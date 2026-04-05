@@ -166,6 +166,43 @@ function extractOcoOrderIds(ocoResponse) {
   return { tpOrderId, slOrderId };
 }
 
+function getPriceStep(symbol) {
+  try {
+    const ex = getExchange();
+    const market = ex.market(symbol);
+    const rawPrecision = market?.precision?.price;
+    if (typeof rawPrecision === 'number' && Number.isFinite(rawPrecision)) {
+      return rawPrecision >= 1 ? (1 / (10 ** rawPrecision)) : rawPrecision;
+    }
+  } catch {
+    // noop
+  }
+  return 0.00000001;
+}
+
+function normalizeProtectiveExitPrices(symbol, fillPrice, tpPrice, slPrice, source = 'fixed') {
+  const ex = getExchange();
+  const priceStep = getPriceStep(symbol);
+  const fixedTpRaw = fillPrice * 1.06;
+  const fixedSlRaw = fillPrice * 0.97;
+  const requestedTp = Number(tpPrice || 0);
+  const requestedSl = Number(slPrice || 0);
+  const requestedValid = requestedTp > fillPrice && requestedSl > 0 && requestedSl < fillPrice;
+  const baseTp = requestedValid ? requestedTp : fixedTpRaw;
+  const baseSl = requestedValid ? requestedSl : fixedSlRaw;
+  const normalizedTp = Number(ex.priceToPrecision(symbol, Math.max(baseTp, fillPrice + priceStep)));
+  const normalizedSl = Number(ex.priceToPrecision(symbol, Math.max(priceStep, Math.min(baseSl, fillPrice - priceStep))));
+  const normalizedSlLimit = Number(ex.priceToPrecision(symbol, Math.max(priceStep, normalizedSl - priceStep)));
+
+  return {
+    tpPrice: normalizedTp,
+    slPrice: normalizedSl,
+    slLimitPrice: normalizedSlLimit < normalizedSl ? normalizedSlLimit : Number(ex.priceToPrecision(symbol, Math.max(priceStep, normalizedSl * 0.999))),
+    sourceUsed: requestedValid ? source : 'fixed_fallback',
+    requestedValid,
+  };
+}
+
 function safeFeatureValue(ex, symbol, method, feature) {
   try {
     if (typeof ex.featureValue === 'function') {
@@ -200,16 +237,17 @@ async function fetchFreeAssetBalance(symbol) {
   return Number(balance.free?.[base] || 0);
 }
 
-async function placeBinanceProtectiveExit(symbol, amount, tpPrice, slPrice) {
+async function placeBinanceProtectiveExit(symbol, amount, fillPrice, tpPrice, slPrice) {
   const ex = getExchange();
   const marketId = symbol.replace('/', '');
   const requestedAmount = Number(amount || 0);
   const freeBalance = await fetchFreeAssetBalance(symbol).catch(() => 0);
   const effectiveAmount = freeBalance > 0 ? Math.min(requestedAmount, freeBalance) : requestedAmount;
   const quantity = ex.amountToPrecision(symbol, effectiveAmount);
-  const tp = ex.priceToPrecision(symbol, tpPrice);
-  const sl = ex.priceToPrecision(symbol, slPrice);
-  const slLimit = ex.priceToPrecision(symbol, slPrice * 0.999);
+  const normalizedPrices = normalizeProtectiveExitPrices(symbol, Number(fillPrice || 0), tpPrice, slPrice, 'provided');
+  const tp = ex.priceToPrecision(symbol, normalizedPrices.tpPrice);
+  const sl = ex.priceToPrecision(symbol, normalizedPrices.slPrice);
+  const slLimit = ex.priceToPrecision(symbol, normalizedPrices.slLimitPrice);
   const errors = [];
   const capabilities = getProtectiveExitCapabilities(ex, symbol);
   const normalizedAmount = Number(quantity || 0);
@@ -719,12 +757,13 @@ async function _tryBuyWithBtcPair(symbol, base, signalId, signal, paperMode) {
   });
 
   // TP/SL OCO — /USDT 페어 기준 설정 (일관성 유지)
-  const tpPrice = parseFloat((usdPrice * 1.06).toFixed(2));
-  const slPrice = parseFloat((usdPrice * 0.97).toFixed(2));
+  const normalizedProtection = normalizeProtectiveExitPrices(symbol, usdPrice, usdPrice * 1.06, usdPrice * 0.97, 'fixed');
+  const tpPrice = normalizedProtection.tpPrice;
+  const slPrice = normalizedProtection.slPrice;
   let protectionSnapshot = buildProtectionSnapshot();
   if (!paperMode && usdPrice > 0) {
     try {
-      const protection = await placeBinanceProtectiveExit(symbol, filledCoin, tpPrice, slPrice);
+      const protection = await placeBinanceProtectiveExit(symbol, filledCoin, usdPrice, tpPrice, slPrice);
       protectionSnapshot = buildProtectionSnapshot(protection);
       if (protection.ok) {
         console.log(`  🛡️ TP/SL OCO (${symbol}): TP=${tpPrice} SL=${slPrice}`);
@@ -945,12 +984,13 @@ export async function executeSignal(signal) {
             await db.upsertPosition({ symbol, amount: newAmount, avgPrice: newAvgPrice, unrealizedPnl: 0, paper: effectivePaperMode });
 
             // TP/SL OCO 설정 (실투자 모드에서만)
-            const tpPrice = parseFloat((curPrice * 1.06).toFixed(2));
-            const slPrice = parseFloat((curPrice * 0.97).toFixed(2));
+            const normalizedProtection = normalizeProtectiveExitPrices(symbol, curPrice, curPrice * 1.06, curPrice * 0.97, 'fixed');
+            const tpPrice = normalizedProtection.tpPrice;
+            const slPrice = normalizedProtection.slPrice;
             let protectionSnapshot = buildProtectionSnapshot();
             if (!effectivePaperMode && curPrice > 0) {
               try {
-                const protection = await placeBinanceProtectiveExit(symbol, untracked, tpPrice, slPrice);
+                const protection = await placeBinanceProtectiveExit(symbol, untracked, curPrice, tpPrice, slPrice);
                 protectionSnapshot = buildProtectionSnapshot(protection);
                 if (protection.ok) {
                   console.log(`  🛡️ TP/SL OCO 설정 완료: TP=${tpPrice} SL=${slPrice}`);
@@ -1195,7 +1235,13 @@ export async function executeSignal(signal) {
         // OCO 주문은 실투자 모드에서만 거래소에 실제 전송
         if (!effectivePaperMode) {
           try {
-            const protection = await placeBinanceProtectiveExit(symbol, order.filled, trade.tpPrice, trade.slPrice);
+            const normalizedProtection = normalizeProtectiveExitPrices(symbol, fillPrice, trade.tpPrice, trade.slPrice, trade.tpslSource);
+            trade.tpPrice = normalizedProtection.tpPrice;
+            trade.slPrice = normalizedProtection.slPrice;
+            if (normalizedProtection.sourceUsed !== trade.tpslSource) {
+              trade.tpslSource = normalizedProtection.sourceUsed;
+            }
+            const protection = await placeBinanceProtectiveExit(symbol, order.filled, fillPrice, trade.tpPrice, trade.slPrice);
             Object.assign(trade, buildProtectionSnapshot(protection));
             if (protection.ok) {
               console.log(`  🛡️ TP/SL OCO 설정 완료: TP=${trade.tpPrice} SL=${trade.slPrice}`);
