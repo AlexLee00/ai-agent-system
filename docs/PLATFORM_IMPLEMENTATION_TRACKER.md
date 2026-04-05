@@ -211,7 +211,7 @@ LLM: 7/10 에이전트 로컬화 (OpenAI 429 대응)
 - [ ] Paperclip: 에이전트별 토큰 예산 — billing-guard 세분화 (80%경고/100%중지)
 - [ ] Paperclip: 에이전트 오피스에 조직도 트리 뷰
 - [ ] 대규모 파일 분리: forecast.py 2,047줄 / chat-agent.js 876줄
-- [ ] OpenClaw Phase 4: mainbot.js 퇴역 + alert resolve
+- [x] OpenClaw Phase 4: ✅ mainbot.js 퇴역 완료! (ai.orchestrator unload + disabled 이동)
 - [x] Gemma 4: ✅ 시범 배치 일시 보류 (26B/8B timeout, 주석 처리, MLX 대기)
   - 구조: ✅ 성공 (try-catch+timeout+폴백 안전!)
   - 26B: ❌ timeout 초과 / 8B: ❌ 실전 프롬프트에서도 15초+ 초과
