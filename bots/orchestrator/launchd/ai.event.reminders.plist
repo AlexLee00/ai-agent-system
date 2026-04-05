@@ -6,7 +6,7 @@
     <string>ai.event.reminders</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/local/bin/node</string>
+        <string>/opt/homebrew/bin/node</string>
         <string>/Users/alexlee/projects/ai-agent-system/bots/orchestrator/lib/research/event-reminders.js</string>
     </array>
     <key>StartCalendarInterval</key>
