@@ -54,6 +54,8 @@ const KIS_RULES = {
   MAX_ORDER_KRW: 1_200_000,
 };
 
+const KIS_ORDER_CASH_BUFFER_KRW = 10_000;
+
 const KIS_OVERSEAS_RULES = {
   MIN_ORDER_USD:   300,
   MAX_ORDER_USD: 1_200,
@@ -268,6 +270,23 @@ async function checkKisRisk(signal) {
           return {
             approved: false,
             reason: `1주 가격 미달 (${amountKrw?.toLocaleString()}원 < ${currentPrice.toLocaleString()}원)`,
+          };
+        }
+      }
+      if (typeof kis.getDomesticBalance === 'function') {
+        const balance = await kis.getDomesticBalance(isKisPaper());
+        const depositKrw = Number(balance?.dnca_tot_amt || 0);
+        const spendableKrw = Math.max(0, depositKrw - KIS_ORDER_CASH_BUFFER_KRW);
+        if (depositKrw <= 0) {
+          return {
+            approved: false,
+            reason: `국내 예수금 확인 실패 또는 0원 (${depositKrw?.toLocaleString?.() || depositKrw}원)`,
+          };
+        }
+        if (amountKrw > spendableKrw) {
+          return {
+            approved: false,
+            reason: `주문가능금액 초과 (${amountKrw?.toLocaleString()}원 > 가용 ${spendableKrw.toLocaleString()}원, 예수금 ${depositKrw.toLocaleString()}원)`,
           };
         }
       }
