@@ -12,6 +12,7 @@ const launchdManager = require('../lib/steward/launchd-manager');
 const telegramManager = require('../lib/steward/telegram-manager');
 const dailySummary = require('../lib/steward/daily-summary');
 const readmeUpdater = require('../lib/steward/readme-updater');
+const openclawSessionManager = require('../lib/steward/openclaw-session-manager');
 const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 const env = require('../../../packages/core/lib/env');
 
@@ -36,6 +37,7 @@ async function runDaily() {
 async function runHourly() {
   console.log('[steward] 매시 모드 시작');
   const sync = envSync.checkSync();
+  const sessionRepair = openclawSessionManager.reconcileMainIngressSessions();
   if (sync.synced === false && sync.behind > 0) {
     await postAlarm({
       message: `⚠️ [스튜어드] ${sync.hostname} 동기화 필요: origin/main보다 ${sync.behind}건 뒤처짐`,
@@ -44,7 +46,15 @@ async function runHourly() {
       fromBot: 'steward',
     });
   }
-  return sync;
+  if (sessionRepair.changed) {
+    await postAlarm({
+      message: `ℹ️ [스튜어드] OpenClaw main ingress 세션 ${sessionRepair.updated.length}건을 ${sessionRepair.preferredModel}로 정규화했습니다.`,
+      team: 'general',
+      alertLevel: 1,
+      fromBot: 'steward',
+    });
+  }
+  return { ...sync, sessionRepair };
 }
 
 async function runSession() {
@@ -89,14 +99,16 @@ function runStatus() {
   const health = launchdManager.checkHealth();
   const topics = telegramManager.listTopics();
   const suspicious = gitHygiene.scanTracked();
+  const sessionRepair = openclawSessionManager.reconcileMainIngressSessions({ restartGateway: false });
 
   console.log(`코덱스: 활성 ${codex.active}, 아카이브 ${codex.archived}`);
   console.log(`동기화: ${sync.synced === true ? '✅' : sync.synced === false ? '⚠️' : '❓'} ${sync.hostname || ''} ${sync.local || ''}`.trim());
   console.log(`launchd: ${health.total}서비스, ${health.running}실행`);
   console.log(`텔레그램: ${topics.filter((item) => item.configured).length}/${topics.length} 토픽`);
+  console.log(`openclaw ingress: ${sessionRepair.ok ? `${sessionRepair.updated.length}건 보정 필요` : '확인 실패'}`);
   console.log(`git 위생: ${suspicious.length}건 의심`);
 
-  return { codex, sync, health, topics, suspicious };
+  return { codex, sync, health, topics, suspicious, sessionRepair };
 }
 
 const { mode } = parseArgs();

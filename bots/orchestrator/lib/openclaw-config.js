@@ -8,6 +8,10 @@ function getOpenClawConfigPath() {
   return path.join(os.homedir(), '.openclaw', 'openclaw.json');
 }
 
+function getOpenClawMainSessionsPath() {
+  return path.join(os.homedir(), '.openclaw', 'agents', 'main', 'sessions', 'sessions.json');
+}
+
 function readOpenClawConfig() {
   const filePath = getOpenClawConfigPath();
   const raw = fs.readFileSync(filePath, 'utf8');
@@ -171,11 +175,147 @@ function updateOpenClawGatewayConcurrency({ maxConcurrent, subagentMaxConcurrent
   };
 }
 
+function _getProviderProfile(config = {}, provider = '') {
+  const normalized = String(provider || '').trim();
+  if (!normalized) return null;
+  const lastGood = config?.auth?.lastGood || {};
+  if (lastGood[normalized]) return lastGood[normalized];
+  const profiles = config?.auth?.profiles || {};
+  const direct = Object.keys(profiles).find((key) => profiles[key]?.provider === normalized);
+  if (direct) return direct;
+
+  try {
+    const authPath = getOpenClawAgentAuthPath();
+    if (!fs.existsSync(authPath)) return null;
+    const agentAuth = readJsonFile(authPath);
+    const agentLastGood = agentAuth?.lastGood || {};
+    if (agentLastGood[normalized]) return agentLastGood[normalized];
+    const agentProfiles = agentAuth?.profiles || {};
+    return Object.keys(agentProfiles).find((key) => agentProfiles[key]?.provider === normalized) || null;
+  } catch {
+    return null;
+  }
+}
+
+function _modelToProvider(modelId = '') {
+  return String(modelId || '').split('/')[0] || '';
+}
+
+function getPreferredOpenClawIngressModel() {
+  const gateway = getOpenClawGatewayModelState();
+  if (!gateway.ok) {
+    return {
+      ok: false,
+      model: null,
+      provider: null,
+      authProfile: null,
+      error: gateway.error || 'gateway state unavailable',
+    };
+  }
+
+  const preferredCandidates = [
+    gateway.primary,
+    ...(gateway.readyFallbacks || []),
+    ...(gateway.fallbacks || []),
+  ].filter(Boolean);
+
+  const selectedModel = preferredCandidates[0] || gateway.primary || null;
+  const provider = _modelToProvider(selectedModel);
+  const { config } = readOpenClawConfig();
+  const authProfile = _getProviderProfile(config, provider);
+
+  return {
+    ok: Boolean(selectedModel),
+    model: selectedModel,
+    provider,
+    authProfile,
+    source: selectedModel === gateway.primary ? 'primary' : 'fallback',
+  };
+}
+
+function normalizeOpenClawMainIngressSessions(options = {}) {
+  const sessionsPath = options.sessionsPath || getOpenClawMainSessionsPath();
+  const dryRun = Boolean(options.dryRun);
+  const staleModels = new Set([
+    'gemini-2.5-flash-lite',
+    'google-gemini-cli/gemini-2.5-flash-lite',
+  ]);
+  const preferred = getPreferredOpenClawIngressModel();
+  if (!preferred.ok || !preferred.model || !preferred.provider) {
+    return {
+      ok: false,
+      sessionsPath,
+      changed: false,
+      updated: [],
+      skipped: [],
+      error: preferred.error || 'preferred ingress model unavailable',
+    };
+  }
+
+  const raw = fs.readFileSync(sessionsPath, 'utf8');
+  const sessions = JSON.parse(raw);
+  const updated = [];
+  const skipped = [];
+
+  for (const [sessionKey, session] of Object.entries(sessions || {})) {
+    const channel = String(session?.channel || session?.origin?.provider || '').trim();
+    const isTelegram = channel === 'telegram' || sessionKey.startsWith('agent:main:telegram:');
+    const isIngressHook = sessionKey.startsWith('agent:main:hook:ingress');
+    if (!isTelegram && !isIngressHook) continue;
+
+    const currentProvider = String(session?.modelProvider || '').trim();
+    const currentModel = String(session?.model || '').trim();
+    const currentComposite = currentProvider && currentModel ? `${currentProvider}/${currentModel}` : currentModel;
+    const needsRepair =
+      currentProvider !== preferred.provider ||
+      currentModel !== preferred.model.replace(`${preferred.provider}/`, '') ||
+      staleModels.has(currentModel) ||
+      staleModels.has(currentComposite);
+
+    if (!needsRepair) {
+      skipped.push({ sessionKey, model: currentComposite || currentModel || null });
+      continue;
+    }
+
+    session.modelProvider = preferred.provider;
+    session.model = preferred.model.replace(`${preferred.provider}/`, '');
+    if (preferred.authProfile) {
+      session.authProfileOverride = preferred.authProfile;
+      session.authProfileOverrideSource = 'auto-healed';
+      session.authProfileOverrideCompactionCount = 0;
+    }
+
+    updated.push({
+      sessionKey,
+      before: currentComposite || currentModel || null,
+      after: preferred.model,
+    });
+  }
+
+  if (updated.length > 0 && !dryRun) {
+    fs.writeFileSync(sessionsPath, `${JSON.stringify(sessions, null, 2)}\n`, 'utf8');
+  }
+
+  return {
+    ok: true,
+    sessionsPath,
+    changed: updated.length > 0,
+    updated,
+    skipped,
+    preferredModel: preferred.model,
+    preferredProvider: preferred.provider,
+    authProfile: preferred.authProfile || null,
+  };
+}
+
 module.exports = {
   getOpenClawConfigPath,
+  getOpenClawMainSessionsPath,
   getOpenClawAgentAuthPath,
   extractProviderFromModel,
   getOpenClawGatewayModelState,
+  getPreferredOpenClawIngressModel,
+  normalizeOpenClawMainIngressSessions,
   updateOpenClawGatewayPrimary,
   updateOpenClawGatewayFallbacks,
   updateOpenClawGatewayConcurrency,
