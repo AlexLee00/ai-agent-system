@@ -80,6 +80,35 @@ function _screeningLabel(market) {
   return market === 'crypto' ? '암호화폐' : market === 'domestic' ? '국내주식' : '해외주식';
 }
 
+function _isValidBinanceUsdtSymbol(symbol, tickerMap = null) {
+  if (typeof symbol !== 'string') return false;
+  const normalized = symbol.trim().toUpperCase();
+  if (!/^[A-Z0-9]+\/USDT$/.test(normalized)) return false;
+  if (normalized.length <= 6) return false;
+  return tickerMap ? Boolean(tickerMap[normalized]) : true;
+}
+
+function _sanitizeCryptoSymbols(symbols, tickerMap = null, logLabel = null) {
+  const seen = new Set();
+  const invalid = [];
+  const sanitized = [];
+  for (const raw of Array.isArray(symbols) ? symbols : []) {
+    const symbol = typeof raw === 'string' ? raw.trim().toUpperCase() : '';
+    if (!symbol) continue;
+    if (!_isValidBinanceUsdtSymbol(symbol, tickerMap)) {
+      invalid.push(symbol);
+      continue;
+    }
+    if (seen.has(symbol)) continue;
+    seen.add(symbol);
+    sanitized.push(symbol);
+  }
+  if (logLabel && invalid.length > 0) {
+    console.warn(`[아르고스] ${logLabel} 비정상 심볼 제외: ${invalid.slice(0, 10).join(', ')}`);
+  }
+  return sanitized;
+}
+
 function _cleanupIntelCache(now = Date.now()) {
   for (const [key, value] of _candidateIntelCache.entries()) {
     if ((now - value.ts) >= INTEL_CACHE_TTL) _candidateIntelCache.delete(key);
@@ -112,9 +141,12 @@ async function _loadRecentScreeningWeights(market) {
     const weights = new Map();
     rows.forEach((row, idx) => {
       const recencyWeight = Math.max(1, 5 - idx);
-      const symbols = Array.isArray(row.dynamic_symbols)
+      const rawSymbols = Array.isArray(row.dynamic_symbols)
         ? row.dynamic_symbols
         : JSON.parse(row.dynamic_symbols || '[]');
+      const symbols = market === 'crypto'
+        ? _sanitizeCryptoSymbols(rawSymbols)
+        : rawSymbols;
       symbols.forEach(sym => weights.set(sym, (weights.get(sym) || 0) + recencyWeight));
     });
     return weights;
@@ -562,7 +594,7 @@ export async function screenCryptoSymbols(maxDynamic, fng = 50) {
     ]);
 
     const tickerMap = tickers.status === 'fulfilled' ? tickers.value : {};
-    const cgSymbols = new Set(cgTrending.status === 'fulfilled' ? cgTrending.value : []);
+    const cgSymbols = new Set(_sanitizeCryptoSymbols(cgTrending.status === 'fulfilled' ? cgTrending.value : [], tickerMap, 'CoinGecko'));
     const btcTicker = tickerMap['BTC/USDT'] || null;
     const ethTicker = tickerMap['ETH/USDT'] || null;
     const ethBtcTicker = tickerMap['ETH/BTC'] || null;
@@ -628,7 +660,7 @@ export async function screenCryptoSymbols(maxDynamic, fng = 50) {
     });
 
     const topDynamic     = await _applyCandidateIntelligence(scored.sort((a, b) => b.finalScore - a.finalScore), 'crypto', max);
-    const dynamicSymbols = topDynamic.map(t => t.symbol);
+    const dynamicSymbols = _sanitizeCryptoSymbols(topDynamic.map(t => t.symbol), tickerMap, '암호화폐 스크리닝');
 
     console.log(`[아르고스] 암호화폐 스크리닝: 동적 ${dynamicSymbols.join(', ') || '없음'}`);
     topDynamic.forEach(t =>
@@ -640,7 +672,8 @@ export async function screenCryptoSymbols(maxDynamic, fng = 50) {
       )
     );
 
-    return { core: CORE_CRYPTO, dynamic: dynamicSymbols, all: dynamicSymbols, screening: topDynamic, fng };
+    const sanitizedScreening = topDynamic.filter((item) => dynamicSymbols.includes(item.symbol));
+    return { core: CORE_CRYPTO, dynamic: dynamicSymbols, all: dynamicSymbols, screening: sanitizedScreening, fng };
   } catch (e) {
     console.warn(`[아르고스] 암호화폐 스크리닝 실패: ${e.message}`);
     return { core: CORE_CRYPTO, dynamic: [], all: [], screening: [], error: e.message, fng };

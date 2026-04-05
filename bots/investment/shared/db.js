@@ -783,6 +783,11 @@ export async function getRecentScreeningSymbols(market, limit = 3) {
   `, [market, limit]);
 
   const symbols = [];
+  const isValidCryptoSymbol = (sym) => (
+    typeof sym === 'string'
+    && /^[A-Z0-9]+\/USDT$/.test(sym.trim().toUpperCase())
+    && sym.trim().length > 6
+  );
   for (const row of rows) {
     const screeningData = row.screening_data && typeof row.screening_data === 'object'
       ? row.screening_data
@@ -801,6 +806,7 @@ export async function getRecentScreeningSymbols(market, limit = 3) {
           ? Object.values(row.core_symbols).flat()
           : JSON.parse(row.core_symbols || '[]');
     for (const sym of [...dynamic, ...core]) {
+      if (market === 'crypto' && !isValidCryptoSymbol(sym)) continue;
       if (sym && !symbols.includes(sym)) symbols.push(sym);
     }
   }
