@@ -1,6 +1,6 @@
 # 플랫폼 구현 추적 문서
 
-> 마지막 업데이트: 2026-04-05
+> 마지막 업데이트: 2026-04-06
 > 목적: 실제 코드 구현 상태와 커밋 이력 기준으로 개발 진행 상황을 추적한다.
 > 원칙: 완료(날짜+근거) / 진행 중(현재+남은 것) / 미완료 3단계 분류
 > 참조: docs/STRATEGY.md, docs/research/RESEARCH_CC_COMPREHENSIVE.md
@@ -17,11 +17,13 @@
 - **Gemma 4**: ✅ 보류 확정 (26B/8B timeout, 주석 처리, MLX 대기)
 - **텔레그램 토픽**: ✅ 12토픽 완성! 10팀 개별 라우팅
 - **git 위생**: ✅ 히스토리 정리(43M→23M) + .gitignore 강화(53파일 추적해제)
-- **자율 고용 전팀 확산**: 블로팀 ε-greedy → 전 팀 확대 (hiring-contract.js)
-- **블로팀 Phase B**: 피드백 루프 (04-07~11 예정)
-- **OpenClaw Phase 4**: mainbot.js 퇴역 + alert resolve Standing Orders
-- **경쟁 결과 확인**: 첫 경쟁 결과 (월요일)
-- **코덱스 정리**: archive 완료, 활성 8개 유지 (Gemma4 보류 3 + 기존 4 + 스튜어드)
+- **자율 고용 전팀 확산**: ✅ 5팀 완료! 블로/루나/다윈/저스틴/시그마 (300b501a)
+- **블로팀 Phase B**: 📋 코덱스 작성 완료 (CODEX_BLOG_PHASE_B_FEEDBACK.md 270줄)
+- **시그마팀 3중 피드백 루프**: ✅ 구현 완료! (c5857944, 809줄/7파일) 12에이전트
+- **데이터 자산화**: 📋 전략 문서 완료 (DUAL_FEEDBACK_LOOP.md §9)
+- **README 현대화**: ✅ 영어 리디자인 + MIT 라이센스 (47bfcbcc)
+- **OpenClaw Phase 4**: ✅ 메인봇 퇴역 완료!
+- **경쟁 결과 확인**: 📋 내일 (월요일) 첫 결과!
 
 ---
 
@@ -450,10 +452,37 @@ packages/core/lib/rag.js — pgvector RAG (rag_experience 컬렉션 추가, 04-0
 
 ---
 
-## 7. 변경 이력
+## 7. 시스템 보완점 추적 (2026-04-06~)
+
+> 출처: docs/strategy/SYSTEM_IMPROVEMENT_ANALYSIS.md (246줄, OpenHarness 외 8출처)
+
+| ID | 심각도 | 항목 | 상태 | 대상 시기 |
+|----|--------|------|------|-----------|
+| P0-1 | P0 | 테스트 커버리지 (hiring-contract부터) | ⬜ | 이번 주 |
+| P0-2 | P0 | 에이전트 간 통신 (pg LISTEN/NOTIFY) | ⬜ | 이번 달 |
+| P0-3 | P0 | 에이전트별 권한 scope | ⬜ | 이번 달 |
+| P1-4 | P1 | 타입 안전성 (JSDoc + .d.ts) | ⬜ | 이번 달 |
+| P1-5 | P1 | 구조화된 로깅 (logger.js) | ⬜ | 이번 주 |
+| P1-6 | P1 | 컨테이너화 (docker-compose) | ⬜ | 분기 |
+| P1-7 | P1 | 플러그인/hooks 시스템 | ⬜ | 분기 |
+| P2-8 | P2 | MCP 서버 제공 | ⬜ | 분기 |
+| P2-9 | P2 | 버전 관리 + CHANGELOG | ⬜ | 분기 |
+| P2-10 | P2 | experience_record 구현 | ⬜ | 분기 |
+| P2-11 | P2 | 코스트 추적 대시보드 | ⬜ | 분기 |
+| P2-12 | P2 | 에러 핸들링 표준화 | ⬜ | 이번 달 |
+| P2-13 | P2 | 전체 시스템 백업 | ⬜ | 이번 달 |
+| P3-14 | P3 | 벤치마크/평가 프레임워크 | ⬜ | 장기 |
+| P3-15 | P3 | 웹 대시보드 | ⬜ | 장기 |
+| P3-16 | P3 | 문서 자동 생성 | ⬜ | 장기 |
+| P3-17 | P3 | 멀티 머신 스케일아웃 | ⬜ | 장기 |
+
+---
+
+## 8. 변경 이력
 
 | 날짜 | 변경 |
 |------|------|
+| 04-06 | 시그마팀3중피드백루프(748줄)+12에이전트(hawk/dove/owl+optimizer/librarian/forecaster)+동적편성. 데이터자산화전략(5라벨+experience_record+거래준비). 자율고용5팀확산(저스틴+시그마specialty). 블로팀PhaseB코덱스(270줄). README현대화(영어+MIT). 라이트에이전트코덱스(203줄). sweeper추가. 시스템보완점분석15건(OpenHarness8출처). 121에이전트 |
 | 04-05 | 비서봇 스튜어드 구현+테스트 완료(b827a8a0): 8모듈(tracker-sync+codex-manager+session-closer+git-hygiene+env-sync+launchd+telegram+daily-summary). 4모드 전부 정상. LLM없음$0. 114에이전트. 비정상 launchd 8건 진단→2폐기+1리로드+5정상 |
 | 04-05 | 도서리뷰 4회연속실패 근본수정(64688e20): 스케줄 키 불일치(book_isbn→isbn) 해소. ISBN없으면 resolveBookForReview 자동보완. 텔레그램12토픽완성(5신규). git히스토리정리(43M→23M). .gitignore 강화(53파일 추적해제) |
 | 04-05 | 다윈Sprint1~3+튜닝4회 전체완료: Sprint1(arXiv+HF108건) Sprint2(자율고용+9도메인+모니터링) Sprint3(graft→edison→proof-r 296초/40평가/2제안). CC P0(연속실패제한+Strict Write). 알람4경로→postAlarm. Gemma4보류 |
