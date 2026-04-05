@@ -153,9 +153,15 @@ async function closeOpenJournalForSymbol(symbol, market, isPaper, exitPrice, exi
       && Boolean(e.is_paper) === Boolean(isPaper),
   );
   const effectiveTradeMode = tradeMode || null;
-  const entry = effectiveTradeMode
-    ? scopedEntries.find((e) => (e.trade_mode || 'normal') === effectiveTradeMode)
-    : (scopedEntries.length === 1 ? scopedEntries[0] : null);
+  let entry = null;
+  if (effectiveTradeMode) {
+    entry = scopedEntries.find((e) => (e.trade_mode || 'normal') === effectiveTradeMode) || null;
+  } else if (scopedEntries.length === 1) {
+    entry = scopedEntries[0];
+  } else if (scopedEntries.length > 1) {
+    const tradeModes = [...new Set(scopedEntries.map((e) => e.trade_mode || 'normal'))];
+    console.warn(`[한울] ${market} ${symbol} journal close 스킵 - trade_mode 불명확 (${tradeModes.join(',')})`);
+  }
   if (!entry) return;
 
   const pnlAmount = (exitValue || 0) - (entry.entry_value || 0);
@@ -214,9 +220,15 @@ async function closeStaleOpenJournalForSymbol(symbol, market, isPaper, exitReaso
       && Boolean(e.is_paper) === Boolean(isPaper),
   );
   const effectiveTradeMode = tradeMode || null;
-  const entry = effectiveTradeMode
-    ? scopedEntries.find((e) => (e.trade_mode || 'normal') === effectiveTradeMode)
-    : (scopedEntries.length === 1 ? scopedEntries[0] : null);
+  let entry = null;
+  if (effectiveTradeMode) {
+    entry = scopedEntries.find((e) => (e.trade_mode || 'normal') === effectiveTradeMode) || null;
+  } else if (scopedEntries.length === 1) {
+    entry = scopedEntries[0];
+  } else if (scopedEntries.length > 1) {
+    const tradeModes = [...new Set(scopedEntries.map((e) => e.trade_mode || 'normal'))];
+    console.warn(`[한울] ${market} ${symbol} stale journal close 스킵 - trade_mode 불명확 (${tradeModes.join(',')})`);
+  }
   if (!entry) return;
 
   await journalDb.closeJournalEntry(entry.trade_id, {
