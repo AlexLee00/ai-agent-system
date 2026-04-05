@@ -19,6 +19,7 @@ const AGENTS = [
   { name: 'nemesis', display_name: '네메시스', team: 'luna', role: 'risk', specialty: '리스크매니저', llm_model: 'groq/llama-4-scout', code_path: 'bots/investment/team/nemesis.js', dot_character: { color: '#64748b', accessory: 'shield' } },
   { name: 'zeus', display_name: '제우스', team: 'luna', role: 'executor', specialty: '주문실행', llm_model: 'groq/llama-4-scout', code_path: 'bots/investment/team/zeus.js' },
   { name: 'athena', display_name: '아테나', team: 'luna', role: 'executor', specialty: '주문실행', llm_model: 'groq/llama-4-scout', code_path: 'bots/investment/team/athena.js' },
+  { name: 'sweeper', display_name: '스위퍼', team: 'luna', role: 'operator', specialty: '지갑정합성복구(dust추적,포지션-지갑대조,브로커청산반영)', code_path: 'bots/investment/team/sweeper.js', config: { llm_management: 'non-llm', non_llm_reason: 'wallet-reconciliation-deterministic-logic' }, dot_character: { color: '#14b8a6', accessory: 'broom' } },
 
   { name: 'dexter', display_name: '덱스터', team: 'claude', role: 'monitor', specialty: '시스템점검', code_path: 'bots/claude/src/dexter.js', is_always_on: true, dot_character: { color: '#10b981', accessory: 'magnifier' }, config: { llm_management: 'runtime-managed', runtime_team: 'claude', runtime_purpose: 'triage' } },
   { name: 'doctor', display_name: '닥터', team: 'claude', role: 'healer', specialty: '자동복구', code_path: 'bots/claude/lib/doctor.js', is_always_on: true, dot_character: { color: '#059669', accessory: 'cross' }, config: { llm_management: 'runtime-managed', runtime_team: 'claude', runtime_purpose: 'triage' } },
