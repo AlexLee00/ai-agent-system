@@ -22,6 +22,11 @@ const { execSync } = require('child_process');
 const pgPool     = require('../../../packages/core/lib/pg-pool');
 
 const SCHEMA = 'reservation';
+const LAUNCHD_DIR = path.join(os.homedir(), 'Library', 'LaunchAgents');
+const RECOVERY_BLACKLIST = new Set([
+  'ai.ops.platform.backend',
+  'ai.ops.platform.frontend',
+]);
 
 // ─── 블랙리스트 (절대 금지 명령/패턴) ─────────────────────────────────────
 const BLACKLIST = [
@@ -60,22 +65,10 @@ const WHITELIST = {
   restart_launchd_service: {
     description: 'launchd 서비스 재시작',
     requires_confirmation: false,
-    allowed_services: [
-      'ai.ska.naver-monitor',       // 앤디
-      'ai.ska.kiosk-monitor',       // 지미
-      'ai.claude.dexter.quick',     // 덱스터 퀵체크
-      'ai.claude.dexter',           // 덱스터 full
-      'ai.investment.crypto',       // 루나팀 크립토 사이클
-      'ai.ska.commander',           // 스카 커맨더
-      'ai.claude.commander',        // 클로드 커맨더
-      'ai.investment.commander',    // 루나 커맨더
-    ],
     action: async ({ label }) => {
       if (!label) throw new Error('label 파라미터 필수');
-      const allowed = WHITELIST.restart_launchd_service.allowed_services;
-      if (!allowed.includes(label)) {
-        throw new Error(`허용되지 않은 서비스: ${label}. 허용 목록: ${allowed.join(', ')}`);
-      }
+      if (!String(label).startsWith('ai.')) throw new Error(`ai.* 서비스만 허용: ${label}`);
+      if (RECOVERY_BLACKLIST.has(label)) throw new Error(`블랙리스트 서비스: ${label}`);
       const uid = process.getuid ? process.getuid() : execSync('id -u', { encoding: 'utf8' }).trim();
       // kickstart -k: 이미 실행 중이면 강제 종료 후 재시작, -p: 출력 보존
       execSync(`launchctl kickstart -kp gui/${uid}/${label}`, { timeout: 15000, encoding: 'utf8' });
@@ -335,22 +328,137 @@ async function pollDoctorTasks() {
   }
 }
 
+function discoverServices() {
+  let output = '';
+  try {
+    output = execSync('launchctl list', { encoding: 'utf8', timeout: 5000 });
+  } catch (err) {
+    console.warn('[doctor] launchctl list 실패:', err.message);
+    return [];
+  }
+
+  const services = [];
+  for (const line of output.split('\n')) {
+    const parts = line.trim().split('\t');
+    if (parts.length < 3) continue;
+    const label = parts[2];
+    if (!label || !label.startsWith('ai.')) continue;
+
+    const pidRaw = parts[0];
+    const statusRaw = parts[1];
+    const plistPath = path.join(LAUNCHD_DIR, `${label}.plist`);
+    let keepAlive = false;
+
+    try {
+      if (fs.existsSync(plistPath)) {
+        const plistContent = execSync(`plutil -p "${plistPath}"`, { encoding: 'utf8', timeout: 3000 });
+        keepAlive = plistContent.includes('"KeepAlive"') && plistContent.includes('true');
+      }
+    } catch {
+      keepAlive = false;
+    }
+
+    services.push({
+      label,
+      pid: pidRaw === '-' ? null : parseInt(pidRaw, 10),
+      status: Number.parseInt(statusRaw, 10) || 0,
+      keepAlive,
+      plistPath: fs.existsSync(plistPath) ? plistPath : null,
+      blacklisted: RECOVERY_BLACKLIST.has(label),
+    });
+  }
+
+  return services;
+}
+
+function checkLaunchdHealth() {
+  const services = discoverServices();
+  const healthy = [];
+  const down = [];
+  const errors = [];
+  const blacklisted = [];
+
+  for (const svc of services) {
+    if (svc.blacklisted) {
+      blacklisted.push(svc);
+      continue;
+    }
+
+    if (svc.pid) {
+      healthy.push(svc);
+    } else if (svc.keepAlive) {
+      down.push(svc);
+    } else if (svc.status !== 0) {
+      errors.push({ ...svc, reason: `비정상 exit: ${svc.status}` });
+    } else {
+      healthy.push(svc);
+    }
+  }
+
+  console.log(`[doctor] launchd 헬스: ${healthy.length}정상, ${down.length}내려감, ${errors.length}에러, ${blacklisted.length}블랙리스트`);
+  return { healthy, down, errors, blacklisted, total: services.length };
+}
+
+async function recoverDownServices(downServices) {
+  if (!downServices || downServices.length === 0) return [];
+
+  const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+  const results = [];
+  const uid = process.getuid ? process.getuid() : execSync('id -u', { encoding: 'utf8' }).trim();
+
+  for (const svc of downServices) {
+    try {
+      console.log(`  🔧 [닥터] ${svc.label} 내려감 (exit: ${svc.status}) → 재시작`);
+      execSync(`launchctl kickstart -kp gui/${uid}/${svc.label}`, { timeout: 15000, encoding: 'utf8' });
+      await logRecovery('restart_launchd_service', { label: svc.label }, { restarted: svc.label }, true, 'doctor-healthcheck');
+      results.push({ label: svc.label, success: true, message: '재시작 완료' });
+    } catch (err) {
+      await logRecovery('restart_launchd_service', { label: svc.label }, null, false, 'doctor-healthcheck', null, err.message);
+      results.push({ label: svc.label, success: false, message: err.message });
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+
+  if (results.length > 0) {
+    const lines = [`🏥 닥터 launchd 자동 복구 (${results.length}건)`];
+    results.forEach((r) => lines.push(`  ${r.success ? '✅' : '❌'} ${r.label} — ${r.message}`));
+    await postAlarm({
+      message: lines.join('\n'),
+      team: 'claude',
+      alertLevel: results.some((r) => r.label.includes('hub') || r.label.includes('mlx')) ? 3 : 2,
+      fromBot: 'doctor',
+    });
+  }
+
+  return results;
+}
+
 async function scanAndRecover() {
   const { fetchOpsErrors } = require('../../../packages/core/lib/hub-client');
+  const recoveries = [];
+
+  try {
+    const health = checkLaunchdHealth();
+    if (health.down.length > 0) {
+      const launchdRecoveries = await recoverDownServices(health.down);
+      recoveries.push(...launchdRecoveries.map((r) => ({ ...r, source: 'launchd-healthcheck' })));
+    }
+  } catch (error) {
+    console.warn('[doctor] launchd 헬스체크 실패:', error.message);
+  }
 
   try {
     const data = await fetchOpsErrors(10);
-    if (!data?.ok || data.total_errors === 0) return [];
+    if (!data?.ok || data.total_errors === 0) return recoveries;
 
-    const recoveries = [];
     for (const svc of data.services) {
       if (svc.error_count < 10) continue;
 
       const label = _serviceToLaunchd(svc.service);
       if (!label) continue;
       if (!canRecover('restart_launchd_service')) continue;
-      const task = WHITELIST.restart_launchd_service;
-      if (!task.allowed_services.includes(label)) continue;
+      if (RECOVERY_BLACKLIST.has(label)) continue;
+      if (recoveries.some((r) => r.label === label && r.success)) continue;
 
       console.log(`  🔧 [닥터] ${svc.service} 에러 ${svc.error_count}건 → ${label} 재시작`);
       const result = await execute('restart_launchd_service', { label }, 'doctor-autoscan');
@@ -365,7 +473,7 @@ async function scanAndRecover() {
     return recoveries;
   } catch (error) {
     console.warn('[doctor] scanAndRecover 실패:', error.message);
-    return [];
+    return recoveries;
   }
 }
 
@@ -450,6 +558,9 @@ module.exports = {
   getRecoveryHistory,
   getAvailableTasks,
   pollDoctorTasks,
+  discoverServices,
+  checkLaunchdHealth,
+  recoverDownServices,
   scanAndRecover,
   emergencyDirectRecover,
   getPastSuccessfulFix,

@@ -27,8 +27,8 @@ const TEAM_CONTEXT = `팀 제이 시스템 구조:
 async function generateProposal(paper) {
   const result = await callWithFallback({
     chain: [
-      { provider: 'local', model: 'qwen2.5-7b', maxTokens: 800, temperature: 0.5 },
       { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 800, temperature: 0.5 },
+      { provider: 'local', model: 'qwen2.5-7b', maxTokens: 800, temperature: 0.5 },
     ],
     systemPrompt: `당신은 팀 제이의 기술 적용 전문가(graft)입니다.
 ${TEAM_CONTEXT}
@@ -44,7 +44,7 @@ ${TEAM_CONTEXT}
 필요 파일: (수정/생성할 파일 경로)`,
     userPrompt: `논문: ${paper.title}\n요약: ${paper.korean_summary}\n적합성: ${paper.relevance_score}점\n이유: ${paper.reason}`,
     logMeta: { team: 'darwin', bot: 'graft', requestType: 'proposal_generation' },
-    timeoutMs: 20_000,
+    timeoutMs: 12_000,
   });
   return result.text || '';
 }
@@ -52,8 +52,8 @@ ${TEAM_CONTEXT}
 async function generatePrototype(paper, proposal) {
   const result = await callWithFallback({
     chain: [
-      { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1200, temperature: 0.3 },
       { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1200, temperature: 0.3 },
+      { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1200, temperature: 0.3 },
     ],
     systemPrompt: `당신은 팀 제이의 프로토타입 개발자(edison)입니다.
 ${TEAM_CONTEXT}
@@ -65,7 +65,7 @@ Node.js (ES5, require) 스타일로 작성.
 주석으로 "여기서 실제 API 호출" 표시.`,
     userPrompt: `논문: ${paper.title}\n적용 방안:\n${proposal}`,
     logMeta: { team: 'darwin', bot: 'edison', requestType: 'prototype_generation' },
-    timeoutMs: 25_000,
+    timeoutMs: 15_000,
   });
   return result.text || '';
 }
