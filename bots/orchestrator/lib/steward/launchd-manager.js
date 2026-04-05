@@ -26,10 +26,12 @@ function listOurServices() {
 
 function checkHealth() {
   const services = listOurServices();
-  const unhealthy = services.filter((service) => service.status !== '0');
+  const restarted = services.filter((service) => service.pid !== '-' && service.status !== '0');
+  const unhealthy = services.filter((service) => service.pid === '-' && service.status !== '0');
   return {
     total: services.length,
     running: services.filter((service) => service.pid !== '-').length,
+    restarted,
     unhealthy,
   };
 }
