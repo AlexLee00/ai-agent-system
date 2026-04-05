@@ -131,6 +131,39 @@ async function cleanupExpiredLock() {
   }
 }
 
+// ─── 수동 픽코 우선 신호 ────────────────────────────────────────────
+
+const MANUAL_PICKKO_AGENT = 'manual_pickko';
+const MANUAL_PICKKO_ACTIVE_MS = 20 * 60 * 1000;
+
+async function setManualPickkoPriority(currentTask = 'manual_reservation') {
+  await updateAgentState(MANUAL_PICKKO_AGENT, 'running', currentTask, null);
+}
+
+async function clearManualPickkoPriority() {
+  await updateAgentState(MANUAL_PICKKO_AGENT, 'idle', null, null);
+}
+
+async function isManualPickkoPriorityActive(activeMs = MANUAL_PICKKO_ACTIVE_MS) {
+  try {
+    const row = await getAgentState(MANUAL_PICKKO_AGENT);
+    if (!row || row.status !== 'running') return { active: false, task: null, updatedAt: null };
+    const updatedAt = row.updated_at ? new Date(row.updated_at) : null;
+    if (!updatedAt || Number.isNaN(updatedAt.getTime())) {
+      return { active: true, task: row.current_task || null, updatedAt: null };
+    }
+    const active = (Date.now() - updatedAt.getTime()) <= activeMs;
+    return {
+      active,
+      task: row.current_task || null,
+      updatedAt,
+    };
+  } catch (e) {
+    console.error('[state-bus] isManualPickkoPriorityActive 실패:', e.message);
+    return { active: false, task: null, updatedAt: null };
+  }
+}
+
 // ─── 블록 요청 큐 (앤디→지미) ──────────────────────────────────────
 
 async function enqueuePendingBlock(phoneEnc, date, reason = null, requestedBy = 'andy') {
@@ -271,6 +304,9 @@ module.exports = {
   releasePickkoLock,
   isPickkoLocked,
   cleanupExpiredLock,
+  setManualPickkoPriority,
+  clearManualPickkoPriority,
+  isManualPickkoPriorityActive,
   enqueuePendingBlock,
   dequeuePendingBlocks,
   markBlockProcessed,
