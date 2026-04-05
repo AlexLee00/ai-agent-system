@@ -181,17 +181,6 @@ fi
 
 log "⏹️  ai-agent-system 서비스 안전 정지 시작"
 
-log "🤖 오케스트레이터 / OpenClaw / n8n"
-stop_service_if_registered "ai.orchestrator" "오케스트레이터"
-stop_service_if_registered "ai.openclaw.gateway" "OpenClaw 게이트웨이"
-stop_service_if_registered "ai.n8n.server" "n8n 서버"
-
-log "🧩 워커팀"
-stop_service_if_registered "ai.worker.web" "워커 웹"
-stop_service_if_registered "ai.worker.nextjs" "워커 Next.js"
-stop_service_if_registered "ai.worker.lead" "워커 lead"
-stop_service_if_registered "ai.worker.task-runner" "워커 task-runner"
-
 log "💹 투자팀"
 stop_service_if_registered "ai.investment.commander" "루나 커맨더"
 stop_service_if_registered "ai.investment.crypto" "루나 크립토"
@@ -203,8 +192,23 @@ stop_service_if_registered "ai.investment.overseas.validation" "루나 해외주
 stop_service_if_registered "ai.investment.argos" "아르고스"
 stop_service_if_registered "ai.investment.reporter" "투자 리포터"
 
+log "🏪 SKA팀"
+stop_service_if_registered "ai.ska.commander" "스카 커맨더"
+stop_service_if_registered "ai.ska.dashboard" "스카 대시보드"
+stop_service_if_registered "ai.ska.naver-monitor" "앤디 (네이버 모니터)"
+stop_service_if_registered "ai.ska.kiosk-monitor" "지미 (키오스크 모니터)"
+stop_service_if_registered "ai.ska.eve" "이브"
+stop_service_if_registered "ai.ska.rebecca" "레베카"
+
 log "📝 블로그팀"
 stop_service_if_registered "ai.blog.node-server" "블로그 node-server"
+stop_service_if_registered "ai.blog.comfyui" "블로그 ComfyUI"
+
+log "🧩 워커팀"
+stop_service_if_registered "ai.worker.web" "워커 웹"
+stop_service_if_registered "ai.worker.nextjs" "워커 Next.js"
+stop_service_if_registered "ai.worker.lead" "워커 lead"
+stop_service_if_registered "ai.worker.task-runner" "워커 task-runner"
 
 log "🛎️  클로드팀"
 stop_service_if_registered "ai.claude.commander" "클로드 커맨더"
@@ -213,11 +217,26 @@ stop_service_if_registered "ai.claude.dexter.quick" "덱스터 quick"
 stop_service_if_registered "ai.claude.dexter.daily" "덱스터 daily"
 stop_service_if_registered "ai.claude.archer" "아처"
 stop_service_if_registered "ai.claude.health-dashboard" "클로드 health-dashboard"
+stop_service_if_registered "ai.claude.health-check" "클로드 health-check"
 stop_service_if_registered "ai.claude.speed-test" "클로드 speed-test"
 
-log "🏪 예약/Ska"
-stop_service_if_registered "ai.ska.naver-monitor" "앤디 (네이버 모니터)"
-stop_service_if_registered "ai.ska.kiosk-monitor" "지미 (키오스크 모니터)"
+log "🔬 연구팀"
+stop_service_if_registered "ai.research.scanner" "리서치 스캐너"
+
+log "🏠 집사 (Steward)"
+stop_service_if_registered "ai.steward.hourly" "집사 hourly"
+stop_service_if_registered "ai.steward.daily" "집사 daily"
+stop_service_if_registered "ai.steward.weekly" "집사 weekly"
+
+log "✍️  라이트 / 이벤트"
+stop_service_if_registered "ai.write.daily" "라이트 daily"
+stop_service_if_registered "ai.event.reminders" "이벤트 리마인더"
+
+log "🔧 인프라 (OpenClaw / n8n / Hub / MLX)"
+stop_service_if_registered "ai.openclaw.gateway" "OpenClaw 게이트웨이"
+stop_service_if_registered "ai.n8n.server" "n8n 서버"
+stop_service_if_registered "ai.hub.resource-api" "Hub 리소스 API"
+stop_service_if_registered "ai.mlx.server" "MLX LLM 서버"
 
 snapshot_services
 date '+%Y-%m-%dT%H:%M:%S KST' > /tmp/last-reboot-time.txt
