@@ -464,6 +464,7 @@ packages/core/lib/rag.js — pgvector RAG (rag_experience 컬렉션 추가, 04-0
 | 2026-04-02 | 라이트 제안 반영: 신규 파일 6건 추적 추가 (experience-store, pickko-alerts-resolve, mainbot, filter, orchestrator scripts). 아키텍처 결정 7건 추가 (Phase 1~3, OAuth, 모델 재편성, Phase 4, n8n, self-improving, F7). 현재 과제 갱신. |
 | 2026-03-31 | 749줄→~200줄 대폭 압축. 03-19 이후 12일간 변화 반영. 맥미니→맥스튜디오, Ollama→MLX, Chronos Phase A, 문서 체계 v2, 블로팀 딥분석, 에러 해소 |
 | 2026-03-19 | 초기 작성 (749줄) |
+| 04-05 | [스튜어드 초안] auto: 2026-04-05 09:47 자동 저장 |
 | 04-05 | [스튜어드 초안] fix(blog): 도서리뷰 검증 실패 근본 수정 — 스케줄 키 이름 불일치 해소 |
 | 04-05 | [스튜어드 초안] feat(jay): add steward ops assistant |
 | 04-05 | [스튜어드 초안] docs: 비서봇 스튜어드 코덱스 — 8모듈 운영 비서 에이전트 |
@@ -518,23 +519,3 @@ packages/core/lib/rag.js — pgvector RAG (rag_experience 컬렉션 추가, 04-0
 | 04-05 | [스튜어드 초안] docs: 인수인계 전면 보강 — 팀장자율적용+진행축+미완료축+CC적용 통합 |
 | 04-05 | [스튜어드 초안] docs: 통합 실행 계획 MASTER_ROADMAP.md — 기존 PENDING + CC 개선안 종합 |
 | 04-05 | [스튜어드 초안] docs: 연구 4파일→1파일 통합 + 인수인계 최종 정리 |
-| 04-05 | [스튜어드 초안] chore(docs): restore research files after worker UI commit |
-| 04-05 | [스튜어드 초안] feat(worker): expand blog URL monitoring range |
-| 04-05 | [스튜어드 초안] docs: 서브에이전트 감독 + 하네스 엔지니어링 심층 연구 추가 |
-| 04-05 | [스튜어드 초안] docs: 인수인계 업데이트 — 팀별 심층 딥 분석 1차+2차 + 연구문서 4건 반영 |
-| 04-05 | [스튜어드 초안] docs: 팀별 심층 딥 분석 2차 — 워커+스카+비디오+신규팀 CC비교 |
-| 04-05 | [스튜어드 초안] docs: 팀별 심층 딥 분석 1차 — 코어+오케스트레이터+루나+클로드 CC비교 |
-| 04-05 | [스튜어드 초안] docs: 인수인계에 에이전트 하네스 연구 반영 — 5대난제+11적용안+417줄 |
-| 04-05 | [스튜어드 초안] docs: 에이전트 하네스 & 에이전틱 AI 심층 연구 — CC+커뮤니티+연구 종합 |
-| 04-05 | [스튜어드 초안] docs: 세션 인수인계 — Phase A 완료 + CC분석 + 9팀 아키텍처 + 전략기획서v2 |
-| 04-05 | [스튜어드 초안] docs: 전체 9팀 아키텍처 비교분석 — CC 패턴 기준 7축 평가 |
-| 04-05 | [스튜어드 초안] docs: 클로드코드 유출 vs 팀제이 전체 아키텍처 비교분석 + 전략기획서 태그 |
-| 04-05 | [스튜어드 초안] refactor(blog): extract shared utils to blog-utils.js |
-| 04-05 | [스튜어드 초안] feat(blog): add flux comfyui workflow |
-| 04-05 | [스튜어드 초안] docs: Phase A-3 공용화 프롬프트 — blog-utils.js 중복함수 추출 |
-| 04-05 | [스튜어드 초안] docs: Phase A 기반안정화 프롬프트 + 전체 일정표 |
-| 04-05 | [스튜어드 초안] docs: 블로팀 전략기획서 v2 — 26에이전트+5Phase+커뮤니티벤치마크 |
-| 04-05 | [스튜어드 초안] docs: Gemma 4 도입 프롬프트 — Ollama테스트→MLX점진전환 3Phase |
-| 04-05 | [스튜어드 초안] docs: 이미지 품질 향상 프롬프트 — MPS전환+FLUX모델+프롬프트최적화 |
-| 04-05 | [스튜어드 초안] docs: 수정3(카테고리분리) 제거 — 7개 순환은 의도된 정상 동작 |
-| 04-05 | [스튜어드 초안] docs: 긴급 수정 프롬프트 — 도서리뷰 ISBN 폴백 + 품질검증 완화 |
