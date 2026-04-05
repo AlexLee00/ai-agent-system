@@ -475,6 +475,14 @@ packages/core/lib/rag.js — pgvector RAG (rag_experience 컬렉션 추가, 04-0
 | P3-15 | P3 | 웹 대시보드 | ⬜ | 장기 |
 | P3-16 | P3 | 문서 자동 생성 | ⬜ | 장기 |
 | P3-17 | P3 | 멀티 머신 스케일아웃 | ⬜ | 장기 |
+| CC-A | P2 | 통합 에이전트 루프 엔진 (agent-loop.js) | ⬜ | 분기 |
+| CC-B | P1 | 훅 시스템 (Pre/PostTaskRun) — P1-7 통합 | ⬜ | 이번 달 |
+| CC-C | P2 | 에이전트 동시성 분류 (안전/위험) | ⬜ | 분기 |
+| CC-D | P0 | 에이전트 권한 scope — P0-3 강화 | ⬜ | 이번 달 |
+| CC-E | P2 | 에이전트 컨텍스트 관리 (auto-compact) | ⬜ | 분기 |
+| CC-F | P1 | experience_record "why" 필드 | ⬜ | 이번 주 |
+| CC-G | P1 | 에러 보류+복구 패턴 — P2-12 강화 | ⬜ | 이번 주 |
+| CC-H | P2 | 리더-워커 4단계 (시그마팀) | ⬜ | 분기 |
 
 ---
 
@@ -482,7 +490,7 @@ packages/core/lib/rag.js — pgvector RAG (rag_experience 컬렉션 추가, 04-0
 
 | 날짜 | 변경 |
 |------|------|
-| 04-06 | 시그마팀3중피드백루프(748줄)+12에이전트(hawk/dove/owl+optimizer/librarian/forecaster)+동적편성. 데이터자산화전략(5라벨+experience_record+거래준비). 자율고용5팀확산(저스틴+시그마specialty). 블로팀PhaseB코덱스(270줄). README현대화(영어+MIT). 라이트에이전트코덱스(203줄). sweeper추가. 시스템보완점분석15건(OpenHarness8출처). 121에이전트 |
+| 04-06 | 시그마팀3중피드백루프(748줄)+12에이전트(hawk/dove/owl+optimizer/librarian/forecaster)+동적편성. 데이터자산화전략(5라벨+experience_record+거래준비). 자율고용5팀확산(저스틴+시그마specialty). 블로팀PhaseB코덱스(270줄). README현대화(영어+MIT). 라이트에이전트코덱스(203줄). sweeper추가. 시스템보완점분석15건(OpenHarness8출처). Claude Code소스분석→추가보완점8건(CC-A~H). 통합로드맵25건. 121에이전트 |
 | 04-05 | 비서봇 스튜어드 구현+테스트 완료(b827a8a0): 8모듈(tracker-sync+codex-manager+session-closer+git-hygiene+env-sync+launchd+telegram+daily-summary). 4모드 전부 정상. LLM없음$0. 114에이전트. 비정상 launchd 8건 진단→2폐기+1리로드+5정상 |
 | 04-05 | 도서리뷰 4회연속실패 근본수정(64688e20): 스케줄 키 불일치(book_isbn→isbn) 해소. ISBN없으면 resolveBookForReview 자동보완. 텔레그램12토픽완성(5신규). git히스토리정리(43M→23M). .gitignore 강화(53파일 추적해제) |
 | 04-05 | 다윈Sprint1~3+튜닝4회 전체완료: Sprint1(arXiv+HF108건) Sprint2(자율고용+9도메인+모니터링) Sprint3(graft→edison→proof-r 296초/40평가/2제안). CC P0(연속실패제한+Strict Write). 알람4경로→postAlarm. Gemma4보류 |
