@@ -496,7 +496,7 @@ packages/core/lib/rag.js — pgvector RAG (rag_experience 컬렉션 추가, 04-0
 
 | 날짜 | 변경 |
 |------|------|
-| 04-06 | 시그마팀3중피드백루프(748줄)+12에이전트(hawk/dove/owl+optimizer/librarian/forecaster)+동적편성. 데이터자산화전략(5라벨+experience_record+거래준비). 자율고용5팀확산(저스틴+시그마specialty). 블로팀PhaseB코덱스(270줄). README현대화(영어+MIT). 라이트에이전트코덱스(203줄). sweeper추가. 시스템보완점분석15건(OpenHarness8출처). Claude Code소스분석→추가보완점8건(CC-A~H). 통합로드맵25건. 121에이전트 |
+| 04-06 | 시그마팀3중피드백루프(748줄)+12에이전트(hawk/dove/owl+optimizer/librarian/forecaster)+동적편성. 데이터자산화전략(5라벨+experience_record+거래준비). 자율고용5팀확산(저스틴+시그마specialty). 블로팀PhaseB코덱스(270줄). README현대화(영어+MIT). 라이트에이전트코덱스(203줄). sweeper추가. 시스템보완점분석: OpenHarness(17건)+ClaudeCode소스(8건,CC-A~H)+ECC133K⭐(6건,ECC-1~6)=총31건추적. 연구문서3건(913줄). 121에이전트 |
 | 04-05 | 비서봇 스튜어드 구현+테스트 완료(b827a8a0): 8모듈(tracker-sync+codex-manager+session-closer+git-hygiene+env-sync+launchd+telegram+daily-summary). 4모드 전부 정상. LLM없음$0. 114에이전트. 비정상 launchd 8건 진단→2폐기+1리로드+5정상 |
 | 04-05 | 도서리뷰 4회연속실패 근본수정(64688e20): 스케줄 키 불일치(book_isbn→isbn) 해소. ISBN없으면 resolveBookForReview 자동보완. 텔레그램12토픽완성(5신규). git히스토리정리(43M→23M). .gitignore 강화(53파일 추적해제) |
 | 04-05 | 다윈Sprint1~3+튜닝4회 전체완료: Sprint1(arXiv+HF108건) Sprint2(자율고용+9도메인+모니터링) Sprint3(graft→edison→proof-r 296초/40평가/2제안). CC P0(연속실패제한+Strict Write). 알람4경로→postAlarm. Gemma4보류 |
