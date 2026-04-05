@@ -522,6 +522,20 @@ async function _callProvider(cfg, systemPrompt, userPrompt, timeoutMs, runtimePr
       if (!result) throw new Error('로컬 LLM 응답 없음');
       return { raw: null, text: result.trim(), usage: null };
     }
+    case 'ollama': {
+      const localLLM = require('./local-llm-client');
+      const result = await localLLM.callLocalLLM(model, [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ], {
+        maxTokens,
+        temperature,
+        baseUrl: env.OLLAMA_BASE_URL,
+        timeoutMs: cfg.timeoutMs || 10000,
+      });
+      if (!result) throw new Error('Ollama LLM 응답 없음');
+      return { raw: null, text: result.trim(), usage: null };
+    }
     default:
       throw new Error(`알 수 없는 provider: ${provider}`);
   }

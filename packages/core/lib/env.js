@@ -122,6 +122,12 @@ const LOCAL_LLM_BASE_URL = process.env.LOCAL_LLM_BASE_URL || (
     : 'http://REDACTED_TAILSCALE_IP:11434'
 );
 
+const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || (
+  IS_OPS
+    ? 'http://127.0.0.1:11435'
+    : 'http://REDACTED_TAILSCALE_IP:11435'
+);
+
 // ─── Resource API Hub ────────────────────────────────────────────────
 
 /**
@@ -255,6 +261,7 @@ module.exports = {
   OPENCLAW_WORKSPACE,
   OPENCLAW_LOGS,
   LOCAL_LLM_BASE_URL,
+  OLLAMA_BASE_URL,
 
   // Resource API Hub
   HUB_BASE_URL,
