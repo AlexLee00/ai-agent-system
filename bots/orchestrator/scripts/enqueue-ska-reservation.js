@@ -46,36 +46,49 @@ async function main() {
   }
 
   const manualRetry = isRetryRegistrationRequest({ raw_text: rawText });
+  const reservations = parsed.mode === 'batch'
+    ? (Array.isArray(parsed.reservations) ? parsed.reservations : [])
+    : [parsed.reservation].filter(Boolean);
 
-  const commandArgs = {
-    command: 'register_reservation',
-    raw_text: rawText,
-    source: 'openclaw_exec',
-    manual_retry: manualRetry,
-    reservation: parsed.reservation || null,
-    reservations: parsed.reservations || null,
-    batch: parsed.mode === 'batch',
-  };
+  const queuedRows = [];
+  for (let index = 0; index < reservations.length; index += 1) {
+    const reservation = reservations[index];
+    const commandArgs = {
+      command: 'register_reservation',
+      raw_text: rawText,
+      source: 'openclaw_exec',
+      manual_retry: manualRetry,
+      reservation,
+      reservations: null,
+      batch: false,
+      batch_request: parsed.mode === 'batch',
+      batch_index: parsed.mode === 'batch' ? index + 1 : 1,
+      batch_total: reservations.length,
+    };
 
-  const rows = await pgPool.query('claude', `
-    INSERT INTO bot_commands (to_bot, command, args)
-    VALUES ($1, $2, $3)
-    RETURNING id, to_bot, command, status, created_at
-  `, ['ska', 'register_reservation', JSON.stringify(commandArgs)]);
+    const rows = await pgPool.query('claude', `
+      INSERT INTO bot_commands (to_bot, command, args)
+      VALUES ($1, $2, $3)
+      RETURNING id, to_bot, command, status, created_at
+    `, ['ska', 'register_reservation', JSON.stringify(commandArgs)]);
+    if (rows[0]) queuedRows.push(rows[0]);
+  }
 
-  const row = rows[0];
+  const firstRow = queuedRows[0] || null;
   console.log(JSON.stringify({
     ok: true,
     queued: true,
-    id: row?.id || null,
-    to_bot: row?.to_bot || 'ska',
-    command: row?.command || 'register_reservation',
-    status: row?.status || 'pending',
-    created_at: row?.created_at || null,
+    id: firstRow?.id || null,
+    ids: queuedRows.map((row) => row.id),
+    to_bot: firstRow?.to_bot || 'ska',
+    command: firstRow?.command || 'register_reservation',
+    status: firstRow?.status || 'pending',
+    created_at: firstRow?.created_at || null,
     reservation: parsed.reservation || null,
-    reservations: parsed.reservations || null,
+    reservations: reservations,
     batch: parsed.mode === 'batch',
     manual_retry: manualRetry,
+    queued_count: queuedRows.length,
   }));
 }
 

@@ -6,6 +6,8 @@ const kst = require('../../../packages/core/lib/kst');
 const { IS_OPS } = require('../../../packages/core/lib/env');
 const { transformPhoneNumber, transformRoom, validateTimeRange } = require('./validation');
 
+const MANUAL_REGISTRATION_TIMEOUT_MS = 180_000;
+
 function formatKstDate(date) {
   return date.toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
 }
@@ -332,6 +334,7 @@ function runSingleReservationRegistration(reservation, options = {}) {
     env: { ...process.env, MODE: IS_OPS ? 'ops' : 'dev' },
     encoding: 'utf8',
     maxBuffer: 1024 * 1024 * 2,
+    timeout: MANUAL_REGISTRATION_TIMEOUT_MS,
   });
 
   const stdout = String(result.stdout || '').trim();
@@ -339,6 +342,13 @@ function runSingleReservationRegistration(reservation, options = {}) {
   const lastLine = stdout.split('\n').map(line => line.trim()).filter(Boolean).pop() || '';
 
   if (result.error) {
+    if (result.error.code === 'ETIMEDOUT') {
+      return {
+        ok: false,
+        code: 'TIMEOUT',
+        error: `픽코 예약 등록 시간 초과 (${Math.round(MANUAL_REGISTRATION_TIMEOUT_MS / 1000)}초)`,
+      };
+    }
     return { ok: false, error: `픽코 예약 등록 실행 실패: ${result.error.message}` };
   }
 

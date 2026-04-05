@@ -37,6 +37,7 @@ const IS_MANUAL_RETRY = Boolean(ARGS['manual-retry'] || ARGS.manualRetry);
 const IS_PENDING_ONLY = Boolean(ARGS['pending-only'] || ARGS.pendingOnly);
 const SKIP_NAME_SYNC = IS_MANUAL_RETRY || Boolean(ARGS['skip-name-sync'] || ARGS.skipNameSync);
 const SKIP_NAVER_BLOCK = IS_MANUAL_RETRY || Boolean(ARGS['skip-naver-block'] || ARGS.skipNaverBlock);
+const PICKKO_ACCURATE_TIMEOUT_MS = 180_000;
 
 // ── 필수 인자 검증 ──
 const required = ['date', 'start', 'end', 'room', 'phone'];
@@ -91,13 +92,34 @@ const child = spawn('node', childArgs, {
   stdio: ['ignore', process.stderr, process.stderr]
 });
 
+let didTimeout = false;
+const timeoutHandle = setTimeout(() => {
+  didTimeout = true;
+  process.stderr.write(`[pickko-register] 시간 초과(${Math.round(PICKKO_ACCURATE_TIMEOUT_MS / 1000)}초) — 하위 프로세스 종료 시도\n`);
+  try { child.kill('SIGTERM'); } catch {}
+  setTimeout(() => {
+    try { child.kill('SIGKILL'); } catch {}
+  }, 5000).unref();
+}, PICKKO_ACCURATE_TIMEOUT_MS);
+timeoutHandle.unref();
+
 child.on('error', err => {
+  clearTimeout(timeoutHandle);
   fail(`pickko-accurate.js 실행 실패: ${err.message}`);
 });
 
 child.on('close', async (code) => {
+  clearTimeout(timeoutHandle);
   const key = buildReservationId(normalized.phone, normalized.date, normalized.start);
   const now = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+
+  if (didTimeout) {
+    process.stdout.write(JSON.stringify({
+      success: false,
+      message: `예약 등록 시간 초과 (${Math.round(PICKKO_ACCURATE_TIMEOUT_MS / 1000)}초)`,
+    }) + '\n');
+    process.exit(1);
+  }
 
   if (code === 0 || code === 2 || code === 3) {
     // DB에 항목 기록 (code 0: manual 완료, code 2: 시간 경과 완료, code 3: 결제대기 등록)
