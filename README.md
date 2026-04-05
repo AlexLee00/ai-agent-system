@@ -151,7 +151,7 @@ Monthly API Cost: $0 (fully local LLM inference)
 
 ## 📄 License
 
-This project is private and proprietary.
+This project is licensed under the [MIT License](LICENSE).
 
 ---
 
