@@ -1,259 +1,160 @@
-# 🤖 AI Agent System
-
-맥 스튜디오 M4 Max 기반 멀티 에이전트 AI 봇 시스템 | v4.1 (2026-03-29)
-
-> 5개 팀 · 30+ 봇 · Node.js · PostgreSQL+pgvector · Groq/OpenAI/Gemini LLM
-> 운영: Mac Studio M4 Max 36GB (24/7) | 개발: MacBook (Claude Code)
-> GitHub Actions CI 자동 검증
-
----
-
-## 봇 현황 (2026-03-08 기준)
-
-| 팀 | 봇 | LLM | 상태 |
-|----|-----|-----|------|
-| 클로드팀 | 클로드 (팀장) | claude-sonnet-4-6 | ✅ OPS — agent_tasks 기반 |
-| 클로드팀 | 덱스터 (시스템 점검) | — (규칙 기반) | ✅ OPS — Phase 3 완료 |
-| 클로드팀 | 독터 (자동 복구) | — | ✅ OPS — 태스크 폴링 |
-| 클로드팀 | 아처 (기술 인텔리전스) | claude-sonnet-4-6 | ✅ OPS — 매주 월 09:00 |
-| 스카팀 | 스카 (예약관리 메인봇) | gemini-2.5-flash / haiku-4-5 | ✅ OPS |
-| 스카팀 | 앤디 (네이버 모니터) | — | ✅ OPS — 5분 주기 |
-| 스카팀 | 지미 (키오스크 모니터) | — | ✅ OPS — 30분 주기 |
-| 스카팀 | 레베카 (매출 분석) | claude-sonnet-4-6 | ✅ OPS — 일일 |
-| 스카팀 | 이브 (환경요소 수집) | — | ✅ OPS — 일일 |
-| 루나팀 | 루나 (팀장) | Groq Scout | ✅ OPS — 시그널 융합 |
-| 루나팀 | 네메시스 (리스크 매니저) | Groq/Gemini | ✅ OPS — 동적 TP/SL |
-| 루나팀 | 헤파이스토스 (실행봇) | — | ✅ OPS — 자본 관리 |
-| 루나팀 | 분석팀 7명 (아리아/오라클/헤르메스/소피아/제우스/아테나/한울) | Groq Scout | ✅ OPS — confidence score |
-| 루나팀 | Phase 0 (제이슨/루나 DEV) | Haiku 4.5 | 🔧 DEV — 10분 주기 |
-
-**총 월 API 비용 추정: ~$1~3 (바이낸스 LIVE 실거래, Groq 무료 위주)**
+<p align="center">
+  <h1 align="center">🤖 AI Agent System</h1>
+  <p align="center">
+    <strong>A self-evolving multi-agent platform with 121 autonomous agents across 10 specialized teams</strong>
+  </p>
+  <p align="center">
+    <a href="#architecture">Architecture</a> •
+    <a href="#teams">Teams</a> •
+    <a href="#features">Features</a> •
+    <a href="#tech-stack">Tech Stack</a> •
+    <a href="#getting-started">Getting Started</a>
+  </p>
+</p>
 
 ---
 
-## 전체 아키텍처
+## What is this?
+
+A **production-grade multi-agent AI platform** running 24/7 on Apple Silicon, orchestrating 121 autonomous agents that trade crypto, publish blogs, manage reservations, conduct research, and continuously improve themselves — all at **$0 API cost** using local LLMs.
 
 ```
-👤 사용자 (텔레그램)
-    │
-    ├── 스카봇 (예약관리 자동화)
-    │    ├── 앤디: 네이버 5분 모니터링 → 픽코 자동 등록/취소/차단
-    │    ├── 지미: 키오스크 30분 감지 → 네이버 예약불가 자동 제어
-    │    ├── 레베카: 매출·예측 분석 (일일 리포트)
-    │    └── 이브: 공휴일·날씨·학사·축제 수집
-    │
-    ├── 루나팀 (자동매매 — Phase 3)
-    │    ├── 아리아: TA 분석 (RSI/MACD/BB/Stoch/ATR)
-    │    ├── 오라클: 온체인 (공포탐욕/펀딩비/Long-Short)
-    │    ├── 헤르메스: 뉴스 분석
-    │    ├── 소피아: 감성 분석
-    │    ├── 제우스↔아테나: 강세/약세 토론
-    │    ├── 루나: 최종 신호 판단 (Haiku)
-    │    ├── 네메시스: 리스크 매니저 (Haiku)
-    │    ├── 헤파이스토스: 바이낸스 Spot 실행 [LIVE]
-    │    └── 한울: KIS 국내+해외주식 실행 [PAPER]
-    │
-    └── 클로드팀 (시스템 유지보수)
-         ├── 덱스터: 9개 체크 모듈 점검 + 자동수정 + 일일 보고
-         └── 아처: AI/LLM 트렌드 서칭 + PATCH_REQUEST.md 오케스트레이션
+10 Teams • 121 Agents • 76 launchd Services • 12 Telegram Topics
+Node.js Monorepo • PostgreSQL + pgvector • MLX Local LLMs • $0 Cost
 ```
 
----
 
-## 프로젝트 구조
+## ✨ Key Features
+
+- **Self-Evolving System** — Agents autonomously research papers, propose improvements, and apply them to the codebase
+- **Triple Feedback Loop** — L1: team self-learning → L2: cross-team analysis → L3: meta-feedback (the system optimizes its own optimization)
+- **Dynamic Agent Hiring** — ε-greedy selection picks the best agent for each task based on historical performance
+- **Autonomous Research (Darwin Team)** — Daily arXiv/HuggingFace scans → evaluate → propose → prototype → apply
+- **RAG Knowledge Library** — pgvector-powered experience store with auto-labeling and Standing Orders promotion
+- **Zero API Cost** — MLX local LLMs (Qwen 2.5 7B + DeepSeek R1 32B) handle all inference on-device
+- **Competition System** — Agents compete for tasks; winners get higher hiring scores (MWF schedule)
+- **Data Asset Pipeline** — 5-label system preparing all agent activity data for reusability and future exchange
+
+
+<h2 id="architecture">🏗 Architecture</h2>
+
+```
+                        ┌─────────────────────┐
+                        │    Master (Jay)      │
+                        │  Strategy & Oversight│
+                        └──────────┬──────────┘
+                                   │
+              ┌────────────────────┼────────────────────┐
+              │                    │                     │
+     ┌────────┴────────┐  ┌───────┴───────┐  ┌─────────┴────────┐
+     │   Hub (:7788)   │  │  OpenClaw CLI │  │  Telegram (12ch) │
+     │  Secrets/PG/API │  │  Webhooks/SO  │  │  Alerts/Reports  │
+     └────────┬────────┘  └───────┬───────┘  └─────────┬────────┘
+              │                   │                     │
+  ┌───────────┼───────────────────┼─────────────────────┼──────────┐
+  │           │                   │                     │          │
+  ▼           ▼                   ▼                     ▼          ▼
+┌─────┐  ┌────────┐  ┌────────┐  ┌───────┐  ┌───────┐  ┌────────┐
+│Luna │  │  Blog  │  │Darwin  │  │Claude │  │ Ska   │  │Worker  │
+│Trade│  │Publish │  │Research│  │Monitor│  │Reserve│  │  SaaS  │
+│ 13  │  │  12    │  │  15    │  │  10+  │  │  10+  │  │  10+   │
+└─────┘  └────────┘  └────────┘  └───────┘  └───────┘  └────────┘
+                        ┌────────┐  ┌────────┐  ┌────────┐
+                        │Justin  │  │  Edi   │  │ Sigma  │
+                        │Forensic│  │ Video  │  │  Data  │
+                        │  10    │  │  10+   │  │  12    │
+                        └────────┘  └────────┘  └────────┘
+```
+
+
+<h2 id="teams">👥 Teams & Agents (121 total)</h2>
+
+| Team | Mission | Agents | Key Capabilities |
+|------|---------|--------|-----------------|
+| **Luna** | Crypto & stock trading | 13 | Multi-analyst debate (bull vs bear), autonomous execution, risk management, wallet reconciliation |
+| **Blog** | Naver blog automation | 12 | Lecture/general series, SEO optimization, quality checking, performance-based writer selection |
+| **Darwin** | Autonomous R&D | 15 | arXiv/HF daily scans, 9-domain searchers, auto-propose → prototype → apply pipeline |
+| **Claude** | System monitoring | 10+ | Dexter (health checks), Doctor (auto-recovery), Steward (daily ops summary) |
+| **Ska** | Study café management | 10+ | Naver reservation sync, kiosk monitoring, revenue forecasting, event collection |
+| **Worker** | Business SaaS portal | 10+ | Next.js dashboard, task runner, chat agent, SQL analytics |
+| **Justin** | Legal SW forensics | 10 | Case analysis, precedent search (KR/US/EU), expert report writing, quality review |
+| **Edi** | Video auto-editing | 10+ | Timeline editing, scene analysis, narration, subtitle correction |
+| **Sigma** | Platform intelligence | 12 | Triple feedback loop, hawk/dove/owl analysts, dynamic formation, data asset pipeline |
+| **Jay** | Orchestration | — | Steward, mainbot (retired), event reminders, deploy automation |
+
+
+## 🔄 Triple Feedback Loop
+
+The system continuously improves through three layers of feedback:
+
+| Layer | Scope | Frequency | Example |
+|-------|-------|-----------|---------|
+| **L1 — Team Self-Learning** | Each team optimizes its own performance | Real-time | Luna: trade → P&L → adjust strategy → next trade |
+| **L2 — Sigma Cross-Team Analysis** | Sigma team analyzes all teams and provides feedback | Daily | "Blog writer X has 2x views → increase hiring score" |
+| **L3 — Sigma Meta-Feedback** | Sigma evaluates its own analysis effectiveness | Weekly | "Hawk analyst feedback was 80% effective → increase hawk allocation" |
+
+
+<h2 id="tech-stack">🛠 Tech Stack</h2>
+
+| Category | Technology |
+|----------|-----------|
+| **Runtime** | Node.js 25 (monorepo) |
+| **Database** | PostgreSQL 17 + pgvector (vector embeddings) |
+| **Local LLMs** | MLX Server — Qwen 2.5 7B (fast), DeepSeek R1 32B (reasoning) |
+| **Embeddings** | MLX Qwen3-Embedding-0.6B (1024-dim, fully local) |
+| **Cloud LLMs** | Groq (free, fallback), OpenAI/Anthropic (selective) |
+| **Hardware** | Mac Studio M4 Max 36GB (OPS) + MacBook Air M3 (DEV) |
+| **Orchestration** | launchd (76 services), OpenClaw CLI, Hub API (:7788) |
+| **Communication** | Telegram Bot API (12 topic channels) |
+| **CI/CD** | GitHub Actions + deploy.sh (5-min cron) |
+| **VPN** | Tailscale (DEV ↔ OPS secure tunnel) |
+
+
+<h2 id="getting-started">🚀 Project Structure</h2>
 
 ```
 ai-agent-system/
-├── CLAUDE.md                     # Claude Code 세션 규칙 (PATCH_REQUEST.md 처리)
-├── PATCH_REQUEST.md              # 아처 자동 생성 — Claude Code 세션 시작 시 처리
+├── packages/core/           # Shared libraries (@ai-agent/core)
+│   └── lib/
+│       ├── hiring-contract.js    # Dynamic agent selection (ε-greedy)
+│       ├── llm-fallback.js       # Multi-provider LLM with chain fallback
+│       ├── openclaw-client.js    # Telegram alerts & Standing Orders
+│       ├── pg-pool.js            # PostgreSQL connection pool
+│       ├── agent-registry.js     # Agent CRUD & scoring
+│       └── skills/               # Team-specific skill modules
 ├── bots/
-│   ├── registry.json             # 전체 봇 등록부
-│   ├── claude/                   # 클로드팀 (덱스터 + 아처)
-│   │   ├── src/                  # dexter.js / archer.js
-│   │   ├── lib/
-│   │   │   ├── team-bus.js       # 덱스터↔아처 통신 버스 (claude-team.db)
-│   │   │   ├── archer/           # config/fetcher/analyzer/patcher/reporter
-│   │   │   └── checks/           # 9개 체크 모듈 + ska.js
-│   │   ├── migrations/           # 001_team_bus.js (claude-team.db)
-│   │   ├── scripts/              # migrate.js / team-status.js / patch-status.js
-│   │   └── reports/              # 주간 리포트 + patches/ 티켓
-│   ├── reservation/              # 스카팀 (OPS)
-│   │   ├── auto/monitors/        # naver-monitor(앤디) + pickko-kiosk-monitor(지미)
-│   │   ├── auto/scheduled/       # daily-summary / audit / pay-scan
-│   │   ├── manual/reservation/   # pickko-accurate/cancel/register/query
-│   │   ├── manual/admin/         # pickko-member/ticket/verify
-│   │   ├── manual/reports/       # occupancy/alerts/stats/revenue
-│   │   ├── lib/                  # db/pickko/state-bus/crypto 등 공유 모듈
-│   │   └── migrations/           # 001_initial / 002_daily_summary / 003_agent_state
-│   ├── investment/               # 루나팀 Phase 3-A (ESM, config.yaml)
-│   │   ├── team/                 # aria/oracle/hermes/sophia/zeus/athena/luna/nemesis/hephaestos/hanul
-│   │   ├── markets/              # crypto.js / domestic.js / overseas.js
-│   │   └── shared/               # db/llm-client/secrets/cost-tracker/report
-│   ├── invest/                   # 루나팀 Phase 0 (레거시 DEV)
-│   └── ska/                      # 레베카·이브 (Python 3.12)
-├── packages/
-│   ├── core/                     # @ai-agent/core
-│   └── playwright-utils/         # @ai-agent/playwright-utils
-└── docs/
-    ├── WORK_HISTORY.md            # 날짜별 작업 타임라인
-    ├── DATABASE_SCHEMA_INDEX.md   # DB/스키마/테이블 인덱스
-    ├── OPERATIONS_RUNBOOK.md      # 운영 점검/재시작/장애 대응 런북
-    ├── coding-guide.md            # 개발 가이드 (P0~P4)
-    ├── SYSTEM_DESIGN.md           # 전체 설계서
-    └── LLM_DOCS.md               # LLM API 참조
+│   ├── investment/          # Luna team (crypto/stock trading)
+│   ├── blog/                # Blog team (Naver blog automation)
+│   ├── orchestrator/        # Darwin, Sigma, Steward, schedulers
+│   ├── claude/              # Claude team (monitoring, doctor)
+│   ├── reservation/         # Ska team (study café)
+│   ├── worker/              # Worker team (SaaS portal)
+│   └── video/               # Edi team (video editing)
+├── bots/hub/                # Hub API server (:7788)
+├── docs/
+│   ├── strategy/            # Strategic documents
+│   ├── codex/               # Active implementation prompts
+│   └── research/            # Papers, proposals, analyses
+└── scripts/                 # Deploy, migrate, utilities
 ```
 
----
+## 📊 System Stats
 
-## 문서 시작 순서
-
-세션이 바뀌었을 때는 아래 순서로 문서를 읽는 것을 기준으로 한다.
-
-1. [CLAUDE.md](/Users/alexlee/projects/ai-agent-system/CLAUDE.md)
-2. [SESSION_CONTEXT_INDEX.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_CONTEXT_INDEX.md)
-3. [SESSION_HANDOFF.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_HANDOFF.md)
-4. [PLATFORM_IMPLEMENTATION_TRACKER.md](/Users/alexlee/projects/ai-agent-system/docs/PLATFORM_IMPLEMENTATION_TRACKER.md)
-5. [WORK_HISTORY.md](/Users/alexlee/projects/ai-agent-system/docs/WORK_HISTORY.md)
-
-역할별 상세 문서는 아래를 본다.
-
-- 구조/아키텍처: [SYSTEM_DESIGN.md](/Users/alexlee/projects/ai-agent-system/docs/SYSTEM_DESIGN.md)
-- 데이터 구조/저장소: [DATABASE_SCHEMA_INDEX.md](/Users/alexlee/projects/ai-agent-system/docs/DATABASE_SCHEMA_INDEX.md)
-- 팀별 구현 위치: [docs/team-indexes/README.md](/Users/alexlee/projects/ai-agent-system/docs/team-indexes/README.md)
-- 운영 설정: [TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md](/Users/alexlee/projects/ai-agent-system/docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md)
-- 운영 점검/장애 대응: [OPERATIONS_RUNBOOK.md](/Users/alexlee/projects/ai-agent-system/docs/OPERATIONS_RUNBOOK.md)
-- 세션 기록/연구 맥락: [WORK_HISTORY.md](/Users/alexlee/projects/ai-agent-system/docs/WORK_HISTORY.md), [RESEARCH_JOURNAL.md](/Users/alexlee/projects/ai-agent-system/docs/RESEARCH_JOURNAL.md)
-
-세션 시작 문서에서 제외하는 문서:
-- `bots/blog/output/*.md` 같은 생성 산출물
-- `bots/ska/venv/**` 같은 외부 패키지 문서
-- `skills/**` 같은 코덱 로컬 skill 문서
-
-이 문서들은 저장소 안에는 있지만, 프로젝트의 현재 상태를 이해하기 위한 핵심 문서에는 포함하지 않는다.
-
----
-
-## 클로드팀 운영 명령
-
-```bash
-cd bots/claude
-
-# 덱스터 (시스템 점검)
-npm run dexter              # 기본 점검 (9개 체크)
-npm run dexter:full         # 전체 점검 + npm audit
-npm run dexter:fix          # 자동 수정 + 텔레그램 알림
-npm run dexter:daily        # 일일 보고 (텔레그램)
-
-# 아처 (기술 인텔리전스)
-npm run archer              # 데이터 수집 + Claude 분석
-npm run archer:telegram     # 분석 + 텔레그램 + PATCH_REQUEST.md
-npm run archer:fetch-only   # 수집만 (디버그)
-
-# 팀 상태 관리
-npm run migrate             # claude-team.db 마이그레이션
-npm run status              # 팀 상태 대시보드
-npm run patch:status        # PATCH_REQUEST.md + 패치 이력
+```
+Agents:          121 (across 10 teams)
+launchd Services: 76 (23 running continuously)
+Telegram Topics:  12 (per-team routing)
+Codex Archives:   77+ (completed implementation prompts)
+Repository Size:  23 MB (optimized from 43 MB)
+Monthly API Cost: $0 (fully local LLM inference)
 ```
 
----
+## 📄 License
 
-## launchd 서비스 목록
-
-### 클로드팀
-
-| 서비스 | 역할 | 주기 |
-|--------|------|------|
-| `ai.claude.dexter` | 덱스터 시스템 점검 + 자동수정 | 1시간 |
-| `ai.claude.dexter.daily` | 덱스터 일일 보고 (텔레그램) | 08:00 KST |
-| `ai.claude.archer` | 아처 기술 인텔리전스 + 패치 오케스트레이션 | 매주 월 09:00 KST |
-
-### 스카팀
-
-| 서비스 | 역할 | 주기 |
-|--------|------|------|
-| `ai.openclaw.gateway` | OpenClaw LLM 게이트웨이 (gemini-2.5-flash) | KeepAlive |
-| `ai.ska.naver-monitor` | 앤디 — 네이버 5분 모니터링 | KeepAlive |
-| `ai.ska.kiosk-monitor` | 지미 — 키오스크 30분 감지 | KeepAlive |
-| `ai.ska.pickko-verify` | 픽코 검증 | 08:00/14:00/20:00 |
-| `ai.ska.pickko-daily-summary` | 일일 예약 요약 | 09:00 / 00:00 |
-| `ai.ska.pickko-daily-audit` | 일일 감사 | 00:00/22:00/23:00 |
-| `ai.ska.health-check` | 헬스체크 | 30분 |
-| `ai.ska.etl` | ETL 데이터 동기화 | 매시 |
-| `ai.ska.rebecca` | 레베카 매출 분석 | 일일 |
-| `ai.ska.eve` | 이브 환경요소 수집 | 일일 |
-| `ai.ska.forecast-daily` | 일별 예측 | 일일 |
-
-### 루나팀
-
-| 서비스 | 역할 | 모드 |
-|--------|------|------|
-| `ai.investment.crypto` | 크립토 사이클 (아리아~헤파이스토스) | 🔴 LIVE |
-| `ai.investment.domestic` | 국내주식 사이클 (한울 KIS) | 🟡 PAPER |
-| `ai.investment.overseas` | 해외주식 사이클 (한울 KIS 해외) | 🟡 PAPER |
-| `ai.invest.dev` | Phase 0 신호집계 (제이슨) | 🔧 DEV |
-| `ai.invest.fund` | Phase 0 펀드매니저 (루나) | 🔧 DEV |
+This project is private and proprietary.
 
 ---
 
-## 최근 변경 (2026-03-08)
-
-- 루나팀: 자본 관리 완전체 (capital-manager.js — 잔고 체크/포지션 사이징/서킷 브레이커)
-- 루나팀: 시그널 융합 + LLM 자기반성 주간 리뷰 (confidence score 기반 가중 의사결정)
-- 루나팀: 네메시스 동적 TP/SL Phase 2 실적용
-- 루나팀: 분석팀 확장 (소피아 Fear&Greed + 아리아 MTF)
-- 루나팀: LLM 재시도 + 시맨틱 캐싱 (Groq Scout 전용)
-- 클로드팀: 덱스터 Phase 2~3 완전체 (클로드 팀장 → 독터 역할 분리, Emergency 폴백)
-- 스카팀: 에러 핸들링 보강 (state-bus/pickko)
-- n8n: 6개 워크플로우 (팀 제이 3 + 스카 3) + fan-out → 순차 체인 전환
-- RAG: pgvector 마이그레이션 + 자동 수집 파이프라인 (Python rag-system deprecated)
-- 코어: pg-pool 자동 재연결 + telegram Rate Limit/Throttle/배치
-
----
-
-## 구축 단계
-
-| Phase | 내용 | 상태 |
-|-------|------|------|
-| **Phase 1** | 스카팀 OPS + SQLite + 공유 인프라 + iPad 접속 | ✅ 완료 |
-| **Phase 1-B** | 스카팀 고도화 v3.0 (폴더구조·state-bus·덱스터 ska 체크) | ✅ 완료 (2026-03-03) |
-| **Phase 2** | 클로드팀 구축 (덱스터 Phase 3 + 아처 v2.0 + 독터 + 팀장) | ✅ 완료 (2026-03-08) |
-| **Phase 3-A** | 루나팀 크립토 LIVE 자동매매 (바이낸스 Spot + 자본관리) | ✅ OPS (2026-03-08) |
-| **Phase 3-B** | 루나팀 국내외주식 PAPER (KIS) | 🧪 PAPER 검증 중 |
-| **Phase 3-C** | 루나팀 국내외주식 LIVE 전환 | ⏳ 30일 PAPER 검증 후 |
-| **Phase 4** | 맥미니 M4 Pro 이전 + 비서봇·업무봇·학술봇 | ⏳ 맥미니 도착 후 (4월 중순) |
-
----
-
-## iPad SSH 접속
-
-```bash
-# Termius SSH
-로컬:      192.168.45.176:22
-외부(Tailscale): 100.124.124.65:22
-
-# 유용한 alias
-ska       # 스카봇 전용 작업
-skalog    # 스카 OPS 로그
-skastatus # launchd 스카 서비스 상태
-bootlog   # 스카 BOOT 시간 확인
-```
-
----
-
-## 맥북 재부팅 절차
-
-```bash
-# 재부팅 전 (자동화)
-bash scripts/pre-reboot.sh
-
-# 재부팅 후 약 65초 내 텔레그램 상태 알림 자동 수신
-tail -f /tmp/post-reboot.log  # 수동 확인
-
-# 클로드팀 수동 재시작
-launchctl kickstart -k gui/$UID/ai.claude.dexter
-launchctl kickstart -k gui/$UID/ai.claude.dexter.daily
-```
-
----
-
-[전체 설계서 → docs/SYSTEM_DESIGN.md](./docs/SYSTEM_DESIGN.md)
+<p align="center">
+  Built with ❤️ by <strong>Team Jay</strong> — A self-evolving multi-agent platform
+</p>
