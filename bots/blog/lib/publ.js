@@ -215,7 +215,18 @@ ${finalBody}
  * @returns {{ filepath, postId, filename }}
  */
 async function publishToFile(postData) {
-  const { title, content, category, postType, lectureNumber, charCount, hashtags, images, scheduleId } = postData;
+  const {
+    title,
+    content,
+    category,
+    postType,
+    lectureNumber,
+    charCount,
+    hashtags,
+    images,
+    scheduleId,
+    writerName,
+  } = postData;
 
   // output 디렉토리 보장
   if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
@@ -299,6 +310,7 @@ async function publishToFile(postData) {
           schedule_id: scheduleId || null,
           filename,
           generated_on: today,
+          writer_name: writerName || null,
         },
       ]);
       postId = rows[0]?.id;
