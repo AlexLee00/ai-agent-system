@@ -9,15 +9,19 @@
 
 ## 0. 현재 최우선 과제
 
-- **알람 체계 통일**: ✅ Phase1~4 전체 완료! postAlarm 단일 API 통일 (6096344)
-- **CC P0**: ✅ 완료! 연속실패제한(MAX=5,COOLDOWN=60s) + Strict Write(성공만 저장) (ed4a715)
+- **알람 체계 통일**: ✅ Phase1~4 전체 완료! postAlarm 단일 API + 12토픽 (6096344)
+- **CC P0**: ✅ 완료! 연속실패제한(MAX=5,COOLDOWN=60s) + Strict Write(성공만 저장)
+- **다윈팀 자율 연구**: ✅ Sprint1~3 완료! Level 3 달성 (자율 발견→학습→적용 제안)
+- **비서봇 스튜어드**: ✅ 구현+테스트 완료! 8모듈, 4모드 정상, LLM 없음 $0 (b827a8a0)
+- **도서리뷰 버그**: ✅ 수정! 스케줄 키 불일치 해소 (64688e20)
+- **Gemma 4**: ✅ 보류 확정 (26B/8B timeout, 주석 처리, MLX 대기)
+- **텔레그램 토픽**: ✅ 12토픽 완성! 10팀 개별 라우팅
+- **git 위생**: ✅ 히스토리 정리(43M→23M) + .gitignore 강화(53파일 추적해제)
 - **자율 고용 전팀 확산**: 블로팀 ε-greedy → 전 팀 확대 (hiring-contract.js)
 - **블로팀 Phase B**: 피드백 루프 (04-07~11 예정)
 - **OpenClaw Phase 4**: mainbot.js 퇴역 + alert resolve Standing Orders
 - **경쟁 결과 확인**: 첫 경쟁 결과 (월요일)
-- **Gemma 4**: 26b JSON 불안정 확인 → 자유형 보조만 가능, 파이프라인용 보류
-- **코덱스 정리**: 43개 완료→archive 이동 완료 (04-05), 6개 활성 유지
-- **픽셀 오피스**: P1 DotCharacter 실시간 상태 반영 (커뮤니티 트렌드 반영)
+- **코덱스 정리**: archive 완료, 활성 8개 유지 (Gemma4 보류 3 + 기존 4 + 스튜어드)
 
 ---
 
@@ -187,8 +191,8 @@ LLM: 7/10 에이전트 로컬화 (OpenAI 429 대응)
 ## 4. 미완료 개발 축 (통합 우선순위)
 
 ### P0 — 즉시 (이번 주)
-- [ ] CC: 연속실패제한 — llm-fallback.js MAX_FAILURES=5 (3줄)
-- [ ] CC: Strict Write Discipline — rag.js 성공 시에만 메모리 기록
+- [x] CC: 연속실패제한 — llm-fallback.js MAX_FAILURES=5 ✅
+- [x] CC: Strict Write Discipline — rag.js 성공 시에만 메모리 기록 ✅
 - [ ] 자율 고용: 루나팀 적용 (taskHint: crypto→chaineye, stock→funder)
 - [ ] 자율 고용: 클로드팀 적용 (taskHint: monitoring→dexter, recovery→doctor)
 
@@ -208,7 +212,7 @@ LLM: 7/10 에이전트 로컬화 (OpenAI 429 대응)
 - [ ] Paperclip: 에이전트 오피스에 조직도 트리 뷰
 - [ ] 대규모 파일 분리: forecast.py 2,047줄 / chat-agent.js 876줄
 - [ ] OpenClaw Phase 4: mainbot.js 퇴역 + alert resolve
-- [ ] Gemma 4: 시범 배치 일시 보류 (코드 주석 처리, MLX 대기)
+- [x] Gemma 4: ✅ 시범 배치 일시 보류 (26B/8B timeout, 주석 처리, MLX 대기)
   - 구조: ✅ 성공 (try-catch+timeout+폴백 안전!)
   - 26B: ❌ timeout 초과 / 8B: ❌ 실전 프롬프트에서도 15초+ 초과
   - 결정: 3개 파일 gemma4 호출 주석 처리 (삭제 아님!)
@@ -450,6 +454,9 @@ packages/core/lib/rag.js — pgvector RAG (rag_experience 컬렉션 추가, 04-0
 
 | 날짜 | 변경 |
 |------|------|
+| 04-05 | 비서봇 스튜어드 구현+테스트 완료(b827a8a0): 8모듈(tracker-sync+codex-manager+session-closer+git-hygiene+env-sync+launchd+telegram+daily-summary). 4모드 전부 정상. LLM없음$0. 114에이전트. 비정상 launchd 8건 진단→2폐기+1리로드+5정상 |
+| 04-05 | 도서리뷰 4회연속실패 근본수정(64688e20): 스케줄 키 불일치(book_isbn→isbn) 해소. ISBN없으면 resolveBookForReview 자동보완. 텔레그램12토픽완성(5신규). git히스토리정리(43M→23M). .gitignore 강화(53파일 추적해제) |
+| 04-05 | 다윈Sprint1~3+튜닝4회 전체완료: Sprint1(arXiv+HF108건) Sprint2(자율고용+9도메인+모니터링) Sprint3(graft→edison→proof-r 296초/40평가/2제안). CC P0(연속실패제한+Strict Write). 알람4경로→postAlarm. Gemma4보류 |
 | 04-05 | 다윈Sprint1 골격 완료: arxiv-client+hf-papers-client+research-evaluator+research-scanner+plist+rag_research. node --check+plutil 통과. 실런 테스트 대기 |
 | 04-05 | 다윈팀 자율연구 심층연구: 7프레임워크(AgentLab/AgentRxiv/AI-Researcher/STELLA/O-Researcher/HybridRAG) + 2주스프린트 설계. CC종합 §17-2추가, 출처44~49(6건). 총 610줄49출처 |
 | 04-05 | CC종합 §15~17 추가: 워커웹+Paperclip+픽셀오피스 3계층 통합설계 + TradingView MCP 2접근법 + 다윈팀 자율연구 3Phase. 출처 31~43(13건). 10팀113에이전트 전수 확인 |

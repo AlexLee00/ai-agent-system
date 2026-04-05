@@ -265,8 +265,19 @@ async function _generateWeeklyReport() {
 
   lines.push('', '## 키워드 진화');
   let keywordEvolutionCount = 0;
-  for (const domain of Object.keys(arxivClient.DOMAIN_KEYWORDS)) {
-    const suggested = await keywordEvolver.suggestKeywords(domain);
+  const activeDomains = Object.entries(byDomain)
+    .sort((a, b) => b[1].total - a[1].total)
+    .slice(0, 5)
+    .map(([domain]) => domain);
+
+  const keywordSuggestions = await Promise.all(
+    activeDomains.map(async (domain) => {
+      const suggested = await keywordEvolver.suggestKeywords(domain);
+      return { domain, suggested };
+    })
+  );
+
+  for (const { domain, suggested } of keywordSuggestions) {
     if (suggested.length > 0) {
       keywordEvolutionCount += suggested.length;
       lines.push(`📈 ${domain}: ${suggested.join(', ')}`);
