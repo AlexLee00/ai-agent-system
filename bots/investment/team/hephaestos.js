@@ -15,7 +15,7 @@ import ccxt from 'ccxt';
 import { fileURLToPath } from 'url';
 import * as db from '../shared/db.js';
 import * as journalDb from '../shared/trade-journal-db.js';
-import { loadSecrets, isPaperMode, getInvestmentTradeMode } from '../shared/secrets.js';
+import { loadSecrets, initHubSecrets, isPaperMode, getInvestmentTradeMode } from '../shared/secrets.js';
 import { isSameDaySymbolReentryBlockEnabled } from '../shared/runtime-config.js';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.js';
 import { notifyTrade, notifyError, notifyJournalEntry, notifyTradeSkip, notifyCircuitBreaker, notifySettlement } from '../shared/report.js';
@@ -412,6 +412,88 @@ async function closeOpenJournalForSymbol(symbol, isPaper, exitPrice, exitValue, 
   }).catch(() => {});
 }
 
+async function findAnyLivePosition(symbol, exchange = 'binance') {
+  return db.getPosition(symbol, { exchange, paper: false });
+}
+
+async function fetchRecentBrokerExit(symbol, amountHint = 0) {
+  try {
+    const orders = await getExchange().fetchOrders(symbol, undefined, 20);
+    const candidates = (orders || [])
+      .filter((order) =>
+        order?.side === 'sell'
+        && order?.status === 'closed'
+        && Number(order?.filled || 0) > 0,
+      )
+      .sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0));
+    if (candidates.length === 0) return null;
+    if (!(amountHint > 0)) return candidates[0];
+    return candidates.find((order) => {
+      const filled = Number(order?.filled || 0);
+      return filled > 0 && Math.abs(filled - amountHint) <= Math.max(1e-6, amountHint * 0.02);
+    }) || candidates[0];
+  } catch {
+    return null;
+  }
+}
+
+async function reconcileLivePositionsWithBrokerBalance() {
+  const livePositions = await db.getAllPositions('binance', false).catch(() => []);
+  if (livePositions.length === 0) return [];
+
+  const wallet = await getExchange().fetchBalance();
+  const walletTotals = wallet?.total || {};
+  const results = [];
+
+  for (const position of livePositions) {
+    const symbol = position.symbol;
+    const base = String(symbol || '').split('/')[0];
+    const trackedAmount = Number(position.amount || 0);
+    const walletAmount = Number(walletTotals?.[base] || 0);
+    const drift = walletAmount - trackedAmount;
+    const tradeMode = position.trade_mode || 'normal';
+
+    if (walletAmount <= 0.000001) {
+      const brokerExit = await fetchRecentBrokerExit(symbol, trackedAmount);
+      const exitPrice = Number(brokerExit?.average || brokerExit?.price || 0)
+        || await fetchTicker(symbol).catch(() => 0);
+      const exitValue = trackedAmount * (exitPrice || 0);
+      await db.deletePosition(symbol, {
+        exchange: 'binance',
+        paper: false,
+        tradeMode,
+      });
+      await closeOpenJournalForSymbol(
+        symbol,
+        false,
+        exitPrice || null,
+        exitValue || null,
+        'broker_wallet_zero_reconciled',
+        tradeMode,
+      ).catch(() => {});
+      console.warn(`  ⚠️ [헤파이스토스] ${symbol} 실지갑 0 → 포지션 자동 정리 (${tradeMode})`);
+      results.push({ symbol, tradeMode, action: 'deleted', trackedAmount, walletAmount, drift });
+      continue;
+    }
+
+    if (Math.abs(drift) > Math.max(0.000001, trackedAmount * 0.001)) {
+      await db.upsertPosition({
+        symbol,
+        amount: walletAmount,
+        avgPrice: Number(position.avg_price || 0),
+        unrealizedPnl: Number(position.unrealized_pnl || 0),
+        paper: false,
+        exchange: 'binance',
+        tradeMode,
+      });
+      console.warn(`  ⚠️ [헤파이스토스] ${symbol} 실지갑 기준 수량 보정 ${trackedAmount} → ${walletAmount} (${tradeMode})`);
+      results.push({ symbol, tradeMode, action: 'updated', trackedAmount, walletAmount, drift });
+    }
+  }
+
+  return results;
+}
+
 async function maybePromotePaperPositions({ reserveSlots = 0 } = {}) {
   const capitalPolicy = getCapitalConfig('binance', 'normal');
   const paperPositions = await db.getPaperPositions('binance', 'normal').catch(() => []);
@@ -739,6 +821,7 @@ async function _liquidateUntrackedForCapital(excludeBase, paperMode) {
  * @param {object} signal  { id, symbol, action, amountUsdt, confidence, reasoning }
  */
 export async function executeSignal(signal) {
+  await initHubSecrets().catch(() => false);
   const globalPaperMode = isPaperMode();
   const { id: signalId, symbol, action } = signal;
   const amountUsdt = signal.amountUsdt || signal.amount_usdt || 100;
@@ -908,6 +991,9 @@ export async function executeSignal(signal) {
       }
 
       const livePosition = await db.getLivePosition(symbol, 'binance', signalTradeMode);
+      const fallbackLivePosition = !livePosition
+        ? await findAnyLivePosition(symbol, 'binance').catch(() => null)
+        : null;
       const paperPosition = await db.getPaperPosition(symbol, 'binance', signalTradeMode);
       const sameDayBuyTrade = isSameDaySymbolReentryBlockEnabled()
         ? await db.getSameDayTrade({ symbol, side: 'buy', exchange: 'binance', tradeMode: signalTradeMode })
@@ -1129,6 +1215,9 @@ export async function executeSignal(signal) {
     } else if (action === ACTIONS.SELL) {
       // DB 포지션 우선, 없으면 실제 바이낸스 잔고 조회 (외부 매수 코인도 매도 가능)
       const livePosition = await db.getLivePosition(symbol, 'binance', signalTradeMode);
+      const fallbackLivePosition = !livePosition
+        ? await findAnyLivePosition(symbol, 'binance').catch(() => null)
+        : null;
       const paperPosition = await db.getPaperPosition(symbol, 'binance', signalTradeMode);
       if (globalPaperMode && livePosition && !paperPosition) {
         const reason = '실포지션 보유 중에는 PAPER SELL로 혼합 청산을 실행할 수 없음';
@@ -1143,15 +1232,18 @@ export async function executeSignal(signal) {
         });
         return { success: false, reason };
       }
-      const position = paperPosition || livePosition;
+      const position = paperPosition || livePosition || fallbackLivePosition;
       let amount = position?.amount;
       const sellPaperMode = globalPaperMode || (!livePosition && Boolean(paperPosition));
+      const effectivePositionTradeMode = (!sellPaperMode && (livePosition || fallbackLivePosition)?.trade_mode)
+        || paperPosition?.trade_mode
+        || signalTradeMode;
       const base = symbol.split('/')[0];
       const bal  = sellPaperMode ? null : await getExchange().fetchBalance();
-      const freeBalance = Number(bal?.free?.[base] || 0);
+      const freeBalance = Number(bal?.total?.[base] || bal?.free?.[base] || 0);
       if (!amount || amount <= 0) {
         amount = sellPaperMode
-          ? Number(livePosition?.amount || paperPosition?.amount || 0)
+          ? Number(livePosition?.amount || fallbackLivePosition?.amount || paperPosition?.amount || 0)
           : freeBalance;
         if (amount <= 0) {
           console.warn(`  ⚠️ ${symbol} 보유량 없음 (DB+바이낸스 모두 0) — SELL 스킵`);
@@ -1162,6 +1254,8 @@ export async function executeSignal(signal) {
           return { success: false, reason: '보유량 없음' };
         }
         console.log(`  ℹ️ DB 포지션 없음 → 바이낸스 실잔고 사용: ${amount} ${base}`);
+      } else if (!livePosition && fallbackLivePosition && fallbackLivePosition.trade_mode !== signalTradeMode) {
+        console.warn(`  ⚠️ ${symbol} SELL 신호(${signalTradeMode})에 대응되는 live 포지션 없음 → ${fallbackLivePosition.trade_mode} 포지션 기준으로 청산`);
       } else if (!sellPaperMode && freeBalance > 0 && freeBalance < amount) {
         const drift = amount - freeBalance;
         console.warn(`  ⚠️ ${symbol} DB 포지션(${amount})과 실잔고(${freeBalance})가 어긋남 — 실잔고 기준으로 SELL 진행`);
@@ -1215,13 +1309,13 @@ export async function executeSignal(signal) {
         totalUsdt: order.totalUsdt || ((order.amount || amount) * (order.price || 0)),
         paper:     sellPaperMode,
         exchange:  'binance',
-        tradeMode: signalTradeMode,
+        tradeMode: effectivePositionTradeMode,
       };
 
       await db.deletePosition(symbol, {
         exchange: 'binance',
         paper: sellPaperMode,
-        tradeMode: signalTradeMode,
+        tradeMode: effectivePositionTradeMode,
       });
 
     } else {
@@ -1326,7 +1420,15 @@ export async function executeSignal(signal) {
  * 대기 중인 바이낸스 신호 전체 처리
  */
 export async function processAllPendingSignals() {
+  await initHubSecrets().catch(() => false);
   const tradeMode = getInvestmentTradeMode();
+  const reconciled = await reconcileLivePositionsWithBrokerBalance().catch((e) => {
+    console.warn(`[헤파이스토스] 실지갑 포지션 동기화 실패: ${e.message}`);
+    return [];
+  });
+  if (reconciled.length > 0) {
+    console.log(`[헤파이스토스] 실지갑 포지션 동기화 ${reconciled.length}건`);
+  }
   const signals = await db.getApprovedSignals('binance', tradeMode);
   if (signals.length === 0) {
     console.log(`[헤파이스토스] 대기 신호 없음 (trade_mode=${tradeMode})`);
@@ -1354,6 +1456,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 
   await db.initSchema();
   try {
+    await initHubSecrets().catch(() => false);
     let r;
     if (inspectPromotions) {
       r = await inspectPromotionCandidates();
