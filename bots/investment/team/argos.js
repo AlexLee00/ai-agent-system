@@ -59,6 +59,11 @@ const _candidateIntelCache = new Map();
 const EXTERNAL_WARN_TTL = 6 * 3600 * 1000;
 const _externalWarnCache = new Map();
 
+function _num(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 function execCurl(args) {
   return new Promise((resolve, reject) => {
     execFile('curl', args, { maxBuffer: 2 * 1024 * 1024 }, (error, stdout, stderr) => {
@@ -447,8 +452,18 @@ async function evaluatePost(post, market) {
   const parsed = parseJSON(raw);
   if (!parsed?.strategy_name) return null;
 
+  const qualityScore = Math.max(0, Math.min(1, _num(parsed.quality_score, 0)));
+
   return {
     ...parsed,
+    strategy_name: String(parsed.strategy_name || '').trim(),
+    entry_condition: String(parsed.entry_condition || '').trim(),
+    exit_condition: String(parsed.exit_condition || '').trim(),
+    risk_management: String(parsed.risk_management || '').trim(),
+    applicable_timeframe: String(parsed.applicable_timeframe || 'all').trim() || 'all',
+    quality_score: qualityScore,
+    summary: String(parsed.summary || '').trim(),
+    applicable_now: parsed.applicable_now === true,
     market,
     source:     'reddit',
     source_url: `https://reddit.com${post.permalink}`,
@@ -471,15 +486,23 @@ export async function collectStrategies() {
     for (const post of posts.slice(0, 5)) {
       try {
         const strategy = await evaluatePost(post, market);
-        if (!strategy || strategy.quality_score < MIN_QUALITY_SCORE) continue;
+        if (!strategy || _num(strategy.quality_score, 0) < MIN_QUALITY_SCORE) continue;
 
         await db.upsertStrategy(strategy);
         saved++;
-        summary.push(`• [${(strategy.quality_score * 10).toFixed(0)}점] ${strategy.strategy_name}: ${strategy.summary}`);
-        console.log(`  ✅ 저장: ${strategy.strategy_name} (점수: ${strategy.quality_score.toFixed(2)})`);
+        summary.push(`• [${(_num(strategy.quality_score, 0) * 10).toFixed(0)}점] ${strategy.strategy_name}: ${strategy.summary}`);
+        console.log(`  ✅ 저장: ${strategy.strategy_name} (점수: ${_num(strategy.quality_score, 0).toFixed(2)})`);
       } catch (e) {
         if (e.name === 'TimeoutError' || e.name === 'AbortError' || /timed out/i.test(e.message || '')) {
           _warnExternalOnce(`argos-eval-timeout:${market}`, `  ⚠️ [아르고스] 전략 평가 타임아웃 — 일부 포스트 스킵`);
+          continue;
+        }
+        if ((e.message || '').includes('Groq API 키 없음')) {
+          _warnExternalOnce('argos-groq-missing', '  ⚠️ [아르고스] Groq API 키 없음 — 전략 평가를 이번 사이클에서 스킵');
+          continue;
+        }
+        if ((e.message || '').includes('OpenAI API 키 없음')) {
+          _warnExternalOnce('argos-openai-missing', '  ⚠️ [아르고스] OpenAI API 키 없음 — OpenAI 폴백 없이 이번 사이클 스킵');
           continue;
         }
         console.warn(`  ⚠️ [아르고스] 평가 실패: ${e.message}`);

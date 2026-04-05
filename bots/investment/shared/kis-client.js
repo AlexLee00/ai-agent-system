@@ -340,11 +340,24 @@ export async function marketBuy(symbol, amountKrw, dryRun = false) {
   const tag   = dryRun ? '[PAPER]' : paper ? '[LIVE/MOCK]' : '[LIVE/REAL]';
 
   const currentPrice = await getDomesticPrice(symbol, paper);
-  const qty          = Math.floor(amountKrw / currentPrice);
+  let effectiveAmountKrw = Number(amountKrw || 0);
+
+  if (!dryRun) {
+    const balance = await getDomesticBalance(paper).catch(() => null);
+    const depositKrw = Number(balance?.dnca_tot_amt || 0);
+    const spendableKrw = Math.max(0, depositKrw - 10_000);
+    if (depositKrw > 0 && effectiveAmountKrw > spendableKrw) {
+      throw new Error(
+        `주문가능금액 초과 방지: 요청 ${effectiveAmountKrw.toLocaleString()}원 > 가용 ${spendableKrw.toLocaleString()}원 (예수금 ${depositKrw.toLocaleString()}원)`,
+      );
+    }
+  }
+
+  const qty = Math.floor(effectiveAmountKrw / currentPrice);
 
   if (qty < 1) {
     throw new Error(
-      `수량 부족: ${amountKrw?.toLocaleString()}원으로 ${symbol} 1주(${currentPrice.toLocaleString()}원) 매수 불가`,
+      `수량 부족: ${effectiveAmountKrw?.toLocaleString()}원으로 ${symbol} 1주(${currentPrice.toLocaleString()}원) 매수 불가`,
     );
   }
 
