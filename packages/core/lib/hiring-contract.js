@@ -41,6 +41,51 @@ function _getLunaRoleBonus(requestedRole, agentRole) {
   return family?.has(agentRole) ? 0.45 : 0;
 }
 
+function _getJustinSpecialtyBonus(taskHint, agentSpecialty) {
+  if (!taskHint || !agentSpecialty) return 0;
+  const hint = String(taskHint).toLowerCase();
+  const spec = String(agentSpecialty).toLowerCase();
+
+  if ((hint.includes('소스코드') || hint.includes('코드 분석')) && spec.includes('소스코드')) return 1.5;
+  if ((hint.includes('국내 판례') || hint.includes('국내')) && spec.includes('국내판례')) return 1.5;
+  if ((hint.includes('해외 판례') || hint.includes('해외')) && spec.includes('해외판례')) return 1.5;
+  if (hint.includes('원고') && spec.includes('원고자료')) return 1.5;
+  if (hint.includes('피고') && spec.includes('피고자료')) return 1.5;
+  if (hint.includes('계약') && spec.includes('계약서검토')) return 1.5;
+  if ((hint.includes('감정서') || hint.includes('초안') || hint.includes('작성')) && spec.includes('감정서초안')) return 1.5;
+  if ((hint.includes('품질') || hint.includes('검증') || hint.includes('리뷰')) && (spec.includes('품질검증') || spec.includes('객관성심사'))) return 1.5;
+
+  if ((hint.includes('소스코드') || hint.includes('코드 분석')) && spec.includes('코드')) return 1.0;
+  if ((hint.includes('국내 판례') || hint.includes('국내')) && spec.includes('국내')) return 1.0;
+  if ((hint.includes('해외 판례') || hint.includes('해외')) && spec.includes('해외')) return 1.0;
+  if (hint.includes('원고') && spec.includes('원고')) return 1.0;
+  if (hint.includes('피고') && spec.includes('피고')) return 1.0;
+  if (hint.includes('계약') && spec.includes('계약')) return 1.0;
+  if ((hint.includes('감정서') || hint.includes('초안') || hint.includes('작성')) && spec.includes('감정')) return 1.0;
+  if ((hint.includes('품질') || hint.includes('검증') || hint.includes('리뷰')) && (spec.includes('품질') || spec.includes('검증'))) return 1.0;
+
+  return 0;
+}
+
+function _getSigmaSpecialtyBonus(taskHint, agentSpecialty) {
+  if (!taskHint || !agentSpecialty) return 0;
+  const hint = String(taskHint).toLowerCase();
+  const spec = String(agentSpecialty).toLowerCase();
+
+  if ((hint.includes('etl') || hint.includes('파이프라인') || hint.includes('수집') || hint.includes('전처리'))
+    && spec.includes('파이프라인')) return 1.5;
+  if ((hint.includes('분석') || hint.includes('통계') || hint.includes('인사이트'))
+    && spec.includes('분석')) return 1.5;
+  if ((hint.includes('ml') || hint.includes('모델') || hint.includes('학습') || hint.includes('추론'))
+    && spec.includes('ml')) return 1.5;
+  if ((hint.includes('시각화') || hint.includes('대시보드') || hint.includes('리포트'))
+    && spec.includes('시각화')) return 1.5;
+  if ((hint.includes('거버넌스') || hint.includes('품질') || hint.includes('카탈로그'))
+    && spec.includes('거버넌스')) return 1.5;
+
+  return 0;
+}
+
 function _getTeamRoleAliases(team) {
   if (team === 'darwin') {
     return {
@@ -127,9 +172,12 @@ async function selectBestAgent(role, team = null, requirements = {}) {
     const fatigue = _normalizeEmotionScore(emotion.fatigue, 0);
     const confidence = _normalizeEmotionScore(emotion.confidence, 5);
     const roleBonus = team === 'luna' ? _getLunaRoleBonus(role, agent.role) : 0;
-    let specialtyBonus = 0;
     const specialty = String(agent.specialty || '').toLowerCase();
-    if (taskHint && specialty) {
+    let specialtyBonus =
+      team === 'justin' ? _getJustinSpecialtyBonus(taskHint, specialty) :
+      team === 'sigma' ? _getSigmaSpecialtyBonus(taskHint, specialty) :
+      0;
+    if (!specialtyBonus && taskHint && specialty) {
       if (specialty.includes(taskHint) || taskHint.split(/\s+/).some((word) => word && specialty.includes(word))) {
         specialtyBonus = 1.0;
       }
