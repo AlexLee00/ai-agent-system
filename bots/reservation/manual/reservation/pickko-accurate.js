@@ -18,7 +18,12 @@ const { parseArgs } = require('../../lib/args');
 const { getPickkoLaunchOptions, setupDialogHandler } = require('../../lib/browser');
 const { loginToPickko } = require('../../lib/pickko');
 const { maskPhone, maskName } = require('../../lib/formatting');
-const { acquirePickkoLock, releasePickkoLock } = require('../../lib/state-bus');
+const {
+  acquirePickkoLock,
+  releasePickkoLock,
+  setManualPickkoPriority,
+  clearManualPickkoPriority,
+} = require('../../lib/state-bus');
 const { publishToMainBot } = require('../../lib/mainbot-client');
 const { IS_DEV, IS_OPS } = require('../../../../packages/core/lib/env');
 
@@ -83,6 +88,8 @@ const SKIP_FINAL_PAYMENT = process.env.SKIP_FINAL_PAYMENT === '1';
 // SKIP_PRICE_ZERO=1 node src/pickko-accurate.js ...
 const SKIP_PRICE_ZERO = process.env.SKIP_PRICE_ZERO === '1';
 const MANUAL_PICKKO_LOCK_TTL_MS = 20 * 60 * 1000;
+const MANUAL_PICKKO_LOCK_WAIT_MS = 90 * 1000;
+const MANUAL_PICKKO_LOCK_RETRY_MS = 5 * 1000;
 
 // ✅ DEV 모드 화이트리스트 (2026-02-23)
 // 환경변수: DEV_WHITELIST_PHONES="01035000586,01054350586"
@@ -307,19 +314,28 @@ async function main() {
       try { await releasePickkoLock('manual'); log('🔓 픽코 락 해제'); } catch {}
       lockAcquired = false;
     }
+    try { await clearManualPickkoPriority(); } catch {}
   };
 
   try {
     await initHubSecrets();
     log(`🚀 픽코 예약 등록 시작`);
+    await setManualPickkoPriority('manual_reservation');
 
     // 픽코 단독접근 락 획득
     // 수동 작업은 실제 운영자가 기다리는 write-path이므로 TTL을 더 길게 잡아 자동 모니터가 중간에 끼어들지 않게 한다.
     setStage('LOCK_ACQUIRE');
-    lockAcquired = await acquirePickkoLock('manual', MANUAL_PICKKO_LOCK_TTL_MS);
+    const lockDeadline = Date.now() + MANUAL_PICKKO_LOCK_WAIT_MS;
+    while (!lockAcquired && Date.now() < lockDeadline) {
+      lockAcquired = await acquirePickkoLock('manual', MANUAL_PICKKO_LOCK_TTL_MS);
+      if (lockAcquired) break;
+      const remainingSec = Math.max(0, Math.ceil((lockDeadline - Date.now()) / 1000));
+      log(`⏳ 픽코 수동 우선 락 대기 중... 남은 ${remainingSec}초`);
+      await delay(MANUAL_PICKKO_LOCK_RETRY_MS);
+    }
     if (!lockAcquired) {
-      logStageFailure('LOCK_CONFLICT', '픽코 락 획득 실패', { mode: MODE });
-      log('⚠️ 픽코 락 획득 실패 — 자동 에이전트가 픽코 사용 중. 잠시 후 재시도하세요.');
+      logStageFailure('LOCK_CONFLICT', '픽코 락 획득 실패', { mode: MODE, waitedMs: MANUAL_PICKKO_LOCK_WAIT_MS });
+      log('⚠️ 픽코 락 획득 실패 — 자동 에이전트 점유가 길어 수동 등록을 시작하지 못했습니다.');
       process.exit(1);
     }
     log(`🔒 픽코 락 획득 (manual, ttl=${Math.floor(MANUAL_PICKKO_LOCK_TTL_MS / 60000)}m)`);

@@ -21,7 +21,13 @@ const { publishToMainBot } = require('../../lib/mainbot-client');
 const { createErrorTracker } = require('../../lib/error-tracker');
 const { getKioskBlock, upsertKioskBlock, recordKioskBlockAttempt, getKioskBlocksForDate, pruneOldKioskBlocks } = require('../../lib/db');
 const { maskPhone, maskName } = require('../../lib/formatting');
-const { updateAgentState, acquirePickkoLock, releasePickkoLock, isPickkoLocked } = require('../../lib/state-bus');
+const {
+  updateAgentState,
+  acquirePickkoLock,
+  releasePickkoLock,
+  isPickkoLocked,
+  isManualPickkoPriorityActive,
+} = require('../../lib/state-bus');
 const { getReservationKioskMonitorConfig } = require('../../lib/runtime-config');
 
 const SECRETS = loadSecrets();
@@ -2071,6 +2077,16 @@ async function main() {
   let browser;
   let lockAcquired = false;
   try {
+    const manualPriority = await isManualPickkoPriorityActive();
+    if (manualPriority.active) {
+      const updatedAt = manualPriority.updatedAt instanceof Date
+        ? manualPriority.updatedAt.toISOString()
+        : manualPriority.updatedAt || null;
+      log(`⏸️ manual 픽코 우선 신호 감지 — kiosk-monitor 이번 사이클 스킵 (task=${manualPriority.task || 'manual_reservation'}, updatedAt=${updatedAt || 'unknown'})`);
+      await updateAgentState('jimmy', 'idle', 'manual_priority_signal');
+      return;
+    }
+
     const existingLock = await isPickkoLocked();
     if (existingLock.locked && existingLock.by === 'manual') {
       const expiresAt = existingLock.expiresAt instanceof Date
