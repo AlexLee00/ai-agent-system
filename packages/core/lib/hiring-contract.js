@@ -71,10 +71,18 @@ function _getSigmaSpecialtyBonus(taskHint, agentSpecialty) {
   if (!taskHint || !agentSpecialty) return 0;
   const hint = String(taskHint).toLowerCase();
   const spec = String(agentSpecialty).toLowerCase();
+  const isRiskHint = hint.includes('리스크') || hint.includes('실패') || hint.includes('문제') || hint.includes('병목');
+  const isGrowthHint = hint.includes('성장') || hint.includes('성공') || hint.includes('기회') || hint.includes('확대');
+  const isTrendHint = hint.includes('추세') || hint.includes('트렌드') || hint.includes('장기') || hint.includes('주간') || hint.includes('월간');
+
+  if (isRiskHint && (spec.includes('비판적') || spec.includes('실패패턴') || spec.includes('병목탐지'))) return 2.5;
+  if (isGrowthHint && (spec.includes('낙관적') || spec.includes('성공패턴') || spec.includes('강점강화'))) return 2.5;
+  if (isTrendHint && (spec.includes('장기') || spec.includes('추세분석') || spec.includes('구조적변화'))) return 2.5;
 
   if ((hint.includes('etl') || hint.includes('파이프라인') || hint.includes('수집') || hint.includes('전처리'))
     && spec.includes('파이프라인')) return 1.5;
-  if ((hint.includes('분석') || hint.includes('통계') || hint.includes('인사이트'))
+  if (!isRiskHint && !isGrowthHint && !isTrendHint
+    && (hint.includes('분석') || hint.includes('통계') || hint.includes('인사이트'))
     && spec.includes('분석')) return 1.5;
   if ((hint.includes('ml') || hint.includes('모델') || hint.includes('학습') || hint.includes('추론'))
     && spec.includes('ml')) return 1.5;
@@ -82,6 +90,12 @@ function _getSigmaSpecialtyBonus(taskHint, agentSpecialty) {
     && spec.includes('시각화')) return 1.5;
   if ((hint.includes('거버넌스') || hint.includes('품질') || hint.includes('카탈로그'))
     && spec.includes('거버넌스')) return 1.5;
+  if ((hint.includes('rag') || hint.includes('지식') || hint.includes('triplet') || hint.includes('standing'))
+    && (spec.includes('rag') || spec.includes('지식그래프') || spec.includes('standingorders'))) return 1.5;
+  if ((hint.includes('워크플로우') || hint.includes('병목') || hint.includes('최적화') || hint.includes('비용'))
+    && spec.includes('워크플로우')) return 1.5;
+  if ((hint.includes('예측') || hint.includes('forecast') || hint.includes('포캐스트'))
+    && spec.includes('예측')) return 1.5;
 
   return 0;
 }
@@ -115,6 +129,9 @@ function _getTeamRoleAliases(team) {
       engineer: new Set(['engineer', 'etl']),
       ml: new Set(['ml', 'ml_engineer']),
       ml_engineer: new Set(['ml_engineer', 'ml']),
+      workflow: new Set(['workflow']),
+      rag: new Set(['rag', 'governance']),
+      predictor: new Set(['predictor', 'ml_engineer']),
       experiment: new Set(['experiment', 'experiment_designer']),
       experiment_designer: new Set(['experiment', 'experiment_designer']),
       feature: new Set(['feature', 'feature_engineer']),
@@ -124,7 +141,7 @@ function _getTeamRoleAliases(team) {
       observability: new Set(['observability', 'visualizer', 'visualization']),
       visualization: new Set(['visualization', 'visualizer']),
       visualizer: new Set(['visualizer', 'visualization']),
-      governance: new Set(['governance']),
+      governance: new Set(['governance', 'rag']),
       analyst: new Set(['analyst']),
     };
   }
