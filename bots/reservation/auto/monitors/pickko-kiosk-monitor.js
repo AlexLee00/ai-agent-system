@@ -2299,7 +2299,7 @@ async function main() {
 
         await waitForCustomerCooldown(e, customerOperationTracker, '예약 차단');
 
-        // Frame detach 시 새 탭으로 1회 재시도
+        // Frame detach 또는 검증 실패 시 같은 예약에 대해 1회 더 재시도
         let blocked = false;
         let blockReason = 'verify_failed';
         for (let attempt = 1; attempt <= 2; attempt++) {
@@ -2307,6 +2307,11 @@ async function main() {
             const blockResult = await blockNaverSlot(naverPg, e);
             blocked = Boolean(blockResult?.ok);
             blockReason = blockResult?.reason || (blocked ? 'verified' : 'verify_failed');
+            if (!blocked && attempt === 1) {
+              log(`⚠️ 네이버 차단 검증 실패 — 예약불가 처리 1회 재실행 (attempt ${attempt + 1}/2, reason=${blockReason})`);
+              await new Promise((resolve) => setTimeout(resolve, 1500));
+              continue;
+            }
             break;
           } catch (err) {
             if (err.message.includes('detached Frame') && attempt === 1) {
