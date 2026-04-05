@@ -18,8 +18,8 @@
 10. **스위퍼 추가 확인** (00e50e2b) — 루나팀 지갑 정합성
 11. **닥터 자율 헬스체크 + 메인봇 퇴역 + launchd 정리** — 구현 완료
 12. **OpenHarness 생태계 분석** — 5개 프로젝트 + 커뮤니티 반응
-13. **시스템 보완점 분석 15건 + Claude Code 분석 8건** (총 25건)
-14. **트래커 보완점 추적 테이블** — 25건 등록 (OpenHarness 17 + Claude Code 8)
+13. **시스템 보완점 분석 31건** (OpenHarness 17 + Claude Code 8 + ECC 6)
+14. **트래커 보완점 추적 테이블** — 31건 등록
 
 ---
 
@@ -68,11 +68,14 @@ launchd: 76서비스
   📋 P1-5 중앙 로거 도입
   📋 CC-F experience_record "why" 필드 추가
   📋 CC-G 에러 보류+복구 패턴
+  📋 ECC-4 세션 종료 시 패턴 자동 추출
 
 보완점 (이번 달):
   📋 P0-2 에이전트 간 통신 (pg LISTEN/NOTIFY)
   📋 P0-3 + CC-D 에이전트별 권한 scope
-  📋 CC-B 훅 시스템 (Pre/PostTaskRun)
+  📋 CC-B + ECC-3 훅 시스템 (3단계 프로파일!)
+  📋 ECC-2 핵심 스킬 추가 (search-first/verification-loop)
+  📋 ECC-5 보안 가이드 + 스킬 보안 스캔
   📋 P2-13 전체 시스템 백업
 ```
 
@@ -83,10 +86,11 @@ launchd: 76서비스
 ```
 전략:
   docs/strategy/DUAL_FEEDBACK_LOOP.md (748줄!)
-  docs/strategy/SYSTEM_IMPROVEMENT_ANALYSIS.md (348줄, OpenHarness+ClaudeCode)
+  docs/strategy/SYSTEM_IMPROVEMENT_ANALYSIS.md (378줄, OpenHarness+ClaudeCode+ECC)
 
 연구:
   docs/research/RESEARCH_CLAUDE_CODE_ANALYSIS.md (299줄, CC 소스 분석)
+  docs/research/RESEARCH_ECC_ANALYSIS.md (236줄, ECC 133K⭐ 분석)
 
 코덱스:
   docs/codex/CODEX_SIGMA_FEEDBACK_LOOP.md → archive (구현 완료)
