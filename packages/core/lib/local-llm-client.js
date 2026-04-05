@@ -4,6 +4,7 @@ const env = require('./env');
 
 const LOCAL_MODEL_FAST = 'qwen2.5-7b';
 const LOCAL_MODEL_DEEP = 'deepseek-r1-32b';
+const LOCAL_RETRYABLE_STATUS = new Set([404, 500, 502, 503, 504]);
 
 function normalizeBaseUrl(value) {
   return String(value || '').replace(/\/+$/, '');
@@ -23,23 +24,35 @@ async function requestJson(path, options = {}, timeoutMs = 3000) {
   if (!baseUrl) return null;
 
   const url = `${baseUrl}${path}`;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const maxAttempts = options.maxAttempts || (path === '/v1/chat/completions' ? 3 : 1);
 
-  try {
-    const res = await fetch(url, { ...options, signal: controller.signal });
-    if (!res.ok) {
-      console.warn(`[local-llm-client] ${path}: HTTP ${res.status}`);
-      return null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const res = await fetch(url, { ...options, signal: controller.signal });
+      if (!res.ok) {
+        const retryable = LOCAL_RETRYABLE_STATUS.has(res.status) && attempt < maxAttempts;
+        console.warn(`[local-llm-client] ${path}: HTTP ${res.status}${retryable ? ` → 재시도 ${attempt}/${maxAttempts - 1}` : ''}`);
+        if (!retryable) return null;
+      } else {
+        return await res.json();
+      }
+    } catch (err) {
+      const aborted = err.name === 'AbortError';
+      const retryable = attempt < maxAttempts;
+      const message = aborted ? '타임아웃' : err.message;
+      console.warn(`[local-llm-client] ${path}: ${message}${retryable ? ` → 재시도 ${attempt}/${maxAttempts - 1}` : ''}`);
+      if (!retryable) return null;
+    } finally {
+      clearTimeout(timer);
     }
-    return await res.json();
-  } catch (err) {
-    const message = err.name === 'AbortError' ? '타임아웃' : err.message;
-    console.warn(`[local-llm-client] ${path}: ${message}`);
-    return null;
-  } finally {
-    clearTimeout(timer);
+
+    await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
   }
+
+  return null;
 }
 
 async function getAvailableModels() {
