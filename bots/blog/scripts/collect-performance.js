@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
+const { execFileSync } = require('child_process');
 const { getPerformanceCollectionCandidates, recordPerformance } = require('../lib/publ');
 const { fetchNaverBlogStats } = require('../lib/richer');
 
@@ -74,6 +75,18 @@ async function main() {
     }
     console.log(`- ✅ ${item.postId} ${item.title} | views=${item.views} comments=${item.comments} likes=${item.likes} (${item.source})`);
   });
+
+  if (!args.dryRun && updated > 0) {
+    try {
+      execFileSync('node', ['scripts/analyze-blog-performance.js'], {
+        cwd: require('path').join(__dirname, '..'),
+        stdio: 'inherit',
+        timeout: 30000,
+      });
+    } catch (error) {
+      console.warn(`[collect-performance] 성과 분석 실패 (무시): ${error.message}`);
+    }
+  }
 }
 
 main().catch((error) => {

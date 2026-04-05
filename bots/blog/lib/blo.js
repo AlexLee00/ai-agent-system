@@ -452,7 +452,7 @@ async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, sc
   };
 }
 
-async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx) {
+async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx, writerName = null) {
   const postTitle = `[Node.js ${context.number}강] ${context.lectureTitle}`;
   const published = await _publishAndTrack({
     title:         postTitle,
@@ -461,6 +461,7 @@ async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx
     postType:      'lecture',
     lectureNumber: context.number,
     charCount:     post.charCount,
+    writerName,
     scheduleId,
   }, scheduleId, traceCtx, {
     type: 'lecture',
@@ -497,7 +498,7 @@ async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx
   };
 }
 
-async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx) {
+async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx, writerName = null) {
   const genTitle = post.title || `[${context.category}] 오늘의 포스팅`;
   const images = await generatePostImages({ title: genTitle, postType: 'general', category: context.category }).catch(e => {
     console.warn('[이미지] 생성 실패 (일반):', e.message); return null;
@@ -519,6 +520,7 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
     category:  context.category,
     postType:  'general',
     charCount: post.charCount,
+    writerName,
     images,
     scheduleId,
   }, scheduleId, traceCtx, {
@@ -738,7 +740,7 @@ async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId
         runLocalDraft
       );
 
-      const finalized = await _finalizeLecturePost(post, quality, context, scheduleId, traceCtx);
+      const finalized = await _finalizeLecturePost(post, quality, context, scheduleId, traceCtx, writerName);
 
       if (contractId) {
         try {
@@ -859,7 +861,7 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId
         runLocalDraft
       );
 
-      const finalized = await _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx);
+      const finalized = await _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx, writerName);
 
       if (contractId) {
         try {
