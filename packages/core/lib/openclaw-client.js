@@ -38,6 +38,7 @@ let _token = null;
 let _groupId = null;
 let _topicIds = null;
 let _telegramBotToken = null;
+let _darwinTelegramBotToken = null;
 
 function _readStoreToken() {
   try {
@@ -102,8 +103,26 @@ async function _getTelegramBotToken() {
   return _telegramBotToken;
 }
 
+async function _getDarwinTelegramBotToken() {
+  if (_darwinTelegramBotToken) return _darwinTelegramBotToken;
+
+  try {
+    const store = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8'));
+    _darwinTelegramBotToken = store?.darwin?.telegram_bot_token
+      || store?.telegram?.darwin_bot_token
+      || process.env.DARWIN_TELEGRAM_BOT_TOKEN
+      || '';
+  } catch {
+    _darwinTelegramBotToken = process.env.DARWIN_TELEGRAM_BOT_TOKEN || '';
+  }
+
+  return _darwinTelegramBotToken;
+}
+
 async function _sendInlineTelegram({ message, team, fromBot, topicId, groupId, inlineKeyboard }) {
-  const botToken = await _getTelegramBotToken();
+  const botToken = team === 'darwin'
+    ? (await _getDarwinTelegramBotToken()) || (await _getTelegramBotToken())
+    : await _getTelegramBotToken();
   if (!botToken || !groupId) {
     console.warn('[openclaw-client] inline telegram 발송 실패: bot token/group id 미설정');
     return { ok: false, error: 'no_telegram_token_or_group' };
