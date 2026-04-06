@@ -1,109 +1,104 @@
-# 세션 인수인계 — 2026-04-06 (최종)
+# 메티 인수인계 (2026-04-06 세션)
 
-> 이전: /mnt/transcripts/2026-04-05-06-57-05-2026-04-06-darwin-steward-hiring-sigma.txt
-
----
-
-## 오늘 완료 작업 (14건!)
-
-1. **시그마팀 3중 피드백 루프 전략 문서** (748줄) — L1자체+L2크로스+L3메타
-2. **시그마팀 에이전트 6→12명** — hawk/dove/owl + optimizer/librarian/forecaster
-3. **시그마팀 피드백 루프 구현 완료** (c5857944, 809줄/7파일)
-4. **데이터 자산화 전략** — 5대 라벨 + experience_record + 거래 준비
-5. **자율 고용 저스틴+시그마 코덱스** (300b501a) — specialty 기반 매칭
-6. **블로팀 Phase B 피드백 루프 코덱스** (270줄)
-7. **README.md 모던 리디자인** — 영어, 벤치마킹
-8. **MIT 라이센스 적용** (47bfcbcc)
-9. **라이트(Write) 에이전트 코덱스** (203줄) — README 자동 업데이트
-10. **스위퍼 추가 확인** (00e50e2b) — 루나팀 지갑 정합성
-11. **닥터 자율 헬스체크 + 메인봇 퇴역 + launchd 정리** — 구현 완료
-12. **OpenHarness 생태계 분석** — 5개 프로젝트 + 커뮤니티 반응
-13. **시스템 보완점 분석 31건** (OpenHarness 17 + Claude Code 8 + ECC 6)
-14. **트래커 보완점 추적 테이블** — 31건 등록
+> 전체 트랜스크립트: /mnt/transcripts/ 참조
 
 ---
 
-## 코덱스 상태
+## 오늘 완료된 작업 ✅
 
-```
-전부 완료! 활성 코덱스 0개, 아카이브 80개+!
-  ✅ 블로팀 Phase B 구현 완료 (analyze-blog-performance.js)
-  ✅ 라이트 에이전트 구현 완료 (readme-updater.js)
-  ✅ 시그마팀 피드백 루프 구현 완료
-  ✅ 저스틴+시그마 자율 고용 구현 완료
-  ✅ 닥터/스튜어드/메인봇 구현 완료
-```
+### 전략 문서 (4건!)
+1. **다윈팀 Sprint 4 자율 파이프라인** (636줄!)
+   - Phase A~D: 텔레그램 승인 → edison 구현 → proof-r 검증 → 자율 전환!
+   - docs/strategy/DARWIN_SPRINT4_AUTONOMOUS_PIPELINE.md
+   
+2. **백테스트 엔진 전략** (263줄)
+   - Freqtrade 코드 분석 → chronos.js 완성!
+   - docs/strategy/BACKTEST_ENGINE_STRATEGY.md
 
----
+3. **스킬/MCP 공용 레이어 전략** (339줄!)
+   - ECC 151스킬 GitHub MCP 분석 → 우리에게 필요한 10개 선별!
+   - docs/strategy/SKILL_MCP_SHARED_LAYER.md
 
-## 핵심 수치
+4. **시스템 보완점 분석** (378줄)
+   - OpenHarness+Claude Code+ECC = 31개 보완점!
+   - docs/strategy/SYSTEM_IMPROVEMENT_ANALYSIS.md
 
-```
-에이전트: 121명 (10팀)
-시그마팀: 12명 (성향3 + 전문3 + 인프라6)
-launchd: 76서비스
-텔레그램: 12토픽
-활성 코덱스: 0개 (전부 완료!)
-비용: $0
-라이센스: MIT
-```
+### 코덱스 프롬프트 (3건!)
+1. **Sprint 4 Phase A~D** (658줄!) — 자율 구현 파이프라인
+   - docs/codex/CODEX_DARWIN_SPRINT4_AB.md
+   
+2. **GitHub 소스 분석 스킬** (402줄)
+   - docs/codex/CODEX_DARWIN_GITHUB_SKILL.md
+   
+3. **경쟁 결과 수집** (230줄)
+   - docs/codex/CODEX_COMPETITION_COLLECT.md
 
----
+### GitHub MCP로 직접 구현! (3건!)
+1. **github-client.js** → packages/core/lib/ (86884bc)
+   - getRepoInfo/listDir/readFile/getTree/readFiles
+   - Hub secrets 연동! (c4756d9)
 
-## 다음 실행
+2. **github-analysis.js** → packages/core/lib/skills/darwin/ (86884bc)
+   - analyzeRepoStructure/extractCodePatterns/generateAnalysisSummary
 
-```
-확인:
-  📋 다윈 groq 전환 후 시간 (오늘 06:00 자동 실행)
-  📋 도서리뷰 정상 발행 확인
-  📋 첫 경쟁 결과 확인! 🏆
+3. **skills/index.js** 스킬 등록 (1a8158d)
+   - darwin.githubAnalysis 추가!
 
-다윈팀 Sprint 4:
-  📋 Phase A: 텔레그램 승인 버튼 (인라인 키보드)
-  📋 Phase B: edison 자동 구현 → 브랜치 커밋
-  📋 Phase C: proof-r 자동 검증 + 머지 버튼
-  📋 Phase D: 검증 데이터 학습 → 자율 레벨 전환
-
-보완점 (이번 주):
-  📋 CC-F experience_record "why" 필드 추가
-  📋 CC-G 에러 보류+복구 패턴
-  📋 P0-1 핵심 모듈 테스트 시작
-  📋 P1-5 중앙 로거 도입
-
-보완점 (이번 달):
-  📋 P0-2 에이전트 간 통신 (pg LISTEN/NOTIFY)
-  📋 P0-3 + CC-D 에이전트별 권한 scope
-  📋 CC-B + ECC-3 훅 시스템 (3단계 프로파일!)
-  📋 ECC-2 핵심 스킬 추가 (search-first/verification-loop)
-  📋 ECC-5 보안 가이드 + 스킬 보안 스캔
-  📋 P2-13 전체 시스템 백업
-
-전략 문서:
-  📋 다윈팀 Sprint 4: DARWIN_SPRINT4_AUTONOMOUS_PIPELINE.md (405줄)
-```
+### 기타 완료
+- arXiv rate limit → 이미 반영됨! (ead82366)
+- secrets-store.json에 github 섹션 추가 (OPS 로컬)
+- 경쟁 엔진 버그 발견 (65건 running, completeCompetition 미호출!)
 
 ---
 
-## 오늘 작성/수정한 문서
+## 미완료 — 다음 세션에서!
 
+### 긴급!
+- 📋 **GitHub 토큰 생성 마무리!**
+  - Chrome에서 토큰 생성 폼 입력 완료 (team-jay-darwin)
+  - 확인 다이얼로그 "Generate token" 클릭 필요!
+  - 생성 후 secrets-store.json github.token에 등록!
+  - 또는 토큰 없이도 60req/hr로 동작함 (급하지 않음)
+
+### 코덱스 전달!
+- 📋 CODEX_DARWIN_SPRINT4_AB.md (658줄) → 코덱스에게 전달!
+- 📋 CODEX_DARWIN_GITHUB_SKILL.md (402줄) → GitHub MCP로 구현 완료!
+- 📋 CODEX_COMPETITION_COLLECT.md (230줄) → 코덱스에게 전달!
+
+### 확인 내일
+- 📋 다윈 arXiv rate limit 개선 확인 (06:00 로그)
+- 📋 도서리뷰 정상 발행 확인
+- 📋 OPS deploy.sh → GitHub MCP 커밋 자동 반영 확인
+
+### 이번 주
+- 📋 CC-F experience_record "why" 필드
+- 📋 CC-G 에러 보류+복구 패턴
+- 📋 P0-1 핵심 모듈 테스트
+- 📋 P1-5 중앙 로거 도입
+
+---
+
+## 핵심 결정 사항
+
+1. **Freqtrade 도입 아닌 분석!** — 단일봇 패러다임 ≠ 우리 13명 팀 패러다임
+2. **Sprint 4 = 다윈팀 핵심!** — 이게 완성돼야 모든 자율화 가능!
+3. **스킬/MCP가 가장 큰 갭!** — 31개 → 70+개로 확대 필요!
+4. **공용 레이어 우선!** — packages/core/lib/skills/shared/
+5. **자율 전환 프레임워크 = Bounded Autonomy!** — L3→L4→L5, 데이터로 증명!
+
+---
+
+## 오늘 세션 커밋 이력
 ```
-전략:
-  docs/strategy/DUAL_FEEDBACK_LOOP.md (748줄!)
-  docs/strategy/SYSTEM_IMPROVEMENT_ANALYSIS.md (378줄, OpenHarness+ClaudeCode+ECC)
-
-연구:
-  docs/research/RESEARCH_CLAUDE_CODE_ANALYSIS.md (299줄, CC 소스 분석)
-  docs/research/RESEARCH_ECC_ANALYSIS.md (236줄, ECC 133K⭐ 분석)
-
-코덱스:
-  docs/codex/CODEX_SIGMA_FEEDBACK_LOOP.md → archive (구현 완료)
-  docs/codex/CODEX_HIRING_JUSTIN_SIGMA.md → archive (구현 완료)
-  docs/codex/CODEX_BLOG_PHASE_B_FEEDBACK.md (270줄, 전달 대기)
-  docs/codex/CODEX_WRITE_README_UPDATER.md (203줄, 전달 대기)
-
-기타:
-  README.md (160줄, 영어 리디자인)
-  LICENSE (MIT)
-  docs/PLATFORM_IMPLEMENTATION_TRACKER.md (502줄, §7 보완점 추가)
-  docs/OPUS_FINAL_HANDOFF.md (이 파일)
+b1923d82 docs: 스킬/MCP 공용 레이어 전략!
+c4756d95 fix: github-client Hub secrets 연동!
+1a8158d5 feat: GitHub 분석 스킬 공용 레이어 등록!
+86884bcd feat: GitHub 클라이언트 + 다윈팀 스킬!
+fad8856e docs: 다윈팀 GitHub 소스 분석 코덱스!
+4ac2d43b docs: 다윈팀 Sprint 4 코덱스 658줄!
+2f7ae6a5 docs: 경쟁 엔진 버그 수정 코덱스!
+9ffa8b59 docs: 백테스트 엔진 전략!
+c182b715 docs: Sprint 4 Phase D 자율 전환 프레임워크!
+68343ed5 docs: 다윈팀 arXiv rate limit 코덱스!
+b73b6aec docs: 오늘 할일 목록 업데이트!
 ```
