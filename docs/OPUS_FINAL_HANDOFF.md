@@ -44,25 +44,51 @@
 3. **skills/index.js** 스킬 등록 (1a8158d)
    - darwin.githubAnalysis 추가!
 
+### GitHub 토큰 설정 완료!
+- 토큰 생성: team-jay-darwin (만료 2026-05-06)
+- secrets-store.json에 등록 완료!
+- 테스트 통과: freqtrade 48,392⭐ 확인!
+- Rate limit: 5,000req/hr!
+
 ### 기타 완료
 - arXiv rate limit → 이미 반영됨! (ead82366)
-- secrets-store.json에 github 섹션 추가 (OPS 로컬)
 - 경쟁 엔진 버그 발견 (65건 running, completeCompetition 미호출!)
+
+---
+
+## Sprint 4 정확한 상태 (100% 마감 아님!)
+
+### 구현 완료 (핵심 골격):
+- Phase A: 텔레그램 승인/거절 버튼 + /hub/darwin/callback + proposal 상태 전이
+- Phase B: implementor.js 골격 (승인→브랜치→파일추출→커밋→verifier 트리거)
+- Phase C: verifier.js 골격 (문법/LLM 검증, 경험 저장, 머지 승인 버튼)
+- Phase D: autonomy-level.js (L3→L4→L5 승격/강등)
+
+### 아직 남은 것:
+- **실운영 end-to-end 실런!**
+  - 실제 텔레그램 버튼 클릭 → 구현 브랜치 생성 → verifier 통과/실패 → 머지 승인
+- **implementor/verifier 운영 안전성 보강**
+  - dirty worktree, merge conflict, branch cleanup, 실패 복구
+- **direct Telegram 예외 분기** → 단일 경로로 흡수 정리
+- **modify 후 승인, 완전 자율 운영 관측** → 최소 구현 수준
+
+### 한 줄 결론:
+Sprint 4 = "핵심 골격 + 버튼 승인 경로"까지 구현, 실운영 검증/안전화 단계!
 
 ---
 
 ## 미완료 — 다음 세션에서!
 
-### 긴급!
-- 📋 **GitHub 토큰 생성 마무리!**
-  - Chrome에서 토큰 생성 폼 입력 완료 (team-jay-darwin)
-  - 확인 다이얼로그 "Generate token" 클릭 필요!
-  - 생성 후 secrets-store.json github.token에 등록!
-  - 또는 토큰 없이도 60req/hr로 동작함 (급하지 않음)
+### Sprint 4 실운영 검증 (최우선!)
+- 📋 **end-to-end 실런 테스트!**
+  - 텔레그램 버튼 클릭 → implementor → verifier → 머지 전체 흐름
+- 📋 **implementor/verifier 안전성 보강**
+  - dirty worktree 처리, merge conflict 복구, branch cleanup
+- 📋 **Telegram direct 예외 분기 → 단일 경로 흡수**
+- 📋 **modify 후 승인 / 자율 운영 관측 확장**
 
 ### 코덱스 전달!
 - 📋 CODEX_DARWIN_SPRINT4_AB.md (658줄) → 코덱스에게 전달!
-- 📋 CODEX_DARWIN_GITHUB_SKILL.md (402줄) → GitHub MCP로 구현 완료!
 - 📋 CODEX_COMPETITION_COLLECT.md (230줄) → 코덱스에게 전달!
 
 ### 확인 내일
