@@ -19,6 +19,7 @@ const darwinCounterexample = require('./darwin/counterexample');
 const darwinReplicator = require('./darwin/replicator');
 const darwinSynthesis = require('./darwin/synthesis');
 const darwinSourceAuditor = require('./darwin/source-auditor');
+const darwinGithubAnalysis = require('./darwin/github-analysis');
 const justinCitationAudit = require('./justin/citation-audit');
 const justinEvidenceMap = require('./justin/evidence-map');
 const justinJudgeSimulator = require('./justin/judge-simulator');
@@ -43,6 +44,7 @@ module.exports = {
     replicator: darwinReplicator,
     synthesis: darwinSynthesis,
     sourceAuditor: darwinSourceAuditor,
+    githubAnalysis: darwinGithubAnalysis,
   },
   justin: {
     citationAudit: justinCitationAudit,
