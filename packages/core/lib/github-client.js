@@ -4,7 +4,7 @@
  * GitHub REST API 클라이언트
  * 다윈팀 scholar/edison이 외부 레포 소스 코드 분석에 사용
  * public repo: 인증 없이 60req/hr
- * GITHUB_TOKEN 설정 시: 5000req/hr
+ * Hub secrets github.token 설정 시: 5000req/hr
  */
 
 const GITHUB_API = 'https://api.github.com';
@@ -12,9 +12,24 @@ const RAW_BASE = 'https://raw.githubusercontent.com';
 const TIMEOUT_MS = 15_000;
 const RATE_DELAY_MS = 1_000;
 
+let _cachedToken = null;
+
+function _getToken() {
+  if (_cachedToken !== null) return _cachedToken;
+  // Hub secrets → 환경변수 → 빈값 순으로 시도
+  try {
+    const hubClient = require('./hub-client');
+    const secrets = hubClient._secretsCache || {};
+    _cachedToken = secrets?.github?.token || process.env.GITHUB_TOKEN || '';
+  } catch {
+    _cachedToken = process.env.GITHUB_TOKEN || '';
+  }
+  return _cachedToken;
+}
+
 function _headers() {
   const h = { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'team-jay' };
-  const token = process.env.GITHUB_TOKEN || '';
+  const token = _getToken();
   if (token) h['Authorization'] = `Bearer ${token}`;
   return h;
 }
