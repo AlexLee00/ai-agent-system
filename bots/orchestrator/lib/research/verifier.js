@@ -10,6 +10,7 @@ const { execFileSync } = require('child_process');
 const { callWithFallback } = require('../../../../packages/core/lib/llm-fallback');
 const { postAlarm } = require('../../../../packages/core/lib/openclaw-client');
 const rag = require('../../../../packages/core/lib/rag');
+const { runFullVerification } = require('../../../../packages/core/lib/skills/verify-loop');
 const proposalStore = require('./proposal-store');
 const autonomyLevel = require('./autonomy-level');
 
@@ -33,26 +34,6 @@ function _listChangedFiles(baseBranch = 'main') {
   return output ? output.split('\n').map((line) => line.trim()).filter(Boolean) : [];
 }
 
-function _syntaxCheck(files) {
-  const failures = [];
-  for (const file of files) {
-    if (!file.endsWith('.js')) continue;
-    try {
-      execFileSync('node', ['--check', file], {
-        cwd: REPO_ROOT,
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-    } catch (error) {
-      failures.push({
-        file,
-        error: String(error.stderr || error.stdout || error.message || '').slice(0, 300),
-      });
-    }
-  }
-  return failures;
-}
-
 function _loadContents(files) {
   return files.map((file) => ({
     path: file,
@@ -73,7 +54,11 @@ async function triggerVerification(proposalId, branchName) {
   try {
     _runGit(['checkout', branchName]);
     const changedFiles = _listChangedFiles('main');
-    const syntaxFailures = _syntaxCheck(changedFiles);
+    const verification = runFullVerification({
+      files: changedFiles,
+      cwd: REPO_ROOT,
+      baseBranch: 'main',
+    });
     const fileContents = _loadContents(changedFiles).slice(0, 8);
 
     const verificationResult = await callWithFallback({
@@ -93,8 +78,8 @@ async function triggerVerification(proposalId, branchName) {
 변경 파일:
 ${fileContents.map((file) => `--- ${file.path} ---\n${file.content}`).join('\n\n')}
 
-사전 문법 실패:
-${JSON.stringify(syntaxFailures)}`,
+사전 자동 검증 리포트:
+${verification.summary}`,
       chain: [
         { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 2200, temperature: 0.2 },
         { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 2200, temperature: 0.2 },
@@ -104,13 +89,14 @@ ${JSON.stringify(syntaxFailures)}`,
     });
 
     const verificationText = String(verificationResult?.text || verificationResult || '').trim();
-    const passed = syntaxFailures.length === 0 && /\bPASS\b/i.test(verificationText) && !/\bFAIL\b/i.test(verificationText);
+    const passed = verification.overall && /\bPASS\b/i.test(verificationText) && !/\bFAIL\b/i.test(verificationText);
 
     proposalStore.updateStatus(proposalId, passed ? 'verified' : 'verification_failed', {
       branch: branchName,
       files: changedFiles,
       verification_text: verificationText,
-      syntax_failures: syntaxFailures,
+      verification_report: verification.report,
+      verification_summary: verification.summary,
       verified_at: new Date().toISOString(),
     });
 
@@ -125,6 +111,7 @@ ${JSON.stringify(syntaxFailures)}`,
         proposal_id: proposalId,
         branch: branchName,
         files: changedFiles,
+        verification_report: verification.report,
       },
       successOnly: false,
     });
