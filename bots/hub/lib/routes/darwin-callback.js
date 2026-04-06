@@ -45,8 +45,26 @@ async function darwinCallbackRoute(req, res) {
     return res.status(400).json({ ok: false, error: 'callback_data required' });
   }
 
-  const [action, proposalId] = String(callbackData).split(':');
-  if (!proposalId) {
+  const parts = String(callbackData).split(':');
+  if (parts.length !== 2) {
+    return res.status(400).json({ ok: false, error: 'invalid callback_data format' });
+  }
+
+  const action = String(parts[0] || '').trim();
+  const proposalId = String(parts[1] || '').trim();
+  const allowedActions = new Set([
+    'darwin_approve',
+    'darwin_reject',
+    'darwin_manual',
+    'darwin_merge',
+    'darwin_merge_skill',
+  ]);
+
+  if (!allowedActions.has(action)) {
+    return res.status(400).json({ ok: false, error: `unknown action: ${action}` });
+  }
+
+  if (!proposalId || proposalId.length > 200 || !/^[A-Za-z0-9._:-]+$/.test(proposalId)) {
     return res.status(400).json({ ok: false, error: 'proposalId required' });
   }
 
@@ -101,8 +119,6 @@ async function darwinCallbackRoute(req, res) {
       });
       return res.json({ ok: true, action: 'skill_merge_started', proposalId });
     }
-
-    return res.status(400).json({ ok: false, error: `unknown action: ${action}` });
   } catch (error) {
     autonomyLevel.recordError(error);
     console.error('[darwin-callback] 오류:', error.message);

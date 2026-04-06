@@ -41,6 +41,16 @@ const app = express();
 const PORT = env.HUB_PORT || 7788;
 
 app.use(express.json({ limit: '1mb' }));
+app.use((req, res, next) => {
+  const reqPath = String(req.path || '');
+  if (reqPath.length > 500) {
+    return res.status(414).json({ error: 'URI too long' });
+  }
+  if (/(.)\1{50,}/.test(reqPath)) {
+    return res.status(400).json({ error: 'invalid path pattern' });
+  }
+  return next();
+});
 
 app.use((req, res, next) => {
   const started = Date.now();
