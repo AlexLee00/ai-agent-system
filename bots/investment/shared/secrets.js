@@ -70,6 +70,12 @@ export async function initHubSecrets() {
   ]);
 
   if (hubConfig || hubLlm) {
+    let localConfig = {};
+    try {
+      localConfig = yaml.load(readFileSync(join(__dirname, '..', 'config.yaml'), 'utf8')) || {};
+    } catch {
+      localConfig = {};
+    }
     const c = hubConfig || {};
     const llm = hubLlm || {};
     _secrets = applyDevSafetyOverrides({
@@ -88,6 +94,9 @@ export async function initHubSecrets() {
       kis_paper_app_secret: c.kis?.paper_app_secret || '',
       kis_account_number:   c.kis?.account_number || '',
       kis_paper_account_number: c.kis?.paper_account_number || '',
+      kis_paper_trading: typeof c.kis?.paper_trading === 'boolean'
+        ? c.kis.paper_trading
+        : (typeof localConfig.kis?.paper_trading === 'boolean' ? localConfig.kis.paper_trading : undefined),
       kis_symbols:          c.kis?.symbols || [],
       kis_overseas_symbols: c.kis?.overseas_symbols || [],
       screening_domestic_core: c.screening?.domestic?.core || [],
@@ -115,7 +124,7 @@ export async function initHubSecrets() {
       alpha_vantage_api_key: c.news?.alpha_vantage_api_key || '',
       trading_mode: normalizeMode(c.trading_mode) || (c.paper_mode === false ? 'live' : 'paper'),
       binance_mode: normalizeMode(c.binance_mode) || 'inherit',
-      kis_mode: normalizeMode(c.kis_mode) || 'inherit',
+      kis_mode: normalizeMode(c.kis_mode) || normalizeMode(localConfig.kis_mode) || 'inherit',
       investment_trade_mode: normalizeInvestmentTradeMode(c.investment_trade_mode) || 'normal',
       paper_mode: c.paper_mode !== false,
     });
@@ -153,6 +162,7 @@ export function loadSecrets() {
       kis_paper_app_secret: c.kis?.paper_app_secret|| '',
       kis_account_number:         c.kis?.account_number        || '',
       kis_paper_account_number:   c.kis?.paper_account_number  || '',
+      kis_paper_trading: typeof c.kis?.paper_trading === 'boolean' ? c.kis.paper_trading : undefined,
       kis_symbols:          c.kis?.symbols          || [],  // 아르고스 동적 선정
       kis_overseas_symbols: c.kis?.overseas_symbols || [],  // 아르고스 동적 선정
       screening_domestic_core: c.screening?.domestic?.core || [],
@@ -286,13 +296,13 @@ export function getBrokerAccountMode(marketType = 'crypto') {
 
 export function describeModePair({ executionMode, brokerAccountMode, marketLabel = '시장' }) {
   if (executionMode === 'paper' && brokerAccountMode === 'mock') {
-    return `${marketLabel}: 📄 PAPER / MOCK (모의투자 계좌 연결, 실제 주문 차단)`;
+    return `${marketLabel}: 📄 PAPER / MOCK (모의투자 계좌 연결, 실자산 리스크 없음)`;
   }
   if (executionMode === 'paper' && brokerAccountMode === 'real') {
     return `${marketLabel}: 📄 PAPER / REAL (실계좌 연결, 실제 주문 차단)`;
   }
   if (executionMode === 'live' && brokerAccountMode === 'mock') {
-    return `${marketLabel}: 🔴 LIVE / MOCK (모의투자용 계좌로 주문 실행)`;
+    return `${marketLabel}: 🔴 LIVE / MOCK (모의투자 계좌로 주문 실행, 실자산 리스크 없음)`;
   }
   return `${marketLabel}: 🔴 LIVE / REAL (실제 투자)`;
 }
