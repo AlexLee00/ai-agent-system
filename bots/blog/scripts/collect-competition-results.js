@@ -38,6 +38,24 @@ async function _fetchRunningCompetitions() {
   );
 }
 
+async function _resolveWindowEnd(team, createdAt) {
+  const nextComp = await pgPool.get(
+    'agent',
+    `SELECT created_at
+     FROM agent.competitions
+     WHERE team = $1
+       AND created_at > $2
+     ORDER BY created_at ASC
+     LIMIT 1`,
+    [team, createdAt],
+  );
+
+  const created = new Date(createdAt);
+  const maxEnd = new Date(created.getTime() + COMPETITION_TIMEOUT_HOURS * 60 * 60 * 1000);
+  const nextCreated = nextComp?.created_at ? new Date(nextComp.created_at) : null;
+  return nextCreated && nextCreated < maxEnd ? nextCreated : maxEnd;
+}
+
 async function _fetchContracts(contractIds = []) {
   const ids = _normalizeArray(contractIds)
     .map((id) => Number.parseInt(id, 10))
@@ -55,6 +73,10 @@ async function _fetchContracts(contractIds = []) {
 }
 
 async function _collectGroupResult(agents = [], createdAt) {
+  return _collectGroupResultInWindow(agents, createdAt, null);
+}
+
+async function _collectGroupResultInWindow(agents = [], createdAt, windowEnd = null) {
   const normalizedAgents = _normalizeArray(agents)
     .map((name) => String(name || '').trim())
     .filter(Boolean);
@@ -72,11 +94,12 @@ async function _collectGroupResult(agents = [], createdAt) {
 
   const rows = await pgPool.query(
     'blog',
-    `SELECT id, title, char_count, content, metadata, created_at
+     `SELECT id, title, char_count, content, metadata, created_at
      FROM blog.posts
      WHERE created_at >= $1
-       AND metadata->>'writer_name' = ANY($2::text[])`,
-    [createdAt, normalizedAgents],
+       AND created_at < $2
+       AND metadata->>'writer_name' = ANY($3::text[])`,
+    [createdAt, windowEnd || new Date(Date.now() + COMPETITION_TIMEOUT_HOURS * 60 * 60 * 1000), normalizedAgents],
   );
 
   let charCount = 0;
@@ -100,7 +123,55 @@ async function _collectGroupResult(agents = [], createdAt) {
   };
 }
 
+async function _finalizeContracts(contractIds = [], status = 'completed', scoreResult = null) {
+  const ids = _normalizeArray(contractIds)
+    .map((id) => Number.parseInt(id, 10))
+    .filter((id) => Number.isInteger(id) && id > 0);
+
+  if (ids.length === 0) return;
+
+  const contracts = await pgPool.query(
+    'agent',
+    `SELECT id, agent_id
+     FROM agent.contracts
+     WHERE id = ANY($1::int[])`,
+    [ids],
+  );
+  if (contracts.length === 0) return;
+
+  await pgPool.run(
+    'agent',
+    `UPDATE agent.contracts
+     SET status = $1,
+         score_result = COALESCE($2, score_result),
+         completed_at = COALESCE(completed_at, NOW())
+     WHERE id = ANY($3::int[])`,
+    [status, scoreResult, ids],
+  );
+
+  const agentIds = contracts
+    .map((row) => Number.parseInt(row.agent_id, 10))
+    .filter((id) => Number.isInteger(id) && id > 0);
+
+  if (agentIds.length > 0) {
+    await pgPool.run(
+      'agent',
+      `UPDATE agent.registry
+       SET status = 'idle', updated_at = NOW()
+       WHERE id = ANY($1::int[])`,
+      [agentIds],
+    );
+  }
+}
+
 async function _markTimeout(competitionId, hoursSinceCreated) {
+  const competition = await pgPool.get(
+    'agent',
+    `SELECT group_a_contract_ids, group_b_contract_ids
+     FROM agent.competitions
+     WHERE id = $1`,
+    [competitionId],
+  );
   await pgPool.run(
     'agent',
     `UPDATE agent.competitions
@@ -108,6 +179,10 @@ async function _markTimeout(competitionId, hoursSinceCreated) {
      WHERE id = $1`,
     [competitionId],
   );
+  await _finalizeContracts([
+    ..._normalizeArray(competition?.group_a_contract_ids),
+    ..._normalizeArray(competition?.group_b_contract_ids),
+  ], 'failed', 0);
   console.log(`[competition-collector] #${competitionId} timeout (${Math.round(hoursSinceCreated)}h)`);
 }
 
@@ -139,14 +214,12 @@ async function main() {
       continue;
     }
 
-    const contractsA = await _fetchContracts(contractIdsA);
-    const contractsB = await _fetchContracts(contractIdsB);
-    const allADone = contractsA.length === contractIdsA.length
-      && contractsA.every((row) => ['completed', 'failed'].includes(String(row.status || '')));
-    const allBDone = contractsB.length === contractIdsB.length
-      && contractsB.every((row) => ['completed', 'failed'].includes(String(row.status || '')));
+    const windowEnd = await _resolveWindowEnd(comp.team || TEAM, comp.created_at);
+    const resultA = await _collectGroupResultInWindow(comp.group_a_agents, comp.created_at, windowEnd);
+    const resultB = await _collectGroupResultInWindow(comp.group_b_agents, comp.created_at, windowEnd);
+    const hasResult = resultA.published_count > 0 || resultB.published_count > 0;
 
-    if (!allADone || !allBDone) {
+    if (!hasResult) {
       const hours = _hoursSince(comp.created_at);
       if (hours >= COMPETITION_TIMEOUT_HOURS) {
         await _markTimeout(comp.id, hours);
@@ -157,9 +230,11 @@ async function main() {
       continue;
     }
 
-    const resultA = await _collectGroupResult(comp.group_a_agents, comp.created_at);
-    const resultB = await _collectGroupResult(comp.group_b_agents, comp.created_at);
     const result = await competitionEngine.completeCompetition(comp.id, resultA, resultB);
+    const winnerContractIds = result.winner === 'a' ? contractIdsA : contractIdsB;
+    const loserContractIds = result.winner === 'a' ? contractIdsB : contractIdsA;
+    await _finalizeContracts(winnerContractIds, 'completed', 8);
+    await _finalizeContracts(loserContractIds, 'completed', 4);
 
     completed += 1;
     console.log(`[competition-collector] #${comp.id} 완료 — winner=${result.winner} diff=${result.qualityDiff}`);
