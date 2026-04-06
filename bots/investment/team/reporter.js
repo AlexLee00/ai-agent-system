@@ -17,7 +17,7 @@ import ccxt            from 'ccxt';
 import { fileURLToPath } from 'url';
 import { createRequire }  from 'module';
 import * as db          from '../shared/db.js';
-import { loadSecrets, getMarketExecutionModeInfo } from '../shared/secrets.js';
+import { loadSecrets, initHubSecrets, getMarketExecutionModeInfo } from '../shared/secrets.js';
 import { tracker }      from '../shared/cost-tracker.js';
 import { buildAccuracyReport } from '../shared/analyst-accuracy.js';
 
@@ -134,6 +134,7 @@ function buildSection(title, lines) {
 // ─── 리포트 생성 ─────────────────────────────────────────────────────
 
 export async function generateReport({ days = 30, telegram = false } = {}) {
+  await initHubSecrets().catch(() => false);
   await db.initSchema();
 
   const today = kst.today();
@@ -214,7 +215,17 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
     const p = realCoinPrices[`${b.coin}/USDT`];
     return p ? s + b.total * p : s;
   }, 0);
-  const equity = (usdtBal?.free || 0) + coinUsdValue;
+  let equity = (usdtBal?.free || 0) + coinUsdValue;
+  let balanceSource = balances.length > 0 ? 'binance_live' : 'snapshot_fallback';
+
+  if (balances.length === 0) {
+    try {
+      const latestEquity = await db.getLatestEquity();
+      if (Number.isFinite(Number(latestEquity)) && Number(latestEquity) > 0) {
+        equity = Number(latestEquity);
+      }
+    } catch {}
+  }
 
   // 스냅샷 저장 후 히스토리 조회 (오늘 포함)
   try { await db.insertAssetSnapshot(equity, usdtBal?.free || 0); } catch {}
@@ -264,6 +275,8 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
   lines.push(`━━━ 바이낸스 실잔고 ━━━`);
   if (balances.length === 0) {
     lines.push(`  조회 실패`);
+    lines.push(`  USDT 가용: 조회 실패`);
+    lines.push(`  총 자산(추정): $${equity.toFixed(2)} (최신 스냅샷 기준)`);
   } else {
     for (const b of balances) {
       lines.push(`  ${b.coin}: ${b.total.toFixed(6)} (가용 ${b.free.toFixed(6)})`);
@@ -431,10 +444,13 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
               return `${modeLabel} [${row.exchange} / ${row.brokerAccountMode}]: ${row.count}건 | 총 거래금액 $${row.gross.toFixed(2)}`;
             })),
         buildSection('자산/비용', [
-          `USDT 가용: $${(usdtBal?.free || 0).toFixed(2)}`,
-          `총 자산(추정): $${equity.toFixed(2)}`,
+          balances.length === 0 ? 'USDT 가용: 조회 실패' : `USDT 가용: $${(usdtBal?.free || 0).toFixed(2)}`,
+          balances.length === 0
+            ? `총 자산(추정): $${equity.toFixed(2)} (최신 스냅샷 기준)`
+            : `총 자산(추정): $${equity.toFixed(2)}`,
           `오늘 LLM 비용: $${cost.usage.toFixed(4)} / $${cost.dailyBudget.toFixed(2)}`,
           `이번달 LLM 비용: $${cost.monthUsage.toFixed(4)} / $${cost.monthlyBudget.toFixed(2)}`,
+          `자산 집계 소스: ${balanceSource === 'binance_live' ? '바이낸스 실잔고' : '최신 스냅샷 fallback'}`,
         ]),
         buildSection(`신호 통계 (${days}일)`, [
           `총 신호: ${sigTotal}개`,
