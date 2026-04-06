@@ -31,10 +31,38 @@ function saveProposal(proposalData) {
   return proposalFile;
 }
 
+function _findProposalFile(proposalId) {
+  ensureDirs();
+  const exact = path.join(PROPOSALS_DIR, `${proposalId}.json`);
+  if (fs.existsSync(exact)) return exact;
+  const files = fs.readdirSync(PROPOSALS_DIR).filter((file) => file.includes(proposalId));
+  if (files.length === 0) return null;
+  return path.join(PROPOSALS_DIR, files[0]);
+}
+
+function loadProposal(proposalId) {
+  const proposalFile = _findProposalFile(proposalId);
+  if (!proposalFile) return null;
+  return JSON.parse(fs.readFileSync(proposalFile, 'utf8'));
+}
+
+function updateStatus(proposalId, status, extra = {}) {
+  const proposalFile = _findProposalFile(proposalId);
+  if (!proposalFile) return null;
+  const proposal = JSON.parse(fs.readFileSync(proposalFile, 'utf8'));
+  proposal.status = status;
+  proposal.updated_at = new Date().toISOString();
+  Object.assign(proposal, extra || {});
+  fs.writeFileSync(proposalFile, JSON.stringify(proposal, null, 2), 'utf8');
+  return proposal;
+}
+
 module.exports = {
   SANDBOX_DIR,
   PROPOSALS_DIR,
   ensureDirs,
   buildProposalId,
   saveProposal,
+  loadProposal,
+  updateStatus,
 };
