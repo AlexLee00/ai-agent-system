@@ -111,6 +111,7 @@ function verifyPrototype(code) {
 
 async function apply(paper) {
   console.log(`[applicator] 시작: ${String(paper.title || '').slice(0, 60)}`);
+  const proposalId = proposalStore.buildProposalId(paper);
 
   let proposal;
   try {
@@ -148,18 +149,11 @@ async function apply(paper) {
     verification.passed ? '승인하려면 "적용 승인"이라고 답해주세요.' : '검증 실패 — 수동 검토 필요.',
   ].filter(Boolean).join('\n');
 
-  const alarmResult = await postAlarm({
-    message: message.slice(0, 4000),
-    team: 'darwin',
-    alertLevel: 2,
-    fromBot: 'applicator',
-  });
-
-  const proposalId = proposalStore.buildProposalId(paper);
   const proposalData = {
     id: proposalId,
     arxiv_id: paper.arxiv_id,
     title: paper.title,
+    paper,
     korean_summary: paper.korean_summary,
     relevance_score: paper.relevance_score,
     proposal,
@@ -175,6 +169,17 @@ async function apply(paper) {
   } catch (err) {
     console.warn(`[applicator] 제안서 저장 실패: ${err.message}`);
   }
+
+  const alarmResult = await postAlarm({
+    message: message.slice(0, 4000),
+    team: 'darwin',
+    alertLevel: 2,
+    fromBot: 'applicator',
+    inlineKeyboard: verification.passed ? [[
+      { text: '✅ 승인 — 구현 시작', callback_data: `darwin_approve:${proposalId}` },
+      { text: '❌ 거절', callback_data: `darwin_reject:${proposalId}` },
+    ]] : null,
+  });
 
   return {
     proposal,

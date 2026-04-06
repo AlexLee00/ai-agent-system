@@ -37,6 +37,7 @@ const TEAM_TOPIC = {
 let _token = null;
 let _groupId = null;
 let _topicIds = null;
+let _telegramBotToken = null;
 
 function _readStoreToken() {
   try {
@@ -89,12 +90,55 @@ async function _getTopicInfo() {
   return { groupId: _groupId, topicIds: _topicIds };
 }
 
+async function _getTelegramBotToken() {
+  if (_telegramBotToken) return _telegramBotToken;
+
+  const telegramData = await fetchHubSecrets('telegram');
+  const reservationData = await fetchHubSecrets('reservation-shared');
+
+  _telegramBotToken = telegramData?.bot_token
+    || reservationData?.telegram_bot_token
+    || '';
+  return _telegramBotToken;
+}
+
+async function _sendInlineTelegram({ message, team, fromBot, topicId, groupId, inlineKeyboard }) {
+  const botToken = await _getTelegramBotToken();
+  if (!botToken || !groupId) {
+    console.warn('[openclaw-client] inline telegram 발송 실패: bot token/group id 미설정');
+    return { ok: false, error: 'no_telegram_token_or_group' };
+  }
+
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: groupId,
+        text: `[${fromBot}→${team}] ${message}`,
+        message_thread_id: topicId || undefined,
+        reply_markup: {
+          inline_keyboard: inlineKeyboard,
+        },
+      }),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+
+    const body = await res.json().catch(() => null);
+    return { ok: res.ok && body?.ok === true, status: res.status, body };
+  } catch (e) {
+    console.warn(`[openclaw-client] inline telegram 실패: ${e.message}`);
+    return { ok: false, error: e.message };
+  }
+}
+
 async function postAlarm({
   message,
   team = 'general',
   alertLevel = 2,
   fromBot = 'unknown',
   sessionKey,
+  inlineKeyboard = null,
 }) {
   const token = await _getToken();
   if (!token) {
@@ -110,6 +154,17 @@ async function postAlarm({
   const to = groupId
     ? (topicId ? `${groupId}:topic:${topicId}` : groupId)
     : undefined;
+
+  if (Array.isArray(inlineKeyboard) && inlineKeyboard.length > 0) {
+    return _sendInlineTelegram({
+      message: `${prefix}${message}`,
+      team,
+      fromBot,
+      topicId,
+      groupId,
+      inlineKeyboard,
+    });
+  }
 
   try {
     const res = await fetch(HOOK_URL, {
