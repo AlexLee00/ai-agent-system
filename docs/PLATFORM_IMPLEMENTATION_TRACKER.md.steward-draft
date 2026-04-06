@@ -18,10 +18,10 @@
 - **텔레그램 토픽**: ✅ 12토픽 완성! 10팀 개별 라우팅
 - **git 위생**: ✅ 히스토리 정리(43M→23M) + .gitignore 강화(53파일 추적해제)
 - **자율 고용 전팀 확산**: ✅ 5팀 완료! 블로/루나/다윈/저스틴/시그마 (300b501a)
-- **블로팀 Phase B**: 📋 코덱스 작성 완료 (CODEX_BLOG_PHASE_B_FEEDBACK.md 270줄)
+- **블로팀 Phase B**: ✅ 구현 완료! analyze-blog-performance.js + 성과 기반 작가 점수
 - **시그마팀 3중 피드백 루프**: ✅ 구현 완료! (c5857944, 809줄/7파일) 12에이전트
 - **데이터 자산화**: 📋 전략 문서 완료 (DUAL_FEEDBACK_LOOP.md §9)
-- **README 현대화**: ✅ 영어 리디자인 + MIT 라이센스 (47bfcbcc)
+- **README 현대화**: ✅ 영어 리디자인 + MIT 라이센스 + 라이트 에이전트 구현 완료!
 - **OpenClaw Phase 4**: ✅ 메인봇 퇴역 완료!
 - **경쟁 결과 확인**: 📋 내일 (월요일) 첫 결과!
 
@@ -475,6 +475,20 @@ packages/core/lib/rag.js — pgvector RAG (rag_experience 컬렉션 추가, 04-0
 | P3-15 | P3 | 웹 대시보드 | ⬜ | 장기 |
 | P3-16 | P3 | 문서 자동 생성 | ⬜ | 장기 |
 | P3-17 | P3 | 멀티 머신 스케일아웃 | ⬜ | 장기 |
+| CC-A | P2 | 통합 에이전트 루프 엔진 (agent-loop.js) | ⬜ | 분기 |
+| CC-B | P1 | 훅 시스템 (Pre/PostTaskRun) — P1-7 통합 | ⬜ | 이번 달 |
+| CC-C | P2 | 에이전트 동시성 분류 (안전/위험) | ⬜ | 분기 |
+| CC-D | P0 | 에이전트 권한 scope — P0-3 강화 | ⬜ | 이번 달 |
+| CC-E | P2 | 에이전트 컨텍스트 관리 (auto-compact) | ⬜ | 분기 |
+| CC-F | P1 | experience_record "why" 필드 | ⬜ | 이번 주 |
+| CC-G | P1 | 에러 보류+복구 패턴 — P2-12 강화 | ⬜ | 이번 주 |
+| CC-H | P2 | 리더-워커 4단계 (시그마팀) | ⬜ | 분기 |
+| ECC-1 | P2 | 메타 에이전트 강화 (시그마팀 확인) | ⬜ | 분기 |
+| ECC-2 | P1 | 핵심 스킬 추가 (search-first/verification-loop) | ⬜ | 이번 달 |
+| ECC-3 | P1 | 훅 시스템 3단계 프로파일 (CC-B 통합) | ⬜ | 이번 달 |
+| ECC-4 | P1 | 세션 종료 시 패턴 자동 추출 | ⬜ | 이번 주 |
+| ECC-5 | P1 | 보안 가이드 + 스킬 보안 스캔 | ⬜ | 이번 달 |
+| ECC-6 | P2 | 작업 유형별 동적 컨텍스트 | ⬜ | 분기 |
 
 ---
 
@@ -482,7 +496,7 @@ packages/core/lib/rag.js — pgvector RAG (rag_experience 컬렉션 추가, 04-0
 
 | 날짜 | 변경 |
 |------|------|
-| 04-06 | 시그마팀3중피드백루프(748줄)+12에이전트(hawk/dove/owl+optimizer/librarian/forecaster)+동적편성. 데이터자산화전략(5라벨+experience_record+거래준비). 자율고용5팀확산(저스틴+시그마specialty). 블로팀PhaseB코덱스(270줄). README현대화(영어+MIT). 라이트에이전트코덱스(203줄). sweeper추가. 시스템보완점분석15건(OpenHarness8출처). 121에이전트 |
+| 04-06 | 시그마팀3중피드백루프(748줄)+12에이전트(hawk/dove/owl+optimizer/librarian/forecaster)+동적편성. 데이터자산화전략(5라벨+experience_record+거래준비). 자율고용5팀확산(저스틴+시그마specialty). 블로팀PhaseB코덱스(270줄). README현대화(영어+MIT). 라이트에이전트코덱스(203줄). sweeper추가. 시스템보완점분석: OpenHarness(17건)+ClaudeCode소스(8건,CC-A~H)+ECC133K⭐(6건,ECC-1~6)=총31건추적. 연구문서3건(913줄). 121에이전트 |
 | 04-05 | 비서봇 스튜어드 구현+테스트 완료(b827a8a0): 8모듈(tracker-sync+codex-manager+session-closer+git-hygiene+env-sync+launchd+telegram+daily-summary). 4모드 전부 정상. LLM없음$0. 114에이전트. 비정상 launchd 8건 진단→2폐기+1리로드+5정상 |
 | 04-05 | 도서리뷰 4회연속실패 근본수정(64688e20): 스케줄 키 불일치(book_isbn→isbn) 해소. ISBN없으면 resolveBookForReview 자동보완. 텔레그램12토픽완성(5신규). git히스토리정리(43M→23M). .gitignore 강화(53파일 추적해제) |
 | 04-05 | 다윈Sprint1~3+튜닝4회 전체완료: Sprint1(arXiv+HF108건) Sprint2(자율고용+9도메인+모니터링) Sprint3(graft→edison→proof-r 296초/40평가/2제안). CC P0(연속실패제한+Strict Write). 알람4경로→postAlarm. Gemma4보류 |
@@ -500,46 +514,42 @@ packages/core/lib/rag.js — pgvector RAG (rag_experience 컬렉션 추가, 04-0
 | 2026-04-02 | 라이트 제안 반영: 신규 파일 6건 추적 추가 (experience-store, pickko-alerts-resolve, mainbot, filter, orchestrator scripts). 아키텍처 결정 7건 추가 (Phase 1~3, OAuth, 모델 재편성, Phase 4, n8n, self-improving, F7). 현재 과제 갱신. |
 | 2026-03-31 | 749줄→~200줄 대폭 압축. 03-19 이후 12일간 변화 반영. 맥미니→맥스튜디오, Ollama→MLX, Chronos Phase A, 문서 체계 v2, 블로팀 딥분석, 에러 해소 |
 | 2026-03-19 | 초기 작성 (749줄) |
-| 04-06 | [스튜어드 초안] docs: 최종 인수인계 — 14건 완료, 보완점 15건 추적 |
-| 04-06 | [스튜어드 초안] docs: 시스템 보완점 분석 15건 + 트래커 추적 등록 |
-| 04-06 | [스튜어드 초안] fix(core): retry transient local llm chat failures |
-| 04-06 | [스튜어드 초안] fix(luna): filter invalid crypto symbols and normalize TP/SL |
-| 04-06 | [스튜어드 초안] fix(reservation): harden manual registration queue handling |
-| 04-06 | [스튜어드 초안] fix(investment): avoid cross-closing journals across trade modes |
-| 04-06 | [스튜어드 초안] fix(reservation): prioritize manual pickko registrations |
-| 04-06 | [스튜어드 초안] fix(openclaw): auto-heal main ingress session models |
-| 04-06 | [스튜어드 초안] feat: Gemma 4 시범 배치 활성화 (write/maestro/rebecca) |
-| 04-06 | [스튜어드 초안] docs: 세션 인수인계 — 12건 완료, 3중 피드백 루프+데이터 자산화+README |
-| 04-06 | [스튜어드 초안] docs: 완료 코덱스 archive — Blog Phase B + Write README updater |
-| 04-06 | [스튜어드 초안] docs(auto): README stats update by write agent |
-| 04-06 | [스튜어드 초안] docs: switch license to MIT — open source ready |
-| 04-06 | [스튜어드 초안] docs: 라이트(Write) 에이전트 코덱스 — README 자동 업데이트 |
-| 04-06 | [스튜어드 초안] docs: README.md modern redesign — English, benchmarked from top GitHub repos |
-| 04-06 | [스튜어드 초안] feat(blog): Phase B feedback loop — performance-based writer scoring |
-| 04-06 | [스튜어드 초안] docs: 블로팀 Phase B 피드백 루프 코덱스 — 성과 기반 작가 점수 |
-| 04-06 | [스튜어드 초안] docs: 시그마팀 피드백 루프 + 자율 고용 코덱스 archive — 구현 완료! |
-| 04-06 | [스튜어드 초안] feat(sigma): add dynamic formation feedback loop |
-| 04-06 | [스튜어드 초안] feat(luna): add sweeper wallet reconciliation agent |
-| 04-06 | [스튜어드 초안] docs: 3중 피드백 루프 완성 — Layer 3 시그마 자기 피드백! |
-| 04-06 | [스튜어드 초안] docs: 데이터 자산화 전략 — 라벨링+재사용성+거래 준비 |
-| 04-06 | [스튜어드 초안] docs: 시그마팀 자체 피드백(메타 학습) — 전략+코덱스 반영 |
-| 04-06 | [스튜어드 초안] docs: 시그마팀 피드백 루프 코덱스 — 동적 편성 + 다성향 에이전트 |
-| 04-06 | [스튜어드 초안] docs: 2중 피드백 루프 전략 문서 — 팀 제이 핵심 성장 엔진 |
-| 04-06 | [스튜어드 초안] auto: 2026-04-05 15:47 자동 저장 |
-| 04-06 | [스튜어드 초안] fix(reservation): retry naver block after verify miss |
-| 04-06 | [스튜어드 초안] docs: 저스틴+시그마 자율 고용 코덱스 — specialty 기반 에이전트 매칭 |
-| 04-06 | [스튜어드 초안] docs: 완료 코덱스 archive — DOCTOR_LAUNCHD 이동, 활성 6개 |
-| 04-06 | [스튜어드 초안] fix(reservation): route ska alerts through postAlarm |
-| 04-06 | [스튜어드 초안] docs: 최종 인수인계 — 30건 완료, 코덱스 4건 전달 대기 |
-| 04-06 | [스튜어드 초안] ops: 메인봇 퇴역+Phase B 등록+도서리뷰 검증 확인 — TRACKER+코덱스 정리 |
-| 04-06 | [스튜어드 초안] docs: 메인봇 퇴역 + Phase B 등록 + 도서리뷰 확인 코덱스 |
-| 04-06 | [스튜어드 초안] docs: 스튜어드 비정상 8건 수정 코덱스 — 폐기2+리로드1+checkHealth개선 |
-| 04-06 | [스튜어드 초안] fix(investment): harden domestic validation and argos eval |
-| 04-06 | [스튜어드 초안] fix(orchestrator): correct event reminders node path |
-| 04-06 | [스튜어드 초안] tune(darwin): applicator groq 우선 — 무거운 프롬프트 timeout 제거 |
-| 04-06 | [스튜어드 초안] docs: 닥터 launchd 자율 헬스체크 코덱스 — 하드코딩→자율발견 전환! |
-| 04-06 | [스튜어드 초안] docs: 닥터 코덱스 확장 — 투자 서비스 18개 시간대별 체크 추가 |
-| 04-06 | [스튜어드 초안] docs: 닥터 launchd 헬스체크 코덱스 — 핵심 서비스 자동 복구 |
-| 04-06 | [스튜어드 초안] docs: 2차 세션 인수인계 — 10건 완료, 다윈 Level 3 + 도서리뷰 수정 + 스튜어드 테스트 |
-| 04-06 | [스튜어드 초안] docs: TRACKER 대규모 업데이트 + launchd 정리 코덱스 |
-| 04-06 | [스튜어드 초안] auto: 2026-04-05 09:47 자동 저장 |
+| 04-07 | [스튜어드 초안] auto: 2026-04-06 20:34 자동 저장 |
+| 04-07 | [스튜어드 초안] feat(skills): verification-loop 6단계 공용 스킬 확장! |
+| 04-07 | [스튜어드 초안] docs: verification-loop 공용 스킬 코덱스 — ECC 6단계 기반! |
+| 04-07 | [스튜어드 초안] auto: 2026-04-06 14:33 자동 저장 |
+| 04-07 | [스튜어드 초안] feat(sprint4): add telegram callback poller for darwin e2e |
+| 04-07 | [스튜어드 초안] docs: Sprint 4 E2E 실런 코덱스 — 텔레그램 콜백 폴링 + 인라인 키보드! |
+| 04-07 | [스튜어드 초안] docs: 최종 인수인계 — 22건 완료! Sprint4+2~4단계+보안+GitHub+E2E! |
+| 04-07 | [스튜어드 초안] feat(darwin): 연구 과제 시스템 실운영 테스트 성공! |
+| 04-07 | [스튜어드 초안] fix(hub): darwin-callback 보강 + auth 보안 패치 + hub 라우트 등록 |
+| 04-07 | [스튜어드 초안] docs: 보안 패치 코덱스 — 아처 보고서 기반! |
+| 04-07 | [스튜어드 초안] test: E2E 테스트 성공! GitHub 스킬 → ECC 분석 → 과제 저장 → 문서 생성! |
+| 04-07 | [스튜어드 초안] docs: 다윈팀 자율화 2~4단계 코덱스 — GitHub통합+연구과제+자율스킬! |
+| 04-07 | [스튜어드 초안] docs: 인수인계 정확한 상태 반영 — Sprint 4는 골격 완료, 실운영 검증 단계! |
+| 04-07 | [스튜어드 초안] docs: 메티 인수인계 (2026-04-06 세션) |
+| 04-07 | [스튜어드 초안] fix(core): github-client Hub secrets 연동! |
+| 04-07 | [스튜어드 초안] feat(skills): GitHub 분석 스킬 공용 레이어 등록! |
+| 04-07 | [스튜어드 초안] feat(core): GitHub 클라이언트 + 다윈팀 GitHub 분석 스킬! |
+| 04-07 | [스튜어드 초안] docs: 스킬/MCP 공용 레이어 전략 — 멀티 자율 에이전트의 핵심! |
+| 04-07 | [스튜어드 초안] docs: 다윈팀 GitHub 소스 분석 코덱스 — 클라이언트 + 스킬! |
+| 04-07 | [스튜어드 초안] docs: 다윈팀 Sprint 4 코덱스 — 자율 구현 파이프라인 Phase A~D! |
+| 04-07 | [스튜어드 초안] fix(blog): complete competitions from actual post results |
+| 04-07 | [스튜어드 초안] docs: 백테스트 엔진 전략 — Freqtrade 코드 분석 → chronos.js 완성! |
+| 04-07 | [스튜어드 초안] feat(blog): collect and finalize competition results |
+| 04-07 | [스튜어드 초안] docs: 경쟁 엔진 버그 수정 코덱스 — completeCompetition 자동 호출! |
+| 04-07 | [스튜어드 초안] tune(luna): prioritize groq for crypto analyst agents |
+| 04-07 | [스튜어드 초안] fix(darwin): arXiv rate limit 해결 — 429/timeout retry+backoff |
+| 04-07 | [스튜어드 초안] fix(darwin): retry arxiv fetches under rate limiting |
+| 04-07 | [스튜어드 초안] feat(luna): add aggregated stock position summaries |
+| 04-07 | [스튜어드 초안] docs: 다윈팀 arXiv rate limit 해결 코덱스 (173줄) |
+| 04-07 | [스튜어드 초안] docs: Sprint 4 Phase D 심화 — 자율 전환 프레임워크! |
+| 04-07 | [스튜어드 초안] docs: 오늘 할일 목록에 다윈팀 Sprint 4 추가 |
+| 04-07 | [스튜어드 초안] docs: 다윈팀 Sprint 4 전략 — 자율 연구→구현→검증 파이프라인! |
+| 04-07 | [스튜어드 초안] fix(luna): avoid zero asset report on balance fetch failure |
+| 04-07 | [스튜어드 초안] fix(reservation): suppress false naver block retry alerts |
+| 04-07 | [스튜어드 초안] docs: 블로팀 Phase B + 라이트 에이전트 완료 체크! 활성 코덱스 0개! |
+| 04-07 | [스튜어드 초안] docs: 트래커+인수인계 ECC 분석 반영 — 전체 31건 추적 |
+| 04-07 | [스튜어드 초안] docs: ECC(133K⭐) 분석 → 보완점 6건 추가 — 전체 31건 추적! |
+| 04-07 | [스튜어드 초안] docs: Claude Code 분석 보완점 8건 통합 — 전체 25건 추적 |
+| 04-07 | [스튜어드 초안] docs: Claude Code 소스 분석 → 팀 제이 개선점 12건 도출 |
