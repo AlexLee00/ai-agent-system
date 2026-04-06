@@ -376,8 +376,10 @@ async function blockNaverSlot(page, entry) {
     }
 
     let selectedStart = null;
+    let lastClickResult = null;
     for (let attempt = 1; attempt <= 2; attempt += 1) {
-      selectedStart = await clickRoomAvailableSlot(page, room, start);
+      lastClickResult = await clickRoomAvailableSlot(page, room, start);
+      selectedStart = lastClickResult?.ok ? lastClickResult.selectedStart : null;
       if (selectedStart) {
         await capture(`slot-clicked-${attempt}`);
         break;
@@ -394,6 +396,11 @@ async function blockNaverSlot(page, entry) {
       }
     }
     if (!selectedStart) {
+      if (lastClickResult?.looksAlreadyBlocked) {
+        log('  ℹ️ 요청 구간 주변 슬롯이 모두 예약불가 상태라 false negative로 판단합니다. 성공 처리합니다.');
+        await capture('already-blocked-false-negative');
+        return { ok: true, applied: false, reason: 'already_blocked_false_negative' };
+      }
       return { ok: false, applied: false, reason: 'slot_click_failed' };
     }
     if (selectedStart !== start) {
@@ -427,7 +434,8 @@ async function blockNaverSlot(page, entry) {
       log(`⚠️ 예약불가 팝업 적용 실패 (시도 ${attempt}/2)`);
       await capture(`popup-failed-${attempt}`);
       if (attempt < 2) {
-        const reopenedStart = await clickRoomAvailableSlot(page, room, selectedStart);
+        const reopenedResult = await clickRoomAvailableSlot(page, room, selectedStart);
+        const reopenedStart = reopenedResult?.ok ? reopenedResult.selectedStart : null;
         if (reopenedStart) {
           log(`↻ 팝업 재시도용 슬롯 재오픈 성공: ${reopenedStart}`);
           await capture(`popup-retry-ready-${attempt}`);
@@ -1103,18 +1111,49 @@ async function clickRoomAvailableSlot(page, roomRaw, startTime) {
     };
   }, roomType, timeDisplay, ampm, hourMin, startTime);
 
+  const looksAlreadyBlocked =
+    result?.reason === 'no_available_button_near_target_slot'
+    && Array.isArray(result?.fallbackCandidates)
+    && result.fallbackCandidates.length > 0
+    && result.fallbackCandidates.every((candidate) => {
+      if (candidate?.reason !== 'button_not_available') return false;
+      const btnText = String(candidate?.btnText || '');
+      const btnClass = String(candidate?.btnClass || '');
+      return btnText.includes('예약불가') || btnClass.includes('suspended') || btnClass.includes('btn-danger');
+    });
+
   log(`  예약가능 버튼: ${JSON.stringify(result)}`);
-  if (!result.found || !result.clicked) return false;
+  if (!result.found || !result.clicked) {
+    return {
+      ok: false,
+      reason: result?.reason || 'slot_click_failed',
+      looksAlreadyBlocked,
+      selectedStart: null,
+      raw: result,
+    };
+  }
 
   await delay(1200);
   if (await isSettingsPanelVisible(page)) {
     const effectiveStart = result.targetSlot24 || startTime;
     log(`  ✅ 설정 패널 열림 확인${result.targetLabel ? ` → 시작시간 ${effectiveStart} (${result.targetLabel})` : ''}`);
-    return effectiveStart;
+    return {
+      ok: true,
+      reason: 'clicked',
+      looksAlreadyBlocked: false,
+      selectedStart: effectiveStart,
+      raw: result,
+    };
   }
 
   log('  ❌ 버튼 클릭 후에도 설정 패널이 열리지 않음');
-  return null;
+  return {
+    ok: false,
+    reason: 'panel_not_opened',
+    looksAlreadyBlocked: false,
+    selectedStart: null,
+    raw: result,
+  };
 }
 
 // Step 4 (해제용): 해당 룸의 suspended(예약불가) 버튼 클릭
