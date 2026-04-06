@@ -403,3 +403,234 @@ Phase D (분기): 자율 레벨 시스템
   의존성: Phase C + 20건+ 데이터
   파일: 시그마팀 분석 연동
 ```
+
+
+---
+
+## 8. Phase D 심화 — 자율 전환 프레임워크 (핵심!)
+
+> "다윈팀의 자율 전환이 구조화되면, 모든 팀에 적용 가능한
+>  완전 자율 에이전트 시스템의 원형이 된다!"
+
+### 8-1. 왜 Phase D가 가장 중요한가
+
+```
+Phase A~C = 파이프라인 자동화 (도구)
+Phase D = 자율 판단 학습 (지능!)
+
+Phase A~C 없이도 수동으로 할 수 있다.
+Phase D가 있어야 비로소 "자율 에이전트"!
+
+Phase D 핵심 질문:
+  "edison이 구현한 코드를, 언제 믿을 수 있는가?"
+  "proof-r의 검증을, 언제 마스터 없이 신뢰할 수 있는가?"
+  → 데이터로 증명해야 한다!
+```
+
+### 8-2. 검증 데이터 수집 구조
+
+```javascript
+// 모든 자동 구현+검증마다 기록되는 데이터:
+{
+  // 제안 정보
+  proposal_id: 'arxiv_2406_12345',
+  paper_title: 'Adaptive ε-Greedy for Multi-Agent Selection',
+  domain: 'AI/멀티에이전트',       // 어떤 도메인?
+  target_team: 'luna',              // 어떤 팀에 적용?
+  complexity: 'medium',             // 복잡도 (graft 판단)
+
+  // 구현 정보
+  implementor: 'edison',
+  llm_model: 'claude-code/sonnet',
+  files_created: 3,
+  lines_added: 142,
+  implementation_time_ms: 45000,
+  syntax_check_passed: true,
+
+  // 검증 정보
+  verifier: 'proof-r',
+  verification_result: 'PASS',      // PASS / FAIL / NEEDS_REVIEW
+  verification_items: {
+    syntax: true,
+    conflict: true,
+    security: true,
+    performance: true,
+    style: true,
+  },
+  failure_reason: null,              // FAIL 시 원인
+
+  // 최종 결과
+  master_decision: 'merge',         // merge / reject / modify
+  post_merge_errors: 0,             // 머지 후 에러 수!
+  post_merge_days_stable: 14,       // 머지 후 안정 일수
+
+  // 메타
+  created_at: '2026-04-10T06:00:00Z',
+  level_at_time: 3,                 // 당시 자율 레벨
+}
+```
+
+### 8-3. 자율 전환 판단 알고리즘
+
+```javascript
+// bots/orchestrator/lib/research/autonomy-level.js (신규!)
+
+function evaluateAutonomyLevel(stats) {
+  const current = stats.currentLevel;
+
+  // === Level 3 → 4 승격 조건 ===
+  // "마스터 머지 불필요" = proof-r을 신뢰할 수 있는가?
+  if (current === 3) {
+    const conditions = {
+      // 최소 데이터: 20건 이상 검증 완료
+      enoughData: stats.totalVerified >= 20,
+      // proof-r 통과율 80% 이상
+      highPassRate: stats.passRate >= 0.80,
+      // 마스터가 proof-r PASS를 reject한 적 없음 (최근 10건)
+      masterAgreement: stats.recentMasterOverrides === 0,
+      // 머지 후 에러 0건 (최근 10건)
+      noPostMergeErrors: stats.recentPostMergeErrors === 0,
+    };
+    
+    if (Object.values(conditions).every(Boolean)) {
+      return { recommend: 4, reason: 'Level 4 승격 조건 충족', conditions };
+    }
+  }
+
+  // === Level 4 → 5 승격 조건 ===
+  // "마스터 승인 불필요" = 다윈팀이 스스로 판단할 수 있는가?
+  if (current === 4) {
+    const conditions = {
+      // 50건 이상 자동 머지 완료
+      enoughAutoMerge: stats.totalAutoMerged >= 50,
+      // proof-r 통과율 95% 이상
+      veryHighPassRate: stats.passRate >= 0.95,
+      // 자동 머지 후 30일+ 무장애
+      stableDays: stats.daysSinceLastError >= 30,
+      // 제안 품질: graft 제안 중 실제 적용 비율 70%+
+      goodProposalRate: stats.proposalApplyRate >= 0.70,
+    };
+    
+    if (Object.values(conditions).every(Boolean)) {
+      return { recommend: 5, reason: 'Level 5 승격 조건 충족!', conditions };
+    }
+  }
+
+  // === 강등 조건 (어떤 레벨이든!) ===
+  const demotion = {
+    // 머지 후 에러 발생 → 즉시 Level 3으로 강등!
+    postMergeError: stats.recentPostMergeErrors > 0,
+    // proof-r 통과율 급락 (직전 5건 중 3건 FAIL)
+    passRateDrop: stats.recentFailRate > 0.60,
+    // 마스터가 수동 개입 (reject 또는 revert)
+    masterIntervention: stats.recentMasterRejects > 0,
+  };
+
+  if (Object.values(demotion).some(Boolean)) {
+    return { recommend: 3, reason: '안전장치: Level 3으로 강등!', demotion };
+  }
+
+  return { recommend: current, reason: '현재 레벨 유지' };
+}
+```
+
+### 8-4. 자율 레벨별 동작
+
+```
+Level 3 (현재): 마스터 관리
+━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Scanner → Evaluator → graft 제안
+  → 텔레그램 [✅ 승인] [❌ 거절]     ← 마스터!
+  → edison 자동 구현 → darwin/* 브랜치
+  → proof-r 검증
+  → 텔레그램 [✅ 머지] [📝 검토]     ← 마스터!
+
+  마스터 관여: 2회 (승인 + 머지)
+
+
+Level 4 (자동 머지): 마스터 승인만
+━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Scanner → Evaluator → graft 제안
+  → 텔레그램 [✅ 승인] [❌ 거절]     ← 마스터! (이것만!)
+  → edison 자동 구현 → darwin/* 브랜치
+  → proof-r 검증
+  → PASS → 자동 머지!! (마스터 개입 없음!)
+  → FAIL → 텔레그램 알림 (수동 검토)
+
+  마스터 관여: 1회 (승인만)
+
+
+Level 5 (완전 자율): 마스터는 리포트만
+━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Scanner → Evaluator → graft 제안
+  → 자동 승인!! (마스터 개입 없음!)
+  → edison 자동 구현 → darwin/* 브랜치
+  → proof-r 검증
+  → PASS → 자동 머지!!
+  → FAIL → 자동 재시도 (최대 2회) → 실패 시 텔레그램 알림
+
+  마스터 관여: 0회! (주간 리포트만 확인)
+  
+  단, 안전장치:
+  ① core 모듈(packages/core) 변경 → Level 3으로 취급!
+  ② DB 스키마(ALTER TABLE) 변경 → Level 3으로 취급!
+  ③ 에러 발생 → 즉시 Level 3으로 강등!
+
+
+텔레그램 주간 자율 리포트:
+━━━━━━━━━━━━━━━━━━━━━━
+
+  📊 다윈팀 자율 리포트 (주간)
+  현재 자율 레벨: Level 4
+  이번 주: 구현 5건, 검증 통과 4건 (80%)
+  자동 머지: 4건
+  머지 후 에러: 0건 ✅
+  Level 5 까지: 통과율 95% 필요 (현재 80%)
+  → 조건 미충족, Level 4 유지
+```
+
+### 8-5. 다윈팀을 넘어 — 전체 팀 자율 전환 프레임워크
+
+```
+다윈팀에서 검증된 자율 전환 패턴 → 모든 팀에 적용!
+
+루나팀:
+  Level 3: 매매 시그널 → 마스터 확인 → 실행
+  Level 4: 매매 시그널 → 자동 실행 (리스크 한도 내)
+  Level 5: 전략 변경까지 자율! (주간 리포트만)
+  강등 조건: 큰 손실 발생 시 즉시 Level 3!
+
+블로팀:
+  Level 3: 게시물 초안 → 마스터 확인 → 발행
+  Level 4: 게시물 자동 발행 (성과 기반 작가 선택)
+  Level 5: 주제 선정까지 자율! (품질 검증만 자동)
+  강등 조건: 저품질 게시물 연속 시 Level 3!
+
+시그마팀:
+  Level 3: 분석 결과 → 마스터 확인 → 피드백 적용
+  Level 4: 분석 결과 자동 피드백 (Standing Orders 범위)
+  Level 5: 에이전트 편성 변경까지 자율!
+  강등 조건: 피드백 효과 없는 분석 연속 시 Level 3!
+
+= 팀별 자율 레벨을 독립적으로 관리!
+= 데이터로 증명된 신뢰 → 자율성 확대!
+= 실패 시 즉시 강등 → 안전!
+```
+
+### 8-6. 자율 전환의 핵심 원칙
+
+```
+① 데이터로 증명! — 감이 아니라 통계로 자율 레벨 결정
+② 점진적 확대! — Level 3→4→5 단계적 (한 번에 5 불가!)
+③ 즉시 강등! — 에러 1건이면 즉시 Level 3 (안전 최우선)
+④ 도메인별 독립! — 팀마다 다른 레벨 가능
+⑤ 위험한 작업은 예외! — core/DB는 항상 마스터 승인
+⑥ 투명한 리포트! — 마스터가 항상 자율 상태를 파악
+⑦ 3역할 유지! — 설계+구현+검증 분리는 불변!
+
+= "신뢰는 데이터로 쌓이고, 한순간에 무너진다"
+= 이것이 팀 제이의 Bounded Autonomy 원칙!
+```
