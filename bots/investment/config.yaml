@@ -244,12 +244,12 @@ capital_management:
       anthropicModel: claude-haiku-4-5-20251001
       agentRoutes:
         luna: groq_with_local      # Groq kimi-k2 → deepseek-r1-32b 폴백
-        nemesis: local_fast        # qwen2.5-7b → Groq 폴백
-        oracle: local_fast         # qwen2.5-7b → Groq 폴백
-        hermes: local_fast         # qwen2.5-7b (뉴스 요약)
-        sophia: local_fast         # qwen2.5-7b (감성 분석)
-        zeus: local_fast           # qwen2.5-7b (기술 분석)
-        athena: local_fast         # qwen2.5-7b (펀더멘탈)
+        nemesis: groq_scout        # Groq 우선 → local 병목 완화
+        oracle: groq_scout         # Groq 우선 → local 병목 완화
+        hermes: groq_scout         # Groq 우선 → local 병목 완화
+        sophia: groq_scout         # Groq 우선 → local 병목 완화
+        zeus: groq_scout           # Groq 우선 → local 병목 완화
+        athena: groq_scout         # Groq 우선 → local 병목 완화
 
 skills:
   - eval-harness
