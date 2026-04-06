@@ -10,6 +10,12 @@ const evaluator = require('./research-evaluator');
 const applicator = require('./applicator');
 const keywordEvolver = require('./keyword-evolver');
 const monitor = require('./research-monitor');
+const githubClient = require('../../../../packages/core/lib/github-client');
+const {
+  analyzeRepoStructure,
+  extractCodePatterns,
+  generateAnalysisSummary,
+} = require('../../../../packages/core/lib/skills/darwin/github-analysis');
 const rag = require('../../../../packages/core/lib/rag');
 const hiringContract = require('../../../../packages/core/lib/hiring-contract');
 const registry = require('../../../../packages/core/lib/agent-registry');
@@ -28,6 +34,25 @@ const MAX_DAILY_PROPOSALS = 2;
 
 function _sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function _extractGitHubRepo(paper) {
+  const text = [
+    paper?.summary,
+    paper?.korean_summary,
+    paper?.title,
+    paper?.reason,
+    paper?.url,
+    paper?.source_url,
+  ].filter(Boolean).join(' ');
+
+  const match = text.match(/github\.com\/([^/\s)"']+)\/([^/\s)"'.]+)/i);
+  if (!match) return null;
+
+  return {
+    owner: String(match[1] || '').trim(),
+    repo: String(match[2] || '').trim().replace(/\.git$/i, ''),
+  };
 }
 
 function _dedupePapers(papers) {
@@ -116,6 +141,64 @@ async function _collectPapers(searchers) {
   return [...arxivResults, ...trending, ...keywordPapers];
 }
 
+async function _enrichWithGitHub(evaluated) {
+  let enriched = 0;
+
+  for (const paper of evaluated) {
+    if (Number(paper?.relevance_score || 0) < 7) continue;
+    if (paper.github) continue;
+
+    const repoRef = _extractGitHubRepo(paper);
+    if (!repoRef) continue;
+
+    const owner = repoRef.owner;
+    const repoName = repoRef.repo;
+
+    try {
+      console.log(`[research-scanner] GitHub 분석: ${owner}/${repoName}`);
+
+      const repoInfo = await githubClient.getRepoInfo(owner, repoName);
+      const tree = await githubClient.getTree(owner, repoName, repoInfo.default_branch);
+      const structure = analyzeRepoStructure({ tree });
+
+      const topFiles = (structure.keyFiles || [])
+        .filter((file) => /\.(js|py|ts|go|rs)$/.test(file.path))
+        .slice(0, 3);
+
+      const fileContents = await githubClient.readFiles(
+        owner,
+        repoName,
+        topFiles.map((file) => file.path),
+        repoInfo.default_branch,
+        200
+      );
+
+      const codePatterns = fileContents
+        .filter((file) => !file.error)
+        .map((file) => extractCodePatterns(file));
+
+      const { summary } = generateAnalysisSummary({ repoInfo, structure, codePatterns });
+
+      paper.github = {
+        owner,
+        repo: repoName,
+        stars: Number(repoInfo.stars || 0),
+        language: repoInfo.language || '',
+        files: Number(structure.summary?.totalFiles || 0),
+        summary,
+      };
+
+      enriched += 1;
+      console.log(`[research-scanner] GitHub 분석 완료: ${owner}/${repoName} (⭐${repoInfo.stars || 0})`);
+      await _sleep(2_000);
+    } catch (err) {
+      console.warn(`[research-scanner] GitHub 분석 실패 (${owner}/${repoName}): ${err.message}`);
+    }
+  }
+
+  return enriched;
+}
+
 async function _storeExperienceIfNeeded(paper) {
   if ((paper.relevance_score || 0) < 7) return false;
   try {
@@ -158,6 +241,8 @@ async function _storeEvaluatedPapers(evaluated) {
           authors: paper.authors || '',
           published: paper.published,
           keyword: paper.keyword || '',
+          github_repo: paper.github ? `${paper.github.owner}/${paper.github.repo}` : '',
+          github_stars: Number(paper.github?.stars || 0),
           scanned_at: new Date().toISOString(),
         },
         'research-scanner'
@@ -321,6 +406,7 @@ async function run() {
     await _sleep(EVALUATION_DELAY_MS);
   }
 
+  const githubEnriched = await _enrichWithGitHub(evaluated);
   const { storedCount, experienceCount } = await _storeEvaluatedPapers(evaluated);
   const { highRelevanceCount, alarmSent } = await _alertHighRelevance(unique.length, evaluated, storedCount, startTime);
   const highRelevance = evaluated.filter((paper) => paper.relevance_score >= 7);
@@ -359,6 +445,7 @@ async function run() {
     highRelevance: highRelevanceCount,
     alarmSent,
     evaluationFailures,
+    githubAnalyzed: githubEnriched,
     durationSec,
     keywordEvolutionCount,
     proposals: proposalCount,
@@ -370,7 +457,7 @@ async function run() {
   await monitor.storeMetrics(metrics);
   await monitor.checkAnomalies(metrics);
   console.log(`[research-scanner] 메트릭: ${JSON.stringify(metrics)}`);
-  console.log(`[research-scanner] 완료: ${storedCount}건 저장, ${experienceCount}건 경험 저장, ${highRelevanceCount}건 후보 알림, 제안 ${proposalCount}건/검증통과 ${verifiedCount}건, 전달=${alarmSent ? '성공' : '실패/없음'}, ${durationSec}초`);
+  console.log(`[research-scanner] 완료: ${storedCount}건 저장, ${experienceCount}건 경험 저장, GitHub 분석 ${githubEnriched}건, ${highRelevanceCount}건 후보 알림, 제안 ${proposalCount}건/검증통과 ${verifiedCount}건, 전달=${alarmSent ? '성공' : '실패/없음'}, ${durationSec}초`);
 
   return result;
 }

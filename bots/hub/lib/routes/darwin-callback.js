@@ -5,6 +5,7 @@ const path = require('path');
 const env = require('../../../../packages/core/lib/env');
 const proposalStore = require('../../../orchestrator/lib/research/proposal-store');
 const autonomyLevel = require('../../../orchestrator/lib/research/autonomy-level');
+const researchTasks = require('../../../orchestrator/lib/research/research-tasks');
 
 const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
 
@@ -75,6 +76,30 @@ async function darwinCallbackRoute(req, res) {
       const verifier = require('../../../orchestrator/lib/research/verifier');
       setImmediate(() => verifier.mergeVerifiedProposal(proposalId));
       return res.json({ ok: true, action: 'merge_started', proposalId });
+    }
+
+    if (action === 'darwin_merge_skill') {
+      const task = researchTasks.loadTask(proposalId);
+      if (!task?.result?.branch) {
+        return res.status(404).json({ ok: false, error: 'skill task branch missing' });
+      }
+      await _answerCallbackQuery(callbackQueryId, '스킬 브랜치 머지를 시작합니다.');
+      const verifier = require('../../../orchestrator/lib/research/verifier');
+      setImmediate(async () => {
+        try {
+          await verifier.mergeBranch(task.result.branch, task.id);
+          researchTasks.updateTask(task.id, {
+            status: 'merged',
+            merged_at: new Date().toISOString(),
+          });
+        } catch (error) {
+          researchTasks.updateTask(task.id, {
+            status: 'merge_failed',
+            merge_error: error.message,
+          });
+        }
+      });
+      return res.json({ ok: true, action: 'skill_merge_started', proposalId });
     }
 
     return res.status(400).json({ ok: false, error: `unknown action: ${action}` });

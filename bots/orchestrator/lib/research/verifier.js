@@ -167,26 +167,28 @@ async function mergeVerifiedProposal(proposalId) {
   const proposal = proposalStore.loadProposal(proposalId);
   if (!proposal?.branch) throw new Error(`branch missing for proposal: ${proposalId}`);
 
+  const merged = await mergeBranch(proposal.branch, proposalId);
+  proposalStore.updateStatus(proposalId, 'merged', {
+    merged_at: new Date().toISOString(),
+    merged_branch: proposal.branch,
+  });
+  await postAlarm({
+    message: `🎉 다윈 제안 머지 완료\n📄 ${proposal.title || proposalId}\n🌿 ${proposal.branch}`,
+    team: 'darwin',
+    alertLevel: 2,
+    fromBot: 'proof-r',
+  });
+  return merged;
+}
+
+async function mergeBranch(branchName, label) {
   const originalBranch = _getCurrentBranch();
   try {
     _runGit(['checkout', 'main']);
-    _runGit(['merge', '--no-ff', proposal.branch, '-m', `merge(darwin): ${proposalId}`]);
-    proposalStore.updateStatus(proposalId, 'merged', {
-      merged_at: new Date().toISOString(),
-      merged_branch: proposal.branch,
-    });
-    await postAlarm({
-      message: `🎉 다윈 제안 머지 완료\n📄 ${proposal.title || proposalId}\n🌿 ${proposal.branch}`,
-      team: 'darwin',
-      alertLevel: 2,
-      fromBot: 'proof-r',
-    });
-    return { ok: true };
+    _runGit(['merge', '--no-ff', branchName, '-m', `merge(darwin): ${label}`]);
+    return { ok: true, branch: branchName };
   } catch (error) {
     autonomyLevel.recordError(error);
-    proposalStore.updateStatus(proposalId, 'merge_failed', {
-      error: error.message,
-    });
     throw error;
   } finally {
     try {
@@ -198,4 +200,5 @@ async function mergeVerifiedProposal(proposalId) {
 module.exports = {
   triggerVerification,
   mergeVerifiedProposal,
+  mergeBranch,
 };
