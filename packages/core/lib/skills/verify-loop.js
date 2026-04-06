@@ -33,6 +33,15 @@ function normalizeError(err) {
   return String(err);
 }
 
+function _stripStringsAndComments(content) {
+  return String(content)
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/\/\/.*$/gm, ' ')
+    .replace(/`(?:\\[\s\S]|[^`])*`/g, '``')
+    .replace(/'(?:\\.|[^'\\])*'/g, "''")
+    .replace(/"(?:\\.|[^"\\])*"/g, '""');
+}
+
 function phaseSyntax(files, cwd) {
   const jsFiles = getJsFiles(files);
   const failures = [];
@@ -61,39 +70,46 @@ function phaseSyntax(files, cwd) {
 
 function phaseStyle(files, cwd) {
   const jsFiles = getJsFiles(files);
+  const failures = [];
   const warnings = [];
 
   for (const file of jsFiles) {
-    const issues = [];
+    const blockingIssues = [];
+    const advisoryIssues = [];
 
     try {
       const content = fs.readFileSync(path.join(cwd, file), 'utf8');
       const lines = content.split('\n');
+      const sanitized = _stripStringsAndComments(content);
 
       if (!content.startsWith("'use strict'")) {
-        issues.push("'use strict' 누락");
+        blockingIssues.push("'use strict' 누락");
       }
-      if (/console\.log\(/.test(content) && !/\/\/\s*(debug|TODO)/.test(content)) {
-        issues.push('console.log 발견 (console.warn/error 권장)');
+      if (/\bvar\s+[A-Za-z_$]/.test(sanitized)) {
+        blockingIssues.push('var 사용 (const/let 권장)');
       }
-      if (/\bvar\s+/.test(content)) {
-        issues.push('var 사용 (const/let 권장)');
+      if (/console\.log\(/.test(sanitized)) {
+        advisoryIssues.push('console.log 발견 (console.warn/error 권장)');
       }
       if (lines.length > 500) {
-        issues.push(`파일 ${lines.length}줄 (500줄 이하 권장)`);
+        advisoryIssues.push(`파일 ${lines.length}줄 (500줄 이하 권장)`);
       }
       if (/module\.exports/.test(content) && !/\/\*\*/.test(content)) {
-        issues.push('JSDoc 주석 없음');
+        advisoryIssues.push('JSDoc 주석 없음');
       }
     } catch {}
 
-    if (issues.length > 0) {
-      warnings.push({ file, issues });
+    if (blockingIssues.length > 0) {
+      failures.push({ file, issues: blockingIssues });
+    }
+    if (advisoryIssues.length > 0) {
+      warnings.push({ file, issues: advisoryIssues });
     }
   }
 
   return {
-    pass: warnings.length === 0,
+    pass: failures.length === 0,
+    failures,
     warnings,
     checked: jsFiles.length,
   };
@@ -191,12 +207,11 @@ function _buildResult(report) {
     if (!result.pass) {
       if (Array.isArray(result.failures)) {
         result.failures.slice(0, 5).forEach((failure) => {
-          lines.push(`   ${failure.file}: ${failure.error}`);
-        });
-      }
-      if (Array.isArray(result.warnings)) {
-        result.warnings.slice(0, 5).forEach((warning) => {
-          lines.push(`   ${warning.file}: ${warning.issues.join(', ')}`);
+          if (failure.error) {
+            lines.push(`   ${failure.file}: ${failure.error}`);
+          } else if (Array.isArray(failure.issues)) {
+            lines.push(`   ${failure.file}: ${failure.issues.join(', ')}`);
+          }
         });
       }
       if (Array.isArray(result.findings)) {
@@ -204,6 +219,12 @@ function _buildResult(report) {
           lines.push(`   ${finding.file}:${finding.line} ${finding.type}`);
         });
       }
+    }
+
+    if (Array.isArray(result.warnings) && result.warnings.length > 0) {
+      result.warnings.slice(0, 5).forEach((warning) => {
+        lines.push(`   ℹ ${warning.file}: ${warning.issues.join(', ')}`);
+      });
     }
   }
 
