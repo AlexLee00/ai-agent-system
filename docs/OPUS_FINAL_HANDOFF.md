@@ -54,16 +54,21 @@ launchd: 76서비스
 
 ```
 확인:
-  📋 다윈 groq 전환 후 시간 (내일 06:00)
+  📋 다윈 groq 전환 후 시간 (오늘 06:00 자동 실행)
   📋 도서리뷰 정상 발행 확인
-  📋 첫 경쟁 결과 (내일 월요일!)
+  📋 첫 경쟁 결과 확인! 🏆
+
+다윈팀 Sprint 4:
+  📋 Phase A: 텔레그램 승인 버튼 (인라인 키보드)
+  📋 Phase B: edison 자동 구현 → 브랜치 커밋
+  📋 Phase C: proof-r 자동 검증 + 머지 버튼
+  📋 Phase D: 검증 데이터 학습 → 자율 레벨 전환
 
 보완점 (이번 주):
-  📋 P0-1 핵심 모듈 테스트 시작
-  📋 P1-5 중앙 로거 도입
   📋 CC-F experience_record "why" 필드 추가
   📋 CC-G 에러 보류+복구 패턴
-  📋 ECC-4 세션 종료 시 패턴 자동 추출
+  📋 P0-1 핵심 모듈 테스트 시작
+  📋 P1-5 중앙 로거 도입
 
 보완점 (이번 달):
   📋 P0-2 에이전트 간 통신 (pg LISTEN/NOTIFY)
@@ -72,6 +77,9 @@ launchd: 76서비스
   📋 ECC-2 핵심 스킬 추가 (search-first/verification-loop)
   📋 ECC-5 보안 가이드 + 스킬 보안 스캔
   📋 P2-13 전체 시스템 백업
+
+전략 문서:
+  📋 다윈팀 Sprint 4: DARWIN_SPRINT4_AUTONOMOUS_PIPELINE.md (405줄)
 ```
 
 ---
