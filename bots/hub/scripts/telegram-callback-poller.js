@@ -30,7 +30,10 @@ function _readSecrets() {
 
 function _getBotToken() {
   const store = _readSecrets();
-  return store?.telegram?.bot_token
+  return store?.darwin?.telegram_bot_token
+    || store?.telegram?.darwin_bot_token
+    || process.env.DARWIN_TELEGRAM_BOT_TOKEN
+    || store?.telegram?.bot_token
     || store?.reservation?.telegram_bot_token
     || process.env.TELEGRAM_BOT_TOKEN
     || '';
