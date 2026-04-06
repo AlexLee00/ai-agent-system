@@ -6,8 +6,11 @@
  */
 
 const ARXIV_API_URL = 'http://export.arxiv.org/api/query';
-const REQUEST_TIMEOUT_MS = 15_000;
-const RATE_LIMIT_DELAY_MS = 3_000;
+const REQUEST_TIMEOUT_MS = 30_000;
+const KEYWORD_DELAY_MS = 5_000;
+const DOMAIN_DELAY_MS = 5_000;
+const MAX_RETRIES = 2;
+const RETRY_BASE_DELAY_MS = 5_000;
 
 const DOMAIN_KEYWORDS = {
   neuron: ['multi-agent system LLM', 'autonomous agent tool use', 'agent orchestration'],
@@ -23,6 +26,49 @@ const DOMAIN_KEYWORDS = {
 
 function _sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function _shouldRetry(err, status) {
+  if (status === 429) return true;
+  if ([500, 502, 503, 504].includes(status)) return true;
+  if (!err) return false;
+  const message = String(err.message || '').toLowerCase();
+  return message.includes('timed out')
+    || message.includes('timeout')
+    || message.includes('aborted')
+    || err.name === 'TimeoutError';
+}
+
+async function _fetchWithRetry(url, context) {
+  let lastError = null;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+      if (res.ok) return res;
+
+      if (!_shouldRetry(null, res.status) || attempt === MAX_RETRIES) {
+        console.warn(`[arxiv-client] ${context} 실패: HTTP ${res.status}`);
+        return res;
+      }
+
+      const delay = RETRY_BASE_DELAY_MS * (2 ** attempt);
+      console.warn(`[arxiv-client] ${context} 재시도 예정: HTTP ${res.status} (${attempt + 1}/${MAX_RETRIES})`);
+      await _sleep(delay);
+    } catch (err) {
+      lastError = err;
+
+      if (!_shouldRetry(err) || attempt === MAX_RETRIES) {
+        throw err;
+      }
+
+      const delay = RETRY_BASE_DELAY_MS * (2 ** attempt);
+      console.warn(`[arxiv-client] ${context} 재시도 예정: ${err.message} (${attempt + 1}/${MAX_RETRIES})`);
+      await _sleep(delay);
+    }
+  }
+
+  throw lastError || new Error(`${context} arXiv fetch 실패`);
 }
 
 function _buildQuery(keyword) {
@@ -70,11 +116,12 @@ async function searchByDomain(domain, maxResults = 20) {
   for (const keyword of keywords) {
     const query = _buildQuery(keyword);
     const url = `${ARXIV_API_URL}?search_query=${query}&start=0&max_results=${perKeyword}&sortBy=submittedDate&sortOrder=descending`;
+    const context = `${domain}/${keyword}`;
 
     try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+      const res = await _fetchWithRetry(url, context);
       if (!res.ok) {
-        console.warn(`[arxiv-client] ${domain}/${keyword} 실패: HTTP ${res.status}`);
+        console.warn(`[arxiv-client] ${context} 실패: HTTP ${res.status}`);
       } else {
         const xml = await res.text();
         const entries = _parseArxivXml(xml);
@@ -86,11 +133,13 @@ async function searchByDomain(domain, maxResults = 20) {
         results.push(...entries);
       }
     } catch (err) {
-      console.warn(`[arxiv-client] ${domain}/${keyword} 실패: ${err.message}`);
+      console.warn(`[arxiv-client] ${context} 실패: ${err.message}`);
     }
 
-    await _sleep(RATE_LIMIT_DELAY_MS);
+    await _sleep(KEYWORD_DELAY_MS);
   }
+
+  await _sleep(DOMAIN_DELAY_MS);
 
   return results;
 }
