@@ -42,7 +42,14 @@ ${TEAM_CONTEXT}
 예상 효과: (1~2줄)
 구현 난이도: (★~★★★★★)
 필요 파일: (수정/생성할 파일 경로)`,
-    userPrompt: `논문: ${paper.title}\n요약: ${paper.korean_summary}\n적합성: ${paper.relevance_score}점\n이유: ${paper.reason}`,
+    userPrompt: `논문: ${paper.title}
+요약: ${paper.korean_summary}
+적합성: ${paper.relevance_score}점
+이유: ${paper.reason}${paper.github ? `
+
+## GitHub 소스 분석 (${paper.github.owner}/${paper.github.repo})
+⭐ ${paper.github.stars} | 📝 ${paper.github.language} | 📂 ${paper.github.files}파일
+${paper.github.summary}` : ''}`,
     logMeta: { team: 'darwin', bot: 'graft', requestType: 'proposal_generation' },
     timeoutMs: 12_000,
   });
