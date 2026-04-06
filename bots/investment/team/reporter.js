@@ -97,6 +97,39 @@ function summarizePositionsByModeAndExchange(positions = [], prices = {}) {
   return Object.values(buckets).sort((a, b) => a.mode.localeCompare(b.mode) || a.exchange.localeCompare(b.exchange));
 }
 
+function summarizeStockPositionsBySymbol(positions = [], exchange = 'kis') {
+  const rows = positions.filter((pos) => pos.exchange === exchange && !pos.paper);
+  const buckets = new Map();
+
+  for (const pos of rows) {
+    const key = pos.symbol;
+    const current = buckets.get(key) || {
+      symbol: pos.symbol,
+      totalAmount: 0,
+      totalCost: 0,
+      modes: new Set(),
+      legs: 0,
+    };
+    const amount = Number(pos.amount || 0);
+    const avgPrice = Number(pos.avg_price || 0);
+    current.totalAmount += amount;
+    current.totalCost += amount * avgPrice;
+    current.modes.add(pos.trade_mode || 'normal');
+    current.legs += 1;
+    buckets.set(key, current);
+  }
+
+  return Array.from(buckets.values())
+    .map((row) => ({
+      symbol: row.symbol,
+      totalAmount: row.totalAmount,
+      weightedAvgPrice: row.totalAmount > 0 ? row.totalCost / row.totalAmount : 0,
+      modes: Array.from(row.modes).sort(),
+      legs: row.legs,
+    }))
+    .sort((a, b) => a.symbol.localeCompare(b.symbol));
+}
+
 // ─── 바이낸스 실잔고 조회 ───────────────────────────────────────────
 
 async function fetchBinanceBalance() {
@@ -246,6 +279,8 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
   const pnl = await db.getTodayPnl();
   const tradeBreakdown = summarizeTradesByModeAndExchange(trades);
   const positionBreakdown = summarizePositionsByModeAndExchange(positions, posPrices);
+  const domesticSymbolTotals = summarizeStockPositionsBySymbol(positions, 'kis');
+  const overseasSymbolTotals = summarizeStockPositionsBySymbol(positions, 'kis_overseas');
 
   // ── 7. 분석팀 정확도 ────────────────────────────────────────────────
   let accuracyReport = null;
@@ -369,6 +404,18 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
       const modeLabel = row.mode === 'live' ? 'LIVE' : 'PAPER';
       const pnlSign = row.unrealized >= 0 ? '+' : '';
       lines.push(`    ${modeLabel} [${row.exchange} / ${row.brokerAccountMode}]: ${row.positions}개 | 평가 $${row.marketValue.toFixed(2)} | 미실현 ${pnlSign}$${row.unrealized.toFixed(2)}`);
+    }
+  }
+  if (domesticSymbolTotals.length > 0) {
+    lines.push(`  국내 심볼 합산:`);
+    for (const row of domesticSymbolTotals) {
+      lines.push(`    ${row.symbol}: ${row.totalAmount}주 | 가중평단 ${row.weightedAvgPrice.toFixed(2)}원 | legs=${row.legs} | modes=${row.modes.join('+')}`);
+    }
+  }
+  if (overseasSymbolTotals.length > 0) {
+    lines.push(`  해외 심볼 합산:`);
+    for (const row of overseasSymbolTotals) {
+      lines.push(`    ${row.symbol}: ${row.totalAmount}주 | 가중평단 $${row.weightedAvgPrice.toFixed(2)} | legs=${row.legs} | modes=${row.modes.join('+')}`);
     }
   }
   lines.push(``);
