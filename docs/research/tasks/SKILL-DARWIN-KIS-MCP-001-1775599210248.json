@@ -1,0 +1,53 @@
+{
+  "id": "SKILL-DARWIN-KIS-MCP-001-1775599210248",
+  "title": "koreainvestment/open-trading-api 패턴 → 스킬 자동 생성",
+  "type": "skill_creation",
+  "target": {
+    "owner": "koreainvestment",
+    "repo": "open-trading-api"
+  },
+  "description": "⭐1218 유의미 레포 — 1186파일 심층 분석 필요",
+  "assignee": "edison",
+  "priority": 3,
+  "sourceAnalysis": {
+    "repoInfo": {
+      "name": "koreainvestment/open-trading-api",
+      "description": "Korea Investment & Securities Open API Github",
+      "stars": 1218,
+      "language": "Python",
+      "default_branch": "main",
+      "updated_at": "2026-04-07T14:22:43Z",
+      "topics": [
+        "ai-trading",
+        "api-samples",
+        "autotrade",
+        "chatgpt",
+        "claude",
+        "finance",
+        "investment",
+        "koreainvestment",
+        "llm",
+        "mcp",
+        "open-trading-api",
+        "openapi",
+        "python",
+        "realtime",
+        "rest-api",
+        "stock-trading",
+        "stocks",
+        "trading",
+        "trading-api",
+        "websocket"
+      ]
+    },
+    "patternCount": 3,
+    "triggerReason": "significant_repo"
+  },
+  "targetCategory": "shared",
+  "skillName": "open-trading-api-patterns",
+  "status": "pending",
+  "created_at": "2026-04-07T22:00:10.248Z",
+  "started_at": null,
+  "completed_at": null,
+  "result": null
+}
