@@ -1,5 +1,5 @@
 import * as db from '../shared/db.js';
-import { notifySignal } from '../shared/report.js';
+import { notifySignal, notifyTradeSkip } from '../shared/report.js';
 import { loadLatestNodePayload } from './helpers.js';
 
 const NODE_ID = 'L32';
@@ -26,6 +26,25 @@ async function run({ sessionId, market, symbol }) {
       skipped: true,
       reason: `승인 상태 아님: ${saved.status}`,
       signalId: saved.signalId,
+    };
+  }
+
+  const isDustExitSell = signal.action === 'SELL' && Number(signal.amount_usdt || 0) <= 0;
+  if (isDustExitSell) {
+    await notifyTradeSkip({
+      symbol: signal.symbol,
+      action: signal.action,
+      reason: '최소 수량 미만 잔여 포지션 가능성 — dust 청산 후보로 보류',
+    }).catch(() => {});
+
+    return {
+      symbol,
+      market,
+      signalId: saved.signalId,
+      notified: false,
+      skipped: true,
+      reason: 'dust_exit_sell_suppressed',
+      status: saved.status,
     };
   }
 

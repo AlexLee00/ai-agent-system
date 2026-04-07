@@ -116,16 +116,18 @@ export function notifyRiskRejection({ symbol, action, reason }) {
 }
 
 export function notifyTradeSkip({ symbol, action, reason, balance, openPositions, maxPositions, confidence }) {
+  const compactReason = compactReasoning(reason, 80);
+  const isDustSkip = /최소 매도 수량 미달|dust/i.test(String(reason || ''));
   const lines = [
-    `⚠️ ${symbol} ${action} 스킵`,
+    `${isDustSkip ? '🧹' : '⚠️'} ${symbol} ${action} ${isDustSkip ? 'dust 스킵' : '스킵'}`,
     DIVIDER,
-    `사유: ${compactReasoning(reason, 80)}`,
+    `사유: ${compactReason}`,
   ];
   if (confidence != null) lines.push(`시그널 신뢰도: ${((confidence || 0) * 100).toFixed(0)}%`);
   if (balance !== undefined) lines.push(`💰 가용 잔고: $${parseFloat(balance).toFixed(2)}`);
   if (openPositions !== undefined) lines.push(`📋 동시 포지션: ${openPositions}/${maxPositions}`);
   lines.push(SMALL_DIVIDER);
-  return publishLunaMessage({ message: lines.join('\n'), eventType: 'alert', alertLevel: 2 });
+  return publishLunaMessage({ message: lines.join('\n'), eventType: 'alert', alertLevel: isDustSkip ? 1 : 2 });
 }
 
 export function notifyCircuitBreaker({ reason, type, dailyPnL, weeklyPnL }) {

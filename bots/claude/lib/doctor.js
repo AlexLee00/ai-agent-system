@@ -352,7 +352,7 @@ function discoverServices() {
     try {
       if (fs.existsSync(plistPath)) {
         const plistContent = execSync(`plutil -p "${plistPath}"`, { encoding: 'utf8', timeout: 3000 });
-        keepAlive = plistContent.includes('"KeepAlive"') && plistContent.includes('true');
+        keepAlive = /"KeepAlive"\s*=>\s*true\b/.test(plistContent);
       }
     } catch {
       keepAlive = false;
