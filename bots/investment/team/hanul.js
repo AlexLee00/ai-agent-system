@@ -248,6 +248,8 @@ async function checkKisRisk(signal) {
   if (!isKisSymbol(symbol)) return { approved: false, reason: `KIS 국내 심볼 아님: ${symbol}` };
   if (action === ACTIONS.HOLD)  return { approved: true };
   if (action === ACTIONS.BUY) {
+    const kisPaperMode = isKisPaper();
+    const accountModeLabel = kisPaperMode ? 'mock' : 'real';
     if (isKisPaper()) {
       const cooldownMinutes = getMockUntradableSymbolCooldownMinutes();
       const recentBlocked = await db.getRecentBlockedSignalByCode({
@@ -274,38 +276,38 @@ async function checkKisRisk(signal) {
     try {
       const kis = await getKis();
       if (typeof kis.getDomesticPrice === 'function') {
-        const currentPrice = Number(await kis.getDomesticPrice(symbol, isKisPaper()));
+        const currentPrice = Number(await kis.getDomesticPrice(symbol, kisPaperMode));
         if (!(currentPrice > 0)) {
-          return { approved: false, reason: `${symbol} 국내 현재가 0원 응답 — 거래불가 종목으로 판단` };
+          return { approved: false, reason: `${symbol} 국내 현재가 0원 응답 — 거래불가 종목으로 판단 (${accountModeLabel})` };
         }
         if (amountKrw < currentPrice) {
           return {
             approved: false,
-            reason: `1주 가격 미달 (${amountKrw?.toLocaleString()}원 < ${currentPrice.toLocaleString()}원)`,
+            reason: `1주 가격 미달 (${amountKrw?.toLocaleString()}원 < ${currentPrice.toLocaleString()}원, ${accountModeLabel})`,
           };
         }
       }
       if (typeof kis.getDomesticBalance === 'function') {
-        const balance = await kis.getDomesticBalance(isKisPaper());
+        const balance = await kis.getDomesticBalance(kisPaperMode);
         const depositKrw = Number(balance?.dnca_tot_amt || 0);
         const spendableKrw = Math.max(0, depositKrw - KIS_ORDER_CASH_BUFFER_KRW);
         if (depositKrw <= 0) {
           return {
             approved: false,
-            reason: `국내 예수금 확인 실패 또는 0원 (${depositKrw?.toLocaleString?.() || depositKrw}원)`,
+            reason: `국내 예수금 확인 실패 또는 0원 (${depositKrw?.toLocaleString?.() || depositKrw}원, ${accountModeLabel})`,
           };
         }
         if (amountKrw > spendableKrw) {
           return {
             approved: false,
-            reason: `주문가능금액 초과 (${amountKrw?.toLocaleString()}원 > 가용 ${spendableKrw.toLocaleString()}원, 예수금 ${depositKrw.toLocaleString()}원)`,
+            reason: `주문가능금액 초과 (${amountKrw?.toLocaleString()}원 > 가용 ${spendableKrw.toLocaleString()}원, 예수금 ${depositKrw.toLocaleString()}원, ${accountModeLabel})`,
           };
         }
       }
     } catch (e) {
       return {
         approved: false,
-        reason: `${symbol} 국내 현재가 사전검증 실패 — ${e.message}`,
+        reason: `${symbol} 국내 현재가 사전검증 실패 (${accountModeLabel}) — ${e.message}`,
       };
     }
   }
