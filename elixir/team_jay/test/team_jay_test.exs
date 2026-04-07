@@ -47,4 +47,11 @@ defmodule TeamJayTest do
     assert is_list(report.agents)
     assert report.summary.total >= 1
   end
+
+  test "shadow report can be published" do
+    report = Diagnostics.publish_shadow_report()
+    assert is_map(report)
+    assert Map.has_key?(report, :summary)
+    assert report.summary.total >= 1
+  end
 end
