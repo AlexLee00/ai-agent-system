@@ -45,6 +45,43 @@ const EXCHANGE_MAP = {
   crypto:   'binance',
 };
 
+function formatSignedPercent(value, digits = 2) {
+  const num = Number(value || 0);
+  return `${num >= 0 ? '+' : ''}${num.toFixed(digits)}%`;
+}
+
+function aggregatePositionsBySymbol(rows = []) {
+  const grouped = new Map();
+  for (const row of rows) {
+    const symbol = String(row.symbol || '').trim();
+    if (!symbol) continue;
+    const amount = Number(row.amount || 0);
+    const avgPrice = Number(row.avg_price || 0);
+    const unrealized = Number(row.unrealized_pnl || 0);
+    const costBasis = amount * avgPrice;
+    const entry = grouped.get(symbol) || {
+      symbol,
+      amount: 0,
+      costBasis: 0,
+      unrealizedPnl: 0,
+      tradeModes: new Set(),
+    };
+    entry.amount += amount;
+    entry.costBasis += costBasis;
+    entry.unrealizedPnl += unrealized;
+    entry.tradeModes.add(String(row.trade_mode || 'normal'));
+    grouped.set(symbol, entry);
+  }
+
+  return [...grouped.values()].map((entry) => ({
+    symbol: entry.symbol,
+    amount: entry.amount,
+    unrealized_pnl: entry.unrealizedPnl,
+    pnl_pct: entry.costBasis > 0 ? (entry.unrealizedPnl / entry.costBasis) * 100 : null,
+    trade_modes: [...entry.tradeModes],
+  }));
+}
+
 async function getMarketAlertStatus(market) {
   if (market === 'domestic') return getKisMarketStatus();
   if (market === 'overseas') return getKisOverseasMarketStatus();
@@ -102,6 +139,7 @@ async function sendOpenAlert(market, label) {
   // 현재 보유 포지션 (해당 거래소)
   const allPositions = await db.getAllPositions();
   const positions    = allPositions.filter(p => p.exchange === exchange && p.amount > 0);
+  const aggregatedPositions = aggregatePositionsBySymbol(positions);
 
   const lines = [
     `📈 ${label} 장 시작!`,
@@ -127,14 +165,13 @@ async function sendOpenAlert(market, label) {
     lines.push(`[장외 연구] ${updatedAt} 갱신 / ${prescreened.research.symbolCount || symbols.length}개 종목`);
   }
 
-  if (positions.length > 0) {
+  if (aggregatedPositions.length > 0) {
     lines.push('');
-    lines.push(`[보유 포지션] ${positions.length}개`);
-    for (const p of positions) {
-      const pnl = p.unrealized_pnl != null
-        ? ` (${p.unrealized_pnl >= 0 ? '+' : ''}${Number(p.unrealized_pnl).toFixed(2)}%)`
-        : '';
-      lines.push(`  ${p.symbol}: ${Number(p.amount).toFixed(4)}주${pnl}`);
+    lines.push(`[보유 포지션] ${aggregatedPositions.length}개 (심볼 합산)`);
+    for (const p of aggregatedPositions) {
+      const pnl = p.pnl_pct != null ? ` (${formatSignedPercent(p.pnl_pct)})` : '';
+      const modes = p.trade_modes.length > 1 ? ` [${p.trade_modes.join('+')}]` : '';
+      lines.push(`  ${p.symbol}: ${Number(p.amount).toFixed(4)}주${pnl}${modes}`);
     }
   } else {
     lines.push(`[보유 포지션] 없음`);
@@ -145,7 +182,7 @@ async function sendOpenAlert(market, label) {
     event_type:  'market_open',
     alert_level: 1,
     message:     lines.join('\n'),
-    payload:     { market, exchange, symbols, positionCount: positions.length },
+    payload:     { market, exchange, symbols, positionCount: aggregatedPositions.length },
   });
 
   console.log(`[market-alert] ${label} 장 시작 알림 발송 완료`);
@@ -179,6 +216,7 @@ async function sendCloseReport(market, label) {
   // 현재 보유 포지션
   const allPositions = await db.getAllPositions();
   const positions    = allPositions.filter(p => p.exchange === exchange && p.amount > 0);
+  const aggregatedPositions = aggregatePositionsBySymbol(positions);
   const summarizeSymbols = (items = [], limit = 5) => {
     const values = items.filter(Boolean);
     if (values.length <= limit) return values.join(', ');
@@ -196,8 +234,8 @@ async function sendCloseReport(market, label) {
   const summarizePositions = (rows = [], limit = 3) => {
     if (rows.length === 0) return ['없음'];
     const mapped = rows.slice(0, limit).map((p) => {
-      const pnl = p.unrealized_pnl != null
-        ? ` ${p.unrealized_pnl >= 0 ? '+' : ''}${Number(p.unrealized_pnl).toFixed(1)}%`
+      const pnl = p.pnl_pct != null
+        ? ` ${formatSignedPercent(p.pnl_pct, 1)}`
         : '';
       return `${p.symbol} ${Number(p.amount).toFixed(4)}주${pnl}`;
     });
@@ -235,8 +273,8 @@ async function sendCloseReport(market, label) {
 
   // 보유 포지션 현황
   lines.push('');
-  lines.push(`[보유 포지션] ${positions.length > 0 ? `${positions.length}개 (익일 이월)` : '없음'}`);
-  for (const line of summarizePositions(positions)) lines.push(`  ${line}`);
+  lines.push(`[보유 포지션] ${aggregatedPositions.length > 0 ? `${aggregatedPositions.length}개 (심볼 합산)` : '없음'}`);
+  for (const line of summarizePositions(aggregatedPositions)) lines.push(`  ${line}`);
 
   lines.push('');
   lines.push(DIVIDER);
@@ -247,7 +285,7 @@ async function sendCloseReport(market, label) {
     event_type:  'market_close_report',
     alert_level: trades.length > 0 ? 2 : 1,
     message:     lines.join('\n'),
-    payload:     { market, exchange, tradeCount: trades.length, positionCount: positions.length, date: today },
+    payload:     { market, exchange, tradeCount: trades.length, positionCount: aggregatedPositions.length, date: today },
   });
 
   console.log(`[market-alert] ${label} 장 마감 매매일지 발송 완료 (거래 ${trades.length}건)`);
@@ -269,6 +307,7 @@ async function sendCryptoDailyReport(label) {
 
   const allPositions = await db.getAllPositions();
   const positions    = allPositions.filter(p => p.exchange === 'binance' && p.amount > 0);
+  const aggregatedPositions = aggregatePositionsBySymbol(positions);
 
   const lines = [
     `${label} 일일 보고`,
@@ -294,14 +333,13 @@ async function sendCryptoDailyReport(label) {
     lines.push(`[24시간 매매] 거래 없음`);
   }
 
-  if (positions.length > 0) {
+  if (aggregatedPositions.length > 0) {
     lines.push('');
-    lines.push(`[보유 포지션] ${positions.length}개`);
-    for (const p of positions) {
-      const pnl = p.unrealized_pnl != null
-        ? ` (${p.unrealized_pnl >= 0 ? '+' : ''}${Number(p.unrealized_pnl).toFixed(2)}%)`
-        : '';
-      lines.push(`  ${p.symbol}: ${Number(p.amount).toFixed(6)}${pnl}`);
+    lines.push(`[보유 포지션] ${aggregatedPositions.length}개 (심볼 합산)`);
+    for (const p of aggregatedPositions) {
+      const pnl = p.pnl_pct != null ? ` (${formatSignedPercent(p.pnl_pct)})` : '';
+      const modes = p.trade_modes.length > 1 ? ` [${p.trade_modes.join('+')}]` : '';
+      lines.push(`  ${p.symbol}: ${Number(p.amount).toFixed(6)}${pnl}${modes}`);
     }
   } else {
     lines.push('');
@@ -313,7 +351,7 @@ async function sendCryptoDailyReport(label) {
     event_type:  'crypto_daily_report',
     alert_level: 1,
     message:     lines.join('\n'),
-    payload:     { market: 'crypto', tradeCount: trades.length, positionCount: positions.length, date: today },
+    payload:     { market: 'crypto', tradeCount: trades.length, positionCount: aggregatedPositions.length, date: today },
   });
 
   console.log(`[market-alert] 암호화폐 일일 보고 발송 완료 (거래 ${trades.length}건)`);
