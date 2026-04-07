@@ -3,7 +3,7 @@ defmodule TeamJay.Agents.PortAgent do
   use GenServer
   require Logger
 
-  defstruct [:name, :script, :schedule, :port, :status, :last_run, :runs]
+  defstruct [:name, :team, :script, :schedule, :port, :status, :last_run, :runs]
 
   def child_spec(opts) do
     name = Keyword.fetch!(opts, :name)
@@ -30,16 +30,22 @@ defmodule TeamJay.Agents.PortAgent do
   @impl true
   def init(opts) do
     name = Keyword.fetch!(opts, :name)
+    team = Keyword.fetch!(opts, :team)
     script = Keyword.fetch!(opts, :script)
     schedule = Keyword.get(opts, :schedule)
 
     Logger.info("[#{name}] 시작!")
+    record_event(:info, "#{name} 시작", "port_agent_started", team, name, %{
+      script: script,
+      schedule: schedule_to_string(schedule)
+    })
     if schedule == :once, do: send(self(), :run)
     if match?({:interval, _}, schedule), do: schedule_run(schedule)
 
     {:ok,
      %__MODULE__{
        name: name,
+       team: team,
        script: script,
        schedule: schedule,
        port: nil,
@@ -64,8 +70,17 @@ defmodule TeamJay.Agents.PortAgent do
   def handle_info({port, {:exit_status, code}}, %{port: port} = state) do
     if code == 0 do
       Logger.info("[#{state.name}] 완료! (runs: #{state.runs + 1})")
+      record_event(:info, "#{state.name} 완료", "port_agent_completed", state.team, state.name, %{
+        script: state.script,
+        runs: state.runs + 1
+      })
     else
       Logger.warning("[#{state.name}] 종료 코드: #{code}")
+      record_event(:warn, "#{state.name} 실패", "port_agent_failed", state.team, state.name, %{
+        script: state.script,
+        exit_code: code,
+        runs: state.runs + 1
+      })
     end
 
     {:noreply, %{state | port: nil, status: :idle, runs: state.runs + 1}}
@@ -81,6 +96,11 @@ defmodule TeamJay.Agents.PortAgent do
 
   defp execute_script(%{port: nil} = state) do
     Logger.info("[#{state.name}] 실행: #{state.script}")
+    record_event(:info, "#{state.name} 실행", "port_agent_run", state.team, state.name, %{
+      script: state.script,
+      schedule: schedule_to_string(state.schedule),
+      runs: state.runs
+    })
 
     port =
       Port.open({:spawn_executable, System.find_executable("node")}, [
@@ -97,4 +117,21 @@ defmodule TeamJay.Agents.PortAgent do
   defp execute_script(state), do: state
 
   defp schedule_run({:interval, ms}), do: Process.send_after(self(), :run, ms)
+
+  defp record_event(severity, title, event_type, team, bot_name, metadata) do
+    TeamJay.EventLake.record(%{
+      event_type: event_type,
+      team: Atom.to_string(team),
+      bot_name: Atom.to_string(bot_name),
+      severity: Atom.to_string(severity),
+      title: title,
+      message: title,
+      tags: ["phase3", "port_agent", "team:#{team}"],
+      metadata: metadata
+    })
+  end
+
+  defp schedule_to_string(nil), do: "manual"
+  defp schedule_to_string(:once), do: "once"
+  defp schedule_to_string({:interval, ms}), do: "interval:#{ms}"
 end
