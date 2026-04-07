@@ -105,7 +105,7 @@ async function darwinCallbackRoute(req, res) {
     }
 
     if (action === 'darwin_merge_skill') {
-      const task = researchTasks.loadTask(proposalId);
+      const task = await researchTasks.loadTask(proposalId);
       if (!task?.result?.branch) {
         return res.status(404).json({ ok: false, error: 'skill task branch missing' });
       }
@@ -114,12 +114,12 @@ async function darwinCallbackRoute(req, res) {
       setImmediate(async () => {
         try {
           await verifier.mergeBranch(task.result.branch, task.id);
-          researchTasks.updateTask(task.id, {
+          await researchTasks.updateTask(task.id, {
             status: 'merged',
             merged_at: new Date().toISOString(),
           });
         } catch (error) {
-          researchTasks.updateTask(task.id, {
+          await researchTasks.updateTask(task.id, {
             status: 'merge_failed',
             merge_error: error.message,
           });
@@ -129,7 +129,7 @@ async function darwinCallbackRoute(req, res) {
     }
 
     if (action === 'darwin_create_skill') {
-      const parentTask = researchTasks.loadTask(proposalId);
+      const parentTask = await researchTasks.loadTask(proposalId);
       if (!parentTask?.result) {
         return res.status(404).json({ ok: false, error: 'parent task result missing' });
       }

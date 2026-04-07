@@ -8,6 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { callWithFallback } = require('../../../../packages/core/lib/llm-fallback');
+const pgPool = require('../../../../packages/core/lib/pg-pool');
 const githubClient = require('../../../../packages/core/lib/github-client');
 const {
   analyzeRepoStructure,
@@ -18,6 +19,16 @@ const {
 const TASKS_DIR = path.join(__dirname, '../../../../docs/research/tasks');
 const DOCS_DIR = path.join(__dirname, '../../../../docs/research');
 const REPO_ROOT = path.join(__dirname, '../../../..');
+const RUNTIME_STATUS_KEYS = new Set([
+  'status',
+  'started_at',
+  'completed_at',
+  'result',
+  'merged_at',
+  'merge_error',
+  'updated_at',
+]);
+let _statusInitPromise = null;
 
 /**
  * @typedef {Object} ResearchTask
@@ -43,6 +54,31 @@ function ensureDir() {
   fs.mkdirSync(DOCS_DIR, { recursive: true });
 }
 
+async function ensureTaskStatusSchema() {
+  if (_statusInitPromise) return _statusInitPromise;
+  _statusInitPromise = (async () => {
+    await pgPool.run('agent', `
+      CREATE TABLE IF NOT EXISTS agent.task_status (
+        task_id TEXT PRIMARY KEY,
+        task_type TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        started_at TIMESTAMPTZ,
+        completed_at TIMESTAMPTZ,
+        runtime JSONB NOT NULL DEFAULT '{}'::jsonb,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await pgPool.run('agent', `
+      CREATE INDEX IF NOT EXISTS idx_agent_task_status_status
+      ON agent.task_status(status, updated_at DESC)
+    `);
+  })().catch((error) => {
+    _statusInitPromise = null;
+    throw error;
+  });
+  return _statusInitPromise;
+}
+
 function _taskPath(taskId) {
   return path.join(TASKS_DIR, `${taskId}.json`);
 }
@@ -53,6 +89,70 @@ function _loadAllTasks() {
     .filter((file) => file.endsWith('.json'))
     .map((file) => JSON.parse(fs.readFileSync(path.join(TASKS_DIR, file), 'utf8')))
     .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+}
+
+async function _loadTaskStatusMap(taskIds = []) {
+  await ensureTaskStatusSchema();
+  const ids = Array.from(new Set((taskIds || []).filter(Boolean)));
+  if (ids.length === 0) return new Map();
+  const rows = await pgPool.query(
+    'agent',
+    `SELECT task_id, status, started_at, completed_at, runtime, updated_at
+       FROM agent.task_status
+      WHERE task_id = ANY($1::text[])`,
+    [ids],
+  ).catch(() => []);
+  const map = new Map();
+  for (const row of rows || []) {
+    map.set(row.task_id, row);
+  }
+  return map;
+}
+
+function _mergeTaskWithStatus(task, statusRow) {
+  if (!statusRow) return task;
+  return {
+    ...task,
+    status: statusRow.status || task.status,
+    started_at: statusRow.started_at || task.started_at || null,
+    completed_at: statusRow.completed_at || task.completed_at || null,
+    ...(statusRow.runtime && typeof statusRow.runtime === 'object' ? statusRow.runtime : {}),
+    runtime_updated_at: statusRow.updated_at || null,
+  };
+}
+
+async function _upsertTaskRuntimeStatus(taskId, taskType, updates = {}) {
+  await ensureTaskStatusSchema();
+  const status = String(updates.status || 'pending').trim();
+  const startedAt = updates.started_at || null;
+  const completedAt = updates.completed_at || null;
+  /** @type {Record<string, any>} */
+  const runtime = { ...updates };
+  delete runtime.status;
+  delete runtime.started_at;
+  delete runtime.completed_at;
+
+  await pgPool.run(
+    'agent',
+    `INSERT INTO agent.task_status (
+       task_id, task_type, status, started_at, completed_at, runtime, updated_at
+     ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, NOW())
+     ON CONFLICT (task_id) DO UPDATE SET
+       task_type = COALESCE(EXCLUDED.task_type, agent.task_status.task_type),
+       status = EXCLUDED.status,
+       started_at = COALESCE(EXCLUDED.started_at, agent.task_status.started_at),
+       completed_at = COALESCE(EXCLUDED.completed_at, agent.task_status.completed_at),
+       runtime = COALESCE(agent.task_status.runtime, '{}'::jsonb) || EXCLUDED.runtime,
+       updated_at = NOW()`,
+    [
+      taskId,
+      taskType || null,
+      status,
+      startedAt,
+      completedAt,
+      JSON.stringify(runtime),
+    ],
+  );
 }
 
 function _normalizeRepoPart(value) {
@@ -87,28 +187,37 @@ function createTask(task) {
 
 /**
  * @param {string} taskId
- * @returns {ResearchTask|null}
+ * @returns {Promise<ResearchTask|null>}
  */
-function loadTask(taskId) {
+async function loadTask(taskId) {
   const filePath = _taskPath(taskId);
   if (!fs.existsSync(filePath)) return null;
-  return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  const task = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  const statusMap = await _loadTaskStatusMap([taskId]).catch(() => new Map());
+  return _mergeTaskWithStatus(task, statusMap.get(taskId));
 }
 
 /**
- * @returns {ResearchTask[]}
+ * @returns {Promise<ResearchTask[]>}
  */
-function getPendingTasks() {
-  return _loadAllTasks()
+async function getPendingTasks() {
+  const tasks = _loadAllTasks();
+  const statusMap = await _loadTaskStatusMap(tasks.map((task) => task.id)).catch(() => new Map());
+  return tasks
+    .map((task) => _mergeTaskWithStatus(task, statusMap.get(task.id)))
     .filter((task) => task.status === 'pending')
     .sort((a, b) => Number(a.priority || 5) - Number(b.priority || 5));
 }
 
 /**
- * @returns {ResearchTask[]}
+ * @returns {Promise<ResearchTask[]>}
  */
-function getCompletedTasks() {
-  return _loadAllTasks().filter((task) => task.status === 'completed');
+async function getCompletedTasks() {
+  const tasks = _loadAllTasks();
+  const statusMap = await _loadTaskStatusMap(tasks.map((task) => task.id)).catch(() => new Map());
+  return tasks
+    .map((task) => _mergeTaskWithStatus(task, statusMap.get(task.id)))
+    .filter((task) => task.status === 'completed');
 }
 
 function hasTaskForRepo(owner, repo, types) {
@@ -133,15 +242,28 @@ function hasTaskForRepo(owner, repo, types) {
 /**
  * @param {string} taskId
  * @param {Partial<ResearchTask>} updates
- * @returns {ResearchTask|null}
+ * @returns {Promise<ResearchTask|null>}
  */
-function updateTask(taskId, updates) {
+async function updateTask(taskId, updates) {
   const filePath = _taskPath(taskId);
   if (!fs.existsSync(filePath)) return null;
   const task = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-  Object.assign(task, updates || {});
-  fs.writeFileSync(filePath, JSON.stringify(task, null, 2), 'utf8');
-  return task;
+  const patch = updates || {};
+  const runtimeUpdates = {};
+  const fileUpdates = {};
+  for (const [key, value] of Object.entries(patch)) {
+    if (RUNTIME_STATUS_KEYS.has(key)) runtimeUpdates[key] = value;
+    else fileUpdates[key] = value;
+  }
+  if (Object.keys(fileUpdates).length > 0) {
+    Object.assign(task, fileUpdates);
+    fs.writeFileSync(filePath, JSON.stringify(task, null, 2), 'utf8');
+  }
+  if (Object.keys(runtimeUpdates).length > 0) {
+    await _upsertTaskRuntimeStatus(taskId, task.type, runtimeUpdates);
+  }
+  const statusMap = await _loadTaskStatusMap([taskId]).catch(() => new Map());
+  return _mergeTaskWithStatus(task, statusMap.get(taskId));
 }
 
 /**
@@ -153,7 +275,7 @@ async function executeGitHubAnalysis(task) {
   const repo = task?.target?.repo;
   if (!owner || !repo) throw new Error('github target owner/repo required');
 
-  updateTask(task.id, { status: 'running', started_at: new Date().toISOString() });
+  await updateTask(task.id, { status: 'running', started_at: new Date().toISOString() });
 
   try {
     const repoInfo = await githubClient.getRepoInfo(owner, repo);
@@ -204,7 +326,7 @@ async function executeGitHubAnalysis(task) {
       docPath,
     };
 
-    updateTask(task.id, {
+    await updateTask(task.id, {
       status: 'completed',
       completed_at: new Date().toISOString(),
       result,
@@ -212,7 +334,7 @@ async function executeGitHubAnalysis(task) {
 
     return result;
   } catch (err) {
-    updateTask(task.id, {
+    await updateTask(task.id, {
       status: 'failed',
       completed_at: new Date().toISOString(),
       result: { error: err.message },
@@ -239,7 +361,7 @@ function _extractCodeBlock(text) {
  * @returns {Promise<any>}
  */
 async function executeSkillCreation(task) {
-  updateTask(task.id, { status: 'running', started_at: new Date().toISOString() });
+  await updateTask(task.id, { status: 'running', started_at: new Date().toISOString() });
 
   try {
     const skillDir = task.targetCategory || 'shared';
@@ -315,7 +437,7 @@ ${JSON.stringify(task.sourceAnalysis || {}, null, 2)}
       linesOfCode: code.split('\n').length,
     };
 
-    updateTask(task.id, {
+    await updateTask(task.id, {
       status: syntaxOk ? 'completed' : 'failed',
       completed_at: new Date().toISOString(),
       result,
@@ -323,7 +445,7 @@ ${JSON.stringify(task.sourceAnalysis || {}, null, 2)}
 
     return result;
   } catch (err) {
-    updateTask(task.id, {
+    await updateTask(task.id, {
       status: 'failed',
       completed_at: new Date().toISOString(),
       result: { error: err.message },
@@ -382,6 +504,7 @@ module.exports = {
   getCompletedTasks,
   hasTaskForRepo,
   updateTask,
+  ensureTaskStatusSchema,
   executeGitHubAnalysis,
   executeSkillCreation,
   autoCreateSkillTaskFromAnalysis,

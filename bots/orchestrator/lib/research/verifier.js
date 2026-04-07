@@ -240,8 +240,12 @@ async function mergeBranch(branchName, label) {
     throw error;
   } finally {
     try {
-      _runGit(['checkout', originalBranch]);
-    } catch {}
+      _runGit(['checkout', 'main']);
+    } catch {
+      try {
+        _runGit(['checkout', originalBranch]);
+      } catch {}
+    }
   }
 }
 
