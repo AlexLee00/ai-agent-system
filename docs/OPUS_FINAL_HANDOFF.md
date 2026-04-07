@@ -107,6 +107,9 @@
 - ✅ 시그마팀 → 데이터 사이언스팀 격상 결정!
 - 📋 Phase A 피드백 엔진 가동! (CODEX_PHASE_A_FEEDBACK_ENGINE.md 380줄! 코덱스 전달!)
   → 시그마 launchd + event_lake 5곳 연동 + logger 3곳!
+- ✅ KIS Open Trading API 분석! (MCP/backtester/strategy_builder 발견!)
+  → 개선점 5가지: MCP매매/indicator포팅/DSL/codegen/웹UI!
+  → DARWIN-KIS-MCP-001 연구 과제 등록!
 - 📋 Sprint 4 실제 제안 풀런 (내일 06:00 확인!)
 
 ### 이번 달

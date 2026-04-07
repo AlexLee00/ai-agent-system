@@ -352,6 +352,21 @@ CREATE INDEX idx_event_lake_no_feedback ON agent.event_lake (team, timestamp DES
 
 ### 아키텍처 철학: 독립 + 공유 = 진화!
 
+### KIS Open Trading API 분석 (2026-04-07!)
+
+> 참조: https://github.com/koreainvestment/open-trading-api
+
+```
+개선점 5가지:
+  1. KIS MCP Trading → 루나팀 자연어 매매! (base.py 36KB!)
+  2. indicator.py (40KB) → chronos.js 기술 지표 포팅!
+  3. 전략 DSL → 선언적 전략 정의 + LLM 자동 생성!
+  4. codegen → edison 코드 자동 생성 참조!
+  5. 백테스트 웹 UI → 워커 웹 통합!
+
+연구 과제: DARWIN-KIS-MCP-001
+```
+
 ### 피드백 루프 보완 3가지 (커뮤니티/연구 기반!)
 
 > 참조: AITL 논문(Airbnb), NVIDIA MAPE, Self-Evolving Data Flywheel
