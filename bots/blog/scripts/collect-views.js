@@ -2,9 +2,11 @@
 'use strict';
 
 const path = require('path');
+const os = require('os');
 const puppeteer = require('puppeteer');
 
 const { parseNaverBlogUrl } = require(path.join(__dirname, '../../../packages/core/lib/naver-blog-url'));
+const { getBlogCommenterConfig } = require('../lib/runtime-config');
 const { getViewCollectionCandidates, recordPerformancePartial } = require('../lib/publ');
 
 const NAV_TIMEOUT_MS = 45000;
@@ -49,6 +51,14 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function expandHome(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return raw;
+  if (raw === '~') return os.homedir();
+  if (raw.startsWith('~/')) return path.join(os.homedir(), raw.slice(2));
+  return raw;
+}
+
 async function collectRenderedStats(page, url) {
   await page.goto(url, { waitUntil: 'networkidle2', timeout: NAV_TIMEOUT_MS });
   await sleep(1500);
@@ -85,8 +95,10 @@ async function collectRenderedStats(page, url) {
 }
 
 async function withBrowser(fn, { headful = false } = {}) {
+  const config = getBlogCommenterConfig();
   const browser = await puppeteer.launch({
     headless: headful ? false : 'new',
+    userDataDir: expandHome(config.profileDir || '~/.openclaw/workspace/naver-profile'),
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
   });
   try {
