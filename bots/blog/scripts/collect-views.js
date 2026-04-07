@@ -45,9 +45,13 @@ function extractViewsFromPayload(payload = {}) {
   };
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function collectRenderedStats(page, url) {
   await page.goto(url, { waitUntil: 'networkidle2', timeout: NAV_TIMEOUT_MS });
-  await page.waitForTimeout(1500);
+  await sleep(1500);
 
   const primary = await page.evaluate(() => {
     const body = document.body ? document.body.innerText : '';
