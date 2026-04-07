@@ -37,7 +37,8 @@ async function main() {
   if (binancePositions.length > 0) {
     try {
       const exchange = new ccxt.binance({ enableRateLimit: true });
-      const tickers = await exchange.fetchTickers(binancePositions.map(p => p.symbol));
+      const symbols = [...new Set(binancePositions.map((p) => p.symbol).filter(Boolean))];
+      const tickers = await exchange.fetchTickers(symbols);
       for (const [sym, ticker] of Object.entries(tickers)) {
         binancePrices[sym] = ticker.last;
       }
