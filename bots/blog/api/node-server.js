@@ -26,7 +26,7 @@ const pipelineStore  = require('../lib/pipeline-store');
 const richer         = require('../lib/richer');
 const posWriter      = require('../lib/pos-writer');
 const gemsWriter     = require('../lib/gems-writer');
-const qualityChecker = require('../lib/quality-checker');
+const { checkQualityEnhanced } = require('../lib/quality-checker');
 const pgPool         = require('../../../packages/core/lib/pg-pool');
 const { initHubConfig } = require('../../../packages/core/lib/llm-keys');
 const { parseNaverBlogUrl } = require('../../../packages/core/lib/naver-blog-url');
@@ -295,7 +295,14 @@ app.post('/api/blog/node/write-general', async (req, res) => {
  * → RAG 스토어에서 컨텐츠 조회 → 품질 검증 → 저장
  */
 app.post('/api/blog/node/quality-check', async (req, res) => {
-  const { sessionId, postType } = req.body;
+  const {
+    sessionId,
+    postType,
+    category = null,
+    lectureNumber = null,
+    lectureTitle = null,
+    bookInfo = null,
+  } = req.body;
   if (!sessionId) return res.status(400).json({ ok: false, error: 'sessionId 필수' });
   try {
     const existing = await pipelineStore.getNodeResult(sessionId, 'quality-check');
@@ -305,6 +312,8 @@ app.post('/api/blog/node/quality-check', async (req, res) => {
         passed: existing.passed,
         charCount: existing.charCount || 0,
         aiRisk: existing.aiRisk || null,
+        issues: existing.issues || [],
+        autoRewriteRecommended: !!existing.autoRewriteRecommended,
         cached: true,
       });
     }
@@ -317,7 +326,12 @@ app.post('/api/blog/node/quality-check', async (req, res) => {
     }
 
     const content = typeof postData === 'object' ? (postData.content || '') : postData;
-    const quality = qualityChecker.checkQuality(content, postType || 'general');
+    const quality = await checkQualityEnhanced(content, postType || 'general', {
+      lectureNumber,
+      expectedLectureTitle: lectureTitle,
+      category,
+      bookInfo,
+    });
 
     // 검증 결과 저장
     await pipelineStore.storeNodeResult(sessionId, 'quality-check', 'validate', quality);
@@ -327,6 +341,8 @@ app.post('/api/blog/node/quality-check', async (req, res) => {
       passed:   quality.passed,
       charCount: content.length,
       aiRisk:   quality.aiRisk,
+      issues: quality.issues || [],
+      autoRewriteRecommended: !!quality.autoRewriteRecommended,
     });
   } catch (e) {
     console.error('[노드서버] /quality-check 오류:', e.message);

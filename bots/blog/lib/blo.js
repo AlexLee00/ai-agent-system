@@ -240,7 +240,7 @@ async function _runQualityRepair(kind, context, draft, variation, repairFn) {
   return { post, quality, sectionVariation: variation, source: 'direct' };
 }
 
-async function _resolvePipelineExecution(postType, sectionVariation, payload, runLocalDraft) {
+async function _resolvePipelineExecution(postType, sectionVariation, payload, runLocalDraft, repairN8nResult = null) {
   const execution = await maestro.run(
     postType,
     variation => runLocalDraft(variation || sectionVariation),
@@ -253,6 +253,10 @@ async function _resolvePipelineExecution(postType, sectionVariation, payload, ru
     const quality = await pipelineStore.getNodeResult(execution.sessionId, 'quality-check');
     if (post?.content && quality) {
       console.log(`[블로] n8n 결과 회수 완료 — session=${execution.sessionId}`);
+      if ((!quality.passed || quality.autoRewriteRecommended) && typeof repairN8nResult === 'function') {
+        console.log('[블로] n8n 품질 보정 루프 진입');
+        return repairN8nResult(post, quality, execution.variations || sectionVariation);
+      }
       return { post, quality, source: 'n8n' };
     }
 
@@ -741,7 +745,21 @@ async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId
           lectureTitle: context.lectureTitle,
           topic: context.lectureTitle,
         },
-        runLocalDraft
+        runLocalDraft,
+        async (currentPost, currentQuality, variation) => _runQualityRepair(
+          'lecture',
+          context,
+          currentPost,
+          variation,
+          async (ctx, repairPost, repairQuality) => repairLecturePostDraft(
+            ctx.number,
+            ctx.lectureTitle,
+            ctx.researchData,
+            repairPost,
+            repairQuality,
+            variation
+          )
+        )
       );
 
       const finalized = await _finalizeLecturePost(post, quality, context, scheduleId, traceCtx, writerName);
@@ -862,7 +880,20 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId
           category: context.category,
           topic: context.category,
         },
-        runLocalDraft
+        runLocalDraft,
+        async (currentPost, currentQuality, variation) => _runQualityRepair(
+          'general',
+          { category: context.category, data: context.researchData },
+          currentPost,
+          variation,
+          async (ctx, repairPost, repairQuality) => repairGeneralPostDraft(
+            ctx.category,
+            ctx.data,
+            repairPost,
+            repairQuality,
+            variation
+          )
+        )
       );
 
       const finalized = await _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx, writerName);
