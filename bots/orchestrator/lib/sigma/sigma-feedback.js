@@ -296,8 +296,13 @@ async function collectScoutQualityMetric({ minutes = 24 * 60 } = {}) {
   const collectRows = rows.filter((row) => row.event_type === 'scout_collect');
   const errorRows = rows.filter((row) => row.event_type === 'scout_error');
   const latestCollect = collectRows[0] || null;
+  const evaluationMinAgeMs = 30 * 60 * 1000;
+  const latestEvaluableCollect = collectRows.find((row) => {
+    const createdAt = row?.created_at ? new Date(row.created_at).getTime() : 0;
+    return createdAt > 0 && (Date.now() - createdAt) >= evaluationMinAgeMs;
+  }) || null;
   const sectionCounts = latestCollect?.metadata?.sectionCounts || {};
-  const baselineQuotes = latestCollect?.metadata?.baselineQuotes || {};
+  const baselineQuotes = latestEvaluableCollect?.metadata?.baselineQuotes || {};
   const activeSectionTypes = Object.entries(sectionCounts)
     .filter(([, count]) => Number(count || 0) > 0)
     .map(([key]) => key);
@@ -310,7 +315,7 @@ async function collectScoutQualityMetric({ minutes = 24 * 60 } = {}) {
     : 0;
   const quoteReturns = [];
 
-  if (latestCollect && baselineQuotes && typeof baselineQuotes === 'object') {
+  if (latestEvaluableCollect && baselineQuotes && typeof baselineQuotes === 'object') {
     try {
       const kis = await import(pathToFileURL(require.resolve('../../../investment/shared/kis-client.js')).href);
       const secrets = await import(pathToFileURL(require.resolve('../../../investment/shared/secrets.js')).href);
@@ -361,6 +366,8 @@ async function collectScoutQualityMetric({ minutes = 24 * 60 } = {}) {
     avg_return_pct: avgReturnPct,
     hit_rate: hitRate,
     quote_returns: quoteReturns.slice(0, 10),
+    evaluation_pending: !latestEvaluableCollect && collectCount > 0,
+    evaluation_min_age_minutes: 30,
   };
 }
 
@@ -372,7 +379,11 @@ async function recordScoutQualityEvent(metric = {}) {
     `최근 시그널: ${Number(metric.latest_signal_count || 0)}건`,
     `활성 섹션: ${Object.entries(metric.latest_sections || {}).filter(([, count]) => Number(count || 0) > 0).map(([key]) => key).join(', ') || '없음'}`,
     `집중 심볼: ${(metric.latest_focus_symbols || []).join(', ') || '없음'}`,
-    metric.evaluated_quotes ? `평균 수익률: ${metric.avg_return_pct}% / 적중률: ${Number(metric.hit_rate || 0) * 100}%` : '가격 성과 평가는 아직 데이터 부족',
+    metric.evaluated_quotes
+      ? `평균 수익률: ${metric.avg_return_pct}% / 적중률: ${Number(metric.hit_rate || 0) * 100}%`
+      : metric.evaluation_pending
+        ? `가격 성과 평가는 ${Number(metric.evaluation_min_age_minutes || 30)}분 이후부터 계산`
+        : '가격 성과 평가는 아직 데이터 부족',
   ].join(' | ');
   return eventLake.record({
     eventType: 'scout_quality',
