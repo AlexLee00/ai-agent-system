@@ -28,6 +28,24 @@ const eventLake = require('../../../packages/core/lib/event-lake');
 
 const logger = createLogger('scout', { team: 'luna' });
 
+/**
+ * @typedef {Object} ScoutSignal
+ * @property {string} symbol
+ * @property {string} market
+ * @property {string} source
+ * @property {number} [score]
+ */
+
+/**
+ * @typedef {Object} ScoutResult
+ * @property {boolean} dryRun
+ * @property {string} source
+ * @property {string} fetchedAt
+ * @property {{ summary: string, focusSymbols?: string[], overlapSymbols?: string[], rationale?: string }} summary
+ * @property {ScoutSignal[]} signals
+ * @property {Record<string, number>} sectionCounts
+ */
+
 function topUniqueSignals(signals = [], limit = 5) {
   const seen = new Set();
   const result = [];
@@ -237,6 +255,10 @@ function buildTelegramMessage(payload, summary) {
   return lines.join('\n');
 }
 
+/**
+ * @param {{ dryRun?: boolean, json?: boolean, limit?: number }} [input]
+ * @returns {Promise<ScoutResult>}
+ */
 export async function runScout({ dryRun = false, json = false, limit = 10 } = {}) {
   if (!dryRun) {
     await db.initSchema();

@@ -47,6 +47,14 @@ const BLACKLIST = [
 ];
 
 /**
+ * @typedef {Object} RecoveryResult
+ * @property {boolean} success
+ * @property {string} message
+ * @property {any} [data]
+ * @property {boolean} [requiresConfirmation]
+ */
+
+/**
  * 블랙리스트 검사 — params를 JSON 직렬화한 문자열에 금지 패턴 포함 여부
  * @param {object} params
  * @returns {string|null} 위반 패턴 문자열, 없으면 null
@@ -135,7 +143,7 @@ const WHITELIST = {
  * @param {string} taskType     - WHITELIST 키
  * @param {object} params       - 작업 파라미터
  * @param {string} requestedBy  - 'dexter' | 'claude-lead'
- * @returns {Promise<{ success, message, data }>}
+ * @returns {Promise<RecoveryResult>}
  */
 async function execute(taskType, params = {}, requestedBy = 'dexter') {
   // 1. 블랙리스트 체크

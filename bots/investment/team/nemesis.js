@@ -174,6 +174,27 @@ const RULES_STOCK_OVERSEAS = {
 // 하위 호환성 — 암호화폐 기본값
 export const RULES = RULES_CRYPTO;
 
+/**
+ * @typedef {Object} AdaptiveResult
+ * @property {boolean} approved
+ * @property {number} [adjustedAmount]
+ * @property {string} [reason]
+ * @property {{ decision?: string, reasoning?: string }} [llm]
+ * @property {number} [tpPrice]
+ * @property {number} [slPrice]
+ * @property {string} [tpslSource]
+ * @property {string} [traceId]
+ */
+
+/**
+ * @typedef {Object} EvaluateSignalOptions
+ * @property {number} [totalUsdt]
+ * @property {number|null} [atrRatio]
+ * @property {number|null} [currentPrice]
+ * @property {boolean} [persist]
+ * @property {string|null} [traceId]
+ */
+
 function getRules(exchange) {
   if (exchange === 'kis') return RULES_STOCK_DOMESTIC;
   if (exchange === 'kis_overseas') return RULES_STOCK_OVERSEAS;
@@ -606,6 +627,11 @@ export async function getDynamicRRWeighted(symbol, minSamples = 10) {
  * 신호 평가 — v1 규칙 + v2 LLM
  * @param {object} signal  { id, symbol, action, amount_usdt, confidence, reasoning }
  * @param {object} [opts]  { atrRatio, totalUsdt }
+ */
+/**
+ * @param {any} signal
+ * @param {EvaluateSignalOptions} [opts]
+ * @returns {Promise<AdaptiveResult>}
  */
 export async function evaluateSignal(signal, opts = {}) {
   const { symbol, action } = signal;

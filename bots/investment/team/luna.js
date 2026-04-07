@@ -46,6 +46,20 @@ const MAX_DEBATE_SYMBOLS = LUNA_RUNTIME.maxDebateSymbols;
 const STOCK_ORDER_DEFAULTS = LUNA_RUNTIME.stockOrderDefaults;
 const ANALYST_WEIGHT_CONFIG = LUNA_RUNTIME.analystWeights || {};
 
+/**
+ * @typedef {Object} TradeSignal
+ * @property {string} symbol
+ * @property {string} action
+ * @property {number} amount_usdt
+ * @property {number} confidence
+ * @property {string} reasoning
+ * @property {number} [adjustedAmount]
+ * @property {number|null} [tpPrice]
+ * @property {number|null} [slPrice]
+ * @property {string|null} [tpslSource]
+ * @property {number|string} [signalId]
+ */
+
 function getStockOrderSpec(exchange) {
   return STOCK_ORDER_DEFAULTS[exchange] || null;
 }
@@ -952,6 +966,12 @@ async function runDebateRound(symbol, summary, exchange, prevDebate = null) {
  * @param {string[]} symbols
  * @param {string}   exchange
  * @returns {Promise<Array>}
+ */
+/**
+ * @param {string[]} symbols
+ * @param {string} [exchange]
+ * @param {any} [params]
+ * @returns {Promise<TradeSignal[]>}
  */
 export async function orchestrate(symbols, exchange = 'binance', params = null) {
   const label           = exchange === 'kis_overseas' ? '미국주식' : exchange === 'kis' ? '국내주식' : '암호화폐';
