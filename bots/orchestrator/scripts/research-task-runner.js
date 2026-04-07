@@ -3,6 +3,8 @@
 const tasks = require('../lib/research/research-tasks');
 const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 
+const MAX_TASKS_PER_RUN = 3;
+
 async function main() {
   const pending = tasks.getPendingTasks();
   if (pending.length === 0) {
@@ -10,9 +12,10 @@ async function main() {
     return;
   }
 
-  console.log(`[task-runner] 대기 과제 ${pending.length}건`);
+  const runnable = pending.slice(0, MAX_TASKS_PER_RUN);
+  console.log(`[task-runner] 대기 과제 ${pending.length}건, 이번 실행 ${runnable.length}건 (최대 ${MAX_TASKS_PER_RUN}건)`);
 
-  for (const task of pending) {
+  for (const task of runnable) {
     console.log(`[task-runner] 실행: ${task.id} (${task.type})`);
 
     try {
@@ -21,12 +24,7 @@ async function main() {
         const spawnedSkillTask = tasks.autoCreateSkillTaskFromAnalysis(result, task.id);
 
         await postAlarm({
-          message: `📊 연구 과제 완료!
-📋 ${task.title}
-🔗 ${task.target.owner}/${task.target.repo}
-⭐ ${result.repoInfo.stars} | 📂 ${result.structure.totalFiles}파일
-📝 분석 문서 자동 생성!
-${spawnedSkillTask ? `🧠 후속 스킬 과제 생성: ${spawnedSkillTask.id}` : '🧠 후속 스킬 과제 없음'}`,
+          message: `📊 연구 과제 완료!\n📋 ${task.title}\n🔗 ${task.target.owner}/${task.target.repo}\n⭐ ${result.repoInfo.stars} | 📂 ${result.structure.totalFiles}파일\n📝 분석 문서 자동 생성!\n${spawnedSkillTask ? `🧠 후속 스킬 과제 생성: ${spawnedSkillTask.id}` : '🧠 후속 스킬 과제 없음'}`,
           team: 'darwin',
           fromBot: 'task-runner',
         });
@@ -36,12 +34,7 @@ ${spawnedSkillTask ? `🧠 후속 스킬 과제 생성: ${spawnedSkillTask.id}` 
       if (task.type === 'skill_creation') {
         const result = await tasks.executeSkillCreation(task);
         await postAlarm({
-          message: `🧠 스킬 자동 생성 ${result.syntaxOk ? '✅' : '❌'}!
-📋 ${task.title}
-📂 ${result.skillPath}
-📊 ${result.linesOfCode}줄
-✅ 문법: ${result.syntaxOk ? '통과' : '실패'}
-${result.branch ? `🌿 검증 브랜치: ${result.branch}` : ''}`,
+          message: `🧠 스킬 자동 생성 ${result.syntaxOk ? '✅' : '❌'}!\n📋 ${task.title}\n📂 ${result.skillPath}\n📊 ${result.linesOfCode}줄\n✅ 문법: ${result.syntaxOk ? '통과' : '실패'}\n${result.branch ? `🌿 검증 브랜치: ${result.branch}` : ''}`,
           team: 'darwin',
           fromBot: 'task-runner',
           inlineKeyboard: result.syntaxOk ? [[

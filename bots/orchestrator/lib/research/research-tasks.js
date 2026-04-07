@@ -28,6 +28,18 @@ function _taskPath(taskId) {
   return path.join(TASKS_DIR, `${taskId}.json`);
 }
 
+function _loadAllTasks() {
+  ensureDir();
+  return fs.readdirSync(TASKS_DIR)
+    .filter((file) => file.endsWith('.json'))
+    .map((file) => JSON.parse(fs.readFileSync(path.join(TASKS_DIR, file), 'utf8')))
+    .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+}
+
+function _normalizeRepoPart(value) {
+  return String(value || '').trim().toLowerCase().replace(/\.git$/i, '');
+}
+
 function createTask(task) {
   ensureDir();
   const taskId = String(task.id || '').trim();
@@ -57,12 +69,32 @@ function loadTask(taskId) {
 }
 
 function getPendingTasks() {
-  ensureDir();
-  return fs.readdirSync(TASKS_DIR)
-    .filter((file) => file.endsWith('.json'))
-    .map((file) => JSON.parse(fs.readFileSync(path.join(TASKS_DIR, file), 'utf8')))
+  return _loadAllTasks()
     .filter((task) => task.status === 'pending')
     .sort((a, b) => Number(a.priority || 5) - Number(b.priority || 5));
+}
+
+function getCompletedTasks() {
+  return _loadAllTasks().filter((task) => task.status === 'completed');
+}
+
+function hasTaskForRepo(owner, repo, types) {
+  const targetOwner = _normalizeRepoPart(owner);
+  const targetRepo = _normalizeRepoPart(repo);
+  const allowedTypes = Array.isArray(types) && types.length > 0
+    ? new Set(types.map((type) => String(type || '').trim().toLowerCase()))
+    : null;
+
+  return _loadAllTasks().some((task) => {
+    const taskOwner = _normalizeRepoPart(task?.target?.owner);
+    const taskRepo = _normalizeRepoPart(task?.target?.repo);
+    const taskType = String(task?.type || '').trim().toLowerCase();
+    const activeStatus = !['failed'].includes(String(task?.status || '').trim().toLowerCase());
+
+    if (!activeStatus) return false;
+    if (allowedTypes && !allowedTypes.has(taskType)) return false;
+    return taskOwner === targetOwner && taskRepo === targetRepo;
+  });
 }
 
 function updateTask(taskId, updates) {
@@ -288,6 +320,8 @@ module.exports = {
   createTask,
   loadTask,
   getPendingTasks,
+  getCompletedTasks,
+  hasTaskForRepo,
   updateTask,
   executeGitHubAnalysis,
   executeSkillCreation,
