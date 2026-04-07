@@ -119,9 +119,12 @@
   → nemesis: 시장 체제 기반 TP/SL/포지션 동적 조정!
   → event_lake: market_regime_detected 기록!
   → 다음: 실제 BUY 시 운영 로그 확인!
+- 📋 TypeScript Phase 0 — JSDoc 타입 힌트! (CODEX_TS_PHASE0_JSDOC.md 328줄!)
+  → tsconfig.json + 핵심 10개 파일 JSDoc + CI typecheck!
 - 📋 Sprint 4 실제 제안 풀런 (내일 06:00 확인!)
 
 ### 이번 달
+- 📋 TypeScript Phase 0 — JSDoc + tsconfig! (코덱스 전달!)
 - 📋 Phase B — 라벨링 + 자동 점수 + L1 확장! (1주 후!)
 - 📋 Phase C — 시그마 event_lake 연동 + 큐레이션! (2주 후!)
 - 📋 experience why 2단계 — Evidence+Confidence! (4/21 이후!)
@@ -133,6 +136,8 @@
 ### 장기 (1개월+)
 - 📋 Phase D — MAPE Plan+Execute + 누락 지식 감지 + Instinct!
 - 📋 experience why 3단계 — Instinct 진화 (LLM 졸업!) (5/7 이후!)
+- 📋 TypeScript Phase 1 — 핵심 인터페이스 TS + Zod! (Phase 0 안정화 후!)
+- 📋 TypeScript Phase 2~3 — 팀별 전환 + strict! (안정화 후!)
 - 📋 4단계 skill_creation E2E 실런
 - 📋 Drift Detection (Arize AI 패턴!)
 
