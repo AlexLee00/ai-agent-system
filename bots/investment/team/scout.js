@@ -16,8 +16,10 @@ import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import * as db from '../shared/db.js';
 import { callLLM, parseJSON } from '../shared/llm-client.js';
-import { store as storeRag } from '../shared/rag-client.js';
+import { initSchema as initRagSchema, store as storeRag } from '../shared/rag-client.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
+import { initHubSecrets, isKisPaper } from '../shared/secrets.js';
+import { getDomesticPrice } from '../shared/kis-client.js';
 import { collectScoutData } from './scout-scraper.js';
 
 const require = createRequire(import.meta.url);
@@ -145,6 +147,32 @@ async function recordScoutArtifacts(payload, summary) {
   const sectionCounts = Object.fromEntries(
     Object.entries(payload.sections || {}).map(([key, values]) => [key, Array.isArray(values) ? values.length : 0]),
   );
+  const baselineQuotes = {};
+  const domesticSignals = topSignals.filter((item) => item.market === 'domestic').slice(0, 5);
+
+  try {
+    await initHubSecrets();
+  } catch {
+    // 허브 접근 실패 시 로컬 config 기반으로 계속 진행한다.
+  }
+
+  for (const signal of domesticSignals) {
+    try {
+      const price = Number(await getDomesticPrice(signal.symbol, isKisPaper()));
+      if (price > 0) {
+        baselineQuotes[signal.symbol] = {
+          price,
+          captured_at: new Date().toISOString(),
+        };
+      }
+    } catch (error) {
+      logger.warn('스카우트 기준가 저장 실패', {
+        symbol: signal.symbol,
+        error: error.message,
+      });
+    }
+  }
+
   const content = [
     `[스카우트 ${payload.source}] ${summary.summary}`,
     `focus: ${summary.focusSymbols.join(', ') || '없음'}`,
@@ -186,6 +214,7 @@ async function recordScoutArtifacts(payload, summary) {
       source: payload.source,
       signals: topSignals,
       sectionCounts,
+      baselineQuotes,
       targetUrl: payload.targetUrl,
       urls: payload.urls || {},
     },
@@ -211,6 +240,7 @@ function buildTelegramMessage(payload, summary) {
 export async function runScout({ dryRun = false, json = false, limit = 10 } = {}) {
   if (!dryRun) {
     await db.initSchema();
+    await initRagSchema();
     await eventLake.initSchema();
   }
 

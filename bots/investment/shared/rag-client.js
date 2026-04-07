@@ -7,6 +7,10 @@ export function getRagGuardStatus() {
   return rag.getRagGuardStatus();
 }
 
+export async function initSchema() {
+  return rag.initSchema();
+}
+
 export async function search(collection, query, opts = {}, meta = {}) {
   return rag.search(collection, query, opts, meta);
 }

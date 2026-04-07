@@ -5,6 +5,7 @@ const rag = require('../../../../packages/core/lib/rag');
 const kst = require('../../../../packages/core/lib/kst');
 const { postAlarm } = require('../../../../packages/core/lib/openclaw-client');
 const eventLake = require('../../../../packages/core/lib/event-lake');
+const { pathToFileURL } = require('url');
 
 const SCHEMA = 'sigma';
 
@@ -296,6 +297,7 @@ async function collectScoutQualityMetric({ minutes = 24 * 60 } = {}) {
   const errorRows = rows.filter((row) => row.event_type === 'scout_error');
   const latestCollect = collectRows[0] || null;
   const sectionCounts = latestCollect?.metadata?.sectionCounts || {};
+  const baselineQuotes = latestCollect?.metadata?.baselineQuotes || {};
   const activeSectionTypes = Object.entries(sectionCounts)
     .filter(([, count]) => Number(count || 0) > 0)
     .map(([key]) => key);
@@ -306,6 +308,37 @@ async function collectScoutQualityMetric({ minutes = 24 * 60 } = {}) {
   const errorRate = totalRuns > 0
     ? Number((errorCount / totalRuns).toFixed(4))
     : 0;
+  const quoteReturns = [];
+
+  if (latestCollect && baselineQuotes && typeof baselineQuotes === 'object') {
+    try {
+      const kis = await import(pathToFileURL(require.resolve('../../../investment/shared/kis-client.js')).href);
+      const secrets = await import(pathToFileURL(require.resolve('../../../investment/shared/secrets.js')).href);
+      const paper = secrets.isKisPaper();
+
+      for (const [symbol, info] of Object.entries(baselineQuotes)) {
+        const baselinePrice = Number(info?.price || 0);
+        if (!baselinePrice) continue;
+        try {
+          const currentPrice = Number(await kis.getDomesticPrice(symbol, paper));
+          if (!currentPrice) continue;
+          const returnPct = Number((((currentPrice - baselinePrice) / baselinePrice) * 100).toFixed(2));
+          quoteReturns.push({ symbol, baselinePrice, currentPrice, returnPct });
+        } catch {
+          // 현재가 조회 실패는 개별 심볼만 건너뛴다.
+        }
+      }
+    } catch {
+      // 동적 import 또는 가격 조회 실패 시 품질 메트릭 기본값만 유지한다.
+    }
+  }
+
+  const avgReturnPct = quoteReturns.length > 0
+    ? Number((quoteReturns.reduce((sum, item) => sum + Number(item.returnPct || 0), 0) / quoteReturns.length).toFixed(2))
+    : null;
+  const hitRate = quoteReturns.length > 0
+    ? Number((quoteReturns.filter((item) => Number(item.returnPct || 0) > 0).length / quoteReturns.length).toFixed(4))
+    : null;
 
   return {
     team: 'luna',
@@ -324,6 +357,10 @@ async function collectScoutQualityMetric({ minutes = 24 * 60 } = {}) {
     latest_signal_count: Number(latestCollect?.metadata?.signalCount || 0),
     latest_sections: sectionCounts,
     coverage_score: coverageScore,
+    evaluated_quotes: quoteReturns.length,
+    avg_return_pct: avgReturnPct,
+    hit_rate: hitRate,
+    quote_returns: quoteReturns.slice(0, 10),
   };
 }
 
@@ -335,6 +372,7 @@ async function recordScoutQualityEvent(metric = {}) {
     `최근 시그널: ${Number(metric.latest_signal_count || 0)}건`,
     `활성 섹션: ${Object.entries(metric.latest_sections || {}).filter(([, count]) => Number(count || 0) > 0).map(([key]) => key).join(', ') || '없음'}`,
     `집중 심볼: ${(metric.latest_focus_symbols || []).join(', ') || '없음'}`,
+    metric.evaluated_quotes ? `평균 수익률: ${metric.avg_return_pct}% / 적중률: ${Number(metric.hit_rate || 0) * 100}%` : '가격 성과 평가는 아직 데이터 부족',
   ].join(' | ');
   return eventLake.record({
     eventType: 'scout_quality',
