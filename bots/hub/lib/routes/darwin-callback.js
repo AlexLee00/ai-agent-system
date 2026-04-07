@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const env = require('../../../../packages/core/lib/env');
 const { postAlarm } = require('../../../../packages/core/lib/openclaw-client');
+const eventLake = require('../../../../packages/core/lib/event-lake');
 const proposalStore = require('../../../orchestrator/lib/research/proposal-store');
 const autonomyLevel = require('../../../orchestrator/lib/research/autonomy-level');
 const researchTasks = require('../../../orchestrator/lib/research/research-tasks');
@@ -66,6 +67,8 @@ async function darwinCallbackRoute(req, res) {
     'darwin_merge_skill',
     'darwin_create_skill',
     'darwin_skip_skill',
+    'darwin_feedback_up',
+    'darwin_feedback_down',
   ]);
 
   if (!allowedActions.has(action)) {
@@ -172,6 +175,24 @@ async function darwinCallbackRoute(req, res) {
         fromBot: 'darwin-callback',
       });
       return res.json({ ok: true, action: 'skill_task_skipped', proposalId });
+    }
+
+    if (action === 'darwin_feedback_up' || action === 'darwin_feedback_down') {
+      const score = action === 'darwin_feedback_up' ? 1 : -1;
+      const label = action === 'darwin_feedback_up' ? '유익함' : '아쉬움';
+      const eventId = Number.parseInt(proposalId, 10);
+      if (!Number.isInteger(eventId) || eventId <= 0) {
+        return res.status(400).json({ ok: false, error: 'valid event id required' });
+      }
+      const updated = await eventLake.addFeedback(eventId, {
+        score,
+        feedback: label,
+      });
+      if (!updated) {
+        return res.status(404).json({ ok: false, error: 'event not found' });
+      }
+      await _answerCallbackQuery(callbackQueryId, `피드백 기록: ${label}`);
+      return res.json({ ok: true, action: 'feedback_recorded', eventId, score });
     }
   } catch (error) {
     autonomyLevel.recordError(error);

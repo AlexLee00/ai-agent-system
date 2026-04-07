@@ -10,6 +10,7 @@ const { execFileSync } = require('child_process');
 const { callWithFallback } = require('../../../../packages/core/lib/llm-fallback');
 const { createLogger } = require('../../../../packages/core/lib/central-logger');
 const { postAlarm } = require('../../../../packages/core/lib/openclaw-client');
+const eventLake = require('../../../../packages/core/lib/event-lake');
 const rag = require('../../../../packages/core/lib/rag');
 const { runFullVerification } = require('../../../../packages/core/lib/skills/verify-loop');
 const proposalStore = require('./proposal-store');
@@ -17,6 +18,14 @@ const autonomyLevel = require('./autonomy-level');
 
 const REPO_ROOT = path.join(__dirname, '../../../..');
 const logger = createLogger('verifier', { team: 'darwin' });
+
+function buildDarwinFeedbackButtons(eventId) {
+  if (!eventId) return [];
+  return [[
+    { text: '👍 유익함', callback_data: `darwin_feedback_up:${eventId}` },
+    { text: '👎 아쉬움', callback_data: `darwin_feedback_down:${eventId}` },
+  ]];
+}
 
 function _runGit(args, opts = {}) {
   return execFileSync('git', args, {
@@ -156,6 +165,21 @@ ${verification.summary}`,
       successOnly: false,
     });
 
+    const verificationEventId = await eventLake.record({
+      eventType: passed ? 'verification_passed' : 'verification_failed',
+      team: 'darwin',
+      botName: 'proof-r',
+      severity: passed ? 'info' : 'warn',
+      title: String(proposal.title || proposalId).slice(0, 140),
+      message: verificationText.slice(0, 500),
+      tags: ['verification', passed ? 'passed' : 'failed'],
+      metadata: {
+        proposal_id: proposalId,
+        branch: branchName,
+        files: changedFiles,
+      },
+    }).catch(() => null);
+
     await postAlarm({
       message: passed
         ? `✅ proof-r 검증 통과\n📄 ${proposal.title || proposalId}\n🌿 ${branchName}\n📂 ${changedFiles.length}개 파일`
@@ -167,10 +191,10 @@ ${verification.summary}`,
         ? [[
             { text: '✅ 머지 승인', callback_data: `darwin_merge:${proposalId}` },
             { text: '📝 수동 검토', callback_data: `darwin_manual:${proposalId}` },
-          ]]
+          ], ...buildDarwinFeedbackButtons(verificationEventId)]
         : [[
             { text: '📝 수동 검토', callback_data: `darwin_manual:${proposalId}` },
-          ]],
+          ], ...buildDarwinFeedbackButtons(verificationEventId)],
     });
 
     return { ok: true, passed, changedFiles, verificationText };
@@ -181,11 +205,26 @@ ${verification.summary}`,
       branch: branchName,
       error: error.message,
     });
+    const eventId = await eventLake.record({
+      eventType: 'verification_error',
+      team: 'darwin',
+      botName: 'proof-r',
+      severity: 'error',
+      title: String(proposal.title || proposalId).slice(0, 140),
+      message: error.message,
+      tags: ['verification', 'error'],
+      metadata: {
+        proposal_id: proposalId,
+        branch: branchName,
+      },
+    }).catch(() => null);
+
     await postAlarm({
       message: `❌ proof-r 검증 중 오류\n📄 ${proposal.title || proposalId}\n🌿 ${branchName}\n사유: ${error.message}`,
       team: 'darwin',
       alertLevel: 3,
       fromBot: 'proof-r',
+      inlineKeyboard: buildDarwinFeedbackButtons(eventId),
     });
     throw error;
   } finally {
