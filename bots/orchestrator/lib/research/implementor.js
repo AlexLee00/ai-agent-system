@@ -343,7 +343,13 @@ ${JSON.stringify(proposal.verification || {})}`,
     throw error;
   } finally {
     try {
-      if (branchCheckedOut) _runGit(['checkout', originalBranch]);
+      if (branchCheckedOut) {
+        try {
+          _runGit(['checkout', 'main']);
+        } catch {
+          _runGit(['checkout', originalBranch]);
+        }
+      }
     } catch {}
     try {
       if (!committed) _deleteBranchIfExists(branchName);

@@ -6,7 +6,8 @@ const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 const MAX_TASKS_PER_RUN = 3;
 
 async function main() {
-  const pending = tasks.getPendingTasks();
+  await tasks.ensureTaskStatusSchema();
+  const pending = await tasks.getPendingTasks();
   if (pending.length === 0) {
     console.log('[task-runner] 대기 중인 과제 없음');
     return;
