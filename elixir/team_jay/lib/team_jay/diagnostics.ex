@@ -8,6 +8,37 @@ defmodule TeamJay.Diagnostics do
   @check_interval 30_000
   @msg_queue_warn 100
   @memory_warn 100_000_000
+  @phase3_launchd_labels [
+    "ai.ska.naver-monitor",
+    "ai.ska.kiosk-monitor",
+    "ai.ska.commander",
+    "ai.ska.eve",
+    "ai.ska.eve-crawl",
+    "ai.ska.etl",
+    "ai.ska.rebecca",
+    "ai.ska.forecast-daily",
+    "ai.ska.forecast-weekly",
+    "ai.ska.forecast-monthly",
+    "ai.ska.pickko-daily-audit",
+    "ai.ska.pickko-daily-summary",
+    "ai.ska.pickko-verify",
+    "ai.ska.today-audit",
+    "ai.ska.health-check",
+    "ai.ska.log-report",
+    "ai.ska.log-rotate",
+    "ai.ska.db-backup",
+    "ai.claude.dexter",
+    "ai.claude.dexter.daily",
+    "ai.claude.dexter.quick",
+    "ai.claude.commander",
+    "ai.claude.archer",
+    "ai.claude.health-check",
+    "ai.claude.health-dashboard",
+    "ai.claude.speed-test",
+    "ai.steward.hourly",
+    "ai.steward.daily",
+    "ai.steward.weekly"
+  ]
 
   defstruct [:checks, :alerts, :last_check]
 
@@ -53,7 +84,8 @@ defmodule TeamJay.Diagnostics do
       check_process_count(),
       check_memory(),
       check_supervisors(),
-      check_message_queues()
+      check_message_queues(),
+      check_launchd_overlap()
     ]
     |> List.flatten()
   end
@@ -84,7 +116,11 @@ defmodule TeamJay.Diagnostics do
   end
 
   defp check_supervisors do
-    supervisors = [TeamJay.Teams.SkaSupervisor]
+    supervisors = [
+      TeamJay.Teams.SkaSupervisor,
+      TeamJay.Teams.ClaudeSupervisor,
+      TeamJay.Teams.StewardSupervisor
+    ]
 
     Enum.map(supervisors, fn sup ->
       case Process.whereis(sup) do
@@ -107,12 +143,13 @@ defmodule TeamJay.Diagnostics do
     processes = [
       TeamJay.EventLake,
       TeamJay.MarketRegime,
-      TeamJay.Agents.Andy,
-      TeamJay.Agents.Jimmy
+      TeamJay.Agents.PortAgent.via(:andy),
+      TeamJay.Agents.PortAgent.via(:jimmy),
+      TeamJay.Agents.PortAgent.via(:dexter)
     ]
 
     Enum.map(processes, fn mod ->
-      case Process.whereis(mod) do
+      case GenServer.whereis(mod) do
         nil ->
           %{name: "msgq_#{inspect(mod)}", severity: :warn, message: "프로세스 없음"}
 
@@ -129,6 +166,40 @@ defmodule TeamJay.Diagnostics do
     end)
   end
 
+  defp check_launchd_overlap do
+    case System.cmd("launchctl", ["list"]) do
+      {output, 0} ->
+        loaded =
+          output
+          |> String.split("\n", trim: true)
+          |> Enum.map(&String.split(&1, "\t", trim: true))
+          |> Enum.filter(&(length(&1) == 3))
+          |> Enum.map(&Enum.at(&1, 2))
+          |> MapSet.new()
+
+        overlaps =
+          @phase3_launchd_labels
+          |> Enum.filter(&MapSet.member?(loaded, &1))
+
+        [
+          %{
+            name: "launchd_phase3_overlap",
+            severity: if(overlaps == [], do: :ok, else: :warn),
+            message: "겹침 #{length(overlaps)}건",
+            overlaps: overlaps
+          }
+        ]
+
+      {error, code} ->
+        [
+          %{
+            name: "launchd_phase3_overlap",
+            severity: :warn,
+            message: "launchctl 조회 실패 code=#{code} #{String.slice(error, 0, 120)}"
+          }
+        ]
+    end
+  end
+
   defp schedule_check, do: Process.send_after(self(), :check, @check_interval)
 end
-
