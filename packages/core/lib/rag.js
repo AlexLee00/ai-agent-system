@@ -294,6 +294,7 @@ async function stats(collection) {
  * @param {string} params.intent
  * @param {string} params.response
  * @param {string} params.result
+ * @param {string} [params.why]
  * @param {object} [params.details]
  * @param {string} [params.team]
  * @param {string} [params.sourceBot]
@@ -304,6 +305,7 @@ async function storeExperience({
   intent,
   response,
   result,
+  why = '',
   details = {},
   team = 'general',
   sourceBot = 'openclaw',
@@ -314,6 +316,7 @@ async function storeExperience({
   if (!intent) throw new Error('storeExperience: intent is required');
   if (!response) throw new Error('storeExperience: response is required');
   if (!result) throw new Error('storeExperience: result is required');
+  const normalizedWhy = String(why || '').trim();
   const normalizedResult = String(result).trim().toLowerCase();
   const isSuccess = normalizedResult === 'success' || normalizedResult === 'ok' || result === true;
   if (successOnly && !isSuccess) {
@@ -327,9 +330,13 @@ async function storeExperience({
     result,
     team,
     timestamp: new Date().toISOString(),
+    ...(normalizedWhy ? { why: normalizedWhy } : {}),
     ...details,
   };
-  return store('experience', content, metadata, sourceBot, { successOnly, isSuccess });
+  const storedContent = normalizedWhy
+    ? `${content}\n[이유: ${normalizedWhy}]`
+    : content;
+  return store('experience', storedContent, metadata, sourceBot, { successOnly, isSuccess });
 }
 
 /**
