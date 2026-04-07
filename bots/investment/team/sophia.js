@@ -20,6 +20,7 @@ import * as db from '../shared/db.js';
 import { callLLM, parseJSON } from '../shared/llm-client.js';
 import { loadSecrets } from '../shared/secrets.js';
 import { ANALYST_TYPES, ACTIONS } from '../shared/signal.js';
+import { loadLatestScoutIntel, getScoutSignalForSymbol } from '../shared/scout-intel.js';
 
 // ─── 소스 설정 ────────────────────────────────────────────────────────
 
@@ -374,6 +375,8 @@ export async function analyzeSentiment(symbol = 'BTC/USDT', exchange = 'binance'
   const label = exchange === 'kis_overseas' ? '미국주식' : exchange === 'kis' ? '국내주식' : '암호화폐';
   const now = Date.now();
   cleanupSentCache(now);
+  const scoutIntel = await loadLatestScoutIntel();
+  const scoutSignal = getScoutSignalForSymbol(scoutIntel, symbol);
 
   // 5분 캐시 확인
   const cacheKey = `${exchange}:${symbol}`;
@@ -427,9 +430,15 @@ export async function analyzeSentiment(symbol = 'BTC/USDT', exchange = 'binance'
     return { symbol, signal: ACTIONS.HOLD, confidence: 0.1, reasoning: '게시물 부족' };
   }
 
-  const postList     = posts.slice(0, 15).map((p, i) => `${i + 1}. [${p.source}] ${p.title}`).join('\n');
+  const postList = posts.slice(0, 15).map((p, i) => `${i + 1}. [${p.source}] ${p.title}`).join('\n');
   const systemPrompt = PROMPTS[exchange] || PROMPTS.binance;
-  const userMsg      = `심볼: ${symbol} (${label})\n커뮤니티 게시물 (${posts.length}건):\n${postList}`;
+  const userMsg = [
+    `심볼: ${symbol} (${label})`,
+    scoutSignal
+      ? `스카우트 힌트: ${scoutSignal.source} / score=${scoutSignal.score} / ${scoutSignal.evidence || scoutSignal.label}`
+      : null,
+    `커뮤니티 게시물 (${posts.length}건):\n${postList}`,
+  ].filter(Boolean).join('\n');
   const responseText = await callLLM('sophia', systemPrompt, userMsg, 300, { symbol });
   const parsed       = parseJSON(responseText);
 
@@ -460,6 +469,11 @@ export async function analyzeSentiment(symbol = 'BTC/USDT', exchange = 'binance'
     symbol, analyst: ANALYST_TYPES.SENTIMENT, signal, confidence,
     reasoning: `[감성] ${reasoning}`,
     metadata:  { filteredCount: posts.length, sentiment, exchange, combinedScore,
+                 scoutSignal: scoutSignal ? {
+                   source: scoutSignal.source,
+                   score: scoutSignal.score,
+                   label: scoutSignal.label,
+                 } : null,
                  topPosts: posts.slice(0, 5).map(p => `[${p.source}] ${p.title.slice(0, 80)}`) },
     exchange,
   });

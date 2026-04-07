@@ -520,6 +520,7 @@ function _buildSelectorRegistry() {
         zeus: 'groq_scout',
         athena: 'groq_scout',
         argos: 'local_fast',
+        scout: 'groq_scout',
       };
       const configuredRoutes = _isObject(policyOverride?.agentRoutes)
         ? { ...defaultRoutes, ...policyOverride.agentRoutes }

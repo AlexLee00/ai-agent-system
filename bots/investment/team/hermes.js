@@ -19,6 +19,7 @@ import * as db from '../shared/db.js';
 import { callLLM, parseJSON } from '../shared/llm-client.js';
 import { loadSecrets }        from '../shared/secrets.js';
 import { ANALYST_TYPES, ACTIONS } from '../shared/signal.js';
+import { loadLatestScoutIntel, getScoutSignalForSymbol } from '../shared/scout-intel.js';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 
@@ -344,6 +345,8 @@ export async function analyzeNews(symbol = 'BTC/USDT', exchange = 'binance') {
   const label = exchange === 'kis_overseas' ? '미국주식' : exchange === 'kis' ? '국내주식' : '암호화폐';
   const domesticMeta = exchange === 'kis' ? await resolveDomesticMeta(symbol) : null;
   const displaySymbol = domesticMeta?.stockName ? `${symbol}/${domesticMeta.stockName}` : symbol;
+  const scoutIntel = await loadLatestScoutIntel();
+  const scoutSignal = getScoutSignalForSymbol(scoutIntel, symbol);
   console.log(`\n📰 [헤르메스] ${displaySymbol}(${label}) 뉴스 수집 중...`);
 
   let rssSources;
@@ -383,11 +386,17 @@ export async function analyzeNews(symbol = 'BTC/USDT', exchange = 'binance') {
     return { symbol, signal: ACTIONS.HOLD, confidence: 0.1, reasoning: '관련 기사 없음' };
   }
 
-  const headlines    = relevant.map((a, i) => `${i + 1}. ${a.title}`).join('\n');
+  const headlines = relevant.map((a, i) => `${i + 1}. ${a.title}`).join('\n');
   relevant.slice(0, 3).forEach(a => console.log(`  • ${a.title.slice(0, 70)}`));
 
   const systemPrompt = PROMPTS[exchange] || PROMPTS.binance;
-  const userMsg      = `심볼: ${symbol} (${label})\n최신 뉴스 ${relevant.length}건:\n${headlines}`;
+  const userMsg = [
+    `심볼: ${symbol} (${label})`,
+    scoutSignal
+      ? `스카우트 힌트: ${scoutSignal.source} / score=${scoutSignal.score} / ${scoutSignal.evidence || scoutSignal.label}`
+      : null,
+    `최신 뉴스 ${relevant.length}건:\n${headlines}`,
+  ].filter(Boolean).join('\n');
   const responseText = await callLLM('hermes', systemPrompt, userMsg, 300, { symbol });
   const parsed       = parseJSON(responseText);
 
@@ -403,7 +412,13 @@ export async function analyzeNews(symbol = 'BTC/USDT', exchange = 'binance') {
   await db.insertAnalysis({
     symbol, analyst: ANALYST_TYPES.NEWS, signal, confidence,
     reasoning: `[뉴스] ${reasoning}`,
-    metadata:  { articleCount: relevant.length, sentiment, exchange, headlines: relevant.slice(0, 5).map(a => a.title) },
+    metadata:  { articleCount: relevant.length, sentiment, exchange,
+                 scoutSignal: scoutSignal ? {
+                   source: scoutSignal.source,
+                   score: scoutSignal.score,
+                   label: scoutSignal.label,
+                 } : null,
+                 headlines: relevant.slice(0, 5).map(a => a.title) },
     exchange,
   });
   console.log(`  ✅ [헤르메스] DB 저장 완료`);

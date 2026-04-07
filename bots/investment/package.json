@@ -13,6 +13,7 @@
     "oracle": "node team/oracle.js --symbol=BTC/USDT",
     "hermes": "node team/hermes.js --symbol=BTC/USDT",
     "sophia": "node team/sophia.js --symbol=BTC/USDT",
+    "scout": "node team/scout.js --dry-run --json",
     "nemesis": "node team/nemesis.js",
     "check": "node --check markets/crypto.js && node --check team/luna.js && node --check shared/llm-client.js",
     "report": "node team/reporter.js",

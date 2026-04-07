@@ -23,6 +23,7 @@ import { publishToMainBot } from '../shared/mainbot-client.js';
 import { search as searchRag } from '../shared/rag-client.js';
 import { getDomesticRanking, getVolumeRank } from '../shared/kis-client.js';
 import { getKisOverseasSymbols, getKisSymbols, isPaperMode } from '../shared/secrets.js';
+import { loadLatestScoutIntel, boostCandidatesWithScout } from '../shared/scout-intel.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const _require = createRequire(import.meta.url);
@@ -756,7 +757,9 @@ export async function screenDomesticSymbols(maxDynamic, fng = 50) {
 
   const merged = _mergeDomesticSourceCandidates(sourceResults);
   if (merged.length) {
-    return _finalizeDomesticResult(merged, max);
+    const scoutIntel = await loadLatestScoutIntel();
+    const boosted = boostCandidatesWithScout(merged, scoutIntel, { market: 'domestic', boost: 1.2 });
+    return _finalizeDomesticResult(boosted, max);
   }
 
   // 모두 실패 → 코어만 반환
