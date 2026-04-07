@@ -354,6 +354,39 @@ CREATE INDEX idx_event_lake_no_feedback ON agent.event_lake (team, timestamp DES
 
 ### KIS Open Trading API 분석 (2026-04-07!)
 
+### 루나팀 조건부 자율고용 설계 (2026-04-07!)
+
+> 연구 기반: TradingAgents(GitHub⭐8.5K), Heterogeneous Multi-Agent(Nature),
+> Adaptive LLM Multi-Agent(PeerJ 53.87%!), QuantAgents(EMNLP 2025)
+
+```
+핵심 원칙 (제이 원문!):
+  ① 정보수집은 보완적! (경쟁 아님!)
+  ② 매매 성향은 장기/단기/시장 상황에 따라 조건부 고용!
+  ③ 정보분석 에이전트가 고용 가이드 제공!
+  ④ 무조건적 고용이 아니라 조건부 고용!
+
+보완적 정보수집 (해고 대상 아님!):
+  스카우트: 토스증권 (AI시그널/스크리너/캘린더!)
+  헤르메스: 뉴스 API (실시간!)
+  소피아: 감성 (Fear&Greed/커뮤니티!)
+  오라클: 온체인 (펀딩비/고래!)
+  → 각자 다른 관점! 전부 수집!
+
+조건부 매매 편성:
+  시장 체제 감지 → 에이전트 가중치 조정!
+  추세장: 제우스↑ + 모멘텀 + 공격적 TP/SL!
+  약세장: 아테나↑ + 방어적 + 포지션 축소!
+  횡보장: 균형 + 짧은 TP/SL!
+
+정보분석 에이전트가 가이드:
+  아리아+소피아+오라클 → "시장 체제 판단 보고서"
+  → 루나(팀장): "현재 추세장" → 공격적 편성 추천!
+  → 자율고용: 제우스↑ 아테나↓ 자동 조정!
+```
+
+### KIS Open Trading API 분석 (2026-04-07!)
+
 > 참조: https://github.com/koreainvestment/open-trading-api
 
 ```
