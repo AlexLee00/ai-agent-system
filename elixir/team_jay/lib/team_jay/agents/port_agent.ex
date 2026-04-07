@@ -3,7 +3,22 @@ defmodule TeamJay.Agents.PortAgent do
   use GenServer
   require Logger
 
-  defstruct [:name, :team, :script, :schedule, :port, :status, :last_run, :runs, :last_output]
+  defstruct [
+    :name,
+    :team,
+    :script,
+    :schedule,
+    :port,
+    :status,
+    :last_run,
+    :runs,
+    :last_output,
+    :consecutive_failures,
+    :last_alert_at
+  ]
+
+  @alert_failure_threshold 3
+  @alert_cooldown_seconds 900
 
   def child_spec(opts) do
     name = Keyword.fetch!(opts, :name)
@@ -52,7 +67,9 @@ defmodule TeamJay.Agents.PortAgent do
        status: :idle,
        last_run: nil,
        runs: 0,
-       last_output: []
+       last_output: [],
+       consecutive_failures: 0,
+       last_alert_at: nil
      }}
   end
 
@@ -83,17 +100,53 @@ defmodule TeamJay.Agents.PortAgent do
         runs: state.runs + 1,
         output_summary: summarize_output(state.last_output)
       })
+
+      new_state = %{
+        state
+        | port: nil,
+          status: :idle,
+          runs: state.runs + 1,
+          last_output: [],
+          consecutive_failures: 0
+      }
+
+      {:noreply, new_state}
     else
       Logger.warning("[#{state.name}] 종료 코드: #{code}")
+      failure_count = state.consecutive_failures + 1
+      output_summary = summarize_output(state.last_output)
+
       record_event(:warn, "#{state.name} 실패", "port_agent_failed", state.team, state.name, %{
         script: state.script,
         exit_code: code,
         runs: state.runs + 1,
-        output_summary: summarize_output(state.last_output)
+        consecutive_failures: failure_count,
+        output_summary: output_summary
       })
-    end
 
-    {:noreply, %{state | port: nil, status: :idle, runs: state.runs + 1, last_output: []}}
+      alert_time =
+        maybe_send_failure_alarm(%{
+          name: state.name,
+          team: state.team,
+          script: state.script,
+          exit_code: code,
+          consecutive_failures: failure_count,
+          output_summary: output_summary,
+          last_alert_at: state.last_alert_at
+        })
+
+      new_state = %{
+        state
+        | port: nil,
+          status: :idle,
+          runs: state.runs + 1,
+          last_output: [],
+          consecutive_failures: failure_count,
+          last_alert_at: alert_time || state.last_alert_at
+      }
+
+      {:noreply, new_state}
+    end
   end
 
   @impl true
@@ -150,5 +203,41 @@ defmodule TeamJay.Agents.PortAgent do
     |> Enum.reverse()
     |> Enum.join("\n")
     |> String.slice(0, 2_000)
+  end
+
+  defp maybe_send_failure_alarm(%{
+         name: name,
+         team: team,
+         script: script,
+         exit_code: code,
+         consecutive_failures: failures,
+         output_summary: output_summary,
+         last_alert_at: last_alert_at
+       }) do
+    now = DateTime.utc_now()
+
+    if failures >= @alert_failure_threshold and alert_due?(last_alert_at, now) do
+      summary =
+        output_summary
+        |> String.replace("\n", " | ")
+        |> String.slice(0, 500)
+
+      _ =
+        TeamJay.HubClient.post_alarm(
+          "🚨 Phase3 PortAgent 연속 실패\n에이전트: #{name}\n팀: #{team}\n종료코드: #{code}\n연속 실패: #{failures}\n스크립트: #{script}\n출력: #{summary}",
+          Atom.to_string(team),
+          "team-jay"
+        )
+
+      now
+    else
+      nil
+    end
+  end
+
+  defp alert_due?(nil, _now), do: true
+
+  defp alert_due?(last_alert_at, now) do
+    DateTime.diff(now, last_alert_at, :second) >= @alert_cooldown_seconds
   end
 end
