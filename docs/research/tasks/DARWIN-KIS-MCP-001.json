@@ -1,0 +1,33 @@
+{
+  "id": "DARWIN-KIS-MCP-001",
+  "title": "KIS Open Trading API MCP 서버 분석 → 루나팀 MCP 매매 연동",
+  "type": "github_analysis",
+  "target": {
+    "owner": "koreainvestment",
+    "repo": "open-trading-api"
+  },
+  "description": "KIS 공식 MCP Trading Server (tools/base.py 36KB, indicator.py 40KB, candlestick.py 19KB, DSL 전략 정의, codegen, QuantConnect Lean 통합) 심층 분석. 루나팀 kis-auth.js HTTP 직접 호출 → MCP 표준 연동 가능성, indicator.py 기술 지표 → chronos.js 포팅, strategy_builder DSL → 전략 자동 생성 패턴 참조.",
+  "assignee": "scholar",
+  "priority": 1,
+  "status": "pending",
+  "created_at": "2026-04-07T00:00:00.000Z",
+  "source": {
+    "type": "manual",
+    "analysis_targets": [
+      "MCP/Kis Trading MCP/tools/base.py (36KB API 래퍼)",
+      "backtester/kis_backtest/core/indicator.py (40KB 기술 지표!)",
+      "backtester/kis_backtest/core/candlestick.py (19KB 캔들 패턴)",
+      "backtester/kis_backtest/dsl/ (전략 DSL)",
+      "backtester/kis_backtest/codegen/ (코드 자동 생성)",
+      "strategy_builder/strategy_core/ (LLM 전략 생성)",
+      "backtester/kis_backtest/lean/ (QuantConnect)"
+    ],
+    "improvement_areas": [
+      "루나팀 MCP 매매 연동",
+      "indicator.py → chronos.js 포팅",
+      "전략 DSL 도입",
+      "codegen → edison 개선",
+      "백테스트 리포트 웹 UI"
+    ]
+  }
+}
