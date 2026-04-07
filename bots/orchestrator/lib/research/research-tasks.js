@@ -19,6 +19,25 @@ const TASKS_DIR = path.join(__dirname, '../../../../docs/research/tasks');
 const DOCS_DIR = path.join(__dirname, '../../../../docs/research');
 const REPO_ROOT = path.join(__dirname, '../../../..');
 
+/**
+ * @typedef {Object} ResearchTask
+ * @property {string} id
+ * @property {string} title
+ * @property {string} type
+ * @property {string} [status]
+ * @property {number} [priority]
+ * @property {string} [description]
+ * @property {string} [assignee]
+ * @property {{ owner?: string, repo?: string }} [target]
+ * @property {string} [created_at]
+ * @property {string|null} [started_at]
+ * @property {string|null} [completed_at]
+ * @property {any} [result]
+ * @property {any} [sourceAnalysis]
+ * @property {string} [targetCategory]
+ * @property {string} [skillName]
+ */
+
 function ensureDir() {
   fs.mkdirSync(TASKS_DIR, { recursive: true });
   fs.mkdirSync(DOCS_DIR, { recursive: true });
@@ -40,6 +59,10 @@ function _normalizeRepoPart(value) {
   return String(value || '').trim().toLowerCase().replace(/\.git$/i, '');
 }
 
+/**
+ * @param {ResearchTask} task
+ * @returns {ResearchTask}
+ */
 function createTask(task) {
   ensureDir();
   const taskId = String(task.id || '').trim();
@@ -62,18 +85,28 @@ function createTask(task) {
   return data;
 }
 
+/**
+ * @param {string} taskId
+ * @returns {ResearchTask|null}
+ */
 function loadTask(taskId) {
   const filePath = _taskPath(taskId);
   if (!fs.existsSync(filePath)) return null;
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 }
 
+/**
+ * @returns {ResearchTask[]}
+ */
 function getPendingTasks() {
   return _loadAllTasks()
     .filter((task) => task.status === 'pending')
     .sort((a, b) => Number(a.priority || 5) - Number(b.priority || 5));
 }
 
+/**
+ * @returns {ResearchTask[]}
+ */
 function getCompletedTasks() {
   return _loadAllTasks().filter((task) => task.status === 'completed');
 }
@@ -97,6 +130,11 @@ function hasTaskForRepo(owner, repo, types) {
   });
 }
 
+/**
+ * @param {string} taskId
+ * @param {Partial<ResearchTask>} updates
+ * @returns {ResearchTask|null}
+ */
 function updateTask(taskId, updates) {
   const filePath = _taskPath(taskId);
   if (!fs.existsSync(filePath)) return null;
@@ -106,6 +144,10 @@ function updateTask(taskId, updates) {
   return task;
 }
 
+/**
+ * @param {ResearchTask} task
+ * @returns {Promise<any>}
+ */
 async function executeGitHubAnalysis(task) {
   const owner = task?.target?.owner;
   const repo = task?.target?.repo;
@@ -192,6 +234,10 @@ function _extractCodeBlock(text) {
   return match ? match[1].trim() : String(text || '').trim();
 }
 
+/**
+ * @param {ResearchTask} task
+ * @returns {Promise<any>}
+ */
 async function executeSkillCreation(task) {
   updateTask(task.id, { status: 'running', started_at: new Date().toISOString() });
 

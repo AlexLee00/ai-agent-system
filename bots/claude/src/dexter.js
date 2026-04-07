@@ -67,6 +67,20 @@ const autofix = require('../lib/autofix');
 const _args   = process.argv.slice(2);
 const SILENT  = _args.includes('--report-only');
 
+/**
+ * @typedef {Object} CheckItem
+ * @property {string} label
+ * @property {'ok'|'warn'|'error'|'critical'} status
+ * @property {string} [detail]
+ */
+
+/**
+ * @typedef {Object} CheckResult
+ * @property {string} name
+ * @property {'ok'|'warn'|'error'|'critical'} status
+ * @property {CheckItem[]} [items]
+ */
+
 // ─── Self-lock ─────────────────────────────────────────────────────
 function acquireLock() {
   const lock = cfg.LOCKS.dexter;
@@ -81,6 +95,9 @@ function acquireLock() {
 }
 
 // ─── 메인 ───────────────────────────────────────────────────────────
+/**
+ * @returns {Promise<void>}
+ */
 async function main() {
   const FULL     = _args.includes('--full');
   const TELEGRAM = _args.includes('--telegram');
