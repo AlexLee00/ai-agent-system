@@ -226,7 +226,7 @@ function canRecover(taskType) {
 /**
  * 복구 이력 조회
  * @param {number} days  최근 N일
- * @returns {Array}
+ * @returns {Promise<any[]>}
  */
 async function getRecoveryHistory(days = 7) {
   try {
@@ -295,13 +295,13 @@ async function pollDoctorTasks() {
         } catch { /* 이벤트 발행 실패 무시 */ }
         // RAG 저장: 복구 이력을 rag_operations에 학습 데이터로 기록
         try {
-          const rag     = require('../../../packages/core/lib/rag-safe');
+          const recoveryRagStore = require('../../../packages/core/lib/rag-safe');
           const content = [
             `장애 복구 성공: ${taskType}`,
             `원인: ${params.original_issue?.detail || params.reason || ''}`,
             `복구 방법: ${result.message || taskType}`,
           ].join(' | ');
-          await rag.store('operations', content, {
+          await recoveryRagStore.store('operations', content, {
             task_type: taskType,
             success:   true,
             category:  'recovery',
@@ -314,13 +314,13 @@ async function pollDoctorTasks() {
         await stateBus.failTask(task.id, result.message);
         // RAG 저장: 복구 실패 이력 학습
         try {
-          const rag     = require('../../../packages/core/lib/rag-safe');
+          const failureRagStore = require('../../../packages/core/lib/rag-safe');
           const content = [
             `장애 복구 실패: ${taskType}`,
             `원인: ${params.original_issue?.detail || params.reason || ''}`,
             `실패 이유: ${result.message || '알 수 없음'}`,
           ].join(' | ');
-          await rag.store('operations', content, {
+          await failureRagStore.store('operations', content, {
             task_type: taskType,
             success:   false,
             category:  'recovery_failure',
@@ -546,14 +546,14 @@ function _serviceToLaunchd(service) {
  */
 async function getPastSuccessfulFix(issueType) {
   try {
-    const rag     = require('../../../packages/core/lib/rag-safe');
-    const results = await rag.search('operations', `장애 복구 성공: ${issueType}`, {
+    const ragSafe = require('../../../packages/core/lib/rag-safe');
+    const results = await ragSafe.search('operations', `장애 복구 성공: ${issueType}`, {
       limit:     3,
       threshold: 0.6,
       filter:    { success: true, category: 'recovery' },
     });
     if (!results || results.length === 0) return null;
-    return results.map(r => r.content || r.text || '').filter(Boolean).join(' / ');
+    return results.map(r => r.content || '').filter(Boolean).join(' / ');
   } catch {
     return null;
   }

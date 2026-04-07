@@ -3,6 +3,17 @@
 const pgPool = require('./pg-pool');
 const { N8N_ENABLED, N8N_BASE_URL: DEFAULT_N8N_BASE } = require('./env');
 
+/**
+ * @typedef {Object} WebhookCandidateInput
+ * @property {string} [workflowName]
+ * @property {string} [method]
+ * @property {string} [pathSuffix]
+ * @property {string} [baseUrl]
+ * @property {string[]|string} [configured]
+ * @property {string[]|string} [defaults]
+ */
+
+/** @param {WebhookCandidateInput} [input] */
 async function resolveProductionWebhookUrl({
   workflowName,
   method = 'POST',
@@ -31,6 +42,7 @@ async function resolveProductionWebhookUrl({
   return `${String(baseUrl).replace(/\/+$/, '')}/webhook/${String(row.webhookPath).replace(/^\/+/, '')}`;
 }
 
+/** @param {WebhookCandidateInput} [input] */
 async function buildWebhookCandidates({
   workflowName,
   method = 'POST',

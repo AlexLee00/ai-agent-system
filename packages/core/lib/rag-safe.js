@@ -79,13 +79,13 @@ function _isCapacityError(error) {
 }
 
 async function _publish(message, payload, fromBot = 'rag') {
-  await postAlarm({
+  await postAlarm(/** @type {any} */ ({
     message,
     team: 'system',
     alertLevel: payload?.status === 'recovered' ? 1 : 2,
     fromBot,
     payload: payload || {},
-  });
+  }));
 }
 
 async function _notifyDegraded(reason, operation, collection, sourceBot = 'rag') {

@@ -334,15 +334,15 @@ async function main() {
 
   // Phase 3: 독터 대기 태스크 처리 (팀장→독터 역할 분리)
   try {
-    const doctor = require('../lib/doctor');
-    await doctor.pollDoctorTasks();
+    const doctorTasks = require('../lib/doctor');
+    await doctorTasks.pollDoctorTasks();
   } catch (e) {
     console.warn('⚠️ 독터 태스크 처리 실패 (무시):', e.message);
   }
 
   try {
-    const doctor = require('../lib/doctor');
-    const recoveries = await doctor.scanAndRecover();
+    const doctorScanner = require('../lib/doctor');
+    const recoveries = await doctorScanner.scanAndRecover();
     if (recoveries.length > 0) {
       const ok = recoveries.filter((item) => item.success).length;
       console.log(`  🔧 [닥터 능동] ${ok}/${recoveries.length}건 자동 복구`);
@@ -356,14 +356,14 @@ async function main() {
   // Emergency: 덱스터 → 독터 직접 호출 (팀장 무응답으로 tasks 생성 불가)
   if (dexterMode.isEmergency()) {
     try {
-      const doctor      = require('../lib/doctor');
+      const doctorEmergency = require('../lib/doctor');
       const errorItems  = results.flatMap(r =>
         (r.items || [])
           .filter(i => i.status === 'error')
           .map(i => ({ checkName: r.name, label: i.label, status: i.status, detail: i.detail || '' }))
       );
       if (errorItems.length > 0) {
-        const recoveries = await doctor.emergencyDirectRecover(errorItems, 'dexter-emergency');
+        const recoveries = await doctorEmergency.emergencyDirectRecover(errorItems, 'dexter-emergency');
         const succeeded  = recoveries.filter(r => r.success).length;
         if (recoveries.length > 0) {
           console.log(`  🚨 [Emergency 폴백] 복구 결과: ${succeeded}/${recoveries.length}건 성공`);
@@ -415,7 +415,7 @@ if (_args.includes('--daily-report')) {
     process.exit(0);
   }
 
-  clearPatterns(allFlag ? null : labelArg, allFlag ? null : checkArg, allFlag)
+  clearPatterns(allFlag ? null : labelArg, allFlag ? null : checkArg)
     .then(deleted => {
       const target = allFlag ? '전체' : labelArg ? `레이블: ${labelArg}` : `체크: ${checkArg}`;
       console.log(`✅ 패턴 이력 삭제 완료: ${target} — ${deleted}건`);

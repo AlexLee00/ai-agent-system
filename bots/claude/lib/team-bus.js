@@ -154,7 +154,7 @@ async function cleanupOldMessages(days = 7) {
   try {
     await pgPool.run(SCHEMA, `
       DELETE FROM messages
-      WHERE acked = 1 AND acked_at < to_char(now() - INTERVAL '${parseInt(days)} days', 'YYYY-MM-DD HH24:MI:SS')
+      WHERE acked = 1 AND acked_at < to_char(now() - INTERVAL '${parseInt(String(days), 10)} days', 'YYYY-MM-DD HH24:MI:SS')
     `);
   } catch (e) {
     console.warn('[team-bus] cleanupOldMessages 실패 (무시):', e.message);

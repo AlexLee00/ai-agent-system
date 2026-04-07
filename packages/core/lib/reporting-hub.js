@@ -340,6 +340,7 @@ function evaluateDeliveryPolicy(channel, normalized, policy = {}) {
   return { allowed: true, reason: 'allowed', policy: resolved, dedupeKey: key };
 }
 
+/** @param {any} [input] */
 function normalizeEvent({
   from_bot,
   team = 'general',
@@ -631,6 +632,7 @@ async function publishToN8n({
   }
 }
 
+/** @param {any} [input] */
 async function publishEventPipeline({
   event,
   targets = [],
@@ -928,6 +930,7 @@ function getEventLinkLines(event) {
  * @deprecated 2026-04-05 알람 전달은 postAlarm()으로 통일됨.
  * publishToQueue, publishToRag 등 큐/RAG 용도는 유지.
  * 텔레그램 알람 목적으로는 사용하지 말 것.
+ * @param {any} [input]
  */
 function buildSeverityTargets({
   event,

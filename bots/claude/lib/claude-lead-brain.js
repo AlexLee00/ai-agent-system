@@ -246,9 +246,9 @@ async function evaluateWithClaudeLead(results) {
   // RAG 검색: 유사 과거 장애/복구 사례 조회 → LLM 컨텍스트 보강
   let ragContext = '';
   try {
-    const rag      = require('../../../packages/core/lib/rag-safe');
+    const ragSearch = require('../../../packages/core/lib/rag-safe');
     const ragQuery = issues.slice(0, 3).map(i => i.label).join(' ');
-    const hits     = await rag.search('operations', ragQuery, { limit: 3, threshold: 0.7 });
+    const hits     = await ragSearch.search('operations', ragQuery, { limit: 3, threshold: 0.7 });
     if (hits.length > 0) {
       ragContext = '\n\n[과거 유사 장애/복구 사례]\n' + hits.map(h => {
         const m = h.metadata || {};
@@ -322,13 +322,13 @@ async function evaluateWithClaudeLead(results) {
 
   // RAG 저장: 이슈 분석 이력을 rag_operations에 학습 데이터로 기록
   try {
-    const rag     = require('../../../packages/core/lib/rag-safe');
+    const ragStore = require('../../../packages/core/lib/rag-safe');
     const content = [
       `클로드팀장 이슈 분석: ${issues.length}건`,
       `판단: ${ruleResult.decision}`,
       `항목: ${issues.slice(0, 3).map(i => i.label).join(', ')}`,
     ].join(' | ');
-    await rag.store('operations', content, {
+    await ragStore.store('operations', content, {
       category:    'analysis',
       team:        'claude',
       decision:    ruleResult.decision,

@@ -152,6 +152,13 @@ async function getToken(paper) {
 
 // ─── 공통 API 요청 ──────────────────────────────────────────────────
 
+/**
+ * @param {string} method
+ * @param {string} endpoint
+ * @param {any} [options]
+ * @param {number} [attempt]
+ * @returns {Promise<any>}
+ */
 async function kisRequest(method, endpoint, { trId, params, body, paper } = {}, attempt = 0) {
   const s     = loadSecrets();
   const key   = paper ? s.kis_paper_app_key    : s.kis_app_key;
@@ -333,7 +340,7 @@ function parseAccount(paper) {
  * @param {string}  symbol     6자리 종목코드 (예: 005930)
  * @param {number}  amountKrw  투자 금액 (원)
  * @param {boolean} dryRun     true = API 호출 없이 시뮬레이션만
- * @returns {{ qty, price, totalKrw, ordNo?, dryRun? }}
+ * @returns {Promise<any>}
  */
 export async function marketBuy(symbol, amountKrw, dryRun = false) {
   const paper = isKisPaper();
@@ -393,7 +400,7 @@ export async function marketBuy(symbol, amountKrw, dryRun = false) {
  * @param {string}  symbol  6자리 종목코드
  * @param {number}  qty     매도 수량
  * @param {boolean} dryRun
- * @returns {{ qty, price, totalKrw, ordNo?, dryRun? }}
+ * @returns {Promise<any>}
  */
 export async function marketSell(symbol, qty, dryRun = false) {
   const paper = isKisPaper();
@@ -434,7 +441,7 @@ export async function marketSell(symbol, qty, dryRun = false) {
  * @param {string}  symbol     알파벳 티커 (예: AAPL)
  * @param {number}  amountUsd  투자 금액 (USD)
  * @param {boolean} dryRun
- * @returns {{ qty, price, totalUsd, ordNo?, dryRun? }}
+ * @returns {Promise<any>}
  */
 export async function marketBuyOverseas(symbol, amountUsd, dryRun = false) {
   const paper = isKisPaper();
@@ -483,7 +490,7 @@ export async function marketBuyOverseas(symbol, amountUsd, dryRun = false) {
  * @param {string}  symbol  알파벳 티커
  * @param {number}  qty     매도 수량
  * @param {boolean} dryRun
- * @returns {{ qty, price, totalUsd, ordNo?, dryRun? }}
+ * @returns {Promise<any>}
  */
 export async function marketSellOverseas(symbol, qty, dryRun = false) {
   const paper = isKisPaper();

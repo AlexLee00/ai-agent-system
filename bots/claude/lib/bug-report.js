@@ -31,7 +31,7 @@ function generateId(prefix = 'DXT') {
 
 /**
  * @param {{ title: string, detail: string, source: string, severity: 'high'|'medium'|'low' }} opts
- * @returns {string} 생성된 버그 ID
+ * @returns {Promise<string>} 생성된 버그 ID
  */
 async function register({ title, detail, source = 'dexter', severity = 'medium' }) {
   const id        = generateId();

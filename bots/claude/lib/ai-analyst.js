@@ -112,13 +112,6 @@ function buildUserPrompt(issues, patterns, newErrors, prevInsights, elapsedMs, s
 
 // ── 메인 분석 함수 ───────────────────────────────────────────────────
 
-/**
- * OpenAI로 덱스터 체크 결과 종합 분석
- * @param {Array}  results   dexter check results
- * @param {number} elapsed   점검 소요 시간 (ms)
- * @param {number} level     alert_level (2=warn, 3=error, 4=critical)
- * @returns {Object|null}    insight 객체 or null (이슈 없거나 키 없을 때)
- */
 function normalizeInsight(parsed, summary) {
   const insight = { ...parsed };
   const lowSeverityWindow =
@@ -147,6 +140,14 @@ function normalizeInsight(parsed, summary) {
 
   return insight;
 }
+
+/**
+ * OpenAI로 덱스터 체크 결과 종합 분석
+ * @param {Array} results dexter check results
+ * @param {number} elapsed 점검 소요 시간 (ms)
+ * @param {number} level alert_level (2=warn, 3=error, 4=critical)
+ * @returns {Promise<Object|null>} insight 객체 or null (이슈 없거나 키 없을 때)
+ */
 
 async function analyzeWithAI(results, elapsed, level) {
   const policyOverride = cfg.RUNTIME?.llmSelectorOverrides?.['claude.dexter.ai_analyst'];

@@ -11,17 +11,17 @@
 
 /**
  * @typedef {Object} JournalEntryInput
- * @property {string} trade_id
+ * @property {string} [trade_id]
  * @property {string} [signal_id]
- * @property {string} market
- * @property {string} exchange
- * @property {string} symbol
+ * @property {string} [market]
+ * @property {string} [exchange]
+ * @property {string} [symbol]
  * @property {boolean} [is_paper]
  * @property {string} [trade_mode]
- * @property {number} entry_time
- * @property {number} entry_price
- * @property {number} entry_size
- * @property {number} entry_value
+ * @property {number} [entry_time]
+ * @property {number} [entry_price]
+ * @property {number} [entry_size]
+ * @property {number} [entry_value]
  * @property {string} [direction]
  * @property {number} [signal_time]
  * @property {number} [decision_time]
@@ -34,6 +34,9 @@
  * @property {boolean} [tp_sl_set]
  * @property {string} [tp_sl_mode]
  * @property {string} [tp_sl_error]
+ * @property {number} [confidence]
+ * @property {string} [reasoning]
+ * @property {any} [capitalInfo]
  */
 
 /**

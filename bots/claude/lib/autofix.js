@@ -167,7 +167,7 @@ function fixChecksums(results, fixes) {
   try {
     const gitDiff = execSync('git -C "' + cfg.ROOT + '" diff --name-only HEAD', { encoding: 'utf8', timeout: 5000 });
     const changedFiles = gitDiff.split('\n').map(f => f.trim()).filter(Boolean);
-    const gitStatus = execSync('git -C "' + cfg.ROOT + '" status --porcelain | head -200', { encoding: 'utf8', timeout: 5000, shell: true }).trim();
+    const gitStatus = execSync('git -C "' + cfg.ROOT + '" status --porcelain | head -200', { encoding: 'utf8', timeout: 5000, shell: '/bin/zsh' }).trim();
     const isClean = !gitStatus;
 
     // 1) 워킹트리 clean + 경고만 남은 경우 → 커밋 후 의도적 변경으로 간주

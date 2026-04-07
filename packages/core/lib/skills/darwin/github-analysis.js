@@ -8,8 +8,8 @@
 
 /**
  * 레포 구조 분석 — 핵심 디렉토리/파일 식별
- * @param {{ tree: Array<{path: string, type: string, size: number}> }} input
- * @returns {{ summary: object, keyDirs: Array, keyFiles: Array }}
+ * @param {any} [input]
+ * @returns {{ summary: object, keyDirs: Array<any>, keyFiles: Array<any> }}
  */
 function analyzeRepoStructure(input = {}) {
   const tree = Array.isArray(input.tree) ? input.tree : [];
@@ -58,8 +58,8 @@ function analyzeRepoStructure(input = {}) {
 
 /**
  * 소스 코드에서 패턴 추출 — 함수/클래스/export 식별
- * @param {{ content: string, path: string }} input
- * @returns {{ path, totalLines, functions, classes, exports, imports, patterns }}
+ * @param {any} [input]
+ * @returns {{ path: string, totalLines: number, functions: Array<any>, classes: Array<any>, exports: Array<any>, imports: Array<any>, patterns: any }}
  */
 function extractCodePatterns(input = {}) {
   const content = String(input.content || '');
@@ -118,7 +118,7 @@ function extractCodePatterns(input = {}) {
 
 /**
  * 분석 결과 요약 생성 — LLM 프롬프트용
- * @param {{ repoInfo: object, structure: object, codePatterns: Array }} input
+ * @param {any} [input]
  * @returns {{ summary: string }}
  */
 function generateAnalysisSummary(input = {}) {

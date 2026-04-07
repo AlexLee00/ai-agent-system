@@ -57,6 +57,7 @@ export function notifySignal({ symbol, action, amountUsdt, confidence, reasoning
   return publishLunaMessage({ message: msg, eventType: 'signal', alertLevel: 1 });
 }
 
+/** @param {any} input */
 export function notifyTrade({ symbol, side, amount, price, totalUsdt, paper, tpPrice, slPrice, tpslSource, capitalInfo, memo }) {
   const tag   = formatExecutionTag(paper);
   const emoji = side === 'buy'       ? '✅ 매수'
@@ -110,11 +111,13 @@ export function notifyKisOverseasSignal({ symbol, action, amountUsdt, confidence
   return publishLunaMessage({ message: msg, eventType: 'signal', alertLevel: 1 });
 }
 
+/** @param {any} input */
 export function notifyRiskRejection({ symbol, action, reason }) {
   const msg = `🚫 [리스크 거부] ${action} ${symbol}\n사유: ${reason}`;
   return publishLunaMessage({ message: msg, eventType: 'alert', alertLevel: 2 });
 }
 
+/** @param {any} input */
 export function notifyTradeSkip({ symbol, action, reason, balance, openPositions, maxPositions, confidence }) {
   const compactReason = compactReasoning(reason, 80);
   const isDustSkip = /최소 매도 수량 미달|dust/i.test(String(reason || ''));
@@ -130,6 +133,7 @@ export function notifyTradeSkip({ symbol, action, reason, balance, openPositions
   return publishLunaMessage({ message: lines.join('\n'), eventType: 'alert', alertLevel: isDustSkip ? 1 : 2 });
 }
 
+/** @param {any} input */
 export function notifyCircuitBreaker({ reason, type, dailyPnL, weeklyPnL }) {
   const lines = [
     '🚨 서킷 브레이커 발동!',
@@ -150,13 +154,14 @@ export function notifyCircuitBreaker({ reason, type, dailyPnL, weeklyPnL }) {
   return publishLunaMessage({ message: lines.join('\n'), eventType: 'alert', alertLevel: 4 });
 }
 
+/** @param {string} context @param {any} error */
 export function notifyError(context, error) {
   const msg = `❌ [오류] ${context}\n${error?.message || error}`;
   return publishLunaMessage({
     message: msg,
     eventType: 'alert',
     alertLevel: 4,
-    criticalTelegramMode: 'team_only',
+    criticalTelegramMode: /** @type {any} */ ('team_only'),
   });
 }
 
@@ -166,6 +171,7 @@ export function notifyError(context, error) {
  * 실시간 진입 알림 (trade_journal 기록 후 호출)
  * executionMode 기준 `[LIVE]` / `[PAPER]` 구분 표시
  */
+/** @param {any} input */
 export function notifyJournalEntry({
   tradeId, symbol, direction = 'long', market = 'crypto',
   entryPrice, entryValue, isPaper,
