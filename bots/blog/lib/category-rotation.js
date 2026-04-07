@@ -70,7 +70,10 @@ async function advanceLectureNumber() {
   // 발행 정합성 검증: 현재 강의(nextNumber)가 실제 발행되었는지 확인
   const published = await pgPool.get('blog', `
     SELECT id FROM blog.posts
-    WHERE post_type = 'lecture' AND lecture_number = $1 LIMIT 1
+    WHERE post_type = 'lecture'
+      AND lecture_number = $1
+      AND status = 'published'
+    LIMIT 1
   `, [nextNumber]);
 
   if (!published) {

@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS blog.publish_schedule (
   book_title     VARCHAR(200),              -- 도서리뷰: 도서명
   book_author    VARCHAR(100),              -- 도서리뷰: 저자
   book_isbn      VARCHAR(20),               -- 도서리뷰: ISBN
-  status         VARCHAR(20)  DEFAULT 'scheduled',  -- scheduled | writing | ready | published
+  status         VARCHAR(20)  DEFAULT 'scheduled',  -- scheduled | writing | ready | published | archived
   post_id        INTEGER      REFERENCES blog.posts(id),
   created_at     TIMESTAMPTZ  DEFAULT NOW(),
   updated_at     TIMESTAMPTZ  DEFAULT NOW(),
