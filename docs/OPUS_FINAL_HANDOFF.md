@@ -110,6 +110,15 @@
 - ✅ KIS Open Trading API 분석! (MCP/backtester/strategy_builder 발견!)
   → 개선점 5가지: MCP매매/indicator포팅/DSL/codegen/웹UI!
   → DARWIN-KIS-MCP-001 연구 과제 등록!
+- ✅ 토스증권 분석 + 스카우트 에이전트 구현 완료!
+  → 토스증권 스크리너/AI시그널/캘린더/TOP10 자동 수집!
+  → Puppeteer 기반 06:30/18:30 스케줄!
+- ✅ 조건부 자율고용 구현 완료! (3b8b962d!)
+  → market-regime.js: trending_bull/bear/ranging/volatile!
+  → hiring-contract: regimeGuide 가중치 적용!
+  → nemesis: 시장 체제 기반 TP/SL/포지션 동적 조정!
+  → event_lake: market_regime_detected 기록!
+  → 다음: 실제 BUY 시 운영 로그 확인!
 - 📋 Sprint 4 실제 제안 풀런 (내일 06:00 확인!)
 
 ### 이번 달
