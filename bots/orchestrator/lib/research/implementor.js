@@ -10,6 +10,7 @@ const { execFileSync } = require('child_process');
 const { callWithFallback } = require('../../../../packages/core/lib/llm-fallback');
 const { createLogger } = require('../../../../packages/core/lib/central-logger');
 const { postAlarm } = require('../../../../packages/core/lib/openclaw-client');
+const eventLake = require('../../../../packages/core/lib/event-lake');
 const proposalStore = require('./proposal-store');
 const autonomyLevel = require('./autonomy-level');
 
@@ -27,6 +28,14 @@ const TEAM_BASE_DIRS = {
   ska: 'bots/ska/experimental',
 };
 const logger = createLogger('implementor', { team: 'darwin' });
+
+function buildDarwinFeedbackButtons(eventId) {
+  if (!eventId) return [];
+  return [[
+    { text: '👍 유익함', callback_data: `darwin_feedback_up:${eventId}` },
+    { text: '👎 아쉬움', callback_data: `darwin_feedback_down:${eventId}` },
+  ]];
+}
 
 function _runGit(args, opts = {}) {
   return execFileSync('git', args, {
@@ -311,6 +320,22 @@ ${JSON.stringify(proposal.verification || {})}`,
       implemented_at: new Date().toISOString(),
     });
 
+    const eventId = await eventLake.record({
+      eventType: 'implementation_completed',
+      team: 'darwin',
+      botName: 'implementor',
+      severity: syntaxPassed ? 'info' : 'warn',
+      title: String(proposal.title || proposal.paper?.title || proposalId).slice(0, 140),
+      message: `구현 완료: ${branchName}`,
+      tags: ['implementation', syntaxPassed ? 'passed' : 'partial_fail'],
+      metadata: {
+        proposal_id: proposalId,
+        branch: branchName,
+        changed_files: changedFiles,
+        syntax_passed: syntaxPassed,
+      },
+    }).catch(() => null);
+
     await postAlarm({
       message: [
         '🔧 다윈 자동 구현 완료',
@@ -322,6 +347,7 @@ ${JSON.stringify(proposal.verification || {})}`,
       team: 'darwin',
       alertLevel: syntaxPassed ? 2 : 3,
       fromBot: 'implementor',
+      inlineKeyboard: buildDarwinFeedbackButtons(eventId),
     });
 
     const verifier = require('./verifier');
@@ -334,11 +360,26 @@ ${JSON.stringify(proposal.verification || {})}`,
       branch: branchName,
       error: error.message,
     });
+    const eventId = await eventLake.record({
+      eventType: 'implementation_failed',
+      team: 'darwin',
+      botName: 'implementor',
+      severity: 'error',
+      title: String(proposal.title || proposalId).slice(0, 140),
+      message: error.message,
+      tags: ['implementation', 'failed'],
+      metadata: {
+        proposal_id: proposalId,
+        branch: branchName,
+      },
+    }).catch(() => null);
+
     await postAlarm({
       message: `❌ 다윈 자동 구현 실패\n📄 ${proposal.title || proposalId}\n사유: ${error.message}`,
       team: 'darwin',
       alertLevel: 3,
       fromBot: 'implementor',
+      inlineKeyboard: buildDarwinFeedbackButtons(eventId),
     });
     throw error;
   } finally {

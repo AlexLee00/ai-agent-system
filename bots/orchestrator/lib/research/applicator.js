@@ -12,6 +12,14 @@ const { postAlarm } = require('../../../../packages/core/lib/openclaw-client');
 const eventLake = require('../../../../packages/core/lib/event-lake');
 const proposalStore = require('./proposal-store');
 
+function buildDarwinFeedbackButtons(eventId) {
+  if (!eventId) return [];
+  return [[
+    { text: '👍 유익함', callback_data: `darwin_feedback_up:${eventId}` },
+    { text: '👎 아쉬움', callback_data: `darwin_feedback_down:${eventId}` },
+  ]];
+}
+
 const TEAM_CONTEXT = `팀 제이 시스템 구조:
 - 10팀 113에이전트, Node.js 모노레포
 - 루나(자동매매 20에이전트): DAG 파이프라인, Bull/Bear 토론, ohlcv→분석→매매
@@ -191,20 +199,7 @@ async function apply(paper) {
     console.warn(`[applicator] 제안서 저장 실패: ${err.message}`);
   }
 
-  const alarmResult = await postAlarm({
-    message: message.slice(0, 4000),
-    team: 'darwin',
-    alertLevel: 2,
-    fromBot: 'applicator',
-    inlineKeyboard: verification.passed ? [[
-      { text: '✅ 승인 — 구현 시작', callback_data: `darwin_approve:${proposalId}` },
-      { text: '❌ 거절', callback_data: `darwin_reject:${proposalId}` },
-    ]] : [[
-      { text: '📝 수동 검토', callback_data: `darwin_manual:${proposalId}` },
-      { text: '❌ 거절', callback_data: `darwin_reject:${proposalId}` },
-    ]],
-  });
-  eventLake.record({
+  const proposalEventId = await eventLake.record({
     eventType: verification.passed ? 'proposal_generated' : 'proposal_review_required',
     team: 'darwin',
     botName: 'applicator',
@@ -216,9 +211,29 @@ async function apply(paper) {
       proposal_id: proposalId,
       arxiv_id: paper.arxiv_id || '',
       verification_passed: verification.passed,
-      alarm_sent: alarmResult?.ok === true,
     },
-  }).catch(() => {});
+  }).catch(() => null);
+
+  const primaryButtons = verification.passed ? [[
+    { text: '✅ 승인 — 구현 시작', callback_data: `darwin_approve:${proposalId}` },
+    { text: '❌ 거절', callback_data: `darwin_reject:${proposalId}` },
+  ]] : [[
+    { text: '📝 수동 검토', callback_data: `darwin_manual:${proposalId}` },
+    { text: '❌ 거절', callback_data: `darwin_reject:${proposalId}` },
+  ]];
+
+  const alarmResult = await postAlarm({
+    message: message.slice(0, 4000),
+    team: 'darwin',
+    alertLevel: 2,
+    fromBot: 'applicator',
+    inlineKeyboard: [...primaryButtons, ...buildDarwinFeedbackButtons(proposalEventId)],
+  });
+  if (proposalEventId) {
+    eventLake.addFeedback(proposalEventId, {
+      feedback: alarmResult?.ok === true ? 'alarm_sent' : 'alarm_failed',
+    }).catch(() => {});
+  }
 
   return {
     proposal,
