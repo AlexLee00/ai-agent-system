@@ -107,18 +107,21 @@ defmodule TeamJay.Diagnostics do
   @impl true
   def handle_call(:publish_shadow_report, _from, state) do
     report = build_shadow_report(state)
+    severity = if(report.overlap_count > 0 or report.summary.failing > 0, do: "warn", else: "info")
 
     TeamJay.EventLake.record(%{
       event_type: "phase3_shadow_report",
       team: "system",
       bot_name: "diagnostics",
-      severity: if(report.overlap_count > 0 or report.summary.failing > 0, do: "warn", else: "info"),
+      severity: severity,
       title: "Phase3 Shadow 리포트",
       message:
         "겹침 #{report.overlap_count}건 | failing #{report.summary.failing} | missing #{report.summary.missing}",
       tags: ["phase3", "diagnostics", "shadow_report"],
       metadata: report
     })
+
+    maybe_alarm_shadow_report(report, severity)
 
     {:reply, report, state}
   end
@@ -330,6 +333,35 @@ defmodule TeamJay.Diagnostics do
       metadata: %{signature: signature, overlaps: overlaps, overlap_count: length(overlaps)}
     })
   end
+
+  defp maybe_alarm_shadow_report(report, "warn") do
+    failing_agents =
+      report.agents
+      |> Enum.filter(&(&1.consecutive_failures > 0 or &1.status == :missing))
+      |> Enum.map(fn agent ->
+        "#{agent.name}(#{agent.status}, fail=#{agent.consecutive_failures})"
+      end)
+      |> Enum.join(", ")
+
+    overlap_text =
+      case report.overlaps do
+        [] -> "없음"
+        overlaps -> overlaps |> Enum.take(6) |> Enum.join(", ")
+      end
+
+    message = """
+    ⚠️ Phase3 Shadow 리포트
+    겹침: #{report.overlap_count}건
+    failing: #{report.summary.failing}
+    missing: #{report.summary.missing}
+    overlaps: #{overlap_text}
+    agents: #{if(failing_agents == "", do: "없음", else: failing_agents)}
+    """
+
+    _ = TeamJay.HubClient.post_alarm(String.trim(message), "claude", "diagnostics")
+  end
+
+  defp maybe_alarm_shadow_report(_report, _severity), do: :ok
 
   defp schedule_check, do: Process.send_after(self(), :check, @check_interval)
 end
