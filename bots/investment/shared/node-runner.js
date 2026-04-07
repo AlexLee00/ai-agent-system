@@ -1,8 +1,36 @@
 import { randomUUID } from 'crypto';
 import { search as searchRag, store as storeRag } from './rag-client.js';
 import * as pipelineDb from './pipeline-db.js';
+import { createRequire } from 'module';
 
 const PIPELINE_NAMESPACE = 'investment_pipeline_store';
+const _require = createRequire(import.meta.url);
+const elixirBridge = _require('../../../packages/core/lib/elixir-bridge');
+
+async function enrichBridgeMetadata(meta = {}) {
+  if (!meta?.bridge_payload || typeof meta.bridge_payload !== 'string') {
+    return meta;
+  }
+  try {
+    const decoded = await elixirBridge.decodeBridgePayload(meta.bridge_payload);
+    return {
+      ...meta,
+      bridge_payload_summary: {
+        envelopeType: decoded?.envelope?.message_type || null,
+        eventType: decoded?.event?.eventType || null,
+        stage: decoded?.event?.metadata?.stage || null,
+        symbol: decoded?.event?.metadata?.symbol || null,
+        market: decoded?.event?.metadata?.market || null,
+        regime: decoded?.regime?.regime || null,
+      },
+    };
+  } catch (error) {
+    return {
+      ...meta,
+      bridge_payload_decode_error: error.message,
+    };
+  }
+}
 
 function artifactRef(sessionId, nodeId, symbol = null) {
   return [sessionId, nodeId, symbol || 'all', randomUUID()].join(':');
@@ -102,6 +130,8 @@ export async function runNode(node, ctx = {}) {
     storeArtifact = true,
   } = ctx;
 
+  const enrichedMeta = await enrichBridgeMetadata(meta);
+
   const nodeRunId = await pipelineDb.startNodeRun({
     sessionId,
     nodeId: node.id,
@@ -109,7 +139,7 @@ export async function runNode(node, ctx = {}) {
     symbol,
     inputRef,
     attempt,
-    metadata: meta,
+    metadata: enrichedMeta,
   });
 
   try {
@@ -162,6 +192,8 @@ export async function recordNodeResult(node, ctx = {}, result, status = 'complet
     storeArtifact = true,
   } = ctx;
 
+  const enrichedMeta = await enrichBridgeMetadata(meta);
+
   const nodeRunId = await pipelineDb.startNodeRun({
     sessionId,
     nodeId: node.id,
@@ -169,7 +201,7 @@ export async function recordNodeResult(node, ctx = {}, result, status = 'complet
     symbol,
     inputRef,
     attempt,
-    metadata: meta,
+    metadata: enrichedMeta,
   });
 
   const artifact = storeArtifact
@@ -183,7 +215,7 @@ export async function recordNodeResult(node, ctx = {}, result, status = 'complet
         payload: result,
         meta: {
           input_ref: inputRef,
-          ...meta,
+          ...enrichedMeta,
         },
       })
     : { ref: null, stored: false };
