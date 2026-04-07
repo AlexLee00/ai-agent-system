@@ -10,6 +10,7 @@ const { n8nWebhookRoute, n8nHealthRoute } = require('../lib/routes/n8n');
 const { servicesStatusRoute, envRoute } = require('../lib/routes/services');
 const { secretsRoute } = require('../lib/routes/secrets');
 const { errorsRecentRoute, errorsSummaryRoute } = require('../lib/routes/errors');
+const { logsSearchRoute, logsStatsRoute } = require('../lib/routes/logs');
 const { darwinCallbackRoute } = require('../lib/routes/darwin-callback');
 const {
   agentsListRoute,
@@ -89,6 +90,8 @@ app.get('/hub/services/status', generalLimiter, servicesStatusRoute);
 app.get('/hub/env', generalLimiter, envRoute);
 app.get('/hub/errors/recent', generalLimiter, errorsRecentRoute);
 app.get('/hub/errors/summary', generalLimiter, errorsSummaryRoute);
+app.get('/hub/logs/search', generalLimiter, logsSearchRoute);
+app.get('/hub/logs/stats', generalLimiter, logsStatsRoute);
 app.post('/hub/darwin/callback', generalLimiter, darwinCallbackRoute);
 app.get('/hub/agents', generalLimiter, agentsListRoute);
 app.get('/hub/agents/dashboard', generalLimiter, agentsDashboardRoute);

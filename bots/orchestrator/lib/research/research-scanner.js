@@ -12,6 +12,7 @@ const keywordEvolver = require('./keyword-evolver');
 const monitor = require('./research-monitor');
 const researchTasks = require('./research-tasks');
 const githubClient = require('../../../../packages/core/lib/github-client');
+const { createLogger } = require('../../../../packages/core/lib/central-logger');
 const {
   analyzeRepoStructure,
   extractCodePatterns,
@@ -35,6 +36,7 @@ const MAX_DAILY_PROPOSALS = 2;
 const AUTO_TASK_MIN_STARS = 100;
 const AUTO_TASK_MIN_FILES = 20;
 const MAX_WEEKLY_TASKS = 3;
+const logger = createLogger('scanner', { team: 'darwin' });
 
 function _sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -155,7 +157,7 @@ async function _selectSearchers() {
     selected.push({ name: domain, domain, score: 0, hired: false, exact: false });
   }
 
-  console.log(`[research-scanner] 고용된 searcher: ${selected.map((item) => `${item.name}(${item.domain})`).join(', ')}`);
+  logger.info(`고용된 searcher: ${selected.map((item) => `${item.name}(${item.domain})`).join(', ')}`);
   return selected;
 }
 
@@ -164,18 +166,18 @@ async function _collectPapers(searchers) {
   for (const { name, domain } of searchers) {
     const papers = await arxivClient.searchByDomain(domain, ARXIV_RESULTS_PER_DOMAIN);
     arxivResults.push(...papers);
-    console.log(`[research-scanner] ${name}→arXiv ${domain}: ${papers.length}건`);
+    logger.info(`${name}→arXiv ${domain}: ${papers.length}건`);
     await _sleep(DOMAIN_DELAY_MS);
   }
 
   const trending = await hfClient.fetchTrending();
-  console.log(`[research-scanner] HF 트렌딩: ${trending.length}건`);
+  logger.info(`HF 트렌딩: ${trending.length}건`);
 
   const keywordPapers = [];
   for (const keyword of hfClient.HF_KEYWORDS.slice(0, 3)) {
     const papers = await hfClient.searchByKeyword(keyword);
     keywordPapers.push(...papers);
-    console.log(`[research-scanner] HF 검색 ${keyword}: ${papers.length}건`);
+    logger.info(`HF 검색 ${keyword}: ${papers.length}건`);
   }
 
   return [...arxivResults, ...trending, ...keywordPapers];
