@@ -23,7 +23,7 @@ function normalizeSignals(signals = []) {
 export async function loadLatestScoutIntel({ minutes = 24 * 60 } = {}) {
   try {
     const rows = await eventLake.search({
-      eventType: 'scout_market_scan',
+      eventType: 'scout_collect',
       team: 'luna',
       botName: 'scout',
       minutes,

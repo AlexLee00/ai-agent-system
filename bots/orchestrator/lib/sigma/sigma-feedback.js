@@ -4,6 +4,7 @@ const pgPool = require('../../../../packages/core/lib/pg-pool');
 const rag = require('../../../../packages/core/lib/rag');
 const kst = require('../../../../packages/core/lib/kst');
 const { postAlarm } = require('../../../../packages/core/lib/openclaw-client');
+const eventLake = require('../../../../packages/core/lib/event-lake');
 
 const SCHEMA = 'sigma';
 
@@ -282,10 +283,81 @@ async function weeklyMetaReview() {
   return { ok: true, sent: result?.ok === true, rows };
 }
 
+async function collectScoutQualityMetric({ minutes = 24 * 60 } = {}) {
+  await eventLake.initSchema();
+  const rows = await eventLake.search({
+    team: 'luna',
+    botName: 'scout',
+    minutes,
+    limit: 50,
+  });
+
+  const collectRows = rows.filter((row) => row.event_type === 'scout_collect');
+  const errorRows = rows.filter((row) => row.event_type === 'scout_error');
+  const latestCollect = collectRows[0] || null;
+  const sectionCounts = latestCollect?.metadata?.sectionCounts || {};
+  const activeSectionTypes = Object.entries(sectionCounts)
+    .filter(([, count]) => Number(count || 0) > 0)
+    .map(([key]) => key);
+  const coverageScore = activeSectionTypes.length;
+  const collectCount = collectRows.length;
+  const errorCount = errorRows.length;
+  const errorRate = collectCount > 0
+    ? Number((errorCount / collectCount).toFixed(4))
+    : errorCount > 0 ? 1 : 0;
+
+  return {
+    team: 'luna',
+    metric_type: 'scout_quality',
+    window_minutes: minutes,
+    collect_count: collectCount,
+    error_count: errorCount,
+    error_rate: errorRate,
+    latest_focus_symbols: Array.isArray(latestCollect?.metadata?.focusSymbols)
+      ? latestCollect.metadata.focusSymbols.slice(0, 5)
+      : [],
+    latest_overlap_symbols: Array.isArray(latestCollect?.metadata?.overlapSymbols)
+      ? latestCollect.metadata.overlapSymbols.slice(0, 5)
+      : [],
+    latest_signal_count: Number(latestCollect?.metadata?.signalCount || 0),
+    latest_sections: sectionCounts,
+    coverage_score: coverageScore,
+  };
+}
+
+async function recordScoutQualityEvent(metric = {}) {
+  if (!metric || typeof metric !== 'object') return null;
+  const title = `스카우트 품질 요약: 수집 ${Number(metric.collect_count || 0)}회, 에러 ${Number(metric.error_count || 0)}회`;
+  const message = [
+    title,
+    `최근 시그널: ${Number(metric.latest_signal_count || 0)}건`,
+    `활성 섹션: ${Object.entries(metric.latest_sections || {}).filter(([, count]) => Number(count || 0) > 0).map(([key]) => key).join(', ') || '없음'}`,
+    `집중 심볼: ${(metric.latest_focus_symbols || []).join(', ') || '없음'}`,
+  ].join(' | ');
+  return eventLake.record({
+    eventType: 'scout_quality',
+    team: 'sigma',
+    botName: 'sigma',
+    severity: Number(metric.error_count || 0) > 0 ? 'warn' : 'info',
+    title,
+    message,
+    tags: [
+      'sigma',
+      'scout',
+      'source:tossinvest',
+      `errors:${Number(metric.error_count || 0)}`,
+      Number(metric.error_count || 0) > 0 ? 'quality:degraded' : 'quality:healthy',
+    ],
+    metadata: metric,
+  });
+}
+
 module.exports = {
   ensureSigmaTables,
   collectTeamMetric,
+  collectScoutQualityMetric,
   computeEffectiveness,
+  recordScoutQualityEvent,
   recordDailyRun,
   recordFeedbackRecommendation,
   measurePastFeedbackEffectiveness,

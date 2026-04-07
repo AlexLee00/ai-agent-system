@@ -142,6 +142,9 @@ JSON만 응답:
 
 async function recordScoutArtifacts(payload, summary) {
   const topSignals = topUniqueSignals(payload.signals || [], 6);
+  const sectionCounts = Object.fromEntries(
+    Object.entries(payload.sections || {}).map(([key, values]) => [key, Array.isArray(values) ? values.length : 0]),
+  );
   const content = [
     `[스카우트 ${payload.source}] ${summary.summary}`,
     `focus: ${summary.focusSymbols.join(', ') || '없음'}`,
@@ -160,19 +163,31 @@ async function recordScoutArtifacts(payload, summary) {
   }, 'scout');
 
   await eventLake.record({
-    eventType: 'scout_market_scan',
+    eventType: 'scout_collect',
     team: 'luna',
     botName: 'scout',
     severity: 'info',
     title: summary.summary.slice(0, 140),
     message: content,
-    tags: ['scout', 'luna', payload.source, 'market_scan'],
+    tags: [
+      'scout',
+      'luna',
+      `source:${payload.source}`,
+      'trigger:scheduled',
+      `errors:0`,
+      ...Object.entries(sectionCounts)
+        .filter(([, count]) => Number(count || 0) > 0)
+        .map(([key]) => `type:${key}`),
+    ],
     metadata: {
       focusSymbols: summary.focusSymbols,
       overlapSymbols: summary.overlapSymbols,
       signalCount: topSignals.length,
       source: payload.source,
       signals: topSignals,
+      sectionCounts,
+      targetUrl: payload.targetUrl,
+      urls: payload.urls || {},
     },
   });
 }
@@ -256,6 +271,21 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const limit = Number(limitArg?.split('=')[1] || 10);
 
   runScout({ dryRun, json, limit }).catch((error) => {
+    eventLake.record({
+      eventType: 'scout_error',
+      team: 'luna',
+      botName: 'scout',
+      severity: 'error',
+      title: '스카우트 실행 실패',
+      message: error?.message || String(error || 'unknown'),
+      tags: ['scout', 'luna', 'source:tossinvest', 'trigger:manual', 'errors:1'],
+      metadata: {
+        dryRun,
+        json,
+        limit,
+        stack: error?.stack || '',
+      },
+    }).catch(() => {});
     logger.error('스카우트 실행 실패', {
       error: error?.message || String(error || 'unknown'),
       stack: error?.stack ? String(error.stack).split('\n').slice(0, 3).join(' | ') : '',

@@ -9,7 +9,9 @@ const { decideTodayFormation } = require('../lib/sigma/sigma-scheduler');
 const { analyzeFormation } = require('../lib/sigma/sigma-analyzer');
 const {
   ensureSigmaTables,
+  collectScoutQualityMetric,
   recordDailyRun,
+  recordScoutQualityEvent,
   recordFeedbackRecommendation,
   measurePastFeedbackEffectiveness,
   weeklyMetaReview,
@@ -24,6 +26,7 @@ function parseArgs(argv = process.argv.slice(2)) {
 async function runDaily({ test = false } = {}) {
   await ensureSigmaTables();
   const measured = await measurePastFeedbackEffectiveness();
+  const scoutQuality = await collectScoutQualityMetric();
   const formation = await decideTodayFormation();
   const analysis = await analyzeFormation(formation);
 
@@ -46,8 +49,11 @@ async function runDaily({ test = false } = {}) {
       measuredCount: measured.length,
       teams: formation.targetTeams,
       analysts: formation.analysts,
+      scoutQuality,
     },
   });
+
+  await recordScoutQualityEvent(scoutQuality);
 
   try {
     await rag.initSchema();
@@ -57,6 +63,7 @@ async function runDaily({ test = false } = {}) {
       teams: formation.targetTeams,
       analysts: formation.analysts,
       feedback_count: feedbackRows.length,
+      scout_quality: scoutQuality,
       why: `일일 크로스팀 분석 ${feedbackRows.length}건 피드백 생성`,
     }, 'sigma');
   } catch (error) {
