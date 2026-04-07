@@ -3,6 +3,36 @@
 const pgPool = require('./pg-pool');
 const registry = require('./agent-registry');
 
+/**
+ * @typedef {Object} HiringRequirements
+ * @property {number} [limit]
+ * @property {'balanced'|'greedy'|'explore'} [mode]
+ * @property {string} [taskHint]
+ * @property {string[]} [excludeNames]
+ * @property {{ agentWeights?: Record<string, number> }} [regimeGuide]
+ * @property {number} [quality_min]
+ * @property {number} [deadline_ms]
+ */
+
+/**
+ * @typedef {Object} HiringResult
+ * @property {number} [quality]
+ * @property {number} [duration_ms]
+ * @property {boolean} [hallucination]
+ */
+
+/**
+ * @typedef {Object} ContractTaskData
+ * @property {string} [team]
+ * @property {string} [employer_team]
+ * @property {string} [employerTeam]
+ * @property {string} [description]
+ * @property {string} [task]
+ * @property {HiringRequirements} [requirements]
+ * @property {object} [reward]
+ * @property {object} [penalty]
+ */
+
 const SCORE_WEIGHTS = {
   BASE: 1.0,
   QUALITY_BONUS_MAX: 0.5,
@@ -158,6 +188,12 @@ function _matchRole(team, requestedRole, agentRole) {
   return family ? family.has(agentRole) : false;
 }
 
+/**
+ * @param {string} role
+ * @param {string|null} [team]
+ * @param {HiringRequirements} [requirements]
+ * @returns {Promise<object|null>}
+ */
 async function selectBestAgent(role, team = null, requirements = {}) {
   const limit = Number.isFinite(Number(requirements.limit)) ? Number(requirements.limit) : 5;
   const mode = requirements.mode || 'balanced';
@@ -236,6 +272,11 @@ async function selectBestAgent(role, team = null, requirements = {}) {
   return decorate(ranked[0]);
 }
 
+/**
+ * @param {string} agentName
+ * @param {ContractTaskData} [taskData]
+ * @returns {Promise<object>}
+ */
 async function hire(agentName, taskData = {}) {
   return registry.createContract(agentName, {
     employer_team: taskData.team || taskData.employer_team || taskData.employerTeam || 'unknown',
@@ -254,6 +295,12 @@ async function hire(agentName, taskData = {}) {
   });
 }
 
+/**
+ * @param {HiringResult} [result]
+ * @param {HiringRequirements} [requirements]
+ * @param {number|null} [confidence]
+ * @returns {number}
+ */
 function calculateScore(result = {}, requirements = {}, confidence = null) {
   const {
     BASE,
@@ -302,6 +349,12 @@ function calculateScore(result = {}, requirements = {}, confidence = null) {
   return Math.max(0, Math.min(10, raw));
 }
 
+/**
+ * @param {string|number} contractId
+ * @param {HiringResult} [result]
+ * @param {number|null} [confidence]
+ * @returns {Promise<{ contractId: string|number, score: number, agent: string|null }>}
+ */
 async function evaluate(contractId, result = {}, confidence = null) {
   const contract = await pgPool.get('agent', 'SELECT * FROM agent.contracts WHERE id = $1', [contractId]);
   if (!contract) throw new Error(`Contract not found: ${contractId}`);
@@ -319,6 +372,10 @@ async function evaluate(contractId, result = {}, confidence = null) {
   return { contractId, score, agent: agent?.name || null };
 }
 
+/**
+ * @param {number} [threshold]
+ * @returns {Promise<Array<{ name: string, team: string, score: number, totalTasks: number, failCount: number, emotion: unknown }>>}
+ */
 async function getLowPerformersForRehab(threshold = 4.0) {
   const low = await registry.getLowPerformers(threshold);
   return low.map((agent) => ({
