@@ -9,6 +9,7 @@ const path = require('path');
 const { execSync } = require('child_process');
 const { callWithFallback } = require('../../../../packages/core/lib/llm-fallback');
 const { postAlarm } = require('../../../../packages/core/lib/openclaw-client');
+const eventLake = require('../../../../packages/core/lib/event-lake');
 const proposalStore = require('./proposal-store');
 
 const TEAM_CONTEXT = `팀 제이 시스템 구조:
@@ -118,6 +119,19 @@ function verifyPrototype(code) {
 
 async function apply(paper) {
   console.log(`[applicator] 시작: ${String(paper.title || '').slice(0, 60)}`);
+  eventLake.record({
+    eventType: 'proposal_generation_started',
+    team: 'darwin',
+    botName: 'applicator',
+    severity: 'info',
+    title: String(paper.title || '').slice(0, 140),
+    message: '다윈 적용 제안 생성 시작',
+    tags: ['proposal', 'generation', paper.domain || 'unknown'],
+    metadata: {
+      arxiv_id: paper.arxiv_id || '',
+      relevance_score: Number(paper.relevance_score || 0),
+    },
+  }).catch(() => {});
   const proposalId = proposalStore.buildProposalId(paper);
 
   let proposal;
@@ -190,6 +204,21 @@ async function apply(paper) {
       { text: '❌ 거절', callback_data: `darwin_reject:${proposalId}` },
     ]],
   });
+  eventLake.record({
+    eventType: verification.passed ? 'proposal_generated' : 'proposal_review_required',
+    team: 'darwin',
+    botName: 'applicator',
+    severity: verification.passed ? 'info' : 'warn',
+    title: String(paper.title || '').slice(0, 140),
+    message: verification.passed ? '검증 통과 후 승인 대기' : '프로토타입 검증 실패',
+    tags: ['proposal', verification.passed ? 'passed' : 'failed'],
+    metadata: {
+      proposal_id: proposalId,
+      arxiv_id: paper.arxiv_id || '',
+      verification_passed: verification.passed,
+      alarm_sent: alarmResult?.ok === true,
+    },
+  }).catch(() => {});
 
   return {
     proposal,

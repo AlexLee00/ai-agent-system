@@ -19,6 +19,7 @@ const {
   generateAnalysisSummary,
 } = require('../../../../packages/core/lib/skills/darwin/github-analysis');
 const rag = require('../../../../packages/core/lib/rag');
+const eventLake = require('../../../../packages/core/lib/event-lake');
 const hiringContract = require('../../../../packages/core/lib/hiring-contract');
 const registry = require('../../../../packages/core/lib/agent-registry');
 const pgPool = require('../../../../packages/core/lib/pg-pool');
@@ -236,6 +237,21 @@ async function _enrichWithGitHub(evaluated) {
         tasksRegistered += 1;
         console.log(`[research-scanner] 연구 과제 자동 등록: ${task.id} (${owner}/${repoName})`);
       }
+      eventLake.record({
+        eventType: 'research_github_enriched',
+        team: 'darwin',
+        botName: 'scanner',
+        severity: 'info',
+        title: paper.title,
+        message: `${owner}/${repoName} GitHub 분석 연결`,
+        tags: ['research', 'github', paper.domain || 'unknown'],
+        metadata: {
+          arxiv_id: paper.arxiv_id || '',
+          repo: `${owner}/${repoName}`,
+          relevance_score: Number(paper.relevance_score || 0),
+          task_registered: !!task,
+        },
+      }).catch(() => {});
 
       enriched += 1;
       console.log(`[research-scanner] GitHub 분석 완료: ${owner}/${repoName} (⭐${repoInfo.stars || 0})`);

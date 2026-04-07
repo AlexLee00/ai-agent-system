@@ -1,6 +1,13 @@
 'use strict';
 
 const { getTraceId } = require('./trace');
+const eventLake = require('./event-lake');
+
+function _eventType(botName, level) {
+  if (level === 'ERROR') return `${botName}_error`;
+  if (level === 'WARN') return `${botName}_warn`;
+  return `${botName}_log`;
+}
 
 function createLogger(bot, options = {}) {
   const botName = String(bot || 'unknown').trim() || 'unknown';
@@ -17,9 +24,23 @@ function createLogger(bot, options = {}) {
 
     if (data && Object.keys(data).length > 0) {
       console[method](line, data);
-      return;
+    } else {
+      console[method](line);
     }
-    console[method](line);
+
+    if (upper === 'WARN' || upper === 'ERROR') {
+      eventLake.record({
+        eventType: _eventType(botName, upper),
+        team: team || 'general',
+        botName,
+        severity: upper.toLowerCase(),
+        traceId,
+        title: String(message || '').slice(0, 140),
+        message: String(message || ''),
+        tags: [botName, team || 'general', upper.toLowerCase()],
+        metadata: data && Object.keys(data).length > 0 ? data : {},
+      }).catch(() => {});
+    }
   }
 
   return {
