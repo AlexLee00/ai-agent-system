@@ -12,6 +12,7 @@
     "dev": "npm run dev --workspaces --if-present",
     "build": "npm run build --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "weekly-report": "node scripts/weekly-team-report.js",
     "weekly-report:30": "node scripts/weekly-team-report.js --days=30"
   },
@@ -27,5 +28,8 @@
     "sharp": "^0.34.5",
     "technicalindicators": "^3.1.0",
     "tesseract.js": "^7.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
   }
 }

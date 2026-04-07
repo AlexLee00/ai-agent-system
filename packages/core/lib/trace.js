@@ -29,7 +29,7 @@ const traceStore = new AsyncLocalStorage();
 /**
  * 새 trace 컨텍스트 생성
  * @param {object} [metadata] - 추가 메타데이터 (bot, action, run_id 등)
- * @returns {{ trace_id: string, started_at: number, ...metadata }}
+ * @returns {{ trace_id: string, started_at: number } & Record<string, any>}
  */
 function startTrace(metadata = {}) {
   return {
@@ -59,7 +59,7 @@ function getTraceContext() {
 /**
  * trace 컨텍스트 내에서 함수 실행 (trace_id 자동 전파)
  * @param {object} traceContext - startTrace()로 생성한 컨텍스트
- * @param {Function} fn - 실행할 함수
+ * @param {() => any} fn - 실행할 함수
  * @returns {any} fn의 반환값
  */
 function withTrace(traceContext, fn) {
@@ -69,7 +69,7 @@ function withTrace(traceContext, fn) {
 /**
  * 기존 trace_id를 이어받아 실행 (봇 간 위임 시)
  * @param {string} traceId - 이어받을 trace_id
- * @param {Function} fn - 실행할 함수
+ * @param {() => any} fn - 실행할 함수
  * @param {object} [extra] - 추가 컨텍스트
  */
 function continueTrace(traceId, fn, extra = {}) {

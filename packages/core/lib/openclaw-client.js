@@ -41,6 +41,16 @@ let _topicIds = null;
 let _telegramBotToken = null;
 let _darwinTelegramBotToken = null;
 
+/**
+ * @typedef {Object} PostAlarmInput
+ * @property {string} message
+ * @property {string} [team]
+ * @property {number} [alertLevel]
+ * @property {string} [fromBot]
+ * @property {string} [sessionKey]
+ * @property {Array<Array<{ text: string, callback_data: string }>> | null} [inlineKeyboard]
+ */
+
 function _sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -132,6 +142,9 @@ async function _getDarwinTelegramBotToken() {
   return _darwinTelegramBotToken;
 }
 
+/**
+ * @param {{ message: string, team: string, fromBot: string, topicId: string|null, groupId: string, inlineKeyboard: Array<Array<{ text: string, callback_data: string }>> }} input
+ */
 async function _sendInlineTelegram({ message, team, fromBot, topicId, groupId, inlineKeyboard }) {
   const botToken = team === 'darwin'
     ? (await _getDarwinTelegramBotToken()) || (await _getTelegramBotToken())
@@ -181,6 +194,9 @@ async function _sendInlineTelegram({ message, team, fromBot, topicId, groupId, i
   }
 }
 
+/**
+ * @param {PostAlarmInput} input
+ */
 async function postAlarm({
   message,
   team = 'general',

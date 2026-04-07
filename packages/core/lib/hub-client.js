@@ -11,6 +11,12 @@ const env = require('./env');
 const cache = new Map();
 const warnCache = new Map();
 
+/**
+ * @typedef {Object} HubFetchResponse
+ * @property {any} [data]
+ * @property {any} [profile]
+ */
+
 function getCacheKey(kind, value) {
   return `${kind}:${value}`;
 }
@@ -39,6 +45,11 @@ function warnOnce(key, message, ttlMs = 30000) {
   console.warn(message);
 }
 
+/**
+ * @param {string} category
+ * @param {number} [timeoutMs]
+ * @returns {Promise<any|null>}
+ */
 async function fetchHubSecrets(category, timeoutMs = 3000) {
   if (!env.USE_HUB_SECRETS || !env.HUB_BASE_URL) return null;
   if (!env.HUB_AUTH_TOKEN) {
@@ -83,6 +94,12 @@ async function fetchHubSecrets(category, timeoutMs = 3000) {
   }
 }
 
+/**
+ * @param {string} sql
+ * @param {string} [schema]
+ * @param {any[]} [params]
+ * @param {number} [timeoutMs]
+ */
 async function queryOpsDb(sql, schema = 'investment', params = [], timeoutMs = 5000) {
   if (!env.HUB_BASE_URL) return null;
   if (!env.HUB_AUTH_TOKEN) {
@@ -128,6 +145,11 @@ async function queryOpsDb(sql, schema = 'investment', params = [], timeoutMs = 5
   }
 }
 
+/**
+ * @param {number} [minutes]
+ * @param {string|null} [service]
+ * @param {number} [timeoutMs]
+ */
 async function fetchOpsErrors(minutes = 60, service = null, timeoutMs = 3000) {
   if (!env.HUB_BASE_URL) return null;
   if (!env.HUB_AUTH_TOKEN) {
@@ -173,6 +195,12 @@ async function fetchOpsErrors(minutes = 60, service = null, timeoutMs = 3000) {
   }
 }
 
+/**
+ * @param {string} team
+ * @param {string} [purpose]
+ * @param {number} [timeoutMs]
+ * @returns {Promise<HubFetchResponse['profile']|null>}
+ */
 async function fetchHubRuntimeProfile(team, purpose = 'default', timeoutMs = 3000) {
   if (!env.HUB_BASE_URL || !team) return null;
   if (!env.HUB_AUTH_TOKEN) {
