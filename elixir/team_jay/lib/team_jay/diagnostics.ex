@@ -39,6 +39,15 @@ defmodule TeamJay.Diagnostics do
     "ai.steward.daily",
     "ai.steward.weekly"
   ]
+  @shadow_agents [
+    {:andy, :ska},
+    {:jimmy, :ska},
+    {:ska_commander, :ska},
+    {:dexter, :claude},
+    {:claude_commander, :claude},
+    {:steward_hourly, :steward},
+    {:steward_daily, :steward}
+  ]
 
   defstruct [:checks, :alerts, :last_check, :last_overlap_signature]
 
@@ -84,9 +93,55 @@ defmodule TeamJay.Diagnostics do
   end
 
   def get_status, do: GenServer.call(__MODULE__, :get_status)
+  def shadow_report, do: GenServer.call(__MODULE__, :shadow_report)
 
   @impl true
   def handle_call(:get_status, _from, state), do: {:reply, state, state}
+
+  @impl true
+  def handle_call(:shadow_report, _from, state) do
+    overlap_result = Enum.find(state.checks, &(&1.name == "launchd_phase3_overlap")) || %{}
+
+    agent_statuses =
+      Enum.map(@shadow_agents, fn {name, team} ->
+        case GenServer.whereis(TeamJay.Agents.PortAgent.via(name)) do
+          nil ->
+            %{name: name, team: team, status: :missing, runs: 0, consecutive_failures: 0}
+
+          _pid ->
+            status = TeamJay.Agents.PortAgent.get_status(name)
+
+            %{
+              name: name,
+              team: team,
+              status: status.status,
+              runs: status.runs,
+              consecutive_failures: Map.get(status, :consecutive_failures, 0)
+            }
+        end
+      end)
+
+    summary =
+      %{
+        total: length(agent_statuses),
+        running: Enum.count(agent_statuses, &(&1.status == :running)),
+        idle: Enum.count(agent_statuses, &(&1.status == :idle)),
+        missing: Enum.count(agent_statuses, &(&1.status == :missing)),
+        failing: Enum.count(agent_statuses, &(&1.consecutive_failures > 0))
+      }
+
+    report = %{
+      generated_at: DateTime.utc_now(),
+      overlap_count: length(Map.get(overlap_result, :overlaps, [])),
+      overlaps: Map.get(overlap_result, :overlaps, []),
+      supervisor_alerts: Enum.map(state.alerts, &Map.take(&1, [:name, :severity, :message])),
+      agents: agent_statuses,
+      summary: summary,
+      recent_failures: TeamJay.EventLake.get_by_type("port_agent_failed", 5)
+    }
+
+    {:reply, report, state}
+  end
 
   defp run_diagnostics do
     [

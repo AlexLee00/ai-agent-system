@@ -1,6 +1,7 @@
 defmodule TeamJayTest do
   use ExUnit.Case
   alias TeamJay.Agents.PortAgent
+  alias TeamJay.Diagnostics
   alias TeamJay.EventLake
   alias TeamJay.MarketRegime
   alias TeamJay.Schemas.EventLake, as: EventLakeSchema
@@ -35,5 +36,15 @@ defmodule TeamJayTest do
     status = PortAgent.get_status(:andy)
     assert status.name == :andy
     assert status.status in [:idle, :running]
+  end
+
+  test "shadow report summarizes overlap and agent states" do
+    report = Diagnostics.shadow_report()
+    assert is_map(report)
+    assert Map.has_key?(report, :overlap_count)
+    assert Map.has_key?(report, :agents)
+    assert Map.has_key?(report, :summary)
+    assert is_list(report.agents)
+    assert report.summary.total >= 1
   end
 end
