@@ -20,10 +20,10 @@ defmodule TeamJay.Teams.ClaudeSupervisor do
   def init(_opts) do
     children =
       Enum.map(@claude_agents, fn agent ->
-        {TeamJay.Agents.PortAgent, name: agent.name, script: agent.script, schedule: agent.schedule}
+        {TeamJay.Agents.PortAgent,
+         name: agent.name, team: :claude, script: agent.script, schedule: agent.schedule}
       end)
 
     Supervisor.init(children, strategy: :one_for_one, max_restarts: 8, max_seconds: 60)
   end
 end
-
