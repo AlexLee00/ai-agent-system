@@ -132,7 +132,14 @@
 
 ### 이번 달
 - ✅ TypeScript Phase 0~1B — 전부 완료!
-- 📋 Elixir Phase 1 — brew install → mix new → Ecto → Supervisor 프로토타입!
+- ✅ Elixir Phase 1 완료! (32e12f0d) 브랜치: elixir/phase1-prototype!
+  → Erlang/OTP 28 + Elixir 설치!
+  → Ecto → jay DB 연결! mix compile 통과!
+  → EventListener pg LISTEN/NOTIFY 실시간!
+  → HubClient health/pg_query 성공!
+  → SkaSupervisor + Andy/Jimmy GenServer!
+  → 크래시 → 자동 재시작 확인!
+- 📋 Elixir Phase 2 — EventLake + MarketRegime + Diagnostics! (코덱스 전달!)
 - 📋 Phase B — 라벨링 + 자동 점수 + L1 확장! (1주 후!)
 - 📋 Phase C — 시그마 event_lake 연동 + 큐레이션! (2주 후!)
 - 📋 experience why 2단계 — Evidence+Confidence! (4/21 이후!)
