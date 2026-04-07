@@ -754,22 +754,32 @@ export async function insertRationale(rationaleData) {
   }
 }
 
-export async function hireAnalystForSignal(market, symbol) {
+export async function hireAnalystForSignal(market, symbol, options = {}) {
   await ensureInit();
   try {
+    const isCryptoMarket = market === 'binance' || market === 'crypto';
     const bestAnalyst = await hiringContract.selectBestAgent('analyst', 'luna', {
       limit: 10,
       mode: 'balanced',
-      taskHint: market === 'crypto' ? '암호화폐 온체인' : '주식 펀더멘탈',
+      taskHint: isCryptoMarket ? '암호화폐 온체인' : '주식 펀더멘탈',
+      regimeGuide: options.regimeGuide || null,
     });
     if (!bestAnalyst) return null;
-    console.log(`[루나고용] 분석가 선택: ${bestAnalyst.name} (${bestAnalyst.specialty || bestAnalyst.role})`);
+    console.log(`[루나고용] 분석가 선택: ${bestAnalyst.name} (${bestAnalyst.specialty || bestAnalyst.role}, 체제 가중 ${Number(bestAnalyst.regimeWeight || 1).toFixed(2)})`);
     const contract = await hiringContract.hire(bestAnalyst.name, {
       team: 'luna',
       description: `analysis: ${market}/${symbol}`,
-      requirements: { accuracy_min: 0.6 },
+      requirements: {
+        accuracy_min: 0.6,
+        regime: options.regimeGuide?.description || null,
+      },
     });
-    return { contractId: contract.contractId, analyst: bestAnalyst.name };
+    return {
+      contractId: contract.contractId,
+      analyst: bestAnalyst.name,
+      regimeWeight: Number(bestAnalyst.regimeWeight || 1),
+      regime: options.regimeGuide?.description || null,
+    };
   } catch (e) {
     console.warn('[루나고용] 실패 (무시):', e.message);
     return null;

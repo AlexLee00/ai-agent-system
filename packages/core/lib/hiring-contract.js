@@ -199,18 +199,25 @@ async function selectBestAgent(role, team = null, requirements = {}) {
         specialtyBonus = 1.0;
       }
     }
-    const adjustedScore = Number(agent.score || 0) - (fatigue * 0.1) + (confidence * 0.05) + roleBonus + specialtyBonus;
-    return { agent, adjustedScore };
+    const regimeWeight = Number(requirements.regimeGuide?.agentWeights?.[agent.name] || 1.0);
+    const baseAdjustedScore = Number(agent.score || 0) - (fatigue * 0.1) + (confidence * 0.05) + roleBonus + specialtyBonus;
+    const adjustedScore = baseAdjustedScore * regimeWeight;
+    return { agent, adjustedScore, regimeWeight };
   });
 
   ranked.sort((a, b) => b.adjustedScore - a.adjustedScore);
+  const decorate = (rankedItem) => (
+    rankedItem?.agent
+      ? { ...rankedItem.agent, adjustedScore: rankedItem.adjustedScore, regimeWeight: rankedItem.regimeWeight }
+      : null
+  );
   if (mode === 'greedy') {
-    return ranked[0]?.agent || null;
+    return decorate(ranked[0]);
   }
 
   if (mode === 'explore') {
     const idx = Math.floor(Math.random() * ranked.length);
-    return ranked[idx]?.agent || null;
+    return decorate(ranked[idx]);
   }
 
   const EPSILON = 0.2;
@@ -221,10 +228,12 @@ async function selectBestAgent(role, team = null, requirements = {}) {
     if (chosen) {
       console.log(`[고용] ε-탐색: ${chosen.name} 선택 (최고 ${ranked[0].agent.name} 대신)`);
     }
-    return chosen || ranked[0]?.agent || null;
+    return chosen
+      ? decorate(explorePool[idx])
+      : decorate(ranked[0]);
   }
 
-  return ranked[0]?.agent || null;
+  return decorate(ranked[0]);
 }
 
 async function hire(agentName, taskData = {}) {

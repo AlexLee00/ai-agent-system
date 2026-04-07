@@ -11,9 +11,12 @@ import { createRequire } from 'module';
 import * as db from '../shared/db.js';
 import { getInvestmentTradeMode, isKisPaper } from '../shared/secrets.js';
 import { getCapitalConfig, getDailyTradeCount } from '../shared/capital-manager.js';
+import { getMarketRegime } from '../shared/market-regime.js';
+import { loadLatestScoutIntel, getScoutSignalForSymbol } from '../shared/scout-intel.js';
 
 const _require = createRequire(import.meta.url);
 const kst = _require('../../../packages/core/lib/kst');
+const eventLake = _require('../../../packages/core/lib/event-lake');
 import * as journalDb from '../shared/trade-journal-db.js';
 import { callLLM, parseJSON } from '../shared/llm-client.js';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.js';
@@ -62,6 +65,23 @@ function getStockRiskThresholds() {
 
 function isDynamicTPSLEnabled() {
   return isDynamicTpSlEnabled();
+}
+
+function applyRegimeGuideToTPSL(dynamicTPSL, guide, entryEstimate = null) {
+  if (!dynamicTPSL || !guide) return dynamicTPSL;
+
+  const nextTpPct = Number(dynamicTPSL.tpPct || 0) * Number(guide.tpMultiplier || 1);
+  const nextSlPct = Number(dynamicTPSL.slPct || 0) * Number(guide.slMultiplier || 1);
+  if (!validateDynamicTPSL(nextTpPct, nextSlPct)) return dynamicTPSL;
+
+  return {
+    ...dynamicTPSL,
+    tpPct: nextTpPct,
+    slPct: nextSlPct,
+    tpPrice: entryEstimate ? entryEstimate * (1 + nextTpPct) : dynamicTPSL.tpPrice,
+    slPrice: entryEstimate ? entryEstimate * (1 - nextSlPct) : dynamicTPSL.slPrice,
+    source: `${dynamicTPSL.source}_regime`,
+  };
 }
 
 // ─── 시스템 프롬프트 (마켓별 분기) ──────────────────────────────────
@@ -615,9 +635,49 @@ export async function evaluateSignal(signal, opts = {}) {
   let positionCount = hardRuleResult.positionCount;
   let todayPnl = hardRuleResult.todayPnl;
   let dynamicTPSL;
+  let marketRegime = null;
 
   // ── v2: 조정 계수 ──
   if (action === ACTIONS.BUY) {
+    try {
+      const scoutIntel = await loadLatestScoutIntel({ minutes: 24 * 60 });
+      const scoutSignal = getScoutSignalForSymbol(scoutIntel, symbol);
+      marketRegime = await getMarketRegime(signal.exchange, {
+        scout: scoutSignal
+          ? {
+              source: scoutSignal.source,
+              score: scoutSignal.score,
+              aiSignal: scoutSignal.evidence || scoutSignal.label,
+            }
+          : (signal.scoutData || {}),
+      });
+      console.log(`  🌍 [네메시스] 시장 체제: ${marketRegime.regime} (${marketRegime.reason})`);
+      eventLake.record({
+        eventType: 'market_regime_detected',
+        team: 'luna',
+        botName: 'nemesis',
+        severity: marketRegime.regime === 'volatile' ? 'warn' : 'info',
+        title: `시장 체제 ${marketRegime.regime}`,
+        message: `${signal.exchange}/${symbol} → ${marketRegime.reason}`,
+        tags: [
+          `market:${signal.exchange}`,
+          `regime:${marketRegime.regime}`,
+          `style:${marketRegime.guide?.tradingStyle || 'unknown'}`,
+          'trigger:signal',
+        ],
+        metadata: {
+          symbol,
+          market: signal.exchange,
+          confidence: marketRegime.confidence,
+          reason: marketRegime.reason,
+          bias: marketRegime.bias,
+          guide: marketRegime.guide || null,
+        },
+      }).catch(() => {});
+    } catch (error) {
+      console.warn(`  ⚠️ [네메시스] 시장 체제 감지 실패: ${error.message}`);
+    }
+
     await ensureAtrColumn();
     const budgetResult = await calculateBudget(signal, {
       totalUsdt,
@@ -647,6 +707,10 @@ export async function evaluateSignal(signal, opts = {}) {
     if (budgetResult.autoApproval) return budgetResult.autoApproval;
     amountUsdt = budgetResult.amountUsdt;
     dynamicTPSL = budgetResult.dynamicTPSL;
+    if (marketRegime?.guide) {
+      amountUsdt = Math.max(rules.MIN_ORDER_USDT, Math.floor(amountUsdt * Number(marketRegime.guide.positionSizeMultiplier || 1)));
+      dynamicTPSL = applyRegimeGuideToTPSL(dynamicTPSL, marketRegime.guide, opts.currentPrice || null);
+    }
 
     const adaptiveResult = await evaluateAdaptiveRisk(signal, {
       amountUsdt,
@@ -671,7 +735,9 @@ export async function evaluateSignal(signal, opts = {}) {
 
     if (persist && signal.id) {
       try {
-        const shadowHiring = await journalDb.hireAnalystForSignal(signal.exchange, symbol).catch(() => null);
+        const shadowHiring = await journalDb.hireAnalystForSignal(signal.exchange, symbol, {
+          regimeGuide: marketRegime?.guide || null,
+        }).catch(() => null);
         await journalDb.insertRationale({
           signal_id: signal.id,
           luna_decision: 'enter',
@@ -681,7 +747,20 @@ export async function evaluateSignal(signal, opts = {}) {
           nemesis_notes: adaptiveResult.llm.reasoning ?? null,
           position_size_original: signal.amount_usdt,
           position_size_approved: amountUsdt,
-          strategy_config: shadowHiring ? { shadow_hiring: shadowHiring } : {},
+          strategy_config: {
+            ...(shadowHiring ? { shadow_hiring: shadowHiring } : {}),
+            ...(marketRegime ? {
+              market_regime: {
+                regime: marketRegime.regime,
+                confidence: marketRegime.confidence,
+                reason: marketRegime.reason,
+                tradingStyle: marketRegime.guide?.tradingStyle || null,
+                tpMultiplier: marketRegime.guide?.tpMultiplier || 1,
+                slMultiplier: marketRegime.guide?.slMultiplier || 1,
+                positionSizeMultiplier: marketRegime.guide?.positionSizeMultiplier || 1,
+              },
+            } : {}),
+          },
         });
       } catch (e) {
         console.warn(`  ⚠️ 매매일지 rationale 기록 실패: ${e.message}`);
