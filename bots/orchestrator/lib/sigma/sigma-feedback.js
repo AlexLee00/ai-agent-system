@@ -269,10 +269,11 @@ async function weeklyMetaReview() {
 
   try {
     await rag.initSchema();
-    await rag.store('experience', lines.join('\n'), {
+    await rag.store('experience', `${lines.join('\n')}\n[이유: 주간 메타 리뷰 ${rows.length}건 분석]`, {
       type: 'sigma_meta_review',
       period: '7d',
       rows,
+      why: `주간 메타 리뷰 ${rows.length}건 분석`,
     }, 'sigma');
   } catch (error) {
     console.warn(`[sigma-feedback] 메타리뷰 RAG 저장 실패: ${error.message}`);
