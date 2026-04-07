@@ -302,9 +302,10 @@ async function collectScoutQualityMetric({ minutes = 24 * 60 } = {}) {
   const coverageScore = activeSectionTypes.length;
   const collectCount = collectRows.length;
   const errorCount = errorRows.length;
-  const errorRate = collectCount > 0
-    ? Number((errorCount / collectCount).toFixed(4))
-    : errorCount > 0 ? 1 : 0;
+  const totalRuns = collectCount + errorCount;
+  const errorRate = totalRuns > 0
+    ? Number((errorCount / totalRuns).toFixed(4))
+    : 0;
 
   return {
     team: 'luna',
@@ -312,6 +313,7 @@ async function collectScoutQualityMetric({ minutes = 24 * 60 } = {}) {
     window_minutes: minutes,
     collect_count: collectCount,
     error_count: errorCount,
+    total_runs: totalRuns,
     error_rate: errorRate,
     latest_focus_symbols: Array.isArray(latestCollect?.metadata?.focusSymbols)
       ? latestCollect.metadata.focusSymbols.slice(0, 5)
