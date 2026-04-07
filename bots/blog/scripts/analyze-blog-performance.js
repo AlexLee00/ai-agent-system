@@ -223,7 +223,7 @@ async function main() {
     writers: applied.length,
     topWriters: applied.slice(0, 5),
     categories: categoryRankings.slice(0, 5),
-    reportSent: reportResult?.ok === true,
+    reportSent: args.dryRun ? false : reportResult?.ok === true,
     dryRun: args.dryRun,
   };
 
