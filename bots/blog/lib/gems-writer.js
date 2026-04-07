@@ -534,9 +534,8 @@ function _buildVariationBlock(variation = {}) {
   if (variation.greetingStyle) {
     const styles = {
       formal:   '격식체 존댓말로 정중하게',
-      casual:   '편안한 반말체로 친근하게',
-      question: '독자에게 질문을 던지는 형식으로',
-      story:    '오늘 아침 에피소드를 먼저 들려주는 스토리텔링으로',
+      question: '독자에게 질문을 던지는 형식이지만 본문 전체는 반드시 존댓말로',
+      story:    '오늘 아침 에피소드를 먼저 들려주는 스토리텔링이지만 본문 전체는 반드시 존댓말로',
     };
     lines.push(`인사말 스타일: ${styles[variation.greetingStyle] || '자유롭게'}`);
   }
@@ -649,6 +648,8 @@ ${GEO_RULES}
 
 [카테고리] ${category}
 [발행일] ${today}
+[문체 규칙]
+본문 전체는 반드시 존댓말로 작성하라. 절대 반말을 쓰지 말라.
 [오늘 날씨 — 서론 + 스터디카페 섹션에 각 1회 자연스럽게 활용]
 ${weatherContext}
 

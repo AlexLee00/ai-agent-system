@@ -95,9 +95,8 @@ function _buildVariationBlock(variation = {}) {
   if (variation.greetingStyle) {
     const styles = {
       formal:   '격식체 존댓말로 정중하게',
-      casual:   '편안한 반말체로 친근하게',
-      question: '독자에게 질문을 던지는 형식으로',
-      story:    '오늘 아침 에피소드를 먼저 들려주는 스토리텔링으로',
+      question: '독자에게 질문을 던지는 형식이지만 본문 전체는 반드시 존댓말로',
+      story:    '오늘 아침 에피소드를 먼저 들려주는 스토리텔링이지만 본문 전체는 반드시 존댓말로',
     };
     lines.push(`인사말 스타일: ${styles[variation.greetingStyle] || '자유롭게'}`);
   }
@@ -205,6 +204,8 @@ ${GEO_RULES}
 [강의 정보]
 강의 번호: ${lectureNumber}강
 강의 제목: ${lectureTitle}
+[문체 규칙]
+본문 전체는 반드시 존댓말로 작성하라. 절대 반말을 쓰지 말라.
 
 ★★★ 핵심 준수 사항 ★★★
 이 포스팅의 메인 주제는 반드시 "${lectureTitle}"이어야 한다.

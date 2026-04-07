@@ -23,7 +23,7 @@ const DEV_HUB_READONLY = env.IS_DEV && !!env.HUB_BASE_URL && !process.env.PG_DIR
 // ─── 상수 ─────────────────────────────────────────────────────────────
 
 // 인사말 스타일 선택지
-const GREETING_STYLES  = ['formal', 'casual', 'question', 'story'];
+const GREETING_STYLES  = ['formal', 'question', 'story'];
 
 // 카페 위치 선택지
 const CAFE_POSITIONS   = ['after_theory', 'after_code', 'before_faq', 'last'];
