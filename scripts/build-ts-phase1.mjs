@@ -1,4 +1,4 @@
-import { mkdir } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { build } from 'esbuild';
 
@@ -28,5 +28,11 @@ await build({
   logLevel: 'info',
   tsconfig: path.join(root, 'tsconfig.json'),
 });
+
+await writeFile(
+  path.join(outdir, 'package.json'),
+  JSON.stringify({ type: 'module' }, null, 2) + '\n',
+  'utf8',
+);
 
 console.log(`[build-ts-phase1] built ${entryPoints.length} entries -> ${outdir}`);
