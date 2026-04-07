@@ -20,7 +20,7 @@
       "typeVersion": 2,
       "position": [460, 300],
       "parameters": {
-        "jsCode": "// 웹훅 입력 파싱\nconst body = $input.item.json.body || $input.item.json;\nconst {\n  postType,\n  sessionId,\n  pipeline,\n  variations,\n  category,\n  lectureNumber,\n  lectureTitle,\n  topic,\n  postId,\n  scheduleId,\n  publishedUrl,\n  url,\n} = body;\n\nreturn [{\n  json: {\n    postType,\n    sessionId,\n    pipeline,\n    variations,\n    category: category || null,\n    lectureNumber: lectureNumber || null,\n    lectureTitle: lectureTitle || null,\n    topic: topic || category || lectureTitle || (postType === 'lecture' ? 'Node.js' : '일반 포스팅'),\n    postId: postId || null,\n    scheduleId: scheduleId || null,\n    publishedUrl: publishedUrl || url || null,\n  }\n}];"
+        "jsCode": "// 웹훅 입력 파싱\nconst body = $input.item.json.body || $input.item.json;\nconst {\n  postType,\n  sessionId,\n  pipeline,\n  variations,\n  category,\n  lectureNumber,\n  lectureTitle,\n  topic,\n  postId,\n  scheduleId,\n  publishedUrl,\n  url,\n  bookInfo,\n  book_info,\n} = body;\n\nreturn [{\n  json: {\n    postType,\n    sessionId,\n    pipeline,\n    variations,\n    category: category || null,\n    lectureNumber: lectureNumber || null,\n    lectureTitle: lectureTitle || null,\n    topic: topic || category || lectureTitle || (postType === 'lecture' ? 'Node.js' : '일반 포스팅'),\n    postId: postId || null,\n    scheduleId: scheduleId || null,\n    publishedUrl: publishedUrl || url || null,\n    bookInfo: bookInfo || book_info || null,\n  }\n}];"
       }
     },
     {
