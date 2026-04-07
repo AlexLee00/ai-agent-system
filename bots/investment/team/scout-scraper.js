@@ -20,6 +20,8 @@ const DEFAULT_TARGET_URL = `${BASE_URL}/`;
 const DEFAULT_SCREENER_URL = process.env.SCOUT_SCREENER_URL || `${BASE_URL}/screener`;
 const DEFAULT_CALENDAR_URL = process.env.SCOUT_CALENDAR_URL || `${BASE_URL}/calendar`;
 const DEFAULT_TIMEOUT_MS = Number(process.env.SCOUT_TIMEOUT_MS || 30000);
+const DEFAULT_USER_AGENT = process.env.SCOUT_USER_AGENT
+  || 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36';
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -29,12 +31,39 @@ function normalizeText(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
 }
 
+function compactEvidence(value, max = 220) {
+  const text = normalizeText(value);
+  if (!text) return '';
+  if (text.length <= max) return text;
+  return `${text.slice(0, Math.max(0, max - 1))}…`;
+}
+
+function isNoiseText(value) {
+  const text = normalizeText(value);
+  if (!text) return true;
+  if (text.length < 2) return true;
+  if (text.length > 500) return true;
+  return [
+    '지원하지 않는 브라우저',
+    '크롬 또는 엣지 최신 버전',
+    '아이패드OS를 최신 버전',
+    '[data-radix-scroll-area-viewport]',
+    'scrollbar-width:none',
+    '::-webkit-scrollbar',
+    'function ()',
+    'ApplePaySession',
+    'contain-intrinsic-width',
+    '개인정보 처리방침',
+    '고객센터 1599-7987',
+  ].some((token) => text.includes(token));
+}
+
 function uniqueTexts(values, limit = 50) {
   const seen = new Set();
   const result = [];
   for (const raw of Array.isArray(values) ? values : []) {
     const value = normalizeText(raw);
-    if (!value || value.length < 2) continue;
+    if (isNoiseText(value)) continue;
     if (seen.has(value)) continue;
     seen.add(value);
     result.push(value);
@@ -91,6 +120,11 @@ async function collectPageTexts(page, url, {
   await sleep(1200);
   return page.evaluate((maxItems) => {
     const textOf = (value) => String(value?.textContent || '').replace(/\s+/g, ' ').trim();
+    const bodyLines = String(document.body?.innerText || '')
+      .split('\n')
+      .map((line) => line.replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+      .slice(0, maxItems);
     const texts = [
       ...Array.from(document.querySelectorAll('h1,h2,h3,[role="heading"],button,a,li,span,strong,p,td,th,div')),
     ]
@@ -99,17 +133,32 @@ async function collectPageTexts(page, url, {
       .slice(0, maxItems);
     return {
       title: document.title || '',
+      bodyLines,
       texts,
     };
   }, limit);
 }
 
-function extractSignalsFromTexts(sections = {}) {
+function inferSignalSource(line, sections = {}) {
+  const text = normalizeText(line);
+  for (const [source, values] of Object.entries(sections)) {
+    if ((Array.isArray(values) ? values : []).some((item) => normalizeText(item) === text || normalizeText(item).includes(text) || text.includes(normalizeText(item)))) {
+      return source;
+    }
+  }
+  return 'scan';
+}
+
+function extractSignalsFromTexts(lines = [], sections = {}) {
   const patterns = [
     { symbol: '005930', label: '삼성전자', market: 'domestic', re: /삼성전자/i },
     { symbol: '000660', label: 'SK하이닉스', market: 'domestic', re: /SK하이닉스/i },
     { symbol: '035420', label: 'NAVER', market: 'domestic', re: /\bNAVER\b/i },
     { symbol: '005380', label: '현대차', market: 'domestic', re: /현대차/i },
+    { symbol: '034020', label: '두산에너빌리티', market: 'domestic', re: /두산에너빌리티/i },
+    { symbol: '042660', label: '한화오션', market: 'domestic', re: /한화오션/i },
+    { symbol: '000815', label: '삼성E&A', market: 'domestic', re: /삼성E&A/i },
+    { symbol: '000250', label: '삼천당제약', market: 'domestic', re: /삼천당제약/i },
     { symbol: 'BTC/USDT', label: 'BTC', market: 'crypto', re: /\bBTC\b|비트코인/i },
     { symbol: 'ETH/USDT', label: 'ETH', market: 'crypto', re: /\bETH\b|이더리움/i },
     { symbol: 'NVDA', label: 'NVIDIA', market: 'overseas', re: /\bNVDA\b|NVIDIA/i },
@@ -117,21 +166,18 @@ function extractSignalsFromTexts(sections = {}) {
   ];
 
   const signals = [];
-  const sectionEntries = Object.entries(sections);
   for (const candidate of patterns) {
-    for (const [source, values] of sectionEntries) {
-      const hit = (Array.isArray(values) ? values : []).find((line) => candidate.re.test(line));
-      if (!hit) continue;
-      signals.push({
-        symbol: candidate.symbol,
-        market: candidate.market,
-        label: candidate.label,
-        source,
-        score: source === 'aiSignals' ? 0.84 : source === 'top10' ? 0.76 : 0.68,
-        evidence: hit,
-      });
-      break;
-    }
+    const hit = (Array.isArray(lines) ? lines : []).find((line) => candidate.re.test(line));
+    if (!hit) continue;
+    const source = inferSignalSource(hit, sections);
+    signals.push({
+      symbol: candidate.symbol,
+      market: candidate.market,
+      label: candidate.label,
+      source,
+      score: source === 'aiSignals' ? 0.84 : source === 'top10' ? 0.76 : source === 'scan' ? 0.7 : 0.68,
+      evidence: compactEvidence(hit),
+    });
   }
 
   return signals;
@@ -168,10 +214,16 @@ export async function collectScoutData({
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
     });
     const page = await browser.newPage();
+    await page.setUserAgent(DEFAULT_USER_AGENT);
+    await page.setViewport({ width: 1440, height: 1200, deviceScaleFactor: 1 });
     page.setDefaultNavigationTimeout(DEFAULT_TIMEOUT_MS);
     const screenerPage = await browser.newPage();
+    await screenerPage.setUserAgent(DEFAULT_USER_AGENT);
+    await screenerPage.setViewport({ width: 1440, height: 1200, deviceScaleFactor: 1 });
     screenerPage.setDefaultNavigationTimeout(DEFAULT_TIMEOUT_MS);
     const calendarPage = await browser.newPage();
+    await calendarPage.setUserAgent(DEFAULT_USER_AGENT);
+    await calendarPage.setViewport({ width: 1440, height: 1200, deviceScaleFactor: 1 });
     calendarPage.setDefaultNavigationTimeout(DEFAULT_TIMEOUT_MS);
 
     const [homeRaw, screenerRaw, calendarRaw] = await Promise.all([
@@ -182,14 +234,17 @@ export async function collectScoutData({
 
     const lines = uniqueTexts([
       homeRaw.title,
+      ...(homeRaw.bodyLines || []),
       ...(homeRaw.texts || []),
       screenerRaw.title,
+      ...(screenerRaw.bodyLines || []),
       ...(screenerRaw.texts || []),
       calendarRaw.title,
+      ...(calendarRaw.bodyLines || []),
       ...(calendarRaw.texts || []),
     ], 220);
     const sections = classifySections(lines);
-    const signals = extractSignalsFromTexts(sections).slice(0, Math.max(1, limit));
+    const signals = extractSignalsFromTexts(lines, sections).slice(0, Math.max(1, limit));
 
     return {
       source: 'puppeteer',
