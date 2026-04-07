@@ -8,6 +8,33 @@ import { evaluateSignal } from '../team/nemesis.js';
 import { notifyError } from './report.js';
 import { loadAnalysesForSession } from '../nodes/helpers.js';
 import { getInvestmentTradeMode } from './secrets.js';
+import { createRequire } from 'module';
+
+const _require = createRequire(import.meta.url);
+const elixirBridge = _require('../../../packages/core/lib/elixir-bridge');
+
+async function buildBridgeMeta({ sessionId, market, symbol = null, stage, regime = null }) {
+  const meta = { bridge: 'luna_orchestrate', stage };
+  try {
+    const bridgePayload = await elixirBridge.createOrchestrationBridgePayload({
+      market,
+      symbol,
+      stage,
+      sessionId,
+      regime,
+    });
+    return {
+      ...meta,
+      bridge_payload: bridgePayload.serialized,
+      bridge_payload_version: 1,
+    };
+  } catch (error) {
+    return {
+      ...meta,
+      bridge_payload_error: error.message,
+    };
+  }
+}
 
 function getDecisionNode(id) {
   const node = getInvestmentNode(id);
@@ -144,7 +171,12 @@ async function executeApprovedDecision({
     sessionId,
     market: exchange,
     symbol: decision.symbol,
-    meta: { bridge: 'luna_orchestrate', stage },
+    meta: await buildBridgeMeta({
+      sessionId,
+      market: exchange,
+      symbol: decision.symbol,
+      stage,
+    }),
   }, {
     symbol: decision.symbol,
     market: exchange,
@@ -181,21 +213,36 @@ async function executeApprovedDecision({
     sessionId,
     market: exchange,
     symbol: decision.symbol,
-    meta: { bridge: 'luna_orchestrate', stage },
+    meta: await buildBridgeMeta({
+      sessionId,
+      market: exchange,
+      symbol: decision.symbol,
+      stage,
+    }),
   });
 
   const ragStore = await runNode(l33Node, {
     sessionId,
     market: exchange,
     symbol: decision.symbol,
-    meta: { bridge: 'luna_orchestrate', stage },
+    meta: await buildBridgeMeta({
+      sessionId,
+      market: exchange,
+      symbol: decision.symbol,
+      stage,
+    }),
   });
 
   const notify = await runNode(l32Node, {
     sessionId,
     market: exchange,
     symbol: decision.symbol,
-    meta: { bridge: 'luna_orchestrate', stage },
+    meta: await buildBridgeMeta({
+      sessionId,
+      market: exchange,
+      symbol: decision.symbol,
+      stage,
+    }),
     storeArtifact: false,
   });
 
@@ -203,14 +250,24 @@ async function executeApprovedDecision({
     sessionId,
     market: exchange,
     symbol: decision.symbol,
-    meta: { bridge: 'luna_orchestrate', stage },
+    meta: await buildBridgeMeta({
+      sessionId,
+      market: exchange,
+      symbol: decision.symbol,
+      stage,
+    }),
   });
 
   const journal = await runNode(l34Node, {
     sessionId,
     market: exchange,
     symbol: decision.symbol,
-    meta: { bridge: 'luna_orchestrate', stage },
+    meta: await buildBridgeMeta({
+      sessionId,
+      market: exchange,
+      symbol: decision.symbol,
+      stage,
+    }),
     storeArtifact: false,
   });
 
@@ -390,7 +447,12 @@ export async function runDecisionExecutionPipeline({
           sessionId,
           market: exchange,
           symbol: dec.symbol,
-          meta: { bridge: 'luna_orchestrate', stage: 'exit' },
+          meta: await buildBridgeMeta({
+            sessionId,
+            market: exchange,
+            symbol: dec.symbol,
+            stage: 'exit',
+          }),
         }, {
           symbol: dec.symbol,
           market: exchange,
@@ -451,7 +513,12 @@ export async function runDecisionExecutionPipeline({
         sessionId,
         market: exchange,
         symbol,
-        meta: { bridge: 'luna_orchestrate', stage: 'fusion' },
+        meta: await buildBridgeMeta({
+          sessionId,
+          market: exchange,
+          symbol,
+          stage: 'fusion',
+        }),
       });
 
       if (debateCount < debateLimit && shouldDebateForSymbol(analyses, exchange, analystWeights)) {
@@ -460,13 +527,23 @@ export async function runDecisionExecutionPipeline({
             sessionId,
             market: exchange,
             symbol,
-            meta: { bridge: 'luna_orchestrate', stage: 'debate' },
+            meta: await buildBridgeMeta({
+              sessionId,
+              market: exchange,
+              symbol,
+              stage: 'debate',
+            }),
           });
           await runNode(l12Node, {
             sessionId,
             market: exchange,
             symbol,
-            meta: { bridge: 'luna_orchestrate', stage: 'debate' },
+            meta: await buildBridgeMeta({
+              sessionId,
+              market: exchange,
+              symbol,
+              stage: 'debate',
+            }),
           });
           debateCount++;
         } catch (err) {
@@ -478,7 +555,12 @@ export async function runDecisionExecutionPipeline({
         sessionId,
         market: exchange,
         symbol,
-        meta: { bridge: 'luna_orchestrate', stage: 'decision' },
+        meta: await buildBridgeMeta({
+          sessionId,
+          market: exchange,
+          symbol,
+          stage: 'decision',
+        }),
       });
       const decision = decisionResult.result?.decision;
       if (!decision?.action) continue;
@@ -538,7 +620,11 @@ export async function runDecisionExecutionPipeline({
   const portfolioDecisionResult = await runNode(l14Node, {
     sessionId,
     market: exchange,
-    meta: { bridge: 'luna_orchestrate', stage: 'portfolio' },
+    meta: await buildBridgeMeta({
+      sessionId,
+      market: exchange,
+      stage: 'portfolio',
+    }),
     symbolDecisions,
     portfolio: currentPortfolio,
     exitSummary: exitEntrySummary,
@@ -656,7 +742,13 @@ export async function runDecisionExecutionPipeline({
       sessionId,
       market: exchange,
       symbol: dec.symbol,
-      meta: { bridge: 'luna_orchestrate', stage: 'risk' },
+      meta: await buildBridgeMeta({
+        sessionId,
+        market: exchange,
+        symbol: dec.symbol,
+        stage: 'risk',
+        regime: riskResult?.strategyConfig?.market_regime || null,
+      }),
     }, {
       symbol: dec.symbol,
       market: exchange,
@@ -693,21 +785,36 @@ export async function runDecisionExecutionPipeline({
       sessionId,
       market: exchange,
       symbol: dec.symbol,
-      meta: { bridge: 'luna_orchestrate', stage: 'execute' },
+      meta: await buildBridgeMeta({
+        sessionId,
+        market: exchange,
+        symbol: dec.symbol,
+        stage: 'execute',
+      }),
     });
 
     const ragStore = await runNode(l33Node, {
       sessionId,
       market: exchange,
       symbol: dec.symbol,
-      meta: { bridge: 'luna_orchestrate', stage: 'execute' },
+      meta: await buildBridgeMeta({
+        sessionId,
+        market: exchange,
+        symbol: dec.symbol,
+        stage: 'execute',
+      }),
     });
 
     const notify = await runNode(l32Node, {
       sessionId,
       market: exchange,
       symbol: dec.symbol,
-      meta: { bridge: 'luna_orchestrate', stage: 'execute' },
+      meta: await buildBridgeMeta({
+        sessionId,
+        market: exchange,
+        symbol: dec.symbol,
+        stage: 'execute',
+      }),
       storeArtifact: false,
     });
 
@@ -715,14 +822,24 @@ export async function runDecisionExecutionPipeline({
       sessionId,
       market: exchange,
       symbol: dec.symbol,
-      meta: { bridge: 'luna_orchestrate', stage: 'execute' },
+      meta: await buildBridgeMeta({
+        sessionId,
+        market: exchange,
+        symbol: dec.symbol,
+        stage: 'execute',
+      }),
     });
 
     const journal = await runNode(l34Node, {
       sessionId,
       market: exchange,
       symbol: dec.symbol,
-      meta: { bridge: 'luna_orchestrate', stage: 'journal' },
+      meta: await buildBridgeMeta({
+        sessionId,
+        market: exchange,
+        symbol: dec.symbol,
+        stage: 'journal',
+      }),
       storeArtifact: false,
     });
 
