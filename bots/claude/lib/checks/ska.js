@@ -53,18 +53,32 @@ async function checkAgentStaleness(items) {
     const updatedAt = row.updated_at ? new Date(row.updated_at).getTime() : 0;
     const elapsedMs = now - updatedAt;
     const elapsedMin = Math.floor(elapsedMs / 60000);
+    const status = String(row.status || '').toLowerCase();
+    const isIdle = status === 'idle';
 
-    if (elapsedMs > 30 * 60 * 1000) {
+    if (elapsedMs > 30 * 60 * 1000 && !isIdle) {
       items.push({
         label: `에이전트 ${row.agent}`,
         status: 'error',
         detail: `${elapsedMin}분 전 마지막 업데이트 (상태: ${row.status})`,
       });
-    } else if (elapsedMs > 10 * 60 * 1000) {
+    } else if (elapsedMs > 10 * 60 * 1000 && !isIdle) {
       items.push({
         label: `에이전트 ${row.agent}`,
         status: 'warn',
         detail: `${elapsedMin}분 전 마지막 업데이트 (상태: ${row.status})`,
+      });
+    } else if (elapsedMs > 30 * 60 * 1000 && isIdle) {
+      items.push({
+        label: `에이전트 ${row.agent}`,
+        status: 'ok',
+        detail: `${elapsedMin}분 전 마지막 업데이트 (상태: ${row.status}, 유휴 상태)`,
+      });
+    } else if (elapsedMs > 10 * 60 * 1000 && isIdle) {
+      items.push({
+        label: `에이전트 ${row.agent}`,
+        status: 'warn',
+        detail: `${elapsedMin}분 전 마지막 업데이트 (상태: ${row.status}, 유휴 상태)`,
       });
     } else {
       items.push({

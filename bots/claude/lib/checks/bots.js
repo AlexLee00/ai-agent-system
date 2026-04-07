@@ -107,6 +107,10 @@ function checkLaunchd(items) {
     return;
   }
 
+  const RETIRED_SERVICES = new Set([
+    'ai.orchestrator',
+  ]);
+
   const SERVICES = [
     // 클로드팀
     { id: 'ai.claude.dexter',         label: '클로드팀 덱스터 full (launchd)' },
@@ -117,7 +121,7 @@ function checkLaunchd(items) {
     // 제이팀
     { id: 'ai.openclaw.gateway',        label: '제이팀 OpenClaw 게이트웨이 (launchd)' },
     { id: 'ai.openclaw.model-sync',     label: '제이팀 OpenClaw 모델동기화 (launchd)', optional: true },
-    { id: 'ai.orchestrator',            label: '제이팀 오케스트레이터 (launchd)' },
+    { id: 'ai.orchestrator',            label: '제이팀 오케스트레이터 (launchd)', retired: true },
     // 스카팀 — 핵심
     { id: 'ai.ska.naver-monitor',       label: '스카팀 앤디 네이버모니터 (launchd)' },
     { id: 'ai.ska.kiosk-monitor',       label: '스카팀 지미 키오스크모니터 (launchd)' },
@@ -148,6 +152,14 @@ function checkLaunchd(items) {
   ];
 
   for (const svc of SERVICES) {
+    if (RETIRED_SERVICES.has(svc.id) || svc.retired) {
+      items.push({
+        label: svc.label,
+        status: 'ok',
+        detail: '퇴역 서비스 — 점검 제외',
+      });
+      continue;
+    }
     const s = launchdStatus(svc.id);
     if (!s) {
       // optional: 아직 미구현 서비스는 info 수준 (warn 아님)
