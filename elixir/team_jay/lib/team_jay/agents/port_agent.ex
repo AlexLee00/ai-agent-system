@@ -3,7 +3,7 @@ defmodule TeamJay.Agents.PortAgent do
   use GenServer
   require Logger
 
-  defstruct [:name, :team, :script, :schedule, :port, :status, :last_run, :runs]
+  defstruct [:name, :team, :script, :schedule, :port, :status, :last_run, :runs, :last_output]
 
   def child_spec(opts) do
     name = Keyword.fetch!(opts, :name)
@@ -51,7 +51,8 @@ defmodule TeamJay.Agents.PortAgent do
        port: nil,
        status: :idle,
        last_run: nil,
-       runs: 0
+       runs: 0,
+       last_output: []
      }}
   end
 
@@ -63,8 +64,15 @@ defmodule TeamJay.Agents.PortAgent do
   end
 
   def handle_info({port, {:data, data}}, %{port: port} = state) do
-    Logger.debug("[#{state.name}] #{String.trim(to_string(data))}")
-    {:noreply, state}
+    line = String.trim(to_string(data))
+    Logger.debug("[#{state.name}] #{line}")
+
+    new_output =
+      [line | state.last_output]
+      |> Enum.reject(&(&1 == ""))
+      |> Enum.take(20)
+
+    {:noreply, %{state | last_output: new_output}}
   end
 
   def handle_info({port, {:exit_status, code}}, %{port: port} = state) do
@@ -72,18 +80,20 @@ defmodule TeamJay.Agents.PortAgent do
       Logger.info("[#{state.name}] 완료! (runs: #{state.runs + 1})")
       record_event(:info, "#{state.name} 완료", "port_agent_completed", state.team, state.name, %{
         script: state.script,
-        runs: state.runs + 1
+        runs: state.runs + 1,
+        output_summary: summarize_output(state.last_output)
       })
     else
       Logger.warning("[#{state.name}] 종료 코드: #{code}")
       record_event(:warn, "#{state.name} 실패", "port_agent_failed", state.team, state.name, %{
         script: state.script,
         exit_code: code,
-        runs: state.runs + 1
+        runs: state.runs + 1,
+        output_summary: summarize_output(state.last_output)
       })
     end
 
-    {:noreply, %{state | port: nil, status: :idle, runs: state.runs + 1}}
+    {:noreply, %{state | port: nil, status: :idle, runs: state.runs + 1, last_output: []}}
   end
 
   @impl true
@@ -134,4 +144,11 @@ defmodule TeamJay.Agents.PortAgent do
   defp schedule_to_string(nil), do: "manual"
   defp schedule_to_string(:once), do: "once"
   defp schedule_to_string({:interval, ms}), do: "interval:#{ms}"
+
+  defp summarize_output(lines) do
+    lines
+    |> Enum.reverse()
+    |> Enum.join("\n")
+    |> String.slice(0, 2_000)
+  end
 end
