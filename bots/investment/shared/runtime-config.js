@@ -154,6 +154,7 @@ const DEFAULT_RUNTIME_CONFIG = {
         sophia: 'openai_mini',
         zeus: 'openai_mini',
         athena: 'openai_mini',
+        scout: 'groq_scout',
       },
     },
   },
