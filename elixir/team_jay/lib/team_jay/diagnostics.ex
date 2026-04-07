@@ -40,7 +40,7 @@ defmodule TeamJay.Diagnostics do
     "ai.steward.weekly"
   ]
 
-  defstruct [:checks, :alerts, :last_check]
+  defstruct [:checks, :alerts, :last_check, :last_overlap_signature]
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -50,13 +50,14 @@ defmodule TeamJay.Diagnostics do
   def init(_opts) do
     Logger.info("[Diagnostics] BEAM 모니터링 시작!")
     schedule_check()
-    {:ok, %__MODULE__{checks: [], alerts: [], last_check: nil}}
+    {:ok, %__MODULE__{checks: [], alerts: [], last_check: nil, last_overlap_signature: nil}}
   end
 
   @impl true
   def handle_info(:check, state) do
     results = run_diagnostics()
     alerts = Enum.filter(results, &(&1.severity in [:warn, :error]))
+    overlap_signature = maybe_record_launchd_overlap(results, state.last_overlap_signature)
 
     if length(alerts) > 0 do
       Logger.warning("[Diagnostics] #{length(alerts)}건 경고!")
@@ -71,7 +72,15 @@ defmodule TeamJay.Diagnostics do
     end
 
     schedule_check()
-    {:noreply, %{state | checks: results, alerts: alerts, last_check: DateTime.utc_now()}}
+
+    {:noreply,
+     %{
+       state
+       | checks: results,
+         alerts: alerts,
+         last_check: DateTime.utc_now(),
+         last_overlap_signature: overlap_signature
+     }}
   end
 
   def get_status, do: GenServer.call(__MODULE__, :get_status)
@@ -199,6 +208,51 @@ defmodule TeamJay.Diagnostics do
           }
         ]
     end
+  end
+
+  defp maybe_record_launchd_overlap(results, last_signature) do
+    overlap_result = Enum.find(results, &(&1.name == "launchd_phase3_overlap"))
+
+    signature =
+      case overlap_result do
+        nil -> "missing"
+        %{overlaps: overlaps} -> Enum.sort(overlaps) |> Enum.join(",")
+        %{message: message} -> message
+      end
+
+    if signature != last_signature do
+      record_launchd_overlap_event(overlap_result, signature)
+    end
+
+    signature
+  end
+
+  defp record_launchd_overlap_event(nil, signature) do
+    TeamJay.EventLake.record(%{
+      event_type: "phase3_launchd_overlap_changed",
+      team: "system",
+      bot_name: "diagnostics",
+      severity: "warn",
+      title: "Phase3 launchd overlap 상태 불명",
+      message: "launchd overlap 결과를 찾지 못했습니다",
+      tags: ["phase3", "diagnostics", "launchd_overlap"],
+      metadata: %{signature: signature}
+    })
+  end
+
+  defp record_launchd_overlap_event(overlap_result, signature) do
+    overlaps = Map.get(overlap_result, :overlaps, [])
+
+    TeamJay.EventLake.record(%{
+      event_type: "phase3_launchd_overlap_changed",
+      team: "system",
+      bot_name: "diagnostics",
+      severity: if(overlaps == [], do: "info", else: "warn"),
+      title: "Phase3 launchd overlap 변경",
+      message: overlap_result.message,
+      tags: ["phase3", "diagnostics", "launchd_overlap"],
+      metadata: %{signature: signature, overlaps: overlaps, overlap_count: length(overlaps)}
+    })
   end
 
   defp schedule_check, do: Process.send_after(self(), :check, @check_interval)
