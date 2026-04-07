@@ -15,15 +15,13 @@
     "types": ["node"]
   },
   "files": [
-    "packages/core/lib/event-lake.js",
-    "packages/core/lib/hiring-contract.js",
     "packages/core/lib/central-logger.js",
     "packages/core/lib/openclaw-client.js",
     "packages/core/lib/llm-model-selector.js",
     "packages/core/lib/llm-fallback.js",
     "packages/core/lib/rag.js",
-    "packages/core/lib/message-envelope.js",
-    "bots/investment/shared/market-regime.js",
+    "packages/core/lib/message-envelope.ts",
+    "bots/investment/shared/market-regime.ts",
     "bots/investment/shared/trade-journal-db.js",
     "bots/investment/team/nemesis.js",
     "bots/investment/team/luna.js",
