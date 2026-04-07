@@ -254,7 +254,7 @@ export async function getOverseasPrice(symbol) {
     AAPL: 'NAS', MSFT: 'NAS', AMZN: 'NAS', GOOGL: 'NAS', META: 'NAS',
     NVDA: 'NAS', TSLA: 'NAS', NFLX: 'NAS', INTC: 'NAS', AMD:  'NAS',
     QCOM: 'NAS', AVGO: 'NAS', ADBE: 'NAS', CSCO: 'NAS', PYPL: 'NAS',
-    COIN: 'NAS', MSTR: 'NAS',
+    COIN: 'NAS', MSTR: 'NAS', JBLU: 'NAS', NBIS: 'NAS',
     JPM: 'NYS', BAC: 'NYS', WMT: 'NYS', JNJ: 'NYS', BRK: 'NYS',
     XOM: 'NYS', CVX: 'NYS', UNH: 'NYS', HD:  'NYS',
     // EV / 중국계 NYSE 상장
@@ -268,7 +268,7 @@ export async function getOverseasPrice(symbol) {
     AAPL: 'NASD', MSFT: 'NASD', AMZN: 'NASD', GOOGL: 'NASD', META: 'NASD',
     NVDA: 'NASD', TSLA: 'NASD', NFLX: 'NASD', INTC: 'NASD', AMD:  'NASD',
     QCOM: 'NASD', AVGO: 'NASD', ADBE: 'NASD', CSCO: 'NASD', PYPL: 'NASD',
-    COIN: 'NASD', MSTR: 'NASD',
+    COIN: 'NASD', MSTR: 'NASD', JBLU: 'NASD', NBIS: 'NASD',
     JPM: 'NYSE', BAC: 'NYSE', WMT: 'NYSE', JNJ: 'NYSE', BRK: 'NYSE',
     XOM: 'NYSE', CVX: 'NYSE', UNH: 'NYSE', HD:  'NYSE',
     // EV / 중국계 NYSE 상장

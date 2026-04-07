@@ -18,6 +18,7 @@ import { fileURLToPath } from 'url';
 import { createRequire }  from 'module';
 import * as db          from '../shared/db.js';
 import { loadSecrets, initHubSecrets, getMarketExecutionModeInfo } from '../shared/secrets.js';
+import { getDomesticPrice, getOverseasPrice } from '../shared/kis-client.js';
 import { tracker }      from '../shared/cost-tracker.js';
 import { buildAccuracyReport } from '../shared/analyst-accuracy.js';
 
@@ -35,10 +36,9 @@ const {
 
 // ─── 바이낸스 현재가 일괄 조회 ──────────────────────────────────────
 
-async function fetchPrices(symbols) {
+async function fetchBinancePrices(symbols) {
   const prices = {};
   try {
-    const s = loadSecrets();
     const ex = new ccxt.binance({ enableRateLimit: true });
     for (const sym of symbols) {
       try {
@@ -50,15 +50,40 @@ async function fetchPrices(symbols) {
   return prices;
 }
 
+async function fetchPositionPrices(positions = []) {
+  const prices = {};
+  const grouped = new Map();
+
+  for (const pos of positions) {
+    const exchange = pos.exchange || 'unknown';
+    const key = `${exchange}:${pos.symbol}`;
+    if (!grouped.has(key)) grouped.set(key, pos);
+  }
+
+  const binanceSymbols = Array.from(grouped.values())
+    .filter((pos) => pos.exchange === 'binance')
+    .map((pos) => pos.symbol);
+  Object.assign(prices, await fetchBinancePrices(binanceSymbols));
+
+  for (const pos of grouped.values()) {
+    try {
+      if (pos.exchange === 'kis') {
+        prices[pos.symbol] = await getDomesticPrice(pos.symbol, Boolean(pos.paper));
+      } else if (pos.exchange === 'kis_overseas') {
+        const quote = await getOverseasPrice(pos.symbol);
+        prices[pos.symbol] = Number(quote?.price || 0) || null;
+      }
+    } catch {
+      prices[pos.symbol] = null;
+    }
+  }
+
+  return prices;
+}
+
 function summarizeTradesByModeAndExchange(trades = []) {
   const getBrokerAccountModeForExchange = (exchange) =>
     getMarketExecutionModeInfo(exchange === 'binance' ? 'crypto' : 'stocks', exchange).brokerAccountMode;
-  const inferExchange = (trade) => {
-    if (trade.exchange) return trade.exchange;
-    if (String(trade.symbol || '').includes('/')) return 'binance';
-    if (/^\d{6}$/.test(String(trade.symbol || ''))) return 'kis';
-    return 'kis_overseas';
-  };
   const buckets = {};
   for (const trade of trades) {
     const mode = trade.paper ? 'paper' : 'live';
@@ -130,6 +155,67 @@ function summarizeStockPositionsBySymbol(positions = [], exchange = 'kis') {
     .sort((a, b) => a.symbol.localeCompare(b.symbol));
 }
 
+function inferExchange(row = {}) {
+  if (row.exchange) return row.exchange;
+  if (String(row.symbol || '').includes('/')) return 'binance';
+  if (/^\d{6}$/.test(String(row.symbol || ''))) return 'kis';
+  return 'kis_overseas';
+}
+
+function isValidReportSignalSymbol(symbol) {
+  const text = String(symbol || '').trim().toUpperCase();
+  if (!text) return false;
+  if (text.includes('/')) return /^[A-Z0-9]+\/USDT$/.test(text);
+  if (/^\d{6}$/.test(text)) return true;
+  return /^[A-Z][A-Z0-9.-]{0,9}$/.test(text);
+}
+
+function getPositionFormat(exchange) {
+  if (exchange === 'kis') return { amountUnit: '주', currency: '원', pricePrefix: '', priceSuffix: '원' };
+  if (exchange === 'kis_overseas') return { amountUnit: '주', currency: '$', pricePrefix: '$', priceSuffix: '' };
+  return { amountUnit: '개', currency: '$', pricePrefix: '$', priceSuffix: '' };
+}
+
+function formatNumber(value, decimals = 2) {
+  return Number(value || 0).toLocaleString('en-US', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+}
+
+function formatPrice(value, exchange) {
+  const fmt = getPositionFormat(exchange);
+  if (fmt.currency === '원') return `${Number(value || 0).toLocaleString('ko-KR')}원`;
+  return `$${formatNumber(value, 2)}`;
+}
+
+function formatValue(value, exchange) {
+  const fmt = getPositionFormat(exchange);
+  const sign = Number(value || 0) >= 0 ? '+' : '-';
+  const abs = Math.abs(Number(value || 0));
+  if (fmt.currency === '원') return `${sign}${Math.round(abs).toLocaleString('ko-KR')}원`;
+  return `${sign}$${formatNumber(abs, 2)}`;
+}
+
+function formatAmount(amount, exchange) {
+  const unit = getPositionFormat(exchange).amountUnit;
+  const decimals = exchange === 'binance' ? 6 : 0;
+  return `${Number(amount || 0).toFixed(decimals)}${unit}`;
+}
+
+function dedupeEquityHistoryByKstDate(equityHistory = []) {
+  const latestByDate = new Map();
+  for (const snap of equityHistory) {
+    const dt = new Date(snap.snapped_at).toLocaleDateString('sv-SE', {
+      timeZone: 'Asia/Seoul',
+    });
+    latestByDate.set(dt, snap);
+  }
+  return Array.from(latestByDate.values()).sort(
+    (a, b) => new Date(a.snapped_at) - new Date(b.snapped_at),
+  );
+}
+
 // ─── 바이낸스 실잔고 조회 ───────────────────────────────────────────
 
 async function fetchBinanceBalance() {
@@ -191,7 +277,7 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
   const sigHold     = sigStats.find(r => r.status === 'hold')?.cnt      || 0;
 
   // ── 2. 심볼별 신호 분포 ────────────────────────────────────────────
-  const symStats = await db.query(`
+  const rawSymStats = await db.query(`
     SELECT
       symbol,
       action,
@@ -201,36 +287,37 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
     GROUP BY symbol, action
     ORDER BY symbol, action
   `);
+  const symStats = rawSymStats.filter((row) => isValidReportSignalSymbol(row.symbol));
 
   // ── 3. 포지션 + 현재가 ─────────────────────────────────────────────
   const positions = await db.getAllPositions();
-  const posPrices = positions.length > 0
-    ? await fetchPrices(positions.map(p => p.symbol))
-    : {};
+  const posPrices = positions.length > 0 ? await fetchPositionPrices(positions) : {};
 
-  let totalUnrealizedPnl  = 0;
-  let totalCostBasis      = 0;
+  const positionTotals = {};
   const posLines = [];
 
   for (const p of positions) {
     const currentPrice = posPrices[p.symbol];
     const costBasis    = p.amount * p.avg_price;
-    totalCostBasis    += costBasis;
+    const bucket = positionTotals[p.exchange] || { costBasis: 0, unrealized: 0 };
+    bucket.costBasis += costBasis;
+    positionTotals[p.exchange] = bucket;
+    const amountUnit = getPositionFormat(p.exchange).amountUnit;
 
     if (currentPrice) {
       const value     = p.amount * currentPrice;
       const pnl       = value - costBasis;
       const pnlPct    = (pnl / costBasis * 100);
-      totalUnrealizedPnl += pnl;
+      bucket.unrealized += pnl;
       const pnlSign   = pnl >= 0 ? '+' : '';
       posLines.push(
-        `  ${p.symbol}: ${p.amount.toFixed(6)}개\n` +
-        `    매수가 $${p.avg_price.toLocaleString()} → 현재가 $${currentPrice.toLocaleString()}\n` +
-        `    평가금액 $${value.toFixed(2)} | 수익 ${pnlSign}$${pnl.toFixed(2)} (${pnlSign}${pnlPct.toFixed(2)}%)`
+        `  ${p.symbol}: ${p.amount.toFixed(p.exchange === 'binance' ? 6 : 0)}${amountUnit}\n` +
+        `    매수가 ${formatPrice(p.avg_price, p.exchange)} → 현재가 ${formatPrice(currentPrice, p.exchange)}\n` +
+        `    평가금액 ${formatPrice(value, p.exchange)} | 수익 ${formatValue(pnl, p.exchange)} (${pnlSign}${pnlPct.toFixed(2)}%)`
       );
     } else {
       posLines.push(
-        `  ${p.symbol}: ${p.amount.toFixed(6)}개 @ $${p.avg_price.toLocaleString()} (현재가 조회 실패)`
+        `  ${p.symbol}: ${p.amount.toFixed(p.exchange === 'binance' ? 6 : 0)}${amountUnit} @ ${formatPrice(p.avg_price, p.exchange)} (현재가 조회 실패)`
       );
     }
   }
@@ -242,7 +329,7 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
   // LU-002: 실잔고 기반 equity 계산 (USDT free + 보유 코인 현재가 환산)
   const nonUsdtHoldings = balances.filter(b => b.coin !== 'USDT' && b.total > 0);
   const realCoinPrices  = nonUsdtHoldings.length > 0
-    ? await fetchPrices(nonUsdtHoldings.map(b => `${b.coin}/USDT`))
+    ? await fetchBinancePrices(nonUsdtHoldings.map(b => `${b.coin}/USDT`))
     : {};
   const coinUsdValue = nonUsdtHoldings.reduce((s, b) => {
     const p = realCoinPrices[`${b.coin}/USDT`];
@@ -262,7 +349,7 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
 
   // 스냅샷 저장 후 히스토리 조회 (오늘 포함)
   try { await db.insertAssetSnapshot(equity, usdtBal?.free || 0); } catch {}
-  const equityHistory = await db.getEquityHistory(7);
+  const equityHistory = dedupeEquityHistoryByKstDate(await db.getEquityHistory(7));
 
   // ── 5. LLM 비용 ────────────────────────────────────────────────────
   const cost = tracker.getToday();
@@ -270,7 +357,7 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
   // ── 6. 거래 내역 요약 ──────────────────────────────────────────────
   const trades = await db.query(`
     SELECT
-      symbol, side, amount, price, total_usdt, paper, executed_at
+      symbol, side, amount, price, total_usdt, exchange, paper, executed_at
     FROM trades
     WHERE executed_at > now() - INTERVAL '${days} days'
     ORDER BY executed_at DESC
@@ -345,11 +432,14 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
     lines.push(`  포지션 없음`);
   } else {
     lines.push(...posLines);
-    const pnlSign = totalUnrealizedPnl >= 0 ? '+' : '';
-    const roiPct  = totalCostBasis > 0 ? (totalUnrealizedPnl / totalCostBasis * 100) : 0;
-    lines.push(`  ─`);
-    lines.push(`  총 매수원가: $${totalCostBasis.toFixed(2)}`);
-    lines.push(`  미실현 PnL: ${pnlSign}$${totalUnrealizedPnl.toFixed(2)} (${pnlSign}${roiPct.toFixed(2)}%)`);
+    for (const exchange of Object.keys(positionTotals).sort()) {
+      const total = positionTotals[exchange];
+      const pnlSign = total.unrealized >= 0 ? '+' : '';
+      const roiPct = total.costBasis > 0 ? (total.unrealized / total.costBasis * 100) : 0;
+      lines.push(`  ─`);
+      lines.push(`  ${exchange} 총 매수원가: ${formatPrice(total.costBasis, exchange)}`);
+      lines.push(`  ${exchange} 미실현 PnL: ${formatValue(total.unrealized, exchange)} (${pnlSign}${roiPct.toFixed(2)}%)`);
+    }
   }
   lines.push(``);
 
@@ -384,7 +474,11 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
     for (const t of trades) {
       const dtStr = kst.toKST(new Date(t.executed_at));
       const paper = t.paper ? '📄' : '🔴';
-      lines.push(`  ${paper} ${dtStr} | ${t.symbol} ${t.side.toUpperCase()} ${t.amount?.toFixed(6)}개 @ $${t.price?.toLocaleString()} (≈$${t.total_usdt?.toFixed(0)})`);
+      const exchange = inferExchange(t);
+      const notional = Number.isFinite(Number(t.total_usdt)) && Number(t.total_usdt) > 0
+        ? Number(t.total_usdt)
+        : Number(t.amount || 0) * Number(t.price || 0);
+      lines.push(`  ${paper} ${dtStr} | ${t.symbol} ${t.side.toUpperCase()} ${formatAmount(t.amount, exchange)} @ ${formatPrice(t.price, exchange)} (≈${formatPrice(notional, exchange)})`);
     }
   }
   lines.push(``);
@@ -395,15 +489,15 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
   } else {
     for (const row of tradeBreakdown) {
       const modeLabel = row.mode === 'live' ? 'LIVE' : 'PAPER';
-      lines.push(`  ${modeLabel} [${row.exchange} / ${row.brokerAccountMode}]: ${row.count}건 | 총 거래금액 $${row.gross.toFixed(2)}`);
+      lines.push(`  ${modeLabel} [${row.exchange} / ${row.brokerAccountMode}]: ${row.count}건 | 총 거래금액 ${formatPrice(row.gross, row.exchange)}`);
     }
   }
   if (positionBreakdown.length > 0) {
     lines.push(`  포지션:`);
     for (const row of positionBreakdown) {
       const modeLabel = row.mode === 'live' ? 'LIVE' : 'PAPER';
-      const pnlSign = row.unrealized >= 0 ? '+' : '';
-      lines.push(`    ${modeLabel} [${row.exchange} / ${row.brokerAccountMode}]: ${row.positions}개 | 평가 $${row.marketValue.toFixed(2)} | 미실현 ${pnlSign}$${row.unrealized.toFixed(2)}`);
+      const unrealizedText = formatValue(row.unrealized, row.exchange);
+      lines.push(`    ${modeLabel} [${row.exchange} / ${row.brokerAccountMode}]: ${row.positions}개 | 평가 ${formatPrice(row.marketValue, row.exchange)} | 미실현 ${unrealizedText}`);
     }
   }
   if (domesticSymbolTotals.length > 0) {
@@ -488,7 +582,7 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
           ? ['거래 없음']
           : tradeBreakdown.map((row) => {
               const modeLabel = row.mode === 'live' ? 'LIVE' : 'PAPER';
-              return `${modeLabel} [${row.exchange} / ${row.brokerAccountMode}]: ${row.count}건 | 총 거래금액 $${row.gross.toFixed(2)}`;
+              return `${modeLabel} [${row.exchange} / ${row.brokerAccountMode}]: ${row.count}건 | 총 거래금액 ${formatPrice(row.gross, row.exchange)}`;
             })),
         buildSection('자산/비용', [
           balances.length === 0 ? 'USDT 가용: 조회 실패' : `USDT 가용: $${(usdtBal?.free || 0).toFixed(2)}`,
