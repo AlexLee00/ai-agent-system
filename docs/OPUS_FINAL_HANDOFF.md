@@ -121,10 +121,18 @@
   → 다음: 실제 BUY 시 운영 로그 확인!
 - 📋 TypeScript Phase 0 — JSDoc 타입 힌트! (CODEX_TS_PHASE0_JSDOC.md 328줄!)
   → tsconfig.json + 핵심 10개 파일 JSDoc + CI typecheck!
+- ✅ TS Phase 0-A 완료! (ff7a7a17) tsconfig + JSDoc 10파일!
+- ✅ TS Phase 0-B 완료! (0e3c4ca4) bots JSDoc + CI typecheck!
+- ✅ TS Phase 1-A 완료! (be225057) .core.ts 5파일 + Zod!
+  → message-envelope / event-lake / hiring-contract / pg-pool / market-regime!
+- ✅ TS Phase 1-B 완료! (d64f0d89) esbuild 빌드 + shared-types + elixir-bridge!
+  → 실소비 경로 연결 (pipeline-decision-runner + node-runner!)
+- ✅ 다윈 버그 수정! (435fc56c) task 상태 PostgreSQL 분리!
 - 📋 Sprint 4 실제 제안 풀런 (내일 06:00 확인!)
 
 ### 이번 달
-- 📋 TypeScript Phase 0 — JSDoc + tsconfig! (코덱스 전달!)
+- ✅ TypeScript Phase 0~1B — 전부 완료!
+- 📋 Elixir Phase 1 — brew install → mix new → Ecto → Supervisor 프로토타입!
 - 📋 Phase B — 라벨링 + 자동 점수 + L1 확장! (1주 후!)
 - 📋 Phase C — 시그마 event_lake 연동 + 큐레이션! (2주 후!)
 - 📋 experience why 2단계 — Evidence+Confidence! (4/21 이후!)
@@ -136,8 +144,8 @@
 ### 장기 (1개월+)
 - 📋 Phase D — MAPE Plan+Execute + 누락 지식 감지 + Instinct!
 - 📋 experience why 3단계 — Instinct 진화 (LLM 졸업!) (5/7 이후!)
-- 📋 TypeScript Phase 1 — 핵심 인터페이스 TS + Zod! (Phase 0 안정화 후!)
-- 📋 TypeScript Phase 2~3 — 팀별 전환 + strict! (안정화 후!)
+- 📋 TypeScript Phase 2 — 팀별 .ts 전환! (Elixir Phase 3 후!)
+- 📋 TypeScript Phase 3 — strict 모드! (안정화 후!)
 - 📋 4단계 skill_creation E2E 실런
 - 📋 Drift Detection (Arize AI 패턴!)
 
