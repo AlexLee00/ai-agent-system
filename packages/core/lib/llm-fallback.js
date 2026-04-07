@@ -251,41 +251,54 @@ async function _callClaudeCode({ model, maxTokens, systemPrompt, userPrompt, tim
   const claudeSessionName = String(runtimeProfile?.claude_code_name || process.env.CLAUDE_CODE_NAME || '').trim();
   const claudeSettingsFile = String(runtimeProfile?.claude_code_settings || process.env.CLAUDE_CODE_SETTINGS || '').trim();
   const claudeAgent = String(process.env.CLAUDE_CODE_AGENT || '').trim();
-  const args = [
-    '-p',
-    '--output-format', 'json',
-    '--max-turns', '1',
-    '--model', resolvedModel,
-    '--tools', '',
-    '--permission-mode', 'default',
-    '--no-session-persistence',
-  ];
-  if (claudeAgent) args.push('--agent', claudeAgent);
-  if (claudeSessionName) args.push('--name', claudeSessionName);
-  if (claudeSettingsFile) args.push('--settings', claudeSettingsFile);
-  if (systemPrompt) args.push('--system-prompt', systemPrompt);
-  args.push(userPrompt || '');
+  const buildArgs = () => {
+    const args = [
+      '-p',
+      '--output-format', 'json',
+      '--max-turns', '1',
+      '--model', resolvedModel,
+      '--tools', '',
+      '--permission-mode', 'default',
+      '--no-session-persistence',
+    ];
+    if (claudeAgent) args.push('--agent', claudeAgent);
+    if (claudeSessionName) args.push('--name', claudeSessionName);
+    if (claudeSettingsFile) args.push('--settings', claudeSettingsFile);
+    if (systemPrompt) args.push('--system-prompt', systemPrompt);
+    args.push(userPrompt || '');
+    return args;
+  };
 
   let stdout = '';
   let stderr = '';
-  try {
-    const result = await execFileAsync('/opt/homebrew/bin/claude', args, {
-      timeout: timeoutMs,
-      maxBuffer: 2 * 1024 * 1024,
-      env: {
-        ...process.env,
-        CLAUDE_CODE_NAME: claudeSessionName || process.env.CLAUDE_CODE_NAME,
-        CLAUDE_CODE_SETTINGS: claudeSettingsFile || process.env.CLAUDE_CODE_SETTINGS,
-      },
-    });
-    stdout = result.stdout || '';
-    stderr = result.stderr || '';
-  } catch (error) {
-    stdout = error?.stdout || '';
-    stderr = error?.stderr || error?.message || '';
+  let output = '';
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      const result = await execFileAsync('/opt/homebrew/bin/claude', buildArgs(), {
+        timeout: timeoutMs,
+        maxBuffer: 2 * 1024 * 1024,
+        env: {
+          ...process.env,
+          CLAUDE_CODE_NAME: claudeSessionName || process.env.CLAUDE_CODE_NAME,
+          CLAUDE_CODE_SETTINGS: claudeSettingsFile || process.env.CLAUDE_CODE_SETTINGS,
+        },
+      });
+      stdout = result.stdout || '';
+      stderr = result.stderr || '';
+    } catch (error) {
+      stdout = error?.stdout || '';
+      stderr = error?.stderr || error?.message || '';
+    }
+
+    output = String(stdout || '').trim();
+    if (output) break;
+
+    if (attempt < 2) {
+      console.warn(`  ⚠️ [claude-code] 빈 응답 — 1회 재시도 (${String(stderr || '').trim().slice(0, 120) || 'no stderr'})`);
+      await new Promise(resolve => setTimeout(resolve, 1200));
+    }
   }
 
-  const output = String(stdout || '').trim();
   if (!output) {
     throw new Error(`Claude Code 빈 응답${stderr ? `: ${String(stderr).slice(0, 160)}` : ''}`);
   }

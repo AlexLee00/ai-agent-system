@@ -206,7 +206,9 @@ async function getTodayContext() {
     if (IS_TEST) {
       lectureCtx = await resolveTestLecture();
     } else {
-      const { number, seriesName } = await getNextLectureNumber();
+      const nextLecture = await getNextLectureNumber();
+      const number = Number(lectureRow.lecture_number || nextLecture.number);
+      const seriesName = nextLecture.seriesName;
       // 커리큘럼 테이블 우선 → category-rotation 폴백
       const planner = _getPlanner();
       const curriculumTitle = planner
@@ -228,7 +230,7 @@ async function getTodayContext() {
       book_title:  generalRow.book_title  || null,
       book_author: generalRow.book_author || null,
       book_isbn:   generalRow.book_isbn   || null,
-    }};
+    }, topicHint: generalRow.lecture_title || null };
   }
 
   return {
