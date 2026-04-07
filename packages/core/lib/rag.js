@@ -25,6 +25,7 @@
 const { execFile } = require('child_process');
 const pgPool = require('./pg-pool');
 const { getEmbeddingsUrl } = require('./local-llm-client');
+const eventLake = require('./event-lake');
 
 const SCHEMA = 'reservation';
 const EMBED_MODEL = process.env.EMBED_MODEL || 'qwen3-embed-0.6b';
@@ -336,7 +337,22 @@ async function storeExperience({
   const storedContent = normalizedWhy
     ? `${content}\n[이유: ${normalizedWhy}]`
     : content;
-  return store('experience', storedContent, metadata, sourceBot, { successOnly, isSuccess });
+  const id = await store('experience', storedContent, metadata, sourceBot, { successOnly, isSuccess });
+  eventLake.record({
+    eventType: 'experience_recorded',
+    team,
+    botName: sourceBot,
+    severity: isSuccess ? 'info' : 'warn',
+    title: intent,
+    message: storedContent.slice(0, 500),
+    tags: ['experience', intent, isSuccess ? 'success' : 'failure'],
+    metadata: {
+      rag_id: id,
+      result,
+      why: normalizedWhy,
+    },
+  }).catch(() => {});
+  return id;
 }
 
 /**
