@@ -140,6 +140,11 @@
   → SkaSupervisor + Andy/Jimmy GenServer!
   → 크래시 → 자동 재시작 확인!
 - 📋 Elixir Phase 2 — EventLake + MarketRegime + Diagnostics! (코덱스 전달!)
+- ✅ Elixir Phase 2 완료! (e682b756) 브랜치: elixir/phase2-infrastructure!
+  → EventLake GenServer (캐시+통계+record!)
+  → MarketRegime GenServer (4체제+히스토리!)
+  → Diagnostics (프로세스+메모리+큐 모니터링!)
+  → mix test 통과!
 - 📋 Phase B — 라벨링 + 자동 점수 + L1 확장! (1주 후!)
 - 📋 Phase C — 시그마 event_lake 연동 + 큐레이션! (2주 후!)
 - 📋 experience why 2단계 — Evidence+Confidence! (4/21 이후!)
