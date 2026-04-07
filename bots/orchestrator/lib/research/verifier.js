@@ -52,6 +52,31 @@ function _loadContents(files) {
   }));
 }
 
+function _decideVerificationPass(verification, verificationText) {
+  const text = String(verificationText || '').trim();
+  const explicitPass = /\b(?:종합 판정|overall(?: verdict)?|final verdict)\s*:\s*PASS\b/i.test(text);
+  const explicitFail = /\b(?:종합 판정|overall(?: verdict)?|final verdict)\s*:\s*FAIL\b/i.test(text);
+  const leadPass = /^PASS\b/i.test(text);
+  const leadFail = /^FAIL\b/i.test(text);
+
+  if (explicitPass) return verification.overall && !explicitFail;
+  if (explicitFail) return false;
+  if (leadPass) return verification.overall && !leadFail;
+  if (leadFail) return false;
+
+  return verification.overall && /\bPASS\b/i.test(text) && !/\bFAIL\b/i.test(text);
+}
+
+function _resolveVerificationFiles(proposal) {
+  const preferred = Array.isArray(proposal?.changed_files) ? proposal.changed_files : [];
+  const existing = preferred.filter((file) => {
+    if (typeof file !== 'string' || !file) return false;
+    return fs.existsSync(path.join(REPO_ROOT, file));
+  });
+  if (existing.length > 0) return existing;
+  return _listChangedFiles('main');
+}
+
 async function triggerVerification(proposalId, branchName) {
   const proposal = proposalStore.loadProposal(proposalId);
   if (!proposal) throw new Error(`proposal not found: ${proposalId}`);
@@ -65,7 +90,7 @@ async function triggerVerification(proposalId, branchName) {
 
   try {
     _runGit(['checkout', branchName]);
-    const changedFiles = _listChangedFiles('main');
+    const changedFiles = _resolveVerificationFiles(proposal);
     const verification = runFullVerification({
       files: changedFiles,
       cwd: REPO_ROOT,
@@ -101,12 +126,13 @@ ${verification.summary}`,
     });
 
     const verificationText = String(verificationResult?.text || verificationResult || '').trim();
-    const passed = verification.overall && /\bPASS\b/i.test(verificationText) && !/\bFAIL\b/i.test(verificationText);
+    const passed = _decideVerificationPass(verification, verificationText);
     logger.info(`검증 완료: ${proposalId} -> ${passed ? 'PASS' : 'FAIL'}`, { files: changedFiles.length });
 
     proposalStore.updateStatus(proposalId, passed ? 'verified' : 'verification_failed', {
       branch: branchName,
       files: changedFiles,
+      error: null,
       verification_text: verificationText,
       verification_report: verification.report,
       verification_summary: verification.summary,

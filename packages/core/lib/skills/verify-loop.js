@@ -42,6 +42,20 @@ function _stripStringsAndComments(content) {
     .replace(/"(?:\\.|[^"\\])*"/g, '""');
 }
 
+function _normalizeForDirectiveCheck(content) {
+  let normalized = String(content || '').replace(/^\uFEFF/, '').trimStart();
+
+  if (/^```[^\n]*\n/.test(normalized)) {
+    normalized = normalized.replace(/^```[^\n]*\n/, '').trimStart();
+  }
+
+  if (/^#![^\n]*\n/.test(normalized)) {
+    normalized = normalized.replace(/^#![^\n]*\n/, '').trimStart();
+  }
+
+  return normalized;
+}
+
 function phaseSyntax(files, cwd) {
   const jsFiles = getJsFiles(files);
   const failures = [];
@@ -81,8 +95,9 @@ function phaseStyle(files, cwd) {
       const content = fs.readFileSync(path.join(cwd, file), 'utf8');
       const lines = content.split('\n');
       const sanitized = _stripStringsAndComments(content);
+      const normalized = _normalizeForDirectiveCheck(content);
 
-      if (!content.startsWith("'use strict'")) {
+      if (!normalized.startsWith("'use strict'") && !normalized.startsWith('"use strict"')) {
         blockingIssues.push("'use strict' 누락");
       }
       if (/\bvar\s+[A-Za-z_$]/.test(sanitized)) {
