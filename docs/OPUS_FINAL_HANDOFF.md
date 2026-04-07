@@ -99,14 +99,19 @@
 - ✅ verification-loop 6단계 공용 스킬 (37a7b72c!)
 - ✅ 다윈 자율 연구 파이프라인 연결 (2993caec!)
 - ✅ 블로팀 조회수 수집 Puppeteer (collect-views.js!)
-- ✅ 에이전트 이벤트 레이크 전략 (AGENT_EVENT_LAKE_STRATEGY.md 317줄!)
-- 📋 이벤트 레이크 Phase 1 구현! (CODEX_EVENT_LAKE_PHASE1.md 540줄!)
-- 📋 중앙 로거 구현! (CODEX_CENTRAL_LOGGER.md!)
+- ✅ 에이전트 이벤트 레이크 전략 (AGENT_EVENT_LAKE_STRATEGY.md 510줄!)
+- ✅ 이벤트 레이크 Phase 1 구현 완료! (event-lake.js+events.js+central-logger.js!)
+- ✅ 피드백 루프 보완 3가지 (Data Flywheel+MAPE+AITL!)
+- ✅ 피드백 루프 통합 구현 계획 (FEEDBACK_LOOP_IMPLEMENTATION_PLAN.md 286줄!)
+- ✅ 아키텍처 철학 문서화 (독립+공유=진화! Rate Limiter 비유!)
+- ✅ 시그마팀 → 데이터 사이언스팀 격상 결정!
+- 📋 Phase A 피드백 엔진 가동! (CODEX_PHASE_A_FEEDBACK_ENGINE.md 380줄! 코덱스 전달!)
+  → 시그마 launchd + event_lake 5곳 연동 + logger 3곳!
 - 📋 Sprint 4 실제 제안 풀런 (내일 06:00 확인!)
 
 ### 이번 달
-- 📋 이벤트 레이크 Phase 2 — 라벨링 + 자동 점수! (1주 후!)
-- 📋 이벤트 레이크 Phase 3 — 시그마 연동 + 피드백! (2주 후!)
+- 📋 Phase B — 라벨링 + 자동 점수 + L1 확장! (1주 후!)
+- 📋 Phase C — 시그마 event_lake 연동 + 큐레이션! (2주 후!)
 - 📋 experience why 2단계 — Evidence+Confidence! (4/21 이후!)
 - 📋 공용 스킬 Phase 2 (search-first/security-scan) — 코덱스/메티!
 - 📋 Freqtrade 패턴 → chronos.js 구현 — 코덱스!
@@ -114,9 +119,17 @@
 - 📋 CC-B+ECC-3 훅 시스템
 
 ### 장기 (1개월+)
-- 📋 이벤트 레이크 Phase 4 — Drift Detection + Instinct!
+- 📋 Phase D — MAPE Plan+Execute + 누락 지식 감지 + Instinct!
 - 📋 experience why 3단계 — Instinct 진화 (LLM 졸업!) (5/7 이후!)
 - 📋 4단계 skill_creation E2E 실런
+- 📋 Drift Detection (Arize AI 패턴!)
+
+---
+
+## 핵심 전략 문서
+- docs/strategy/AGENT_EVENT_LAKE_STRATEGY.md (510줄!) — 이벤트 레이크 + 피드백 루프 + 아키텍처 철학!
+- docs/strategy/FEEDBACK_LOOP_IMPLEMENTATION_PLAN.md (286줄!) — 4단계 통합 구현 계획!
+- docs/codex/CODEX_PHASE_A_FEEDBACK_ENGINE.md (380줄!) — Phase A 통합 코덱스!
 
 ---
 

@@ -5,6 +5,7 @@ const path = require('path');
 const pgPool = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'));
 const registry = require(path.join(__dirname, '../../../packages/core/lib/agent-registry'));
 const { postAlarm } = require(path.join(__dirname, '../../../packages/core/lib/openclaw-client'));
+const eventLake = require(path.join(__dirname, '../../../packages/core/lib/event-lake'));
 
 function parseArgs(argv = process.argv.slice(2)) {
   const get = (name) => argv.find((arg) => arg.startsWith(`--${name}=`))?.split('=').slice(1).join('=');
@@ -198,6 +199,21 @@ async function main() {
   const categoryRankings = aggregateByCategory(rows);
   const applied = await applyWriterFeedback(writerRankings, { dryRun: args.dryRun });
   const reportResult = await sendReport(rows, applied, categoryRankings, { dryRun: args.dryRun });
+  eventLake.record({
+    eventType: 'blog_performance_analyzed',
+    team: 'blog',
+    botName: 'blog-analyzer',
+    severity: 'info',
+    title: `blog performance ${rows.length}건`,
+    message: `작가 ${applied.length}명 성과 분석 완료`,
+    tags: ['blog', 'performance', args.dryRun ? 'dry-run' : 'live'],
+    metadata: {
+      analyzed_posts: rows.length,
+      writers: applied.length,
+      top_writer: applied[0]?.name || null,
+      report_sent: reportResult?.ok === true,
+    },
+  }).catch(() => {});
 
   const payload = {
     ok: true,

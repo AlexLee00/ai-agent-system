@@ -20,6 +20,7 @@ const fs         = require('fs');
 const path       = require('path');
 const { execSync } = require('child_process');
 const pgPool     = require('../../../packages/core/lib/pg-pool');
+const eventLake  = require('../../../packages/core/lib/event-lake');
 
 const SCHEMA = 'reservation';
 const LAUNCHD_DIR = path.join(os.homedir(), 'Library', 'LaunchAgents');
@@ -411,9 +412,37 @@ async function recoverDownServices(downServices) {
       console.log(`  🔧 [닥터] ${svc.label} 내려감 (exit: ${svc.status}) → 재시작`);
       execSync(`launchctl kickstart -kp gui/${uid}/${svc.label}`, { timeout: 15000, encoding: 'utf8' });
       await logRecovery('restart_launchd_service', { label: svc.label }, { restarted: svc.label }, true, 'doctor-healthcheck');
+      eventLake.record({
+        eventType: 'doctor_recovery_success',
+        team: 'claude',
+        botName: 'doctor',
+        severity: 'info',
+        title: svc.label,
+        message: 'launchd 자동 복구 성공',
+        tags: ['doctor', 'recovery', 'launchd'],
+        metadata: {
+          label: svc.label,
+          status: svc.status,
+          source: 'launchd-healthcheck',
+        },
+      }).catch(() => {});
       results.push({ label: svc.label, success: true, message: '재시작 완료' });
     } catch (err) {
       await logRecovery('restart_launchd_service', { label: svc.label }, null, false, 'doctor-healthcheck', null, err.message);
+      eventLake.record({
+        eventType: 'doctor_recovery_failed',
+        team: 'claude',
+        botName: 'doctor',
+        severity: 'error',
+        title: svc.label,
+        message: err.message,
+        tags: ['doctor', 'recovery', 'failed'],
+        metadata: {
+          label: svc.label,
+          status: svc.status,
+          source: 'launchd-healthcheck',
+        },
+      }).catch(() => {});
       results.push({ label: svc.label, success: false, message: err.message });
     }
     await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -462,6 +491,20 @@ async function scanAndRecover() {
 
       console.log(`  🔧 [닥터] ${svc.service} 에러 ${svc.error_count}건 → ${label} 재시작`);
       const result = await execute('restart_launchd_service', { label }, 'doctor-autoscan');
+      eventLake.record({
+        eventType: result.success ? 'doctor_error_threshold_recovered' : 'doctor_error_threshold_failed',
+        team: 'claude',
+        botName: 'doctor',
+        severity: result.success ? 'warn' : 'error',
+        title: svc.service,
+        message: result.message,
+        tags: ['doctor', 'autoscan', svc.service],
+        metadata: {
+          service: svc.service,
+          label,
+          error_count: svc.error_count,
+        },
+      }).catch(() => {});
       recoveries.push({
         service: svc.service,
         label,
