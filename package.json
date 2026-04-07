@@ -11,6 +11,7 @@
   "scripts": {
     "dev": "npm run dev --workspaces --if-present",
     "build": "npm run build --workspaces --if-present",
+    "build:ts": "node scripts/build-ts-phase1.mjs",
     "test": "npm run test --workspaces --if-present",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "weekly-report": "node scripts/weekly-team-report.js",
@@ -30,6 +31,7 @@
     "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
+    "esbuild": "^0.27.7",
     "typescript": "^5.9.3"
   }
 }
