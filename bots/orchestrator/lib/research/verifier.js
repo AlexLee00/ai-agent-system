@@ -29,6 +29,15 @@ function _getCurrentBranch() {
   return _runGit(['rev-parse', '--abbrev-ref', 'HEAD']);
 }
 
+function _deleteBranchIfExists(branchName) {
+  if (!branchName) return;
+  try {
+    _runGit(['branch', '-D', branchName]);
+  } catch {
+    // ignore
+  }
+}
+
 function _listChangedFiles(baseBranch = 'main') {
   const output = _runGit(['diff', '--name-only', `${baseBranch}...HEAD`]);
   return output ? output.split('\n').map((line) => line.trim()).filter(Boolean) : [];
@@ -123,10 +132,14 @@ ${verification.summary}`,
       team: 'darwin',
       alertLevel: passed ? 2 : 3,
       fromBot: 'proof-r',
-      inlineKeyboard: passed ? [[
-        { text: '✅ 머지 승인', callback_data: `darwin_merge:${proposalId}` },
-        { text: '📝 수동 검토', callback_data: `darwin_manual:${proposalId}` },
-      ]] : null,
+      inlineKeyboard: passed
+        ? [[
+            { text: '✅ 머지 승인', callback_data: `darwin_merge:${proposalId}` },
+            { text: '📝 수동 검토', callback_data: `darwin_manual:${proposalId}` },
+          ]]
+        : [[
+            { text: '📝 수동 검토', callback_data: `darwin_manual:${proposalId}` },
+          ]],
     });
 
     return { ok: true, passed, changedFiles, verificationText };
@@ -173,8 +186,24 @@ async function mergeBranch(branchName, label) {
   try {
     _runGit(['checkout', 'main']);
     _runGit(['merge', '--no-ff', branchName, '-m', `merge(darwin): ${label}`]);
+    _deleteBranchIfExists(branchName);
     return { ok: true, branch: branchName };
   } catch (error) {
+    const stderr = String(error.stderr || error.stdout || error.message || '');
+    if (/CONFLICT|Automatic merge failed|fix conflicts/i.test(stderr)) {
+      try {
+        _runGit(['merge', '--abort']);
+      } catch {}
+      await postAlarm({
+        message: `⚠️ 다윈 머지 충돌\n🌿 ${branchName}\n사유: ${stderr.slice(0, 500)}`,
+        team: 'darwin',
+        alertLevel: 3,
+        fromBot: 'proof-r',
+        inlineKeyboard: [[
+          { text: '📝 수동 검토', callback_data: `darwin_manual:${label}` },
+        ]],
+      });
+    }
     autonomyLevel.recordError(error);
     throw error;
   } finally {

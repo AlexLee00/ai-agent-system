@@ -13,6 +13,7 @@ const proposalStore = require('./proposal-store');
 const autonomyLevel = require('./autonomy-level');
 
 const REPO_ROOT = path.join(__dirname, '../../../..');
+const ALLOWED_PREFIXES = ['packages/', 'bots/', 'docs/', 'scripts/', 'config/'];
 
 function _runGit(args, opts = {}) {
   return execFileSync('git', args, {
@@ -35,13 +36,70 @@ function _sanitizeBranchName(proposalId) {
   return `darwin/${String(proposalId).replace(/[^a-zA-Z0-9/_-]+/g, '-').slice(0, 96)}`;
 }
 
+function _createStashLabel(proposalId) {
+  return `darwin-auto-${String(proposalId || 'unknown').replace(/[^a-zA-Z0-9._-]+/g, '-')}`;
+}
+
+function _normalizeRepoPath(filePath) {
+  const normalized = String(filePath || '').trim().replace(/\\/g, '/');
+  if (!normalized || normalized.startsWith('/') || normalized.includes('\0')) {
+    throw new Error(`invalid_output_path:${filePath}`);
+  }
+
+  const clean = path.posix.normalize(normalized);
+  if (clean.startsWith('../') || clean === '..' || clean.includes('/../')) {
+    throw new Error(`path_traversal_blocked:${filePath}`);
+  }
+  if (!ALLOWED_PREFIXES.some((prefix) => clean.startsWith(prefix))) {
+    throw new Error(`output_path_not_allowed:${filePath}`);
+  }
+  return clean;
+}
+
+function _stashPushIfNeeded(proposalId) {
+  if (_isCleanWorktree()) return { created: false, label: null };
+  const label = _createStashLabel(proposalId);
+  _runGit(['stash', 'push', '-u', '-m', label]);
+  return { created: true, label };
+}
+
+function _stashPopIfNeeded(stashState) {
+  if (!stashState?.created || !stashState.label) return;
+  const stashList = _runGit(['stash', 'list']);
+  const line = String(stashList || '')
+    .split('\n')
+    .find((entry) => entry.includes(stashState.label));
+  if (!line) return;
+  const stashRef = String(line.split(':')[0] || '').trim();
+  if (!stashRef) return;
+  _runGit(['stash', 'pop', stashRef]);
+}
+
+function _deleteBranchIfExists(branchName) {
+  if (!branchName) return;
+  try {
+    _runGit(['branch', '-D', branchName]);
+  } catch {
+    // ignore
+  }
+}
+
+function _hasStagedChanges() {
+  try {
+    _runGit(['diff', '--cached', '--quiet']);
+    return false;
+  } catch {
+    return true;
+  }
+}
+
 function _extractFiles(rawText) {
   const text = String(rawText?.text || rawText || '');
   const files = [];
   const pattern = /---\s*FILE:\s*([^\n]+?)\s*---\n([\s\S]*?)(?=\n---\s*FILE:|\s*$)/g;
   let match;
   while ((match = pattern.exec(text)) !== null) {
-    const filePath = String(match[1] || '').trim();
+    const filePath = _normalizeRepoPath(String(match[1] || '').trim());
     const content = String(match[2] || '').trim();
     if (!filePath || !content) continue;
     files.push({ path: filePath, content });
@@ -89,22 +147,21 @@ async function triggerImplementation(proposalId) {
   const proposal = proposalStore.loadProposal(proposalId);
   if (!proposal) throw new Error(`proposal not found: ${proposalId}`);
 
-  if (!_isCleanWorktree()) {
-    proposalStore.updateStatus(proposalId, 'implementation_failed', {
-      error: 'dirty_worktree',
-    });
-    throw new Error('darwin auto implementation requires a clean worktree');
-  }
-
   const originalBranch = _getCurrentBranch();
   const branchName = proposal.branch || _sanitizeBranchName(proposalId);
+  let stashState = null;
+  let branchCheckedOut = false;
+  let committed = false;
   proposalStore.updateStatus(proposalId, 'implementing', { branch: branchName, implementation_started_at: new Date().toISOString() });
 
   try {
+    stashState = _stashPushIfNeeded(proposalId);
     _runGit(['checkout', '-b', branchName]);
+    branchCheckedOut = true;
   } catch (error) {
     if (String(error.stderr || error.message || '').includes('already exists')) {
       _runGit(['checkout', branchName]);
+      branchCheckedOut = true;
     } else {
       throw error;
     }
@@ -140,6 +197,9 @@ ${JSON.stringify(proposal.verification || {})}`,
 
     const files = _extractFiles(implementationResult);
     if (files.length === 0) {
+      _runGit(['checkout', originalBranch]);
+      branchCheckedOut = false;
+      _deleteBranchIfExists(branchName);
       proposalStore.updateStatus(proposalId, 'implementation_failed', {
         error: 'no_files_extracted',
       });
@@ -151,7 +211,17 @@ ${JSON.stringify(proposal.verification || {})}`,
     const syntaxPassed = syntaxChecks.every((item) => item.ok);
 
     _runGit(['add', ...changedFiles]);
+    if (!_hasStagedChanges()) {
+      _runGit(['checkout', originalBranch]);
+      branchCheckedOut = false;
+      _deleteBranchIfExists(branchName);
+      proposalStore.updateStatus(proposalId, 'implementation_failed', {
+        error: 'no_effective_changes',
+      });
+      throw new Error('edison produced no effective file changes');
+    }
     _runGit(['commit', '-m', `feat(darwin): auto-implement ${proposalId}`]);
+    committed = true;
 
     proposalStore.updateStatus(proposalId, 'implemented', {
       branch: branchName,
@@ -192,7 +262,13 @@ ${JSON.stringify(proposal.verification || {})}`,
     throw error;
   } finally {
     try {
-      _runGit(['checkout', originalBranch]);
+      if (branchCheckedOut) _runGit(['checkout', originalBranch]);
+    } catch {}
+    try {
+      if (!committed) _deleteBranchIfExists(branchName);
+    } catch {}
+    try {
+      _stashPopIfNeeded(stashState);
     } catch {}
   }
 }
