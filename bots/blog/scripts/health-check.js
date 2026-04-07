@@ -18,10 +18,7 @@ const {
   getLaunchctlStatus,
   DEFAULT_NORMAL_EXIT_CODES,
 } = require('../../../packages/core/lib/health-provider');
-const {
-  publishEventPipeline,
-  buildSeverityTargets,
-} = require('../../../packages/core/lib/reporting-hub');
+const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 
 const runtimeConfig = getBlogHealthRuntimeConfig();
 const NODE_SERVER_HEALTH_URL = new URL(runtimeConfig.nodeServerHealthUrl || 'http://127.0.0.1:3100/health');
@@ -31,31 +28,11 @@ const N8N_HEALTH_TIMEOUT_MS = Number(runtimeConfig.n8nHealthTimeoutMs || 2500);
 
 async function notify(msg, level = 3) {
   try {
-    const event = {
-      from_bot: 'blog-health',
-      team: 'blog',
-      event_type: 'health_alert',
-      alert_level: level,
+    await postAlarm({
       message: msg,
-    };
-    await publishEventPipeline({
-      event,
-      policy: {
-        cooldownMs: level >= 3 ? 60_000 : 5 * 60_000,
-        quietHours: {
-          timezone: 'KST',
-          startHour: 23,
-          endHour: 8,
-          maxAlertLevel: 1,
-        },
-      },
-      targets: buildSeverityTargets({
-        event,
-        topicTeam: 'blog',
-        includeQueue: false,
-        includeTelegram: false,
-        includeN8n: true,
-      }),
+      team: 'blog',
+      alertLevel: level,
+      fromBot: 'blog-health',
     });
   } catch { /* 무시 */ }
 }

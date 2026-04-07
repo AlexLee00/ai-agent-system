@@ -8,9 +8,8 @@ const {
   normalizeEvent,
   buildReportEvent,
   renderReportEvent,
-  publishEventPipeline,
-  buildSeverityTargets,
 } = require('../lib/reporting-hub');
+const { postAlarm } = require('../lib/openclaw-client');
 
 function readStdin() {
   return fs.readFileSync(0, 'utf8').trim();
@@ -102,31 +101,20 @@ async function main() {
     payload: event.payload,
   }));
 
-  const results = await publishEventPipeline({
-    event: {
-      ...event,
-      message: reportMessage,
-    },
-    policy: {
-      cooldownMs: 0,
-      dedupe: false,
-    },
-    targets: buildSeverityTargets({
-      event,
-      topicTeam,
-      telegramPrefix: '',
-      includeQueue: false,
-      includeTelegram: false,
-      includeN8n: false,
-    }),
+  const results = await postAlarm({
+    message: reportMessage,
+    team: topicTeam || team,
+    alertLevel,
+    fromBot,
+    payload: event.payload,
   });
 
   if (!results.ok) {
-    console.error('[python-report] ⚠️ reporting-hub 발행 실패');
+    console.error('[python-report] ⚠️ postAlarm 발행 실패');
     process.exit(1);
   }
 
-  console.log('[python-report] ✅ reporting-hub 발행 완료');
+  console.log('[python-report] ✅ postAlarm 발행 완료');
 }
 
 main().catch((error) => {

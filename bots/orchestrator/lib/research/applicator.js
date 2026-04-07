@@ -185,7 +185,10 @@ async function apply(paper) {
     inlineKeyboard: verification.passed ? [[
       { text: '✅ 승인 — 구현 시작', callback_data: `darwin_approve:${proposalId}` },
       { text: '❌ 거절', callback_data: `darwin_reject:${proposalId}` },
-    ]] : null,
+    ]] : [[
+      { text: '📝 수동 검토', callback_data: `darwin_manual:${proposalId}` },
+      { text: '❌ 거절', callback_data: `darwin_reject:${proposalId}` },
+    ]],
   });
 
   return {
