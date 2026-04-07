@@ -15,6 +15,17 @@ const autonomyLevel = require('./autonomy-level');
 
 const REPO_ROOT = path.join(__dirname, '../../../..');
 const ALLOWED_PREFIXES = ['packages/', 'bots/', 'docs/', 'scripts/', 'config/'];
+const TEAM_BASE_DIRS = {
+  luna: 'bots/investment/experimental',
+  investment: 'bots/investment/experimental',
+  blog: 'bots/blog/experimental',
+  claude: 'bots/claude/experimental',
+  worker: 'bots/worker/experimental',
+  darwin: 'bots/orchestrator/experimental',
+  orchestrator: 'bots/orchestrator/experimental',
+  reservation: 'bots/reservation/experimental',
+  ska: 'bots/ska/experimental',
+};
 const logger = createLogger('implementor', { team: 'darwin' });
 
 function _runGit(args, opts = {}) {
@@ -42,13 +53,45 @@ function _createStashLabel(proposalId) {
   return `darwin-auto-${String(proposalId || 'unknown').replace(/[^a-zA-Z0-9._-]+/g, '-')}`;
 }
 
-function _normalizeRepoPath(filePath) {
+function _extractTargetTeam(proposal = {}) {
+  const direct = String(
+    proposal.target?.team
+    || proposal.team
+    || '',
+  ).trim().toLowerCase();
+  if (direct) return direct;
+
+  const proposalText = String(proposal.proposal || '');
+  const match = proposalText.match(/적용 대상 팀:\s*([^\n]+)/);
+  if (!match) return '';
+  const rawTeam = String(match[1] || '').trim();
+  if (/루나/.test(rawTeam)) return 'luna';
+  if (/블로|블로그/.test(rawTeam)) return 'blog';
+  if (/클로드|claude/i.test(rawTeam)) return 'claude';
+  if (/워커|worker/i.test(rawTeam)) return 'worker';
+  if (/다윈|darwin/i.test(rawTeam)) return 'darwin';
+  if (/예약|ska/i.test(rawTeam)) return 'reservation';
+  return rawTeam.toLowerCase();
+}
+
+function _resolveProposalBaseDir(proposalId, proposal = {}) {
+  const team = _extractTargetTeam(proposal);
+  const teamBase = TEAM_BASE_DIRS[team] || 'docs/research/prototypes';
+  return path.posix.join(teamBase, String(proposalId || 'unknown'));
+}
+
+function _normalizeRepoPath(filePath, proposalId = null, proposal = null) {
   const normalized = String(filePath || '').trim().replace(/\\/g, '/');
   if (!normalized || normalized.startsWith('/') || normalized.includes('\0')) {
     throw new Error(`invalid_output_path:${filePath}`);
   }
 
-  const clean = path.posix.normalize(normalized);
+  const looksRelativeBare = !normalized.includes('/') || normalized.startsWith('./');
+  const repoRelative = looksRelativeBare
+    ? path.posix.join(_resolveProposalBaseDir(proposalId, proposal || {}), normalized.replace(/^\.\//, ''))
+    : normalized;
+
+  const clean = path.posix.normalize(repoRelative);
   if (clean.startsWith('../') || clean === '..' || clean.includes('/../')) {
     throw new Error(`path_traversal_blocked:${filePath}`);
   }
@@ -95,16 +138,43 @@ function _hasStagedChanges() {
   }
 }
 
-function _extractFiles(rawText) {
+function _extractFiles(rawText, proposalId = null, proposal = null) {
   const text = String(rawText?.text || rawText || '');
   const files = [];
+  const seen = new Set();
+  const pushFile = (filePath, content) => {
+    const normalizedPath = _normalizeRepoPath(String(filePath || '').trim(), proposalId, proposal);
+    const normalizedContent = String(content || '').trim();
+    if (!normalizedPath || !normalizedContent || seen.has(normalizedPath)) return;
+    seen.add(normalizedPath);
+    files.push({ path: normalizedPath, content: normalizedContent });
+  };
+
   const pattern = /---\s*FILE:\s*([^\n]+?)\s*---\n([\s\S]*?)(?=\n---\s*FILE:|\s*$)/g;
   let match;
   while ((match = pattern.exec(text)) !== null) {
-    const filePath = _normalizeRepoPath(String(match[1] || '').trim());
-    const content = String(match[2] || '').trim();
-    if (!filePath || !content) continue;
-    files.push({ path: filePath, content });
+    pushFile(match[1], match[2]);
+  }
+
+  if (files.length > 0) return files;
+
+  const fencedWithHeaderPattern = /(?:^|\n)(?:#{1,6}\s*)?(?:FILE|Filename|Path)\s*:\s*([^\n]+?)\s*\n```[a-zA-Z0-9_-]*\n([\s\S]*?)```/g;
+  while ((match = fencedWithHeaderPattern.exec(text)) !== null) {
+    pushFile(match[1], match[2]);
+  }
+
+  if (files.length > 0) return files;
+
+  const fencedPathPattern = /```(?:[a-zA-Z0-9_-]+)?\s+([^\s`]+\.(?:js|cjs|mjs|json|md|ts|py|go|rs|yaml|yml))\n([\s\S]*?)```/g;
+  while ((match = fencedPathPattern.exec(text)) !== null) {
+    pushFile(match[1], match[2]);
+  }
+
+  if (files.length > 0) return files;
+
+  const adjacentPattern = /(?:^|\n)([^\n]+\.(?:js|cjs|mjs|json|md|ts|py|go|rs|yaml|yml))\s*\n```[a-zA-Z0-9_-]*\n([\s\S]*?)```/g;
+  while ((match = adjacentPattern.exec(text)) !== null) {
+    pushFile(match[1], match[2]);
   }
   return files;
 }
@@ -179,8 +249,13 @@ async function triggerImplementation(proposalId) {
 - CommonJS(require/module.exports)
 - 각 파일은 --- FILE: path/to/file.js --- 형식으로 구분
 - node --check 통과 가능한 코드
-- 기존 패턴을 따르고 외부 비밀값 하드코딩 금지`,
+- 기존 패턴을 따르고 외부 비밀값 하드코딩 금지
+- 출력 경로는 반드시 repo-relative 경로
+- bare filename만 필요하면 같은 폴더 기준으로 묶어서 출력`,
       userPrompt: `논문: ${proposal.paper?.title || proposal.title || 'unknown'}
+
+안전 출력 베이스:
+${_resolveProposalBaseDir(proposalId, proposal)}
 
 적용 방안:
 ${proposal.proposal || ''}
@@ -198,7 +273,7 @@ ${JSON.stringify(proposal.verification || {})}`,
       timeoutMs: 45_000,
     });
 
-    const files = _extractFiles(implementationResult);
+    const files = _extractFiles(implementationResult, proposalId, proposal);
     logger.info(`LLM 출력 파싱 완료: ${files.length}개 파일`);
     if (files.length === 0) {
       _runGit(['checkout', originalBranch]);

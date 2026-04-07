@@ -288,7 +288,7 @@ function checkInvestStatus(items) {
     try {
       const s = JSON.parse(fs.readFileSync(statusPath, 'utf8'));
       const lastRun = s.lastRun ? new Date(s.lastRun) : null;
-      const ageMin  = lastRun ? Math.floor((Date.now() - lastRun) / 60000) : null;
+      const ageMin  = lastRun ? Math.floor((Date.now() - lastRun.getTime()) / 60000) : null;
       const ageStr  = ageMin !== null ? `${ageMin}분 전` : 'N/A';
 
       if (s.status === 'error') {
