@@ -24,6 +24,12 @@ function round(value, digits = 2) {
   return Math.round(Number(value || 0) * factor) / factor;
 }
 
+function deriveEffectiveViews(views, likes, comments) {
+  const rawViews = Number(views || 0);
+  if (rawViews > 0) return rawViews;
+  return Number(likes || 0) * 25 + Number(comments || 0) * 40;
+}
+
 async function loadPerformanceRows(days = 30) {
   return pgPool.query('blog', `
     SELECT
@@ -83,11 +89,13 @@ function aggregateByWriter(rows) {
     const avgViews = item.posts > 0 ? item.totalViews / item.posts : 0;
     const avgLikes = item.posts > 0 ? item.totalLikes / item.posts : 0;
     const avgComments = item.posts > 0 ? item.totalComments / item.posts : 0;
-    const score = avgViews * 0.7 + avgLikes * 20 + avgComments * 10;
+    const effectiveViews = deriveEffectiveViews(avgViews, avgLikes, avgComments);
+    const score = effectiveViews * 0.7 + avgLikes * 20 + avgComments * 10;
     return {
       name: item.name,
       posts: item.posts,
       avgViews: round(avgViews),
+      effectiveViews: round(effectiveViews),
       avgLikes: round(avgLikes),
       avgComments: round(avgComments),
       score: round(score),
