@@ -1,0 +1,22 @@
+[
+  {
+    "id": "EXPERIENCE_WHY_PHASE2",
+    "title": "experience why 2단계 — Evidence+Confidence 구조화",
+    "remind_after": "2026-04-21",
+    "condition": "why 데이터 200건+ 축적 확인",
+    "action": "CODEX_EXPERIENCE_WHY.md 2단계 참조. rag_experience 테이블에서 metadata->>'why' IS NOT NULL 건수 확인!",
+    "reference": "docs/codex/CODEX_EXPERIENCE_WHY.md",
+    "created_at": "2026-04-07",
+    "status": "pending"
+  },
+  {
+    "id": "EXPERIENCE_WHY_PHASE3",
+    "title": "experience why 3단계 — Instinct 진화 (LLM 졸업!)",
+    "remind_after": "2026-05-07",
+    "condition": "2단계 confidence 데이터 충분 축적",
+    "action": "CODEX_EXPERIENCE_WHY.md 3단계 참조. instinct-detector/store/promoter 구현!",
+    "reference": "docs/codex/CODEX_EXPERIENCE_WHY.md",
+    "created_at": "2026-04-07",
+    "status": "pending"
+  }
+]
