@@ -254,6 +254,7 @@ async function _storeExperienceIfNeeded(paper) {
       intent: 'research_discovery',
       response: paper.korean_summary,
       result: 'success',
+      why: `적합성 ${paper.relevance_score}점, 도메인 ${paper.domain || 'unknown'}`,
       sourceBot: 'research-scanner',
       details: {
         arxiv_id: paper.arxiv_id,

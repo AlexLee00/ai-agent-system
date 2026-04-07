@@ -417,7 +417,7 @@ async function recordPerformance(postId, metrics = {}) {
     if (row && views > 0) {
       await rag.initSchema();
       await rag.store('experience',
-        `[blog_success] ${row.title} | views=${views} | comments=${comments} | likes=${likes}`,
+        `[blog_success] ${row.title} | views=${views} | comments=${comments} | likes=${likes}\n[이유: 조회수 ${views}회, 카테고리 ${row.category || 'unknown'}]`,
         {
           intent: 'blog_success',
           team: 'blog',
@@ -427,6 +427,7 @@ async function recordPerformance(postId, metrics = {}) {
           likes,
           charCount: Number(row.char_count || 0),
           postId,
+          why: `조회수 ${views}회, 카테고리 ${row.category || 'unknown'}`,
         },
         'blog-publ'
       );
@@ -493,7 +494,7 @@ async function recordPerformancePartial(postId, metrics = {}) {
     if (row && hasViews && views > 0) {
       await rag.initSchema();
       await rag.store('experience',
-        `[blog_success] ${row.title} | views=${views}${hasComments ? ` | comments=${comments}` : ''}${hasLikes ? ` | likes=${likes}` : ''}`,
+        `[blog_success] ${row.title} | views=${views}${hasComments ? ` | comments=${comments}` : ''}${hasLikes ? ` | likes=${likes}` : ''}\n[이유: 조회수 ${views}회, 카테고리 ${row.category || 'unknown'}]`,
         {
           intent: 'blog_success',
           team: 'blog',
@@ -503,6 +504,7 @@ async function recordPerformancePartial(postId, metrics = {}) {
           likes: hasLikes ? likes : null,
           charCount: Number(row.char_count || 0),
           postId,
+          why: `조회수 ${views}회, 카테고리 ${row.category || 'unknown'}`,
         },
         'blog-publ'
       );

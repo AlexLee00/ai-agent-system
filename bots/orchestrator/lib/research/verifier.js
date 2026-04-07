@@ -114,6 +114,7 @@ ${verification.summary}`,
       intent: 'darwin_auto_verification',
       response: verificationText.slice(0, 1500),
       result: passed ? 'success' : 'failure',
+      why: verification.summary || (passed ? 'syntax 통과, security 위험 미감지' : 'syntax/security/diff 중 하나 이상 실패'),
       team: 'darwin',
       sourceBot: 'proof-r',
       details: {

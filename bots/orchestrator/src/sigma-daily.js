@@ -51,12 +51,13 @@ async function runDaily({ test = false } = {}) {
 
   try {
     await rag.initSchema();
-    await rag.store('experience', analysis.report, {
+    await rag.store('experience', `${analysis.report}\n[이유: 일일 크로스팀 분석 ${feedbackRows.length}건 피드백 생성]`, {
       type: 'sigma_daily_report',
       date: kst.today(),
       teams: formation.targetTeams,
       analysts: formation.analysts,
       feedback_count: feedbackRows.length,
+      why: `일일 크로스팀 분석 ${feedbackRows.length}건 피드백 생성`,
     }, 'sigma');
   } catch (error) {
     console.warn(`[sigma-daily] RAG 저장 실패: ${error.message}`);
