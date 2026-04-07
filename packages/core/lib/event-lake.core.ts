@@ -1,13 +1,5 @@
 import { z } from 'zod';
 
-const runtime = require('./event-lake.js') as {
-  initSchema: () => Promise<void>;
-  record: (input: EventLakeRecordInput) => Promise<number | null>;
-  search: (input?: EventLakeSearchInput) => Promise<EventLakeRow[]>;
-  stats: (input?: { minutes?: number }) => Promise<EventLakeStats>;
-  addFeedback: (id: number | string, input?: EventLakeFeedbackInput) => Promise<EventLakeFeedbackRow | null>;
-};
-
 export const EventSeveritySchema = z.enum(['debug', 'info', 'warn', 'error', 'critical']);
 
 export const EventRecordSchema = z.object({
@@ -64,36 +56,9 @@ export const EventLakeStatsSchema = z.object({
   services: z.array(z.record(z.string(), z.unknown())),
 });
 
-export type EventLakeRecordInput = z.infer<typeof EventRecordSchema>;
+export type EventSeverity = z.infer<typeof EventSeveritySchema>;
+export type EventRecordInput = z.infer<typeof EventRecordSchema>;
 export type EventLakeSearchInput = z.infer<typeof EventLakeSearchSchema>;
 export type EventLakeFeedbackInput = z.infer<typeof EventLakeFeedbackSchema>;
 export type EventLakeRow = z.infer<typeof EventLakeRowSchema>;
 export type EventLakeStats = z.infer<typeof EventLakeStatsSchema>;
-export type EventLakeFeedbackRow = {
-  id: number;
-  feedback_score?: number | null;
-  feedback?: string | null;
-  updated_at?: string | Date;
-};
-
-export async function initSchema(): Promise<void> {
-  return runtime.initSchema();
-}
-
-export async function record(input: EventLakeRecordInput): Promise<number | null> {
-  return runtime.record(EventRecordSchema.parse(input));
-}
-
-export async function search(input: EventLakeSearchInput = {}): Promise<EventLakeRow[]> {
-  const rows = await runtime.search(EventLakeSearchSchema.parse(input));
-  return z.array(EventLakeRowSchema).parse(rows);
-}
-
-export async function stats(input: { minutes?: number } = {}): Promise<EventLakeStats> {
-  return EventLakeStatsSchema.parse(await runtime.stats(input));
-}
-
-export async function addFeedback(id: number | string, input: EventLakeFeedbackInput = {}): Promise<EventLakeFeedbackRow | null> {
-  const row = await runtime.addFeedback(id, EventLakeFeedbackSchema.parse(input));
-  return row ? row as EventLakeFeedbackRow : null;
-}
