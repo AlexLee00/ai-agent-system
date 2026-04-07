@@ -199,21 +199,23 @@ async function main() {
   const categoryRankings = aggregateByCategory(rows);
   const applied = await applyWriterFeedback(writerRankings, { dryRun: args.dryRun });
   const reportResult = await sendReport(rows, applied, categoryRankings, { dryRun: args.dryRun });
-  eventLake.record({
-    eventType: 'blog_performance_analyzed',
-    team: 'blog',
-    botName: 'blog-analyzer',
-    severity: 'info',
-    title: `blog performance ${rows.length}건`,
-    message: `작가 ${applied.length}명 성과 분석 완료`,
-    tags: ['blog', 'performance', args.dryRun ? 'dry-run' : 'live'],
-    metadata: {
-      analyzed_posts: rows.length,
-      writers: applied.length,
-      top_writer: applied[0]?.name || null,
-      report_sent: reportResult?.ok === true,
-    },
-  }).catch(() => {});
+  if (!args.dryRun) {
+    eventLake.record({
+      eventType: 'blog_performance_analyzed',
+      team: 'blog',
+      botName: 'blog-analyzer',
+      severity: 'info',
+      title: `blog performance ${rows.length}건`,
+      message: `작가 ${applied.length}명 성과 분석 완료`,
+      tags: ['blog', 'performance', 'live'],
+      metadata: {
+        analyzed_posts: rows.length,
+        writers: applied.length,
+        top_writer: applied[0]?.name || null,
+        report_sent: reportResult?.ok === true,
+      },
+    }).catch(() => {});
+  }
 
   const payload = {
     ok: true,
