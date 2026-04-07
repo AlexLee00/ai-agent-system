@@ -67,7 +67,7 @@ export function createMessage(
   payload: Record<string, unknown>,
   options: CreateMessageOptions = {},
 ): MessageEnvelope {
-  const envelope: MessageEnvelope = {
+  return MessageEnvelopeSchema.parse({
     message_id: randomUUID(),
     trace_id: options.trace_id || randomUUID(),
     run_id: options.run_id ?? null,
@@ -81,8 +81,7 @@ export function createMessage(
     priority: options.priority ?? 'normal',
     requires_ack: options.requires_ack ?? false,
     payload,
-  };
-  return MessageEnvelopeSchema.parse(envelope);
+  });
 }
 
 export function createReply(
