@@ -91,17 +91,32 @@
 - 📋 도서리뷰 정상 발행
 
 ### 이번 주 (Sprint 4 실운영!)
-- 📋 Sprint 4 end-to-end 실런!
-- 📋 implementor/verifier 안전성 보강
-- 📋 경쟁 결과 수집 구현 (CODEX_COMPETITION_COLLECT.md)
-- 📋 CC-F experience_record "why" 필드
-- 📋 P1-5 중앙 로거 도입
+- ✅ Sprint 4 end-to-end 성공! (버튼→폴러→Hub→approved!)
+- ✅ implementor/verifier 안전성 보강 (경로탈출/stash/conflict abort!)
+- ✅ 경쟁 결과 수집 구현 (f189169c + 90d4556b!)
+- ✅ CC-F experience_record "why" 필드 (18676cfa!)
+- ✅ P1-5 중앙 로거 설계 (CODEX_CENTRAL_LOGGER.md 454줄!)
+- ✅ verification-loop 6단계 공용 스킬 (37a7b72c!)
+- ✅ 다윈 자율 연구 파이프라인 연결 (2993caec!)
+- ✅ 블로팀 조회수 수집 Puppeteer (collect-views.js!)
+- ✅ 에이전트 이벤트 레이크 전략 (AGENT_EVENT_LAKE_STRATEGY.md 317줄!)
+- 📋 이벤트 레이크 Phase 1 구현! (CODEX_EVENT_LAKE_PHASE1.md 540줄!)
+- 📋 중앙 로거 구현! (CODEX_CENTRAL_LOGGER.md!)
+- 📋 Sprint 4 실제 제안 풀런 (내일 06:00 확인!)
 
 ### 이번 달
-- 📋 공용 스킬 Phase 2 (search-first/verification-loop/security-scan) — 코덱스/메티!
+- 📋 이벤트 레이크 Phase 2 — 라벨링 + 자동 점수! (1주 후!)
+- 📋 이벤트 레이크 Phase 3 — 시그마 연동 + 피드백! (2주 후!)
+- 📋 experience why 2단계 — Evidence+Confidence! (4/21 이후!)
+- 📋 공용 스킬 Phase 2 (search-first/security-scan) — 코덱스/메티!
 - 📋 Freqtrade 패턴 → chronos.js 구현 — 코덱스!
 - 📋 P0-2 에이전트 간 통신 (pg LISTEN/NOTIFY)
 - 📋 CC-B+ECC-3 훅 시스템
+
+### 장기 (1개월+)
+- 📋 이벤트 레이크 Phase 4 — Drift Detection + Instinct!
+- 📋 experience why 3단계 — Instinct 진화 (LLM 졸업!) (5/7 이후!)
+- 📋 4단계 skill_creation E2E 실런
 
 ---
 
@@ -112,6 +127,9 @@
 4. 공용 레이어 우선! (packages/core/lib/skills/shared/)
 5. 자율 전환 = Bounded Autonomy (데이터로 증명!)
 6. 분석은 자동, 복잡한 구현은 코덱스!
+7. 에이전트 이벤트 레이크 = RAG(벡터) + event_lake(SQL) 하이브리드!
+8. ECC Instinct 패턴 → experience why 3단계 진화!
+9. 로그 데이터도 대도서관에! (시계열+분류+라벨링+피드백!)
 
 ---
 
