@@ -938,9 +938,24 @@ async function buildWorkerMonitoringPayload(user) {
 async function buildBlogPublishedUrlPayload(limit = 100) {
   const todayKst = kst.today();
   const rows = await pgPool.query('blog', `
-    SELECT id, title, status, naver_url, publish_date, created_at
-    FROM blog.posts
-    WHERE id NOT IN (34, 36, 38)
+    SELECT
+      p.id,
+      p.title,
+      p.status,
+      p.naver_url,
+      p.publish_date,
+      p.created_at,
+      COALESCE(s.status, '') AS schedule_status
+    FROM blog.posts p
+    LEFT JOIN blog.publish_schedule s
+      ON s.id = CASE
+        WHEN COALESCE(p.metadata->>'schedule_id', '') ~ '^[0-9]+$'
+          THEN (p.metadata->>'schedule_id')::int
+        ELSE NULL
+      END
+    WHERE p.id NOT IN (34, 36, 38)
+      AND p.status IN ('ready', 'published')
+      AND COALESCE(s.status, '') <> 'archived'
     ORDER BY created_at DESC
     LIMIT $1
   `, [limit]);
@@ -955,7 +970,10 @@ async function buildBlogPublishedUrlPayload(limit = 100) {
         ? String(row.publish_date).slice(0, 10)
         : parsed.toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
     }
-    const isReadyWithoutUrl = row.status === 'ready' && !row.naver_url;
+    const hasActiveSchedule = row.schedule_status === 'scheduled'
+      || row.schedule_status === 'writing'
+      || row.schedule_status === 'ready';
+    const isReadyWithoutUrl = row.status === 'ready' && hasActiveSchedule && !row.naver_url;
     const publishDue = Boolean(isReadyWithoutUrl && publishDate && publishDate <= todayKst);
     const needsUrl = Boolean((row.status === 'published' && !row.naver_url) || publishDue);
     const scheduled = Boolean(isReadyWithoutUrl && !publishDue);

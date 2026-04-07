@@ -69,7 +69,7 @@ async function getScheduleByDate(date) {
 /**
  * 스케줄 행 상태 업데이트
  * @param {number} id
- * @param {string} status — 'writing' | 'ready' | 'published'
+ * @param {string} status — 'scheduled' | 'writing' | 'ready' | 'published' | 'archived'
  * @param {number|null} [postId]
  */
 async function updateScheduleStatus(id, status, postId = null) {
@@ -83,6 +83,10 @@ async function updateScheduleStatus(id, status, postId = null) {
   } catch (e) {
     console.warn('[스케줄] 상태 업데이트 실패:', e.message);
   }
+}
+
+function isActionableScheduleStatus(status) {
+  return status === 'scheduled' || status === 'writing' || status === 'ready';
 }
 
 /**
@@ -198,8 +202,8 @@ async function getTodayContext() {
   const generalRow = schedule.find(r => r.post_type === 'general') || null;
 
   // 이미 발행된 항목은 건너뜀 (재실행 안전)
-  const needLecture = lectureRow && lectureRow.status !== 'published';
-  const needGeneral = generalRow && generalRow.status !== 'published';
+  const needLecture = lectureRow && isActionableScheduleStatus(lectureRow.status);
+  const needGeneral = generalRow && isActionableScheduleStatus(generalRow.status);
 
   let lectureCtx = null;
   if (needLecture) {

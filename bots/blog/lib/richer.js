@@ -18,6 +18,22 @@ const { parseNaverBlogUrl } = require('../../../packages/core/lib/naver-blog-url
 
 const DEV_HUB_READONLY = env.IS_DEV && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
 
+async function filterPublishedBlogHits(hits) {
+  if (!hits?.length) return [];
+  const filenames = hits
+    .map((hit) => String(hit?.metadata?.filename || '').trim())
+    .filter(Boolean);
+  if (!filenames.length) return [];
+  const rows = await pgPool.query('blog', `
+    SELECT metadata->>'filename' AS filename
+    FROM blog.posts
+    WHERE status = 'published'
+      AND metadata->>'filename' = ANY($1::text[])
+  `, [filenames]);
+  const publishedSet = new Set(rows.map((row) => String(row.filename || '').trim()).filter(Boolean));
+  return hits.filter((hit) => publishedSet.has(String(hit?.metadata?.filename || '').trim()));
+}
+
 // ─── 헬퍼 ────────────────────────────────────────────────────────────
 
 function httpsGet(url, timeout = 10000) {
@@ -312,7 +328,9 @@ async function searchRealExperiences(topic, postType = 'lecture') {
     }
 
     // blog — 과거 포스팅 연결점
-    const blogHits = await rag.search('blog', topic, { limit: 1, threshold: 0.6 });
+    const blogHits = await filterPublishedBlogHits(
+      await rag.search('blog', topic, { limit: 1, threshold: 0.6 })
+    );
     if (blogHits?.length) {
       episodes.push({
         source: 'blog',
@@ -340,7 +358,9 @@ async function searchRelatedPosts(topic, currentLectureNum = null) {
     if (!DEV_HUB_READONLY) {
       await rag.initSchema();
     }
-    const hits = await rag.search('blog', topic, { limit: 5, threshold: 0.5 });
+    const hits = await filterPublishedBlogHits(
+      await rag.search('blog', topic, { limit: 5, threshold: 0.5 })
+    );
     if (!hits?.length) return [];
 
     let filtered = hits
