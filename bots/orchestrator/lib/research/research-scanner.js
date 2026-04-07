@@ -10,6 +10,7 @@ const evaluator = require('./research-evaluator');
 const applicator = require('./applicator');
 const keywordEvolver = require('./keyword-evolver');
 const monitor = require('./research-monitor');
+const researchTasks = require('./research-tasks');
 const githubClient = require('../../../../packages/core/lib/github-client');
 const {
   analyzeRepoStructure,
@@ -31,6 +32,9 @@ const ARXIV_RESULTS_PER_DOMAIN = 10;
 const SCHEMA = 'reservation';
 const TABLE = 'rag_research';
 const MAX_DAILY_PROPOSALS = 2;
+const AUTO_TASK_MIN_STARS = 100;
+const AUTO_TASK_MIN_FILES = 20;
+const MAX_WEEKLY_TASKS = 3;
 
 function _sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -67,6 +71,42 @@ function _dedupePapers(papers) {
   }
 
   return unique;
+}
+
+function _safeTaskId(prefix, paper, owner, repo) {
+  const paperPart = String(paper?.arxiv_id || paper?.title || Date.now())
+    .trim()
+    .replace(/[^a-z0-9_-]/gi, '-')
+    .slice(0, 80);
+  return `${prefix}-${paperPart}-${String(owner || '').replace(/[^a-z0-9_-]/gi, '-')}-${String(repo || '').replace(/[^a-z0-9_-]/gi, '-')}`;
+}
+
+function _maybeCreateGitHubTask(paper, github, source) {
+  const owner = String(github?.owner || '').trim();
+  const repo = String(github?.repo || '').trim();
+  const stars = Number(github?.stars || 0);
+  const files = Number(github?.files || 0);
+
+  if (!owner || !repo) return null;
+  if (stars < AUTO_TASK_MIN_STARS || files < AUTO_TASK_MIN_FILES) return null;
+  if (researchTasks.hasTaskForRepo(owner, repo, ['github_analysis'])) return null;
+
+  return researchTasks.createTask({
+    id: _safeTaskId('GH', paper, owner, repo),
+    title: `${owner}/${repo} 심층 GitHub 분석`,
+    type: 'github_analysis',
+    target: { owner, repo },
+    description: `${source}에서 발견한 고적합 논문 관련 저장소 심층 분석`,
+    assignee: 'pipe',
+    priority: 2,
+    sourcePaper: {
+      arxiv_id: paper?.arxiv_id || '',
+      title: paper?.title || '',
+      relevance_score: Number(paper?.relevance_score || 0),
+      domain: paper?.domain || '',
+    },
+    source,
+  });
 }
 
 async function _selectSearchers() {
@@ -143,6 +183,7 @@ async function _collectPapers(searchers) {
 
 async function _enrichWithGitHub(evaluated) {
   let enriched = 0;
+  let tasksRegistered = 0;
 
   for (const paper of evaluated) {
     if (Number(paper?.relevance_score || 0) < 7) continue;
@@ -188,6 +229,12 @@ async function _enrichWithGitHub(evaluated) {
         summary,
       };
 
+      const task = _maybeCreateGitHubTask(paper, paper.github, 'scanner_github_enrichment');
+      if (task) {
+        tasksRegistered += 1;
+        console.log(`[research-scanner] 연구 과제 자동 등록: ${task.id} (${owner}/${repoName})`);
+      }
+
       enriched += 1;
       console.log(`[research-scanner] GitHub 분석 완료: ${owner}/${repoName} (⭐${repoInfo.stars || 0})`);
       await _sleep(2_000);
@@ -196,7 +243,7 @@ async function _enrichWithGitHub(evaluated) {
     }
   }
 
-  return enriched;
+  return { githubEnriched: enriched, tasksRegistered };
 }
 
 async function _storeExperienceIfNeeded(paper) {
@@ -303,9 +350,63 @@ async function _loadWeeklyResearchRows() {
   `, []);
 }
 
+function _extractWeeklyRepo(row) {
+  const repoValue = String(row?.metadata?.github_repo || '').trim();
+  if (repoValue.includes('/')) {
+    const [owner, repo] = repoValue.split('/');
+    if (owner && repo) {
+      return { owner: owner.trim(), repo: repo.trim().replace(/\.git$/i, '') };
+    }
+  }
+
+  const extracted = _extractGitHubRepo({
+    summary: row?.content,
+    title: row?.metadata?.title,
+    reason: row?.metadata?.reason,
+  });
+  return extracted;
+}
+
+function _registerWeeklyResearchTasks(weekData) {
+  let tasksRegistered = 0;
+  const candidates = weekData
+    .filter((row) => Number(row?.metadata?.relevance_score || 0) >= 8)
+    .sort((a, b) => Number(b?.metadata?.relevance_score || 0) - Number(a?.metadata?.relevance_score || 0));
+
+  for (const row of candidates) {
+    if (tasksRegistered >= MAX_WEEKLY_TASKS) break;
+
+    const repoRef = _extractWeeklyRepo(row);
+    if (!repoRef) continue;
+    if (researchTasks.hasTaskForRepo(repoRef.owner, repoRef.repo, ['github_analysis'])) continue;
+
+    const task = researchTasks.createTask({
+      id: _safeTaskId('WEEKLY-GH', row?.metadata || {}, repoRef.owner, repoRef.repo),
+      title: `${repoRef.owner}/${repoRef.repo} 주간 트렌드 GitHub 분석`,
+      type: 'github_analysis',
+      target: { owner: repoRef.owner, repo: repoRef.repo },
+      description: '주간 리서치 8점+ 논문과 연결된 GitHub 저장소 심층 분석',
+      assignee: 'pipe',
+      priority: 2,
+      source: 'weekly_research_report',
+      sourcePaper: {
+        arxiv_id: row?.metadata?.arxiv_id || '',
+        title: String(row?.content || '').split('\n')[0] || '',
+        relevance_score: Number(row?.metadata?.relevance_score || 0),
+        domain: row?.metadata?.domain || '',
+      },
+    });
+
+    tasksRegistered += 1;
+    console.log(`[research-scanner] 주간 연구 과제 등록: ${task.id} (${repoRef.owner}/${repoRef.repo})`);
+  }
+
+  return tasksRegistered;
+}
+
 async function _generateWeeklyReport() {
   const weekData = await _loadWeeklyResearchRows();
-  if (!weekData || weekData.length === 0) return { report: '', keywordEvolutionCount: 0 };
+  if (!weekData || weekData.length === 0) return { report: '', keywordEvolutionCount: 0, tasksRegistered: 0 };
 
   const sevenPlus = weekData.filter((row) => Number(row.metadata?.relevance_score || 0) >= 7).length;
   const fiveToSix = weekData.filter((row) => {
@@ -369,6 +470,11 @@ async function _generateWeeklyReport() {
     }
   }
 
+  const tasksRegistered = _registerWeeklyResearchTasks(weekData);
+  if (tasksRegistered > 0) {
+    lines.push('', '## 자동 등록 과제', `- GitHub 심층 분석 과제 ${tasksRegistered}건 등록`);
+  }
+
   const trendText = await monitor.weeklyTrend();
   if (trendText) {
     lines.push('', '## 모니터링 추세', trendText);
@@ -382,7 +488,7 @@ async function _generateWeeklyReport() {
     fromBot: 'research-scanner',
   });
 
-  return { report, keywordEvolutionCount };
+  return { report, keywordEvolutionCount, tasksRegistered };
 }
 
 async function run() {
@@ -406,7 +512,7 @@ async function run() {
     await _sleep(EVALUATION_DELAY_MS);
   }
 
-  const githubEnriched = await _enrichWithGitHub(evaluated);
+  const enrichment = await _enrichWithGitHub(evaluated);
   const { storedCount, experienceCount } = await _storeEvaluatedPapers(evaluated);
   const { highRelevanceCount, alarmSent } = await _alertHighRelevance(unique.length, evaluated, storedCount, startTime);
   const highRelevance = evaluated.filter((paper) => paper.relevance_score >= 7);
@@ -426,10 +532,12 @@ async function run() {
   const proposalCount = proposalResults.filter((item) => item.proposal).length;
   const verifiedCount = proposalResults.filter((item) => item.verification?.passed).length;
   let keywordEvolutionCount = 0;
+  let weeklyTasksRegistered = 0;
 
   if (new Date().getDay() === 0) {
     const weekly = await _generateWeeklyReport();
     keywordEvolutionCount = Number(weekly?.keywordEvolutionCount || 0);
+    weeklyTasksRegistered = Number(weekly?.tasksRegistered || 0);
   }
 
   const durationSec = Math.round((Date.now() - startTime) / 1000);
@@ -445,7 +553,8 @@ async function run() {
     highRelevance: highRelevanceCount,
     alarmSent,
     evaluationFailures,
-    githubAnalyzed: githubEnriched,
+    githubAnalyzed: Number(enrichment?.githubEnriched || 0),
+    tasksRegistered: Number(enrichment?.tasksRegistered || 0) + weeklyTasksRegistered,
     durationSec,
     keywordEvolutionCount,
     proposals: proposalCount,
@@ -457,7 +566,7 @@ async function run() {
   await monitor.storeMetrics(metrics);
   await monitor.checkAnomalies(metrics);
   console.log(`[research-scanner] 메트릭: ${JSON.stringify(metrics)}`);
-  console.log(`[research-scanner] 완료: ${storedCount}건 저장, ${experienceCount}건 경험 저장, GitHub 분석 ${githubEnriched}건, ${highRelevanceCount}건 후보 알림, 제안 ${proposalCount}건/검증통과 ${verifiedCount}건, 전달=${alarmSent ? '성공' : '실패/없음'}, ${durationSec}초`);
+  console.log(`[research-scanner] 완료: ${storedCount}건 저장, ${experienceCount}건 경험 저장, GitHub 분석 ${result.githubAnalyzed}건, 과제 등록 ${result.tasksRegistered}건, ${highRelevanceCount}건 후보 알림, 제안 ${proposalCount}건/검증통과 ${verifiedCount}건, 전달=${alarmSent ? '성공' : '실패/없음'}, ${durationSec}초`);
 
   return result;
 }
