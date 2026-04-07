@@ -604,6 +604,7 @@ async function writeGeneralPost(category, researchData, sectionVariation = {}) {
   const realExperiences = researchData.realExperiences || [];
   const relatedPosts    = researchData.relatedPosts    || [];
   const popularPatterns = researchData.popularPatterns || [];
+  const topicHint = String(researchData.topic_hint || '').trim();
 
   const weatherContext = weatherToContext(weather, { detailed: false });
 
@@ -657,7 +658,11 @@ ${weatherContext}
 ${itNews.slice(0, 5).map(n => `- ${n.title} (인기도: ${n.score})`).join('\n') || '- 최신 IT 트렌드를 자체 지식으로 언급하라'}
 
 ${bookReviewBlock}${newsAnalysisBlock}${experienceBlock}${linkingBlock}${recentThemeBlock}${popularPatternBlock}
-카테고리 "${category}"에 맞는 주제를 자율 선정하여 작성하라.
+${topicHint ? `[주제 힌트]\n${topicHint}\n` : ''}
+${topicHint
+  ? `이번 수동 재작성은 위 [주제 힌트]를 중심 주제로 유지하여, 같은 문제의식을 새 글로 다시 작성하라.
+제목도 [주제 힌트]와 같은 방향의 핵심 키워드를 유지하되 문장은 새롭게 구성하라.`
+  : `카테고리 "${category}"에 맞는 주제를 자율 선정하여 작성하라.`}
 단, 최근 발행 일반 글과 같은 상위 서사를 반복하면 안 된다.
 글 첫 번째 줄에 제목을 [${category}] 형식으로 시작하라.
 

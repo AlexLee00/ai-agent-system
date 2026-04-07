@@ -380,6 +380,9 @@ async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, sc
   console.log(`[블로] MessageEnvelope → 젬스 (${writeReq.message_id.slice(0, 8)})`);
 
   let preparedResearch = { ...researchData };
+  if (preloaded.topicHint) {
+    preparedResearch.topic_hint = String(preloaded.topicHint).trim();
+  }
   if (needsBook) {
     const scheduledBook = preloaded.bookInfo;
     if (scheduledBook?.book_title && scheduledBook?.book_isbn) {
@@ -449,6 +452,7 @@ async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, sc
     sectionVariation,
     researchData: preparedResearch,
     book_info: preparedResearch.book_info || null,
+    topicHint: preparedResearch.topic_hint || null,
   };
 }
 
