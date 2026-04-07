@@ -37,6 +37,10 @@ async function main() {
         updated++;
       }
 
+      if (payload.views === 0) {
+        console.warn(`[collect-performance] ${post.id} 조회수 0건 — 전용 views 수집 대상 가능`);
+      }
+
       results.push({
         ok: true,
         postId: post.id,

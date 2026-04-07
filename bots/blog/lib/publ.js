@@ -439,6 +439,82 @@ async function recordPerformance(postId, metrics = {}) {
   }
 }
 
+async function recordPerformancePartial(postId, metrics = {}) {
+  if (!postId) return null;
+  if (DEV_HUB_READONLY) return null;
+
+  const hasViews = metrics.views !== undefined && metrics.views !== null;
+  const hasComments = metrics.comments !== undefined && metrics.comments !== null;
+  const hasLikes = metrics.likes !== undefined && metrics.likes !== null;
+  if (!hasViews && !hasComments && !hasLikes) return null;
+
+  const views = hasViews ? Number(metrics.views || 0) : null;
+  const comments = hasComments ? Number(metrics.comments || 0) : null;
+  const likes = hasLikes ? Number(metrics.likes || 0) : null;
+  const hasColumns = await hasPerformanceColumns();
+
+  try {
+    const fragments = [];
+    const params = [postId];
+    let paramIndex = 2;
+
+    if (hasColumns) {
+      if (hasViews) {
+        fragments.push(`views = $${paramIndex++}`);
+        params.push(views);
+      }
+      if (hasComments) {
+        fragments.push(`comments = $${paramIndex++}`);
+        params.push(comments);
+      }
+      if (hasLikes) {
+        fragments.push(`likes = $${paramIndex++}`);
+        params.push(likes);
+      }
+    }
+
+    const payload = {
+      performance_collected_at: new Date().toISOString(),
+    };
+    if (hasViews) payload.views = views;
+    if (hasComments) payload.comments = comments;
+    if (hasLikes) payload.likes = likes;
+
+    fragments.push(`metadata = COALESCE(metadata, '{}'::jsonb) || $${paramIndex++}::jsonb`);
+    params.push(JSON.stringify(payload));
+
+    const row = await pgPool.get('blog', `
+      UPDATE blog.posts
+      SET ${fragments.join(', ')}
+      WHERE id = $1
+      RETURNING title, category, char_count
+    `, params);
+
+    if (row && hasViews && views > 0) {
+      await rag.initSchema();
+      await rag.store('experience',
+        `[blog_success] ${row.title} | views=${views}${hasComments ? ` | comments=${comments}` : ''}${hasLikes ? ` | likes=${likes}` : ''}`,
+        {
+          intent: 'blog_success',
+          team: 'blog',
+          category: row.category,
+          views,
+          comments: hasComments ? comments : null,
+          likes: hasLikes ? likes : null,
+          charCount: Number(row.char_count || 0),
+          postId,
+        },
+        'blog-publ'
+      );
+    }
+
+    return row;
+  } catch (e) {
+    console.warn('[퍼블] 성과 부분 기록 실패:', e.message);
+    return null;
+  }
+}
+
 async function getPerformanceCollectionCandidates(days = 7) {
   try {
     return await pgPool.query('blog', `
@@ -459,11 +535,30 @@ async function getPerformanceCollectionCandidates(days = 7) {
   }
 }
 
+async function getViewCollectionCandidates(days = 14, limit = 10) {
+  try {
+    return await pgPool.query('blog', `
+      SELECT id, title, category, publish_date, naver_url, metadata
+      FROM blog.posts
+      WHERE status = 'published'
+        AND publish_date >= CURRENT_DATE - $1::int
+        AND COALESCE(NULLIF(metadata->>'views', ''), '0')::int = 0
+      ORDER BY publish_date DESC, id DESC
+      LIMIT $2
+    `, [days, limit]);
+  } catch (e) {
+    console.warn('[퍼블] 조회수 수집 대상 조회 실패:', e.message);
+    return [];
+  }
+}
+
 module.exports = {
   publishToFile,
   markPublished,
   recordPerformance,
+  recordPerformancePartial,
   getPerformanceCollectionCandidates,
+  getViewCollectionCandidates,
   OUTPUT_DIR,
   normalizeTitleKey,
   replaceInternalLinkPlaceholders,
