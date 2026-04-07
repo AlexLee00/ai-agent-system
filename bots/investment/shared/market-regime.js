@@ -11,7 +11,14 @@ export const REGIMES = {
 export const REGIME_GUIDES = {
   [REGIMES.TRENDING_BULL]: {
     description: '강한 상승 추세',
-    agentWeights: { zeus: 1.5, athena: 0.5, argos: 1.2, scout: 1.0 },
+    agentWeights: {
+      aria: 1.25,
+      oracle: 1.2,
+      hound: 1.15,
+      hera: 1.1,
+      macro: 0.9,
+      vibe: 0.95,
+    },
     tradingStyle: 'aggressive',
     tpMultiplier: 1.3,
     slMultiplier: 1.0,
@@ -20,7 +27,14 @@ export const REGIME_GUIDES = {
   },
   [REGIMES.TRENDING_BEAR]: {
     description: '강한 하락 추세',
-    agentWeights: { zeus: 0.5, athena: 1.5, argos: 0.8, scout: 1.0 },
+    agentWeights: {
+      macro: 1.3,
+      vibe: 1.2,
+      hound: 1.15,
+      hera: 1.05,
+      aria: 0.9,
+      oracle: 0.9,
+    },
     tradingStyle: 'defensive',
     tpMultiplier: 0.8,
     slMultiplier: 0.7,
@@ -29,7 +43,13 @@ export const REGIME_GUIDES = {
   },
   [REGIMES.RANGING]: {
     description: '횡보장',
-    agentWeights: { zeus: 1.0, athena: 1.0, argos: 1.0, scout: 1.0 },
+    agentWeights: {
+      echo: 1.2,
+      chronos: 1.15,
+      macro: 1.05,
+      aria: 1.0,
+      oracle: 1.0,
+    },
     tradingStyle: 'neutral',
     tpMultiplier: 0.7,
     slMultiplier: 0.7,
@@ -38,7 +58,14 @@ export const REGIME_GUIDES = {
   },
   [REGIMES.VOLATILE]: {
     description: '급변동장',
-    agentWeights: { zeus: 0.3, athena: 1.8, argos: 0.5, scout: 1.2 },
+    agentWeights: {
+      macro: 1.35,
+      vibe: 1.25,
+      hound: 1.2,
+      echo: 1.05,
+      aria: 0.8,
+      oracle: 0.8,
+    },
     tradingStyle: 'defensive',
     tpMultiplier: 1.5,
     slMultiplier: 0.5,
