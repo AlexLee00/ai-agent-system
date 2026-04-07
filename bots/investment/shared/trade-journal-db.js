@@ -9,6 +9,45 @@
  *       ? 플레이스홀더 → pg-pool이 $1/$2... 자동 변환.
  */
 
+/**
+ * @typedef {Object} JournalEntryInput
+ * @property {string} trade_id
+ * @property {string} [signal_id]
+ * @property {string} market
+ * @property {string} exchange
+ * @property {string} symbol
+ * @property {boolean} [is_paper]
+ * @property {string} [trade_mode]
+ * @property {number} entry_time
+ * @property {number} entry_price
+ * @property {number} entry_size
+ * @property {number} entry_value
+ * @property {string} [direction]
+ * @property {number} [signal_time]
+ * @property {number} [decision_time]
+ * @property {number} [execution_time]
+ * @property {number} [signal_to_exec_ms]
+ * @property {number} [tp_price]
+ * @property {number} [sl_price]
+ * @property {string} [tp_order_id]
+ * @property {string} [sl_order_id]
+ * @property {boolean} [tp_sl_set]
+ * @property {string} [tp_sl_mode]
+ * @property {string} [tp_sl_error]
+ */
+
+/**
+ * @typedef {Object} JournalCloseInput
+ * @property {number} [exitTime]
+ * @property {number} [exitPrice]
+ * @property {number} [exitValue]
+ * @property {string} [exitReason]
+ * @property {number} [pnlAmount]
+ * @property {number} [pnlPercent]
+ * @property {number} [feeTotal]
+ * @property {number} [pnlNet]
+ */
+
 import { get, query, run } from './db.js';
 import { computeTradeExcursions } from './trade-review-metrics.js';
 import { getInvestmentTradeMode } from './secrets.js';
@@ -412,6 +451,10 @@ export async function generateTradeId() {
 /**
  * 거래 일지 진입 기록
  */
+/**
+ * @param {JournalEntryInput} entry
+ * @returns {Promise<void>}
+ */
 export async function insertJournalEntry(entry) {
   await ensureInit();
   const now = Date.now();
@@ -446,6 +489,11 @@ export async function insertJournalEntry(entry) {
 
 /**
  * 거래 일지 청산 기록
+ */
+/**
+ * @param {string} tradeId
+ * @param {JournalCloseInput} [input]
+ * @returns {Promise<void>}
  */
 export async function closeJournalEntry(tradeId, { exitTime, exitPrice, exitValue, exitReason, pnlAmount, pnlPercent, feeTotal, pnlNet } = {}) {
   await ensureInit();
@@ -547,6 +595,10 @@ function _ratioToPercent(value) {
   return Number((Number(value) * 100).toFixed(4));
 }
 
+/**
+ * @param {number|null|undefined} value
+ * @returns {number|null}
+ */
 export function ratioToPercent(value) {
   return _ratioToPercent(value);
 }
@@ -580,6 +632,11 @@ function _buildAnalystAccuracy(analystSignals, pnlPercent) {
   };
 }
 
+/**
+ * @param {string} tradeId
+ * @param {Record<string, any>} [opts]
+ * @returns {Promise<object|null>}
+ */
 export async function ensureAutoReview(tradeId, opts = {}) {
   await ensureInit();
 
@@ -754,6 +811,12 @@ export async function insertRationale(rationaleData) {
   }
 }
 
+/**
+ * @param {string} market
+ * @param {string} symbol
+ * @param {Record<string, any>} [options]
+ * @returns {Promise<{ contractId: string|number, analyst: string|null, regimeWeight: number|null, regime?: string|null }|null>}
+ */
 export async function hireAnalystForSignal(market, symbol, options = {}) {
   await ensureInit();
   try {
@@ -786,6 +849,12 @@ export async function hireAnalystForSignal(market, symbol, options = {}) {
   }
 }
 
+/**
+ * @param {string|number|null} contractId
+ * @param {boolean|null} accurate
+ * @param {Record<string, any>} [details]
+ * @returns {Promise<object|null>}
+ */
 export async function evaluateAnalystContract(contractId, accurate, details = {}) {
   if (!contractId) return null;
   try {

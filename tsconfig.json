@@ -15,16 +15,16 @@
     "types": ["node"]
   },
   "files": [
-    "packages/core/lib/env.js",
-    "packages/core/lib/trace.js",
-    "packages/core/lib/kst.js",
     "packages/core/lib/event-lake.js",
+    "packages/core/lib/hiring-contract.js",
     "packages/core/lib/central-logger.js",
-    "packages/core/lib/hub-client.js",
     "packages/core/lib/openclaw-client.js",
-    "packages/core/lib/tool-selector.js",
-    "packages/core/lib/runtime-config-loader.js",
-    "packages/core/lib/health-core.js"
+    "packages/core/lib/llm-model-selector.js",
+    "packages/core/lib/llm-fallback.js",
+    "packages/core/lib/rag.js",
+    "packages/core/lib/message-envelope.js",
+    "bots/investment/shared/market-regime.js",
+    "bots/investment/shared/trade-journal-db.js"
   ],
   "exclude": [
     "**/node_modules/**",
