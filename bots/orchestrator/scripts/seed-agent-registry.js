@@ -16,6 +16,7 @@ const AGENTS = [
   { name: 'sentinel', display_name: '센티널', team: 'luna', role: 'analyst', specialty: '외부정보감시', llm_model: 'groq/llama-4-scout', code_path: 'bots/investment/team/sentinel.js' },
   { name: 'oracle', display_name: '오라클', team: 'luna', role: 'analyst', specialty: '기술분석', llm_model: 'local/qwen2.5-7b', code_path: 'bots/investment/team/oracle.js' },
   { name: 'chronos', display_name: '크로노스', team: 'luna', role: 'analyst', specialty: '백테스팅', code_path: 'bots/investment/team/chronos.js', config: { llm_management: 'non-llm', non_llm_reason: 'deterministic-backtest' } },
+  { name: 'scout', display_name: '스카우트', team: 'luna', role: 'analyst', specialty: '토스시장스캔/시장인텔리전스', llm_model: 'groq/llama-4-scout', code_path: 'bots/investment/team/scout.js', dot_character: { color: '#0ea5e9', accessory: 'radar' } },
   { name: 'nemesis', display_name: '네메시스', team: 'luna', role: 'risk', specialty: '리스크매니저', llm_model: 'groq/llama-4-scout', code_path: 'bots/investment/team/nemesis.js', dot_character: { color: '#64748b', accessory: 'shield' } },
   { name: 'zeus', display_name: '제우스', team: 'luna', role: 'executor', specialty: '주문실행', llm_model: 'groq/llama-4-scout', code_path: 'bots/investment/team/zeus.js' },
   { name: 'athena', display_name: '아테나', team: 'luna', role: 'executor', specialty: '주문실행', llm_model: 'groq/llama-4-scout', code_path: 'bots/investment/team/athena.js' },
