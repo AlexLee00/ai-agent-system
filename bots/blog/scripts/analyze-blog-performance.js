@@ -44,7 +44,7 @@ async function loadPerformanceRows(days = 30) {
       COALESCE(NULLIF(metadata->>'comments', ''), '0')::double precision AS comments,
       COALESCE(NULLIF(metadata->>'likes', ''), '0')::double precision AS likes
     FROM blog.posts
-    WHERE status IN ('published', 'ready')
+    WHERE status = 'published'
       AND publish_date >= CURRENT_DATE - $1::int
       AND metadata->>'performance_collected_at' IS NOT NULL
       AND metadata->>'performance_collected_at' <> ''

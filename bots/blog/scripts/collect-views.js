@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
+const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const puppeteer = require('puppeteer');
@@ -96,15 +97,37 @@ async function collectRenderedStats(page, url) {
 
 async function withBrowser(fn, { headful = false } = {}) {
   const config = getBlogCommenterConfig();
-  const browser = await puppeteer.launch({
+  const profileDir = expandHome(config.profileDir || '~/.openclaw/workspace/naver-profile');
+  /** @type {string|null} */
+  let tempProfileDir = null;
+  let browser = null;
+
+  const launchWithProfile = async (userDataDir) => puppeteer.launch({
     headless: headful ? false : 'new',
-    userDataDir: expandHome(config.profileDir || '~/.openclaw/workspace/naver-profile'),
+    userDataDir,
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
   });
+
   try {
+    try {
+      browser = await launchWithProfile(profileDir);
+    } catch (error) {
+      tempProfileDir = path.join(os.tmpdir(), `blog-views-profile-${Date.now()}`);
+      console.warn(`[collect-views] 기본 프로필 실행 실패 — 복제 프로필로 재시도: ${error.message}`);
+      if (profileDir && fs.existsSync(profileDir)) {
+        fs.cpSync(profileDir, tempProfileDir, { recursive: true });
+      } else {
+        fs.mkdirSync(tempProfileDir, { recursive: true });
+      }
+      browser = await launchWithProfile(tempProfileDir);
+    }
+
     return await fn(browser);
   } finally {
-    await browser.close().catch(() => {});
+    await browser?.close().catch(() => {});
+    if (tempProfileDir) {
+      fs.rmSync(tempProfileDir, { recursive: true, force: true });
+    }
   }
 }
 

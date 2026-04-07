@@ -98,6 +98,7 @@ async function _collectGroupResultInWindow(agents = [], createdAt, windowEnd = n
      FROM blog.posts
      WHERE created_at >= $1
        AND created_at < $2
+       AND status = 'published'
        AND metadata->>'writer_name' = ANY($3::text[])`,
     [createdAt, windowEnd || new Date(Date.now() + COMPETITION_TIMEOUT_HOURS * 60 * 60 * 1000), normalizedAgents],
   );
