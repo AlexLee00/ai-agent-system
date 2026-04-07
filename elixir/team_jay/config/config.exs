@@ -16,3 +16,13 @@ config :team_jay,
   hub_token: System.get_env("TEAM_JAY_HUB_TOKEN"),
   pg_notify_channel: System.get_env("TEAM_JAY_EVENT_CHANNEL", "event_lake_insert")
 
+config :team_jay,
+  repo_root: System.get_env("REPO_ROOT", "/Users/alexlee/projects/ai-agent-system")
+
+config :team_jay, TeamJay.Scheduler,
+  jobs: [
+    {"0 * * * *", {TeamJay.Agents.PortAgent, :run, [:ska_etl]}},
+    {"0 6 * * *", {TeamJay.Agents.PortAgent, :run, [:forecast_daily]}},
+    {"0 9 * * *", {TeamJay.Agents.PortAgent, :run, [:dexter_daily]}},
+    {"0 10 * * 1", {TeamJay.Agents.PortAgent, :run, [:steward_weekly]}}
+  ]

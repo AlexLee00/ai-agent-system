@@ -1,6 +1,6 @@
 defmodule TeamJayTest do
   use ExUnit.Case
-  alias TeamJay.Agents.Andy
+  alias TeamJay.Agents.PortAgent
   alias TeamJay.EventLake
   alias TeamJay.MarketRegime
   alias TeamJay.Schemas.EventLake, as: EventLakeSchema
@@ -10,13 +10,6 @@ defmodule TeamJayTest do
     changeset = EventLakeSchema.changeset(%EventLakeSchema{}, %{})
     refute changeset.valid?
     assert "can't be blank" in errors_on(changeset).event_type
-  end
-
-  test "andy state shape is readable" do
-    status = Andy.get_status()
-    assert status.name == "andy"
-    assert status.team == "ska"
-    assert is_integer(status.check_count)
   end
 
   test "event lake stats api responds" do
@@ -36,5 +29,11 @@ defmodule TeamJayTest do
 
     assert result.regime == :trending_bull
     assert result.confidence > 0.0
+  end
+
+  test "port agent status is readable through registry" do
+    status = PortAgent.get_status(:andy)
+    assert status.name == :andy
+    assert status.status in [:idle, :running]
   end
 end
