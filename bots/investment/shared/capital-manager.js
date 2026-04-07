@@ -341,7 +341,7 @@ export async function checkCircuitBreaker() {
  * @param {string} direction    — 'BUY' | 'SELL'
  * @param {number} estimatedAmount — 예상 매매 금액 (USDT)
  * @param {string|null} exchange   — 포지션 제한을 적용할 거래소 (예: 'binance')
- * @returns {{ allowed: boolean, reason?: string, balance?: number, dailyTrades?: number }}
+ * @returns {Promise<{ allowed: boolean, reason?: string, balance?: number, dailyTrades?: number, circuit?: boolean, circuitType?: string }>}
  */
 export async function preTradeCheck(symbol, direction, estimatedAmount = 0, exchange = null, tradeMode = null) {
   const isBuy = direction === 'BUY' || direction === 'buy';
@@ -397,7 +397,7 @@ export async function preTradeCheck(symbol, direction, estimatedAmount = 0, exch
  * @param {string} symbol
  * @param {number} entryPrice
  * @param {number} stopLossPrice  — 0이면 고정 3% 폴백
- * @returns {{ size, sizeInCoin, riskAmount, riskPercent, capitalPct, skip, reason? }}
+ * @returns {Promise<{ size: number, sizeInCoin?: number, riskAmount?: number, riskPercent?: number, capitalPct?: string|number, skip: boolean, reason?: string }>}
  */
 export async function calculatePositionSize(symbol, entryPrice, stopLossPrice, exchange = null) {
   const policy = getCapitalConfig(exchange);

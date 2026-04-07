@@ -188,12 +188,11 @@ async function _applyCandidateIntelligence(candidates, market, max) {
     }
 
     const baseScore = Number(candidate.finalScore ?? candidate.changeRate ?? candidate.changePercent ?? candidate.volume ?? 0);
+    const liquiditySource = candidate.dollarVolume ?? candidate.volume24h;
     const liquidityBase = Number(
-      candidate.dollarVolume
-      ?? candidate.volume24h
-      ?? ((candidate.price || 0) * (candidate.volume || 0))
-      ?? candidate.volume
-      ?? 0
+      liquiditySource != null
+        ? liquiditySource
+        : ((candidate.price || 0) * (candidate.volume || 0))
     );
     const liquidityScore = liquidityBase > 0 ? Math.log10(Math.max(liquidityBase, 1)) : 0;
     const momentumBase = Number(candidate.changeRate ?? candidate.changePercent ?? 0);
@@ -213,12 +212,11 @@ async function _applyCandidateIntelligence(candidates, market, max) {
   candidates.forEach((candidate) => {
     if (candidate.intelligenceScore == null) {
       const baseScore = Number(candidate.finalScore ?? candidate.changeRate ?? candidate.changePercent ?? candidate.volume ?? 0);
+      const liquiditySource = candidate.dollarVolume ?? candidate.volume24h;
       const liquidityBase = Number(
-        candidate.dollarVolume
-        ?? candidate.volume24h
-        ?? ((candidate.price || 0) * (candidate.volume || 0))
-        ?? candidate.volume
-        ?? 0
+        liquiditySource != null
+          ? liquiditySource
+          : ((candidate.price || 0) * (candidate.volume || 0))
       );
       const liquidityScore = liquidityBase > 0 ? Math.log10(Math.max(liquidityBase, 1)) : 0;
       const momentumBase = Number(candidate.changeRate ?? candidate.changePercent ?? 0);
@@ -598,7 +596,7 @@ export async function recommendStrategy(symbol, exchange = 'binance') {
 /**
  * 바이낸스 24h 데이터 기반 동적 암호화폐 종목 선정
  * 볼륨 상위 30 필터 + 모멘텀 점수 기반 상위 N개 반환
- * @param {number} [maxDynamic] — 동적 종목 수 (기본: config.yaml 또는 3)
+ * @param {number} [maxDynamic] - 동적 종목 수 (기본: config.yaml 또는 3)
  */
 export async function screenCryptoSymbols(maxDynamic, fng = 50) {
   const configuredMax = maxDynamic ?? _screenCfg('crypto', 'max_dynamic', 7);
@@ -737,7 +735,7 @@ function _computeCryptoRegimeBonus({ symbol, relToBtc, relToEth, ethBtcMomentum 
 
 /**
  * 네이버 증권 거래량 상위 종목 → 동적 국내주식 선정
- * @param {number} [maxDynamic] — 동적 종목 수 (기본: config.yaml 또는 2)
+ * @param {number} [maxDynamic] - 동적 종목 수 (기본: config.yaml 또는 2)
  */
 export async function screenDomesticSymbols(maxDynamic, fng = 50) {
   const configuredMax = maxDynamic ?? _screenCfg('domestic', 'max_dynamic', 5);
@@ -1000,7 +998,7 @@ async function _tryNaverRiseHtml(max = 10) {
 
 /**
  * Yahoo Finance Trending Tickers → 동적 해외주식 선정
- * @param {number} [maxDynamic] — 동적 종목 수 (기본: config.yaml 또는 2)
+ * @param {number} [maxDynamic] - 동적 종목 수 (기본: config.yaml 또는 2)
  */
 export async function screenOverseasSymbols(maxDynamic, fng = 50) {
   const configuredMax = maxDynamic ?? _screenCfg('overseas', 'max_dynamic', 5);

@@ -32,6 +32,7 @@ export const ANALYST_TYPES = Object.freeze({
   MACRO:       'macro',       // 거시경제 (오라클)
   NEWS:        'news',        // 뉴스 (헤르메스)
   SENTIMENT:   'sentiment',   // 커뮤니티 감성 (소피아)
+  X_SEARCH:    'x_search',    // X/검색 감성 확장 (레거시 호환)
   SENTINEL:    'sentinel',    // 외부 인텔리전스 통합 래퍼 (헤르메스+소피아)
   FEAR_GREED:  'fear_greed',  // 공포탐욕지수 (소피아)
   CRYPTO_PANIC:'crypto_panic',// CryptoPanic (소피아)
@@ -167,7 +168,7 @@ export async function checkSafetyGates(signal) {
  * 어떤 경우에도 이 함수를 통해서만 실행해야 한다.
  *
  * @param {object} signal  { symbol, action, amount_usdt, exchange, ... }
- * @returns {{ executed: boolean, mode: string, traceId: string, reason?: string }}
+ * @returns {Promise<any>}
  */
 export async function executeSignal(signal) {
   const traceId  = `SIG-${(signal.exchange || 'UNK').toUpperCase()}-${Date.now()}`;

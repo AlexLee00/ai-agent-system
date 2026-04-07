@@ -143,9 +143,9 @@ function checkOllamaMemory(items) {
     let totalRssMB = 0;
     let maxPct = 0;
     for (const line of out.split('\n').filter(Boolean)) {
-      const [pct, rsKB] = line.split(/\s+/);
-      totalRssMB += parseInt(rsKB || 0, 10) / 1024;
-      maxPct = Math.max(maxPct, parseFloat(pct || 0));
+      const [pct = '0', rsKB = '0'] = line.split(/\s+/);
+      totalRssMB += parseInt(rsKB, 10) / 1024;
+      maxPct = Math.max(maxPct, parseFloat(pct));
     }
     const rssMB = Math.round(totalRssMB);
     // Ollama 기본 모델(qwen2.5:7b) ~ 4GB 이하 정상, 10GB 초과 warn

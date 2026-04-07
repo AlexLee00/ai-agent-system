@@ -91,7 +91,7 @@ async function marketSell(symbol, amount, paperMode) {
   const normalizedAmount = roundSellAmount(symbol, amount);
   const minSellAmount = await getMinSellAmount(symbol).catch(() => 0);
   if (normalizedAmount <= 0 || (minSellAmount > 0 && normalizedAmount < minSellAmount)) {
-    const error = new Error(`sell_amount_below_minimum:${symbol}:${normalizedAmount}:${minSellAmount}`);
+    const error = /** @type {any} */ (new Error(`sell_amount_below_minimum:${symbol}:${normalizedAmount}:${minSellAmount}`));
     error.code = 'sell_amount_below_minimum';
     error.meta = {
       symbol,
@@ -641,6 +641,7 @@ export async function inspectPromotionCandidates() {
     const minOrder = capitalPolicy.min_order_usdt || 11;
     const tooSmall = desiredUsdt < minOrder;
     const enoughUsdt = freeUsdt >= desiredUsdt;
+    /** @type {any} */
     let check = { allowed: false, reason: tooSmall ? `최소 주문 미만: ${desiredUsdt.toFixed(2)} USDT` : 'USDT 부족' };
 
     if (!tooSmall && enoughUsdt) {
@@ -697,7 +698,7 @@ export async function simulateBuyDecision({ symbol, amountUsdt = 100 }) {
 /**
  * 미추적 BTC → 직접 BTC 페어(ETH/BTC 등)로 매수
  * BTC→USDT 변환 없이 1회 수수료로 처리 (가격 갭 최소화)
- * @returns {object|null} 성공 시 결과 객체, BTC 페어 없거나 미추적 BTC 없으면 null
+ * @returns {Promise<any|null>} 성공 시 결과 객체, BTC 페어 없거나 미추적 BTC 없으면 null
  */
 async function _tryBuyWithBtcPair(symbol, base, signalId, signal, paperMode) {
   const capitalPolicy = getCapitalConfig('binance', signal?.trade_mode || getInvestmentTradeMode());
@@ -906,6 +907,7 @@ export async function executeSignal(signal) {
   console.log(`\n⚡ [헤파이스토스] ${symbol} ${action} $${amountUsdt} ${tag}`);
 
   try {
+    /** @type {any} */
     let trade;
 
     if (action === ACTIONS.BUY) {

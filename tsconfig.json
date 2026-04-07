@@ -24,7 +24,13 @@
     "packages/core/lib/rag.js",
     "packages/core/lib/message-envelope.js",
     "bots/investment/shared/market-regime.js",
-    "bots/investment/shared/trade-journal-db.js"
+    "bots/investment/shared/trade-journal-db.js",
+    "bots/investment/team/nemesis.js",
+    "bots/investment/team/luna.js",
+    "bots/investment/team/scout.js",
+    "bots/claude/src/dexter.js",
+    "bots/claude/lib/doctor.js",
+    "bots/orchestrator/lib/research/research-tasks.js"
   ],
   "exclude": [
     "**/node_modules/**",

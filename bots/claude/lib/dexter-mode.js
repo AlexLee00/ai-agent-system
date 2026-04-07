@@ -125,7 +125,7 @@ class DexterMode {
   /**
    * Phase 2: DB(team-bus agent_state) 기반 클로드(팀장) 마지막 활동 조회
    * 파일 기반 체크의 DB 보완 확인 — 비동기
-   * @returns {Promise<{updatedAt: string|null, isStale: boolean}|null>}
+   * @returns {Promise<{updatedAt: string|null, status?: string|null, isStale: boolean}|null>}
    */
   async checkClaudeLeadDbStatus() {
     try {

@@ -176,8 +176,11 @@ export const RULES = RULES_CRYPTO;
 
 /**
  * @typedef {Object} AdaptiveResult
- * @property {boolean} approved
+ * @property {boolean} [approved]
  * @property {number} [adjustedAmount]
+ * @property {number} [amountUsdt]
+ * @property {number} [positionCount]
+ * @property {number} [todayPnl]
  * @property {string} [reason]
  * @property {{ decision?: string, reasoning?: string }} [llm]
  * @property {number} [tpPrice]

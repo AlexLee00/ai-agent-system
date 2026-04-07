@@ -23,19 +23,19 @@ async function run() {
     detail: n8nHealthy ? 'healthz 정상' : 'healthz 응답 없음',
   });
 
-  const criticalWebhook = await buildResolvedWebhookHealth({
+  const criticalWebhook = await buildResolvedWebhookHealth(/** @type {any} */ ({
     workflowName: 'CRITICAL 알림 에스컬레이션',
     pathSuffix: 'critical',
-    defaultUrl: DEFAULT_CRITICAL_WEBHOOK_URL,
+    defaultWebhookUrl: DEFAULT_CRITICAL_WEBHOOK_URL,
     label: 'n8n critical webhook',
-    body: {
+    probeBody: {
       severity: 'critical',
       service: 'claude-health-check',
       status: 'probe',
       detail: 'n8n critical webhook health probe',
     },
     timeoutMs: N8N_TIMEOUT_MS,
-  });
+  }));
 
   items.push({
     status: criticalWebhook.warn.length ? 'warn' : 'ok',

@@ -109,7 +109,7 @@ async function run() {
       try {
         const log = execSync(
           `git -C "${cfg.ROOT}" log --oneline -1 -- "${rel}"`,
-          { encoding: 'utf8', timeout: 5000, shell: true }
+          { encoding: 'utf8', timeout: 5000, shell: '/bin/zsh' }
         ).trim();
         commitInfo = log || '(커밋 없음 — 미커밋 수정)';
         // 커밋이 없으면 → 봇이 직접 수정한 가능성 (가장 위험)
@@ -145,7 +145,7 @@ async function run() {
 
   // 2. git 상태 (출력 제한으로 타임아웃 방지)
   try {
-    const dirty = execSync('git -C "' + cfg.ROOT + '" status --porcelain | head -200', { encoding: 'utf8', timeout: 15000, shell: true }).trim();
+    const dirty = execSync('git -C "' + cfg.ROOT + '" status --porcelain | head -200', { encoding: 'utf8', timeout: 15000, shell: '/bin/zsh' }).trim();
     const lines = dirty ? dirty.split('\n').filter(Boolean) : [];
     const paths = lines.map(parseChangedPath).filter(Boolean);
     const meaningfulPaths = paths.filter((filePath) => !isGeneratedPath(filePath));

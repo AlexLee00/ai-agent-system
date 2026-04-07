@@ -714,7 +714,7 @@ export async function getSymbolDecision(symbol, analyses, exchange = 'binance', 
       context:   'symbol_decision',
       input:     userMsg,
       ruleEngine: async () => {
-        const raw    = await cachedCallLLM('luna', getLunaSystem(exchange), userMsg, 256, { cacheTTL: 300, symbol });
+        const raw    = await cachedCallLLM('luna', getLunaSystem(exchange), userMsg, 256, /** @type {any} */ ({ cacheTTL: 300, symbol }));
         const parsed = parseJSON(raw);
         if (!parsed?.action) {
           return buildVoteFallbackDecision(analyses, exchange, '분석가 투표 기반 (LLM fallback)');
@@ -932,7 +932,7 @@ export async function inspectPortfolioContext(exchange = 'binance') {
  * @param {string} summary    분석 요약 텍스트
  * @param {string} exchange
  * @param {object|null} prevDebate  1라운드 결과 (null이면 1라운드)
- * @returns {{ bull, bear, round }}
+ * @returns {Promise<{ bull: any, bear: any, round: number }>}
  */
 async function runDebateRound(symbol, summary, exchange, prevDebate = null) {
   if (!prevDebate) {

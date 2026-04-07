@@ -7,6 +7,19 @@ const { resolveProductionWebhookUrl } = require('./n8n-webhook-registry');
 
 const DEFAULT_NORMAL_EXIT_CODES = new Set([0, -9, -15]);
 
+/**
+ * @typedef {Object} ResolvedWebhookHealthInput
+ * @property {string} [workflowName]
+ * @property {string} [pathSuffix]
+ * @property {string} [method]
+ * @property {string} [healthUrl]
+ * @property {string} [defaultWebhookUrl]
+ * @property {object} [probeBody]
+ * @property {number} [timeoutMs]
+ * @property {string} [okLabel]
+ * @property {string} [warnLabel]
+ */
+
 function getLaunchctlPrintStatus(label) {
   try {
     const raw = execSync(`launchctl print gui/$(id -u)/${label} 2>/dev/null`, { encoding: 'utf-8' });
@@ -57,9 +70,9 @@ function buildServiceRows(status, {
   continuous = [],
   normalExitCodes = DEFAULT_NORMAL_EXIT_CODES,
   shortLabel = (label) => hsm.shortLabel(label),
-  isExpectedExit = () => false,
+  isExpectedExit = (label, exitCode, svc) => false,
   treatMissingAsOk = false,
-  missingOkText = (name) => `  ${name}: 대기`,
+  missingOkText = (name, label) => `  ${name}: 대기`,
 } = {}) {
   const ok = [];
   const warn = [];
@@ -292,6 +305,7 @@ function buildFileActivityHealth({
   };
 }
 
+/** @param {ResolvedWebhookHealthInput} [input] */
 async function buildResolvedWebhookHealth({
   workflowName,
   pathSuffix,

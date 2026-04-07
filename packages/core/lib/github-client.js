@@ -18,7 +18,7 @@ function _getToken() {
   if (_cachedToken !== null) return _cachedToken;
   // Hub secrets → 환경변수 → 빈값 순으로 시도
   try {
-    const hubClient = require('./hub-client');
+    const hubClient = /** @type {any} */ (require('./hub-client'));
     const secrets = hubClient._secretsCache || {};
     _cachedToken = secrets?.github?.token || process.env.GITHUB_TOKEN || '';
   } catch {
@@ -40,7 +40,7 @@ function _sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
  * 레포 기본 정보
  * @param {string} owner - 소유자 (예: 'freqtrade')
  * @param {string} repo - 레포명 (예: 'freqtrade')
- * @returns {Promise<{name, description, stars, language, license, default_branch, topics}>}
+ * @returns {Promise<{name: string, description: any, stars: number, language: any, license: any, default_branch: string, updated_at?: string, topics: any[]}>}
  */
 async function getRepoInfo(owner, repo) {
   const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}`, {

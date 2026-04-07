@@ -38,6 +38,23 @@ const WEIGHT_MAX = 0.40;
 const WEIGHT_MIN = 0.05;
 const WEIGHT_STEP = 0.05;
 
+/**
+ * @typedef {Object} AccuracySummary
+ * @property {string} [botName]
+ * @property {number} total
+ * @property {number} accurate
+ * @property {number|null} rate
+ * @property {number} weeks
+ */
+
+/**
+ * @typedef {Object} AccuracyReport
+ * @property {string} text
+ * @property {any[]} adjustments
+ * @property {Record<string, number>} [suggestedWeights]
+ * @property {number} [totalWeight]
+ */
+
 const THRESHOLD_HIGH = 0.70;  // 70%+ → 가중치 증가
 const THRESHOLD_LOW  = 0.50;  // 50%- → 가중치 감소
 
@@ -94,7 +111,7 @@ function _round2(n) {
  * 특정 봇의 주간 정확도 조회
  * @param {string} botName   'aria'|'sophia'|'oracle'|'hermes'
  * @param {number} weeks     조회할 주 수 (1 = 이번 주)
- * @returns {Promise<{total, accurate, rate, weeks}>}
+ * @returns {Promise<AccuracySummary>}
  */
 async function getWeeklyAccuracy(botName, weeks = 1) {
   const analyst = _fallbackAnalystMeta(botName);
@@ -148,7 +165,7 @@ async function getWeeklyAccuracy(botName, weeks = 1) {
  * 최근 N주 주별 정확도 배열 반환
  * @param {string} botName
  * @param {number} nWeeks
- * @returns {Promise<Array<{week, total, accurate, rate}>>}
+ * @returns {Promise<Array<{week: number, total: number, accurate: number, rate: number|null, botName?: string}>>}
  */
 async function getWeeklyAccuracyHistory(botName, nWeeks = 4) {
   const analyst = _fallbackAnalystMeta(botName);
@@ -280,9 +297,8 @@ async function calculateWeightAdjustment(botName, currentWeight) {
 // ── 전체 리포트 ───────────────────────────────────────────────────────
 
 /**
- * 분석팀 주간 성적표 + 가중치 조정 제안 리포트
- * @param {object} currentWeights  { aria: 0.25, sophia: 0.20, ... }
- * @returns {Promise<{text: string, adjustments: Array}>}
+ * @param {Record<string, number>} [currentWeights]
+ * @returns {Promise<AccuracyReport>}
  */
 async function buildAccuracyReport(currentWeights = {}) {
   const analysts = await getActiveAnalysts();

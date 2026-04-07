@@ -48,6 +48,8 @@ let _darwinTelegramBotToken = null;
  * @property {number} [alertLevel]
  * @property {string} [fromBot]
  * @property {string} [sessionKey]
+ * @property {any} [payload]
+ * @property {string} [criticalTelegramMode]
  * @property {Array<Array<{ text: string, callback_data: string }>> | null} [inlineKeyboard]
  */
 
