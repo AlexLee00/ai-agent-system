@@ -8,12 +8,14 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { callWithFallback } = require('../../../../packages/core/lib/llm-fallback');
+const { createLogger } = require('../../../../packages/core/lib/central-logger');
 const { postAlarm } = require('../../../../packages/core/lib/openclaw-client');
 const proposalStore = require('./proposal-store');
 const autonomyLevel = require('./autonomy-level');
 
 const REPO_ROOT = path.join(__dirname, '../../../..');
 const ALLOWED_PREFIXES = ['packages/', 'bots/', 'docs/', 'scripts/', 'config/'];
+const logger = createLogger('implementor', { team: 'darwin' });
 
 function _runGit(args, opts = {}) {
   return execFileSync('git', args, {
@@ -153,6 +155,7 @@ async function triggerImplementation(proposalId) {
   let branchCheckedOut = false;
   let committed = false;
   proposalStore.updateStatus(proposalId, 'implementing', { branch: branchName, implementation_started_at: new Date().toISOString() });
+  logger.info(`구현 시작: ${proposalId} -> ${branchName}`);
 
   try {
     stashState = _stashPushIfNeeded(proposalId);
@@ -196,6 +199,7 @@ ${JSON.stringify(proposal.verification || {})}`,
     });
 
     const files = _extractFiles(implementationResult);
+    logger.info(`LLM 출력 파싱 완료: ${files.length}개 파일`);
     if (files.length === 0) {
       _runGit(['checkout', originalBranch]);
       branchCheckedOut = false;
@@ -209,6 +213,7 @@ ${JSON.stringify(proposal.verification || {})}`,
     const changedFiles = _writeFiles(files);
     const syntaxChecks = _checkSyntax(changedFiles);
     const syntaxPassed = syntaxChecks.every((item) => item.ok);
+    logger.info(`구현 커밋 준비: ${changedFiles.length}개 파일, syntax=${syntaxPassed ? 'pass' : 'partial-fail'}`);
 
     _runGit(['add', ...changedFiles]);
     if (!_hasStagedChanges()) {
@@ -248,6 +253,7 @@ ${JSON.stringify(proposal.verification || {})}`,
     setImmediate(() => verifier.triggerVerification(proposalId, branchName));
     return { ok: true, branchName, changedFiles, syntaxChecks };
   } catch (error) {
+    logger.error(`구현 실패: ${proposalId} -> ${error.message}`);
     autonomyLevel.recordError(error);
     proposalStore.updateStatus(proposalId, 'implementation_failed', {
       branch: branchName,

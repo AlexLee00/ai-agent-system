@@ -8,6 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { callWithFallback } = require('../../../../packages/core/lib/llm-fallback');
+const { createLogger } = require('../../../../packages/core/lib/central-logger');
 const { postAlarm } = require('../../../../packages/core/lib/openclaw-client');
 const rag = require('../../../../packages/core/lib/rag');
 const { runFullVerification } = require('../../../../packages/core/lib/skills/verify-loop');
@@ -15,6 +16,7 @@ const proposalStore = require('./proposal-store');
 const autonomyLevel = require('./autonomy-level');
 
 const REPO_ROOT = path.join(__dirname, '../../../..');
+const logger = createLogger('verifier', { team: 'darwin' });
 
 function _runGit(args, opts = {}) {
   return execFileSync('git', args, {
@@ -59,6 +61,7 @@ async function triggerVerification(proposalId, branchName) {
     verification_started_at: new Date().toISOString(),
     branch: branchName,
   });
+  logger.info(`검증 시작: ${proposalId} -> ${branchName}`);
 
   try {
     _runGit(['checkout', branchName]);
@@ -99,6 +102,7 @@ ${verification.summary}`,
 
     const verificationText = String(verificationResult?.text || verificationResult || '').trim();
     const passed = verification.overall && /\bPASS\b/i.test(verificationText) && !/\bFAIL\b/i.test(verificationText);
+    logger.info(`검증 완료: ${proposalId} -> ${passed ? 'PASS' : 'FAIL'}`, { files: changedFiles.length });
 
     proposalStore.updateStatus(proposalId, passed ? 'verified' : 'verification_failed', {
       branch: branchName,
@@ -145,6 +149,7 @@ ${verification.summary}`,
 
     return { ok: true, passed, changedFiles, verificationText };
   } catch (error) {
+    logger.error(`검증 실패: ${proposalId} -> ${error.message}`);
     autonomyLevel.recordError(error);
     proposalStore.updateStatus(proposalId, 'verification_failed', {
       branch: branchName,
