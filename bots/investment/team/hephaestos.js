@@ -413,6 +413,7 @@ async function closeOpenJournalForSymbol(symbol, isPaper, exitPrice, exitValue, 
     exitReason,
     pnlAmount,
     pnlPercent,
+    pnlNet: pnlAmount,
   });
   await journalDb.ensureAutoReview(entry.trade_id).catch(() => {});
   const review = await journalDb.getReviewByTradeId(entry.trade_id).catch(() => null);
