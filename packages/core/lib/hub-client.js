@@ -9,6 +9,7 @@
 
 const env = require('./env');
 const cache = new Map();
+const warnCache = new Map();
 
 function getCacheKey(kind, value) {
   return `${kind}:${value}`;
@@ -31,8 +32,19 @@ function setCached(cacheKey, value, ttlMs) {
   });
 }
 
+function warnOnce(key, message, ttlMs = 30000) {
+  const last = warnCache.get(key) || 0;
+  if ((Date.now() - last) < ttlMs) return;
+  warnCache.set(key, Date.now());
+  console.warn(message);
+}
+
 async function fetchHubSecrets(category, timeoutMs = 3000) {
   if (!env.USE_HUB_SECRETS || !env.HUB_BASE_URL) return null;
+  if (!env.HUB_AUTH_TOKEN) {
+    warnOnce('hub-auth-missing:secrets', '[hub-client] HUB_AUTH_TOKEN 없음 — hub secrets 조회 생략');
+    return null;
+  }
 
   const cacheKey = getCacheKey('secret', category);
   const cached = getCached(cacheKey);
@@ -52,8 +64,9 @@ async function fetchHubSecrets(category, timeoutMs = 3000) {
     });
 
     if (!res.ok) {
-      console.warn(`[hub-client] ${category}: HTTP ${res.status}`);
+      warnOnce(`hub-secrets:${category}:${res.status}`, `[hub-client] ${category}: HTTP ${res.status}`);
       if (res.status === 429) setCached(cacheKey, null, 5000);
+      if (res.status === 401) setCached(cacheKey, null, 30000);
       return null;
     }
 
@@ -72,6 +85,10 @@ async function fetchHubSecrets(category, timeoutMs = 3000) {
 
 async function queryOpsDb(sql, schema = 'investment', params = [], timeoutMs = 5000) {
   if (!env.HUB_BASE_URL) return null;
+  if (!env.HUB_AUTH_TOKEN) {
+    warnOnce('hub-auth-missing:query', '[hub-client] HUB_AUTH_TOKEN 없음 — queryOpsDb 생략');
+    return null;
+  }
 
   const cacheKey = getCacheKey('query', `${schema}:${sql}:${JSON.stringify(Array.isArray(params) ? params : [])}`);
   const cached = getCached(cacheKey);
@@ -93,8 +110,9 @@ async function queryOpsDb(sql, schema = 'investment', params = [], timeoutMs = 5
     });
 
     if (!res.ok) {
-      console.warn(`[hub-client] queryOpsDb: HTTP ${res.status}`);
+      warnOnce(`hub-query:${res.status}`, `[hub-client] queryOpsDb: HTTP ${res.status}`);
       if (res.status === 429) setCached(cacheKey, null, 3000);
+      if (res.status === 401) setCached(cacheKey, null, 30000);
       return null;
     }
 
@@ -112,6 +130,10 @@ async function queryOpsDb(sql, schema = 'investment', params = [], timeoutMs = 5
 
 async function fetchOpsErrors(minutes = 60, service = null, timeoutMs = 3000) {
   if (!env.HUB_BASE_URL) return null;
+  if (!env.HUB_AUTH_TOKEN) {
+    warnOnce('hub-auth-missing:errors', '[hub-client] HUB_AUTH_TOKEN 없음 — fetchOpsErrors 생략');
+    return null;
+  }
 
   const cacheKey = getCacheKey('errors', `${minutes}:${service || '*'}`);
   const cached = getCached(cacheKey);
@@ -133,8 +155,9 @@ async function fetchOpsErrors(minutes = 60, service = null, timeoutMs = 3000) {
     });
 
     if (!res.ok) {
-      console.warn(`[hub-client] fetchOpsErrors: HTTP ${res.status}`);
+      warnOnce(`hub-errors:${res.status}`, `[hub-client] fetchOpsErrors: HTTP ${res.status}`);
       if (res.status === 429) setCached(cacheKey, null, 3000);
+      if (res.status === 401) setCached(cacheKey, null, 30000);
       return null;
     }
 
@@ -152,6 +175,10 @@ async function fetchOpsErrors(minutes = 60, service = null, timeoutMs = 3000) {
 
 async function fetchHubRuntimeProfile(team, purpose = 'default', timeoutMs = 3000) {
   if (!env.HUB_BASE_URL || !team) return null;
+  if (!env.HUB_AUTH_TOKEN) {
+    warnOnce('hub-auth-missing:runtime', '[hub-client] HUB_AUTH_TOKEN 없음 — runtime profile 조회 생략');
+    return null;
+  }
 
   const cacheKey = getCacheKey('runtime', `${team}:${purpose}`);
   const cached = getCached(cacheKey);
@@ -171,8 +198,9 @@ async function fetchHubRuntimeProfile(team, purpose = 'default', timeoutMs = 300
     });
 
     if (!res.ok) {
-      console.warn(`[hub-client] runtime ${team}/${purpose}: HTTP ${res.status}`);
+      warnOnce(`hub-runtime:${team}:${purpose}:${res.status}`, `[hub-client] runtime ${team}/${purpose}: HTTP ${res.status}`);
       if (res.status === 429) setCached(cacheKey, null, 3000);
+      if (res.status === 401) setCached(cacheKey, null, 30000);
       return null;
     }
 

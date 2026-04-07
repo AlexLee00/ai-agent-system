@@ -27,6 +27,19 @@ const DELIVERY_STATE = new Map();
 const DEFAULT_CRITICAL_WEBHOOK_URL = process.env.N8N_CRITICAL_WEBHOOK || 'http://127.0.0.1:5678/webhook/critical';
 const PAYLOAD_WARNING_LOG = process.env.REPORTING_PAYLOAD_WARNING_LOG || '/tmp/reporting-payload-warnings.jsonl';
 const MAX_WARNING_LOG_BYTES = 512 * 1024;
+const TELEGRAM_API_RETRY_ATTEMPTS = 2;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function resolveTelegramRetryDelayMs(res, data, fallbackMs = 3000) {
+  const retryAfterSec = Number(data?.parameters?.retry_after || res?.headers?.get('retry-after') || 0);
+  if (Number.isFinite(retryAfterSec) && retryAfterSec > 0) {
+    return Math.max(1000, retryAfterSec * 1000);
+  }
+  return fallbackMs;
+}
 
 function normalizeMessageText(message = '') {
   const lines = String(message || '')
@@ -493,22 +506,31 @@ async function publishToTelegramApi({
   if (replyMarkup) body.reply_markup = replyMarkup;
 
   try {
-    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(10000),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (res.ok && data?.ok) {
-      return { ok: true, channel: 'telegram_api', event: normalized };
+    for (let attempt = 1; attempt <= TELEGRAM_API_RETRY_ATTEMPTS; attempt += 1) {
+      const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(10000),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.ok) {
+        return { ok: true, channel: 'telegram_api', event: normalized };
+      }
+      if (res.status === 429 && attempt < TELEGRAM_API_RETRY_ATTEMPTS) {
+        const delayMs = resolveTelegramRetryDelayMs(res, data, 3000);
+        console.warn(`[reporting-hub] telegram api 429 — ${delayMs}ms 후 재시도`);
+        await sleep(delayMs);
+        continue;
+      }
+      return {
+        ok: false,
+        channel: 'telegram_api',
+        event: normalized,
+        error: data?.description || `telegram_api_status_${res.status}`,
+      };
     }
-    return {
-      ok: false,
-      channel: 'telegram_api',
-      event: normalized,
-      error: data?.description || `telegram_api_status_${res.status}`,
-    };
+    return { ok: false, channel: 'telegram_api', event: normalized, error: 'telegram_retry_exhausted' };
   } catch (error) {
     console.warn(`[reporting-hub] telegram api publish failed: ${error.message}`);
     return { ok: false, channel: 'telegram_api', event: normalized, error: error.message };

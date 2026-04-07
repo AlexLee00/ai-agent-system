@@ -58,6 +58,8 @@ const INTEL_CACHE_MAX = 500;
 const _candidateIntelCache = new Map();
 const EXTERNAL_WARN_TTL = 6 * 3600 * 1000;
 const _externalWarnCache = new Map();
+const REDDIT_COOLDOWN_TTL_MS = 10 * 60 * 1000;
+const _redditCooldownUntil = new Map();
 
 function _num(value, fallback = 0) {
   const n = Number(value);
@@ -444,6 +446,16 @@ Reddit 인기 트레이딩 포스트에서 실제 매매에 활용할 수 있는
 // ─── Reddit 수집 ────────────────────────────────────────────────────
 
 async function fetchRedditPosts(subreddit, limit = 10) {
+  const cooldownUntil = _redditCooldownUntil.get(subreddit) || 0;
+  if (cooldownUntil > Date.now()) {
+    _warnExternalOnce(
+      `reddit-cooldown:${subreddit}`,
+      `  ⚠️ [아르고스] r/${subreddit} rate limit 쿨다운 중 — 이번 사이클 스킵`,
+      Math.min(REDDIT_COOLDOWN_TTL_MS, Math.max(1000, cooldownUntil - Date.now())),
+    );
+    return [];
+  }
+
   const url = `https://www.reddit.com/r/${subreddit}/top.json?limit=${limit}&t=day`;
   try {
     const res = await fetch(url, {
@@ -452,6 +464,17 @@ async function fetchRedditPosts(subreddit, limit = 10) {
     });
     if (res.status === 403) {
       _warnExternalOnce(`reddit403:${subreddit}`, `  ⚠️ [아르고스] r/${subreddit} 접근 거부(403) — 전략 수집 소스에서 일시 제외`);
+      return [];
+    }
+    if (res.status === 429) {
+      const retryAfterSec = Number(res.headers.get('retry-after') || 600);
+      const retryMs = Number.isFinite(retryAfterSec) && retryAfterSec > 0 ? retryAfterSec * 1000 : REDDIT_COOLDOWN_TTL_MS;
+      _redditCooldownUntil.set(subreddit, Date.now() + retryMs);
+      _warnExternalOnce(
+        `reddit429:${subreddit}`,
+        `  ⚠️ [아르고스] r/${subreddit} 수집 실패: HTTP 429 — ${Math.ceil(retryMs / 1000)}초 후 재시도`,
+        retryMs,
+      );
       return [];
     }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);

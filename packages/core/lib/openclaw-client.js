@@ -15,6 +15,7 @@ const { fetchHubSecrets } = require('./hub-client');
 const HOOK_URL = 'http://127.0.0.1:18789/hooks/agent';
 const TIMEOUT_MS = 30_000;
 const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
+const TELEGRAM_RETRY_ATTEMPTS = 2;
 
 const TEAM_TOPIC = {
   general: 'general',
@@ -39,6 +40,18 @@ let _groupId = null;
 let _topicIds = null;
 let _telegramBotToken = null;
 let _darwinTelegramBotToken = null;
+
+function _sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function _resolveTelegramRetryDelayMs(res, body, fallbackMs = 3000) {
+  const retryAfterSec = Number(body?.parameters?.retry_after || res?.headers?.get('retry-after') || 0);
+  if (Number.isFinite(retryAfterSec) && retryAfterSec > 0) {
+    return Math.max(1000, retryAfterSec * 1000);
+  }
+  return fallbackMs;
+}
 
 function _readStoreToken() {
   try {
@@ -129,22 +142,39 @@ async function _sendInlineTelegram({ message, team, fromBot, topicId, groupId, i
   }
 
   try {
-    const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: groupId,
-        text: `[${fromBot}→${team}] ${message}`,
-        message_thread_id: topicId || undefined,
-        reply_markup: {
-          inline_keyboard: inlineKeyboard,
-        },
-      }),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
+    const payload = {
+      chat_id: groupId,
+      text: `[${fromBot}→${team}] ${message}`,
+      message_thread_id: topicId || undefined,
+      reply_markup: {
+        inline_keyboard: inlineKeyboard,
+      },
+    };
 
-    const body = await res.json().catch(() => null);
-    return { ok: res.ok && body?.ok === true, status: res.status, body };
+    for (let attempt = 1; attempt <= TELEGRAM_RETRY_ATTEMPTS; attempt += 1) {
+      const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      });
+
+      const body = await res.json().catch(() => null);
+      if (res.ok && body?.ok === true) {
+        return { ok: true, status: res.status, body };
+      }
+
+      if (res.status === 429 && attempt < TELEGRAM_RETRY_ATTEMPTS) {
+        const delayMs = _resolveTelegramRetryDelayMs(res, body, 3000);
+        console.warn(`[openclaw-client] inline telegram 429 — ${delayMs}ms 후 재시도`);
+        await _sleep(delayMs);
+        continue;
+      }
+
+      return { ok: false, status: res.status, body };
+    }
+
+    return { ok: false, error: 'telegram_retry_exhausted' };
   } catch (e) {
     console.warn(`[openclaw-client] inline telegram 실패: ${e.message}`);
     return { ok: false, error: e.message };
