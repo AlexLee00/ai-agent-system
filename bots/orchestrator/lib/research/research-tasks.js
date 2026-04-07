@@ -289,10 +289,17 @@ ${JSON.stringify(task.sourceAnalysis || {}, null, 2)}
 function autoCreateSkillTaskFromAnalysis(analysisResult, sourceTaskId) {
   const repoName = String(analysisResult?.repoInfo?.name || '');
   const codePatterns = Array.isArray(analysisResult?.codePatterns) ? analysisResult.codePatterns : [];
-  if (!repoName || codePatterns.length === 0) return null;
+  if (!repoName) return null;
 
-  const richPatterns = codePatterns.filter((item) => Number(item.functions || 0) > 10 || Number(item.classes || 0) > 3);
-  if (richPatterns.length === 0) return null;
+  const hasRichPatterns = codePatterns.some((item) =>
+    Number(item.functions || 0) > 5
+    || Number(item.classes || 0) > 2
+    || Number(item.lines || 0) > 200
+  );
+  const stars = Number(analysisResult?.repoInfo?.stars || 0);
+  const totalFiles = Number(analysisResult?.structure?.totalFiles || analysisResult?.structure?.summary?.totalFiles || 0);
+  const hasSignificantRepo = stars >= 500 && totalFiles >= 50;
+  if (!hasRichPatterns && !hasSignificantRepo) return null;
 
   const repoPart = repoName.split('/')[1] || repoName;
   const skillName = repoPart.toLowerCase().replace(/[^a-z0-9-]/g, '-') + '-patterns';
@@ -305,10 +312,16 @@ function autoCreateSkillTaskFromAnalysis(analysisResult, sourceTaskId) {
       owner: repoName.split('/')[0] || '',
       repo: repoPart,
     },
-    description: `${richPatterns.length}개 파일에서 풍부한 함수/클래스 패턴 발견`,
+    description: hasRichPatterns
+      ? `${codePatterns.length}개 파일에서 풍부한 패턴 발견`
+      : `⭐${stars} 유의미 레포 — ${totalFiles}파일 심층 분석 필요`,
     assignee: 'edison',
     priority: 3,
-    sourceAnalysis: analysisResult,
+    sourceAnalysis: {
+      repoInfo: analysisResult?.repoInfo,
+      patternCount: codePatterns.length,
+      triggerReason: hasRichPatterns ? 'rich_patterns' : 'significant_repo',
+    },
     targetCategory: 'shared',
     skillName,
   });

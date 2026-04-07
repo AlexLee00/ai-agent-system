@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const env = require('../../../../packages/core/lib/env');
+const { postAlarm } = require('../../../../packages/core/lib/openclaw-client');
 const proposalStore = require('../../../orchestrator/lib/research/proposal-store');
 const autonomyLevel = require('../../../orchestrator/lib/research/autonomy-level');
 const researchTasks = require('../../../orchestrator/lib/research/research-tasks');
@@ -63,6 +64,8 @@ async function darwinCallbackRoute(req, res) {
     'darwin_manual',
     'darwin_merge',
     'darwin_merge_skill',
+    'darwin_create_skill',
+    'darwin_skip_skill',
   ]);
 
   if (!allowedActions.has(action)) {
@@ -123,6 +126,52 @@ async function darwinCallbackRoute(req, res) {
         }
       });
       return res.json({ ok: true, action: 'skill_merge_started', proposalId });
+    }
+
+    if (action === 'darwin_create_skill') {
+      const parentTask = researchTasks.loadTask(proposalId);
+      if (!parentTask?.result) {
+        return res.status(404).json({ ok: false, error: 'parent task result missing' });
+      }
+      const repoName = String(
+        parentTask.result?.repoInfo?.name
+        || [parentTask.target?.owner, parentTask.target?.repo].filter(Boolean).join('/')
+        || ''
+      );
+      if (!repoName) {
+        return res.status(400).json({ ok: false, error: 'repo name missing' });
+      }
+      const repoPart = repoName.split('/')[1] || repoName;
+      const taskId = `SKILL-${proposalId}-${Date.now()}`.slice(0, 60);
+      const newTask = researchTasks.createTask({
+        id: taskId,
+        title: `${repoName} 패턴 → 스킬 생성 (마스터 승인!)`,
+        type: 'skill_creation',
+        target: parentTask.target,
+        description: '마스터 승인으로 강제 생성.',
+        assignee: 'edison',
+        priority: 2,
+        source: { type: 'master_approved', parent_task: proposalId },
+        targetCategory: 'shared',
+        skillName: repoPart.toLowerCase().replace(/[^a-z0-9-]/g, '-') + '-patterns',
+      });
+      await _answerCallbackQuery(callbackQueryId, '스킬 과제를 생성했습니다.');
+      await postAlarm({
+        message: `✅ 마스터 승인! 스킬 과제 생성\n🧠 ${newTask.id}`,
+        team: 'darwin',
+        fromBot: 'darwin-callback',
+      });
+      return res.json({ ok: true, action: 'skill_task_created', proposalId, taskId: newTask.id });
+    }
+
+    if (action === 'darwin_skip_skill') {
+      await _answerCallbackQuery(callbackQueryId, '스킬 과제를 건너뜁니다.');
+      await postAlarm({
+        message: `⏭ 스킬 과제 건너뜀: ${proposalId}`,
+        team: 'darwin',
+        fromBot: 'darwin-callback',
+      });
+      return res.json({ ok: true, action: 'skill_task_skipped', proposalId });
     }
   } catch (error) {
     autonomyLevel.recordError(error);

@@ -195,7 +195,8 @@ const TEAM_SELECTOR_DEFAULTS = {
     'social.summarize': {
       primary: { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 1024, temperature: 0.1 },
       fallbacks: [
-        { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 1024, temperature: 0.1 },
+        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1024, temperature: 0.1 },
+        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.1 },
       ],
     },
     'social.caption': {
@@ -353,7 +354,7 @@ const AGENT_MODEL_REGISTRY = {
     'curriculum-generate': 'blog.curriculum.generate',
   },
   worker: {
-    lead: null,
+    foreman: null,
     web: null,
     nextjs: null,
     'task-runner': null,

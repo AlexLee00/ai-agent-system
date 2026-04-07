@@ -1,0 +1,14 @@
+{
+  "id": "DARWIN-CHRONOS-001",
+  "title": "Freqtrade 백테스트 패턴 → chronos.js Layer 1 구현",
+  "type": "skill_creation",
+  "target": { "owner": "freqtrade", "repo": "freqtrade" },
+  "description": "DARWIN-BACKTEST-001 분석 결과 기반. walk-forward/슬리피지/FreqAI/hyperopt/지표 파이프라인 핵심 패턴을 chronos.js Layer 1 규칙 엔진으로 구현.",
+  "assignee": "edison",
+  "priority": 1,
+  "status": "pending",
+  "created_at": "2026-04-07T00:00:00.000Z",
+  "source": { "type": "manual_followup", "parent_task": "DARWIN-BACKTEST-001" },
+  "targetCategory": "shared",
+  "skillName": "chronos-backtest-layer1"
+}
