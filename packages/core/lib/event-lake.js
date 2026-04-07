@@ -8,6 +8,36 @@ const TABLE = `${SCHEMA}.event_lake`;
 
 let _initPromise = null;
 
+/**
+ * @typedef {Object} EventLakeRecordInput
+ * @property {string} eventType
+ * @property {string} [team]
+ * @property {string} [botName]
+ * @property {'debug'|'info'|'warn'|'error'|'critical'} [severity]
+ * @property {string} [traceId]
+ * @property {string} [title]
+ * @property {string} [message]
+ * @property {string[]} [tags]
+ * @property {Record<string, any>} [metadata]
+ */
+
+/**
+ * @typedef {Object} EventLakeSearchInput
+ * @property {string} [q]
+ * @property {string} [eventType]
+ * @property {string} [team]
+ * @property {string} [severity]
+ * @property {string} [botName]
+ * @property {number} [minutes]
+ * @property {number} [limit]
+ */
+
+/**
+ * @typedef {Object} EventLakeFeedbackInput
+ * @property {number|null} [score]
+ * @property {string} [feedback]
+ */
+
 function _text(value, fallback = '') {
   const normalized = String(value == null ? fallback : value).trim();
   return normalized || fallback;
@@ -79,6 +109,9 @@ async function initSchema() {
   return _initPromise;
 }
 
+/**
+ * @param {EventLakeRecordInput} input
+ */
 async function record({
   eventType,
   team = 'general',
@@ -114,6 +147,9 @@ async function record({
   return rows[0]?.id || null;
 }
 
+/**
+ * @param {EventLakeSearchInput} [input]
+ */
 async function search({
   q = '',
   eventType = '',
@@ -125,30 +161,33 @@ async function search({
 } = {}) {
   await initSchema();
 
+  /** @type {(string|number)[]} */
   const params = [Math.max(1, Number(minutes || 0) || 1)];
   const conditions = [`created_at >= NOW() - ($1::int * INTERVAL '1 minute')`];
   let idx = 2;
+  /** @type {number} */
+  let nextParamIndex = idx;
 
   if (_text(q)) {
     params.push(`%${String(q).trim()}%`);
-    conditions.push(`(title ILIKE $${idx} OR message ILIKE $${idx} OR metadata::text ILIKE $${idx})`);
-    idx += 1;
+    conditions.push(`(title ILIKE $${nextParamIndex} OR message ILIKE $${nextParamIndex} OR metadata::text ILIKE $${nextParamIndex})`);
+    nextParamIndex += 1;
   }
   if (_text(eventType)) {
     params.push(_text(eventType));
-    conditions.push(`event_type = $${idx++}`);
+    conditions.push(`event_type = $${nextParamIndex++}`);
   }
   if (_text(team)) {
     params.push(_text(team));
-    conditions.push(`team = $${idx++}`);
+    conditions.push(`team = $${nextParamIndex++}`);
   }
   if (_text(severity)) {
     params.push(_severity(severity));
-    conditions.push(`severity = $${idx++}`);
+    conditions.push(`severity = $${nextParamIndex++}`);
   }
   if (_text(botName)) {
     params.push(_text(botName));
-    conditions.push(`bot_name = $${idx++}`);
+    conditions.push(`bot_name = $${nextParamIndex++}`);
   }
 
   params.push(Math.min(200, Math.max(1, Number(limit || 50) || 50)));
@@ -164,6 +203,9 @@ async function search({
   `, params);
 }
 
+/**
+ * @param {{ minutes?: number }} [input]
+ */
 async function stats({ minutes = 24 * 60 } = {}) {
   await initSchema();
   const windowMinutes = Math.max(1, Number(minutes || 0) || 1);
@@ -204,6 +246,10 @@ async function stats({ minutes = 24 * 60 } = {}) {
   };
 }
 
+/**
+ * @param {number|string} id
+ * @param {EventLakeFeedbackInput} [input]
+ */
 async function addFeedback(id, { score = null, feedback = '' } = {}) {
   await initSchema();
   const rows = await pgPool.query(SCHEMA, `

@@ -196,7 +196,7 @@ function daysAgoStr(n) {
 function daysBetween(date1, date2) {
   const d1 = new Date(date1);
   const d2 = new Date(date2);
-  return Math.floor(Math.abs(d2 - d1) / 86400000);
+  return Math.floor(Math.abs(d2.getTime() - d1.getTime()) / 86400000);
 }
 
 // ── 내보내기 ─────────────────────────────────────────────────────────────

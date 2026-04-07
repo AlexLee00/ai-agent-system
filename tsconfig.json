@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": false,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "maxNodeModuleJsDepth": 0,
+    "types": ["node"]
+  },
+  "files": [
+    "packages/core/lib/env.js",
+    "packages/core/lib/trace.js",
+    "packages/core/lib/kst.js",
+    "packages/core/lib/event-lake.js",
+    "packages/core/lib/central-logger.js",
+    "packages/core/lib/hub-client.js",
+    "packages/core/lib/openclaw-client.js",
+    "packages/core/lib/tool-selector.js",
+    "packages/core/lib/runtime-config-loader.js",
+    "packages/core/lib/health-core.js"
+  ],
+  "exclude": [
+    "**/node_modules/**",
+    "bots/worker/web/**"
+  ]
+}

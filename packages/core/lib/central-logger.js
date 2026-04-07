@@ -3,16 +3,34 @@
 const { getTraceId } = require('./trace');
 const eventLake = require('./event-lake');
 
+/**
+ * @typedef {Object} LoggerOptions
+ * @property {string} [team]
+ */
+
+/**
+ * @typedef {Object.<string, any>} LoggerData
+ */
+
 function _eventType(botName, level) {
   if (level === 'ERROR') return `${botName}_error`;
   if (level === 'WARN') return `${botName}_warn`;
   return `${botName}_log`;
 }
 
+/**
+ * @param {string} bot
+ * @param {LoggerOptions} [options]
+ */
 function createLogger(bot, options = {}) {
   const botName = String(bot || 'unknown').trim() || 'unknown';
   const team = String(options.team || '').trim();
 
+  /**
+   * @param {'INFO'|'WARN'|'ERROR'|'DEBUG'|string} level
+   * @param {string} message
+   * @param {LoggerData|null} [data]
+   */
   function emit(level, message, data = null) {
     const upper = String(level || 'INFO').toUpperCase();
     const traceId = getTraceId();
@@ -33,7 +51,7 @@ function createLogger(bot, options = {}) {
         eventType: _eventType(botName, upper),
         team: team || 'general',
         botName,
-        severity: upper.toLowerCase(),
+        severity: /** @type {'warn'|'error'} */ (upper.toLowerCase()),
         traceId,
         title: String(message || '').slice(0, 140),
         message: String(message || ''),
