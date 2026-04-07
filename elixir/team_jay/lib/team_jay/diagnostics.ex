@@ -94,51 +94,31 @@ defmodule TeamJay.Diagnostics do
 
   def get_status, do: GenServer.call(__MODULE__, :get_status)
   def shadow_report, do: GenServer.call(__MODULE__, :shadow_report)
+  def publish_shadow_report, do: GenServer.call(__MODULE__, :publish_shadow_report)
 
   @impl true
   def handle_call(:get_status, _from, state), do: {:reply, state, state}
 
   @impl true
   def handle_call(:shadow_report, _from, state) do
-    overlap_result = Enum.find(state.checks, &(&1.name == "launchd_phase3_overlap")) || %{}
+    {:reply, build_shadow_report(state), state}
+  end
 
-    agent_statuses =
-      Enum.map(@shadow_agents, fn {name, team} ->
-        case GenServer.whereis(TeamJay.Agents.PortAgent.via(name)) do
-          nil ->
-            %{name: name, team: team, status: :missing, runs: 0, consecutive_failures: 0}
+  @impl true
+  def handle_call(:publish_shadow_report, _from, state) do
+    report = build_shadow_report(state)
 
-          _pid ->
-            status = TeamJay.Agents.PortAgent.get_status(name)
-
-            %{
-              name: name,
-              team: team,
-              status: status.status,
-              runs: status.runs,
-              consecutive_failures: Map.get(status, :consecutive_failures, 0)
-            }
-        end
-      end)
-
-    summary =
-      %{
-        total: length(agent_statuses),
-        running: Enum.count(agent_statuses, &(&1.status == :running)),
-        idle: Enum.count(agent_statuses, &(&1.status == :idle)),
-        missing: Enum.count(agent_statuses, &(&1.status == :missing)),
-        failing: Enum.count(agent_statuses, &(&1.consecutive_failures > 0))
-      }
-
-    report = %{
-      generated_at: DateTime.utc_now(),
-      overlap_count: length(Map.get(overlap_result, :overlaps, [])),
-      overlaps: Map.get(overlap_result, :overlaps, []),
-      supervisor_alerts: Enum.map(state.alerts, &Map.take(&1, [:name, :severity, :message])),
-      agents: agent_statuses,
-      summary: summary,
-      recent_failures: TeamJay.EventLake.get_by_type("port_agent_failed", 5)
-    }
+    TeamJay.EventLake.record(%{
+      event_type: "phase3_shadow_report",
+      team: "system",
+      bot_name: "diagnostics",
+      severity: if(report.overlap_count > 0 or report.summary.failing > 0, do: "warn", else: "info"),
+      title: "Phase3 Shadow 리포트",
+      message:
+        "겹침 #{report.overlap_count}건 | failing #{report.summary.failing} | missing #{report.summary.missing}",
+      tags: ["phase3", "diagnostics", "shadow_report"],
+      metadata: report
+    })
 
     {:reply, report, state}
   end
@@ -280,6 +260,47 @@ defmodule TeamJay.Diagnostics do
     end
 
     signature
+  end
+
+  defp build_shadow_report(state) do
+    overlap_result = Enum.find(state.checks, &(&1.name == "launchd_phase3_overlap")) || %{}
+
+    agent_statuses =
+      Enum.map(@shadow_agents, fn {name, team} ->
+        case GenServer.whereis(TeamJay.Agents.PortAgent.via(name)) do
+          nil ->
+            %{name: name, team: team, status: :missing, runs: 0, consecutive_failures: 0}
+
+          _pid ->
+            status = TeamJay.Agents.PortAgent.get_status(name)
+
+            %{
+              name: name,
+              team: team,
+              status: status.status,
+              runs: status.runs,
+              consecutive_failures: Map.get(status, :consecutive_failures, 0)
+            }
+        end
+      end)
+
+    summary = %{
+      total: length(agent_statuses),
+      running: Enum.count(agent_statuses, &(&1.status == :running)),
+      idle: Enum.count(agent_statuses, &(&1.status == :idle)),
+      missing: Enum.count(agent_statuses, &(&1.status == :missing)),
+      failing: Enum.count(agent_statuses, &(&1.consecutive_failures > 0))
+    }
+
+    %{
+      generated_at: DateTime.utc_now(),
+      overlap_count: length(Map.get(overlap_result, :overlaps, [])),
+      overlaps: Map.get(overlap_result, :overlaps, []),
+      supervisor_alerts: Enum.map(state.alerts, &Map.take(&1, [:name, :severity, :message])),
+      agents: agent_statuses,
+      summary: summary,
+      recent_failures: TeamJay.EventLake.get_by_type("port_agent_failed", 5)
+    }
   end
 
   defp record_launchd_overlap_event(nil, signature) do

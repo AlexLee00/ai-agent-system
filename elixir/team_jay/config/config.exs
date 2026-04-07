@@ -22,6 +22,7 @@ config :team_jay,
 config :team_jay, TeamJay.Scheduler,
   jobs: [
     {"0 * * * *", {TeamJay.Agents.PortAgent, :run, [:ska_etl]}},
+    {"*/30 * * * *", {TeamJay.Diagnostics, :publish_shadow_report, []}},
     {"0 6 * * *", {TeamJay.Agents.PortAgent, :run, [:forecast_daily]}},
     {"0 9 * * *", {TeamJay.Agents.PortAgent, :run, [:dexter_daily]}},
     {"0 10 * * 1", {TeamJay.Agents.PortAgent, :run, [:steward_weekly]}}
