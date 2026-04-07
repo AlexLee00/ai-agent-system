@@ -35,6 +35,17 @@ const PRICING = {
 
 /**
  * 토큰 사용 기록
+ * @param {{
+ *   bot: string,
+ *   team: string,
+ *   model: string,
+ *   provider?: string,
+ *   taskType?: string,
+ *   tokensIn?: number,
+ *   tokensOut?: number,
+ *   durationMs?: number,
+ *   costUsd?: number
+ * }} input
  */
 async function trackTokens({ bot, team, model, provider, taskType = 'unknown', tokensIn = 0, tokensOut = 0, durationMs = 0, costUsd }) {
   if (DEV_HUB_READONLY) return;

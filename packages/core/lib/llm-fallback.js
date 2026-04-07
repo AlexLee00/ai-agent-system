@@ -111,7 +111,8 @@ function _extractText(resp, provider) {
 async function _callAnthropic({ model, maxTokens, temperature = 0.1, systemPrompt, userPrompt }) {
   const apiKey = getAnthropicKey();
   if (!apiKey) throw new Error('Anthropic API 키 없음');
-  const Anthropic = require('@anthropic-ai/sdk');
+  const anthropicModule = require('@anthropic-ai/sdk');
+  const Anthropic = /** @type {any} */ (anthropicModule.default || anthropicModule);
   const { getTimeout } = require('./llm-timeouts');
   const client = new Anthropic({ apiKey, timeout: getTimeout(model), maxRetries: 1 });
   return client.messages.create({
@@ -123,10 +124,12 @@ async function _callAnthropic({ model, maxTokens, temperature = 0.1, systemPromp
   });
 }
 
-async function _callOpenAI({ model, maxTokens, temperature = 0.1, systemPrompt, userPrompt, baseURL }) {
+/** @param {{ model: string, maxTokens: number, temperature?: number, systemPrompt: string, userPrompt: string, baseURL?: string|null }} input */
+async function _callOpenAI({ model, maxTokens, temperature = 0.1, systemPrompt, userPrompt, baseURL = null }) {
   const apiKey = getOpenAIKey();
   if (!apiKey) throw new Error('OpenAI API 키 없음');
-  const OpenAI = require('openai');
+  const openaiModule = require('openai');
+  const OpenAI = /** @type {any} */ (openaiModule.default || openaiModule);
   const opts = { apiKey };
   if (baseURL) opts.baseURL = baseURL;
   const client = new OpenAI(opts);
@@ -411,7 +414,8 @@ async function _recordModelEval({
 }
 
 async function _groqSingleCall(apiKey, groqModel, maxTokens, temperature, systemPrompt, userPrompt) {
-  const OpenAI = require('openai');
+  const openaiModule = require('openai');
+  const OpenAI = /** @type {any} */ (openaiModule.default || openaiModule);
   const client = new OpenAI({ apiKey, baseURL: 'https://api.groq.com/openai/v1' });
   // gpt-oss-20b는 추론(reasoning) 모델 — reasoning_effort:low로 내부 추론 토큰 최소화
   const isReasoning = groqModel.includes('gpt-oss-20b');
@@ -473,11 +477,11 @@ async function _callGemini({ model, maxTokens, temperature = 0.1, systemPrompt, 
   const gemini = genai.getGenerativeModel({
     model: model.replace(/^google-gemini-cli\//, ''),
     systemInstruction: systemPrompt,
-    generationConfig: {
+    generationConfig: /** @type {any} */ ({
       maxOutputTokens: maxTokens,
       temperature,
       thinkingConfig: { thinkingBudget: 0 },  // thinking 비활성 (단순 생성 태스크)
-    },
+    }),
   });
   return gemini.generateContent(userPrompt);
 }
@@ -523,8 +527,8 @@ async function _callProvider(cfg, systemPrompt, userPrompt, timeoutMs, runtimePr
       return { raw: resp, text: _extractText(resp, 'gemini'), usage: null };
     }
     case 'local': {
-      const localLLM = require('./local-llm-client');
-      const result = await localLLM.callLocalLLM(model, [
+      const localClient = require('./local-llm-client');
+      const result = await localClient.callLocalLLM(model, [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ], {
@@ -536,8 +540,8 @@ async function _callProvider(cfg, systemPrompt, userPrompt, timeoutMs, runtimePr
       return { raw: null, text: result.trim(), usage: null };
     }
     case 'ollama': {
-      const localLLM = require('./local-llm-client');
-      const result = await localLLM.callLocalLLM(model, [
+      const ollamaClient = require('./local-llm-client');
+      const result = await ollamaClient.callLocalLLM(model, [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ], {
@@ -580,10 +584,13 @@ function _inferRuntimePurpose(logMeta = {}) {
 
 /**
  * @param {object} opts
- * @param {Array<{provider, model, maxTokens, temperature}>} opts.chain
+ * @param {Array<{provider, model, maxTokens, temperature, timeoutMs?: number, local?: boolean}>} opts.chain
  * @param {string}   opts.systemPrompt
  * @param {string}   opts.userPrompt
  * @param {object}   [opts.logMeta]  { team, bot, requestType }
+ * @param {number|null} [opts.timeoutMs]
+ * @param {string|null} [opts.team]
+ * @param {string|null} [opts.purpose]
  * @returns {Promise<{text, provider, model, attempt}>}
  * @throws 모든 체인 실패 시 마지막 오류를 throw
  */

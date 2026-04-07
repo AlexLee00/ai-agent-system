@@ -323,6 +323,16 @@ export async function insertSignal({ symbol, action, amountUsdt, confidence, rea
   return rows[0]?.id;
 }
 
+/**
+ * @param {{
+ *   symbol?: string,
+ *   action?: string,
+ *   exchange?: string,
+ *   tradeMode?: string|null,
+ *   minutesBack?: number
+ * }} [input={}]
+ * @returns {Promise<any>}
+ */
 export async function getRecentSignalDuplicate({
   symbol,
   action,
@@ -345,6 +355,17 @@ export async function getRecentSignalDuplicate({
   );
 }
 
+/**
+ * @param {{
+ *   symbol?: string,
+ *   action?: string|null,
+ *   exchange?: string,
+ *   tradeMode?: string|null,
+ *   blockCode?: string,
+ *   minutesBack?: number
+ * }} [input={}]
+ * @returns {Promise<any>}
+ */
 export async function getRecentBlockedSignalByCode({
   symbol,
   action = null,
@@ -379,6 +400,20 @@ export async function getRecentBlockedSignalByCode({
   );
 }
 
+/**
+ * @param {{
+ *   symbol?: string,
+ *   action?: string,
+ *   amountUsdt?: number|null,
+ *   confidence?: number|null,
+ *   reasoning?: string|null,
+ *   exchange?: string,
+ *   analystSignals?: object|null,
+ *   tradeMode?: string|null,
+ *   dedupeWindowMinutes?: number|null
+ * }} [input={}]
+ * @returns {Promise<{ id: any, duplicate: boolean, existingSignal: any, dedupeWindowMinutes: number }>}
+ */
 export async function insertSignalIfFresh({
   symbol,
   action,
@@ -536,6 +571,15 @@ export async function getLatestTradeBySignalId(signalId) {
   return get(`SELECT * FROM trades WHERE signal_id = $1 ORDER BY executed_at DESC LIMIT 1`, [signalId]);
 }
 
+/**
+ * @param {{
+ *   symbol?: string,
+ *   side?: string,
+ *   exchange?: string|null,
+ *   tradeMode?: string|null
+ * }} [input={}]
+ * @returns {Promise<any>}
+ */
 export async function getSameDayTrade({
   symbol,
   side,
@@ -938,6 +982,11 @@ export async function getRuntimeConfigSuggestionLogById(id) {
   );
 }
 
+/**
+ * @param {string|number} id
+ * @param {{ reviewStatus?: string, reviewNote?: string|null }} [input={}]
+ * @returns {Promise<any>}
+ */
 export async function updateRuntimeConfigSuggestionLogReview(id, {
   reviewStatus,
   reviewNote = null,

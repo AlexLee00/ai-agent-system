@@ -299,6 +299,7 @@ async function stats(collection) {
  * @param {object} [params.details]
  * @param {string} [params.team]
  * @param {string} [params.sourceBot]
+ * @param {boolean} [params.successOnly]
  * @returns {Promise<number>}
  */
 async function storeExperience({
@@ -319,7 +320,7 @@ async function storeExperience({
   if (!result) throw new Error('storeExperience: result is required');
   const normalizedWhy = String(why || '').trim();
   const normalizedResult = String(result).trim().toLowerCase();
-  const isSuccess = normalizedResult === 'success' || normalizedResult === 'ok' || result === true;
+  const isSuccess = normalizedResult === 'success' || normalizedResult === 'ok' || String(result) === 'true';
   if (successOnly && !isSuccess) {
     console.log(`[rag] Strict Write: 실패 경험 저장 건너뜀 (${sourceBot}, result=${result})`);
     return null;

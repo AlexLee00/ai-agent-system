@@ -13,6 +13,28 @@
  * - 나중에 확장할 구조: runtime_config / workspace / tenant별 정책 주입
  */
 
+/**
+ * @typedef {Object} LLMChainEntry
+ * @property {string} provider
+ * @property {string} model
+ * @property {number} [maxTokens]
+ * @property {number} [temperature]
+ * @property {number} [timeoutMs]
+ */
+
+/**
+ * @typedef {Object} SelectorOptions
+ * @property {number} [maxTokens]
+ * @property {number} [temperature]
+ * @property {any} [policyOverride]
+ * @property {string} [intentPrimary]
+ * @property {string} [intentFallback]
+ * @property {LLMChainEntry[]} [chatFallbackChain]
+ * @property {string} [agentName]
+ * @property {string|null} [agentModel]
+ * @property {string} [openaiPerfModel]
+ */
+
 function _clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -414,6 +436,7 @@ function _resolveFromTeamDefault(selectorKey) {
   );
 }
 
+/** @returns {Record<string, Function|LLMChainEntry[]|object>} */
 function _buildSelectorRegistry() {
   return {
     'claude._default': () => _resolveFromTeamDefault('claude._default'),
@@ -421,6 +444,7 @@ function _buildSelectorRegistry() {
     'claude.lead.system_issue_triage': () => _resolveFromTeamDefault('claude.lead.system_issue_triage'),
     'claude.dexter.ai_analyst': () => _resolveFromTeamDefault('claude.dexter.ai_analyst'),
 
+    /** @param {SelectorOptions} [input] */
     'orchestrator.jay.intent': ({ intentPrimary, intentFallback } = {}) => ({
       primary: {
         provider: 'openai-oauth',
@@ -432,6 +456,7 @@ function _buildSelectorRegistry() {
       },
     }),
 
+    /** @param {SelectorOptions} [input] */
     'orchestrator.jay.chat_fallback': ({ chatFallbackChain } = {}) => {
       if (Array.isArray(chatFallbackChain) && chatFallbackChain.length > 0) {
         return chatFallbackChain.map((item) => ({
@@ -511,6 +536,7 @@ function _buildSelectorRegistry() {
     'video._default': () => _resolveFromTeamDefault('video._default'),
     'video.step-proposal': () => _resolveFromTeamDefault('video.step-proposal'),
 
+    /** @param {SelectorOptions} [input] */
     'investment.agent_policy': ({ agentName, agentModel = null, openaiPerfModel = 'gpt-5.4', policyOverride } = {}) => {
       const defaultRoutes = {
         luna: 'openai_perf',

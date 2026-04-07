@@ -131,19 +131,31 @@ function _calcCost(model, inputTokens, outputTokens) {
 // ── 핵심 함수 ─────────────────────────────────────────────────────────
 
 /**
+ * @typedef {Object} LLMLogInput
+ * @property {string} team
+ * @property {string} bot
+ * @property {string} model
+ * @property {string|null} [market]
+ * @property {string|null} [symbol]
+ * @property {string|null} [guardScope]
+ * @property {string} [requestType]
+ * @property {number} [inputTokens]
+ * @property {number} [outputTokens]
+ * @property {number} [costUsd]
+ * @property {boolean} [cacheHit]
+ * @property {number|null} [latencyMs]
+ * @property {boolean} [success]
+ * @property {string|null} [errorMsg]
+ * @property {string|null} [runtimeTeam]
+ * @property {string|null} [runtimePurpose]
+ * @property {string|null} [runtimeOpenClawAgent]
+ * @property {string|null} [runtimeClaudeCodeName]
+ * @property {string|null} [runtimeSelectionReason]
+ */
+
+/**
  * LLM 호출 기록
- * @param {object} opts
- * @param {string}  opts.team          'ska' | 'claude' | 'luna'
- * @param {string}  opts.bot           봇명 (ska, aria, dexter, luna, archer ...)
- * @param {string}  opts.model         모델 ID
- * @param {string}  [opts.requestType] 요청 유형 (reservation_check, trade_signal ...)
- * @param {number}  [opts.inputTokens]
- * @param {number}  [opts.outputTokens]
- * @param {number}  [opts.costUsd]     미제공 시 단가표로 자동 계산
- * @param {boolean} [opts.cacheHit]    캐시 히트 여부
- * @param {number}  [opts.latencyMs]   응답 소요 시간
- * @param {boolean} [opts.success]     성공 여부 (기본 true)
- * @param {string}  [opts.errorMsg]    실패 시 에러 메시지
+ * @param {LLMLogInput} opts
  */
 async function logLLMCall({
   team, bot, model,
@@ -306,7 +318,7 @@ function _triggerEmergency(reason, cost, scope = 'global', options = {}) {
 
   // 텔레그램 CRITICAL 알림 (실패해도 차단 유지)
   try {
-    const mainbotClient = require('../../bots/claude/lib/mainbot-client');
+    const mainbotClient = /** @type {any} */ (require('../../../bots/claude/lib/mainbot-client'));
     const pub = mainbotClient.publishToMainBot || mainbotClient.default?.publishToMainBot;
     if (pub) {
       pub({
