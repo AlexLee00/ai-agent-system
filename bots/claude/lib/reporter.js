@@ -8,14 +8,6 @@ const kst = require('../../../packages/core/lib/kst');
 const fs     = require('fs');
 const cfg    = require('./config');
 const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
-const pgPool = require('../../../packages/core/lib/pg-pool');
-const {
-  publishEventPipeline,
-  buildNoticeEvent,
-  buildEventPayload,
-  renderNoticeEvent,
-  buildSeverityTargets,
-} = require('../../../packages/core/lib/reporting-hub');
 
 const STATUS_ICON = { ok: '✅', warn: '⚠️', error: '❌' };
 
@@ -213,50 +205,19 @@ function publishDexterNotice({
   action = '',
   footer = '',
 }) {
-  const event = {
-    from_bot: 'dexter',
+  const lines = [
+    title ? `${level >= 4 ? '🚨' : '⚠️'} ${title}` : '',
+    summary,
+    ...details,
+    action ? `조치: ${action}` : '',
+    footer || '',
+    `event_type: ${eventType}`,
+  ].filter(Boolean);
+  return postAlarm({
+    message: lines.join('\n'),
     team: 'claude',
-    event_type: eventType,
-    alert_level: level,
-    message: renderNoticeEvent(buildNoticeEvent({
-      from_bot: 'dexter',
-      team: 'claude',
-      event_type: eventType,
-      alert_level: level,
-      title,
-      summary,
-      details,
-      action,
-      footer,
-    })),
-    payload: buildEventPayload({
-      title,
-      summary,
-      details,
-      action,
-      detail: details.join(' | '),
-    }),
-  };
-  return publishEventPipeline({
-    event,
-    policy: {
-      cooldownMs: level >= 4 ? 60_000 : 5 * 60_000,
-      quietHours: {
-        timezone: 'KST',
-        startHour: 23,
-        endHour: 8,
-        maxAlertLevel: 1,
-      },
-    },
-    targets: buildSeverityTargets({
-      event,
-      pgPool,
-      schema: 'claude',
-      topicTeam: 'claude-lead',
-      includeQueue: false,
-      includeTelegram: false,
-      includeN8n: true,
-    }),
+    alertLevel: level,
+    fromBot: 'dexter',
   }).then((result) => result.ok);
 }
 

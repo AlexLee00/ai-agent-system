@@ -5,8 +5,7 @@ const os = require('os');
 const path = require('path');
 
 const rag = require('./rag');
-const pgPool = require('./pg-pool');
-const { publishEventPipeline } = require('./reporting-hub');
+const { postAlarm } = require('./openclaw-client');
 
 const RAG_BACKOFF_MS = 2 * 3600 * 1000;
 const RAG_ALERT_COOLDOWN_MS = 2 * 3600 * 1000;
@@ -80,22 +79,12 @@ function _isCapacityError(error) {
 }
 
 async function _publish(message, payload, fromBot = 'rag') {
-  await publishEventPipeline({
-    event: {
-      from_bot: fromBot,
-      team: 'system',
-      event_type: 'system',
-      alert_level: payload?.status === 'recovered' ? 1 : 2,
-      message,
-      payload: payload || {},
-    },
-    targets: [
-      {
-        type: 'queue',
-        pgPool,
-        schema: 'claude',
-      },
-    ],
+  await postAlarm({
+    message,
+    team: 'system',
+    alertLevel: payload?.status === 'recovered' ? 1 : 2,
+    fromBot,
+    payload: payload || {},
   });
 }
 
