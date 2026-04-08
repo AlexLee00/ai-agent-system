@@ -39,7 +39,12 @@
     "bots/worker/web/server.ts",
     "bots/claude/src/dexter.ts",
     "bots/claude/lib/doctor.ts",
-    "bots/orchestrator/lib/research/research-tasks.ts"
+    "bots/hub/lib/routes/health.ts",
+    "bots/hub/lib/routes/logs.ts",
+    "bots/hub/lib/routes/events.ts",
+    "bots/orchestrator/lib/research/research-tasks.ts",
+    "bots/orchestrator/lib/sigma/sigma-feedback.ts",
+    "bots/orchestrator/src/sigma-daily.ts"
   ],
   "exclude": [
     "**/node_modules/**"
