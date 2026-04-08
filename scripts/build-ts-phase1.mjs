@@ -1,9 +1,27 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { build } from 'esbuild';
+import { createRequire } from 'node:module';
 
 const root = '/Users/alexlee/projects/ai-agent-system';
 const outdir = path.join(root, 'dist', 'ts-phase1');
+const require = createRequire(import.meta.url);
+
+function loadEsbuild() {
+  const candidates = [root, path.join(root, 'bots/worker/web')];
+
+  for (const candidate of candidates) {
+    try {
+      const resolved = require.resolve('esbuild', { paths: [candidate] });
+      return require(resolved);
+    } catch {}
+  }
+
+  throw new Error(
+    'Unable to resolve esbuild from project root or bots/worker/web workspace.',
+  );
+}
+
+const { build } = loadEsbuild();
 
 const entryPoints = [
   path.join(root, 'packages/core/lib/message-envelope.core.ts'),
