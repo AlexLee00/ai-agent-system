@@ -82,4 +82,10 @@ defmodule TeamJayTest do
     assert report.week2_summary.total >= 1
     assert report.week3_summary.total >= 1
   end
+
+  test "diagnostics status tracks next pilot signature" do
+    _report = Diagnostics.shadow_report()
+    status = Diagnostics.get_status()
+    assert Map.has_key?(status, :last_pilot_signature)
+  end
 end
