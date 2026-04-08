@@ -48,9 +48,23 @@ defmodule TeamJayTest do
     assert Map.has_key?(report, :week2_summary)
     assert Map.has_key?(report, :week3_shadow_agents)
     assert Map.has_key?(report, :week3_summary)
+    assert Map.has_key?(report, :migration_candidates)
+    assert Map.has_key?(report, :top_transition_candidates)
+    assert Map.has_key?(report, :transition_plan)
+    assert Map.has_key?(report, :pilot_runbook)
+    assert Map.has_key?(report, :recommended_actions)
     assert is_list(report.agents)
     assert is_list(report.week2_shadow_agents)
     assert is_list(report.week3_shadow_agents)
+    assert is_list(report.migration_candidates.week2)
+    assert is_list(report.migration_candidates.week3)
+    assert is_list(report.top_transition_candidates.week2)
+    assert is_list(report.top_transition_candidates.week3)
+    assert is_list(report.transition_plan.pilot_candidates)
+    assert is_list(report.transition_plan.blockers)
+    assert is_list(report.pilot_runbook.steps)
+    assert Map.has_key?(report.transition_plan, :next_pilot_candidate)
+    assert is_list(report.recommended_actions)
     assert report.summary.total >= 1
     assert report.week2_summary.total >= 1
     assert report.week3_summary.total >= 1
@@ -69,5 +83,11 @@ defmodule TeamJayTest do
     assert report.summary.total >= 1
     assert report.week2_summary.total >= 1
     assert report.week3_summary.total >= 1
+  end
+
+  test "diagnostics status tracks next pilot signature" do
+    _report = Diagnostics.shadow_report()
+    status = Diagnostics.get_status()
+    assert Map.has_key?(status, :last_pilot_signature)
   end
 end

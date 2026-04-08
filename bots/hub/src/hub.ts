@@ -1,0 +1,3 @@
+import './hub.js';
+
+export {};
