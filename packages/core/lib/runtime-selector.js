@@ -1,39 +1,11 @@
 'use strict';
 
-const { fetchHubRuntimeProfile } = require('./hub-client');
-const env = require('./env');
+const path = require('path');
 
-let _localSelectRuntimeProfile = null;
+const distPath = path.join(__dirname, '../../../dist/ts-runtime/packages/core/lib/runtime-selector.js');
 
-function _getLocalSelectRuntimeProfile() {
-  if (_localSelectRuntimeProfile) return _localSelectRuntimeProfile;
-  try {
-    ({ selectRuntimeProfile: _localSelectRuntimeProfile } = require(env.projectPath('bots', 'hub', 'lib', 'runtime-profiles')));
-  } catch {
-    _localSelectRuntimeProfile = null;
-  }
-  return _localSelectRuntimeProfile;
+try {
+  module.exports = require(distPath);
+} catch {
+  module.exports = require('./runtime-selector.legacy.js');
 }
-
-async function selectRuntime(team, purpose = 'default') {
-  const normalizedTeam = String(team || '').trim();
-  const normalizedPurpose = String(purpose || 'default').trim() || 'default';
-  if (!normalizedTeam) return null;
-  try {
-    const hubProfile = await fetchHubRuntimeProfile(normalizedTeam, normalizedPurpose);
-    if (hubProfile) return hubProfile;
-  } catch {
-    // fall through to local runtime profiles
-  }
-  const localSelectRuntimeProfile = _getLocalSelectRuntimeProfile();
-  if (!localSelectRuntimeProfile) return null;
-  try {
-    return localSelectRuntimeProfile(normalizedTeam, normalizedPurpose);
-  } catch {
-    return null;
-  }
-}
-
-module.exports = {
-  selectRuntime,
-};
