@@ -30,7 +30,11 @@ defmodule TeamJay.Teams.InvestmentShadowSupervisor do
   def init(_opts) do
     children =
       Enum.map(@investment_agents, fn agent ->
-        {TeamJay.Agents.LaunchdShadowAgent, name: agent.name, team: :investment, label: agent.label}
+        {TeamJay.Agents.LaunchdShadowAgent,
+         name: agent.name,
+         team: :investment,
+         label: agent.label,
+         required: Map.get(agent, :required, true)}
       end)
 
     Supervisor.init(children, strategy: :one_for_one, max_restarts: 10, max_seconds: 60)

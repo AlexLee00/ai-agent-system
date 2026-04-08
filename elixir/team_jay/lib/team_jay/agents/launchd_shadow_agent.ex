@@ -3,7 +3,7 @@ defmodule TeamJay.Agents.LaunchdShadowAgent do
   use GenServer
   require Logger
 
-  defstruct [:name, :team, :label, :status, :pid, :last_exit_code, :last_checked_at]
+  defstruct [:name, :team, :label, :required, :status, :pid, :last_exit_code, :last_checked_at]
 
   @check_interval 30_000
 
@@ -34,6 +34,7 @@ defmodule TeamJay.Agents.LaunchdShadowAgent do
       name: Keyword.fetch!(opts, :name),
       team: Keyword.fetch!(opts, :team),
       label: Keyword.fetch!(opts, :label),
+      required: Keyword.get(opts, :required, true),
       status: :unknown,
       pid: nil,
       last_exit_code: nil,
@@ -68,7 +69,13 @@ defmodule TeamJay.Agents.LaunchdShadowAgent do
         }
 
       {_output, _code} ->
-        Logger.warning("[#{state.name}] launchd 미등록 또는 조회 실패: #{state.label}")
+        log_message = "[#{state.name}] launchd 미등록 또는 조회 실패: #{state.label}"
+
+        if state.required do
+          Logger.warning(log_message)
+        else
+          Logger.info(log_message)
+        end
 
         %{
           state
