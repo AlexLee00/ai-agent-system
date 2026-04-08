@@ -1,71 +1,25 @@
-import pgPool = require('./pg-pool');
-import { normalizeTeam } from './agent-registry.js';
+'use strict';
 
-type ToolRequirements = {
-  preferredTypes?: string[];
-};
+const pgPool = require('./pg-pool');
+const { normalizeTeam } = require('./agent-registry');
 
-type ToolRow = {
-  name: string;
-  display_name: string;
-  type: string;
-  team?: string | null;
-  endpoint?: string | null;
-  capabilities?: unknown;
-  auth_config?: unknown;
-  score?: number | string | null;
-  usage_count?: number | string | null;
-  success_count?: number | string | null;
-  fail_count?: number | string | null;
-  avg_latency_ms?: number | string | null;
-  cost_per_call?: number | string | null;
-  status?: string | null;
-  config?: unknown;
-};
-
-type NormalizedTool = Omit<ToolRow, 'capabilities' | 'auth_config' | 'config'> & {
-  capabilities: unknown[];
-  auth_config: Record<string, unknown>;
-  config: Record<string, unknown>;
-  score: number;
-  usage_count: number;
-  success_count: number;
-  fail_count: number;
-  avg_latency_ms: number | null;
-  cost_per_call: number;
-};
-
-type ToolInsert = {
-  name: string;
-  display_name: string;
-  type: string;
-  team?: string | null;
-  endpoint?: string | null;
-  capabilities?: unknown[];
-  auth_config?: Record<string, unknown>;
-  score?: number;
-  cost_per_call?: number;
-  status?: string;
-  config?: Record<string, unknown>;
-};
-
-function safeJson<T>(value: unknown, fallback: T): T {
+function _safeJson(value, fallback) {
   if (value == null) return fallback;
-  if (typeof value === 'object') return value as T;
+  if (typeof value === 'object') return value;
   try {
-    return JSON.parse(String(value)) as T;
+    return JSON.parse(value);
   } catch {
     return fallback;
   }
 }
 
-function normalizeTool(row: ToolRow | null | undefined): NormalizedTool | null {
+function _normalizeTool(row) {
   if (!row) return null;
   return {
     ...row,
-    capabilities: safeJson(row.capabilities, [] as unknown[]),
-    auth_config: safeJson(row.auth_config, {} as Record<string, unknown>),
-    config: safeJson(row.config, {} as Record<string, unknown>),
+    capabilities: _safeJson(row.capabilities, []),
+    auth_config: _safeJson(row.auth_config, {}),
+    config: _safeJson(row.config, {}),
     score: Number(row.score || 0),
     usage_count: Number(row.usage_count || 0),
     success_count: Number(row.success_count || 0),
@@ -75,7 +29,7 @@ function normalizeTool(row: ToolRow | null | undefined): NormalizedTool | null {
   };
 }
 
-function rankTool(tool: NormalizedTool, requirements: ToolRequirements = {}): number {
+function _rankTool(tool, requirements = {}) {
   const successRate = tool.usage_count > 0
     ? tool.success_count / Math.max(1, tool.usage_count)
     : 0.5;
@@ -87,10 +41,10 @@ function rankTool(tool: NormalizedTool, requirements: ToolRequirements = {}): nu
   return tool.score + (successRate * 2) + latencyPenalty + costBonus + preferredBonus + teamBonus;
 }
 
-export async function listTools(team: string | null = null, capability: string | null = null): Promise<NormalizedTool[]> {
+async function listTools(team = null, capability = null) {
   const normalizedTeam = team ? normalizeTeam(team) : null;
   const conditions = [`status = 'active'`];
-  const params: Array<string> = [];
+  const params = [];
 
   if (normalizedTeam) {
     params.push(normalizedTeam);
@@ -108,36 +62,28 @@ export async function listTools(team: string | null = null, capability: string |
      WHERE ${conditions.join(' AND ')}
      ORDER BY score DESC, usage_count DESC, updated_at DESC`,
     params,
-  ) as ToolRow[];
-  return rows.map((row) => normalizeTool(row)).filter((row): row is NormalizedTool => row !== null);
+  );
+  return rows.map(_normalizeTool);
 }
 
-export async function getTool(name: string): Promise<NormalizedTool | null> {
-  const row = await pgPool.get('agent', 'SELECT * FROM agent.tools WHERE name = $1', [name]) as ToolRow | null;
-  return normalizeTool(row);
+async function getTool(name) {
+  const row = await pgPool.get('agent', 'SELECT * FROM agent.tools WHERE name = $1', [name]);
+  return _normalizeTool(row);
 }
 
-export async function selectBestTool(
-  capability: string,
-  team: string | null = null,
-  requirements: ToolRequirements = {},
-): Promise<NormalizedTool | null> {
+async function selectBestTool(capability, team = null, requirements = {}) {
   const candidates = await listTools(team, capability);
   if (!candidates.length) return null;
 
   const ranked = candidates.map((tool) => ({
     tool,
-    adjustedScore: rankTool(tool, requirements),
+    adjustedScore: _rankTool(tool, requirements),
   }));
   ranked.sort((a, b) => b.adjustedScore - a.adjustedScore);
   return ranked[0]?.tool || null;
 }
 
-export async function evaluateTool(
-  toolName: string,
-  success: boolean,
-  latencyMs: number | null = null,
-): Promise<boolean> {
+async function evaluateTool(toolName, success, latencyMs = null) {
   const scoreAdj = success ? 0.12 : -0.08;
   const latencyValue = Number.isFinite(Number(latencyMs)) ? Number(latencyMs) : null;
   const counterColumn = success ? 'success_count' : 'fail_count';
@@ -159,7 +105,7 @@ export async function evaluateTool(
   return result.rowCount > 0;
 }
 
-export async function registerTool(data: ToolInsert): Promise<NormalizedTool | null> {
+async function registerTool(data) {
   const normalizedTeam = data.team ? normalizeTeam(data.team) : null;
   const row = await pgPool.get(
     'agent',
@@ -196,6 +142,14 @@ export async function registerTool(data: ToolInsert): Promise<NormalizedTool | n
       data.status || 'active',
       JSON.stringify(data.config || {}),
     ],
-  ) as ToolRow | null;
-  return normalizeTool(row);
+  );
+  return _normalizeTool(row);
 }
+
+module.exports = {
+  listTools,
+  getTool,
+  selectBestTool,
+  evaluateTool,
+  registerTool,
+};
