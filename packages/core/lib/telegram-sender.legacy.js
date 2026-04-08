@@ -1,3 +1,5 @@
+'use strict';
+
 /**
  * packages/core/lib/telegram-sender.js — 공용 텔레그램 발송 (Forum Topic 라우팅)
  *
@@ -145,12 +147,12 @@ const _batchBuffer = new Map();
 /**
  * @returns {{ ok: boolean, code: number, retryAfter: number }}
  */
-async function _trySend(text, threadId, options: any = {}) {
+async function _trySend(text, threadId, options = {}) {
   const token  = _token();
   const chatId = options.chatId || _chatId();
   if (!token || !chatId) return { ok: false, code: 0, retryAfter: 0 };
 
-  const body: any = { chat_id: chatId, text, parse_mode: 'HTML' };
+  const body = { chat_id: chatId, text, parse_mode: 'HTML' };
   if (threadId) body.message_thread_id = threadId;
   if (options.replyMarkup) body.reply_markup = options.replyMarkup;
   if (typeof options.disableWebPagePreview === 'boolean') {
@@ -235,7 +237,7 @@ async function _flushBatch(topic) {
  * @param {string} message 발송 메시지 (HTML 태그 사용 가능)
  * @returns {Promise<boolean>}
  */
-export async function send(team, message) {
+async function send(team, message) {
   if (process.env.TELEGRAM_ENABLED === '0') return true;
   const normalized = _normalizeForMobile(message);
 
@@ -337,7 +339,7 @@ async function sendWithOptions(team, message, options = {}) {
   return false;
 }
 
-async function sendDirect(chatId, message, options: any = {}) {
+async function sendDirect(chatId, message, options = {}) {
   if (process.env.TELEGRAM_ENABLED === '0') return true;
   if (!chatId) return false;
   const normalized = _normalizeForMobile(message);
@@ -365,7 +367,7 @@ async function sendDirect(chatId, message, options: any = {}) {
  * @param {string} team    발신 팀
  * @param {string} message CRITICAL 메시지
  */
-export async function sendCritical(team, message) {
+async function sendCritical(team, message) {
   if (env.IS_OPS) {
     const full = `🚨 CRITICAL\n${message}`;
     const tasks = [openclawClient.postAlarm({
@@ -396,7 +398,7 @@ export async function sendCritical(team, message) {
  * 대기큐 재발송 (재시작 시 호출)
  * 구형 포맷 { message, chatId } 와 신형 포맷 { team, message } 모두 처리.
  */
-export async function flushPending() {
+async function flushPending() {
   if (!fs.existsSync(PENDING_FILE)) return;
 
   let lines;
@@ -439,3 +441,4 @@ export async function flushPending() {
   } catch { /* 무시 */ }
 }
 
+module.exports = { send, sendBuffered, sendWithOptions, sendDirect, sendCritical, flushPending };
