@@ -45,6 +45,7 @@ const runtimeEntryPoints = [
   path.join(root, 'packages/core/lib/health-provider.ts'),
   path.join(root, 'packages/core/lib/health-state-manager.ts'),
   path.join(root, 'packages/core/lib/health-runner.ts'),
+  path.join(root, 'packages/core/lib/heartbeat.ts'),
 ];
 
 await mkdir(outdir, { recursive: true });
