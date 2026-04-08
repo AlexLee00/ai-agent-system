@@ -449,17 +449,21 @@ defmodule TeamJay.Diagnostics do
     pilot_candidates =
       candidates
       |> Enum.filter(&pilot_safe?/1)
-      |> Enum.take(3)
-      |> Enum.map(&Map.take(&1, [:name, :team, :status]))
+      |> Enum.map(&score_transition_candidate/1)
+      |> Enum.sort_by(&{-&1.priority_score, Atom.to_string(&1.name)})
+
+    top_pilots = Enum.take(pilot_candidates, 3)
+    next_pilot_candidate = List.first(top_pilots)
 
     blockers =
       []
       |> maybe_add_blocker(week2_summary.required_missing > 0, "Week2 required shadow missing 존재")
       |> maybe_add_blocker(week3_summary.required_missing > 0, "Week3 required shadow missing 존재")
-      |> maybe_add_blocker(Enum.empty?(pilot_candidates), "즉시 파일럿 가능한 loaded 후보가 부족함")
+      |> maybe_add_blocker(Enum.empty?(top_pilots), "즉시 파일럿 가능한 loaded 후보가 부족함")
 
     %{
-      pilot_candidates: pilot_candidates,
+      pilot_candidates: top_pilots,
+      next_pilot_candidate: next_pilot_candidate,
       blockers: blockers,
       ready_for_pilot: blockers == []
     }
@@ -469,6 +473,30 @@ defmodule TeamJay.Diagnostics do
   defp pilot_safe?(%{name: :worker_web}), do: false
   defp pilot_safe?(%{name: :worker_nextjs}), do: false
   defp pilot_safe?(_agent), do: true
+
+  defp score_transition_candidate(agent) do
+    team_bonus =
+      case agent.team do
+        :blog -> 30
+        :worker -> 20
+        :platform -> 10
+        _ -> 0
+      end
+
+    name_bonus =
+      case agent.name do
+        :blog_commenter -> 15
+        :blog_daily -> 10
+        :worker_task_runner -> 10
+        :worker_health_check -> 8
+        :worker_claude_monitor -> 6
+        _ -> 0
+      end
+
+    Map.merge(Map.take(agent, [:name, :team, :status]), %{
+      priority_score: 100 + team_bonus + name_bonus
+    })
+  end
 
   defp maybe_add_blocker(blockers, true, blocker), do: blockers ++ [blocker]
   defp maybe_add_blocker(blockers, false, _blocker), do: blockers
@@ -562,6 +590,7 @@ defmodule TeamJay.Diagnostics do
     week2 top: #{format_candidate_names(report.top_transition_candidates.week2)}
     week3 top: #{format_candidate_names(report.top_transition_candidates.week3)}
     pilot: #{format_candidate_names(report.transition_plan.pilot_candidates)}
+    next pilot: #{format_single_candidate(report.transition_plan.next_pilot_candidate)}
     blockers: #{format_text_list(report.transition_plan.blockers)}
     overlaps: #{overlap_text}
     agents: #{if(failing_agents == "", do: "없음", else: failing_agents)}
@@ -581,6 +610,12 @@ defmodule TeamJay.Diagnostics do
     candidates
     |> Enum.map(&to_string(&1.name))
     |> Enum.join(", ")
+  end
+
+  defp format_single_candidate(nil), do: "없음"
+
+  defp format_single_candidate(candidate) do
+    "#{candidate.name}(#{candidate.team}, score=#{candidate.priority_score})"
   end
 
   defp format_text_list([]), do: "없음"

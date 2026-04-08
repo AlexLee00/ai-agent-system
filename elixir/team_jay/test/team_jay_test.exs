@@ -61,6 +61,7 @@ defmodule TeamJayTest do
     assert is_list(report.top_transition_candidates.week3)
     assert is_list(report.transition_plan.pilot_candidates)
     assert is_list(report.transition_plan.blockers)
+    assert Map.has_key?(report.transition_plan, :next_pilot_candidate)
     assert is_list(report.recommended_actions)
     assert report.summary.total >= 1
     assert report.week2_summary.total >= 1
