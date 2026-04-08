@@ -35,6 +35,7 @@ const runtimeEntryPoints = [
   path.join(root, 'packages/core/lib/event-lake.ts'),
   path.join(root, 'packages/core/lib/central-logger.ts'),
   path.join(root, 'packages/core/lib/trace.ts'),
+  path.join(root, 'packages/core/lib/kst.ts'),
 ];
 
 await mkdir(outdir, { recursive: true });
