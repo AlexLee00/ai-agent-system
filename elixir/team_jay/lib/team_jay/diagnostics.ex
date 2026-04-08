@@ -356,6 +356,11 @@ defmodule TeamJay.Diagnostics do
         Enum.count(week3_shadow_agents, &(&1.status == :missing and not Map.get(&1, :required, true)))
     }
 
+    migration_candidates = %{
+      week2: build_transition_candidates(week2_shadow_agents),
+      week3: build_transition_candidates(week3_shadow_agents)
+    }
+
     %{
       generated_at: DateTime.utc_now(),
       overlap_count: length(Map.get(overlap_result, :overlaps, [])),
@@ -366,6 +371,7 @@ defmodule TeamJay.Diagnostics do
       week2_summary: week2_summary,
       week3_shadow_agents: week3_shadow_agents,
       week3_summary: week3_summary,
+      migration_candidates: migration_candidates,
       summary: summary,
       recent_failures: TeamJay.EventLake.get_by_type("port_agent_failed", 5)
     }
@@ -403,6 +409,12 @@ defmodule TeamJay.Diagnostics do
 
   defp normalize_shadow_agent({name, team}), do: {name, team, true}
   defp normalize_shadow_agent({name, team, required}), do: {name, team, required}
+
+  defp build_transition_candidates(agents) do
+    agents
+    |> Enum.filter(&(&1.status == :loaded and Map.get(&1, :required, true)))
+    |> Enum.map(&Map.take(&1, [:name, :team, :status]))
+  end
 
   defp record_launchd_overlap_event(nil, signature) do
     TeamJay.EventLake.record(%{
@@ -488,6 +500,8 @@ defmodule TeamJay.Diagnostics do
     week3 loaded: #{report.week3_summary.loaded}
     week3 missing: #{report.week3_summary.missing}
     week3 required_missing: #{report.week3_summary.required_missing}
+    week2 candidates: #{length(report.migration_candidates.week2)}
+    week3 candidates: #{length(report.migration_candidates.week3)}
     overlaps: #{overlap_text}
     agents: #{if(failing_agents == "", do: "없음", else: failing_agents)}
     week2 issues: #{if(week2_issues == "", do: "없음", else: week2_issues)}
