@@ -30,12 +30,14 @@
     "bots/investment/team/nemesis.ts",
     "bots/investment/team/luna.ts",
     "bots/investment/team/scout.ts",
+    "bots/blog/lib/blo.ts",
+    "bots/blog/api/node-server.ts",
+    "bots/worker/web/server.ts",
     "bots/claude/src/dexter.ts",
     "bots/claude/lib/doctor.ts",
     "bots/orchestrator/lib/research/research-tasks.ts"
   ],
   "exclude": [
-    "**/node_modules/**",
-    "bots/worker/web/**"
+    "**/node_modules/**"
   ]
 }
