@@ -361,7 +361,11 @@ defmodule TeamJay.Diagnostics do
       week3: build_transition_candidates(week3_shadow_agents)
     }
 
-    recommended_actions = build_recommended_actions(summary, week2_summary, week3_summary, migration_candidates)
+    transition_plan =
+      build_transition_plan(week2_shadow_agents, week3_shadow_agents, week2_summary, week3_summary)
+
+    recommended_actions =
+      build_recommended_actions(summary, week2_summary, week3_summary, migration_candidates, transition_plan)
 
     %{
       generated_at: DateTime.utc_now(),
@@ -378,6 +382,7 @@ defmodule TeamJay.Diagnostics do
         week2: Enum.take(migration_candidates.week2, 3),
         week3: Enum.take(migration_candidates.week3, 3)
       },
+      transition_plan: transition_plan,
       recommended_actions: recommended_actions,
       summary: summary,
       recent_failures: TeamJay.EventLake.get_by_type("port_agent_failed", 5)
@@ -423,17 +428,50 @@ defmodule TeamJay.Diagnostics do
     |> Enum.map(&Map.take(&1, [:name, :team, :status]))
   end
 
-  defp build_recommended_actions(summary, week2_summary, week3_summary, migration_candidates) do
+  defp build_recommended_actions(summary, week2_summary, week3_summary, migration_candidates, transition_plan) do
     []
     |> maybe_add_action(summary.failing > 0, "Week1 failing agent 먼저 안정화")
     |> maybe_add_action(week2_summary.required_missing > 0, "Week2 필수 shadow 누락 서비스 점검")
     |> maybe_add_action(week3_summary.required_missing > 0, "Week3 필수 shadow 누락 서비스 점검")
     |> maybe_add_action(length(migration_candidates.week2) > 0, "Week2 loaded 서비스 중 저위험 후보를 병렬 전환 검토")
     |> maybe_add_action(length(migration_candidates.week3) > 0, "Week3 loaded 서비스 중 저위험 후보를 병렬 전환 검토")
+    |> maybe_add_action(length(transition_plan.pilot_candidates) > 0, "pilot 후보 1개를 골라 launchd vs Elixir 병렬 비교 시작")
   end
 
   defp maybe_add_action(actions, true, action), do: actions ++ [action]
   defp maybe_add_action(actions, false, _action), do: actions
+
+  defp build_transition_plan(week2_agents, week3_agents, week2_summary, week3_summary) do
+    candidates =
+      (week2_agents ++ week3_agents)
+      |> Enum.filter(&(&1.status == :loaded and Map.get(&1, :required, true)))
+
+    pilot_candidates =
+      candidates
+      |> Enum.filter(&pilot_safe?/1)
+      |> Enum.take(3)
+      |> Enum.map(&Map.take(&1, [:name, :team, :status]))
+
+    blockers =
+      []
+      |> maybe_add_blocker(week2_summary.required_missing > 0, "Week2 required shadow missing 존재")
+      |> maybe_add_blocker(week3_summary.required_missing > 0, "Week3 required shadow missing 존재")
+      |> maybe_add_blocker(Enum.empty?(pilot_candidates), "즉시 파일럿 가능한 loaded 후보가 부족함")
+
+    %{
+      pilot_candidates: pilot_candidates,
+      blockers: blockers,
+      ready_for_pilot: blockers == []
+    }
+  end
+
+  defp pilot_safe?(%{team: :investment}), do: false
+  defp pilot_safe?(%{name: :worker_web}), do: false
+  defp pilot_safe?(%{name: :worker_nextjs}), do: false
+  defp pilot_safe?(_agent), do: true
+
+  defp maybe_add_blocker(blockers, true, blocker), do: blockers ++ [blocker]
+  defp maybe_add_blocker(blockers, false, _blocker), do: blockers
 
   defp record_launchd_overlap_event(nil, signature) do
     TeamJay.EventLake.record(%{
@@ -523,6 +561,8 @@ defmodule TeamJay.Diagnostics do
     week3 candidates: #{length(report.migration_candidates.week3)}
     week2 top: #{format_candidate_names(report.top_transition_candidates.week2)}
     week3 top: #{format_candidate_names(report.top_transition_candidates.week3)}
+    pilot: #{format_candidate_names(report.transition_plan.pilot_candidates)}
+    blockers: #{format_text_list(report.transition_plan.blockers)}
     overlaps: #{overlap_text}
     agents: #{if(failing_agents == "", do: "없음", else: failing_agents)}
     week2 issues: #{if(week2_issues == "", do: "없음", else: week2_issues)}
@@ -542,6 +582,9 @@ defmodule TeamJay.Diagnostics do
     |> Enum.map(&to_string(&1.name))
     |> Enum.join(", ")
   end
+
+  defp format_text_list([]), do: "없음"
+  defp format_text_list(items), do: Enum.join(items, " | ")
 
   defp schedule_check, do: Process.send_after(self(), :check, @check_interval)
 end
