@@ -388,6 +388,8 @@ defmodule TeamJay.Diagnostics do
     transition_plan =
       build_transition_plan(week2_shadow_agents, week3_shadow_agents, week2_summary, week3_summary)
 
+    pilot_runbook = build_pilot_runbook(transition_plan.next_pilot_candidate)
+
     recommended_actions =
       build_recommended_actions(summary, week2_summary, week3_summary, migration_candidates, transition_plan)
 
@@ -407,6 +409,7 @@ defmodule TeamJay.Diagnostics do
         week3: Enum.take(migration_candidates.week3, 3)
       },
       transition_plan: transition_plan,
+      pilot_runbook: pilot_runbook,
       recommended_actions: recommended_actions,
       summary: summary,
       recent_failures: TeamJay.EventLake.get_by_type("port_agent_failed", 5)
@@ -422,6 +425,7 @@ defmodule TeamJay.Diagnostics do
           %{
             name: name,
             team: team,
+            label: nil,
             status: :missing,
             pid: nil,
             last_exit_code: nil,
@@ -434,6 +438,7 @@ defmodule TeamJay.Diagnostics do
           %{
             name: name,
             team: team,
+            label: Map.get(status, :label),
             status: status.status,
             pid: status.pid,
             last_exit_code: status.last_exit_code,
@@ -449,7 +454,7 @@ defmodule TeamJay.Diagnostics do
   defp build_transition_candidates(agents) do
     agents
     |> Enum.filter(&(&1.status == :loaded and Map.get(&1, :required, true)))
-    |> Enum.map(&Map.take(&1, [:name, :team, :status]))
+    |> Enum.map(&Map.take(&1, [:name, :team, :status, :label]))
   end
 
   defp build_recommended_actions(summary, week2_summary, week3_summary, migration_candidates, transition_plan) do
@@ -517,9 +522,32 @@ defmodule TeamJay.Diagnostics do
         _ -> 0
       end
 
-    Map.merge(Map.take(agent, [:name, :team, :status]), %{
+    Map.merge(Map.take(agent, [:name, :team, :status, :label]), %{
       priority_score: 100 + team_bonus + name_bonus
     })
+  end
+
+  defp build_pilot_runbook(nil) do
+    %{
+      ready: false,
+      label: nil,
+      steps: [],
+      note: "현재 즉시 파일럿 가능한 후보가 없습니다"
+    }
+  end
+
+  defp build_pilot_runbook(candidate) do
+    %{
+      ready: true,
+      label: candidate.label,
+      steps: [
+        "launchd 서비스 #{candidate.label}의 최근 로그와 health 상태를 먼저 확인",
+        "Elixir shadow report에서 #{candidate.name}가 loaded 상태로 2회 이상 안정적으로 유지되는지 확인",
+        "짧은 창에서 launchd와 Elixir를 병렬 비교하고 결과를 event_lake에 기록",
+        "불일치 0건이면 다음 창에서 launchd off -> Elixir on 파일럿 전환 검토"
+      ],
+      note: "#{candidate.name}(#{candidate.team})를 다음 파일럿 후보로 권장"
+    }
   end
 
   defp maybe_add_blocker(blockers, true, blocker), do: blockers ++ [blocker]

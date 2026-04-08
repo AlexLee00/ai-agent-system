@@ -51,6 +51,7 @@ defmodule TeamJayTest do
     assert Map.has_key?(report, :migration_candidates)
     assert Map.has_key?(report, :top_transition_candidates)
     assert Map.has_key?(report, :transition_plan)
+    assert Map.has_key?(report, :pilot_runbook)
     assert Map.has_key?(report, :recommended_actions)
     assert is_list(report.agents)
     assert is_list(report.week2_shadow_agents)
@@ -61,6 +62,7 @@ defmodule TeamJayTest do
     assert is_list(report.top_transition_candidates.week3)
     assert is_list(report.transition_plan.pilot_candidates)
     assert is_list(report.transition_plan.blockers)
+    assert is_list(report.pilot_runbook.steps)
     assert Map.has_key?(report.transition_plan, :next_pilot_candidate)
     assert is_list(report.recommended_actions)
     assert report.summary.total >= 1
