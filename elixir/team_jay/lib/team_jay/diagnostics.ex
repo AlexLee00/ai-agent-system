@@ -158,7 +158,7 @@ defmodule TeamJay.Diagnostics do
       severity: severity,
       title: "Phase3 Shadow 리포트",
       message:
-        "겹침 #{report.overlap_count}건 | week1 failing #{report.summary.failing} | week1 missing #{report.summary.missing} | shadow running #{total_shadow_running} | shadow loaded #{total_shadow_loaded} | required missing #{total_required_missing}",
+        "겹침 #{report.overlap_count}건 | week1 failing #{report.summary.failing} | week1 missing #{report.summary.missing} | shadow running #{total_shadow_running} | shadow loaded #{total_shadow_loaded} | required missing #{total_required_missing} | next pilot #{format_single_candidate(report.transition_plan.next_pilot_candidate)} | pilot label #{format_runbook_label(report.pilot_runbook)}",
       tags: ["phase3", "diagnostics", "shadow_report"],
       metadata: report
     })
@@ -669,6 +669,11 @@ defmodule TeamJay.Diagnostics do
     week3 top: #{format_candidate_names(report.top_transition_candidates.week3)}
     pilot: #{format_candidate_names(report.transition_plan.pilot_candidates)}
     next pilot: #{format_single_candidate(report.transition_plan.next_pilot_candidate)}
+    pilot label: #{format_runbook_label(report.pilot_runbook)}
+    pilot ready: #{if(report.pilot_runbook.ready, do: "yes", else: "no")}
+    pilot note: #{report.pilot_runbook.note}
+    pilot step1: #{format_runbook_step(report.pilot_runbook, 0)}
+    pilot step2: #{format_runbook_step(report.pilot_runbook, 1)}
     blockers: #{format_text_list(report.transition_plan.blockers)}
     overlaps: #{overlap_text}
     agents: #{if(failing_agents == "", do: "없음", else: failing_agents)}
@@ -694,6 +699,16 @@ defmodule TeamJay.Diagnostics do
 
   defp format_single_candidate(candidate) do
     "#{candidate.name}(#{candidate.team}, score=#{candidate.priority_score})"
+  end
+
+  defp format_runbook_label(%{label: nil}), do: "없음"
+  defp format_runbook_label(%{label: label}), do: label
+
+  defp format_runbook_step(%{steps: steps}, index) do
+    case Enum.at(steps, index) do
+      nil -> "없음"
+      step -> step
+    end
   end
 
   defp format_text_list([]), do: "없음"
