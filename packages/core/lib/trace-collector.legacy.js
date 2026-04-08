@@ -1,64 +1,18 @@
-import { randomUUID } from 'node:crypto';
-import pgPool = require('./pg-pool');
-import { _calcCostForModel } from './llm-logger.js';
+'use strict';
 
-type TraceSeed = {
-  traceId: string;
-  agentName: string | null;
-  team: string | null;
-  taskType: string | null;
-  startedAt: number;
-};
-
-type GenerationData = {
-  model?: string | null;
-  provider?: string | null;
-  route?: string | null;
-  inputTokens?: number;
-  outputTokens?: number;
-  costUsd?: number | null;
-  latencyMs?: number;
-  status?: string;
-  errorMessage?: string | null;
-  fallbackUsed?: boolean;
-  fallbackProvider?: string | null;
-  confidence?: number | null;
-  qualityScore?: number | null;
-};
-
-type TraceRecord = {
-  trace_id: string;
-  agent_name: string | null;
-  team: string | null;
-  task_type: string | null;
-  model: string | null;
-  provider: string | null;
-  route: string | null;
-  input_tokens: number;
-  output_tokens: number;
-  cost_usd: number;
-  latency_ms: number;
-  status: string;
-  error_message: string | null;
-  fallback_used: boolean;
-  fallback_provider: string | null;
-  confidence: number | null;
-  quality_score: number | null;
-};
+const { randomUUID } = require('crypto');
+const pgPool = require('./pg-pool');
+const { _calcCostForModel } = require('./llm-logger');
 
 const FLUSH_INTERVAL_MS = 5000;
 const FLUSH_BATCH_SIZE = 10;
 
-let queue: TraceRecord[] = [];
-let flushTimer: NodeJS.Timeout | null = null;
+let queue = [];
+let flushTimer = null;
 
-function newTraceId(): string {
-  return randomUUID().replace(/-/g, '').slice(0, 32);
-}
-
-export function startTrace(agentName?: string | null, team?: string | null, taskType?: string | null): TraceSeed {
+function startTrace(agentName, team, taskType) {
   return {
-    traceId: newTraceId(),
+    traceId: randomUUID().replace(/-/g, '').slice(0, 32),
     agentName: agentName || null,
     team: team || null,
     taskType: taskType || null,
@@ -66,21 +20,21 @@ export function startTrace(agentName?: string | null, team?: string | null, task
   };
 }
 
-function ensureFlushTimer(): void {
+function ensureFlushTimer() {
   if (flushTimer) return;
   flushTimer = setInterval(() => {
-    flush().catch((error: Error) => {
+    flush().catch((error) => {
       console.error('[trace-collector] flush error:', error.message);
     });
   }, FLUSH_INTERVAL_MS);
   if (typeof flushTimer.unref === 'function') flushTimer.unref();
 }
 
-export function recordGeneration(trace?: Partial<TraceSeed> | null, genData: GenerationData = {}): TraceRecord {
+function recordGeneration(trace, genData = {}) {
   const inputTokens = Number(genData.inputTokens || 0);
   const outputTokens = Number(genData.outputTokens || 0);
-  const record: TraceRecord = {
-    trace_id: trace?.traceId || newTraceId(),
+  const record = {
+    trace_id: trace?.traceId || randomUUID().replace(/-/g, '').slice(0, 32),
     agent_name: trace?.agentName || null,
     team: trace?.team || null,
     task_type: trace?.taskType || null,
@@ -104,7 +58,7 @@ export function recordGeneration(trace?: Partial<TraceSeed> | null, genData: Gen
   queue.push(record);
 
   if (queue.length >= FLUSH_BATCH_SIZE) {
-    flush().catch((error: Error) => {
+    flush().catch((error) => {
       console.error('[trace-collector] flush error:', error.message);
     });
   }
@@ -113,11 +67,11 @@ export function recordGeneration(trace?: Partial<TraceSeed> | null, genData: Gen
   return record;
 }
 
-export async function flush(): Promise<number> {
+async function flush() {
   if (!queue.length) return 0;
   const batch = queue.splice(0, queue.length);
-  const values: unknown[] = [];
-  const placeholders: string[] = [];
+  const values = [];
+  const placeholders = [];
   let idx = 1;
 
   for (const row of batch) {
@@ -158,16 +112,14 @@ export async function flush(): Promise<number> {
   try {
     await pgPool.run('agent', sql, values);
   } catch (error) {
-    console.error(`[trace-collector] batch insert failed (${batch.length}건):`, (error as Error).message);
+    console.error(`[trace-collector] batch insert failed (${batch.length}건):`, error.message);
   }
 
   return batch.length;
 }
 
-export async function getTraceStats(days = 7): Promise<unknown[]> {
-  return pgPool.query(
-    'agent',
-    `
+async function getTraceStats(days = 7) {
+  return pgPool.query('agent', `
     SELECT
       date_trunc('day', created_at) AS day,
       provider,
@@ -181,15 +133,11 @@ export async function getTraceStats(days = 7): Promise<unknown[]> {
     WHERE created_at >= NOW() - make_interval(days => $1::int)
     GROUP BY day, provider
     ORDER BY day DESC, provider
-  `,
-    [days],
-  ) as Promise<unknown[]>;
+  `, [days]);
 }
 
-export async function getAgentTraceStats(agentName: string, days = 7): Promise<unknown[]> {
-  return pgPool.query(
-    'agent',
-    `
+async function getAgentTraceStats(agentName, days = 7) {
+  return pgPool.query('agent', `
     SELECT
       date_trunc('day', created_at) AS day,
       count(*) AS call_count,
@@ -203,7 +151,13 @@ export async function getAgentTraceStats(agentName: string, days = 7): Promise<u
       AND created_at >= NOW() - make_interval(days => $2::int)
     GROUP BY day
     ORDER BY day DESC
-  `,
-    [agentName, days],
-  ) as Promise<unknown[]>;
+  `, [agentName, days]);
 }
+
+module.exports = {
+  startTrace,
+  recordGeneration,
+  flush,
+  getTraceStats,
+  getAgentTraceStats,
+};
