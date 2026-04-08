@@ -29,13 +29,45 @@ const path = require('path');
 const env = require('./env');
 const openclawClient = require('./openclaw-client');
 
+type TeamKey =
+  | 'general'
+  | 'reservation'
+  | 'ska'
+  | 'investment'
+  | 'luna'
+  | 'claude'
+  | 'claude-lead'
+  | 'meeting'
+  | 'emergency'
+  | 'blog';
+
+type SecretPayload = {
+  telegram_bot_token?: string;
+  telegram_group_id?: string;
+  telegram_chat_id?: string;
+  telegram_topic_ids?: Record<string, string>;
+};
+
+type SendOptions = {
+  replyMarkup?: unknown;
+  disableWebPagePreview?: boolean;
+  chatId?: string;
+  threadId?: string | null;
+};
+
+type BatchEntry = {
+  lines: string[];
+  timer: NodeJS.Timeout | null;
+  threadId: string | null;
+};
+
 // ── 시크릿 로드 (lazy, 캐싱) ─────────────────────────────────────────
 const SECRETS_PATH = path.join(__dirname, '../../../bots/reservation/secrets.json');
-let _cachedSecrets = null;
+let _cachedSecrets: SecretPayload | null = null;
 
-function _secrets() {
+function _secrets(): SecretPayload {
   if (!_cachedSecrets) {
-    try { _cachedSecrets = JSON.parse(fs.readFileSync(SECRETS_PATH, 'utf-8')); }
+    try { _cachedSecrets = JSON.parse(fs.readFileSync(SECRETS_PATH, 'utf-8')) as SecretPayload; }
     catch { _cachedSecrets = {}; }
   }
   return _cachedSecrets;
@@ -61,8 +93,8 @@ const TOPIC_KEYS = {
   'blog':        'blog',
 };
 
-function _getThreadId(team) {
-  const key = TOPIC_KEYS[team] ?? 'general';
+function _getThreadId(team: string): string | null {
+  const key = TOPIC_KEYS[team as TeamKey] ?? 'general';
   const ids = _topics();
   return ids[key] ?? ids['general'] ?? null;
 }
@@ -73,7 +105,7 @@ const PENDING_FILE = path.join(WORKSPACE, 'pending-telegrams.jsonl');
 const TG_MAX       = 4096 - 20;  // Telegram 최대 길이 여유 확보
 const MOBILE_DIVIDER = '──────────';
 
-function _normalizeForMobile(message) {
+function _normalizeForMobile(message: string): string {
   const raw = String(message || '');
   const lines = raw
     .replace(/\r\n/g, '\n')
@@ -101,7 +133,7 @@ const PENDING_MAX_AGE_MS = 30 * 60 * 1000;  // 30분 초과 메시지 폐기
 const PENDING_MAX_RETRIES = 3;              // 최대 재시도 3회
 const PENDING_MAX_QUEUE = 50;               // 큐 최대 50건
 
-function _savePending(team, message) {
+function _savePending(team: string, message: string): void {
   try {
     if (!fs.existsSync(WORKSPACE)) return;
     // 큐 크기 제한
@@ -120,7 +152,7 @@ function _savePending(team, message) {
 // ── 파일명 누출 방어 (BUG-006) ────────────────────────────────────────
 const FILE_PATTERN = /^[\w\-. ]+\.(md|js|json|txt|sh|py|plist|log|db)$/i;
 
-function _isFilenameLeak(msg) {
+function _isFilenameLeak(msg: string): boolean {
   const t = msg.trim();
   if (!t.includes('\n') && FILE_PATTERN.test(t)) return true;
   const lines = t.split('\n').map(l => l.trim()).filter(Boolean);
@@ -128,7 +160,7 @@ function _isFilenameLeak(msg) {
 }
 
 // ── 긴급 메시지 판별 ──────────────────────────────────────────────────
-function _isUrgent(message) {
+function _isUrgent(message: string): boolean {
   return message.includes('🚨') || message.toUpperCase().includes('CRITICAL');
 }
 
@@ -139,18 +171,18 @@ let _lastSentAt = 0;
 // ── 배치 설정 ─────────────────────────────────────────────────────────
 const BATCH_WINDOW_MS = 2000;  // 동일 팀 메시지를 2초 내 합치기
 // topic → { lines: string[], timer: NodeJS.Timeout|null, threadId: number|null }
-const _batchBuffer = new Map();
+const _batchBuffer = new Map<string, BatchEntry>();
 
 // ── 단일 발송 시도 (Rate Limit 정보 포함) ────────────────────────────
 /**
  * @returns {{ ok: boolean, code: number, retryAfter: number }}
  */
-async function _trySend(text, threadId, options: any = {}) {
+async function _trySend(text: string, threadId: string | null, options: SendOptions = {}) {
   const token  = _token();
   const chatId = options.chatId || _chatId();
   if (!token || !chatId) return { ok: false, code: 0, retryAfter: 0 };
 
-  const body: any = { chat_id: chatId, text, parse_mode: 'HTML' };
+  const body: Record<string, unknown> = { chat_id: chatId, text, parse_mode: 'HTML' };
   if (threadId) body.message_thread_id = threadId;
   if (options.replyMarkup) body.reply_markup = options.replyMarkup;
   if (typeof options.disableWebPagePreview === 'boolean') {
@@ -183,11 +215,11 @@ async function _trySend(text, threadId, options: any = {}) {
  * 429 발생 시 retry_after 준수, 기타 실패 시 3초 간격 재시도.
  * @returns {Promise<boolean>}
  */
-async function _doSend(text, threadId, options = {}) {
+async function _doSend(text: string, threadId: string | null, options: SendOptions = {}): Promise<boolean> {
   // Throttle: 마지막 발송으로부터 MIN_INTERVAL_MS 확보
   const now  = Date.now();
   const wait = _lastSentAt + MIN_INTERVAL_MS - now;
-  if (wait > 0) await new Promise(r => setTimeout(r, wait));
+  if (wait > 0) await new Promise((r) => setTimeout(r, wait));
 
   const MAX_TRIES = 3;
   for (let i = 1; i <= MAX_TRIES; i++) {
@@ -197,16 +229,16 @@ async function _doSend(text, threadId, options = {}) {
 
     if (code === 429 && retryAfter > 0) {
       console.warn(`⚠️ [telegram-sender] Rate Limit (429) — ${retryAfter}초 대기 후 재시도 (${i}/${MAX_TRIES})`);
-      await new Promise(r => setTimeout(r, retryAfter * 1000));
+      await new Promise((r) => setTimeout(r, retryAfter * 1000));
     } else if (i < MAX_TRIES) {
-      await new Promise(r => setTimeout(r, i * 3000));
+      await new Promise((r) => setTimeout(r, i * 3000));
     }
   }
   return false;
 }
 
 // ── 배치 flush ────────────────────────────────────────────────────────
-async function _flushBatch(topic) {
+async function _flushBatch(topic: string): Promise<void> {
   const buf = _batchBuffer.get(topic);
   if (!buf || buf.lines.length === 0) {
     _batchBuffer.delete(topic);
@@ -235,7 +267,7 @@ async function _flushBatch(topic) {
  * @param {string} message 발송 메시지 (HTML 태그 사용 가능)
  * @returns {Promise<boolean>}
  */
-export async function send(team, message) {
+export async function send(team: string, message: string): Promise<boolean> {
   if (process.env.TELEGRAM_ENABLED === '0') return true;
   const normalized = _normalizeForMobile(message);
 
@@ -281,7 +313,7 @@ export async function send(team, message) {
   return true;  // 배치 버퍼 추가 성공
 }
 
-async function sendBuffered(team, message) {
+async function sendBuffered(team: string, message: string): Promise<boolean> {
   if (process.env.TELEGRAM_ENABLED === '0') return true;
   const normalized = _normalizeForMobile(message);
 
@@ -309,7 +341,7 @@ async function sendBuffered(team, message) {
   return false;
 }
 
-async function sendWithOptions(team, message, options = {}) {
+async function sendWithOptions(team: string, message: string, options: SendOptions = {}): Promise<boolean> {
   if (process.env.TELEGRAM_ENABLED === '0') return true;
   const normalized = _normalizeForMobile(message);
 
@@ -337,7 +369,7 @@ async function sendWithOptions(team, message, options = {}) {
   return false;
 }
 
-async function sendDirect(chatId, message, options: any = {}) {
+async function sendDirect(chatId: string, message: string, options: SendOptions = {}): Promise<boolean> {
   if (process.env.TELEGRAM_ENABLED === '0') return true;
   if (!chatId) return false;
   const normalized = _normalizeForMobile(message);
@@ -365,7 +397,7 @@ async function sendDirect(chatId, message, options: any = {}) {
  * @param {string} team    발신 팀
  * @param {string} message CRITICAL 메시지
  */
-export async function sendCritical(team, message) {
+export async function sendCritical(team: string, message: string): Promise<boolean> {
   if (env.IS_OPS) {
     const full = `🚨 CRITICAL\n${message}`;
     const tasks = [openclawClient.postAlarm({
@@ -389,7 +421,8 @@ export async function sendCritical(team, message) {
   const full = `🚨 [${team}] CRITICAL\n${message}`;
   const tasks = [send('emergency', full)];
   if (team !== 'emergency') tasks.push(send(team, `🚨 CRITICAL\n${message}`));
-  await Promise.all(tasks);
+  const results = await Promise.all(tasks);
+  return results.every(Boolean);
 }
 
 /**
@@ -399,8 +432,8 @@ export async function sendCritical(team, message) {
 export async function flushPending() {
   if (!fs.existsSync(PENDING_FILE)) return;
 
-  let lines;
-  try { lines = fs.readFileSync(PENDING_FILE, 'utf-8').split('\n').filter(l => l.trim()); }
+  let lines: string[];
+  try { lines = fs.readFileSync(PENDING_FILE, 'utf-8').split('\n').filter((l: string) => l.trim()); }
   catch { return; }
   if (!lines.length) return;
 
@@ -438,4 +471,3 @@ export async function flushPending() {
     else fs.writeFileSync(PENDING_FILE, remaining.join('\n') + '\n', 'utf-8');
   } catch { /* 무시 */ }
 }
-
