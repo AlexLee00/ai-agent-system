@@ -8,11 +8,10 @@ let localSelectRuntimeProfile: RuntimeProfileSelector | null = null;
 function getLocalSelectRuntimeProfile(): RuntimeProfileSelector | null {
   if (localSelectRuntimeProfile) return localSelectRuntimeProfile;
   try {
-    ({
-      selectRuntimeProfile: localSelectRuntimeProfile,
-    } = require(env.projectPath('bots', 'hub', 'lib', 'runtime-profiles')) as {
+    const runtimeProfiles = require(env.projectPath('bots', 'hub', 'lib', 'runtime-profiles')) as {
       selectRuntimeProfile?: RuntimeProfileSelector;
-    });
+    };
+    localSelectRuntimeProfile = runtimeProfiles.selectRuntimeProfile || null;
   } catch {
     localSelectRuntimeProfile = null;
   }

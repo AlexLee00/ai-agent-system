@@ -91,7 +91,7 @@ export function recordGeneration(trace?: Partial<TraceSeed> | null, genData: Gen
     output_tokens: outputTokens,
     cost_usd: genData.costUsd != null
       ? Number(genData.costUsd || 0)
-      : _calcCostForModel(genData.model, inputTokens, outputTokens),
+      : _calcCostForModel(genData.model || '', inputTokens, outputTokens),
     latency_ms: Number(genData.latencyMs || (trace?.startedAt ? Date.now() - trace.startedAt : 0)),
     status: genData.status || 'success',
     error_message: genData.errorMessage || null,
