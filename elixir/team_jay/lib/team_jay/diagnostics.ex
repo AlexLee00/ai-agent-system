@@ -361,6 +361,8 @@ defmodule TeamJay.Diagnostics do
       week3: build_transition_candidates(week3_shadow_agents)
     }
 
+    recommended_actions = build_recommended_actions(summary, week2_summary, week3_summary, migration_candidates)
+
     %{
       generated_at: DateTime.utc_now(),
       overlap_count: length(Map.get(overlap_result, :overlaps, [])),
@@ -372,6 +374,11 @@ defmodule TeamJay.Diagnostics do
       week3_shadow_agents: week3_shadow_agents,
       week3_summary: week3_summary,
       migration_candidates: migration_candidates,
+      top_transition_candidates: %{
+        week2: Enum.take(migration_candidates.week2, 3),
+        week3: Enum.take(migration_candidates.week3, 3)
+      },
+      recommended_actions: recommended_actions,
       summary: summary,
       recent_failures: TeamJay.EventLake.get_by_type("port_agent_failed", 5)
     }
@@ -415,6 +422,18 @@ defmodule TeamJay.Diagnostics do
     |> Enum.filter(&(&1.status == :loaded and Map.get(&1, :required, true)))
     |> Enum.map(&Map.take(&1, [:name, :team, :status]))
   end
+
+  defp build_recommended_actions(summary, week2_summary, week3_summary, migration_candidates) do
+    []
+    |> maybe_add_action(summary.failing > 0, "Week1 failing agent 먼저 안정화")
+    |> maybe_add_action(week2_summary.required_missing > 0, "Week2 필수 shadow 누락 서비스 점검")
+    |> maybe_add_action(week3_summary.required_missing > 0, "Week3 필수 shadow 누락 서비스 점검")
+    |> maybe_add_action(length(migration_candidates.week2) > 0, "Week2 loaded 서비스 중 저위험 후보를 병렬 전환 검토")
+    |> maybe_add_action(length(migration_candidates.week3) > 0, "Week3 loaded 서비스 중 저위험 후보를 병렬 전환 검토")
+  end
+
+  defp maybe_add_action(actions, true, action), do: actions ++ [action]
+  defp maybe_add_action(actions, false, _action), do: actions
 
   defp record_launchd_overlap_event(nil, signature) do
     TeamJay.EventLake.record(%{
@@ -502,16 +521,27 @@ defmodule TeamJay.Diagnostics do
     week3 required_missing: #{report.week3_summary.required_missing}
     week2 candidates: #{length(report.migration_candidates.week2)}
     week3 candidates: #{length(report.migration_candidates.week3)}
+    week2 top: #{format_candidate_names(report.top_transition_candidates.week2)}
+    week3 top: #{format_candidate_names(report.top_transition_candidates.week3)}
     overlaps: #{overlap_text}
     agents: #{if(failing_agents == "", do: "없음", else: failing_agents)}
     week2 issues: #{if(week2_issues == "", do: "없음", else: week2_issues)}
     week3 issues: #{if(week3_issues == "", do: "없음", else: week3_issues)}
+    next: #{Enum.join(report.recommended_actions, " | ")}
     """
 
     _ = TeamJay.HubClient.post_alarm(String.trim(message), "claude", "diagnostics")
   end
 
   defp maybe_alarm_shadow_report(_report, _severity), do: :ok
+
+  defp format_candidate_names([]), do: "없음"
+
+  defp format_candidate_names(candidates) do
+    candidates
+    |> Enum.map(&to_string(&1.name))
+    |> Enum.join(", ")
+  end
 
   defp schedule_check, do: Process.send_after(self(), :check, @check_interval)
 end
