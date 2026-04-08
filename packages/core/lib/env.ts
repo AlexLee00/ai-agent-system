@@ -53,7 +53,7 @@ export const PROJECT_ROOT = process.env.PROJECT_ROOT ||
  * @returns {string}
  * @example env.projectPath('bots/investment/config.yaml')
  */
-export function projectPath(...segments) {
+export function projectPath(...segments: string[]): string {
   return path.join(PROJECT_ROOT, ...segments);
 }
 
@@ -63,7 +63,7 @@ export function projectPath(...segments) {
  * @returns {string}
  * @example env.corePath('pg-pool')  →  '/Users/.../packages/core/lib/pg-pool.js'
  */
-export function corePath(moduleName) {
+export function corePath(moduleName: string): string {
   return path.join(PROJECT_ROOT, 'packages', 'core', 'lib', moduleName);
 }
 
@@ -153,7 +153,7 @@ export const HUB_PORT = parseInt(process.env.HUB_PORT || '7788', 10);
  * @param {string} operation
  * @throws {Error}
  */
-export function ensureOps(operation) {
+export function ensureOps(operation: string): void {
   if (!IS_OPS) {
     throw new Error(
       `[env] "${operation}"은 MODE=ops 에서만 실행 가능. ` +
@@ -167,7 +167,7 @@ export function ensureOps(operation) {
  * @param {string} operation
  * @throws {Error}
  */
-export function ensureDev(operation) {
+export function ensureDev(operation: string): void {
   if (!IS_DEV) {
     throw new Error(
       `[env] "${operation}"은 MODE=dev 에서만 실행 가능. ` +
@@ -183,7 +183,11 @@ export function ensureDev(operation) {
  * @param {function} [dryRunFn] DEV 대체 함수 (생략 시 로그만)
  * @returns {Promise<any>}
  */
-export async function runIfOps(operation, fn, dryRunFn = null) {
+export async function runIfOps<T>(
+  operation: string,
+  fn: () => T | Promise<T>,
+  dryRunFn: null | (() => T | Promise<T>) = null,
+): Promise<T | null> {
   if (IS_OPS) return fn();
   if (dryRunFn) return dryRunFn();
   console.log(`[env] DEV 모드 — "${operation}" dry-run 스킵`);
@@ -196,7 +200,11 @@ export async function runIfOps(operation, fn, dryRunFn = null) {
  * @param {function} fn
  * @param {function} [dryRunFn]
  */
-export async function runIfDev(operation, fn, dryRunFn = null) {
+export async function runIfDev<T>(
+  operation: string,
+  fn: () => T | Promise<T>,
+  dryRunFn: null | (() => T | Promise<T>) = null,
+): Promise<T | null> {
   if (IS_DEV) return fn();
   if (dryRunFn) return dryRunFn();
   console.log(`[env] OPS 모드 — "${operation}" 실험 코드 스킵`);
@@ -211,7 +219,7 @@ export async function runIfDev(operation, fn, dryRunFn = null) {
  * @returns {string}
  * @example `/tmp/ska-status${env.modeSuffix()}.json`
  */
-export function modeSuffix() {
+export function modeSuffix(): string {
   return IS_OPS ? '' : '-dev';
 }
 
@@ -219,7 +227,7 @@ export function modeSuffix() {
  * 배너 출력 (프로세스 시작 시)
  * @param {string} [scriptName]
  */
-export function printModeBanner(scriptName = '') {
+export function printModeBanner(scriptName = ''): void {
   if (IS_OPS) {
     const tag = scriptName ? `   실행: ${scriptName}` : '';
     console.log('');
@@ -236,4 +244,3 @@ export function printModeBanner(scriptName = '') {
 }
 
 // ─── 내보내기 ────────────────────────────────────────────────────────────
-
