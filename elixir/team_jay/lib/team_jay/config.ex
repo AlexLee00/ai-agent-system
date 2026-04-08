@@ -6,6 +6,7 @@ defmodule TeamJay.Config do
   def hub_url, do: Application.get_env(:team_jay, :hub_url)
   def hub_token, do: Application.get_env(:team_jay, :hub_token)
   def pg_notify_channel, do: Application.get_env(:team_jay, :pg_notify_channel, "event_lake_insert")
+  def repo_root, do: Application.get_env(:team_jay, :repo_root, "/Users/alexlee/projects/ai-agent-system")
 
   def notification_db_opts do
     opts = [hostname: db_host(), database: db_name(), username: db_user()]

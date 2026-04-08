@@ -4,14 +4,22 @@ defmodule TeamJay.Application do
 
   @impl true
   def start(_type, _args) do
-    Logger.info("🚀 TeamJay Elixir Phase 2 시작!")
+    Logger.info("🚀 TeamJay Elixir Phase 3 시작!")
 
     children = [
       TeamJay.Repo,
+      {Registry, keys: :unique, name: TeamJay.AgentRegistry},
       TeamJay.EventLake,
       TeamJay.MarketRegime,
       TeamJay.Teams.SkaSupervisor,
-      TeamJay.Diagnostics
+      TeamJay.Teams.ClaudeSupervisor,
+      TeamJay.Teams.StewardSupervisor,
+      TeamJay.Teams.InvestmentShadowSupervisor,
+      TeamJay.Teams.BlogShadowSupervisor,
+      TeamJay.Teams.WorkerShadowSupervisor,
+      TeamJay.Teams.PlatformShadowSupervisor,
+      TeamJay.Diagnostics,
+      TeamJay.Scheduler
     ]
 
     opts = [strategy: :one_for_one, name: TeamJay.Supervisor]
@@ -22,7 +30,7 @@ defmodule TeamJay.Application do
 
       _ =
         TeamJay.HubClient.post_alarm(
-          "🚀 Elixir Phase 2 시작!\n👥 스카팀 Supervisor 가동\n📡 EventLake 수신 중\n🌍 MarketRegime 감지 중\n🔍 Diagnostics 모니터링 중",
+          "🚀 Elixir Phase 3 Week3 시작!\n👥 Week1 Supervisor 유지 + Week2/3 Shadow 감시 확대\n📡 EventLake 수신 중\n🌍 MarketRegime 감지 중\n🔍 Diagnostics 모니터링 중",
           "system",
           "elixir"
         )

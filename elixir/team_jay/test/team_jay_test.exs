@@ -1,6 +1,7 @@
 defmodule TeamJayTest do
   use ExUnit.Case
-  alias TeamJay.Agents.Andy
+  alias TeamJay.Agents.PortAgent
+  alias TeamJay.Diagnostics
   alias TeamJay.EventLake
   alias TeamJay.MarketRegime
   alias TeamJay.Schemas.EventLake, as: EventLakeSchema
@@ -10,13 +11,6 @@ defmodule TeamJayTest do
     changeset = EventLakeSchema.changeset(%EventLakeSchema{}, %{})
     refute changeset.valid?
     assert "can't be blank" in errors_on(changeset).event_type
-  end
-
-  test "andy state shape is readable" do
-    status = Andy.get_status()
-    assert status.name == "andy"
-    assert status.team == "ska"
-    assert is_integer(status.check_count)
   end
 
   test "event lake stats api responds" do
@@ -36,5 +30,44 @@ defmodule TeamJayTest do
 
     assert result.regime == :trending_bull
     assert result.confidence > 0.0
+  end
+
+  test "port agent status is readable through registry" do
+    status = PortAgent.get_status(:andy)
+    assert status.name == :andy
+    assert status.status in [:idle, :running]
+  end
+
+  test "shadow report summarizes overlap and agent states" do
+    report = Diagnostics.shadow_report()
+    assert is_map(report)
+    assert Map.has_key?(report, :overlap_count)
+    assert Map.has_key?(report, :agents)
+    assert Map.has_key?(report, :summary)
+    assert Map.has_key?(report, :week2_shadow_agents)
+    assert Map.has_key?(report, :week2_summary)
+    assert Map.has_key?(report, :week3_shadow_agents)
+    assert Map.has_key?(report, :week3_summary)
+    assert is_list(report.agents)
+    assert is_list(report.week2_shadow_agents)
+    assert is_list(report.week3_shadow_agents)
+    assert report.summary.total >= 1
+    assert report.week2_summary.total >= 1
+    assert report.week3_summary.total >= 1
+    assert Map.has_key?(report.week2_summary, :required_missing)
+    assert Map.has_key?(report.week2_summary, :optional_missing)
+    assert Map.has_key?(report.week3_summary, :required_missing)
+    assert Map.has_key?(report.week3_summary, :optional_missing)
+  end
+
+  test "shadow report can be published" do
+    report = Diagnostics.publish_shadow_report()
+    assert is_map(report)
+    assert Map.has_key?(report, :summary)
+    assert Map.has_key?(report, :week2_summary)
+    assert Map.has_key?(report, :week3_summary)
+    assert report.summary.total >= 1
+    assert report.week2_summary.total >= 1
+    assert report.week3_summary.total >= 1
   end
 end
