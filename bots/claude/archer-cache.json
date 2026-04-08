@@ -1,18 +1,13 @@
 {
-  "lastRun": "2026-04-06",
+  "lastRun": "2026-04-08",
   "versions": {
-    "@anthropic-ai/sdk": "0.82.0",
+    "@anthropic-ai/sdk": "0.85.0",
     "@modelcontextprotocol/sdk": "1.29.0",
     "groq-sdk": "1.1.2",
     "duckdb": "1.4.4",
     "better-sqlite3": "12.8.0",
-    "ccxt": "4.5.46",
+    "ccxt": "4.5.47",
     "playwright": "1.59.1"
   },
-  "lastAnalysis": {
-    "summary": "이번 주 패치 검토 1순위는 groq-sdk입니다. 연구 관찰 1순위는 'Holo3: Computer Use Frontier 돌파'입니다. 웹 하이라이트는 'Gemma 4 공식 출시 — 디바이스 온디바이스 멀티모달 모델'입니다. 이번 주 최우선 조치는 lodash·path-to-regexp 두 건의 high 보안 취약점 패치로, Hub(:7788) 라우터 레이어가 잠재적 영향권임을 유의해야 한다. Google Gemma 4와 Holo3 Computer Use 에이전트가 나란히 공개되며 로컬 MLX 스택 확장 및 UI 자동화 고도화의 현실적 기회가 열렸다. Claude Code v2.1.92가 릴리스됐으므로 DEV 환경 즉시 업데이트를 권장한다.",
-    "patchCount": 6,
-    "securityCount": 2,
-    "llmApiCount": 3
-  }
+  "lastAnalysis": null
 }
