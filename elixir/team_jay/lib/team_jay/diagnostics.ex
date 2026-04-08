@@ -49,25 +49,25 @@ defmodule TeamJay.Diagnostics do
     {:steward_daily, :steward}
   ]
   @week2_shadow_agents [
-    {:luna_commander, :investment},
-    {:luna_domestic, :investment},
-    {:luna_overseas, :investment},
-    {:luna_crypto, :investment},
-    {:argos_shadow, :investment},
-    {:reporter_shadow, :investment},
-    {:blog_daily, :blog},
-    {:blog_commenter, :blog},
-    {:blog_node_server, :blog}
+    {:luna_commander, :investment, true},
+    {:luna_domestic, :investment, true},
+    {:luna_overseas, :investment, true},
+    {:luna_crypto, :investment, true},
+    {:argos_shadow, :investment, true},
+    {:reporter_shadow, :investment, true},
+    {:blog_daily, :blog, true},
+    {:blog_commenter, :blog, true},
+    {:blog_node_server, :blog, true}
   ]
   @week3_shadow_agents [
-    {:worker_lead, :worker},
-    {:worker_task_runner, :worker},
-    {:worker_web, :worker},
-    {:worker_nextjs, :worker},
-    {:worker_health_check, :worker},
-    {:worker_claude_monitor, :worker},
-    {:darwin_orchestrator, :platform},
-    {:hub_resource_api, :platform}
+    {:worker_lead, :worker, true},
+    {:worker_task_runner, :worker, true},
+    {:worker_web, :worker, true},
+    {:worker_nextjs, :worker, true},
+    {:worker_health_check, :worker, true},
+    {:worker_claude_monitor, :worker, true},
+    {:darwin_orchestrator, :platform, false},
+    {:hub_resource_api, :platform, true}
   ]
 
   defstruct [:checks, :alerts, :last_check, :last_overlap_signature]
@@ -128,11 +128,13 @@ defmodule TeamJay.Diagnostics do
   @impl true
   def handle_call(:publish_shadow_report, _from, state) do
     report = build_shadow_report(state)
+    total_required_missing =
+      report.week2_summary.required_missing + report.week3_summary.required_missing
 
     severity =
       if(
         report.overlap_count > 0 or report.summary.failing > 0 or
-          report.week2_summary.required_missing > 0 or report.week3_summary.required_missing > 0,
+          total_required_missing > 0,
         do: "warn",
         else: "info"
       )
@@ -144,7 +146,7 @@ defmodule TeamJay.Diagnostics do
       severity: severity,
       title: "Phase3 Shadow 리포트",
       message:
-        "겹침 #{report.overlap_count}건 | failing #{report.summary.failing} | missing #{report.summary.missing}",
+        "겹침 #{report.overlap_count}건 | failing #{report.summary.failing} | week1 missing #{report.summary.missing} | required missing #{total_required_missing}",
       tags: ["phase3", "diagnostics", "shadow_report"],
       metadata: report
     })
@@ -368,7 +370,9 @@ defmodule TeamJay.Diagnostics do
   end
 
   defp build_launchd_shadow_agents(agents) do
-    Enum.map(agents, fn {name, team} ->
+    Enum.map(agents, fn agent ->
+      {name, team, required} = normalize_shadow_agent(agent)
+
       case GenServer.whereis(TeamJay.Agents.LaunchdShadowAgent.via(name)) do
         nil ->
           %{
@@ -377,7 +381,7 @@ defmodule TeamJay.Diagnostics do
             status: :missing,
             pid: nil,
             last_exit_code: nil,
-            required: true
+            required: required
           }
 
         _pid ->
@@ -394,6 +398,9 @@ defmodule TeamJay.Diagnostics do
       end
     end)
   end
+
+  defp normalize_shadow_agent({name, team}), do: {name, team, true}
+  defp normalize_shadow_agent({name, team, required}), do: {name, team, required}
 
   defp record_launchd_overlap_event(nil, signature) do
     TeamJay.EventLake.record(%{
@@ -470,7 +477,7 @@ defmodule TeamJay.Diagnostics do
     ⚠️ Phase3 Shadow 리포트
     겹침: #{report.overlap_count}건
     failing: #{report.summary.failing}
-    missing: #{report.summary.missing}
+    week1 missing: #{report.summary.missing}
     week2 running: #{report.week2_summary.running}
     week2 loaded: #{report.week2_summary.loaded}
     week2 missing: #{report.week2_summary.missing}
