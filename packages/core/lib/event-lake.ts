@@ -4,54 +4,58 @@ const { getTraceId } = require('./trace');
 const SCHEMA = 'agent';
 const TABLE = `${SCHEMA}.event_lake`;
 
-let _initPromise = null;
+type EventLakeSeverity = 'debug' | 'info' | 'warn' | 'error' | 'critical';
+type EventLakeInsertRow = { id?: number | string | null };
+type EventLakeTotalsRow = {
+  total?: number | string | null;
+  errors?: number | string | null;
+  warnings?: number | string | null;
+  teams?: number | string | null;
+  bots?: number | string | null;
+};
+type EventLakeRecordInput = {
+  eventType: string;
+  team?: string;
+  botName?: string;
+  severity?: EventLakeSeverity;
+  traceId?: string;
+  title?: string;
+  message?: string;
+  tags?: string[];
+  metadata?: Record<string, unknown>;
+};
+type EventLakeSearchInput = {
+  q?: string;
+  eventType?: string;
+  team?: string;
+  severity?: string;
+  botName?: string;
+  minutes?: number;
+  limit?: number;
+};
+type EventLakeFeedbackInput = {
+  score?: number | null;
+  feedback?: string;
+};
 
-/**
- * @typedef {Object} EventLakeRecordInput
- * @property {string} eventType
- * @property {string} [team]
- * @property {string} [botName]
- * @property {'debug'|'info'|'warn'|'error'|'critical'} [severity]
- * @property {string} [traceId]
- * @property {string} [title]
- * @property {string} [message]
- * @property {string[]} [tags]
- * @property {Record<string, any>} [metadata]
- */
+let _initPromise: Promise<void> | null = null;
 
-/**
- * @typedef {Object} EventLakeSearchInput
- * @property {string} [q]
- * @property {string} [eventType]
- * @property {string} [team]
- * @property {string} [severity]
- * @property {string} [botName]
- * @property {number} [minutes]
- * @property {number} [limit]
- */
-
-/**
- * @typedef {Object} EventLakeFeedbackInput
- * @property {number|null} [score]
- * @property {string} [feedback]
- */
-
-function _text(value, fallback = '') {
+function _text(value: unknown, fallback = ''): string {
   const normalized = String(value == null ? fallback : value).trim();
   return normalized || fallback;
 }
 
-function _severity(value) {
+function _severity(value: unknown): EventLakeSeverity {
   const normalized = _text(value, 'info').toLowerCase();
   return ['debug', 'info', 'warn', 'error', 'critical'].includes(normalized)
-    ? normalized
+    ? (normalized as EventLakeSeverity)
     : 'info';
 }
 
-function _tags(tags) {
+function _tags(tags: unknown): string[] {
   if (!Array.isArray(tags)) return [];
   return tags
-    .map((tag) => _text(tag))
+    .map((tag: unknown) => _text(tag))
     .filter(Boolean)
     .slice(0, 20);
 }
@@ -120,10 +124,10 @@ export async function record({
   message = '',
   tags = [],
   metadata = {},
-}) {
+}: EventLakeRecordInput): Promise<number | string | null> {
   await initSchema();
 
-  const rows = await pgPool.query(SCHEMA, `
+  const rows = /** @type {EventLakeInsertRow[]} */ (await pgPool.query(SCHEMA, `
     INSERT INTO ${TABLE} (
       event_type, team, bot_name, severity, trace_id,
       title, message, tags, metadata
@@ -140,7 +144,7 @@ export async function record({
     _text(message, ''),
     _tags(tags),
     JSON.stringify(metadata || {}),
-  ]);
+  ]));
 
   return rows[0]?.id || null;
 }
@@ -156,7 +160,7 @@ export async function search({
   botName = '',
   minutes = 24 * 60,
   limit = 50,
-} = {}) {
+}: EventLakeSearchInput = {}) {
   await initSchema();
 
   const params: Array<string | number> = [Math.max(1, Number(minutes || 0) || 1)];
@@ -206,7 +210,7 @@ export async function stats({ minutes = 24 * 60 } = {}) {
   await initSchema();
   const windowMinutes = Math.max(1, Number(minutes || 0) || 1);
 
-  const totals = await pgPool.get(SCHEMA, `
+  const totals = /** @type {EventLakeTotalsRow | null} */ (await pgPool.get(SCHEMA, `
     SELECT
       COUNT(*)::int AS total,
       COUNT(*) FILTER (WHERE severity IN ('error', 'critical'))::int AS errors,
@@ -215,7 +219,7 @@ export async function stats({ minutes = 24 * 60 } = {}) {
       COUNT(DISTINCT bot_name)::int AS bots
     FROM ${TABLE}
     WHERE created_at >= NOW() - ($1::int * INTERVAL '1 minute')
-  `, [windowMinutes]);
+  `, [windowMinutes]));
 
   const services = await pgPool.query(SCHEMA, `
     SELECT
@@ -246,7 +250,7 @@ export async function stats({ minutes = 24 * 60 } = {}) {
  * @param {number|string} id
  * @param {EventLakeFeedbackInput} [input]
  */
-export async function addFeedback(id, { score = null, feedback = '' } = {}) {
+export async function addFeedback(id: number | string, { score = null, feedback = '' }: EventLakeFeedbackInput = {}) {
   await initSchema();
   const rows = await pgPool.query(SCHEMA, `
     UPDATE ${TABLE}

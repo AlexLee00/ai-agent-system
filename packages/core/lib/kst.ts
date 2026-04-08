@@ -15,46 +15,46 @@ const KST_OFFSET = 9 * 60 * 60 * 1000;  // +09:00 in ms
 // ── KST 날짜/시간 변환 ──────────────────────────────────────────────────
 
 /** KST 기준 오늘 날짜 문자열 (YYYY-MM-DD) */
-export function today() {
+export function today(): string {
   return new Date().toLocaleDateString('sv-SE', { timeZone: TZ });
 }
 
 /** KST 기준 현재 시각 문자열 (HH:MM:SS) */
-export function timeStr() {
+export function timeStr(): string {
   return new Intl.DateTimeFormat('en-GB', {
     timeZone: TZ, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
   }).format(new Date());
 }
 
 /** KST 기준 현재 날짜+시각 문자열 (YYYY-MM-DD HH:MM:SS) */
-export function datetimeStr() {
+export function datetimeStr(): string {
   return `${today()} ${timeStr()}`;
 }
 
 /** 임의 Date 객체를 KST 로케일 문자열로 변환 */
-export function toKST(date) {
+export function toKST(date: Date | string | number): string {
   return (date instanceof Date ? date : new Date(date))
     .toLocaleString('ko-KR', { timeZone: TZ });
 }
 
 /** KST 기준 현재 시(hour) 반환 (0~23) */
-export function currentHour(date?: Date) {
+export function currentHour(date?: Date): number {
   const d = date || new Date();
   const parts = new Intl.DateTimeFormat('en-US', { timeZone: TZ, hour: 'numeric', hour12: false })
     .formatToParts(d);
-  return parseInt(parts.find(p => p.type === 'hour')?.value || '0', 10) % 24;
+  return parseInt(parts.find((p: Intl.DateTimeFormatPart) => p.type === 'hour')?.value || '0', 10) % 24;
 }
 
 /** KST 기준 현재 분(minute) 반환 (0~59) */
-export function currentMinute(date?: Date) {
+export function currentMinute(date?: Date): number {
   const d = date || new Date();
   const parts = new Intl.DateTimeFormat('en-US', { timeZone: TZ, minute: 'numeric', hour12: false })
     .formatToParts(d);
-  return parseInt(parts.find(p => p.type === 'minute')?.value || '0', 10);
+  return parseInt(parts.find((p: Intl.DateTimeFormatPart) => p.type === 'minute')?.value || '0', 10);
 }
 
 /** KST 기준 오늘 특정 시각의 Date 객체 (ISO 8601 +09:00 사용) */
-export function todayAt(hour, minute = 0, second = 0) {
+export function todayAt(hour: number, minute = 0, second = 0): Date {
   const hh = String(hour).padStart(2, '0');
   const mm = String(minute).padStart(2, '0');
   const ss = String(second).padStart(2, '0');
@@ -75,7 +75,7 @@ export function isDST(date?: Date) {
     timeZone: 'America/New_York',
     timeZoneName: 'short',
   }).formatToParts(d);
-  return parts.find(p => p.type === 'timeZoneName')?.value === 'EDT';
+  return parts.find((p: Intl.DateTimeFormatPart) => p.type === 'timeZoneName')?.value === 'EDT';
 }
 
 // ── 장 시간 상수 ─────────────────────────────────────────────────────────
@@ -103,7 +103,7 @@ export const MARKET_HOURS = {
  * @param {'domestic'|'overseas'|'crypto'} market
  * @returns {boolean}
  */
-export function isMarketOpen(market) {
+export function isMarketOpen(market: 'domestic' | 'overseas' | 'crypto'): boolean {
   if (market === 'crypto') return true;
 
   const h   = currentHour();
@@ -134,8 +134,8 @@ export function isMarketOpen(market) {
  * 특정 시장의 개장/폐장 시각 반환 (KST 기준, 서머타임 자동 반영)
  * @param {'domestic'|'overseas'|'crypto'} market
  */
-export function getMarketHours(market) {
-  const fmt = ({ hour, minute }) =>
+export function getMarketHours(market: 'domestic' | 'overseas' | 'crypto'): { open: string; close: string; dst: boolean; premarket?: string } | { open: '24시간'; close: '24시간'; dst: false } | null {
+  const fmt = ({ hour, minute }: { hour: number; minute: number }) =>
     `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
 
   if (market === 'crypto') {
@@ -169,29 +169,29 @@ export function getMarketHours(market) {
  * @param {number} hour   KST 시 (0~23)
  * @param {number} minute KST 분 (0~59)
  */
-export function toLaunchdTime(hour, minute = 0) {
+export function toLaunchdTime(hour: number, minute = 0): { Hour: number; Minute: number } {
   return { Hour: hour, Minute: minute };
 }
 
 // ── 유틸리티 ─────────────────────────────────────────────────────────────
 
 /** N분 전 Date 객체 */
-export function minutesAgo(n) {
+export function minutesAgo(n: number): Date {
   return new Date(Date.now() - n * 60 * 1000);
 }
 
 /** N시간 전 Date 객체 */
-export function hoursAgo(n) {
+export function hoursAgo(n: number): Date {
   return new Date(Date.now() - n * 60 * 60 * 1000);
 }
 
 /** N일 전 KST 날짜 문자열 (YYYY-MM-DD) */
-export function daysAgoStr(n) {
+export function daysAgoStr(n: number): string {
   return new Date(Date.now() - n * 86400 * 1000).toLocaleDateString('sv-SE', { timeZone: TZ });
 }
 
 /** 두 날짜 간의 일수 차이 (절대값) */
-export function daysBetween(date1, date2) {
+export function daysBetween(date1: Date | string | number, date2: Date | string | number): number {
   const d1 = new Date(date1);
   const d2 = new Date(date2);
   return Math.floor(Math.abs(d2.getTime() - d1.getTime()) / 86400000);
