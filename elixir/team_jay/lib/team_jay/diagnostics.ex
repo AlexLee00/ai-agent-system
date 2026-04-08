@@ -59,6 +59,16 @@ defmodule TeamJay.Diagnostics do
     {:blog_commenter, :blog},
     {:blog_node_server, :blog}
   ]
+  @week3_shadow_agents [
+    {:worker_lead, :worker},
+    {:worker_task_runner, :worker},
+    {:worker_web, :worker},
+    {:worker_nextjs, :worker},
+    {:worker_health_check, :worker},
+    {:worker_claude_monitor, :worker},
+    {:darwin_orchestrator, :platform},
+    {:hub_resource_api, :platform}
+  ]
 
   defstruct [:checks, :alerts, :last_check, :last_overlap_signature]
 
@@ -179,7 +189,9 @@ defmodule TeamJay.Diagnostics do
       TeamJay.Teams.ClaudeSupervisor,
       TeamJay.Teams.StewardSupervisor,
       TeamJay.Teams.InvestmentShadowSupervisor,
-      TeamJay.Teams.BlogShadowSupervisor
+      TeamJay.Teams.BlogShadowSupervisor,
+      TeamJay.Teams.WorkerShadowSupervisor,
+      TeamJay.Teams.PlatformShadowSupervisor
     ]
 
     Enum.map(supervisors, fn sup ->
@@ -301,6 +313,7 @@ defmodule TeamJay.Diagnostics do
       end)
 
     week2_shadow_agents = build_launchd_shadow_agents(@week2_shadow_agents)
+    week3_shadow_agents = build_launchd_shadow_agents(@week3_shadow_agents)
 
     summary = %{
       total: length(agent_statuses),
@@ -317,6 +330,13 @@ defmodule TeamJay.Diagnostics do
       missing: Enum.count(week2_shadow_agents, &(&1.status == :missing))
     }
 
+    week3_summary = %{
+      total: length(week3_shadow_agents),
+      running: Enum.count(week3_shadow_agents, &(&1.status == :running)),
+      loaded: Enum.count(week3_shadow_agents, &(&1.status == :loaded)),
+      missing: Enum.count(week3_shadow_agents, &(&1.status == :missing))
+    }
+
     %{
       generated_at: DateTime.utc_now(),
       overlap_count: length(Map.get(overlap_result, :overlaps, [])),
@@ -325,6 +345,8 @@ defmodule TeamJay.Diagnostics do
       agents: agent_statuses,
       week2_shadow_agents: week2_shadow_agents,
       week2_summary: week2_summary,
+      week3_shadow_agents: week3_shadow_agents,
+      week3_summary: week3_summary,
       summary: summary,
       recent_failures: TeamJay.EventLake.get_by_type("port_agent_failed", 5)
     }
@@ -407,6 +429,20 @@ defmodule TeamJay.Diagnostics do
       end)
       |> Enum.join(", ")
 
+    week3_issues =
+      report.week3_shadow_agents
+      |> Enum.filter(&(&1.status == :missing or is_integer(&1.last_exit_code)))
+      |> Enum.map(fn agent ->
+        suffix =
+          cond do
+            is_integer(agent.last_exit_code) -> ", exit=#{agent.last_exit_code}"
+            true -> ""
+          end
+
+        "#{agent.name}(#{agent.status}#{suffix})"
+      end)
+      |> Enum.join(", ")
+
     message = """
     ⚠️ Phase3 Shadow 리포트
     겹침: #{report.overlap_count}건
@@ -415,9 +451,13 @@ defmodule TeamJay.Diagnostics do
     week2 running: #{report.week2_summary.running}
     week2 loaded: #{report.week2_summary.loaded}
     week2 missing: #{report.week2_summary.missing}
+    week3 running: #{report.week3_summary.running}
+    week3 loaded: #{report.week3_summary.loaded}
+    week3 missing: #{report.week3_summary.missing}
     overlaps: #{overlap_text}
     agents: #{if(failing_agents == "", do: "없음", else: failing_agents)}
     week2 issues: #{if(week2_issues == "", do: "없음", else: week2_issues)}
+    week3 issues: #{if(week3_issues == "", do: "없음", else: week3_issues)}
     """
 
     _ = TeamJay.HubClient.post_alarm(String.trim(message), "claude", "diagnostics")
