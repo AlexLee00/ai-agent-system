@@ -70,7 +70,7 @@ defmodule TeamJay.Diagnostics do
     {:hub_resource_api, :platform, true}
   ]
 
-  defstruct [:checks, :alerts, :last_check, :last_overlap_signature]
+  defstruct [:checks, :alerts, :last_check, :last_overlap_signature, :last_pilot_signature]
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -80,7 +80,14 @@ defmodule TeamJay.Diagnostics do
   def init(_opts) do
     Logger.info("[Diagnostics] BEAM 모니터링 시작!")
     schedule_check()
-    {:ok, %__MODULE__{checks: [], alerts: [], last_check: nil, last_overlap_signature: nil}}
+    {:ok,
+     %__MODULE__{
+       checks: [],
+       alerts: [],
+       last_check: nil,
+       last_overlap_signature: nil,
+       last_pilot_signature: nil
+     }}
   end
 
   @impl true
@@ -88,6 +95,8 @@ defmodule TeamJay.Diagnostics do
     results = run_diagnostics()
     alerts = Enum.filter(results, &(&1.severity in [:warn, :error]))
     overlap_signature = maybe_record_launchd_overlap(results, state.last_overlap_signature)
+    report = build_shadow_report(%{state | checks: results, alerts: alerts})
+    pilot_signature = maybe_record_next_pilot(report, state.last_pilot_signature)
 
     if length(alerts) > 0 do
       Logger.warning("[Diagnostics] #{length(alerts)}건 경고!")
@@ -109,7 +118,8 @@ defmodule TeamJay.Diagnostics do
        | checks: results,
          alerts: alerts,
          last_check: DateTime.utc_now(),
-         last_overlap_signature: overlap_signature
+         last_overlap_signature: overlap_signature,
+         last_pilot_signature: pilot_signature
      }}
   end
 
@@ -148,7 +158,7 @@ defmodule TeamJay.Diagnostics do
       severity: severity,
       title: "Phase3 Shadow 리포트",
       message:
-        "겹침 #{report.overlap_count}건 | week1 failing #{report.summary.failing} | week1 missing #{report.summary.missing} | shadow running #{total_shadow_running} | shadow loaded #{total_shadow_loaded} | required missing #{total_required_missing}",
+        "겹침 #{report.overlap_count}건 | week1 failing #{report.summary.failing} | week1 missing #{report.summary.missing} | shadow running #{total_shadow_running} | shadow loaded #{total_shadow_loaded} | required missing #{total_required_missing} | next pilot #{format_single_candidate(report.transition_plan.next_pilot_candidate)} | pilot label #{format_runbook_label(report.pilot_runbook)}",
       tags: ["phase3", "diagnostics", "shadow_report"],
       metadata: report
     })
@@ -301,6 +311,20 @@ defmodule TeamJay.Diagnostics do
     signature
   end
 
+  defp maybe_record_next_pilot(report, last_signature) do
+    signature =
+      case report.transition_plan.next_pilot_candidate do
+        nil -> "none"
+        candidate -> "#{candidate.team}:#{candidate.name}:#{candidate.priority_score}"
+      end
+
+    if signature != last_signature do
+      record_next_pilot_event(report.transition_plan.next_pilot_candidate, signature, report.transition_plan.blockers)
+    end
+
+    signature
+  end
+
   defp build_shadow_report(state) do
     overlap_result = Enum.find(state.checks, &(&1.name == "launchd_phase3_overlap")) || %{}
 
@@ -356,6 +380,19 @@ defmodule TeamJay.Diagnostics do
         Enum.count(week3_shadow_agents, &(&1.status == :missing and not Map.get(&1, :required, true)))
     }
 
+    migration_candidates = %{
+      week2: build_transition_candidates(week2_shadow_agents),
+      week3: build_transition_candidates(week3_shadow_agents)
+    }
+
+    transition_plan =
+      build_transition_plan(week2_shadow_agents, week3_shadow_agents, week2_summary, week3_summary)
+
+    pilot_runbook = build_pilot_runbook(transition_plan.next_pilot_candidate)
+
+    recommended_actions =
+      build_recommended_actions(summary, week2_summary, week3_summary, migration_candidates, transition_plan)
+
     %{
       generated_at: DateTime.utc_now(),
       overlap_count: length(Map.get(overlap_result, :overlaps, [])),
@@ -366,6 +403,14 @@ defmodule TeamJay.Diagnostics do
       week2_summary: week2_summary,
       week3_shadow_agents: week3_shadow_agents,
       week3_summary: week3_summary,
+      migration_candidates: migration_candidates,
+      top_transition_candidates: %{
+        week2: Enum.take(migration_candidates.week2, 3),
+        week3: Enum.take(migration_candidates.week3, 3)
+      },
+      transition_plan: transition_plan,
+      pilot_runbook: pilot_runbook,
+      recommended_actions: recommended_actions,
       summary: summary,
       recent_failures: TeamJay.EventLake.get_by_type("port_agent_failed", 5)
     }
@@ -380,6 +425,7 @@ defmodule TeamJay.Diagnostics do
           %{
             name: name,
             team: team,
+            label: nil,
             status: :missing,
             pid: nil,
             last_exit_code: nil,
@@ -392,6 +438,7 @@ defmodule TeamJay.Diagnostics do
           %{
             name: name,
             team: team,
+            label: Map.get(status, :label),
             status: status.status,
             pid: status.pid,
             last_exit_code: status.last_exit_code,
@@ -403,6 +450,108 @@ defmodule TeamJay.Diagnostics do
 
   defp normalize_shadow_agent({name, team}), do: {name, team, true}
   defp normalize_shadow_agent({name, team, required}), do: {name, team, required}
+
+  defp build_transition_candidates(agents) do
+    agents
+    |> Enum.filter(&(&1.status == :loaded and Map.get(&1, :required, true)))
+    |> Enum.map(&Map.take(&1, [:name, :team, :status, :label]))
+  end
+
+  defp build_recommended_actions(summary, week2_summary, week3_summary, migration_candidates, transition_plan) do
+    []
+    |> maybe_add_action(summary.failing > 0, "Week1 failing agent 먼저 안정화")
+    |> maybe_add_action(week2_summary.required_missing > 0, "Week2 필수 shadow 누락 서비스 점검")
+    |> maybe_add_action(week3_summary.required_missing > 0, "Week3 필수 shadow 누락 서비스 점검")
+    |> maybe_add_action(length(migration_candidates.week2) > 0, "Week2 loaded 서비스 중 저위험 후보를 병렬 전환 검토")
+    |> maybe_add_action(length(migration_candidates.week3) > 0, "Week3 loaded 서비스 중 저위험 후보를 병렬 전환 검토")
+    |> maybe_add_action(length(transition_plan.pilot_candidates) > 0, "pilot 후보 1개를 골라 launchd vs Elixir 병렬 비교 시작")
+  end
+
+  defp maybe_add_action(actions, true, action), do: actions ++ [action]
+  defp maybe_add_action(actions, false, _action), do: actions
+
+  defp build_transition_plan(week2_agents, week3_agents, week2_summary, week3_summary) do
+    candidates =
+      (week2_agents ++ week3_agents)
+      |> Enum.filter(&(&1.status == :loaded and Map.get(&1, :required, true)))
+
+    pilot_candidates =
+      candidates
+      |> Enum.filter(&pilot_safe?/1)
+      |> Enum.map(&score_transition_candidate/1)
+      |> Enum.sort_by(&{-&1.priority_score, Atom.to_string(&1.name)})
+
+    top_pilots = Enum.take(pilot_candidates, 3)
+    next_pilot_candidate = List.first(top_pilots)
+
+    blockers =
+      []
+      |> maybe_add_blocker(week2_summary.required_missing > 0, "Week2 required shadow missing 존재")
+      |> maybe_add_blocker(week3_summary.required_missing > 0, "Week3 required shadow missing 존재")
+      |> maybe_add_blocker(Enum.empty?(top_pilots), "즉시 파일럿 가능한 loaded 후보가 부족함")
+
+    %{
+      pilot_candidates: top_pilots,
+      next_pilot_candidate: next_pilot_candidate,
+      blockers: blockers,
+      ready_for_pilot: blockers == []
+    }
+  end
+
+  defp pilot_safe?(%{team: :investment}), do: false
+  defp pilot_safe?(%{name: :worker_web}), do: false
+  defp pilot_safe?(%{name: :worker_nextjs}), do: false
+  defp pilot_safe?(_agent), do: true
+
+  defp score_transition_candidate(agent) do
+    team_bonus =
+      case agent.team do
+        :blog -> 30
+        :worker -> 20
+        :platform -> 10
+        _ -> 0
+      end
+
+    name_bonus =
+      case agent.name do
+        :blog_commenter -> 15
+        :blog_daily -> 10
+        :worker_task_runner -> 10
+        :worker_health_check -> 8
+        :worker_claude_monitor -> 6
+        _ -> 0
+      end
+
+    Map.merge(Map.take(agent, [:name, :team, :status, :label]), %{
+      priority_score: 100 + team_bonus + name_bonus
+    })
+  end
+
+  defp build_pilot_runbook(nil) do
+    %{
+      ready: false,
+      label: nil,
+      steps: [],
+      note: "현재 즉시 파일럿 가능한 후보가 없습니다"
+    }
+  end
+
+  defp build_pilot_runbook(candidate) do
+    %{
+      ready: true,
+      label: candidate.label,
+      steps: [
+        "launchd 서비스 #{candidate.label}의 최근 로그와 health 상태를 먼저 확인",
+        "Elixir shadow report에서 #{candidate.name}가 loaded 상태로 2회 이상 안정적으로 유지되는지 확인",
+        "짧은 창에서 launchd와 Elixir를 병렬 비교하고 결과를 event_lake에 기록",
+        "불일치 0건이면 다음 창에서 launchd off -> Elixir on 파일럿 전환 검토"
+      ],
+      note: "#{candidate.name}(#{candidate.team})를 다음 파일럿 후보로 권장"
+    }
+  end
+
+  defp maybe_add_blocker(blockers, true, blocker), do: blockers ++ [blocker]
+  defp maybe_add_blocker(blockers, false, _blocker), do: blockers
 
   defp record_launchd_overlap_event(nil, signature) do
     TeamJay.EventLake.record(%{
@@ -429,6 +578,32 @@ defmodule TeamJay.Diagnostics do
       message: overlap_result.message,
       tags: ["phase3", "diagnostics", "launchd_overlap"],
       metadata: %{signature: signature, overlaps: overlaps, overlap_count: length(overlaps)}
+    })
+  end
+
+  defp record_next_pilot_event(nil, signature, blockers) do
+    TeamJay.EventLake.record(%{
+      event_type: "phase3_next_pilot_changed",
+      team: "system",
+      bot_name: "diagnostics",
+      severity: "info",
+      title: "Phase3 다음 파일럿 후보 없음",
+      message: "현재 즉시 파일럿 가능한 후보가 없습니다",
+      tags: ["phase3", "diagnostics", "pilot_candidate"],
+      metadata: %{signature: signature, blockers: blockers}
+    })
+  end
+
+  defp record_next_pilot_event(candidate, signature, blockers) do
+    TeamJay.EventLake.record(%{
+      event_type: "phase3_next_pilot_changed",
+      team: "system",
+      bot_name: "diagnostics",
+      severity: "info",
+      title: "Phase3 다음 파일럿 후보 변경",
+      message: "#{candidate.name}(#{candidate.team}) score=#{candidate.priority_score}",
+      tags: ["phase3", "diagnostics", "pilot_candidate"],
+      metadata: %{signature: signature, candidate: candidate, blockers: blockers}
     })
   end
 
@@ -488,16 +663,56 @@ defmodule TeamJay.Diagnostics do
     week3 loaded: #{report.week3_summary.loaded}
     week3 missing: #{report.week3_summary.missing}
     week3 required_missing: #{report.week3_summary.required_missing}
+    week2 candidates: #{length(report.migration_candidates.week2)}
+    week3 candidates: #{length(report.migration_candidates.week3)}
+    week2 top: #{format_candidate_names(report.top_transition_candidates.week2)}
+    week3 top: #{format_candidate_names(report.top_transition_candidates.week3)}
+    pilot: #{format_candidate_names(report.transition_plan.pilot_candidates)}
+    next pilot: #{format_single_candidate(report.transition_plan.next_pilot_candidate)}
+    pilot label: #{format_runbook_label(report.pilot_runbook)}
+    pilot ready: #{if(report.pilot_runbook.ready, do: "yes", else: "no")}
+    pilot note: #{report.pilot_runbook.note}
+    pilot step1: #{format_runbook_step(report.pilot_runbook, 0)}
+    pilot step2: #{format_runbook_step(report.pilot_runbook, 1)}
+    blockers: #{format_text_list(report.transition_plan.blockers)}
     overlaps: #{overlap_text}
     agents: #{if(failing_agents == "", do: "없음", else: failing_agents)}
     week2 issues: #{if(week2_issues == "", do: "없음", else: week2_issues)}
     week3 issues: #{if(week3_issues == "", do: "없음", else: week3_issues)}
+    next: #{Enum.join(report.recommended_actions, " | ")}
     """
 
     _ = TeamJay.HubClient.post_alarm(String.trim(message), "claude", "diagnostics")
   end
 
   defp maybe_alarm_shadow_report(_report, _severity), do: :ok
+
+  defp format_candidate_names([]), do: "없음"
+
+  defp format_candidate_names(candidates) do
+    candidates
+    |> Enum.map(&to_string(&1.name))
+    |> Enum.join(", ")
+  end
+
+  defp format_single_candidate(nil), do: "없음"
+
+  defp format_single_candidate(candidate) do
+    "#{candidate.name}(#{candidate.team}, score=#{candidate.priority_score})"
+  end
+
+  defp format_runbook_label(%{label: nil}), do: "없음"
+  defp format_runbook_label(%{label: label}), do: label
+
+  defp format_runbook_step(%{steps: steps}, index) do
+    case Enum.at(steps, index) do
+      nil -> "없음"
+      step -> step
+    end
+  end
+
+  defp format_text_list([]), do: "없음"
+  defp format_text_list(items), do: Enum.join(items, " | ")
 
   defp schedule_check, do: Process.send_after(self(), :check, @check_interval)
 end
