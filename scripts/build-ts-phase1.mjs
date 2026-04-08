@@ -55,6 +55,8 @@ const runtimeEntryPoints = [
   path.join(root, 'packages/core/lib/competition-engine.ts'),
   path.join(root, 'packages/core/lib/file-guard.ts'),
   path.join(root, 'packages/core/lib/experience-store.ts'),
+  path.join(root, 'packages/core/lib/ai-feedback-core.ts'),
+  path.join(root, 'packages/core/lib/ai-feedback-report.ts'),
 ];
 
 await mkdir(outdir, { recursive: true });
