@@ -65,9 +65,93 @@ type FallbackLogMeta = {
   [key: string]: any;
 };
 
+type ProviderFailureState = {
+  count: number;
+  lastFailAt: number;
+};
+
+type RuntimeProfile = {
+  openclaw_agent?: string;
+  claude_code_name?: string;
+  claude_code_settings?: string;
+  local_llm_base_url?: string;
+} | null;
+
+type ProviderCallOptions = {
+  model: string;
+  maxTokens: number;
+  temperature?: number;
+  systemPrompt: string;
+  userPrompt: string;
+  timeoutMs?: number | null;
+  local?: boolean;
+  runtimeProfile?: RuntimeProfile;
+};
+
+type ProviderUsage = {
+  input_tokens?: number;
+  output_tokens?: number;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+};
+
+type ProviderCallResult = {
+  raw: unknown;
+  text: string;
+  usage: ProviderUsage | null;
+};
+
+type OAuthStore = {
+  openai_oauth?: {
+    access_token?: string;
+  };
+};
+
+type OAuthSecretPayload = {
+  access_token?: string;
+};
+
+type ExecFileErrorLike = {
+  code?: string | number;
+  signal?: string;
+  stdout?: string;
+  stderr?: string;
+  message?: string;
+};
+
+type ClaudeCodeResponse = {
+  result?: string;
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+  };
+  modelUsage?: Record<string, unknown>;
+  session_id?: string;
+  duration_ms?: number;
+  is_error?: boolean;
+};
+
+type OpenClawAgentResponse = {
+  status?: string;
+  summary?: string;
+  runId?: string | null;
+  result?: {
+    payloads?: Array<{ text?: string }>;
+    meta?: {
+      durationMs?: number | null;
+      agentMeta?: {
+        provider?: string;
+        model?: string;
+        lastCallUsage?: { input?: number; output?: number; total?: number };
+        usage?: { input?: number; output?: number; total?: number };
+      };
+    };
+  };
+};
+
 // ── 그루크 계정 라운드로빈 인덱스 ────────────────────────────────────
 let _groqIdx = 0;
-let _oauthToken = null;
+let _oauthToken: string | null = null;
 let _oauthTokenExpiry = 0;
 let _evalTableReady = false;
 const OAUTH_CACHE_TTL = 300_000;
@@ -75,9 +159,9 @@ const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.jso
 const EVAL_EXCLUDED_PROVIDERS = new Set(['openai-oauth', 'openai', 'anthropic']);
 const MAX_CONSECUTIVE_FAILURES = 5;
 const FAILURE_COOLDOWN_MS = 60_000;
-const _providerFailures = new Map();
+const _providerFailures = new Map<string, ProviderFailureState>();
 
-function _isProviderCoolingDown(provider) {
+function _isProviderCoolingDown(provider: string): boolean {
   const entry = _providerFailures.get(provider);
   if (!entry || entry.count < MAX_CONSECUTIVE_FAILURES) return false;
   if (Date.now() - entry.lastFailAt > FAILURE_COOLDOWN_MS) {
@@ -87,7 +171,7 @@ function _isProviderCoolingDown(provider) {
   return true;
 }
 
-function _recordProviderFailure(provider) {
+function _recordProviderFailure(provider: string): void {
   const key = String(provider || '').trim();
   if (!key) return;
   const entry = _providerFailures.get(key) || { count: 0, lastFailAt: 0 };
@@ -96,14 +180,14 @@ function _recordProviderFailure(provider) {
   _providerFailures.set(key, entry);
 }
 
-function _recordProviderSuccess(provider) {
+function _recordProviderSuccess(provider: string): void {
   const key = String(provider || '').trim();
   if (!key) return;
   _providerFailures.delete(key);
 }
 
 // ── 응답 텍스트 정규화 ────────────────────────────────────────────────
-function _extractText(resp, provider) {
+function _extractText(resp: any, provider: string): string {
   if (provider === 'anthropic') {
     return resp?.content?.[0]?.text?.trim() || '';
   }
@@ -125,7 +209,7 @@ function _extractText(resp, provider) {
 
 // ── provider별 단건 호출 ─────────────────────────────────────────────
 
-async function _callAnthropic({ model, maxTokens, temperature = 0.1, systemPrompt, userPrompt }) {
+async function _callAnthropic({ model, maxTokens, temperature = 0.1, systemPrompt, userPrompt }: ProviderCallOptions) {
   const apiKey = getAnthropicKey();
   if (!apiKey) throw new Error('Anthropic API 키 없음');
   const anthropicModule = require('@anthropic-ai/sdk');
@@ -142,7 +226,21 @@ async function _callAnthropic({ model, maxTokens, temperature = 0.1, systemPromp
 }
 
 /** @param {{ model: string, maxTokens: number, temperature?: number, systemPrompt: string, userPrompt: string, baseURL?: string|null }} input */
-async function _callOpenAI({ model, maxTokens, temperature = 0.1, systemPrompt, userPrompt, baseURL = null }) {
+async function _callOpenAI({
+  model,
+  maxTokens,
+  temperature = 0.1,
+  systemPrompt,
+  userPrompt,
+  baseURL = null,
+}: {
+  model: string;
+  maxTokens: number;
+  temperature?: number;
+  systemPrompt: string;
+  userPrompt: string;
+  baseURL?: string | null;
+}) {
   const apiKey = getOpenAIKey();
   if (!apiKey) throw new Error('OpenAI API 키 없음');
   const openaiModule = require('openai');
@@ -161,11 +259,11 @@ async function _callOpenAI({ model, maxTokens, temperature = 0.1, systemPrompt, 
   });
 }
 
-async function _getOAuthToken() {
+async function _getOAuthToken(): Promise<string | null> {
   if (_oauthToken && Date.now() < _oauthTokenExpiry) return _oauthToken;
 
   try {
-    const store = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8'));
+    const store = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8')) as OAuthStore;
     if (store?.openai_oauth?.access_token) {
       _oauthToken = store.openai_oauth.access_token;
       _oauthTokenExpiry = Date.now() + OAUTH_CACHE_TTL;
@@ -173,7 +271,7 @@ async function _getOAuthToken() {
     }
   } catch { /* DEV나 미동기화 상태면 Hub 경유 */ }
 
-  const data = await fetchHubSecrets('openai_oauth');
+  const data = await fetchHubSecrets('openai_oauth') as OAuthSecretPayload | null;
   if (data?.access_token) {
     _oauthToken = data.access_token;
     _oauthTokenExpiry = Date.now() + OAUTH_CACHE_TTL;
@@ -183,7 +281,8 @@ async function _getOAuthToken() {
   return null;
 }
 
-async function _callOpenAIOAuth({ model, maxTokens, temperature = 0.1, systemPrompt, userPrompt, timeoutMs = 30000, local = false, runtimeProfile = null }) {
+async function _callOpenAIOAuth({ model, maxTokens, temperature = 0.1, systemPrompt, userPrompt, timeoutMs = 30000, local = false, runtimeProfile = null }: ProviderCallOptions) {
+  const resolvedTimeoutMs = timeoutMs ?? 30000;
   const openclawAgent = String(runtimeProfile?.openclaw_agent || process.env.OPENCLAW_AGENT || 'main').trim() || 'main';
   const prompt = [
     '[SYSTEM]',
@@ -198,7 +297,7 @@ async function _callOpenAIOAuth({ model, maxTokens, temperature = 0.1, systemPro
     '--agent', openclawAgent,
     '--json',
     '--message', prompt,
-    '--timeout', String(Math.max(10, Math.ceil(timeoutMs / 1000))),
+    '--timeout', String(Math.max(10, Math.ceil(resolvedTimeoutMs / 1000))),
   ];
   if (local) args.push('--local');
 
@@ -206,7 +305,7 @@ async function _callOpenAIOAuth({ model, maxTokens, temperature = 0.1, systemPro
   let stderr = '';
   try {
     const result = await execFileAsync('openclaw', args, {
-      timeout: timeoutMs + 5000,
+      timeout: resolvedTimeoutMs + 5000,
       maxBuffer: 2 * 1024 * 1024,
       env: {
         ...process.env,
@@ -216,10 +315,11 @@ async function _callOpenAIOAuth({ model, maxTokens, temperature = 0.1, systemPro
     stdout = result.stdout || '';
     stderr = result.stderr || '';
   } catch (error) {
-    const exitCode = error?.code ?? 'unknown';
-    const signal = error?.signal || '';
-    stdout = error?.stdout || '';
-    stderr = error?.stderr || error?.message || '';
+    const execError = error as ExecFileErrorLike;
+    const exitCode = execError?.code ?? 'unknown';
+    const signal = execError?.signal || '';
+    stdout = execError?.stdout || '';
+    stderr = execError?.stderr || execError?.message || '';
     const detail = [
       `exit=${exitCode}`,
       signal ? `signal=${signal}` : null,
@@ -234,9 +334,9 @@ async function _callOpenAIOAuth({ model, maxTokens, temperature = 0.1, systemPro
     throw new Error(`OpenClaw agent 빈 응답${stderr ? `: ${String(stderr).slice(0, 160)}` : ''}`);
   }
 
-  let parsed;
+  let parsed: OpenClawAgentResponse;
   try {
-    parsed = JSON.parse(output);
+    parsed = JSON.parse(output) as OpenClawAgentResponse;
   } catch {
     throw new Error(`OpenClaw agent JSON 파싱 실패: ${output.slice(0, 160)}`);
   }
@@ -266,7 +366,7 @@ async function _callOpenAIOAuth({ model, maxTokens, temperature = 0.1, systemPro
   };
 }
 
-async function _callClaudeCode({ model, maxTokens, systemPrompt, userPrompt, timeoutMs = 45000, runtimeProfile = null }) {
+async function _callClaudeCode({ model, maxTokens, systemPrompt, userPrompt, timeoutMs = 45000, runtimeProfile = null }: ProviderCallOptions) {
   const resolvedModel = String(model || 'sonnet').replace(/^claude-code\//, '') || 'sonnet';
   const claudeSessionName = String(runtimeProfile?.claude_code_name || process.env.CLAUDE_CODE_NAME || '').trim();
   const claudeSettingsFile = String(runtimeProfile?.claude_code_settings || process.env.CLAUDE_CODE_SETTINGS || '').trim();
@@ -306,8 +406,9 @@ async function _callClaudeCode({ model, maxTokens, systemPrompt, userPrompt, tim
       stdout = result.stdout || '';
       stderr = result.stderr || '';
     } catch (error) {
-      stdout = error?.stdout || '';
-      stderr = error?.stderr || error?.message || '';
+      const execError = error as ExecFileErrorLike;
+      stdout = execError?.stdout || '';
+      stderr = execError?.stderr || execError?.message || '';
     }
 
     output = String(stdout || '').trim();
@@ -323,9 +424,9 @@ async function _callClaudeCode({ model, maxTokens, systemPrompt, userPrompt, tim
     throw new Error(`Claude Code 빈 응답${stderr ? `: ${String(stderr).slice(0, 160)}` : ''}`);
   }
 
-  let parsed;
+  let parsed: ClaudeCodeResponse;
   try {
-    parsed = JSON.parse(output);
+    parsed = JSON.parse(output) as ClaudeCodeResponse;
   } catch {
     throw new Error(`Claude Code JSON 파싱 실패: ${output.slice(0, 160)}`);
   }
@@ -348,8 +449,8 @@ async function _callClaudeCode({ model, maxTokens, systemPrompt, userPrompt, tim
   };
 }
 
-function _inferErrorType(err) {
-  const message = String(err?.message || '').toLowerCase();
+function _inferErrorType(err: unknown): string | null {
+  const message = String((err as Error | undefined)?.message || '').toLowerCase();
   if (!message) return null;
   if (message.includes('429') || message.includes('rate limit') || message.includes('quota')) return 'rate_limit';
   if (message.includes('timeout') || message.includes('timed out') || message.includes('abort')) return 'timeout';
@@ -399,6 +500,18 @@ async function _recordModelEval({
   errorType,
   tokenInput,
   tokenOutput,
+}: {
+  selectorKey?: string;
+  agentName?: string;
+  team?: string;
+  provider: string;
+  model: string;
+  isPrimary: boolean;
+  latencyMs: number;
+  success: boolean;
+  errorType: string | null;
+  tokenInput: number | null;
+  tokenOutput: number | null;
 }) {
   if (EVAL_EXCLUDED_PROVIDERS.has(provider)) return;
   if (!env.IS_OPS) return;
@@ -430,7 +543,7 @@ async function _recordModelEval({
   } catch { /* 기록 실패 무시 */ }
 }
 
-async function _groqSingleCall(apiKey, groqModel, maxTokens, temperature, systemPrompt, userPrompt) {
+async function _groqSingleCall(apiKey: string, groqModel: string, maxTokens: number, temperature: number, systemPrompt: string, userPrompt: string) {
   const openaiModule = require('openai');
   const OpenAI = /** @type {any} */ (openaiModule.default || openaiModule);
   const client = new OpenAI({ apiKey, baseURL: 'https://api.groq.com/openai/v1' });
@@ -449,7 +562,19 @@ async function _groqSingleCall(apiKey, groqModel, maxTokens, temperature, system
   return client.chat.completions.create(params);
 }
 
-async function _callGroq({ model, maxTokens, temperature = 0.1, systemPrompt, userPrompt }) {
+async function _callGroq({
+  model,
+  maxTokens,
+  temperature = 0.1,
+  systemPrompt,
+  userPrompt,
+}: {
+  model: string;
+  maxTokens: number;
+  temperature?: number;
+  systemPrompt: string;
+  userPrompt: string;
+}) {
   // groq/ 외부 네임스페이스만 제거
   const groqModel  = model.replace(/^groq\//, '');
   const accounts   = getGroqAccounts();
@@ -463,7 +588,7 @@ async function _callGroq({ model, maxTokens, temperature = 0.1, systemPrompt, us
 
   // 최대 3개 키 순회하며 429 retry
   const maxRetry = Math.min(accounts.length, 3);
-  let lastError;
+  let lastError: unknown;
 
   for (let i = 0; i < maxRetry; i++) {
     const apiKey = accounts[(_groqIdx + i) % accounts.length]?.api_key;
@@ -474,7 +599,8 @@ async function _callGroq({ model, maxTokens, temperature = 0.1, systemPrompt, us
       return result;
     } catch (e) {
       lastError = e;
-      const is429 = e.status === 429 || e.message?.includes('429') || e.message?.includes('rate_limit');
+      const error = e as { status?: number; message?: string };
+      const is429 = error.status === 429 || error.message?.includes('429') || error.message?.includes('rate_limit');
       if (is429) {
         console.warn(`  ⚠️ [Groq] 429 rate limit → 키 ${i + 1}/${maxRetry} 실패, 다음 키 시도...`);
         continue;
@@ -486,7 +612,7 @@ async function _callGroq({ model, maxTokens, temperature = 0.1, systemPrompt, us
   throw lastError || new Error('Groq 전체 키 소진 (429)');
 }
 
-async function _callGemini({ model, maxTokens, temperature = 0.1, systemPrompt, userPrompt }) {
+async function _callGemini({ model, maxTokens, temperature = 0.1, systemPrompt, userPrompt }: ProviderCallOptions) {
   const apiKey = getGeminiKey();
   if (!apiKey) throw new Error('Gemini API 키 없음');
   const { GoogleGenerativeAI } = require('@google/generative-ai');
@@ -505,7 +631,13 @@ async function _callGemini({ model, maxTokens, temperature = 0.1, systemPrompt, 
 
 // ── provider 디스패처 ─────────────────────────────────────────────────
 
-async function _callProvider(cfg, systemPrompt, userPrompt, timeoutMs, runtimeProfile = null) {
+async function _callProvider(
+  cfg: FallbackChainEntry,
+  systemPrompt: string,
+  userPrompt: string,
+  timeoutMs: number | null,
+  runtimeProfile: RuntimeProfile = null,
+): Promise<ProviderCallResult> {
   const { provider, model, maxTokens, temperature } = cfg;
   const opts = {
     model,
@@ -517,30 +649,34 @@ async function _callProvider(cfg, systemPrompt, userPrompt, timeoutMs, runtimePr
     local: cfg.local === true,
     runtimeProfile,
   };
+  const normalizedOpts: ProviderCallOptions = {
+    ...opts,
+    timeoutMs: opts.timeoutMs ?? undefined,
+  };
 
   switch (provider) {
     case 'anthropic': {
-      const resp = await _callAnthropic(opts);
+      const resp = await _callAnthropic(normalizedOpts);
       return { raw: resp, text: _extractText(resp, 'anthropic'), usage: resp.usage };
     }
     case 'openai': {
-      const resp = await _callOpenAI(opts);
+      const resp = await _callOpenAI(normalizedOpts);
       return { raw: resp, text: _extractText(resp, 'openai'), usage: resp.usage };
     }
     case 'openai-oauth': {
-      const resp = await _callOpenAIOAuth(opts);
+      const resp = await _callOpenAIOAuth(normalizedOpts);
       return { raw: resp, text: _extractText(resp, 'openai'), usage: resp.usage };
     }
     case 'claude-code': {
-      const resp = await _callClaudeCode(opts);
+      const resp = await _callClaudeCode(normalizedOpts);
       return { raw: resp, text: _extractText(resp, 'claude-code'), usage: resp.usage };
     }
     case 'groq': {
-      const resp = await _callGroq(opts);
+      const resp = await _callGroq(normalizedOpts);
       return { raw: resp, text: _extractText(resp, 'groq'), usage: resp.usage };
     }
     case 'gemini': {
-      const resp = await _callGemini(opts);
+      const resp = await _callGemini(normalizedOpts);
       return { raw: resp, text: _extractText(resp, 'gemini'), usage: null };
     }
     case 'local': {
@@ -611,7 +747,7 @@ function _inferRuntimePurpose(logMeta: FallbackLogMeta = {}) {
  * @returns {Promise<{text, provider, model, attempt}>}
  * @throws 모든 체인 실패 시 마지막 오류를 throw
  */
-export async function callWithFallback({ chain, systemPrompt, userPrompt, logMeta = {}, timeoutMs = null, team = null, purpose = null }: { chain: FallbackChainEntry[]; systemPrompt: string; userPrompt: string; logMeta?: FallbackLogMeta; timeoutMs?: number | null; team?: string | null; purpose?: string | null; }) {
+export async function callWithFallback({ chain, systemPrompt, userPrompt, logMeta = {}, timeoutMs = null, team = null, purpose = null }: { chain: FallbackChainEntry[]; systemPrompt: string; userPrompt: string; logMeta?: FallbackLogMeta; timeoutMs?: number | null; team?: string | null; purpose?: string | null; }): Promise<{ text: string; provider: string; model: string; attempt: number; }> {
   await initHubConfig();
 
   // ★ 긴급 차단 체크
@@ -726,7 +862,7 @@ export async function callWithFallback({ chain, systemPrompt, userPrompt, logMet
             requestType: logMeta.requestType,
             latencyMs,
             success:     false,
-            errorMsg:    e.message?.slice(0, 200),
+            errorMsg:    (e as Error).message?.slice(0, 200),
             runtimeTeam,
             runtimePurpose,
             runtimeOpenClawAgent,
@@ -756,13 +892,13 @@ export async function callWithFallback({ chain, systemPrompt, userPrompt, logMet
         route: traceRoute,
         latencyMs,
         status: 'error',
-        errorMessage: e.message,
+        errorMessage: (e as Error).message,
         fallbackUsed: i > 0,
         fallbackProvider: i > 0 ? cfg.provider : null,
       });
 
       const isLast = i === chain.length - 1;
-      console.warn(`  ⚠️ [폴백] ${cfg.provider}/${cfg.model} (시도 ${attempt}) 실패: ${e.message?.slice(0, 80)}${isLast ? ' — 모든 폴백 소진' : ' → 다음 시도...'}`);
+      console.warn(`  ⚠️ [폴백] ${cfg.provider}/${cfg.model} (시도 ${attempt}) 실패: ${(e as Error).message?.slice(0, 80)}${isLast ? ' — 모든 폴백 소진' : ' → 다음 시도...'}`);
     }
   }
 
@@ -777,4 +913,3 @@ export async function callWithFallback({ chain, systemPrompt, userPrompt, logMet
   }
   throw lastError;
 }
-
