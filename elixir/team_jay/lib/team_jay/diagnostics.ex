@@ -70,7 +70,7 @@ defmodule TeamJay.Diagnostics do
     {:hub_resource_api, :platform, true}
   ]
 
-  defstruct [:checks, :alerts, :last_check, :last_overlap_signature]
+  defstruct [:checks, :alerts, :last_check, :last_overlap_signature, :last_pilot_signature]
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -80,7 +80,14 @@ defmodule TeamJay.Diagnostics do
   def init(_opts) do
     Logger.info("[Diagnostics] BEAM 모니터링 시작!")
     schedule_check()
-    {:ok, %__MODULE__{checks: [], alerts: [], last_check: nil, last_overlap_signature: nil}}
+    {:ok,
+     %__MODULE__{
+       checks: [],
+       alerts: [],
+       last_check: nil,
+       last_overlap_signature: nil,
+       last_pilot_signature: nil
+     }}
   end
 
   @impl true
@@ -88,6 +95,8 @@ defmodule TeamJay.Diagnostics do
     results = run_diagnostics()
     alerts = Enum.filter(results, &(&1.severity in [:warn, :error]))
     overlap_signature = maybe_record_launchd_overlap(results, state.last_overlap_signature)
+    report = build_shadow_report(%{state | checks: results, alerts: alerts})
+    pilot_signature = maybe_record_next_pilot(report, state.last_pilot_signature)
 
     if length(alerts) > 0 do
       Logger.warning("[Diagnostics] #{length(alerts)}건 경고!")
@@ -109,7 +118,8 @@ defmodule TeamJay.Diagnostics do
        | checks: results,
          alerts: alerts,
          last_check: DateTime.utc_now(),
-         last_overlap_signature: overlap_signature
+         last_overlap_signature: overlap_signature,
+         last_pilot_signature: pilot_signature
      }}
   end
 
@@ -296,6 +306,20 @@ defmodule TeamJay.Diagnostics do
 
     if signature != last_signature do
       record_launchd_overlap_event(overlap_result, signature)
+    end
+
+    signature
+  end
+
+  defp maybe_record_next_pilot(report, last_signature) do
+    signature =
+      case report.transition_plan.next_pilot_candidate do
+        nil -> "none"
+        candidate -> "#{candidate.team}:#{candidate.name}:#{candidate.priority_score}"
+      end
+
+    if signature != last_signature do
+      record_next_pilot_event(report.transition_plan.next_pilot_candidate, signature, report.transition_plan.blockers)
     end
 
     signature
@@ -526,6 +550,32 @@ defmodule TeamJay.Diagnostics do
       message: overlap_result.message,
       tags: ["phase3", "diagnostics", "launchd_overlap"],
       metadata: %{signature: signature, overlaps: overlaps, overlap_count: length(overlaps)}
+    })
+  end
+
+  defp record_next_pilot_event(nil, signature, blockers) do
+    TeamJay.EventLake.record(%{
+      event_type: "phase3_next_pilot_changed",
+      team: "system",
+      bot_name: "diagnostics",
+      severity: "info",
+      title: "Phase3 다음 파일럿 후보 없음",
+      message: "현재 즉시 파일럿 가능한 후보가 없습니다",
+      tags: ["phase3", "diagnostics", "pilot_candidate"],
+      metadata: %{signature: signature, blockers: blockers}
+    })
+  end
+
+  defp record_next_pilot_event(candidate, signature, blockers) do
+    TeamJay.EventLake.record(%{
+      event_type: "phase3_next_pilot_changed",
+      team: "system",
+      bot_name: "diagnostics",
+      severity: "info",
+      title: "Phase3 다음 파일럿 후보 변경",
+      message: "#{candidate.name}(#{candidate.team}) score=#{candidate.priority_score}",
+      tags: ["phase3", "diagnostics", "pilot_candidate"],
+      metadata: %{signature: signature, candidate: candidate, blockers: blockers}
     })
   end
 
