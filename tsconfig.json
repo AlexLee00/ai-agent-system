@@ -17,8 +17,9 @@
   "files": [
     "packages/core/lib/central-logger.js",
     "packages/core/lib/openclaw-client.js",
-    "packages/core/lib/llm-model-selector.js",
-    "packages/core/lib/llm-fallback.js",
+    "packages/core/lib/llm-model-selector.ts",
+    "packages/core/lib/llm-fallback.ts",
+    "packages/core/lib/llm-logger.ts",
     "packages/core/lib/rag.js",
     "packages/core/lib/message-envelope.core.ts",
     "packages/core/lib/event-lake.core.ts",
@@ -26,12 +27,12 @@
     "packages/core/lib/pg-pool.core.ts",
     "bots/investment/shared/market-regime.core.ts",
     "bots/investment/shared/trade-journal-db.js",
-    "bots/investment/team/nemesis.js",
-    "bots/investment/team/luna.js",
-    "bots/investment/team/scout.js",
-    "bots/claude/src/dexter.js",
-    "bots/claude/lib/doctor.js",
-    "bots/orchestrator/lib/research/research-tasks.js"
+    "bots/investment/team/nemesis.ts",
+    "bots/investment/team/luna.ts",
+    "bots/investment/team/scout.ts",
+    "bots/claude/src/dexter.ts",
+    "bots/claude/lib/doctor.ts",
+    "bots/orchestrator/lib/research/research-tasks.ts"
   ],
   "exclude": [
     "**/node_modules/**",
