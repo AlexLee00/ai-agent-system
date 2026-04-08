@@ -4,6 +4,7 @@ import { build } from 'esbuild';
 
 const root = '/Users/alexlee/projects/ai-agent-system';
 const outdir = path.join(root, 'dist', 'ts-phase1');
+const runtimeOutdir = path.join(root, 'dist', 'ts-runtime');
 
 const entryPoints = [
   path.join(root, 'packages/core/lib/message-envelope.core.ts'),
@@ -15,7 +16,13 @@ const entryPoints = [
   path.join(root, 'bots/investment/shared/market-regime.core.ts'),
 ];
 
+const runtimeEntryPoints = [
+  path.join(root, 'packages/core/lib/llm-timeouts.ts'),
+  path.join(root, 'packages/core/lib/runtime-selector.ts'),
+];
+
 await mkdir(outdir, { recursive: true });
+await mkdir(runtimeOutdir, { recursive: true });
 
 await build({
   entryPoints,
@@ -29,6 +36,19 @@ await build({
   tsconfig: path.join(root, 'tsconfig.json'),
 });
 
+await build({
+  entryPoints: runtimeEntryPoints,
+  outdir: runtimeOutdir,
+  outbase: root,
+  bundle: false,
+  platform: 'node',
+  format: 'cjs',
+  target: ['node22'],
+  sourcemap: true,
+  logLevel: 'info',
+  tsconfig: path.join(root, 'tsconfig.strict.json'),
+});
+
 await writeFile(
   path.join(outdir, 'package.json'),
   JSON.stringify({ type: 'module' }, null, 2) + '\n',
@@ -36,3 +56,4 @@ await writeFile(
 );
 
 console.log(`[build-ts-phase1] built ${entryPoints.length} entries -> ${outdir}`);
+console.log(`[build-ts-phase1] built ${runtimeEntryPoints.length} runtime entries -> ${runtimeOutdir}`);

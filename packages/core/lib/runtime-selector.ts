@@ -1,3 +1,38 @@
-const runtimeSelectorModule = require('./runtime-selector.js');
+import env = require('./env');
+import { fetchHubRuntimeProfile } from './hub-client.js';
 
-export const selectRuntime = runtimeSelectorModule.selectRuntime;
+type RuntimeProfileSelector = (team: string, purpose: string) => unknown;
+
+let localSelectRuntimeProfile: RuntimeProfileSelector | null = null;
+
+function getLocalSelectRuntimeProfile(): RuntimeProfileSelector | null {
+  if (localSelectRuntimeProfile) return localSelectRuntimeProfile;
+  try {
+    ({
+      selectRuntimeProfile: localSelectRuntimeProfile,
+    } = require(env.projectPath('bots', 'hub', 'lib', 'runtime-profiles')) as {
+      selectRuntimeProfile?: RuntimeProfileSelector;
+    });
+  } catch {
+    localSelectRuntimeProfile = null;
+  }
+  return localSelectRuntimeProfile;
+}
+
+export async function selectRuntime(team: string, purpose = 'default'): Promise<unknown | null> {
+  const normalizedTeam = String(team || '').trim();
+  const normalizedPurpose = String(purpose || 'default').trim() || 'default';
+  if (!normalizedTeam) return null;
+  try {
+    const hubProfile = await fetchHubRuntimeProfile(normalizedTeam, normalizedPurpose);
+    if (hubProfile) return hubProfile;
+  } catch {}
+
+  const selector = getLocalSelectRuntimeProfile();
+  if (!selector) return null;
+  try {
+    return selector(normalizedTeam, normalizedPurpose);
+  } catch {
+    return null;
+  }
+}
