@@ -1,23 +1,17 @@
-import env = require('./env');
+'use strict';
+/**
+ * packages/core/lib/hub-client.js — Hub 시크릿 프록시 클라이언트
+ */
 
-type CacheEntry = {
-  value: any;
-  expiresAt: number;
-};
+const env = require('./env');
+const cache = new Map();
+const warnCache = new Map();
 
-type HubFetchResponse = {
-  data?: any;
-  profile?: any;
-};
-
-const cache = new Map<string, CacheEntry>();
-const warnCache = new Map<string, number>();
-
-function getCacheKey(kind: string, value: string): string {
+function getCacheKey(kind, value) {
   return `${kind}:${value}`;
 }
 
-function getCached(cacheKey: string): any {
+function getCached(cacheKey) {
   const entry = cache.get(cacheKey);
   if (!entry) return undefined;
   if (entry.expiresAt <= Date.now()) {
@@ -27,21 +21,21 @@ function getCached(cacheKey: string): any {
   return entry.value;
 }
 
-function setCached(cacheKey: string, value: any, ttlMs: number): void {
+function setCached(cacheKey, value, ttlMs) {
   cache.set(cacheKey, {
     value,
     expiresAt: Date.now() + ttlMs,
   });
 }
 
-function warnOnce(key: string, message: string, ttlMs = 30000): void {
+function warnOnce(key, message, ttlMs = 30000) {
   const last = warnCache.get(key) || 0;
   if ((Date.now() - last) < ttlMs) return;
   warnCache.set(key, Date.now());
   console.warn(message);
 }
 
-export async function fetchHubSecrets(category: string, timeoutMs = 3000): Promise<any | null> {
+async function fetchHubSecrets(category, timeoutMs = 3000) {
   if (!env.USE_HUB_SECRETS || !env.HUB_BASE_URL) return null;
   if (!env.HUB_AUTH_TOKEN) {
     warnOnce('hub-auth-missing:secrets', '[hub-client] HUB_AUTH_TOKEN 없음 — hub secrets 조회 생략');
@@ -72,12 +66,11 @@ export async function fetchHubSecrets(category: string, timeoutMs = 3000): Promi
       return null;
     }
 
-    const json = await res.json() as HubFetchResponse;
+    const json = await res.json();
     const data = json.data || null;
     setCached(cacheKey, data, 10000);
     return data;
-  } catch (error) {
-    const err = error as Error & { name?: string };
+  } catch (err) {
     const message = err.name === 'AbortError' ? '타임아웃' : err.message;
     console.warn(`[hub-client] ${category}: ${message}`);
     return null;
@@ -86,20 +79,14 @@ export async function fetchHubSecrets(category: string, timeoutMs = 3000): Promi
   }
 }
 
-export async function queryOpsDb(
-  sql: string,
-  schema = 'investment',
-  params: any[] = [],
-  timeoutMs = 5000,
-): Promise<any | null> {
+async function queryOpsDb(sql, schema = 'investment', params = [], timeoutMs = 5000) {
   if (!env.HUB_BASE_URL) return null;
   if (!env.HUB_AUTH_TOKEN) {
     warnOnce('hub-auth-missing:query', '[hub-client] HUB_AUTH_TOKEN 없음 — queryOpsDb 생략');
     return null;
   }
 
-  const safeParams = Array.isArray(params) ? params : [];
-  const cacheKey = getCacheKey('query', `${schema}:${sql}:${JSON.stringify(safeParams)}`);
+  const cacheKey = getCacheKey('query', `${schema}:${sql}:${JSON.stringify(Array.isArray(params) ? params : [])}`);
   const cached = getCached(cacheKey);
   if (cached !== undefined) return cached;
 
@@ -114,7 +101,7 @@ export async function queryOpsDb(
         Authorization: `Bearer ${env.HUB_AUTH_TOKEN}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ sql, schema, params: safeParams }),
+      body: JSON.stringify({ sql, schema, params: Array.isArray(params) ? params : [] }),
       signal: controller.signal,
     });
 
@@ -128,8 +115,7 @@ export async function queryOpsDb(
     const json = await res.json();
     setCached(cacheKey, json, 3000);
     return json;
-  } catch (error) {
-    const err = error as Error & { name?: string };
+  } catch (err) {
     const message = err.name === 'AbortError' ? '타임아웃' : err.message;
     console.warn(`[hub-client] queryOpsDb: ${message}`);
     return null;
@@ -138,7 +124,7 @@ export async function queryOpsDb(
   }
 }
 
-export async function fetchOpsErrors(minutes = 60, service: string | null = null, timeoutMs = 3000): Promise<any | null> {
+async function fetchOpsErrors(minutes = 60, service = null, timeoutMs = 3000) {
   if (!env.HUB_BASE_URL) return null;
   if (!env.HUB_AUTH_TOKEN) {
     warnOnce('hub-auth-missing:errors', '[hub-client] HUB_AUTH_TOKEN 없음 — fetchOpsErrors 생략');
@@ -174,8 +160,7 @@ export async function fetchOpsErrors(minutes = 60, service: string | null = null
     const json = await res.json();
     setCached(cacheKey, json, 3000);
     return json;
-  } catch (error) {
-    const err = error as Error & { name?: string };
+  } catch (err) {
     const message = err.name === 'AbortError' ? '타임아웃' : err.message;
     console.warn(`[hub-client] fetchOpsErrors: ${message}`);
     return null;
@@ -184,7 +169,7 @@ export async function fetchOpsErrors(minutes = 60, service: string | null = null
   }
 }
 
-export async function fetchHubRuntimeProfile(team: string, purpose = 'default', timeoutMs = 3000): Promise<HubFetchResponse['profile'] | null> {
+async function fetchHubRuntimeProfile(team, purpose = 'default', timeoutMs = 3000) {
   if (!env.HUB_BASE_URL || !team) return null;
   if (!env.HUB_AUTH_TOKEN) {
     warnOnce('hub-auth-missing:runtime', '[hub-client] HUB_AUTH_TOKEN 없음 — runtime profile 조회 생략');
@@ -193,7 +178,7 @@ export async function fetchHubRuntimeProfile(team: string, purpose = 'default', 
 
   const cacheKey = getCacheKey('runtime', `${team}:${purpose}`);
   const cached = getCached(cacheKey);
-  if (cached !== undefined) return cached as HubFetchResponse['profile'];
+  if (cached !== undefined) return cached;
 
   const url = `${env.HUB_BASE_URL}/hub/runtime/select?team=${encodeURIComponent(team)}&purpose=${encodeURIComponent(purpose)}`;
   const controller = new AbortController();
@@ -215,12 +200,11 @@ export async function fetchHubRuntimeProfile(team: string, purpose = 'default', 
       return null;
     }
 
-    const json = await res.json() as HubFetchResponse;
+    const json = await res.json();
     const data = json?.profile || null;
     setCached(cacheKey, data, 5000);
     return data;
-  } catch (error) {
-    const err = error as Error & { name?: string };
+  } catch (err) {
     const message = err.name === 'AbortError' ? '타임아웃' : err.message;
     console.warn(`[hub-client] runtime ${team}/${purpose}: ${message}`);
     return null;
@@ -228,3 +212,10 @@ export async function fetchHubRuntimeProfile(team: string, purpose = 'default', 
     clearTimeout(timer);
   }
 }
+
+module.exports = {
+  fetchHubSecrets,
+  queryOpsDb,
+  fetchOpsErrors,
+  fetchHubRuntimeProfile,
+};
