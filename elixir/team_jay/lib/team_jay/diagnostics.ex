@@ -128,7 +128,14 @@ defmodule TeamJay.Diagnostics do
   @impl true
   def handle_call(:publish_shadow_report, _from, state) do
     report = build_shadow_report(state)
-    severity = if(report.overlap_count > 0 or report.summary.failing > 0, do: "warn", else: "info")
+
+    severity =
+      if(
+        report.overlap_count > 0 or report.summary.failing > 0 or
+          report.week2_summary.required_missing > 0 or report.week3_summary.required_missing > 0,
+        do: "warn",
+        else: "info"
+      )
 
     TeamJay.EventLake.record(%{
       event_type: "phase3_shadow_report",
@@ -327,14 +334,22 @@ defmodule TeamJay.Diagnostics do
       total: length(week2_shadow_agents),
       running: Enum.count(week2_shadow_agents, &(&1.status == :running)),
       loaded: Enum.count(week2_shadow_agents, &(&1.status == :loaded)),
-      missing: Enum.count(week2_shadow_agents, &(&1.status == :missing))
+      missing: Enum.count(week2_shadow_agents, &(&1.status == :missing)),
+      required_missing:
+        Enum.count(week2_shadow_agents, &(&1.status == :missing and Map.get(&1, :required, true))),
+      optional_missing:
+        Enum.count(week2_shadow_agents, &(&1.status == :missing and not Map.get(&1, :required, true)))
     }
 
     week3_summary = %{
       total: length(week3_shadow_agents),
       running: Enum.count(week3_shadow_agents, &(&1.status == :running)),
       loaded: Enum.count(week3_shadow_agents, &(&1.status == :loaded)),
-      missing: Enum.count(week3_shadow_agents, &(&1.status == :missing))
+      missing: Enum.count(week3_shadow_agents, &(&1.status == :missing)),
+      required_missing:
+        Enum.count(week3_shadow_agents, &(&1.status == :missing and Map.get(&1, :required, true))),
+      optional_missing:
+        Enum.count(week3_shadow_agents, &(&1.status == :missing and not Map.get(&1, :required, true)))
     }
 
     %{
@@ -356,7 +371,14 @@ defmodule TeamJay.Diagnostics do
     Enum.map(agents, fn {name, team} ->
       case GenServer.whereis(TeamJay.Agents.LaunchdShadowAgent.via(name)) do
         nil ->
-          %{name: name, team: team, status: :missing, pid: nil, last_exit_code: nil}
+          %{
+            name: name,
+            team: team,
+            status: :missing,
+            pid: nil,
+            last_exit_code: nil,
+            required: true
+          }
 
         _pid ->
           status = TeamJay.Agents.LaunchdShadowAgent.get_status(name)
@@ -366,7 +388,8 @@ defmodule TeamJay.Diagnostics do
             team: team,
             status: status.status,
             pid: status.pid,
-            last_exit_code: status.last_exit_code
+            last_exit_code: status.last_exit_code,
+            required: Map.get(status, :required, true)
           }
       end
     end)
@@ -451,9 +474,11 @@ defmodule TeamJay.Diagnostics do
     week2 running: #{report.week2_summary.running}
     week2 loaded: #{report.week2_summary.loaded}
     week2 missing: #{report.week2_summary.missing}
+    week2 required_missing: #{report.week2_summary.required_missing}
     week3 running: #{report.week3_summary.running}
     week3 loaded: #{report.week3_summary.loaded}
     week3 missing: #{report.week3_summary.missing}
+    week3 required_missing: #{report.week3_summary.required_missing}
     overlaps: #{overlap_text}
     agents: #{if(failing_agents == "", do: "없음", else: failing_agents)}
     week2 issues: #{if(week2_issues == "", do: "없음", else: week2_issues)}

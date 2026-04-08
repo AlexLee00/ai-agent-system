@@ -54,6 +54,10 @@ defmodule TeamJayTest do
     assert report.summary.total >= 1
     assert report.week2_summary.total >= 1
     assert report.week3_summary.total >= 1
+    assert Map.has_key?(report.week2_summary, :required_missing)
+    assert Map.has_key?(report.week2_summary, :optional_missing)
+    assert Map.has_key?(report.week3_summary, :required_missing)
+    assert Map.has_key?(report.week3_summary, :optional_missing)
   end
 
   test "shadow report can be published" do
