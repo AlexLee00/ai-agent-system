@@ -31,6 +31,7 @@ const runtimeEntryPoints = [
   path.join(root, 'packages/core/lib/reporting-hub.ts'),
   path.join(root, 'packages/core/lib/telegram-sender.ts'),
   path.join(root, 'packages/core/lib/openclaw-client.ts'),
+  path.join(root, 'packages/core/lib/message-envelope.ts'),
 ];
 
 await mkdir(outdir, { recursive: true });
