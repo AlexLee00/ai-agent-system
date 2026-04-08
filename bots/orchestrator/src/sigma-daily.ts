@@ -1,3 +1,3 @@
-const sigmaDailyModule = require('./sigma-daily.js') as typeof import('./sigma-daily.js');
+const sigmaDailyModule = require('./sigma-daily.js');
 
-export const { runDaily } = sigmaDailyModule;
+export const runDaily = sigmaDailyModule.runDaily;

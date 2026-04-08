@@ -1,4 +1,3 @@
-const sigmaAnalyzerModule =
-  require('./sigma-analyzer.js') as typeof import('./sigma-analyzer.js');
+const sigmaAnalyzerModule = require('./sigma-analyzer.js');
 
-export const { analyzeFormation } = sigmaAnalyzerModule;
+export const analyzeFormation = sigmaAnalyzerModule.analyzeFormation;

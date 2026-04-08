@@ -1,3 +1,3 @@
-const routerModule = require('./router.js') as typeof import('./router.js');
+const routerModule = require('./router.js');
 
-export const { route } = routerModule;
+export const route = routerModule.route;

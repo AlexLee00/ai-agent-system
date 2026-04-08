@@ -22,6 +22,9 @@ else
   echo "✅ 의존성 변경 없음"
 fi
 
+echo "🔎 TypeScript strict 검증"
+npm run typecheck:strict
+
 node bots/claude/src/dexter.js --update-checksums || true
 bash scripts/smart-restart.sh
 sleep 15

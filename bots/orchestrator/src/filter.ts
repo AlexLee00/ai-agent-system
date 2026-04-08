@@ -1,3 +1,4 @@
-const filterModule = require('./filter.js') as typeof import('./filter.js');
+const filterModule = require('./filter.js');
 
-export const { processItem, flushAll } = filterModule;
+export const processItem = filterModule.processItem;
+export const flushAll = filterModule.flushAll;

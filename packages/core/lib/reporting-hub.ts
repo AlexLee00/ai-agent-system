@@ -1,27 +1,24 @@
-const reportingHubModule =
-  require('./reporting-hub.js') as typeof import('./reporting-hub.js');
+const reportingHubModule = require('./reporting-hub.js');
 
-export const {
-  normalizeEvent,
-  validatePayloadSchema,
-  normalizePayload,
-  buildEventPayload,
-  publishToWebhook,
-  publishToQueue,
-  publishToTelegram,
-  publishToTelegramApi,
-  publishToRag,
-  publishToN8n,
-  publishEventPipeline,
-  buildSnippetEvent,
-  renderSnippetEvent,
-  buildNoticeEvent,
-  renderNoticeEvent,
-  buildReportEvent,
-  renderReportEvent,
-  parseEventPayload,
-  getEventHeadline,
-  getEventDetailLines,
-  getEventAction,
-  getEventLinkLines,
-} = reportingHubModule;
+export const normalizeEvent = reportingHubModule.normalizeEvent;
+export const validatePayloadSchema = reportingHubModule.validatePayloadSchema;
+export const normalizePayload = reportingHubModule.normalizePayload;
+export const buildEventPayload = reportingHubModule.buildEventPayload;
+export const publishToWebhook = reportingHubModule.publishToWebhook;
+export const publishToQueue = reportingHubModule.publishToQueue;
+export const publishToTelegram = reportingHubModule.publishToTelegram;
+export const publishToTelegramApi = reportingHubModule.publishToTelegramApi;
+export const publishToRag = reportingHubModule.publishToRag;
+export const publishToN8n = reportingHubModule.publishToN8n;
+export const publishEventPipeline = reportingHubModule.publishEventPipeline;
+export const buildSnippetEvent = reportingHubModule.buildSnippetEvent;
+export const renderSnippetEvent = reportingHubModule.renderSnippetEvent;
+export const buildNoticeEvent = reportingHubModule.buildNoticeEvent;
+export const renderNoticeEvent = reportingHubModule.renderNoticeEvent;
+export const buildReportEvent = reportingHubModule.buildReportEvent;
+export const renderReportEvent = reportingHubModule.renderReportEvent;
+export const parseEventPayload = reportingHubModule.parseEventPayload;
+export const getEventHeadline = reportingHubModule.getEventHeadline;
+export const getEventDetailLines = reportingHubModule.getEventDetailLines;
+export const getEventAction = reportingHubModule.getEventAction;
+export const getEventLinkLines = reportingHubModule.getEventLinkLines;

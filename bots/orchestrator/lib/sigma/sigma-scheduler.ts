@@ -1,9 +1,6 @@
-const sigmaSchedulerModule =
-  require('./sigma-scheduler.js') as typeof import('./sigma-scheduler.js');
+const sigmaSchedulerModule = require('./sigma-scheduler.js');
 
-export const {
-  CORE_ANALYSTS,
-  ROTATION,
-  collectYesterdayEvents,
-  decideTodayFormation,
-} = sigmaSchedulerModule;
+export const CORE_ANALYSTS = sigmaSchedulerModule.CORE_ANALYSTS;
+export const ROTATION = sigmaSchedulerModule.ROTATION;
+export const collectYesterdayEvents = sigmaSchedulerModule.collectYesterdayEvents;
+export const decideTodayFormation = sigmaSchedulerModule.decideTodayFormation;

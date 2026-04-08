@@ -1,3 +1,4 @@
-const servicesRouteModule = require('./services.js') as typeof import('./services.js');
+const servicesRouteModule = require('./services.js');
 
-export const { servicesStatusRoute, envRoute } = servicesRouteModule;
+export const servicesStatusRoute = servicesRouteModule.servicesStatusRoute;
+export const envRoute = servicesRouteModule.envRoute;

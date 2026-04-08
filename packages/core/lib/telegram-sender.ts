@@ -1,9 +1,6 @@
-const telegramSenderModule =
-  require('./telegram-sender.js') as typeof import('./telegram-sender.js');
+const telegramSenderModule = require('./telegram-sender.js');
 
-export const {
-  send,
-  sendCritical,
-  flushPending,
-  _normalizeForMobile,
-} = telegramSenderModule;
+export const send = telegramSenderModule.send;
+export const sendCritical = telegramSenderModule.sendCritical;
+export const flushPending = telegramSenderModule.flushPending;
+export const _normalizeForMobile = telegramSenderModule._normalizeForMobile;

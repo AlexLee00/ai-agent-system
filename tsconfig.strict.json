@@ -1,0 +1,23 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "allowJs": false,
+    "checkJs": false,
+    "strict": true,
+    "noImplicitAny": true
+  },
+  "files": [],
+  "include": [
+    "packages/core/lib/*.ts",
+    "bots/blog/**/*.ts",
+    "bots/claude/**/*.ts",
+    "bots/hub/**/*.ts",
+    "bots/investment/**/*.ts",
+    "bots/orchestrator/**/*.ts",
+    "bots/worker/**/*.ts"
+  ],
+  "exclude": [
+    "**/node_modules/**",
+    "bots/worker/web/.next/**"
+  ]
+}

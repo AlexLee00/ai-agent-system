@@ -1,10 +1,7 @@
-const llmTimeoutsModule =
-  require('./llm-timeouts.js') as typeof import('./llm-timeouts.js');
+const llmTimeoutsModule = require('./llm-timeouts.js');
 
-export const {
-  LLM_TIMEOUTS,
-  getTimeout,
-  updateTimeouts,
-  calcTimeout,
-  OVERRIDE_FILE,
-} = llmTimeoutsModule;
+export const LLM_TIMEOUTS = llmTimeoutsModule.LLM_TIMEOUTS;
+export const getTimeout = llmTimeoutsModule.getTimeout;
+export const updateTimeouts = llmTimeoutsModule.updateTimeouts;
+export const calcTimeout = llmTimeoutsModule.calcTimeout;
+export const OVERRIDE_FILE = llmTimeoutsModule.OVERRIDE_FILE;

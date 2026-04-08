@@ -1,3 +1,3 @@
-const bloModule = require('./blo.js') as typeof import('./blo.js');
+const bloModule = require('./blo.js');
 
-export const { run } = bloModule;
+export const run = bloModule.run;

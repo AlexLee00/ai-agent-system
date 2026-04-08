@@ -1,3 +1,4 @@
-const logsRouteModule = require('./logs.js') as typeof import('./logs.js');
+const logsRouteModule = require('./logs.js');
 
-export const { logsSearchRoute, logsStatsRoute } = logsRouteModule;
+export const logsSearchRoute = logsRouteModule.logsSearchRoute;
+export const logsStatsRoute = logsRouteModule.logsStatsRoute;

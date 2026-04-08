@@ -1,3 +1,3 @@
-const pgRouteModule = require('./pg.js') as typeof import('./pg.js');
+const pgRouteModule = require('./pg.js');
 
-export const { pgQueryRoute } = pgRouteModule;
+export const pgQueryRoute = pgRouteModule.pgQueryRoute;
