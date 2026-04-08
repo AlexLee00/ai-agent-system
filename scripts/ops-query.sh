@@ -10,7 +10,7 @@ if [ -z "$SQL" ]; then
   exit 1
 fi
 
-HUB_URL="${HUB_BASE_URL:-http://REDACTED_TAILSCALE_IP:7788}"
+HUB_URL="${HUB_BASE_URL:-http://localhost:7788}"
 TOKEN="${HUB_AUTH_TOKEN}"
 [ -z "$TOKEN" ] && TOKEN=$(grep 'HUB_AUTH_TOKEN' ~/.zprofile 2>/dev/null | sed 's/.*="//' | sed 's/".*//')
 [ -z "$TOKEN" ] && { echo "❌ HUB_AUTH_TOKEN 없음"; exit 1; }
