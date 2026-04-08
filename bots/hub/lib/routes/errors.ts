@@ -1,3 +1,4 @@
-const errorsRouteModule = require('./errors.js') as typeof import('./errors.js');
+const errorsRouteModule = require('./errors.js');
 
-export const { errorsRecentRoute, errorsSummaryRoute } = errorsRouteModule;
+export const errorsRecentRoute = errorsRouteModule.errorsRecentRoute;
+export const errorsSummaryRoute = errorsRouteModule.errorsSummaryRoute;

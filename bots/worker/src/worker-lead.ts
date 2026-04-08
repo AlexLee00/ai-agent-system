@@ -1,3 +1,3 @@
-const workerLeadModule = require('./worker-lead.js') as typeof import('./worker-lead.js');
+const workerLeadModule = require('./worker-lead.js');
 
-export const { handleCommand } = workerLeadModule;
+export const handleCommand = workerLeadModule.handleCommand;

@@ -1,3 +1,3 @@
-const fallbackModule = require('./llm-fallback.js') as typeof import('./llm-fallback.js');
+const fallbackModule = require('./llm-fallback.js');
 
-export const { callWithFallback } = fallbackModule;
+export const callWithFallback = fallbackModule.callWithFallback;

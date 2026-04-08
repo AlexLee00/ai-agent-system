@@ -1,3 +1,4 @@
-const writeModule = require('./write.js') as typeof import('./write.js');
+const writeModule = require('./write.js');
 
-export const { runOnPush, runDaily } = writeModule;
+export const runOnPush = writeModule.runOnPush;
+export const runDaily = writeModule.runDaily;

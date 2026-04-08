@@ -1,14 +1,11 @@
-const sigmaFeedbackModule =
-  require('./sigma-feedback.js') as typeof import('./sigma-feedback.js');
+const sigmaFeedbackModule = require('./sigma-feedback.js');
 
-export const {
-  ensureSigmaTables,
-  collectTeamMetric,
-  collectScoutQualityMetric,
-  computeEffectiveness,
-  recordScoutQualityEvent,
-  recordDailyRun,
-  recordFeedbackRecommendation,
-  measurePastFeedbackEffectiveness,
-  weeklyMetaReview,
-} = sigmaFeedbackModule;
+export const ensureSigmaTables = sigmaFeedbackModule.ensureSigmaTables;
+export const collectTeamMetric = sigmaFeedbackModule.collectTeamMetric;
+export const collectScoutQualityMetric = sigmaFeedbackModule.collectScoutQualityMetric;
+export const computeEffectiveness = sigmaFeedbackModule.computeEffectiveness;
+export const recordScoutQualityEvent = sigmaFeedbackModule.recordScoutQualityEvent;
+export const recordDailyRun = sigmaFeedbackModule.recordDailyRun;
+export const recordFeedbackRecommendation = sigmaFeedbackModule.recordFeedbackRecommendation;
+export const measurePastFeedbackEffectiveness = sigmaFeedbackModule.measurePastFeedbackEffectiveness;
+export const weeklyMetaReview = sigmaFeedbackModule.weeklyMetaReview;

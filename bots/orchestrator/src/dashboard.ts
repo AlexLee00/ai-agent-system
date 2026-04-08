@@ -1,3 +1,3 @@
-const dashboardModule = require('./dashboard.js') as typeof import('./dashboard.js');
+const dashboardModule = require('./dashboard.js');
 
-export const { buildStatus } = dashboardModule;
+export const buildStatus = dashboardModule.buildStatus;

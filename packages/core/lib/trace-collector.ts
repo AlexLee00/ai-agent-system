@@ -1,8 +1,5 @@
-const traceCollectorModule =
-  require('./trace-collector.js') as typeof import('./trace-collector.js');
+const traceCollectorModule = require('./trace-collector.js');
 
-export const {
-  startTrace,
-  recordGeneration,
-  flush,
-} = traceCollectorModule;
+export const startTrace = traceCollectorModule.startTrace;
+export const recordGeneration = traceCollectorModule.recordGeneration;
+export const flush = traceCollectorModule.flush;

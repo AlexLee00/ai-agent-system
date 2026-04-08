@@ -1,3 +1,3 @@
-const secretsRouteModule = require('./secrets.js') as typeof import('./secrets.js');
+const secretsRouteModule = require('./secrets.js');
 
-export const { secretsRoute } = secretsRouteModule;
+export const secretsRoute = secretsRouteModule.secretsRoute;

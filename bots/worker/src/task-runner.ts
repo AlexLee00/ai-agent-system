@@ -1,3 +1,4 @@
-const taskRunnerModule = require('./task-runner.js') as typeof import('./task-runner.js');
+const taskRunnerModule = require('./task-runner.js');
 
-export const { processOne, executeTask } = taskRunnerModule;
+export const processOne = taskRunnerModule.processOne;
+export const executeTask = taskRunnerModule.executeTask;

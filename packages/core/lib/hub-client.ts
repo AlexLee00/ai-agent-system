@@ -1,8 +1,6 @@
-const hubClientModule = require('./hub-client.js') as typeof import('./hub-client.js');
+const hubClientModule = require('./hub-client.js');
 
-export const {
-  fetchHubSecrets,
-  queryOpsDb,
-  fetchOpsErrors,
-  fetchHubRuntimeProfile,
-} = hubClientModule;
+export const fetchHubSecrets = hubClientModule.fetchHubSecrets;
+export const queryOpsDb = hubClientModule.queryOpsDb;
+export const fetchOpsErrors = hubClientModule.fetchOpsErrors;
+export const fetchHubRuntimeProfile = hubClientModule.fetchHubRuntimeProfile;

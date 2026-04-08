@@ -1,4 +1,3 @@
-const darwinCallbackModule =
-  require('./darwin-callback.js') as typeof import('./darwin-callback.js');
+const darwinCallbackModule = require('./darwin-callback.js');
 
-export const { darwinCallbackRoute } = darwinCallbackModule;
+export const darwinCallbackRoute = darwinCallbackModule.darwinCallbackRoute;

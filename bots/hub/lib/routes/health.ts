@@ -1,3 +1,3 @@
-const healthRouteModule = require('./health.js') as typeof import('./health.js');
+const healthRouteModule = require('./health.js');
 
-export const { healthRoute } = healthRouteModule;
+export const healthRoute = healthRouteModule.healthRoute;

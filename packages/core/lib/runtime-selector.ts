@@ -1,4 +1,3 @@
-const runtimeSelectorModule =
-  require('./runtime-selector.js') as typeof import('./runtime-selector.js');
+const runtimeSelectorModule = require('./runtime-selector.js');
 
-export const { selectRuntime } = runtimeSelectorModule;
+export const selectRuntime = runtimeSelectorModule.selectRuntime;
