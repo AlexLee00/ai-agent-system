@@ -44,14 +44,20 @@ defmodule TeamJayTest do
     assert Map.has_key?(report, :overlap_count)
     assert Map.has_key?(report, :agents)
     assert Map.has_key?(report, :summary)
+    assert Map.has_key?(report, :week2_shadow_agents)
+    assert Map.has_key?(report, :week2_summary)
     assert is_list(report.agents)
+    assert is_list(report.week2_shadow_agents)
     assert report.summary.total >= 1
+    assert report.week2_summary.total >= 1
   end
 
   test "shadow report can be published" do
     report = Diagnostics.publish_shadow_report()
     assert is_map(report)
     assert Map.has_key?(report, :summary)
+    assert Map.has_key?(report, :week2_summary)
     assert report.summary.total >= 1
+    assert report.week2_summary.total >= 1
   end
 end

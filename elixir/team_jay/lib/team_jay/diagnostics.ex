@@ -300,6 +300,8 @@ defmodule TeamJay.Diagnostics do
         end
       end)
 
+    week2_shadow_agents = build_launchd_shadow_agents(@week2_shadow_agents)
+
     summary = %{
       total: length(agent_statuses),
       running: Enum.count(agent_statuses, &(&1.status == :running)),
@@ -308,13 +310,21 @@ defmodule TeamJay.Diagnostics do
       failing: Enum.count(agent_statuses, &(&1.consecutive_failures > 0))
     }
 
+    week2_summary = %{
+      total: length(week2_shadow_agents),
+      running: Enum.count(week2_shadow_agents, &(&1.status == :running)),
+      loaded: Enum.count(week2_shadow_agents, &(&1.status == :loaded)),
+      missing: Enum.count(week2_shadow_agents, &(&1.status == :missing))
+    }
+
     %{
       generated_at: DateTime.utc_now(),
       overlap_count: length(Map.get(overlap_result, :overlaps, [])),
       overlaps: Map.get(overlap_result, :overlaps, []),
       supervisor_alerts: Enum.map(state.alerts, &Map.take(&1, [:name, :severity, :message])),
       agents: agent_statuses,
-      week2_shadow_agents: build_launchd_shadow_agents(@week2_shadow_agents),
+      week2_shadow_agents: week2_shadow_agents,
+      week2_summary: week2_summary,
       summary: summary,
       recent_failures: TeamJay.EventLake.get_by_type("port_agent_failed", 5)
     }
@@ -383,13 +393,31 @@ defmodule TeamJay.Diagnostics do
         overlaps -> overlaps |> Enum.take(6) |> Enum.join(", ")
       end
 
+    week2_issues =
+      report.week2_shadow_agents
+      |> Enum.filter(&(&1.status == :missing or is_integer(&1.last_exit_code)))
+      |> Enum.map(fn agent ->
+        suffix =
+          cond do
+            is_integer(agent.last_exit_code) -> ", exit=#{agent.last_exit_code}"
+            true -> ""
+          end
+
+        "#{agent.name}(#{agent.status}#{suffix})"
+      end)
+      |> Enum.join(", ")
+
     message = """
     ⚠️ Phase3 Shadow 리포트
     겹침: #{report.overlap_count}건
     failing: #{report.summary.failing}
     missing: #{report.summary.missing}
+    week2 running: #{report.week2_summary.running}
+    week2 loaded: #{report.week2_summary.loaded}
+    week2 missing: #{report.week2_summary.missing}
     overlaps: #{overlap_text}
     agents: #{if(failing_agents == "", do: "없음", else: failing_agents)}
+    week2 issues: #{if(week2_issues == "", do: "없음", else: week2_issues)}
     """
 
     _ = TeamJay.HubClient.post_alarm(String.trim(message), "claude", "diagnostics")
