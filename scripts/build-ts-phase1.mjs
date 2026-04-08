@@ -29,6 +29,7 @@ const runtimeEntryPoints = [
   path.join(root, 'packages/core/lib/llm-model-selector.ts'),
   path.join(root, 'packages/core/lib/llm-fallback.ts'),
   path.join(root, 'packages/core/lib/reporting-hub.ts'),
+  path.join(root, 'packages/core/lib/telegram-sender.ts'),
 ];
 
 await mkdir(outdir, { recursive: true });
