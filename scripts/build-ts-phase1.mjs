@@ -42,6 +42,7 @@ const runtimeEntryPoints = [
   path.join(root, 'packages/core/lib/billing-guard.ts'),
   path.join(root, 'packages/core/lib/agent-registry.ts'),
   path.join(root, 'packages/core/lib/health-db.ts'),
+  path.join(root, 'packages/core/lib/health-provider.ts'),
 ];
 
 await mkdir(outdir, { recursive: true });
