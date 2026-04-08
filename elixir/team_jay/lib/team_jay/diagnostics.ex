@@ -48,6 +48,17 @@ defmodule TeamJay.Diagnostics do
     {:steward_hourly, :steward},
     {:steward_daily, :steward}
   ]
+  @week2_shadow_agents [
+    {:luna_commander, :investment},
+    {:luna_domestic, :investment},
+    {:luna_overseas, :investment},
+    {:luna_crypto, :investment},
+    {:argos_shadow, :investment},
+    {:reporter_shadow, :investment},
+    {:blog_daily, :blog},
+    {:blog_commenter, :blog},
+    {:blog_node_server, :blog}
+  ]
 
   defstruct [:checks, :alerts, :last_check, :last_overlap_signature]
 
@@ -166,7 +177,9 @@ defmodule TeamJay.Diagnostics do
     supervisors = [
       TeamJay.Teams.SkaSupervisor,
       TeamJay.Teams.ClaudeSupervisor,
-      TeamJay.Teams.StewardSupervisor
+      TeamJay.Teams.StewardSupervisor,
+      TeamJay.Teams.InvestmentShadowSupervisor,
+      TeamJay.Teams.BlogShadowSupervisor
     ]
 
     Enum.map(supervisors, fn sup ->
@@ -301,9 +314,30 @@ defmodule TeamJay.Diagnostics do
       overlaps: Map.get(overlap_result, :overlaps, []),
       supervisor_alerts: Enum.map(state.alerts, &Map.take(&1, [:name, :severity, :message])),
       agents: agent_statuses,
+      week2_shadow_agents: build_launchd_shadow_agents(@week2_shadow_agents),
       summary: summary,
       recent_failures: TeamJay.EventLake.get_by_type("port_agent_failed", 5)
     }
+  end
+
+  defp build_launchd_shadow_agents(agents) do
+    Enum.map(agents, fn {name, team} ->
+      case GenServer.whereis(TeamJay.Agents.LaunchdShadowAgent.via(name)) do
+        nil ->
+          %{name: name, team: team, status: :missing, pid: nil, last_exit_code: nil}
+
+        _pid ->
+          status = TeamJay.Agents.LaunchdShadowAgent.get_status(name)
+
+          %{
+            name: name,
+            team: team,
+            status: status.status,
+            pid: status.pid,
+            last_exit_code: status.last_exit_code
+          }
+      end
+    end)
   end
 
   defp record_launchd_overlap_event(nil, signature) do

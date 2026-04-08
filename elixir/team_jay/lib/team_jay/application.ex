@@ -14,6 +14,8 @@ defmodule TeamJay.Application do
       TeamJay.Teams.SkaSupervisor,
       TeamJay.Teams.ClaudeSupervisor,
       TeamJay.Teams.StewardSupervisor,
+      TeamJay.Teams.InvestmentShadowSupervisor,
+      TeamJay.Teams.BlogShadowSupervisor,
       TeamJay.Diagnostics,
       TeamJay.Scheduler
     ]
@@ -26,7 +28,7 @@ defmodule TeamJay.Application do
 
       _ =
         TeamJay.HubClient.post_alarm(
-          "🚀 Elixir Phase 3 Week1 시작!\n👥 스카/클로드/스튜어드 Supervisor 가동\n📡 EventLake 수신 중\n🌍 MarketRegime 감지 중\n🔍 Diagnostics 모니터링 중",
+          "🚀 Elixir Phase 3 Week2 시작!\n👥 Week1 Supervisor 유지 + 루나/블로 Shadow 감시 추가\n📡 EventLake 수신 중\n🌍 MarketRegime 감지 중\n🔍 Diagnostics 모니터링 중",
           "system",
           "elixir"
         )
