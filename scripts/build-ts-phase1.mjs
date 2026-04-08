@@ -19,6 +19,7 @@ const entryPoints = [
 const runtimeEntryPoints = [
   path.join(root, 'packages/core/lib/llm-timeouts.ts'),
   path.join(root, 'packages/core/lib/runtime-selector.ts'),
+  path.join(root, 'packages/core/lib/llm-keys.ts'),
 ];
 
 await mkdir(outdir, { recursive: true });
