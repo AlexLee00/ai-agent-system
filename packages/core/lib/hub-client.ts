@@ -34,6 +34,36 @@ function setCached(cacheKey: string, value: any, ttlMs: number): void {
   });
 }
 
+function getSecretsSuccessTtl(category: string): number {
+  switch (category) {
+    case 'llm':
+    case 'openai_oauth':
+      return 60000;
+    case 'telegram':
+    case 'openclaw':
+    case 'reservation':
+    case 'reservation-shared':
+      return 30000;
+    default:
+      return 10000;
+  }
+}
+
+function getSecretsRateLimitTtl(category: string): number {
+  switch (category) {
+    case 'llm':
+    case 'openai_oauth':
+      return 15000;
+    case 'telegram':
+    case 'openclaw':
+    case 'reservation':
+    case 'reservation-shared':
+      return 10000;
+    default:
+      return 5000;
+  }
+}
+
 function warnOnce(key: string, message: string, ttlMs = 30000): void {
   const last = warnCache.get(key) || 0;
   if ((Date.now() - last) < ttlMs) return;
@@ -67,14 +97,14 @@ export async function fetchHubSecrets(category: string, timeoutMs = 3000): Promi
 
     if (!res.ok) {
       warnOnce(`hub-secrets:${category}:${res.status}`, `[hub-client] ${category}: HTTP ${res.status}`);
-      if (res.status === 429) setCached(cacheKey, null, 5000);
+      if (res.status === 429) setCached(cacheKey, null, getSecretsRateLimitTtl(category));
       if (res.status === 401) setCached(cacheKey, null, 30000);
       return null;
     }
 
     const json = await res.json() as HubFetchResponse;
     const data = json.data || null;
-    setCached(cacheKey, data, 10000);
+    setCached(cacheKey, data, getSecretsSuccessTtl(category));
     return data;
   } catch (error) {
     const err = error as Error & { name?: string };
