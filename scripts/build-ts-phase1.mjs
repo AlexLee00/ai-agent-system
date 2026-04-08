@@ -48,6 +48,9 @@ const runtimeEntryPoints = [
   path.join(root, 'packages/core/lib/heartbeat.ts'),
   path.join(root, 'packages/core/lib/github-client.ts'),
   path.join(root, 'packages/core/lib/rag.ts'),
+  path.join(root, 'packages/core/lib/blog-utils.ts'),
+  path.join(root, 'packages/core/lib/tool-logger.ts'),
+  path.join(root, 'packages/core/lib/mode-guard.ts'),
 ];
 
 await mkdir(outdir, { recursive: true });
