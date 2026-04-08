@@ -42,9 +42,16 @@
     "bots/hub/lib/routes/health.ts",
     "bots/hub/lib/routes/logs.ts",
     "bots/hub/lib/routes/events.ts",
+    "bots/hub/lib/routes/pg.ts",
+    "bots/hub/lib/routes/n8n.ts",
+    "bots/hub/lib/routes/secrets.ts",
+    "bots/hub/lib/routes/services.ts",
     "bots/orchestrator/lib/research/research-tasks.ts",
     "bots/orchestrator/lib/sigma/sigma-feedback.ts",
-    "bots/orchestrator/src/sigma-daily.ts"
+    "bots/orchestrator/src/sigma-daily.ts",
+    "bots/orchestrator/src/dashboard.ts",
+    "bots/orchestrator/src/filter.ts",
+    "bots/orchestrator/src/write.ts"
   ],
   "exclude": [
     "**/node_modules/**"
