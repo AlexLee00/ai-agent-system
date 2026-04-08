@@ -33,6 +33,7 @@ const runtimeEntryPoints = [
   path.join(root, 'packages/core/lib/openclaw-client.ts'),
   path.join(root, 'packages/core/lib/message-envelope.ts'),
   path.join(root, 'packages/core/lib/event-lake.ts'),
+  path.join(root, 'packages/core/lib/central-logger.ts'),
 ];
 
 await mkdir(outdir, { recursive: true });
