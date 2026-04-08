@@ -24,6 +24,7 @@ const runtimeEntryPoints = [
   path.join(root, 'packages/core/lib/token-tracker.ts'),
   path.join(root, 'packages/core/lib/trace-collector.ts'),
   path.join(root, 'packages/core/lib/hub-client.ts'),
+  path.join(root, 'packages/core/lib/llm-logger.ts'),
 ];
 
 await mkdir(outdir, { recursive: true });
