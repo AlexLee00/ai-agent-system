@@ -120,10 +120,10 @@ app.get('/hub/agents/:name', generalLimiter, agentDetailRoute);
 
 const secretsLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 10,
+  max: 60,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'secrets rate limit exceeded (10/min)' },
+  message: { error: 'secrets rate limit exceeded (60/min)' },
 });
 app.get('/hub/secrets/:category', secretsLimiter, secretsRoute);
 
