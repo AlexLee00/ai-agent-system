@@ -1,3 +1,5 @@
+'use strict';
+
 /**
  * packages/core/lib/llm-fallback.js — 공통 LLM 폴백 체인 실행기
  *
@@ -45,25 +47,6 @@ const path = require('path');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 const execFileAsync = promisify(execFile);
-
-type FallbackChainEntry = {
-  provider: string;
-  model: string;
-  maxTokens: number;
-  temperature?: number;
-  timeoutMs?: number;
-  local?: boolean;
-};
-
-type FallbackLogMeta = {
-  team?: string;
-  bot?: string;
-  requestType?: string;
-  purpose?: string;
-  selectorKey?: string;
-  agentName?: string;
-  [key: string]: any;
-};
 
 // ── 그루크 계정 라운드로빈 인덱스 ────────────────────────────────────
 let _groqIdx = 0;
@@ -147,7 +130,7 @@ async function _callOpenAI({ model, maxTokens, temperature = 0.1, systemPrompt, 
   if (!apiKey) throw new Error('OpenAI API 키 없음');
   const openaiModule = require('openai');
   const OpenAI = /** @type {any} */ (openaiModule.default || openaiModule);
-  const opts: any = { apiKey };
+  const opts = { apiKey };
   if (baseURL) opts.baseURL = baseURL;
   const client = new OpenAI(opts);
   return client.chat.completions.create({
@@ -436,7 +419,7 @@ async function _groqSingleCall(apiKey, groqModel, maxTokens, temperature, system
   const client = new OpenAI({ apiKey, baseURL: 'https://api.groq.com/openai/v1' });
   // gpt-oss-20b는 추론(reasoning) 모델 — reasoning_effort:low로 내부 추론 토큰 최소화
   const isReasoning = groqModel.includes('gpt-oss-20b');
-  const params: any = {
+  const params = {
     model:      groqModel,
     max_tokens: maxTokens,
     temperature,
@@ -575,7 +558,7 @@ async function _callProvider(cfg, systemPrompt, userPrompt, timeoutMs, runtimePr
   }
 }
 
-function _inferRuntimePurpose(logMeta: FallbackLogMeta = {}) {
+function _inferRuntimePurpose(logMeta = {}) {
   const explicit = String(logMeta.purpose || '').trim();
   if (explicit) return explicit;
 
@@ -611,7 +594,7 @@ function _inferRuntimePurpose(logMeta: FallbackLogMeta = {}) {
  * @returns {Promise<{text, provider, model, attempt}>}
  * @throws 모든 체인 실패 시 마지막 오류를 throw
  */
-export async function callWithFallback({ chain, systemPrompt, userPrompt, logMeta = {}, timeoutMs = null, team = null, purpose = null }: { chain: FallbackChainEntry[]; systemPrompt: string; userPrompt: string; logMeta?: FallbackLogMeta; timeoutMs?: number | null; team?: string | null; purpose?: string | null; }) {
+async function callWithFallback({ chain, systemPrompt, userPrompt, logMeta = {}, timeoutMs = null, team = null, purpose = null }) {
   await initHubConfig();
 
   // ★ 긴급 차단 체크
@@ -778,3 +761,4 @@ export async function callWithFallback({ chain, systemPrompt, userPrompt, logMet
   throw lastError;
 }
 
+module.exports = { callWithFallback };
