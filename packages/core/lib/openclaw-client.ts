@@ -33,29 +33,70 @@ const TEAM_TOPIC = {
   emergency: 'emergency',
 };
 
-let _token = null;
-let _groupId = null;
-let _topicIds = null;
-let _telegramBotToken = null;
-let _darwinTelegramBotToken = null;
+type TopicIdMap = Record<string, string>;
 
-/**
- * @typedef {Object} PostAlarmInput
- * @property {string} message
- * @property {string} [team]
- * @property {number} [alertLevel]
- * @property {string} [fromBot]
- * @property {string} [sessionKey]
- * @property {any} [payload]
- * @property {string} [criticalTelegramMode]
- * @property {Array<Array<{ text: string, callback_data: string }>> | null} [inlineKeyboard]
- */
+type OpenClawStore = {
+  openclaw?: {
+    hooks_token?: string;
+  };
+  telegram?: {
+    group_id?: string;
+    topic_ids?: TopicIdMap;
+    bot_token?: string;
+    darwin_bot_token?: string;
+  };
+  darwin?: {
+    telegram_bot_token?: string;
+  };
+};
 
-function _sleep(ms) {
+type SecretTopicInfo = {
+  group_id?: string;
+  topic_ids?: TopicIdMap;
+};
+
+type TelegramInlineButton = {
+  text: string;
+  callback_data: string;
+};
+
+type InlineKeyboard = TelegramInlineButton[][];
+
+type PostAlarmInput = {
+  message: string;
+  team?: string;
+  alertLevel?: number;
+  fromBot?: string;
+  sessionKey?: string;
+  payload?: unknown;
+  criticalTelegramMode?: string;
+  inlineKeyboard?: InlineKeyboard | null;
+};
+
+type InlineTelegramInput = {
+  message: string;
+  team: string;
+  fromBot: string;
+  topicId: string | null;
+  groupId: string;
+  inlineKeyboard: InlineKeyboard;
+};
+
+type ExecError = Error & {
+  status?: number;
+};
+
+let _token: string | null = null;
+let _groupId: string | null = null;
+let _topicIds: TopicIdMap | null = null;
+let _telegramBotToken: string | null = null;
+let _darwinTelegramBotToken: string | null = null;
+
+function _sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function _resolveTelegramRetryDelayMs(res, body, fallbackMs = 3000) {
+function _resolveTelegramRetryDelayMs(res: Response | null, body: any, fallbackMs = 3000): number {
   const retryAfterSec = Number(body?.parameters?.retry_after || res?.headers?.get('retry-after') || 0);
   if (Number.isFinite(retryAfterSec) && retryAfterSec > 0) {
     return Math.max(1000, retryAfterSec * 1000);
@@ -65,7 +106,7 @@ function _resolveTelegramRetryDelayMs(res, body, fallbackMs = 3000) {
 
 function _readStoreToken() {
   try {
-    const store = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8'));
+    const store = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8')) as OpenClawStore;
     return store?.openclaw?.hooks_token || '';
   } catch {
     return '';
@@ -74,7 +115,7 @@ function _readStoreToken() {
 
 function _readStoreTopicInfo() {
   try {
-    const store = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8'));
+    const store = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8')) as OpenClawStore;
     return {
       groupId: store?.telegram?.group_id || '',
       topicIds: store?.telegram?.topic_ids || {},
@@ -84,10 +125,10 @@ function _readStoreTopicInfo() {
   }
 }
 
-async function _getToken() {
+async function _getToken(): Promise<string> {
   if (_token) return _token;
 
-  const hubData = await fetchHubSecrets('openclaw');
+  const hubData = await fetchHubSecrets('openclaw') as { hooks_token?: string } | null;
   _token = hubData?.hooks_token
     || process.env.OPENCLAW_HOOKS_TOKEN
     || _readStoreToken()
@@ -95,12 +136,12 @@ async function _getToken() {
   return _token;
 }
 
-async function _getTopicInfo() {
+async function _getTopicInfo(): Promise<{ groupId: string; topicIds: TopicIdMap }> {
   if (_groupId && _topicIds) {
     return { groupId: _groupId, topicIds: _topicIds };
   }
 
-  const hubData = await fetchHubSecrets('telegram');
+  const hubData = await fetchHubSecrets('telegram') as SecretTopicInfo | null;
   const storeData = _readStoreTopicInfo();
 
   _groupId = hubData?.group_id
@@ -114,11 +155,11 @@ async function _getTopicInfo() {
   return { groupId: _groupId, topicIds: _topicIds };
 }
 
-async function _getTelegramBotToken() {
+async function _getTelegramBotToken(): Promise<string> {
   if (_telegramBotToken) return _telegramBotToken;
 
-  const telegramData = await fetchHubSecrets('telegram');
-  const reservationData = await fetchHubSecrets('reservation-shared');
+  const telegramData = await fetchHubSecrets('telegram') as { bot_token?: string } | null;
+  const reservationData = await fetchHubSecrets('reservation-shared') as { telegram_bot_token?: string } | null;
 
   _telegramBotToken = telegramData?.bot_token
     || reservationData?.telegram_bot_token
@@ -126,11 +167,11 @@ async function _getTelegramBotToken() {
   return _telegramBotToken;
 }
 
-async function _getDarwinTelegramBotToken() {
+async function _getDarwinTelegramBotToken(): Promise<string> {
   if (_darwinTelegramBotToken) return _darwinTelegramBotToken;
 
   try {
-    const store = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8'));
+    const store = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8')) as OpenClawStore;
     _darwinTelegramBotToken = store?.darwin?.telegram_bot_token
       || store?.telegram?.darwin_bot_token
       || process.env.DARWIN_TELEGRAM_BOT_TOKEN
@@ -142,10 +183,7 @@ async function _getDarwinTelegramBotToken() {
   return _darwinTelegramBotToken;
 }
 
-/**
- * @param {{ message: string, team: string, fromBot: string, topicId: string|null, groupId: string, inlineKeyboard: Array<Array<{ text: string, callback_data: string }>> }} input
- */
-async function _sendInlineTelegram({ message, team, fromBot, topicId, groupId, inlineKeyboard }) {
+async function _sendInlineTelegram({ message, team, fromBot, topicId, groupId, inlineKeyboard }: InlineTelegramInput) {
   const botToken = team === 'darwin'
     ? (await _getDarwinTelegramBotToken()) || (await _getTelegramBotToken())
     : await _getTelegramBotToken();
@@ -189,14 +227,12 @@ async function _sendInlineTelegram({ message, team, fromBot, topicId, groupId, i
 
     return { ok: false, error: 'telegram_retry_exhausted' };
   } catch (e) {
-    console.warn(`[openclaw-client] inline telegram 실패: ${e.message}`);
-    return { ok: false, error: e.message };
+    const error = e as ExecError;
+    console.warn(`[openclaw-client] inline telegram 실패: ${error.message}`);
+    return { ok: false, error: error.message };
   }
 }
 
-/**
- * @param {PostAlarmInput} input
- */
 export async function postAlarm({
   message,
   team = 'general',
@@ -204,14 +240,14 @@ export async function postAlarm({
   fromBot = 'unknown',
   sessionKey,
   inlineKeyboard = null,
-}) {
+}: PostAlarmInput) {
   const token = await _getToken();
   if (!token) {
     console.warn('[openclaw-client] hooks_token 미설정');
     return { ok: false, error: 'no_token' };
   }
 
-  const normalizedTeam = TEAM_TOPIC[team] || 'general';
+  const normalizedTeam = TEAM_TOPIC[team as keyof typeof TEAM_TOPIC] || 'general';
   const key = sessionKey || `hook:${normalizedTeam}:${fromBot}`;
   const prefix = alertLevel >= 3 ? `🚨 [긴급 alert_level=${alertLevel}] ` : '';
   const { groupId, topicIds } = await _getTopicInfo();
@@ -255,8 +291,8 @@ export async function postAlarm({
     const body = await res.json().catch(() => null);
     return { ok: res.ok, status: res.status, body };
   } catch (e) {
-    console.warn(`[openclaw-client] webhook 실패: ${e.message}`);
-    return { ok: false, error: e.message };
+    const error = e as ExecError;
+    console.warn(`[openclaw-client] webhook 실패: ${error.message}`);
+    return { ok: false, error: error.message };
   }
 }
-
