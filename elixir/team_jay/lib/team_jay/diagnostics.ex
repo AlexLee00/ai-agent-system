@@ -130,6 +130,8 @@ defmodule TeamJay.Diagnostics do
     report = build_shadow_report(state)
     total_required_missing =
       report.week2_summary.required_missing + report.week3_summary.required_missing
+    total_shadow_loaded = report.week2_summary.loaded + report.week3_summary.loaded
+    total_shadow_running = report.week2_summary.running + report.week3_summary.running
 
     severity =
       if(
@@ -146,7 +148,7 @@ defmodule TeamJay.Diagnostics do
       severity: severity,
       title: "Phase3 Shadow 리포트",
       message:
-        "겹침 #{report.overlap_count}건 | failing #{report.summary.failing} | week1 missing #{report.summary.missing} | required missing #{total_required_missing}",
+        "겹침 #{report.overlap_count}건 | week1 failing #{report.summary.failing} | week1 missing #{report.summary.missing} | shadow running #{total_shadow_running} | shadow loaded #{total_shadow_loaded} | required missing #{total_required_missing}",
       tags: ["phase3", "diagnostics", "shadow_report"],
       metadata: report
     })

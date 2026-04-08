@@ -3,9 +3,21 @@ defmodule TeamJay.Agents.LaunchdShadowAgent do
   use GenServer
   require Logger
 
-  defstruct [:name, :team, :label, :required, :status, :pid, :last_exit_code, :last_checked_at]
+  defstruct [
+    :name,
+    :team,
+    :label,
+    :required,
+    :status,
+    :pid,
+    :last_exit_code,
+    :last_checked_at,
+    :last_log_signature,
+    :last_log_at
+  ]
 
   @check_interval 30_000
+  @log_cooldown_ms 300_000
 
   def child_spec(opts) do
     name = Keyword.fetch!(opts, :name)
@@ -38,7 +50,9 @@ defmodule TeamJay.Agents.LaunchdShadowAgent do
       status: :unknown,
       pid: nil,
       last_exit_code: nil,
-      last_checked_at: nil
+      last_checked_at: nil,
+      last_log_signature: nil,
+      last_log_at: nil
     }
 
     send(self(), :check)
@@ -59,30 +73,57 @@ defmodule TeamJay.Agents.LaunchdShadowAgent do
     case System.cmd("launchctl", ["list", state.label]) do
       {output, 0} ->
         parsed = parse_launchctl_detail(output)
+        status = if(parsed.pid, do: :running, else: :loaded)
+
+        maybe_log_status(state, status, state.label)
 
         %{
           state
-          | status: if(parsed.pid, do: :running, else: :loaded),
+          | status: status,
             pid: parsed.pid,
             last_exit_code: parsed.last_exit_code,
             last_checked_at: DateTime.utc_now()
         }
 
       {_output, _code} ->
-        log_message = "[#{state.name}] launchd 미등록 또는 조회 실패: #{state.label}"
-
-        if state.required do
-          Logger.warning(log_message)
-        else
-          Logger.info(log_message)
-        end
+        new_state = maybe_log_status(state, :missing, state.label)
 
         %{
-          state
+          new_state
           | status: :missing,
             pid: nil,
             last_checked_at: DateTime.utc_now()
         }
+    end
+  end
+
+  defp maybe_log_status(state, status, detail) do
+    signature = "#{status}:#{detail}"
+    now = System.monotonic_time(:millisecond)
+
+    should_log =
+      state.last_log_signature != signature or
+        is_nil(state.last_log_at) or
+        now - state.last_log_at >= @log_cooldown_ms
+
+    if should_log do
+      log_message =
+        case status do
+          :missing -> "[#{state.name}] launchd 미등록 또는 조회 실패: #{detail}"
+          :running -> "[#{state.name}] launchd 실행 중: #{detail}"
+          :loaded -> "[#{state.name}] launchd 로드됨: #{detail}"
+          _ -> "[#{state.name}] launchd 상태 변경: #{status} #{detail}"
+        end
+
+      cond do
+        status == :missing and state.required -> Logger.warning(log_message)
+        status == :missing -> Logger.info(log_message)
+        true -> Logger.debug(log_message)
+      end
+
+      %{state | last_log_signature: signature, last_log_at: now}
+    else
+      state
     end
   end
 
