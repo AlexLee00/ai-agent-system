@@ -1,5 +1,5 @@
 import pgPool = require('./pg-pool');
-import { normalizeTeam } from './agent-registry.js';
+import agentRegistry = require('./agent-registry');
 
 type ToolRequirements = {
   preferredTypes?: string[];
@@ -47,6 +47,10 @@ type ToolInsert = {
   cost_per_call?: number;
   status?: string;
   config?: Record<string, unknown>;
+};
+
+const { normalizeTeam } = agentRegistry as {
+  normalizeTeam: (team?: string | null) => string;
 };
 
 function safeJson<T>(value: unknown, fallback: T): T {
