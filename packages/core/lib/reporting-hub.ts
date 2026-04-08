@@ -27,11 +27,146 @@ const PAYLOAD_WARNING_LOG = process.env.REPORTING_PAYLOAD_WARNING_LOG || '/tmp/r
 const MAX_WARNING_LOG_BYTES = 512 * 1024;
 const TELEGRAM_API_RETRY_ATTEMPTS = 2;
 
-function sleep(ms) {
+type AlertLevel = 1 | 2 | 3 | 4;
+
+type PayloadLink = {
+  label: string;
+  href?: string;
+};
+
+type NormalizedPayload = {
+  title?: string;
+  summary?: string;
+  action?: string;
+  detail?: string;
+  details?: string[];
+  links?: PayloadLink[];
+  [key: string]: unknown;
+} | null;
+
+type NormalizedEvent = {
+  from_bot: string;
+  team: string;
+  event_type: string;
+  alert_level: number;
+  message: string;
+  payload: NormalizedPayload;
+};
+
+type EventInput = {
+  from_bot?: string;
+  team?: string;
+  event_type?: string;
+  alert_level?: number;
+  message?: string;
+  payload?: unknown;
+};
+
+type SnippetEvent = NormalizedEvent & {
+  title: string;
+  lines: string[];
+  detailHint: string;
+};
+
+type NoticeEvent = NormalizedEvent & {
+  title: string;
+  summary: string;
+  details: string[];
+  action: string;
+  actionLabel: string;
+  footer: string;
+};
+
+type ReportSection = {
+  title: string;
+  lines: string[];
+};
+
+type ReportEvent = NormalizedEvent & {
+  title: string;
+  summary: string;
+  sections: ReportSection[];
+  footer: string;
+};
+
+type DeliveryPolicy = {
+  key?: string;
+  dedupe?: boolean;
+  cooldownMs?: number;
+  quietHours?: {
+    maxAlertLevel?: number;
+    timezone?: string;
+    startHour?: number;
+    endHour?: number;
+  } | null;
+};
+
+type PolicyDecision = {
+  allowed: boolean;
+  reason: string;
+  policy: {
+    dedupe: boolean;
+    cooldownMs: number;
+    quietHours: DeliveryPolicy['quietHours'];
+    channel: string;
+  };
+  dedupeKey?: string;
+  retryAfterMs?: number;
+};
+
+type QueuePublisherInput = {
+  pgPool: { run: (schema: string, sql: string, params: unknown[]) => Promise<unknown> };
+  schema?: string;
+  table?: string;
+  event: EventInput;
+  policy?: DeliveryPolicy;
+};
+
+type TelegramPublisherInput = {
+  sender: { send: (team: string, message: string) => Promise<boolean>; sendCritical: (team: string, message: string) => Promise<boolean> };
+  topicTeam: string;
+  event: EventInput;
+  prefix?: string;
+  criticalMode?: string;
+  policy?: DeliveryPolicy;
+};
+
+type TelegramApiPublisherInput = {
+  token: string;
+  chatId: string;
+  threadId?: string | null;
+  event: EventInput;
+  parseMode?: string;
+  replyMarkup?: unknown;
+  disableWebPagePreview?: boolean;
+  policy?: DeliveryPolicy;
+};
+
+type RagPublisherInput = {
+  ragStore: { store: (collection: string, content: string, metadata: Record<string, unknown>, sourceBot: string) => Promise<unknown> };
+  collection?: string;
+  sourceBot?: string;
+  event: EventInput;
+  metadata?: Record<string, unknown>;
+  contentBuilder?: ((event: NormalizedEvent) => string) | null;
+  policy?: DeliveryPolicy;
+};
+
+type N8nPublisherInput = {
+  circuitName?: string;
+  webhookCandidates: string[];
+  healthUrl?: string;
+  event: EventInput;
+  bodyBuilder?: ((event: NormalizedEvent) => unknown) | null;
+  directResult?: { ok?: boolean; source?: string };
+  policy?: DeliveryPolicy;
+};
+
+function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function resolveTelegramRetryDelayMs(res, data, fallbackMs = 3000) {
+function resolveTelegramRetryDelayMs(res: Response | null, data: any, fallbackMs = 3000): number {
   const retryAfterSec = Number(data?.parameters?.retry_after || res?.headers?.get('retry-after') || 0);
   if (Number.isFinite(retryAfterSec) && retryAfterSec > 0) {
     return Math.max(1000, retryAfterSec * 1000);
@@ -39,12 +174,12 @@ function resolveTelegramRetryDelayMs(res, data, fallbackMs = 3000) {
   return fallbackMs;
 }
 
-function normalizeMessageText(message = '') {
+function normalizeMessageText(message = ''): string {
   const lines = String(message || '')
     .replace(/\r\n/g, '\n')
     .split('\n')
-    .map((line) => line.replace(/[ \t]+$/g, ''))
-    .map((line) => {
+    .map((line: string) => line.replace(/[ \t]+$/g, ''))
+    .map((line: string) => {
       const trimmed = line.trim();
       if (/^[━═─-]{8,}$/.test(trimmed)) return MOBILE_DIVIDER;
       return line;
@@ -62,7 +197,7 @@ function normalizeMessageText(message = '') {
   return compact.join('\n').trim();
 }
 
-function appendPayloadWarning(entry) {
+function appendPayloadWarning(entry: Record<string, unknown>): void {
   try {
     if (fs.existsSync(PAYLOAD_WARNING_LOG)) {
       const stat = fs.statSync(PAYLOAD_WARNING_LOG);
@@ -72,11 +207,11 @@ function appendPayloadWarning(entry) {
     }
     fs.appendFileSync(PAYLOAD_WARNING_LOG, `${JSON.stringify(entry)}\n`, 'utf8');
   } catch (error) {
-    console.warn(`[reporting-hub] payload warning log failed: ${error.message}`);
+    console.warn(`[reporting-hub] payload warning log failed: ${(error as Error).message}`);
   }
 }
 
-function recordPayloadWarnings(event, warnings) {
+function recordPayloadWarnings(event: NormalizedEvent, warnings: string[]): void {
   if (!Array.isArray(warnings) || warnings.length === 0) return;
   appendPayloadWarning({
     ts: new Date().toISOString(),
@@ -91,7 +226,7 @@ function recordPayloadWarnings(event, warnings) {
 export function getRecentPayloadWarnings({
   limit = 50,
   withinHours = 24,
-} = {}) {
+} = {}): Record<string, unknown>[] {
   try {
     if (!fs.existsSync(PAYLOAD_WARNING_LOG)) return [];
     const minTs = Date.now() - (withinHours * 60 * 60 * 1000);
@@ -101,8 +236,8 @@ export function getRecentPayloadWarnings({
     const entries = [];
     for (let index = lines.length - 1; index >= 0 && entries.length < limit; index -= 1) {
       try {
-        const parsed = JSON.parse(lines[index]);
-        const ts = Date.parse(parsed.ts || '');
+        const parsed = JSON.parse(lines[index]) as Record<string, unknown>;
+        const ts = Date.parse(String(parsed.ts || ''));
         if (!Number.isFinite(ts) || ts < minTs) continue;
         entries.push(parsed);
       } catch {
@@ -111,13 +246,13 @@ export function getRecentPayloadWarnings({
     }
     return entries.reverse();
   } catch (error) {
-    console.warn(`[reporting-hub] payload warning read failed: ${error.message}`);
+    console.warn(`[reporting-hub] payload warning read failed: ${(error as Error).message}`);
     return [];
   }
 }
 
-export function summarizePayloadWarnings(entries = []) {
-  const producerCounts = new Map();
+export function summarizePayloadWarnings(entries: Array<Record<string, unknown>> = []) {
+  const producerCounts = new Map<string, number>();
   for (const entry of entries) {
     const key = `${entry.team || 'general'}/${entry.from_bot || 'unknown'}`;
     producerCounts.set(key, (producerCounts.get(key) || 0) + 1);
@@ -133,7 +268,7 @@ export function summarizePayloadWarnings(entries = []) {
   };
 }
 
-function compactLine(line, maxLength = MOBILE_LINE_MAX) {
+function compactLine(line: string, maxLength = MOBILE_LINE_MAX): string {
   const text = String(line || '')
     .replace(/\s+/g, ' ')
     .replace(/[━═─-]{8,}/g, MOBILE_DIVIDER)
@@ -143,11 +278,11 @@ function compactLine(line, maxLength = MOBILE_LINE_MAX) {
   return `${text.slice(0, maxLength - 1).trimEnd()}…`;
 }
 
-function compactSectionTitle(title) {
+function compactSectionTitle(title: string): string {
   return compactLine(String(title || '').replace(/[━═─]/g, ' ').replace(/\s+/g, ' ').trim(), 40);
 }
 
-function compactNoticeTitle(title) {
+function compactNoticeTitle(title: string): string {
   const normalized = String(title || '')
     .replace(/^[^\w가-힣]+\s*/, '')
     .replace(/^루나 메트릭 경고\s*[—-]\s*/u, '루나 경고 · ')
@@ -160,7 +295,7 @@ function compactNoticeTitle(title) {
   return compactLine(normalized, 40);
 }
 
-function compactLines(lines = [], limit = MOBILE_DETAIL_LIMIT) {
+function compactLines(lines: string[] = [], limit = MOBILE_DETAIL_LIMIT): string[] {
   const normalized = lines
     .map((line) => compactLine(line))
     .filter(Boolean);
@@ -171,7 +306,7 @@ function compactLines(lines = [], limit = MOBILE_DETAIL_LIMIT) {
   ];
 }
 
-export function validatePayloadSchema(payload = null) {
+export function validatePayloadSchema(payload: unknown = null): { payload: NormalizedPayload; warnings: string[] } {
   if (payload == null) {
     return { payload: null, warnings: [] };
   }
@@ -184,7 +319,7 @@ export function validatePayloadSchema(payload = null) {
     };
   }
 
-  const normalized = {
+  const normalized: Record<string, unknown> = {
     ...payload,
   };
 
@@ -200,7 +335,9 @@ export function validatePayloadSchema(payload = null) {
       warnings.push('details_coerced_to_array');
       normalized.details = [normalized.details];
     }
-    normalized.details = normalized.details.map((line) => String(line || '').trim()).filter(Boolean);
+    normalized.details = (normalized.details as unknown[])
+      .map((line: unknown) => String(line || '').trim())
+      .filter(Boolean);
   }
 
   if (normalized.links != null) {
@@ -208,8 +345,8 @@ export function validatePayloadSchema(payload = null) {
       warnings.push('links_coerced_to_array');
       normalized.links = [normalized.links];
     }
-    normalized.links = normalized.links
-      .map((link) => {
+    normalized.links = (normalized.links as unknown[])
+      .map((link: unknown): PayloadLink | null => {
         if (!link) return null;
         if (typeof link === 'string') {
           warnings.push('link_string_coerced_to_object');
@@ -219,12 +356,13 @@ export function validatePayloadSchema(payload = null) {
           warnings.push('link_invalid_dropped');
           return null;
         }
+        const linkRecord = link as Record<string, unknown>;
         return {
-          label: String(link.label || '').trim(),
-          href: String(link.href || '').trim(),
+          label: String(linkRecord.label || '').trim(),
+          href: String(linkRecord.href || '').trim(),
         };
       })
-      .filter((link) => link && link.label);
+      .filter((link): link is PayloadLink => Boolean(link && link.label));
   }
 
   return {
@@ -233,7 +371,7 @@ export function validatePayloadSchema(payload = null) {
   };
 }
 
-export function normalizePayload(payload = null) {
+export function normalizePayload(payload: unknown = null): NormalizedPayload {
   const validated = validatePayloadSchema(payload);
   if (validated.warnings.length > 0) {
     console.warn(`[reporting-hub] payload normalized with warnings: ${validated.warnings.join(', ')}`);
@@ -249,7 +387,15 @@ export function buildEventPayload({
   links = [],
   detail = '',
   extra = {},
-} = {}) {
+}: {
+  title?: string;
+  summary?: string;
+  details?: string[];
+  action?: string;
+  links?: PayloadLink[];
+  detail?: string;
+  extra?: Record<string, unknown>;
+} = {}): NormalizedPayload {
   return normalizePayload({
     title,
     summary,
@@ -261,18 +407,18 @@ export function buildEventPayload({
   });
 }
 
-function getDefaultCooldownMs(alertLevel) {
+function getDefaultCooldownMs(alertLevel: number): number {
   if (alertLevel >= 4) return 0;
   if (alertLevel >= 3) return 60_000;
   if (alertLevel >= 2) return 10 * 60_000;
   return 30 * 60_000;
 }
 
-function getKstHour() {
+function getKstHour(): number {
   return new Date(Date.now() + 9 * 60 * 60 * 1000).getUTCHours();
 }
 
-function buildPolicyKey(channel: any, normalized: any, policy: any = {}) {
+function buildPolicyKey(channel: string, normalized: NormalizedEvent, policy: DeliveryPolicy = {}): string {
   if (policy.key) return String(policy.key);
   return [
     channel,
@@ -284,7 +430,7 @@ function buildPolicyKey(channel: any, normalized: any, policy: any = {}) {
   ].join('::');
 }
 
-function resolvePolicy(channel: any, normalized: any, policy: any = {}) {
+function resolvePolicy(channel: string, normalized: NormalizedEvent, policy: DeliveryPolicy = {}) {
   return {
     dedupe: policy.dedupe !== false,
     cooldownMs: Number.isFinite(Number(policy.cooldownMs))
@@ -295,7 +441,7 @@ function resolvePolicy(channel: any, normalized: any, policy: any = {}) {
   };
 }
 
-function shouldQuietHoursSuppress(normalized, quietHours) {
+function shouldQuietHoursSuppress(normalized: NormalizedEvent, quietHours: DeliveryPolicy['quietHours']): boolean {
   if (!quietHours) return false;
   const maxAlertLevel = Number.isFinite(Number(quietHours.maxAlertLevel))
     ? Number(quietHours.maxAlertLevel)
@@ -313,7 +459,7 @@ function shouldQuietHoursSuppress(normalized, quietHours) {
   return inQuietHours;
 }
 
-function evaluateDeliveryPolicy(channel, normalized, policy = {}) {
+function evaluateDeliveryPolicy(channel: string, normalized: NormalizedEvent, policy: DeliveryPolicy = {}): PolicyDecision {
   const resolved = resolvePolicy(channel, normalized, policy);
   if (shouldQuietHoursSuppress(normalized, resolved.quietHours)) {
     return { allowed: false, reason: 'quiet_hours', policy: resolved };
@@ -338,7 +484,6 @@ function evaluateDeliveryPolicy(channel, normalized, policy = {}) {
   return { allowed: true, reason: 'allowed', policy: resolved, dedupeKey: key };
 }
 
-/** @param {any} [input] */
 export function normalizeEvent({
   from_bot,
   team = 'general',
@@ -346,7 +491,14 @@ export function normalizeEvent({
   alert_level = 2,
   message = '',
   payload = null,
-} : any = {}) {
+}: {
+  from_bot?: string;
+  team?: string;
+  event_type?: string;
+  alert_level?: number;
+  message?: string;
+  payload?: unknown;
+} = {}): NormalizedEvent {
   const validated = validatePayloadSchema(payload);
   if (validated.warnings.length > 0) {
     console.warn(`[reporting-hub] payload normalized with warnings: ${validated.warnings.join(', ')}`);
@@ -369,7 +521,7 @@ export async function publishToQueue({
   table = 'mainbot_queue',
   event,
   policy,
-}) {
+}: QueuePublisherInput) {
   const normalized = normalizeEvent(event);
   const decision = evaluateDeliveryPolicy('queue', normalized, policy);
   if (!decision.allowed) {
@@ -395,14 +547,17 @@ export async function publishToQueue({
     ]);
     return { ok: true, channel: 'queue', event: normalized };
   } catch (error) {
-    console.warn(`[reporting-hub] queue publish failed: ${error.message}`);
-    return { ok: false, channel: 'queue', event: normalized, error: error.message };
+    console.warn(`[reporting-hub] queue publish failed: ${(error as Error).message}`);
+    return { ok: false, channel: 'queue', event: normalized, error: (error as Error).message };
   }
 }
 
 export async function publishToWebhook({
   event,
   policy,
+}: {
+  event: EventInput;
+  policy?: DeliveryPolicy;
 }) {
   const normalized = normalizeEvent(event);
   const decision = evaluateDeliveryPolicy('webhook', normalized, policy);
@@ -431,8 +586,8 @@ export async function publishToWebhook({
       error: result.error,
     };
   } catch (error) {
-    console.warn(`[reporting-hub] webhook publish failed: ${error.message}`);
-    return { ok: false, channel: 'webhook', event: normalized, error: error.message };
+    console.warn(`[reporting-hub] webhook publish failed: ${(error as Error).message}`);
+    return { ok: false, channel: 'webhook', event: normalized, error: (error as Error).message };
   }
 }
 
@@ -443,7 +598,7 @@ export async function publishToTelegram({
   prefix = '',
   criticalMode = 'both',
   policy,
-}) {
+}: TelegramPublisherInput) {
   const normalized = normalizeEvent(event);
   const decision = evaluateDeliveryPolicy('telegram', normalized, policy);
   if (!decision.allowed) {
@@ -465,8 +620,8 @@ export async function publishToTelegram({
       : await sender.send(topicTeam, finalMessage);
     return { ok: Boolean(ok), channel: 'telegram', event: normalized };
   } catch (error) {
-    console.warn(`[reporting-hub] telegram publish failed: ${error.message}`);
-    return { ok: false, channel: 'telegram', event: normalized, error: error.message };
+    console.warn(`[reporting-hub] telegram publish failed: ${(error as Error).message}`);
+    return { ok: false, channel: 'telegram', event: normalized, error: (error as Error).message };
   }
 }
 
@@ -479,7 +634,7 @@ export async function publishToTelegramApi({
   replyMarkup = null,
   disableWebPagePreview = true,
   policy,
-}) {
+}: TelegramApiPublisherInput) {
   const normalized = normalizeEvent(event);
   const decision = evaluateDeliveryPolicy('telegram', normalized, policy);
   if (!decision.allowed) {
@@ -495,7 +650,7 @@ export async function publishToTelegramApi({
     return { ok: false, channel: 'telegram_api', event: normalized, error: 'missing_telegram_credentials' };
   }
 
-  const body: any = {
+  const body: Record<string, unknown> = {
     chat_id: chatId,
     text: normalized.message,
     parse_mode: parseMode,
@@ -531,8 +686,8 @@ export async function publishToTelegramApi({
     }
     return { ok: false, channel: 'telegram_api', event: normalized, error: 'telegram_retry_exhausted' };
   } catch (error) {
-    console.warn(`[reporting-hub] telegram api publish failed: ${error.message}`);
-    return { ok: false, channel: 'telegram_api', event: normalized, error: error.message };
+    console.warn(`[reporting-hub] telegram api publish failed: ${(error as Error).message}`);
+    return { ok: false, channel: 'telegram_api', event: normalized, error: (error as Error).message };
   }
 }
 
@@ -544,7 +699,7 @@ export async function publishToRag({
   metadata = {},
   contentBuilder,
   policy,
-}) {
+}: RagPublisherInput) {
   const normalized = normalizeEvent(event);
   const decision = evaluateDeliveryPolicy('rag', normalized, policy);
   if (!decision.allowed) {
@@ -580,8 +735,8 @@ export async function publishToRag({
     );
     return { ok: true, channel: 'rag', event: normalized, id };
   } catch (error) {
-    console.warn(`[reporting-hub] rag publish failed: ${error.message}`);
-    return { ok: false, channel: 'rag', event: normalized, error: error.message };
+    console.warn(`[reporting-hub] rag publish failed: ${(error as Error).message}`);
+    return { ok: false, channel: 'rag', event: normalized, error: (error as Error).message };
   }
 }
 
@@ -593,7 +748,7 @@ export async function publishToN8n({
   bodyBuilder,
   directResult = { ok: false, source: 'direct_bypass' },
   policy,
-}) {
+}: N8nPublisherInput) {
   const normalized = normalizeEvent(event);
   const decision = evaluateDeliveryPolicy('n8n', normalized, policy);
   if (!decision.allowed) {
@@ -625,8 +780,8 @@ export async function publishToN8n({
       result,
     };
   } catch (error) {
-    console.warn(`[reporting-hub] n8n publish failed: ${error.message}`);
-    return { ok: false, channel: 'n8n', event: normalized, error: error.message };
+    console.warn(`[reporting-hub] n8n publish failed: ${(error as Error).message}`);
+    return { ok: false, channel: 'n8n', event: normalized, error: (error as Error).message };
   }
 }
 
@@ -723,7 +878,16 @@ export function buildSnippetEvent({
   lines = [],
   detailHint = '',
   payload = null,
-} : any = {}) {
+}: {
+  from_bot?: string;
+  team?: string;
+  event_type?: string;
+  alert_level?: number;
+  title?: string;
+  lines?: unknown[];
+  detailHint?: string;
+  payload?: unknown;
+} = {}): SnippetEvent {
   const normalized = normalizeEvent({
     from_bot,
     team,
@@ -735,12 +899,12 @@ export function buildSnippetEvent({
   return {
     ...normalized,
     title: String(title || normalized.message || '').trim(),
-    lines: (lines || []).map((line) => String(line || '').trim()).filter(Boolean),
+    lines: (lines || []).map((line: unknown) => String(line || '').trim()).filter(Boolean),
     detailHint: String(detailHint || '').trim(),
   };
 }
 
-export function renderSnippetEvent(event) {
+export function renderSnippetEvent(event: EventInput | SnippetEvent | null | undefined): string {
   if (!event) return '';
   const normalized = buildSnippetEvent(event);
   const lines = [normalized.title];
@@ -767,7 +931,19 @@ export function buildNoticeEvent({
   actionLabel = '조치',
   footer = '',
   payload = null,
-} = {}) {
+}: {
+  from_bot?: string;
+  team?: string;
+  event_type?: string;
+  alert_level?: number;
+  title?: string;
+  summary?: string;
+  details?: unknown[];
+  action?: string;
+  actionLabel?: string;
+  footer?: string;
+  payload?: unknown;
+} = {}): NoticeEvent {
   const normalized = normalizeEvent({
     from_bot,
     team,
@@ -780,18 +956,19 @@ export function buildNoticeEvent({
     ...normalized,
     title: String(title || '').trim(),
     summary: String(summary || '').trim(),
-    details: (details || []).map((line) => String(line || '').trim()).filter(Boolean),
+    details: (details || []).map((line: unknown) => String(line || '').trim()).filter(Boolean),
     action: String(action || '').trim(),
     actionLabel: String(actionLabel || '조치').trim(),
     footer: String(footer || '').trim(),
   };
 }
 
-export function renderNoticeEvent(event) {
+export function renderNoticeEvent(event: EventInput | NoticeEvent | null | undefined): string {
   if (!event) return '';
   const normalized = buildNoticeEvent(event);
-  const levelLabel = ALERT_LEVEL_LABELS[normalized.alert_level] || '알림';
-  const levelIcon = ALERT_LEVEL_ICONS[normalized.alert_level] || 'ℹ️';
+  const alertLevel = normalized.alert_level as AlertLevel;
+  const levelLabel = ALERT_LEVEL_LABELS[alertLevel] || '알림';
+  const levelIcon = ALERT_LEVEL_ICONS[alertLevel] || 'ℹ️';
   const title = compactNoticeTitle(normalized.title);
   const summary = compactLine(normalized.summary);
   const lines = [`${levelIcon} ${levelLabel}${title ? ` · ${title}` : ''}`];
@@ -819,7 +996,17 @@ export function buildReportEvent({
   sections = [],
   footer = '',
   payload = null,
-} = {}) {
+}: {
+  from_bot?: string;
+  team?: string;
+  event_type?: string;
+  alert_level?: number;
+  title?: string;
+  summary?: string;
+  sections?: Array<{ title?: string; lines?: unknown[] }>;
+  footer?: string;
+  payload?: unknown;
+} = {}): ReportEvent {
   const normalized = normalizeEvent({
     from_bot,
     team,
@@ -832,15 +1019,15 @@ export function buildReportEvent({
     ...normalized,
     title: String(title || '').trim(),
     summary: String(summary || '').trim(),
-    sections: (sections || []).map((section) => ({
+    sections: (sections || []).map((section): ReportSection => ({
       title: String(section?.title || '').trim(),
-      lines: (section?.lines || []).map((line) => String(line || '').trim()).filter(Boolean),
+      lines: (section?.lines || []).map((line: unknown) => String(line || '').trim()).filter(Boolean),
     })).filter((section) => section.title || section.lines.length > 0),
     footer: String(footer || '').trim(),
   };
 }
 
-export function renderReportEvent(event) {
+export function renderReportEvent(event: EventInput | ReportEvent | null | undefined): string {
   if (!event) return '';
   const normalized = buildReportEvent(event);
   const lines = [];
@@ -859,7 +1046,7 @@ export function renderReportEvent(event) {
   return lines.join('\n').trim();
 }
 
-export function parseEventPayload(payload) {
+export function parseEventPayload(payload: unknown): NormalizedPayload {
   if (!payload) return null;
   if (typeof payload === 'object') return normalizePayload(payload);
   if (typeof payload !== 'string') return null;
@@ -871,7 +1058,7 @@ export function parseEventPayload(payload) {
   }
 }
 
-export function getEventHeadline(event) {
+export function getEventHeadline(event: { payload?: unknown; message?: string | null } | null | undefined): string {
   const payload = parseEventPayload(event?.payload);
   const fromPayload = [
     payload?.title,
@@ -885,7 +1072,7 @@ export function getEventHeadline(event) {
   return message.split('\n').map((line) => line.trim()).find(Boolean) || '';
 }
 
-export function getEventDetailLines(event) {
+export function getEventDetailLines(event: { payload?: unknown; message?: string | null } | null | undefined): string[] {
   const payload = parseEventPayload(event?.payload);
   const payloadDetails = [];
   if (Array.isArray(payload?.details)) {
@@ -903,7 +1090,7 @@ export function getEventDetailLines(event) {
   return compactLines(filteredMessageLines, MOBILE_DETAIL_LIMIT);
 }
 
-export function getEventAction(event) {
+export function getEventAction(event: { payload?: unknown } | null | undefined): string {
   const payload = parseEventPayload(event?.payload);
   if (typeof payload?.action === 'string' && payload.action.trim()) {
     return payload.action.trim();
@@ -911,11 +1098,11 @@ export function getEventAction(event) {
   return '';
 }
 
-export function getEventLinkLines(event) {
+export function getEventLinkLines(event: { payload?: unknown } | null | undefined): string[] {
   const payload = parseEventPayload(event?.payload);
   if (!Array.isArray(payload?.links)) return [];
   return payload.links
-    .map((link) => {
+    .map((link: PayloadLink) => {
       const label = String(link?.label || '').trim();
       const href = String(link?.href || '').trim();
       if (!label) return '';
@@ -943,7 +1130,20 @@ export function buildSeverityTargets({
   includeN8n = true,
   criticalTelegramMode = 'both',
   criticalWebhookUrl = DEFAULT_CRITICAL_WEBHOOK_URL,
-}: any = {}) {
+}: {
+  event?: EventInput;
+  pgPool?: QueuePublisherInput['pgPool'];
+  schema?: string;
+  table?: string;
+  sender?: TelegramPublisherInput['sender'];
+  topicTeam?: string;
+  telegramPrefix?: string;
+  includeQueue?: boolean;
+  includeTelegram?: boolean;
+  includeN8n?: boolean;
+  criticalTelegramMode?: string;
+  criticalWebhookUrl?: string;
+} = {}) {
   const normalized = normalizeEvent(event);
   const targets = [];
 
@@ -976,7 +1176,7 @@ export function buildSeverityTargets({
       type: 'n8n',
       webhookCandidates: [criticalWebhookUrl],
       healthUrl: 'http://127.0.0.1:5678/healthz',
-      bodyBuilder: (payloadEvent) => ({
+      bodyBuilder: (payloadEvent: NormalizedEvent) => ({
         severity: 'critical',
         service: payloadEvent.team || payloadEvent.from_bot,
         message: payloadEvent.message,
@@ -992,4 +1192,3 @@ export function buildSeverityTargets({
 
   return targets;
 }
-

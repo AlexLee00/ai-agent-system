@@ -135,10 +135,10 @@ async function safeQuery(pool: PgPoolLike, sql: string, params: any[]): Promise<
       if (!isConnError(error)) throw error;
       if (attempt < MAX_ATTEMPTS - 1) {
         const wait = 1000 * (attempt + 1);
-        console.warn(`[pg-pool:${schema}] 쿼리 재시도 ${attempt + 1}/${MAX_ATTEMPTS} (${wait}ms 대기): ${error.message} | pool=${JSON.stringify(stats)}`);
+        console.warn(`[pg-pool:${schema}] 쿼리 재시도 ${attempt + 1}/${MAX_ATTEMPTS} (${wait}ms 대기): ${(error as Error).message} | pool=${JSON.stringify(stats)}`);
         await new Promise((resolve) => setTimeout(resolve, wait));
       } else {
-        console.error(`[pg-pool:${schema}] 쿼리 최종 실패: ${error.message} | pool=${JSON.stringify(stats)} | sql=${String(sql).slice(0, 140)}`);
+        console.error(`[pg-pool:${schema}] 쿼리 최종 실패: ${(error as Error).message} | pool=${JSON.stringify(stats)} | sql=${String(sql).slice(0, 140)}`);
       }
     }
   }
