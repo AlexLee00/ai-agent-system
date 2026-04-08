@@ -9,6 +9,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 const { createRuntimeConfigLoader, deepMerge } = require('../../../packages/core/lib/runtime-config-loader');
 
+/** @typedef {typeof DEFAULT_RUNTIME_CONFIG} InvestmentRuntimeConfig */
+
 const DEFAULT_RUNTIME_CONFIG = {
   dynamicTpSlEnabled: true,
   luna: {
@@ -160,30 +162,41 @@ const DEFAULT_RUNTIME_CONFIG = {
   },
 };
 
-const { loadRuntimeConfig } = createRuntimeConfigLoader({
-  fs: { readFileSync },
+const runtimeConfigLoader =
+  /** @type {{ loadRuntimeConfig: () => InvestmentRuntimeConfig }} */ (createRuntimeConfigLoader({
+  fs: {
+    readFileSync:
+      /**
+       * @param {string} filePath
+       * @param {string} _encoding
+       */
+      (filePath, _encoding) => readFileSync(filePath, 'utf8'),
+  },
   defaults: DEFAULT_RUNTIME_CONFIG,
   configPath: join(__dirname, '..', 'config.yaml'),
   format: 'yaml',
-  extractRuntimeConfig: (raw = {}) => {
-    const legacyCapitalRuntime = raw.capital_management && (
-      raw.capital_management.dynamicTpSlEnabled !== undefined ||
-      raw.capital_management.luna ||
-      raw.capital_management.nemesis ||
-      raw.capital_management.timeMode ||
-      raw.capital_management.llmPolicies
+  extractRuntimeConfig: (raw) => {
+    const config = /** @type {{ runtime_config?: object, capital_management?: any }} */ (raw || {});
+    const legacyCapitalRuntime = config.capital_management && (
+      config.capital_management.dynamicTpSlEnabled !== undefined ||
+      config.capital_management.luna ||
+      config.capital_management.nemesis ||
+      config.capital_management.timeMode ||
+      config.capital_management.llmPolicies
     )
       ? {
-          dynamicTpSlEnabled: raw.capital_management.dynamicTpSlEnabled,
-          luna: raw.capital_management.luna,
-          nemesis: raw.capital_management.nemesis,
-          timeMode: raw.capital_management.timeMode,
-          llmPolicies: raw.capital_management.llmPolicies,
+          dynamicTpSlEnabled: config.capital_management.dynamicTpSlEnabled,
+          luna: config.capital_management.luna,
+          nemesis: config.capital_management.nemesis,
+          timeMode: config.capital_management.timeMode,
+          llmPolicies: config.capital_management.llmPolicies,
         }
       : {};
-    return raw.runtime_config || raw.capital_management?.runtime_config || legacyCapitalRuntime || {};
+    return config.runtime_config || config.capital_management?.runtime_config || legacyCapitalRuntime || {};
   },
-});
+}));
+
+const { loadRuntimeConfig } = runtimeConfigLoader;
 
 export function getInvestmentRuntimeConfig() {
   return loadRuntimeConfig();
@@ -228,8 +241,8 @@ export function isSameDaySymbolReentryBlockEnabled() {
 
 export function getLunaStockStrategyProfile() {
   const luna = getLunaRuntimeConfig();
-  const mode = luna.stockStrategyMode || {};
-  const profiles = luna.stockStrategyProfiles || {};
+  const mode = /** @type {Record<string, string>} */ (luna.stockStrategyMode || {});
+  const profiles = /** @type {Record<string, any>} */ (luna.stockStrategyProfiles || {});
   const selectedKey = (mode[isPaperMode() ? 'paper' : 'live'] || 'aggressive');
   const selectedProfile = profiles[selectedKey] || profiles.aggressive || profiles.balanced || {
     label: 'aggressive',
