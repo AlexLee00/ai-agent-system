@@ -86,6 +86,7 @@ const runtimeEntryPoints = [
   path.join(root, 'bots/hub/lib/auth.ts'),
   path.join(root, 'bots/hub/lib/runtime-profiles.ts'),
   path.join(root, 'bots/hub/lib/sql-guard.ts'),
+  path.join(root, 'bots/hub/src/hub.ts'),
   path.join(root, 'bots/hub/scripts/telegram-callback-poller.ts'),
 ];
 
