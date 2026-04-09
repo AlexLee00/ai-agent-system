@@ -100,6 +100,7 @@ const runtimeEntryPoints = [
   path.join(root, 'bots/blog/api/node-server.ts'),
   path.join(root, 'bots/orchestrator/src/dashboard.ts'),
   path.join(root, 'bots/orchestrator/src/filter.ts'),
+  path.join(root, 'bots/orchestrator/src/sigma-daily.ts'),
   path.join(root, 'bots/orchestrator/src/write.ts'),
   path.join(root, 'bots/worker/src/worker-lead.ts'),
   path.join(root, 'bots/worker/src/task-runner.ts'),
