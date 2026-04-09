@@ -103,6 +103,7 @@ const runtimeEntryPoints = [
   path.join(root, 'bots/orchestrator/lib/sigma/sigma-analyzer.ts'),
   path.join(root, 'bots/orchestrator/lib/sigma/sigma-feedback.ts'),
   path.join(root, 'bots/orchestrator/lib/sigma/sigma-scheduler.ts'),
+  path.join(root, 'bots/orchestrator/lib/research/research-tasks.ts'),
   path.join(root, 'bots/orchestrator/src/dashboard.ts'),
   path.join(root, 'bots/orchestrator/src/filter.ts'),
   path.join(root, 'bots/orchestrator/src/sigma-daily.ts'),
