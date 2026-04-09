@@ -1,3 +1,5 @@
+'use strict';
+
 /**
  * bots/blog/api/node-server.js — 블로그 노드 API 서버
  *
@@ -10,7 +12,7 @@
  *   미설치 시: cd bots/blog && npm install express --save
  */
 
-let express: any;
+let express;
 try {
   express = require('express');
 } catch {
@@ -19,44 +21,44 @@ try {
   process.exit(1);
 }
 
-const pipelineStore = require('../lib/pipeline-store');
-const richer = require('../lib/richer');
-const posWriter = require('../lib/pos-writer');
-const gemsWriter = require('../lib/gems-writer');
+const pipelineStore  = require('../lib/pipeline-store');
+const richer         = require('../lib/richer');
+const posWriter      = require('../lib/pos-writer');
+const gemsWriter     = require('../lib/gems-writer');
 const { checkQualityEnhanced } = require('../lib/quality-checker');
-const pgPool = require('../../../packages/core/lib/pg-pool');
+const pgPool         = require('../../../packages/core/lib/pg-pool');
 const { initHubConfig } = require('../../../packages/core/lib/llm-keys');
 const { parseNaverBlogUrl } = require('../../../packages/core/lib/naver-blog-url');
 const { markPublished } = require('../lib/publ');
 
 const PORT = process.env.BLOG_API_PORT || 3100;
 const HOST = process.env.BLOG_API_HOST || '127.0.0.1';
-const app = express();
+const app  = express();
 app.use(express.json());
 
-function getRemoteIp(req: any) {
+function _getRemoteIp(req) {
   return String(
     req.headers['x-forwarded-for']
     || req.socket?.remoteAddress
     || req.ip
-    || '',
+    || ''
   ).split(',')[0].trim();
 }
 
-function isLocalRequest(req: any) {
-  const ip = getRemoteIp(req);
+function _isLocalRequest(req) {
+  const ip = _getRemoteIp(req);
   return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
 }
 
-function requireLocalNodeAccess(req: any, res: any, next: any) {
-  if (isLocalRequest(req)) return next();
+function requireLocalNodeAccess(req, res, next) {
+  if (_isLocalRequest(req)) return next();
   return res.status(403).json({ ok: false, error: '로컬 노드 접근만 허용됩니다.' });
 }
 
 async function bootstrap() {
   await initHubConfig();
-  pipelineStore.ensureSchema().catch((e: any) =>
-    console.warn('[노드서버] RAG 스토어 스키마 초기화 실패 (무시):', e.message),
+  pipelineStore.ensureSchema().catch(e =>
+    console.warn('[노드서버] RAG 스토어 스키마 초기화 실패 (무시):', e.message)
   );
 
   app.listen(PORT, HOST, () => {
@@ -65,11 +67,11 @@ async function bootstrap() {
   });
 }
 
-app.get('/health', (_req: any, res: any) => {
+app.get('/health', (req, res) => {
   res.json({ ok: true, port: PORT });
 });
 
-async function findTargetPost({ postId, scheduleId }: { postId?: number | null; scheduleId?: string | number | null }) {
+async function findTargetPost({ postId, scheduleId }) {
   if (postId) {
     return pgPool.get('blog', `
       SELECT id, title, status, naver_url, metadata, created_at
@@ -91,72 +93,72 @@ async function findTargetPost({ postId, scheduleId }: { postId?: number | null; 
   return null;
 }
 
-app.post('/api/blog/node/weather', async (req: any, res: any) => {
+app.post('/api/blog/node/weather', async (req, res) => {
   const { sessionId } = req.body;
   if (!sessionId) return res.status(400).json({ ok: false, error: 'sessionId 필수' });
   try {
     const result = await richer.fetchWeather();
     await pipelineStore.storeNodeResult(sessionId, 'weather', 'research', result);
     res.json({ ok: true, result });
-  } catch (e: any) {
+  } catch (e) {
     console.error('[노드서버] /weather 오류:', e.message);
     res.status(500).json({ ok: false, error: e.message });
   }
 });
 
-app.post('/api/blog/node/it-news', async (req: any, res: any) => {
+app.post('/api/blog/node/it-news', async (req, res) => {
   const { sessionId } = req.body;
   if (!sessionId) return res.status(400).json({ ok: false, error: 'sessionId 필수' });
   try {
     const result = await richer.fetchITNews(5);
     await pipelineStore.storeNodeResult(sessionId, 'it-news', 'research', result);
     res.json({ ok: true, result });
-  } catch (e: any) {
+  } catch (e) {
     console.error('[노드서버] /it-news 오류:', e.message);
     res.status(500).json({ ok: false, error: e.message });
   }
 });
 
-app.post('/api/blog/node/nodejs-updates', async (req: any, res: any) => {
+app.post('/api/blog/node/nodejs-updates', async (req, res) => {
   const { sessionId } = req.body;
   if (!sessionId) return res.status(400).json({ ok: false, error: 'sessionId 필수' });
   try {
     const result = await richer.fetchNodejsUpdates();
     await pipelineStore.storeNodeResult(sessionId, 'nodejs-updates', 'research', result);
     res.json({ ok: true, result });
-  } catch (e: any) {
+  } catch (e) {
     console.error('[노드서버] /nodejs-updates 오류:', e.message);
     res.status(500).json({ ok: false, error: e.message });
   }
 });
 
-app.post('/api/blog/node/rag-experiences', async (req: any, res: any) => {
+app.post('/api/blog/node/rag-experiences', async (req, res) => {
   const { sessionId, topic, postType } = req.body;
   if (!sessionId) return res.status(400).json({ ok: false, error: 'sessionId 필수' });
   try {
     const result = await richer.searchRealExperiences(topic || '', postType || 'general');
     await pipelineStore.storeNodeResult(sessionId, 'rag-experiences', 'research', result);
     res.json({ ok: true, result });
-  } catch (e: any) {
+  } catch (e) {
     console.error('[노드서버] /rag-experiences 오류:', e.message);
     res.status(500).json({ ok: false, error: e.message });
   }
 });
 
-app.post('/api/blog/node/related-posts', async (req: any, res: any) => {
+app.post('/api/blog/node/related-posts', async (req, res) => {
   const { sessionId, topic, lectureNumber } = req.body;
   if (!sessionId) return res.status(400).json({ ok: false, error: 'sessionId 필수' });
   try {
     const result = await richer.searchRelatedPosts(topic || '', lectureNumber || null);
     await pipelineStore.storeNodeResult(sessionId, 'related-posts', 'research', result);
     res.json({ ok: true, result });
-  } catch (e: any) {
+  } catch (e) {
     console.error('[노드서버] /related-posts 오류:', e.message);
     res.status(500).json({ ok: false, error: e.message });
   }
 });
 
-app.post('/api/blog/node/write-lecture', async (req: any, res: any) => {
+app.post('/api/blog/node/write-lecture', async (req, res) => {
   const { sessionId, lectureNumber, lectureTitle, sectionVariation } = req.body;
   if (!sessionId) return res.status(400).json({ ok: false, error: 'sessionId 필수' });
   try {
@@ -172,28 +174,38 @@ app.post('/api/blog/node/write-lecture', async (req: any, res: any) => {
 
     const sessionData = await pipelineStore.getSessionResults(sessionId);
     const researchData = {
-      weather: sessionData.weather || {},
-      it_news: sessionData['it-news'] || [],
-      nodejs_updates: sessionData['nodejs-updates'] || [],
-      realExperiences: sessionData['rag-experiences'] || [],
-      relatedPosts: sessionData['related-posts'] || [],
+      weather:          sessionData['weather']          || {},
+      it_news:          sessionData['it-news']          || [],
+      nodejs_updates:   sessionData['nodejs-updates']   || [],
+      realExperiences:  sessionData['rag-experiences']  || [],
+      relatedPosts:     sessionData['related-posts']    || [],
     };
 
     const useChunked = process.env.BLOG_LLM_MODEL === 'gemini';
     const post = useChunked
-      ? await posWriter.writeLecturePostChunked(lectureNumber, lectureTitle, researchData, sectionVariation || {})
-      : await posWriter.writeLecturePost(lectureNumber, lectureTitle, researchData, sectionVariation || {});
+      ? await posWriter.writeLecturePostChunked(
+        lectureNumber,
+        lectureTitle,
+        researchData,
+        sectionVariation || {}
+      )
+      : await posWriter.writeLecturePost(
+        lectureNumber,
+        lectureTitle,
+        researchData,
+        sectionVariation || {}
+      );
 
     await pipelineStore.storeNodeResult(sessionId, 'write-lecture', 'generate', post);
 
     res.json({ ok: true, charCount: post.charCount, model: post.model, mode: useChunked ? 'chunked' : 'single' });
-  } catch (e: any) {
+  } catch (e) {
     console.error('[노드서버] /write-lecture 오류:', e.message);
     res.status(500).json({ ok: false, error: e.message });
   }
 });
 
-app.post('/api/blog/node/write-general', async (req: any, res: any) => {
+app.post('/api/blog/node/write-general', async (req, res) => {
   const { sessionId, category, sectionVariation } = req.body;
   if (!sessionId) return res.status(400).json({ ok: false, error: 'sessionId 필수' });
   try {
@@ -209,10 +221,10 @@ app.post('/api/blog/node/write-general', async (req: any, res: any) => {
 
     const sessionData = await pipelineStore.getSessionResults(sessionId);
     const researchData = {
-      weather: sessionData.weather || {},
-      it_news: sessionData['it-news'] || [],
+      weather:         sessionData['weather']         || {},
+      it_news:         sessionData['it-news']         || [],
       realExperiences: sessionData['rag-experiences'] || [],
-      relatedPosts: sessionData['related-posts'] || [],
+      relatedPosts:    sessionData['related-posts']   || [],
     };
 
     const useChunked = process.env.BLOG_LLM_MODEL === 'gemini';
@@ -223,13 +235,13 @@ app.post('/api/blog/node/write-general', async (req: any, res: any) => {
     await pipelineStore.storeNodeResult(sessionId, 'write-general', 'generate', post);
 
     res.json({ ok: true, charCount: post.charCount, model: post.model, mode: useChunked ? 'chunked' : 'single' });
-  } catch (e: any) {
+  } catch (e) {
     console.error('[노드서버] /write-general 오류:', e.message);
     res.status(500).json({ ok: false, error: e.message });
   }
 });
 
-app.post('/api/blog/node/quality-check', async (req: any, res: any) => {
+app.post('/api/blog/node/quality-check', async (req, res) => {
   const {
     sessionId,
     postType,
@@ -270,20 +282,20 @@ app.post('/api/blog/node/quality-check', async (req: any, res: any) => {
     await pipelineStore.storeNodeResult(sessionId, 'quality-check', 'validate', quality);
 
     res.json({
-      ok: true,
-      passed: quality.passed,
+      ok:       true,
+      passed:   quality.passed,
       charCount: content.length,
-      aiRisk: quality.aiRisk,
+      aiRisk:   quality.aiRisk,
       issues: quality.issues || [],
       autoRewriteRecommended: !!quality.autoRewriteRecommended,
     });
-  } catch (e: any) {
+  } catch (e) {
     console.error('[노드서버] /quality-check 오류:', e.message);
     res.status(500).json({ ok: false, error: e.message });
   }
 });
 
-app.post('/api/blog/rag/store', requireLocalNodeAccess, async (req: any, res: any) => {
+app.post('/api/blog/rag/store', requireLocalNodeAccess, async (req, res) => {
   const { sessionId, nodeId, nodeGroup, data } = req.body;
   if (!sessionId || !nodeId) {
     return res.status(400).json({ ok: false, error: 'sessionId, nodeId 필수' });
@@ -291,13 +303,13 @@ app.post('/api/blog/rag/store', requireLocalNodeAccess, async (req: any, res: an
   try {
     await pipelineStore.storeNodeResult(sessionId, nodeId, nodeGroup, data);
     res.json({ ok: true });
-  } catch (e: any) {
+  } catch (e) {
     console.error('[노드서버] /rag/store 오류:', e.message);
     res.status(500).json({ ok: false, error: e.message });
   }
 });
 
-app.post('/api/blog/mark-published', requireLocalNodeAccess, async (req: any, res: any) => {
+app.post('/api/blog/mark-published', requireLocalNodeAccess, async (req, res) => {
   const { postId = null, scheduleId = null, url } = req.body || {};
   if (!url) {
     return res.status(400).json({ ok: false, error: 'url 필수' });
@@ -328,13 +340,13 @@ app.post('/api/blog/mark-published', requireLocalNodeAccess, async (req: any, re
       blogId: parsed.blogId,
       logNo: parsed.logNo,
     });
-  } catch (e: any) {
+  } catch (e) {
     console.error('[노드서버] /mark-published 오류:', e.message);
     return res.status(500).json({ ok: false, error: e.message });
   }
 });
 
-app.get('/api/blog/rag/get', requireLocalNodeAccess, async (req: any, res: any) => {
+app.get('/api/blog/rag/get', requireLocalNodeAccess, async (req, res) => {
   const { sessionId, nodeId } = req.query;
   if (!sessionId || !nodeId) {
     return res.status(400).json({ ok: false, error: 'sessionId, nodeId 필수' });
@@ -342,27 +354,27 @@ app.get('/api/blog/rag/get', requireLocalNodeAccess, async (req: any, res: any) 
   try {
     const data = await pipelineStore.getNodeResult(sessionId, nodeId);
     res.json({ ok: true, data });
-  } catch (e: any) {
+  } catch (e) {
     console.error('[노드서버] /rag/get 오류:', e.message);
     res.status(500).json({ ok: false, error: e.message });
   }
 });
 
-app.get('/api/blog/rag/session', requireLocalNodeAccess, async (req: any, res: any) => {
+app.get('/api/blog/rag/session', requireLocalNodeAccess, async (req, res) => {
   const { sessionId } = req.query;
   if (!sessionId) return res.status(400).json({ ok: false, error: 'sessionId 필수' });
   try {
     const data = await pipelineStore.getSessionResults(sessionId);
     res.json({ ok: true, data });
-  } catch (e: any) {
+  } catch (e) {
     console.error('[노드서버] /rag/session 오류:', e.message);
     res.status(500).json({ ok: false, error: e.message });
   }
 });
 
-bootstrap().catch((error: any) => {
+bootstrap().catch((error) => {
   console.error('[노드서버] 기동 실패:', error.message);
   process.exit(1);
 });
 
-export = app;
+module.exports = app;
