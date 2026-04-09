@@ -67,6 +67,8 @@ const runtimeEntryPoints = [
   path.join(root, 'packages/core/lib/intent-store.ts'),
   path.join(root, 'packages/core/lib/local-llm-client.ts'),
   path.join(root, 'packages/core/lib/local-image-client.ts'),
+  path.join(root, 'packages/core/lib/document-parser.ts'),
+  path.join(root, 'packages/core/lib/ai-feedback-store.ts'),
 ];
 
 await mkdir(outdir, { recursive: true });
