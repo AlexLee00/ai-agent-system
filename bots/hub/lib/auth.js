@@ -1,36 +1,15 @@
 'use strict';
 
-const crypto = require('crypto');
-const env = require('../../../packages/core/lib/env');
+const path = require('node:path');
 
-function safeCompare(a, b) {
-  if (typeof a !== 'string' || typeof b !== 'string') return false;
-  const left = Buffer.from(a, 'utf8');
-  const right = Buffer.from(b, 'utf8');
-  if (left.length !== right.length) return false;
-  return crypto.timingSafeEqual(left, right);
+const runtimePath = path.join(__dirname, '../../../dist/ts-runtime/bots/hub/lib/auth.js');
+
+try {
+  module.exports = require(runtimePath);
+} catch (error) {
+  if (error && (error.code === 'MODULE_NOT_FOUND' || error.code === 'ERR_REQUIRE_ESM')) {
+    module.exports = require('./auth.legacy.js');
+  } else {
+    throw error;
+  }
 }
-
-function authMiddleware(req, res, next) {
-  const configured = String(env.HUB_AUTH_TOKEN || '').trim();
-  if (!configured) {
-    return res.status(503).json({ error: 'hub_auth_not_configured' });
-  }
-
-  const header = String(req.headers.authorization || '');
-  if (!header.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'missing_bearer_token' });
-  }
-
-  const token = header.slice('Bearer '.length).trim();
-  if (!token || !safeCompare(token, configured)) {
-    return res.status(401).json({ error: 'invalid_bearer_token' });
-  }
-
-  return next();
-}
-
-module.exports = {
-  authMiddleware,
-  safeCompare,
-};
