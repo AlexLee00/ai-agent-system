@@ -1,3 +1,5 @@
+'use strict';
+
 const {
   getAgent,
   getAllAgents,
@@ -32,14 +34,8 @@ const {
 } = require('../../../../packages/core/lib/competition-engine');
 const { selectRuntimeProfile } = require('../runtime-profiles');
 
-function readOptionalQuery(req: any, key: string, fallback: string | null = null) {
-  return typeof req.query[key] === 'string' && req.query[key].trim()
-    ? req.query[key].trim()
-    : fallback;
-}
-
-export async function agentsListRoute(req: any, res: any) {
-  const team = readOptionalQuery(req, 'team');
+async function agentsListRoute(req, res) {
+  const team = typeof req.query.team === 'string' && req.query.team.trim() ? req.query.team.trim() : null;
   const agents = team ? await getAgentsByTeam(team) : await getAllAgents();
   return res.json({
     ok: true,
@@ -49,7 +45,7 @@ export async function agentsListRoute(req: any, res: any) {
   });
 }
 
-export async function agentsDashboardRoute(_req: any, res: any) {
+async function agentsDashboardRoute(req, res) {
   const dashboard = await getDashboardData();
   return res.json({
     ok: true,
@@ -57,7 +53,7 @@ export async function agentsDashboardRoute(_req: any, res: any) {
   });
 }
 
-export async function agentsAlwaysOnRoute(_req: any, res: any) {
+async function agentsAlwaysOnRoute(req, res) {
   const agents = await getAlwaysOnStatus();
   return res.json({
     ok: true,
@@ -66,7 +62,7 @@ export async function agentsAlwaysOnRoute(_req: any, res: any) {
   });
 }
 
-export async function agentsTraceStatsRoute(req: any, res: any) {
+async function agentsTraceStatsRoute(req, res) {
   const days = Number.parseInt(req.query.days, 10) || 7;
   const stats = await getTraceStats(days);
   return res.json({
@@ -76,9 +72,9 @@ export async function agentsTraceStatsRoute(req: any, res: any) {
   });
 }
 
-export async function agentsSelectRoute(req: any, res: any) {
+async function agentsSelectRoute(req, res) {
   const role = typeof req.query.role === 'string' ? req.query.role.trim() : '';
-  const team = readOptionalQuery(req, 'team');
+  const team = typeof req.query.team === 'string' && req.query.team.trim() ? req.query.team.trim() : null;
   if (!role) {
     return res.status(400).json({ ok: false, error: 'role required' });
   }
@@ -86,13 +82,13 @@ export async function agentsSelectRoute(req: any, res: any) {
   return res.json({ ok: true, role, team, agent });
 }
 
-export async function agentsLowPerformersRoute(req: any, res: any) {
+async function agentsLowPerformersRoute(req, res) {
   const threshold = Number.parseFloat(req.query.threshold) || 4.0;
   const agents = await getLowPerformersForRehab(threshold);
   return res.json({ ok: true, count: agents.length, threshold, agents });
 }
 
-export async function agentsHireRoute(req: any, res: any) {
+async function agentsHireRoute(req, res) {
   const { agentName, ...taskData } = req.body || {};
   if (!agentName) {
     return res.status(400).json({ ok: false, error: 'agentName required' });
@@ -101,7 +97,7 @@ export async function agentsHireRoute(req: any, res: any) {
   return res.json({ ok: true, contract });
 }
 
-export async function agentsEvaluateRoute(req: any, res: any) {
+async function agentsEvaluateRoute(req, res) {
   const { contractId, result, confidence } = req.body || {};
   if (!contractId) {
     return res.status(400).json({ ok: false, error: 'contractId required' });
@@ -110,7 +106,7 @@ export async function agentsEvaluateRoute(req: any, res: any) {
   return res.json({ ok: true, evaluation });
 }
 
-export async function agentsCompetitionStartRoute(req: any, res: any) {
+async function agentsCompetitionStartRoute(req, res) {
   const topic = typeof req.body?.topic === 'string' ? req.body.topic.trim() : '';
   const team = typeof req.body?.team === 'string' && req.body.team.trim() ? req.body.team.trim() : 'blog';
   if (!topic) {
@@ -120,7 +116,7 @@ export async function agentsCompetitionStartRoute(req: any, res: any) {
   return res.json({ ok: true, competition });
 }
 
-export async function agentsCompetitionCompleteRoute(req: any, res: any) {
+async function agentsCompetitionCompleteRoute(req, res) {
   const competitionId = Number.parseInt(req.body?.competitionId, 10);
   if (!competitionId) {
     return res.status(400).json({ ok: false, error: 'competitionId required' });
@@ -131,23 +127,23 @@ export async function agentsCompetitionCompleteRoute(req: any, res: any) {
   return res.json({ ok: true, competition });
 }
 
-export async function agentsCompetitionHistoryRoute(req: any, res: any) {
-  const team = readOptionalQuery(req, 'team', 'blog') || 'blog';
+async function agentsCompetitionHistoryRoute(req, res) {
+  const team = typeof req.query.team === 'string' && req.query.team.trim() ? req.query.team.trim() : 'blog';
   const limit = Number.parseInt(req.query.limit, 10) || 10;
   const competitions = await getCompetitionHistory(team, limit);
   return res.json({ ok: true, count: competitions.length, team, competitions });
 }
 
-export async function skillsListRoute(req: any, res: any) {
-  const team = readOptionalQuery(req, 'team');
-  const category = readOptionalQuery(req, 'category');
+async function skillsListRoute(req, res) {
+  const team = typeof req.query.team === 'string' && req.query.team.trim() ? req.query.team.trim() : null;
+  const category = typeof req.query.category === 'string' && req.query.category.trim() ? req.query.category.trim() : null;
   const skills = await listSkills(team, category);
   return res.json({ ok: true, count: skills.length, team, category, skills });
 }
 
-export async function skillsSelectRoute(req: any, res: any) {
+async function skillsSelectRoute(req, res) {
   const category = typeof req.query.category === 'string' ? req.query.category.trim() : '';
-  const team = readOptionalQuery(req, 'team');
+  const team = typeof req.query.team === 'string' && req.query.team.trim() ? req.query.team.trim() : null;
   if (!category) {
     return res.status(400).json({ ok: false, error: 'category required' });
   }
@@ -155,7 +151,7 @@ export async function skillsSelectRoute(req: any, res: any) {
   return res.json({ ok: true, category, team, skill });
 }
 
-export async function skillsEvaluateRoute(req: any, res: any) {
+async function skillsEvaluateRoute(req, res) {
   const skillName = typeof req.body?.skillName === 'string' ? req.body.skillName.trim() : '';
   if (!skillName) {
     return res.status(400).json({ ok: false, error: 'skillName required' });
@@ -166,16 +162,16 @@ export async function skillsEvaluateRoute(req: any, res: any) {
   return res.json({ ok: true, skillName, updated });
 }
 
-export async function toolsListRoute(req: any, res: any) {
-  const team = readOptionalQuery(req, 'team');
-  const capability = readOptionalQuery(req, 'capability');
+async function toolsListRoute(req, res) {
+  const team = typeof req.query.team === 'string' && req.query.team.trim() ? req.query.team.trim() : null;
+  const capability = typeof req.query.capability === 'string' && req.query.capability.trim() ? req.query.capability.trim() : null;
   const tools = await listTools(team, capability);
   return res.json({ ok: true, count: tools.length, team, capability, tools });
 }
 
-export async function toolsSelectRoute(req: any, res: any) {
+async function toolsSelectRoute(req, res) {
   const capability = typeof req.query.capability === 'string' ? req.query.capability.trim() : '';
-  const team = readOptionalQuery(req, 'team');
+  const team = typeof req.query.team === 'string' && req.query.team.trim() ? req.query.team.trim() : null;
   if (!capability) {
     return res.status(400).json({ ok: false, error: 'capability required' });
   }
@@ -183,7 +179,7 @@ export async function toolsSelectRoute(req: any, res: any) {
   return res.json({ ok: true, capability, team, tool });
 }
 
-export async function toolsEvaluateRoute(req: any, res: any) {
+async function toolsEvaluateRoute(req, res) {
   const toolName = typeof req.body?.toolName === 'string' ? req.body.toolName.trim() : '';
   if (!toolName) {
     return res.status(400).json({ ok: false, error: 'toolName required' });
@@ -194,7 +190,7 @@ export async function toolsEvaluateRoute(req: any, res: any) {
   return res.json({ ok: true, toolName, updated });
 }
 
-export async function runtimeSelectRoute(req: any, res: any) {
+async function runtimeSelectRoute(req, res) {
   const team = typeof req.query.team === 'string' ? req.query.team.trim() : '';
   const purpose = typeof req.query.purpose === 'string' && req.query.purpose.trim()
     ? req.query.purpose.trim()
@@ -212,7 +208,7 @@ export async function runtimeSelectRoute(req: any, res: any) {
   });
 }
 
-export async function agentTraceStatsRoute(req: any, res: any) {
+async function agentTraceStatsRoute(req, res) {
   const days = Number.parseInt(req.query.days, 10) || 7;
   const stats = await getAgentTraceStats(req.params.name, days);
   return res.json({
@@ -223,7 +219,7 @@ export async function agentTraceStatsRoute(req: any, res: any) {
   });
 }
 
-export async function agentDetailRoute(req: any, res: any) {
+async function agentDetailRoute(req, res) {
   const agent = await getAgent(req.params.name);
   if (!agent) {
     return res.status(404).json({
@@ -236,3 +232,26 @@ export async function agentDetailRoute(req: any, res: any) {
     agent,
   });
 }
+
+module.exports = {
+  agentsListRoute,
+  agentsDashboardRoute,
+  agentsAlwaysOnRoute,
+  agentsTraceStatsRoute,
+  agentsSelectRoute,
+  agentsLowPerformersRoute,
+  agentsHireRoute,
+  agentsEvaluateRoute,
+  agentsCompetitionStartRoute,
+  agentsCompetitionCompleteRoute,
+  agentsCompetitionHistoryRoute,
+  skillsListRoute,
+  skillsSelectRoute,
+  skillsEvaluateRoute,
+  toolsListRoute,
+  toolsSelectRoute,
+  toolsEvaluateRoute,
+  runtimeSelectRoute,
+  agentTraceStatsRoute,
+  agentDetailRoute,
+};

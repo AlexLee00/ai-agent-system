@@ -84,6 +84,7 @@ const runtimeEntryPoints = [
   path.join(root, 'packages/core/lib/team-skill-mcp-pipeline.ts'),
   path.join(root, 'packages/core/lib/llm-graduation.ts'),
   path.join(root, 'bots/hub/lib/auth.ts'),
+  path.join(root, 'bots/hub/lib/routes/agents.ts'),
   path.join(root, 'bots/hub/lib/routes/errors.ts'),
   path.join(root, 'bots/hub/lib/routes/darwin-callback.ts'),
   path.join(root, 'bots/hub/lib/routes/events.ts'),
