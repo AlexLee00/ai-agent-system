@@ -1,72 +1,15 @@
 'use strict';
 
-const pgPool = require('./pg-pool');
-const { N8N_ENABLED, N8N_BASE_URL: DEFAULT_N8N_BASE } = require('./env');
+const path = require('node:path');
 
-/**
- * @typedef {Object} WebhookCandidateInput
- * @property {string} [workflowName]
- * @property {string} [method]
- * @property {string} [pathSuffix]
- * @property {string} [baseUrl]
- * @property {string[]|string} [configured]
- * @property {string[]|string} [defaults]
- */
+const runtimePath = path.join(__dirname, '../../../dist/ts-runtime/packages/core/lib/n8n-webhook-registry.js');
 
-/** @param {WebhookCandidateInput} [input] */
-async function resolveProductionWebhookUrl({
-  workflowName,
-  method = 'POST',
-  pathSuffix = '',
-  baseUrl = DEFAULT_N8N_BASE,
-} = {}) {
-  if (!N8N_ENABLED) return null;
-  if (!workflowName) return null;
-
-  const rows = await pgPool.query('public', `
-    SELECT we."webhookPath" AS "webhookPath"
-    FROM n8n.webhook_entity we
-    JOIN n8n.workflow_entity wf ON wf.id = we."workflowId"
-    WHERE wf.name = $1
-      AND we.method = $2
-      AND ($3 = '' OR we."webhookPath" LIKE $3)
-    LIMIT 5
-  `, [
-    workflowName,
-    method,
-    pathSuffix ? `%${pathSuffix}` : '',
-  ]);
-
-  const row = rows.find((item) => item?.webhookPath) || null;
-  if (!row?.webhookPath) return null;
-  return `${String(baseUrl).replace(/\/+$/, '')}/webhook/${String(row.webhookPath).replace(/^\/+/, '')}`;
+try {
+  module.exports = require(runtimePath);
+} catch (error) {
+  if (error && (error.code === 'MODULE_NOT_FOUND' || error.code === 'ERR_REQUIRE_ESM')) {
+    module.exports = require('./n8n-webhook-registry.legacy.js');
+  } else {
+    throw error;
+  }
 }
-
-/** @param {WebhookCandidateInput} [input] */
-async function buildWebhookCandidates({
-  workflowName,
-  method = 'POST',
-  pathSuffix = '',
-  configured = [],
-  defaults = [],
-} = {}) {
-  let resolved = null;
-  try {
-    resolved = await resolveProductionWebhookUrl({
-      workflowName,
-      method,
-      pathSuffix,
-    });
-  } catch {}
-
-  return [...new Set([
-    ...(Array.isArray(configured) ? configured : [configured]),
-    resolved,
-    ...(Array.isArray(defaults) ? defaults : [defaults]),
-  ].filter(Boolean))];
-}
-
-module.exports = {
-  resolveProductionWebhookUrl,
-  buildWebhookCandidates,
-};
