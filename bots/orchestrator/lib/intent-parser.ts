@@ -1,19 +1,206 @@
+// @ts-nocheck
 'use strict';
 
-const path = require('path');
+/**
+ * lib/intent-parser.js — 명령 인텐트 3단계 파싱 v2.0
+ *
+ * 1단계: 슬래시 명령 직접 매핑 (토큰 0)
+ * 2단계: 키워드 패턴 매칭 (토큰 0) — 학습된 패턴 포함 (nlp-learnings.json)
+ * 3단계: LLM 폴백 파싱 (CoT + Few-shot + 동적 예시, DB에서 자동 로드)
+ *
+ * parse_source: 'slash' | 'keyword' | 'learned' | 'llm' | 'failed'
+ */
 
-const runtimePath = path.join(
-  __dirname,
-  '../../../dist/ts-runtime/bots/orchestrator/lib/intent-parser.js'
-);
+const https = require('https');
+const { trackTokens } = require('./token-tracker');
+const logger = require('../../../packages/core/lib/llm-logger');
+const { getGeminiKey, getOpenAIKey } = require('../../../packages/core/lib/llm-keys');
+const pgPool = require('../../../packages/core/lib/pg-pool');
+const { buildIntentParsePolicy } = require('./jay-model-policy');
+const {
+  createLearnedPatternReloader,
+  createPromotedIntentExampleLoader,
+  injectDynamicExamples,
+} = require('../../../packages/core/lib/intent-core');
+const {
+  getIntentLearningPath,
+  getPromotedIntentExamples,
+} = require('../../../packages/core/lib/intent-store');
 
-try {
-  module.exports = require(runtimePath);
-} catch (error) {
-  if (error && error.code !== 'MODULE_NOT_FOUND') {
-    throw error;
+// ─── 학습 패턴 로더 ─────────────────────────────────────────────────
+// claude-commander analyze_unknown이 저장한 NLP 학습 패턴을 주기적으로 로드
+
+const NLP_LEARNINGS_PATH = getIntentLearningPath();
+
+const learnedPatternReloader = createLearnedPatternReloader({
+  filePath: NLP_LEARNINGS_PATH,
+  intervalMs: 5 * 60 * 1000,
+});
+
+// ─── 동적 Few-shot 예시 로더 (unrecognized_intents.promoted_to) ──────
+// router.js의 promoteToIntent()가 승인한 예시를 LLM 프롬프트에 동적 추가
+
+const loadDynamicExamples = createPromotedIntentExampleLoader({
+  ttlMs: 5 * 60 * 1000,
+  fetchRows: async () => getPromotedIntentExamples(pgPool, { schema: 'claude', limit: 30 }),
+  maxTextLength: 60,
+  confidence: 0.9,
+});
+
+// ─── LLM 폴백 설정 ───────────────────────────────────────────────────
+
+const INTENT_POLICY = buildIntentParsePolicy();
+const INTENT_PRIMARY_MODEL = INTENT_POLICY.primary.model;
+const INTENT_PRIMARY_PROVIDER = INTENT_POLICY.primary.provider;
+const INTENT_FALLBACK_MODEL = INTENT_POLICY.fallback.model;
+const INTENT_FALLBACK_PROVIDER = INTENT_POLICY.fallback.provider;
+
+// ─── 1단계: 슬래시 명령 ──────────────────────────────────────────────
+
+const SLASH_MAP = {
+  '/status':      { intent: 'status',              args: {} },
+  '/help':        { intent: 'help',                args: {} },
+  '/cost':        { intent: 'cost',                args: {} },
+  '/speed':       { intent: 'speed_test',          args: {} },
+  '/logs':        { intent: 'system_logs',         args: {} },
+  '/mute':        { intent: 'mute',                args: {} },
+  '/unmute':      { intent: 'unmute',              args: {} },
+  '/mutes':       { intent: 'mutes',               args: {} },
+  '/luna':        { intent: 'luna',                args: {} },
+  '/ska':         { intent: 'ska',                 args: {} },
+  '/dexter':      { intent: 'claude_action',       args: { command: 'run_check'          } },
+  '/archer':      { intent: 'claude_action',       args: { command: 'run_archer'         } },
+  '/brief':       { intent: 'brief',               args: {} },
+  '/queue':       { intent: 'queue',               args: {} },
+  '/withdraw':    { intent: 'upbit_withdraw',      args: {} },
+  '/upbit':       { intent: 'upbit_balance',       args: { command: 'get_upbit_balance'   } },
+  '/binance':     { intent: 'binance_balance',     args: { command: 'get_binance_balance' } },
+  '/price':       { intent: 'crypto_price',        args: { command: 'get_crypto_price'    } },
+  '/market':      { intent: 'market_status',       args: { market: 'all' } },
+  '/transfer':    { intent: 'upbit_transfer',      args: { command: 'upbit_to_binance'    } },
+  // ── 신규 슬래시 명령 ──
+  '/shadow':      { intent: 'shadow_report',       args: {} },
+  '/graduation':  { intent: 'llm_graduation',      args: {} },
+  '/jay-models':  { intent: 'jay_model_policy',    args: {} },
+  '/llm-selectors': { intent: 'llm_selector_report', args: {} },
+  '/stability':   { intent: 'stability',           args: {} },
+  '/journal':     { intent: 'trade_journal',       args: {} },
+  '/performance': { intent: 'performance',         args: {} },
+  '/unrec':       { intent: 'unrecognized_report', args: {} },
+  '/promotions':  { intent: 'promotion_candidates', args: {} },
+  '/ops-health': { intent: 'ops_health', args: {} },
+  '/orchestrator-health': { intent: 'orchestrator_health', args: {} },
+  '/jay-health': { intent: 'orchestrator_health', args: {} },
+  '/openclaw-health': { intent: 'orchestrator_health', args: {} },
+  '/reporting-health': { intent: 'reporting_health', args: {} },
+  '/feedback-health': { intent: 'feedback_health', args: {} },
+  '/intent-health': { intent: 'intent_engine_health', args: {} },
+  '/luna-health': { intent: 'luna_health', args: {} },
+  '/worker-health': { intent: 'worker_health', args: {} },
+  '/claude-health': { intent: 'claude_health', args: {} },
+  '/ska-health': { intent: 'ska_health', args: {} },
+  '/blog-health': { intent: 'blog_health', args: {} },
+  '/ska-forecast': { intent: 'ska_forecast_health', args: {} },
+  '/ska-review': { intent: 'ska_forecast_review', args: {} },
+  '/luna-intents': { intent: 'team_intent_report', args: { team: 'luna' } },
+  '/ska-intents':  { intent: 'team_intent_report', args: { team: 'ska' } },
+  '/claude-intents': { intent: 'team_intent_report', args: { team: 'claude' } },
+  '/luna-rollback':   { intent: 'team_promotion_rollback', args: { team: 'luna' } },
+  '/ska-rollback':    { intent: 'team_promotion_rollback', args: { team: 'ska' } },
+  '/claude-rollback': { intent: 'team_promotion_rollback', args: { team: 'claude' } },
+  '/dynamic_tpsl_on':     { intent: 'dynamic_tpsl_on',     args: {} },
+  '/dynamic_tpsl_off':    { intent: 'dynamic_tpsl_off',    args: {} },
+  '/dynamic_tpsl_status': { intent: 'dynamic_tpsl_status', args: {} },
+  // ── 블로그팀 커리큘럼 ──
+  '/curriculum':          { intent: 'curriculum_status',   args: {} },
+  '/curriculum_approve':  { intent: 'curriculum_approve',  args: {} },
+};
+
+function parseSlash(text) {
+  const parts = text.trim().split(/\s+/);
+  const cmd   = parts[0].toLowerCase();
+
+  // /claude <질문> 또는 /ask <질문> — 클로드 AI 직접 질문
+  if ((cmd === '/claude' || cmd === '/ask') && parts.length >= 2) {
+    const query = text.trim().replace(/^\/\S+\s+/, '').trim();
+    if (query) return { intent: 'claude_ask', args: { query }, source: 'slash' };
   }
-  module.exports = require('./intent-parser.legacy.js');
+
+  // /promote <인텐트> <패턴> — 미인식 명령 프로모트
+  if (cmd === '/promote' && parts.length >= 3) {
+    const toIntent = parts[1];
+    const pattern  = parts.slice(2).join(' ');
+    return { intent: 'promote_intent', args: { intent: toIntent, pattern }, source: 'slash' };
+  }
+  if (cmd === '/unrec' && parts.length >= 2) {
+    const query = parts.slice(1).join(' ').trim();
+    return { intent: 'unrecognized_report', args: { query }, source: 'slash' };
+  }
+  if (cmd === '/promotions' && parts.length >= 2) {
+    const query = parts.slice(1).join(' ').trim();
+    return { intent: 'promotion_candidates', args: { query }, source: 'slash' };
+  }
+  if (cmd === '/ops-health' && parts.length >= 2) {
+    const query = parts.slice(1).join(' ').trim();
+    return { intent: 'ops_health', args: { query }, source: 'slash' };
+  }
+  if (cmd === '/reporting-health' && parts.length >= 2) {
+    const query = parts.slice(1).join(' ').trim();
+    return { intent: 'reporting_health', args: { query }, source: 'slash' };
+  }
+  if (cmd === '/feedback-health' && parts.length >= 2) {
+    const query = parts.slice(1).join(' ').trim();
+    return { intent: 'feedback_health', args: { query }, source: 'slash' };
+  }
+  if ((cmd === '/luna-intents' || cmd === '/ska-intents' || cmd === '/claude-intents') && parts.length >= 2) {
+    const query = parts.slice(1).join(' ').trim();
+    return {
+      intent: 'team_intent_report',
+      args: {
+        team:
+          cmd === '/luna-intents'
+            ? 'luna'
+            : cmd === '/ska-intents'
+              ? 'ska'
+              : 'claude',
+        query,
+      },
+      source: 'slash',
+    };
+  }
+  if ((cmd === '/rollback' || cmd === '/forget') && parts.length >= 2) {
+    const target = parts.slice(1).join(' ');
+    return { intent: 'promotion_rollback', args: { target }, source: 'slash' };
+  }
+  if ((cmd === '/luna-rollback' || cmd === '/ska-rollback' || cmd === '/claude-rollback') && parts.length >= 2) {
+    const target = parts.slice(1).join(' ');
+    return {
+      intent: 'team_promotion_rollback',
+      args: {
+        team:
+          cmd === '/luna-rollback'
+            ? 'luna'
+            : cmd === '/ska-rollback'
+              ? 'ska'
+              : 'claude',
+        target,
+      },
+      source: 'slash',
+    };
+  }
+
+  const mapped = SLASH_MAP[cmd];
+  if (!mapped) return null;
+
+  // /mute luna 1h 파싱
+  if (cmd === '/mute' && parts.length >= 3) {
+    return { intent: 'mute', args: { target: parts[1], duration: parts[2] }, source: 'slash' };
+  }
+  if (cmd === '/unmute' && parts.length >= 2) {
+    return { intent: 'unmute', args: { target: parts[1] }, source: 'slash' };
+  }
+
+  return { intent: mapped.intent, args: mapped.args, source: 'slash' };
 }
 
 // ─── 2단계: 키워드 패턴 ──────────────────────────────────────────────
