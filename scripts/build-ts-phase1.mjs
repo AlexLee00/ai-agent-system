@@ -113,6 +113,7 @@ const runtimeEntryPoints = [
   path.join(root, 'bots/orchestrator/lib/identity-checker.ts'),
   path.join(root, 'bots/orchestrator/lib/intent-parser.ts'),
   path.join(root, 'bots/orchestrator/lib/mute-manager.ts'),
+  path.join(root, 'bots/orchestrator/lib/night-handler.ts'),
   path.join(root, 'bots/orchestrator/lib/reservation-draft-cache.ts'),
   path.join(root, 'bots/orchestrator/lib/response-cache.ts'),
   path.join(root, 'bots/orchestrator/src/dashboard.ts'),
