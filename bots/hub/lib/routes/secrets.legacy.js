@@ -1,80 +1,77 @@
 'use strict';
+/**
+ * routes/secrets.js — 시크릿 프록시
+ *
+ * 모든 시크릿은 secrets-store.json에서 읽는다.
+ * config.yaml은 런타임 설정(billing, screening, capital_management 등)만 담당한다.
+ * DEV 안전은 클라이언트의 env.js (MODE=dev → PAPER_MODE=true) + hostname 체크가 담당.
+ *
+ * 카테고리:
+ *   llm         — LLM API 키 (Anthropic/OpenAI/Gemini/Groq 등)
+ *   telegram    — bot_token + chat_id
+ *   exchange    — Binance/Upbit/KIS (DEV: paper/testnet 강제)
+ *   openclaw    — gateway/hooks 토큰
+ *   reservation-shared — reservation 공유 가능 키
+ *   reservation — 공유키만, OPS전용 마스킹
+ *   config      — config.yaml 전체 (DEV 안전 오버라이드)
+ */
 
-const fs = require('fs') as typeof import('node:fs');
-const path = require('path') as typeof import('node:path');
-const env = require('../../../../packages/core/lib/env') as {
-  PROJECT_ROOT: string;
-};
+const fs = require('fs');
+const path = require('path');
+const env = require('../../../../packages/core/lib/env');
 
 const CONFIG_YAML = path.join(env.PROJECT_ROOT, 'bots/investment/config.yaml');
 const SECRETS_STORE = path.join(env.PROJECT_ROOT, 'bots/hub/secrets-store.json');
 
-type Dict = Record<string, any>;
-
-type SecretsRequest = {
-  params?: {
-    category?: string;
-  };
-};
-
-type SecretsResponse = {
-  status: (code: number) => SecretsResponse;
-  json: (payload: unknown) => SecretsResponse | void;
-};
-
-let _configCache: Dict | null = null;
+let _configCache = null;
 let _configMtime = 0;
-let _secretsCache: Dict | null = null;
+let _secretsCache = null;
 let _secretsMtime = 0;
 
-function sanitizeKisConfig(kis: unknown): Dict {
-  if (!kis || typeof kis !== 'object' || Array.isArray(kis)) return (kis as Dict) || {};
-  const { paper_trading, ...rest } = kis as Dict;
-  void paper_trading;
+function sanitizeKisConfig(kis) {
+  if (!kis || typeof kis !== 'object') return kis || {};
+  const { paper_trading, ...rest } = kis;
   return rest;
 }
 
-function sanitizeConfig(config: unknown): Dict {
-  if (!config || typeof config !== 'object' || Array.isArray(config)) return {};
-  const typedConfig = config as Dict;
+function sanitizeConfig(config) {
+  if (!config || typeof config !== 'object') return {};
   return {
-    ...typedConfig,
-    kis: sanitizeKisConfig(typedConfig.kis),
+    ...config,
+    kis: sanitizeKisConfig(config.kis),
   };
 }
 
-function loadConfigYaml(): Dict {
+function loadConfigYaml() {
   try {
-    const yaml = require('js-yaml') as { load: (value: string) => unknown };
+    const yaml = require('js-yaml');
     const stat = fs.statSync(CONFIG_YAML);
     if (_configCache && stat.mtimeMs === _configMtime) return _configCache;
-    _configCache = (yaml.load(fs.readFileSync(CONFIG_YAML, 'utf8')) as Dict) || {};
+    _configCache = yaml.load(fs.readFileSync(CONFIG_YAML, 'utf8')) || {};
     _configMtime = stat.mtimeMs;
     return _configCache;
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.warn('[secrets] config.yaml 로드 실패:', message);
+    console.warn('[secrets] config.yaml 로드 실패:', err.message);
     return {};
   }
 }
 
-function loadSecretsStore(): Dict | null {
+function loadSecretsStore() {
   try {
     const stat = fs.statSync(SECRETS_STORE);
     if (_secretsCache && stat.mtimeMs === _secretsMtime) return _secretsCache;
-    _secretsCache = JSON.parse(fs.readFileSync(SECRETS_STORE, 'utf8')) as Dict;
+    _secretsCache = JSON.parse(fs.readFileSync(SECRETS_STORE, 'utf8'));
     _secretsMtime = stat.mtimeMs;
     return _secretsCache;
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.warn('[secrets] secrets-store.json 로드 실패:', message);
+    console.warn('[secrets] secrets-store.json 로드 실패:', err.message);
     return null;
   }
 }
 
-function mergeRuntimeAndSecrets(runtime: unknown, secrets: unknown): Dict {
-  const merged: Dict = { ...((runtime as Dict) || {}) };
-  const source = ((secrets as Dict) || {});
+function mergeRuntimeAndSecrets(runtime, secrets) {
+  const merged = { ...(runtime || {}) };
+  const source = secrets || {};
 
   Object.keys(source).forEach((key) => {
     const left = merged[key];
@@ -93,9 +90,7 @@ function mergeRuntimeAndSecrets(runtime: unknown, secrets: unknown): Dict {
   return merged;
 }
 
-type CategoryHandler = () => Dict;
-
-const CATEGORY_HANDLERS: Record<string, CategoryHandler> = {
+const CATEGORY_HANDLERS = {
   llm: () => {
     const store = loadSecretsStore();
     if (store?.anthropic || store?.openai || store?.gemini || store?.groq) {
@@ -236,8 +231,8 @@ const CATEGORY_HANDLERS: Record<string, CategoryHandler> = {
   },
 };
 
-async function secretsRoute(req: SecretsRequest, res: SecretsResponse): Promise<SecretsResponse | void> {
-  const { category = '' } = req.params || {};
+async function secretsRoute(req, res) {
+  const { category } = req.params;
   const handler = CATEGORY_HANDLERS[category];
   if (!handler) {
     return res.status(404).json({
@@ -247,11 +242,10 @@ async function secretsRoute(req: SecretsRequest, res: SecretsResponse): Promise<
   }
   try {
     const data = handler();
-    return res.json({ category, data });
+    res.json({ category, data });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return res.status(500).json({ error: 'secrets load failed', detail: message });
+    res.status(500).json({ error: 'secrets load failed', detail: err.message });
   }
 }
 
-export { secretsRoute };
+module.exports = { secretsRoute };

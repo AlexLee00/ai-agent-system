@@ -92,6 +92,7 @@ const runtimeEntryPoints = [
   path.join(root, 'bots/hub/lib/routes/logs.ts'),
   path.join(root, 'bots/hub/lib/routes/n8n.ts'),
   path.join(root, 'bots/hub/lib/routes/pg.ts'),
+  path.join(root, 'bots/hub/lib/routes/secrets.ts'),
   path.join(root, 'bots/hub/lib/routes/services.ts'),
   path.join(root, 'bots/hub/lib/runtime-profiles.ts'),
   path.join(root, 'bots/hub/lib/sql-guard.ts'),
