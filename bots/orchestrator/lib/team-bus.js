@@ -1,9 +1,17 @@
 'use strict';
-/**
- * lib/team-bus.js — claude team-bus.js 재사용 래퍼
- *
- * bots/claude/lib/team-bus.js를 직접 require하여 재사용.
- * 오케스트레이터는 같은 claude-team.db를 공유한다.
- */
 
-module.exports = require('../../claude/lib/team-bus');
+const path = require('path');
+
+const runtimePath = path.join(
+  __dirname,
+  '../../../dist/ts-runtime/bots/orchestrator/lib/team-bus.js'
+);
+
+try {
+  module.exports = require(runtimePath);
+} catch (error) {
+  if (error && error.code !== 'MODULE_NOT_FOUND') {
+    throw error;
+  }
+  module.exports = require('./team-bus.legacy.js');
+}

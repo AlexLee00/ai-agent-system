@@ -117,6 +117,8 @@ const runtimeEntryPoints = [
   path.join(root, 'bots/orchestrator/lib/openclaw-config.ts'),
   path.join(root, 'bots/orchestrator/lib/reservation-draft-cache.ts'),
   path.join(root, 'bots/orchestrator/lib/response-cache.ts'),
+  path.join(root, 'bots/orchestrator/lib/runtime-config.ts'),
+  path.join(root, 'bots/orchestrator/lib/team-bus.ts'),
   path.join(root, 'bots/orchestrator/lib/token-tracker.ts'),
   path.join(root, 'bots/orchestrator/src/dashboard.ts'),
   path.join(root, 'bots/orchestrator/src/filter.ts'),
