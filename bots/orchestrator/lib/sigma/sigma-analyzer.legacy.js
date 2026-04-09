@@ -1,27 +1,8 @@
-const { collectTeamMetric } = require('./sigma-feedback') as {
-  collectTeamMetric: (team: string) => Promise<any>;
-};
+'use strict';
 
-type Formation = {
-  date?: string;
-  targetTeams?: string[];
-  analysts?: string[];
-  formationReason?: string;
-  events?: {
-    unhealthyServices?: any[];
-    newExperiences?: number;
-  };
-};
+const { collectTeamMetric } = require('./sigma-feedback');
 
-type Feedback = {
-  targetTeam: string;
-  feedbackType: string;
-  content: string;
-  analystUsed: string;
-  beforeMetric: any;
-};
-
-function inferFeedbackType(analystName: string): string {
+function inferFeedbackType(analystName) {
   if (analystName === 'hawk') return 'risk_review';
   if (analystName === 'dove') return 'growth_expand';
   if (analystName === 'owl') return 'trend_watch';
@@ -31,7 +12,7 @@ function inferFeedbackType(analystName: string): string {
   return 'general_review';
 }
 
-function formatMetricLine(team: string, metric: any): string {
+function formatMetricLine(team, metric) {
   if (!metric || typeof metric !== 'object') return `- ${team}: 메트릭 없음`;
   if (metric.metric_type === 'content_ops') {
     return `- ${team}: 최근 7일 발행 ${metric.published_7d}건, 준비 ${metric.ready_count}건`;
@@ -51,7 +32,7 @@ function formatMetricLine(team: string, metric: any): string {
   return `- ${team}: ${JSON.stringify(metric)}`;
 }
 
-function buildRecommendation(team: string, metric: any, primaryAnalyst: string, specialists: string[] = []): string {
+function buildRecommendation(team, metric, primaryAnalyst, specialists = []) {
   const extra = specialists.length > 0 ? ` / 보조: ${specialists.join(', ')}` : '';
   if (primaryAnalyst === 'hawk') {
     return `리스크 관점에서 ${team}의 병목/실패 패턴을 우선 점검하세요.${extra}`;
@@ -65,18 +46,13 @@ function buildRecommendation(team: string, metric: any, primaryAnalyst: string, 
   return `${team}의 핵심 지표를 일일 기준으로 추적하고 다음 실행에 반영할 개선점을 정리하세요.${extra}`;
 }
 
-export async function analyzeFormation(formation: Formation): Promise<{
-  report: string;
-  metricsByTeam: Record<string, any>;
-  feedbacks: Feedback[];
-  insightCount: number;
-}> {
+async function analyzeFormation(formation) {
   const targetTeams = Array.isArray(formation?.targetTeams) ? formation.targetTeams : [];
   const analysts = Array.isArray(formation?.analysts) ? formation.analysts : [];
   const primaryAnalyst = analysts.find((name) => ['hawk', 'dove', 'owl'].includes(name)) || 'pivot';
   const specialists = analysts.filter((name) => ['optimizer', 'librarian', 'forecaster'].includes(name));
-  const metricsByTeam: Record<string, any> = {};
-  const feedbacks: Feedback[] = [];
+  const metricsByTeam = {};
+  const feedbacks = [];
   const lines = [
     `📈 시그마 일일 편성 (${formation?.date || 'unknown'})`,
     `- 대상 팀: ${targetTeams.join(', ') || '없음'}`,
@@ -103,9 +79,9 @@ export async function analyzeFormation(formation: Formation): Promise<{
     feedbacks.push({
       targetTeam: 'claude',
       feedbackType: 'workflow_tuning',
-      content: `launchd 비정상 서비스 ${formation.events?.unhealthyServices?.length || 0}건을 기준으로 자동 복구/재기동 정책을 점검하세요.`,
+      content: `launchd 비정상 서비스 ${formation.events.unhealthyServices.length}건을 기준으로 자동 복구/재기동 정책을 점검하세요.`,
       analystUsed: 'optimizer',
-      beforeMetric: { unhealthy_services: formation.events?.unhealthyServices?.length || 0 },
+      beforeMetric: { unhealthy_services: formation.events.unhealthyServices.length },
     });
   }
 
@@ -113,9 +89,9 @@ export async function analyzeFormation(formation: Formation): Promise<{
     feedbacks.push({
       targetTeam: 'darwin',
       feedbackType: 'knowledge_capture',
-      content: `누적 경험 ${formation.events?.newExperiences || 0}건을 기반으로 Standing Orders 승격 후보를 정리하세요.`,
+      content: `누적 경험 ${formation.events.newExperiences}건을 기반으로 Standing Orders 승격 후보를 정리하세요.`,
       analystUsed: 'librarian',
-      beforeMetric: { new_experiences: formation.events?.newExperiences || 0 },
+      beforeMetric: { new_experiences: formation.events.newExperiences },
     });
   }
 
@@ -141,3 +117,7 @@ export async function analyzeFormation(formation: Formation): Promise<{
     insightCount: targetTeams.length,
   };
 }
+
+module.exports = {
+  analyzeFormation,
+};
