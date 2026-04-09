@@ -1,32 +1,25 @@
-const fs = require('node:fs');
-const path = require('node:path');
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
 
 const LOG_DIR = '/tmp';
 const ERR_SUFFIX = '.err.log';
 
-type ErrorSummary = {
-  service: string;
-  file: string;
-  size_bytes: number;
-  modified_at: string;
-  error_count: number;
-  recent_errors: string[];
-};
-
-function isErrorLikeLine(line: string) {
+function isErrorLikeLine(line) {
   return /❌|error|exception|traceback|fatal|uncaught|rejected|failed/i.test(line);
 }
 
-export async function errorsRecentRoute(req: any, res: any) {
+async function errorsRecentRoute(req, res) {
   const minutes = parseInt(req.query.minutes || '60', 10);
   const serviceFilter = req.query.service || null;
   const cutoffMs = Date.now() - (minutes * 60 * 1000);
 
   const files = fs.readdirSync(LOG_DIR)
-    .filter((file: string) => file.endsWith(ERR_SUFFIX))
-    .filter((file: string) => !serviceFilter || file.includes(serviceFilter));
+    .filter((file) => file.endsWith(ERR_SUFFIX))
+    .filter((file) => !serviceFilter || file.includes(serviceFilter));
 
-  const results: ErrorSummary[] = [];
+  const results = [];
   for (const file of files) {
     const filePath = path.join(LOG_DIR, file);
     try {
@@ -37,7 +30,7 @@ export async function errorsRecentRoute(req: any, res: any) {
       const content = fs.readFileSync(filePath, 'utf8');
       const lines = content
         .split('\n')
-        .map((line: string) => line.trim())
+        .map((line) => line.trim())
         .filter(Boolean)
         .filter(isErrorLikeLine);
       if (lines.length === 0) continue;
@@ -65,8 +58,8 @@ export async function errorsRecentRoute(req: any, res: any) {
   });
 }
 
-export async function errorsSummaryRoute(_req: any, res: any) {
-  const files = fs.readdirSync(LOG_DIR).filter((file: string) => file.endsWith(ERR_SUFFIX));
+async function errorsSummaryRoute(req, res) {
+  const files = fs.readdirSync(LOG_DIR).filter((file) => file.endsWith(ERR_SUFFIX));
   const summary = [];
 
   for (const file of files) {
@@ -92,3 +85,8 @@ export async function errorsSummaryRoute(_req: any, res: any) {
     services: summary.sort((a, b) => b.size_bytes - a.size_bytes),
   });
 }
+
+module.exports = {
+  errorsRecentRoute,
+  errorsSummaryRoute,
+};

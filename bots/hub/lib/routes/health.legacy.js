@@ -1,18 +1,12 @@
+'use strict';
+
 const env = require('../../../../packages/core/lib/env');
 const pgPool = require('../../../../packages/core/lib/pg-pool');
 const { checkHttp } = require('../../../../packages/core/lib/health-provider');
 
-type HealthResource = {
-  status: 'ok' | 'warn';
-  detail: string;
-  latency_ms?: number;
-};
-
-type HealthResources = Record<string, HealthResource>;
-
-export async function healthRoute(_req: any, res: any) {
+async function healthRoute(req, res) {
   const started = Date.now();
-  const resources: HealthResources = {};
+  const resources = {};
 
   try {
     const pgStart = Date.now();
@@ -22,7 +16,7 @@ export async function healthRoute(_req: any, res: any) {
       detail: 'query ok',
       latency_ms: Date.now() - pgStart,
     };
-  } catch (error: any) {
+  } catch (error) {
     resources.postgresql = {
       status: 'warn',
       detail: String(error?.message || 'pg_failed'),
@@ -54,3 +48,7 @@ export async function healthRoute(_req: any, res: any) {
     resources,
   });
 }
+
+module.exports = {
+  healthRoute,
+};
