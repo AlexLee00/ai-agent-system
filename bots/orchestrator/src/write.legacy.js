@@ -1,69 +1,21 @@
 #!/usr/bin/env node
+'use strict';
 
-const { execSync } = require('child_process') as typeof import('node:child_process');
+const path = require('path');
+const { execSync } = require('child_process');
 
-const { postAlarm } = require('../../../packages/core/lib/openclaw-client') as {
-  postAlarm: (payload: { message: string; team: string; alertLevel: number; fromBot: string }) => Promise<{ ok?: boolean }>;
-};
-const kst = require('../../../packages/core/lib/kst') as { datetimeStr: () => string };
-const env = require('../../../packages/core/lib/env') as { PROJECT_ROOT: string };
-const aggregator = require('../lib/write/report-aggregator') as {
-  collectAll: () => Promise<any>;
-  formatDailyReport: (collected: any) => string;
-};
-const docSyncChecker = require('../lib/write/doc-sync-checker') as {
-  checkAll: (changedFiles: string[]) => SyncIssue[];
-  findUntrackedFiles: (changedFiles: string[]) => string[];
-};
-const changelogWriter = require('../lib/write/changelog-writer') as {
-  generateEntry: (range: string) => any;
-  formatChangelogEntry: (entry: any) => string;
-};
-const docArchiver = require('../lib/write/doc-archiver') as {
-  scanCompletedCodex: () => ArchiveItem[];
-  archiveCompletedCodex: (completed: ArchiveItem[]) => ArchiveResult;
-  updateTracker: (files: string[]) => TrackerResult;
-  scanStaleRootDocs: () => StaleDoc[];
-};
-const { generateGemmaPilotText } = require('../../../packages/core/lib/gemma-pilot') as {
-  generateGemmaPilotText: (payload: Record<string, any>) => Promise<{ ok?: boolean; content?: string }>;
-};
-
-type WriteOptions = {
-  mode?: string;
-  test?: boolean;
-};
-
-type SyncIssue = {
-  file: string;
-  doc: string;
-  issue: string;
-  suggestion: string;
-};
-
-type ArchiveItem = {
-  file: string;
-  reason?: string;
-};
-
-type ArchiveResult = {
-  moved?: string[];
-  commitHash?: string | null;
-};
-
-type TrackerResult = {
-  added?: string[];
-  commitHash?: string | null;
-};
-
-type StaleDoc = {
-  file: string;
-  refCount: number;
-};
+const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const kst = require('../../../packages/core/lib/kst');
+const env = require('../../../packages/core/lib/env');
+const aggregator = require('../lib/write/report-aggregator');
+const docSyncChecker = require('../lib/write/doc-sync-checker');
+const changelogWriter = require('../lib/write/changelog-writer');
+const docArchiver = require('../lib/write/doc-archiver');
+const { generateGemmaPilotText } = require('../../../packages/core/lib/gemma-pilot');
 
 const ROOT = env.PROJECT_ROOT;
 
-function parseArgs(argv: string[] = process.argv.slice(2)): WriteOptions {
+function parseArgs(argv = process.argv.slice(2)) {
   const modeArg = argv.find((arg) => arg.startsWith('--mode='));
   return {
     mode: modeArg ? modeArg.split('=')[1] : 'push',
@@ -71,7 +23,7 @@ function parseArgs(argv: string[] = process.argv.slice(2)): WriteOptions {
   };
 }
 
-function safeExec(command: string): string {
+function safeExec(command) {
   try {
     return execSync(command, {
       cwd: ROOT,
@@ -79,19 +31,18 @@ function safeExec(command: string): string {
       encoding: 'utf8',
     }).trim();
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.warn(`[write] 명령 실행 실패: ${message}`);
+    console.warn(`[write] 명령 실행 실패: ${error.message}`);
     return '';
   }
 }
 
-function getChangedFiles(): string[] {
+function getChangedFiles() {
   const output = safeExec('git diff --name-only HEAD~1');
   if (!output) return [];
   return output.split('\n').map((line) => line.trim()).filter(Boolean);
 }
 
-function formatPushReport(syncIssues: SyncIssue[], changelogEntry: any, archiveResult: ArchiveResult = {}, trackerResult: TrackerResult = {}): string {
+function formatPushReport(syncIssues, changelogEntry, archiveResult = {}, trackerResult = {}) {
   const lines = ['📝 라이트 문서 점검 제안', `- 점검 시각: ${kst.datetimeStr()}`];
   lines.push('');
   lines.push(`- 문서 이슈: ${syncIssues.length}건`);
@@ -107,12 +58,12 @@ function formatPushReport(syncIssues: SyncIssue[], changelogEntry: any, archiveR
   lines.push('');
   lines.push(`- 자동 아카이빙: ${(archiveResult.moved || []).length}건`);
   if ((archiveResult.moved || []).length > 0) {
-    (archiveResult.moved || []).forEach((file) => lines.push(`  · archive 이동: ${file}`));
+    archiveResult.moved.forEach((file) => lines.push(`  · archive 이동: ${file}`));
     if (archiveResult.commitHash) lines.push(`  · commit: ${archiveResult.commitHash}`);
   }
   lines.push(`- TRACKER 자동 갱신: ${(trackerResult.added || []).length}건`);
   if ((trackerResult.added || []).length > 0) {
-    (trackerResult.added || []).forEach((file) => lines.push(`  · TRACKER 추가: ${file}`));
+    trackerResult.added.forEach((file) => lines.push(`  · TRACKER 추가: ${file}`));
     if (trackerResult.commitHash) lines.push(`  · commit: ${trackerResult.commitHash}`);
   }
 
@@ -122,7 +73,7 @@ function formatPushReport(syncIssues: SyncIssue[], changelogEntry: any, archiveR
   return lines.join('\n');
 }
 
-export async function runOnPush(options: WriteOptions = {}): Promise<Record<string, any>> {
+async function runOnPush(options = {}) {
   const changedFiles = getChangedFiles();
   const syncIssues = docSyncChecker.checkAll(changedFiles);
   const changelogEntry = changelogWriter.generateEntry('1 day ago');
@@ -131,11 +82,11 @@ export async function runOnPush(options: WriteOptions = {}): Promise<Record<stri
   const archiveResult = options.test ? { moved: completed.map((item) => item.file), commitHash: null } : docArchiver.archiveCompletedCodex(completed);
   const trackerResult = options.test ? { added: untrackedFiles.slice(0, 5), commitHash: null } : docArchiver.updateTracker(untrackedFiles);
   const message = formatPushReport(syncIssues, changelogEntry, archiveResult, trackerResult);
-  const sent = options.test ? false : Boolean((await postAlarm({ message, team: 'general', alertLevel: 2, fromBot: 'write' })).ok);
+  const sent = options.test ? false : (await postAlarm({ message, team: 'general', alertLevel: 2, fromBot: 'write' })).ok;
   return { changedFiles, syncIssues, changelogEntry, archiveResult, trackerResult, sent, message };
 }
 
-export async function runDaily(options: WriteOptions = {}): Promise<Record<string, any>> {
+async function runDaily(options = {}) {
   const collected = await aggregator.collectAll();
   const report = aggregator.formatDailyReport(collected);
   const commits = changelogWriter.generateEntry('yesterday');
@@ -145,7 +96,6 @@ export async function runDaily(options: WriteOptions = {}): Promise<Record<strin
     '전일 커밋 요약:',
     changelogWriter.formatChangelogEntry(commits).slice(0, 1200),
   ];
-
   if (new Date().getDay() === 0) {
     const codexStatus = docArchiver.scanCompletedCodex();
     const staleDocs = docArchiver.scanStaleRootDocs();
@@ -183,14 +133,15 @@ ${JSON.stringify(collected, null, 2).slice(0, 2000)}`;
       messageLines.push('', '🔍 AI 인사이트 (gemma4):', insight.content.trim());
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.warn(`[write] gemma4 인사이트 생략: ${message}`);
+    console.warn(`[write] gemma4 인사이트 생략: ${error.message}`);
   }
 
   const message = messageLines.join('\n');
-  const sent = options.test ? false : Boolean((await postAlarm({ message, team: 'general', alertLevel: 2, fromBot: 'write' })).ok);
+  const sent = options.test ? false : (await postAlarm({ message, team: 'general', alertLevel: 2, fromBot: 'write' })).ok;
   return { collected, sent, message };
 }
+
+module.exports = { runOnPush, runDaily };
 
 if (require.main === module) {
   const options = parseArgs();
@@ -201,8 +152,7 @@ if (require.main === module) {
       process.exit(0);
     })
     .catch((error) => {
-      const message = error instanceof Error ? error.message : String(error);
-      console.warn(`[write] 실행 실패: ${message}`);
+      console.warn(`[write] 실행 실패: ${error.message}`);
       process.exit(0);
     });
 }
