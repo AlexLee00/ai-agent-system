@@ -63,6 +63,8 @@ const runtimeEntryPoints = [
   path.join(root, 'packages/core/lib/llm-cache.ts'),
   path.join(root, 'packages/core/lib/llm-router.ts'),
   path.join(root, 'packages/core/lib/llm-selector-advisor.ts'),
+  path.join(root, 'packages/core/lib/intent-core.ts'),
+  path.join(root, 'packages/core/lib/intent-store.ts'),
 ];
 
 await mkdir(outdir, { recursive: true });
