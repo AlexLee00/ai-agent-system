@@ -79,6 +79,8 @@ const runtimeEntryPoints = [
   path.join(root, 'packages/core/lib/n8n-setup-client.ts'),
   path.join(root, 'packages/core/lib/n8n-webhook-registry.ts'),
   path.join(root, 'packages/core/lib/naver-blog-url.ts'),
+  path.join(root, 'packages/core/lib/reservation-rag.ts'),
+  path.join(root, 'packages/core/lib/gemma-pilot.ts'),
 ];
 
 await mkdir(outdir, { recursive: true });
