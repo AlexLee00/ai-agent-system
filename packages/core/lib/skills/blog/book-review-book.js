@@ -4,6 +4,7 @@ const https = require('https');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const pgPool = require('../../pg-pool');
 
 const {
   resolveNaverCredentials,
@@ -32,6 +33,52 @@ const DEFAULT_TOPIC_KEYWORDS = [
   '개발자 자기계발 도서',
   'IT 트렌드 도서',
 ];
+
+function normalizeBookKey(value = '') {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/[^가-힣a-z0-9\s]/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normalizeBookIsbn(value = '') {
+  return String(value || '').replace(/[^0-9]/g, '');
+}
+
+async function loadReviewedBookHistory() {
+  try {
+    const rows = await pgPool.query('blog', `
+      SELECT publish_date, book_title, book_author, book_isbn, status
+      FROM blog.publish_schedule
+      WHERE post_type = 'general'
+        AND category = '도서리뷰'
+        AND status IN ('ready', 'published', 'archived')
+        AND (book_title IS NOT NULL OR book_isbn IS NOT NULL)
+      ORDER BY publish_date DESC
+    `);
+    return rows || [];
+  } catch (error) {
+    console.warn('[도서스킬] 도서리뷰 이력 조회 실패:', error.message);
+    return [];
+  }
+}
+
+function findReviewedBookMatch(book, history = []) {
+  const isbn = normalizeBookIsbn(book?.isbn);
+  const titleKey = normalizeBookKey(book?.title);
+  if (!isbn && !titleKey) return null;
+
+  return history.find((row) => {
+    const rowIsbn = normalizeBookIsbn(row?.book_isbn);
+    const rowTitleKey = normalizeBookKey(row?.book_title);
+    if (isbn && rowIsbn && isbn === rowIsbn) return true;
+    if (titleKey && rowTitleKey && titleKey === rowTitleKey) return true;
+    return false;
+  }) || null;
+}
 
 function httpsGet(url, headers = {}) {
   return new Promise((resolve, reject) => {
@@ -373,6 +420,7 @@ async function searchCanonicalVerifiedBooks() {
 async function resolveBookForReview(input = {}) {
   const topicLabel = input.topic ? ` (${input.topic})` : '';
   console.log(`[도서스킬] 도서 후보 검색 시작...${topicLabel}`);
+  const reviewedHistory = await loadReviewedBookHistory();
   const canonicalCandidates = await searchCanonicalVerifiedBooks();
   const candidates = canonicalCandidates.length
     ? canonicalCandidates
@@ -414,6 +462,14 @@ async function resolveBookForReview(input = {}) {
       coverPath,
       verification_candidates: normalizedCandidates,
     };
+
+    const duplicateMatch = findReviewedBookMatch(book, reviewedHistory);
+    if (duplicateMatch) {
+      console.warn(
+        `[도서스킬] 후보 제외: ${book.title} — 기존 도서리뷰와 중복 (${duplicateMatch.publish_date}, ${duplicateMatch.status})`
+      );
+      continue;
+    }
 
     console.log(`[도서스킬] ✅ 검증 선택: ${book.title} — ${book.author} (${book.source})`);
     return book;

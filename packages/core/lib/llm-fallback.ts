@@ -42,7 +42,7 @@ const { selectRuntime } = require('./runtime-selector');
 const env = require('./env');
 const fs = require('fs');
 const path = require('path');
-const { execFile } = require('child_process');
+const { execFile, spawn } = require('child_process');
 const { promisify } = require('util');
 const execFileAsync = promisify(execFile);
 
@@ -367,6 +367,7 @@ async function _callOpenAIOAuth({ model, maxTokens, temperature = 0.1, systemPro
 }
 
 async function _callClaudeCode({ model, maxTokens, systemPrompt, userPrompt, timeoutMs = 45000, runtimeProfile = null }: ProviderCallOptions) {
+  const effectiveTimeoutMs = Number(timeoutMs || 45000);
   const resolvedModel = String(model || 'sonnet').replace(/^claude-code\//, '') || 'sonnet';
   const claudeSessionName = String(runtimeProfile?.claude_code_name || process.env.CLAUDE_CODE_NAME || '').trim();
   const claudeSettingsFile = String(runtimeProfile?.claude_code_settings || process.env.CLAUDE_CODE_SETTINGS || '').trim();
@@ -389,20 +390,71 @@ async function _callClaudeCode({ model, maxTokens, systemPrompt, userPrompt, tim
     return args;
   };
 
-  let stdout = '';
-  let stderr = '';
-  let output = '';
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
-    try {
-      const result = await execFileAsync('/opt/homebrew/bin/claude', buildArgs(), {
-        timeout: timeoutMs,
-        maxBuffer: 2 * 1024 * 1024,
+  const runClaudeOnce = async () => {
+    const args = buildArgs();
+    return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+      const child = spawn('/opt/homebrew/bin/claude', args, {
         env: {
           ...process.env,
           CLAUDE_CODE_NAME: claudeSessionName || process.env.CLAUDE_CODE_NAME,
           CLAUDE_CODE_SETTINGS: claudeSettingsFile || process.env.CLAUDE_CODE_SETTINGS,
         },
+        stdio: ['ignore', 'pipe', 'pipe'],
       });
+
+      let stdoutBuffer = '';
+      let stderrBuffer = '';
+      let settled = false;
+      const timeoutHandle = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        child.kill('SIGTERM');
+        const error = new Error(`Claude Code timeout after ${effectiveTimeoutMs}ms`) as ExecFileErrorLike;
+        error.code = 'ETIMEDOUT';
+        error.stdout = stdoutBuffer;
+        error.stderr = stderrBuffer;
+        reject(error);
+      }, effectiveTimeoutMs);
+
+      child.stdout.on('data', (chunk: Buffer | string) => {
+        stdoutBuffer += String(chunk || '');
+      });
+      child.stderr.on('data', (chunk: Buffer | string) => {
+        stderrBuffer += String(chunk || '');
+      });
+      child.on('error', (error: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutHandle);
+        const execError = error as ExecFileErrorLike;
+        execError.stdout = stdoutBuffer;
+        execError.stderr = stderrBuffer || execError.stderr || '';
+        reject(execError);
+      });
+      child.on('close', (code: number | null, signal: string | null) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutHandle);
+        if (code === 0) {
+          resolve({ stdout: stdoutBuffer, stderr: stderrBuffer });
+          return;
+        }
+        const error = new Error(`Claude Code 실행 실패: exit=${code}${signal ? ` signal=${signal}` : ''}`) as ExecFileErrorLike;
+        error.code = code ?? undefined;
+        error.signal = signal ?? undefined;
+        error.stdout = stdoutBuffer;
+        error.stderr = stderrBuffer;
+        reject(error);
+      });
+    });
+  };
+
+  let stdout = '';
+  let stderr = '';
+  let output = '';
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      const result = await runClaudeOnce();
       stdout = result.stdout || '';
       stderr = result.stderr || '';
     } catch (error) {
