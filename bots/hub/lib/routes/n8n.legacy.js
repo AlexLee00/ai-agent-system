@@ -1,12 +1,14 @@
+'use strict';
+
 const env = require('../../../../packages/core/lib/env');
 const { fetchJson, postJson } = require('../../../../packages/core/lib/health-provider');
 
-function buildWebhookUrl(pathValue: unknown) {
+function buildWebhookUrl(pathValue) {
   const safePath = String(pathValue || '').replace(/^\/+/, '');
   return `${env.N8N_BASE_URL}/webhook/${safePath}`;
 }
 
-export async function n8nHealthRoute(_req: any, res: any) {
+async function n8nHealthRoute(req, res) {
   if (!env.N8N_ENABLED) {
     return res.json({ status: 'ok', detail: 'n8n disabled in current mode' });
   }
@@ -18,7 +20,7 @@ export async function n8nHealthRoute(_req: any, res: any) {
   return res.json(data);
 }
 
-export async function n8nWebhookRoute(req: any, res: any) {
+async function n8nWebhookRoute(req, res) {
   if (!env.N8N_ENABLED) {
     return res.status(503).json({ error: 'n8n_disabled' });
   }
@@ -40,3 +42,8 @@ export async function n8nWebhookRoute(req: any, res: any) {
     },
   );
 }
+
+module.exports = {
+  n8nWebhookRoute,
+  n8nHealthRoute,
+};
