@@ -81,6 +81,8 @@ const runtimeEntryPoints = [
   path.join(root, 'packages/core/lib/naver-blog-url.ts'),
   path.join(root, 'packages/core/lib/reservation-rag.ts'),
   path.join(root, 'packages/core/lib/gemma-pilot.ts'),
+  path.join(root, 'packages/core/lib/team-skill-mcp-pipeline.ts'),
+  path.join(root, 'packages/core/lib/llm-graduation.ts'),
 ];
 
 await mkdir(outdir, { recursive: true });
