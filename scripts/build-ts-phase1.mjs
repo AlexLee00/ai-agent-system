@@ -83,6 +83,9 @@ const runtimeEntryPoints = [
   path.join(root, 'packages/core/lib/gemma-pilot.ts'),
   path.join(root, 'packages/core/lib/team-skill-mcp-pipeline.ts'),
   path.join(root, 'packages/core/lib/llm-graduation.ts'),
+  path.join(root, 'bots/hub/lib/auth.ts'),
+  path.join(root, 'bots/hub/lib/sql-guard.ts'),
+  path.join(root, 'bots/hub/scripts/telegram-callback-poller.ts'),
 ];
 
 await mkdir(outdir, { recursive: true });
