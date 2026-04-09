@@ -109,6 +109,8 @@ const runtimeEntryPoints = [
   path.join(root, 'bots/orchestrator/lib/research/research-tasks.ts'),
   path.join(root, 'bots/orchestrator/lib/jay-model-policy.ts'),
   path.join(root, 'bots/orchestrator/lib/confirm.ts'),
+  path.join(root, 'bots/orchestrator/lib/batch-formatter.ts'),
+  path.join(root, 'bots/orchestrator/lib/identity-checker.ts'),
   path.join(root, 'bots/orchestrator/lib/intent-parser.ts'),
   path.join(root, 'bots/orchestrator/lib/mute-manager.ts'),
   path.join(root, 'bots/orchestrator/lib/reservation-draft-cache.ts'),
