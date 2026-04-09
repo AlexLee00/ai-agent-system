@@ -16,6 +16,43 @@ const REQUIRED_SECTION_MARKERS = {
   general: ['AI 스니펫 요약', '승호아빠 인사말', '본론 섹션 1', '본론 섹션 2', '본론 섹션 3', '마무리 제언', '해시태그'],
 };
 
+function checkTruncatedEnding(content, type) {
+  const issues = [];
+  const text = String(content || '');
+  const trimmed = text.trimEnd();
+  const tail = trimmed.slice(-1500);
+  const lines = trimmed.split('\n').map((line) => line.trim()).filter(Boolean);
+  const lastLine = lines[lines.length - 1] || '';
+
+  const boldCount = (tail.match(/\*\*/g) || []).length;
+  if (boldCount % 2 !== 0) {
+    issues.push({ severity: 'error', msg: '본문 끝부분 강조 마커(**)가 닫히지 않음 — 출력 잘림 의심' });
+  }
+
+  const inlineCodeCount = (tail.match(/`/g) || []).length;
+  if (inlineCodeCount % 2 !== 0) {
+    issues.push({ severity: 'error', msg: '본문 끝부분 인라인 코드 마커(`)가 닫히지 않음 — 출력 잘림 의심' });
+  }
+
+  if (/^\*\*Q\d+\./.test(lastLine) || /\?\*?$/.test(lastLine) && /^\*\*/.test(lastLine)) {
+    issues.push({ severity: 'error', msg: 'FAQ 항목이 질문 줄에서 끝남 — 답변 누락 또는 출력 잘림 의심' });
+  }
+
+  if (type === 'lecture') {
+    if (!text.includes('[마무리 인사]')) {
+      issues.push({ severity: 'error', msg: '강의 포스팅 마무리 인사 섹션 누락' });
+    }
+    if (!text.includes('[함께 읽으면 좋은 글]')) {
+      issues.push({ severity: 'error', msg: '강의 포스팅 관련 글 섹션 누락' });
+    }
+    if (!text.includes('[해시태그]')) {
+      issues.push({ severity: 'error', msg: '강의 포스팅 해시태그 섹션 누락' });
+    }
+  }
+
+  return issues;
+}
+
 // ─── AI 탐지 리스크 분석 ──────────────────────────────────────────────
 
 /**
@@ -138,6 +175,8 @@ function checkQuality(content, type) {
   } else if (aiRisk.riskLevel === 'medium') {
     issues.push({ severity: 'info', msg: `AI 탐지 리스크 중간 (${aiRisk.riskScore}점) — 개인 에피소드 보강 권장` });
   }
+
+  issues.push(...checkTruncatedEnding(content, type));
 
   return {
     passed:      !issues.some(i => i.severity === 'error'),

@@ -127,6 +127,49 @@ function _extractTopicKeywords(researchData = {}) {
   return [...keywordSet].slice(0, 8);
 }
 
+function _normalizeReviewedBookKey(value = '') {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/[^가-힣a-z0-9\s]/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function _normalizeReviewedBookIsbn(value = '') {
+  return String(value || '').replace(/[^0-9]/g, '');
+}
+
+async function _findExistingReviewedBook(bookInfo = {}) {
+  const isbn = _normalizeReviewedBookIsbn(bookInfo.book_isbn || bookInfo.isbn);
+  const titleKey = _normalizeReviewedBookKey(bookInfo.book_title || bookInfo.title);
+  if (!isbn && !titleKey) return null;
+
+  try {
+    const rows = await pgPool.query('blog', `
+      SELECT publish_date, book_title, book_author, book_isbn, status
+      FROM blog.publish_schedule
+      WHERE post_type = 'general'
+        AND category = '도서리뷰'
+        AND status IN ('ready', 'published', 'archived')
+        AND (book_title IS NOT NULL OR book_isbn IS NOT NULL)
+      ORDER BY publish_date DESC
+    `);
+
+    return (rows || []).find((row) => {
+      const rowIsbn = _normalizeReviewedBookIsbn(row?.book_isbn);
+      const rowTitleKey = _normalizeReviewedBookKey(row?.book_title);
+      if (isbn && rowIsbn && isbn === rowIsbn) return true;
+      if (titleKey && rowTitleKey && titleKey === rowTitleKey) return true;
+      return false;
+    }) || null;
+  } catch (error) {
+    console.warn('[블로] 도서리뷰 중복 이력 조회 실패:', error.message);
+    return null;
+  }
+}
+
 function _buildBookReviewSkillInput(researchData = {}) {
   const topic = String(
     researchData?.it_news?.[0]?.title
@@ -403,6 +446,18 @@ async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, sc
   if (needsBook) {
     const scheduledBook = preloaded.bookInfo;
     if (scheduledBook?.book_title && scheduledBook?.book_isbn) {
+      const duplicateBook = await _findExistingReviewedBook(scheduledBook);
+      if (duplicateBook) {
+        console.warn(
+          `[젬스] 스케줄 도서 중복 감지 — ${scheduledBook.book_title} (${duplicateBook.publish_date}, ${duplicateBook.status})`
+        );
+        return {
+          skipped: true,
+          reason: `기존 도서리뷰와 중복: ${scheduledBook.book_title}`,
+          category,
+          sectionVariation,
+        };
+      }
       preparedResearch.book_info = {
         title: scheduledBook.book_title,
         author: scheduledBook.book_author || '',
