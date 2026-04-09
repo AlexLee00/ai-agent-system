@@ -1,5 +1,7 @@
-const fs = require('node:fs');
-const path = require('node:path');
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
 
 const REPO_ROOT = '/Users/alexlee/projects/ai-agent-system';
 const LOG_GLOBS = [
@@ -7,27 +9,11 @@ const LOG_GLOBS = [
   path.join(REPO_ROOT, 'bots'),
 ];
 
-type LogMatch = {
-  line: string;
-  line_no: number;
-  level: string;
-  service: string;
-  file: string;
-  modified_at: string;
-};
-
-type TailOptions = {
-  query: string;
-  level: string;
-  minutes: number;
-  service: string;
-};
-
 function collectLogFiles() {
-  const files: string[] = [];
+  const files = [];
 
-  function walk(dir: string) {
-    let entries: Array<{ isDirectory(): boolean; isFile(): boolean; name: string }> = [];
+  function walk(dir) {
+    let entries = [];
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true });
     } catch {
@@ -50,15 +36,15 @@ function collectLogFiles() {
   return files;
 }
 
-function normalizeServiceName(filePath: string) {
-  return path.basename(filePath).replace(/\.err\.log$/, '').replace(/\.log$/, '');
+function normalizeServiceName(filePath) {
+  const base = path.basename(filePath).replace(/\.err\.log$/, '').replace(/\.log$/, '');
+  return base;
 }
 
-function detectLevel(line: string, filePath: string) {
+function detectLevel(line, filePath) {
   const text = String(line || '');
-  const structured = text.match(/^\[[^\]]+\]\[(ERROR|WARN|INFO|DEBUG)\]/i);
-  if (structured) {
-    return structured[1].toUpperCase();
+  if (/^\[[^\]]+\]\[(ERROR|WARN|INFO|DEBUG)\]/i.test(text)) {
+    return text.match(/^\[[^\]]+\]\[(ERROR|WARN|INFO|DEBUG)\]/i)[1].toUpperCase();
   }
   if (filePath.endsWith('.err.log')) return 'ERROR';
   if (/❌|error|exception|traceback|fatal|uncaught|rejected|failed/i.test(text)) return 'ERROR';
@@ -66,33 +52,32 @@ function detectLevel(line: string, filePath: string) {
   return 'INFO';
 }
 
-function tailMatches(filePath: string, { query, level, minutes, service }: TailOptions) {
+function tailMatches(filePath, { query, level, minutes, service }) {
   const stat = fs.statSync(filePath);
   if (minutes > 0) {
     const cutoffMs = Date.now() - minutes * 60 * 1000;
     if (stat.mtimeMs < cutoffMs) return [];
   }
-
   const serviceName = normalizeServiceName(filePath);
   if (service && !serviceName.includes(service)) return [];
 
   const content = fs.readFileSync(filePath, 'utf8');
   return content
     .split('\n')
-    .map((line: string, idx: number) => ({ line: String(line || '').trim(), line_no: idx + 1 }))
-    .filter((row: { line: string }) => row.line)
-    .map((row: { line: string; line_no: number }) => ({
+    .map((line, idx) => ({ line: String(line || '').trim(), line_no: idx + 1 }))
+    .filter((row) => row.line)
+    .map((row) => ({
       ...row,
       level: detectLevel(row.line, filePath),
       service: serviceName,
       file: filePath,
       modified_at: stat.mtime.toISOString(),
     }))
-    .filter((row: LogMatch) => !level || row.level === level)
-    .filter((row: LogMatch) => !query || row.line.toLowerCase().includes(query));
+    .filter((row) => !level || row.level === level)
+    .filter((row) => !query || row.line.toLowerCase().includes(query));
 }
 
-export async function logsSearchRoute(req: any, res: any) {
+async function logsSearchRoute(req, res) {
   const query = String(req.query.q || '').trim().toLowerCase();
   const service = String(req.query.service || '').trim();
   const level = String(req.query.level || '').trim().toUpperCase();
@@ -100,7 +85,7 @@ export async function logsSearchRoute(req: any, res: any) {
   const limit = Math.min(500, Math.max(1, parseInt(req.query.limit || '100', 10) || 100));
 
   const allFiles = collectLogFiles();
-  const matches: LogMatch[] = [];
+  const matches = [];
 
   for (const filePath of allFiles) {
     try {
@@ -123,15 +108,9 @@ export async function logsSearchRoute(req: any, res: any) {
   });
 }
 
-export async function logsStatsRoute(_req: any, res: any) {
+async function logsStatsRoute(req, res) {
   const files = collectLogFiles();
-  const stats = new Map<string, {
-    service: string;
-    files: number;
-    bytes: number;
-    errors: number;
-    latest_modified_at: string | null;
-  }>();
+  const stats = new Map();
 
   for (const filePath of files) {
     try {
@@ -146,7 +125,7 @@ export async function logsStatsRoute(_req: any, res: any) {
       };
       item.files += 1;
       item.bytes += stat.size;
-      if (filePath.endsWith('.err.log') || (stat.size > 0 && /error|failed|exception|fatal/i.test(fs.readFileSync(filePath, 'utf8')))) {
+      if (filePath.endsWith('.err.log') || stat.size > 0 && /error|failed|exception|fatal/i.test(fs.readFileSync(filePath, 'utf8'))) {
         item.errors += 1;
       }
       if (!item.latest_modified_at || stat.mtime.toISOString() > item.latest_modified_at) {
@@ -166,3 +145,8 @@ export async function logsStatsRoute(_req: any, res: any) {
     services,
   });
 }
+
+module.exports = {
+  logsSearchRoute,
+  logsStatsRoute,
+};
