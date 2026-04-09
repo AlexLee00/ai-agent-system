@@ -69,6 +69,8 @@ const runtimeEntryPoints = [
   path.join(root, 'packages/core/lib/local-image-client.ts'),
   path.join(root, 'packages/core/lib/document-parser.ts'),
   path.join(root, 'packages/core/lib/ai-feedback-store.ts'),
+  path.join(root, 'packages/core/lib/chunked-llm.ts'),
+  path.join(root, 'packages/core/lib/news-credentials.ts'),
 ];
 
 await mkdir(outdir, { recursive: true });
