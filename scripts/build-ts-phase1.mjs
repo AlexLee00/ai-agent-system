@@ -99,6 +99,7 @@ const runtimeEntryPoints = [
   path.join(root, 'bots/hub/src/hub.ts'),
   path.join(root, 'bots/hub/scripts/telegram-callback-poller.ts'),
   path.join(root, 'bots/blog/api/node-server.ts'),
+  path.join(root, 'bots/blog/lib/blo.ts'),
   path.join(root, 'bots/blog/lib/gems-writer.ts'),
   path.join(root, 'bots/blog/lib/pos-writer.ts'),
   path.join(root, 'bots/claude/lib/doctor.ts'),
