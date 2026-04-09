@@ -3,7 +3,7 @@
 const path = require('path');
 const runtimePath = path.join(
   __dirname,
-  '../../../dist/ts-runtime/bots/blog/lib/pos-writer.js'
+  '../../../../dist/ts-runtime/bots/blog/lib/pos-writer.js'
 );
 
 try {
