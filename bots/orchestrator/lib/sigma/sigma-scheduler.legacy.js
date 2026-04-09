@@ -1,42 +1,16 @@
-const { execSync } = require('child_process') as typeof import('node:child_process');
+'use strict';
 
-const pgPool = require('../../../../packages/core/lib/pg-pool') as {
-  get: (schema: string, sql: string, params?: any[]) => Promise<any>;
-  query: (schema: string, sql: string, params?: any[]) => Promise<any[]>;
-};
-const kst = require('../../../../packages/core/lib/kst') as { today: () => string };
-const { selectBestAgent } = require('../../../../packages/core/lib/hiring-contract') as {
-  selectBestAgent: (role: string, team: string, options: Record<string, any>) => Promise<any>;
-};
+const { execSync } = require('child_process');
 
-type SchedulerEvents = {
-  date: string;
-  postsPublished: number;
-  tradesExecuted: number;
-  researchCompleted: boolean;
-  researchMetrics: Record<string, any>;
-  unhealthyServices: Array<{ service: string; exitCode: number }>;
-  lowScoreTeams: Array<{ team: string; lowCount: number }>;
-  workflowSlow: boolean;
-  newExperiences: number;
-  performanceUp: boolean;
-  errorSpikes: Array<{ service: string; exitCode: number }>;
-};
+const pgPool = require('../../../../packages/core/lib/pg-pool');
+const kst = require('../../../../packages/core/lib/kst');
+const { selectBestAgent } = require('../../../../packages/core/lib/hiring-contract');
 
-type Formation = {
-  date: string;
-  weekday: number;
-  targetTeams: string[];
-  analysts: string[];
-  events: SchedulerEvents;
-  formationReason: string;
-};
-
-export const ROTATION = ['ska', 'worker', 'claude', 'justin', 'video'];
-export const CORE_ANALYSTS = ['pipe', 'canvas', 'curator'];
+const ROTATION = ['ska', 'worker', 'claude', 'justin', 'video'];
+const CORE_ANALYSTS = ['pipe', 'canvas', 'curator'];
 const SIGMA_RANDOM_EPSILON = 0.2;
 
-function safeExec(command: string): string {
+function safeExec(command) {
   try {
     return execSync(command, {
       encoding: 'utf8',
@@ -48,50 +22,34 @@ function safeExec(command: string): string {
   }
 }
 
-export async function collectYesterdayEvents(): Promise<SchedulerEvents> {
+async function collectYesterdayEvents() {
   const [blogRow, tradeRow, researchRow, lowScoreRows] = await Promise.all([
-    pgPool.get(
-      'blog',
-      `
+    pgPool.get('blog', `
       SELECT COUNT(*)::int AS posts_published
       FROM blog.posts
       WHERE created_at >= NOW() - interval '1 day'
         AND status IN ('ready', 'published')
-    `,
-      [],
-    ).catch(() => ({ posts_published: 0 })),
-    pgPool.get(
-      'investment',
-      `
+    `, []).catch(() => ({ posts_published: 0 })),
+    pgPool.get('investment', `
       SELECT COUNT(*)::int AS trades_executed
       FROM investment.trades
       WHERE executed_at >= NOW() - interval '1 day'
-    `,
-      [],
-    ).catch(() => ({ trades_executed: 0 })),
-    pgPool.get(
-      'reservation',
-      `
+    `, []).catch(() => ({ trades_executed: 0 })),
+    pgPool.get('reservation', `
       SELECT metadata
       FROM reservation.rag_research
       WHERE metadata->>'type' = 'daily_metrics'
         AND created_at >= NOW() - interval '2 days'
       ORDER BY created_at DESC
       LIMIT 1
-    `,
-      [],
-    ).catch(() => ({ metadata: {} })),
-    pgPool.query(
-      'agent',
-      `
+    `, []).catch(() => ({ metadata: {} })),
+    pgPool.query('agent', `
       SELECT team, COUNT(*)::int AS low_count
       FROM agent.registry
       WHERE score < 5
       GROUP BY team
       ORDER BY low_count DESC, team ASC
-    `,
-      [],
-    ).catch(() => []),
+    `, []).catch(() => []),
   ]);
 
   const launchdRaw = safeExec('launchctl list | egrep "ai\\."');
@@ -130,7 +88,7 @@ export async function collectYesterdayEvents(): Promise<SchedulerEvents> {
   };
 }
 
-function selectPerspectiveHint(events: SchedulerEvents, date: Date = new Date()): string {
+function selectPerspectiveHint(events, date = new Date()) {
   const weekday = date.getDay();
   if ((events.errorSpikes || []).length > 0) return '리스크 실패 문제 분석';
   if (events.performanceUp) return '성장 성공 기회 분석';
@@ -142,9 +100,9 @@ function selectPerspectiveHint(events: SchedulerEvents, date: Date = new Date())
   return rotation[weekday % rotation.length];
 }
 
-export async function decideTodayFormation({ date = new Date() }: { date?: Date } = {}): Promise<Formation> {
+async function decideTodayFormation({ date = new Date() } = {}) {
   const events = await collectYesterdayEvents();
-  const targetTeams = new Set<string>();
+  const targetTeams = new Set();
   const weekday = date.getDay();
 
   if (events.postsPublished > 0) targetTeams.add('blog');
@@ -207,3 +165,10 @@ export async function decideTodayFormation({ date = new Date() }: { date?: Date 
     formationReason: perspectiveHint,
   };
 }
+
+module.exports = {
+  CORE_ANALYSTS,
+  ROTATION,
+  collectYesterdayEvents,
+  decideTodayFormation,
+};
