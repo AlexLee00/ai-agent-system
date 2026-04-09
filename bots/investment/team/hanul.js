@@ -242,6 +242,10 @@ async function closeStaleOpenJournalForSymbol(symbol, market, isPaper, exitReaso
   await journalDb.ensureAutoReview(entry.trade_id).catch(() => {});
 }
 
+function getPositionTradeMode(position, fallbackTradeMode = null) {
+  return position?.trade_mode || fallbackTradeMode || 'normal';
+}
+
 async function checkKisRisk(signal) {
   const { action, amount_usdt: amountKrw, symbol } = signal;
   const signalTradeMode = signal.trade_mode || getInvestmentTradeMode();
@@ -583,6 +587,7 @@ export async function executeSignal(signal) {
         return { success: false, reason: '포지션 없음' };
       }
 
+      const effectiveTradeMode = getPositionTradeMode(position, signalTradeMode);
       const order = await kis.marketSell(symbol, Math.floor(qty), sellPaperMode);
       trade = {
         signalId, symbol, side: 'sell',
@@ -591,13 +596,13 @@ export async function executeSignal(signal) {
         totalUsdt: order.totalKrw,
         paper:     sellPaperMode,
         exchange:  'kis',
-        tradeMode: signalTradeMode,
+        tradeMode: effectiveTradeMode,
       };
 
       await db.deletePosition(symbol, {
         exchange: 'kis',
         paper: sellPaperMode,
-        tradeMode: signalTradeMode,
+        tradeMode: effectiveTradeMode,
       });
       await closeOpenJournalForSymbol(symbol, 'domestic', sellPaperMode, trade.price, trade.totalUsdt, exitReasonOverride || 'sell', trade.tradeMode).catch(() => {});
 
@@ -826,6 +831,7 @@ export async function executeOverseasSignal(signal) {
         return { success: false, reason: '해외 포지션 없음' };
       }
 
+      const effectiveTradeMode = getPositionTradeMode(position, signalTradeMode);
       const order = await kis.marketSellOverseas(symbol, Math.floor(qty), sellPaperMode);
       trade = {
         signalId, symbol, side: 'sell',
@@ -834,13 +840,13 @@ export async function executeOverseasSignal(signal) {
         totalUsdt: order.totalUsd,
         paper:     sellPaperMode,
         exchange:  'kis_overseas',
-        tradeMode: signalTradeMode,
+        tradeMode: effectiveTradeMode,
       };
 
       await db.deletePosition(symbol, {
         exchange: 'kis_overseas',
         paper: sellPaperMode,
-        tradeMode: signalTradeMode,
+        tradeMode: effectiveTradeMode,
       });
       await closeOpenJournalForSymbol(symbol, 'overseas', sellPaperMode, trade.price, trade.totalUsdt, exitReasonOverride || 'sell', trade.tradeMode).catch(() => {});
 
@@ -861,19 +867,21 @@ export async function executeOverseasSignal(signal) {
     if (e?.message && e.message.includes('APBK1526')) {
       const livePosition = await db.getLivePosition(symbol, 'kis_overseas', signalTradeMode).catch(() => null);
       const paperPosition = await db.getPaperPosition(symbol, 'kis_overseas', signalTradeMode).catch(() => null);
+      const position = paperPosition || livePosition;
       const cleanupPaperMode = paperMode || (!livePosition && !!paperPosition);
+      const effectiveTradeMode = getPositionTradeMode(position, signalTradeMode);
       console.warn(`  ⚠️ ${symbol} KIS 해외잔고 미존재 → DB 포지션 삭제 정리`);
       await db.deletePosition(symbol, {
         exchange: 'kis_overseas',
         paper: cleanupPaperMode,
-        tradeMode: signalTradeMode,
+        tradeMode: effectiveTradeMode,
       });
       await closeStaleOpenJournalForSymbol(
         symbol,
         'overseas',
         cleanupPaperMode,
         'broker_no_balance_cleanup',
-        signalTradeMode,
+        effectiveTradeMode,
       ).catch(() => {});
       await markSignalFailedDetailed(signalId, {
         reason: 'KIS 해외잔고 미존재 — DB 포지션 삭제 정리',
