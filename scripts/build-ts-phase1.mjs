@@ -73,6 +73,8 @@ const runtimeEntryPoints = [
   path.join(root, 'packages/core/lib/news-credentials.ts'),
   path.join(root, 'packages/core/lib/feedback-rag.ts'),
   path.join(root, 'packages/core/lib/rag-safe.ts'),
+  path.join(root, 'packages/core/lib/skill-selector.ts'),
+  path.join(root, 'packages/core/lib/shadow-mode.ts'),
 ];
 
 await mkdir(outdir, { recursive: true });
