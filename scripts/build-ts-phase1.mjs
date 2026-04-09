@@ -99,6 +99,7 @@ const runtimeEntryPoints = [
   path.join(root, 'bots/hub/scripts/telegram-callback-poller.ts'),
   path.join(root, 'bots/blog/api/node-server.ts'),
   path.join(root, 'bots/orchestrator/lib/sigma/sigma-analyzer.ts'),
+  path.join(root, 'bots/orchestrator/lib/sigma/sigma-feedback.ts'),
   path.join(root, 'bots/orchestrator/lib/sigma/sigma-scheduler.ts'),
   path.join(root, 'bots/orchestrator/src/dashboard.ts'),
   path.join(root, 'bots/orchestrator/src/filter.ts'),
