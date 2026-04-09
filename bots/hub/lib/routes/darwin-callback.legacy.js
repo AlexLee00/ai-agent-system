@@ -1,5 +1,7 @@
-const fs = require('node:fs');
-const path = require('node:path');
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
 const env = require('../../../../packages/core/lib/env');
 const { postAlarm } = require('../../../../packages/core/lib/openclaw-client');
 const eventLake = require('../../../../packages/core/lib/event-lake');
@@ -9,7 +11,7 @@ const researchTasks = require('../../../orchestrator/lib/research/research-tasks
 
 const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
 
-function readTelegramToken() {
+function _readTelegramToken() {
   try {
     const store = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8'));
     return store?.darwin?.telegram_bot_token
@@ -23,8 +25,8 @@ function readTelegramToken() {
   }
 }
 
-async function answerCallbackQuery(callbackQueryId: string | null, text: string) {
-  const botToken = readTelegramToken();
+async function _answerCallbackQuery(callbackQueryId, text) {
+  const botToken = _readTelegramToken();
   if (!callbackQueryId || !botToken) return;
   try {
     await fetch(`https://api.telegram.org/bot${botToken}/answerCallbackQuery`, {
@@ -37,12 +39,12 @@ async function answerCallbackQuery(callbackQueryId: string | null, text: string)
       }),
       signal: AbortSignal.timeout(10_000),
     });
-  } catch (error: any) {
+  } catch (error) {
     console.warn(`[darwin-callback] answerCallbackQuery 실패: ${error.message}`);
   }
 }
 
-export async function darwinCallbackRoute(req: any, res: any) {
+async function darwinCallbackRoute(req, res) {
   const callbackData = req.body?.callback_data || req.body?.callback_query?.data || '';
   const callbackQueryId = req.body?.callback_query_id || req.body?.callback_query?.id || null;
 
@@ -80,7 +82,7 @@ export async function darwinCallbackRoute(req: any, res: any) {
   try {
     if (action === 'darwin_approve') {
       proposalStore.updateStatus(proposalId, 'approved', { approved_at: new Date().toISOString() });
-      await answerCallbackQuery(callbackQueryId, '승인 완료! edison이 구현을 시작합니다.');
+      await _answerCallbackQuery(callbackQueryId, '승인 완료! edison이 구현을 시작합니다.');
       const implementor = require('../../../orchestrator/lib/research/implementor');
       setImmediate(() => implementor.triggerImplementation(proposalId));
       return res.json({ ok: true, action: 'approved', proposalId });
@@ -88,18 +90,18 @@ export async function darwinCallbackRoute(req: any, res: any) {
 
     if (action === 'darwin_reject') {
       proposalStore.updateStatus(proposalId, 'rejected', { rejected_at: new Date().toISOString() });
-      await answerCallbackQuery(callbackQueryId, '거절 처리되었습니다.');
+      await _answerCallbackQuery(callbackQueryId, '거절 처리되었습니다.');
       return res.json({ ok: true, action: 'rejected', proposalId });
     }
 
     if (action === 'darwin_manual') {
       proposalStore.updateStatus(proposalId, 'manual_review', { manual_review_at: new Date().toISOString() });
-      await answerCallbackQuery(callbackQueryId, '수동 검토 대상으로 전환했습니다.');
+      await _answerCallbackQuery(callbackQueryId, '수동 검토 대상으로 전환했습니다.');
       return res.json({ ok: true, action: 'manual_review', proposalId });
     }
 
     if (action === 'darwin_merge') {
-      await answerCallbackQuery(callbackQueryId, '머지를 시작합니다.');
+      await _answerCallbackQuery(callbackQueryId, '머지를 시작합니다.');
       const verifier = require('../../../orchestrator/lib/research/verifier');
       setImmediate(() => verifier.mergeVerifiedProposal(proposalId));
       return res.json({ ok: true, action: 'merge_started', proposalId });
@@ -110,7 +112,7 @@ export async function darwinCallbackRoute(req: any, res: any) {
       if (!task?.result?.branch) {
         return res.status(404).json({ ok: false, error: 'skill task branch missing' });
       }
-      await answerCallbackQuery(callbackQueryId, '스킬 브랜치 머지를 시작합니다.');
+      await _answerCallbackQuery(callbackQueryId, '스킬 브랜치 머지를 시작합니다.');
       const verifier = require('../../../orchestrator/lib/research/verifier');
       setImmediate(async () => {
         try {
@@ -119,7 +121,7 @@ export async function darwinCallbackRoute(req: any, res: any) {
             status: 'merged',
             merged_at: new Date().toISOString(),
           });
-        } catch (error: any) {
+        } catch (error) {
           await researchTasks.updateTask(task.id, {
             status: 'merge_failed',
             merge_error: error.message,
@@ -156,7 +158,7 @@ export async function darwinCallbackRoute(req: any, res: any) {
         targetCategory: 'shared',
         skillName: repoPart.toLowerCase().replace(/[^a-z0-9-]/g, '-') + '-patterns',
       });
-      await answerCallbackQuery(callbackQueryId, '스킬 과제를 생성했습니다.');
+      await _answerCallbackQuery(callbackQueryId, '스킬 과제를 생성했습니다.');
       await postAlarm({
         message: `✅ 마스터 승인! 스킬 과제 생성\n🧠 ${newTask.id}`,
         team: 'darwin',
@@ -166,7 +168,7 @@ export async function darwinCallbackRoute(req: any, res: any) {
     }
 
     if (action === 'darwin_skip_skill') {
-      await answerCallbackQuery(callbackQueryId, '스킬 과제를 건너뜁니다.');
+      await _answerCallbackQuery(callbackQueryId, '스킬 과제를 건너뜁니다.');
       await postAlarm({
         message: `⏭ 스킬 과제 건너뜀: ${proposalId}`,
         team: 'darwin',
@@ -189,12 +191,16 @@ export async function darwinCallbackRoute(req: any, res: any) {
       if (!updated) {
         return res.status(404).json({ ok: false, error: 'event not found' });
       }
-      await answerCallbackQuery(callbackQueryId, `피드백 기록: ${label}`);
+      await _answerCallbackQuery(callbackQueryId, `피드백 기록: ${label}`);
       return res.json({ ok: true, action: 'feedback_recorded', eventId, score });
     }
-  } catch (error: any) {
+  } catch (error) {
     autonomyLevel.recordError(error);
     console.error('[darwin-callback] 오류:', error.message);
     return res.status(500).json({ ok: false, error: error.message });
   }
 }
+
+module.exports = {
+  darwinCallbackRoute,
+};
