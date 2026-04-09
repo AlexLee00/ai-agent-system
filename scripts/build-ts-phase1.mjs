@@ -98,6 +98,7 @@ const runtimeEntryPoints = [
   path.join(root, 'bots/hub/src/hub.ts'),
   path.join(root, 'bots/hub/scripts/telegram-callback-poller.ts'),
   path.join(root, 'bots/blog/api/node-server.ts'),
+  path.join(root, 'bots/worker/src/task-runner.ts'),
 ];
 
 await mkdir(outdir, { recursive: true });
