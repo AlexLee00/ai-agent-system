@@ -1,4 +1,6 @@
-const path = require('node:path');
+'use strict';
+
+const path = require('path');
 const pgPool = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'));
 const kst = require(path.join(__dirname, '../../../packages/core/lib/kst'));
 const { initHubConfig } = require(path.join(__dirname, '../../../packages/core/lib/llm-keys'));
@@ -22,7 +24,7 @@ const chloe = require('./chloe');
 const SCHEMA = 'worker';
 const POLL_MS = parseInt(process.env.WORKER_TASK_POLL_MS || '15000', 10);
 
-function parsePayload(payload: unknown) {
+function parsePayload(payload) {
   if (!payload) return {};
   if (typeof payload === 'string') {
     try {
@@ -52,7 +54,7 @@ async function claimNextTask() {
   `);
 }
 
-async function finishTask(taskId: number, status: string, payload: unknown) {
+async function finishTask(taskId, status, payload) {
   const done = status === 'completed' || status === 'failed' || status === 'rejected';
   return pgPool.run(SCHEMA, `
     UPDATE worker.agent_tasks
@@ -64,7 +66,7 @@ async function finishTask(taskId: number, status: string, payload: unknown) {
   `, [taskId, status, JSON.stringify(payload || {}), done]);
 }
 
-async function emitTaskEvent(task: any, status: string, summary: string, ui: unknown) {
+async function emitTaskEvent(task, status, summary, ui) {
   const payload = {
     companyId: task.company_id,
     userId: task.user_id,
@@ -82,7 +84,7 @@ async function emitTaskEvent(task: any, status: string, summary: string, ui: unk
   ]);
 }
 
-function buildTaskUi(task: any, status: string, summary: string) {
+function buildTaskUi(task, status, summary) {
   return {
     type: 'route_result',
     target: task.target_bot,
@@ -97,7 +99,7 @@ function buildTaskUi(task: any, status: string, summary: string) {
   };
 }
 
-async function publishTaskResult(task: any, status: string, summary: string, details: string[] = []) {
+async function publishTaskResult(task, status, summary, details = []) {
   if (!task.session_id) return;
   await ensureChatSchema();
   const ui = buildTaskUi(task, status, summary);
@@ -124,20 +126,20 @@ async function publishTaskResult(task: any, status: string, summary: string, det
   await emitTaskEvent(task, status, summary, ui);
 }
 
-function summarizeList(prefix: string, items: any[]) {
+function summarizeList(prefix, items) {
   if (!items?.length) return `${prefix} 없음`;
   return `${prefix} ${items.length}건`;
 }
 
-async function runEmily(companyId: number, task: any) {
-  const payload: any = parsePayload(task.payload);
+async function runEmily(companyId, task) {
+  const payload = parsePayload(task.payload);
   const raw = String(payload.raw_text || task.description || '').trim();
 
   if (/목록|리스트/.test(raw)) {
     const rows = await emily.listDocuments({ companyId, limit: 5 });
     return {
       summary: rows.length ? `문서 ${rows.length}건을 확인했습니다.` : '등록된 문서가 없습니다.',
-      details: rows.map((row: any) => `[${row.category}] ${row.filename}`),
+      details: rows.map(row => `[${row.category}] ${row.filename}`),
     };
   }
 
@@ -146,7 +148,7 @@ async function runEmily(companyId: number, task: any) {
     const rows = await emily.listDocuments({ companyId, limit: 5, keyword });
     return {
       summary: rows.length ? `"${keyword}" 검색 결과 ${rows.length}건입니다.` : `"${keyword}" 검색 결과가 없습니다.`,
-      details: rows.map((row: any) => `[${row.category}] ${row.filename}`),
+      details: rows.map(row => `[${row.category}] ${row.filename}`),
     };
   }
 
@@ -156,24 +158,24 @@ async function runEmily(companyId: number, task: any) {
   };
 }
 
-async function runNoah(companyId: number, task: any) {
-  const payload: any = parsePayload(task.payload);
+async function runNoah(companyId, task) {
+  const payload = parsePayload(task.payload);
   const raw = String(payload.raw_text || task.description || '').trim();
 
   if (/직원|목록/.test(raw)) {
     const rows = await noah.listEmployees({ companyId });
     return {
       summary: summarizeList('직원', rows),
-      details: rows.slice(0, 5).map((row: any) => `${row.name} (${[row.position, row.department].filter(Boolean).join(' / ') || '미설정'})`),
+      details: rows.slice(0, 5).map(row => `${row.name} (${[row.position, row.department].filter(Boolean).join(' / ') || '미설정'})`),
     };
   }
 
   if (/근태|출근|퇴근/.test(raw)) {
     const rows = await noah.getTodayAttendance({ companyId });
-    const checkedIn = rows.filter((row: any) => row.check_in).length;
+    const checkedIn = rows.filter(row => row.check_in).length;
     return {
       summary: `오늘 근태 ${rows.length}명 중 ${checkedIn}명이 출근 처리되었습니다.`,
-      details: rows.slice(0, 5).map((row: any) => `${row.name}: ${row.check_in ? '출근' : '미출근'} / ${row.check_out ? '퇴근' : '근무중'}`),
+      details: rows.slice(0, 5).map(row => `${row.name}: ${row.check_in ? '출근' : '미출근'} / ${row.check_out ? '퇴근' : '근무중'}`),
     };
   }
 
@@ -183,8 +185,8 @@ async function runNoah(companyId: number, task: any) {
   };
 }
 
-async function runSophie(companyId: number, task: any) {
-  const payload: any = parsePayload(task.payload);
+async function runSophie(companyId, task) {
+  const payload = parsePayload(task.payload);
   const raw = String(payload.raw_text || task.description || '').trim();
   const yearMonth = kst.today().slice(0, 7);
 
@@ -192,7 +194,7 @@ async function runSophie(companyId: number, task: any) {
     const rows = await sophie.calculatePayroll(companyId, yearMonth);
     return {
       summary: `${yearMonth} 급여 계산을 실행했습니다. ${rows.length}명 처리 완료.`,
-      details: rows.slice(0, 5).map((row: any) => `${row.employee}: ₩${Number(row.net_salary || 0).toLocaleString()}`),
+      details: rows.slice(0, 5).map(row => `${row.employee}: ₩${Number(row.net_salary || 0).toLocaleString()}`),
     };
   }
 
@@ -203,8 +205,8 @@ async function runSophie(companyId: number, task: any) {
   };
 }
 
-async function runOliver(companyId: number, task: any) {
-  const payload: any = parsePayload(task.payload);
+async function runOliver(companyId, task) {
+  const payload = parsePayload(task.payload);
   const raw = String(payload.raw_text || task.description || '').trim();
 
   if (/분석/.test(raw)) {
@@ -227,13 +229,13 @@ async function runOliver(companyId: number, task: any) {
   };
 }
 
-async function runRyan(companyId: number) {
+async function runRyan(companyId) {
   const text = await ryan.handleCommand(companyId, '/projects');
   return { summary: text || '진행 중 프로젝트가 없습니다.', details: [] };
 }
 
-async function runChloe(companyId: number, task: any) {
-  const payload: any = parsePayload(task.payload);
+async function runChloe(companyId, task) {
+  const payload = parsePayload(task.payload);
   const raw = String(payload.raw_text || task.description || '').trim();
   const text = /내일/.test(raw)
     ? await chloe.handleCommand(companyId, '/schedule_tomorrow')
@@ -241,7 +243,7 @@ async function runChloe(companyId: number, task: any) {
   return { summary: text || '일정을 불러오지 못했습니다.', details: [] };
 }
 
-export async function executeTask(task: any) {
+async function executeTask(task) {
   const target = String(task.target_bot || '').toLowerCase();
   switch (target) {
     case 'emily':
@@ -264,11 +266,11 @@ export async function executeTask(task: any) {
   }
 }
 
-export async function processOne() {
+async function processOne() {
   const task = await claimNextTask();
   if (!task) return false;
 
-  const payload: any = parsePayload(task.payload);
+  const payload = parsePayload(task.payload);
   try {
     const result = await executeTask(task);
     const completedPayload = {
@@ -292,7 +294,7 @@ export async function processOne() {
     }
     await publishTaskResult(task, 'completed', result.summary, result.details || []);
     console.log(`[worker-task-runner] completed #${task.id} ${task.target_bot}`);
-  } catch (error: any) {
+  } catch (error) {
     await finishTask(task.id, 'failed', {
       ...payload,
       handled_by: task.target_bot,
@@ -308,15 +310,16 @@ export async function processOne() {
 async function main() {
   await initHubConfig();
   console.log('[worker-task-runner] 실행기 가동');
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     const processed = await processOne();
-    await new Promise((resolve) => setTimeout(resolve, processed ? 1000 : POLL_MS));
+    await new Promise(resolve => setTimeout(resolve, processed ? 1000 : POLL_MS));
   }
 }
 
+module.exports = { processOne, executeTask };
+
 if (require.main === module) {
-  main().catch((error: any) => {
+  main().catch(error => {
     console.error(error);
     process.exit(1);
   });
