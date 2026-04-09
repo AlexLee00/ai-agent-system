@@ -1,3 +1,5 @@
+'use strict';
+
 const env = require('../../../../packages/core/lib/env');
 const { getLaunchctlStatus } = require('../../../../packages/core/lib/health-provider');
 
@@ -19,7 +21,7 @@ const SERVICE_LABELS = [
   'ai.hub.resource-api',
 ];
 
-export async function servicesStatusRoute(_req: any, res: any) {
+async function servicesStatusRoute(req, res) {
   if (!env.LAUNCHD_AVAILABLE) {
     return res.json({
       status: 'ok',
@@ -35,7 +37,7 @@ export async function servicesStatusRoute(_req: any, res: any) {
   });
 }
 
-export async function envRoute(_req: any, res: any) {
+async function envRoute(req, res) {
   return res.json({
     mode: env.MODE,
     node_env: env.NODE_ENV,
@@ -49,3 +51,8 @@ export async function envRoute(_req: any, res: any) {
     use_hub: env.USE_HUB,
   });
 }
+
+module.exports = {
+  servicesStatusRoute,
+  envRoute,
+};
