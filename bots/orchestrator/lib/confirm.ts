@@ -1,0 +1,86 @@
+'use strict';
+
+const pgPool = require('../../../packages/core/lib/pg-pool') as {
+  run: (
+    schema: string,
+    query: string,
+    params?: unknown[]
+  ) => Promise<{ rowCount?: number }>;
+  get: (
+    schema: string,
+    query: string,
+    params?: unknown[]
+  ) => Promise<unknown | null>;
+};
+
+const SCHEMA = 'claude';
+const CONFIRM_TTL_MS = 10 * 60 * 1000;
+
+async function createConfirm(
+  queueId: string | number,
+  message: string
+): Promise<{ confirmKey: string; rejectKey: string; expiresAt: string }> {
+  const expiresAt = new Date(Date.now() + CONFIRM_TTL_MS).toISOString();
+  const now = Date.now();
+  const confirmKey = `yes_${queueId}_${now}`;
+  const rejectKey = `no_${queueId}_${now}`;
+
+  await pgPool.run(
+    SCHEMA,
+    `
+    INSERT INTO pending_confirms (queue_id, confirm_key, message, expires_at)
+    VALUES ($1, $2, $3, $4)
+  `,
+    [queueId, confirmKey, message, expiresAt]
+  );
+
+  await pgPool.run(
+    SCHEMA,
+    `
+    INSERT INTO pending_confirms (queue_id, confirm_key, message, expires_at)
+    VALUES ($1, $2, $3, $4)
+  `,
+    [queueId, rejectKey, message, expiresAt]
+  );
+
+  return { confirmKey, rejectKey, expiresAt };
+}
+
+async function getByKey(key: string): Promise<unknown | null> {
+  return pgPool.get(
+    SCHEMA,
+    `
+    SELECT * FROM pending_confirms WHERE confirm_key = $1 AND status = 'pending'
+  `,
+    [key]
+  );
+}
+
+async function resolve(key: string, action: string): Promise<boolean> {
+  const now = new Date().toISOString();
+  const result = await pgPool.run(
+    SCHEMA,
+    `
+    UPDATE pending_confirms
+    SET status = $1, resolved_at = $2
+    WHERE confirm_key = $3 AND status = 'pending' AND expires_at > $2
+  `,
+    [action, now, key]
+  );
+  return (result.rowCount || 0) > 0;
+}
+
+async function cleanExpired(): Promise<number> {
+  const now = new Date().toISOString();
+  const result = await pgPool.run(
+    SCHEMA,
+    `
+    UPDATE pending_confirms SET status = 'expired'
+    WHERE status = 'pending' AND expires_at <= $1
+  `,
+    [now]
+  );
+  return result.rowCount || 0;
+}
+
+module.exports = { cleanExpired, createConfirm, getByKey, resolve };
