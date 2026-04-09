@@ -113,6 +113,7 @@ const runtimeEntryPoints = [
   path.join(root, 'bots/orchestrator/lib/response-cache.ts'),
   path.join(root, 'bots/orchestrator/src/dashboard.ts'),
   path.join(root, 'bots/orchestrator/src/filter.ts'),
+  path.join(root, 'bots/orchestrator/src/router.ts'),
   path.join(root, 'bots/orchestrator/src/sigma-daily.ts'),
   path.join(root, 'bots/orchestrator/src/write.ts'),
   path.join(root, 'bots/worker/src/worker-lead.ts'),
