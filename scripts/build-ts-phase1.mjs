@@ -75,6 +75,8 @@ const runtimeEntryPoints = [
   path.join(root, 'packages/core/lib/rag-safe.ts'),
   path.join(root, 'packages/core/lib/skill-selector.ts'),
   path.join(root, 'packages/core/lib/shadow-mode.ts'),
+  path.join(root, 'packages/core/lib/n8n-runner.ts'),
+  path.join(root, 'packages/core/lib/n8n-setup-client.ts'),
 ];
 
 await mkdir(outdir, { recursive: true });
