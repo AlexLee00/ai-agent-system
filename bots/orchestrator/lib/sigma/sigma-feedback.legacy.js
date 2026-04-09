@@ -1,26 +1,15 @@
-const pgPool = require('../../../../packages/core/lib/pg-pool') as {
-  run: (schema: string, sql: string, params?: any[]) => Promise<any>;
-  get: (schema: string, sql: string, params?: any[]) => Promise<any>;
-  query: (schema: string, sql: string, params?: any[]) => Promise<any[]>;
-};
-const rag = require('../../../../packages/core/lib/rag') as {
-  initSchema: () => Promise<void>;
-  store: (kind: string, content: string, metadata: Record<string, any>, scope: string) => Promise<void>;
-};
-const kst = require('../../../../packages/core/lib/kst') as { today: () => string };
-const { postAlarm } = require('../../../../packages/core/lib/openclaw-client') as {
-  postAlarm: (payload: { message: string; team: string; alertLevel: number; fromBot: string }) => Promise<{ ok?: boolean }>;
-};
-const eventLake = require('../../../../packages/core/lib/event-lake') as {
-  initSchema: () => Promise<void>;
-  search: (payload: Record<string, any>) => Promise<any[]>;
-  record: (payload: Record<string, any>) => Promise<any>;
-};
-const { pathToFileURL } = require('url') as typeof import('node:url');
+'use strict';
+
+const pgPool = require('../../../../packages/core/lib/pg-pool');
+const rag = require('../../../../packages/core/lib/rag');
+const kst = require('../../../../packages/core/lib/kst');
+const { postAlarm } = require('../../../../packages/core/lib/openclaw-client');
+const eventLake = require('../../../../packages/core/lib/event-lake');
+const { pathToFileURL } = require('url');
 
 const SCHEMA = 'sigma';
 
-export async function ensureSigmaTables(): Promise<void> {
+async function ensureSigmaTables() {
   await pgPool.run('public', `CREATE SCHEMA IF NOT EXISTS ${SCHEMA}`, []);
   await pgPool.run(SCHEMA, `
     CREATE TABLE IF NOT EXISTS ${SCHEMA}.daily_runs (
@@ -67,7 +56,7 @@ export async function ensureSigmaTables(): Promise<void> {
   `, []);
 }
 
-export async function collectTeamMetric(team: string): Promise<Record<string, any>> {
+async function collectTeamMetric(team) {
   const normalized = String(team || '').trim().toLowerCase();
   try {
     if (normalized === 'blog') {
@@ -146,13 +135,13 @@ export async function collectTeamMetric(team: string): Promise<Record<string, an
     return {
       team: normalized,
       metric_type: 'unknown',
-      error: error instanceof Error ? error.message : String(error),
+      error: error.message,
     };
   }
 }
 
-export function computeEffectiveness(beforeMetric: Record<string, any> = {}, afterMetric: Record<string, any> = {}): number {
-  const scoreMetric = (metric: Record<string, any>): number => {
+function computeEffectiveness(beforeMetric = {}, afterMetric = {}) {
+  const scoreMetric = (metric) => {
     if (!metric || typeof metric !== 'object') return 0;
     if (metric.metric_type === 'content_ops') {
       return Number(metric.published_7d || 0) * 3 + Number(metric.posts_7d || 0) - Number(metric.ready_count || 0);
@@ -176,7 +165,7 @@ export function computeEffectiveness(beforeMetric: Record<string, any> = {}, aft
   return Number((((afterScore - beforeScore) / Math.max(1, Math.abs(beforeScore))) * 100).toFixed(2));
 }
 
-export async function recordDailyRun({ formation, events, report, insightCount = 0, feedbackCount = 0, meta = {} }: Record<string, any>): Promise<any> {
+async function recordDailyRun({ formation, events, report, insightCount = 0, feedbackCount = 0, meta = {} }) {
   return pgPool.get(SCHEMA, `
     INSERT INTO ${SCHEMA}.daily_runs (
       run_date, formation, events, report, insight_count, feedback_count, meta
@@ -193,14 +182,14 @@ export async function recordDailyRun({ formation, events, report, insightCount =
   ]);
 }
 
-export async function recordFeedbackRecommendation({
+async function recordFeedbackRecommendation({
   targetTeam,
   feedbackType,
   content,
   formation,
   analystUsed,
   beforeMetric,
-}: Record<string, any>): Promise<any> {
+}) {
   return pgPool.get(SCHEMA, `
     INSERT INTO ${SCHEMA}.feedback_effectiveness (
       target_team, feedback_type, content, formation, analyst_used, before_metric
@@ -216,7 +205,7 @@ export async function recordFeedbackRecommendation({
   ]);
 }
 
-export async function measurePastFeedbackEffectiveness(): Promise<any[]> {
+async function measurePastFeedbackEffectiveness() {
   const rows = await pgPool.query(SCHEMA, `
     SELECT *
     FROM ${SCHEMA}.feedback_effectiveness
@@ -247,7 +236,7 @@ export async function measurePastFeedbackEffectiveness(): Promise<any[]> {
   return measured;
 }
 
-export async function weeklyMetaReview(): Promise<Record<string, any>> {
+async function weeklyMetaReview() {
   const rows = await pgPool.query(SCHEMA, `
     SELECT
       analyst_used,
@@ -289,14 +278,13 @@ export async function weeklyMetaReview(): Promise<Record<string, any>> {
       why: `주간 메타 리뷰 ${rows.length}건 분석`,
     }, 'sigma');
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.warn(`[sigma-feedback] 메타리뷰 RAG 저장 실패: ${message}`);
+    console.warn(`[sigma-feedback] 메타리뷰 RAG 저장 실패: ${error.message}`);
   }
 
   return { ok: true, sent: result?.ok === true, rows };
 }
 
-export async function collectScoutQualityMetric({ minutes = 24 * 60 }: { minutes?: number } = {}): Promise<Record<string, any>> {
+async function collectScoutQualityMetric({ minutes = 24 * 60 } = {}) {
   await eventLake.initSchema();
   const rows = await eventLake.search({
     team: 'luna',
@@ -322,7 +310,9 @@ export async function collectScoutQualityMetric({ minutes = 24 * 60 }: { minutes
   const collectCount = collectRows.length;
   const errorCount = errorRows.length;
   const totalRuns = collectCount + errorCount;
-  const errorRate = totalRuns > 0 ? Number((errorCount / totalRuns).toFixed(4)) : 0;
+  const errorRate = totalRuns > 0
+    ? Number((errorCount / totalRuns).toFixed(4))
+    : 0;
   const quoteReturns = [];
 
   if (latestEvaluableCollect && baselineQuotes && typeof baselineQuotes === 'object') {
@@ -332,7 +322,7 @@ export async function collectScoutQualityMetric({ minutes = 24 * 60 }: { minutes
       const paper = secrets.isKisPaper();
 
       for (const [symbol, info] of Object.entries(baselineQuotes)) {
-        const baselinePrice = Number((info as any)?.price || 0);
+        const baselinePrice = Number(info?.price || 0);
         if (!baselinePrice) continue;
         try {
           const currentPrice = Number(await kis.getDomesticPrice(symbol, paper));
@@ -379,7 +369,7 @@ export async function collectScoutQualityMetric({ minutes = 24 * 60 }: { minutes
   };
 }
 
-export async function recordScoutQualityEvent(metric: Record<string, any> = {}): Promise<any> {
+async function recordScoutQualityEvent(metric = {}) {
   if (!metric || typeof metric !== 'object') return null;
   const title = `스카우트 품질 요약: 수집 ${Number(metric.collect_count || 0)}회, 에러 ${Number(metric.error_count || 0)}회`;
   const message = [
@@ -410,3 +400,15 @@ export async function recordScoutQualityEvent(metric: Record<string, any> = {}):
     metadata: metric,
   });
 }
+
+module.exports = {
+  ensureSigmaTables,
+  collectTeamMetric,
+  collectScoutQualityMetric,
+  computeEffectiveness,
+  recordScoutQualityEvent,
+  recordDailyRun,
+  recordFeedbackRecommendation,
+  measurePastFeedbackEffectiveness,
+  weeklyMetaReview,
+};
