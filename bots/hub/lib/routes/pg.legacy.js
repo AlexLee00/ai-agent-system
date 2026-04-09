@@ -1,7 +1,9 @@
+'use strict';
+
 const pgPool = require('../../../../packages/core/lib/pg-pool');
 const { validateSchema, validateSql } = require('../sql-guard');
 
-export async function pgQueryRoute(req: any, res: any) {
+async function pgQueryRoute(req, res) {
   const started = Date.now();
   const { sql, schema = 'public', params = [] } = req.body || {};
 
@@ -28,7 +30,7 @@ export async function pgQueryRoute(req: any, res: any) {
       rows,
       duration_ms: Date.now() - started,
     });
-  } catch (error: any) {
+  } catch (error) {
     return res.status(500).json({
       error: 'query failed',
       reason: String(error?.message || 'pg_query_failed'),
@@ -36,3 +38,7 @@ export async function pgQueryRoute(req: any, res: any) {
     });
   }
 }
+
+module.exports = {
+  pgQueryRoute,
+};

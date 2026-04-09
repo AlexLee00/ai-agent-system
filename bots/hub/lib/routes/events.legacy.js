@@ -1,11 +1,13 @@
+'use strict';
+
 const eventLake = require('../../../../packages/core/lib/event-lake');
 
-function toInt(value: unknown, fallback: number) {
-  const parsed = Number.parseInt(String(value ?? ''), 10);
+function _toInt(value, fallback) {
+  const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-export async function eventsSearchRoute(req: any, res: any) {
+async function eventsSearchRoute(req, res) {
   try {
     const rows = await eventLake.search({
       q: req.query.q || '',
@@ -13,27 +15,27 @@ export async function eventsSearchRoute(req: any, res: any) {
       team: req.query.team || '',
       severity: req.query.severity || '',
       botName: req.query.bot || '',
-      minutes: toInt(req.query.minutes, 24 * 60),
-      limit: toInt(req.query.limit, 50),
+      minutes: _toInt(req.query.minutes, 24 * 60),
+      limit: _toInt(req.query.limit, 50),
     });
     return res.json({ ok: true, total: rows.length, results: rows });
-  } catch (error: any) {
+  } catch (error) {
     return res.status(500).json({ ok: false, error: error.message });
   }
 }
 
-export async function eventsStatsRoute(req: any, res: any) {
+async function eventsStatsRoute(req, res) {
   try {
     const result = await eventLake.stats({
-      minutes: toInt(req.query.minutes, 24 * 60),
+      minutes: _toInt(req.query.minutes, 24 * 60),
     });
     return res.json({ ok: true, ...result });
-  } catch (error: any) {
+  } catch (error) {
     return res.status(500).json({ ok: false, error: error.message });
   }
 }
 
-export async function eventsFeedbackRoute(req: any, res: any) {
+async function eventsFeedbackRoute(req, res) {
   try {
     const id = Number.parseInt(req.body?.id, 10);
     if (!Number.isInteger(id) || id <= 0) {
@@ -43,11 +45,15 @@ export async function eventsFeedbackRoute(req: any, res: any) {
       score: req.body?.score,
       feedback: req.body?.feedback || '',
     });
-    if (!row) {
-      return res.status(404).json({ ok: false, error: 'event not found' });
-    }
+    if (!row) return res.status(404).json({ ok: false, error: 'event not found' });
     return res.json({ ok: true, event: row });
-  } catch (error: any) {
+  } catch (error) {
     return res.status(500).json({ ok: false, error: error.message });
   }
 }
+
+module.exports = {
+  eventsSearchRoute,
+  eventsStatsRoute,
+  eventsFeedbackRoute,
+};
