@@ -61,6 +61,8 @@ const runtimeEntryPoints = [
   path.join(root, 'packages/core/lib/team-comm.ts'),
   path.join(root, 'packages/core/lib/hiring-contract.ts'),
   path.join(root, 'packages/core/lib/llm-cache.ts'),
+  path.join(root, 'packages/core/lib/llm-router.ts'),
+  path.join(root, 'packages/core/lib/llm-selector-advisor.ts'),
 ];
 
 await mkdir(outdir, { recursive: true });
