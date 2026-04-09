@@ -71,6 +71,8 @@ const runtimeEntryPoints = [
   path.join(root, 'packages/core/lib/ai-feedback-store.ts'),
   path.join(root, 'packages/core/lib/chunked-llm.ts'),
   path.join(root, 'packages/core/lib/news-credentials.ts'),
+  path.join(root, 'packages/core/lib/feedback-rag.ts'),
+  path.join(root, 'packages/core/lib/rag-safe.ts'),
 ];
 
 await mkdir(outdir, { recursive: true });
