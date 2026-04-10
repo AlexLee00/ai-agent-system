@@ -82,6 +82,92 @@ export async function runBacktest(symbol, from, to, strategy = 'default', option
   return { ...judged, paper: guard.paper, layer };
 }
 
+function computeLayer2Quality(layer2Signals = []) {
+  const measured = layer2Signals.filter((signal) => Number.isFinite(signal?.sentiment?.score));
+  const matched = measured.filter((signal) => {
+    const score = Number(signal?.sentiment?.score);
+    if (signal.action === 'BUY') return score >= 0.55;
+    if (signal.action === 'SELL') return score <= 0.45;
+    return score >= 0.45 && score <= 0.55;
+  }).length;
+  const averageSentiment = measured.length > 0
+    ? measured.reduce((sum, signal) => sum + Number(signal?.sentiment?.score || 0), 0) / measured.length
+    : 0;
+
+  return {
+    model: LOCAL_MODEL_FAST,
+    layer: 2,
+    sampleCount: measured.length,
+    matchRate: measured.length > 0 ? matched / measured.length : 0,
+    accuracy: measured.length > 0 ? matched / measured.length : 0,
+    summary: {
+      averageSentiment,
+      passed: layer2Signals.filter((signal) => signal.passedLayer2).length,
+      byAction: summarizeLayerActions(layer2Signals, 'action'),
+    },
+  };
+}
+
+function computeLayer3Quality(finalSignals = []) {
+  const measured = finalSignals.filter((signal) => signal?.judge);
+  const matched = measured.filter((signal) => {
+    const decision = String(signal?.judge?.action || 'HOLD').toUpperCase();
+    return decision === String(signal?.finalAction || 'HOLD').toUpperCase();
+  }).length;
+  const averageConfidence = measured.length > 0
+    ? measured.reduce((sum, signal) => sum + Number(signal?.judge?.confidence || 0), 0) / measured.length
+    : 0;
+
+  return {
+    model: LOCAL_MODEL_DEEP,
+    layer: 3,
+    sampleCount: measured.length,
+    matchRate: measured.length > 0 ? matched / measured.length : 0,
+    accuracy: measured.length > 0 ? matched / measured.length : 0,
+    summary: {
+      averageConfidence,
+      finalSummary: summarizeLayerActions(finalSignals, 'finalAction'),
+    },
+  };
+}
+
+async function persistBacktestQuality(symbol, qualityItems = []) {
+  for (const item of qualityItems) {
+    await db.run(`
+      INSERT INTO llm_backtest_quality (
+        model, symbol, layer, accuracy, match_rate, sample_count, summary
+      ) VALUES (?, ?, ?, ?, ?, ?, ?::jsonb)
+    `, [
+      item.model,
+      symbol,
+      item.layer,
+      item.accuracy ?? null,
+      item.matchRate ?? null,
+      item.sampleCount ?? 0,
+      JSON.stringify(item.summary || {}),
+    ]).catch(() => {});
+  }
+}
+
+async function measureBacktestQuality(result, { persist = true } = {}) {
+  const quality = [];
+  if (Array.isArray(result.layer2Signals) && result.layer2Signals.length > 0) {
+    quality.push(computeLayer2Quality(result.layer2Signals));
+  }
+  if (Array.isArray(result.finalSignals) && result.finalSignals.length > 0) {
+    quality.push(computeLayer3Quality(result.finalSignals));
+  }
+  if (persist && quality.length > 0) {
+    try {
+      await db.initSchema();
+      await persistBacktestQuality(result.symbol, quality);
+    } catch (error) {
+      console.warn(`  ⚠️ [크로노스] 품질 저장 생략: ${error?.message || error}`);
+    }
+  }
+  return quality;
+}
+
 /**
  * 저장된 신호 기반 성과 분석 (실제 DB 데이터 활용)
  * @param {number} days  최근 N일
@@ -420,16 +506,20 @@ async function runLayer3(layer2Result, options = {}) {
 // CLI 실행
 if (isDirectExecution(import.meta.url)) {
   await runCliMain({
-    before: () => db.initSchema(),
     run: async () => {
       const symbolArg = parseArg('symbol', 'BTC/USDT');
       const fromArg = parseArg('from', '2024-01-01');
       const toArg = parseArg('to', kst.today());
       const layerArg = parseArg('layer', '1');
       const maxSignalsArg = parseArg('max-signals', null);
-      return runBacktest(symbolArg, fromArg, toArg, layerArg, {
+      const measureQuality = parseArg('measure-quality', null) != null;
+      const result = await runBacktest(symbolArg, fromArg, toArg, layerArg, {
         maxSignals: maxSignalsArg == null ? null : Number(maxSignalsArg),
       });
+      if (measureQuality) {
+        result.quality = await measureBacktestQuality(result, { persist: true });
+      }
+      return result;
     },
     onSuccess: async (result) => {
       console.log('\n결과:', JSON.stringify(result, null, 2));

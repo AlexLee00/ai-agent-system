@@ -2,6 +2,14 @@
 import { fileURLToPath } from 'url';
 
 function getErrorMessage(error) {
+  if (error instanceof AggregateError && Array.isArray(error.errors) && error.errors.length > 0) {
+    return error.errors
+      .map((item, index) => {
+        const message = item?.message || String(item);
+        return `[${index + 1}] ${message}`;
+      })
+      .join(' | ');
+  }
   if (error?.message) return error.message;
   return String(error);
 }

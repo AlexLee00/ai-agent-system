@@ -164,6 +164,23 @@ export async function initSchema() {
     )
   `);
   await run(`
+    CREATE TABLE IF NOT EXISTS llm_backtest_quality (
+      id              TEXT DEFAULT gen_random_uuid()::text PRIMARY KEY,
+      model           TEXT NOT NULL,
+      symbol          TEXT NOT NULL,
+      layer           INTEGER NOT NULL,
+      accuracy        DOUBLE PRECISION,
+      match_rate      DOUBLE PRECISION,
+      sample_count    INTEGER DEFAULT 0,
+      summary         JSONB,
+      created_at      TIMESTAMP DEFAULT now()
+    )
+  `);
+  await run(`
+    CREATE INDEX IF NOT EXISTS idx_llm_backtest_quality_model_symbol
+    ON llm_backtest_quality(model, symbol, created_at DESC)
+  `);
+  await run(`
     CREATE INDEX IF NOT EXISTS idx_runtime_config_suggestion_log_captured_at
     ON runtime_config_suggestion_log(captured_at DESC)
   `);
