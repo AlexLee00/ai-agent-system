@@ -26,6 +26,7 @@ const PG_CONFIG = {
   database: process.env.PG_DATABASE || 'jay',
   max: 10,
   idleTimeoutMillis: 60000,
+  allowExitOnIdle: true,
   connectionTimeoutMillis: 5000,
 };
 

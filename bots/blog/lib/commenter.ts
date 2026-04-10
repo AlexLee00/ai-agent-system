@@ -105,6 +105,7 @@ function getNeighborCommenterConfig() {
     recentWindowDays: Number(runtime.recentWindowDays || 14),
     minCommentLen: Number(runtime.minCommentLen || 45),
     maxCommentLen: Number(runtime.maxCommentLen || 220),
+    processTimeoutMs: Number(runtime.processTimeoutMs || 180000),
   };
 }
 
@@ -172,6 +173,12 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function createTimeoutError(code, message) {
+  const error = new Error(message || code || 'timeout');
+  error.code = code || 'timeout';
+  return error;
+}
+
 async function humanDelay(minSec, maxSec, testMode = false) {
   const delayMs = calcDelayMs(minSec, maxSec, testMode);
   if (delayMs > 0) {
@@ -235,17 +242,39 @@ async function ensureSchema() {
 }
 
 async function recordCommentAction(actionType, payload = {}) {
+  const targetPostUrl = String(payload.targetPostUrl || '').trim();
+  const shouldDedupeSuccessByPost =
+    payload.success !== false
+    && targetPostUrl
+    && ['neighbor_comment', 'neighbor_sympathy', 'neighbor_comment_sympathy', 'comment_post', 'comment_post_sympathy'].includes(String(actionType || ''));
+
+  if (shouldDedupeSuccessByPost) {
+    const existing = await pgPool.get('blog', `
+      SELECT id
+      FROM ${ACTION_TABLE}
+      WHERE action_type = $1
+        AND success = true
+        AND target_post_url = $2
+        AND timezone('Asia/Seoul', executed_at)::date = timezone('Asia/Seoul', now())::date
+      LIMIT 1
+    `, [actionType, targetPostUrl]);
+    if (existing?.id) {
+      return { ok: true, skippedDuplicate: true, id: existing.id };
+    }
+  }
+
   await pgPool.run('blog', `
     INSERT INTO ${ACTION_TABLE} (action_type, target_blog, target_post_url, comment_text, success, meta)
     VALUES ($1, $2, $3, $4, $5, $6::jsonb)
   `, [
     actionType,
     payload.targetBlog || null,
-    payload.targetPostUrl || null,
+    targetPostUrl || null,
     payload.commentText || null,
     payload.success !== false,
     JSON.stringify(payload.meta || {}),
   ]);
+  return { ok: true, skippedDuplicate: false };
 }
 
 async function getTodayReplyCount() {
@@ -588,20 +617,47 @@ async function disconnectBrowser(handle) {
   await handle.browser.close();
 }
 
-async function withBrowserPage(testMode, fn) {
+async function withBrowserPage(testMode, fn, { timeoutMs = 0, timeoutCode = 'browser_page_timeout' } = {}) {
   const handle = await connectBrowser(testMode);
   const page = await handle.browser.newPage();
   page.setDefaultNavigationTimeout(testMode ? 15000 : NAVER_NAVIGATION_TIMEOUT_MS);
   page.setDefaultTimeout(testMode ? 10000 : 30000);
-  try {
-    return await fn(page, handle);
-  } finally {
+  let cleanedUp = false;
+  let timer = null;
+
+  async function cleanup() {
+    if (cleanedUp) return;
+    cleanedUp = true;
     try {
       await page.close();
     } catch {
       // ignore
     }
-    await disconnectBrowser(handle);
+    try {
+      await disconnectBrowser(handle);
+    } catch {
+      // ignore
+    }
+  }
+  try {
+    if (timeoutMs > 0) {
+      return await new Promise((resolve, reject) => {
+        timer = setTimeout(async () => {
+          traceCommenter('browserPage:timeout', { timeoutCode, timeoutMs });
+          await cleanup();
+          reject(createTimeoutError(timeoutCode, `${timeoutCode}:${timeoutMs}`));
+        }, timeoutMs);
+
+        Promise.resolve()
+          .then(() => fn(page, handle))
+          .then(resolve)
+          .catch(reject);
+      });
+    }
+    return await fn(page, handle);
+  } finally {
+    if (timer) clearTimeout(timer);
+    await cleanup();
   }
 }
 
@@ -2117,7 +2173,7 @@ async function postReply(comment, replyText, { testMode = false } = {}) {
   });
 }
 
-async function postComment(postUrl, commentText, { testMode = false, withSympathy = false } = {}) {
+async function postComment(postUrl, commentText, { testMode = false, withSympathy = false, operationTimeoutMs = 0 } = {}) {
   const config = getCommenterConfig();
   const logNo = extractLogNo(postUrl);
   const normalizedComment = normalizeText(commentText);
@@ -2126,6 +2182,11 @@ async function postComment(postUrl, commentText, { testMode = false, withSympath
   }
 
   return withBrowserPage(testMode, async (page) => {
+    traceCommenter('postComment:start', {
+      postUrl,
+      withSympathy,
+      textLength: normalizedComment.length,
+    });
     await goto(page, postUrl);
     const contentFrame = resolvePostContentFrame(page);
     await contentFrame.waitForSelector('body', { timeout: testMode ? 5000 : 15000 }).catch(() => {});
@@ -2153,6 +2214,7 @@ async function postComment(postUrl, commentText, { testMode = false, withSympath
       const snapshotPrefix = await saveCommentDebugSnapshot(contentFrame, { post_url: postUrl }, 'comment-submit-not-confirmed');
       throw new Error(`comment_submit_not_confirmed:${snapshotPrefix}`);
     }
+    traceCommenter('postComment:comment-posted', { postUrl, withSympathy });
 
     let sympathy = null;
     if (withSympathy) {
@@ -2172,8 +2234,24 @@ async function postComment(postUrl, commentText, { testMode = false, withSympath
       success: true,
       meta: { mode: 'direct_comment_test', withSympathy, sympathy },
     }).catch(() => {});
+    if (withSympathy && sympathy?.ok) {
+      await recordCommentAction('comment_post_sympathy', {
+        targetBlog: await resolveBlogId(),
+        targetPostUrl: postUrl,
+        success: true,
+        meta: { mode: 'direct_comment_test', sympathy },
+      }).catch(() => {});
+    }
 
+    traceCommenter('postComment:done', {
+      postUrl,
+      withSympathy,
+      sympathyOk: sympathy?.ok === true,
+    });
     return { ok: true, postUrl, commentText: normalizedComment, sympathy };
+  }, {
+    timeoutMs: Number(operationTimeoutMs || 0),
+    timeoutCode: 'comment_post_timeout',
   });
 }
 
@@ -2291,7 +2369,18 @@ async function runCommentReply({ testMode = false } = {}) {
 }
 
 async function processNeighborComment(candidate, { testMode = false } = {}) {
+  const config = getNeighborCommenterConfig();
+  traceCommenter('neighborComment:start', {
+    candidateId: candidate.id,
+    postUrl: candidate.post_url,
+    sourceType: candidate.source_type || null,
+    timeoutMs: config.processTimeoutMs,
+  });
   const postInfo = await getPostSummary(candidate.post_url, { testMode });
+  traceCommenter('neighborComment:summary-ready', {
+    candidateId: candidate.id,
+    summaryLength: String(postInfo.summary || '').length,
+  });
   const generated = await generateNeighborComment(postInfo.title || candidate.post_title, postInfo.summary, candidate);
   const validation = validateNeighborCommentWithCandidate(generated.comment, postInfo.summary, candidate);
 
@@ -2308,7 +2397,15 @@ async function processNeighborComment(candidate, { testMode = false } = {}) {
     return { ok: false, skipped: true, reason: validation.reason };
   }
 
-  const posted = await postComment(candidate.post_url, generated.comment, { testMode, withSympathy: true });
+  traceCommenter('neighborComment:posting', {
+    candidateId: candidate.id,
+    commentLength: String(generated.comment || '').length,
+  });
+  const posted = await postComment(candidate.post_url, generated.comment, {
+    testMode,
+    withSympathy: true,
+    operationTimeoutMs: testMode ? Math.min(config.processTimeoutMs, 45000) : config.processTimeoutMs,
+  });
 
   await updateNeighborCommentStatus(candidate.id, 'posted', {
     commentText: generated.comment,
@@ -2324,6 +2421,23 @@ async function processNeighborComment(candidate, { testMode = false } = {}) {
       sourceType: candidate.source_type || null,
       targetBlogName: candidate.target_blog_name || null,
     },
+  });
+  if (posted?.sympathy?.ok) {
+    await recordCommentAction('neighbor_comment_sympathy', {
+      targetBlog: candidate.target_blog_id,
+      targetPostUrl: candidate.post_url,
+      success: true,
+      meta: {
+        neighborCommentId: candidate.id,
+        sourceType: candidate.source_type || null,
+        targetBlogName: candidate.target_blog_name || null,
+        sympathy: posted.sympathy,
+      },
+    });
+  }
+  traceCommenter('neighborComment:posted', {
+    candidateId: candidate.id,
+    sympathyOk: posted?.sympathy?.ok === true,
   });
   return { ok: true, comment: generated.comment, sympathy: posted?.sympathy || null };
 }
@@ -2420,6 +2534,7 @@ async function runNeighborCommenter({ testMode = false } = {}) {
   await ensureSchema();
 
   const todayCount = await getTodayNeighborCommentCount();
+  const todaySympathyCount = await getTodayActionCount('neighbor_comment_sympathy');
   if (todayCount >= config.maxDaily) {
     return { skipped: true, reason: 'daily_limit', count: todayCount };
   }
@@ -2428,16 +2543,32 @@ async function runNeighborCommenter({ testMode = false } = {}) {
   const pending = await getPendingNeighborComments(Math.min(config.maxProcessPerCycle, testMode ? 1 : config.maxProcessPerCycle));
   const remaining = Math.max(0, config.maxDaily - todayCount);
   const targets = pending.slice(0, testMode ? 1 : remaining);
+  traceCommenter('neighborComment:cycle', {
+    detected: newCandidates.length,
+    pending: pending.length,
+    targets: targets.length,
+    processTimeoutMs: config.processTimeoutMs,
+    testMode,
+  });
 
   let posted = 0;
+  let sympathized = 0;
   let failed = 0;
   let skipped = 0;
 
   for (const candidate of targets) {
     try {
+      const startedAt = Date.now();
       const result = await processNeighborComment(candidate, { testMode });
       if (result.ok) posted += 1;
+      if (result?.sympathy?.ok) sympathized += 1;
       else if (result.skipped) skipped += 1;
+      traceCommenter('neighborComment:done', {
+        candidateId: candidate.id,
+        ok: result.ok === true,
+        skipped: result.skipped === true,
+        elapsedMs: Date.now() - startedAt,
+      });
     } catch (error) {
       failed += 1;
       await updateNeighborCommentStatus(candidate.id, 'failed', {
@@ -2451,6 +2582,10 @@ async function runNeighborCommenter({ testMode = false } = {}) {
         success: false,
         meta: { neighborCommentId: candidate.id, error: error.message },
       }).catch(() => {});
+      traceCommenter('neighborComment:failed', {
+        candidateId: candidate.id,
+        error: error.message,
+      });
     }
   }
 
@@ -2459,7 +2594,7 @@ async function runNeighborCommenter({ testMode = false } = {}) {
       team: 'blog',
       fromBot: 'blog-neighbor-commenter',
       alertLevel: failed > 0 ? 3 : 2,
-      message: `이웃 댓글 ${posted}건 완료, 실패 ${failed}건, 스킵 ${skipped}건 (오늘 총 ${todayCount + posted}/${config.maxDaily})`,
+      message: `이웃 댓글 ${posted}건 완료, 댓글 공감 ${sympathized}건 완료, 실패 ${failed}건, 스킵 ${skipped}건 (오늘 댓글 총 ${todayCount + posted}/${config.maxDaily}, 댓글공감 총 ${todaySympathyCount + sympathized})`,
     }).catch(() => {});
   }
 
@@ -2468,9 +2603,11 @@ async function runNeighborCommenter({ testMode = false } = {}) {
     detected: newCandidates.length,
     pending: pending.length,
     posted,
+    sympathized,
     failed,
     skipped,
     total: todayCount + posted,
+    sympathyTotal: todaySympathyCount + sympathized,
     testMode,
   };
 }

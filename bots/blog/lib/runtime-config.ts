@@ -62,6 +62,7 @@ const DEFAULTS = {
     recentWindowDays: 14,
     minCommentLen: 45,
     maxCommentLen: 220,
+    processTimeoutMs: 180000,
   },
   llmSelectorOverrides: {
     'blog.pos.writer': {
