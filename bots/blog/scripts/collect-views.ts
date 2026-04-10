@@ -1,3 +1,4 @@
-import './collect-views.js';
+// @ts-nocheck
+'use strict';
 
-export {};
+module.exports = require('./collect-views.legacy.js');

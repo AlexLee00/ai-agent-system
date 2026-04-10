@@ -1,9 +1,13 @@
-const kst   = require('../../../packages/core/lib/kst');
-const delay = ms => new Promise(r => setTimeout(r, ms));
+const path = require('path');
 
-function log(msg) {
-  const ts = kst.toKST(new Date());
-  console.log(`[${ts}] ${msg}`);
+const runtimePath = path.join(
+  __dirname,
+  '../../../dist/ts-runtime/bots/reservation/lib/utils.js'
+);
+
+try {
+  module.exports = require(runtimePath);
+} catch (error) {
+  if (error && error.code !== 'MODULE_NOT_FOUND') throw error;
+  module.exports = require('./utils.legacy.js');
 }
-
-module.exports = { delay, log };

@@ -1,20 +1,30 @@
-/**
- * shared/llm.js — 하위 호환 래퍼 (deprecated → llm-client.js 사용)
- *
- * Phase 3-A v2.1부터 llm-client.js가 메인 LLM 클라이언트.
- * 이 파일은 "type":"module" 전환 후 ESM 오류 방지용으로 유지.
- */
+import path from 'path';
+import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
 
-export { callLLM, parseJSON, PAPER_MODE, GROQ_SCOUT_MODEL, HAIKU_MODEL } from './llm-client.js';
+const require = createRequire(import.meta.url);
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-// callHaiku(system, user, caller, maxTokens) → callLLM(caller, system, user, maxTokens) 어댑터
-export async function callHaiku(systemPrompt, userPrompt, caller = 'luna', maxTokens = 512) {
-  const { callLLM: _callLLM } = await import('./llm-client.js');
-  return _callLLM(caller, systemPrompt, userPrompt, maxTokens);
-}
+const runtimePath = path.join(
+  __dirname,
+  '../../../dist/ts-runtime/bots/investment/shared/llm.js'
+);
 
-// callFreeLLM(system, user, model, caller, provider, maxTokens) → callLLM 어댑터
-export async function callFreeLLM(systemPrompt, userPrompt, model, caller = 'hermes', provider = 'groq', maxTokens = 256) {
-  const { callLLM: _callLLM } = await import('./llm-client.js');
-  return _callLLM(caller, systemPrompt, userPrompt, maxTokens);
-}
+const loaded = await (async () => {
+  try {
+    return require(runtimePath);
+  } catch (error) {
+    if (error && error.code !== 'MODULE_NOT_FOUND') throw error;
+    return import('./llm.legacy.js');
+  }
+})();
+
+export const callLLM = loaded.callLLM;
+export const parseJSON = loaded.parseJSON;
+export const PAPER_MODE = loaded.PAPER_MODE;
+export const GROQ_SCOUT_MODEL = loaded.GROQ_SCOUT_MODEL;
+export const HAIKU_MODEL = loaded.HAIKU_MODEL;
+export const callHaiku = loaded.callHaiku;
+export const callFreeLLM = loaded.callFreeLLM;
+export default loaded;

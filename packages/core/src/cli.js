@@ -1,21 +1,15 @@
 'use strict';
 
-/**
- * packages/core/src/cli.js — JSON stdout CLI 헬퍼
- * 모든 봇 CLI 스크립트 공통
- */
+const path = require('path');
 
-function outputResult(result) {
-  process.stdout.write(JSON.stringify(result) + '\n');
+const runtimePath = path.join(
+  __dirname,
+  '../../../dist/ts-runtime/packages/core/src/cli.js'
+);
+
+try {
+  module.exports = require(runtimePath);
+} catch (error) {
+  if (error && error.code !== 'MODULE_NOT_FOUND') throw error;
+  module.exports = require('./cli.legacy.js');
 }
-
-function fail(message, extra = {}) {
-  outputResult({ success: false, message, ...extra });
-  process.exit(1);
-}
-
-function successResult(message, extra = {}) {
-  outputResult({ success: true, message, ...extra });
-}
-
-module.exports = { outputResult, fail, successResult };

@@ -71,7 +71,53 @@ const TITLE_FORBIDDEN_PHRASES = [
   '성장의 법칙',
   '운영 전략',
   '시장 인사이트',
+  '더 빨리 신뢰를 잃을까',
+  '설명 부족',
+  '고장이',
+  '왜 홈페이지와 앱은',
 ];
+const TITLE_FORBIDDEN_PATTERNS = [
+  /^왜 .*신뢰를 잃을까$/i,
+  /^왜 .*무너질까$/i,
+  /^성공적인 .*전략$/i,
+];
+const CATEGORY_TOPIC_EXPANSION_MAP = {
+  '홈페이지와App': [
+    '온보딩 첫 화면과 가입 전환율',
+    '검색/필터/탐색 구조와 정보구조(IA)',
+    '모바일 속도와 체감 성능 최적화',
+    '폼 입력 완료율과 이탈 지점 개선',
+    '장애 공지보다 평시 상태 설명 UX 설계',
+    '결제/구매 흐름의 마찰 제거',
+    '접근성, 가독성, 명도 대비 같은 기본 UX 품질',
+    '디자인 시스템과 컴포넌트 일관성',
+    '랜딩페이지 메시지와 고객 기대치 정렬',
+    '신뢰 배지, 후기, 가격 설명 같은 설득 요소 설계',
+    '웹-앱 간 역할 분담과 채널 전략',
+    '운영자 관점의 공지/배너/상태관리 도구 설계',
+  ],
+  '개발기획과컨설팅': [
+    '요구사항 정의와 전제 검증',
+    '일정 산정과 범위 조정',
+    '의사결정 문서화와 커뮤니케이션',
+    '운영 리스크 사전 점검',
+    '고객 기대치 관리',
+  ],
+  '최신IT트렌드': [
+    '새 기술의 유지보수 비용',
+    '도입보다 운영 책임',
+    '성능보다 안정성',
+    '도구 선택 기준',
+    '현업 적용 조건',
+  ],
+  '도서리뷰': [
+    '책의 핵심 주장 1개를 실무 판단 기준으로 번역',
+    '저자의 관점을 실제 업무 장면에 대입',
+    '읽고 바로 적용할 체크리스트',
+    '비슷한 책과의 관점 차이',
+    '초보자/실무자 각각에게 유용한 포인트',
+  ],
+};
 
 // ─── GEO 최적화 규칙 ─────────────────────────────────────────────────
 
@@ -135,6 +181,13 @@ function _loadRecentGeneralThemes(category, days = RECENT_GENERAL_THEME_WINDOW_D
         blockedPhrases.add(phrase);
       }
     }
+
+    const normalizedTitle = post.title.replace(/^\[[^\]]+\]\s*/, '').trim();
+    for (const pattern of TITLE_FORBIDDEN_PATTERNS) {
+      if (pattern.test(normalizedTitle)) {
+        blockedPhrases.add(normalizedTitle);
+      }
+    }
   }
 
   return {
@@ -148,6 +201,13 @@ function _buildRecentThemeDedupeBlock(category) {
   const themeContext = _loadRecentGeneralThemes(category);
   if (!themeContext.recentPosts.length) return '';
 
+  const blockedFrameLines = themeContext.recentPosts
+    .map((post) => post.title.replace(/^\[[^\]]+\]\s*/, '').trim())
+    .filter(Boolean)
+    .slice(0, 6)
+    .map((title, index) => `${index + 1}. ${title}`)
+    .join('\n');
+
   const recentTitleLines = themeContext.recentPosts
     .map((post, index) => `${index + 1}. [${post.dateString}][${post.category}] ${post.title}`)
     .join('\n');
@@ -159,6 +219,14 @@ function _buildRecentThemeDedupeBlock(category) {
   const blockedPhraseLines = themeContext.blockedPhrases.length
     ? themeContext.blockedPhrases.map((phrase, index) => `${index + 1}. ${phrase}`).join('\n')
     : '1. 최근 제목 핵심 표현 반복 금지';
+  const expansionTopics = CATEGORY_TOPIC_EXPANSION_MAP[category] || [
+    `${category} 입문자가 가장 먼저 헷갈리는 판단 기준`,
+    `${category}에서 자주 놓치는 운영 리스크`,
+    `${category}를 실무에 적용할 때 생기는 마찰`,
+    `${category} 관점에서 우선순위를 다시 세우는 방법`,
+    `${category} 독자가 바로 써먹을 체크리스트`,
+  ];
+  const expansionTopicLines = expansionTopics.map((topic, index) => `${index + 1}. ${topic}`).join('\n');
 
   return `
 [최근 발행 일반 글 — 주제 중복 금지]
@@ -174,13 +242,91 @@ ${blockedThemeLines}
 이번 글 제목/소제목에서 피해야 할 표현:
 ${blockedPhraseLines}
 
+이번 글에서 피해야 할 최근 제목 프레임:
+${blockedFrameLines}
+
+이번 카테고리에서 우선 검토할 대체 주제 축:
+${expansionTopicLines}
+
 [중복 방지 규칙 — 반드시 준수]
 1. 위 최근 글과 다른 질문에서 출발하라.
 2. 같은 시스템 경험을 쓰더라도 전혀 다른 문제 정의, 다른 독자 효용, 다른 실전 상황으로 전개하라.
 3. 제목 첫 문장에 위 금지 표현을 재사용하지 말 것.
 4. "AI 시대 / 멀티에이전트 / 30개 AI 에이전트 / 성장 전략 / 운영 전략 / 시장 인사이트" 프레임을 기본 주제로 삼지 말 것.
 5. 이번 글은 카테고리(${category}) 자체의 독자 고민을 먼저 세우고, AI 운영 경험은 필요할 때 보조 사례로만 제한적으로 사용하라.
+6. 최근 제목과 같은 어미/질문 프레임(예: "왜 ...일까", "왜 ...무너질까", "왜 ...신뢰를 잃을까", "성공적인 ...전략")을 반복하지 말 것.
+7. 위 대체 주제 축 중 최근 제목과 가장 거리가 먼 축을 우선 선택하라.
 `.trim();
+}
+
+function _normalizeComparableTitle(title = '') {
+  return String(title || '')
+    .replace(/^\[[^\]]+\]\s*/, '')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function _titleBigrams(text) {
+  const normalized = _normalizeComparableTitle(text).replace(/\s+/g, '');
+  const grams = new Set();
+  for (let i = 0; i < normalized.length - 1; i += 1) {
+    grams.add(normalized.slice(i, i + 2));
+  }
+  return grams;
+}
+
+function _jaccardSimilarity(a, b) {
+  if (!a.size || !b.size) return 0;
+  let intersection = 0;
+  for (const item of a) {
+    if (b.has(item)) intersection += 1;
+  }
+  const union = new Set([...a, ...b]).size;
+  return union ? intersection / union : 0;
+}
+
+function _findTooSimilarRecentTitle(category, title) {
+  const themeContext = _loadRecentGeneralThemes(category);
+  const currentNormalized = _normalizeComparableTitle(title);
+  const currentBigrams = _titleBigrams(title);
+  if (!currentNormalized || !currentBigrams.size) return null;
+
+  for (const post of themeContext.recentPosts) {
+    const recentNormalized = _normalizeComparableTitle(post.title);
+    if (!recentNormalized) continue;
+
+    const exactFrameMatch =
+      currentNormalized === recentNormalized ||
+      currentNormalized.startsWith(recentNormalized.slice(0, 18)) ||
+      recentNormalized.startsWith(currentNormalized.slice(0, 18));
+
+    const sameQuestionFamily =
+      (/^왜 /.test(currentNormalized) && /^왜 /.test(recentNormalized)) ||
+      (/신뢰/.test(currentNormalized) && /신뢰/.test(recentNormalized)) ||
+      (/설명/.test(currentNormalized) && /설명/.test(recentNormalized)) ||
+      (/홈페이지와 앱/.test(currentNormalized) && /홈페이지와 앱/.test(recentNormalized));
+
+    const similarity = _jaccardSimilarity(currentBigrams, _titleBigrams(post.title));
+    if (exactFrameMatch || (sameQuestionFamily && similarity >= 0.34) || similarity >= 0.52) {
+      return {
+        title: post.title,
+        dateString: post.dateString,
+        similarity,
+      };
+    }
+  }
+
+  return null;
+}
+
+function _assertDistinctGeneralTitle(category, title) {
+  const matched = _findTooSimilarRecentTitle(category, title);
+  if (!matched) return;
+  throw new Error(
+    `최근 일반 글 제목과 너무 유사함: ${matched.dateString} "${matched.title}" (similarity=${matched.similarity.toFixed(2)})`
+  );
 }
 
 function _defaultGeneralSnippet(title, category) {
@@ -669,6 +815,9 @@ ${topicHint
 제목도 [주제 힌트]와 같은 방향의 핵심 키워드를 유지하되 문장은 새롭게 구성하라.`
   : `카테고리 "${category}"에 맞는 주제를 자율 선정하여 작성하라.`}
 단, 최근 발행 일반 글과 같은 상위 서사를 반복하면 안 된다.
+제목은 최근 발행 제목과 질문 구조, 어미, 핵심 표현이 겹치면 안 된다.
+특히 "왜 ...일까/무너질까/신뢰를 잃을까", "성공적인 ...전략" 같은 제목 템플릿을 최근 글과 비슷하게 반복하지 말라.
+이번 글은 최근 글과 가장 멀리 떨어진 새 문제 정의를 먼저 고르고, 그에 맞는 제목을 작성하라.
 글 첫 번째 줄에 제목을 [${category}] 형식으로 시작하라.
 
 ★★★ 글자수 요구사항 (반드시 준수) ★★★
@@ -793,6 +942,7 @@ ${_buildVariationBlock(sectionVariation)}
 
   const firstLine = content.split('\n').find(l => l.trim().length > 0) || '';
   const title     = firstLine.slice(0, 80).trim();
+  _assertDistinctGeneralTitle(category, title);
 
   const result = { content, charCount: content.length, model: usedModel, title, fallbackUsed };
 
@@ -914,6 +1064,7 @@ ${content}
   repaired = repaired.replace(/_THE_END_/g, '').trim();
   const firstLine = repaired.split('\n').find(line => line.trim().length > 0) || '';
   const title = firstLine.slice(0, 80).trim();
+  _assertDistinctGeneralTitle(category, title);
 
   return {
     content: repaired,
@@ -1073,6 +1224,7 @@ ${linkingBlock}
   const content   = result.content;
   const firstLine = content.split('\n').find(l => l.trim().length > 0) || '';
   const title     = firstLine.slice(0, 80).trim();
+  _assertDistinctGeneralTitle(category, title);
 
   console.log(`[젬스청크] 전체 ${result.charCount}자 (${chunks.length}청크)`);
 

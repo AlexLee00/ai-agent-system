@@ -1,3 +1,4 @@
-import './collect-performance.js';
+// @ts-nocheck
+'use strict';
 
-export {};
+module.exports = require('./collect-performance.legacy.js');

@@ -1,30 +1,15 @@
 'use strict';
 
-const selector = require('../llm-model-selector');
-const advisor = require('../llm-selector-advisor');
-const snapshot = require('./snapshot');
+const path = require('path');
 
-function getSpeedContext(speedSnapshot = snapshot.loadLatestSpeedSnapshot()) {
-  return {
-    speedSnapshot,
-    speedLookup: advisor.buildSpeedLookup(speedSnapshot),
-  };
+const runtimePath = path.join(
+  __dirname,
+  '../../../../dist/ts-runtime/packages/core/lib/llm-control/service.js'
+);
+
+try {
+  module.exports = require(runtimePath);
+} catch (error) {
+  if (error && error.code !== 'MODULE_NOT_FOUND') throw error;
+  module.exports = require('./service.legacy.js');
 }
-
-function describeSelectorWithAdvice(key, options = {}, speedSnapshot = snapshot.loadLatestSpeedSnapshot()) {
-  const description = selector.describeLLMSelector(key, options);
-  const { speedLookup } = getSpeedContext(speedSnapshot);
-  return {
-    description,
-    advice: advisor.buildSelectorAdvice(description, speedLookup),
-    speedSnapshot,
-  };
-}
-
-module.exports = {
-  ...selector,
-  ...advisor,
-  ...snapshot,
-  getSpeedContext,
-  describeSelectorWithAdvice,
-};

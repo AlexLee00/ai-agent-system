@@ -1,47 +1,19 @@
-import * as db from '../shared/db.js';
-import * as journalDb from '../shared/trade-journal-db.js';
-import { loadLatestNodePayload } from './helpers.js';
+import path from 'path';
+import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
 
-const NODE_ID = 'L34';
+const require = createRequire(import.meta.url);
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const runtimePath = path.join(__dirname, '../../../dist/ts-runtime/bots/investment/nodes/l34-journal.js');
 
-async function run({ sessionId, market, symbol }) {
-  if (!sessionId) throw new Error('sessionId 필요');
-  if (!symbol) throw new Error('symbol 필요');
-
-  const executeHit = await loadLatestNodePayload(sessionId, 'L31', symbol);
-  const saveHit = await loadLatestNodePayload(sessionId, 'L30', symbol);
-  const execution = executeHit?.payload || null;
-  const saved = saveHit?.payload || null;
-  const signalId = execution?.signalId || saved?.signalId || null;
-
-  if (!signalId) {
-    return { symbol, market, skipped: true, reason: 'signalId 없음' };
+const loaded = await (async () => {
+  try {
+    return require(runtimePath);
+  } catch (error) {
+    if (error && error.code !== 'MODULE_NOT_FOUND') throw error;
+    return import('./l34-journal.legacy.js');
   }
+})();
 
-  const signal = await db.getSignalById(signalId).catch(() => null);
-  const trade = await db.getLatestTradeBySignalId(signalId).catch(() => null);
-  const journalEntry = await journalDb.getLatestJournalEntryBySignalId(signalId).catch(() => null);
-  const review = journalEntry?.trade_id
-    ? await journalDb.getReviewByTradeId(journalEntry.trade_id).catch(() => null)
-    : null;
-
-  return {
-    symbol,
-    market,
-    signalId,
-    signalStatus: signal?.status ?? null,
-    tradeId: journalEntry?.trade_id ?? null,
-    tradeSide: trade?.side ?? null,
-    journalStatus: journalEntry?.status ?? null,
-    hasJournalEntry: Boolean(journalEntry),
-    hasReview: Boolean(review),
-    review,
-  };
-}
-
-export default {
-  id: NODE_ID,
-  type: 'execute',
-  label: 'journal',
-  run,
-};
+export default loaded.default ?? loaded;

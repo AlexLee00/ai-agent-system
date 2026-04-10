@@ -1,36 +1,17 @@
-#!/usr/bin/env node
 'use strict';
 
-const { parseArgs } = require('../../reservation/lib/args');
-const mcp = require('../../../packages/core/lib/mcp');
+const path = require('path');
 
-async function main() {
-  const args = parseArgs(process.argv);
-  const team = String(args.team || '').toLowerCase();
-  const task = String(args.task || 'general');
+const runtimePath = path.join(
+  __dirname,
+  '../../../dist/ts-runtime/bots/orchestrator/scripts/team-mcp-cli.js',
+);
 
-  if (!team) {
-    console.log(JSON.stringify({
-      success: false,
-      message: 'usage: --team darwin|justin|sigma --task research|citation|quality',
-    }));
-    process.exitCode = 1;
-    return;
+try {
+  module.exports = require(runtimePath);
+} catch (error) {
+  if (error && error.code !== 'MODULE_NOT_FOUND') {
+    throw error;
   }
-
-  const recommended = mcp.recommendMcps(team, task);
-  const plan = mcp.buildMcpPlan(team, task);
-
-  console.log(JSON.stringify({
-    success: true,
-    team,
-    task,
-    recommended,
-    plan,
-  }, null, 2));
+  module.exports = require('./team-mcp-cli.legacy.js');
 }
-
-main().catch((error) => {
-  console.error(error?.stack || error?.message || String(error));
-  process.exit(1);
-});

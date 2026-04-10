@@ -1,26 +1,23 @@
-import { screenCryptoSymbols, screenDomesticSymbols, screenOverseasSymbols } from '../team/argos.js';
+import path from 'path';
+import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
 
-const NODE_ID = 'L01';
+const require = createRequire(import.meta.url);
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-async function run({ market }) {
-  if (market === 'binance') {
-    const symbols = await screenCryptoSymbols();
-    return { market, symbols, source: 'argos' };
-  }
-  if (market === 'kis') {
-    const symbols = await screenDomesticSymbols();
-    return { market, symbols, source: 'argos' };
-  }
-  if (market === 'kis_overseas') {
-    const symbols = await screenOverseasSymbols();
-    return { market, symbols, source: 'argos' };
-  }
-  throw new Error(`지원하지 않는 market: ${market}`);
-}
+const runtimePath = path.join(
+  __dirname,
+  '../../../dist/ts-runtime/bots/investment/nodes/l01-pre-screen.js'
+);
 
-export default {
-  id: NODE_ID,
-  type: 'collect',
-  label: 'pre-screen',
-  run,
-};
+const loaded = await (async () => {
+  try {
+    return require(runtimePath);
+  } catch (error) {
+    if (error && error.code !== 'MODULE_NOT_FOUND') throw error;
+    return import('./l01-pre-screen.legacy.js');
+  }
+})();
+
+export default loaded.default ?? loaded;

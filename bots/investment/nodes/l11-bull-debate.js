@@ -1,48 +1,19 @@
-import { buildAnalysisSummary } from '../team/luna.js';
-import { runBullResearcher } from '../team/zeus.js';
-import { loadAnalysesForSession, loadLatestNodePayload } from './helpers.js';
+import path from 'path';
+import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
 
-const NODE_ID = 'L11';
+const require = createRequire(import.meta.url);
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const runtimePath = path.join(__dirname, '../../../dist/ts-runtime/bots/investment/nodes/l11-bull-debate.js');
 
-function currentPriceFromAnalyses(analyses = []) {
-  return analyses.find(item => item?.metadata?.currentPrice != null)?.metadata?.currentPrice ?? null;
-}
-
-async function run({ sessionId, market, symbol }) {
-  if (!sessionId) throw new Error('sessionId 필요');
-  if (!symbol) throw new Error('symbol 필요');
-
-  const { analyses, source } = await loadAnalysesForSession(sessionId, symbol, market);
-  if (!analyses.length) {
-    return {
-      symbol,
-      market,
-      source,
-      skipped: true,
-      reason: '분석 결과 없음',
-    };
+const loaded = await (async () => {
+  try {
+    return require(runtimePath);
+  } catch (error) {
+    if (error && error.code !== 'MODULE_NOT_FOUND') throw error;
+    return import('./l11-bull-debate.legacy.js');
   }
+})();
 
-  const bearHit = await loadLatestNodePayload(sessionId, 'L12', symbol);
-  const bearReasoning = bearHit?.payload?.bear?.reasoning || null;
-  const summary = buildAnalysisSummary(analyses);
-  const context = bearReasoning
-    ? `${summary}\n\n[약세 주장 반박 요청]\n${bearReasoning}`
-    : summary;
-
-  const bull = await runBullResearcher(symbol, context, currentPriceFromAnalyses(analyses), market);
-  return {
-    symbol,
-    market,
-    source,
-    round: bearReasoning ? 2 : 1,
-    bull,
-  };
-}
-
-export default {
-  id: NODE_ID,
-  type: 'decision',
-  label: 'bull-debate',
-  run,
-};
+export default loaded.default ?? loaded;

@@ -1,18 +1,13 @@
-function parseArgs(argv) {
-  const out = {};
-  for (let i = 2; i < argv.length; i++) {
-    const a = argv[i];
-    if (!a.startsWith('--')) continue;
-    const [k, vRaw] = a.slice(2).split('=');
-    if (vRaw !== undefined) {
-      out[k] = vRaw;
-    } else {
-      const next = argv[i + 1];
-      if (next && !next.startsWith('--')) { out[k] = next; i++; }
-      else                                { out[k] = true; }
-    }
-  }
-  return out;
-}
+const path = require('path');
 
-module.exports = { parseArgs };
+const runtimePath = path.join(
+  __dirname,
+  '../../../dist/ts-runtime/bots/reservation/lib/args.js'
+);
+
+try {
+  module.exports = require(runtimePath);
+} catch (error) {
+  if (error && error.code !== 'MODULE_NOT_FOUND') throw error;
+  module.exports = require('./args.legacy.js');
+}

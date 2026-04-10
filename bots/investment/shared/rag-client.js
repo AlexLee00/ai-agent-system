@@ -1,24 +1,28 @@
+import path from 'path';
 import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
 
 const require = createRequire(import.meta.url);
-const rag = require('../../../packages/core/lib/rag-safe');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-export function getRagGuardStatus() {
-  return rag.getRagGuardStatus();
-}
+const runtimePath = path.join(
+  __dirname,
+  '../../../dist/ts-runtime/bots/investment/shared/rag-client.js'
+);
 
-export async function initSchema() {
-  return rag.initSchema();
-}
+const loaded = await (async () => {
+  try {
+    return require(runtimePath);
+  } catch (error) {
+    if (error && error.code !== 'MODULE_NOT_FOUND') throw error;
+    return import('./rag-client.legacy.js');
+  }
+})();
 
-export async function search(collection, query, opts = {}, meta = {}) {
-  return rag.search(collection, query, opts, meta);
-}
-
-export async function store(collection, content, metadata = {}, sourceBot = 'luna') {
-  return rag.store(collection, content, metadata, sourceBot);
-}
-
-export async function storeBatch(collection, items, sourceBot = 'luna') {
-  return rag.storeBatch(collection, items, sourceBot);
-}
+export const getRagGuardStatus = loaded.getRagGuardStatus;
+export const initSchema = loaded.initSchema;
+export const search = loaded.search;
+export const store = loaded.store;
+export const storeBatch = loaded.storeBatch;
+export default loaded;

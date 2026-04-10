@@ -575,6 +575,15 @@ async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx
 }
 
 async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx, writerName = null) {
+  if (!quality?.passed) {
+    const qualityErrors = (quality?.issues || [])
+      .filter(issue => issue?.severity === 'error')
+      .map(issue => issue.msg)
+      .slice(0, 3)
+      .join(' | ');
+    throw new Error(`일반 포스팅 품질 미달${qualityErrors ? `: ${qualityErrors}` : ''}`);
+  }
+
   const genTitle = post.title || `[${context.category}] 오늘의 포스팅`;
   const images = await generatePostImages({ title: genTitle, postType: 'general', category: context.category }).catch(e => {
     console.warn('[이미지] 생성 실패 (일반):', e.message); return null;
@@ -1052,6 +1061,9 @@ async function run() {
       }
     } catch (e) {
       console.error('[블로] 강의 포스팅 실패:', e.message);
+      if (lectureSchedule?.id) {
+        await updateScheduleStatus(lectureSchedule.id, 'scheduled');
+      }
       results.push({ type: 'lecture', error: e.message });
       await _emitEvent('post_failed', { type: 'lecture', error: e.message, traceId: traceCtx.trace_id });
     }
@@ -1079,6 +1091,9 @@ async function run() {
       results.push(r);
     } catch (e) {
       console.error('[블로] 일반 포스팅 실패:', e.message);
+      if (scheduleId) {
+        await updateScheduleStatus(scheduleId, 'scheduled');
+      }
       results.push({ type: 'general', error: e.message });
       await _emitEvent('post_failed', { type: 'general', error: e.message, traceId: traceCtx.trace_id });
     }

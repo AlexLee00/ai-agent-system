@@ -1,98 +1,19 @@
-import * as db from '../shared/db.js';
-import { SIGNAL_STATUS } from '../shared/signal.js';
-import { loadAnalysesForSession, loadLatestNodePayload, buildAnalystSignals } from './helpers.js';
+import path from 'path';
+import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
 
-const NODE_ID = 'L30';
+const require = createRequire(import.meta.url);
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const runtimePath = path.join(__dirname, '../../../dist/ts-runtime/bots/investment/nodes/l30-signal-save.js');
 
-async function run({ sessionId, market, symbol }) {
-  if (!sessionId) throw new Error('sessionId 필요');
-  if (!symbol) throw new Error('symbol 필요');
-
-  const decisionHit = await loadLatestNodePayload(sessionId, 'L13', symbol);
-  const riskHit = await loadLatestNodePayload(sessionId, 'L21', symbol);
-  const decision = decisionHit?.payload?.decision || null;
-  const risk = riskHit?.payload?.risk || null;
-
-  if (!decision?.action || decision.action === 'HOLD') {
-    return {
-      symbol,
-      market,
-      skipped: true,
-      reason: decision?.action === 'HOLD' ? 'HOLD 신호' : '최종 판단 없음',
-    };
+const loaded = await (async () => {
+  try {
+    return require(runtimePath);
+  } catch (error) {
+    if (error && error.code !== 'MODULE_NOT_FOUND') throw error;
+    return import('./l30-signal-save.legacy.js');
   }
+})();
 
-  const { analyses } = await loadAnalysesForSession(sessionId, symbol, market);
-  const analystSignals = decisionHit?.payload?.analystSignals
-    || decision?.analyst_signals
-    || buildAnalystSignals(analyses);
-  const amountUsdt = risk?.approved
-    ? (risk.adjustedAmount ?? decision.amount_usdt)
-    : (decision.amount_usdt ?? 0);
-
-  const signalInsert = await db.insertSignalIfFresh({
-    symbol,
-    action: decision.action,
-    amountUsdt,
-    confidence: decision.confidence,
-    reasoning: `[노드:${NODE_ID}] ${decision.reasoning || ''}`.slice(0, 255),
-    exchange: market,
-    analystSignals,
-  });
-  const signalId = signalInsert.id;
-
-  if (signalInsert.duplicate) {
-    return {
-      symbol,
-      market,
-      signalId,
-      status: signalInsert.existingSignal?.status || 'duplicate',
-      skipped: true,
-      reason: `최근 ${signalInsert.dedupeWindowMinutes}분 내 중복 신호`,
-      duplicateOf: signalInsert.existingSignal?.id || signalId,
-      analystSignals,
-    };
-  }
-
-  let status = SIGNAL_STATUS.PENDING;
-  if (risk) {
-    if (risk.approved) {
-      status = SIGNAL_STATUS.APPROVED;
-      await db.updateSignalStatus(signalId, SIGNAL_STATUS.APPROVED);
-      if (risk.adjustedAmount != null) {
-        await db.updateSignalAmount(signalId, risk.adjustedAmount);
-      }
-    } else {
-      status = SIGNAL_STATUS.REJECTED;
-      await db.updateSignalBlock(signalId, {
-        status: SIGNAL_STATUS.REJECTED,
-        reason: risk.reason || null,
-        code: 'risk_rejected',
-        meta: {
-          market,
-          symbol,
-          action: decision.action,
-          amount: decision.amount_usdt,
-          adjustedAmount: risk.adjustedAmount ?? null,
-        },
-      });
-    }
-  }
-
-  return {
-    symbol,
-    market,
-    signalId,
-    status,
-    decision,
-    risk,
-    analystSignals,
-  };
-}
-
-export default {
-  id: NODE_ID,
-  type: 'execute',
-  label: 'signal-save',
-  run,
-};
+export default loaded.default ?? loaded;

@@ -1,13 +1,15 @@
 'use strict';
-const fs   = require('fs');
+
 const path = require('path');
-const pgPool = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'));
 
-async function run() {
-  const sql = fs.readFileSync(path.join(__dirname, '004-admin-columns.sql'), 'utf8');
-  await pgPool.run('worker', sql);
-  console.log('[migrate 004] users 관리 컬럼 추가 완료 (channel, must_change_pw, last_login_at)');
-  process.exit(0);
+const runtimePath = path.join(
+  __dirname,
+  '../../../dist/ts-runtime/bots/worker/migrations/004-admin-columns.js'
+);
+
+try {
+  module.exports = require(runtimePath);
+} catch (error) {
+  if (error && error.code !== 'MODULE_NOT_FOUND') throw error;
+  module.exports = require('./004-admin-columns.legacy.js');
 }
-
-run().catch(e => { console.error('[migrate 004] 오류:', e.message); process.exit(1); });

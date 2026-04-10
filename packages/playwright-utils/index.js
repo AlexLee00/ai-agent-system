@@ -1,7 +1,15 @@
 'use strict';
 
-/**
- * @ai-agent/playwright-utils — Puppeteer 브라우저 자동화 공유 모듈
- */
+const path = require('path');
 
-module.exports = { ...require('./src/browser') };
+const runtimePath = path.join(
+  __dirname,
+  '../../dist/ts-runtime/packages/playwright-utils/index.js'
+);
+
+try {
+  module.exports = require(runtimePath);
+} catch (error) {
+  if (error && error.code !== 'MODULE_NOT_FOUND') throw error;
+  module.exports = require('./index.legacy.js');
+}

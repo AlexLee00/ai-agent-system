@@ -1,21 +1,13 @@
-'use strict';
+const path = require('path');
 
-function normalizePhoneRaw(value) {
-  return String(value || '').replace(/\D/g, '');
+const runtimePath = path.join(
+  __dirname,
+  '../../../dist/ts-runtime/bots/reservation/lib/reservation-key.js'
+);
+
+try {
+  module.exports = require(runtimePath);
+} catch (error) {
+  if (error && error.code !== 'MODULE_NOT_FOUND') throw error;
+  module.exports = require('./reservation-key.legacy.js');
 }
-
-function buildReservationId(phoneRaw, date, start) {
-  const phone = normalizePhoneRaw(phoneRaw);
-  return `${phone}-${date}-${start}`;
-}
-
-function buildReservationCompositeKey(phoneRaw, date, start, end, room) {
-  const phone = normalizePhoneRaw(phoneRaw);
-  return `${date}|${start}|${end}|${room}|${phone}`;
-}
-
-module.exports = {
-  normalizePhoneRaw,
-  buildReservationId,
-  buildReservationCompositeKey,
-};
