@@ -83,6 +83,18 @@ function buildFfmpegPreview({ thumbPath, outputPath, durationSec = SHORTFORM_DEF
   ].join(' ');
 }
 
+function buildShortformOutputPath(title = '') {
+  const slug = slugify(title || 'blog_shortform');
+  const outputDir = path.join(env.PROJECT_ROOT, 'bots/blog/output/shortform');
+  return path.join(outputDir, `${slug}_reel.mp4`);
+}
+
+function buildShortformCta(blogUrl = '') {
+  return blogUrl
+    ? `자세한 내용은 블로그에서 확인하세요 👉 ${blogUrl}`
+    : '자세한 내용은 블로그에서 확인하세요 👉 프로필 링크';
+}
+
 function buildShortformPlan({
   title,
   category,
@@ -96,12 +108,8 @@ function buildShortformPlan({
   const safeDurationSec = normalizeDurationSec(durationSec);
   const hook = pickHook(safeTitle, safeCategory);
   const storyboard = buildStoryboard(safeTitle, safeCategory, safeDurationSec);
-  const slug = slugify(safeTitle || 'blog_shortform');
-  const outputDir = path.join(env.PROJECT_ROOT, 'bots/blog/output/shortform');
-  const outputPath = path.join(outputDir, `${slug}_reel.mp4`);
-  const cta = blogUrl
-    ? `자세한 내용은 블로그에서 확인하세요 👉 ${blogUrl}`
-    : '자세한 내용은 블로그에서 확인하세요 👉 프로필 링크';
+  const outputPath = buildShortformOutputPath(safeTitle);
+  const cta = buildShortformCta(blogUrl);
 
   return {
     title: safeTitle,
@@ -120,6 +128,8 @@ function buildShortformPlan({
 
 module.exports = {
   buildShortformPlan,
+  buildShortformOutputPath,
+  buildShortformCta,
   normalizeDurationSec,
   SHORTFORM_MIN_DURATION_SEC,
   SHORTFORM_MAX_DURATION_SEC,
