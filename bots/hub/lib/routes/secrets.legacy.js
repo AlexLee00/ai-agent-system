@@ -224,6 +224,20 @@ const CATEGORY_HANDLERS = {
     };
   },
 
+  instagram: () => {
+    const store = loadSecretsStore();
+    const d = store?.instagram || {};
+    return {
+      access_token: d.access_token || '',
+      ig_user_id: d.ig_user_id || '',
+      api_version: d.api_version || 'v21.0',
+      base_url: d.base_url || 'https://graph.facebook.com',
+      app_id: d.app_id || '',
+      app_secret: d.app_secret || '',
+      business_account_id: d.business_account_id || '',
+    };
+  },
+
   config: () => {
     const runtime = loadConfigYaml();
     const store = loadSecretsStore();

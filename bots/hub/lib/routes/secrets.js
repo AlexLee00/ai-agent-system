@@ -1,14 +1,14 @@
 'use strict';
 
 const path = require('path');
-const runtimePath = path.join(
-  __dirname,
-  '../../../../dist/ts-runtime/bots/hub/lib/routes/secrets.js'
-);
+const env = require('../../../../packages/core/lib/env');
 
 try {
-  module.exports = require(runtimePath);
+  module.exports = require(path.join(env.PROJECT_ROOT, 'bots/hub/lib/routes/secrets.ts'));
 } catch (error) {
-  if (error && error.code !== 'MODULE_NOT_FOUND') throw error;
-  module.exports = require('./secrets.legacy.js');
+  if (error && (error.code === 'MODULE_NOT_FOUND' || error.code === 'ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX')) {
+    module.exports = require('./secrets.legacy.js');
+  } else {
+    throw error;
+  }
 }
