@@ -126,6 +126,15 @@ function _buildVariationBlock(variation = {}) {
     };
     lines.push(`카페 홍보 위치: ${cPos[variation.cafePosition] || '기본 위치'}`);
   }
+  if (variation.writerPersona?.name) {
+    lines.push(`작가 페르소나: ${variation.writerPersona.name} — ${variation.writerPersona.style}`);
+    lines.push(`작가 문체: ${variation.writerPersona.tone}`);
+    lines.push(`작가 지시: ${variation.writerPersona.promptPrefix}`);
+  }
+  if (variation.editorPersona?.name) {
+    lines.push(`편집자 페르소나: ${variation.editorPersona.name} — ${variation.editorPersona.focus}`);
+    lines.push(`편집자 지시: ${variation.editorPersona.instruction}`);
+  }
 
   // ★ 보너스 인사이트 지시
   if (variation.bonusInsights?.length > 0) {

@@ -43,6 +43,9 @@ const {
 const richer                                        = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/richer.js'));
 const { collectAllResearch }                        = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/parallel-collector.js'));
 const { getRecentPosts, selectAndValidateTopic }    = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/topic-selector.js'));
+const { agenticSearch }                             = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/agentic-rag.js'));
+const { getWriterPersona }                          = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/writer-personas.js'));
+const { pickEditorPersona }                         = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/editor-personas.js'));
 const {
   writeLecturePost,
   writeLecturePostChunked,
@@ -821,6 +824,13 @@ async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId
   const startTime = Date.now();
   let contractId = null;
   const writerName = await _selectBlogWriter('강의', 'pos', '기술 강의 IT');
+  const writerPersona = getWriterPersona(writerName, 'lecture');
+  const editorPersona = pickEditorPersona('lecture');
+  context.sectionVariation = {
+    ...context.sectionVariation,
+    writerPersona,
+    editorPersona,
+  };
 
   try {
     const contract = await hiringContract.hire(writerName, {
@@ -945,6 +955,13 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId
     'gems',
     context.category === '도서리뷰' ? '도서 감성 에세이' : (context.category || '에세이')
   );
+  const writerPersona = getWriterPersona(writerName, 'general');
+  const editorPersona = pickEditorPersona('general');
+  context.sectionVariation = {
+    ...context.sectionVariation,
+    writerPersona,
+    editorPersona,
+  };
 
   try {
     const contract = await hiringContract.hire(writerName, {
@@ -1082,12 +1099,10 @@ async function run(options = {}) {
         results.push({ type: 'lecture', skipped: true, reason: '시리즈 완료' });
       } else {
         const { number, seriesName, lectureTitle } = lectureCtx;
-        const [realExperiences, relatedPosts] = await Promise.all([
-          richer.searchRealExperiences(lectureTitle, 'lecture'),
-          richer.searchRelatedPosts(lectureTitle, number),
-        ]);
-        researchData.realExperiences = realExperiences;
-        researchData.relatedPosts    = relatedPosts;
+        const ragContext = await agenticSearch(lectureTitle, 'lecture', 3, number);
+        researchData.realExperiences = ragContext.episodes;
+        researchData.relatedPosts = ragContext.relatedPosts;
+        researchData.ragQuality = ragContext.quality;
 
         // 스케줄 상태 → writing
         if (lectureSchedule?.id && !options.dryRun) await updateScheduleStatus(lectureSchedule.id, 'writing');
@@ -1112,12 +1127,10 @@ async function run(options = {}) {
   if (generalCtx && config.general_count > 0) {
     try {
       const { category, scheduleId, bookInfo } = generalCtx;
-      const [realExperiences, relatedPosts] = await Promise.all([
-        richer.searchRealExperiences(category, 'general'),
-        richer.searchRelatedPosts(category),
-      ]);
-      researchData.realExperiences = realExperiences;
-      researchData.relatedPosts    = relatedPosts;
+      const ragContext = await agenticSearch(category, 'general', 3);
+      researchData.realExperiences = ragContext.episodes;
+      researchData.relatedPosts = ragContext.relatedPosts;
+      researchData.ragQuality = ragContext.quality;
 
       // 스케줄 상태 → writing
       if (scheduleId && !options.dryRun) await updateScheduleStatus(scheduleId, 'writing');
