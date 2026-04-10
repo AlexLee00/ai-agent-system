@@ -11,8 +11,8 @@
  *   node bots/investment/scripts/force-exit-candidate-report.js
  *   node bots/investment/scripts/force-exit-candidate-report.js --json
  */
-import { fileURLToPath } from 'url';
 import * as db from '../shared/db.ts';
+import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import {
   getKisExecutionModeInfo,
   getKisMarketStatus,
@@ -249,9 +249,11 @@ async function main() {
   console.log(formatHuman(report));
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  main().catch((error) => {
-    console.error(`[force-exit-candidate-report] ${error?.stack || error?.message || String(error)}`);
-    process.exit(1);
+if (isDirectExecution(import.meta.url)) {
+  await runCliMain({
+    run: () => main(),
+    onError: async (error) => {
+      console.error(`[force-exit-candidate-report] ${error?.stack || error?.message || String(error)}`);
+    },
   });
 }

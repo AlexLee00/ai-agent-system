@@ -11,7 +11,7 @@
  */
 
 import { createRequire } from 'module';
-import { fileURLToPath } from 'url';
+import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 const require = createRequire(import.meta.url);
 const puppeteer = require('puppeteer');
@@ -265,15 +265,16 @@ export async function collectScoutData({
   }
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isDirectExecution(import.meta.url)) {
   const args = process.argv.slice(2);
   const dryRun = args.includes('--dry-run');
   const asJson = args.includes('--json');
   const limitArg = args.find((arg) => arg.startsWith('--limit='));
   const limit = Number(limitArg?.split('=')[1] || 10);
 
-  collectScoutData({ dryRun, limit })
-    .then((result) => {
+  await runCliMain({
+    run: () => collectScoutData({ dryRun, limit }),
+    onSuccess: async (result) => {
       if (asJson) {
         console.log(JSON.stringify(result, null, 2));
         return;
@@ -283,9 +284,9 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
         if (!Array.isArray(values) || values.length === 0) continue;
         console.log(`- ${section}: ${values.slice(0, 3).join(' | ')}`);
       }
-    })
-    .catch((error) => {
+    },
+    onError: async (error) => {
       console.error(`[scout-scraper] 실패: ${error.message}`);
-      process.exitCode = 1;
-    });
+    },
+  });
 }

@@ -13,9 +13,9 @@
  *   node team/scout.js --dry-run --json
  */
 
-import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import * as db from '../shared/db.ts';
+import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { callLLM, parseJSON } from '../shared/llm-client.ts';
 import { initSchema as initRagSchema, store as storeRag } from '../shared/rag-client.ts';
 import { publishToMainBot } from '../shared/mainbot-client.ts';
@@ -316,33 +316,35 @@ export async function runScout({ dryRun = false, json = false, limit = 10 } = {}
   return result;
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isDirectExecution(import.meta.url)) {
   const args = process.argv.slice(2);
   const dryRun = args.includes('--dry-run');
   const json = args.includes('--json');
   const limitArg = args.find((arg) => arg.startsWith('--limit='));
   const limit = Number(limitArg?.split('=')[1] || 10);
 
-  runScout({ dryRun, json, limit }).catch((error) => {
-    eventLake.record({
-      eventType: 'scout_error',
-      team: 'luna',
-      botName: 'scout',
-      severity: 'error',
-      title: '스카우트 실행 실패',
-      message: error?.message || String(error || 'unknown'),
-      tags: ['scout', 'luna', 'source:tossinvest', 'trigger:manual', 'errors:1'],
-      metadata: {
-        dryRun,
-        json,
-        limit,
-        stack: error?.stack || '',
-      },
-    }).catch(() => {});
-    logger.error('스카우트 실행 실패', {
-      error: error?.message || String(error || 'unknown'),
-      stack: error?.stack ? String(error.stack).split('\n').slice(0, 3).join(' | ') : '',
-    });
-    process.exitCode = 1;
+  await runCliMain({
+    run: () => runScout({ dryRun, json, limit }),
+    onError: async (error) => {
+      eventLake.record({
+        eventType: 'scout_error',
+        team: 'luna',
+        botName: 'scout',
+        severity: 'error',
+        title: '스카우트 실행 실패',
+        message: error?.message || String(error || 'unknown'),
+        tags: ['scout', 'luna', 'source:tossinvest', 'trigger:manual', 'errors:1'],
+        metadata: {
+          dryRun,
+          json,
+          limit,
+          stack: error?.stack || '',
+        },
+      }).catch(() => {});
+      logger.error('스카우트 실행 실패', {
+        error: error?.message || String(error || 'unknown'),
+        stack: error?.stack ? String(error.stack).split('\n').slice(0, 3).join(' | ') : '',
+      });
+    },
   });
 }

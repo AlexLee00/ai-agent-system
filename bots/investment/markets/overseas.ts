@@ -13,20 +13,27 @@
  * 실행: PAPER_MODE=true node markets/overseas.js [--symbols=AAPL,TSLA,NVDA] [--force]
  */
 
-import { readFileSync, writeFileSync, mkdirSync } from 'fs';
-import { homedir } from 'os';
-import { join } from 'path';
-import { fileURLToPath } from 'url';
 import { loadPreScreened, loadPreScreenedFallback, savePreScreened, saveResearchWatchlist } from '../scripts/pre-market-screen.ts';
 
 import { createRequire } from 'module';
 const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
 import * as db from '../shared/db.ts';
+import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { initHubSecrets, getKisOverseasSymbols, getKisOverseasMarketStatus, getKisExecutionModeInfo, getOverseasScreeningMaxDynamic } from '../shared/secrets.ts';
 import { publishToMainBot } from '../shared/mainbot-client.ts';
 import { tracker } from '../shared/cost-tracker.ts';
 import { resolveSymbolsWithFallback, appendHeldSymbols, capDynamicUniverse } from '../shared/universe-fallback.ts';
-import { buildCollectAlertMessage, runMarketCollectPipeline, summarizeNodeStatuses } from '../shared/pipeline-market-runner.ts';
+import {
+  getOpenClawStateFile,
+  loadJsonState,
+  saveJsonState,
+  shouldRunFixedIntervalCycle,
+  logMarketCycleStart,
+  logMarketCycleComplete,
+  logResearchCycleStart,
+  logResearchCycleComplete,
+} from '../shared/market-cycle-support.ts';
+import { logMarketPipelineMetrics, runMarketCollectPipeline, summarizeNodeStatuses } from '../shared/pipeline-market-runner.ts';
 import { runDecisionExecutionPipeline } from '../shared/pipeline-decision-runner.ts';
 import { finishPipelineRun } from '../shared/pipeline-db.ts';
 
@@ -36,36 +43,25 @@ process.env.INVESTMENT_MARKET = 'overseas';
 
 // ─── 30분 주기 상태 파일 ────────────────────────────────────────────
 
-const STATE_FILE     = join(homedir(), '.openclaw', 'investment-overseas-state.json');
+const STATE_FILE     = getOpenClawStateFile('investment-overseas-state.json');
 const CYCLE_INTERVAL = 30 * 60 * 1000;  // 30분
 
 function loadState() {
-  try { return JSON.parse(readFileSync(STATE_FILE, 'utf8')); }
-  catch { return { lastCycleAt: 0 }; }
+  return loadJsonState(STATE_FILE, { lastCycleAt: 0 });
 }
 
 function saveState(state) {
-  try {
-    mkdirSync(join(homedir(), '.openclaw'), { recursive: true });
-    writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
-  } catch (e) {
-    console.warn(`  ⚠️ 상태 저장 실패: ${e.message}`);
-  }
+  saveJsonState(STATE_FILE, state);
 }
 
 function shouldRunCycle(force = false) {
-  if (force) return { run: true, reason: '--force 옵션' };
   const state = loadState();
-  const now   = Date.now();
-  if (now - state.lastCycleAt >= CYCLE_INTERVAL) {
-    return { run: true, reason: '30분 정규 사이클' };
-  }
-  const remainMin = Math.ceil((CYCLE_INTERVAL - (now - state.lastCycleAt)) / 60000);
-  const lastTime  = state.lastCycleAt > 0
-    ? kst.toKST(new Date(state.lastCycleAt))
-    : '없음';
-  console.log(`⏳ 다음 사이클까지 ${remainMin}분 (마지막: ${lastTime})`);
-  return { run: false, reason: `대기 중 (${remainMin}분 남음)` };
+  return shouldRunFixedIntervalCycle({
+    force,
+    lastCycleAt: state.lastCycleAt,
+    intervalMs: CYCLE_INTERVAL,
+    toKst: (date) => kst.toKST(date),
+  });
 }
 
 // ─── 예산 초과 리스너 ────────────────────────────────────────────────
@@ -91,10 +87,13 @@ export async function runOverseasCycle(symbols) {
   const startTime = Date.now();
   let sessionId = null;
 
-  console.log(`\n${'═'.repeat(60)}`);
-  console.log(`🗽 ${tag} 미국주식 사이클 시작 — ${kst.toKST(new Date())}`);
-  console.log(`   심볼: ${symbols.join(', ')}`);
-  console.log(`${'═'.repeat(60)}`);
+  logMarketCycleStart({
+    icon: '🗽',
+    tag,
+    marketLabel: '미국주식',
+    now: kst.toKST(new Date()),
+    symbols,
+  });
 
   try {
     // ── 단계 1: 노드 기반 수집 실행 ──
@@ -108,7 +107,7 @@ export async function runOverseasCycle(symbols) {
     sessionId = collect.sessionId;
     console.log(`  🧩 [노드] session=${collect.sessionId}`);
     console.log(`  🧩 [노드] ${summarizeNodeStatuses(collect.summaries)}`);
-    await logPipelineMetrics('미국주식 수집', collect.metrics);
+    await logMarketPipelineMetrics('미국주식 수집', collect.metrics);
 
     // ── 단계 2: 루나 오케스트레이터 ──
     console.log('\n🌙 [판단 단계] 루나 오케스트레이터 실행...');
@@ -119,7 +118,7 @@ export async function runOverseasCycle(symbols) {
     });
     const results = decision.results;
     const executedResults = results.filter(item => !item.skipped);
-    await logPipelineMetrics('미국주식 판단', decision.metrics);
+    await logMarketPipelineMetrics('미국주식 판단', decision.metrics);
 
     // ── 단계 3: 한울 실행 (PAPER_MODE: 신호만 저장) ──
     // 항상 실행 — 이전 사이클 pending 신호도 처리
@@ -131,9 +130,13 @@ export async function runOverseasCycle(symbols) {
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     const cost    = tracker.getToday();
-    console.log(`\n${'═'.repeat(60)}`);
-    console.log(`✅ ${tag} 미국주식 사이클 완료 — ${elapsed}초 | ${executedResults.length}개 신호 | LLM $${cost.usage.toFixed(4)}/일`);
-    console.log(`${'═'.repeat(60)}\n`);
+    logMarketCycleComplete({
+      tag,
+      marketLabel: '미국주식',
+      elapsedSec: elapsed,
+      signalCount: executedResults.length,
+      dailyCost: cost.usage,
+    });
 
     // ── 사이클 요약 알람 (신호 있을 때만) ──
     if (executedResults.length > 0) {
@@ -170,10 +173,11 @@ export async function runOverseasResearchCycle(symbols) {
   const startTime = Date.now();
   let sessionId = null;
 
-  console.log(`\n${'═'.repeat(60)}`);
-  console.log(`📚 [RESEARCH] 미국주식 장외 분석 시작 — ${kst.toKST(new Date())}`);
-  console.log(`   심볼: ${symbols.join(', ')}`);
-  console.log(`${'═'.repeat(60)}`);
+  logResearchCycleStart({
+    marketLabel: '미국주식',
+    now: kst.toKST(new Date()),
+    symbols,
+  });
 
   try {
     console.log('\n📊 [연구 단계] 노드 기반 수집 실행...');
@@ -186,7 +190,7 @@ export async function runOverseasResearchCycle(symbols) {
     sessionId = collect.sessionId;
     console.log(`  🧩 [노드] session=${collect.sessionId}`);
     console.log(`  🧩 [노드] ${summarizeNodeStatuses(collect.summaries)}`);
-    await logPipelineMetrics('미국주식 연구수집', collect.metrics);
+    await logMarketPipelineMetrics('미국주식 연구수집', collect.metrics);
 
     saveResearchWatchlist('overseas', symbols, {
       label: '미국주식',
@@ -199,7 +203,7 @@ export async function runOverseasResearchCycle(symbols) {
     saveState({ lastCycleAt: Date.now() });
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.log(`\n✅ [RESEARCH] 미국주식 장외 분석 완료 — ${elapsed}초`);
+    logResearchCycleComplete({ marketLabel: '미국주식', elapsedSec: elapsed });
 
     publishToMainBot({
       from_bot: 'luna',
@@ -237,141 +241,99 @@ export async function runOverseasResearchCycle(symbols) {
   }
 }
 
-async function logPipelineMetrics(label, metrics = {}) {
-  if (!metrics || typeof metrics !== 'object') return;
-  const parts = [
-    `duration=${((metrics.durationMs || 0) / 1000).toFixed(1)}s`,
-    metrics.symbolCount != null ? `symbols=${metrics.symbolCount}` : null,
-    metrics.totalTasks != null ? `tasks=${metrics.totalTasks}` : null,
-    metrics.concurrencyLimit != null ? `concurrency=${metrics.concurrencyLimit}` : null,
-    metrics.failedTasks != null ? `failed=${metrics.failedTasks}` : null,
-    metrics.failedCoreTasks != null ? `coreFailed=${metrics.failedCoreTasks}` : null,
-    metrics.failedEnrichmentTasks != null ? `enrichFailed=${metrics.failedEnrichmentTasks}` : null,
-    metrics.debateCount != null ? `debate=${metrics.debateCount}/${metrics.debateLimit}` : null,
-    metrics.weakSignalSkipped != null ? `weakSkipped=${metrics.weakSignalSkipped}` : null,
-    metrics.riskRejected != null ? `riskRejected=${metrics.riskRejected}` : null,
-    metrics.savedExecutionWork != null ? `savedNodes=${metrics.savedExecutionWork}` : null,
-  ].filter(Boolean);
-  console.log(`  📈 [메트릭] ${label} | ${parts.join(' | ')}`);
-  if (metrics.warnings?.length) {
-    console.warn(`  ⚠️ [경고] ${label} | ${metrics.warnings.join(', ')}`);
-    const escalated = metrics.warnings.filter(w =>
-      [
-        'collect_overload_detected',
-        'collect_failure_rate_high',
-        'core_collect_failure_rate_high',
-        'enrichment_collect_failure_rate_high',
-        'collect_blocked_by_llm_guard',
-        'debate_capacity_hot',
-        'weak_signal_pressure',
-      ].includes(w),
-    );
-    if (escalated.length) {
-      await publishToMainBot({
-        from_bot: 'argos',
-        event_type: 'alert',
-        alert_level: 2,
-        message: buildCollectAlertMessage(label, escalated, metrics),
-        payload: metrics,
-      });
-    }
-  }
-}
-
 // ─── CLI 실행 ───────────────────────────────────────────────────────
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  await initHubSecrets();
-  const args      = process.argv.slice(2);
-  const symArg    = args.find(a => a.startsWith('--symbols='));
-  const force     = args.includes('--force');
-  const noDynamic = args.includes('--no-dynamic');
-  const researchOnly = args.includes('--research-only');
+if (isDirectExecution(import.meta.url)) {
+  await runCliMain({
+    before: async () => {
+      await initHubSecrets();
+      await db.initSchema();
+    },
+    run: async () => {
+      const args      = process.argv.slice(2);
+      const symArg    = args.find(a => a.startsWith('--symbols='));
+      const force     = args.includes('--force');
+      const noDynamic = args.includes('--no-dynamic');
+      const researchOnly = args.includes('--research-only');
 
-  let symbols;
-  if (symArg) {
-    symbols = symArg.split('=')[1].split(',').map(s => s.trim());
-  } else if (noDynamic) {
-    symbols = getKisOverseasSymbols();
-  } else {
-    const overseasMaxDynamic = getOverseasScreeningMaxDynamic();
-    const preScreened = loadPreScreened('overseas');
-    if (preScreened?.symbols?.length > 0) {
-      symbols = capDynamicUniverse(preScreened.symbols, overseasMaxDynamic, 'overseas-prescreened');
-      const ageMin = Math.floor((Date.now() - preScreened.savedAt) / 60000);
-      console.log(`📋 [장전 스크리닝] 종목 로드 (${ageMin}분 전): ${symbols.join(', ')}`);
-    } else {
-      const resolved = await resolveSymbolsWithFallback({
-        market: 'overseas',
-        screen: async () => {
-          const { screenOverseasSymbols } = await import('../team/argos.ts');
-          return screenOverseasSymbols();
-        },
-        loadCache: () => loadPreScreenedFallback('overseas'),
-        defaultSymbols: getKisOverseasSymbols(),
-        screenLabel: '아르고스 해외주식 스크리닝',
-        cacheLabel: 'RAG 폴백',
-      });
-      symbols = capDynamicUniverse(resolved.symbols, overseasMaxDynamic, `overseas-${resolved.source || 'dynamic'}`);
-      if (resolved.source === 'screening') {
-        savePreScreened('overseas', symbols);
-        const { recordScreeningSuccess } = await import('../scripts/screening-monitor.ts');
-        await recordScreeningSuccess('overseas');
-      } else if (resolved.error && resolved.shouldCountFailure !== false) {
-        const { recordScreeningFailure } = await import('../scripts/screening-monitor.ts');
-        await recordScreeningFailure('overseas', resolved.error.message);
-      } else if (symbols.length > 0) {
-        const { recordScreeningSuccess } = await import('../scripts/screening-monitor.ts');
-        await recordScreeningSuccess('overseas');
+      let symbols;
+      if (symArg) {
+        symbols = symArg.split('=')[1].split(',').map(s => s.trim());
+      } else if (noDynamic) {
+        symbols = getKisOverseasSymbols();
+      } else {
+        const overseasMaxDynamic = getOverseasScreeningMaxDynamic();
+        const preScreened = loadPreScreened('overseas');
+        if (preScreened?.symbols?.length > 0) {
+          symbols = capDynamicUniverse(preScreened.symbols, overseasMaxDynamic, 'overseas-prescreened');
+          const ageMin = Math.floor((Date.now() - preScreened.savedAt) / 60000);
+          console.log(`📋 [장전 스크리닝] 종목 로드 (${ageMin}분 전): ${symbols.join(', ')}`);
+        } else {
+          const resolved = await resolveSymbolsWithFallback({
+            market: 'overseas',
+            screen: async () => {
+              const { screenOverseasSymbols } = await import('../team/argos.ts');
+              return screenOverseasSymbols();
+            },
+            loadCache: () => loadPreScreenedFallback('overseas'),
+            defaultSymbols: getKisOverseasSymbols(),
+            screenLabel: '아르고스 해외주식 스크리닝',
+            cacheLabel: 'RAG 폴백',
+          });
+          symbols = capDynamicUniverse(resolved.symbols, overseasMaxDynamic, `overseas-${resolved.source || 'dynamic'}`);
+          if (resolved.source === 'screening') {
+            savePreScreened('overseas', symbols);
+            const { recordScreeningSuccess } = await import('../scripts/screening-monitor.ts');
+            await recordScreeningSuccess('overseas');
+          } else if (resolved.error && resolved.shouldCountFailure !== false) {
+            const { recordScreeningFailure } = await import('../scripts/screening-monitor.ts');
+            await recordScreeningFailure('overseas', resolved.error.message);
+          } else if (symbols.length > 0) {
+            const { recordScreeningSuccess } = await import('../scripts/screening-monitor.ts');
+            await recordScreeningSuccess('overseas');
+          }
+        }
       }
-    }
-  }
 
-  symbols = await appendHeldSymbols(symbols, 'kis_overseas');
+      symbols = await appendHeldSymbols(symbols, 'kis_overseas');
+      console.log(getKisExecutionModeInfo('해외주식').logLine);
 
-  console.log(getKisExecutionModeInfo('해외주식').logLine);
+      const marketStatus = force
+        ? { isOpen: true, reason: '--force 옵션' }
+        : getKisOverseasMarketStatus();
+      const marketOpen = marketStatus.isOpen;
+      const check = researchOnly
+        ? { run: true, reason: '--research-only 옵션' }
+        : shouldRunCycle(force);
+      if (!check.run) {
+        console.log(`⏳ 사이클 스킵: ${check.reason}`);
+        return [];
+      }
 
-  const marketStatus = force
-    ? { isOpen: true, reason: '--force 옵션' }
-    : getKisOverseasMarketStatus();
-  const marketOpen = marketStatus.isOpen;
+      if (symbols.length === 0) {
+        console.log('⏭️ 처리할 종목 없음 (아르고스 스크리닝 필요) — 사이클 스킵');
+        return [];
+      }
 
-  // 30분 주기 체크
-  const check = researchOnly
-    ? { run: true, reason: '--research-only 옵션' }
-    : shouldRunCycle(force);
-  if (!check.run) {
-    console.log(`⏳ 사이클 스킵: ${check.reason}`);
-    process.exit(0);
-  }
+      console.log(`🔄 ${check.reason}`);
 
-  // 보유 포지션 포함 후에도 종목 없으면 스킵
-  if (symbols.length === 0) {
-    console.log('⏭️ 처리할 종목 없음 (아르고스 스크리닝 필요) — 사이클 스킵');
-    process.exit(0);
-  }
+      if (researchOnly) {
+        console.log('🧪 강제 연구 모드 실행');
+        await runOverseasResearchCycle(symbols);
+        return [];
+      }
 
-  console.log(`🔄 ${check.reason}`);
+      if (!force && !marketOpen) {
+        console.log(`📚 ${marketStatus.reason} — 연구 모드 전환`);
+        await runOverseasResearchCycle(symbols);
+        return [];
+      }
 
-  await db.initSchema();
-  try {
-    if (researchOnly) {
-      console.log('🧪 강제 연구 모드 실행');
-      await runOverseasResearchCycle(symbols);
-      process.exit(0);
-    }
-
-    if (!force && !marketOpen) {
-      console.log(`📚 ${marketStatus.reason} — 연구 모드 전환`);
-      await runOverseasResearchCycle(symbols);
-      process.exit(0);
-    }
-
-    const r = await runOverseasCycle(symbols);
-    console.log(`\n최종 결과: ${r.length}개 신호 승인`);
-    process.exit(0);
-  } catch (e) {
-    console.error('❌ 종료 오류:', e.message);
-    process.exit(1);
-  }
+      return runOverseasCycle(symbols);
+    },
+    onSuccess: async (results) => {
+      console.log(`\n최종 결과: ${results.length}개 신호 승인`);
+    },
+    errorPrefix: '❌ 종료 오류:',
+  });
 }

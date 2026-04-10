@@ -20,12 +20,20 @@
  */
 
 import { createRequire } from 'module';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
+import yaml from 'js-yaml';
 const require = createRequire(import.meta.url);
 const pgPool  = require('../../../packages/core/lib/pg-pool');
 const kst     = require('../../../packages/core/lib/kst');
 const { getAgentsByTeam } = require('../../../packages/core/lib/agent-registry');
 
 const SCHEMA = 'investment';
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const CONFIG_PATH = join(__dirname, '..', 'config.yaml');
+const OVERRIDE_DIR = join(__dirname, '..', 'data');
+const OVERRIDE_PATH = join(OVERRIDE_DIR, 'analyst-weight-overrides.json');
 
 // ── 분석팀 봇 정의 ─────────────────────────────────────────────────────
 const ANALYSTS = [
@@ -58,6 +66,15 @@ const WEIGHT_STEP = 0.05;
 
 const THRESHOLD_HIGH = 0.70;  // 70%+ → 가중치 증가
 const THRESHOLD_LOW  = 0.50;  // 50%- → 가중치 감소
+const CONSECUTIVE_LOW_WEEKS = 3;
+const PROFILE_KEYS = ['default', 'crypto', 'stocksPaper', 'stocksLive'];
+const ANALYST_PROFILE_MAP = {
+  aria: 'taMtf',
+  oracle: 'onchain',
+  sophia: 'sentiment',
+  hermes: 'news',
+};
+const ALERT_ELIGIBLE_ANALYSTS = new Set(Object.keys(ANALYST_PROFILE_MAP));
 
 function _jsonbAnalystKey(botName) {
   if (botName === 'sophia' || botName === 'hermes') return 'sentinel';
@@ -104,6 +121,64 @@ function _clamp(val, min, max) {
 
 function _round2(n) {
   return Math.round(n * 100) / 100;
+}
+
+function _readConfigWeights() {
+  try {
+    const raw = yaml.load(readFileSync(CONFIG_PATH, 'utf8'));
+    return raw?.runtime_config?.luna?.analystWeights || {};
+  } catch {
+    return {};
+  }
+}
+
+function _readOverrideWeights() {
+  try {
+    if (!existsSync(OVERRIDE_PATH)) return {};
+    return JSON.parse(readFileSync(OVERRIDE_PATH, 'utf8')) || {};
+  } catch {
+    return {};
+  }
+}
+
+function _writeOverrideWeights(data) {
+  mkdirSync(OVERRIDE_DIR, { recursive: true });
+  writeFileSync(OVERRIDE_PATH, JSON.stringify(data, null, 2));
+}
+
+function _getEffectiveProfileWeights() {
+  const configWeights = _readConfigWeights();
+  const overrideWeights = _readOverrideWeights();
+  const result = {};
+  for (const profileKey of PROFILE_KEYS) {
+    result[profileKey] = {
+      ...(configWeights?.[profileKey] || {}),
+      ...(overrideWeights?.[profileKey] || {}),
+    };
+  }
+  return result;
+}
+
+function getEffectiveAnalystWeightProfiles() {
+  return _getEffectiveProfileWeights();
+}
+
+function _applyAdjustmentToProfiles(currentProfiles, adjustmentByAnalyst = {}) {
+  const nextProfiles = {};
+  for (const profileKey of PROFILE_KEYS) {
+    const currentProfile = { ...(currentProfiles?.[profileKey] || {}) };
+    const nextProfile = { ...currentProfile };
+    for (const [analystName, delta] of Object.entries(adjustmentByAnalyst)) {
+      const field = ANALYST_PROFILE_MAP[analystName];
+      if (!field || !Number.isFinite(delta) || delta === 0) continue;
+      const baseValue = Number(nextProfile[field]);
+      if (!Number.isFinite(baseValue)) continue;
+      if (baseValue <= 0) continue;
+      nextProfile[field] = _round2(_clamp(baseValue + delta, WEIGHT_MIN, WEIGHT_MAX));
+    }
+    nextProfiles[profileKey] = nextProfile;
+  }
+  return nextProfiles;
 }
 
 // ── 주간 정확도 조회 ──────────────────────────────────────────────────
@@ -372,6 +447,77 @@ function normalizeWeights(weights) {
   );
 }
 
+async function checkConsecutiveLowWeeks(botName, limitWeeks = CONSECUTIVE_LOW_WEEKS) {
+  const history = await getWeeklyAccuracyHistory(botName, limitWeeks);
+  let consecutive = 0;
+  for (const week of history) {
+    if (week.rate !== null && week.rate < THRESHOLD_LOW) consecutive += 1;
+    else break;
+  }
+  return consecutive;
+}
+
+async function adjustAnalystWeights({
+  persist = true,
+} = {}) {
+  const currentProfiles = _getEffectiveProfileWeights();
+  const currentDefault = currentProfiles.default || {};
+  const report = await buildAccuracyReport({
+    aria: currentDefault.taMtf,
+    oracle: currentDefault.onchain,
+    sophia: currentDefault.sentiment,
+    hermes: currentDefault.news,
+  });
+
+  const adjustments = [];
+  const alerts = [];
+  const adjustmentByAnalyst = {};
+
+  for (const item of report.adjustments || []) {
+    const analystName = item.botName;
+    const currentWeight = Number(item.currentWeight);
+    const suggestedWeight = Number(item.suggestedWeight);
+    if (!Number.isFinite(currentWeight) || !Number.isFinite(suggestedWeight)) continue;
+    const delta = _round2(suggestedWeight - currentWeight);
+    if (delta !== 0) {
+      adjustmentByAnalyst[analystName] = delta;
+      adjustments.push({
+        name: analystName,
+        from: currentWeight,
+        to: suggestedWeight,
+        accuracy: item.accuracy,
+        sampleCount: item.sampleCount,
+        reason: item.reason,
+      });
+    }
+    const consecutiveLow = await checkConsecutiveLowWeeks(analystName, CONSECUTIVE_LOW_WEEKS);
+    if (ALERT_ELIGIBLE_ANALYSTS.has(analystName) && consecutiveLow >= CONSECUTIVE_LOW_WEEKS) {
+      const meta = _fallbackAnalystMeta(analystName);
+      alerts.push({
+        analyst: analystName,
+        label: meta?.label || analystName,
+        weeks: consecutiveLow,
+        message: `⚠️ ${meta?.label || analystName} ${consecutiveLow}주 연속 50% 미만 — 역할 재검토 필요`,
+      });
+    }
+  }
+
+  const nextProfiles = _applyAdjustmentToProfiles(currentProfiles, adjustmentByAnalyst);
+  if (persist && adjustments.length > 0) {
+    _writeOverrideWeights(nextProfiles);
+  }
+
+  return {
+    report,
+    adjustments,
+    alerts,
+    currentProfiles,
+    nextProfiles,
+    persisted: Boolean(persist && adjustments.length > 0),
+    overridePath: OVERRIDE_PATH,
+  };
+}
+
 export {
   ANALYSTS,
   getActiveAnalysts,
@@ -379,5 +525,8 @@ export {
   getWeeklyAccuracyHistory,
   calculateWeightAdjustment,
   buildAccuracyReport,
+  adjustAnalystWeights,
+  checkConsecutiveLowWeeks,
+  getEffectiveAnalystWeightProfiles,
   normalizeWeights,
 };

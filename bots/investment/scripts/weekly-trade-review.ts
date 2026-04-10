@@ -20,11 +20,13 @@
 import { callLLM, parseJSON } from '../shared/llm-client.ts';
 import { publishToMainBot } from '../shared/mainbot-client.ts';
 import * as db from '../shared/db.ts';
+import { adjustAnalystWeights } from '../shared/analyst-accuracy.ts';
 import { validateTradeReview } from './validate-trade-review.ts';
 import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
 const pgPool = require('../../../packages/core/lib/pg-pool');
+const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 
 function getMarketBucket(exchange) {
   if (exchange === 'kis') return 'domestic';
@@ -670,6 +672,63 @@ function buildTelegramMessage(trades, review, rrSection = null) {
   return lines.join('\n');
 }
 
+function buildAnalystWeightAdjustmentMessage(result) {
+  const lines = ['📊 분석팀 가중치 조정'];
+  if (!result.adjustments?.length) {
+    lines.push('- 이번 주 변경 없음');
+  } else {
+    for (const item of result.adjustments) {
+      const accuracyText = item.accuracy != null ? `${(item.accuracy * 100).toFixed(1)}%` : 'n/a';
+      lines.push(`- ${item.name}: ${item.from} → ${item.to} (${accuracyText}, ${item.reason})`);
+    }
+  }
+  if (result.persisted && result.overridePath) {
+    lines.push(`- 저장: ${result.overridePath}`);
+  }
+  return lines.join('\n');
+}
+
+async function runWeeklyAnalystWeightAdjustment({ dryRun = false } = {}) {
+  const analystWeightResult = await adjustAnalystWeights({ persist: !dryRun });
+  console.log(`\n  ⚖️ 분석팀 가중치 조정: ${analystWeightResult.adjustments.length}건`);
+  for (const item of analystWeightResult.adjustments) {
+    console.log(`    - ${item.name}: ${item.from} → ${item.to} (${item.reason})`);
+  }
+  for (const alert of analystWeightResult.alerts) {
+    console.log(`    ⚠️ ${alert.message}`);
+  }
+
+  if (dryRun) {
+    if (analystWeightResult.adjustments.length > 0 || analystWeightResult.alerts.length > 0) {
+      console.log('\n--- 분석팀 가중치 조정 미리보기 (dry-run) ---');
+      console.log(buildAnalystWeightAdjustmentMessage(analystWeightResult));
+      for (const alert of analystWeightResult.alerts) {
+        console.log(alert.message);
+      }
+    }
+    return analystWeightResult;
+  }
+
+  if (analystWeightResult.adjustments.length > 0) {
+    await postAlarm({
+      message: buildAnalystWeightAdjustmentMessage(analystWeightResult),
+      team: 'investment',
+      alertLevel: 1,
+      fromBot: 'luna-weekly-review',
+    }).catch(() => {});
+  }
+  for (const alert of analystWeightResult.alerts) {
+    await postAlarm({
+      message: alert.message,
+      team: 'investment',
+      alertLevel: 2,
+      fromBot: 'luna-weekly-review',
+    }).catch(() => {});
+  }
+
+  return analystWeightResult;
+}
+
 // ─── 메인 ────────────────────────────────────────────────────────────
 
 async function main() {
@@ -750,6 +809,8 @@ async function main() {
       console.log(buildNoTradeTelegramMessage(DAYS, positions, tokenUsage));
     }
 
+    await runWeeklyAnalystWeightAdjustment({ dryRun: DRY_RUN });
+
     console.log('\n✅ [주간 리뷰] 완료 (거래 없음 요약)');
     process.exit(0);
   }
@@ -783,6 +844,8 @@ async function main() {
   console.log(`  → 전략: ${review.next_week_strategy}`);
 
   await storeReviewToRAG(summary, review, trades, rrSection);
+
+  await runWeeklyAnalystWeightAdjustment({ dryRun: DRY_RUN });
 
   if (!DRY_RUN) {
     const msg = buildTelegramMessage(trades, review, rrSection);

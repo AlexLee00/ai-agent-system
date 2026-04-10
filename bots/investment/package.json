@@ -40,6 +40,12 @@
     "validate-review:fix": "node scripts/validate-trade-review.ts --fix",
     "analyze-rr": "node scripts/analyze-rr.ts",
     "analyze-rr:30": "node scripts/analyze-rr.ts --days=30",
+    "analyze-rr:validate": "node scripts/analyze-rr.ts --validate-backtest",
+    "analyze-rr:validate-only": "node scripts/analyze-rr.ts --validate-backtest-only",
+    "backtest:vectorbt": "python3 scripts/backtest-vectorbt.py --symbol BTC/USDT --days 30",
+    "backtest:vectorbt:grid": "python3 scripts/backtest-vectorbt.py --symbol BTC/USDT --days 90 --grid",
+    "optimize-ta": "node scripts/optimize-ta-params.ts",
+    "optimize-ta:no-alert": "node scripts/optimize-ta-params.ts --no-alert",
     "analyze-signals": "node scripts/analyze-signal-correlation.ts",
     "analyze-signals:30": "node scripts/analyze-signal-correlation.ts --days=30"
   },

@@ -14,9 +14,9 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
-import { fileURLToPath } from 'url';
 
 import * as db from '../shared/db.ts';
+import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import {
   getInvestmentTradeMode,
   getKisMarketStatus,
@@ -211,9 +211,9 @@ async function main() {
   console.log(`\n✅ [장전 스크리닝] ${label} 완료 — ${symbols.length}개 종목`);
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  main().catch(e => {
-    console.error('❌ 장전 스크리닝 오류:', e.message);
-    process.exit(1);
+if (isDirectExecution(import.meta.url)) {
+  await runCliMain({
+    run: () => main(),
+    errorPrefix: '❌ 장전 스크리닝 오류:',
   });
 }

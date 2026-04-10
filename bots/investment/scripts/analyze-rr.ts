@@ -19,6 +19,7 @@
 import { createRequire } from 'module';
 import * as db from '../shared/db.ts';
 import * as journalDb from '../shared/trade-journal-db.ts';
+import { runVectorBtBacktest } from '../shared/vectorbt-runner.ts';
 
 const _require = createRequire(import.meta.url);
 const rag      = _require('../../../packages/core/lib/rag-safe');
@@ -27,11 +28,78 @@ const kst      = _require('../../../packages/core/lib/kst');
 const args    = process.argv.slice(2);
 const daysArg = args.find(a => a.startsWith('--days='));
 const DAYS    = daysArg ? parseInt(daysArg.split('=')[1]) : 90;
+const SYMBOL   = args.find(a => a.startsWith('--symbol='))?.split('=')[1] || 'BTC/USDT';
+const SHOULD_VALIDATE_BACKTEST = args.includes('--validate-backtest');
+const VALIDATE_BACKTEST_ONLY = args.includes('--validate-backtest-only');
+
+const RR_SCENARIOS = [
+  { tp: 1.0, sl: 0.5,  label: 'TP 1.0% / SL 0.5%  (R/R 2:1)' },
+  { tp: 1.5, sl: 0.75, label: 'TP 1.5% / SL 0.75% (R/R 2:1)' },
+  { tp: 2.0, sl: 1.0,  label: 'TP 2.0% / SL 1.0%  (R/R 2:1)' },
+  { tp: 3.0, sl: 1.0,  label: 'TP 3.0% / SL 1.0%  (R/R 3:1)' },
+  { tp: 6.0, sl: 3.0,  label: 'TP 6.0% / SL 3.0%  (현재 고정 R/R 2:1)' },
+  { tp: 1.5, sl: 1.0,  label: 'TP 1.5% / SL 1.0%  (R/R 1.5:1)' },
+  { tp: 2.0, sl: 0.7,  label: 'TP 2.0% / SL 0.7%  (R/R 2.86:1)' },
+  { tp: 1.0, sl: 1.0,  label: 'TP 1.0% / SL 1.0%  (R/R 1:1)' },
+];
+
+async function validateRRWithBacktest(symbol, days = 90, scenarios = RR_SCENARIOS) {
+  console.log(`7. VectorBT 백테스트 검증 (${symbol}, ${days}일)`);
+
+  const results = [];
+  for (const scenario of scenarios) {
+    try {
+      const btResult = runVectorBtBacktest(symbol, days, {
+        tpPct: scenario.tp / 100,
+        slPct: scenario.sl / 100,
+      });
+      if (btResult?.status === 'dependency_missing') {
+        console.log(`   ⚠️ 의존성 부족: ${btResult.missing?.join(', ') || 'unknown'}`);
+        console.log(`   설치: ${btResult.install}`);
+        return { status: 'dependency_missing', details: btResult };
+      }
+      results.push({
+        ...scenario,
+        sharpe: btResult?.sharpe_ratio ?? null,
+        totalReturn: btResult?.total_return ?? null,
+        maxDrawdown: btResult?.max_drawdown ?? null,
+        winRate: btResult?.win_rate ?? null,
+        totalTrades: btResult?.total_trades ?? null,
+      });
+      console.log(
+        `   - ${scenario.label}: ` +
+        `샤프=${Number(btResult?.sharpe_ratio || 0).toFixed(2)} ` +
+        `수익=${Number(btResult?.total_return || 0).toFixed(1)}% ` +
+        `MDD=${Number(btResult?.max_drawdown || 0).toFixed(1)}%`,
+      );
+    } catch (error) {
+      console.log(`   ⚠️ ${scenario.label}: 검증 실패 (${error.message})`);
+      results.push({ ...scenario, error: error.message });
+    }
+  }
+
+  return { status: 'ok', results };
+}
 
 async function analyzeRR() {
   console.log(`=== 네메시스 R/R 최적화 분석 (최근 ${DAYS}일) ===\n`);
 
-  await journalDb.initJournalSchema();
+  if (VALIDATE_BACKTEST_ONLY) {
+    await validateRRWithBacktest(SYMBOL, DAYS);
+    process.exit(0);
+  }
+
+  try {
+    await journalDb.initJournalSchema();
+  } catch (error) {
+    if (SHOULD_VALIDATE_BACKTEST) {
+      console.log(`⚠️ DB 초기화 실패 — 백테스트 검증만 계속 진행: ${error.message}`);
+      console.log('');
+      await validateRRWithBacktest(SYMBOL, DAYS);
+      process.exit(0);
+    }
+    throw error;
+  }
 
   const sinceMs = Date.now() - DAYS * 24 * 60 * 60 * 1000;
 
@@ -55,6 +123,10 @@ async function analyzeRR() {
   if (total === 0) {
     console.log('⬜ 종료된 매매 없음 — 충분한 매매 기록이 쌓인 후 재실행하세요.');
     console.log('   (최소 10건 이상 권장)');
+    if (SHOULD_VALIDATE_BACKTEST) {
+      console.log('');
+      await validateRRWithBacktest(SYMBOL, DAYS);
+    }
     process.exit(0);
   }
 
@@ -130,21 +202,10 @@ async function analyzeRR() {
   } else {
     console.log(`3. TP/SL 시뮬레이션 (${reviewedTrades.length}건 리뷰 기반)`);
 
-    const scenarios = [
-      { tp: 1.0, sl: 0.5,  label: 'TP 1.0% / SL 0.5%  (R/R 2:1)' },
-      { tp: 1.5, sl: 0.75, label: 'TP 1.5% / SL 0.75% (R/R 2:1)' },
-      { tp: 2.0, sl: 1.0,  label: 'TP 2.0% / SL 1.0%  (R/R 2:1)' },
-      { tp: 3.0, sl: 1.0,  label: 'TP 3.0% / SL 1.0%  (R/R 3:1)' },
-      { tp: 6.0, sl: 3.0,  label: 'TP 6.0% / SL 3.0%  (현재 고정 R/R 2:1)' },
-      { tp: 1.5, sl: 1.0,  label: 'TP 1.5% / SL 1.0%  (R/R 1.5:1)' },
-      { tp: 2.0, sl: 0.7,  label: 'TP 2.0% / SL 0.7%  (R/R 2.86:1)' },
-      { tp: 1.0, sl: 1.0,  label: 'TP 1.0% / SL 1.0%  (R/R 1:1)' },
-    ];
-
     let bestExpectancy = -Infinity;
     let bestScenario   = null;
 
-    for (const sc of scenarios) {
+    for (const sc of RR_SCENARIOS) {
       let wins2 = 0, losses2 = 0, neither = 0, totalPnl = 0;
 
       for (const t of reviewedTrades) {
@@ -259,6 +320,11 @@ async function analyzeRR() {
     console.log('✅ [RAG] R/R 분석 결과 rag_trades 저장 완료');
   } catch (e) {
     console.warn('⚠️ [RAG] 저장 실패 (무시):', e.message);
+  }
+
+  if (SHOULD_VALIDATE_BACKTEST) {
+    console.log('');
+    await validateRRWithBacktest(SYMBOL, DAYS);
   }
 
   process.exit(0);

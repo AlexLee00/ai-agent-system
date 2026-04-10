@@ -15,9 +15,9 @@
  */
 
 import ccxt            from 'ccxt';
-import { fileURLToPath } from 'url';
 import { createRequire }  from 'module';
 import * as db          from '../shared/db.ts';
+import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { loadSecrets, initHubSecrets, getMarketExecutionModeInfo } from '../shared/secrets.ts';
 import { getDomesticPrice, getOverseasPrice } from '../shared/kis-client.ts';
 import { tracker }      from '../shared/cost-tracker.ts';
@@ -251,6 +251,39 @@ function buildSection(title, lines) {
   };
 }
 
+function buildBalanceSummaryLines({ balances, usdtBal, equity, balanceSource }) {
+  if (balances.length === 0) {
+    return [
+      `조회 실패`,
+      `USDT 가용: 조회 실패`,
+      `총 자산(추정): $${equity.toFixed(2)} (최신 스냅샷 기준)`,
+    ];
+  }
+
+  return [
+    ...balances.map((b) => `  ${b.coin}: ${b.total.toFixed(6)} (가용 ${b.free.toFixed(6)})`),
+    `  USDT 가용: $${(usdtBal?.free || 0).toFixed(2)}`,
+    `  총 자산(추정): $${equity.toFixed(2)}`,
+    `  자산 집계 소스: ${balanceSource === 'binance_live' ? '바이낸스 실잔고' : '최신 스냅샷 fallback'}`,
+  ];
+}
+
+function buildTradeBreakdownLines(tradeBreakdown = []) {
+  if (tradeBreakdown.length === 0) return ['거래 없음'];
+  return tradeBreakdown.map((row) => {
+    const modeLabel = row.mode === 'live' ? 'LIVE' : 'PAPER';
+    return `${modeLabel} [${row.exchange} / ${row.brokerAccountMode}]: ${row.count}건 | 총 거래금액 ${formatPrice(row.gross, row.exchange)}`;
+  });
+}
+
+function buildSignalStatsLines({ days, sigTotal, sigExec, sigApproved, sigFailed }) {
+  return [
+    `총 신호: ${sigTotal}개`,
+    `실행(모의): ${sigExec}개 | 승인대기: ${sigApproved}개 | 잔고부족실패: ${sigFailed}개`,
+    ...(sigTotal > 0 ? [`실행률: ${((sigExec / sigTotal) * 100).toFixed(1)}%`] : []),
+  ];
+}
+
 // ─── 리포트 생성 ─────────────────────────────────────────────────────
 
 export async function generateReport({ days = 30, telegram = false } = {}) {
@@ -396,17 +429,7 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
 
   // 바이낸스 잔고
   lines.push(`━━━ 바이낸스 실잔고 ━━━`);
-  if (balances.length === 0) {
-    lines.push(`  조회 실패`);
-    lines.push(`  USDT 가용: 조회 실패`);
-    lines.push(`  총 자산(추정): $${equity.toFixed(2)} (최신 스냅샷 기준)`);
-  } else {
-    for (const b of balances) {
-      lines.push(`  ${b.coin}: ${b.total.toFixed(6)} (가용 ${b.free.toFixed(6)})`);
-    }
-    lines.push(`  USDT 가용: $${(usdtBal?.free || 0).toFixed(2)}`);
-    lines.push(`  총 자산(추정): $${equity.toFixed(2)}`);
-  }
+  lines.push(...buildBalanceSummaryLines({ balances, usdtBal, equity, balanceSource }));
   lines.push(``);
 
   // 자산 추이 (스냅샷 2개 이상일 때)
@@ -485,14 +508,7 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
   lines.push(``);
 
   lines.push(`━━━ 실행 모드 분리 ━━━`);
-  if (tradeBreakdown.length === 0) {
-    lines.push(`  거래 없음`);
-  } else {
-    for (const row of tradeBreakdown) {
-      const modeLabel = row.mode === 'live' ? 'LIVE' : 'PAPER';
-      lines.push(`  ${modeLabel} [${row.exchange} / ${row.brokerAccountMode}]: ${row.count}건 | 총 거래금액 ${formatPrice(row.gross, row.exchange)}`);
-    }
-  }
+  lines.push(...buildTradeBreakdownLines(tradeBreakdown).map((line) => `  ${line}`));
   if (positionBreakdown.length > 0) {
     lines.push(`  포지션:`);
     for (const row of positionBreakdown) {
@@ -581,10 +597,7 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
         ]),
         buildSection('실행 모드', tradeBreakdown.length === 0
           ? ['거래 없음']
-          : tradeBreakdown.map((row) => {
-              const modeLabel = row.mode === 'live' ? 'LIVE' : 'PAPER';
-              return `${modeLabel} [${row.exchange} / ${row.brokerAccountMode}]: ${row.count}건 | 총 거래금액 ${formatPrice(row.gross, row.exchange)}`;
-            })),
+          : buildTradeBreakdownLines(tradeBreakdown)),
         buildSection('자산/비용', [
           balances.length === 0 ? 'USDT 가용: 조회 실패' : `USDT 가용: $${(usdtBal?.free || 0).toFixed(2)}`,
           balances.length === 0
@@ -594,11 +607,7 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
           `이번달 LLM 비용: $${cost.monthUsage.toFixed(4)} / $${cost.monthlyBudget.toFixed(2)}`,
           `자산 집계 소스: ${balanceSource === 'binance_live' ? '바이낸스 실잔고' : '최신 스냅샷 fallback'}`,
         ]),
-        buildSection(`신호 통계 (${days}일)`, [
-          `총 신호: ${sigTotal}개`,
-          `실행(모의): ${sigExec}개 | 승인대기: ${sigApproved}개 | 잔고부족실패: ${sigFailed}개`,
-          ...(sigTotal > 0 ? [`실행률: ${((sigExec / sigTotal) * 100).toFixed(1)}%`] : []),
-        ]),
+        buildSection(`신호 통계 (${days}일)`, buildSignalStatsLines({ days, sigTotal, sigExec, sigApproved, sigFailed })),
       ],
       footer: '상세: 콘솔 리포트 참고',
     }));
@@ -676,12 +685,14 @@ export async function buildWeek4Summary() {
 
 // ─── CLI 실행 ───────────────────────────────────────────────────────
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const args     = process.argv.slice(2);
-  const telegram = args.includes('--telegram');
-  const daysArg  = args.find(a => a.startsWith('--days='));
-  const days     = daysArg ? parseInt(daysArg.split('=')[1]) : 30;
-
-  await generateReport({ days, telegram });
-  process.exit(0);
+if (isDirectExecution(import.meta.url)) {
+  await runCliMain({
+    run: async () => {
+      const args     = process.argv.slice(2);
+      const telegram = args.includes('--telegram');
+      const daysArg  = args.find(a => a.startsWith('--days='));
+      const days     = daysArg ? parseInt(daysArg.split('=')[1]) : 30;
+      return generateReport({ days, telegram });
+    },
+  });
 }

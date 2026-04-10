@@ -21,9 +21,9 @@
  *       node team/hanul.js [--symbol=AAPL] [--action=BUY] [--amount=400]
  */
 
-import { fileURLToPath } from 'url';
 import * as db from '../shared/db.ts';
 import * as journalDb from '../shared/trade-journal-db.ts';
+import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import {
   isPaperMode,
   isKisPaper,
@@ -87,6 +87,27 @@ async function markSignalFailed(signalId, reason) {
   return markSignalFailedDetailed(signalId, { reason });
 }
 
+async function failHanulSignal(signalId, {
+  reason,
+  code = null,
+  market = 'domestic',
+  symbol = null,
+  action = null,
+  amount = null,
+  error = null,
+} = {}) {
+  await markSignalFailedDetailed(signalId, {
+    reason,
+    code,
+    market,
+    symbol,
+    action,
+    amount,
+    error,
+  });
+  return { success: false, reason: reason || error || null, error: error || null };
+}
+
 function inferHanulBlockCode(reason = '', market = 'domestic') {
   if (!reason) return market === 'overseas' ? 'overseas_order_rejected' : 'domestic_order_rejected';
   if (reason.includes('[90000000]') || reason.includes('모의투자에서는 해당업무가 제공되지 않습니다')) return 'mock_operation_unsupported';
@@ -123,6 +144,198 @@ async function markSignalFailedDetailed(signalId, {
       error: error ? String(error).slice(0, 240) : null,
     },
   }).catch(() => {});
+}
+
+async function recordHanulEntryJournal({
+  market,
+  exchange,
+  signalId,
+  symbol,
+  trade,
+  paperMode,
+  confidence = null,
+  reasoning = null,
+}) {
+  try {
+    const execTime = Date.now();
+    const tradeId = await journalDb.generateTradeId();
+    await journalDb.insertJournalEntry({
+      trade_id: tradeId,
+      signal_id: signalId,
+      market,
+      exchange,
+      symbol,
+      is_paper: paperMode,
+      entry_time: execTime,
+      entry_price: trade.price || 0,
+      entry_size: trade.amount || 0,
+      entry_value: trade.totalUsdt || 0,
+      direction: 'long',
+    });
+    await journalDb.linkRationaleToTrade(tradeId, signalId).catch(() => {});
+    notifyJournalEntry({
+      tradeId,
+      symbol,
+      direction: 'long',
+      market,
+      entryPrice: trade.price,
+      entryValue: trade.totalUsdt,
+      isPaper: paperMode,
+      confidence,
+      reasoning,
+    });
+  } catch (journalErr) {
+    const marketLabel = market === 'overseas' ? '해외주식' : '국내주식';
+    console.warn(`  ⚠️ ${marketLabel} 매매일지 기록 실패: ${journalErr.message}`);
+  }
+}
+
+async function finalizeHanulTrade({ trade, signalId, currency, tag }) {
+  await db.insertTrade(trade);
+  await db.updateSignalStatus(signalId, SIGNAL_STATUS.EXECUTED);
+  await notifyTrade({ ...trade, currency });
+  const priceLabel = currency === 'KRW'
+    ? `${trade.price?.toLocaleString()}원`
+    : `$${trade.price}`;
+  console.log(`  ✅ ${tag} 완료: ${trade.side} ${trade.amount}주 @ ${priceLabel}`);
+  return { success: true, trade };
+}
+
+async function processPendingHanulSignals({ exchange, label, execute, delayMs = 1100 }) {
+  const startedAt = Date.now();
+  const tradeMode = getInvestmentTradeMode();
+  console.log(`[한울] ${label} pending 조회 시작 ${JSON.stringify({ pool: getInvestmentPoolStats() })}`);
+  const signals = await db.getPendingSignals(exchange, tradeMode);
+  logHanulPhase(`${label} pending 조회 완료`, startedAt, { signal_count: signals.length, trade_mode: tradeMode });
+  if (signals.length === 0) {
+    console.log(`[한울] 대기 ${label} 신호 없음 (trade_mode=${tradeMode})`);
+    return [];
+  }
+  console.log(`[한울] ${signals.length}개 ${label} 신호 처리 시작 (trade_mode=${tradeMode})`);
+  const results = [];
+  for (const signal of signals) {
+    const signalStartedAt = Date.now();
+    results.push(await execute(signal));
+    logHanulPhase(`${label} 신호 처리 완료 ${signal.symbol}`, signalStartedAt, {
+      signal_id: signal.id,
+      action: signal.action,
+    });
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+  logHanulPhase(`${label} pending 전체 처리 완료`, startedAt, {
+    signal_count: signals.length,
+    success_count: results.filter((result) => result?.success).length,
+  });
+  return results;
+}
+
+async function ensureHanulBuyEntryAllowed({
+  signalId,
+  signalTradeMode,
+  paperMode,
+  symbol,
+  action,
+  amount,
+  exchange,
+  market,
+}) {
+  const livePosition = await db.getLivePosition(symbol, exchange, signalTradeMode);
+  const paperPosition = await db.getPaperPosition(symbol, exchange, signalTradeMode);
+  const sameDayBuyTrade = isSameDaySymbolReentryBlockEnabled()
+    ? await db.getSameDayTrade({ symbol, side: 'buy', exchange, tradeMode: signalTradeMode })
+    : null;
+
+  if (paperMode && livePosition) {
+    return failHanulSignal(signalId, {
+      reason: '실포지션 보유 중에는 PAPER 추가매수로 혼합 포지션을 만들 수 없음',
+      code: 'position_mode_conflict',
+      market,
+      symbol,
+      action,
+      amount,
+    });
+  }
+  if (paperMode && paperPosition) {
+    return failHanulSignal(signalId, {
+      reason: `동일 ${signalTradeMode.toUpperCase()} PAPER 포지션 보유 중 — 추가매수 차단`,
+      code: 'paper_position_reentry_blocked',
+      market,
+      symbol,
+      action,
+      amount,
+    });
+  }
+  if (!paperMode && livePosition) {
+    return failHanulSignal(signalId, {
+      reason: '동일 LIVE 포지션 보유 중 — 추가매수 차단',
+      code: 'live_position_reentry_blocked',
+      market,
+      symbol,
+      action,
+      amount,
+    });
+  }
+  if (!livePosition && !paperPosition && sameDayBuyTrade) {
+    return failHanulSignal(signalId, {
+      reason: `동일 ${signalTradeMode.toUpperCase()} 심볼 당일 재진입 차단`,
+      code: 'same_day_reentry_blocked',
+      market,
+      symbol,
+      action,
+      amount,
+    });
+  }
+
+  return { success: true };
+}
+
+async function prepareHanulSellExecution({
+  signalId,
+  signalTradeMode,
+  paperMode,
+  symbol,
+  action,
+  amount,
+  exchange,
+  market,
+  missingReason,
+}) {
+  const livePosition = await db.getLivePosition(symbol, exchange, signalTradeMode);
+  const paperPosition = await db.getPaperPosition(symbol, exchange, signalTradeMode);
+
+  if (paperMode && livePosition && !paperPosition) {
+    return failHanulSignal(signalId, {
+      reason: '실포지션 보유 중에는 PAPER SELL로 혼합 청산을 실행할 수 없음',
+      code: 'position_mode_conflict',
+      market,
+      symbol,
+      action,
+      amount,
+    });
+  }
+
+  const position = paperPosition || livePosition;
+  const sellPaperMode = paperMode || (!livePosition && !!paperPosition);
+  const qty = position?.amount;
+  if (!qty || qty < 1) {
+    return failHanulSignal(signalId, {
+      reason: missingReason,
+      market,
+      symbol,
+      action,
+      amount,
+    });
+  }
+
+  return {
+    success: true,
+    livePosition,
+    paperPosition,
+    position,
+    sellPaperMode,
+    qty,
+    effectiveTradeMode: getPositionTradeMode(position, signalTradeMode),
+  };
 }
 
 async function getKisExecutionPreflight({ market = 'domestic', action = ACTIONS.HOLD }) {
@@ -414,7 +627,7 @@ export async function executeSignal(signal) {
     const preflight = await getKisExecutionPreflight({ market: 'domestic', action });
     if (!preflight.ok) {
       console.log(`  ⛔ 실행 사전 차단: ${preflight.reason}`);
-      await markSignalFailedDetailed(signalId, {
+      return failHanulSignal(signalId, {
         reason: preflight.reason,
         code: preflight.code,
         market: 'domestic',
@@ -422,13 +635,12 @@ export async function executeSignal(signal) {
         action,
         amount: amountKrw,
       });
-      return { success: false, reason: preflight.reason };
     }
 
     const risk = await checkKisRisk(signal);
     if (!risk.approved) {
       console.log(`  ❌ 리스크 거부: ${risk.reason}`);
-      await markSignalFailedDetailed(signalId, {
+      return failHanulSignal(signalId, {
         reason: risk.reason,
         code: risk.code || null,
         market: 'domestic',
@@ -436,7 +648,6 @@ export async function executeSignal(signal) {
         action,
         amount: amountKrw,
       });
-      return { success: false, reason: risk.reason };
     }
 
     // 신호 알람 (BUY/SELL만, HOLD 제외)
@@ -448,64 +659,17 @@ export async function executeSignal(signal) {
     let trade;
 
     if (action === ACTIONS.BUY) {
-      const livePosition = await db.getLivePosition(symbol, 'kis', signalTradeMode);
-      const paperPosition = await db.getPaperPosition(symbol, 'kis', signalTradeMode);
-      const sameDayBuyTrade = isSameDaySymbolReentryBlockEnabled()
-        ? await db.getSameDayTrade({ symbol, side: 'buy', exchange: 'kis', tradeMode: signalTradeMode })
-        : null;
-
-      if (paperMode && livePosition) {
-        const reason = '실포지션 보유 중에는 PAPER 추가매수로 혼합 포지션을 만들 수 없음';
-        console.warn(`  ⚠️ ${reason}`);
-        await markSignalFailedDetailed(signalId, {
-          reason,
-          code: 'position_mode_conflict',
-          market: 'domestic',
-          symbol,
-          action,
-          amount: amountKrw,
-        });
-        return { success: false, reason };
-      }
-      if (paperMode && paperPosition) {
-        const reason = `동일 ${signalTradeMode.toUpperCase()} PAPER 포지션 보유 중 — 추가매수 차단`;
-        console.warn(`  ⚠️ ${reason}`);
-        await markSignalFailedDetailed(signalId, {
-          reason,
-          code: 'paper_position_reentry_blocked',
-          market: 'domestic',
-          symbol,
-          action,
-          amount: amountKrw,
-        });
-        return { success: false, reason };
-      }
-      if (!paperMode && livePosition) {
-        const reason = '동일 LIVE 포지션 보유 중 — 추가매수 차단';
-        console.warn(`  ⚠️ ${reason}`);
-        await markSignalFailedDetailed(signalId, {
-          reason,
-          code: 'live_position_reentry_blocked',
-          market: 'domestic',
-          symbol,
-          action,
-          amount: amountKrw,
-        });
-        return { success: false, reason };
-      }
-      if (!livePosition && !paperPosition && sameDayBuyTrade) {
-        const reason = `동일 ${signalTradeMode.toUpperCase()} 심볼 당일 재진입 차단`;
-        console.warn(`  ⚠️ ${reason}`);
-        await markSignalFailedDetailed(signalId, {
-          reason,
-          code: 'same_day_reentry_blocked',
-          market: 'domestic',
-          symbol,
-          action,
-          amount: amountKrw,
-        });
-        return { success: false, reason };
-      }
+      const buyEntryState = await ensureHanulBuyEntryAllowed({
+        signalId,
+        signalTradeMode,
+        paperMode,
+        symbol,
+        action,
+        amount: amountKrw,
+        exchange: 'kis',
+        market: 'domestic',
+      });
+      if (buyEntryState?.success === false) return buyEntryState;
 
       // paperMode=true → dryRun(API 호출 없음) / false → brokerAccountMode(mock/real)에 따라 실제 주문 API 호출
       const order = await kis.marketBuy(symbol, amountKrw, paperMode);
@@ -529,87 +693,48 @@ export async function executeSignal(signal) {
         tradeMode: signalTradeMode,
       });
 
-      try {
-        const execTime = Date.now();
-        const tradeId = await journalDb.generateTradeId();
-        await journalDb.insertJournalEntry({
-          trade_id: tradeId,
-          signal_id: signalId,
-          market: 'domestic',
-          exchange: 'kis',
-          symbol,
-          is_paper: paperMode,
-          entry_time: execTime,
-          entry_price: trade.price || 0,
-          entry_size: trade.amount || 0,
-          entry_value: trade.totalUsdt || 0,
-          direction: 'long',
-        });
-        await journalDb.linkRationaleToTrade(tradeId, signalId).catch(() => {});
-        notifyJournalEntry({
-          tradeId,
-          symbol,
-          direction: 'long',
-          market: 'domestic',
-          entryPrice: trade.price,
-          entryValue: trade.totalUsdt,
-          isPaper: paperMode,
-          confidence: signal.confidence,
-          reasoning: signal.reasoning,
-        });
-      } catch (journalErr) {
-        console.warn(`  ⚠️ 국내주식 매매일지 기록 실패: ${journalErr.message}`);
-      }
+      await recordHanulEntryJournal({
+        market: 'domestic',
+        exchange: 'kis',
+        signalId,
+        symbol,
+        trade,
+        paperMode,
+        confidence: signal.confidence,
+        reasoning: signal.reasoning,
+      });
 
     } else if (action === ACTIONS.SELL) {
-      const livePosition = await db.getLivePosition(symbol, 'kis', signalTradeMode);
-      const paperPosition = await db.getPaperPosition(symbol, 'kis', signalTradeMode);
-      if (paperMode && livePosition && !paperPosition) {
-        const reason = '실포지션 보유 중에는 PAPER SELL로 혼합 청산을 실행할 수 없음';
-        console.warn(`  ⚠️ ${reason}`);
-        await markSignalFailedDetailed(signalId, {
-          reason,
-          code: 'position_mode_conflict',
-          market: 'domestic',
-          symbol,
-          action,
-          amount: amountKrw,
-        });
-        return { success: false, reason };
-      }
-      const position = paperPosition || livePosition;
-      const sellPaperMode = paperMode || (!livePosition && !!paperPosition);
-      const qty = position?.amount;
-      if (!qty || qty < 1) {
-        console.warn(`  ⚠️ ${symbol} 포지션 없음 — SELL 스킵`);
-        await markSignalFailedDetailed(signalId, {
-          reason: '포지션 없음',
-          market: 'domestic',
-          symbol,
-          action,
-          amount: amountKrw,
-        });
-        return { success: false, reason: '포지션 없음' };
-      }
+      const sellState = await prepareHanulSellExecution({
+        signalId,
+        signalTradeMode,
+        paperMode,
+        symbol,
+        action,
+        amount: amountKrw,
+        exchange: 'kis',
+        market: 'domestic',
+        missingReason: '포지션 없음',
+      });
+      if (sellState?.success === false) return sellState;
 
-      const effectiveTradeMode = getPositionTradeMode(position, signalTradeMode);
-      const order = await kis.marketSell(symbol, Math.floor(qty), sellPaperMode);
+      const order = await kis.marketSell(symbol, Math.floor(sellState.qty), sellState.sellPaperMode);
       trade = {
         signalId, symbol, side: 'sell',
         amount:    order.qty,
         price:     order.price,
         totalUsdt: order.totalKrw,
-        paper:     sellPaperMode,
+        paper:     sellState.sellPaperMode,
         exchange:  'kis',
-        tradeMode: effectiveTradeMode,
+        tradeMode: sellState.effectiveTradeMode,
       };
 
       await db.deletePosition(symbol, {
         exchange: 'kis',
-        paper: sellPaperMode,
-        tradeMode: effectiveTradeMode,
+        paper: sellState.sellPaperMode,
+        tradeMode: sellState.effectiveTradeMode,
       });
-      await closeOpenJournalForSymbol(symbol, 'domestic', sellPaperMode, trade.price, trade.totalUsdt, exitReasonOverride || 'sell', trade.tradeMode).catch(() => {});
+      await closeOpenJournalForSymbol(symbol, 'domestic', sellState.sellPaperMode, trade.price, trade.totalUsdt, exitReasonOverride || 'sell', trade.tradeMode).catch(() => {});
 
     } else {
       console.log(`  ⏸️ HOLD — 실행 없음`);
@@ -617,12 +742,7 @@ export async function executeSignal(signal) {
       return { success: true };
     }
 
-    await db.insertTrade(trade);
-    await db.updateSignalStatus(signalId, SIGNAL_STATUS.EXECUTED);
-    await notifyTrade({ ...trade, currency: 'KRW' });
-
-    console.log(`  ✅ ${tag} 완료: ${trade.side} ${trade.amount}주 @ ${trade.price?.toLocaleString()}원`);
-    return { success: true, trade };
+    return finalizeHanulTrade({ trade, signalId, currency: 'KRW', tag });
 
   } catch (e) {
     console.error(`  ❌ 실행 오류: ${e.message}`);
@@ -659,7 +779,7 @@ export async function executeOverseasSignal(signal) {
     const preflight = await getKisExecutionPreflight({ market: 'overseas', action });
     if (!preflight.ok) {
       console.log(`  ⛔ 실행 사전 차단: ${preflight.reason}`);
-      await markSignalFailedDetailed(signalId, {
+      return failHanulSignal(signalId, {
         reason: preflight.reason,
         code: preflight.code,
         market: 'overseas',
@@ -667,13 +787,12 @@ export async function executeOverseasSignal(signal) {
         action,
         amount: amountUsd,
       });
-      return { success: false, reason: preflight.reason };
     }
 
     const risk = await checkKisOverseasRisk(signal);
     if (!risk.approved) {
       console.log(`  ❌ 리스크 거부: ${risk.reason}`);
-      await markSignalFailedDetailed(signalId, {
+      return failHanulSignal(signalId, {
         reason: risk.reason,
         code: risk.code || null,
         market: 'overseas',
@@ -681,7 +800,6 @@ export async function executeOverseasSignal(signal) {
         action,
         amount: amountUsd,
       });
-      return { success: false, reason: risk.reason };
     }
 
     // 신호 알람 (BUY/SELL만, HOLD 제외)
@@ -693,64 +811,17 @@ export async function executeOverseasSignal(signal) {
     let trade;
 
     if (action === ACTIONS.BUY) {
-      const livePosition = await db.getLivePosition(symbol, 'kis_overseas', signalTradeMode);
-      const paperPosition = await db.getPaperPosition(symbol, 'kis_overseas', signalTradeMode);
-      const sameDayBuyTrade = isSameDaySymbolReentryBlockEnabled()
-        ? await db.getSameDayTrade({ symbol, side: 'buy', exchange: 'kis_overseas', tradeMode: signalTradeMode })
-        : null;
-
-      if (paperMode && livePosition) {
-        const reason = '실포지션 보유 중에는 PAPER 추가매수로 혼합 포지션을 만들 수 없음';
-        console.warn(`  ⚠️ ${reason}`);
-        await markSignalFailedDetailed(signalId, {
-          reason,
-          code: 'position_mode_conflict',
-          market: 'overseas',
-          symbol,
-          action,
-          amount: amountUsd,
-        });
-        return { success: false, reason };
-      }
-      if (paperMode && paperPosition) {
-        const reason = `동일 ${signalTradeMode.toUpperCase()} PAPER 포지션 보유 중 — 추가매수 차단`;
-        console.warn(`  ⚠️ ${reason}`);
-        await markSignalFailedDetailed(signalId, {
-          reason,
-          code: 'paper_position_reentry_blocked',
-          market: 'overseas',
-          symbol,
-          action,
-          amount: amountUsd,
-        });
-        return { success: false, reason };
-      }
-      if (!paperMode && livePosition) {
-        const reason = '동일 LIVE 포지션 보유 중 — 추가매수 차단';
-        console.warn(`  ⚠️ ${reason}`);
-        await markSignalFailedDetailed(signalId, {
-          reason,
-          code: 'live_position_reentry_blocked',
-          market: 'overseas',
-          symbol,
-          action,
-          amount: amountUsd,
-        });
-        return { success: false, reason };
-      }
-      if (!livePosition && !paperPosition && sameDayBuyTrade) {
-        const reason = `동일 ${signalTradeMode.toUpperCase()} 심볼 당일 재진입 차단`;
-        console.warn(`  ⚠️ ${reason}`);
-        await markSignalFailedDetailed(signalId, {
-          reason,
-          code: 'same_day_reentry_blocked',
-          market: 'overseas',
-          symbol,
-          action,
-          amount: amountUsd,
-        });
-        return { success: false, reason };
-      }
+      const buyEntryState = await ensureHanulBuyEntryAllowed({
+        signalId,
+        signalTradeMode,
+        paperMode,
+        symbol,
+        action,
+        amount: amountUsd,
+        exchange: 'kis_overseas',
+        market: 'overseas',
+      });
+      if (buyEntryState?.success === false) return buyEntryState;
 
       const order = await kis.marketBuyOverseas(symbol, amountUsd, paperMode);
       trade = {
@@ -773,87 +844,48 @@ export async function executeOverseasSignal(signal) {
         tradeMode: signalTradeMode,
       });
 
-      try {
-        const execTime = Date.now();
-        const tradeId = await journalDb.generateTradeId();
-        await journalDb.insertJournalEntry({
-          trade_id: tradeId,
-          signal_id: signalId,
-          market: 'overseas',
-          exchange: 'kis_overseas',
-          symbol,
-          is_paper: paperMode,
-          entry_time: execTime,
-          entry_price: trade.price || 0,
-          entry_size: trade.amount || 0,
-          entry_value: trade.totalUsdt || 0,
-          direction: 'long',
-        });
-        await journalDb.linkRationaleToTrade(tradeId, signalId).catch(() => {});
-        notifyJournalEntry({
-          tradeId,
-          symbol,
-          direction: 'long',
-          market: 'overseas',
-          entryPrice: trade.price,
-          entryValue: trade.totalUsdt,
-          isPaper: paperMode,
-          confidence: signal.confidence,
-          reasoning: signal.reasoning,
-        });
-      } catch (journalErr) {
-        console.warn(`  ⚠️ 해외주식 매매일지 기록 실패: ${journalErr.message}`);
-      }
+      await recordHanulEntryJournal({
+        market: 'overseas',
+        exchange: 'kis_overseas',
+        signalId,
+        symbol,
+        trade,
+        paperMode,
+        confidence: signal.confidence,
+        reasoning: signal.reasoning,
+      });
 
     } else if (action === ACTIONS.SELL) {
-      const livePosition = await db.getLivePosition(symbol, 'kis_overseas', signalTradeMode);
-      const paperPosition = await db.getPaperPosition(symbol, 'kis_overseas', signalTradeMode);
-      if (paperMode && livePosition && !paperPosition) {
-        const reason = '실포지션 보유 중에는 PAPER SELL로 혼합 청산을 실행할 수 없음';
-        console.warn(`  ⚠️ ${reason}`);
-        await markSignalFailedDetailed(signalId, {
-          reason,
-          code: 'position_mode_conflict',
-          market: 'overseas',
-          symbol,
-          action,
-          amount: amountUsd,
-        });
-        return { success: false, reason };
-      }
-      const position = paperPosition || livePosition;
-      const sellPaperMode = paperMode || (!livePosition && !!paperPosition);
-      const qty = position?.amount;
-      if (!qty || qty < 1) {
-        console.warn(`  ⚠️ ${symbol} 해외 포지션 없음 — SELL 스킵`);
-        await markSignalFailedDetailed(signalId, {
-          reason: '해외 포지션 없음',
-          market: 'overseas',
-          symbol,
-          action,
-          amount: amountUsd,
-        });
-        return { success: false, reason: '해외 포지션 없음' };
-      }
+      const sellState = await prepareHanulSellExecution({
+        signalId,
+        signalTradeMode,
+        paperMode,
+        symbol,
+        action,
+        amount: amountUsd,
+        exchange: 'kis_overseas',
+        market: 'overseas',
+        missingReason: '해외 포지션 없음',
+      });
+      if (sellState?.success === false) return sellState;
 
-      const effectiveTradeMode = getPositionTradeMode(position, signalTradeMode);
-      const order = await kis.marketSellOverseas(symbol, Math.floor(qty), sellPaperMode);
+      const order = await kis.marketSellOverseas(symbol, Math.floor(sellState.qty), sellState.sellPaperMode);
       trade = {
         signalId, symbol, side: 'sell',
         amount:    order.qty,
         price:     order.price,
         totalUsdt: order.totalUsd,
-        paper:     sellPaperMode,
+        paper:     sellState.sellPaperMode,
         exchange:  'kis_overseas',
-        tradeMode: effectiveTradeMode,
+        tradeMode: sellState.effectiveTradeMode,
       };
 
       await db.deletePosition(symbol, {
         exchange: 'kis_overseas',
-        paper: sellPaperMode,
-        tradeMode: effectiveTradeMode,
+        paper: sellState.sellPaperMode,
+        tradeMode: sellState.effectiveTradeMode,
       });
-      await closeOpenJournalForSymbol(symbol, 'overseas', sellPaperMode, trade.price, trade.totalUsdt, exitReasonOverride || 'sell', trade.tradeMode).catch(() => {});
+      await closeOpenJournalForSymbol(symbol, 'overseas', sellState.sellPaperMode, trade.price, trade.totalUsdt, exitReasonOverride || 'sell', trade.tradeMode).catch(() => {});
 
     } else {
       console.log(`  ⏸️ HOLD — 실행 없음`);
@@ -861,12 +893,7 @@ export async function executeOverseasSignal(signal) {
       return { success: true };
     }
 
-    await db.insertTrade(trade);
-    await db.updateSignalStatus(signalId, SIGNAL_STATUS.EXECUTED);
-    await notifyTrade({ ...trade, currency: 'USD' });
-
-    console.log(`  ✅ ${tag} 완료: ${trade.side} ${trade.amount}주 @ $${trade.price}`);
-    return { success: true, trade };
+    return finalizeHanulTrade({ trade, signalId, currency: 'USD', tag });
 
   } catch (e) {
     if (e?.message && e.message.includes('APBK1526')) {
@@ -917,97 +944,62 @@ export async function executeOverseasSignal(signal) {
  * 대기 중인 KIS 국내주식 신호 전체 처리
  */
 export async function processAllPendingKisSignals() {
-  const startedAt = Date.now();
-  const tradeMode = getInvestmentTradeMode();
-  console.log(`[한울] KIS 국내 pending 조회 시작 ${JSON.stringify({ pool: getInvestmentPoolStats() })}`);
-  const signals = await db.getPendingSignals('kis', tradeMode);
-  logHanulPhase('KIS 국내 pending 조회 완료', startedAt, { signal_count: signals.length, trade_mode: tradeMode });
-  if (signals.length === 0) { console.log(`[한울] 대기 KIS 국내 신호 없음 (trade_mode=${tradeMode})`); return []; }
-  console.log(`[한울] ${signals.length}개 KIS 국내 신호 처리 시작 (trade_mode=${tradeMode})`);
-  const results = [];
-  for (const signal of signals) {
-    const signalStartedAt = Date.now();
-    results.push(await executeSignal(signal));
-    logHanulPhase(`KIS 국내 신호 처리 완료 ${signal.symbol}`, signalStartedAt, {
-      signal_id: signal.id,
-      action: signal.action,
-    });
-    await new Promise(r => setTimeout(r, 1100));
-  }
-  logHanulPhase('KIS 국내 pending 전체 처리 완료', startedAt, {
-    signal_count: signals.length,
-    success_count: results.filter(r => r?.success).length,
+  return processPendingHanulSignals({
+    exchange: 'kis',
+    label: 'KIS 국내',
+    execute: executeSignal,
   });
-  return results;
 }
 
 /**
  * 대기 중인 KIS 해외주식 신호 전체 처리
  */
 export async function processAllPendingKisOverseasSignals() {
-  const startedAt = Date.now();
-  const tradeMode = getInvestmentTradeMode();
-  console.log(`[한울] KIS 해외 pending 조회 시작 ${JSON.stringify({ pool: getInvestmentPoolStats() })}`);
-  const signals = await db.getPendingSignals('kis_overseas', tradeMode);
-  logHanulPhase('KIS 해외 pending 조회 완료', startedAt, { signal_count: signals.length, trade_mode: tradeMode });
-  if (signals.length === 0) { console.log(`[한울] 대기 KIS 해외 신호 없음 (trade_mode=${tradeMode})`); return []; }
-  console.log(`[한울] ${signals.length}개 KIS 해외 신호 처리 시작 (trade_mode=${tradeMode})`);
-  const results = [];
-  for (const signal of signals) {
-    const signalStartedAt = Date.now();
-    results.push(await executeOverseasSignal(signal));
-    logHanulPhase(`KIS 해외 신호 처리 완료 ${signal.symbol}`, signalStartedAt, {
-      signal_id: signal.id,
-      action: signal.action,
-    });
-    await new Promise(r => setTimeout(r, 1100));
-  }
-  logHanulPhase('KIS 해외 pending 전체 처리 완료', startedAt, {
-    signal_count: signals.length,
-    success_count: results.filter(r => r?.success).length,
+  return processPendingHanulSignals({
+    exchange: 'kis_overseas',
+    label: 'KIS 해외',
+    execute: executeOverseasSignal,
   });
-  return results;
 }
 
 // CLI 실행
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const args      = process.argv.slice(2);
-  const actionArg = args.find(a => a.startsWith('--action='))?.split('=')[1];
-  const symbolArg = args.find(a => a.startsWith('--symbol='))?.split('=')[1];
-  const amountArg = args.find(a => a.startsWith('--amount='))?.split('=')[1];
+if (isDirectExecution(import.meta.url)) {
+  await runCliMain({
+    before: () => db.initSchema(),
+    run: async () => {
+      const args      = process.argv.slice(2);
+      const actionArg = args.find(a => a.startsWith('--action='))?.split('=')[1];
+      const symbolArg = args.find(a => a.startsWith('--symbol='))?.split('=')[1];
+      const amountArg = args.find(a => a.startsWith('--amount='))?.split('=')[1];
 
-  await db.initSchema();
-  try {
-    let r;
-    if (actionArg && symbolArg) {
-      const sym        = symbolArg.toUpperCase();
-      const isOverseas = isKisOverseasSymbol(sym);
-      const isDomestic = isKisSymbol(sym);
-      if (!isDomestic && !isOverseas) {
-        console.error(`❌ KIS 심볼 아님: ${sym} (국내: 6자리 숫자, 해외: 알파벳 1~5자)`);
-        process.exit(1);
+      if (actionArg && symbolArg) {
+        const sym        = symbolArg.toUpperCase();
+        const isOverseas = isKisOverseasSymbol(sym);
+        const isDomestic = isKisSymbol(sym);
+        if (!isDomestic && !isOverseas) {
+          throw new Error(`KIS 심볼 아님: ${sym} (국내: 6자리 숫자, 해외: 알파벳 1~5자)`);
+        }
+        const mockSignal = {
+          id:          `CLI-HAN-${Date.now()}`,
+          symbol:      sym,
+          action:      actionArg.toUpperCase(),
+          amount_usdt: parseFloat(amountArg || (isOverseas ? '400' : '500000')),
+          confidence:  0.7,
+          reasoning:   'CLI 수동 실행',
+          exchange:    isOverseas ? 'kis_overseas' : 'kis',
+        };
+        return isOverseas ? executeOverseasSignal(mockSignal) : executeSignal(mockSignal);
       }
-      const mockSignal = {
-        id:          `CLI-HAN-${Date.now()}`,
-        symbol:      sym,
-        action:      actionArg.toUpperCase(),
-        amount_usdt: parseFloat(amountArg || (isOverseas ? '400' : '500000')),
-        confidence:  0.7,
-        reasoning:   'CLI 수동 실행',
-        exchange:    isOverseas ? 'kis_overseas' : 'kis',
-      };
-      r = isOverseas ? await executeOverseasSignal(mockSignal) : await executeSignal(mockSignal);
-    } else {
+
       const [domestic, overseas] = await Promise.all([
         processAllPendingKisSignals(),
         processAllPendingKisOverseasSignals(),
       ]);
-      r = { domestic, overseas };
-    }
-    console.log('완료:', JSON.stringify(r));
-    process.exit(0);
-  } catch (e) {
-    console.error('❌ 한울 오류:', e.message);
-    process.exit(1);
-  }
+      return { domestic, overseas };
+    },
+    onSuccess: async (result) => {
+      console.log('완료:', JSON.stringify(result));
+    },
+    errorPrefix: '❌ 한울 오류:',
+  });
 }

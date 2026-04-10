@@ -373,22 +373,8 @@ function buildValidationBudgetPolicyTrend(currentPolicy = null, previousSnapshot
   };
 }
 
-function buildSuggestions(
-  config,
-  summaries,
-  validationSummaries,
-  validationBudgetSnapshots = {},
-  capitalGuardBias = null,
-  validationBudgetPolicy = null,
-) {
+function buildCryptoSuggestions(config, crypto) {
   const suggestions = [];
-  const crypto = summaries.binance;
-  const domestic = summaries.kis;
-  const overseas = summaries.kis_overseas;
-  const domesticValidation = validationSummaries.domestic;
-  const overseasValidation = validationSummaries.overseas;
-  const cryptoValidationBudget = validationBudgetSnapshots.cryptoValidation;
-
   if (crypto.totalBuy >= 3 && crypto.executed === 0 && crypto.failed >= 3) {
     suggestions.push({
       key: 'runtime_config.luna.fastPathThresholds.minCryptoConfidence',
@@ -424,7 +410,6 @@ function buildSuggestions(
       reason: '암호화폐 실행/실패 표본이 설정 조정까지 판단하기엔 아직 충분하지 않습니다.',
     });
   }
-
   if (crypto.taHoldRate != null && crypto.taHoldRate >= 95) {
     suggestions.push({
       key: 'runtime_config.luna.analystWeights.crypto.taMtf',
@@ -435,7 +420,11 @@ function buildSuggestions(
       reason: `암호화폐 ta_mtf HOLD 비율이 ${crypto.taHoldRate}%로 과도하게 높아 최종 승격을 누를 가능성이 있습니다.`,
     });
   }
+  return suggestions;
+}
 
+function buildDomesticSuggestions(config, domestic) {
+  const suggestions = [];
   if (domestic.totalBuy > 0 && domestic.executed === 0 && domestic.topBlocks[0]?.code === 'min_order_notional') {
     suggestions.push({
       key: 'runtime_config.luna.stockOrderDefaults.kis.min',
@@ -446,7 +435,11 @@ function buildSuggestions(
       reason: `국내장 실패는 최소 주문금액 미달 패턴이지만 현재 기본 주문금액은 이미 ${config.luna.stockOrderDefaults.kis.buyDefault.toLocaleString()} KRW라, 과거 레거시 실패 가능성이 커서 즉시 조정보다 신규 데이터 확인이 우선입니다.`,
     });
   }
+  return suggestions;
+}
 
+function buildOverseasSuggestions(config, overseas) {
+  const suggestions = [];
   if (overseas.totalBuy >= 8 && overseas.executed >= 3 && overseas.topBlocks[0]?.code === 'legacy_order_rejected') {
     suggestions.push({
       key: 'runtime_config.luna.stockOrderDefaults.kis_overseas.max',
@@ -468,7 +461,13 @@ function buildSuggestions(
       reason: `해외장 실행률이 ${overseas.executionRate}%로 아직 낮아 최소 confidence 기준을 소폭 완화해 비교할 수 있습니다.`,
     });
   }
+  return suggestions;
+}
 
+function buildValidationPromotionSuggestions(config, validationSummaries) {
+  const suggestions = [];
+  const domesticValidation = validationSummaries.domestic;
+  const overseasValidation = validationSummaries.overseas;
   if (domesticValidation.liveTrades > 0 || domesticValidation.executed > 0) {
     suggestions.push({
       key: 'runtime_config.nemesis.thresholds.stockStarterApproveDomestic',
@@ -501,7 +500,15 @@ function buildSuggestions(
       reason: `해외장 validation은 decision ${overseasValidation.decision}건이 대부분 HOLD라 추가 장중 표본 확인 후 승격 여부를 판단하는 것이 안전합니다.`,
     });
   }
+  return suggestions;
+}
 
+function buildValidationBudgetSuggestions(
+  validationBudgetSnapshots = {},
+  validationBudgetPolicy = null,
+) {
+  const suggestions = [];
+  const cryptoValidationBudget = validationBudgetSnapshots.cryptoValidation;
   if (cryptoValidationBudget?.enabled && (cryptoValidationBudget.nearSoftCap || cryptoValidationBudget.atSoftCap)) {
     suggestions.push({
       key: 'runtime_config.luna.validationSoftBudget.binance.reserveDailyBuySlots',
@@ -550,8 +557,25 @@ function buildSuggestions(
       reason: `현재 정책 판단은 ${validationBudgetPolicy.decisionLabel}입니다. ${validationBudgetPolicy.reasons.join(' / ')} 기준으로 validation daily budget 상향 비교 실험 후보입니다.`,
     });
   }
-
   return suggestions;
+}
+
+function buildSuggestions(
+  config,
+  summaries,
+  validationSummaries,
+  validationBudgetSnapshots = {},
+  capitalGuardBias = null,
+  validationBudgetPolicy = null,
+) {
+  void capitalGuardBias;
+  return [
+    ...buildCryptoSuggestions(config, summaries.binance),
+    ...buildDomesticSuggestions(config, summaries.kis),
+    ...buildOverseasSuggestions(config, summaries.kis_overseas),
+    ...buildValidationPromotionSuggestions(config, validationSummaries),
+    ...buildValidationBudgetSuggestions(validationBudgetSnapshots, validationBudgetPolicy),
+  ];
 }
 
 function buildReport(days, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, validationBudgetPolicyTrend, suggestions) {

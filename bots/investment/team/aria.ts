@@ -15,8 +15,8 @@
 
 import ccxt  from 'ccxt';
 import https from 'https';
-import { fileURLToPath } from 'url';
 import * as db from '../shared/db.ts';
+import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { store as storeRag } from '../shared/rag-client.ts';
 import { ANALYST_TYPES, ACTIONS } from '../shared/signal.ts';
 import { isKisMarketOpen, isKisOverseasMarketOpen, isKisHoliday, isNyseHoliday } from '../shared/secrets.ts';
@@ -626,21 +626,20 @@ export async function analyzeKisOverseasMTF(symbol, force = false) {
 }
 
 // CLI 실행
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const args     = process.argv.slice(2);
-  const symbol   = args.find(a => a.startsWith('--symbol='))?.split('=')[1] || 'BTC/USDT';
-  const exchange = args.find(a => a.startsWith('--exchange='))?.split('=')[1] || 'binance';
-
-  await db.initSchema();
-  try {
-    let r;
-    if (exchange === 'kis')          r = await analyzeKisMTF(symbol);
-    else if (exchange === 'kis_overseas') r = await analyzeKisOverseasMTF(symbol);
-    else                              r = await analyzeCryptoMTF(symbol);
-    console.log('\n결과:', JSON.stringify(r, null, 2));
-    process.exit(0);
-  } catch (e) {
-    console.error('❌ 아리아 오류:', e.message);
-    process.exit(1);
-  }
+if (isDirectExecution(import.meta.url)) {
+  await runCliMain({
+    before: () => db.initSchema(),
+    run: async () => {
+      const args     = process.argv.slice(2);
+      const symbol   = args.find(a => a.startsWith('--symbol='))?.split('=')[1] || 'BTC/USDT';
+      const exchange = args.find(a => a.startsWith('--exchange='))?.split('=')[1] || 'binance';
+      if (exchange === 'kis') return analyzeKisMTF(symbol);
+      if (exchange === 'kis_overseas') return analyzeKisOverseasMTF(symbol);
+      return analyzeCryptoMTF(symbol);
+    },
+    onSuccess: async (result) => {
+      console.log('\n결과:', JSON.stringify(result, null, 2));
+    },
+    errorPrefix: '❌ 아리아 오류:',
+  });
 }

@@ -15,9 +15,9 @@
  * 실행: node team/luna.js --symbols=BTC/USDT,ETH/USDT
  */
 
-import { fileURLToPath } from 'url';
 import { createRequire }  from 'module';
 import * as db from '../shared/db.ts';
+import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 const _require = createRequire(import.meta.url);
 const shadow   = _require('../../../packages/core/lib/shadow-mode.js');
@@ -31,7 +31,7 @@ import { getAvailableBalance, getAvailableUSDT } from '../shared/capital-manager
 import { getDomesticBalance } from '../shared/kis-client.ts';
 import { getLunaRuntimeConfig, getLunaStockStrategyProfile } from '../shared/runtime-config.ts';
 import * as journalDb from '../shared/trade-journal-db.ts';
-import { buildAccuracyReport, normalizeWeights } from '../shared/analyst-accuracy.ts';
+import { buildAccuracyReport, getEffectiveAnalystWeightProfiles, normalizeWeights } from '../shared/analyst-accuracy.ts';
 import { getMarketRegime, formatMarketRegime } from '../shared/market-regime.ts';
 import { runBullResearcher } from './zeus.ts';
 import { runBearResearcher } from './athena.ts';
@@ -81,11 +81,12 @@ function normalizeDecisionAmount(exchange, action, amount) {
 }
 
 function buildAnalystWeights(exchange = 'binance') {
+  const runtimeAnalystWeightConfig = getEffectiveAnalystWeightProfiles();
   const isStock = exchange === 'kis' || exchange === 'kis_overseas';
   const profile = isStock
-    ? (isPaperMode() ? ANALYST_WEIGHT_CONFIG.stocksPaper : ANALYST_WEIGHT_CONFIG.stocksLive)
-    : ANALYST_WEIGHT_CONFIG.crypto;
-  const fallback = ANALYST_WEIGHT_CONFIG.default || {};
+    ? (isPaperMode() ? runtimeAnalystWeightConfig.stocksPaper : runtimeAnalystWeightConfig.stocksLive)
+    : runtimeAnalystWeightConfig.crypto;
+  const fallback = runtimeAnalystWeightConfig.default || {};
   const sentinelBase = profile?.sentinel
     ?? ((profile?.sentiment ?? fallback.sentiment ?? ANALYST_WEIGHTS[ANALYST_TYPES.SENTIMENT])
       + (profile?.news ?? fallback.news ?? ANALYST_WEIGHTS[ANALYST_TYPES.NEWS])) / 2;
@@ -464,8 +465,166 @@ export function buildAnalysisSummary(analyses) {
   }).join('\n');
 }
 
+function getExchangeLabel(exchange) {
+  return exchange === 'kis_overseas' ? '미국주식' : exchange === 'kis' ? '국내주식' : '암호화폐';
+}
+
+function buildFusedSection(fused) {
+  return `\n\n[시그널 융합] 방향=${fused.recommendation} | 점수=${fused.fusedScore.toFixed(3)} | 평균확신도=${(fused.averageConfidence * 100).toFixed(0)}%${fused.hasConflict ? ' | ⚠️ 신호 충돌' : ''}`;
+}
+
+function buildReviewSection(reviewHint) {
+  return reviewHint.notes.length > 0
+    ? `\n[리뷰 힌트] ${reviewHint.notes.join(' / ')}`
+    : '';
+}
+
+function buildDebateSection(debate) {
+  if (!debate) return '';
+  const bullText = debate.bull
+    ? `목표가 ${debate.bull.targetPrice} | 상승 ${debate.bull.upsidePct}% | ${debate.bull.reasoning}`
+    : '데이터 없음';
+  const bearText = debate.bear
+    ? `목표가 ${debate.bear.targetPrice} | 하락 ${debate.bear.downsidePct}% | ${debate.bear.reasoning}`
+    : '데이터 없음';
+  return `\n\n[강세 리서처] ${bullText}\n[약세 리서처] ${bearText}`;
+}
+
+async function buildStrategySection(symbol, exchange) {
+  try {
+    const strat = await recommendStrategy(symbol, exchange);
+    if (!strat) return '';
+    return `\n\n[참고 전략 — 아르고스]\n${strat.strategy_name}: ${strat.entry_condition || '진입 조건 없음'} (품질점수 ${strat.quality_score?.toFixed(2)})`;
+  } catch {
+    return '';
+  }
+}
+
+async function buildRagContext(symbol, summary) {
+  try {
+    const hits = await searchRag('trades', `${symbol} ${summary.slice(0, 100)}`, { limit: 3, threshold: 0.7 }, { sourceBot: 'luna' });
+    if (hits.length === 0) return '';
+    return '\n\n[과거 유사 신호]\n' + hits.map(h => {
+      const m = h.metadata || {};
+      return `  ${m.symbol || '?'} ${m.action || '?'} (신뢰도 ${m.confidence || '?'}): ${h.content.slice(0, 80)}`;
+    }).join('\n');
+  } catch {
+    return '';
+  }
+}
+
+async function buildRegimeSection(exchange) {
+  try {
+    const regime = await getMarketRegime(exchange);
+    return `\n\n${formatMarketRegime(regime)}`;
+  } catch {
+    return '';
+  }
+}
+
+async function buildSymbolDecisionPromptParts({ symbol, analyses, exchange, debate, analystWeights }) {
+  const summary = buildAnalysisSummary(analyses);
+  const label = getExchangeLabel(exchange);
+  const fused = fuseSignals(analyses, analystWeights);
+  const reviewHint = await loadReviewConfidenceHint(symbol, exchange);
+  const [strategySection, ragContext, regimeSection] = await Promise.all([
+    buildStrategySection(symbol, exchange),
+    buildRagContext(symbol, summary),
+    buildRegimeSection(exchange),
+  ]);
+  const userMsg = `심볼: ${symbol} (${label})\n\n분석 결과:\n${summary}${buildFusedSection(fused)}${buildReviewSection(reviewHint)}${buildDebateSection(debate)}${strategySection}${ragContext}${regimeSection}\n\n최종 매매 신호:`;
+
+  return {
+    summary,
+    label,
+    fused,
+    reviewHint,
+    userMsg,
+  };
+}
+
+async function buildPortfolioDecisionPromptParts(symbolDecisions, portfolio, exchange = 'binance', exitSummary = null) {
+  const symbols = [...new Set(symbolDecisions.map(s => s.symbol))];
+  const signalLines = symbolDecisions
+    .map(s => `${s.symbol}: ${s.action} | 확신도 ${((s.confidence || 0) * 100).toFixed(0)}% | ${s.reasoning}`)
+    .join('\n');
+
+  let regimeSection = '';
+  try {
+    const regime = await getMarketRegime(exchange);
+    regimeSection = formatMarketRegime(regime);
+  } catch {}
+
+  const exitSection = exitSummary?.closedCount
+    ? [
+        `=== EXIT Phase 결과 ===`,
+        `방금 ${exitSummary.closedCount}개 포지션을 청산했습니다.`,
+        ...(Array.isArray(exitSummary.closedPositions) ? exitSummary.closedPositions.map(item => {
+          const reclaimed = Number(item.reclaimedUsdt || 0);
+          const reclaimedText = reclaimed > 0 ? ` | 회수 $${reclaimed.toFixed(2)}` : '';
+          return `- ${item.symbol}: ${item.reason || '청산'}${reclaimedText}`;
+        }) : []),
+        `회수된 USDT: $${Number(exitSummary.reclaimedUsdt || 0).toFixed(2)}`,
+        ``,
+      ].join('\n')
+    : '';
+
+  const userMsg = [
+    `=== 포트폴리오 현황 ===`,
+    `USDT 가용: $${portfolio.usdtFree.toFixed(2)} | 총자산: $${portfolio.totalAsset.toFixed(2)}`,
+    `현재 포지션: ${portfolio.positionCount}/${MAX_POS_COUNT}개`,
+    `오늘 P&L: ${(portfolio.todayPnl?.pnl || 0) >= 0 ? '+' : ''}$${(portfolio.todayPnl?.pnl || 0).toFixed(2)}`,
+    ``,
+    regimeSection,
+    regimeSection ? `` : '',
+    exitSection,
+    `=== 분석가 신호 (${symbols.join(', ')}) ===`,
+    signalLines,
+    ``,
+    `최종 포트폴리오 투자 결정:`,
+  ].join('\n');
+
+  return {
+    symbols,
+    userMsg,
+    systemPrompt: buildPortfolioPrompt(symbols, exchange, exitSummary),
+  };
+}
+
+function normalizePortfolioDecisionResult(parsed, symbols, exchange, symbolDecisions, portfolio) {
+  if (!parsed) {
+    if (exchange === 'binance') {
+      const fallback = buildCryptoPortfolioFallback(symbolDecisions, portfolio);
+      if (fallback) return fallback;
+    }
+    return {
+      decisions: symbolDecisions.map(s => ({ ...s })),
+      portfolio_view: 'LLM 판단 실패',
+      risk_level: 'MEDIUM',
+    };
+  }
+
+  if (parsed.decisions) {
+    const allowed = new Set(symbols);
+    parsed.decisions = parsed.decisions.filter(d => allowed.has(d.symbol));
+    if (exchange === 'kis' || exchange === 'kis_overseas') {
+      parsed.decisions = parsed.decisions.map(d => ({
+        ...d,
+        amount_usdt: normalizeDecisionAmount(exchange, d.action, d.amount_usdt),
+      }));
+    }
+  }
+
+  const hasExecutableDecision = (parsed.decisions || []).some(d => d.action && d.action !== ACTIONS.HOLD);
+  if (!hasExecutableDecision && exchange === 'binance') {
+    const fallback = buildCryptoPortfolioFallback(symbolDecisions, portfolio);
+    if (fallback) return fallback;
+  }
+  return parsed;
+}
+
 function buildExitPrompt(openPositions, exchange = 'binance') {
-  const label = exchange === 'kis_overseas' ? '미국주식' : exchange === 'kis' ? '국내주식' : '암호화폐';
+  const label = getExchangeLabel(exchange);
   const lines = openPositions.map((pos) => {
     const pnl = Number(pos.unrealized_pnl || 0);
     const avgPrice = Number(pos.avg_price || 0);
@@ -587,6 +746,58 @@ function buildExitFallback(openPositions) {
   };
 }
 
+async function enrichExitPositions(openPositions, exchange = 'binance') {
+  const enrichedPositions = [];
+  for (const position of openPositions) {
+    const analyses = await db.getRecentAnalysis(position.symbol, 180, exchange).catch(() => []);
+    const entryTime = position.entry_time || position.updated_at || null;
+    const heldHours = entryTime
+      ? Math.max(0, (Date.now() - new Date(entryTime).getTime()) / 3600000)
+      : 0;
+    const avgPrice = Number(position.avg_price || 0);
+    const amount = Number(position.amount || 0);
+    const unrealizedPnl = Number(position.unrealized_pnl || 0);
+    const derivedCurrentPrice = avgPrice > 0 && amount > 0
+      ? avgPrice + (unrealizedPnl / amount)
+      : avgPrice;
+    enrichedPositions.push({
+      ...position,
+      analyses,
+      held_hours: heldHours,
+      current_price: position.current_price || derivedCurrentPrice || avgPrice || 0,
+    });
+  }
+  return enrichedPositions;
+}
+
+function normalizeExitDecisionResult(parsed, enrichedPositions) {
+  if (!parsed || !Array.isArray(parsed.decisions)) {
+    return buildExitFallback(enrichedPositions);
+  }
+
+  const bySymbol = new Map(enrichedPositions.map(pos => [pos.symbol, pos]));
+  const decisions = parsed.decisions
+    .map(item => normalizeExitDecision(item, bySymbol.get(item?.symbol)))
+    .filter(item => item.symbol && bySymbol.has(item.symbol));
+
+  for (const position of enrichedPositions) {
+    if (!decisions.some(dec => dec.symbol === position.symbol)) {
+      decisions.push({
+        symbol: position.symbol,
+        action: ACTIONS.HOLD,
+        confidence: 0.5,
+        reasoning: 'LLM 응답 누락 — 기본 HOLD',
+        exit_type: 'normal_exit',
+      });
+    }
+  }
+
+  return {
+    decisions,
+    exit_view: parsed.exit_view || 'EXIT 판단 요약 없음',
+  };
+}
+
 function buildVoteFallbackDecision(analyses, exchange = 'binance', reason = '분석가 투표 기반 fallback') {
   const votes   = analyses.filter(a => a.signal !== 'HOLD').map(a => a.signal === 'BUY' ? 1 : -1);
   const avgConf = analyses.reduce((s, a) => s + (a.confidence || 0), 0) / (analyses.length || 1);
@@ -639,51 +850,13 @@ function buildEmergencySymbolFallbackDecision(analyses, exchange, fused) {
 // ─── 개별 심볼 LLM 판단 ────────────────────────────────────────────
 
 export async function getSymbolDecision(symbol, analyses, exchange = 'binance', debate = null, analystWeights = ANALYST_WEIGHTS) {
-  const summary = buildAnalysisSummary(analyses);
-  const label   = exchange === 'kis_overseas' ? '미국주식' : exchange === 'kis' ? '국내주식' : '암호화폐';
-  const fused   = fuseSignals(analyses, analystWeights);
-  const reviewHint = await loadReviewConfidenceHint(symbol, exchange);
-  const fusedSection = `\n\n[시그널 융합] 방향=${fused.recommendation} | 점수=${fused.fusedScore.toFixed(3)} | 평균확신도=${(fused.averageConfidence * 100).toFixed(0)}%${fused.hasConflict ? ' | ⚠️ 신호 충돌' : ''}`;
-  const reviewSection = reviewHint.notes.length > 0
-    ? `\n[리뷰 힌트] ${reviewHint.notes.join(' / ')}` : '';
-
-  let debateSection = '';
-  if (debate) {
-    const bullText = debate.bull
-      ? `목표가 ${debate.bull.targetPrice} | 상승 ${debate.bull.upsidePct}% | ${debate.bull.reasoning}`
-      : '데이터 없음';
-    const bearText = debate.bear
-      ? `목표가 ${debate.bear.targetPrice} | 하락 ${debate.bear.downsidePct}% | ${debate.bear.reasoning}`
-      : '데이터 없음';
-    debateSection = `\n\n[강세 리서처] ${bullText}\n[약세 리서처] ${bearText}`;
-  }
-
-  // 아르고스 전략 컨텍스트 (실패 시 빈 문자열)
-  let strategySection = '';
-  try {
-    const strat = await recommendStrategy(symbol, exchange);
-    if (strat) {
-      strategySection = `\n\n[참고 전략 — 아르고스]\n${strat.strategy_name}: ${strat.entry_condition || '진입 조건 없음'} (품질점수 ${strat.quality_score?.toFixed(2)})`;
-    }
-  } catch {}
-
-  // RAG 검색: 과거 유사 신호 조회 (참고용 컨텍스트)
-  let ragContext = '';
-  try {
-    const hits = await searchRag('trades', `${symbol} ${summary.slice(0, 100)}`, { limit: 3, threshold: 0.7 }, { sourceBot: 'luna' });
-    if (hits.length > 0) {
-      ragContext = '\n\n[과거 유사 신호]\n' + hits.map(h => {
-        const m = h.metadata || {};
-        return `  ${m.symbol || '?'} ${m.action || '?'} (신뢰도 ${m.confidence || '?'}): ${h.content.slice(0, 80)}`;
-      }).join('\n');
-    }
-  } catch { /* RAG 검색 실패 시 무시 */ }
-
-  let regimeSection = '';
-  try {
-    const regime = await getMarketRegime(exchange);
-    regimeSection = `\n\n${formatMarketRegime(regime)}`;
-  } catch { /* 시장 레짐 실패 시 무시 */ }
+  const { fused, reviewHint, userMsg } = await buildSymbolDecisionPromptParts({
+    symbol,
+    analyses,
+    exchange,
+    debate,
+    analystWeights,
+  });
 
   const weakSignalGate = exchange === 'binance'
     ? { minAverageConfidence: 0.22, minAbsScore: 0.03 }
@@ -709,8 +882,6 @@ export async function getSymbolDecision(symbol, analyses, exchange = 'binance', 
         : fastPath.reasoning,
     };
   }
-
-  const userMsg = `심볼: ${symbol} (${label})\n\n분석 결과:\n${summary}${fusedSection}${reviewSection}${debateSection}${strategySection}${ragContext}${regimeSection}\n\n최종 매매 신호:`;
 
   // Shadow Mode 래핑 (mode: 'shadow' 고정 — TEAM_MODE.luna='off' 무시)
   let shadowResult;
@@ -757,49 +928,16 @@ export async function getSymbolDecision(symbol, analyses, exchange = 'binance', 
 export async function getPortfolioDecision(symbolDecisions, portfolio, exchange = 'binance', exitSummary = null) {
   if (symbolDecisions.length === 0) return null;
 
-  const symbols     = [...new Set(symbolDecisions.map(s => s.symbol))];
-  const signalLines = symbolDecisions
-    .map(s => `${s.symbol}: ${s.action} | 확신도 ${((s.confidence || 0) * 100).toFixed(0)}% | ${s.reasoning}`)
-    .join('\n');
-
-  let regimeSection = '';
-  try {
-    const regime = await getMarketRegime(exchange);
-    regimeSection = formatMarketRegime(regime);
-  } catch { /* 시장 레짐 실패 시 무시 */ }
-
-  const exitSection = exitSummary?.closedCount
-    ? [
-        `=== EXIT Phase 결과 ===`,
-        `방금 ${exitSummary.closedCount}개 포지션을 청산했습니다.`,
-        ...(Array.isArray(exitSummary.closedPositions) ? exitSummary.closedPositions.map(item => {
-          const reclaimed = Number(item.reclaimedUsdt || 0);
-          const reclaimedText = reclaimed > 0 ? ` | 회수 $${reclaimed.toFixed(2)}` : '';
-          return `- ${item.symbol}: ${item.reason || '청산'}${reclaimedText}`;
-        }) : []),
-        `회수된 USDT: $${Number(exitSummary.reclaimedUsdt || 0).toFixed(2)}`,
-        ``,
-      ].join('\n')
-    : '';
-
-  const userMsg = [
-    `=== 포트폴리오 현황 ===`,
-    `USDT 가용: $${portfolio.usdtFree.toFixed(2)} | 총자산: $${portfolio.totalAsset.toFixed(2)}`,
-    `현재 포지션: ${portfolio.positionCount}/${MAX_POS_COUNT}개`,
-    `오늘 P&L: ${(portfolio.todayPnl?.pnl || 0) >= 0 ? '+' : ''}$${(portfolio.todayPnl?.pnl || 0).toFixed(2)}`,
-    ``,
-    regimeSection,
-    regimeSection ? `` : '',
-    exitSection,
-    `=== 분석가 신호 (${symbols.join(', ')}) ===`,
-    signalLines,
-    ``,
-    `최종 포트폴리오 투자 결정:`,
-  ].join('\n');
+  const { symbols, userMsg, systemPrompt } = await buildPortfolioDecisionPromptParts(
+    symbolDecisions,
+    portfolio,
+    exchange,
+    exitSummary,
+  );
 
   let raw;
   try {
-    raw = await callLLM('luna', buildPortfolioPrompt(symbols, exchange, exitSummary), userMsg, 768);
+    raw = await callLLM('luna', systemPrompt, userMsg, 768);
   } catch (err) {
     if (String(err?.message || '').includes('LLM 긴급 차단 중')) {
       console.warn(`[luna] portfolio decision LLM 긴급 차단 fallback 적용 (${exchange}): ${err.message}`);
@@ -807,32 +945,8 @@ export async function getPortfolioDecision(symbolDecisions, portfolio, exchange 
     }
     throw err;
   }
-  const parsed = parseJSON(raw);
-  if (!parsed) {
-    if (exchange === 'binance') {
-      const fallback = buildCryptoPortfolioFallback(symbolDecisions, portfolio);
-      if (fallback) return fallback;
-    }
-    return { decisions: symbolDecisions.map(s => ({ ...s })), portfolio_view: 'LLM 판단 실패', risk_level: 'MEDIUM' };
-  }
 
-  // 허용 심볼 외 결정 필터링 (LLM 환각 방지)
-  if (parsed.decisions) {
-    const allowed = new Set(symbols);
-    parsed.decisions = parsed.decisions.filter(d => allowed.has(d.symbol));
-    if (exchange === 'kis' || exchange === 'kis_overseas') {
-      parsed.decisions = parsed.decisions.map(d => ({
-        ...d,
-        amount_usdt: normalizeDecisionAmount(exchange, d.action, d.amount_usdt),
-      }));
-    }
-  }
-  const hasExecutableDecision = (parsed.decisions || []).some(d => d.action && d.action !== ACTIONS.HOLD);
-  if (!hasExecutableDecision && exchange === 'binance') {
-    const fallback = buildCryptoPortfolioFallback(symbolDecisions, portfolio);
-    if (fallback) return fallback;
-  }
-  return parsed;
+  return normalizePortfolioDecisionResult(parseJSON(raw), symbols, exchange, symbolDecisions, portfolio);
 }
 
 export async function getExitDecisions(openPositions, exchange = 'binance') {
@@ -840,26 +954,7 @@ export async function getExitDecisions(openPositions, exchange = 'binance') {
     return { decisions: [], exit_view: 'no_positions' };
   }
 
-  const enrichedPositions = [];
-  for (const position of openPositions) {
-    const analyses = await db.getRecentAnalysis(position.symbol, 180, exchange).catch(() => []);
-    const entryTime = position.entry_time || position.updated_at || null;
-    const heldHours = entryTime
-      ? Math.max(0, (Date.now() - new Date(entryTime).getTime()) / 3600000)
-      : 0;
-    const avgPrice = Number(position.avg_price || 0);
-    const amount = Number(position.amount || 0);
-    const unrealizedPnl = Number(position.unrealized_pnl || 0);
-    const derivedCurrentPrice = avgPrice > 0 && amount > 0
-      ? avgPrice + (unrealizedPnl / amount)
-      : avgPrice;
-    enrichedPositions.push({
-      ...position,
-      analyses,
-      held_hours: heldHours,
-      current_price: position.current_price || derivedCurrentPrice || avgPrice || 0,
-    });
-  }
+  const enrichedPositions = await enrichExitPositions(openPositions, exchange);
 
   const userPrompt = buildExitPrompt(enrichedPositions, exchange);
 
@@ -874,32 +969,7 @@ export async function getExitDecisions(openPositions, exchange = 'binance') {
     throw err;
   }
 
-  const parsed = parseJSON(raw);
-  if (!parsed || !Array.isArray(parsed.decisions)) {
-    return buildExitFallback(enrichedPositions);
-  }
-
-  const bySymbol = new Map(enrichedPositions.map(pos => [pos.symbol, pos]));
-  const decisions = parsed.decisions
-    .map(item => normalizeExitDecision(item, bySymbol.get(item?.symbol)))
-    .filter(item => item.symbol && bySymbol.has(item.symbol));
-
-  for (const position of enrichedPositions) {
-    if (!decisions.some(dec => dec.symbol === position.symbol)) {
-      decisions.push({
-        symbol: position.symbol,
-        action: ACTIONS.HOLD,
-        confidence: 0.5,
-        reasoning: 'LLM 응답 누락 — 기본 HOLD',
-        exit_type: 'normal_exit',
-      });
-    }
-  }
-
-  return {
-    decisions,
-    exit_view: parsed.exit_view || 'EXIT 판단 요약 없음',
-  };
+  return normalizeExitDecisionResult(parseJSON(raw), enrichedPositions);
 }
 
 // ─── 포트폴리오 컨텍스트 ───────────────────────────────────────────
@@ -1200,25 +1270,27 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
 }
 
 // CLI 실행
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const args     = process.argv.slice(2);
-  const symArg   = args.find(a => a.startsWith('--symbols='));
-  const symbols  = symArg ? symArg.split('=')[1].split(',').map(s => s.trim()) : ['BTC/USDT'];
-  const exchange = args.find(a => a.startsWith('--exchange='))?.split('=')[1] || 'binance';
-  const inspectContext = args.includes('--inspect-context');
-
-  await db.initSchema();
-  try {
-    if (inspectContext) {
-      const ctx = await inspectPortfolioContext(exchange);
-      console.log(`\n컨텍스트: ${JSON.stringify(ctx, null, 2)}`);
-      process.exit(0);
-    }
-    const r = await orchestrate(symbols, exchange);
-    console.log(`\n결과: ${r.length}개 신호`);
-    process.exit(0);
-  } catch (e) {
-    console.error('❌ 루나 오류:', e.message);
-    process.exit(1);
-  }
+if (isDirectExecution(import.meta.url)) {
+  await runCliMain({
+    before: () => db.initSchema(),
+    run: async () => {
+      const args     = process.argv.slice(2);
+      const symArg   = args.find(a => a.startsWith('--symbols='));
+      const symbols  = symArg ? symArg.split('=')[1].split(',').map(s => s.trim()) : ['BTC/USDT'];
+      const exchange = args.find(a => a.startsWith('--exchange='))?.split('=')[1] || 'binance';
+      const inspectContext = args.includes('--inspect-context');
+      if (inspectContext) {
+        const ctx = await inspectPortfolioContext(exchange);
+        console.log(`\n컨텍스트: ${JSON.stringify(ctx, null, 2)}`);
+        return [];
+      }
+      return orchestrate(symbols, exchange);
+    },
+    onSuccess: async (results) => {
+      if (Array.isArray(results)) {
+        console.log(`\n결과: ${results.length}개 신호`);
+      }
+    },
+    errorPrefix: '❌ 루나 오류:',
+  });
 }

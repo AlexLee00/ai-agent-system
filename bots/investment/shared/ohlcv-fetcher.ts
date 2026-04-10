@@ -1,7 +1,7 @@
 // @ts-nocheck
 import ccxt from 'ccxt';
-import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
+import { isDirectExecution, runCliMain } from './cli-runtime.ts';
 
 const require = createRequire(import.meta.url);
 const pgPool = require('../../../packages/core/lib/pg-pool');
@@ -151,26 +151,35 @@ export async function getOHLCV(symbol, timeframe, from, to = null, exchange = DE
   return fetchAndCacheOHLCV(symbol, timeframe, from, to, exchange);
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const args = process.argv.slice(2);
-  const symbol = args.find((arg) => arg.startsWith('--symbol='))?.split('=')[1] || 'BTC/USDT';
-  const timeframe = args.find((arg) => arg.startsWith('--timeframe='))?.split('=')[1] || '1h';
-  const from = args.find((arg) => arg.startsWith('--from='))?.split('=')[1];
-  const to = args.find((arg) => arg.startsWith('--to='))?.split('=')[1] || null;
-
-  if (!from) {
-    console.error('사용법: node shared/ohlcv-fetcher.js --symbol=BTC/USDT --from=2026-03-01 --timeframe=1h [--to=2026-03-30]');
-    process.exit(1);
-  }
-
-  const rows = await getOHLCV(symbol, timeframe, from, to);
-  console.log(JSON.stringify({
-    symbol,
-    timeframe,
-    from,
-    to,
-    count: rows.length,
-    first: rows[0] || null,
-    last: rows[rows.length - 1] || null,
-  }, null, 2));
+if (isDirectExecution(import.meta.url)) {
+  await runCliMain({
+    run: async () => {
+      const args = process.argv.slice(2);
+      const symbol = args.find((arg) => arg.startsWith('--symbol='))?.split('=')[1] || 'BTC/USDT';
+      const timeframe = args.find((arg) => arg.startsWith('--timeframe='))?.split('=')[1] || '1h';
+      const from = args.find((arg) => arg.startsWith('--from='))?.split('=')[1];
+      const to = args.find((arg) => arg.startsWith('--to='))?.split('=')[1] || null;
+      if (!from) {
+        throw new Error('사용법: node shared/ohlcv-fetcher.ts --symbol=BTC/USDT --from=2026-03-01 --timeframe=1h [--to=2026-03-30]');
+      }
+      return {
+        symbol,
+        timeframe,
+        from,
+        to,
+        rows: await getOHLCV(symbol, timeframe, from, to),
+      };
+    },
+    onSuccess: async (result) => {
+      console.log(JSON.stringify({
+        symbol: result.symbol,
+        timeframe: result.timeframe,
+        from: result.from,
+        to: result.to,
+        count: result.rows.length,
+        first: result.rows[0] || null,
+        last: result.rows[result.rows.length - 1] || null,
+      }, null, 2));
+    },
+  });
 }

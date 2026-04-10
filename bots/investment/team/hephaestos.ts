@@ -13,9 +13,9 @@
  */
 
 import ccxt from 'ccxt';
-import { fileURLToPath } from 'url';
 import * as db from '../shared/db.ts';
 import * as journalDb from '../shared/trade-journal-db.ts';
+import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { loadSecrets, initHubSecrets, isPaperMode, getInvestmentTradeMode } from '../shared/secrets.ts';
 import { isSameDaySymbolReentryBlockEnabled } from '../shared/runtime-config.ts';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.ts';
@@ -28,6 +28,10 @@ const BINANCE_SYMBOL_RE = /^[A-Z0-9]+\/USDT$/;
 
 function isBinanceSymbol(symbol) {
   return BINANCE_SYMBOL_RE.test(symbol);
+}
+
+async function delay(ms) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 // ─── CCXT 바이낸스 클라이언트 (lazy init) ──────────────────────────
@@ -454,6 +458,649 @@ async function closeOpenJournalForSymbol(symbol, isPaper, exitPrice, exitValue, 
 
 async function findAnyLivePosition(symbol, exchange = 'binance') {
   return db.getPosition(symbol, { exchange, paper: false });
+}
+
+async function preparePendingSignalProcessing() {
+  await initHubSecrets().catch(() => false);
+  const tradeMode = getInvestmentTradeMode();
+  const reconciled = await reconcileLivePositionsWithBrokerBalance().catch((error) => {
+    console.warn(`[헤파이스토스] 실지갑 포지션 동기화 실패: ${error.message}`);
+    return [];
+  });
+  if (reconciled.length > 0) {
+    console.log(`[헤파이스토스] 실지갑 포지션 동기화 ${reconciled.length}건`);
+  }
+  return { tradeMode, reconciled };
+}
+
+async function runPendingSignalBatch(signals, { tradeMode, delayMs = 500 } = {}) {
+  if (signals.length === 0) {
+    console.log(`[헤파이스토스] 대기 신호 없음 (trade_mode=${tradeMode})`);
+    return [];
+  }
+
+  console.log(`[헤파이스토스] ${signals.length}개 신호 처리 시작 (trade_mode=${tradeMode})`);
+  const results = [];
+  for (const signal of signals) {
+    results.push(await executeSignal(signal));
+    await delay(delayMs);
+  }
+  return results;
+}
+
+async function rejectExecution({
+  persistFailure,
+  symbol,
+  action,
+  reason,
+  code = 'broker_execution_error',
+  meta = {},
+  notify = 'skip',
+}) {
+  await persistFailure(reason, { code, meta });
+  if (notify === 'circuit') {
+    notifyCircuitBreaker({ reason, type: meta.circuitType ?? null }).catch(() => {});
+  } else if (notify === 'skip') {
+    notifyTradeSkip({
+      symbol,
+      action,
+      reason,
+      openPositions: meta.openPositions,
+      maxPositions: meta.maxPositions,
+    }).catch(() => {});
+  }
+  return { success: false, reason };
+}
+
+async function runBuySafetyGuards({
+  persistFailure,
+  symbol,
+  action,
+  signalTradeMode,
+  capitalPolicy,
+}) {
+  const circuit = await checkCircuitBreaker();
+  if (circuit.triggered) {
+    console.log(`  ⛔ [서킷 브레이커] ${circuit.reason}`);
+    return rejectExecution({
+      persistFailure,
+      symbol,
+      action,
+      reason: circuit.reason,
+      code: 'capital_circuit_breaker',
+      meta: { circuitType: circuit.type ?? null },
+      notify: 'circuit',
+    });
+  }
+
+  const openPositionsSafe = await getOpenPositions('binance', false, signalTradeMode).catch(() => []);
+  if (openPositionsSafe.length >= capitalPolicy.max_concurrent_positions) {
+    const reason = `최대 포지션 도달: ${openPositionsSafe.length}/${capitalPolicy.max_concurrent_positions}`;
+    console.log(`  ⛔ [자본관리] ${reason}`);
+    return rejectExecution({
+      persistFailure,
+      symbol,
+      action,
+      reason,
+      code: 'capital_guard_rejected',
+      meta: {
+        openPositions: openPositionsSafe.length,
+        maxPositions: capitalPolicy.max_concurrent_positions,
+      },
+      notify: 'skip',
+    });
+  }
+
+  const dailyTradesSafe = await getDailyTradeCount({ exchange: 'binance', tradeMode: signalTradeMode, side: 'buy' }).catch(() => 0);
+  if (dailyTradesSafe >= capitalPolicy.max_daily_trades) {
+    const reason = formatDailyTradeLimitReason(dailyTradesSafe, capitalPolicy.max_daily_trades);
+    console.log(`  ⛔ [자본관리] ${reason}`);
+    return rejectExecution({
+      persistFailure,
+      symbol,
+      action,
+      reason,
+      code: 'capital_guard_rejected',
+      meta: {
+        dailyTrades: dailyTradesSafe,
+        maxDailyTrades: capitalPolicy.max_daily_trades,
+      },
+      notify: 'skip',
+    });
+  }
+
+  return null;
+}
+
+async function tryAbsorbUntrackedBalance({
+  signalId,
+  symbol,
+  base,
+  signalTradeMode,
+  minOrderUsdt,
+  effectivePaperMode,
+}) {
+  try {
+    const walletBal = await getExchange().fetchBalance();
+    const walletFree = walletBal.free?.[base] || 0;
+    const trackedPos = await db.getLivePosition(symbol, null, signalTradeMode);
+    const trackedAmt = trackedPos?.amount || 0;
+    const untracked = walletFree - trackedAmt;
+    if (!(untracked > 0)) return null;
+
+    const curPrice = await fetchTicker(symbol).catch(() => 0);
+    const untrackedUsd = untracked * curPrice;
+    if (untrackedUsd < minOrderUsdt) {
+      console.log(`  ℹ️ 미추적 ${base} ${untracked.toFixed(6)} (≈$${untrackedUsd.toFixed(2)}) — 최소금액 미만, 무시`);
+      return null;
+    }
+
+    console.log(`  ✅ [헤파이스토스] 미추적 ${base} 흡수: ${untracked.toFixed(6)} (≈$${untrackedUsd.toFixed(2)}) → 포지션 등록 + TP/SL 설정`);
+
+    const newAmount = trackedAmt + untracked;
+    const newAvgPrice = trackedPos && trackedAmt > 0
+      ? ((trackedAmt * trackedPos.avg_price) + untrackedUsd) / newAmount
+      : curPrice;
+    await db.upsertPosition({ symbol, amount: newAmount, avgPrice: newAvgPrice, unrealizedPnl: 0, paper: effectivePaperMode });
+
+    const normalizedProtection = normalizeProtectiveExitPrices(symbol, curPrice, curPrice * 1.06, curPrice * 0.97, 'fixed');
+    const tpPrice = normalizedProtection.tpPrice;
+    const slPrice = normalizedProtection.slPrice;
+    let protectionSnapshot = buildProtectionSnapshot();
+    if (!effectivePaperMode && curPrice > 0) {
+      try {
+        const protection = await placeBinanceProtectiveExit(symbol, untracked, curPrice, tpPrice, slPrice);
+        protectionSnapshot = buildProtectionSnapshot(protection);
+        if (protection.ok) {
+          console.log(`  🛡️ TP/SL OCO 설정 완료: TP=${tpPrice} SL=${slPrice}`);
+        } else if (isStopLossOnlyMode(protection.mode)) {
+          console.warn(`  ⚠️ TP/SL OCO 미지원 → SL-only 보호주문 설정: SL=${slPrice}`);
+        } else {
+          throw new Error(protection.error || 'protective_exit_failed');
+        }
+      } catch (tpslErr) {
+        protectionSnapshot = buildProtectionSnapshot(null, tpslErr.message);
+        console.warn(`  ⚠️ TP/SL 설정 실패: ${tpslErr.message}`);
+      }
+    }
+
+    const paperTag = effectivePaperMode ? ' [PAPER]' : '';
+    notifyTrade({
+      signalId,
+      symbol,
+      side: 'absorb',
+      amount: untracked,
+      price: curPrice,
+      totalUsdt: untrackedUsd,
+      paper: effectivePaperMode,
+      exchange: 'binance',
+      tpPrice,
+      slPrice,
+      ...protectionSnapshot,
+      memo: `미추적 잔고 흡수 — 봇 외부 매수 코인 포지션 등록${paperTag}`,
+    }).catch(() => {});
+
+    await db.updateSignalStatus(signalId, SIGNAL_STATUS.EXECUTED);
+    return { success: true, absorbed: true, amount: untracked, price: curPrice };
+  } catch (error) {
+    console.warn(`  ⚠️ 미추적 잔고 흡수 실패 (일반 매수 계속): ${error.message}`);
+    return null;
+  }
+}
+
+async function checkBuyReentryGuards({
+  persistFailure,
+  symbol,
+  action,
+  signalTradeMode,
+  effectivePaperMode,
+}) {
+  const livePosition = await db.getLivePosition(symbol, 'binance', signalTradeMode);
+  const fallbackLivePosition = !livePosition
+    ? await findAnyLivePosition(symbol, 'binance').catch(() => null)
+    : null;
+  const paperPosition = await db.getPaperPosition(symbol, 'binance', signalTradeMode);
+  const sameDayBuyTrade = isSameDaySymbolReentryBlockEnabled()
+    ? await db.getSameDayTrade({ symbol, side: 'buy', exchange: 'binance', tradeMode: signalTradeMode })
+    : null;
+
+  if (effectivePaperMode && livePosition) {
+    const reason = '실포지션 보유 중에는 PAPER 추가매수로 혼합 포지션을 만들 수 없음';
+    console.log(`  ⛔ [자본관리] ${reason}`);
+    return rejectExecution({
+      persistFailure,
+      symbol,
+      action,
+      reason,
+      code: 'position_mode_conflict',
+      meta: {
+        existingPaper: livePosition.paper,
+        requestedPaper: effectivePaperMode,
+      },
+      notify: 'skip',
+    });
+  }
+  if (effectivePaperMode && paperPosition) {
+    const reason = `동일 ${signalTradeMode.toUpperCase()} PAPER 포지션 보유 중 — 추가매수 차단`;
+    console.log(`  ⛔ [자본관리] ${reason}`);
+    return rejectExecution({
+      persistFailure,
+      symbol,
+      action,
+      reason,
+      code: 'paper_position_reentry_blocked',
+      meta: {
+        existingPaper: paperPosition.paper,
+        requestedPaper: effectivePaperMode,
+        tradeMode: signalTradeMode,
+      },
+      notify: 'skip',
+    });
+  }
+  if (!effectivePaperMode && livePosition) {
+    const reason = '동일 LIVE 포지션 보유 중 — 추가매수 차단';
+    console.log(`  ⛔ [자본관리] ${reason}`);
+    return rejectExecution({
+      persistFailure,
+      symbol,
+      action,
+      reason,
+      code: 'live_position_reentry_blocked',
+      meta: {
+        existingPaper: livePosition.paper,
+        requestedPaper: effectivePaperMode,
+        tradeMode: signalTradeMode,
+      },
+      notify: 'skip',
+    });
+  }
+  if (!livePosition && !paperPosition && sameDayBuyTrade) {
+    const reason = `동일 ${signalTradeMode.toUpperCase()} 심볼 당일 재진입 차단`;
+    console.log(`  ⛔ [자본관리] ${reason}`);
+    return rejectExecution({
+      persistFailure,
+      symbol,
+      action,
+      reason,
+      code: 'same_day_reentry_blocked',
+      meta: {
+        tradeMode: signalTradeMode,
+        sameDayTradeId: sameDayBuyTrade.id,
+        sameDayTradePaper: sameDayBuyTrade.paper === true,
+      },
+      notify: 'skip',
+    });
+  }
+
+  return { livePosition, fallbackLivePosition, paperPosition };
+}
+
+async function persistBuyPosition({ symbol, order, effectivePaperMode, signalTradeMode }) {
+  await db.upsertPosition({
+    symbol,
+    amount: order.filled || 0,
+    avgPrice: order.price || 0,
+    unrealizedPnl: 0,
+    paper: effectivePaperMode,
+    exchange: 'binance',
+    tradeMode: signalTradeMode,
+  });
+}
+
+async function applyBuyProtectiveExit({ trade, signal, order, effectivePaperMode, symbol }) {
+  const fillPrice = order.price || order.average || 0;
+  if (!(fillPrice > 0 && order.filled > 0)) return;
+
+  const hasDynamic = !!(signal.tpPrice && signal.slPrice);
+  trade.tpPrice = hasDynamic
+    ? parseFloat(signal.tpPrice.toFixed(2))
+    : parseFloat((fillPrice * 1.06).toFixed(2));
+  trade.slPrice = hasDynamic
+    ? parseFloat(signal.slPrice.toFixed(2))
+    : parseFloat((fillPrice * 0.97).toFixed(2));
+  trade.tpslSource = hasDynamic ? (signal.tpslSource || 'atr') : 'fixed';
+  const tpslTag = hasDynamic ? '[동적 TP/SL]' : '[고정 TP/SL]';
+  console.log(`  📐 ${tpslTag} TP=${trade.tpPrice} SL=${trade.slPrice} (${trade.tpslSource})`);
+
+  if (effectivePaperMode) return;
+
+  try {
+    const normalizedProtection = normalizeProtectiveExitPrices(symbol, fillPrice, trade.tpPrice, trade.slPrice, trade.tpslSource);
+    trade.tpPrice = normalizedProtection.tpPrice;
+    trade.slPrice = normalizedProtection.slPrice;
+    if (normalizedProtection.sourceUsed !== trade.tpslSource) {
+      trade.tpslSource = normalizedProtection.sourceUsed;
+    }
+    const protection = await placeBinanceProtectiveExit(symbol, order.filled, fillPrice, trade.tpPrice, trade.slPrice);
+    Object.assign(trade, buildProtectionSnapshot(protection));
+    if (protection.ok) {
+      console.log(`  🛡️ TP/SL OCO 설정 완료: TP=${trade.tpPrice} SL=${trade.slPrice}`);
+    } else if (isStopLossOnlyMode(protection.mode)) {
+      console.warn(`  ⚠️ TP/SL OCO 미지원 → SL-only 보호주문 설정: SL=${trade.slPrice}`);
+    } else {
+      throw new Error(protection.error || 'protective_exit_failed');
+    }
+  } catch (tpslErr) {
+    console.error(`  ⚠️ TP/SL 설정 실패: ${tpslErr.message}`);
+    Object.assign(trade, buildProtectionSnapshot(null, tpslErr.message));
+    await notifyError(`헤파이스토스 TP/SL 설정 실패 — ${symbol}`, tpslErr);
+  }
+}
+
+async function notifyExecutedTrade({ trade, signalTradeMode, capitalPolicy }) {
+  const [curBalance, curPositions, curDailyPnl] = await Promise.all([
+    getAvailableBalance().catch(() => null),
+    getOpenPositions('binance', false, signalTradeMode).catch(() => []),
+    getDailyPnL().catch(() => null),
+  ]);
+
+  await notifyTrade({
+    ...trade,
+    capitalInfo: {
+      balance: curBalance,
+      openPositions: curPositions.length,
+      maxPositions: capitalPolicy.max_concurrent_positions,
+      dailyPnL: curDailyPnl,
+    },
+  });
+}
+
+async function recordExecutedTradeJournal({ trade, signalId, exitReason }) {
+  if (trade.side === 'buy') {
+    const execTime = Date.now();
+    const tradeId = await journalDb.generateTradeId();
+    await journalDb.insertJournalEntry({
+      trade_id: tradeId,
+      signal_id: signalId,
+      market: 'crypto',
+      exchange: trade.exchange,
+      symbol: trade.symbol,
+      is_paper: trade.paper,
+      entry_time: execTime,
+      entry_price: trade.price || 0,
+      entry_size: trade.amount || 0,
+      entry_value: trade.totalUsdt || 0,
+      direction: 'long',
+      tp_price: trade.tpPrice ?? null,
+      sl_price: trade.slPrice ?? null,
+      tp_order_id: trade.tpOrderId ?? null,
+      sl_order_id: trade.slOrderId ?? null,
+      tp_sl_set: trade.tpSlSet ?? false,
+      tp_sl_mode: trade.tpSlMode ?? null,
+      tp_sl_error: trade.tpSlError ?? null,
+    });
+    await journalDb.linkRationaleToTrade(tradeId, signalId);
+    notifyJournalEntry({
+      tradeId,
+      symbol: trade.symbol,
+      direction: 'long',
+      market: 'crypto',
+      entryPrice: trade.price,
+      entryValue: trade.totalUsdt,
+      isPaper: trade.paper,
+      tpPrice: trade.tpPrice,
+      slPrice: trade.slPrice,
+      tpSlSet: trade.tpSlSet,
+    });
+    return;
+  }
+
+  if (trade.side === 'sell') {
+    await closeOpenJournalForSymbol(
+      trade.symbol,
+      trade.paper,
+      trade.price,
+      trade.totalUsdt,
+      exitReason || 'signal_reverse',
+      trade.tradeMode,
+    );
+  }
+}
+
+async function finalizeExecutedTrade({ trade, signalId, signalTradeMode, capitalPolicy, exitReason }) {
+  await db.insertTrade(trade);
+  await db.updateSignalStatus(signalId, SIGNAL_STATUS.EXECUTED);
+  await notifyExecutedTrade({ trade, signalTradeMode, capitalPolicy });
+
+  try {
+    await recordExecutedTradeJournal({ trade, signalId, exitReason });
+  } catch (journalErr) {
+    console.warn(`  ⚠️ 매매일지 기록 실패: ${journalErr.message}`);
+  }
+}
+
+async function resolveSellExecutionContext({
+  persistFailure,
+  signalId,
+  symbol,
+  signalTradeMode,
+  globalPaperMode,
+}) {
+  const livePosition = await db.getLivePosition(symbol, 'binance', signalTradeMode);
+  const fallbackLivePosition = !livePosition
+    ? await findAnyLivePosition(symbol, 'binance').catch(() => null)
+    : null;
+  const paperPosition = await db.getPaperPosition(symbol, 'binance', signalTradeMode);
+
+  if (globalPaperMode && livePosition && !paperPosition) {
+    const reason = '실포지션 보유 중에는 PAPER SELL로 혼합 청산을 실행할 수 없음';
+    console.warn(`  ⚠️ ${reason}`);
+    await persistFailure(reason, {
+      code: 'position_mode_conflict',
+      meta: {
+        paperMode: globalPaperMode,
+        liveAmount: livePosition.amount || 0,
+        tradeMode: signalTradeMode,
+      },
+    });
+    return { success: false, reason };
+  }
+
+  const position = paperPosition || livePosition || fallbackLivePosition;
+  const sellPaperMode = globalPaperMode || (!livePosition && Boolean(paperPosition));
+  const effectivePositionTradeMode = (!sellPaperMode && (livePosition || fallbackLivePosition)?.trade_mode)
+    || paperPosition?.trade_mode
+    || signalTradeMode;
+  const base = symbol.split('/')[0];
+  const balance = sellPaperMode ? null : await getExchange().fetchBalance();
+  const freeBalance = Number(balance?.total?.[base] || balance?.free?.[base] || 0);
+
+  return {
+    success: true,
+    livePosition,
+    fallbackLivePosition,
+    paperPosition,
+    position,
+    sellPaperMode,
+    effectivePositionTradeMode,
+    base,
+    freeBalance,
+  };
+}
+
+async function resolveSellAmount({
+  persistFailure,
+  signalId,
+  symbol,
+  signalTradeMode,
+  sellPaperMode,
+  livePosition,
+  fallbackLivePosition,
+  paperPosition,
+  position,
+  freeBalance,
+}) {
+  let amount = position?.amount;
+
+  if (!amount || amount <= 0) {
+    amount = sellPaperMode
+      ? Number(livePosition?.amount || fallbackLivePosition?.amount || paperPosition?.amount || 0)
+      : freeBalance;
+    if (amount <= 0) {
+      console.warn(`  ⚠️ ${symbol} 보유량 없음 (DB+바이낸스 모두 0) — SELL 스킵`);
+      await persistFailure('보유량 없음', {
+        code: 'missing_position',
+        meta: { sellPaperMode },
+      });
+      return { success: false, reason: '보유량 없음' };
+    }
+    console.log(`  ℹ️ DB 포지션 없음 → 바이낸스 실잔고 사용: ${amount} ${symbol.split('/')[0]}`);
+  } else if (!livePosition && fallbackLivePosition && fallbackLivePosition.trade_mode !== signalTradeMode) {
+    console.warn(`  ⚠️ ${symbol} SELL 신호(${signalTradeMode})에 대응되는 live 포지션 없음 → ${fallbackLivePosition.trade_mode} 포지션 기준으로 청산`);
+  } else if (!sellPaperMode && freeBalance > 0 && freeBalance < amount) {
+    const drift = amount - freeBalance;
+    console.warn(`  ⚠️ ${symbol} DB 포지션(${amount})과 실잔고(${freeBalance})가 어긋남 — 실잔고 기준으로 SELL 진행`);
+    amount = freeBalance;
+    await db.updateSignalBlock(signalId, {
+      reason: `position_reconciled_to_balance:${drift.toFixed(8)}`,
+      code: 'position_balance_reconciled',
+      meta: {
+        exchange: 'binance',
+        symbol,
+        dbAmount: position?.amount || 0,
+        freeBalance,
+        drift,
+      },
+    }).catch(() => {});
+  }
+
+  if (!sellPaperMode) {
+    const minSellAmount = await getMinSellAmount(symbol).catch(() => 0);
+    const roundedAmount = roundSellAmount(symbol, amount);
+    if (roundedAmount <= 0 || (minSellAmount > 0 && roundedAmount < minSellAmount)) {
+      const reason = `최소 매도 수량 미달 (${roundedAmount || amount} < ${minSellAmount || 'exchange_min'})`;
+      console.warn(`  ⚠️ ${symbol} ${reason} — SELL 스킵`);
+      await cleanupDustLivePosition(symbol, livePosition, signalTradeMode, {
+        signalId,
+        freeBalance,
+        roundedAmount: roundedAmount || amount,
+        minSellAmount,
+      });
+      await persistFailure(reason, {
+        code: 'sell_amount_below_minimum',
+        meta: {
+          requestedAmount: amount,
+          roundedAmount,
+          minSellAmount,
+          sellPaperMode,
+        },
+      });
+      return { success: false, reason };
+    }
+    amount = roundedAmount;
+  }
+
+  return { success: true, amount };
+}
+
+async function executeSellTrade({ signalId, symbol, amount, sellPaperMode, effectivePositionTradeMode }) {
+  const order = await marketSell(symbol, amount, sellPaperMode);
+  const trade = {
+    signalId,
+    symbol,
+    side: 'sell',
+    amount: order.amount || amount,
+    price: order.price,
+    totalUsdt: order.totalUsdt || ((order.amount || amount) * (order.price || 0)),
+    paper: sellPaperMode,
+    exchange: 'binance',
+    tradeMode: effectivePositionTradeMode,
+  };
+
+  await db.deletePosition(symbol, {
+    exchange: 'binance',
+    paper: sellPaperMode,
+    tradeMode: effectivePositionTradeMode,
+  });
+
+  return trade;
+}
+
+async function resolveBuyExecutionMode({
+  persistFailure,
+  signalId,
+  symbol,
+  action,
+  amountUsdt,
+  signalTradeMode,
+  globalPaperMode,
+  capitalPolicy,
+}) {
+  const check = await preTradeCheck(symbol, 'BUY', amountUsdt, 'binance', signalTradeMode);
+  if (check.allowed) {
+    return { effectivePaperMode: globalPaperMode };
+  }
+
+  if (!globalPaperMode && !check.circuit && isCapitalShortageReason(check.reason || '')) {
+    console.log(`  📄 [자본관리] 실잔고 부족 → PAPER 폴백: ${check.reason}`);
+    await db.updateSignalBlock(signalId, {
+      reason: `paper_fallback:${check.reason}`,
+      code: 'paper_fallback',
+      meta: {
+        exchange: 'binance',
+        symbol,
+        action,
+        amount: amountUsdt,
+      },
+    });
+    notifyTradeSkip({ symbol, action, reason: `실잔고 부족으로 PAPER 전환: ${check.reason}` }).catch(() => {});
+    return { effectivePaperMode: true };
+  }
+
+  console.log(`  ⛔ [자본관리] 매매 스킵: ${check.reason}`);
+  return rejectExecution({
+    persistFailure,
+    symbol,
+    action,
+    reason: check.reason,
+    code: check.circuit ? 'capital_circuit_breaker' : 'capital_guard_rejected',
+    meta: {
+      circuit: Boolean(check.circuit),
+      circuitType: check.circuitType ?? null,
+      openPositions: !check.circuit ? (await getOpenPositions('binance', false, signalTradeMode).catch(() => [])).length : undefined,
+      maxPositions: !check.circuit ? capitalPolicy.max_concurrent_positions : undefined,
+    },
+    notify: check.circuit ? 'circuit' : 'skip',
+  });
+}
+
+async function resolveBuyOrderAmount({
+  persistFailure,
+  symbol,
+  action,
+  amountUsdt,
+  signal,
+  effectivePaperMode,
+}) {
+  const slPrice = signal.slPrice || 0;
+  const currentPrice = await fetchTicker(symbol).catch(() => 0);
+  const sizing = await calculatePositionSize(symbol, currentPrice, slPrice, 'binance');
+  if (sizing.skip && !effectivePaperMode) {
+    console.log(`  ⛔ [자본관리] 포지션 크기 부족: ${sizing.reason}`);
+    return rejectExecution({
+      persistFailure,
+      symbol,
+      action,
+      reason: sizing.reason,
+      code: 'position_sizing_rejected',
+      meta: {
+        currentPrice,
+        slPrice,
+        capitalPct: sizing.capitalPct ?? null,
+        riskPercent: sizing.riskPercent ?? null,
+      },
+      notify: 'skip',
+    });
+  }
+
+  const actualAmount = effectivePaperMode ? amountUsdt : sizing.size;
+  if (effectivePaperMode) {
+    console.log(`  📄 [PAPER] 시그널 원본 금액으로 가상 포지션 추적: ${actualAmount.toFixed(2)} USDT`);
+  } else {
+    console.log(`  📐 [자본관리] 포지션 ${actualAmount.toFixed(2)} USDT (자본의 ${sizing.capitalPct}% | 리스크 ${sizing.riskPercent}%)`);
+  }
+
+  return { actualAmount };
 }
 
 async function fetchRecentBrokerExit(symbol, amountHint = 0) {
@@ -927,181 +1574,33 @@ export async function executeSignal(signal) {
         }
       }
 
-      // ── BUY 공통 안전 게이트 ─────────────────────────────────────────
-      // 흡수·BTC직접매수 경로도 서킷 브레이커·포지션 한도·일간 횟수를 준수해야 함
-      const circuit = await checkCircuitBreaker();
-      if (circuit.triggered) {
-        console.log(`  ⛔ [서킷 브레이커] ${circuit.reason}`);
-        await persistFailure(circuit.reason, {
-          code: 'capital_circuit_breaker',
-          meta: { circuitType: circuit.type ?? null },
-        });
-        notifyCircuitBreaker({ reason: circuit.reason, type: circuit.type }).catch(() => {});
-        return { success: false, reason: circuit.reason };
-      }
-      const openPositionsSafe = await getOpenPositions('binance', false, signalTradeMode).catch(() => []);
-      if (openPositionsSafe.length >= capitalPolicy.max_concurrent_positions) {
-        const reason = `최대 포지션 도달: ${openPositionsSafe.length}/${capitalPolicy.max_concurrent_positions}`;
-        console.log(`  ⛔ [자본관리] ${reason}`);
-        await persistFailure(reason, {
-          code: 'capital_guard_rejected',
-          meta: {
-            openPositions: openPositionsSafe.length,
-            maxPositions: capitalPolicy.max_concurrent_positions,
-          },
-        });
-        notifyTradeSkip({ symbol, action, reason, openPositions: openPositionsSafe.length, maxPositions: capitalPolicy.max_concurrent_positions }).catch(() => {});
-        return { success: false, reason };
-      }
-      const dailyTradesSafe = await getDailyTradeCount({ exchange: 'binance', tradeMode: signalTradeMode, side: 'buy' }).catch(() => 0);
-      if (dailyTradesSafe >= capitalPolicy.max_daily_trades) {
-        const reason = formatDailyTradeLimitReason(dailyTradesSafe, capitalPolicy.max_daily_trades);
-        console.log(`  ⛔ [자본관리] ${reason}`);
-        await persistFailure(reason, {
-          code: 'capital_guard_rejected',
-          meta: {
-            dailyTrades: dailyTradesSafe,
-            maxDailyTrades: capitalPolicy.max_daily_trades,
-          },
-        });
-        notifyTradeSkip({ symbol, action, reason }).catch(() => {});
-        return { success: false, reason };
-      }
+      const safetyRejected = await runBuySafetyGuards({
+        persistFailure,
+        symbol,
+        action,
+        signalTradeMode,
+        capitalPolicy,
+      });
+      if (safetyRejected) return safetyRejected;
 
-      // ── 미추적 잔고 흡수 ─────────────────────────────────────────────
-      // 지갑에 있지만 DB 포지션에 없는 코인 → 기존 BTC를 포지션으로 등록 + TP/SL 설정
-      // 이미 보유한 코인을 그대로 매매에 사용 (불필요한 매도·재매수 없음)
-      try {
-        const walletBal  = await getExchange().fetchBalance();
-        const walletFree = walletBal.free?.[base] || 0;
-        const trackedPos = await db.getLivePosition(symbol, null, signalTradeMode);
-        const trackedAmt = trackedPos?.amount || 0;
-        const untracked  = walletFree - trackedAmt;
+      const absorbed = await tryAbsorbUntrackedBalance({
+        signalId,
+        symbol,
+        base,
+        signalTradeMode,
+        minOrderUsdt,
+        effectivePaperMode,
+      });
+      if (absorbed) return absorbed;
 
-        if (untracked > 0) {
-          const curPrice     = await fetchTicker(symbol).catch(() => 0);
-          const untrackedUsd = untracked * curPrice;
-
-          if (untrackedUsd >= minOrderUsdt) {
-            console.log(`  ✅ [헤파이스토스] 미추적 ${base} 흡수: ${untracked.toFixed(6)} (≈$${untrackedUsd.toFixed(2)}) → 포지션 등록 + TP/SL 설정`);
-
-            // DB 포지션 등록 (현재가 기준 평균가)
-            const newAmount   = trackedAmt + untracked;
-            const newAvgPrice = trackedPos && trackedAmt > 0
-              ? ((trackedAmt * trackedPos.avg_price) + untrackedUsd) / newAmount
-              : curPrice;
-            await db.upsertPosition({ symbol, amount: newAmount, avgPrice: newAvgPrice, unrealizedPnl: 0, paper: effectivePaperMode });
-
-            // TP/SL OCO 설정 (실투자 모드에서만)
-            const normalizedProtection = normalizeProtectiveExitPrices(symbol, curPrice, curPrice * 1.06, curPrice * 0.97, 'fixed');
-            const tpPrice = normalizedProtection.tpPrice;
-            const slPrice = normalizedProtection.slPrice;
-            let protectionSnapshot = buildProtectionSnapshot();
-            if (!effectivePaperMode && curPrice > 0) {
-              try {
-                const protection = await placeBinanceProtectiveExit(symbol, untracked, curPrice, tpPrice, slPrice);
-                protectionSnapshot = buildProtectionSnapshot(protection);
-                if (protection.ok) {
-                  console.log(`  🛡️ TP/SL OCO 설정 완료: TP=${tpPrice} SL=${slPrice}`);
-                } else if (isStopLossOnlyMode(protection.mode)) {
-                  console.warn(`  ⚠️ TP/SL OCO 미지원 → SL-only 보호주문 설정: SL=${slPrice}`);
-                } else {
-                  throw new Error(protection.error || 'protective_exit_failed');
-                }
-              } catch (tpslErr) {
-                protectionSnapshot = buildProtectionSnapshot(null, tpslErr.message);
-                console.warn(`  ⚠️ TP/SL 설정 실패: ${tpslErr.message}`);
-              }
-            }
-
-            // 텔레그램 알림
-            const tag = effectivePaperMode ? ' [PAPER]' : '';
-            notifyTrade({
-              signalId, symbol,
-              side:      'absorb',
-              amount:    untracked,
-              price:     curPrice,
-              totalUsdt: untrackedUsd,
-              paper:     effectivePaperMode,
-              exchange:  'binance',
-              tpPrice, slPrice,
-              ...protectionSnapshot,
-              memo:      `미추적 잔고 흡수 — 봇 외부 매수 코인 포지션 등록${tag}`,
-            }).catch(() => {});
-
-            await db.updateSignalStatus(signalId, SIGNAL_STATUS.EXECUTED);
-            return { success: true, absorbed: true, amount: untracked, price: curPrice };
-          } else {
-            console.log(`  ℹ️ 미추적 ${base} ${untracked.toFixed(6)} (≈$${untrackedUsd.toFixed(2)}) — 최소금액 미만, 무시`);
-          }
-        }
-      } catch (e) {
-        console.warn(`  ⚠️ 미추적 잔고 흡수 실패 (일반 매수 계속): ${e.message}`);
-      }
-
-      const livePosition = await db.getLivePosition(symbol, 'binance', signalTradeMode);
-      const fallbackLivePosition = !livePosition
-        ? await findAnyLivePosition(symbol, 'binance').catch(() => null)
-        : null;
-      const paperPosition = await db.getPaperPosition(symbol, 'binance', signalTradeMode);
-      const sameDayBuyTrade = isSameDaySymbolReentryBlockEnabled()
-        ? await db.getSameDayTrade({ symbol, side: 'buy', exchange: 'binance', tradeMode: signalTradeMode })
-        : null;
-      if (effectivePaperMode && livePosition) {
-        const reason = '실포지션 보유 중에는 PAPER 추가매수로 혼합 포지션을 만들 수 없음';
-        console.log(`  ⛔ [자본관리] ${reason}`);
-        await persistFailure(reason, {
-          code: 'position_mode_conflict',
-          meta: {
-            existingPaper: livePosition.paper,
-            requestedPaper: effectivePaperMode,
-          },
-        });
-        notifyTradeSkip({ symbol, action, reason }).catch(() => {});
-        return { success: false, reason };
-      }
-      if (effectivePaperMode && paperPosition) {
-        const reason = `동일 ${signalTradeMode.toUpperCase()} PAPER 포지션 보유 중 — 추가매수 차단`;
-        console.log(`  ⛔ [자본관리] ${reason}`);
-        await persistFailure(reason, {
-          code: 'paper_position_reentry_blocked',
-          meta: {
-            existingPaper: paperPosition.paper,
-            requestedPaper: effectivePaperMode,
-            tradeMode: signalTradeMode,
-          },
-        });
-        notifyTradeSkip({ symbol, action, reason }).catch(() => {});
-        return { success: false, reason };
-      }
-      if (!effectivePaperMode && livePosition) {
-        const reason = '동일 LIVE 포지션 보유 중 — 추가매수 차단';
-        console.log(`  ⛔ [자본관리] ${reason}`);
-        await persistFailure(reason, {
-          code: 'live_position_reentry_blocked',
-          meta: {
-            existingPaper: livePosition.paper,
-            requestedPaper: effectivePaperMode,
-            tradeMode: signalTradeMode,
-          },
-        });
-        notifyTradeSkip({ symbol, action, reason }).catch(() => {});
-        return { success: false, reason };
-      }
-      if (!livePosition && !paperPosition && sameDayBuyTrade) {
-        const reason = `동일 ${signalTradeMode.toUpperCase()} 심볼 당일 재진입 차단`;
-        console.log(`  ⛔ [자본관리] ${reason}`);
-        await persistFailure(reason, {
-          code: 'same_day_reentry_blocked',
-          meta: {
-            tradeMode: signalTradeMode,
-            sameDayTradeId: sameDayBuyTrade.id,
-            sameDayTradePaper: sameDayBuyTrade.paper === true,
-          },
-        });
-        notifyTradeSkip({ symbol, action, reason }).catch(() => {});
-        return { success: false, reason };
-      }
+      const buyReentryState = await checkBuyReentryGuards({
+        persistFailure,
+        symbol,
+        action,
+        signalTradeMode,
+        effectivePaperMode,
+      });
+      if (buyReentryState?.success === false) return buyReentryState;
 
       // ── 미추적 BTC로 직접 매수 (BTC 페어 우선) ─────────────────────
       // 1순위: ETH/BTC 같은 직접 페어 → BTC→USDT 변환 없이 1회 수수료로 매수
@@ -1120,84 +1619,50 @@ export async function executeSignal(signal) {
         console.warn(`  ⚠️ 미추적 코인 청산 실패 (매수 계속): ${e.message}`);
       }
 
-      // ── 자본 관리 게이트 ────────────────────────────────────────────
-      const check = await preTradeCheck(symbol, 'BUY', amountUsdt, 'binance', signalTradeMode);
-      if (!check.allowed) {
-        if (!globalPaperMode && !check.circuit && isCapitalShortageReason(check.reason || '')) {
-          effectivePaperMode = true;
-          console.log(`  📄 [자본관리] 실잔고 부족 → PAPER 폴백: ${check.reason}`);
-          await db.updateSignalBlock(signalId, {
-            reason: `paper_fallback:${check.reason}`,
-            code: 'paper_fallback',
-            meta: {
-              exchange: 'binance',
-              symbol,
-              action,
-              amount: amountUsdt,
-            },
-          });
-          notifyTradeSkip({ symbol, action, reason: `실잔고 부족으로 PAPER 전환: ${check.reason}` }).catch(() => {});
-        } else {
-          console.log(`  ⛔ [자본관리] 매매 스킵: ${check.reason}`);
-          await persistFailure(check.reason, {
-            code: check.circuit ? 'capital_circuit_breaker' : 'capital_guard_rejected',
-            meta: {
-              circuit: Boolean(check.circuit),
-              circuitType: check.circuitType ?? null,
-            },
-          });
-          if (check.circuit) {
-            notifyCircuitBreaker({ reason: check.reason, type: check.circuitType }).catch(() => {});
-          } else {
-            const openPos = await getOpenPositions('binance', false, signalTradeMode).catch(() => []);
-            notifyTradeSkip({ symbol, action, reason: check.reason, openPositions: openPos.length, maxPositions: capitalPolicy.max_concurrent_positions }).catch(() => {});
-          }
-          return { success: false, reason: check.reason };
-        }
-      }
+      const executionModeState = await resolveBuyExecutionMode({
+        persistFailure,
+        signalId,
+        symbol,
+        action,
+        amountUsdt,
+        signalTradeMode,
+        globalPaperMode,
+        capitalPolicy,
+      });
+      if (executionModeState?.success === false) return executionModeState;
+      effectivePaperMode = executionModeState.effectivePaperMode;
 
       if (effectivePaperMode) {
         const paperPositionAfterFallback = await db.getPaperPosition(symbol, 'binance', signalTradeMode);
         if (paperPositionAfterFallback) {
           const reason = `동일 ${signalTradeMode.toUpperCase()} PAPER 포지션 보유 중 — 추가매수 차단`;
           console.log(`  ⛔ [자본관리] ${reason}`);
-          await persistFailure(reason, {
+          return rejectExecution({
+            persistFailure,
+            symbol,
+            action,
+            reason,
             code: 'paper_position_reentry_blocked',
             meta: {
               existingPaper: paperPositionAfterFallback.paper,
               requestedPaper: effectivePaperMode,
               tradeMode: signalTradeMode,
             },
+            notify: 'skip',
           });
-          notifyTradeSkip({ symbol, action, reason }).catch(() => {});
-          return { success: false, reason };
         }
       }
 
-      // ── 동적 포지션 사이징 ──────────────────────────────────────────
-      const slPrice = signal.slPrice || 0;
-      const currentPrice = await fetchTicker(symbol).catch(() => 0);
-      const sizing  = await calculatePositionSize(symbol, currentPrice, slPrice, 'binance');
-      if (sizing.skip && !effectivePaperMode) {
-        console.log(`  ⛔ [자본관리] 포지션 크기 부족: ${sizing.reason}`);
-        await persistFailure(sizing.reason, {
-          code: 'position_sizing_rejected',
-          meta: {
-            currentPrice,
-            slPrice,
-            capitalPct: sizing.capitalPct ?? null,
-            riskPercent: sizing.riskPercent ?? null,
-          },
-        });
-        notifyTradeSkip({ symbol, action, reason: sizing.reason }).catch(() => {});
-        return { success: false, reason: sizing.reason };
-      }
-      const actualAmount = effectivePaperMode ? amountUsdt : sizing.size;
-      if (effectivePaperMode) {
-        console.log(`  📄 [PAPER] 시그널 원본 금액으로 가상 포지션 추적: ${actualAmount.toFixed(2)} USDT`);
-      } else {
-        console.log(`  📐 [자본관리] 포지션 ${actualAmount.toFixed(2)} USDT (자본의 ${sizing.capitalPct}% | 리스크 ${sizing.riskPercent}%)`);
-      }
+      const orderAmountState = await resolveBuyOrderAmount({
+        persistFailure,
+        symbol,
+        action,
+        amountUsdt,
+        signal,
+        effectivePaperMode,
+      });
+      if (orderAmountState?.success === false) return orderAmountState;
+      const actualAmount = orderAmountState.actualAmount;
 
       const order = await marketBuy(symbol, actualAmount, effectivePaperMode);
       trade = {
@@ -1212,165 +1677,39 @@ export async function executeSignal(signal) {
         tradeMode: signalTradeMode,
       };
 
-      const newAmount = order.filled || 0;
-      const newAvgPrice = order.price || 0;
-
-      await db.upsertPosition({
-        symbol,
-        amount: newAmount,
-        avgPrice: newAvgPrice,
-        unrealizedPnl: 0,
-        paper: effectivePaperMode,
-        exchange: 'binance',
-        tradeMode: signalTradeMode,
-      });
-
-      // ── TP/SL 가격 결정 (동적/고정, PAPER_MODE 포함) ────────────────
-      // 우선순위: 1) 네메시스 동적 TP/SL (signal.tpPrice/slPrice, applied=true)
-      //           2) 고정 TP +6%, SL -3% 폴백
-      const fillPrice = order.price || order.average || 0;
-      if (fillPrice > 0 && order.filled > 0) {
-        const hasDynamic  = !!(signal.tpPrice && signal.slPrice);
-        trade.tpPrice     = hasDynamic
-          ? parseFloat(signal.tpPrice.toFixed(2))
-          : parseFloat((fillPrice * 1.06).toFixed(2));
-        trade.slPrice     = hasDynamic
-          ? parseFloat(signal.slPrice.toFixed(2))
-          : parseFloat((fillPrice * 0.97).toFixed(2));
-        trade.tpslSource  = hasDynamic ? (signal.tpslSource || 'atr') : 'fixed';
-        const tpslTag     = hasDynamic ? '[동적 TP/SL]' : '[고정 TP/SL]';
-        console.log(`  📐 ${tpslTag} TP=${trade.tpPrice} SL=${trade.slPrice} (${trade.tpslSource})`);
-
-        // OCO 주문은 실투자 모드에서만 거래소에 실제 전송
-        if (!effectivePaperMode) {
-          try {
-            const normalizedProtection = normalizeProtectiveExitPrices(symbol, fillPrice, trade.tpPrice, trade.slPrice, trade.tpslSource);
-            trade.tpPrice = normalizedProtection.tpPrice;
-            trade.slPrice = normalizedProtection.slPrice;
-            if (normalizedProtection.sourceUsed !== trade.tpslSource) {
-              trade.tpslSource = normalizedProtection.sourceUsed;
-            }
-            const protection = await placeBinanceProtectiveExit(symbol, order.filled, fillPrice, trade.tpPrice, trade.slPrice);
-            Object.assign(trade, buildProtectionSnapshot(protection));
-            if (protection.ok) {
-              console.log(`  🛡️ TP/SL OCO 설정 완료: TP=${trade.tpPrice} SL=${trade.slPrice}`);
-            } else if (isStopLossOnlyMode(protection.mode)) {
-              console.warn(`  ⚠️ TP/SL OCO 미지원 → SL-only 보호주문 설정: SL=${trade.slPrice}`);
-            } else {
-              throw new Error(protection.error || 'protective_exit_failed');
-            }
-          } catch (tpslErr) {
-            console.error(`  ⚠️ TP/SL 설정 실패: ${tpslErr.message}`);
-            Object.assign(trade, buildProtectionSnapshot(null, tpslErr.message));
-            await notifyError(`헤파이스토스 TP/SL 설정 실패 — ${symbol}`, tpslErr);
-          }
-        }
-      }
+      await persistBuyPosition({ symbol, order, effectivePaperMode, signalTradeMode });
+      await applyBuyProtectiveExit({ trade, signal, order, effectivePaperMode, symbol });
 
     } else if (action === ACTIONS.SELL) {
-      // DB 포지션 우선, 없으면 실제 바이낸스 잔고 조회 (외부 매수 코인도 매도 가능)
-      const livePosition = await db.getLivePosition(symbol, 'binance', signalTradeMode);
-      const fallbackLivePosition = !livePosition
-        ? await findAnyLivePosition(symbol, 'binance').catch(() => null)
-        : null;
-      const paperPosition = await db.getPaperPosition(symbol, 'binance', signalTradeMode);
-      if (globalPaperMode && livePosition && !paperPosition) {
-        const reason = '실포지션 보유 중에는 PAPER SELL로 혼합 청산을 실행할 수 없음';
-        console.warn(`  ⚠️ ${reason}`);
-        await persistFailure(reason, {
-          code: 'position_mode_conflict',
-          meta: {
-            paperMode: globalPaperMode,
-            liveAmount: livePosition.amount || 0,
-            tradeMode: signalTradeMode,
-          },
-        });
-        return { success: false, reason };
-      }
-      const position = paperPosition || livePosition || fallbackLivePosition;
-      let amount = position?.amount;
-      const sellPaperMode = globalPaperMode || (!livePosition && Boolean(paperPosition));
-      const effectivePositionTradeMode = (!sellPaperMode && (livePosition || fallbackLivePosition)?.trade_mode)
-        || paperPosition?.trade_mode
-        || signalTradeMode;
-      const base = symbol.split('/')[0];
-      const bal  = sellPaperMode ? null : await getExchange().fetchBalance();
-      const freeBalance = Number(bal?.total?.[base] || bal?.free?.[base] || 0);
-      if (!amount || amount <= 0) {
-        amount = sellPaperMode
-          ? Number(livePosition?.amount || fallbackLivePosition?.amount || paperPosition?.amount || 0)
-          : freeBalance;
-        if (amount <= 0) {
-          console.warn(`  ⚠️ ${symbol} 보유량 없음 (DB+바이낸스 모두 0) — SELL 스킵`);
-          await persistFailure('보유량 없음', {
-            code: 'missing_position',
-            meta: { sellPaperMode },
-          });
-          return { success: false, reason: '보유량 없음' };
-        }
-        console.log(`  ℹ️ DB 포지션 없음 → 바이낸스 실잔고 사용: ${amount} ${base}`);
-      } else if (!livePosition && fallbackLivePosition && fallbackLivePosition.trade_mode !== signalTradeMode) {
-        console.warn(`  ⚠️ ${symbol} SELL 신호(${signalTradeMode})에 대응되는 live 포지션 없음 → ${fallbackLivePosition.trade_mode} 포지션 기준으로 청산`);
-      } else if (!sellPaperMode && freeBalance > 0 && freeBalance < amount) {
-        const drift = amount - freeBalance;
-        console.warn(`  ⚠️ ${symbol} DB 포지션(${amount})과 실잔고(${freeBalance})가 어긋남 — 실잔고 기준으로 SELL 진행`);
-        amount = freeBalance;
-        await db.updateSignalBlock(signalId, {
-          reason: `position_reconciled_to_balance:${drift.toFixed(8)}`,
-          code: 'position_balance_reconciled',
-          meta: {
-            exchange: 'binance',
-            symbol,
-            dbAmount: position?.amount || 0,
-            freeBalance,
-            drift,
-          },
-        }).catch(() => {});
-      }
-
-      if (!sellPaperMode) {
-        const minSellAmount = await getMinSellAmount(symbol).catch(() => 0);
-        const roundedAmount = roundSellAmount(symbol, amount);
-        if (roundedAmount <= 0 || (minSellAmount > 0 && roundedAmount < minSellAmount)) {
-          const reason = `최소 매도 수량 미달 (${roundedAmount || amount} < ${minSellAmount || 'exchange_min'})`;
-          console.warn(`  ⚠️ ${symbol} ${reason} — SELL 스킵`);
-          await cleanupDustLivePosition(symbol, livePosition, signalTradeMode, {
-            signalId,
-            freeBalance,
-            roundedAmount: roundedAmount || amount,
-            minSellAmount,
-          });
-          await persistFailure(reason, {
-            code: 'sell_amount_below_minimum',
-            meta: {
-              requestedAmount: amount,
-              roundedAmount,
-              minSellAmount,
-              sellPaperMode,
-            },
-          });
-          return { success: false, reason };
-        }
-        amount = roundedAmount;
-      }
-
-      const order = await marketSell(symbol, amount, sellPaperMode);
-      trade = {
+      const sellContext = await resolveSellExecutionContext({
+        persistFailure,
         signalId,
         symbol,
-        side:      'sell',
-        amount:    order.amount || amount,
-        price:     order.price,
-        totalUsdt: order.totalUsdt || ((order.amount || amount) * (order.price || 0)),
-        paper:     sellPaperMode,
-        exchange:  'binance',
-        tradeMode: effectivePositionTradeMode,
-      };
+        signalTradeMode,
+        globalPaperMode,
+      });
+      if (sellContext?.success === false) return sellContext;
 
-      await db.deletePosition(symbol, {
-        exchange: 'binance',
-        paper: sellPaperMode,
-        tradeMode: effectivePositionTradeMode,
+      const sellAmountState = await resolveSellAmount({
+        persistFailure,
+        signalId,
+        symbol,
+        signalTradeMode,
+        sellPaperMode: sellContext.sellPaperMode,
+        livePosition: sellContext.livePosition,
+        fallbackLivePosition: sellContext.fallbackLivePosition,
+        paperPosition: sellContext.paperPosition,
+        position: sellContext.position,
+        freeBalance: sellContext.freeBalance,
+      });
+      if (sellAmountState?.success === false) return sellAmountState;
+
+      trade = await executeSellTrade({
+        signalId,
+        symbol,
+        amount: sellAmountState.amount,
+        sellPaperMode: sellContext.sellPaperMode,
+        effectivePositionTradeMode: sellContext.effectivePositionTradeMode,
       });
 
     } else {
@@ -1379,76 +1718,13 @@ export async function executeSignal(signal) {
       return { success: true };
     }
 
-    await db.insertTrade(trade);
-    await db.updateSignalStatus(signalId, SIGNAL_STATUS.EXECUTED);
-
-    // 자본 관리 정보 포함 알림
-    const [curBalance, curPositions, curDailyPnl] = await Promise.all([
-      getAvailableBalance().catch(() => null),
-      getOpenPositions('binance', false, signalTradeMode).catch(() => []),
-      getDailyPnL().catch(() => null),
-    ]);
-    await notifyTrade({
-      ...trade,
-      capitalInfo: {
-        balance:       curBalance,
-        openPositions: curPositions.length,
-        maxPositions:  capitalPolicy.max_concurrent_positions,
-        dailyPnL:      curDailyPnl,
-      },
+    await finalizeExecutedTrade({
+      trade,
+      signalId,
+      signalTradeMode,
+      capitalPolicy,
+      exitReason: exitReasonOverride,
     });
-
-    // ── 매매일지 기록 (기존 기능에 영향 없도록 try-catch 감쌈) ────────
-    try {
-      if (trade.side === 'buy') {
-        const execTime = Date.now();
-        const tradeId  = await journalDb.generateTradeId();
-        await journalDb.insertJournalEntry({
-          trade_id:      tradeId,
-          signal_id:     signalId,
-          market:        'crypto',
-          exchange:      trade.exchange,
-          symbol:        trade.symbol,
-          is_paper:      trade.paper,
-          entry_time:    execTime,
-          entry_price:   trade.price || 0,
-          entry_size:    trade.amount || 0,
-          entry_value:   trade.totalUsdt || 0,
-          direction:     'long',
-          tp_price:      trade.tpPrice ?? null,
-          sl_price:      trade.slPrice ?? null,
-          tp_order_id:   trade.tpOrderId ?? null,
-          sl_order_id:   trade.slOrderId ?? null,
-          tp_sl_set:     trade.tpSlSet ?? false,
-          tp_sl_mode:    trade.tpSlMode ?? null,
-          tp_sl_error:   trade.tpSlError ?? null,
-        });
-        await journalDb.linkRationaleToTrade(tradeId, signalId);
-        notifyJournalEntry({
-          tradeId,
-          symbol:    trade.symbol,
-          direction: 'long',
-          market:    'crypto',
-          entryPrice: trade.price,
-          entryValue: trade.totalUsdt,
-          isPaper:   trade.paper,
-          tpPrice:   trade.tpPrice,
-          slPrice:   trade.slPrice,
-          tpSlSet:   trade.tpSlSet,
-        });
-      } else if (trade.side === 'sell') {
-        await closeOpenJournalForSymbol(
-          trade.symbol,
-          trade.paper,
-          trade.price,
-          trade.totalUsdt,
-          exitReasonOverride || 'signal_reverse',
-          trade.tradeMode,
-        );
-      }
-    } catch (journalErr) {
-      console.warn(`  ⚠️ 매매일지 기록 실패 (거래는 정상 완료): ${journalErr.message}`);
-    }
 
     const doneTag = trade.paper ? '[PAPER]' : '[LIVE]';
     console.log(`  ✅ ${doneTag} 완료: ${trade.side} ${trade.amount?.toFixed(6)} @ $${trade.price?.toLocaleString()}`);
@@ -1475,67 +1751,50 @@ export async function executeSignal(signal) {
  * 대기 중인 바이낸스 신호 전체 처리
  */
 export async function processAllPendingSignals() {
-  await initHubSecrets().catch(() => false);
-  const tradeMode = getInvestmentTradeMode();
-  const reconciled = await reconcileLivePositionsWithBrokerBalance().catch((e) => {
-    console.warn(`[헤파이스토스] 실지갑 포지션 동기화 실패: ${e.message}`);
-    return [];
-  });
-  if (reconciled.length > 0) {
-    console.log(`[헤파이스토스] 실지갑 포지션 동기화 ${reconciled.length}건`);
-  }
+  const { tradeMode } = await preparePendingSignalProcessing();
   const signals = await db.getApprovedSignals('binance', tradeMode);
-  if (signals.length === 0) {
-    console.log(`[헤파이스토스] 대기 신호 없음 (trade_mode=${tradeMode})`);
-    return [];
-  }
-
-  console.log(`[헤파이스토스] ${signals.length}개 신호 처리 시작 (trade_mode=${tradeMode})`);
-  const results = [];
-  for (const signal of signals) {
-    const r = await executeSignal(signal);
-    results.push(r);
-    await new Promise(res => setTimeout(res, 500));
-  }
-  return results;
+  return runPendingSignalBatch(signals, { tradeMode, delayMs: 500 });
 }
 
 // CLI 실행
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const args              = process.argv.slice(2);
-  const actionArg         = args.find(a => a.startsWith('--action='))?.split('=')[1];
-  const symbolArg         = args.find(a => a.startsWith('--symbol='))?.split('=')[1];
-  const amountArg         = args.find(a => a.startsWith('--amount='))?.split('=')[1];
-  const inspectPromotions = args.includes('--inspect-promotions');
-  const simulateBuy       = args.includes('--simulate-buy');
+if (isDirectExecution(import.meta.url)) {
+  await runCliMain({
+    before: async () => {
+      await db.initSchema();
+      await initHubSecrets().catch(() => false);
+    },
+    run: async () => {
+      const args              = process.argv.slice(2);
+      const actionArg         = args.find(a => a.startsWith('--action='))?.split('=')[1];
+      const symbolArg         = args.find(a => a.startsWith('--symbol='))?.split('=')[1];
+      const amountArg         = args.find(a => a.startsWith('--amount='))?.split('=')[1];
+      const inspectPromotions = args.includes('--inspect-promotions');
+      const simulateBuy       = args.includes('--simulate-buy');
 
-  await db.initSchema();
-  try {
-    await initHubSecrets().catch(() => false);
-    let r;
-    if (inspectPromotions) {
-      r = await inspectPromotionCandidates();
-    } else if (simulateBuy && symbolArg) {
-      r = await simulateBuyDecision({
-        symbol: symbolArg.toUpperCase(),
-        amountUsdt: parseFloat(amountArg || '100'),
-      });
-    } else if (actionArg && symbolArg) {
-      r = await executeSignal({
-        id:         `CLI-${Date.now()}`,
-        symbol:     symbolArg.toUpperCase(),
-        action:     actionArg.toUpperCase(),
-        amountUsdt: parseFloat(amountArg || '100'),
-        confidence: 0.7,
-        reasoning:  'CLI 수동 실행',
-      });
-    } else {
-      r = await processAllPendingSignals();
-    }
-    console.log('완료:', JSON.stringify(r));
-    process.exit(0);
-  } catch (e) {
-    console.error('❌ 헤파이스토스 오류:', e.message);
-    process.exit(1);
-  }
+      if (inspectPromotions) {
+        return inspectPromotionCandidates();
+      }
+      if (simulateBuy && symbolArg) {
+        return simulateBuyDecision({
+          symbol: symbolArg.toUpperCase(),
+          amountUsdt: parseFloat(amountArg || '100'),
+        });
+      }
+      if (actionArg && symbolArg) {
+        return executeSignal({
+          id:         `CLI-${Date.now()}`,
+          symbol:     symbolArg.toUpperCase(),
+          action:     actionArg.toUpperCase(),
+          amountUsdt: parseFloat(amountArg || '100'),
+          confidence: 0.7,
+          reasoning:  'CLI 수동 실행',
+        });
+      }
+      return processAllPendingSignals();
+    },
+    onSuccess: async (result) => {
+      console.log('완료:', JSON.stringify(result));
+    },
+    errorPrefix: '❌ 헤파이스토스 오류:',
+  });
 }

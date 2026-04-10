@@ -11,9 +11,9 @@
 
 import https from 'https';
 import * as db from '../shared/db.ts';
+import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { callLLM, parseJSON } from '../shared/llm-client.ts';
 import { ANALYST_TYPES, ACTIONS } from '../shared/signal.ts';
-import { fileURLToPath } from 'url';
 import { getFundingRate, getOpenInterest, getLongShortRatio } from '../shared/onchain-data.ts';
 
 // ─── 공개 API 수집 ──────────────────────────────────────────────────
@@ -97,6 +97,39 @@ const SYSTEM_PROMPT = `당신은 암호화폐 온체인·파생상품 시장 분
 - 복합 신호 불일치 시 HOLD
 - confidence 0.5 미만이면 반드시 HOLD`;
 
+function buildOracleUserMessage(symbol, futureSymbol, fearGreed, funding, lsRatio, openInterest) {
+  return [
+    `심볼: ${symbol}`,
+    fearGreed ? `공포탐욕지수: ${fearGreed.value} (${fearGreed.classification})` : '',
+    funding ? `펀딩비: ${(funding.fundingRate * 100).toFixed(4)}%` : '',
+    lsRatio ? `Long/Short 비율: ${lsRatio.longShortRatio.toFixed(2)} (롱 ${(lsRatio.longAccount * 100).toFixed(1)}%)` : '',
+    openInterest ? `미결제약정: ${parseFloat(openInterest.openInterest).toLocaleString()} ${futureSymbol.replace('USDT', '')}` : '',
+  ].filter(Boolean).join('\n');
+}
+
+async function resolveOracleDecision(symbol, userMsg, fearGreed, funding, lsRatio) {
+  const responseText = await callLLM('oracle', SYSTEM_PROMPT, userMsg, 200, { symbol });
+  const parsed = parseJSON(responseText);
+  if (parsed?.action) {
+    return {
+      signal: parsed.action,
+      confidence: parsed.confidence,
+      reasoning: parsed.reasoning,
+    };
+  }
+  return ruleBasedSignal(fearGreed, funding, lsRatio);
+}
+
+function buildOracleAnalysisMetadata(fearGreed, funding, lsRatio, openInterest) {
+  return {
+    fearGreed: fearGreed?.value,
+    fgClass: fearGreed?.classification,
+    fundingRate: funding?.fundingRate,
+    longShortRatio: lsRatio?.longShortRatio,
+    openInterest: openInterest?.openInterest,
+  };
+}
+
 // ─── 메인 분석 ─────────────────────────────────────────────────────
 
 export async function analyzeOnchain(symbol = 'BTC/USDT') {
@@ -115,25 +148,8 @@ export async function analyzeOnchain(symbol = 'BTC/USDT') {
   console.log(`  Long/Short: ${lsRatio ? `${lsRatio.longShortRatio.toFixed(2)}` : 'N/A'}`);
   console.log(`  미결제약정: ${openInterest ? `${parseFloat(openInterest.openInterest).toLocaleString()}` : 'N/A'}`);
 
-  const userMsg = [
-    `심볼: ${symbol}`,
-    fearGreed    ? `공포탐욕지수: ${fearGreed.value} (${fearGreed.classification})` : '',
-    funding      ? `펀딩비: ${(funding.fundingRate * 100).toFixed(4)}%` : '',
-    lsRatio      ? `Long/Short 비율: ${lsRatio.longShortRatio.toFixed(2)} (롱 ${(lsRatio.longAccount * 100).toFixed(1)}%)` : '',
-    openInterest ? `미결제약정: ${parseFloat(openInterest.openInterest).toLocaleString()} ${futureSymbol.replace('USDT', '')}` : '',
-  ].filter(Boolean).join('\n');
-
-  let signal, confidence, reasoning;
-  const responseText = await callLLM('oracle', SYSTEM_PROMPT, userMsg, 200, { symbol });
-  const parsed       = parseJSON(responseText);
-
-  if (parsed?.action) {
-    signal     = parsed.action;
-    confidence = parsed.confidence;
-    reasoning  = parsed.reasoning;
-  } else {
-    ({ signal, confidence, reasoning } = ruleBasedSignal(fearGreed, funding, lsRatio));
-  }
+  const userMsg = buildOracleUserMessage(symbol, futureSymbol, fearGreed, funding, lsRatio, openInterest);
+  const { signal, confidence, reasoning } = await resolveOracleDecision(symbol, userMsg, fearGreed, funding, lsRatio);
 
   console.log(`  → [오라클] ${signal} (${(confidence * 100).toFixed(0)}%) | ${reasoning}`);
 
@@ -144,13 +160,7 @@ export async function analyzeOnchain(symbol = 'BTC/USDT') {
     confidence,
     reasoning: `[온체인] ${reasoning}`,
     exchange:  'binance',
-    metadata:  {
-      fearGreed:      fearGreed?.value,
-      fgClass:        fearGreed?.classification,
-      fundingRate:    funding?.fundingRate,
-      longShortRatio: lsRatio?.longShortRatio,
-      openInterest:   openInterest?.openInterest,
-    },
+    metadata:  buildOracleAnalysisMetadata(fearGreed, funding, lsRatio, openInterest),
   });
   console.log(`  ✅ [오라클] DB 저장 완료`);
 
@@ -158,12 +168,17 @@ export async function analyzeOnchain(symbol = 'BTC/USDT') {
 }
 
 // CLI 실행
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const args   = process.argv.slice(2);
-  const symbol = args.find(a => a.startsWith('--symbol='))?.split('=')[1] || 'BTC/USDT';
-
-  db.initSchema()
-    .then(() => analyzeOnchain(symbol))
-    .then(r => { console.log('\n결과:', JSON.stringify(r, null, 2)); process.exit(0); })
-    .catch(e => { console.error('❌ 오라클 오류:', e.message); process.exit(1); });
+if (isDirectExecution(import.meta.url)) {
+  await runCliMain({
+    before: () => db.initSchema(),
+    run: async () => {
+      const args   = process.argv.slice(2);
+      const symbol = args.find(a => a.startsWith('--symbol='))?.split('=')[1] || 'BTC/USDT';
+      return analyzeOnchain(symbol);
+    },
+    onSuccess: async (result) => {
+      console.log('\n결과:', JSON.stringify(result, null, 2));
+    },
+    errorPrefix: '❌ 오라클 오류:',
+  });
 }

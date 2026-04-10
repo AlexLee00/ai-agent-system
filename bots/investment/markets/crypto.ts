@@ -17,19 +17,26 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
 import https from 'https';
-import { fileURLToPath } from 'url';
 
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const kst = require('../../../packages/core/lib/kst');
 const { writeHeartbeat } = require('../../../packages/core/lib/agent-heartbeats');
 import * as db from '../shared/db.ts';
+import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { initHubSecrets, getSymbols, getMarketExecutionModeInfo, getInvestmentTradeMode, getCryptoScreeningMaxDynamic } from '../shared/secrets.ts';
 import { publishToMainBot } from '../shared/mainbot-client.ts';
 import { tracker } from '../shared/cost-tracker.ts';
 import { getLunaParams } from '../shared/time-mode.ts';
 import { resolveSymbolsWithFallback, appendHeldSymbols, capDynamicUniverse } from '../shared/universe-fallback.ts';
-import { buildCollectAlertMessage, runMarketCollectPipeline, summarizeNodeStatuses } from '../shared/pipeline-market-runner.ts';
+import {
+  getOpenClawStateFile,
+  loadJsonState,
+  saveJsonState,
+  logMarketCycleStart,
+  logMarketCycleComplete,
+} from '../shared/market-cycle-support.ts';
+import { logMarketPipelineMetrics, runMarketCollectPipeline, summarizeNodeStatuses } from '../shared/pipeline-market-runner.ts';
 import { runDecisionExecutionPipeline } from '../shared/pipeline-decision-runner.ts';
 import { finishPipelineRun } from '../shared/pipeline-db.ts';
 
@@ -44,23 +51,17 @@ const EMERGENCY_CHG = 0.03;  // BTC ±3% 긴급 트리거
 function getStateFile() {
   const tradeMode = getInvestmentTradeMode();
   const suffix = tradeMode === 'validation' ? '-validation' : '';
-  return join(homedir(), '.openclaw', `investment-state${suffix}.json`);
+  return getOpenClawStateFile(`investment-state${suffix}.json`);
 }
 
 function loadState() {
   const stateFile = getStateFile();
-  try { return JSON.parse(readFileSync(stateFile, 'utf8')); }
-  catch { return { lastCycleAt: 0, lastBtcPrice: 0 }; }
+  return loadJsonState(stateFile, { lastCycleAt: 0, lastBtcPrice: 0 });
 }
 
 function saveState(state) {
   const stateFile = getStateFile();
-  try {
-    mkdirSync(join(homedir(), '.openclaw'), { recursive: true });
-    writeFileSync(stateFile, JSON.stringify(state, null, 2));
-  } catch (e) {
-    console.warn(`  ⚠️ 상태 저장 실패: ${e.message}`);
-  }
+  saveJsonState(stateFile, state);
 }
 
 function getHeldMergeStats(baseSymbols = [], heldSymbols = []) {
@@ -187,11 +188,16 @@ export async function runCryptoCycle(symbols, universeMeta = {}) {
   const params    = getLunaParams();
   let sessionId   = null;
 
-  console.log(`\n${'═'.repeat(60)}`);
-  console.log(`🚀 ${tag} 암호화폐 사이클 시작 — ${kst.toKST(new Date())}`);
-  console.log(`   심볼: ${symbols.join(', ')}`);
-  console.log(`   시간대: ${params.mode} | 최소신호점수: ${params.minSignalScore} | 최대포지션: ${params.maxOpenPositions}개`);
-  console.log(`${'═'.repeat(60)}`);
+  logMarketCycleStart({
+    icon: '🚀',
+    tag,
+    marketLabel: '암호화폐',
+    now: kst.toKST(new Date()),
+    symbols,
+    extraLines: [
+      `   시간대: ${params.mode} | 최소신호점수: ${params.minSignalScore} | 최대포지션: ${params.maxOpenPositions}개`,
+    ],
+  });
 
   try {
     // ── 단계 1: 노드 기반 수집 실행 ──
@@ -210,7 +216,7 @@ export async function runCryptoCycle(symbols, universeMeta = {}) {
     sessionId = collect.sessionId;
     console.log(`  🧩 [노드] session=${collect.sessionId}`);
     console.log(`  🧩 [노드] ${summarizeNodeStatuses(collect.summaries)}`);
-    await logPipelineMetrics('암호화폐 수집', collect.metrics);
+    await logMarketPipelineMetrics('암호화폐 수집', collect.metrics);
 
     // ── 단계 2: 루나 오케스트레이터 ──
     console.log('\n🌙 [판단 단계] 루나 오케스트레이터 실행...');
@@ -221,7 +227,7 @@ export async function runCryptoCycle(symbols, universeMeta = {}) {
       params,
     });
     const results = decision.results;
-    await logPipelineMetrics('암호화폐 판단', decision.metrics);
+    await logMarketPipelineMetrics('암호화폐 판단', decision.metrics);
 
     // ── 단계 3: 헤파이스토스 실행 (PAPER_MODE: 신호만 저장) ──
     // 항상 실행 — 이전 사이클 pending 신호도 처리
@@ -243,9 +249,13 @@ export async function runCryptoCycle(symbols, universeMeta = {}) {
       exitPhaseExecuted: Number(decision.metrics?.exitPhaseExecuted || 0),
       approvedSignals: Number(decision.metrics?.approvedSignals || 0),
     }).catch(() => {});
-    console.log(`\n${'═'.repeat(60)}`);
-    console.log(`✅ ${tag} 사이클 완료 — ${elapsed}초 | ${results.length}개 신호 | LLM $${cost.usage.toFixed(4)}/일`);
-    console.log(`${'═'.repeat(60)}\n`);
+    logMarketCycleComplete({
+      tag,
+      marketLabel: '암호화폐',
+      elapsedSec: elapsed,
+      signalCount: results.length,
+      dailyCost: cost.usage,
+    });
 
     return results;
 
@@ -273,136 +283,92 @@ export async function runCryptoCycle(symbols, universeMeta = {}) {
   }
 }
 
-async function logPipelineMetrics(label, metrics = {}) {
-  if (!metrics || typeof metrics !== 'object') return;
-  const parts = [
-    `duration=${((metrics.durationMs || 0) / 1000).toFixed(1)}s`,
-    metrics.symbolCount != null ? `symbols=${metrics.symbolCount}` : null,
-    metrics.screeningSymbolCount != null && metrics.screeningSymbolCount > 0 ? `screening=${metrics.screeningSymbolCount}` : null,
-    metrics.heldAddedCount != null && metrics.heldAddedCount > 0 ? `heldAdded=${metrics.heldAddedCount}` : null,
-    metrics.totalTasks != null ? `tasks=${metrics.totalTasks}` : null,
-    metrics.concurrencyLimit != null ? `concurrency=${metrics.concurrencyLimit}` : null,
-    metrics.failedTasks != null ? `failed=${metrics.failedTasks}` : null,
-    metrics.failedCoreTasks != null ? `coreFailed=${metrics.failedCoreTasks}` : null,
-    metrics.failedEnrichmentTasks != null ? `enrichFailed=${metrics.failedEnrichmentTasks}` : null,
-    metrics.debateCount != null ? `debate=${metrics.debateCount}/${metrics.debateLimit}` : null,
-    metrics.weakSignalSkipped != null ? `weakSkipped=${metrics.weakSignalSkipped}` : null,
-    metrics.riskRejected != null ? `riskRejected=${metrics.riskRejected}` : null,
-    metrics.savedExecutionWork != null ? `savedNodes=${metrics.savedExecutionWork}` : null,
-  ].filter(Boolean);
-  console.log(`  📈 [메트릭] ${label} | ${parts.join(' | ')}`);
-  if (metrics.warnings?.length) {
-    console.warn(`  ⚠️ [경고] ${label} | ${metrics.warnings.join(', ')}`);
-    const escalated = metrics.warnings.filter(w =>
-      [
-        'collect_overload_detected',
-        'collect_failure_rate_high',
-        'core_collect_failure_rate_high',
-        'enrichment_collect_failure_rate_high',
-        'collect_blocked_by_llm_guard',
-        'debate_capacity_hot',
-        'weak_signal_pressure',
-      ].includes(w),
-    );
-    if (escalated.length) {
-      await publishToMainBot({
-        from_bot: 'argos',
-        event_type: 'alert',
-        alert_level: 2,
-        message: buildCollectAlertMessage(label, escalated, metrics),
-        payload: metrics,
-      });
-    }
-  }
-}
-
 // ─── CLI 실행 ───────────────────────────────────────────────────────
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  await initHubSecrets();
-  const args      = process.argv.slice(2);
-  const symArg    = args.find(a => a.startsWith('--symbols='));
-  const force     = args.includes('--force');
-  const noDynamic = args.includes('--no-dynamic');
+if (isDirectExecution(import.meta.url)) {
+  await runCliMain({
+    before: async () => {
+      await initHubSecrets();
+      await db.initSchema();
+    },
+    run: async () => {
+      const args      = process.argv.slice(2);
+      const symArg    = args.find(a => a.startsWith('--symbols='));
+      const force     = args.includes('--force');
+      const noDynamic = args.includes('--no-dynamic');
 
-  let symbols;
-  const cryptoMaxDynamic = getCryptoScreeningMaxDynamic();
-  let universeMeta = {
-    screeningSymbolCount: 0,
-    heldSymbolCount: 0,
-    heldAddedCount: 0,
-  };
-  if (symArg) {
-    symbols = symArg.split('=')[1].split(',').map(s => s.trim());
-    universeMeta.screeningSymbolCount = symbols.length;
-  } else if (noDynamic) {
-    symbols = getSymbols();
-    universeMeta.screeningSymbolCount = symbols.length;
-  } else {
-    const { loadPreScreenedFallback, savePreScreened } = await import('../scripts/pre-market-screen.ts');
-    const resolved = await resolveSymbolsWithFallback({
-      market: 'crypto',
-      screen: async () => {
-        const { screenCryptoSymbols } = await import('../team/argos.ts');
-        return screenCryptoSymbols();
-      },
-      loadCache: () => loadPreScreenedFallback('crypto'),
-      defaultSymbols: getSymbols(),
-      screenLabel: '아르고스 스크리닝',
-      cacheLabel: 'RAG 폴백',
-    });
-    symbols = capDynamicUniverse(resolved.symbols, cryptoMaxDynamic, resolved.source || 'dynamic');
-    universeMeta.screeningSymbolCount = symbols.length;
-    if (resolved.source === 'screening') {
-      savePreScreened('crypto', symbols);
-      const { recordScreeningSuccess } = await import('../scripts/screening-monitor.ts');
-      await recordScreeningSuccess('crypto');
-    } else if (resolved.error && resolved.shouldCountFailure !== false) {
-      const { recordScreeningFailure } = await import('../scripts/screening-monitor.ts');
-      await recordScreeningFailure('crypto', resolved.error.message);
-    } else if (symbols.length > 0) {
-      const { recordScreeningSuccess } = await import('../scripts/screening-monitor.ts');
-      await recordScreeningSuccess('crypto');
-    }
-  }
+      let symbols;
+      const cryptoMaxDynamic = getCryptoScreeningMaxDynamic();
+      let universeMeta = {
+        screeningSymbolCount: 0,
+        heldSymbolCount: 0,
+        heldAddedCount: 0,
+      };
+      if (symArg) {
+        symbols = symArg.split('=')[1].split(',').map(s => s.trim());
+        universeMeta.screeningSymbolCount = symbols.length;
+      } else if (noDynamic) {
+        symbols = getSymbols();
+        universeMeta.screeningSymbolCount = symbols.length;
+      } else {
+        const { loadPreScreenedFallback, savePreScreened } = await import('../scripts/pre-market-screen.ts');
+        const resolved = await resolveSymbolsWithFallback({
+          market: 'crypto',
+          screen: async () => {
+            const { screenCryptoSymbols } = await import('../team/argos.ts');
+            return screenCryptoSymbols();
+          },
+          loadCache: () => loadPreScreenedFallback('crypto'),
+          defaultSymbols: getSymbols(),
+          screenLabel: '아르고스 스크리닝',
+          cacheLabel: 'RAG 폴백',
+        });
+        symbols = capDynamicUniverse(resolved.symbols, cryptoMaxDynamic, resolved.source || 'dynamic');
+        universeMeta.screeningSymbolCount = symbols.length;
+        if (resolved.source === 'screening') {
+          savePreScreened('crypto', symbols);
+          const { recordScreeningSuccess } = await import('../scripts/screening-monitor.ts');
+          await recordScreeningSuccess('crypto');
+        } else if (resolved.error && resolved.shouldCountFailure !== false) {
+          const { recordScreeningFailure } = await import('../scripts/screening-monitor.ts');
+          await recordScreeningFailure('crypto', resolved.error.message);
+        } else if (symbols.length > 0) {
+          const { recordScreeningSuccess } = await import('../scripts/screening-monitor.ts');
+          await recordScreeningSuccess('crypto');
+        }
+      }
 
-  const heldSymbols = (await db.getAllPositions('binance', false)).map((row) => row.symbol);
-  universeMeta.heldSymbolCount = heldSymbols.length;
-  universeMeta.heldAddedCount = getHeldMergeStats(symbols, heldSymbols).heldAddedCount;
-  symbols = await appendHeldSymbols(symbols, 'binance');
+      const heldSymbols = (await db.getAllPositions('binance', false)).map((row) => row.symbol);
+      universeMeta.heldSymbolCount = heldSymbols.length;
+      universeMeta.heldAddedCount = getHeldMergeStats(symbols, heldSymbols).heldAddedCount;
+      symbols = await appendHeldSymbols(symbols, 'binance');
 
-  console.log(getMarketExecutionModeInfo('crypto', '암호화폐').logLine);
+      console.log(getMarketExecutionModeInfo('crypto', '암호화폐').logLine);
 
-  // 거래 일시정지 플래그 확인 (luna-commander가 제어)
-  const PAUSE_FLAG = join(homedir(), '.openclaw', 'workspace', 'luna-paused.flag');
-  if (!force && existsSync(PAUSE_FLAG)) {
-    console.log('⏸ 거래 일시정지 플래그 감지 — 사이클 스킵 (재개: resume_trading 명령)');
-    process.exit(0);
-  }
+      const PAUSE_FLAG = join(homedir(), '.openclaw', 'workspace', 'luna-paused.flag');
+      if (!force && existsSync(PAUSE_FLAG)) {
+        console.log('⏸ 거래 일시정지 플래그 감지 — 사이클 스킵 (재개: resume_trading 명령)');
+        return [];
+      }
 
-  // 30분 주기 또는 긴급 트리거 확인
-  const check = force ? { run: true, emergency: false, reason: '--force 옵션' } : await shouldRunCycle(symbols);
+      const check = force ? { run: true, emergency: false, reason: '--force 옵션' } : await shouldRunCycle(symbols);
+      if (!check.run) {
+        console.log(`⏳ 사이클 스킵: ${check.reason}`);
+        return [];
+      }
 
-  if (!check.run) {
-    console.log(`⏳ 사이클 스킵: ${check.reason}`);
-    process.exit(0);
-  }
+      if (check.emergency) {
+        console.log(`🚨 긴급 트리거: ${check.reason}`);
+        publishToMainBot({ from_bot: 'luna', event_type: 'alert', alert_level: 3, message: `🚨 암호화폐 긴급 트리거\n${check.reason}` });
+      } else {
+        console.log(`🔄 ${check.reason}`);
+      }
 
-  if (check.emergency) {
-    console.log(`🚨 긴급 트리거: ${check.reason}`);
-    publishToMainBot({ from_bot: 'luna', event_type: 'alert', alert_level: 3, message: `🚨 암호화폐 긴급 트리거\n${check.reason}` });
-  } else {
-    console.log(`🔄 ${check.reason}`);
-  }
-
-  await db.initSchema();
-
-  try {
-    const r = await runCryptoCycle(symbols, universeMeta);
-    console.log(`\n최종 결과: ${r.length}개 신호 승인`);
-    process.exit(0);
-  } catch (e) {
-    console.error('❌ 종료 오류:', e.message);
-    process.exit(1);
-  }
+      return runCryptoCycle(symbols, universeMeta);
+    },
+    onSuccess: async (results) => {
+      console.log(`\n최종 결과: ${results.length}개 신호 승인`);
+    },
+    errorPrefix: '❌ 종료 오류:',
+  });
 }
