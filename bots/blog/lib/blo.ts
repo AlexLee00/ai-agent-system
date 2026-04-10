@@ -46,6 +46,7 @@ const { getRecentPosts, selectAndValidateTopic }    = require(path.join(env.PROJ
 const { agenticSearch }                             = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/agentic-rag.js'));
 const { getWriterPersona }                          = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/writer-personas.js'));
 const { pickEditorPersona }                         = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/editor-personas.js'));
+const { loadLatestStrategy }                        = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/strategy-loader.js'));
 const {
   writeLecturePost,
   writeLecturePostChunked,
@@ -436,6 +437,7 @@ async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, sc
   const { category } = preloaded.category ? preloaded : { category: '자기계발' };
   const sectionVariation = preloaded.sectionVariation || {};
   const needsBook = category === '도서리뷰';
+  const strategyPlan = loadLatestStrategy();
 
   console.log(`\n[젬스] 일반 포스팅: ${category}`);
   const writeReq = createMessage('task_request', 'blog-blo', 'blog-gems', {
@@ -451,11 +453,15 @@ async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, sc
   if (!needsBook && !preparedResearch.topic_hint) {
     try {
       const recentPosts = getRecentPosts(category, 10);
-      const selectedTopic = selectAndValidateTopic(category, recentPosts);
+      const selectedTopic = selectAndValidateTopic(category, recentPosts, strategyPlan);
       preparedResearch.topic_hint = selectedTopic.topic;
       preparedResearch.topic_question = selectedTopic.question;
       preparedResearch.topic_diff = selectedTopic.diff;
       preparedResearch.topic_title_candidate = selectedTopic.title;
+      preparedResearch.strategy_focus = Array.isArray(strategyPlan?.focus) ? strategyPlan.focus : [];
+      preparedResearch.strategy_recommendations = Array.isArray(strategyPlan?.recommendations) ? strategyPlan.recommendations : [];
+      preparedResearch.strategy_preferred_pattern = strategyPlan?.preferredTitlePattern || null;
+      preparedResearch.strategy_suppressed_pattern = strategyPlan?.suppressedTitlePattern || null;
       console.log(`[젬스] 주제 다양화 선택: ${selectedTopic.title}${selectedTopic.forced ? ' (forced)' : ''}`);
     } catch (error) {
       console.warn('[젬스] 주제 다양화 선택 실패 — 기본 자율 주제 유지:', error.message);
@@ -545,6 +551,7 @@ async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, sc
     topicHint: preparedResearch.topic_hint || null,
     topicQuestion: preparedResearch.topic_question || null,
     topicDiff: preparedResearch.topic_diff || null,
+    strategyPlan,
   };
 }
 

@@ -42,14 +42,14 @@ const CATEGORY_TOPIC_POOL = {
 };
 
 const TITLE_FRAMES = [
-  '{topicObject} 시작하기 전에 반드시 점검해야 할 3가지',
-  '{topic}, 지금 바꾸지 않으면 늦는 이유',
-  '직접 해보고 깨달은 {topic}의 진짜 핵심',
-  '3개월간 {topicObject} 운영하며 배운 것들',
-  '{topic}에서 막힐 때 가장 먼저 확인할 포인트',
-  '{count}가지 {topic} 실전 노하우',
-  '{topic}에서 초보자가 가장 먼저 실수하는 것',
-  '2026년 {topic} 트렌드: 달라진 것과 변하지 않는 것',
+  { pattern: 'checklist', template: '{topicObject} 시작하기 전에 반드시 점검해야 할 3가지' },
+  { pattern: 'warning', template: '{topic}, 지금 바꾸지 않으면 늦는 이유' },
+  { pattern: 'experience', template: '직접 해보고 깨달은 {topic}의 진짜 핵심' },
+  { pattern: 'experience', template: '3개월간 {topicObject} 운영하며 배운 것들' },
+  { pattern: 'checklist', template: '{topic}에서 막힐 때 가장 먼저 확인할 포인트' },
+  { pattern: 'checklist', template: '{count}가지 {topic} 실전 노하우' },
+  { pattern: 'warning', template: '{topic}에서 초보자가 가장 먼저 실수하는 것' },
+  { pattern: 'trend', template: '2026년 {topic} 트렌드: 달라진 것과 변하지 않는 것' },
 ];
 
 function safeReadDir(dirPath) {
@@ -129,6 +129,17 @@ function buildTitle(frame, candidate, index) {
     .replace('{count}', String((index % 5) + 3));
 }
 
+function scoreCandidate(candidate, strategyPlan = null) {
+  let score = 0;
+  if (!strategyPlan) return score;
+  if (strategyPlan.preferredTitlePattern && candidate.pattern === strategyPlan.preferredTitlePattern) score += 4;
+  if (strategyPlan.suppressedTitlePattern && candidate.pattern === strategyPlan.suppressedTitlePattern) score -= 3;
+  if (Array.isArray(strategyPlan.focus) && strategyPlan.focus.some((item) => String(item || '').includes('제목 패턴'))) {
+    if (candidate.pattern !== strategyPlan.suppressedTitlePattern) score += 1;
+  }
+  return score;
+}
+
 function pickTopicPool(category) {
   return CATEGORY_TOPIC_POOL[category] || [
     { topic: `${category}에서 먼저 점검해야 할 기준`, question: `${category} 독자가 가장 먼저 부딪히는 문제는 무엇일까`, diff: '카테고리 독자 관점의 실전 문제 정의' },
@@ -146,27 +157,32 @@ function getRecentPosts(category, limit = RECENT_POST_LIMIT) {
     .slice(0, limit);
 }
 
-function selectAndValidateTopic(category, recentPosts = []) {
+function selectAndValidateTopic(category, recentPosts = [], strategyPlan = null) {
   const recentTitles = recentPosts.map((post) => post.title).filter(Boolean);
   const topicPool = pickTopicPool(category);
 
   const candidates = [];
   for (let i = 0; i < topicPool.length; i += 1) {
     for (let j = 0; j < TITLE_FRAMES.length; j += 1) {
-      const title = buildTitle(TITLE_FRAMES[j], topicPool[i], j);
+      const frame = TITLE_FRAMES[j];
+      const title = buildTitle(frame.template, topicPool[i], j);
       candidates.push({
         title,
+        pattern: frame.pattern,
         topic: topicPool[i].topic,
         question: topicPool[i].question,
         diff: topicPool[i].diff,
+        score: scoreCandidate({ pattern: frame.pattern, topic: topicPool[i].topic, title }, strategyPlan),
       });
     }
   }
 
-  const selected = candidates.find((candidate) => {
-    if (isBannedTitle(candidate.title)) return false;
-    return !recentTitles.some((recentTitle) => similarity(recentTitle, candidate.title) > SIMILARITY_THRESHOLD);
-  });
+  const selected = candidates
+    .sort((a, b) => b.score - a.score)
+    .find((candidate) => {
+      if (isBannedTitle(candidate.title)) return false;
+      return !recentTitles.some((recentTitle) => similarity(recentTitle, candidate.title) > SIMILARITY_THRESHOLD);
+    });
 
   if (selected) {
     return {
@@ -182,6 +198,7 @@ function selectAndValidateTopic(category, recentPosts = []) {
     topic: fallback.topic,
     question: fallback.question,
     diff: fallback.diff,
+    pattern: strategyPlan?.preferredTitlePattern || 'default',
     recentTitleCount: recentTitles.length,
     forced: true,
   };
