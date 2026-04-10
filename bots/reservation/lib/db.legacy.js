@@ -199,9 +199,48 @@ async function findReservationBySlot(phone, date, start, room = null) {
       ORDER BY updated_at DESC NULLS LAST
       LIMIT 1
     `,
-    [phone, date, start, room || null],
+    [normalizedPhone, date, start, room || null],
   );
   return row ? _decryptRow(row) : null;
+}
+
+async function getReservationsBySlot(phone, date, start, room = null) {
+  const normalizedPhone = String(phone || '').replace(/\D+/g, '');
+  const rows = await pgPool.query(
+    SCHEMA,
+    `
+      SELECT *
+      FROM reservations
+      WHERE regexp_replace(phone, '\\D', '', 'g') = $1
+        AND date = $2
+        AND start_time = $3
+        AND ($4::text IS NULL OR room = $4)
+      ORDER BY updated_at DESC NULLS LAST, id DESC
+    `,
+    [normalizedPhone, date, start, room || null],
+  );
+  return rows.map(_decryptRow);
+}
+
+async function hideDuplicateReservationsForSlot(canonicalId, phone, date, start, room = null) {
+  const normalizedPhone = String(phone || '').replace(/\D+/g, '');
+  const result = await pgPool.run(
+    SCHEMA,
+    `
+      UPDATE reservations
+      SET seen_only = 1,
+          marked_seen = 1,
+          updated_at = to_char(now(),'YYYY-MM-DD HH24:MI:SS')
+      WHERE id <> $1
+        AND regexp_replace(phone, '\\D', '', 'g') = $2
+        AND date = $3
+        AND start_time = $4
+        AND ($5::text IS NULL OR room = $5)
+        AND seen_only = 0
+    `,
+    [String(canonicalId), normalizedPhone, date, start, room || null],
+  );
+  return result.rowCount;
 }
 
 /**
@@ -224,6 +263,50 @@ async function getPendingReservations() {
 async function getUnverifiedCompletedReservations() {
   const rows = await pgPool.query(SCHEMA,
     "SELECT * FROM reservations WHERE status='completed' AND seen_only=0 AND (pickko_status IS NULL OR pickko_status NOT IN ('verified','manual','manual_retry','manual_pending','time_elapsed'))");
+  return rows.map(_decryptRow);
+}
+
+/**
+ * completed + manual_pending 상태의 미래 예약 반환
+ */
+async function getManualPendingReservations(fromDate) {
+  const rows = await pgPool.query(
+    SCHEMA,
+    `
+      SELECT *
+      FROM reservations
+      WHERE status = 'completed'
+        AND seen_only = 0
+        AND pickko_status = 'manual_pending'
+        AND nullif(date, '') IS NOT NULL
+        AND date >= $1
+      ORDER BY date ASC, start_time ASC, updated_at ASC
+    `,
+    [fromDate],
+  );
+  return rows.map(_decryptRow);
+}
+
+async function getVerifiedReservationsForPayScan(fromDate, toDate) {
+  const rows = await pgPool.query(
+    SCHEMA,
+    `
+      SELECT *
+      FROM reservations
+      WHERE status = 'completed'
+        AND pickko_status = 'verified'
+        AND nullif(date, '') IS NOT NULL
+        AND date >= $1
+        AND date <= $2
+        AND (
+          error_reason IS NULL
+          OR error_reason = ''
+          OR error_reason NOT LIKE 'pay_scan_failed:%'
+        )
+      ORDER BY date ASC, start_time ASC, updated_at ASC
+    `,
+    [fromDate, toDate],
+  );
   return rows.map(_decryptRow);
 }
 
@@ -1104,8 +1187,12 @@ module.exports = {
   findReservationByBooking,
   findReservationByCompositeKey,
   findReservationBySlot,
+  getReservationsBySlot,
+  hideDuplicateReservationsForSlot,
   getPendingReservations,
   getUnverifiedCompletedReservations,
+  getManualPendingReservations,
+  getVerifiedReservationsForPayScan,
   getAllNaverKeys,
   getFuturePickkoRegistered,
   rollbackProcessing,

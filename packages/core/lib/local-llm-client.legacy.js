@@ -2,8 +2,8 @@
 
 const env = require('./env');
 
-const LOCAL_MODEL_FAST = 'qwen2.5-7b';
-const LOCAL_MODEL_DEEP = 'deepseek-r1-32b';
+const LOCAL_MODEL_FAST = process.env.LOCAL_MODEL_FAST || 'qwen2.5-7b';
+const LOCAL_MODEL_DEEP = process.env.LOCAL_MODEL_DEEP || 'deepseek-r1-32b';
 const LOCAL_RETRYABLE_STATUS = new Set([404, 500, 502, 503, 504]);
 
 function normalizeBaseUrl(value) {
@@ -61,21 +61,47 @@ async function getAvailableModels() {
   return json.data.map((item) => item.id).filter(Boolean);
 }
 
+function pickGemmaModel(models, preferLarge = false) {
+  const gemma = models.filter((model) => /^gemma/i.test(model));
+  if (gemma.length === 0) return null;
+  if (!preferLarge) {
+    return gemma.find((model) => /latest/i.test(model)) || gemma[0] || null;
+  }
+  return gemma.find((model) => /26b|27b|large/i.test(model))
+    || gemma.find((model) => /latest/i.test(model))
+    || gemma[0]
+    || null;
+}
+
+async function resolveRequestedModel(model) {
+  const models = await getAvailableModels();
+  if (models.length === 0 || models.includes(model)) return model;
+
+  const preferLarge = model === LOCAL_MODEL_DEEP || /deepseek|32b|70b|reason/i.test(model);
+  const remapped = pickGemmaModel(models, preferLarge) || models[0];
+  if (remapped && remapped !== model) {
+    console.warn(`[local-llm-client] model '${model}' 없음 → '${remapped}' 사용`);
+    return remapped;
+  }
+  return model;
+}
+
 async function isLocalLLMAvailable() {
   const models = await getAvailableModels();
   return models.length > 0;
 }
 
 async function callLocalLLM(model, messages, options = {}) {
+  const resolvedModel = await resolveRequestedModel(model);
   const timeoutMs = options.timeoutMs
-    || (model === LOCAL_MODEL_DEEP ? 120000 : 30000);
+    || ((model === LOCAL_MODEL_DEEP || resolvedModel === LOCAL_MODEL_DEEP) ? 120000 : 30000);
 
   const json = await requestJson('/v1/chat/completions', {
     baseUrl: options.baseUrl,
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model,
+      model: resolvedModel,
       messages,
       max_tokens: options.max_tokens || options.maxTokens || 512,
       temperature: options.temperature ?? 0.2,

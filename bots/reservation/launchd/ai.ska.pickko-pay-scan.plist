@@ -17,17 +17,17 @@
 		<string>/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/scheduled/run-pay-scan.sh</string>
 	</array>
 	<key>RunAtLoad</key>
-	<false/>
+	<true/>
 	<key>StandardErrorPath</key>
 	<string>/tmp/pickko-pay-scan-launchd.log</string>
 	<key>StandardOutPath</key>
 	<string>/tmp/pickko-pay-scan-launchd.log</string>
 	<key>StartCalendarInterval</key>
-	<dict>
-		<key>Hour</key>
-		<integer>9</integer>
-		<key>Minute</key>
-		<integer>30</integer>
-	</dict>
+	<array>
+		<dict>
+			<key>Minute</key>
+			<integer>30</integer>
+		</dict>
+	</array>
 </dict>
 </plist>

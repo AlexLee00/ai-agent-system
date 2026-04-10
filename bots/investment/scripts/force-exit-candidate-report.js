@@ -1,18 +1,12 @@
-import path from 'path';
-import { fileURLToPath, pathToFileURL } from 'url';
+const loaded = await import('./force-exit-candidate-report.legacy.js');
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const runtimePath = path.join(
-  __dirname,
-  '../../../dist/ts-runtime/bots/investment/scripts/force-exit-candidate-report.js',
-);
-
-try {
-  await import(pathToFileURL(runtimePath).href);
-} catch (error) {
-  if (error && error.code !== 'ERR_MODULE_NOT_FOUND' && error.code !== 'MODULE_NOT_FOUND') {
-    throw error;
-  }
-  await import('./force-exit-candidate-report.legacy.js');
-}
+export const parseArgs = loaded.parseArgs;
+export const getMarketLabel = loaded.getMarketLabel;
+export const getThresholdHours = loaded.getThresholdHours;
+export const getCandidateLevel = loaded.getCandidateLevel;
+export const getPriorityScore = loaded.getPriorityScore;
+export const buildSummary = loaded.buildSummary;
+export const formatHuman = loaded.formatHuman;
+export const ensureReadableInvestmentSchema = loaded.ensureReadableInvestmentSchema;
+export const loadCandidates = loaded.loadCandidates;
+export default loaded.default ?? loaded;
