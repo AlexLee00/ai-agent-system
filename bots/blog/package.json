@@ -5,6 +5,7 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "daily": "node scripts/run-daily.js",
     "mark-published": "node scripts/mark-published-url.js",
     "setup:n8n": "node n8n/setup-blog-workflows.js",
