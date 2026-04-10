@@ -145,30 +145,12 @@ function _contentToHtml(content, title, images = null) {
   const thumbImg = images?.thumb?.filename
     ? `<div class="post-thumb"><img src="images/${images.thumb.filename}" alt="${title || ''}" loading="lazy"></div>`
     : '';
-  const midImg = images?.mid?.filename
-    ? `<div class="post-mid-img"><img src="images/${images.mid.filename}" alt="${title || ''} 본문 이미지" loading="lazy"></div>`
-    : '';
-  const imageStyles = (thumbImg || midImg)
+  const imageStyles = thumbImg
     ? `
   .post-thumb { margin: 0 0 24px; text-align: center; }
-  .post-thumb img { max-width: 100%; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.12); }
-  .post-mid-img { margin: 24px 0; text-align: center; }
-  .post-mid-img img { max-width: 100%; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.10); }`
+  .post-thumb img { max-width: 100%; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.12); }`
     : '';
-
-  let finalBody = body;
-  if (midImg) {
-    const bodyParts = finalBody.split('<h2 class="section-title">');
-    if (bodyParts.length >= 3) {
-      bodyParts[2] = midImg + '\n<h2 class="section-title">' + bodyParts[2];
-      finalBody = bodyParts[0] + '<h2 class="section-title">' + bodyParts.slice(1).join('<h2 class="section-title">');
-    } else if (bodyParts.length === 2) {
-      bodyParts[1] = midImg + '\n<h2 class="section-title">' + bodyParts[1];
-      finalBody = bodyParts[0] + bodyParts[1];
-    } else {
-      finalBody = body + '\n' + midImg;
-    }
-  }
+  const finalBody = body;
 
   return `<!DOCTYPE html>
 <html lang="ko">

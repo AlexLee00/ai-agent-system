@@ -1,13 +1,13 @@
-const path = require('path');
+'use strict';
 
-const runtimePath = path.join(
-  __dirname,
-  '../../../dist/ts-runtime/bots/blog/lib/img-gen.js'
-);
+const path = require('path');
+const env = require('../../../packages/core/lib/env');
 
 try {
-  module.exports = require(runtimePath);
+  module.exports = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/img-gen.ts'));
 } catch (error) {
-  if (error && error.code !== 'MODULE_NOT_FOUND') throw error;
-  module.exports = require('./img-gen.legacy.js');
+  if (error?.code !== 'MODULE_NOT_FOUND' && error?.code !== 'ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX') {
+    throw error;
+  }
+  module.exports = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/img-gen.legacy.js'));
 }
