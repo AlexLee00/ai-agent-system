@@ -28,6 +28,7 @@ const BRIDGE_INTERVALS = [800, 1000, 1200, 1500];
 const RESEARCH_NODES = ['weather', 'it-news', 'nodejs-updates'];
 const generationRuntimeConfig = getBlogGenerationRuntimeConfig();
 const competitionRuntimeConfig = getBlogCompetitionRuntimeConfig();
+const N8N_PIPELINE_ENABLED = generationRuntimeConfig.useN8nPipeline === true;
 const N8N_WEBHOOK_TIMEOUT_MS = Number(process.env.N8N_BLOG_TIMEOUT_MS || generationRuntimeConfig.maestroWebhookTimeoutMs || 180000);
 const N8N_HEALTH_TIMEOUT_MS = Number(process.env.N8N_BLOG_HEALTH_TIMEOUT_MS || generationRuntimeConfig.maestroHealthTimeoutMs || 2500);
 const N8N_CIRCUIT_COOLDOWN_MS = Number(generationRuntimeConfig.maestroCircuitCooldownMs || (30 * 60 * 1000));
@@ -270,7 +271,9 @@ async function run(postType, directRunner = null, payload = {}) {
   const body = JSON.stringify({ postType, sessionId, pipeline, variations, gemmaRecommendation, ...payload });
   const dryRun = !!payload?.dryRun;
 
-  if (dryRun) {
+  if (!N8N_PIPELINE_ENABLED) {
+    console.log('  ↳ n8n 파이프라인 비활성화 — 로컬 생성 경로 사용');
+  } else if (dryRun) {
     console.log('  ↳ dry-run: n8n 웹훅 트리거 생략');
   } else if (_isCircuitOpen()) {
     console.log(`  ↳ n8n 우회 중 (${_n8nCircuit.reason})`);
@@ -324,7 +327,7 @@ async function run(postType, directRunner = null, payload = {}) {
     console.log('  ↳ dry-run: execution_history 저장 생략');
   }
 
-  if (!n8nOk && directRunner) {
+  if ((!N8N_PIPELINE_ENABLED || !n8nOk) && directRunner) {
     console.log('  ↳ directRunner 실행');
     return await directRunner(variations, { ...payload, gemmaRecommendation });
   }

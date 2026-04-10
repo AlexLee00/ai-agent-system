@@ -19,6 +19,7 @@ const DEFAULTS = {
     dailyLogStaleMs: 36 * 60 * 60 * 1000,
   },
   generation: {
+    useN8nPipeline: false,
     gemsMinChars: 6000,
     posMinChars: 7000,
     continueMaxTokens: 8000,
