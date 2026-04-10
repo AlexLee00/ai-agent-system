@@ -34,12 +34,14 @@ const {
   updateScheduleStatus,
   updateScheduleCategory,
 }                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/schedule.js'));
+const { getBlogCompetitionRuntimeConfig }           = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/runtime-config.js'));
 const { blog: blogSkills }                          = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/skills/index.js'));
 const {
   dailyCurriculumCheck,
   transitionSeries,
 }                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/curriculum-planner.js'));
 const richer                                        = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/richer.js'));
+const { collectAllResearch }                        = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/parallel-collector.js'));
 const {
   writeLecturePost,
   writeLecturePostChunked,
@@ -68,7 +70,11 @@ const {
 const stateBus                                      = require(path.join(env.PROJECT_ROOT, 'bots/reservation/lib/state-bus.js'));
 const pipelineStore                                 = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/pipeline-store.js'));
 const DEV_HUB_READONLY                              = env.IS_DEV && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
-const COMPETITION_DAYS                              = [1, 3, 5];
+const competitionRuntimeConfig                      = getBlogCompetitionRuntimeConfig();
+const COMPETITION_ENABLED                           = competitionRuntimeConfig.enabled === true;
+const COMPETITION_DAYS                              = Array.isArray(competitionRuntimeConfig.days) && competitionRuntimeConfig.days.length
+  ? competitionRuntimeConfig.days
+  : [1, 3, 5];
 
 async function _selectBlogWriter(taskLabel, fallbackName, taskHint = null) {
   try {
@@ -194,6 +200,9 @@ async function ensureSchema() {
 }
 
 async function prepareCompetition(topic, postType) {
+  if (!COMPETITION_ENABLED) {
+    return null;
+  }
   const today = new Date().getDay();
   if (!COMPETITION_DAYS.includes(today)) {
     return null;
@@ -695,9 +704,7 @@ async function _prepareDailyRun(traceCtx, options = {}) {
     traceId: traceCtx.trace_id,
   });
 
-  const researchData = await richer.research('general', false);
-  researchData.popularPatterns = await richer.searchPopularPatterns('general');
-  researchData.lecturePopularPatterns = await richer.searchPopularPatterns('lecture');
+  const researchData = await collectAllResearch('general', false);
 
   return {
     inactive: false,

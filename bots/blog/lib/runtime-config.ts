@@ -30,6 +30,11 @@ const DEFAULTS = {
     maestroHealthTimeoutMs: 2500,
     maestroCircuitCooldownMs: 30 * 60 * 1000,
   },
+  competition: {
+    enabled: false,
+    days: [1, 3, 5],
+    minWriters: 2,
+  },
   commenter: {
     enabled: false,
     blogId: 'cafe_library',
@@ -146,6 +151,10 @@ function getBlogGenerationRuntimeConfig() {
   return loadRuntimeConfig().generation;
 }
 
+function getBlogCompetitionRuntimeConfig() {
+  return loadRuntimeConfig().competition || {};
+}
+
 function getBlogLLMSelectorOverrides() {
   return loadRuntimeConfig().llmSelectorOverrides || {};
 }
@@ -161,6 +170,7 @@ function getBlogNeighborCommenterConfig() {
 module.exports = {
   getBlogHealthRuntimeConfig,
   getBlogGenerationRuntimeConfig,
+  getBlogCompetitionRuntimeConfig,
   getBlogCommenterConfig,
   getBlogNeighborCommenterConfig,
   getBlogLLMSelectorOverrides,
