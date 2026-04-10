@@ -20,6 +20,7 @@ const env = require('../../../packages/core/lib/env');
 const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
 const { buildShortformPlan } = require('./shortform-planner');
 const { renderShortformReel } = require('./shortform-renderer');
+const { SHORTFORM_DEFAULT_DURATION_SEC } = require('./shortform-planner');
 const fs = require('fs');
 const path = require('path');
 
@@ -177,7 +178,7 @@ async function createInstaContent(content, title, category, cardCount = 3, optio
       category,
       thumbPath,
       blogUrl: options.blogUrl || '',
-      durationSec: options.durationSec || 10,
+      durationSec: options.durationSec || SHORTFORM_DEFAULT_DURATION_SEC,
       content,
     });
     const render = await renderShortformReel({

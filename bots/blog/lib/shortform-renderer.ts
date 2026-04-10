@@ -4,18 +4,20 @@ const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
+const { normalizeDurationSec, SHORTFORM_DEFAULT_DURATION_SEC } = require('./shortform-planner');
 
 const execFileAsync = promisify(execFile);
 
 async function renderShortformReel({
   thumbPath,
   outputPath,
-  durationSec = 10,
+  durationSec = SHORTFORM_DEFAULT_DURATION_SEC,
 }) {
   if (!thumbPath || !fs.existsSync(thumbPath)) {
     throw new Error(`숏폼 렌더용 썸네일이 없습니다: ${thumbPath}`);
   }
 
+  const safeDurationSec = normalizeDurationSec(durationSec);
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
 
   const filter = [
@@ -29,7 +31,7 @@ async function renderShortformReel({
     '-y',
     '-loop', '1',
     '-i', thumbPath,
-    '-t', String(durationSec),
+    '-t', String(safeDurationSec),
     '-vf', filter,
     '-c:v', 'libx264',
     '-pix_fmt', 'yuv420p',
@@ -49,7 +51,7 @@ async function renderShortformReel({
   return {
     outputPath,
     fileSize: stat.size,
-    durationSec,
+    durationSec: safeDurationSec,
   };
 }
 

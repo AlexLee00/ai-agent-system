@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const { buildShortformPlan } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-planner.js'));
+const { SHORTFORM_DEFAULT_DURATION_SEC } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-planner.js'));
 const { generateInstaCaption } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/social.js'));
 
 const BLOG_ROOT = path.join(env.PROJECT_ROOT, 'bots/blog');
@@ -44,7 +45,7 @@ function parseArgs(argv = []) {
     else if (token === '--thumb') args.thumb = argv[++i];
     else if (token === '--blog-url') args.blogUrl = argv[++i];
     else if (token === '--content-file') args.contentFile = argv[++i];
-    else if (token === '--duration') args.durationSec = Number(argv[++i] || 10);
+    else if (token === '--duration') args.durationSec = Number(argv[++i] || SHORTFORM_DEFAULT_DURATION_SEC);
   }
   return args;
 }
@@ -84,7 +85,7 @@ async function main() {
     category,
     thumbPath,
     blogUrl: args.blogUrl || '',
-    durationSec: args.durationSec || 10,
+    durationSec: args.durationSec || SHORTFORM_DEFAULT_DURATION_SEC,
     content
   });
 
@@ -95,10 +96,10 @@ async function main() {
     console.warn('[숏폼] 캡션 생성 실패 — 기본 템플릿 사용:', error?.message || error);
     const hashtags = ['#개발자일상', '#IT블로그', '#승호아빠', '#cafe_library', '#shorts', '#reels'];
     captionData = {
-      caption: `📝 ${title}\n10초 안에 핵심만 정리했어요!`,
+      caption: `📝 ${title}\n15~20초 안에 핵심만 정리했어요!`,
       hashtags,
       cta: plan.cta,
-      fullText: `📝 ${title}\n10초 안에 핵심만 정리했어요!\n\n${plan.cta}\n\n${hashtags.join(' ')}`
+      fullText: `📝 ${title}\n15~20초 안에 핵심만 정리했어요!\n\n${plan.cta}\n\n${hashtags.join(' ')}`
     };
   }
   const result = {

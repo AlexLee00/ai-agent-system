@@ -3,6 +3,10 @@
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
 
+const SHORTFORM_MIN_DURATION_SEC = 15;
+const SHORTFORM_MAX_DURATION_SEC = 20;
+const SHORTFORM_DEFAULT_DURATION_SEC = 18;
+
 function slugify(text = '') {
   return String(text)
     .replace(/[^\p{L}\p{N}]+/gu, '_')
@@ -18,7 +22,13 @@ function pickHook(title = '', category = '') {
   if (category === '최신IT트렌드') {
     return `${clean.slice(0, 20)} 지금 놓치면 감각이 늦습니다`;
   }
-  return `${clean.slice(0, 22)} 핵심만 10초 안에 정리합니다`;
+  return `${clean.slice(0, 22)} 핵심만 15초 안에 정리합니다`;
+}
+
+function normalizeDurationSec(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return SHORTFORM_DEFAULT_DURATION_SEC;
+  return Math.min(SHORTFORM_MAX_DURATION_SEC, Math.max(SHORTFORM_MIN_DURATION_SEC, Math.round(num)));
 }
 
 function buildOverlayLines(title = '', category = '') {
@@ -44,25 +54,29 @@ function buildOverlayLines(title = '', category = '') {
   ];
 }
 
-function buildStoryboard(title = '', category = '', durationSec = 10) {
+function buildStoryboard(title = '', category = '', durationSec = SHORTFORM_DEFAULT_DURATION_SEC) {
   const overlayLines = buildOverlayLines(title, category);
-  const beatDuration = Number((durationSec / 3).toFixed(2));
+  const safeDurationSec = normalizeDurationSec(durationSec);
+  const beatDuration = Number((safeDurationSec / 3).toFixed(2));
   return overlayLines.map((line, index) => ({
     index: index + 1,
     startSec: Number((index * beatDuration).toFixed(2)),
-    endSec: Number(((index + 1) * beatDuration).toFixed(2)),
+    endSec: index === overlayLines.length - 1
+      ? safeDurationSec
+      : Number(((index + 1) * beatDuration).toFixed(2)),
     overlay: line,
     motion: index === 0 ? 'slow_zoom_in' : index === 1 ? 'pan_right' : 'slow_zoom_out'
   }));
 }
 
-function buildFfmpegPreview({ thumbPath, outputPath, durationSec = 10 }) {
+function buildFfmpegPreview({ thumbPath, outputPath, durationSec = SHORTFORM_DEFAULT_DURATION_SEC }) {
+  const safeDurationSec = normalizeDurationSec(durationSec);
   const safeInput = JSON.stringify(String(thumbPath));
   const safeOutput = JSON.stringify(String(outputPath));
   return [
     'ffmpeg -y',
     `-loop 1 -i ${safeInput}`,
-    `-t ${durationSec}`,
+    `-t ${safeDurationSec}`,
     '-vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z=\'min(zoom+0.0008,1.18)\':d=250:x=\'iw/2-(iw/zoom/2)\':y=\'ih/2-(ih/zoom/2)\',fps=25"',
     '-c:v libx264 -pix_fmt yuv420p',
     safeOutput
@@ -74,13 +88,14 @@ function buildShortformPlan({
   category,
   thumbPath,
   blogUrl = '',
-  durationSec = 10,
+  durationSec = SHORTFORM_DEFAULT_DURATION_SEC,
   content = ''
 }) {
   const safeTitle = String(title || '').trim();
   const safeCategory = String(category || '일반');
+  const safeDurationSec = normalizeDurationSec(durationSec);
   const hook = pickHook(safeTitle, safeCategory);
-  const storyboard = buildStoryboard(safeTitle, safeCategory, durationSec);
+  const storyboard = buildStoryboard(safeTitle, safeCategory, safeDurationSec);
   const slug = slugify(safeTitle || 'blog_shortform');
   const outputDir = path.join(env.PROJECT_ROOT, 'bots/blog/output/shortform');
   const outputPath = path.join(outputDir, `${slug}_reel.mp4`);
@@ -92,12 +107,12 @@ function buildShortformPlan({
     title: safeTitle,
     category: safeCategory,
     hook,
-    durationSec,
+    durationSec: safeDurationSec,
     thumbPath,
     outputPath,
     storyboard,
     cta,
-    ffmpegPreview: buildFfmpegPreview({ thumbPath, outputPath, durationSec }),
+    ffmpegPreview: buildFfmpegPreview({ thumbPath, outputPath, durationSec: safeDurationSec }),
     contentSnippet: String(content || '').slice(0, 280),
     generatedAt: new Date().toISOString()
   };
@@ -105,4 +120,8 @@ function buildShortformPlan({
 
 module.exports = {
   buildShortformPlan,
+  normalizeDurationSec,
+  SHORTFORM_MIN_DURATION_SEC,
+  SHORTFORM_MAX_DURATION_SEC,
+  SHORTFORM_DEFAULT_DURATION_SEC,
 };
