@@ -20,11 +20,24 @@ const TIMEFRAME_MS = {
 };
 
 let _exchange = null;
+let _cacheAvailable = null;
 
 function getExchange() {
   if (_exchange) return _exchange;
   _exchange = new ccxt.binance({ options: { defaultType: 'spot' } });
   return _exchange;
+}
+
+async function canUseCache() {
+  if (_cacheAvailable !== null) return _cacheAvailable;
+  try {
+    await ensureOHLCVCacheTable();
+    _cacheAvailable = true;
+  } catch (error) {
+    _cacheAvailable = false;
+    console.warn(`  ⚠️ [ohlcv-fetcher] DB 캐시 비활성화: ${error?.message || error}`);
+  }
+  return _cacheAvailable;
 }
 
 function parseDateMs(value, fallback = null) {
@@ -113,11 +126,12 @@ async function loadCachedRows(symbol, timeframe, fromMs, toMs, exchange = DEFAUL
 }
 
 export async function fetchAndCacheOHLCV(symbol, timeframe, from, to = null, exchange = DEFAULT_EXCHANGE) {
-  await ensureOHLCVCacheTable();
   const ex = getExchange();
   const stepMs = getTimeframeMs(timeframe);
   const fromMs = parseDateMs(from);
   const toMs = parseDateMs(to, Date.now());
+  const useCache = await canUseCache();
+  const collected = [];
 
   let cursor = fromMs;
   while (cursor <= toMs) {
@@ -125,7 +139,10 @@ export async function fetchAndCacheOHLCV(symbol, timeframe, from, to = null, exc
     if (!Array.isArray(rows) || rows.length === 0) break;
     const filtered = rows.filter((row) => row[0] <= toMs);
     if (filtered.length > 0) {
-      await upsertOHLCVRows(symbol, timeframe, filtered, exchange);
+      if (useCache) {
+        await upsertOHLCVRows(symbol, timeframe, filtered, exchange).catch(() => {});
+      }
+      collected.push(...filtered);
     }
     const lastTs = rows[rows.length - 1]?.[0];
     if (!lastTs || lastTs <= cursor) break;
@@ -133,15 +150,21 @@ export async function fetchAndCacheOHLCV(symbol, timeframe, from, to = null, exc
     if (rows.length < MAX_BATCH) break;
   }
 
-  return loadCachedRows(symbol, timeframe, fromMs, toMs, exchange);
+  if (useCache) {
+    return loadCachedRows(symbol, timeframe, fromMs, toMs, exchange).catch(() => collected);
+  }
+
+  return collected;
 }
 
 export async function getOHLCV(symbol, timeframe, from, to = null, exchange = DEFAULT_EXCHANGE) {
-  await ensureOHLCVCacheTable();
   const fromMs = parseDateMs(from);
   const toMs = parseDateMs(to, Date.now());
   const stepMs = getTimeframeMs(timeframe);
-  const cached = await loadCachedRows(symbol, timeframe, fromMs, toMs, exchange);
+  const useCache = await canUseCache();
+  const cached = useCache
+    ? await loadCachedRows(symbol, timeframe, fromMs, toMs, exchange).catch(() => [])
+    : [];
   const expected = Math.max(1, Math.floor((toMs - fromMs) / stepMs) + 1);
 
   if (cached.length >= Math.max(1, Math.floor(expected * 0.9))) {
