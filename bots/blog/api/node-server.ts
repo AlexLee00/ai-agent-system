@@ -1,10 +1,10 @@
 /**
- * bots/blog/api/node-server.js — 블로그 노드 API 서버
+ * bots/blog/api/node-server.ts — 블로그 노드 API 서버
  *
  * n8n이 각 파이프라인 노드를 HTTP로 호출.
  * 포트: 3100 (BLOG_API_PORT 환경변수로 변경 가능)
  *
- * 실행: node bots/blog/api/node-server.js
+ * 실행: node bots/blog/api/node-server.ts
  *
  * [의존성] express 필요
  *   미설치 시: cd bots/blog && npm install express --save
@@ -19,15 +19,15 @@ try {
   process.exit(1);
 }
 
-const pipelineStore = require('../lib/pipeline-store');
-const richer = require('../lib/richer');
-const posWriter = require('../lib/pos-writer');
-const gemsWriter = require('../lib/gems-writer');
-const { checkQualityEnhanced } = require('../lib/quality-checker');
+const pipelineStore = require('../lib/pipeline-store.ts');
+const richer = require('../lib/richer.ts');
+const posWriter = require('../lib/pos-writer.ts');
+const gemsWriter = require('../lib/gems-writer.ts');
+const { checkQualityEnhanced } = require('../lib/quality-checker.ts');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const { initHubConfig } = require('../../../packages/core/lib/llm-keys');
 const { parseNaverBlogUrl } = require('../../../packages/core/lib/naver-blog-url');
-const { markPublished } = require('../lib/publ');
+const { markPublished } = require('../lib/publ.ts');
 
 const PORT = process.env.BLOG_API_PORT || 3100;
 const HOST = process.env.BLOG_API_HOST || '127.0.0.1';
@@ -365,4 +365,4 @@ bootstrap().catch((error: any) => {
   process.exit(1);
 });
 
-export = app;
+module.exports = app;

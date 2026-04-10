@@ -7,7 +7,7 @@ const {
   checkWebhookRegistration,
 } = require('../../../packages/core/lib/health-provider');
 const { resolveProductionWebhookUrl } = require('../../../packages/core/lib/n8n-webhook-registry');
-const { getBlogHealthRuntimeConfig } = require('../lib/runtime-config');
+const { getBlogHealthRuntimeConfig } = require('../lib/runtime-config.ts');
 
 const runtimeConfig = getBlogHealthRuntimeConfig();
 const HEALTH_URL = process.env.N8N_HEALTH_URL || runtimeConfig.n8nHealthUrl || 'http://127.0.0.1:5678/healthz';

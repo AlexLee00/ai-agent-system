@@ -13,7 +13,7 @@ const { buildSingleChain } = require('../../../packages/core/lib/llm-model-selec
 const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
 const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 const { parseNaverBlogUrl } = require('../../../packages/core/lib/naver-blog-url');
-const { getBlogCommenterConfig, getBlogNeighborCommenterConfig, getBlogLLMSelectorOverrides } = require('./runtime-config');
+const { getBlogCommenterConfig, getBlogNeighborCommenterConfig, getBlogLLMSelectorOverrides } = require('./runtime-config.ts');
 
 const TABLE = 'blog.comments';
 const ACTION_TABLE = 'blog.comment_actions';

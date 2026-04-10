@@ -4,7 +4,7 @@
 
 const path = require('path');
 const pgPool = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'));
-const { recordPerformance, getPerformanceCollectionCandidates } = require('../lib/publ');
+const { recordPerformance, getPerformanceCollectionCandidates } = require('../lib/publ.ts');
 
 function parseArgs(argv = process.argv.slice(2)) {
   const get = (name) => argv.find((arg) => arg.startsWith(`--${name}=`))?.split('=').slice(1).join('=') || null;

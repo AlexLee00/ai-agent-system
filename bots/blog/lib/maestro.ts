@@ -3,7 +3,7 @@
 const kst = require('../../../packages/core/lib/kst');
 
 /**
- * bots/blog/lib/maestro.js — 블로그팀 컨트롤타워
+ * bots/blog/lib/maestro.ts — 블로그팀 컨트롤타워
  *
  * 역할:
  *   1. 오늘의 파이프라인 동적 결정 (노드 순서/구조/변형 매번 다르게)
@@ -17,7 +17,7 @@ const pgPool = require('../../../packages/core/lib/pg-pool');
 const env = require('../../../packages/core/lib/env');
 const competitionEngine = require('../../../packages/core/lib/competition-engine');
 const { buildWebhookCandidates } = require('../../../packages/core/lib/n8n-webhook-registry');
-const { getBlogGenerationRuntimeConfig, getBlogCompetitionRuntimeConfig } = require('./runtime-config');
+const { getBlogGenerationRuntimeConfig, getBlogCompetitionRuntimeConfig } = require('./runtime-config.ts');
 const { generateGemmaPilotText } = require('../../../packages/core/lib/gemma-pilot');
 const DEV_HUB_READONLY = env.IS_DEV && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
 
@@ -109,7 +109,7 @@ async function saveExecutionHistory(date, postType, pipeline, variations) {
 }
 
 function buildDynamicVariation(postType, history) {
-  const { selectBonusInsights } = require('./bonus-insights');
+  const { selectBonusInsights } = require('./bonus-insights.ts');
 
   const usedGreetings = new Set(history.map((h) => h.variations?.greetingStyle).filter(Boolean));
   const usedCafePos = new Set(history.map((h) => h.variations?.cafePosition).filter(Boolean));

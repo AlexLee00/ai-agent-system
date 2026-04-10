@@ -3,7 +3,7 @@
 'use strict';
 
 const env = require('../../../packages/core/lib/env');
-const { runCommentReply } = require('../lib/commenter');
+const { runCommentReply } = require('../lib/commenter.ts');
 
 async function main() {
   const testMode = process.env.BLOG_COMMENTER_TEST === 'true';

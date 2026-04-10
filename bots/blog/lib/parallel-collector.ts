@@ -1,7 +1,7 @@
 // @ts-nocheck
 'use strict';
 
-const richer = require('./richer.js');
+const richer = require('./richer.ts');
 
 function unwrapSettled(result, fallback) {
   return result && result.status === 'fulfilled' ? result.value : fallback;

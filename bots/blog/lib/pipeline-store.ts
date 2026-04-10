@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * bots/blog/lib/pipeline-store.js
+ * bots/blog/lib/pipeline-store.ts
  *
  * 블로팀 파이프라인 세션 저장소 래퍼.
  * 실제 구현은 core의 blog-rag-store를 사용하지만,

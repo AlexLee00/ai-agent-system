@@ -2,7 +2,7 @@
 // @ts-nocheck
 'use strict';
 
-const { postComment } = require('../lib/commenter');
+const { postComment } = require('../lib/commenter.ts');
 
 function parseArgs(argv = process.argv.slice(2)) {
   const get = (name) => argv.find((arg) => arg.startsWith(`--${name}=`))?.split('=').slice(1).join('=');

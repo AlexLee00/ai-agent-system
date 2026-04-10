@@ -10,7 +10,7 @@
 #   제31강: Express.js 기초
 #   ...
 #
-# 시딩 실행: node bots/blog/scripts/seed-curriculum.js
+# 시딩 실행: node bots/blog/scripts/seed-curriculum.ts
 
 [1개월 차]
 제1강: Node.js 소개와 개발 환경 설정

@@ -9,7 +9,7 @@
  *   - "제N강:" 또는 "N강:" 패턴으로 강의 번호·제목 추출
  *   - "[N개월 차]" 패턴으로 month_chapter 결정
  *
- * 실행: node bots/blog/scripts/seed-curriculum.js [--series=nodejs_120]
+ * 실행: node bots/blog/scripts/seed-curriculum.ts [--series=nodejs_120]
  */
 
 const fs = require('fs');

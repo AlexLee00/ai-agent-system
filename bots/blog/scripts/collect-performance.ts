@@ -5,8 +5,8 @@
 const { execFileSync } = require('child_process');
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
-const { getPerformanceCollectionCandidates, recordPerformance } = require('../lib/publ');
-const { fetchNaverBlogStats } = require('../lib/richer');
+const { getPerformanceCollectionCandidates, recordPerformance } = require('../lib/publ.ts');
+const { fetchNaverBlogStats } = require('../lib/richer.ts');
 
 function parseArgs(argv = process.argv.slice(2)) {
   const get = (name) => argv.find((arg) => arg.startsWith(`--${name}=`))?.split('=').slice(1).join('=');
@@ -85,7 +85,7 @@ async function main() {
 
   if (!args.dryRun && updated > 0) {
     try {
-      execFileSync('node', ['scripts/analyze-blog-performance.js'], {
+      execFileSync('node', ['scripts/analyze-blog-performance.ts'], {
         cwd: path.join(env.PROJECT_ROOT, 'bots', 'blog'),
         stdio: 'inherit',
         timeout: 30000,

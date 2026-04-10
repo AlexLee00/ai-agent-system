@@ -3,9 +3,9 @@
 const fs = require('fs');
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
-const { buildShortformPlan } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-planner.js'));
-const { SHORTFORM_DEFAULT_DURATION_SEC } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-planner.js'));
-const { generateInstaCaption } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/social.js'));
+const { buildShortformPlan } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-planner.ts'));
+const { SHORTFORM_DEFAULT_DURATION_SEC } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-planner.ts'));
+const { generateInstaCaption } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/social.ts'));
 
 const BLOG_ROOT = path.join(env.PROJECT_ROOT, 'bots/blog');
 const IMAGE_DIR = path.join(BLOG_ROOT, 'output/images');

@@ -2,7 +2,7 @@
 // @ts-nocheck
 'use strict';
 
-const { ensureSchema, collectNeighborCandidates, runNeighborCommenter } = require('../lib/commenter');
+const { ensureSchema, collectNeighborCandidates, runNeighborCommenter } = require('../lib/commenter.ts');
 
 async function main() {
   const testMode = process.argv.includes('--test-mode') || process.env.BLOG_COMMENTER_TEST === 'true';

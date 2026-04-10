@@ -2,11 +2,11 @@
 
 ## 기준 경로
 
-- 메인 엔트리: `scripts/run-daily.js`
-- 최상위 오케스트레이터: `lib/blo.js`
-- 실행 백엔드 선택: `lib/maestro.js`
-- 노드 API 실행기: `api/node-server.js`
-- 세션 저장소: `lib/pipeline-store.js`
+- 메인 엔트리: `scripts/run-daily.ts`
+- 최상위 오케스트레이터: `lib/blo.ts`
+- 실행 백엔드 선택: `lib/maestro.ts`
+- 노드 API 실행기: `api/node-server.ts`
+- 세션 저장소: `lib/pipeline-store.ts`
 
 ## 실행 원칙
 
