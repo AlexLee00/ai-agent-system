@@ -5,24 +5,16 @@ const kst = require('../../../packages/core/lib/kst');
 /**
  * img-gen.js — 블로그팀 이미지 생성
  *
- * 전략: 로컬 이미지 엔진 메인 + 로컬 재시도
- *
- * 함수:
- *   generateImage(prompt, opts)          — 단건 생성 (폴백 체인)
- *   generateWithComfyUI(prompt, opts)    — 로컬 이미지 생성 (ComfyUI / Draw Things)
- *   generatePostImages({ title, postType, category }) — 블로그 포스팅 이미지 2장
- *   generateInstaCard(summary, cardIndex, outputPath) — 인스타 카드 1장
- *
- * 비용:
- *   로컬 자원 사용 (메인)
+ * 전략: Draw Things 중심의 단일 클릭 유도형 썸네일
  */
 
 const fs = require('fs');
 const path = require('path');
+const env = require('../../../packages/core/lib/env');
 const { selectRuntime } = require('../../../packages/core/lib/runtime-selector');
 const { generateWithComfyUI } = require('../../../packages/core/lib/local-image-client');
 
-const OUTPUT_DIR = path.join(__dirname, '..', 'output');
+const OUTPUT_DIR = path.join(env.PROJECT_ROOT, 'bots/blog/output');
 const IMAGES_DIR = path.join(OUTPUT_DIR, 'images');
 const GDRIVE_DIR = process.env.GDRIVE_BLOG_IMAGES || '/tmp/blog-images';
 
@@ -30,6 +22,8 @@ async function generateImage(prompt, opts = {}) {
   const { outputPath, ...genOpts } = opts;
   const runtimeProfile = await selectRuntime('blog', 'image-local');
   const result = await generateWithComfyUI(prompt, {
+    provider: process.env.BLOG_IMAGE_PROVIDER || 'drawthings',
+    baseUrl: process.env.BLOG_IMAGE_BASE_URL || 'http://127.0.0.1:7860',
     ...genOpts,
     runtimeProfile,
   });
@@ -43,12 +37,32 @@ function _saveBuffer(buffer, outputPath) {
 }
 
 const STYLE_BASE = [
-  'Clean, modern, professional blog thumbnail.',
+  'Professional blog thumbnail, 16:9 aspect ratio, ultra high quality.',
   'No text overlay.',
-  'Soft lighting, high resolution.',
-  'Absolutely no readable text, letters, numbers, words, UI labels, logos, signage, checklist text, whiteboard text, or typography anywhere in the image.',
-  'If documents, screens, boards, or clipboards appear, render only abstract wireframe blocks, empty cards, icons, or illegible placeholder marks.',
+  'Absolutely no readable text, letters, words, numbers, UI labels, logos, signage, captions, checklist text, whiteboard text, or typography anywhere.',
+  'Image should feel premium, distinctive, and curiosity-inducing.',
 ].join(' ');
+
+const CLICK_BAIT_STYLES = [
+  'Dramatic cinematic lighting with strong contrast, mysterious mood, single bold focal point.',
+  'Vibrant neon accents against a dark background, futuristic tech aesthetic, eye-catching glow.',
+  'Breathtaking sense of scale with a surprising perspective and visual wonder.',
+  'Unexpected close-up focus with rich texture detail and strong subject isolation.',
+  'Bold editorial magazine-cover composition with striking color blocks and premium feel.',
+  'Surreal dreamlike scene with impossible architecture or floating objects, high curiosity.',
+  'Golden-hour warm lighting with cozy aspiration mood and polished lifestyle energy.',
+  'Minimalist composition with one powerful subject and clean negative space.',
+];
+
+const COLOR_HINTS = {
+  '최신IT트렌드': 'deep blue, cyan, electric purple accents',
+  'IT정보와분석': 'dark navy, gold analytical glow',
+  '홈페이지와App': 'clean white, soft blue, modern UI atmosphere',
+  '자기계발': 'warm sunrise orange, focused motivation',
+  '도서리뷰': 'warm amber, cozy bookish brown tones',
+  '성장과성공': 'bold gold, confident navy contrast',
+  '개발기획과컨설팅': 'professional gray, strategic blue accents',
+};
 
 function _hashSeed(input) {
   const text = String(input || '');
@@ -65,44 +79,36 @@ function _pickVariant(list, seed, offset = 0) {
   return list[(seed + offset) % list.length];
 }
 
-function _buildVisualVariant(title, postType, category, label) {
-  const seed = _hashSeed(`${postType}:${category}:${label}:${title}`);
+function _buildVisualVariant(title, postType, category) {
+  const seed = _hashSeed(`${postType}:${category}:${title}`);
   const categoryTypePools = {
     '최신IT트렌드': {
       thumb: ['cinematic photo', 'animation concept art', 'modern infographic scene'],
-      mid: ['isometric explainer visual', 'animation storyboard scene', 'editorial illustration'],
     },
     'IT정보와분석': {
       thumb: ['modern infographic scene', 'editorial illustration', 'documentary-style photo'],
-      mid: ['isometric explainer visual', 'editorial illustration', 'modern infographic scene'],
     },
     '홈페이지와App': {
       thumb: ['editorial illustration', 'cinematic photo', 'modern infographic scene'],
-      mid: ['isometric explainer visual', 'editorial illustration', 'animation storyboard scene'],
     },
     '자기계발': {
       thumb: ['cinematic photo', 'animation concept art', 'editorial illustration'],
-      mid: ['animation storyboard scene', 'documentary-style photo', 'editorial illustration'],
     },
     '도서리뷰': {
       thumb: ['documentary-style photo', 'editorial illustration', 'animation concept art'],
-      mid: ['editorial illustration', 'documentary-style photo', 'animation storyboard scene'],
     },
     '성장과성공': {
       thumb: ['cinematic photo', 'modern infographic scene', 'editorial illustration'],
-      mid: ['editorial illustration', 'isometric explainer visual', 'documentary-style photo'],
     },
     '개발기획과컨설팅': {
       thumb: ['modern infographic scene', 'editorial illustration', 'cinematic photo'],
-      mid: ['editorial illustration', 'isometric explainer visual', 'documentary-style photo'],
     },
     default: {
       thumb: ['cinematic photo', 'editorial illustration', 'animation concept art', 'modern infographic scene'],
-      mid: ['editorial illustration', 'isometric explainer visual', 'animation storyboard scene', 'documentary-style photo'],
     },
   };
   const categoryTypePool = categoryTypePools[category] || categoryTypePools.default;
-  const typePool = label === 'thumb' ? categoryTypePool.thumb : categoryTypePool.mid;
+  const typePool = categoryTypePool.thumb;
 
   const shotPool = ['wide shot', 'three-quarter view', 'close-up focus', 'over-the-shoulder composition'];
   const attitudePool = ['calm and focused', 'confident and proactive', 'curious and analytical', 'warm and collaborative'];
@@ -149,77 +155,48 @@ function _buildVisualVariant(title, postType, category, label) {
     ],
   };
 
-  const propPool = {
-    thumb: [
-      'clear focal subject with bold silhouette',
-      'layered devices, notes, and visual cues',
-      'strong depth with foreground-background separation',
-      'subtle motion and directional light',
-    ],
-    mid: [
-      'supporting objects that explain the idea',
-      'step-by-step visual logic with subtle symbols',
-      'spatial layout showing process and relationships',
-      'clean scene with informative details',
-    ],
-  };
+  const propPool = [
+    'clear focal subject with bold silhouette',
+    'layered devices, notes, and visual cues',
+    'strong depth with foreground-background separation',
+    'subtle motion and directional light',
+  ];
 
   return {
     renderType: _pickVariant(typePool, seed, 0),
     shot: _pickVariant(shotPool, seed, 1),
     attitude: _pickVariant(attitudePool, seed, 2),
     situation: _pickVariant(situationPool[category] || situationPool.default, seed, 3),
-    propStyle: _pickVariant(propPool[label] || propPool.thumb, seed, 4),
+    propStyle: _pickVariant(propPool, seed, 4),
   };
 }
 
 function _buildThumbPrompt(title, postType, category) {
   if (postType === 'lecture') {
     const topic = title.replace(/\[Node\.js \d+강\]\s*/, '').trim();
-    return `${STYLE_BASE} Topic: "${topic}". Technology and software development theme. Dark modern UI aesthetic, code editor vibes, subtle Node.js green accent color (#68a063). Abstract digital background.`;
+    const style = CLICK_BAIT_STYLES[_hashSeed(`${title}:${category}`) % CLICK_BAIT_STYLES.length];
+    return [
+      STYLE_BASE,
+      `Topic hint: "${topic}". Dark modern UI, code editor vibes, Node.js green accent color (#68a063).`,
+      style,
+      'Strong focal subject, clean composition, premium tutorial cover feel.',
+    ].join(' ');
   }
-  const visual = _buildVisualVariant(title, postType, category, 'thumb');
-  const categoryStyles = {
-    '최신IT트렌드': 'Futuristic technology theme, AI and innovation, deep blue, cyan, and silver accents.',
-    'IT정보와분석': 'Business intelligence mood, structured dashboards, charts, and analytical visual cues.',
-    '홈페이지와App': 'Product design mood, UI/UX artifacts, wireframes, smartphone and laptop interplay, clean white and blue.',
-    '자기계발': 'Personal growth mood, disciplined routine, reflective energy, warm orange and neutral tones.',
-    '도서리뷰': 'Thoughtful reading mood, books, notes, library textures, warm and calm light.',
-    '성장과성공': 'Achievement and momentum mood, strategic progress symbols, gold and navy contrast.',
-    '개발기획과컨설팅': 'Planning and facilitation mood, service blueprints, whiteboard systems, collaboration energy.',
-  };
-  const style = categoryStyles[category] || 'Modern professional blog image with strong concept storytelling.';
+  const visual = _buildVisualVariant(title, postType, category);
+  const clickStyle = CLICK_BAIT_STYLES[_hashSeed(`${title}:${category}`) % CLICK_BAIT_STYLES.length];
   const topic = title.replace(/\[.*?\]\s*/, '').trim();
   return [
     STYLE_BASE,
-    `Topic: "${topic}".`,
+    `Topic hint: "${topic}".`,
+    clickStyle,
     `Render type: ${visual.renderType}.`,
     `Scene: ${visual.situation}.`,
     `Mood and attitude: ${visual.attitude}.`,
     `Composition: ${visual.shot}, ${visual.propStyle}.`,
-    style,
-    'Keep the image visually distinct from generic AI-tech thumbnails; avoid repeating the same pose, same lighting, and same layout every time.',
-    'Do not render any readable words on walls, screens, papers, or devices; use diagram shapes or blank interface blocks only.',
-  ].join(' ');
-}
-
-function _buildMidPrompt(title, postType, category) {
-  if (postType === 'lecture') {
-    const topic = title.replace(/\[Node\.js \d+강\]\s*/, '').trim();
-    return `${STYLE_BASE} Illustrating the concept of "${topic}" in software development. Code snippets, flowchart elements, or system architecture diagram style. Dark theme, developer aesthetic.`;
-  }
-  const visual = _buildVisualVariant(title, postType, category, 'mid');
-  const topic = title.replace(/\[.*?\]\s*/, '').trim();
-  return [
-    STYLE_BASE,
-    `Detailed supporting visual for "${topic}".`,
-    `Render type: ${visual.renderType}.`,
-    `Situation: ${visual.situation}.`,
-    `Character presence and attitude: ${visual.attitude}.`,
-    `Composition: ${visual.shot}, ${visual.propStyle}.`,
-    `Use category-aware objects and context for "${category}", not just abstract shapes.`,
-    'Make this image complementary to the thumbnail, with a different framing, situation, and storytelling emphasis.',
-    'No readable text on clipboards, notebooks, calendars, dashboards, or interface panels; replace with icon-like placeholders and empty structure.',
+    `Color mood: ${COLOR_HINTS[category] || 'modern tech color palette'}.`,
+    'The image should make people want to click through curiosity, surprise, beauty, or tension.',
+    'Avoid generic stock-photo feel. Be bold, distinctive, and emotionally legible at a glance.',
+    'No readable words on walls, screens, papers, boards, or devices.',
   ].join(' ');
 }
 
@@ -230,37 +207,26 @@ async function generatePostImages({ title, postType, category }) {
   const safeSlug = (title || '').replace(/[^가-힣a-zA-Z0-9]/g, '_').slice(0, 40);
   const slug = `${today}_${postType}_${safeSlug}`;
 
-  console.log(`[이미지] 생성 시작 (local image runtime) — ${title}`);
+  console.log(`[이미지] 썸네일 생성 시작 (Draw Things/local runtime) — ${title}`);
 
   const thumbPrompt = _buildThumbPrompt(title, postType, category);
-  const midPrompt = _buildMidPrompt(title, postType, category);
+  const filename = `${slug}_thumb.png`;
+  const filepath = path.join(IMAGES_DIR, filename);
 
-  async function _genAndSave(prompt, label) {
-    const filename = `${slug}_${label}.png`;
-    const filepath = path.join(IMAGES_DIR, filename);
-    const { buffer, source, fallback } = await generateImage(prompt, { aspectRatio: '16:9' });
-
+  try {
+    const { buffer, source, fallback } = await generateImage(thumbPrompt, { aspectRatio: '16:9' });
     fs.writeFileSync(filepath, buffer);
     try {
       if (!fs.existsSync(GDRIVE_DIR)) fs.mkdirSync(GDRIVE_DIR, { recursive: true });
       fs.writeFileSync(path.join(GDRIVE_DIR, filename), buffer);
     } catch (_) {}
 
-    console.log(`  [이미지] ${label}: images/${filename} (${source}${fallback ? ', 폴백' : ''})`);
-    return { filename, filepath };
-  }
-
-  const [thumb, mid] = await Promise.all([
-    _genAndSave(thumbPrompt, 'thumb').catch((e) => { console.warn('[이미지] 대표 실패:', e.message); return null; }),
-    _genAndSave(midPrompt, 'mid').catch((e) => { console.warn('[이미지] 중간 실패:', e.message); return null; }),
-  ]);
-
-  if (!thumb && !mid) {
-    console.warn('[이미지] 대표/중간 이미지 모두 실패 — 이미지 없이 포스팅 진행');
+    console.log(`  [이미지] thumb: images/${filename} (${source}${fallback ? ', 폴백' : ''})`);
+    return { thumb: { filename, filepath } };
+  } catch (e) {
+    console.warn('[이미지] 썸네일 실패:', e.message);
     return null;
   }
-
-  return { thumb, mid };
 }
 
 function _escapeXml(str) {
@@ -340,6 +306,5 @@ module.exports = {
   generatePostImages,
   generateInstaCard,
   _buildThumbPrompt,
-  _buildMidPrompt,
   IMAGES_DIR,
 };
