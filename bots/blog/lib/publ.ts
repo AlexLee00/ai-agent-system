@@ -15,7 +15,7 @@ const pgPool = require('../../../packages/core/lib/pg-pool');
 const rag = require('../../../packages/core/lib/rag-safe');
 const env = require('../../../packages/core/lib/env');
 
-const OUTPUT_DIR = path.join(__dirname, '..', 'output');
+const OUTPUT_DIR = path.join(env.PROJECT_ROOT, 'bots', 'blog', 'output');
 const GDRIVE_DIR = process.env.GDRIVE_BLOG_DIR || '/tmp/blog-output';
 const DEV_HUB_READONLY = env.IS_DEV && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
 let _performanceColumnsState = null;
@@ -394,23 +394,27 @@ async function recordPerformance(postId, metrics = {}) {
       ]);
 
     if (row && views > 0) {
-      await rag.initSchema();
-      await rag.store(
-        'experience',
-        `[blog_success] ${row.title} | views=${views} | comments=${comments} | likes=${likes}\n[이유: 조회수 ${views}회, 카테고리 ${row.category || 'unknown'}]`,
-        {
-          intent: 'blog_success',
-          team: 'blog',
-          category: row.category,
-          views,
-          comments,
-          likes,
-          charCount: Number(row.char_count || 0),
-          postId,
-          why: `조회수 ${views}회, 카테고리 ${row.category || 'unknown'}`,
-        },
-        'blog-publ'
-      );
+      try {
+        await rag.initSchema();
+        await rag.store(
+          'experience',
+          `[blog_success] ${row.title} | views=${views} | comments=${comments} | likes=${likes}\n[이유: 조회수 ${views}회, 카테고리 ${row.category || 'unknown'}]`,
+          {
+            intent: 'blog_success',
+            team: 'blog',
+            category: row.category,
+            views,
+            comments,
+            likes,
+            charCount: Number(row.char_count || 0),
+            postId,
+            why: `조회수 ${views}회, 카테고리 ${row.category || 'unknown'}`,
+          },
+          'blog-publ'
+        );
+      } catch (ragError) {
+        console.warn('[퍼블] 성과 RAG 저장 실패(무시):', ragError.message);
+      }
     }
 
     return row;
@@ -472,23 +476,27 @@ async function recordPerformancePartial(postId, metrics = {}) {
     `, params);
 
     if (row && hasViews && views > 0) {
-      await rag.initSchema();
-      await rag.store(
-        'experience',
-        `[blog_success] ${row.title} | views=${views}${hasComments ? ` | comments=${comments}` : ''}${hasLikes ? ` | likes=${likes}` : ''}\n[이유: 조회수 ${views}회, 카테고리 ${row.category || 'unknown'}]`,
-        {
-          intent: 'blog_success',
-          team: 'blog',
-          category: row.category,
-          views,
-          comments: hasComments ? comments : null,
-          likes: hasLikes ? likes : null,
-          charCount: Number(row.char_count || 0),
-          postId,
-          why: `조회수 ${views}회, 카테고리 ${row.category || 'unknown'}`,
-        },
-        'blog-publ'
-      );
+      try {
+        await rag.initSchema();
+        await rag.store(
+          'experience',
+          `[blog_success] ${row.title} | views=${views}${hasComments ? ` | comments=${comments}` : ''}${hasLikes ? ` | likes=${likes}` : ''}\n[이유: 조회수 ${views}회, 카테고리 ${row.category || 'unknown'}]`,
+          {
+            intent: 'blog_success',
+            team: 'blog',
+            category: row.category,
+            views,
+            comments: hasComments ? comments : null,
+            likes: hasLikes ? likes : null,
+            charCount: Number(row.char_count || 0),
+            postId,
+            why: `조회수 ${views}회, 카테고리 ${row.category || 'unknown'}`,
+          },
+          'blog-publ'
+        );
+      } catch (ragError) {
+        console.warn('[퍼블] 성과 부분 RAG 저장 실패(무시):', ragError.message);
+      }
     }
 
     return row;

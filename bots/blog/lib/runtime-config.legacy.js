@@ -32,8 +32,8 @@ const DEFAULTS = {
     enabled: false,
     blogId: 'cafe_library',
     maxDaily: 20,
-    activeStartHour: 8,
-    activeEndHour: 22,
+    activeStartHour: 9,
+    activeEndHour: 21,
     browserHttpUrl: 'http://127.0.0.1:18791',
     browserWsEndpoint: '',
     browserToken: '',
@@ -48,6 +48,18 @@ const DEFAULTS = {
     maxReplyLen: 200,
     maxDetectPerCycle: 20,
     maxProcessPerCycle: 20,
+  },
+  neighborCommenter: {
+    enabled: false,
+    blogId: 'cafe_library',
+    maxDaily: 20,
+    activeStartHour: 9,
+    activeEndHour: 21,
+    maxCollectPerCycle: 20,
+    maxProcessPerCycle: 20,
+    recentWindowDays: 14,
+    minCommentLen: 45,
+    maxCommentLen: 220,
   },
   llmSelectorOverrides: {
     'blog.pos.writer': {
@@ -127,9 +139,14 @@ function getBlogCommenterConfig() {
   return loadRuntimeConfig().commenter || {};
 }
 
+function getBlogNeighborCommenterConfig() {
+  return loadRuntimeConfig().neighborCommenter || {};
+}
+
 module.exports = {
   getBlogHealthRuntimeConfig,
   getBlogGenerationRuntimeConfig,
   getBlogCommenterConfig,
+  getBlogNeighborCommenterConfig,
   getBlogLLMSelectorOverrides,
 };

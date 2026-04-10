@@ -6,6 +6,10 @@
 	<dict>
 		<key>BLOG_API_PORT</key>
 		<string>3100</string>
+		<key>BLOG_IMAGE_BASE_URL</key>
+		<string>http://127.0.0.1:7860</string>
+		<key>BLOG_IMAGE_PROVIDER</key>
+		<string>drawthings</string>
 		<key>HOME</key>
 		<string>/Users/alexlee</string>
 		<key>PATH</key>

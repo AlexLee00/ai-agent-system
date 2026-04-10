@@ -4,11 +4,11 @@ const kst = require('../../../packages/core/lib/kst');
 /**
  * img-gen.js — 블로그팀 이미지 생성
  *
- * 전략: ComfyUI 로컬 메인 + 로컬 재시도
+ * 전략: 로컬 이미지 엔진 메인 + 로컬 재시도
  *
  * 함수:
  *   generateImage(prompt, opts)          — 단건 생성 (폴백 체인)
- *   generateWithComfyUI(prompt, opts)    — ComfyUI 로컬 생성 (메인)
+ *   generateWithComfyUI(prompt, opts)    — 로컬 이미지 생성 (ComfyUI / Draw Things)
  *   generatePostImages({ title, postType, category }) — 블로그 포스팅 이미지 2장
  *   generateInstaCard(summary, cardIndex, outputPath) — 인스타 카드 1장
  *
@@ -25,10 +25,10 @@ const OUTPUT_DIR  = path.join(__dirname, '..', 'output');
 const IMAGES_DIR  = path.join(OUTPUT_DIR, 'images');
 const GDRIVE_DIR  = process.env.GDRIVE_BLOG_IMAGES || '/tmp/blog-images';
 
-// ── 1. 메인 체인 (ComfyUI local-only + retry) ───────────────────
+// ── 1. 메인 체인 (local image runtime + retry) ───────────────────
 
 /**
- * 이미지 생성 — ComfyUI local-only, 내부 retry 포함
+ * 이미지 생성 — 로컬 이미지 엔진, 내부 retry 포함
  * @param {string} prompt
  * @param {{ aspectRatio?: string, outputPath?: string }} [opts]
  * @returns {Promise<{ buffer: Buffer, source: string, fallback: boolean }>}
@@ -244,7 +244,7 @@ async function generatePostImages({ title, postType, category }) {
   const safeSlug = (title || '').replace(/[^가-힣a-zA-Z0-9]/g, '_').slice(0, 40);
   const slug     = `${today}_${postType}_${safeSlug}`;
 
-  console.log(`[이미지] 생성 시작 (ComfyUI local-only) — ${title}`);
+  console.log(`[이미지] 생성 시작 (local image runtime) — ${title}`);
 
   const thumbPrompt = _buildThumbPrompt(title, postType, category);
   const midPrompt   = _buildMidPrompt(title, postType, category);

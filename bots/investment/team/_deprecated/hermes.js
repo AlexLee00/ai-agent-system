@@ -1,18 +1,4 @@
-import path from 'path';
-import { fileURLToPath, pathToFileURL } from 'url';
+const loaded = await import('./hermes.legacy.js');
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const runtimePath = path.join(
-  __dirname,
-  '../../../../dist/ts-runtime/bots/investment/team/_deprecated/hermes.js',
-);
-
-try {
-  await import(pathToFileURL(runtimePath).href);
-} catch (error) {
-  if (error && error.code !== 'ERR_MODULE_NOT_FOUND' && error.code !== 'MODULE_NOT_FOUND') {
-    throw error;
-  }
-  await import('./hermes.legacy.js');
-}
+export const analyzeNews = loaded.analyzeNews;
+export default loaded.default ?? loaded;

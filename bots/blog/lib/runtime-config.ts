@@ -3,9 +3,10 @@
 
 const fs = require('fs');
 const path = require('path');
+const env = require('../../../packages/core/lib/env');
 const { createRuntimeConfigLoader } = require('../../../packages/core/lib/runtime-config-loader');
 
-const CONFIG_PATH = path.join(__dirname, '..', 'config.json');
+const CONFIG_PATH = path.join(env.PROJECT_ROOT, 'bots', 'blog', 'config.json');
 
 const DEFAULTS = {
   health: {
@@ -33,8 +34,8 @@ const DEFAULTS = {
     enabled: false,
     blogId: 'cafe_library',
     maxDaily: 20,
-    activeStartHour: 8,
-    activeEndHour: 22,
+    activeStartHour: 9,
+    activeEndHour: 21,
     browserHttpUrl: 'http://127.0.0.1:18791',
     browserWsEndpoint: '',
     browserToken: '',
@@ -49,6 +50,18 @@ const DEFAULTS = {
     maxReplyLen: 200,
     maxDetectPerCycle: 20,
     maxProcessPerCycle: 20,
+  },
+  neighborCommenter: {
+    enabled: false,
+    blogId: 'cafe_library',
+    maxDaily: 20,
+    activeStartHour: 9,
+    activeEndHour: 21,
+    maxCollectPerCycle: 20,
+    maxProcessPerCycle: 20,
+    recentWindowDays: 14,
+    minCommentLen: 45,
+    maxCommentLen: 220,
   },
   llmSelectorOverrides: {
     'blog.pos.writer': {
@@ -103,6 +116,18 @@ const DEFAULTS = {
         { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 8000, temperature: 0.5 },
       ],
     },
+    'blog.commenter.reply': {
+      chain: [
+        { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 600, temperature: 0.75, timeoutMs: 12000 },
+        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 600, temperature: 0.7, timeoutMs: 20000 },
+      ],
+    },
+    'blog.commenter.neighbor': {
+      chain: [
+        { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 700, temperature: 0.8, timeoutMs: 15000 },
+        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 700, temperature: 0.75, timeoutMs: 20000 },
+      ],
+    },
   },
 };
 
@@ -128,9 +153,14 @@ function getBlogCommenterConfig() {
   return loadRuntimeConfig().commenter || {};
 }
 
+function getBlogNeighborCommenterConfig() {
+  return loadRuntimeConfig().neighborCommenter || {};
+}
+
 module.exports = {
   getBlogHealthRuntimeConfig,
   getBlogGenerationRuntimeConfig,
   getBlogCommenterConfig,
+  getBlogNeighborCommenterConfig,
   getBlogLLMSelectorOverrides,
 };

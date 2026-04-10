@@ -1,4 +1,2497 @@
 // @ts-nocheck
 'use strict';
 
-module.exports = require('./commenter.legacy.js');
+const crypto = require('crypto');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const puppeteer = require('puppeteer');
+
+const pgPool = require('../../../packages/core/lib/pg-pool');
+const env = require('../../../packages/core/lib/env');
+const { buildSingleChain } = require('../../../packages/core/lib/llm-model-selector');
+const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
+const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const { parseNaverBlogUrl } = require('../../../packages/core/lib/naver-blog-url');
+const { getBlogCommenterConfig, getBlogNeighborCommenterConfig, getBlogLLMSelectorOverrides } = require('./runtime-config');
+
+const TABLE = 'blog.comments';
+const ACTION_TABLE = 'blog.comment_actions';
+const NEIGHBOR_TABLE = 'blog.neighbor_comments';
+const DEFAULT_SUMMARY_LEN = 220;
+const BROWSER_CONNECT_TIMEOUT_MS = 5000;
+const NAVER_NAVIGATION_TIMEOUT_MS = 45000;
+const NAVER_MONITOR_WS_FILE = path.join(env.OPENCLAW_WORKSPACE, 'naver-monitor-ws.txt');
+const BLOG_COMMENTER_DEBUG_DIR = path.join(env.PROJECT_ROOT, 'tmp', 'blog-commenter-debug');
+
+function traceCommenter(...args) {
+  if (process.env.BLOG_COMMENTER_TRACE !== 'true') return;
+  console.log('[blog-commenter]', ...args);
+}
+
+function nowKstHour() {
+  return Number(new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' })).getHours());
+}
+
+function expandHome(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return raw;
+  if (raw === '~') return os.homedir();
+  if (raw.startsWith('~/')) return path.join(os.homedir(), raw.slice(2));
+  return raw;
+}
+
+function readOpenClawGatewayTokenFromConfig() {
+  try {
+    const configPath = path.join(os.homedir(), '.openclaw', 'openclaw.json');
+    const raw = fs.readFileSync(configPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    return String(parsed?.gateway?.auth?.token || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function readNaverMonitorWsEndpoint() {
+  try {
+    return String(fs.readFileSync(NAVER_MONITOR_WS_FILE, 'utf8') || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function getCommenterConfig() {
+  const runtime = getBlogCommenterConfig();
+  const browserToken = String(
+    runtime.browserToken
+    || process.env.OPENCLAW_BROWSER_TOKEN
+    || process.env.OPENCLAW_GATEWAY_TOKEN
+    || readOpenClawGatewayTokenFromConfig()
+    || ''
+  ).trim();
+  return {
+    enabled: runtime.enabled === true,
+    blogId: String(runtime.blogId || '').trim(),
+    maxDaily: Number(runtime.maxDaily || 20),
+    activeStartHour: Number(runtime.activeStartHour || 8),
+    activeEndHour: Number(runtime.activeEndHour || 22),
+    browserHttpUrl: String(runtime.browserHttpUrl || '').trim(),
+    browserWsEndpoint: String(runtime.browserWsEndpoint || '').trim(),
+    browserToken,
+    profileDir: expandHome(runtime.profileDir || path.join(env.OPENCLAW_WORKSPACE, 'naver-profile')),
+    pageReadMinSec: Number(runtime.pageReadMinSec || 30),
+    pageReadMaxSec: Number(runtime.pageReadMaxSec || 90),
+    typingMinSec: Number(runtime.typingMinSec || 20),
+    typingMaxSec: Number(runtime.typingMaxSec || 45),
+    betweenCommentsMinSec: Number(runtime.betweenCommentsMinSec || 60),
+    betweenCommentsMaxSec: Number(runtime.betweenCommentsMaxSec || 180),
+    minReplyLen: Number(runtime.minReplyLen || 30),
+    maxReplyLen: Number(runtime.maxReplyLen || 200),
+    maxDetectPerCycle: Number(runtime.maxDetectPerCycle || 20),
+    maxProcessPerCycle: Number(runtime.maxProcessPerCycle || 20),
+  };
+}
+
+function getNeighborCommenterConfig() {
+  const runtime = getBlogNeighborCommenterConfig();
+  return {
+    enabled: runtime.enabled === true,
+    blogId: String(runtime.blogId || '').trim(),
+    maxDaily: Number(runtime.maxDaily || 20),
+    activeStartHour: Number(runtime.activeStartHour || 9),
+    activeEndHour: Number(runtime.activeEndHour || 21),
+    maxCollectPerCycle: Number(runtime.maxCollectPerCycle || 20),
+    maxProcessPerCycle: Number(runtime.maxProcessPerCycle || 20),
+    recentWindowDays: Number(runtime.recentWindowDays || 14),
+    minCommentLen: Number(runtime.minCommentLen || 45),
+    maxCommentLen: Number(runtime.maxCommentLen || 220),
+  };
+}
+
+async function inferBlogIdFromPublishedPosts() {
+  try {
+    const row = await pgPool.get('blog', `
+      SELECT naver_url
+      FROM blog.posts
+      WHERE naver_url IS NOT NULL
+        AND naver_url <> ''
+      ORDER BY created_at DESC
+      LIMIT 1
+    `);
+    if (!row?.naver_url) return '';
+    const parsed = parseNaverBlogUrl(row.naver_url);
+    return parsed.ok ? parsed.blogId : '';
+  } catch {
+    return '';
+  }
+}
+
+async function resolveBlogId() {
+  const config = getCommenterConfig();
+  if (config.blogId) return config.blogId;
+  return inferBlogIdFromPublishedPosts();
+}
+
+function buildDedupeKey(postUrl, commenterId, commentText) {
+  const raw = [String(postUrl || '').trim(), String(commenterId || '').trim(), String(commentText || '').trim()].join('|');
+  return crypto.createHash('sha1').update(raw).digest('hex');
+}
+
+function normalizeText(value) {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .replace(/\u00a0/g, ' ')
+    .trim();
+}
+
+function squeezeText(value, maxLen = DEFAULT_SUMMARY_LEN) {
+  const normalized = normalizeText(value);
+  if (!normalized) return '';
+  if (normalized.length <= maxLen) return normalized;
+  return `${normalized.slice(0, maxLen - 1)}…`;
+}
+
+function ensureDir(dirPath) {
+  fs.mkdirSync(dirPath, { recursive: true });
+}
+
+function isWithinActiveWindow(config = getCommenterConfig()) {
+  const hour = nowKstHour();
+  return hour >= config.activeStartHour && hour <= config.activeEndHour;
+}
+
+function calcDelayMs(minSec, maxSec, testMode = false) {
+  const min = Number(minSec || 0);
+  const max = Number(maxSec || min);
+  const factor = testMode ? 0.03 : 1;
+  const jitter = min + Math.random() * Math.max(0, max - min);
+  return Math.round(jitter * 1000 * factor);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function humanDelay(minSec, maxSec, testMode = false) {
+  const delayMs = calcDelayMs(minSec, maxSec, testMode);
+  if (delayMs > 0) {
+    await sleep(delayMs);
+  }
+}
+
+async function ensureSchema() {
+  await pgPool.run('blog', `
+    CREATE TABLE IF NOT EXISTS ${TABLE} (
+      id SERIAL PRIMARY KEY,
+      post_url TEXT NOT NULL,
+      post_title TEXT,
+      commenter_id TEXT,
+      commenter_name TEXT,
+      comment_text TEXT NOT NULL,
+      comment_ref TEXT,
+      dedupe_key TEXT NOT NULL UNIQUE,
+      reply_text TEXT,
+      reply_at TIMESTAMPTZ,
+      detected_at TIMESTAMPTZ DEFAULT NOW(),
+      status TEXT DEFAULT 'pending',
+      error_message TEXT,
+      meta JSONB DEFAULT '{}'::JSONB
+    )
+  `);
+  await pgPool.run('blog', `CREATE INDEX IF NOT EXISTS idx_comments_status ON ${TABLE}(status)`);
+  await pgPool.run('blog', `CREATE INDEX IF NOT EXISTS idx_comments_detected ON ${TABLE}(detected_at DESC)`);
+  await pgPool.run('blog', `
+    CREATE TABLE IF NOT EXISTS ${ACTION_TABLE} (
+      id SERIAL PRIMARY KEY,
+      action_type TEXT NOT NULL,
+      target_blog TEXT,
+      target_post_url TEXT,
+      comment_text TEXT,
+      success BOOLEAN DEFAULT true,
+      executed_at TIMESTAMPTZ DEFAULT NOW(),
+      meta JSONB DEFAULT '{}'::JSONB
+    )
+  `);
+  await pgPool.run('blog', `
+    CREATE TABLE IF NOT EXISTS ${NEIGHBOR_TABLE} (
+      id SERIAL PRIMARY KEY,
+      target_blog_id TEXT NOT NULL,
+      target_blog_name TEXT,
+      source_type TEXT NOT NULL,
+      source_ref TEXT,
+      post_url TEXT NOT NULL,
+      post_title TEXT,
+      dedupe_key TEXT NOT NULL UNIQUE,
+      comment_text TEXT,
+      status TEXT DEFAULT 'pending',
+      error_message TEXT,
+      posted_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      meta JSONB DEFAULT '{}'::JSONB
+    )
+  `);
+  await pgPool.run('blog', `CREATE INDEX IF NOT EXISTS idx_neighbor_comments_status ON ${NEIGHBOR_TABLE}(status, created_at DESC)`);
+  await pgPool.run('blog', `CREATE INDEX IF NOT EXISTS idx_neighbor_comments_blog ON ${NEIGHBOR_TABLE}(target_blog_id, created_at DESC)`);
+}
+
+async function recordCommentAction(actionType, payload = {}) {
+  await pgPool.run('blog', `
+    INSERT INTO ${ACTION_TABLE} (action_type, target_blog, target_post_url, comment_text, success, meta)
+    VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+  `, [
+    actionType,
+    payload.targetBlog || null,
+    payload.targetPostUrl || null,
+    payload.commentText || null,
+    payload.success !== false,
+    JSON.stringify(payload.meta || {}),
+  ]);
+}
+
+async function getTodayReplyCount() {
+  const row = await pgPool.get('blog', `
+    SELECT COUNT(*) AS count
+    FROM ${TABLE}
+    WHERE status = 'replied'
+      AND timezone('Asia/Seoul', reply_at)::date = timezone('Asia/Seoul', now())::date
+  `);
+  return Number(row?.count || 0);
+}
+
+async function getTodayNeighborCommentCount() {
+  const row = await pgPool.get('blog', `
+    SELECT COUNT(*) AS count
+    FROM ${NEIGHBOR_TABLE}
+    WHERE status = 'posted'
+      AND timezone('Asia/Seoul', posted_at)::date = timezone('Asia/Seoul', now())::date
+  `);
+  return Number(row?.count || 0);
+}
+
+async function getTodayActionCount(actionType) {
+  const row = await pgPool.get('blog', `
+    SELECT COUNT(*) AS count
+    FROM ${ACTION_TABLE}
+    WHERE action_type = $1
+      AND success = true
+      AND timezone('Asia/Seoul', executed_at)::date = timezone('Asia/Seoul', now())::date
+  `, [actionType]);
+  return Number(row?.count || 0);
+}
+
+async function getPendingComments(limit = 20) {
+  return pgPool.query('blog', `
+    SELECT *
+    FROM ${TABLE}
+    WHERE status = 'pending'
+    ORDER BY detected_at ASC
+    LIMIT $1
+  `, [limit]);
+}
+
+async function updateCommentStatus(id, status, options = {}) {
+  const fields = [
+    'status = $2',
+    'reply_text = COALESCE($3, reply_text)',
+    'error_message = $4',
+    'reply_at = CASE WHEN $2 = \'replied\' THEN NOW() ELSE reply_at END',
+    'meta = COALESCE(meta, \'{}\'::jsonb) || $5::jsonb',
+  ];
+  await pgPool.run('blog', `
+    UPDATE ${TABLE}
+    SET ${fields.join(', ')}
+    WHERE id = $1
+  `, [
+    id,
+    status,
+    options.replyText || null,
+    options.errorMessage || null,
+    JSON.stringify(options.meta || {}),
+  ]);
+}
+
+function buildNeighborDedupeKey(targetBlogId, postUrl) {
+  return crypto.createHash('sha1').update([String(targetBlogId || '').trim(), String(postUrl || '').trim()].join('|')).digest('hex');
+}
+
+async function saveNeighborCandidate(candidate) {
+  const dedupeKey = buildNeighborDedupeKey(candidate.targetBlogId, candidate.postUrl);
+  const result = await pgPool.run('blog', `
+    INSERT INTO ${NEIGHBOR_TABLE} (
+      target_blog_id, target_blog_name, source_type, source_ref,
+      post_url, post_title, dedupe_key, meta
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+    ON CONFLICT (dedupe_key) DO NOTHING
+    RETURNING id
+  `, [
+    candidate.targetBlogId,
+    candidate.targetBlogName || null,
+    candidate.sourceType,
+    candidate.sourceRef || null,
+    candidate.postUrl,
+    candidate.postTitle || null,
+    dedupeKey,
+    JSON.stringify(candidate.meta || {}),
+  ]);
+
+  return {
+    inserted: result.rowCount > 0,
+    id: result.rows?.[0]?.id || null,
+    dedupeKey,
+  };
+}
+
+async function getPendingNeighborComments(limit = 20) {
+  return pgPool.query('blog', `
+    SELECT *
+    FROM ${NEIGHBOR_TABLE}
+    WHERE status = 'pending'
+    ORDER BY created_at ASC
+    LIMIT $1
+  `, [limit]);
+}
+
+async function updateNeighborCommentStatus(id, status, options = {}) {
+  await pgPool.run('blog', `
+    UPDATE ${NEIGHBOR_TABLE}
+    SET status = $2,
+        comment_text = COALESCE($3, comment_text),
+        error_message = $4,
+        posted_at = CASE WHEN $2 = 'posted' THEN NOW() ELSE posted_at END,
+        meta = COALESCE(meta, '{}'::jsonb) || $5::jsonb
+    WHERE id = $1
+  `, [
+    id,
+    status,
+    options.commentText || null,
+    options.errorMessage || null,
+    JSON.stringify(options.meta || {}),
+  ]);
+}
+
+async function getRecentlyTargetedPostUrls(recentWindowDays = 14) {
+  const [neighborRows, actionRows] = await Promise.all([
+    pgPool.query('blog', `
+    SELECT post_url
+    FROM ${NEIGHBOR_TABLE}
+    WHERE created_at >= NOW() - ($1::text || ' days')::interval
+  `, [recentWindowDays]),
+    pgPool.query('blog', `
+    SELECT target_post_url AS post_url
+    FROM ${ACTION_TABLE}
+    WHERE success = true
+      AND action_type IN ('neighbor_comment', 'neighbor_sympathy')
+      AND executed_at >= NOW() - ($1::text || ' days')::interval
+  `, [recentWindowDays]),
+  ]);
+  return new Set(
+    [...neighborRows, ...actionRows]
+      .map((row) => String(row.post_url || '').trim())
+      .filter(Boolean),
+  );
+}
+
+async function getRecentNeighborBlogIds(recentWindowDays = 14) {
+  const [neighborRows, actionRows] = await Promise.all([
+    pgPool.query('blog', `
+    SELECT DISTINCT target_blog_id
+    FROM ${NEIGHBOR_TABLE}
+    WHERE created_at >= NOW() - ($1::text || ' days')::interval
+  `, [recentWindowDays]),
+    pgPool.query('blog', `
+    SELECT DISTINCT target_blog AS target_blog_id
+    FROM ${ACTION_TABLE}
+    WHERE success = true
+      AND action_type IN ('neighbor_comment', 'neighbor_sympathy')
+      AND executed_at >= NOW() - ($1::text || ' days')::interval
+  `, [recentWindowDays]),
+  ]);
+  return new Set(
+    [...neighborRows, ...actionRows]
+      .map((row) => String(row.target_blog_id || '').trim())
+      .filter(Boolean),
+  );
+}
+
+async function saveDetectedComment(comment) {
+  const dedupeKey = buildDedupeKey(comment.postUrl, comment.commenterId, comment.commentText);
+  const result = await pgPool.run('blog', `
+    INSERT INTO ${TABLE} (
+      post_url, post_title, commenter_id, commenter_name,
+      comment_text, comment_ref, dedupe_key, meta
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+    ON CONFLICT (dedupe_key) DO NOTHING
+    RETURNING id
+  `, [
+    comment.postUrl,
+    comment.postTitle || null,
+    comment.commenterId || null,
+    comment.commenterName || null,
+    comment.commentText,
+    comment.commentRef || null,
+    dedupeKey,
+    JSON.stringify(comment.meta || {}),
+  ]);
+
+  if (result.rowCount > 0) {
+    return { inserted: true, id: result.rows[0].id, dedupeKey };
+  }
+  return { inserted: false, dedupeKey };
+}
+
+async function fetchManagedBrowserWsEndpoint(config) {
+  const wsFileEndpoint = readNaverMonitorWsEndpoint();
+  if (wsFileEndpoint) return wsFileEndpoint;
+  if (config.browserWsEndpoint) return config.browserWsEndpoint;
+  if (!config.browserHttpUrl) return '';
+
+  const baseUrl = config.browserHttpUrl.replace(/\/+$/, '');
+  const headers = {};
+  const token = config.browserToken;
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  try {
+    const statusRes = await fetch(`${baseUrl}/`, {
+      headers,
+      signal: AbortSignal.timeout(BROWSER_CONNECT_TIMEOUT_MS),
+    });
+    if (statusRes.status === 401 || statusRes.status === 403) {
+      const error = new Error('managed_browser_auth_failed');
+      error.code = 'managed_browser_auth_failed';
+      throw error;
+    }
+    if (statusRes.ok) {
+      const status = await statusRes.json();
+      const cdpUrl = String(status?.cdpUrl || '').trim();
+      const ready = status?.running === true && status?.cdpReady === true && !!cdpUrl;
+      if (!ready) {
+        const reason = status?.running === false
+          ? 'managed_browser_not_running'
+          : 'managed_browser_not_ready';
+        const error = new Error(reason);
+        error.code = reason;
+        throw error;
+      }
+
+      const cdpVersionRes = await fetch(`${cdpUrl.replace(/\/+$/, '')}/json/version`, {
+        signal: AbortSignal.timeout(BROWSER_CONNECT_TIMEOUT_MS),
+      });
+      if (cdpVersionRes.status === 401 || cdpVersionRes.status === 403) {
+        const error = new Error('managed_browser_auth_failed');
+        error.code = 'managed_browser_auth_failed';
+        throw error;
+      }
+      if (cdpVersionRes.ok) {
+        const cdpVersion = await cdpVersionRes.json();
+        if (cdpVersion?.webSocketDebuggerUrl) {
+          return cdpVersion.webSocketDebuggerUrl;
+        }
+      }
+    }
+  } catch (error) {
+    if (env.IS_OPS || token) {
+      throw error;
+    }
+  }
+
+  const candidates = [
+    `${baseUrl}/json/version`,
+    token ? `${baseUrl}/json/version?token=${encodeURIComponent(token)}` : '',
+  ].filter(Boolean);
+
+  for (const target of candidates) {
+    try {
+      const res = await fetch(target, {
+        headers,
+        signal: AbortSignal.timeout(BROWSER_CONNECT_TIMEOUT_MS),
+      });
+      if (res.status === 401 || res.status === 403) {
+        const error = new Error('managed_browser_auth_failed');
+        error.code = 'managed_browser_auth_failed';
+        throw error;
+      }
+      if (!res.ok) continue;
+      const json = await res.json();
+      if (json?.webSocketDebuggerUrl) {
+        return json.webSocketDebuggerUrl;
+      }
+    } catch (error) {
+      if (error?.code === 'managed_browser_auth_failed' || error?.message === 'managed_browser_auth_failed') {
+        throw error;
+      }
+      // try next
+    }
+  }
+
+  return '';
+}
+
+async function connectBrowser(testMode = false) {
+  const config = getCommenterConfig();
+  const wsFileEndpoint = readNaverMonitorWsEndpoint();
+  if (wsFileEndpoint) {
+    try {
+      const browser = await puppeteer.connect({
+        browserWSEndpoint: wsFileEndpoint,
+        protocolTimeout: testMode ? 15000 : 60000,
+      });
+      return { browser, managed: true, mode: 'connect-ws-file' };
+    } catch (error) {
+      console.warn(`[commenter] naver-monitor ws 연결 실패 — managed browser 상태 조회로 폴백: ${error.message}`);
+    }
+  }
+
+  const wsEndpoint = await fetchManagedBrowserWsEndpoint(config);
+  if (wsEndpoint) {
+    const browser = await puppeteer.connect({
+      browserWSEndpoint: wsEndpoint,
+      protocolTimeout: testMode ? 15000 : 60000,
+    });
+    return { browser, managed: true, mode: 'connect' };
+  }
+
+  if (env.IS_OPS && config.browserHttpUrl) {
+    const error = new Error('managed_browser_required');
+    error.code = 'managed_browser_required';
+    throw error;
+  }
+
+  const browser = await puppeteer.launch({
+    headless: false,
+    pipe: false,
+    defaultViewport: null,
+    protocolTimeout: testMode ? 15000 : 60000,
+    userDataDir: config.profileDir,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-gpu',
+      '--disable-dev-shm-usage',
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-renderer-backgrounding',
+      '--window-position=0,25',
+      '--window-size=1600,1100',
+    ],
+  });
+  return { browser, managed: false, mode: 'launch' };
+}
+
+async function disconnectBrowser(handle) {
+  if (!handle?.browser) return;
+  if (handle.managed) {
+    await handle.browser.disconnect();
+    return;
+  }
+  await handle.browser.close();
+}
+
+async function withBrowserPage(testMode, fn) {
+  const handle = await connectBrowser(testMode);
+  const page = await handle.browser.newPage();
+  page.setDefaultNavigationTimeout(testMode ? 15000 : NAVER_NAVIGATION_TIMEOUT_MS);
+  page.setDefaultTimeout(testMode ? 10000 : 30000);
+  try {
+    return await fn(page, handle);
+  } finally {
+    try {
+      await page.close();
+    } catch {
+      // ignore
+    }
+    await disconnectBrowser(handle);
+  }
+}
+
+async function goto(page, url) {
+  try {
+    await page.goto(url, {
+      waitUntil: 'domcontentloaded',
+      timeout: NAVER_NAVIGATION_TIMEOUT_MS,
+    });
+    return;
+  } catch (error) {
+    const message = String(error?.message || '');
+    const isTimeout = /Navigation timeout/i.test(message);
+    if (!isTimeout) throw error;
+
+    const currentUrl = String(page.url() || '');
+    const sameTarget =
+      currentUrl === url ||
+      currentUrl.includes('blog.naver.com') ||
+      currentUrl.includes('PostView.naver') ||
+      currentUrl.includes('m.blog.naver.com');
+
+    if (sameTarget) {
+      await page.waitForFunction(() => document.readyState !== 'loading', { timeout: 5000 }).catch(() => {});
+      return;
+    }
+
+    await page.goto(url, {
+      waitUntil: 'commit',
+      timeout: Math.min(15000, NAVER_NAVIGATION_TIMEOUT_MS),
+    });
+  }
+}
+
+async function extractAdminComments(page, limit = 20, ownBlogId = '') {
+  const payload = {
+    maxItems: Number(limit || 20),
+    ownBlogId: String(ownBlogId || '').trim(),
+  };
+  return page.evaluate(({ maxItems, ownBlogId }) => {
+    function textOf(el) {
+      return String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
+    }
+
+    function pickText(root, selectors) {
+      for (const selector of selectors) {
+        const node = root.querySelector(selector);
+        const text = textOf(node);
+        if (text) return text;
+      }
+      return '';
+    }
+
+    function visible(el) {
+      if (!el) return false;
+      const style = window.getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+    }
+
+    const selectors = ['tr', 'li[class*="comment"]', 'div[class*="comment"]', 'li'];
+    const roots = [];
+    for (const selector of selectors) {
+      for (const node of document.querySelectorAll(selector)) {
+        if (!visible(node)) continue;
+        const text = textOf(node);
+        if (text.length < 10 || text.length > 4000) continue;
+        const anchor = node.querySelector('a[href*="blog.naver.com"], a[href*="m.blog.naver.com"], a[href*="PostView.naver"]');
+        if (!anchor) continue;
+        roots.push(node);
+      }
+    }
+
+    const deduped = Array.from(new Set(roots)).slice(0, maxItems * 5);
+    const results = [];
+
+    for (const root of deduped) {
+      const rootText = textOf(root);
+      const anchorCandidates = Array.from(root.querySelectorAll('a[href*="blog.naver.com"], a[href*="m.blog.naver.com"], a[href*="PostView.naver"]'));
+      const postAnchor = anchorCandidates.sort((a, b) => textOf(b).length - textOf(a).length)[0];
+      const postUrl = postAnchor?.href || '';
+      const postTitle = textOf(postAnchor);
+
+      const commenterName = pickText(root, ['._writerNickname', '.nickname', '.nick', '.name', '.writer', 'strong']);
+      const commenterId = pickText(root, ['._writerId', '.blogid']);
+      const commentText = pickText(root, ['._replyRealContents', '._replyContents', '.comment_text', '.text', '.desc', 'p', 'span']);
+      const commentRef = root.getAttribute('data-comment-id')
+        || root.getAttribute('data-comment-no')
+        || root.getAttribute('data-log-no')
+        || root.querySelector('input[name="commentKey"]')?.value
+        || root.id
+        || '';
+
+      if (!postUrl || !commentText) continue;
+      if (commenterId && ownBlogId && commenterId === ownBlogId) continue;
+      if (/^(작성자|내용)$/.test(commenterName) || /^(작성자 내용)$/.test(rootText)) continue;
+      if (postTitle && !/\[글\]/.test(postTitle) && !/blog\.naver\.com|m\.blog\.naver\.com|PostView\.naver/.test(postUrl)) continue;
+
+      results.push({
+        postUrl,
+        postTitle,
+        commenterId: root.getAttribute('data-user-id') || root.getAttribute('data-member-id') || commenterId || commenterName || '',
+        commenterName,
+        commentText,
+        commentRef,
+        meta: {
+          source: 'admin-comment',
+          snippet: rootText.slice(0, 240),
+          currentUrl: location.href,
+        },
+      });
+    }
+
+    return results.slice(0, maxItems);
+  }, payload);
+}
+
+async function resolveAdminCommentFrame(page, blogId) {
+  const directUrl = `https://admin.blog.naver.com/${blogId}/userfilter/commentlist`;
+  const fallbackUrl = `https://admin.blog.naver.com/AdminMain.naver?blogId=${blogId}`;
+
+  await goto(page, directUrl);
+  await page.waitForSelector('body');
+
+  let frame = page.frames().find((item) => item.name() === 'papermain' || /AdminNaverCommentManageView/.test(item.url()));
+  if (frame) {
+    await frame.waitForSelector('body', { timeout: 10000 }).catch(() => {});
+    return frame;
+  }
+
+  await goto(page, fallbackUrl);
+  await page.waitForSelector('body');
+  await page.evaluate(() => {
+    const link = document.querySelector('a[href*="/userfilter/commentlist"]');
+    if (link) {
+      link.click();
+      return true;
+    }
+    return false;
+  }).catch(() => false);
+
+  await humanDelay(1, 2, true);
+  frame = page.frames().find((item) => item.name() === 'papermain' || /AdminNaverCommentManageView/.test(item.url()));
+  if (frame) {
+    await frame.waitForSelector('body', { timeout: 10000 }).catch(() => {});
+    return frame;
+  }
+
+  throw new Error('comment_admin_frame_not_found');
+}
+
+async function detectNewComments({ testMode = false } = {}) {
+  const blogId = await resolveBlogId();
+  if (!blogId) {
+    throw new Error('blogId를 확인할 수 없습니다. bots/blog/config.json commenter.blogId 또는 published naver_url이 필요합니다.');
+  }
+
+  const config = getCommenterConfig();
+  return withBrowserPage(testMode, async (page) => {
+    const frame = await resolveAdminCommentFrame(page, blogId);
+    await humanDelay(2, 4, testMode);
+    const extracted = await extractAdminComments(frame, Math.min(config.maxDetectPerCycle, testMode ? 3 : config.maxDetectPerCycle), blogId);
+    const inserted = [];
+    for (const comment of extracted) {
+      const saved = await saveDetectedComment(comment);
+      if (saved.inserted) {
+        inserted.push({ ...comment, id: saved.id });
+      }
+    }
+    return inserted;
+  });
+}
+
+async function getPostSummary(postUrl, { testMode = false } = {}) {
+  return withBrowserPage(testMode, async (page) => {
+    await goto(page, postUrl);
+    const contentFrame = resolvePostContentFrame(page);
+    await contentFrame.waitForSelector('body', { timeout: testMode ? 5000 : 15000 }).catch(() => {});
+    await humanDelay(1, 2, testMode);
+    const result = await contentFrame.evaluate((maxLen) => {
+      function metaContent(selector) {
+        const node = document.querySelector(selector);
+        return String(node?.getAttribute?.('content') || '').replace(/\s+/g, ' ').trim();
+      }
+
+      function textOf(selector) {
+        const node = document.querySelector(selector);
+        return String(node?.innerText || node?.textContent || '').replace(/\s+/g, ' ').trim();
+      }
+
+      function firstText(selectors) {
+        for (const selector of selectors) {
+          const text = textOf(selector);
+          if (text) return text;
+        }
+        return '';
+      }
+
+      const title =
+        metaContent('meta[property="og:title"]')
+        || firstText(['.se-title-text', '.pcol1 .htitle', '.tit_view', 'h3', 'h1', 'title']);
+      const body = [
+        '.se-main-container',
+        '.se-component-content',
+        '#post-view',
+        '#postViewArea',
+        '.post_ct',
+        '.post-view',
+        '.contents_style',
+        '.view',
+        'body',
+      ].map((selector) => textOf(selector)).find((text) => text && text.length > 120) || firstText(['body']) || '';
+
+      return {
+        title,
+        summary: body.length > maxLen ? `${body.slice(0, maxLen - 1)}…` : body,
+      };
+    }, DEFAULT_SUMMARY_LEN);
+    return {
+      title: squeezeText(result?.title, 120),
+      summary: squeezeText(result?.summary, DEFAULT_SUMMARY_LEN),
+    };
+  });
+}
+
+async function generateReply(postTitle, postSummary, commentText) {
+  const selectorOverrides = getBlogLLMSelectorOverrides();
+  const systemPrompt = [
+    '너는 IT 블로그 운영자다.',
+    '네이버 블로그 댓글에 사람이 직접 쓴 것처럼 자연스럽고 따뜻한 한국어 답글을 JSON으로만 작성한다.',
+    '답글은 반드시 2~4문장으로 쓴다.',
+    '첫 문장에서는 댓글의 핵심 포인트를 정확히 짚어 공감하거나 반응한다.',
+    '둘째 문장 이후에는 글 내용이나 운영 맥락을 반영한 구체적인 한마디를 덧붙인다.',
+    '마지막 문장은 너무 상투적인 감사 인사 대신 자연스러운 마무리로 끝낸다.',
+  ].join(' ');
+  const userPrompt = [
+    `[글 제목] ${postTitle || ''}`,
+    `[글 요약] ${postSummary || ''}`,
+    `[댓글] ${commentText || ''}`,
+    '',
+    '규칙:',
+    '- 70~160자',
+    '- 반드시 2~4문장',
+    '- 댓글의 구체 표현이나 핵심 의도를 반영',
+    '- 블로그 운영자 1인칭 시점 유지',
+    '- 기계적인 감사 인사만 반복 금지',
+    '- "좋은 하루 되세요", "방문 감사합니다", "공감하고 갑니다" 같은 상투 표현 금지',
+    '- 필요하면 이모지 0~1개만 자연스럽게 사용',
+    '',
+    'JSON만 응답: {"reply":"답글 내용","tone":"질문형|공감형|정보형"}',
+  ].join('\n');
+  const chain = Array.isArray(selectorOverrides['blog.commenter.reply']?.chain)
+    ? selectorOverrides['blog.commenter.reply'].chain
+    : buildSingleChain('claude-code/sonnet', 600, 0.75);
+  let result = await callWithFallback({
+    chain,
+    systemPrompt,
+    userPrompt,
+    logMeta: { team: 'blog', purpose: 'commenter', bot: 'commenter', requestType: 'reply' },
+  });
+  let reply = normalizeText(result?.text || '');
+  let tone = '';
+  let parsed = null;
+  try {
+    const match = reply.match(/\{[\s\S]*\}/);
+    parsed = match ? JSON.parse(match[0]) : JSON.parse(reply);
+  } catch {
+    parsed = null;
+  }
+  if (parsed) {
+    reply = normalizeText(parsed.reply || reply);
+    tone = normalizeText(parsed.tone || '');
+  }
+
+  if (!reply || reply.length < 70) {
+    result = await callWithFallback({
+      chain,
+      systemPrompt,
+      userPrompt: [
+        userPrompt,
+        '',
+        '추가 지시:',
+        '이전 답글이 너무 짧았습니다.',
+        '이번에는 반드시 2~4문장으로, 더 구체적으로 써주세요.',
+        '댓글 작성자가 언급한 포인트를 한 번 짚고, 글 내용과 연결되는 한 문장을 추가하세요.',
+        '반드시 70자 이상 160자 이하로 맞춰주세요.',
+        'JSON만 응답하세요.',
+      ].join('\n'),
+      logMeta: { team: 'blog', purpose: 'commenter', bot: 'commenter', requestType: 'reply_retry' },
+    });
+    reply = normalizeText(result?.text || reply);
+    try {
+      const match = reply.match(/\{[\s\S]*\}/);
+      parsed = match ? JSON.parse(match[0]) : JSON.parse(reply);
+    } catch {
+      parsed = null;
+    }
+    if (parsed) {
+      reply = normalizeText(parsed.reply || reply);
+      tone = normalizeText(parsed.tone || tone);
+    }
+  }
+
+  return {
+    reply,
+    tone,
+  };
+}
+
+function validateReply(reply, commentText, config = getCommenterConfig()) {
+  const normalizedReply = normalizeText(reply);
+  const normalizedComment = normalizeText(commentText);
+
+  if (!normalizedReply || normalizedReply.length < config.minReplyLen) {
+    return { ok: false, reason: 'too_short' };
+  }
+  if (normalizedReply.length > config.maxReplyLen) {
+    return { ok: false, reason: 'too_long' };
+  }
+  if (normalizedComment && normalizedReply.includes(normalizedComment.slice(0, Math.min(20, normalizedComment.length)))) {
+    return { ok: false, reason: 'copied_comment' };
+  }
+
+  const roboticPatterns = ['감사합니다 방문해', '좋은 하루 되세요', '공감하고 갑니다'];
+  for (const pattern of roboticPatterns) {
+    if (normalizedReply.includes(pattern)) {
+      return { ok: false, reason: `robotic:${pattern}` };
+    }
+  }
+
+  return { ok: true };
+}
+
+function normalizePostUrl(rawUrl) {
+  const parsed = parseNaverBlogUrl(rawUrl);
+  if (parsed?.ok && parsed.blogId && parsed.logNo) {
+    return {
+      ok: true,
+      blogId: parsed.blogId,
+      logNo: parsed.logNo,
+      postUrl: `https://blog.naver.com/${parsed.blogId}/${parsed.logNo}`,
+    };
+  }
+
+  const match = String(rawUrl || '').match(/blog\.naver\.com\/([^/?#]+)\/(\d{8,})/i);
+  if (match) {
+    return {
+      ok: true,
+      blogId: match[1],
+      logNo: match[2],
+      postUrl: `https://blog.naver.com/${match[1]}/${match[2]}`,
+    };
+  }
+
+  return { ok: false, blogId: '', logNo: '', postUrl: '' };
+}
+
+async function getCommenterNetworkCandidates(limit = 10, ownBlogId = '') {
+  return pgPool.query('blog', `
+    SELECT DISTINCT ON (commenter_id)
+      commenter_id,
+      commenter_name,
+      MAX(detected_at) OVER (PARTITION BY commenter_id) AS last_seen_at
+    FROM ${TABLE}
+    WHERE commenter_id IS NOT NULL
+      AND commenter_id <> ''
+      AND commenter_id <> $1
+    ORDER BY commenter_id, detected_at DESC
+    LIMIT $2
+  `, [ownBlogId || '', limit]);
+}
+
+async function extractBuddyFeedPosts(page, ownBlogId, limit = 10) {
+  const feedUrl = `https://section.blog.naver.com/connect/ViewMoreBuddyPosts.naver?blogId=${encodeURIComponent(ownBlogId)}&widgetSeq=1`;
+  await goto(page, feedUrl);
+  await page.waitForSelector('body', { timeout: 15000 }).catch(() => {});
+  await humanDelay(1, 2, true);
+
+  const extracted = await page.evaluate((maxItems) => {
+    function textOf(el) {
+      return String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
+    }
+    function uniquePush(store, item) {
+      if (!item?.href) return;
+      if (store.seen.has(item.href)) return;
+      store.seen.add(item.href);
+      store.items.push(item);
+    }
+
+    const store = { seen: new Set(), items: [] };
+    const cards = Array.from(document.querySelectorAll('li.add_img, li[class*="list"], ul li')).slice(0, maxItems * 8);
+
+    for (const card of cards) {
+      const postAnchor = Array.from(card.querySelectorAll('a[href*="blog.naver.com"], a[href*="PostView.naver"], a[href*="m.blog.naver.com"]')).find((anchor) => {
+        const href = String(anchor.href || '');
+        return /blog\.naver\.com\/[^/?#]+\/\d{8,}|logNo=\d{8,}/i.test(href);
+      });
+      if (!postAnchor) continue;
+
+      const blogAnchor = Array.from(card.querySelectorAll('a[href*="blog.naver.com"]')).find((anchor) => {
+        const href = String(anchor.href || '');
+        return /blog\.naver\.com\/[^/?#]+\/?$/i.test(href);
+      });
+
+      const title =
+        textOf(postAnchor)
+        || textOf(card.querySelector('.title'))
+        || textOf(card.querySelector('.tit'))
+        || textOf(card.querySelector('.template_briefContents')).slice(0, 80);
+
+      const blogName =
+        textOf(blogAnchor)
+        || textOf(card.querySelector('.list_data a'))
+        || textOf(card.querySelector('.name'))
+        || '';
+
+      const snippet =
+        textOf(card.querySelector('.list_content'))
+        || textOf(card.querySelector('.template_briefContents'))
+        || textOf(card).slice(0, 240);
+
+      uniquePush(store, {
+        href: String(postAnchor.href || '').trim(),
+        title,
+        blogName,
+        snippet,
+      });
+
+      if (store.items.length >= maxItems * 4) break;
+    }
+
+    return store.items;
+  }, Math.max(1, limit));
+
+  return extracted
+    .map((item) => {
+      const normalized = normalizePostUrl(item.href);
+      return {
+        ok: normalized.ok,
+        targetBlogId: normalized.blogId,
+        postUrl: normalized.postUrl,
+        postTitle: squeezeText(item.title, 140),
+        targetBlogName: squeezeText(item.blogName, 80),
+        meta: { snippet: item.snippet || '', rawHref: item.href },
+      };
+    })
+    .filter((item) => item.ok && item.targetBlogId && item.postUrl && item.targetBlogId !== ownBlogId)
+    .slice(0, limit);
+}
+
+async function resolveLatestPostForBlog(page, blogId, testMode = false) {
+  await goto(page, `https://blog.naver.com/${blogId}`);
+  const frame = resolvePostContentFrame(page);
+  await frame.waitForSelector('a', { timeout: testMode ? 5000 : 15000 }).catch(() => {});
+  await humanDelay(1, 2, true);
+
+  const candidate = await frame.evaluate((targetBlogId) => {
+    function textOf(el) {
+      return String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
+    }
+
+    const anchors = Array.from(document.querySelectorAll('a[href*="blog.naver.com"], a[href*="PostView.naver"], a[href*="m.blog.naver.com"]'));
+    for (const anchor of anchors) {
+      const href = String(anchor.href || '').trim();
+      const text = textOf(anchor);
+      if (!href) continue;
+      if (!new RegExp(`blogId=${targetBlogId}|blog\\.naver\\.com/${targetBlogId}/`, 'i').test(href)) continue;
+      if (!/\d{8,}/.test(href)) continue;
+      if (!text || text.length < 4) continue;
+      return { href, title: text };
+    }
+    return null;
+  }, blogId);
+
+  if (!candidate?.href) return null;
+  const normalized = normalizePostUrl(candidate.href);
+  if (!normalized.ok) return null;
+  return {
+    targetBlogId: normalized.blogId,
+    postUrl: normalized.postUrl,
+    postTitle: squeezeText(candidate.title, 140),
+  };
+}
+
+async function collectNeighborCandidates({ testMode = false, persist = true } = {}) {
+  const ownBlogId = await resolveBlogId();
+  if (!ownBlogId) {
+    throw new Error('neighbor_commenter_blog_id_required');
+  }
+
+  const config = getNeighborCommenterConfig();
+  const recentUrls = await getRecentlyTargetedPostUrls(config.recentWindowDays);
+  const recentBlogIds = await getRecentNeighborBlogIds(config.recentWindowDays);
+  const collected = [];
+  const seenUrls = new Set(recentUrls);
+
+  const commenterNetwork = await getCommenterNetworkCandidates(config.maxCollectPerCycle, ownBlogId);
+
+  await withBrowserPage(testMode, async (page) => {
+    const buddyFeed = await extractBuddyFeedPosts(page, ownBlogId, config.maxCollectPerCycle);
+    for (const item of buddyFeed) {
+      if (seenUrls.has(item.postUrl) || recentBlogIds.has(item.targetBlogId)) continue;
+      collected.push({
+        targetBlogId: item.targetBlogId,
+        targetBlogName: item.targetBlogName,
+        sourceType: 'buddy_feed',
+        sourceRef: 'ViewMoreBuddyPosts',
+        postUrl: item.postUrl,
+        postTitle: item.postTitle,
+        meta: item.meta,
+      });
+      seenUrls.add(item.postUrl);
+      if (collected.length >= config.maxCollectPerCycle) return;
+    }
+
+    for (const row of commenterNetwork) {
+      const targetBlogId = String(row.commenter_id || '').trim();
+      if (!targetBlogId || recentBlogIds.has(targetBlogId)) continue;
+      const latest = await resolveLatestPostForBlog(page, targetBlogId, testMode).catch(() => null);
+      if (!latest?.postUrl || seenUrls.has(latest.postUrl)) continue;
+      collected.push({
+        targetBlogId,
+        targetBlogName: squeezeText(row.commenter_name || '', 80),
+        sourceType: 'commenter_network',
+        sourceRef: 'blog.comments',
+        postUrl: latest.postUrl,
+        postTitle: latest.postTitle,
+        meta: { lastSeenAt: row.last_seen_at || null },
+      });
+      seenUrls.add(latest.postUrl);
+      if (collected.length >= config.maxCollectPerCycle) return;
+    }
+  });
+
+  if (!persist) {
+    return collected;
+  }
+
+  const inserted = [];
+  for (const candidate of collected) {
+    const saved = await saveNeighborCandidate(candidate);
+    if (saved.inserted) inserted.push({ ...candidate, id: saved.id });
+  }
+  return inserted;
+}
+
+async function generateNeighborComment(postTitle, postSummary, candidate) {
+  const selectorOverrides = getBlogLLMSelectorOverrides();
+  const chain = Array.isArray(selectorOverrides['blog.commenter.neighbor']?.chain)
+    ? selectorOverrides['blog.commenter.neighbor'].chain
+    : buildSingleChain('claude-code/sonnet', 700, 0.8);
+  const isNonNeighborVisit = String(candidate?.source_type || '') === 'commenter_network';
+
+  const systemPrompt = [
+    '너는 네이버 블로그 운영자다.',
+    '다른 블로그의 최신 글에 남길 한국어 댓글을 JSON으로만 작성한다.',
+    '친근하지만 과장하지 않고, 광고/영업처럼 보이면 안 된다.',
+    '본문의 구체 포인트를 1개 이상 언급해야 한다.',
+    '서로이웃처럼 따뜻하고 자연스러운 톤을 유지한다.',
+    '기본 원칙은 비질문형 댓글이다. 특별한 이유가 없으면 물음표를 쓰지 않는다.',
+    isNonNeighborVisit
+      ? '이웃이 아닌 블로그에 처음 방문한 상황이므로 첫 문장은 가벼운 방문 인사로 시작하되, 바로 본문 이야기로 자연스럽게 넘어간다.'
+      : '이미 이웃 새글을 보고 온 흐름처럼 자연스럽게 본문 이야기부터 시작한다.',
+  ].join(' ');
+  const userPrompt = [
+    `[대상 블로그] ${candidate.targetBlogName || candidate.targetBlogId || ''}`,
+    `[포스트 제목] ${postTitle || candidate.postTitle || ''}`,
+    `[포스트 요약] ${postSummary || ''}`,
+    `[유입 경로] ${candidate.sourceType === 'buddy_feed' ? '이웃 새글' : '우리 글 댓글 작성자'} `,
+    `[방문 성격] ${isNonNeighborVisit ? '비이웃 첫 방문' : '이웃 새글 방문'}`,
+    '',
+    '규칙:',
+    '- 2~4문장',
+    '- 55~180자',
+    '- 글 내용의 구체 포인트를 짚기',
+    '- "소통해요", "자주 들를게요", "잘 보고 갑니다" 같은 상투 표현 금지',
+    '- 질문형 문장 금지',
+    '- 홍보/링크 유도/구매 유도 금지',
+    isNonNeighborVisit
+      ? '- 첫 문장은 "처음 들렀는데" 또는 "방문해보니"처럼 가벼운 방문 인사를 담되, 과하게 친한 척하지 않기'
+      : '- 첫 문장부터 본문 포인트로 바로 들어가기',
+    '',
+    'JSON만 응답: {"comment":"댓글 내용","tone":"친근형|공감형|관찰형"}',
+  ].join('\n');
+
+  const result = await callWithFallback({
+    chain,
+    systemPrompt,
+    userPrompt,
+    logMeta: { team: 'blog', purpose: 'neighbor-commenter', bot: 'neighbor-commenter', requestType: 'comment' },
+  });
+
+  let text = normalizeText(result?.text || '');
+  let parsed = null;
+  try {
+    const match = text.match(/\{[\s\S]*\}/);
+    parsed = match ? JSON.parse(match[0]) : JSON.parse(text);
+  } catch {
+    parsed = null;
+  }
+
+  return {
+    comment: normalizeText(parsed?.comment || text),
+    tone: normalizeText(parsed?.tone || ''),
+  };
+}
+
+function validateNeighborComment(comment, summary, config = getNeighborCommenterConfig()) {
+  const normalized = normalizeText(comment);
+  if (!normalized || normalized.length < config.minCommentLen) {
+    return { ok: false, reason: 'too_short' };
+  }
+  if (normalized.length > config.maxCommentLen) {
+    return { ok: false, reason: 'too_long' };
+  }
+  if (/소통해요|잘 보고 갑니다|자주 들를게요|좋은 글 감사합니다/.test(normalized)) {
+    return { ok: false, reason: 'too_generic' };
+  }
+  if (/[?？]|궁금하|알고 싶|혹시/.test(normalized)) {
+    return { ok: false, reason: 'question_style' };
+  }
+  const summaryTokens = String(summary || '')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 2)
+    .slice(0, 12);
+  if (summaryTokens.length > 0 && !summaryTokens.some((token) => normalized.includes(token))) {
+    return { ok: false, reason: 'missing_specific_point' };
+  }
+  return { ok: true };
+}
+
+function validateNeighborCommentWithCandidate(comment, summary, candidate, config = getNeighborCommenterConfig()) {
+  const base = validateNeighborComment(comment, summary, config);
+  if (!base.ok) return base;
+
+  const normalized = normalizeText(comment);
+  const isNonNeighborVisit = String(candidate?.source_type || '') === 'commenter_network';
+  if (isNonNeighborVisit && !/처음 들렀|방문해보니|처음 방문했는데|들렀는데/.test(normalized)) {
+    return { ok: false, reason: 'missing_first_visit_greeting' };
+  }
+
+  return { ok: true };
+}
+
+async function openReplyEditor(page, comment) {
+  return page.evaluate(({ commentText, commenterName }) => {
+    function textOf(el) {
+      return String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
+    }
+    function visible(el) {
+      if (!el) return false;
+      const style = window.getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+    }
+
+    const selectors = ['li.u_cbox_comment', 'li[class*="comment"]', 'div[class*="comment"]', 'article', 'section'];
+    const candidates = [];
+    for (const selector of selectors) {
+      for (const node of document.querySelectorAll(selector)) {
+        if (!visible(node)) continue;
+        const text = textOf(node);
+        if (!text) continue;
+        let score = 0;
+        if (commentText && text.includes(commentText.slice(0, Math.min(20, commentText.length)))) score += 3;
+        if (commenterName && text.includes(commenterName)) score += 2;
+        if (score > 0) candidates.push({ node, score });
+      }
+    }
+    candidates.sort((a, b) => b.score - a.score);
+    const matchedNode = candidates[0]?.node;
+    const target = matchedNode?.closest?.('li.u_cbox_comment, li[class*="comment"]') || matchedNode;
+    if (target) {
+      document.querySelectorAll('[data-blog-target-comment],[data-blog-target-reply-button],[data-blog-target-reply-area]').forEach((node) => {
+        node.removeAttribute('data-blog-target-comment');
+        node.removeAttribute('data-blog-target-reply-button');
+        node.removeAttribute('data-blog-target-reply-area');
+      });
+      target.setAttribute('data-blog-target-comment', 'true');
+      const buttons = Array.from(target.querySelectorAll('button, a')).filter(visible);
+      const replyButton = buttons.find((btn) => {
+        const text = textOf(btn);
+        const cls = String(btn.className || '');
+        return /답글|답변/.test(text) || /btn_reply|reply/i.test(cls);
+      });
+      if (replyButton) {
+        replyButton.setAttribute('data-blog-target-reply-button', 'true');
+        const replyArea = target.parentElement?.querySelector('.u_cbox_reply_area') || target.querySelector('.u_cbox_reply_area');
+        if (replyArea) {
+          replyArea.setAttribute('data-blog-target-reply-area', 'true');
+        }
+        return true;
+      }
+    }
+    return false;
+  }, {
+    commentText: comment.comment_text,
+    commenterName: comment.commenter_name,
+  });
+}
+
+async function activateReplyMode(page) {
+  const replyButton = await page.$('[data-blog-target-reply-button="true"]');
+  if (!replyButton) return false;
+
+  await replyButton.evaluate((node) => node.scrollIntoView({ block: 'center', behavior: 'instant' })).catch(() => {});
+  await replyButton.click().catch(() => {});
+  await replyButton.evaluate((node) => {
+    const rect = node.getBoundingClientRect();
+    const eventInit = {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      button: 0,
+      buttons: 1,
+      clientX: rect.left + rect.width / 2,
+      clientY: rect.top + rect.height / 2,
+    };
+    node.dispatchEvent(new MouseEvent('pointerdown', eventInit));
+    node.dispatchEvent(new MouseEvent('mousedown', eventInit));
+    node.dispatchEvent(new MouseEvent('pointerup', eventInit));
+    node.dispatchEvent(new MouseEvent('mouseup', eventInit));
+    node.dispatchEvent(new MouseEvent('click', eventInit));
+  }).catch(() => {});
+
+  return page.waitForFunction(() => {
+    function visible(el) {
+      if (!el) return false;
+      const style = window.getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+    }
+
+    const replyArea = document.querySelector('[data-blog-target-reply-area="true"]');
+    if (visible(replyArea)) {
+      const replyEditors = Array.from(replyArea.querySelectorAll('textarea, div[contenteditable="true"], div[role="textbox"]'));
+      if (replyEditors.some(visible)) return true;
+    }
+    const stateOnButton = document.querySelector('[data-blog-target-reply-button="true"].u_cbox_btn_reply_on');
+    if (visible(stateOnButton)) {
+      const scopedReplyArea = document.querySelector('[data-blog-target-comment="true"]')?.parentElement?.querySelector('.u_cbox_reply_area');
+      return visible(scopedReplyArea);
+    }
+    return false;
+  }, { timeout: 8000 }).then(() => true).catch(() => false);
+}
+
+async function openCommentPanel(page, logNo = '', testMode = false) {
+  const directSelector = [logNo ? `#Comi${logNo}` : '', '#btn_comment_2']
+    .filter(Boolean)
+    .join(', ');
+
+  if (directSelector) {
+    const handle = await page.$(directSelector);
+    if (handle) {
+      await handle.evaluate((node) => node.scrollIntoView({ block: 'center', behavior: 'instant' })).catch(() => {});
+      await handle.evaluate((node) => {
+        node.click();
+        return true;
+      }).catch(() => false);
+      return true;
+    }
+  }
+
+  return page.evaluate(({ currentLogNo }) => {
+    function textOf(el) {
+      return String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
+    }
+    function visible(el) {
+      if (!el) return false;
+      const style = window.getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+    }
+    const commentRoot = document.querySelector('[id^="naverComment_"][id$="_ct"], [id^="naverComment_"].u_cbox, .u_cbox_wrap');
+    if (commentRoot) {
+      commentRoot.scrollIntoView({ block: 'center', behavior: 'instant' });
+      return true;
+    }
+
+    const directTargets = [
+      currentLogNo ? document.querySelector(`#Comi${currentLogNo}`) : null,
+      document.querySelector('#btn_comment_2'),
+    ].filter(Boolean);
+    for (const target of directTargets) {
+      if (visible(target)) {
+        target.scrollIntoView({ block: 'center', behavior: 'instant' });
+        target.click();
+        return true;
+      }
+    }
+
+    const buttons = Array.from(document.querySelectorAll('button, a')).filter(visible);
+    const toggles = buttons.filter((btn) => /댓글\s*\d+|댓글$|댓글쓰기|댓글 쓰기/i.test(textOf(btn)) || btn.id === 'btn_comment_2' || /^Comi\d+/.test(btn.id));
+    if (!toggles.length) return false;
+    toggles[0].scrollIntoView({ block: 'center', behavior: 'instant' });
+    toggles[0].click();
+    return true;
+  }, { currentLogNo: logNo });
+}
+
+async function waitForCommentPanel(page, logNo = '') {
+  const directRootSelector = [
+    logNo ? `#naverComment_201_${logNo}_ct` : '',
+    logNo ? `#naverComment_201_${logNo}` : '',
+    '.u_cbox_wrap',
+    '.u_cbox_btn_reply',
+    '.u_cbox_text_mention',
+    '[id*="write_textarea"]',
+  ].filter(Boolean).join(', ');
+
+  if (directRootSelector) {
+    await page.waitForSelector(directRootSelector, { timeout: 15000 }).catch(() => {});
+  }
+
+  await page.waitForFunction(({ currentLogNo }) => {
+    function visible(el) {
+      if (!el) return false;
+      const style = window.getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+    }
+
+    const directRoots = [
+      currentLogNo ? document.querySelector(`#naverComment_201_${currentLogNo}_ct`) : null,
+      currentLogNo ? document.querySelector(`#naverComment_201_${currentLogNo}`) : null,
+      currentLogNo ? document.querySelector(`#Comi${currentLogNo}`) : null,
+    ].filter(Boolean);
+    if (directRoots.find(visible)) {
+      return true;
+    }
+
+    return Boolean(
+      Array.from(
+        document.querySelectorAll(
+          '[id^="naverComment_"][id$="_ct"], [id^="naverComment_"].u_cbox, .u_cbox_wrap, .u_cbox_btn_reply, .u_cbox_text_mention, [id*="write_textarea"]',
+        ),
+      ).find(visible),
+    );
+  }, { timeout: 15000 }, { currentLogNo: logNo });
+}
+
+function resolvePostContentFrame(page) {
+  return page.frames().find((item) => item.name() === 'mainFrame' || /PostView\.naver/.test(item.url())) || page.mainFrame();
+}
+
+function extractLogNo(postUrl) {
+  const match = String(postUrl || '').match(/(\d{9,})/);
+  return match ? match[1] : '';
+}
+
+async function inspectReplyControls(page) {
+  return page.evaluate(() => {
+    function textOf(el) {
+      return String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
+    }
+    function visible(el) {
+      if (!el) return false;
+      const style = window.getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+    }
+
+    const replyButtons = Array.from(document.querySelectorAll('a,button')).filter(visible).filter((btn) => {
+      const text = textOf(btn);
+      const cls = String(btn.className || '');
+      return /답글|답변/.test(text) || /u_cbox_btn_reply|btn_reply|replyButton/.test(cls);
+    }).map((btn) => ({
+      text: textOf(btn).slice(0, 80),
+      className: String(btn.className || '').slice(0, 200),
+      id: btn.id || '',
+    }));
+
+    const editors = Array.from(document.querySelectorAll('textarea, div[contenteditable="true"], div[role="textbox"], div[id*="write_textarea"]'))
+      .filter(visible)
+      .map((el) => ({
+        id: el.id || '',
+        className: String(el.className || '').slice(0, 160),
+      }));
+
+    return {
+      url: location.href,
+      replyButtonCount: replyButtons.length,
+      editorCount: editors.length,
+      replyButtons: replyButtons.slice(0, 5),
+      editors: editors.slice(0, 5),
+      snippet: textOf(document.body).slice(0, 400),
+    };
+  });
+}
+
+async function saveCommentDebugSnapshot(page, comment, stage) {
+  try {
+    ensureDir(BLOG_COMMENTER_DEBUG_DIR);
+    const logNo = extractLogNo(comment?.post_url);
+    const stamp = Date.now();
+    const prefix = path.join(BLOG_COMMENTER_DEBUG_DIR, `${stamp}-${stage}-${logNo || 'unknown'}`);
+    const payload = await page.evaluate(() => {
+      function textOf(el) {
+        return String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
+      }
+      return {
+        url: location.href,
+        title: document.title,
+        bodySnippet: textOf(document.body).slice(0, 1200),
+        html: document.documentElement?.outerHTML || '',
+      };
+    }).catch(() => null);
+    if (payload) {
+      fs.writeFileSync(`${prefix}.json`, JSON.stringify(payload, null, 2), 'utf8');
+      fs.writeFileSync(`${prefix}.html`, payload.html || '', 'utf8');
+    }
+    return prefix;
+  } catch {
+    return '';
+  }
+}
+
+async function mountCommentPanel(page, logNo = '', testMode = false) {
+  const directRootSelector = [
+    logNo ? `#naverComment_201_${logNo}_ct` : '',
+    logNo ? `#naverComment_201_${logNo}` : '',
+    '.u_cbox_wrap',
+    '.u_cbox_btn_reply',
+    '.u_cbox_text_mention',
+    '[id*="write_textarea"]',
+  ].filter(Boolean).join(', ');
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    await page.evaluate(({ currentLogNo }) => {
+      window.scrollTo(0, document.body.scrollHeight);
+      const anchors = [
+        currentLogNo ? document.querySelector(`#Comi${currentLogNo}`) : null,
+        document.querySelector('#btn_comment_2'),
+        currentLogNo ? document.querySelector(`#naverComment_201_${currentLogNo}_ct`) : null,
+      ].filter(Boolean);
+      const target = anchors[0];
+      if (target) {
+        target.scrollIntoView({ block: 'center', behavior: 'instant' });
+      }
+    }, { currentLogNo: logNo }).catch(() => {});
+
+    await humanDelay(1, 2, testMode);
+    await openCommentPanel(page, logNo, testMode).catch(() => false);
+
+    const mounted = await page.waitForFunction((selector) => {
+      function visible(el) {
+        if (!el) return false;
+        const style = window.getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+      }
+
+      return Boolean(Array.from(document.querySelectorAll(selector)).find(visible));
+    }, { timeout: 4000 }, directRootSelector).then(() => true).catch(() => false);
+
+    if (mounted) {
+      return true;
+    }
+
+    await humanDelay(2, 3, testMode);
+  }
+
+  return false;
+}
+
+async function focusReplyEditor(page) {
+  await page.waitForFunction(() => {
+    const scope = document.querySelector('[data-blog-target-reply-area="true"]');
+    const roots = scope ? [scope] : [document];
+    const nodes = roots.flatMap((root) => Array.from(root.querySelectorAll('textarea, div[contenteditable="true"], div[role="textbox"]')));
+    return nodes.some((node) => {
+      const style = window.getComputedStyle(node);
+      const rect = node.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+    });
+  }, { timeout: 15000 });
+
+  return page.evaluate(() => {
+    function visible(el) {
+      if (!el) return false;
+      const style = window.getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+    }
+
+    const scope = document.querySelector('[data-blog-target-reply-area="true"]');
+    const roots = scope ? [scope] : [document];
+    const nodes = roots
+      .flatMap((root) => Array.from(root.querySelectorAll('textarea, div[contenteditable="true"], div[role="textbox"]')))
+      .filter(visible);
+    const target = nodes[nodes.length - 1];
+    if (!target) return null;
+    target.setAttribute('data-blog-commenter-editor', 'true');
+    target.focus();
+    return {
+      selector: '[data-blog-commenter-editor="true"]',
+      tagName: target.tagName.toLowerCase(),
+      contentEditable: target.getAttribute('contenteditable') === 'true',
+    };
+  });
+}
+
+async function focusCommentEditor(page, logNo = '') {
+  const directSelector = [
+    logNo ? `#naverComment_201_${logNo}__write_textarea` : '',
+    'div.u_cbox_text.u_cbox_text_mention',
+    'div[contenteditable="true"]:not([data-blog-target-reply-area="true"] *)',
+  ].filter(Boolean).join(', ');
+
+  await page.waitForFunction((selector) => {
+    function visible(el) {
+      if (!el) return false;
+      const style = window.getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+    }
+    return Boolean(Array.from(document.querySelectorAll(selector)).find(visible));
+  }, { timeout: 15000 }, directSelector);
+
+  return page.evaluate((currentLogNo) => {
+    function visible(el) {
+      if (!el) return false;
+      const style = window.getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+    }
+    function inReplyArea(node) {
+      return Boolean(node?.closest('.u_cbox_reply_area,[data-blog-target-reply-area="true"]'));
+    }
+
+    const preferred = currentLogNo ? document.querySelector(`#naverComment_201_${currentLogNo}__write_textarea`) : null;
+    const candidates = [
+      preferred,
+      ...Array.from(document.querySelectorAll('textarea, div[contenteditable="true"], div[role="textbox"], div[id*="write_textarea"]')),
+    ].filter(Boolean).filter((node) => visible(node) && !inReplyArea(node));
+
+    const target = candidates[0];
+    if (!target) return null;
+    document.querySelectorAll('[data-blog-commenter-editor="true"]').forEach((node) => node.removeAttribute('data-blog-commenter-editor'));
+    target.setAttribute('data-blog-commenter-editor', 'true');
+    target.focus();
+    return {
+      selector: '[data-blog-commenter-editor="true"]',
+      tagName: String(target.tagName || '').toLowerCase(),
+      contentEditable: target.getAttribute('contenteditable') === 'true',
+    };
+  }, logNo);
+}
+
+async function submitReply(page) {
+  const clicked = await page.evaluate(() => {
+    function visible(el) {
+      if (!el) return false;
+      const style = window.getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+    }
+    const replyScope = document.querySelector('[data-blog-target-reply-area="true"]');
+    const roots = replyScope ? [replyScope] : [document];
+    const candidates = roots.flatMap((root) => Array.from(root.querySelectorAll('button[type="button"], button, a')));
+    const submit = candidates.find((btn) => {
+      if (!visible(btn)) return false;
+      const dataAction = String(btn.getAttribute('data-action') || '');
+      const uiSelector = String(btn.getAttribute('data-ui-selector') || '');
+      return dataAction.includes('reply#') && dataAction.includes('#write#request') && /^replyButton_/.test(uiSelector);
+    });
+
+    if (!submit) return false;
+    submit.scrollIntoView({ block: 'center', behavior: 'instant' });
+    submit.click();
+    return true;
+  });
+
+  if (!clicked) {
+    throw new Error('reply_submit_not_found');
+  }
+}
+
+async function submitComment(page) {
+  const clicked = await page.evaluate(() => {
+    function visible(el) {
+      if (!el) return false;
+      const style = window.getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+    }
+    const candidates = Array.from(document.querySelectorAll('button[type="button"], button, a'));
+    const submit = candidates.find((btn) => {
+      if (!visible(btn)) return false;
+      const dataAction = String(btn.getAttribute('data-action') || '');
+      const uiSelector = String(btn.getAttribute('data-ui-selector') || '');
+      return dataAction === 'write#request' && uiSelector === 'writeButton';
+    });
+    if (!submit) return false;
+    submit.scrollIntoView({ block: 'center', behavior: 'instant' });
+    submit.click();
+    return true;
+  });
+
+  if (!clicked) {
+    throw new Error('comment_submit_not_found');
+  }
+}
+
+async function getSympathyState(page) {
+  return page.evaluate(() => {
+    function visible(el) {
+      if (!el) return false;
+      const style = window.getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+    }
+
+    function textOf(node) {
+      return String(node?.innerText || node?.textContent || '').replace(/\s+/g, ' ').trim();
+    }
+
+    function getReactionModule() {
+      return document.querySelector('.area_sympathy .my_reaction .u_likeit_list_module[data-markuserreaction="true"]')
+        || document.querySelector('.my_reaction .u_likeit_list_module[data-markuserreaction="true"]')
+        || document.querySelector('.area_sympathy .my_reaction .u_likeit_list_module')
+        || document.querySelector('.my_reaction .u_likeit_list_module')
+        || document.querySelector('.area_sympathy .my_reaction')
+        || document.querySelector('.my_reaction')
+        || document;
+    }
+
+    function findPrimarySympathyButton() {
+      const scope = getReactionModule();
+      const likeButton = scope.querySelector('a.u_likeit_list_button._button[data-type="like"][href*="#ratingbutton-like"]');
+      if (likeButton) return likeButton;
+      const faceButton = scope.querySelector('a.u_likeit_button._face[role="button"]');
+      if (visible(faceButton)) return faceButton;
+      return null;
+    }
+
+    function isPrimarySympathyButton(node) {
+      if (!node) return false;
+      const text = textOf(node);
+      const cls = String(node.className || '');
+      const href = String(node.getAttribute('href') || '');
+      return /공감/.test(text) && /u_likeit_list_button/.test(cls) && /ratingbutton-like/i.test(href);
+    }
+
+    const candidates = Array.from(document.querySelectorAll('a,button')).filter(visible);
+    const target = findPrimarySympathyButton()
+      || candidates.find(isPrimarySympathyButton)
+      || candidates.find((node) => {
+        const text = textOf(node);
+        const cls = String(node.className || '');
+        return /공감/.test(text) && (/u_likeit_button/.test(cls) || node.id?.startsWith?.('Sympathy'));
+      });
+
+    if (!target) {
+      return { found: false, active: false };
+    }
+
+    const ariaPressed = String(target.getAttribute('aria-pressed') || '').trim().toLowerCase();
+    const ariaSelected = String(target.getAttribute('aria-selected') || '').trim().toLowerCase();
+    const active = ariaPressed === 'true' || ariaSelected === 'true' || /\bon\b/.test(String(target.className || ''));
+    return {
+      found: true,
+      active,
+      text: String(target.innerText || target.textContent || '').replace(/\s+/g, ' ').trim(),
+      className: String(target.className || ''),
+      href: String(target.getAttribute('href') || ''),
+    };
+  });
+}
+
+async function activateSympathyInFrame(contentFrame, { testMode = false, postUrl = null } = {}) {
+  await contentFrame.waitForSelector('body', { timeout: testMode ? 5000 : 15000 }).catch(() => {});
+  await humanDelay(1, 2, testMode);
+
+  const before = await getSympathyState(contentFrame);
+  if (before.found && before.active) {
+    return { ok: true, alreadyActive: true, postUrl };
+  }
+
+  const clicked = await contentFrame.evaluate(() => {
+    function visible(el) {
+      if (!el) return false;
+      const style = window.getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+    }
+
+    function textOf(node) {
+      return String(node?.innerText || node?.textContent || '').replace(/\s+/g, ' ').trim();
+    }
+
+    function getReactionModule() {
+      return document.querySelector('.area_sympathy .my_reaction .u_likeit_list_module[data-markuserreaction="true"]')
+        || document.querySelector('.my_reaction .u_likeit_list_module[data-markuserreaction="true"]')
+        || document.querySelector('.area_sympathy .my_reaction .u_likeit_list_module')
+        || document.querySelector('.my_reaction .u_likeit_list_module')
+        || document.querySelector('.area_sympathy .my_reaction')
+        || document.querySelector('.my_reaction')
+        || document;
+    }
+
+    function clickNode(target) {
+      if (!target) return false;
+      if (visible(target)) {
+        target.scrollIntoView({ block: 'center', behavior: 'instant' });
+      }
+      target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+      target.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+      target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+      return true;
+    }
+
+    function findPrimarySympathyButton() {
+      const scope = getReactionModule();
+      const likeButton = scope.querySelector('a.u_likeit_list_button._button[data-type="like"][href*="#ratingbutton-like"]');
+      if (likeButton) return likeButton;
+      const faceButton = scope.querySelector('a.u_likeit_button._face[role="button"]');
+      if (visible(faceButton)) return faceButton;
+      return null;
+    }
+
+    function isPrimarySympathyButton(node) {
+      if (!node) return false;
+      const text = textOf(node);
+      const cls = String(node.className || '');
+      const href = String(node.getAttribute('href') || '');
+      const ariaPressed = String(node.getAttribute('aria-pressed') || '').trim().toLowerCase();
+      const ariaSelected = String(node.getAttribute('aria-selected') || '').trim().toLowerCase();
+      if (ariaPressed === 'true' || ariaSelected === 'true' || /\bon\b/.test(cls)) return false;
+      return /공감/.test(text) && /u_likeit_list_button/.test(cls) && /ratingbutton-like/i.test(href);
+    }
+
+    const candidates = Array.from(document.querySelectorAll('a,button')).filter(visible);
+    const target = findPrimarySympathyButton()
+      || candidates.find(isPrimarySympathyButton)
+      || candidates.find((node) => {
+        const text = textOf(node);
+        const cls = String(node.className || '');
+        const ariaPressed = String(node.getAttribute('aria-pressed') || '').trim().toLowerCase();
+        const ariaSelected = String(node.getAttribute('aria-selected') || '').trim().toLowerCase();
+        if (ariaPressed === 'true' || ariaSelected === 'true' || /\bon\b/.test(cls)) return false;
+        return /공감/.test(text) && (/u_likeit_button/.test(cls) || node.id?.startsWith?.('Sympathy'));
+      });
+
+    if (!target) return { ok: false, mode: null };
+    return {
+      ok: clickNode(target),
+      mode: target.matches?.('a.u_likeit_list_button._button[data-type="like"][href*="#ratingbutton-like"]') ? 'like' : 'face',
+    };
+  });
+
+  if (!clicked?.ok) {
+    throw new Error('sympathy_button_not_found');
+  }
+
+  await humanDelay(1, 2, testMode);
+  let after = await getSympathyState(contentFrame);
+
+  if (!after.found || !after.active) {
+    await contentFrame.evaluate(() => {
+      const likeButton = document.querySelector('.area_sympathy .my_reaction .u_likeit_list_module[data-markuserreaction="true"] a.u_likeit_list_button._button[data-type="like"][href*="#ratingbutton-like"]')
+        || document.querySelector('.my_reaction .u_likeit_list_module[data-markuserreaction="true"] a.u_likeit_list_button._button[data-type="like"][href*="#ratingbutton-like"]')
+        || document.querySelector('.area_sympathy .my_reaction .u_likeit_list_module a.u_likeit_list_button._button[data-type="like"][href*="#ratingbutton-like"]')
+        || document.querySelector('.my_reaction .u_likeit_list_module a.u_likeit_list_button._button[data-type="like"][href*="#ratingbutton-like"]');
+      if (!likeButton) return false;
+      likeButton.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+      likeButton.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+      likeButton.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+      return true;
+    }).catch(() => false);
+    await humanDelay(1, 2, testMode);
+    after = await getSympathyState(contentFrame);
+  }
+
+  if (!after.found || !after.active) {
+    throw new Error('sympathy_not_confirmed');
+  }
+
+  return { ok: true, alreadyActive: false, postUrl, mode: clicked.mode };
+}
+
+async function clickSympathy(postUrl, { testMode = false } = {}) {
+  return withBrowserPage(testMode, async (page) => {
+    await goto(page, postUrl);
+    const contentFrame = resolvePostContentFrame(page);
+    return activateSympathyInFrame(contentFrame, { testMode, postUrl });
+  });
+}
+
+async function verifyReplyPosted(page, replyText, testMode = false) {
+  const needle = normalizeText(replyText).slice(0, 24);
+  if (!needle) return false;
+
+  const timeoutMs = testMode ? 4000 : 15000;
+  const matched = await page.waitForFunction((expected) => {
+    function textOf(el) {
+      return String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
+    }
+    function visible(el) {
+      if (!el) return false;
+      const style = window.getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+    }
+    function isEditorArea(el) {
+      if (!el) return false;
+      return Boolean(
+        el.closest(
+          [
+            '.u_cbox_write_box',
+            '.u_cbox_comment_write',
+            '.u_cbox_reply_write',
+            '.u_cbox_text_wrap',
+            '.u_cbox_write_area',
+            '[id*="write"]',
+            '[class*="write"]',
+            '[class*="textarea"]',
+          ].join(', '),
+        ),
+      );
+    }
+
+    const candidates = Array.from(
+      document.querySelectorAll(
+        [
+          'li.u_cbox_comment',
+          'li[class*="comment"]',
+          'li[class*="reply"]',
+          'div.u_cbox_comment_box',
+          'div[class*="reply_area"]',
+          'div[class*="reply"]',
+          'div[class*="comment"]',
+        ].join(', '),
+      ),
+    ).filter((node) => visible(node) && !isEditorArea(node));
+
+    return candidates.some((node) => textOf(node).includes(expected));
+  }, { timeout: timeoutMs }, needle).then(() => true).catch(() => false);
+
+  return matched;
+}
+
+async function verifyCommentPosted(page, commentText, testMode = false) {
+  const needle = normalizeText(commentText).slice(0, 24);
+  if (!needle) return false;
+
+  const timeoutMs = testMode ? 5000 : 15000;
+  return page.waitForFunction((expected) => {
+    function textOf(el) {
+      return String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
+    }
+    function visible(el) {
+      if (!el) return false;
+      const style = window.getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+    }
+    function isEditorArea(el) {
+      if (!el) return false;
+      return Boolean(
+        el.closest(
+          [
+            '.u_cbox_write_box',
+            '.u_cbox_comment_write',
+            '.u_cbox_reply_write',
+            '.u_cbox_text_wrap',
+            '.u_cbox_write_area',
+            '[id*="write"]',
+            '[class*="write"]',
+            '[class*="textarea"]',
+          ].join(', '),
+        ),
+      );
+    }
+
+    const candidates = Array.from(
+      document.querySelectorAll(
+        [
+          'li.u_cbox_comment',
+          'li[class*="comment"]',
+          'div.u_cbox_comment_box',
+          'div[class*="comment"]',
+        ].join(', '),
+      ),
+    ).filter((node) => visible(node) && !isEditorArea(node));
+
+    return candidates.some((node) => textOf(node).includes(expected));
+  }, { timeout: timeoutMs }, needle).then(() => true).catch(() => false);
+}
+
+async function typeReply(frame, browserPage, selector, replyText, config, testMode) {
+  const durationMs = calcDelayMs(config.typingMinSec, config.typingMaxSec, testMode);
+  const perCharDelay = Math.max(15, Math.min(180, Math.round(durationMs / Math.max(replyText.length, 1))));
+  const target = await frame.$(selector);
+  if (!target) throw new Error('reply_editor_not_found');
+
+  const editorMeta = await frame.evaluate((targetSelector, nextText) => {
+    function dispatchEditableEvents(node) {
+      const events = [
+        new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: nextText }),
+        new InputEvent('input', { bubbles: true, inputType: 'insertText', data: nextText }),
+        new KeyboardEvent('keyup', { bubbles: true, key: 'Process' }),
+        new Event('change', { bubbles: true }),
+        new Event('blur', { bubbles: true }),
+      ];
+      for (const event of events) {
+        node.dispatchEvent(event);
+      }
+    }
+
+    const node = document.querySelector(targetSelector);
+    if (!node) {
+      return { found: false };
+    }
+
+    node.focus();
+    const isEditable = node.getAttribute('contenteditable') === 'true';
+    const tagName = String(node.tagName || '').toLowerCase();
+
+    if (isEditable) {
+      node.innerHTML = '';
+      node.textContent = nextText;
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      range.collapse(false);
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      dispatchEditableEvents(node);
+    } else if (tagName === 'textarea' || tagName === 'input') {
+      node.value = nextText;
+      node.dispatchEvent(new Event('input', { bubbles: true }));
+      node.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    return {
+      found: true,
+      tagName,
+      isEditable,
+      textLength: String(node.textContent || node.value || '').trim().length,
+    };
+  }, selector, replyText);
+
+  if (!editorMeta?.found) {
+    throw new Error('reply_editor_not_found');
+  }
+
+  if ((editorMeta?.textLength || 0) >= Math.min(20, replyText.length)) {
+    return;
+  }
+
+  await target.click({ clickCount: 3 }).catch(() => {});
+  await browserPage.keyboard.down(process.platform === 'darwin' ? 'Meta' : 'Control').catch(() => {});
+  await browserPage.keyboard.press('KeyA').catch(() => {});
+  await browserPage.keyboard.up(process.platform === 'darwin' ? 'Meta' : 'Control').catch(() => {});
+  await browserPage.keyboard.press('Backspace').catch(() => {});
+  await browserPage.keyboard.type(replyText, { delay: perCharDelay });
+
+  const typedLength = await frame.evaluate((targetSelector) => {
+    const node = document.querySelector(targetSelector);
+    return String(node?.textContent || node?.value || '').trim().length;
+  }, selector).catch(() => 0);
+
+  if (typedLength < Math.min(20, replyText.length)) {
+    throw new Error(`reply_editor_text_not_applied:${typedLength}`);
+  }
+}
+
+async function postReply(comment, replyText, { testMode = false } = {}) {
+  const config = getCommenterConfig();
+  const logNo = extractLogNo(comment.post_url);
+  return withBrowserPage(testMode, async (page) => {
+    await goto(page, comment.post_url);
+    const contentFrame = resolvePostContentFrame(page);
+    await contentFrame.waitForSelector('body');
+    await humanDelay(config.pageReadMinSec, config.pageReadMaxSec, testMode);
+    const mounted = await mountCommentPanel(contentFrame, logNo, testMode);
+    let opened = false;
+    if (mounted) {
+      await waitForCommentPanel(contentFrame, logNo).catch(() => false);
+      await humanDelay(1, 2, testMode);
+      opened = await openReplyEditor(contentFrame, comment);
+      if (opened) {
+        opened = await activateReplyMode(contentFrame);
+      }
+    }
+
+    if (!opened) {
+      const debug = await inspectReplyControls(contentFrame).catch(() => null);
+      const snapshotPrefix = await saveCommentDebugSnapshot(contentFrame, comment, mounted ? 'reply-open-failed' : 'comment-panel-not-mounted');
+      throw new Error(`reply_button_not_found:${JSON.stringify({ ...(debug || {}), snapshotPrefix }).slice(0, 500)}`);
+    }
+
+    await humanDelay(1, 2, testMode);
+    const editor = await focusReplyEditor(contentFrame);
+    if (!editor?.selector) {
+      throw new Error('reply_editor_not_found');
+    }
+
+    await typeReply(contentFrame, page, editor.selector, replyText, config, testMode);
+    await humanDelay(1, 2, testMode);
+    await submitReply(contentFrame);
+    const posted = await verifyReplyPosted(contentFrame, replyText, testMode);
+    if (!posted) {
+      const snapshotPrefix = await saveCommentDebugSnapshot(contentFrame, comment, 'reply-submit-not-confirmed');
+      throw new Error(`reply_submit_not_confirmed:${snapshotPrefix}`);
+    }
+    await humanDelay(config.betweenCommentsMinSec, config.betweenCommentsMaxSec, testMode);
+    return { ok: true };
+  });
+}
+
+async function postComment(postUrl, commentText, { testMode = false, withSympathy = false } = {}) {
+  const config = getCommenterConfig();
+  const logNo = extractLogNo(postUrl);
+  const normalizedComment = normalizeText(commentText);
+  if (!normalizedComment) {
+    throw new Error('comment_text_required');
+  }
+
+  return withBrowserPage(testMode, async (page) => {
+    await goto(page, postUrl);
+    const contentFrame = resolvePostContentFrame(page);
+    await contentFrame.waitForSelector('body', { timeout: testMode ? 5000 : 15000 }).catch(() => {});
+    await humanDelay(1, 2, testMode);
+
+    const mounted = await mountCommentPanel(contentFrame, logNo, testMode);
+    if (!mounted) {
+      const snapshotPrefix = await saveCommentDebugSnapshot(contentFrame, { post_url: postUrl }, 'comment-panel-not-mounted');
+      throw new Error(`comment_panel_not_mounted:${snapshotPrefix}`);
+    }
+
+    await waitForCommentPanel(contentFrame, logNo).catch(() => false);
+    await humanDelay(1, 2, testMode);
+    const editor = await focusCommentEditor(contentFrame, logNo);
+    if (!editor?.selector) {
+      throw new Error('comment_editor_not_found');
+    }
+
+    await typeReply(contentFrame, page, editor.selector, normalizedComment, config, testMode);
+    await humanDelay(1, 2, testMode);
+    await submitComment(contentFrame);
+
+    const posted = await verifyCommentPosted(contentFrame, normalizedComment, testMode);
+    if (!posted) {
+      const snapshotPrefix = await saveCommentDebugSnapshot(contentFrame, { post_url: postUrl }, 'comment-submit-not-confirmed');
+      throw new Error(`comment_submit_not_confirmed:${snapshotPrefix}`);
+    }
+
+    let sympathy = null;
+    if (withSympathy) {
+      await humanDelay(2, 3, testMode);
+      sympathy = await activateSympathyInFrame(contentFrame, { testMode, postUrl }).catch((error) => ({ ok: false, error: error.message, attempt: 1 }));
+      if (!sympathy?.ok) {
+        traceCommenter('postComment:sympathy-retry', sympathy);
+        await humanDelay(2, 4, testMode);
+        sympathy = await activateSympathyInFrame(contentFrame, { testMode, postUrl }).catch((error) => ({ ok: false, error: error.message, attempt: 2 }));
+      }
+    }
+
+    await recordCommentAction('comment_post', {
+      targetBlog: await resolveBlogId(),
+      targetPostUrl: postUrl,
+      commentText: normalizedComment,
+      success: true,
+      meta: { mode: 'direct_comment_test', withSympathy, sympathy },
+    }).catch(() => {});
+
+    return { ok: true, postUrl, commentText: normalizedComment, sympathy };
+  });
+}
+
+async function processComment(comment, options = {}) {
+  const postInfo = await getPostSummary(comment.post_url, options);
+  let generated = await generateReply(postInfo.title || comment.post_title, postInfo.summary, comment.comment_text);
+  let validation = validateReply(generated.reply, comment.comment_text);
+
+  if (!validation.ok) {
+    generated = await generateReply(postInfo.title || comment.post_title, postInfo.summary, comment.comment_text);
+    validation = validateReply(generated.reply, comment.comment_text);
+  }
+
+  if (!validation.ok) {
+    await updateCommentStatus(comment.id, 'skipped', {
+      errorMessage: validation.reason,
+      meta: { phase: 'validate' },
+    });
+    return { ok: false, skipped: true, reason: validation.reason };
+  }
+
+  await postReply(comment, generated.reply, options);
+  await updateCommentStatus(comment.id, 'replied', {
+    replyText: generated.reply,
+    meta: { tone: generated.tone || null },
+  });
+  await recordCommentAction('reply', {
+    targetBlog: await resolveBlogId(),
+    targetPostUrl: comment.post_url,
+    commentText: generated.reply,
+    success: true,
+    meta: { commentId: comment.id, commenterName: comment.commenter_name || null },
+  });
+  return { ok: true, reply: generated.reply };
+}
+
+async function runCommentReply({ testMode = false } = {}) {
+  const config = getCommenterConfig();
+  if (!env.IS_OPS && !process.env.BLOG_COMMENTER_ALLOW_DEV) {
+    return { skipped: true, reason: 'ops_only' };
+  }
+  if (!config.enabled && !testMode && process.env.BLOG_COMMENTER_FORCE !== 'true') {
+    return { skipped: true, reason: 'disabled' };
+  }
+  if (!testMode && !isWithinActiveWindow(config)) {
+    return { skipped: true, reason: 'inactive_window' };
+  }
+
+  await ensureSchema();
+
+  const todayCount = await getTodayReplyCount();
+  if (todayCount >= config.maxDaily) {
+    return { skipped: true, reason: 'daily_limit', count: todayCount };
+  }
+
+  let newComments;
+  try {
+    newComments = await detectNewComments({ testMode });
+  } catch (error) {
+    if (testMode && ['managed_browser_not_running', 'managed_browser_required', 'managed_browser_not_ready'].includes(error?.code || error?.message)) {
+      return { skipped: true, reason: error.code || error.message, testMode: true };
+    }
+    throw error;
+  }
+  const pending = await getPendingComments(Math.min(config.maxProcessPerCycle, testMode ? 1 : config.maxProcessPerCycle));
+  const remaining = Math.max(0, config.maxDaily - todayCount);
+  const targets = pending.slice(0, testMode ? 1 : remaining);
+
+  let replied = 0;
+  let failed = 0;
+  let skipped = 0;
+
+  for (const comment of targets) {
+    try {
+      const result = await processComment(comment, { testMode });
+      if (result.ok) replied += 1;
+      else if (result.skipped) skipped += 1;
+    } catch (error) {
+      failed += 1;
+      await updateCommentStatus(comment.id, 'failed', {
+        errorMessage: error.message,
+        meta: { phase: 'post' },
+      });
+      await recordCommentAction('reply', {
+        targetBlog: await resolveBlogId(),
+        targetPostUrl: comment.post_url,
+        commentText: comment.comment_text,
+        success: false,
+        meta: { commentId: comment.id, error: error.message },
+      }).catch(() => {});
+    }
+  }
+
+  const totalProcessed = replied + failed + skipped;
+  const failureRate = totalProcessed > 0 ? failed / totalProcessed : 0;
+  if (replied > 0 || failed > 0) {
+    await postAlarm({
+      team: 'blog',
+      fromBot: 'blog-commenter',
+      alertLevel: failureRate >= 0.5 ? 3 : 2,
+      message: `답댓글 ${replied}건 완료, 실패 ${failed}건, 스킵 ${skipped}건 (오늘 총 ${todayCount + replied}/${config.maxDaily})`,
+    }).catch(() => {});
+  }
+
+  return {
+    ok: true,
+    detected: newComments.length,
+    pending: pending.length,
+    replied,
+    failed,
+    skipped,
+    total: todayCount + replied,
+    testMode,
+  };
+}
+
+async function processNeighborComment(candidate, { testMode = false } = {}) {
+  const postInfo = await getPostSummary(candidate.post_url, { testMode });
+  const generated = await generateNeighborComment(postInfo.title || candidate.post_title, postInfo.summary, candidate);
+  const validation = validateNeighborCommentWithCandidate(generated.comment, postInfo.summary, candidate);
+
+  if (!validation.ok) {
+    traceCommenter('neighborComment:validation-failed', {
+      candidateId: candidate.id,
+      reason: validation.reason,
+    });
+    await updateNeighborCommentStatus(candidate.id, 'skipped', {
+      commentText: generated.comment,
+      errorMessage: validation.reason,
+      meta: { phase: 'validate', tone: generated.tone || null },
+    });
+    return { ok: false, skipped: true, reason: validation.reason };
+  }
+
+  const posted = await postComment(candidate.post_url, generated.comment, { testMode, withSympathy: true });
+
+  await updateNeighborCommentStatus(candidate.id, 'posted', {
+    commentText: generated.comment,
+    meta: { tone: generated.tone || null, sourceType: candidate.source_type || null },
+  });
+  await recordCommentAction('neighbor_comment', {
+    targetBlog: candidate.target_blog_id,
+    targetPostUrl: candidate.post_url,
+    commentText: generated.comment,
+    success: true,
+    meta: {
+      neighborCommentId: candidate.id,
+      sourceType: candidate.source_type || null,
+      targetBlogName: candidate.target_blog_name || null,
+    },
+  });
+  return { ok: true, comment: generated.comment, sympathy: posted?.sympathy || null };
+}
+
+async function runNeighborSympathy({ testMode = false } = {}) {
+  const config = getNeighborCommenterConfig();
+  if (!env.IS_OPS && !process.env.BLOG_COMMENTER_ALLOW_DEV) {
+    return { skipped: true, reason: 'ops_only' };
+  }
+  if (!config.enabled && !testMode && process.env.BLOG_NEIGHBOR_COMMENTER_FORCE !== 'true') {
+    return { skipped: true, reason: 'disabled' };
+  }
+  if (!testMode && !isWithinActiveWindow(config)) {
+    return { skipped: true, reason: 'inactive_window' };
+  }
+
+  await ensureSchema();
+
+  const todayCount = await getTodayActionCount('neighbor_sympathy');
+  if (todayCount >= config.maxDaily) {
+    return { skipped: true, reason: 'daily_limit', count: todayCount };
+  }
+
+  const newCandidates = await collectNeighborCandidates({ testMode, persist: false });
+  const remaining = Math.max(0, config.maxDaily - todayCount);
+  const targets = newCandidates.slice(0, testMode ? 1 : Math.min(config.maxProcessPerCycle, remaining));
+
+  let liked = 0;
+  let failed = 0;
+  let skipped = 0;
+
+  for (const candidate of targets) {
+    try {
+      const sympathy = await clickSympathy(candidate.postUrl, { testMode });
+      await recordCommentAction('neighbor_sympathy', {
+        targetBlog: candidate.targetBlogId,
+        targetPostUrl: candidate.postUrl,
+        success: true,
+        meta: {
+          sourceType: candidate.sourceType || null,
+          targetBlogName: candidate.targetBlogName || null,
+          sympathy,
+        },
+      });
+      liked += 1;
+    } catch (error) {
+      failed += 1;
+      await recordCommentAction('neighbor_sympathy', {
+        targetBlog: candidate.targetBlogId,
+        targetPostUrl: candidate.postUrl,
+        success: false,
+        meta: {
+          sourceType: candidate.sourceType || null,
+          targetBlogName: candidate.targetBlogName || null,
+          error: error.message,
+        },
+      }).catch(() => {});
+    }
+  }
+
+  if (liked > 0 || failed > 0) {
+    await postAlarm({
+      team: 'blog',
+      fromBot: 'blog-neighbor-sympathy',
+      alertLevel: failed > 0 ? 3 : 2,
+      message: `이웃 공감 ${liked}건 완료, 실패 ${failed}건, 스킵 ${skipped}건 (오늘 총 ${todayCount + liked}/${config.maxDaily})`,
+    }).catch(() => {});
+  }
+
+  return {
+    ok: true,
+    detected: newCandidates.length,
+    pending: targets.length,
+    liked,
+    failed,
+    skipped,
+    total: todayCount + liked,
+    testMode,
+  };
+}
+
+async function runNeighborCommenter({ testMode = false } = {}) {
+  const config = getNeighborCommenterConfig();
+  if (!env.IS_OPS && !process.env.BLOG_COMMENTER_ALLOW_DEV) {
+    return { skipped: true, reason: 'ops_only' };
+  }
+  if (!config.enabled && !testMode && process.env.BLOG_NEIGHBOR_COMMENTER_FORCE !== 'true') {
+    return { skipped: true, reason: 'disabled' };
+  }
+  if (!testMode && !isWithinActiveWindow(config)) {
+    return { skipped: true, reason: 'inactive_window' };
+  }
+
+  await ensureSchema();
+
+  const todayCount = await getTodayNeighborCommentCount();
+  if (todayCount >= config.maxDaily) {
+    return { skipped: true, reason: 'daily_limit', count: todayCount };
+  }
+
+  const newCandidates = await collectNeighborCandidates({ testMode });
+  const pending = await getPendingNeighborComments(Math.min(config.maxProcessPerCycle, testMode ? 1 : config.maxProcessPerCycle));
+  const remaining = Math.max(0, config.maxDaily - todayCount);
+  const targets = pending.slice(0, testMode ? 1 : remaining);
+
+  let posted = 0;
+  let failed = 0;
+  let skipped = 0;
+
+  for (const candidate of targets) {
+    try {
+      const result = await processNeighborComment(candidate, { testMode });
+      if (result.ok) posted += 1;
+      else if (result.skipped) skipped += 1;
+    } catch (error) {
+      failed += 1;
+      await updateNeighborCommentStatus(candidate.id, 'failed', {
+        errorMessage: error.message,
+        meta: { phase: 'post', sourceType: candidate.source_type || null },
+      });
+      await recordCommentAction('neighbor_comment', {
+        targetBlog: candidate.target_blog_id,
+        targetPostUrl: candidate.post_url,
+        commentText: candidate.comment_text || null,
+        success: false,
+        meta: { neighborCommentId: candidate.id, error: error.message },
+      }).catch(() => {});
+    }
+  }
+
+  if (posted > 0 || failed > 0) {
+    await postAlarm({
+      team: 'blog',
+      fromBot: 'blog-neighbor-commenter',
+      alertLevel: failed > 0 ? 3 : 2,
+      message: `이웃 댓글 ${posted}건 완료, 실패 ${failed}건, 스킵 ${skipped}건 (오늘 총 ${todayCount + posted}/${config.maxDaily})`,
+    }).catch(() => {});
+  }
+
+  return {
+    ok: true,
+    detected: newCandidates.length,
+    pending: pending.length,
+    posted,
+    failed,
+    skipped,
+    total: todayCount + posted,
+    testMode,
+  };
+}
+
+module.exports = {
+  getCommenterConfig,
+  getNeighborCommenterConfig,
+  resolveBlogId,
+  ensureSchema,
+  detectNewComments,
+  collectNeighborCandidates,
+  generateReply,
+  generateNeighborComment,
+  validateReply,
+  validateNeighborComment,
+  validateNeighborCommentWithCandidate,
+  getPostSummary,
+  clickSympathy,
+  postComment,
+  postReply,
+  runNeighborCommenter,
+  runNeighborSympathy,
+  runCommentReply,
+};

@@ -20,7 +20,7 @@ const { recordHeartbeat, markStopped } = require('../../lib/status');
 const { registerShutdownHandlers, isShuttingDown } = require('../../lib/health');
 const {
   isSeenId, markSeen, addReservation, updateReservation, getReservation, findReservationByBooking,
-  findReservationByCompositeKey, findReservationBySlot,
+  findReservationByCompositeKey, findReservationBySlot, getReservationsBySlot, hideDuplicateReservationsForSlot,
   rollbackProcessing, pruneOldReservations,
   isCancelledKey, addCancelledKey, pruneOldCancelledKeys,
   addAlert, updateAlertSent, resolveAlert, resolveAlertsByTitle, getUnresolvedAlerts, pruneOldAlerts,
@@ -2209,9 +2209,14 @@ function runPickkoCancel(booking, cancelKey = null) {
       return child;
     };
 
+    const isAlreadyGoneOutput = (buf) => /취소 대상 예약 미발견/.test(String(buf || ''));
+
     const child = spawnCancel();
+    let firstOutputBuf = '';
+    child.stdout.on('data', d => { firstOutputBuf += d.toString(); });
+    child.stderr.on('data', d => { firstOutputBuf += d.toString(); });
     child.on('close', async (code) => {
-      if (code === 0) {
+      if (code === 0 || isAlreadyGoneOutput(firstOutputBuf)) {
         await onCancelSuccess(false);
         return resolve(0);
       }
@@ -2220,8 +2225,14 @@ function runPickkoCancel(booking, cancelKey = null) {
       const firstCode = code;
       setTimeout(() => {
         const child2 = spawnCancel();
+        let retryOutputBuf = '';
+        child2.stdout.on('data', d => { retryOutputBuf += d.toString(); });
+        child2.stderr.on('data', d => { retryOutputBuf += d.toString(); });
         child2.on('close', async (code2) => {
           if (code2 === 0) {
+            await onCancelSuccess(true);
+          } else if (isAlreadyGoneOutput(retryOutputBuf)) {
+            log(`ℹ️ 픽코 취소 대상이 이미 사라짐 → 취소 완료로 간주: ${maskPhone(booking.phone)} ${booking.date} ${booking.start}`);
             await onCancelSuccess(true);
           } else {
             onCancelFail(code2, firstCode);
@@ -2260,6 +2271,105 @@ async function findTrackedReservationForCancelCandidate(booking) {
 async function shouldProcessCancelledBooking(booking) {
   const tracked = await findTrackedReservationForCancelCandidate(booking);
   return Boolean(tracked);
+}
+
+function chooseCanonicalReservationIdForSlot(slotRows, fallbackId = null) {
+  const rows = Array.isArray(slotRows) ? slotRows : [];
+  if (rows.length === 0) return fallbackId ? String(fallbackId) : null;
+
+  const scoreRow = (row) => {
+    let score = 0;
+    if (/^\d+$/.test(String(row.id || ''))) score += 100;
+    if (row.status === 'completed') score += 20;
+    if (['paid', 'manual', 'manual_retry', 'verified'].includes(row.pickkoStatus)) score += 10;
+    if (row.markedSeen) score += 2;
+    if (!row.seenOnly) score += 1;
+    return score;
+  };
+
+  return rows
+    .slice()
+    .sort((a, b) => scoreRow(b) - scoreRow(a) || String(b.id).localeCompare(String(a.id)))[0]?.id
+    || (fallbackId ? String(fallbackId) : null);
+}
+
+async function reconcileSlotDuplicatesAfterRecovery(bookingId, booking) {
+  const slotRows = await getReservationsBySlot(
+    booking.phoneRaw || booking.phone,
+    booking.date,
+    booking.start,
+    booking.room,
+  ).catch(() => []);
+
+  if (!Array.isArray(slotRows) || slotRows.length <= 1) {
+    return { canonicalId: bookingId ? String(bookingId) : null, hiddenCount: 0, slotRows };
+  }
+
+  const canonicalId = chooseCanonicalReservationIdForSlot(slotRows, bookingId);
+  const hiddenCount = canonicalId
+    ? await hideDuplicateReservationsForSlot(
+        canonicalId,
+        booking.phoneRaw || booking.phone,
+        booking.date,
+        booking.start,
+        booking.room,
+      ).catch(() => 0)
+    : 0;
+
+  if (hiddenCount > 0) {
+    log(`🧹 [중복정리] ${maskPhone(booking.phone)} ${booking.date} ${booking.start} ${booking.room} → canonical=${canonicalId}, hidden=${hiddenCount}`);
+  }
+
+  return { canonicalId, hiddenCount, slotRows };
+}
+
+async function verifyRecoverablePickkoFailure(bookingId, booking, failureStage, outputBuf) {
+  const recoverableSignal = (
+    failureStage === 'ALREADY_REGISTERED' ||
+    /결제하기 버튼 미발견/.test(String(outputBuf || ''))
+  );
+  if (!recoverableSignal || !bookingId) return false;
+
+  const slotRows = await getReservationsBySlot(
+    booking.phoneRaw || booking.phone,
+    booking.date,
+    booking.start,
+    booking.room,
+  ).catch(() => []);
+
+  const peerCompleted = Array.isArray(slotRows) && slotRows.some((row) =>
+    String(row.id) !== String(bookingId) &&
+    row.status === 'completed' &&
+    ['paid', 'manual', 'manual_retry', 'verified'].includes(row.pickkoStatus),
+  );
+
+  if (!peerCompleted) return false;
+
+  await updateReservation(String(bookingId), {
+    status: 'completed',
+    pickkoStatus: 'manual',
+    errorReason: null,
+    pickkoCompleteTime: kst.toKST(new Date()),
+  });
+  await markSeen(String(bookingId)).catch(() => {});
+  await reconcileSlotDuplicatesAfterRecovery(String(bookingId), booking);
+  await resolveAlertsByBooking(booking.phone, booking.date, booking.start);
+
+  sendAlert({
+    type: 'completed',
+    title: '✅ 픽코 예약 완료! (실패 검증 복구)',
+    customer: booking.phoneText || '고객',
+    phone: booking.phone,
+    date: booking.date,
+    time: `${booking.start}~${booking.end}`,
+    room: booking.room,
+    status: 'manual',
+    action: '동일 슬롯의 기존 완료 예약을 확인해 자동 복구함',
+  });
+
+  await ragSaveReservation(booking, '픽코완료(실패검증복구)');
+  log(`✅ [실패검증복구] 동일 슬롯 완료 이력 확인: ${maskPhone(booking.phone)} ${booking.date} ${booking.start} ${booking.room}`);
+  return true;
 }
 
 function runPickko(booking, bookingId = null, naveraPage = null) {
@@ -2376,25 +2486,38 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
 
       // 📊 상태 업데이트 (성공/실패)
       if (code === 0) {
+        const alreadyRegisteredRecovered = failureStage === 'ALREADY_REGISTERED';
+        const alreadyPaidWithoutButton = /결제하기 버튼 미발견/.test(outputBuf);
         // ✅ 성공
         if (bookingId) {
           await updateBookingState(bookingId, booking, 'completed');
+          if (alreadyRegisteredRecovered) {
+            await updateReservation(bookingId, {
+              pickkoStatus: 'manual',
+              errorReason: null,
+            });
+          }
+          if (alreadyRegisteredRecovered || alreadyPaidWithoutButton) {
+            await reconcileSlotDuplicatesAfterRecovery(bookingId, booking);
+          }
 
           // 📢 완료 알람
           sendAlert({
             type: 'completed',
-            title: '✅ 픽코 예약 완료!',
+            title: alreadyRegisteredRecovered ? '✅ 픽코 예약 완료! (기존 등록 확인)' : '✅ 픽코 예약 완료!',
             customer: booking.phoneText || '고객',
             phone: booking.phone,
             date: booking.date,
             time: `${booking.start}~${booking.end}`,
             room: booking.room,
-            status: 'paid',
-            action: '정상 처리됨'
+            status: alreadyRegisteredRecovered ? 'manual' : 'paid',
+            action: alreadyRegisteredRecovered
+              ? (alreadyPaidWithoutButton ? '기존 픽코 결제완료 예약 확인' : '기존 등록 예약 재사용')
+              : '정상 처리됨'
           });
 
           // 📚 RAG: 픽코 완료 상태로 업데이트 저장
-          ragSaveReservation(booking, '픽코완료');
+          ragSaveReservation(booking, alreadyRegisteredRecovered ? '픽코완료(기등록복구)' : '픽코완료');
 
           // ✅ 이 예약에 대한 미해결 오류 알림 → 해결됨 마킹
           await resolveAlertsByBooking(booking.phone, booking.date, booking.start);
@@ -2413,6 +2536,11 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
           : rawErrorMsg;
 
         if (bookingId) {
+          const recovered = await verifyRecoverablePickkoFailure(bookingId, booking, failureStage, outputBuf);
+          if (recovered) {
+            return resolve(0);
+          }
+
           await updateBookingState(bookingId, booking, 'failed');
           await updateReservation(bookingId, { errorReason: errorMsg });
 

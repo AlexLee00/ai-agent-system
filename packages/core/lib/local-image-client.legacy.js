@@ -10,6 +10,7 @@ const DEFAULT_BASE_URL = 'http://127.0.0.1:8188';
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
 const DEFAULT_POLL_MS = 1500;
 const DEFAULT_RETRIES = 3;
+const DEFAULT_DRAWTHINGS_BASE_URL = 'http://127.0.0.1:7860';
 
 const ASPECT_RATIO_MAP = {
   '1:1': { width: 1024, height: 1024 },
@@ -94,6 +95,65 @@ async function ensureComfyUiReachable(baseUrl) {
   await fetchJson(`${baseUrl}/system_stats`);
 }
 
+function inferProvider(baseUrl, profile, opts = {}) {
+  const explicit = String(
+    opts.provider || profile?.image_provider || process.env.BLOG_IMAGE_PROVIDER || '',
+  ).trim().toLowerCase();
+  if (explicit === 'drawthings' || explicit === 'draw-things') return 'drawthings';
+  if (explicit === 'comfyui' || explicit === 'comfy') return 'comfyui';
+  if (/:7860(?:\/|$)/.test(baseUrl) || /\/sdapi(?:\/|$)/.test(baseUrl)) return 'drawthings';
+  return 'comfyui';
+}
+
+async function ensureDrawThingsReachable(baseUrl) {
+  await fetchJson(`${baseUrl}/sdapi/v1/options`);
+}
+
+async function generateWithDrawThings(prompt, baseUrl, opts = {}, profile = null) {
+  const aspectRatio = opts.aspectRatio || '1:1';
+  const size = ASPECT_RATIO_MAP[aspectRatio] || ASPECT_RATIO_MAP['1:1'];
+  const negativePrompt = process.env.BLOG_DRAWTHINGS_NEGATIVE_PROMPT
+    || process.env.BLOG_COMFYUI_NEGATIVE_PROMPT
+    || '';
+  const steps = Number(process.env.BLOG_DRAWTHINGS_STEPS || process.env.BLOG_COMFYUI_STEPS || 4);
+  const guidanceScale = Number(process.env.BLOG_DRAWTHINGS_CFG || process.env.BLOG_COMFYUI_CFG || 4.5);
+  const batchSize = Math.max(1, Number(opts.batchSize || 1));
+  const batchCount = Math.max(1, Number(opts.batchCount || 1));
+  const startedAt = Date.now();
+
+  await ensureDrawThingsReachable(baseUrl);
+  const response = await fetchJson(`${baseUrl}/sdapi/v1/txt2img`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      prompt,
+      negative_prompt: negativePrompt,
+      width: size.width,
+      height: size.height,
+      steps,
+      guidance_scale: guidanceScale,
+      batch_size: batchSize,
+      batch_count: batchCount,
+      sampler: String(process.env.BLOG_DRAWTHINGS_SAMPLER || 'Euler A Trailing'),
+    }),
+  });
+
+  const firstImage = Array.isArray(response?.images) ? response.images[0] : null;
+  if (!firstImage || typeof firstImage !== 'string') {
+    throw new Error('Draw Things 이미지 응답이 없습니다.');
+  }
+
+  return {
+    buffer: Buffer.from(firstImage, 'base64'),
+    source: 'drawthings',
+    execution_mode: 'local_image',
+    duration_ms: Date.now() - startedAt,
+    batch_size: batchSize,
+    batch_count: batchCount,
+    model: profile?.checkpoint_name || null,
+  };
+}
+
 async function queuePrompt(baseUrl, workflow, clientId) {
   const body = JSON.stringify({
     prompt: workflow,
@@ -151,16 +211,22 @@ async function waitForImage(baseUrl, promptId, timeoutMs, pollMs) {
 
 async function generateWithComfyUI(prompt, opts = {}) {
   const profile = opts.runtimeProfile || await selectRuntime('blog', 'image-local') || {};
-  const baseUrl = opts.baseUrl || profile.base_url || DEFAULT_BASE_URL;
+  const baseUrl = opts.baseUrl || process.env.BLOG_IMAGE_BASE_URL || profile.base_url || DEFAULT_BASE_URL;
   const timeoutMs = Number(opts.timeoutMs || profile.timeout_ms || DEFAULT_TIMEOUT_MS);
   const pollMs = Number(opts.pollMs || profile.poll_ms || DEFAULT_POLL_MS);
   const retries = Math.max(1, Number(opts.retries || profile.max_retries || DEFAULT_RETRIES));
   const clientId = crypto.randomUUID();
+  const provider = inferProvider(baseUrl, profile, opts);
 
   let lastError = null;
   for (let attempt = 1; attempt <= retries; attempt += 1) {
     const startedAt = Date.now();
     try {
+      if (provider === 'drawthings') {
+        const drawThingsBaseUrl = opts.baseUrl || process.env.BLOG_IMAGE_BASE_URL || profile.base_url || DEFAULT_DRAWTHINGS_BASE_URL;
+        const result = await generateWithDrawThings(prompt, drawThingsBaseUrl, opts, profile);
+        return { ...result, attempt };
+      }
       if (attempt === 1) {
         await ensureComfyUiReachable(baseUrl);
       }
@@ -188,7 +254,8 @@ async function generateWithComfyUI(prompt, opts = {}) {
     }
   }
 
-  throw new Error(`ComfyUI 로컬 이미지 생성 실패: ${lastError?.message || 'unknown error'}`);
+  const providerLabel = provider === 'drawthings' ? 'Draw Things' : 'ComfyUI';
+  throw new Error(`${providerLabel} 로컬 이미지 생성 실패: ${lastError?.message || 'unknown error'}`);
 }
 
 module.exports = {

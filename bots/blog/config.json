@@ -25,8 +25,8 @@
       "enabled": true,
       "blogId": "cafe_library",
       "maxDaily": 20,
-      "activeStartHour": 8,
-      "activeEndHour": 22,
+      "activeStartHour": 9,
+      "activeEndHour": 21,
       "browserHttpUrl": "http://127.0.0.1:18791",
       "browserWsEndpoint": "",
       "browserToken": "",
@@ -41,6 +41,18 @@
       "maxReplyLen": 200,
       "maxDetectPerCycle": 20,
       "maxProcessPerCycle": 20
+    },
+    "neighborCommenter": {
+      "enabled": true,
+      "blogId": "cafe_library",
+      "maxDaily": 20,
+      "activeStartHour": 9,
+      "activeEndHour": 21,
+      "maxCollectPerCycle": 20,
+      "maxProcessPerCycle": 20,
+      "recentWindowDays": 14,
+      "minCommentLen": 45,
+      "maxCommentLen": 220
     },
     "llmSelectorOverrides": {
       "blog.pos.writer": {
@@ -92,6 +104,12 @@
         "chain": [
           { "provider": "claude-code", "model": "claude-code/sonnet", "maxTokens": 8000, "temperature": 0.5 },
           { "provider": "openai-oauth", "model": "gpt-5.4", "maxTokens": 8000, "temperature": 0.5 }
+        ]
+      },
+      "blog.commenter.reply": {
+        "chain": [
+          { "provider": "claude-code", "model": "claude-code/sonnet", "maxTokens": 600, "temperature": 0.75, "timeoutMs": 12000 },
+          { "provider": "groq", "model": "meta-llama/llama-4-scout-17b-16e-instruct", "maxTokens": 600, "temperature": 0.7, "timeoutMs": 20000 }
         ]
       }
     }
