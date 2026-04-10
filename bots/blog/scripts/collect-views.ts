@@ -9,8 +9,8 @@ const puppeteer = require('puppeteer');
 
 const env = require('../../../packages/core/lib/env');
 const { parseNaverBlogUrl } = require(path.join(__dirname, '../../../packages/core/lib/naver-blog-url'));
-const { getBlogCommenterConfig } = require('../lib/runtime-config');
-const { getViewCollectionCandidates, recordPerformancePartial } = require('../lib/publ');
+const { getBlogCommenterConfig } = require('../lib/runtime-config.ts');
+const { getViewCollectionCandidates, recordPerformancePartial } = require('../lib/publ.ts');
 
 const NAV_TIMEOUT_MS = 45000;
 const NAVER_MONITOR_WS_FILE = path.join(env.OPENCLAW_WORKSPACE, 'naver-monitor-ws.txt');

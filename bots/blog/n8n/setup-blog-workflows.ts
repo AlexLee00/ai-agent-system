@@ -1,13 +1,13 @@
 // @ts-nocheck
 'use strict';
 /**
- * bots/blog/n8n/setup-blog-workflows.js
+ * bots/blog/n8n/setup-blog-workflows.ts
  *
  * 블로팀 n8n 워크플로우 생성/업데이트 스크립트
  * - "블로그팀 동적 포스팅" 워크플로우를 n8n에 생성
  * - 이미 존재하면 최신 JSON으로 재생성 후 활성화
  *
- * 실행: node bots/blog/n8n/setup-blog-workflows.js
+ * 실행: node bots/blog/n8n/setup-blog-workflows.ts
  */
 
 const path = require('path');

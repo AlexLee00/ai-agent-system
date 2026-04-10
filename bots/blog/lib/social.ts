@@ -2,10 +2,10 @@
 'use strict';
 const kst = require('../../../packages/core/lib/kst');
 const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
-const { getBlogLLMSelectorOverrides } = require('./runtime-config');
+const { getBlogLLMSelectorOverrides } = require('./runtime-config.ts');
 
 /**
- * bots/blog/lib/social.js — 소셜(SOCIAL) 봇
+ * bots/blog/lib/social.ts — 소셜(SOCIAL) 봇
  *
  * 역할:
  *   N40. 포스팅 본문 → 섹션별 15~20자 요약 (gpt-4o-mini, OpenAI)
@@ -16,7 +16,7 @@ const { getBlogLLMSelectorOverrides } = require('./runtime-config');
  */
 
 const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
-const { generateInstaCard } = require('./img-gen');
+const { generateInstaCard } = require('./img-gen.ts');
 const fs = require('fs');
 const path = require('path');
 

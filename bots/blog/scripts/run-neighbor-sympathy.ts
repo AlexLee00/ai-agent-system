@@ -2,7 +2,7 @@
 // @ts-nocheck
 'use strict';
 
-const { runNeighborSympathy } = require('../lib/commenter');
+const { runNeighborSympathy } = require('../lib/commenter.ts');
 
 async function main() {
   const testMode = process.argv.includes('--test-mode') || process.env.BLOG_COMMENTER_TEST === 'true';

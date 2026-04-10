@@ -7,12 +7,12 @@ const {
   getNextLectureNumber,
   getLectureTitle,
   getNextGeneralCategory,
-} = require('./category-rotation');
+} = require('./category-rotation.ts');
 
 let _curriculumPlanner = null;
 function _getPlanner() {
   if (!_curriculumPlanner) {
-    try { _curriculumPlanner = require('./curriculum-planner'); } catch {}
+    try { _curriculumPlanner = require('./curriculum-planner.ts'); } catch {}
   }
   return _curriculumPlanner;
 }

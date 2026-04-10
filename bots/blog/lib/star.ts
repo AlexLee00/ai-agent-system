@@ -2,11 +2,11 @@
 'use strict';
 const kst = require('../../../packages/core/lib/kst');
 const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
-const { getBlogLLMSelectorOverrides } = require('./runtime-config');
+const { getBlogLLMSelectorOverrides } = require('./runtime-config.ts');
 const env = require('../../../packages/core/lib/env');
 
 /**
- * bots/blog/lib/star.js — 스타(STAR) 봇
+ * bots/blog/lib/star.ts — 스타(STAR) 봇
  *
  * 역할:
  *   N40. 포스팅 본문 → 섹션별 15~20자 요약 (gpt-4o-mini, OpenAI)
@@ -18,9 +18,9 @@ const env = require('../../../packages/core/lib/env');
  */
 
 const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
-const { buildShortformPlan } = require('./shortform-planner');
-const { renderShortformReel } = require('./shortform-renderer');
-const { SHORTFORM_DEFAULT_DURATION_SEC } = require('./shortform-planner');
+const { buildShortformPlan } = require('./shortform-planner.ts');
+const { renderShortformReel } = require('./shortform-renderer.ts');
+const { SHORTFORM_DEFAULT_DURATION_SEC } = require('./shortform-planner.ts');
 const fs = require('fs');
 const path = require('path');
 

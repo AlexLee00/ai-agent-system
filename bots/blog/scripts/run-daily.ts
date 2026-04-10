@@ -6,11 +6,11 @@
  * 블로그팀 일간 실행 스크립트
  * launchd 또는 수동 실행
  *
- * 실행: node bots/blog/scripts/run-daily.js
+ * 실행: node bots/blog/scripts/run-daily.ts
  */
 
 const { initHubConfig } = require('../../../packages/core/lib/llm-keys');
-const { run } = require('../lib/blo');
+const { run } = require('../lib/blo.ts');
 
 const dryRun = process.argv.includes('--dry-run');
 const verifyOnly = process.argv.includes('--verify');

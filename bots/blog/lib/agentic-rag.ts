@@ -1,7 +1,7 @@
 // @ts-nocheck
 'use strict';
 
-const richer = require('./richer.js');
+const richer = require('./richer.ts');
 
 function evaluateSearchResults(episodes = [], posts = [], topic = '') {
   let score = 0;

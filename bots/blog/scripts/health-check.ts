@@ -3,19 +3,19 @@
 'use strict';
 
 /**
- * scripts/health-check.js — 블로그팀 launchd 서비스 헬스체크
+ * scripts/health-check.ts — 블로그팀 launchd 서비스 헬스체크
  *
  * 감지 대상:
  *   - 스케줄: daily (06:00 KST 자동 실행)
  *
  * 공통 상태: packages/core/lib/health-state-manager.js
- * 실행: node scripts/health-check.js
+ * 실행: node scripts/health-check.ts
  * 자동: launchd ai.blog.health-check (10분마다)
  */
 
 const http = require('http');
 const hsm = require('../../../packages/core/lib/health-state-manager');
-const { getBlogHealthRuntimeConfig } = require('../lib/runtime-config');
+const { getBlogHealthRuntimeConfig } = require('../lib/runtime-config.ts');
 const {
   getLaunchctlStatus,
   DEFAULT_NORMAL_EXIT_CODES,

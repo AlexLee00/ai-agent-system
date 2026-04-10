@@ -8,7 +8,7 @@
   <key>ProgramArguments</key>
   <array>
     <string>/opt/homebrew/bin/node</string>
-    <string>/Users/alexlee/projects/ai-agent-system/bots/blog/scripts/run-neighbor-commenter.js</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/blog/scripts/run-neighbor-commenter.ts</string>
   </array>
 
   <key>StartCalendarInterval</key>

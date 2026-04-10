@@ -27,8 +27,8 @@ const {
   ensureBlogFeedbackTables,
   createCurriculumProposalSession,
   markCurriculumProposalCommitted,
-} = require('./ai-feedback');
-const { getBlogLLMSelectorOverrides } = require('./runtime-config');
+} = require('./ai-feedback.ts');
+const { getBlogLLMSelectorOverrides } = require('./runtime-config.ts');
 
 const DAYS_BEFORE_END = 7;
 const MIN_LECTURES = 100;

@@ -16,10 +16,10 @@
  */
 const path                                          = require('path');
 const env                                           = require('../../../packages/core/lib/env');
-const maestro                                       = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/maestro.js'));
-const { generatePostImages }                        = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/img-gen.js'));
-const { createInstaContent }                        = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/star.js'));
-const { getConfig }                                 = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/daily-config.js'));
+const maestro                                       = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/maestro.ts'));
+const { generatePostImages }                        = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/img-gen.ts'));
+const { createInstaContent }                        = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/star.ts'));
+const { getConfig }                                 = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/daily-config.ts'));
 const {
   GENERAL_CATEGORIES,
   advanceGeneralCategory,
@@ -28,38 +28,38 @@ const {
   isSeriesComplete,
   getLectureTitle,
   getNextLectureNumber,
-}                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/category-rotation.js'));
+}                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/category-rotation.ts'));
 const {
   getTodayContext,
   updateScheduleStatus,
   updateScheduleCategory,
-}                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/schedule.js'));
-const { getBlogCompetitionRuntimeConfig }           = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/runtime-config.js'));
+}                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/schedule.ts'));
+const { getBlogCompetitionRuntimeConfig }           = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/runtime-config.ts'));
 const { blog: blogSkills }                          = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/skills/index.js'));
 const {
   dailyCurriculumCheck,
   transitionSeries,
-}                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/curriculum-planner.js'));
-const richer                                        = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/richer.js'));
-const { collectAllResearch }                        = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/parallel-collector.js'));
-const { getRecentPosts, selectAndValidateTopic }    = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/topic-selector.js'));
-const { agenticSearch }                             = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/agentic-rag.js'));
-const { getWriterPersona }                          = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/writer-personas.js'));
-const { pickEditorPersona }                         = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/editor-personas.js'));
-const { loadLatestStrategy }                        = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/strategy-loader.js'));
-const { accumulatePostExperience }                 = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/rag-accumulator.js'));
+}                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/curriculum-planner.ts'));
+const richer                                        = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/richer.ts'));
+const { collectAllResearch }                        = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/parallel-collector.ts'));
+const { getRecentPosts, selectAndValidateTopic }    = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/topic-selector.ts'));
+const { agenticSearch }                             = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/agentic-rag.ts'));
+const { getWriterPersona }                          = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/writer-personas.ts'));
+const { pickEditorPersona }                         = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/editor-personas.ts'));
+const { loadLatestStrategy }                        = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/strategy-loader.ts'));
+const { accumulatePostExperience }                 = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/rag-accumulator.ts'));
 const {
   writeLecturePost,
   writeLecturePostChunked,
   repairLecturePostDraft,
-}                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/pos-writer.js'));
+}                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/pos-writer.ts'));
 const {
   writeGeneralPost,
   writeGeneralPostChunked,
   repairGeneralPostDraft,
-}                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/gems-writer.js'));
-const { checkQualityEnhanced }                      = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/quality-checker.js'));
-const { publishToFile, recordPerformance }          = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/publ.js'));
+}                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/gems-writer.ts'));
+const { checkQualityEnhanced }                      = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/quality-checker.ts'));
+const { publishToFile, recordPerformance }          = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/publ.ts'));
 const pgPool                                        = require('../../../packages/core/lib/pg-pool');
 const rag                                           = require('../../../packages/core/lib/rag-safe');
 const hiringContract                                = require('../../../packages/core/lib/hiring-contract');
@@ -498,7 +498,7 @@ async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, sc
         if (book) {
           preparedResearch.book_info = book;
           if (scheduleId) {
-            const { updateBookInfo } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/schedule.js'));
+            const { updateBookInfo } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/schedule.ts'));
             await updateBookInfo(scheduleId, { book_title: book.title, book_author: book.author, book_isbn: book.isbn });
           }
         } else {
@@ -524,7 +524,7 @@ async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, sc
 
         preparedResearch.book_info = book;
         if (scheduleId && book?.title) {
-          const { updateBookInfo } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/schedule.js'));
+          const { updateBookInfo } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/schedule.ts'));
           await updateBookInfo(scheduleId, {
             book_title: book.title,
             book_author: book.author,

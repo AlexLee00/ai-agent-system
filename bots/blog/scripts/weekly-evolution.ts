@@ -2,8 +2,8 @@
 // @ts-nocheck
 'use strict';
 
-const { diagnoseWeeklyPerformance } = require('../lib/performance-diagnostician');
-const { evolveStrategy } = require('../lib/strategy-evolver');
+const { diagnoseWeeklyPerformance } = require('../lib/performance-diagnostician.ts');
+const { evolveStrategy } = require('../lib/strategy-evolver.ts');
 const { runIfOps } = require('../../../packages/core/lib/mode-guard');
 const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 const { buildReportEvent, renderReportEvent } = require('../../../packages/core/lib/reporting-hub');

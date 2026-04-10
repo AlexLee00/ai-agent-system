@@ -20,7 +20,7 @@ const {
   buildFileActivityHealth,
   buildResolvedWebhookHealth,
 } = require('../../../packages/core/lib/health-provider');
-const { getBlogHealthRuntimeConfig } = require('../lib/runtime-config');
+const { getBlogHealthRuntimeConfig } = require('../lib/runtime-config.ts');
 
 const CONTINUOUS = ['ai.blog.node-server'];
 const ALL_SERVICES = ['ai.blog.daily', 'ai.blog.node-server'];
@@ -145,7 +145,7 @@ function formatText(report) {
         }),
       },
     ].filter(Boolean),
-    footer: ['실행: node bots/blog/scripts/health-report.js --json'],
+    footer: ['실행: node bots/blog/scripts/health-report.ts --json'],
   });
 }
 
