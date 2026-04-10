@@ -320,14 +320,14 @@ async function _resolvePipelineExecution(postType, sectionVariation, payload, ru
   return execution;
 }
 
-async function _createInstaContentSafe(content, title, category, label) {
+async function _createInstaContentSafe(content, title, category, label, options = {}) {
   if (process.env.BLOG_INSTA_ENABLED === 'false') return null;
-  const instaContent = await createInstaContent(content, title, category).catch(e => {
+  const instaContent = await createInstaContent(content, title, category, 3, options).catch(e => {
     console.warn(`[소셜] ${label} 생성 실패 (무시):`, e.message);
     return null;
   });
   if (instaContent) {
-    console.log(`[소셜] ${label} 완료: 카드 ${instaContent.cards?.length}장 + 해시태그 ${instaContent.hashtags?.length}개`);
+    console.log(`[소셜] ${label} 완료: 릴스 ${instaContent.reel ? '1개' : '0개'} + 해시태그 ${instaContent.hashtags?.length}개`);
   }
   return instaContent;
 }
@@ -605,7 +605,8 @@ async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx
       post.content,
       postTitle,
       'Node.js강의',
-      '강의 인스타'
+      '강의 인스타',
+      { thumbPath: images?.thumb?.filepath || null }
     );
 
   return {
@@ -648,7 +649,8 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
       post.content,
       genTitle,
       context.category,
-      '인스타'
+      '인스타',
+      { thumbPath: images?.thumb?.filepath || null }
     );
 
   const published = await _publishAndTrack({
