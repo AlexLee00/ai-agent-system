@@ -3,26 +3,30 @@
 const kst = require('../../../packages/core/lib/kst');
 const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
 const { getBlogLLMSelectorOverrides } = require('./runtime-config');
+const env = require('../../../packages/core/lib/env');
 
 /**
  * bots/blog/lib/star.js — 스타(STAR) 봇
  *
  * 역할:
  *   N40. 포스팅 본문 → 섹션별 15~20자 요약 (gpt-4o-mini, OpenAI)
- *   N41. 요약 텍스트 → 1024×1024 인스타 카드 (img-gen: Nano Banana 메인 + OpenAI Medium 폴백)
+ *   N41. 썸네일 기반 1080x1920 숏폼 렌더
  *   N42. 캡션 + 해시태그 자동 생성 (gpt-4o-mini, OpenAI)
  *
- * 비용: gpt-4o-mini(N40/N42) 유료(저렴), Nano Banana(N41) 무료 → OpenAI Medium 폴백 유료
- * 산출물: insta_content.html (Safari 복붙) + 카드 이미지 PNG
+ * 비용: gpt-4o-mini(N40/N42) 유료(저렴), ffmpeg 렌더(N41) 로컬
+ * 산출물: insta_content.html (Safari 복붙) + reel MP4
  */
 
 const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
-const { generateInstaCard } = require('./img-gen');
+const { buildShortformPlan } = require('./shortform-planner');
+const { renderShortformReel } = require('./shortform-renderer');
 const fs = require('fs');
 const path = require('path');
 
-const INSTA_DIR = path.join(__dirname, '..', 'output', 'images', 'insta');
+const BLOG_ROOT = path.join(env.PROJECT_ROOT, 'bots/blog');
+const INSTA_DIR = path.join(BLOG_ROOT, 'output', 'images', 'insta');
 const GDRIVE_DIR = process.env.GDRIVE_BLOG_INSTA || '/tmp/blog-insta';
+const IMAGE_DIR = path.join(BLOG_ROOT, 'output/images');
 
 const SUMMARIZE_SYSTEM = `
 당신은 인스타그램 콘텐츠 전문가입니다.
@@ -136,8 +140,23 @@ ${content.slice(0, 3000)}
   }
 }
 
-async function createInstaContent(content, title, category, cardCount = 3) {
-  console.log(`[소셜] 인스타 콘텐츠 생성 시작 (카드 ${cardCount}장)`);
+function resolveThumbPath(title = '', explicitThumbPath = null) {
+  if (explicitThumbPath && fs.existsSync(explicitThumbPath)) return explicitThumbPath;
+  if (!fs.existsSync(IMAGE_DIR)) return null;
+
+  const safeTitle = String(title || '').replace(/[^\p{L}\p{N}]+/gu, '_');
+  const thumbs = fs
+    .readdirSync(IMAGE_DIR)
+    .filter((name) => name.endsWith('_thumb.png'))
+    .map((name) => path.join(IMAGE_DIR, name))
+    .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+
+  const matching = thumbs.find((fullPath) => path.basename(fullPath).includes(safeTitle.slice(0, 12)));
+  return matching || thumbs[0] || null;
+}
+
+async function createInstaContent(content, title, category, cardCount = 3, options = {}) {
+  console.log(`[소셜] 인스타 콘텐츠 생성 시작 (릴스 중심)`);
 
   const today = kst.today();
   const safeSlug = (title || '').replace(/[^가-힣a-zA-Z0-9]/g, '_').slice(0, 30);
@@ -146,35 +165,40 @@ async function createInstaContent(content, title, category, cardCount = 3) {
   const summaries = await summarizeForInsta(content, cardCount);
   console.log(`  요약 ${summaries.length}개 생성`);
 
-  if (!fs.existsSync(INSTA_DIR)) fs.mkdirSync(INSTA_DIR, { recursive: true });
-  const cardResults = await Promise.allSettled(
-    summaries.map(async (s, i) => {
-      const filename = `${slug}_card${i + 1}.png`;
-      const outputPath = path.join(INSTA_DIR, filename);
-      const filePath = await generateInstaCard(s.summary, i + 1, outputPath);
-      if (filePath) {
-        try {
-          if (!fs.existsSync(GDRIVE_DIR)) fs.mkdirSync(GDRIVE_DIR, { recursive: true });
-          fs.copyFileSync(outputPath, path.join(GDRIVE_DIR, filename));
-        } catch (_) {}
-      }
-      return filePath;
-    })
-  );
-  const cards = cardResults
-    .map((r, i) => ({
-      index: i + 1,
-      summary: summaries[i]?.summary || '',
-      imagePath: r.status === 'fulfilled' ? r.value : null,
-    }))
-    .filter((c) => c.imagePath);
-  console.log(`  카드 ${cards.length}/${summaries.length} 생성 성공`);
-
   const { caption, hashtags, cta, fullText } = await generateInstaCaption(content, title, category);
   console.log(`  캡션 완료 (해시태그 ${hashtags.length}개)`);
 
+  const thumbPath = resolveThumbPath(title, options.thumbPath || null);
+  let reel = null;
+  let plan = null;
+  if (thumbPath) {
+    plan = buildShortformPlan({
+      title,
+      category,
+      thumbPath,
+      blogUrl: options.blogUrl || '',
+      durationSec: options.durationSec || 10,
+      content,
+    });
+    const render = await renderShortformReel({
+      thumbPath: plan.thumbPath,
+      outputPath: plan.outputPath,
+      durationSec: plan.durationSec,
+    });
+    reel = {
+      ...render,
+      storyboard: plan.storyboard,
+      thumbPath: plan.thumbPath,
+      hook: plan.hook,
+      cta: plan.cta,
+    };
+    console.log(`  릴스 렌더 완료 (${render.durationSec}초)`);
+  } else {
+    console.warn('  ⚠️ 숏폼용 썸네일을 찾지 못해 릴스 렌더를 건너뜁니다');
+  }
+
   const meta = {
-    title, category, slug, summaries, cards,
+    title, category, slug, summaries, reel,
     caption, hashtags, cta, fullText,
     createdAt: new Date().toISOString(),
   };
@@ -218,8 +242,9 @@ async function createInstaContent(content, title, category, cardCount = 3) {
 <div class="caption" id="cta">${escHtml(cta || '')}</div>
 <button class="copy-btn" onclick="navigator.clipboard.writeText(document.getElementById('cta').textContent).then(()=>alert('CTA 복사됨!'))">CTA 복사</button>
 
-<h2>🖼️ 카드 목록 (${cards.length}장)</h2>
-${cards.map((c, i) => `<div class="card-info">카드 ${i + 1}: ${c.summary || ''}</div>`).join('\n')}
+<h2>🎬 릴스 결과</h2>
+${reel ? `<div class="card-info">릴스 파일: ${escHtml(reel.outputPath)}</div>` : '<div class="card-info">릴스 미생성</div>'}
+${(reel?.storyboard || []).map((step, i) => `<div class="card-info">구간 ${i + 1}: ${step.overlay || ''}</div>`).join('\n')}
 
 <footer>생성: ${new Date().toLocaleString('ko-KR')} | 팀 제이 스타 봇</footer>
 </body>
@@ -230,12 +255,12 @@ ${cards.map((c, i) => `<div class="card-info">카드 ${i + 1}: ${c.summary || ''
   try {
     if (!fs.existsSync(GDRIVE_DIR)) fs.mkdirSync(GDRIVE_DIR, { recursive: true });
     fs.writeFileSync(path.join(GDRIVE_DIR, htmlFilename), htmlContent, 'utf8');
-    console.log(`  📱 [스타] 구글드라이브 동기화: html + 이미지 ${cards.length}장`);
+    console.log(`  📱 [스타] 구글드라이브 동기화: html${reel?.outputPath ? ' + 릴스 1개' : ''}`);
   } catch (e) {
     console.warn(`  ⚠️ [스타] 구글드라이브 복사 실패: ${e.message}`);
   }
 
-  console.log(`[소셜] 완성: 카드 ${cards.length}장 + 해시태그 ${hashtags.length}개`);
+  console.log(`[소셜] 완성: 릴스 ${reel ? '1개' : '0개'} + 해시태그 ${hashtags.length}개`);
   return meta;
 }
 
