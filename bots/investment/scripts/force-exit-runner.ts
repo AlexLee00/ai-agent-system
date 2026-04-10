@@ -14,8 +14,8 @@
  *   env PAPER_MODE=false node bots/investment/scripts/force-exit-runner.js --symbol=ORCL --exchange=kis_overseas --execute --confirm=force-exit
  */
 
-import { fileURLToPath } from 'url';
 import * as db from '../shared/db.ts';
+import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { loadCandidates, getMarketLabel } from './force-exit-candidate-report.ts';
 import { executeSignal as executeCryptoSignal } from '../team/hephaestos.ts';
 import { executeSignal as executeDomesticSignal, executeOverseasSignal } from '../team/hanul.ts';
@@ -243,9 +243,12 @@ async function main() {
   console.log(`- 실행 결과: ${JSON.stringify(result)}`);
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  main().catch((error) => {
-    console.error(`[force-exit-runner] ${error?.stack || error?.message || String(error)}`);
-    process.exit(1);
+if (isDirectExecution(import.meta.url)) {
+  await runCliMain({
+    before: () => db.initSchema(),
+    run: () => main(),
+    onError: async (error) => {
+      console.error(`[force-exit-runner] ${error?.stack || error?.message || String(error)}`);
+    },
   });
 }

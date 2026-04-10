@@ -487,6 +487,84 @@ function buildCostEfficiencyNote(trades, usageRows) {
   return '';
 }
 
+function accumulatePipelineTotals(rows = []) {
+  return rows.reduce((acc, row) => {
+    for (const meta of (row.meta_rows || [])) {
+      acc.decided += Number(meta?.decided_symbols || 0);
+      acc.approved += Number(meta?.approved_signals || 0);
+      acc.executed += Number(meta?.executed_symbols || 0);
+      acc.buy += Number(meta?.buy_decisions || 0);
+      acc.sell += Number(meta?.sell_decisions || 0);
+      acc.hold += Number(meta?.hold_decisions || 0);
+      acc.weak += Number(meta?.weak_signal_skipped || 0);
+      acc.risk += Number(meta?.risk_rejected || 0);
+      acc.saved += Number(meta?.saved_execution_work || 0);
+      const modeKey = String(meta?.investment_trade_mode || 'normal').toUpperCase();
+      acc.modeCounts[modeKey] = (acc.modeCounts[modeKey] || 0) + 1;
+      const topReason = meta?.risk_reject_reason_top;
+      if (topReason) acc.riskReasons[topReason] = (acc.riskReasons[topReason] || 0) + Number(meta?.risk_rejected || 1);
+      const weakReasons = meta?.weak_signal_reasons || {};
+      for (const [reason, count] of Object.entries(weakReasons)) {
+        acc.weakReasons[reason] = (acc.weakReasons[reason] || 0) + Number(count || 0);
+      }
+    }
+    return acc;
+  }, {
+    decided: 0,
+    approved: 0,
+    executed: 0,
+    buy: 0,
+    sell: 0,
+    hold: 0,
+    weak: 0,
+    risk: 0,
+    saved: 0,
+    riskReasons: {},
+    weakReasons: {},
+    modeCounts: {},
+  });
+}
+
+function buildTradeModeSummary(trades = []) {
+  const tradeSummary = new Map();
+  for (const trade of trades) {
+    const key = `${getMarketBucket(trade.exchange)}|${getTradeModeLabel(trade.trade_mode)}`;
+    const bucket = tradeSummary.get(key) || { total: 0, live: 0, paper: 0 };
+    bucket.total += 1;
+    if (trade.paper) bucket.paper += 1;
+    else bucket.live += 1;
+    tradeSummary.set(key, bucket);
+  }
+  return tradeSummary;
+}
+
+function buildValidationPipelineSummary(rows = []) {
+  const validationSummary = new Map();
+  for (const row of rows) {
+    const market = getMarketBucket(row.market);
+    for (const meta of (row.meta_rows || [])) {
+      const mode = String(meta?.investment_trade_mode || 'normal').toUpperCase();
+      if (mode !== 'VALIDATION') continue;
+      const bucket = validationSummary.get(market) || {
+        decision: 0, buy: 0, hold: 0, approved: 0, executed: 0, weak: 0, risk: 0, weakReasons: {},
+      };
+      bucket.decision += Number(meta?.decided_symbols || 0);
+      bucket.buy += Number(meta?.buy_decisions || 0);
+      bucket.hold += Number(meta?.hold_decisions || 0);
+      bucket.approved += Number(meta?.approved_signals || 0);
+      bucket.executed += Number(meta?.executed_symbols || 0);
+      bucket.weak += Number(meta?.weak_signal_skipped || 0);
+      bucket.risk += Number(meta?.risk_rejected || 0);
+      const weakReasons = meta?.weak_signal_reasons || {};
+      for (const [reason, count] of Object.entries(weakReasons)) {
+        bucket.weakReasons[reason] = (bucket.weakReasons[reason] || 0) + Number(count || 0);
+      }
+      validationSummary.set(market, bucket);
+    }
+  }
+  return validationSummary;
+}
+
 function formatSignalFunnel({ signalRows, blockRows, blockCodeRows, analysisRows }) {
   if (!signalRows.length && !blockRows.length && !blockCodeRows.length && !analysisRows.length) return '  기록 없음';
 
@@ -586,28 +664,7 @@ function formatDecisionPipeline(rows) {
       continue;
     }
 
-    const totals = marketRows.reduce((acc, row) => {
-      for (const meta of (row.meta_rows || [])) {
-        acc.decided += Number(meta?.decided_symbols || 0);
-        acc.approved += Number(meta?.approved_signals || 0);
-        acc.executed += Number(meta?.executed_symbols || 0);
-        acc.buy += Number(meta?.buy_decisions || 0);
-        acc.sell += Number(meta?.sell_decisions || 0);
-        acc.hold += Number(meta?.hold_decisions || 0);
-        acc.weak += Number(meta?.weak_signal_skipped || 0);
-        acc.risk += Number(meta?.risk_rejected || 0);
-        acc.saved += Number(meta?.saved_execution_work || 0);
-        const modeKey = String(meta?.investment_trade_mode || 'normal').toUpperCase();
-        acc.modeCounts[modeKey] = (acc.modeCounts[modeKey] || 0) + 1;
-        const topReason = meta?.risk_reject_reason_top;
-        if (topReason) acc.riskReasons[topReason] = (acc.riskReasons[topReason] || 0) + Number(meta?.risk_rejected || 1);
-        const weakReasons = meta?.weak_signal_reasons || {};
-        for (const [reason, count] of Object.entries(weakReasons)) {
-          acc.weakReasons[reason] = (acc.weakReasons[reason] || 0) + Number(count || 0);
-        }
-      }
-      return acc;
-    }, { decided: 0, approved: 0, executed: 0, buy: 0, sell: 0, hold: 0, weak: 0, risk: 0, saved: 0, riskReasons: {}, weakReasons: {}, modeCounts: {} });
+    const totals = accumulatePipelineTotals(marketRows);
 
     lines.push(`    decision ${totals.decided}건 | BUY ${totals.buy} | SELL ${totals.sell} | HOLD ${totals.hold}`);
     const modeSummary = Object.entries(totals.modeCounts).map(([mode, count]) => `${mode} ${count}`).join(' / ');
@@ -625,16 +682,7 @@ function formatDecisionPipeline(rows) {
 function formatIntegratedFeedbackMatrix(rows, trades) {
   const markets = ['crypto', 'domestic', 'overseas'];
   const modes = ['NORMAL', 'VALIDATION'];
-  const tradeSummary = new Map();
-
-  for (const trade of trades) {
-    const key = `${getMarketBucket(trade.exchange)}|${getTradeModeLabel(trade.trade_mode)}`;
-    const bucket = tradeSummary.get(key) || { total: 0, live: 0, paper: 0 };
-    bucket.total += 1;
-    if (trade.paper) bucket.paper += 1;
-    else bucket.live += 1;
-    tradeSummary.set(key, bucket);
-  }
+  const tradeSummary = buildTradeModeSummary(trades);
 
   const pipelineSummary = new Map();
   for (const row of rows) {
@@ -684,37 +732,8 @@ function formatIntegratedFeedbackMatrix(rows, trades) {
 
 function formatValidationPromotionCandidates(rows, trades) {
   const markets = ['crypto', 'domestic', 'overseas'];
-  const tradeSummary = new Map();
-  for (const trade of trades) {
-    const key = `${getMarketBucket(trade.exchange)}|${getTradeModeLabel(trade.trade_mode)}`;
-    const bucket = tradeSummary.get(key) || { total: 0, live: 0, paper: 0 };
-    bucket.total += 1;
-    if (trade.paper) bucket.paper += 1;
-    else bucket.live += 1;
-    tradeSummary.set(key, bucket);
-  }
-
-  const validationSummary = new Map();
-  for (const row of rows) {
-    const market = getMarketBucket(row.market);
-    for (const meta of (row.meta_rows || [])) {
-      const mode = String(meta?.investment_trade_mode || 'normal').toUpperCase();
-      if (mode !== 'VALIDATION') continue;
-      const bucket = validationSummary.get(market) || { decision: 0, buy: 0, hold: 0, approved: 0, executed: 0, weak: 0, risk: 0, weakReasons: {} };
-      bucket.decision += Number(meta?.decided_symbols || 0);
-      bucket.buy += Number(meta?.buy_decisions || 0);
-      bucket.hold += Number(meta?.hold_decisions || 0);
-      bucket.approved += Number(meta?.approved_signals || 0);
-      bucket.executed += Number(meta?.executed_symbols || 0);
-      bucket.weak += Number(meta?.weak_signal_skipped || 0);
-      bucket.risk += Number(meta?.risk_rejected || 0);
-      const weakReasons = meta?.weak_signal_reasons || {};
-      for (const [reason, count] of Object.entries(weakReasons)) {
-        bucket.weakReasons[reason] = (bucket.weakReasons[reason] || 0) + Number(count || 0);
-      }
-      validationSummary.set(market, bucket);
-    }
-  }
+  const tradeSummary = buildTradeModeSummary(trades);
+  const validationSummary = buildValidationPipelineSummary(rows);
 
   const lines = [];
   for (const market of markets) {
@@ -746,33 +765,8 @@ function formatValidationPromotionCandidates(rows, trades) {
   return lines.join('\n');
 }
 
-// ─── 메인 ───────────────────────────────────────────────────────────
-
-async function main() {
-  await db.initSchema();
-  await initJournalSchema();
-
-  const args    = process.argv.slice(2);
-  const sendTg  = args.includes('--telegram');
-  const allTime = args.includes('--all');
-  const daysArg = args.find(a => a.startsWith('--days='));
-  const days    = allTime ? 0 : daysArg ? parseInt(daysArg.split('=')[1]) : 1;
-
-  const { from, to, label } = kstDateRange(days);
-
-  const [trades, positions, reviewRows] = await Promise.all([
-    fetchTrades(from, to),
-    fetchPositions(),
-    fetchClosedTradeReviews(from, to),
-  ]);
-
-  const pnlMap    = calcPnl(trades);
-  const tokenRows = await fetchTokenUsage(from, to);
-  const funnel    = await fetchSignalFunnel(from, to);
-  const decisionPipeline = await fetchDecisionPipelineStats(from, to);
-
-  // ─── 출력 조립 ───
-  const lines = [
+function buildJournalReportLines({ label, trades, pnlMap, positions, reviewRows, funnel, decisionPipeline, tokenRows }) {
+  return [
     `📓 루나팀 자동매매 일지`,
     `기간: ${label}`,
     ``,
@@ -800,6 +794,44 @@ async function main() {
     `━━ LLM 토큰 사용 ━━`,
     formatTokenUsage(tokenRows),
   ];
+}
+
+// ─── 메인 ───────────────────────────────────────────────────────────
+
+async function main() {
+  await db.initSchema();
+  await initJournalSchema();
+
+  const args    = process.argv.slice(2);
+  const sendTg  = args.includes('--telegram');
+  const allTime = args.includes('--all');
+  const daysArg = args.find(a => a.startsWith('--days='));
+  const days    = allTime ? 0 : daysArg ? parseInt(daysArg.split('=')[1]) : 1;
+
+  const { from, to, label } = kstDateRange(days);
+
+  const [trades, positions, reviewRows] = await Promise.all([
+    fetchTrades(from, to),
+    fetchPositions(),
+    fetchClosedTradeReviews(from, to),
+  ]);
+
+  const pnlMap    = calcPnl(trades);
+  const tokenRows = await fetchTokenUsage(from, to);
+  const funnel    = await fetchSignalFunnel(from, to);
+  const decisionPipeline = await fetchDecisionPipelineStats(from, to);
+
+  // ─── 출력 조립 ───
+  const lines = buildJournalReportLines({
+    label,
+    trades,
+    pnlMap,
+    positions,
+    reviewRows,
+    funnel,
+    decisionPipeline,
+    tokenRows,
+  });
 
   const report = lines.join('\n');
   const costEfficiencyNote = buildCostEfficiencyNote(trades, tokenRows);

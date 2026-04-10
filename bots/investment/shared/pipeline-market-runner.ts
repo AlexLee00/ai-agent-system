@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { createPipelineSession, runNode } from './node-runner.ts';
 import { finishPipelineRun } from './pipeline-db.ts';
+import { publishToMainBot } from './mainbot-client.ts';
 import { getInvestmentNode } from '../nodes/index.ts';
 
 const COLLECT_NODE_SETS = {
@@ -283,11 +284,55 @@ export function buildCollectAlertMessage(label, warnings = [], metrics = {}) {
   ].join('\n');
 }
 
+export async function logMarketPipelineMetrics(label, metrics = {}) {
+  if (!metrics || typeof metrics !== 'object') return;
+  const parts = [
+    `duration=${((metrics.durationMs || 0) / 1000).toFixed(1)}s`,
+    metrics.symbolCount != null ? `symbols=${metrics.symbolCount}` : null,
+    metrics.screeningSymbolCount != null && metrics.screeningSymbolCount > 0 ? `screening=${metrics.screeningSymbolCount}` : null,
+    metrics.heldAddedCount != null && metrics.heldAddedCount > 0 ? `heldAdded=${metrics.heldAddedCount}` : null,
+    metrics.totalTasks != null ? `tasks=${metrics.totalTasks}` : null,
+    metrics.concurrencyLimit != null ? `concurrency=${metrics.concurrencyLimit}` : null,
+    metrics.failedTasks != null ? `failed=${metrics.failedTasks}` : null,
+    metrics.failedCoreTasks != null ? `coreFailed=${metrics.failedCoreTasks}` : null,
+    metrics.failedEnrichmentTasks != null ? `enrichFailed=${metrics.failedEnrichmentTasks}` : null,
+    metrics.debateCount != null ? `debate=${metrics.debateCount}/${metrics.debateLimit}` : null,
+    metrics.weakSignalSkipped != null ? `weakSkipped=${metrics.weakSignalSkipped}` : null,
+    metrics.riskRejected != null ? `riskRejected=${metrics.riskRejected}` : null,
+    metrics.savedExecutionWork != null ? `savedNodes=${metrics.savedExecutionWork}` : null,
+  ].filter(Boolean);
+  console.log(`  📈 [메트릭] ${label} | ${parts.join(' | ')}`);
+  if (!metrics.warnings?.length) return;
+
+  console.warn(`  ⚠️ [경고] ${label} | ${metrics.warnings.join(', ')}`);
+  const escalated = metrics.warnings.filter((warning) =>
+    [
+      'collect_overload_detected',
+      'collect_failure_rate_high',
+      'core_collect_failure_rate_high',
+      'enrichment_collect_failure_rate_high',
+      'collect_blocked_by_llm_guard',
+      'debate_capacity_hot',
+      'weak_signal_pressure',
+    ].includes(warning),
+  );
+  if (!escalated.length) return;
+
+  await publishToMainBot({
+    from_bot: 'argos',
+    event_type: 'alert',
+    alert_level: 2,
+    message: buildCollectAlertMessage(label, escalated, metrics),
+    payload: metrics,
+  });
+}
+
 export default {
   runMarketCollectPipeline,
   summarizeNodeStatuses,
   summarizeCollectWarnings,
   buildCollectAlertMessage,
+  logMarketPipelineMetrics,
 };
 
 async function runWithConcurrencyLimit(tasks, limit) {

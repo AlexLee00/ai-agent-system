@@ -10,15 +10,16 @@
  * 실행: node team/argos.js
  */
 
-import { fileURLToPath } from 'url';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
 import https from 'https';
 import { execFile } from 'child_process';
 import ccxt from 'ccxt';
 import yaml from 'js-yaml';
 import * as db from '../shared/db.ts';
+import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { callLLM, parseJSON } from '../shared/llm-client.ts';
 import { publishToMainBot } from '../shared/mainbot-client.ts';
 import { search as searchRag } from '../shared/rag-client.ts';
@@ -494,19 +495,8 @@ async function fetchRedditPosts(subreddit, limit = 10) {
 
 // ─── LLM 품질 평가 ──────────────────────────────────────────────────
 
-async function evaluatePost(post, market) {
-  const userMsg = [
-    `제목: ${post.title}`,
-    `내용: ${(post.selftext || '').slice(0, 800)}`,
-    `좋아요: ${post.score} | 댓글: ${post.num_comments}`,
-    ``,
-    `이 포스트에서 트레이딩 전략을 추출하고 평가하시오.`,
-  ].join('\n');
-
-  const raw    = await callLLM('argos', ARGOS_SYSTEM, userMsg, 300);
-  const parsed = parseJSON(raw);
+function normalizeEvaluatedStrategy(parsed, market, post) {
   if (!parsed?.strategy_name) return null;
-
   const qualityScore = Math.max(0, Math.min(1, _num(parsed.quality_score, 0)));
 
   return {
@@ -520,9 +510,38 @@ async function evaluatePost(post, market) {
     summary: String(parsed.summary || '').trim(),
     applicable_now: parsed.applicable_now === true,
     market,
-    source:     'reddit',
+    source: 'reddit',
     source_url: `https://reddit.com${post.permalink}`,
   };
+}
+
+function handleArgosEvaluationError(error, market) {
+  if (error.name === 'TimeoutError' || error.name === 'AbortError' || /timed out/i.test(error.message || '')) {
+    _warnExternalOnce(`argos-eval-timeout:${market}`, '  ⚠️ [아르고스] 전략 평가 타임아웃 — 일부 포스트 스킵');
+    return true;
+  }
+  if ((error.message || '').includes('Groq API 키 없음')) {
+    _warnExternalOnce('argos-groq-missing', '  ⚠️ [아르고스] Groq API 키 없음 — 전략 평가를 이번 사이클에서 스킵');
+    return true;
+  }
+  if ((error.message || '').includes('OpenAI API 키 없음')) {
+    _warnExternalOnce('argos-openai-missing', '  ⚠️ [아르고스] OpenAI API 키 없음 — OpenAI 폴백 없이 이번 사이클 스킵');
+    return true;
+  }
+  return false;
+}
+
+async function evaluatePost(post, market) {
+  const userMsg = [
+    `제목: ${post.title}`,
+    `내용: ${(post.selftext || '').slice(0, 800)}`,
+    `좋아요: ${post.score} | 댓글: ${post.num_comments}`,
+    ``,
+    `이 포스트에서 트레이딩 전략을 추출하고 평가하시오.`,
+  ].join('\n');
+
+  const raw = await callLLM('argos', ARGOS_SYSTEM, userMsg, 300);
+  return normalizeEvaluatedStrategy(parseJSON(raw), market, post);
 }
 
 // ─── 메인 수집 함수 ──────────────────────────────────────────────────
@@ -548,16 +567,7 @@ export async function collectStrategies() {
         summary.push(`• [${(_num(strategy.quality_score, 0) * 10).toFixed(0)}점] ${strategy.strategy_name}: ${strategy.summary}`);
         console.log(`  ✅ 저장: ${strategy.strategy_name} (점수: ${_num(strategy.quality_score, 0).toFixed(2)})`);
       } catch (e) {
-        if (e.name === 'TimeoutError' || e.name === 'AbortError' || /timed out/i.test(e.message || '')) {
-          _warnExternalOnce(`argos-eval-timeout:${market}`, `  ⚠️ [아르고스] 전략 평가 타임아웃 — 일부 포스트 스킵`);
-          continue;
-        }
-        if ((e.message || '').includes('Groq API 키 없음')) {
-          _warnExternalOnce('argos-groq-missing', '  ⚠️ [아르고스] Groq API 키 없음 — 전략 평가를 이번 사이클에서 스킵');
-          continue;
-        }
-        if ((e.message || '').includes('OpenAI API 키 없음')) {
-          _warnExternalOnce('argos-openai-missing', '  ⚠️ [아르고스] OpenAI API 키 없음 — OpenAI 폴백 없이 이번 사이클 스킵');
+        if (handleArgosEvaluationError(e, market)) {
           continue;
         }
         console.warn(`  ⚠️ [아르고스] 평가 실패: ${e.message}`);
@@ -1229,14 +1239,13 @@ export async function screenAllMarkets() {
 }
 
 // CLI 실행
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  await db.initSchema();
-  try {
-    const count = await collectStrategies();
-    console.log(`\n결과: ${count}개 전략`);
-    process.exit(0);
-  } catch (e) {
-    console.error('❌ 아르고스 오류:', e.message);
-    process.exit(1);
-  }
+if (isDirectExecution(import.meta.url)) {
+  await runCliMain({
+    before: () => db.initSchema(),
+    run: () => collectStrategies(),
+    onSuccess: async (count) => {
+      console.log(`\n결과: ${count}개 전략`);
+    },
+    errorPrefix: '❌ 아르고스 오류:',
+  });
 }

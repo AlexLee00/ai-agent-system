@@ -16,10 +16,10 @@
 import https from 'https';
 import http  from 'http';
 import * as db from '../../shared/db.ts';
+import { isDirectExecution, runCliMain } from '../../shared/cli-runtime.ts';
 import { callLLM, parseJSON } from '../../shared/llm-client.ts';
 import { loadSecrets }        from '../../shared/secrets.ts';
 import { ANALYST_TYPES, ACTIONS } from '../../shared/signal.ts';
-import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 
 const _require = createRequire(import.meta.url);
@@ -411,13 +411,18 @@ export async function analyzeNews(symbol = 'BTC/USDT', exchange = 'binance') {
 }
 
 // CLI 실행
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const args     = process.argv.slice(2);
-  const symbol   = args.find(a => a.startsWith('--symbol='))?.split('=')[1]   || 'BTC/USDT';
-  const exchange = args.find(a => a.startsWith('--exchange='))?.split('=')[1] || 'binance';
-
-  db.initSchema()
-    .then(() => analyzeNews(symbol, exchange))
-    .then(r => { console.log('\n결과:', JSON.stringify(r, null, 2)); process.exit(0); })
-    .catch(e => { console.error('❌ 헤르메스 오류:', e.message); process.exit(1); });
+if (isDirectExecution(import.meta.url)) {
+  await runCliMain({
+    before: () => db.initSchema(),
+    run: async () => {
+      const args     = process.argv.slice(2);
+      const symbol   = args.find(a => a.startsWith('--symbol='))?.split('=')[1]   || 'BTC/USDT';
+      const exchange = args.find(a => a.startsWith('--exchange='))?.split('=')[1] || 'binance';
+      return analyzeNews(symbol, exchange);
+    },
+    onSuccess: async (result) => {
+      console.log('\n결과:', JSON.stringify(result, null, 2));
+    },
+    errorPrefix: '❌ 헤르메스 오류:',
+  });
 }

@@ -9,9 +9,9 @@
  * 실행: node team/chronos.js --symbol=BTC/USDT --from=2024-01-01 --to=2024-12-31
  */
 
-import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import * as db from '../shared/db.ts';
+import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { isPaperMode } from '../shared/secrets.ts';
 import { getOHLCV } from '../shared/ohlcv-fetcher.ts';
 import {
@@ -131,6 +131,81 @@ function calcSignalScore({ close, rsi, macd, bb }) {
   if (score > 0) return { action: 'BUY', score, tags };
   if (score < 0) return { action: 'SELL', score, tags };
   return { action: 'HOLD', score, tags };
+}
+
+function normalizeSentimentScore(rawSentiment) {
+  if (typeof rawSentiment === 'number' && Number.isFinite(rawSentiment)) {
+    return Math.max(0, Math.min(1, rawSentiment));
+  }
+  const text = String(rawSentiment || '').trim().toUpperCase();
+  if (text === 'BULLISH') return 0.75;
+  if (text === 'BEARISH') return 0.25;
+  if (text === 'NEUTRAL') return 0.5;
+  return 0.5;
+}
+
+function passesLayer2SentimentGate(action, sentimentScore) {
+  if (!Number.isFinite(sentimentScore)) return false;
+
+  if (action === 'BUY') {
+    return sentimentScore >= 0.55;
+  }
+  if (action === 'SELL') {
+    return sentimentScore <= 0.45;
+  }
+
+  return sentimentScore >= 0.45 && sentimentScore <= 0.55;
+}
+
+function normalizeLayer2Signal(signal, response = null) {
+  const sentimentScore = normalizeSentimentScore(response?.sentiment);
+  const passedLayer2 = passesLayer2SentimentGate(signal.action, sentimentScore);
+  return {
+    ...signal,
+    sentiment: {
+      score: sentimentScore,
+      reason: response?.reason || response?.reasoning || '',
+      source: response ? 'local_llm' : 'fallback',
+      raw: response || null,
+    },
+    passedLayer2,
+  };
+}
+
+function normalizeLayer3Decision(signal, response = null) {
+  const action = String(response?.decision || response?.action || 'HOLD').toUpperCase();
+  const confidence = Number(response?.confidence || 0);
+  const riskLevel = String(response?.riskLevel || response?.risk_level || 'high');
+  const atrRatio = signal.indicators?.atr && signal.close ? signal.indicators.atr / signal.close : null;
+  const riskAdjustedAction = atrRatio != null && atrRatio > 0.05 ? 'HOLD' : action;
+
+  return {
+    ...signal,
+    judge: {
+      action,
+      confidence: Number.isFinite(confidence) ? confidence : 0,
+      reasoning: response?.reason || response?.reasoning || 'local_llm_unparsed',
+      riskLevel,
+      source: response ? 'local_llm' : 'fallback',
+      raw: response || null,
+    },
+    finalAction: riskAdjustedAction,
+  };
+}
+
+function summarizeLayerActions(signals = [], actionField = 'finalAction') {
+  return {
+    buy: signals.filter((item) => item[actionField] === 'BUY').length,
+    sell: signals.filter((item) => item[actionField] === 'SELL').length,
+    hold: signals.filter((item) => item[actionField] === 'HOLD').length,
+  };
+}
+
+function toActionSignals(signals = [], actionField = 'finalAction') {
+  return signals.map((signal) => ({
+    ...signal,
+    action: signal[actionField] || signal.action || 'HOLD',
+  }));
 }
 
 function buildTradeStats(signals) {
@@ -261,7 +336,13 @@ async function runLayer1(symbol, from, to, options = {}, timeframe = '1h') {
 async function runLayer2(layer1Result, options = {}) {
   const available = await isLocalLLMAvailable();
   if (!available) {
-    return { ...layer1Result, layer2Status: 'llm_unavailable', layer2Signals: [] };
+    return {
+      ...layer1Result,
+      layer2Status: 'llm_unavailable',
+      layer2Signals: [],
+      layer2PassedSignals: [],
+      layer2Summary: { buy: 0, sell: 0, hold: 0, passed: 0 },
+    };
   }
 
   const layer2Signals = [];
@@ -270,78 +351,89 @@ async function runLayer2(layer1Result, options = {}) {
     : 200;
   for (const signal of layer1Result.filteredSignals.slice(0, maxSignals)) {
     const prompt = [
-      { role: 'system', content: '암호화폐 감성 분석가다. 반드시 JSON만 답한다: {"sentiment":"BULLISH|BEARISH|NEUTRAL","confidence":0~1,"reasoning":"..."}' },
-      { role: 'user', content: `RSI=${signal.indicators.rsi?.toFixed?.(2) || 'null'}, MACD_hist=${signal.indicators.macd?.histogram?.toFixed?.(4) || 'null'}, volume_ratio=${signal.indicators.volumeRatio?.toFixed?.(2) || 'null'}, action=${signal.action}` },
+      { role: 'system', content: '암호화폐 감성 분석가다. 반드시 JSON만 답한다. 형식: {"sentiment":0.65,"reason":"이유"} sentiment는 0~1 범위다.' },
+      { role: 'user', content: `symbol=${layer1Result.symbol}, ts=${signal.ts}, RSI=${signal.indicators.rsi?.toFixed?.(2) || 'null'}, MACD_hist=${signal.indicators.macd?.histogram?.toFixed?.(4) || 'null'}, volume_ratio=${signal.indicators.volumeRatio?.toFixed?.(2) || 'null'}, action=${signal.action}` },
     ];
     const sentiment = await callLocalLLMJSON(LOCAL_MODEL_FAST, prompt, { max_tokens: 180, temperature: 0.1 });
-    layer2Signals.push({
-      ...signal,
-      sentiment: sentiment || { sentiment: 'NEUTRAL', confidence: 0, reasoning: 'local_llm_unparsed' },
-    });
+    layer2Signals.push(normalizeLayer2Signal(signal, sentiment));
   }
+
+  const layer2PassedSignals = layer2Signals.filter((signal) => signal.passedLayer2);
+  const layer2TradeStats = buildTradeStats(toActionSignals(layer2PassedSignals, 'action'));
 
   return {
     ...layer1Result,
     layer2Status: 'ok',
     layer2Signals,
+    layer2PassedSignals,
+    layer2Summary: {
+      ...summarizeLayerActions(layer2Signals, 'action'),
+      passed: layer2PassedSignals.length,
+    },
+    totalTrades: layer2TradeStats.totalTrades,
+    winRate: layer2TradeStats.winRate,
+    totalPnlPct: layer2TradeStats.totalPnlPct,
+    maxDrawdown: layer2TradeStats.maxDrawdown,
+    sharpeRatio: layer2TradeStats.sharpeRatio,
   };
 }
 
 async function runLayer3(layer2Result, options = {}) {
   const available = await isLocalLLMAvailable();
   if (!available) {
-    return { ...layer2Result, layer3Status: 'llm_unavailable', finalSignals: [] };
+    return {
+      ...layer2Result,
+      layer3Status: 'llm_unavailable',
+      finalSignals: [],
+      finalSummary: { buy: 0, sell: 0, hold: 0 },
+    };
   }
 
   const finalSignals = [];
   const maxSignals = Number.isFinite(Number(options.maxSignals))
     ? Math.max(0, Number(options.maxSignals))
-    : layer2Result.layer2Signals.length;
-  for (const signal of layer2Result.layer2Signals.slice(0, maxSignals)) {
+    : layer2Result.layer2PassedSignals.length;
+  for (const signal of layer2Result.layer2PassedSignals.slice(0, maxSignals)) {
     const prompt = [
-      { role: 'system', content: '트레이딩 팀장이다. 추론 설명이나 <think>, 마크다운 없이 JSON 객체 하나만 답한다. 형식: {"action":"BUY|SELL|HOLD","confidence":0~1,"reasoning":"...","size":0~1}' },
-      { role: 'user', content: `기술:${signal.action} score=${signal.score}, RSI=${signal.indicators.rsi?.toFixed?.(2) || 'null'}, 감성:${signal.sentiment?.sentiment || 'NEUTRAL'}(${signal.sentiment?.confidence || 0})` },
+      { role: 'system', content: '당신은 루나 투자 팀장이다. 추론 설명이나 <think>, 마크다운 없이 JSON 객체 하나만 답한다. 형식: {"decision":"BUY|SELL|HOLD","confidence":0.75,"reason":"이유","riskLevel":"low|medium|high"}' },
+      { role: 'user', content: `symbol=${layer2Result.symbol}, ts=${signal.ts}, 기술=${signal.action}, score=${signal.score}, RSI=${signal.indicators.rsi?.toFixed?.(2) || 'null'}, sentiment=${signal.sentiment?.score ?? 0.5}` },
     ];
-    const judge = await callLocalLLMJSON(LOCAL_MODEL_DEEP, prompt, { max_tokens: 512, temperature: 0.1, timeoutMs: 120000 });
-    const riskAdjustedAction = signal.indicators.atr && signal.indicators.atr / signal.close > 0.05
-      ? 'HOLD'
-      : (judge?.action || 'HOLD');
-    finalSignals.push({
-      ...signal,
-      judge: judge || { action: 'HOLD', confidence: 0, reasoning: 'local_llm_unparsed', size: 0 },
-      finalAction: riskAdjustedAction,
-    });
+    const judge = await callLocalLLMJSON(LOCAL_MODEL_DEEP, prompt, { max_tokens: 512, temperature: 0.1, timeoutMs: 180000 });
+    finalSignals.push(normalizeLayer3Decision(signal, judge));
   }
+
+  const finalTradeStats = buildTradeStats(toActionSignals(finalSignals, 'finalAction'));
 
   return {
     ...layer2Result,
     layer3Status: 'ok',
     finalSignals,
-    finalSummary: {
-      buy: finalSignals.filter((item) => item.finalAction === 'BUY').length,
-      sell: finalSignals.filter((item) => item.finalAction === 'SELL').length,
-      hold: finalSignals.filter((item) => item.finalAction === 'HOLD').length,
-    },
+    finalSummary: summarizeLayerActions(finalSignals, 'finalAction'),
+    totalTrades: finalTradeStats.totalTrades,
+    winRate: finalTradeStats.winRate,
+    totalPnlPct: finalTradeStats.totalPnlPct,
+    maxDrawdown: finalTradeStats.maxDrawdown,
+    sharpeRatio: finalTradeStats.sharpeRatio,
   };
 }
 
 // CLI 실행
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const symbolArg = parseArg('symbol', 'BTC/USDT');
-  const fromArg = parseArg('from', '2024-01-01');
-  const toArg = parseArg('to', kst.today());
-  const layerArg = parseArg('layer', '1');
-  const maxSignalsArg = parseArg('max-signals', null);
-
-  await db.initSchema();
-  try {
-    const r = await runBacktest(symbolArg, fromArg, toArg, layerArg, {
-      maxSignals: maxSignalsArg == null ? null : Number(maxSignalsArg),
-    });
-    console.log('\n결과:', JSON.stringify(r, null, 2));
-    process.exit(0);
-  } catch (e) {
-    console.error('❌ 크로노스 오류:', e.message);
-    process.exit(1);
-  }
+if (isDirectExecution(import.meta.url)) {
+  await runCliMain({
+    before: () => db.initSchema(),
+    run: async () => {
+      const symbolArg = parseArg('symbol', 'BTC/USDT');
+      const fromArg = parseArg('from', '2024-01-01');
+      const toArg = parseArg('to', kst.today());
+      const layerArg = parseArg('layer', '1');
+      const maxSignalsArg = parseArg('max-signals', null);
+      return runBacktest(symbolArg, fromArg, toArg, layerArg, {
+        maxSignals: maxSignalsArg == null ? null : Number(maxSignalsArg),
+      });
+    },
+    onSuccess: async (result) => {
+      console.log('\n결과:', JSON.stringify(result, null, 2));
+    },
+    errorPrefix: '❌ 크로노스 오류:',
+  });
 }
