@@ -1,8 +1,9 @@
 import { execFile } from 'node:child_process';
 import pgPool = require('./pg-pool');
 
-const { getEmbeddingsUrl } = require('./local-llm-client') as {
+const { getEmbeddingsUrl, resolveEmbeddingModel } = require('./local-llm-client') as {
   getEmbeddingsUrl: () => string | null | undefined;
+  resolveEmbeddingModel: (model?: string) => Promise<string>;
 };
 
 const eventLake = require('./event-lake') as {
@@ -146,8 +147,9 @@ async function initSchema(): Promise<void> {
 }
 
 async function createEmbedding(text: string): Promise<number[]> {
+  const embedModel = await resolveEmbeddingModel(EMBED_MODEL);
   const payload = JSON.stringify({
-    model: EMBED_MODEL,
+    model: embedModel,
     input: text.slice(0, 8000),
   });
 

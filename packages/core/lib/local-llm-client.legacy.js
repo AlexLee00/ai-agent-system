@@ -1,10 +1,13 @@
 'use strict';
 
 const env = require('./env');
+const { execFile } = require('node:child_process');
 
 const LOCAL_MODEL_FAST = process.env.LOCAL_MODEL_FAST || 'qwen2.5-7b';
 const LOCAL_MODEL_DEEP = process.env.LOCAL_MODEL_DEEP || 'deepseek-r1-32b';
+const LOCAL_MODEL_EMBED = process.env.EMBED_MODEL || 'qwen3-embed-0.6b';
 const LOCAL_RETRYABLE_STATUS = new Set([404, 500, 502, 503, 504]);
+const EXPECTED_MLX_MODELS = new Set([LOCAL_MODEL_FAST, LOCAL_MODEL_DEEP, LOCAL_MODEL_EMBED]);
 
 function normalizeBaseUrl(value) {
   return String(value || '').replace(/\/+$/, '');
@@ -17,6 +20,31 @@ function getBaseUrl(options = {}) {
 function getEmbeddingsUrl(options = {}) {
   const baseUrl = getBaseUrl(options);
   return baseUrl ? `${baseUrl}/v1/embeddings` : '';
+}
+
+function execCurlJson(url, options = {}, timeoutMs = 3000) {
+  return new Promise((resolve) => {
+    const headers = options.headers || {};
+    const args = ['-sS', '-m', String(Math.max(1, Math.ceil(timeoutMs / 1000)))];
+    for (const [key, value] of Object.entries(headers)) {
+      args.push('-H', `${key}: ${value}`);
+    }
+    if (options.method) args.push('-X', String(options.method));
+    if (options.body) args.push('-d', String(options.body));
+    args.push(url);
+
+    execFile('curl', args, { maxBuffer: 5 * 1024 * 1024 }, (error, stdout) => {
+      if (error) {
+        resolve(null);
+        return;
+      }
+      try {
+        resolve(JSON.parse(stdout));
+      } catch {
+        resolve(null);
+      }
+    });
+  });
 }
 
 async function requestJson(path, options = {}, timeoutMs = 3000) {
@@ -44,6 +72,10 @@ async function requestJson(path, options = {}, timeoutMs = 3000) {
       const retryable = attempt < maxAttempts;
       const message = aborted ? '타임아웃' : err.message;
       console.warn(`[local-llm-client] ${path}: ${message}${retryable ? ` → 재시도 ${attempt}/${maxAttempts - 1}` : ''}`);
+      if (!aborted && attempt === maxAttempts) {
+        const curlJson = await execCurlJson(url, options, timeoutMs);
+        if (curlJson) return curlJson;
+      }
       if (!retryable) return null;
     } finally {
       clearTimeout(timer);
@@ -58,7 +90,16 @@ async function requestJson(path, options = {}, timeoutMs = 3000) {
 async function getAvailableModels() {
   const json = await requestJson('/v1/models');
   if (!json?.data || !Array.isArray(json.data)) return [];
-  return json.data.map((item) => item.id).filter(Boolean);
+  const models = json.data.map((item) => item.id).filter(Boolean);
+  const baseUrl = getBaseUrl();
+  if (/127\.0\.0\.1:11434|localhost:11434/.test(baseUrl)) {
+    const hasExpectedMlxModel = models.some((model) => EXPECTED_MLX_MODELS.has(model));
+    if (!hasExpectedMlxModel && models.length > 0) {
+      console.warn(`[local-llm-client] MLX endpoint mismatch on ${baseUrl}: ${models.join(', ')}`);
+      return [];
+    }
+  }
+  return models;
 }
 
 function pickGemmaModel(models, preferLarge = false) {
@@ -81,6 +122,20 @@ async function resolveRequestedModel(model) {
   const remapped = pickGemmaModel(models, preferLarge) || models[0];
   if (remapped && remapped !== model) {
     console.warn(`[local-llm-client] model '${model}' 없음 → '${remapped}' 사용`);
+    return remapped;
+  }
+  return model;
+}
+
+async function resolveEmbeddingModel(model = LOCAL_MODEL_EMBED) {
+  const models = await getAvailableModels();
+  if (models.length === 0 || models.includes(model)) return model;
+
+  const remapped = models.find((candidate) => /embed/i.test(candidate))
+    || models.find((candidate) => /qwen/i.test(candidate))
+    || models[0];
+  if (remapped && remapped !== model) {
+    console.warn(`[local-llm-client] embedding model '${model}' 없음 → '${remapped}' 사용`);
     return remapped;
   }
   return model;
@@ -158,10 +213,12 @@ async function callLocalLLMJSON(model, messages, options = {}) {
 module.exports = {
   LOCAL_MODEL_FAST,
   LOCAL_MODEL_DEEP,
+  LOCAL_MODEL_EMBED,
   getBaseUrl,
   getEmbeddingsUrl,
   getAvailableModels,
   isLocalLLMAvailable,
+  resolveEmbeddingModel,
   callLocalLLM,
   callLocalLLMJSON,
 };
