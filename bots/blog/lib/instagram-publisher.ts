@@ -1,13 +1,29 @@
 'use strict';
 
 const fs = require('fs');
+const path = require('path');
+const env = require('../../../packages/core/lib/env');
+const { fetchHubSecrets } = require('../../../packages/core/lib/hub-client');
 
-function getInstagramConfig() {
+const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
+
+function readStoreInstagramConfig() {
+  try {
+    const store = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8'));
+    return store?.instagram || {};
+  } catch {
+    return {};
+  }
+}
+
+async function getInstagramConfig() {
+  const hubData = await fetchHubSecrets('instagram');
+  const storeData = readStoreInstagramConfig();
   return {
-    accessToken: process.env.INSTAGRAM_GRAPH_ACCESS_TOKEN || '',
-    igUserId: process.env.INSTAGRAM_GRAPH_IG_USER_ID || '',
-    apiVersion: process.env.INSTAGRAM_GRAPH_API_VERSION || 'v21.0',
-    baseUrl: process.env.INSTAGRAM_GRAPH_BASE_URL || 'https://graph.facebook.com',
+    accessToken: hubData?.access_token || storeData?.access_token || process.env.INSTAGRAM_GRAPH_ACCESS_TOKEN || '',
+    igUserId: hubData?.ig_user_id || storeData?.ig_user_id || process.env.INSTAGRAM_GRAPH_IG_USER_ID || '',
+    apiVersion: hubData?.api_version || storeData?.api_version || process.env.INSTAGRAM_GRAPH_API_VERSION || 'v21.0',
+    baseUrl: hubData?.base_url || storeData?.base_url || process.env.INSTAGRAM_GRAPH_BASE_URL || 'https://graph.facebook.com',
     defaultStatus: process.env.INSTAGRAM_PUBLISH_DEFAULT_STATUS || 'draft',
   };
 }
@@ -69,7 +85,7 @@ async function publishInstagramReel({
   dryRun = false,
 }) {
   validatePublishInputs({ videoUrl, caption });
-  const config = getInstagramConfig();
+  const config = await getInstagramConfig();
   const createRequest = buildCreateContainerRequest(config, { videoUrl, caption });
 
   if (dryRun) {
