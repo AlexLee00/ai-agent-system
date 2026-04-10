@@ -3,10 +3,8 @@
 const fs = require('fs');
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
-const { getInstagramConfig } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/instagram-publisher.ts'));
-
-const BLOG_ROOT = path.join(env.PROJECT_ROOT, 'bots/blog');
-const SHORTFORM_DIR = path.join(BLOG_ROOT, 'output/shortform');
+const { getInstagramConfig } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-graph.ts'));
+const { findLatestReelPath } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-files.ts'));
 
 function parseArgs(argv = []) {
   return {
@@ -14,20 +12,10 @@ function parseArgs(argv = []) {
   };
 }
 
-function latestReelPath() {
-  if (!fs.existsSync(SHORTFORM_DIR)) return null;
-  const files = fs
-    .readdirSync(SHORTFORM_DIR)
-    .filter((name) => name.endsWith('_reel.mp4'))
-    .map((name) => path.join(SHORTFORM_DIR, name))
-    .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
-  return files[0] || null;
-}
-
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const config = await getInstagramConfig();
-  const reelPath = latestReelPath();
+  const reelPath = findLatestReelPath();
   const missing = [];
 
   if (!config.accessToken) missing.push('instagram.access_token');

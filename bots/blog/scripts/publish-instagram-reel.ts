@@ -3,10 +3,8 @@
 const fs = require('fs');
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
-const { publishInstagramReel, buildFileVideoUrl } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/instagram-publisher.ts'));
-
-const BLOG_ROOT = path.join(env.PROJECT_ROOT, 'bots/blog');
-const SHORTFORM_DIR = path.join(BLOG_ROOT, 'output/shortform');
+const { publishInstagramReel, buildFileVideoUrl } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-graph.ts'));
+const { findLatestReelPath } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-files.ts'));
 
 /**
  * @typedef {{
@@ -35,19 +33,9 @@ function parseArgs(argv = []) {
   return args;
 }
 
-function latestReelPath() {
-  if (!fs.existsSync(SHORTFORM_DIR)) return null;
-  const files = fs
-    .readdirSync(SHORTFORM_DIR)
-    .filter((name) => name.endsWith('_reel.mp4'))
-    .map((name) => path.join(SHORTFORM_DIR, name))
-    .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
-  return files[0] || null;
-}
-
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const videoPath = args.video ? path.resolve(args.video) : latestReelPath();
+  const videoPath = args.video ? path.resolve(args.video) : findLatestReelPath();
   if (!videoPath) throw new Error('업로드할 릴스 파일을 찾지 못했습니다.');
 
   const caption = args.caption || '릴스 초안 업로드 테스트입니다.';

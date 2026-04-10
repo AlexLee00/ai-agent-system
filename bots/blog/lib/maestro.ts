@@ -108,25 +108,30 @@ async function saveExecutionHistory(date, postType, pipeline, variations) {
   }
 }
 
-function buildDynamicVariation(postType, history) {
+function _buildUsedVariationSets(history) {
+  return {
+    usedGreetings: new Set(history.map((h) => h.variations?.greetingStyle).filter(Boolean)),
+    usedCafePositions: new Set(history.map((h) => h.variations?.cafePosition).filter(Boolean)),
+  };
+}
+
+function _pickFreshOrAny(allValues, usedValues) {
+  const availableValues = allValues.filter((value) => !usedValues.has(value));
+  return availableValues.length > 0 ? _pick(availableValues) : _pick(allValues);
+}
+
+function _buildBonusInsights(postType, history) {
   const { selectBonusInsights } = require('./bonus-insights.ts');
-
-  const usedGreetings = new Set(history.map((h) => h.variations?.greetingStyle).filter(Boolean));
-  const usedCafePos = new Set(history.map((h) => h.variations?.cafePosition).filter(Boolean));
-
-  const availableGreetings = GREETING_STYLES.filter((s) => !usedGreetings.has(s));
-  const greetingStyle = availableGreetings.length > 0
-    ? _pick(availableGreetings)
-    : _pick(GREETING_STYLES);
-
-  const availableCafePos = CAFE_POSITIONS.filter((p) => !usedCafePos.has(p));
-  const cafePosition = availableCafePos.length > 0
-    ? _pick(availableCafePos)
-    : _pick(CAFE_POSITIONS);
-
   const botType = postType === 'lecture' ? 'pos' : 'gems';
   const recentBonusIds = history.flatMap((h) => (h.variations?.bonusInsights || []).map((b) => b.id));
-  const bonusInsights = selectBonusInsights(botType, recentBonusIds);
+  return selectBonusInsights(botType, recentBonusIds);
+}
+
+function buildDynamicVariation(postType, history) {
+  const { usedGreetings, usedCafePositions } = _buildUsedVariationSets(history);
+  const greetingStyle = _pickFreshOrAny(GREETING_STYLES, usedGreetings);
+  const cafePosition = _pickFreshOrAny(CAFE_POSITIONS, usedCafePositions);
+  const bonusInsights = _buildBonusInsights(postType, history);
 
   const variation = {
     greetingStyle,
@@ -201,10 +206,28 @@ function _resetCircuit() {
   _n8nCircuit.reason = '';
 }
 
+function _shouldRunCompetition() {
+  if (!COMPETITION_ENABLED) return false;
+  return COMPETITION_DAYS.includes(new Date().getDay());
+}
+
+function _logMaestroSession(postType, sessionId, pipeline, variations, gemmaRecommendation) {
+  console.log(`[마에스트로] ${postType} — 세션: ${sessionId}`);
+  console.log(`  노드: ${pipeline.join(' → ')}`);
+  console.log(`  인사말: ${variations.greetingStyle}, 이미지: ${variations.imageCount}장`);
+  if (gemmaRecommendation) console.log(`  gemma4 추천 반영 후보:\n${gemmaRecommendation}`);
+}
+
+function _buildMaestroPayload(postType, sessionId, pipeline, variations, gemmaRecommendation, payload) {
+  return JSON.stringify({ postType, sessionId, pipeline, variations, gemmaRecommendation, ...payload });
+}
+
+function _buildMaestroResult(sessionId, pipeline, variations, gemmaRecommendation, n8nTriggered) {
+  return { sessionId, pipeline, variations, gemmaRecommendation, n8nTriggered };
+}
+
 async function runCompetition(topic, postType) {
-  if (!COMPETITION_ENABLED) return null;
-  const today = new Date().getDay();
-  if (!COMPETITION_DAYS.includes(today)) return null;
+  if (!_shouldRunCompetition()) return null;
 
   console.log(`[경쟁] 그룹 경쟁 시작: ${topic} (${postType})`);
   try {
@@ -217,6 +240,101 @@ async function runCompetition(topic, postType) {
   }
 }
 
+function _buildTopicRecommendationPrompt(postType, historyTopics, weatherContext) {
+  const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+  const today = dayNames[new Date().getDay()];
+
+  return `당신은 네이버 블로그 주제 추천 전문가입니다.
+오늘은 ${today}요일입니다.
+포스팅 유형: ${postType}
+최근 주제: ${historyTopics.join(', ') || '없음'}
+날씨/상황: ${weatherContext}
+
+겹치지 않는 새로운 추천 주제 3개를 한국어로 간결하게 작성하세요.
+번호 없이 한 줄씩만 작성하세요.`;
+}
+
+async function _generateTopicRecommendation(postType, history, payload) {
+  const historyTopics = history
+    .map((entry) => entry?.variations?.selectedTopic || entry?.variations?.seedTopic || entry?.variations?.theme)
+    .filter(Boolean)
+    .slice(0, 10);
+  const weatherContext = payload?.weather?.summary || payload?.weatherContext || '날씨 정보 없음';
+  const prompt = _buildTopicRecommendationPrompt(postType, historyTopics, weatherContext);
+
+  const recResult = await generateGemmaPilotText({
+    team: 'blog',
+    purpose: 'gemma-topic',
+    bot: 'maestro',
+    requestType: 'topic-recommendation',
+    prompt,
+    maxTokens: 200,
+    temperature: 0.8,
+    timeoutMs: 10000,
+  });
+
+  if (!recResult?.ok || !recResult.content) return null;
+  return recResult.content.trim();
+}
+
+async function _triggerN8nPipeline(body, dryRun) {
+  if (!N8N_PIPELINE_ENABLED) {
+    console.log('  ↳ n8n 파이프라인 비활성화 — 로컬 생성 경로 사용');
+    return false;
+  }
+
+  if (dryRun) {
+    console.log('  ↳ dry-run: n8n 웹훅 트리거 생략');
+    return false;
+  }
+
+  if (_isCircuitOpen()) {
+    console.log(`  ↳ n8n 우회 중 (${_n8nCircuit.reason})`);
+    return false;
+  }
+
+  if (!(await _probeN8nHealth())) {
+    _openCircuit('health_unreachable');
+    console.warn('  ⚠️ n8n 헬스체크 실패 — 직접 실행 폴백');
+    return false;
+  }
+
+  for (const n8nUrl of await _getDefaultWebhookCandidates()) {
+    try {
+      const res = await fetch(n8nUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        signal: AbortSignal.timeout(N8N_WEBHOOK_TIMEOUT_MS),
+      });
+
+      if (res.ok) {
+        _resetCircuit();
+        console.log(`  ↳ n8n 트리거 성공 (${n8nUrl})`);
+        return true;
+      }
+
+      if (res.status === 404) {
+        console.warn(`  ⚠️ n8n 웹훅 없음 (${n8nUrl}) — 다음 후보 확인`);
+        continue;
+      }
+
+      console.warn(`  ⚠️ n8n 응답 오류 (${res.status}, ${n8nUrl}) — 직접 실행 폴백`);
+      _openCircuit(`http_${res.status}`);
+      return false;
+    } catch (e) {
+      console.warn(`  ⚠️ n8n 트리거 실패 (${e.message}, ${n8nUrl})`);
+    }
+  }
+
+  if (!_isCircuitOpen()) {
+    _openCircuit('webhook_unavailable');
+    console.warn('  ⚠️ n8n 유효 웹훅 미확인 — 직접 실행 폴백');
+  }
+
+  return false;
+}
+
 async function run(postType, directRunner = null, payload = {}) {
   await _ensureHistoryTable();
 
@@ -225,96 +343,18 @@ async function run(postType, directRunner = null, payload = {}) {
   let gemmaRecommendation = null;
 
   try {
-    const historyTopics = history
-      .map((entry) => entry?.variations?.selectedTopic || entry?.variations?.seedTopic || entry?.variations?.theme)
-      .filter(Boolean)
-      .slice(0, 10);
-    const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
-    const today = dayNames[new Date().getDay()];
-    const weatherContext = payload?.weather?.summary || payload?.weatherContext || '날씨 정보 없음';
-    const recPrompt = `당신은 네이버 블로그 주제 추천 전문가입니다.
-오늘은 ${today}요일입니다.
-포스팅 유형: ${postType}
-최근 주제: ${historyTopics.join(', ') || '없음'}
-날씨/상황: ${weatherContext}
-
-겹치지 않는 새로운 추천 주제 3개를 한국어로 간결하게 작성하세요.
-번호 없이 한 줄씩만 작성하세요.`;
-
-    const recResult = await generateGemmaPilotText({
-      team: 'blog',
-      purpose: 'gemma-topic',
-      bot: 'maestro',
-      requestType: 'topic-recommendation',
-      prompt: recPrompt,
-      maxTokens: 200,
-      temperature: 0.8,
-      timeoutMs: 10000,
-    });
-
-    if (recResult?.ok && recResult.content) {
-      gemmaRecommendation = recResult.content.trim();
-      console.log(`[마에스트로] gemma4 주제 추천:\n${gemmaRecommendation}`);
-    }
+    gemmaRecommendation = await _generateTopicRecommendation(postType, history, payload);
+    if (gemmaRecommendation) console.log(`[마에스트로] gemma4 주제 추천:\n${gemmaRecommendation}`);
   } catch (error) {
     console.warn(`[maestro] gemma4 추천 생략: ${error.message}`);
   }
 
   const { pipeline, variations } = buildDynamicPipeline(postType, history);
+  _logMaestroSession(postType, sessionId, pipeline, variations, gemmaRecommendation);
 
-  console.log(`[마에스트로] ${postType} — 세션: ${sessionId}`);
-  console.log(`  노드: ${pipeline.join(' → ')}`);
-  console.log(`  인사말: ${variations.greetingStyle}, 이미지: ${variations.imageCount}장`);
-  if (gemmaRecommendation) console.log(`  gemma4 추천 반영 후보:\n${gemmaRecommendation}`);
-
-  let n8nOk = false;
-  const body = JSON.stringify({ postType, sessionId, pipeline, variations, gemmaRecommendation, ...payload });
+  const body = _buildMaestroPayload(postType, sessionId, pipeline, variations, gemmaRecommendation, payload);
   const dryRun = !!payload?.dryRun;
-
-  if (!N8N_PIPELINE_ENABLED) {
-    console.log('  ↳ n8n 파이프라인 비활성화 — 로컬 생성 경로 사용');
-  } else if (dryRun) {
-    console.log('  ↳ dry-run: n8n 웹훅 트리거 생략');
-  } else if (_isCircuitOpen()) {
-    console.log(`  ↳ n8n 우회 중 (${_n8nCircuit.reason})`);
-  } else if (!(await _probeN8nHealth())) {
-    _openCircuit('health_unreachable');
-    console.warn('  ⚠️ n8n 헬스체크 실패 — 직접 실행 폴백');
-  } else {
-    for (const n8nUrl of await _getDefaultWebhookCandidates()) {
-      try {
-        const res = await fetch(n8nUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body,
-          signal: AbortSignal.timeout(N8N_WEBHOOK_TIMEOUT_MS),
-        });
-
-        if (res.ok) {
-          n8nOk = true;
-          _resetCircuit();
-          console.log(`  ↳ n8n 트리거 성공 (${n8nUrl})`);
-          break;
-        }
-
-        if (res.status === 404) {
-          console.warn(`  ⚠️ n8n 웹훅 없음 (${n8nUrl}) — 다음 후보 확인`);
-          continue;
-        }
-
-        console.warn(`  ⚠️ n8n 응답 오류 (${res.status}, ${n8nUrl}) — 직접 실행 폴백`);
-        _openCircuit(`http_${res.status}`);
-        break;
-      } catch (e) {
-        console.warn(`  ⚠️ n8n 트리거 실패 (${e.message}, ${n8nUrl})`);
-      }
-    }
-
-    if (!n8nOk && !_isCircuitOpen()) {
-      _openCircuit('webhook_unavailable');
-      console.warn('  ⚠️ n8n 유효 웹훅 미확인 — 직접 실행 폴백');
-    }
-  }
+  const n8nOk = await _triggerN8nPipeline(body, dryRun);
 
   if (!dryRun) {
     await saveExecutionHistory(
@@ -332,7 +372,7 @@ async function run(postType, directRunner = null, payload = {}) {
     return await directRunner(variations, { ...payload, gemmaRecommendation });
   }
 
-  return { sessionId, pipeline, variations, gemmaRecommendation, n8nTriggered: n8nOk };
+  return _buildMaestroResult(sessionId, pipeline, variations, gemmaRecommendation, n8nOk);
 }
 
 module.exports = { run, runCompetition, buildDynamicPipeline, buildDynamicVariation };

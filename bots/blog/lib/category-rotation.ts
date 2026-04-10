@@ -8,16 +8,24 @@ const GENERAL_CATEGORIES = [
 ];
 
 async function getNextGeneralCategory() {
-  const row = await pgPool.get('blog', `
-    SELECT current_index FROM blog.category_rotation
-    WHERE rotation_type = 'general_category' LIMIT 1
-  `);
-  const idx = row?.current_index ?? 0;
-  return {
-    category: GENERAL_CATEGORIES[idx % GENERAL_CATEGORIES.length],
-    index: idx,
-    nextIndex: (idx + 1) % GENERAL_CATEGORIES.length,
-  };
+  try {
+    const row = await pgPool.get('blog', `
+      SELECT current_index FROM blog.category_rotation
+      WHERE rotation_type = 'general_category' LIMIT 1
+    `);
+    const idx = row?.current_index ?? 0;
+    return {
+      category: GENERAL_CATEGORIES[idx % GENERAL_CATEGORIES.length],
+      index: idx,
+      nextIndex: (idx + 1) % GENERAL_CATEGORIES.length,
+    };
+  } catch {
+    return {
+      category: GENERAL_CATEGORIES[0],
+      index: 0,
+      nextIndex: 1,
+    };
+  }
 }
 
 async function advanceGeneralCategory() {
@@ -29,14 +37,21 @@ async function advanceGeneralCategory() {
 }
 
 async function getNextLectureNumber() {
-  const row = await pgPool.get('blog', `
-    SELECT current_index, series_name FROM blog.category_rotation
-    WHERE rotation_type = 'lecture_series' LIMIT 1
-  `);
-  return {
-    number: (row?.current_index ?? 0) + 1,
-    seriesName: row?.series_name ?? 'nodejs_120',
-  };
+  try {
+    const row = await pgPool.get('blog', `
+      SELECT current_index, series_name FROM blog.category_rotation
+      WHERE rotation_type = 'lecture_series' LIMIT 1
+    `);
+    return {
+      number: (row?.current_index ?? 0) + 1,
+      seriesName: row?.series_name ?? 'nodejs_120',
+    };
+  } catch {
+    return {
+      number: 1,
+      seriesName: 'nodejs_120',
+    };
+  }
 }
 
 async function advanceLectureNumber() {
@@ -76,24 +91,32 @@ async function resetLectureNumber(currentIndex = 55) {
 }
 
 async function isSeriesComplete() {
-  const row = await pgPool.get('blog', `
-    SELECT cr.current_index,
-           (SELECT MAX(lecture_number)
-            FROM blog.curriculum
-            WHERE series_name = cr.series_name) AS max_lecture
-    FROM blog.category_rotation cr
-    WHERE cr.rotation_type = 'lecture_series'
-  `);
-  if (!row) return false;
-  return row.current_index >= (row.max_lecture || 120);
+  try {
+    const row = await pgPool.get('blog', `
+      SELECT cr.current_index,
+             (SELECT MAX(lecture_number)
+              FROM blog.curriculum
+              WHERE series_name = cr.series_name) AS max_lecture
+      FROM blog.category_rotation cr
+      WHERE cr.rotation_type = 'lecture_series'
+    `);
+    if (!row) return false;
+    return row.current_index >= (row.max_lecture || 120);
+  } catch {
+    return false;
+  }
 }
 
 async function getLectureTitle(number: number, seriesName = 'nodejs_120') {
-  const row = await pgPool.get('blog', `
-    SELECT title FROM blog.curriculum
-    WHERE series_name = $1 AND lecture_number = $2
-  `, [seriesName, number]);
-  return row?.title || null;
+  try {
+    const row = await pgPool.get('blog', `
+      SELECT title FROM blog.curriculum
+      WHERE series_name = $1 AND lecture_number = $2
+    `, [seriesName, number]);
+    return row?.title || null;
+  } catch {
+    return null;
+  }
 }
 
 module.exports = {

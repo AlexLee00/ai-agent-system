@@ -2,8 +2,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const env = require('../../../packages/core/lib/env');
-const { fetchHubSecrets } = require('../../../packages/core/lib/hub-client');
+const env = require('./env');
+const { fetchHubSecrets } = require('./hub-client');
 
 const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
 

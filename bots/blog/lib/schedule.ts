@@ -8,6 +8,7 @@ const {
   getLectureTitle,
   getNextGeneralCategory,
 } = require('./category-rotation.ts');
+const { ensureBlogCoreSchema } = require('./schema.ts');
 
 let _curriculumPlanner = null;
 function _getPlanner() {
@@ -25,12 +26,25 @@ function _today() {
   return RUN_DATE || kst.today();
 }
 
+function _isDbPermissionError(error) {
+  return String(error?.code || '').trim() === 'EPERM';
+}
+
+async function _buildSyntheticSchedule(date = _today()) {
+  const { category } = await getNextGeneralCategory().catch(() => ({ category: '자기계발' }));
+  return [
+    { id: null, publish_date: date, post_type: 'lecture', category: 'Node.js강의', status: 'scheduled' },
+    { id: null, publish_date: date, post_type: 'general', category, status: 'scheduled' },
+  ];
+}
+
 async function getTodaySchedule() {
   return getScheduleByDate(_today());
 }
 
 async function getScheduleByDate(date) {
   try {
+    await ensureBlogCoreSchema();
     const rows = await pgPool.query('blog', `
       SELECT * FROM blog.publish_schedule
       WHERE publish_date = $1
@@ -88,6 +102,7 @@ async function updateScheduleCategory(id, category) {
 
 async function ensureSchedule(date = _today()) {
   try {
+    await ensureBlogCoreSchema();
     const existing = await getScheduleByDate(date);
     if (existing.length > 0) return existing;
 
@@ -95,10 +110,7 @@ async function ensureSchedule(date = _today()) {
 
     if (DEV_HUB_READONLY) {
       console.log(`[스케줄] DEV/HUB 읽기 전용 — ${date} 합성 스케줄 사용 (${category})`);
-      return [
-        { id: null, publish_date: date, post_type: 'lecture', category: 'Node.js강의', status: 'scheduled' },
-        { id: null, publish_date: date, post_type: 'general', category, status: 'scheduled' },
-      ];
+      return _buildSyntheticSchedule(date);
     }
 
     await pgPool.run('blog', `
@@ -110,17 +122,15 @@ async function ensureSchedule(date = _today()) {
     `, [date, category]);
 
     console.log(`[스케줄] ${date} 자동 생성 — 일반 카테고리: ${category}`);
-    return await getScheduleByDate(date);
+    const created = await getScheduleByDate(date);
+    return created.length > 0 ? created : _buildSyntheticSchedule(date);
   } catch (e) {
-    console.warn('[스케줄] 자동 생성 실패:', e.message);
-    if (DEV_HUB_READONLY) {
-      const { category } = await getNextGeneralCategory().catch(() => ({ category: '자기계발' }));
-      return [
-        { id: null, publish_date: date, post_type: 'lecture', category: 'Node.js강의', status: 'scheduled' },
-        { id: null, publish_date: date, post_type: 'general', category, status: 'scheduled' },
-      ];
+    if (_isDbPermissionError(e)) {
+      console.log('[스케줄] DB 접근 제한 — 합성 스케줄 사용');
+    } else {
+      console.warn('[스케줄] 자동 생성 실패:', e.message);
     }
-    return [];
+    return _buildSyntheticSchedule(date);
   }
 }
 

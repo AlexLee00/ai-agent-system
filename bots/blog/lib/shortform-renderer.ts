@@ -8,6 +8,28 @@ const { normalizeDurationSec, SHORTFORM_DEFAULT_DURATION_SEC } = require('./shor
 
 const execFileAsync = promisify(execFile);
 
+function buildShortformVideoFilter() {
+  return [
+    'scale=1080:1920:force_original_aspect_ratio=increase',
+    'crop=1080:1920',
+    "zoompan=z='min(zoom+0.0008,1.18)':d=250:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'",
+    'fps=25'
+  ].join(',');
+}
+
+function buildShortformRenderArgs({ thumbPath, outputPath, durationSec }) {
+  return [
+    '-y',
+    '-loop', '1',
+    '-i', thumbPath,
+    '-t', String(durationSec),
+    '-vf', buildShortformVideoFilter(),
+    '-c:v', 'libx264',
+    '-pix_fmt', 'yuv420p',
+    outputPath,
+  ];
+}
+
 async function renderShortformReel({
   thumbPath,
   outputPath,
@@ -19,24 +41,11 @@ async function renderShortformReel({
 
   const safeDurationSec = normalizeDurationSec(durationSec);
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-
-  const filter = [
-    'scale=1080:1920:force_original_aspect_ratio=increase',
-    'crop=1080:1920',
-    "zoompan=z='min(zoom+0.0008,1.18)':d=250:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'",
-    'fps=25'
-  ].join(',');
-
-  const args = [
-    '-y',
-    '-loop', '1',
-    '-i', thumbPath,
-    '-t', String(safeDurationSec),
-    '-vf', filter,
-    '-c:v', 'libx264',
-    '-pix_fmt', 'yuv420p',
+  const args = buildShortformRenderArgs({
+    thumbPath,
     outputPath,
-  ];
+    durationSec: safeDurationSec,
+  });
 
   try {
     await execFileAsync('ffmpeg', args, {
@@ -56,5 +65,7 @@ async function renderShortformReel({
 }
 
 module.exports = {
+  buildShortformVideoFilter,
+  buildShortformRenderArgs,
   renderShortformReel,
 };

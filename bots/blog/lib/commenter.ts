@@ -2173,6 +2173,56 @@ async function postReply(comment, replyText, { testMode = false } = {}) {
   });
 }
 
+async function _openCommentEditor(contentFrame, postUrl, logNo, testMode) {
+  const mounted = await mountCommentPanel(contentFrame, logNo, testMode);
+  if (!mounted) {
+    const snapshotPrefix = await saveCommentDebugSnapshot(contentFrame, { post_url: postUrl }, 'comment-panel-not-mounted');
+    throw new Error(`comment_panel_not_mounted:${snapshotPrefix}`);
+  }
+
+  await waitForCommentPanel(contentFrame, logNo).catch(() => false);
+  await humanDelay(1, 2, testMode);
+  const editor = await focusCommentEditor(contentFrame, logNo);
+  if (!editor?.selector) {
+    throw new Error('comment_editor_not_found');
+  }
+
+  return editor;
+}
+
+async function _submitCommentWithVerification(contentFrame, page, editor, normalizedComment, config, testMode, postUrl) {
+  await typeReply(contentFrame, page, editor.selector, normalizedComment, config, testMode);
+  await humanDelay(1, 2, testMode);
+  await submitComment(contentFrame);
+
+  const posted = await verifyCommentPosted(contentFrame, normalizedComment, testMode);
+  if (!posted) {
+    const snapshotPrefix = await saveCommentDebugSnapshot(contentFrame, { post_url: postUrl }, 'comment-submit-not-confirmed');
+    throw new Error(`comment_submit_not_confirmed:${snapshotPrefix}`);
+  }
+}
+
+async function _recordDirectCommentActions(postUrl, normalizedComment, withSympathy, sympathy) {
+  const targetBlog = await resolveBlogId();
+
+  await recordCommentAction('comment_post', {
+    targetBlog,
+    targetPostUrl: postUrl,
+    commentText: normalizedComment,
+    success: true,
+    meta: { mode: 'direct_comment_test', withSympathy, sympathy },
+  }).catch(() => {});
+
+  if (!withSympathy || !sympathy?.ok) return;
+
+  await recordCommentAction('comment_post_sympathy', {
+    targetBlog,
+    targetPostUrl: postUrl,
+    success: true,
+    meta: { mode: 'direct_comment_test', sympathy },
+  }).catch(() => {});
+}
+
 async function postComment(postUrl, commentText, { testMode = false, withSympathy = false, operationTimeoutMs = 0 } = {}) {
   const config = getCommenterConfig();
   const logNo = extractLogNo(postUrl);
@@ -2191,29 +2241,8 @@ async function postComment(postUrl, commentText, { testMode = false, withSympath
     const contentFrame = resolvePostContentFrame(page);
     await contentFrame.waitForSelector('body', { timeout: testMode ? 5000 : 15000 }).catch(() => {});
     await humanDelay(1, 2, testMode);
-
-    const mounted = await mountCommentPanel(contentFrame, logNo, testMode);
-    if (!mounted) {
-      const snapshotPrefix = await saveCommentDebugSnapshot(contentFrame, { post_url: postUrl }, 'comment-panel-not-mounted');
-      throw new Error(`comment_panel_not_mounted:${snapshotPrefix}`);
-    }
-
-    await waitForCommentPanel(contentFrame, logNo).catch(() => false);
-    await humanDelay(1, 2, testMode);
-    const editor = await focusCommentEditor(contentFrame, logNo);
-    if (!editor?.selector) {
-      throw new Error('comment_editor_not_found');
-    }
-
-    await typeReply(contentFrame, page, editor.selector, normalizedComment, config, testMode);
-    await humanDelay(1, 2, testMode);
-    await submitComment(contentFrame);
-
-    const posted = await verifyCommentPosted(contentFrame, normalizedComment, testMode);
-    if (!posted) {
-      const snapshotPrefix = await saveCommentDebugSnapshot(contentFrame, { post_url: postUrl }, 'comment-submit-not-confirmed');
-      throw new Error(`comment_submit_not_confirmed:${snapshotPrefix}`);
-    }
+    const editor = await _openCommentEditor(contentFrame, postUrl, logNo, testMode);
+    await _submitCommentWithVerification(contentFrame, page, editor, normalizedComment, config, testMode, postUrl);
     traceCommenter('postComment:comment-posted', { postUrl, withSympathy });
 
     let sympathy = null;
@@ -2227,21 +2256,7 @@ async function postComment(postUrl, commentText, { testMode = false, withSympath
       }
     }
 
-    await recordCommentAction('comment_post', {
-      targetBlog: await resolveBlogId(),
-      targetPostUrl: postUrl,
-      commentText: normalizedComment,
-      success: true,
-      meta: { mode: 'direct_comment_test', withSympathy, sympathy },
-    }).catch(() => {});
-    if (withSympathy && sympathy?.ok) {
-      await recordCommentAction('comment_post_sympathy', {
-        targetBlog: await resolveBlogId(),
-        targetPostUrl: postUrl,
-        success: true,
-        meta: { mode: 'direct_comment_test', sympathy },
-      }).catch(() => {});
-    }
+    await _recordDirectCommentActions(postUrl, normalizedComment, withSympathy, sympathy);
 
     traceCommenter('postComment:done', {
       postUrl,
@@ -2288,17 +2303,36 @@ async function processComment(comment, options = {}) {
   return { ok: true, reply: generated.reply };
 }
 
-async function runCommentReply({ testMode = false } = {}) {
-  const config = getCommenterConfig();
+function _checkOpsAndWindow(config, { testMode = false, enabledForceEnv = '' } = {}) {
   if (!env.IS_OPS && !process.env.BLOG_COMMENTER_ALLOW_DEV) {
     return { skipped: true, reason: 'ops_only' };
   }
-  if (!config.enabled && !testMode && process.env.BLOG_COMMENTER_FORCE !== 'true') {
+  if (!config.enabled && !testMode && enabledForceEnv !== 'true') {
     return { skipped: true, reason: 'disabled' };
   }
   if (!testMode && !isWithinActiveWindow(config)) {
     return { skipped: true, reason: 'inactive_window' };
   }
+  return null;
+}
+
+async function _postCommenterAlarm({ fromBot, alertLevel, message, shouldSend }) {
+  if (!shouldSend) return;
+  await postAlarm({
+    team: 'blog',
+    fromBot,
+    alertLevel,
+    message,
+  }).catch(() => {});
+}
+
+async function runCommentReply({ testMode = false } = {}) {
+  const config = getCommenterConfig();
+  const guardResult = _checkOpsAndWindow(config, {
+    testMode,
+    enabledForceEnv: process.env.BLOG_COMMENTER_FORCE,
+  });
+  if (guardResult) return guardResult;
 
   await ensureSchema();
 
@@ -2347,14 +2381,12 @@ async function runCommentReply({ testMode = false } = {}) {
 
   const totalProcessed = replied + failed + skipped;
   const failureRate = totalProcessed > 0 ? failed / totalProcessed : 0;
-  if (replied > 0 || failed > 0) {
-    await postAlarm({
-      team: 'blog',
-      fromBot: 'blog-commenter',
-      alertLevel: failureRate >= 0.5 ? 3 : 2,
-      message: `답댓글 ${replied}건 완료, 실패 ${failed}건, 스킵 ${skipped}건 (오늘 총 ${todayCount + replied}/${config.maxDaily})`,
-    }).catch(() => {});
-  }
+  await _postCommenterAlarm({
+    fromBot: 'blog-commenter',
+    alertLevel: failureRate >= 0.5 ? 3 : 2,
+    message: `답댓글 ${replied}건 완료, 실패 ${failed}건, 스킵 ${skipped}건 (오늘 총 ${todayCount + replied}/${config.maxDaily})`,
+    shouldSend: replied > 0 || failed > 0,
+  });
 
   return {
     ok: true,
@@ -2366,6 +2398,35 @@ async function runCommentReply({ testMode = false } = {}) {
     total: todayCount + replied,
     testMode,
   };
+}
+
+async function _recordNeighborCommentSuccess(candidate, generated, posted) {
+  await recordCommentAction('neighbor_comment', {
+    targetBlog: candidate.target_blog_id,
+    targetPostUrl: candidate.post_url,
+    commentText: generated.comment,
+    success: true,
+    meta: {
+      neighborCommentId: candidate.id,
+      sourceType: candidate.source_type || null,
+      targetBlogName: candidate.target_blog_name || null,
+      tone: generated.tone || null,
+    },
+  });
+
+  if (!posted?.sympathy?.ok) return;
+
+  await recordCommentAction('neighbor_comment_sympathy', {
+    targetBlog: candidate.target_blog_id,
+    targetPostUrl: candidate.post_url,
+    success: true,
+    meta: {
+      neighborCommentId: candidate.id,
+      sourceType: candidate.source_type || null,
+      targetBlogName: candidate.target_blog_name || null,
+      sympathy: posted.sympathy,
+    },
+  });
 }
 
 async function processNeighborComment(candidate, { testMode = false } = {}) {
@@ -2411,30 +2472,7 @@ async function processNeighborComment(candidate, { testMode = false } = {}) {
     commentText: generated.comment,
     meta: { tone: generated.tone || null, sourceType: candidate.source_type || null },
   });
-  await recordCommentAction('neighbor_comment', {
-    targetBlog: candidate.target_blog_id,
-    targetPostUrl: candidate.post_url,
-    commentText: generated.comment,
-    success: true,
-    meta: {
-      neighborCommentId: candidate.id,
-      sourceType: candidate.source_type || null,
-      targetBlogName: candidate.target_blog_name || null,
-    },
-  });
-  if (posted?.sympathy?.ok) {
-    await recordCommentAction('neighbor_comment_sympathy', {
-      targetBlog: candidate.target_blog_id,
-      targetPostUrl: candidate.post_url,
-      success: true,
-      meta: {
-        neighborCommentId: candidate.id,
-        sourceType: candidate.source_type || null,
-        targetBlogName: candidate.target_blog_name || null,
-        sympathy: posted.sympathy,
-      },
-    });
-  }
+  await _recordNeighborCommentSuccess(candidate, generated, posted);
   traceCommenter('neighborComment:posted', {
     candidateId: candidate.id,
     sympathyOk: posted?.sympathy?.ok === true,
@@ -2444,15 +2482,11 @@ async function processNeighborComment(candidate, { testMode = false } = {}) {
 
 async function runNeighborSympathy({ testMode = false } = {}) {
   const config = getNeighborCommenterConfig();
-  if (!env.IS_OPS && !process.env.BLOG_COMMENTER_ALLOW_DEV) {
-    return { skipped: true, reason: 'ops_only' };
-  }
-  if (!config.enabled && !testMode && process.env.BLOG_NEIGHBOR_COMMENTER_FORCE !== 'true') {
-    return { skipped: true, reason: 'disabled' };
-  }
-  if (!testMode && !isWithinActiveWindow(config)) {
-    return { skipped: true, reason: 'inactive_window' };
-  }
+  const guardResult = _checkOpsAndWindow(config, {
+    testMode,
+    enabledForceEnv: process.env.BLOG_NEIGHBOR_COMMENTER_FORCE,
+  });
+  if (guardResult) return guardResult;
 
   await ensureSchema();
 
@@ -2498,14 +2532,12 @@ async function runNeighborSympathy({ testMode = false } = {}) {
     }
   }
 
-  if (liked > 0 || failed > 0) {
-    await postAlarm({
-      team: 'blog',
-      fromBot: 'blog-neighbor-sympathy',
-      alertLevel: failed > 0 ? 3 : 2,
-      message: `이웃 공감 ${liked}건 완료, 실패 ${failed}건, 스킵 ${skipped}건 (오늘 총 ${todayCount + liked}/${config.maxDaily})`,
-    }).catch(() => {});
-  }
+  await _postCommenterAlarm({
+    fromBot: 'blog-neighbor-sympathy',
+    alertLevel: failed > 0 ? 3 : 2,
+    message: `이웃 공감 ${liked}건 완료, 실패 ${failed}건, 스킵 ${skipped}건 (오늘 총 ${todayCount + liked}/${config.maxDaily})`,
+    shouldSend: liked > 0 || failed > 0,
+  });
 
   return {
     ok: true,
@@ -2521,15 +2553,11 @@ async function runNeighborSympathy({ testMode = false } = {}) {
 
 async function runNeighborCommenter({ testMode = false } = {}) {
   const config = getNeighborCommenterConfig();
-  if (!env.IS_OPS && !process.env.BLOG_COMMENTER_ALLOW_DEV) {
-    return { skipped: true, reason: 'ops_only' };
-  }
-  if (!config.enabled && !testMode && process.env.BLOG_NEIGHBOR_COMMENTER_FORCE !== 'true') {
-    return { skipped: true, reason: 'disabled' };
-  }
-  if (!testMode && !isWithinActiveWindow(config)) {
-    return { skipped: true, reason: 'inactive_window' };
-  }
+  const guardResult = _checkOpsAndWindow(config, {
+    testMode,
+    enabledForceEnv: process.env.BLOG_NEIGHBOR_COMMENTER_FORCE,
+  });
+  if (guardResult) return guardResult;
 
   await ensureSchema();
 
@@ -2589,14 +2617,12 @@ async function runNeighborCommenter({ testMode = false } = {}) {
     }
   }
 
-  if (posted > 0 || failed > 0) {
-    await postAlarm({
-      team: 'blog',
-      fromBot: 'blog-neighbor-commenter',
-      alertLevel: failed > 0 ? 3 : 2,
-      message: `이웃 댓글 ${posted}건 완료, 댓글 공감 ${sympathized}건 완료, 실패 ${failed}건, 스킵 ${skipped}건 (오늘 댓글 총 ${todayCount + posted}/${config.maxDaily}, 댓글공감 총 ${todaySympathyCount + sympathized})`,
-    }).catch(() => {});
-  }
+  await _postCommenterAlarm({
+    fromBot: 'blog-neighbor-commenter',
+    alertLevel: failed > 0 ? 3 : 2,
+    message: `이웃 댓글 ${posted}건 완료, 댓글 공감 ${sympathized}건 완료, 실패 ${failed}건, 스킵 ${skipped}건 (오늘 댓글 총 ${todayCount + posted}/${config.maxDaily}, 댓글공감 총 ${todaySympathyCount + sympathized})`,
+    shouldSend: posted > 0 || failed > 0,
+  });
 
   return {
     ok: true,

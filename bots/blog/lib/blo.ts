@@ -58,6 +58,7 @@ const {
   writeGeneralPostChunked,
   repairGeneralPostDraft,
 }                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/gems-writer.ts'));
+const { ensureBlogCoreSchema }                      = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/schema.ts'));
 const { checkQualityEnhanced }                      = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/quality-checker.ts'));
 const { publishToFile, recordPerformance }          = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/publ.ts'));
 const pgPool                                        = require('../../../packages/core/lib/pg-pool');
@@ -194,13 +195,134 @@ function _buildBookReviewSkillInput(researchData = {}) {
   };
 }
 
+function _applyGeneralTopicStrategy(preparedResearch, category, strategyPlan) {
+  if (preparedResearch.topic_hint) return preparedResearch;
+
+  const recentPosts = getRecentPosts(category, 10);
+  const selectedTopic = selectAndValidateTopic(category, recentPosts, strategyPlan);
+
+  return {
+    ...preparedResearch,
+    topic_hint: selectedTopic.topic,
+    topic_question: selectedTopic.question,
+    topic_diff: selectedTopic.diff,
+    topic_title_candidate: selectedTopic.title,
+    strategy_focus: Array.isArray(strategyPlan?.focus) ? strategyPlan.focus : [],
+    strategy_recommendations: Array.isArray(strategyPlan?.recommendations) ? strategyPlan.recommendations : [],
+    strategy_preferred_pattern: strategyPlan?.preferredTitlePattern || null,
+    strategy_suppressed_pattern: strategyPlan?.suppressedTitlePattern || null,
+    _selectedTopic: selectedTopic,
+  };
+}
+
+async function _updateScheduledBookInfo(scheduleId, book) {
+  if (!scheduleId || !book?.title) return;
+  const { updateBookInfo } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/schedule.ts'));
+  await updateBookInfo(scheduleId, {
+    book_title: book.title,
+    book_author: book.author,
+    book_isbn: book.isbn,
+  });
+}
+
+async function _resolveScheduledBookResearch(preparedResearch, scheduledBook, scheduleId = null) {
+  if (scheduledBook?.book_title && scheduledBook?.book_isbn) {
+    const duplicateBook = await _findExistingReviewedBook(scheduledBook);
+    if (duplicateBook) {
+      return {
+        ok: false,
+        skipped: true,
+        reason: `기존 도서리뷰와 중복: ${scheduledBook.book_title}`,
+      };
+    }
+
+    return {
+      ok: true,
+      researchData: {
+        ...preparedResearch,
+        book_info: {
+          title: scheduledBook.book_title,
+          author: scheduledBook.book_author || '',
+          isbn: scheduledBook.book_isbn,
+          source: 'schedule',
+        },
+      },
+    };
+  }
+
+  if (!scheduledBook?.book_title) {
+    return { ok: true, researchData: preparedResearch };
+  }
+
+  console.log(`[젬스] 스케줄 도서 ISBN 없음 → 검색으로 보완: ${scheduledBook.book_title}`);
+  const book = await blogSkills.bookReviewBook.resolveBookForReview({ topic: scheduledBook.book_title });
+  if (!book) {
+    return {
+      ok: false,
+      skipped: true,
+      reason: '도서 검색/선택/검증 실패',
+    };
+  }
+
+  await _updateScheduledBookInfo(scheduleId, book);
+  return {
+    ok: true,
+    researchData: {
+      ...preparedResearch,
+      book_info: book,
+    },
+  };
+}
+
+async function _resolveDynamicBookResearch(preparedResearch, researchData, scheduleId = null) {
+  const skillInput = _buildBookReviewSkillInput(researchData);
+  console.log(`[젬스] 도서리뷰 주제 선정: ${skillInput.topic}`);
+  const book = await blogSkills.bookReviewBook.resolveBookForReview(skillInput);
+  if (!book) {
+    return {
+      ok: false,
+      skipped: true,
+      reason: '도서 검색/선택/검증 실패',
+    };
+  }
+
+  await _updateScheduledBookInfo(scheduleId, book);
+  return {
+    ok: true,
+    researchData: {
+      ...preparedResearch,
+      book_info: book,
+    },
+  };
+}
+
+async function _prepareBookReviewResearch(preparedResearch, researchData, scheduledBook, scheduleId = null) {
+  if (scheduledBook) {
+    return _resolveScheduledBookResearch(preparedResearch, scheduledBook, scheduleId);
+  }
+
+  try {
+    return await _resolveDynamicBookResearch(preparedResearch, researchData, scheduleId);
+  } catch (error) {
+    return {
+      ok: false,
+      skipped: true,
+      reason: `도서 정보 수집/검증 실패: ${error.message}`,
+    };
+  }
+}
+
 // ─── 스키마 초기화 ────────────────────────────────────────────────────
 
 async function ensureSchema() {
   try {
-    await pgPool.run('blog', 'SELECT 1 FROM blog.daily_config LIMIT 1');
-  } catch {
-    console.warn('[블로] blog 스키마 미초기화 — 마이그레이션 필요: bots/blog/migrations/001-blog-schema.sql');
+    await ensureBlogCoreSchema();
+  } catch (error) {
+    if (String(error?.code || '').trim() === 'EPERM') {
+      console.log('[블로] DB 접근 제한 — 스키마 자동 보강 생략');
+      return;
+    }
+    console.warn('[블로] 스키마 자동 보강 실패:', error?.message || error);
   }
 }
 
@@ -320,6 +442,45 @@ async function _resolvePipelineExecution(postType, sectionVariation, payload, ru
   return execution;
 }
 
+function _attachQualitySummary(result, quality) {
+  return {
+    ...result,
+    qualityPassed: quality?.passed,
+    qualityScore: Number(quality?.score || (quality?.passed ? 8 : 5)),
+  };
+}
+
+function _createLocalDraftRunner({
+  kind,
+  context,
+  chunkedLabel,
+  chunkedWriter,
+  singleWriter,
+  repairDraft,
+  buildRepairContext,
+  buildSingleArgs,
+  buildChunkedArgs,
+  buildRepairArgs,
+}) {
+  return async (variation) => {
+    let post;
+    try {
+      post = await chunkedWriter(...buildChunkedArgs(context, variation));
+    } catch (e) {
+      console.warn(`[블로] ${chunkedLabel} 분할 생성 실패 — 단일 생성 폴백:`, e.message);
+      post = await singleWriter(...buildSingleArgs(context, variation));
+    }
+
+    return _runQualityRepair(
+      kind,
+      buildRepairContext(context),
+      post,
+      variation,
+      async (repairContext, currentPost, quality) => repairDraft(...buildRepairArgs(repairContext, currentPost, quality, variation))
+    );
+  };
+}
+
 async function _createInstaContentSafe(content, title, category, label, options = {}) {
   if (process.env.BLOG_INSTA_ENABLED === 'false') return null;
   const instaContent = await createInstaContent(content, title, category, 3, options).catch(e => {
@@ -361,6 +522,59 @@ async function _publishAndTrack(postData, scheduleId, traceCtx, eventDetail, opt
   return published;
 }
 
+function _buildAccumulationOptions(traceCtx, options = {}, published = null) {
+  return {
+    traceId: traceCtx.trace_id,
+    dryRun: !!options.dryRun,
+    reused: !!published?.reused,
+  };
+}
+
+async function _accumulatePublishedPost(postData, quality, traceCtx, options = {}, published = null) {
+  await accumulatePostExperience(postData, quality, _buildAccumulationOptions(traceCtx, options, published));
+}
+
+async function _advanceContentTracker({
+  dryRun = false,
+  published = null,
+  skipLabel = '',
+  dryRunLabel = '',
+  readonlyLabel = '',
+  advance,
+}) {
+  if (!dryRun && !published?.reused && !DEV_HUB_READONLY) {
+    await advance();
+    return;
+  }
+
+  if (published?.reused) {
+    console.log(skipLabel);
+  } else if (dryRun) {
+    console.log(dryRunLabel);
+  } else {
+    console.log(readonlyLabel);
+  }
+}
+
+function _buildPreparedContext(context) {
+  return {
+    skipped: false,
+    context,
+  };
+}
+
+function _buildSkippedPostResult(type, reason, extra = {}) {
+  return {
+    skipped: true,
+    result: {
+      type,
+      skipped: true,
+      reason,
+      ...extra,
+    },
+  };
+}
+
 async function _prepareLectureContext(researchData, traceCtx, preloaded = {}) {
   if (await isSeriesComplete()) {
     const next = await transitionSeries();
@@ -391,10 +605,10 @@ async function _prepareLectureContext(researchData, traceCtx, preloaded = {}) {
         }),
         () => console.log('[DEV] 텔레그램 생략')
       );
-      return { skipped: true, result: { type: 'lecture', skipped: true, reason: '시리즈 완료 — 차기 준비 중' } };
+      return _buildSkippedPostResult('lecture', '시리즈 완료 — 차기 준비 중');
     }
     console.log(`[블로] 🔄 시리즈 전환 완료 → ${next.series_name} 1강부터 시작`);
-    return { skipped: true, result: { type: 'lecture', skipped: true, reason: `시리즈 전환: ${next.series_name}` } };
+    return _buildSkippedPostResult('lecture', `시리즈 전환: ${next.series_name}`);
   }
 
   const sectionVariation = preloaded.sectionVariation || {};
@@ -422,16 +636,13 @@ async function _prepareLectureContext(researchData, traceCtx, preloaded = {}) {
     preparedResearch.pastPosts = pastPosts;
   }
 
-  return {
-    skipped: false,
-    context: {
-      number,
-      seriesName,
-      lectureTitle,
-      sectionVariation,
-      researchData: preparedResearch,
-    },
-  };
+  return _buildPreparedContext({
+    number,
+    seriesName,
+    lectureTitle,
+    sectionVariation,
+    researchData: preparedResearch,
+  });
 }
 
 async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, scheduleId = null) {
@@ -453,98 +664,30 @@ async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, sc
   }
   if (!needsBook && !preparedResearch.topic_hint) {
     try {
-      const recentPosts = getRecentPosts(category, 10);
-      const selectedTopic = selectAndValidateTopic(category, recentPosts, strategyPlan);
-      preparedResearch.topic_hint = selectedTopic.topic;
-      preparedResearch.topic_question = selectedTopic.question;
-      preparedResearch.topic_diff = selectedTopic.diff;
-      preparedResearch.topic_title_candidate = selectedTopic.title;
-      preparedResearch.strategy_focus = Array.isArray(strategyPlan?.focus) ? strategyPlan.focus : [];
-      preparedResearch.strategy_recommendations = Array.isArray(strategyPlan?.recommendations) ? strategyPlan.recommendations : [];
-      preparedResearch.strategy_preferred_pattern = strategyPlan?.preferredTitlePattern || null;
-      preparedResearch.strategy_suppressed_pattern = strategyPlan?.suppressedTitlePattern || null;
+      preparedResearch = _applyGeneralTopicStrategy(preparedResearch, category, strategyPlan);
+      const selectedTopic = preparedResearch._selectedTopic;
       console.log(`[젬스] 주제 다양화 선택: ${selectedTopic.title}${selectedTopic.forced ? ' (forced)' : ''}`);
+      delete preparedResearch._selectedTopic;
     } catch (error) {
       console.warn('[젬스] 주제 다양화 선택 실패 — 기본 자율 주제 유지:', error.message);
     }
   }
   if (needsBook) {
-    const scheduledBook = preloaded.bookInfo;
-    if (scheduledBook?.book_title && scheduledBook?.book_isbn) {
-      const duplicateBook = await _findExistingReviewedBook(scheduledBook);
-      if (duplicateBook) {
-        console.warn(
-          `[젬스] 스케줄 도서 중복 감지 — ${scheduledBook.book_title} (${duplicateBook.publish_date}, ${duplicateBook.status})`
-        );
-        return {
-          skipped: true,
-          reason: `기존 도서리뷰와 중복: ${scheduledBook.book_title}`,
-          category,
-          sectionVariation,
-        };
-      }
-      preparedResearch.book_info = {
-        title: scheduledBook.book_title,
-        author: scheduledBook.book_author || '',
-        isbn: scheduledBook.book_isbn,
-        source: 'schedule',
-      };
-      console.log(`[젬스] 스케줄 도서 정보 사용: ${scheduledBook.book_title} (ISBN: ${scheduledBook.book_isbn})`);
-    } else if (scheduledBook?.book_title) {
-      // ISBN 없는 스케줄 → resolveBookForReview로 보완
-      console.log(`[젬스] 스케줄 도서 ISBN 없음 → 검색으로 보완: ${scheduledBook.book_title}`);
-      try {
-        const book = await blogSkills.bookReviewBook.resolveBookForReview({ topic: scheduledBook.book_title });
-        if (book) {
-          preparedResearch.book_info = book;
-          if (scheduleId) {
-            const { updateBookInfo } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/schedule.ts'));
-            await updateBookInfo(scheduleId, { book_title: book.title, book_author: book.author, book_isbn: book.isbn });
-          }
-        } else {
-          console.warn('[젬스] 스케줄 도서 검색 보완 실패');
-        }
-      } catch (e) {
-        console.warn('[젬스] 스케줄 도서 검색 보완 에러:', e.message);
-      }
-    } else {
-      try {
-        const skillInput = _buildBookReviewSkillInput(researchData);
-        console.log(`[젬스] 도서리뷰 주제 선정: ${skillInput.topic}`);
-        const book = await blogSkills.bookReviewBook.resolveBookForReview(skillInput);
-        if (!book) {
-          console.warn('[젬스] 도서 검색/선택/검증 실패 — 도서리뷰 스킵');
-          return {
-            skipped: true,
-            reason: '도서 검색/선택/검증 실패',
-            category,
-            sectionVariation,
-          };
-        }
-
-        preparedResearch.book_info = book;
-        if (scheduleId && book?.title) {
-          const { updateBookInfo } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/schedule.ts'));
-          await updateBookInfo(scheduleId, {
-            book_title: book.title,
-            book_author: book.author,
-            book_isbn: book.isbn,
-          });
-        }
-      } catch (e) {
-        console.warn('[젬스] 도서 정보 수집/검증 실패 — 도서리뷰 스킵:', e.message);
-        return {
-          skipped: true,
-          reason: `도서 정보 수집/검증 실패: ${e.message}`,
-          category,
-          sectionVariation,
-        };
-      }
+    const bookResult = await _prepareBookReviewResearch(preparedResearch, researchData, preloaded.bookInfo, scheduleId);
+    if (!bookResult.ok) {
+      console.warn(`[젬스] ${bookResult.reason} — 도서리뷰 스킵`);
+      return _buildSkippedPostResult('general', bookResult.reason, {
+        category,
+        sectionVariation,
+      });
+    }
+    preparedResearch = bookResult.researchData;
+    if (preparedResearch.book_info?.title) {
+      console.log(`[젬스] 도서 정보 준비 완료: ${preparedResearch.book_info.title}`);
     }
   }
 
-  return {
-    skipped: false,
+  return _buildPreparedContext({
     category,
     sectionVariation,
     researchData: preparedResearch,
@@ -553,7 +696,7 @@ async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, sc
     topicQuestion: preparedResearch.topic_question || null,
     topicDiff: preparedResearch.topic_diff || null,
     strategyPlan,
-  };
+  });
 }
 
 async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx, writerName = null, options = {}) {
@@ -574,7 +717,7 @@ async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx
     charCount: post.charCount,
   }, options);
 
-  await accumulatePostExperience({
+  await _accumulatePublishedPost({
     title: postTitle,
     content: post.content,
     category: 'Node.js강의',
@@ -583,21 +726,16 @@ async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx
     charCount: post.charCount,
     postId: published.postId || null,
     scheduleId,
-  }, quality, {
-    traceId: traceCtx.trace_id,
-    dryRun: !!options.dryRun,
-    reused: !!published?.reused,
-  });
+  }, quality, traceCtx, options, published);
 
-  if (!options.dryRun && !published?.reused && !DEV_HUB_READONLY) {
-    await advanceLectureNumber();
-  } else if (published?.reused) {
-    console.log(`[블로] 강의 ${context.number}강 재실행 감지 — 인덱스 증가 생략`);
-  } else if (options.dryRun) {
-    console.log(`[블로][dry-run] 강의 인덱스 증가 생략 (${context.number}강)`);
-  } else {
-    console.log(`[블로] DEV/HUB 읽기 전용 — 강의 인덱스 증가 생략 (${context.number}강)`);
-  }
+  await _advanceContentTracker({
+    dryRun: !!options.dryRun,
+    published,
+    skipLabel: `[블로] 강의 ${context.number}강 재실행 감지 — 인덱스 증가 생략`,
+    dryRunLabel: `[블로][dry-run] 강의 인덱스 증가 생략 (${context.number}강)`,
+    readonlyLabel: `[블로] DEV/HUB 읽기 전용 — 강의 인덱스 증가 생략 (${context.number}강)`,
+    advance: advanceLectureNumber,
+  });
 
   const instaContent = options.dryRun
     ? null
@@ -606,7 +744,7 @@ async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx
       postTitle,
       'Node.js강의',
       '강의 인스타',
-      { thumbPath: images?.thumb?.filepath || null }
+      { thumbPath: null }
     );
 
   return {
@@ -669,7 +807,7 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
     charCount: post.charCount,
   }, options);
 
-  await accumulatePostExperience({
+  await _accumulatePublishedPost({
     title: genTitle,
     content: post.content,
     category: context.category,
@@ -678,21 +816,16 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
     charCount: post.charCount,
     postId: published.postId || null,
     scheduleId,
-  }, quality, {
-    traceId: traceCtx.trace_id,
-    dryRun: !!options.dryRun,
-    reused: !!published?.reused,
-  });
+  }, quality, traceCtx, options, published);
 
-  if (!options.dryRun && !published?.reused && !DEV_HUB_READONLY) {
-    await advanceGeneralCategory();
-  } else if (published?.reused) {
-    console.log(`[블로] 일반 포스팅 재실행 감지 (${context.category}) — 카테고리 증가 생략`);
-  } else if (options.dryRun) {
-    console.log(`[블로][dry-run] 일반 카테고리 증가 생략 (${context.category})`);
-  } else {
-    console.log(`[블로] DEV/HUB 읽기 전용 — 일반 카테고리 증가 생략 (${context.category})`);
-  }
+  await _advanceContentTracker({
+    dryRun: !!options.dryRun,
+    published,
+    skipLabel: `[블로] 일반 포스팅 재실행 감지 (${context.category}) — 카테고리 증가 생략`,
+    dryRunLabel: `[블로][dry-run] 일반 카테고리 증가 생략 (${context.category})`,
+    readonlyLabel: `[블로] DEV/HUB 읽기 전용 — 일반 카테고리 증가 생략 (${context.category})`,
+    advance: advanceGeneralCategory,
+  });
 
   return {
     type:         'general',
@@ -756,26 +889,89 @@ async function _prepareDailyRun(traceCtx, options = {}) {
   };
 }
 
-async function _sendDailyReport(results, traceCtx, options = {}) {
-  const hasErrors = results.some(r => r.error);
-  const reportLines = [
+function _formatDailyResultLabel(result) {
+  return result.type === 'lecture'
+    ? `강의 ${result.number}강`
+    : `일반[${result.category}]`;
+}
+
+function _formatDailyResultLine(result) {
+  if (result.error) return `❌ ${result.type}: ${result.error.slice(0, 60)}`;
+  if (result.skipped) return `⏭ ${result.type}: ${result.reason}`;
+  return `${result.quality ? '✅' : '⚠️'} ${_formatDailyResultLabel(result)}: ${result.title?.slice(0, 30)} (${result.charCount}자)`;
+}
+
+function _buildDailyGuideLine(result) {
+  return `${result.type === 'lecture' ? `[${result.number}강]` : `[${result.category}]`} ${_buildRewriteGuide(result.aiRisk)}`;
+}
+
+function _buildDailyReportLines(results, traceCtx) {
+  return [
     '📝 [블로그팀] 일간 작업 완료',
     `🔖 trace: ${traceCtx.trace_id.slice(0, 8)}`,
     '',
-    ...results.map(r => {
-      if (r.error) return `❌ ${r.type}: ${r.error.slice(0, 60)}`;
-      if (r.skipped) return `⏭ ${r.type}: ${r.reason}`;
-      const label = r.type === 'lecture' ? `강의 ${r.number}강` : `일반[${r.category}]`;
-      return `${r.quality ? '✅' : '⚠️'} ${label}: ${r.title?.slice(0, 30)} (${r.charCount}자)`;
-    }),
+    ...results.map(_formatDailyResultLine),
     '',
-    ...results.filter(r => !r.error && !r.skipped).map(r =>
-      `${r.type === 'lecture' ? `[${r.number}강]` : `[${r.category}]`} ${_buildRewriteGuide(r.aiRisk)}`
-    ),
+    ...results.filter(r => !r.error && !r.skipped).map(_buildDailyGuideLine),
     '',
     '📁 파일 위치: bots/blog/output/',
     '📅 예약 발행: 내일 오전 07:00',
   ];
+}
+
+async function _safeEvaluateContract(contractId, payload) {
+  if (!contractId) return;
+  try {
+    await hiringContract.evaluate(contractId, payload, null);
+  } catch (e) {
+    console.warn('[shadow] evaluate 기록 실패 (무시):', e.message);
+  }
+}
+
+function _attachWriterPersonas(sectionVariation = {}, writerName, postType) {
+  return {
+    ...sectionVariation,
+    writerPersona: getWriterPersona(writerName, postType),
+    editorPersona: pickEditorPersona(postType),
+  };
+}
+
+async function _hireBlogWriterContract(writerName, description) {
+  try {
+    const contract = await hiringContract.hire(writerName, {
+      team: 'blog',
+      description,
+      requirements: { quality_min: 7.0, min_chars: 9000 },
+    });
+    return contract.contractId || null;
+  } catch (e) {
+    console.warn('[shadow] hire 기록 실패 (무시):', e.message);
+    return null;
+  }
+}
+
+async function _executeWithWriterContract(traceCtx, startTime, contractId, runner) {
+  try {
+    const result = await withTrace(traceCtx, runner);
+    await _safeEvaluateContract(contractId, {
+      quality: Number(result?.qualityScore || (result?.qualityPassed ? 8 : 5)),
+      char_count: result?.charCount || 0,
+      duration_ms: Date.now() - startTime,
+    });
+    return result;
+  } catch (error) {
+    await _safeEvaluateContract(contractId, {
+      quality: 0,
+      duration_ms: Date.now() - startTime,
+      hallucination: false,
+    });
+    throw error;
+  }
+}
+
+async function _sendDailyReport(results, traceCtx, options = {}) {
+  const hasErrors = results.some(r => r.error);
+  const reportLines = _buildDailyReportLines(results, traceCtx);
 
   const reportEvent = buildReportEvent({
     from_bot: 'blog-blo',
@@ -787,18 +983,11 @@ async function _sendDailyReport(results, traceCtx, options = {}) {
     sections: [
       {
         title: '결과',
-        lines: results.map(r => {
-          if (r.error) return `❌ ${r.type}: ${r.error.slice(0, 60)}`;
-          if (r.skipped) return `⏭ ${r.type}: ${r.reason}`;
-          const label = r.type === 'lecture' ? `강의 ${r.number}강` : `일반[${r.category}]`;
-          return `${r.quality ? '✅' : '⚠️'} ${label}: ${r.title?.slice(0, 30)} (${r.charCount}자)`;
-        }),
+        lines: results.map(_formatDailyResultLine),
       },
       {
         title: '리라이팅 가이드',
-        lines: results.filter(r => !r.error && !r.skipped).map(r =>
-          `${r.type === 'lecture' ? `[${r.number}강]` : `[${r.category}]`} ${_buildRewriteGuide(r.aiRisk)}`
-        ),
+        lines: results.filter(r => !r.error && !r.skipped).map(_buildDailyGuideLine),
       },
     ],
     footer: '파일 위치: bots/blog/output/ | 예약 발행: 내일 오전 07:00',
@@ -855,6 +1044,90 @@ async function _sendDailyReport(results, traceCtx, options = {}) {
   }
 }
 
+function _buildVerifyResult(daily) {
+  return {
+    type: 'verify',
+    ok: true,
+    dryRun: false,
+    verifyOnly: true,
+    lectureScheduled: !!daily.lectureCtx,
+    generalScheduled: !!daily.generalCtx,
+    lectureCount: Number(daily.config?.lecture_count || 0),
+    generalCount: Number(daily.config?.general_count || 0),
+  };
+}
+
+function _applyRagContext(researchData, ragContext) {
+  researchData.realExperiences = ragContext.episodes;
+  researchData.relatedPosts = ragContext.relatedPosts;
+  researchData.ragQuality = ragContext.quality;
+}
+
+async function _runLectureStage(daily, traceCtx, options = {}) {
+  const { config, researchData, lectureCtx, lectureSchedule } = daily;
+  if (!lectureCtx || config.lecture_count <= 0) return null;
+
+  try {
+    if (await isSeriesComplete()) {
+      return { type: 'lecture', skipped: true, reason: '시리즈 완료' };
+    }
+
+    const { number, seriesName, lectureTitle } = lectureCtx;
+    const ragContext = await agenticSearch(lectureTitle, 'lecture', 3, number);
+    _applyRagContext(researchData, ragContext);
+
+    if (lectureSchedule?.id && !options.dryRun) await updateScheduleStatus(lectureSchedule.id, 'writing');
+    if (!options.dryRun) await prepareCompetition(lectureTitle, 'lecture');
+
+    return await runLecturePost(researchData, traceCtx, {
+      number, seriesName, lectureTitle,
+    }, lectureSchedule?.id, options);
+  } catch (e) {
+    console.error('[블로] 강의 포스팅 실패:', e.message);
+    if (lectureSchedule?.id && !options.dryRun) {
+      await updateScheduleStatus(lectureSchedule.id, 'scheduled');
+    }
+    await _emitEvent('post_failed', { type: 'lecture', error: e.message, traceId: traceCtx.trace_id });
+    return { type: 'lecture', error: e.message };
+  }
+}
+
+async function _runGeneralStage(daily, traceCtx, options = {}) {
+  const { config, researchData, generalCtx } = daily;
+  if (!generalCtx || config.general_count <= 0) return null;
+
+  const { category, scheduleId, bookInfo } = generalCtx;
+  try {
+    const ragContext = await agenticSearch(category, 'general', 3);
+    _applyRagContext(researchData, ragContext);
+
+    if (scheduleId && !options.dryRun) await updateScheduleStatus(scheduleId, 'writing');
+    if (!options.dryRun) await prepareCompetition(category, 'general');
+
+    return await runGeneralPost(researchData, traceCtx, {
+      category,
+      bookInfo,
+    }, scheduleId, options);
+  } catch (e) {
+    console.error('[블로] 일반 포스팅 실패:', e.message);
+    if (scheduleId && !options.dryRun) {
+      await updateScheduleStatus(scheduleId, 'scheduled');
+    }
+    await _emitEvent('post_failed', { type: 'general', error: e.message, traceId: traceCtx.trace_id });
+    return { type: 'general', error: e.message };
+  }
+}
+
+async function _runPostPublishChecks(options = {}) {
+  if (!options.dryRun) {
+    await dailyCurriculumCheck().catch(e =>
+      console.warn('[블로] 커리큘럼 체크 실패 (무시):', e.message)
+    );
+    return;
+  }
+  console.log('[블로][dry-run] 커리큘럼 체크 생략');
+}
+
 // ─── 강의 포스팅 ──────────────────────────────────────────────────────
 
 async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId = null, options = {}) {
@@ -862,52 +1135,30 @@ async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId
   if (prepared.skipped) return prepared.result;
   const context = prepared.context;
   const startTime = Date.now();
-  let contractId = null;
   const writerName = await _selectBlogWriter('강의', 'pos', '기술 강의 IT');
-  const writerPersona = getWriterPersona(writerName, 'lecture');
-  const editorPersona = pickEditorPersona('lecture');
-  context.sectionVariation = {
-    ...context.sectionVariation,
-    writerPersona,
-    editorPersona,
-  };
+  context.sectionVariation = _attachWriterPersonas(context.sectionVariation, writerName, 'lecture');
+  const contractId = await _hireBlogWriterContract(writerName, `lecture: ${context.lectureTitle || '자동 주제'}`);
 
-  try {
-    const contract = await hiringContract.hire(writerName, {
-      team: 'blog',
-      description: `lecture: ${context.lectureTitle || '자동 주제'}`,
-      requirements: { quality_min: 7.0, min_chars: 9000 },
-    });
-    contractId = contract.contractId;
-  } catch (e) {
-    console.warn('[shadow] hire 기록 실패 (무시):', e.message);
-  }
-
-  try {
-    const result = await withTrace(traceCtx, async () => {
-      const runLocalDraft = async variation => {
-        let post;
-        try {
-          post = await writeLecturePostChunked(context.number, context.lectureTitle, context.researchData, variation);
-        } catch (e) {
-          console.warn('[블로] 강의 분할 생성 실패 — 단일 생성 폴백:', e.message);
-          post = await writeLecturePost(context.number, context.lectureTitle, context.researchData, variation);
-        }
-        return _runQualityRepair(
-          'lecture',
-          context,
-          post,
+  return _executeWithWriterContract(traceCtx, startTime, contractId, async () => {
+      const runLocalDraft = _createLocalDraftRunner({
+        kind: 'lecture',
+        context,
+        chunkedLabel: '강의',
+        chunkedWriter: writeLecturePostChunked,
+        singleWriter: writeLecturePost,
+        repairDraft: repairLecturePostDraft,
+        buildRepairContext: (ctx) => ctx,
+        buildSingleArgs: (ctx, variation) => [ctx.number, ctx.lectureTitle, ctx.researchData, variation],
+        buildChunkedArgs: (ctx, variation) => [ctx.number, ctx.lectureTitle, ctx.researchData, variation],
+        buildRepairArgs: (ctx, currentPost, quality, variation) => [
+          ctx.number,
+          ctx.lectureTitle,
+          ctx.researchData,
+          currentPost,
+          quality,
           variation,
-          async (ctx, currentPost, quality) => repairLecturePostDraft(
-            ctx.number,
-            ctx.lectureTitle,
-            ctx.researchData,
-            currentPost,
-            quality,
-            variation
-          )
-        );
-      };
+        ],
+      });
 
       const { post, quality } = await _resolvePipelineExecution(
         'lecture',
@@ -922,51 +1173,23 @@ async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId
       );
 
       const finalized = await _finalizeLecturePost(post, quality, context, scheduleId, traceCtx, writerName, options);
-
-      if (contractId) {
-        try {
-          await hiringContract.evaluate(contractId, {
-            quality: Number(quality?.score || (quality?.passed ? 8 : 5)),
-            char_count: post?.charCount || 0,
-            duration_ms: Date.now() - startTime,
-          }, null);
-        } catch (e) {
-          console.warn('[shadow] evaluate 기록 실패 (무시):', e.message);
-        }
-      }
-
-      return finalized;
+      return _attachQualitySummary(finalized, quality);
     });
-
-    return result;
-  } catch (error) {
-    if (contractId) {
-      try {
-        await hiringContract.evaluate(contractId, {
-          quality: 0,
-          duration_ms: Date.now() - startTime,
-          hallucination: false,
-        }, null);
-      } catch (e) {
-        console.warn('[shadow] evaluate 실패 기록 (무시):', e.message);
-      }
-    }
-    throw error;
-  }
 }
 
 // ─── 일반 포스팅 ──────────────────────────────────────────────────────
 
 async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId = null, options = {}) {
-  const context = await _prepareGeneralContext(researchData, traceCtx, preloaded, scheduleId);
-  if (context?.skipped) {
-    const canFallbackCategory = context.category === '도서리뷰' && !preloaded._bookFallbackTried;
+  const prepared = await _prepareGeneralContext(researchData, traceCtx, preloaded, scheduleId);
+  if (prepared?.skipped) {
+    const skippedResult = prepared.result || { type: 'general', skipped: true, reason: 'skipped' };
+    const canFallbackCategory = skippedResult.category === '도서리뷰' && !preloaded._bookFallbackTried;
     if (canFallbackCategory) {
       await advanceGeneralCategory();
       const nextCategoryInfo = await getNextGeneralCategory();
       const fallbackCategory = nextCategoryInfo?.category === '도서리뷰'
-        ? _getNextFallbackGeneralCategory(context.category)
-        : (nextCategoryInfo?.category || _getNextFallbackGeneralCategory(context.category));
+        ? _getNextFallbackGeneralCategory(skippedResult.category)
+        : (nextCategoryInfo?.category || _getNextFallbackGeneralCategory(skippedResult.category));
       if (scheduleId) {
         await updateScheduleCategory(scheduleId, fallbackCategory);
       }
@@ -981,63 +1204,37 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId
     if (!DEV_HUB_READONLY) {
       await advanceGeneralCategory();
     }
-    return {
-      type: 'general',
-      skipped: true,
-      reason: context.reason,
-      category: context.category,
-    };
+    return skippedResult;
   }
+  const context = prepared.context;
   const startTime = Date.now();
-  let contractId = null;
   const writerName = await _selectBlogWriter(
     context.category === '도서리뷰' ? '도서리뷰' : '일반',
     'gems',
     context.category === '도서리뷰' ? '도서 감성 에세이' : (context.category || '에세이')
   );
-  const writerPersona = getWriterPersona(writerName, 'general');
-  const editorPersona = pickEditorPersona('general');
-  context.sectionVariation = {
-    ...context.sectionVariation,
-    writerPersona,
-    editorPersona,
-  };
+  context.sectionVariation = _attachWriterPersonas(context.sectionVariation, writerName, 'general');
+  const contractId = await _hireBlogWriterContract(writerName, `general: ${context.category || '자동 주제'}`);
 
-  try {
-    const contract = await hiringContract.hire(writerName, {
-      team: 'blog',
-      description: `general: ${context.category || '자동 주제'}`,
-      requirements: { quality_min: 7.0, min_chars: 9000 },
-    });
-    contractId = contract.contractId;
-  } catch (e) {
-    console.warn('[shadow] hire 기록 실패 (무시):', e.message);
-  }
-
-  try {
-    const result = await withTrace(traceCtx, async () => {
-      const runLocalDraft = async variation => {
-        let post;
-        try {
-          post = await writeGeneralPostChunked(context.category, context.researchData, variation);
-        } catch (e) {
-          console.warn('[블로] 일반 분할 생성 실패 — 단일 생성 폴백:', e.message);
-          post = await writeGeneralPost(context.category, context.researchData, variation);
-        }
-        return _runQualityRepair(
-          'general',
-          { category: context.category, data: context.researchData },
-          post,
+  return _executeWithWriterContract(traceCtx, startTime, contractId, async () => {
+      const runLocalDraft = _createLocalDraftRunner({
+        kind: 'general',
+        context,
+        chunkedLabel: '일반',
+        chunkedWriter: writeGeneralPostChunked,
+        singleWriter: writeGeneralPost,
+        repairDraft: repairGeneralPostDraft,
+        buildRepairContext: (ctx) => ({ category: ctx.category, data: ctx.researchData }),
+        buildSingleArgs: (ctx, variation) => [ctx.category, ctx.researchData, variation],
+        buildChunkedArgs: (ctx, variation) => [ctx.category, ctx.researchData, variation],
+        buildRepairArgs: (ctx, currentPost, quality, variation) => [
+          ctx.category,
+          ctx.data,
+          currentPost,
+          quality,
           variation,
-          async (ctx, currentPost, quality) => repairGeneralPostDraft(
-            ctx.category,
-            ctx.data,
-            currentPost,
-            quality,
-            variation
-          )
-        );
-      };
+        ],
+      });
 
       const { post, quality } = await _resolvePipelineExecution(
         'general',
@@ -1051,37 +1248,8 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId
       );
 
       const finalized = await _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx, writerName, options);
-
-      if (contractId) {
-        try {
-          await hiringContract.evaluate(contractId, {
-            quality: Number(quality?.score || (quality?.passed ? 8 : 5)),
-            char_count: post?.charCount || 0,
-            duration_ms: Date.now() - startTime,
-          }, null);
-        } catch (e) {
-          console.warn('[shadow] evaluate 기록 실패 (무시):', e.message);
-        }
-      }
-
-      return finalized;
+      return _attachQualitySummary(finalized, quality);
     });
-
-    return result;
-  } catch (error) {
-    if (contractId) {
-      try {
-        await hiringContract.evaluate(contractId, {
-          quality: 0,
-          duration_ms: Date.now() - startTime,
-          hallucination: false,
-        }, null);
-      } catch (e) {
-        console.warn('[shadow] evaluate 실패 기록 (무시):', e.message);
-      }
-    }
-    throw error;
-  }
 }
 
 // ─── 메인 ───────────────────────────────────────────────────────────
@@ -1108,99 +1276,17 @@ async function run(options = {}) {
     return [];
   }
   if (daily.verifyOnly) {
-    return [
-      {
-        type: 'verify',
-        ok: true,
-        dryRun: false,
-        verifyOnly: true,
-        lectureScheduled: !!daily.lectureCtx,
-        generalScheduled: !!daily.generalCtx,
-        lectureCount: Number(daily.config?.lecture_count || 0),
-        generalCount: Number(daily.config?.general_count || 0),
-      },
-    ];
+    return [_buildVerifyResult(daily)];
   }
-
-  const {
-    config,
-    researchData,
-    lectureCtx,
-    generalCtx,
-    lectureSchedule,
-    generalSchedule,
-  } = daily;
 
   const results = [];
-
-  if (lectureCtx && config.lecture_count > 0) {
-    try {
-      if (await isSeriesComplete()) {
-        results.push({ type: 'lecture', skipped: true, reason: '시리즈 완료' });
-      } else {
-        const { number, seriesName, lectureTitle } = lectureCtx;
-        const ragContext = await agenticSearch(lectureTitle, 'lecture', 3, number);
-        researchData.realExperiences = ragContext.episodes;
-        researchData.relatedPosts = ragContext.relatedPosts;
-        researchData.ragQuality = ragContext.quality;
-
-        // 스케줄 상태 → writing
-        if (lectureSchedule?.id && !options.dryRun) await updateScheduleStatus(lectureSchedule.id, 'writing');
-
-        if (!options.dryRun) await prepareCompetition(lectureTitle, 'lecture');
-
-        const r = await runLecturePost(researchData, traceCtx, {
-          number, seriesName, lectureTitle,
-        }, lectureSchedule?.id, options);
-        results.push(r);
-      }
-    } catch (e) {
-      console.error('[블로] 강의 포스팅 실패:', e.message);
-      if (lectureSchedule?.id && !options.dryRun) {
-        await updateScheduleStatus(lectureSchedule.id, 'scheduled');
-      }
-      results.push({ type: 'lecture', error: e.message });
-      await _emitEvent('post_failed', { type: 'lecture', error: e.message, traceId: traceCtx.trace_id });
-    }
-  }
-
-  if (generalCtx && config.general_count > 0) {
-    try {
-      const { category, scheduleId, bookInfo } = generalCtx;
-      const ragContext = await agenticSearch(category, 'general', 3);
-      researchData.realExperiences = ragContext.episodes;
-      researchData.relatedPosts = ragContext.relatedPosts;
-      researchData.ragQuality = ragContext.quality;
-
-      // 스케줄 상태 → writing
-      if (scheduleId && !options.dryRun) await updateScheduleStatus(scheduleId, 'writing');
-
-      if (!options.dryRun) await prepareCompetition(category, 'general');
-
-      const r = await runGeneralPost(researchData, traceCtx, {
-        category,
-        bookInfo,
-      }, scheduleId, options);
-      results.push(r);
-    } catch (e) {
-      console.error('[블로] 일반 포스팅 실패:', e.message);
-      if (scheduleId && !options.dryRun) {
-        await updateScheduleStatus(scheduleId, 'scheduled');
-      }
-      results.push({ type: 'general', error: e.message });
-      await _emitEvent('post_failed', { type: 'general', error: e.message, traceId: traceCtx.trace_id });
-    }
-  }
+  const lectureResult = await _runLectureStage(daily, traceCtx, options);
+  if (lectureResult) results.push(lectureResult);
+  const generalResult = await _runGeneralStage(daily, traceCtx, options);
+  if (generalResult) results.push(generalResult);
 
   await _sendDailyReport(results, traceCtx, options);
-
-  if (!options.dryRun) {
-    await dailyCurriculumCheck().catch(e =>
-      console.warn('[블로] 커리큘럼 체크 실패 (무시):', e.message)
-    );
-  } else {
-    console.log('[블로][dry-run] 커리큘럼 체크 생략');
-  }
+  await _runPostPublishChecks(options);
 
   console.log('\n📝 [블로] 일간 작업 완료\n');
   return results;

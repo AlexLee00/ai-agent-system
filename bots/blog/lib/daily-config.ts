@@ -1,6 +1,7 @@
 'use strict';
 
 const pgPool = require('../../../packages/core/lib/pg-pool');
+const { ensureBlogCoreSchema } = require('./schema.ts');
 
 type DailyConfigKey = 'lecture_count' | 'general_count' | 'max_total' | 'active';
 
@@ -20,6 +21,7 @@ const DEFAULT_CONFIG: DailyConfig = {
 
 async function getConfig(): Promise<DailyConfig> {
   try {
+    await ensureBlogCoreSchema();
     const row = await pgPool.get('blog', `
       SELECT lecture_count, general_count, max_total, active
       FROM blog.daily_config
@@ -39,6 +41,7 @@ async function setConfig(key: DailyConfigKey, value: number | boolean): Promise<
     ? Boolean(value)
     : Math.max(0, Math.min(parseInt(String(value), 10), 4));
 
+  await ensureBlogCoreSchema();
   await pgPool.run('blog', `
     UPDATE blog.daily_config
     SET ${key} = $1, updated_at = NOW()
