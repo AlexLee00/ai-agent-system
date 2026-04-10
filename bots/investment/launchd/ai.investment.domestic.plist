@@ -20,7 +20,7 @@
 	<key>ProgramArguments</key>
 	<array>
 		<string>/opt/homebrew/bin/node</string>
-		<string>/Users/alexlee/projects/ai-agent-system/bots/investment/markets/domestic.js</string>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/investment/markets/domestic.ts</string>
 	</array>
 	<key>RunAtLoad</key>
 	<false/>

@@ -1,6 +1,6 @@
 trading_mode: live
 binance_mode: inherit
-kis_mode: inherit
+kis_mode: paper
 paper_mode: false
 dynamic_tp_sl_enabled: true
 anthropic:
@@ -27,7 +27,6 @@ binance:
   deposit_address_usdt: REDACTED_USDT_ADDR
 upbit:
 kis:
-  paper_trading: true
   account_number: REDACTED_KIS_ACCOUNT
   paper_account_number: 'REDACTED_KIS_PAPER'
   symbols: []
@@ -60,6 +59,17 @@ capital_management:
   risk_per_trade: 0.02
   max_position_pct: 0.1
   min_order_usdt: 11
+  dynamic_min_order:
+    enabled: true
+    ratio_of_available_funds: 0.05
+    log_decisions: true
+    by_exchange:
+      binance:
+        fallback_min_order: 10
+      kis:
+        fallback_min_order: 200000
+      kis_overseas:
+        fallback_min_order: 200
   max_concurrent_positions: 3
   max_daily_trades: 12
   max_daily_loss_pct: 0.1
@@ -71,73 +81,73 @@ capital_management:
       reserve_ratio: 0.02
       min_order_usdt: 10
       max_position_pct: 0.18
-      max_concurrent_positions: 6
-      max_daily_trades: 20
+      max_concurrent_positions: 10
+      max_daily_trades: 40
       trade_modes:
         validation:
           reserve_ratio: 0.01
           risk_per_trade: 0.01
           max_position_pct: 0.08
-          max_concurrent_positions: 3
-          max_daily_trades: 12
+          max_concurrent_positions: 6
+          max_daily_trades: 24
     kis:
       reserve_ratio: 0.02
       min_order_usdt: 200000
       max_position_pct: 0.18
-      max_concurrent_positions: 6
-      max_daily_trades: 16
+      max_concurrent_positions: 10
+      max_daily_trades: 30
       trade_modes:
         validation:
           reserve_ratio: 0.01
           risk_per_trade: 0.012
           max_position_pct: 0.10
-          max_concurrent_positions: 8
-          max_daily_trades: 20
+          max_concurrent_positions: 12
+          max_daily_trades: 40
     kis_overseas:
       reserve_ratio: 0.02
-      min_order_usdt: 300
+      min_order_usdt: 200
       max_position_pct: 0.18
-      max_concurrent_positions: 6
-      max_daily_trades: 16
+      max_concurrent_positions: 10
+      max_daily_trades: 30
       trade_modes:
         validation:
           reserve_ratio: 0.01
           risk_per_trade: 0.012
-          min_order_usdt: 250
+          min_order_usdt: 200
           max_position_pct: 0.10
-          max_concurrent_positions: 8
-          max_daily_trades: 20
+          max_concurrent_positions: 12
+          max_daily_trades: 40
   runtime_config:
   dynamicTpSlEnabled: true
   luna:
     signalDedupeWindowMinutes: 180
-    sameDaySymbolReentryBlockEnabled: true
+    sameDaySymbolReentryBlockEnabled: false
     minConfidence:
       live:
-        binance: 0.44
-        kis: 0.28
-        kis_overseas: 0.28
-      paper:
-        binance: 0.4
+        binance: 0.35
         kis: 0.22
         kis_overseas: 0.22
+      paper:
+        binance: 0.30
+        kis: 0.18
+        kis_overseas: 0.18
     maxPosCount: 6
     maxDebateSymbols: 2
     debateThresholds:
       stocksPaper:
-        minAverageConfidence: 0.55
-        minAbsScore: 0.35
+        minAverageConfidence: 0.45
+        minAbsScore: 0.25
       stocksLive:
-        minAverageConfidence: 0.62
-        minAbsScore: 0.4
+        minAverageConfidence: 0.48
+        minAbsScore: 0.24
       crypto:
-        minAverageConfidence: 0.56
-        minAbsScore: 0.18
+        minAverageConfidence: 0.42
+        minAbsScore: 0.10
     fastPathThresholds:
-      minAverageConfidence: 0.34
-      minAbsScore: 0.16
-      minStockConfidence: 0.28
-      minCryptoConfidence: 0.4
+      minAverageConfidence: 0.28
+      minAbsScore: 0.10
+      minStockConfidence: 0.20
+      minCryptoConfidence: 0.34
     stockOrderDefaults:
       kis:
         buyDefault: 500000
@@ -148,11 +158,25 @@ capital_management:
       kis_overseas:
         buyDefault: 400
         sellDefault: 400
-        min: 300
+        min: 200
         max: 1200
         currency: USD
     stockStrategyProfiles:
       aggressive:
+        promptTag: 공격적 모드
+        minConfidence:
+          live: 0.18
+          paper: 0.16
+        debateThresholds:
+          live:
+            minAverageConfidence: 0.40
+            minAbsScore: 0.18
+          paper:
+            minAverageConfidence: 0.34
+            minAbsScore: 0.10
+        fastPathMinConfidence: 0.16
+        portfolioMaxPositionPct: 0.30
+        portfolioDailyLossPct: 0.12
         tradeModes:
           validation:
             promptTag: 공격적 검증 모드
@@ -189,31 +213,31 @@ capital_management:
       maxDailyLossPct: 0.1
       maxOpenPositions: 6
       stopLossPct: 0.05
-      minOrderUsdt: 300
+      minOrderUsdt: 200
       maxOrderUsdt: 1200
     thresholds:
-      cryptoRejectConfidence: 0.42
-      cryptoStarterApproveConfidence: 0.44
+      cryptoRejectConfidence: 0.34
+      cryptoStarterApproveConfidence: 0.35
       cryptoStarterApproveMaxRisk: 6
-      cryptoStarterScale: 0.6
-      stockRejectConfidence: 0.20
+      cryptoStarterScale: 0.8
+      stockRejectConfidence: 0.12
       stockAutoApproveDomestic: 500000
       stockAutoApproveOverseas: 400
-      stockStarterApproveConfidence: 0.24
-      stockStarterApproveDomestic: 450000
-      stockStarterApproveOverseas: 300
+      stockStarterApproveConfidence: 0.15
+      stockStarterApproveDomestic: 700000
+      stockStarterApproveOverseas: 200
       byTradeMode:
         validation:
-          cryptoRejectConfidence: 0.39
-          cryptoStarterApproveConfidence: 0.4
+          cryptoRejectConfidence: 0.30
+          cryptoStarterApproveConfidence: 0.32
           cryptoStarterApproveMaxRisk: 7
-          cryptoStarterScale: 0.45
-          stockRejectConfidence: 0.14
-          stockAutoApproveDomestic: 700000
-          stockAutoApproveOverseas: 700
-          stockStarterApproveConfidence: 0.18
-          stockStarterApproveDomestic: 450000
-          stockStarterApproveOverseas: 320
+          cryptoStarterScale: 0.9
+          stockRejectConfidence: 0.10
+          stockAutoApproveDomestic: 900000
+          stockAutoApproveOverseas: 900
+          stockStarterApproveConfidence: 0.12
+          stockStarterApproveDomestic: 700000
+          stockStarterApproveOverseas: 200
   timeMode:
     ACTIVE:
       maxPositionPct: 0.18

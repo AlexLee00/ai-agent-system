@@ -7,7 +7,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>/opt/homebrew/bin/node</string>
-        <string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/update-unrealized-pnl.js</string>
+        <string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/update-unrealized-pnl.ts</string>
     </array>
     <key>StartInterval</key>
     <integer>600</integer>
