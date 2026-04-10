@@ -14,7 +14,7 @@
 	<key>ProgramArguments</key>
 	<array>
 		<string>/opt/homebrew/bin/node</string>
-		<string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/health-check.js</string>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/health-check.ts</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>

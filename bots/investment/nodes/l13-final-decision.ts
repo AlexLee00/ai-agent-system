@@ -1,2 +1,48 @@
 // @ts-nocheck
-export { default } from './l13-final-decision.legacy.js';
+import { getSymbolDecision } from '../team/luna.ts';
+import { loadAnalysesForSession, loadLatestNodePayload } from './helpers.ts';
+
+const NODE_ID = 'L13';
+
+async function run({ sessionId, market, symbol }) {
+  if (!sessionId) throw new Error('sessionId 필요');
+  if (!symbol) throw new Error('symbol 필요');
+
+  const { analyses, source } = await loadAnalysesForSession(sessionId, symbol, market);
+  if (!analyses.length) {
+    return {
+      symbol,
+      market,
+      source,
+      decision: null,
+      skipped: true,
+      reason: '분석 결과 없음',
+    };
+  }
+
+  const bullHit = await loadLatestNodePayload(sessionId, 'L11', symbol);
+  const bearHit = await loadLatestNodePayload(sessionId, 'L12', symbol);
+  const debate = (bullHit?.payload?.bull || bearHit?.payload?.bear)
+    ? {
+        bull: bullHit?.payload?.bull || null,
+        bear: bearHit?.payload?.bear || null,
+      }
+    : null;
+
+  const decision = await getSymbolDecision(symbol, analyses, market, debate);
+  return {
+    symbol,
+    market,
+    source,
+    analyses_count: analyses.length,
+    debate,
+    decision,
+  };
+}
+
+export default {
+  id: NODE_ID,
+  type: 'decision',
+  label: 'final-decision',
+  run,
+};

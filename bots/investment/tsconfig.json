@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "allowImportingTsExtensions": true,
+    "esModuleInterop": true,
+    "allowJs": true,
+    "outDir": "../../dist/ts-runtime/bots/investment",
+    "strict": false,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "declaration": false,
+    "sourceMap": false
+  },
+  "include": [
+    "**/*.ts",
+    "../../packages/core/lib/env.ts",
+    "../../packages/core/lib/pg-pool.ts"
+  ],
+  "exclude": ["node_modules", "dist", "_deprecated"]
+}

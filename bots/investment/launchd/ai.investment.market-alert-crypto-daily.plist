@@ -20,7 +20,7 @@
 	<key>ProgramArguments</key>
 	<array>
 		<string>/opt/homebrew/bin/node</string>
-		<string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/market-alert.js</string>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/market-alert.ts</string>
 		<string>--market=crypto</string>
 		<string>--event=daily</string>
 	</array>
