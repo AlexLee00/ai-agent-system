@@ -8,6 +8,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "daily": "node scripts/run-daily.js",
     "weekly-evolution": "node scripts/weekly-evolution.js",
+    "prepare-shortform": "node scripts/prepare-shortform.js",
     "mark-published": "node scripts/mark-published-url.js",
     "setup:n8n": "node n8n/setup-blog-workflows.js",
     "check:n8n-pipeline": "node scripts/check-n8n-pipeline-path.js",
