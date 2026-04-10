@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const { buildShortformPlan } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-planner.js'));
+const { SHORTFORM_DEFAULT_DURATION_SEC } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-planner.js'));
 const { renderShortformReel } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-renderer.js'));
 
 const BLOG_ROOT = path.join(env.PROJECT_ROOT, 'bots/blog');
@@ -40,7 +41,7 @@ function parseArgs(argv = []) {
     else if (token === '--category') args.category = argv[++i];
     else if (token === '--thumb') args.thumb = argv[++i];
     else if (token === '--blog-url') args.blogUrl = argv[++i];
-    else if (token === '--duration') args.durationSec = Number(argv[++i] || 10);
+    else if (token === '--duration') args.durationSec = Number(argv[++i] || SHORTFORM_DEFAULT_DURATION_SEC);
   }
   return args;
 }
@@ -62,7 +63,7 @@ async function main() {
 
   const title = args.title || path.basename(thumbPath).replace(/_thumb\.png$/i, '').replace(/_/g, ' ');
   const category = args.category || '최신IT트렌드';
-  const durationSec = args.durationSec || 10;
+  const durationSec = args.durationSec || SHORTFORM_DEFAULT_DURATION_SEC;
 
   const plan = buildShortformPlan({
     title,
