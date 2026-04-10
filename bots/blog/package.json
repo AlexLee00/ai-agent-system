@@ -12,6 +12,7 @@
     "render-shortform": "node scripts/render-shortform.js",
     "publish-instagram-reel": "node scripts/publish-instagram-reel.js",
     "check:instagram": "node scripts/check-instagram-readiness.js",
+    "set:instagram": "node scripts/set-instagram-secrets.js",
     "mark-published": "node scripts/mark-published-url.js",
     "setup:n8n": "node n8n/setup-blog-workflows.js",
     "check:n8n-pipeline": "node scripts/check-n8n-pipeline-path.js",
