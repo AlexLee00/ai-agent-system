@@ -68,7 +68,6 @@ const {
   renderNoticeEvent,
 }                                                   = require('../../../packages/core/lib/reporting-hub');
 const stateBus                                      = require(path.join(env.PROJECT_ROOT, 'bots/reservation/lib/state-bus.js'));
-const pipelineStore                                 = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/pipeline-store.js'));
 const DEV_HUB_READONLY                              = env.IS_DEV && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
 const competitionRuntimeConfig                      = getBlogCompetitionRuntimeConfig();
 const COMPETITION_ENABLED                           = competitionRuntimeConfig.enabled === true;
@@ -305,29 +304,12 @@ async function _runQualityRepair(kind, context, draft, variation, repairFn) {
   return { post, quality, sectionVariation: variation, source: 'direct' };
 }
 
-async function _resolvePipelineExecution(postType, sectionVariation, payload, runLocalDraft, repairN8nResult = null) {
+async function _resolvePipelineExecution(postType, sectionVariation, payload, runLocalDraft) {
   const execution = await maestro.run(
     postType,
     variation => runLocalDraft(variation || sectionVariation),
     payload
   );
-
-  if (execution?.n8nTriggered) {
-    const writeNode = postType === 'lecture' ? 'write-lecture' : 'write-general';
-    const post = await pipelineStore.getNodeResult(execution.sessionId, writeNode);
-    const quality = await pipelineStore.getNodeResult(execution.sessionId, 'quality-check');
-    if (post?.content && quality) {
-      console.log(`[블로] n8n 결과 회수 완료 — session=${execution.sessionId}`);
-      if ((!quality.passed || quality.autoRewriteRecommended) && typeof repairN8nResult === 'function') {
-        console.log('[블로] n8n 품질 보정 루프 진입');
-        return repairN8nResult(post, quality, execution.variations || sectionVariation);
-      }
-      return { post, quality, source: 'n8n' };
-    }
-
-    console.warn('[블로] n8n 결과 회수 실패 — 로컬 생성 폴백');
-    return await runLocalDraft(execution.variations || sectionVariation);
-  }
 
   return execution;
 }
@@ -870,21 +852,7 @@ async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId
           topic: context.lectureTitle,
           dryRun: !!options.dryRun,
         },
-        runLocalDraft,
-        async (currentPost, currentQuality, variation) => _runQualityRepair(
-          'lecture',
-          context,
-          currentPost,
-          variation,
-          async (ctx, repairPost, repairQuality) => repairLecturePostDraft(
-            ctx.number,
-            ctx.lectureTitle,
-            ctx.researchData,
-            repairPost,
-            repairQuality,
-            variation
-          )
-        )
+        runLocalDraft
       );
 
       const finalized = await _finalizeLecturePost(post, quality, context, scheduleId, traceCtx, writerName, options);
@@ -1006,20 +974,7 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId
           topic: context.category,
           dryRun: !!options.dryRun,
         },
-        runLocalDraft,
-        async (currentPost, currentQuality, variation) => _runQualityRepair(
-          'general',
-          { category: context.category, data: context.researchData },
-          currentPost,
-          variation,
-          async (ctx, repairPost, repairQuality) => repairGeneralPostDraft(
-            ctx.category,
-            ctx.data,
-            repairPost,
-            repairQuality,
-            variation
-          )
-        )
+        runLocalDraft
       );
 
       const finalized = await _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx, writerName, options);
