@@ -39,7 +39,7 @@ function deepMerge(base: any, override: any): any {
 export function inferProviderFromModel(model = ''): string {
   if (!model) return 'anthropic';
   if (model.startsWith('claude-code/')) return 'claude-code';
-  if (model.startsWith('gemma4') || model.startsWith('gemma-4')) return 'ollama';
+  if (model.startsWith('gemma4') || model.startsWith('gemma-4')) return 'local';
   if (model.startsWith('local/') || model === 'qwen2.5-7b' || model === 'deepseek-r1-32b') return 'local';
   if (model.startsWith('groq/')) return 'groq';
   if (
@@ -464,14 +464,6 @@ function buildSelectorRegistry(): Record<string, any> {
     'blog.curriculum.recommend': () => resolveFromTeamDefault('blog.curriculum.recommend'),
     'blog.curriculum.generate': () => resolveFromTeamDefault('blog.curriculum.generate'),
 
-    gemma_fast: [
-      { provider: 'ollama', model: 'gemma4:latest', maxTokens: 1024, temperature: 0.7, timeoutMs: 10000 },
-      { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.7 },
-    ],
-    gemma_structured: [
-      { provider: 'ollama', model: 'gemma4:latest', maxTokens: 1400, temperature: 0.1, timeoutMs: 10000 },
-      { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1400, temperature: 0.1 },
-    ],
 
     'core._default': () => resolveFromTeamDefault('core._default'),
     'core.chunked.gpt4o': () => resolveFromTeamDefault('core.chunked.gpt4o'),
@@ -538,14 +530,6 @@ function buildSelectorRegistry(): Record<string, any> {
         local_deep: [
           { provider: 'local', model: 'deepseek-r1-32b', maxTokens: 2048, temperature: 0.1 },
           { provider: 'groq', model: groqScoutModel },
-        ],
-        gemma_fast: [
-          { provider: 'ollama', model: 'gemma4:latest', maxTokens: 1024, temperature: 0.7, timeoutMs: 10000 },
-          { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.7 },
-        ],
-        gemma_structured: [
-          { provider: 'ollama', model: 'gemma4:latest', maxTokens: 1400, temperature: 0.1, timeoutMs: 10000 },
-          { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1400, temperature: 0.1 },
         ],
         groq_with_local: [
           { provider: 'groq', model: 'moonshotai/kimi-k2-instruct-0905', maxTokens: 2048, temperature: 0.1 },

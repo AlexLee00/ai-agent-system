@@ -3,7 +3,16 @@
 > 기간: 2026-04-07(월) ~ 2026-04-13(일)
 > 판정일: 2026-04-14(월)
 > 대상: 라이트(write.js) / 마에스트로(maestro.js) / 레베카(rebecca.py)
-> 모델: gemma4:latest (8B) @ Ollama localhost:11435
+> 모델: gemma4:latest @ MLX localhost:11434
+> 실제 서빙: mlx-community/gemma-4-e2b-it-4bit
+> 현재 연결 팀: blog(gemma-topic) / orchestrator(gemma-insight) / ska(gemma-insight)
+
+## 상태 메모 (2026-04-11)
+
+- Ollama 의존 제거 완료
+- 허브 runtime profile은 `local + gemma4:latest + http://127.0.0.1:11434` 반환
+- `generateGemmaPilotText(...)` 기준 blog / orchestrator / ska 모두 응답 성공 확인
+- `e4b-it-8bit`는 동작 확인했지만, 현재 운영 기본값은 응답 안정성이 더 나은 `e2b-it-4bit`
 
 ## 판정 매트릭스
 

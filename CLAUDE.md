@@ -52,7 +52,7 @@ DB: PostgreSQL 단일 (jay DB) + pgvector — 별도 DB 추가 금지
   reservation/worker secrets.json = 삭제됨 (Hub 경유)
 
 LLM 아키텍처:
-  로컬 MLX (:11434) — qwen2.5-7b(빠른) + deepseek-r1-32b(깊은) + qwen3-embed-0.6b(임베딩)
+  로컬 MLX (:11434) — qwen2.5-7b(빠른) + deepseek-r1-32b(깊은) + qwen3-embed-0.6b(임베딩) + gemma4:latest(e2b-it-4bit, Gemma 파일럿)
   7/10 에이전트 로컬화: hermes/sophia/zeus/athena/nemesis/oracle → local_fast
   루나 → groq_with_local (Groq Kimi K2 → deepseek 폴백)
   임베딩: Qwen3-Embedding-0.6B (1024차원, 로컬, 비용$0)

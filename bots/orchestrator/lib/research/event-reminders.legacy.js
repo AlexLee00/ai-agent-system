@@ -37,9 +37,9 @@ const EVENTS = [
   { start: '2026-04-08', end: '2026-04-08', team: 'claude',
     message: '⚡ CC P0 운영 확인\n연속 실패 제한 + Strict Write\nllm-fallback _providerFailures 동작 확인' },
 
-  // Gemma 4 MLX 체크 (2주마다)
+  // Gemma 4 운영 상태 점검
   { start: '2026-04-14', end: '2026-04-14', team: 'general',
-    message: '🔍 Gemma 4 MLX 출시 체크\nMLX gemma4 배포 여부 확인\n출시 시 → 주석 해제 + 시범 배치 재개' },
+    message: '🔍 Gemma 4 운영 점검\n허브 runtime/select가 local gemma4:latest(e2b)를 반환하는지 확인\nblog/orchestrator/ska 파일럿 응답 성공 여부 재확인' },
 ];
 
 function _getKSTDate() {

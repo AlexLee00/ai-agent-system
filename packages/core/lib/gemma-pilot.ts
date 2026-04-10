@@ -1,5 +1,6 @@
 import { logLLMCall } from './llm-logger';
 import { selectRuntime } from './runtime-selector';
+import { callLocalLLM } from './local-llm-client';
 
 type Runtime = {
   provider?: string;
@@ -42,40 +43,58 @@ export async function generateGemmaPilotText({
   const startedAt = Date.now();
   const fallbackResult = { ok: false, content: '', runtime: runtime || null };
 
-  if (!runtime || runtime.provider !== 'ollama' || !runtime.base_url || !runtime.model || !prompt) {
+  if (!runtime || !runtime.provider || !runtime.base_url || !runtime.model || !prompt) {
     return fallbackResult;
   }
-
-  const controller = new AbortController();
   const resolvedTimeoutMs = Number(timeoutMs || runtime.timeout_ms || 10000);
-  const timer = setTimeout(() => controller.abort(), resolvedTimeoutMs);
+  const modelLabel = `${runtime.provider}/${runtime.model}`;
 
   try {
-    const response = await fetch(`${String(runtime.base_url).replace(/\/+$/, '')}/api/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: runtime.model,
-        prompt: safePrompt,
-        stream: false,
-        options: {
-          temperature: temperature ?? runtime.temperature ?? 0.7,
-          num_predict: maxTokens ?? runtime.max_tokens ?? 256,
-        },
-      }),
-      signal: controller.signal,
-    });
+    let content = '';
+    if (runtime.provider === 'local') {
+      content = String(await callLocalLLM(runtime.model, [
+        { role: 'user', content: safePrompt },
+      ], {
+        baseUrl: runtime.base_url,
+        maxTokens: maxTokens ?? runtime.max_tokens ?? 256,
+        temperature: temperature ?? runtime.temperature ?? 0.7,
+        timeoutMs: resolvedTimeoutMs,
+      }) || '').trim();
+    } else if (runtime.provider === 'ollama') {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), resolvedTimeoutMs);
+      try {
+        const response = await fetch(`${String(runtime.base_url).replace(/\/+$/, '')}/api/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: runtime.model,
+            prompt: safePrompt,
+            stream: false,
+            options: {
+              temperature: temperature ?? runtime.temperature ?? 0.7,
+              num_predict: maxTokens ?? runtime.max_tokens ?? 256,
+            },
+          }),
+          signal: controller.signal,
+        });
 
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
-    const json = (await response.json()) as { response?: string };
-    const content = String(json?.response || '').trim();
+        const json = (await response.json()) as { response?: string };
+        content = String(json?.response || '').trim();
+      } finally {
+        clearTimeout(timer);
+      }
+    } else {
+      return fallbackResult;
+    }
     const latencyMs = Date.now() - startedAt;
 
     await logLLMCall({
       team: safeTeam,
       bot: safeBot,
-      model: `ollama/${runtime.model}`,
+      model: modelLabel,
       requestType: safeRequestType,
       inputTokens: estimateTokens(safePrompt),
       outputTokens: estimateTokens(content),
@@ -91,7 +110,7 @@ export async function generateGemmaPilotText({
     await logLLMCall({
       team: safeTeam,
       bot: safeBot,
-      model: `ollama/${runtime.model}`,
+      model: modelLabel,
       requestType: safeRequestType,
       inputTokens: estimateTokens(safePrompt),
       outputTokens: 0,
@@ -100,7 +119,5 @@ export async function generateGemmaPilotText({
       errorMsg: err?.name === 'AbortError' ? 'timeout' : err.message,
     });
     return fallbackResult;
-  } finally {
-    clearTimeout(timer);
   }
 }
