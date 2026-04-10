@@ -21,6 +21,11 @@
       "maestroHealthTimeoutMs": 2500,
       "maestroCircuitCooldownMs": 1800000
     },
+    "competition": {
+      "enabled": false,
+      "days": [1, 3, 5],
+      "minWriters": 2
+    },
     "commenter": {
       "enabled": true,
       "blogId": "cafe_library",

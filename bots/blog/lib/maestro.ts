@@ -17,7 +17,7 @@ const pgPool = require('../../../packages/core/lib/pg-pool');
 const env = require('../../../packages/core/lib/env');
 const competitionEngine = require('../../../packages/core/lib/competition-engine');
 const { buildWebhookCandidates } = require('../../../packages/core/lib/n8n-webhook-registry');
-const { getBlogGenerationRuntimeConfig } = require('./runtime-config');
+const { getBlogGenerationRuntimeConfig, getBlogCompetitionRuntimeConfig } = require('./runtime-config');
 const { generateGemmaPilotText } = require('../../../packages/core/lib/gemma-pilot');
 const DEV_HUB_READONLY = env.IS_DEV && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
 
@@ -27,11 +27,14 @@ const LIST_STYLES = ['number', 'bullet', 'mixed'];
 const BRIDGE_INTERVALS = [800, 1000, 1200, 1500];
 const RESEARCH_NODES = ['weather', 'it-news', 'nodejs-updates'];
 const generationRuntimeConfig = getBlogGenerationRuntimeConfig();
+const competitionRuntimeConfig = getBlogCompetitionRuntimeConfig();
 const N8N_WEBHOOK_TIMEOUT_MS = Number(process.env.N8N_BLOG_TIMEOUT_MS || generationRuntimeConfig.maestroWebhookTimeoutMs || 180000);
 const N8N_HEALTH_TIMEOUT_MS = Number(process.env.N8N_BLOG_HEALTH_TIMEOUT_MS || generationRuntimeConfig.maestroHealthTimeoutMs || 2500);
 const N8N_CIRCUIT_COOLDOWN_MS = Number(generationRuntimeConfig.maestroCircuitCooldownMs || (30 * 60 * 1000));
-const COMPETITION_ENABLED = true;
-const COMPETITION_DAYS = [1, 3, 5];
+const COMPETITION_ENABLED = competitionRuntimeConfig.enabled === true;
+const COMPETITION_DAYS = Array.isArray(competitionRuntimeConfig.days) && competitionRuntimeConfig.days.length
+  ? competitionRuntimeConfig.days
+  : [1, 3, 5];
 
 const _n8nCircuit = {
   disabledUntil: 0,
