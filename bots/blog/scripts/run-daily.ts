@@ -12,12 +12,22 @@
 const { initHubConfig } = require('../../../packages/core/lib/llm-keys');
 const { run } = require('../lib/blo');
 
+const dryRun = process.argv.includes('--dry-run');
+const verifyOnly = process.argv.includes('--verify');
+const json = process.argv.includes('--json');
+
 initHubConfig()
-  .then(() => run())
+  .then(() => run({ dryRun, verifyOnly }))
   .then((results) => {
+    if (json) {
+      console.log(JSON.stringify({ dryRun, verifyOnly, results }, null, 2));
+      process.exit(0);
+    }
+
     const ok = results.filter((r) => !r.error && !r.skipped).length;
     const err = results.filter((r) => r.error).length;
-    console.log(`\n완료: ✅${ok}편 생성, ❌${err}편 실패`);
+    const modeLabel = verifyOnly ? 'verify' : (dryRun ? 'dry-run' : 'live');
+    console.log(`\n완료[${modeLabel}]: ✅${ok}편 생성, ❌${err}편 실패`);
     process.exit(0);
   })
   .catch((e) => {

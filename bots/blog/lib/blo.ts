@@ -335,7 +335,17 @@ async function _createInstaContentSafe(content, title, category, label) {
   return instaContent;
 }
 
-async function _publishAndTrack(postData, scheduleId, traceCtx, eventDetail) {
+async function _publishAndTrack(postData, scheduleId, traceCtx, eventDetail, options = {}) {
+  if (options.dryRun) {
+    console.log(`[블로][dry-run] 발행 생략: ${postData?.title || 'untitled'}`);
+    return {
+      dryRun: true,
+      filename: null,
+      postId: null,
+      reused: true,
+    };
+  }
+
   const published = await publishToFile(postData);
 
   if (scheduleId) {
@@ -528,7 +538,7 @@ async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, sc
   };
 }
 
-async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx, writerName = null) {
+async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx, writerName = null, options = {}) {
   const postTitle = `[Node.js ${context.number}강] ${context.lectureTitle}`;
   const published = await _publishAndTrack({
     title:         postTitle,
@@ -544,22 +554,26 @@ async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx
     number: context.number,
     title: context.lectureTitle,
     charCount: post.charCount,
-  });
+  }, options);
 
-  if (!published?.reused && !DEV_HUB_READONLY) {
+  if (!options.dryRun && !published?.reused && !DEV_HUB_READONLY) {
     await advanceLectureNumber();
   } else if (published?.reused) {
     console.log(`[블로] 강의 ${context.number}강 재실행 감지 — 인덱스 증가 생략`);
+  } else if (options.dryRun) {
+    console.log(`[블로][dry-run] 강의 인덱스 증가 생략 (${context.number}강)`);
   } else {
     console.log(`[블로] DEV/HUB 읽기 전용 — 강의 인덱스 증가 생략 (${context.number}강)`);
   }
 
-  const instaContent = await _createInstaContentSafe(
-    post.content,
-    postTitle,
-    'Node.js강의',
-    '강의 인스타'
-  );
+  const instaContent = options.dryRun
+    ? null
+    : await _createInstaContentSafe(
+      post.content,
+      postTitle,
+      'Node.js강의',
+      '강의 인스타'
+    );
 
   return {
     type:         'lecture',
@@ -571,10 +585,11 @@ async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx
     aiRisk:       quality.aiRisk,
     filename:     published.filename,
     postId:       published.postId,
-  };
+    dryRun:       !!options.dryRun,
+    };
 }
 
-async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx, writerName = null) {
+async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx, writerName = null, options = {}) {
   if (!quality?.passed) {
     const qualityErrors = (quality?.issues || [])
       .filter(issue => issue?.severity === 'error')
@@ -585,19 +600,23 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
   }
 
   const genTitle = post.title || `[${context.category}] 오늘의 포스팅`;
-  const images = await generatePostImages({ title: genTitle, postType: 'general', category: context.category }).catch(e => {
-    console.warn('[이미지] 생성 실패 (일반):', e.message); return null;
-  });
-  if (!images) {
+  const images = options.dryRun
+    ? null
+    : await generatePostImages({ title: genTitle, postType: 'general', category: context.category }).catch(e => {
+      console.warn('[이미지] 생성 실패 (일반):', e.message); return null;
+    });
+  if (!images && !options.dryRun) {
     console.log('[이미지] 일반 포스팅은 이미지 없이 발행 계속 진행');
   }
 
-  const instaContent = await _createInstaContentSafe(
-    post.content,
-    genTitle,
-    context.category,
-    '인스타'
-  );
+  const instaContent = options.dryRun
+    ? null
+    : await _createInstaContentSafe(
+      post.content,
+      genTitle,
+      context.category,
+      '인스타'
+    );
 
   const published = await _publishAndTrack({
     title:     genTitle,
@@ -613,12 +632,14 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
     category: context.category,
     title: post.title,
     charCount: post.charCount,
-  });
+  }, options);
 
-  if (!published?.reused && !DEV_HUB_READONLY) {
+  if (!options.dryRun && !published?.reused && !DEV_HUB_READONLY) {
     await advanceGeneralCategory();
   } else if (published?.reused) {
     console.log(`[블로] 일반 포스팅 재실행 감지 (${context.category}) — 카테고리 증가 생략`);
+  } else if (options.dryRun) {
+    console.log(`[블로][dry-run] 일반 카테고리 증가 생략 (${context.category})`);
   } else {
     console.log(`[블로] DEV/HUB 읽기 전용 — 일반 카테고리 증가 생략 (${context.category})`);
   }
@@ -633,10 +654,11 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
     filename:     published.filename,
     postId:       published.postId,
     instaContent: instaContent || null,
+    dryRun:       !!options.dryRun,
   };
 }
 
-async function _prepareDailyRun(traceCtx) {
+async function _prepareDailyRun(traceCtx, options = {}) {
   await ensureSchema();
 
   const config = await getConfig();
@@ -645,6 +667,27 @@ async function _prepareDailyRun(traceCtx) {
   }
 
   console.log(`[블로] 오늘 발행: 강의 ${config.lecture_count}편 + 일반 ${config.general_count}편`);
+
+  const scheduleContext = await getTodayContext();
+  const { lectureCtx, generalCtx, lectureSchedule, generalSchedule } = scheduleContext;
+  console.log(`[블로] 스케줄 — 강의: ${lectureCtx ? `${lectureCtx.number}강` : '없음(이미발행)'} / 일반: ${generalCtx?.category || '없음(이미발행)'}`);
+
+  const scheduleExists = lectureSchedule || generalSchedule;
+  if (scheduleExists && !lectureCtx && !generalCtx) {
+    return { complete: true, results: [] };
+  }
+
+  if (options.verifyOnly) {
+    console.log('[블로][verify] 리서치/생성/발행 전 단계까지만 확인');
+    return {
+      inactive: false,
+      complete: false,
+      verifyOnly: true,
+      config,
+      researchData: null,
+      ...scheduleContext,
+    };
+  }
 
   await _emitEvent('daily_start', {
     lecture_count: config.lecture_count,
@@ -656,15 +699,6 @@ async function _prepareDailyRun(traceCtx) {
   researchData.popularPatterns = await richer.searchPopularPatterns('general');
   researchData.lecturePopularPatterns = await richer.searchPopularPatterns('lecture');
 
-  const scheduleContext = await getTodayContext();
-  const { lectureCtx, generalCtx, lectureSchedule, generalSchedule } = scheduleContext;
-  console.log(`[블로] 스케줄 — 강의: ${lectureCtx ? `${lectureCtx.number}강` : '없음(이미발행)'} / 일반: ${generalCtx?.category || '없음(이미발행)'}`);
-
-  const scheduleExists = lectureSchedule || generalSchedule;
-  if (scheduleExists && !lectureCtx && !generalCtx) {
-    return { complete: true, results: [] };
-  }
-
   return {
     inactive: false,
     complete: false,
@@ -674,7 +708,7 @@ async function _prepareDailyRun(traceCtx) {
   };
 }
 
-async function _sendDailyReport(results, traceCtx) {
+async function _sendDailyReport(results, traceCtx, options = {}) {
   const hasErrors = results.some(r => r.error);
   const reportLines = [
     '📝 [블로그팀] 일간 작업 완료',
@@ -727,6 +761,12 @@ async function _sendDailyReport(results, traceCtx) {
     },
   });
   const renderedReport = renderReportEvent(reportEvent) || reportLines.join('\n');
+  if (options.dryRun) {
+    console.log('[블로][dry-run] 텔레그램 리포트 생략');
+    console.log(renderedReport);
+    return;
+  }
+
   await runIfOps(
     'blog-tg',
     () => postAlarm({
@@ -769,7 +809,7 @@ async function _sendDailyReport(results, traceCtx) {
 
 // ─── 강의 포스팅 ──────────────────────────────────────────────────────
 
-async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId = null) {
+async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId = null, options = {}) {
   const prepared = await _prepareLectureContext(researchData, traceCtx, preloaded);
   if (prepared.skipped) return prepared.result;
   const context = prepared.context;
@@ -821,6 +861,7 @@ async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId
           lectureNumber: context.number,
           lectureTitle: context.lectureTitle,
           topic: context.lectureTitle,
+          dryRun: !!options.dryRun,
         },
         runLocalDraft,
         async (currentPost, currentQuality, variation) => _runQualityRepair(
@@ -839,7 +880,7 @@ async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId
         )
       );
 
-      const finalized = await _finalizeLecturePost(post, quality, context, scheduleId, traceCtx, writerName);
+      const finalized = await _finalizeLecturePost(post, quality, context, scheduleId, traceCtx, writerName, options);
 
       if (contractId) {
         try {
@@ -875,7 +916,7 @@ async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId
 
 // ─── 일반 포스팅 ──────────────────────────────────────────────────────
 
-async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId = null) {
+async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId = null, options = {}) {
   const context = await _prepareGeneralContext(researchData, traceCtx, preloaded, scheduleId);
   if (context?.skipped) {
     const canFallbackCategory = context.category === '도서리뷰' && !preloaded._bookFallbackTried;
@@ -956,6 +997,7 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId
         {
           category: context.category,
           topic: context.category,
+          dryRun: !!options.dryRun,
         },
         runLocalDraft,
         async (currentPost, currentQuality, variation) => _runQualityRepair(
@@ -973,7 +1015,7 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId
         )
       );
 
-      const finalized = await _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx, writerName);
+      const finalized = await _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx, writerName, options);
 
       if (contractId) {
         try {
@@ -1009,13 +1051,19 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId
 
 // ─── 메인 ───────────────────────────────────────────────────────────
 
-async function run() {
+async function run(options = {}) {
   console.log('\n📝 [블로] 블로그팀 일간 작업 시작\n');
+  if (options.dryRun) {
+    console.log('[블로][dry-run] 발행/스케줄 갱신/텔레그램 전송 없이 검증 실행');
+  }
+  if (options.verifyOnly) {
+    console.log('[블로][verify] 설정/스케줄/핵심 의존성만 빠르게 점검');
+  }
 
   const traceCtx = startTrace({ bot: 'blog-blo', action: 'daily_run' });
   console.log(`[블로] trace_id: ${traceCtx.trace_id}`);
 
-  const daily = await _prepareDailyRun(traceCtx);
+  const daily = await _prepareDailyRun(traceCtx, options);
   if (daily.inactive) {
     console.log('[블로] 일시 정지 상태. 종료.');
     return [];
@@ -1023,6 +1071,20 @@ async function run() {
   if (daily.complete) {
     console.log('[블로] ✅ 오늘 발행 항목이 모두 완료됨 — 중복 실행 건너뜀');
     return [];
+  }
+  if (daily.verifyOnly) {
+    return [
+      {
+        type: 'verify',
+        ok: true,
+        dryRun: false,
+        verifyOnly: true,
+        lectureScheduled: !!daily.lectureCtx,
+        generalScheduled: !!daily.generalCtx,
+        lectureCount: Number(daily.config?.lecture_count || 0),
+        generalCount: Number(daily.config?.general_count || 0),
+      },
+    ];
   }
 
   const {
@@ -1050,18 +1112,18 @@ async function run() {
         researchData.relatedPosts    = relatedPosts;
 
         // 스케줄 상태 → writing
-        if (lectureSchedule?.id) await updateScheduleStatus(lectureSchedule.id, 'writing');
+        if (lectureSchedule?.id && !options.dryRun) await updateScheduleStatus(lectureSchedule.id, 'writing');
 
-        await prepareCompetition(lectureTitle, 'lecture');
+        if (!options.dryRun) await prepareCompetition(lectureTitle, 'lecture');
 
         const r = await runLecturePost(researchData, traceCtx, {
           number, seriesName, lectureTitle,
-        }, lectureSchedule?.id);
+        }, lectureSchedule?.id, options);
         results.push(r);
       }
     } catch (e) {
       console.error('[블로] 강의 포스팅 실패:', e.message);
-      if (lectureSchedule?.id) {
+      if (lectureSchedule?.id && !options.dryRun) {
         await updateScheduleStatus(lectureSchedule.id, 'scheduled');
       }
       results.push({ type: 'lecture', error: e.message });
@@ -1080,18 +1142,18 @@ async function run() {
       researchData.relatedPosts    = relatedPosts;
 
       // 스케줄 상태 → writing
-      if (scheduleId) await updateScheduleStatus(scheduleId, 'writing');
+      if (scheduleId && !options.dryRun) await updateScheduleStatus(scheduleId, 'writing');
 
-      await prepareCompetition(category, 'general');
+      if (!options.dryRun) await prepareCompetition(category, 'general');
 
       const r = await runGeneralPost(researchData, traceCtx, {
         category,
         bookInfo,
-      }, scheduleId);
+      }, scheduleId, options);
       results.push(r);
     } catch (e) {
       console.error('[블로] 일반 포스팅 실패:', e.message);
-      if (scheduleId) {
+      if (scheduleId && !options.dryRun) {
         await updateScheduleStatus(scheduleId, 'scheduled');
       }
       results.push({ type: 'general', error: e.message });
@@ -1099,11 +1161,15 @@ async function run() {
     }
   }
 
-  await _sendDailyReport(results, traceCtx);
+  await _sendDailyReport(results, traceCtx, options);
 
-  await dailyCurriculumCheck().catch(e =>
-    console.warn('[블로] 커리큘럼 체크 실패 (무시):', e.message)
-  );
+  if (!options.dryRun) {
+    await dailyCurriculumCheck().catch(e =>
+      console.warn('[블로] 커리큘럼 체크 실패 (무시):', e.message)
+    );
+  } else {
+    console.log('[블로][dry-run] 커리큘럼 체크 생략');
+  }
 
   console.log('\n📝 [블로] 일간 작업 완료\n');
   return results;

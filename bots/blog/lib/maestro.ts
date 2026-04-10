@@ -265,8 +265,11 @@ async function run(postType, directRunner = null, payload = {}) {
 
   let n8nOk = false;
   const body = JSON.stringify({ postType, sessionId, pipeline, variations, gemmaRecommendation, ...payload });
+  const dryRun = !!payload?.dryRun;
 
-  if (_isCircuitOpen()) {
+  if (dryRun) {
+    console.log('  ↳ dry-run: n8n 웹훅 트리거 생략');
+  } else if (_isCircuitOpen()) {
     console.log(`  ↳ n8n 우회 중 (${_n8nCircuit.reason})`);
   } else if (!(await _probeN8nHealth())) {
     _openCircuit('health_unreachable');
@@ -307,12 +310,16 @@ async function run(postType, directRunner = null, payload = {}) {
     }
   }
 
-  await saveExecutionHistory(
-    kst.today(),
-    postType,
-    pipeline,
-    variations
-  );
+  if (!dryRun) {
+    await saveExecutionHistory(
+      kst.today(),
+      postType,
+      pipeline,
+      variations
+    );
+  } else {
+    console.log('  ↳ dry-run: execution_history 저장 생략');
+  }
 
   if (!n8nOk && directRunner) {
     console.log('  ↳ directRunner 실행');
