@@ -1,3 +1,4 @@
-import './collect-competition-results.js';
+// @ts-nocheck
+'use strict';
 
-export {};
+module.exports = require('./collect-competition-results.legacy.js');

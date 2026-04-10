@@ -1,47 +1,19 @@
-import { getPortfolioDecision, inspectPortfolioContext } from '../team/luna.js';
-import { fetchNodeArtifacts } from '../shared/node-runner.js';
+import path from 'path';
+import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
 
-const NODE_ID = 'L14';
+const require = createRequire(import.meta.url);
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const runtimePath = path.join(__dirname, '../../../dist/ts-runtime/bots/investment/nodes/l14-portfolio-decision.js');
 
-async function run({ sessionId, market, symbolDecisions = null, portfolio = null, exitSummary = null }) {
-  if (!sessionId) throw new Error('sessionId 필요');
-
-  let decisions = symbolDecisions;
-  if (!Array.isArray(decisions)) {
-    const hits = await fetchNodeArtifacts(sessionId, 'L13', { limit: 20 }).catch(() => []);
-    decisions = hits
-      .map(hit => hit.payload?.decision ? ({ symbol: hit.payload.symbol, exchange: market, ...hit.payload.decision }) : null)
-      .filter(Boolean);
+const loaded = await (async () => {
+  try {
+    return require(runtimePath);
+  } catch (error) {
+    if (error && error.code !== 'MODULE_NOT_FOUND') throw error;
+    return import('./l14-portfolio-decision.legacy.js');
   }
+})();
 
-  if (!decisions.length) {
-    return {
-      market,
-      skipped: true,
-      reason: '심볼 판단 없음',
-      decisions: [],
-    };
-  }
-
-  const currentPortfolio = portfolio || await inspectPortfolioContext(market);
-  const portfolioDecision = await getPortfolioDecision(decisions, currentPortfolio, market, exitSummary);
-  return {
-    market,
-    decisions,
-    portfolio: {
-      usdtFree: currentPortfolio.usdtFree,
-      totalAsset: currentPortfolio.totalAsset,
-      positionCount: currentPortfolio.positionCount,
-      todayPnl: currentPortfolio.todayPnl,
-    },
-    exitSummary,
-    portfolioDecision,
-  };
-}
-
-export default {
-  id: NODE_ID,
-  type: 'decision',
-  label: 'portfolio-decision',
-  run,
-};
+export default loaded.default ?? loaded;

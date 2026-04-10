@@ -1,3 +1,4 @@
-require('./dexter.js');
+// @ts-nocheck
+'use strict';
 
-export {};
+module.exports = require('./dexter.legacy.js');

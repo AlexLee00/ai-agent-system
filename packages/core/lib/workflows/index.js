@@ -1,13 +1,15 @@
 'use strict';
 
-const reviewWorkflow = require('./review-workflow');
-const qaWorkflow = require('./qa-workflow');
-const shipWorkflow = require('./ship-workflow');
-const retroWorkflow = require('./retro-workflow');
+const path = require('path');
 
-module.exports = {
-  reviewWorkflow,
-  qaWorkflow,
-  shipWorkflow,
-  retroWorkflow,
-};
+const runtimePath = path.join(
+  __dirname,
+  '../../../../dist/ts-runtime/packages/core/lib/workflows/index.js'
+);
+
+try {
+  module.exports = require(runtimePath);
+} catch (error) {
+  if (error && error.code !== 'MODULE_NOT_FOUND') throw error;
+  module.exports = require('./index.legacy.js');
+}

@@ -1,18 +1,23 @@
-import { analyzeCryptoMTF, analyzeKisMTF, analyzeKisOverseasMTF } from '../team/aria.js';
+import path from 'path';
+import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
 
-const NODE_ID = 'L02';
+const require = createRequire(import.meta.url);
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-async function run({ market, symbol }) {
-  if (!symbol) throw new Error('symbol 필요');
-  if (market === 'binance') return analyzeCryptoMTF(symbol);
-  if (market === 'kis') return analyzeKisMTF(symbol, false);
-  if (market === 'kis_overseas') return analyzeKisOverseasMTF(symbol, false);
-  throw new Error(`지원하지 않는 market: ${market}`);
-}
+const runtimePath = path.join(
+  __dirname,
+  '../../../dist/ts-runtime/bots/investment/nodes/l02-ta-analysis.js'
+);
 
-export default {
-  id: NODE_ID,
-  type: 'collect',
-  label: 'ta-analysis',
-  run,
-};
+const loaded = await (async () => {
+  try {
+    return require(runtimePath);
+  } catch (error) {
+    if (error && error.code !== 'MODULE_NOT_FOUND') throw error;
+    return import('./l02-ta-analysis.legacy.js');
+  }
+})();
+
+export default loaded.default ?? loaded;

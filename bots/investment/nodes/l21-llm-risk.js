@@ -1,60 +1,19 @@
-import { inspectPortfolioContext } from '../team/luna.js';
-import { evaluateSignal } from '../team/nemesis.js';
-import { fetchNodeArtifacts } from '../shared/node-runner.js';
-import { loadAnalysesForSession } from './helpers.js';
+import path from 'path';
+import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
 
-const NODE_ID = 'L21';
+const require = createRequire(import.meta.url);
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const runtimePath = path.join(__dirname, '../../../dist/ts-runtime/bots/investment/nodes/l21-llm-risk.js');
 
-async function run({ sessionId, market, symbol }) {
-  if (!sessionId) throw new Error('sessionId 필요');
-  if (!symbol) throw new Error('symbol 필요');
-
-  const decisionHit = (await fetchNodeArtifacts(sessionId, 'L13', { symbol, limit: 1 }).catch(() => []))[0] || null;
-  const decision = decisionHit?.payload?.decision || null;
-  if (!decision?.action || decision.action === 'HOLD') {
-    return {
-      symbol,
-      market,
-      skipped: true,
-      reason: decision?.action === 'HOLD' ? 'HOLD 신호' : 'L13 결정 없음',
-      decision,
-    };
+const loaded = await (async () => {
+  try {
+    return require(runtimePath);
+  } catch (error) {
+    if (error && error.code !== 'MODULE_NOT_FOUND') throw error;
+    return import('./l21-llm-risk.legacy.js');
   }
+})();
 
-  const { analyses } = await loadAnalysesForSession(sessionId, symbol, market);
-  const taAnalysis = analyses.find(item => item?.metadata?.currentPrice != null || item?.metadata?.atrRatio != null);
-  const portfolio = await inspectPortfolioContext(market);
-
-  const riskResult = await evaluateSignal({
-    symbol,
-    action: decision.action,
-    amount_usdt: decision.amount_usdt,
-    confidence: decision.confidence,
-    reasoning: decision.reasoning,
-    exchange: market,
-  }, {
-    totalUsdt: portfolio.totalAsset,
-    atrRatio: taAnalysis?.metadata?.atrRatio ?? null,
-    currentPrice: taAnalysis?.metadata?.currentPrice ?? null,
-    persist: false,
-  });
-
-  return {
-    symbol,
-    market,
-    decision,
-    portfolio: {
-      totalAsset: portfolio.totalAsset,
-      positionCount: portfolio.positionCount,
-      usdtFree: portfolio.usdtFree,
-    },
-    risk: riskResult,
-  };
-}
-
-export default {
-  id: NODE_ID,
-  type: 'risk',
-  label: 'llm-risk',
-  run,
-};
+export default loaded.default ?? loaded;

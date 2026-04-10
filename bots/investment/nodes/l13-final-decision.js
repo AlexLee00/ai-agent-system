@@ -1,47 +1,19 @@
-import { getSymbolDecision } from '../team/luna.js';
-import { loadAnalysesForSession, loadLatestNodePayload } from './helpers.js';
+import path from 'path';
+import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
 
-const NODE_ID = 'L13';
+const require = createRequire(import.meta.url);
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const runtimePath = path.join(__dirname, '../../../dist/ts-runtime/bots/investment/nodes/l13-final-decision.js');
 
-async function run({ sessionId, market, symbol }) {
-  if (!sessionId) throw new Error('sessionId 필요');
-  if (!symbol) throw new Error('symbol 필요');
-
-  const { analyses, source } = await loadAnalysesForSession(sessionId, symbol, market);
-  if (!analyses.length) {
-    return {
-      symbol,
-      market,
-      source,
-      decision: null,
-      skipped: true,
-      reason: '분석 결과 없음',
-    };
+const loaded = await (async () => {
+  try {
+    return require(runtimePath);
+  } catch (error) {
+    if (error && error.code !== 'MODULE_NOT_FOUND') throw error;
+    return import('./l13-final-decision.legacy.js');
   }
+})();
 
-  const bullHit = await loadLatestNodePayload(sessionId, 'L11', symbol);
-  const bearHit = await loadLatestNodePayload(sessionId, 'L12', symbol);
-  const debate = (bullHit?.payload?.bull || bearHit?.payload?.bear)
-    ? {
-        bull: bullHit?.payload?.bull || null,
-        bear: bearHit?.payload?.bear || null,
-      }
-    : null;
-
-  const decision = await getSymbolDecision(symbol, analyses, market, debate);
-  return {
-    symbol,
-    market,
-    source,
-    analyses_count: analyses.length,
-    debate,
-    decision,
-  };
-}
-
-export default {
-  id: NODE_ID,
-  type: 'decision',
-  label: 'final-decision',
-  run,
-};
+export default loaded.default ?? loaded;

@@ -1,25 +1,17 @@
-#!/usr/bin/env node
 'use strict';
 
-const env = require('../../../packages/core/lib/env');
-const { runCommentReply } = require('../lib/commenter');
+const path = require('path');
 
-async function main() {
-  const testMode = process.env.BLOG_COMMENTER_TEST === 'true';
-  env.printModeBanner('blog commenter');
+const runtimePath = path.join(
+  __dirname,
+  '../../../dist/ts-runtime/bots/blog/scripts/run-commenter.js',
+);
 
-  const result = await runCommentReply({ testMode });
-  if (result?.skipped) {
-    console.log(`[커멘터] 스킵: ${result.reason}`);
-    return;
+try {
+  module.exports = require(runtimePath);
+} catch (error) {
+  if (error && error.code !== 'MODULE_NOT_FOUND') {
+    throw error;
   }
-
-  console.log('[커멘터] 완료:', JSON.stringify(result));
+  module.exports = require('./run-commenter.legacy.js');
 }
-
-main()
-  .then(() => process.exit(0))
-  .catch((error) => {
-    console.error('[커멘터] 실패:', error?.stack || error?.message || String(error));
-    process.exit(1);
-  });

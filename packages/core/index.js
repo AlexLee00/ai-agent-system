@@ -1,14 +1,15 @@
 'use strict';
 
-/**
- * @ai-agent/core — 공유 유틸리티 패키지
- * 신규 봇은 require('@ai-agent/core')로 전부 임포트
- */
+const path = require('path');
 
-module.exports = {
-  ...require('./src/cli'),
-  ...require('./src/utils'),
-  ...require('./src/args'),
-  ...require('./src/formatting'),
-  ...require('./src/crypto'),
-};
+const runtimePath = path.join(
+  __dirname,
+  '../../dist/ts-runtime/packages/core/index.js'
+);
+
+try {
+  module.exports = require(runtimePath);
+} catch (error) {
+  if (error && error.code !== 'MODULE_NOT_FOUND') throw error;
+  module.exports = require('./index.legacy.js');
+}

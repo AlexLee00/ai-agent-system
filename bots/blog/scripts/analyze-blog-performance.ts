@@ -1,3 +1,4 @@
-import './analyze-blog-performance.js';
+// @ts-nocheck
+'use strict';
 
-export {};
+module.exports = require('./analyze-blog-performance.legacy.js');

@@ -259,7 +259,10 @@ async function checkQualityEnhanced(content, type, options = {}) {
   for (const pkg of packages.slice(0, 8)) {
     const exists = await packageExists(pkg);
     if (exists === false) {
-      issues.push({ severity: 'error', msg: `코드 블록 패키지 미존재: ${pkg}` });
+      issues.push({
+        severity: type === 'lecture' ? 'warn' : 'error',
+        msg: `코드 블록 패키지 미존재: ${pkg}`,
+      });
     }
   }
 

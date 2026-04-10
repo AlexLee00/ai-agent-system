@@ -231,10 +231,7 @@ async function publishToFile(postData) {
   // output 디렉토리 보장
   if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
-  const today     = kst.today();
-  const safeTitle = (title || '').replace(/[^가-힣a-zA-Z0-9\s-]/g, '').slice(0, 50).trim();
-  const filename  = `${today}_${postType}_${safeTitle}.html`;
-  const filepath  = path.join(OUTPUT_DIR, filename);
+  const today = kst.today();
   let publishDate = today;
 
   if (scheduleId && !DEV_HUB_READONLY) {
@@ -270,6 +267,10 @@ async function publishToFile(postData) {
       console.warn('[퍼블] 기존 포스트 조회 실패 (계속 진행):', e.message);
     }
   }
+
+  const safeTitle = (title || '').replace(/[^가-힣a-zA-Z0-9\s-]/g, '').slice(0, 50).trim();
+  const filename  = `${publishDate}_${postType}_${safeTitle}.html`;
+  const filepath  = path.join(OUTPUT_DIR, filename);
 
   const titleUrlMap = await loadPublishedLinkMap();
   const linkedContent = replaceInternalLinkPlaceholders(content, titleUrlMap);
@@ -333,7 +334,7 @@ async function publishToFile(postData) {
           category,
           lecture_number: lectureNumber || null,
           char_count:     charCount,
-          publish_date:   today,
+          publish_date:   publishDate,
           filename,
         },
         'blog-publ'

@@ -1,7 +1,7 @@
 {
-  "lastRun": "2026-04-08",
+  "lastRun": "2026-04-10",
   "versions": {
-    "@anthropic-ai/sdk": "0.85.0",
+    "@anthropic-ai/sdk": "0.87.0",
     "@modelcontextprotocol/sdk": "1.29.0",
     "groq-sdk": "1.1.2",
     "duckdb": "1.4.4",
@@ -9,5 +9,10 @@
     "ccxt": "4.5.47",
     "playwright": "1.59.1"
   },
-  "lastAnalysis": null
+  "lastAnalysis": {
+    "summary": "이번 주 패치 검토 1순위는 groq-sdk입니다. 연구 관찰 1순위는 'Multimodal Embedding & Reranker Models'입니다. 웹 하이라이트는 'The next phase of enterprise AI'입니다. 이번 주 우선순위는 보안 취약점 두 건(특히 axios SSRF)과 @anthropic-ai/sdk 소폭 업그레이드 검토입니다. 기술적으로는 멀티모달 검색 리랭킹과 에이전트의 on-the-job learning, RCA용 지식베이스 구축 논의가 우리 시스템과 가장 가깝습니다. 외부 동향은 엔터프라이즈 AI와 에이전트 워크플로 고도화 쪽으로 계속 무게가 실리고 있습니다.",
+    "patchCount": 5,
+    "securityCount": 2,
+    "llmApiCount": 4
+  }
 }

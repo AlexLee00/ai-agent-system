@@ -1,14 +1,13 @@
-const fs = require('fs');
+const path = require('path');
 
-function loadJson(file) {
-  try { return JSON.parse(fs.readFileSync(file, 'utf-8')); }
-  catch (e) { return {}; }
+const runtimePath = path.join(
+  __dirname,
+  '../../../dist/ts-runtime/bots/reservation/lib/files.js'
+);
+
+try {
+  module.exports = require(runtimePath);
+} catch (error) {
+  if (error && error.code !== 'MODULE_NOT_FOUND') throw error;
+  module.exports = require('./files.legacy.js');
 }
-
-function saveJson(file, data) {
-  const tmp = file + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf-8');
-  fs.renameSync(tmp, file);
-}
-
-module.exports = { loadJson, saveJson };

@@ -1,50 +1,22 @@
-import l01PreScreen from './l01-pre-screen.js';
-import l02TaAnalysis from './l02-ta-analysis.js';
-import l03Sentinel from './l03-sentinel.js';
-import l05Onchain from './l05-onchain.js';
-import l06PortfolioContext from './l06-portfolio-context.js';
-import l10SignalFusion from './l10-signal-fusion.js';
-import l11BullDebate from './l11-bull-debate.js';
-import l12BearDebate from './l12-bear-debate.js';
-import l13FinalDecision from './l13-final-decision.js';
-import l14PortfolioDecision from './l14-portfolio-decision.js';
-import l21LlmRisk from './l21-llm-risk.js';
-import l30SignalSave from './l30-signal-save.js';
-import l31OrderExecute from './l31-order-execute.js';
-import l32Notify from './l32-notify.js';
-import l33RagStore from './l33-rag-store.js';
-import l34Journal from './l34-journal.js';
+import path from 'path';
+import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
 
-export const INVESTMENT_NODES = [
-  l01PreScreen,
-  l02TaAnalysis,
-  l03Sentinel,
-  l05Onchain,
-  l06PortfolioContext,
-  l10SignalFusion,
-  l11BullDebate,
-  l12BearDebate,
-  l13FinalDecision,
-  l14PortfolioDecision,
-  l21LlmRisk,
-  l30SignalSave,
-  l31OrderExecute,
-  l32Notify,
-  l33RagStore,
-  l34Journal,
-];
+const require = createRequire(import.meta.url);
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const runtimePath = path.join(__dirname, '../../../dist/ts-runtime/bots/investment/nodes/index.js');
 
-export const INVESTMENT_NODE_MAP = new Map(
-  INVESTMENT_NODES.map(node => [String(node.id).toUpperCase(), node]),
-);
+const loaded = await (async () => {
+  try {
+    return require(runtimePath);
+  } catch (error) {
+    if (error && error.code !== 'MODULE_NOT_FOUND') throw error;
+    return import('./index.legacy.js');
+  }
+})();
 
-export function getInvestmentNode(nodeId) {
-  if (!nodeId) return null;
-  return INVESTMENT_NODE_MAP.get(String(nodeId).toUpperCase()) || null;
-}
-
-export default {
-  INVESTMENT_NODES,
-  INVESTMENT_NODE_MAP,
-  getInvestmentNode,
-};
+export const INVESTMENT_NODES = loaded.INVESTMENT_NODES;
+export const INVESTMENT_NODE_MAP = loaded.INVESTMENT_NODE_MAP;
+export const getInvestmentNode = loaded.getInvestmentNode;
+export default loaded.default ?? loaded;

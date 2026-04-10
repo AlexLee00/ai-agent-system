@@ -1,142 +1,17 @@
-#!/usr/bin/env node
 'use strict';
 
-/**
- * manual-block-followup-report.js — manual 등록 후속 네이버 차단 점검 리포트
- *
- * 사용법:
- *   node manual/reports/manual-block-followup-report.js
- *   node manual/reports/manual-block-followup-report.js --from=2026-03-21
- *   node manual/reports/manual-block-followup-report.js --only-open
- *
- * 출력 (stdout JSON):
- *   { success: true, count: N, openCount: M, message, rows }
- */
+const path = require('path');
 
-const pgPool = require('../../../../packages/core/lib/pg-pool');
-const { parseArgs } = require('../../lib/args');
-const { outputResult, fail } = require('../../lib/cli');
-const { getKioskBlock, getBlockedKioskBlocks } = require('../../lib/db');
+const runtimePath = path.join(
+  __dirname,
+  '../../../../dist/ts-runtime/bots/reservation/manual/reports/manual-block-followup-report.js',
+);
 
-const SCHEMA = 'reservation';
-const ARGS = parseArgs(process.argv);
-const fromDate = ARGS.from || new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
-const onlyOpen = Boolean(ARGS['only-open'] || ARGS.onlyOpen);
-
-function normalizePhone(value) {
-  return String(value || '').replace(/\D+/g, '');
-}
-
-function formatRow(row) {
-  const phone = row.phone ? ` (${row.phone})` : '';
-  const base = `${row.date} ${row.start_time}~${row.end_time} ${row.room || '-'} ${phone}`.trim();
-
-  if (!row.kiosk_block_id) {
-    return `🔴 ${base} — kiosk_blocks row 없음`;
+try {
+  module.exports = require(runtimePath);
+} catch (error) {
+  if (error && error.code !== 'MODULE_NOT_FOUND') {
+    throw error;
   }
-
-  if (Number(row.naver_blocked) === 1) {
-    return `✅ ${base} — 차단 완료 (${row.blocked_at || 'blocked_at 없음'})`;
-  }
-
-  const parts = [`🟠 ${base} — 차단 미완료`];
-  if (row.last_block_result) parts.push(`결과=${row.last_block_result}`);
-  if (row.last_block_reason) parts.push(`사유=${row.last_block_reason}`);
-  parts.push(`retry=${Number(row.block_retry_count || 0)}`);
-  return parts.join(' / ');
+  module.exports = require('./manual-block-followup-report.legacy.js');
 }
-
-async function main() {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(fromDate)) {
-    fail(`--from 형식 오류: ${fromDate} (예: 2026-03-21)`);
-  }
-
-  const reservationRows = await pgPool.query(SCHEMA, `
-    SELECT
-      r.id,
-      r.date,
-      r.start_time,
-      r.end_time,
-      r.room,
-      r.status,
-      r.pickko_status,
-      r.phone
-    FROM reservations r
-    WHERE r.pickko_status IN ('manual', 'manual_retry')
-      AND r.status = 'completed'
-      AND r.date >= $1
-    ORDER BY r.date ASC, r.start_time ASC, r.updated_at DESC NULLS LAST
-  `, [fromDate]);
-
-  const rows = await Promise.all(reservationRows.map(async (row) => {
-    const phoneRaw = normalizePhone(row.phone);
-    const kiosk = phoneRaw ? await getKioskBlock(phoneRaw, row.date, row.start_time, row.end_time, row.room) : null;
-    return {
-      ...row,
-      kiosk_block_id: kiosk?.id || null,
-      naver_blocked: kiosk ? (kiosk.naverBlocked ? 1 : 0) : null,
-      blocked_at: kiosk?.blockedAt || null,
-      last_block_attempt_at: kiosk?.lastBlockAttemptAt || null,
-      last_block_result: kiosk?.lastBlockResult || null,
-      last_block_reason: kiosk?.lastBlockReason || null,
-      block_retry_count: kiosk?.blockRetryCount || 0,
-      first_seen_at: kiosk?.firstSeenAt || null,
-    };
-  }));
-
-  const openRows = rows.filter((row) => !row.kiosk_block_id || Number(row.naver_blocked || 0) !== 1);
-  const selectedRows = onlyOpen ? openRows : rows;
-
-  const matchedKeys = new Set(rows.map((row) => `${normalizePhone(row.phone)}|${row.date}|${row.start_time}|${row.room || ''}`));
-  const correctedRows = (await getBlockedKioskBlocks())
-    .filter((row) => row.date >= fromDate)
-    .filter((row) => row.lastBlockReason === 'operator_confirmed_actual_slot')
-    .filter((row) => !matchedKeys.has(`${normalizePhone(row.phoneRaw)}|${row.date}|${row.start}|${row.room || ''}`))
-    .map((row) => ({
-      id: `corrected|${row.date}|${row.start}|${row.room || ''}|${normalizePhone(row.phoneRaw)}`,
-      date: row.date,
-      start_time: row.start,
-      end_time: row.end,
-      room: row.room,
-      status: 'corrected',
-      pickko_status: 'operator_confirmed_actual_slot',
-      phone: row.phoneRaw,
-      kiosk_block_id: row.id,
-      naver_blocked: row.naverBlocked ? 1 : 0,
-      blocked_at: row.blockedAt,
-      last_block_attempt_at: row.lastBlockAttemptAt,
-      last_block_result: row.lastBlockResult,
-      last_block_reason: row.lastBlockReason,
-      block_retry_count: row.blockRetryCount,
-      first_seen_at: row.firstSeenAt,
-      corrected_slot: true,
-    }));
-
-  const header = [
-    `📋 manual 등록 후속 네이버 차단 리포트`,
-    `기준일: ${fromDate}`,
-    `전체 ${rows.length}건 / 미완료 ${openRows.length}건 / 정정 슬롯 ${correctedRows.length}건`,
-  ];
-
-  const lines = selectedRows.length > 0
-    ? selectedRows.map(formatRow)
-    : ['✅ 조건에 맞는 대상 없음'];
-
-  const correctedLines = correctedRows.length > 0
-    ? ['', '🛠 운영자 정정으로 확인된 실제 차단 슬롯', ...correctedRows.map((row) => `✅ ${row.date} ${row.start_time}~${row.end_time} ${row.room || '-'} (${row.phone}) — 실제 차단 슬롯 / 사유=${row.last_block_reason}`)]
-    : [];
-
-  outputResult({
-    success: true,
-    count: rows.length,
-    openCount: openRows.length,
-    correctedCount: correctedRows.length,
-    rows: selectedRows,
-    correctedRows,
-    message: [...header, '', ...lines, ...correctedLines].join('\n'),
-  });
-}
-
-main().catch((error) => {
-  fail(`manual follow-up 리포트 조회 실패: ${error.message}`);
-});

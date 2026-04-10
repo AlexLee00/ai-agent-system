@@ -1,55 +1,13 @@
-const fs = require('fs');
 const path = require('path');
-const { createRuntimeConfigLoader } = require('../../../packages/core/lib/runtime-config-loader');
 
-const DEFAULT_RUNTIME_CONFIG = {
-  browser: {
-    launchRetries: 3,
-    launchRetryDelayMs: 2000,
-    navigationTimeoutMs: 30000,
-    pickkoProtocolTimeoutMs: 180000,
-  },
-  naverMonitor: {
-    maxRetries: 5,
-    errorTrackerThreshold: 3,
-    staleConfirmCount: 5,
-    staleMinElapsedMs: 10 * 60 * 1000,
-    staleExpireMs: 30 * 60 * 1000,
-    verifyBeforeUnresolvedReport: true,
-    verifyBeforeUnresolvedReportTimeoutMs: 4 * 60 * 1000,
-  },
-  kioskMonitor: {
-    errorTrackerThreshold: 3,
-    customerOperationCooldownMs: 30000,
-  },
-};
+const runtimePath = path.join(
+  __dirname,
+  '../../../dist/ts-runtime/bots/reservation/lib/runtime-config.js'
+);
 
-const { loadRuntimeConfig } = createRuntimeConfigLoader({
-  fs,
-  defaults: DEFAULT_RUNTIME_CONFIG,
-  configPath: path.join(__dirname, '..', 'config.yaml'),
-  format: 'yaml',
-});
-
-function getReservationRuntimeConfig() {
-  return loadRuntimeConfig();
+try {
+  module.exports = require(runtimePath);
+} catch (error) {
+  if (error && error.code !== 'MODULE_NOT_FOUND') throw error;
+  module.exports = require('./runtime-config.legacy.js');
 }
-
-function getReservationBrowserConfig() {
-  return loadRuntimeConfig().browser;
-}
-
-function getReservationNaverMonitorConfig() {
-  return loadRuntimeConfig().naverMonitor;
-}
-
-function getReservationKioskMonitorConfig() {
-  return loadRuntimeConfig().kioskMonitor;
-}
-
-module.exports = {
-  getReservationRuntimeConfig,
-  getReservationBrowserConfig,
-  getReservationNaverMonitorConfig,
-  getReservationKioskMonitorConfig,
-};

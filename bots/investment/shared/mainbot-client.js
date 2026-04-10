@@ -1,37 +1,24 @@
-/**
- * shared/mainbot-client.js — 루나팀 → 메인봇 알람 발행 클라이언트 (ESM)
- *
- * OpenClaw webhook 경유로 전달한다.
- */
-
+import path from 'path';
 import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
 
-const require  = createRequire(import.meta.url);
-const { publishToWebhook } = require('../../../packages/core/lib/reporting-hub');
+const require = createRequire(import.meta.url);
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-/**
- * OpenClaw webhook으로 알람 발행
- * @param {object} opts
- * @param {string} opts.from_bot     발신 봇 ID (luna, jason, tyler, molly, chris...)
- * @param {string} [opts.team]       팀명 (기본: investment)
- * @param {string} opts.event_type   이벤트 유형 (trade|alert|system|report)
- * @param {number} [opts.alert_level] 1~4 (기본: 2=MEDIUM)
- * @param {string} opts.message      사람이 읽는 메시지
- * @param {object} [opts.payload]    JSON 구조화 데이터
- */
-export async function publishToMainBot({ from_bot, team = 'investment', event_type, alert_level = 2, message, payload }) {
-  const event = { from_bot, team, event_type, alert_level, message, payload };
+const runtimePath = path.join(
+  __dirname,
+  '../../../dist/ts-runtime/bots/investment/shared/mainbot-client.js'
+);
 
-  const webhookResult = await publishToWebhook({
-    event,
-    policy: {
-      cooldownMs: 2 * 60_000,
-    },
-  });
-
-  if (webhookResult.ok && !webhookResult.skipped) {
-    return true;
+const loaded = await (async () => {
+  try {
+    return require(runtimePath);
+  } catch (error) {
+    if (error && error.code !== 'MODULE_NOT_FOUND') throw error;
+    return import('./mainbot-client.legacy.js');
   }
-  console.warn(`[mainbot-client] webhook 실패/스킵: ${webhookResult.error || webhookResult.reason || 'unknown'}`);
-  return false;
-}
+})();
+
+export const publishToMainBot = loaded.publishToMainBot;
+export default loaded;
