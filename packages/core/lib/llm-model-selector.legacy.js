@@ -26,7 +26,7 @@ function _deepMerge(base, override) {
 function inferProviderFromModel(model = '') {
   if (!model) return 'anthropic';
   if (model.startsWith('claude-code/')) return 'claude-code';
-  if (model.startsWith('gemma4') || model.startsWith('gemma-4')) return 'ollama';
+  if (model.startsWith('gemma4') || model.startsWith('gemma-4')) return 'local';
   if (model.startsWith('local/') || model === 'qwen2.5-7b' || model === 'deepseek-r1-32b') return 'local';
   if (model.startsWith('groq/')) return 'groq';
   if (
@@ -208,14 +208,6 @@ function _buildSelectorRegistry() {
     'blog.star.caption': () => _resolveFromTeamDefault('blog.star.caption'),
     'blog.curriculum.recommend': () => _resolveFromTeamDefault('blog.curriculum.recommend'),
     'blog.curriculum.generate': () => _resolveFromTeamDefault('blog.curriculum.generate'),
-    gemma_fast: [
-      { provider: 'ollama', model: 'gemma4:latest', maxTokens: 1024, temperature: 0.7, timeoutMs: 10000 },
-      { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.7 },
-    ],
-    gemma_structured: [
-      { provider: 'ollama', model: 'gemma4:latest', maxTokens: 1400, temperature: 0.1, timeoutMs: 10000 },
-      { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1400, temperature: 0.1 },
-    ],
     'core._default': () => _resolveFromTeamDefault('core._default'),
     'core.chunked.gpt4o': () => _resolveFromTeamDefault('core.chunked.gpt4o'),
     'core.chunked.default': () => _resolveFromTeamDefault('core.chunked.default'),
@@ -237,8 +229,6 @@ function _buildSelectorRegistry() {
         groq_scout: [{ provider: 'groq', model: groqScoutModel }, { provider: 'groq', model: groqCompetitionModels[0] || 'openai/gpt-oss-20b' }, { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.1 }],
         local_fast: [{ provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.1 }, { provider: 'groq', model: groqScoutModel }],
         local_deep: [{ provider: 'local', model: 'deepseek-r1-32b', maxTokens: 2048, temperature: 0.1 }, { provider: 'groq', model: groqScoutModel }],
-        gemma_fast: [{ provider: 'ollama', model: 'gemma4:latest', maxTokens: 1024, temperature: 0.7, timeoutMs: 10000 }, { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.7 }],
-        gemma_structured: [{ provider: 'ollama', model: 'gemma4:latest', maxTokens: 1400, temperature: 0.1, timeoutMs: 10000 }, { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1400, temperature: 0.1 }],
         groq_with_local: [{ provider: 'groq', model: 'moonshotai/kimi-k2-instruct-0905', maxTokens: 2048, temperature: 0.1 }, { provider: 'local', model: 'deepseek-r1-32b', maxTokens: 2048, temperature: 0.1 }],
       };
       return { route, openaiPerfModel, openaiMiniModel, groqScoutModel, groqCompetitionModels, anthropicModel, primary: routeChains[route][0] || null, fallbacks: routeChains[route].slice(1), fallbackChain: routeChains[route] };

@@ -24,6 +24,23 @@ Gemma 4는 "지금 바로 전면 교체"보다
   - darwin 심층 연구 검증
 ```
 
+### 현재 운영 상태 (2026-04-11)
+
+```
+실제 운영 연결:
+  - blog / gemma-topic
+  - orchestrator / gemma-insight
+  - ska / gemma-insight
+
+서빙 경로:
+  - hub runtime profile -> local http://127.0.0.1:11434
+  - model: gemma4:latest
+  - backing model: mlx-community/gemma-4-e2b-it-4bit
+
+참고:
+  - 현재 production Gemma 호출의 source of truth는 gemma-pilot 경로
+```
+
 ---
 
 ## 2. 외부 평가 요약
@@ -295,7 +312,7 @@ Gemma 4는 유망하다.
 "구조화/경량/로컬 보조 경로"부터 시험 도입하는 것이 맞다.
 ```
 
-추천 순서:
+초기 설계상 추천 순서:
 
 ```
 1. worker
@@ -305,3 +322,10 @@ Gemma 4는 유망하다.
 5. 그 다음 darwin / justin 보조 경로
 ```
 
+현재 반영 순서:
+
+```
+1. blog
+2. orchestrator
+3. ska
+```

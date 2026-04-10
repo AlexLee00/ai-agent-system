@@ -1,7 +1,6 @@
 'use strict';
 
 const LOCAL_LLM_BASE_URL = 'http://127.0.0.1:11434';
-const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11435';
 
 const PROFILES = {
   blog: {
@@ -55,8 +54,8 @@ const PROFILES = {
       openclaw_agent: 'blog-writer',
       claude_code_name: 'blog-writer',
       claude_code_settings: '/Users/alexlee/.openclaw/.claude/blog-writer.settings.json',
-      provider: 'ollama',
-      base_url: OLLAMA_BASE_URL,
+      provider: 'local',
+      base_url: LOCAL_LLM_BASE_URL,
       model: 'gemma4:latest',
       timeout_ms: 10000,
       max_tokens: 200,
@@ -262,8 +261,8 @@ const PROFILES = {
       openclaw_agent: 'jay-orchestrator',
       claude_code_name: 'jay-orchestrator',
       claude_code_settings: '/Users/alexlee/.openclaw/.claude/jay-orchestrator.settings.json',
-      provider: 'ollama',
-      base_url: OLLAMA_BASE_URL,
+      provider: 'local',
+      base_url: LOCAL_LLM_BASE_URL,
       model: 'gemma4:latest',
       timeout_ms: 10000,
       max_tokens: 300,
@@ -283,8 +282,8 @@ const PROFILES = {
       openclaw_agent: 'ska-ops',
       claude_code_name: 'ska-ops',
       claude_code_settings: '/Users/alexlee/.openclaw/.claude/ska-ops.settings.json',
-      provider: 'ollama',
-      base_url: OLLAMA_BASE_URL,
+      provider: 'local',
+      base_url: LOCAL_LLM_BASE_URL,
       model: 'gemma4:latest',
       timeout_ms: 10000,
       max_tokens: 150,
