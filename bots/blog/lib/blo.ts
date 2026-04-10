@@ -47,6 +47,7 @@ const { agenticSearch }                             = require(path.join(env.PROJ
 const { getWriterPersona }                          = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/writer-personas.js'));
 const { pickEditorPersona }                         = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/editor-personas.js'));
 const { loadLatestStrategy }                        = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/strategy-loader.js'));
+const { accumulatePostExperience }                 = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/rag-accumulator.js'));
 const {
   writeLecturePost,
   writeLecturePostChunked,
@@ -573,6 +574,21 @@ async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx
     charCount: post.charCount,
   }, options);
 
+  await accumulatePostExperience({
+    title: postTitle,
+    content: post.content,
+    category: 'Node.js강의',
+    postType: 'lecture',
+    writerName,
+    charCount: post.charCount,
+    postId: published.postId || null,
+    scheduleId,
+  }, quality, {
+    traceId: traceCtx.trace_id,
+    dryRun: !!options.dryRun,
+    reused: !!published?.reused,
+  });
+
   if (!options.dryRun && !published?.reused && !DEV_HUB_READONLY) {
     await advanceLectureNumber();
   } else if (published?.reused) {
@@ -650,6 +666,21 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
     title: post.title,
     charCount: post.charCount,
   }, options);
+
+  await accumulatePostExperience({
+    title: genTitle,
+    content: post.content,
+    category: context.category,
+    postType: 'general',
+    writerName,
+    charCount: post.charCount,
+    postId: published.postId || null,
+    scheduleId,
+  }, quality, {
+    traceId: traceCtx.trace_id,
+    dryRun: !!options.dryRun,
+    reused: !!published?.reused,
+  });
 
   if (!options.dryRun && !published?.reused && !DEV_HUB_READONLY) {
     await advanceGeneralCategory();
