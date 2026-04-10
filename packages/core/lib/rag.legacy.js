@@ -2,7 +2,7 @@
 
 const { execFile } = require('child_process');
 const pgPool = require('./pg-pool');
-const { getEmbeddingsUrl } = require('./local-llm-client');
+const { getEmbeddingsUrl, resolveEmbeddingModel } = require('./local-llm-client');
 const eventLake = require('./event-lake');
 
 const SCHEMA = 'reservation';
@@ -80,8 +80,9 @@ async function initSchema() {
 }
 
 async function createEmbedding(text) {
+  const embedModel = await resolveEmbeddingModel(EMBED_MODEL);
   const payload = JSON.stringify({
-    model: EMBED_MODEL,
+    model: embedModel,
     input: text.slice(0, 8000),
   });
 

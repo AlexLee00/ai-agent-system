@@ -42,6 +42,7 @@ const {
 }                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/curriculum-planner.js'));
 const richer                                        = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/richer.js'));
 const { collectAllResearch }                        = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/parallel-collector.js'));
+const { getRecentPosts, selectAndValidateTopic }    = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/topic-selector.js'));
 const {
   writeLecturePost,
   writeLecturePostChunked,
@@ -444,6 +445,19 @@ async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, sc
   if (preloaded.topicHint) {
     preparedResearch.topic_hint = String(preloaded.topicHint).trim();
   }
+  if (!needsBook && !preparedResearch.topic_hint) {
+    try {
+      const recentPosts = getRecentPosts(category, 10);
+      const selectedTopic = selectAndValidateTopic(category, recentPosts);
+      preparedResearch.topic_hint = selectedTopic.topic;
+      preparedResearch.topic_question = selectedTopic.question;
+      preparedResearch.topic_diff = selectedTopic.diff;
+      preparedResearch.topic_title_candidate = selectedTopic.title;
+      console.log(`[젬스] 주제 다양화 선택: ${selectedTopic.title}${selectedTopic.forced ? ' (forced)' : ''}`);
+    } catch (error) {
+      console.warn('[젬스] 주제 다양화 선택 실패 — 기본 자율 주제 유지:', error.message);
+    }
+  }
   if (needsBook) {
     const scheduledBook = preloaded.bookInfo;
     if (scheduledBook?.book_title && scheduledBook?.book_isbn) {
@@ -526,6 +540,8 @@ async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, sc
     researchData: preparedResearch,
     book_info: preparedResearch.book_info || null,
     topicHint: preparedResearch.topic_hint || null,
+    topicQuestion: preparedResearch.topic_question || null,
+    topicDiff: preparedResearch.topic_diff || null,
   };
 }
 

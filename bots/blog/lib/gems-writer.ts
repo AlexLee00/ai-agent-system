@@ -753,6 +753,9 @@ async function writeGeneralPost(category, researchData, sectionVariation = {}) {
   const relatedPosts    = researchData.relatedPosts    || [];
   const popularPatterns = researchData.popularPatterns || [];
   const topicHint = String(researchData.topic_hint || '').trim();
+  const topicQuestion = String(researchData.topic_question || '').trim();
+  const topicDiff = String(researchData.topic_diff || '').trim();
+  const topicTitleCandidate = String(researchData.topic_title_candidate || '').trim();
 
   const weatherContext = weatherToContext(weather, { detailed: false });
 
@@ -810,6 +813,9 @@ ${itNews.slice(0, 5).map(n => `- ${n.title} (인기도: ${n.score})`).join('\n')
 
 ${bookReviewBlock}${newsAnalysisBlock}${experienceBlock}${linkingBlock}${recentThemeBlock}${popularPatternBlock}
 ${topicHint ? `[주제 힌트]\n${topicHint}\n` : ''}
+${topicQuestion ? `[이번 글이 답해야 할 질문]\n${topicQuestion}\n` : ''}
+${topicDiff ? `[최근 글과의 차별화 포인트]\n${topicDiff}\n` : ''}
+${topicTitleCandidate ? `[제목 후보 예시]\n${topicTitleCandidate}\n` : ''}
 ${topicHint
   ? `이번 수동 재작성은 위 [주제 힌트]를 중심 주제로 유지하여, 같은 문제의식을 새 글로 다시 작성하라.
 제목도 [주제 힌트]와 같은 방향의 핵심 키워드를 유지하되 문장은 새롭게 구성하라.`
@@ -1099,6 +1105,10 @@ async function writeGeneralPostChunked(category, researchData, sectionVariation 
   const realExperiences = researchData.realExperiences || [];
   const relatedPosts    = researchData.relatedPosts    || [];
   const popularPatterns = researchData.popularPatterns || [];
+  const topicHint = String(researchData.topic_hint || '').trim();
+  const topicQuestion = String(researchData.topic_question || '').trim();
+  const topicDiff = String(researchData.topic_diff || '').trim();
+  const topicTitleCandidate = String(researchData.topic_title_candidate || '').trim();
 
   const weatherContext = weatherToContext(weather, { detailed: false });
 
@@ -1141,7 +1151,11 @@ ${GEMS_PERSONA_GUIDE ? `[참조 페르소나]\n${GEMS_PERSONA_GUIDE}\n` : ''}
 [최신 IT 뉴스] ${newsBlock}
 ${bookReviewBlock}${experienceBlock}
 ${recentThemeBlock}
-${popularPatternBlock}`.trim();
+${popularPatternBlock}
+${topicHint ? `\n[주제 힌트]\n${topicHint}` : ''}
+${topicQuestion ? `\n[이번 글이 답해야 할 질문]\n${topicQuestion}` : ''}
+${topicDiff ? `\n[최근 글과의 차별화 포인트]\n${topicDiff}` : ''}
+${topicTitleCandidate ? `\n[제목 후보 예시]\n${topicTitleCandidate}` : ''}`.trim();
 
   const chunks = [
     {
