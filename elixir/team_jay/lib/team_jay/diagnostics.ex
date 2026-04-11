@@ -209,7 +209,7 @@ defmodule TeamJay.Diagnostics do
       TeamJay.Teams.SkaSupervisor,
       TeamJay.Teams.ClaudeSupervisor,
       TeamJay.Teams.StewardSupervisor,
-      TeamJay.Teams.InvestmentShadowSupervisor,
+      TeamJay.Teams.InvestmentSupervisor,
       TeamJay.Teams.BlogShadowSupervisor,
       TeamJay.Teams.WorkerShadowSupervisor,
       TeamJay.Teams.PlatformShadowSupervisor
