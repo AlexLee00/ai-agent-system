@@ -6,14 +6,26 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const pgPool = require('../../pg-pool');
+const env = require('../../env');
 
 const {
   resolveNaverCredentials,
   resolveGoogleBooksApiKey,
+  resolveData4LibraryKey,
+  resolveKakaoApiKey,
 } = require('../../news-credentials');
 const { verifyBookSources } = require('./book-source-verify');
 
-const COVER_DIR = path.join(__dirname, '..', '..', '..', '..', '..', 'bots', 'blog', 'output', 'images', 'books');
+const COVER_DIR = path.join(env.PROJECT_ROOT, 'bots', 'blog', 'output', 'images', 'books');
+const COVER_SOURCE_PRIORITY = ['kakao', 'data4library', 'naver', 'google', 'openlibrary'];
+const SOURCE_SCORE_MAP = {
+  kakao: 6,
+  data4library: 5,
+  naver: 5,
+  google: 4,
+  openlibrary: 3,
+  catalog: 2,
+};
 
 const CANONICAL_BOOKS = [
   { title: '소프트웨어 장인', author: '산드로 만쿠소', isbn: '9788968482397' },
@@ -24,6 +36,14 @@ const CANONICAL_BOOKS = [
   { title: '데브옵스 핸드북', author: '진 킴', isbn: '9788966261857' },
   { title: '아토믹 해빗', author: '제임스 클리어', isbn: '9788966262588' },
   { title: '원씽', author: '게리 켈러', isbn: '9788901153667' },
+  { title: '사피엔스', author: '유발 하라리', isbn: '9788934972464' },
+  { title: '총 균 쇠', author: '재레드 다이아몬드', isbn: '9788972914891' },
+  { title: '죽음의 수용소에서', author: '빅터 프랭클', isbn: '9788937464270' },
+  { title: '어린 왕자', author: '앙투안 드 생텍쥐페리', isbn: '9788970633756' },
+  { title: '데미안', author: '헤르만 헤세', isbn: '9788937460449' },
+  { title: '아몬드', author: '손원평', isbn: '9791190090018' },
+  { title: '불편한 편의점', author: '김호연', isbn: '9791161571188' },
+  { title: '작별인사', author: '김영하', isbn: '9788936438838' },
 ];
 
 const DEFAULT_TOPIC_KEYWORDS = [
@@ -33,7 +53,18 @@ const DEFAULT_TOPIC_KEYWORDS = [
   '개발 조직 문화 책',
   '개발자 자기계발 도서',
   'IT 트렌드 도서',
+  '인문학 추천 도서',
+  '생각을 넓혀주는 책',
+  '요즘 많이 읽는 소설',
+  '베스트셀러 소설 추천',
+  '일과 삶을 함께 돌아보는 책',
+  '사람들이 많이 찾는 책',
+  '화제의 베스트셀러',
+  '시대가 바뀌어도 읽히는 고전',
+  '관계와 삶을 돌아보게 하는 책',
 ];
+
+const DEFAULT_CANONICAL_BOOKS = [...CANONICAL_BOOKS];
 
 function normalizeBookKey(value = '') {
   return String(value || '')
@@ -47,6 +78,378 @@ function normalizeBookKey(value = '') {
 
 function normalizeBookIsbn(value = '') {
   return String(value || '').replace(/[^0-9]/g, '');
+}
+
+function normalizeBookAuthor(value = '') {
+  return String(value || '')
+    .split(/[,\^]/)
+    .map((part) => normalizeBookKey(part))
+    .filter(Boolean)[0] || '';
+}
+
+async function ensureBookCatalogTable() {
+  try {
+    await pgPool.run('blog', `
+      CREATE TABLE IF NOT EXISTS blog.book_catalog (
+        id SERIAL PRIMARY KEY,
+        title TEXT NOT NULL,
+        author TEXT NOT NULL,
+        isbn VARCHAR(13),
+        category VARCHAR(50) DEFAULT 'IT',
+        priority INTEGER DEFAULT 50,
+        reviewed BOOLEAN DEFAULT FALSE,
+        reviewed_date DATE,
+        source VARCHAR(30) DEFAULT 'manual',
+        metadata JSONB DEFAULT '{}',
+        added_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
+    await pgPool.run('blog', `
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_book_catalog_isbn_unique
+      ON blog.book_catalog (isbn)
+      WHERE isbn IS NOT NULL AND isbn <> ''
+    `);
+
+    await pgPool.run('blog', `
+      CREATE INDEX IF NOT EXISTS idx_book_catalog_priority
+      ON blog.book_catalog (priority DESC, added_at DESC)
+    `);
+  } catch (error) {
+    console.warn('[도서스킬] book_catalog 테이블 보강 실패:', error.message);
+  }
+}
+
+async function ensureBookReviewQueueTable() {
+  try {
+    await pgPool.run('blog', `
+      CREATE TABLE IF NOT EXISTS blog.book_review_queue (
+        id SERIAL PRIMARY KEY,
+        queue_date DATE NOT NULL DEFAULT CURRENT_DATE,
+        title TEXT NOT NULL,
+        author TEXT NOT NULL,
+        isbn VARCHAR(13),
+        category VARCHAR(50) DEFAULT '기타',
+        priority INTEGER DEFAULT 50,
+        status VARCHAR(20) DEFAULT 'queued',
+        source VARCHAR(30) DEFAULT 'catalog',
+        metadata JSONB DEFAULT '{}',
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
+    await pgPool.run('blog', `
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_book_review_queue_daily_unique
+      ON blog.book_review_queue (queue_date, title, author)
+    `);
+
+    await pgPool.run('blog', `
+      CREATE INDEX IF NOT EXISTS idx_book_review_queue_status
+      ON blog.book_review_queue (status, queue_date DESC, priority DESC)
+    `);
+  } catch (error) {
+    console.warn('[도서스킬] book_review_queue 테이블 보강 실패:', error.message);
+  }
+}
+
+async function seedCanonicalBooksToCatalog() {
+  try {
+    await ensureBookCatalogTable();
+    for (const book of DEFAULT_CANONICAL_BOOKS) {
+      await pgPool.run('blog', `
+        INSERT INTO blog.book_catalog (title, author, isbn, category, priority, source)
+        VALUES (?, ?, ?, ?, ?, 'canonical')
+        ON CONFLICT DO NOTHING
+      `, [
+        book.title,
+        book.author,
+        book.isbn || null,
+        inferCatalogCategory(book.title),
+        100,
+      ]);
+    }
+  } catch (error) {
+    console.warn('[도서스킬] canonical 도서 시드 실패:', error.message);
+  }
+}
+
+async function loadCatalogBooks() {
+  try {
+    await seedCanonicalBooksToCatalog();
+    const rows = await pgPool.query('blog', `
+      SELECT title, author, isbn, category, priority, source
+      FROM blog.book_catalog
+      ORDER BY priority DESC, added_at DESC
+      LIMIT 50
+    `);
+    if (Array.isArray(rows) && rows.length > 0) {
+      return rows.map((row) => ({
+        title: row.title,
+        author: row.author,
+        isbn: row.isbn || '',
+        category: row.category || 'IT',
+        priority: Number(row.priority || 50),
+        source: row.source || 'manual',
+      }));
+    }
+  } catch (error) {
+    console.warn('[도서스킬] book_catalog 조회 실패, 기본 목록 사용:', error.message);
+  }
+  return DEFAULT_CANONICAL_BOOKS.map((book) => ({ ...book, category: 'IT', priority: 100, source: 'canonical' }));
+}
+
+async function listBookCatalog(options = {}) {
+  await ensureBookCatalogTable();
+
+  const clauses = [];
+  const params = [];
+
+  if (typeof options.reviewed === 'boolean') {
+    clauses.push(`reviewed = ?`);
+    params.push(options.reviewed);
+  }
+
+  if (options.category) {
+    clauses.push(`category = ?`);
+    params.push(String(options.category).trim());
+  }
+
+  if (options.source) {
+    clauses.push(`source = ?`);
+    params.push(String(options.source).trim());
+  }
+
+  const limit = Math.max(1, Math.min(Number(options.limit || 20), 100));
+  const whereSql = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+
+  const rows = await pgPool.query('blog', `
+    SELECT
+      id,
+      title,
+      author,
+      isbn,
+      category,
+      priority,
+      reviewed,
+      reviewed_date,
+      source,
+      metadata,
+      added_at,
+      updated_at
+    FROM blog.book_catalog
+    ${whereSql}
+    ORDER BY reviewed ASC, priority DESC, added_at DESC
+    LIMIT ${limit}
+  `, params);
+
+  return Array.isArray(rows) ? rows : [];
+}
+
+async function listBookReviewQueue(options = {}) {
+  await ensureBookReviewQueueTable();
+
+  const clauses = [];
+  const params = [];
+
+  if (options.status) {
+    clauses.push(`status = ?`);
+    params.push(String(options.status).trim());
+  }
+
+  const limit = Math.max(1, Math.min(Number(options.limit || 20), 100));
+  const whereSql = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+
+  const rows = await pgPool.query('blog', `
+    SELECT
+      id,
+      queue_date,
+      title,
+      author,
+      isbn,
+      category,
+      priority,
+      status,
+      source,
+      metadata,
+      created_at,
+      updated_at
+    FROM blog.book_review_queue
+    ${whereSql}
+    ORDER BY queue_date DESC, priority DESC, created_at ASC
+    LIMIT ${limit}
+  `, params);
+
+  return Array.isArray(rows) ? rows : [];
+}
+
+async function updateBookReviewQueueEntry(input = {}) {
+  await ensureBookReviewQueueTable();
+
+  const isbn = normalizeBookIsbn(input.isbn);
+  const title = String(input.title || '').trim();
+  if (!isbn && !title) {
+    throw new Error('queue 업데이트에는 isbn 또는 title이 필요합니다');
+  }
+
+  const matchSql = isbn
+    ? 'SELECT id, metadata FROM blog.book_review_queue WHERE isbn = ? ORDER BY queue_date DESC, id DESC LIMIT 1'
+    : 'SELECT id, metadata FROM blog.book_review_queue WHERE title = ? ORDER BY queue_date DESC, id DESC LIMIT 1';
+  const matchParams = isbn ? [isbn] : [title];
+  const current = await pgPool.get('blog', matchSql, matchParams);
+  if (!current?.id) {
+    return { updated: false, reason: '큐 항목 없음' };
+  }
+
+  const updates = [];
+  const params = [];
+
+  if (input.status) {
+    updates.push('status = ?');
+    params.push(String(input.status).trim());
+  }
+
+  const nextMetadata = {
+    ...(current.metadata && typeof current.metadata === 'object' ? current.metadata : {}),
+  };
+
+  if (Number.isFinite(Number(input.postId))) nextMetadata.postId = Number(input.postId);
+  if (input.note) nextMetadata.note = String(input.note).trim();
+  if (Object.keys(nextMetadata).length > 0) {
+    updates.push('metadata = ?::jsonb');
+    params.push(JSON.stringify(nextMetadata));
+  }
+
+  if (!updates.length) {
+    return { updated: false, reason: '변경할 값 없음' };
+  }
+
+  updates.push('updated_at = NOW()');
+  params.push(current.id);
+
+  const result = await pgPool.run('blog', `
+    UPDATE blog.book_review_queue
+    SET ${updates.join(', ')}
+    WHERE id = ?
+  `, params);
+
+  return {
+    updated: Number(result?.rowCount || 0) > 0,
+    id: current.id,
+  };
+}
+
+async function updateBookCatalogEntry(input = {}) {
+  await ensureBookCatalogTable();
+
+  const isbn = normalizeBookIsbn(input.isbn);
+  const title = String(input.title || '').trim();
+  if (!isbn && !title) {
+    throw new Error('isbn 또는 title 중 하나는 필요합니다');
+  }
+
+  const matchSql = isbn
+    ? 'SELECT id, metadata FROM blog.book_catalog WHERE isbn = ? LIMIT 1'
+    : 'SELECT id, metadata FROM blog.book_catalog WHERE title = ? LIMIT 1';
+  const matchParams = isbn ? [isbn] : [title];
+  const current = await pgPool.get('blog', matchSql, matchParams);
+  if (!current?.id) {
+    throw new Error('대상 도서를 찾지 못했습니다');
+  }
+
+  const updates = [];
+  const params = [];
+
+  if (Number.isFinite(Number(input.priority))) {
+    updates.push('priority = ?');
+    params.push(Number(input.priority));
+  }
+
+  if (typeof input.reviewed === 'boolean') {
+    updates.push('reviewed = ?');
+    params.push(input.reviewed);
+    updates.push(`reviewed_date = ${input.reviewed ? 'CURRENT_DATE' : 'NULL'}`);
+  }
+
+  if (input.category) {
+    updates.push('category = ?');
+    params.push(String(input.category).trim());
+  }
+
+  const nextMetadata = {
+    ...(current.metadata && typeof current.metadata === 'object' ? current.metadata : {}),
+  };
+
+  if (input.coverUrl) nextMetadata.coverUrl = String(input.coverUrl).trim();
+  if (input.descriptionSnippet) nextMetadata.descriptionSnippet = String(input.descriptionSnippet).trim().slice(0, 500);
+  if (input.recommendedBy) nextMetadata.recommendedBy = String(input.recommendedBy).trim();
+
+  if (Object.keys(nextMetadata).length > 0) {
+    updates.push('metadata = ?::jsonb');
+    params.push(JSON.stringify(nextMetadata));
+  }
+
+  if (!updates.length) {
+    return { updated: false, reason: '변경할 값 없음' };
+  }
+
+  updates.push('updated_at = NOW()');
+  params.push(current.id);
+
+  const result = await pgPool.run('blog', `
+    UPDATE blog.book_catalog
+    SET ${updates.join(', ')}
+    WHERE id = ?
+  `, params);
+
+  return {
+    updated: Number(result?.rowCount || 0) > 0,
+    id: current.id,
+  };
+}
+
+async function syncPopularBooksToCatalog(options = {}) {
+  await ensureBookCatalogTable();
+  const popular = await searchData4LibraryPopular(options);
+  if (!Array.isArray(popular) || popular.length === 0) {
+    return { inserted: 0, scanned: 0 };
+  }
+
+  let inserted = 0;
+  for (const book of popular.slice(0, 20)) {
+    try {
+      const priority = Math.max(50, 50 + Math.floor(Number(book.loanCount || 0) / 10));
+      const result = await pgPool.run('blog', `
+        INSERT INTO blog.book_catalog (title, author, isbn, category, source, priority, metadata, updated_at)
+        VALUES (?, ?, ?, 'IT', 'data4library', ?, ?::jsonb, NOW())
+        ON CONFLICT (isbn) DO UPDATE
+          SET title = EXCLUDED.title,
+              author = EXCLUDED.author,
+              priority = GREATEST(blog.book_catalog.priority, EXCLUDED.priority),
+              metadata = COALESCE(blog.book_catalog.metadata, '{}'::jsonb) || EXCLUDED.metadata,
+              updated_at = NOW()
+      `, [
+        book.title,
+        book.author,
+        book.isbn || null,
+        priority,
+        JSON.stringify({
+          loanCount: Number(book.loanCount || 0),
+          ranking: Number(book.ranking || 0),
+          source: 'data4library',
+        }),
+      ]);
+      inserted += Number(result?.rowCount || 0) > 0 ? 1 : 0;
+    } catch (error) {
+      console.warn('[도서스킬] 인기대출 도서 저장 실패:', error.message);
+    }
+  }
+
+  return {
+    inserted,
+    scanned: popular.slice(0, 20).length,
+  };
 }
 
 async function loadReviewedBookHistory() {
@@ -113,6 +516,9 @@ function normalizeBook(value = {}) {
     description: String(value.description || '').replace(/<[^>]+>/g, '').trim().slice(0, 500),
     coverUrl: value.coverUrl || null,
     source: String(value.source || '').trim(),
+    sourceScore: Number(value.sourceScore || 0),
+    sourceCount: Number(value.sourceCount || 0),
+    editionCount: Number(value.editionCount || 0),
   };
 }
 
@@ -134,18 +540,172 @@ function uniqueByBookSignature(items = [], options = {}) {
   return unique;
 }
 
-function buildSearchKeywords(input = {}) {
+function buildSearchKeywords(input = {}, catalogBooks = DEFAULT_CANONICAL_BOOKS) {
   const topic = String(input.topic || '').trim();
   const extraKeywords = Array.isArray(input.keywords)
     ? input.keywords.map((value) => String(value || '').trim()).filter(Boolean)
     : [];
-  const focusedKeywords = CANONICAL_BOOKS.map((book) => [book.title, book.author].filter(Boolean).join(' '));
+  const preferredKeywords = Array.isArray(input.preferredBooks)
+    ? input.preferredBooks
+      .map((book) => [book?.title, book?.author].filter(Boolean).join(' ').trim())
+      .filter(Boolean)
+    : [];
+  const focusedKeywords = catalogBooks.map((book) => [book.title, book.author].filter(Boolean).join(' '));
   return [...new Set([
     ...(topic ? [topic] : []),
     ...extraKeywords,
+    ...preferredKeywords,
     ...focusedKeywords,
     ...DEFAULT_TOPIC_KEYWORDS,
   ])];
+}
+
+function inferCatalogCategory(title = '') {
+  if (/아토믹 해빗|원씽|함께 자라기|죽음의 수용소에서/.test(title)) return '자기계발';
+  if (/사피엔스|총 균 쇠/.test(title)) return '인문학';
+  if (/어린 왕자|데미안|아몬드|불편한 편의점|작별인사/.test(title)) return '소설';
+  return 'IT';
+}
+
+function buildDiversePreferredBooks(catalogBooks = [], limit = 5, reviewedHistory = []) {
+  const groups = new Map();
+  for (const book of catalogBooks) {
+    const category = String(book?.category || inferCatalogCategory(book?.title || '') || '기타').trim();
+    if (!groups.has(category)) groups.set(category, []);
+    groups.get(category).push(book);
+  }
+
+  const recentAuthors = new Set(
+    (reviewedHistory || [])
+      .slice(0, 8)
+      .map((row) => normalizeBookAuthor(row?.book_author))
+      .filter(Boolean)
+  );
+  const recentTitles = new Set(
+    (reviewedHistory || [])
+      .slice(0, 8)
+      .map((row) => normalizeBookKey(row?.book_title))
+      .filter(Boolean)
+  );
+
+  for (const [category, items] of groups.entries()) {
+    groups.set(category, [...items].sort((a, b) => {
+      const aAuthor = normalizeBookAuthor(a?.author);
+      const bAuthor = normalizeBookAuthor(b?.author);
+      const aTitle = normalizeBookKey(a?.title);
+      const bTitle = normalizeBookKey(b?.title);
+      const aPenalty = (recentAuthors.has(aAuthor) ? 10 : 0) + (recentTitles.has(aTitle) ? 20 : 0);
+      const bPenalty = (recentAuthors.has(bAuthor) ? 10 : 0) + (recentTitles.has(bTitle) ? 20 : 0);
+      return (Number(b?.priority || 0) - bPenalty) - (Number(a?.priority || 0) - aPenalty);
+    }));
+  }
+
+  const preferredOrder = ['IT', '자기계발', '인문학', '소설'];
+  const result = [];
+  const categoryCap = new Map([
+    ['IT', 2],
+    ['자기계발', 2],
+    ['인문학', 2],
+    ['소설', 2],
+  ]);
+  const categoryCount = new Map();
+  const canTake = (category) => (categoryCount.get(category) || 0) < (categoryCap.get(category) || limit);
+  const markTaken = (category) => categoryCount.set(category, (categoryCount.get(category) || 0) + 1);
+
+  for (const category of preferredOrder) {
+    const items = groups.get(category) || [];
+    if (items.length && canTake(category)) {
+      result.push(items[0]);
+      markTaken(category);
+    }
+    if (result.length >= limit) return result.slice(0, limit);
+  }
+
+  for (const [category, items] of groups.entries()) {
+    for (const item of items) {
+      if (result.includes(item)) continue;
+      if (!canTake(category)) continue;
+      result.push(item);
+      markTaken(category);
+      if (result.length >= limit) return result.slice(0, limit);
+    }
+  }
+
+  return result.slice(0, limit);
+}
+
+async function buildBookReviewQueue(options = {}) {
+  await ensureBookReviewQueueTable();
+  const limit = Math.max(1, Math.min(Number(options.limit || 5), 20));
+  const catalogBooks = await loadCatalogBooks();
+  const reviewedHistory = await loadReviewedBookHistory();
+  const preferredBooks = buildDiversePreferredBooks(catalogBooks, Math.max(limit * 2, 8), reviewedHistory);
+
+  const todayRows = await pgPool.query('blog', `
+    SELECT title, author, isbn
+    FROM blog.book_review_queue
+    WHERE queue_date = CURRENT_DATE
+  `);
+  const existingKeys = new Set(
+    (todayRows || []).map((row) => normalizeBookIsbn(row?.isbn) || `${normalizeBookKey(row?.title)}|${normalizeBookAuthor(row?.author)}`)
+  );
+
+  const selected = [];
+  for (const book of preferredBooks) {
+    const key = normalizeBookIsbn(book?.isbn) || `${normalizeBookKey(book?.title)}|${normalizeBookAuthor(book?.author)}`;
+    if (!key || existingKeys.has(key)) continue;
+    selected.push(book);
+    existingKeys.add(key);
+    if (selected.length >= limit) break;
+  }
+
+  let inserted = 0;
+  for (const book of selected) {
+    const metadata = {
+      category: book.category || inferCatalogCategory(book.title),
+      preferred: true,
+      builtAt: new Date().toISOString(),
+    };
+
+    const result = await pgPool.run('blog', `
+      INSERT INTO blog.book_review_queue (
+        queue_date, title, author, isbn, category, priority, status, source, metadata, updated_at
+      )
+      VALUES (
+        CURRENT_DATE, ?, ?, ?, ?, ?, 'queued', ?, ?::jsonb, NOW()
+      )
+      ON CONFLICT (queue_date, title, author) DO UPDATE
+        SET priority = EXCLUDED.priority,
+            category = EXCLUDED.category,
+            source = EXCLUDED.source,
+            metadata = COALESCE(blog.book_review_queue.metadata, '{}'::jsonb) || EXCLUDED.metadata,
+            updated_at = NOW()
+    `, [
+      book.title,
+      book.author,
+      normalizeBookIsbn(book.isbn) || null,
+      book.category || inferCatalogCategory(book.title),
+      Number(book.priority || 50),
+      book.source || 'catalog',
+      JSON.stringify(metadata),
+    ]);
+    inserted += Number(result?.rowCount || 0) > 0 ? 1 : 0;
+  }
+
+  const rows = await listBookReviewQueue({ limit, status: 'queued' });
+  return {
+    inserted,
+    scanned: preferredBooks.length,
+    rows,
+  };
+}
+
+function pickBestCoverUrl(candidates = []) {
+  for (const source of COVER_SOURCE_PRIORITY) {
+    const matched = candidates.find((candidate) => candidate?.source === source && candidate?.coverUrl);
+    if (matched) return matched.coverUrl;
+  }
+  return candidates.find((candidate) => candidate?.coverUrl)?.coverUrl || null;
 }
 
 function scoreBookCandidate(candidate = {}, sourceFrequency = new Map()) {
@@ -157,7 +717,9 @@ function scoreBookCandidate(candidate = {}, sourceFrequency = new Map()) {
   if (candidate.title && candidate.title.length <= 40) score += 2;
   if (candidate.author && !String(candidate.author).includes('^')) score += 1;
   if (/세트|전집|필독서|진로|교과연계/i.test(candidate.title || '')) score -= 4;
-  score += Number(sourceFrequency.get(candidate.isbn || `${candidate.title}|${candidate.author}`) || 0) * 3;
+  score += Number(candidate.sourceScore || SOURCE_SCORE_MAP[candidate.source] || 0);
+  score += Number(candidate.editionCount || 0) > 0 ? Math.min(2, Math.floor(Number(candidate.editionCount || 0) / 5)) : 0;
+  score += Number(sourceFrequency.get(candidate.isbn || `${candidate.title}|${candidate.author}`) || 0) * 4;
   return score;
 }
 
@@ -171,10 +733,10 @@ function normalizeText(value) {
     .trim();
 }
 
-function findCanonicalMatch(candidate = {}) {
+function findCanonicalMatch(candidate = {}, catalogBooks = DEFAULT_CANONICAL_BOOKS) {
   const title = normalizeText(candidate.title);
   const author = normalizeText(String(candidate.author || '').split(',')[0]);
-  return CANONICAL_BOOKS.find((book) => {
+  return catalogBooks.find((book) => {
     const bookTitle = normalizeText(book.title);
     const bookAuthor = normalizeText(book.author);
     const titleMatch = !!title && !!bookTitle && (title.includes(bookTitle) || bookTitle.includes(title));
@@ -274,12 +836,12 @@ async function searchGoogleBookByQuery(query) {
   }
 }
 
-async function searchNaverBookCandidates(input = {}) {
+async function searchNaverBookCandidates(input = {}, catalogBooks = DEFAULT_CANONICAL_BOOKS) {
   const { clientId, clientSecret } = await resolveNaverCredentials();
   if (!clientId || !clientSecret) return [];
 
   const results = [];
-  for (const keyword of buildSearchKeywords(input)) {
+  for (const keyword of buildSearchKeywords(input, catalogBooks)) {
     try {
       const url = `https://openapi.naver.com/v1/search/book.json?query=${encodeURIComponent(keyword)}&display=5&sort=sim`;
       const { status, body } = await httpsGet(url, {
@@ -309,12 +871,12 @@ async function searchNaverBookCandidates(input = {}) {
   return uniqueByBookSignature(results);
 }
 
-async function searchGoogleBookCandidates(input = {}) {
+async function searchGoogleBookCandidates(input = {}, catalogBooks = DEFAULT_CANONICAL_BOOKS) {
   const apiKey = await resolveGoogleBooksApiKey();
   const keyPart = apiKey ? `&key=${apiKey}` : '';
   const results = [];
 
-  for (const query of buildSearchKeywords(input)) {
+  for (const query of buildSearchKeywords(input, catalogBooks)) {
     try {
       const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&maxResults=5&orderBy=relevance&printType=books${keyPart}`;
       const { status, body } = await httpsGet(url);
@@ -342,21 +904,165 @@ async function searchGoogleBookCandidates(input = {}) {
   return uniqueByBookSignature(results);
 }
 
+async function searchOpenLibrary(query) {
+  if (!query) return [];
+
+  try {
+    const url = `https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&limit=5&language=kor`;
+    const { status, body } = await httpsGet(url);
+    if (status !== 200 || !body?.docs?.length) return [];
+
+    return body.docs.slice(0, 5).map((doc) => ({
+      title: doc.title || '',
+      author: (doc.author_name || []).join(', '),
+      isbn: (doc.isbn || []).find((value) => String(value || '').replace(/[^0-9]/g, '').length === 13) || '',
+      publisher: (doc.publisher || [])[0] || '',
+      pubDate: String(doc.first_publish_year || ''),
+      description: '',
+      coverUrl: doc.cover_i ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg` : null,
+      source: 'openlibrary',
+      editionCount: doc.edition_count || 0,
+    }));
+  } catch (error) {
+    console.warn('[도서스킬] Open Library 검색 실패:', error.message);
+    return [];
+  }
+}
+
+async function searchOpenLibraryCandidates(input = {}, catalogBooks = DEFAULT_CANONICAL_BOOKS) {
+  const results = [];
+  for (const query of buildSearchKeywords(input, catalogBooks)) {
+    const found = await searchOpenLibrary(query);
+    results.push(...found);
+  }
+  return uniqueByBookSignature(results);
+}
+
+async function searchData4LibraryPopular(options = {}) {
+  const authKey = await resolveData4LibraryKey();
+  if (!authKey) return [];
+  // 주의:
+  // 도서관 정보나루는 인증키를 저장한 직후에도 별도 승인 완료 전까지
+  // 빈 응답 또는 실패 응답이 올 수 있다. 이 경우 전체 도서 검색을 깨지 않게
+  // 빈 배열로 안전하게 내려서 다른 소스(네이버/카카오/Open Library)로 계속 진행한다.
+
+  const params = new URLSearchParams({
+    authKey,
+    pageNo: '1',
+    pageSize: '20',
+    format: 'json',
+  });
+  if (options.age) params.set('age', String(options.age));
+  if (options.kdc) params.set('kdc', String(options.kdc));
+
+  try {
+    const url = `https://data4library.kr/api/loanItemSrch?${params.toString()}`;
+    const { status, body } = await httpsGet(url);
+    if (status !== 200) return [];
+
+    const docs = body?.response?.docs || [];
+    return docs.map((doc) => ({
+      title: doc.doc?.bookname || '',
+      author: doc.doc?.authors || '',
+      isbn: doc.doc?.isbn13 || '',
+      publisher: doc.doc?.publisher || '',
+      pubDate: String(doc.doc?.publication_year || ''),
+      description: '',
+      coverUrl: doc.doc?.bookImageURL || null,
+      source: 'data4library',
+      loanCount: Number(doc.doc?.loan_count || 0),
+      ranking: Number(doc.doc?.ranking || 0),
+    }));
+  } catch (error) {
+    console.warn('[도서스킬] 정보나루 인기도서 실패:', error.message);
+    return [];
+  }
+}
+
+async function searchKakaoBook(query) {
+  const apiKey = await resolveKakaoApiKey();
+  if (!apiKey || !query) return [];
+
+  try {
+    const url = `https://dapi.kakao.com/v2/search/book?query=${encodeURIComponent(query)}&size=5&sort=accuracy`;
+    const { status, body } = await httpsGet(url, {
+      Authorization: `KakaoAK ${apiKey}`,
+    });
+    if (status !== 200 || !body?.documents?.length) return [];
+
+    return body.documents.map((doc) => ({
+      title: doc.title || '',
+      author: (doc.authors || []).join(', '),
+      isbn: String(doc.isbn || '').split(' ').find((value) => String(value || '').length === 13) || '',
+      publisher: doc.publisher || '',
+      pubDate: String(doc.datetime || '').slice(0, 10),
+      description: String(doc.contents || '').slice(0, 500),
+      coverUrl: doc.thumbnail || null,
+      source: 'kakao',
+      price: Number(doc.price || 0),
+      salePrice: Number(doc.sale_price || 0),
+      url: doc.url || '',
+    }));
+  } catch (error) {
+    console.warn('[도서스킬] 카카오 검색 실패:', error.message);
+    return [];
+  }
+}
+
+async function searchKakaoBookCandidates(input = {}, catalogBooks = DEFAULT_CANONICAL_BOOKS) {
+  const results = [];
+  for (const query of buildSearchKeywords(input, catalogBooks)) {
+    const found = await searchKakaoBook(query);
+    results.push(...found);
+  }
+  return uniqueByBookSignature(results);
+}
+
 async function searchBookCandidates(input = {}) {
-  const [naverCandidates, googleCandidates] = await Promise.all([
-    searchNaverBookCandidates(input),
-    searchGoogleBookCandidates(input),
+  const catalogBooks = await loadCatalogBooks();
+  const [data4libraryCandidates, naverCandidates, kakaoCandidates, googleCandidates, openLibraryCandidates] = await Promise.all([
+    searchData4LibraryPopular({
+      kdc: input.kdc || '',
+      age: input.age || '',
+    }),
+    searchNaverBookCandidates(input, catalogBooks),
+    searchKakaoBookCandidates(input, catalogBooks),
+    searchGoogleBookCandidates(input, catalogBooks),
+    searchOpenLibraryCandidates(input, catalogBooks),
   ]);
-  const merged = uniqueByBookSignature([...naverCandidates, ...googleCandidates]);
+  const allCandidates = [...data4libraryCandidates, ...naverCandidates, ...kakaoCandidates, ...googleCandidates, ...openLibraryCandidates];
+  const merged = uniqueByBookSignature(allCandidates).map((candidate) => {
+    const key = candidate.isbn || `${candidate.title}|${candidate.author}`;
+    return {
+      ...candidate,
+      sourceCount: 0,
+      coverUrl: candidate.coverUrl,
+      sourceScore: SOURCE_SCORE_MAP[candidate.source] || 0,
+      key,
+    };
+  });
 
   const sourceFrequency = new Map();
-  for (const item of [...naverCandidates, ...googleCandidates]) {
+  for (const item of allCandidates) {
     const key = item.isbn || `${item.title}|${item.author}`;
     sourceFrequency.set(key, (sourceFrequency.get(key) || 0) + 1);
   }
 
   return merged
-    .map((candidate) => ({ ...candidate, score: scoreBookCandidate(candidate, sourceFrequency) }))
+    .map((candidate) => {
+      const key = candidate.key || candidate.isbn || `${candidate.title}|${candidate.author}`;
+      const siblings = allCandidates.filter((item) => (item.isbn || `${item.title}|${item.author}`) === key);
+      return {
+        ...candidate,
+        sourceCount: Number(sourceFrequency.get(key) || 0),
+        coverUrl: pickBestCoverUrl(siblings) || candidate.coverUrl,
+        score: scoreBookCandidate({
+          ...candidate,
+          sourceCount: Number(sourceFrequency.get(key) || 0),
+          coverUrl: pickBestCoverUrl(siblings) || candidate.coverUrl,
+        }, sourceFrequency),
+      };
+    })
     .sort((left, right) => right.score - left.score);
 }
 
@@ -365,32 +1071,37 @@ async function buildVerificationCandidates(primary) {
   if (!primary?.title) return verificationCandidates;
 
   const query = [primary.title, primary.author].filter(Boolean).join(' ');
-  const [naverCandidate, googleCandidate] = await Promise.all([
+  const [naverCandidate, googleCandidate, openLibraryCandidates] = await Promise.all([
     primary.source === 'naver' ? Promise.resolve(null) : searchNaverBookByQuery(query),
     primary.source === 'google' ? Promise.resolve(null) : searchGoogleBookByQuery(query),
+    primary.source === 'openlibrary' ? Promise.resolve([]) : searchOpenLibrary(query),
   ]);
 
   if (naverCandidate) verificationCandidates.push(naverCandidate);
   if (googleCandidate) verificationCandidates.push(googleCandidate);
+  verificationCandidates.push(...(openLibraryCandidates || []));
   return uniqueByBookSignature(verificationCandidates, { keepSources: true });
 }
 
 async function searchCanonicalVerifiedBooks() {
+  const catalogBooks = await loadCatalogBooks();
   const verified = [];
-  for (const book of CANONICAL_BOOKS) {
+  for (const book of catalogBooks) {
     const query = [book.title, book.author].filter(Boolean).join(' ');
-    const [naverCandidate, googleCandidate] = await Promise.all([
+    const [naverCandidate, googleCandidate, openLibraryCandidates] = await Promise.all([
       searchNaverBookByQuery(query),
       searchGoogleBookByQuery(query),
+      searchOpenLibrary(query),
     ]);
 
-    const primary = naverCandidate || googleCandidate;
+    const primary = naverCandidate || googleCandidate || (openLibraryCandidates || [])[0] || null;
     if (!primary) continue;
 
     const verificationCandidates = uniqueByBookSignature([
       primary,
       naverCandidate,
       googleCandidate,
+      ...(openLibraryCandidates || []),
       {
         title: book.title,
         author: book.author,
@@ -398,7 +1109,7 @@ async function searchCanonicalVerifiedBooks() {
         publisher: primary.publisher,
         pubDate: primary.pubDate,
         description: primary.description,
-        coverUrl: primary.coverUrl,
+        coverUrl: pickBestCoverUrl([naverCandidate, googleCandidate, ...(openLibraryCandidates || []), primary].filter(Boolean)),
         source: 'catalog',
       },
     ], { keepSources: true });
@@ -411,6 +1122,7 @@ async function searchCanonicalVerifiedBooks() {
     verified.push({
       ...verification.book,
       verification_candidates: verificationCandidates,
+      coverUrl: pickBestCoverUrl(verificationCandidates) || verification.book.coverUrl || null,
       score: 100,
     });
   }
@@ -433,7 +1145,8 @@ async function resolveBookForReview(input = {}) {
     const resolvedPrimary = verificationCandidates.find((candidate) =>
       candidate && candidate.isbn && candidate.source !== 'catalog'
     ) || verificationCandidates.find((candidate) => candidate && candidate.isbn) || primary;
-    const canonicalMatch = findCanonicalMatch(resolvedPrimary) || findCanonicalMatch(primary);
+    const catalogBooks = await loadCatalogBooks();
+    const canonicalMatch = findCanonicalMatch(resolvedPrimary, catalogBooks) || findCanonicalMatch(primary, catalogBooks);
     if (canonicalMatch) {
       verificationCandidates.push({
         title: canonicalMatch.title,
@@ -460,6 +1173,7 @@ async function resolveBookForReview(input = {}) {
     const coverPath = resolvedPrimary.coverUrl ? await downloadCover(resolvedPrimary.coverUrl, resolvedPrimary.isbn) : null;
     const book = {
       ...verification.book,
+      coverUrl: pickBestCoverUrl(normalizedCandidates) || verification.book.coverUrl || null,
       coverPath,
       verification_candidates: normalizedCandidates,
     };
@@ -480,6 +1194,19 @@ async function resolveBookForReview(input = {}) {
 }
 
 module.exports = {
+  buildBookReviewQueue,
+  buildDiversePreferredBooks,
+  inferCatalogCategory,
+  listBookCatalog,
+  listBookReviewQueue,
+  loadCatalogBooks,
+  loadReviewedBookHistory,
   resolveBookForReview,
   searchBookCandidates,
+  searchData4LibraryPopular,
+  searchKakaoBook,
+  searchOpenLibrary,
+  syncPopularBooksToCatalog,
+  updateBookCatalogEntry,
+  updateBookReviewQueueEntry,
 };

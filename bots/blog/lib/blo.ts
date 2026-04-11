@@ -134,6 +134,11 @@ function _extractTopicKeywords(researchData = {}) {
     '개발 조직 문화',
     'AI 개발',
     '생산성',
+    '인문학',
+    '베스트셀러 소설',
+    '삶을 돌아보는 책',
+    '요즘 많이 읽는 책',
+    '일과 사람에 대한 통찰',
   ].forEach(pushKeyword);
 
   return [...keywordSet].slice(0, 8);
@@ -182,16 +187,54 @@ async function _findExistingReviewedBook(bookInfo = {}) {
   }
 }
 
-function _buildBookReviewSkillInput(researchData = {}) {
+async function _buildBookReviewSkillInput(researchData = {}) {
+  let preferredBooks = [];
+  let queuedBooks = [];
+  let reviewedHistory = [];
+  try {
+    queuedBooks = await blogSkills.bookReviewBook.listBookReviewQueue({ limit: 6, status: 'queued' });
+  } catch (error) {
+    console.warn('[블로] 도서리뷰 큐 로드 실패:', error.message);
+  }
+  try {
+    preferredBooks = await blogSkills.bookReviewBook.loadCatalogBooks();
+  } catch (error) {
+    console.warn('[블로] book_catalog 기반 도서리뷰 후보 로드 실패:', error.message);
+  }
+  try {
+    reviewedHistory = await blogSkills.bookReviewBook.loadReviewedBookHistory();
+  } catch (error) {
+    console.warn('[블로] 도서리뷰 최근 이력 로드 실패:', error.message);
+  }
+
+  const queuedSeeds = Array.isArray(queuedBooks)
+    ? queuedBooks.map((book) => ({
+      title: book.title,
+      author: book.author,
+      isbn: book.isbn || '',
+      category: book.category || '기타',
+      priority: Number(book.priority || 50),
+      source: book.source || 'queue',
+    }))
+    : [];
+  const catalogSeeds = Array.isArray(preferredBooks)
+    ? blogSkills.bookReviewBook.buildDiversePreferredBooks(preferredBooks, 6, reviewedHistory)
+    : [];
+  const preferredSeeds = [...queuedSeeds, ...catalogSeeds].slice(0, 6);
   const topic = String(
     researchData?.it_news?.[0]?.title
     || researchData?.nodejs_updates?.[0]?.name
-    || '개발자 성장과 소프트웨어 설계'
+    || preferredSeeds?.[0]?.title
+    || '일과 삶을 함께 돌아보게 만드는 책'
   ).trim();
 
   return {
     topic,
-    keywords: _extractTopicKeywords(researchData),
+    keywords: [
+      ..._extractTopicKeywords(researchData),
+      ...preferredSeeds.map((book) => [book.title, book.author].filter(Boolean).join(' ')),
+    ],
+    preferredBooks: preferredSeeds,
   };
 }
 
@@ -223,6 +266,32 @@ async function _updateScheduledBookInfo(scheduleId, book) {
     book_author: book.author,
     book_isbn: book.isbn,
   });
+}
+
+async function _markBookReviewQueueStatus(book, status, extra = {}) {
+  if (!book?.title && !book?.isbn) return;
+  try {
+    await blogSkills.bookReviewBook.updateBookReviewQueueEntry({
+      isbn: book?.isbn || null,
+      title: book?.title || null,
+      status,
+      postId: extra.postId || null,
+      note: extra.note || null,
+    });
+  } catch (error) {
+    console.warn(`[블로] 도서리뷰 큐 상태 갱신 실패(${status}):`, error.message);
+  }
+}
+
+async function _refillBookReviewQueue(targetSize = 5) {
+  try {
+    const result = await blogSkills.bookReviewBook.buildBookReviewQueue({ limit: targetSize });
+    if (Number(result?.inserted || 0) > 0) {
+      console.log(`[블로] 도서리뷰 큐 자동 보충: ${result.inserted}건 추가`);
+    }
+  } catch (error) {
+    console.warn('[블로] 도서리뷰 큐 자동 보충 실패:', error.message);
+  }
 }
 
 async function _resolveScheduledBookResearch(preparedResearch, scheduledBook, scheduleId = null) {
@@ -265,6 +334,7 @@ async function _resolveScheduledBookResearch(preparedResearch, scheduledBook, sc
   }
 
   await _updateScheduledBookInfo(scheduleId, book);
+  await _markBookReviewQueueStatus(book, 'selected', { note: 'scheduled_book_selected' });
   return {
     ok: true,
     researchData: {
@@ -275,7 +345,7 @@ async function _resolveScheduledBookResearch(preparedResearch, scheduledBook, sc
 }
 
 async function _resolveDynamicBookResearch(preparedResearch, researchData, scheduleId = null) {
-  const skillInput = _buildBookReviewSkillInput(researchData);
+  const skillInput = await _buildBookReviewSkillInput(researchData);
   console.log(`[젬스] 도서리뷰 주제 선정: ${skillInput.topic}`);
   const book = await blogSkills.bookReviewBook.resolveBookForReview(skillInput);
   if (!book) {
@@ -287,6 +357,7 @@ async function _resolveDynamicBookResearch(preparedResearch, researchData, sched
   }
 
   await _updateScheduledBookInfo(scheduleId, book);
+  await _markBookReviewQueueStatus(book, 'selected', { note: 'dynamic_book_selected' });
   return {
     ok: true,
     researchData: {
@@ -817,6 +888,22 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
     postId: published.postId || null,
     scheduleId,
   }, quality, traceCtx, options, published);
+
+  if (context.category === '도서리뷰' && context.book_info && !options.dryRun) {
+    await blogSkills.bookReviewBook.updateBookCatalogEntry({
+      isbn: context.book_info.isbn || null,
+      title: context.book_info.title || null,
+      reviewed: true,
+    }).catch((error) => {
+      console.warn('[블로] book_catalog reviewed 마킹 실패:', error.message);
+    });
+
+    await _markBookReviewQueueStatus(context.book_info, 'done', {
+      postId: published.postId || null,
+      note: 'book_review_published',
+    });
+    await _refillBookReviewQueue(5);
+  }
 
   await _advanceContentTracker({
     dryRun: !!options.dryRun,

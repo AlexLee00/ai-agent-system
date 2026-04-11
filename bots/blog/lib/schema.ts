@@ -87,6 +87,61 @@ async function ensureBlogCoreSchema() {
   `);
 
   await pgPool.run('blog', `
+    CREATE TABLE IF NOT EXISTS blog.book_catalog (
+      id SERIAL PRIMARY KEY,
+      title TEXT NOT NULL,
+      author TEXT NOT NULL,
+      isbn VARCHAR(13),
+      category VARCHAR(50) DEFAULT 'IT',
+      priority INTEGER DEFAULT 50,
+      reviewed BOOLEAN DEFAULT FALSE,
+      reviewed_date DATE,
+      source VARCHAR(30) DEFAULT 'manual',
+      metadata JSONB DEFAULT '{}',
+      added_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  await pgPool.run('blog', `
+    CREATE TABLE IF NOT EXISTS blog.book_review_queue (
+      id SERIAL PRIMARY KEY,
+      queue_date DATE NOT NULL DEFAULT CURRENT_DATE,
+      title TEXT NOT NULL,
+      author TEXT NOT NULL,
+      isbn VARCHAR(13),
+      category VARCHAR(50) DEFAULT '기타',
+      priority INTEGER DEFAULT 50,
+      status VARCHAR(20) DEFAULT 'queued',
+      source VARCHAR(30) DEFAULT 'catalog',
+      metadata JSONB DEFAULT '{}',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  await pgPool.run('blog', `
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_book_catalog_isbn_unique
+    ON blog.book_catalog (isbn)
+    WHERE isbn IS NOT NULL AND isbn <> ''
+  `);
+
+  await pgPool.run('blog', `
+    CREATE INDEX IF NOT EXISTS idx_book_catalog_priority
+    ON blog.book_catalog (priority DESC, added_at DESC)
+  `);
+
+  await pgPool.run('blog', `
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_book_review_queue_daily_unique
+    ON blog.book_review_queue (queue_date, title, author)
+  `);
+
+  await pgPool.run('blog', `
+    CREATE INDEX IF NOT EXISTS idx_book_review_queue_status
+    ON blog.book_review_queue (status, queue_date DESC, priority DESC)
+  `);
+
+  await pgPool.run('blog', `
     CREATE INDEX IF NOT EXISTS idx_publish_schedule_date
     ON blog.publish_schedule(publish_date)
   `);
@@ -116,6 +171,20 @@ async function ensureBlogCoreSchema() {
     WHERE NOT EXISTS (
       SELECT 1 FROM blog.category_rotation WHERE rotation_type = 'lecture_series'
     )
+  `);
+
+  await pgPool.run('blog', `
+    INSERT INTO blog.book_catalog (title, author, isbn, category, priority, source)
+    VALUES
+      ('소프트웨어 장인', '산드로 만쿠소', '9788968482397', 'IT', 100, 'canonical'),
+      ('클린 코드', '로버트 마틴', '9788966260959', 'IT', 100, 'canonical'),
+      ('클린 아키텍처', '로버트 마틴', '9788966262472', 'IT', 100, 'canonical'),
+      ('함께 자라기', '김창준', '9788966262335', '자기계발', 100, 'canonical'),
+      ('피닉스 프로젝트', '진 킴', '9788966261437', 'IT', 100, 'canonical'),
+      ('데브옵스 핸드북', '진 킴', '9788966261857', 'IT', 100, 'canonical'),
+      ('아토믹 해빗', '제임스 클리어', '9788966262588', '자기계발', 100, 'canonical'),
+      ('원씽', '게리 켈러', '9788901153667', '자기계발', 100, 'canonical')
+    ON CONFLICT DO NOTHING
   `);
 
   _schemaEnsured = true;
