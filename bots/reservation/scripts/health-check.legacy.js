@@ -37,7 +37,6 @@ const SCHEDULED_SERVICES = [
   'ai.ska.pickko-verify',
   'ai.ska.pickko-daily-audit',
   'ai.ska.pickko-daily-summary',
-  'ai.ska.log-report',
   'ai.ska.db-backup',
   'ai.ska.log-rotate',
 ];
