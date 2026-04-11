@@ -86,7 +86,11 @@ function acquireLock() {
   const lock = cfg.LOCKS.dexter;
   if (fs.existsSync(lock)) {
     const old = fs.readFileSync(lock, 'utf8').trim();
-    try { process.kill(Number(old), 0); console.error(`${BOT_NAME} 이미 실행 중 (PID: ${old})`); process.exit(1); }
+    try {
+      process.kill(Number(old), 0);
+      console.error(`${BOT_NAME} 이미 실행 중 (PID: ${old}) — 이번 실행은 정상 스킵`);
+      process.exit(0);
+    }
     catch { fs.unlinkSync(lock); }
   }
   fs.writeFileSync(lock, String(process.pid));
