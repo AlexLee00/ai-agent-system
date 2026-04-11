@@ -7,6 +7,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
 const env = require('./env');
 const { fetchHubSecrets } = require('./hub-client');
 
@@ -183,6 +184,32 @@ async function _getDarwinTelegramBotToken(): Promise<string> {
   return _darwinTelegramBotToken;
 }
 
+function _postHookViaCurl({ token, payload }: { token: string; payload: Record<string, unknown> }) {
+  try {
+    const result = spawnSync('curl', [
+      '-sS',
+      '-X', 'POST',
+      HOOK_URL,
+      '-H', 'Content-Type: application/json',
+      '-H', `Authorization: Bearer ${token}`,
+      '--data', JSON.stringify(payload),
+    ], {
+      encoding: 'utf8',
+      timeout: TIMEOUT_MS,
+    }) as { error?: Error; status?: number; stderr?: string; stdout?: string };
+
+    if (result.error) return { ok: false, error: result.error.message };
+    if (result.status !== 0) {
+      return { ok: false, error: result.stderr?.trim() || `curl_exit_${result.status}` };
+    }
+
+    const body = JSON.parse(result.stdout || '{}');
+    return { ok: body?.ok === true, status: 200, body };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
 async function _sendInlineTelegram({ message, team, fromBot, topicId, groupId, inlineKeyboard }: InlineTelegramInput) {
   const botToken = team === 'darwin'
     ? (await _getDarwinTelegramBotToken()) || (await _getTelegramBotToken())
@@ -266,6 +293,18 @@ export async function postAlarm({
     });
   }
 
+  const payload = {
+    message: `${prefix}[${fromBot}→${team}] ${message}`,
+    name: fromBot,
+    agentId: 'main',
+    ...(sessionKey ? { sessionKey } : {}),
+    deliver: true,
+    channel: 'telegram',
+    to,
+    wakeMode: 'now',
+    timeoutSeconds: TIMEOUT_MS / 1000,
+  };
+
   try {
     const res = await fetch(HOOK_URL, {
       method: 'POST',
@@ -273,17 +312,7 @@ export async function postAlarm({
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({
-        message: `${prefix}[${fromBot}→${team}] ${message}`,
-        name: fromBot,
-        agentId: 'main',
-        ...(sessionKey ? { sessionKey } : {}),
-        deliver: true,
-        channel: 'telegram',
-        to,
-        wakeMode: 'now',
-        timeoutSeconds: TIMEOUT_MS / 1000,
-      }),
+      body: JSON.stringify(payload),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
 
@@ -292,6 +321,11 @@ export async function postAlarm({
   } catch (e) {
     const error = e as ExecError;
     console.warn(`[openclaw-client] webhook 실패: ${error.message}`);
-    return { ok: false, error: error.message };
+    const fallback = _postHookViaCurl({ token, payload });
+    if (fallback.ok) {
+      console.warn('[openclaw-client] webhook curl 폴백 성공');
+      return fallback;
+    }
+    return { ok: false, error: fallback.error || error.message };
   }
 }
