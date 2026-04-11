@@ -20,6 +20,12 @@ const GDRIVE_DIR = process.env.GDRIVE_BLOG_DIR || '/tmp/blog-output';
 const DEV_HUB_READONLY = env.IS_DEV && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
 let _performanceColumnsState = null;
 
+function formatKstDate(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return kst.today();
+  return date.toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
+}
+
 function normalizeTitleKey(value) {
   return String(value || '')
     .replace(/\[[^\]]+\]/g, ' ')
@@ -86,15 +92,15 @@ function normalizePublishDate(value) {
     const trimmed = value.trim();
     if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
     const parsed = new Date(trimmed);
-    if (!Number.isNaN(parsed.getTime())) return kst.date(parsed);
+    if (!Number.isNaN(parsed.getTime())) return formatKstDate(parsed);
     return kst.today();
   }
   if (value instanceof Date) {
-    if (!Number.isNaN(value.getTime())) return kst.date(value);
+    if (!Number.isNaN(value.getTime())) return formatKstDate(value);
     return kst.today();
   }
   const parsed = new Date(String(value));
-  if (!Number.isNaN(parsed.getTime())) return kst.date(parsed);
+  if (!Number.isNaN(parsed.getTime())) return formatKstDate(parsed);
   return kst.today();
 }
 
