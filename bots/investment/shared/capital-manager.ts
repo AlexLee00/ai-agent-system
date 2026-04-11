@@ -14,6 +14,7 @@ import yaml from 'js-yaml';
 import ccxt from 'ccxt';
 import { getInvestmentTradeMode, loadSecrets, isKisPaper } from './secrets.ts';
 import { getMinOrderAmount, getMinOrderRatio } from './order-rules.ts';
+import { fetchFearGreedIndex } from '../team/argos.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const _require  = createRequire(import.meta.url);
@@ -58,6 +59,7 @@ function loadCapitalConfig() {
 }
 
 export const config = loadCapitalConfig();
+const MAX_SAME_DIRECTION_POSITIONS = 3;
 
 export function getCapitalConfig(exchange = null, tradeMode = null) {
   if (!exchange) return config;
@@ -336,6 +338,13 @@ export async function getOpenPositions(exchange = null, paper = false, tradeMode
   }
 }
 
+function normalizeTradeDirection(direction) {
+  const value = String(direction || '').toLowerCase();
+  if (value === 'buy' || value === 'long') return 'long';
+  if (value === 'sell' || value === 'short') return 'short';
+  return null;
+}
+
 // ─── PnL / 거래 횟수 ─────────────────────────────────────────────────
 
 export async function getDailyPnL() {
@@ -418,6 +427,47 @@ async function getRecentClosedTrades(n) {
     console.warn('[capital] 최근 거래 조회 실패:', e.message);
     return [];
   }
+}
+
+export async function checkCorrelationGuard(symbol, direction, exchange = 'binance', tradeMode = null) {
+  try {
+    const normalizedDirection = normalizeTradeDirection(direction);
+    if (!normalizedDirection) return { ok: true };
+
+    const openPositions = await getOpenPositions(exchange, false, tradeMode);
+    const sameDirectionCount = openPositions.filter((position) => {
+      const sideDirection = normalizeTradeDirection(position.side || position.direction || 'buy');
+      return sideDirection === normalizedDirection;
+    }).length;
+
+    if (sameDirectionCount >= MAX_SAME_DIRECTION_POSITIONS) {
+      return {
+        ok: false,
+        reason: `상관관계 가드: 같은 방향(${normalizedDirection}) 포지션 ${sameDirectionCount}개 (한도: ${MAX_SAME_DIRECTION_POSITIONS})`,
+      };
+    }
+
+    return { ok: true };
+  } catch (e) {
+    console.warn('[capital] 상관관계 가드 체크 실패:', e.message);
+    return { ok: true };
+  }
+}
+
+export function getVolatilityAdjustedRisk(baseRisk, fearGreedIndex, atrRatio = 1.0) {
+  let multiplier = 1.0;
+  const fng = Number(fearGreedIndex);
+  const atr = Number(atrRatio);
+
+  if (Number.isFinite(fng)) {
+    if (fng > 85 || fng < 15) multiplier = 0.25;
+    else if (fng > 75 || fng < 25) multiplier = 0.5;
+  }
+
+  if (Number.isFinite(atr) && atr > 2.0) multiplier *= 0.5;
+  else if (Number.isFinite(atr) && atr > 1.5) multiplier *= 0.75;
+
+  return Math.max(baseRisk * multiplier, 0.005);
 }
 
 // ─── 서킷 브레이커 ──────────────────────────────────────────────────
@@ -517,6 +567,16 @@ export async function preTradeCheck(symbol, direction, estimatedAmount = 0, exch
     return { allowed: false, reason: `서킷 브레이커: ${circuitCheck.reason}`, circuit: true, circuitType: circuitCheck.type };
   }
 
+  const correlationGuard = await checkCorrelationGuard(symbol, direction, exchange || 'binance', effectiveTradeMode);
+  if (!correlationGuard.ok) {
+    return {
+      allowed: false,
+      approved: false,
+      reason: correlationGuard.reason,
+      type: 'correlation_guard',
+    };
+  }
+
   // 5. 일간 매매 횟수 (BUY만)
   if (isBuy) {
     const dailyTrades = await getDailyTradeCount({ exchange, tradeMode: effectiveTradeMode, side: 'buy' });
@@ -547,7 +607,9 @@ export async function calculatePositionSize(symbol, entryPrice, stopLossPrice, e
   if (totalCapital <= 0) return { size: 0, skip: true, reason: '총 자본 없음' };
 
   // 리스크 기반 사이징
-  const accountRisk = totalCapital * policy.risk_per_trade;
+  const fearGreedIndex = await fetchFearGreedIndex().catch(() => 50);
+  const adjustedRisk = getVolatilityAdjustedRisk(policy.risk_per_trade, fearGreedIndex, 1.0);
+  const accountRisk = totalCapital * adjustedRisk;
   const tradeRisk   = (entryPrice > 0 && stopLossPrice > 0)
     ? Math.abs(entryPrice - stopLossPrice) / entryPrice
     : 0.03;  // SL 없으면 기본 3% 리스크
@@ -573,7 +635,7 @@ export async function calculatePositionSize(symbol, entryPrice, stopLossPrice, e
     size,
     sizeInCoin:  entryPrice > 0 ? size / entryPrice : 0,
     riskAmount:  accountRisk,
-    riskPercent: policy.risk_per_trade * 100,
+    riskPercent: adjustedRisk * 100,
     capitalPct:  (size / totalCapital * 100).toFixed(1),
     skip:        false,
   };
