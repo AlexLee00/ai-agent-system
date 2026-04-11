@@ -25,5 +25,14 @@ config :team_jay, TeamJay.Scheduler,
     {"*/30 * * * *", {TeamJay.Diagnostics, :publish_shadow_report, []}},
     {"0 6 * * *", {TeamJay.Agents.PortAgent, :run, [:forecast_daily]}},
     {"0 9 * * *", {TeamJay.Agents.PortAgent, :run, [:dexter_daily]}},
-    {"0 10 * * 1", {TeamJay.Agents.PortAgent, :run, [:steward_weekly]}}
+    {"0 10 * * 1", {TeamJay.Agents.PortAgent, :run, [:steward_weekly]}},
+    {"0 8 * * *", {TeamJay.Teams.InvestmentScheduler, :run_prescreen_domestic, []}},
+    {"0 21 * * *", {TeamJay.Teams.InvestmentScheduler, :run_prescreen_overseas, []}},
+    {"0 9 * * *", {TeamJay.Teams.InvestmentScheduler, :run_market_alert_crypto_daily, []}},
+    {"0 9 * * *", {TeamJay.Teams.InvestmentScheduler, :run_market_alert_domestic_open, []}},
+    {"30 15 * * *", {TeamJay.Teams.InvestmentScheduler, :run_market_alert_domestic_close, []}},
+    {"30 23 * * *", {TeamJay.Teams.InvestmentScheduler, :run_market_alert_overseas_open, []}},
+    {"0 6 * * *", {TeamJay.Teams.InvestmentScheduler, :run_market_alert_overseas_close, []}},
+    {"0 8 * * *", {TeamJay.Teams.InvestmentScheduler, :run_reporter, []}},
+    {"0 21 * * *", {TeamJay.Teams.InvestmentScheduler, :run_daily_feedback, []}}
   ]
