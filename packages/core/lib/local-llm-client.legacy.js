@@ -166,14 +166,17 @@ async function callLocalLLM(model, messages, options = {}) {
   return json?.choices?.[0]?.message?.content || null;
 }
 
-async function callLocalLLMJSON(model, messages, options = {}) {
-  const text = await callLocalLLM(model, messages, options);
-  if (!text) return null;
-
-  const cleaned = text
+function cleanLocalLLMText(text) {
+  return text
     .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<\/think>/gi, '')
     .replace(/```json/gi, '```')
     .trim();
+}
+
+function tryParseLocalLLMJSON(text) {
+  const cleaned = cleanLocalLLMText(text);
+  if (!cleaned) return null;
 
   try {
     return JSON.parse(cleaned);
@@ -208,6 +211,38 @@ async function callLocalLLMJSON(model, messages, options = {}) {
       return null;
     }
   }
+}
+
+async function callLocalLLMJSON(model, messages, options = {}) {
+  const maxJsonAttempts = Math.max(
+    1,
+    Number(options.jsonAttempts || ((model === LOCAL_MODEL_DEEP || /deepseek|32b|70b|reason/i.test(model)) ? 2 : 1)),
+  );
+
+  for (let attempt = 1; attempt <= maxJsonAttempts; attempt++) {
+    const text = await callLocalLLM(model, messages, options);
+    if (!text) {
+      if (attempt === maxJsonAttempts) return null;
+      continue;
+    }
+
+    const parsed = tryParseLocalLLMJSON(text);
+    if (parsed == null) {
+      console.warn(`[local-llm-client] JSON parse failed for model '${model}'${attempt < maxJsonAttempts ? ` → 재시도 ${attempt}/${maxJsonAttempts - 1}` : ''}`);
+      if (attempt === maxJsonAttempts) return null;
+      continue;
+    }
+
+    if (typeof options.validateResult === 'function' && !options.validateResult(parsed)) {
+      console.warn(`[local-llm-client] JSON validation failed for model '${model}'${attempt < maxJsonAttempts ? ` → 재시도 ${attempt}/${maxJsonAttempts - 1}` : ''}`);
+      if (attempt === maxJsonAttempts) return null;
+      continue;
+    }
+
+    return parsed;
+  }
+
+  return null;
 }
 
 module.exports = {
