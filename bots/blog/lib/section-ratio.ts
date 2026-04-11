@@ -1,5 +1,7 @@
 'use strict';
 
+const { getBlogSectionRatioRuntimeConfig } = require('./runtime-config.ts');
+
 type BonusInsight = {
   id: string;
   title: string;
@@ -67,26 +69,67 @@ const SECTION_LABELS = {
   insight_4: '[전문가의 실무 인사이트 ④]',
 };
 
-function calculateSectionChars(botType: 'pos' | 'gems' | 'star', bonusInsights: BonusInsight[] = [], jitter = 0.20) {
-  const baseMap = botType === 'pos' ? { ...POS_BASE_CHARS }
-    : botType === 'gems' ? { ...GEMS_BASE_CHARS }
-      : { ...STAR_BASE_CHARS };
+function getSectionRatioDefaults(botType) {
+  if (botType === 'pos') {
+    return {
+      jitter: 0.20,
+      baseChars: POS_BASE_CHARS,
+      bonusBase: BONUS_BASE.pos,
+    };
+  }
+  if (botType === 'gems') {
+    return {
+      jitter: 0.20,
+      baseChars: GEMS_BASE_CHARS,
+      bonusBase: BONUS_BASE.gems,
+    };
+  }
+  return {
+    jitter: 0.20,
+    baseChars: STAR_BASE_CHARS,
+    bonusBase: BONUS_BASE.star,
+  };
+}
+
+function getSectionRatioConfig(botType) {
+  const runtime = getBlogSectionRatioRuntimeConfig() || {};
+  const defaults = getSectionRatioDefaults(botType);
+  const scoped = botType === 'pos'
+    ? (runtime.lecture || {})
+    : botType === 'gems'
+      ? (runtime.general || {})
+      : (runtime.shortform || {});
+
+  return {
+    jitter: Number(scoped.jitter ?? defaults.jitter),
+    baseChars: {
+      ...defaults.baseChars,
+      ...(scoped.baseChars || {}),
+    },
+    bonusBase: Number(scoped.bonusBase ?? defaults.bonusBase),
+  };
+}
+
+function calculateSectionChars(botType: 'pos' | 'gems' | 'star', bonusInsights: BonusInsight[] = [], jitter) {
+  const config = getSectionRatioConfig(botType);
+  const baseMap = { ...config.baseChars } as Record<string, number>;
+  const jitterValue = typeof jitter === 'number' ? jitter : config.jitter;
 
   const charCounts: Record<string, number> = {};
 
   for (const [section, base] of Object.entries(baseMap)) {
-    const factor = 1 + (Math.random() * 2 - 1) * jitter;
-    charCounts[section] = Math.round(base * factor);
+    const factor = 1 + (Math.random() * 2 - 1) * jitterValue;
+    charCounts[section] = Math.round(Number(base) * factor);
   }
 
-  const bonusBase = BONUS_BASE[botType] || 500;
+  const bonusBase = config.bonusBase || BONUS_BASE[botType] || 500;
   for (const bonus of bonusInsights) {
-    const factor = 1 + (Math.random() * 2 - 1) * jitter;
+    const factor = 1 + (Math.random() * 2 - 1) * jitterValue;
     charCounts[`bonus_${bonus.id}`] = Math.round(bonusBase * factor);
   }
 
-  const totalChars = Object.values(charCounts).reduce((sum, value) => sum + value, 0);
-  const baseTotal = Object.values(baseMap).reduce((sum, value) => sum + value, 0);
+  const totalChars = Object.values(charCounts).reduce((sum, value) => Number(sum) + Number(value), 0);
+  const baseTotal = Object.values(baseMap).reduce((sum, value) => Number(sum) + Number(value), 0);
 
   return { charCounts, totalChars, baseTotal };
 }
@@ -114,4 +157,4 @@ function buildCharCountInstruction(charCounts: Record<string, number>, _botType:
   return lines.join('\n');
 }
 
-module.exports = { calculateSectionChars, buildCharCountInstruction };
+module.exports = { getSectionRatioConfig, calculateSectionChars, buildCharCountInstruction };

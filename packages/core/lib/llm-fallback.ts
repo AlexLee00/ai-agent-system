@@ -376,7 +376,7 @@ async function _callClaudeCode({ model, maxTokens, systemPrompt, userPrompt, tim
     const args = [
       '-p',
       '--output-format', 'json',
-      '--max-turns', '1',
+      '--max-turns', '2',
       '--model', resolvedModel,
       '--tools', '',
       '--permission-mode', 'default',

@@ -18,6 +18,7 @@ const { weatherToContext, estimateCost, loadPersonaGuide } = require('../../../p
 const env = require('../../../packages/core/lib/env');
 const path = require('path');
 const { getBlogGenerationRuntimeConfig, getBlogLLMSelectorOverrides } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/runtime-config.ts'));
+const { calculateSectionChars, buildCharCountInstruction } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/section-ratio.ts'));
 
 const generationRuntimeConfig = getBlogGenerationRuntimeConfig();
 const BLOG_WRITER_TIMEOUT_MS = Number(generationRuntimeConfig.writerTimeoutMs || 90000);
@@ -176,6 +177,9 @@ async function writeLecturePost(lectureNumber, lectureTitle, researchData, secti
   const realExperiences = researchData.realExperiences || [];
   const relatedPosts   = researchData.relatedPosts   || [];
   const popularPatterns = researchData.lecturePopularPatterns || researchData.popularPatterns || [];
+  const bonusInsights = sectionVariation.bonusInsights || [];
+  const sectionPlan = calculateSectionChars('pos', bonusInsights);
+  const charInstruction = buildCharCountInstruction(sectionPlan.charCounts, 'pos', bonusInsights);
 
   const weatherContext = weatherToContext(weather);
 
@@ -238,6 +242,7 @@ ${nodejsUpdates.length > 0
 [최신 IT 뉴스 (인사말에 활용)]
 ${itNews.slice(0, 3).map(n => `- ${n.title}`).join('\n') || '- 최신 IT 트렌드를 자체 지식으로 언급하라'}
 ${experienceBlock}${linkingBlock}${popularPatternBlock}
+${charInstruction}
 이전 강의 (${lectureNumber - 1}강) 내용을 자연스럽게 연결하고,
 다음 강의 (${lectureNumber + 1}강) 내용을 마무리에서 예고하라.
 
