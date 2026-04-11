@@ -37,7 +37,25 @@ defmodule TeamJay.Diagnostics do
     "ai.claude.speed-test",
     "ai.steward.hourly",
     "ai.steward.daily",
-    "ai.steward.weekly"
+    "ai.steward.weekly",
+    "ai.investment.commander",
+    "ai.investment.crypto",
+    "ai.investment.crypto.validation",
+    "ai.investment.domestic",
+    "ai.investment.domestic.validation",
+    "ai.investment.overseas",
+    "ai.investment.overseas.validation",
+    "ai.investment.argos",
+    "ai.investment.reporter",
+    "ai.investment.health-check",
+    "ai.investment.unrealized-pnl",
+    "ai.investment.prescreen-domestic",
+    "ai.investment.prescreen-overseas",
+    "ai.investment.market-alert-domestic-open",
+    "ai.investment.market-alert-domestic-close",
+    "ai.investment.market-alert-overseas-open",
+    "ai.investment.market-alert-overseas-close",
+    "ai.investment.market-alert-crypto-daily"
   ]
   @shadow_agents [
     {:andy, :ska},
@@ -49,12 +67,6 @@ defmodule TeamJay.Diagnostics do
     {:steward_daily, :steward}
   ]
   @week2_shadow_agents [
-    {:luna_commander, :investment, true},
-    {:luna_domestic, :investment, true},
-    {:luna_overseas, :investment, true},
-    {:luna_crypto, :investment, true},
-    {:argos_shadow, :investment, true},
-    {:reporter_shadow, :investment, true},
     {:blog_daily, :blog, true},
     {:blog_commenter, :blog, true},
     {:blog_node_server, :blog, true}
@@ -132,12 +144,18 @@ defmodule TeamJay.Diagnostics do
 
   @impl true
   def handle_call(:shadow_report, _from, state) do
-    {:reply, build_shadow_report(state), state}
+    results = run_diagnostics()
+    alerts = Enum.filter(results, &(&1.severity in [:warn, :error]))
+    updated_state = %{state | checks: results, alerts: alerts, last_check: DateTime.utc_now()}
+    {:reply, build_shadow_report(updated_state), updated_state}
   end
 
   @impl true
   def handle_call(:publish_shadow_report, _from, state) do
-    report = build_shadow_report(state)
+    results = run_diagnostics()
+    alerts = Enum.filter(results, &(&1.severity in [:warn, :error]))
+    updated_state = %{state | checks: results, alerts: alerts, last_check: DateTime.utc_now()}
+    report = build_shadow_report(updated_state)
     total_required_missing =
       report.week2_summary.required_missing + report.week3_summary.required_missing
     total_shadow_loaded = report.week2_summary.loaded + report.week3_summary.loaded
@@ -165,7 +183,7 @@ defmodule TeamJay.Diagnostics do
 
     maybe_alarm_shadow_report(report, severity)
 
-    {:reply, report, state}
+    {:reply, report, updated_state}
   end
 
   defp run_diagnostics do
@@ -260,16 +278,8 @@ defmodule TeamJay.Diagnostics do
   end
 
   defp check_launchd_overlap do
-    case System.cmd("launchctl", ["list"]) do
-      {output, 0} ->
-        loaded =
-          output
-          |> String.split("\n", trim: true)
-          |> Enum.map(&String.split(&1, "\t", trim: true))
-          |> Enum.filter(&(length(&1) == 3))
-          |> Enum.map(&Enum.at(&1, 2))
-          |> MapSet.new()
-
+    case get_loaded_launchd_labels() do
+      {:ok, loaded} ->
         overlaps =
           @phase3_launchd_labels
           |> Enum.filter(&MapSet.member?(loaded, &1))
@@ -283,14 +293,56 @@ defmodule TeamJay.Diagnostics do
           }
         ]
 
-      {error, code} ->
+      {:error, message} ->
         [
           %{
             name: "launchd_phase3_overlap",
             severity: :warn,
-            message: "launchctl 조회 실패 code=#{code} #{String.slice(error, 0, 120)}"
+            message: message
           }
         ]
+    end
+  end
+
+  defp get_loaded_launchd_labels do
+    uid = System.get_env("UID") || System.cmd("id", ["-u"]) |> elem(0) |> String.trim()
+
+    case System.cmd("launchctl", ["print", "gui/#{uid}"]) do
+      {output, 0} ->
+        loaded =
+          output
+          |> String.split("\n", trim: true)
+          |> Enum.flat_map(&extract_launchd_labels/1)
+          |> MapSet.new()
+
+        {:ok, loaded}
+
+      {error, code} ->
+        {:error, "launchctl 조회 실패 code=#{code} #{String.slice(error, 0, 120)}"}
+    end
+  end
+
+  defp extract_launchd_labels(line) do
+    trimmed = String.trim(line)
+
+    cond do
+      trimmed == "" ->
+        []
+
+      Regex.match?(~r/^[-\d]+\s+[-\d]+\s+ai\./, trimmed) ->
+        case Regex.run(~r/(ai\.[A-Za-z0-9.\-_]+)/, trimmed, capture: :all_but_first) do
+          [label] -> [label]
+          _ -> []
+        end
+
+      Regex.match?(~r/^"ai\.[^"]+"\s+=>\s+enabled$/, trimmed) ->
+        case Regex.run(~r/^"(ai\.[^"]+)"/, trimmed, capture: :all_but_first) do
+          [label] -> [label]
+          _ -> []
+        end
+
+      true ->
+        []
     end
   end
 

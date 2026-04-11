@@ -1,4 +1,5 @@
-// @ts-nocheck
-'use strict';
+type LegacyMonitorModule = Record<string, unknown>;
 
-module.exports = require('./naver-monitor.legacy.js');
+const legacyModule = require('./naver-monitor.legacy.js') as LegacyMonitorModule;
+
+export = legacyModule;

@@ -81,11 +81,11 @@ send_telegram() {
   cd "$BOT_DIR"
   # printf → stdin 으로 메시지 전달 (멀티라인·특수문자 안전)
   printf '%s' "$msg" | "$NODE_BIN" -e "
-    const { publishToMainBot } = require('./lib/mainbot-client');
+    const { publishReservationAlert } = require('./lib/alert-client');
     let msg = '';
     process.stdin.on('data', d => msg += d);
     process.stdin.on('end', () => {
-      publishToMainBot({
+      publishReservationAlert({
         from_bot: 'ska',
         event_type: 'system_error',
         alert_level: 3,

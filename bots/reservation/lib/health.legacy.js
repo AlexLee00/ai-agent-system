@@ -178,8 +178,8 @@ async function preflightConnCheck() {
     console.log('      ✅ 텔레그램 연결 체크 생략 (무소음 모드)');
   } else {
     try {
-      const { publishToMainBot } = require('./mainbot-client');
-      const ok = await publishToMainBot({
+      const { publishReservationAlert } = require('./alert-client');
+      const ok = await publishReservationAlert({
         from_bot: 'ska',
         event_type: 'health_check',
         alert_level: 1,
@@ -254,9 +254,9 @@ async function shutdownCleanup({ reason = '정상 종료', error = false, locks 
   // 정상적인 SIGTERM 재시작은 너무 시끄러워서 기본적으로 알리지 않는다.
   if (error || process.env.SKA_NOTIFY_SHUTDOWN === '1') {
     try {
-      const { publishToMainBot } = require('./mainbot-client');
+      const { publishReservationAlert } = require('./alert-client');
       const emoji = error ? '❌' : '🏁';
-      await publishToMainBot({
+      await publishReservationAlert({
         from_bot: 'ska',
         event_type: 'system_error',
         alert_level: error ? 3 : 1,

@@ -45,6 +45,7 @@ const path = require('path');
 const { execFile, spawn } = require('child_process');
 const { promisify } = require('util');
 const execFileAsync = promisify(execFile);
+const OPENCLAW_BIN = process.env.OPENCLAW_BIN || '/opt/homebrew/bin/openclaw';
 
 type FallbackChainEntry = {
   provider: string;
@@ -303,30 +304,52 @@ async function _callOpenAIOAuth({ model, maxTokens, temperature = 0.1, systemPro
 
   let stdout = '';
   let stderr = '';
-  try {
-    const result = await execFileAsync('openclaw', args, {
-      timeout: resolvedTimeoutMs + 5000,
-      maxBuffer: 2 * 1024 * 1024,
-      env: {
-        ...process.env,
-        OPENCLAW_AGENT: openclawAgent,
-      },
-    });
-    stdout = result.stdout || '';
-    stderr = result.stderr || '';
-  } catch (error) {
-    const execError = error as ExecFileErrorLike;
-    const exitCode = execError?.code ?? 'unknown';
-    const signal = execError?.signal || '';
-    stdout = execError?.stdout || '';
-    stderr = execError?.stderr || execError?.message || '';
+  let lastError: ExecFileErrorLike | null = null;
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      const result = await execFileAsync(OPENCLAW_BIN, args, {
+        timeout: resolvedTimeoutMs + 5000,
+        maxBuffer: 2 * 1024 * 1024,
+        env: {
+          ...process.env,
+          OPENCLAW_AGENT: openclawAgent,
+        },
+      });
+      stdout = result.stdout || '';
+      stderr = result.stderr || '';
+      lastError = null;
+      break;
+    } catch (error) {
+      const execError = error as ExecFileErrorLike;
+      lastError = execError;
+      stdout = execError?.stdout || '';
+      stderr = execError?.stderr || execError?.message || '';
+      if (attempt < 2) {
+        console.warn(`[llm-fallback] openai-oauth OpenClaw 재시도 (${attempt}/2): agent=${openclawAgent}`);
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+      }
+    }
+  }
+
+  if (lastError) {
+    const exitCode = lastError?.code ?? 'unknown';
+    const signal = lastError?.signal || '';
+    const stderrText = String(stderr || '').trim();
+    const stdoutText = String(stdout || '').trim();
+    const sandboxNote = (
+      stderrText.includes('sessions.json.lock')
+      && stderrText.includes('EPERM')
+    )
+      ? ' | note=sandbox_or_fs_lock_restriction'
+      : '';
     const detail = [
+      `agent=${openclawAgent}`,
       `exit=${exitCode}`,
       signal ? `signal=${signal}` : null,
-      stderr ? `stderr=${String(stderr).trim().slice(0, 400)}` : null,
-      stdout ? `stdout=${String(stdout).trim().slice(0, 240)}` : null,
+      stderrText ? `stderr=${stderrText.slice(0, 400)}` : null,
+      stdoutText ? `stdout=${stdoutText.slice(0, 240)}` : null,
     ].filter(Boolean).join(' | ');
-    throw new Error(`OpenClaw agent 실행 실패: ${detail}`);
+    throw new Error(`OpenClaw agent 실행 실패: ${detail}${sandboxNote}`);
   }
 
   const output = String(stdout || '').trim();

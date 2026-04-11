@@ -11,35 +11,28 @@
  */
 
 const { log } = require('../../lib/utils');
-const { publishToMainBot } = require('../../lib/mainbot-client');
+const { publishReservationAlert } = require('../../lib/alert-client');
+const {
+  formatAmount,
+  formatDateHeader,
+  buildRevenueConfirmMessage,
+} = require('../../lib/report-followup-helpers');
 const {
   getLatestUnconfirmedSummary,
   confirmDailySummary,
   getRoomRevenueSummary,
 } = require('../../lib/db');
 
-function formatAmount(amount) {
-  return Number(amount || 0).toLocaleString('ko-KR') + '원';
-}
-
-function formatDateHeader(dateStr) {
-  const d = new Date(dateStr + 'T00:00:00+09:00');
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
-  return `${mm}/${dd} (${dayNames[d.getDay()]})`;
-}
-
 async function main() {
   log('\n💳 매출 컨펌 처리 시작');
 
   // 1. 미컨펌 요약 조회
-  const pending = getLatestUnconfirmedSummary();
+  const pending = await getLatestUnconfirmedSummary();
 
   if (!pending) {
     const msg = '✅ 컨펌할 매출 내역이 없습니다.\n(이미 모두 확정됐거나 아직 보고된 내역이 없습니다)';
     log(msg);
-    publishToMainBot({ from_bot: 'ska', event_type: 'report', alert_level: 1, message: msg });
+    publishReservationAlert({ from_bot: 'ska', event_type: 'report', alert_level: 1, message: msg });
     console.log(JSON.stringify({ ok: false, reason: 'no_pending' }));
     return;
   }
@@ -47,11 +40,11 @@ async function main() {
   log(`  대상: ${pending.date} | ${pending.total_amount}원 | ${pending.entries_count}건`);
 
   // 2. 컨펌 처리 (daily_summary → room_revenue)
-  const result = confirmDailySummary(pending.date);
+  const result = await confirmDailySummary(pending.date);
   if (!result) {
     const msg = `❌ 컨펌 처리 실패: ${pending.date}`;
     log(msg);
-    publishToMainBot({ from_bot: 'ska', event_type: 'system_error', alert_level: 3, message: msg });
+    publishReservationAlert({ from_bot: 'ska', event_type: 'system_error', alert_level: 3, message: msg });
     console.log(JSON.stringify({ ok: false, reason: 'confirm_failed' }));
     return;
   }
@@ -59,33 +52,12 @@ async function main() {
   log(`  ✅ 컨펌 완료: ${result.date}`);
 
   // 3. 텔레그램 컨펌 완료 메시지
-  const dateHeader = formatDateHeader(result.date);
-  // 일반이용 포함 전체 매출 항목
-  const allAmounts = { ...result.roomAmounts };
-  if (result.generalRevenue > 0) {
-    allAmounts['일반이용'] = result.generalRevenue;
-  }
-  const roomLines = Object.entries(allAmounts)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([room, amt]) => `  ${room}: ${formatAmount(amt)}`)
-    .join('\n');
-
-  const grandTotal = result.totalAmount + (result.generalRevenue || 0);
-  let msg = `✅ 매출 확정 — ${dateHeader}\n\n`;
-  msg += `${roomLines}\n`;
-  msg += `  합계: ${formatAmount(grandTotal)}\n`;
-
   // 4. 누적 매출 요약 (room_revenue 전체)
-  const revSummary = getRoomRevenueSummary();
-  if (revSummary.length > 0) {
-    msg += `\n📊 스터디룸 누적 매출:\n`;
-    for (const r of revSummary) {
-      msg += `  ${r.room}: ${formatAmount(r.total_amount)} (${r.days}일)\n`;
-    }
-  }
+  const revSummary = await getRoomRevenueSummary();
+  const msg = buildRevenueConfirmMessage(result, revSummary);
 
   log('\n' + msg);
-  publishToMainBot({ from_bot: 'ska', event_type: 'report', alert_level: 1, message: msg });
+  publishReservationAlert({ from_bot: 'ska', event_type: 'report', alert_level: 1, message: msg });
 
   console.log(JSON.stringify({
     ok:         true,
@@ -97,7 +69,7 @@ async function main() {
 
 main().catch(err => {
   log(`❌ 치명 오류: ${err.message}`);
-  publishToMainBot({ from_bot: 'ska', event_type: 'system_error', alert_level: 3, message: `❌ 매출 컨펌 오류: ${err.message}` });
+  publishReservationAlert({ from_bot: 'ska', event_type: 'system_error', alert_level: 3, message: `❌ 매출 컨펌 오류: ${err.message}` });
   console.log(JSON.stringify({ ok: false, reason: err.message }));
   process.exit(1);
 });
