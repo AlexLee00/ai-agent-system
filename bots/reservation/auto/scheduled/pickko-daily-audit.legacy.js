@@ -104,15 +104,15 @@ async function main() {
 
     let report;
     if (total === 0) {
-      report = `📊 픽코 일일 감사 — ${today}\n\n당일 등록된 예약이 없습니다.`;
+      report = `📊 픽코 일일 감사 (당일 접수 기준) — ${today}\n\n당일 접수 기준 신규 예약이 없습니다.\n오늘 이용 예약이 없다는 뜻은 아닙니다.`;
     } else if (manualCount === 0) {
-      report = `📊 픽코 일일 감사 — ${today}\n\n✅ 당일 픽코 등록 ${total}건 모두 auto\n네이버 예약 자동 등록 정상 처리됨`;
+      report = `📊 픽코 일일 감사 (당일 접수 기준) — ${today}\n\n✅ 당일 접수 ${total}건 모두 auto\n네이버 예약 자동 등록 정상 처리됨`;
     } else {
       const fmtPhone = (raw) => raw.length === 11
         ? `${raw.slice(0, 3)}-${raw.slice(3, 7)}-${raw.slice(7)}`
         : raw;
 
-      report = `📊 픽코 일일 감사 — ${today}\n\n`;
+      report = `📊 픽코 일일 감사 (당일 접수 기준) — ${today}\n\n`;
       report += `총 ${total}건 | auto ${autoCount}건 | 수동 ${manualCount}건\n\n`;
       report += `⚠️ 수동(전화/직접) 등록 항목:\n`;
       report += `━━━━━━━━━━━━━━━\n`;

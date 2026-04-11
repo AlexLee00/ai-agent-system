@@ -1,18 +1,11 @@
 /**
- * lib/telegram.js — Telegram Bot API 직접 발송 모듈
+ * lib/telegram.js — 스카 알림 호환 래퍼
  *
- * openclaw agent --deliver를 사용하지 않고 Telegram Bot API를 직접 호출.
- * openclaw는 사용자 ↔ 스카 대화용, 단방향 알림은 Bot API 직접 사용.
- *
- * 알람 유실 방지 (pending queue):
- *   - 3회 재시도 후 최종 실패 시 pending-telegrams.jsonl 에 저장
- *   - 재시작 시 flushPendingTelegrams() 호출로 자동 재발송
- *
- * Forum Topic 라우팅: telegram-sender.js 경유 (🏢 스카 Topic)
+ * 2026-04-11 기준 스카 예약 알림은 OpenClaw hook → topic 경로만 사용한다.
+ * 과거 Bot API 직접 발송은 개인 채팅 유출의 원인이 되어 더 이상 사용하지 않는다.
  */
 
 const fs = require('fs');
-const https = require('https');
 const path = require('path');
 const { loadSecrets } = require('./secrets');
 const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
@@ -26,46 +19,16 @@ const BOT_TOKEN = SECRETS.telegram_bot_token;
 const DEFAULT_CHAT_ID = SECRETS.telegram_chat_id;
 
 const WORKSPACE = path.join(process.env.HOME, '.openclaw', 'workspace');
-const PENDING_FILE = path.join(WORKSPACE, 'pending-telegrams.jsonl');
 
 /**
- * @deprecated 2026-04-05 postAlarm()으로 통일됨. 직접 호출하지 말 것.
- * 재개 조건: postAlarm 장애 시 직접 Bot API 폴백이 꼭 필요할 때만.
- * Telegram Bot API로 메시지 1회 전송 시도
- * @returns {Promise<boolean>} 성공 여부
+ * @deprecated 개인 채팅 유출 방지를 위해 비활성화됨.
+ * 하위 호환용으로만 남기며 항상 false를 반환한다.
  */
 function tryTelegramSend(message, chatId = DEFAULT_CHAT_ID) {
-  if (!BOT_TOKEN) return Promise.resolve(false); // 텔레그램 토큰 미설정 — 무음 스킵
-  if (process.env.TELEGRAM_ENABLED === '0') return Promise.resolve(true);
-  return new Promise((resolve) => {
-    try {
-      const text = `🔔 ${TEAM_NAME}\n\n${message}`;
-      const body = Buffer.from(JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }));
-      const req = https.request({
-        hostname: 'api.telegram.org',
-        path: `/bot${BOT_TOKEN}/sendMessage`,
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': body.length,
-        },
-      }, (res) => {
-        let raw = '';
-        res.on('data', d => raw += d);
-        res.on('end', () => {
-          try {
-            const r = JSON.parse(raw);
-            if (!r.ok) log(`⚠️ 텔레그램 API 오류: ${r.description || raw.slice(0, 80)}`);
-            resolve(r.ok === true);
-          } catch { resolve(false); }
-        });
-      });
-      req.on('error', (e) => { log(`⚠️ 텔레그램 요청 오류: ${e.message}`); resolve(false); });
-      req.setTimeout(10000, () => { req.destroy(); log('⏱️ 텔레그램 발송 타임아웃'); resolve(false); });
-      req.write(body);
-      req.end();
-    } catch (e) { log(`⚠️ 텔레그램 발송 예외: ${e.message}`); resolve(false); }
-  });
+  void message;
+  void chatId;
+  log('ℹ️ tryTelegramSend 호출 무시: 스카 알림은 topic-only 정책');
+  return Promise.resolve(false);
 }
 
 /**
@@ -89,12 +52,13 @@ function isFilenameLeak(message) {
 }
 
 /**
- * 스카팀 메시지 발송 — OpenClaw webhook 경유
+ * 스카팀 메시지 발송 — OpenClaw topic 경유
  * @param {string} message  발송할 메시지 본문
- * @param {string} [chatId] 수신자 chat_id (하위 호환, Forum 모드에서는 무시)
+ * @param {string} [chatId] 하위 호환용 인자. 더 이상 사용하지 않음.
  * @returns {Promise<boolean>}
  */
 async function sendTelegram(message, chatId = DEFAULT_CHAT_ID) {
+  void chatId;
   if (!BOT_TOKEN) {
     log(`[텔레그램 비활성화] 토큰 미설정 — 스킵: ${message.slice(0, 60)}`);
     return false;
@@ -118,52 +82,23 @@ async function sendTelegram(message, chatId = DEFAULT_CHAT_ID) {
       fromBot: 'ska',
     });
     if (result.ok) {
-      log(`📱 [텔레그램] 발송 성공: ${message.slice(0, 50)}`);
+      log(`📱 [스카 topic] 발송 성공: ${message.slice(0, 50)}`);
       return true;
     }
 
-    log(`⚠️ [텔레그램] postAlarm 실패 → Bot API 폴백 시도: ${JSON.stringify(result).slice(0, 120)}`);
-    const fallbackOk = await tryTelegramSend(message, chatId);
-    if (fallbackOk) {
-      log(`📱 [텔레그램] Bot API 폴백 발송 성공: ${message.slice(0, 50)}`);
-      return true;
-    }
-
-    log(`⚠️ [텔레그램] Bot API 폴백 실패 — 대기큐 저장: ${message.slice(0, 50)}`);
-    savePending(message, chatId);
+    log(`⚠️ [스카 topic] postAlarm 실패: ${JSON.stringify(result).slice(0, 120)}`);
     return false;
   } catch (err) {
-    log(`⚠️ [텔레그램] postAlarm 예외 → Bot API 폴백 시도: ${err.message}`);
-    const fallbackOk = await tryTelegramSend(message, chatId);
-    if (fallbackOk) {
-      log(`📱 [텔레그램] Bot API 폴백 발송 성공: ${message.slice(0, 50)}`);
-      return true;
-    }
-    log(`⚠️ [텔레그램] Bot API 폴백 실패 — 대기큐 저장: ${message.slice(0, 50)}`);
-    savePending(message, chatId);
+    log(`⚠️ [스카 topic] postAlarm 예외: ${err.message}`);
     return false;
   }
 }
 
 /**
- * 대기큐에 메시지 저장 (JSONL 한 줄 append)
- */
-function savePending(message, chatId) {
-  try {
-    if (!fs.existsSync(WORKSPACE)) return;
-    const entry = JSON.stringify({ message, chatId, savedAt: new Date().toISOString() });
-    fs.appendFileSync(PENDING_FILE, entry + '\n', 'utf-8');
-    log(`📥 대기큐 저장: ${message.slice(0, 50)}`);
-  } catch (e) {
-    log(`⚠️ 대기큐 저장 실패: ${e.message}`);
-  }
-}
-
-/**
- * 대기큐 메시지 재발송 (재시작 시 호출)
- * telegram-sender.flushPending()에 위임 — 구형/신형 포맷 모두 처리.
+ * 과거 pending queue 재발송 훅. topic-only 정책에서는 noop 유지.
  */
 async function flushPendingTelegrams() {
+  if (fs.existsSync(WORKSPACE)) return false;
   return false;
 }
 

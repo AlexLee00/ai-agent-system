@@ -110,29 +110,57 @@ function fmtPhone(raw) {
   return raw || '';
 }
 
+function buildOpsAlertMessage({
+  title,
+  customer,
+  phone,
+  date,
+  start,
+  end,
+  room,
+  status,
+  reason,
+  action,
+}) {
+  let message = `${title}\n`;
+  message += '━━━━━━━━━━━━━━━\n';
+  if (customer) message += `👤 고객: ${customer}\n`;
+  if (phone) message += `📞 번호: ${phone}\n`;
+  if (date) message += `📅 날짜: ${date}\n`;
+  if (start || end) message += `⏰ 시간: ${start || ''}~${end || ''}\n`;
+  if (room) message += `🏛️ 룸: ${room}\n`;
+  if (status) message += `📊 상태: ${status}\n`;
+  if (reason) message += `ℹ️ 사유: ${reason}\n`;
+  message += '━━━━━━━━━━━━━━━\n';
+  if (action) message += `✅ 조치: ${action}\n`;
+  return message;
+}
+
 function publishRetryableBlockAlert(entry, reason, options = {}) {
   const {
     prefix = '⚠️',
     title = '네이버 차단 지연',
-    roomSuffix = '룸',
     alertLevel = 2,
     sourceLabel = '키오스크 예약',
     actionLine = '자동 재시도 예정 — kiosk-monitor 후속 사이클을 확인하고, 계속 실패하면 수동 처리'
   } = options;
 
-  const name = entry?.name || '(이름없음)';
-  const phone = entry?.phoneRaw ? ` ${fmtPhone(entry.phoneRaw)}` : '';
-  const date = entry?.date || '';
-  const start = entry?.start || '';
-  const end = entry?.end || '';
-  const room = entry?.room || '';
-
   publishToMainBot({
     from_bot: 'jimmy',
     event_type: 'alert',
     alert_level: alertLevel,
-    message:
-      `${prefix} ${title}\n${name}${phone}\n${date} ${start}~${end} ${room}${roomSuffix}\n사유: ${reason}\n조치: ${actionLine} (${sourceLabel})`,
+    message: buildOpsAlertMessage({
+      title: `${prefix} ${title}`,
+      customer: entry?.name || '(이름없음)',
+      phone: entry?.phoneRaw ? fmtPhone(entry.phoneRaw) : '',
+      date: entry?.date || '',
+      start: entry?.start || '',
+      end: entry?.end || '',
+      room: entry?.room || '',
+      status: sourceLabel,
+      reason,
+      action: `${actionLine} (${sourceLabel})`,
+    }),
   });
 }
 
@@ -2262,8 +2290,22 @@ async function main() {
         });
       }
       for (const e of cancelledEntries) {
-        publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 3, message:
-          `⚠️ 네이버 차단 해제 필요 — 수동 처리\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''} (키오스크 취소)\n사유: naver-monitor 미실행`
+        publishToMainBot({
+          from_bot: 'jimmy',
+          event_type: 'alert',
+          alert_level: 3,
+          message: buildOpsAlertMessage({
+            title: '⚠️ 네이버 차단 해제 필요 — 수동 처리',
+            customer: e.name || '(이름없음)',
+            phone: fmtPhone(e.phoneRaw),
+            date: e.date,
+            start: e.start,
+            end: e.end,
+            room: e.room || '',
+            status: '키오스크 취소',
+            reason: 'naver-monitor 미실행',
+            action: '네이버 예약가능 상태를 수동으로 복구해 주세요.',
+          }),
         });
       }
       return;
@@ -2314,8 +2356,22 @@ async function main() {
           });
         }
         for (const e of cancelledEntries) {
-          publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 3, message:
-            `⚠️ 네이버 차단 해제 필요 — 수동 처리\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''} (키오스크 취소)\n사유: 네이버 로그인 실패`
+          publishToMainBot({
+            from_bot: 'jimmy',
+            event_type: 'alert',
+            alert_level: 3,
+            message: buildOpsAlertMessage({
+              title: '⚠️ 네이버 차단 해제 필요 — 수동 처리',
+              customer: e.name || '(이름없음)',
+              phone: fmtPhone(e.phoneRaw),
+              date: e.date,
+              start: e.start,
+              end: e.end,
+              room: e.room || '',
+              status: '키오스크 취소',
+              reason: '네이버 로그인 실패',
+              action: '네이버 예약가능 상태를 수동으로 복구해 주세요.',
+            }),
           });
         }
         return;
@@ -2347,7 +2403,18 @@ async function main() {
             lastBlockReason: 'time_elapsed',
           });
           publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 2, message:
-            `⏰ 시간 경과 — 네이버 차단 생략\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''}\n예약 종료 시각이 지나 네이버 차단 불필요 (픽코에서 직접 확인)`
+            buildOpsAlertMessage({
+              title: '⏰ 시간 경과 — 네이버 차단 생략',
+              customer: e.name || '(이름없음)',
+              phone: fmtPhone(e.phoneRaw),
+              date: e.date,
+              start: e.start,
+              end: e.end,
+              room: e.room || '',
+              status: '키오스크 예약',
+              reason: '예약 종료 시각이 지나 네이버 차단이 불필요함',
+              action: '픽코 등록 상태만 확인해 주세요.',
+            })
           });
           continue;
         }
@@ -2461,8 +2528,22 @@ async function main() {
             );
           } else {
             // 실패 시 naverBlocked: true 유지 → 다음 주기에 재시도
-            publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 3, message:
-              `⚠️ 네이버 차단 해제 실패 — 수동 처리 필요\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''}`
+            publishToMainBot({
+              from_bot: 'jimmy',
+              event_type: 'alert',
+              alert_level: 3,
+              message: buildOpsAlertMessage({
+                title: '⚠️ 네이버 차단 해제 실패 — 수동 처리 필요',
+                customer: e.name || '(이름없음)',
+                phone: fmtPhone(e.phoneRaw),
+                date: e.date,
+                start: e.start,
+                end: e.end,
+                room: e.room || '',
+                status: '키오스크 취소',
+                reason: '자동 해제 실패',
+                action: '네이버 예약가능 상태를 수동으로 복구해 주세요.',
+              }),
             });
           }
         }
@@ -2855,7 +2936,22 @@ async function unblockSlotOnly(entry) {
   try { wsEndpoint = fs.readFileSync(NAVER_WS_FILE, 'utf8').trim(); } catch (e) {}
   if (!wsEndpoint) {
     log('⚠️ naver-monitor 미실행 (WS 파일 없음) — 수동 해제 필요');
-    publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 3, message: `⚠️ [취소] 네이버 해제 실패 — 수동 처리 필요\n${name} ${date} ${start}~${end} ${room}\n사유: naver-monitor 미실행` });
+    publishToMainBot({
+      from_bot: 'jimmy',
+      event_type: 'alert',
+      alert_level: 3,
+      message: buildOpsAlertMessage({
+        title: '⚠️ [취소] 네이버 해제 실패 — 수동 처리 필요',
+        customer: name,
+        date,
+        start,
+        end,
+        room,
+        status: '취소 후 복구',
+        reason: 'naver-monitor 미실행',
+        action: '네이버 예약가능 상태를 수동으로 복구해 주세요.',
+      }),
+    });
     process.exit(1);
   }
 
@@ -2878,7 +2974,22 @@ async function unblockSlotOnly(entry) {
     const loggedIn = await naverBookingLogin(naverPg);
     if (!loggedIn) {
       log('❌ 네이버 booking 로그인 실패');
-      publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 3, message: `⚠️ [취소] 네이버 해제 실패 — 수동 처리 필요\n${name} ${date} ${start}~${end} ${room}\n사유: 네이버 로그인 실패` });
+      publishToMainBot({
+        from_bot: 'jimmy',
+        event_type: 'alert',
+        alert_level: 3,
+        message: buildOpsAlertMessage({
+          title: '⚠️ [취소] 네이버 해제 실패 — 수동 처리 필요',
+          customer: name,
+          date,
+          start,
+          end,
+          room,
+          status: '취소 후 복구',
+          reason: '네이버 로그인 실패',
+          action: '네이버 예약가능 상태를 수동으로 복구해 주세요.',
+        }),
+      });
       // exitCode stays 1, falls through to finally
     } else {
       let unblocked = false;
@@ -2913,7 +3024,22 @@ async function unblockSlotOnly(entry) {
         publishKioskSuccessReport(`✅ [취소] 네이버 예약가능 복구 완료\n${name} ${date} ${start}~${end} ${room}룸`);
       } else {
         log(`⚠️ 네이버 해제 실패 — 수동 확인 필요`);
-        publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 3, message: `⚠️ [취소] 네이버 예약가능 복구 실패 — 수동 확인 필요\n${name} ${date} ${start}~${end} ${room}룸` });
+        publishToMainBot({
+          from_bot: 'jimmy',
+          event_type: 'alert',
+          alert_level: 3,
+          message: buildOpsAlertMessage({
+            title: '⚠️ [취소] 네이버 예약가능 복구 실패 — 수동 확인 필요',
+            customer: name,
+            date,
+            start,
+            end,
+            room,
+            status: '취소 후 복구',
+            reason: '자동 해제 실패',
+            action: '네이버 예약가능 상태를 수동으로 확인해 주세요.',
+          }),
+        });
       }
       exitCode = unblocked ? 0 : 1;
     }
