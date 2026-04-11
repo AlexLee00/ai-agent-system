@@ -30,7 +30,10 @@ import re
 import psycopg2
 from datetime import date as date_type, timedelta
 
-PG_SKA = "dbname=jay options='-c search_path=ska,public'"
+PG_SKA = os.getenv(
+    'PG_SKA_DSN',
+    "dbname=jay host=127.0.0.1 port=5432 options='-c search_path=ska,public'"
+)
 
 THURSDAY = 3  # weekday: 0=월 … 6=일
 

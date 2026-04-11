@@ -119,12 +119,28 @@ async function sendTelegram(message, chatId = DEFAULT_CHAT_ID) {
     });
     if (result.ok) {
       log(`📱 [텔레그램] 발송 성공: ${message.slice(0, 50)}`);
-    } else {
-      log(`⚠️ [텔레그램] 발송 실패: ${JSON.stringify(result).slice(0, 120)}`);
+      return true;
     }
-    return result.ok;
+
+    log(`⚠️ [텔레그램] postAlarm 실패 → Bot API 폴백 시도: ${JSON.stringify(result).slice(0, 120)}`);
+    const fallbackOk = await tryTelegramSend(message, chatId);
+    if (fallbackOk) {
+      log(`📱 [텔레그램] Bot API 폴백 발송 성공: ${message.slice(0, 50)}`);
+      return true;
+    }
+
+    log(`⚠️ [텔레그램] Bot API 폴백 실패 — 대기큐 저장: ${message.slice(0, 50)}`);
+    savePending(message, chatId);
+    return false;
   } catch (err) {
-    log(`⚠️ [텔레그램] postAlarm 예외: ${err.message}`);
+    log(`⚠️ [텔레그램] postAlarm 예외 → Bot API 폴백 시도: ${err.message}`);
+    const fallbackOk = await tryTelegramSend(message, chatId);
+    if (fallbackOk) {
+      log(`📱 [텔레그램] Bot API 폴백 발송 성공: ${message.slice(0, 50)}`);
+      return true;
+    }
+    log(`⚠️ [텔레그램] Bot API 폴백 실패 — 대기큐 저장: ${message.slice(0, 50)}`);
+    savePending(message, chatId);
     return false;
   }
 }

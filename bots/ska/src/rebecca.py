@@ -25,7 +25,7 @@ launchd:
 import sys
 import os
 import json
-# import subprocess
+import subprocess
 import psycopg2
 from datetime import date as date_type, timedelta
 from runtime_config import get_rebecca_config

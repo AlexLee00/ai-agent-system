@@ -214,7 +214,6 @@ async function postAlarm({
   }
 
   const normalizedTeam = TEAM_TOPIC[team] || 'general';
-  const key = sessionKey || `hook:${normalizedTeam}:${fromBot}`;
   const prefix = alertLevel >= 3 ? `🚨 [긴급 alert_level=${alertLevel}] ` : '';
   const { groupId, topicIds } = await _getTopicInfo();
   const topicId = topicIds?.[normalizedTeam] || topicIds?.general || null;
@@ -244,7 +243,7 @@ async function postAlarm({
         message: `${prefix}[${fromBot}→${team}] ${message}`,
         name: fromBot,
         agentId: 'main',
-        sessionKey: key,
+        ...(sessionKey ? { sessionKey } : {}),
         deliver: true,
         channel: 'telegram',
         to,

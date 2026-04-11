@@ -2,6 +2,8 @@
 
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
+const env = require('../lib/env');
 
 const {
   buildEventPayload,
@@ -10,6 +12,80 @@ const {
   renderReportEvent,
 } = require('../lib/reporting-hub');
 const { postAlarm } = require('../lib/openclaw-client');
+
+const TEAM_TOPIC = {
+  general: 'general',
+  reservation: 'ska',
+  ska: 'ska',
+  investment: 'luna',
+  luna: 'luna',
+  claude: 'claude_lead',
+  'claude-lead': 'claude_lead',
+  blog: 'blog',
+  worker: 'worker',
+  video: 'video',
+  darwin: 'darwin',
+  justin: 'justin',
+  sigma: 'sigma',
+  meeting: 'meeting',
+  emergency: 'emergency',
+};
+
+function loadStoreSecrets() {
+  try {
+    const raw = fs.readFileSync(path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json'), 'utf8');
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function postAlarmViaCurl({ message, team, fromBot, alertLevel }) {
+  const store = loadStoreSecrets();
+  const token = store?.openclaw?.hooks_token || '';
+  const groupId = store?.telegram?.group_id || '';
+  const topicIds = store?.telegram?.topic_ids || {};
+  const normalizedTeam = TEAM_TOPIC[team] || 'general';
+  const topicId = topicIds?.[normalizedTeam] || topicIds?.general || null;
+  const to = groupId ? (topicId ? `${groupId}:topic:${topicId}` : groupId) : undefined;
+  if (!token || !to) return { ok: false, error: 'missing_hook_secret_or_topic' };
+
+  const prefix = alertLevel >= 3 ? `🚨 [긴급 alert_level=${alertLevel}] ` : '';
+  const payload = {
+    message: `${prefix}[${fromBot}→${team}] ${message}`,
+    name: fromBot,
+    agentId: 'main',
+    deliver: true,
+    channel: 'telegram',
+    to,
+    wakeMode: 'now',
+    timeoutSeconds: 30,
+  };
+
+  const result = spawnSync('curl', [
+    '-sS',
+    '-X', 'POST',
+    'http://127.0.0.1:18789/hooks/agent',
+    '-H', 'Content-Type: application/json',
+    '-H', `Authorization: Bearer ${token}`,
+    '--data', JSON.stringify(payload),
+  ], {
+    encoding: 'utf8',
+    timeout: 30000,
+  });
+
+  if (result.error) return { ok: false, error: result.error.message };
+  if (result.status !== 0) {
+    return { ok: false, error: result.stderr?.trim() || `curl_exit_${result.status}` };
+  }
+
+  try {
+    const parsed = JSON.parse(result.stdout || '{}');
+    return { ok: parsed.ok === true, body: parsed };
+  } catch {
+    return { ok: false, error: 'invalid_curl_response' };
+  }
+}
 
 function readStdin() {
   return fs.readFileSync(0, 'utf8').trim();
@@ -110,7 +186,18 @@ async function main() {
   });
 
   if (!results.ok) {
-    console.error('[python-report] ⚠️ postAlarm 발행 실패');
+    const fallback = postAlarmViaCurl({
+      message: reportMessage,
+      team: topicTeam || team,
+      fromBot,
+      alertLevel,
+    });
+    if (fallback.ok) {
+      console.log('[python-report] ✅ curl hook 폴백 발행 완료');
+      return;
+    }
+    console.error(`[python-report] ⚠️ postAlarm 발행 실패: ${results.error || results.status || 'unknown'}`);
+    console.error(`[python-report] ⚠️ curl hook 폴백 실패: ${fallback.error || 'unknown'}`);
     process.exit(1);
   }
 
