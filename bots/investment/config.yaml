@@ -54,8 +54,8 @@ screening:
       - AAPL
     max_dynamic: 15
 capital_management:
-  max_capital_usage: 0.9
-  reserve_ratio: 0.1
+  max_capital_usage: 0.7
+  reserve_ratio: 0.3
   risk_per_trade: 0.02
   max_position_pct: 0.1
   min_order_usdt: 11
@@ -72,51 +72,51 @@ capital_management:
         fallback_min_order: 200
   max_concurrent_positions: 3
   max_daily_trades: 12
-  max_daily_loss_pct: 0.1
-  max_weekly_loss_pct: 0.2
+  max_daily_loss_pct: 0.05
+  max_weekly_loss_pct: 0.12
   cooldown_after_loss_streak: 3
-  cooldown_minutes: 60
+  cooldown_minutes: 120
   by_exchange:
     binance:
-      reserve_ratio: 0.02
+      reserve_ratio: 0.10
       min_order_usdt: 10
-      max_position_pct: 0.18
-      max_concurrent_positions: 10
-      max_daily_trades: 40
+      max_position_pct: 0.12
+      max_concurrent_positions: 6
+      max_daily_trades: 25
       trade_modes:
         validation:
-          reserve_ratio: 0.01
+          reserve_ratio: 0.05
           risk_per_trade: 0.01
           max_position_pct: 0.08
           max_concurrent_positions: 6
           max_daily_trades: 24
     kis:
-      reserve_ratio: 0.02
+      reserve_ratio: 0.10
       min_order_usdt: 200000
-      max_position_pct: 0.18
-      max_concurrent_positions: 10
-      max_daily_trades: 30
+      max_position_pct: 0.12
+      max_concurrent_positions: 6
+      max_daily_trades: 25
       trade_modes:
         validation:
-          reserve_ratio: 0.01
+          reserve_ratio: 0.05
           risk_per_trade: 0.012
           max_position_pct: 0.10
-          max_concurrent_positions: 12
-          max_daily_trades: 40
+          max_concurrent_positions: 6
+          max_daily_trades: 30
     kis_overseas:
-      reserve_ratio: 0.02
+      reserve_ratio: 0.10
       min_order_usdt: 200
-      max_position_pct: 0.18
-      max_concurrent_positions: 10
-      max_daily_trades: 30
+      max_position_pct: 0.12
+      max_concurrent_positions: 6
+      max_daily_trades: 25
       trade_modes:
         validation:
-          reserve_ratio: 0.01
+          reserve_ratio: 0.05
           risk_per_trade: 0.012
           min_order_usdt: 200
           max_position_pct: 0.10
-          max_concurrent_positions: 12
-          max_daily_trades: 40
+          max_concurrent_positions: 6
+          max_daily_trades: 30
   runtime_config:
   dynamicTpSlEnabled: true
   luna:
@@ -195,22 +195,22 @@ capital_management:
             portfolioDailyLossPct: 0.12
   nemesis:
     crypto:
-      maxSinglePositionPct: 0.22
+      maxSinglePositionPct: 0.12
       maxDailyLossPct: 0.05
       maxOpenPositions: 6
       stopLossPct: 0.03
       minOrderUsdt: 10
       maxOrderUsdt: 1200
     stockDomestic:
-      maxSinglePositionPct: 0.3
-      maxDailyLossPct: 0.1
+      maxSinglePositionPct: 0.12
+      maxDailyLossPct: 0.05
       maxOpenPositions: 6
       stopLossPct: 0.05
       minOrderUsdt: 200000
       maxOrderUsdt: 1200000
     stockOverseas:
-      maxSinglePositionPct: 0.3
-      maxDailyLossPct: 0.1
+      maxSinglePositionPct: 0.12
+      maxDailyLossPct: 0.05
       maxOpenPositions: 6
       stopLossPct: 0.05
       minOrderUsdt: 200

@@ -81,9 +81,12 @@ export function validateAnalysis(analysis) {
 
 const SAFETY = {
   MAX_SINGLE_PCT:  0.10,  // 단일 포지션 ≤ 10%
+  MAX_CAPITAL_USAGE: 0.70, // 총 자본 사용률 ≤ 70%
   MAX_POSITIONS:   3,     // 동시 포지션 ≤ 3개
-  MAX_DAILY_LOSS:  0.03,  // 일손실 ≤ 3%
+  MAX_DAILY_LOSS:  0.05,  // 일손실 ≤ 5%
   MAX_DRAWDOWN:    0.15,  // 최대 드로우다운 ≤ 15%
+  COOLDOWN_AFTER_LOSS_STREAK: 3,
+  COOLDOWN_MINUTES: 120,
   INITIAL_EQUITY:  138.71, // 초기 자산 폴백 (USD)
 };
 
@@ -113,55 +116,78 @@ export async function checkSafetyGates(signal) {
   const { action, amount_usdt: orderValue, symbol } = signal;
   const isBuy = action === ACTIONS.BUY;
   const totalAsset = await getTotalAsset();
+  const capitalPolicy = getCapitalConfig(signal.exchange, signal.trade_mode || null) || {};
+  const maxSinglePct = Number(capitalPolicy.max_position_pct ?? SAFETY.MAX_SINGLE_PCT);
+  const maxCapitalUsage = Number(capitalPolicy.max_capital_usage ?? SAFETY.MAX_CAPITAL_USAGE);
+  const maxDailyLoss = Number(capitalPolicy.max_daily_loss_pct ?? SAFETY.MAX_DAILY_LOSS);
+  const maxPositions = Number(capitalPolicy.max_concurrent_positions ?? SAFETY.MAX_POSITIONS);
+  const cooldownAfterLossStreak = Number(
+    capitalPolicy.cooldown_after_loss_streak ?? SAFETY.COOLDOWN_AFTER_LOSS_STREAK,
+  );
+  const cooldownMinutes = Number(capitalPolicy.cooldown_minutes ?? SAFETY.COOLDOWN_MINUTES);
 
-  // 원칙 1 — 단일 포지션 ≤ 10%
-  if (isBuy && orderValue > totalAsset * SAFETY.MAX_SINGLE_PCT) {
+  // 원칙 1 — 단일 포지션 ≤ config.max_position_pct
+  if (isBuy && orderValue > totalAsset * maxSinglePct) {
     return {
       passed: false,
-      reason: `원칙1 위반: 단일 포지션 한도 초과 ($${orderValue?.toFixed(0)} > $${(totalAsset * SAFETY.MAX_SINGLE_PCT).toFixed(0)})`,
+      reason: `원칙1 위반: 단일 포지션 한도 초과 ($${orderValue?.toFixed(0)} > $${(totalAsset * maxSinglePct).toFixed(0)})`,
     };
   }
 
-  // 원칙 2 — 동시 포지션 ≤ 3개
+  // 원칙 2 — 총 자본 사용률 ≤ config.max_capital_usage
   if (isBuy) {
-    const positions = await db.getAllPositions();
-    const configMaxPositions = Number(
-      getCapitalConfig(signal.exchange, signal.trade_mode || null)?.max_concurrent_positions ?? SAFETY.MAX_POSITIONS,
-    );
-    const maxPositions = Number.isFinite(configMaxPositions) && configMaxPositions > 0
-      ? configMaxPositions
-      : SAFETY.MAX_POSITIONS;
+    const positions = await db.getAllPositions(signal.exchange || null, false, signal.trade_mode || null);
+    const currentExposure = positions.reduce((sum, position) => {
+      const amount = Number(position.amount || 0);
+      const avgPrice = Number(position.avg_price || 0);
+      return sum + (amount * avgPrice);
+    }, 0);
+    const projectedExposure = currentExposure + Number(orderValue || 0);
+    if (projectedExposure > totalAsset * maxCapitalUsage) {
+      return {
+        passed: false,
+        reason: `원칙2 위반: 총 자본 사용률 초과 ($${projectedExposure.toFixed(0)} > $${(totalAsset * maxCapitalUsage).toFixed(0)})`,
+      };
+    }
+
+    // 원칙 3 — 동시 포지션 ≤ config.max_concurrent_positions
     if (positions.length >= maxPositions) {
-      return { passed: false, reason: `원칙2 위반: 동시 포지션 한도 (현재 ${positions.length}개, 최대 ${maxPositions}개)` };
+      return { passed: false, reason: `원칙3 위반: 동시 포지션 한도 (현재 ${positions.length}개, 최대 ${maxPositions}개)` };
     }
   }
 
-  // 원칙 3 — 일일 손실 ≤ 3%
+  // 원칙 4 — 일일 손실 ≤ config.max_daily_loss_pct
   const { pnl } = await db.getTodayPnl();
-  if ((pnl ?? 0) < -(totalAsset * SAFETY.MAX_DAILY_LOSS)) {
+  if ((pnl ?? 0) < -(totalAsset * maxDailyLoss)) {
     return {
       passed: false,
-      reason: `원칙3 위반: 일일 손실 한도 초과 ($${Math.abs(pnl).toFixed(2)} > $${(totalAsset * SAFETY.MAX_DAILY_LOSS).toFixed(2)})`,
+      reason: `원칙4 위반: 일일 손실 한도 초과 ($${Math.abs(pnl).toFixed(2)} > $${(totalAsset * maxDailyLoss).toFixed(2)})`,
     };
   }
 
-  // 원칙 4 — 연속 3회 손실 → 24시간 중단
+  // 원칙 5 — 연속 손실 쿨다운
   const recent = await db.query(
-    `SELECT total_usdt, side FROM trades ORDER BY executed_at DESC LIMIT 3`,
+    `SELECT total_usdt, side, executed_at FROM trades ORDER BY executed_at DESC LIMIT $1`,
+    [cooldownAfterLossStreak],
   );
-  if (recent.length === 3) {
+  if (recent.length >= cooldownAfterLossStreak) {
     const allLoss = recent.every(r => (r.side === 'sell' ? r.total_usdt : -r.total_usdt) < 0);
     if (allLoss) {
-      return { passed: false, reason: '원칙4 위반: 연속 3회 손실 → 24시간 매매 중단' };
+      const lastExecutedAt = Number(new Date(recent[0].executed_at).getTime());
+      const cooldownEnd = lastExecutedAt + (cooldownMinutes * 60 * 1000);
+      if (Date.now() < cooldownEnd) {
+        const remainMin = Math.ceil((cooldownEnd - Date.now()) / 60000);
+        return { passed: false, reason: `원칙5 위반: 연속 ${cooldownAfterLossStreak}회 손실 → 쿨다운 ${remainMin}분 남음` };
+      }
     }
   }
 
-  // 원칙 5 — 최대 드로우다운 ≤ 15%
+  // 원칙 6 — 최대 드로우다운 ≤ 15%
   const maxDD = await getMaxDrawdown();
   if (maxDD > SAFETY.MAX_DRAWDOWN) {
     return {
       passed: false,
-      reason: `원칙5 위반: 최대 드로우다운 초과 (${(maxDD * 100).toFixed(1)}% > 15%) → 사용자 승인 필요`,
+      reason: `원칙6 위반: 최대 드로우다운 초과 (${(maxDD * 100).toFixed(1)}% > 15%) → 사용자 승인 필요`,
     };
   }
 

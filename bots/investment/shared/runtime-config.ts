@@ -101,7 +101,7 @@ const DEFAULT_RUNTIME_CONFIG = {
   },
   nemesis: {
     crypto: {
-      maxSinglePositionPct: 0.22,
+      maxSinglePositionPct: 0.12,
       maxDailyLossPct: 0.05,
       maxOpenPositions: 6,
       stopLossPct: 0.03,
@@ -109,16 +109,16 @@ const DEFAULT_RUNTIME_CONFIG = {
       maxOrderUsdt: 1200,
     },
     stockDomestic: {
-      maxSinglePositionPct: 0.30,
-      maxDailyLossPct: 0.10,
+      maxSinglePositionPct: 0.12,
+      maxDailyLossPct: 0.05,
       maxOpenPositions: 6,
       stopLossPct: 0.05,
       minOrderUsdt: KIS_ORDER_RULE?.minOrderAmount ?? 200000,
       maxOrderUsdt: 1200000,
     },
     stockOverseas: {
-      maxSinglePositionPct: 0.30,
-      maxDailyLossPct: 0.10,
+      maxSinglePositionPct: 0.12,
+      maxDailyLossPct: 0.05,
       maxOpenPositions: 6,
       stopLossPct: 0.05,
       minOrderUsdt: KIS_OVERSEAS_ORDER_RULE?.minOrderAmount ?? 200,
