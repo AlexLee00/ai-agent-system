@@ -27,6 +27,8 @@
     "review": "node scripts/weekly-trade-review.ts",
     "review:dry": "node scripts/weekly-trade-review.ts --dry-run",
     "review:2w": "node scripts/weekly-trade-review.ts --days=14",
+    "daily-feedback": "node scripts/daily-trade-feedback.ts",
+    "daily-feedback:dry": "node scripts/daily-trade-feedback.ts --dry-run",
     "runtime-suggest": "node scripts/runtime-config-suggestions.ts",
     "runtime-suggest:write": "node scripts/runtime-config-suggestions.ts --write",
     "runtime-suggest:review": "node scripts/review-runtime-config-suggestion.ts",

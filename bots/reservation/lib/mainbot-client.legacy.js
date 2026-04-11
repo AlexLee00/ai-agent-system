@@ -6,6 +6,7 @@
  * OpenClaw webhook 단일 경로만 사용한다.
  */
 const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const { tryTelegramSend } = require('./telegram');
 
 /**
  * OpenClaw webhook으로 알람 발행
@@ -32,7 +33,10 @@ async function publishToMainBot({ from_bot, team = 'reservation', event_type, al
     alertLevel: alert_level,
     fromBot: from_bot || 'ska',
   });
-  return result.ok;
+  if (result.ok) return true;
+
+  // OpenClaw/Hook 경로 장애 시 스카 예약 알림은 텔레그램 직접 발송으로 한 번 더 시도한다.
+  return tryTelegramSend(lines.filter(Boolean).join('\n'));
 }
 
 module.exports = { publishToMainBot };

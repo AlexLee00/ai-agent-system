@@ -21,7 +21,7 @@ EXIT_CODE=$?
 cat "$TMPFILE"
 
 if [ $EXIT_CODE -eq 0 ]; then
-    "$NODE" "$PUBLISHER" \
+    MODE=ops PROJECT_ROOT=/Users/alexlee/projects/ai-agent-system "$NODE" "$PUBLISHER" \
       --fromBot=forecast \
       --team=reservation \
       --topicTeam=ska \
