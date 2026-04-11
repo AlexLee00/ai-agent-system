@@ -48,6 +48,7 @@
     "backtest:vectorbt:grid": "python3 scripts/backtest-vectorbt.py --symbol BTC/USDT --days 90 --grid",
     "optimize-ta": "node scripts/optimize-ta-params.ts",
     "optimize-ta:no-alert": "node scripts/optimize-ta-params.ts --no-alert",
+    "tradingview-mcp:test": "python3 scripts/tradingview-mcp-server.py --test --json",
     "analyze-signals": "node scripts/analyze-signal-correlation.ts",
     "analyze-signals:30": "node scripts/analyze-signal-correlation.ts --days=30"
   },

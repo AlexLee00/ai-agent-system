@@ -1,5 +1,6 @@
 // @ts-nocheck
 import ccxt from 'ccxt';
+import { execFileSync } from 'child_process';
 import { createRequire } from 'module';
 import { isDirectExecution, runCliMain } from './cli-runtime.ts';
 
@@ -9,6 +10,7 @@ const pgPool = require('../../../packages/core/lib/pg-pool');
 const SCHEMA = 'investment';
 const DEFAULT_EXCHANGE = 'binance';
 const MAX_BATCH = 1000;
+const TRADINGVIEW_MCP_SCRIPT = new URL('../scripts/tradingview-mcp-server.py', import.meta.url);
 
 const TIMEFRAME_MS = {
   '1m': 60 * 1000,
@@ -51,6 +53,71 @@ function getTimeframeMs(timeframe) {
   const value = TIMEFRAME_MS[timeframe];
   if (!value) throw new Error(`지원하지 않는 timeframe: ${timeframe}`);
   return value;
+}
+
+function mapSymbolToYahoo(symbol) {
+  if (!symbol) return symbol;
+  if (symbol.endsWith('/USDT')) {
+    return symbol.replace('/USDT', '-USD');
+  }
+  if (symbol.includes('/')) {
+    const [base, quote] = symbol.split('/');
+    return `${base}-${quote}`;
+  }
+  return symbol;
+}
+
+function mapTimeframeToYahoo(timeframe) {
+  const map = {
+    '1m': '1m',
+    '5m': '5m',
+    '15m': '15m',
+    '1h': '1h',
+    '4h': '1h',
+    '1d': '1d',
+  };
+  return map[timeframe] || '1h';
+}
+
+function fetchOHLCVFromTradingViewFallback(symbol, timeframe, from, to = null) {
+  const yahooSymbol = mapSymbolToYahoo(symbol);
+  const interval = mapTimeframeToYahoo(timeframe);
+  const args = [
+    new URL(TRADINGVIEW_MCP_SCRIPT).pathname,
+    '--ohlcv',
+    '--json',
+    `--symbol=${yahooSymbol}`,
+    `--interval=${interval}`,
+    `--from-date=${from}`,
+  ];
+  if (to) {
+    args.push(`--to-date=${to}`);
+  }
+
+  let payload = null;
+  try {
+    const raw = execFileSync('python3', args, {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    payload = JSON.parse(String(raw || '{}'));
+  } catch (error) {
+    const stdout = String(error?.stdout || '').trim();
+    if (stdout) {
+      try {
+        payload = JSON.parse(stdout);
+      } catch (_) {
+        payload = null;
+      }
+    }
+    if (!payload) {
+      throw error;
+    }
+  }
+  if (payload?.status !== 'ok' || !Array.isArray(payload?.rows)) {
+    throw new Error(payload?.message || 'TradingView MCP fallback failed');
+  }
+  return payload.rows;
 }
 
 export async function ensureOHLCVCacheTable() {
@@ -134,20 +201,32 @@ export async function fetchAndCacheOHLCV(symbol, timeframe, from, to = null, exc
   const collected = [];
 
   let cursor = fromMs;
-  while (cursor <= toMs) {
-    const rows = await ex.fetchOHLCV(symbol, timeframe, cursor, MAX_BATCH);
-    if (!Array.isArray(rows) || rows.length === 0) break;
-    const filtered = rows.filter((row) => row[0] <= toMs);
-    if (filtered.length > 0) {
-      if (useCache) {
-        await upsertOHLCVRows(symbol, timeframe, filtered, exchange).catch(() => {});
+  try {
+    while (cursor <= toMs) {
+      const rows = await ex.fetchOHLCV(symbol, timeframe, cursor, MAX_BATCH);
+      if (!Array.isArray(rows) || rows.length === 0) break;
+      const filtered = rows.filter((row) => row[0] <= toMs);
+      if (filtered.length > 0) {
+        if (useCache) {
+          await upsertOHLCVRows(symbol, timeframe, filtered, exchange).catch(() => {});
+        }
+        collected.push(...filtered);
       }
-      collected.push(...filtered);
+      const lastTs = rows[rows.length - 1]?.[0];
+      if (!lastTs || lastTs <= cursor) break;
+      cursor = lastTs + stepMs;
+      if (rows.length < MAX_BATCH) break;
     }
-    const lastTs = rows[rows.length - 1]?.[0];
-    if (!lastTs || lastTs <= cursor) break;
-    cursor = lastTs + stepMs;
-    if (rows.length < MAX_BATCH) break;
+  } catch (error) {
+    console.warn(`  ⚠️ [ohlcv-fetcher] ${exchange} fetch 실패, TradingView MCP fallback 시도: ${error?.message || error}`);
+    const fallbackRows = fetchOHLCVFromTradingViewFallback(symbol, timeframe, from, to);
+    if (Array.isArray(fallbackRows) && fallbackRows.length > 0) {
+      if (useCache) {
+        await upsertOHLCVRows(symbol, timeframe, fallbackRows, 'yfinance').catch(() => {});
+      }
+      return fallbackRows;
+    }
+    throw error;
   }
 
   if (useCache) {
