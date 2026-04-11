@@ -4,6 +4,7 @@
 
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
+const pgPool = require('../../../packages/core/lib/pg-pool.js');
 const {
   buildHealthReport,
   buildHealthDecision,
@@ -92,6 +93,83 @@ async function buildN8nPipelineHealth() {
   });
 }
 
+async function buildBookCatalogHealth() {
+  try {
+    const rows = await pgPool.query('blog', `
+      SELECT
+        COALESCE(count(*), 0)::int AS total_count,
+        COALESCE(count(*) FILTER (WHERE source = 'canonical'), 0)::int AS canonical_count,
+        COALESCE(count(*) FILTER (WHERE source = 'data4library'), 0)::int AS popular_count
+      FROM blog.book_catalog
+    `);
+    const row = rows?.[0] || { total_count: 0, canonical_count: 0, popular_count: 0 };
+    const ok = [
+      `  book_catalog: ${row.total_count}권`,
+      `  canonical: ${row.canonical_count}권`,
+      `  data4library popular: ${row.popular_count}권`,
+      '  note: 정보나루 승인 전에는 popular 0건이 자연스러울 수 있음',
+    ];
+    return {
+      okCount: ok.length,
+      warnCount: 0,
+      ok,
+      warn: [],
+      totalCount: Number(row.total_count || 0),
+      canonicalCount: Number(row.canonical_count || 0),
+      popularCount: Number(row.popular_count || 0),
+    };
+  } catch (error) {
+    return {
+      okCount: 0,
+      warnCount: 1,
+      ok: [],
+      warn: [`  book_catalog: 확인 실패 (${error.message.slice(0, 120)})`],
+      totalCount: 0,
+      canonicalCount: 0,
+      popularCount: 0,
+    };
+  } finally {
+    await pgPool.closeAll().catch(() => {});
+  }
+}
+
+async function buildBookReviewQueueHealth() {
+  try {
+    const rows = await pgPool.query('blog', `
+      SELECT
+        COALESCE(count(*), 0)::int AS total_count,
+        COALESCE(count(*) FILTER (WHERE status = 'queued'), 0)::int AS queued_count,
+        COALESCE(count(*) FILTER (WHERE queue_date = CURRENT_DATE), 0)::int AS today_count
+      FROM blog.book_review_queue
+    `);
+    const row = rows?.[0] || { total_count: 0, queued_count: 0, today_count: 0 };
+    const ok = [
+      `  book_review_queue: ${row.total_count}건`,
+      `  queued: ${row.queued_count}건`,
+      `  today: ${row.today_count}건`,
+    ];
+    return {
+      okCount: ok.length,
+      warnCount: 0,
+      ok,
+      warn: [],
+      totalCount: Number(row.total_count || 0),
+      queuedCount: Number(row.queued_count || 0),
+      todayCount: Number(row.today_count || 0),
+    };
+  } catch (error) {
+    return {
+      okCount: 0,
+      warnCount: 1,
+      ok: [],
+      warn: [`  book_review_queue: 확인 실패 (${error.message.slice(0, 120)})`],
+      totalCount: 0,
+      queuedCount: 0,
+      todayCount: 0,
+    };
+  }
+}
+
 function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealth) {
   return buildHealthDecision({
     warnings: [
@@ -133,6 +211,8 @@ function formatText(report) {
       buildHealthSampleSection('■ 정상 서비스 샘플', report.serviceHealth),
       buildHealthCountSection('■ 실행 백엔드 상태', report.nodeHealth, { okLimit: 3 }),
       buildHealthCountSection('■ n8n pipeline 경로', report.n8nPipelineHealth, { okLimit: 2 }),
+      buildHealthCountSection('■ 도서 카탈로그 상태', report.bookCatalogHealth, { okLimit: 4 }),
+      buildHealthCountSection('■ 도서리뷰 큐 상태', report.bookReviewQueueHealth, { okLimit: 3 }),
       buildHealthCountSection('■ daily run 상태', report.dailyRunHealth, { warnLimit: 4, okLimit: 2 }),
       {
         title: null,
@@ -160,6 +240,8 @@ async function buildReport() {
   const nodeHealth = await buildNodeHealth();
   const dailyRunHealth = buildDailyRunHealth();
   const n8nPipelineHealth = await buildN8nPipelineHealth();
+  const bookCatalogHealth = await buildBookCatalogHealth();
+  const bookReviewQueueHealth = await buildBookReviewQueueHealth();
   const decision = buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealth);
 
   return {
@@ -193,6 +275,8 @@ async function buildReport() {
       webhookUrl: n8nPipelineHealth.webhookUrl,
       resolvedWebhookUrl: n8nPipelineHealth.resolvedWebhookUrl,
     },
+    bookCatalogHealth,
+    bookReviewQueueHealth,
     decision,
   };
 }

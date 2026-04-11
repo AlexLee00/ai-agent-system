@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/Users/alexlee</string>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+	</dict>
+	<key>KeepAlive</key>
+	<false/>
+	<key>Label</key>
+	<string>ai.blog.sync-book-review-queue</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/opt/homebrew/bin/node</string>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/blog/scripts/build-book-review-queue.ts</string>
+		<string>--json</string>
+		<string>--limit</string>
+		<string>5</string>
+	</array>
+	<key>RunAtLoad</key>
+	<false/>
+	<key>StandardErrorPath</key>
+	<string>/Users/alexlee/projects/ai-agent-system/bots/blog/book-review-queue.err.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/alexlee/projects/ai-agent-system/bots/blog/book-review-queue.log</string>
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Hour</key>
+		<integer>5</integer>
+		<key>Minute</key>
+		<integer>50</integer>
+	</dict>
+	<key>WorkingDirectory</key>
+	<string>/Users/alexlee/projects/ai-agent-system/bots/blog</string>
+</dict>
+</plist>

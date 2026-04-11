@@ -15,6 +15,7 @@
 
 const http = require('http');
 const hsm = require('../../../packages/core/lib/health-state-manager');
+const pgPool = require('../../../packages/core/lib/pg-pool.js');
 const { getBlogHealthRuntimeConfig } = require('../lib/runtime-config.ts');
 const {
   getLaunchctlStatus,
@@ -126,6 +127,30 @@ function checkN8nHealth() {
   });
 }
 
+async function checkBookCatalogHealth() {
+  try {
+    const rows = await pgPool.query('blog', `
+      SELECT
+        COALESCE(count(*), 0)::int AS total_count,
+        COALESCE(count(*) FILTER (WHERE source = 'canonical'), 0)::int AS canonical_count,
+        COALESCE(count(*) FILTER (WHERE source = 'data4library'), 0)::int AS popular_count
+      FROM blog.book_catalog
+    `);
+    const row = rows?.[0];
+    if (!row) {
+      return { ok: false, detail: 'book_catalog 조회 결과 없음' };
+    }
+    return {
+      ok: true,
+      detail: `book_catalog ${row.total_count}권 (canonical ${row.canonical_count}, popular ${row.popular_count})`,
+    };
+  } catch (e) {
+    return { ok: false, detail: `book_catalog 확인 실패: ${e.message.slice(0, 120)}` };
+  } finally {
+    await pgPool.closeAll().catch(() => {});
+  }
+}
+
 async function main() {
   console.log(`[블로그 헬스체크] 시작 — ${new Date().toISOString()}`);
 
@@ -201,6 +226,21 @@ async function main() {
   } else if (state[n8nKey]) {
     await notify(`✅ [블로그 헬스] n8n 회복\n${n8nHealth.detail}`, 1);
     hsm.clearAlert(state, n8nKey);
+  }
+
+  const bookCatalog = await checkBookCatalogHealth();
+  const bookCatalogKey = 'book-catalog:db';
+  if (!bookCatalog.ok) {
+    if (hsm.canAlert(state, bookCatalogKey)) {
+      issues.push({
+        key: bookCatalogKey,
+        level: 2,
+        msg: `⚠️ [블로그 헬스] book_catalog 비정상\n${bookCatalog.detail}`,
+      });
+    }
+  } else if (state[bookCatalogKey]) {
+    await notify(`✅ [블로그 헬스] book_catalog 회복\n${bookCatalog.detail}`, 1);
+    hsm.clearAlert(state, bookCatalogKey);
   }
 
   for (const { key, level, msg } of issues) {
