@@ -430,8 +430,9 @@ export async function getDynamicRR(symbol, minSamples = 10) {
  * @returns {{ tpPct, slPct, tpPrice, slPrice, source, applied }}
  */
 export function calculateDynamicTPSL(symbol, entryPrice = null, atrRatio = null) {
-  const FIXED_TP_PCT = 0.06;  // 고정 +6%
-  const FIXED_SL_PCT = 0.03;  // 고정 -3%
+  const capitalConfig = getCapitalConfig();
+  const FIXED_TP_PCT = Number(capitalConfig.rr_fallback?.tp_pct ?? 0.06);  // 고정 +6%
+  const FIXED_SL_PCT = Number(capitalConfig.rr_fallback?.sl_pct ?? 0.03);  // 고정 -3%
   const enabled      = isDynamicTPSLEnabled();
 
   if (!atrRatio || atrRatio <= 0) {

@@ -90,6 +90,22 @@ const SAFETY = {
   INITIAL_EQUITY:  138.71, // 초기 자산 폴백 (USD)
 };
 
+export function getSignalLimits(exchange = null, tradeMode = null) {
+  const cfg = getCapitalConfig(exchange, tradeMode) || {};
+  return {
+    MAX_SINGLE_PCT: Number(cfg.max_position_pct ?? SAFETY.MAX_SINGLE_PCT),
+    MAX_CAPITAL_USAGE: Number(cfg.max_capital_usage ?? SAFETY.MAX_CAPITAL_USAGE),
+    MAX_POSITIONS: Number(cfg.max_concurrent_positions ?? SAFETY.MAX_POSITIONS),
+    MAX_DAILY_LOSS: Number(cfg.max_daily_loss_pct ?? SAFETY.MAX_DAILY_LOSS),
+    MAX_DRAWDOWN: Number(cfg.max_drawdown_pct ?? SAFETY.MAX_DRAWDOWN),
+    COOLDOWN_AFTER_LOSS_STREAK: Number(
+      cfg.cooldown_after_loss_streak ?? SAFETY.COOLDOWN_AFTER_LOSS_STREAK,
+    ),
+    COOLDOWN_MINUTES: Number(cfg.cooldown_minutes ?? SAFETY.COOLDOWN_MINUTES),
+    INITIAL_EQUITY: SAFETY.INITIAL_EQUITY,
+  };
+}
+
 async function getTotalAsset() {
   const equity = await db.getLatestEquity();
   return equity ?? SAFETY.INITIAL_EQUITY;
@@ -116,15 +132,13 @@ export async function checkSafetyGates(signal) {
   const { action, amount_usdt: orderValue, symbol } = signal;
   const isBuy = action === ACTIONS.BUY;
   const totalAsset = await getTotalAsset();
-  const capitalPolicy = getCapitalConfig(signal.exchange, signal.trade_mode || null) || {};
-  const maxSinglePct = Number(capitalPolicy.max_position_pct ?? SAFETY.MAX_SINGLE_PCT);
-  const maxCapitalUsage = Number(capitalPolicy.max_capital_usage ?? SAFETY.MAX_CAPITAL_USAGE);
-  const maxDailyLoss = Number(capitalPolicy.max_daily_loss_pct ?? SAFETY.MAX_DAILY_LOSS);
-  const maxPositions = Number(capitalPolicy.max_concurrent_positions ?? SAFETY.MAX_POSITIONS);
-  const cooldownAfterLossStreak = Number(
-    capitalPolicy.cooldown_after_loss_streak ?? SAFETY.COOLDOWN_AFTER_LOSS_STREAK,
-  );
-  const cooldownMinutes = Number(capitalPolicy.cooldown_minutes ?? SAFETY.COOLDOWN_MINUTES);
+  const limits = getSignalLimits(signal.exchange, signal.trade_mode || null);
+  const maxSinglePct = limits.MAX_SINGLE_PCT;
+  const maxCapitalUsage = limits.MAX_CAPITAL_USAGE;
+  const maxDailyLoss = limits.MAX_DAILY_LOSS;
+  const maxPositions = limits.MAX_POSITIONS;
+  const cooldownAfterLossStreak = limits.COOLDOWN_AFTER_LOSS_STREAK;
+  const cooldownMinutes = limits.COOLDOWN_MINUTES;
 
   // 원칙 1 — 단일 포지션 ≤ config.max_position_pct
   if (isBuy && orderValue > totalAsset * maxSinglePct) {
@@ -184,10 +198,10 @@ export async function checkSafetyGates(signal) {
 
   // 원칙 6 — 최대 드로우다운 ≤ 15%
   const maxDD = await getMaxDrawdown();
-  if (maxDD > SAFETY.MAX_DRAWDOWN) {
+  if (maxDD > limits.MAX_DRAWDOWN) {
     return {
       passed: false,
-      reason: `원칙6 위반: 최대 드로우다운 초과 (${(maxDD * 100).toFixed(1)}% > 15%) → 사용자 승인 필요`,
+      reason: `원칙6 위반: 최대 드로우다운 초과 (${(maxDD * 100).toFixed(1)}% > ${(limits.MAX_DRAWDOWN * 100).toFixed(1)}%) → 사용자 승인 필요`,
     };
   }
 
