@@ -8,10 +8,32 @@ function createSkaReadService({ pgPool, rag = null }) {
     const date = args.date || kst.today();
     try {
       const rows = await pgPool.query('reservation', `
-        SELECT name_enc, date, start_time, end_time, room, status
+        SELECT DISTINCT ON (
+          regexp_replace(phone, '\\D', '', 'g'),
+          date,
+          start_time,
+          end_time,
+          COALESCE(room, '')
+        )
+          name_enc,
+          date,
+          start_time,
+          end_time,
+          room,
+          status
         FROM reservations
         WHERE date = $1
-        ORDER BY start_time
+          AND seen_only = 0
+          AND status NOT IN ('failed')
+        ORDER BY
+          regexp_replace(phone, '\\D', '', 'g'),
+          date,
+          start_time,
+          end_time,
+          COALESCE(room, ''),
+          updated_at DESC NULLS LAST,
+          id DESC,
+          start_time
       `, [date]);
 
       if (rows.length === 0) {
