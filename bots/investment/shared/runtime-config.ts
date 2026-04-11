@@ -15,6 +15,44 @@ const KIS_ORDER_RULE = getMarketOrderRule('kis');
 const KIS_OVERSEAS_ORDER_RULE = getMarketOrderRule('kis_overseas');
 const BINANCE_ORDER_RULE = getMarketOrderRule('binance');
 
+function loadCapitalManagementConfig() {
+  try {
+    const raw = yaml.load(readFileSync(join(__dirname, '..', 'config.yaml'), 'utf8'));
+    return raw?.capital_management || {};
+  } catch {
+    return {};
+  }
+}
+
+export function getTimeProfiles() {
+  const capitalManagement = loadCapitalManagementConfig();
+  const tp = capitalManagement.time_profiles || {};
+
+  return {
+    ACTIVE: {
+      maxPositionPct: Number(tp.active?.max_position_pct ?? 0.12),
+      maxOpenPositions: Number(tp.active?.max_open_positions ?? 4),
+      minSignalScore: Number(tp.active?.min_signal_score ?? 0.54),
+      cycleSec: 1800,
+      emergencyTrigger: true,
+    },
+    SLOWDOWN: {
+      maxPositionPct: Number(tp.slowdown?.max_position_pct ?? 0.10),
+      maxOpenPositions: Number(tp.slowdown?.max_open_positions ?? 3),
+      minSignalScore: Number(tp.slowdown?.min_signal_score ?? 0.66),
+      cycleSec: 3600,
+      emergencyTrigger: true,
+    },
+    NIGHT_AUTO: {
+      maxPositionPct: Number(tp.night?.max_position_pct ?? 0.06),
+      maxOpenPositions: Number(tp.night?.max_open_positions ?? 1),
+      minSignalScore: Number(tp.night?.min_signal_score ?? 0.74),
+      cycleSec: 3600,
+      emergencyTrigger: false,
+    },
+  };
+}
+
 /** @typedef {typeof DEFAULT_RUNTIME_CONFIG} InvestmentRuntimeConfig */
 
 const DEFAULT_RUNTIME_CONFIG = {
@@ -132,29 +170,7 @@ const DEFAULT_RUNTIME_CONFIG = {
       stockAutoApproveOverseas: 400,
     },
   },
-  timeMode: {
-    ACTIVE: {
-      maxPositionPct: 0.18,
-      maxOpenPositions: 4,
-      minSignalScore: 0.54,
-      cycleSec: 1800,
-      emergencyTrigger: true,
-    },
-    SLOWDOWN: {
-      maxPositionPct: 0.10,
-      maxOpenPositions: 3,
-      minSignalScore: 0.66,
-      cycleSec: 3600,
-      emergencyTrigger: true,
-    },
-    NIGHT_AUTO: {
-      maxPositionPct: 0.06,
-      maxOpenPositions: 1,
-      minSignalScore: 0.74,
-      cycleSec: 3600,
-      emergencyTrigger: false,
-    },
-  },
+  timeMode: getTimeProfiles(),
   llmPolicies: {
     investmentAgentPolicy: {
       useSharedFallbackEngine: true,

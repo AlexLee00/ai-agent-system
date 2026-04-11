@@ -58,6 +58,7 @@ capital_management:
   reserve_ratio: 0.3
   risk_per_trade: 0.02
   max_position_pct: 0.1
+  max_drawdown_pct: 0.15
   min_order_usdt: 11
   dynamic_min_order:
     enabled: true
@@ -76,6 +77,22 @@ capital_management:
   max_weekly_loss_pct: 0.12
   cooldown_after_loss_streak: 3
   cooldown_minutes: 120
+  time_profiles:
+    active:
+      max_position_pct: 0.12
+      max_open_positions: 4
+      min_signal_score: 0.54
+    slowdown:
+      max_position_pct: 0.10
+      max_open_positions: 3
+      min_signal_score: 0.66
+    night:
+      max_position_pct: 0.06
+      max_open_positions: 1
+      min_signal_score: 0.74
+  rr_fallback:
+    tp_pct: 0.06
+    sl_pct: 0.03
   by_exchange:
     binance:
       reserve_ratio: 0.10

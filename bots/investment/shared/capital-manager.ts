@@ -36,6 +36,7 @@ function loadCapitalConfig() {
       reserve_ratio:              cm.reserve_ratio              ?? 0.50,
       risk_per_trade:             cm.risk_per_trade             ?? 0.02,
       max_position_pct:           cm.max_position_pct           ?? 0.10,
+      max_drawdown_pct:           cm.max_drawdown_pct           ?? 0.15,
       min_order_usdt:             cm.min_order_usdt             ?? fallbackCryptoMinOrder,
       max_concurrent_positions:   cm.max_concurrent_positions   ?? 3,
       max_daily_trades:           cm.max_daily_trades           ?? 15,
@@ -44,15 +45,19 @@ function loadCapitalConfig() {
       cooldown_after_loss_streak: cm.cooldown_after_loss_streak ?? 3,
       cooldown_minutes:           cm.cooldown_minutes           ?? 60,
       dynamic_min_order:          cm.dynamic_min_order          ?? {},
+      time_profiles:              cm.time_profiles              ?? {},
+      rr_fallback:                cm.rr_fallback                ?? {},
       by_exchange:                cm.by_exchange                ?? {},
     };
   } catch {
     return {
       max_capital_usage: 0.90,  reserve_ratio: 0.10,          risk_per_trade: 0.02,
-      max_position_pct: 0.10,   min_order_usdt: fallbackCryptoMinOrder, max_concurrent_positions: 3,
+      max_position_pct: 0.10,   max_drawdown_pct: 0.15, min_order_usdt: fallbackCryptoMinOrder, max_concurrent_positions: 3,
       max_daily_trades: 15,     max_daily_loss_pct: 0.10,     max_weekly_loss_pct: 0.20,
       cooldown_after_loss_streak: 3, cooldown_minutes: 60,
       dynamic_min_order: {},
+      time_profiles: {},
+      rr_fallback: {},
       by_exchange: {},
     };
   }
