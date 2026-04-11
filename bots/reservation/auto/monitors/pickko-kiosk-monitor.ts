@@ -1,4 +1,5 @@
-// @ts-nocheck
-'use strict';
+type LegacyKioskMonitorModule = Record<string, unknown>;
 
-module.exports = require('./pickko-kiosk-monitor.legacy.js');
+const legacyModule = require('./pickko-kiosk-monitor.legacy.js') as LegacyKioskMonitorModule;
+
+export = legacyModule;

@@ -14,7 +14,7 @@
 const path = require('path');
 const fs = require('fs');
 const { execSync } = require('child_process');
-const { publishToMainBot } = require('../lib/mainbot-client');
+const { publishReservationAlert } = require('../lib/alert-client');
 
 const BACKUP_DIR = path.join(process.env.HOME, '.openclaw', 'workspace', 'backups');
 const KEEP_DAYS = 7;
@@ -75,7 +75,7 @@ async function main() {
   } catch (err) {
     const msg = `🚨 [스카 백업 실패]\n${err.message}`;
     console.error(msg);
-    publishToMainBot({ from_bot: 'ska', event_type: 'system_error', alert_level: 3, message: msg });
+    publishReservationAlert({ from_bot: 'ska', event_type: 'system_error', alert_level: 3, message: msg });
     process.exit(1);
   }
 }

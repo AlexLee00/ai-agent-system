@@ -195,12 +195,12 @@ async function runTests() {
     if (t2.getCount() !== 0) throw new Error('success 후 파일 미삭제');
   });
 
-  // ─── 8. 제이 큐 (publishToMainBot) ───────────────────────
-  console.log('\n[8] 제이 큐 (publishToMainBot)');
-  const { publishToMainBot } = require('../lib/mainbot-client');
+  // ─── 8. OpenClaw topic 알림 (publishReservationAlert) ─────────────
+  console.log('\n[8] OpenClaw topic 알림 (publishReservationAlert)');
+  const { publishReservationAlert } = require('../lib/alert-client');
 
-  await step('publishToMainBot DB 삽입 확인', () => {
-    const result = publishToMainBot({ from_bot: 'ska', event_type: 'health_check', alert_level: 1, message: 'E2E 테스트 메시지' });
+  await step('publishReservationAlert 전달 확인', () => {
+    const result = publishReservationAlert({ from_bot: 'ska', event_type: 'health_check', alert_level: 1, message: 'E2E 테스트 메시지' });
     if (result !== true) throw new Error(`예상 결과: true, 실제: ${result}`);
   });
 

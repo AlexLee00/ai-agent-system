@@ -19,7 +19,7 @@
 
 const fs   = require('fs');
 const path = require('path');
-const { publishToMainBot } = require('./mainbot-client');
+const { publishReservationAlert } = require('./alert-client');
 const { log } = require('./utils');
 
 const DEFAULT_THRESHOLD   = 3;   // 연속 3회 실패 시 첫 알림
@@ -80,7 +80,7 @@ function createErrorTracker({ label = 'unknown', threshold = DEFAULT_THRESHOLD, 
         `시각: ${new Date().toLocaleTimeString('ko-KR')}`,
       ];
       if (count > threshold) lines.push(`(${count - threshold}회 추가 지속 — 수동 확인 권장)`);
-      publishToMainBot({ from_bot: 'ska', event_type: 'alert', alert_level: 3, message: lines.join('\n') });
+      publishReservationAlert({ from_bot: 'ska', event_type: 'alert', alert_level: 3, message: lines.join('\n') });
     }
   }
 

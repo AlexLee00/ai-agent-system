@@ -13,17 +13,17 @@
 
 완료:
 
-- `bots/reservation/lib/mainbot-client.legacy.js`
-  - `publishToMainBot()`가 더 이상 `tryTelegramSend()` 개인 DM 폴백을 타지 않음
+- `bots/reservation/lib/alert-client.legacy.js`
+  - `publishReservationAlert()`가 더 이상 `tryTelegramSend()` 개인 DM 폴백을 타지 않음
 - `bots/reservation/lib/telegram.legacy.js`
   - `sendTelegram()`은 topic 경유 래퍼만 유지
   - `tryTelegramSend()`는 비활성화
 - `bots/reservation/lib/health.legacy.js`
-  - 시작/종료 알림을 `publishToMainBot()`로 전환
+  - 시작/종료 알림을 `publishReservationAlert()`로 전환
 - `bots/reservation/manual/reservation/pickko-cancel.legacy.js`
-  - 앱/키오스크 PG 환불 후 수동처리 알림을 `publishToMainBot()`로 전환
+  - 앱/키오스크 PG 환불 후 수동처리 알림을 `publishReservationAlert()`로 전환
 - `bots/reservation/scripts/deploy-ops.sh`
-  - 배포 실패 알림을 `publishToMainBot()`로 전환
+  - 배포 실패 알림을 `publishReservationAlert()`로 전환
 
 남은 주의점:
 
@@ -126,3 +126,43 @@
 - 개인 채팅 fallback 금지
 - topic 라우팅 실패 시에는 조용히 실패 로그만 남기고, 같은 내용을 다른 채널로 재발송하지 않는다
 - 같은 날짜/동일 대상/동일 조치 요구 알림은 가능한 한 묶어서 한 번만 보낸다
+
+## 5. 공용 Telegram Helper 점검 메모
+
+### 이미 안전한 경로
+
+- `packages/core/lib/telegram-sender*`
+  - `OPS`에서는 이미 `openclawClient.postAlarm()`을 우선 사용한다.
+  - `sendDirect()`도 `OPS`에서는 비활성화되어 있다.
+  - 즉 현재 운영 서버에서 이 모듈은 기본적으로 topic 라우팅 쪽으로 간다.
+
+- `scripts/api-usage-report.legacy.js`
+  - 텔레그램 전송 플래그가 있어도 실제 발송은 `openclawClient.postAlarm()` 사용
+  - direct Telegram API 경로가 아님
+
+### 남겨야 하는 direct API
+
+- `packages/core/lib/reporting-hub*`
+  - `telegram_api` target이 남아 있다.
+  - 이는 특정 대상 채팅/스레드/inline keyboard 같은 특수 전달을 위해 필요하다.
+  - 예: worker approval 요청처럼 일반 team topic broadcast와 다른 경우
+
+- `bots/worker/lib/approval.js`
+  - 승인 요청은 inline button 상호작용이 핵심이라 일반 report/alert와 완전히 같은 축이 아니다.
+  - 이 경로는 `reporting-hub`의 `telegram_api` target 유지가 맞다.
+
+### 다음 정리 원칙
+
+- `topic broadcast` 용도:
+  - `postAlarm()` 또는 `telegram-sender`만 사용
+
+- `특정 채팅/특정 thread/inline keyboard` 용도:
+  - `reporting-hub telegram_api target` 유지
+
+- `직접 Bot API 호출`이 남아 있어도 아래 조건이면 유지:
+  - OpenClaw topic broadcast로 대체 불가
+  - callback/approval/특정 대상 direct delivery가 목적
+
+- 반대로 아래는 제거 대상:
+  - 단순 알림인데 `chat_id`로 직접 보내는 fallback
+  - topic 실패 시 개인 DM으로 우회하는 코드

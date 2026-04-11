@@ -21,7 +21,7 @@ const { delay, log } = require('../../lib/utils');
 const { loadSecrets } = require('../../lib/secrets');
 const { getPickkoLaunchOptions, setupDialogHandler } = require('../../lib/browser');
 const { loginToPickko, fetchPickkoEntries } = require('../../lib/pickko');
-const { publishToMainBot } = require('../../lib/mainbot-client');
+const { publishReservationAlert } = require('../../lib/alert-client');
 const {
   getAllNaverKeys, getKioskBlocksForDate,
   upsertDailySummary, getUnconfirmedSummaryBefore,
@@ -29,56 +29,20 @@ const {
 const { fetchDailyDetail } = require('../../lib/pickko-stats');
 const { maskName } = require('../../lib/formatting');
 const {
-  timeToMinutes,
-  resolveStudyRoomAmount,
-  buildRoomAmountsFromEntries,
-} = require('../../lib/study-room-pricing');
+  getTodayKST,
+  getHourKST,
+  getYesterdayKST,
+  formatDateHeader,
+  formatAmount,
+  calcAmount,
+  classifyEntry,
+  classifyLabel,
+  buildDailySummaryMessage,
+} = require('../../lib/daily-report-helpers');
 
 const SECRETS = loadSecrets();
 const PICKKO_ID = SECRETS.pickko_id;
 const PICKKO_PW = SECRETS.pickko_pw;
-
-// KST 기준 오늘 날짜 (YYYY-MM-DD)
-function getTodayKST() {
-  return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
-}
-
-// KST 현재 시각 (시 단위)
-function getHourKST() {
-  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' })).getHours();
-}
-
-// KST 기준 어제 날짜 (YYYY-MM-DD)
-function getYesterdayKST() {
-  const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
-  d.setDate(d.getDate() - 1);
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-}
-
-// 날짜 헤더용 포맷 (02/26 (목))
-function formatDateHeader(dateStr) {
-  const d = new Date(dateStr + 'T00:00:00+09:00');
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
-  const dow = dayNames[d.getDay()];
-  return `${mm}/${dd} (${dow})`;
-}
-
-// 금액 포맷 (12000 → 12,000원)
-function formatAmount(amount) {
-  if (!amount && amount !== 0) return '?원';
-  return Number(amount).toLocaleString('ko-KR') + '원';
-}
-
-/**
- * 예약 금액 계산 (룸 타입 × 이용 시간)
- * A1, A2: 3,500원 / 30분 (00:00~09:00 = 2,500원)
- * B:      6,000원 / 30분 (00:00~09:00 = 4,000원)
- */
-function calcAmount(entry) {
-  return resolveStudyRoomAmount(entry);
-}
 
 /**
  * 오늘 kiosk_blocks DB 조회 → { "date|start|room": naverBlocked } 맵
@@ -94,127 +58,6 @@ async function getTodayKioskMap(today) {
     map[key] = row.naver_blocked === 1;
   }
   return map;
-}
-
-/**
- * 픽코 예약 항목 분류
- */
-function classifyEntry(e, naverKeys, kioskMap) {
-  const naverKey = `${e.phoneRaw}|${e.date}|${e.start}`;
-  if (e.phoneRaw && naverKeys.has(naverKey)) return { type: 'naver', naverBlocked: null };
-
-  const kioskKey = `${e.date}|${e.start}|${e.room || ''}`;
-  if (kioskKey in kioskMap) return { type: 'kiosk', naverBlocked: kioskMap[kioskKey] };
-
-  return { type: 'manual', naverBlocked: null };
-}
-
-function classifyLabel(cls) {
-  if (cls.type === 'naver') return '[네이버]';
-  if (cls.type === 'kiosk') return cls.naverBlocked ? '[키오스크 ✅]' : '[키오스크 ⚠️]';
-  return '[수동]';
-}
-
-/**
- * 예약 목록 → 텔레그램 메시지 생성
- * isNoon=true 이면 매출 + 컨펌 요청 포함
- */
-function buildMessage(today, entries, naverKeys, kioskMap, isNoon, pickkoStats = null) {
-  const dateHeader = formatDateHeader(today);
-
-  if (entries.length === 0) {
-    const base = `📋 오늘 예약 · ${dateHeader}\n\n예약 없음`;
-    if (isNoon) {
-      const generalRevenue = pickkoStats ? pickkoStats.generalRevenue : 0;
-      const baseMsg = base + `\n\n💰 총 매출: ${formatAmount(generalRevenue)}\n\n❓ 오늘 매출을 확정하시겠습니까?`;
-      return { msg: baseMsg, totalAmount: generalRevenue, roomAmounts: {} };
-    }
-    return base;
-  }
-
-  // 시간순 정렬
-  const sorted = [...entries].sort((a, b) => {
-    const diff = timeToMinutes(a.start) - timeToMinutes(b.start);
-    return diff !== 0 ? diff : (a.room || '').localeCompare(b.room || '');
-  });
-
-  // 각 항목 분류
-  const classified = sorted.map(e => ({ ...e, cls: classifyEntry(e, naverKeys, kioskMap) }));
-
-  // 총 금액 & 룸별 금액
-  const roomAmounts = buildRoomAmountsFromEntries(classified);
-  let totalAmount = 0;
-  for (const e of classified) {
-    const amt = calcAmount(e);
-    totalAmount += amt;
-  }
-
-  // 룸별 건수
-  const roomCount = {};
-  for (const e of sorted) {
-    const r = e.room || '?';
-    roomCount[r] = (roomCount[r] || 0) + 1;
-  }
-  const roomSummary = Object.entries(roomCount)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([room, cnt]) => `${room}×${cnt}`)
-    .join(' / ');
-
-  const SEP = '━━━━━━━━━━━━━━━';
-
-  let msg = `📋 오늘 예약 · ${dateHeader}\n\n`;
-  msg += `총 ${sorted.length}건 | ${formatAmount(totalAmount)}\n`;
-  msg += `${SEP}\n`;
-
-  for (const e of classified) {
-    const name  = e.name || '(이름없음)';
-    const room  = e.room || '?';
-    const start = e.start || '?';
-    const end   = e.end || '?';
-    const amt   = formatAmount(calcAmount(e));
-    const tag   = classifyLabel(e.cls);
-    msg += `${start}~${end}  ${room}  ${name}  ${amt}  ${tag}\n`;
-  }
-
-  msg += `${SEP}\n`;
-  msg += roomSummary;
-
-  // 주의 항목
-  const unblocked = classified.filter(e => e.cls.type === 'kiosk' && !e.cls.naverBlocked);
-  const manual    = classified.filter(e => e.cls.type === 'manual');
-
-  if (unblocked.length > 0) {
-    msg += `\n\n⚠️ 네이버 차단 미완료 (${unblocked.length}건):`;
-    for (const e of unblocked) {
-      msg += `\n• ${e.start}~${e.end} ${e.room} ${e.name || '(이름없음)'}`;
-    }
-  }
-  if (manual.length > 0) {
-    msg += `\n\n📞 수동 등록 — 네이버 확인 필요 (${manual.length}건):`;
-    for (const e of manual) {
-      msg += `\n• ${e.start}~${e.end} ${e.room} ${e.name || '(이름없음)'}`;
-    }
-  }
-
-  // 00:00 보고 — 룸별 매출 + 컨펌 요청
-  if (isNoon) {
-    const generalRevenue = pickkoStats ? pickkoStats.generalRevenue : 0;
-    const grandTotal = generalRevenue + totalAmount;
-
-    msg += `\n\n💰 매출 현황:\n`;
-    if (pickkoStats && generalRevenue > 0) {
-      msg += `  일반이용: ${formatAmount(generalRevenue)}\n`;
-    }
-    for (const [room, amt] of Object.entries(roomAmounts).sort(([a], [b]) => a.localeCompare(b))) {
-      msg += `  ${room}: ${formatAmount(amt)}\n`;
-    }
-    msg += `  합계: ${formatAmount(grandTotal)}\n`;
-    msg += `\n❓ 오늘 매출을 확정하시겠습니까?`;
-
-    return { msg, totalAmount: grandTotal, roomAmounts };
-  }
-
-  return { msg, totalAmount, roomAmounts };
 }
 
 async function main() {
@@ -305,7 +148,7 @@ async function main() {
 
     // ──── 4단계: 메시지 생성 & DB 저장 ────
     log('\n[4단계] 메시지 생성 & DB 저장');
-    const result = buildMessage(reportDate, entries, naverKeys, kioskMap, isMidnight, pickkoStats);
+    const result = buildDailySummaryMessage(reportDate, entries, naverKeys, kioskMap, isMidnight, pickkoStats);
 
     // result는 예약 없을 때 string, 있을 때 { msg, totalAmount, roomAmounts }
     let msg, totalAmount = 0, roomAmounts = {};
@@ -359,7 +202,7 @@ async function main() {
           `  합계: ${formatAmount(unconfirmed.total_amount)}\n\n` +
           `❓ ${prevHeader} 매출이 아직 확정되지 않았습니다. 지금 확정하시겠습니까?`;
         log('\n미컨펌 리마인드 발송:\n' + remindMsg);
-        publishToMainBot({ from_bot: 'ska', event_type: 'report', alert_level: 2, message: remindMsg });
+        publishReservationAlert({ from_bot: 'ska', event_type: 'report', alert_level: 2, message: remindMsg });
       }
     }
 
@@ -382,7 +225,7 @@ async function main() {
     if (!skipSend) {
       fs.writeFileSync(guardFile, new Date().toISOString());
       log('\n' + msg);
-      publishToMainBot({ from_bot: 'ska', event_type: 'report', alert_level: 1, message: msg });
+      publishReservationAlert({ from_bot: 'ska', event_type: 'report', alert_level: 1, message: msg });
     }
     log('\n✅ 픽코 일일 요약 완료');
 

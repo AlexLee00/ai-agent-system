@@ -1,4 +1,3 @@
-// @ts-nocheck
-'use strict';
+import { flushPendingTelegrams, sendTelegram } from './telegram';
 
-module.exports = require('./reporter.legacy.js');
+export { sendTelegram, flushPendingTelegrams };

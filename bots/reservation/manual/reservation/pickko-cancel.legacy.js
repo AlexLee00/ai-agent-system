@@ -22,7 +22,7 @@ const { parseArgs } = require('../../lib/args');
 const { formatPhone, toKoreanTime, pickkoEndTime } = require('../../lib/formatting');
 const { getPickkoLaunchOptions, setupDialogHandler } = require('../../lib/browser');
 const { loginToPickko } = require('../../lib/pickko');
-const { publishToMainBot } = require('../../lib/mainbot-client');
+const { publishReservationAlert } = require('../../lib/alert-client');
 const { IS_DEV, IS_OPS } = require('../../../../packages/core/lib/env');
 
 // ======================== 설정 ========================
@@ -508,7 +508,7 @@ async function run() {
         `픽코 어드민에서 수동으로 예약 취소 처리 해주세요.`,
         `(픽코 어드민 버그 — 유지보수 업체 문의 중)`,
       ].join('\n');
-      const sent = await publishToMainBot({
+      const sent = await publishReservationAlert({
         from_bot: 'jimmy',
         event_type: 'alert',
         alert_level: 3,

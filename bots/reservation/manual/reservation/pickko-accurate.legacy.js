@@ -24,7 +24,7 @@ const {
   setManualPickkoPriority,
   clearManualPickkoPriority,
 } = require('../../lib/state-bus');
-const { publishToMainBot } = require('../../lib/mainbot-client');
+const { publishReservationAlert } = require('../../lib/alert-client');
 const { IS_DEV, IS_OPS } = require('../../../../packages/core/lib/env');
 
 function buildStageError(code, message) {
@@ -194,7 +194,7 @@ async function notifyMemberNameMismatch(phoneRaw, pickkoName, naverName, mbNo = 
     `회원 정보 수정이 필요하면 마스터가 수동으로 확인해 주세요.`;
 
   log(`[4.5단계] ⚠️ 이름 불일치 감지 → 자동 수정 없이 알림만 발송`);
-  await publishToMainBot({
+  await publishReservationAlert({
     from_bot: 'andy',
     event_type: 'alert',
     alert_level: 2,

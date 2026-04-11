@@ -14,9 +14,13 @@ const { delay, log } = require('../../lib/utils');
 const { loadSecrets } = require('../../lib/secrets');
 const { getPickkoLaunchOptions, setupDialogHandler } = require('../../lib/browser');
 const { loginToPickko, fetchPickkoEntries } = require('../../lib/pickko');
-const { publishToMainBot } = require('../../lib/mainbot-client');
+const { publishReservationAlert } = require('../../lib/alert-client');
 const { getAllNaverKeys } = require('../../lib/db');
 const { maskPhone, maskName } = require('../../lib/formatting');
+const {
+  getTodayKST,
+  buildDailyAuditReport,
+} = require('../../lib/daily-report-helpers');
 const shadow = require('../../../../packages/core/lib/shadow-mode');
 const { IS_OPS } = require('../../../../packages/core/lib/env');
 
@@ -24,11 +28,6 @@ const SECRETS = loadSecrets();
 const PICKKO_ID = SECRETS.pickko_id;
 const PICKKO_PW = SECRETS.pickko_pw;
 const MODE = IS_OPS ? 'ops' : 'dev';
-
-// KST 기준 오늘 날짜 (YYYY-MM-DD)
-function getTodayKST() {
-  return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
-}
 
 // DB에서 "네이버 경유" 예약 키 수집 (collectNaverKeys 대체)
 function collectNaverKeys() {
@@ -102,28 +101,10 @@ async function main() {
       }
     }
 
-    let report;
-    if (total === 0) {
-      report = `📊 픽코 일일 감사 (당일 접수 기준) — ${today}\n\n당일 접수 기준 신규 예약이 없습니다.\n오늘 이용 예약이 없다는 뜻은 아닙니다.`;
-    } else if (manualCount === 0) {
-      report = `📊 픽코 일일 감사 (당일 접수 기준) — ${today}\n\n✅ 당일 접수 ${total}건 모두 auto\n네이버 예약 자동 등록 정상 처리됨`;
-    } else {
-      const fmtPhone = (raw) => raw.length === 11
-        ? `${raw.slice(0, 3)}-${raw.slice(3, 7)}-${raw.slice(7)}`
-        : raw;
-
-      report = `📊 픽코 일일 감사 (당일 접수 기준) — ${today}\n\n`;
-      report += `총 ${total}건 | auto ${autoCount}건 | 수동 ${manualCount}건\n\n`;
-      report += `⚠️ 수동(전화/직접) 등록 항목:\n`;
-      report += `━━━━━━━━━━━━━━━\n`;
-      for (const e of manualEntries) {
-        report += `• ${e.name || '(이름없음)'} ${e.phoneRaw ? fmtPhone(e.phoneRaw) : '(번호없음)'}\n`;
-        report += `  ${e.date} ${e.start}~${e.end} ${e.room || ''}\n`;
-      }
-    }
+    const report = buildDailyAuditReport(today, pickkoEntries, autoMatched, manualEntries);
 
     log('\n' + report);
-    publishToMainBot({ from_bot: 'ska', event_type: 'report', alert_level: 1, message: report });
+    publishReservationAlert({ from_bot: 'ska', event_type: 'report', alert_level: 1, message: report });
     log('\n✅ 픽코 일일 감사 완료');
 
     // ──── RAG: 일간 예약 감사 요약 저장 ────

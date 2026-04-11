@@ -17,10 +17,23 @@ const { delay, log } = require('../../lib/utils');
 const { loadSecrets } = require('../../lib/secrets');
 const { getPickkoLaunchOptions, setupDialogHandler } = require('../../lib/browser');
 const { loginToPickko, fetchPickkoEntries } = require('../../lib/pickko');
-const { publishToMainBot } = require('../../lib/mainbot-client');
+const { publishReservationAlert } = require('../../lib/alert-client');
 const { createErrorTracker } = require('../../lib/error-tracker');
 const { getKioskBlock, upsertKioskBlock, recordKioskBlockAttempt, getKioskBlocksForDate, pruneOldKioskBlocks } = require('../../lib/db');
 const { maskPhone, maskName } = require('../../lib/formatting');
+const {
+  fmtPhone,
+  buildOpsAlertMessage,
+  publishRetryableBlockAlert,
+  publishKioskSuccessReport,
+  journalBlockAttempt,
+  roundUpToHalfHour,
+  toClockMinutes,
+  to24Hour,
+  compareEntrySequence,
+  waitForCustomerCooldown,
+  markCustomerCooldown,
+} = require('../../lib/kiosk-monitor-helpers');
 const {
   updateAgentState,
   acquirePickkoLock,
@@ -29,6 +42,9 @@ const {
   isManualPickkoPriorityActive,
 } = require('../../lib/state-bus');
 const { getReservationKioskMonitorConfig } = require('../../lib/runtime-config');
+const { createKioskSlotRunnerService } = require('../../lib/kiosk-slot-runner-service');
+const { createKioskAuditService } = require('../../lib/kiosk-audit-service');
+const { createKioskVerifyService } = require('../../lib/kiosk-verify-service');
 
 const SECRETS = loadSecrets();
 const PICKKO_ID = SECRETS.pickko_id;
@@ -42,6 +58,61 @@ const NAVER_WS_FILE = path.join(WORKSPACE, 'naver-monitor-ws.txt');
 const BOOKING_URL = 'https://partner.booking.naver.com/bizes/596871/booking-calendar-view';
 const KIOSK_MONITOR_RUNTIME = getReservationKioskMonitorConfig();
 const NAVER_SCHEDULE_TRACE_LOG = '/tmp/naver-schedule-trace.log';
+
+const kioskSlotRunnerService = createKioskSlotRunnerService({
+  connectBrowser: (options) => puppeteer.connect(options),
+  attachNaverScheduleTrace,
+  naverBookingLogin,
+  blockNaverSlot,
+  unblockNaverSlot,
+  verifyBlockStateInFreshPage,
+  journalBlockAttempt,
+  recordKioskBlockAttempt,
+  publishRetryableBlockAlert,
+  publishKioskSuccessReport,
+  publishReservationAlert,
+  buildOpsAlertMessage,
+  getKioskBlock,
+  upsertKioskBlock,
+  nowKST,
+  log,
+});
+const kioskAuditService = createKioskAuditService({
+  launchBrowser: (options) => puppeteer.launch(options),
+  connectBrowser: (options) => puppeteer.connect(options),
+  delay,
+  setupDialogHandler,
+  loginToPickko,
+  fetchPickkoEntries,
+  attachNaverScheduleTrace,
+  naverBookingLogin,
+  selectBookingDate,
+  verifyBlockInGrid,
+  blockNaverSlot,
+  unblockNaverSlot,
+  publishReservationAlert,
+  getKioskBlock,
+  upsertKioskBlock,
+  getKioskBlocksForDate,
+  maskName,
+  getTodayKST,
+  nowKST,
+  getPickkoLaunchOptions,
+  pickkoId: PICKKO_ID,
+  pickkoPw: PICKKO_PW,
+  bookingUrl: BOOKING_URL,
+  log,
+});
+const kioskVerifyService = createKioskVerifyService({
+  connectBrowser: (options) => puppeteer.connect(options),
+  naverBookingLogin,
+  selectBookingDate,
+  verifyBlockInGrid,
+  roundUpToHalfHour,
+  delay,
+  bookingUrl: BOOKING_URL,
+  log,
+});
 
 // ─── 유틸 ───────────────────────────────────────────────
 
@@ -104,160 +175,6 @@ function attachNaverScheduleTrace(page, label = 'naver-page') {
   });
 }
 
-
-function fmtPhone(raw) {
-  if ((raw || '').length === 11) return `${raw.slice(0, 3)}-${raw.slice(3, 7)}-${raw.slice(7)}`;
-  return raw || '';
-}
-
-function buildOpsAlertMessage({
-  title,
-  customer,
-  phone,
-  date,
-  start,
-  end,
-  room,
-  status,
-  reason,
-  action,
-}) {
-  let message = `${title}\n`;
-  message += '━━━━━━━━━━━━━━━\n';
-  if (customer) message += `👤 고객: ${customer}\n`;
-  if (phone) message += `📞 번호: ${phone}\n`;
-  if (date) message += `📅 날짜: ${date}\n`;
-  if (start || end) message += `⏰ 시간: ${start || ''}~${end || ''}\n`;
-  if (room) message += `🏛️ 룸: ${room}\n`;
-  if (status) message += `📊 상태: ${status}\n`;
-  if (reason) message += `ℹ️ 사유: ${reason}\n`;
-  message += '━━━━━━━━━━━━━━━\n';
-  if (action) message += `✅ 조치: ${action}\n`;
-  return message;
-}
-
-function publishRetryableBlockAlert(entry, reason, options = {}) {
-  const {
-    prefix = '⚠️',
-    title = '네이버 차단 지연',
-    alertLevel = 2,
-    sourceLabel = '키오스크 예약',
-    actionLine = '자동 재시도 예정 — kiosk-monitor 후속 사이클을 확인하고, 계속 실패하면 수동 처리'
-  } = options;
-
-  publishToMainBot({
-    from_bot: 'jimmy',
-    event_type: 'alert',
-    alert_level: alertLevel,
-    message: buildOpsAlertMessage({
-      title: `${prefix} ${title}`,
-      customer: entry?.name || '(이름없음)',
-      phone: entry?.phoneRaw ? fmtPhone(entry.phoneRaw) : '',
-      date: entry?.date || '',
-      start: entry?.start || '',
-      end: entry?.end || '',
-      room: entry?.room || '',
-      status: sourceLabel,
-      reason,
-      action: `${actionLine} (${sourceLabel})`,
-    }),
-  });
-}
-
-function publishKioskSuccessReport(message) {
-  publishToMainBot({
-    from_bot: 'jimmy',
-    event_type: 'report',
-    alert_level: 1,
-    message,
-  });
-}
-
-async function journalBlockAttempt(entry, result, reason, options = {}) {
-  await recordKioskBlockAttempt(entry.phoneRaw, entry.date, entry.start, {
-    name: entry.name,
-    date: entry.date,
-    start: entry.start,
-    end: entry.end,
-    room: entry.room,
-    amount: entry.amount || 0,
-    naverBlocked: options.naverBlocked,
-    blockedAt: options.blockedAt,
-    naverUnblockedAt: options.naverUnblockedAt,
-    lastBlockAttemptAt: options.at || nowKST(),
-    lastBlockResult: result,
-    lastBlockReason: reason,
-    incrementRetry: options.incrementRetry === true,
-  });
-}
-
-// 네이버 드롭다운은 30분 단위 — 종료시간을 30분 단위로 올림
-// 예: "19:50" → "20:00", "19:30" → "19:30" (그대로)
-function roundUpToHalfHour(timeStr) {
-  const [h, m] = (timeStr || '').split(':').map(Number);
-  if (isNaN(h) || isNaN(m)) return timeStr;
-  if (m === 0 || m === 30) return timeStr; // 이미 30분 단위
-  const newM = m < 30 ? 30 : 0;
-  const newH = m >= 30 ? h + 1 : h;
-  return `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`;
-}
-
-function toClockMinutes(timeStr) {
-  const [h, m] = String(timeStr || '').split(':').map(Number);
-  if (Number.isNaN(h) || Number.isNaN(m)) return null;
-  return h * 60 + m;
-}
-
-function to24Hour(timeText) {
-  const text = (timeText || '').trim().replace(/\s+/g, ' ');
-  const m = text.match(/(오전|오후|자정)\s*(\d{1,2}):(\d{2})/);
-  if (!m) return null;
-  const [, meridiem, hourStr, minStr] = m;
-  let hour = Number(hourStr);
-  const minute = Number(minStr);
-  if (Number.isNaN(hour) || Number.isNaN(minute)) return null;
-  if (meridiem === '자정') hour = 0;
-  else if (meridiem === '오전') hour = hour === 12 ? 0 : hour;
-  else if (meridiem === '오후') hour = hour === 12 ? 12 : hour + 12;
-  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
-}
-
-function getCustomerOperationGroupKey(entry) {
-  return `${entry?.phoneRaw || ''}|${entry?.date || ''}`;
-}
-
-function compareEntrySequence(a, b) {
-  const aGroup = getCustomerOperationGroupKey(a);
-  const bGroup = getCustomerOperationGroupKey(b);
-  if (aGroup !== bGroup) return aGroup.localeCompare(bGroup);
-  const aStart = String(a?.start || '');
-  const bStart = String(b?.start || '');
-  if (aStart !== bStart) return aStart.localeCompare(bStart);
-  const aEnd = String(a?.end || '');
-  const bEnd = String(b?.end || '');
-  if (aEnd !== bEnd) return aEnd.localeCompare(bEnd);
-  return String(a?.room || '').localeCompare(String(b?.room || ''));
-}
-
-async function waitForCustomerCooldown(entry, tracker, operationLabel) {
-  const cooldownMs = Number(KIOSK_MONITOR_RUNTIME.customerOperationCooldownMs || 0);
-  if (!cooldownMs || cooldownMs <= 0) return;
-  const groupKey = getCustomerOperationGroupKey(entry);
-  if (!groupKey || groupKey === '|') return;
-  const lastAt = tracker.get(groupKey);
-  if (!lastAt) return;
-  const elapsedMs = Date.now() - lastAt;
-  const waitMs = cooldownMs - elapsedMs;
-  if (waitMs <= 0) return;
-  log(`⏳ 동일 고객 연속 ${operationLabel} cooldown 대기: ${Math.ceil(waitMs / 1000)}초 (${groupKey})`);
-  await delay(waitMs);
-}
-
-function markCustomerCooldown(entry, tracker) {
-  const groupKey = getCustomerOperationGroupKey(entry);
-  if (!groupKey || groupKey === '|') return;
-  tracker.set(groupKey, Date.now());
-}
 
 
 
@@ -351,7 +268,7 @@ async function naverBookingLogin(page) {
 
   log(`⚠️ 로그인 후 상태: ${JSON.stringify(secCheck)}`);
   if (secCheck.needsSecurity) {
-    publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 4, message: '🔐 네이버 예약관리 보안인증 필요!\n수동 로그인 후 재시작 필요' });
+    publishReservationAlert({ from_bot: 'jimmy', event_type: 'alert', alert_level: 4, message: '🔐 네이버 예약관리 보안인증 필요!\n수동 로그인 후 재시작 필요' });
   }
   return false;
 }
@@ -2281,6 +2198,7 @@ async function main() {
           lastBlockReason: 'naver_monitor_unavailable',
         });
         await journalBlockAttempt(e, 'deferred', 'naver_monitor_unavailable', {
+          recordKioskBlockAttempt,
           naverBlocked: false,
           incrementRetry: true,
         });
@@ -2290,7 +2208,7 @@ async function main() {
         });
       }
       for (const e of cancelledEntries) {
-        publishToMainBot({
+        publishReservationAlert({
           from_bot: 'jimmy',
           event_type: 'alert',
           alert_level: 3,
@@ -2347,6 +2265,7 @@ async function main() {
             lastBlockReason: 'naver_login_failed',
           });
           await journalBlockAttempt(e, 'deferred', 'naver_login_failed', {
+            recordKioskBlockAttempt,
             naverBlocked: false,
             incrementRetry: true,
           });
@@ -2356,7 +2275,7 @@ async function main() {
           });
         }
         for (const e of cancelledEntries) {
-          publishToMainBot({
+          publishReservationAlert({
             from_bot: 'jimmy',
             event_type: 'alert',
             alert_level: 3,
@@ -2402,7 +2321,7 @@ async function main() {
             lastBlockResult: 'skipped',
             lastBlockReason: 'time_elapsed',
           });
-          publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 2, message:
+          publishReservationAlert({ from_bot: 'jimmy', event_type: 'alert', alert_level: 2, message:
             buildOpsAlertMessage({
               title: '⏰ 시간 경과 — 네이버 차단 생략',
               customer: e.name || '(이름없음)',
@@ -2419,7 +2338,14 @@ async function main() {
           continue;
         }
 
-        await waitForCustomerCooldown(e, customerOperationTracker, '예약 차단');
+        await waitForCustomerCooldown(
+          e,
+          customerOperationTracker,
+          '예약 차단',
+          Number(KIOSK_MONITOR_RUNTIME.customerOperationCooldownMs || 0),
+          delay,
+          log,
+        );
 
         // Frame detach 또는 검증 실패 시 같은 예약에 대해 1회 더 재시도
         let blocked = false;
@@ -2476,6 +2402,7 @@ async function main() {
           );
         } else {
           await journalBlockAttempt(e, 'retryable_failure', blockReason, {
+            recordKioskBlockAttempt,
             naverBlocked: false,
             incrementRetry: true,
           });
@@ -2493,7 +2420,14 @@ async function main() {
           const { key } = e;
           log(`\n처리 중 (취소): ${key}`);
 
-          await waitForCustomerCooldown(e, customerOperationTracker, '예약 해제');
+          await waitForCustomerCooldown(
+            e,
+            customerOperationTracker,
+            '예약 해제',
+            Number(KIOSK_MONITOR_RUNTIME.customerOperationCooldownMs || 0),
+            delay,
+            log,
+          );
 
           let unblocked = false;
           for (let attempt = 1; attempt <= 2; attempt++) {
@@ -2528,7 +2462,7 @@ async function main() {
             );
           } else {
             // 실패 시 naverBlocked: true 유지 → 다음 주기에 재시도
-            publishToMainBot({
+            publishReservationAlert({
               from_bot: 'jimmy',
               event_type: 'alert',
               alert_level: 3,
@@ -2576,145 +2510,9 @@ async function main() {
 // 사용: node pickko-kiosk-monitor.js --block-slot --date=2026-03-03 --start=10:00 --end=12:00 --room=A1 --phone=01012345678 --name=홍길동
 
 async function blockSlotOnly(entry) {
-  const { date, start, end, room, name = '고객', phoneRaw = '00000000000' } = entry;
-  log(`\n🔒 [block-slot 모드] 네이버 차단: ${name} ${date} ${start}~${end} ${room}`);
-
-  // CDP 엔드포인트 읽기
   let wsEndpoint = null;
   try { wsEndpoint = fs.readFileSync(NAVER_WS_FILE, 'utf8').trim(); } catch (e) {}
-  if (!wsEndpoint) {
-    log('⚠️ naver-monitor 미실행 (WS 파일 없음) — 수동 차단 필요');
-    await journalBlockAttempt(entry, 'deferred', 'naver_monitor_unavailable', {
-      naverBlocked: false,
-      incrementRetry: true,
-    });
-    publishRetryableBlockAlert(entry, 'naver-monitor 미실행', {
-      prefix: '🟠',
-      title: '[대리등록] 네이버 예약불가 처리 지연',
-      roomSuffix: '룸',
-      sourceLabel: '대리등록',
-    });
-    process.exit(1);
-  }
-
-  let naverBrowser = null;
-  let naverPg = null;
-  let exitCode = 1;
-  try {
-    naverBrowser = await puppeteer.connect({ browserWSEndpoint: wsEndpoint });
-    log('✅ CDP 연결 성공');
-
-    const createPage = async () => {
-      const pg = await naverBrowser.newPage();
-      pg.setDefaultTimeout(30000);
-      await pg.setViewport({ width: 1920, height: 1080 });
-      attachNaverScheduleTrace(pg, 'block-slot');
-      return pg;
-    };
-    naverPg = await createPage();
-
-    const loggedIn = await naverBookingLogin(naverPg);
-    if (!loggedIn) {
-      log('❌ 네이버 booking 로그인 실패');
-      await journalBlockAttempt(entry, 'deferred', 'naver_login_failed', {
-        naverBlocked: false,
-        incrementRetry: true,
-      });
-      publishRetryableBlockAlert(entry, '네이버 로그인 실패', {
-        prefix: '🟠',
-        title: '[대리등록] 네이버 예약불가 처리 지연',
-        roomSuffix: '룸',
-        sourceLabel: '대리등록',
-      });
-      // exitCode = 1 (기본값), finally로 탭 닫기 후 종료
-    } else {
-      // blockNaverSlot 실행 (Frame detach 시 1회 재시도)
-      let blocked = false;
-      let blockResult = { ok: false, applied: false, reason: 'not_started' };
-      for (let attempt = 1; attempt <= 2; attempt++) {
-        try {
-          blockResult = await blockNaverSlot(naverPg, entry);
-          blocked = Boolean(blockResult?.ok);
-          break;
-        } catch (err) {
-          if (err.message.includes('detached Frame') && attempt === 1) {
-            log(`⚠️ Frame detach 감지 — 새 탭으로 재시도`);
-            try { await naverPg.close(); } catch {}
-            naverPg = await createPage();
-            const reLoggedIn = await naverBookingLogin(naverPg);
-            if (!reLoggedIn) break;
-          } else {
-            log(`❌ blockNaverSlot 오류: ${err.message}`);
-            break;
-          }
-        }
-      }
-
-      // kiosk_blocks DB에 기록 (중복 차단 방지 / 추적)
-      await upsertKioskBlock(phoneRaw, date, start, {
-        name, date, start, end, room, amount: 0,
-        naverBlocked: blocked,
-        firstSeenAt:  nowKST(),
-        blockedAt:    blocked ? nowKST() : null,
-        lastBlockAttemptAt: nowKST(),
-        lastBlockResult: blocked ? 'blocked' : 'attempted',
-        lastBlockReason: blockResult?.reason || 'block_attempt_finished',
-      });
-
-      if (!blocked) {
-        blocked = await verifyBlockStateInFreshPage(naverBrowser, entry, { capturePrefix: 'naver-recheck' });
-        log(`  🔁 대리등록 후 독립 재검증: ${blocked ? '✅ 차단 확인' : '❌ 차단 미확인'}`);
-        if (blocked) {
-          const existing = await getKioskBlock(phoneRaw, date, start, end, room);
-          await upsertKioskBlock(phoneRaw, date, start, {
-            ...(existing || {}),
-            name,
-            date,
-            start,
-            end,
-            room,
-            amount: 0,
-            naverBlocked: true,
-            firstSeenAt: existing?.firstSeenAt || nowKST(),
-            blockedAt: existing?.blockedAt || nowKST(),
-            lastBlockAttemptAt: nowKST(),
-            lastBlockResult: 'blocked',
-            lastBlockReason: 'fresh_page_verified',
-            blockRetryCount: existing?.blockRetryCount || 0,
-          });
-        }
-      }
-
-      if (blocked) {
-        log(`✅ 네이버 차단 완료: ${name} ${date} ${start}~${end} ${room}`);
-        publishKioskSuccessReport(`✅ [대리등록] 네이버 예약불가 처리 완료\n${name} ${date} ${start}~${end} ${room}룸`);
-      } else if (blockResult?.applied) {
-        log(`⚠️ 네이버 차단 검증 불확실 — 화면 확인 권장`);
-        await journalBlockAttempt(entry, 'uncertain', blockResult?.reason || 'applied_but_unverified', {
-          naverBlocked: false,
-        });
-        publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 2, message: `⚠️ [대리등록] 네이버 차단 검증 불확실 — 화면 확인 권장\n${name} ${date} ${start}~${end} ${room}룸` });
-        blocked = true;
-      } else {
-        log(`⚠️ 네이버 차단 미확인 — 자동 재시도 예정`);
-        await journalBlockAttempt(entry, 'retryable_failure', blockResult?.reason || 'verify_failed', {
-          naverBlocked: false,
-          incrementRetry: true,
-        });
-        publishRetryableBlockAlert(entry, '차단 검증 실패', {
-          prefix: '🟠',
-          title: '[대리등록] 네이버 예약불가 처리 지연',
-          roomSuffix: '룸',
-          sourceLabel: '대리등록',
-        });
-      }
-      exitCode = blocked ? 0 : 1;
-    }
-  } finally {
-    // process.exit()는 finally를 건너뛰므로 반드시 finally에서 탭 닫기
-    if (naverPg)     { try { await naverPg.close();    } catch {} }
-    if (naverBrowser){ try { naverBrowser.disconnect(); } catch {} }
-  }
+  const exitCode = await kioskSlotRunnerService.runBlockSlotOnly({ entry, wsEndpoint });
   process.exit(exitCode);
 }
 
@@ -2728,190 +2526,9 @@ async function blockSlotOnly(entry) {
 // 사용: node src/pickko-kiosk-monitor.js --audit-today
 
 async function auditToday(dateOverride = null) {
-  const today = dateOverride || getTodayKST();
-  log(`\n📋 [오늘 예약 검증] ${today} 시작`);
-
-  // ── Step 1: 픽코에서 오늘 예약 조회 ──
-  let pickkoEntries = [];
-  let browser;
-  try {
-    browser = await puppeteer.launch(getPickkoLaunchOptions());
-    const pages = await browser.pages();
-    const page = pages[0] || await browser.newPage();
-    page.setDefaultTimeout(30000);
-    setupDialogHandler(page, log);
-    await loginToPickko(page, PICKKO_ID, PICKKO_PW, delay);
-    const { entries } = await fetchPickkoEntries(page, today, { minAmount: 1 });
-    pickkoEntries = entries;
-    log(`  픽코 예약: ${pickkoEntries.length}건`);
-    for (const e of pickkoEntries) {
-      log(`    • ${maskName(e.name)} ${e.date} ${e.start}~${e.end} ${e.room}`);
-    }
-  } finally {
-    if (browser) { try { await browser.close(); } catch {} }
-  }
-
-  // ── Step 2: 네이버 CDP 연결 ──
   let wsEndpoint = null;
   try { wsEndpoint = fs.readFileSync(NAVER_WS_FILE, 'utf8').trim(); } catch {}
-  if (!wsEndpoint) {
-    log('⚠️ naver-monitor 미실행 — 검증 불가');
-    publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 3, message: `⚠️ [오늘 예약 검증] naver-monitor 미실행으로 검증 불가` });
-    return;
-  }
-
-  let naverBrowser = null;
-  let naverPg = null;
-  const okList = [], blockedList = [], unblockedList = [], failedList = [];
-
-  try {
-    naverBrowser = await puppeteer.connect({ browserWSEndpoint: wsEndpoint });
-    log('✅ CDP 연결 성공');
-
-    const createPage = async () => {
-      const pg = await naverBrowser.newPage();
-      pg.setDefaultTimeout(30000);
-      await pg.setViewport({ width: 1920, height: 1080 });
-      attachNaverScheduleTrace(pg, 'verify-slot');
-      return pg;
-    };
-    naverPg = await createPage();
-
-    const loggedIn = await naverBookingLogin(naverPg);
-    if (!loggedIn) {
-      log('❌ 네이버 로그인 실패');
-      publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 3, message: `⚠️ [오늘 예약 검증] 네이버 로그인 실패` });
-      return;
-    }
-
-    // 오늘 날짜 선택 (초기 1회)
-    await naverPg.goto(BOOKING_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await naverPg.waitForNetworkIdle({ idleTime: 800, timeout: 15000 }).catch(() => null);
-    await delay(2000);
-    await selectBookingDate(naverPg, today);
-    await delay(1000);
-
-    // ── Step 3: 픽코 예약별 차단 상태 확인 + 누락 시 차단 ──
-    log('\n[검증] 픽코 예약 → 네이버 차단 상태 확인');
-    for (const e of pickkoEntries) {
-      try {
-        const isBlocked = await verifyBlockInGrid(naverPg, e.room, e.start, e.end);
-        if (isBlocked) {
-          log(`  ✅ 차단확인: ${e.room} ${e.start}~${e.end} (${maskName(e.name)})`);
-          okList.push(e);
-          // DB 동기화: 확인됐으면 naverBlocked=true 보장
-          const existing = await getKioskBlock(e.phoneRaw, e.date, e.start, e.end, e.room);
-          if (!existing || !existing.naverBlocked) {
-            await upsertKioskBlock(e.phoneRaw, e.date, e.start, {
-              ...(existing || {}), ...e,
-              naverBlocked: true,
-              firstSeenAt: existing?.firstSeenAt || nowKST(),
-              blockedAt: existing?.blockedAt || nowKST(),
-            });
-          }
-        } else {
-          log(`  ⚠️ 차단 누락: ${e.room} ${e.start}~${e.end} → 차단 시도`);
-          let success = false;
-          for (let attempt = 1; attempt <= 2; attempt++) {
-            try {
-              success = Boolean((await blockNaverSlot(naverPg, e))?.ok);
-              break;
-            } catch (err) {
-              if (err.message.includes('detached Frame') && attempt === 1) {
-                log('  ⚠️ Frame detach → 새 탭으로 재시도');
-                try { await naverPg.close(); } catch {}
-                naverPg = await createPage();
-                const reLoggedIn = await naverBookingLogin(naverPg);
-                if (!reLoggedIn) break;
-              } else {
-                log(`  ❌ blockNaverSlot 오류: ${err.message}`);
-                break;
-              }
-            }
-          }
-          const existing = await getKioskBlock(e.phoneRaw, e.date, e.start, e.end, e.room);
-          await upsertKioskBlock(e.phoneRaw, e.date, e.start, {
-            ...(existing || {}), ...e,
-            naverBlocked: success,
-            firstSeenAt: existing?.firstSeenAt || nowKST(),
-            blockedAt: success ? nowKST() : null,
-          });
-          if (success) {
-            blockedList.push(e);
-          } else {
-            log(`  ❌ 차단 실패: ${e.room} ${e.start}~${e.end} — 수동 차단 필요`);
-            failedList.push(e);
-          }
-        }
-      } catch (err) {
-        log(`  ❌ 검증 오류 (${e.room} ${e.start}): ${err.message}`);
-      }
-    }
-
-    // ── Step 4: DB 차단 항목 중 픽코 예약 없는 것 해제 ──
-    const dbBlocks = await getKioskBlocksForDate(today);
-    const pickkoSet = new Set(pickkoEntries.map(e => `${e.phoneRaw}|${e.start}`));
-    const orphans = dbBlocks.filter(b => !pickkoSet.has(`${b.phoneRaw}|${b.start}`));
-    log(`\n[검증] DB 차단 항목: ${dbBlocks.length}건, 고아 항목: ${orphans.length}건`);
-
-    for (const b of orphans) {
-      log(`  🗑 고아 차단 해제: ${b.room} ${b.start}~${b.end}`);
-      let unblocked = false;
-      for (let attempt = 1; attempt <= 2; attempt++) {
-        try {
-          unblocked = await unblockNaverSlot(naverPg, b);
-          break;
-        } catch (err) {
-          if (err.message.includes('detached Frame') && attempt === 1) {
-            log('  ⚠️ Frame detach → 새 탭으로 재시도');
-            try { await naverPg.close(); } catch {}
-            naverPg = await createPage();
-            const reLoggedIn = await naverBookingLogin(naverPg);
-            if (!reLoggedIn) break;
-          } else {
-            log(`  ❌ unblockNaverSlot 오류: ${err.message}`);
-            break;
-          }
-        }
-      }
-      if (unblocked) {
-        const existing = await getKioskBlock(b.phoneRaw, b.date, b.start, b.end, b.room);
-        await upsertKioskBlock(b.phoneRaw, b.date, b.start, {
-          ...(existing || {}), ...b,
-          naverBlocked: false,
-          naverUnblockedAt: nowKST(),
-        });
-        unblockedList.push(b);
-      }
-    }
-
-  } finally {
-    if (naverPg)     { try { await naverPg.close(); } catch {} }
-    if (naverBrowser){ try { naverBrowser.disconnect(); } catch {} }
-  }
-
-  // ── 결과 요약 보고 ──
-  const msgParts = [`📋 [오늘 예약 검증] ${today} 완료`];
-  msgParts.push(`✅ 차단확인: ${okList.length}건`);
-  if (blockedList.length > 0) {
-    msgParts.push(`🔒 차단추가: ${blockedList.length}건`);
-    for (const e of blockedList) msgParts.push(`  - ${e.room} ${e.start}~${e.end} (${maskName(e.name)})`);
-  }
-  if (unblockedList.length > 0) {
-    msgParts.push(`🔓 차단해제: ${unblockedList.length}건`);
-    for (const e of unblockedList) msgParts.push(`  - ${e.room} ${e.start}~${e.end}`);
-  }
-  if (failedList.length > 0) {
-    msgParts.push(`❌ 차단실패(수동필요): ${failedList.length}건`);
-    for (const e of failedList) msgParts.push(`  - ${e.room} ${e.start}~${e.end} (${maskName(e.name)})`);
-  }
-  if (blockedList.length === 0 && unblockedList.length === 0 && okList.length === 0) {
-    msgParts.push('오늘 예약 없음');
-  } else if (blockedList.length === 0 && unblockedList.length === 0) {
-    msgParts.push('이상 없음');
-  }
-  publishToMainBot({ from_bot: 'jimmy', event_type: 'report', alert_level: 1, message: msgParts.join('\n') });
-  log(`\n✅ 오늘 예약 검증 완료 — 확인: ${okList.length}, 차단추가: ${blockedList.length}, 해제: ${unblockedList.length}, 실패: ${failedList.length}`);
+  return kioskAuditService.auditToday({ dateOverride, wsEndpoint });
 }
 
 // ─── 진입점 ──────────────────────────────────────────────────────────────────
@@ -2929,196 +2546,23 @@ const kioskErrorTracker = createErrorTracker({ label: 'kiosk-monitor', threshold
 // 사용: node pickko-kiosk-monitor.js --unblock-slot --date=2026-03-03 --start=10:00 --end=12:00 --room=A1 --phone=01012345678 --name=홍길동
 
 async function unblockSlotOnly(entry) {
-  const { date, start, end, room, name = '고객', phoneRaw = '00000000000' } = entry;
-  log(`\n🔓 [unblock-slot 모드] 네이버 차단 해제: ${name} ${date} ${start}~${end} ${room}`);
-
   let wsEndpoint = null;
   try { wsEndpoint = fs.readFileSync(NAVER_WS_FILE, 'utf8').trim(); } catch (e) {}
-  if (!wsEndpoint) {
-    log('⚠️ naver-monitor 미실행 (WS 파일 없음) — 수동 해제 필요');
-    publishToMainBot({
-      from_bot: 'jimmy',
-      event_type: 'alert',
-      alert_level: 3,
-      message: buildOpsAlertMessage({
-        title: '⚠️ [취소] 네이버 해제 실패 — 수동 처리 필요',
-        customer: name,
-        date,
-        start,
-        end,
-        room,
-        status: '취소 후 복구',
-        reason: 'naver-monitor 미실행',
-        action: '네이버 예약가능 상태를 수동으로 복구해 주세요.',
-      }),
-    });
-    process.exit(1);
-  }
-
-  let naverBrowser = null;
-  let naverPg = null;
-  let exitCode = 1;
-  try {
-    naverBrowser = await puppeteer.connect({ browserWSEndpoint: wsEndpoint });
-    log('✅ CDP 연결 성공');
-
-    const createPage = async () => {
-      const pg = await naverBrowser.newPage();
-      pg.setDefaultTimeout(30000);
-      await pg.setViewport({ width: 1920, height: 1080 });
-      attachNaverScheduleTrace(pg, 'unblock-slot');
-      return pg;
-    };
-    naverPg = await createPage();
-
-    const loggedIn = await naverBookingLogin(naverPg);
-    if (!loggedIn) {
-      log('❌ 네이버 booking 로그인 실패');
-      publishToMainBot({
-        from_bot: 'jimmy',
-        event_type: 'alert',
-        alert_level: 3,
-        message: buildOpsAlertMessage({
-          title: '⚠️ [취소] 네이버 해제 실패 — 수동 처리 필요',
-          customer: name,
-          date,
-          start,
-          end,
-          room,
-          status: '취소 후 복구',
-          reason: '네이버 로그인 실패',
-          action: '네이버 예약가능 상태를 수동으로 복구해 주세요.',
-        }),
-      });
-      // exitCode stays 1, falls through to finally
-    } else {
-      let unblocked = false;
-      for (let attempt = 1; attempt <= 2; attempt++) {
-        try {
-          unblocked = await unblockNaverSlot(naverPg, entry);
-          break;
-        } catch (err) {
-          if (err.message.includes('detached Frame') && attempt === 1) {
-            log(`⚠️ Frame detach 감지 — 새 탭으로 재시도`);
-            try { await naverPg.close(); } catch {}
-            naverPg = await createPage();
-            const reLoggedIn = await naverBookingLogin(naverPg);
-            if (!reLoggedIn) break;
-          } else {
-            log(`❌ unblockNaverSlot 오류: ${err.message}`);
-            break;
-          }
-        }
-      }
-
-      // DB 업데이트
-      const existing = await getKioskBlock(phoneRaw, date, start, end, room);
-      await upsertKioskBlock(phoneRaw, date, start, {
-        ...(existing || {}), name, date, start, end, room,
-        naverBlocked: unblocked ? false : Boolean(existing?.naverBlocked),
-        naverUnblockedAt: unblocked ? nowKST() : (existing?.naverUnblockedAt || null),
-      });
-
-      if (unblocked) {
-        log(`✅ 네이버 해제 완료: ${name} ${date} ${start}~${end} ${room}`);
-        publishKioskSuccessReport(`✅ [취소] 네이버 예약가능 복구 완료\n${name} ${date} ${start}~${end} ${room}룸`);
-      } else {
-        log(`⚠️ 네이버 해제 실패 — 수동 확인 필요`);
-        publishToMainBot({
-          from_bot: 'jimmy',
-          event_type: 'alert',
-          alert_level: 3,
-          message: buildOpsAlertMessage({
-            title: '⚠️ [취소] 네이버 예약가능 복구 실패 — 수동 확인 필요',
-            customer: name,
-            date,
-            start,
-            end,
-            room,
-            status: '취소 후 복구',
-            reason: '자동 해제 실패',
-            action: '네이버 예약가능 상태를 수동으로 확인해 주세요.',
-          }),
-        });
-      }
-      exitCode = unblocked ? 0 : 1;
-    }
-  } finally {
-    // process.exit()는 finally를 건너뛰므로 반드시 finally에서 탭 닫기
-    if (naverPg)     { try { await naverPg.close();        } catch {} }
-    if (naverBrowser){ try { naverBrowser.disconnect();     } catch {} }
-  }
+  const exitCode = await kioskSlotRunnerService.runUnblockSlotOnly({ entry, wsEndpoint });
   process.exit(exitCode);
 }
 
 async function verifyBlockStateInFreshPage(naverBrowser, entry, options = {}) {
-  const { date, start, end, room } = entry;
-  const { capturePrefix = null } = options;
-  const verifyPage = await naverBrowser.newPage();
-  try {
-    verifyPage.setDefaultTimeout(30000);
-    await verifyPage.setViewport({ width: 1920, height: 1080 });
-
-    const capture = async (stage) => {
-      if (!capturePrefix) return null;
-      const safeStage = String(stage || 'stage').replace(/[^a-z0-9_-]+/gi, '-');
-      const ssPath = `/tmp/${capturePrefix}-${date}-${safeStage}.png`;
-      await verifyPage.screenshot({ path: ssPath, fullPage: false }).catch(() => null);
-      log(`📸 [${safeStage}] 스크린샷: ${ssPath}`);
-      return ssPath;
-    };
-
-    const verifyLoggedIn = await naverBookingLogin(verifyPage);
-    if (!verifyLoggedIn) {
-      await capture('login-failed');
-      return false;
-    }
-
-    await verifyPage.goto(BOOKING_URL, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => null);
-    await verifyPage.waitForNetworkIdle({ idleTime: 800, timeout: 15000 }).catch(() => null);
-    await delay(1200);
-    await capture('calendar-open');
-    const dateSelected = await selectBookingDate(verifyPage, date);
-    if (!dateSelected) {
-      log(`⚠️ 검증용 날짜 선택 실패: ${date}`);
-      await capture('date-select-failed');
-      return false;
-    }
-    await capture('date-selected');
-    const verified = await verifyBlockInGrid(verifyPage, room, start, roundUpToHalfHour(end));
-    await capture(verified ? 'verified' : 'verify-failed');
-    return verified;
-  } finally {
-    try { await verifyPage.close(); } catch {}
-  }
+  return kioskVerifyService.verifyBlockStateInFreshPage(naverBrowser, entry, options);
 }
 
 // ─── verify-slot 단독 모드 (네이버 상태 검증 전용, 변경 없음) ───────────────
 // 사용: node pickko-kiosk-monitor.js --verify-slot --date=2026-03-03 --start=10:00 --end=12:00 --room=A1
 
 async function verifySlotOnly(entry) {
-  const { date, start, end, room, name = '고객' } = entry;
-  log(`\n🔎 [verify-slot 모드] 네이버 상태 검증: ${name} ${date} ${start}~${end} ${room}`);
-
   let wsEndpoint = null;
   try { wsEndpoint = fs.readFileSync(NAVER_WS_FILE, 'utf8').trim(); } catch (e) {}
-  if (!wsEndpoint) {
-    log('⚠️ naver-monitor 미실행 (WS 파일 없음) — 검증 불가');
-    process.exit(1);
-  }
-
-  let naverBrowser = null;
-  let exitCode = 1;
-  try {
-    naverBrowser = await puppeteer.connect({ browserWSEndpoint: wsEndpoint });
-    log('✅ CDP 연결 성공');
-    const verified = await verifyBlockStateInFreshPage(naverBrowser, entry, { capturePrefix: 'naver-verify' });
-    log(`✅ [verify-slot 결과] ${verified ? '차단 확인됨' : '차단 확인 실패'}: ${date} ${start}~${end} ${room}`);
-    exitCode = verified ? 0 : 1;
-  } finally {
-    if (naverBrowser) { try { naverBrowser.disconnect(); } catch {} }
-  }
-
+  const exitCode = await kioskVerifyService.verifySlotOnly({ entry, wsEndpoint });
   process.exit(exitCode);
 }
 
@@ -3167,7 +2611,7 @@ if (KIOSK_ARGS['block-slot']) {
     .then(() => process.exit(0))
     .catch(async err => {
       log(`❌ audit-today 오류: ${err.message}`);
-      publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 3, message: `⚠️ [오늘 예약 검증] 실행 오류: ${err.message}` });
+      publishReservationAlert({ from_bot: 'jimmy', event_type: 'alert', alert_level: 3, message: `⚠️ [오늘 예약 검증] 실행 오류: ${err.message}` });
       process.exit(1);
     });
 } else {

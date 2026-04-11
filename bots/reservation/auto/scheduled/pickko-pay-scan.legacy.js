@@ -14,9 +14,18 @@
  */
 
 const path = require('path');
-const fs = require('fs');
 const { spawn } = require('child_process');
-const { publishToMainBot } = require('../../lib/mainbot-client');
+const { publishReservationAlert } = require('../../lib/alert-client');
+const {
+  getArgValue,
+  parseCsvArg,
+  ts,
+  buildFailureLine,
+  writePayScanChecklistFile,
+  isAlreadyPaidWithoutButton,
+  isExpectedManualFollowup,
+  buildPayScanAlertMessage,
+} = require('../../lib/report-followup-helpers');
 const {
   getManualPendingReservations,
   getVerifiedReservationsForPayScan,
@@ -24,60 +33,8 @@ const {
   markSeen,
 } = require('../../lib/db.legacy.js');
 
-function getArgValue(name) {
-  const prefix = `--${name}=`;
-  const hit = process.argv.find((arg) => arg.startsWith(prefix));
-  return hit ? hit.slice(prefix.length) : '';
-}
-
-function parseCsvArg(name) {
-  return getArgValue(name)
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function ts() {
-  return new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
-}
-
 function log(message) {
   process.stdout.write(`[${ts()}] ${message}\n`);
-}
-
-function buildFailureLine(entry, result) {
-  return `- ${entry.date} ${entry.start}~${entry.end} ${entry.room}룸 / ${entry.phone} / ${result.message}`;
-}
-
-function writeChecklistFile(failures) {
-  if (!failures.length) return null;
-  const dir = path.join(__dirname, '../../manual/reports');
-  const stamp = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Seoul' }).replace(/[-: ]/g, '').slice(0, 13);
-  const filePath = path.join(dir, `pickko-pay-scan-followup-${stamp}.md`);
-  const lines = [
-    '# Pickko Pay Scan Follow-up',
-    '',
-    `생성시각: ${ts()}`,
-    '',
-    '자동 결제완료 처리 실패 건',
-    '',
-    ...failures.map(({ entry, result }) => buildFailureLine(entry, result)),
-    '',
-  ];
-  fs.writeFileSync(filePath, lines.join('\n'), 'utf8');
-  return filePath;
-}
-
-function isAlreadyPaidWithoutButton(entry, result) {
-  return entry?.pickkoStatus === 'verified'
-    && typeof result?.message === 'string'
-    && result.message.includes('결제하기 버튼 미발견');
-}
-
-function isExpectedManualFollowup(result) {
-  const message = typeof result?.message === 'string' ? result.message : '';
-  return message.includes('결제하기 버튼 미발견')
-    || message.includes('결제대기 예약 미발견');
 }
 
 function runPayPending(entry) {
@@ -135,8 +92,8 @@ function runPayPending(entry) {
 }
 
 async function main() {
-  const phoneFilters = parseCsvArg('phones').map((phone) => String(phone).replace(/\D/g, ''));
-  const dateFilters = parseCsvArg('dates');
+  const phoneFilters = parseCsvArg(process.argv, 'phones').map((phone) => String(phone).replace(/\D/g, ''));
+  const dateFilters = parseCsvArg(process.argv, 'dates');
 
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
   const until = new Date();
@@ -210,22 +167,13 @@ async function main() {
 
   log(`📊 완료: 성공 ${successCount}건 / 실패 ${failureCount}건`);
 
-  const checklistPath = writeChecklistFile(failures);
+  const checklistPath = writePayScanChecklistFile(path.join(__dirname, '../../manual/reports'), failures);
   if (failureCount > 0) {
-    const messageLines = [
-      `⚠️ pickko-pay-scan 후속 확인 필요`,
-      `성공 ${successCount}건 / 후속확인 ${failureCount}건`,
-      '',
-      ...failures.slice(0, 10).map(({ entry, result }) => buildFailureLine(entry, result)),
-    ];
-    if (checklistPath) {
-      messageLines.push('', `체크리스트: ${checklistPath}`);
-    }
-    await publishToMainBot({
+    await publishReservationAlert({
       from_bot: 'ska',
       event_type: 'alert',
       alert_level: 2,
-      message: messageLines.join('\n'),
+      message: buildPayScanAlertMessage(successCount, failureCount, failures, checklistPath),
       payload: {
         successCount,
         failureCount,
@@ -244,7 +192,7 @@ async function main() {
       log(`⚠️ 메인봇 알림 실패: ${error.message}`);
     });
   } else {
-    await publishToMainBot({
+    await publishReservationAlert({
       from_bot: 'ska',
       event_type: 'report',
       alert_level: 1,
