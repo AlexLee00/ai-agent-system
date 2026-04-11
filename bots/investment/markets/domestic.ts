@@ -81,7 +81,12 @@ tracker.once('BUDGET_EXCEEDED', async ({ type }) => {
 
 async function filterMockUntradableDomesticCandidates(symbols, tradeMode = getInvestmentTradeMode()) {
   if (!Array.isArray(symbols) || symbols.length === 0) return [];
-  await db.initSchema();
+  try {
+    await db.initSchema();
+  } catch (error) {
+    console.warn(`  ⚠️ [mock 불가 제외] DB 미연결로 쿨다운 검사 생략: ${error.message}`);
+    return symbols;
+  }
   const cooldownMinutes = getMockUntradableSymbolCooldownMinutes();
   const checks = await Promise.all(
     symbols.map(async (symbol) => ({
@@ -277,7 +282,6 @@ if (isDirectExecution(import.meta.url)) {
   await runCliMain({
     before: async () => {
       await initHubSecrets();
-      await db.initSchema();
     },
     run: async () => {
       const args      = process.argv.slice(2);
@@ -285,6 +289,22 @@ if (isDirectExecution(import.meta.url)) {
       const force     = args.includes('--force');
       const noDynamic = args.includes('--no-dynamic');
       const researchOnly = args.includes('--research-only');
+      const marketStatus = !force
+        ? await getKisMarketStatus()
+        : { isOpen: true, reason: '--force 옵션', holiday: { isHoliday: false, name: '' }, isWeekend: false };
+      const check = researchOnly
+        ? { run: true, reason: '--research-only 옵션' }
+        : shouldRunCycle(force);
+
+      if (!check.run) {
+        console.log(`⏳ 사이클 스킵: ${check.reason}`);
+        return [];
+      }
+
+      if (!force && !researchOnly && !marketStatus.isOpen && (marketStatus.isWeekend || marketStatus.holiday?.isHoliday)) {
+        console.log(`⏭️ ${marketStatus.reason} — 주말/휴장 스킵`);
+        return [];
+      }
 
       let symbols;
       if (symArg) {
@@ -329,18 +349,7 @@ if (isDirectExecution(import.meta.url)) {
 
       symbols = await appendHeldSymbols(symbols, 'kis');
       console.log(getKisExecutionModeInfo('국내주식').logLine);
-
-      const marketStatus = !force
-        ? await getKisMarketStatus()
-        : { isOpen: true, reason: '--force 옵션', holiday: { isHoliday: false, name: '' } };
       const marketOpen = marketStatus.isOpen;
-      const check = researchOnly
-        ? { run: true, reason: '--research-only 옵션' }
-        : shouldRunCycle(force);
-      if (!check.run) {
-        console.log(`⏳ 사이클 스킵: ${check.reason}`);
-        return [];
-      }
 
       if (symbols.length === 0) {
         console.log('⏭️ 처리할 종목 없음 (아르고스 스크리닝 필요) — 사이클 스킵');

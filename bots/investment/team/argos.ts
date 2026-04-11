@@ -549,6 +549,14 @@ async function evaluatePost(post, market) {
 export async function collectStrategies() {
   console.log('\n👁️ [아르고스] 외부 전략 수집 시작');
 
+  let dbAvailable = true;
+  try {
+    await db.initSchema();
+  } catch (error) {
+    dbAvailable = false;
+    console.warn(`  ⚠️ [아르고스] DB 미연결 — 전략 저장 생략: ${error.message}`);
+  }
+
   let saved     = 0;
   const summary = [];
 
@@ -562,10 +570,14 @@ export async function collectStrategies() {
         const strategy = await evaluatePost(post, market);
         if (!strategy || _num(strategy.quality_score, 0) < MIN_QUALITY_SCORE) continue;
 
-        await db.upsertStrategy(strategy);
-        saved++;
         summary.push(`• [${(_num(strategy.quality_score, 0) * 10).toFixed(0)}점] ${strategy.strategy_name}: ${strategy.summary}`);
-        console.log(`  ✅ 저장: ${strategy.strategy_name} (점수: ${_num(strategy.quality_score, 0).toFixed(2)})`);
+        if (dbAvailable) {
+          await db.upsertStrategy(strategy);
+          saved++;
+          console.log(`  ✅ 저장: ${strategy.strategy_name} (점수: ${_num(strategy.quality_score, 0).toFixed(2)})`);
+        } else {
+          console.log(`  ℹ️ [DB 생략] ${strategy.strategy_name} (점수: ${_num(strategy.quality_score, 0).toFixed(2)})`);
+        }
       } catch (e) {
         if (handleArgosEvaluationError(e, market)) {
           continue;
@@ -575,12 +587,12 @@ export async function collectStrategies() {
     }
   }
 
-  console.log(`\n✅ [아르고스] ${saved}개 전략 저장 완료`);
+  console.log(`\n✅ [아르고스] ${dbAvailable ? `${saved}개 전략 저장 완료` : `${summary.length}개 전략 평가 완료 (DB 저장 생략)`}`);
 
-  if (saved > 0) {
+  if (summary.length > 0) {
     const msg = [
       `👁️ *아르고스 전략 수집 완료*`,
-      `수집: ${saved}개 (품질 ${MIN_QUALITY_SCORE} 이상)`,
+      `수집: ${dbAvailable ? saved : `${summary.length}개 평가 / DB 저장 생략`} (품질 ${MIN_QUALITY_SCORE} 이상)`,
       '',
       ...summary.slice(0, 5),
     ].join('\n');
@@ -1241,7 +1253,6 @@ export async function screenAllMarkets() {
 // CLI 실행
 if (isDirectExecution(import.meta.url)) {
   await runCliMain({
-    before: () => db.initSchema(),
     run: () => collectStrategies(),
     onSuccess: async (count) => {
       console.log(`\n결과: ${count}개 전략`);

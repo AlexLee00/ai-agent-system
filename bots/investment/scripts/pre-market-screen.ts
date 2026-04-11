@@ -171,8 +171,6 @@ async function main() {
 
   console.log(`\n🔍 [장전 스크리닝] ${label} 시작 — ${nowKst}`);
 
-  await db.initSchema();
-
   if (market === 'domestic' || market === 'overseas') {
     const marketStatus = market === 'domestic'
       ? await getKisMarketStatus()
@@ -182,6 +180,8 @@ async function main() {
       return;
     }
   }
+
+  await db.initSchema();
 
   const resolved = await resolveSymbolsWithFallback({
     market,
