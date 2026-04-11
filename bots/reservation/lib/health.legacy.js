@@ -178,8 +178,13 @@ async function preflightConnCheck() {
     console.log('      ✅ 텔레그램 연결 체크 생략 (무소음 모드)');
   } else {
     try {
-      const { sendTelegram } = require('./telegram');
-      const ok = await sendTelegram('[3중 체크] 스카봇 OPS 시작 — 연결 확인');
+      const { publishToMainBot } = require('./mainbot-client');
+      const ok = await publishToMainBot({
+        from_bot: 'ska',
+        event_type: 'health_check',
+        alert_level: 1,
+        message: '[3중 체크] 스카봇 OPS 시작 — 연결 확인',
+      });
       if (ok) {
         console.log('      ✅ 텔레그램 연결');
       } else {
@@ -249,9 +254,14 @@ async function shutdownCleanup({ reason = '정상 종료', error = false, locks 
   // 정상적인 SIGTERM 재시작은 너무 시끄러워서 기본적으로 알리지 않는다.
   if (error || process.env.SKA_NOTIFY_SHUTDOWN === '1') {
     try {
-      const { sendTelegram } = require('./telegram');
+      const { publishToMainBot } = require('./mainbot-client');
       const emoji = error ? '❌' : '🏁';
-      await sendTelegram(`${emoji} [스카봇 OPS] 종료\n사유: ${reason}`);
+      await publishToMainBot({
+        from_bot: 'ska',
+        event_type: 'system_error',
+        alert_level: error ? 3 : 1,
+        message: `${emoji} [스카봇 OPS] 종료\n사유: ${reason}`,
+      });
       console.log('      ✅ 텔레그램 종료 알림');
     } catch (e) {
       console.warn(`      ⚠️  텔레그램 알림 실패: ${e.message}`);

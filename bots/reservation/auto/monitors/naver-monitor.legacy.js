@@ -1681,10 +1681,11 @@ async function monitorBookings() {
             lastHeartbeatTime = Date.now();
           }
 
-          // ✅ 일일 마감 요약 (22:00 이후, 하루 1회)
+          // ✅ 일일 마감 요약은 pickko-daily-summary(23:50)가 메인이다.
+          // 중복 리포트 방지를 위해 기본 비활성화하고 필요 시에만 별도 env로 켠다.
           const hDateStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
           const hHourFull = parseInt(new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', hour12: false }).replace(/\D/g, ''), 10);
-          if (hHourFull >= 22 && lastDailyReportDate !== hDateStr) {
+          if (process.env.SKA_ENABLE_NAVER_DAILY_REPORT === '1' && hHourFull >= 22 && lastDailyReportDate !== hDateStr) {
             const dayMsg =
               `📊 스카 일일 마감 요약 (${hDateStr})\n\n` +
               `✅ 신규 등록 완료: ${dailyStats.completed}건\n` +
