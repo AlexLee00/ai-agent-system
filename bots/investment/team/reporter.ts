@@ -288,7 +288,49 @@ function buildSignalStatsLines({ days, sigTotal, sigExec, sigApproved, sigFailed
 
 export async function generateReport({ days = 30, telegram = false } = {}) {
   await initHubSecrets().catch(() => false);
-  await db.initSchema();
+  let dbAvailable = true;
+  try {
+    await db.initSchema();
+  } catch (error) {
+    dbAvailable = false;
+    console.warn(`  ⚠️ 리포트 DB 미연결 — 축약 리포트로 진행: ${error.message}`);
+  }
+
+  if (!dbAvailable) {
+    const balances = await fetchBinanceBalance();
+    const usdtBal = balances.find((b) => b.coin === 'USDT');
+    const cost = tracker.getToday();
+    const cryptoMode = getMarketExecutionModeInfo('crypto');
+    const domesticMode = getMarketExecutionModeInfo('stocks', 'kis');
+    const overseasMode = getMarketExecutionModeInfo('stocks', 'kis_overseas');
+    const lines = [
+      `📊 루나팀 투자 리포트 (축약) — ${kstStr()}`,
+      '',
+      '━━━ 운영 모드 ━━━',
+      `  ${cryptoMode.executionMode.toUpperCase()} / ${cryptoMode.brokerAccountMode.toUpperCase()} — 암호화폐`,
+      `  ${domesticMode.executionMode.toUpperCase()} / ${domesticMode.brokerAccountMode.toUpperCase()} — 국내주식`,
+      `  ${overseasMode.executionMode.toUpperCase()} / ${overseasMode.brokerAccountMode.toUpperCase()} — 미국주식`,
+      '',
+      '━━━ 자산/비용 ━━━',
+      balances.length === 0 ? '  바이낸스 잔고 조회 실패' : `  USDT 가용: $${(usdtBal?.free || 0).toFixed(2)}`,
+      `  오늘 LLM 비용: $${cost.usage.toFixed(4)} / $${cost.dailyBudget.toFixed(2)}`,
+      `  이번달 LLM 비용: $${cost.monthUsage.toFixed(4)} / $${cost.monthlyBudget.toFixed(2)}`,
+      '',
+      '━━━ 상태 ━━━',
+      '  DB 미연결로 신호/거래 통계는 생략',
+    ];
+    const report = lines.join('\n');
+    console.log('\n' + report);
+    if (telegram) {
+      await postAlarm({
+        message: report,
+        team: 'luna',
+        alertLevel: 1,
+        fromBot: 'reporter',
+      });
+    }
+    return report;
+  }
 
   const today = kst.today();
 
