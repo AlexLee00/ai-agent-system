@@ -17,6 +17,24 @@ const REQUIRED_SECTION_MARKERS = {
   general: ['AI 스니펫 요약', '승호아빠 인사말', '본론 섹션 1', '본론 섹션 2', '본론 섹션 3', '마무리 제언', '해시태그'],
 };
 
+const MARKER_ALIASES = {
+  lecture: {
+    '[함께 읽으면 좋은 글]': ['[마무리 인사 + 함께 읽으면 좋은 글]'],
+    '[해시태그]': ['[마무리 인사 + 해시태그]'],
+    '함께 읽으면 좋은 글': ['마무리 인사 + 함께 읽으면 좋은 글'],
+    '해시태그': ['마무리 인사 + 해시태그'],
+    '[마무리 인사]': ['[마무리 인사 + 함께 읽으면 좋은 글]'],
+    '마무리 인사': ['마무리 인사 + 함께 읽으면 좋은 글'],
+  },
+};
+
+function hasSectionMarker(content, type, marker) {
+  const text = String(content || '');
+  if (text.includes(marker)) return true;
+  const aliases = MARKER_ALIASES[type]?.[marker] || [];
+  return aliases.some((alias) => text.includes(alias));
+}
+
 function checkTruncatedEnding(content, type) {
   const issues = [];
   const text = String(content || '');
@@ -40,13 +58,13 @@ function checkTruncatedEnding(content, type) {
   }
 
   if (type === 'lecture') {
-    if (!text.includes('[마무리 인사]')) {
+    if (!hasSectionMarker(text, 'lecture', '[마무리 인사]') && !hasSectionMarker(text, 'lecture', '[함께 읽으면 좋은 글]')) {
       issues.push({ severity: 'error', msg: '강의 포스팅 마무리 인사 섹션 누락' });
     }
-    if (!text.includes('[함께 읽으면 좋은 글]')) {
+    if (!hasSectionMarker(text, 'lecture', '[함께 읽으면 좋은 글]')) {
       issues.push({ severity: 'error', msg: '강의 포스팅 관련 글 섹션 누락' });
     }
-    if (!text.includes('[해시태그]')) {
+    if (!hasSectionMarker(text, 'lecture', '[해시태그]')) {
       issues.push({ severity: 'error', msg: '강의 포스팅 해시태그 섹션 누락' });
     }
   }
@@ -131,7 +149,7 @@ function checkQuality(content, type) {
   }
 
   for (const marker of REQUIRED_SECTION_MARKERS[type] || []) {
-    if (!content.includes(marker)) {
+    if (!hasSectionMarker(content, type, marker)) {
       issues.push({ severity: 'error', msg: `필수 섹션 누락: "${marker}"` });
     }
   }

@@ -21,6 +21,7 @@ const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selecto
 const { weatherToContext, estimateCost, loadPersonaGuide } = require('../../../packages/core/lib/blog-utils');
 const env = require('../../../packages/core/lib/env');
 const { getBlogGenerationRuntimeConfig, getBlogLLMSelectorOverrides } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/runtime-config.ts'));
+const { calculateSectionChars, buildCharCountInstruction } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/section-ratio.ts'));
 
 const generationRuntimeConfig = getBlogGenerationRuntimeConfig();
 const BLOG_WRITER_TIMEOUT_MS = Number(generationRuntimeConfig.writerTimeoutMs || 90000);
@@ -767,6 +768,9 @@ async function writeGeneralPost(category, researchData, sectionVariation = {}) {
   const topicTitleCandidate = String(researchData.topic_title_candidate || '').trim();
   const strategyFocus = (researchData.strategy_focus || []).filter(Boolean).join(' / ');
   const strategyRecommendations = (researchData.strategy_recommendations || []).filter(Boolean).join(' / ');
+  const bonusInsights = sectionVariation.bonusInsights || [];
+  const sectionPlan = calculateSectionChars('gems', bonusInsights);
+  const charInstruction = buildCharCountInstruction(sectionPlan.charCounts, 'gems', bonusInsights);
 
   const weatherContext = weatherToContext(weather, { detailed: false });
 
@@ -829,6 +833,7 @@ ${topicDiff ? `[최근 글과의 차별화 포인트]\n${topicDiff}\n` : ''}
 ${topicTitleCandidate ? `[제목 후보 예시]\n${topicTitleCandidate}\n` : ''}
 ${strategyFocus ? `[이번 주 전략 포커스]\n${strategyFocus}\n` : ''}
 ${strategyRecommendations ? `[전략 권고]\n${strategyRecommendations}\n` : ''}
+${charInstruction}
 ${topicHint
   ? `이번 수동 재작성은 위 [주제 힌트]를 중심 주제로 유지하여, 같은 문제의식을 새 글로 다시 작성하라.
 제목도 [주제 힌트]와 같은 방향의 핵심 키워드를 유지하되 문장은 새롭게 구성하라.`

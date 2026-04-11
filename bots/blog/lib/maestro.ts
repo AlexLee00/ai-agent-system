@@ -19,12 +19,9 @@ const competitionEngine = require('../../../packages/core/lib/competition-engine
 const { buildWebhookCandidates } = require('../../../packages/core/lib/n8n-webhook-registry');
 const { getBlogGenerationRuntimeConfig, getBlogCompetitionRuntimeConfig } = require('./runtime-config.ts');
 const { generateGemmaPilotText } = require('../../../packages/core/lib/gemma-pilot');
+const { buildDynamicVariation } = require('./section-variation.ts');
 const DEV_HUB_READONLY = env.IS_DEV && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
 
-const GREETING_STYLES = ['formal', 'question', 'story'];
-const CAFE_POSITIONS = ['after_theory', 'after_code', 'before_faq', 'last'];
-const LIST_STYLES = ['number', 'bullet', 'mixed'];
-const BRIDGE_INTERVALS = [800, 1000, 1200, 1500];
 const RESEARCH_NODES = ['weather', 'it-news', 'nodejs-updates'];
 const generationRuntimeConfig = getBlogGenerationRuntimeConfig();
 const competitionRuntimeConfig = getBlogCompetitionRuntimeConfig();
@@ -41,14 +38,6 @@ const _n8nCircuit = {
   disabledUntil: 0,
   reason: '',
 };
-
-function _randInt(min, max) {
-  return min + Math.floor(Math.random() * (max - min + 1));
-}
-
-function _pick(arr) {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
 
 function _shuffle(arr) {
   const a = [...arr];
@@ -106,53 +95,6 @@ async function saveExecutionHistory(date, postType, pipeline, variations) {
   } catch (e) {
     console.warn('[마에스트로] 이력 저장 실패 (무시):', e.message);
   }
-}
-
-function _buildUsedVariationSets(history) {
-  return {
-    usedGreetings: new Set(history.map((h) => h.variations?.greetingStyle).filter(Boolean)),
-    usedCafePositions: new Set(history.map((h) => h.variations?.cafePosition).filter(Boolean)),
-  };
-}
-
-function _pickFreshOrAny(allValues, usedValues) {
-  const availableValues = allValues.filter((value) => !usedValues.has(value));
-  return availableValues.length > 0 ? _pick(availableValues) : _pick(allValues);
-}
-
-function _buildBonusInsights(postType, history) {
-  const { selectBonusInsights } = require('./bonus-insights.ts');
-  const botType = postType === 'lecture' ? 'pos' : 'gems';
-  const recentBonusIds = history.flatMap((h) => (h.variations?.bonusInsights || []).map((b) => b.id));
-  return selectBonusInsights(botType, recentBonusIds);
-}
-
-function buildDynamicVariation(postType, history) {
-  const { usedGreetings, usedCafePositions } = _buildUsedVariationSets(history);
-  const greetingStyle = _pickFreshOrAny(GREETING_STYLES, usedGreetings);
-  const cafePosition = _pickFreshOrAny(CAFE_POSITIONS, usedCafePositions);
-  const bonusInsights = _buildBonusInsights(postType, history);
-
-  const variation = {
-    greetingStyle,
-    faqCount: _randInt(3, 6),
-    listStyle: _pick(LIST_STYLES),
-    bridgeInterval: _pick(BRIDGE_INTERVALS),
-    includeInsta: Math.random() < 0.4,
-    imageCount: _randInt(0, 5),
-    cafePosition,
-    bonusInsights,
-    totalInsights: 4 + bonusInsights.length,
-  };
-
-  if (postType === 'lecture') {
-    variation.insightCount = _randInt(2, 5);
-    variation.codeBlockCount = _randInt(2, 5);
-  } else {
-    variation.bodyCount = _randInt(2, 4);
-  }
-
-  return variation;
 }
 
 function buildDynamicPipeline(postType, history) {
