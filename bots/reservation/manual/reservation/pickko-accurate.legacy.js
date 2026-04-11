@@ -736,6 +736,47 @@ async function main() {
       }
       return slots;
     }
+
+    function buildSlotCandidates(slots) {
+      if (!Array.isArray(slots) || slots.length < 2) return [];
+
+      const candidates = [];
+      const seen = new Set();
+
+      const pushCandidate = (startIdx, endIdx, reason) => {
+        if (startIdx < 0 || endIdx >= slots.length || endIdx <= startIdx) return;
+        const start = slots[startIdx];
+        const end = slots[endIdx];
+        const slotCount = endIdx - startIdx + 1;
+        const key = `${start}->${end}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        candidates.push({
+          start,
+          end,
+          slotCount,
+          durationMin: (slotCount - 1) * 30,
+          reason,
+        });
+      };
+
+      // 1) 가능한 한 종료 슬롯은 유지하고 시작 슬롯을 뒤로 민다.
+      for (let startIdx = 0; startIdx <= slots.length - 2; startIdx++) {
+        pushCandidate(startIdx, slots.length - 1, startIdx === 0 ? 'original-window' : 'shift-start-keep-end');
+      }
+
+      // 2) 그래도 안 되면 연속 구간을 줄여가며 모든 하위 구간을 시도한다.
+      for (let startIdx = 0; startIdx <= slots.length - 2; startIdx++) {
+        for (let endIdx = slots.length - 2; endIdx > startIdx; endIdx--) {
+          pushCandidate(startIdx, endIdx, 'shrink-window');
+        }
+      }
+
+      return candidates.sort((a, b) => {
+        if (b.slotCount !== a.slotCount) return b.slotCount - a.slotCount;
+        return a.start.localeCompare(b.start);
+      });
+    }
     
     const TIME_SLOTS = timeToSlots(START_TIME, END_TIME);
     log(`🔄 [30분 단위 슬롯 변환] ${START_TIME}~${END_TIME} → [${TIME_SLOTS.join(', ')}] (${TIME_SLOTS.length}개)`);
@@ -838,33 +879,28 @@ async function main() {
     
     let chosen = null;
     let attemptCount = 0;
+    const slotCandidates = buildSlotCandidates(effectiveTimeSlots);
+    log(`   ⏰ 후보 구간 ${slotCandidates.length}개 생성: ${slotCandidates.map((c) => `${c.start}~${c.end}`).join(', ')}`);
 
-    // 🔄 30분 단위 슬롯 선택: 첫 슬롯 ~ 마지막 슬롯
-    // 예: ["00:00", "00:30", "01:00"] → "00:00"과 "01:00" 선택 (픽코가 중간 자동 채움)
-    // [6-0]에서 경과 슬롯이 제거된 effectiveTimeSlots 사용
-    const firstSlot = effectiveTimeSlots[0];
-    const lastSlot = effectiveTimeSlots[effectiveTimeSlots.length - 1];
+    // 시간 선택 시도 (AJAX 갱신 타이밍을 고려해 후보별 최대 3회 재시도)
+    for (const candidate of slotCandidates) {
+      log(`   ⏰ 후보: ${candidate.start} / ${candidate.end} / 기간 ${candidate.durationMin}분 / reason=${candidate.reason}`);
 
-    // 🔧 Duration 계산 (유효 슬롯 개수 기반)
-    const durationMin = (effectiveTimeSlots.length - 1) * 30;  // 슬롯 개수 - 1 × 30분
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) {
+          log(`   ⏰ 재시도 #${attempt + 1}: 스케줄 갱신 대기 후 재시도...`);
+          await delay(1500);
+        }
+        attemptCount++;
+        log(`   ⏰ 시도 #${attemptCount}: ${candidate.start} -> ${candidate.end}`);
 
-    log(`   ⏰ 첫 슬롯: ${firstSlot} / 마지막 슬롯: ${lastSlot} / 기간: ${durationMin}분`);
-    
-    // 시간 선택 시도 (AJAX 갱신 타이밍을 고려해 최대 3회 재시도)
-    for (let attempt = 0; attempt < 3; attempt++) {
-      if (attempt > 0) {
-        log(`   ⏰ 재시도 #${attempt + 1}: 스케줄 갱신 대기 후 재시도...`);
-        await delay(1500);
-      }
-      attemptCount++;
-      log(`   ⏰ 시도 #${attemptCount}: ${firstSlot} -> ${lastSlot}`);
-      
-      const s = firstSlot;
-      const e = lastSlot;
-      log(`      범위: ${s} ~ ${e}`);
+        const s = candidate.start;
+        const e = candidate.end;
+        const durationMin = candidate.durationMin;
+        log(`      범위: ${s} ~ ${e}`);
 
-      // 🎯 **4-Tier Fallback Selector** - 정확한 시간대 선택
-      const res = await page.evaluate((dateStr, stNoStr, start, end, durationMin, custName, phoneLast4) => {
+        // 🎯 **4-Tier Fallback Selector** - 정확한 시간대 선택
+        const res = await page.evaluate((dateStr, stNoStr, start, end, durationMin, custName, phoneLast4) => {
         const debug = {
           methodUsed: null,
           startExists: false,
@@ -974,36 +1010,41 @@ async function main() {
         }
 
         return debug;
-      }, DATE, stNo, s, e, durationMin, CUSTOMER_NAME, PHONE_NOHYPHEN.slice(-4));
+        }, DATE, stNo, s, e, durationMin, CUSTOMER_NAME, PHONE_NOHYPHEN.slice(-4));
 
-      // 로그 출력
-      if (res.methodUsed) {
-        log(`       ✅ ${res.methodUsed}`);
+        // 로그 출력
+        if (res.methodUsed) {
+          log(`       ✅ ${res.methodUsed}`);
+        }
+        log(`       ├─ start: exists=${res.startExists} used=${res.startUsed} clickable=${res.startClicked}`);
+        log(`       ├─ end: exists=${res.endExists} used=${res.endUsed} clickable=${res.endClicked}`);
+        log(`       └─ mid: ok=${res.okMid} ${res.errors.length > 0 ? `(${res.errors.join(', ')})` : ''}`);
+
+        // 🔍 슬롯 사용중이지만 동일 고객 → 이미 등록된 것으로 완료 처리
+        if (res.alreadyRegistered) {
+          log(`       ✅ 동일 고객 슬롯 이미 등록됨: "${res.alreadyRegisteredBy}" → 완료 처리`);
+          const _alreadyErr = new Error(`슬롯 이미 등록됨: ${res.alreadyRegisteredBy}`);
+          _alreadyErr.code = 'ALREADY_REGISTERED';
+          throw _alreadyErr;
+        }
+
+        // ✅ 선택 성공 조건
+        if (res.startClicked && res.endClicked && res.okMid) {
+          chosen = {
+            start: s,
+            end: e,
+            method: res.methodUsed,
+            reason: candidate.reason,
+            durationMin,
+          };
+          log(`       🎯 **시간 선택 성공!**`);
+          break;
+        }
+
+        await delay(350);
       }
-      log(`       ├─ start: exists=${res.startExists} used=${res.startUsed} clickable=${res.startClicked}`);
-      log(`       ├─ end: exists=${res.endExists} used=${res.endUsed} clickable=${res.endClicked}`);
-      log(`       └─ mid: ok=${res.okMid} ${res.errors.length > 0 ? `(${res.errors.join(', ')})` : ''}`);
 
-      // 🔍 슬롯 사용중이지만 동일 고객 → 이미 등록된 것으로 완료 처리
-      if (res.alreadyRegistered) {
-        log(`       ✅ 동일 고객 슬롯 이미 등록됨: "${res.alreadyRegisteredBy}" → 완료 처리`);
-        const _alreadyErr = new Error(`슬롯 이미 등록됨: ${res.alreadyRegisteredBy}`);
-        _alreadyErr.code = 'ALREADY_REGISTERED';
-        throw _alreadyErr;
-      }
-
-      // ✅ 선택 성공 조건
-      if (res.startClicked && res.endClicked && res.okMid) {
-        chosen = { 
-          start: s, 
-          end: e,
-          method: res.methodUsed
-        };
-        log(`       🎯 **시간 선택 성공!**`);
-        break;
-      }
-
-      await delay(350);
+      if (chosen) break;
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -1046,7 +1087,7 @@ async function main() {
       }
     }
 
-    log(`[6-5] ✅ 시간 선택 완료: ${chosen.start}~${chosen.end} (방법: ${chosen.method || 'unknown'})`);
+    log(`[6-5] ✅ 시간 선택 완료: ${chosen.start}~${chosen.end} (방법: ${chosen.method || 'unknown'}, reason=${chosen.reason || 'unknown'}, duration=${chosen.durationMin || 0}분)`);
 
     // ─────────────────────────────────────────────────────────────
     // [6-6] 검증 - Input 필드 확인
