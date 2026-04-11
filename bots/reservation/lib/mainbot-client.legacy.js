@@ -35,6 +35,9 @@ async function publishToMainBot({ from_bot, team = 'reservation', event_type, al
   });
   if (result.ok) return true;
 
+  // Heartbeat는 개인 채팅 fallback을 타지 않게 해서 불필요한 DM 소음을 막는다.
+  if (event_type === 'heartbeat') return false;
+
   // OpenClaw/Hook 경로 장애 시 스카 예약 알림은 텔레그램 직접 발송으로 한 번 더 시도한다.
   return tryTelegramSend(lines.filter(Boolean).join('\n'));
 }
