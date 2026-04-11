@@ -50,20 +50,54 @@ function createSkaReadService({ pgPool, rag = null }) {
   async function queryTodayStats(args = {}) {
     const date = args.date || kst.today();
     try {
-      const summary = await pgPool.get('reservation', `
-        SELECT
-          total_amount,
-          entries_count,
-          COALESCE(pickko_study_room, 0) AS pickko_study_room,
-          COALESCE(general_revenue, 0) AS general_revenue,
-          COALESCE(general_revenue, 0) + COALESCE(pickko_study_room, 0) AS combined_revenue
-        FROM daily_summary
-        WHERE date = $1
-      `, [date]);
+      const [summary, liveCounts] = await Promise.all([
+        pgPool.get('reservation', `
+          SELECT
+            total_amount,
+            entries_count,
+            COALESCE(pickko_study_room, 0) AS pickko_study_room,
+            COALESCE(general_revenue, 0) AS general_revenue,
+            COALESCE(general_revenue, 0) + COALESCE(pickko_study_room, 0) AS combined_revenue
+          FROM daily_summary
+          WHERE date = $1
+        `, [date]),
+        pgPool.get('reservation', `
+          WITH dedup AS (
+            SELECT DISTINCT ON (
+              regexp_replace(phone, '\\D', '', 'g'),
+              date,
+              start_time,
+              end_time,
+              COALESCE(room, '')
+            )
+              room,
+              status
+            FROM reservations
+            WHERE date = $1
+              AND seen_only = 0
+              AND status NOT IN ('failed')
+            ORDER BY
+              regexp_replace(phone, '\\D', '', 'g'),
+              date,
+              start_time,
+              end_time,
+              COALESCE(room, ''),
+              updated_at DESC NULLS LAST,
+              id DESC
+          )
+          SELECT
+            COUNT(*) FILTER (WHERE status = 'completed') AS completed_count,
+            COUNT(*) AS active_count
+          FROM dedup
+        `, [date]),
+      ]);
 
       if (!summary) {
         return { ok: true, date, message: `${date} 매출 데이터 없음` };
       }
+
+      const completedCount = Number(liveCounts?.completed_count || 0);
+      const activeCount = Number(liveCounts?.active_count || 0);
 
       return {
         ok: true,
@@ -77,7 +111,9 @@ function createSkaReadService({ pgPool, rag = null }) {
         study_cafe_revenue: Number(summary.general_revenue || 0),
         pickko_study_room: Number(summary.pickko_study_room || 0),
         general_revenue: Number(summary.general_revenue || 0),
-        entries_count: summary.entries_count,
+        entries_count: completedCount,
+        active_entries_count: activeCount,
+        summary_entries_count: Number(summary.entries_count || 0),
         revenue_axes: {
           booking_axis: 'total_amount',
           recognized_axis: 'general_revenue + pickko_study_room',

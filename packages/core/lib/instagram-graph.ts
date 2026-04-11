@@ -17,7 +17,15 @@ function readStoreInstagramConfig() {
 }
 
 async function getInstagramConfig() {
-  const hubData = await fetchHubSecrets('instagram');
+  // NOTE:
+  // Instagram 토큰/IG User ID는 아직 허브 시크릿에 정식 등록되지 않았습니다.
+  // 토큰이 비어 있는 동안 허브를 계속 조회하면 "설정 가능한 경로"처럼 보이는데
+  // 실제로는 미등록 상태라 운영자 판단만 흐리게 만듭니다.
+  //
+  // 그래서 현재는 허브 조회를 잠시 끄고, 로컬 secrets-store.json 또는 env만 봅니다.
+  // 인스타 자격증명이 준비되면 아래 라인을 복구하면 됩니다.
+  // const hubData = await fetchHubSecrets('instagram');
+  const hubData = {};
   const storeData = readStoreInstagramConfig();
   return {
     accessToken: hubData?.access_token || storeData?.access_token || process.env.INSTAGRAM_GRAPH_ACCESS_TOKEN || '',

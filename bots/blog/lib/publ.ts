@@ -80,6 +80,24 @@ function replaceInternalLinkPlaceholders(content, titleUrlMap) {
   });
 }
 
+function normalizePublishDate(value) {
+  if (!value) return kst.today();
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+    const parsed = new Date(trimmed);
+    if (!Number.isNaN(parsed.getTime())) return kst.date(parsed);
+    return kst.today();
+  }
+  if (value instanceof Date) {
+    if (!Number.isNaN(value.getTime())) return kst.date(value);
+    return kst.today();
+  }
+  const parsed = new Date(String(value));
+  if (!Number.isNaN(parsed.getTime())) return kst.date(parsed);
+  return kst.today();
+}
+
 function _contentToHtml(content, title, images = null) {
   let text = content.replace(/_THE_END_\s*$/, '').trim();
 
@@ -198,7 +216,7 @@ async function publishToFile(postData) {
   if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
   const today = kst.today();
-  let publishDate = today;
+  let publishDate = normalizePublishDate(today);
 
   if (scheduleId && !DEV_HUB_READONLY) {
     try {
@@ -208,7 +226,7 @@ async function publishToFile(postData) {
          WHERE id = $1
       `, [scheduleId]);
       if (scheduleRow?.publish_date) {
-        publishDate = scheduleRow.publish_date;
+        publishDate = normalizePublishDate(scheduleRow.publish_date);
       }
 
       const existing = await pgPool.get('blog', `

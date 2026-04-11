@@ -25,6 +25,7 @@ async function main() {
   const payload = {
     ready: missing.length === 0,
     missing,
+    note: 'Instagram Graph token/IG User ID is intentionally not wired through hub secrets until credentials are registered.',
     source: {
       apiVersion: config.apiVersion || 'v21.0',
       baseUrl: config.baseUrl || 'https://graph.facebook.com',
