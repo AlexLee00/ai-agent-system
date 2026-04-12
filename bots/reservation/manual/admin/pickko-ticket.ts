@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// @ts-nocheck
+/// <reference lib="dom" />
 
 /**
  * pickko-ticket.js — 픽코 키오스크 이용권 추가 CLI
@@ -14,6 +14,8 @@ const { loginToPickko, findPickkoMember } = require('../../lib/pickko');
 const { IS_DEV, IS_OPS } = require('../../../../packages/core/lib/env');
 const { outputResult, fail } = require('../../lib/cli');
 const { maskPhone, maskName } = require('../../lib/formatting');
+
+declare const jQuery: any;
 
 const SECRETS = loadSecrets();
 const PICKKO_ID = SECRETS.pickko_id;
@@ -67,18 +69,18 @@ if (IS_DEV && !DEV_WHITELIST.includes(PHONE_RAW)) {
   fail(`DEV 모드: 화이트리스트 번호만 허용 (입력: ${PHONE_RAW})\nOPS 모드 사용: MODE=ops node src/pickko-ticket.js ...`);
 }
 
-async function selectSeatTypeAndLoad(page) {
+async function selectSeatTypeAndLoad(page: any) {
   log('\n[4단계] 자유석 선택 → 이용권 목록 로드');
 
   const stcNoValue = await page.evaluate(() => {
     const opt = Array.from(document.querySelectorAll('#stc_no option'))
-      .find((o) => o.textContent.includes('자유석'));
-    return opt ? opt.value : null;
+      .find((o) => (o.textContent || '').includes('자유석'));
+    return opt ? (opt as HTMLOptionElement).value : null;
   });
   if (!stcNoValue) throw new Error('#stc_no 자유석 옵션을 찾을 수 없음');
 
-  await page.evaluate((val) => {
-    const sel = document.querySelector('#stc_no');
+  await page.evaluate((val: string) => {
+    const sel = document.querySelector('#stc_no') as HTMLSelectElement | null;
     if (!sel) return;
     sel.value = val;
     if (typeof jQuery !== 'undefined') {
@@ -93,7 +95,7 @@ async function selectSeatTypeAndLoad(page) {
   for (let i = 0; i < 12; i++) {
     await delay(1000);
     const svcCount = await page.evaluate(() => {
-      const sp = document.querySelector('#service_price');
+      const sp = document.querySelector('#service_price') as HTMLElement | null;
       if (!sp) return 0;
       return sp.querySelectorAll('a.use_Y').length;
     });
@@ -107,12 +109,12 @@ async function selectSeatTypeAndLoad(page) {
   log('  ✅ 이용권 목록 로드 완료');
 }
 
-async function waitForPayOrderEnabled(page, maxMs = 8000) {
+async function waitForPayOrderEnabled(page: any, maxMs = 8000) {
   const start = Date.now();
   while (Date.now() - start < maxMs) {
     const enabled = await page.evaluate(() => {
-      const btn = document.querySelector('#pay_order');
-      return btn && !btn.className.includes('disabled');
+      const btn = document.querySelector('#pay_order') as HTMLElement | null;
+      return !!btn && !btn.className.includes('disabled');
     });
     if (enabled) return true;
     await delay(300);
@@ -120,15 +122,15 @@ async function waitForPayOrderEnabled(page, maxMs = 8000) {
   return false;
 }
 
-async function addTicket(page, ticketName, count) {
+async function addTicket(page: any, ticketName: string, count: number) {
   log(`\n[5단계] 이용권 추가: "${ticketName}" × ${count}`);
 
-  const svcNo = await page.evaluate((name) => {
+  const svcNo = await page.evaluate((name: string) => {
     const items = document.querySelectorAll('#service_price a.use_Y');
     for (const item of items) {
       const payName = (item.querySelector('.pay_name')?.textContent || '').replace(/\s+/g, '');
       if (payName.includes(name)) {
-        const btn = item.querySelector('.svc_add_btn');
+        const btn = item.querySelector('.svc_add_btn') as HTMLElement | null;
         return btn ? btn.getAttribute('svc_no') : null;
       }
     }
@@ -139,8 +141,8 @@ async function addTicket(page, ticketName, count) {
   log(`  svc_no=${svcNo} 확인`);
 
   for (let i = 1; i <= count; i++) {
-    const clicked = await page.evaluate((no) => {
-      const btn = document.querySelector(`.svc_add_btn[svc_no="${no}"]`);
+    const clicked = await page.evaluate((no: string) => {
+      const btn = document.querySelector(`.svc_add_btn[svc_no="${no}"]`) as HTMLElement | null;
       if (btn) { btn.click(); return true; }
       return false;
     }, svcNo);
@@ -154,11 +156,11 @@ async function addTicket(page, ticketName, count) {
   log('  ✅ #pay_order 활성화 확인');
 }
 
-async function applyDiscount(page) {
+async function applyDiscount(page: any) {
   log('\n[5.5단계] 할인 추가');
 
   const priceStr = await page.evaluate(() => {
-    const input = document.querySelector('input.price1');
+    const input = document.querySelector('input.price1') as HTMLInputElement | null;
     return input ? input.value : '';
   });
   const priceNum = priceStr.replace(/[^0-9]/g, '');
@@ -166,7 +168,7 @@ async function applyDiscount(page) {
   log(`  이용권 금액: ${priceStr} → 할인 금액: ${priceNum}원`);
 
   const dcClicked = await page.evaluate(() => {
-    const btn = document.querySelector('#add_dc');
+    const btn = document.querySelector('#add_dc') as HTMLElement | null;
     if (btn) { btn.scrollIntoView({ block: 'center' }); btn.click(); return true; }
     return false;
   });
@@ -174,15 +176,15 @@ async function applyDiscount(page) {
   await delay(500);
 
   await page.evaluate(() => {
-    const input = document.querySelector('#add_item_dsc');
+    const input = document.querySelector('#add_item_dsc') as HTMLInputElement | null;
     if (input) {
       input.value = '기타할인';
       input.dispatchEvent(new Event('input', { bubbles: true }));
     }
   });
 
-  await page.evaluate((price) => {
-    const input = document.querySelector('#add_item_price');
+  await page.evaluate((price: string) => {
+    const input = document.querySelector('#add_item_price') as HTMLInputElement | null;
     if (input) {
       input.value = price;
       input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -191,24 +193,25 @@ async function applyDiscount(page) {
   await delay(200);
 
   const okClicked = await page.evaluate(() => {
-    const btn = document.querySelector('#add_item_ok');
+    const btn = document.querySelector('#add_item_ok') as HTMLElement | null;
     if (btn && btn.offsetParent !== null) { btn.click(); return true; }
     return false;
   });
   if (!okClicked) throw new Error('#add_item_ok 할인 추가 확인 버튼 없음');
   await delay(800);
 
-  const totalText = await page.evaluate(() =>
-    (document.querySelector('.total_price')?.innerText || '').replace(/\n/g, ' '),
-  );
+  const totalText = await page.evaluate(() => {
+    const totalPrice = document.querySelector('.total_price') as HTMLElement | null;
+    return (totalPrice?.innerText || '').replace(/\n/g, ' ');
+  });
   log(`  합계금액 확인: ${totalText}`);
   log('  ✅ 할인 추가 완료');
 }
 
-async function fillOrderMemo(page, reason) {
+async function fillOrderMemo(page: any, reason: string) {
   log(`\n[6.5단계] 주문 메모 입력: "${reason}"`);
-  await page.evaluate((text) => {
-    const ta = document.querySelector('#od_memo');
+  await page.evaluate((text: string) => {
+    const ta = document.querySelector('#od_memo') as HTMLTextAreaElement | null;
     if (ta) {
       ta.value = text;
       ta.dispatchEvent(new Event('input', { bubbles: true }));
@@ -218,23 +221,24 @@ async function fillOrderMemo(page, reason) {
   await delay(200);
 }
 
-async function verifyOrderSummary(page, ticketName) {
+async function verifyOrderSummary(page: any, ticketName: string) {
   log('\n[6단계] 주문정보 확인');
   await delay(500);
 
-  const found = await page.evaluate((name) => document.body.innerText.includes(name), ticketName);
+  const found = await page.evaluate((name: string) => document.body.innerText.includes(name), ticketName);
   if (found) log(`  ✅ 주문정보에 "${ticketName}" 확인됨`);
   else log(`  ⚠️ 페이지에서 "${ticketName}" 텍스트 미확인 — 계속 진행`);
 }
 
-async function selectCash(page) {
+async function selectCash(page: any) {
   log('\n[7단계] 현금 결제수단 선택');
 
   let cashOk = await page.evaluate(() => {
-    const label = document.querySelector('label[for="pay_type1_2"]');
+    const label = document.querySelector('label[for="pay_type1_2"]') as HTMLElement | null;
     if (label) { label.click(); return true; }
     for (const l of document.querySelectorAll('label')) {
-      if ((l.textContent || '').trim() === '현금') { l.click(); return true; }
+      const labelEl = l as HTMLElement;
+      if ((labelEl.textContent || '').trim() === '현금') { labelEl.click(); return true; }
     }
     return false;
   });
@@ -249,11 +253,15 @@ async function selectCash(page) {
           await page.evaluate(() => document.querySelector('label[for="pay_type1_2"]')?.scrollIntoView({ block: 'center' }));
           await delay(150);
           await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-          cashOk = await page.evaluate(() => document.querySelector('#pay_type1_2')?.checked ?? false);
+          cashOk = await page.evaluate(() => {
+            const radio = document.querySelector('#pay_type1_2') as HTMLInputElement | null;
+            return radio?.checked ?? false;
+          });
         }
       }
     } catch (e) {
-      log(`  ⚠️ 현금 선택 실패: ${e.message}`);
+      const message = e instanceof Error ? e.message : String(e);
+      log(`  ⚠️ 현금 선택 실패: ${message}`);
     }
   }
 
@@ -262,11 +270,11 @@ async function selectCash(page) {
   return cashOk;
 }
 
-async function clickMainPayButton(page) {
+async function clickMainPayButton(page: any) {
   log('\n[8단계] #pay_order 결제하기 클릭');
 
   const clicked = await page.evaluate(() => {
-    const btn = document.querySelector('#pay_order');
+    const btn = document.querySelector('#pay_order') as HTMLElement | null;
     if (btn && !btn.className.includes('disabled') && btn.offsetParent !== null) {
       btn.scrollIntoView({ block: 'center' });
       btn.click();
@@ -280,14 +288,14 @@ async function clickMainPayButton(page) {
   await delay(1200);
 }
 
-async function handlePaymentPopups(page) {
+async function handlePaymentPopups(page: any) {
   log('\n[9단계] 결제 완료 처리');
 
   for (let round = 1; round <= 8; round++) {
     await delay(600);
 
     const payStartClicked = await page.evaluate(() => {
-      const btn = document.querySelector('.pay_start');
+      const btn = document.querySelector('.pay_start') as HTMLElement | null;
       if (btn && btn.offsetParent !== null) {
         btn.scrollIntoView({ block: 'center' });
         btn.click();
@@ -341,7 +349,7 @@ async function main() {
     await delay(2000);
 
     const memberName = await page.evaluate(() => {
-      const nameInput = document.querySelector('input[name="mb_name"]');
+      const nameInput = document.querySelector('input[name="mb_name"]') as HTMLInputElement | null;
       if (nameInput && nameInput.value) return nameInput.value.trim();
       return null;
     }) || pickkName;
@@ -371,12 +379,13 @@ async function main() {
     const doneMsg = `이용권 추가 완료: ${targetLabel}\n이용권: ${TICKET_NAME} × ${COUNT}${discountNote}`;
     log(`\n✅ ${doneMsg}`);
     outputResult({ success: true, message: doneMsg });
-  } catch (err) {
-    log(`❌ 오류: ${err.message}`);
-    fail(err.message);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    log(`❌ 오류: ${message}`);
+    fail(message);
   } finally {
     if (browser) {
-      try { await browser.close(); } catch (e) {}
+      try { await browser.close(); } catch (_e: unknown) {}
     }
   }
 }
@@ -394,7 +403,8 @@ module.exports = {
   main,
 };
 
-main().catch((err) => {
-  log(`❌ 치명 오류: ${err.message}`);
-  fail(err.message);
+main().catch((err: unknown) => {
+  const message = err instanceof Error ? err.message : String(err);
+  log(`❌ 치명 오류: ${message}`);
+  fail(message);
 });

@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 'use strict';
-// @ts-nocheck
 
 /**
  * manual-block-followup-report.js — manual 등록 후속 네이버 차단 점검 리포트
@@ -16,11 +15,34 @@ const ARGS = parseArgs(process.argv);
 const fromDate = ARGS.from || new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
 const onlyOpen = Boolean(ARGS['only-open'] || ARGS.onlyOpen);
 
-function normalizePhone(value) {
+type ReservationRow = {
+  id: string;
+  date: string;
+  start_time: string;
+  end_time: string;
+  room: string | null;
+  status: string;
+  pickko_status: string;
+  phone: string | null;
+};
+
+type FollowupReportRow = ReservationRow & {
+  kiosk_block_id: string | null;
+  naver_blocked: number | null;
+  blocked_at: string | null;
+  last_block_attempt_at: string | null;
+  last_block_result: string | null;
+  last_block_reason: string | null;
+  block_retry_count: number;
+  first_seen_at: string | null;
+  corrected_slot?: boolean;
+};
+
+function normalizePhone(value: unknown) {
   return String(value || '').replace(/\D+/g, '');
 }
 
-function formatRow(row) {
+function formatRow(row: FollowupReportRow) {
   const phone = row.phone ? ` (${row.phone})` : '';
   const base = `${row.date} ${row.start_time}~${row.end_time} ${row.room || '-'} ${phone}`.trim();
 
@@ -44,7 +66,7 @@ async function main() {
     fail(`--from 형식 오류: ${fromDate} (예: 2026-03-21)`);
   }
 
-  const reservationRows = await pgPool.query(SCHEMA, `
+  const reservationRows: ReservationRow[] = await pgPool.query(SCHEMA, `
     SELECT
       r.id,
       r.date,
@@ -61,7 +83,7 @@ async function main() {
     ORDER BY r.date ASC, r.start_time ASC, r.updated_at DESC NULLS LAST
   `, [fromDate]);
 
-  const rows = await Promise.all(reservationRows.map(async (row) => {
+  const rows: FollowupReportRow[] = await Promise.all(reservationRows.map(async (row) => {
     const phoneRaw = normalizePhone(row.phone);
     const kiosk = phoneRaw ? await getKioskBlock(phoneRaw, row.date, row.start_time, row.end_time, row.room) : null;
     return {
@@ -81,7 +103,7 @@ async function main() {
   const selectedRows = onlyOpen ? openRows : rows;
 
   const matchedKeys = new Set(rows.map((row) => `${normalizePhone(row.phone)}|${row.date}|${row.start_time}|${row.room || ''}`));
-  const correctedRows = (await getBlockedKioskBlocks())
+  const correctedRows: FollowupReportRow[] = (await getBlockedKioskBlocks())
     .filter((row) => row.date >= fromDate)
     .filter((row) => row.lastBlockReason === 'operator_confirmed_actual_slot')
     .filter((row) => !matchedKeys.has(`${normalizePhone(row.phoneRaw)}|${row.date}|${row.start}|${row.room || ''}`))
@@ -130,6 +152,7 @@ async function main() {
   });
 }
 
-main().catch((error) => {
-  fail(`manual follow-up 리포트 조회 실패: ${error.message}`);
+main().catch((error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  fail(`manual follow-up 리포트 조회 실패: ${message}`);
 });

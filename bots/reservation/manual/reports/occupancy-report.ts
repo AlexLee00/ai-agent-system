@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 
 /**
  * occupancy-report.js — 룸별·시간대별 가동률 리포트
@@ -18,16 +17,43 @@ const BIZ_START = 9;
 const BIZ_END = 22;
 const SLOTS = Array.from({ length: BIZ_END - BIZ_START }, (_, i) => BIZ_START + i);
 
+type ReservationRow = {
+  room: string;
+  date: string;
+  start_time: string;
+  end_time: string;
+};
+
+type RoomStat = {
+  room: string;
+  reservedMin: number;
+  totalMin: number;
+  rate: number;
+};
+
+type SlotStat = {
+  slotH: number;
+  reservedMin: number;
+  totalMin: number;
+  rate: number;
+};
+
+type RangeInfo = {
+  start: string;
+  end: string;
+  label: string;
+};
+
 function nowKST() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
 }
 
-function toDateStr(d) {
+function toDateStr(d: Date) {
   return d.toLocaleDateString('en-CA');
 }
 
-function dateRange(startStr, endStr) {
-  const dates = [];
+function dateRange(startStr: string, endStr: string): string[] {
+  const dates: string[] = [];
   const cur = new Date(`${startStr}T00:00:00+09:00`);
   const end = new Date(`${endStr}T00:00:00+09:00`);
   while (cur <= end) {
@@ -37,12 +63,12 @@ function dateRange(startStr, endStr) {
   return dates;
 }
 
-function toMin(timeStr) {
+function toMin(timeStr: string) {
   const [h, m] = timeStr.split(':').map(Number);
   return h * 60 + m;
 }
 
-function overlapMin(startMin, endMin, slotH) {
+function overlapMin(startMin: number, endMin: number, slotH: number) {
   const slotStart = slotH * 60;
   const slotEnd = (slotH + 1) * 60;
   const overlapStart = Math.max(startMin, slotStart);
@@ -50,7 +76,7 @@ function overlapMin(startMin, endMin, slotH) {
   return Math.max(0, overlapEnd - overlapStart);
 }
 
-async function fetchReservations(startDate, endDate) {
+async function fetchReservations(startDate: string, endDate: string): Promise<ReservationRow[]> {
   return pgPool.query(SCHEMA, `
     SELECT room, date, start_time, end_time
     FROM reservations
@@ -63,11 +89,11 @@ async function fetchReservations(startDate, endDate) {
   `, [startDate, endDate]);
 }
 
-function calcRoomOccupancy(rows, dates, rooms) {
+function calcRoomOccupancy(rows: ReservationRow[], dates: string[], rooms: string[]): RoomStat[] {
   const bizMinPerDay = (BIZ_END - BIZ_START) * 60;
   const totalMin = dates.length * bizMinPerDay;
 
-  const reservedByRoom = {};
+  const reservedByRoom: Record<string, number> = {};
   for (const room of rooms) reservedByRoom[room] = 0;
 
   for (const r of rows) {
@@ -89,10 +115,10 @@ function calcRoomOccupancy(rows, dates, rooms) {
   }));
 }
 
-function calcSlotOccupancy(rows, dates, rooms) {
+function calcSlotOccupancy(rows: ReservationRow[], dates: string[], rooms: string[]): SlotStat[] {
   const totalMin = dates.length * rooms.length * 60;
 
-  const reservedBySlot = {};
+  const reservedBySlot: Record<number, number> = {};
   for (const s of SLOTS) reservedBySlot[s] = 0;
 
   for (const r of rows) {
@@ -113,13 +139,13 @@ function calcSlotOccupancy(rows, dates, rooms) {
   }));
 }
 
-function bar(rate, width = 12) {
+function bar(rate: number, width = 12) {
   const filled = Math.round((rate / 100) * width);
   return '█'.repeat(filled) + '░'.repeat(width - filled);
 }
 
-function formatReport(label, roomStats, slotStats, totalRows, days) {
-  const lines = [];
+function formatReport(label: string, roomStats: RoomStat[], slotStats: SlotStat[], totalRows: number, days: number) {
+  const lines: string[] = [];
   lines.push(`📊 가동률 리포트 — ${label}`);
   lines.push(`   (${days}일 기간, 예약 ${totalRows}건)`);
   lines.push('');
@@ -146,7 +172,7 @@ function formatReport(label, roomStats, slotStats, totalRows, days) {
   return lines.join('\n');
 }
 
-function resolveRange() {
+function resolveRange(): RangeInfo {
   const now = nowKST();
 
   if (ARGS.month) {
@@ -191,7 +217,8 @@ function resolveRange() {
     const msg = formatReport(label, roomStats, slotStats, rows.length, dates.length);
     outputResult({ success: true, message: msg });
     process.exit(0);
-  } catch (e) {
-    fail(`가동률 조회 실패: ${e.message}`);
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    fail(`가동률 조회 실패: ${message}`);
   }
 })();

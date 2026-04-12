@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 
 /**
  * pickko-alerts-resolve.js — 미해결 오류 알림 수동 해결 처리 CLI
@@ -16,9 +15,31 @@ const phone = ARGS.phone || null;
 const date = ARGS.date || null;
 const start = ARGS.start || null;
 
-let result;
+type AlertResolveRow = {
+  id: string;
+  phone: string | null;
+  date: string | null;
+  start_time: string | null;
+  title: string;
+  message: string | null;
+  timestamp: string | Date;
+};
 
-async function listUnresolvedAlerts() {
+type RecentCandidateRow = {
+  phone: string;
+  date: string;
+  start_time: string;
+  latest_timestamp: string | Date;
+  alert_count: number | string;
+};
+
+type RunResult = {
+  rowCount?: number | string | null;
+};
+
+let result: RunResult | undefined;
+
+async function listUnresolvedAlerts(): Promise<AlertResolveRow[]> {
   return pgPool.query('reservation', `
     SELECT id, phone, date, start_time, title, message, timestamp
     FROM alerts
@@ -28,7 +49,7 @@ async function listUnresolvedAlerts() {
   `);
 }
 
-async function listRecentAlertCandidates() {
+async function listRecentAlertCandidates(): Promise<RecentCandidateRow[]> {
   return pgPool.query('reservation', `
     SELECT
       phone,
@@ -149,7 +170,11 @@ async function listRecentAlertCandidates() {
         : `✅ 미해결 오류 알림 ${n}건 해결 처리 완료`,
     }));
   }
-})().catch((error) => {
-  console.error(error?.stack || error?.message || String(error));
+})().catch((error: unknown) => {
+  if (error instanceof Error) {
+    console.error(error.stack || error.message);
+  } else {
+    console.error(String(error));
+  }
   process.exit(1);
 });
