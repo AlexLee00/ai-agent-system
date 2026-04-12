@@ -24,6 +24,15 @@ function loadCapitalManagementConfig() {
   }
 }
 
+function getDefaultLunaMaxPosCount() {
+  const capitalManagement = loadCapitalManagementConfig();
+  const binanceMax = Number(capitalManagement.by_exchange?.binance?.max_concurrent_positions);
+  if (Number.isFinite(binanceMax) && binanceMax > 0) return Math.round(binanceMax);
+  const globalMax = Number(capitalManagement.max_concurrent_positions);
+  if (Number.isFinite(globalMax) && globalMax > 0) return Math.round(globalMax);
+  return 6;
+}
+
 export function getTimeProfiles() {
   const capitalManagement = loadCapitalManagementConfig();
   const tp = capitalManagement.time_profiles || {};
@@ -107,7 +116,7 @@ const DEFAULT_RUNTIME_CONFIG = {
       stocksPaper: { taMtf: 0.20, onchain: 0.00, sentiment: 0.12, news: 0.32 },
       stocksLive: { taMtf: 0.26, onchain: 0.00, sentiment: 0.18, news: 0.22 },
     },
-    maxPosCount: 6,
+    maxPosCount: getDefaultLunaMaxPosCount(),
     maxDebateSymbols: 2,
     debateThresholds: {
       stocksPaper: { minAverageConfidence: 0.48, minAbsScore: 0.22 },
@@ -233,7 +242,14 @@ const runtimeConfigLoader =
 const { loadRuntimeConfig } = runtimeConfigLoader;
 
 export function getInvestmentRuntimeConfig() {
-  return loadRuntimeConfig();
+  const runtimeConfig = loadRuntimeConfig();
+  const lunaMaxPosCount = Number(runtimeConfig?.luna?.maxPosCount);
+  if (Number.isFinite(lunaMaxPosCount) && lunaMaxPosCount > 0) return runtimeConfig;
+  return deepMerge(runtimeConfig, {
+    luna: {
+      maxPosCount: getDefaultLunaMaxPosCount(),
+    },
+  });
 }
 
 export function isDynamicTpSlEnabled() {

@@ -148,7 +148,6 @@ capital_management:
         binance: 0.30
         kis: 0.18
         kis_overseas: 0.18
-    maxPosCount: 6
     maxDebateSymbols: 2
     debateThresholds:
       stocksPaper:
@@ -257,7 +256,7 @@ capital_management:
           stockStarterApproveOverseas: 200
   timeMode:
     ACTIVE:
-      maxPositionPct: 0.18
+      maxPositionPct: 0.12
       maxOpenPositions: 4
       minSignalScore: 0.54
       cycleSec: 1800
