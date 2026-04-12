@@ -104,6 +104,8 @@ export function buildDailySummaryMessage(
 
   let totalAmount = 0;
   for (const entry of classified) totalAmount += calcAmount(entry);
+  const generalRevenue = isMidnight && pickkoStats ? Number(pickkoStats.generalRevenue || 0) : 0;
+  const displayTotal = isMidnight ? totalAmount + generalRevenue : totalAmount;
 
   const roomCount: Record<string, number> = {};
   for (const entry of sorted) {
@@ -117,7 +119,7 @@ export function buildDailySummaryMessage(
 
   const sep = '━━━━━━━━━━━━━━━';
   let msg = `📋 오늘 예약 · ${dateHeader}\n\n`;
-  msg += `총 ${sorted.length}건 | ${formatAmount(totalAmount)}\n`;
+  msg += `총 ${sorted.length}건 | ${formatAmount(displayTotal)}\n`;
   msg += `${sep}\n`;
 
   for (const entry of classified) {
@@ -140,7 +142,6 @@ export function buildDailySummaryMessage(
   }
 
   if (isMidnight) {
-    const generalRevenue = pickkoStats ? Number(pickkoStats.generalRevenue || 0) : 0;
     const grandTotal = generalRevenue + totalAmount;
     msg += `\n\n💰 매출 현황:\n`;
     if (pickkoStats && generalRevenue > 0) msg += `  일반이용: ${formatAmount(generalRevenue)}\n`;
