@@ -876,6 +876,41 @@ export async function getRecentScreeningSymbols(market, limit = 3) {
   return symbols;
 }
 
+export async function getRecentScreeningDynamicSymbols(market, limit = 5) {
+  const rows = await query(`
+    SELECT market, dynamic_symbols, created_at
+    FROM screening_history
+    WHERE market = $1
+    ORDER BY created_at DESC
+    LIMIT $2
+  `, [market, limit]);
+
+  return rows.map((row) => ({
+    market: row.market,
+    created_at: row.created_at,
+    dynamic_symbols: Array.isArray(row.dynamic_symbols)
+      ? row.dynamic_symbols
+      : JSON.parse(row.dynamic_symbols || '[]'),
+  }));
+}
+
+export async function getRecentScreeningMarkets(limit = 6) {
+  const rows = await query(`
+    SELECT market, dynamic_symbols, created_at
+    FROM screening_history
+    ORDER BY created_at DESC
+    LIMIT $1
+  `, [limit]);
+
+  return rows.map((row) => ({
+    market: String(row.market || '').trim() || 'unknown',
+    created_at: row.created_at,
+    dynamic_symbols: Array.isArray(row.dynamic_symbols)
+      ? row.dynamic_symbols
+      : JSON.parse(row.dynamic_symbols || '[]'),
+  }));
+}
+
 // ─── strategy_pool ───────────────────────────────────────────────────
 
 export async function upsertStrategy(s) {
