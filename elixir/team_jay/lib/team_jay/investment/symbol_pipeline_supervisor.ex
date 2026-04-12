@@ -14,6 +14,7 @@ defmodule TeamJay.Investment.SymbolPipelineSupervisor do
   alias TeamJay.Investment.Analyst.Worker, as: AnalystWorker
   alias TeamJay.Investment.Decision.Luna, as: DecisionWorker
   alias TeamJay.Investment.Execution.Worker, as: ExecutionWorker
+  alias TeamJay.Investment.Feedback.Realtime, as: RealtimeFeedbackWorker
   alias TeamJay.Investment.Indicator.Worker, as: IndicatorWorker
   alias TeamJay.Investment.Risk.Nemesis, as: RiskWorker
   alias TeamJay.Investment.Streamer.Worker, as: StreamerWorker
@@ -39,7 +40,8 @@ defmodule TeamJay.Investment.SymbolPipelineSupervisor do
       {IndicatorWorker, symbol: symbol},
       {DecisionWorker, symbol: symbol},
       {RiskWorker, symbol: symbol},
-      {ExecutionWorker, symbol: symbol}
+      {ExecutionWorker, symbol: symbol},
+      {RealtimeFeedbackWorker, symbol: symbol}
     ] ++ analyst_children(symbol)
 
     Supervisor.init(children, strategy: :one_for_one)
@@ -56,7 +58,10 @@ defmodule TeamJay.Investment.SymbolPipelineSupervisor do
 
   defp analyst_children(symbol) do
     Enum.map(AnalystWorker.supported_types(), fn analyst_type ->
-      {AnalystWorker, analyst_type: analyst_type, symbol: symbol}
+      Supervisor.child_spec(
+        {AnalystWorker, analyst_type: analyst_type, symbol: symbol},
+        id: {AnalystWorker, analyst_type, symbol}
+      )
     end)
   end
 end
