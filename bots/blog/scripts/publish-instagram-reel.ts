@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
-const { publishInstagramReel, buildFileVideoUrl } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-graph.ts'));
+const { publishInstagramReel, buildHostedVideoUrl } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-graph.ts'));
 const { findLatestReelPath } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-files.ts'));
 
 /**
@@ -40,7 +40,7 @@ async function main() {
 
   const caption = args.caption || '릴스 초안 업로드 테스트입니다.';
   const result = await publishInstagramReel({
-    videoUrl: buildFileVideoUrl(videoPath),
+    videoUrl: buildHostedVideoUrl(videoPath),
     caption,
     dryRun: args.dryRun || false,
   });

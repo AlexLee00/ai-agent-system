@@ -4,8 +4,18 @@ const fs = require('fs');
 const path = require('path');
 const env = require('./env');
 const { fetchHubSecrets } = require('./hub-client');
+const {
+  getInstagramTokenConfig,
+  getTokenHealth,
+} = require('./instagram-token-manager.ts');
+const {
+  resolveInstagramHostedMediaUrl,
+  getInstagramHostedAssetLocalPath,
+} = require('./instagram-image-host.ts');
 
 const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
+const MIN_REQUEST_INTERVAL_MS = 20 * 1000;
+let _lastGraphRequestAt = 0;
 
 function readStoreInstagramConfig() {
   try {
@@ -27,11 +37,17 @@ async function getInstagramConfig() {
   // const hubData = await fetchHubSecrets('instagram');
   const hubData = {};
   const storeData = readStoreInstagramConfig();
+  const tokenConfig = getInstagramTokenConfig();
   return {
-    accessToken: hubData?.access_token || storeData?.access_token || process.env.INSTAGRAM_GRAPH_ACCESS_TOKEN || '',
-    igUserId: hubData?.ig_user_id || storeData?.ig_user_id || process.env.INSTAGRAM_GRAPH_IG_USER_ID || '',
-    apiVersion: hubData?.api_version || storeData?.api_version || process.env.INSTAGRAM_GRAPH_API_VERSION || 'v21.0',
-    baseUrl: hubData?.base_url || storeData?.base_url || process.env.INSTAGRAM_GRAPH_BASE_URL || 'https://graph.facebook.com',
+    accessToken: hubData?.access_token || tokenConfig.accessToken || '',
+    igUserId: hubData?.ig_user_id || tokenConfig.igUserId || '',
+    appId: hubData?.app_id || tokenConfig.appId || '',
+    appSecret: hubData?.app_secret || tokenConfig.appSecret || '',
+    businessAccountId: hubData?.business_account_id || tokenConfig.businessAccountId || '',
+    apiVersion: hubData?.api_version || tokenConfig.apiVersion || 'v21.0',
+    baseUrl: hubData?.base_url || tokenConfig.baseUrl || 'https://graph.facebook.com',
+    tokenExpiresAt: tokenConfig.tokenExpiresAt || null,
+    tokenHealth: getTokenHealth(tokenConfig),
     defaultStatus: process.env.INSTAGRAM_PUBLISH_DEFAULT_STATUS || 'draft',
   };
 }
@@ -72,6 +88,11 @@ function buildPublishRequest(config, creationId) {
 }
 
 async function postJson(url, body, accessToken) {
+  const sinceLast = Date.now() - _lastGraphRequestAt;
+  if (_lastGraphRequestAt > 0 && sinceLast < MIN_REQUEST_INTERVAL_MS) {
+    await new Promise((resolve) => setTimeout(resolve, MIN_REQUEST_INTERVAL_MS - sinceLast));
+  }
+
   const response = await fetch(url, {
     method: 'POST',
     headers: {
@@ -80,7 +101,25 @@ async function postJson(url, body, accessToken) {
     },
     body: JSON.stringify(body),
   });
+  _lastGraphRequestAt = Date.now();
   const data = await response.json().catch(() => ({}));
+  if (response.status === 429) {
+    await new Promise((resolve) => setTimeout(resolve, 60 * 1000));
+    const retry = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify(body),
+    });
+    _lastGraphRequestAt = Date.now();
+    const retryData = await retry.json().catch(() => ({}));
+    if (!retry.ok) {
+      throw new Error(`Instagram Graph API 실패: HTTP ${retry.status} ${JSON.stringify(retryData)}`);
+    }
+    return retryData;
+  }
   if (!response.ok) {
     throw new Error(`Instagram Graph API 실패: HTTP ${response.status} ${JSON.stringify(data)}`);
   }
@@ -131,10 +170,25 @@ function buildFileVideoUrl(filePath = '') {
   return `file://${filePath}`;
 }
 
+function buildHostedVideoUrl(filePath = '') {
+  const hosted = resolveInstagramHostedMediaUrl(filePath, { kind: 'reels' });
+  if (!hosted.ready || !hosted.publicUrl) {
+    throw new Error(`Instagram 공개 비디오 URL이 준비되지 않았습니다: ${hosted.note}`);
+  }
+  if (hosted.mode === 'github_pages') {
+    const localTarget = getInstagramHostedAssetLocalPath(filePath, { kind: 'reels' });
+    if (!fs.existsSync(localTarget.targetPath)) {
+      throw new Error(`Instagram 공개 비디오 파일이 아직 준비되지 않았습니다: ${localTarget.targetPath} (prepare:instagram-media 실행 필요)`);
+    }
+  }
+  return hosted.publicUrl;
+}
+
 module.exports = {
   getInstagramConfig,
   buildCreateContainerRequest,
   buildPublishRequest,
   publishInstagramReel,
   buildFileVideoUrl,
+  buildHostedVideoUrl,
 };

@@ -22,6 +22,8 @@ const {
   buildResolvedWebhookHealth,
 } = require('../../../packages/core/lib/health-provider');
 const { getBlogHealthRuntimeConfig } = require('../lib/runtime-config.ts');
+const { getInstagramConfig } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-graph.ts'));
+const { getInstagramImageHostConfig } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-image-host.ts'));
 
 const CONTINUOUS = ['ai.blog.node-server'];
 const ALL_SERVICES = ['ai.blog.daily', 'ai.blog.node-server'];
@@ -170,7 +172,44 @@ async function buildBookReviewQueueHealth() {
   }
 }
 
-function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealth) {
+async function buildInstagramHealth() {
+  try {
+    const config = await getInstagramConfig();
+    const host = getInstagramImageHostConfig();
+    const hostReady = Boolean(host.publicBaseUrl || host.githubPagesBaseUrl || host.opsStaticBaseUrl);
+    const health = config.tokenHealth || {};
+    const ok = [
+      `  instagram token: ${health.hasAccessToken && health.hasIgUserId ? '준비됨' : '누락'}`,
+      `  token expires: ${health.tokenExpiresAt || '미설정'}`,
+      `  public host: ${hostReady ? `${host.mode || 'configured'} 준비됨` : '미설정'}`,
+    ];
+    const warn = [];
+    if (health.critical) warn.push(`  인스타 토큰 만료 임박: ${health.daysLeft}일 남음`);
+    else if (health.needsRefresh) warn.push(`  인스타 토큰 갱신 권장: ${health.daysLeft}일 남음`);
+    if (!hostReady) warn.push('  공개 미디어 호스팅 URL이 없어 릴스 업로드를 진행할 수 없습니다');
+    return {
+      okCount: ok.length,
+      warnCount: warn.length,
+      ok,
+      warn,
+      needsRefresh: Boolean(health.needsRefresh),
+      critical: Boolean(health.critical),
+      hostReady,
+    };
+  } catch (error) {
+    return {
+      okCount: 0,
+      warnCount: 1,
+      ok: [],
+      warn: [`  instagram: 확인 실패 (${error.message.slice(0, 120)})`],
+      needsRefresh: false,
+      critical: false,
+      hostReady: false,
+    };
+  }
+}
+
+function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealth, instagramHealth) {
   return buildHealthDecision({
     warnings: [
       {
@@ -198,6 +237,16 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
         level: 'medium',
         reason: `n8n은 살아 있지만 blog pipeline webhook이 미등록 상태입니다 (${n8nPipelineHealth.webhookReason}).`,
       },
+      {
+        active: instagramHealth.critical,
+        level: 'high',
+        reason: '인스타 토큰 만료가 임박해 릴스 업로드가 중단될 수 있습니다.',
+      },
+      {
+        active: !instagramHealth.hostReady,
+        level: 'medium',
+        reason: '인스타 공개 미디어 호스팅이 준비되지 않아 릴스 업로드를 진행할 수 없습니다.',
+      },
     ],
     okReason: '블로팀 실행기와 daily run 상태가 현재는 안정 구간입니다.',
   });
@@ -211,6 +260,7 @@ function formatText(report) {
       buildHealthSampleSection('■ 정상 서비스 샘플', report.serviceHealth),
       buildHealthCountSection('■ 실행 백엔드 상태', report.nodeHealth, { okLimit: 3 }),
       buildHealthCountSection('■ n8n pipeline 경로', report.n8nPipelineHealth, { okLimit: 2 }),
+      buildHealthCountSection('■ 인스타 업로드 상태', report.instagramHealth, { okLimit: 3 }),
       buildHealthCountSection('■ 도서 카탈로그 상태', report.bookCatalogHealth, { okLimit: 4 }),
       buildHealthCountSection('■ 도서리뷰 큐 상태', report.bookReviewQueueHealth, { okLimit: 3 }),
       buildHealthCountSection('■ daily run 상태', report.dailyRunHealth, { warnLimit: 4, okLimit: 2 }),
@@ -240,9 +290,10 @@ async function buildReport() {
   const nodeHealth = await buildNodeHealth();
   const dailyRunHealth = buildDailyRunHealth();
   const n8nPipelineHealth = await buildN8nPipelineHealth();
+  const instagramHealth = await buildInstagramHealth();
   const bookCatalogHealth = await buildBookCatalogHealth();
   const bookReviewQueueHealth = await buildBookReviewQueueHealth();
-  const decision = buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealth);
+  const decision = buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealth, instagramHealth);
 
   return {
     serviceHealth: {
@@ -275,6 +326,7 @@ async function buildReport() {
       webhookUrl: n8nPipelineHealth.webhookUrl,
       resolvedWebhookUrl: n8nPipelineHealth.resolvedWebhookUrl,
     },
+    instagramHealth,
     bookCatalogHealth,
     bookReviewQueueHealth,
     decision,
