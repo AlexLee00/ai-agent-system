@@ -2,6 +2,7 @@
 import { execFileSync } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { buildScreeningHistoryReport } from './screening-history-report.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -79,6 +80,24 @@ function loadHealthReport() {
   return { ...JSON.parse(result.output), error: null };
 }
 
+async function loadScreeningHistory() {
+  try {
+    const [crypto, domestic, overseas] = await Promise.all([
+      buildScreeningHistoryReport({ market: 'crypto', limit: 3, json: true }),
+      buildScreeningHistoryReport({ market: 'domestic', limit: 3, json: true }),
+      buildScreeningHistoryReport({ market: 'overseas', limit: 3, json: true }),
+    ]);
+    return { crypto, domestic, overseas, error: null };
+  } catch (error) {
+    return {
+      crypto: null,
+      domestic: null,
+      overseas: null,
+      error: String(error?.message || error).trim(),
+    };
+  }
+}
+
 function loadLaunchdLabels() {
   const result = tryRunCommand('launchctl', ['list'], { cwd: REPO_ROOT });
   if (!result.ok) {
@@ -131,11 +150,12 @@ function loadPortAgentStatuses() {
   return { rows: extractJsonMarker(result.output), error: null };
 }
 
-function buildSnapshot() {
+async function buildSnapshot() {
   const launchd = loadLaunchdLabels();
   const overlap = loadOverlapReport();
   const portAgents = loadPortAgentStatuses();
   const health = loadHealthReport();
+  const screening = await loadScreeningHistory();
 
   return {
     capturedAt: new Date().toISOString(),
@@ -153,6 +173,7 @@ function buildSnapshot() {
       cryptoLiveGateHealth: health.cryptoLiveGateHealth,
       error: health.error,
     },
+    screening,
   };
 }
 
@@ -186,15 +207,29 @@ function printText(snapshot) {
     console.log(`  - ${row.name}: ${row.status} / runs=${row.runs} / failures=${row.consecutive_failures}`);
   });
   console.log('');
+  if (snapshot.screening?.error) {
+    console.log(`screening_history: ⚠️ ${snapshot.screening.error}`);
+    console.log('');
+  } else if (snapshot.screening) {
+    console.log('screening_history 요약:');
+    for (const market of ['crypto', 'domestic', 'overseas']) {
+      const summary = snapshot.screening[market]?.summary;
+      if (!summary) continue;
+      console.log(`  - ${market}: rows=${summary.totalRows}, unique=${summary.uniqueDynamicSymbols}`);
+      const top = (summary.topSymbols || []).slice(0, 3).map((item) => `${item.symbol}(${item.count})`).join(', ');
+      if (top) console.log(`    top: ${top}`);
+    }
+    console.log('');
+  }
   if (snapshot.health.cryptoLiveGateHealth?.warn?.length) {
     console.log('crypto LIVE gate:');
     snapshot.health.cryptoLiveGateHealth.warn.forEach((line) => console.log(line));
   }
 }
 
-function main() {
+async function main() {
   const json = process.argv.includes('--json');
-  const snapshot = buildSnapshot();
+  const snapshot = await buildSnapshot();
   if (json) {
     console.log(JSON.stringify(snapshot, null, 2));
     return;
@@ -202,4 +237,4 @@ function main() {
   printText(snapshot);
 }
 
-main();
+await main();

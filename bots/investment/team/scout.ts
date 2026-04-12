@@ -63,18 +63,11 @@ function topUniqueSignals(signals = [], limit = 5) {
 async function loadRecentArgosSymbols({ dryRun = false } = {}) {
   if (dryRun) return new Map();
   try {
-    const rows = await db.query(`
-      SELECT market, dynamic_symbols
-      FROM screening_history
-      ORDER BY created_at DESC
-      LIMIT 6
-    `);
+    const rows = await db.getRecentScreeningMarkets(6);
     const byMarket = new Map();
     for (const row of rows) {
-      const market = String(row.market || '').trim() || 'unknown';
-      const list = Array.isArray(row.dynamic_symbols)
-        ? row.dynamic_symbols
-        : JSON.parse(row.dynamic_symbols || '[]');
+      const market = row.market;
+      const list = Array.isArray(row.dynamic_symbols) ? row.dynamic_symbols : [];
       if (!byMarket.has(market)) byMarket.set(market, new Set());
       const bucket = byMarket.get(market);
       for (const symbol of list) {

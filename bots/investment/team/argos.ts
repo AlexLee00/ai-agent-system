@@ -135,20 +135,12 @@ function _warnExternalOnce(key, message, ttl = EXTERNAL_WARN_TTL) {
 
 async function _loadRecentScreeningWeights(market) {
   try {
-    const rows = await db.query(`
-      SELECT dynamic_symbols
-      FROM screening_history
-      WHERE market = $1
-      ORDER BY created_at DESC
-      LIMIT 5
-    `, [market]);
+    const rows = await db.getRecentScreeningDynamicSymbols(market, 5);
 
     const weights = new Map();
     rows.forEach((row, idx) => {
       const recencyWeight = Math.max(1, 5 - idx);
-      const rawSymbols = Array.isArray(row.dynamic_symbols)
-        ? row.dynamic_symbols
-        : JSON.parse(row.dynamic_symbols || '[]');
+      const rawSymbols = Array.isArray(row.dynamic_symbols) ? row.dynamic_symbols : [];
       const symbols = market === 'crypto'
         ? _sanitizeCryptoSymbols(rawSymbols)
         : rawSymbols;
