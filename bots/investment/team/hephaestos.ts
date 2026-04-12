@@ -903,7 +903,8 @@ async function resolveSellExecutionContext({
     || signalTradeMode;
   const base = symbol.split('/')[0];
   const balance = sellPaperMode ? null : await getExchange().fetchBalance();
-  const freeBalance = Number(balance?.total?.[base] || balance?.free?.[base] || 0);
+  const freeBalance = Number(balance?.free?.[base] || 0);
+  const totalBalance = Number(balance?.total?.[base] || freeBalance || 0);
 
   return {
     success: true,
@@ -915,6 +916,7 @@ async function resolveSellExecutionContext({
     effectivePositionTradeMode,
     base,
     freeBalance,
+    totalBalance,
   };
 }
 
@@ -929,6 +931,7 @@ async function resolveSellAmount({
   paperPosition,
   position,
   freeBalance,
+  totalBalance,
 }) {
   let amount = position?.amount;
 
@@ -947,9 +950,24 @@ async function resolveSellAmount({
     console.log(`  ℹ️ DB 포지션 없음 → 바이낸스 실잔고 사용: ${amount} ${symbol.split('/')[0]}`);
   } else if (!livePosition && fallbackLivePosition && fallbackLivePosition.trade_mode !== signalTradeMode) {
     console.warn(`  ⚠️ ${symbol} SELL 신호(${signalTradeMode})에 대응되는 live 포지션 없음 → ${fallbackLivePosition.trade_mode} 포지션 기준으로 청산`);
-  } else if (!sellPaperMode && freeBalance > 0 && freeBalance < amount) {
+  } else if (!sellPaperMode && freeBalance <= 0 && amount > 0) {
+    const reason = `가용 잔고 없음 (free=${freeBalance}, total=${totalBalance || 0})`;
+    console.warn(`  ⚠️ ${symbol} ${reason} — SELL 스킵`);
+    await persistFailure(reason, {
+      code: 'no_free_balance_for_sell',
+      meta: {
+        exchange: 'binance',
+        symbol,
+        dbAmount: position?.amount || 0,
+        freeBalance,
+        totalBalance,
+        sellPaperMode,
+      },
+    });
+    return { success: false, reason };
+  } else if (!sellPaperMode && freeBalance < amount) {
     const drift = amount - freeBalance;
-    console.warn(`  ⚠️ ${symbol} DB 포지션(${amount})과 실잔고(${freeBalance})가 어긋남 — 실잔고 기준으로 SELL 진행`);
+    console.warn(`  ⚠️ ${symbol} DB 포지션(${amount})과 가용잔고(free=${freeBalance}, total=${totalBalance || freeBalance})가 어긋남 — free 기준으로 SELL 진행`);
     amount = freeBalance;
     await db.updateSignalBlock(signalId, {
       reason: `position_reconciled_to_balance:${drift.toFixed(8)}`,
@@ -959,6 +977,7 @@ async function resolveSellAmount({
         symbol,
         dbAmount: position?.amount || 0,
         freeBalance,
+        totalBalance,
         drift,
       },
     }).catch(() => {});
