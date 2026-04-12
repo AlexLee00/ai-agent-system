@@ -37,6 +37,31 @@
 
 const path = require('path');
 const os   = require('os');
+const { execFileSync } = require('child_process');
+
+const _launchctl_env_cache = new Map<string, string>();
+
+function _readLaunchctlEnv(name: string): string {
+  if (_launchctl_env_cache.has(name)) {
+    return _launchctl_env_cache.get(name) || '';
+  }
+
+  try {
+    const value = execFileSync('/bin/launchctl', ['getenv', name], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    _launchctl_env_cache.set(name, value);
+    return value;
+  } catch {
+    _launchctl_env_cache.set(name, '');
+    return '';
+  }
+}
+
+function _envOrLaunchctl(name: string, fallback = ''): string {
+  return process.env[name] || _readLaunchctlEnv(name) || fallback;
+}
 
 // ─── 경로 ────────────────────────────────────────────────────────────────
 
@@ -135,14 +160,14 @@ export const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || (
  * DEV: http://localhost:7788 (Tailscale/SSH 터널 경유)
  * Hub가 시크릿의 유일한 진입점 → OPS/DEV 모두 필요
  */
-export const HUB_BASE_URL = process.env.HUB_BASE_URL || 'http://localhost:7788';
+export const HUB_BASE_URL = _envOrLaunchctl('HUB_BASE_URL', 'http://localhost:7788');
 
 export const USE_HUB = IS_DEV && !!HUB_BASE_URL;
 
-export const HUB_AUTH_TOKEN = process.env.HUB_AUTH_TOKEN || '';
+export const HUB_AUTH_TOKEN = _envOrLaunchctl('HUB_AUTH_TOKEN');
 
 /** 시크릿 Hub 경로 사용 여부 (자동배포 안전성을 위해 기본값은 false) */
-export const USE_HUB_SECRETS = process.env.USE_HUB_SECRETS === 'true';
+export const USE_HUB_SECRETS = _envOrLaunchctl('USE_HUB_SECRETS') === 'true';
 
 export const HUB_PORT = parseInt(process.env.HUB_PORT || '7788', 10);
 

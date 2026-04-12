@@ -4,6 +4,7 @@
  */
 
 const env = require('./env');
+const { execFileSync } = require('child_process');
 const cache = new Map();
 const warnCache = new Map();
 
@@ -33,6 +34,36 @@ function warnOnce(key, message, ttlMs = 30000) {
   if ((Date.now() - last) < ttlMs) return;
   warnCache.set(key, Date.now());
   console.warn(message);
+}
+
+function shouldUseCurlFallback(err, url) {
+  const message = `${err?.message || ''} ${err?.cause?.message || ''}`.toLowerCase();
+  return (
+    (url.includes('localhost') || url.includes('127.0.0.1')) &&
+    (message.includes('eperm') || message.includes('fetch failed') || message.includes('connect eperm'))
+  );
+}
+
+function fetchJsonViaCurl(url, authToken, timeoutMs) {
+  try {
+    const seconds = Math.max(1, Math.ceil(timeoutMs / 1000));
+    const raw = execFileSync('/usr/bin/curl', [
+      '-sS',
+      '--max-time',
+      String(seconds),
+      '-H',
+      `Authorization: Bearer ${authToken}`,
+      '-H',
+      'Content-Type: application/json',
+      url,
+    ], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
 }
 
 async function fetchHubSecrets(category, timeoutMs = 3000) {
@@ -71,6 +102,14 @@ async function fetchHubSecrets(category, timeoutMs = 3000) {
     setCached(cacheKey, data, 10000);
     return data;
   } catch (err) {
+    if (shouldUseCurlFallback(err, url)) {
+      const json = fetchJsonViaCurl(url, env.HUB_AUTH_TOKEN, timeoutMs);
+      if (json) {
+        const data = json.data || null;
+        setCached(cacheKey, data, 10000);
+        return data;
+      }
+    }
     const message = err.name === 'AbortError' ? '타임아웃' : err.message;
     console.warn(`[hub-client] ${category}: ${message}`);
     return null;

@@ -27,27 +27,28 @@ function readStoreInstagramConfig() {
 }
 
 async function getInstagramConfig() {
-  // NOTE:
-  // Instagram 토큰/IG User ID는 아직 허브 시크릿에 정식 등록되지 않았습니다.
-  // 토큰이 비어 있는 동안 허브를 계속 조회하면 "설정 가능한 경로"처럼 보이는데
-  // 실제로는 미등록 상태라 운영자 판단만 흐리게 만듭니다.
-  //
-  // 그래서 현재는 허브 조회를 잠시 끄고, 로컬 secrets-store.json 또는 env만 봅니다.
-  // 인스타 자격증명이 준비되면 아래 라인을 복구하면 됩니다.
-  // const hubData = await fetchHubSecrets('instagram');
-  const hubData = {};
+  const hubData = await fetchHubSecrets('instagram');
   const storeData = readStoreInstagramConfig();
   const tokenConfig = getInstagramTokenConfig();
   return {
-    accessToken: hubData?.access_token || tokenConfig.accessToken || '',
-    igUserId: hubData?.ig_user_id || tokenConfig.igUserId || '',
-    appId: hubData?.app_id || tokenConfig.appId || '',
-    appSecret: hubData?.app_secret || tokenConfig.appSecret || '',
-    businessAccountId: hubData?.business_account_id || tokenConfig.businessAccountId || '',
-    apiVersion: hubData?.api_version || tokenConfig.apiVersion || 'v21.0',
-    baseUrl: hubData?.base_url || tokenConfig.baseUrl || 'https://graph.facebook.com',
-    tokenExpiresAt: tokenConfig.tokenExpiresAt || null,
-    tokenHealth: getTokenHealth(tokenConfig),
+    accessToken: hubData?.access_token || storeData?.access_token || tokenConfig.accessToken || '',
+    igUserId: hubData?.ig_user_id || storeData?.ig_user_id || tokenConfig.igUserId || '',
+    appId: hubData?.app_id || storeData?.app_id || tokenConfig.appId || '',
+    appSecret: hubData?.app_secret || storeData?.app_secret || tokenConfig.appSecret || '',
+    businessAccountId: hubData?.business_account_id || storeData?.business_account_id || tokenConfig.businessAccountId || '',
+    apiVersion: hubData?.api_version || storeData?.api_version || tokenConfig.apiVersion || 'v21.0',
+    baseUrl: hubData?.base_url || storeData?.base_url || tokenConfig.baseUrl || 'https://graph.facebook.com',
+    tokenExpiresAt: tokenConfig.tokenExpiresAt || (hubData?.token_expires_at ? new Date(hubData.token_expires_at).getTime() : null) || null,
+    tokenHealth: getTokenHealth({
+      accessToken: hubData?.access_token || storeData?.access_token || tokenConfig.accessToken || '',
+      igUserId: hubData?.ig_user_id || storeData?.ig_user_id || tokenConfig.igUserId || '',
+      appId: hubData?.app_id || storeData?.app_id || tokenConfig.appId || '',
+      appSecret: hubData?.app_secret || storeData?.app_secret || tokenConfig.appSecret || '',
+      businessAccountId: hubData?.business_account_id || storeData?.business_account_id || tokenConfig.businessAccountId || '',
+      apiVersion: hubData?.api_version || storeData?.api_version || tokenConfig.apiVersion || 'v21.0',
+      baseUrl: hubData?.base_url || storeData?.base_url || tokenConfig.baseUrl || 'https://graph.facebook.com',
+      tokenExpiresAt: tokenConfig.tokenExpiresAt || (hubData?.token_expires_at ? new Date(hubData.token_expires_at).getTime() : null) || null,
+    }),
     defaultStatus: process.env.INSTAGRAM_PUBLISH_DEFAULT_STATUS || 'draft',
   };
 }
