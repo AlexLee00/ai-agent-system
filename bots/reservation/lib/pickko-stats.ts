@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use strict';
 
 /**
@@ -13,7 +12,51 @@
 const { delay } = require('./utils');
 const { normalizeStudyRoomKey } = require('./study-room-pricing');
 
-function normalizeStudyRoomLabel(description) {
+type MonthlyRevenueRow = {
+  date: string;
+  netRevenue: number;
+  refundAmount: number;
+  grossRevenue: number;
+};
+
+type GeneralTicketDetail = {
+  rawDescription: string;
+  productHours: number | null;
+  productDays: number | null;
+  ticketType: string;
+  memberHint: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  isPeriodPass: boolean;
+};
+
+type StudyRoomDetail = {
+  rawDescription: string;
+  roomLabel: string | null;
+  roomType: string | null;
+  useDate: string | null;
+  startTime: string | null;
+  endTime: string | null;
+  memberName: string | null;
+};
+
+type DailyTransaction = {
+  no: number;
+  description: string;
+  netRevenue: number;
+  studyRoom: string | null;
+  generalTicket: GeneralTicketDetail | null;
+  roomDetail: StudyRoomDetail | null;
+};
+
+type DailyDetail = {
+  transactions: DailyTransaction[];
+  studyRoomRevenue: Record<string, number>;
+  generalRevenue: number;
+  totalRevenue: number;
+};
+
+function normalizeStudyRoomLabel(description: unknown): string | null {
   const text = String(description || '')
     .replace(/\u00A0/g, ' ')
     .replace(/\s+/g, ' ')
@@ -29,7 +72,7 @@ function normalizeStudyRoomLabel(description) {
   return `스터디룸${alpha}${digits}`;
 }
 
-function normalizeTicketType(hours, description, amount) {
+function normalizeTicketType(hours: unknown, description: unknown, amount: unknown): string {
   const text = String(description || '')
     .replace(/\u00A0/g, ' ')
     .replace(/\s+/g, ' ')
@@ -48,7 +91,7 @@ function normalizeTicketType(hours, description, amount) {
   return hour > 0 ? `기타-${hour}시간` : '미분류';
 }
 
-function parseGeneralTicketDescription(description, amount = 0) {
+function parseGeneralTicketDescription(description: unknown, amount = 0): GeneralTicketDetail {
   const text = String(description || '')
     .replace(/\u00A0/g, ' ')
     .replace(/\s+/g, ' ')
@@ -111,7 +154,7 @@ function parseGeneralTicketDescription(description, amount = 0) {
   };
 }
 
-function parseStudyRoomDescription(description, defaultYear = null) {
+function parseStudyRoomDescription(description: unknown, defaultYear: number | null = null): StudyRoomDetail {
   const text = String(description || '')
     .replace(/\u00A0/g, ' ')
     .replace(/\s+/g, ' ')
@@ -170,7 +213,7 @@ function parseStudyRoomDescription(description, defaultYear = null) {
  *   grossRevenue = 결제금액 합계
  *   refundAmount = 환불금액 합계
  */
-async function fetchMonthlyRevenue(page, year, month) {
+async function fetchMonthlyRevenue(page: any, year: number, month: number): Promise<MonthlyRevenueRow[]> {
   const url = `https://pickkoadmin.com/manager/statistic/month/${year}/${month}.html`;
   await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
   await delay(1500);
@@ -205,7 +248,7 @@ async function fetchMonthlyRevenue(page, year, month) {
  * @param {string} date - 'YYYY-MM-DD'
  * @returns {{ date, netRevenue, grossRevenue, refundAmount } | null}
  */
-async function fetchDailyRevenue(page, date) {
+async function fetchDailyRevenue(page: any, date: string): Promise<MonthlyRevenueRow | null> {
   const [year, month] = date.split('-').map(Number);
   const rows = await fetchMonthlyRevenue(page, year, month);
   return rows.find(r => r.date === date) || null;
@@ -231,14 +274,14 @@ async function fetchDailyRevenue(page, date) {
  *   totalRevenue: number,
  * }}
  */
-async function fetchDailyDetail(page, date) {
+async function fetchDailyDetail(page: any, date: string): Promise<DailyDetail> {
   const url = `https://pickkoadmin.com/manager/statistic/day/${date}.html`;
   await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
   await delay(1500);
 
   const targetYear = Number(String(date || '').slice(0, 4)) || new Date().getFullYear();
 
-  const transactions = await page.evaluate((defaultYear) => {
+  const transactions: DailyTransaction[] = await page.evaluate((defaultYear: number) => {
     const normalizeStudyRoomLabel = (description) => {
       const text = String(description || '')
         .replace(/\u00A0/g, ' ')
@@ -414,7 +457,7 @@ async function fetchDailyDetail(page, date) {
   }, targetYear);
 
   // 룸별·일반 합산
-  const studyRoomRevenue = {};
+  const studyRoomRevenue: Record<string, number> = {};
   let generalRevenue = 0;
 
   for (const t of transactions) {
@@ -425,7 +468,7 @@ async function fetchDailyDetail(page, date) {
     }
   }
 
-  const totalRevenue = Object.values(studyRoomRevenue).reduce((s, v) => s + v, 0) + generalRevenue;
+  const totalRevenue = Object.values(studyRoomRevenue).reduce<number>((s, v) => s + v, 0) + generalRevenue;
 
   return { transactions, studyRoomRevenue, generalRevenue, totalRevenue };
 }

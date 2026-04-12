@@ -1,29 +1,65 @@
-// @ts-nocheck
+/// <reference lib="dom" />
+
 const { delay } = require('./utils');
 
-async function loginToPickko(page, id, pw, delayFn) {
+type PickkoEntry = {
+  name: string;
+  phoneRaw: string;
+  room: string;
+  date: string;
+  start: string;
+  end: string;
+  amount: number;
+  receiptText: string;
+};
+
+type FetchPickkoEntriesOptions = {
+  endDate?: string;
+  statusKeyword?: string;
+  minAmount?: number;
+  sortBy?: string;
+  receiptDate?: string;
+};
+
+type FetchPickkoEntriesResult = {
+  entries: PickkoEntry[];
+  fetchOk: boolean;
+};
+
+type PickkoMemberLookupResult = {
+  found: boolean;
+  mbNo: string | null;
+  name: string | null;
+};
+
+async function loginToPickko(page: any, id: string, pw: string, delayFn?: (ms: number) => Promise<unknown>) {
   const d = delayFn || delay;
   try {
     await page.goto('https://pickkoadmin.com/manager/login.html', { waitUntil: 'domcontentloaded' });
-  } catch (e) {
-    console.error('[pickko] 로그인 페이지 로드 실패:', e.message);
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error('[pickko] 로그인 페이지 로드 실패:', message);
     throw e;
   }
   try {
     await page.evaluate((id, pw) => {
-      document.getElementById('mn_id').value  = id;
-      document.getElementById('mn_pw').value  = pw;
-      document.getElementById('loginButton').click();
+      const idInput = document.getElementById('mn_id') as HTMLInputElement | null;
+      const pwInput = document.getElementById('mn_pw') as HTMLInputElement | null;
+      const loginButton = document.getElementById('loginButton') as HTMLElement | null;
+      if (idInput) idInput.value = id;
+      if (pwInput) pwInput.value = pw;
+      loginButton?.click();
     }, id, pw);
-  } catch (e) {
-    console.error('[pickko] 로그인 폼 입력 실패:', e.message);
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error('[pickko] 로그인 폼 입력 실패:', message);
     throw e;
   }
   await d(3000);
 }
 
 // 시간 문자열 → HH:MM 정규화 (내부용)
-function _normalizeTime(str) {
+function _normalizeTime(str: string): string {
   if (!str) return '';
   const m1 = str.match(/(오전|오후)\s*(\d+)시\s*(\d+)?분?/);
   if (m1) {
@@ -62,7 +98,11 @@ function _normalizeTime(str) {
  *   receiptDate: string    — 접수일 필터 'YYYY-MM-DD' (sortBy=sd_regdate 전용)
  * @returns {{ entries: Array<{phoneRaw,name,room,date,start,end,amount,receiptText}>, fetchOk: boolean }}
  */
-async function fetchPickkoEntries(page, startDate, opts = {}) {
+async function fetchPickkoEntries(
+  page: any,
+  startDate: string,
+  opts: FetchPickkoEntriesOptions = {},
+): Promise<FetchPickkoEntriesResult> {
   const {
     endDate = '',
     statusKeyword = '결제완료',
@@ -75,8 +115,9 @@ async function fetchPickkoEntries(page, startDate, opts = {}) {
     await page.goto('https://pickkoadmin.com/study/index.html', {
       waitUntil: 'networkidle2', timeout: 30000
     });
-  } catch (e) {
-    console.error('[pickko] fetchPickkoEntries 페이지 로드 실패:', e.message);
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error('[pickko] fetchPickkoEntries 페이지 로드 실패:', message);
     return { entries: [], fetchOk: false };
   }
   await delay(2000);
@@ -87,37 +128,41 @@ async function fetchPickkoEntries(page, startDate, opts = {}) {
     if (sb !== 'sd_regdate') {
       const startEl = document.querySelector('input[name="sd_start_up"]');
       if (startEl) {
-        startEl.value = sd;
-        startEl.dispatchEvent(new Event('change', { bubbles: true }));
+        const input = startEl as HTMLInputElement;
+        input.value = sd;
+        input.dispatchEvent(new Event('change', { bubbles: true }));
       }
       if (ed) {
         const endEl = document.querySelector('input[name="sd_start_dw"]');
         if (endEl) {
-          endEl.removeAttribute('readonly');
-          endEl.value = ed;
-          endEl.dispatchEvent(new Event('change', { bubbles: true }));
+          const input = endEl as HTMLInputElement;
+          input.removeAttribute('readonly');
+          input.value = ed;
+          input.dispatchEvent(new Event('change', { bubbles: true }));
         }
       }
     }
 
     // 접수일시 기준 정렬 (sortBy=sd_regdate일 때)
-    if (sb === 'sd_regdate') {
-      const radio = document.querySelector('input[name="o_key"][value="sd_regdate"]');
-      if (radio) {
-        radio.checked = true;
-        radio.dispatchEvent(new Event('change', { bubbles: true }));
+      if (sb === 'sd_regdate') {
+        const radio = document.querySelector('input[name="o_key"][value="sd_regdate"]');
+        if (radio) {
+          const input = radio as HTMLInputElement;
+          input.checked = true;
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+        }
       }
-    }
 
     // 이용금액 하한 필터
-    if (ma > 0) {
-      const amtEl = document.querySelector('input[name="order_price_up"]');
-      if (amtEl) {
-        amtEl.value = String(ma);
-        amtEl.dispatchEvent(new Event('input', { bubbles: true }));
-        amtEl.dispatchEvent(new Event('change', { bubbles: true }));
+      if (ma > 0) {
+        const amtEl = document.querySelector('input[name="order_price_up"]');
+        if (amtEl) {
+          const input = amtEl as HTMLInputElement;
+          input.value = String(ma);
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+        }
       }
-    }
 
     // 상태 필터
     if (sk) {
@@ -145,7 +190,18 @@ async function fetchPickkoEntries(page, startDate, opts = {}) {
   await delay(2000);
 
   // colMap 분석
-  let colMap;
+  let colMap: {
+    name: number;
+    phone: number;
+    room: number;
+    startTime: number;
+    endTime: number;
+    amount: number;
+    status: number;
+    receiptTime: number;
+    isCombined: boolean;
+    headers: string[];
+  };
   try {
     colMap = await page.evaluate(() => {
       const result = {
@@ -171,13 +227,23 @@ async function fetchPickkoEntries(page, startDate, opts = {}) {
       });
       return result;
     });
-  } catch (e) {
-    console.error('[pickko] colMap 파싱 실패:', e.message);
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error('[pickko] colMap 파싱 실패:', message);
     return { entries: [], fetchOk: false };
   }
 
   // 행 파싱
-  let rawEntries;
+  let rawEntries: Array<{
+    name: string;
+    phoneRaw: string;
+    room: string;
+    reservationDate: string;
+    startText: string;
+    endText: string;
+    amtText: string;
+    receiptText: string;
+  }>;
   try {
     rawEntries = await page.evaluate((sd, cm, sk, ma, rd) => {
       const entries = [];
@@ -243,12 +309,13 @@ async function fetchPickkoEntries(page, startDate, opts = {}) {
       }
       return entries;
     }, startDate, colMap, statusKeyword, minAmount, receiptDate);
-  } catch (e) {
-    console.error('[pickko] 행 파싱 실패:', e.message);
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error('[pickko] 행 파싱 실패:', message);
     return { entries: [], fetchOk: false };
   }
 
-  const entries = rawEntries.map(e => ({
+  const entries: PickkoEntry[] = rawEntries.map(e => ({
     name: e.name,
     phoneRaw: e.phoneRaw,
     room: e.room,
@@ -273,13 +340,18 @@ async function fetchPickkoEntries(page, startDate, opts = {}) {
  * @param {function} [d]   - delay 함수 (기본값: lib/utils의 delay)
  * @returns {{ found: boolean, mbNo: string|null, name: string|null }}
  */
-async function findPickkoMember(page, phone, d) {
+async function findPickkoMember(
+  page: any,
+  phone: string,
+  d?: (ms: number) => Promise<unknown>,
+): Promise<PickkoMemberLookupResult> {
   const wait = d || delay;
 
   try {
     await page.goto('https://pickkoadmin.com/study/write.html', { waitUntil: 'domcontentloaded' });
-  } catch (e) {
-    console.error('[pickko] findPickkoMember 페이지 로드 실패:', e.message);
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error('[pickko] findPickkoMember 페이지 로드 실패:', message);
     return { found: false, mbNo: null, name: null };
   }
   await wait(2000);
@@ -288,32 +360,34 @@ async function findPickkoMember(page, phone, d) {
   try {
     await page.evaluate((p) => {
       const inputs = document.querySelectorAll('input[type="text"]');
-      let target = null;
+      let target: HTMLInputElement | null = null;
       for (const inp of inputs) {
-        if (inp.placeholder && (inp.placeholder.includes('이름') || inp.placeholder.includes('검색'))) {
-          target = inp; break;
+        const input = inp as HTMLInputElement;
+        if (input.placeholder && (input.placeholder.includes('이름') || input.placeholder.includes('검색'))) {
+          target = input; break;
         }
       }
-      if (!target && inputs.length > 0) target = inputs[inputs.length - 1];
+      if (!target && inputs.length > 0) target = inputs[inputs.length - 1] as HTMLInputElement;
       if (target) {
         target.value = p;
         target.dispatchEvent(new Event('input', { bubbles: true }));
         target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
       }
     }, phone);
-  } catch (e) {
-    console.error('[pickko] 회원 검색 입력 실패:', e.message);
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error('[pickko] 회원 검색 입력 실패:', message);
   }
   await wait(2000);
 
   // 회원 선택 버튼 클릭 → 모달 열기 (id 방식 실패 시 텍스트 폴백)
   try {
     await page.click('a#mb_select_btn');
-  } catch (e) {
+  } catch (_e: unknown) {
     await page.evaluate(() => {
       const links = document.querySelectorAll('a.btn_box');
       for (const a of links) {
-        if (a.textContent.includes('회원 선택')) { a.click(); return; }
+        if (a.textContent?.includes('회원 선택')) { (a as HTMLElement).click(); return; }
       }
     });
   }
@@ -321,7 +395,7 @@ async function findPickkoMember(page, phone, d) {
 
   // 모달에서 mb_no, mb_name 추출
   // a.mb_select의 부모 li[mb_no]에 속성으로 저장됨
-  const result = await page.evaluate(() => {
+  const result: PickkoMemberLookupResult = await page.evaluate(() => {
     const selectEl = document.querySelector('a.mb_select');
     if (!selectEl) return { found: false, mbNo: null, name: null };
 
@@ -340,7 +414,7 @@ async function findPickkoMember(page, phone, d) {
   });
 
   // 모달 닫기
-  try { await page.keyboard.press('Escape'); } catch (e) {}
+  try { await page.keyboard.press('Escape'); } catch (_e: unknown) {}
   await wait(300);
 
   return result;

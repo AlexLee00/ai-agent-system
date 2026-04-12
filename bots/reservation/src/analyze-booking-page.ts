@@ -1,15 +1,16 @@
-// @ts-nocheck
+/// <reference lib="dom" />
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 const { getNaverLaunchOptions, isHeadedMode } = require('../lib/browser');
 
 async function analyze() {
+  const baseLaunchOptions = getNaverLaunchOptions({
+    userDataDir: './naver-profile',
+  }) as { args?: string[] } & Record<string, unknown>;
   const browser = await puppeteer.launch({
-    ...getNaverLaunchOptions({
-      userDataDir: './naver-profile',
-    }),
+    ...baseLaunchOptions,
     args: [
-      ...getNaverLaunchOptions({ userDataDir: './naver-profile' }).args,
+      ...(baseLaunchOptions.args || []),
       ...(isHeadedMode('naver') ? ['--start-maximized', '--kiosk'] : [])
     ]
   });
@@ -56,10 +57,11 @@ async function analyze() {
     console.log('브라우저를 직접 보며 조사하려면 PLAYWRIGHT_HEADLESS=false 로 재실행하세요.');
     
     // 무한 대기 (사용자가 Ctrl+C를 누를 때까지)
-    await new Promise(() => {});
+    await new Promise<void>(() => {});
     
   } catch (e) {
     console.error('❌ 오류:', e.message);
+  } finally {
     await browser.close();
   }
 }

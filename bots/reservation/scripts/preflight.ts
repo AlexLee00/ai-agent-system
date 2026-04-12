@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 'use strict';
 
 /**
@@ -25,4 +24,8 @@ async function run() {
 
 run()
   .then(() => process.exit(0))
-  .catch(e => { console.error(e.message); process.exit(1); });
+  .catch((e: unknown) => {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error(message);
+    process.exit(1);
+  });

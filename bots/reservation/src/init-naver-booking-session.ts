@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// @ts-nocheck
+/// <reference lib="dom" />
 /**
  * init-naver-booking-session.js — naver-booking-profile 세션 초기화 (1회 실행)
  *
@@ -18,7 +18,7 @@ const NAVER_PROFILE = path.join(WORKSPACE, 'naver-profile');
 const BOOKING_URL = 'https://partner.booking.naver.com/bizes/596871/booking-calendar-view';
 
 function waitForEnter(msg) {
-  return new Promise(resolve => {
+  return new Promise<void>((resolve) => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     rl.question(msg, () => { rl.close(); resolve(); });
   });

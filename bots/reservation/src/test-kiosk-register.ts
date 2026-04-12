@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// @ts-nocheck
+/// <reference lib="dom" />
 /**
  * test-kiosk-register.js — 키오스크 예약 테스트 데이터 삽입
  *
@@ -101,12 +101,13 @@ async function main() {
       const roomId = roomIds[room];
       const btns = document.querySelectorAll('button, input[type="button"], td, a');
       for (const el of btns) {
+        const htmlEl = el as HTMLElement;
         const text = (el.textContent || '').trim();
         const val = el.getAttribute('value') || '';
         const onclick = el.getAttribute('onclick') || '';
         if (text.includes(room) || onclick.includes(roomId) || val === roomId) {
-          if (el.offsetParent !== null) {
-            el.click();
+          if (htmlEl.offsetParent !== null) {
+            htmlEl.click();
             return { clicked: true, text, onclick: onclick.slice(0, 50) };
           }
         }
@@ -121,10 +122,11 @@ async function main() {
     const dateSet = await page.evaluate((dateStr) => {
       const dateInputs = document.querySelectorAll('input[type="text"][id*="date"], input[type="text"][name*="date"], input[id*="dp"]');
       for (const el of dateInputs) {
-        if (el.offsetParent !== null) {
-          el.value = dateStr;
-          el.dispatchEvent(new Event('change', { bubbles: true }));
-          return { set: true, id: el.id, name: el.name };
+        const inputEl = el as HTMLInputElement;
+        if (inputEl.offsetParent !== null) {
+          inputEl.value = dateStr;
+          inputEl.dispatchEvent(new Event('change', { bubbles: true }));
+          return { set: true, id: inputEl.id, name: inputEl.name };
         }
       }
       return { set: false };
@@ -138,9 +140,10 @@ async function main() {
       const clicked = await page.evaluate((timeSlot) => {
         const els = document.querySelectorAll('td, button, a, span');
         for (const el of els) {
+          const htmlEl = el as HTMLElement;
           const text = (el.textContent || '').replace(/\s+/g, '').trim();
-          if (text === timeSlot && el.offsetParent !== null) {
-            el.click();
+          if (text === timeSlot && htmlEl.offsetParent !== null) {
+            htmlEl.click();
             return { clicked: true, text };
           }
         }
@@ -177,8 +180,9 @@ async function main() {
       const payBtn = document.querySelector('#pay_order')
         || document.querySelector('button[onclick*="pay"]')
         || document.querySelector('input[value*="결제"]');
-      if (payBtn && payBtn.offsetParent !== null) {
-        payBtn.click();
+      const htmlEl = payBtn as HTMLElement | null;
+      if (htmlEl && htmlEl.offsetParent !== null) {
+        htmlEl.click();
         return { clicked: true };
       }
       return { clicked: false };

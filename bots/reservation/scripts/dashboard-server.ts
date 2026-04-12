@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 'use strict';
 const kst = require('../../../packages/core/lib/kst');
 
@@ -29,6 +28,11 @@ const PORT    = portArg ? parseInt(portArg.split('=')[1]) : 3031;
 const HTML_FILE = path.join(__dirname, 'dashboard.html');
 const readService = createSkaReadService({ pgPool, rag });
 const WEBHOOK_SECRET = process.env.SKA_WEBHOOK_SECRET || '';
+
+type WebhookPayload = {
+  command?: string;
+  args?: Record<string, unknown>;
+};
 
 // ─── 데이터 조회 ─────────────────────────────────────────────────────
 
@@ -128,7 +132,7 @@ function isWebhookAuthorized(req) {
   return String(req.headers['x-ska-webhook-secret'] || '') === WEBHOOK_SECRET;
 }
 
-async function runWebhookCommand(payload = {}) {
+async function runWebhookCommand(payload: WebhookPayload = {}) {
   const command = String(payload.command || '');
   const args = payload.args || {};
   async function resolveErrorAlerts() {

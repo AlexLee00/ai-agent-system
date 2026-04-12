@@ -19,6 +19,10 @@ defmodule TeamJay.Investment.Feedback.Realtime do
 
   def via(symbol), do: {:via, Registry, {TeamJay.AgentRegistry, {:investment_feedback_realtime, symbol}}}
 
+  def status(symbol) do
+    GenServer.call(via(symbol), :status)
+  end
+
   @impl true
   def init(opts) do
     symbol = Keyword.fetch!(opts, :symbol)
@@ -31,6 +35,18 @@ defmodule TeamJay.Investment.Feedback.Realtime do
        feedback_count: 0,
        last_feedback_at: nil
      }}
+  end
+
+  @impl true
+  def handle_call(:status, _from, state) do
+    {:reply,
+     %{
+       symbol: state.symbol,
+       feedback_count: state.feedback_count,
+       last_feedback_at: state.last_feedback_at,
+       open_position_count: map_size(state.open_positions),
+       open_positions: Map.keys(state.open_positions)
+     }, state}
   end
 
   @impl true
@@ -82,6 +98,6 @@ defmodule TeamJay.Investment.Feedback.Realtime do
   defp scaffold_evaluation(_other), do: %{status: :observed, score: 0.0}
 
   defp position_key(result) do
-    {result[:symbol] || result["symbol"], result[:side] || result["side"] || result[:action] || result["action"]}
+    result[:symbol] || result["symbol"]
   end
 end

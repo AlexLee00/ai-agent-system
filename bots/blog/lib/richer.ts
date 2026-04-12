@@ -20,6 +20,7 @@ const rag = require('../../../packages/core/lib/rag-safe');
 const env = require('../../../packages/core/lib/env');
 const { resolveNaverCredentials } = require('../../../packages/core/lib/news-credentials');
 const { parseNaverBlogUrl } = require('../../../packages/core/lib/naver-blog-url');
+const { isExcludedReferencePost } = require('./reference-exclusions.ts');
 
 const DEV_HUB_READONLY = env.IS_DEV && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
 const NAVER_MONITOR_WS_FILE = path.join(env.OPENCLAW_WORKSPACE, 'naver-monitor-ws.txt');
@@ -31,12 +32,18 @@ async function filterPublishedBlogHits(hits) {
     .filter(Boolean);
   if (!filenames.length) return [];
   const rows = await pgPool.query('blog', `
-    SELECT metadata->>'filename' AS filename
+    SELECT id, title, metadata->>'filename' AS filename, metadata
     FROM blog.posts
     WHERE status = 'published'
+      AND COALESCE(NULLIF(metadata->>'exclude_from_reference', '')::boolean, false) = false
       AND metadata->>'filename' = ANY($1::text[])
   `, [filenames]);
-  const publishedSet = new Set(rows.map((row) => String(row.filename || '').trim()).filter(Boolean));
+  const publishedSet = new Set(
+    rows
+      .filter((row) => !isExcludedReferencePost(row))
+      .map((row) => String(row.filename || '').trim())
+      .filter(Boolean),
+  );
   return hits.filter((hit) => publishedSet.has(String(hit?.metadata?.filename || '').trim()));
 }
 

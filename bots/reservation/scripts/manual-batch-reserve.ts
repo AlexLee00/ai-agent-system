@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 'use strict';
 /**
  * scripts/manual-batch-reserve.js — 대리예약 배치 스크립트
@@ -15,8 +14,17 @@ const { spawn } = require('child_process');
 const path = require('path');
 const { releasePickkoLock } = require('../lib/state-bus');
 
+type Booking = {
+  name: string;
+  phone: string;
+  date: string;
+  start: string;
+  end: string;
+  room: 'A1' | 'A2' | 'B';
+};
+
 // ── 예약 목록 (수정 후 실행) ─────────────────────────────────────────
-const BOOKINGS = [
+const BOOKINGS: Booking[] = [
   { name: '민경수', phone: '01027922221', date: '2026-03-11', start: '10:30', end: '12:30', room: 'A1' },
   { name: '민경수', phone: '01027922221', date: '2026-03-11', start: '12:30', end: '14:30', room: 'A2' },
   { name: '민경수', phone: '01027922221', date: '2026-03-13', start: '12:00', end: '14:00', room: 'A1' },
@@ -26,14 +34,18 @@ const BOOKINGS = [
 ];
 
 // 폴백 순서
-const ROOM_FALLBACK = { A1: ['A1', 'A2', 'B'], A2: ['A2', 'B'], B: ['B'] };
+const ROOM_FALLBACK: Record<Booking['room'], Booking['room'][]> = {
+  A1: ['A1', 'A2', 'B'],
+  A2: ['A2', 'B'],
+  B: ['B'],
+};
 
 const PICKKO_SCRIPT  = path.join(__dirname, '../manual/reservation/pickko-accurate.js');
 const KIOSK_MONITOR  = path.join(__dirname, '../auto/monitors/pickko-kiosk-monitor.js');
 
 // ── 유틸 ─────────────────────────────────────────────────────────────
 
-function runNode(scriptPath, args) {
+function runNode(scriptPath: string, args: string[]): Promise<number | null> {
   return new Promise((resolve, reject) => {
     const child = spawn('node', [scriptPath, ...args], {
       cwd: path.dirname(scriptPath),

@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use strict';
 
 const path = require('path');
@@ -9,17 +8,51 @@ const { transformPhoneNumber, transformRoom, validateTimeRange } = require('./va
 
 const MANUAL_REGISTRATION_TIMEOUT_MS = 180_000;
 
-function formatKstDate(date) {
+type ReservationRequest = {
+  date: string | null;
+  start: string | null;
+  end: string | null;
+  room: string | null;
+  phone: string | null;
+  name: string;
+  raw_line?: string;
+};
+
+type ValidationResult =
+  | { ok: true }
+  | { ok: false; code: string; error: string; missing?: string[] };
+
+type SingleReservationResult = {
+  ok: boolean;
+  code?: string;
+  error?: string;
+  message?: string;
+  reservation?: ReservationRequest;
+  exitCode?: number | null;
+  stdout?: string;
+  stderr?: string;
+};
+
+type ParseReservationRequestResult =
+  | { ok: true; reservation: ReservationRequest }
+  | { ok: false; code: string; error: string; missing?: string[] };
+
+type ParseReservationCommandResult =
+  | { ok: true; mode: 'single'; reservation: ReservationRequest }
+  | { ok: true; mode: 'batch'; reservations: ReservationRequest[] }
+  | { ok: false; code: string; error: string; missing?: string[] };
+
+function formatKstDate(date: Date): string {
   return date.toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
 }
 
-function addKstDays(baseDateStr, days) {
+function addKstDays(baseDateStr: string, days: number): string {
   const base = new Date(`${baseDateStr}T00:00:00+09:00`);
   base.setUTCDate(base.getUTCDate() + days);
   return formatKstDate(base);
 }
 
-function parseDateFromText(text) {
+function parseDateFromText(text: unknown): string | null {
   const raw = String(text || '');
   if (/모레/.test(raw)) return addKstDays(kst.today(), 2);
   if (/내일/.test(raw)) return addKstDays(kst.today(), 1);
@@ -39,7 +72,7 @@ function parseDateFromText(text) {
   return null;
 }
 
-function parseTimeToken(token) {
+function parseTimeToken(token: unknown): string | null {
   const value = String(token || '').trim().replace(/\s+/g, '');
   if (!value) return null;
 
@@ -70,7 +103,7 @@ function parseTimeToken(token) {
   return `${String(converted).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
 }
 
-function parseTimeRangeFromText(text) {
+function parseTimeRangeFromText(text: unknown): { start: string | null; end: string | null } {
   const normalized = String(text || '')
     .replace(/부터/g, '~')
     .replace(/까지/g, '')
@@ -99,14 +132,14 @@ function parseTimeRangeFromText(text) {
   return { start: tokens[0], end: tokens[1] };
 }
 
-function parseRoomFromText(text) {
+function parseRoomFromText(text: unknown): string | null {
   const roomMatch = String(text || '').match(/\b(A1|A2|B)\b\s*룸?|\b(A1|A2|B룸?)\b/i);
   if (!roomMatch) return null;
   const raw = roomMatch[1] || roomMatch[2] || '';
   return transformRoom(raw.replace(/룸/gi, ''));
 }
 
-function parseNameFromText(text) {
+function parseNameFromText(text: unknown): string | null {
   const cleaned = String(text || '')
     .replace(/01\d[- ]?\d{3,4}[- ]?\d{4}/g, ' ')
     .replace(/20\d{2}[./-]\s*\d{1,2}[./-]\s*\d{1,2}/g, ' ')
@@ -123,7 +156,7 @@ function parseNameFromText(text) {
   return matches.length > 0 ? matches[matches.length - 1] : null;
 }
 
-function parseSharedName(text) {
+function parseSharedName(text: unknown): string | null {
   const raw = String(text || '').trim();
   const phoneMatch = raw.match(/01\d[- ]?\d{3,4}[- ]?\d{4}/);
   if (phoneMatch) {
@@ -134,7 +167,7 @@ function parseSharedName(text) {
   return parseNameFromText(raw);
 }
 
-function parseBatchCount(text, explicitCount) {
+function parseBatchCount(text: unknown, explicitCount: unknown): number {
   if (Number.isFinite(Number(explicitCount)) && Number(explicitCount) > 0) {
     return Number(explicitCount);
   }
@@ -142,13 +175,13 @@ function parseBatchCount(text, explicitCount) {
   return matched ? Number(matched[1]) : 1;
 }
 
-function isRetryRegistrationRequest(args = {}) {
+function isRetryRegistrationRequest(args: Record<string, unknown> = {}): boolean {
   const rawText = String(args.raw_text || args.text || '').trim();
   if (args.manual_retry === true || args.manual_retry === 'true') return true;
   return /다시\s*등록|재등록|다시\s*해봐|다시\s*시도|반영이\s*되(지\s*않|지않)|실패했|실패했어|재처리/.test(rawText);
 }
 
-function extractBatchReservations(args = {}) {
+function extractBatchReservations(args: Record<string, unknown> = {}): ReservationRequest[] {
   const rawText = String(args.raw_text || args.text || '').trim();
   const lines = rawText
     .split('\n')
@@ -157,7 +190,7 @@ function extractBatchReservations(args = {}) {
 
   const sharedPhone = transformPhoneNumber(args.phone || rawText.match(/01\d[- ]?\d{3,4}[- ]?\d{4}/)?.[0]);
   const identityLine = lines.find((line) => /01\d[- ]?\d{3,4}[- ]?\d{4}/.test(line)) || rawText;
-  const sharedName = (args.name || parseSharedName(identityLine) || parseSharedName(rawText) || '고객').trim();
+  const sharedName = String(args.name || parseSharedName(identityLine) || parseSharedName(rawText) || '고객').trim();
   const allExplicitDates = lines
     .map((line) => parseDateFromText(line))
     .filter(Boolean);
@@ -220,7 +253,7 @@ function extractBatchReservations(args = {}) {
   return extracted.length > reservations.length ? extracted : reservations;
 }
 
-function validateReservation(reservation) {
+function validateReservation(reservation: ReservationRequest): ValidationResult {
   const missing = ['date', 'start', 'end', 'room', 'phone'].filter((key) => !reservation[key]);
   if (missing.length > 0) {
     return {
@@ -243,7 +276,7 @@ function validateReservation(reservation) {
   return { ok: true };
 }
 
-function parseReservationCommand(args = {}) {
+function parseReservationCommand(args: Record<string, unknown> = {}): ParseReservationCommandResult {
   const rawText = String(args.raw_text || args.text || '').trim();
   const explicitBatchCount = parseBatchCount(rawText, args.batch_count);
   const extractedReservations = extractBatchReservations(args);
@@ -264,10 +297,11 @@ function parseReservationCommand(args = {}) {
 
     if (invalid.length > 0) {
       const first = invalid[0];
-      const missing = first.check.missing?.length ? first.check.missing.join(', ') : first.check.error;
+      const failedCheck = first.check as Exclude<ValidationResult, { ok: true }>;
+      const missing = failedCheck.missing?.length ? failedCheck.missing.join(', ') : failedCheck.error;
       return {
         ok: false,
-        code: first.check.code || 'MISSING_FIELDS',
+        code: failedCheck.code || 'MISSING_FIELDS',
         error: `${first.index + 1}번째 예약 정보가 부족합니다: ${missing}. 예: "민경수 010-2792-2221\\n3월 20일 12:00-14:00 A1\\n3월 20일 14:00-15:00 A1\\n예약 추가해줘"`,
       };
     }
@@ -280,7 +314,15 @@ function parseReservationCommand(args = {}) {
   }
 
   const single = parseReservationRequest(args);
-  if (!single.ok) return single;
+  if (!single.ok) {
+    const failedSingle = single as Exclude<ParseReservationRequestResult, { ok: true }>;
+    return {
+      ok: false,
+      code: failedSingle.code,
+      error: failedSingle.error,
+      missing: failedSingle.missing,
+    };
+  }
   return {
     ok: true,
     mode: 'single',
@@ -288,31 +330,35 @@ function parseReservationCommand(args = {}) {
   };
 }
 
-function parseReservationRequest(args = {}) {
+function parseReservationRequest(args: Record<string, unknown> = {}): ParseReservationRequestResult {
   const rawText = String(args.raw_text || args.text || '').trim();
 
   const reservation = {
     date: parseDateFromText(rawText),
     room: parseRoomFromText(rawText),
     phone: transformPhoneNumber(args.phone || rawText.match(/01\d[- ]?\d{3,4}[- ]?\d{4}/)?.[0]),
-    name: (args.name || parseSharedName(rawText) || parseNameFromText(rawText) || '고객').trim(),
+    name: String(args.name || parseSharedName(rawText) || parseNameFromText(rawText) || '고객').trim(),
     ...parseTimeRangeFromText(rawText),
   };
 
   const check = validateReservation(reservation);
   if (!check.ok) {
+    const failedCheck = check as Exclude<ValidationResult, { ok: true }>;
     return {
-      ...check,
-      error: check.code === 'MISSING_FIELDS'
-        ? `예약 등록에 필요한 정보가 부족합니다: ${check.missing.join(', ')}. 예: "내일 오후 3시~5시 A1 010-1234-5678 홍길동 예약해줘"`
-        : check.error,
+      ...failedCheck,
+      error: failedCheck.code === 'MISSING_FIELDS'
+        ? `예약 등록에 필요한 정보가 부족합니다: ${failedCheck.missing?.join(', ')}. 예: "내일 오후 3시~5시 A1 010-1234-5678 홍길동 예약해줘"`
+        : failedCheck.error,
     };
   }
 
   return { ok: true, reservation };
 }
 
-function runSingleReservationRegistration(reservation, options = {}) {
+function runSingleReservationRegistration(
+  reservation: ReservationRequest,
+  options: { manualRetry?: boolean } = {},
+): SingleReservationResult {
   const scriptPath = path.join(__dirname, '../manual/reservation/pickko-register.js');
   const childArgs = [
     scriptPath,
@@ -373,7 +419,7 @@ function runSingleReservationRegistration(reservation, options = {}) {
   };
 }
 
-function runManualReservationRegistration(args = {}) {
+function runManualReservationRegistration(args: Record<string, unknown> = {}) {
   const parsed = parseReservationCommand(args);
   if (!parsed.ok) return parsed;
   const manualRetry = isRetryRegistrationRequest(args);

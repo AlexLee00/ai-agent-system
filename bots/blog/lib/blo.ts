@@ -43,6 +43,7 @@ const {
 const richer                                        = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/richer.ts'));
 const { collectAllResearch }                        = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/parallel-collector.ts'));
 const { getRecentPosts, selectAndValidateTopic }    = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/topic-selector.ts'));
+const { isExcludedReferencePost }                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/reference-exclusions.ts'));
 const { agenticSearch }                             = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/agentic-rag.ts'));
 const { getWriterPersona }                          = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/writer-personas.ts'));
 const { pickEditorPersona }                         = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/editor-personas.ts'));
@@ -439,12 +440,18 @@ async function searchPastPosts(topic) {
       .filter(Boolean);
     if (!filenames.length) return [];
     const rows = await pgPool.query('blog', `
-      SELECT metadata->>'filename' AS filename
+      SELECT id, title, metadata->>'filename' AS filename, metadata
       FROM blog.posts
       WHERE status = 'published'
+        AND COALESCE(NULLIF(metadata->>'exclude_from_reference', '')::boolean, false) = false
         AND metadata->>'filename' = ANY($1::text[])
     `, [filenames]);
-    const publishedSet = new Set(rows.map((row) => String(row.filename || '').trim()).filter(Boolean));
+    const publishedSet = new Set(
+      rows
+        .filter((row) => !isExcludedReferencePost(row))
+        .map((row) => String(row.filename || '').trim())
+        .filter(Boolean),
+    );
     return hits.filter((hit) => publishedSet.has(String(hit?.metadata?.filename || '').trim()));
   } catch { return []; }
 }

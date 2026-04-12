@@ -228,28 +228,25 @@ const CATEGORY_HANDLERS: Record<string, CategoryHandler> = {
     };
   },
 
-  // NOTE:
-  // Instagram Graph API 자격증명은 아직 운영 시크릿으로 등록되지 않았습니다.
-  // 토큰과 IG User ID를 공식 경로로 주입하기 전까지는 허브 secrets 라우트에서
-  // `instagram` 카테고리를 열어두지 않습니다. 그렇지 않으면 "지원되는 시크릿"처럼
-  // 보이지만 실제로는 빈 값만 반환해 혼선을 만들 수 있습니다.
-  //
-  // 재활성화 시 아래 핸들러를 되살리고, `packages/core/lib/instagram-graph.ts`의
-  // 허브 fetch 경로도 함께 다시 켜면 됩니다.
-  //
-  // instagram: () => {
-  //   const store = loadSecretsStore();
-  //   const d = store?.instagram || {};
-  //   return {
-  //     access_token: d.access_token || '',
-  //     ig_user_id: d.ig_user_id || '',
-  //     api_version: d.api_version || 'v21.0',
-  //     base_url: d.base_url || 'https://graph.facebook.com',
-  //     app_id: d.app_id || '',
-  //     app_secret: d.app_secret || '',
-  //     business_account_id: d.business_account_id || '',
-  //   };
-  // },
+  instagram: () => {
+    const store = loadSecretsStore();
+    const d = store?.instagram || {};
+    return {
+      access_token: d.access_token || '',
+      ig_user_id: d.ig_user_id || '',
+      api_version: d.api_version || 'v21.0',
+      base_url: d.base_url || 'https://graph.facebook.com',
+      app_id: d.app_id || '',
+      app_secret: d.app_secret || '',
+      business_account_id: d.business_account_id || '',
+      token_expires_at: d.token_expires_at || '',
+      host_mode: d.host_mode || '',
+      github_pages_base_url: d.github_pages_base_url || '',
+      public_base_url: d.public_base_url || '',
+      ops_static_base_url: d.ops_static_base_url || '',
+      public_relative_prefix: d.public_relative_prefix || 'blog-assets/instagram',
+    };
+  },
 
   config: () => {
     const runtime = loadConfigYaml();

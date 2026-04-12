@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use strict';
 
 /**
@@ -18,6 +17,37 @@ const { createSchemaDbHelpers } = require('../../../packages/core/lib/db/helpers
 
 const SCHEMA = 'reservation';
 const schemaDb = createSchemaDbHelpers(pgPool, SCHEMA);
+
+type KioskBlockRecord = {
+  date?: string | null;
+  start?: string | null;
+  end?: string | null;
+  room?: string | null;
+  amount?: number | null;
+  name?: string | null;
+  naverBlocked?: boolean;
+  firstSeenAt?: string | null;
+  blockedAt?: string | null;
+  naverUnblockedAt?: string | null;
+  lastBlockAttemptAt?: string | null;
+  lastBlockResult?: string | null;
+  lastBlockReason?: string | null;
+  blockRetryCount?: number | null;
+  incrementRetry?: boolean;
+};
+
+type ManualBlockConfirmOptions = {
+  phone?: string | null;
+  phoneRaw?: string | null;
+  date?: string | null;
+  start?: string | null;
+  start_time?: string | null;
+  end?: string | null;
+  room?: string | null;
+  amount?: number | null;
+  name?: string | null;
+  reason?: string | null;
+};
 
 function query(sql, params = []) {
   return schemaDb.query(sql, params);
@@ -478,7 +508,7 @@ async function upsertKioskBlock(phoneRaw, date, start, data) {
   }
 }
 
-async function recordKioskBlockAttempt(phoneRaw, date, start, data = {}) {
+async function recordKioskBlockAttempt(phoneRaw, date, start, data: KioskBlockRecord = {}) {
   const existing = await getKioskBlock(phoneRaw, data.date || date, data.start || start, data.end || null, data.room || null);
   const nextRetryCount = Number(existing?.blockRetryCount || 0) + (data.incrementRetry ? 1 : 0);
 
@@ -598,7 +628,7 @@ async function getOpenManualBlockFollowups(fromDate) {
   })).filter((row) => row.phoneRaw);
 }
 
-async function markKioskBlockManuallyConfirmed(phone, date, start, options = {}) {
+async function markKioskBlockManuallyConfirmed(phone, date, start, options: ManualBlockConfirmOptions = {}) {
   if (!phone || !date || !start) return null;
 
   const room = options.room || null;
@@ -652,7 +682,7 @@ async function markKioskBlockManuallyConfirmed(phone, date, start, options = {})
   };
 }
 
-async function resolveOpenKioskBlockFollowups(args = {}) {
+async function resolveOpenKioskBlockFollowups(args: ManualBlockConfirmOptions = {}) {
   const phone = args.phone || null;
   const date = args.date || null;
   const start = args.start || args.start_time || null;

@@ -52,10 +52,10 @@ const {
 const { parseNaverBlogUrl } = require(path.join(__dirname, '../../../packages/core/lib/naver-blog-url'));
 const { describeLLMSelector } = require(path.join(__dirname, '../../../packages/core/lib/llm-model-selector'));
 const { buildSpeedLookup, buildSelectorAdvice } = require(path.join(__dirname, '../../../packages/core/lib/llm-selector-advisor'));
-const { markPublished } = require(path.join(__dirname, '../../blog/lib/publ'));
+const { markPublished } = require(path.join(__dirname, '../../blog/lib/publ.ts'));
 const orchestratorRuntime = require(path.join(__dirname, '../../../bots/orchestrator/lib/runtime-config'));
 const workerRuntime = require('../lib/runtime-config');
-const blogRuntime = require(path.join(__dirname, '../../../bots/blog/lib/runtime-config'));
+const blogRuntime = require(path.join(__dirname, '../../../bots/blog/lib/runtime-config.ts'));
 const claudeConfig = require(path.join(__dirname, '../../../bots/claude/lib/config'));
 const {
   buildAttendanceProposal,
@@ -954,6 +954,7 @@ async function buildBlogPublishedUrlPayload(limit = 100) {
         ELSE NULL
       END
     WHERE p.id NOT IN (34, 36, 38)
+      AND COALESCE(NULLIF(p.metadata->>'exclude_from_reference', '')::boolean, false) = false
       AND p.status IN ('ready', 'published')
       AND COALESCE(s.status, '') <> 'archived'
     ORDER BY created_at DESC

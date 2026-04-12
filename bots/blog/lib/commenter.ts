@@ -2202,6 +2202,36 @@ async function _submitCommentWithVerification(contentFrame, page, editor, normal
   }
 }
 
+async function _openCommentEditorWithRetry(page, postUrl, logNo, testMode) {
+  let contentFrame = resolvePostContentFrame(page);
+  let lastError = null;
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      if (attempt > 0) {
+        traceCommenter('postComment:panel-retry', {
+          postUrl,
+          attempt: attempt + 1,
+        });
+        await goto(page, postUrl);
+        contentFrame = resolvePostContentFrame(page);
+        await contentFrame.waitForSelector('body', { timeout: testMode ? 5000 : 15000 }).catch(() => {});
+        await humanDelay(1, 2, testMode);
+      }
+
+      const editor = await _openCommentEditor(contentFrame, postUrl, logNo, testMode);
+      return { contentFrame, editor };
+    } catch (error) {
+      lastError = error;
+      if (!String(error?.message || '').startsWith('comment_panel_not_mounted:') || attempt > 0) {
+        throw error;
+      }
+    }
+  }
+
+  throw lastError || new Error('comment_panel_not_mounted');
+}
+
 async function _recordDirectCommentActions(postUrl, normalizedComment, withSympathy, sympathy) {
   const targetBlog = await resolveBlogId();
 
@@ -2238,10 +2268,12 @@ async function postComment(postUrl, commentText, { testMode = false, withSympath
       textLength: normalizedComment.length,
     });
     await goto(page, postUrl);
-    const contentFrame = resolvePostContentFrame(page);
+    let contentFrame = resolvePostContentFrame(page);
     await contentFrame.waitForSelector('body', { timeout: testMode ? 5000 : 15000 }).catch(() => {});
     await humanDelay(1, 2, testMode);
-    const editor = await _openCommentEditor(contentFrame, postUrl, logNo, testMode);
+    const opened = await _openCommentEditorWithRetry(page, postUrl, logNo, testMode);
+    contentFrame = opened.contentFrame;
+    const editor = opened.editor;
     await _submitCommentWithVerification(contentFrame, page, editor, normalizedComment, config, testMode, postUrl);
     traceCommenter('postComment:comment-posted', { postUrl, withSympathy });
 
