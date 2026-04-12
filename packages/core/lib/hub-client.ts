@@ -1,4 +1,5 @@
 import env = require('./env');
+const { execFileSync } = require('child_process');
 
 type CacheEntry = {
   value: any;
@@ -71,6 +72,37 @@ function warnOnce(key: string, message: string, ttlMs = 30000): void {
   console.warn(message);
 }
 
+function shouldUseCurlFallback(error: unknown, url: string): boolean {
+  const err = error as Error & { cause?: Error };
+  const message = `${err?.message || ''} ${err?.cause?.message || ''}`.toLowerCase();
+  return (
+    (url.includes('localhost') || url.includes('127.0.0.1')) &&
+    (message.includes('eperm') || message.includes('fetch failed') || message.includes('connect eperm'))
+  );
+}
+
+function fetchJsonViaCurl(url: string, authToken: string, timeoutMs: number): HubFetchResponse | null {
+  try {
+    const seconds = Math.max(1, Math.ceil(timeoutMs / 1000));
+    const raw = execFileSync('/usr/bin/curl', [
+      '-sS',
+      '--max-time',
+      String(seconds),
+      '-H',
+      `Authorization: Bearer ${authToken}`,
+      '-H',
+      'Content-Type: application/json',
+      url,
+    ], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchHubSecrets(category: string, timeoutMs = 3000): Promise<any | null> {
   if (!env.USE_HUB_SECRETS || !env.HUB_BASE_URL) return null;
   if (!env.HUB_AUTH_TOKEN) {
@@ -108,6 +140,14 @@ export async function fetchHubSecrets(category: string, timeoutMs = 3000): Promi
     return data;
   } catch (error) {
     const err = error as Error & { name?: string };
+    if (shouldUseCurlFallback(error, url)) {
+      const json = fetchJsonViaCurl(url, env.HUB_AUTH_TOKEN, timeoutMs);
+      if (json) {
+        const data = json.data || null;
+        setCached(cacheKey, data, getSecretsSuccessTtl(category));
+        return data;
+      }
+    }
     const message = err.name === 'AbortError' ? '타임아웃' : err.message;
     console.warn(`[hub-client] ${category}: ${message}`);
     return null;
