@@ -34,7 +34,7 @@ async function main() {
   const payload = {
     ready: missing.length === 0,
     missing,
-    note: 'Instagram Graph credentials are resolved from hub secrets first, then local secrets-store/env fallback.',
+    note: 'Instagram Graph credentials are resolved from hub secrets first, then hub-managed secrets-store/env fallback.',
     source: {
       credentialSource: config.credentialSource || 'unknown',
       apiVersion: config.apiVersion || 'v21.0',
