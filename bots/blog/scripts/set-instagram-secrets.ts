@@ -6,22 +6,6 @@ const env = require('../../../packages/core/lib/env');
 
 const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
 
-type InstagramSecrets = {
-  access_token?: string;
-  ig_user_id?: string;
-  app_id?: string;
-  app_secret?: string;
-  business_account_id?: string;
-  api_version?: string;
-  base_url?: string;
-  token_expires_at?: string;
-  host_mode?: string;
-  github_pages_base_url?: string;
-  public_base_url?: string;
-  ops_static_base_url?: string;
-  public_relative_prefix?: string;
-};
-
 function parseArgs(argv = []) {
   const args = {
     accessToken: '',
@@ -37,6 +21,7 @@ function parseArgs(argv = []) {
     publicBaseUrl: '',
     opsStaticBaseUrl: '',
     publicRelativePrefix: 'blog-assets/instagram',
+    clearTokenExpiresAt: false,
     dryRun: false,
     json: false,
   };
@@ -56,6 +41,7 @@ function parseArgs(argv = []) {
     else if (token === '--public-base-url') args.publicBaseUrl = argv[++i] || '';
     else if (token === '--ops-static-base-url') args.opsStaticBaseUrl = argv[++i] || '';
     else if (token === '--public-relative-prefix') args.publicRelativePrefix = argv[++i] || 'blog-assets/instagram';
+    else if (token === '--clear-token-expires-at') args.clearTokenExpiresAt = true;
     else if (token === '--dry-run') args.dryRun = true;
     else if (token === '--json') args.json = true;
   }
@@ -63,7 +49,7 @@ function parseArgs(argv = []) {
   return args;
 }
 
-function loadStore(): Record<string, any> {
+function loadStore() {
   try {
     return JSON.parse(fs.readFileSync(STORE_PATH, 'utf8'));
   } catch {
@@ -71,14 +57,15 @@ function loadStore(): Record<string, any> {
   }
 }
 
-function sanitizeInstagramSection(args: Record<string, any>): InstagramSecrets {
-  const section: InstagramSecrets = {};
+function sanitizeInstagramSection(args) {
+  const section = {};
   if (args.accessToken) section.access_token = args.accessToken;
   if (args.igUserId) section.ig_user_id = args.igUserId;
   if (args.appId) section.app_id = args.appId;
   if (args.appSecret) section.app_secret = args.appSecret;
   if (args.businessAccountId) section.business_account_id = args.businessAccountId;
   if (args.tokenExpiresAt) section.token_expires_at = args.tokenExpiresAt;
+  if (args.clearTokenExpiresAt) section.token_expires_at = null;
   section.api_version = args.apiVersion || 'v21.0';
   section.base_url = args.baseUrl || 'https://graph.facebook.com';
   if (args.hostMode) section.host_mode = args.hostMode;
@@ -103,8 +90,8 @@ function ensureDirectory() {
 function main() {
   const args = parseArgs(process.argv.slice(2));
   const current = loadStore();
-  const currentInstagram: InstagramSecrets = current.instagram || {};
-  const nextInstagram: InstagramSecrets = {
+  const currentInstagram = current.instagram || {};
+  const nextInstagram = {
     ...currentInstagram,
     ...sanitizeInstagramSection(args),
   };
@@ -117,6 +104,7 @@ function main() {
   const payload = {
     storePath: STORE_PATH,
     dryRun: args.dryRun,
+    source: 'hub_store',
     updated: {
       access_token: mask(nextInstagram.access_token || ''),
       ig_user_id: mask(nextInstagram.ig_user_id || ''),
@@ -132,6 +120,11 @@ function main() {
       ops_static_base_url: nextInstagram.ops_static_base_url || '',
       public_relative_prefix: nextInstagram.public_relative_prefix || 'blog-assets/instagram',
     },
+    nextSteps: [
+      'check:instagram-token',
+      'refresh:instagram-token',
+      'publish-instagram-reel',
+    ],
   };
 
   if (!args.dryRun) {
@@ -146,6 +139,7 @@ function main() {
 
   console.log(`[인스타 secret] ${args.dryRun ? 'dry-run' : 'saved'} (hub store): ${STORE_PATH}`);
   console.log(`[인스타 secret] access_token=${payload.updated.access_token || 'missing'} ig_user_id=${payload.updated.ig_user_id || 'missing'}`);
+  console.log(`[인스타 secret] next=${payload.nextSteps.join(' -> ')}`);
 }
 
 main();
