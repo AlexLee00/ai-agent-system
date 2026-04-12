@@ -1,5 +1,27 @@
-// @ts-nocheck
 'use strict';
+
+type CommandRow = {
+  id: number;
+  to_bot: string;
+  command: string;
+  args: string;
+};
+
+type CommandResult = {
+  ok: boolean;
+  error?: string;
+  message?: string;
+  code?: string;
+  retryQueued?: boolean;
+  retryCount?: number;
+};
+
+type CommandArgs = {
+  retry_count?: number;
+  max_retries?: number;
+  batch_request?: boolean;
+  [key: string]: unknown;
+};
 
 function createSkaCommandQueue({
   pgPool,
@@ -77,7 +99,7 @@ function createSkaCommandQueue({
     `, [id]);
   }
 
-  async function markCompleted(id, result) {
+  async function markCompleted(id: number, result: CommandResult) {
     await pgPool.run(schema, `
       UPDATE bot_commands
       SET status = $1, result = $2, done_at = to_char(now(), 'YYYY-MM-DD HH24:MI:SS')
@@ -85,7 +107,7 @@ function createSkaCommandQueue({
     `, [result.ok ? 'done' : 'error', JSON.stringify(result), id]);
   }
 
-  async function enqueueRetry(commandRow, args, result) {
+  async function enqueueRetry(commandRow: CommandRow, args: CommandArgs, result: CommandResult) {
     const retryCount = Number(args.retry_count || 0);
     const maxRetries = Number(args.max_retries || (args.batch_request ? 1 : 0));
     if (retryCount >= maxRetries) return false;
@@ -107,11 +129,11 @@ function createSkaCommandQueue({
     return true;
   }
 
-  async function executeCommand(commandRow) {
+  async function executeCommand(commandRow: CommandRow): Promise<CommandResult> {
     await markRunning(commandRow.id);
 
-    let args = {};
-    let result;
+    let args: CommandArgs = {};
+    let result: CommandResult;
     try {
       args = JSON.parse(commandRow.args || '{}');
       const handler = handlers[commandRow.command];
@@ -121,8 +143,9 @@ function createSkaCommandQueue({
       } else {
         result = await Promise.resolve(handler(args, commandRow));
       }
-    } catch (e) {
-      result = { ok: false, error: e.message };
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      result = { ok: false, error: message };
     }
 
     const retryQueued = await enqueueRetry(commandRow, args, result);

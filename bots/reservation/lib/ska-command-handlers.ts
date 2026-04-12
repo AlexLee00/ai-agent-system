@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use strict';
 
 const { execFileSync } = require('child_process');
@@ -10,6 +9,8 @@ const { createSkaReadService } = require('./ska-read-service');
 const { runManualReservationRegistration } = require('./manual-reservation');
 const { runManualReservationCancellation } = require('./manual-cancellation');
 const { resolveOpenKioskBlockFollowups } = require('./db');
+
+type HandlerArgs = Record<string, unknown>;
 
 function createSkaCommandHandlers({ pgPool, rag }) {
   const N8N_HEALTH_URL = process.env.N8N_SKA_HEALTH_URL || 'http://localhost:5678/healthz';
@@ -70,19 +71,19 @@ function createSkaCommandHandlers({ pgPool, rag }) {
     });
   }
 
-  async function handleQueryReservations(args = {}) {
+  async function handleQueryReservations(args: HandlerArgs = {}) {
     return runCommandWithN8n('query_reservations', args, () => readService.queryReservations(args));
   }
 
-  async function handleQueryTodayStats(args = {}) {
+  async function handleQueryTodayStats(args: HandlerArgs = {}) {
     return runCommandWithN8n('query_today_stats', args, () => readService.queryTodayStats(args));
   }
 
-  async function handleQueryAlerts(args = {}) {
+  async function handleQueryAlerts(args: HandlerArgs = {}) {
     return runCommandWithN8n('query_alerts', args, () => readService.queryAlerts(args));
   }
 
-  async function resolveErrorAlerts(args = {}) {
+  async function resolveErrorAlerts(args: HandlerArgs = {}) {
     const phone = args.phone || null;
     const date = args.date || null;
     const start = args.start || args.start_time || null;
@@ -104,7 +105,7 @@ function createSkaCommandHandlers({ pgPool, rag }) {
     return Number(result?.rowCount || 0);
   }
 
-  async function handleStoreResolution(args = {}) {
+  async function handleStoreResolution(args: HandlerArgs = {}) {
     const { issueType = '알람', detail = '', resolution = '처리 완료' } = args;
     try {
       const resolved = await resolveErrorAlerts(args);
@@ -125,18 +126,19 @@ function createSkaCommandHandlers({ pgPool, rag }) {
             ? `RAG 저장 완료 / 네이버 차단 follow-up ${kioskFollowups.length}건 수동 완료 반영`
             : 'RAG 저장 완료 / 미해결 오류 알림 없음'),
       };
-    } catch (e) {
-      return { ok: false, error: e.message };
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      return { ok: false, error: message };
     }
   }
 
-  async function handleRegisterReservation(args = {}) {
+  async function handleRegisterReservation(args: HandlerArgs = {}) {
     // Reservation registration is a write path that must return the real
     // Pickko/Naver outcome, not just an n8n webhook acceptance.
     return runManualReservationRegistration(args);
   }
 
-  async function handleCancelReservation(args = {}) {
+  async function handleCancelReservation(args: HandlerArgs = {}) {
     // Cancellation is also a write path that must surface partial-success
     // details from Pickko cancel / Naver unblock directly.
     return runManualReservationCancellation(args);
@@ -150,8 +152,9 @@ function createSkaCommandHandlers({ pgPool, rag }) {
         timeout: 30000,
       });
       return { ok: true, message: '앤디 재시작 완료' };
-    } catch (e) {
-      return { ok: false, error: e.message };
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      return { ok: false, error: message };
     }
   }
 
@@ -163,8 +166,9 @@ function createSkaCommandHandlers({ pgPool, rag }) {
         timeout: 30000,
       });
       return { ok: true, message: '지미 재시작 완료' };
-    } catch (e) {
-      return { ok: false, error: e.message };
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      return { ok: false, error: message };
     }
   }
 

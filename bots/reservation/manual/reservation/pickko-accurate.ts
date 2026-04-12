@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// @ts-nocheck
+/// <reference lib="dom" />
 
 /**
  * 픽코 예약 등록 (외부 모니터 + 팝업 자동 처리)
@@ -40,8 +40,13 @@ const { createPickkoFinalizationService } = require('../../lib/pickko-finalizati
 const { createPickkoSavePrecheckService } = require('../../lib/pickko-save-precheck-service');
 const { IS_DEV, IS_OPS } = require('../../../../packages/core/lib/env');
 
-function buildStageError(code, message) {
-  const error = new Error(message);
+type StageError = Error & {
+  stageCode?: string;
+  code?: string;
+};
+
+function buildStageError(code: string, message: string): StageError {
+  const error = new Error(message) as StageError;
   error.stageCode = code;
   return error;
 }
@@ -322,7 +327,7 @@ async function main() {
     if (adjustedSlots.skippedCount > 0) {
       log(`⏰ [6-0] 경과 슬롯 ${adjustedSlots.skippedCount}개 스킵 (현재 ${adjustedSlots.nowText}): ${TIME_SLOTS[0]}~${TIME_SLOTS[TIME_SLOTS.length - 1]} → 유효: [${effectiveTimeSlots.join(', ')}]`);
       if (effectiveTimeSlots.length < 2) {
-        const elapsedErr = new Error(`${START_TIME}~${END_TIME} (현재 ${adjustedSlots.nowText}) — 남은 유효 슬롯 없음`);
+        const elapsedErr = new Error(`${START_TIME}~${END_TIME} (현재 ${adjustedSlots.nowText}) — 남은 유효 슬롯 없음`) as StageError;
         elapsedErr.code = 'TIME_ELAPSED';
         throw elapsedErr;
       }
@@ -348,11 +353,15 @@ async function main() {
     await delay(1000);
 
     const timeVerification = await page.evaluate(() => {
+      const startDateInput = document.querySelector('input#start_date') as HTMLInputElement | null;
+      const startTimeInput = document.querySelector('input#start_time') as HTMLInputElement | null;
+      const endDateInput = document.querySelector('input#end_date') as HTMLInputElement | null;
+      const endTimeInput = document.querySelector('input#end_time') as HTMLInputElement | null;
       const inps = {
-        start_date: document.querySelector('input#start_date')?.value || '',
-        start_time: document.querySelector('input#start_time')?.value || '',
-        end_date: document.querySelector('input#end_date')?.value || '',
-        end_time: document.querySelector('input#end_time')?.value || '',
+        start_date: startDateInput?.value || '',
+        start_time: startTimeInput?.value || '',
+        end_date: endDateInput?.value || '',
+        end_time: endTimeInput?.value || '',
       };
 
       return {

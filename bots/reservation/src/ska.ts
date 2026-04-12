@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 'use strict';
 
 /**
@@ -61,8 +60,9 @@ function loadBotIdentity() {
     if (roleM)    BOT_IDENTITY.role    = roleM[1].trim().split('\n')[0];
     if (missionM) BOT_IDENTITY.mission = missionM[1].trim().replace(/^- /gm, '').split('\n')[0];
     console.log(`[스카] 🎭 정체성 로드: ${BOT_IDENTITY.role}`);
-  } catch (e) {
-    console.error(`[스카] 정체성 로드 실패:`, e.message);
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error(`[스카] 정체성 로드 실패:`, message);
   }
 }
 
@@ -128,7 +128,10 @@ async function main() {
         console.log(`[스카] ${row.command} → ${row.ok ? 'done' : 'error'}`);
       }
     }
-    catch (e) { console.error(`[스카] 루프 오류:`, e.message); }
+    catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.error(`[스카] 루프 오류:`, message);
+    }
 
     // 팀원 정체성 점검 + 자신의 정체성 리로드: 시작 1분 후 첫 실행, 이후 6시간마다
     _identityCounter++;
@@ -137,14 +140,17 @@ async function main() {
         loadBotIdentity(); // 정체성 리로드 (파일 변경 반영)
         console.log(`[스카] 역할 확인: ${BOT_IDENTITY.role}`);
         checkSkaTeamIdentity();
-      } catch (e) { console.error(`[스카] 정체성 점검 오류:`, e.message); }
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : String(e);
+        console.error(`[스카] 정체성 점검 오류:`, message);
+      }
     }
 
     await new Promise(r => setTimeout(r, COMMAND_POLL_MS));
   }
 }
 
-main().catch(e => {
+main().catch((e: unknown) => {
   console.error(`[스카] 치명적 오류:`, e);
   process.exit(1);
 });

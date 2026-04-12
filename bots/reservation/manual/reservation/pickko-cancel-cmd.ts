@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
-
 /**
  * pickko-cancel-cmd.js — 스카 자연어 취소 명령용 래퍼
  */
@@ -12,6 +10,8 @@ const { fail } = require('../../lib/cli');
 const { IS_OPS } = require('../../../../packages/core/lib/env');
 
 const ARGS = parseArgs(process.argv);
+
+type RunScriptResult = Promise<boolean>;
 
 const required = ['phone', 'date', 'start', 'end', 'room'];
 const missing = required.filter((k) => !ARGS[k]);
@@ -34,18 +34,18 @@ if (!VALID_ROOMS.includes(room)) {
   fail(`유효하지 않은 룸: ${ARGS.room} (허용: ${VALID_ROOMS.join(', ')})`);
 }
 
-function runScript(scriptPath, args, label) {
-  return new Promise((resolve) => {
+function runScript(scriptPath: string, args: string[], label: string): RunScriptResult {
+  return new Promise<boolean>((resolve) => {
     const child = spawn('node', [scriptPath, ...args], {
       cwd: __dirname,
       env: { ...process.env, MODE: IS_OPS ? 'ops' : 'dev' },
       stdio: ['ignore', process.stderr, process.stderr],
     });
-    child.on('error', (err) => {
+    child.on('error', (err: Error) => {
       process.stderr.write(`[${label}] 실행 실패: ${err.message}\n`);
       resolve(false);
     });
-    child.on('close', (code) => resolve(code === 0));
+    child.on('close', (code: number | null) => resolve(code === 0));
   });
 }
 

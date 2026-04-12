@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
-
 /**
  * pickko-query.js — 예약 조회 CLI
  *
@@ -27,7 +25,19 @@ const BOOKINGS_FILE = path.join(WORKSPACE, 'naver-bookings-full.json');
 
 const ARGS = parseArgs(process.argv);
 
-function resolveDate(dateArg) {
+type Booking = {
+  date: string;
+  start: string;
+  end: string;
+  room: string;
+  phone?: string;
+  phoneRaw?: string;
+  raw?: {
+    name?: string;
+  };
+};
+
+function resolveDate(dateArg: string | undefined): string | null {
   const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
   if (!dateArg || dateArg === 'today') {
     return now.toLocaleDateString('en-CA');
@@ -40,13 +50,13 @@ function resolveDate(dateArg) {
   return null;
 }
 
-function formatBooking(b, idx) {
+function formatBooking(b: Booking, idx: number): string {
   const name = b.raw?.name || '(이름 없음)';
   const phone = b.phone || b.phoneRaw;
   return `${idx}. ${name} · ${phone}\n   🕐 ${b.start}~${b.end} · ${b.room}룸`;
 }
 
-function formatDate(dateStr) {
+function formatDate(dateStr: string): string {
   const d = new Date(`${dateStr}T00:00:00+09:00`);
   const days = ['일', '월', '화', '수', '목', '금', '토'];
   return `${d.getMonth() + 1}월 ${d.getDate()}일(${days[d.getDay()]})`;
@@ -58,16 +68,17 @@ if (!fs.existsSync(BOOKINGS_FILE)) {
 
 let bookings;
 try {
-  bookings = JSON.parse(fs.readFileSync(BOOKINGS_FILE, 'utf-8'));
-} catch (e) {
-  fail(`예약 데이터 읽기 실패: ${e.message}`);
+  bookings = JSON.parse(fs.readFileSync(BOOKINGS_FILE, 'utf-8')) as Booking[];
+} catch (e: unknown) {
+  const message = e instanceof Error ? e.message : String(e);
+  fail(`예약 데이터 읽기 실패: ${message}`);
 }
 
 if (!Array.isArray(bookings)) {
   fail('예약 데이터 형식 오류');
 }
 
-let filtered = bookings;
+let filtered: Booking[] = bookings;
 const filterDesc = [];
 
 if (ARGS.date !== undefined) {
@@ -107,7 +118,7 @@ if (filtered.length === 0) {
   process.exit(0);
 }
 
-const groups = {};
+const groups: Record<string, Booking[]> = {};
 for (const b of filtered) {
   if (!groups[b.date]) groups[b.date] = [];
   groups[b.date].push(b);
