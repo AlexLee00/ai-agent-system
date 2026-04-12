@@ -66,12 +66,12 @@ async function advanceLectureNumber() {
     SELECT id FROM blog.posts
     WHERE post_type = 'lecture'
       AND lecture_number = $1
-      AND status = 'published'
+      AND status IN ('ready', 'published')
     LIMIT 1
   `, [nextNumber]);
 
   if (!published) {
-    console.warn(`[category-rotation] ⚠️ ${nextNumber}강 미발행 — 인덱스 증가 스킵`);
+    console.warn(`[category-rotation] ⚠️ ${nextNumber}강 ready/published 포스트 없음 — 인덱스 증가 스킵`);
     return;
   }
 
