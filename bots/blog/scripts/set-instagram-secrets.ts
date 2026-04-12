@@ -144,7 +144,7 @@ function main() {
     return;
   }
 
-  console.log(`[인스타 secret] ${args.dryRun ? 'dry-run' : 'saved'}: ${STORE_PATH}`);
+  console.log(`[인스타 secret] ${args.dryRun ? 'dry-run' : 'saved'} (hub store): ${STORE_PATH}`);
   console.log(`[인스타 secret] access_token=${payload.updated.access_token || 'missing'} ig_user_id=${payload.updated.ig_user_id || 'missing'}`);
 }
 

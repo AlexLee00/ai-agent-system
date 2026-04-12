@@ -41,7 +41,7 @@ async function getInstagramConfig() {
   const credentialSource = hubData?.access_token || hubData?.ig_user_id
     ? 'hub'
     : storeData?.access_token || storeData?.ig_user_id
-      ? 'store'
+      ? 'hub_store'
       : 'env';
   return {
     accessToken,
