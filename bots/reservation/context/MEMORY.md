@@ -32,20 +32,20 @@ OPS 모드는 테스트 완료 후 사장님과 협의하여 전환한다.
 ~/projects/ai-agent-system/bots/reservation/
 ├── auto/
 │   ├── monitors/
-│   │   ├── naver-monitor.js      ← OPS 모드 실행 파일 (launchd 상시 실행)
-│   │   ├── pickko-kiosk-monitor.js ← 키오스크 예약 감지
+│   │   ├── naver-monitor.ts      ← source of truth / 운영은 dist runtime
+│   │   ├── pickko-kiosk-monitor.ts ← 키오스크 예약 감지
 │   │   └── start-ops.sh          ← 부트스트랩
 │   └── scheduled/
-│       └── pickko-daily-summary.js ← 일일 매출 집계
+│       └── pickko-daily-summary.ts ← 일일 매출 집계
 ├── manual/
 │   ├── reservation/
-│   │   ├── pickko-register.js    ← 예약 등록
-│   │   ├── pickko-accurate.js    ← 픽코 자동 등록 (naver-monitor 호출)
-│   │   ├── pickko-cancel.js      ← 픽코 취소 (naver-monitor 호출)
+│   │   ├── pickko-register.ts    ← 예약 등록
+│   │   ├── pickko-accurate.ts    ← 픽코 자동 등록 (naver-monitor 호출)
+│   │   ├── pickko-cancel.ts      ← 픽코 취소 (naver-monitor 호출)
 │   │   ├── pickko-cancel-cmd.js  ← 자연어 취소 명령
-│   │   └── pickko-query.js       ← 예약 조회
+│   │   └── pickko-query.ts       ← 예약 조회
 │   ├── admin/
-│   │   └── pickko-member.js      ← 회원 등록
+│   │   └── pickko-member.ts      ← 회원 등록
 │   └── reports/
 │       ├── pickko-stats-cmd.js   ← 매출 통계
 │       ├── pickko-revenue-confirm.js ← 매출 확정
@@ -141,7 +141,7 @@ rm -f ~/.openclaw/workspace/naver-monitor.lock
 - **2026-02-23 04:54:** OPS 모드 재시작 (Heartbeat 감시)
 
 ### 모니터링 구조
-1. naver-monitor.js (OPS) → 신규 예약 감지
+1. naver-monitor.ts / dist runtime (OPS) → 신규 예약 감지
 2. sendAlert() → .pickko-alerts.jsonl 저장 (sent=true)
 3. cleanupOldAlerts() → 48시간 자동 정리
 4. Heartbeat (30분) → Telegram 일괄 발송
@@ -293,7 +293,7 @@ curl -s -X POST http://localhost:8100/ask \
 ## 📌 예약 등록 응답 규칙 (2026-03-16)
 
 - 예약 등록 요청은 `/ask` 질문 흐름이 아니라 **실행 흐름**이다.
-- `"예약해줘"`, `"등록해줘"`, `"다시 등록해줘"`, `"결제해줘"`는 가능하면 `pickko-register.js` 실행으로 바로 이어져야 한다.
+- `"예약해줘"`, `"등록해줘"`, `"다시 등록해줘"`, `"결제해줘"`는 가능하면 `pickko-register.ts` 기준 런타임 실행으로 바로 이어져야 한다.
 - 텔레그램에서 여러 줄로 나뉜 입력도 하나의 예약 초안으로 합쳐 해석한다.
   - 예:
     - `민경수 010-2792-2221`

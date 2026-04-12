@@ -17,15 +17,15 @@
 ```
 [네이버 스마트플레이스]
         ↓ 신규 예약 감지 (3분 주기)        ↓ 취소 감지 (리스트 비교 방식)
-[naver-monitor.js] ← OPS 모드 실행 중 (PICKKO_CANCEL_ENABLE=1)
+[naver-monitor.ts / dist runtime]  ← OPS 모드 실행 중 (PICKKO_CANCEL_ENABLE=1)
         ↓ sendAlert() → .pickko-alerts.jsonl 저장
         ↓ runPickko()                       ↓ runPickkoCancel()
-[pickko-accurate.js]               [pickko-cancel.js]
+[pickko-accurate.ts]               [pickko-cancel.ts]
    Stage [1-9] 자동 실행              취소 처리 [1-10]
         ↓                                   ↓
 [픽코 키오스크] ← 예약 등록+결제 완료 / 취소 상태 변경
         ↓ Heartbeat (30분 주기)
-[Telegram] ← 사장님에게 결과 알람 (new/completed/cancelled/error)
+[Telegram/OpenClaw] ← 운영 결과 알람
         ↓
 [RAG API] ← 예약 이력 저장 (http://localhost:8100)
 ```
@@ -36,22 +36,22 @@
 
 | 파일 | 역할 | 상태 |
 |------|------|------|
-| `src/naver-monitor.js` | 네이버 모니터링 + 픽코 트리거 (등록+취소) | ✅ OPS 실행 중 |
-| `src/pickko-accurate.js` | 픽코 자동 예약 Stage [1→1.5→2~9]; [1.5] `syncMemberNameIfNeeded()` — 픽코↔네이버 이름 자동 동기화 (통합 타입 스킵, 비치명적) | ✅ 완성 |
-| `src/pickko-cancel.js` | 픽코 자동 취소 Stage [1-10]; [6-B단계] 폴백: 0원/이용중 예약 → 수정→취소→저장; [7-B단계] 폴백: 결제대기 예약 → a.pay_view 없을 시 write→취소→저장 | ✅ 완성 |
-| `src/pickko-verify.js` | 미검증 예약 재검증 + 자동 등록 (pending + completed/미검증 모두 포함) | ✅ 완성 |
-| `src/pickko-daily-audit.js` | 당일 픽코 등록 사후 감사 (22:00+23:50 launchd) | ✅ 완성 |
-| `src/pickko-kiosk-monitor.js` | 키오스크 예약 감지 → 네이버 예약불가 차단 (30분 주기 launchd) | ✅ 신규 완성 |
-| `src/pickko-daily-summary.js` | 일일 예약 요약 + 매출 보고 (09:00/00:00 launchd); `--midnight` 플래그로 강제 자정 모드 가능 | ✅ 신규 완성 |
-| `src/pickko-revenue-confirm.js` | 매출 컨펌 처리 CLI; 미컨펌 daily_summary → room_revenue 누적 + 텔레그램 발송 | ✅ 신규 완성 |
-| `src/pickko-register.js` | 자연어 예약 등록 CLI (stdout JSON) | ✅ 완성 |
-| `src/pickko-member.js` | 신규 회원 가입 CLI (stdout JSON) | ✅ 완성 |
-| `src/start-ops.sh` | OPS 자동 재시작 루프 + 로그 관리 (1000줄 로테이션) | ✅ 업데이트 |
-| `src/run-audit.sh` | pickko-daily-audit 실행 래퍼 (lock + 로테이션) | ✅ 완성 |
-| `src/run-kiosk-monitor.sh` | pickko-kiosk-monitor 실행 래퍼 (lock + 로테이션) | ✅ 신규 |
-| `lib/db.js` | SQLite 싱글턴 + 스키마 초기화 + 도메인 함수 전체 (reservations/cancelled_keys/kiosk_blocks/alerts/daily_summary/room_revenue); ALTER TABLE 마이그레이션 블록 포함 | ✅ 신규 |
-| `lib/pickko-stats.js` | 픽코 매출통계 스크래퍼; fetchMonthlyRevenue/fetchDailyRevenue/fetchDailyDetail (일별 거래 스터디룸/일반 분리) | ✅ 신규 |
-| `lib/crypto.js` | AES-256-GCM 암호화/복호화 + SHA256 kiosk 해시 키 (Node.js crypto 내장) | ✅ 신규 |
+| `auto/monitors/naver-monitor.ts` | 네이버 모니터링 + 픽코 트리거 (등록+취소), 운영 엔트리는 dist runtime | ✅ OPS 실행 중 |
+| `manual/reservation/pickko-accurate.ts` | 픽코 자동 예약 Stage [1→1.5→2~9] | ✅ 완성 |
+| `manual/reservation/pickko-cancel.ts` | 픽코 자동 취소 Stage [1-10] | ✅ 완성 |
+| `manual/admin/pickko-verify.ts` | 미검증 예약 재검증 + 자동 등록 | ✅ 완성 |
+| `auto/scheduled/pickko-daily-audit.ts` | 당일 픽코 등록 사후 감사 (22:00+23:50 launchd) | ✅ 완성 |
+| `auto/monitors/pickko-kiosk-monitor.ts` | 키오스크 예약 감지 → 네이버 예약불가 차단 | ✅ 완성 |
+| `auto/scheduled/pickko-daily-summary.ts` | 일일 예약 요약 + 매출 보고 | ✅ 완성 |
+| `manual/reports/pickko-revenue-confirm.ts` | 매출 컨펌 처리 CLI | ✅ 완성 |
+| `manual/reservation/pickko-register.ts` | 자연어 예약 등록 CLI (stdout JSON) | ✅ 완성 |
+| `manual/admin/pickko-member.ts` | 신규 회원 가입 CLI (stdout JSON) | ✅ 완성 |
+| `auto/monitors/start-ops.sh` | OPS 자동 재시작 루프 + 로그 관리 | ✅ 업데이트 |
+| `auto/scheduled/run-audit.sh` | pickko-daily-audit 실행 래퍼 | ✅ 완성 |
+| `auto/monitors/run-kiosk-monitor.sh` | pickko-kiosk-monitor 실행 래퍼 | ✅ 완성 |
+| `lib/db.ts` | Postgres 도메인 함수 + 마이그레이션 | ✅ 완료 |
+| `lib/pickko-stats.ts` | 픽코 매출통계 스크래퍼 | ✅ 완료 |
+| `lib/crypto.ts` | AES-256-GCM 암호화/복호화 + SHA256 kiosk 해시 키 | ✅ 완료 |
 | `scripts/migrate-to-sqlite.js` | JSON → SQLite 1회 마이그레이션 스크립트 (완료 후 .bak 리네임) | ✅ 신규 |
 | `lib/validation.js` | 전화번호/날짜/시간 정규식 변환 | ✅ 24:00 지원 |
 | `lib/utils.js` | delay, log (공통 유틸) | ✅ |
@@ -65,7 +65,8 @@
 | `scripts/speed-test.js` | LLM API 속도 테스트 툴 (--apply로 openclaw.json 자동 반영) | ✅ |
 | `secrets.json` | 네이버/픽코 로그인 정보 + db_encryption_key(64자 hex) + db_key_pepper | ✅ |
 
-**경로:** `~/projects/ai-agent-system/bots/reservation/`
+**운영 엔트리:** `dist/ts-runtime/bots/reservation/.../*.js`
+**소스 기준:** `~/projects/ai-agent-system/bots/reservation/`
 
 ---
 

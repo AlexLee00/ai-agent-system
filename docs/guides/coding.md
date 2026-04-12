@@ -123,26 +123,36 @@ function checkHealth() {
 
 ```
 bots/reservation/
-├── src/                            ← 실행 스크립트
-│   ├── naver-monitor.js            메인 루프 (감지 + 오케스트레이션)
-│   ├── pickko-accurate.js          픽코 신규 등록 Stage [1~9]
-│   ├── pickko-cancel.js            픽코 취소 Stage [1~10]
-│   ├── pickko-verify.js            미검증 예약 재검증 + 자동 등록
-│   ├── pickko-daily-audit.js       당일 감사 (launchd 22:00+23:50)
-│   ├── pickko-kiosk-monitor.js     키오스크 감지 → 네이버 차단/해제 (launchd 30분)
-│   ├── pickko-daily-summary.js     일일 요약 + 매출 보고 (launchd 09:00/00:00)
-│   ├── pickko-revenue-confirm.js   매출 컨펌 CLI
-│   ├── pickko-register.js          NLP 예약 등록 CLI (stdout JSON)
-│   ├── pickko-cancel-cmd.js        NLP 취소 CLI (stdout JSON)
-│   ├── pickko-query.js             NLP 예약 조회 CLI (stdout JSON)
-│   ├── pickko-stats-cmd.js         NLP 매출 통계 CLI (stdout JSON)
-│   ├── pickko-ticket.js            NLP 이용권 추가 CLI (stdout JSON)
-│   ├── pickko-member.js            NLP 회원 가입 CLI (stdout JSON)
-│   ├── bug-report.js               버그/유지보수 추적 CLI
+├── auto/                           ← 상시 모니터 / 스케줄 배치
+│   ├── monitors/
+│   │   ├── naver-monitor.ts        메인 루프 (감지 + 오케스트레이션)
+│   │   ├── pickko-kiosk-monitor.ts 키오스크 감지 → 네이버 차단/해제
+│   │   ├── start-ops.sh            OPS 자동 재시작 루프
+│   │   └── run-*.sh                launchd 실행 래퍼
+│   └── scheduled/
+│       ├── pickko-daily-audit.ts   당일 감사
+│       ├── pickko-daily-summary.ts 일일 요약 + 매출 보고
+│       └── pickko-pay-scan.ts      미결제 스캔
+├── manual/                         ← 수동 CLI / 리포트
+│   ├── reservation/
+│   │   ├── pickko-accurate.ts      픽코 신규 등록 Stage [1~9]
+│   │   ├── pickko-cancel.ts        픽코 취소 Stage [1~10]
+│   │   ├── pickko-register.ts      NLP 예약 등록 CLI (stdout JSON)
+│   │   ├── pickko-cancel-cmd.ts    NLP 취소 CLI (stdout JSON)
+│   │   └── pickko-query.ts         NLP 예약 조회 CLI (stdout JSON)
+│   ├── admin/
+│   │   ├── pickko-verify.ts        미검증 예약 재검증 + 자동 등록
+│   │   ├── pickko-ticket.ts        NLP 이용권 추가 CLI (stdout JSON)
+│   │   └── pickko-member.ts        NLP 회원 가입 CLI (stdout JSON)
+│   └── reports/
+│       ├── pickko-revenue-confirm.ts 매출 컨펌 CLI
+│       └── pickko-stats-cmd.ts       NLP 매출 통계 CLI (stdout JSON)
+├── src/                            ← 진단/유지보수 도구
+│   ├── bug-report.ts               버그/유지보수 추적 CLI
 │   ├── start-ops.sh                OPS 자동 재시작 루프 (self-lock)
 │   └── run-*.sh                    launchd 실행 래퍼 (lock + 로테이션)
 ├── lib/                            ← 공유 라이브러리
-│   ├── args.js                     CLI 인수 파싱 (parseArgs)
+│   ├── args.ts                     CLI 인수 파싱 (parseArgs)
 │   ├── browser.js                  Playwright 런치 옵션 + 다이얼로그 핸들러
 │   ├── cli.js                      NLP CLI 공통 래퍼
 │   ├── crypto.js                   AES-256-GCM 암호화/복호화

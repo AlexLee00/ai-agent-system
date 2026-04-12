@@ -1100,7 +1100,7 @@ async function runClaudeHealthDirect() {
 
 async function runSkaHealthDirect() {
   const root = path.join(__dirname, '..', '..', '..');
-  const script = path.join(root, 'bots', 'reservation', 'scripts', 'health-report.js');
+  const script = path.join(root, 'dist', 'ts-runtime', 'bots', 'reservation', 'scripts', 'health-report.js');
   return await runNodeScriptText(script, {
     timeoutText: '⏱ 스카 운영 헬스 조회가 60초 내 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.',
     errorPrefix: '⚠️ 스카 운영 헬스 실행 실패',
@@ -1152,7 +1152,7 @@ async function buildUnifiedOpsHealthReport(options = {}) {
     luna: path.join(root, 'bots', 'investment', 'scripts', 'health-report.js'),
     worker: path.join(root, 'bots', 'worker', 'scripts', 'health-report.js'),
     claude: path.join(root, 'bots', 'claude', 'scripts', 'health-report.js'),
-    ska: path.join(root, 'bots', 'reservation', 'scripts', 'health-report.js'),
+    ska: path.join(root, 'dist', 'ts-runtime', 'bots', 'reservation', 'scripts', 'health-report.js'),
     blog: path.join(root, 'bots', 'blog', 'scripts', 'health-report.js'),
     critical: path.join(root, 'bots', 'orchestrator', 'scripts', 'check-n8n-critical-path.js'),
     feedback: path.join(root, 'bots', 'orchestrator', 'scripts', 'feedback-health.js'),

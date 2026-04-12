@@ -11,91 +11,94 @@
 ```
 [네이버 스마트플레이스]
         ↓ 신규 예약 감지 (5분 주기)     ↓ 취소 감지 (교차검증)
-[auto/monitors/naver-monitor.js]            ↓ currentCancelledList 비교
+[dist/.../naver-monitor.js]                ↓ currentCancelledList 비교
         ↓ runPickko()               runPickkoCancel() / 이용완료 추정 스킵
-[manual/reservation/pickko-accurate.js]  [manual/reservation/pickko-cancel.js]
+[dist/.../pickko-accurate.js]      [dist/.../pickko-cancel.js]
    Stage [1-9] 자동 등록                  취소 처리 [1-10]
         ↓
 [픽코 키오스크] ← 예약 등록+결제 / 취소 상태 변경
         ↓
-[SQLite DB] ← 예약 이력 + AES-256-GCM 암호화  +  agent_state / pickko_lock / pending_blocks
+[Postgres] ← 예약 이력 + AES-256-GCM 암호화 + agent_state / pickko_lock / pending_blocks
         ↓
-[Telegram] ← 사장님 알람 (new/completed/cancelled/error)
+[Telegram/OpenClaw] ← 운영 알람·리포트
 ```
 
 ---
 
-## 디렉토리 구조 (v3.0 — 2026-03-03)
+## 디렉토리 구조
+
+TS 본문이 source of truth이고, `.js` / `.legacy.js`는 런타임 호환 레일이다.
+운영 launchd와 shell wrapper는 점진적으로 `dist/ts-runtime` 엔트리를 직접 보도록 정리 중이다.
 
 ```
 reservation/
 ├── auto/
 │   ├── monitors/
-│   │   ├── naver-monitor.js          # 앤디: 네이버 모니터링 + 픽코 트리거 (상시)
-│   │   ├── pickko-kiosk-monitor.js   # 지미: 키오스크 예약 감지 + 네이버 차단 (10분)
+│   │   ├── naver-monitor.ts          # 앤디: 네이버 모니터링 + 픽코 트리거 (source of truth)
+│   │   ├── pickko-kiosk-monitor.ts   # 지미: 키오스크 예약 감지 + 네이버 차단 (source of truth)
 │   │   ├── start-ops.sh              # OPS 자동 재시작 루프 (naver-monitor)
 │   │   ├── run-kiosk-monitor.sh      # 키오스크 모니터 래퍼 (launchd)
 │   │   └── run-today-audit.sh        # 오늘 예약 검증 래퍼 (08:30 KST)
 │   └── scheduled/
-│       ├── pickko-daily-summary.js   # 일일 요약 (자동)
-│       ├── pickko-daily-audit.js     # 일일 감사 (자동)
-│       ├── pickko-pay-scan.js        # 결제 스캔 (자동)
+│       ├── pickko-daily-summary.ts   # 일일 요약 (자동, source of truth)
+│       ├── pickko-daily-audit.ts     # 일일 감사 (자동, source of truth)
+│       ├── pickko-pay-scan.ts        # 결제 스캔 (자동, source of truth)
 │       ├── run-daily-summary.sh      # 래퍼
 │       ├── run-audit.sh              # 래퍼
 │       └── run-pay-scan.sh           # 래퍼
 ├── manual/
 │   ├── reservation/
-│   │   ├── pickko-accurate.js        # 예약 등록 Stage [1-9]
-│   │   ├── pickko-cancel.js          # 예약 취소 Stage [1-10]
-│   │   ├── pickko-cancel-cmd.js      # 취소 CLI
-│   │   ├── pickko-register.js        # 등록 CLI
-│   │   └── pickko-query.js           # 조회
+│   │   ├── pickko-accurate.ts        # 예약 등록 Stage [1-9] (source of truth)
+│   │   ├── pickko-cancel.ts          # 예약 취소 Stage [1-10] (source of truth)
+│   │   ├── pickko-cancel-cmd.ts      # 취소 CLI
+│   │   ├── pickko-register.ts        # 등록 CLI
+│   │   └── pickko-query.ts           # 조회
 │   ├── admin/
-│   │   ├── pickko-member.js          # 회원 관리
-│   │   ├── pickko-ticket.js          # 티켓 관리
-│   │   ├── pickko-verify.js          # pending/failed 재검증
+│   │   ├── pickko-member.ts          # 회원 관리
+│   │   ├── pickko-ticket.ts          # 티켓 관리
+│   │   ├── pickko-verify.ts          # pending/failed 재검증
 │   │   └── run-verify.sh             # 래퍼
 │   └── reports/
-│       ├── occupancy-report.js       # 가동률 리포트
-│       ├── pickko-alerts-query.js    # 알림 조회
-│       ├── pickko-stats-cmd.js       # 통계 CLI
-│       ├── pickko-revenue-confirm.js # 매출 확인
-│       ├── pickko-pay-pending.js     # 결제 대기 조회
+│       ├── occupancy-report.ts       # 가동률 리포트
+│       ├── pickko-alerts-query.ts    # 알림 조회
+│       ├── pickko-stats-cmd.ts       # 통계 CLI
+│       ├── pickko-revenue-confirm.ts # 매출 확인
+│       ├── pickko-pay-pending.ts     # 결제 대기 조회
 │       └── log-report.sh             # 로그 분석 리포트
 ├── lib/
-│   ├── state-bus.js      # ★ 에이전트 간 통신 버스 (v3.0 신규)
-│   ├── pickko.js         # 핵심 픽코 엔진
-│   ├── db.js             # SQLite (better-sqlite3) + 마이그레이션
-│   ├── validation.js     # 전화번호/날짜/시간 정규식 변환
-│   ├── crypto.js         # AES-256-GCM 암호화
-│   ├── telegram.js       # 텔레그램 알림
-│   ├── browser.js        # Puppeteer 설정
-│   ├── health.js         # 프리플라이트 + 셧다운 핸들러
-│   ├── mode.js           # DEV/OPS 분리
-│   ├── status.js         # 프로세스 상태 파일
-│   ├── error-tracker.js  # 연속 오류 카운터
-│   ├── args.js           # parseArgs() — 불리언 플래그 지원
-│   ├── cli.js            # outputResult, fail
-│   ├── formatting.js     # toKoreanTime, formatPhone
-│   ├── files.js          # loadJson, saveJson
-│   ├── secrets.js        # loadSecrets()
-│   ├── utils.js          # delay, log
-│   ├── vip.js            # VIP 배지
-│   └── pickko-stats.js   # 픽코 통계
+│   ├── state-bus.ts      # ★ 에이전트 간 통신 버스
+│   ├── pickko.ts         # 핵심 픽코 엔진
+│   ├── db.ts             # Postgres + 마이그레이션
+│   ├── validation.ts     # 전화번호/날짜/시간 정규식 변환
+│   ├── crypto.ts         # AES-256-GCM 암호화
+│   ├── telegram.ts       # 텔레그램 알림
+│   ├── browser.ts        # Puppeteer 설정
+│   ├── health.ts         # 프리플라이트 + 셧다운 핸들러
+│   ├── mode.ts           # DEV/OPS 분리
+│   ├── status.ts         # 프로세스 상태 파일
+│   ├── error-tracker.ts  # 연속 오류 카운터
+│   ├── args.ts           # parseArgs() — 불리언 플래그 지원
+│   ├── cli.ts            # outputResult, fail
+│   ├── formatting.ts     # toKoreanTime, formatPhone
+│   ├── files.ts          # loadJson, saveJson
+│   ├── secrets.ts        # loadSecrets()
+│   ├── utils.ts          # delay, log
+│   ├── vip.ts            # VIP 배지
+│   └── pickko-stats.ts   # 픽코 통계
 ├── migrations/
-│   ├── 001_initial_schema.js
-│   ├── 002_daily_summary_columns.js
-│   └── 003_agent_state.js  # ★ agent_state / pickko_lock / pending_blocks (v3.0)
+│   ├── 001_initial_schema.ts
+│   ├── 002_daily_summary_columns.ts
+│   └── 003_agent_state.ts  # ★ agent_state / pickko_lock / pending_blocks
 ├── src/                    # 진단·테스트 도구 (비자동화)
-│   ├── analyze-booking-page.js
-│   ├── backfill-study-room.js
-│   ├── bug-report.js
-│   ├── check-naver.js
-│   ├── get-naver-html.js
-│   ├── init-naver-booking-session.js
-│   ├── inspect-naver.js
-│   ├── test-kiosk-register.js
-│   └── test-nlp-e2e.js
+│   ├── analyze-booking-page.ts
+│   ├── backfill-study-room.ts
+│   ├── bug-report.ts
+│   ├── check-naver.ts
+│   ├── get-naver-html.ts
+│   ├── init-naver-booking-session.ts
+│   ├── inspect-naver.ts
+│   ├── test-kiosk-register.ts
+│   └── test-nlp-e2e.ts
 ├── secrets.json            # 네이버/픽코 로그인 정보 (git 제외)
 └── package.json
 ```
@@ -132,7 +135,7 @@ reservation/
 
 ## 에이전트 통신 (v3.0 신규)
 
-`lib/state-bus.js` — SQLite 기반 에이전트 간 통신:
+`lib/state-bus.ts` — Postgres 기반 에이전트 간 통신:
 
 | 테이블 | 역할 |
 |--------|------|
@@ -160,10 +163,10 @@ launchctl load ~/Library/LaunchAgents/ai.ska.naver-monitor.plist
 tail -f /tmp/naver-ops-mode.log
 
 # 수동 재검증
-node manual/admin/pickko-verify.js
+node dist/ts-runtime/bots/reservation/manual/admin/pickko-verify.js
 
 # dry-run
-node manual/admin/pickko-verify.js --dry-run
+node dist/ts-runtime/bots/reservation/manual/admin/pickko-verify.js --dry-run
 ```
 
 ---

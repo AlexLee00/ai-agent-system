@@ -6,6 +6,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 NODE="/opt/homebrew/bin/node"
+RUNTIME_SCRIPT="/Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/auto/monitors/pickko-kiosk-monitor.js"
 LOCK_FILE="$HOME/.openclaw/workspace/pickko-kiosk-monitor.lock"
 LOG_DIR="/tmp"
 LOG_DATE=$(date '+%Y-%m-%d')
@@ -30,7 +31,7 @@ ln -sf "$LOG_FILE" "$LOG_SYMLINK" 2>/dev/null
 
 echo "[$(date)] ▶ pickko-kiosk-monitor 시작" >> "$LOG_FILE"
 
-MODE=ops TELEGRAM_ENABLED=1 "$NODE" "$SCRIPT_DIR/pickko-kiosk-monitor.js" >> "$LOG_FILE" 2>&1
+MODE=ops TELEGRAM_ENABLED=1 "$NODE" "$RUNTIME_SCRIPT" >> "$LOG_FILE" 2>&1
 EXIT_CODE=$?
 
 echo "[$(date)] ⏹ pickko-kiosk-monitor 완료 (exit: $EXIT_CODE)" >> "$LOG_FILE"

@@ -101,13 +101,13 @@
       "subBots": {
         "andy": {
           "name": "앤디",
-          "file": "auto/monitors/naver-monitor.js",
+          "file": "dist/ts-runtime/bots/reservation/auto/monitors/naver-monitor.js",
           "role": "네이버 스마트플레이스 모니터",
           "stateBus": true
         },
         "jimmy": {
           "name": "지미",
-          "file": "auto/monitors/pickko-kiosk-monitor.js",
+          "file": "dist/ts-runtime/bots/reservation/auto/monitors/pickko-kiosk-monitor.js",
           "role": "키오스크 예약 감지",
           "stateBus": true
         }
@@ -152,7 +152,7 @@
         }
       ],
       "ops": {
-        "startScript": "bots/reservation/src/start-ops.sh",
+        "startScript": "bots/reservation/auto/monitors/start-ops.sh",
         "logFile": "/tmp/naver-ops-mode.log"
       }
     },

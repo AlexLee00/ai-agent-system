@@ -3,6 +3,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 NODE="/opt/homebrew/bin/node"
+RUNTIME_SCRIPT="/Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/auto/scheduled/pickko-pay-scan.js"
 LOCK_FILE="$HOME/.openclaw/workspace/pickko-pay-scan.lock"
 LOG_FILE="/tmp/pickko-pay-scan.log"
 
@@ -22,7 +23,7 @@ trap "rm -f '$LOCK_FILE'" EXIT
 
 echo "" >> "$LOG_FILE"
 echo "[$(TS)] ━━━ pickko-pay-scan 시작 ━━━" | tee -a "$LOG_FILE"
-MODE=ops "$NODE" "$SCRIPT_DIR/pickko-pay-scan.js" >> "$LOG_FILE" 2>&1
+MODE=ops "$NODE" "$RUNTIME_SCRIPT" >> "$LOG_FILE" 2>&1
 EXIT_CODE=$?
 echo "[$(TS)] ━━━ pickko-pay-scan 완료 (exit: $EXIT_CODE) ━━━" | tee -a "$LOG_FILE"
 

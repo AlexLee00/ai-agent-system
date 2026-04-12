@@ -6,6 +6,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 NODE="/opt/homebrew/bin/node"
+RUNTIME_SCRIPT="/Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/auto/scheduled/pickko-daily-audit.js"
 LOCK_FILE="$HOME/.openclaw/workspace/pickko-daily-audit.lock"
 LOG_FILE="/tmp/pickko-daily-audit.log"
 
@@ -24,7 +25,7 @@ trap "rm -f '$LOCK_FILE'" EXIT
 
 echo "[$(date)] ▶ pickko-daily-audit 시작" >> "$LOG_FILE"
 
-MODE=ops TELEGRAM_ENABLED=1 "$NODE" "$SCRIPT_DIR/pickko-daily-audit.js" >> "$LOG_FILE" 2>&1
+MODE=ops TELEGRAM_ENABLED=1 "$NODE" "$RUNTIME_SCRIPT" >> "$LOG_FILE" 2>&1
 EXIT_CODE=$?
 
 echo "[$(date)] ⏹ pickko-daily-audit 완료 (exit: $EXIT_CODE)" >> "$LOG_FILE"

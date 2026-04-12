@@ -165,7 +165,7 @@ child.on('close', async (code: number | null) => {
       });
 
       const blockArgs = [
-        path.join(__dirname, '../../auto/monitors/pickko-kiosk-monitor.js'),
+        path.join(__dirname, '../../../../dist/ts-runtime/bots/reservation/auto/monitors/pickko-kiosk-monitor.js'),
         '--block-slot',
         `--date=${normalized.date}`,
         `--start=${normalized.start}`,

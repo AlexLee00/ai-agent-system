@@ -10,6 +10,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 NODE="/opt/homebrew/bin/node"
+RUNTIME_SCRIPT="/Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/admin/pickko-verify.js"
 LOCK_FILE="$HOME/.openclaw/workspace/pickko-verify.lock"
 LOG_FILE="/tmp/pickko-verify.log"
 
@@ -41,7 +42,7 @@ for attempt in $(seq 1 $MAX_RETRY); do
     echo "[$(TS)] 🔄 pickko-verify 재시도 ${attempt}/${MAX_RETRY} (${RETRY_WAIT}초 대기 후)" | tee -a "$LOG_FILE"
     sleep $RETRY_WAIT
   fi
-  MODE=ops "$NODE" "$SCRIPT_DIR/pickko-verify.js" >> "$LOG_FILE" 2>&1
+  MODE=ops "$NODE" "$RUNTIME_SCRIPT" >> "$LOG_FILE" 2>&1
   EXIT_CODE=$?
   if [ $EXIT_CODE -eq 0 ]; then
     break

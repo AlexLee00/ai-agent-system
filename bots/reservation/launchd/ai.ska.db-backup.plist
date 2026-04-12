@@ -14,7 +14,7 @@
 	<key>ProgramArguments</key>
 	<array>
 		<string>/opt/homebrew/bin/node</string>
-		<string>/Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/backup-db.js</string>
+		<string>/Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/scripts/backup-db.js</string>
 	</array>
 	<key>RunAtLoad</key>
 	<false/>

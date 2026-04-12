@@ -17,7 +17,7 @@ LOCK_FILE="$HOME/.openclaw/workspace/naver-monitor.lock"
 SELF_LOCK="$HOME/.openclaw/workspace/start-ops.lock"
 LOG_FILE="/tmp/naver-ops-mode.log"
 NAVER_PROFILE="$HOME/.openclaw/workspace/naver-profile"
-NAVER_MONITOR_SCRIPT="$BOT_DIR/auto/monitors/naver-monitor.js"
+NAVER_MONITOR_SCRIPT="/Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/auto/monitors/naver-monitor.js"
 KIOSK_PLIST="$HOME/Library/LaunchAgents/ai.ska.kiosk-monitor.plist"
 HEADED_FLAG="$BOT_DIR/.playwright-headed"
 
