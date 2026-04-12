@@ -8,6 +8,7 @@ defmodule TeamJay.Investment.Feedback.Realtime do
 
   use GenServer
 
+  alias TeamJay.Investment.Feedback.Events
   alias TeamJay.Investment.PubSub
   alias TeamJay.Investment.Topics
 
@@ -50,14 +51,12 @@ defmodule TeamJay.Investment.Feedback.Realtime do
   defp build_feedback(result, state) do
     action = infer_trade_action(result)
 
-    feedback = %{
-      symbol: state.symbol,
-      source: :feedback_realtime_scaffold,
-      action: action,
-      generated_at: DateTime.utc_now(),
-      evaluation: scaffold_evaluation(action),
-      trade_result: result
-    }
+    feedback =
+      Events.realtime(state.symbol,
+        action: action,
+        evaluation: scaffold_evaluation(action),
+        trade_result: result
+      )
 
     open_positions =
       case action do
