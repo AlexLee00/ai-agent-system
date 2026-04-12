@@ -59,6 +59,7 @@ async function inspect() {
     console.log('브라우저를 보며 조사하려면 PLAYWRIGHT_HEADLESS=false 로 재실행하세요.');
   } catch (e) {
     console.error('오류:', e.message);
+  } finally {
     await browser.close();
   }
 }
