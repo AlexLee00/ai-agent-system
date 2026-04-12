@@ -17,7 +17,7 @@ const {
   getVerifiedReservationsForPayScan,
   updateReservation,
   markSeen,
-} = require('../../lib/db.legacy.js');
+} = require('../../lib/db');
 
 function log(message: string) {
   process.stdout.write(`[${ts()}] ${message}\n`);

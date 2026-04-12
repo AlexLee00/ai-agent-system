@@ -7,22 +7,21 @@
 - 스카팀 실제 소스는 `bots/reservation` 기준으로 운영된다.
 - 파일 구조는 이미 `3중 패턴`이 깔려 있다.
   - `.legacy.js` = 실제 운영 원본
-  - `.ts` = 현재는 대부분 shim
+  - `.ts` = 현재는 실구현 본체, `.legacy.js`는 대부분 호환 wrapper
   - `.js` = `dist/ts-runtime` 우선 + `.legacy.js` 폴백 래퍼
 
 ### 계량 결과
 
-- `.legacy.js`: 86개
-- `.ts`: 91개
-- `.js`: 91개
-- `full trio(.legacy.js + .ts + .js)`: 86개
-- `ts-only 추가 파일`: 5개
+- `.legacy.js`: 134개
+- `.ts`: 133개
+- `.js`: 133개
+- 현재는 대부분 파일이 `TS 본체 + JS 런처 + legacy wrapper` 구조로 정리됨
 
 ### 가장 중요한 발견
 
-- `.ts` 91개 전부가 아직 `@ts-nocheck + require('./xxx.legacy.js')` 4줄 shim이다.
-- 즉 스카팀은 “TS가 이미 많이 됐다”가 아니라 “TS 진입점 껍데기만 마련된 상태”다.
-- 따라서 바로 `.legacy.js`를 지우거나 `.ts`를 런타임 진실(source of truth)로 바꾸면 위험하다.
+- 현재는 핵심 운영/배치/수동/command/scripts 계층 대부분이 TS 본체로 승격됐다.
+- `.legacy.js`는 거의 전부 `ts-fallback-loader` 기반의 얇은 호환 wrapper다.
+- 즉 스카팀은 이제 ‘TS 진입점 껍데기’ 단계가 아니라, TS source of truth를 중심으로 호환 레일만 유지하는 단계다.
 
 ## 2. 다른 팀에서 가져올 원칙
 
@@ -333,19 +332,21 @@
 
 1. 진행 문서/변경 범위 최종 점검
 2. wrapper 예외 파일(`ts-fallback-loader.legacy.js`) 유지 정책 명시
-3. 커밋 단위 정리 및 최종 리뷰
+3. 남은 호환 wrapper 전수 점검 및 정리
+4. 커밋 단위 정리 및 최종 리뷰
 
 현재 잔여 예외:
 
 - `lib/ts-fallback-loader.legacy.js`만 호환 레일 자체로 유지
 - 나머지 운영/배치/수동/command 계층 legacy는 wrapper 수준으로 정리 완료
+- 기존 orphan shim 5개(`export-ska-sales-csv`, `check-n8n-command-path`, `init-naver-booking-session`, `backfill-study-room`, `inspect-naver`)는 모두 TS 본문 복원 완료
 
 ## 7. 2026-04-12 진행 현황 업데이트
 
 ### 실제 TS 구현으로 전환된 lib 상태
 
-- `bots/reservation/**/*.legacy.js` 총 수: 129개
-- 그중 `20줄 이하 wrapper`: 128개
+- `bots/reservation/**/*.legacy.js` 총 수: 134개
+- 그중 `20줄 이하 wrapper`: 133개
 - `20줄 초과 legacy`: 1개 (`ts-fallback-loader.legacy.js`)
 - 즉 실질적인 큰 legacy 본체는 정리 완료 상태
 
