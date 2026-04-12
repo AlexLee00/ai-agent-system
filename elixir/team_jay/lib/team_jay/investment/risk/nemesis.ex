@@ -8,6 +8,7 @@ defmodule TeamJay.Investment.Risk.Nemesis do
 
   use GenServer
 
+  alias TeamJay.Investment.Events
   alias TeamJay.Investment.PubSub
   alias TeamJay.Investment.Topics
 
@@ -33,12 +34,7 @@ defmodule TeamJay.Investment.Risk.Nemesis do
 
   @impl true
   def handle_info({:investment_event, _topic, {:signal, signal}}, state) do
-    approved_signal = %{
-      signal: signal,
-      source: :risk_scaffold,
-      approved: true,
-      reviewed_at: DateTime.utc_now()
-    }
+    approved_signal = Events.approved_signal(signal)
 
     PubSub.broadcast(Topics.approved_signal(state.symbol), {:approved_signal, approved_signal})
 

@@ -9,6 +9,7 @@ defmodule TeamJay.Investment.Analyst.Worker do
 
   use GenServer
 
+  alias TeamJay.Investment.Events
   alias TeamJay.Investment.PubSub
   alias TeamJay.Investment.Topics
 
@@ -59,16 +60,11 @@ defmodule TeamJay.Investment.Analyst.Worker do
   end
 
   defp build_analysis_payload(analyst_type, symbol, topic, indicator_payload, sequence) do
-    %{
-      analyst_type: analyst_type,
-      symbol: symbol,
-      source: :analyst_scaffold,
+    Events.analysis(symbol, analyst_type,
       topic: topic,
       sequence: sequence,
       summary: "#{analyst_type} scaffold analysis",
-      confidence: 0.0,
-      generated_at: DateTime.utc_now(),
       input: indicator_payload
-    }
+    )
   end
 end

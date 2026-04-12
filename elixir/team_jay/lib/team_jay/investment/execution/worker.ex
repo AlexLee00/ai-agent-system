@@ -8,6 +8,7 @@ defmodule TeamJay.Investment.Execution.Worker do
 
   use GenServer
 
+  alias TeamJay.Investment.Events
   alias TeamJay.Investment.PubSub
   alias TeamJay.Investment.Topics
 
@@ -33,13 +34,7 @@ defmodule TeamJay.Investment.Execution.Worker do
 
   @impl true
   def handle_info({:investment_event, _topic, {:approved_signal, approved_signal}}, state) do
-    trade_result = %{
-      symbol: state.symbol,
-      source: :execution_scaffold,
-      executed: true,
-      executed_at: DateTime.utc_now(),
-      approved_signal: approved_signal
-    }
+    trade_result = Events.trade_result(state.symbol, approved_signal)
 
     PubSub.broadcast(Topics.trade_result(state.symbol), {:trade_result, trade_result})
 
