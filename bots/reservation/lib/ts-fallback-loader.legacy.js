@@ -22,6 +22,17 @@ function loadTsModule(tsPath) {
   return runtimeModule.exports;
 }
 
+function loadTsModuleWithFallback(baseDir, tsRelativePath, distRelativePath) {
+  const distPath = distRelativePath ? path.resolve(baseDir, distRelativePath) : null;
+  if (distPath && fs.existsSync(distPath)) {
+    return require(distPath);
+  }
+
+  const tsPath = path.resolve(baseDir, tsRelativePath);
+  return loadTsModule(tsPath);
+}
+
 module.exports = {
   loadTsModule,
+  loadTsModuleWithFallback,
 };
