@@ -20,14 +20,16 @@ description: Use when operating, debugging, or improving the Ska reservation sta
 
 핵심 운영 경로:
 
-- `bots/reservation/auto/monitors/naver-monitor.js`
+- `bots/reservation/auto/monitors/naver-monitor.ts`
 - `bots/reservation/auto/monitors/start-ops.sh`
-- `bots/reservation/src/ska.js`
-- `bots/reservation/lib/ska-command-queue.js`
-- `bots/reservation/lib/ska-command-handlers.js`
-- `bots/reservation/lib/ska-read-service.js`
-- `bots/reservation/scripts/health-report.js`
-- `bots/reservation/scripts/health-check.js`
+- `dist/ts-runtime/bots/reservation/auto/monitors/naver-monitor.js`
+- `bots/reservation/src/ska.ts`
+- `bots/reservation/lib/ska-command-queue.ts`
+- `bots/reservation/lib/ska-command-handlers.ts`
+- `bots/reservation/lib/ska-read-service.ts`
+- `bots/reservation/scripts/health-report.ts`
+- `dist/ts-runtime/bots/reservation/scripts/health-report.js`
+- `bots/reservation/scripts/health-check.ts`
 
 공용 계층:
 
@@ -42,9 +44,11 @@ n8n 관련:
 - `bots/reservation/context/N8N_NODE_PLAN.md`
 - `bots/reservation/context/N8N_COMMAND_CONTRACT.md`
 - `bots/reservation/context/n8n-ska-command-workflow.json`
-- `bots/reservation/n8n/setup-ska-command-workflow.js`
-- `bots/reservation/scripts/dashboard-server.js`
-- `bots/reservation/scripts/check-n8n-command-path.js`
+- `bots/reservation/n8n/setup-ska-command-workflow.ts`
+- `dist/ts-runtime/bots/reservation/n8n/setup-ska-command-workflow.js`
+- `bots/reservation/scripts/dashboard-server.ts`
+- `dist/ts-runtime/bots/reservation/scripts/dashboard-server.js`
+- `bots/reservation/scripts/check-n8n-command-path.ts`
 
 ## 기본 원칙
 
@@ -60,7 +64,7 @@ n8n 관련:
 
 순서:
 
-1. `naver-monitor.js`가 예약 감지
+1. `naver-monitor` 런타임이 예약 감지
 2. DB 상태 생성/갱신
 3. Pickko 실행 후보 판단
 4. `pending -> processing -> completed` 상태 전이
@@ -82,9 +86,9 @@ n8n 관련:
 
 확인 순서:
 
-1. `ska-command-handlers.js`
-2. `ska-read-service.js`
-3. `dashboard-server.js` bridge endpoint
+1. `ska-command-handlers.ts`
+2. `ska-read-service.ts`
+3. `dashboard-server` bridge endpoint
 4. `n8n-runner.js`
 5. `check-n8n-command-path.js`
 
@@ -96,11 +100,11 @@ n8n 관련:
 
 ## 검증 기본 세트
 
-- `node --check bots/reservation/src/ska.js`
-- `node --check bots/reservation/lib/ska-command-handlers.js`
-- `node --check bots/reservation/lib/ska-read-service.js`
-- `node bots/reservation/scripts/health-report.js --json`
-- `node bots/reservation/scripts/check-n8n-command-path.js`
+- `node --check bots/reservation/src/ska.ts`
+- `node --check bots/reservation/lib/ska-command-handlers.ts`
+- `node --check bots/reservation/lib/ska-read-service.ts`
+- `node dist/ts-runtime/bots/reservation/scripts/health-report.js --json`
+- `node dist/ts-runtime/bots/reservation/scripts/check-n8n-command-path.js`
 
 필요 시:
 
