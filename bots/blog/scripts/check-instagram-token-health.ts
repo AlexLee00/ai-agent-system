@@ -8,8 +8,8 @@ const {
   getTokenHealth,
   buildExchangeTokenRequest,
   buildRefreshLongLivedTokenRequest,
-  parseInstagramAuthError,
 } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-token-manager.ts'));
+const { getInstagramConfig } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-graph.ts'));
 
 function parseArgs(argv = []) {
   return {
@@ -37,6 +37,7 @@ function redactUrl(url = '') {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  const runtimeConfig = await getInstagramConfig();
   const config = getInstagramTokenConfig();
   const health = getTokenHealth(config);
   const exchangeRequest = health.readyForExchange ? buildExchangeTokenRequest(config) : null;
@@ -45,6 +46,7 @@ async function main() {
   /** @type {any} */
   const payload = {
     ready: Boolean(health.hasAccessToken && health.hasIgUserId),
+    source: runtimeConfig.credentialSource || 'unknown',
     health,
     requests: {
       exchange: exchangeRequest ? { ...exchangeRequest, url: redactUrl(exchangeRequest.url) } : null,

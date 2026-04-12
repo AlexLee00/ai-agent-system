@@ -36,6 +36,7 @@ async function main() {
     missing,
     note: 'Instagram Graph credentials are resolved from hub secrets first, then local secrets-store/env fallback.',
     source: {
+      credentialSource: config.credentialSource || 'unknown',
       apiVersion: config.apiVersion || 'v21.0',
       baseUrl: config.baseUrl || 'https://graph.facebook.com',
       hasAccessToken: Boolean(config.accessToken),

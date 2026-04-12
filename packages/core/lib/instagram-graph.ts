@@ -30,24 +30,38 @@ async function getInstagramConfig() {
   const hubData = await fetchHubSecrets('instagram');
   const storeData = readStoreInstagramConfig();
   const tokenConfig = getInstagramTokenConfig();
+  const accessToken = hubData?.access_token || storeData?.access_token || tokenConfig.accessToken || '';
+  const igUserId = hubData?.ig_user_id || storeData?.ig_user_id || tokenConfig.igUserId || '';
+  const appId = hubData?.app_id || storeData?.app_id || tokenConfig.appId || '';
+  const appSecret = hubData?.app_secret || storeData?.app_secret || tokenConfig.appSecret || '';
+  const businessAccountId = hubData?.business_account_id || storeData?.business_account_id || tokenConfig.businessAccountId || '';
+  const apiVersion = hubData?.api_version || storeData?.api_version || tokenConfig.apiVersion || 'v21.0';
+  const baseUrl = hubData?.base_url || storeData?.base_url || tokenConfig.baseUrl || 'https://graph.facebook.com';
+  const tokenExpiresAt = tokenConfig.tokenExpiresAt || (hubData?.token_expires_at ? new Date(hubData.token_expires_at).getTime() : null) || null;
+  const credentialSource = hubData?.access_token || hubData?.ig_user_id
+    ? 'hub'
+    : storeData?.access_token || storeData?.ig_user_id
+      ? 'store'
+      : 'env';
   return {
-    accessToken: hubData?.access_token || storeData?.access_token || tokenConfig.accessToken || '',
-    igUserId: hubData?.ig_user_id || storeData?.ig_user_id || tokenConfig.igUserId || '',
-    appId: hubData?.app_id || storeData?.app_id || tokenConfig.appId || '',
-    appSecret: hubData?.app_secret || storeData?.app_secret || tokenConfig.appSecret || '',
-    businessAccountId: hubData?.business_account_id || storeData?.business_account_id || tokenConfig.businessAccountId || '',
-    apiVersion: hubData?.api_version || storeData?.api_version || tokenConfig.apiVersion || 'v21.0',
-    baseUrl: hubData?.base_url || storeData?.base_url || tokenConfig.baseUrl || 'https://graph.facebook.com',
-    tokenExpiresAt: tokenConfig.tokenExpiresAt || (hubData?.token_expires_at ? new Date(hubData.token_expires_at).getTime() : null) || null,
+    accessToken,
+    igUserId,
+    appId,
+    appSecret,
+    businessAccountId,
+    apiVersion,
+    baseUrl,
+    tokenExpiresAt,
+    credentialSource,
     tokenHealth: getTokenHealth({
-      accessToken: hubData?.access_token || storeData?.access_token || tokenConfig.accessToken || '',
-      igUserId: hubData?.ig_user_id || storeData?.ig_user_id || tokenConfig.igUserId || '',
-      appId: hubData?.app_id || storeData?.app_id || tokenConfig.appId || '',
-      appSecret: hubData?.app_secret || storeData?.app_secret || tokenConfig.appSecret || '',
-      businessAccountId: hubData?.business_account_id || storeData?.business_account_id || tokenConfig.businessAccountId || '',
-      apiVersion: hubData?.api_version || storeData?.api_version || tokenConfig.apiVersion || 'v21.0',
-      baseUrl: hubData?.base_url || storeData?.base_url || tokenConfig.baseUrl || 'https://graph.facebook.com',
-      tokenExpiresAt: tokenConfig.tokenExpiresAt || (hubData?.token_expires_at ? new Date(hubData.token_expires_at).getTime() : null) || null,
+      accessToken,
+      igUserId,
+      appId,
+      appSecret,
+      businessAccountId,
+      apiVersion,
+      baseUrl,
+      tokenExpiresAt,
     }),
     defaultStatus: process.env.INSTAGRAM_PUBLISH_DEFAULT_STATUS || 'draft',
   };

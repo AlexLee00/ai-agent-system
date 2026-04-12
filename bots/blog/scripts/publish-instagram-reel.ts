@@ -5,6 +5,7 @@ const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const { publishInstagramReel, buildHostedVideoUrl } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-graph.ts'));
 const { findLatestReelPath } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-files.ts'));
+const { parseInstagramAuthError } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-token-manager.ts'));
 
 /**
  * @typedef {{
@@ -67,6 +68,10 @@ async function main() {
 }
 
 main().catch((error) => {
+  const diagnosis = parseInstagramAuthError(error);
   console.error('[인스타] 업로드 실패:', error?.message || error);
+  if (diagnosis?.code && diagnosis.code !== 'unknown_auth_error') {
+    console.error(`[인스타] 진단: ${diagnosis.code} | ${diagnosis.note}`);
+  }
   process.exit(1);
 });
