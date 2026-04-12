@@ -2,6 +2,7 @@
 // @ts-nocheck
 
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import { publishToMainBot } from '../shared/mainbot-client.ts';
 import { buildScreeningHistoryReport } from './screening-history-report.ts';
 import { execFileSync } from 'child_process';
 import path from 'path';
@@ -81,6 +82,26 @@ function summarizeScreening(screening = {}) {
   return lines;
 }
 
+function buildActionItems(health, decision) {
+  if (decision.status === 'baseline_ok') {
+    return [
+      '24시간 병렬 운영 관찰을 계속 진행합니다.',
+      'launchd 제거 전 동일 기준선이 유지되는지 확인합니다.',
+    ];
+  }
+
+  if (decision.status === 'hold') {
+    return [
+      '경고 서비스 원인을 우선 복구합니다.',
+      'warnCount가 0으로 내려온 뒤 제거 판단을 재개합니다.',
+    ];
+  }
+
+  const items = ['health-report/DB 접근 경로를 먼저 확인합니다.'];
+  if (health.error) items.push('권한/네트워크 제약이 없는 환경에서 다시 실행합니다.');
+  return items;
+}
+
 function buildDecision(health) {
   if (health.error) {
     return {
@@ -107,7 +128,26 @@ function buildDecision(health) {
   };
 }
 
-function formatTextReport({ capturedAt, decision, health, screening }) {
+function formatCompactMessage({ decision, health, screening, actionItems }) {
+  const lines = [
+    `🧭 병렬 운영: ${decision.status}`,
+    `📌 ${decision.headline}`,
+    `📊 serviceHealth ok ${health.serviceHealth.okCount} / warn ${health.serviceHealth.warnCount}`,
+  ];
+
+  const screeningLines = summarizeScreening(screening).slice(0, 3);
+  if (screeningLines.length > 0) {
+    lines.push(`🔎 ${screeningLines.join(' | ')}`);
+  }
+
+  if (actionItems.length > 0) {
+    lines.push(`➡️ ${actionItems[0]}`);
+  }
+
+  return lines.join('\n');
+}
+
+function formatTextReport({ capturedAt, decision, health, screening, actionItems }) {
   const lines = [
     `🧭 병렬 운영 요약 리포트`,
     `기준: ${new Date(capturedAt).toLocaleString('sv-SE', { timeZone: 'Asia/Seoul' })} KST`,
@@ -130,6 +170,9 @@ function formatTextReport({ capturedAt, decision, health, screening }) {
   lines.push('');
   lines.push('screening 동향:');
   lines.push(...summarizeScreening(screening).map((line) => `- ${line}`));
+  lines.push('');
+  lines.push('권장 조치:');
+  lines.push(...actionItems.map((item) => `- ${item}`));
 
   return lines.join('\n');
 }
@@ -138,9 +181,11 @@ export async function buildParallelOpsReport({ json = false } = {}) {
   const health = loadHealthReport();
   const screening = await loadScreeningSummary();
   const decision = buildDecision(health);
+  const actionItems = buildActionItems(health, decision);
   const payload = {
     capturedAt: new Date().toISOString(),
     decision,
+    actionItems,
     health: {
       serviceHealth: health.serviceHealth,
       cryptoLiveGateHealth: health.cryptoLiveGateHealth,
@@ -155,7 +200,22 @@ export async function buildParallelOpsReport({ json = false } = {}) {
 
 async function main() {
   const json = process.argv.includes('--json');
+  const publish = process.argv.includes('--publish');
   const report = await buildParallelOpsReport({ json });
+  if (publish) {
+    const payload = json ? report : await buildParallelOpsReport({ json: true });
+    try {
+      await publishToMainBot({
+        from_bot: 'luna',
+        event_type: 'report',
+        alert_level: payload.decision.status === 'baseline_ok' ? 1 : 2,
+        message: formatCompactMessage(payload),
+        payload,
+      });
+    } catch (error) {
+      console.warn(`  ⚠️ [parallel-ops-report] 발행 실패(무시): ${error?.message || error}`);
+    }
+  }
   if (json) {
     console.log(JSON.stringify(report, null, 2));
   } else {
