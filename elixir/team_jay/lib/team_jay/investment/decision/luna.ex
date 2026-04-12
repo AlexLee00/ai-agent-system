@@ -9,6 +9,7 @@ defmodule TeamJay.Investment.Decision.Luna do
   use GenServer
 
   alias TeamJay.Investment.Analyst.Worker, as: AnalystWorker
+  alias TeamJay.Investment.Events
   alias TeamJay.Investment.PubSub
   alias TeamJay.Investment.Topics
 
@@ -59,14 +60,9 @@ defmodule TeamJay.Investment.Decision.Luna do
   end
 
   defp build_signal_payload(symbol, analyses, sequence) do
-    %{
-      symbol: symbol,
-      action: :hold,
-      source: :decision_scaffold,
+    Events.signal(symbol,
       sequence: sequence,
-      confidence: 0.0,
-      generated_at: DateTime.utc_now(),
       analyses: analyses
-    }
+    )
   end
 end
