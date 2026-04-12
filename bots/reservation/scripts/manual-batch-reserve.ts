@@ -40,8 +40,8 @@ const ROOM_FALLBACK: Record<Booking['room'], Booking['room'][]> = {
   B: ['B'],
 };
 
-const PICKKO_SCRIPT  = path.join(__dirname, '../manual/reservation/pickko-accurate.js');
-const KIOSK_MONITOR  = path.join(__dirname, '../auto/monitors/pickko-kiosk-monitor.js');
+const PICKKO_SCRIPT  = path.join(__dirname, '../../../dist/ts-runtime/bots/reservation/manual/reservation/pickko-accurate.js');
+const KIOSK_MONITOR  = path.join(__dirname, '../../../dist/ts-runtime/bots/reservation/auto/monitors/pickko-kiosk-monitor.js');
 
 // ── 유틸 ─────────────────────────────────────────────────────────────
 

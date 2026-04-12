@@ -2,10 +2,13 @@
 
 ## 1. 목적
 
-이 문서는 `pickko-kiosk-monitor.js`가 픽코 예약취소를 감지하고 네이버 예약가능 복구까지 수행하는 현재 절차를 운영/개발 공통 기준으로 고정한다.
+이 문서는 `pickko-kiosk-monitor` 런타임이 픽코 예약취소를 감지하고 네이버 예약가능 복구까지 수행하는 현재 절차를 운영/개발 공통 기준으로 고정한다.
 
 현재 source of truth:
-- [pickko-kiosk-monitor.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/pickko-kiosk-monitor.js)
+- [pickko-kiosk-monitor.ts](/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/pickko-kiosk-monitor.ts)
+
+현재 운영 엔트리:
+- [dist pickko-kiosk-monitor.js](/Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/auto/monitors/pickko-kiosk-monitor.js)
 
 현재 운영 원칙:
 - 픽코 취소 감지 = `상태=환불` + `상태=취소`
@@ -269,4 +272,3 @@ flowchart TD
 4. `cancelledEntries` 건수
 5. `kiosk_blocks`의 `naverBlocked / naverUnblockedAt`
 6. 네이버 UI 실제 예약가능 복구 상태
-

@@ -32,31 +32,31 @@
 
 | 기능 | 파일 | 주기 | 설명 |
 |------|------|------|------|
-| 네이버 예약 모니터링 | `auto/monitors/naver-monitor.js` | 5분 (상시) | 신규 예약 감지 → 픽코 자동 등록 트리거 |
-| 키오스크 예약 감지 | `auto/monitors/pickko-kiosk-monitor.js` | 30분 | 픽코 키오스크 예약 → 네이버 드롭다운 자동 차단 |
-| 일일 요약 보고 | `auto/scheduled/pickko-daily-summary.js` | 09:00 / 00:00 | 당일 예약 현황 + 스터디룸/일반이용 매출 분리 보고 |
-| 일일 감사 | `auto/scheduled/pickko-daily-audit.js` | 08:30 | pending/failed 항목 자동 검증 + 텔레그램 알림 |
-| 결제 스캔 | `auto/scheduled/pickko-pay-scan.js` | 13:00 | 미결제 항목 재조회 |
+| 네이버 예약 모니터링 | `auto/monitors/naver-monitor.ts` | 5분 (상시) | source of truth는 TS, 운영 엔트리는 dist runtime |
+| 키오스크 예약 감지 | `auto/monitors/pickko-kiosk-monitor.ts` | 30분 | source of truth는 TS, 운영 엔트리는 dist runtime |
+| 일일 요약 보고 | `auto/scheduled/pickko-daily-summary.ts` | 09:00 / 00:00 | 당일 예약 현황 + 스터디룸/일반이용 매출 분리 보고 |
+| 일일 감사 | `auto/scheduled/pickko-daily-audit.ts` | 08:30 | pending/failed 항목 자동 검증 + 텔레그램 알림 |
+| 결제 스캔 | `auto/scheduled/pickko-pay-scan.ts` | 13:00 | 미결제 항목 재조회 |
 | 환경요소 수집 | `bots/ska/src/eve.py` | 1시간 | 공휴일·날씨·학사·축제 공공API 수집 |
 | 매출 예측 (Prophet) | `bots/ska/src/rebecca.py` | 토요일 18:00 | Prophet 기반 일/주/월 매출 예측 |
-| DB 백업 | `scripts/backup-db.js` | 매일 23:00 | state.db 자동 백업 |
-| 로그 로테이션 | `scripts/log-rotate.js` | 매주 월 00:00 | 10개 로그 파일 copytruncate |
-| 헬스 체크 | `scripts/health-check.js` | 1시간 | naver-monitor 크래시루프 감지 + 텔레그램 |
+| DB 백업 | `scripts/backup-db.ts` | 매일 23:00 | 운영 엔트리는 dist runtime 기준 |
+| 로그 로테이션 | `scripts/log-rotate.ts` | 매주 월 00:00 | 10개 로그 파일 copytruncate |
+| 헬스 체크 | `scripts/health-check.ts` | 1시간 | naver-monitor 크래시루프 감지 + 텔레그램 |
 
 ### 수동 CLI 기능
 
 | 기능 | 파일 | 설명 |
 |------|------|------|
-| 예약 등록 | `manual/reservation/pickko-accurate.js` | 픽코 신규 등록 Stage [1~9] |
-| 예약 취소 | `manual/reservation/pickko-cancel.js` | 픽코 취소 + 네이버 해제 Stage [1~10] |
-| 예약 조회 | `manual/reservation/pickko-query.js` | 예약 내역 조회 CLI |
-| 미검증 재검증 | `manual/admin/pickko-verify.js` | pending/failed 항목 픽코 재검증 + 자동 등록 (08:00/14:00/20:00) |
-| 회원 관리 | `manual/admin/pickko-member.js` | 회원 CRUD + AES-256-GCM 암호화 저장 |
-| 티켓 관리 | `manual/admin/pickko-ticket.js` | 이용권 등록/취소 CLI |
-| 가동률 리포트 | `manual/reports/occupancy-report.js` | 룸별·시간대별 가동률 분석 |
-| 매출 통계 | `manual/reports/pickko-stats-cmd.js` | 예약/취소/매출 통계 CLI |
-| 매출 확인 | `manual/reports/pickko-revenue-confirm.js` | 매출 컨펌 CLI |
-| 배치 재등록 | `manual/reservation/pickko-reregister-batch.js` | 일괄 재등록 배치 |
+| 예약 등록 | `manual/reservation/pickko-accurate.ts` | 픽코 신규 등록 Stage [1~9] |
+| 예약 취소 | `manual/reservation/pickko-cancel.ts` | 픽코 취소 + 네이버 해제 Stage [1~10] |
+| 예약 조회 | `manual/reservation/pickko-query.ts` | 예약 내역 조회 CLI |
+| 미검증 재검증 | `manual/admin/pickko-verify.ts` | pending/failed 항목 픽코 재검증 + 자동 등록 (08:00/14:00/20:00) |
+| 회원 관리 | `manual/admin/pickko-member.ts` | 회원 CRUD + AES-256-GCM 암호화 저장 |
+| 티켓 관리 | `manual/admin/pickko-ticket.ts` | 이용권 등록/취소 CLI |
+| 가동률 리포트 | `manual/reports/occupancy-report.ts` | 룸별·시간대별 가동률 분석 |
+| 매출 통계 | `manual/reports/pickko-stats-cmd.ts` | 예약/취소/매출 통계 CLI |
+| 매출 확인 | `manual/reports/pickko-revenue-confirm.ts` | 매출 컨펌 CLI |
+| 배치 재등록 | `manual/reservation/pickko-reregister-batch.ts` | 일괄 재등록 배치 |
 
 ### 빠른 재시작
 
@@ -69,15 +69,15 @@ bash scripts/reload-monitor.sh
 
 | 라이브러리 | 역할 |
 |-----------|------|
-| `lib/state-bus.js` | 에이전트 간 통신 (SQLite — agent_state / pickko_lock / pending_blocks) |
-| `lib/db.js` | SQLite 싱글턴 + 스키마 + 도메인 함수 |
-| `lib/pickko.js` | 픽코 로그인 / 예약 조회 / 회원 검색 |
-| `lib/telegram.js` | Bot API 직접 발송 + pending queue |
-| `lib/crypto.js` | AES-256-GCM 암호화/복호화 |
-| `lib/browser.js` | Puppeteer 런치 옵션 + 다이얼로그 핸들러 |
-| `lib/health.js` | 3중 가동/중지 + 셧다운 핸들러 |
-| `lib/error-tracker.js` | 연속 오류 카운터 |
-| `lib/validation.js` | 전화번호·날짜·시간 정규화 |
+| `lib/state-bus.ts` | 에이전트 간 통신 (Postgres — agent_state / pickko_lock / pending_blocks) |
+| `lib/db.ts` | Postgres 도메인 함수 + 마이그레이션 |
+| `lib/pickko.ts` | 픽코 로그인 / 예약 조회 / 회원 검색 |
+| `lib/telegram.ts` | Bot API 직접 발송 + pending queue |
+| `lib/crypto.ts` | AES-256-GCM 암호화/복호화 |
+| `lib/browser.ts` | Puppeteer 런치 옵션 + 다이얼로그 핸들러 |
+| `lib/health.ts` | 3중 가동/중지 + 셧다운 핸들러 |
+| `lib/error-tracker.ts` | 연속 오류 카운터 |
+| `lib/validation.ts` | 전화번호·날짜·시간 정규화 |
 
 ### launchd 서비스 목록 (18개)
 

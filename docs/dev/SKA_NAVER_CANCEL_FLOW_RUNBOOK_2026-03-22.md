@@ -2,10 +2,13 @@
 
 ## 1. 목적
 
-이 문서는 `naver-monitor.js`가 네이버 예약취소를 감지하고 픽코 취소까지 수행하는 현재 절차를 운영/개발 공통 기준으로 고정한다.
+이 문서는 `naver-monitor` 런타임이 네이버 예약취소를 감지하고 픽코 취소까지 수행하는 현재 절차를 운영/개발 공통 기준으로 고정한다.
 
 현재 source of truth:
-- [naver-monitor.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/naver-monitor.js)
+- [naver-monitor.ts](/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/naver-monitor.ts)
+
+현재 운영 엔트리:
+- [dist naver-monitor.js](/Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/auto/monitors/naver-monitor.js)
 
 현재 운영 원칙:
 - 네이버 취소 감지

@@ -51,9 +51,13 @@
 | 봇 이름 | 파일 | 역할 |
 |---------|------|------|
 | **스카** | `bots/reservation/` | 메인봇 (스카, 자연어 처리·OpenClaw) |
-| **앤디** | `auto/monitors/naver-monitor.js` | 네이버 스마트플레이스 모니터링 |
-| **지미** | `auto/monitors/pickko-kiosk-monitor.js` | 키오스크 예약 감지 |
+| **앤디** | `auto/monitors/naver-monitor.ts` | 네이버 스마트플레이스 모니터링 |
+| **지미** | `auto/monitors/pickko-kiosk-monitor.ts` | 키오스크 예약 감지 |
 | **레베카** | `bots/ska/` (Python) | 매출·예측 분석봇 |
+
+현재 운영 엔트리:
+- `dist/ts-runtime/bots/reservation/auto/monitors/naver-monitor.js`
+- `dist/ts-runtime/bots/reservation/auto/monitors/pickko-kiosk-monitor.js`
 
 - 신규 스카팀 봇: 쉬운 단어 랜덤 이름 (예: 나비, 콩이처럼 단순·기억하기 쉬운 이름)
 - 기능 서술식 이름 금지 (naver-monitor-bot 등)

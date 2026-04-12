@@ -14,7 +14,7 @@
 	<key>ProgramArguments</key>
 	<array>
 		<string>/opt/homebrew/bin/node</string>
-		<string>/Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/log-rotate.js</string>
+		<string>/Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/scripts/log-rotate.js</string>
 	</array>
 	<key>StandardErrorPath</key>
 	<string>/tmp/ska-log-rotate.log</string>
