@@ -22,7 +22,7 @@ const REPORT_JOBS = [
   {
     key: 'ska',
     label: '스카',
-    args: ['bots/reservation/auto/scheduled/pickko-daily-summary.js'],
+    args: ['dist/ts-runtime/bots/reservation/auto/scheduled/pickko-daily-summary.js'],
   },
   {
     key: 'common',

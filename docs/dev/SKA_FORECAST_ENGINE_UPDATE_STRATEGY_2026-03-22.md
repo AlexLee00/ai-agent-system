@@ -37,8 +37,8 @@
 ### Phase A. source/read 경로 정렬
 
 - 대상:
-  - `bots/reservation/lib/ska-read-service.js`
-  - `bots/reservation/scripts/dashboard-server.js`
+  - `bots/reservation/lib/ska-read-service.ts`
+  - `bots/reservation/scripts/dashboard-server.ts`
   - `scripts/collect-kpi.js`
 - 목표:
   - `total_amount` 직접 사용 대신 `general_revenue + pickko_study_room`을 총매출로 사용

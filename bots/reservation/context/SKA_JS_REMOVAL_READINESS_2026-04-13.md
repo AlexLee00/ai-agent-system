@@ -17,80 +17,50 @@
 
 ## 아직 `.js`를 유지해야 하는 이유
 
-### 1. launchd가 직접 `.js`를 실행 중
+초기 전환 시점에는 launchd, shell wrapper, cross-team import가 reservation 내부 wrapper `.js`를 직접 사용하고 있었다.
+하지만 현재는 대부분 `dist/ts-runtime/.../*.js` 직결로 옮겨졌고, 남은 `.js`는 주로 아래 세 부류로 압축됐다.
 
-현재 launchd/plist가 다음 JS 엔트리포인트를 직접 호출한다.
+### 1. wrapper 자기 자신
 
-- `bots/reservation/scripts/health-check.js`
-- `bots/reservation/scripts/dashboard-server.js`
-- `bots/reservation/scripts/backup-db.js`
-- `bots/reservation/scripts/log-rotate.js`
-- `bots/reservation/auto/scheduled/pickko-daily-summary.js`
-- `bots/reservation/auto/scheduled/pickko-daily-audit.js`
-- `bots/reservation/auto/scheduled/pickko-pay-scan.js`
 - `bots/reservation/manual/admin/pickko-verify.js`
-- `bots/reservation/auto/monitors/run-kiosk-monitor.sh` 경유의 JS 호출
 
-관련 파일:
-- `bots/reservation/launchd/ai.ska.health-check.plist`
-- `bots/reservation/launchd/ai.ska.dashboard.plist`
-- `bots/reservation/launchd/ai.ska.db-backup.plist`
-- `bots/reservation/launchd/ai.ska.log-rotate.plist`
-- `bots/reservation/launchd/ai.ska.pickko-daily-summary.plist`
-- `bots/reservation/launchd/ai.ska.pickko-daily-audit.plist`
-- `bots/reservation/launchd/ai.ska.pickko-pay-scan.plist`
-- `bots/reservation/launchd/ai.ska.pickko-verify.plist`
-- `bots/reservation/launchd/ai.ska.kiosk-monitor.plist`
-- `bots/reservation/launchd/ai.ska.naver-monitor.plist`
+위 파일들은 현재 대부분 “실행 주체”라기보다 `dist/ts-runtime`를 호출하는 얇은 호환 wrapper다.
 
-### 2. shell wrapper가 `.js` 경로를 직접 spawn 중
+### 2. 현재 운영 엔트리로 남아 있는 dist `.js`
 
-- `bots/reservation/manual/admin/run-verify.sh` -> `pickko-verify.js`
-- `bots/reservation/manual/reservation/pickko-cancel-cmd.ts` -> `pickko-cancel.js`
-- `bots/reservation/manual/reservation/pickko-register.ts` -> `pickko-accurate.js`, `pickko-kiosk-monitor.js`
-- `bots/reservation/manual/reservation/pickko-reregister-batch.ts` -> `pickko-accurate.js`
+launchd, shell wrapper, package script, registry, cross-team caller는 이제 reservation source wrapper가 아니라
+대체로 `dist/ts-runtime/.../*.js`를 직접 본다.
 
-### 3. 다른 팀 코드가 `.js` import/path를 직접 사용 중
+즉 지금 단계에서 바로 지워도 되는 대상은 “source wrapper”인지, 아니면 “실제 dist 런타임 파일명”인지 구분해서 봐야 한다.
 
-- `bots/blog/lib/blo.ts` -> `bots/reservation/lib/state-bus.js`
-- `bots/orchestrator/src/router.ts` -> `bots/reservation/scripts/health-report.js`
-- `bots/registry.json` -> `auto/monitors/naver-monitor.js`, `auto/monitors/pickko-kiosk-monitor.js`
+### 3. 역사/운영 문서 표기
+
+`HANDOFF`, `DEV_SUMMARY`, `CLAUDE_NOTES`, 일부 checklist는 당시 작업명을 그대로 유지하기 위해 `.js` 표기를 계속 담고 있다.
+이들은 삭제 blocker라기보다 기록성 잔존이다.
 
 ## 분류
 
-### A. 즉시 삭제 금지 (실행 엔트리)
+### A. 삭제 준비 완료에 가까움 (source wrapper)
 
-아래는 아직 실제 실행 경로로 쓰이므로 유지 필요.
+아래 source wrapper 1차 배치는 실제 삭제까지 완료했다.
 
-- `auto/monitors/*.js`
-- `auto/scheduled/*.js`
-- `manual/admin/pickko-verify.js`
-- `manual/reservation/pickko-accurate.js`
-- `manual/reservation/pickko-cancel.js`
-- `manual/reservation/pickko-register.js`
-- `manual/reservation/pickko-query.js`
 - `scripts/health-check.js`
-- `scripts/health-report.js`
 - `scripts/dashboard-server.js`
 - `scripts/backup-db.js`
 - `scripts/log-rotate.js`
-- `lib/state-bus.js`
+- `auto/scheduled/pickko-daily-summary.js`
 
-### B. 선행 전환 후 삭제 가능 (호출자 수정 필요)
+### B. 아직 보류 (남은 현재 코드/운영 참조 있음)
 
-아래는 직접 호출자가 끊기면 삭제 후보가 된다.
+- `auto/monitors/*.js`
+  - registry / start script / launchd가 이미 dist 직결이긴 하지만, 모니터는 운영 민감도가 높아 마지막 배치로 미루는 것이 안전
+- 기타 source wrapper
+  - 삭제보다 “호환 레일 유지” 이득이 아직 있는 것들
 
-- launchd plist에 연결된 JS wrapper 전체
-- `run-verify.sh`가 호출하는 `pickko-verify.js`
-- `pickko-register.ts` / `pickko-reregister-batch.ts` / `pickko-cancel-cmd.ts`가 spawn하는 JS 경로
-- `bots/blog/lib/blo.ts`의 `state-bus.js` import
-- `bots/orchestrator/src/router.ts`의 `health-report.js` path
-- `bots/registry.json`의 `naver-monitor.js`, `pickko-kiosk-monitor.js`
+### C. 기록성 `.js` 표기
 
-### C. 문서/런북/스킬 참조
-
-문서와 스킬에도 `.js` 표기가 다수 남아 있다.
-이는 런타임 차단 이슈는 아니지만, 실제 제거 직전에 한 번 정리해야 한다.
+문서와 checklist의 `.js` 표기는 여전히 많다.
+이는 삭제 blocker는 아니지만, “지금도 source wrapper를 운영이 직접 쓴다”는 오해를 만들 수 있으므로 마지막에 정리 가치가 있다.
 
 ## 추천 삭제 순서
 
@@ -213,12 +183,69 @@
 - `bots/registry.json` JSON validation 통과
 - dist runtime / startScript 경로 반영 확인
 
-## 바로 다음 작업 추천
+## 현재 추천 단계
 
-이제 남은 작업은 구현보다 운영 표면 마감에 가깝다.
+이제 남은 작업은 “전환”보다 “삭제 배치 설계”에 가깝다.
 
-- 실제 `~/Library/LaunchAgents/ai.ska.*` 동기화 여부 결정
-- 문서/런북/README의 `.js` 표기 정리
-- 충분히 확인되면 wrapper 삭제 후보 목록 확정
+1. 저위험 source wrapper 1차 삭제 후보 확정
+   - `scripts/health-check.js`
+   - `scripts/dashboard-server.js`
+   - `scripts/backup-db.js`
+   - `scripts/log-rotate.js`
+   - `auto/scheduled/pickko-daily-summary.js`
+2. 운영 민감 wrapper는 별도 배치로 유지
+   - `manual/admin/pickko-verify.js`
+   - `auto/monitors/*.js`
+3. 역사 문서 `.js` 표기는 필요 시 후속 정리
 
-즉 reservation JS 제거 준비는 사실상 메타/운영 마감 단계에 들어왔다.
+즉 reservation JS 제거 준비는 이제 “삭제 가능한 wrapper를 실제로 어떤 순서로 걷을지”만 남은 상태에 가깝다.
+
+## 1차 삭제 완료
+
+다음 source wrapper 5개는 실제로 제거했다.
+
+- `bots/reservation/scripts/health-check.js`
+- `bots/reservation/scripts/dashboard-server.js`
+- `bots/reservation/scripts/backup-db.js`
+- `bots/reservation/scripts/log-rotate.js`
+- `bots/reservation/auto/scheduled/pickko-daily-summary.js`
+
+검증:
+- reservation `tsc --noEmit` 통과
+- reservation runtime build 통과
+- 현재 참조는 주로 `dist/ts-runtime/...` 또는 역사 문서 표기로 압축됨
+
+## 모니터 runtime blocker 추가 정리
+
+모니터 wrapper 삭제를 막던 shell runtime 2곳도 `dist/ts-runtime` 직결로 정리했다.
+
+- `bots/reservation/auto/monitors/start-ops.sh`
+- `bots/reservation/auto/monitors/run-today-audit.sh`
+
+정리 내용:
+- `start-ops.sh`는 더 이상 상대경로 `naver-monitor.js`를 실행하지 않고
+  `dist/ts-runtime/.../naver-monitor.js`를 직접 실행한다.
+- `run-today-audit.sh`도 더 이상 `pickko-kiosk-monitor.js` wrapper를 직접 호출하지 않고
+  `dist/ts-runtime/.../pickko-kiosk-monitor.js --audit-today`를 직접 실행한다.
+
+## 2차 삭제 완료
+
+다음 source wrapper 3개도 실제로 제거했다.
+
+- `bots/reservation/manual/admin/pickko-verify.js`
+- `bots/reservation/auto/monitors/naver-monitor.js`
+- `bots/reservation/auto/monitors/pickko-kiosk-monitor.js`
+
+정리 배경:
+- `run-verify.sh`, startup verify, registry, package script, monitor shell runner, launchd template이 모두
+  source wrapper 대신 `dist/ts-runtime/...`를 직접 보도록 정리된 뒤 삭제했다.
+
+## 추가 정리 (orchestrator collector)
+
+- `bots/orchestrator/lib/write/report-aggregator.legacy.js`의 스카 daily summary 수집 경로를
+  `bots/reservation/auto/scheduled/pickko-daily-summary.js`에서
+  `dist/ts-runtime/bots/reservation/auto/scheduled/pickko-daily-summary.js`로 전환했다.
+
+검증:
+- `report-aggregator.legacy.js` syntax check 통과
+- dist 경로 반영 확인

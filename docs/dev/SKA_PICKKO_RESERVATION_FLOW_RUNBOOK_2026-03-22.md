@@ -2,10 +2,10 @@
 
 ## 1. 목적
 
-이 문서는 `pickko-kiosk-monitor.js`가 픽코 예약을 감지하고 네이버 예약불가 차단까지 수행하는 현재 절차를 운영/개발 공통 기준으로 고정한다.
+이 문서는 `pickko-kiosk-monitor.ts`가 픽코 예약을 감지하고 네이버 예약불가 차단까지 수행하는 현재 절차를 운영/개발 공통 기준으로 고정한다.
 
 현재 source of truth:
-- [pickko-kiosk-monitor.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/pickko-kiosk-monitor.js)
+- [pickko-kiosk-monitor.ts](/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/pickko-kiosk-monitor.ts)
 
 현재 운영 원칙:
 - 자동 모니터링은 `픽코 직접 감지 신규 예약 + 미차단 재시도`만 담당
@@ -291,4 +291,3 @@ flowchart TD
 4. `toBlockEntries` 건수
 5. `kiosk_blocks`의 `naverBlocked / blockedAt / lastBlockResult / lastBlockReason`
 6. 네이버 UI 실제 예약불가 상태
-

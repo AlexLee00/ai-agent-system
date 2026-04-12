@@ -5,9 +5,9 @@
 이 문서는 스카 예약 자동화의 차후 확장 구조로 `operation_queue`를 도입할 때 필요한 설계 기준을 정리한다.
 
 현재 source of truth:
-- [pickko-kiosk-monitor.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/pickko-kiosk-monitor.js)
-- [naver-monitor.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/naver-monitor.js)
-- [db.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/db.js)
+- [pickko-kiosk-monitor.ts](/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/pickko-kiosk-monitor.ts)
+- [naver-monitor.ts](/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/naver-monitor.ts)
+- [db.ts](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/db.ts)
 
 현재 운영 원칙:
 - 지금은 `operation_queue`를 구현하지 않는다
@@ -204,10 +204,10 @@ ON reservation.operation_queue (workspace_id, operation_group_key, status);
 
 작업을 큐에 넣는 주체:
 
-- `naver-monitor.js`
+- `naver-monitor.ts`
   - 예약 감지 -> `reserve_pickko`
   - 취소 감지 -> `cancel_pickko`
-- `pickko-kiosk-monitor.js`
+- `pickko-kiosk-monitor.ts`
   - 예약 감지 -> `block_naver_slot`
   - 취소 감지 -> `unblock_naver_slot`
 - 수동 command / 운영 도구
@@ -380,4 +380,3 @@ operation_type별 재시도 정책을 다르게 두는 것이 좋다.
 즉 `operation_queue`는 맞는 방향이지만,
 현재 phase에서는 설계 문서로 고정하고
 다음 안정화 단계가 끝난 뒤 도입하는 것이 가장 안전하다.
-

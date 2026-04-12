@@ -6,6 +6,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 NODE="/opt/homebrew/bin/node"
+RUNTIME_SCRIPT="/Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/auto/monitors/pickko-kiosk-monitor.js"
 LOCK_FILE="$HOME/.openclaw/workspace/today-audit.lock"
 LOG_FILE="/tmp/today-audit.log"
 
@@ -34,7 +35,7 @@ for attempt in $(seq 1 $MAX_RETRY); do
     echo "[$(date)] 🔄 today-audit 재시도 ${attempt}/${MAX_RETRY} (${RETRY_WAIT}초 대기 후)" >> "$LOG_FILE"
     sleep $RETRY_WAIT
   fi
-  MODE=ops TELEGRAM_ENABLED=1 "$NODE" "$SCRIPT_DIR/pickko-kiosk-monitor.js" --audit-today >> "$LOG_FILE" 2>&1
+  MODE=ops TELEGRAM_ENABLED=1 "$NODE" "$RUNTIME_SCRIPT" --audit-today >> "$LOG_FILE" 2>&1
   EXIT_CODE=$?
   if [ $EXIT_CODE -eq 0 ]; then
     break

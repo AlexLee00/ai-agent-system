@@ -176,13 +176,13 @@
 - `reservation.llm_usage_log`
 
 대표 owner code:
-- [bots/reservation/lib/db.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/db.js)
-- [bots/reservation/auto/monitors/naver-monitor.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/naver-monitor.js)
-- [bots/reservation/auto/monitors/pickko-kiosk-monitor.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/pickko-kiosk-monitor.js)
-- [bots/reservation/manual/admin/pickko-verify.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/manual/admin/pickko-verify.js)
+- [bots/reservation/lib/db.ts](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/db.ts)
+- [bots/reservation/auto/monitors/naver-monitor.ts](/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/naver-monitor.ts)
+- [bots/reservation/auto/monitors/pickko-kiosk-monitor.ts](/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/pickko-kiosk-monitor.ts)
+- [bots/reservation/manual/admin/pickko-verify.ts](/Users/alexlee/projects/ai-agent-system/bots/reservation/manual/admin/pickko-verify.ts)
 
 소스 오브 트루스:
-- [bots/reservation/lib/db.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/db.js)
+- [bots/reservation/lib/db.ts](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/db.ts)
 - [bots/reservation/migrations/](/Users/alexlee/projects/ai-agent-system/bots/reservation/migrations)
 
 운영적으로 자주 보는 테이블:
