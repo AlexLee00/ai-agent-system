@@ -17,6 +17,11 @@ export async function publishReservationAlert({
   message,
   payload,
 }: PublishReservationAlertOptions): Promise<boolean> {
+  if (process.env.TELEGRAM_ENABLED === '0') {
+    console.log('[publishReservationAlert] suppressed by TELEGRAM_ENABLED=0');
+    return true;
+  }
+
   const lines = [message];
   if (payload && typeof payload === 'object') {
     lines.push(`payload: ${JSON.stringify(payload)}`);
