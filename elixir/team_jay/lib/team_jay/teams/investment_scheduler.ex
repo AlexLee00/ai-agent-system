@@ -8,6 +8,7 @@ defmodule TeamJay.Teams.InvestmentScheduler do
   """
 
   alias TeamJay.Agents.PortAgent
+  alias TeamJay.Investment.Feedback.Daily, as: DailyFeedback
 
   def run_prescreen_domestic, do: PortAgent.run(:prescreen_domestic)
   def run_prescreen_overseas, do: PortAgent.run(:prescreen_overseas)
@@ -19,5 +20,5 @@ defmodule TeamJay.Teams.InvestmentScheduler do
   def run_market_alert_crypto_daily, do: PortAgent.run(:market_alert_crypto_daily)
 
   def run_reporter, do: PortAgent.run(:reporter)
-  def run_daily_feedback, do: PortAgent.run(:daily_feedback)
+  def run_daily_feedback, do: DailyFeedback.run()
 end
