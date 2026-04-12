@@ -77,13 +77,6 @@ function sanitizeInstagramSection(args) {
   return section;
 }
 
-function mask(value = '') {
-  const text = String(value || '');
-  if (!text) return '';
-  if (text.length <= 8) return '*'.repeat(text.length);
-  return `${text.slice(0, 4)}...${text.slice(-4)}`;
-}
-
 function ensureDirectory() {
   fs.mkdirSync(path.dirname(STORE_PATH), { recursive: true });
 }
@@ -107,11 +100,11 @@ function main() {
     dryRun: args.dryRun,
     source: 'hub_store',
     updated: {
-      access_token: mask(nextInstagram.access_token || ''),
-      ig_user_id: mask(nextInstagram.ig_user_id || ''),
-      app_id: mask(nextInstagram.app_id || ''),
-      app_secret: mask(nextInstagram.app_secret || ''),
-      business_account_id: mask(nextInstagram.business_account_id || ''),
+      has_access_token: Boolean(nextInstagram.access_token),
+      has_ig_user_id: Boolean(nextInstagram.ig_user_id),
+      has_app_id: Boolean(nextInstagram.app_id),
+      has_app_secret: Boolean(nextInstagram.app_secret),
+      has_business_account_id: Boolean(nextInstagram.business_account_id),
       token_expires_at: nextInstagram.token_expires_at || '',
       api_version: nextInstagram.api_version || 'v21.0',
       base_url: nextInstagram.base_url || 'https://graph.facebook.com',
@@ -139,7 +132,7 @@ function main() {
   }
 
   console.log(`[인스타 secret] ${args.dryRun ? 'dry-run' : 'saved'} (hub store): ${STORE_PATH}`);
-  console.log(`[인스타 secret] access_token=${payload.updated.access_token || 'missing'} ig_user_id=${payload.updated.ig_user_id || 'missing'}`);
+  console.log(`[인스타 secret] token=${payload.updated.has_access_token ? 'configured' : 'missing'} ig_user_id=${payload.updated.has_ig_user_id ? 'configured' : 'missing'} app_id=${payload.updated.has_app_id ? 'configured' : 'missing'} app_secret=${payload.updated.has_app_secret ? 'configured' : 'missing'}`);
   console.log(`[인스타 secret] next=${payload.nextSteps.join(' -> ')}`);
 }
 

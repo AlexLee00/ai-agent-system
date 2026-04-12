@@ -39,13 +39,6 @@ function saveStore(store) {
   fs.writeFileSync(STORE_PATH, JSON.stringify(store, null, 2));
 }
 
-function maskValue(value = '') {
-  const text = String(value || '');
-  if (!text) return '';
-  if (text.length <= 8) return '*'.repeat(text.length);
-  return `${text.slice(0, 4)}...${text.slice(-4)}`;
-}
-
 function normalizeExpiry(expiresInSeconds) {
   const seconds = Number(expiresInSeconds || 0);
   if (!Number.isFinite(seconds) || seconds <= 0) return null;
@@ -112,7 +105,7 @@ async function main() {
     dryRun: args.dryRun,
     mode: result.mode,
     saved: !args.dryRun,
-    token: maskValue(nextToken),
+    tokenUpdated: Boolean(nextToken),
     tokenExpiresAt: nextExpiry,
     expiresInSeconds: Number(result.response?.expires_in || 0) || null,
   };
@@ -123,7 +116,7 @@ async function main() {
   }
 
   console.log(`[인스타 토큰] mode=${payload.mode} ${payload.saved ? 'saved' : 'dry-run'}`);
-  console.log(`[인스타 토큰] token=${payload.token} expiresAt=${payload.tokenExpiresAt || 'unknown'}`);
+  console.log(`[인스타 토큰] token=${payload.tokenUpdated ? 'updated' : 'unchanged'} expiresAt=${payload.tokenExpiresAt || 'unknown'}`);
 }
 
 main().catch((error) => {
