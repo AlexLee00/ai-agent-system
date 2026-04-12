@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// @ts-nocheck
+/// <reference lib="dom" />
 
 /**
  * pickko-member.js — 신규 회원 가입 CLI 래퍼
@@ -20,6 +20,8 @@ const { loginToPickko, findPickkoMember } = require('../../lib/pickko');
 const { outputResult, fail } = require('../../lib/cli');
 const { maskPhone, maskName } = require('../../lib/formatting');
 
+declare const jQuery: any;
+
 const SECRETS = loadSecrets();
 const PICKKO_ID = SECRETS.pickko_id;
 const PICKKO_PW = SECRETS.pickko_pw;
@@ -37,14 +39,19 @@ if (!/^\d{10,11}$/.test(PHONE_RAW)) {
 const CUSTOMER_NAME = ARGS.name.replace(/대리예약.*/, '').trim().slice(0, 20) || '고객';
 const BIRTH_DATE = ARGS.birth || new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
 
-async function findMember(page, phoneNoHyphen) {
+async function findMember(page: any, phoneNoHyphen: string): Promise<{ exists: boolean }> {
   log(`\n[회원 검색] 전화번호: ${maskPhone(phoneNoHyphen)}`);
   const result = await findPickkoMember(page, phoneNoHyphen, delay);
   log(`  검색 결과: ${JSON.stringify(result)}`);
   return { exists: result.found };
 }
 
-async function registerNewMember(page, phoneNoHyphen, customerName, birthDate) {
+async function registerNewMember(
+  page: any,
+  phoneNoHyphen: string,
+  customerName: string,
+  birthDate: string,
+) {
   log(`\n[회원 등록] ${maskName(customerName)} (${maskPhone(phoneNoHyphen)})`);
 
   const phone1 = phoneNoHyphen.slice(0, 3);
@@ -81,8 +88,8 @@ async function registerNewMember(page, phoneNoHyphen, customerName, birthDate) {
   }
   await delay(300);
 
-  await page.evaluate((bd) => {
-    const birthInput = document.querySelector('#mb_birth');
+  await page.evaluate((bd: string) => {
+    const birthInput = document.querySelector('#mb_birth') as HTMLInputElement | null;
     if (!birthInput) return;
     birthInput.removeAttribute('readonly');
     if (typeof jQuery !== 'undefined' && jQuery(birthInput).data('datepicker')) {
@@ -152,12 +159,13 @@ async function main() {
       isNew: true,
       message: `신규 회원 등록 완료: ${CUSTOMER_NAME} (${PHONE_RAW.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3')})`,
     });
-  } catch (err) {
-    log(`❌ 오류: ${err.message}`);
-    fail(err.message);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    log(`❌ 오류: ${message}`);
+    fail(message);
   } finally {
     if (browser) {
-      try { await browser.close(); } catch (e) {}
+      try { await browser.close(); } catch (_e: unknown) {}
     }
   }
 }
@@ -168,7 +176,8 @@ module.exports = {
   main,
 };
 
-main().catch((err) => {
-  log(`❌ 치명 오류: ${err.message}`);
-  fail(err.message);
+main().catch((err: unknown) => {
+  const message = err instanceof Error ? err.message : String(err);
+  log(`❌ 치명 오류: ${message}`);
+  fail(message);
 });

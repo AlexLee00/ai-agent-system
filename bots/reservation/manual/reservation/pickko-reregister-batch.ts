@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
-
 /**
  * 픽코 예약 일괄 재등록 (감지3 오취소 복구용)
  */
@@ -10,7 +8,16 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '../../../..');
 
-const reservations = [
+type Reservation = {
+  phone: string;
+  date: string;
+  start: string;
+  end: string;
+  room: string;
+  name: string;
+};
+
+const reservations: Reservation[] = [
   { phone: '01090187345', date: '2026-03-05', start: '17:30', end: '18:20', room: 'A2', name: '이효진' },
   { phone: '01043602074', date: '2026-03-06', start: '17:30', end: '18:20', room: 'A1', name: '김경혜' },
   { phone: '01030903105', date: '2026-03-07', start: '10:30', end: '12:00', room: 'A2', name: '이원준' },
@@ -32,7 +39,7 @@ const reservations = [
 
 const REGISTER_SCRIPT = path.join(ROOT, 'bots/reservation/manual/reservation/pickko-accurate.js');
 
-function runRegister(res, index) {
+function runRegister(res: Reservation, index: number): Promise<number | null> {
   return new Promise((resolve) => {
     console.log(`\n[${index + 1}/${reservations.length}] ${res.date} ${res.start}~${res.end} ${res.room} ${res.phone} (${res.name})`);
     const args = [
@@ -48,7 +55,7 @@ function runRegister(res, index) {
       stdio: 'inherit',
       env: { ...process.env, MODE: 'ops' },
     });
-    child.on('exit', (code) => {
+    child.on('exit', (code: number | null) => {
       if (code === 0) {
         console.log(`  ✅ 완료: ${res.date} ${res.phone}`);
       } else {
@@ -81,7 +88,8 @@ module.exports = {
   main,
 };
 
-main().catch((e) => {
-  console.error('오류:', e.message);
+main().catch((e: unknown) => {
+  const message = e instanceof Error ? e.message : String(e);
+  console.error('오류:', message);
   process.exit(1);
 });

@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use strict';
 
 const { spawn } = require('child_process');
@@ -18,6 +17,25 @@ const {
   markUnrecognizedPromoted,
 } = require('../../../packages/core/lib/intent-store');
 
+type LearningEntry = {
+  re?: string;
+  intent?: string;
+  args?: Record<string, unknown>;
+  original_text?: string;
+  reason?: string;
+  confidence?: number;
+};
+
+type ClaudePromptResult = {
+  code: number | null;
+  stdout: string;
+  stderr: string;
+};
+
+type AnalyzeUnknownArgs = {
+  text?: string;
+};
+
 function createSkaIntentLearning({
   pgPool,
   learningPath,
@@ -26,7 +44,7 @@ function createSkaIntentLearning({
   team = 'ska',
   actor = 'ska-commander',
 }) {
-  async function saveLearning(entry) {
+  async function saveLearning(entry: LearningEntry) {
     try {
       const normalizedText = normalizeIntentText(entry.original_text || entry.re || '');
       const learnedPattern = entry.re || buildAutoLearnPattern(normalizedText);
@@ -141,13 +159,17 @@ function createSkaIntentLearning({
       if (patternResult.changed) {
         console.log(`[스카] NLP 패턴 학습: /${entry.re}/ → ${intent}`);
       }
-    } catch (e) {
-      console.error(`[스카] NLP 학습 저장 실패:`, e.message);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.error(`[스카] NLP 학습 저장 실패:`, message);
     }
   }
 
-  function runClaudeAnalyzePrompt(prompt, { cwd = projectRoot, timeout = 120000 } = {}) {
-    return new Promise((resolve, reject) => {
+  function runClaudeAnalyzePrompt(
+    prompt: string,
+    { cwd = projectRoot, timeout = 120000 }: { cwd?: string; timeout?: number } = {},
+  ): Promise<ClaudePromptResult> {
+    return new Promise<ClaudePromptResult>((resolve, reject) => {
       const child = spawn('claude', ['-p', prompt, '--dangerously-skip-permissions'], {
         cwd,
         env: { ...process.env },
@@ -182,7 +204,7 @@ function createSkaIntentLearning({
     });
   }
 
-  async function handleAnalyzeUnknown(args) {
+  async function handleAnalyzeUnknown(args: AnalyzeUnknownArgs = {}) {
     const text = (args.text || '').trim();
     if (!text) return { ok: false, error: '분석할 텍스트 없음' };
 

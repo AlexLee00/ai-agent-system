@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
-
 /**
  * pickko-register.js — 자연어 예약 등록 CLI 래퍼
  */
@@ -17,6 +15,14 @@ const { IS_OPS } = require('../../../../packages/core/lib/env');
 
 const ARGS = parseArgs(process.argv);
 
+type RegisterInput = {
+  phone: string;
+  date: string;
+  start: string;
+  end: string;
+  room: string;
+};
+
 const VALID_ROOMS = ['A1', 'A2', 'B'];
 const MODE = IS_OPS ? 'ops' : 'dev';
 const IS_MANUAL_RETRY = Boolean(ARGS['manual-retry'] || ARGS.manualRetry);
@@ -31,7 +37,7 @@ if (missing.length > 0) {
   fail(`필수 인자 누락: ${missing.join(', ')}\n사용법: node pickko-register.js --date=YYYY-MM-DD --start=HH:MM --end=HH:MM --room=A1|A2|B --phone=01000000000 --name=이름`);
 }
 
-const rawInput = {
+const rawInput: RegisterInput = {
   phone: ARGS.phone,
   date: ARGS.date,
   start: ARGS.start,
@@ -84,12 +90,12 @@ const timeoutHandle = setTimeout(() => {
 }, PICKKO_ACCURATE_TIMEOUT_MS);
 timeoutHandle.unref();
 
-child.on('error', (err) => {
+child.on('error', (err: Error) => {
   clearTimeout(timeoutHandle);
   fail(`pickko-accurate.js 실행 실패: ${err.message}`);
 });
 
-child.on('close', async (code) => {
+child.on('close', async (code: number | null) => {
   clearTimeout(timeoutHandle);
   const key = buildReservationId(normalized.phone, normalized.date, normalized.start);
   const now = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
@@ -133,8 +139,9 @@ child.on('close', async (code) => {
         });
       }
       await markSeen(key);
-    } catch (e) {
-      process.stderr.write(`[pickko-register] 예약 상태 반영 실패 (${key}): ${e.message}\n`);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      process.stderr.write(`[pickko-register] 예약 상태 반영 실패 (${key}): ${message}\n`);
     }
 
     if ((code === 0 || code === 3) && !SKIP_NAVER_BLOCK) {
@@ -152,7 +159,10 @@ child.on('close', async (code) => {
         lastBlockResult: 'queued',
         lastBlockReason: 'manual_register_spawned',
         blockRetryCount: 0,
-      }).catch((e) => process.stderr.write(`[pickko-register] kiosk_blocks 선등록 실패: ${e.message}\n`));
+      }).catch((e: unknown) => {
+        const message = e instanceof Error ? e.message : String(e);
+        process.stderr.write(`[pickko-register] kiosk_blocks 선등록 실패: ${message}\n`);
+      });
 
       const blockArgs = [
         path.join(__dirname, '../../auto/monitors/pickko-kiosk-monitor.js'),
