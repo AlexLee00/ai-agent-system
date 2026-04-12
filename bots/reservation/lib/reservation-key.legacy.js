@@ -1,21 +1,5 @@
 'use strict';
 
-function normalizePhoneRaw(value) {
-  return String(value || '').replace(/\D/g, '');
-}
+const { loadTsModuleWithFallback } = require('./ts-fallback-loader.legacy.js');
 
-function buildReservationId(phoneRaw, date, start) {
-  const phone = normalizePhoneRaw(phoneRaw);
-  return `${phone}-${date}-${start}`;
-}
-
-function buildReservationCompositeKey(phoneRaw, date, start, end, room) {
-  const phone = normalizePhoneRaw(phoneRaw);
-  return `${date}|${start}|${end}|${room}|${phone}`;
-}
-
-module.exports = {
-  normalizePhoneRaw,
-  buildReservationId,
-  buildReservationCompositeKey,
-};
+module.exports = loadTsModuleWithFallback(__dirname, './reservation-key.ts', '../../../dist/ts-runtime/bots/reservation/lib/reservation-key.js');

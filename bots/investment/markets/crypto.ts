@@ -28,6 +28,7 @@ import { initHubSecrets, getSymbols, getMarketExecutionModeInfo, getInvestmentTr
 import { publishToMainBot } from '../shared/mainbot-client.ts';
 import { tracker } from '../shared/cost-tracker.ts';
 import { getLunaParams } from '../shared/time-mode.ts';
+import { parseUniverseCliFlags } from '../shared/screening-runtime.ts';
 import { resolveSymbolsWithFallback, appendHeldSymbols, capDynamicUniverse } from '../shared/universe-fallback.ts';
 import {
   getOpenClawStateFile,
@@ -292,10 +293,8 @@ if (isDirectExecution(import.meta.url)) {
       await db.initSchema();
     },
     run: async () => {
-      const args      = process.argv.slice(2);
-      const symArg    = args.find(a => a.startsWith('--symbols='));
-      const force     = args.includes('--force');
-      const noDynamic = args.includes('--no-dynamic');
+      const args = process.argv.slice(2);
+      const { symbols: cliSymbols, force, noDynamic } = parseUniverseCliFlags(args);
 
       let symbols;
       const cryptoMaxDynamic = getCryptoScreeningMaxDynamic();
@@ -304,8 +303,8 @@ if (isDirectExecution(import.meta.url)) {
         heldSymbolCount: 0,
         heldAddedCount: 0,
       };
-      if (symArg) {
-        symbols = symArg.split('=')[1].split(',').map(s => s.trim());
+      if (Array.isArray(cliSymbols) && cliSymbols.length > 0) {
+        symbols = cliSymbols;
         universeMeta.screeningSymbolCount = symbols.length;
       } else if (noDynamic) {
         symbols = getSymbols();

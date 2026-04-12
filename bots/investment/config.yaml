@@ -53,6 +53,30 @@ screening:
     core:
       - AAPL
     max_dynamic: 15
+research_depth:
+  default: 2
+  by_regime:
+    trending_bull: 2
+    trending_bear: 2
+    ranging: 1
+    volatile: 3
+  volatility_thresholds:
+    low_atr_ratio: 0.015
+    high_atr_ratio: 0.04
+  overrides:
+    high_conviction: 3
+    capital_guard: 1
+    validation: 2
+perception_first:
+  enabled: false
+  fear_greed_extreme_high: 85
+  fear_greed_extreme_low: 15
+  volume_ratio_floor: 0.30
+  consecutive_loss_cooldown: 3
+  skip_reasons:
+    fear_greed_extreme: true
+    volume_dry_up: true
+    consecutive_losses: true
 capital_management:
   max_capital_usage: 0.7
   reserve_ratio: 0.3

@@ -1,14 +1,5 @@
-const fs = require('fs');
+'use strict';
 
-function loadJson(file) {
-  try { return JSON.parse(fs.readFileSync(file, 'utf-8')); }
-  catch (e) { return {}; }
-}
+const { loadTsModuleWithFallback } = require('./ts-fallback-loader.legacy.js');
 
-function saveJson(file, data) {
-  const tmp = file + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf-8');
-  fs.renameSync(tmp, file);
-}
-
-module.exports = { loadJson, saveJson };
+module.exports = loadTsModuleWithFallback(__dirname, './files.ts', '../../../dist/ts-runtime/bots/reservation/lib/files.js');

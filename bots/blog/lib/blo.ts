@@ -368,7 +368,7 @@ async function _resolveDynamicBookResearch(preparedResearch, researchData, sched
 }
 
 async function _prepareBookReviewResearch(preparedResearch, researchData, scheduledBook, scheduleId = null) {
-  if (scheduledBook) {
+  if (scheduledBook?.book_title || scheduledBook?.book_isbn) {
     return _resolveScheduledBookResearch(preparedResearch, scheduledBook, scheduleId);
   }
 

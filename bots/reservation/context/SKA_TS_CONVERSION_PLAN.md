@@ -259,12 +259,95 @@
 - Phase 4: 1~2일
 - Phase 5: 1일+
 
+## 7. 현재 진행 상태
+
+- 핵심 모니터 TS 본체 승격 완료
+  - `auto/monitors/naver-monitor.ts`
+  - `auto/monitors/pickko-kiosk-monitor.ts`
+- 주요 상시 배치 TS 본체 승격 완료
+  - `auto/scheduled/pickko-daily-summary.ts`
+  - `auto/scheduled/pickko-daily-audit.ts`
+  - `auto/scheduled/pickko-pay-scan.ts`
+- 수동 처리/리포트/admin TS 본체 승격 완료
+  - `manual/reservation/pickko-accurate.ts`
+  - `manual/reservation/pickko-cancel.ts`
+  - `manual/reservation/pickko-query.ts`
+  - `manual/reservation/pickko-register.ts`
+  - `manual/reservation/pickko-cancel-cmd.ts`
+  - `manual/reservation/pickko-reregister-batch.ts`
+  - `manual/reports/pickko-revenue-confirm.ts`
+  - `manual/reports/pickko-pay-pending.ts`
+  - `manual/reports/pickko-alerts-query.ts`
+  - `manual/reports/pickko-alerts-resolve.ts`
+  - `manual/reports/occupancy-report.ts`
+  - `manual/reports/manual-block-followup-report.ts`
+  - `manual/reports/manual-block-followup-resolve.ts`
+  - `manual/reports/pickko-stats-cmd.ts`
+  - `manual/admin/pickko-member.ts`
+  - `manual/admin/pickko-verify.ts`
+  - `manual/admin/pickko-ticket.ts`
+
+## 8. 최근 마무리
+
+- `pickko-accurate` 분해/서비스화
+  - `pickko-member-service`
+  - `pickko-slot-helpers`
+  - `pickko-date-service`
+  - `pickko-member-selection-service`
+  - `pickko-room-slot-service`
+  - `pickko-payment-service`
+  - `pickko-save-precheck-service`
+  - `pickko-finalization-service`
+- `pickko-accurate.legacy.js`는 `1814줄 -> 613줄 -> 6줄 wrapper`까지 축소
+- `pickko-cancel.legacy.js`, `pickko-query.legacy.js`, `pickko-register.legacy.js`도 `6줄 wrapper`로 정리
+- `pickko-pay-pending.legacy.js`, `pickko-ticket.legacy.js`도 `6줄 wrapper`로 정리
+- `scripts/health-report.ts`도 실제 TS 본체로 승격
+- `scripts/health-report.legacy.js`도 `6줄 wrapper`로 정리
+- `lib/pickko-stats.ts`, `lib/manual-reservation.ts`도 실제 TS 본체로 승격
+- `lib/pickko-stats.legacy.js`, `lib/manual-reservation.legacy.js`도 `6줄 wrapper`로 정리
+- `lib/health.ts`도 실제 TS 본체로 승격
+- `lib/health.legacy.js`도 `6줄 wrapper`로 정리
+- `lib/pickko.ts`도 실제 TS 본체로 승격
+- `lib/pickko.legacy.js`도 `6줄 wrapper`로 정리
+- `lib/state-bus.legacy.js`도 `6줄 wrapper`로 정리
+- `src/bug-report.ts`도 실제 TS 본체로 승격
+- `src/bug-report.legacy.js`도 `6줄 wrapper`로 정리
+- `scripts/collect-pickko-order-raw.ts`, `scripts/collect-pickko-order-raw-range.ts`도 실제 TS 본체로 승격
+- 두 legacy 스크립트도 `6줄 wrapper`로 정리
+- `scripts/dashboard-server.ts`도 실제 TS 본체로 승격
+- `scripts/dashboard-server.legacy.js`도 `6줄 wrapper`로 정리
+- `scripts/e2e-test.ts`도 실제 TS 본체로 승격
+- `scripts/e2e-test.legacy.js`도 `6줄 wrapper`로 정리
+- `migrations/001_initial_schema.ts`, `002_daily_summary_columns.ts`도 PostgreSQL 기준선 TS 본체로 정리
+- 두 migration legacy도 `6줄 wrapper`로 정리
+- `pickko-accurate.ts`는 실제 TS 본체로 승격
+
+## 9. 호환 레일 상태
+
+- `manual/**/*.ts` 기준 shim 전용 파일은 정리 완료
+- reservation runtime build와 reservation 전용 typecheck는 계속 녹색
+- 최근 추가 helper의 `.legacy.js` fallback은 더 이상 `.ts`를 직접 `require(...)`하지 않는다
+- 대신 `ts-fallback-loader.legacy.js`를 사용해 source 모드에서도 CommonJS 호환 fallback이 가능하도록 보강했다
+
+## 10. 다음 우선순위
+
+1. 진행 문서/변경 범위 최종 점검
+2. wrapper 예외 파일(`ts-fallback-loader.legacy.js`) 유지 정책 명시
+3. 커밋 단위 정리 및 최종 리뷰
+
+현재 잔여 예외:
+
+- `lib/ts-fallback-loader.legacy.js`만 호환 레일 자체로 유지
+- 나머지 운영/배치/수동/command 계층 legacy는 wrapper 수준으로 정리 완료
+
 ## 7. 2026-04-12 진행 현황 업데이트
 
-### 실제 TS 구현으로 전환된 lib 수
+### 실제 TS 구현으로 전환된 lib 상태
 
-- `bots/reservation/lib/*.ts` 기준 실구현 파일: 44개
-- 단순 shim이 아니라 helper/service/facade 역할을 하는 TS 파일이 이미 꽤 넓게 올라왔다.
+- `bots/reservation/**/*.legacy.js` 총 수: 129개
+- 그중 `20줄 이하 wrapper`: 128개
+- `20줄 초과 legacy`: 1개 (`ts-fallback-loader.legacy.js`)
+- 즉 실질적인 큰 legacy 본체는 정리 완료 상태
 
 대표 전환 축:
 
@@ -291,26 +374,167 @@
   - `naver-reservation-helpers.ts`
   - `naver-alert-helpers.ts`
   - `naver-monitor-service.ts`
+  - `naver-list-scrape-service.ts`
+  - `naver-session-service.ts`
+  - `naver-cycle-report-service.ts`
+  - `naver-booking-state-service.ts`
+  - `naver-candidate-service.ts`
+  - `naver-future-cancel-service.ts`
+  - `naver-cancel-detection-service.ts`
+  - `naver-confirmed-cycle-service.ts`
+  - `naver-monitor-cycle-service.ts`
+  - `naver-browser-session-service.ts`
+  - `naver-detached-recovery-service.ts`
   - `naver-pickko-recovery-service.ts`
   - `naver-pickko-runner-helpers.ts`
   - `naver-pickko-runner-service.ts`
 - 키오스크 모니터 helper/service:
   - `kiosk-monitor-helpers.ts`
+  - `kiosk-panel-service.ts`
+  - `kiosk-calendar-service.ts`
+  - `kiosk-slot-calendar-service.ts`
+  - `kiosk-block-flow-service.ts`
+  - `kiosk-pickko-cycle-service.ts`
+  - `kiosk-naver-phase-service.ts`
+  - `kiosk-runtime-service.ts`
   - `kiosk-slot-runner-service.ts`
   - `kiosk-audit-service.ts`
+  - `kiosk-verify-service.ts`
 - 배치/리포트 helper:
-  - `daily-report-helpers.ts`
-  - `report-followup-helpers.ts`
+- `daily-report-helpers.ts`
+- `report-followup-helpers.ts`
+- `pickko-stats.ts`
+- `manual-reservation.ts`
+- `health.ts`
+- `pickko.ts`
+
+### 실제 TS 본체 entrypoint로 승격된 상시/배치 스크립트
+
+- `auto/monitors/naver-monitor.ts`
+- `auto/monitors/pickko-kiosk-monitor.ts`
+- `auto/scheduled/pickko-daily-summary.ts`
+- `auto/scheduled/pickko-daily-audit.ts`
+- `auto/scheduled/pickko-pay-scan.ts`
+- `manual/reports/pickko-revenue-confirm.ts`
+- `manual/reports/pickko-pay-pending.ts`
+- `manual/reports/pickko-alerts-query.ts`
+- `manual/reports/pickko-alerts-resolve.ts`
+- `manual/reports/occupancy-report.ts`
+- `manual/reports/manual-block-followup-report.ts`
+- `manual/reports/manual-block-followup-resolve.ts`
+- `manual/reports/pickko-stats-cmd.ts`
+- `manual/reservation/pickko-cancel.ts`
+- `manual/reservation/pickko-accurate.ts`
+- `manual/reservation/pickko-query.ts`
+- `manual/reservation/pickko-register.ts`
+- `manual/admin/pickko-member.ts`
+- `manual/admin/pickko-verify.ts`
+- `manual/admin/pickko-ticket.ts`
+- `lib/db.ts`
+- `lib/vip.ts`
+- `lib/pickko-member-service.ts`
+- `lib/pickko-slot-helpers.ts`
+- `lib/pickko-payment-service.ts`
+- `lib/pickko-date-service.ts`
+- `lib/pickko-member-selection-service.ts`
+- `lib/pickko-room-slot-service.ts`
+- `lib/pickko-finalization-service.ts`
+- `lib/pickko-save-precheck-service.ts`
 
 ### 현재 모니터 본체 상태
 
-- `auto/monitors/naver-monitor.ts`: TS entrypoint 확보
-- `auto/monitors/pickko-kiosk-monitor.ts`: TS entrypoint 확보
+- `auto/monitors/naver-monitor.ts`: 실제 TS 본체 entrypoint 확보
+- `auto/monitors/pickko-kiosk-monitor.ts`: 실제 TS 본체 entrypoint 확보
 
 legacy 본체 라인 수:
 
-- `naver-monitor.legacy.js`: 약 1980 lines
-- `pickko-kiosk-monitor.legacy.js`: 약 2671 lines
+- `naver-monitor.legacy.js`: 6 lines
+- `pickko-kiosk-monitor.legacy.js`: 6 lines
+
+TS 본체 라인 수:
+
+- `naver-monitor.ts`: 614 lines
+- `pickko-kiosk-monitor.ts`: 475 lines
+
+### 현재 배치 본체 상태
+
+TS 본체 라인 수:
+
+- `pickko-daily-summary.ts`: 216 lines
+- `pickko-daily-audit.ts`: 172 lines
+- `pickko-pay-scan.ts`: 192 lines
+
+### 현재 수동 리포트 본체 상태
+
+TS 본체 라인 수:
+
+- `pickko-revenue-confirm.ts`: 60 lines
+- `pickko-pay-pending.ts`: 388 lines
+- `pickko-pay-pending.legacy.js`: 6 lines
+- `pickko-alerts-query.ts`: 실제 TS 본체 entrypoint 확보
+- `pickko-alerts-resolve.ts`: 실제 TS 본체 entrypoint 확보
+- `occupancy-report.ts`: 실제 TS 본체 entrypoint 확보
+
+### 현재 수동 처리 본체 상태
+
+TS 본체 라인 수:
+
+- `pickko-cancel.ts`: 414 lines
+- `pickko-accurate.ts`: 548 lines
+
+legacy 잔여 대형 파일:
+
+- `pickko-accurate.legacy.js`: 6 lines
+
+manual/admin 잔여 shim:
+
+- 대형 admin 진입점은 `pickko-member / pickko-verify / pickko-ticket`까지 TS 본체 entrypoint 확보
+- `pickko-ticket.legacy.js`: 6 lines
+
+### 현재 scripts 본체 상태
+
+- `health-report.ts`: 497 lines
+- `health-report.legacy.js`: 6 lines
+- `health-check.ts`, `log-rotate.ts`, `backup-db.ts`, `migrate.ts`, `preflight.ts`도 실제 TS 본체 승격 완료
+- `show-auth.ts`도 실제 TS 본체 승격 완료
+
+### DB 기준선 상태
+
+- `db.ts`: 실제 TS source of truth로 승격 완료
+- `db.legacy.js`: 6 lines
+- reservation 코드 기준 `getDb()` 참조 제거 완료
+- `vip.ts`: async Postgres 조회 기반으로 전환 완료
+
+최근 분리 완료:
+
+- `pickko-member-service.ts`
+  - `notifyMemberNameMismatch`
+  - `registerNewMember`
+- `pickko-slot-helpers.ts`
+  - `timeToSlots`
+  - `buildSlotCandidates`
+  - `adjustEffectiveTimeSlots`
+- `pickko-payment-service.ts`
+  - 결제 모달 입력/검증/제출/확인
+- `pickko-date-service.ts`
+  - 날짜 설정/검증
+- `pickko-member-selection-service.ts`
+  - 회원 검색
+  - 회원 선택/검증
+  - 신규 회원 등록 후 재검색
+- `pickko-room-slot-service.ts`
+  - 룸 탭 선택
+  - 스케줄 준비 대기
+  - 시간표 스크롤
+  - 슬롯 후보 순차 선택
+  - 동일 고객 기존 등록 감지
+- `pickko-finalization-service.ts`
+  - 저장 직후 예약 정보 추출
+  - 회원/룸/날짜 비교 검증
+  - 최종 완료 상태 판독
+- `pickko-save-precheck-service.ts`
+  - 저장 직전 시간/금액 sanity check
+  - 작성하기 제출/fallback
 
 하지만 핵심 차이는 “라인 수”보다 “무슨 블록이 이미 바깥으로 빠졌는가”다.
 
@@ -320,76 +544,78 @@ legacy 본체 라인 수:
 - reservation helper
 - alert helper
 - alert service
+- list scrape service
+- session service
+- cycle report service
+- booking state service
+- candidate service
+- future cancel service
+- cancel detection service
+- confirmed cycle service
+- monitor cycle service
+- browser session service
+- detached recovery service
 - pickko recovery service
 - pickko runner helper
 - pickko runner service
 
-즉 `runPickkoCancel`, `runPickko`, 미해결 알림/오류 해결/발행 로직은 이미 서비스화됐다.
+즉 `naver-monitor`는 이미 “알림/취소감지/복구/픽코 실행/사이클 처리” 대부분이 서비스화됐다.
 
 #### pickko-kiosk-monitor에서 이미 분리된 것
 
 - kiosk helper
+- panel service
+- calendar service
+- slot calendar service
+- block flow service
+- pickko cycle service
+- naver phase service
+- runtime service
 - block-slot service
 - unblock-slot service
 - audit-today service
+- verify service
 
-즉 단독 운영 모드와 일일 검증 배치는 이미 서비스 위임 구조로 전환됐다.
+즉 `kiosk-monitor`는 “캘린더 조작 + 차단/해제 상위 흐름 + 단독 운영 모드 + 검증 배치”가 거의 전부 서비스 위임 구조다.
 
 ### 남은 큰 legacy 면적
 
 #### naver-monitor
 
-여전히 본체에 큰 비중으로 남은 것:
+여전히 legacy 본체에 남은 것:
 
-- `naverLogin`
-- `closePopupsIfPresent`
-- `monitorBookings`
-- `scrapeExpandedCancelled`
-- `scrapeNewestBookingsFromList`
-- `updateBookingState`
-- `rollbackProcessingEntries`
-- `ragSaveReservation`
+- 호환 wrapper
+- 기존 실행 진입 호환 레일
 
 판단:
 
-- 이제 이 파일은 “픽코 실행/알림”보다 “브라우저 상호작용 + 모니터링 사이클” 중심으로 남아 있다.
-- 다음 TS 본체 후보는 `monitorBookings` 보조 루프 분리 또는 `scrape*` 계열 추출이다.
+- 이제 실질 본체는 `naver-monitor.ts`로 올라왔다.
+- 다음 단계는 legacy 본체를 더 얇은 호환 wrapper 수준으로 줄이고, launchd/운영 smoke를 붙여 안정성을 확인하는 일이다.
 
 #### pickko-kiosk-monitor
 
-여전히 본체에 큰 비중으로 남은 것:
+여전히 legacy 본체에 남은 것:
 
-- `naverBookingLogin`
-- `blockNaverSlot`
-- `unblockNaverSlot`
-- `selectBookingDate`
-- `clickRoomAvailableSlot`
-- `clickRoomSuspendedSlot`
-- `fillUnavailablePopup`
-- `fillAvailablePopup`
-- `selectUnavailableStatus`
-- `selectAvailableStatus`
-- `verifyBlockInGrid`
-- `main`
-- `verifyBlockStateInFreshPage`
-- `verifySlotOnly`
+- 호환 wrapper
+- 기존 실행 진입 호환 레일
 
 판단:
 
-- 이 파일은 이제 “네이버 캘린더 조작 DSL”과 “상시 루프 orchestration”이 남은 상태다.
-- 다음 TS 본체 후보는 `verifyBlockStateInFreshPage` + `verifySlotOnly`를 먼저 옮기고, 그다음 `main()`과 캘린더 조작 함수군을 별도 service로 나누는 것이다.
+- 이제 실질 본체는 `pickko-kiosk-monitor.ts`로 올라왔다.
+- 다음 단계는 legacy 본체를 더 얇은 호환 wrapper 수준으로 줄이고, launchd/운영 smoke를 붙여 안정성을 확인하는 일이다.
 
 ## 8. 다음 권장 순서
 
-### 추천 A. 본체 service 추가 분해
+### 추천 A. 본체 승격 이후 정리
 
-1. `naver-monitor`의 `scrapeExpandedCancelled` / `scrapeNewestBookingsFromList` 추출
-2. `kiosk-monitor`의 `verifyBlockStateInFreshPage` / `verifySlotOnly` 추출
-3. 이후 각 모니터의 `main loop` 또는 `monitorBookings`를 service로 감싸기
+1. 두 모니터의 legacy 본체를 더 얇은 호환 wrapper 수준으로 축소
+2. launchd kickstart + 최근 로그 확인으로 운영 smoke를 추가
+3. 이후 마지막 대형 수동 처리 CLI인 `pickko-accurate`를 단계 분리 후 실제 TS 본체 승격
 
 장점:
 
 - 현재 만든 helper/service 자산을 가장 잘 재사용함
+- 상시 운영 축 2개를 같은 구조로 맞춘 뒤 배치 축으로 넘어갈 수 있음
 - 운영 리스크가 낮음
 - 실제 legacy 면적 감소가 눈에 띄게 진행됨
 
@@ -412,17 +638,17 @@ legacy 본체 라인 수:
 
 현재 남은 체감 소요:
 
-- 모니터 본체 추가 service 분해: 1~2일
+- 모니터 본체 TS 승격 마무리: 0.5~1.5일
 - 수동 처리/CLI 계열 정리: 1~2일
 - 최종 legacy 축소와 진입점 정리: 1일+
 
 즉 “스카팀을 루나/블로그팀과 유사한 운영 구조로 맞추는 일”은 이미 중반을 넘겼고,
-이제부터는 helper 전환보다 본체 orchestration 재배치가 중심이 된다.
+지금은 helper 전환보다 “얇은 legacy orchestrator를 TS 본체로 승격”하는 단계가 중심이다.
 
 ### 총 추정
 
-- 빠른 최단: 6일 전후
-- 운영 안정 포함 현실치: 7~10일
+- 빠른 최단: 4~6일
+- 운영 안정 포함 현실치: 5~8일
 
 ## 7. 테스트 레일
 
@@ -450,16 +676,16 @@ legacy 본체 라인 수:
 - 수동 처리 알림
 - 오늘 예약 조회
 
-## 8. 바로 다음 액션
+## 10. 바로 다음 액션
 
 추천 시작점:
 
-1. Phase 0 기준선 확정
-2. Phase 1에서 `lib`의 작은 파일부터 실전환
-3. `alert-client`, `telegram`, `formatting`, `utils`부터 시작
+1. `pickko-kiosk-monitor`의 `verifyBlockStateInFreshPage` / `verifySlotOnly` 추출
+2. `naver-monitor`의 `monitorBookings` TS 본체 승격 범위 결정
+3. 그다음 모니터 둘의 legacy 본체를 300줄 이하 wrapper 수준으로 축소
 
 이유:
 
-- 최근 우리가 직접 만진 파일이라 동작을 이미 파악하고 있음
-- 알림/리포트/포맷 영향이 커서 전환 효과를 바로 확인 가능
-- 실패해도 rollback 범위가 좁음
+- 지금까지 쌓은 service/helper 자산을 가장 잘 활용할 수 있음
+- 운영 경로를 끊지 않으면서 “실질 TS 전환율”을 빠르게 끌어올릴 수 있음
+- 이제는 작은 helper보다 본체 승격이 전환 체감에 더 크게 기여함

@@ -25,6 +25,7 @@ import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { initHubSecrets, getKisSymbols, getKisMarketStatus, getKisExecutionModeInfo, getDomesticScreeningMaxDynamic, getInvestmentTradeMode } from '../shared/secrets.ts';
 import { publishToMainBot } from '../shared/mainbot-client.ts';
 import { tracker } from '../shared/cost-tracker.ts';
+import { parseUniverseCliFlags } from '../shared/screening-runtime.ts';
 import { resolveSymbolsWithFallback, appendHeldSymbols, capDynamicUniverse } from '../shared/universe-fallback.ts';
 import {
   getOpenClawStateFile,
@@ -284,11 +285,8 @@ if (isDirectExecution(import.meta.url)) {
       await initHubSecrets();
     },
     run: async () => {
-      const args      = process.argv.slice(2);
-      const symArg    = args.find(a => a.startsWith('--symbols='));
-      const force     = args.includes('--force');
-      const noDynamic = args.includes('--no-dynamic');
-      const researchOnly = args.includes('--research-only');
+      const args = process.argv.slice(2);
+      const { symbols: cliSymbols, force, noDynamic, researchOnly } = parseUniverseCliFlags(args);
       const marketStatus = !force
         ? await getKisMarketStatus()
         : { isOpen: true, reason: '--force 옵션', holiday: { isHoliday: false, name: '' }, isWeekend: false };
@@ -307,8 +305,8 @@ if (isDirectExecution(import.meta.url)) {
       }
 
       let symbols;
-      if (symArg) {
-        symbols = symArg.split('=')[1].split(',').map(s => s.trim());
+      if (Array.isArray(cliSymbols) && cliSymbols.length > 0) {
+        symbols = cliSymbols;
       } else if (noDynamic) {
         symbols = getKisSymbols();
       } else {
