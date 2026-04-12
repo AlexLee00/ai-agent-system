@@ -5,11 +5,11 @@
   "main": "src/index.js",
   "type": "commonjs",
   "scripts": {
-    "start": "node src/index.js",
-    "monitor": "node src/naver-monitor.js",
-    "dashboard": "node scripts/dashboard-server.js",
-    "setup:n8n-command": "node n8n/setup-ska-command-workflow.js",
-    "check:n8n-command": "node scripts/check-n8n-command-path.js"
+    "start": "node ../../dist/ts-runtime/bots/reservation/src/ska.js",
+    "monitor": "node ../../dist/ts-runtime/bots/reservation/auto/monitors/naver-monitor.js",
+    "dashboard": "node ../../dist/ts-runtime/bots/reservation/scripts/dashboard-server.js",
+    "setup:n8n-command": "node ../../dist/ts-runtime/bots/reservation/n8n/setup-ska-command-workflow.js",
+    "check:n8n-command": "node ../../dist/ts-runtime/bots/reservation/scripts/check-n8n-command-path.js"
   },
   "dependencies": {
     "@ai-agent/core": "*",

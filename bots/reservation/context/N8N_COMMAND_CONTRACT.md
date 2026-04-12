@@ -5,7 +5,7 @@
 - endpoint:
   - `POST /api/webhooks/n8n/ska-command`
 - server:
-  - `scripts/dashboard-server.js`
+  - `dist/ts-runtime/bots/reservation/scripts/dashboard-server.js`
 
 ## 공통 요청 형식
 
