@@ -126,6 +126,38 @@ async function postJson(url, body, accessToken) {
   return data;
 }
 
+async function verifyPublicMediaUrl(url) {
+  const response = await fetch(url, {
+    method: 'HEAD',
+  }).catch(() => null);
+
+  if (response?.ok) {
+    return {
+      ok: true,
+      status: response.status,
+      method: 'HEAD',
+    };
+  }
+
+  const retry = await fetch(url, {
+    method: 'GET',
+  }).catch(() => null);
+
+  if (retry?.ok) {
+    return {
+      ok: true,
+      status: retry.status,
+      method: 'GET',
+    };
+  }
+
+  return {
+    ok: false,
+    status: retry?.status || response?.status || 0,
+    method: retry ? 'GET' : (response ? 'HEAD' : 'fetch'),
+  };
+}
+
 async function publishInstagramReel({
   videoUrl,
   caption,
@@ -145,6 +177,10 @@ async function publishInstagramReel({
   }
 
   ensureReady(config);
+  const mediaCheck = await verifyPublicMediaUrl(videoUrl);
+  if (!mediaCheck.ok) {
+    throw new Error(`Instagram 공개 비디오 URL이 아직 응답하지 않습니다: HTTP ${mediaCheck.status || 'unknown'} (${mediaCheck.method})`);
+  }
   const creation = await postJson(createRequest.url, createRequest.body, config.accessToken);
   const creationId = creation.id || creation.creation_id;
   if (!creationId) {
@@ -191,4 +227,5 @@ module.exports = {
   publishInstagramReel,
   buildFileVideoUrl,
   buildHostedVideoUrl,
+  verifyPublicMediaUrl,
 };
