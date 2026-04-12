@@ -7,6 +7,17 @@ defmodule TeamJay.Investment.Feedback.Daily do
   """
 
   alias TeamJay.Agents.PortAgent
+  alias TeamJay.Investment.Feedback.Events
 
-  def run, do: PortAgent.run(:daily_feedback)
+  def run do
+    result = PortAgent.run(:daily_feedback)
+
+    Events.daily(
+      status: normalize_status(result),
+      result: result
+    )
+  end
+
+  defp normalize_status(:ok), do: :requested
+  defp normalize_status(_other), do: :failed
 end
