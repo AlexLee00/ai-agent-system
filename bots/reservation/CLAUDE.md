@@ -5,7 +5,7 @@
            → 포캐스트(매출예측) + 대시보드(:3031)
 
 ## 핵심 파일
-- auto/monitors/naver-monitor.js, pickko-kiosk-monitor.js
+- auto/monitors/naver-monitor.ts, pickko-kiosk-monitor.ts
 - bots/ska/src/forecast.py, rebecca.py, runtime_config.py
 - lib/ska-read-service.js, runtime-config.js
 

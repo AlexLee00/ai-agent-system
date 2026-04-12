@@ -456,7 +456,7 @@ URL:
 ## 9. 앤디(naver-monitor) 쪽 절차
 
 파일:
-- `/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/naver-monitor.js`
+- `/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/naver-monitor.ts`
 
 역할:
 - 네이버 예약 현황을 보며
@@ -510,7 +510,7 @@ URL:
 ## 10. 지미(pickko-kiosk-monitor) 쪽 절차
 
 파일:
-- `/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/pickko-kiosk-monitor.js`
+- `/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/pickko-kiosk-monitor.ts`
 
 역할:
 - 네이버 예약불가 차단/해제

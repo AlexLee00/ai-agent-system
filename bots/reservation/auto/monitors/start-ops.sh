@@ -207,7 +207,7 @@ while true; do
   PICKKO_CANCEL_ENABLE=1 \
   PICKKO_HEADLESS=1 \
   PICKKO_PROTOCOL_TIMEOUT_MS=300000 \
-  "$NODE_BIN" naver-monitor.js >> "$LOG_FILE" 2>&1
+  "$NODE_BIN" "$NAVER_MONITOR_SCRIPT" >> "$LOG_FILE" 2>&1
   EXIT_CODE=$?
 
   log "⏹ naver-monitor 종료 (exit: $EXIT_CODE, 5초 후 재시작...)"

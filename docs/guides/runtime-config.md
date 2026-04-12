@@ -25,11 +25,11 @@
 ### Reservation
 
 - 설정 파일: [/Users/alexlee/projects/ai-agent-system/bots/reservation/config.yaml](/Users/alexlee/projects/ai-agent-system/bots/reservation/config.yaml)
-- 적용 로더: [/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/runtime-config.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/runtime-config.js)
+- 적용 로더: [/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/runtime-config.ts](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/runtime-config.ts)
 - 적용 영역:
-  - [/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/browser.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/browser.js)
-  - [/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/naver-monitor.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/naver-monitor.js)
-  - [/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/pickko-kiosk-monitor.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/pickko-kiosk-monitor.js)
+  - [/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/browser.ts](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/browser.ts)
+  - [/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/naver-monitor.ts](/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/naver-monitor.ts)
+  - [/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/pickko-kiosk-monitor.ts](/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/pickko-kiosk-monitor.ts)
 - 운영에서 바꿀 수 있는 값 예:
   - `browser.launchRetries`
   - `browser.launchRetryDelayMs`
