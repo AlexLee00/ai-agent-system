@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 'use strict';
 
 /**
@@ -59,6 +58,8 @@ function getCurrentMonthKST() {
 const FROM_MONTH = getArg('from') || '2025-10';
 const TO_MONTH   = getArg('to')   || getCurrentMonthKST();
 
+type RoomAmounts = Record<string, number>;
+
 // ─── 월 범위 생성 ──────────────────────────────────────────────
 function monthsInRange(from, to) {
   const [fy, fm] = from.split('-').map(Number);
@@ -80,10 +81,15 @@ async function buildRoomAmountsFallback(page, date) {
     endDate: date,
     sortBy: 'sd_start',
   });
-  if (!fetchOk || !entries.length) return { roomAmounts: {}, studyRoomTotal: 0, entryCount: 0 };
+  if (!fetchOk || !entries.length) {
+    return { roomAmounts: {} as RoomAmounts, studyRoomTotal: 0, entryCount: 0 };
+  }
 
-  const roomAmounts = buildRoomAmountsFromEntries(entries);
-  const studyRoomTotal = Object.values(roomAmounts).reduce((sum, value) => sum + Number(value || 0), 0);
+  const roomAmounts = buildRoomAmountsFromEntries(entries) as RoomAmounts;
+  const studyRoomTotal = Object.values(roomAmounts).reduce<number>(
+    (sum, value) => sum + Number(value || 0),
+    0,
+  );
   return { roomAmounts, studyRoomTotal, entryCount: entries.length };
 }
 
@@ -92,7 +98,11 @@ function fmt(n) { return Number(n || 0).toLocaleString('ko-KR') + '원'; }
 
 async function fetchDetailWithFallback(page, date, netRevenue, maxAttempts = 3) {
   let lastDetail = null;
-  let lastFallback = { roomAmounts: {}, studyRoomTotal: 0, entryCount: 0 };
+  let lastFallback: { roomAmounts: RoomAmounts; studyRoomTotal: number; entryCount: number } = {
+    roomAmounts: {},
+    studyRoomTotal: 0,
+    entryCount: 0,
+  };
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const detail = await fetchDailyDetail(page, date);

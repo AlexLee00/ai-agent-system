@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 
 /**
  * test-nlp-e2e.js — 자연어 명령 CLI E2E 테스트
@@ -41,6 +40,12 @@ const VERBOSE = process.argv.includes('--verbose');
 let passed = 0, failed = 0;
 const results = [];
 
+type TestOptions = {
+  expectSuccess?: boolean;
+  checkFields?: string[];
+  checkMessage?: RegExp | null;
+};
+
 // ── 실행 헬퍼 ────────────────────────────────────────────────────────────────
 
 function run(script, args, timeoutMs = 8000) {
@@ -75,7 +80,7 @@ function run(script, args, timeoutMs = 8000) {
  *   checkFields   {string[]}   결과 JSON에 반드시 있어야 할 필드 목록
  *   checkMessage  {RegExp}     message 필드가 매칭해야 할 정규식 (선택)
  */
-function test(name, script, args, opts = {}) {
+function test(name, script, args, opts: TestOptions = {}) {
   const {
     expectSuccess = true,
     checkFields   = ['success', 'message'],

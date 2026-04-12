@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use strict';
 
 /**
@@ -74,7 +73,8 @@ async function main() {
 
     console.log(`[백업] 완료 — ${sizeKB}KB, 보관 ${remaining}개`);
   } catch (err) {
-    const msg = `🚨 [스카 백업 실패]\n${err.message}`;
+    const message = err instanceof Error ? err.message : String(err);
+    const msg = `🚨 [스카 백업 실패]\n${message}`;
     console.error(msg);
     publishReservationAlert({ from_bot: 'ska', event_type: 'system_error', alert_level: 3, message: msg });
     process.exit(1);

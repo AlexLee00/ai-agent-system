@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 'use strict';
 
 /**
@@ -99,7 +98,7 @@ function syncHandoff(data) {
   const openBugs = data.bugs.filter(b => b.status === 'open' || b.status === 'in_progress');
   const recentResolved = [...data.bugs]
     .filter(b => b.status === 'resolved')
-    .sort((a, b) => new Date(b.resolvedAt) - new Date(a.resolvedAt))
+    .sort((a, b) => new Date(b.resolvedAt).getTime() - new Date(a.resolvedAt).getTime())
     .slice(0, 3);
 
   let issueBlock = '';
@@ -128,7 +127,7 @@ function syncHandoff(data) {
 
   // ── 유지보수 섹션: 최근 8건 ───────────────────────────────────────
   const recentMaint = [...data.maintenance]
-    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
     .slice(0, 8);
 
   let maintBlock = '';
@@ -306,7 +305,7 @@ function cmdMaintList(args) {
   const data  = loadTracker();
   const limit = parseInt(args.limit || '10', 10);
   const items = [...data.maintenance]
-    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
     .slice(0, limit);
 
   if (items.length === 0) { console.log('[유지보수] 기록 없음'); return; }

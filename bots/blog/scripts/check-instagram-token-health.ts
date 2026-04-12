@@ -1,3 +1,4 @@
+// @ts-nocheck
 'use strict';
 
 const path = require('path');
@@ -7,6 +8,7 @@ const {
   getTokenHealth,
   buildExchangeTokenRequest,
   buildRefreshLongLivedTokenRequest,
+  parseInstagramAuthError,
 } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-token-manager.ts'));
 
 function parseArgs(argv = []) {
@@ -40,6 +42,7 @@ async function main() {
   const exchangeRequest = health.readyForExchange ? buildExchangeTokenRequest(config) : null;
   const refreshRequest = health.readyForRefresh ? buildRefreshLongLivedTokenRequest(config) : null;
 
+  /** @type {any} */
   const payload = {
     ready: Boolean(health.hasAccessToken && health.hasIgUserId),
     health,
@@ -49,6 +52,10 @@ async function main() {
     },
     note: '장기 토큰은 만료 14일 전 갱신, 3일 전 CRITICAL 알림 기준으로 운영하는 것을 권장합니다.',
   };
+
+  if (!health.tokenExpiresAt) {
+    payload.warning = 'token_expires_at가 아직 저장되지 않았습니다. 만료 추적을 위해 refresh/exchange 성공 후 저장이 필요합니다.';
+  }
 
   if (args.json) {
     console.log(JSON.stringify(payload, null, 2));

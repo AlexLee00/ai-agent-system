@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use strict';
 
 /**
@@ -26,6 +25,17 @@ const https = require('https');
 // ─── 내부 상태 ──────────────────────────────────────────────────────
 let _isShuttingDown = false;
 
+type ShutdownCleanupOptions = {
+  reason?: string;
+  error?: boolean;
+  locks?: string[];
+};
+
+type ShutdownHandlerOptions = {
+  locks?: string[];
+  waitMs?: number;
+};
+
 // ─── 시작 2중: Node.js 프리플라이트 ────────────────────────────────
 
 /**
@@ -43,8 +53,9 @@ async function preflightSystemCheck() {
     const { assertOpsReady } = require('./mode');
     assertOpsReady();
     console.log('      ✅ OPS 모드 가드');
-  } catch (e) {
-    errors.push(`OPS 가드: ${e.message.split('\n')[0]}`);
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    errors.push(`OPS 가드: ${message.split('\n')[0]}`);
   }
 
   // 2-2. secrets.json 필수 키
@@ -60,8 +71,9 @@ async function preflightSystemCheck() {
     if (!hasSecret('telegram_bot_token')) {
       warns.push('telegram_bot_token 미설정 — 텔레그램 알림 비활성화됨');
     }
-  } catch (e) {
-    errors.push(`secrets 로드 실패: ${e.message}`);
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    errors.push(`secrets 로드 실패: ${message}`);
   }
 
   // 2-3. PostgreSQL 연결 확인
@@ -73,8 +85,9 @@ async function preflightSystemCheck() {
     } else {
       errors.push('PostgreSQL 연결 실패 → PostgreSQL 서비스 확인 필요');
     }
-  } catch (e) {
-    errors.push(`PostgreSQL 연결 오류: ${e.message.split('\n')[0]}`);
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    errors.push(`PostgreSQL 연결 오류: ${message.split('\n')[0]}`);
   }
 
   // 2-4. 필수 테이블 확인
@@ -106,9 +119,13 @@ async function preflightSystemCheck() {
         if (pending.length > 0) warns.push(`미적용 마이그레이션 ${pending.length}개`);
         else console.log('      ✅ DB 마이그레이션 최신');
       }
-    } catch (e) { warns.push(`마이그레이션 확인 오류: ${e.message.split('\n')[0]}`); }
-  } catch (e) {
-    errors.push(`DB 테이블 확인 실패: ${e.message.split('\n')[0]}`);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      warns.push(`마이그레이션 확인 오류: ${message.split('\n')[0]}`);
+    }
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    errors.push(`DB 테이블 확인 실패: ${message.split('\n')[0]}`);
   }
 
   // 2-5. Puppeteer Chrome 설치 여부
@@ -120,8 +137,9 @@ async function preflightSystemCheck() {
     } else {
       console.log('      ✅ Puppeteer Chrome');
     }
-  } catch (e) {
-    errors.push(`Puppeteer 확인 실패: ${e.message.split('\n')[0]}`);
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    errors.push(`Puppeteer 확인 실패: ${message.split('\n')[0]}`);
   }
 
   for (const w of warns) console.warn(`      ⚠️  ${w}`);
@@ -141,11 +159,11 @@ async function preflightSystemCheck() {
  * @param {number} timeoutMs
  * @returns {Promise<number>} HTTP 상태 코드
  */
-function _httpsGet(hostname, pathname = '/', timeoutMs = 5000) {
-  return new Promise((resolve, reject) => {
+function _httpsGet(hostname: string, pathname = '/', timeoutMs = 5000): Promise<number> {
+  return new Promise<number>((resolve, reject) => {
     const req = https.get({ hostname, path: pathname, timeout: timeoutMs }, res => {
       res.resume(); // 응답 바디 소모 (메모리 누수 방지)
-      resolve(res.statusCode);
+      resolve(Number(res.statusCode || 0));
     });
     req.on('timeout', () => { req.destroy(); reject(new Error('연결 타임아웃')); });
     req.on('error', reject);
@@ -169,8 +187,9 @@ async function preflightConnCheck() {
     } else {
       errors.push(`네이버 HTTP 응답 이상: ${status}`);
     }
-  } catch (e) {
-    errors.push(`네이버 연결 실패: ${e.message}`);
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    errors.push(`네이버 연결 실패: ${message}`);
   }
 
   // 3-2. 텔레그램 연결성
@@ -191,8 +210,9 @@ async function preflightConnCheck() {
       } else {
         errors.push('텔레그램 발송 실패 (token 또는 네트워크 확인)');
       }
-    } catch (e) {
-      errors.push(`텔레그램 체크 오류: ${e.message}`);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      errors.push(`텔레그램 체크 오류: ${message}`);
     }
   }
 
@@ -219,8 +239,9 @@ async function shutdownDB() {
     const count = await rollbackProcessing();
     if (count > 0) console.log(`      ✅ processing → failed 롤백 ${count}건`);
     else            console.log('      ✅ 롤백 대상 없음');
-  } catch (e) {
-    console.error(`      ⚠️  DB 정리 실패: ${e.message}`);
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error(`      ⚠️  DB 정리 실패: ${message}`);
   }
 }
 
@@ -233,7 +254,7 @@ async function shutdownDB() {
  * @param {boolean}  [opts.error=false]
  * @param {string[]} [opts.locks=[]]  삭제할 lock 파일 경로 목록
  */
-async function shutdownCleanup({ reason = '정상 종료', error = false, locks = [] } = {}) {
+async function shutdownCleanup({ reason = '정상 종료', error = false, locks = [] }: ShutdownCleanupOptions = {}) {
   console.log('  🧹 [3중 종료] 정리...');
 
   // lock 파일 삭제
@@ -247,8 +268,9 @@ async function shutdownCleanup({ reason = '정상 종료', error = false, locks 
     const { markStopped } = require('./status');
     markStopped({ reason, error });
     console.log('      ✅ 상태 파일 갱신');
-  } catch (e) {
-    console.warn(`      ⚠️  상태 파일 갱신 실패: ${e.message}`);
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.warn(`      ⚠️  상태 파일 갱신 실패: ${message}`);
   }
 
   // 텔레그램 종료 알림
@@ -264,8 +286,9 @@ async function shutdownCleanup({ reason = '정상 종료', error = false, locks 
         message: `${emoji} [스카봇 OPS] 종료\n사유: ${reason}`,
       });
       console.log('      ✅ 텔레그램 종료 알림');
-    } catch (e) {
-      console.warn(`      ⚠️  텔레그램 알림 실패: ${e.message}`);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.warn(`      ⚠️  텔레그램 알림 실패: ${message}`);
     }
   } else {
     console.log('      ℹ️  정상 종료 알림 생략');
@@ -284,7 +307,7 @@ async function shutdownCleanup({ reason = '정상 종료', error = false, locks 
  * @param {string[]} [opts.locks=[]]       삭제할 lock 파일 목록
  * @param {number}   [opts.waitMs=15000]   진행 중 작업 대기 시간 (ms)
  */
-function registerShutdownHandlers({ locks = [], waitMs = 15000 } = {}) {
+function registerShutdownHandlers({ locks = [], waitMs = 15000 }: ShutdownHandlerOptions = {}) {
   let _handled = false;
 
   async function onShutdown(signal) {
@@ -313,7 +336,7 @@ function registerShutdownHandlers({ locks = [], waitMs = 15000 } = {}) {
 
   process.on('SIGTERM', () => onShutdown('SIGTERM'));
   process.on('SIGINT',  () => onShutdown('SIGINT'));
-  process.on('uncaughtException', async (err) => {
+  process.on('uncaughtException', async (err: Error) => {
     if (_handled) return;
     _handled = true;
     setShuttingDown();

@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
+const { isExcludedReferenceFilename, isExcludedReferenceTitle } = require('./reference-exclusions.ts');
 
 const BLOG_OUTPUT_DIR = path.join(env.PROJECT_ROOT, 'bots/blog/output');
 const RECENT_POST_LIMIT = 10;
@@ -152,6 +153,8 @@ function getRecentPosts(category, limit = RECENT_POST_LIMIT) {
   return safeReadDir(BLOG_OUTPUT_DIR)
     .map(parseRecentGeneralPost)
     .filter(Boolean)
+    .filter((post) => !isExcludedReferenceFilename(post.filename))
+    .filter((post) => !isExcludedReferenceTitle(post.title))
     .filter((post) => post.category === category)
     .sort((a, b) => String(b.dateString).localeCompare(String(a.dateString)))
     .slice(0, limit);

@@ -1,4 +1,4 @@
-// @ts-nocheck
+/// <reference lib="dom" />
 'use strict';
 
 const puppeteer = require('puppeteer');
@@ -24,8 +24,7 @@ async function inspect() {
       const walker = document.createTreeWalker(
         document.body,
         NodeFilter.SHOW_TEXT,
-        null,
-        false
+        null
       );
 
       let node;

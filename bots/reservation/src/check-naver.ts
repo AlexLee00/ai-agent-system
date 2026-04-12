@@ -1,4 +1,4 @@
-// @ts-nocheck
+/// <reference lib="dom" />
 const puppeteer = require('puppeteer');
 const { getNaverLaunchOptions, isHeadedMode } = require('../lib/browser');
 
@@ -39,9 +39,9 @@ async function checkNaver() {
     
     console.log(`\n검사 완료. 현재 모드: ${isHeadedMode('naver') ? 'headed' : 'headless'}`);
     console.log('필요 시 PLAYWRIGHT_HEADLESS=false 로 재실행하세요.');
-    
   } catch (e) {
     console.error('오류:', e.message);
+  } finally {
     await browser.close();
   }
 }

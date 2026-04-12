@@ -14,6 +14,7 @@ const path = require('path');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const rag = require('../../../packages/core/lib/rag-safe');
 const env = require('../../../packages/core/lib/env');
+const { isExcludedReferencePost } = require('./reference-exclusions.ts');
 
 const OUTPUT_DIR = path.join(env.PROJECT_ROOT, 'bots', 'blog', 'output');
 const GDRIVE_DIR = process.env.GDRIVE_BLOG_DIR || '/tmp/blog-output';
@@ -38,9 +39,10 @@ function normalizeTitleKey(value) {
 async function loadPublishedLinkMap() {
   try {
     const rows = await pgPool.query('blog', `
-      SELECT title, naver_url
+      SELECT id, title, naver_url, metadata
       FROM blog.posts
       WHERE status = 'published'
+        AND COALESCE(NULLIF(metadata->>'exclude_from_reference', '')::boolean, false) = false
         AND naver_url IS NOT NULL
         AND naver_url <> ''
       ORDER BY created_at DESC
@@ -48,6 +50,7 @@ async function loadPublishedLinkMap() {
     `);
     const map = new Map();
     for (const row of rows) {
+      if (isExcludedReferencePost(row)) continue;
       const key = normalizeTitleKey(row.title);
       if (!key || map.has(key)) continue;
       map.set(key, row.naver_url);

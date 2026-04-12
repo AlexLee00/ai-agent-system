@@ -31,6 +31,7 @@
     "daily-feedback:dry": "node scripts/daily-trade-feedback.ts --dry-run",
     "parallel-snapshot": "node scripts/parallel-ops-snapshot.ts",
     "parallel-report": "node scripts/parallel-ops-report.ts",
+    "parallel-history": "node scripts/parallel-ops-history.ts",
     "runtime-suggest": "node scripts/runtime-config-suggestions.ts",
     "runtime-suggest:write": "node scripts/runtime-config-suggestions.ts --write",
     "runtime-suggest:review": "node scripts/review-runtime-config-suggestion.ts",

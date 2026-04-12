@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use strict';
 
 /**
@@ -15,11 +14,41 @@
 
 const pgPool = require('../../../packages/core/lib/pg-pool');
 
+type ReservationRow = {
+  id: number;
+  phone: string;
+  date: string;
+  start_time: string;
+  end_time: string;
+  room: string;
+  status: string;
+  pickko_status: string;
+  updated_at: string | null;
+  composite_key: string | null;
+};
+
+type DuplicateGroup = {
+  phone: string;
+  date: string;
+  start_time: string;
+  end_time: string;
+  room: string;
+  row_count: number;
+  rows: ReservationRow[];
+  classification?: GroupClassification;
+};
+
+type GroupClassification = {
+  severity: 'risky' | 'historical' | 'unknown';
+  reason: string;
+  recommendedAction: string;
+};
+
 function normalizeStatus(value) {
   return String(value || '').trim() || 'unknown';
 }
 
-function classifyGroup(group) {
+function classifyGroup(group: DuplicateGroup): GroupClassification {
   const statuses = (group.rows || []).map((row) => normalizeStatus(row.status));
   const activeRows = group.rows.filter((row) => normalizeStatus(row.status) !== 'cancelled');
   const cancelledRows = group.rows.filter((row) => normalizeStatus(row.status) === 'cancelled');
@@ -57,7 +86,7 @@ function classifyGroup(group) {
   };
 }
 
-function formatGroupLine(group) {
+function formatGroupLine(group: DuplicateGroup): string {
   const ids = group.rows.map((row) => row.id).join(', ');
   const statuses = group.rows.map((row) => `${normalizeStatus(row.status)}/${normalizeStatus(row.pickko_status)}`).join(', ');
   return [
@@ -114,7 +143,7 @@ async function loadDuplicateGroups() {
       ORDER BY updated_at DESC NULLS LAST, id DESC
     `, [group.phone, group.date, group.start_time, group.end_time, group.room]);
 
-    const normalizedGroup = {
+    const normalizedGroup: DuplicateGroup = {
       phone: group.phone,
       date: group.date,
       start_time: group.start_time,
@@ -198,7 +227,8 @@ async function main() {
   printText(report);
 }
 
-main().catch((error) => {
-  console.error('[audit-duplicate-slots] 실패:', error.message);
+main().catch((error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error('[audit-duplicate-slots] 실패:', message);
   process.exit(1);
 });

@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 'use strict';
 
 /**
@@ -51,13 +50,13 @@ const N8N_HEALTH_URL = process.env.N8N_HEALTH_URL || 'http://127.0.0.1:5678/heal
 const DEFAULT_N8N_WEBHOOK_URL = process.env.SKA_N8N_WEBHOOK_URL || 'http://127.0.0.1:5678/webhook/ska-command';
 const CANCEL_COUNTER_DRIFT_TITLE = '🚨 네이버 취소 카운터 증가 이상';
 
-function sumRoomAmounts(roomAmountsJson) {
+function sumRoomAmounts(roomAmountsJson): number {
   if (!roomAmountsJson) return 0;
 
-  let parsed = roomAmountsJson;
+  let parsed: Record<string, unknown> | string = roomAmountsJson;
   if (typeof roomAmountsJson === 'string') {
     try {
-      parsed = JSON.parse(roomAmountsJson);
+      parsed = JSON.parse(roomAmountsJson) as Record<string, unknown>;
     } catch (_) {
       return 0;
     }
@@ -65,7 +64,10 @@ function sumRoomAmounts(roomAmountsJson) {
 
   if (!parsed || typeof parsed !== 'object') return 0;
 
-  return Object.values(parsed).reduce((sum, value) => sum + Number(value || 0), 0);
+  return Object.values(parsed as Record<string, unknown>).reduce<number>(
+    (sum, value) => sum + Number(value || 0),
+    0,
+  );
 }
 
 function buildMonitorHealth() {

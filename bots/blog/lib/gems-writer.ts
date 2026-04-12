@@ -22,6 +22,7 @@ const { weatherToContext, estimateCost, loadPersonaGuide } = require('../../../p
 const env = require('../../../packages/core/lib/env');
 const { getBlogGenerationRuntimeConfig, getBlogLLMSelectorOverrides } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/runtime-config.ts'));
 const { calculateSectionChars, buildCharCountInstruction } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/section-ratio.ts'));
+const { isExcludedReferenceTitle, isExcludedReferenceFilename } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/reference-exclusions.ts'));
 
 const generationRuntimeConfig = getBlogGenerationRuntimeConfig();
 const BLOG_WRITER_TIMEOUT_MS = Number(generationRuntimeConfig.writerTimeoutMs || 90000);
@@ -163,6 +164,8 @@ function _loadRecentGeneralThemes(category, days = RECENT_GENERAL_THEME_WINDOW_D
   const recentPosts = _safeReadDir(BLOG_OUTPUT_DIR)
     .map(_parseRecentGeneralPostMeta)
     .filter(Boolean)
+    .filter(post => !isExcludedReferenceFilename(post.filename))
+    .filter(post => !isExcludedReferenceTitle(post.title))
     .filter(post => post.publishedAt >= cutoff)
     .sort((a, b) => b.publishedAt - a.publishedAt)
     .slice(0, RECENT_GENERAL_THEME_LIMIT);
@@ -340,7 +343,7 @@ function _defaultGeneralSnippet(title, category) {
 function _defaultCafeSection(weatherContext) {
   return [
     '[스터디카페 홍보 섹션]',
-    `${weatherContext}처럼 집중력이 쉽게 흔들리는 날에는 작업 공간의 질이 생각보다 큰 차이를 만든다. 커피랑도서관 분당서현점은 조용한 좌석 환경과 안정적인 작업 동선을 갖춰서 글쓰기, 기획, 개발 문서 정리 같은 깊은 집중 작업을 이어가기 좋다. 특히 장시간 앉아 있어도 답답하지 않도록 세스코 에어 시스템으로 공기 질을 관리하고 있어, 머리가 무거워지기 쉬운 오후 시간대에도 작업 리듬을 비교적 안정적으로 유지할 수 있다. 실제로 복잡한 기획서를 다듬거나 긴 글을 마무리해야 할 때는 주변 소음보다도 ‘얼마나 바로 다시 몰입할 수 있는가’가 중요한데, 이런 점에서 커피랑도서관은 공부뿐 아니라 실무 작업 공간으로도 충분히 설득력이 있다.`,
+    `${weatherContext}처럼 집중력이 쉽게 흔들리는 날에는 작업 공간의 질이 생각보다 큰 차이를 만든다. 매장 이름은 커피랑도서관 분당서현점이고, 세스코 에어는 이 공간에서 운영하는 공기질 관리 기능이다. 커피랑도서관 분당서현점은 조용한 좌석 환경과 안정적인 작업 동선을 갖춰서 글쓰기, 기획, 개발 문서 정리 같은 깊은 집중 작업을 이어가기 좋다. 특히 장시간 앉아 있어도 답답하지 않도록 세스코 에어 시스템으로 공기 질을 관리하고 있어, 머리가 무거워지기 쉬운 오후 시간대에도 작업 리듬을 비교적 안정적으로 유지할 수 있다. 실제로 복잡한 기획서를 다듬거나 긴 글을 마무리해야 할 때는 주변 소음보다도 ‘얼마나 바로 다시 몰입할 수 있는가’가 중요한데, 이런 점에서 커피랑도서관 분당서현점은 공부뿐 아니라 실무 작업 공간으로도 충분히 설득력이 있다.`,
   ].join('\n');
 }
 
@@ -1225,7 +1228,7 @@ ${_buildVariationBlock(sectionVariation)}`,
 날씨 맥락(${weatherContext})을 스터디카페 섹션에 자연스럽게 포함하라.
 
 작성할 섹션 (모두 포함, 생략 금지):
-1. [스터디카페 홍보 섹션] — 작업 메모리/인지 부하 → 커피랑도서관 자연 연결, 세스코 에어 + 날씨 환경 연결, 불릿 리스트, 600자 이상
+1. [스터디카페 홍보 섹션] — 작업 메모리/인지 부하 → 커피랑도서관 분당서현점 자연 연결, 세스코 에어는 공기질 관리 기능으로만 설명, 불릿 리스트, 600자 이상
 2. ━━━━━━━━━━━━━━━━━━━━━
 3. [마무리 제언] — 명언형 인용 + 결론 한줄 + 감사 인사 + 좋아요/댓글 독려, 400자 이상
 

@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 'use strict';
 
 /**
@@ -24,6 +23,44 @@ const { loginToPickko } = require('../lib/pickko');
 const { fetchDailyDetail } = require('../lib/pickko-stats');
 const { delay } = require('../lib/utils');
 
+type CandidateRow = {
+  date: string;
+  pickko_study_room: number | null;
+  general_revenue: number | null;
+  room_amounts_json: string | Record<string, unknown> | null;
+};
+
+type CandidateQueryArgs = {
+  fromDate: string;
+  toDate: string;
+  exactDate: string | null;
+  limit: number;
+};
+
+type AuditResult = {
+  date: string;
+  detailTotalRevenue: number;
+  stored: {
+    generalRevenue: number;
+    studyRoomRevenue: number;
+    roomAmounts: Record<string, unknown>;
+  };
+  direct: {
+    generalRevenue: number;
+    studyRoomRevenue: number;
+    studyRoomRevenueByLabel: Record<string, unknown>;
+    transactionCount: number;
+    generalTransactions: Array<Record<string, unknown>>;
+    roomTransactions: Array<Record<string, unknown>>;
+  };
+  deltas: {
+    generalRevenue: number;
+    studyRoomRevenue: number;
+    totalGapAgainstStored: number;
+    totalGapAgainstDirect: number;
+  };
+};
+
 const argv = process.argv.slice(2);
 const AS_JSON = argv.includes('--json');
 
@@ -36,22 +73,22 @@ function won(value) {
   return `${Number(value || 0).toLocaleString('ko-KR')}원`;
 }
 
-function sumObjectValues(obj) {
+function sumObjectValues(obj: Record<string, unknown> | null | undefined): number {
   if (!obj || typeof obj !== 'object') return 0;
-  return Object.values(obj).reduce((sum, value) => sum + Number(value || 0), 0);
+  return Object.values(obj).reduce<number>((sum, value) => sum + Number(value || 0), 0);
 }
 
-function parseRoomAmounts(roomAmountsJson) {
+function parseRoomAmounts(roomAmountsJson: CandidateRow['room_amounts_json']): Record<string, unknown> {
   if (!roomAmountsJson) return {};
   if (typeof roomAmountsJson === 'object') return roomAmountsJson;
   try {
-    return JSON.parse(roomAmountsJson);
+    return JSON.parse(roomAmountsJson) as Record<string, unknown>;
   } catch (_) {
     return {};
   }
 }
 
-async function loadCandidateRows({ fromDate, toDate, exactDate, limit }) {
+async function loadCandidateRows({ fromDate, toDate, exactDate, limit }: CandidateQueryArgs): Promise<CandidateRow[]> {
   if (exactDate) {
     return pgPool.query('reservation', `
       SELECT
@@ -97,7 +134,7 @@ async function main() {
 
   const { pickko_id, pickko_pw } = loadSecrets();
   const browser = await puppeteer.launch(getPickkoLaunchOptions());
-  const results = [];
+  const results: AuditResult[] = [];
 
   try {
     const page = (await browser.pages())[0] || await browser.newPage();
@@ -199,7 +236,8 @@ async function main() {
   console.log(lines.join('\n'));
 }
 
-main().catch((error) => {
-  console.error(`❌ audit 실패: ${error.message}`);
+main().catch((error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(`❌ audit 실패: ${message}`);
   process.exit(1);
 });

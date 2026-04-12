@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 'use strict';
 
 /**
@@ -27,6 +26,14 @@ const db   = require('../lib/db');
 
 const MIGRATIONS_DIR = path.join(__dirname, '..', 'migrations');
 
+type MigrationModule = {
+  version: number;
+  name: string;
+  filename: string;
+  up: () => Promise<unknown>;
+  down?: () => Promise<unknown>;
+};
+
 // ─── 마이그레이션 파일 로드 ─────────────────────────────────────────
 
 function loadMigrationFiles() {
@@ -39,7 +46,7 @@ function loadMigrationFiles() {
     .filter(f => /^\d+_.+\.js$/.test(f))
     .sort();
 
-  return files.map(f => {
+  return files.map((f): MigrationModule => {
     const mod = require(path.join(MIGRATIONS_DIR, f));
     if (!mod.version || !mod.name || typeof mod.up !== 'function') {
       console.error(`❌ ${f}: version/name/up 누락`);
@@ -95,8 +102,9 @@ async function runMigrations() {
       await m.up();
       await db.recordMigration(m.version, m.name);
       console.log('✅');
-    } catch (e) {
-      console.log(`❌\n     오류: ${e.message}`);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.log(`❌\n     오류: ${message}`);
       console.error(`\n마이그레이션 v${m.version} 실패 — 중단`);
       process.exit(1);
     }
@@ -118,7 +126,8 @@ async function rollbackLast() {
   }
 
   const all  = loadMigrationFiles();
-  const last = all.filter(m => applied.has(m.version)).at(-1);
+  const appliedMigrations = all.filter(m => applied.has(m.version));
+  const last = appliedMigrations[appliedMigrations.length - 1];
 
   if (!last) {
     console.log('⚠️  마이그레이션 파일을 찾을 수 없음');
@@ -142,8 +151,9 @@ async function rollbackLast() {
     await db.removeMigration(last.version);
     const newVer = await db.getSchemaVersion();
     console.log(`✅ 롤백 완료 → 스키마 v${newVer}`);
-  } catch (e) {
-    console.error(`❌ 롤백 실패: ${e.message}`);
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error(`❌ 롤백 실패: ${message}`);
     process.exit(1);
   }
 }
@@ -164,8 +174,9 @@ const args = process.argv.slice(2);
     } else {
       await runMigrations();
     }
-  } catch (e) {
-    console.error('❌ 오류:', e.message);
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error('❌ 오류:', message);
     process.exit(1);
   }
   process.exit(0);

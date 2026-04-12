@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 /**
  * backfill-study-room.ts
  * daily_summary.total_amount=0 인 날짜들 중 일반매출 또는 엔트리가 남아 있는 날을 찾아
@@ -20,6 +19,8 @@ const SECRETS = loadSecrets();
 const PICKKO_ID = SECRETS.pickko_id;
 const PICKKO_PW = SECRETS.pickko_pw;
 const SCHEMA = 'reservation';
+
+type RoomAmounts = Record<string, number>;
 
 async function listBackfillDates() {
   const rows = await pgPool.query(SCHEMA, `
@@ -53,7 +54,7 @@ async function buildStudyRoomSummary(page, date) {
     };
   }
 
-  const roomAmounts = buildRoomAmountsFromEntries(entries);
+  const roomAmounts = buildRoomAmountsFromEntries(entries) as RoomAmounts;
   const studyRoomTotal = Object.values(roomAmounts).reduce((sum, amount) => sum + Number(amount || 0), 0);
   return {
     fetchOk,
@@ -64,7 +65,7 @@ async function buildStudyRoomSummary(page, date) {
   };
 }
 
-function formatRoomBreakdown(roomAmounts) {
+function formatRoomBreakdown(roomAmounts: RoomAmounts) {
   return Object.entries(roomAmounts)
     .map(([room, amount]) => `${room}:${(Number(amount || 0) / 1000).toFixed(0)}K`)
     .join(' ');
