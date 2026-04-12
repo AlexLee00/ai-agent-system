@@ -53,6 +53,24 @@ function buildSummary(rows = [], market = 'all') {
     totalRows: rows.length,
     uniqueDynamicSymbols: unique.size,
     topSymbols,
+    trend: buildTrend(rows),
+  };
+}
+
+function buildTrend(rows = []) {
+  const latest = rows[0]?.dynamic || [];
+  const previous = rows[1]?.dynamic || [];
+  const latestSet = new Set(latest);
+  const previousSet = new Set(previous);
+  const addedSymbols = latest.filter((symbol) => !previousSet.has(symbol));
+  const removedSymbols = previous.filter((symbol) => !latestSet.has(symbol));
+
+  return {
+    latestDynamicCount: latest.length,
+    previousDynamicCount: previous.length,
+    deltaDynamicCount: latest.length - previous.length,
+    addedSymbols,
+    removedSymbols,
   };
 }
 
@@ -69,6 +87,18 @@ function formatTextReport(summary, rows) {
     `행 수: ${summary.totalRows}`,
     `동적 종목 고유 수: ${summary.uniqueDynamicSymbols}`,
   ];
+
+  if (summary.totalRows > 0) {
+    lines.push(
+      `최근 변화: ${summary.trend.latestDynamicCount}개 (이전 ${summary.trend.previousDynamicCount}개, Δ ${summary.trend.deltaDynamicCount >= 0 ? '+' : ''}${summary.trend.deltaDynamicCount})`
+    );
+    if (summary.trend.addedSymbols.length > 0) {
+      lines.push(`신규 편입: ${summary.trend.addedSymbols.join(', ')}`);
+    }
+    if (summary.trend.removedSymbols.length > 0) {
+      lines.push(`제외 종목: ${summary.trend.removedSymbols.join(', ')}`);
+    }
+  }
 
   if (summary.topSymbols.length > 0) {
     lines.push('상위 종목:');

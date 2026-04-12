@@ -22,6 +22,7 @@ import { loadSecrets, initHubSecrets, getMarketExecutionModeInfo } from '../shar
 import { getDomesticPrice, getOverseasPrice } from '../shared/kis-client.ts';
 import { tracker }      from '../shared/cost-tracker.ts';
 import { buildAccuracyReport } from '../shared/analyst-accuracy.ts';
+import { buildScreeningHistoryReport } from '../scripts/screening-history-report.ts';
 
 const _require = createRequire(import.meta.url);
 const shadow   = _require('../../../packages/core/lib/shadow-mode.js');
@@ -284,10 +285,44 @@ function buildSignalStatsLines({ days, sigTotal, sigExec, sigApproved, sigFailed
   ];
 }
 
+async function loadScreeningSummary() {
+  const summaryByMarket = {};
+  for (const market of ['crypto', 'domestic', 'overseas']) {
+    try {
+      const report = await buildScreeningHistoryReport({ market, limit: 3, json: true });
+      summaryByMarket[market] = report.summary;
+    } catch (error) {
+      summaryByMarket[market] = {
+        error: String(error?.message || error),
+      };
+    }
+  }
+  return summaryByMarket;
+}
+
+function buildScreeningSummaryLines(screeningSummary = {}) {
+  const lines = [];
+  for (const market of ['crypto', 'domestic', 'overseas']) {
+    const summary = screeningSummary[market];
+    if (!summary) continue;
+    if (summary.error) {
+      lines.push(`${market}: 조회 실패`);
+      continue;
+    }
+    const delta = Number(summary.trend?.deltaDynamicCount || 0);
+    const signedDelta = `${delta >= 0 ? '+' : ''}${delta}`;
+    const top = (summary.topSymbols || []).slice(0, 3).map((item) => `${item.symbol}(${item.count})`).join(', ');
+    lines.push(`${market}: ${summary.trend?.latestDynamicCount ?? 0}개 (${signedDelta})`);
+    if (top) lines.push(`top: ${top}`);
+  }
+  return lines;
+}
+
 // ─── 리포트 생성 ─────────────────────────────────────────────────────
 
 export async function generateReport({ days = 30, telegram = false } = {}) {
   await initHubSecrets().catch(() => false);
+  const screeningSummary = await loadScreeningSummary();
   let dbAvailable = true;
   try {
     await db.initSchema();
@@ -315,6 +350,9 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
       balances.length === 0 ? '  바이낸스 잔고 조회 실패' : `  USDT 가용: $${(usdtBal?.free || 0).toFixed(2)}`,
       `  오늘 LLM 비용: $${cost.usage.toFixed(4)} / $${cost.dailyBudget.toFixed(2)}`,
       `  이번달 LLM 비용: $${cost.monthUsage.toFixed(4)} / $${cost.monthlyBudget.toFixed(2)}`,
+      '',
+      '━━━ 스크리닝 동향 ━━━',
+      ...buildScreeningSummaryLines(screeningSummary).map((line) => `  ${line}`),
       '',
       '━━━ 상태 ━━━',
       '  DB 미연결로 신호/거래 통계는 생략',
@@ -472,6 +510,10 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
   // 바이낸스 잔고
   lines.push(`━━━ 바이낸스 실잔고 ━━━`);
   lines.push(...buildBalanceSummaryLines({ balances, usdtBal, equity, balanceSource }));
+  lines.push(``);
+
+  lines.push(`━━━ 스크리닝 동향 ━━━`);
+  lines.push(...buildScreeningSummaryLines(screeningSummary).map((line) => `  ${line}`));
   lines.push(``);
 
   // 자산 추이 (스냅샷 2개 이상일 때)
@@ -649,6 +691,7 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
           `이번달 LLM 비용: $${cost.monthUsage.toFixed(4)} / $${cost.monthlyBudget.toFixed(2)}`,
           `자산 집계 소스: ${balanceSource === 'binance_live' ? '바이낸스 실잔고' : '최신 스냅샷 fallback'}`,
         ]),
+        buildSection('스크리닝 동향', buildScreeningSummaryLines(screeningSummary)),
         buildSection(`신호 통계 (${days}일)`, buildSignalStatsLines({ days, sigTotal, sigExec, sigApproved, sigFailed })),
       ],
       footer: '상세: 콘솔 리포트 참고',

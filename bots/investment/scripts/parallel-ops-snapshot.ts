@@ -216,6 +216,17 @@ function printText(snapshot) {
       const summary = snapshot.screening[market]?.summary;
       if (!summary) continue;
       console.log(`  - ${market}: rows=${summary.totalRows}, unique=${summary.uniqueDynamicSymbols}`);
+      if (summary.trend) {
+        console.log(
+          `    trend: latest=${summary.trend.latestDynamicCount}, prev=${summary.trend.previousDynamicCount}, delta=${summary.trend.deltaDynamicCount >= 0 ? '+' : ''}${summary.trend.deltaDynamicCount}`
+        );
+        if ((summary.trend.addedSymbols || []).length > 0) {
+          console.log(`    added: ${summary.trend.addedSymbols.slice(0, 5).join(', ')}`);
+        }
+        if ((summary.trend.removedSymbols || []).length > 0) {
+          console.log(`    removed: ${summary.trend.removedSymbols.slice(0, 5).join(', ')}`);
+        }
+      }
       const top = (summary.topSymbols || []).slice(0, 3).map((item) => `${item.symbol}(${item.count})`).join(', ');
       if (top) console.log(`    top: ${top}`);
     }
