@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// @ts-nocheck
+/// <reference lib="dom" />
 
 /**
  * pickko-verify.js — 미검증 예약 검증 스크립트
@@ -29,7 +29,35 @@ const PICKKO_PW = SECRETS.pickko_pw;
 const MODE = IS_OPS ? 'ops' : 'dev';
 const DRY_RUN = process.argv.includes('--dry-run');
 
-function needsVerify(entry) {
+type ReservationLike = {
+  id: string;
+  compositeKey?: string | null;
+  name?: string | null;
+  phone?: string | null;
+  phoneRaw?: string | null;
+  date: string;
+  start: string;
+  end: string;
+  room: string;
+  detectedAt?: string | null;
+  status: string;
+  pickkoStatus?: string | null;
+  retries?: number;
+  raw?: { name?: string | null } | null;
+};
+
+type TargetItem = {
+  source: 'db';
+  id: string;
+  entry: ReservationLike;
+};
+
+type PickkoDateResult = {
+  entries: Array<{ phoneRaw?: string | null; start?: string | null }>;
+  fetchOk: boolean;
+};
+
+function needsVerify(entry: ReservationLike) {
   if (entry.status === 'pending' || entry.status === 'failed') return true;
   if (entry.status === 'completed') {
     const ps = entry.pickkoStatus;
@@ -42,8 +70,8 @@ async function collectTargets() {
   const pending = await getPendingReservations();
   const unverified = await getUnverifiedCompletedReservations();
 
-  const targets = [];
-  const seen = new Set();
+  const targets: TargetItem[] = [];
+  const seen = new Set<string>();
 
   for (const entry of [...pending, ...unverified]) {
     if (!needsVerify(entry)) continue;
@@ -69,21 +97,24 @@ async function searchPickko(page, entry) {
   await page.goto('https://pickkoadmin.com/study/index.html', { waitUntil: 'networkidle2', timeout: 30000 });
   await delay(1500);
 
-  await page.$eval('input[name="mb_phone"]', (el, v) => {
+  await page.$eval('input[name="mb_phone"]', (el: any, v: string) => {
     el.value = v;
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
   }, phone);
 
   for (const name of ['sd_start_up', 'sd_start_dw']) {
-    await page.evaluate((nm, d) => {
-      const el = document.querySelector(`input[name="${nm}"]`);
+    await page.evaluate((nm: string, d: string) => {
+      const el = document.querySelector(`input[name="${nm}"]`) as HTMLInputElement | null;
       if (!el) return;
       el.removeAttribute('readonly');
       el.value = d;
       el.dispatchEvent(new Event('input', { bubbles: true }));
       el.dispatchEvent(new Event('change', { bubbles: true }));
-      try { if (window.jQuery?.fn.datepicker) window.jQuery(el).datepicker('setDate', new Date(d)); } catch (e) {}
+      try {
+        const jq = (window as Window & { jQuery?: any }).jQuery;
+        if (jq?.fn.datepicker) jq(el).datepicker('setDate', new Date(d));
+      } catch (_e: unknown) {}
     }, name, date);
   }
 
@@ -91,34 +122,34 @@ async function searchPickko(page, entry) {
 
   await Promise.all([
     page.evaluate(() => {
-      const btn = document.querySelector('input[type="submit"].btn_box');
+      const btn = document.querySelector('input[type="submit"].btn_box') as HTMLElement | null;
       if (btn) btn.click();
     }),
     page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 20000 }).catch(() => null),
   ]);
   await delay(1500);
 
-  const viewHref = await page.evaluate((sk, ek, ps) => {
-    const clean = (s) => (s ?? '').replace(/\s+/g, ' ').trim();
+  const viewHref = await page.evaluate((sk: string, ek: string, ps: string) => {
+    const clean = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, ' ').trim();
     const trs = Array.from(document.querySelectorAll('tbody tr'));
     for (const tr of trs) {
       const t = clean(tr.textContent);
       if (t.includes(sk) && t.includes(ek)) {
-        const a = tr.querySelector('a[href*="/study/view/"]');
+        const a = tr.querySelector('a[href*="/study/view/"]') as HTMLAnchorElement | null;
         if (a) return a.href;
       }
     }
     for (const tr of trs) {
       const t = clean(tr.textContent);
       if (t.includes(sk)) {
-        const a = tr.querySelector('a[href*="/study/view/"]');
+        const a = tr.querySelector('a[href*="/study/view/"]') as HTMLAnchorElement | null;
         if (a) return a.href;
       }
     }
     for (const tr of trs) {
       const t = clean(tr.textContent);
       if (t.includes(ps)) {
-        const a = tr.querySelector('a[href*="/study/view/"]');
+        const a = tr.querySelector('a[href*="/study/view/"]') as HTMLAnchorElement | null;
         if (a) return a.href;
       }
     }
@@ -128,7 +159,7 @@ async function searchPickko(page, entry) {
   return viewHref;
 }
 
-async function markCompleted(source, id, entry) {
+async function markCompleted(source: string, id: string, entry: ReservationLike) {
   const now = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
 
   const existing = await getReservation(id);
@@ -159,7 +190,7 @@ async function markCompleted(source, id, entry) {
   await markSeen(id);
 }
 
-function runPickko(entry) {
+function runPickko(entry: ReservationLike): Promise<number | null> {
   return new Promise((resolve) => {
     const phone = (entry.phoneRaw || entry.phone || '').replace(/\D/g, '');
     const args = [
@@ -173,7 +204,7 @@ function runPickko(entry) {
     ];
     log(`  🤖 픽코 등록 실행: ${maskPhone(phone)} ${entry.date} ${entry.start}~${entry.end} ${entry.room}룸`);
     const child = spawn('node', args, { cwd: path.join(__dirname, '../reservation'), stdio: 'inherit' });
-    child.on('close', (code) => {
+    child.on('close', (code: number | null) => {
       log(`  🤖 픽코 완료 (exit: ${code})`);
       resolve(code);
     });
@@ -212,14 +243,14 @@ async function main() {
     await loginToPickko(page, PICKKO_ID, PICKKO_PW, delay);
     log(`✅ 로그인 완료: ${page.url()}`);
 
-    const dateGroups = {};
+    const dateGroups: Record<string, TargetItem[]> = {};
     for (const item of targets) {
       const d = item.entry.date;
       if (!dateGroups[d]) dateGroups[d] = [];
       dateGroups[d].push(item);
     }
 
-    const pickkoByDate = {};
+    const pickkoByDate: Record<string, PickkoDateResult> = {};
     const uniqueDates = Object.keys(dateGroups);
     log(`\n[2단계] 픽코 일괄 조회: ${uniqueDates.length}개 날짜`);
     for (const date of uniqueDates) {
@@ -229,7 +260,7 @@ async function main() {
       log(`  → ${result.entries.length}건 (fetchOk=${result.fetchOk})`);
     }
 
-    const results = { found: [], notFound: [], error: [] };
+    const results: { found: string[]; notFound: string[]; error: string[] } = { found: [], notFound: [], error: [] };
 
     for (let i = 0; i < targets.length; i++) {
       const { source, id, entry } = targets[i];
@@ -275,8 +306,9 @@ async function main() {
             await updateReservation(id, { retries: (cur?.retries || 0) + 1 });
           }
         }
-      } catch (err) {
-        log(`  ❌ 오류: ${err.message}`);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        log(`  ❌ 오류: ${message}`);
         results.error.push(id);
       }
     }
@@ -289,7 +321,7 @@ async function main() {
     log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   } finally {
     if (browser) {
-      try { await browser.close(); } catch (e) {}
+      try { await browser.close(); } catch (_e: unknown) {}
     }
   }
 }
@@ -305,7 +337,8 @@ module.exports = {
 
 main()
   .then(() => process.exit(0))
-  .catch((err) => {
-    log(`❌ 치명 오류: ${err.message}`);
+  .catch((err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err);
+    log(`❌ 치명 오류: ${message}`);
     process.exit(1);
   });

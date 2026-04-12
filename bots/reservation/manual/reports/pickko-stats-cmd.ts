@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 
 /**
  * pickko-stats-cmd.js — 매출 통계 조회 CLI
@@ -11,7 +10,21 @@ const { outputResult, fail } = require('../../lib/cli');
 
 const ARGS = parseArgs(process.argv);
 
-function ok(message) {
+type SummaryRow = {
+  date?: string;
+  roomAmounts?: Record<string, number>;
+  generalRevenue?: number;
+  total_amount?: number;
+  confirmed?: boolean;
+};
+
+type RevenueSummaryRow = {
+  room: string;
+  total_amount: number;
+  days: number;
+};
+
+function ok(message: string) {
   outputResult({ success: true, message });
   process.exit(0);
 }
@@ -20,11 +33,11 @@ function nowKST() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
 }
 
-function toDateStr(d) {
+function toDateStr(d: Date) {
   return d.toLocaleDateString('en-CA');
 }
 
-function resolveDate(arg) {
+function resolveDate(arg: string | undefined) {
   const now = nowKST();
   if (!arg || arg === 'today') return toDateStr(now);
   if (arg === 'yesterday') {
@@ -35,28 +48,28 @@ function resolveDate(arg) {
   return null;
 }
 
-function formatDate(dateStr) {
+function formatDate(dateStr: string) {
   const d = new Date(`${dateStr}T00:00:00+09:00`);
   const days = ['일', '월', '화', '수', '목', '금', '토'];
   return `${d.getMonth() + 1}월 ${d.getDate()}일(${days[d.getDay()]})`;
 }
 
-function formatMonth(dateStr) {
+function formatMonth(dateStr: string) {
   const d = new Date(`${dateStr}T00:00:00+09:00`);
   return `${d.getFullYear()}년 ${d.getMonth() + 1}월`;
 }
 
-function won(amount) {
+function won(amount: number | string | null | undefined) {
   return `${Number(amount || 0).toLocaleString('ko-KR')}원`;
 }
 
-function buildDayMessage(row, label) {
+function buildDayMessage(row: SummaryRow | null, label: string) {
   if (!row) return `${label}\n\n📭 매출 데이터 없음 (집계 전이거나 해당 날짜 데이터 미존재)`;
 
   const lines = [`📅 ${label} 매출`, ''];
   const roomAmounts = row.roomAmounts || {};
   const generalRevenue = row.generalRevenue || 0;
-  const grandTotal = (row.total_amount || 0) + generalRevenue;
+  const grandTotal = row.total_amount || 0;
 
   if (generalRevenue > 0) lines.push(`  일반이용: ${won(generalRevenue)}`);
   for (const [room, amount] of Object.entries(roomAmounts).sort()) {
@@ -70,10 +83,10 @@ function buildDayMessage(row, label) {
   return lines.join('\n');
 }
 
-function buildPeriodMessage(rows, label) {
+function buildPeriodMessage(rows: SummaryRow[], label: string) {
   if (rows.length === 0) return `${label}\n\n📭 집계된 매출 데이터 없음`;
 
-  const totals = {};
+  const totals: Record<string, number> = {};
   let totalAmount = 0;
   let generalRevenue = 0;
   let confirmedCount = 0;
@@ -106,7 +119,7 @@ function buildPeriodMessage(rows, label) {
   return lines.join('\n');
 }
 
-function buildCumulativeMessage(rows) {
+function buildCumulativeMessage(rows: RevenueSummaryRow[]) {
   if (rows.length === 0) return '📊 누적 확정 매출\n\n📭 확정된 매출 데이터 없음';
 
   let total = 0;
@@ -123,64 +136,68 @@ function buildCumulativeMessage(rows) {
 
 const isCumulative = process.argv.includes('--cumulative');
 
-if (isCumulative) {
+(async () => {
   try {
-    const rows = getRoomRevenueSummary();
-    ok(buildCumulativeMessage(rows));
-  } catch (e) {
-    fail(`누적 매출 조회 실패: ${e.message}`);
-  }
-} else if (ARGS.month) {
-  if (!/^\d{4}-\d{2}$/.test(ARGS.month)) {
-    fail(`월 형식 오류: ${ARGS.month} (예: 2026-02)`);
-  }
-  const [y, m] = ARGS.month.split('-').map(Number);
-  const startDate = `${ARGS.month}-01`;
-  const lastDay = new Date(y, m, 0).getDate();
-  const endDate = `${ARGS.month}-${String(lastDay).padStart(2, '0')}`;
-  try {
-    const rows = getDailySummariesInRange(startDate, endDate);
-    ok(buildPeriodMessage(rows, `${formatMonth(startDate)} 매출`));
-  } catch (e) {
-    fail(`월 매출 조회 실패: ${e.message}`);
-  }
-} else if (ARGS.period) {
-  const now = nowKST();
-  let startDate;
-  let label;
+    if (isCumulative) {
+      const rows: RevenueSummaryRow[] = await getRoomRevenueSummary();
+      ok(buildCumulativeMessage(rows));
+      return;
+    }
 
-  if (ARGS.period === 'week') {
-    const day = now.getDay();
-    const diff = day === 0 ? -6 : 1 - day;
-    const monday = new Date(now);
-    monday.setDate(now.getDate() + diff);
-    startDate = toDateStr(monday);
-    label = '이번 주 매출';
-  } else if (ARGS.period === 'month') {
-    startDate = toDateStr(new Date(now.getFullYear(), now.getMonth(), 1));
-    label = `${now.getMonth() + 1}월 매출`;
-  } else {
-    fail(`--period 오류: ${ARGS.period} (허용: week|month)`);
-  }
+    if (ARGS.month) {
+      if (!/^\d{4}-\d{2}$/.test(ARGS.month)) {
+        fail(`월 형식 오류: ${ARGS.month} (예: 2026-02)`);
+      }
+      const [y, m] = ARGS.month.split('-').map(Number);
+      const startDate = `${ARGS.month}-01`;
+      const lastDay = new Date(y, m, 0).getDate();
+      const endDate = `${ARGS.month}-${String(lastDay).padStart(2, '0')}`;
+      const rows: SummaryRow[] = await getDailySummariesInRange(startDate, endDate);
+      ok(buildPeriodMessage(rows, `${formatMonth(startDate)} 매출`));
+      return;
+    }
 
-  const endDate = toDateStr(now);
-  try {
-    const rows = getDailySummariesInRange(startDate, endDate);
-    ok(buildPeriodMessage(rows, label));
-  } catch (e) {
-    fail(`기간 매출 조회 실패: ${e.message}`);
-  }
-} else if (ARGS.date !== undefined || Object.keys(ARGS).filter((k) => k !== '_').length === 0) {
-  const dateArg = ARGS.date;
-  const resolved = resolveDate(dateArg);
-  if (!resolved) fail(`날짜 형식 오류: ${dateArg} (예: today, yesterday, 2026-02-26)`);
+    if (ARGS.period) {
+      const now = nowKST();
+      let startDate: string;
+      let label: string;
 
-  try {
-    const row = getDailySummary(resolved);
-    ok(buildDayMessage(row, formatDate(resolved)));
-  } catch (e) {
-    fail(`매출 조회 실패: ${e.message}`);
+      if (ARGS.period === 'week') {
+        const day = now.getDay();
+        const diff = day === 0 ? -6 : 1 - day;
+        const monday = new Date(now);
+        monday.setDate(now.getDate() + diff);
+        startDate = toDateStr(monday);
+        label = '이번 주 매출';
+      } else if (ARGS.period === 'month') {
+        startDate = toDateStr(new Date(now.getFullYear(), now.getMonth(), 1));
+        label = `${now.getMonth() + 1}월 매출`;
+      } else {
+        fail(`--period 오류: ${ARGS.period} (허용: week|month)`);
+      }
+
+      const endDate = toDateStr(now);
+      const rows: SummaryRow[] = await getDailySummariesInRange(startDate, endDate);
+      ok(buildPeriodMessage(rows, label));
+      return;
+    }
+
+    if (ARGS.date !== undefined || Object.keys(ARGS).filter((k) => k !== '_').length === 0) {
+      const dateArg = ARGS.date as string | undefined;
+      const resolved = resolveDate(dateArg);
+      if (!resolved) fail(`날짜 형식 오류: ${dateArg} (예: today, yesterday, 2026-02-26)`);
+
+      const row: SummaryRow | null = await getDailySummary(resolved);
+      ok(buildDayMessage(row, formatDate(resolved)));
+      return;
+    }
+
+    fail('옵션 오류.\n  --date=today|yesterday|YYYY-MM-DD\n  --period=week|month\n  --month=YYYY-MM\n  --cumulative');
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    fail(`매출 조회 실패: ${message}`);
   }
-} else {
-  fail('옵션 오류.\n  --date=today|yesterday|YYYY-MM-DD\n  --period=week|month\n  --month=YYYY-MM\n  --cumulative');
-}
+})().catch((e: unknown) => {
+  const message = e instanceof Error ? e.message : String(e);
+  fail(`매출 조회 실패: ${message}`);
+});

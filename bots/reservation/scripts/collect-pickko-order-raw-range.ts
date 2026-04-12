@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 'use strict';
 
 /**
@@ -25,56 +24,138 @@ const { spawn } = require('child_process');
 const argv = process.argv.slice(2);
 const collectorScript = path.join(__dirname, 'collect-pickko-order-raw.js');
 
-function getArg(name) {
+type StoredRow = {
+  source_axis?: string;
+  order_kind?: string;
+  raw_amount?: number | string | null;
+  policy_amount?: number | string | null;
+};
+
+type CollectedRow = {
+  sourceAxis?: string;
+  orderKind?: string;
+  rawAmount?: number | string | null;
+  policyAmount?: number | string | null;
+};
+
+type CollectSummary = {
+  generalCount: number;
+  directGeneralRevenue: number;
+  paymentRoomCount: number;
+  paymentRoomRevenueRaw: number;
+  roomCount: number;
+};
+
+type CollectResult = {
+  rows: CollectedRow[];
+  summary: CollectSummary;
+  storedRowCount: number;
+};
+
+type SummaryBucket = {
+  totalCount: number;
+  generalCount: number;
+  generalRevenueRaw: number;
+  paymentRoomCount: number;
+  paymentRoomRevenueRaw: number;
+  useRoomCount: number;
+  useRoomPolicyRevenue: number;
+};
+
+type VerificationResult = {
+  ok: boolean;
+  expected: SummaryBucket;
+  stored: SummaryBucket;
+};
+
+type DateResult =
+  | {
+      date: string;
+      ok: boolean;
+      summary: CollectSummary;
+      storedRowCount: number;
+      verification: VerificationResult;
+    }
+  | {
+      date: string;
+      ok: false;
+      error: string;
+    };
+
+type BatchResult = {
+  batchIndex: number;
+  batchLabel: string;
+  successDates: number;
+  failedDates: number;
+  verificationFailures: number;
+  generalCount: number;
+  paymentRoomCount: number;
+  useRoomCount: number;
+  dates: DateResult[];
+};
+
+function getArg(name: string) {
   const match = argv.find((item) => item.startsWith(`--${name}=`));
   return match ? match.split('=').slice(1).join('=') : null;
 }
 
-function parseDate(text) {
+function parseDate(text: string | null) {
   if (!text || !/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
   const [y, m, d] = text.split('-').map(Number);
   const date = new Date(Date.UTC(y, m - 1, d));
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function formatDate(date) {
+function formatDate(date: Date) {
   const y = date.getUTCFullYear();
   const m = String(date.getUTCMonth() + 1).padStart(2, '0');
   const d = String(date.getUTCDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 }
 
-function addDays(date, days) {
+function addDays(date: Date, days: number) {
   return new Date(date.getTime() + (days * 86400000));
 }
 
-function buildDateList(fromDate, toDate) {
-  const dates = [];
+function buildDateList(fromDate: Date, toDate: Date): string[] {
+  const dates: string[] = [];
   for (let cursor = new Date(fromDate); cursor <= toDate; cursor = addDays(cursor, 1)) {
     dates.push(formatDate(cursor));
   }
   return dates;
 }
 
-function chunkArray(items, chunkSize) {
-  const chunks = [];
+function chunkArray<T>(items: T[], chunkSize: number): T[][] {
+  const chunks: T[][] = [];
   for (let i = 0; i < items.length; i += chunkSize) {
     chunks.push(items.slice(i, i + chunkSize));
   }
   return chunks;
 }
 
-function summarizeRows(rows) {
+function summarizeRows(rows: Array<StoredRow | CollectedRow>): SummaryBucket {
   return rows.reduce((acc, row) => {
+    const sourceAxis = 'source_axis' in row
+      ? row.source_axis
+      : ('sourceAxis' in row ? row.sourceAxis : undefined);
+    const orderKind = 'order_kind' in row
+      ? row.order_kind
+      : ('orderKind' in row ? row.orderKind : undefined);
+    const rawAmount = 'raw_amount' in row
+      ? row.raw_amount
+      : ('rawAmount' in row ? row.rawAmount : undefined);
+    const policyAmount = 'policy_amount' in row
+      ? row.policy_amount
+      : ('policyAmount' in row ? row.policyAmount : undefined);
     acc.totalCount += 1;
-    if (row.source_axis === 'payment_day' && row.order_kind === 'general') {
+    if (sourceAxis === 'payment_day' && orderKind === 'general') {
       acc.generalCount += 1;
-      acc.generalRevenueRaw += Number(row.raw_amount || 0);
-    } else if (row.source_axis === 'use_day' && row.order_kind === 'study_room') {
+      acc.generalRevenueRaw += Number(rawAmount || 0);
+    } else if (sourceAxis === 'use_day' && orderKind === 'study_room') {
       acc.useRoomCount += 1;
-      acc.useRoomPolicyRevenue += Number(row.raw_amount || 0) > 0
-        ? Number(row.raw_amount || 0)
-        : Number(row.policy_amount || 0);
+      acc.useRoomPolicyRevenue += Number(rawAmount || 0) > 0
+        ? Number(rawAmount || 0)
+        : Number(policyAmount || 0);
     }
     return acc;
   }, {
@@ -88,7 +169,7 @@ function summarizeRows(rows) {
   });
 }
 
-function verifyDate(result, storedRows) {
+function verifyDate(result: CollectResult, storedRows: StoredRow[]): VerificationResult {
   const storedSummary = summarizeRows(storedRows);
   const expectedSummary = {
     totalCount: result.rows.length,
@@ -117,7 +198,7 @@ function verifyDate(result, storedRows) {
   };
 }
 
-async function runCollectorForDate(date, timeoutMs) {
+async function runCollectorForDate(date: string, timeoutMs: number): Promise<CollectResult> {
   return await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [collectorScript, `--date=${date}`, '--json'], {
       cwd: process.cwd(),
@@ -141,13 +222,13 @@ async function runCollectorForDate(date, timeoutMs) {
     child.stderr.on('data', (chunk) => {
       stderr += String(chunk);
     });
-    child.on('error', (error) => {
+    child.on('error', (error: Error) => {
       if (finished) return;
       finished = true;
       clearTimeout(timer);
       reject(error);
     });
-    child.on('exit', (code, signal) => {
+    child.on('exit', (code: number | null, signal: NodeJS.Signals | null) => {
       if (finished) return;
       finished = true;
       clearTimeout(timer);
@@ -157,16 +238,17 @@ async function runCollectorForDate(date, timeoutMs) {
       }
       try {
         resolve(JSON.parse(stdout));
-      } catch (error) {
-        reject(new Error(`invalid JSON output: ${error.message}`));
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        reject(new Error(`invalid JSON output: ${message}`));
       }
     });
   });
 }
 
-async function collectOneDate(date, timeoutMs) {
+async function collectOneDate(date: string, timeoutMs: number) {
   const result = await runCollectorForDate(date, timeoutMs);
-  const storedRows = await getPickkoOrderRawByDate(date);
+  const storedRows: StoredRow[] = await getPickkoOrderRawByDate(date);
   const verification = verifyDate(result, storedRows);
   return {
     date,
@@ -207,12 +289,12 @@ async function main() {
 
   const dates = buildDateList(fromDate, toDate);
   const batches = chunkArray(dates, chunkDays);
-  const batchResults = [];
+  const batchResults: BatchResult[] = [];
 
   for (let i = 0; i < batches.length; i += 1) {
     const batchDates = batches[i];
     const batchLabel = `${batchDates[0]} ~ ${batchDates[batchDates.length - 1]}`;
-    const dateResults = [];
+    const dateResults: DateResult[] = [];
     const batchSummary = {
       batchIndex: i + 1,
       batchLabel,
@@ -237,12 +319,13 @@ async function main() {
         batchSummary.generalCount += Number(dateResult.summary.generalCount || 0);
         batchSummary.paymentRoomCount += Number(dateResult.summary.paymentRoomCount || 0);
         batchSummary.useRoomCount += Number(dateResult.summary.roomCount || 0);
-      } catch (error) {
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
         batchSummary.failedDates += 1;
         dateResults.push({
           date,
           ok: false,
-          error: error.message,
+          error: message,
         });
         if (stopOnError) {
           batchResults.push({
@@ -260,7 +343,7 @@ async function main() {
           } else {
             console.log(`📦 Pickko raw order batch 중단 (${batchLabel})`);
             console.log(`  실패 날짜: ${date}`);
-            console.log(`  사유: ${error.message}`);
+            console.log(`  사유: ${message}`);
           }
           process.exit(1);
         }
@@ -319,7 +402,8 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(`❌ 범위 수집 실패: ${error.message}`);
+main().catch((error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(`❌ 범위 수집 실패: ${message}`);
   process.exit(1);
 });

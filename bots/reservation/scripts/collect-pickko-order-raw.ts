@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 'use strict';
 
 /**
@@ -32,7 +31,108 @@ const {
 
 const argv = process.argv.slice(2);
 
-function getArg(name) {
+type PickkoEntry = {
+  date?: string;
+  room?: string;
+  start?: string | null;
+  end?: string | null;
+  name?: string | null;
+  amount?: number | string | null;
+};
+
+type RoomDetail = {
+  useDate?: string | null;
+  startTime?: string | null;
+  endTime?: string | null;
+  roomType?: string | null;
+  roomLabel?: string | null;
+  memberName?: string | null;
+};
+
+type DailyTransaction = {
+  no: number;
+  description: string;
+  netRevenue?: number | string | null;
+  studyRoom?: string | null;
+  generalTicket?: {
+    ticketType?: string | null;
+    productHours?: number | null;
+    productDays?: number | null;
+    memberHint?: string | null;
+    startDate?: string | null;
+    endDate?: string | null;
+  } | null;
+  roomDetail?: RoomDetail | null;
+  detailHref?: string | null;
+  orderAt?: string | null;
+  payType?: string | null;
+  payDevice?: string | null;
+  memo?: string | null;
+};
+
+type DailyDetail = {
+  totalRevenue: number;
+  generalRevenue: number;
+  transactions: DailyTransaction[];
+};
+
+type RawOrderRow = {
+  entryKey: string;
+  sourceDate: string;
+  sourceAxis: string;
+  orderKind: string;
+  transactionNo: number | null;
+  detailHref: string | null;
+  description: string;
+  rawAmount: number;
+  paymentAt?: string | null;
+  payType?: string | null;
+  payDevice?: string | null;
+  memo?: string | null;
+  ticketType?: string | null;
+  productHours?: number | null;
+  productDays?: number | null;
+  memberHint?: string | null;
+  validityStart?: string | null;
+  validityEnd?: string | null;
+  roomLabel?: string | null;
+  roomType?: string | null;
+  useDate?: string | null;
+  useStartTime?: string | null;
+  useEndTime?: string | null;
+  memberName?: string | null;
+  policyAmount?: number | null;
+  amountMatch?: number | null;
+};
+
+type HrefRow = {
+  no: number;
+  description: string;
+  href: string | null;
+};
+
+type ScrapedOrderDetail = {
+  orderAt: string | null;
+  payType: string | null;
+  payDevice: string | null;
+  status: string | null;
+  memo: string | null;
+  url: string;
+};
+
+type CollectRowsResult = {
+  date: string;
+  summary: {
+    detailTotalRevenue: number;
+    directGeneralRevenue: number;
+    generalCount: number;
+    paymentRoomCount: number;
+    roomCount: number;
+  };
+  rows: RawOrderRow[];
+};
+
+function getArg(name: string) {
   const match = argv.find((item) => item.startsWith(`--${name}=`));
   return match ? match.split('=').slice(1).join('=') : null;
 }
@@ -40,11 +140,20 @@ function getArg(name) {
 const asJson = argv.includes('--json');
 const noStore = argv.includes('--no-store');
 
-function buildEntryKey(parts) {
+function buildEntryKey(parts: Array<string | number | null | undefined>) {
   return parts.map((part) => String(part || '')).join('|');
 }
 
-function matchRoomPolicyToDirect(policyRow, roomTransactions) {
+function matchRoomPolicyToDirect(
+  policyRow: {
+    roomType: string;
+    useDate: string;
+    useStartTime: string | null;
+    useEndTime: string | null;
+    memberName?: string | null;
+  },
+  roomTransactions: DailyTransaction[],
+) {
   return roomTransactions.find((tx) =>
     tx.roomDetail &&
     tx.roomDetail.useDate === policyRow.useDate &&
@@ -55,7 +164,7 @@ function matchRoomPolicyToDirect(policyRow, roomTransactions) {
   ) || null;
 }
 
-function calcPolicyAmountFromRoomDetail(roomDetail) {
+function calcPolicyAmountFromRoomDetail(roomDetail: RoomDetail | null | undefined) {
   if (!roomDetail?.roomType || !roomDetail?.startTime || !roomDetail?.endTime) return 0;
   return calcStudyRoomAmount({
     room: roomDetail.roomType,
@@ -64,7 +173,7 @@ function calcPolicyAmountFromRoomDetail(roomDetail) {
   });
 }
 
-async function scrapeOrderDetail(page, href) {
+async function scrapeOrderDetail(page: any, href: string): Promise<ScrapedOrderDetail> {
   const url = href.startsWith('http') ? href : `https://pickkoadmin.com${href}`;
   await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
   try {
@@ -72,14 +181,14 @@ async function scrapeOrderDetail(page, href) {
       const text = document.body?.innerText || '';
       return text.includes('주문일시') || text.includes('주문 상세 정보') || text.includes('결제 항목');
     }, { timeout: 5000 });
-  } catch (_) {
+  } catch (_: unknown) {
     // 일부 상세 페이지는 렌더링이 늦거나 라벨 구성이 달라 추가 대기만 하고 진행
   }
   await delay(1200);
   return await page.evaluate(() => {
     const text = document.body.innerText.replace(/\s+/g, ' ').trim();
     const labels = ['결제타입', '결제기기', '카드결제금액', '주문메모', '주문상태', '주문일시', '작업로그', '추가 정보'];
-    const extractSection = (label) => {
+    const extractSection = (label: string) => {
       const idx = text.indexOf(label);
       if (idx < 0) return null;
       const rest = text.slice(idx + label.length).trim();
@@ -92,14 +201,14 @@ async function scrapeOrderDetail(page, href) {
       const value = rest.slice(0, cut).trim();
       return value || null;
     };
-    const extractTimestamp = (label) => {
+    const extractTimestamp = (label: string) => {
       const section = extractSection(label);
       const directMatch = String(section || '').match(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/);
       if (directMatch) return directMatch[0];
       const fallback = text.match(new RegExp(`${label}\\s*(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2})`));
       return fallback ? fallback[1] : null;
     };
-    const extractWord = (label) => {
+    const extractWord = (label: string) => {
       const section = extractSection(label);
       if (!section) return null;
       const value = section.split(' ')[0]?.trim();
@@ -123,7 +232,7 @@ async function scrapeOrderDetail(page, href) {
   });
 }
 
-async function collectRows(date) {
+async function collectRows(date: string): Promise<CollectRowsResult> {
   const { pickko_id, pickko_pw } = loadSecrets();
   const browser = await puppeteer.launch(getPickkoLaunchOptions());
 
@@ -133,21 +242,21 @@ async function collectRows(date) {
     setupDialogHandler(page, console.log);
     await loginToPickko(page, pickko_id, pickko_pw, delay);
 
-    const detail = await fetchDailyDetail(page, date);
+    const detail: DailyDetail = await fetchDailyDetail(page, date);
     const fetched = await fetchPickkoEntries(page, date, { endDate: date, minAmount: 0 });
-    const entries = fetched.entries || [];
+    const entries: PickkoEntry[] = fetched.entries || [];
 
     const dayUrl = `https://pickkoadmin.com/manager/statistic/day/${date}.html`;
     await page.goto(dayUrl, { waitUntil: 'networkidle2', timeout: 30000 });
     await delay(1200);
 
-    const rowHrefs = await page.evaluate(() => {
+    const rowHrefs: HrefRow[] = await page.evaluate(() => {
       return Array.from(document.querySelectorAll('table tbody tr')).map((tr) => {
         const tds = Array.from(tr.querySelectorAll('td'));
         const noText = (tds[0]?.textContent || '').trim();
         const description = (tds[1]?.textContent || '').replace(/\s+/g, ' ').trim();
         if (!/^\d+$/.test(noText)) return null;
-        const link = Array.from(tr.querySelectorAll('a')).find((a) => (a.textContent || '').includes('결제보기'));
+        const link = Array.from(tr.querySelectorAll('a')).find((a) => (a.textContent || '').includes('결제보기')) as HTMLAnchorElement | undefined;
         return {
           no: Number(noText),
           description,
@@ -156,17 +265,17 @@ async function collectRows(date) {
       }).filter(Boolean);
     });
 
-    const hrefByNo = new Map(rowHrefs.map((row) => [row.no, row]));
+    const hrefByNo = new Map<number, HrefRow>(rowHrefs.map((row) => [row.no, row]));
     const detailPage = await browser.newPage();
     detailPage.setDefaultTimeout(30000);
     setupDialogHandler(detailPage, console.log);
 
-    const generalRows = [];
-    const roomTransactions = [];
+    const generalRows: RawOrderRow[] = [];
+    const roomTransactions: DailyTransaction[] = [];
 
     for (const tx of detail.transactions || []) {
       const hrefRow = hrefByNo.get(tx.no);
-      const extra = hrefRow?.href ? await scrapeOrderDetail(detailPage, hrefRow.href) : {};
+      const extra: Partial<ScrapedOrderDetail> = hrefRow?.href ? await scrapeOrderDetail(detailPage, hrefRow.href) : {};
 
       if (tx.studyRoom) {
         const roomTx = {
@@ -187,7 +296,7 @@ async function collectRows(date) {
           transactionNo: tx.no,
           detailHref: hrefRow?.href || null,
           description: tx.description,
-          rawAmount: tx.netRevenue,
+          rawAmount: Number(tx.netRevenue || 0),
           paymentAt: extra.orderAt || null,
           payType: extra.payType || null,
           payDevice: extra.payDevice || null,
@@ -204,7 +313,7 @@ async function collectRows(date) {
 
     const scopedEntries = entries.filter((entry) => (entry.date || date) === date);
 
-    const policyRows = scopedEntries.map((entry) => {
+    const policyRows: RawOrderRow[] = scopedEntries.map((entry) => {
       const roomType = normalizeStudyRoomKey(entry.room);
       const useDate = entry.date || date;
       const useStartTime = entry.start || null;
@@ -256,7 +365,7 @@ async function collectRows(date) {
       rows: [...generalRows, ...policyRows],
     };
   } finally {
-    try { await browser.close(); } catch (_) {}
+    try { await browser.close(); } catch (_: unknown) {}
   }
 }
 
@@ -292,8 +401,9 @@ async function main() {
 }
 
 if (require.main === module) {
-  main().catch((error) => {
-    console.error(`❌ 수집 실패: ${error.message}`);
+  main().catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`❌ 수집 실패: ${message}`);
     process.exit(1);
   });
 }

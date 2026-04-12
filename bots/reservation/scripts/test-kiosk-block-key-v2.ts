@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 'use strict';
 
 /**
@@ -29,14 +28,37 @@ const START = '09:00';
 const LONG_END = '13:00';
 const SHORT_END = '11:00';
 
-class RollbackOnly extends Error {
-  constructor(summary) {
-    super('ROLLBACK_ONLY');
-    this.summary = summary;
-  }
-}
+type InsertParams = {
+  id: string;
+  phoneRawEnc: string;
+  nameEnc: string;
+  date: string;
+  start: string;
+  end: string;
+  room: string;
+  amount: number;
+  naverBlocked: number;
+  firstSeenAt: null;
+  blockedAt: string | null;
+  naverUnblockedAt: null;
+  lastBlockAttemptAt: string;
+  lastBlockResult: string;
+  lastBlockReason: string;
+  blockRetryCount: number;
+};
 
-function buildInsertParams(endTime, naverBlocked = true) {
+type KioskBlockRow = {
+  id: string;
+  date: string;
+  start_time: string;
+  end_time: string;
+  room: string | null;
+  naver_blocked: number;
+  last_block_result: string | null;
+  last_block_reason: string | null;
+};
+
+function buildInsertParams(endTime: string, naverBlocked = true): InsertParams {
   return {
     id: hashKioskKey(TEST_PHONE, TEST_DATE, START, endTime, TEST_ROOM),
     phoneRawEnc: encrypt(TEST_PHONE),
@@ -95,7 +117,7 @@ async function main() {
       ]);
     }
 
-    const rows = (await client.query(`
+    const rows: KioskBlockRow[] = (await client.query(`
       SELECT id, date, start_time, end_time, room, naver_blocked, last_block_result, last_block_reason
       FROM kiosk_blocks
       WHERE id = ANY($1)
@@ -134,18 +156,21 @@ async function main() {
     await client.query('ROLLBACK');
     process.stdout.write(JSON.stringify(summary, null, 2) + '\n');
     process.exitCode = summary.success ? 0 : 1;
-  } catch (error) {
-    try { await client.query('ROLLBACK'); } catch {}
+  } catch (error: unknown) {
+    try { await client.query('ROLLBACK'); } catch (_rollbackError: unknown) {}
     throw error;
   } finally {
     client.release();
-    await pgPool.closeAll().catch(() => {});
+    await pgPool.closeAll().catch((_closeError: unknown) => {});
   }
 }
 
-main().catch((error) => {
-  process.stderr.write(`test-kiosk-block-key-v2 실패: ${error?.message || '(no message)'}\n`);
-  if (error?.stack) process.stderr.write(`${error.stack}\n`);
-  if (!error?.stack) process.stderr.write(`${JSON.stringify(error, Object.getOwnPropertyNames(error || {}), 2)}\n`);
+main().catch((error: unknown) => {
+  const message = error instanceof Error ? error.message : '(no message)';
+  process.stderr.write(`test-kiosk-block-key-v2 실패: ${message}\n`);
+  if (error instanceof Error && error.stack) process.stderr.write(`${error.stack}\n`);
+  if (!(error instanceof Error && error.stack)) {
+    process.stderr.write(`${JSON.stringify(error, Object.getOwnPropertyNames((error as object) || {}), 2)}\n`);
+  }
   process.exit(1);
 });

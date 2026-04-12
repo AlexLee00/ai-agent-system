@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 /**
  * scripts/e2e-test.js — 스카봇 E2E 통합 테스트 (SKA-P06)
  *
@@ -28,24 +27,33 @@ const path = require('path');
 let passed = 0;
 let failed = 0;
 
+type MaybePromise<T> = T | Promise<T>;
+type StepFn = () => MaybePromise<void>;
+type TableRow = { tablename: string };
+
 function setModeForTest(value) {
   if (value == null) Reflect.deleteProperty(process.env, 'MODE');
   else Reflect.set(process.env, 'MODE', value);
 }
 
-function step(name, fn) {
+function step(name: string, fn: StepFn) {
   process.stdout.write(`  ${name}... `);
   try {
     const result = fn();
     if (result && typeof result.then === 'function') {
       return result
         .then(() => { console.log('✅'); passed++; })
-        .catch(e => { console.log(`❌ ${e.message}`); failed++; });
+        .catch((e: unknown) => {
+          const message = e instanceof Error ? e.message : String(e);
+          console.log(`❌ ${message}`);
+          failed++;
+        });
     }
     console.log('✅');
     passed++;
-  } catch (e) {
-    console.log(`❌ ${e.message}`);
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.log(`❌ ${message}`);
     failed++;
   }
   return Promise.resolve();
@@ -96,7 +104,7 @@ async function runTests() {
   });
 
   await step('필수 테이블 존재 확인', async () => {
-    const rows = await pgPool.query(
+    const rows: TableRow[] = await pgPool.query(
       'reservation',
       "SELECT tablename FROM pg_tables WHERE schemaname = 'reservation'",
     );
@@ -242,8 +250,9 @@ async function runTests() {
     try {
       guardRealAction('e2e-테스트-액션');
       throw new Error('차단되어야 했으나 통과됨');
-    } catch (e) {
-      if (!e.message.includes('실동작 차단')) throw e; // 다른 에러라면 재throw
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      if (!message.includes('실동작 차단')) throw e; // 다른 에러라면 재throw
     }
   });
 
@@ -316,7 +325,7 @@ async function runTests() {
   console.log('\n[12] 마이그레이션 상태');
 
   await step('schema_migrations 테이블 존재 (12)', async () => {
-    const rows = await pgPool.query(
+    const rows: TableRow[] = await pgPool.query(
       'reservation',
       "SELECT tablename FROM pg_tables WHERE schemaname = 'reservation' AND tablename = 'schema_migrations'",
     );
@@ -342,7 +351,8 @@ async function runTests() {
   }
 }
 
-runTests().catch(err => {
-  console.error(`\n❌ 테스트 런타임 오류: ${err.message}`);
+runTests().catch((err: unknown) => {
+  const message = err instanceof Error ? err.message : String(err);
+  console.error(`\n❌ 테스트 런타임 오류: ${message}`);
   process.exit(1);
 });

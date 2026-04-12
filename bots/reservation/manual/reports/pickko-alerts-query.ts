@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 
 /**
  * pickko-alerts-query.js — 최근 알림 조회 CLI
@@ -16,9 +15,22 @@ const phoneF = ARGS.phone || null;
 const dateF = ARGS.date || null;
 const startF = ARGS.start || null;
 
-async function queryAlerts() {
+type AlertRow = {
+  id: string;
+  timestamp: string | Date;
+  type: string;
+  title: string;
+  message: string | null;
+  resolved: number | boolean;
+  resolved_at: string | Date | null;
+  phone: string | null;
+  date: string | null;
+  start_time: string | null;
+};
+
+async function queryAlerts(): Promise<AlertRow[]> {
   const clauses = [`timestamp::timestamptz > NOW() - ($1::int * INTERVAL '1 hour')`];
-  const params = [hours];
+  const params: Array<number | string> = [hours];
 
   if (typeF) {
     params.push(typeF);
@@ -49,7 +61,7 @@ async function queryAlerts() {
   `, params);
 }
 
-function fmt(r) {
+function fmt(r: AlertRow) {
   const ts = new Date(r.timestamp).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false });
   const icon = r.type === 'error'
     ? '❌'
@@ -95,7 +107,11 @@ function fmt(r) {
 
   const message = [header, '', ...lines].join('\n');
   console.log(JSON.stringify({ success: true, count: rows.length, message }));
-})().catch((error) => {
-  console.error(error?.stack || error?.message || String(error));
+})().catch((error: unknown) => {
+  if (error instanceof Error) {
+    console.error(error.stack || error.message);
+  } else {
+    console.error(String(error));
+  }
   process.exit(1);
 });

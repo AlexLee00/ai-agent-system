@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 'use strict';
-// @ts-nocheck
 
 /**
  * manual-block-followup-resolve.js — manual 등록 후속 네이버 차단 수동 처리 결과 반영
@@ -14,7 +13,30 @@ const { upsertKioskBlock, recordKioskBlockAttempt } = require('../../lib/db');
 const SCHEMA = 'reservation';
 const ARGS = parseArgs(process.argv);
 
-function normalizePhone(raw) {
+type TargetRow = {
+  id: string;
+  date: string;
+  start_time: string;
+  end_time: string;
+  room: string | null;
+  status: string;
+  pickko_status: string;
+  phone: string | null;
+  kiosk_block_id: string | null;
+  naver_blocked: number | boolean | null;
+  blocked_at: string | null;
+};
+
+type TouchedRow = {
+  phone: string | null;
+  date: string;
+  start: string;
+  end: string;
+  room: string | null;
+  mode: 'dry_run' | 'updated';
+};
+
+function normalizePhone(raw: unknown) {
   return String(raw || '').replace(/\D+/g, '');
 }
 
@@ -22,7 +44,7 @@ function nowKST() {
   return `${new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Seoul' }).replace(' ', 'T')}+09:00`;
 }
 
-async function findOpenRows(fromDate) {
+async function findOpenRows(fromDate: string): Promise<TargetRow[]> {
   return pgPool.query(SCHEMA, `
     SELECT
       r.id,
@@ -50,7 +72,7 @@ async function findOpenRows(fromDate) {
   `, [fromDate]);
 }
 
-async function findTargetRows() {
+async function findTargetRows(): Promise<TargetRow[]> {
   const allOpen = Boolean(ARGS['all-open'] || ARGS.allOpen);
   const fromDate = ARGS.from || new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
 
@@ -105,7 +127,7 @@ async function main() {
   }
 
   const appliedAt = nowKST();
-  const touched = [];
+  const touched: TouchedRow[] = [];
 
   for (const row of rows) {
     const phoneRaw = normalizePhone(row.phone);
@@ -161,6 +183,7 @@ async function main() {
   });
 }
 
-main().catch((error) => {
-  fail(`manual 후속 차단 원장 반영 실패: ${error.message}`);
+main().catch((error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  fail(`manual 후속 차단 원장 반영 실패: ${message}`);
 });
