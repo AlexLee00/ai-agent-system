@@ -22,6 +22,7 @@ import { publishToMainBot } from '../shared/mainbot-client.ts';
 import * as db from '../shared/db.ts';
 import * as rag from '../shared/rag-client.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import { buildScreeningHistoryReport } from './screening-history-report.ts';
 
 function parseArg(name, fallback = null) {
   return process.argv.slice(2).find((arg) => arg.startsWith(`--${name}=`))?.split('=')[1] || fallback;
@@ -98,6 +99,22 @@ function formatAccuracy(value) {
   return `${(Number(value) * 100).toFixed(1)}%`;
 }
 
+async function fetchScreeningSummary() {
+  const markets = ['crypto', 'domestic', 'overseas'];
+  const result = {};
+  for (const market of markets) {
+    try {
+      const report = await buildScreeningHistoryReport({ market, limit: 3, json: true });
+      result[market] = report.summary;
+    } catch (error) {
+      result[market] = {
+        error: String(error?.message || error),
+      };
+    }
+  }
+  return result;
+}
+
 async function buildDailyFeedback(dateKst, trades, analystAccuracy) {
   const stats = buildDailyStats(trades);
   if (trades.length === 0) {
@@ -140,25 +157,41 @@ async function buildDailyFeedback(dateKst, trades, analystAccuracy) {
   };
 }
 
-function buildTelegramMessage(dateKst, feedback, analystAccuracy) {
+function buildScreeningLine(screeningSummary) {
+  if (!screeningSummary) return null;
+  const parts = [];
+  for (const market of ['crypto', 'domestic', 'overseas']) {
+    const summary = screeningSummary[market];
+    if (!summary || summary.error || !summary.trend) continue;
+    const delta = summary.trend.deltaDynamicCount;
+    const signedDelta = `${delta >= 0 ? '+' : ''}${delta}`;
+    parts.push(`${market} ${summary.trend.latestDynamicCount}개(${signedDelta})`);
+  }
+  return parts.length > 0 ? `🔎 screening: ${parts.join(' | ')}` : null;
+}
+
+function buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSummary) {
   const lines = [
     `🌓 루나 일일 피드백 (${dateKst})`,
     `📌 ${feedback.summary}`,
     `📊 거래 ${feedback.stats.total}건 | 승률 ${(feedback.stats.winRate * 100).toFixed(1)}% | 손익 $${feedback.stats.totalPnl.toFixed(2)}`,
     `🧠 분석팀 정확도: aria ${formatAccuracy(analystAccuracy?.aria_accuracy)}, sophia ${formatAccuracy(analystAccuracy?.sophia_accuracy)}, oracle ${formatAccuracy(analystAccuracy?.oracle_accuracy)}, hermes ${formatAccuracy(analystAccuracy?.hermes_accuracy)}`,
   ];
+  const screeningLine = buildScreeningLine(screeningSummary);
+  if (screeningLine) lines.push(screeningLine);
   if (Array.isArray(feedback.nextActions) && feedback.nextActions.length > 0) {
     lines.push(`➡️ 다음 액션: ${feedback.nextActions.join(' / ')}`);
   }
   return lines.join('\n');
 }
 
-async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy) {
+async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeningSummary) {
   const content = [
     `[일일 피드백 ${dateKst}] ${feedback.summary}`,
     `거래 ${feedback.stats.total}건 / 승률 ${(feedback.stats.winRate * 100).toFixed(1)}% / 손익 $${feedback.stats.totalPnl.toFixed(2)}`,
+    buildScreeningLine(screeningSummary),
     `다음 액션: ${(feedback.nextActions || []).join(' / ') || '없음'}`,
-  ].join('\n');
+  ].filter(Boolean).join('\n');
   await rag.initSchema();
   await rag.store('trades', content, {
     type: 'daily_trade_feedback',
@@ -167,17 +200,19 @@ async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy) {
     win_rate: feedback.stats.winRate,
     total_pnl: feedback.stats.totalPnl,
     analyst_accuracy: analystAccuracy || {},
+    screening_summary: screeningSummary || {},
   }, 'luna');
 }
 
 async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
   const trades = await fetchDailyTrades(dateKst);
   const analystAccuracy = await fetchDailyAnalystAccuracy(dateKst);
+  const screeningSummary = await fetchScreeningSummary();
   const feedback = await buildDailyFeedback(dateKst, trades, analystAccuracy);
-  const message = buildTelegramMessage(dateKst, feedback, analystAccuracy);
+  const message = buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSummary);
 
   try {
-    await storeDailyFeedbackRag(dateKst, feedback, analystAccuracy);
+    await storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeningSummary);
   } catch (error) {
     console.warn(`  ⚠️ [daily-feedback] RAG 저장 실패(무시): ${error?.message || error}`);
   }
@@ -189,7 +224,7 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
         event_type: 'daily_feedback',
         alert_level: 1,
         message,
-        payload: { dateKst, feedback, analystAccuracy },
+        payload: { dateKst, feedback, analystAccuracy, screeningSummary },
       });
     } catch (error) {
       console.warn(`  ⚠️ [daily-feedback] 메인봇 발행 실패(무시): ${error?.message || error}`);
@@ -202,6 +237,7 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
     dryRun,
     tradeCount: trades.length,
     analystAccuracy,
+    screeningSummary,
     feedback,
     message,
   };
