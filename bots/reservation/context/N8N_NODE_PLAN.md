@@ -7,18 +7,18 @@
 
 ## 현재 구조
 - 엔트리:
-  - `src/ska.js`
+  - `src/ska.ts`
 - 명령 핸들러:
-  - `lib/ska-command-handlers.js`
-  - `lib/ska-intent-learning.js`
+  - `lib/ska-command-handlers.ts`
+  - `lib/ska-intent-learning.ts`
 - 명령 큐:
-  - `lib/ska-command-queue.js`
+  - `lib/ska-command-queue.ts`
 - 운영 모니터:
-  - `auto/monitors/naver-monitor.js`
-  - `auto/monitors/pickko-kiosk-monitor.js`
+  - `auto/monitors/naver-monitor.ts`
+  - `auto/monitors/pickko-kiosk-monitor.ts`
 - n8n draft:
   - `context/n8n-ska-command-workflow.json`
-  - `n8n/setup-ska-command-workflow.js`
+  - `n8n/setup-ska-command-workflow.ts`
 
 ## 1차 노드화 대상
 - `query_reservations`

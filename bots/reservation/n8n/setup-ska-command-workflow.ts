@@ -1,13 +1,13 @@
 'use strict';
 /**
- * bots/reservation/n8n/setup-ska-command-workflow.js
+ * bots/reservation/n8n/setup-ska-command-workflow.ts
  *
  * 스카팀 읽기 명령 webhook 워크플로우 생성/업데이트 스크립트
  * - query_reservations
  * - query_today_stats
  * - query_alerts
  *
- * 실행: node bots/reservation/n8n/setup-ska-command-workflow.js
+ * 실행: node dist/ts-runtime/bots/reservation/n8n/setup-ska-command-workflow.js
  */
 
 const http = require('http');
