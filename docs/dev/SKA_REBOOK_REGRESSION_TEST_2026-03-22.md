@@ -31,7 +31,7 @@
 권장 확인 명령:
 
 ```bash
-node /Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/health-report.js --json
+node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/scripts/health-report.js --json
 node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/scripts/migrate.js --version
 ```
 

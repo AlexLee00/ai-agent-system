@@ -282,13 +282,13 @@
 
 ---
 
-## 7. pickko-register.js 래퍼
+## 7. pickko-register.ts 등록 진입점
 
 파일:
-- `/Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-register.js`
+- `/Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-register.ts`
 
 역할:
-- 실제 픽코 자동화 스크립트 `pickko-accurate.js`를 감싸는 래퍼
+- 실제 픽코 자동화 스크립트 `pickko-accurate.ts`를 감싸는 TS 진입점
 - 입력 검증
 - 실행 후 DB 반영
 - 필요 시 네이버 차단 spawn
@@ -315,7 +315,7 @@
 현재 규칙:
 - 재시도면 자동으로 세 옵션을 같이 켠다.
 
-### 7-3. pickko-accurate.js 실행
+### 7-3. pickko-accurate 실행
 
 실행 값:
 - `--phone`
@@ -346,7 +346,7 @@ DB 기록:
 현재 규칙:
 - `code === 0` 이고
 - `SKIP_NAVER_BLOCK === false`
-일 때만 `pickko-kiosk-monitor.js --block-slot` spawn
+일 때만 `dist/ts-runtime/.../pickko-kiosk-monitor.js --block-slot` spawn
 
 즉:
 - 일반 신규 등록은 네이버 차단 시도
@@ -354,10 +354,10 @@ DB 기록:
 
 ---
 
-## 8. pickko-accurate.js 실제 자동화
+## 8. pickko-accurate.ts 실제 자동화
 
 파일:
-- `/Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-accurate.js`
+- `/Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-accurate.ts`
 
 역할:
 - 픽코 관리자 페이지를 직접 조작해 예약 등록/결제를 수행

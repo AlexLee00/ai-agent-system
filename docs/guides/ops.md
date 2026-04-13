@@ -546,7 +546,7 @@ launchctl bootout gui/$(id -u) /Users/alexlee/projects/ai-agent-system/bots/inve
 4. 필요 시 manual verify 후 alert resolve
 
 대표 점검:
-- `node bots/reservation/scripts/health-report.js --json`
+- `node dist/ts-runtime/bots/reservation/scripts/health-report.js --json`
 - `node dist/ts-runtime/bots/reservation/manual/admin/pickko-verify.js`
 - `bash bots/reservation/scripts/reload-monitor.sh`
 
