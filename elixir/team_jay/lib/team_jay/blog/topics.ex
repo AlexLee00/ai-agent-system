@@ -11,6 +11,7 @@ defmodule TeamJay.Blog.Topics do
   def research_done, do: "blog:research_done"
   def draft_ready(writer), do: "blog:draft_ready:#{writer}"
   def quality_approved, do: "blog:quality_approved"
+  def handoff(target), do: "blog:handoff:#{target}"
   def image_ready(post_type), do: "blog:image_ready:#{post_type}"
   def published, do: "blog:published"
   def feedback(post_id), do: "blog:feedback:#{post_id}"

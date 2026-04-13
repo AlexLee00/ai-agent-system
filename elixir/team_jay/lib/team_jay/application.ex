@@ -17,6 +17,7 @@ defmodule TeamJay.Application do
       TeamJay.Blog.Writer.Gems,
       TeamJay.Blog.Editor,
       TeamJay.Blog.Publisher,
+      TeamJay.Blog.PortBridge,
       TeamJay.EventLake,
       TeamJay.MarketRegime,
       TeamJay.Teams.SkaSupervisor,

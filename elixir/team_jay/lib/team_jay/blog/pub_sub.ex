@@ -38,4 +38,9 @@ defmodule TeamJay.Blog.PubSub do
     TeamJay.Blog.Topics.published()
     |> broadcast({:published, post_payload})
   end
+
+  def broadcast_handoff(target, payload) when is_binary(target) do
+    TeamJay.Blog.Topics.handoff(target)
+    |> broadcast({:handoff_ready, target, payload})
+  end
 end
