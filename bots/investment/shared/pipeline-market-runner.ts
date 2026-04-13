@@ -17,6 +17,10 @@ const COLLECT_CONCURRENCY_LIMIT = {
 };
 
 const ENRICHMENT_NODE_IDS = new Set(['L03', 'L05']);
+const ENRICHMENT_NODE_LABELS = {
+  L03: '센티널(뉴스·감성)',
+  L05: '온체인',
+};
 
 const COLLECT_WARNING_THRESHOLDS = {
   overloadTasks: 60,
@@ -113,6 +117,8 @@ export async function runMarketCollectPipeline({
             status: 'completed',
             symbol,
             outputRef: result.outputRef,
+            partialFallback: Boolean(result?.result?.partialFallback),
+            errors: Array.isArray(result?.result?.errors) ? result.result.errors : [],
           })).catch(err => ({
             nodeId,
             status: 'failed',
@@ -128,6 +134,7 @@ export async function runMarketCollectPipeline({
     const totalTasks = tasks.length + (portfolioNode ? 1 : 0);
     const failedTasks = summaries.filter(item => item.status === 'failed').length;
     const failedSummaries = summaries.filter(item => item.status === 'failed');
+    const partialFallbackSummaries = summaries.filter(item => item.status === 'completed' && item.partialFallback);
     const dataSparsityFailures = failedSummaries.filter(item => isDataSparsityError(item.error)).length;
     const failedCoreTasks = failedSummaries.filter(item => !ENRICHMENT_NODE_IDS.has(item.nodeId)).length;
     const failedHardCoreTasks = failedSummaries.filter(item => !ENRICHMENT_NODE_IDS.has(item.nodeId) && !isDataSparsityError(item.error)).length;
@@ -139,6 +146,17 @@ export async function runMarketCollectPipeline({
     ).length;
     const failedNodeCounts = failedSummaries.reduce((acc, item) => {
       acc[item.nodeId] = (acc[item.nodeId] || 0) + 1;
+      return acc;
+    }, {});
+    const partialFallbackNodeCounts = partialFallbackSummaries.reduce((acc, item) => {
+      acc[item.nodeId] = (acc[item.nodeId] || 0) + 1;
+      return acc;
+    }, {});
+    const partialFallbackErrorSources = partialFallbackSummaries.reduce((acc, item) => {
+      for (const err of Array.isArray(item.errors) ? item.errors : []) {
+        const key = String(err?.source || 'unknown');
+        acc[key] = (acc[key] || 0) + 1;
+      }
       return acc;
     }, {});
     const metrics = {
@@ -162,6 +180,9 @@ export async function runMarketCollectPipeline({
       dataSparsityFailures,
       llmGuardFailedTasks,
       failedNodeCounts,
+      partialFallbackTasks: partialFallbackSummaries.length,
+      partialFallbackNodeCounts,
+      partialFallbackErrorSources,
       concurrencyLimit: COLLECT_CONCURRENCY_LIMIT[market] || 4,
       ragArtifactsSkipped: tasks.length,
       overloadDetected: tasks.length >= COLLECT_WARNING_THRESHOLDS.overloadTasks,
@@ -218,17 +239,48 @@ export function summarizeCollectWarnings(warnings = [], metrics = {}) {
   const coreFailed = Number(metrics.failedCoreTasks || 0);
   const enrichFailed = Number(metrics.failedEnrichmentTasks || 0);
   const llmGuardFailed = Number(metrics.llmGuardFailedTasks || 0);
+  const partialFallbackTasks = Number(metrics.partialFallbackTasks || 0);
+  const failedNodeCounts = metrics.failedNodeCounts && typeof metrics.failedNodeCounts === 'object'
+    ? metrics.failedNodeCounts
+    : {};
+  const partialFallbackNodeCounts = metrics.partialFallbackNodeCounts && typeof metrics.partialFallbackNodeCounts === 'object'
+    ? metrics.partialFallbackNodeCounts
+    : {};
+  const partialFallbackErrorSources = metrics.partialFallbackErrorSources && typeof metrics.partialFallbackErrorSources === 'object'
+    ? metrics.partialFallbackErrorSources
+    : {};
+  const enrichmentBreakdown = Object.entries(ENRICHMENT_NODE_LABELS)
+    .map(([nodeId, label]) => {
+      const count = Number(failedNodeCounts[nodeId] || 0);
+      return count > 0 ? `${label} ${count}건` : null;
+    })
+    .filter(Boolean)
+    .join(', ');
+  const partialBreakdown = Object.entries(ENRICHMENT_NODE_LABELS)
+    .map(([nodeId, label]) => {
+      const count = Number(partialFallbackNodeCounts[nodeId] || 0);
+      return count > 0 ? `${label} ${count}건` : null;
+    })
+    .filter(Boolean)
+    .join(', ');
+  const partialSources = Object.entries(partialFallbackErrorSources)
+    .map(([source, count]) => `${source} ${count}건`)
+    .join(', ');
 
   if (warnings.includes('collect_blocked_by_llm_guard')) {
     if (coreFailed === 0 && enrichFailed > 0) {
-      lines.push(`LLM guard 발동으로 보조 분석 수집 ${enrichFailed}건이 차단됐습니다. 핵심 수집은 정상입니다.`);
+      lines.push(`LLM guard 발동으로 보조 분석 수집 ${enrichFailed}건이 차단됐습니다.${enrichmentBreakdown ? ` (${enrichmentBreakdown})` : ''} 핵심 수집은 정상입니다.`);
     } else {
       lines.push(`LLM guard 발동으로 수집 노드 ${llmGuardFailed || (coreFailed + enrichFailed)}건이 차단됐습니다.`);
     }
   }
 
   if (warnings.includes('enrichment_collect_failure_rate_high')) {
-    lines.push(`뉴스·감성·온체인 등 보조 분석 실패율이 높습니다 (실패 ${enrichFailed}건).`);
+    lines.push(`뉴스·감성·온체인 등 보조 분석 실패율이 높습니다 (실패 ${enrichFailed}건${enrichmentBreakdown ? `, ${enrichmentBreakdown}` : ''}).`);
+  }
+
+  if (partialFallbackTasks > 0) {
+    lines.push(`보조 분석이 부분 폴백으로 완료된 건이 있습니다 (${partialFallbackTasks}건${partialBreakdown ? `, ${partialBreakdown}` : ''}${partialSources ? `, 원인 ${partialSources}` : ''}).`);
   }
 
   if (warnings.includes('core_collect_failure_rate_high')) {
@@ -296,6 +348,11 @@ export async function logMarketPipelineMetrics(label, metrics = {}) {
     metrics.failedTasks != null ? `failed=${metrics.failedTasks}` : null,
     metrics.failedCoreTasks != null ? `coreFailed=${metrics.failedCoreTasks}` : null,
     metrics.failedEnrichmentTasks != null ? `enrichFailed=${metrics.failedEnrichmentTasks}` : null,
+    metrics.partialFallbackTasks != null && metrics.partialFallbackTasks > 0 ? `partial=${metrics.partialFallbackTasks}` : null,
+    metrics.failedNodeCounts?.L03 ? `L03=${metrics.failedNodeCounts.L03}` : null,
+    metrics.failedNodeCounts?.L05 ? `L05=${metrics.failedNodeCounts.L05}` : null,
+    metrics.partialFallbackNodeCounts?.L03 ? `L03_partial=${metrics.partialFallbackNodeCounts.L03}` : null,
+    metrics.partialFallbackNodeCounts?.L05 ? `L05_partial=${metrics.partialFallbackNodeCounts.L05}` : null,
     metrics.debateCount != null ? `debate=${metrics.debateCount}/${metrics.debateLimit}` : null,
     metrics.weakSignalSkipped != null ? `weakSkipped=${metrics.weakSignalSkipped}` : null,
     metrics.riskRejected != null ? `riskRejected=${metrics.riskRejected}` : null,

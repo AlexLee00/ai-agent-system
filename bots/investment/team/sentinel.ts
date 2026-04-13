@@ -54,15 +54,44 @@ export function combineSentinelResult(community = {}, news = {}) {
 }
 
 export async function analyze(symbol = 'BTC/USDT', exchange = 'binance') {
-  const [community, news] = await Promise.all([
+  const [communityResult, newsResult] = await Promise.allSettled([
     analyzeSentiment(symbol, exchange),
     analyzeNews(symbol, exchange),
   ]);
 
-  const combined = combineSentinelResult(community, news);
+  const errors = [];
+  const community = communityResult.status === 'fulfilled'
+    ? communityResult.value
+    : null;
+  const news = newsResult.status === 'fulfilled'
+    ? newsResult.value
+    : null;
+
+  if (communityResult.status === 'rejected') {
+    errors.push({
+      source: 'sentiment',
+      message: communityResult.reason?.message || String(communityResult.reason || 'unknown sentiment error'),
+    });
+  }
+
+  if (newsResult.status === 'rejected') {
+    errors.push({
+      source: 'news',
+      message: newsResult.reason?.message || String(newsResult.reason || 'unknown news error'),
+    });
+  }
+
+  if (!community && !news) {
+    const detail = errors.map((item) => `${item.source}: ${item.message}`).join(' | ');
+    throw new Error(`sentinel collectors failed (${detail || 'unknown'})`);
+  }
+
+  const combined = combineSentinelResult(community || {}, news || {});
   return {
     symbol,
     analyst: ANALYST_TYPES.SENTINEL,
+    partialFallback: errors.length > 0,
+    errors,
     ...combined,
   };
 }
