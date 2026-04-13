@@ -107,6 +107,132 @@ function normalizePublishDate(value) {
   return kst.today();
 }
 
+function countQuestionStyleFaq(content) {
+  return (String(content || '').match(/(?:^|\n)\s*(?:\*\*)?Q[0-9]*[.):]|(?:^|\n)\s*Q\.\s|(?:^|\n)\s*질문\s*[0-9]*[.):]/gm) || []).length;
+}
+
+function buildLectureLearningPointsSection(title) {
+  return [
+    '[이 글에서 배울 수 있는 것]',
+    `- ${title || '이번 강의 주제'}의 핵심 구조를 실무 관점에서 이해합니다.`,
+    '- 구현 전에 먼저 확인해야 할 설계 기준과 운영 포인트를 정리합니다.',
+    '- 예제 코드를 실제 프로젝트에 옮길 때 놓치기 쉬운 체크포인트를 짚습니다.',
+  ].join('\n');
+}
+
+function buildLectureFaqSection(title) {
+  return [
+    '[AEO FAQ]',
+    `Q. ${title || '이번 강의 주제'}를 왜 먼저 이해해야 하나요?`,
+    'A. 기능 구현보다 먼저 시스템 경계와 운영 책임을 이해해야 실제 장애를 줄일 수 있기 때문입니다.',
+    `Q. ${title || '이 기술'}를 적용할 때 가장 자주 놓치는 부분은 무엇인가요?`,
+    'A. 예외 처리, 관측 포인트, 재시도 정책처럼 운영 단계에서 필요한 기준을 뒤늦게 붙이는 경우가 많습니다.',
+    'Q. 예제 코드를 그대로 복사해도 바로 실무에 쓸 수 있나요?',
+    'A. 출발점으로는 좋지만 인증, 로깅, 롤백, 모니터링까지 붙어야 운영 가능한 코드가 됩니다.',
+  ].join('\n');
+}
+
+function buildGeneralLearningPointsSection(title) {
+  return [
+    '[이 글에서 배울 수 있는 것]',
+    `- ${title || '이번 주제'}를 볼 때 먼저 점검해야 할 기준`,
+    '- 실무 의사결정에서 흔들리지 않도록 잡아야 할 핵심 포인트',
+    '- 오늘 내용이 실제 업무나 일상 판단에 어떻게 연결되는지',
+  ].join('\n');
+}
+
+function buildGeneralQuestionSection(title) {
+  return [
+    '[질문형 Q&A]',
+    `Q. ${title || '이번 주제'}를 실제 상황에 적용할 때 가장 먼저 봐야 할 것은 무엇인가요?`,
+    'A. 지금 당장 해결하려는 문제보다, 그 판단이 이후 일정과 기대치에 어떤 영향을 주는지 먼저 보는 편이 안전합니다.',
+    'Q. 겉으로는 비슷해 보이는 선택지인데 왜 결과가 크게 달라지나요?',
+    'A. 기준 없이 빠르게 결정하면 중간 수정 비용이 커지기 때문입니다. 처음에 확인할 질문 몇 개가 전체 흐름을 바꿉니다.',
+    'Q. 실무에서는 완벽한 답보다 무엇이 더 중요할까요?',
+    'A. 지금 단계에서 무엇을 확정하고 무엇을 열어둘지 분리하는 판단이 더 중요합니다.',
+  ].join('\n');
+}
+
+function hasPersonalVoice(content) {
+  return /제가|저는|느꼈|경험|실제로.*해보니|직접.*해본|제 생각|솔직히/.test(String(content || ''));
+}
+
+function hasEmotionLine(content) {
+  return /놀랐|감동|기뻤|아쉬웠|뿌듯|설레|두근|가슴이|반가웠|인상적/.test(String(content || ''));
+}
+
+function buildPersonalVoiceParagraph(title, postType) {
+  const topic = title || '이번 주제';
+  if (postType === 'lecture') {
+    return [
+      '제가 실제 운영 흐름에 이 구조를 대입해보면, 처음에는 단순한 개념처럼 보여도 장애와 복구 관점에서 생각보다 훨씬 중요하게 다가올 때가 많았습니다.',
+      `특히 ${topic}처럼 책임을 나누는 주제는 실무에서 한 번 체감하고 나면, 왜 이 기준을 먼저 잡아야 하는지 더 선명하게 느껴졌습니다.`,
+      '개인적으로도 이런 지점을 정리하고 나면 막연했던 구조가 꽤 단단하게 잡히는 느낌이라 인상적이었습니다.',
+    ].join(' ');
+  }
+
+  return [
+    `저도 ${topic}와 비슷한 고민을 할 때면, 더 많이 하는 방법보다 무엇을 기준으로 버릴지부터 다시 적어보곤 합니다.`,
+    '이 과정을 거치면 막연하게 조급했던 마음이 조금 정리되고, 생각보다 훨씬 차분하게 다음 선택을 보게 되는 점이 늘 인상적이었습니다.',
+  ].join(' ');
+}
+
+function ensurePersonalVoiceFloor(content, postType, title) {
+  let next = String(content || '').trim();
+  if (!next) return next;
+  if (hasPersonalVoice(next) && hasEmotionLine(next)) return next;
+
+  const paragraph = buildPersonalVoiceParagraph(title, postType);
+  const anchor = postType === 'lecture' ? '[마무리 인사]' : '[마무리 제언]';
+
+  if (next.includes(anchor)) {
+    return next.replace(anchor, `${paragraph}\n\n${anchor}`);
+  }
+
+  return `${next}\n\n${paragraph}`;
+}
+
+function ensurePublishBriefingFloor(content, postType, title) {
+  let next = String(content || '').trim();
+  if (!next) return next;
+
+  if (postType === 'lecture') {
+    if (!next.includes('이 글에서 배울 수 있는 것')) {
+      const markerIndex = next.indexOf('[승호아빠 인사말]');
+      const section = buildLectureLearningPointsSection(title);
+      if (markerIndex >= 0) {
+        next = `${next.slice(0, markerIndex).trimEnd()}\n\n${section}\n\n${next.slice(markerIndex).trimStart()}`;
+      } else {
+        next = `${section}\n\n${next}`;
+      }
+    }
+
+    const faqCount = countQuestionStyleFaq(next);
+    if (!next.includes('[AEO FAQ]') || faqCount < 3) {
+      next = next.replace(/\[AEO FAQ\][\s\S]*?(?=\n\[|$)/, '').trim();
+      next = `${next}\n\n${buildLectureFaqSection(title)}`;
+    }
+  } else {
+    if (!next.includes('이 글에서 배울 수 있는 것')) {
+      const markerIndex = next.indexOf('[승호아빠 인사말]');
+      const section = buildGeneralLearningPointsSection(title);
+      if (markerIndex >= 0) {
+        next = `${next.slice(0, markerIndex).trimEnd()}\n\n${section}\n\n${next.slice(markerIndex).trimStart()}`;
+      } else {
+        next = `${section}\n\n${next}`;
+      }
+    }
+
+    const faqCount = countQuestionStyleFaq(next);
+    if (!next.includes('[질문형 Q&A]') || faqCount < 3) {
+      next = next.replace(/\[질문형 Q&A\][\s\S]*?(?=\n\[|$)/, '').trim();
+      next = `${next}\n\n${buildGeneralQuestionSection(title)}`;
+    }
+  }
+
+  return next.trim();
+}
+
 function _contentToHtml(content, title, images = null) {
   let text = content.replace(/_THE_END_\s*$/, '').trim();
 
@@ -220,6 +346,7 @@ async function publishToFile(postData) {
     images,
     scheduleId,
     writerName,
+    metadata,
   } = postData;
 
   if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
@@ -266,7 +393,12 @@ async function publishToFile(postData) {
   const filepath = path.join(OUTPUT_DIR, filename);
 
   const titleUrlMap = await loadPublishedLinkMap();
-  const linkedContent = replaceInternalLinkPlaceholders(content, titleUrlMap);
+  const normalizedContent = ensurePersonalVoiceFloor(
+    ensurePublishBriefingFloor(content, postType, title),
+    postType,
+    title,
+  );
+  const linkedContent = replaceInternalLinkPlaceholders(normalizedContent, titleUrlMap);
 
   const htmlContent = _contentToHtml(linkedContent, title, images);
 
@@ -302,6 +434,7 @@ async function publishToFile(postData) {
           filename,
           generated_on: today,
           writer_name: writerName || null,
+          ...(metadata || {}),
         },
       ]);
       postId = rows[0]?.id;

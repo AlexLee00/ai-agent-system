@@ -29,6 +29,7 @@ const BLOCKED_KEYWORDS = [
 ];
 
 const ALLOWED_SCHEMAS = new Set([
+  'agent',
   'claude',
   'reservation',
   'investment',

@@ -1,0 +1,19 @@
+-- 008: 마케팅 메트릭스 확장
+ALTER TABLE blog.posts
+  ADD COLUMN IF NOT EXISTS thumbnail_type VARCHAR(20),
+  ADD COLUMN IF NOT EXISTS aggro_type VARCHAR(20),
+  ADD COLUMN IF NOT EXISTS aggro_score FLOAT DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS publish_hour INTEGER,
+  ADD COLUMN IF NOT EXISTS ctr FLOAT DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS blog.channel_performance (
+  id SERIAL PRIMARY KEY,
+  post_id INTEGER REFERENCES blog.posts(id),
+  channel VARCHAR(20) NOT NULL,
+  published_at TIMESTAMP,
+  reach INTEGER DEFAULT 0,
+  clicks INTEGER DEFAULT 0,
+  saves INTEGER DEFAULT 0,
+  shares INTEGER DEFAULT 0,
+  collected_at TIMESTAMP DEFAULT NOW()
+);

@@ -8,6 +8,7 @@ const {
 const {
   searchData4LibraryPopular,
   syncPopularBooksToCatalog,
+  syncRecommendedBooksToCatalog,
 } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/skills/blog/book-review-book.js'));
 
 function parseArgs(argv = []) {
@@ -85,13 +86,22 @@ async function main() {
     return;
   }
 
-  const result = await syncPopularBooksToCatalog({ kdc: args.kdc });
+  const popularResult = await syncPopularBooksToCatalog({ kdc: args.kdc });
+  const recommendedResult = await syncRecommendedBooksToCatalog();
   const payload = {
     ok: true,
     dryRun: false,
     kdc: args.kdc,
-    scanned: Number(result?.scanned || 0),
-    inserted: Number(result?.inserted || 0),
+    scanned: Number(popularResult?.scanned || 0) + Number(recommendedResult?.scanned || 0),
+    inserted: Number(popularResult?.inserted || 0) + Number(recommendedResult?.inserted || 0),
+    popular: {
+      scanned: Number(popularResult?.scanned || 0),
+      inserted: Number(popularResult?.inserted || 0),
+    },
+    recommended: {
+      scanned: Number(recommendedResult?.scanned || 0),
+      inserted: Number(recommendedResult?.inserted || 0),
+    },
     note: '정보나루는 승인 완료 전까지 결과가 비어 있을 수 있습니다.',
   };
 

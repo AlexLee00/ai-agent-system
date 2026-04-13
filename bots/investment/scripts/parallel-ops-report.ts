@@ -32,6 +32,23 @@ function tryRunCommand(command, args) {
   }
 }
 
+function parseJsonFromMixedOutput(output) {
+  const text = String(output || '').trim();
+  if (!text) throw new Error('empty output');
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    // health-report.ts may print setup/status lines before the final JSON block.
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start === -1 || end === -1 || end <= start) {
+      throw new Error('JSON payload not found');
+    }
+    return JSON.parse(text.slice(start, end + 1));
+  }
+}
+
 function loadHealthReport() {
   const result = tryRunCommand('node', [
     path.resolve(INVESTMENT_ROOT, 'scripts', 'health-report.ts'),
@@ -44,7 +61,7 @@ function loadHealthReport() {
       error: String(result.error || 'health-report failed').trim(),
     };
   }
-  const parsed = JSON.parse(result.output);
+  const parsed = parseJsonFromMixedOutput(result.output);
   return { ...parsed, error: null };
 }
 

@@ -46,6 +46,7 @@ defmodule TeamJay.Blog.NaverBlogAgent do
   @impl true
   def handle_info({:blog_event, _topic, {:social_ready, "naver_blog", relay}}, state) do
     queued = build_naver_blog_queue(relay)
+    :ok = PubSub.broadcast_handoff("naver_blog", queued)
 
     {:noreply,
      %{

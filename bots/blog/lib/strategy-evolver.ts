@@ -15,6 +15,17 @@ function ensureStrategyDir() {
 function createStrategyPlan(diagnosis = {}) {
   const topCategory = diagnosis.byCategory?.[0]?.key || null;
   const topPattern = diagnosis.byTitlePattern?.[0]?.key || null;
+  const preferredPatternOrder = ['checklist', 'experience', 'warning', 'trend', 'why'];
+  const alternativePatterns = Array.isArray(diagnosis.byTitlePattern)
+    ? diagnosis.byTitlePattern
+        .map((item) => item?.key)
+        .filter(Boolean)
+        .filter((key) => key !== topPattern)
+    : [];
+  const preferredAlternative = preferredPatternOrder
+    .find((key) => key !== topPattern && alternativePatterns.includes(key));
+  const safePatternFallback = preferredPatternOrder
+    .find((key) => key !== topPattern && !alternativePatterns.includes(key));
 
   const focus = [];
   if (diagnosis.primaryWeakness?.code === 'category_bias' && topCategory) {
@@ -35,8 +46,13 @@ function createStrategyPlan(diagnosis = {}) {
     recommendations: diagnosis.recommendations || [],
     preferredCategory: diagnosis.byCategory?.[1]?.key || diagnosis.byCategory?.[0]?.key || null,
     suppressedCategory: diagnosis.byCategory?.[0]?.key || null,
-    preferredTitlePattern: diagnosis.byTitlePattern?.find((item) => item.key !== diagnosis.byTitlePattern?.[0]?.key)?.key || diagnosis.byTitlePattern?.[0]?.key || null,
+    preferredTitlePattern:
+      preferredAlternative
+      || safePatternFallback
+      || diagnosis.byTitlePattern?.[0]?.key
+      || null,
     suppressedTitlePattern: diagnosis.byTitlePattern?.[0]?.key || null,
+    hardSuppressTitlePattern: diagnosis.primaryWeakness?.code === 'title_pattern_bias',
   };
 }
 

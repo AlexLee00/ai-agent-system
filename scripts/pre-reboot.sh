@@ -17,20 +17,28 @@ DOC_STATUS_FILE="/tmp/pre-reboot-docs.txt"
 TELEGRAM_NODE="/opt/homebrew/bin/node"
 LAUNCHCTL_DOMAIN="gui/$(id -u)"
 DRAIN_NOW=0
+FORCE_DOCS=0
 NOW_TS=$(date +%s)
 TODAY=$(date '+%Y-%m-%d')
 
 DOC_CHECKS=(
-  "SESSION_HANDOFF|$PROJECT_DIR/docs/SESSION_HANDOFF.md|86400"
-  "WORK_HISTORY|$PROJECT_DIR/docs/WORK_HISTORY.md|172800"
-  "CHANGELOG|$PROJECT_DIR/docs/CHANGELOG.md|172800"
-  "TEST_RESULTS|$PROJECT_DIR/docs/TEST_RESULTS.md|172800"
-  "PLATFORM_IMPLEMENTATION_TRACKER|$PROJECT_DIR/docs/PLATFORM_IMPLEMENTATION_TRACKER.md|172800"
+  "CLAUDE_ROOT|$PROJECT_DIR/CLAUDE.md|86400"
+  "WORK_HISTORY|$PROJECT_DIR/docs/history/WORK_HISTORY.md|172800"
+  "CHANGELOG|$PROJECT_DIR/docs/history/CHANGELOG.md|172800"
+  "TEST_RESULTS|$PROJECT_DIR/docs/history/TEST_RESULTS.md|172800"
+  "RESEARCH_JOURNAL|$PROJECT_DIR/docs/research/RESEARCH_JOURNAL.md|172800"
 )
 
-if [ "${1:-}" = "--drain-now" ]; then
-  DRAIN_NOW=1
-fi
+for arg in "$@"; do
+  case "$arg" in
+    --drain-now)
+      DRAIN_NOW=1
+      ;;
+    --force-docs)
+      FORCE_DOCS=1
+      ;;
+  esac
+done
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"; }
 
@@ -151,6 +159,7 @@ if [ "$DRAIN_NOW" -eq 0 ]; then
 [다음 단계]
 • 필수 문서와 세션 핸드오프 최신성 재확인
 • 재부팅 직전: bash $PROJECT_DIR/scripts/pre-reboot.sh --drain-now
+• 문서 확인을 이미 마쳤고 즉시 종료가 필요하면: bash $PROJECT_DIR/scripts/pre-reboot.sh --drain-now --force-docs
 • 그 다음 사용자가 직접 재시작 실행
 EOF
   send_telegram "$PRE_MSG_FILE"
@@ -161,22 +170,27 @@ EOF
   log "→ 필수 문서 점검 결과: $DOC_STATUS_FILE"
   log "→ 재부팅 직전에 아래 명령을 수동 실행하세요:"
   log "   bash $PROJECT_DIR/scripts/pre-reboot.sh --drain-now"
+  log "   문서 경고를 인지하고 바로 종료해야 하면: bash $PROJECT_DIR/scripts/pre-reboot.sh --drain-now --force-docs"
   log "→ 최종 재시작은 사용자가 직접 진행합니다."
   log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   exit 0
 fi
 
-if [ "$DOCS_OK" -ne 1 ]; then
+if [ "$DOCS_OK" -ne 1 ] && [ "$FORCE_DOCS" -ne 1 ]; then
   log ""
   log "❌ 필수 문서 업데이트 / 세션 핸드오프 확인이 끝나지 않아 drain 단계 중단"
   log "→ 아래 파일을 최신 상태로 반영한 뒤 다시 실행하세요."
-  log "   $PROJECT_DIR/docs/SESSION_HANDOFF.md"
-  log "   $PROJECT_DIR/docs/WORK_HISTORY.md"
-  log "   $PROJECT_DIR/docs/CHANGELOG.md"
-  log "   $PROJECT_DIR/docs/TEST_RESULTS.md"
-  log "   $PROJECT_DIR/docs/PLATFORM_IMPLEMENTATION_TRACKER.md"
+  log "   $PROJECT_DIR/CLAUDE.md"
+  log "   $PROJECT_DIR/docs/history/WORK_HISTORY.md"
+  log "   $PROJECT_DIR/docs/history/CHANGELOG.md"
+  log "   $PROJECT_DIR/docs/history/TEST_RESULTS.md"
+  log "   $PROJECT_DIR/docs/research/RESEARCH_JOURNAL.md"
   log "→ 점검 결과: $DOC_STATUS_FILE"
   exit 1
+fi
+
+if [ "$DOCS_OK" -ne 1 ] && [ "$FORCE_DOCS" -eq 1 ]; then
+  log "⚠️  문서 최신성 경고를 사용자가 확인했고 --force-docs로 drain 계속 진행"
 fi
 
 log "⏹️  ai-agent-system 서비스 안전 정지 시작"
@@ -191,6 +205,15 @@ stop_service_if_registered "ai.investment.overseas" "루나 해외주식"
 stop_service_if_registered "ai.investment.overseas.validation" "루나 해외주식 검증거래"
 stop_service_if_registered "ai.investment.argos" "아르고스"
 stop_service_if_registered "ai.investment.reporter" "투자 리포터"
+stop_service_if_registered "ai.investment.health-check" "투자 health-check"
+stop_service_if_registered "ai.investment.unrealized-pnl" "미실현 손익"
+stop_service_if_registered "ai.investment.market-alert-domestic-open" "국내장 오픈 알림"
+stop_service_if_registered "ai.investment.market-alert-domestic-close" "국내장 마감 알림"
+stop_service_if_registered "ai.investment.market-alert-overseas-open" "해외장 오픈 알림"
+stop_service_if_registered "ai.investment.market-alert-overseas-close" "해외장 마감 알림"
+stop_service_if_registered "ai.investment.market-alert-crypto-daily" "크립토 일일 알림"
+stop_service_if_registered "ai.investment.prescreen-domestic" "국내장 prescreen"
+stop_service_if_registered "ai.investment.prescreen-overseas" "해외장 prescreen"
 
 log "🏪 SKA팀"
 stop_service_if_registered "ai.ska.commander" "스카 커맨더"
@@ -198,17 +221,36 @@ stop_service_if_registered "ai.ska.dashboard" "스카 대시보드"
 stop_service_if_registered "ai.ska.naver-monitor" "앤디 (네이버 모니터)"
 stop_service_if_registered "ai.ska.kiosk-monitor" "지미 (키오스크 모니터)"
 stop_service_if_registered "ai.ska.eve" "이브"
+stop_service_if_registered "ai.ska.eve-crawl" "이브 크롤"
 stop_service_if_registered "ai.ska.rebecca" "레베카"
+stop_service_if_registered "ai.ska.rebecca-weekly" "레베카 weekly"
+stop_service_if_registered "ai.ska.etl" "스카 ETL"
+stop_service_if_registered "ai.ska.db-backup" "스카 DB 백업"
+stop_service_if_registered "ai.ska.health-check" "스카 health-check"
+stop_service_if_registered "ai.ska.forecast-daily" "매출 예측 daily"
+stop_service_if_registered "ai.ska.forecast-weekly" "매출 예측 weekly"
+stop_service_if_registered "ai.ska.forecast-monthly" "매출 예측 monthly"
+stop_service_if_registered "ai.ska.log-rotate" "스카 로그 로테이트"
+stop_service_if_registered "ai.ska.pickko-daily-audit" "피코 일일 감사"
+stop_service_if_registered "ai.ska.pickko-daily-summary" "피코 일일 요약"
+stop_service_if_registered "ai.ska.pickko-pay-scan" "피코 결제 스캔"
+stop_service_if_registered "ai.ska.pickko-verify" "피코 검증"
+stop_service_if_registered "ai.ska.today-audit" "스카 금일 감사"
 
 log "📝 블로그팀"
 stop_service_if_registered "ai.blog.node-server" "블로그 node-server"
 stop_service_if_registered "ai.blog.comfyui" "블로그 ComfyUI"
+stop_service_if_registered "ai.blog.daily" "블로그 daily"
+stop_service_if_registered "ai.blog.health-check" "블로그 health-check"
+stop_service_if_registered "ai.blog.collect-performance" "블로그 성과 수집"
 
 log "🧩 워커팀"
 stop_service_if_registered "ai.worker.web" "워커 웹"
 stop_service_if_registered "ai.worker.nextjs" "워커 Next.js"
 stop_service_if_registered "ai.worker.lead" "워커 lead"
 stop_service_if_registered "ai.worker.task-runner" "워커 task-runner"
+stop_service_if_registered "ai.worker.health-check" "워커 health-check"
+stop_service_if_registered "ai.worker.claude-monitor" "워커 claude-monitor"
 
 log "🛎️  클로드팀"
 stop_service_if_registered "ai.claude.commander" "클로드 커맨더"
@@ -232,11 +274,18 @@ log "✍️  라이트 / 이벤트"
 stop_service_if_registered "ai.write.daily" "라이트 daily"
 stop_service_if_registered "ai.event.reminders" "이벤트 리마인더"
 
+log "🔄 공통 에이전트"
+stop_service_if_registered "ai.agent.auto-commit" "auto-commit"
+stop_service_if_registered "ai.agent.nightly-sync" "nightly-sync"
+stop_service_if_registered "ai.agent.post-reboot" "post-reboot (자기 자신)"
+
 log "🔧 인프라 (OpenClaw / n8n / Hub / MLX)"
 stop_service_if_registered "ai.openclaw.gateway" "OpenClaw 게이트웨이"
 stop_service_if_registered "ai.n8n.server" "n8n 서버"
 stop_service_if_registered "ai.hub.resource-api" "Hub 리소스 API"
 stop_service_if_registered "ai.mlx.server" "MLX LLM 서버"
+stop_service_if_registered "ai.openclaw.model-sync" "OpenClaw 모델 싱크"
+stop_service_if_registered "ai.env.setup" "환경 설정"
 
 snapshot_services
 date '+%Y-%m-%dT%H:%M:%S KST' > /tmp/last-reboot-time.txt

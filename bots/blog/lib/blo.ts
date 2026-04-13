@@ -48,6 +48,9 @@ const { agenticSearch }                             = require(path.join(env.PROJ
 const { getWriterPersona }                          = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/writer-personas.ts'));
 const { pickEditorPersona }                         = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/editor-personas.ts'));
 const { loadLatestStrategy }                        = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/strategy-loader.ts'));
+const { senseDailyState }                          = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/sense-engine.ts'));
+const { analyzeMarketingToRevenue }                = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/marketing-revenue-correlation.ts'));
+const { decideAutonomy }                           = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/autonomy-gate.ts'));
 const { accumulatePostExperience }                 = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/rag-accumulator.ts'));
 const {
   writeLecturePost,
@@ -251,6 +254,11 @@ function _applyGeneralTopicStrategy(preparedResearch, category, strategyPlan) {
     topic_question: selectedTopic.question,
     topic_diff: selectedTopic.diff,
     topic_title_candidate: selectedTopic.title,
+    topic_reader_problem: selectedTopic.readerProblem || '',
+    topic_opening_angle: selectedTopic.openingAngle || '',
+    topic_key_questions: Array.isArray(selectedTopic.keyQuestions) ? selectedTopic.keyQuestions : [],
+    topic_closing_angle: selectedTopic.closingAngle || '',
+    topic_freshness_summary: selectedTopic.freshnessSummary || '',
     strategy_focus: Array.isArray(strategyPlan?.focus) ? strategyPlan.focus : [],
     strategy_recommendations: Array.isArray(strategyPlan?.recommendations) ? strategyPlan.recommendations : [],
     strategy_preferred_pattern: strategyPlan?.preferredTitlePattern || null,
@@ -528,6 +536,70 @@ function _attachQualitySummary(result, quality) {
   };
 }
 
+function _buildSenseSummary(sense = null) {
+  if (!sense) return null;
+  return {
+    sensedAt: sense.sensedAt || null,
+    signalCount: Array.isArray(sense.signals) ? sense.signals.length : 0,
+    signalTypes: Array.isArray(sense.signals) ? sense.signals.map((signal) => signal.type).filter(Boolean).slice(0, 8) : [],
+    skaRevenueRatio: Number(sense?.skaRevenue?.ratio || 0),
+    skaRevenueTrend: sense?.skaRevenue?.trend || null,
+    blogAvgViews: Number(sense?.blogPerformance?.avgViews || 0),
+  };
+}
+
+function _buildRevenueSummary(correlation = null) {
+  if (!correlation) return null;
+  return {
+    period: Number(correlation.period || 0),
+    revenueImpact: Number(correlation.revenueImpact || 0),
+    revenueImpactPct: Number(correlation.revenueImpactPct || 0),
+    highViewRevenueAfter: Number(correlation.highViewRevenueAfter || 0),
+  };
+}
+
+async function _decideAutonomyForPost(postData, daily = {}) {
+  try {
+    const decision = await decideAutonomy(postData);
+    return {
+      ...decision,
+      senseSummary: _buildSenseSummary(daily.senseState),
+      revenueSummary: _buildRevenueSummary(daily.revenueCorrelation),
+    };
+  } catch (error) {
+    console.warn('[블로] autonomy 판단 실패 (무시):', error.message);
+    return null;
+  }
+}
+
+async function _recordAutonomyDecision(postData, autonomy = null, extra = {}) {
+  if (!autonomy || DEV_HUB_READONLY) return;
+
+  try {
+    await pgPool.run('blog', `
+      INSERT INTO blog.autonomy_decisions
+        (decision_date, post_type, category, title, post_id, autonomy_phase, decision, score, threshold, reasons, sense_summary, revenue_summary, metadata)
+      VALUES
+        (CURRENT_DATE, $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb)
+    `, [
+      postData.postType || 'general',
+      postData.category || null,
+      postData.title || '',
+      postData.postId || null,
+      Number(autonomy.phase || 1),
+      autonomy.decision || 'master_review',
+      Number(autonomy.score || 0),
+      Number(autonomy.threshold || 0),
+      JSON.stringify(Array.isArray(autonomy.reasons) ? autonomy.reasons : []),
+      JSON.stringify(autonomy.senseSummary || {}),
+      JSON.stringify(autonomy.revenueSummary || {}),
+      JSON.stringify(extra || {}),
+    ]);
+  } catch (error) {
+    console.warn('[블로] autonomy decision 기록 실패 (무시):', error.message);
+  }
+}
+
 function _createLocalDraftRunner({
   kind,
   context,
@@ -779,6 +851,13 @@ async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, sc
 
 async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx, writerName = null, options = {}) {
   const postTitle = `[Node.js ${context.number}강] ${context.lectureTitle}`;
+  const autonomy = await _decideAutonomyForPost({
+    title: postTitle,
+    content: post.content,
+    thumbnailPath: null,
+    postType: 'lecture',
+    category: 'Node.js강의',
+  }, context.daily || {});
   const published = await _publishAndTrack({
     title:         postTitle,
     content:       post.content,
@@ -788,6 +867,7 @@ async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx
     charCount:     post.charCount,
     writerName,
     scheduleId,
+    metadata: autonomy ? { autonomy } : undefined,
   }, scheduleId, traceCtx, {
     type: 'lecture',
     number: context.number,
@@ -805,6 +885,17 @@ async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx
     postId: published.postId || null,
     scheduleId,
   }, quality, traceCtx, options, published);
+
+  await _recordAutonomyDecision({
+    title: postTitle,
+    category: 'Node.js강의',
+    postType: 'lecture',
+    postId: published.postId || null,
+  }, autonomy, {
+    trace_id: traceCtx.trace_id,
+    writer_name: writerName || null,
+    lecture_number: context.number,
+  });
 
   await _advanceContentTracker({
     dryRun: !!options.dryRun,
@@ -869,6 +960,14 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
       { thumbPath: images?.thumb?.filepath || null }
     );
 
+  const autonomy = await _decideAutonomyForPost({
+    title: genTitle,
+    content: post.content,
+    thumbnailPath: images?.thumb?.filepath || null,
+    postType: 'general',
+    category: context.category,
+  }, context.daily || {});
+
   const published = await _publishAndTrack({
     title:     genTitle,
     content:   post.content,
@@ -878,6 +977,7 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
     writerName,
     images,
     scheduleId,
+    metadata: autonomy ? { autonomy } : undefined,
   }, scheduleId, traceCtx, {
     type: 'general',
     category: context.category,
@@ -895,6 +995,17 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
     postId: published.postId || null,
     scheduleId,
   }, quality, traceCtx, options, published);
+
+  await _recordAutonomyDecision({
+    title: genTitle,
+    category: context.category,
+    postType: 'general',
+    postId: published.postId || null,
+  }, autonomy, {
+    trace_id: traceCtx.trace_id,
+    writer_name: writerName || null,
+    topic_hint: context.topicHint || null,
+  });
 
   if (context.category === '도서리뷰' && context.book_info && !options.dryRun) {
     await blogSkills.bookReviewBook.updateBookCatalogEntry({
@@ -972,6 +1083,31 @@ async function _prepareDailyRun(traceCtx, options = {}) {
     traceId: traceCtx.trace_id,
   });
 
+  if (options.dryRun && options.phase1FastDryRun) {
+    console.log('[블로][phase1-fast-dry-run] 리서치/작성/이미지 단계를 건너뛰고 스케줄 구조만 점검');
+    return {
+      inactive: false,
+      complete: false,
+      phase1FastDryRun: true,
+      config,
+      researchData: {},
+      senseState: null,
+      revenueCorrelation: null,
+      ...scheduleContext,
+    };
+  }
+
+  const [senseState, revenueCorrelation] = await Promise.all([
+    senseDailyState().catch((error) => {
+      console.warn('[블로] sense-engine 실패 (무시):', error.message);
+      return null;
+    }),
+    analyzeMarketingToRevenue(14).catch((error) => {
+      console.warn('[블로] revenue-correlation 실패 (무시):', error.message);
+      return null;
+    }),
+  ]);
+
   const researchData = await collectAllResearch('general', false);
 
   return {
@@ -979,7 +1115,47 @@ async function _prepareDailyRun(traceCtx, options = {}) {
     complete: false,
     config,
     researchData,
+    senseState,
+    revenueCorrelation,
     ...scheduleContext,
+  };
+}
+
+function _buildPhase1FastLectureResult(lectureCtx, options = {}) {
+  return {
+    type: 'lecture',
+    number: lectureCtx.number,
+    title: `[Phase1 Fast Dry-Run] ${lectureCtx.lectureTitle}`,
+    charCount: 0,
+    quality: true,
+    aiRisk: {
+      riskLevel: 'low',
+      riskScore: 0,
+      note: 'phase1_fast_dry_run',
+    },
+    dryRun: !!options.dryRun,
+    fastDryRun: true,
+  };
+}
+
+function _buildPhase1FastGeneralResult(generalCtx, options = {}) {
+  const suffix = generalCtx.category === '도서리뷰'
+    ? '도서 후보/큐 연결 점검'
+    : '카테고리 라우팅 점검';
+
+  return {
+    type: 'general',
+    category: generalCtx.category,
+    title: `[Phase1 Fast Dry-Run][${generalCtx.category}] ${suffix}`,
+    charCount: 0,
+    quality: true,
+    aiRisk: {
+      riskLevel: 'low',
+      riskScore: 0,
+      note: 'phase1_fast_dry_run',
+    },
+    dryRun: !!options.dryRun,
+    fastDryRun: true,
   };
 }
 
@@ -1161,6 +1337,10 @@ async function _runLectureStage(daily, traceCtx, options = {}) {
   const { config, researchData, lectureCtx, lectureSchedule } = daily;
   if (!lectureCtx || config.lecture_count <= 0) return null;
 
+  if (options.dryRun && options.phase1FastDryRun) {
+    return _buildPhase1FastLectureResult(lectureCtx, options);
+  }
+
   try {
     if (await isSeriesComplete()) {
       return { type: 'lecture', skipped: true, reason: '시리즈 완료' };
@@ -1189,6 +1369,10 @@ async function _runLectureStage(daily, traceCtx, options = {}) {
 async function _runGeneralStage(daily, traceCtx, options = {}) {
   const { config, researchData, generalCtx } = daily;
   if (!generalCtx || config.general_count <= 0) return null;
+
+  if (options.dryRun && options.phase1FastDryRun) {
+    return _buildPhase1FastGeneralResult(generalCtx, options);
+  }
 
   const { category, scheduleId, bookInfo } = generalCtx;
   try {
@@ -1228,6 +1412,10 @@ async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId
   const prepared = await _prepareLectureContext(researchData, traceCtx, preloaded);
   if (prepared.skipped) return prepared.result;
   const context = prepared.context;
+  context.daily = {
+    senseState: daily.senseState || null,
+    revenueCorrelation: daily.revenueCorrelation || null,
+  };
   const startTime = Date.now();
   const writerName = await _selectBlogWriter('강의', 'pos', '기술 강의 IT');
   context.sectionVariation = _attachWriterPersonas(context.sectionVariation, writerName, 'lecture');
@@ -1301,6 +1489,10 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId
     return skippedResult;
   }
   const context = prepared.context;
+  context.daily = {
+    senseState: daily.senseState || null,
+    revenueCorrelation: daily.revenueCorrelation || null,
+  };
   const startTime = Date.now();
   const writerName = await _selectBlogWriter(
     context.category === '도서리뷰' ? '도서리뷰' : '일반',
@@ -1352,6 +1544,9 @@ async function run(options = {}) {
   console.log('\n📝 [블로] 블로그팀 일간 작업 시작\n');
   if (options.dryRun) {
     console.log('[블로][dry-run] 발행/스케줄 갱신/텔레그램 전송 없이 검증 실행');
+  }
+  if (options.dryRun && options.phase1FastDryRun) {
+    console.log('[블로][phase1-fast-dry-run] Elixir handoff용 경량 dry-run 실행');
   }
   if (options.verifyOnly) {
     console.log('[블로][verify] 설정/스케줄/핵심 의존성만 빠르게 점검');

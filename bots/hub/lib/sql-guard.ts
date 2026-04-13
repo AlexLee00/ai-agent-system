@@ -26,7 +26,7 @@ const BLOCKED_KEYWORDS = [
   /;\s*(select|with|explain)?/i,
 ];
 
-export const ALLOWED_SCHEMAS = new Set(['claude', 'reservation', 'investment', 'ska', 'worker', 'blog', 'public']);
+export const ALLOWED_SCHEMAS = new Set(['agent', 'claude', 'reservation', 'investment', 'ska', 'worker', 'blog', 'public']);
 
 function normalizeSql(sql: unknown): string {
   return String(sql || '').trim();

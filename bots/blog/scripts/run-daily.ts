@@ -14,13 +14,16 @@ const { run } = require('../lib/blo.ts');
 
 const dryRun = process.argv.includes('--dry-run');
 const verifyOnly = process.argv.includes('--verify');
+const phase1FastDryRun =
+  process.argv.includes('--phase1-fast-dry-run')
+  || process.env.BLOG_PHASE1_FAST_DRY_RUN === '1';
 const json = process.argv.includes('--json');
 
 initHubConfig()
-  .then(() => run({ dryRun, verifyOnly }))
+  .then(() => run({ dryRun, verifyOnly, phase1FastDryRun }))
   .then((results) => {
     if (json) {
-      console.log(JSON.stringify({ dryRun, verifyOnly, results }, null, 2));
+      console.log(JSON.stringify({ dryRun, verifyOnly, phase1FastDryRun, results }, null, 2));
       process.exit(0);
     }
 

@@ -20,6 +20,7 @@ const COVER_DIR = path.join(env.PROJECT_ROOT, 'bots', 'blog', 'output', 'images'
 const COVER_SOURCE_PRIORITY = ['kakao', 'data4library', 'naver', 'google', 'openlibrary'];
 const SOURCE_SCORE_MAP = {
   kakao: 6,
+  data4library_recommend: 6,
   data4library: 5,
   naver: 5,
   google: 4,
@@ -419,28 +420,17 @@ async function syncPopularBooksToCatalog(options = {}) {
   let inserted = 0;
   for (const book of popular.slice(0, 20)) {
     try {
-      const priority = Math.max(50, 50 + Math.floor(Number(book.loanCount || 0) / 10));
-      const result = await pgPool.run('blog', `
-        INSERT INTO blog.book_catalog (title, author, isbn, category, source, priority, metadata, updated_at)
-        VALUES (?, ?, ?, 'IT', 'data4library', ?, ?::jsonb, NOW())
-        ON CONFLICT (isbn) DO UPDATE
-          SET title = EXCLUDED.title,
-              author = EXCLUDED.author,
-              priority = GREATEST(blog.book_catalog.priority, EXCLUDED.priority),
-              metadata = COALESCE(blog.book_catalog.metadata, '{}'::jsonb) || EXCLUDED.metadata,
-              updated_at = NOW()
-      `, [
-        book.title,
-        book.author,
-        book.isbn || null,
-        priority,
-        JSON.stringify({
+      inserted += await upsertCatalogBook({
+        ...book,
+        category: inferCatalogCategory(book.title || ''),
+        source: 'data4library',
+        priority: Math.max(50, 50 + Math.floor(Number(book.loanCount || 0) / 10)),
+        metadata: {
           loanCount: Number(book.loanCount || 0),
           ranking: Number(book.ranking || 0),
           source: 'data4library',
-        }),
-      ]);
-      inserted += Number(result?.rowCount || 0) > 0 ? 1 : 0;
+        },
+      });
     } catch (error) {
       console.warn('[도서스킬] 인기대출 도서 저장 실패:', error.message);
     }
@@ -450,6 +440,97 @@ async function syncPopularBooksToCatalog(options = {}) {
     inserted,
     scanned: popular.slice(0, 20).length,
   };
+}
+
+async function upsertCatalogBook(input = {}) {
+  const isbn = typeof input.isbn === 'string' ? input.isbn.trim() : '';
+  const category = input.category || inferCatalogCategory(input.title || '');
+  const priority = Number(input.priority || 50);
+  const source = String(input.source || 'manual').trim();
+  const metadata = JSON.stringify(input.metadata || {});
+  let rowChanged = 0;
+
+  if (isbn) {
+    const updated = await pgPool.run('blog', `
+      UPDATE blog.book_catalog
+      SET title = ?,
+          author = ?,
+          category = ?,
+          source = CASE
+            WHEN source = 'canonical' THEN source
+            ELSE ?
+          END,
+          priority = GREATEST(priority, ?),
+          metadata = COALESCE(metadata, '{}'::jsonb) || ?::jsonb,
+          updated_at = NOW()
+      WHERE isbn = ?
+    `, [
+      input.title,
+      input.author,
+      category,
+      source,
+      priority,
+      metadata,
+      isbn,
+    ]);
+    rowChanged = Number(updated?.rowCount || 0);
+  }
+
+  if (!rowChanged) {
+    const insertedRow = await pgPool.run('blog', `
+      INSERT INTO blog.book_catalog (title, author, isbn, category, source, priority, metadata, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, NOW())
+    `, [
+      input.title,
+      input.author,
+      isbn || null,
+      category,
+      source,
+      priority,
+      metadata,
+    ]);
+    rowChanged = Number(insertedRow?.rowCount || 0);
+  }
+
+  return rowChanged > 0 ? 1 : 0;
+}
+
+async function syncRecommendedBooksToCatalog(options = {}) {
+  await ensureBookCatalogTable();
+
+  const seeds = [
+    ...(Array.isArray(options.seedIsbns) ? options.seedIsbns : []),
+    ...((await listBookCatalog({ limit: 6, source: 'data4library' })).map((book) => normalizeBookIsbn(book?.isbn))),
+  ].filter(Boolean);
+  const uniqueSeeds = [...new Set(seeds)].slice(0, 8);
+  if (!uniqueSeeds.length) {
+    return { inserted: 0, scanned: 0 };
+  }
+
+  let inserted = 0;
+  let scanned = 0;
+  for (const seedIsbn of uniqueSeeds) {
+    try {
+      const recommended = await searchData4LibraryRecommend(seedIsbn);
+      for (const book of recommended.slice(0, 10)) {
+        scanned += 1;
+        inserted += await upsertCatalogBook({
+          ...book,
+          category: inferCatalogCategory(book.title || ''),
+          source: 'data4library_recommend',
+          priority: Math.max(40, 40 + Math.floor((10 - Math.min(10, scanned)) * 4)),
+          metadata: {
+            recommendationSeedIsbn: seedIsbn,
+            source: 'data4library_recommend',
+          },
+        });
+      }
+    } catch (error) {
+      console.warn('[도서스킬] 추천도서 저장 실패:', error.message);
+    }
+  }
+
+  return { inserted, scanned };
 }
 
 async function loadReviewedBookHistory() {
@@ -484,7 +565,7 @@ function findReviewedBookMatch(book, history = []) {
   }) || null;
 }
 
-function httpsGet(url, headers = {}) {
+function httpsGet(url, headers = {}, options = {}) {
   return new Promise((resolve, reject) => {
     const lib = url.startsWith('https') ? https : http;
     const req = lib.get(url, { headers: { 'User-Agent': 'ai-agent-blog/1.0', ...headers } }, (res) => {
@@ -498,7 +579,7 @@ function httpsGet(url, headers = {}) {
         }
       });
     });
-    req.setTimeout(8000, () => {
+    req.setTimeout(Number(options.timeoutMs || 8000), () => {
       req.destroy();
       reject(new Error('timeout'));
     });
@@ -561,8 +642,8 @@ function buildSearchKeywords(input = {}, catalogBooks = DEFAULT_CANONICAL_BOOKS)
 }
 
 function inferCatalogCategory(title = '') {
-  if (/아토믹 해빗|원씽|함께 자라기|죽음의 수용소에서/.test(title)) return '자기계발';
-  if (/사피엔스|총 균 쇠/.test(title)) return '인문학';
+  if (/아토믹 해빗|원씽|함께 자라기|죽음의 수용소에서|열한 계단|공부머리 독서법/.test(title)) return '자기계발';
+  if (/사피엔스|총 균 쇠|책은 도끼다|지적 대화를 위한 넓고 얕은 지식|시민의 교양|지대넓얕/.test(title)) return '인문학';
   if (/어린 왕자|데미안|아몬드|불편한 편의점|작별인사/.test(title)) return '소설';
   return 'IT';
 }
@@ -642,18 +723,53 @@ async function buildBookReviewQueue(options = {}) {
   const preferredBooks = buildDiversePreferredBooks(catalogBooks, Math.max(limit * 2, 8), reviewedHistory);
 
   const todayRows = await pgPool.query('blog', `
-    SELECT title, author, isbn
+    SELECT id, title, author, isbn, status
     FROM blog.book_review_queue
     WHERE queue_date = CURRENT_DATE
   `);
-  const existingKeys = new Set(
-    (todayRows || []).map((row) => normalizeBookIsbn(row?.isbn) || `${normalizeBookKey(row?.title)}|${normalizeBookAuthor(row?.author)}`)
+  const todayRowMap = new Map(
+    (todayRows || []).map((row) => [
+      normalizeBookIsbn(row?.isbn) || `${normalizeBookKey(row?.title)}|${normalizeBookAuthor(row?.author)}`,
+      row,
+    ])
   );
+  const existingKeys = new Set(todayRowMap.keys());
 
   const selected = [];
+  let updated = 0;
   for (const book of preferredBooks) {
     const key = normalizeBookIsbn(book?.isbn) || `${normalizeBookKey(book?.title)}|${normalizeBookAuthor(book?.author)}`;
-    if (!key || existingKeys.has(key)) continue;
+    if (!key) continue;
+
+    const metadata = {
+      category: book.category || inferCatalogCategory(book.title),
+      preferred: true,
+      builtAt: new Date().toISOString(),
+    };
+
+    if (existingKeys.has(key)) {
+      const current = todayRowMap.get(key);
+      const result = await pgPool.run('blog', `
+        UPDATE blog.book_review_queue
+        SET isbn = COALESCE(?, isbn),
+            category = ?,
+            priority = ?,
+            source = ?,
+            metadata = COALESCE(metadata, '{}'::jsonb) || ?::jsonb,
+            updated_at = NOW()
+        WHERE id = ?
+      `, [
+        normalizeBookIsbn(book.isbn) || null,
+        book.category || inferCatalogCategory(book.title),
+        Number(book.priority || 50),
+        book.source || 'catalog',
+        JSON.stringify(metadata),
+        current.id,
+      ]);
+      updated += Number(result?.rowCount || 0) > 0 ? 1 : 0;
+      continue;
+    }
+
     selected.push(book);
     existingKeys.add(key);
     if (selected.length >= limit) break;
@@ -695,6 +811,7 @@ async function buildBookReviewQueue(options = {}) {
   const rows = await listBookReviewQueue({ limit, status: 'queued' });
   return {
     inserted,
+    updated,
     scanned: preferredBooks.length,
     rows,
   };
@@ -814,7 +931,7 @@ async function searchGoogleBookByQuery(query) {
 
   try {
     const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&maxResults=5&orderBy=relevance&printType=books${keyPart}`;
-    const { status, body } = await httpsGet(url);
+    const { status, body } = await httpsGet(url, {}, { timeoutMs: 15000 });
     if (status !== 200 || !body?.items?.length) return null;
 
     const item = body.items[0];
@@ -909,7 +1026,7 @@ async function searchOpenLibrary(query) {
 
   try {
     const url = `https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&limit=5&language=kor`;
-    const { status, body } = await httpsGet(url);
+    const { status, body } = await httpsGet(url, {}, { timeoutMs: 15000 });
     if (status !== 200 || !body?.docs?.length) return [];
 
     return body.docs.slice(0, 5).map((doc) => ({
@@ -979,6 +1096,40 @@ async function searchData4LibraryPopular(options = {}) {
   }
 }
 
+async function searchData4LibraryRecommend(isbn) {
+  const authKey = await resolveData4LibraryKey();
+  const normalizedIsbn = normalizeBookIsbn(isbn);
+  if (!authKey || !normalizedIsbn) return [];
+
+  try {
+    const params = new URLSearchParams({
+      authKey,
+      isbn13: normalizedIsbn,
+      type: 'reader',
+      format: 'json',
+    });
+    const url = `https://data4library.kr/api/recommandList?${params.toString()}`;
+    const { status, body } = await httpsGet(url);
+    if (status !== 200) return [];
+
+    const docs = body?.response?.docs || [];
+    return docs.slice(0, 10).map((doc) => ({
+      title: doc.book?.bookname || '',
+      author: doc.book?.authors || '',
+      isbn: doc.book?.isbn13 || '',
+      publisher: doc.book?.publisher || '',
+      pubDate: String(doc.book?.publication_year || ''),
+      description: '',
+      coverUrl: doc.book?.bookImageURL || null,
+      source: 'data4library_recommend',
+      recommendationSeedIsbn: normalizedIsbn,
+    }));
+  } catch (error) {
+    console.warn('[도서스킬] 정보나루 추천도서 실패:', error.message);
+    return [];
+  }
+}
+
 async function searchKakaoBook(query) {
   const apiKey = await resolveKakaoApiKey();
   if (!apiKey || !query) return [];
@@ -1020,17 +1171,38 @@ async function searchKakaoBookCandidates(input = {}, catalogBooks = DEFAULT_CANO
 
 async function searchBookCandidates(input = {}) {
   const catalogBooks = await loadCatalogBooks();
-  const [data4libraryCandidates, naverCandidates, kakaoCandidates, googleCandidates, openLibraryCandidates] = await Promise.all([
-    searchData4LibraryPopular({
-      kdc: input.kdc || '',
-      age: input.age || '',
-    }),
+  const data4libraryCandidates = await searchData4LibraryPopular({
+    kdc: input.kdc || '',
+    age: input.age || '',
+  });
+  const recommendationSeedIsbns = [
+    ...data4libraryCandidates.slice(0, 3).map((book) => normalizeBookIsbn(book?.isbn)),
+    ...catalogBooks.slice(0, 3).map((book) => normalizeBookIsbn(book?.isbn)),
+    normalizeBookIsbn(input.isbn),
+  ].filter(Boolean);
+  const uniqueRecommendationSeeds = [...new Set(recommendationSeedIsbns)].slice(0, 5);
+
+  const [
+    data4libraryRecommended,
+    naverCandidates,
+    kakaoCandidates,
+    googleCandidates,
+    openLibraryCandidates,
+  ] = await Promise.all([
+    Promise.all(uniqueRecommendationSeeds.map((isbn) => searchData4LibraryRecommend(isbn))).then((groups) => groups.flat()),
     searchNaverBookCandidates(input, catalogBooks),
     searchKakaoBookCandidates(input, catalogBooks),
     searchGoogleBookCandidates(input, catalogBooks),
     searchOpenLibraryCandidates(input, catalogBooks),
   ]);
-  const allCandidates = [...data4libraryCandidates, ...naverCandidates, ...kakaoCandidates, ...googleCandidates, ...openLibraryCandidates];
+  const allCandidates = [
+    ...data4libraryCandidates,
+    ...data4libraryRecommended,
+    ...naverCandidates,
+    ...kakaoCandidates,
+    ...googleCandidates,
+    ...openLibraryCandidates,
+  ];
   const merged = uniqueByBookSignature(allCandidates).map((candidate) => {
     const key = candidate.isbn || `${candidate.title}|${candidate.author}`;
     return {
@@ -1204,9 +1376,11 @@ module.exports = {
   resolveBookForReview,
   searchBookCandidates,
   searchData4LibraryPopular,
+  searchData4LibraryRecommend,
   searchKakaoBook,
   searchOpenLibrary,
   syncPopularBooksToCatalog,
+  syncRecommendedBooksToCatalog,
   updateBookCatalogEntry,
   updateBookReviewQueueEntry,
 };
