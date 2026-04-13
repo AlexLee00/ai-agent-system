@@ -18,11 +18,12 @@ async function run({ market, symbol }) {
       metadata: {
         ...(result.sentiment ? { sentiment: result.sentiment } : {}),
         ...(result.combinedScore != null ? { combinedScore: result.combinedScore } : {}),
+        ...(Array.isArray(result.errors) && result.errors.length > 0 ? { errors: result.errors } : {}),
         ...(result.metadata || {}),
       },
     }],
-    partialFallback: false,
-    errors: [],
+    partialFallback: Boolean(result.partialFallback),
+    errors: Array.isArray(result.errors) ? result.errors : [],
   };
 }
 
