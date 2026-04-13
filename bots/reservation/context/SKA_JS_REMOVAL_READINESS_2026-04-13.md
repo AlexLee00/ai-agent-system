@@ -420,6 +420,22 @@ launchd, shell wrapper, package script, registry, cross-team caller는 이제 re
 - 현재 코드 기준 직접 실행/직접 참조는 대부분 `dist/ts-runtime/...` 또는 `.legacy.js` fallback 레일로 이미 이동한 상태였다.
 - 남아 있던 source `.js`는 얇은 dist passthrough wrapper 역할만 하고 있었다.
 
+## 14차 삭제 완료
+
+다음 코어 `lib` source wrapper 7개도 실제로 제거했다.
+
+- `bots/reservation/lib/telegram.js`
+- `bots/reservation/lib/state-bus.js`
+- `bots/reservation/lib/pickko-stats.js`
+- `bots/reservation/lib/pickko.js`
+- `bots/reservation/lib/health.js`
+- `bots/reservation/lib/manual-reservation.js`
+- `bots/reservation/lib/manual-cancellation.js`
+
+정리 배경:
+- 현재 코드 기준 직접 참조는 대부분 `dist/ts-runtime/...` 또는 `.legacy.js` fallback 레일로 정리돼 있었다.
+- 남아 있던 source `.js`는 얇은 dist passthrough wrapper 역할만 하고 있었다.
+
 ## 다음 삭제 후보 메모
 
 `manual/reports/*.js`는 대부분 얇은 source wrapper로 남아 있지만,

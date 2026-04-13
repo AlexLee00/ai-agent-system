@@ -19,5 +19,5 @@
 - `bots/investment/shared/mainbot-client.js`
 - `bots/investment/shared/report.js`
 - `bots/reservation/lib/mainbot-client.js`
-- `bots/reservation/lib/telegram.js`
+- `bots/reservation/lib/telegram.ts`
 - `bots/blog/scripts/health-check.js`
