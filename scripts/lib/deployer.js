@@ -33,7 +33,7 @@ function getRecentErrorAlerts(botId) {
       return `- [${ts}] ${res} ${r.title}${who}${when}`;
     });
     return `\n\n## ⚠️ 최근 48시간 실패 알림 (${rows.length}건, 미해결 ${unresCnt}건)\n\n` +
-           `> 사장님이 이 알림에 대해 질문하면 \`node manual/reports/pickko-alerts-query.js\`로 상세 조회할 것.\n\n` +
+           `> 사장님이 이 알림에 대해 질문하면 \`node dist/ts-runtime/bots/reservation/manual/reports/pickko-alerts-query.js\`로 상세 조회할 것.\n\n` +
            lines.join('\n') + '\n';
   } catch {
     return '';

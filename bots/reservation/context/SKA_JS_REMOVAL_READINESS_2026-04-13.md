@@ -240,6 +240,16 @@ launchd, shell wrapper, package script, registry, cross-team caller는 이제 re
 - `run-verify.sh`, startup verify, registry, package script, monitor shell runner, launchd template이 모두
   source wrapper 대신 `dist/ts-runtime/...`를 직접 보도록 정리된 뒤 삭제했다.
 
+## 다음 삭제 후보 메모
+
+`manual/reports/*.js`는 대부분 얇은 source wrapper로 남아 있지만,
+현재 코드 기준 직접 호출은 아래 두 경로가 핵심이었다.
+
+- `bots/orchestrator/src/router.ts` -> `pickko-alerts-resolve.js`
+- `bots/reservation/manual/reservation/pickko-accurate.ts` -> `pickko-pay-pending.js`
+
+이 두 경로도 이제 `dist/ts-runtime/...`를 직접 보도록 정리했다.
+
 ## 추가 정리 (orchestrator collector)
 
 - `bots/orchestrator/lib/write/report-aggregator.legacy.js`의 스카 daily summary 수집 경로를

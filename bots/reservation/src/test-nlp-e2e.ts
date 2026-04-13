@@ -8,10 +8,10 @@
  *   node src/test-nlp-e2e.js --verbose  # 각 케이스 message 미리보기 포함
  *
  * 대상 스크립트:
- *   - pickko-query.js      (예약 조회 — DB read)
- *   - pickko-stats-cmd.js  (매출 통계 — DB read)
- *   - pickko-register.js   (예약 등록 — validation layer only)
- *   - pickko-cancel-cmd.js (예약 취소 — validation layer only)
+ *   - dist/.../pickko-query.js        (예약 조회 — DB read)
+ *   - dist/.../pickko-stats-cmd.js    (매출 통계 — DB read)
+ *   - dist/.../pickko-register.js     (예약 등록 — validation layer only)
+ *   - dist/.../pickko-cancel-cmd.js   (예약 취소 — validation layer only)
  *
  * 참고: register/cancel의 실제 Playwright 실행 테스트는 이 스크립트 범위 밖 (수동 검증)
  */
@@ -19,20 +19,19 @@
 const { spawnSync } = require('child_process');
 const path = require('path');
 
-const RESERVATION_DIR = path.join(__dirname, '..', 'manual', 'reservation');
-const REPORTS_DIR     = path.join(__dirname, '..', 'manual', 'reports');
+const DIST_RUNTIME_DIR = path.join(__dirname, '..', '..', '..', 'dist', 'ts-runtime', 'bots', 'reservation');
 
-// 스크립트명 → 디렉토리 매핑 (src/ → manual/ 이전 후 경로 업데이트)
-const SCRIPT_DIRS = {
-  'pickko-query.js':      RESERVATION_DIR,
-  'pickko-register.js':   RESERVATION_DIR,
-  'pickko-cancel-cmd.js': RESERVATION_DIR,
-  'pickko-stats-cmd.js':  REPORTS_DIR,
+// 스크립트명 → dist 런타임 경로 매핑
+const SCRIPT_PATHS: Record<string, string> = {
+  'pickko-query.js':      path.join(DIST_RUNTIME_DIR, 'manual', 'reservation', 'pickko-query.js'),
+  'pickko-register.js':   path.join(DIST_RUNTIME_DIR, 'manual', 'reservation', 'pickko-register.js'),
+  'pickko-cancel-cmd.js': path.join(DIST_RUNTIME_DIR, 'manual', 'reservation', 'pickko-cancel-cmd.js'),
+  'pickko-stats-cmd.js':  path.join(DIST_RUNTIME_DIR, 'manual', 'reports', 'pickko-stats-cmd.js'),
 };
 
-function resolveScript(script) {
-  const dir = SCRIPT_DIRS[script] || RESERVATION_DIR;
-  return { scriptPath: path.join(dir, script), cwd: dir };
+function resolveScript(script: string) {
+  const scriptPath = SCRIPT_PATHS[script] || path.join(DIST_RUNTIME_DIR, 'manual', 'reservation', script);
+  return { scriptPath, cwd: path.dirname(scriptPath) };
 }
 
 const VERBOSE = process.argv.includes('--verbose');

@@ -488,7 +488,7 @@ async function main() {
 
       await new Promise((resolve) => {
         const child = spawn('node', [
-          path.join(__dirname, '../reports/pickko-pay-pending.js'),
+          path.join(__dirname, '../../../../dist/ts-runtime/bots/reservation/manual/reports/pickko-pay-pending.js'),
           `--phone=${PHONE_NOHYPHEN}`,
           `--date=${DATE}`,
           `--start=${START_TIME}`,

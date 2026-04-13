@@ -129,7 +129,7 @@ flowchart TD
 
 중요:
 - `manual/manual_retry` 후속 차단은 여기서 다루지 않는다
-- 수동 예약 후속은 `manual-block-followup-report.js` / `manual-block-followup-resolve.js` 수동 레일에서만 관리한다
+- 수동 예약 후속은 `manual-block-followup-report.ts` / `manual-block-followup-resolve.ts` 수동 레일에서만 관리한다
 
 ---
 

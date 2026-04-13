@@ -25,7 +25,10 @@ function log(message: string) {
 
 function runPayPending(entry: any) {
   return new Promise<any>((resolve) => {
-    const scriptPath = path.join(__dirname, '../../manual/reports/pickko-pay-pending.js');
+    const scriptPath = path.join(
+      __dirname,
+      '../../../../dist/ts-runtime/bots/reservation/manual/reports/pickko-pay-pending.js',
+    );
     const args = [
       scriptPath,
       `--phone=${String(entry.phone || '').replace(/\D/g, '')}`,
