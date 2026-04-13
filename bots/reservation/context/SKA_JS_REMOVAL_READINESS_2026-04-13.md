@@ -270,6 +270,27 @@ launchd, shell wrapper, package script, registry, cross-team caller는 이제 re
 정리 배경:
 - operator/docs 표면과 도움말 문자열을 `dist/ts-runtime/...` 또는 `.ts` source of truth 기준으로 정리한 뒤 삭제했다.
 
+## 5차 삭제 완료
+
+다음 `manual/reservation` source wrapper 6개도 실제로 제거했다.
+
+- `bots/reservation/manual/reservation/pickko-accurate.js`
+- `bots/reservation/manual/reservation/pickko-cancel-cmd.js`
+- `bots/reservation/manual/reservation/pickko-cancel.js`
+- `bots/reservation/manual/reservation/pickko-query.js`
+- `bots/reservation/manual/reservation/pickko-register.js`
+- `bots/reservation/manual/reservation/pickko-reregister-batch.js`
+
+정리 배경:
+- `bots/reservation/lib/manual-reservation.ts`
+- `bots/reservation/lib/manual-cancellation.ts`
+- `bots/reservation/manual/reservation/pickko-register.ts`
+- `bots/reservation/manual/reservation/pickko-cancel-cmd.ts`
+- `bots/reservation/manual/reservation/pickko-reregister-batch.ts`
+- `bots/reservation/manual/admin/pickko-verify.ts`
+
+위 현재 코드 경로들이 모두 source wrapper 대신 `dist/ts-runtime/...`를 직접 보도록 정리된 뒤 삭제했다.
+
 ## 다음 삭제 후보 메모
 
 `manual/reports/*.js`는 대부분 얇은 source wrapper로 남아 있지만,

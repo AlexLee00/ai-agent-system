@@ -37,7 +37,10 @@ const reservations: Reservation[] = [
   { phone: '01090187345', date: '2026-03-31', start: '20:00', end: '20:50', room: 'A1', name: '이효진' },
 ];
 
-const REGISTER_SCRIPT = path.join(ROOT, 'bots/reservation/manual/reservation/pickko-accurate.js');
+const REGISTER_SCRIPT = path.join(
+  ROOT,
+  'dist/ts-runtime/bots/reservation/manual/reservation/pickko-accurate.js',
+);
 
 function runRegister(res: Reservation, index: number): Promise<number | null> {
   return new Promise((resolve) => {

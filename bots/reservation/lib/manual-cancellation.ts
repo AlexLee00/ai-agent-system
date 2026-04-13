@@ -100,7 +100,10 @@ export function runManualReservationCancellation(args: ManualCancellationArgs = 
   if (!parsed.ok) return parsed;
 
   const reservation = parsed.reservation;
-  const scriptPath = path.join(__dirname, '../manual/reservation/pickko-cancel-cmd.js');
+  const scriptPath = path.join(
+    __dirname,
+    '../../../dist/ts-runtime/bots/reservation/manual/reservation/pickko-cancel-cmd.js',
+  );
   const childArgs = [
     scriptPath,
     `--phone=${reservation.phone}`,
