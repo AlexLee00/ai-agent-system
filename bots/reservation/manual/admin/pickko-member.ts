@@ -2,10 +2,10 @@
 /// <reference lib="dom" />
 
 /**
- * pickko-member.js — 신규 회원 가입 CLI 래퍼
+ * pickko-member.ts — 신규 회원 가입 CLI
  *
- * 사용법:
- *   node src/pickko-member.js \
+ * 운영 실행 예:
+ *   node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/admin/pickko-member.js \
  *     --phone=01012345678 \
  *     --name=홍길동 \
  *     [--birth=2000-01-01]
@@ -28,7 +28,10 @@ const PICKKO_PW = SECRETS.pickko_pw;
 const ARGS = parseArgs(process.argv);
 
 if (!ARGS.phone || !ARGS.name) {
-  fail('필수 인자 누락: --phone, --name\n사용법: node pickko-member.js --phone=01000000000 --name=이름');
+  fail(
+    '필수 인자 누락: --phone, --name\n' +
+    '사용법: node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/admin/pickko-member.js --phone=01000000000 --name=이름',
+  );
 }
 
 const PHONE_RAW = ARGS.phone.replace(/\D/g, '');

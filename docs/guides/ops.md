@@ -547,7 +547,7 @@ launchctl bootout gui/$(id -u) /Users/alexlee/projects/ai-agent-system/bots/inve
 
 대표 점검:
 - `node bots/reservation/scripts/health-report.js --json`
-- `node bots/reservation/manual/admin/pickko-verify.js`
+- `node dist/ts-runtime/bots/reservation/manual/admin/pickko-verify.js`
 - `bash bots/reservation/scripts/reload-monitor.sh`
 
 ---

@@ -366,17 +366,17 @@ curl -s -X POST http://localhost:8100/ask \
 ## 🚀 현재 운영 상태 (2026-02-26)
 
 ```
-⏸ naver-monitor.js    마이그레이션 후 일시 중단 → 재시작 필요
+⏸ naver-monitor.ts    마이그레이션 후 일시 중단 → dist runtime 기준 재시작 필요
 ⏸ OpenClaw 게이트웨이  마이그레이션 후 일시 중단 → 재시작 필요
 ✅ Heartbeat           1시간 주기, 09:00~22:00 텔레그램 전송 (재시작 후 복구)
 ✅ pickko-cancel.js    네이버 취소 → 픽코 자동 취소 (PICKKO_CANCEL_ENABLE=1)
-✅ pickko-verify.js    needsVerify() 기반 재검증 (자동: 08:00/14:00/20:00, launchd)
+✅ pickko-verify.ts    needsVerify() 기반 재검증 (자동: 08:00/14:00/20:00, launchd)
 ✅ pickko-daily-audit  당일 픽코 감사 (22:00+23:50 자동, launchd)
-✅ pickko-register.js  자연어 예약 등록 CLI — 스카가 직접 실행 가능
-✅ pickko-member.js    신규 회원 가입 CLI — 스카가 직접 실행 가능
+✅ pickko-register.ts  자연어 예약 등록 CLI — 스카가 직접 실행 가능
+✅ pickko-member.ts    신규 회원 가입 CLI — 스카가 직접 실행 가능
 ✅ pickko-daily-summary  09:00 예약현황 / 00:00 마감 매출+컨펌 (launchd: ai.ska.pickko-daily-summary)
-✅ lib/ 공유 라이브러리  10개 모듈 (pickko-stats.js 신규 추가)
-✅ state.db            단일 SQLite, AES-256-GCM 암호화 (phone/name)
+✅ lib/ 공유 라이브러리  TS source of truth 기준 운영 중
+✅ reservation DB      Postgres 기준 운영, 암호화 필드 유지
 ✅ RAG 서버            http://localhost:8100 정상
 ✅ BOOT.md             게이트웨이 재시작 시 자동 실행 + sync 자동 보존
 ✅ 자정 자동 보존       nightly-sync.sh + launchd (00:00 실행)
@@ -386,7 +386,7 @@ curl -s -X POST http://localhost:8100/ask \
 **재시작 명령:**
 ```bash
 launchctl load ~/Library/LaunchAgents/ai.openclaw.gateway.plist
-cd ~/projects/ai-agent-system/bots/reservation && nohup bash src/start-ops.sh > /dev/null 2>&1 &
+cd ~/projects/ai-agent-system/bots/reservation && nohup bash auto/monitors/start-ops.sh > /dev/null 2>&1 &
 ```
 
 ## 📌 pickko-cancel.js 핵심 구현 노트 (2026-02-24)

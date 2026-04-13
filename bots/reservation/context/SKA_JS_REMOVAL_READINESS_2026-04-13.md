@@ -22,9 +22,8 @@
 
 ### 1. wrapper 자기 자신
 
-- `bots/reservation/manual/admin/pickko-verify.js`
-
-위 파일들은 현재 대부분 “실행 주체”라기보다 `dist/ts-runtime`를 호출하는 얇은 호환 wrapper다.
+남아 있는 source `.js`는 대부분 “실행 주체”라기보다 `dist/ts-runtime`를 호출하는 얇은 호환 wrapper다.
+삭제 대상은 현재 코드/운영 표면과 연결이 끊긴 source wrapper부터 순차적으로 진행하면 된다.
 
 ### 2. 현재 운영 엔트리로 남아 있는 dist `.js`
 
@@ -52,10 +51,10 @@ launchd, shell wrapper, package script, registry, cross-team caller는 이제 re
 
 ### B. 아직 보류 (남은 현재 코드/운영 참조 있음)
 
-- `auto/monitors/*.js`
-  - registry / start script / launchd가 이미 dist 직결이긴 하지만, 모니터는 운영 민감도가 높아 마지막 배치로 미루는 것이 안전
-- 기타 source wrapper
+- 일부 `manual/admin`, `manual/reservation`, `scripts`, `lib` source wrapper
   - 삭제보다 “호환 레일 유지” 이득이 아직 있는 것들
+- `.legacy.js`
+  - source fallback과 CommonJS 호환 레일 역할이 남아 있음
 
 ### C. 기록성 `.js` 표기
 
@@ -194,7 +193,7 @@ launchd, shell wrapper, package script, registry, cross-team caller는 이제 re
    - `scripts/log-rotate.js`
    - `auto/scheduled/pickko-daily-summary.js`
 2. 운영 민감 wrapper는 별도 배치로 유지
-   - `manual/admin/pickko-verify.js`
+   - `manual/admin/*.js`
    - `auto/monitors/*.js`
 3. 역사 문서 `.js` 표기는 필요 시 후속 정리
 
@@ -239,6 +238,37 @@ launchd, shell wrapper, package script, registry, cross-team caller는 이제 re
 정리 배경:
 - `run-verify.sh`, startup verify, registry, package script, monitor shell runner, launchd template이 모두
   source wrapper 대신 `dist/ts-runtime/...`를 직접 보도록 정리된 뒤 삭제했다.
+
+## 3차 삭제 완료
+
+다음 `manual/reports` source wrapper 8개도 실제로 제거했다.
+
+- `bots/reservation/manual/reports/manual-block-followup-report.js`
+- `bots/reservation/manual/reports/manual-block-followup-resolve.js`
+- `bots/reservation/manual/reports/occupancy-report.js`
+- `bots/reservation/manual/reports/pickko-alerts-query.js`
+- `bots/reservation/manual/reports/pickko-alerts-resolve.js`
+- `bots/reservation/manual/reports/pickko-pay-pending.js`
+- `bots/reservation/manual/reports/pickko-revenue-confirm.js`
+- `bots/reservation/manual/reports/pickko-stats-cmd.js`
+
+정리 배경:
+- `bots/orchestrator/src/router.ts`
+- `bots/reservation/auto/scheduled/pickko-pay-scan.ts`
+- `bots/reservation/manual/reservation/pickko-accurate.ts`
+- `bots/reservation/src/test-nlp-e2e.ts`
+
+위 현재 코드 경로들이 모두 source wrapper 대신 `dist/ts-runtime/...`를 직접 보도록 정리된 뒤 삭제했다.
+
+## 4차 삭제 완료
+
+다음 `manual/admin` source wrapper 2개도 실제로 제거했다.
+
+- `bots/reservation/manual/admin/pickko-member.js`
+- `bots/reservation/manual/admin/pickko-ticket.js`
+
+정리 배경:
+- operator/docs 표면과 도움말 문자열을 `dist/ts-runtime/...` 또는 `.ts` source of truth 기준으로 정리한 뒤 삭제했다.
 
 ## 다음 삭제 후보 메모
 
