@@ -463,6 +463,48 @@ launchd, shell wrapper, package script, registry, cross-team caller는 이제 re
 - `bots/reservation/lib/ska-team.js`
 - `bots/reservation/lib/vip.js`
 
+## 18차 삭제 완료
+
+- `bots/reservation/lib/kiosk-audit-service.js`
+- `bots/reservation/lib/kiosk-block-flow-service.js`
+- `bots/reservation/lib/kiosk-calendar-service.js`
+- `bots/reservation/lib/kiosk-cli-service.js`
+- `bots/reservation/lib/kiosk-main-service.js`
+- `bots/reservation/lib/kiosk-monitor-helpers.js`
+- `bots/reservation/lib/kiosk-naver-phase-service.js`
+- `bots/reservation/lib/kiosk-panel-service.js`
+- `bots/reservation/lib/kiosk-pickko-cycle-service.js`
+- `bots/reservation/lib/kiosk-runtime-service.js`
+- `bots/reservation/lib/kiosk-slot-calendar-service.js`
+- `bots/reservation/lib/kiosk-slot-runner-service.js`
+- `bots/reservation/lib/kiosk-verify-service.js`
+- `bots/reservation/lib/naver-alert-helpers.js`
+- `bots/reservation/lib/naver-booking-state-service.js`
+- `bots/reservation/lib/naver-browser-session-service.js`
+- `bots/reservation/lib/naver-cancel-detection-service.js`
+- `bots/reservation/lib/naver-candidate-service.js`
+- `bots/reservation/lib/naver-confirmed-cycle-service.js`
+- `bots/reservation/lib/naver-cycle-report-service.js`
+- `bots/reservation/lib/naver-detached-recovery-service.js`
+- `bots/reservation/lib/naver-future-cancel-service.js`
+- `bots/reservation/lib/naver-list-scrape-service.js`
+- `bots/reservation/lib/naver-monitor-cycle-service.js`
+- `bots/reservation/lib/naver-monitor-helpers.js`
+- `bots/reservation/lib/naver-monitor-service.js`
+- `bots/reservation/lib/naver-pickko-recovery-service.js`
+- `bots/reservation/lib/naver-pickko-runner-helpers.js`
+- `bots/reservation/lib/naver-pickko-runner-service.js`
+- `bots/reservation/lib/naver-reservation-helpers.js`
+- `bots/reservation/lib/naver-session-service.js`
+- `bots/reservation/lib/pickko-date-service.js`
+- `bots/reservation/lib/pickko-finalization-service.js`
+- `bots/reservation/lib/pickko-member-selection-service.js`
+- `bots/reservation/lib/pickko-member-service.js`
+- `bots/reservation/lib/pickko-payment-service.js`
+- `bots/reservation/lib/pickko-room-slot-service.js`
+- `bots/reservation/lib/pickko-save-precheck-service.js`
+- `bots/reservation/lib/pickko-slot-helpers.js`
+
 정리 배경:
 - 현재 코드 기준 직접 참조는 이미 `dist/ts-runtime/.../lib/db.js` 또는 `.legacy.js` fallback 레일로 정리돼 있었다.
 - 남아 있던 source `.js`는 얇은 dist passthrough wrapper 역할만 하고 있었다.
