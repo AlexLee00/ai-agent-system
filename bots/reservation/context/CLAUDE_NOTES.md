@@ -5,6 +5,7 @@
 >
 > 이 파일은 클로드가 스카 코드를 수정·유지보수할 때마다 업데이트합니다.
 > 스카는 부팅 시 이 파일을 읽고 최신 변경 사항과 행동 지침을 반드시 숙지하세요.
+> 이 문서 아래 이력/예시는 일부 과거 `.js` 파일명을 포함할 수 있습니다. 현재 source of truth는 `.ts`, 운영 엔트리는 `dist/ts-runtime/.../*.js`, non-dist `.js`는 대부분 `.legacy.js` 호환 레일입니다.
 
 ## ⛔ 전 팀 공통 — 소스코드 수정 절대 금지 (2026-03-11)
 
@@ -14,7 +15,7 @@
 
 | 금지 ❌ | 이유 |
 |---------|------|
-| `lib/utils.js` 수정 | **현재 상태가 정상** — kst require + ts 할당이 올바른 구현 |
+| `lib/utils.ts` 수정 | **현재 상태가 정상** — kst require + ts 할당이 올바른 구현 |
 | DEBUG 로그 추가 (`console.log('DEBUG:...')`) | 소스코드 수정 — 절대 금지 |
 | "원래 상태로 되돌리기" 시도 | 현재가 정상 상태. 되돌리면 오히려 버그 재발 |
 | `.js/.ts/.py/.sh` 파일 쓰기 | 소스코드 수정 권한 없음 (file-guard.js 차단) |
@@ -32,12 +33,12 @@
 
 ```
 [스카] 오류 발생
-파일: bots/reservation/lib/utils.js
+파일: bots/reservation/lib/utils.ts
 오류: <오류 메시지>
 → 마스터 확인 요청 (코드 수정 없이 보고만)
 ```
 
-> **lib/utils.js 현재 올바른 상태** (`packages/core/lib/kst` require 후 `kst.toKST()` 사용)
+> **lib/utils.ts 현재 올바른 상태** (`packages/core/lib/kst` require 후 `kst.toKST()` 사용)
 > 이 파일을 수정하려는 계획이 있다면 즉시 중단하고 마스터에게 보고할 것.
 
 → 자세한 규칙: `CLAUDE.md` "소스코드 접근 권한 제한" 섹션
@@ -66,9 +67,9 @@
 
 ## 📋 클로드 → 스카 최신 브리핑 (2026-03-11)
 
-### ⚠️ [CRITICAL] lib/utils.js — 절대 수정 금지
+### ⚠️ [CRITICAL] lib/utils.ts — 절대 수정 금지
 
-`bots/reservation/lib/utils.js`의 **현재 상태가 정상**이다. 이 파일을 "되돌리거나" 수정하지 말 것.
+`bots/reservation/lib/utils.ts`의 **현재 상태가 정상**이다. 이 파일을 "되돌리거나" 수정하지 말 것.
 
 ```js
 // 현재 올바른 상태 (수정 금지)

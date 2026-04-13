@@ -60,8 +60,8 @@
 | `lib/files.js` | loadJson, saveJson (원자적 쓰기 tmp→rename) | ✅ |
 | `lib/args.js` | parseArgs() | ✅ |
 | `lib/browser.js` | getPickkoLaunchOptions, setupDialogHandler | ✅ |
-| `lib/pickko.js` | loginToPickko(), fetchPickkoEntries() — 픽코 어드민 일괄 조회 공통 함수 | ✅ |
-| `src/bug-report.js` | 버그·유지보수 추적 CLI; HANDOFF_FILE = `context/HANDOFF.md` 직접 참조 (deploy 순서 의존성 제거) | ✅ 수정 |
+| `lib/pickko.ts` | loginToPickko(), fetchPickkoEntries() — 픽코 어드민 일괄 조회 공통 함수 | ✅ |
+| `src/bug-report.ts` | 버그·유지보수 추적 CLI; HANDOFF_FILE = `context/HANDOFF.md` 직접 참조 (deploy 순서 의존성 제거) | ✅ 수정 |
 | `scripts/speed-test.js` | LLM API 속도 테스트 툴 (--apply로 openclaw.json 자동 반영) | ✅ |
 | `secrets.json` | 네이버/픽코 로그인 정보 + db_encryption_key(64자 hex) + db_key_pepper | ✅ |
 
@@ -70,7 +70,7 @@
 
 ---
 
-## 📋 개발 완료 단계 (pickko-accurate.js)
+## 📋 개발 완료 단계 (pickko-accurate.ts)
 
 | Stage | 기능 | 구현 내용 |
 |-------|------|----------|
