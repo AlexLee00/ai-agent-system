@@ -30,6 +30,9 @@
 TS 본문이 source of truth이고, `.js` / `.legacy.js`는 런타임 호환 레일이다.
 운영 launchd와 shell wrapper는 점진적으로 `dist/ts-runtime` 엔트리를 직접 보도록 정리 중이다.
 
+관련 정책:
+- `context/SKA_LEGACY_RUNTIME_POLICY_2026-04-13.md`
+
 ```
 reservation/
 ├── auto/

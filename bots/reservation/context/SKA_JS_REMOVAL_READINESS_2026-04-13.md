@@ -10,6 +10,9 @@
 다만 `.legacy.js`는 아직 단순 잔재가 아니라, source fallback과 CommonJS 호환 레일로 사용 중이다.
 따라서 지금 단계에서 `bots/reservation/**/*.legacy.js`를 일괄 삭제하면 안 된다.
 
+관련 정책:
+- `context/SKA_LEGACY_RUNTIME_POLICY_2026-04-13.md`
+
 ## 현재 상태
 
 - `bots/reservation/**/*.ts`: 133개
