@@ -27,7 +27,7 @@
 
 ### 서비스 상태
 
-- [ ] `node /Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/health-report.js --json`
+- [ ] `node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/scripts/health-report.js --json`
   - `naver-monitor: 정상`
   - `kiosk-monitor: 미로드`
 - [ ] `/tmp/naver-ops-mode.log` 최근 10~15분 기준
