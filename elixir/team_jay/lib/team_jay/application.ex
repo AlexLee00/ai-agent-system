@@ -20,6 +20,7 @@ defmodule TeamJay.Application do
       TeamJay.Blog.PortBridge,
       TeamJay.Blog.Feedback,
       TeamJay.Blog.SocialRelay,
+      TeamJay.Blog.InstagramAgent,
       TeamJay.EventLake,
       TeamJay.MarketRegime,
       TeamJay.Teams.SkaSupervisor,
