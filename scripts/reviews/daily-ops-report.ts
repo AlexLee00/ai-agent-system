@@ -15,7 +15,7 @@ const TEAM_HEALTH_COMMANDS = [
   { team: 'claude', script: path.join(ROOT, 'bots/claude/scripts/health-report.js') },
   { team: 'blog', script: path.join(ROOT, 'bots/blog/scripts/health-report.js') },
   { team: 'investment', script: path.join(ROOT, 'bots/investment/scripts/health-report.js') },
-  { team: 'reservation', script: path.join(ROOT, 'bots/reservation/scripts/health-report.js') },
+  { team: 'reservation', script: path.join(ROOT, 'dist/ts-runtime/bots/reservation/scripts/health-report.js') },
 ];
 
 const FALLBACK_TEAM_PROBES = {

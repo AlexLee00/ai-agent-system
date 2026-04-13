@@ -2,14 +2,14 @@
 'use strict';
 
 /**
- * scripts/health-report.js — 스카팀 운영자용 헬스 리포트
+ * scripts/health-report.ts — 스카팀 운영자용 헬스 리포트
  *
  * 목적:
  *   - launchd 서비스 상태와 naver-monitor 로그 활동성을 사람이 읽기 쉽게 요약
  *   - 공용 health-core 포맷을 사용하는 운영 리포트
  *
  * 실행:
- *   node bots/reservation/scripts/health-report.js [--json]
+ *   node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/scripts/health-report.js [--json]
  */
 
 const {
@@ -401,7 +401,7 @@ function formatText(report) {
         }),
       },
     ].filter(Boolean),
-    footer: ['실행: node bots/reservation/scripts/health-report.js --json'],
+    footer: ['실행: node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/scripts/health-report.js --json'],
   });
 }
 

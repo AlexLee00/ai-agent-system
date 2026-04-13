@@ -54,7 +54,7 @@
 ## 자주 쓰는 명령어
 
 ```bash
-node /Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/health-report.js --json
+node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/scripts/health-report.js --json
 node /Users/alexlee/projects/ai-agent-system/scripts/reviews/ska-sales-forecast-daily-review.js --days=7
 node /Users/alexlee/projects/ai-agent-system/scripts/reviews/ska-sales-forecast-weekly-review.js --days=28
 bash /Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/reload-monitor.sh
