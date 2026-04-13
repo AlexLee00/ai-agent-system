@@ -18,4 +18,4 @@
 - `bots/worker/web/server.js`
 - `bots/claude/src/claude-commander.js`
 - `bots/investment/luna-commander.cjs`
-- `bots/reservation/src/ska.js`
+- `bots/reservation/src/ska.ts`

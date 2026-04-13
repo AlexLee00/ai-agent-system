@@ -118,7 +118,7 @@ function log(msg) {
 
 - **모니터링**: launchd KeepAlive로 상시 실행 중 (자동 재시작)
 - **로그 확인**: `tail -f /tmp/naver-ops-mode.log` 또는 텔레그램으로 `skalog`
-- **버그 발견 시**: `node src/bug-report.js --new --title "..." --by ska` 로 즉시 등록
+- **버그 발견 시**: `node dist/ts-runtime/bots/reservation/src/bug-report.js --new --title "..." --by ska` 로 즉시 등록
 
 ---
 
@@ -163,7 +163,7 @@ function log(msg) {
 | 알람 저장소 | `~/.openclaw/workspace/state.db` alerts 테이블 (2026-02-26 마이그레이션, `.pickko-alerts.jsonl` 폐기) |
 | `sent: false` 항목 | 발송 실패 건 — 재시도됨 |
 | alerts `resolved` | error 타입만 `false`, 나머지 `true` (자동 관리) |
-| 버그 발견 시 | `node src/bug-report.js --new` 로 등록 후 클로드에게 보고 |
+| 버그 발견 시 | `node dist/ts-runtime/bots/reservation/src/bug-report.js --new` 로 등록 후 클로드에게 보고 |
 | "버그리포트에 올려줘" | 사장님이 이 말을 하면 → `bug-report.js --new`로 즉시 등록 (뭔지 되묻지 말 것) |
 | "의견/이슈/메모 버그리포트에" | bug-report.js = 스카·클로드 공용 이슈 추적 도구. 바로 등록할 것 |
 | **"매출 컨펌" / "매출 확정"** | `node dist/ts-runtime/bots/reservation/manual/reports/pickko-revenue-confirm.js` 실행 → 가장 최근 미컨펌 daily_summary를 room_revenue에 누적 확정 + 텔레그램 결과 발송 |
@@ -578,7 +578,7 @@ node ~/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/reports/
 cd ~/projects/ai-agent-system/bots/reservation
 
 # 버그 등록 (반드시 --by ska 명시)
-node src/bug-report.js --new \
+node dist/ts-runtime/bots/reservation/src/bug-report.js --new \
   --title "문제 요약 (한 줄)" \
   --desc "구체적인 현상: 언제, 어떤 상황에서, 어떤 오류가 발생했는지" \
   --severity high \
@@ -593,10 +593,10 @@ node src/bug-report.js --new \
 ### 버그 상태 확인
 
 ```bash
-node src/bug-report.js --list              # 미해결 버그
-node src/bug-report.js --list --status all # 전체 목록
-node src/bug-report.js --show --id BUG-001 # 특정 버그 상세
-node src/bug-report.js --maint-list        # 유지보수 이력 (클로드 작업 내역)
+node dist/ts-runtime/bots/reservation/src/bug-report.js --list              # 미해결 버그
+node dist/ts-runtime/bots/reservation/src/bug-report.js --list --status all # 전체 목록
+node dist/ts-runtime/bots/reservation/src/bug-report.js --show --id BUG-001 # 특정 버그 상세
+node dist/ts-runtime/bots/reservation/src/bug-report.js --maint-list        # 유지보수 이력 (클로드 작업 내역)
 ```
 
 ### 버그 상태 흐름
