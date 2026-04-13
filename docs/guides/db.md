@@ -337,7 +337,7 @@
 | 목적 | 대표 테이블 | 우선 보는 코드 |
 |---|---|---|
 | 명령 큐/오케스트레이션 | `claude.bot_commands`, `claude.mainbot_queue` | [bots/orchestrator/src/router.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/src/router.js) |
-| 예약 상태/경고 | `reservation.reservations`, `reservation.alerts` | [bots/reservation/lib/db.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/db.js) |
+| 예약 상태/경고 | `reservation.reservations`, `reservation.alerts` | [bots/reservation/lib/db.ts](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/db.ts) |
 | 예측/실적 비교 | `ska.forecast_results`, `ska.training_feature_daily` | [bots/ska/src/forecast.py](/Users/alexlee/projects/ai-agent-system/bots/ska/src/forecast.py) |
 | 거래 판단/성과 | `investment.signals`, `investment.trades`, `investment.trade_journal` | [bots/investment/shared/db.js](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/db.js) |
 | 워커 업무 객체 | `worker.documents`, `worker.schedules`, `worker.projects`, `worker.sales` | [bots/worker/web/server.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/server.js) |
