@@ -309,6 +309,17 @@ launchd, shell wrapper, package script, registry, cross-team caller는 이제 re
 
 위 현재 코드 경로들이 모두 source wrapper 대신 `dist/ts-runtime/...`를 직접 보도록 정리된 뒤 삭제했다.
 
+## 7차 삭제 완료
+
+다음 `auto/scheduled` source wrapper 2개도 실제로 제거했다.
+
+- `bots/reservation/auto/scheduled/pickko-daily-audit.js`
+- `bots/reservation/auto/scheduled/pickko-pay-scan.js`
+
+정리 배경:
+- 예약 배치 실행은 이미 `run-audit.sh`, `run-pay-scan.sh`, launchd 템플릿에서
+  source wrapper 대신 `dist/ts-runtime/...`를 직접 보도록 정리돼 있었다.
+
 ## 다음 삭제 후보 메모
 
 `manual/reports/*.js`는 대부분 얇은 source wrapper로 남아 있지만,
