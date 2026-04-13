@@ -340,6 +340,25 @@ launchd, shell wrapper, package script, registry, cross-team caller는 이제 re
 - 현재 코드 기준 직접 실행/직접 참조는 대부분 `dist/ts-runtime/...` 또는 `.legacy.js` fallback 레일로 이동한 상태였고,
   남아 있던 source `.js`는 얇은 dist passthrough wrapper 역할만 하고 있었다.
 
+## 9차 삭제 완료
+
+다음 `migrations`/`n8n` source wrapper 10개도 실제로 제거했다.
+
+- `bots/reservation/migrations/001_initial_schema.js`
+- `bots/reservation/migrations/002_daily_summary_columns.js`
+- `bots/reservation/migrations/003_agent_state.js`
+- `bots/reservation/migrations/004_agent_events_tasks.js`
+- `bots/reservation/migrations/005_pickko_order_raw.js`
+- `bots/reservation/migrations/006_kiosk_block_attempts.js`
+- `bots/reservation/migrations/007_kiosk_block_key_v2.js`
+- `bots/reservation/migrations/008_pickko_order_raw_cleanup.js`
+- `bots/reservation/migrations/009_daily_summary_remove_pickko_total.js`
+- `bots/reservation/n8n/setup-ska-command-workflow.js`
+
+정리 배경:
+- reservation migration 실행은 이미 `scripts/migrate.ts`와 `dist/ts-runtime/.../migrations/*.js` 기준으로 동작하고 있었다.
+- reservation n8n setup 실행도 이미 `package.json`과 운영 문서에서 `dist/ts-runtime/.../setup-ska-command-workflow.js`를 직접 보도록 정리돼 있었다.
+
 ## 다음 삭제 후보 메모
 
 `manual/reports/*.js`는 대부분 얇은 source wrapper로 남아 있지만,

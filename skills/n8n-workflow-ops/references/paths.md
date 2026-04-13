@@ -12,7 +12,7 @@
 - `bots/orchestrator/n8n/setup-ska-workflows.js`
 - `bots/worker/n8n/setup-worker-workflows.js`
 - `bots/blog/n8n/setup-blog-workflows.js`
-- `bots/reservation/n8n/setup-ska-command-workflow.js`
+- `bots/reservation/n8n/setup-ska-command-workflow.ts`
 
 진단 스크립트:
 
