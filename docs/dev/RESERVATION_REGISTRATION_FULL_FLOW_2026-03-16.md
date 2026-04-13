@@ -168,7 +168,7 @@
 ### 5-1. 스카 명령 분배
 
 파일:
-- `/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/ska-command-handlers.js`
+- `/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/ska-command-handlers.ts`
 
 역할:
 - 읽기 명령은 n8n fallback을 탈 수 있지만,
