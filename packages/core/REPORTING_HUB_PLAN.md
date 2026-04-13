@@ -25,7 +25,7 @@
 - [bots/reservation/lib/mainbot-client.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/mainbot-client.js)
 - [bots/investment/shared/mainbot-client.js](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/mainbot-client.js)
 - [bots/claude/lib/mainbot-client.js](/Users/alexlee/projects/ai-agent-system/bots/claude/lib/mainbot-client.js)
-- [bots/reservation/lib/telegram.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/telegram.js)
+- [bots/reservation/lib/telegram.ts](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/telegram.ts)
 - [packages/core/scripts/publish-python-report.js](/Users/alexlee/projects/ai-agent-system/packages/core/scripts/publish-python-report.js)
 
 즉 지금은

@@ -14,7 +14,7 @@
 
 ### Direct Telegram Producers
 
-- [bots/reservation/lib/telegram.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/telegram.js)
+- [bots/reservation/lib/telegram.ts](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/telegram.ts)
 - [packages/core/lib/telegram-sender.js](/Users/alexlee/projects/ai-agent-system/packages/core/lib/telegram-sender.js)
 - [bots/orchestrator/src/mainbot.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/src/mainbot.js)
 

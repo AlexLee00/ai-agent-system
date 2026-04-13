@@ -19,7 +19,7 @@ description: Use when adding, migrating, reviewing, or debugging alerts and repo
 
 - Claude: `bots/claude/lib/reporter.js`, `bots/claude/lib/mainbot-client.js`
 - Luna: `bots/investment/team/reporter.js`, `bots/investment/shared/mainbot-client.js`, `bots/investment/shared/report.js`
-- Ska: `bots/reservation/lib/mainbot-client.js`, `bots/reservation/lib/telegram.js`
+- Ska: `bots/reservation/lib/mainbot-client.js`, `bots/reservation/lib/telegram.ts`
 - Blog: `bots/blog/scripts/health-check.js`
 
 ## 기본 원칙

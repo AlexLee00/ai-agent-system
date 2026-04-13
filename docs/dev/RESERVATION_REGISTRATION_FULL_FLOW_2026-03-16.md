@@ -185,7 +185,7 @@
 ### 6-1. 전체 진입점
 
 파일:
-- `/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/manual-reservation.js`
+- `/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/manual-reservation.ts`
 
 중심 함수:
 - `runManualReservationRegistration(args)`

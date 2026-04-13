@@ -1008,7 +1008,7 @@ AI 응답을 생성하면서 실시간으로 텍스트를 사용자에게 스트
 
 | 파일 | parse_mode | 분할 로직 | 상태 |
 |------|-----------|---------|------|
-| `bots/reservation/lib/telegram.js` | ✅ `HTML` (2026-03-04) | ❌ (스카팀 메시지 짧음) | 적용 완료 |
+| `bots/reservation/lib/telegram.ts` | ✅ `HTML` (2026-03-04) | ❌ (스카팀 메시지 짧음) | 적용 완료 |
 | `bots/orchestrator/src/mainbot.js` | ✅ `HTML` (2026-03-04) | ✅ 4096자 분할 | 적용 완료 |
 
 ---
