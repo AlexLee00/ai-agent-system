@@ -1,7 +1,7 @@
 #!/bin/bash
-# pickko-daily-audit.js 자동 실행 래퍼 (launchd)
+# pickko-daily-audit dist runtime 자동 실행 래퍼 (launchd)
 # - 중복 실행 방지 (lock file)
-# - MODE=ops로 pickko-daily-audit.js 실행
+# - MODE=ops로 dist/ts-runtime의 pickko-daily-audit.js 실행
 # - 로그 유지 (/tmp/pickko-daily-audit.log, 최신 500줄)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
