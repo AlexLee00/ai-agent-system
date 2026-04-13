@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * src/ska.js — 스카 팀장 봇
+ * src/ska.ts — 스카 팀장 봇
  *
  * 역할:
  *   - bot_commands 테이블 폴링 (5초 간격)

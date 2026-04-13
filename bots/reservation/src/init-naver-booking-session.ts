@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /// <reference lib="dom" />
 /**
- * init-naver-booking-session.js — naver-booking-profile 세션 초기화 (1회 실행)
+ * init-naver-booking-session.ts — naver-booking-profile 세션 초기화 (1회 실행)
  *
- * pickko-kiosk-monitor.js가 사용하는 naver-booking-profile에 Naver 로그인 세션 저장
- * naver-monitor.js의 naver-profile과 분리 (동시 실행 충돌 방지)
+ * dist/ts-runtime/.../pickko-kiosk-monitor.js가 사용하는 naver-booking-profile에 Naver 로그인 세션 저장
+ * dist/ts-runtime/.../naver-monitor.js의 naver-profile과 분리 (동시 실행 충돌 방지)
  */
 'use strict';
 

@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 /// <reference lib="dom" />
 /**
- * test-kiosk-register.js — 키오스크 예약 테스트 데이터 삽입
+ * test-kiosk-register.ts — 키오스크 예약 테스트 데이터 삽입
  *
- * pickko-accurate.js와 동일하지만 결제금액을 0으로 변경하지 않고 그대로 결제
+ * dist/ts-runtime/.../pickko-accurate.js와 동일하지만 결제금액을 0으로 변경하지 않고 그대로 결제
  * → 이용금액 > 0 인 예약을 만들어 pickko-kiosk-monitor.js 테스트에 사용
  *
  * 테스트 후 반드시 예약 취소 처리 필요
  *
  * 사용법:
- *   node src/test-kiosk-register.js --date=2026-02-25 --start=19:00 --end=20:00 --room=A1
+ *   node dist/ts-runtime/bots/reservation/src/test-kiosk-register.js --date=2026-02-25 --start=19:00 --end=20:00 --room=A1
  */
 
 const puppeteer = require('puppeteer');
