@@ -2,10 +2,13 @@
 
 ## 결론
 
-`bots/reservation`는 **TS source of truth** 및 **TS-only typecheck** 상태까지는 완료됐다.
-하지만 `.js` / `.legacy.js` 파일은 아직 단순 잔재가 아니라, 실제 런타임 엔트리와 cross-team import 호환 레일로 사용 중이다.
+`bots/reservation`는 이제 **TS source of truth**, **TS-only typecheck**, **source wrapper 제거**까지 완료됐다.
 
-따라서 현재 단계에서 `bots/reservation/**/*.js`를 일괄 삭제하면 안 된다.
+현재 `bots/reservation` 아래 non-dist `.js`는 사실상 `.legacy.js` 호환 레일만 남아 있다.
+즉 `source wrapper .js`는 더 이상 운영 진입점으로 남아 있지 않다.
+
+다만 `.legacy.js`는 아직 단순 잔재가 아니라, source fallback과 CommonJS 호환 레일로 사용 중이다.
+따라서 지금 단계에서 `bots/reservation/**/*.legacy.js`를 일괄 삭제하면 안 된다.
 
 ## 현재 상태
 
@@ -14,23 +17,27 @@
 - reservation `tsc --noEmit`: 통과
 - reservation runtime build: 통과
 - source legacy wrapper fallback: 복구 완료
+- non-dist source `.js`: 제거 완료
+- 남은 non-dist `.js`: `.legacy.js`만 존재
 
-## 아직 `.js`를 유지해야 하는 이유
+## 아직 `.legacy.js`를 유지해야 하는 이유
 
 초기 전환 시점에는 launchd, shell wrapper, cross-team import가 reservation 내부 wrapper `.js`를 직접 사용하고 있었다.
-하지만 현재는 대부분 `dist/ts-runtime/.../*.js` 직결로 옮겨졌고, 남은 `.js`는 주로 아래 세 부류로 압축됐다.
+하지만 현재는 대부분 `dist/ts-runtime/.../*.js` 직결로 옮겨졌고, source wrapper `.js`는 제거가 끝났다.
+지금 남은 non-dist `.js`는 주로 아래 부류로 압축됐다.
 
-### 1. wrapper 자기 자신
+### 1. `.legacy.js` 호환 레일
 
-남아 있는 source `.js`는 대부분 “실행 주체”라기보다 `dist/ts-runtime`를 호출하는 얇은 호환 wrapper다.
-삭제 대상은 현재 코드/운영 표면과 연결이 끊긴 source wrapper부터 순차적으로 진행하면 된다.
+남아 있는 non-dist `.js`는 대부분 `.legacy.js`이며, `dist/ts-runtime` 또는 TS source를 호출하는 호환 레일이다.
+즉 삭제 대상은 이제 source wrapper가 아니라, 정말로 `.legacy.js`를 제거할 준비가 됐는지의 문제로 바뀌었다.
 
-### 2. 현재 운영 엔트리로 남아 있는 dist `.js`
+### 2. 현재 운영 엔트리인 dist `.js`
 
 launchd, shell wrapper, package script, registry, cross-team caller는 이제 reservation source wrapper가 아니라
 대체로 `dist/ts-runtime/.../*.js`를 직접 본다.
 
-즉 지금 단계에서 바로 지워도 되는 대상은 “source wrapper”인지, 아니면 “실제 dist 런타임 파일명”인지 구분해서 봐야 한다.
+즉 지금 단계에서 지워도 되는 대상과 유지해야 하는 대상의 경계는
+“source wrapper”가 아니라 “legacy 호환 레일”과 “실제 dist 런타임 파일명” 사이에 있다.
 
 ### 3. 역사/운영 문서 표기
 
@@ -39,27 +46,18 @@ launchd, shell wrapper, package script, registry, cross-team caller는 이제 re
 
 ## 분류
 
-### A. 삭제 준비 완료에 가까움 (source wrapper)
+### A. source wrapper `.js`
 
-아래 source wrapper 1차 배치는 실제 삭제까지 완료했다.
+완료. reservation 내부 source wrapper `.js` 제거는 끝났다.
 
-- `scripts/health-check.js`
-- `scripts/dashboard-server.js`
-- `scripts/backup-db.js`
-- `scripts/log-rotate.js`
-- `auto/scheduled/pickko-daily-summary.js`
+### B. `.legacy.js`
 
-### B. 아직 보류 (남은 현재 코드/운영 참조 있음)
-
-- 일부 `manual/admin`, `manual/reservation`, `scripts`, `lib` source wrapper
-  - 삭제보다 “호환 레일 유지” 이득이 아직 있는 것들
-- `.legacy.js`
-  - source fallback과 CommonJS 호환 레일 역할이 남아 있음
+보류. source fallback과 CommonJS 호환 레일 역할이 남아 있다.
 
 ### C. 기록성 `.js` 표기
 
-문서와 checklist의 `.js` 표기는 여전히 많다.
-이는 삭제 blocker는 아니지만, “지금도 source wrapper를 운영이 직접 쓴다”는 오해를 만들 수 있으므로 마지막에 정리 가치가 있다.
+문서와 checklist의 `.js` 표기는 여전히 남아 있다.
+이는 삭제 blocker는 아니지만, 현재 운영 구조를 오해하게 만들 수 있어 후속 정리 가치가 있다.
 
 ## 추천 삭제 순서
 
@@ -184,20 +182,15 @@ launchd, shell wrapper, package script, registry, cross-team caller는 이제 re
 
 ## 현재 추천 단계
 
-이제 남은 작업은 “전환”보다 “삭제 배치 설계”에 가깝다.
+이제 남은 작업은 “source wrapper 삭제”가 아니라 “legacy 호환 레일을 어디까지 유지할지”를 정하는 단계다.
 
-1. 저위험 source wrapper 1차 삭제 후보 확정
-   - `scripts/health-check.js`
-   - `scripts/dashboard-server.js`
-   - `scripts/backup-db.js`
-   - `scripts/log-rotate.js`
-   - `auto/scheduled/pickko-daily-summary.js`
-2. 운영 민감 wrapper는 별도 배치로 유지
-   - `manual/admin/*.js`
-   - `auto/monitors/*.js`
-3. 역사 문서 `.js` 표기는 필요 시 후속 정리
+1. `.legacy.js` 유지 범위 확정
+   - launchd/source fallback
+   - CommonJS import 호환
+2. 역사 문서 `.js` 표기 후속 정리
+3. 필요하면 마지막에 `ts-fallback-loader.legacy.js` 포함 호환 레일까지 재평가
 
-즉 reservation JS 제거 준비는 이제 “삭제 가능한 wrapper를 실제로 어떤 순서로 걷을지”만 남은 상태에 가깝다.
+즉 reservation JS 제거 준비는 사실상 완료됐고, 지금부터는 `legacy.js` 보존 정책과 문서 표면 정리가 핵심이다.
 
 ## 1차 삭제 완료
 
