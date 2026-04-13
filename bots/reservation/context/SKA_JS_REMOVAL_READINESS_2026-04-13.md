@@ -405,6 +405,21 @@ launchd, shell wrapper, package script, registry, cross-team caller는 이제 re
 - `naver-monitor.ts`의 bug-report 실행 경로를 `dist/ts-runtime/.../src/bug-report.js`로 전환했다.
 - `ai.ska.commander` launchd 템플릿과 live LaunchAgent를 `dist/ts-runtime/.../src/ska.js` 기준으로 정리했다.
 
+## 13차 삭제 완료
+
+다음 `lib` 저위험 source wrapper 6개도 실제로 제거했다.
+
+- `bots/reservation/lib/alert-client.js`
+- `bots/reservation/lib/browser.js`
+- `bots/reservation/lib/crypto.js`
+- `bots/reservation/lib/error-tracker.js`
+- `bots/reservation/lib/reporter.js`
+- `bots/reservation/lib/secrets.js`
+
+정리 배경:
+- 현재 코드 기준 직접 실행/직접 참조는 대부분 `dist/ts-runtime/...` 또는 `.legacy.js` fallback 레일로 이미 이동한 상태였다.
+- 남아 있던 source `.js`는 얇은 dist passthrough wrapper 역할만 하고 있었다.
+
 ## 다음 삭제 후보 메모
 
 `manual/reports/*.js`는 대부분 얇은 source wrapper로 남아 있지만,
