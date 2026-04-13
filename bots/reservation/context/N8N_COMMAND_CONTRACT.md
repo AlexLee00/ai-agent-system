@@ -169,4 +169,4 @@
 
 1. 새 명령은 먼저 `bridge endpoint`에 계약을 추가
 2. 그다음 `n8n workflow`에서 호출
-3. 마지막에 `ska-command-handlers.js`의 local fallback과 결과 shape를 맞춘다
+3. 마지막에 `ska-command-handlers.ts`의 local fallback과 결과 shape를 맞춘다

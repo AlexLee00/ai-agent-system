@@ -452,6 +452,17 @@ launchd, shell wrapper, package script, registry, cross-team caller는 이제 re
 
 - `bots/reservation/lib/db.js`
 
+## 17차 삭제 완료
+
+- `bots/reservation/lib/daily-report-helpers.js`
+- `bots/reservation/lib/report-followup-helpers.js`
+- `bots/reservation/lib/ska-command-handlers.js`
+- `bots/reservation/lib/ska-command-queue.js`
+- `bots/reservation/lib/ska-intent-learning.js`
+- `bots/reservation/lib/ska-read-service.js`
+- `bots/reservation/lib/ska-team.js`
+- `bots/reservation/lib/vip.js`
+
 정리 배경:
 - 현재 코드 기준 직접 참조는 이미 `dist/ts-runtime/.../lib/db.js` 또는 `.legacy.js` fallback 레일로 정리돼 있었다.
 - 남아 있던 source `.js`는 얇은 dist passthrough wrapper 역할만 하고 있었다.

@@ -7,7 +7,7 @@
 ## 핵심 파일
 - auto/monitors/naver-monitor.ts, pickko-kiosk-monitor.ts
 - bots/ska/src/forecast.py, rebecca.py, runtime_config.py
-- lib/ska-read-service.js, runtime-config.js
+- lib/ska-read-service.ts, runtime-config.ts
 
 ## 현재 상태: 운영 안정 (n8n 5개 워크플로우)
 ## 개발: docs/dev/SKA_*.md (9개 운영 문서)
