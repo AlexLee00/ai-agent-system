@@ -9,7 +9,6 @@ const puppeteer = require('puppeteer');
 
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const env = require('../../../packages/core/lib/env');
-const { buildSingleChain } = require('../../../packages/core/lib/llm-model-selector');
 const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
 const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 const { parseNaverBlogUrl } = require('../../../packages/core/lib/naver-blog-url');
@@ -27,6 +26,15 @@ const BLOG_COMMENTER_DEBUG_DIR = path.join(env.PROJECT_ROOT, 'tmp', 'blog-commen
 function traceCommenter(...args) {
   if (process.env.BLOG_COMMENTER_TRACE !== 'true') return;
   console.log('[blog-commenter]', ...args);
+}
+
+function buildCommenterFallbackChain(maxTokens, temperature) {
+  return [
+    { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens, temperature },
+    { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens, temperature },
+    { provider: 'local', model: 'qwen2.5-7b', maxTokens, temperature: Math.min(temperature, 0.7) },
+    { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens, temperature: Math.min(temperature, 0.7) },
+  ];
 }
 
 function nowKstHour() {
@@ -177,6 +185,27 @@ function createTimeoutError(code, message) {
   const error = new Error(message || code || 'timeout');
   error.code = code || 'timeout';
   return error;
+}
+
+function isNeighborCommentUiTimeoutError(error) {
+  const message = String(error?.message || '');
+  return (
+    message === 'comment_editor_not_found'
+    || message.startsWith('comment_panel_not_mounted:')
+    || /Waiting failed: \d+ms exceeded/.test(message)
+  );
+}
+
+async function processNeighborCommentWithTimeout(candidate, { testMode = false } = {}) {
+  const config = getNeighborCommenterConfig();
+  return Promise.race([
+    processNeighborComment(candidate, { testMode }),
+    new Promise((_, reject) => {
+      setTimeout(() => {
+        reject(createTimeoutError('neighbor_comment_process_timeout', `neighbor_comment_process_timeout:${config.processTimeoutMs}`));
+      }, Number(config.processTimeoutMs || 180000));
+    }),
+  ]);
 }
 
 async function humanDelay(minSec, maxSec, testMode = false) {
@@ -911,7 +940,7 @@ async function generateReply(postTitle, postSummary, commentText) {
   ].join('\n');
   const chain = Array.isArray(selectorOverrides['blog.commenter.reply']?.chain)
     ? selectorOverrides['blog.commenter.reply'].chain
-    : buildSingleChain('claude-code/sonnet', 600, 0.75);
+    : buildCommenterFallbackChain(600, 0.75);
   let result = await callWithFallback({
     chain,
     systemPrompt,
@@ -1204,11 +1233,11 @@ async function collectNeighborCandidates({ testMode = false, persist = true } = 
   return inserted;
 }
 
-async function generateNeighborComment(postTitle, postSummary, candidate) {
+async function generateNeighborComment(postTitle, postSummary, candidate, extraGuidance = '') {
   const selectorOverrides = getBlogLLMSelectorOverrides();
   const chain = Array.isArray(selectorOverrides['blog.commenter.neighbor']?.chain)
     ? selectorOverrides['blog.commenter.neighbor'].chain
-    : buildSingleChain('claude-code/sonnet', 700, 0.8);
+    : buildCommenterFallbackChain(700, 0.8);
   const isNonNeighborVisit = String(candidate?.source_type || '') === 'commenter_network';
 
   const systemPrompt = [
@@ -1239,9 +1268,10 @@ async function generateNeighborComment(postTitle, postSummary, candidate) {
     isNonNeighborVisit
       ? '- 첫 문장은 "처음 들렀는데" 또는 "방문해보니"처럼 가벼운 방문 인사를 담되, 과하게 친한 척하지 않기'
       : '- 첫 문장부터 본문 포인트로 바로 들어가기',
+    extraGuidance ? `- 추가 지시: ${extraGuidance}` : '',
     '',
     'JSON만 응답: {"comment":"댓글 내용","tone":"친근형|공감형|관찰형"}',
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 
   const result = await callWithFallback({
     chain,
@@ -1263,6 +1293,21 @@ async function generateNeighborComment(postTitle, postSummary, candidate) {
     comment: normalizeText(parsed?.comment || text),
     tone: normalizeText(parsed?.tone || ''),
   };
+}
+
+function buildNeighborSpecificityGuidance(postTitle, postSummary) {
+  const source = [String(postTitle || ''), String(postSummary || '')].filter(Boolean).join(' ');
+  const tokens = source
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 2)
+    .filter((token, index, list) => list.indexOf(token) === index)
+    .slice(0, 6);
+  if (!tokens.length) {
+    return '글에서 인상적인 장면이나 표현을 한 번은 직접 짚어 주세요.';
+  }
+  return `다음 표현 중 최소 1개를 자연스럽게 반영해 주세요: ${tokens.join(', ')}`;
 }
 
 function validateNeighborComment(comment, summary, config = getNeighborCommenterConfig()) {
@@ -1408,7 +1453,12 @@ async function activateReplyMode(page) {
 }
 
 async function openCommentPanel(page, logNo = '', testMode = false) {
-  const directSelector = [logNo ? `#Comi${logNo}` : '', '#btn_comment_2']
+  const directSelector = [
+    logNo ? `#Comi${logNo}` : '',
+    '#btn_comment_2',
+    '.commentbox_header .btn_write_comment._naverCommentWriteBtn',
+    '.commentbox_header .btn_write_comment',
+  ]
     .filter(Boolean)
     .join(', ');
 
@@ -1416,8 +1466,23 @@ async function openCommentPanel(page, logNo = '', testMode = false) {
     const handle = await page.$(directSelector);
     if (handle) {
       await handle.evaluate((node) => node.scrollIntoView({ block: 'center', behavior: 'instant' })).catch(() => {});
+      await handle.click().catch(() => {});
       await handle.evaluate((node) => {
-        node.click();
+        const rect = node.getBoundingClientRect();
+        const eventInit = {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          button: 0,
+          buttons: 1,
+          clientX: rect.left + rect.width / 2,
+          clientY: rect.top + rect.height / 2,
+        };
+        node.dispatchEvent(new MouseEvent('pointerdown', eventInit));
+        node.dispatchEvent(new MouseEvent('mousedown', eventInit));
+        node.dispatchEvent(new MouseEvent('pointerup', eventInit));
+        node.dispatchEvent(new MouseEvent('mouseup', eventInit));
+        node.dispatchEvent(new MouseEvent('click', eventInit));
         return true;
       }).catch(() => false);
       return true;
@@ -1434,7 +1499,35 @@ async function openCommentPanel(page, logNo = '', testMode = false) {
       const rect = el.getBoundingClientRect();
       return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
     }
-    const commentRoot = document.querySelector('[id^="naverComment_"][id$="_ct"], [id^="naverComment_"].u_cbox, .u_cbox_wrap');
+    const hiddenRoot = currentLogNo ? document.querySelector(`#naverComment_201_${currentLogNo}_ct`) : null;
+    if (hiddenRoot instanceof HTMLElement) {
+      hiddenRoot.style.display = 'block';
+      hiddenRoot.style.visibility = 'visible';
+      const writeButton = hiddenRoot.querySelector('.btn_write_comment._naverCommentWriteBtn, .btn_write_comment');
+      if (visible(writeButton)) {
+        writeButton.scrollIntoView({ block: 'center', behavior: 'instant' });
+        const rect = writeButton.getBoundingClientRect();
+        const eventInit = {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          button: 0,
+          buttons: 1,
+          clientX: rect.left + rect.width / 2,
+          clientY: rect.top + rect.height / 2,
+        };
+        writeButton.dispatchEvent(new MouseEvent('pointerdown', eventInit));
+        writeButton.dispatchEvent(new MouseEvent('mousedown', eventInit));
+        writeButton.dispatchEvent(new MouseEvent('pointerup', eventInit));
+        writeButton.dispatchEvent(new MouseEvent('mouseup', eventInit));
+        writeButton.dispatchEvent(new MouseEvent('click', eventInit));
+        return true;
+      }
+    }
+
+    const commentRoot = document.querySelector(
+      '[id^="naverComment_"][id$="_ct"], [id^="naverComment_"].u_cbox, .u_cbox_wrap, .u_cbox_write_box, .u_cbox_comment_write, .u_cbox_write_area',
+    );
     if (commentRoot) {
       commentRoot.scrollIntoView({ block: 'center', behavior: 'instant' });
       return true;
@@ -1443,11 +1536,27 @@ async function openCommentPanel(page, logNo = '', testMode = false) {
     const directTargets = [
       currentLogNo ? document.querySelector(`#Comi${currentLogNo}`) : null,
       document.querySelector('#btn_comment_2'),
+      document.querySelector('.commentbox_header .btn_write_comment._naverCommentWriteBtn'),
+      document.querySelector('.commentbox_header .btn_write_comment'),
     ].filter(Boolean);
     for (const target of directTargets) {
       if (visible(target)) {
         target.scrollIntoView({ block: 'center', behavior: 'instant' });
-        target.click();
+        const rect = target.getBoundingClientRect();
+        const eventInit = {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          button: 0,
+          buttons: 1,
+          clientX: rect.left + rect.width / 2,
+          clientY: rect.top + rect.height / 2,
+        };
+        target.dispatchEvent(new MouseEvent('pointerdown', eventInit));
+        target.dispatchEvent(new MouseEvent('mousedown', eventInit));
+        target.dispatchEvent(new MouseEvent('pointerup', eventInit));
+        target.dispatchEvent(new MouseEvent('mouseup', eventInit));
+        target.dispatchEvent(new MouseEvent('click', eventInit));
         return true;
       }
     }
@@ -1456,7 +1565,21 @@ async function openCommentPanel(page, logNo = '', testMode = false) {
     const toggles = buttons.filter((btn) => /댓글\s*\d+|댓글$|댓글쓰기|댓글 쓰기/i.test(textOf(btn)) || btn.id === 'btn_comment_2' || /^Comi\d+/.test(btn.id));
     if (!toggles.length) return false;
     toggles[0].scrollIntoView({ block: 'center', behavior: 'instant' });
-    toggles[0].click();
+    const rect = toggles[0].getBoundingClientRect();
+    const eventInit = {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      button: 0,
+      buttons: 1,
+      clientX: rect.left + rect.width / 2,
+      clientY: rect.top + rect.height / 2,
+    };
+    toggles[0].dispatchEvent(new MouseEvent('pointerdown', eventInit));
+    toggles[0].dispatchEvent(new MouseEvent('mousedown', eventInit));
+    toggles[0].dispatchEvent(new MouseEvent('pointerup', eventInit));
+    toggles[0].dispatchEvent(new MouseEvent('mouseup', eventInit));
+    toggles[0].dispatchEvent(new MouseEvent('click', eventInit));
     return true;
   }, { currentLogNo: logNo });
 }
@@ -1466,6 +1589,9 @@ async function waitForCommentPanel(page, logNo = '') {
     logNo ? `#naverComment_201_${logNo}_ct` : '',
     logNo ? `#naverComment_201_${logNo}` : '',
     '.u_cbox_wrap',
+    '.u_cbox_write_box',
+    '.u_cbox_comment_write',
+    '.u_cbox_write_area',
     '.u_cbox_btn_reply',
     '.u_cbox_text_mention',
     '[id*="write_textarea"]',
@@ -1495,7 +1621,7 @@ async function waitForCommentPanel(page, logNo = '') {
     return Boolean(
       Array.from(
         document.querySelectorAll(
-          '[id^="naverComment_"][id$="_ct"], [id^="naverComment_"].u_cbox, .u_cbox_wrap, .u_cbox_btn_reply, .u_cbox_text_mention, [id*="write_textarea"]',
+          '[id^="naverComment_"][id$="_ct"], [id^="naverComment_"].u_cbox, .u_cbox_wrap, .u_cbox_write_box, .u_cbox_comment_write, .u_cbox_write_area, .u_cbox_btn_reply, .u_cbox_text_mention, [id*="write_textarea"]',
         ),
       ).find(visible),
     );
@@ -1583,6 +1709,9 @@ async function mountCommentPanel(page, logNo = '', testMode = false) {
     logNo ? `#naverComment_201_${logNo}_ct` : '',
     logNo ? `#naverComment_201_${logNo}` : '',
     '.u_cbox_wrap',
+    '.u_cbox_write_box',
+    '.u_cbox_comment_write',
+    '.u_cbox_write_area',
     '.u_cbox_btn_reply',
     '.u_cbox_text_mention',
     '[id*="write_textarea"]',
@@ -1591,9 +1720,16 @@ async function mountCommentPanel(page, logNo = '', testMode = false) {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     await page.evaluate(({ currentLogNo }) => {
       window.scrollTo(0, document.body.scrollHeight);
+      const hiddenRoot = currentLogNo ? document.querySelector(`#naverComment_201_${currentLogNo}_ct`) : null;
+      if (hiddenRoot instanceof HTMLElement) {
+        hiddenRoot.style.display = 'block';
+        hiddenRoot.style.visibility = 'visible';
+      }
       const anchors = [
         currentLogNo ? document.querySelector(`#Comi${currentLogNo}`) : null,
         document.querySelector('#btn_comment_2'),
+        document.querySelector('.commentbox_header .btn_write_comment._naverCommentWriteBtn'),
+        document.querySelector('.commentbox_header .btn_write_comment'),
         currentLogNo ? document.querySelector(`#naverComment_201_${currentLogNo}_ct`) : null,
       ].filter(Boolean);
       const target = anchors[0];
@@ -1663,7 +1799,7 @@ async function focusReplyEditor(page) {
   });
 }
 
-async function focusCommentEditor(page, logNo = '') {
+async function focusCommentEditor(page, logNo = '', timeoutMs = 15000) {
   const directSelector = [
     logNo ? `#naverComment_201_${logNo}__write_textarea` : '',
     'div.u_cbox_text.u_cbox_text_mention',
@@ -1678,7 +1814,7 @@ async function focusCommentEditor(page, logNo = '') {
       return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
     }
     return Boolean(Array.from(document.querySelectorAll(selector)).find(visible));
-  }, { timeout: 15000 }, directSelector);
+  }, { timeout: timeoutMs }, directSelector);
 
   return page.evaluate((currentLogNo) => {
     function visible(el) {
@@ -2173,7 +2309,7 @@ async function postReply(comment, replyText, { testMode = false } = {}) {
   });
 }
 
-async function _openCommentEditor(contentFrame, postUrl, logNo, testMode) {
+async function _openCommentEditor(contentFrame, postUrl, logNo, testMode, editorTimeoutMs = null) {
   const mounted = await mountCommentPanel(contentFrame, logNo, testMode);
   if (!mounted) {
     const snapshotPrefix = await saveCommentDebugSnapshot(contentFrame, { post_url: postUrl }, 'comment-panel-not-mounted');
@@ -2182,7 +2318,11 @@ async function _openCommentEditor(contentFrame, postUrl, logNo, testMode) {
 
   await waitForCommentPanel(contentFrame, logNo).catch(() => false);
   await humanDelay(1, 2, testMode);
-  const editor = await focusCommentEditor(contentFrame, logNo);
+  const editor = await focusCommentEditor(
+    contentFrame,
+    logNo,
+    Number(editorTimeoutMs || 0) > 0 ? Number(editorTimeoutMs) : (testMode ? 10000 : 30000),
+  );
   if (!editor?.selector) {
     throw new Error('comment_editor_not_found');
   }
@@ -2206,7 +2346,7 @@ async function _openCommentEditorWithRetry(page, postUrl, logNo, testMode) {
   let contentFrame = resolvePostContentFrame(page);
   let lastError = null;
 
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       if (attempt > 0) {
         traceCommenter('postComment:panel-retry', {
@@ -2219,11 +2359,22 @@ async function _openCommentEditorWithRetry(page, postUrl, logNo, testMode) {
         await humanDelay(1, 2, testMode);
       }
 
-      const editor = await _openCommentEditor(contentFrame, postUrl, logNo, testMode);
+      const editor = await _openCommentEditor(
+        contentFrame,
+        postUrl,
+        logNo,
+        testMode,
+        attempt > 0 ? (testMode ? 12000 : 35000) : (testMode ? 10000 : 30000),
+      );
       return { contentFrame, editor };
     } catch (error) {
       lastError = error;
-      if (!String(error?.message || '').startsWith('comment_panel_not_mounted:') || attempt > 0) {
+      const message = String(error?.message || '');
+      const retryable =
+        message.startsWith('comment_panel_not_mounted:')
+        || message === 'comment_editor_not_found'
+        || /Waiting failed: 15000ms exceeded/.test(message);
+      if (!retryable || attempt > 1) {
         throw error;
       }
     }
@@ -2474,8 +2625,18 @@ async function processNeighborComment(candidate, { testMode = false } = {}) {
     candidateId: candidate.id,
     summaryLength: String(postInfo.summary || '').length,
   });
-  const generated = await generateNeighborComment(postInfo.title || candidate.post_title, postInfo.summary, candidate);
-  const validation = validateNeighborCommentWithCandidate(generated.comment, postInfo.summary, candidate);
+  let generated = await generateNeighborComment(postInfo.title || candidate.post_title, postInfo.summary, candidate);
+  let validation = validateNeighborCommentWithCandidate(generated.comment, postInfo.summary, candidate);
+
+  if (!validation.ok && validation.reason === 'missing_specific_point') {
+    generated = await generateNeighborComment(
+      postInfo.title || candidate.post_title,
+      postInfo.summary,
+      candidate,
+      buildNeighborSpecificityGuidance(postInfo.title || candidate.post_title, postInfo.summary),
+    );
+    validation = validateNeighborCommentWithCandidate(generated.comment, postInfo.summary, candidate);
+  }
 
   if (!validation.ok) {
     traceCommenter('neighborComment:validation-failed', {
@@ -2619,7 +2780,7 @@ async function runNeighborCommenter({ testMode = false } = {}) {
   for (const candidate of targets) {
     try {
       const startedAt = Date.now();
-      const result = await processNeighborComment(candidate, { testMode });
+      const result = await processNeighborCommentWithTimeout(candidate, { testMode });
       if (result.ok) posted += 1;
       if (result?.sympathy?.ok) sympathized += 1;
       else if (result.skipped) skipped += 1;
@@ -2630,21 +2791,39 @@ async function runNeighborCommenter({ testMode = false } = {}) {
         elapsedMs: Date.now() - startedAt,
       });
     } catch (error) {
-      failed += 1;
-      await updateNeighborCommentStatus(candidate.id, 'failed', {
-        errorMessage: error.message,
-        meta: { phase: 'post', sourceType: candidate.source_type || null },
-      });
+      const uiTimeout = isNeighborCommentUiTimeoutError(error);
+      if (uiTimeout) {
+        skipped += 1;
+        await updateNeighborCommentStatus(candidate.id, 'skipped', {
+          errorMessage: 'comment_ui_timeout',
+          meta: {
+            phase: 'post',
+            sourceType: candidate.source_type || null,
+            timeoutError: String(error?.message || ''),
+          },
+        });
+      } else {
+        failed += 1;
+        await updateNeighborCommentStatus(candidate.id, 'failed', {
+          errorMessage: error.message,
+          meta: { phase: 'post', sourceType: candidate.source_type || null },
+        });
+      }
       await recordCommentAction('neighbor_comment', {
         targetBlog: candidate.target_blog_id,
         targetPostUrl: candidate.post_url,
         commentText: candidate.comment_text || null,
         success: false,
-        meta: { neighborCommentId: candidate.id, error: error.message },
+        meta: {
+          neighborCommentId: candidate.id,
+          error: error.message,
+          terminalStatus: uiTimeout ? 'skipped' : 'failed',
+        },
       }).catch(() => {});
       traceCommenter('neighborComment:failed', {
         candidateId: candidate.id,
         error: error.message,
+        terminalStatus: uiTimeout ? 'skipped' : 'failed',
       });
     }
   }
