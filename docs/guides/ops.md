@@ -104,7 +104,7 @@ node /Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/health-rep
 3. 수동 취소 실행
 
 ```bash
-node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-cancel-cmd.js \
+node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/reservation/pickko-cancel-cmd.js \
   --phone=01000000000 \
   --date=YYYY-MM-DD \
   --start=HH:MM \

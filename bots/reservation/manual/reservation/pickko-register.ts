@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * pickko-register.js — 자연어 예약 등록 CLI 래퍼
+ * pickko-register.ts — 자연어 예약 등록 CLI
  */
 
 const { spawn } = require('child_process');
@@ -34,7 +34,10 @@ const PICKKO_ACCURATE_TIMEOUT_MS = 180_000;
 const required = ['date', 'start', 'end', 'room', 'phone'];
 const missing = required.filter((k) => !ARGS[k]);
 if (missing.length > 0) {
-  fail(`필수 인자 누락: ${missing.join(', ')}\n사용법: node pickko-register.js --date=YYYY-MM-DD --start=HH:MM --end=HH:MM --room=A1|A2|B --phone=01000000000 --name=이름`);
+  fail(
+    `필수 인자 누락: ${missing.join(', ')}\n` +
+    '사용법: node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/reservation/pickko-register.js --date=YYYY-MM-DD --start=HH:MM --end=HH:MM --room=A1|A2|B --phone=01000000000 --name=이름',
+  );
 }
 
 const rawInput: RegisterInput = {
@@ -56,7 +59,10 @@ if (!VALID_ROOMS.includes(normalized.room)) {
 
 const customerName = (ARGS.name || '고객').replace(/대리예약.*/, '').trim().slice(0, 20) || '고객';
 
-const accurateScript = path.join(__dirname, 'pickko-accurate.js');
+const accurateScript = path.join(
+  __dirname,
+  '../../../../dist/ts-runtime/bots/reservation/manual/reservation/pickko-accurate.js',
+);
 const childArgs = [
   accurateScript,
   `--phone=${normalized.phone}`,
@@ -92,7 +98,7 @@ timeoutHandle.unref();
 
 child.on('error', (err: Error) => {
   clearTimeout(timeoutHandle);
-  fail(`pickko-accurate.js 실행 실패: ${err.message}`);
+  fail(`pickko-accurate 실행 실패: ${err.message}`);
 });
 
 child.on('close', async (code: number | null) => {

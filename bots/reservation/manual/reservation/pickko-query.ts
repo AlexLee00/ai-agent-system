@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /**
- * pickko-query.js — 예약 조회 CLI
+ * pickko-query.ts — 예약 조회 CLI
  *
- * 사용법:
- *   node src/pickko-query.js --date=today
- *   node src/pickko-query.js --date=tomorrow
- *   node src/pickko-query.js --date=2026-03-05
- *   node src/pickko-query.js --phone=01012345678
- *   node src/pickko-query.js --name=홍길동
- *   node src/pickko-query.js --date=2026-03-05 --room=A1
+ * 운영 실행 예:
+ *   node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/reservation/pickko-query.js --date=today
+ *   node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/reservation/pickko-query.js --date=tomorrow
+ *   node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/reservation/pickko-query.js --date=2026-03-05
+ *   node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/reservation/pickko-query.js --phone=01012345678
+ *   node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/reservation/pickko-query.js --name=홍길동
+ *   node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/reservation/pickko-query.js --date=2026-03-05 --room=A1
  *
  * 출력 (stdout JSON):
  *   { success: true, count: N, message: "포맷된 결과", bookings: [...] }

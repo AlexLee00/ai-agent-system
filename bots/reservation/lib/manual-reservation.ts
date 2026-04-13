@@ -359,7 +359,10 @@ function runSingleReservationRegistration(
   reservation: ReservationRequest,
   options: { manualRetry?: boolean } = {},
 ): SingleReservationResult {
-  const scriptPath = path.join(__dirname, '../manual/reservation/pickko-register.js');
+  const scriptPath = path.join(
+    __dirname,
+    '../../../dist/ts-runtime/bots/reservation/manual/reservation/pickko-register.js',
+  );
   const childArgs = [
     scriptPath,
     `--date=${reservation.date}`,

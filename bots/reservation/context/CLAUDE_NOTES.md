@@ -245,20 +245,20 @@ node dist/ts-runtime/bots/reservation/manual/reports/pickko-alerts-resolve.js --
 
 | 사장님 말 (예시) | 실행 명령 |
 |-----------------|-----------|
-| "오늘 예약 현황", "오늘 예약 알려줘" | `node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-query.js --date=today` |
-| "내일 예약 있어?" | `node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-query.js --date=tomorrow` |
-| "3월 5일 예약 알려줘" | `node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-query.js --date=2026-03-05` |
-| "홍길동 예약 언제야?" | `node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-query.js --name=홍길동` |
-| "010-1234-5678 예약 조회" | `node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-query.js --phone=01012345678` |
-| "A1룸 예약 현황" | `node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-query.js --room=A1` |
-| "오늘 B룸 예약" | `node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-query.js --date=today --room=B` |
+| "오늘 예약 현황", "오늘 예약 알려줘" | `node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/reservation/pickko-query.js --date=today` |
+| "내일 예약 있어?" | `node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/reservation/pickko-query.js --date=tomorrow` |
+| "3월 5일 예약 알려줘" | `node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/reservation/pickko-query.js --date=2026-03-05` |
+| "홍길동 예약 언제야?" | `node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/reservation/pickko-query.js --name=홍길동` |
+| "010-1234-5678 예약 조회" | `node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/reservation/pickko-query.js --phone=01012345678` |
+| "A1룸 예약 현황" | `node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/reservation/pickko-query.js --room=A1` |
+| "오늘 B룸 예약" | `node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/reservation/pickko-query.js --date=today --room=B` |
 
 ### 예약 등록
 
 | 사장님 말 (예시) | 실행 명령 |
 |-----------------|-----------|
-| "3월 5일 오후 3시~5시 A1 010-1234-5678 홍길동 예약해줘" | `node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-register.js --date=2026-03-05 --start=15:00 --end=17:00 --room=A1 --phone=01012345678 --name=홍길동` |
-| "내일 오전 10시~12시 B룸 010-0000-0000 김철수" | `node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-register.js --date=내일 --start=10:00 --end=12:00 --room=B --phone=01000000000 --name=김철수` |
+| "3월 5일 오후 3시~5시 A1 010-1234-5678 홍길동 예약해줘" | `node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/reservation/pickko-register.js --date=2026-03-05 --start=15:00 --end=17:00 --room=A1 --phone=01012345678 --name=홍길동` |
+| "내일 오전 10시~12시 B룸 010-0000-0000 김철수" | `node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/reservation/pickko-register.js --date=내일 --start=10:00 --end=12:00 --room=B --phone=01000000000 --name=김철수` |
 
 - 신규 회원이어도 픽코 자동 등록 포함 (별도 회원 가입 불필요)
 
@@ -266,7 +266,7 @@ node dist/ts-runtime/bots/reservation/manual/reports/pickko-alerts-resolve.js --
 
 | 사장님 말 (예시) | 실행 명령 |
 |-----------------|-----------|
-| "홍길동 3월 5일 3시 A1 취소해줘" | `node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-cancel-cmd.js --phone=01012345678 --date=2026-03-05 --start=15:00 --end=17:00 --room=A1 --name=홍길동` |
+| "홍길동 3월 5일 3시 A1 취소해줘" | `node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/reservation/pickko-cancel-cmd.js --phone=01012345678 --date=2026-03-05 --start=15:00 --end=17:00 --room=A1 --name=홍길동` |
 
 - **취소 전 반드시** pickko-query.js로 예약 확인 후 정확한 정보로 실행
 
@@ -351,7 +351,7 @@ node dist/ts-runtime/bots/reservation/manual/reports/pickko-alerts-resolve.js --
 
 ### 시나리오 1: 예약 등록 (신규 회원 포함 — 가장 흔한 케이스)
 
-사장님이 "XXX 예약해줘" 또는 "XXX 등록해줘"라고 하면 → **pickko-register.js 하나만 실행**
+사장님이 "XXX 예약해줘" 또는 "XXX 등록해줘"라고 하면 → `dist/ts-runtime`의 `pickko-register.js` 하나만 실행
 
 > **절대 규칙**
 > - 예약/등록/결제/다시 등록 요청에는 설명형 대화로 답하지 말 것.
@@ -363,7 +363,7 @@ node dist/ts-runtime/bots/reservation/manual/reports/pickko-alerts-resolve.js --
 > - 텔레그램에서 여러 줄로 들어온 예약 정보는 하나의 예약 요청으로 합쳐 해석해야 한다.
 
 ```bash
-node ~/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-register.js \
+node ~/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/reservation/pickko-register.js \
   --date=YYYY-MM-DD --start=HH:MM --end=HH:MM \
   --room=A1|A2|B --phone=01000000000 --name=이름
 ```
@@ -417,7 +417,7 @@ node ~/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/admin/pi
 
 ```
 사장님: "3월 5일 오후 3시~5시 A1 010-1234-5678 홍길동 예약해줘"
-→ node .../pickko-register.js --date=2026-03-05 --start=15:00 --end=17:00 --room=A1 --phone=01012345678 --name=홍길동
+→ node .../dist/ts-runtime/bots/reservation/manual/reservation/pickko-register.js --date=2026-03-05 --start=15:00 --end=17:00 --room=A1 --phone=01012345678 --name=홍길동
   (홍길동이 신규 회원이어도 자동 등록 후 예약까지 처리됨)
 
 사장님: "010-1234-5678 홍길동 회원가입해줘"  ← 예약 없이 회원만
@@ -436,7 +436,7 @@ node ~/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/admin/pi
 사장님이 예약 현황을 물어보면 아래 절대 경로로 실행하고 `message` 필드를 텔레그램으로 전송한다.
 
 ```bash
-node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-query.js [옵션]
+node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/reservation/pickko-query.js [옵션]
 ```
 
 | 옵션 | 설명 | 예시 |
@@ -482,7 +482,7 @@ SCRIPT=/Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservati
 2. **네이버 해제** (`pickko-kiosk-monitor.js --unblock-slot`) — 네이버 예약불가 → 예약가능 복구
 
 ```bash
-node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-cancel-cmd.js \
+node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/reservation/pickko-cancel-cmd.js \
   --phone=01012345678 --date=2026-03-05 \
   --start=15:00 --end=17:00 --room=A1 [--name=홍길동]
 ```

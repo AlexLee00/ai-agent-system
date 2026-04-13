@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * pickko-cancel-cmd.js — 스카 자연어 취소 명령용 래퍼
+ * pickko-cancel-cmd.ts — 스카 자연어 취소 명령용 CLI
  */
 
 const { spawn } = require('child_process');
@@ -16,7 +16,10 @@ type RunScriptResult = Promise<boolean>;
 const required = ['phone', 'date', 'start', 'end', 'room'];
 const missing = required.filter((k) => !ARGS[k]);
 if (missing.length > 0) {
-  fail(`필수 인자 누락: ${missing.join(', ')}\n사용법: node pickko-cancel-cmd.js --phone=01000000000 --date=YYYY-MM-DD --start=HH:MM --end=HH:MM --room=A1|A2|B`);
+  fail(
+    `필수 인자 누락: ${missing.join(', ')}\n` +
+    '사용법: node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/reservation/pickko-cancel-cmd.js --phone=01000000000 --date=YYYY-MM-DD --start=HH:MM --end=HH:MM --room=A1|A2|B',
+  );
 }
 
 const phoneRaw = ARGS.phone.replace(/\D/g, '');
@@ -49,7 +52,10 @@ function runScript(scriptPath: string, args: string[], label: string): RunScript
   });
 }
 
-const cancelScript = path.join(__dirname, 'pickko-cancel.js');
+const cancelScript = path.join(
+  __dirname,
+  '../../../../dist/ts-runtime/bots/reservation/manual/reservation/pickko-cancel.js',
+);
 const cancelArgs = [
   `--phone=${phoneRaw}`,
   `--date=${ARGS.date}`,
