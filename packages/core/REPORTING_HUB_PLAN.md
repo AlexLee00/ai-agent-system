@@ -22,7 +22,7 @@
 
 ## Applied So Far
 
-- [bots/reservation/lib/mainbot-client.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/mainbot-client.js)
+- [bots/reservation/lib/mainbot-client.ts](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/mainbot-client.ts)
 - [bots/investment/shared/mainbot-client.js](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/mainbot-client.js)
 - [bots/claude/lib/mainbot-client.js](/Users/alexlee/projects/ai-agent-system/bots/claude/lib/mainbot-client.js)
 - [bots/reservation/lib/telegram.ts](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/telegram.ts)

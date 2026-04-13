@@ -436,6 +436,16 @@ launchd, shell wrapper, package script, registry, cross-team caller는 이제 re
 - 현재 코드 기준 직접 참조는 대부분 `dist/ts-runtime/...` 또는 `.legacy.js` fallback 레일로 정리돼 있었다.
 - 남아 있던 source `.js`는 얇은 dist passthrough wrapper 역할만 하고 있었다.
 
+## 15차 삭제 완료
+
+다음 reporting bridge source wrapper 1개도 실제로 제거했다.
+
+- `bots/reservation/lib/mainbot-client.js`
+
+정리 배경:
+- 현재 코드 기준 직접 실행/직접 참조는 이미 `alert-client`와 `dist/ts-runtime/...` 레일로 정리돼 있었다.
+- 남아 있던 source `.js`는 문서 표기 외엔 실질 호출이 없는 얇은 wrapper였다.
+
 ## 다음 삭제 후보 메모
 
 `manual/reports/*.js`는 대부분 얇은 source wrapper로 남아 있지만,
