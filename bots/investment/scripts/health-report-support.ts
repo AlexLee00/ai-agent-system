@@ -678,6 +678,65 @@ export async function loadCryptoValidationBudgetBlockHealth(pgPool, windowMinute
   };
 }
 
+export async function loadCryptoSentinelFallbackHealth(pgPool, windowMinutes = 1440) {
+  const rows = await pgPool.query(
+    'investment',
+    `
+      SELECT metadata
+      FROM investment.pipeline_node_runs
+      WHERE node_id = 'L03'
+        AND started_at > (extract(epoch from now() - INTERVAL '1 minute' * $1) * 1000)::bigint
+        AND status = 'completed'
+    `,
+    [windowMinutes],
+  ).catch(() => []);
+
+  let partialFallbackCount = 0;
+  const sourceCounts = new Map();
+
+  for (const row of rows) {
+    const meta = row?.metadata || {};
+    const inlinePayload = meta.inline_payload || null;
+    const payload = inlinePayload && typeof inlinePayload === 'object'
+      ? inlinePayload
+      : null;
+    const errors = Array.isArray(payload?.errors)
+      ? payload.errors
+      : Array.isArray(inlinePayload?.errors)
+        ? inlinePayload.errors
+        : [];
+    const partialFallback = Boolean(payload?.partialFallback || inlinePayload?.partialFallback || errors.length > 0);
+    if (!partialFallback) continue;
+
+    partialFallbackCount += 1;
+    for (const err of errors) {
+      const source = String(err?.source || 'unknown');
+      sourceCounts.set(source, (sourceCounts.get(source) || 0) + 1);
+    }
+  }
+
+  const sources = [...sourceCounts.entries()]
+    .map(([source, count]) => ({ source, count }))
+    .sort((a, b) => b.count - a.count || a.source.localeCompare(b.source, 'ko'));
+
+  const warn = partialFallbackCount > 0
+    ? [
+        `  최근 ${Math.round(windowMinutes / 60)}시간 센티널 부분 폴백 ${partialFallbackCount}건`,
+        ...sources.slice(0, 5).map((row) => `  ${row.source}: ${row.count}건`),
+      ]
+    : [];
+
+  return {
+    windowMinutes,
+    total: partialFallbackCount,
+    okCount: partialFallbackCount === 0 ? 1 : 0,
+    warnCount: partialFallbackCount > 0 ? 1 : 0,
+    ok: partialFallbackCount === 0 ? ['  최근 센티널 부분 폴백 없음'] : [],
+    warn,
+    sources,
+  };
+}
+
 export function loadCryptoValidationBudgetPolicyHealth(
   cryptoValidationBudgetBlockHealth,
   cryptoLiveGateHealth,

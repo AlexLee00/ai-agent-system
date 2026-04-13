@@ -28,6 +28,7 @@ import {
   loadCapitalPolicySnapshot,
   loadCryptoValidationBudgetBlockHealth,
   loadCryptoValidationBudgetPolicyHealth,
+  loadCryptoSentinelFallbackHealth,
   loadCryptoValidationSoftBudgetHealth,
   loadDomesticCollectPressure,
   loadDomesticRejectBreakdown,
@@ -262,6 +263,7 @@ function buildDecision(
   tradeLaneHealth,
   cryptoValidationSoftBudgetHealth,
   cryptoValidationBudgetBlockHealth,
+  cryptoSentinelFallbackHealth,
   stalePositionHealth,
   cryptoLiveGateHealth,
   capitalGuardBreakdown,
@@ -336,6 +338,11 @@ function buildDecision(
         active: cryptoValidationBudgetBlockHealth.total > 0,
         level: 'medium',
         reason: `최근 ${Math.round(cryptoValidationBudgetBlockHealth.windowMinutes / 60)}시간 crypto validation soft cap 차단 ${cryptoValidationBudgetBlockHealth.total}건`,
+      },
+      {
+        active: cryptoSentinelFallbackHealth.total > 0,
+        level: 'low',
+        reason: `최근 ${Math.round(cryptoSentinelFallbackHealth.windowMinutes / 60)}시간 센티널 부분 폴백 ${cryptoSentinelFallbackHealth.total}건 — ${cryptoSentinelFallbackHealth.sources[0]?.source || 'unknown'} ${cryptoSentinelFallbackHealth.sources[0]?.count || 0}건`,
       },
       {
         active: capitalGuardBreakdown.total > 0,
@@ -420,6 +427,7 @@ function formatText(report) {
     buildHealthCountSection(`■ 국내장 주문 실패 분해(최근 ${Math.round(report.domesticRejectBreakdown.windowMinutes / 60)}시간)`, report.domesticRejectBreakdown, { okLimit: 1, warnLimit: 10 }),
     buildHealthCountSection('■ crypto validation soft budget(오늘)', report.cryptoValidationSoftBudgetHealth, { okLimit: 1, warnLimit: 1 }),
     buildHealthCountSection(`■ crypto validation soft cap 차단(최근 ${Math.round(report.cryptoValidationBudgetBlockHealth.windowMinutes / 60)}시간)`, report.cryptoValidationBudgetBlockHealth, { okLimit: 1, warnLimit: 8 }),
+    buildHealthCountSection(`■ 센티널 부분 폴백(최근 ${Math.round(report.cryptoSentinelFallbackHealth.windowMinutes / 60)}시간)`, report.cryptoSentinelFallbackHealth, { okLimit: 1, warnLimit: 8 }),
     buildHealthCountSection('■ crypto validation budget 정책 판단', report.cryptoValidationBudgetPolicyHealth, { okLimit: 1, warnLimit: 8 }),
     {
       title: '■ 장기 미결 LIVE 포지션',
@@ -486,6 +494,7 @@ async function buildReport() {
     getValidationSoftBudgetConfig('binance'),
   );
   const cryptoValidationBudgetBlockHealth = await loadCryptoValidationBudgetBlockHealth(pgPool);
+  const cryptoSentinelFallbackHealth = await loadCryptoSentinelFallbackHealth(pgPool);
   const stalePositionHealth = await loadStalePositionHealth();
   const cryptoLiveGateHealth = await loadCryptoLiveGateHealth();
   const capitalGuardBreakdown = await loadCapitalGuardBreakdown(pgPool);
@@ -508,6 +517,7 @@ async function buildReport() {
     tradeLaneHealth,
     cryptoValidationSoftBudgetHealth,
     cryptoValidationBudgetBlockHealth,
+    cryptoSentinelFallbackHealth,
     stalePositionHealth,
     cryptoLiveGateHealth,
     capitalGuardBreakdown,
@@ -532,6 +542,7 @@ async function buildReport() {
     tradeLaneHealth,
     cryptoValidationSoftBudgetHealth,
     cryptoValidationBudgetBlockHealth,
+    cryptoSentinelFallbackHealth,
     stalePositionHealth,
     cryptoLiveGateHealth,
     capitalGuardBreakdown,
