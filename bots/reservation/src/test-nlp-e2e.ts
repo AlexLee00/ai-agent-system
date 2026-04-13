@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
 /**
- * test-nlp-e2e.js — 자연어 명령 CLI E2E 테스트
+ * test-nlp-e2e.ts — 자연어 명령 CLI E2E 테스트
  *
  * 사용법:
- *   node src/test-nlp-e2e.js           # 전체 테스트 (검증 레이어 + DB 조회)
- *   node src/test-nlp-e2e.js --verbose  # 각 케이스 message 미리보기 포함
+ *   node dist/ts-runtime/bots/reservation/src/test-nlp-e2e.js           # 전체 테스트 (검증 레이어 + DB 조회)
+ *   node dist/ts-runtime/bots/reservation/src/test-nlp-e2e.js --verbose  # 각 케이스 message 미리보기 포함
  *
  * 대상 스크립트:
  *   - dist/.../pickko-query.js        (예약 조회 — DB read)

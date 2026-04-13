@@ -376,6 +376,24 @@ launchd, shell wrapper, package script, registry, cross-team caller는 이제 re
 - 현재 package/skill/operator 경로는 이미 `dist/ts-runtime/...`를 직접 보도록 정리돼 있었다.
 - 남아 있던 source `.js`는 얇은 dist passthrough wrapper 역할만 하고 있었다.
 
+## 11차 삭제 완료
+
+다음 `src`/top-level 진단 source wrapper 9개도 실제로 제거했다.
+
+- `bots/reservation/src/analyze-booking-page.js`
+- `bots/reservation/src/backfill-study-room.js`
+- `bots/reservation/src/check-naver.js`
+- `bots/reservation/src/get-naver-html.js`
+- `bots/reservation/src/init-naver-booking-session.js`
+- `bots/reservation/src/inspect-naver.js`
+- `bots/reservation/src/test-kiosk-register.js`
+- `bots/reservation/src/test-nlp-e2e.js`
+- `bots/reservation/show-auth.js`
+
+정리 배경:
+- 현재 실행 예시와 운영 레퍼런스는 `dist/ts-runtime/...`를 직접 보도록 정리돼 있었다.
+- `ska.js`와 `bug-report.js`는 현재 실행 경로가 남아 있어 이번 배치에서 제외했다.
+
 ## 다음 삭제 후보 메모
 
 `manual/reports/*.js`는 대부분 얇은 source wrapper로 남아 있지만,

@@ -58,7 +58,7 @@ node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/sc
 node /Users/alexlee/projects/ai-agent-system/scripts/reviews/ska-sales-forecast-daily-review.js --days=7
 node /Users/alexlee/projects/ai-agent-system/scripts/reviews/ska-sales-forecast-weekly-review.js --days=28
 bash /Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/reload-monitor.sh
-PLAYWRIGHT_HEADLESS=false node /Users/alexlee/projects/ai-agent-system/bots/reservation/src/check-naver.js
+PLAYWRIGHT_HEADLESS=false node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/src/check-naver.js
 ```
 
 ## 관련 문서
