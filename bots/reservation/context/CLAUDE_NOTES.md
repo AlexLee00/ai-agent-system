@@ -274,19 +274,19 @@ node dist/ts-runtime/bots/reservation/manual/reports/pickko-alerts-resolve.js --
 
 | 사장님 말 (예시) | 실행 명령 |
 |-----------------|-----------|
-| "010-1234-5678 홍길동 회원가입해줘" | `node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/admin/pickko-member.js --phone=01012345678 --name=홍길동` |
+| "010-1234-5678 홍길동 회원가입해줘" | `node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/admin/pickko-member.js --phone=01012345678 --name=홍길동` |
 
 ### 이용권 추가
 
 | 사장님 말 (예시) | 실행 명령 |
 |-----------------|-----------|
-| "홍길동한테 3시간 이용권 추가해줘" | `node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-ticket.js --phone=01012345678 --ticket=3시간` |
-| "010-1234-5678 1시간 이용권" | `node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-ticket.js --phone=01012345678 --ticket=1시간` |
-| "김철수 14일권 추가" | `node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-ticket.js --phone=01000000000 --ticket=14일권` |
-| "이름 30시간권 충전" | `node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-ticket.js --phone=01000000000 --ticket=30시간` |
-| "홍길동 리뷰체험단 3시간 이용권" | `node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-ticket.js --phone=01012345678 --ticket=3시간 --discount --reason="리뷰체험단"` |
-| "이벤트 할인으로 1시간 이용권 줘" | `node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-ticket.js --phone=01012345678 --ticket=1시간 --discount --reason="이벤트 할인"` |
-| "공짜로 이용권 추가" / 할인 사유 없음 | `pickko-ticket.js --phone=01012345678 --ticket=3시간 --discount` |
+| "홍길동한테 3시간 이용권 추가해줘" | `node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/admin/pickko-ticket.js --phone=01012345678 --ticket=3시간` |
+| "010-1234-5678 1시간 이용권" | `node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/admin/pickko-ticket.js --phone=01012345678 --ticket=1시간` |
+| "김철수 14일권 추가" | `node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/admin/pickko-ticket.js --phone=01000000000 --ticket=14일권` |
+| "이름 30시간권 충전" | `node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/admin/pickko-ticket.js --phone=01000000000 --ticket=30시간` |
+| "홍길동 리뷰체험단 3시간 이용권" | `node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/admin/pickko-ticket.js --phone=01012345678 --ticket=3시간 --discount --reason="리뷰체험단"` |
+| "이벤트 할인으로 1시간 이용권 줘" | `node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/admin/pickko-ticket.js --phone=01012345678 --ticket=1시간 --discount --reason="이벤트 할인"` |
+| "공짜로 이용권 추가" / 할인 사유 없음 | `dist/ts-runtime/.../pickko-ticket.js --phone=01012345678 --ticket=3시간 --discount` |
 
 > **할인 규칙**: `--discount` = 이용권 전액 0원 처리. `--reason` 없으면 "기타 할인" 자동 입력.
 
@@ -344,8 +344,8 @@ node dist/ts-runtime/bots/reservation/manual/reports/pickko-alerts-resolve.js --
 
 사장님이 텔레그램으로 예약 등록 또는 회원 가입을 요청하면 스카가 직접 처리한다.
 
-> **핵심**: `pickko-register.js`는 내부적으로 신규 회원 자동 등록 포함.
-> **예약 요청 시 pickko-member.js 별도 실행 불필요** — pickko-register.js 하나로 끝.
+> **핵심**: `pickko-register.ts`는 내부적으로 신규 회원 자동 등록 포함.
+> **예약 요청 시 별도 `pickko-member` 실행 불필요** — 등록 흐름 하나로 끝.
 
 ---
 
@@ -387,10 +387,10 @@ node ~/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-regis
 
 ### 시나리오 2: 회원 가입만 (예약 없이 회원만 등록)
 
-사장님이 "XXX 회원가입해줘" 또는 "XXX 회원으로 등록해줘"라고 하면 → pickko-member.js 실행
+사장님이 "XXX 회원가입해줘" 또는 "XXX 회원으로 등록해줘"라고 하면 → `dist/ts-runtime`의 `pickko-member.js` 실행
 
 ```bash
-node ~/projects/ai-agent-system/bots/reservation/manual/admin/pickko-member.js \
+node ~/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/admin/pickko-member.js \
   --phone=01000000000 --name=이름
 ```
 
@@ -421,7 +421,7 @@ node ~/projects/ai-agent-system/bots/reservation/manual/admin/pickko-member.js \
   (홍길동이 신규 회원이어도 자동 등록 후 예약까지 처리됨)
 
 사장님: "010-1234-5678 홍길동 회원가입해줘"  ← 예약 없이 회원만
-→ node .../pickko-member.js --phone=01012345678 --name=홍길동
+→ node .../dist/ts-runtime/bots/reservation/manual/admin/pickko-member.js --phone=01012345678 --name=홍길동
 ```
 
 > **스크립트 경로**: `~/projects/ai-agent-system/bots/reservation/`

@@ -2,7 +2,7 @@
 /// <reference lib="dom" />
 
 /**
- * pickko-ticket.js — 픽코 키오스크 이용권 추가 CLI
+ * pickko-ticket.ts — 픽코 키오스크 이용권 추가 CLI
  */
 
 const puppeteer = require('puppeteer');
@@ -42,7 +42,10 @@ const VALID_TICKETS = [
 ];
 
 if (!ARGS.phone || !ARGS.ticket) {
-  fail('필수 인자 누락: --phone, --ticket\n사용법: node pickko-ticket.js --phone=01000000000 --ticket="3시간" [--count=1]');
+  fail(
+    '필수 인자 누락: --phone, --ticket\n' +
+    '사용법: node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/admin/pickko-ticket.js --phone=01000000000 --ticket="3시간" [--count=1]',
+  );
 }
 
 const PHONE_RAW = ARGS.phone.replace(/\D/g, '');
@@ -66,7 +69,10 @@ if (['14일권', '28일권'].includes(TICKET_NAME) && COUNT > 1) {
 }
 
 if (IS_DEV && !DEV_WHITELIST.includes(PHONE_RAW)) {
-  fail(`DEV 모드: 화이트리스트 번호만 허용 (입력: ${PHONE_RAW})\nOPS 모드 사용: MODE=ops node src/pickko-ticket.js ...`);
+  fail(
+    `DEV 모드: 화이트리스트 번호만 허용 (입력: ${PHONE_RAW})\n` +
+    'OPS 모드 사용: MODE=ops node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/admin/pickko-ticket.js ...',
+  );
 }
 
 async function selectSeatTypeAndLoad(page: any) {

@@ -447,7 +447,7 @@ upsertReservation(bookingId, {
 |--------------|------|
 | `null` | 처리 전 |
 | `paid` | 등록+결제 완료 (미검증) |
-| `verified` | pickko-verify.js 확인 완료 |
+| `verified` | `dist/ts-runtime/.../pickko-verify.js` 확인 완료 |
 | `time_elapsed` | 시간 경과로 등록 생략 |
 | `auto` | verify 중 자동 재등록 |
 | `manual` | 수동 처리 |
@@ -485,7 +485,7 @@ await flushPendingTelegrams();  // naver-monitor.js 시작 시 호출
 ### 비활성화
 
 ```bash
-TELEGRAM_ENABLED=0 node pickko-verify.js  # 테스트 시 발송 차단
+TELEGRAM_ENABLED=0 node dist/ts-runtime/bots/reservation/manual/admin/pickko-verify.js  # 테스트 시 발송 차단
 ```
 
 ---
