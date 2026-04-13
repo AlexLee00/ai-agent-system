@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
- * scripts/e2e-test.js — 스카봇 E2E 통합 테스트 (SKA-P06)
+ * scripts/e2e-test.ts — 스카봇 E2E 통합 테스트 (SKA-P06)
  *
  * 루나팀 dry-run-test.js 패턴 적용.
  * Playwright/픽코/네이버 실제 연결 없이 내부 모듈 전체 검증.
  *
  * 실행:
- *   TELEGRAM_ENABLED=0 node bots/reservation/scripts/e2e-test.js
+ *   TELEGRAM_ENABLED=0 node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/scripts/e2e-test.js
  *
  * 테스트 단계:
  *   1. secrets 로드 + 필수 키 검증

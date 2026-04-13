@@ -108,7 +108,7 @@ echo ""
 log "━━━ [1단계] E2E 테스트 실행 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 cd "$BOT_DIR"
-if TELEGRAM_ENABLED=0 "$NODE_BIN" scripts/e2e-test.js 2>&1 | tee -a "$LOG_FILE"; then
+if TELEGRAM_ENABLED=0 "$NODE_BIN" /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/scripts/e2e-test.js 2>&1 | tee -a "$LOG_FILE"; then
   log_ok "E2E 테스트 전체 통과"
 else
   log_err "E2E 테스트 실패 — 배포 중단"

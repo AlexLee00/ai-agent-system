@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * collect-pickko-order-raw.js
+ * collect-pickko-order-raw.ts
  *
  * 목적:
  *   Pickko 관리자에서 날짜 단위 raw order 메타를 수집해 reservation.pickko_order_raw에 저장
@@ -13,8 +13,8 @@
  *   - 스터디룸은 use_day 기준 예약행만 저장
  *
  * 사용 예:
- *   PICKKO_HEADLESS=1 node bots/reservation/scripts/collect-pickko-order-raw.js --date=2026-03-20
- *   PICKKO_HEADLESS=1 node bots/reservation/scripts/collect-pickko-order-raw.js --date=2026-03-20 --json --no-store
+ *   PICKKO_HEADLESS=1 node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/scripts/collect-pickko-order-raw.js --date=2026-03-20
+ *   PICKKO_HEADLESS=1 node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/scripts/collect-pickko-order-raw.js --date=2026-03-20 --json --no-store
  */
 
 const puppeteer = require('puppeteer');

@@ -291,6 +291,24 @@ launchd, shell wrapper, package script, registry, cross-team caller는 이제 re
 
 위 현재 코드 경로들이 모두 source wrapper 대신 `dist/ts-runtime/...`를 직접 보도록 정리된 뒤 삭제했다.
 
+## 6차 삭제 완료
+
+다음 `scripts` source wrapper 5개도 실제로 제거했다.
+
+- `bots/reservation/scripts/health-report.js`
+- `bots/reservation/scripts/preflight.js`
+- `bots/reservation/scripts/e2e-test.js`
+- `bots/reservation/scripts/collect-pickko-order-raw.js`
+- `bots/reservation/scripts/collect-pickko-order-raw-range.js`
+
+정리 배경:
+- `scripts/reviews/daily-ops-report.ts`
+- `bots/reservation/auto/monitors/start-ops.sh`
+- `bots/reservation/scripts/deploy-ops.sh`
+- `bots/reservation/scripts/collect-pickko-order-raw-range.ts`
+
+위 현재 코드 경로들이 모두 source wrapper 대신 `dist/ts-runtime/...`를 직접 보도록 정리된 뒤 삭제했다.
+
 ## 다음 삭제 후보 메모
 
 `manual/reports/*.js`는 대부분 얇은 source wrapper로 남아 있지만,

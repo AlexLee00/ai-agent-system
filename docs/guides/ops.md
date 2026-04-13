@@ -72,7 +72,7 @@ node /Users/alexlee/projects/ai-agent-system/bots/investment/scripts/trading-jou
 ### Reservation / Ska
 
 ```bash
-node /Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/health-report.js --json
+node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/scripts/health-report.js --json
 bash /Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/reload-monitor.sh
 node /Users/alexlee/projects/ai-agent-system/scripts/reviews/ska-sales-forecast-daily-review.js --days=7
 ```
@@ -82,7 +82,7 @@ node /Users/alexlee/projects/ai-agent-system/scripts/reviews/ska-sales-forecast-
 1. health / drift 확인
 
 ```bash
-node /Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/health-report.js --json
+node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/scripts/health-report.js --json
 ```
 
 - `cancelCounterDriftHealth`
@@ -142,7 +142,7 @@ duplicate slot cleanup policy:
 1. 먼저 health 기준으로 분류
 
 ```bash
-node /Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/health-report.js --json
+node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/scripts/health-report.js --json
 node /Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/audit-duplicate-slots.js --json
 ```
 

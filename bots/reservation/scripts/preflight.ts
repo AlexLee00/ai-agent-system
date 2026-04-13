@@ -2,10 +2,10 @@
 'use strict';
 
 /**
- * scripts/preflight.js — 스카봇 시작 전 체크 래퍼
+ * scripts/preflight.ts — 스카봇 시작 전 체크 래퍼
  *
- *   node scripts/preflight.js          → 2중 (Node.js 프리플라이트)
- *   node scripts/preflight.js --conn   → 2중 + 3중 (연결성 포함)
+ *   node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/scripts/preflight.js          → 2중 (Node.js 프리플라이트)
+ *   node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/scripts/preflight.js --conn   → 2중 + 3중 (연결성 포함)
  *
  * 종료 코드: 0 = 통과, 1 = 실패
  *
