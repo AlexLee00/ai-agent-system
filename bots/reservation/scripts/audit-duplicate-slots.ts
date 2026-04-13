@@ -1,15 +1,15 @@
 'use strict';
 
 /**
- * scripts/audit-duplicate-slots.js
+ * scripts/audit-duplicate-slots.ts
  *
  * 목적:
  *   - reservation duplicate slot group을 운영자가 직접 검토할 수 있도록 상세 분류한다.
  *   - health-report는 count/summary만 보여주고, 이 스크립트는 실제 row detail과 조치 우선순위를 보여준다.
  *
  * 사용:
- *   node bots/reservation/scripts/audit-duplicate-slots.js
- *   node bots/reservation/scripts/audit-duplicate-slots.js --json
+ *   node dist/ts-runtime/bots/reservation/scripts/audit-duplicate-slots.js
+ *   node dist/ts-runtime/bots/reservation/scripts/audit-duplicate-slots.js --json
  */
 
 const pgPool = require('../../../packages/core/lib/pg-pool');

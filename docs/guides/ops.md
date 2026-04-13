@@ -143,7 +143,7 @@ duplicate slot cleanup policy:
 
 ```bash
 node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/scripts/health-report.js --json
-node /Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/audit-duplicate-slots.js --json
+node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/scripts/audit-duplicate-slots.js --json
 ```
 
 - `duplicateSlotHealth.riskyCount > 0`
@@ -185,7 +185,7 @@ node /Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/audit-dupl
 운영 팁:
 
 - `health-report`는 요약/count를 본다.
-- `audit-duplicate-slots.js`는 실제 row id, status, 권장 조치를 본다.
+- `dist/ts-runtime/.../audit-duplicate-slots.js`는 실제 row id, status, 권장 조치를 본다.
 - 현재 기준 historical sample은 아래 두 패턴이 정상 후보다.
   - `completed + cancelled`
   - `cancelled + cancelled`

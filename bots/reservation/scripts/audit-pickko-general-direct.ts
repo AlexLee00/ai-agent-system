@@ -2,16 +2,16 @@
 'use strict';
 
 /**
- * audit-pickko-general-direct.js
+ * audit-pickko-general-direct.ts
  *
  * 목적:
  *   reservation.daily_summary에 저장된 derived general_revenue 와
  *   Pickko 일별 상세에서 직접 파싱한 direct generalRevenue 를 비교한다.
  *
  * 사용 예:
- *   PICKKO_HEADLESS=1 node bots/reservation/scripts/audit-pickko-general-direct.js --from=2025-10-01 --to=2026-03-20
- *   PICKKO_HEADLESS=1 node bots/reservation/scripts/audit-pickko-general-direct.js --date=2026-02-01
- *   PICKKO_HEADLESS=1 node bots/reservation/scripts/audit-pickko-general-direct.js --from=2025-10-01 --to=2026-03-20 --limit=20 --json
+ *   PICKKO_HEADLESS=1 node dist/ts-runtime/bots/reservation/scripts/audit-pickko-general-direct.js --from=2025-10-01 --to=2026-03-20
+ *   PICKKO_HEADLESS=1 node dist/ts-runtime/bots/reservation/scripts/audit-pickko-general-direct.js --date=2026-02-01
+ *   PICKKO_HEADLESS=1 node dist/ts-runtime/bots/reservation/scripts/audit-pickko-general-direct.js --from=2025-10-01 --to=2026-03-20 --limit=20 --json
  */
 
 const puppeteer = require('puppeteer');

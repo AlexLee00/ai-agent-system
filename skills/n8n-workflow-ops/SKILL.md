@@ -69,7 +69,7 @@ description: Use when creating, updating, reinstalling, or debugging n8n workflo
 - blog pipeline:
   - `node bots/blog/scripts/check-n8n-pipeline-path.js`
 - ska command:
-  - `node bots/reservation/scripts/check-n8n-command-path.js`
+  - `node dist/ts-runtime/bots/reservation/scripts/check-n8n-command-path.js`
 
 ## 흔한 함정
 

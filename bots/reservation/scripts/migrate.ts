@@ -2,13 +2,13 @@
 'use strict';
 
 /**
- * scripts/migrate.js — DB 스키마 마이그레이션 실행기 (PostgreSQL)
+ * scripts/migrate.ts — DB 스키마 마이그레이션 실행기 (PostgreSQL)
  *
  * 사용법:
- *   node scripts/migrate.js            # 미적용 마이그레이션 전부 실행
- *   node scripts/migrate.js --status   # 현재 버전 및 적용 이력 출력
- *   node scripts/migrate.js --rollback # 마지막 마이그레이션 롤백 (down)
- *   node scripts/migrate.js --version  # 현재 스키마 버전만 출력
+ *   node dist/ts-runtime/bots/reservation/scripts/migrate.js            # 미적용 마이그레이션 전부 실행
+ *   node dist/ts-runtime/bots/reservation/scripts/migrate.js --status   # 현재 버전 및 적용 이력 출력
+ *   node dist/ts-runtime/bots/reservation/scripts/migrate.js --rollback # 마지막 마이그레이션 롤백 (down)
+ *   node dist/ts-runtime/bots/reservation/scripts/migrate.js --version  # 현재 스키마 버전만 출력
  *
  * migrations/ 디렉토리의 NNN_name.js 파일을 버전 순으로 실행.
  * 각 파일은 다음을 export해야 한다:
@@ -75,7 +75,7 @@ async function showStatus() {
 
   const pending = all.filter(m => !applied.has(m.version));
   if (pending.length > 0) {
-    console.log(`\n  ⚠️  미적용: ${pending.length}개 → node scripts/migrate.js 실행`);
+    console.log(`\n  ⚠️  미적용: ${pending.length}개 → node dist/ts-runtime/bots/reservation/scripts/migrate.js 실행`);
   } else {
     console.log(`\n  ✅ 모든 마이그레이션 적용 완료`);
   }
