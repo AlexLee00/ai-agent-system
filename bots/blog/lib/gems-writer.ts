@@ -20,6 +20,8 @@ const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
 const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
 const { weatherToContext, estimateCost, loadPersonaGuide } = require('../../../packages/core/lib/blog-utils');
 const env = require('../../../packages/core/lib/env');
+const { buildBlogSkillBundle } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/skills/blog/skill-loader.js'));
+const { buildAIBriefingSectionOrder, buildAIBriefingChecklist } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/ai-briefing.ts'));
 const { getBlogGenerationRuntimeConfig, getBlogLLMSelectorOverrides } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/runtime-config.ts'));
 const { calculateSectionChars, buildCharCountInstruction } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/section-ratio.ts'));
 const { isExcludedReferenceTitle, isExcludedReferenceFilename } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/reference-exclusions.ts'));
@@ -121,6 +123,69 @@ const CATEGORY_TOPIC_EXPANSION_MAP = {
   ],
 };
 
+const CATEGORY_BRIEFING_GUIDES = {
+  '홈페이지와App': {
+    readerProblem: '기능은 있는데 사용자가 어디에서 멈추고 왜 신뢰를 잃는지 설명이 필요한 독자',
+    openingAngle: '첫 화면, 탐색, 상태 설명처럼 사용자가 가장 먼저 체감하는 마찰에서 출발',
+    keyQuestions: [
+      '사용자는 어디에서 헷갈리거나 멈추는가',
+      '무엇을 더 넣기보다 무엇을 먼저 설명해야 하는가',
+      '속도보다 신뢰를 높이는 UX 장치는 무엇인가',
+    ],
+    closingAngle: '기능 추가보다 이해 가능한 흐름과 설명 가능한 상태를 먼저 정리하자는 결론으로 닫기',
+  },
+  '개발기획과컨설팅': {
+    readerProblem: '일정, 요구사항, 기대치가 자꾸 어긋나는 실무 의사결정자',
+    openingAngle: '개발 자체보다 전제와 문서화가 늦어질 때 생기는 비용에서 출발',
+    keyQuestions: [
+      '무엇이 아직 확정되지 않았는가',
+      '어떤 문서를 먼저 합의해야 일정이 덜 흔들리는가',
+      '기술보다 기대치 관리가 먼저 필요한 지점은 어디인가',
+    ],
+    closingAngle: '좋은 기획은 더 많은 요구를 담는 것이 아니라 범위와 전제를 먼저 선명하게 만드는 일이라고 정리',
+  },
+  '최신IT트렌드': {
+    readerProblem: '새 기술 뉴스는 많이 보지만 실제 도입 기준은 잘 안 잡히는 독자',
+    openingAngle: '화제성보다 운영 비용과 유지 책임을 먼저 보는 관점에서 출발',
+    keyQuestions: [
+      '이 기술은 왜 지금 다시 주목받는가',
+      '도입보다 운영에서 더 큰 비용은 무엇인가',
+      '실무자는 어떤 조건이 갖춰질 때만 따라가야 하는가',
+    ],
+    closingAngle: '트렌드는 빨리 읽되 도입은 늦고 신중하게 하자는 메시지로 마무리',
+  },
+  'IT정보와분석': {
+    readerProblem: '정보는 많은데 무엇이 중요한 신호인지 구분하기 어려운 독자',
+    openingAngle: '뉴스 나열보다 의미 해석과 우선순위 판단이 필요한 장면에서 출발',
+    keyQuestions: [
+      '지금 봐야 할 신호는 무엇인가',
+      '겉으로 큰 뉴스와 실제 영향이 큰 뉴스는 어떻게 다른가',
+      '실무자는 어떤 정보부터 행동으로 옮겨야 하는가',
+    ],
+    closingAngle: '정보 소비보다 해석 기준을 남기는 글로 닫기',
+  },
+  '성장과성공': {
+    readerProblem: '열심히 하는데도 방향과 기준이 자꾸 흔들리는 독자',
+    openingAngle: '실행력 부족보다 판단 기준의 부재에서 출발',
+    keyQuestions: [
+      '지금의 선택이 나를 바쁘게 만드는가, 나아가게 만드는가',
+      '무엇을 더 할지가 아니라 무엇을 버릴지 먼저 정했는가',
+      '오늘의 선택이 다음 기회를 넓히는가',
+    ],
+    closingAngle: '더 많이 하는 삶보다 더 분명하게 고르는 삶으로 정리',
+  },
+  '도서리뷰': {
+    readerProblem: '책 소개보다 이 책이 지금 왜 읽을 가치가 있는지 알고 싶은 독자',
+    openingAngle: '줄거리 요약보다 지금의 일과 삶에 어떤 질문을 남기는 책인지에서 출발',
+    keyQuestions: [
+      '이 책은 어떤 독자에게 지금 유효한가',
+      '핵심 주장이나 장면을 실무와 삶의 판단 기준으로 어떻게 번역할 수 있는가',
+      '비슷한 책과 달리 이 책이 남기는 결은 무엇인가',
+    ],
+    closingAngle: '책 내용을 요약하는 데서 멈추지 않고 독자의 다음 행동이나 질문으로 연결하며 마무리',
+  },
+};
+
 // ─── GEO 최적화 규칙 ─────────────────────────────────────────────────
 
 const GEO_RULES = `
@@ -130,6 +195,27 @@ const GEO_RULES = `
 3. 해시태그에 질문형 키워드 추가 (#AI시대자기계발방법 #스터디카페추천이유)
 4. 결론에 "핵심 메시지 한줄" 명확히 (AI가 이 글의 결론을 한 문장으로 인용 가능)
 `.trim();
+
+const BLOG_SKILL_BUNDLE = buildBlogSkillBundle([
+  'naverSeo',
+  'contentQuality',
+  'bookSearch',
+  'imageGen',
+  'shortformVideo',
+  'blogRag',
+]);
+
+const AI_BRIEFING_RULES = `
+[AI Briefing 구조 규칙]
+1. 인사말 직후 [AI 스니펫 요약] 또는 [핵심 요약 3줄]을 둔다.
+2. [이 글에서 배울 수 있는 것]을 불릿 3~5개로 배치한다.
+3. 본문 중간에 실제 검색형 질문을 쓰는 Q&A를 최소 3개 포함한다.
+4. 본문은 문제 정의 → 판단 기준 → 실전 사례 → 정리 순으로 구조화한다.
+5. 마지막에는 핵심 메시지를 한 줄로 다시 못박는다.
+`.trim();
+
+const GENERAL_AI_BRIEFING_ORDER = buildAIBriefingSectionOrder('general');
+const GENERAL_AI_BRIEFING_CHECKLIST = buildAIBriefingChecklist('general');
 
 // ─── 날씨 → 글 맥락 변환 ─────────────────────────────────────────────
 
@@ -340,6 +426,27 @@ function _defaultGeneralSnippet(title, category) {
   ].join('\n');
 }
 
+function _defaultLearningPointsSection(category) {
+  return [
+    '[이 글에서 배울 수 있는 것]',
+    `- ${category} 주제를 볼 때 무엇을 먼저 판단해야 하는지`,
+    `- 실무에서 바로 적용할 수 있는 기준 3가지`,
+    '- 오늘 내용에서 바로 실행 가능한 체크 포인트',
+  ].join('\n');
+}
+
+function _defaultQuestionSection(category) {
+  return [
+    '[질문형 Q&A]',
+    `Q. ${category} 주제를 볼 때 가장 먼저 점검해야 할 것은 무엇인가요?`,
+    'A. 문제를 더 많이 해결하는 기능보다, 지금 어떤 오해나 마찰이 생기고 있는지 먼저 정의하는 것이 중요합니다.',
+    `Q. ${category} 인사이트를 읽고 바로 실행으로 옮기려면 어떻게 해야 하나요?`,
+    'A. 오늘 글의 핵심을 한 문장으로 다시 적고, 이번 주 안에 실행할 행동 세 가지로 쪼개면 훨씬 실전적으로 움직일 수 있습니다.',
+    'Q. 비슷한 글을 많이 읽어도 변화가 없는 이유는 무엇인가요?',
+    'A. 읽는 양보다 실행 기록이 부족하기 때문입니다. 적용 전후가 어떻게 달라졌는지를 남겨야 다음 판단의 기준이 생깁니다.',
+  ].join('\n');
+}
+
 function _defaultCafeSection(weatherContext) {
   return [
     '[스터디카페 홍보 섹션]',
@@ -370,6 +477,70 @@ function _defaultHashtags(category) {
   ].join('\n');
 }
 
+function _buildCategoryBriefingGuide(category) {
+  const guide = CATEGORY_BRIEFING_GUIDES[category];
+  if (!guide) return '';
+
+  return [
+    '[카테고리 문제의식 가이드]',
+    `독자 문제 정의: ${guide.readerProblem}`,
+    `서두 출발점: ${guide.openingAngle}`,
+    '이번 글이 답해야 할 질문:',
+    ...guide.keyQuestions.map((question, index) => `${index + 1}. ${question}`),
+    `마무리 방향: ${guide.closingAngle}`,
+  ].join('\n');
+}
+
+function _buildSelectedTopicDirection(researchData = {}) {
+  const topicHint = String(researchData.topic_hint || '').trim();
+  const topicQuestion = String(researchData.topic_question || '').trim();
+  const topicDiff = String(researchData.topic_diff || '').trim();
+  const topicTitleCandidate = String(researchData.topic_title_candidate || '').trim();
+  const readerProblem = String(researchData.topic_reader_problem || '').trim();
+  const openingAngle = String(researchData.topic_opening_angle || '').trim();
+  const closingAngle = String(researchData.topic_closing_angle || '').trim();
+  const freshnessSummary = String(researchData.topic_freshness_summary || '').trim();
+  const strategyPreferredPattern = String(researchData.strategy_preferred_pattern || '').trim();
+  const strategySuppressedPattern = String(researchData.strategy_suppressed_pattern || '').trim();
+  const strategyFocus = Array.isArray(researchData.strategy_focus)
+    ? researchData.strategy_focus.map((item) => String(item || '').trim()).filter(Boolean)
+    : [];
+  const keyQuestions = Array.isArray(researchData.topic_key_questions)
+    ? researchData.topic_key_questions.map((item) => String(item || '').trim()).filter(Boolean)
+    : [];
+
+  if (!topicHint && !topicTitleCandidate && !readerProblem && !openingAngle && !closingAngle && !keyQuestions.length) {
+    return '';
+  }
+
+  const lines = ['[선택된 주제 방향]'];
+  if (topicHint) lines.push(`핵심 주제: ${topicHint}`);
+  if (topicTitleCandidate) lines.push(`제목 초안 방향: ${topicTitleCandidate}`);
+  if (readerProblem) lines.push(`독자 문제: ${readerProblem}`);
+  if (openingAngle) lines.push(`서두 출발점: ${openingAngle}`);
+  if (topicQuestion) lines.push(`이번 글의 대표 질문: ${topicQuestion}`);
+  if (topicDiff) lines.push(`최근 글과의 차별화: ${topicDiff}`);
+  if (keyQuestions.length) {
+    lines.push('본문에서 반드시 다뤄야 할 질문:');
+    lines.push(...keyQuestions.map((question, index) => `${index + 1}. ${question}`));
+  }
+  if (strategyFocus.length) {
+    lines.push(`이번 전략 초점: ${strategyFocus.join(' | ')}`);
+  }
+  if (strategyPreferredPattern || strategySuppressedPattern) {
+    lines.push(
+      `제목 패턴 가이드: 선호=${strategyPreferredPattern || '없음'} / 억제=${strategySuppressedPattern || '없음'}`
+    );
+  }
+  if (closingAngle) lines.push(`마무리 방향: ${closingAngle}`);
+  if (freshnessSummary) lines.push(`중복 회피 메모: ${freshnessSummary}`);
+  lines.push('제목과 본문은 위 방향에서 벗어나지 말고, 특히 제목은 위 제목 초안 방향의 핵심 키워드와 문제의식을 유지하라.');
+  if (strategySuppressedPattern) {
+    lines.push(`이번 글 제목은 ${strategySuppressedPattern} 패턴으로 기울지 않게 하고, 가능하면 ${strategyPreferredPattern || '다른'} 패턴 쪽으로 자연스럽게 재구성하라.`);
+  }
+  return lines.join('\n');
+}
+
 function _ensureGeneralQualityFloor(content, { category, weatherContext, relatedPosts, minChars }) {
   let next = String(content || '').trim();
   if (!next) return next;
@@ -379,6 +550,14 @@ function _ensureGeneralQualityFloor(content, { category, weatherContext, related
 
   if (!next.includes('AI 스니펫 요약')) {
     next = [titleLine, _defaultGeneralSnippet(titleLine.replace(/^\[[^\]]+\]\s*/, ''), category), next.slice(titleLine.length).trim()].filter(Boolean).join('\n\n');
+  }
+
+  if (!next.includes('이 글에서 배울 수 있는 것')) {
+    next = `${next}\n\n${_defaultLearningPointsSection(category)}`;
+  }
+
+  if (!next.includes('질문형 Q&A') && ((next.match(/(?:^|\n)\s*(?:\*\*)?Q[0-9]*[.):]|(?:^|\n)\s*Q\.\s|(?:^|\n)\s*질문\s*[0-9]*[.):]/g) || []).length < 3)) {
+    next = `${next}\n\n${_defaultQuestionSection(category)}`;
   }
 
   if (!next.includes('커피랑도서관') && !next.includes('분당서현')) {
@@ -771,6 +950,7 @@ async function writeGeneralPost(category, researchData, sectionVariation = {}) {
   const topicTitleCandidate = String(researchData.topic_title_candidate || '').trim();
   const strategyFocus = (researchData.strategy_focus || []).filter(Boolean).join(' / ');
   const strategyRecommendations = (researchData.strategy_recommendations || []).filter(Boolean).join(' / ');
+  const selectedTopicDirection = _buildSelectedTopicDirection(researchData);
   const bonusInsights = sectionVariation.bonusInsights || [];
   const sectionPlan = calculateSectionChars('gems', bonusInsights);
   const charInstruction = buildCharCountInstruction(sectionPlan.charCounts, 'gems', bonusInsights);
@@ -814,6 +994,12 @@ async function writeGeneralPost(category, researchData, sectionVariation = {}) {
 ${GEMS_PERSONA_GUIDE ? `[참조 페르소나]\n${GEMS_PERSONA_GUIDE}\n` : ''}
 ${AI_AGENT_CONTEXT}
 ${GEO_RULES}
+${AI_BRIEFING_RULES}
+${GENERAL_AI_BRIEFING_ORDER}
+${GENERAL_AI_BRIEFING_CHECKLIST}
+${_buildCategoryBriefingGuide(category)}
+${selectedTopicDirection}
+${BLOG_SKILL_BUNDLE ? `${BLOG_SKILL_BUNDLE}\n` : ''}
 다음 일반 포스팅을 작성하라:
 
 [카테고리] ${category}
@@ -839,7 +1025,8 @@ ${strategyRecommendations ? `[전략 권고]\n${strategyRecommendations}\n` : ''
 ${charInstruction}
 ${topicHint
   ? `이번 수동 재작성은 위 [주제 힌트]를 중심 주제로 유지하여, 같은 문제의식을 새 글로 다시 작성하라.
-제목도 [주제 힌트]와 같은 방향의 핵심 키워드를 유지하되 문장은 새롭게 구성하라.`
+제목도 [주제 힌트]와 같은 방향의 핵심 키워드를 유지하되 문장은 새롭게 구성하라.
+특히 [선택된 주제 방향]에 있는 독자 문제와 대표 질문을 제목과 첫 두 섹션에 반드시 반영하라.`
   : `카테고리 "${category}"에 맞는 주제를 자율 선정하여 작성하라.`}
 단, 최근 발행 일반 글과 같은 상위 서사를 반복하면 안 된다.
 제목은 최근 발행 제목과 질문 구조, 어미, 핵심 표현이 겹치면 안 된다.
@@ -1023,6 +1210,7 @@ async function repairGeneralPostDraft(category, researchData, draft, quality, se
   const newsAnalysisBlock = IT_NEWS_CATEGORIES.includes(category)
     ? '\n' + _buildNewsAnalysisBlock(researchData.it_news || [], category) + '\n'
     : '';
+  const selectedTopicDirection = _buildSelectedTopicDirection(researchData);
 
   const repairPrompt = `
 다음은 이미 작성된 일반 포스팅 초안이다.
@@ -1031,11 +1219,14 @@ async function repairGeneralPostDraft(category, researchData, draft, quality, se
 [카테고리] ${category}
 [오늘 날씨 맥락] ${weatherContext}
 ${bookReviewBlock}${newsAnalysisBlock}
+[선택된 주제 방향]
+${selectedTopicDirection || '기존 초안의 제목과 중심 문제의식을 그대로 유지'}
 [품질 이슈]
 ${issueLines}
 
 [중요 지시]
 1. 기존 글의 제목, 핵심 주장, 전개 순서를 최대한 유지하라.
+1-1. 특히 [선택된 주제 방향]의 독자 문제, 대표 질문, 마무리 방향을 흐리지 말 것.
 2. 부족한 섹션/해시태그/스터디카페 문단/개인 경험만 보강하라.
 3. 글자수가 부족하면 필요한 섹션만 확장하라. 이미 충분한 문단은 반복하거나 축약하지 말 것.
 4. 새 글을 처음부터 다시 작성하지 말 것.
@@ -1132,6 +1323,7 @@ async function writeGeneralPostChunked(category, researchData, sectionVariation 
   const topicTitleCandidate = String(researchData.topic_title_candidate || '').trim();
   const strategyFocus = (researchData.strategy_focus || []).filter(Boolean).join(' / ');
   const strategyRecommendations = (researchData.strategy_recommendations || []).filter(Boolean).join(' / ');
+  const selectedTopicDirection = _buildSelectedTopicDirection(researchData);
 
   const weatherContext = weatherToContext(weather, { detailed: false });
 
@@ -1175,6 +1367,10 @@ ${GEMS_PERSONA_GUIDE ? `[참조 페르소나]\n${GEMS_PERSONA_GUIDE}\n` : ''}
 ${bookReviewBlock}${experienceBlock}
 ${recentThemeBlock}
 ${popularPatternBlock}
+${GENERAL_AI_BRIEFING_ORDER}
+${GENERAL_AI_BRIEFING_CHECKLIST}
+${_buildCategoryBriefingGuide(category)}
+${selectedTopicDirection}
 ${topicHint ? `\n[주제 힌트]\n${topicHint}` : ''}
 ${topicQuestion ? `\n[이번 글이 답해야 할 질문]\n${topicQuestion}` : ''}
 ${topicDiff ? `\n[최근 글과의 차별화 포인트]\n${topicDiff}` : ''}
@@ -1190,6 +1386,7 @@ ${strategyRecommendations ? `\n[전략 권고]\n${strategyRecommendations}` : ''
 
 카테고리 "${category}"에 맞는 주제를 선정하여 아래 섹션을 작성하라.
 글 첫 번째 줄에 제목을 [${category}] 형식으로 시작하라.
+가능하면 [선택된 주제 방향]의 제목 초안 방향과 대표 질문을 그대로 살리되, 문장은 자연스럽게 새로 구성하라.
 
 작성할 섹션 (모두 포함, 생략 금지):
 1. [AI 스니펫 요약] — 150자, 검색 노출용
@@ -1230,9 +1427,11 @@ ${_buildVariationBlock(sectionVariation)}`,
 작성할 섹션 (모두 포함, 생략 금지):
 1. [스터디카페 홍보 섹션] — 작업 메모리/인지 부하 → 커피랑도서관 분당서현점 자연 연결, 세스코 에어는 공기질 관리 기능으로만 설명, 불릿 리스트, 600자 이상
 2. ━━━━━━━━━━━━━━━━━━━━━
-3. [마무리 제언] — 명언형 인용 + 결론 한줄 + 감사 인사 + 좋아요/댓글 독려, 400자 이상
+3. [질문형 Q&A] — 실제 검색형 질문 3개 이상, 450자 이상
+4. ━━━━━━━━━━━━━━━━━━━━━
+5. [마무리 제언] — 명언형 인용 + 결론 한줄 + 감사 인사 + 좋아요/댓글 독려, 400자 이상
 
-글자수 요구: 전체 1,250자 이상. 스터디카페 섹션 최소 600자.`,
+글자수 요구: 전체 1,700자 이상. 스터디카페 섹션 최소 600자, 질문형 Q&A 최소 450자.`,
     },
     {
       id:       'group_d',

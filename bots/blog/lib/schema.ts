@@ -142,6 +142,36 @@ async function ensureBlogCoreSchema() {
   `);
 
   await pgPool.run('blog', `
+    CREATE TABLE IF NOT EXISTS blog.autonomy_decisions (
+      id SERIAL PRIMARY KEY,
+      decision_date DATE NOT NULL DEFAULT CURRENT_DATE,
+      post_type TEXT NOT NULL,
+      category TEXT,
+      title TEXT NOT NULL,
+      post_id INTEGER,
+      autonomy_phase INTEGER DEFAULT 1,
+      decision TEXT NOT NULL DEFAULT 'master_review',
+      score NUMERIC DEFAULT 0,
+      threshold NUMERIC DEFAULT 0,
+      reasons JSONB DEFAULT '[]',
+      sense_summary JSONB DEFAULT '{}',
+      revenue_summary JSONB DEFAULT '{}',
+      metadata JSONB DEFAULT '{}',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  await pgPool.run('blog', `
+    CREATE INDEX IF NOT EXISTS idx_autonomy_decisions_date
+    ON blog.autonomy_decisions (decision_date DESC, post_type)
+  `);
+
+  await pgPool.run('blog', `
+    CREATE INDEX IF NOT EXISTS idx_autonomy_decisions_decision
+    ON blog.autonomy_decisions (decision, created_at DESC)
+  `);
+
+  await pgPool.run('blog', `
     CREATE INDEX IF NOT EXISTS idx_publish_schedule_date
     ON blog.publish_schedule(publish_date)
   `);

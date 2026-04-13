@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/Users/alexlee</string>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+	</dict>
+	<key>KeepAlive</key>
+	<false/>
+	<key>Label</key>
+	<string>ai.blog.phase3-feedback</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/opt/homebrew/bin/mix</string>
+		<string>blog.phase3.notify</string>
+		<string>--brief</string>
+		<string>--send</string>
+	</array>
+	<key>RunAtLoad</key>
+	<false/>
+	<key>StandardErrorPath</key>
+	<string>/Users/alexlee/projects/ai-agent-system/elixir/team_jay/blog-phase3-feedback.err.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/alexlee/projects/ai-agent-system/elixir/team_jay/blog-phase3-feedback.log</string>
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Hour</key>
+		<integer>6</integer>
+		<key>Minute</key>
+		<integer>20</integer>
+	</dict>
+	<key>WorkingDirectory</key>
+	<string>/Users/alexlee/projects/ai-agent-system/elixir/team_jay</string>
+</dict>
+</plist>

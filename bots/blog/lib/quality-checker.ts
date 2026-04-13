@@ -13,7 +13,7 @@ const GOAL_CHARS = { lecture: 9000, general: 8000 };
 const AI_RISK_REWRITE_THRESHOLD = 70;
 
 const REQUIRED_SECTION_MARKERS = {
-  lecture: ['핵심 요약', '승호아빠 인사말', '최신 기술 브리핑', '강의 - 이론', '실무 - 코드', 'AEO FAQ', '함께 읽으면 좋은 글', '해시태그'],
+  lecture: ['핵심 요약', '이 글에서 배울 수 있는 것', '승호아빠 인사말', '최신 기술 브리핑', '강의 - 이론', '실무 - 코드', 'AEO FAQ', '함께 읽으면 좋은 글', '해시태그'],
   general: ['AI 스니펫 요약', '승호아빠 인사말', '본론 섹션 1', '본론 섹션 2', '본론 섹션 3', '마무리 제언', '해시태그'],
 };
 
@@ -31,8 +31,19 @@ const MARKER_ALIASES = {
 function hasSectionMarker(content, type, marker) {
   const text = String(content || '');
   if (text.includes(marker)) return true;
+  const normalizedMarker = String(marker || '').replace(/^\[|\]$/g, '').trim();
+  if (normalizedMarker) {
+    const headingPattern = new RegExp(`<h2[^>]*class="section-title"[^>]*>\\s*${normalizedMarker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*<\\/h2>`, 'i');
+    if (headingPattern.test(text)) return true;
+  }
   const aliases = MARKER_ALIASES[type]?.[marker] || [];
-  return aliases.some((alias) => text.includes(alias));
+  return aliases.some((alias) => {
+    if (text.includes(alias)) return true;
+    const normalizedAlias = String(alias || '').replace(/^\[|\]$/g, '').trim();
+    if (!normalizedAlias) return false;
+    const headingPattern = new RegExp(`<h2[^>]*class="section-title"[^>]*>\\s*${normalizedAlias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*<\\/h2>`, 'i');
+    return headingPattern.test(text);
+  });
 }
 
 function checkTruncatedEnding(content, type) {
@@ -72,11 +83,84 @@ function checkTruncatedEnding(content, type) {
   return issues;
 }
 
+function countQuestionStyleFaq(content) {
+  const text = String(content || '');
+  const matches = text.match(/(?:^|\n)\s*(?:\*\*)?Q[0-9]*[.):]|(?:^|\n)\s*Q\.\s|(?:^|\n)\s*질문\s*[0-9]*[.):]|(?:^|\n)\s*Q\.\s*[^ \n]/g);
+  const baseCount = matches ? matches.length : 0;
+  const htmlCount = (text.match(/(?:<p[^>]*>\s*(?:<strong>)?)\s*(?:Q[0-9]*[.):]|Q\.\s|질문\s*[0-9]*[.):])/gi) || []).length;
+  const faqSections = Array.from(text.matchAll(/<h2[^>]*class="section-title"[^>]*>(AEO FAQ|질문형 Q&A)<\/h2>/gi)).length;
+  return Math.max(baseCount, htmlCount, faqSections);
+}
+
+function countAnsweredFaqPairs(content) {
+  const text = String(content || '');
+  const normalized = text
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ');
+  const lines = normalized
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  let answered = 0;
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (!/^(?:Q[0-9]*[.):]|Q\.\s|질문\s*[0-9]*[.):])/.test(line)) continue;
+    const answerLine = lines.slice(i + 1, i + 4).find((nextLine) => /^(?:A[0-9]*[.):]|A\.\s|답변\s*[0-9]*[.):])/.test(nextLine) || nextLine.length >= 24);
+    if (answerLine) answered += 1;
+  }
+  return answered;
+}
+
+function checkBriefingStructure(content, type) {
+  const issues = [];
+  const text = String(content || '');
+
+  if (type === 'lecture') {
+    if (!hasSectionMarker(text, type, '이 글에서 배울 수 있는 것')) {
+      issues.push({ severity: 'warn', msg: 'AI Briefing용 학습 포인트 섹션 누락: "이 글에서 배울 수 있는 것"' });
+    }
+  }
+
+  if (type === 'general') {
+    if (!hasSectionMarker(text, type, '이 글에서 배울 수 있는 것')) {
+      issues.push({ severity: 'warn', msg: 'AI Briefing용 학습 포인트 섹션 누락: "이 글에서 배울 수 있는 것"' });
+    }
+  }
+
+  const faqCount = countQuestionStyleFaq(text);
+  const answeredFaqCount = countAnsweredFaqPairs(text);
+  if (faqCount < 3) {
+    issues.push({ severity: 'warn', msg: `질문형 Q&A 부족: ${faqCount}개 (권장 최소 3개)` });
+  }
+  if (answeredFaqCount < 3) {
+    issues.push({ severity: 'warn', msg: `질문형 Q&A 답변 밀도 부족: ${answeredFaqCount}개 (권장 최소 3개)` });
+  }
+
+  return issues;
+}
+
+function sanitizeForAIDetection(content) {
+  return String(content || '')
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/<pre[\s\S]*?<\/pre>/gi, ' ')
+    .replace(/<code[\s\S]*?<\/code>/gi, ' ')
+    .replace(/_THE_END_/g, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function checkAIDetectionRisk(content) {
   const issues = [];
   let riskScore = 0;
+  const normalized = sanitizeForAIDetection(content);
 
-  const sentences = content.split(/[.!?。]\s*/).filter((s) => s.trim().length > 5);
+  const sentences = normalized
+    .split(/[.!?。]\s*/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 12 && !/^(use strict|nodejs \d+강|\[.*\])$/i.test(s));
 
   const phraseMap = {};
   for (const sentence of sentences) {
@@ -89,7 +173,7 @@ function checkAIDetectionRisk(content) {
     issues.push({ severity: 'warn', msg: `반복 어구 ${repeatedPhrases.length}개 (3회 이상 반복)` });
   }
 
-  const endingMatches = content.match(/입니다|합니다|됩니다|있습니다/g) || [];
+  const endingMatches = normalized.match(/입니다|합니다|됩니다|있습니다/g) || [];
   const endingRatio = endingMatches.length / Math.max(sentences.length, 1);
   if (endingRatio > 0.6) {
     riskScore += 15;
@@ -106,19 +190,19 @@ function checkAIDetectionRisk(content) {
     }
   }
 
-  if (!/제가|저는|솔직히|느꼈|경험|실제로.*해보니|직접.*해본|제 생각/.test(content)) {
+  if (!/제가|저는|솔직히|느꼈|경험|실제로.*해보니|직접.*해본|제 생각/.test(normalized)) {
     riskScore += 25;
     issues.push({ severity: 'warn', msg: '개인 경험/감상 표현 미포함 — 리라이팅 시 추가 필요' });
   }
 
-  if (!/놀랐|감동|기뻤|아쉬웠|뿌듯|설레|두근|가슴이/.test(content)) {
+  if (!/놀랐|감동|기뻤|아쉬웠|뿌듯|설레|두근|가슴이|반가웠|인상적/.test(normalized)) {
     riskScore += 10;
     issues.push({ severity: 'info', msg: '감정 표현 부족 — 리라이팅 시 추가 권장' });
   }
 
-  const hasWeather = /날씨|기온|[0-9]+도|비가|눈이|맑|흐림|바람|춥|덥|선선|따뜻|쌀쌀|봄|여름|가을|겨울|햇살|창밖/.test(content);
-  const hasDate = /월요일|화요일|수요일|목요일|금요일|토요일|일요일|오늘 아침|이른 아침|오후/.test(content);
-  const hasPlace = /서현|분당|커피랑|도서관|자리에 앉|창가|책상/.test(content);
+  const hasWeather = /날씨|기온|[0-9]+도|비가|눈이|맑|흐림|바람|춥|덥|선선|따뜻|쌀쌀|봄|여름|가을|겨울|햇살|창밖/.test(normalized);
+  const hasDate = /월요일|화요일|수요일|목요일|금요일|토요일|일요일|오늘 아침|이른 아침|오후/.test(normalized);
+  const hasPlace = /서현|분당|커피랑|도서관|자리에 앉|창가|책상/.test(normalized);
   const ctxScore = [hasWeather, hasDate, hasPlace].filter(Boolean).length;
 
   if (ctxScore === 0) {
@@ -171,6 +255,7 @@ function checkQuality(content, type) {
     issues.push({ severity: 'info', msg: `AI 탐지 리스크 중간 (${aiRisk.riskScore}점) — 개인 에피소드 보강 권장` });
   }
 
+  issues.push(...checkBriefingStructure(content, type));
   issues.push(...checkTruncatedEnding(content, type));
 
   return {

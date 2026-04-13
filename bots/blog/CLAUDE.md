@@ -137,3 +137,35 @@
 ## 참고
 - 이 문서는 블로그팀 로컬 운영 기준 요약이다
 - 세부 구현과 단계 계획은 마스터 문서를 우선한다
+
+
+## 자율 마케팅 시스템 — 신규 모듈 (2026.04.13 추가)
+
+### 피드백 루프 아키텍처
+```
+SENSE → PLAN → ACT → OBSERVE → LEARN → (반복)
+```
+
+### 신규 파일
+- `lib/sense-engine.ts` — 스카팀 매출 + 트렌드 + 채널 상태 감지
+- `lib/autonomy-gate.ts` — 자동 게시 vs 마스터 검토 판단 (Phase별 임계값)
+- `lib/feedback-learner.ts` — 마스터 수정 diff → LLM 분석 → 선호 패턴 학습
+- `lib/autonomy-tracker.ts` — Phase 추적 (1→2→3), 정확도 4주 연속 기준
+- `lib/marketing-revenue-correlation.ts` — 마케팅→스카팀 매출 상관분석
+
+### 신규 스킬
+- `skills/marketing-ops-playbook/SKILL.md` — 자율 마케팅 운영 가이드
+
+### DB 마이그레이션
+- `migrations/008-marketing-metrics.sql` — channel_performance 테이블, 어그로 컬럼
+- `migrations/009-feedback-autonomy-revenue.sql` — master_feedback, autonomy_log, revenue_correlation
+
+### Phase 전환 규칙
+- Phase 1→2: accuracy >= 0.80, 4주 연속
+- Phase 2→3: accuracy >= 0.95, 4주 연속
+- Phase 역전환: accuracy < 0.60 → Phase -1
+
+### 스카팀 데이터 접근
+- `pgPool.query('ska', ...)` — revenue_daily, environment_factors 조회
+- 마케팅 활동일 vs 비활동일 매출 비교
+- 환경 변수(공휴일/날씨/시험) 보정

@@ -21,6 +21,10 @@ defmodule TeamJay.Blog.Orchestrator do
     GenServer.call(__MODULE__, :state)
   end
 
+  def status do
+    GenServer.call(__MODULE__, :status)
+  end
+
   def plan_today do
     GenServer.call(__MODULE__, :plan_today)
   end
@@ -43,6 +47,17 @@ defmodule TeamJay.Blog.Orchestrator do
   @impl true
   def handle_call(:state, _from, state) do
     {:reply, state, state}
+  end
+
+  @impl true
+  def handle_call(:status, _from, state) do
+    {:reply,
+     %{
+       today_posts: state.today_posts,
+       planned_count: length(state.today_posts),
+       last_planned_at: state.last_planned_at,
+       last_broadcast_at: state.last_broadcast_at
+     }, state}
   end
 
   @impl true

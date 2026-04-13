@@ -17,6 +17,8 @@ const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selecto
 const { weatherToContext, estimateCost, loadPersonaGuide } = require('../../../packages/core/lib/blog-utils');
 const env = require('../../../packages/core/lib/env');
 const path = require('path');
+const { buildBlogSkillBundle } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/skills/blog/skill-loader.js'));
+const { buildAIBriefingSectionOrder, buildAIBriefingChecklist } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/ai-briefing.ts'));
 const { getBlogGenerationRuntimeConfig, getBlogLLMSelectorOverrides } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/runtime-config.ts'));
 const { calculateSectionChars, buildCharCountInstruction } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/section-ratio.ts'));
 
@@ -74,6 +76,26 @@ AI 검색엔진(네이버 AI, ChatGPT, Gemini)이 이 글을 출처로 인용할
 4. 권위적 출처 명시: Node.js 공식 문서 URL, CVE 번호
 5. 저자 명시: "승호아빠(15년 시니어 IT 컨설턴트, 커피랑도서관 대표)"를 서두에 한 번 기재
 `.trim();
+
+const BLOG_SKILL_BUNDLE = buildBlogSkillBundle([
+  'naverSeo',
+  'contentQuality',
+  'imageGen',
+  'shortformVideo',
+  'blogRag',
+]);
+
+const AI_BRIEFING_RULES = `
+[AI Briefing 구조 규칙]
+1. [핵심 요약 3줄] 다음에 [이 글에서 배울 수 있는 것]을 불릿으로 제시한다.
+2. 강의 글이라도 질문형 Q&A를 반드시 포함한다.
+3. 각 본문 섹션은 한 줄 요약 또는 핵심 문장으로 시작한다.
+4. 이론/코드/실전 인사이트가 분리돼 보여야 한다.
+5. 결론에서 실무 적용 포인트를 한 줄로 다시 정리한다.
+`.trim();
+
+const LECTURE_AI_BRIEFING_ORDER = buildAIBriefingSectionOrder('lecture');
+const LECTURE_AI_BRIEFING_CHECKLIST = buildAIBriefingChecklist('lecture');
 
 // ─── 날씨 → 글 맥락 변환 ─────────────────────────────────────────────
 
@@ -152,6 +174,68 @@ function _buildVariationBlock(variation = {}) {
   return '\n' + lines.join('\n') + '\n';
 }
 
+function _defaultLectureLearningPointsSection(lectureTitle) {
+  return [
+    '[이 글에서 배울 수 있는 것]',
+    `- ${lectureTitle}를 실무 관점에서 이해하는 핵심 포인트`,
+    '- 구현 전에 먼저 점검해야 할 설계 기준',
+    '- 오늘 코드 예제를 실제 운영 환경에 옮길 때 주의할 점',
+  ].join('\n');
+}
+
+function _defaultLectureQuestionSection(lectureTitle) {
+  return [
+    '[AEO FAQ]',
+    `Q. ${lectureTitle}를 실무에서 먼저 이해해야 하는 이유는 무엇인가요?`,
+    'A. 개념만 아는 것과 운영에서 판단할 수 있는 것은 다르기 때문입니다. 실무에서는 어디서 비용과 장애가 생기는지까지 같이 봐야 합니다.',
+    `Q. ${lectureTitle}를 적용할 때 가장 많이 놓치는 부분은 무엇인가요?`,
+    'A. 구현 자체보다 경계 조건과 운영 책임을 덜 보는 경우가 많습니다. 그래서 예외 처리와 관측 포인트를 먼저 설계하는 편이 안전합니다.',
+    'Q. 예제를 그대로 복사하면 바로 실무에 쓸 수 있나요?',
+    'A. 예제는 출발점일 뿐입니다. 실제 환경에서는 인증, 로깅, 재시도, 롤백, 모니터링까지 함께 붙여야 운영 가능한 코드가 됩니다.',
+  ].join('\n');
+}
+
+function _ensureLectureBriefingFloor(content, lectureTitle) {
+  let next = String(content || '').trim();
+  if (!next) return next;
+
+  if (!next.includes('이 글에서 배울 수 있는 것')) {
+    const markerIndex = next.indexOf('[승호아빠 인사말]');
+    if (markerIndex >= 0) {
+      next = `${next.slice(0, markerIndex).trimEnd()}\n\n${_defaultLectureLearningPointsSection(lectureTitle)}\n\n${next.slice(markerIndex).trimStart()}`;
+    } else {
+      next = `${next}\n\n${_defaultLectureLearningPointsSection(lectureTitle)}`;
+    }
+  }
+
+  const faqCount = (next.match(/(?:^|\n)\s*(?:\*\*)?Q[0-9]*[.):]|(?:^|\n)\s*Q\.\s|(?:^|\n)\s*질문\s*[0-9]*[.):]/g) || []).length;
+  if (!next.includes('[AEO FAQ]') || faqCount < 3) {
+    next = next.replace(/\[AEO FAQ\][\s\S]*?(?=\n\[|$)/, '').trim();
+    next = `${next}\n\n${_defaultLectureQuestionSection(lectureTitle)}`;
+  }
+
+  return next.trim();
+}
+
+function _buildLectureTopicDirection(lectureNumber, lectureTitle) {
+  const title = String(lectureTitle || '').trim();
+  if (!title) return '';
+
+  return [
+    '[선택된 강의 방향]',
+    `강의 핵심 주제: ${title}`,
+    `강의 번호: ${lectureNumber}강`,
+    `독자 문제: ${title}를 이름만 아는 수준에서 벗어나, 실제 설계와 운영 판단 기준까지 연결하고 싶은 수강생`,
+    `서두 출발점: ${title}가 왜 지금 실무에서 다시 중요해졌는지, 어떤 상황에서 먼저 떠올려야 하는지부터 설명`,
+    '이번 강의가 답해야 할 질문:',
+    `1. ${title}를 실무에서 먼저 이해해야 하는 이유는 무엇인가`,
+    `2. ${title}를 적용할 때 구현보다 먼저 설계해야 할 기준은 무엇인가`,
+    `3. ${title}를 운영 단계로 가져갈 때 가장 자주 놓치는 부분은 무엇인가`,
+    `마무리 방향: ${title}를 개념 설명으로 끝내지 말고, 다음 강의와 연결되는 실무 적용 포인트로 정리`,
+    '제목과 본문은 위 강의 방향에서 벗어나지 말고, 특히 첫 요약과 이론 섹션에서 대표 질문을 바로 다뤄라.',
+  ].join('\n');
+}
+
 // ─── 강의 포스팅 생성 ────────────────────────────────────────────────
 
 /**
@@ -180,6 +264,7 @@ async function writeLecturePost(lectureNumber, lectureTitle, researchData, secti
   const bonusInsights = sectionVariation.bonusInsights || [];
   const sectionPlan = calculateSectionChars('pos', bonusInsights);
   const charInstruction = buildCharCountInstruction(sectionPlan.charCounts, 'pos', bonusInsights);
+  const lectureDirection = _buildLectureTopicDirection(lectureNumber, lectureTitle);
 
   const weatherContext = weatherToContext(weather);
 
@@ -215,6 +300,11 @@ async function writeLecturePost(lectureNumber, lectureTitle, researchData, secti
 ${POS_PERSONA_GUIDE ? `[참조 페르소나]\n${POS_PERSONA_GUIDE}\n` : ''}
 ${AI_AGENT_CONTEXT}
 ${GEO_RULES}
+${AI_BRIEFING_RULES}
+${LECTURE_AI_BRIEFING_ORDER}
+${LECTURE_AI_BRIEFING_CHECKLIST}
+${lectureDirection}
+${BLOG_SKILL_BUNDLE ? `${BLOG_SKILL_BUNDLE}\n` : ''}
 다음 강의 포스팅을 작성하라:
 
 [강의 정보]
@@ -249,6 +339,7 @@ ${charInstruction}
 ★★★ 글자수 요구사항 (반드시 준수) ★★★
 전체 최소 8,000자 (한국어 기준). 각 섹션별 최소 글자수:
 - [핵심 요약 3줄]: 150자
+- [이 글에서 배울 수 있는 것]: 불릿 3개 이상
 - [승호아빠 인사말]: 300자
 - [최신 기술 브리핑]: 1,200자 (Node.js 릴리스 + 보안 이슈 상세 설명)
 - [전문가의 실무 인사이트 ①②③④] 각 600자
@@ -332,6 +423,7 @@ ${_buildVariationBlock(sectionVariation)}
 
   // _THE_END_ 마커 제거
   content = content.replace(/_THE_END_/g, '').trim();
+  content = _ensureLectureBriefingFloor(content, lectureTitle);
 
   const result  = {
     content,
@@ -359,6 +451,7 @@ async function repairLecturePostDraft(lectureNumber, lectureTitle, researchData,
   }
 
   const weatherContext = weatherToContext(researchData.weather || {});
+  const lectureDirection = _buildLectureTopicDirection(lectureNumber, lectureTitle);
   const issueLines = (quality?.issues || [])
     .map((issue, index) => `${index + 1}. [${issue.severity}] ${issue.msg}`)
     .join('\n') || '1. [warn] 품질 보정 필요';
@@ -371,12 +464,15 @@ async function repairLecturePostDraft(lectureNumber, lectureTitle, researchData,
 강의 번호: ${lectureNumber}강
 강의 제목: ${lectureTitle}
 [오늘 날씨 맥락] ${weatherContext}
+[선택된 강의 방향]
+${lectureDirection}
 
 [품질 이슈]
 ${issueLines}
 
 [중요 지시]
 1. 기존 강의 제목과 핵심 기술 주제를 유지하라.
+1-1. 특히 [선택된 강의 방향]의 대표 질문과 마무리 방향을 흐리지 말 것.
 2. 부족한 섹션, 코드 예시, FAQ, 해시태그, 날씨/경험 문맥만 보강하라.
 3. 글자수가 부족하면 필요한 섹션만 확장하라. 이미 충분한 부분은 반복하지 말 것.
 4. 새 강의를 처음부터 다시 작성하지 말 것.
@@ -420,6 +516,7 @@ ${content}
   }
 
   repaired = repaired.replace(/_THE_END_/g, '').trim();
+  repaired = _ensureLectureBriefingFloor(repaired, lectureTitle);
 
   return {
     content: repaired,
@@ -467,6 +564,7 @@ async function writeLecturePostChunked(lectureNumber, lectureTitle, researchData
         return `${index + 1}. ${item.content} | views=${meta.views || 0} | category=${meta.category || 'lecture'}`;
       }).join('\n') + '\n'
     : '';
+  const lectureDirection = _buildLectureTopicDirection(lectureNumber, lectureTitle);
 
   const chunks = [
     {
@@ -481,14 +579,18 @@ ${POS_PERSONA_GUIDE ? `[참조 페르소나]\n${POS_PERSONA_GUIDE}\n` : ''}
 [최신 IT 뉴스] ${itNews.slice(0, 3).map(n => n.title).join(' / ') || '최신 IT 트렌드 자체 지식'}
 [최신 Node.js] ${nodejsUpdates.map(u => `${u.tag} ${u.name}`).join(', ') || '자체 지식 보충'}
 ${popularPatternBlock}
+${LECTURE_AI_BRIEFING_ORDER}
+${LECTURE_AI_BRIEFING_CHECKLIST}
+${lectureDirection}
 
 작성할 섹션 (이것만 작성하라):
   [핵심 요약 3줄] — 150자 내외 AI 스니펫용
+  [이 글에서 배울 수 있는 것] — 불릿 3개 이상, 120자 이상
   [승호아빠 인사말] — 날씨+시사 반영, 300자
   [최신 기술 브리핑] — Node.js 릴리스/보안 이슈, 1,200자
   [전문가의 실무 인사이트 ①] — 비즈니스 관점, 500자
 
-총 2,500자 이상. 날씨 맥락 1회 포함.
+총 2,700자 이상. 날씨 맥락 1회 포함.
 이전 강의(${lectureNumber - 1}강) 내용을 인사말에서 간략히 연결하라.
 ${_buildVariationBlock(sectionVariation)}      `.trim(),
     },
@@ -507,6 +609,7 @@ ${POS_PERSONA_GUIDE ? `[참조 페르소나]\n${POS_PERSONA_GUIDE}\n` : ''}
   흐름이 끊기지 않게 자연스럽게 연결하라.
 ${experienceBlock ? `[실전 에피소드]\n${experienceBlock}\n→ "제가 운영하는 ai-agent-system에서 겪은 경험"으로 녹여라` : ''}
 ${popularPatternBlock}
+${lectureDirection}
 
 작성할 섹션 (이것만 작성하라):
   ━━━━━━━━━━━━━━━━━━━━━
@@ -529,6 +632,7 @@ ${POS_PERSONA_GUIDE ? `[참조 페르소나]\n${POS_PERSONA_GUIDE}\n` : ''}
 - "승호아빠" 인사말, 저자 소개, 인사는 [그룹 A]에서 이미 작성 완료.
   이 그룹에서는 인사말/저자소개 없이 본론으로 바로 시작하라.
 - 이전 섹션 '[강의 - 이론]'과 '[전문가의 실무 인사이트 ②]'에 이어서 작성하라.
+${lectureDirection}
 
 작성할 섹션 (이것만 작성하라):
   ━━━━━━━━━━━━━━━━━━━━━
@@ -552,6 +656,7 @@ ${POS_PERSONA_GUIDE ? `[참조 페르소나]\n${POS_PERSONA_GUIDE}\n` : ''}
   이 그룹에서는 인사말/저자소개 없이 본론으로 바로 시작하라.
 - 이전 섹션 '[실무 - 코드 및 아키텍처]'와 '[전문가의 실무 인사이트 ③]'에 이어서 작성하라.
 - [마무리 인사]에서만 "승호아빠"를 한 번 언급하라.
+${lectureDirection}
 ${linkingBlock ? `[관련 과거 포스팅]\n${linkingBlock}` : ''}
 
 작성할 섹션 (이것만 작성하라):
@@ -583,9 +688,11 @@ ${linkingBlock ? `[관련 과거 포스팅]\n${linkingBlock}` : ''}
 
   console.log(`[포스] 분할생성 완료: 총 ${result.charCount}자 (${((Date.now() - startTime) / 1000).toFixed(1)}초)`);
 
+  const content = _ensureLectureBriefingFloor(String(result.content || '').trim(), lectureTitle);
+
   return {
-    content:   result.content,
-    charCount: result.charCount,
+    content,
+    charCount: content.length,
     model:     `chunked-${model}`,
   };
 }

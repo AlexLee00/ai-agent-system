@@ -43,4 +43,19 @@ defmodule TeamJay.Blog.PubSub do
     TeamJay.Blog.Topics.handoff(target)
     |> broadcast({:handoff_ready, target, payload})
   end
+
+  def broadcast_execution(target, payload) when is_binary(target) do
+    TeamJay.Blog.Topics.execution(target)
+    |> broadcast({:execution_ready, target, payload})
+  end
+
+  def broadcast_execution_result(target, payload) when is_binary(target) do
+    TeamJay.Blog.Topics.execution_result(target)
+    |> broadcast({:execution_result, target, payload})
+  end
+
+  def broadcast_execution_alert(target, payload) when is_binary(target) do
+    TeamJay.Blog.Topics.execution_alert(target)
+    |> broadcast({:execution_alert, target, payload})
+  end
 end

@@ -192,6 +192,7 @@ check_periodic "ai.ska.forecast-monthly"     "매출 예측 monthly"
 check_periodic "ai.ska.log-rotate"           "스카 로그 로테이트"
 check_periodic "ai.ska.pickko-daily-audit"   "피코 일일 감사"
 check_periodic "ai.ska.pickko-daily-summary" "피코 일일 요약"
+check_periodic "ai.ska.pickko-pay-scan"      "피코 결제 스캔"
 check_periodic "ai.ska.pickko-verify"        "피코 검증"
 check_periodic "ai.ska.today-audit"          "스카 금일 감사"
 
@@ -243,11 +244,11 @@ log "💾 전체 서비스 목록 저장 → /tmp/post-reboot-services.txt"
 cat > "$FOLLOWUP_FILE" <<EOF
 post_reboot_at=$(date '+%Y-%m-%dT%H:%M:%S%z')
 required_followups:
-- /Users/alexlee/projects/ai-agent-system/docs/SESSION_HANDOFF.md
-- /Users/alexlee/projects/ai-agent-system/docs/WORK_HISTORY.md
-- /Users/alexlee/projects/ai-agent-system/docs/CHANGELOG.md
-- /Users/alexlee/projects/ai-agent-system/docs/TEST_RESULTS.md
-- /Users/alexlee/projects/ai-agent-system/docs/PLATFORM_IMPLEMENTATION_TRACKER.md
+- /Users/alexlee/projects/ai-agent-system/CLAUDE.md
+- /Users/alexlee/projects/ai-agent-system/docs/history/WORK_HISTORY.md
+- /Users/alexlee/projects/ai-agent-system/docs/history/CHANGELOG.md
+- /Users/alexlee/projects/ai-agent-system/docs/history/TEST_RESULTS.md
+- /Users/alexlee/projects/ai-agent-system/docs/research/RESEARCH_JOURNAL.md
 rule=재부팅 후 상태 변화 또는 장애/복구 조치가 있으면 위 문서와 세션 인수인계를 갱신
 EOF
 log "📝 재부팅 후 문서/세션 후속 체크리스트 저장 → $FOLLOWUP_FILE"
@@ -281,8 +282,9 @@ ${REPORT_TEXT}
 
 [수동 후속 권장]
 • worker / orchestrator / investment / blog health-report --json 재확인
+• reservation health-report --json 재확인
 • 필요 시 bash $PROJECT_DIR/scripts/post-reboot.sh --dry-run
-• 상태 변화가 있으면 SESSION_HANDOFF / WORK_HISTORY / CHANGELOG / TEST_RESULTS / PLATFORM_IMPLEMENTATION_TRACKER 갱신
+• 상태 변화가 있으면 CLAUDE / WORK_HISTORY / CHANGELOG / TEST_RESULTS / RESEARCH_JOURNAL 갱신
 EOF
 send_telegram "$MSG_FILE"
 

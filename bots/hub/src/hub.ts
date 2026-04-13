@@ -4,6 +4,7 @@ const rateLimit = rateLimitModule.default || rateLimitModule;
 const env = require('../../../packages/core/lib/env');
 const { authMiddleware } = require('../lib/auth');
 const { healthRoute } = require('../lib/routes/health');
+const { alarmRoute } = require('../lib/routes/alarm');
 const { pgQueryRoute } = require('../lib/routes/pg');
 const { n8nWebhookRoute, n8nHealthRoute } = require('../lib/routes/n8n');
 const { servicesStatusRoute, envRoute } = require('../lib/routes/services');
@@ -84,6 +85,7 @@ app.get('/hub/health', generalLimiter, healthRoute);
 app.use('/hub', authMiddleware);
 
 app.post('/hub/pg/query', pgLimiter, pgQueryRoute);
+app.post('/hub/alarm', generalLimiter, alarmRoute);
 app.post('/hub/n8n/webhook/:path', generalLimiter, n8nWebhookRoute);
 app.get('/hub/n8n/health', generalLimiter, n8nHealthRoute);
 app.get('/hub/services/status', generalLimiter, servicesStatusRoute);

@@ -46,6 +46,7 @@ defmodule TeamJay.Blog.InstagramAgent do
   @impl true
   def handle_info({:blog_event, _topic, {:social_ready, "instagram", relay}}, state) do
     queued = build_instagram_queue(relay)
+    :ok = PubSub.broadcast_handoff("instagram", queued)
 
     {:noreply,
      %{

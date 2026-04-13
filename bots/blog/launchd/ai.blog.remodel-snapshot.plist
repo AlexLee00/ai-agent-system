@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.blog.remodel-snapshot</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/mix</string>
+    <string>blog.remodel.snapshot</string>
+    <string>--json</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/alexlee/projects/ai-agent-system/elixir/team_jay</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>MIX_ENV</key>
+    <string>dev</string>
+  </dict>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>6</integer>
+    <key>Minute</key>
+    <integer>25</integer>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/ai.blog.remodel-snapshot.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/tmp/ai.blog.remodel-snapshot.err</string>
+</dict>
+</plist>

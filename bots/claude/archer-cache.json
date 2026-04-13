@@ -1,17 +1,17 @@
 {
-  "lastRun": "2026-04-10",
+  "lastRun": "2026-04-13",
   "versions": {
-    "@anthropic-ai/sdk": "0.87.0",
+    "@anthropic-ai/sdk": "0.88.0",
     "@modelcontextprotocol/sdk": "1.29.0",
     "groq-sdk": "1.1.2",
     "duckdb": "1.4.4",
-    "better-sqlite3": "12.8.0",
-    "ccxt": "4.5.47",
+    "better-sqlite3": "12.9.0",
+    "ccxt": "4.5.48",
     "playwright": "1.59.1"
   },
   "lastAnalysis": {
-    "summary": "이번 주 패치 검토 1순위는 groq-sdk입니다. 연구 관찰 1순위는 'Multimodal Embedding & Reranker Models'입니다. 웹 하이라이트는 'The next phase of enterprise AI'입니다. 이번 주 우선순위는 보안 취약점 두 건(특히 axios SSRF)과 @anthropic-ai/sdk 소폭 업그레이드 검토입니다. 기술적으로는 멀티모달 검색 리랭킹과 에이전트의 on-the-job learning, RCA용 지식베이스 구축 논의가 우리 시스템과 가장 가깝습니다. 외부 동향은 엔터프라이즈 AI와 에이전트 워크플로 고도화 쪽으로 계속 무게가 실리고 있습니다.",
-    "patchCount": 5,
+    "summary": "이번 주 패치 검토 1순위는 axios입니다. 연구 관찰 1순위는 'ALTK-Evolve: On-the-Job Learning for AI Agents'입니다. 웹 하이라이트는 'Our response to the Axios developer tool compromise'입니다. 이번 주 최우선 조치는 axios SSRF critical 취약점 즉시 패치 — 내부 Hub·DB 엔드포인트 노출 위험으로 금일 중 npm audit fix 실행 필요. 루나팀 실투자 사용 패키지(ccxt 4.5.48)와 @anthropic-ai/sdk(0.88.0) 마이너 업그레이드도 이번 주 내 완료 권장. 기술 트렌드 측면에서는 ALTK-Evolve 온더잡 에이전트 학습과 멀티모달 임베딩 강화가 덱스터·닥터·에디팀 업그레이드에 직접 적용 가능한 유망 기법으로 주목됨.",
+    "patchCount": 7,
     "securityCount": 2,
     "llmApiCount": 4
   }

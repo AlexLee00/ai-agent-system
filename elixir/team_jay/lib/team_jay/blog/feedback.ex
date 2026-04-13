@@ -12,6 +12,7 @@ defmodule TeamJay.Blog.Feedback do
 
   alias TeamJay.Blog.PubSub
   alias TeamJay.Blog.Topics
+  alias TeamJay.EventLake
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -47,6 +48,7 @@ defmodule TeamJay.Blog.Feedback do
   def handle_info({:blog_event, _topic, {:published, published}}, state) do
     feedback = build_feedback_payload(published)
     :ok = PubSub.broadcast(Topics.feedback(feedback.feedback_key), {:feedback_ready, feedback})
+    record_feedback(feedback)
 
     {:noreply,
      %{
@@ -66,5 +68,29 @@ defmodule TeamJay.Blog.Feedback do
       feedback_note: "Phase 1 feedback scaffold prepared",
       payload: published
     }
+  end
+
+  defp record_feedback(feedback) do
+    payload = Map.get(feedback, :payload, %{})
+
+    EventLake.record(%{
+      event_type: "blog_feedback_created",
+      team: "blog",
+      bot_name: "feedback",
+      severity: "info",
+      title: "[blog-phase3] #{feedback.feedback_key}",
+      message: "feedback_ready #{feedback.feedback_key}",
+      tags: ["phase3", "blog", "feedback"],
+      metadata: %{
+        feedback_key: feedback.feedback_key,
+        status: feedback.feedback_status,
+        note: feedback.feedback_note,
+        post_type: Map.get(payload, :post_type),
+        writer: Map.get(payload, :writer),
+        date: Map.get(payload, :date),
+        title: Map.get(payload, :title),
+        post_id: Map.get(payload, :post_id)
+      }
+    })
   end
 end
