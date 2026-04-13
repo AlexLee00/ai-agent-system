@@ -19,7 +19,7 @@
 
 ## 🐛 이슈 & 버그 추적
 
-> 자동 관리: `bug-report.js` 실행 시 갱신 | 수동 등록: `node src/bug-report.js --new --title "..." --by ska`
+> 자동 관리: `dist/ts-runtime/.../bug-report.js` 실행 시 갱신 | 수동 등록: `node dist/ts-runtime/bots/reservation/src/bug-report.js --new --title "..." --by ska`
 
 <!-- bug-tracker:issues:start -->
 _현재 미해결 이슈 없음_

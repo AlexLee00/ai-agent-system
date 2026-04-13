@@ -2,30 +2,30 @@
 'use strict';
 
 /**
- * bug-report.js — 스카 버그 추적 & 유지보수 기록 CLI
+ * bug-report.ts — 스카 버그 추적 & 유지보수 기록 CLI
  *
  * 변경 시마다 HANDOFF.md 버그/유지보수 섹션이 자동으로 갱신됩니다.
  *
  * 사용법:
- *   node bug-report.js --new         --title "제목" [--desc "설명"] [--severity critical|high|medium|low]
+ *   node dist/ts-runtime/bots/reservation/src/bug-report.js --new         --title "제목" [--desc "설명"] [--severity critical|high|medium|low]
  *                                    [--by ska|claude] [--category stability|logic|ux|data|reliability]
  *                                    [--files "src/a.js,src/b.js"]
  *
- *   node bug-report.js --action      --id BUG-001 --desc "조치 내용"
+ *   node dist/ts-runtime/bots/reservation/src/bug-report.js --action      --id BUG-001 --desc "조치 내용"
  *                                    [--type investigate|fix|workaround|verify|note]
  *                                    [--by ska|claude]
  *
- *   node bug-report.js --resolve     --id BUG-001 [--desc "해결 요약"] [--by claude]
+ *   node dist/ts-runtime/bots/reservation/src/bug-report.js --resolve     --id BUG-001 [--desc "해결 요약"] [--by claude]
  *
- *   node bug-report.js --list        [--status open|in_progress|resolved|all]
+ *   node dist/ts-runtime/bots/reservation/src/bug-report.js --list        [--status open|in_progress|resolved|all]
  *
- *   node bug-report.js --show        --id BUG-001
+ *   node dist/ts-runtime/bots/reservation/src/bug-report.js --show        --id BUG-001
  *
- *   node bug-report.js --maintenance --title "제목" [--type config|fix|feature|refactor|deploy|hotfix]
+ *   node dist/ts-runtime/bots/reservation/src/bug-report.js --maintenance --title "제목" [--type config|fix|feature|refactor|deploy|hotfix]
  *                                    [--desc "설명"] [--by claude]
  *                                    [--bugs "BUG-001,BUG-002"] [--files "src/a.js,src/b.js"]
  *
- *   node bug-report.js --maint-list  [--limit 10]
+ *   node dist/ts-runtime/bots/reservation/src/bug-report.js --maint-list  [--limit 10]
  */
 
 const fs   = require('fs');

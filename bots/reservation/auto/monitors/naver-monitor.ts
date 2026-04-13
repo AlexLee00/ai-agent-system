@@ -122,7 +122,10 @@ function autoBugReport({
   bugReportCache.add(cacheKey);
 
   const child = spawn('node', [
-    path.join(__dirname, 'bug-report.js'),
+    path.join(
+      __dirname,
+      '../../../../dist/ts-runtime/bots/reservation/src/bug-report.js',
+    ),
     '--new', '--title', title,
     '--desc', desc,
     '--severity', severity,
