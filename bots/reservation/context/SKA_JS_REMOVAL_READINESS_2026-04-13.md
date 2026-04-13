@@ -320,6 +320,26 @@ launchd, shell wrapper, package script, registry, cross-team caller는 이제 re
 - 예약 배치 실행은 이미 `run-audit.sh`, `run-pay-scan.sh`, launchd 템플릿에서
   source wrapper 대신 `dist/ts-runtime/...`를 직접 보도록 정리돼 있었다.
 
+## 8차 삭제 완료
+
+다음 `lib` 유틸 source wrapper 11개도 실제로 제거했다.
+
+- `bots/reservation/lib/args.js`
+- `bots/reservation/lib/cli.js`
+- `bots/reservation/lib/files.js`
+- `bots/reservation/lib/formatting.js`
+- `bots/reservation/lib/mode.js`
+- `bots/reservation/lib/reservation-key.js`
+- `bots/reservation/lib/runtime-config.js`
+- `bots/reservation/lib/status.js`
+- `bots/reservation/lib/study-room-pricing.js`
+- `bots/reservation/lib/utils.js`
+- `bots/reservation/lib/validation.js`
+
+정리 배경:
+- 현재 코드 기준 직접 실행/직접 참조는 대부분 `dist/ts-runtime/...` 또는 `.legacy.js` fallback 레일로 이동한 상태였고,
+  남아 있던 source `.js`는 얇은 dist passthrough wrapper 역할만 하고 있었다.
+
 ## 다음 삭제 후보 메모
 
 `manual/reports/*.js`는 대부분 얇은 source wrapper로 남아 있지만,
