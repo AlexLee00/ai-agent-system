@@ -5,17 +5,17 @@
 ## 1. 현재 상태 진단
 
 - 스카팀 실제 소스는 `bots/reservation` 기준으로 운영된다.
-- 파일 구조는 이미 `3중 패턴`이 깔려 있다.
-  - `.legacy.js` = 실제 운영 원본
-  - `.ts` = 현재는 실구현 본체, `.legacy.js`는 대부분 호환 wrapper
-  - `.js` = `dist/ts-runtime` 우선 + `.legacy.js` 폴백 래퍼
+- 현재 구조는 사실상 `TS 본체 + dist 런타임 + legacy 호환 레일`로 정리됐다.
+  - `.ts` = 실구현 본체
+  - `dist/ts-runtime/**/*.js` = 실제 운영 런타임 엔트리
+  - `.legacy.js` = source fallback / CommonJS 호환 레일
 
 ### 계량 결과
 
 - `.legacy.js`: 134개
 - `.ts`: 133개
-- `.js`: 133개
-- 현재는 대부분 파일이 `TS 본체 + JS 런처 + legacy wrapper` 구조로 정리됨
+- non-dist source `.js`: 0개
+- 현재는 `TS 본체`와 `dist 런타임`이 source of truth이고, non-dist `.js`는 `.legacy.js`만 남아 있음
 
 ### 가장 중요한 발견
 
@@ -45,8 +45,8 @@
 
 ### 핵심 원칙
 
-1. `.legacy.js`는 Phase 3 전까지 유지
-2. 런타임은 계속 `.js wrapper -> dist -> legacy fallback`
+1. `.legacy.js`는 안정화 전까지 유지
+2. 런타임은 `dist/ts-runtime`를 직접 사용하고, `.legacy.js`는 fallback / 호환 레일로만 유지
 3. 한 번에 대량 전환하지 않고, “도메인 묶음” 단위로 전환
 4. 각 묶음마다
    - typecheck
@@ -348,7 +348,8 @@
 - `bots/reservation/**/*.legacy.js` 총 수: 134개
 - 그중 `20줄 이하 wrapper`: 133개
 - `20줄 초과 legacy`: 1개 (`ts-fallback-loader.legacy.js`)
-- 즉 실질적인 큰 legacy 본체는 정리 완료 상태
+- non-dist source `.js`: 0개
+- 즉 source wrapper 제거까지 완료됐고, 실질적인 큰 legacy 본체도 정리 완료 상태
 
 대표 전환 축:
 
