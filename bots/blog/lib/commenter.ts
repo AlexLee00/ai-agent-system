@@ -196,6 +196,16 @@ function isNeighborCommentUiTimeoutError(error) {
   );
 }
 
+function isDirectReplyUiError(error) {
+  const message = String(error?.message || '');
+  return (
+    message.startsWith('reply_button_not_found:')
+    || message === 'reply_editor_not_found'
+    || message.startsWith('reply_submit_not_confirmed:')
+    || /Waiting failed: \d+ms exceeded/.test(message)
+  );
+}
+
 async function processNeighborCommentWithTimeout(candidate, { testMode = false } = {}) {
   const config = getNeighborCommenterConfig();
   return Promise.race([
@@ -2547,17 +2557,30 @@ async function runCommentReply({ testMode = false } = {}) {
       if (result.ok) replied += 1;
       else if (result.skipped) skipped += 1;
     } catch (error) {
-      failed += 1;
-      await updateCommentStatus(comment.id, 'failed', {
-        errorMessage: error.message,
-        meta: { phase: 'post' },
-      });
+      const uiError = isDirectReplyUiError(error);
+      if (uiError) {
+        skipped += 1;
+        await updateCommentStatus(comment.id, 'skipped', {
+          errorMessage: 'reply_ui_unavailable',
+          meta: { phase: 'post', uiError: String(error?.message || '') },
+        });
+      } else {
+        failed += 1;
+        await updateCommentStatus(comment.id, 'failed', {
+          errorMessage: error.message,
+          meta: { phase: 'post' },
+        });
+      }
       await recordCommentAction('reply', {
         targetBlog: await resolveBlogId(),
         targetPostUrl: comment.post_url,
         commentText: comment.comment_text,
         success: false,
-        meta: { commentId: comment.id, error: error.message },
+        meta: {
+          commentId: comment.id,
+          error: error.message,
+          terminalStatus: uiError ? 'skipped' : 'failed',
+        },
       }).catch(() => {});
     }
   }
