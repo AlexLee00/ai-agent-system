@@ -2,15 +2,15 @@
 'use strict';
 
 /**
- * test-kiosk-block-key-v2.js — kiosk_blocks v2 키 재예약 충돌 회귀 테스트
+ * test-kiosk-block-key-v2.ts — kiosk_blocks v2 키 재예약 충돌 회귀 테스트
  *
  * 목적:
  *   - 같은 phone/date/start 이지만 end가 다른 두 예약이 서로 다른 row로 저장되는지 확인
  *   - 테스트는 트랜잭션 안에서 실행하고 마지막에 rollback 한다 (운영 DB 비파괴)
  *
  * 사용법:
- *   node bots/reservation/scripts/test-kiosk-block-key-v2.js
- *   node bots/reservation/scripts/test-kiosk-block-key-v2.js --date=2026-04-15 --room=A1
+ *   node dist/ts-runtime/bots/reservation/scripts/test-kiosk-block-key-v2.js
+ *   node dist/ts-runtime/bots/reservation/scripts/test-kiosk-block-key-v2.js --date=2026-04-15 --room=A1
  */
 
 const pgPool = require('../../../packages/core/lib/pg-pool');

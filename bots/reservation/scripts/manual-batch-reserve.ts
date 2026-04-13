@@ -7,7 +7,7 @@
  *   - 슬롯 사용 중이면 A1→A2→B 순으로 자동 폴백
  * 2단계: pickko-kiosk-monitor.js --block-slot → 네이버 예약불가 처리
  *
- * 실행: node bots/reservation/scripts/manual-batch-reserve.js
+ * 실행: node dist/ts-runtime/bots/reservation/scripts/manual-batch-reserve.js
  */
 
 const { spawn } = require('child_process');

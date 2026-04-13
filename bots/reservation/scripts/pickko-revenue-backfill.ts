@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * scripts/pickko-revenue-backfill.js — 픽코 매출 이력 DB 일괄 채우기
+ * scripts/pickko-revenue-backfill.ts — 픽코 매출 이력 DB 일괄 채우기
  *
  * 픽코 매출통계 페이지에서 월별 → 일별 상세를 파싱해 daily_summary 테이블에 저장.
  * 기존 레코드는 ON CONFLICT UPDATE (confirmed 상태 유지).
@@ -16,9 +16,9 @@
  *   컬럼: date, day_of_week, is_weekend, study_cafe, room_a1, room_a2, room_b, study_room_total, total
  *
  * 사용법:
- *   PICKKO_HEADLESS=1 node scripts/pickko-revenue-backfill.js
- *   PICKKO_HEADLESS=1 node scripts/pickko-revenue-backfill.js --from=2025-10 --to=2026-02
- *   PICKKO_HEADLESS=1 node scripts/pickko-revenue-backfill.js --dry-run
+ *   PICKKO_HEADLESS=1 node dist/ts-runtime/bots/reservation/scripts/pickko-revenue-backfill.js
+ *   PICKKO_HEADLESS=1 node dist/ts-runtime/bots/reservation/scripts/pickko-revenue-backfill.js --from=2025-10 --to=2026-02
+ *   PICKKO_HEADLESS=1 node dist/ts-runtime/bots/reservation/scripts/pickko-revenue-backfill.js --dry-run
  *
  * 기본값: --from=2025-10, --to=현재월(KST)
  */
