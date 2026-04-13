@@ -1924,7 +1924,7 @@ async function runPickkoAlertsResolveDirect() {
   // DEPRECATED:
   // OpenClaw thread context 기반 자연어 해제가 주 경로가 되면 제거 대상이다.
   const root = path.join(__dirname, '..', '..', '..');
-  const script = path.join(root, 'bots', 'reservation', 'manual', 'reports', 'pickko-alerts-resolve.js');
+  const script = path.join(root, 'dist', 'ts-runtime', 'bots', 'reservation', 'manual', 'reports', 'pickko-alerts-resolve.js');
   const result = await runNodeScriptJson(script, [], 60_000);
   if (!result) {
     return '⚠️ 미해결 오류 알림 해결 처리 실행에 실패했습니다. 잠시 후 다시 시도해 주세요.';

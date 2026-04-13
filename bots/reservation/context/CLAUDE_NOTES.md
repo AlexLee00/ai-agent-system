@@ -166,8 +166,8 @@ function log(msg) {
 | 버그 발견 시 | `node src/bug-report.js --new` 로 등록 후 클로드에게 보고 |
 | "버그리포트에 올려줘" | 사장님이 이 말을 하면 → `bug-report.js --new`로 즉시 등록 (뭔지 되묻지 말 것) |
 | "의견/이슈/메모 버그리포트에" | bug-report.js = 스카·클로드 공용 이슈 추적 도구. 바로 등록할 것 |
-| **"매출 컨펌" / "매출 확정"** | `node manual/reports/pickko-revenue-confirm.js` 실행 → 가장 최근 미컨펌 daily_summary를 room_revenue에 누적 확정 + 텔레그램 결과 발송 |
-| **매출 확정 질문에 긍정 답변** | 스카가 "오늘 매출을 확정하시겠습니까?" 또는 "지금 확정하시겠습니까?" 라고 물은 직후 사장님이 "네", "응", "확정", "맞아", "ㅇㅇ", "그래" 등 긍정으로 답하면 → `node manual/reports/pickko-revenue-confirm.js` 실행 |
+| **"매출 컨펌" / "매출 확정"** | `node dist/ts-runtime/bots/reservation/manual/reports/pickko-revenue-confirm.js` 실행 → 가장 최근 미컨펌 daily_summary를 room_revenue에 누적 확정 + 텔레그램 결과 발송 |
+| **매출 확정 질문에 긍정 답변** | 스카가 "오늘 매출을 확정하시겠습니까?" 또는 "지금 확정하시겠습니까?" 라고 물은 직후 사장님이 "네", "응", "확정", "맞아", "ㅇㅇ", "그래" 등 긍정으로 답하면 → `node dist/ts-runtime/bots/reservation/manual/reports/pickko-revenue-confirm.js` 실행 |
 | **매출 확정 질문에 부정 답변** | "아니", "나중에", "ㄴㄴ" 등 부정이면 → "알겠습니다. 나중에 '매출 컨펌'이라고 말씀해주시면 처리하겠습니다." 라고 안내만 하고 종료 |
 | **⚠️ 매출 확정 관련 절대 금지** | 매출 확정 상황에서 "어떤 도움을 드릴까요?", "확인 부탁드립니다", "어떻게 하면 될까요?" 같은 **메타 질문 절대 금지**. 로그에서 `오늘 확정=0` 또는 미컨펌 상태를 발견해도 **스카가 먼저 메시지 보내지 말 것** — pickko-daily-summary가 이미 확정 질문을 보냈으므로 사장님 답변을 기다릴 것. 만약 사장님이 먼저 확정 관련 메시지를 보내면 즉시 실행하거나 "예/아니오"로만 답하게 유도할 것. |
 | **매출 보고 시 일반이용 포함** | 매출 보고·합계 계산 시 **스터디룸(A1/A2/B룸) + 일반이용(스터디카페 키오스크) 합산**해서 보고. 일반이용이 0원이면 생략 가능 |
@@ -181,7 +181,7 @@ function log(msg) {
 
 ### 알림 조회 트리거
 
-사장님 말에 아래 키워드가 포함되면 **답변 전에 반드시** `pickko-alerts-query.js`를 먼저 실행해 컨텍스트를 파악한다:
+사장님 말에 아래 키워드가 포함되면 **답변 전에 반드시** `dist/ts-runtime/.../pickko-alerts-query.js`를 먼저 실행해 컨텍스트를 파악한다:
 - "방금 알림", "알림 왔는데", "알림 뭐야", "알림 봤어"
 - "픽코 실패", "픽코 실패 알림", "등록 실패", "취소 실패"
 - "최근 알림", "알림 현황", "어떤 알림"
@@ -189,16 +189,16 @@ function log(msg) {
 
 ```bash
 # 기본 (최근 24시간 전체)
-node manual/reports/pickko-alerts-query.js
+node dist/ts-runtime/bots/reservation/manual/reports/pickko-alerts-query.js
 
 # 실패/에러만
-node manual/reports/pickko-alerts-query.js --type=error
+node dist/ts-runtime/bots/reservation/manual/reports/pickko-alerts-query.js --type=error
 
 # 미해결만
-node manual/reports/pickko-alerts-query.js --unresolved
+node dist/ts-runtime/bots/reservation/manual/reports/pickko-alerts-query.js --unresolved
 
 # 최근 48시간
-node manual/reports/pickko-alerts-query.js --hours=48
+node dist/ts-runtime/bots/reservation/manual/reports/pickko-alerts-query.js --hours=48
 ```
 
 **중요**: 조회 결과를 읽고 상황을 파악한 뒤 사장님께 요약해서 답변. DB 조회했다는 사실은 텔레그램에 보고 금지.
@@ -207,17 +207,17 @@ node manual/reports/pickko-alerts-query.js --hours=48
 
 > 앤디가 "미해결 오류 알림" 알람을 보낸 후, 사장님이 수동으로 처리한 경우 사용
 
-사장님이 다음 말을 하면 → 즉시 `pickko-alerts-resolve.js` 실행해서 미해결 알림 해결 처리:
+사장님이 다음 말을 하면 → 즉시 `dist/ts-runtime/.../pickko-alerts-resolve.js` 실행해서 미해결 알림 해결 처리:
 - "처리완료", "처리했어", "처리 완료", "처리됨"
 - "해결했어", "해결됐어", "해결 완료"
 - "수동으로 처리했어", "직접 처리했어"
 
 ```bash
 # 전체 미해결 오류 알림 해결 (처리완료 수신 시 기본 실행)
-node manual/reports/pickko-alerts-resolve.js
+node dist/ts-runtime/bots/reservation/manual/reports/pickko-alerts-resolve.js
 
 # 특정 예약만 해결 (선택적)
-node manual/reports/pickko-alerts-resolve.js --phone=01012345678 --date=2026-03-06 --start=19:00
+node dist/ts-runtime/bots/reservation/manual/reports/pickko-alerts-resolve.js --phone=01012345678 --date=2026-03-06 --start=19:00
 ```
 
 실행 후 결과 예시:
@@ -228,9 +228,9 @@ node manual/reports/pickko-alerts-resolve.js --phone=01012345678 --date=2026-03-
 
 | 사장님 말 (예시) | 실행 명령 |
 |-----------------|-----------|
-| "최근 알림", "알림 현황" | `pickko-alerts-query.js` |
-| "에러 알림", "실패 알림" | `pickko-alerts-query.js --type=error` |
-| "미해결 알림" | `pickko-alerts-query.js --unresolved` |
+| "최근 알림", "알림 현황" | `dist/ts-runtime/.../pickko-alerts-query.js` |
+| "에러 알림", "실패 알림" | `dist/ts-runtime/.../pickko-alerts-query.js --type=error` |
+| "미해결 알림" | `dist/ts-runtime/.../pickko-alerts-query.js --unresolved` |
 
 ---
 
@@ -306,23 +306,23 @@ node manual/reports/pickko-alerts-resolve.js --phone=01012345678 --date=2026-03-
 
 | 사장님 말 (예시) | 실행 명령 |
 |-----------------|-----------|
-| "오늘 매출 얼마야?", "오늘 얼마야" | `pickko-stats-cmd.js --date=today` |
-| "어제 매출" | `pickko-stats-cmd.js --date=yesterday` |
-| "3월 5일 매출" | `pickko-stats-cmd.js --date=2026-03-05` |
-| "이번 주 매출", "이번주 총 얼마야" | `pickko-stats-cmd.js --period=week` |
-| "이번 달 매출", "이번달 총 얼마야" | `pickko-stats-cmd.js --period=month` |
-| "2월 매출 알려줘" | `pickko-stats-cmd.js --month=2026-02` |
-| "지금까지 누적 매출", "전체 매출" | `pickko-stats-cmd.js --cumulative` |
-| "매출 확정해줘", "매출 컨펌" | `pickko-revenue-confirm.js` |
+| "오늘 매출 얼마야?", "오늘 얼마야" | `dist/ts-runtime/.../pickko-stats-cmd.js --date=today` |
+| "어제 매출" | `dist/ts-runtime/.../pickko-stats-cmd.js --date=yesterday` |
+| "3월 5일 매출" | `dist/ts-runtime/.../pickko-stats-cmd.js --date=2026-03-05` |
+| "이번 주 매출", "이번주 총 얼마야" | `dist/ts-runtime/.../pickko-stats-cmd.js --period=week` |
+| "이번 달 매출", "이번달 총 얼마야" | `dist/ts-runtime/.../pickko-stats-cmd.js --period=month` |
+| "2월 매출 알려줘" | `dist/ts-runtime/.../pickko-stats-cmd.js --month=2026-02` |
+| "지금까지 누적 매출", "전체 매출" | `dist/ts-runtime/.../pickko-stats-cmd.js --cumulative` |
+| "매출 확정해줘", "매출 컨펌" | `dist/ts-runtime/.../pickko-revenue-confirm.js` |
 
 ### 가동률 리포트
 
 | 사장님 말 (예시) | 실행 명령 |
 |-----------------|-----------|
-| "가동률 알려줘", "이번 달 가동률" | `occupancy-report.js --period=month` |
-| "이번 주 가동률" | `occupancy-report.js --period=week` |
-| "2월 가동률", "2월달 룸 가동률" | `occupancy-report.js --month=2026-02` |
-| "최근 가동률", "전체 가동률" | `occupancy-report.js` |
+| "가동률 알려줘", "이번 달 가동률" | `dist/ts-runtime/.../occupancy-report.js --period=month` |
+| "이번 주 가동률" | `dist/ts-runtime/.../occupancy-report.js --period=week` |
+| "2월 가동률", "2월달 룸 가동률" | `dist/ts-runtime/.../occupancy-report.js --month=2026-02` |
+| "최근 가동률", "전체 가동률" | `dist/ts-runtime/.../occupancy-report.js` |
 
 - 룸별 가동률 (A1/A2/B 각각) + 시간대별 피크 분석
 - stdout JSON `{ success, message }` → 텔레그램 전송
@@ -511,10 +511,10 @@ SCRIPT=/Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservati
 
 ## 📊 자연어 매출 통계 명령
 
-사장님이 매출을 물어보면 `pickko-stats-cmd.js`를 실행하고 `message` 필드를 텔레그램으로 전송한다.
+사장님이 매출을 물어보면 `dist/ts-runtime/.../pickko-stats-cmd.js`를 실행하고 `message` 필드를 텔레그램으로 전송한다.
 
 ```bash
-node ~/projects/ai-agent-system/bots/reservation/manual/reports/pickko-stats-cmd.js [옵션]
+node ~/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/reports/pickko-stats-cmd.js [옵션]
 ```
 
 | 사장님 말 | 실행 옵션 |
@@ -536,16 +536,16 @@ node ~/projects/ai-agent-system/bots/reservation/manual/reports/pickko-stats-cmd
 
 ```
 사장님: "오늘 매출 얼마야?"
-→ node .../pickko-stats-cmd.js --date=today
+→ node .../dist/ts-runtime/.../pickko-stats-cmd.js --date=today
 
 사장님: "이번달 총 얼마야?"
-→ node .../pickko-stats-cmd.js --period=month
+→ node .../dist/ts-runtime/.../pickko-stats-cmd.js --period=month
 
 사장님: "2월 매출 알려줘"
-→ node .../pickko-stats-cmd.js --month=2026-02
+→ node .../dist/ts-runtime/.../pickko-stats-cmd.js --month=2026-02
 
 사장님: "지금까지 누적 매출 알려줘"
-→ node .../pickko-stats-cmd.js --cumulative
+→ node .../dist/ts-runtime/.../pickko-stats-cmd.js --cumulative
 ```
 
 > **주의**: 매출 데이터는 `pickko-daily-summary.js`가 00:00/09:00에 집계. 당일 실시간 매출이 필요하면 "데이터 집계 전"임을 안내 후 `pickko-daily-summary.js --midnight` 실행 제안
