@@ -2,6 +2,10 @@
 
 작성일: 2026-04-12
 
+관련 현재 문서:
+- `context/SKA_JS_REMOVAL_READINESS_2026-04-13.md`
+- `context/SKA_LEGACY_RUNTIME_POLICY_2026-04-13.md`
+
 ## 1. 현재 상태 진단
 
 - 스카팀 실제 소스는 `bots/reservation` 기준으로 운영된다.
@@ -644,8 +648,8 @@ manual/admin 잔여 shim:
 - 수동 처리/CLI 계열 정리: 1~2일
 - 최종 legacy 축소와 진입점 정리: 1일+
 
-즉 “스카팀을 루나/블로그팀과 유사한 운영 구조로 맞추는 일”은 이미 중반을 넘겼고,
-지금은 helper 전환보다 “얇은 legacy orchestrator를 TS 본체로 승격”하는 단계가 중심이다.
+즉 이 계획 문서는 “전환 진행 중” 기록을 담고 있지만,
+현재 상태는 이미 helper 전환을 넘어서 source wrapper 제거와 dist runtime 직결까지 마감된 상태다.
 
 ### 총 추정
 
@@ -678,16 +682,21 @@ manual/admin 잔여 shim:
 - 수동 처리 알림
 - 오늘 예약 조회
 
-## 10. 바로 다음 액션
+## 10. 현재 마감 상태
 
-추천 시작점:
+완료:
 
-1. `pickko-kiosk-monitor`의 `verifyBlockStateInFreshPage` / `verifySlotOnly` 추출
-2. `naver-monitor`의 `monitorBookings` TS 본체 승격 범위 결정
-3. 그다음 모니터 둘의 legacy 본체를 300줄 이하 wrapper 수준으로 축소
+1. `.ts` source of truth 전환
+2. `@ts-nocheck` 제거
+3. source wrapper `.js` 제거
+4. `dist/ts-runtime` 운영 엔트리 정리
+5. live launchd 저위험/배치 재적용
+6. 현재 운영 문서와 context 문서 정리
 
-이유:
+현재 남은 과제:
 
-- 지금까지 쌓은 service/helper 자산을 가장 잘 활용할 수 있음
-- 운영 경로를 끊지 않으면서 “실질 TS 전환율”을 빠르게 끌어올릴 수 있음
-- 이제는 작은 helper보다 본체 승격이 전환 체감에 더 크게 기여함
+1. `.legacy.js` 유지 범위 정책 준수
+2. 역사 문서의 과거 `.js` 표기를 필요 시 점진 정리
+3. 마지막에 `ts-fallback-loader.legacy.js` 포함 legacy 레일 재평가
+
+즉 다음 액션은 “TS 전환 구현”이 아니라 “legacy 호환 정책 유지 + 기록 문서 정리”에 가깝다.
