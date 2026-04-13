@@ -21,6 +21,7 @@ defmodule TeamJay.Application do
       TeamJay.Blog.Feedback,
       TeamJay.Blog.SocialRelay,
       TeamJay.Blog.InstagramAgent,
+      TeamJay.Blog.NaverBlogAgent,
       TeamJay.EventLake,
       TeamJay.MarketRegime,
       TeamJay.Teams.SkaSupervisor,
