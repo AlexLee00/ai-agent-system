@@ -32,6 +32,7 @@ TS 본문이 source of truth이고, `.js` / `.legacy.js`는 런타임 호환 레
 
 관련 정책:
 - `context/SKA_LEGACY_RUNTIME_POLICY_2026-04-13.md`
+- `context/SKA_LEGACY_RETIREMENT_CHECKLIST_2026-04-13.md`
 
 ```
 reservation/

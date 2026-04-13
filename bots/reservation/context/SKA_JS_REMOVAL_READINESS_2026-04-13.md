@@ -12,6 +12,7 @@
 
 관련 정책:
 - `context/SKA_LEGACY_RUNTIME_POLICY_2026-04-13.md`
+- `context/SKA_LEGACY_RETIREMENT_CHECKLIST_2026-04-13.md`
 
 ## 현재 상태
 
@@ -62,37 +63,12 @@ launchd, shell wrapper, package script, registry, cross-team caller는 이제 re
 문서와 checklist의 `.js` 표기는 여전히 남아 있다.
 이는 삭제 blocker는 아니지만, 현재 운영 구조를 오해하게 만들 수 있어 후속 정리 가치가 있다.
 
-## 추천 삭제 순서
+## 다음 단계
 
-1. **cross-team import 제거**
-   - `bots/blog/lib/blo.ts` -> `dist` 또는 공식 런타임 엔트리로 교체
-   - `bots/orchestrator/src/router.ts` -> `dist` 또는 새 런타임 엔트리로 교체
-   - `bots/registry.json` 엔트리 정책 정리
+source wrapper `.js` 제거는 완료됐다.
+앞으로 실제 삭제 프로젝트가 남아 있다면 대상은 `.legacy.js`이며, 아래 체크리스트 기준으로만 진행한다.
 
-2. **shell wrapper 제거**
-   - `run-verify.sh`
-   - `pickko-register.ts`
-   - `pickko-reregister-batch.ts`
-   - `pickko-cancel-cmd.ts`
-
-3. **launchd plist 전환**
-   - 먼저 저위험 스크립트부터
-     - `health-check`
-     - `dashboard-server`
-     - `backup-db`
-     - `log-rotate`
-   - 그 다음 예약 배치/모니터
-     - `pickko-daily-summary`
-     - `pickko-daily-audit`
-     - `pickko-pay-scan`
-     - `pickko-verify`
-     - `naver-monitor`
-     - `pickko-kiosk-monitor`
-
-4. **마지막에 wrapper 제거**
-   - `.js`
-   - `.legacy.js`
-   - 단, `ts-fallback-loader.legacy.js`는 마지막 호환 레일까지 끝난 뒤 판단
+- `context/SKA_LEGACY_RETIREMENT_CHECKLIST_2026-04-13.md`
 
 ## live LaunchAgents 동기화 완료
 
