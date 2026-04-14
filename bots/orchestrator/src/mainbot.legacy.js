@@ -197,11 +197,13 @@ async function runCleanup() {
           (to_bot <> 'claude' AND created_at < to_char(now() - INTERVAL '5 minutes', 'YYYY-MM-DD HH24:MI:SS'))
         )
     `);
-    // 1시간 초과 batched mainbot_queue → sent 처리
-    await pgPool.run('claude', `
-      UPDATE mainbot_queue SET status='sent'
-      WHERE status='batched' AND processed_at < to_char(now() - INTERVAL '1 hour', 'YYYY-MM-DD HH24:MI:SS')
-    `);
+    if (LEGACY_QUEUE_CONSUMER_ENABLED) {
+      // 1시간 초과 batched mainbot_queue → sent 처리
+      await pgPool.run('claude', `
+        UPDATE mainbot_queue SET status='sent'
+        WHERE status='batched' AND processed_at < to_char(now() - INTERVAL '1 hour', 'YYYY-MM-DD HH24:MI:SS')
+      `);
+    }
   } catch {}
 }
 
