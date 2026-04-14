@@ -192,7 +192,6 @@ async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeni
     buildScreeningLine(screeningSummary),
     `다음 액션: ${(feedback.nextActions || []).join(' / ') || '없음'}`,
   ].filter(Boolean).join('\n');
-  await rag.initSchema();
   await rag.store('trades', content, {
     type: 'daily_trade_feedback',
     date: dateKst,

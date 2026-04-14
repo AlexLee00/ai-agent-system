@@ -148,7 +148,6 @@ async function analyzeCorrelation() {
 
   // ── 6. RAG 저장 ──────────────────────────────────────────────────
   try {
-    await rag.initSchema();
     const topPattern = sorted.length > 0 ? sorted[0] : null;
     const ragSummary =
       `[신호 상관관계 분석 ${kst.today()}] ` +
@@ -160,6 +159,7 @@ async function analyzeCorrelation() {
       best_pattern:     topPattern?.pattern    || null,
       best_expectancy:  topPattern ? parseFloat(topPattern.expectancy) : null,
       days:             DAYS,
+      event_type:       'signal_correlation_rag',
     }, 'luna');
     console.log('✅ [RAG] 상관관계 분석 결과 저장');
   } catch (e) {
