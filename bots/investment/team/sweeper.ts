@@ -20,9 +20,11 @@ import { initHubSecrets, loadSecrets } from '../shared/secrets.ts';
 import { createRequire } from 'module';
 
 const _require = createRequire(import.meta.url);
+const { createAgentMemory } = _require('../../../packages/core/lib/agent-memory');
 
 const DUST_USDT = 3;
 const WATCH_USDT = 10;
+const sweeperMemory = createAgentMemory({ agentId: 'investment.sweeper', team: 'investment' });
 
 function getExchange() {
   const secrets = loadSecrets();
@@ -80,6 +82,16 @@ async function fetchRecentBrokerExit(ex, symbol, amountHint = 0) {
   } catch {
     return null;
   }
+}
+
+function buildSweeperMemoryQuery(summary = {}) {
+  return [
+    'investment sweeper wallet integrity',
+    summary.mismatch_count > 0 ? 'has-mismatch' : 'no-mismatch',
+    summary.significant_wallet_only_count > 0 ? 'has-significant-wallet-only' : 'no-significant-wallet-only',
+    `wallet-only-${summary.wallet_only_count || 0}`,
+    `mismatch-${summary.mismatch_count || 0}`,
+  ].filter(Boolean).join(' ');
 }
 
 export async function runSweeper({ telegram = false } = {}) {
@@ -146,6 +158,26 @@ export async function runSweeper({ telegram = false } = {}) {
   };
 
   if (telegram && (significantWalletOnly.length > 0 || mismatches.length > 0)) {
+    const memoryQuery = buildSweeperMemoryQuery(summary);
+    const episodicHint = await sweeperMemory.recallCountHint(memoryQuery, {
+      type: 'episodic',
+      limit: 2,
+      threshold: 0.33,
+      title: '최근 유사 정합성 점검',
+      separator: 'pipe',
+      metadataKey: 'kind',
+      labels: {
+        integrity: '정합성',
+      },
+      order: ['integrity'],
+    }).catch(() => '');
+    const semanticHint = await sweeperMemory.recallHint(`${memoryQuery} consolidated integrity pattern`, {
+      type: 'semantic',
+      limit: 2,
+      threshold: 0.28,
+      title: '최근 통합 패턴',
+      separator: 'newline',
+    }).catch(() => '');
     const lines = [
       '🧹 [sweeper] 루나 지갑 정합성 점검',
       `wallet-only: ${walletOnlyRows.length}종 (중요 ${significantWalletOnly.length}종)`,
@@ -157,16 +189,31 @@ export async function runSweeper({ telegram = false } = {}) {
     if (mismatches[0]) {
       lines.push(`주요 불일치: ${mismatches[0].symbol} ${mismatches[0].tracked_amount} -> ${mismatches[0].wallet_amount}`);
     }
+    const message = `${lines.join('\n')}${episodicHint}${semanticHint}`;
     await publishAlert({
       from_bot: 'sweeper',
       event_type: 'wallet_integrity_report',
       alert_level: mismatches.length > 0 ? 2 : 1,
-      message: lines.join('\n'),
+      message,
       payload: {
         wallet_only_count: walletOnlyRows.length,
         significant_wallet_only_count: significantWalletOnly.length,
         mismatch_count: mismatches.length,
       },
+    }).catch(() => {});
+    await sweeperMemory.remember(message, 'episodic', {
+      importance: mismatches.length > 0 ? 0.76 : 0.68,
+      expiresIn: 1000 * 60 * 60 * 24 * 30,
+      metadata: {
+        kind: 'integrity',
+        walletOnlyCount: walletOnlyRows.length,
+        significantWalletOnlyCount: significantWalletOnly.length,
+        mismatchCount: mismatches.length,
+      },
+    }).catch(() => {});
+    await sweeperMemory.consolidate({
+      olderThanDays: 14,
+      limit: 10,
     }).catch(() => {});
   }
 
