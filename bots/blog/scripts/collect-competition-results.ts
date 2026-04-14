@@ -5,10 +5,12 @@
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const competitionEngine = require('../../../packages/core/lib/competition-engine');
 const { publishToWebhook } = require('../../../packages/core/lib/reporting-hub');
+const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
 
 const TEAM = 'blog';
 const COMPETITION_TIMEOUT_HOURS = 24;
 const DEFAULT_REPAIR_DAYS = 14;
+const competitionMemory = createAgentMemory({ agentId: 'blog.competition', team: TEAM });
 
 function _parseArgs(argv = process.argv.slice(2)) {
   const args = new Set(argv);
@@ -40,6 +42,14 @@ function _hoursSince(dateLike) {
   const timestamp = new Date(dateLike).getTime();
   if (!Number.isFinite(timestamp) || timestamp <= 0) return 0;
   return (Date.now() - timestamp) / (1000 * 60 * 60);
+}
+
+function _buildCompetitionMemoryQuery(comp, outcome) {
+  return [
+    'blog competition completed',
+    String(comp?.topic || '').trim(),
+    outcome?.result?.winner === 'a' ? 'winner-a' : 'winner-b',
+  ].filter(Boolean).join(' ');
 }
 
 async function _fetchRunningCompetitions() {
@@ -458,21 +468,59 @@ async function main() {
     completed += 1;
     console.log(`[competition-collector] #${comp.id} 완료 — winner=${outcome.result.winner} diff=${outcome.result.qualityDiff}`);
 
+    const memoryQuery = _buildCompetitionMemoryQuery(comp, outcome);
+    const episodicHint = await competitionMemory.recallCountHint(memoryQuery, {
+      type: 'episodic',
+      limit: 2,
+      threshold: 0.33,
+      title: '최근 유사 경쟁',
+      separator: 'pipe',
+      metadataKey: 'kind',
+      labels: {
+        completed: '완료',
+      },
+      order: ['completed'],
+    }).catch(() => '');
+    const semanticHint = await competitionMemory.recallHint(`${memoryQuery} consolidated competition pattern`, {
+      type: 'semantic',
+      limit: 2,
+      threshold: 0.28,
+      title: '최근 통합 패턴',
+      separator: 'newline',
+    }).catch(() => '');
+    const message =
+      `🏆 경쟁 #${comp.id} 완료\n` +
+      `📋 ${comp.topic}\n` +
+      `🥇 승자: ${outcome.result.winner === 'a' ? 'A그룹' : 'B그룹'}\n` +
+      `📊 차이: ${outcome.result.qualityDiff}` +
+      episodicHint +
+      semanticHint;
+
     await publishToWebhook({
       event: {
         from_bot: 'competition-collector',
         team: TEAM,
         event_type: 'blog_competition_completed',
         alert_level: 2,
-        message:
-          `🏆 경쟁 #${comp.id} 완료\n` +
-          `📋 ${comp.topic}\n` +
-          `🥇 승자: ${outcome.result.winner === 'a' ? 'A그룹' : 'B그룹'}\n` +
-          `📊 차이: ${outcome.result.qualityDiff}`,
+        message,
       },
     }).catch((error) => {
       console.warn(`[competition-collector] 알림 실패 #${comp.id}: ${error.message}`);
     });
+    await competitionMemory.remember(message, 'episodic', {
+      importance: 0.68,
+      expiresIn: 1000 * 60 * 60 * 24 * 30,
+      metadata: {
+        kind: 'completed',
+        topic: String(comp.topic || '').trim(),
+        winner: outcome.result.winner,
+        qualityDiff: outcome.result.qualityDiff,
+      },
+    }).catch(() => {});
+    await competitionMemory.consolidate({
+      olderThanDays: 14,
+      limit: 10,
+    }).catch(() => {});
   }
 
   if (options.json) {
