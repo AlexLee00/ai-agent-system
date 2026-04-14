@@ -38,6 +38,7 @@ These still read from `mainbot_queue` as part of orchestrator behavior.
 
 - [mainbot.legacy.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/src/mainbot.legacy.js)
   - queue polling / processing loop
+  - now supports `MAINBOT_QUEUE_CONSUMER_ENABLED=false` for staged disable
 - [router.ts](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/src/router.ts)
   - `queue` command summary
   - `mute_last_alert`
@@ -110,4 +111,5 @@ The next safe implementation step is:
 1. observe `/tmp/mainbot-queue-usage.jsonl` for remaining runtime writers
 2. finish router `/queue` + mute/unmute migration to `recent-alerts.json`
 3. verify snapshot-based dashboard and operator flows in live runtime
-4. then evaluate whether legacy consumer loop still needs live queue visibility
+4. trial `MAINBOT_QUEUE_CONSUMER_ENABLED=false` in live runtime after telemetry stays quiet
+5. then evaluate whether legacy consumer loop still needs live queue visibility
