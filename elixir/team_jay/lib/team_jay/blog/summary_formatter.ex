@@ -206,10 +206,11 @@ defmodule TeamJay.Blog.SummaryFormatter do
           base = Map.get(value, :preferred_category_count, 0)
           matched = Map.get(value, :preferred_category_pattern_count, 0)
           status = Map.get(value, :status)
+          preview_overlap = Map.get(value, :latest_preview_overlap, 0)
 
           cond do
-            is_binary(status) and status != "" -> ",adopt=#{status}:#{matched}/#{base}"
-            is_atom(status) -> ",adopt=#{status}:#{matched}/#{base}"
+            is_binary(status) and status != "" -> ",adopt=#{status}:#{matched}/#{base}@#{Float.round((preview_overlap || 0) * 1.0, 2)}"
+            is_atom(status) -> ",adopt=#{status}:#{matched}/#{base}@#{Float.round((preview_overlap || 0) * 1.0, 2)}"
             true -> ""
           end
 
