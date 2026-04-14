@@ -25,6 +25,7 @@ const { buildAIBriefingSectionOrder, buildAIBriefingChecklist } = require(path.j
 const { getBlogGenerationRuntimeConfig, getBlogLLMSelectorOverrides } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/runtime-config.ts'));
 const { calculateSectionChars, buildCharCountInstruction } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/section-ratio.ts'));
 const { isExcludedReferenceTitle, isExcludedReferenceFilename } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/reference-exclusions.ts'));
+const { detectTitlePattern } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/performance-diagnostician.ts'));
 
 const generationRuntimeConfig = getBlogGenerationRuntimeConfig();
 const BLOG_WRITER_TIMEOUT_MS = Number(generationRuntimeConfig.writerTimeoutMs || 90000);
@@ -417,6 +418,54 @@ function _assertDistinctGeneralTitle(category, title) {
   throw new Error(
     `최근 일반 글 제목과 너무 유사함: ${matched.dateString} "${matched.title}" (similarity=${matched.similarity.toFixed(2)})`
   );
+}
+
+function _calculateTitleWordOverlap(a = '', b = '') {
+  const first = new Set(_normalizeComparableTitle(a).split(' ').filter((token) => token.length >= 2));
+  const second = new Set(_normalizeComparableTitle(b).split(' ').filter((token) => token.length >= 2));
+  if (!first.size || !second.size) return 0;
+  let matched = 0;
+  for (const token of first) {
+    if (second.has(token)) matched += 1;
+  }
+  return matched / Math.max(first.size, second.size);
+}
+
+function _normalizeCategoryTitleLine(category, title) {
+  const cleanTitle = String(title || '').replace(/^\[[^\]]+\]\s*/, '').trim();
+  return cleanTitle ? `[${category}] ${cleanTitle}` : `[${category}]`;
+}
+
+function _enforceGeneralTitleAlignment(content, category, researchData = {}) {
+  const text = String(content || '').trim();
+  if (!text) return text;
+
+  const lines = text.split('\n');
+  const firstIndex = lines.findIndex((line) => line.trim().length > 0);
+  if (firstIndex < 0) return text;
+
+  const currentTitle = lines[firstIndex].trim();
+  const candidateTitle = String(researchData.topic_title_candidate || '').trim();
+  const expectedPattern = String(researchData.strategy_preferred_pattern || '').trim();
+  if (!candidateTitle) {
+    if (!currentTitle.startsWith(`[${category}]`)) {
+      lines[firstIndex] = _normalizeCategoryTitleLine(category, currentTitle);
+      return lines.join('\n').trim();
+    }
+    return text;
+  }
+
+  const currentPattern = detectTitlePattern(currentTitle.replace(/^\[[^\]]+\]\s*/, '').trim());
+  const overlap = _calculateTitleWordOverlap(currentTitle, candidateTitle);
+  const shouldAlign =
+    overlap < 0.35 ||
+    (expectedPattern && currentPattern !== expectedPattern);
+
+  lines[firstIndex] = shouldAlign
+    ? _normalizeCategoryTitleLine(category, candidateTitle)
+    : _normalizeCategoryTitleLine(category, currentTitle);
+
+  return lines.join('\n').trim();
 }
 
 function _defaultGeneralSnippet(title, category) {
@@ -1267,6 +1316,7 @@ ${_buildVariationBlock(sectionVariation)}
     relatedPosts,
     minChars: MIN_CHARS_GENERAL,
   });
+  content = _enforceGeneralTitleAlignment(content, category, researchData);
 
   if (content.length < MIN_CHARS_GENERAL) {
     console.log(`[젬스] repair 이후에도 글자수 미달: ${content.length}자`);
@@ -1400,6 +1450,7 @@ ${content}
   }
 
   repaired = repaired.replace(/_THE_END_/g, '').trim();
+  repaired = _enforceGeneralTitleAlignment(repaired, category, researchData);
   const firstLine = repaired.split('\n').find(line => line.trim().length > 0) || '';
   const title = firstLine.slice(0, 80).trim();
   _assertDistinctGeneralTitle(category, title);
@@ -1579,7 +1630,7 @@ ${linkingBlock}
       console.log(`[젬스청크] ${id} (${index + 1}/${chunks.length}): ${charCount}자`),
   });
 
-  const content   = result.content;
+  const content   = _enforceGeneralTitleAlignment(result.content, category, researchData);
   const firstLine = content.split('\n').find(l => l.trim().length > 0) || '';
   const title     = firstLine.slice(0, 80).trim();
   _assertDistinctGeneralTitle(category, title);
