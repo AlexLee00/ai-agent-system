@@ -6,6 +6,17 @@ const { checkHttp, checkWebhookRegistration } = require('../../../packages/core/
 const { resolveProductionWebhookUrl } = require('../../../packages/core/lib/n8n-webhook-registry');
 const { loadConfig } = require('../src/index');
 const { resolveVideoN8nToken } = require('../lib/video-n8n-config');
+const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
+
+const videoPathMemory = createAgentMemory({ agentId: 'video.n8n-path', team: 'video' });
+
+function buildVideoPathMemoryQuery(kind, extras = []) {
+  return [
+    'video n8n path',
+    kind,
+    ...extras,
+  ].filter(Boolean).join(' ');
+}
 
 async function main() {
   const config = loadConfig();
@@ -42,20 +53,74 @@ async function main() {
     timeoutMs: 5000,
     headers: token ? { 'X-Video-Token': token } : {},
   });
+  const n8nHealthy = healthOk;
+  const webhookRegistered = webhook.registered;
+  const kind = n8nHealthy && webhookRegistered ? 'healthy' : 'issue';
+  const memoryQuery = buildVideoPathMemoryQuery(kind, [
+    n8nHealthy ? 'n8n-ok' : 'n8n-fail',
+    webhookRegistered ? 'webhook-ok' : 'webhook-missing',
+  ]);
+  const episodicHint = await videoPathMemory.recallCountHint(memoryQuery, {
+    type: 'episodic',
+    limit: 2,
+    threshold: 0.33,
+    title: '최근 유사 진단',
+    separator: 'pipe',
+    metadataKey: 'kind',
+    labels: {
+      healthy: '정상',
+      issue: '이슈',
+    },
+    order: ['issue', 'healthy'],
+  }).catch(() => '');
+  const semanticHint = await videoPathMemory.recallHint(`${memoryQuery} consolidated video path pattern`, {
+    type: 'semantic',
+    limit: 2,
+    threshold: 0.28,
+    title: '최근 통합 패턴',
+    separator: 'newline',
+  }).catch(() => '');
+  const summary = [
+    '비디오 n8n path 진단',
+    `n8n healthy: ${n8nHealthy}`,
+    `webhook registered: ${webhookRegistered}`,
+    `webhook status: ${webhook.status}`,
+    resolveError ? `registry resolve error: ${resolveError}` : null,
+    webhook.reason ? `reason: ${webhook.reason}` : null,
+  ].filter(Boolean).join('\n');
 
   console.log(JSON.stringify({
     healthUrl,
     webhookUrl,
     resolvedWebhookUrl,
     defaultWebhookUrl,
-    n8nHealthy: healthOk,
-    webhookRegistered: webhook.registered,
+    n8nHealthy,
+    webhookRegistered,
     webhookStatus: webhook.status,
     webhookReason: webhook.reason,
     webhookHealthy: webhook.healthy,
     webhookError: webhook.error || null,
     registryResolveError: resolveError,
+    memoryHints: {
+      episodicHint,
+      semanticHint,
+    },
   }, null, 2));
+
+  await videoPathMemory.remember(summary, 'episodic', {
+    importance: kind === 'issue' ? 0.74 : 0.58,
+    expiresIn: 1000 * 60 * 60 * 24 * 30,
+    metadata: {
+      kind,
+      n8nHealthy,
+      webhookRegistered,
+      webhookStatus: webhook.status || null,
+    },
+  }).catch(() => {});
+  await videoPathMemory.consolidate({
+    olderThanDays: 14,
+    limit: 10,
+  }).catch(() => {});
 }
 
 main().catch((error) => {
