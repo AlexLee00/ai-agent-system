@@ -482,12 +482,12 @@ def format_telegram(report):
                 '--requestType=daily-insight',
                 '--maxTokens=150',
                 '--temperature=0.7',
-                '--timeoutMs=10000',
+                '--timeoutMs=20000',
             ],
             input=prompt,
             capture_output=True,
             text=True,
-            timeout=12,
+            timeout=22,
             cwd=PROJECT_ROOT,
         )
         insight = (proc.stdout or '').strip()
