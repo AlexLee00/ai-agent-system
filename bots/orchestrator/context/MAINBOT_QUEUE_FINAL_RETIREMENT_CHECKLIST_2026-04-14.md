@@ -1,5 +1,9 @@
 # Mainbot Queue Final Retirement Checklist
 
+## Status
+
+Completed on `2026-04-14`.
+
 ## Goal
 
 Remove the last frozen live legacy queue tables after a quiet period, while
@@ -74,6 +78,9 @@ Execution order:
 - `claude.mainbot_queue` no longer exists
 - `claude.pending_confirms` no longer exists
 - `claude.morning_queue` no longer exists
+- `claude.mainbot_queue_legacy_live` no longer exists
+- `claude.pending_confirms_legacy_live` no longer exists
+- `claude.morning_queue_legacy_live` no longer exists
 - archive tables still query successfully
 - orchestrator remains healthy
 - no current runtime path expects legacy queue tables
