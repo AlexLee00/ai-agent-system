@@ -157,7 +157,7 @@
   - 레거시 알람 큐
   - 2026-04-14 기준 retired-by-default
   - 현재 운영자 표면은 queue 대신 snapshot/webhook 경로를 우선 사용
-  - freeze 단계에서는 read-only compatibility view로 유지될 수 있음
+  - 2026-04-14 기준 live는 read-only compatibility view로 freeze됨
 - `claude.token_usage`
   - LLM 사용량 집계
 - `claude.shadow_log`
