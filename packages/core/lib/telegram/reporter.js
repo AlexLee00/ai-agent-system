@@ -1,6 +1,6 @@
 'use strict';
 
-const { postAlarm } = require('../openclaw-client');
+const { publishToWebhook } = require('../reporting-hub');
 
 /**
  * @param {{
@@ -33,15 +33,18 @@ function createEventReporter({
     const enrichedMessage = payload
       ? `${message}\n\nevent_type: ${eventType}`
       : message;
-    const result = await postAlarm(/** @type {any} */ ({
-      message: enrichedMessage,
-      team: topicTeam || team,
-      alertLevel,
-      fromBot,
-      payload: payload || undefined,
-      criticalTelegramMode,
-    }));
-    return result.ok;
+    const result = await publishToWebhook({
+      event: {
+        from_bot: fromBot,
+        team: topicTeam || team,
+        event_type: eventType,
+        alert_level: alertLevel,
+        message: enrichedMessage,
+        payload: payload || undefined,
+        criticalTelegramMode,
+      },
+    });
+    return Boolean(result.ok);
   };
 }
 
