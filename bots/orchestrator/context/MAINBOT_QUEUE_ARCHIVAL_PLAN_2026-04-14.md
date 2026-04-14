@@ -25,6 +25,17 @@ Observed live runtime status:
 - `publishToQueue(...)` requires `MAINBOT_QUEUE_PUBLISH_ENABLED=true`
 - `/tmp/mainbot-queue-usage.jsonl` is still absent
 
+Archive status:
+- completed on 2026-04-14
+- created:
+  - `claude.mainbot_queue_archive_20260414`
+  - `claude.pending_confirms_archive_20260414`
+  - `claude.morning_queue_archive_20260414`
+- verified row counts:
+  - `mainbot_queue_archive_20260414 = 7`
+  - `pending_confirms_archive_20260414 = 0`
+  - `morning_queue_archive_20260414 = 2`
+
 Interpretation:
 - no fresh queue intake is visible
 - no active confirmation flow depends on `pending_confirms`
@@ -81,10 +92,13 @@ Recommended archive shape:
 - `claude.morning_queue_archive_20260414`
 - `claude.pending_confirms_archive_20260414`
 
-Recommended action:
+Status:
+- completed
+
+Completed action:
 1. `CREATE TABLE ... AS SELECT * ...`
-2. verify row counts
-3. export optional CSV/JSON snapshot for cold storage
+2. verified row counts
+3. optional CSV/JSON cold export still pending
 
 Why:
 - preserves debugging value
@@ -120,5 +134,5 @@ Only after a quiet period:
 The next safe operational step is:
 
 1. keep observing runtime for a short quiet window
-2. create archive tables with row-count verification
-3. then decide whether live tables should be renamed, emptied, or fully retired
+2. decide whether live tables should be renamed, emptied, or fully retired
+3. only then consider destructive cleanup
