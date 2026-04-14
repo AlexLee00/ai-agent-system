@@ -25,6 +25,20 @@ type RecallTeamOptions = RecallOptions & {
   excludeSelf?: boolean;
 };
 
+type ConsolidateOptions = {
+  olderThanDays?: number;
+  limit?: number;
+  sourceType?: Extract<MemoryType, 'episodic'>;
+  targetType?: Extract<MemoryType, 'semantic'>;
+};
+
+type ConsolidateResult = {
+  scanned: number;
+  created: number;
+  sourceIds: number[];
+  memoryId: number | null;
+};
+
 type AgentMemoryRow = {
   id: number;
   agent_id: string;
@@ -62,6 +76,57 @@ function ensureMemoryType(type: MemoryType): void {
   if (!MEMORY_TYPES.includes(type)) {
     throw new Error(`invalid memory type: ${type}`);
   }
+}
+
+function normalizeOlderThanDays(value?: number): number {
+  const n = Number(value || 30);
+  if (!Number.isFinite(n) || n <= 0) return 30;
+  return Math.min(Math.floor(n), 365);
+}
+
+function firstLine(value: string): string {
+  return String(value || '').split('\n').map((line) => line.trim()).find(Boolean) || '';
+}
+
+function summarizeMemories(rows: AgentMemoryRow[]): string {
+  if (!rows.length) return '';
+
+  const typeCounts = new Map<string, number>();
+  const keywordCounts = new Map<string, number>();
+  const highlights: string[] = [];
+
+  for (const row of rows) {
+    const sourceType = String(row.metadata?.type || row.memory_type || 'memory');
+    typeCounts.set(sourceType, (typeCounts.get(sourceType) || 0) + 1);
+
+    for (const keyword of row.keywords || []) {
+      const k = String(keyword || '').trim();
+      if (!k) continue;
+      keywordCounts.set(k, (keywordCounts.get(k) || 0) + 1);
+    }
+
+    const headline = firstLine(row.content);
+    if (headline && highlights.length < 5) {
+      highlights.push(headline.slice(0, 140));
+    }
+  }
+
+  const typeSummary = Array.from(typeCounts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([type, count]) => `${type} ${count}건`)
+    .join(', ');
+  const keywords = Array.from(keywordCounts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 6)
+    .map(([keyword]) => keyword);
+
+  return [
+    `[통합 기억] ${rows.length}건의 episodic 기억 요약`,
+    typeSummary ? `주요 유형: ${typeSummary}` : null,
+    keywords.length ? `핵심 키워드: ${keywords.join(', ')}` : null,
+    highlights.length ? `대표 사례: ${highlights.join(' | ')}` : null,
+  ].filter(Boolean).join('\n');
 }
 
 async function ensureMemorySchema(): Promise<void> {
@@ -291,6 +356,79 @@ class AgentMemory {
 
     await touchAccess(rows.map((row) => row.id));
     return rows;
+  }
+
+  async consolidate(opts: ConsolidateOptions = {}): Promise<ConsolidateResult> {
+    await ensureMemorySchema();
+
+    const sourceType = opts.sourceType || 'episodic';
+    const targetType = opts.targetType || 'semantic';
+    ensureMemoryType(sourceType);
+    ensureMemoryType(targetType);
+
+    const olderThanDays = normalizeOlderThanDays(opts.olderThanDays);
+    const limit = normalizeLimit(opts.limit || 20);
+
+    const rows = await pgPool.query<AgentMemoryRow>(SCHEMA, `
+      SELECT
+        id,
+        agent_id,
+        team,
+        memory_type,
+        content,
+        keywords,
+        importance,
+        access_count,
+        last_accessed,
+        expires_at,
+        metadata,
+        created_at,
+        updated_at
+      FROM rag.agent_memory
+      WHERE
+        agent_id = $1
+        AND team = $2
+        AND memory_type = $3
+        AND created_at < NOW() - ($4::text || ' days')::interval
+        AND (expires_at IS NULL OR expires_at > NOW())
+      ORDER BY importance DESC, created_at ASC
+      LIMIT $5
+    `, [this.agentId, this.team, sourceType, String(olderThanDays), limit]);
+
+    if (!rows.length) {
+      return { scanned: 0, created: 0, sourceIds: [], memoryId: null };
+    }
+
+    const keywordSet = new Set<string>();
+    for (const row of rows) {
+      for (const keyword of row.keywords || []) {
+        const k = String(keyword || '').trim();
+        if (k) keywordSet.add(k);
+      }
+    }
+
+    const summary = summarizeMemories(rows);
+    const memoryId = await this.remember(summary, targetType, {
+      keywords: Array.from(keywordSet).slice(0, 12),
+      importance: 0.72,
+      metadata: {
+        consolidatedFrom: sourceType,
+        sourceIds: rows.map((row) => row.id),
+        sourceCount: rows.length,
+        olderThanDays,
+        sourceCreatedAt: {
+          first: rows[0]?.created_at || null,
+          last: rows[rows.length - 1]?.created_at || null,
+        },
+      },
+    });
+
+    return {
+      scanned: rows.length,
+      created: memoryId ? 1 : 0,
+      sourceIds: rows.map((row) => row.id),
+      memoryId,
+    };
   }
 }
 
