@@ -20,6 +20,7 @@
 import { callLLM, parseJSON } from '../shared/llm-client.ts';
 import { publishAlert } from '../shared/alert-publisher.ts';
 import * as db from '../shared/db.ts';
+import * as rag from '../shared/rag-client.ts';
 import { adjustAnalystWeights } from '../shared/analyst-accuracy.ts';
 import { validateTradeReview } from './validate-trade-review.ts';
 import { createRequire } from 'module';
@@ -610,7 +611,6 @@ async function runLLMReview(tradeSummary, reviewSection = '') {
 
 async function storeReviewToRAG(summary, review, trades, rrSection = null) {
   try {
-    const rag     = require('../../../packages/core/lib/rag-safe');
     const rrStr   = rrSection?.currentRR != null ? ` | R/R ${rrSection.currentRR} 승률 ${rrSection.winRate}%` : '';
     const content = [
       `주간 리뷰 (${DAYS}일): 등급=${review.overall_grade}${rrStr}`,

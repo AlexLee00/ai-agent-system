@@ -12,9 +12,9 @@
 import { createRequire } from 'module';
 import * as db from '../shared/db.ts';
 import * as journalDb from '../shared/trade-journal-db.ts';
+import * as rag from '../shared/rag-client.ts';
 
 const _require = createRequire(import.meta.url);
-const rag      = _require('../../../packages/core/lib/rag-safe');
 const kst      = _require('../../../packages/core/lib/kst');
 
 const args    = process.argv.slice(2);
