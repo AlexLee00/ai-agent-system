@@ -1,6 +1,9 @@
 const { collectTeamMetric } = require('./sigma-feedback') as {
   collectTeamMetric: (team: string) => Promise<any>;
 };
+const { formatRecallHintRows } = require('../../../../packages/core/lib/agent-memory') as {
+  formatRecallHintRows: (rows: MemorySnippet[], opts?: { title?: string | null; separator?: 'pipe' | 'newline'; limit?: number }) => string;
+};
 
 type Formation = {
   date?: string;
@@ -96,13 +99,14 @@ export async function analyzeFormation(
   ];
 
   if (recentMemories.length > 0) {
-    lines.push('', '최근 기억 참고:');
-    recentMemories.slice(0, 3).forEach((memory, idx) => {
-      const headline = String(memory?.content || '').split('\n').find((line) => line.trim()) || '내용 없음';
-      const createdAt = memory?.created_at ? String(memory.created_at).slice(0, 10) : 'unknown';
-      const similarity = Number(memory?.similarity || 0);
-      lines.push(`- ${idx + 1}. ${createdAt} / 유사도 ${similarity.toFixed(2)} / ${headline}`);
+    const memoryHint = formatRecallHintRows(recentMemories, {
+      title: '최근 기억 참고',
+      separator: 'newline',
+      limit: 3,
     });
+    if (memoryHint) {
+      lines.push('', ...memoryHint.trimStart().split('\n'));
+    }
   }
 
   lines.push('', '팀별 관찰:');
