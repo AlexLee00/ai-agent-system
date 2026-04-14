@@ -6,6 +6,7 @@ const path = require('path');
 
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const rag = require('../../../packages/core/lib/rag-safe');
+const { publishToRag } = require('../../../packages/core/lib/reporting-hub');
 const { logToolCall } = require('../../../packages/core/lib/tool-logger');
 
 const BOT_NAME = 'video';
@@ -86,7 +87,40 @@ function inferFeedbackTags(feedback = {}) {
 async function safeStore(content, metadata) {
   const startedAt = Date.now();
   try {
-    const ragId = await rag.store(COLLECTION, content, metadata, BOT_NAME);
+    const ragId = await publishToRag({
+      ragStore: {
+        async store(collection, ragContent, targetMetadata = {}, sourceBot = BOT_NAME) {
+          return rag.store(collection, ragContent, targetMetadata, sourceBot);
+        },
+      },
+      collection: COLLECTION,
+      sourceBot: BOT_NAME,
+      event: {
+        from_bot: BOT_NAME,
+        team: 'video',
+        event_type: metadata?.type === 'edit_feedback' ? 'video_edit_feedback_rag' : 'video_edit_result_rag',
+        alert_level: 1,
+        message: String(content || ''),
+        payload: {
+          title: metadata?.title || 'video rag',
+          summary: metadata?.type === 'edit_feedback'
+            ? `feedback | confirmed=${Boolean(metadata?.confirmed)}`
+            : `quality=${safeNumber(metadata?.quality_score, 0)} | duration=${safeNumber(metadata?.duration_s, 0)}s`,
+          details: [
+            `type: ${metadata?.type || 'unknown'}`,
+            ...(metadata?.edit_id != null ? [`edit_id: ${metadata.edit_id}`] : []),
+            ...(metadata?.session_id != null ? [`session_id: ${metadata.session_id}`] : []),
+          ],
+        },
+      },
+      metadata,
+      contentBuilder: () => String(content || ''),
+      policy: {
+        dedupe: true,
+        key: `video-rag:${metadata?.type || 'unknown'}:${metadata?.edit_id || metadata?.session_id || metadata?.title || String(content || '').slice(0, 80)}`,
+        cooldownMs: 30 * 60 * 1000,
+      },
+    });
     await logToolCall('video_rag', 'store', {
       bot: BOT_NAME,
       success: true,
