@@ -292,6 +292,31 @@ function calculateTitleOverlap(a = '', b = '') {
   return Number((matched / Math.max(first.size, second.size)).toFixed(2));
 }
 
+function buildLatestAlignmentHint(post = null, alignment = null, preview = {}) {
+  if (!post) return null;
+
+  const previewCategory = String(preview.category || alignment?.preview_category || '').trim();
+  const previewPattern = String(preview.pattern || alignment?.preview_pattern || '').trim();
+  const finalCategory = String(post.category || '').trim();
+  const finalPattern = String(post.pattern || alignment?.final_pattern || '').trim();
+  const overlap = Number(alignment?.title_overlap || 0);
+
+  if (alignment?.aligned === true) return 'aligned';
+  if (previewCategory && finalCategory && previewCategory !== finalCategory) {
+    return `category_drift:${finalCategory}`;
+  }
+  if (previewPattern && finalPattern && previewPattern !== finalPattern) {
+    return `pattern_drift:${finalPattern}`;
+  }
+  if (overlap > 0 && overlap < 0.4) {
+    return `title_drift:${overlap.toFixed(2)}`;
+  }
+  if (alignment?.inferred_from_snapshot) {
+    return 'snapshot_inferred';
+  }
+  return 'warming_up';
+}
+
 async function buildNextGeneralPreview(strategy = {}, sense = null, revenueCorrelation = null) {
   try {
     const next = await getNextGeneralCategory(strategy);
@@ -523,6 +548,7 @@ async function getRecentGeneralStrategyAdoption(strategy = {}, nextPreview = nul
       : latestPost && previewTitle
         ? calculateTitleOverlap(latestPost.title, previewTitle)
         : 0;
+    const latestAlignmentHint = buildLatestAlignmentHint(latestPost, latestAlignment, nextPreview || {});
     const previewAligned = Boolean(
       latestAlignment
         ? latestAlignment.aligned === true
@@ -565,6 +591,7 @@ async function getRecentGeneralStrategyAdoption(strategy = {}, nextPreview = nul
       latestAligned,
       latestPreviewAligned: previewAligned,
       latestPreviewOverlap,
+      latestAlignmentHint,
       latestPost,
       sampledPosts: recentPosts.slice(0, 3),
       source: loaded?.source || 'unknown',
@@ -589,6 +616,7 @@ async function getRecentGeneralStrategyAdoption(strategy = {}, nextPreview = nul
       latestAligned: false,
       latestPreviewAligned: false,
       latestPreviewOverlap: 0,
+      latestAlignmentHint: 'error',
       latestPost: null,
       sampledPosts: [],
       source: 'error',
