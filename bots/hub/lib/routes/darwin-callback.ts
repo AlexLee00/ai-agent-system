@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const env = require('../../../../packages/core/lib/env');
-const { postAlarm } = require('../../../../packages/core/lib/openclaw-client');
+const { publishToWebhook } = require('../../../../packages/core/lib/reporting-hub');
 const eventLake = require('../../../../packages/core/lib/event-lake');
 const proposalStore = require('../../../orchestrator/lib/research/proposal-store');
 const autonomyLevel = require('../../../orchestrator/lib/research/autonomy-level');
@@ -157,20 +157,28 @@ export async function darwinCallbackRoute(req: any, res: any) {
         skillName: repoPart.toLowerCase().replace(/[^a-z0-9-]/g, '-') + '-patterns',
       });
       await answerCallbackQuery(callbackQueryId, '스킬 과제를 생성했습니다.');
-      await postAlarm({
-        message: `✅ 마스터 승인! 스킬 과제 생성\n🧠 ${newTask.id}`,
-        team: 'darwin',
-        fromBot: 'darwin-callback',
+      await publishToWebhook({
+        event: {
+          from_bot: 'darwin-callback',
+          team: 'darwin',
+          event_type: 'skill_task_created',
+          alert_level: 1,
+          message: `✅ 마스터 승인! 스킬 과제 생성\n🧠 ${newTask.id}`,
+        },
       });
       return res.json({ ok: true, action: 'skill_task_created', proposalId, taskId: newTask.id });
     }
 
     if (action === 'darwin_skip_skill') {
       await answerCallbackQuery(callbackQueryId, '스킬 과제를 건너뜁니다.');
-      await postAlarm({
-        message: `⏭ 스킬 과제 건너뜀: ${proposalId}`,
-        team: 'darwin',
-        fromBot: 'darwin-callback',
+      await publishToWebhook({
+        event: {
+          from_bot: 'darwin-callback',
+          team: 'darwin',
+          event_type: 'skill_task_skipped',
+          alert_level: 1,
+          message: `⏭ 스킬 과제 건너뜀: ${proposalId}`,
+        },
       });
       return res.json({ ok: true, action: 'skill_task_skipped', proposalId });
     }
