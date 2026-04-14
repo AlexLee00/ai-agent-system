@@ -74,6 +74,8 @@ MORNING_PATTERN_ADJUSTMENT_WEIGHT = FORECAST_RUNTIME.get('morningPatternAdjustme
 AFTERNOON_PATTERN_ADJUSTMENT_WEIGHT = FORECAST_RUNTIME.get('afternoonPatternAdjustmentWeight', 0.10)
 RESERVATION_TREND_ADJUSTMENT_WEIGHT = FORECAST_RUNTIME.get('reservationTrendAdjustmentWeight', 0.18)
 BOOKED_HOURS_TREND_ADJUSTMENT_WEIGHT = FORECAST_RUNTIME.get('bookedHoursTrendAdjustmentWeight', 0.16)
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..'))
+GEMMA_PILOT_CLI = os.path.join(PROJECT_ROOT, 'packages', 'core', 'scripts', 'gemma-pilot-cli.js')
 
 # 자동 튜닝 파라미터 저장 경로 (review 모드에서 갱신)
 _MODEL_PARAMS_FILE = os.path.join(os.path.dirname(__file__), '..', 'db', 'model_params.json')
@@ -104,6 +106,71 @@ def _one(con, sql, params=()):
     row = cur.fetchone()
     cur.close()
     return row
+
+
+def sanitize_insight_line(raw_text):
+    """메타/추론 출력은 버리고, 한국어 한 줄 인사이트만 남긴다."""
+    if not raw_text:
+        return ''
+
+    blocked_prefixes = (
+        '<|channel>',
+        'Thinking Process',
+        'Thinking process',
+        'Analyze',
+        'Calculation',
+        '1.',
+        '2.',
+        '3.',
+        '4.',
+        '5.',
+        '*',
+        '-',
+    )
+
+    candidates = []
+    for line in str(raw_text).splitlines():
+        text = line.strip()
+        if not text:
+            continue
+        if text.startswith(blocked_prefixes):
+            continue
+        lowered = text.lower()
+        if 'today' in lowered or '7-day average' in lowered or 'outlier' in lowered:
+            continue
+        if any('가' <= ch <= '힣' for ch in text):
+            candidates.append(text)
+
+    if not candidates:
+        return ''
+
+    best = candidates[-1]
+    if len(best) > 120:
+        return ''
+    return best
+
+
+def build_daily_fallback_insight(result_row, recent_mape=None):
+    """LLM 보조 인사이트가 비어도 붙일 수 있는 예측 한 줄 요약."""
+    yhat = int(result_row.get('yhat') or 0)
+    confidence = float(result_row.get('confidence') or _calc_confidence(result_row))
+    reservation_count = int(result_row.get('reservation_count') or 0)
+
+    if recent_mape is not None:
+        try:
+            mape = float(recent_mape)
+            if mape <= 10:
+                return f'예측 정확도는 최근 MAPE {mape:.1f}%로 안정적이며 내일 예상 매출은 {yhat:,}원입니다.'
+            if mape >= 20:
+                return f'최근 MAPE {mape:.1f}%로 변동성이 있어 내일 예상 매출 {yhat:,}원은 보수적으로 확인이 필요합니다.'
+        except Exception:
+            pass
+
+    if reservation_count >= 5:
+        return f'예약 흐름이 확보되어 내일 예상 매출은 {yhat:,}원 수준으로 보입니다.'
+    if confidence >= 0.75:
+        return f'모델 확신도가 높아 내일 예상 매출은 {yhat:,}원 수준으로 예상됩니다.'
+    return f'내일 예상 매출은 {yhat:,}원이며 예약과 환경 변수에 따라 변동 가능성이 있습니다.'
 
 
 # ─── 모델 파라미터 관리 ────────────────────────────────────────────────────────
@@ -1570,6 +1637,45 @@ def format_daily(result, base_date, recent_mape=None, weather_impact=None):
         icon = '📈' if impact == 'positive' else '📉'
         lines.append(f'  실시간 날씨: {icon} {desc}')
         lines.append('')
+
+    try:
+        prompt = f"""당신은 스터디카페 매출 예측 분석가입니다.
+내일 예상 매출: {r["yhat"]:,}원
+최근 MAPE: {recent_mape if recent_mape is not None else '없음'}
+예약 건수: {res_cnt}건
+확신도: {conf*100:.0f}%
+
+예측 해석을 한국어 1줄로 간결하게 작성하세요."""
+        proc = subprocess.run(
+            [
+                'node',
+                GEMMA_PILOT_CLI,
+                '--team=ska',
+                '--purpose=gemma-insight',
+                '--bot=forecast',
+                '--requestType=daily-forecast-insight',
+                '--maxTokens=150',
+                '--temperature=0.7',
+                '--timeoutMs=20000',
+            ],
+            input=prompt,
+            capture_output=True,
+            text=True,
+            timeout=22,
+            cwd=PROJECT_ROOT,
+        )
+        insight = sanitize_insight_line((proc.stdout or '').strip())
+        if not insight:
+            insight = build_daily_fallback_insight(r, recent_mape=recent_mape)
+        if insight:
+            lines.append(f'🔍 AI: {insight}')
+            lines.append('')
+    except Exception as e:
+        print(f'[forecast] gemma 인사이트 생략: {e}', file=sys.stderr)
+        fallback_insight = build_daily_fallback_insight(r, recent_mape=recent_mape)
+        if fallback_insight:
+            lines.append(f'🔍 AI: {fallback_insight}')
+            lines.append('')
 
     lines.append('═' * 19)
 
