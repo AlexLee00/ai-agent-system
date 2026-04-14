@@ -4,6 +4,7 @@
 const path = require('path');
 const { spawn } = require('child_process');
 const { publishReservationAlert } = require('../../lib/alert-client');
+const { createAgentMemory } = require('../../../../packages/core/lib/agent-memory');
 const {
   parseCsvArg,
   ts,
@@ -18,9 +19,20 @@ const {
   updateReservation,
   markSeen,
 } = require('../../lib/db');
+const payScanMemory = createAgentMemory({ agentId: 'reservation.pickko-pay-scan', team: 'reservation' });
 
 function log(message: string) {
   process.stdout.write(`[${ts()}] ${message}\n`);
+}
+
+function buildPayScanMemoryQuery(successCount: number, failureCount: number, unexpectedFailureCount: number) {
+  return [
+    'reservation pickko pay scan',
+    failureCount > 0 ? 'has-failure' : 'all-success',
+    unexpectedFailureCount > 0 ? 'unexpected-failure' : 'expected-only',
+    `success-${successCount}`,
+    `failure-${failureCount}`,
+  ].filter(Boolean).join(' ');
 }
 
 function runPayPending(entry: any) {
@@ -146,12 +158,35 @@ async function main() {
   log(`📊 완료: 성공 ${successCount}건 / 실패 ${failureCount}건`);
 
   const checklistPath = writePayScanChecklistFile(path.join(__dirname, '../../manual/reports'), failures);
+  const memoryQuery = buildPayScanMemoryQuery(successCount, failureCount, unexpectedFailureCount);
+  const episodicHint = await payScanMemory.recallCountHint(memoryQuery, {
+    type: 'episodic',
+    limit: 2,
+    threshold: 0.33,
+    title: '최근 유사 후속처리',
+    separator: 'pipe',
+    metadataKey: 'kind',
+    labels: {
+      alert: '실패',
+      report: '정상',
+    },
+    order: ['alert', 'report'],
+  }).catch(() => '');
+  const semanticHint = await payScanMemory.recallHint(`${memoryQuery} consolidated pay scan pattern`, {
+    type: 'semantic',
+    limit: 2,
+    threshold: 0.28,
+    title: '최근 통합 패턴',
+    separator: 'newline',
+  }).catch(() => '');
+
   if (failureCount > 0) {
+    const message = `${buildPayScanAlertMessage(successCount, failureCount, failures, checklistPath)}${episodicHint}${semanticHint}`;
     await publishReservationAlert({
       from_bot: 'ska',
       event_type: 'alert',
       alert_level: 2,
-      message: buildPayScanAlertMessage(successCount, failureCount, failures, checklistPath),
+      message,
       payload: {
         successCount,
         failureCount,
@@ -169,17 +204,43 @@ async function main() {
     }).catch((error: any) => {
       log(`⚠️ 메인봇 알림 실패: ${error.message}`);
     });
+    await payScanMemory.remember(message, 'episodic', {
+      importance: unexpectedFailureCount > 0 ? 0.82 : 0.72,
+      expiresIn: 1000 * 60 * 60 * 24 * 30,
+      metadata: {
+        kind: 'alert',
+        successCount,
+        failureCount,
+        unexpectedFailureCount,
+      },
+    }).catch(() => {});
   } else {
+    const message = `✅ pickko-pay-scan 완료 — 성공 ${successCount}건 / 실패 0건${episodicHint}${semanticHint}`;
     await publishReservationAlert({
       from_bot: 'ska',
       event_type: 'report',
       alert_level: 1,
-      message: `✅ pickko-pay-scan 완료 — 성공 ${successCount}건 / 실패 0건`,
+      message,
       payload: { successCount, failureCount: 0 },
     }).catch((error: any) => {
       log(`⚠️ 메인봇 보고 실패: ${error.message}`);
     });
+    await payScanMemory.remember(message, 'episodic', {
+      importance: 0.64,
+      expiresIn: 1000 * 60 * 60 * 24 * 30,
+      metadata: {
+        kind: 'report',
+        successCount,
+        failureCount: 0,
+        unexpectedFailureCount: 0,
+      },
+    }).catch(() => {});
   }
+
+  await payScanMemory.consolidate({
+    olderThanDays: 14,
+    limit: 10,
+  }).catch(() => {});
 
   if (unexpectedFailureCount > 0) process.exitCode = 1;
 }
