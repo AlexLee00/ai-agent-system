@@ -6,7 +6,9 @@ const path = require('path');
 const pgPool = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'));
 const registry = require(path.join(__dirname, '../../../packages/core/lib/agent-registry'));
 const { publishToWebhook } = require(path.join(__dirname, '../../../packages/core/lib/reporting-hub'));
+const { createAgentMemory } = require(path.join(__dirname, '../../../packages/core/lib/agent-memory'));
 const eventLake = require(path.join(__dirname, '../../../packages/core/lib/event-lake'));
+const performanceMemory = createAgentMemory({ agentId: 'blog.performance', team: 'blog' });
 
 function parseArgs(argv = process.argv.slice(2)) {
   const get = (name) => argv.find((arg) => arg.startsWith(`--${name}=`))?.split('=').slice(1).join('=');
@@ -30,6 +32,16 @@ function deriveEffectiveViews(views, likes, comments) {
   const rawViews = Number(views || 0);
   if (rawViews > 0) return rawViews;
   return Number(likes || 0) * 25 + Number(comments || 0) * 40;
+}
+
+function buildMemoryQuery(rows, rankings, categoryRankings) {
+  return [
+    'blog performance feedback',
+    `posts-${rows.length}`,
+    rankings[0]?.name,
+    rankings[0]?.topCategory,
+    categoryRankings[0]?.category,
+  ].filter(Boolean).join(' ');
 }
 
 async function loadPerformanceRows(days = 30) {
@@ -180,15 +192,54 @@ async function sendReport(rows, rankings, categoryRankings, { dryRun = false } =
 
   if (dryRun) return { ok: true, skipped: true, message: lines.join('\n') };
 
-  return publishToWebhook({
+  const memoryQuery = buildMemoryQuery(rows, rankings, categoryRankings);
+  const episodicHint = await performanceMemory.recallCountHint(memoryQuery, {
+    type: 'episodic',
+    limit: 2,
+    threshold: 0.33,
+    title: '최근 유사 피드백',
+    separator: 'pipe',
+    metadataKey: 'kind',
+    labels: {
+      feedback: '피드백',
+      recovery: '회복',
+    },
+    order: ['feedback', 'recovery'],
+  }).catch(() => '');
+  const semanticHint = await performanceMemory.recallHint(`${memoryQuery} consolidated performance pattern`, {
+    type: 'semantic',
+    limit: 2,
+    threshold: 0.28,
+    title: '최근 통합 패턴',
+    separator: 'newline',
+  }).catch(() => '');
+  const message = `${lines.join('\n')}${episodicHint}${semanticHint}`;
+
+  const result = await publishToWebhook({
     event: {
       from_bot: 'blog-analyzer',
       team: 'blog',
       event_type: 'blog_performance_feedback',
       alert_level: 2,
-      message: lines.join('\n'),
+      message,
     },
   });
+  await performanceMemory.remember(message, 'episodic', {
+    importance: 0.7,
+    expiresIn: 1000 * 60 * 60 * 24 * 30,
+    metadata: {
+      kind: 'feedback',
+      posts: rows.length,
+      writers: rankings.length,
+      topWriter: rankings[0]?.name || null,
+      topCategory: categoryRankings[0]?.category || null,
+    },
+  }).catch(() => {});
+  await performanceMemory.consolidate({
+    olderThanDays: 14,
+    limit: 10,
+  }).catch(() => {});
+  return result;
 }
 
 async function main() {
