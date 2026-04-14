@@ -10,6 +10,11 @@ const { publishToRag } = require('../../../packages/core/lib/reporting-hub') as 
 const { publishToWebhook } = require('../../../packages/core/lib/reporting-hub') as {
   publishToWebhook: (payload: { event: { from_bot: string; team: string; event_type: string; alert_level: number; message: string } }) => Promise<{ ok?: boolean }>;
 };
+const { createAgentMemory } = require('../../../packages/core/lib/agent-memory') as {
+  createAgentMemory: (opts: { agentId: string; team: string }) => {
+    remember: (content: string, type: 'episodic' | 'semantic' | 'procedural', opts?: Record<string, any>) => Promise<number | null>;
+  };
+};
 const kst = require('../../../packages/core/lib/kst') as { today: () => string };
 
 const { decideTodayFormation } = require('../lib/sigma/sigma-scheduler') as {
@@ -48,6 +53,7 @@ function parseArgs(argv: string[] = process.argv.slice(2)): SigmaDailyOptions {
 
 export async function runDaily({ test = false }: SigmaDailyOptions = {}): Promise<Record<string, any>> {
   await ensureSigmaTables();
+  const sigmaMemory = createAgentMemory({ agentId: 'sigma.analyst', team: 'sigma' });
   const measured = await measurePastFeedbackEffectiveness();
   const scoutQuality = await collectScoutQualityMetric();
   const formation = await decideTodayFormation();
@@ -122,6 +128,30 @@ export async function runDaily({ test = false }: SigmaDailyOptions = {}): Promis
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.warn(`[sigma-daily] RAG 저장 실패: ${message}`);
+  }
+
+  try {
+    await sigmaMemory.remember(analysis.report, 'episodic', {
+      keywords: [
+        'sigma',
+        'daily',
+        ...(formation.targetTeams || []).map((team: string) => String(team)),
+      ].slice(0, 8),
+      importance: feedbackRows.length > 0 ? 0.72 : 0.58,
+      expiresIn: 30 * 24 * 60 * 60,
+      metadata: {
+        type: 'sigma_daily_report',
+        date: kst.today(),
+        targetTeams: formation.targetTeams || [],
+        analysts: formation.analysts || [],
+        feedbackCount: feedbackRows.length,
+        measuredCount: measured.length,
+        scoutQuality,
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`[sigma-daily] agent memory 저장 실패: ${message}`);
   }
 
   let metaReview = null;
