@@ -13,6 +13,7 @@ const { publishToWebhook } = require('../../../packages/core/lib/reporting-hub')
 const { createAgentMemory } = require('../../../packages/core/lib/agent-memory') as {
   createAgentMemory: (opts: { agentId: string; team: string }) => {
     remember: (content: string, type: 'episodic' | 'semantic' | 'procedural', opts?: Record<string, any>) => Promise<number | null>;
+    recall: (query: string, opts?: Record<string, any>) => Promise<Array<Record<string, any>>>;
   };
 };
 const kst = require('../../../packages/core/lib/kst') as { today: () => string };
@@ -57,7 +58,20 @@ export async function runDaily({ test = false }: SigmaDailyOptions = {}): Promis
   const measured = await measurePastFeedbackEffectiveness();
   const scoutQuality = await collectScoutQualityMetric();
   const formation = await decideTodayFormation();
-  const analysis = await analyzeFormation(formation);
+  const recentMemories = await sigmaMemory.recall(
+    [
+      formation.formationReason || '',
+      ...(formation.targetTeams || []),
+      ...(formation.analysts || []),
+      'sigma daily report',
+    ].filter(Boolean).join(' '),
+    {
+      type: 'episodic',
+      limit: 3,
+      threshold: 0.35,
+    },
+  ).catch(() => []);
+  const analysis = await analyzeFormation(formation, { recentMemories });
 
   const feedbackRows = [];
   for (const feedback of analysis.feedbacks || []) {
@@ -79,6 +93,7 @@ export async function runDaily({ test = false }: SigmaDailyOptions = {}): Promis
       teams: formation.targetTeams,
       analysts: formation.analysts,
       scoutQuality,
+      recentMemoryCount: recentMemories.length,
     },
   });
 
@@ -116,6 +131,7 @@ export async function runDaily({ test = false }: SigmaDailyOptions = {}): Promis
         analysts: formation.analysts,
         feedback_count: feedbackRows.length,
         scout_quality: scoutQuality,
+        recent_memory_count: recentMemories.length,
         why: `일일 크로스팀 분석 ${feedbackRows.length}건 피드백 생성`,
       },
       contentBuilder: () => `${analysis.report}\n[이유: 일일 크로스팀 분석 ${feedbackRows.length}건 피드백 생성]`,
@@ -147,6 +163,7 @@ export async function runDaily({ test = false }: SigmaDailyOptions = {}): Promis
         feedbackCount: feedbackRows.length,
         measuredCount: measured.length,
         scoutQuality,
+        recentMemoryCount: recentMemories.length,
       },
     });
   } catch (error) {
