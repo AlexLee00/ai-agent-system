@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const { logToolCall } = require('../../../packages/core/lib/tool-logger');
-const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const { publishToWebhook } = require('../../../packages/core/lib/reporting-hub');
 const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
 const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
 
@@ -283,16 +283,19 @@ async function correctFile(inputSrtPath, outputSrtPath, config) {
   } catch (error) {
     fs.mkdirSync(path.dirname(outputSrtPath), { recursive: true });
     fs.writeFileSync(outputSrtPath, originalSrt, 'utf8');
-    await postAlarm({
-      message: [
-        '🚨 비디오 자막 교정 실패',
-        `파일: ${path.basename(inputSrtPath)}`,
-        `사유: ${error.message}`,
-        '조치: 원본 SRT로 폴백되어 파이프라인은 계속 진행됩니다.',
-      ].join('\n'),
-      team: 'general',
-      alertLevel: 4,
-      fromBot: 'subtitle-corrector',
+    await publishToWebhook({
+      event: {
+        from_bot: 'subtitle-corrector',
+        team: TEAM_NAME,
+        event_type: 'video_subtitle_correction_failed',
+        alert_level: 4,
+        message: [
+          '🚨 비디오 자막 교정 실패',
+          `파일: ${path.basename(inputSrtPath)}`,
+          `사유: ${error.message}`,
+          '조치: 원본 SRT로 폴백되어 파이프라인은 계속 진행됩니다.',
+        ].join('\n'),
+      },
     });
     return {
       outputPath: outputSrtPath,
