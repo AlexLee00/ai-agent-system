@@ -525,4 +525,5 @@ export = {
   AgentMemory,
   createAgentMemory,
   ensureMemorySchema,
+  formatRecallHintRows: formatRecallHint,
 };
