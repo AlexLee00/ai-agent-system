@@ -8,22 +8,26 @@ OPS 리소스 프록시 서버. DEV↔OPS 브릿지.
 `:7788` (OPS 맥 스튜디오, launchd `ai.hub.resource-api`)
 
 ## 핵심 파일
-- `src/hub.js` — Express 서버 진입점, 라우트 등록
-- `lib/auth.js` — Bearer 토큰 인증 미들웨어
-- `lib/sql-guard.js` — SQL 화이트리스트 (SELECT/WITH/EXPLAIN만 허용)
-- `lib/routes/secrets.js` — secrets-store.json 14섹션 제공
-- `lib/routes/pg.js` — PostgreSQL 읽기 전용 쿼리 프록시
-- `lib/routes/errors.js` — /tmp/*.err.log 에러 집계
-- `lib/routes/health.js` — 헬스 체크
-- `lib/routes/services.js` — launchd 서비스 상태 + 환경 변수
-- `lib/routes/agents.js` — 에이전트 레지스트리 엔드포인트
-- `lib/routes/n8n.js` — n8n 웹훅 프록시
+- `src/hub.ts` — Express 서버 source of truth
+- `dist/ts-runtime/bots/hub/src/hub.js` — 실제 운영 런타임 엔트리
+- `lib/auth.ts` — Bearer 토큰 인증 미들웨어
+- `lib/sql-guard.ts` — SQL 화이트리스트 (SELECT/WITH/EXPLAIN만 허용)
+- `lib/routes/secrets.ts` — secrets-store.json 14섹션 제공
+- `lib/routes/pg.ts` — PostgreSQL 읽기 전용 쿼리 프록시 + overload guard
+- `lib/routes/errors.ts` — /tmp/*.err.log 에러 집계
+- `lib/routes/health.ts` — live/ready 포함 헬스 체크
+- `lib/routes/services.ts` — launchd 서비스 상태 + 환경 변수
+- `lib/routes/agents.ts` — 에이전트 레지스트리 엔드포인트
+- `lib/routes/n8n.ts` — n8n 웹훅 프록시
 
 ## API 엔드포인트
 ```
 GET  /hub/health              — 헬스 체크 (인증 불필요)
+GET  /hub/health/live         — 프로세스 생존 확인
+GET  /hub/health/ready        — 의존성 준비 상태 확인
+GET  /hub/health/startup      — 부팅 완료 상태 확인
 GET  /hub/secrets/:category   — 시크릿 (14개 카테고리)
-POST /hub/pg/query            — PG 읽기 전용 쿼리
+POST /hub/pg/query            — PG 읽기 전용 쿼리 (과부하 시 503 + Retry-After)
 GET  /hub/errors/recent       — 에러 로그 집계
 GET  /hub/errors/summary      — 에러 현황 요약
 GET  /hub/services/status     — launchd 서비스 상태
@@ -32,12 +36,13 @@ GET  /hub/agents/*            — 에이전트 레지스트리
 ```
 
 ## 보안
-- `/hub/health` 외 전 라우트 `authMiddleware` 적용
+- `/hub/health*` 외 전 라우트 `authMiddleware` 적용
 - `HUB_AUTH_TOKEN` Bearer 인증
 - sql-guard: INSERT/UPDATE/DELETE/DROP 등 쓰기 차단
-- rate limiter: secrets 30rpm, pg 60rpm, 일반 120rpm
+- rate limiter: secrets 60rpm, pg 120rpm, 일반 200rpm
+- pg overload guard: waiting>5 또는 active>=8 이면 즉시 503 defer
 
 ## 참조
-- DEV 클라이언트: `packages/core/lib/hub-client.js`
+- DEV 클라이언트: `packages/core/lib/hub-client.ts`
 - 시크릿 소스: `secrets-store.json` (14섹션, git 미추적)
-- 현재 상태: 운영 안정 (7카테고리 200 OK 확인)
+- 현재 상태: `dist/ts-runtime` 런타임 기준 운영

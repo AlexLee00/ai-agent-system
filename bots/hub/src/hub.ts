@@ -3,7 +3,8 @@ const rateLimitModule = require('express-rate-limit');
 const rateLimit = rateLimitModule.default || rateLimitModule;
 const env = require('../../../packages/core/lib/env');
 const { authMiddleware } = require('../lib/auth');
-const { healthRoute } = require('../lib/routes/health');
+const pgPool = require('../../../packages/core/lib/pg-pool');
+const { healthRoute, healthReadyRoute } = require('../lib/routes/health');
 const { alarmRoute } = require('../lib/routes/alarm');
 const { pgQueryRoute } = require('../lib/routes/pg');
 const { n8nWebhookRoute, n8nHealthRoute } = require('../lib/routes/n8n');
@@ -41,8 +42,25 @@ env.printModeBanner('Resource API Hub');
 
 const app = express();
 const PORT = env.HUB_PORT || 7788;
+const SHUTDOWN_TIMEOUT_MS = 10000;
+const UNCAUGHT_OVERFLOW_LIMIT = 3;
+const UNCAUGHT_RESET_MS = 5 * 60 * 1000;
+
+let server: any = null;
+let isShuttingDown = false;
+let startupComplete = false;
+let uncaughtCount = 0;
+let uncaughtResetTimer: ReturnType<typeof setTimeout> | null = null;
+const activeConnections = new Set<any>();
 
 app.use(express.json({ limit: '1mb' }));
+app.use((req: any, res: any, next: any) => {
+  if (isShuttingDown) {
+    res.set('Connection', 'close');
+    return res.status(503).json({ error: 'server shutting down' });
+  }
+  return next();
+});
 app.use((req: any, res: any, next: any) => {
   const reqPath = String(req.path || '');
   if (reqPath.length > 500) {
@@ -66,21 +84,40 @@ app.use((req: any, res: any, next: any) => {
 
 const generalLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 100,
+  max: 200,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'rate limit exceeded (100/min)' },
+  message: { error: 'rate limit exceeded (200/min)' },
 });
 
 const pgLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 30,
+  max: 120,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'DB query rate limit exceeded (30/min)' },
+  message: { error: 'DB query rate limit exceeded (120/min)' },
 });
 
 app.get('/hub/health', generalLimiter, healthRoute);
+app.get('/hub/health/live', generalLimiter, (_req: any, res: any) => {
+  return res.status(isShuttingDown ? 503 : 200).json({
+    status: isShuttingDown ? 'shutting_down' : 'ok',
+    live: !isShuttingDown,
+    mode: env.MODE,
+    uptime_s: Math.round(process.uptime()),
+  });
+});
+app.get('/hub/health/ready', generalLimiter, healthReadyRoute);
+app.get('/hub/health/startup', generalLimiter, (_req: any, res: any) => {
+  const startupOk = startupComplete && !isShuttingDown;
+  return res.status(startupOk ? 200 : 503).json({
+    status: startupOk ? 'ok' : (isShuttingDown ? 'shutting_down' : 'starting'),
+    startup_complete: startupComplete,
+    shutting_down: isShuttingDown,
+    mode: env.MODE,
+    uptime_s: Math.round(process.uptime()),
+  });
+});
 
 app.use('/hub', authMiddleware);
 
@@ -132,14 +169,66 @@ app.use('/hub', (req: any, res: any) => {
   res.status(404).json({ error: `unknown endpoint: ${req.method} ${req.path}` });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+function resetUncaughtOverflowTimer() {
+  if (uncaughtResetTimer) clearTimeout(uncaughtResetTimer);
+  uncaughtResetTimer = setTimeout(() => {
+    uncaughtCount = 0;
+    uncaughtResetTimer = null;
+  }, UNCAUGHT_RESET_MS);
+  uncaughtResetTimer.unref?.();
+}
+
+async function gracefulShutdown(reason: string, exitCode = 0) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  console.error(`[hub] ${reason} → graceful shutdown 시작`);
+
+  const forceTimer = setTimeout(() => {
+    console.error(`[hub] 강제 종료 (${SHUTDOWN_TIMEOUT_MS}ms 타임아웃)`);
+    for (const socket of activeConnections) {
+      try { socket.destroy(); } catch {}
+    }
+    process.exit(exitCode || 1);
+  }, SHUTDOWN_TIMEOUT_MS);
+  forceTimer.unref?.();
+
+  try {
+    if (server) {
+      await new Promise<void>((resolve) => {
+        server.close(() => resolve());
+      });
+    }
+    await pgPool.closeAll?.();
+    clearTimeout(forceTimer);
+    process.exit(exitCode);
+  } catch (error) {
+    clearTimeout(forceTimer);
+    console.error('[hub] graceful shutdown 실패:', error);
+    process.exit(1);
+  }
+}
+
+server = app.listen(PORT, '0.0.0.0', () => {
+  startupComplete = true;
   console.log(`🌐 Resource API Hub 시작 — http://0.0.0.0:${PORT}/hub/health`);
   console.log(`   인증: ${env.HUB_AUTH_TOKEN ? 'Bearer Token 활성' : '⚠️ HUB_AUTH_TOKEN 미설정'}`);
 });
 
+server.on('connection', (socket: any) => {
+  activeConnections.add(socket);
+  socket.on('close', () => activeConnections.delete(socket));
+});
+
+process.on('SIGTERM', () => { gracefulShutdown('SIGTERM', 0).catch(() => {}); });
+process.on('SIGINT', () => { gracefulShutdown('SIGINT', 0).catch(() => {}); });
+
 process.on('uncaughtException', (error: unknown) => {
-  console.error('[hub] uncaughtException:', error);
-  process.exit(1);
+  uncaughtCount += 1;
+  resetUncaughtOverflowTimer();
+  console.error(`[hub] uncaughtException #${uncaughtCount}:`, error);
+  if (uncaughtCount >= UNCAUGHT_OVERFLOW_LIMIT) {
+    gracefulShutdown('uncaught_overflow', 1).catch(() => {});
+  }
 });
 
 process.on('unhandledRejection', (error: unknown) => {

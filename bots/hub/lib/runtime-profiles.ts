@@ -30,7 +30,584 @@ type TeamProfiles = Record<string, RuntimeProfile>;
 const LOCAL_LLM_BASE_URL = 'http://127.0.0.1:11434';
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11435';
 
-export const PROFILES: Record<string, TeamProfiles> = require('./runtime-profiles.legacy.js').PROFILES;
+export const PROFILES: Record<string, TeamProfiles> = {
+  "blog": {
+    "default": {
+      "openclaw_agent": "blog-writer",
+      "claude_code_name": "blog-writer",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/blog-writer.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "claude-code/sonnet",
+        "openai-oauth/gpt-5.4"
+      ],
+      "fallback_routes": [
+        "local/qwen2.5-7b",
+        "google-gemini-cli/gemini-2.5-flash"
+      ]
+    },
+    "writer": {
+      "openclaw_agent": "blog-writer",
+      "claude_code_name": "blog-writer",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/blog-writer.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "claude-code/sonnet",
+        "openai-oauth/gpt-5.4"
+      ],
+      "fallback_routes": [
+        "local/qwen2.5-7b",
+        "google-gemini-cli/gemini-2.5-flash"
+      ]
+    },
+    "social": {
+      "openclaw_agent": "blog-writer",
+      "claude_code_name": "blog-writer",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/blog-writer.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "openai-oauth/gpt-5.4-mini",
+        "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+      ],
+      "fallback_routes": [
+        "claude-code/sonnet"
+      ]
+    },
+    "curriculum": {
+      "openclaw_agent": "blog-writer",
+      "claude_code_name": "blog-writer",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/blog-writer.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "claude-code/sonnet",
+        "openai-oauth/gpt-5.4"
+      ],
+      "fallback_routes": [
+        "groq/qwen/qwen3-32b"
+      ]
+    },
+    "image-local": {
+      "openclaw_agent": "blog-writer",
+      "claude_code_name": "blog-writer",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/blog-writer.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "local_image": true,
+      "engine": "comfyui",
+      "base_url": "http://127.0.0.1:8188",
+      "checkpoint_name": "sd_xl_base_1.0.safetensors",
+      "workflow_template_path": "/Users/alexlee/projects/ai-agent-system/bots/blog/config/comfyui-workflow-template.json",
+      "timeout_ms": 300000,
+      "poll_ms": 1500,
+      "max_retries": 3
+    },
+    "gemma-topic": {
+      "openclaw_agent": "blog-writer",
+      "claude_code_name": "blog-writer",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/blog-writer.settings.json",
+      "provider": "local",
+      "base_url": "http://127.0.0.1:11434",
+      "model": "gemma4:latest",
+      "timeout_ms": 10000,
+      "max_tokens": 200,
+      "temperature": 0.8
+    }
+  },
+  "luna": {
+    "default": {
+      "openclaw_agent": "luna-ops",
+      "claude_code_name": "luna-ops",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/luna-ops.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "openai-oauth/gpt-5.4",
+        "claude-code/sonnet"
+      ],
+      "fallback_routes": [
+        "local/qwen2.5-7b",
+        "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+      ]
+    },
+    "analyst": {
+      "openclaw_agent": "luna-ops",
+      "claude_code_name": "luna-ops",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/luna-ops.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "openai-oauth/gpt-5.4",
+        "claude-code/sonnet"
+      ],
+      "fallback_routes": [
+        "local/qwen2.5-7b",
+        "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+      ]
+    },
+    "validator": {
+      "openclaw_agent": "luna-ops",
+      "claude_code_name": "luna-ops",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/luna-ops.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "claude-code/sonnet",
+        "openai-oauth/gpt-5.4"
+      ],
+      "fallback_routes": [
+        "local/qwen2.5-7b",
+        "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+      ]
+    },
+    "commander": {
+      "openclaw_agent": "luna-ops",
+      "claude_code_name": "luna-ops",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/luna-ops.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "openai-oauth/gpt-5.4",
+        "claude-code/sonnet"
+      ],
+      "fallback_routes": [
+        "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+      ]
+    }
+  },
+  "darwin": {
+    "default": {
+      "openclaw_agent": "darwin-research",
+      "claude_code_name": "darwin-research",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/darwin-research.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "claude-code/sonnet",
+        "openai-oauth/gpt-5.4"
+      ],
+      "fallback_routes": [
+        "local/qwen2.5-7b",
+        "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+      ]
+    },
+    "research": {
+      "openclaw_agent": "darwin-research",
+      "claude_code_name": "darwin-research",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/darwin-research.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "claude-code/sonnet",
+        "openai-oauth/gpt-5.4"
+      ],
+      "fallback_routes": [
+        "local/qwen2.5-7b",
+        "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+      ]
+    },
+    "synthesis": {
+      "openclaw_agent": "darwin-research",
+      "claude_code_name": "darwin-research",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/darwin-research.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "openai-oauth/gpt-5.4",
+        "claude-code/sonnet"
+      ],
+      "fallback_routes": [
+        "local/qwen2.5-7b"
+      ]
+    },
+    "review": {
+      "openclaw_agent": "darwin-research",
+      "claude_code_name": "darwin-research",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/darwin-research.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "claude-code/sonnet",
+        "openai-oauth/gpt-5.4"
+      ],
+      "fallback_routes": [
+        "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+      ]
+    }
+  },
+  "justin": {
+    "default": {
+      "openclaw_agent": "justin-legal",
+      "claude_code_name": "justin-legal",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/justin-legal.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "claude-code/sonnet",
+        "openai-oauth/gpt-5.4"
+      ],
+      "fallback_routes": [
+        "local/qwen2.5-7b",
+        "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+      ]
+    },
+    "citation": {
+      "openclaw_agent": "justin-legal",
+      "claude_code_name": "justin-legal",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/justin-legal.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "claude-code/sonnet",
+        "openai-oauth/gpt-5.4"
+      ],
+      "fallback_routes": [
+        "local/qwen2.5-7b"
+      ]
+    },
+    "analysis": {
+      "openclaw_agent": "justin-legal",
+      "claude_code_name": "justin-legal",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/justin-legal.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "openai-oauth/gpt-5.4",
+        "claude-code/sonnet"
+      ],
+      "fallback_routes": [
+        "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+      ]
+    },
+    "opinion": {
+      "openclaw_agent": "justin-legal",
+      "claude_code_name": "justin-legal",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/justin-legal.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "claude-code/sonnet",
+        "openai-oauth/gpt-5.4"
+      ],
+      "fallback_routes": [
+        "local/qwen2.5-7b"
+      ]
+    }
+  },
+  "sigma": {
+    "default": {
+      "openclaw_agent": "sigma-data",
+      "claude_code_name": "sigma-data",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/sigma-data.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "claude-code/sonnet",
+        "openai-oauth/gpt-5.4"
+      ],
+      "fallback_routes": [
+        "local/qwen2.5-7b"
+      ]
+    },
+    "quality": {
+      "openclaw_agent": "sigma-data",
+      "claude_code_name": "sigma-data",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/sigma-data.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "claude-code/sonnet",
+        "openai-oauth/gpt-5.4"
+      ],
+      "fallback_routes": [
+        "local/qwen2.5-7b"
+      ]
+    },
+    "experiment": {
+      "openclaw_agent": "sigma-data",
+      "claude_code_name": "sigma-data",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/sigma-data.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "openai-oauth/gpt-5.4",
+        "claude-code/sonnet"
+      ],
+      "fallback_routes": [
+        "local/qwen2.5-7b"
+      ]
+    },
+    "analysis": {
+      "openclaw_agent": "sigma-data",
+      "claude_code_name": "sigma-data",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/sigma-data.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "openai-oauth/gpt-5.4",
+        "claude-code/sonnet"
+      ],
+      "fallback_routes": [
+        "local/qwen2.5-7b"
+      ]
+    }
+  },
+  "claude": {
+    "default": {
+      "openclaw_agent": "claude-ops",
+      "claude_code_name": "claude-ops",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/claude-ops.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "openai-oauth/gpt-5.4",
+        "claude-code/sonnet"
+      ],
+      "fallback_routes": [
+        "local/qwen2.5-7b",
+        "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+      ]
+    },
+    "reporting": {
+      "openclaw_agent": "claude-ops",
+      "claude_code_name": "claude-ops",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/claude-ops.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "claude-code/sonnet",
+        "openai-oauth/gpt-5.4"
+      ],
+      "fallback_routes": [
+        "local/qwen2.5-7b"
+      ]
+    },
+    "triage": {
+      "openclaw_agent": "claude-ops",
+      "claude_code_name": "claude-ops",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/claude-ops.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "openai-oauth/gpt-5.4",
+        "claude-code/sonnet"
+      ],
+      "fallback_routes": [
+        "local/qwen2.5-7b",
+        "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+      ]
+    },
+    "lead": {
+      "openclaw_agent": "claude-ops",
+      "claude_code_name": "claude-ops",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/claude-ops.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "openai-oauth/gpt-5.4",
+        "claude-code/sonnet"
+      ],
+      "fallback_routes": [
+        "local/qwen2.5-7b"
+      ]
+    }
+  },
+  "orchestrator": {
+    "default": {
+      "openclaw_agent": "jay-orchestrator",
+      "claude_code_name": "jay-orchestrator",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/jay-orchestrator.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "openai-oauth/gpt-5.4",
+        "claude-code/sonnet"
+      ],
+      "fallback_routes": [
+        "groq/meta-llama/llama-4-scout-17b-16e-instruct",
+        "google-gemini-cli/gemini-2.5-flash"
+      ]
+    },
+    "intent": {
+      "openclaw_agent": "jay-orchestrator",
+      "claude_code_name": "jay-orchestrator",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/jay-orchestrator.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "openai-oauth/gpt-5.4",
+        "claude-code/sonnet"
+      ],
+      "fallback_routes": [
+        "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+      ]
+    },
+    "fallback": {
+      "openclaw_agent": "jay-orchestrator",
+      "claude_code_name": "jay-orchestrator",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/jay-orchestrator.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "claude-code/sonnet",
+        "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+      ],
+      "fallback_routes": [
+        "google-gemini-cli/gemini-2.5-flash"
+      ]
+    },
+    "gemma-insight": {
+      "openclaw_agent": "jay-orchestrator",
+      "claude_code_name": "jay-orchestrator",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/jay-orchestrator.settings.json",
+      "provider": "local",
+      "base_url": "http://127.0.0.1:11434",
+      "model": "gemma4:latest",
+      "timeout_ms": 10000,
+      "max_tokens": 300,
+      "temperature": 0.7
+    }
+  },
+  "ska": {
+    "default": {
+      "openclaw_agent": "ska-ops",
+      "claude_code_name": "ska-ops",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/ska-ops.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "openai-oauth/gpt-5.4",
+        "claude-code/sonnet"
+      ],
+      "fallback_routes": [
+        "local/qwen2.5-7b",
+        "google-gemini-cli/gemini-2.5-flash"
+      ]
+    },
+    "gemma-insight": {
+      "openclaw_agent": "ska-ops",
+      "claude_code_name": "ska-ops",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/ska-ops.settings.json",
+      "provider": "local",
+      "base_url": "http://127.0.0.1:11434",
+      "model": "gemma4:latest",
+      "timeout_ms": 10000,
+      "max_tokens": 150,
+      "temperature": 0.7
+    },
+    "monitoring": {
+      "openclaw_agent": "ska-ops",
+      "claude_code_name": "ska-ops",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/ska-ops.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "openai-oauth/gpt-5.4",
+        "claude-code/sonnet"
+      ],
+      "fallback_routes": [
+        "local/qwen2.5-7b"
+      ]
+    },
+    "reporting": {
+      "openclaw_agent": "ska-ops",
+      "claude_code_name": "ska-ops",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/ska-ops.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "claude-code/sonnet",
+        "openai-oauth/gpt-5.4"
+      ],
+      "fallback_routes": [
+        "local/qwen2.5-7b"
+      ]
+    }
+  },
+  "worker": {
+    "default": {
+      "openclaw_agent": "worker-ops",
+      "claude_code_name": "worker-ops",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/worker-ops.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "groq/llama-4-scout-17b-16e-instruct",
+        "claude-code/sonnet"
+      ],
+      "fallback_routes": [
+        "openai/gpt-4o-mini",
+        "google-gemini-cli/gemini-2.5-flash"
+      ]
+    },
+    "assistant": {
+      "openclaw_agent": "worker-ops",
+      "claude_code_name": "worker-ops",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/worker-ops.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "groq/llama-4-scout-17b-16e-instruct",
+        "claude-code/sonnet"
+      ],
+      "fallback_routes": [
+        "openai/gpt-4o-mini",
+        "google-gemini-cli/gemini-2.5-flash"
+      ]
+    },
+    "intake": {
+      "openclaw_agent": "worker-ops",
+      "claude_code_name": "worker-ops",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/worker-ops.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "claude-code/sonnet",
+        "groq/llama-4-scout-17b-16e-instruct"
+      ],
+      "fallback_routes": [
+        "openai/gpt-4o-mini"
+      ]
+    }
+  },
+  "video": {
+    "default": {
+      "openclaw_agent": "video-edi",
+      "claude_code_name": "video-edi",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/video-edi.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "openai-oauth/gpt-5.4",
+        "claude-code/sonnet"
+      ],
+      "fallback_routes": [
+        "local/qwen2.5-7b",
+        "google-gemini-cli/gemini-2.5-flash"
+      ]
+    },
+    "editing": {
+      "openclaw_agent": "video-edi",
+      "claude_code_name": "video-edi",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/video-edi.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "openai-oauth/gpt-5.4",
+        "claude-code/sonnet"
+      ],
+      "fallback_routes": [
+        "local/qwen2.5-7b"
+      ]
+    },
+    "analysis": {
+      "openclaw_agent": "video-edi",
+      "claude_code_name": "video-edi",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/video-edi.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "openai-oauth/gpt-5.4",
+        "claude-code/sonnet"
+      ],
+      "fallback_routes": [
+        "local/qwen2.5-7b"
+      ]
+    },
+    "stt": {
+      "openclaw_agent": "video-edi",
+      "claude_code_name": "video-edi",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/video-edi.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "openai/whisper-1"
+      ],
+      "fallback_routes": [],
+      "direct_provider": "openai",
+      "direct_model": "whisper-1",
+      "direct_endpoint": "https://api.openai.com/v1/audio/transcriptions"
+    },
+    "review": {
+      "openclaw_agent": "video-edi",
+      "claude_code_name": "video-edi",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/video-edi.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "claude-code/sonnet",
+        "openai-oauth/gpt-5.4"
+      ],
+      "fallback_routes": [
+        "google-gemini-cli/gemini-2.5-flash"
+      ]
+    }
+  }
+};
 
 export function selectRuntimeProfile(team: string | null | undefined, purpose = 'default'): RuntimeProfile | null {
   const normalizedTeam = String(team || '').trim().toLowerCase();

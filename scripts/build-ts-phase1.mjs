@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile, copyFile } from 'node:fs/promises';
 import path from 'node:path';
 import { build } from 'esbuild';
 
@@ -109,6 +109,7 @@ const runtimeEntryPoints = [
   path.join(root, 'packages/core/lib/llm-graduation.ts'),
   path.join(root, 'bots/hub/lib/auth.ts'),
   path.join(root, 'bots/hub/lib/routes/agents.ts'),
+  path.join(root, 'bots/hub/lib/routes/alarm.ts'),
   path.join(root, 'bots/hub/lib/routes/errors.ts'),
   path.join(root, 'bots/hub/lib/routes/darwin-callback.ts'),
   path.join(root, 'bots/hub/lib/routes/events.ts'),
@@ -614,6 +615,18 @@ await build({
   logLevel: 'info',
   tsconfig: path.join(root, 'tsconfig.strict.json'),
 });
+
+for (const entryPoint of runtimeEntryPoints) {
+  const legacyPath = entryPoint.replace(/\.ts$/, '.legacy.js');
+  try {
+    const relative = path.relative(root, legacyPath);
+    const target = path.join(runtimeOutdir, relative);
+    await mkdir(path.dirname(target), { recursive: true });
+    await copyFile(legacyPath, target);
+  } catch {
+    // No legacy sidecar for this runtime entry.
+  }
+}
 
 await writeFile(
   path.join(outdir, 'package.json'),

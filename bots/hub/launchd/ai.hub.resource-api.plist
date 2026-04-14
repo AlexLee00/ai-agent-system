@@ -9,7 +9,7 @@
   <key>ProgramArguments</key>
   <array>
     <string>/opt/homebrew/bin/node</string>
-    <string>bots/hub/src/hub.js</string>
+    <string>dist/ts-runtime/bots/hub/src/hub.js</string>
   </array>
 
   <key>WorkingDirectory</key>
