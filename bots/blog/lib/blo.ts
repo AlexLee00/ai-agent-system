@@ -1233,6 +1233,15 @@ function _summarizeDailyMarketing(daily = {}) {
   const preferredCategory = strategyPlan?.preferredCategory || 'none';
   const preferredPattern = strategyPlan?.preferredTitlePattern || 'none';
   const suppressedPattern = strategyPlan?.suppressedTitlePattern || 'none';
+  const nextGeneralCategory = daily?.generalCtx?.category || 'none';
+
+  let predictedAdoption = 'warming_up';
+  if (daily?.generalCtx?.category) {
+    predictedAdoption =
+      preferredCategory !== 'none' && nextGeneralCategory === preferredCategory
+        ? (preferredPattern !== 'none' ? 'aligned' : 'partial')
+        : (preferredPattern !== 'none' ? 'partial' : 'off_track');
+  }
 
   return {
     signalLabel,
@@ -1240,7 +1249,9 @@ function _summarizeDailyMarketing(daily = {}) {
     preferredCategory,
     preferredPattern,
     suppressedPattern,
-    briefLine: `📈 마케팅 전략: signal=${signalLabel} | impact=${(revenueImpact * 100).toFixed(1)}% | plan=${preferredCategory}/${preferredPattern} | suppress=${suppressedPattern}`,
+    nextGeneralCategory,
+    predictedAdoption,
+    briefLine: `📈 마케팅 전략: signal=${signalLabel} | impact=${(revenueImpact * 100).toFixed(1)}% | plan=${preferredCategory}/${preferredPattern} | next=${nextGeneralCategory} | predicted=${predictedAdoption} | suppress=${suppressedPattern}`,
   };
 }
 
@@ -1337,6 +1348,8 @@ async function _sendDailyReport(results, traceCtx, options = {}) {
           `signal: ${marketing.signalLabel}`,
           `impact: ${(marketing.revenueImpactPct * 100).toFixed(1)}%`,
           `plan: ${marketing.preferredCategory}/${marketing.preferredPattern}`,
+          `next: ${marketing.nextGeneralCategory}`,
+          `predicted: ${marketing.predictedAdoption}`,
           `suppress: ${marketing.suppressedPattern}`,
         ],
       },
