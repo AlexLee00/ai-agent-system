@@ -22,7 +22,7 @@ const path       = require('path');
 const { execSync } = require('child_process');
 const pgPool     = require('../../../packages/core/lib/pg-pool');
 const eventLake  = require('../../../packages/core/lib/event-lake');
-const { publishToRag } = require('../../../packages/core/lib/reporting-hub');
+const { publishToRag, publishToWebhook } = require('../../../packages/core/lib/reporting-hub');
 
 const SCHEMA = 'reservation';
 const LAUNCHD_DIR = path.join(os.homedir(), 'Library', 'LaunchAgents');
@@ -519,11 +519,14 @@ async function recoverDownServices(downServices) {
   if (results.length > 0) {
     const lines = [`🏥 닥터 launchd 자동 복구 (${results.length}건)`];
     results.forEach((r) => lines.push(`  ${r.success ? '✅' : '❌'} ${r.label} — ${r.message}`));
-    await postAlarm({
-      message: lines.join('\n'),
-      team: 'claude',
-      alertLevel: results.some((r) => r.label.includes('hub') || r.label.includes('mlx')) ? 3 : 2,
-      fromBot: 'doctor',
+    await publishToWebhook({
+      event: {
+        from_bot: 'doctor',
+        team: 'claude',
+        event_type: 'doctor_recovery_summary',
+        alert_level: results.some((r) => r.label.includes('hub') || r.label.includes('mlx')) ? 3 : 2,
+        message: lines.join('\n'),
+      },
     });
   }
 
