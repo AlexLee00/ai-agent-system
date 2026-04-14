@@ -370,6 +370,7 @@ function normalizeGeneralPostFromDb(row = {}) {
     filename: metadata.filename || null,
     pattern,
     titleAlignment: alignment && typeof alignment === 'object' ? alignment : null,
+    hasTitleAlignment: Boolean(alignment && typeof alignment === 'object' && (alignment.preview_title || alignment.final_title)),
   };
 }
 
@@ -405,6 +406,7 @@ async function loadRecentGeneralPosts(maxPosts = 5) {
     .map((post) => ({
       ...post,
       titleAlignment: null,
+      hasTitleAlignment: false,
     })),
     source: 'output_files',
   };
@@ -420,6 +422,7 @@ async function getRecentGeneralStrategyAdoption(strategy = {}, nextPreview = nul
     const previewCategory = nextPreview?.category || preferredCategory || null;
     const previewPattern = nextPreview?.pattern || preferredPattern || null;
     const previewTitle = nextPreview?.title || null;
+    const metadataCoverageCount = recentPosts.filter((post) => post.hasTitleAlignment).length;
     const preferredCategoryPosts = preferredCategory
       ? recentPosts.filter((post) => post.category === preferredCategory)
       : [];
@@ -478,6 +481,8 @@ async function getRecentGeneralStrategyAdoption(strategy = {}, nextPreview = nul
       preferredCategoryCount: preferredCategoryPosts.length,
       preferredPatternCount: patternMatches.length,
       preferredCategoryPatternCount: combinedMatches.length,
+      metadataCoverageCount,
+      metadataCoverageRatio: recentPosts.length > 0 ? Number((metadataCoverageCount / recentPosts.length).toFixed(2)) : 0,
       latestAligned,
       latestPreviewAligned: previewAligned,
       latestPreviewOverlap,
@@ -497,6 +502,8 @@ async function getRecentGeneralStrategyAdoption(strategy = {}, nextPreview = nul
       preferredCategoryCount: 0,
       preferredPatternCount: 0,
       preferredCategoryPatternCount: 0,
+      metadataCoverageCount: 0,
+      metadataCoverageRatio: 0,
       latestAligned: false,
       latestPreviewAligned: false,
       latestPreviewOverlap: 0,
