@@ -444,7 +444,24 @@ async function sendApprovalRequest({ chatId, requestId, action, requesterName, p
     const rejected = rows.filter((row) => String(row?.metadata?.decision || '') === 'rejected').length;
     return `\n최근 유사 승인 기록: 승인 ${approved}건 / 반려 ${rejected}건`;
   }).catch(() => '');
-  const text = `${renderNoticeEvent(notice) || _buildApprovalText(requestId, action, requesterName, payload)}${memoryHint}`;
+  const semanticMemoryHint = await approvalMemory.recall(
+    [String(action || ''), String(requesterName || ''), 'consolidated approval pattern'].filter(Boolean).join(' '),
+    {
+      type: 'semantic',
+      limit: 2,
+      threshold: 0.28,
+    },
+  ).then((rows) => {
+    if (!rows || rows.length === 0) return '';
+    const lines = rows.slice(0, 2).map((row) => {
+      const createdAt = row?.created_at ? String(row.created_at).slice(0, 10) : 'unknown';
+      const similarity = Number(row?.similarity || 0);
+      const headline = String(row?.content || '').split('\n')[0] || '패턴 요약 없음';
+      return `${createdAt} / 유사도 ${similarity.toFixed(2)} / ${headline}`;
+    });
+    return `\n최근 통합 승인 패턴:\n- ${lines.join('\n- ')}`;
+  }).catch(() => '');
+  const text = `${renderNoticeEvent(notice) || _buildApprovalText(requestId, action, requesterName, payload)}${memoryHint}${semanticMemoryHint}`;
 
   try {
     await publishToWebhook({
