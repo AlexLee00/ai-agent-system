@@ -79,10 +79,15 @@
 - luna direct telegram alerts/reports → severity 기반 telegram/n8n 라우팅
 - blog health-check alerts → severity 기반 telegram/n8n 라우팅
 - luna health-check alerts → reporting-hub notice + severity fanout
+- luna optimize-ta alerts → investment alert-publisher → reporting-hub webhook fanout
+- luna sweeper alerts → investment alert-publisher → reporting-hub webhook fanout
+- luna reporter daily/accuracy alerts → investment alert-publisher → reporting-hub webhook fanout
 - worker health-check alerts → reporting-hub notice + severity fanout
 - worker claude-api-monitor alerts → reporting-hub notice + severity fanout
 - worker approval request telegram alerts → reporting-hub telegram_api target
 - dexter autofix blocked-action alerts → reporting-hub notice + severity fanout
+- shared telegram reporter wrapper → reporting-hub webhook fanout
+- file-guard blocked-write alerts → reporting-hub webhook fanout
 - reservation RAG writes → reporting-hub rag target
 - luna L33 trade RAG write → reporting-hub rag target
 - investment shared rag-client store → reporting-hub rag target
@@ -96,6 +101,8 @@
 - blog rag accumulator RAG writes → reporting-hub rag target
 - blog curriculum notices → reporting-hub notice + severity fanout
 - blog daily report and failure notice → reporting-hub report/notice format
+- orchestrator write reports → reporting-hub webhook fanout
+- sigma daily/meta-review alerts → reporting-hub webhook fanout
 - orchestrator batch formatter → 공용 notice/snippet 서식 정렬
 - orchestrator queue consumer → payload headline/detail 우선 사용
 - dexter/luna producer payload → 표준 `title/summary/details/action` 키 적용 시작

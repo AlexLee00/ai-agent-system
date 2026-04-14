@@ -39,6 +39,13 @@
 - [bots/worker/web/server.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/server.js)
 - [bots/claude/lib/doctor.ts](/Users/alexlee/projects/ai-agent-system/bots/claude/lib/doctor.ts)
 - [bots/ska/lib/rag_client.py](/Users/alexlee/projects/ai-agent-system/bots/ska/lib/rag_client.py)
+- [bots/investment/team/reporter.ts](/Users/alexlee/projects/ai-agent-system/bots/investment/team/reporter.ts)
+- [bots/investment/team/sweeper.ts](/Users/alexlee/projects/ai-agent-system/bots/investment/team/sweeper.ts)
+- [bots/investment/scripts/health-check.ts](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/health-check.ts)
+- [bots/investment/scripts/optimize-ta-params.ts](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/optimize-ta-params.ts)
+- [packages/core/lib/telegram/reporter.ts](/Users/alexlee/projects/ai-agent-system/packages/core/lib/telegram/reporter.ts)
+- [packages/core/lib/file-guard.ts](/Users/alexlee/projects/ai-agent-system/packages/core/lib/file-guard.ts)
+- [bots/orchestrator/src/write.ts](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/src/write.ts)
 
 즉 지금은
 - alert publisher 발행
@@ -53,6 +60,9 @@
 - ska python rebecca/forecast RAG 저장
 - blog publish / performance RAG 저장
 - blog post/quality accumulation RAG 저장
+- investment ops / reporter / sweeper current fanout
+- orchestrator write / sigma current webhook fanout
+- shared reporter / file-guard webhook fanout
  이 같은 이벤트 정규화 레이어를 탄다.
 
 최근 재집계 기준으로 남는 `rag.store(...)` 매치의 대부분은 아래에 해당한다.
@@ -81,6 +91,7 @@
 - 야간/아침 브리핑
 - daily/weekly report
 - 운영 헬스 경고
+- current low-risk direct webhook caller는 investment/orchestrator/core shared rail 위주로 계속 축소 중
 
 4. delivery policy
 - severity별 채널
