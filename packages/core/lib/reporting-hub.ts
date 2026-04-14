@@ -24,8 +24,10 @@ const MOBILE_DIVIDER = '──────────';
 const DELIVERY_STATE = new Map();
 const DEFAULT_CRITICAL_WEBHOOK_URL = process.env.N8N_CRITICAL_WEBHOOK || 'http://127.0.0.1:5678/webhook/critical';
 const PAYLOAD_WARNING_LOG = process.env.REPORTING_PAYLOAD_WARNING_LOG || '/tmp/reporting-payload-warnings.jsonl';
+const LEGACY_QUEUE_USAGE_LOG = process.env.MAINBOT_QUEUE_USAGE_LOG || '/tmp/mainbot-queue-usage.jsonl';
 const MAX_WARNING_LOG_BYTES = 512 * 1024;
 const TELEGRAM_API_RETRY_ATTEMPTS = 2;
+const LEGACY_QUEUE_WARNED_KEYS = new Set<string>();
 
 type AlertLevel = 1 | 2 | 3 | 4;
 
@@ -221,6 +223,37 @@ function recordPayloadWarnings(event: NormalizedEvent, warnings: string[]): void
     alert_level: Number.isFinite(Number(event?.alert_level)) ? Number(event.alert_level) : 2,
     warnings,
   });
+}
+
+function recordLegacyQueueUsage(event: NormalizedEvent, schema: string, table: string): void {
+  const warnKey = `${schema}:${table}:${event.team}:${event.from_bot}:${event.event_type}`;
+  if (!LEGACY_QUEUE_WARNED_KEYS.has(warnKey)) {
+    LEGACY_QUEUE_WARNED_KEYS.add(warnKey);
+    console.warn(
+      `[reporting-hub] legacy queue publish used: ${schema}.${table} ` +
+      `team=${event.team} from_bot=${event.from_bot} event_type=${event.event_type}`,
+    );
+  }
+
+  try {
+    if (fs.existsSync(LEGACY_QUEUE_USAGE_LOG)) {
+      const stat = fs.statSync(LEGACY_QUEUE_USAGE_LOG);
+      if (stat.size > MAX_WARNING_LOG_BYTES) {
+        fs.truncateSync(LEGACY_QUEUE_USAGE_LOG, 0);
+      }
+    }
+    fs.appendFileSync(LEGACY_QUEUE_USAGE_LOG, `${JSON.stringify({
+      ts: new Date().toISOString(),
+      schema,
+      table,
+      team: event.team,
+      from_bot: event.from_bot,
+      event_type: event.event_type,
+      alert_level: event.alert_level,
+    })}\n`, 'utf8');
+  } catch (error) {
+    console.warn(`[reporting-hub] legacy queue usage log failed: ${(error as Error).message}`);
+  }
 }
 
 export function getRecentPayloadWarnings({
@@ -527,6 +560,7 @@ export async function publishToQueue({
   policy,
 }: QueuePublisherInput) {
   const normalized = normalizeEvent(event);
+  recordLegacyQueueUsage(normalized, schema, table);
   const decision = evaluateDeliveryPolicy('queue', normalized, policy);
   if (!decision.allowed) {
     return {
