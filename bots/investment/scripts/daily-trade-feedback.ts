@@ -18,7 +18,7 @@
  */
 
 import { callLLM, parseJSON } from '../shared/llm-client.ts';
-import { publishToMainBot } from '../shared/mainbot-client.ts';
+import { publishAlert } from '../shared/mainbot-client.ts';
 import * as db from '../shared/db.ts';
 import * as rag from '../shared/rag-client.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
@@ -219,7 +219,7 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
 
   if (!dryRun) {
     try {
-      await publishToMainBot({
+      await publishAlert({
         from_bot: 'luna',
         event_type: 'daily_feedback',
         alert_level: 1,

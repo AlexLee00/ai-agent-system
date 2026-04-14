@@ -21,7 +21,7 @@ import yaml from 'js-yaml';
 import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { callLLM, parseJSON } from '../shared/llm-client.ts';
-import { publishToMainBot } from '../shared/mainbot-client.ts';
+import { publishAlert } from '../shared/mainbot-client.ts';
 import { search as searchRag } from '../shared/rag-client.ts';
 import { getDomesticRanking, getVolumeRank } from '../shared/kis-client.ts';
 import { getKisOverseasSymbols, getKisSymbols, isPaperMode } from '../shared/secrets.ts';
@@ -588,7 +588,7 @@ export async function collectStrategies() {
       '',
       ...summary.slice(0, 5),
     ].join('\n');
-    publishToMainBot({ from_bot: 'luna', event_type: 'report', alert_level: 1, message: msg });
+    publishAlert({ from_bot: 'luna', event_type: 'report', alert_level: 1, message: msg });
   }
 
   return saved;

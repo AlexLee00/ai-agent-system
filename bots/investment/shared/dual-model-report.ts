@@ -10,7 +10,7 @@
  */
 
 import * as db from './db.ts';
-import { publishToMainBot } from './mainbot-client.ts';
+import { publishAlert } from './mainbot-client.ts';
 
 const DIVIDER = '──────────';
 
@@ -158,7 +158,7 @@ export async function buildDualModelReport(days = 7) {
   const report = lines.join('\n');
 
   // 텔레그램 발송
-  publishToMainBot({
+  publishAlert({
     from_bot: 'luna', event_type: 'report', alert_level: 1, message: report,
   });
 

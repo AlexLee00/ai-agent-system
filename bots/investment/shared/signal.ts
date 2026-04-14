@@ -10,7 +10,7 @@
 
 import * as db from './db.ts';
 import { isPaperMode } from './secrets.ts';
-import { publishToMainBot } from './mainbot-client.ts';
+import { publishAlert } from './mainbot-client.ts';
 import { getCapitalConfig } from './capital-manager.ts';
 
 export const ACTIONS = Object.freeze({
@@ -232,7 +232,7 @@ export async function executeSignal(signal) {
       `UPDATE signals SET trace_id = ?, status = 'paper' WHERE id = ?`,
       [traceId, signal.id ?? ''],
     ).catch(() => {});
-    publishToMainBot({ from_bot: 'luna', event_type: 'trade', alert_level: 1, message: msg, payload: signal });
+    publishAlert({ from_bot: 'luna', event_type: 'trade', alert_level: 1, message: msg, payload: signal });
     return { executed: false, mode: 'paper', traceId };
   }
 
@@ -241,7 +241,7 @@ export async function executeSignal(signal) {
   if (!guard.passed) {
     console.warn(`[GUARD:${traceId}] 차단 — ${guard.reason}`);
     const guardMsg = `🛡️ 안전장치 발동\n사유: ${guard.reason}\n신호: ${signal.symbol} ${signal.action}`;
-    publishToMainBot({ from_bot: 'luna', event_type: 'alert', alert_level: 3, message: guardMsg, payload: { reason: guard.reason, signal } });
+    publishAlert({ from_bot: 'luna', event_type: 'alert', alert_level: 3, message: guardMsg, payload: { reason: guard.reason, signal } });
     await db.updateSignalBlock(signal.id ?? '', {
       status: 'blocked',
       reason: guard.reason,

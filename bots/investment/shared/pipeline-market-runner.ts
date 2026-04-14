@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { createPipelineSession, runNode } from './node-runner.ts';
 import { finishPipelineRun } from './pipeline-db.ts';
-import { publishToMainBot } from './mainbot-client.ts';
+import { publishAlert } from './mainbot-client.ts';
 import { getInvestmentNode } from '../nodes/index.ts';
 
 const COLLECT_NODE_SETS = {
@@ -375,7 +375,7 @@ export async function logMarketPipelineMetrics(label, metrics = {}) {
   );
   if (!escalated.length) return;
 
-  await publishToMainBot({
+  await publishAlert({
     from_bot: 'argos',
     event_type: 'alert',
     alert_level: 2,

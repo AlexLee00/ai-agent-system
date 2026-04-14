@@ -18,7 +18,7 @@ import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { callLLM, parseJSON } from '../shared/llm-client.ts';
 import { initSchema as initRagSchema, store as storeRag } from '../shared/rag-client.ts';
-import { publishToMainBot } from '../shared/mainbot-client.ts';
+import { publishAlert } from '../shared/mainbot-client.ts';
 import { initHubSecrets, isKisPaper } from '../shared/secrets.ts';
 import { getDomesticPrice } from '../shared/kis-client.ts';
 import { collectScoutData } from './scout-scraper.ts';
@@ -270,7 +270,7 @@ export async function runScout({ dryRun = false, json = false, limit = 10 } = {}
   if (!dryRun) {
     await recordScoutArtifacts(payload, summary);
     const message = buildTelegramMessage(payload, summary);
-    await publishToMainBot({
+    await publishAlert({
       from_bot: 'scout',
       team: 'investment',
       event_type: 'report',

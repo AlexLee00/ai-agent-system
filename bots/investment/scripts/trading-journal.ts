@@ -17,7 +17,7 @@
  */
 
 import * as db from '../shared/db.ts';
-import { publishToMainBot } from '../shared/mainbot-client.ts';
+import { publishAlert } from '../shared/mainbot-client.ts';
 import { initJournalSchema } from '../shared/trade-journal-db.ts';
 import { createRequire } from 'module';
 
@@ -847,7 +847,7 @@ async function main() {
       chunks.push(finalReport.slice(i, i + MAX));
     }
     for (const chunk of chunks) {
-      await publishToMainBot({
+      await publishAlert({
         from_bot:    'luna',
         event_type:  'daily_report',
         alert_level: 1,

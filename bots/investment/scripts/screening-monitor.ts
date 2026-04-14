@@ -8,7 +8,7 @@
  */
 
 import { createRequire } from 'module';
-import { publishToMainBot } from '../shared/mainbot-client.ts';
+import { publishAlert } from '../shared/mainbot-client.ts';
 
 const require      = createRequire(import.meta.url);
 const pgPool       = require('../../../packages/core/lib/pg-pool');
@@ -86,7 +86,7 @@ export async function recordScreeningFailure(market, errorMsg) {
       const msg   = `⚠️ [스크리닝 장애] ${label} 아르고스 스크리닝 ${count}회 연속 실패\n오류: ${errorMsg?.slice(0, 100)}\n→ 보유 포지션만 처리 중`;
       console.error(msg);
       try {
-        await publishToMainBot({ from_bot: 'argos', event_type: 'alert', alert_level: 2, message: msg });
+        await publishAlert({ from_bot: 'argos', event_type: 'alert', alert_level: 2, message: msg });
       } catch { /* 알림 실패 무시 */ }
       lastAlertAt = now;
     }

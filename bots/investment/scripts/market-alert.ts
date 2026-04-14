@@ -19,7 +19,7 @@
  */
 
 import * as db from '../shared/db.ts';
-import { publishToMainBot } from '../shared/mainbot-client.ts';
+import { publishAlert } from '../shared/mainbot-client.ts';
 import { loadPreScreened } from './pre-market-screen.ts';
 import { getInvestmentProfile } from './investment-profile.ts';
 import { getKisMarketStatus, getKisOverseasMarketStatus } from '../shared/secrets.ts';
@@ -178,7 +178,7 @@ async function sendOpenAlert(market, label) {
     lines.push(`[보유 포지션] 없음`);
   }
 
-  await publishToMainBot({
+  await publishAlert({
     from_bot:    'luna',
     event_type:  'market_open',
     alert_level: 1,
@@ -281,7 +281,7 @@ async function sendCloseReport(market, label) {
   lines.push(DIVIDER);
   lines.push(`${label} 장 마감. 수고하셨습니다! 🙏`);
 
-  await publishToMainBot({
+  await publishAlert({
     from_bot:    'luna',
     event_type:  'market_close_report',
     alert_level: trades.length > 0 ? 2 : 1,
@@ -347,7 +347,7 @@ async function sendCryptoDailyReport(label) {
     lines.push(`[보유 포지션] 없음`);
   }
 
-  await publishToMainBot({
+  await publishAlert({
     from_bot:    'luna',
     event_type:  'crypto_daily_report',
     alert_level: 1,

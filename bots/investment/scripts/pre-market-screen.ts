@@ -24,7 +24,7 @@ import {
   getKisSymbols,
   getKisOverseasSymbols,
 } from '../shared/secrets.ts';
-import { publishToMainBot } from '../shared/mainbot-client.ts';
+import { publishAlert } from '../shared/mainbot-client.ts';
 import { resolveSymbolsWithFallback } from '../shared/universe-fallback.ts';
 import { getMockUntradableSymbolCooldownMinutes } from '../shared/runtime-config.ts';
 import { createRequire } from 'module';
@@ -206,7 +206,7 @@ async function main() {
   console.log(`  💾 저장: ${PRESCREENED_FILE[market]}`);
 
   const msg = `🔍 장전 스크리닝 완료 (${label})\n심볼: ${summarizedSymbols}\n저장: ${kst.timeStr()}`;
-  publishToMainBot({ from_bot: 'luna', event_type: 'report', alert_level: 1, message: msg });
+  publishAlert({ from_bot: 'luna', event_type: 'report', alert_level: 1, message: msg });
 
   console.log(`\n✅ [장전 스크리닝] ${label} 완료 — ${symbols.length}개 종목`);
 }

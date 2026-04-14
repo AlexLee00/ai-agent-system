@@ -20,7 +20,7 @@ const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
 import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { initHubSecrets, getKisOverseasSymbols, getKisOverseasMarketStatus, getKisExecutionModeInfo, getOverseasScreeningMaxDynamic } from '../shared/secrets.ts';
-import { publishToMainBot } from '../shared/mainbot-client.ts';
+import { publishAlert } from '../shared/mainbot-client.ts';
 import { tracker } from '../shared/cost-tracker.ts';
 import { parseUniverseCliFlags } from '../shared/screening-runtime.ts';
 import { resolveSymbolsWithFallback, appendHeldSymbols, capDynamicUniverse } from '../shared/universe-fallback.ts';
@@ -72,7 +72,7 @@ tracker.once('BUDGET_EXCEEDED', async ({ type }) => {
   const cost  = tracker.getToday();
   const msg   = `💸 [예산 초과] ${label} LLM 예산 초과 — 미국주식 사이클 중단\n일간: $${cost.usage.toFixed(4)} | 월간: $${cost.monthUsage.toFixed(4)}`;
   console.error(msg);
-  publishToMainBot({ from_bot: 'luna', event_type: 'alert', alert_level: 3, message: msg });
+  publishAlert({ from_bot: 'luna', event_type: 'alert', alert_level: 3, message: msg });
   process.exit(1);
 });
 
@@ -142,7 +142,7 @@ export async function runOverseasCycle(symbols) {
     // ── 사이클 요약 알람 (신호 있을 때만) ──
     if (executedResults.length > 0) {
       const signalLines = executedResults.map(r => `  • ${r.symbol} ${r.action} (${((r.confidence || 0) * 100).toFixed(0)}%)`).join('\n');
-      publishToMainBot({
+      publishAlert({
         from_bot: 'luna', event_type: 'trade', alert_level: 2,
         message: `🗽 ${tag} 미국주식 사이클\n심볼: ${symbols.join(', ')}\n신호: ${executedResults.length}개\n${signalLines}`,
       });
@@ -164,7 +164,7 @@ export async function runOverseasCycle(symbols) {
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     console.error(`\n❌ 미국주식 사이클 오류 (${elapsed}초): ${e.message}`);
     console.error(e.stack);
-    publishToMainBot({ from_bot: 'luna', event_type: 'system_error', alert_level: 3, message: `❌ 미국주식 사이클 오류\n${e.message}` });
+    publishAlert({ from_bot: 'luna', event_type: 'system_error', alert_level: 3, message: `❌ 미국주식 사이클 오류\n${e.message}` });
     throw e;
   }
 }
@@ -206,7 +206,7 @@ export async function runOverseasResearchCycle(symbols) {
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     logResearchCycleComplete({ marketLabel: '미국주식', elapsedSec: elapsed });
 
-    publishToMainBot({
+    publishAlert({
       from_bot: 'luna',
       event_type: 'report',
       alert_level: 1,
@@ -237,7 +237,7 @@ export async function runOverseasResearchCycle(symbols) {
     }
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     console.error(`\n❌ 미국주식 장외 연구 오류 (${elapsed}초): ${e.message}`);
-    publishToMainBot({ from_bot: 'luna', event_type: 'system_error', alert_level: 2, message: `❌ 미국주식 장외 연구 오류\n${e.message}` });
+    publishAlert({ from_bot: 'luna', event_type: 'system_error', alert_level: 2, message: `❌ 미국주식 장외 연구 오류\n${e.message}` });
     throw e;
   }
 }

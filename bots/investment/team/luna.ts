@@ -25,7 +25,7 @@ import { callLLM, cachedCallLLM, parseJSON } from '../shared/llm-client.ts';
 import { search as searchRag, store as storeRag } from '../shared/rag-client.ts';
 import { ACTIONS, ANALYST_TYPES, SIGNAL_STATUS, validateSignal } from '../shared/signal.ts';
 import { notifySignal, notifyError } from '../shared/report.ts';
-import { publishToMainBot } from '../shared/mainbot-client.ts';
+import { publishAlert } from '../shared/mainbot-client.ts';
 import { isPaperMode, isValidationTradeMode } from '../shared/secrets.ts';
 import { getAvailableBalance, getAvailableUSDT } from '../shared/capital-manager.ts';
 import { getDomesticBalance } from '../shared/kis-client.ts';
@@ -1139,7 +1139,7 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
       return `${emoji} ${d.action} ${d.symbol} $${d.amount_usdt} (${((d.confidence || 0) * 100).toFixed(0)}%)\n  ${d.reasoning?.slice(0, 80)}`;
     }),
   ].join('\n');
-  publishToMainBot({ from_bot: 'luna', event_type: 'report', alert_level: 1, message: summaryMsg });
+  publishAlert({ from_bot: 'luna', event_type: 'report', alert_level: 1, message: summaryMsg });
 
   for (const dec of (portfolio_decision.decisions || [])) {
     if (dec.action === ACTIONS.HOLD) continue;
