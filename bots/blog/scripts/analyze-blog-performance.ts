@@ -5,7 +5,7 @@
 const path = require('path');
 const pgPool = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'));
 const registry = require(path.join(__dirname, '../../../packages/core/lib/agent-registry'));
-const { postAlarm } = require(path.join(__dirname, '../../../packages/core/lib/openclaw-client'));
+const { publishToWebhook } = require(path.join(__dirname, '../../../packages/core/lib/reporting-hub'));
 const eventLake = require(path.join(__dirname, '../../../packages/core/lib/event-lake'));
 
 function parseArgs(argv = process.argv.slice(2)) {
@@ -180,11 +180,14 @@ async function sendReport(rows, rankings, categoryRankings, { dryRun = false } =
 
   if (dryRun) return { ok: true, skipped: true, message: lines.join('\n') };
 
-  return postAlarm({
-    message: lines.join('\n'),
-    team: 'blog',
-    alertLevel: 2,
-    fromBot: 'blog-analyzer',
+  return publishToWebhook({
+    event: {
+      from_bot: 'blog-analyzer',
+      team: 'blog',
+      event_type: 'blog_performance_feedback',
+      alert_level: 2,
+      message: lines.join('\n'),
+    },
   });
 }
 
