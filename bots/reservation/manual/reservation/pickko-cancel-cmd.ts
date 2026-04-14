@@ -8,10 +8,13 @@ const path = require('path');
 const { parseArgs } = require('../../lib/args');
 const { fail } = require('../../lib/cli');
 const { IS_OPS } = require('../../../../packages/core/lib/env');
+const { createAgentMemory } = require('../../../../packages/core/lib/agent-memory');
 
 const ARGS = parseArgs(process.argv);
 
 type RunScriptResult = Promise<boolean>;
+
+const cancelCommandMemory = createAgentMemory({ agentId: 'reservation.pickko-cancel-cmd', team: 'reservation' });
 
 const required = ['phone', 'date', 'start', 'end', 'room'];
 const missing = required.filter((k) => !ARGS[k]);
@@ -35,6 +38,16 @@ const VALID_ROOMS = ['A1', 'A2', 'B'];
 const room = ARGS.room.replace(/룸|room/gi, '').toUpperCase();
 if (!VALID_ROOMS.includes(room)) {
   fail(`유효하지 않은 룸: ${ARGS.room} (허용: ${VALID_ROOMS.join(', ')})`);
+}
+
+function buildCancelCommandMemoryQuery(kind: string) {
+  return [
+    'reservation pickko cancel cmd',
+    kind,
+    room,
+    ARGS.date,
+    `${ARGS.start}-${ARGS.end}`,
+  ].filter(Boolean).join(' ');
 }
 
 function runScript(scriptPath: string, args: string[], label: string): RunScriptResult {
@@ -68,20 +81,97 @@ const cancelArgs = [
 process.stderr.write(`[pickko-cancel-cmd] 픽코 취소 시작: ${phoneRaw} ${ARGS.date} ${ARGS.start}~${ARGS.end} ${room}룸\n`);
 
 runScript(cancelScript, cancelArgs, 'pickko-cancel').then(async (cancelOk) => {
+  const kind = cancelOk ? 'success' : 'failure';
+  const memoryQuery = buildCancelCommandMemoryQuery(kind);
+  const episodicHint = await cancelCommandMemory.recallCountHint(memoryQuery, {
+    type: 'episodic',
+    limit: 2,
+    threshold: 0.33,
+    title: '최근 유사 취소',
+    separator: 'pipe',
+    metadataKey: 'kind',
+    labels: {
+      success: '성공',
+      failure: '실패',
+    },
+    order: ['failure', 'success'],
+  }).catch(() => '');
+  const semanticHint = await cancelCommandMemory.recallHint(`${memoryQuery} consolidated cancel pattern`, {
+    type: 'semantic',
+    limit: 2,
+    threshold: 0.28,
+    title: '최근 통합 패턴',
+    separator: 'newline',
+  }).catch(() => '');
+
   if (!cancelOk) {
+    const message = '예약 취소 실패 — 픽코 수동 취소 필요';
     process.stdout.write(`${JSON.stringify({
       success: false,
-      message: '예약 취소 실패 — 픽코 수동 취소 필요',
+      message,
+      memoryHints: {
+        episodicHint,
+        semanticHint,
+      },
     })}\n`);
+    await cancelCommandMemory.remember([
+      '픽코 예약 취소 실패',
+      `phone: ${phoneRaw}`,
+      `date: ${ARGS.date}`,
+      `time: ${ARGS.start}~${ARGS.end}`,
+      `room: ${room}`,
+      message,
+    ].join('\n'), 'episodic', {
+      importance: 0.8,
+      expiresIn: 1000 * 60 * 60 * 24 * 30,
+      metadata: {
+        kind: 'failure',
+        room,
+        date: ARGS.date,
+        start: ARGS.start,
+        end: ARGS.end,
+      },
+    }).catch(() => {});
+    await cancelCommandMemory.consolidate({
+      olderThanDays: 14,
+      limit: 10,
+    }).catch(() => {});
     process.exit(1);
   }
 
   const nameStr = ARGS.name ? ` (${ARGS.name})` : '';
   const baseInfo = `${phoneRaw} ${ARGS.date} ${ARGS.start}~${ARGS.end} ${room}룸${nameStr}`;
+  const successMessage = `예약 취소 완료: ${baseInfo}`;
 
   process.stdout.write(`${JSON.stringify({
     success: true,
-    message: `예약 취소 완료: ${baseInfo}`,
+    message: successMessage,
+    memoryHints: {
+      episodicHint,
+      semanticHint,
+    },
   })}\n`);
+  await cancelCommandMemory.remember([
+    '픽코 예약 취소 완료',
+    `phone: ${phoneRaw}`,
+    `date: ${ARGS.date}`,
+    `time: ${ARGS.start}~${ARGS.end}`,
+    `room: ${room}`,
+    successMessage,
+  ].join('\n'), 'episodic', {
+    importance: 0.66,
+    expiresIn: 1000 * 60 * 60 * 24 * 30,
+    metadata: {
+      kind: 'success',
+      room,
+      date: ARGS.date,
+      start: ARGS.start,
+      end: ARGS.end,
+    },
+  }).catch(() => {});
+  await cancelCommandMemory.consolidate({
+    olderThanDays: 14,
+    limit: 10,
+  }).catch(() => {});
   process.exit(0);
 });
