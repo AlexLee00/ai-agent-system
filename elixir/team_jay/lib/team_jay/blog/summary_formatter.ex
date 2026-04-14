@@ -223,14 +223,17 @@ defmodule TeamJay.Blog.SummaryFormatter do
   defp render_marketing_strategy(strategy) do
     category = Map.get(strategy, :preferred_category)
     pattern = Map.get(strategy, :preferred_title_pattern)
+    hotspot = render_marketing_hotspot(strategy)
 
     cond do
       is_binary(category) and category != "" and is_binary(pattern) and pattern != "" ->
-        ", strategy #{category}/#{pattern}"
+        ", strategy #{category}/#{pattern}#{hotspot}"
       is_binary(category) and category != "" ->
-        ", strategy #{category}"
+        ", strategy #{category}#{hotspot}"
       is_binary(pattern) and pattern != "" ->
-        ", strategy #{pattern}"
+        ", strategy #{pattern}#{hotspot}"
+      hotspot != "" ->
+        hotspot
       true ->
         ""
     end
@@ -241,18 +244,56 @@ defmodule TeamJay.Blog.SummaryFormatter do
   defp render_marketing_strategy_brief(strategy) do
     category = Map.get(strategy, :preferred_category)
     pattern = Map.get(strategy, :preferred_title_pattern)
+    hotspot = render_marketing_hotspot_brief(strategy)
 
     cond do
       is_binary(category) and category != "" and is_binary(pattern) and pattern != "" ->
-        ",plan=#{category}:#{pattern}"
+        ",plan=#{category}:#{pattern}#{hotspot}"
       is_binary(category) and category != "" ->
-        ",plan=#{category}"
+        ",plan=#{category}#{hotspot}"
       is_binary(pattern) and pattern != "" ->
-        ",plan=#{pattern}"
+        ",plan=#{pattern}#{hotspot}"
+      hotspot != "" ->
+        hotspot
       true ->
         ""
     end
   end
+
+  defp render_marketing_hotspot(nil), do: ""
+  defp render_marketing_hotspot(strategy) when strategy == %{}, do: ""
+  defp render_marketing_hotspot(strategy) do
+    hotspot = Map.get(strategy, :category_pattern_hotspot) || %{}
+    category = hotspot_value(hotspot, :category)
+    pattern = hotspot_value(hotspot, :topPattern)
+
+    cond do
+      is_binary(category) and category != "" and is_binary(pattern) and pattern != "" ->
+        ", hotspot #{category}/#{pattern}"
+      is_binary(category) and category != "" ->
+        ", hotspot #{category}"
+      true ->
+        ""
+    end
+  end
+
+  defp render_marketing_hotspot_brief(nil), do: ""
+  defp render_marketing_hotspot_brief(strategy) when strategy == %{}, do: ""
+  defp render_marketing_hotspot_brief(strategy) do
+    hotspot = Map.get(strategy, :category_pattern_hotspot) || %{}
+    category = hotspot_value(hotspot, :category)
+
+    cond do
+      is_binary(category) and category != "" -> ",hot=#{category}"
+      true -> ""
+    end
+  end
+
+  defp hotspot_value(map, key) when is_map(map) do
+    Map.get(map, key) || Map.get(map, Atom.to_string(key))
+  end
+
+  defp hotspot_value(_map, _key), do: nil
 
   defp render_pct(nil), do: "0.0%"
   defp render_pct(value) when is_float(value), do: :erlang.float_to_binary(value * 100, decimals: 1) <> "%"

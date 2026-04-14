@@ -597,6 +597,13 @@ async function buildMarketingExpansionHealth() {
         `  strategy: ${strategy?.preferredCategory || 'none'} / ${strategy?.preferredTitlePattern || 'none'}`,
       );
     }
+    const hotspotCategory = strategy?.categoryPatternHotspot?.category || null;
+    const hotspotPattern = strategy?.categoryPatternHotspot?.topPattern || null;
+    if (hotspotCategory || hotspotPattern) {
+      ok.push(
+        `  pattern hotspot: ${hotspotCategory || 'none'} / ${hotspotPattern || 'none'}`,
+      );
+    }
     if (digest?.channelPerformance?.latestDate) {
       ok.push(
         `  channels: ${digest?.channelPerformance?.totalChannels ?? 0}개 / watch ${digest?.channelPerformance?.watchChannels ?? 0}개`,
@@ -638,6 +645,7 @@ async function buildMarketingExpansionHealth() {
       preferredCategory: strategy?.preferredCategory || null,
       preferredTitlePattern: strategy?.preferredTitlePattern || null,
       suppressedTitlePattern: strategy?.suppressedTitlePattern || null,
+      categoryPatternHotspot: strategy?.categoryPatternHotspot || null,
     };
   } catch (error) {
     const reason = String(error?.message || error).slice(0, 160);
@@ -658,6 +666,7 @@ async function buildMarketingExpansionHealth() {
       preferredCategory: null,
       preferredTitlePattern: null,
       suppressedTitlePattern: null,
+      categoryPatternHotspot: null,
     };
   }
 }
