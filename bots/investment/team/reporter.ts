@@ -17,6 +17,7 @@
 import ccxt            from 'ccxt';
 import { createRequire }  from 'module';
 import * as db          from '../shared/db.ts';
+import { publishAlert } from '../shared/alert-publisher.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { loadSecrets, initHubSecrets, getMarketExecutionModeInfo } from '../shared/secrets.ts';
 import { getDomesticPrice, getOverseasPrice } from '../shared/kis-client.ts';
@@ -28,7 +29,6 @@ const _require = createRequire(import.meta.url);
 const shadow   = _require('../../../packages/core/lib/shadow-mode.js');
 const pgPool   = _require('../../../packages/core/lib/pg-pool.js');
 const kst      = _require('../../../packages/core/lib/kst');
-const { postAlarm } = _require('../../../packages/core/lib/openclaw-client.js');
 const {
   buildNoticeEvent,
   renderNoticeEvent,
@@ -360,11 +360,18 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
     const report = lines.join('\n');
     console.log('\n' + report);
     if (telegram) {
-      await postAlarm({
+      await publishAlert({
+        from_bot: 'reporter',
+        event_type: 'report',
+        alert_level: 1,
         message: report,
-        team: 'luna',
-        alertLevel: 1,
-        fromBot: 'reporter',
+        payload: {
+          title: '루나팀 투자 리포트 (축약)',
+          summary: `기준: ${kstStr()} | 최근 ${days}일`,
+          details: [
+            'DB 미연결로 신호/거래 통계는 생략',
+          ],
+        },
       });
     }
     return report;
@@ -655,11 +662,12 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
         details: detailLines,
         action: '자동 변경 없이 마스터 승인 후 반영',
       });
-      await postAlarm({
+      await publishAlert({
+        from_bot: 'reporter',
+        event_type: 'accuracy_alert',
+        alert_level: 2,
         message: renderNoticeEvent(alertNotice),
-        team: 'luna',
-        alertLevel: 2,
-        fromBot: 'reporter',
+        payload: alertNotice.payload,
       });
       console.log('\n📊 가중치 조정 알림 발송 완료');
     }
@@ -696,11 +704,19 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
       ],
       footer: '상세: 콘솔 리포트 참고',
     }));
-    await postAlarm({
+    await publishAlert({
+      from_bot: 'reporter',
+      event_type: 'report',
+      alert_level: 1,
       message: reportMessage,
-      team: 'luna',
-      alertLevel: 1,
-      fromBot: 'reporter',
+      payload: {
+        title: '루나팀 투자 리포트',
+        summary: `기준: ${kstStr()} | 최근 ${days}일`,
+        details: [
+          `신호 ${sigTotal}개`,
+          `실행 ${sigExec}개 / 승인대기 ${sigApproved}개 / 실패 ${sigFailed}개`,
+        ],
+      },
     });
     console.log('\n📱 제이 큐 발송 완료');
   }
