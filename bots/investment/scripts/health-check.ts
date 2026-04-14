@@ -117,7 +117,7 @@ async function main() {
 
     // 미로드 → 회복
     if (state[`unloaded:${label}`]) {
-      recovers.push(`✅ [루나 헬스] ${shortName} 회복\nlaunchd 정상 로드 — 자동 감지`);
+      recovers.push({ key: `unloaded:${label}`, msg: `✅ [루나 헬스] ${shortName} 회복\nlaunchd 정상 로드 — 자동 감지` });
       hsm.clearAlert(state, `unloaded:${label}`);
     }
 
@@ -129,7 +129,7 @@ async function main() {
           issues.push({ key, level: hsm.getAlertLevel(label), msg: `🔴 [루나 헬스] ${shortName} 다운\nPID 없음 — launchd 재시작 실패 가능성` });
         }
       } else if (state[`down:${label}`]) {
-        recovers.push(`✅ [루나 헬스] ${shortName} 회복\nPID 정상 확인 — 자동 감지`);
+        recovers.push({ key: `down:${label}`, msg: `✅ [루나 헬스] ${shortName} 회복\nPID 정상 확인 — 자동 감지` });
         hsm.clearAlert(state, `down:${label}`);
       }
     }
@@ -143,7 +143,7 @@ async function main() {
     } else {
       const prevKeys = Object.keys(state).filter(k => k.startsWith(`exitcode:${label}:`));
       if (prevKeys.length > 0) {
-        recovers.push(`✅ [루나 헬스] ${shortName} 회복\nexit code 정상 (0) — 자동 감지`);
+        recovers.push({ key: `exitcode:${label}:0`, msg: `✅ [루나 헬스] ${shortName} 회복\nexit code 정상 (0) — 자동 감지` });
         prevKeys.forEach(k => hsm.clearAlert(state, k));
       }
     }
@@ -161,7 +161,7 @@ async function main() {
         });
       }
     } else if (state['trade-review-integrity']) {
-      recovers.push(`✅ [루나 헬스] trade_review 정합성 회복\n거래 리뷰 누락/불일치 없음 — 자동 감지`);
+      recovers.push({ key: 'trade-review-integrity', msg: `✅ [루나 헬스] trade_review 정합성 회복\n거래 리뷰 누락/불일치 없음 — 자동 감지` });
       hsm.clearAlert(state, 'trade-review-integrity');
     }
   } catch (e) {
@@ -185,9 +185,9 @@ async function main() {
   }
 
   // 회복 알림 발송
-  for (const msg of recovers) {
+  for (const { key, msg } of recovers) {
     await notify(msg, 1);
-    await rememberHealthEvent(`recover:${msg.split('\n')[0] || 'investment-health'}`, 'recovery', msg, 1);
+    await rememberHealthEvent(key, 'recovery', msg, 1);
   }
 
   hsm.saveState(state);
