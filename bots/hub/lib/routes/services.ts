@@ -35,6 +35,15 @@ type LaunchctlServiceStatus = {
 
 type LaunchctlStatusMap = Record<string, LaunchctlServiceStatus>;
 
+type ServiceClassification = 'running' | 'idle' | 'down';
+
+type ServiceStatusResponse = LaunchctlServiceStatus & {
+  classification: ServiceClassification;
+  core: boolean;
+};
+
+type ServiceStatusMap = Record<string, ServiceStatusResponse>;
+
 type ServiceSummary = {
   total: number;
   running: number;
@@ -81,6 +90,15 @@ export function summarizeServiceStatus(
   };
 }
 
+function classifyServiceStatus(
+  label: string,
+  service: LaunchctlServiceStatus,
+): ServiceClassification {
+  if (service.running) return 'running';
+  if (isExpectedIdle(label, service)) return 'idle';
+  return 'down';
+}
+
 export async function servicesStatusRoute(_req: any, res: any) {
   if (!env.LAUNCHD_AVAILABLE) {
     return res.json({
@@ -101,12 +119,25 @@ export async function servicesStatusRoute(_req: any, res: any) {
         loaded: false,
       },
     ]),
-  );
+  ) as LaunchctlStatusMap;
   const summary = summarizeServiceStatus(status);
+  const services = Object.fromEntries(
+    SERVICE_LABELS.map((label) => {
+      const service = status[label];
+      return [
+        label,
+        {
+          ...service,
+          classification: classifyServiceStatus(label, service),
+          core: HUB_CORE_SERVICE_LABELS.includes(label),
+        },
+      ];
+    }),
+  ) as ServiceStatusMap;
   return res.json({
     status: summary.core_down.length === 0 ? 'ok' : 'warn',
     summary,
-    services: status,
+    services,
   });
 }
 

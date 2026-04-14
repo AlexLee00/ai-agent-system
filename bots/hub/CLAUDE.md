@@ -40,9 +40,10 @@ GET  /hub/agents/*            — 에이전트 레지스트리
   - 코어 서비스(`ai.openclaw.gateway`, `ai.orchestrator`, `ai.n8n.server`) 기준 readiness 신호
 - `/hub/services/status`
   - 허브가 직접 보는 핵심 launchd 서비스만 반환
-  - `running`: 현재 상주 실행 중
-  - `idle`: launchd에 정상 등록됐고 현재는 비상주/스케줄 대기 상태
-  - `down`: 실제 점검이 필요한 비정상 비가동
+  - 각 서비스 row에 `classification`과 `core`가 같이 들어감
+  - `classification=running`: 현재 상주 실행 중
+  - `classification=idle`: launchd에 정상 등록됐고 현재는 비상주/스케줄 대기 상태
+  - `classification=down`: 실제 점검이 필요한 비정상 비가동
 - 현재 `idle`로 보는 대표 서비스
   - `ai.claude.dexter`
   - `ai.worker.lead`
