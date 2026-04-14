@@ -13,9 +13,9 @@
 const path   = require('path');
 const pgPool = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'));
 const { getSecret } = require('./secrets');
-const { postAlarm } = require(path.join(__dirname, '../../../packages/core/lib/openclaw-client'));
 const {
   buildNoticeEvent,
+  publishToWebhook,
   renderNoticeEvent,
 } = require(path.join(__dirname, '../../../packages/core/lib/reporting-hub'));
 const {
@@ -339,11 +339,15 @@ async function sendApprovalRequest({ chatId, requestId, action, requesterName, p
   const text = renderNoticeEvent(notice) || _buildApprovalText(requestId, action, requesterName, payload);
 
   try {
-    await postAlarm({
-      message: text,
-      team: 'general',
-      alertLevel: notice.alert_level || 2,
-      fromBot: 'approval',
+    await publishToWebhook({
+      event: {
+        from_bot: 'approval',
+        team: 'general',
+        event_type: notice.event_type || 'approval_request',
+        alert_level: notice.alert_level || 2,
+        message: text,
+        payload: notice.payload || undefined,
+      },
     });
   } catch (e) {
     console.warn('[approval] 텔레그램 발송 실패:', e.message);
