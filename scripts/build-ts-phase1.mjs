@@ -197,6 +197,7 @@ const runtimeEntryPoints = [
   path.join(root, 'bots/claude/lib/doctor.ts'),
   path.join(root, 'bots/claude/lib/error-history.ts'),
   path.join(root, 'bots/claude/lib/alert-publisher.ts'),
+  // Compatibility alias kept for dist/runtime consumers still importing mainbot-client.
   path.join(root, 'bots/claude/lib/mainbot-client.ts'),
   path.join(root, 'bots/claude/lib/reporter.ts'),
   path.join(root, 'bots/claude/lib/team-bus.ts'),
@@ -228,6 +229,7 @@ const runtimeEntryPoints = [
   path.join(root, 'bots/investment/shared/llm-client.ts'),
   path.join(root, 'bots/investment/shared/llm.ts'),
   path.join(root, 'bots/investment/shared/alert-publisher.ts'),
+  // Compatibility alias kept for dist/runtime consumers still importing mainbot-client.
   path.join(root, 'bots/investment/shared/mainbot-client.ts'),
   path.join(root, 'bots/investment/shared/node-runner.ts'),
   path.join(root, 'bots/investment/shared/ohlcv-fetcher.ts'),
@@ -413,6 +415,7 @@ const runtimeEntryPoints = [
   path.join(root, 'bots/reservation/lib/formatting.ts'),
   path.join(root, 'bots/reservation/lib/health.ts'),
   path.join(root, 'bots/reservation/lib/alert-client.ts'),
+  // Compatibility alias kept for dist/runtime consumers still importing mainbot-client.
   path.join(root, 'bots/reservation/lib/mainbot-client.ts'),
   path.join(root, 'bots/reservation/lib/manual-cancellation.ts'),
   path.join(root, 'bots/reservation/lib/manual-reservation.ts'),
