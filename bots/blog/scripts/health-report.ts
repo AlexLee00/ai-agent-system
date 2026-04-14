@@ -3,6 +3,7 @@
 'use strict';
 
 const path = require('path');
+const fs = require('fs');
 const { execFileSync } = require('child_process');
 const env = require('../../../packages/core/lib/env');
 const pgPool = require('../../../packages/core/lib/pg-pool.js');
@@ -31,6 +32,7 @@ const CONTINUOUS = ['ai.blog.node-server'];
 const ALL_SERVICES = ['ai.blog.daily', 'ai.blog.node-server'];
 const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;
 const BLOG_ROOT = path.join(env.PROJECT_ROOT, 'bots', 'blog');
+const BLOG_STRATEGY_PATH = path.join(BLOG_ROOT, 'output', 'strategy', 'latest-strategy.json');
 const DAILY_LOG = path.join(BLOG_ROOT, 'blog-daily.log');
 const runtimeConfig = getBlogHealthRuntimeConfig();
 const DAILY_LOG_STALE_MS = Number(runtimeConfig.dailyLogStaleMs || (36 * 60 * 60 * 1000));
@@ -572,6 +574,15 @@ async function buildPhase4CompetitionHealth() {
 async function buildMarketingExpansionHealth() {
   try {
     const digest = await buildMarketingDigest();
+    let strategy = null;
+    try {
+      if (fs.existsSync(BLOG_STRATEGY_PATH)) {
+        const parsed = JSON.parse(fs.readFileSync(BLOG_STRATEGY_PATH, 'utf8'));
+        strategy = parsed?.plan || null;
+      }
+    } catch {
+      strategy = null;
+    }
     const ok = [
       `  status: ${digest?.health?.status || 'unknown'}`,
       `  reason: ${digest?.health?.reason || '없음'}`,
@@ -581,6 +592,11 @@ async function buildMarketingExpansionHealth() {
       `  avg snapshot impact: ${((Number(digest?.snapshotTrend?.avgRevenueImpactPct || 0)) * 100).toFixed(1)}%`,
       `  autonomy decisions: ${digest?.autonomySummary?.totalCount ?? 0}`,
     ];
+    if (strategy?.preferredCategory || strategy?.preferredTitlePattern) {
+      ok.push(
+        `  strategy: ${strategy?.preferredCategory || 'none'} / ${strategy?.preferredTitlePattern || 'none'}`,
+      );
+    }
     const warn = [];
     if (digest?.senseSummary?.topSignal?.message) {
       warn.push(`  top signal: ${digest.senseSummary.topSignal.message}`);
@@ -609,6 +625,9 @@ async function buildMarketingExpansionHealth() {
       snapshotWatchCount: Number(digest?.snapshotTrend?.watchCount || 0),
       snapshotAvgRevenueImpactPct: Number(digest?.snapshotTrend?.avgRevenueImpactPct || 0),
       autonomyDecisionCount: Number(digest?.autonomySummary?.totalCount || 0),
+      preferredCategory: strategy?.preferredCategory || null,
+      preferredTitlePattern: strategy?.preferredTitlePattern || null,
+      suppressedTitlePattern: strategy?.suppressedTitlePattern || null,
     };
   } catch (error) {
     const reason = String(error?.message || error).slice(0, 160);
@@ -624,6 +643,9 @@ async function buildMarketingExpansionHealth() {
       snapshotWatchCount: 0,
       snapshotAvgRevenueImpactPct: 0,
       autonomyDecisionCount: 0,
+      preferredCategory: null,
+      preferredTitlePattern: null,
+      suppressedTitlePattern: null,
     };
   }
 }

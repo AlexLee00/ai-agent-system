@@ -32,6 +32,7 @@ defmodule TeamJay.Blog.MarketingNotifier do
   defp format(digest, :brief) do
     health = Map.get(digest, :health, %{})
     latest = Map.get(digest, :latest_snapshot, %{})
+    strategy = Map.get(digest, :strategy, %{})
 
     parts = [
       "marketing=#{render_health(Map.get(health, :status, :warming_up))}",
@@ -47,12 +48,19 @@ defmodule TeamJay.Blog.MarketingNotifier do
         value -> parts ++ ["weak=#{value}"]
       end
 
+    parts =
+      case render_strategy_hint(strategy) do
+        "none" -> parts
+        value -> parts ++ ["plan=#{value}"]
+      end
+
     Enum.join(parts, " ")
   end
 
   defp format(digest, :ops) do
     health = Map.get(digest, :health, %{})
     latest = Map.get(digest, :latest_snapshot, %{})
+    strategy = Map.get(digest, :strategy, %{})
 
     [
       "블로그 마케팅 확장 리포트",
@@ -62,6 +70,7 @@ defmodule TeamJay.Blog.MarketingNotifier do
       "Avg signal count: #{Map.get(health, :avg_signal_count, 0)}",
       "Avg revenue impact: #{render_pct(Map.get(health, :avg_revenue_impact_pct, 0))}",
       "최근 weakness: #{render_recent_weakness(latest)}",
+      "현재 전략: #{render_strategy_hint(strategy)}",
       "추천: #{render_recommendation(digest)}"
     ]
     |> Enum.join("\n")
@@ -84,6 +93,24 @@ defmodule TeamJay.Blog.MarketingNotifier do
     |> case do
       nil -> "현재는 별도 권고 없음"
       value -> value
+    end
+  end
+
+  defp render_strategy_hint(nil), do: "none"
+  defp render_strategy_hint(strategy) when strategy == %{}, do: "none"
+  defp render_strategy_hint(strategy) do
+    category = Map.get(strategy, :preferred_category)
+    pattern = Map.get(strategy, :preferred_title_pattern)
+
+    cond do
+      is_binary(category) and category != "" and is_binary(pattern) and pattern != "" ->
+        "#{category}/#{pattern}"
+      is_binary(category) and category != "" ->
+        category
+      is_binary(pattern) and pattern != "" ->
+        pattern
+      true ->
+        "none"
     end
   end
 

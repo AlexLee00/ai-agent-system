@@ -172,6 +172,31 @@ async function ensureBlogCoreSchema() {
   `);
 
   await pgPool.run('blog', `
+    CREATE TABLE IF NOT EXISTS blog.channel_performance (
+      id SERIAL PRIMARY KEY,
+      snapshot_date DATE NOT NULL DEFAULT CURRENT_DATE,
+      channel TEXT NOT NULL,
+      source TEXT DEFAULT 'local',
+      status TEXT DEFAULT 'ok',
+      published_count INTEGER DEFAULT 0,
+      views INTEGER DEFAULT 0,
+      comments INTEGER DEFAULT 0,
+      likes INTEGER DEFAULT 0,
+      engagement_rate NUMERIC DEFAULT 0,
+      revenue_signal NUMERIC DEFAULT 0,
+      metadata JSONB DEFAULT '{}',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(snapshot_date, channel, source)
+    )
+  `);
+
+  await pgPool.run('blog', `
+    CREATE INDEX IF NOT EXISTS idx_channel_performance_date
+    ON blog.channel_performance (snapshot_date DESC, channel)
+  `);
+
+  await pgPool.run('blog', `
     CREATE INDEX IF NOT EXISTS idx_publish_schedule_date
     ON blog.publish_schedule(publish_date)
   `);

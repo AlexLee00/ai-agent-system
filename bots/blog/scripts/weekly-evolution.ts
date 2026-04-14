@@ -4,6 +4,7 @@
 
 const { diagnoseWeeklyPerformance } = require('../lib/performance-diagnostician.ts');
 const { evolveStrategy } = require('../lib/strategy-evolver.ts');
+const { buildMarketingDigest } = require('../lib/marketing-digest.ts');
 const { runIfOps } = require('../../../packages/core/lib/mode-guard');
 const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 const { buildReportEvent, renderReportEvent } = require('../../../packages/core/lib/reporting-hub');
@@ -11,12 +12,18 @@ const { buildReportEvent, renderReportEvent } = require('../../../packages/core/
 const dryRun = process.argv.includes('--dry-run');
 const json = process.argv.includes('--json');
 
-function buildWeeklyLines(diagnosis = {}, evolution = {}) {
+function buildWeeklyLines(diagnosis = {}, evolution = {}, marketingDigest = null) {
   const lines = [
     `최근 포스트: ${diagnosis.postCount || 0}건 / 실행 이력: ${diagnosis.executionCount || 0}건`,
     `주요 약점: ${diagnosis.primaryWeakness?.message || '없음'}`,
     `다음 주 초점: ${(evolution.plan?.focus || []).join(' | ') || '없음'}`,
   ];
+
+  if (marketingDigest) {
+    lines.push(
+      `마케팅 상태: ${marketingDigest?.health?.status || 'unknown'} / 매출 영향 ${(Number(marketingDigest?.revenueCorrelation?.revenueImpactPct || 0) * 100).toFixed(1)}%`
+    );
+  }
 
   if (Array.isArray(diagnosis.recommendations) && diagnosis.recommendations.length) {
     lines.push('', '권고 사항:');
@@ -36,8 +43,8 @@ function buildWeeklyLines(diagnosis = {}, evolution = {}) {
   return lines;
 }
 
-async function sendWeeklyReport(diagnosis = {}, evolution = {}, options = {}) {
-  const lines = buildWeeklyLines(diagnosis, evolution);
+async function sendWeeklyReport(diagnosis = {}, evolution = {}, marketingDigest = null, options = {}) {
+  const lines = buildWeeklyLines(diagnosis, evolution, marketingDigest);
   const reportEvent = buildReportEvent({
     from_bot: 'blog-blo',
     team: 'blog',
@@ -84,12 +91,21 @@ async function main() {
     console.log('[블로][dry-run] 전략 파일 저장 없이 진단만 실행');
   }
 
-  const diagnosis = await diagnoseWeeklyPerformance(7);
-  const evolution = await evolveStrategy(diagnosis, { dryRun });
+  const [diagnosis, marketingDigest] = await Promise.all([
+    diagnoseWeeklyPerformance(7),
+    buildMarketingDigest({
+      revenueWindow: 14,
+      diagnosisWindow: 7,
+      autonomyWindow: 14,
+      snapshotWindow: 7,
+    }).catch(() => null),
+  ]);
+  const evolution = await evolveStrategy(diagnosis, { dryRun, marketingDigest });
 
   const result = {
     dryRun,
     diagnosis,
+    marketingDigest,
     evolution,
   };
 
@@ -101,7 +117,7 @@ async function main() {
     console.log(`[블로] 다음 주 초점: ${(evolution.plan?.focus || []).join(' | ')}`);
   }
 
-  await sendWeeklyReport(diagnosis, evolution, { dryRun });
+  await sendWeeklyReport(diagnosis, evolution, marketingDigest, { dryRun });
 }
 
 main().catch((error) => {

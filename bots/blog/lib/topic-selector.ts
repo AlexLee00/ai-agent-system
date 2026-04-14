@@ -30,7 +30,7 @@ const CATEGORY_TOPIC_POOL = {
     { topic: '요즘 기술 선택에서 안정성이 다시 중요한 이유', question: '성능보다 먼저 따져야 할 기준은 무엇일까', diff: '트렌드 소개가 아닌 선택 원칙 정리' },
   ],
   '개발기획과컨설팅': [
-    { topic: '요구사항 정의 전 꼭 확인할 전제', question: '일정이 밀리기 전에 무엇을 먼저 문서화해야 할까', diff: '기능 목록보다 전제와 범위 점검' },
+    { topic: '요구사항 정의 전에 먼저 정리할 전제', question: '일정이 밀리기 전에 무엇을 먼저 문서화해야 할까', diff: '기능 목록보다 전제와 범위 점검' },
     { topic: '개발 일정 산정을 망치는 커뮤니케이션', question: '왜 같은 요구사항을 두고 서로 다른 일정을 말하게 될까', diff: '기술 난이도보다 의사소통 관점' },
     { topic: '기획 문서가 실제 구현으로 이어지는 조건', question: '좋아 보이는 문서가 왜 실행 단계에서 무너질까', diff: '문서 형식보다 전달력과 결정 구조' },
   ],
@@ -106,7 +106,7 @@ const CATEGORY_SELECTION_GUIDES = {
 };
 
 const TITLE_FRAMES = [
-  { pattern: 'checklist', template: '{topicObject} 시작하기 전에 반드시 점검해야 할 3가지' },
+  { pattern: 'checklist', template: '{topic} 체크리스트 3가지' },
   { pattern: 'warning', template: '{topic}, 지금 바꾸지 않으면 늦는 이유' },
   { pattern: 'experience', template: '직접 해보고 깨달은 {topic}의 진짜 핵심' },
   { pattern: 'experience', template: '3개월간 {topicObject} 운영하며 배운 것들' },
@@ -124,6 +124,87 @@ const CATEGORY_PATTERN_PREFERENCES = {
   '성장과성공': ['experience', 'checklist'],
   '도서리뷰': ['experience', 'checklist'],
 };
+
+function _hasSenseSignal(senseState = null, signalType = '') {
+  const signals = Array.isArray(senseState?.signals) ? senseState.signals : [];
+  return signals.some((signal) => String(signal?.type || '') === signalType);
+}
+
+function adjustCategoryWeightsBySense(baseWeights = {}, senseState = null, revenueCorrelation = null) {
+  const next = {
+    홈페이지와App: 1,
+    개발기획과컨설팅: 1,
+    최신IT트렌드: 1,
+    IT정보와분석: 1,
+    성장과성공: 1,
+    도서리뷰: 1,
+    ...baseWeights,
+  };
+
+  const revenueDown = _hasSenseSignal(senseState, 'revenue_anomaly') || _hasSenseSignal(senseState, 'revenue_decline');
+  const examPeriod = _hasSenseSignal(senseState, 'exam_period') || Number(senseState?.skaEnvironment?.exam_score || 0) > 0;
+  const holiday = _hasSenseSignal(senseState, 'holiday') || !!senseState?.skaEnvironment?.holiday_flag;
+  const negativeRevenueImpact = Number(revenueCorrelation?.revenueImpactPct || 0) < 0;
+
+  if (revenueDown || negativeRevenueImpact) {
+    next['홈페이지와App'] += 3;
+    next['개발기획과컨설팅'] += 2;
+    next['성장과성공'] += 1;
+  }
+
+  if (examPeriod) {
+    next['성장과성공'] += 3;
+    next['도서리뷰'] += 2;
+    next['홈페이지와App'] += 1;
+  }
+
+  if (holiday) {
+    next['도서리뷰'] += 2;
+    next['성장과성공'] += 1;
+    next['홈페이지와App'] += 1;
+  }
+
+  return next;
+}
+
+function buildMarketingHints(category = '', senseState = null, revenueCorrelation = null) {
+  const adjustedWeights = adjustCategoryWeightsBySense({}, senseState, revenueCorrelation);
+  const signals = [];
+  const recommendations = [];
+  let ctaHint = '';
+
+  if (_hasSenseSignal(senseState, 'revenue_anomaly') || _hasSenseSignal(senseState, 'revenue_decline')) {
+    signals.push('매출 하락 또는 이상 징후 감지');
+    if (['홈페이지와App', '개발기획과컨설팅', '성장과성공'].includes(category)) {
+      recommendations.push('예약, 문의, 체험 전환으로 이어지는 CTA를 과장 없이 자연스럽게 넣어라.');
+      ctaHint = '체험 예약, 상담 문의, 방문 유도 중 하나를 본문 후반에 자연스럽게 연결';
+    }
+  }
+
+  if (_hasSenseSignal(senseState, 'exam_period') || Number(senseState?.skaEnvironment?.exam_score || 0) > 0) {
+    signals.push('시험기간/학습 수요 감지');
+    recommendations.push('학습 효율, 몰입 환경, 루틴 유지 포인트를 최소 1회 이상 본문에 포함하라.');
+    if (!ctaHint && ['성장과성공', '도서리뷰', '홈페이지와App'].includes(category)) {
+      ctaHint = '시험기간 독자가 바로 적용할 학습 루틴이나 집중 환경 팁을 결론부에 연결';
+    }
+  }
+
+  if (_hasSenseSignal(senseState, 'holiday') || !!senseState?.skaEnvironment?.holiday_flag) {
+    signals.push('공휴일/가벼운 소비 맥락 감지');
+    recommendations.push('무겁게 밀어붙이기보다 체크리스트형, 가볍게 읽히는 톤으로 정리하라.');
+  }
+
+  if (Number(revenueCorrelation?.revenueImpactPct || 0) < 0) {
+    signals.push(`최근 마케팅-매출 상관 약세 (${(Number(revenueCorrelation.revenueImpactPct) * 100).toFixed(1)}%)`);
+  }
+
+  return {
+    categoryWeight: Number(adjustedWeights[category] || 1),
+    signalSummary: signals.join(' / ') || '특이 마케팅 신호 없음',
+    recommendations,
+    ctaHint,
+  };
+}
 
 function safeReadDir(dirPath) {
   try {
@@ -273,6 +354,10 @@ function enrichTopicSelection(candidate, category, recentTitles = []) {
     openingAngle: guide.openingAngle,
     keyQuestions: guide.keyQuestions,
     closingAngle: guide.closingAngle,
+    marketingSignalSummary: candidate.marketingSignalSummary || '',
+    marketingRecommendations: Array.isArray(candidate.marketingRecommendations) ? candidate.marketingRecommendations : [],
+    marketingCtaHint: candidate.marketingCtaHint || '',
+    marketingWeight: Number(candidate.marketingWeight || 1),
     freshnessSummary: recentTitles.length
       ? `최근 ${recentTitles.length}개 제목과 중복을 피하도록 조정`
       : '최근 제목 이력이 적어 카테고리 기본 문제의식 중심으로 선택',
@@ -298,9 +383,10 @@ function getRecentPosts(category, limit = RECENT_POST_LIMIT) {
     .slice(0, limit);
 }
 
-function selectAndValidateTopic(category, recentPosts = [], strategyPlan = null) {
+function selectAndValidateTopic(category, recentPosts = [], strategyPlan = null, senseState = null, revenueCorrelation = null) {
   const recentTitles = recentPosts.map((post) => post.title).filter(Boolean);
   const topicPool = pickTopicPool(category);
+  const marketingHints = buildMarketingHints(category, senseState, revenueCorrelation);
 
   const candidates = [];
   for (let i = 0; i < topicPool.length; i += 1) {
@@ -313,13 +399,17 @@ function selectAndValidateTopic(category, recentPosts = [], strategyPlan = null)
         topic: topicPool[i].topic,
         question: topicPool[i].question,
         diff: topicPool[i].diff,
+        marketingSignalSummary: marketingHints.signalSummary,
+        marketingRecommendations: marketingHints.recommendations,
+        marketingCtaHint: marketingHints.ctaHint,
+        marketingWeight: marketingHints.categoryWeight,
         score: scoreCandidate({
           pattern: frame.pattern,
           topic: topicPool[i].topic,
           title,
           question: topicPool[i].question,
           diff: topicPool[i].diff,
-        }, category, strategyPlan),
+        }, category, strategyPlan) + Number(marketingHints.categoryWeight || 1) - 1,
       });
     }
   }
@@ -352,6 +442,10 @@ function selectAndValidateTopic(category, recentPosts = [], strategyPlan = null)
     topic: fallback.topic,
     question: fallback.question,
     diff: fallback.diff,
+    marketingSignalSummary: marketingHints.signalSummary,
+    marketingRecommendations: marketingHints.recommendations,
+    marketingCtaHint: marketingHints.ctaHint,
+    marketingWeight: marketingHints.categoryWeight,
     pattern: strategyPlan?.preferredTitlePattern || (strategyPlan?.hardSuppressTitlePattern ? 'checklist' : 'default'),
     recentTitleCount: recentTitles.length,
     forced: true,
@@ -361,6 +455,8 @@ function selectAndValidateTopic(category, recentPosts = [], strategyPlan = null)
 module.exports = {
   getRecentPosts,
   getCategorySelectionGuide,
+  adjustCategoryWeightsBySense,
+  buildMarketingHints,
   selectAndValidateTopic,
   similarity,
 };
