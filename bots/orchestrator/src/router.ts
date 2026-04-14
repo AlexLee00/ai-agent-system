@@ -102,6 +102,9 @@ const {
   summarizePayloadWarnings,
 } = require('../../../packages/core/lib/reporting-hub');
 const {
+  readRecentAlertSnapshot,
+} = require('../../../packages/core/lib/openclaw-client');
+const {
   getPromotionPendingHealth,
   getPendingCommandHealth,
 } = require('../../../packages/core/lib/health-db');
@@ -1778,12 +1781,7 @@ function formatSkaResult(command, rawResult) {
  */
 async function getQueueSummary() {
   try {
-    const rows = await pgPool.query('claude', `
-      SELECT from_bot, event_type, alert_level, message, status, created_at
-      FROM mainbot_queue
-      ORDER BY created_at DESC
-      LIMIT 10
-    `);
+    const rows = readRecentAlertSnapshot(10);
 
     if (rows.length === 0) return '📬 큐가 비어있습니다.';
 
@@ -1799,6 +1797,10 @@ async function getQueueSummary() {
   } catch (e) {
     return `큐 조회 실패: ${e.message}`;
   }
+}
+
+function getMostRecentAlertWithEventType() {
+  return readRecentAlertSnapshot(20).find((row) => row?.event_type);
 }
 
 /**
@@ -2307,13 +2309,7 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
     }
 
     case 'mute_last_alert': {
-      const last = await pgPool.get('claude', `
-        SELECT from_bot, event_type, message
-        FROM mainbot_queue
-        WHERE status = 'sent' AND event_type IS NOT NULL AND event_type != ''
-        ORDER BY id DESC
-        LIMIT 1
-      `);
+      const last = getMostRecentAlertWithEventType();
       if (!last?.event_type) return '⚠️ 무음 처리할 최근 알람이 없습니다.';
       const dur = parseDuration(args.duration || '30d') || { ms: 30 * 86400_000, label: '30일' };
       await setMuteByEvent(last.from_bot, last.event_type, dur.ms, '사용자 요청');
@@ -2322,13 +2318,7 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
     }
 
     case 'unmute_last_alert': {
-      const last = await pgPool.get('claude', `
-        SELECT from_bot, event_type, message
-        FROM mainbot_queue
-        WHERE status = 'sent' AND event_type IS NOT NULL AND event_type != ''
-        ORDER BY id DESC
-        LIMIT 1
-      `);
+      const last = getMostRecentAlertWithEventType();
       if (!last?.event_type) return '⚠️ 해제할 알람이 없습니다.';
       await clearMuteByEvent(last.from_bot, last.event_type);
       return `🔔 알람 무음 해제됨\n봇: ${last.from_bot} / 타입: ${last.event_type}`;

@@ -42,6 +42,7 @@ These still read from `mainbot_queue` as part of orchestrator behavior.
   - `queue` command summary
   - `mute_last_alert`
   - `unmute_last_alert`
+  - now migrating to `recent-alerts.json` snapshot written by `postAlarm(...)`
 
 Interpretation:
 - This is user-visible behavior, but not the preferred ingestion path anymore.
@@ -73,9 +74,10 @@ Exit condition:
 
 ### Phase B. Replace queue-driven operator affordances
 
-1. Replace `/queue` summary with webhook/reporting-hub delivery summary.
-2. Replace `mute_last_alert` / `unmute_last_alert` to use new delivery/event storage.
-3. Keep legacy polling only if old producers still exist.
+1. Replace `/queue` summary with `recent-alerts.json` snapshot first.
+2. Replace `mute_last_alert` / `unmute_last_alert` to use the same snapshot.
+3. Migrate dashboard reads after operator commands are stable.
+4. Keep legacy polling only if old producers still exist.
 
 Exit condition:
 - operator commands no longer depend on `mainbot_queue`
@@ -106,6 +108,6 @@ Exit condition:
 
 The next safe implementation step is:
 
-1. enumerate actual runtime callers of `publishToQueue(...)`
-2. migrate those producers to webhook / alert publisher
-3. then revisit orchestrator queue command paths
+1. observe `/tmp/mainbot-queue-usage.jsonl` for remaining runtime writers
+2. finish router `/queue` + mute/unmute migration to `recent-alerts.json`
+3. then move dashboard monitoring off `mainbot_queue`
