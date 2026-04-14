@@ -13,12 +13,16 @@ MODE="${1:-daily}"
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] FORECAST (${MODE}) 시작"
 
-TMPFILE=$(mktemp /tmp/ska-forecast-XXXXXX)
+TMPFILE=$(mktemp /tmp/ska-forecast.out.XXXXXX)
+ERRFILE=$(mktemp /tmp/ska-forecast.err.XXXXXX)
 
-"$PYTHON" "$FORECAST" "--mode=${MODE}" > "$TMPFILE" 2>&1
+"$PYTHON" "$FORECAST" "--mode=${MODE}" > "$TMPFILE" 2> "$ERRFILE"
 EXIT_CODE=$?
 
 cat "$TMPFILE"
+if [ -s "$ERRFILE" ]; then
+    cat "$ERRFILE" >&2
+fi
 
 if [ $EXIT_CODE -eq 0 ]; then
     MODE=ops PROJECT_ROOT=/Users/alexlee/projects/ai-agent-system "$NODE" "$PUBLISHER" \
@@ -37,5 +41,5 @@ else
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] ⚠️ FORECAST (${MODE}) 오류 (exit: $EXIT_CODE)"
 fi
 
-rm -f "$TMPFILE"
+rm -f "$TMPFILE" "$ERRFILE"
 exit $EXIT_CODE
