@@ -27,7 +27,6 @@ import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
 const pgPool = require('../../../packages/core/lib/pg-pool');
-const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 
 function getMarketBucket(exchange) {
   if (exchange === 'kis') return 'domestic';
@@ -711,19 +710,21 @@ async function runWeeklyAnalystWeightAdjustment({ dryRun = false } = {}) {
   }
 
   if (analystWeightResult.adjustments.length > 0) {
-    await postAlarm({
+    await publishAlert({
+      from_bot: 'luna-weekly-review',
+      event_type: 'weekly_weight_adjustment',
+      alert_level: 1,
       message: buildAnalystWeightAdjustmentMessage(analystWeightResult),
-      team: 'investment',
-      alertLevel: 1,
-      fromBot: 'luna-weekly-review',
+      payload: { analystWeightResult },
     }).catch(() => {});
   }
   for (const alert of analystWeightResult.alerts) {
-    await postAlarm({
+    await publishAlert({
+      from_bot: 'luna-weekly-review',
+      event_type: 'weekly_weight_alert',
+      alert_level: 2,
       message: alert.message,
-      team: 'investment',
-      alertLevel: 2,
-      fromBot: 'luna-weekly-review',
+      payload: { alert },
     }).catch(() => {});
   }
 
