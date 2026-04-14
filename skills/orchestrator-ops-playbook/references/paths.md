@@ -3,6 +3,8 @@
 핵심:
 
 - `bots/orchestrator/src/mainbot.js`
+- `bots/orchestrator/src/orchestrator.ts`
+- `dist/ts-runtime/bots/orchestrator/src/orchestrator.js`
 - `bots/orchestrator/src/router.js`
 - `bots/orchestrator/src/filter.js`
 - `bots/orchestrator/lib/batch-formatter.js`

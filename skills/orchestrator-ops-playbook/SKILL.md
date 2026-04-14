@@ -1,6 +1,6 @@
 ---
 name: orchestrator-ops-playbook
-description: Use when operating, debugging, or improving the orchestrator and OpenClaw stack in this repository, especially when working on mainbot queue flow, gateway behavior, unified ops health, critical n8n webhook delivery, or briefing and batch formatting.
+description: Use when operating, debugging, or improving the orchestrator and OpenClaw stack in this repository, especially when working on mainbot queue flow, orchestrator runtime behavior, unified ops health, critical n8n webhook delivery, or briefing and batch formatting.
 ---
 
 # Orchestrator Ops Playbook
@@ -10,7 +10,7 @@ description: Use when operating, debugging, or improving the orchestrator and Op
 주요 대상:
 
 - `mainbot_queue`
-- `mainbot.js`
+- `orchestrator runtime`
 - OpenClaw gateway
 - `critical webhook`
 - `/ops-health`
@@ -20,7 +20,9 @@ description: Use when operating, debugging, or improving the orchestrator and Op
 
 핵심 운영 경로:
 
-- `bots/orchestrator/src/mainbot.js`
+- `bots/orchestrator/src/orchestrator.ts`
+- `dist/ts-runtime/bots/orchestrator/src/orchestrator.js`
+- `bots/orchestrator/src/mainbot.js` (legacy alias)
 - `bots/orchestrator/src/router.js`
 - `bots/orchestrator/src/filter.js`
 - `bots/orchestrator/lib/batch-formatter.js`
@@ -46,12 +48,12 @@ description: Use when operating, debugging, or improving the orchestrator and Op
 
 ## 자주 보는 운영 흐름
 
-### 1. 메인봇 큐 소비
+### 1. 오케스트레이터 큐 소비
 
 순서:
 
 1. producer가 `mainbot_queue`에 적재
-2. `mainbot.js`가 폴링
+2. `orchestrator` runtime이 폴링
 3. `filter.js`가 defer/batch 경로 결정
 4. `batch-formatter.js`가 렌더링
 5. gateway 또는 telegram 경로로 발송
