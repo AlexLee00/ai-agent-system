@@ -13,6 +13,7 @@ const fs = require('fs');
 const path = require('path');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const rag = require('../../../packages/core/lib/rag-safe');
+const { publishToRag } = require('../../../packages/core/lib/reporting-hub');
 const env = require('../../../packages/core/lib/env');
 const { isExcludedReferencePost } = require('./reference-exclusions.ts');
 
@@ -20,6 +21,45 @@ const OUTPUT_DIR = path.join(env.PROJECT_ROOT, 'bots', 'blog', 'output');
 const GDRIVE_DIR = process.env.GDRIVE_BLOG_DIR || '/tmp/blog-output';
 const DEV_HUB_READONLY = env.IS_DEV && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
 let _performanceColumnsState = null;
+
+async function publishBlogRagEvent({
+  collection,
+  sourceBot = 'blog-publ',
+  eventType,
+  message,
+  payload,
+  metadata = {},
+  content,
+  dedupeKey,
+  cooldownMs = 30 * 60 * 1000,
+}) {
+  await rag.initSchema();
+  const result = await publishToRag({
+    ragStore: {
+      async store(targetCollection, ragContent, targetMetadata = {}, targetSourceBot = sourceBot) {
+        return rag.store(targetCollection, ragContent, targetMetadata, targetSourceBot);
+      },
+    },
+    collection,
+    sourceBot,
+    event: {
+      from_bot: sourceBot,
+      team: 'blog',
+      event_type: eventType,
+      alert_level: 1,
+      message,
+      payload,
+    },
+    metadata,
+    contentBuilder: () => String(content || ''),
+    policy: {
+      dedupe: true,
+      key: dedupeKey,
+      cooldownMs,
+    },
+  });
+  return result?.id ?? null;
+}
 
 function formatKstDate(value) {
   const date = value instanceof Date ? value : new Date(value);
@@ -448,11 +488,20 @@ async function publishToFile(postData) {
 
   if (!DEV_HUB_READONLY) {
     try {
-      await rag.initSchema();
-      await rag.store(
-        'blog',
-        `[${postType}] ${title} | ${category}${lectureNumber ? ` | ${lectureNumber}강` : ''} | ${charCount}자`,
-        {
+      await publishBlogRagEvent({
+        collection: 'blog',
+        eventType: 'blog_publish_rag',
+        message: `[${postType}] ${title} | ${category}${lectureNumber ? ` | ${lectureNumber}강` : ''} | ${charCount}자`,
+        payload: {
+          title,
+          summary: `${category}${lectureNumber ? ` | ${lectureNumber}강` : ''} | ${charCount}자`,
+          details: [
+            `type: ${postType}`,
+            `publish_date: ${publishDate}`,
+            `filename: ${filename}`,
+          ],
+        },
+        metadata: {
           type: postType,
           category,
           lecture_number: lectureNumber || null,
@@ -460,8 +509,9 @@ async function publishToFile(postData) {
           publish_date: publishDate,
           filename,
         },
-        'blog-publ'
-      );
+        content: `[${postType}] ${title} | ${category}${lectureNumber ? ` | ${lectureNumber}강` : ''} | ${charCount}자`,
+        dedupeKey: `blog-rag:${filename}:${publishDate}`,
+      });
     } catch (e) {
       console.warn('[퍼블] RAG 저장 실패:', e.message);
     }
@@ -537,11 +587,19 @@ async function recordPerformance(postId, metrics = {}) {
 
     if (row && views > 0) {
       try {
-        await rag.initSchema();
-        await rag.store(
-          'experience',
-          `[blog_success] ${row.title} | views=${views} | comments=${comments} | likes=${likes}\n[이유: 조회수 ${views}회, 카테고리 ${row.category || 'unknown'}]`,
-          {
+        await publishBlogRagEvent({
+          collection: 'experience',
+          eventType: 'blog_success_rag',
+          message: `[blog_success] ${row.title} | views=${views} | comments=${comments} | likes=${likes}`,
+          payload: {
+            title: row.title,
+            summary: `views=${views} | comments=${comments} | likes=${likes}`,
+            details: [
+              `category: ${row.category || 'unknown'}`,
+              `why: 조회수 ${views}회, 카테고리 ${row.category || 'unknown'}`,
+            ],
+          },
+          metadata: {
             intent: 'blog_success',
             team: 'blog',
             category: row.category,
@@ -552,8 +610,10 @@ async function recordPerformance(postId, metrics = {}) {
             postId,
             why: `조회수 ${views}회, 카테고리 ${row.category || 'unknown'}`,
           },
-          'blog-publ'
-        );
+          content: `[blog_success] ${row.title} | views=${views} | comments=${comments} | likes=${likes}\n[이유: 조회수 ${views}회, 카테고리 ${row.category || 'unknown'}]`,
+          dedupeKey: `blog-success:${postId}:${views}:${comments}:${likes}`,
+          cooldownMs: 24 * 60 * 60 * 1000,
+        });
       } catch (ragError) {
         console.warn('[퍼블] 성과 RAG 저장 실패(무시):', ragError.message);
       }
@@ -619,11 +679,19 @@ async function recordPerformancePartial(postId, metrics = {}) {
 
     if (row && hasViews && views > 0) {
       try {
-        await rag.initSchema();
-        await rag.store(
-          'experience',
-          `[blog_success] ${row.title} | views=${views}${hasComments ? ` | comments=${comments}` : ''}${hasLikes ? ` | likes=${likes}` : ''}\n[이유: 조회수 ${views}회, 카테고리 ${row.category || 'unknown'}]`,
-          {
+        await publishBlogRagEvent({
+          collection: 'experience',
+          eventType: 'blog_success_rag',
+          message: `[blog_success] ${row.title} | views=${views}${hasComments ? ` | comments=${comments}` : ''}${hasLikes ? ` | likes=${likes}` : ''}`,
+          payload: {
+            title: row.title,
+            summary: `views=${views}${hasComments ? ` | comments=${comments}` : ''}${hasLikes ? ` | likes=${likes}` : ''}`,
+            details: [
+              `category: ${row.category || 'unknown'}`,
+              `why: 조회수 ${views}회, 카테고리 ${row.category || 'unknown'}`,
+            ],
+          },
+          metadata: {
             intent: 'blog_success',
             team: 'blog',
             category: row.category,
@@ -634,8 +702,10 @@ async function recordPerformancePartial(postId, metrics = {}) {
             postId,
             why: `조회수 ${views}회, 카테고리 ${row.category || 'unknown'}`,
           },
-          'blog-publ'
-        );
+          content: `[blog_success] ${row.title} | views=${views}${hasComments ? ` | comments=${comments}` : ''}${hasLikes ? ` | likes=${likes}` : ''}\n[이유: 조회수 ${views}회, 카테고리 ${row.category || 'unknown'}]`,
+          dedupeKey: `blog-success:${postId}:${views}:${hasComments ? comments : 'na'}:${hasLikes ? likes : 'na'}`,
+          cooldownMs: 24 * 60 * 60 * 1000,
+        });
       } catch (ragError) {
         console.warn('[퍼블] 성과 부분 RAG 저장 실패(무시):', ragError.message);
       }
