@@ -43,6 +43,12 @@ function formatText(digest = {}) {
     `- decisions: ${digest?.autonomySummary?.totalCount ?? 0}`,
     `- auto publish: ${digest?.autonomySummary?.autoPublishCount ?? 0}`,
     `- latest: ${digest?.autonomySummary?.latestDecision?.decision || '없음'}`,
+    '',
+    '[Next General Preview]',
+    `- category: ${digest?.nextGeneralPreview?.category || 'none'}`,
+    `- pattern: ${digest?.nextGeneralPreview?.pattern || 'none'}`,
+    `- predicted: ${digest?.nextGeneralPreview?.predictedAdoption || 'warming_up'}`,
+    `- title: ${digest?.nextGeneralPreview?.title || 'none'}`,
   ];
 
   const channels = Array.isArray(digest?.channelPerformance?.rows) ? digest.channelPerformance.rows : [];
