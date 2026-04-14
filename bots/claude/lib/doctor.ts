@@ -150,12 +150,30 @@ const WHITELIST = {
  * @returns {Promise<RecoveryResult>}
  */
 async function execute(taskType, params = {}, requestedBy = 'dexter') {
+  const recentRecoveryHint = await doctorMemory.recall(
+    [String(taskType || ''), String(requestedBy || ''), String(params?.label || '')].filter(Boolean).join(' '),
+    {
+      type: 'episodic',
+      limit: 2,
+      threshold: 0.35,
+    },
+  ).then((rows) => {
+    if (!rows || rows.length === 0) return '';
+    const lines = rows.slice(0, 2).map((row) => {
+      const createdAt = row?.created_at ? String(row.created_at).slice(0, 10) : 'unknown';
+      const similarity = Number(row?.similarity || 0);
+      const headline = String(row?.content || '').split(' | ')[0] || '기록 없음';
+      return `${createdAt} / 유사도 ${similarity.toFixed(2)} / ${headline}`;
+    });
+    return `\n최근 유사 복구:\n- ${lines.join('\n- ')}`;
+  }).catch(() => '');
+
   // 1. 블랙리스트 체크
   const banned = _checkBlacklist(params);
   if (banned) {
     const msg = `블랙리스트 위반 — "${banned}" 포함 파라미터 거부`;
     await logRecovery(taskType, params, null, false, requestedBy, null, msg);
-    return { success: false, message: msg };
+    return { success: false, message: `${msg}${recentRecoveryHint}` };
   }
 
   // 2. 화이트리스트 확인
@@ -163,14 +181,14 @@ async function execute(taskType, params = {}, requestedBy = 'dexter') {
   if (!task) {
     const msg = `화이트리스트에 없는 작업: ${taskType}`;
     await logRecovery(taskType, params, null, false, requestedBy, null, msg);
-    return { success: false, message: msg };
+    return { success: false, message: `${msg}${recentRecoveryHint}` };
   }
 
   // 3. 마스터 확인 필요 시 — 현재는 거부 후 알림으로 처리 (추후 텔레그램 연동 확장)
   if (task.requires_confirmation) {
     const msg = `"${task.description}" 작업은 마스터 확인이 필요합니다. 텔레그램으로 요청하세요.`;
     await logRecovery(taskType, params, null, false, requestedBy, null, msg);
-    return { success: false, message: msg, requiresConfirmation: true };
+    return { success: false, message: `${msg}${recentRecoveryHint}`, requiresConfirmation: true };
   }
 
   // 4. 실행
@@ -179,12 +197,12 @@ async function execute(taskType, params = {}, requestedBy = 'dexter') {
     await logRecovery(taskType, params, data, true, requestedBy, 'auto');
     const msg = `✅ [독터] ${task.description} 완료`;
     console.log(`${msg} — ${JSON.stringify(data)}`);
-    return { success: true, message: msg, data };
+    return { success: true, message: `${msg}${recentRecoveryHint}`, data };
   } catch (e) {
     await logRecovery(taskType, params, null, false, requestedBy, null, e.message);
     const msg = `❌ [독터] ${task.description} 실패: ${e.message}`;
     console.error(msg);
-    return { success: false, message: msg };
+    return { success: false, message: `${msg}${recentRecoveryHint}` };
   }
 }
 
