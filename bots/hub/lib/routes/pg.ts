@@ -1,5 +1,7 @@
 const pgPool = require('../../../../packages/core/lib/pg-pool');
 const { validateSchema, validateSql } = require('../sql-guard');
+const PG_WAITING_LIMIT = 5;
+const PG_ACTIVE_LIMIT = 8;
 
 export async function pgQueryRoute(req: any, res: any) {
   const started = Date.now();
@@ -17,6 +19,28 @@ export async function pgQueryRoute(req: any, res: any) {
 
   if (!Array.isArray(params)) {
     return res.status(400).json({ error: 'query rejected', reason: 'params must be an array' });
+  }
+
+  const poolStats = pgPool.getPoolStats?.(schemaCheck.schema);
+  if (poolStats && typeof poolStats === 'object') {
+    const waiting = Number(poolStats.waiting || 0);
+    const active = Number(poolStats.active || 0);
+    if (waiting > PG_WAITING_LIMIT || active >= PG_ACTIVE_LIMIT) {
+      res.set('Retry-After', '2');
+      return res.status(503).json({
+        error: 'query deferred',
+        reason: 'pg_pool_overloaded',
+        duration_ms: Date.now() - started,
+        pool: {
+          schema: schemaCheck.schema,
+          waiting,
+          active,
+          total: Number(poolStats.total || 0),
+          utilization: String(poolStats.utilization || '0%'),
+        },
+        retry_after_ms: 1500,
+      });
+    }
   }
 
   try {

@@ -207,7 +207,7 @@
       "status": "ops",
       "contextPath": "bots/hub",
       "runtime": "node",
-      "entrypoint": "bots/hub/src/hub.js",
+      "entrypoint": "dist/ts-runtime/bots/hub/src/hub.js",
       "launchd": "ai.hub.resource-api",
       "type": "service",
       "port": 7788
