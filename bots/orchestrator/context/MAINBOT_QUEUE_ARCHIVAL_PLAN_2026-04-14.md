@@ -130,6 +130,9 @@ Completed action:
 Prepared scripts:
 - [mainbot_queue_freeze_20260414.sql](/Users/alexlee/projects/ai-agent-system/scripts/sql/mainbot_queue_freeze_20260414.sql)
 - [mainbot_queue_freeze_rollback_20260414.sql](/Users/alexlee/projects/ai-agent-system/scripts/sql/mainbot_queue_freeze_rollback_20260414.sql)
+- [mainbot_queue_final_drop_20260414.sql](/Users/alexlee/projects/ai-agent-system/scripts/sql/mainbot_queue_final_drop_20260414.sql)
+- [mainbot_queue_restore_from_archive_20260414.sql](/Users/alexlee/projects/ai-agent-system/scripts/sql/mainbot_queue_restore_from_archive_20260414.sql)
+- [MAINBOT_QUEUE_FINAL_RETIREMENT_CHECKLIST_2026-04-14.md](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/context/MAINBOT_QUEUE_FINAL_RETIREMENT_CHECKLIST_2026-04-14.md)
 
 Recommended freeze mode:
 - rename live tables to `*_legacy_live`
