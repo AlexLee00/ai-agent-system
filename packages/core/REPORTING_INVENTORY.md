@@ -90,6 +90,7 @@
 - sigma daily/meta-review RAG writes → reporting-hub rag target
 - video edit result/feedback RAG writes → reporting-hub rag target
 - worker document/journal/schedule RAG writes → reporting-hub rag target
+- claude doctor recovery/failure RAG writes → reporting-hub rag target
 - blog publ RAG writes → reporting-hub rag target
 - blog rag accumulator RAG writes → reporting-hub rag target
 - blog curriculum notices → reporting-hub notice + severity fanout
@@ -109,6 +110,6 @@
 
 1. `rebecca`와 기타 reporter 경로를 reporting-hub fanout으로 통일
 2. severity, dedupe, throttle, quiet-hours 정책을 reporting-hub로 승격
-3. remaining direct `rag.store(...)` writers, especially a few test/legacy paths and any leftover non-shared callers, also absorb into reporting-hub rag target composition
+3. remaining direct `rag.store(...)` writers, especially search-only rag consumers plus a few test/legacy paths, continue to be narrowed and any leftover non-shared writers also absorb into reporting-hub rag target composition
 4. reporter/rebecca/night-handler 문구를 공용 notice/report formatter로 추가 통일
 5. mainbot consumer도 envelope/target 기반으로 일반화
