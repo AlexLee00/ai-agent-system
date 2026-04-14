@@ -1,4 +1,4 @@
-import { postAlarm } from '../../../packages/core/lib/openclaw-client';
+import { publishToWebhook } from '../../../packages/core/lib/reporting-hub';
 
 export interface PublishReservationAlertOptions {
   from_bot?: string;
@@ -30,11 +30,15 @@ export async function publishReservationAlert({
     lines.push(`event_type: ${event_type}`);
   }
 
-  const result = await postAlarm({
-    message: lines.filter(Boolean).join('\n'),
-    team,
-    alertLevel: alert_level,
-    fromBot: from_bot || 'ska',
+  const result = await publishToWebhook({
+    event: {
+      from_bot: from_bot || 'ska',
+      team,
+      event_type,
+      alert_level,
+      message: lines.filter(Boolean).join('\n'),
+      payload: payload || undefined,
+    },
   });
   return result.ok === true;
 }
