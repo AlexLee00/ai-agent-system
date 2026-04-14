@@ -154,7 +154,9 @@
 - `claude.bot_commands`
   - 제이/클로드 명령 enqueue, 실행 상태, 결과 추적
 - `claude.mainbot_queue`
-  - 팀장봇 큐 적재 상태와 지연 확인
+  - 레거시 알람 큐
+  - 2026-04-14 기준 retired-by-default
+  - 현재 운영자 표면은 queue 대신 snapshot/webhook 경로를 우선 사용
 - `claude.token_usage`
   - LLM 사용량 집계
 - `claude.shadow_log`

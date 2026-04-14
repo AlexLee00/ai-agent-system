@@ -17,6 +17,9 @@ Live OPS status as of 2026-04-14:
 - live queue had no fresh `pending` rows during the disable trial
 - `publishToQueue(...)` now requires `MAINBOT_QUEUE_PUBLISH_ENABLED=true`
 
+Related archive planning:
+- [MAINBOT_QUEUE_ARCHIVAL_PLAN_2026-04-14.md](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/context/MAINBOT_QUEUE_ARCHIVAL_PLAN_2026-04-14.md)
+
 ## Current Usage Classification
 
 ### 1. Legacy producer write path
