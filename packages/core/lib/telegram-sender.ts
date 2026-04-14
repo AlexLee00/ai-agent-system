@@ -28,6 +28,7 @@ const fs   = require('fs');
 const path = require('path');
 const env = require('./env');
 const openclawClient = require('./openclaw-client');
+const { publishToWebhook } = require('./reporting-hub');
 
 type TeamKey =
   | 'general'
@@ -277,11 +278,14 @@ export async function send(team: string, message: string): Promise<boolean> {
   }
 
   if (env.IS_OPS) {
-    const result = await openclawClient.postAlarm({
-      team,
-      message: normalized,
-      alertLevel: _isUrgent(normalized) ? 4 : 2,
-      fromBot: 'telegram-sender',
+    const result = await publishToWebhook({
+      event: {
+        from_bot: 'telegram-sender',
+        team,
+        event_type: 'telegram_send',
+        alert_level: _isUrgent(normalized) ? 4 : 2,
+        message: normalized,
+      },
     });
     return Boolean(result?.ok);
   }
@@ -323,11 +327,14 @@ async function sendBuffered(team: string, message: string): Promise<boolean> {
   }
 
   if (env.IS_OPS) {
-    const result = await openclawClient.postAlarm({
-      team,
-      message: normalized,
-      alertLevel: _isUrgent(normalized) ? 4 : 2,
-      fromBot: 'telegram-sender',
+    const result = await publishToWebhook({
+      event: {
+        from_bot: 'telegram-sender',
+        team,
+        event_type: 'telegram_buffered_send',
+        alert_level: _isUrgent(normalized) ? 4 : 2,
+        message: normalized,
+      },
     });
     return Boolean(result?.ok);
   }
@@ -351,11 +358,14 @@ async function sendWithOptions(team: string, message: string, options: SendOptio
   }
 
   if (env.IS_OPS) {
-    const result = await openclawClient.postAlarm({
-      team,
-      message: normalized,
-      alertLevel: _isUrgent(normalized) ? 4 : 2,
-      fromBot: 'telegram-sender',
+    const result = await publishToWebhook({
+      event: {
+        from_bot: 'telegram-sender',
+        team,
+        event_type: 'telegram_option_send',
+        alert_level: _isUrgent(normalized) ? 4 : 2,
+        message: normalized,
+      },
     });
     return Boolean(result?.ok);
   }
@@ -400,18 +410,24 @@ async function sendDirect(chatId: string, message: string, options: SendOptions 
 export async function sendCritical(team: string, message: string): Promise<boolean> {
   if (env.IS_OPS) {
     const full = `🚨 CRITICAL\n${message}`;
-    const tasks = [openclawClient.postAlarm({
-      team: 'emergency',
-      message: `🚨 [${team}] CRITICAL\n${message}`,
-      alertLevel: 4,
-      fromBot: 'telegram-sender',
+    const tasks = [publishToWebhook({
+      event: {
+        from_bot: 'telegram-sender',
+        team: 'emergency',
+        event_type: 'telegram_critical',
+        alert_level: 4,
+        message: `🚨 [${team}] CRITICAL\n${message}`,
+      },
     })];
     if (team !== 'emergency') {
-      tasks.push(openclawClient.postAlarm({
-        team,
-        message: full,
-        alertLevel: 4,
-        fromBot: 'telegram-sender',
+      tasks.push(publishToWebhook({
+        event: {
+          from_bot: 'telegram-sender',
+          team,
+          event_type: 'telegram_critical',
+          alert_level: 4,
+          message: full,
+        },
       }));
     }
     const results = await Promise.all(tasks);
