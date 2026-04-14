@@ -40,4 +40,7 @@ export async function publishReservationAlert({
 }
 
 export const publishAlert = publishReservationAlert;
+/**
+ * @deprecated Use publishAlert or publishReservationAlert instead.
+ */
 export const publishToMainBot = publishReservationAlert;

@@ -174,11 +174,11 @@ function triggerEmergency(reason: string, cost: number, scope = 'global', option
   const stopData = billingGuard.activate(reason, cost, 'llm-logger', scope, { ttlMs });
 
   try {
-    const mainbotClient = require('../../../bots/claude/lib/alert-publisher') as any;
-    const publish = mainbotClient.publishAlert
-      || mainbotClient.publishToMainBot
-      || mainbotClient.default?.publishAlert
-      || mainbotClient.default?.publishToMainBot;
+    const alertPublisher = require('../../../bots/claude/lib/alert-publisher') as any;
+    const publish = alertPublisher.publishAlert
+      || alertPublisher.publishToMainBot
+      || alertPublisher.default?.publishAlert
+      || alertPublisher.default?.publishToMainBot;
     if (publish) {
       publish({
         from_bot: 'dexter',
