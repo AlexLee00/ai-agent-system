@@ -118,6 +118,7 @@ defmodule TeamJay.Blog.MarketingDigest do
 
       %{
         preferred_category: Map.get(plan, "preferredCategory"),
+        preferred_category_weight_boost: Map.get(plan, "preferredCategoryWeightBoost"),
         suppressed_category: Map.get(plan, "suppressedCategory"),
         preferred_title_pattern: Map.get(plan, "preferredTitlePattern"),
         suppressed_title_pattern: Map.get(plan, "suppressedTitlePattern"),

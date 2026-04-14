@@ -11,9 +11,10 @@ const GENERAL_CATEGORIES = [
 function _scoreGeneralCategory(category, distance, strategyPlan = null) {
   let score = 100 - distance;
   if (!strategyPlan) return score;
+  const preferredBoost = Number(strategyPlan.preferredCategoryWeightBoost || 0);
 
   if (strategyPlan.preferredCategory && category === strategyPlan.preferredCategory) {
-    score += 8;
+    score += 8 + preferredBoost;
   }
   if (strategyPlan.suppressedCategory && category === strategyPlan.suppressedCategory) {
     score -= 4;
