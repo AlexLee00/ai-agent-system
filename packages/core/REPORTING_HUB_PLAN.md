@@ -27,11 +27,13 @@
 - [bots/claude/lib/alert-publisher.ts](/Users/alexlee/projects/ai-agent-system/bots/claude/lib/alert-publisher.ts)
 - [bots/reservation/lib/telegram.ts](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/telegram.ts)
 - [packages/core/scripts/publish-python-report.js](/Users/alexlee/projects/ai-agent-system/packages/core/scripts/publish-python-report.js)
+- [bots/investment/shared/rag-client.ts](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/rag-client.ts)
 
 즉 지금은
 - alert publisher 발행
 - 팀 topic 텔레그램 발행
 - Python 리포터 stdout 브릿지
+- investment current RAG 저장
 이 같은 이벤트 정규화 레이어를 탄다.
 
 ## Next Extraction Targets
@@ -40,6 +42,7 @@
 - `reservation-rag`
 - `rag-safe`
 - `blog-rag-store`
+- `blog publ direct rag.store(...)`
 
 2. n8n escalation 연동
 - critical webhook
