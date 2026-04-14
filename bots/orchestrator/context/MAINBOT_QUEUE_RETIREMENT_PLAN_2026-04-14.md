@@ -22,6 +22,8 @@ Related archive planning:
   - archive tables created and row-count verified on 2026-04-14
   - live freeze applied on 2026-04-14
   - rollback SQL script prepared
+- [MAINBOT_QUEUE_FINAL_RETIREMENT_CHECKLIST_2026-04-14.md](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/context/MAINBOT_QUEUE_FINAL_RETIREMENT_CHECKLIST_2026-04-14.md)
+  - final destructive cleanup gate
 
 ## Current Usage Classification
 
