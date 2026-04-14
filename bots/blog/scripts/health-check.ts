@@ -22,8 +22,10 @@ const {
   DEFAULT_NORMAL_EXIT_CODES,
 } = require('../../../packages/core/lib/health-provider');
 const { publishToWebhook } = require('../../../packages/core/lib/reporting-hub');
+const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
 
 const runtimeConfig = getBlogHealthRuntimeConfig();
+const healthMemory = createAgentMemory({ agentId: 'blog.health', team: 'blog' });
 const NODE_SERVER_HEALTH_URL = new URL(runtimeConfig.nodeServerHealthUrl || 'http://127.0.0.1:3100/health');
 const N8N_HEALTH_URL = new URL(runtimeConfig.n8nHealthUrl || 'http://127.0.0.1:5678/healthz');
 const NODE_SERVER_TIMEOUT_MS = Number(runtimeConfig.nodeServerTimeoutMs || 3000);
@@ -43,6 +45,56 @@ async function notify(msg, level = 3) {
   } catch {
     // ignore
   }
+}
+
+function buildMemoryQuery(key, msg) {
+  const headline = String(msg || '').split('\n')[0] || '';
+  return [String(key || ''), headline, 'blog health'].filter(Boolean).join(' ');
+}
+
+async function rememberHealthEvent(key, kind, msg, level) {
+  try {
+    await healthMemory.remember(String(msg || ''), 'episodic', {
+      importance: kind === 'issue' ? 0.76 : 0.62,
+      expiresIn: 1000 * 60 * 60 * 24 * 30,
+      metadata: {
+        kind,
+        issueKey: key,
+        level,
+      },
+    });
+    await healthMemory.consolidate({
+      olderThanDays: 14,
+      limit: 10,
+    });
+  } catch (_error) {
+    // ignore
+  }
+}
+
+async function buildIssueHints(key, msg) {
+  const query = buildMemoryQuery(key, msg);
+  const episodicHint = await healthMemory.recallCountHint(query, {
+    type: 'episodic',
+    limit: 2,
+    threshold: 0.33,
+    title: '최근 유사 이슈',
+    separator: 'pipe',
+    metadataKey: 'kind',
+    labels: {
+      issue: '이슈',
+      recovery: '회복',
+    },
+    order: ['issue', 'recovery'],
+  }).catch(() => '');
+  const semanticHint = await healthMemory.recallHint(`${query} consolidated health pattern`, {
+    type: 'semantic',
+    limit: 2,
+    threshold: 0.28,
+    title: '최근 통합 패턴',
+    separator: 'newline',
+  }).catch(() => '');
+  return `${episodicHint}${semanticHint}`;
 }
 
 const CONTINUOUS = [];
@@ -181,7 +233,9 @@ async function main() {
     }
 
     if (state[`unloaded:${label}`]) {
-      await notify(`✅ [블로그 헬스] ${shortName} 회복\nlaunchd 정상 로드 — 자동 감지`, 1);
+      const recoveryMsg = `✅ [블로그 헬스] ${shortName} 회복\nlaunchd 정상 로드 — 자동 감지`;
+      await notify(recoveryMsg, 1);
+      await rememberHealthEvent(`unloaded:${label}`, 'recovery', recoveryMsg, 1);
       hsm.clearAlert(state, `unloaded:${label}`);
     }
 
@@ -193,7 +247,9 @@ async function main() {
     } else {
       const prevKeys = Object.keys(state).filter((k) => k.startsWith(`exitcode:${label}:`));
       if (prevKeys.length > 0) {
-        await notify(`✅ [블로그 헬스] ${shortName} 회복\nexit code 정상 (0) — 자동 감지`, 1);
+        const recoveryMsg = `✅ [블로그 헬스] ${shortName} 회복\nexit code 정상 (0) — 자동 감지`;
+        await notify(recoveryMsg, 1);
+        await rememberHealthEvent(`exitcode:${label}:0`, 'recovery', recoveryMsg, 1);
         prevKeys.forEach((k) => hsm.clearAlert(state, k));
       }
     }
@@ -211,7 +267,9 @@ async function main() {
         });
       }
     } else if (state[key]) {
-      await notify(`✅ [블로그 헬스] node-server 회복\n${nodeServer.detail}`, 1);
+      const recoveryMsg = `✅ [블로그 헬스] node-server 회복\n${nodeServer.detail}`;
+      await notify(recoveryMsg, 1);
+      await rememberHealthEvent(key, 'recovery', recoveryMsg, 1);
       hsm.clearAlert(state, key);
     }
   }
@@ -227,7 +285,9 @@ async function main() {
       });
     }
   } else if (state[n8nKey]) {
-    await notify(`✅ [블로그 헬스] n8n 회복\n${n8nHealth.detail}`, 1);
+    const recoveryMsg = `✅ [블로그 헬스] n8n 회복\n${n8nHealth.detail}`;
+    await notify(recoveryMsg, 1);
+    await rememberHealthEvent(n8nKey, 'recovery', recoveryMsg, 1);
     hsm.clearAlert(state, n8nKey);
   }
 
@@ -242,13 +302,17 @@ async function main() {
       });
     }
   } else if (state[bookCatalogKey]) {
-    await notify(`✅ [블로그 헬스] book_catalog 회복\n${bookCatalog.detail}`, 1);
+    const recoveryMsg = `✅ [블로그 헬스] book_catalog 회복\n${bookCatalog.detail}`;
+    await notify(recoveryMsg, 1);
+    await rememberHealthEvent(bookCatalogKey, 'recovery', recoveryMsg, 1);
     hsm.clearAlert(state, bookCatalogKey);
   }
 
   for (const { key, level, msg } of issues) {
     console.warn(`[블로그 헬스체크] 이슈: ${msg}`);
-    await notify(msg, level);
+    const memoryHints = await buildIssueHints(key, msg);
+    await notify(`${msg}${memoryHints}`, level);
+    await rememberHealthEvent(key, 'issue', msg, level);
     hsm.recordAlert(state, key);
   }
 
