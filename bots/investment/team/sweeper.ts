@@ -15,11 +15,11 @@
 
 import ccxt from 'ccxt';
 import * as db from '../shared/db.ts';
+import { publishAlert } from '../shared/alert-publisher.ts';
 import { initHubSecrets, loadSecrets } from '../shared/secrets.ts';
 import { createRequire } from 'module';
 
 const _require = createRequire(import.meta.url);
-const { postAlarm } = _require('../../../packages/core/lib/openclaw-client.js');
 
 const DUST_USDT = 3;
 const WATCH_USDT = 10;
@@ -157,11 +157,16 @@ export async function runSweeper({ telegram = false } = {}) {
     if (mismatches[0]) {
       lines.push(`주요 불일치: ${mismatches[0].symbol} ${mismatches[0].tracked_amount} -> ${mismatches[0].wallet_amount}`);
     }
-    await postAlarm({
-      team: 'investment',
-      fromBot: 'sweeper',
-      alertLevel: mismatches.length > 0 ? 2 : 1,
+    await publishAlert({
+      from_bot: 'sweeper',
+      event_type: 'wallet_integrity_report',
+      alert_level: mismatches.length > 0 ? 2 : 1,
       message: lines.join('\n'),
+      payload: {
+        wallet_only_count: walletOnlyRows.length,
+        significant_wallet_only_count: significantWalletOnly.length,
+        mismatch_count: mismatches.length,
+      },
     }).catch(() => {});
   }
 
