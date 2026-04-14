@@ -323,40 +323,26 @@ async function correctFile(inputSrtPath, outputSrtPath, config) {
   } catch (error) {
     fs.mkdirSync(path.dirname(outputSrtPath), { recursive: true });
     fs.writeFileSync(outputSrtPath, originalSrt, 'utf8');
-    const episodicHint = await subtitleMemory.recall(
+    const episodicHint = await subtitleMemory.recallHint(
       [path.basename(inputSrtPath), 'subtitle correction failure'].filter(Boolean).join(' '),
       {
         type: 'episodic',
         limit: 2,
         threshold: 0.35,
+        title: '최근 유사 실패',
+        separator: 'pipe',
       },
-    ).then((rows) => {
-      if (!rows || rows.length === 0) return '';
-      const lines = rows.slice(0, 2).map((row) => {
-        const createdAt = row?.created_at ? String(row.created_at).slice(0, 10) : 'unknown';
-        const similarity = Number(row?.similarity || 0);
-        const headline = String(row?.content || '').split(' | ')[0] || '기록 없음';
-        return `${createdAt} / 유사도 ${similarity.toFixed(2)} / ${headline}`;
-      });
-      return `\n최근 유사 실패:\n- ${lines.join('\n- ')}`;
-    }).catch(() => '');
-    const semanticHint = await subtitleMemory.recall(
+    ).catch(() => '');
+    const semanticHint = await subtitleMemory.recallHint(
       [path.basename(inputSrtPath), 'consolidated subtitle correction pattern'].filter(Boolean).join(' '),
       {
         type: 'semantic',
         limit: 2,
         threshold: 0.28,
+        title: '최근 통합 패턴',
+        separator: 'newline',
       },
-    ).then((rows) => {
-      if (!rows || rows.length === 0) return '';
-      const lines = rows.slice(0, 2).map((row) => {
-        const createdAt = row?.created_at ? String(row.created_at).slice(0, 10) : 'unknown';
-        const similarity = Number(row?.similarity || 0);
-        const headline = String(row?.content || '').split('\n')[0] || '패턴 요약 없음';
-        return `${createdAt} / 유사도 ${similarity.toFixed(2)} / ${headline}`;
-      });
-      return `\n최근 통합 패턴:\n- ${lines.join('\n- ')}`;
-    }).catch(() => '');
+    ).catch(() => '');
     await publishToWebhook({
       event: {
         from_bot: 'subtitle-corrector',
