@@ -30,12 +30,16 @@
 - [bots/investment/shared/rag-client.ts](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/rag-client.ts)
 - [bots/blog/lib/publ.ts](/Users/alexlee/projects/ai-agent-system/bots/blog/lib/publ.ts)
 - [bots/blog/lib/rag-accumulator.ts](/Users/alexlee/projects/ai-agent-system/bots/blog/lib/rag-accumulator.ts)
+- [bots/investment/scripts/weekly-trade-review.ts](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/weekly-trade-review.ts)
+- [bots/investment/scripts/analyze-rr.ts](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/analyze-rr.ts)
+- [bots/investment/scripts/analyze-signal-correlation.ts](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/analyze-signal-correlation.ts)
 
 즉 지금은
 - alert publisher 발행
 - 팀 topic 텔레그램 발행
 - Python 리포터 stdout 브릿지
 - investment current RAG 저장
+- investment review/analysis RAG 저장
 - blog publish / performance RAG 저장
 - blog post/quality accumulation RAG 저장
  이 같은 이벤트 정규화 레이어를 탄다.
