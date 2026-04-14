@@ -172,23 +172,16 @@ async function execute(taskType, params = {}, requestedBy = 'dexter') {
     });
     return `\n최근 유사 복구: 성공 ${successCount}건 / 실패 ${failureCount}건${caution}\n- ${lines.join('\n- ')}`;
   }).catch(() => '');
-  const semanticRecoveryHint = await doctorMemory.recall(
+  const semanticRecoveryHint = await doctorMemory.recallHint(
     [String(taskType || ''), String(params?.label || ''), 'consolidated recovery pattern'].filter(Boolean).join(' '),
     {
       type: 'semantic',
       limit: 2,
       threshold: 0.28,
+      title: '최근 통합 패턴',
+      separator: 'newline',
     },
-  ).then((rows) => {
-    if (!rows || rows.length === 0) return '';
-    const lines = rows.slice(0, 2).map((row) => {
-      const createdAt = row?.created_at ? String(row.created_at).slice(0, 10) : 'unknown';
-      const similarity = Number(row?.similarity || 0);
-      const headline = String(row?.content || '').split('\n')[0] || '패턴 요약 없음';
-      return `${createdAt} / 유사도 ${similarity.toFixed(2)} / ${headline}`;
-    });
-    return `\n최근 통합 패턴:\n- ${lines.join('\n- ')}`;
-  }).catch(() => '');
+  ).catch(() => '');
   const memoryHints = `${recentRecoveryHint}${semanticRecoveryHint}`;
 
   // 1. 블랙리스트 체크
