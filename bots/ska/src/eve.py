@@ -23,6 +23,7 @@ import sys
 import os
 import json
 import re
+import subprocess
 import requests
 import psycopg2
 from datetime import date as date_type, datetime, timedelta
@@ -32,6 +33,8 @@ SECRETS_PATH = os.path.abspath(
     os.path.join(os.path.dirname(__file__), '..', '..', 'reservation', 'secrets.json')
 )
 PG_SKA = "dbname=jay options='-c search_path=ska,public'"
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..'))
+GEMMA_PILOT_CLI = os.path.join(PROJECT_ROOT, 'packages', 'core', 'scripts', 'gemma-pilot-cli.js')
 
 # 성남시 분당구 기상 격자 좌표
 NX, NY = 62, 122
@@ -58,6 +61,69 @@ def _run(con, sql, params=()):
     cur.execute(sql, params)
     cur.close()
     con.commit()
+
+
+def sanitize_insight_line(raw_text):
+    if not raw_text:
+        return ''
+
+    blocked_prefixes = (
+        '<|channel>',
+        'Thinking Process',
+        'Thinking process',
+        'Analyze',
+        'Calculation',
+        '1.',
+        '2.',
+        '3.',
+        '4.',
+        '5.',
+        '*',
+        '-',
+    )
+
+    candidates = []
+    for line in str(raw_text).splitlines():
+        text = line.strip()
+        if not text:
+            continue
+        if text.startswith(blocked_prefixes):
+            continue
+        if any('가' <= ch <= '힣' for ch in text):
+            candidates.append(text)
+
+    if not candidates:
+        return ''
+
+    best = candidates[-1]
+    if len(best) > 120:
+        return ''
+    return best
+
+
+def build_eve_fallback_insight(holiday_cnt, weather_cnt, preview):
+    upcoming_special = 0
+    rainy_days = 0
+    exam_days = 0
+    festival_days = 0
+    for row in preview:
+        if row[1]:
+            upcoming_special += 1
+        if row[3] and row[3] > 0:
+            rainy_days += 1
+        if row[5] and row[5] != 0:
+            exam_days += 1
+        if row[6]:
+            festival_days += 1
+
+    if upcoming_special or exam_days or festival_days:
+        return (
+            f'향후 7일 기준 특이 일정 {upcoming_special}일, 시험 {exam_days}일, '
+            f'축제 {festival_days}일이 반영되었습니다.'
+        )
+    if rainy_days:
+        return f'향후 7일 기준 강수 예보 {rainy_days}일이 반영되었습니다.'
+    return f'환경 데이터는 공휴일 {holiday_cnt}일, 강수기록 {weather_cnt}일 기준으로 안정적으로 수집되었습니다.'
 
 
 # ─── 유틸 ──────────────────────────────────────────────────────────────────────
@@ -624,6 +690,41 @@ def run_eve(days_back=30, flags=None):
             if p[5] != 0:         tags.append(f'📚{p[5]:+d}')
             if p[6]:              tags.append(f'🎪{p[7]}')
             print(f'  {p[0]}  {" ".join(tags) if tags else "-"}')
+
+        insight = ''
+        try:
+            prompt = f"""당신은 스터디카페 운영 환경 분석가입니다.
+공휴일 반영 일수: {holiday_cnt}일
+강수 기록 일수: {weather_cnt}일
+향후 7일 특이 일정 미리보기 건수: {len(preview)}건
+
+환경 수집 상태를 한국어 1줄로 간결하게 작성하세요."""
+            proc = subprocess.run(
+                [
+                    'node',
+                    GEMMA_PILOT_CLI,
+                    '--team=ska',
+                    '--purpose=gemma-insight',
+                    '--bot=eve',
+                    '--requestType=environment-insight',
+                    '--maxTokens=150',
+                    '--temperature=0.7',
+                    '--timeoutMs=20000',
+                ],
+                input=prompt,
+                capture_output=True,
+                text=True,
+                timeout=22,
+                cwd=PROJECT_ROOT,
+            )
+            insight = sanitize_insight_line((proc.stdout or '').strip())
+        except Exception as e:
+            print(f'[EVE] gemma 인사이트 생략: {e}', file=sys.stderr)
+
+        if not insight:
+            insight = build_eve_fallback_insight(holiday_cnt, weather_cnt, preview)
+        if insight:
+            print(f'[EVE] 🔍 AI: {insight}')
 
         # ska-012: 징검다리 연휴 플래그 일괄 재계산
         calc_bridge_holiday_flags(con, start, end)
