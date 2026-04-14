@@ -12,6 +12,7 @@
 
 const path   = require('path');
 const pgPool = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'));
+const { createAgentMemory } = require(path.join(__dirname, '../../../packages/core/lib/agent-memory'));
 const { getSecret } = require('./secrets');
 const {
   buildNoticeEvent,
@@ -27,6 +28,7 @@ const {
 const SCHEMA     = 'worker';
 const SEP_SINGLE = '───────────────';
 const SEP_DOUBLE = '═══════════════';
+const approvalMemory = createAgentMemory({ agentId: 'worker.approval', team: 'worker' });
 
 // ── 승인 레벨 정의 ────────────────────────────────────────────────────
 
@@ -131,6 +133,42 @@ async function approve({ requestId, approverId, approverRole = 'member', approve
       },
     });
   }
+  try {
+    await approvalMemory.remember(
+      [
+        `승인 처리: ${req.action || 'unknown'}`,
+        `category=${req.category || 'unknown'}`,
+        `requester=${req.requester_id || 'unknown'}`,
+        `approver=${approverId || 'unknown'}`,
+      ].join(' | '),
+      'episodic',
+      {
+        keywords: [
+          'worker',
+          'approval',
+          'approved',
+          String(req.action || ''),
+          String(req.category || ''),
+        ].filter(Boolean).slice(0, 8),
+        importance: 0.66,
+        expiresIn: 30 * 24 * 60 * 60,
+        metadata: {
+          type: 'worker_approval_decision',
+          decision: 'approved',
+          requestId: req.id,
+          action: req.action || null,
+          category: req.category || null,
+          requesterId: req.requester_id || null,
+          approverId: approverId || null,
+          approverRole: approverRole || null,
+          targetTable: req.target_table || null,
+          targetId: req.target_id || null,
+        },
+      },
+    );
+  } catch (e) {
+    console.warn('[approval] agent memory 승인 기록 실패:', e.message);
+  }
   return req;
 }
 
@@ -167,6 +205,43 @@ async function reject({ requestId, approverId, reason, approverRole = 'member', 
         reject_reason: reason || '반려',
       },
     });
+  }
+  try {
+    await approvalMemory.remember(
+      [
+        `반려 처리: ${req.action || 'unknown'}`,
+        `category=${req.category || 'unknown'}`,
+        `reason=${reason || req.reject_reason || '반려'}`,
+        `approver=${approverId || 'unknown'}`,
+      ].join(' | '),
+      'episodic',
+      {
+        keywords: [
+          'worker',
+          'approval',
+          'rejected',
+          String(req.action || ''),
+          String(req.category || ''),
+        ].filter(Boolean).slice(0, 8),
+        importance: 0.76,
+        expiresIn: 30 * 24 * 60 * 60,
+        metadata: {
+          type: 'worker_approval_decision',
+          decision: 'rejected',
+          requestId: req.id,
+          action: req.action || null,
+          category: req.category || null,
+          requesterId: req.requester_id || null,
+          approverId: approverId || null,
+          approverRole: approverRole || null,
+          rejectReason: reason || req.reject_reason || null,
+          targetTable: req.target_table || null,
+          targetId: req.target_id || null,
+        },
+      },
+    );
+  } catch (e) {
+    console.warn('[approval] agent memory 반려 기록 실패:', e.message);
   }
   return req;
 }
