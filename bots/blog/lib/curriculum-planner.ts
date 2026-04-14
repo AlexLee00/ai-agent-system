@@ -19,6 +19,7 @@ const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
 const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
 const { runIfOps } = require('../../../packages/core/lib/mode-guard');
 const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
 const {
   buildNoticeEvent,
   renderNoticeEvent,
@@ -32,6 +33,15 @@ const { getBlogLLMSelectorOverrides } = require('./runtime-config.ts');
 
 const DAYS_BEFORE_END = 7;
 const MIN_LECTURES = 100;
+const curriculumMemory = createAgentMemory({ agentId: 'blog.curriculum', team: 'blog' });
+
+function buildCurriculumMemoryQuery(kind, values = []) {
+  return [
+    'blog curriculum',
+    kind,
+    ...values,
+  ].filter(Boolean).map((item) => String(item || '').trim()).filter(Boolean).join(' ');
+}
 
 function _httpsGet(url, headers = {}, timeout = 12000) {
   return new Promise((resolve) => {
@@ -222,6 +232,31 @@ async function proposeToMaster(candidates, currentSeries, remainingLectures) {
   lines.push('또는 직접 주제를 입력해주세요.');
 
   const msg = lines.join('\n');
+  const memoryQuery = buildCurriculumMemoryQuery('proposal', [
+    currentSeries?.series_name,
+    candidates.candidates[0]?.topic,
+  ]);
+  const episodicHint = await curriculumMemory.recallCountHint(memoryQuery, {
+    type: 'episodic',
+    limit: 2,
+    threshold: 0.33,
+    title: '최근 유사 제안',
+    separator: 'pipe',
+    metadataKey: 'kind',
+    labels: {
+      proposal: '제안',
+      generated: '생성',
+      transitioned: '전환',
+    },
+    order: ['proposal', 'generated', 'transitioned'],
+  }).catch(() => '');
+  const semanticHint = await curriculumMemory.recallHint(`${memoryQuery} consolidated curriculum pattern`, {
+    type: 'semantic',
+    limit: 2,
+    threshold: 0.28,
+    title: '최근 통합 패턴',
+    separator: 'newline',
+  }).catch(() => '');
   const notice = buildNoticeEvent({
     from_bot: 'blog-richer',
     team: 'blog',
@@ -240,7 +275,7 @@ async function proposeToMaster(candidates, currentSeries, remainingLectures) {
       action: '1/2/3 또는 직접 주제 회신',
     },
   });
-  const rendered = renderNoticeEvent(notice) || msg;
+  const rendered = `${renderNoticeEvent(notice) || msg}${episodicHint}${semanticHint}`;
   await runIfOps(
     'blog-tg',
     () => postAlarm({
@@ -251,6 +286,20 @@ async function proposeToMaster(candidates, currentSeries, remainingLectures) {
     }),
     () => console.log('[DEV] 텔레그램 생략\n' + rendered)
   );
+  await curriculumMemory.remember(rendered, 'episodic', {
+    importance: 0.7,
+    expiresIn: 1000 * 60 * 60 * 24 * 30,
+    metadata: {
+      kind: 'proposal',
+      currentSeries: currentSeries?.series_name || null,
+      remainingLectures,
+      candidateTopics: candidates.candidates.map((c) => c.topic).slice(0, 3),
+    },
+  }).catch(() => {});
+  await curriculumMemory.consolidate({
+    olderThanDays: 14,
+    limit: 10,
+  }).catch(() => {});
 
   const feedbackSession = await createCurriculumProposalSession({
     currentSeries,
@@ -350,6 +399,28 @@ async function generateCurriculum(topic, lectureCount = 100) {
 
   const msg = `📚 [커리큘럼 생성 완료]\n${topic} ${parsed.curriculum.length}강\n\n샘플:\n${parsed.curriculum.slice(0, 5).map((l) => `  ${l.lecture}강: ${l.title}`).join('\n')}`;
   console.log('[커리큘럼] ✅', msg.replace(/\n/g, ' | '));
+  const generatedMemoryQuery = buildCurriculumMemoryQuery('generated', [topic, String(parsed.curriculum.length)]);
+  const generatedEpisodicHint = await curriculumMemory.recallCountHint(generatedMemoryQuery, {
+    type: 'episodic',
+    limit: 2,
+    threshold: 0.33,
+    title: '최근 유사 생성',
+    separator: 'pipe',
+    metadataKey: 'kind',
+    labels: {
+      generated: '생성',
+      transitioned: '전환',
+      proposal: '제안',
+    },
+    order: ['generated', 'transitioned', 'proposal'],
+  }).catch(() => '');
+  const generatedSemanticHint = await curriculumMemory.recallHint(`${generatedMemoryQuery} consolidated curriculum pattern`, {
+    type: 'semantic',
+    limit: 2,
+    threshold: 0.28,
+    title: '최근 통합 패턴',
+    separator: 'newline',
+  }).catch(() => '');
   const createdNotice = buildNoticeEvent({
     from_bot: 'blog-richer',
     team: 'blog',
@@ -368,13 +439,27 @@ async function generateCurriculum(topic, lectureCount = 100) {
   await runIfOps(
     'blog-tg',
     () => postAlarm({
-      message: renderNoticeEvent(createdNotice) || msg,
+      message: `${renderNoticeEvent(createdNotice) || msg}${generatedEpisodicHint}${generatedSemanticHint}`,
       team: 'blog',
       alertLevel: createdNotice.alert_level || 1,
       fromBot: 'blog-richer',
     }),
     () => {}
   );
+  await curriculumMemory.remember(msg, 'episodic', {
+    importance: 0.72,
+    expiresIn: 1000 * 60 * 60 * 24 * 30,
+    metadata: {
+      kind: 'generated',
+      topic,
+      lectureCount: parsed.curriculum.length,
+      seriesId,
+    },
+  }).catch(() => {});
+  await curriculumMemory.consolidate({
+    olderThanDays: 14,
+    limit: 10,
+  }).catch(() => {});
 
   if (candidateSeries?.feedback_session_id) {
     await markCurriculumProposalCommitted({
@@ -409,6 +494,27 @@ async function transitionSeries() {
       const n = next[0];
       console.log(`[커리큘럼] 🔄 시리즈 전환: ${n.series_name} ${n.total_lectures}강 시작!`);
       const msg = `🔄 [시리즈 전환]\n새 시리즈: ${n.series_name} (${n.total_lectures}강)\n오늘부터 1강 시작!`;
+      const transitionMemoryQuery = buildCurriculumMemoryQuery('transition', [n.series_name, String(n.total_lectures)]);
+      const transitionEpisodicHint = await curriculumMemory.recallCountHint(transitionMemoryQuery, {
+        type: 'episodic',
+        limit: 2,
+        threshold: 0.33,
+        title: '최근 유사 전환',
+        separator: 'pipe',
+        metadataKey: 'kind',
+        labels: {
+          transitioned: '전환',
+          generated: '생성',
+        },
+        order: ['transitioned', 'generated'],
+      }).catch(() => '');
+      const transitionSemanticHint = await curriculumMemory.recallHint(`${transitionMemoryQuery} consolidated curriculum pattern`, {
+        type: 'semantic',
+        limit: 2,
+        threshold: 0.28,
+        title: '최근 통합 패턴',
+        separator: 'newline',
+      }).catch(() => '');
       const transitionNotice = buildNoticeEvent({
         from_bot: 'blog-richer',
         team: 'blog',
@@ -426,13 +532,26 @@ async function transitionSeries() {
       await runIfOps(
         'blog-tg',
         () => postAlarm({
-          message: renderNoticeEvent(transitionNotice) || msg,
+          message: `${renderNoticeEvent(transitionNotice) || msg}${transitionEpisodicHint}${transitionSemanticHint}`,
           team: 'blog',
           alertLevel: transitionNotice.alert_level || 2,
           fromBot: 'blog-richer',
         }),
         () => console.log('[DEV] 시리즈 전환 생략')
       );
+      await curriculumMemory.remember(msg, 'episodic', {
+        importance: 0.68,
+        expiresIn: 1000 * 60 * 60 * 24 * 30,
+        metadata: {
+          kind: 'transitioned',
+          seriesName: n.series_name,
+          lectureCount: n.total_lectures,
+        },
+      }).catch(() => {});
+      await curriculumMemory.consolidate({
+        olderThanDays: 14,
+        limit: 10,
+      }).catch(() => {});
       return n;
     }
 
