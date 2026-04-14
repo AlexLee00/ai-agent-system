@@ -22,10 +22,14 @@ const {
   DEFAULT_NORMAL_EXIT_CODES,
 } = require('../../../packages/core/lib/health-provider');
 const { publishToWebhook } = require('../../../packages/core/lib/reporting-hub');
-const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
+const { createHealthMemoryHelper } = require('../../../packages/core/lib/health-memory');
 
 const runtimeConfig = getBlogHealthRuntimeConfig();
-const healthMemory = createAgentMemory({ agentId: 'blog.health', team: 'blog' });
+const { buildIssueHints, rememberHealthEvent } = createHealthMemoryHelper({
+  agentId: 'blog.health',
+  team: 'blog',
+  domain: 'blog health',
+});
 const NODE_SERVER_HEALTH_URL = new URL(runtimeConfig.nodeServerHealthUrl || 'http://127.0.0.1:3100/health');
 const N8N_HEALTH_URL = new URL(runtimeConfig.n8nHealthUrl || 'http://127.0.0.1:5678/healthz');
 const NODE_SERVER_TIMEOUT_MS = Number(runtimeConfig.nodeServerTimeoutMs || 3000);
@@ -45,56 +49,6 @@ async function notify(msg, level = 3) {
   } catch {
     // ignore
   }
-}
-
-function buildMemoryQuery(key, msg) {
-  const headline = String(msg || '').split('\n')[0] || '';
-  return [String(key || ''), headline, 'blog health'].filter(Boolean).join(' ');
-}
-
-async function rememberHealthEvent(key, kind, msg, level) {
-  try {
-    await healthMemory.remember(String(msg || ''), 'episodic', {
-      importance: kind === 'issue' ? 0.76 : 0.62,
-      expiresIn: 1000 * 60 * 60 * 24 * 30,
-      metadata: {
-        kind,
-        issueKey: key,
-        level,
-      },
-    });
-    await healthMemory.consolidate({
-      olderThanDays: 14,
-      limit: 10,
-    });
-  } catch (_error) {
-    // ignore
-  }
-}
-
-async function buildIssueHints(key, msg) {
-  const query = buildMemoryQuery(key, msg);
-  const episodicHint = await healthMemory.recallCountHint(query, {
-    type: 'episodic',
-    limit: 2,
-    threshold: 0.33,
-    title: '최근 유사 이슈',
-    separator: 'pipe',
-    metadataKey: 'kind',
-    labels: {
-      issue: '이슈',
-      recovery: '회복',
-    },
-    order: ['issue', 'recovery'],
-  }).catch(() => '');
-  const semanticHint = await healthMemory.recallHint(`${query} consolidated health pattern`, {
-    type: 'semantic',
-    limit: 2,
-    threshold: 0.28,
-    title: '최근 통합 패턴',
-    separator: 'newline',
-  }).catch(() => '');
-  return `${episodicHint}${semanticHint}`;
 }
 
 const CONTINUOUS = [];
