@@ -56,7 +56,7 @@ const PROFILES = {
       claude_code_settings: '/Users/alexlee/.openclaw/.claude/blog-writer.settings.json',
       provider: 'local',
       base_url: LOCAL_LLM_BASE_URL,
-      model: 'gemma4:latest',
+      model: 'qwen2.5-7b',
       timeout_ms: 10000,
       max_tokens: 200,
       temperature: 0.8,

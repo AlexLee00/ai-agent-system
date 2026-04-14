@@ -106,7 +106,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_settings": "/Users/alexlee/.openclaw/.claude/blog-writer.settings.json",
       "provider": "local",
       "base_url": "http://127.0.0.1:11434",
-      "model": "gemma4:latest",
+      "model": "qwen2.5-7b",
       "timeout_ms": 10000,
       "max_tokens": 200,
       "temperature": 0.8
