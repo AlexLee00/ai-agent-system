@@ -5,7 +5,7 @@ description: Use when adding, migrating, reviewing, or debugging alerts and repo
 
 # Reporting Hub Maintainer
 
-이 스킬은 이 저장소에서 `알림`, `리포트`, `브리핑 스니펫`, `mainbot_queue payload`, `reporting-hub fanout`을 다룰 때 사용한다.
+이 스킬은 이 저장소에서 `알림`, `리포트`, `브리핑 스니펫`, `mainbot_queue payload`, `alert publisher`, `reporting-hub fanout`을 다룰 때 사용한다.
 
 ## 먼저 볼 파일
 
@@ -17,9 +17,9 @@ description: Use when adding, migrating, reviewing, or debugging alerts and repo
 
 팀별 producer를 만질 때는 관련 파일을 추가로 확인한다.
 
-- Claude: `bots/claude/lib/reporter.js`, `bots/claude/lib/mainbot-client.js`
-- Luna: `bots/investment/team/reporter.js`, `bots/investment/shared/mainbot-client.js`, `bots/investment/shared/report.js`
-- Ska: `bots/reservation/lib/mainbot-client.ts`, `bots/reservation/lib/telegram.ts`
+- Claude: `bots/claude/lib/reporter.js`, `bots/claude/lib/alert-publisher.ts`
+- Luna: `bots/investment/team/reporter.js`, `bots/investment/shared/alert-publisher.ts`, `bots/investment/shared/report.js`
+- Ska: `bots/reservation/lib/alert-client.ts`, `bots/reservation/lib/telegram.ts`
 - Blog: `bots/blog/scripts/health-check.js`
 
 ## 기본 원칙
