@@ -324,7 +324,7 @@ npm run patch:status        # 패치 현황 콘솔
 ### 명령 목록
 `/status` `/cost` `/mute` `/unmute` `/luna` `/ska` `/dexter` `/archer` `/brief` `/queue` `/help`
 
-### 팀별 publishToMainBot 클라이언트
+### 팀별 Alert Publisher 클라이언트
 | 팀 | 파일 | 모듈 방식 |
 |----|------|---------|
 | 스카팀 | `bots/reservation/lib/mainbot-client.ts` | TS |
@@ -345,5 +345,5 @@ launchctl load ~/Library/LaunchAgents/ai.orchestrator.plist
 
 | 날짜 | 내용 |
 |------|------|
-| 2026-03-04 | 메인봇(오케스트레이터) OPS 전환 — 전체 봇 sendTelegram→publishToMainBot 교체 완료, time-mode.js 루나팀 연동 |
+| 2026-03-04 | 메인봇(오케스트레이터) OPS 전환 — 전체 봇 sendTelegram→alert publisher 계열 호출로 교체 시작, time-mode.js 루나팀 연동 |
 | 2026-03-03 | 최초 작성 — 스카팀(v3.0 구조 반영) + 루나팀(Phase 3-A/B) + 클로드팀(덱스터/아처 v2.0) |

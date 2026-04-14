@@ -613,7 +613,7 @@ _현재 미해결 이슈 없음_
 <!-- session-close:2026-03-02:예약-취소-e2e-완성-toolsmd-취소등록-도구-정:end -->
 
 <!-- session-close:2026-03-04:전체-봇-sendtelegram-publishtomai -->
-#### 2026-03-04 ♻️ 전체 봇 sendTelegram → publishToMainBot 전면 교체
+#### 2026-03-04 ♻️ 전체 봇 sendTelegram → alert publisher 계열 호출 전환 시작
 - error-tracker.js 마지막 교체 완료
 - dexter 체크섬 갱신 (9개 파일)
 - 관련 파일: `bots/reservation/lib/error-tracker.js`
