@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { postAlarm } from '../../../packages/core/lib/openclaw-client';
+import { publishReservationAlert } from './alert-client';
 import { log } from './utils';
 const { loadSecrets } = require('./secrets');
 
@@ -46,22 +46,23 @@ export async function sendTelegram(message: string, chatId = DEFAULT_CHAT_ID): P
   }
 
   try {
-    const result = await postAlarm({
+    const result = await publishReservationAlert({
       message,
       team: 'ska',
-      alertLevel: 2,
-      fromBot: 'ska',
+      alert_level: 2,
+      from_bot: 'ska',
+      event_type: 'ska_telegram_send',
     });
-    if (result.ok) {
+    if (result) {
       log(`📱 [스카 topic] 발송 성공: ${message.slice(0, 50)}`);
       return true;
     }
 
-    log(`⚠️ [스카 topic] postAlarm 실패: ${JSON.stringify(result).slice(0, 120)}`);
+    log('⚠️ [스카 topic] publishReservationAlert 실패');
     return false;
   } catch (err) {
     const error = err as Error;
-    log(`⚠️ [스카 topic] postAlarm 예외: ${error.message}`);
+    log(`⚠️ [스카 topic] publishReservationAlert 예외: ${error.message}`);
     return false;
   }
 }
