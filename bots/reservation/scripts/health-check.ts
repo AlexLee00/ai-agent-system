@@ -20,6 +20,7 @@ const { publishReservationAlert } = require('../lib/alert-client');
 const { initHubSecrets } = require('../lib/secrets');
 const hsm = require('../../../packages/core/lib/health-state-manager');
 const { getLaunchctlStatus, DEFAULT_NORMAL_EXIT_CODES } = require('../../../packages/core/lib/health-provider');
+const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
 
 // 상시 실행 서비스 (PID 있어야 정상)
 const CONTINUOUS = ['ai.ska.commander', 'ai.ska.naver-monitor'];
@@ -43,6 +44,7 @@ const SCHEDULED_SERVICES = [
 
 const ALL_SERVICES = [...CORE_SERVICES, ...SCHEDULED_SERVICES];
 const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;
+const healthMemory = createAgentMemory({ agentId: 'reservation.health', team: 'reservation' });
 
 // naver-monitor 로그 staleness 체크
 const NAVER_LOG = '/tmp/naver-ops-mode.log';
@@ -64,6 +66,56 @@ function checkNaverLogStaleness() {
   } catch {
     return { exists: false, ageMs: null, stale: false }; // 파일 없으면 스킵
   }
+}
+
+function buildMemoryQuery(key, msg) {
+  const headline = String(msg || '').split('\n')[0] || '';
+  return [String(key || ''), headline, 'reservation health'].filter(Boolean).join(' ');
+}
+
+async function rememberHealthEvent(key, kind, msg, level = 1) {
+  try {
+    await healthMemory.remember(String(msg || ''), 'episodic', {
+      importance: kind === 'issue' ? 0.76 : 0.62,
+      expiresIn: 1000 * 60 * 60 * 24 * 30,
+      metadata: {
+        kind,
+        issueKey: key,
+        level,
+      },
+    });
+    await healthMemory.consolidate({
+      olderThanDays: 14,
+      limit: 10,
+    });
+  } catch (_error) {
+    // ignore
+  }
+}
+
+async function buildIssueHints(key, msg) {
+  const query = buildMemoryQuery(key, msg);
+  const episodicHint = await healthMemory.recallCountHint(query, {
+    type: 'episodic',
+    limit: 2,
+    threshold: 0.33,
+    title: '최근 유사 이슈',
+    separator: 'pipe',
+    metadataKey: 'kind',
+    labels: {
+      issue: '이슈',
+      recovery: '회복',
+    },
+    order: ['issue', 'recovery'],
+  }).catch(() => '');
+  const semanticHint = await healthMemory.recallHint(`${query} consolidated health pattern`, {
+    type: 'semantic',
+    limit: 2,
+    threshold: 0.28,
+    title: '최근 통합 패턴',
+    separator: 'newline',
+  }).catch(() => '');
+  return `${episodicHint}${semanticHint}`;
 }
 
 // ─── 메인 ───────────────────────────────────────────────────────
@@ -103,10 +155,12 @@ async function main() {
     // 미로드 → 회복 시 state 클리어 + 알림
     if (isCoreService && state[`unloaded:${label}`]) {
       console.log(`[헬스체크] ${shortName} 로드 회복 확인`);
+      const recoveryMsg = `✅ [스카 헬스] ${shortName} 회복\nlaunchd 정상 로드 — 자동 감지`;
       await publishReservationAlert({
         from_bot: 'ska', event_type: 'health_check', alert_level: 1,
-        message: `✅ [스카 헬스] ${shortName} 회복\nlaunchd 정상 로드 — 자동 감지`,
+        message: recoveryMsg,
       });
+      await rememberHealthEvent(`unloaded:${label}`, 'recovery', recoveryMsg, 1);
       delete state[`unloaded:${label}`];
     }
 
@@ -121,10 +175,12 @@ async function main() {
         // PID 회복 시 state 클리어 + 알림
         if (state[`down:${label}`]) {
           console.log(`[헬스체크] ${shortName} PID 회복 확인`);
+          const recoveryMsg = `✅ [스카 헬스] ${shortName} 회복\nPID 정상 확인 — 자동 감지`;
           await publishReservationAlert({
             from_bot: 'ska', event_type: 'health_check', alert_level: 1,
-            message: `✅ [스카 헬스] ${shortName} 회복\nPID 정상 확인 — 자동 감지`,
+            message: recoveryMsg,
           });
+          await rememberHealthEvent(`down:${label}`, 'recovery', recoveryMsg, 1);
           delete state[`down:${label}`];
         }
       }
@@ -142,10 +198,12 @@ async function main() {
       const prevKeys = Object.keys(state).filter(k => k.startsWith(`exitcode:${label}:`));
       if (prevKeys.length > 0) {
         console.log(`[헬스체크] ${shortName} 회복 확인 (exit code → 0)`);
+        const recoveryMsg = `✅ [스카 헬스] ${shortName} 회복\nexit code 정상 (0) — 자동 감지`;
         await publishReservationAlert({
           from_bot: 'ska', event_type: 'health_check', alert_level: 1,
-          message: `✅ [스카 헬스] ${shortName} 회복\nexit code 정상 (0) — 자동 감지`,
+          message: recoveryMsg,
         });
+        await rememberHealthEvent(`exitcode:${label}:0`, 'recovery', recoveryMsg, 1);
         prevKeys.forEach(k => delete state[k]);
       }
     }
@@ -164,10 +222,12 @@ async function main() {
     // 로그 정상화 시 state 클리어 + 알림
     if (state['stale:ai.ska.naver-monitor']) {
       console.log('[헬스체크] naver-monitor 로그 활동 재개 확인');
+      const recoveryMsg = `✅ [스카 헬스] naver-monitor 회복\n로그 활동 재개 — 자동 감지`;
       await publishReservationAlert({
         from_bot: 'ska', event_type: 'health_check', alert_level: 1,
-        message: `✅ [스카 헬스] naver-monitor 회복\n로그 활동 재개 — 자동 감지`,
+        message: recoveryMsg,
       });
+      await rememberHealthEvent('stale:ai.ska.naver-monitor', 'recovery', recoveryMsg, 1);
       delete state['stale:ai.ska.naver-monitor'];
     }
   }
@@ -175,7 +235,9 @@ async function main() {
   // 알림 발송 + 상태 기록
   for (const { key, level, msg } of issues) {
     console.warn(`[헬스체크] 이슈 감지: ${msg}`);
-    await publishReservationAlert({ from_bot: 'ska', event_type: 'health_check', alert_level: level, message: msg });
+    const memoryHints = await buildIssueHints(key, msg);
+    await publishReservationAlert({ from_bot: 'ska', event_type: 'health_check', alert_level: level, message: `${msg}${memoryHints}` });
+    await rememberHealthEvent(key, 'issue', msg, level);
     hsm.recordAlert(state, key);
   }
 
