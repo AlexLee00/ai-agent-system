@@ -19,6 +19,7 @@ These still write or can write into `mainbot_queue`.
 - [reporting-hub.ts](/Users/alexlee/projects/ai-agent-system/packages/core/lib/reporting-hub.ts)
   - `publishToQueue(...)`
   - `publishEventPipeline(... target.type === 'queue')`
+  - `buildSeverityTargets(...)` default now keeps `includeQueue = false`
 
 Recently removed from this bucket:
 
