@@ -101,6 +101,65 @@ async function getMarketingSnapshotTrend(days = 7) {
   }
 }
 
+async function getChannelPerformanceSummary(days = 7) {
+  try {
+    const latest = await pgPool.get('blog', `
+      SELECT MAX(snapshot_date) AS snapshot_date
+      FROM blog.channel_performance
+      WHERE snapshot_date >= CURRENT_DATE - ($1::text || ' days')::interval
+    `, [days]);
+
+    const snapshotDate = latest?.snapshot_date || null;
+    if (!snapshotDate) {
+      return {
+        latestDate: null,
+        totalChannels: 0,
+        activeChannels: 0,
+        watchChannels: 0,
+        rows: [],
+      };
+    }
+
+    const rows = await pgPool.query('blog', `
+      SELECT snapshot_date, channel, source, status, published_count, views, comments, likes, engagement_rate, revenue_signal, metadata
+      FROM blog.channel_performance
+      WHERE snapshot_date = $1
+      ORDER BY channel ASC, source ASC
+    `, [snapshotDate]);
+
+    const normalized = (rows || []).map((row) => ({
+      snapshotDate: row.snapshot_date,
+      channel: row.channel,
+      source: row.source,
+      status: row.status,
+      publishedCount: Number(row.published_count || 0),
+      views: Number(row.views || 0),
+      comments: Number(row.comments || 0),
+      likes: Number(row.likes || 0),
+      engagementRate: Number(row.engagement_rate || 0),
+      revenueSignal: Number(row.revenue_signal || 0),
+      metadata: row.metadata || {},
+    }));
+
+    return {
+      latestDate: snapshotDate,
+      totalChannels: normalized.length,
+      activeChannels: normalized.filter((item) => item.status === 'ok').length,
+      watchChannels: normalized.filter((item) => item.status === 'watch').length,
+      rows: normalized,
+    };
+  } catch (error) {
+    return {
+      latestDate: null,
+      totalChannels: 0,
+      activeChannels: 0,
+      watchChannels: 0,
+      rows: [],
+      error: error.message,
+    };
+  }
+}
+
 function summarizeSense(sense = {}) {
   const signals = Array.isArray(sense.signals) ? sense.signals : [];
   const topSignal = signals[0] || null;
@@ -118,7 +177,7 @@ function summarizeSense(sense = {}) {
   };
 }
 
-function buildRecommendations({ senseSummary, revenueCorrelation, diagnosis, autonomySummary }) {
+function buildRecommendations({ senseSummary, revenueCorrelation, diagnosis, autonomySummary, channelPerformance }) {
   const recommendations = [];
 
   if (senseSummary.anomaly) {
@@ -139,6 +198,20 @@ function buildRecommendations({ senseSummary, revenueCorrelation, diagnosis, aut
     recommendations.push('자율 판단은 아직 master_review 중심이어서, 자동 게시 확대 전 품질 기준을 더 다듬는 편이 안전합니다.');
   }
 
+  const instagram = Array.isArray(channelPerformance?.rows)
+    ? channelPerformance.rows.find((item) => item.channel === 'instagram')
+    : null;
+  if (instagram?.status === 'watch') {
+    recommendations.push('인스타 실행 결과에 실패가 남아 있어 릴스/캡션 발행보다 실행 안정화와 재시도율 점검을 먼저 보는 편이 좋습니다.');
+  }
+
+  const naverBlog = Array.isArray(channelPerformance?.rows)
+    ? channelPerformance.rows.find((item) => item.channel === 'naver_blog')
+    : null;
+  if (naverBlog && Number(naverBlog.publishedCount || 0) === 0) {
+    recommendations.push('네이버 블로그 채널 성과가 아직 warming-up 상태라 게시 후 조회/공감 수집 루프를 더 쌓는 편이 좋습니다.');
+  }
+
   if (!recommendations.length) {
     recommendations.push('현재 신호는 안정적입니다. 예약 전환형과 신뢰 축적형 포스팅을 균형 있게 유지하면 좋습니다.');
   }
@@ -146,7 +219,7 @@ function buildRecommendations({ senseSummary, revenueCorrelation, diagnosis, aut
   return recommendations;
 }
 
-function buildHealth({ senseSummary, revenueCorrelation, diagnosis, autonomySummary }) {
+function buildHealth({ senseSummary, revenueCorrelation, diagnosis, autonomySummary, channelPerformance }) {
   if (senseSummary.signalCount === 0 && diagnosis?.postCount === 0 && autonomySummary.totalCount === 0) {
     return {
       status: 'warming_up',
@@ -161,6 +234,13 @@ function buildHealth({ senseSummary, revenueCorrelation, diagnosis, autonomySumm
     };
   }
 
+  if (Number(channelPerformance?.watchChannels || 0) > 0) {
+    return {
+      status: 'watch',
+      reason: '채널 실행 신호에 watch 상태가 있어 발행 품질보다 채널 안정화 점검이 먼저입니다.',
+    };
+  }
+
   return {
     status: 'ok',
     reason: '현재 마케팅 신호는 안정 구간입니다.',
@@ -172,17 +252,18 @@ async function buildMarketingDigest(options = {}) {
   const diagnosisWindow = Number(options.diagnosisWindow || 7);
   const autonomyWindow = Number(options.autonomyWindow || 14);
 
-  const [sense, revenueCorrelation, diagnosis, autonomySummary, snapshotTrend] = await Promise.all([
+  const [sense, revenueCorrelation, diagnosis, autonomySummary, snapshotTrend, channelPerformance] = await Promise.all([
     senseDailyState().catch((error) => ({ error: error.message, signals: [] })),
     analyzeMarketingToRevenue(revenueWindow).catch((error) => ({ error: error.message })),
     diagnoseWeeklyPerformance(diagnosisWindow).catch((error) => ({ error: error.message })),
     getAutonomySummary(autonomyWindow),
     getMarketingSnapshotTrend(Number(options.snapshotWindow || 7)),
+    getChannelPerformanceSummary(Number(options.channelWindow || 7)),
   ]);
 
   const senseSummary = summarizeSense(sense);
-  const health = buildHealth({ senseSummary, revenueCorrelation, diagnosis, autonomySummary });
-  const recommendations = buildRecommendations({ senseSummary, revenueCorrelation, diagnosis, autonomySummary });
+  const health = buildHealth({ senseSummary, revenueCorrelation, diagnosis, autonomySummary, channelPerformance });
+  const recommendations = buildRecommendations({ senseSummary, revenueCorrelation, diagnosis, autonomySummary, channelPerformance });
 
   return {
     generatedAt: new Date().toISOString(),
@@ -192,6 +273,7 @@ async function buildMarketingDigest(options = {}) {
     diagnosis: diagnosis || null,
     autonomySummary,
     snapshotTrend,
+    channelPerformance,
     recommendations,
   };
 }
@@ -200,4 +282,5 @@ module.exports = {
   buildMarketingDigest,
   getAutonomySummary,
   getMarketingSnapshotTrend,
+  getChannelPerformanceSummary,
 };

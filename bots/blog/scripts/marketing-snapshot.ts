@@ -25,6 +25,7 @@ function buildPayload(digest = {}) {
       topPatterns: Array.isArray(digest?.diagnosis?.byTitlePattern) ? digest.diagnosis.byTitlePattern.slice(0, 5) : [],
     },
     autonomySummary: digest?.autonomySummary || {},
+    channelPerformance: digest?.channelPerformance || {},
     recommendations: Array.isArray(digest?.recommendations) ? digest.recommendations : [],
   };
 }
@@ -35,7 +36,8 @@ function buildBrief(digest = {}) {
   const impactPct = ((Number(digest?.revenueCorrelation?.revenueImpactPct || 0)) * 100).toFixed(1);
   const autonomyCount = Number(digest?.autonomySummary?.totalCount || 0);
   const weakness = digest?.diagnosis?.primaryWeakness?.code || 'stable';
-  return `marketing=${status} signals=${signals} impact=${impactPct}% autonomy=${autonomyCount} weakness=${weakness}`;
+  const channelWatch = Number(digest?.channelPerformance?.watchChannels || 0);
+  return `marketing=${status} signals=${signals} impact=${impactPct}% autonomy=${autonomyCount} channels_watch=${channelWatch} weakness=${weakness}`;
 }
 
 async function persist(digest) {

@@ -34,11 +34,21 @@ function formatText(digest = {}) {
     `- avg signals: ${Number(digest?.snapshotTrend?.avgSignalCount || 0).toFixed(1)}`,
     `- avg impact: ${((Number(digest?.snapshotTrend?.avgRevenueImpactPct || 0)) * 100).toFixed(1)}%`,
     '',
+    '[Channel Performance]',
+    `- latest date: ${digest?.channelPerformance?.latestDate || '없음'}`,
+    `- channels: ${digest?.channelPerformance?.totalChannels ?? 0}`,
+    `- active/watch: ${digest?.channelPerformance?.activeChannels ?? 0}/${digest?.channelPerformance?.watchChannels ?? 0}`,
+    '',
     '[Autonomy]',
     `- decisions: ${digest?.autonomySummary?.totalCount ?? 0}`,
     `- auto publish: ${digest?.autonomySummary?.autoPublishCount ?? 0}`,
     `- latest: ${digest?.autonomySummary?.latestDecision?.decision || '없음'}`,
   ];
+
+  const channels = Array.isArray(digest?.channelPerformance?.rows) ? digest.channelPerformance.rows : [];
+  channels.slice(0, 3).forEach((row) => {
+    lines.push(`- ${row.channel}: ${row.status}, published ${row.publishedCount}, engagement ${Number(row.engagementRate || 0).toFixed(1)}`);
+  });
 
   const recommendations = Array.isArray(digest?.recommendations) ? digest.recommendations : [];
   if (recommendations.length) {
