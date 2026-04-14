@@ -20,7 +20,7 @@ const { createAgentMemory } = require('../../../packages/core/lib/agent-memory')
 const kst = require('../../../packages/core/lib/kst') as { today: () => string };
 
 const { decideTodayFormation } = require('../lib/sigma/sigma-scheduler') as {
-  decideTodayFormation: () => Promise<any>;
+  decideTodayFormation: (opts?: Record<string, any>) => Promise<any>;
 };
 const { analyzeFormation } = require('../lib/sigma/sigma-analyzer') as {
   analyzeFormation: (formation: any) => Promise<any>;
@@ -66,7 +66,18 @@ export async function runDaily({ test = false }: SigmaDailyOptions = {}): Promis
       threshold: 0.3,
     },
   ).catch(() => []);
-  const formation = await decideTodayFormation({ recentMemories: decisionMemories });
+  const semanticDecisionMemories = await sigmaMemory.recall(
+    'sigma daily report weekly meta-review consolidated pattern',
+    {
+      type: 'semantic',
+      limit: 3,
+      threshold: 0.3,
+    },
+  ).catch(() => []);
+  const formation = await decideTodayFormation({
+    recentMemories: decisionMemories,
+    recentSemanticMemories: semanticDecisionMemories,
+  });
   const recentMemories = await sigmaMemory.recall(
     [
       formation.formationReason || '',
@@ -103,6 +114,7 @@ export async function runDaily({ test = false }: SigmaDailyOptions = {}): Promis
       analysts: formation.analysts,
       scoutQuality,
       decisionMemoryCount: decisionMemories.length,
+      semanticDecisionMemoryCount: semanticDecisionMemories.length,
       recentMemoryCount: recentMemories.length,
     },
   });
@@ -142,6 +154,7 @@ export async function runDaily({ test = false }: SigmaDailyOptions = {}): Promis
         feedback_count: feedbackRows.length,
         scout_quality: scoutQuality,
         decision_memory_count: decisionMemories.length,
+        semantic_decision_memory_count: semanticDecisionMemories.length,
         recent_memory_count: recentMemories.length,
         why: `일일 크로스팀 분석 ${feedbackRows.length}건 피드백 생성`,
       },
@@ -175,6 +188,7 @@ export async function runDaily({ test = false }: SigmaDailyOptions = {}): Promis
         measuredCount: measured.length,
         scoutQuality,
         decisionMemoryCount: decisionMemories.length,
+        semanticDecisionMemoryCount: semanticDecisionMemories.length,
         recentMemoryCount: recentMemories.length,
       },
     });
@@ -219,6 +233,7 @@ export async function runDaily({ test = false }: SigmaDailyOptions = {}): Promis
     measuredCount: measured.length,
     dailyRunId: dailyRun?.id || null,
     feedbackCount: feedbackRows.length,
+    semanticDecisionMemoryCount: semanticDecisionMemories.length,
     consolidation,
     metaReview: metaReview ? { sent: !!metaReview.sent, skipped: !!metaReview.skipped } : null,
     message: analysis.report,
