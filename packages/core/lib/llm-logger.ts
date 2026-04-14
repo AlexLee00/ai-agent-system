@@ -175,7 +175,10 @@ function triggerEmergency(reason: string, cost: number, scope = 'global', option
 
   try {
     const mainbotClient = require('../../../bots/claude/lib/mainbot-client') as any;
-    const publish = mainbotClient.publishToMainBot || mainbotClient.default?.publishToMainBot;
+    const publish = mainbotClient.publishAlert
+      || mainbotClient.publishToMainBot
+      || mainbotClient.default?.publishAlert
+      || mainbotClient.default?.publishToMainBot;
     if (publish) {
       publish({
         from_bot: 'dexter',

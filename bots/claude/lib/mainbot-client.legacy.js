@@ -28,4 +28,6 @@ async function publishToMainBot({ from_bot, team = 'claude', event_type, alert_l
   return result.ok;
 }
 
-module.exports = { publishToMainBot };
+const publishAlert = publishToMainBot;
+
+module.exports = { publishAlert, publishToMainBot };
