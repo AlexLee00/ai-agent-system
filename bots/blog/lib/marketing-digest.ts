@@ -512,6 +512,90 @@ async function loadRecentGeneralPosts(maxPosts = 5) {
   };
 }
 
+async function backfillRecentGeneralTitleAlignment(options = {}) {
+  const maxPosts = Math.max(1, Number(options.maxPosts || options.limit || 10));
+  const dryRun = Boolean(options.dryRun);
+  const loaded = await loadRecentGeneralPosts(maxPosts);
+  const recentPosts = Array.isArray(loaded?.rows) ? loaded.rows : [];
+
+  let updated = 0;
+  let inferred = 0;
+  const items = [];
+
+  for (const post of recentPosts) {
+    const alignment = post?.titleAlignment;
+    const hasMeasuredAlignment = Boolean(
+      alignment
+      && typeof alignment === 'object'
+      && (alignment.preview_title || alignment.final_title)
+      && !alignment.inferred_from_snapshot
+    );
+
+    if (hasMeasuredAlignment) {
+      items.push({
+        postId: post.id || null,
+        title: post.title,
+        category: post.category,
+        status: 'skip_measured',
+        source: post.alignmentSource || 'post_metadata',
+      });
+      continue;
+    }
+
+    if (!post?.id || !alignment || !alignment.inferred_from_snapshot) {
+      items.push({
+        postId: post.id || null,
+        title: post.title,
+        category: post.category,
+        status: 'skip_missing',
+        source: post.alignmentSource || loaded.source || 'unknown',
+      });
+      continue;
+    }
+
+    inferred += 1;
+    const normalizedAlignment = {
+      ...alignment,
+      inferred_from_snapshot: false,
+      backfilled_from_snapshot: true,
+      backfilled_at: new Date().toISOString(),
+    };
+
+    if (!dryRun) {
+      await pgPool.run('blog', `
+        UPDATE blog.posts
+        SET metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb
+        WHERE id = $1
+      `, [
+        post.id,
+        JSON.stringify({
+          title_alignment: normalizedAlignment,
+        }),
+      ]);
+      updated += 1;
+    }
+
+    items.push({
+      postId: post.id,
+      title: post.title,
+      category: post.category,
+      status: dryRun ? 'ready' : 'updated',
+      source: 'snapshot_backfill',
+      titleOverlap: Number(alignment.title_overlap || 0),
+      aligned: Boolean(alignment.aligned),
+    });
+  }
+
+  return {
+    dryRun,
+    scanned: recentPosts.length,
+    inferred,
+    updated,
+    source: loaded.source || 'unknown',
+    items,
+  };
+}
+
 async function getRecentGeneralStrategyAdoption(strategy = {}, nextPreview = null, maxPosts = 5) {
   try {
     const loaded = await loadRecentGeneralPosts(maxPosts);
@@ -779,4 +863,8 @@ module.exports = {
   getAutonomySummary,
   getMarketingSnapshotTrend,
   getChannelPerformanceSummary,
+  loadRecentGeneralPosts,
+  loadRecentMarketingSnapshots,
+  inferTitleAlignmentFromSnapshots,
+  backfillRecentGeneralTitleAlignment,
 };
