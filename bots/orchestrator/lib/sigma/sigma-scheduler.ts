@@ -32,9 +32,15 @@ type Formation = {
   formationReason: string;
 };
 
+type MemorySnippet = {
+  metadata?: Record<string, any>;
+  importance?: number;
+};
+
 export const ROTATION = ['ska', 'worker', 'claude', 'justin', 'video'];
 export const CORE_ANALYSTS = ['pipe', 'canvas', 'curator'];
 const SIGMA_RANDOM_EPSILON = 0.2;
+const KNOWN_MEMORY_TEAMS = new Set(['blog', 'luna', 'darwin', 'claude', 'worker', 'video', 'ska', 'justin']);
 
 function safeExec(command: string): string {
   try {
@@ -142,7 +148,28 @@ function selectPerspectiveHint(events: SchedulerEvents, date: Date = new Date())
   return rotation[weekday % rotation.length];
 }
 
-export async function decideTodayFormation({ date = new Date() }: { date?: Date } = {}): Promise<Formation> {
+function deriveMemoryTeams(memories: MemorySnippet[] = []): string[] {
+  const counts = new Map<string, number>();
+  for (const memory of memories) {
+    const metadata = memory?.metadata || {};
+    const importance = Number(memory?.importance || 0);
+    const candidates = Array.isArray(metadata?.targetTeams) ? metadata.targetTeams : [];
+    for (const team of candidates) {
+      const normalized = String(team || '').trim().toLowerCase();
+      if (!KNOWN_MEMORY_TEAMS.has(normalized)) continue;
+      counts.set(normalized, (counts.get(normalized) || 0) + (importance >= 0.7 ? 2 : 1));
+    }
+  }
+  return [...counts.entries()]
+    .filter(([, score]) => score >= 2)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 2)
+    .map(([team]) => team);
+}
+
+export async function decideTodayFormation(
+  { date = new Date(), recentMemories = [] }: { date?: Date; recentMemories?: MemorySnippet[] } = {},
+): Promise<Formation> {
   const events = await collectYesterdayEvents();
   const targetTeams = new Set<string>();
   const weekday = date.getDay();
@@ -160,6 +187,8 @@ export async function decideTodayFormation({ date = new Date() }: { date?: Date 
   }
 
   targetTeams.add(ROTATION[weekday % ROTATION.length]);
+  const memoryBoostTeams = deriveMemoryTeams(recentMemories);
+  for (const team of memoryBoostTeams) targetTeams.add(team);
 
   const analysts = [...CORE_ANALYSTS];
   const perspectiveHint = selectPerspectiveHint(events, date);
@@ -204,6 +233,8 @@ export async function decideTodayFormation({ date = new Date() }: { date?: Date 
     targetTeams: [...targetTeams],
     analysts: [...new Set(analysts)],
     events,
-    formationReason: perspectiveHint,
+    formationReason: memoryBoostTeams.length > 0
+      ? `${perspectiveHint} / 기억 기반 보강: ${memoryBoostTeams.join(', ')}`
+      : perspectiveHint,
   };
 }

@@ -57,7 +57,15 @@ export async function runDaily({ test = false }: SigmaDailyOptions = {}): Promis
   const sigmaMemory = createAgentMemory({ agentId: 'sigma.analyst', team: 'sigma' });
   const measured = await measurePastFeedbackEffectiveness();
   const scoutQuality = await collectScoutQualityMetric();
-  const formation = await decideTodayFormation();
+  const decisionMemories = await sigmaMemory.recall(
+    'sigma daily report weekly meta-review',
+    {
+      type: 'episodic',
+      limit: 5,
+      threshold: 0.3,
+    },
+  ).catch(() => []);
+  const formation = await decideTodayFormation({ recentMemories: decisionMemories });
   const recentMemories = await sigmaMemory.recall(
     [
       formation.formationReason || '',
@@ -93,6 +101,7 @@ export async function runDaily({ test = false }: SigmaDailyOptions = {}): Promis
       teams: formation.targetTeams,
       analysts: formation.analysts,
       scoutQuality,
+      decisionMemoryCount: decisionMemories.length,
       recentMemoryCount: recentMemories.length,
     },
   });
@@ -131,6 +140,7 @@ export async function runDaily({ test = false }: SigmaDailyOptions = {}): Promis
         analysts: formation.analysts,
         feedback_count: feedbackRows.length,
         scout_quality: scoutQuality,
+        decision_memory_count: decisionMemories.length,
         recent_memory_count: recentMemories.length,
         why: `일일 크로스팀 분석 ${feedbackRows.length}건 피드백 생성`,
       },
@@ -163,6 +173,7 @@ export async function runDaily({ test = false }: SigmaDailyOptions = {}): Promis
         feedbackCount: feedbackRows.length,
         measuredCount: measured.length,
         scoutQuality,
+        decisionMemoryCount: decisionMemories.length,
         recentMemoryCount: recentMemories.length,
       },
     });
