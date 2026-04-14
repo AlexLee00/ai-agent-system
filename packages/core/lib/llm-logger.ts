@@ -176,9 +176,7 @@ function triggerEmergency(reason: string, cost: number, scope = 'global', option
   try {
     const alertPublisher = require('../../../bots/claude/lib/alert-publisher') as any;
     const publish = alertPublisher.publishAlert
-      || alertPublisher.publishToMainBot
-      || alertPublisher.default?.publishAlert
-      || alertPublisher.default?.publishToMainBot;
+      || alertPublisher.default?.publishAlert;
     if (publish) {
       publish({
         from_bot: 'dexter',
