@@ -46,9 +46,17 @@ send_telegram() {
   local msg_file="$1"
   "$TELEGRAM_NODE" -e "
     const fs = require('fs');
-    const openclawClient = require('$PROJECT_DIR/packages/core/lib/openclaw-client');
+    const { publishToWebhook } = require('$PROJECT_DIR/packages/core/lib/reporting-hub');
     const text = fs.readFileSync('$msg_file', 'utf-8');
-    openclawClient.postAlarm({ team: 'claude-lead', message: text, alertLevel: 1, fromBot: 'pre-reboot' }).catch(() => {});
+    publishToWebhook({
+      event: {
+        from_bot: 'pre-reboot',
+        team: 'claude-lead',
+        event_type: 'pre_reboot_notice',
+        alert_level: 1,
+        message: text,
+      }
+    }).catch(() => {});
     setTimeout(() => {}, 3000);
   " 2>/dev/null || true
 }
