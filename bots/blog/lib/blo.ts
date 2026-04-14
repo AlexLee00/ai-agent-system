@@ -1223,6 +1223,13 @@ function _buildDailyGuideLine(result) {
   return `${result.type === 'lecture' ? `[${result.number}강]` : `[${result.category}]`} ${_buildRewriteGuide(result.aiRisk)}`;
 }
 
+function _compactPreviewTitle(title = '', maxLength = 42) {
+  const text = String(title || '').replace(/\s+/g, ' ').trim();
+  if (!text) return 'none';
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(0, maxLength - 1)).trim()}…`;
+}
+
 function _summarizeDailyMarketing(daily = {}) {
   const senseState = daily?.senseState || {};
   const revenueCorrelation = daily?.revenueCorrelation || {};
@@ -1234,13 +1241,27 @@ function _summarizeDailyMarketing(daily = {}) {
   const preferredPattern = strategyPlan?.preferredTitlePattern || 'none';
   const suppressedPattern = strategyPlan?.suppressedTitlePattern || 'none';
   const nextGeneralCategory = daily?.generalCtx?.category || 'none';
+  const selectedGeneralTopic = nextGeneralCategory !== 'none'
+    ? selectAndValidateTopic(
+      nextGeneralCategory,
+      getRecentPosts(nextGeneralCategory, 10),
+      strategyPlan,
+      senseState,
+      revenueCorrelation
+    )
+    : null;
+  const nextGeneralTitle = selectedGeneralTopic?.title || 'none';
+  const nextGeneralPattern = selectedGeneralTopic?.pattern || 'none';
 
   let predictedAdoption = 'warming_up';
   if (daily?.generalCtx?.category) {
-    predictedAdoption =
-      preferredCategory !== 'none' && nextGeneralCategory === preferredCategory
-        ? (preferredPattern !== 'none' ? 'aligned' : 'partial')
-        : (preferredPattern !== 'none' ? 'partial' : 'off_track');
+    const categoryAligned = preferredCategory !== 'none' && nextGeneralCategory === preferredCategory;
+    const patternAligned = preferredPattern !== 'none' && nextGeneralPattern === preferredPattern;
+    predictedAdoption = categoryAligned && patternAligned
+      ? 'aligned'
+      : (categoryAligned || patternAligned)
+        ? 'partial'
+        : 'off_track';
   }
 
   return {
@@ -1250,8 +1271,10 @@ function _summarizeDailyMarketing(daily = {}) {
     preferredPattern,
     suppressedPattern,
     nextGeneralCategory,
+    nextGeneralTitle,
+    nextGeneralPattern,
     predictedAdoption,
-    briefLine: `📈 마케팅 전략: signal=${signalLabel} | impact=${(revenueImpact * 100).toFixed(1)}% | plan=${preferredCategory}/${preferredPattern} | next=${nextGeneralCategory} | predicted=${predictedAdoption} | suppress=${suppressedPattern}`,
+    briefLine: `📈 마케팅 전략: signal=${signalLabel} | impact=${(revenueImpact * 100).toFixed(1)}% | plan=${preferredCategory}/${preferredPattern} | next=${nextGeneralCategory}/${nextGeneralPattern} | predicted=${predictedAdoption} | title=${_compactPreviewTitle(nextGeneralTitle)} | suppress=${suppressedPattern}`,
   };
 }
 
@@ -1349,6 +1372,8 @@ async function _sendDailyReport(results, traceCtx, options = {}) {
           `impact: ${(marketing.revenueImpactPct * 100).toFixed(1)}%`,
           `plan: ${marketing.preferredCategory}/${marketing.preferredPattern}`,
           `next: ${marketing.nextGeneralCategory}`,
+          `next pattern: ${marketing.nextGeneralPattern}`,
+          `next title: ${marketing.nextGeneralTitle}`,
           `predicted: ${marketing.predictedAdoption}`,
           `suppress: ${marketing.suppressedPattern}`,
         ],
