@@ -25,6 +25,11 @@ type RecallTeamOptions = RecallOptions & {
   excludeSelf?: boolean;
 };
 
+type RecallHintOptions = RecallOptions & {
+  title?: string | null;
+  separator?: 'pipe' | 'newline';
+};
+
 type ConsolidateOptions = {
   olderThanDays?: number;
   limit?: number;
@@ -86,6 +91,26 @@ function normalizeOlderThanDays(value?: number): number {
 
 function firstLine(value: string): string {
   return String(value || '').split('\n').map((line) => line.trim()).find(Boolean) || '';
+}
+
+function extractHeadline(value: string, separator: 'pipe' | 'newline' = 'newline'): string {
+  if (separator === 'pipe') {
+    return String(value || '').split(' | ')[0] || '기록 없음';
+  }
+  return firstLine(value) || '패턴 요약 없음';
+}
+
+function formatRecallHint(rows: AgentMemoryRow[], opts: RecallHintOptions = {}): string {
+  if (!rows || rows.length === 0) return '';
+  const title = String(opts.title || '최근 기억');
+  const separator = opts.separator || 'newline';
+  const lines = rows.slice(0, normalizeLimit(opts.limit || 2)).map((row) => {
+    const createdAt = row?.created_at ? String(row.created_at).slice(0, 10) : 'unknown';
+    const similarity = Number(row?.similarity || 0);
+    const headline = extractHeadline(String(row?.content || ''), separator);
+    return `${createdAt} / 유사도 ${similarity.toFixed(2)} / ${headline}`;
+  });
+  return `\n${title}:\n- ${lines.join('\n- ')}`;
 }
 
 function summarizeMemories(rows: AgentMemoryRow[]): string {
@@ -356,6 +381,11 @@ class AgentMemory {
 
     await touchAccess(rows.map((row) => row.id));
     return rows;
+  }
+
+  async recallHint(query: string, opts: RecallHintOptions = {}): Promise<string> {
+    const rows = await this.recall(query, opts);
+    return formatRecallHint(rows, opts);
   }
 
   async consolidate(opts: ConsolidateOptions = {}): Promise<ConsolidateResult> {
