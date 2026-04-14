@@ -19,6 +19,7 @@ Live OPS status as of 2026-04-14:
 
 Related archive planning:
 - [MAINBOT_QUEUE_ARCHIVAL_PLAN_2026-04-14.md](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/context/MAINBOT_QUEUE_ARCHIVAL_PLAN_2026-04-14.md)
+  - archive tables created and row-count verified on 2026-04-14
 
 ## Current Usage Classification
 
@@ -124,4 +125,4 @@ The next safe implementation step is:
 1. observe `/tmp/mainbot-queue-usage.jsonl` for any explicit re-enable caller
 2. keep observing OPS runtime for any queue writer reappearance
 3. if telemetry stays quiet, treat queue publish and queue polling as retired-by-default
-4. then evaluate table retirement / archival timing
+4. then evaluate live table rename / freeze / final retirement timing
