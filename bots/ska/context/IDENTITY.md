@@ -22,3 +22,9 @@
 - `rebecca.py` — 일간·주간 현황 리포트
 - `eve_crawl.py` — 시험기간·공휴일 환경요인 수집
 - `eve.py` — 환경요인 처리
+
+## 현재 리포트 런타임 메모
+- `rebecca.py`와 `forecast.py`는 리포트 본문 끝에 `🔍 AI:` 한 줄 요약을 붙인다.
+- `ska / gemma-insight` 보조 라우팅은 현재 `qwen2.5-7b` 기준으로 맞춰져 있다.
+- LLM 응답이 비거나 형식이 어색해도, 각 리포트는 결정론적 fallback 한 줄을 붙여 본문 품질을 유지한다.
+- `run-rebecca.sh`, `run-forecast.sh`는 `stdout`만 발송하고 `stderr`는 로그에만 남긴다. 그래서 경고/오류 문구가 텔레그램 리포트 본문에 섞이지 않는다.
