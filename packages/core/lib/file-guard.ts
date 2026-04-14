@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { postAlarm } from './openclaw-client';
+import { publishToWebhook } from './reporting-hub';
 
 const PROTECTED_EXTENSIONS = new Set([
   '.js', '.mjs', '.cjs',
@@ -80,6 +80,26 @@ function warn(callerBot: string, filePath: string, reason: string): void {
   console.error(`🚨 [file-guard] ${callerBot} → ${filePath} 쓰기 차단 (${reason})`);
 }
 
+async function notifyBlockedWrite(callerBot: string, filePath: string): Promise<void> {
+  await publishToWebhook({
+    event: {
+      from_bot: 'file-guard',
+      team: 'general',
+      event_type: 'blocked_write',
+      alert_level: 4,
+      message: `🚨 [보안] 소스코드 수정 시도 차단!\n봇: ${callerBot}\n파일: ${filePath}\n→ 마스터 확인 필요`,
+      payload: {
+        title: '소스코드 수정 시도 차단',
+        summary: `${callerBot} → ${filePath}`,
+        details: [
+          `bot: ${callerBot}`,
+          `file: ${filePath}`,
+        ],
+      },
+    },
+  });
+}
+
 function safeWriteFile(
   filePath: string,
   content: string | NodeJS.ArrayBufferView,
@@ -87,12 +107,7 @@ function safeWriteFile(
   encoding: BufferEncoding = 'utf8',
 ): void {
   if (!canWrite(filePath, callerBot)) {
-    postAlarm({
-      message: `🚨 [보안] 소스코드 수정 시도 차단!\n봇: ${callerBot}\n파일: ${filePath}\n→ 마스터 확인 필요`,
-      team: 'general',
-      alertLevel: 4,
-      fromBot: 'file-guard',
-    }).catch((error: unknown) => {
+    notifyBlockedWrite(callerBot, filePath).catch((error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);
       console.error(`[file-guard] 보안 알람 발송 실패: ${message}`);
     });
@@ -111,12 +126,7 @@ async function safeWriteFileAsync(
 ): Promise<void> {
   if (!canWrite(filePath, callerBot)) {
     try {
-      await postAlarm({
-        message: `🚨 [보안] 소스코드 수정 시도 차단!\n봇: ${callerBot}\n파일: ${filePath}\n→ 마스터 확인 필요`,
-        team: 'general',
-        alertLevel: 4,
-        fromBot: 'file-guard',
-      });
+      await notifyBlockedWrite(callerBot, filePath);
     } catch {
       // ignore alarm failure
     }
