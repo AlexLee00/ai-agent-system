@@ -11,6 +11,7 @@ ska-015: 포캐스트 헬스 리포트
 import json
 import os
 import sys
+import subprocess
 import psycopg2
 from datetime import date as date_type, timedelta
 
@@ -19,6 +20,8 @@ from packages.core.lib.health_core import build_health_report, build_health_deci
 
 PG_SKA = "dbname=jay options='-c search_path=ska,public'"
 WEEKDAY_KO = ['월', '화', '수', '목', '금', '토', '일']
+PROJECT_ROOT = os.environ.get('PROJECT_ROOT', os.path.expanduser('~/projects/ai-agent-system'))
+GEMMA_PILOT_CLI = os.path.join(PROJECT_ROOT, 'packages', 'core', 'scripts', 'gemma-pilot-cli.js')
 
 
 def _qry(con, sql, params=()):
@@ -27,6 +30,58 @@ def _qry(con, sql, params=()):
     rows = cur.fetchall()
     cur.close()
     return rows
+
+
+def sanitize_insight_line(raw_text):
+    if not raw_text:
+        return ''
+
+    blocked_prefixes = (
+        '<|channel>',
+        'Thinking Process',
+        'Thinking process',
+        'Analyze',
+        'Calculation',
+        '1.',
+        '2.',
+        '3.',
+        '4.',
+        '5.',
+        '*',
+        '-',
+    )
+
+    candidates = []
+    for line in str(raw_text).splitlines():
+        text = line.strip()
+        if not text:
+            continue
+        if text.startswith(blocked_prefixes):
+            continue
+        if any('가' <= ch <= '힣' for ch in text):
+            candidates.append(text)
+
+    if not candidates:
+        return ''
+
+    best = candidates[-1]
+    if len(best) > 120:
+        return ''
+    return best
+
+
+def build_health_fallback_insight(report):
+    summary = report['summary']
+    tuning = report.get('tuning_candidate') or {}
+    avg_mape = summary.get('avg_mape') or 0
+    hit_rate_20 = summary.get('hit_rate_20') or 0
+    avg_bias = summary.get('avg_bias') or 0
+
+    if tuning.get('recommended'):
+        return f'최근 평균 MAPE {avg_mape:.1f}%와 편향 {avg_bias:+,}원을 기준으로 추가 튜닝 검토가 필요합니다.'
+    if hit_rate_20 >= 80 and avg_mape <= 15:
+        return f'최근 평균 MAPE {avg_mape:.1f}%로 비교적 안정적이며 현 설정을 유지해도 좋습니다.'
+    return f'최근 평균 MAPE {avg_mape:.1f}%, 20% 이내 적중률 {hit_rate_20:.1f}%로 경향 관찰이 필요합니다.'
 
 
 def parse_args():
@@ -297,6 +352,46 @@ def format_text(report):
                 reasons=tuning_candidate.get('reasons', []),
                 ok_text='현재는 추가 튜닝보다 관찰 유지',
             ),
+        })
+
+    insight = ''
+    try:
+        prompt = f"""당신은 스터디카페 매출 예측 운영 분석가입니다.
+최근 평균 MAPE: {summary["avg_mape"]:.2f}%
+중앙 MAPE: {summary["median_mape"]:.2f}%
+평균 편향: {avg_bias:+,}원
+20% 이내 적중률: {summary["hit_rate_20"]:.1f}%
+
+현재 예측 헬스 상태를 한국어 1줄로 간결하게 작성하세요."""
+        proc = subprocess.run(
+            [
+                'node',
+                GEMMA_PILOT_CLI,
+                '--team=ska',
+                '--purpose=gemma-insight',
+                '--bot=forecast-health',
+                '--requestType=forecast-health-insight',
+                '--maxTokens=150',
+                '--temperature=0.7',
+                '--timeoutMs=20000',
+            ],
+            input=prompt,
+            capture_output=True,
+            text=True,
+            timeout=22,
+            cwd=PROJECT_ROOT,
+        )
+        insight = sanitize_insight_line((proc.stdout or '').strip())
+    except Exception as e:
+        print(f'[forecast-health] gemma 인사이트 생략: {e}', file=sys.stderr)
+
+    if not insight:
+        insight = build_health_fallback_insight(report)
+
+    if insight:
+        sections.append({
+            'title': '■ AI 요약',
+            'lines': [f'  {insight}'],
         })
 
     return build_health_report(
