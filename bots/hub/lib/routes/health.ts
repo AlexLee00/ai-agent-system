@@ -1,5 +1,6 @@
 const env = require('../../../../packages/core/lib/env');
 const pgPool = require('../../../../packages/core/lib/pg-pool');
+const { createHealthMemoryHelper } = require('../../../../packages/core/lib/health-memory');
 const { checkHttp, getLaunchctlStatus } = require('../../../../packages/core/lib/health-provider');
 const {
   HUB_CORE_SERVICE_LABELS,
@@ -29,12 +30,22 @@ type HealthSnapshot = {
   uptime_s: number;
   latency_ms: number;
   resources: HealthResources;
+  memory_hints?: {
+    recent_patterns?: string;
+  };
   readiness_summary: {
     core_service_total: number;
     core_service_down: number;
     resource_warn_count: number;
   };
 };
+
+const { buildIssueHints, rememberHealthEvent } = createHealthMemoryHelper({
+  agentId: 'hub.health',
+  team: 'hub',
+  domain: 'hub health',
+});
+let lastRecordedStatus: 'ok' | 'warn' | null = null;
 
 export async function collectHealthSnapshot(): Promise<HealthSnapshot> {
   const started = Date.now();
@@ -127,6 +138,29 @@ export async function healthRoute(_req: any, res: any) {
 
 export async function healthReadyRoute(_req: any, res: any) {
   const snapshot = await collectHealthSnapshot();
+  const issueKey = snapshot.resources.core_services?.status === 'warn'
+    ? `core-services:${snapshot.resources.core_services.detail}`
+    : `resource-warn:${snapshot.readiness_summary.resource_warn_count}`;
+  const summaryLine = Object.entries(snapshot.resources)
+    .filter(([, item]) => item.status !== 'ok')
+    .map(([name, item]) => `${name}: ${item.detail}`)
+    .join(' | ') || 'hub readiness healthy';
+
+  if (snapshot.status === 'warn') {
+    snapshot.memory_hints = {
+      recent_patterns: await buildIssueHints(issueKey, `⚠️ [허브 헬스] readiness 경고\n${summaryLine}`).catch(() => ''),
+    };
+  }
+
+  if (lastRecordedStatus !== snapshot.status) {
+    const kind = snapshot.status === 'warn' ? 'issue' : 'recovery';
+    const message = snapshot.status === 'warn'
+      ? `⚠️ [허브 헬스] readiness 경고\n${summaryLine}`
+      : `✅ [허브 헬스] readiness 회복\n${summaryLine}`;
+    void rememberHealthEvent(issueKey, kind, message, snapshot.status === 'warn' ? 2 : 1);
+    lastRecordedStatus = snapshot.status;
+  }
+
   return res.status(snapshot.status === 'ok' ? 200 : 503).json({
     ...snapshot,
     ready: snapshot.status === 'ok',
