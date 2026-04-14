@@ -27,6 +27,9 @@
 | `src/router.js` | 인텐트 → 핸들러 매핑 + bot_commands + legacy queue 소비 |
 | `src/filter.js` | 무음·중복·야간 필터 |
 | `src/dashboard.js` | /status 빌더 |
+
+관련 계획:
+- [MAINBOT_QUEUE_RETIREMENT_PLAN_2026-04-14.md](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/context/MAINBOT_QUEUE_RETIREMENT_PLAN_2026-04-14.md)
 | `lib/intent-parser.js` | 4단계 파싱 (slash→learned→keyword→LLM fallback) + nlp-learnings.json 5분 리로드 |
 | `lib/identity-checker.js` | 팀장 커맨더 정체성 점검·자동 복원 (6시간 주기) |
 | `lib/token-tracker.js` | LLM 토큰 추적 (duration_ms·gpt-4o 단가 추가, 2026-03-05) |
