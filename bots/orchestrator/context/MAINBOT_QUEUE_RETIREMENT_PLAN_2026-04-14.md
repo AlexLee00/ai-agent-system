@@ -20,6 +20,7 @@ Live OPS status as of 2026-04-14:
 Related archive planning:
 - [MAINBOT_QUEUE_ARCHIVAL_PLAN_2026-04-14.md](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/context/MAINBOT_QUEUE_ARCHIVAL_PLAN_2026-04-14.md)
   - archive tables created and row-count verified on 2026-04-14
+  - freeze/rollback SQL scripts prepared
 
 ## Current Usage Classification
 
