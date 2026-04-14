@@ -161,13 +161,16 @@ async function execute(taskType, params = {}, requestedBy = 'dexter') {
     if (!rows || rows.length === 0) return '';
     const successCount = rows.filter((row) => String(row?.metadata?.success || '') === 'true' || row?.metadata?.success === true).length;
     const failureCount = rows.length - successCount;
+    const caution = failureCount >= 2 && failureCount > successCount
+      ? '\n주의: 최근 유사 복구에서 실패 비중이 높습니다. 수동 점검을 우선 고려하세요.'
+      : '';
     const lines = rows.slice(0, 2).map((row) => {
       const createdAt = row?.created_at ? String(row.created_at).slice(0, 10) : 'unknown';
       const similarity = Number(row?.similarity || 0);
       const headline = String(row?.content || '').split(' | ')[0] || '기록 없음';
       return `${createdAt} / 유사도 ${similarity.toFixed(2)} / ${headline}`;
     });
-    return `\n최근 유사 복구: 성공 ${successCount}건 / 실패 ${failureCount}건\n- ${lines.join('\n- ')}`;
+    return `\n최근 유사 복구: 성공 ${successCount}건 / 실패 ${failureCount}건${caution}\n- ${lines.join('\n- ')}`;
   }).catch(() => '');
 
   // 1. 블랙리스트 체크
