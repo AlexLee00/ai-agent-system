@@ -148,6 +148,35 @@ function selectPerspectiveHint(events: SchedulerEvents, date: Date = new Date())
   return rotation[weekday % rotation.length];
 }
 
+function deriveMemoryPerspectiveHint(memories: MemorySnippet[] = []): string | null {
+  const scores = {
+    risk: 0,
+    growth: 0,
+    trend: 0,
+  };
+
+  for (const memory of memories) {
+    const metadata = memory?.metadata || {};
+    const importance = Number(memory?.importance || 0);
+    const weight = importance >= 0.7 ? 2 : 1;
+    const teams = Array.isArray(metadata?.targetTeams) ? metadata.targetTeams.map((team) => String(team).toLowerCase()) : [];
+
+    for (const team of teams) {
+      if (team === 'claude' || team === 'worker' || team === 'ska') scores.risk += weight;
+      if (team === 'blog' || team === 'luna') scores.growth += weight;
+      if (team === 'darwin' || team === 'video' || team === 'justin') scores.trend += weight;
+    }
+  }
+
+  const entries = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+  const [topKey, topScore] = entries[0];
+  if (!topScore || topScore < 2) return null;
+
+  if (topKey === 'risk') return '리스크 실패 문제 분석';
+  if (topKey === 'growth') return '성장 성공 기회 분석';
+  return '주간 장기 추세 분석';
+}
+
 function deriveMemoryTeams(memories: MemorySnippet[] = []): string[] {
   const counts = new Map<string, number>();
   for (const memory of memories) {
@@ -196,7 +225,8 @@ export async function decideTodayFormation(
   for (const team of memoryBoostTeams) targetTeams.add(team);
 
   const analysts = [...CORE_ANALYSTS];
-  const perspectiveHint = selectPerspectiveHint(events, date);
+  const memoryPerspectiveHint = deriveMemoryPerspectiveHint(recentMemories);
+  const perspectiveHint = memoryPerspectiveHint || selectPerspectiveHint(events, date);
   const memoryAwareHint = buildMemoryAwareTaskHint(perspectiveHint, memoryBoostTeams);
   const perspectiveAnalyst = await selectBestAgent('analyst', 'sigma', {
     mode: 'balanced',
