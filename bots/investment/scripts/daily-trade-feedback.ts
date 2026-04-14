@@ -23,6 +23,9 @@ import * as db from '../shared/db.ts';
 import * as rag from '../shared/rag-client.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { buildScreeningHistoryReport } from './screening-history-report.ts';
+const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
+
+const dailyFeedbackMemory = createAgentMemory({ agentId: 'investment.daily-feedback', team: 'investment' });
 
 function parseArg(name, fallback = null) {
   return process.argv.slice(2).find((arg) => arg.startsWith(`--${name}=`))?.split('=')[1] || fallback;
@@ -170,6 +173,15 @@ function buildScreeningLine(screeningSummary) {
   return parts.length > 0 ? `🔎 screening: ${parts.join(' | ')}` : null;
 }
 
+function buildDailyFeedbackMemoryQuery(dateKst, feedback, screeningSummary) {
+  return [
+    'investment daily trade feedback',
+    dateKst,
+    feedback?.stats?.wins > feedback?.stats?.losses ? 'win-day' : 'loss-day',
+    screeningSummary?.crypto?.trend ? 'screening-active' : 'screening-light',
+  ].filter(Boolean).join(' ');
+}
+
 function buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSummary) {
   const lines = [
     `🌓 루나 일일 피드백 (${dateKst})`,
@@ -218,13 +230,49 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
 
   if (!dryRun) {
     try {
+      const memoryQuery = buildDailyFeedbackMemoryQuery(dateKst, feedback, screeningSummary);
+      const episodicHint = await dailyFeedbackMemory.recallCountHint(memoryQuery, {
+        type: 'episodic',
+        limit: 2,
+        threshold: 0.33,
+        title: '최근 유사 피드백',
+        separator: 'pipe',
+        metadataKey: 'kind',
+        labels: {
+          feedback: '피드백',
+        },
+        order: ['feedback'],
+      }).catch(() => '');
+      const semanticHint = await dailyFeedbackMemory.recallHint(`${memoryQuery} consolidated trading pattern`, {
+        type: 'semantic',
+        limit: 2,
+        threshold: 0.28,
+        title: '최근 통합 패턴',
+        separator: 'newline',
+      }).catch(() => '');
+      const finalMessage = `${message}${episodicHint}${semanticHint}`;
       await publishAlert({
         from_bot: 'luna',
         event_type: 'daily_feedback',
         alert_level: 1,
-        message,
+        message: finalMessage,
         payload: { dateKst, feedback, analystAccuracy, screeningSummary },
       });
+      await dailyFeedbackMemory.remember(finalMessage, 'episodic', {
+        importance: 0.7,
+        expiresIn: 1000 * 60 * 60 * 24 * 30,
+        metadata: {
+          kind: 'feedback',
+          dateKst,
+          tradeCount: feedback.stats.total,
+          totalPnl: feedback.stats.totalPnl,
+          winRate: feedback.stats.winRate,
+        },
+      }).catch(() => {});
+      await dailyFeedbackMemory.consolidate({
+        olderThanDays: 14,
+        limit: 10,
+      }).catch(() => {});
     } catch (error) {
       console.warn(`  ⚠️ [daily-feedback] 메인봇 발행 실패(무시): ${error?.message || error}`);
     }
