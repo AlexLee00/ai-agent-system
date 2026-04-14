@@ -18,10 +18,16 @@ const fs = require('fs');
 const path = require('path');
 const { publishAlert } = require('../lib/alert-publisher');
 const hsm = require('../../../packages/core/lib/health-state-manager');
+const { createHealthMemoryHelper } = require('../../../packages/core/lib/health-memory');
 const {
   getLaunchctlStatus,
   DEFAULT_NORMAL_EXIT_CODES,
 } = require('../../../packages/core/lib/health-provider');
+const { buildIssueHints, rememberHealthEvent } = createHealthMemoryHelper({
+  agentId: 'claude.health',
+  team: 'claude',
+  domain: 'claude health',
+});
 
 const CONTINUOUS = ['ai.claude.commander'];
 const ALL_SERVICES = [
@@ -93,11 +99,13 @@ async function main() {
     }
 
     if (state[`unloaded:${label}`]) {
+      const recoveryMsg = `✅ ${tag}[클로드 헬스] ${shortName} 회복\nlaunchd 정상 로드 — 자동 감지`;
       recovers.push({
         from_bot: 'claude',
         event_type: 'health_check',
         alert_level: 1,
-        message: `✅ ${tag}[클로드 헬스] ${shortName} 회복\nlaunchd 정상 로드 — 자동 감지`,
+        message: recoveryMsg,
+        recoveryKey: `unloaded:${label}`,
       });
       hsm.clearAlert(state, `unloaded:${label}`);
     }
@@ -113,11 +121,13 @@ async function main() {
           });
         }
       } else if (state[`down:${label}`]) {
+        const recoveryMsg = `✅ ${tag}[클로드 헬스] ${shortName} 회복\nPID 정상 확인 — 자동 감지`;
         recovers.push({
           from_bot: 'claude',
           event_type: 'health_check',
           alert_level: 1,
-          message: `✅ ${tag}[클로드 헬스] ${shortName} 회복\nPID 정상 확인 — 자동 감지`,
+          message: recoveryMsg,
+          recoveryKey: `down:${label}`,
         });
         hsm.clearAlert(state, `down:${label}`);
       }
@@ -139,11 +149,13 @@ async function main() {
     } else {
       const prevKeys = Object.keys(state).filter((key) => key.startsWith(`exitcode:${label}:`));
       if (prevKeys.length > 0) {
+        const recoveryMsg = `✅ ${tag}[클로드 헬스] ${shortName} 회복\nexit code 정상 (0) — 자동 감지`;
         recovers.push({
           from_bot: 'claude',
           event_type: 'health_check',
           alert_level: 1,
-          message: `✅ ${tag}[클로드 헬스] ${shortName} 회복\nexit code 정상 (0) — 자동 감지`,
+          message: recoveryMsg,
+          recoveryKey: `exitcode:${label}:0`,
         });
         prevKeys.forEach((key) => hsm.clearAlert(state, key));
       }
@@ -152,17 +164,20 @@ async function main() {
 
   for (const { key, level, msg } of issues) {
     console.warn(`[클로드 헬스체크] 이슈: ${msg}`);
+    const memoryHints = await buildIssueHints(key, msg);
     await publishAlert({
       from_bot: 'claude',
       event_type: 'health_check',
       alert_level: level,
-      message: msg,
+      message: `${msg}${memoryHints}`,
     });
+    await rememberHealthEvent(key, 'issue', msg, level);
     hsm.recordAlert(state, key);
   }
 
   for (const opts of recovers) {
     await publishAlert(opts);
+    await rememberHealthEvent(opts.recoveryKey || 'recovery:claude-health', 'recovery', opts.message, opts.alert_level || 1);
   }
 
   hsm.saveState(state);
