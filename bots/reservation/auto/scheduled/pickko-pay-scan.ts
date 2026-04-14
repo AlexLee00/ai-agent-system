@@ -29,6 +29,7 @@ function runPayPending(entry: any) {
       __dirname,
       '../../../../dist/ts-runtime/bots/reservation/manual/reports/pickko-pay-pending.js',
     );
+    const nodeBin = process.execPath || 'node';
     const args = [
       scriptPath,
       `--phone=${String(entry.phone || '').replace(/\D/g, '')}`,
@@ -38,7 +39,7 @@ function runPayPending(entry: any) {
       `--room=${entry.room}`,
     ];
 
-    const child = spawn('/opt/homebrew/bin/node', args, {
+    const child = spawn(nodeBin, args, {
       cwd: path.dirname(scriptPath),
       env: { ...process.env, MODE: 'ops' },
       stdio: ['ignore', 'pipe', 'pipe'],
