@@ -272,6 +272,17 @@ async function logRecovery(taskType, params, result, success, requestedBy, confi
   } catch (e) {
     console.warn('[doctor] agent memory 저장 실패 (메인 로직에 영향 없음):', e.message);
   }
+
+  try {
+    await doctorMemory.consolidate({
+      olderThanDays: 14,
+      limit: 10,
+      sourceType: 'episodic',
+      targetType: 'semantic',
+    });
+  } catch (e) {
+    console.warn('[doctor] agent memory 통합 실패 (메인 로직에 영향 없음):', e.message);
+  }
 }
 
 // ─── 조회 함수 ─────────────────────────────────────────────────────────────
