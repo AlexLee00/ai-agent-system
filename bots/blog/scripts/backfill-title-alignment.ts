@@ -36,6 +36,9 @@ async function main() {
   }
 
   console.log(`[title-alignment backfill] scanned=${result.scanned} inferred=${result.inferred} updated=${result.updated} source=${result.source} dryRun=${result.dryRun}`);
+  if (result.sourceReason) {
+    console.log(`  fallback: ${String(result.sourceReason).slice(0, 160)}`);
+  }
   for (const item of result.items.slice(0, 10)) {
     const suffix = item.titleOverlap !== undefined ? ` overlap=${item.titleOverlap}` : '';
     console.log(`- #${item.postId || 'n/a'} [${item.category || 'unknown'}] ${item.status}${suffix} ${item.title || ''}`);

@@ -28,6 +28,7 @@
     "check:briefing": "node scripts/check-ai-briefing-structure.ts",
     "repair:briefing": "node scripts/repair-ai-briefing-output.ts",
     "backfill:autonomy": "node scripts/backfill-autonomy-decisions.ts",
+    "backfill:title-alignment": "node scripts/backfill-title-alignment.ts",
     "collect:competition": "node scripts/collect-competition-results.ts",
     "repair:competition": "node scripts/collect-competition-results.ts --repair-timeouts",
     "marketing:digest": "node scripts/marketing-digest.ts",
