@@ -10,9 +10,20 @@ const { trackWeeklyAutonomy } = require('../lib/autonomy-tracker.ts');
 const { aggregatePatterns } = require('../lib/feedback-learner.ts');
 const { runIfOps } = require('../../../packages/core/lib/mode-guard');
 const { publishToWebhook, buildReportEvent, renderReportEvent } = require('../../../packages/core/lib/reporting-hub');
+const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
 
 const dryRun = process.argv.includes('--dry-run');
 const json = process.argv.includes('--json');
+const weeklyEvolutionMemory = createAgentMemory({ agentId: 'blog.weekly-evolution', team: 'blog' });
+
+function buildWeeklyMemoryQuery(diagnosis = {}, evolution = {}, autonomy = null) {
+  return [
+    'blog weekly evolution',
+    diagnosis.primaryWeakness?.code || 'stable',
+    ...(Array.isArray(evolution?.plan?.focus) ? evolution.plan.focus.slice(0, 2) : []),
+    autonomy?.currentPhase ? `phase-${autonomy.currentPhase}` : null,
+  ].filter(Boolean).join(' ');
+}
 
 function buildWeeklyLines(diagnosis = {}, evolution = {}, marketingDigest = null, autonomy = null, revenueCorrelation = null, feedbackPatterns = []) {
   const lines = [
@@ -73,6 +84,26 @@ function buildWeeklyLines(diagnosis = {}, evolution = {}, marketingDigest = null
 
 async function sendWeeklyReport(diagnosis = {}, evolution = {}, marketingDigest = null, autonomy = null, revenueCorrelation = null, feedbackPatterns = [], options = {}) {
   const lines = buildWeeklyLines(diagnosis, evolution, marketingDigest, autonomy, revenueCorrelation, feedbackPatterns);
+  const memoryQuery = buildWeeklyMemoryQuery(diagnosis, evolution, autonomy);
+  const episodicHint = await weeklyEvolutionMemory.recallCountHint(memoryQuery, {
+    type: 'episodic',
+    limit: 2,
+    threshold: 0.33,
+    title: '최근 유사 전략',
+    separator: 'pipe',
+    metadataKey: 'kind',
+    labels: {
+      evolution: '전략',
+    },
+    order: ['evolution'],
+  }).catch(() => '');
+  const semanticHint = await weeklyEvolutionMemory.recallHint(`${memoryQuery} consolidated strategy pattern`, {
+    type: 'semantic',
+    limit: 2,
+    threshold: 0.28,
+    title: '최근 통합 패턴',
+    separator: 'newline',
+  }).catch(() => '');
   const reportEvent = buildReportEvent({
     from_bot: 'blog-blo',
     team: 'blog',
@@ -93,7 +124,7 @@ async function sendWeeklyReport(diagnosis = {}, evolution = {}, marketingDigest 
       details: lines,
     },
   });
-  const rendered = renderReportEvent(reportEvent) || lines.join('\n');
+  const rendered = `${renderReportEvent(reportEvent) || lines.join('\n')}${episodicHint}${semanticHint}`;
 
   if (options.dryRun) {
     console.log('[블로][dry-run] 주간 텔레그램 리포트 생략');
@@ -115,6 +146,21 @@ async function sendWeeklyReport(diagnosis = {}, evolution = {}, marketingDigest 
     }),
     () => console.log('[DEV] 주간 텔레그램 리포트 생략\n' + rendered)
   );
+  await weeklyEvolutionMemory.remember(rendered, 'episodic', {
+    importance: 0.72,
+    expiresIn: 1000 * 60 * 60 * 24 * 30,
+    metadata: {
+      kind: 'evolution',
+      weakness: diagnosis.primaryWeakness?.code || 'stable',
+      postCount: diagnosis.postCount || 0,
+      currentPhase: autonomy?.currentPhase || null,
+      focus: Array.isArray(evolution?.plan?.focus) ? evolution.plan.focus.slice(0, 3) : [],
+    },
+  }).catch(() => {});
+  await weeklyEvolutionMemory.consolidate({
+    olderThanDays: 14,
+    limit: 10,
+  }).catch(() => {});
 }
 
 async function main() {
