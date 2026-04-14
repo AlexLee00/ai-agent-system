@@ -5,19 +5,27 @@
 const { diagnoseWeeklyPerformance } = require('../lib/performance-diagnostician.ts');
 const { evolveStrategy } = require('../lib/strategy-evolver.ts');
 const { buildMarketingDigest } = require('../lib/marketing-digest.ts');
+const { analyzeMarketingToRevenue } = require('../lib/marketing-revenue-correlation.ts');
+const { trackWeeklyAutonomy } = require('../lib/autonomy-tracker.ts');
+const { aggregatePatterns } = require('../lib/feedback-learner.ts');
 const { runIfOps } = require('../../../packages/core/lib/mode-guard');
-const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
-const { buildReportEvent, renderReportEvent } = require('../../../packages/core/lib/reporting-hub');
+const { publishToWebhook, buildReportEvent, renderReportEvent } = require('../../../packages/core/lib/reporting-hub');
 
 const dryRun = process.argv.includes('--dry-run');
 const json = process.argv.includes('--json');
 
-function buildWeeklyLines(diagnosis = {}, evolution = {}, marketingDigest = null) {
+function buildWeeklyLines(diagnosis = {}, evolution = {}, marketingDigest = null, autonomy = null, revenueCorrelation = null, feedbackPatterns = []) {
   const lines = [
     `최근 포스트: ${diagnosis.postCount || 0}건 / 실행 이력: ${diagnosis.executionCount || 0}건`,
     `주요 약점: ${diagnosis.primaryWeakness?.message || '없음'}`,
     `다음 주 초점: ${(evolution.plan?.focus || []).join(' | ') || '없음'}`,
   ];
+
+  if (autonomy) {
+    lines.push(
+      `자율 Phase: ${autonomy.currentPhase || 1} (이전 ${autonomy.previousPhase || 1}, 정확도 ${(Number(autonomy.accuracy || 0) * 100).toFixed(1)}%, 변화 ${autonomy.phaseChanged ? '있음' : '없음'})`
+    );
+  }
 
   if (marketingDigest) {
     lines.push(
@@ -25,9 +33,22 @@ function buildWeeklyLines(diagnosis = {}, evolution = {}, marketingDigest = null
     );
   }
 
+  if (revenueCorrelation && !marketingDigest) {
+    lines.push(
+      `매출 영향: ${(Number(revenueCorrelation?.revenueImpactPct || 0) * 100).toFixed(1)}% / 고조회수 다음날 ${Number(revenueCorrelation?.highViewRevenueAfter || 0).toFixed(0)}`
+    );
+  }
+
   if (Array.isArray(diagnosis.recommendations) && diagnosis.recommendations.length) {
     lines.push('', '권고 사항:');
     diagnosis.recommendations.forEach((item) => lines.push(`- ${item}`));
+  }
+
+  if (Array.isArray(feedbackPatterns) && feedbackPatterns.length) {
+    lines.push('', '마스터 피드백 요약:');
+    feedbackPatterns.slice(0, 3).forEach((item) => {
+      lines.push(`- ${item.type}: ${item.count}회 / ${item.recentSummaries?.[0] || '요약 없음'}`);
+    });
   }
 
   if (Array.isArray(diagnosis.byCategory) && diagnosis.byCategory.length) {
@@ -50,12 +71,12 @@ function buildWeeklyLines(diagnosis = {}, evolution = {}, marketingDigest = null
   return lines;
 }
 
-async function sendWeeklyReport(diagnosis = {}, evolution = {}, marketingDigest = null, options = {}) {
-  const lines = buildWeeklyLines(diagnosis, evolution, marketingDigest);
+async function sendWeeklyReport(diagnosis = {}, evolution = {}, marketingDigest = null, autonomy = null, revenueCorrelation = null, feedbackPatterns = [], options = {}) {
+  const lines = buildWeeklyLines(diagnosis, evolution, marketingDigest, autonomy, revenueCorrelation, feedbackPatterns);
   const reportEvent = buildReportEvent({
     from_bot: 'blog-blo',
     team: 'blog',
-    event_type: 'report',
+    event_type: 'blog_weekly_evolution',
     alert_level: 1,
     title: '블로그팀 주간 전략 진화 완료',
     summary: `${diagnosis.postCount || 0}건 분석 / 약점: ${diagnosis.primaryWeakness?.code || 'stable'}`,
@@ -82,11 +103,15 @@ async function sendWeeklyReport(diagnosis = {}, evolution = {}, marketingDigest 
 
   await runIfOps(
     'blog-weekly-report',
-    () => postAlarm({
-      message: rendered,
-      team: 'blog',
-      alertLevel: 1,
-      fromBot: 'blog-blo',
+    () => publishToWebhook({
+      event: {
+        from_bot: 'blog-blo',
+        team: 'blog',
+        event_type: 'blog_weekly_evolution',
+        alert_level: 1,
+        message: rendered,
+        payload: reportEvent.payload,
+      },
     }),
     () => console.log('[DEV] 주간 텔레그램 리포트 생략\n' + rendered)
   );
@@ -98,7 +123,7 @@ async function main() {
     console.log('[블로][dry-run] 전략 파일 저장 없이 진단만 실행');
   }
 
-  const [diagnosis, marketingDigest] = await Promise.all([
+  const [diagnosis, marketingDigest, autonomy, revenueCorrelation, feedbackPatterns] = await Promise.all([
     diagnoseWeeklyPerformance(7),
     buildMarketingDigest({
       revenueWindow: 14,
@@ -106,6 +131,9 @@ async function main() {
       autonomyWindow: 14,
       snapshotWindow: 7,
     }).catch(() => null),
+    trackWeeklyAutonomy().catch(() => null),
+    analyzeMarketingToRevenue(14).catch(() => null),
+    aggregatePatterns(30).catch(() => []),
   ]);
   const evolution = await evolveStrategy(diagnosis, { dryRun, marketingDigest });
 
@@ -113,6 +141,9 @@ async function main() {
     dryRun,
     diagnosis,
     marketingDigest,
+    autonomy,
+    revenueCorrelation,
+    feedbackPatterns,
     evolution,
   };
 
@@ -122,9 +153,12 @@ async function main() {
     console.log(`[블로] 주간 진단: 최근 포스트 ${diagnosis.postCount}건 / 실행 이력 ${diagnosis.executionCount}건`);
     console.log(`[블로] 주요 약점: ${diagnosis.primaryWeakness?.message || '없음'}`);
     console.log(`[블로] 다음 주 초점: ${(evolution.plan?.focus || []).join(' | ')}`);
+    if (autonomy) {
+      console.log(`[블로] 자율 Phase: ${autonomy.currentPhase} / 정확도 ${(Number(autonomy.accuracy || 0) * 100).toFixed(1)}%`);
+    }
   }
 
-  await sendWeeklyReport(diagnosis, evolution, marketingDigest, { dryRun });
+  await sendWeeklyReport(diagnosis, evolution, marketingDigest, autonomy, revenueCorrelation, feedbackPatterns, { dryRun });
 }
 
 main().catch((error) => {
