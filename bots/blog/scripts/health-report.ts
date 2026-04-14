@@ -612,6 +612,9 @@ async function buildMarketingExpansionHealth() {
           `  latest title overlap: ${Number(adoption.latestPreviewOverlap || 0).toFixed(2)} (${adoption?.latestPreviewAligned ? 'preview aligned' : 'preview drift'})`,
         );
       }
+      if (adoption?.latestAlignmentHint) {
+        ok.push(`  latest alignment hint: ${adoption.latestAlignmentHint}`);
+      }
     }
     const nextPreview = digest?.nextGeneralPreview || null;
     if (nextPreview?.category || nextPreview?.pattern) {

@@ -210,10 +210,16 @@ defmodule TeamJay.Blog.SummaryFormatter do
           inferred_coverage = Map.get(value, :inferred_coverage_count, 0)
           status = Map.get(value, :status)
           preview_overlap = Map.get(value, :latest_preview_overlap, 0)
+          alignment_hint = Map.get(value, :latest_alignment_hint)
+          hint_suffix =
+            case alignment_hint do
+              value when is_binary(value) and value != "" -> ",hint=#{value}"
+              _ -> ""
+            end
 
           cond do
-            is_binary(status) and status != "" -> ",adopt=#{status}:#{matched}/#{base}@#{Float.round((preview_overlap || 0) * 1.0, 2)},align=#{align_coverage}/#{base}[m#{meta_coverage}/i#{inferred_coverage}]"
-            is_atom(status) -> ",adopt=#{status}:#{matched}/#{base}@#{Float.round((preview_overlap || 0) * 1.0, 2)},align=#{align_coverage}/#{base}[m#{meta_coverage}/i#{inferred_coverage}]"
+            is_binary(status) and status != "" -> ",adopt=#{status}:#{matched}/#{base}@#{Float.round((preview_overlap || 0) * 1.0, 2)},align=#{align_coverage}/#{base}[m#{meta_coverage}/i#{inferred_coverage}]#{hint_suffix}"
+            is_atom(status) -> ",adopt=#{status}:#{matched}/#{base}@#{Float.round((preview_overlap || 0) * 1.0, 2)},align=#{align_coverage}/#{base}[m#{meta_coverage}/i#{inferred_coverage}]#{hint_suffix}"
             true -> ""
           end
 
