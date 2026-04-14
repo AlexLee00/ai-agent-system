@@ -11,8 +11,8 @@ const { publishToRag } = require('../../../../packages/core/lib/reporting-hub') 
   publishToRag: (payload: Record<string, any>) => Promise<{ id?: unknown }>;
 };
 const kst = require('../../../../packages/core/lib/kst') as { today: () => string };
-const { postAlarm } = require('../../../../packages/core/lib/openclaw-client') as {
-  postAlarm: (payload: { message: string; team: string; alertLevel: number; fromBot: string }) => Promise<{ ok?: boolean }>;
+const { publishToWebhook } = require('../../../../packages/core/lib/reporting-hub') as {
+  publishToWebhook: (payload: { event: { from_bot: string; team: string; event_type: string; alert_level: number; message: string } }) => Promise<{ ok?: boolean }>;
 };
 const eventLake = require('../../../../packages/core/lib/event-lake') as {
   initSchema: () => Promise<void>;
@@ -276,11 +276,14 @@ export async function weeklyMetaReview(): Promise<Record<string, any>> {
     lines.push(`- ${row.analyst_used || 'unknown'}: 효과 ${row.effective_count}/${row.total}, 평균 ${row.avg_effect}`);
   });
 
-  const result = await postAlarm({
-    message: lines.join('\n'),
-    team: 'sigma',
-    alertLevel: 2,
-    fromBot: 'sigma',
+  const result = await publishToWebhook({
+    event: {
+      from_bot: 'sigma',
+      team: 'sigma',
+      event_type: 'sigma_weekly_meta_review',
+      alert_level: 2,
+      message: lines.join('\n'),
+    },
   });
 
   try {

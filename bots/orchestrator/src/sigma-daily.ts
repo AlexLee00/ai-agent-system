@@ -7,8 +7,8 @@ const rag = require('../../../packages/core/lib/rag') as {
 const { publishToRag } = require('../../../packages/core/lib/reporting-hub') as {
   publishToRag: (payload: Record<string, any>) => Promise<{ id?: unknown }>;
 };
-const { postAlarm } = require('../../../packages/core/lib/openclaw-client') as {
-  postAlarm: (payload: { message: string; team: string; alertLevel: number; fromBot: string }) => Promise<{ ok?: boolean }>;
+const { publishToWebhook } = require('../../../packages/core/lib/reporting-hub') as {
+  publishToWebhook: (payload: { event: { from_bot: string; team: string; event_type: string; alert_level: number; message: string } }) => Promise<{ ok?: boolean }>;
 };
 const kst = require('../../../packages/core/lib/kst') as { today: () => string };
 
@@ -130,11 +130,14 @@ export async function runDaily({ test = false }: SigmaDailyOptions = {}): Promis
   }
 
   if (!test) {
-    await postAlarm({
-      message: analysis.report,
-      team: 'sigma',
-      alertLevel: 2,
-      fromBot: 'sigma',
+    await publishToWebhook({
+      event: {
+        from_bot: 'sigma',
+        team: 'sigma',
+        event_type: 'sigma_daily_report',
+        alert_level: 2,
+        message: analysis.report,
+      },
     });
   }
 
