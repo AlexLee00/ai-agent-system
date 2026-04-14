@@ -274,14 +274,16 @@ export async function weeklyMetaReview(): Promise<Record<string, any>> {
     return { ok: true, skipped: true, message: '시그마 주간 메타리뷰 데이터 부족' };
   }
 
-  const recentSemanticMemories = await sigmaMemory.recall(
+  const semanticHint = await sigmaMemory.recallHint(
     'sigma weekly meta review consolidated pattern',
     {
       type: 'semantic',
       limit: 2,
       threshold: 0.28,
+      title: '최근 통합 패턴 참고',
+      separator: 'newline',
     },
-  ).catch(() => []);
+  ).catch(() => '');
 
   const lines = [
     '🦉 시그마 주간 자기 평가',
@@ -290,23 +292,13 @@ export async function weeklyMetaReview(): Promise<Record<string, any>> {
   rows.forEach((row) => {
     lines.push(`- ${row.analyst_used || 'unknown'}: 효과 ${row.effective_count}/${row.total}, 평균 ${row.avg_effect}`);
   });
-  if (recentSemanticMemories.length > 0) {
-    lines.push('- 최근 통합 패턴 참고:');
-    recentSemanticMemories.slice(0, 2).forEach((memory) => {
-      const createdAt = memory?.created_at ? String(memory.created_at).slice(0, 10) : 'unknown';
-      const similarity = Number(memory?.similarity || 0);
-      const headline = String(memory?.content || '').split('\n')[0] || '패턴 요약 없음';
-      lines.push(`  · ${createdAt} / 유사도 ${similarity.toFixed(2)} / ${headline}`);
-    });
-  }
-
   const result = await publishToWebhook({
     event: {
       from_bot: 'sigma',
       team: 'sigma',
       event_type: 'sigma_weekly_meta_review',
       alert_level: 2,
-      message: lines.join('\n'),
+      message: lines.join('\n') + semanticHint,
     },
   });
 
