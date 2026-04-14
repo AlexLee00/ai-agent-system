@@ -95,6 +95,9 @@ function applyMarketingFeedbackToPlan(plan = {}, marketingDigest = null) {
   const topSignalMessage = String(marketingDigest?.senseSummary?.topSignal?.message || '');
   const latestWeakness = String(marketingDigest?.snapshotTrend?.latestWeakness || '');
   const watchCount = Number(marketingDigest?.snapshotTrend?.watchCount || 0);
+  const adoptionStatus = String(marketingDigest?.strategyAdoption?.status || '');
+  const latestAlignmentHint = String(marketingDigest?.strategyAdoption?.latestAlignmentHint || '');
+  const preferredCategory = String(next.preferredCategory || '');
 
   if (revenueImpactPct < -0.05) {
     focus.unshift('매출 하락 구간용 전환형 주제와 CTA 강화');
@@ -122,6 +125,14 @@ function applyMarketingFeedbackToPlan(plan = {}, marketingDigest = null) {
 
   if (signalCount >= 3) {
     recommendations.push('오늘 감지된 운영 신호가 많으니, 실험성 제목보다 독자 문제를 바로 짚는 안정형 제목을 우선 쓰는 편이 좋습니다.');
+  }
+
+  if (latestAlignmentHint.startsWith('category_drift:') && preferredCategory) {
+    next.preferredCategoryWeightBoost = Math.max(Number(next.preferredCategoryWeightBoost || 0), 6);
+    recommendations.unshift(`최근 일반 글이 전략 카테고리에서 벗어나 ${preferredCategory} 회전 가중치를 더 강하게 적용합니다.`);
+    focus.unshift(`${preferredCategory} 카테고리 채택률 우선 복구`);
+  } else if (adoptionStatus === 'aligned') {
+    next.preferredCategoryWeightBoost = 0;
   }
 
   next.focus = [...new Set(focus.filter(Boolean))];
@@ -188,6 +199,7 @@ function createStrategyPlan(diagnosis = {}, options = {}) {
       || safePatternFallback
       || diagnosis.byTitlePattern?.[0]?.key
       || null,
+    preferredCategoryWeightBoost: 0,
     suppressedTitlePattern: diagnosis.byTitlePattern?.[0]?.key || null,
     hardSuppressTitlePattern:
       diagnosis.primaryWeakness?.code === 'title_pattern_bias'
