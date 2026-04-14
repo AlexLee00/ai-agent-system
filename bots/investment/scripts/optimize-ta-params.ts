@@ -2,6 +2,7 @@
 // @ts-nocheck
 
 import * as db from '../shared/db.ts';
+import { publishAlert } from '../shared/alert-publisher.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { runVectorBtGrid } from '../shared/vectorbt-runner.ts';
 
@@ -92,12 +93,16 @@ export async function runOptimization(symbol = 'BTC/USDT', days = 90, { alert = 
   const topResults = await persistTopResults(symbol, results);
 
   if (alert && topResults.length > 0) {
-    const { postAlarm } = await import('../../../packages/core/lib/openclaw-client.js');
-    await postAlarm({
+    await publishAlert({
+      from_bot: 'luna-optimize-ta',
+      event_type: 'ta_optimization_report',
+      alert_level: 1,
       message: buildOptimizationMessage(symbol, days, topResults),
-      team: 'investment',
-      alertLevel: 1,
-      fromBot: 'luna-optimize-ta',
+      payload: {
+        symbol,
+        days,
+        topResults,
+      },
     }).catch(() => {});
   }
 
