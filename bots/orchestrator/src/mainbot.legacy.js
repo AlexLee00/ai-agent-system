@@ -27,6 +27,7 @@ const sender   = require('../../../packages/core/lib/telegram-sender');
 // ─── 봇 정보 ─────────────────────────────────────────────────────────
 const BOT_NAME = '제이';
 const BOT_ID   = 'mainbot';
+const LEGACY_QUEUE_CONSUMER_ENABLED = process.env.MAINBOT_QUEUE_CONSUMER_ENABLED !== 'false';
 
 // ─── Self-lock ─────────────────────────────────────────────────────
 const LOCK_PATH = path.join(os.homedir(), '.openclaw', 'workspace', 'mainbot.lock');
@@ -126,6 +127,9 @@ const { runCommanderIdentityCheck, buildIdentityReport }          = require('../
 let _lastBriefHour = -1;
 
 async function processQueue() {
+  if (!LEGACY_QUEUE_CONSUMER_ENABLED) {
+    return;
+  }
   try {
     const pending = await pgPool.query('claude', `
       SELECT * FROM mainbot_queue
@@ -237,6 +241,9 @@ async function main() {
   await flushPendingTelegrams();
 
   console.log(`🤖 ${BOT_NAME} 알람 큐 처리기 시작 (PID: ${process.pid})`);
+  if (!LEGACY_QUEUE_CONSUMER_ENABLED) {
+    console.log('[mainbot] legacy mainbot_queue consumer disabled by MAINBOT_QUEUE_CONSUMER_ENABLED=false');
+  }
 
   // 큐 처리 루프 (2초 간격)
   while (true) {
