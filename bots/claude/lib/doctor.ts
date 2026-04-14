@@ -23,9 +23,11 @@ const { execSync } = require('child_process');
 const pgPool     = require('../../../packages/core/lib/pg-pool');
 const eventLake  = require('../../../packages/core/lib/event-lake');
 const { publishToRag, publishToWebhook } = require('../../../packages/core/lib/reporting-hub');
+const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
 
 const SCHEMA = 'reservation';
 const LAUNCHD_DIR = path.join(os.homedir(), 'Library', 'LaunchAgents');
+const doctorMemory = createAgentMemory({ agentId: 'claude.doctor', team: 'claude' });
 const RECOVERY_BLACKLIST = new Set([
   'ai.ops.platform.backend',
   'ai.ops.platform.frontend',
@@ -212,6 +214,41 @@ async function logRecovery(taskType, params, result, success, requestedBy, confi
       confirmedBy ?? null,
     ]);
   } catch (e) { console.warn('[doctor] doctor_log INSERT 실패 (메인 로직에 영향 없음):', e.message); }
+
+  try {
+    const summaryParts = [
+      success ? `복구 성공: ${taskType}` : `복구 실패: ${taskType}`,
+      requestedBy ? `요청자: ${requestedBy}` : '',
+      confirmedBy ? `승인: ${confirmedBy}` : '',
+      errorMsg ? `오류: ${errorMsg}` : '',
+    ].filter(Boolean);
+    const detailParts = [
+      params && Object.keys(params).length > 0 ? `params=${JSON.stringify(params)}` : '',
+      result && Object.keys(result).length > 0 ? `result=${JSON.stringify(result)}` : '',
+    ].filter(Boolean);
+
+    await doctorMemory.remember([...summaryParts, ...detailParts].join(' | '), 'episodic', {
+      keywords: [
+        'doctor',
+        success ? 'recovery-success' : 'recovery-failure',
+        String(taskType || ''),
+        String(requestedBy || ''),
+      ].filter(Boolean).slice(0, 8),
+      importance: success ? 0.68 : 0.82,
+      expiresIn: 30 * 24 * 60 * 60,
+      metadata: {
+        type: 'doctor_recovery_log',
+        taskType,
+        success: !!success,
+        requestedBy: requestedBy || null,
+        confirmedBy: confirmedBy || null,
+        errorMsg: errorMsg || null,
+        params: params || null,
+      },
+    });
+  } catch (e) {
+    console.warn('[doctor] agent memory 저장 실패 (메인 로직에 영향 없음):', e.message);
+  }
 }
 
 // ─── 조회 함수 ─────────────────────────────────────────────────────────────
