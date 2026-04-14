@@ -8,6 +8,7 @@ const { loginToPickko, fetchPickkoEntries } = require('../../lib/pickko');
 const { publishReservationAlert } = require('../../lib/alert-client');
 const { getAllNaverKeys } = require('../../lib/db');
 const { maskPhone, maskName } = require('../../lib/formatting');
+const { createAgentMemory } = require('../../../../packages/core/lib/agent-memory');
 const {
   getTodayKST,
   buildDailyAuditReport,
@@ -19,6 +20,16 @@ const SECRETS = loadSecrets();
 const PICKKO_ID = SECRETS.pickko_id;
 const PICKKO_PW = SECRETS.pickko_pw;
 const MODE = IS_OPS ? 'ops' : 'dev';
+const dailyAuditMemory = createAgentMemory({ agentId: 'reservation.pickko-daily-audit', team: 'reservation' });
+
+function buildAuditMemoryQuery(today: string, manualEntries: any[]) {
+  return [
+    'reservation pickko daily audit',
+    today,
+    manualEntries.length > 0 ? 'manual-present' : 'manual-empty',
+    `${manualEntries.length}-manual`,
+  ].filter(Boolean).join(' ');
+}
 
 function collectNaverKeys() {
   return getAllNaverKeys();
@@ -128,8 +139,44 @@ async function main() {
     }
 
     const report = buildDailyAuditReport(today, pickkoEntries, autoMatched, manualEntries);
+    const memoryQuery = buildAuditMemoryQuery(today, manualEntries);
+    const episodicHint = await dailyAuditMemory.recallCountHint(memoryQuery, {
+      type: 'episodic',
+      limit: 2,
+      threshold: 0.33,
+      title: '최근 유사 감사',
+      separator: 'pipe',
+      metadataKey: 'kind',
+      labels: {
+        audit: '감사',
+      },
+      order: ['audit'],
+    }).catch(() => '');
+    const semanticHint = await dailyAuditMemory.recallHint(`${memoryQuery} consolidated audit pattern`, {
+      type: 'semantic',
+      limit: 2,
+      threshold: 0.28,
+      title: '최근 통합 패턴',
+      separator: 'newline',
+    }).catch(() => '');
+    const finalReport = `${report}${episodicHint}${semanticHint}`;
     log('\n' + report);
-    publishReservationAlert({ from_bot: 'ska', event_type: 'report', alert_level: 1, message: report });
+    publishReservationAlert({ from_bot: 'ska', event_type: 'report', alert_level: 1, message: finalReport });
+    await dailyAuditMemory.remember(report, 'episodic', {
+      importance: manualCount > 0 ? 0.72 : 0.62,
+      expiresIn: 1000 * 60 * 60 * 24 * 30,
+      metadata: {
+        kind: 'audit',
+        date: today,
+        total,
+        autoCount,
+        manualCount,
+      },
+    }).catch(() => {});
+    await dailyAuditMemory.consolidate({
+      olderThanDays: 14,
+      limit: 10,
+    }).catch(() => {});
     log('\n✅ 픽코 일일 감사 완료');
 
     try {
