@@ -1,36 +1,31 @@
-type RuntimeProfileValue = string | number | boolean | string[] | undefined;
-
-type RuntimeProfile = {
-  openclaw_agent?: string;
-  claude_code_name?: string;
-  claude_code_settings?: string;
-  local_llm_base_url?: string;
-  primary_routes?: string[];
-  fallback_routes?: string[];
-  provider?: string;
-  base_url?: string;
-  model?: string;
-  timeout_ms?: number;
-  max_tokens?: number;
-  temperature?: number;
-  local_image?: boolean;
-  engine?: string;
-  checkpoint_name?: string;
-  workflow_template_path?: string;
-  poll_ms?: number;
-  max_retries?: number;
-  direct_provider?: string;
-  direct_model?: string;
-  direct_endpoint?: string;
-  [key: string]: RuntimeProfileValue;
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
 };
-
-type TeamProfiles = Record<string, RuntimeProfile>;
-
-const LOCAL_LLM_BASE_URL = 'http://127.0.0.1:11434';
-const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11435';
-
-export const PROFILES: Record<string, TeamProfiles> = {
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+var runtime_profiles_exports = {};
+__export(runtime_profiles_exports, {
+  LOCAL_LLM_BASE_URL: () => LOCAL_LLM_BASE_URL,
+  OLLAMA_BASE_URL: () => OLLAMA_BASE_URL,
+  PROFILES: () => PROFILES,
+  selectRuntimeProfile: () => selectRuntimeProfile
+});
+module.exports = __toCommonJS(runtime_profiles_exports);
+const LOCAL_LLM_BASE_URL = "http://127.0.0.1:11434";
+const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11435";
+const PROFILES = {
   "blog": {
     "default": {
       "openclaw_agent": "blog-writer",
@@ -96,7 +91,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "base_url": "http://127.0.0.1:8188",
       "checkpoint_name": "sd_xl_base_1.0.safetensors",
       "workflow_template_path": "/Users/alexlee/projects/ai-agent-system/bots/blog/config/comfyui-workflow-template.json",
-      "timeout_ms": 300000,
+      "timeout_ms": 3e5,
       "poll_ms": 1500,
       "max_retries": 3
     },
@@ -107,7 +102,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "provider": "local",
       "base_url": "http://127.0.0.1:11434",
       "model": "qwen2.5-7b",
-      "timeout_ms": 10000,
+      "timeout_ms": 1e4,
       "max_tokens": 200,
       "temperature": 0.8
     }
@@ -438,7 +433,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "provider": "local",
       "base_url": "http://127.0.0.1:11434",
       "model": "qwen2.5-7b",
-      "timeout_ms": 10000,
+      "timeout_ms": 1e4,
       "max_tokens": 300,
       "temperature": 0.7
     }
@@ -465,7 +460,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "provider": "local",
       "base_url": "http://127.0.0.1:11434",
       "model": "qwen2.5-7b",
-      "timeout_ms": 10000,
+      "timeout_ms": 1e4,
       "max_tokens": 150,
       "temperature": 0.7
     },
@@ -608,19 +603,18 @@ export const PROFILES: Record<string, TeamProfiles> = {
     }
   }
 };
-
-export function selectRuntimeProfile(team: string | null | undefined, purpose = 'default'): RuntimeProfile | null {
-  const normalizedTeam = String(team || '').trim().toLowerCase();
-  const normalizedPurpose = String(purpose || 'default').trim().toLowerCase() || 'default';
+function selectRuntimeProfile(team, purpose = "default") {
+  const normalizedTeam = String(team || "").trim().toLowerCase();
+  const normalizedPurpose = String(purpose || "default").trim().toLowerCase() || "default";
   if (!normalizedTeam) return null;
-
   const teamProfiles = PROFILES[normalizedTeam];
   if (!teamProfiles) return null;
-
   return teamProfiles[normalizedPurpose] || teamProfiles.default || null;
 }
-
-export {
+// Annotate the CommonJS export names for ESM import in node:
+0 && (module.exports = {
   LOCAL_LLM_BASE_URL,
   OLLAMA_BASE_URL,
-};
+  PROFILES,
+  selectRuntimeProfile
+});
