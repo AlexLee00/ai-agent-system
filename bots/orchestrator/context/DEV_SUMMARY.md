@@ -9,6 +9,7 @@
 - **orchestrator runtime**: OpenClaw alert/webhook fanout과 legacy `mainbot_queue` 소비를 함께 맡는 백그라운드 프로세스
   - legacy queue consumer는 `MAINBOT_QUEUE_CONSUMER_ENABLED=false`로 단계적 비활성화 가능
   - 2026-04-14 기준 OPS live는 `MAINBOT_QUEUE_CONSUMER_ENABLED=false` 상태로 정상 운영 중
+  - legacy queue publish도 `MAINBOT_QUEUE_PUBLISH_ENABLED=true`일 때만 opt-in으로 허용
 - **팀장 지휘**: bot_commands DB를 통해 스카/루나/클로드팀에 명령 전달
 
 ## 아키텍처

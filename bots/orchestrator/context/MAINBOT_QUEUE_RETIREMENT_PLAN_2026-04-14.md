@@ -15,6 +15,7 @@ Live OPS status as of 2026-04-14:
 - operator paths now use `recent-alerts.json`
 - recent queue telemetry file `/tmp/mainbot-queue-usage.jsonl` is still empty
 - live queue had no fresh `pending` rows during the disable trial
+- `publishToQueue(...)` now requires `MAINBOT_QUEUE_PUBLISH_ENABLED=true`
 
 ## Current Usage Classification
 
@@ -26,6 +27,7 @@ These still write or can write into `mainbot_queue`.
   - `publishToQueue(...)`
   - `publishEventPipeline(... target.type === 'queue')`
   - `buildSeverityTargets(...)` default now keeps `includeQueue = false`
+  - queue publish is now opt-in via `MAINBOT_QUEUE_PUBLISH_ENABLED=true`
 
 Recently removed from this bucket:
 
@@ -115,7 +117,7 @@ Exit condition:
 
 The next safe implementation step is:
 
-1. observe `/tmp/mainbot-queue-usage.jsonl` for remaining runtime writers
+1. observe `/tmp/mainbot-queue-usage.jsonl` for any explicit re-enable caller
 2. keep observing OPS runtime for any queue writer reappearance
-3. if telemetry stays quiet, treat `mainbot.legacy.js` queue polling as retired-by-default
+3. if telemetry stays quiet, treat queue publish and queue polling as retired-by-default
 4. then evaluate table retirement / archival timing
