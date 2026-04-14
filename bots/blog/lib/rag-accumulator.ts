@@ -5,6 +5,7 @@ const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const rag = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/rag.js'));
 const eventLake = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/event-lake.js'));
+const { publishToRag } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/reporting-hub'));
 
 function _compact(text = '', max = 500) {
   const normalized = String(text || '').replace(/\s+/g, ' ').trim();
@@ -58,10 +59,30 @@ async function accumulatePostExperience(post = {}, quality = {}, options = {}) {
   };
 
   try {
-    await rag.store(
-      'blog',
-      summary,
-      {
+    await publishToRag({
+      ragStore: {
+        async store(targetCollection, ragContent, metadata = {}, sourceBot = 'blog-blo') {
+          return rag.store(targetCollection, ragContent, metadata, sourceBot);
+        },
+      },
+      collection: 'blog',
+      sourceBot: 'blog-blo',
+      event: {
+        from_bot: 'blog-blo',
+        team: 'blog',
+        event_type: 'blog_post_rag',
+        alert_level: 1,
+        message: summary,
+        payload: {
+          title: post.title || 'blog post',
+          summary: `${post.category || 'general'} | ${post.postType || 'general'}`,
+          details: [
+            `writer: ${post.writerName || 'unknown'}`,
+            `qualityScore: ${_qualityScore(quality)}`,
+          ],
+        },
+      },
+      metadata: {
         category: post.category,
         writerName: post.writerName || null,
         postType: post.postType,
@@ -69,13 +90,38 @@ async function accumulatePostExperience(post = {}, quality = {}, options = {}) {
         postId: post.postId || null,
         traceId: traceId || null,
       },
-      'blog-blo'
-    );
+      contentBuilder: () => summary,
+      policy: {
+        dedupe: true,
+        key: `blog-accumulator:blog:${post.postId || post.title || 'unknown'}`,
+        cooldownMs: 30 * 60 * 1000,
+      },
+    });
 
-    await rag.store(
-      'experience',
-      JSON.stringify(qualityPayload),
-      {
+    await publishToRag({
+      ragStore: {
+        async store(targetCollection, ragContent, metadata = {}, sourceBot = 'blog-blo') {
+          return rag.store(targetCollection, ragContent, metadata, sourceBot);
+        },
+      },
+      collection: 'experience',
+      sourceBot: 'blog-blo',
+      event: {
+        from_bot: 'blog-blo',
+        team: 'blog',
+        event_type: 'blog_quality_rag',
+        alert_level: 1,
+        message: `${post.title || 'blog post'} 품질 경험 저장`,
+        payload: {
+          title: post.title || 'blog quality',
+          summary: `${post.category || 'general'} | qualityScore ${_qualityScore(quality)}`,
+          details: [
+            `writer: ${post.writerName || 'unknown'}`,
+            `aiRisk: ${quality?.aiRisk?.riskLevel || 'unknown'}`,
+          ],
+        },
+      },
+      metadata: {
         type: 'blog_quality',
         category: post.category,
         writerName: post.writerName || null,
@@ -83,8 +129,13 @@ async function accumulatePostExperience(post = {}, quality = {}, options = {}) {
         postId: post.postId || null,
         traceId: traceId || null,
       },
-      'blog-blo'
-    );
+      contentBuilder: () => JSON.stringify(qualityPayload),
+      policy: {
+        dedupe: true,
+        key: `blog-accumulator:experience:${post.postId || post.title || 'unknown'}`,
+        cooldownMs: 30 * 60 * 1000,
+      },
+    });
   } catch (error) {
     console.warn('[블로] 발행 후 RAG 축적 실패:', error.message);
   }
