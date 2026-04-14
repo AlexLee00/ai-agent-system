@@ -51,6 +51,47 @@ GEMMA_PILOT_CLI = os.path.join(PROJECT_ROOT, 'packages', 'core', 'scripts', 'gem
 
 # ─── psycopg2 헬퍼 ──────────────────────────────────────────────────────────────
 
+def sanitize_insight_line(raw_text):
+    """메타/추론 출력은 버리고, 한국어 한 줄 인사이트만 남긴다."""
+    if not raw_text:
+        return ''
+
+    blocked_prefixes = (
+        '<|channel>',
+        'Thinking Process',
+        'Thinking process',
+        'Analyze',
+        'Calculation',
+        '1.',
+        '2.',
+        '3.',
+        '4.',
+        '5.',
+        '*',
+        '-',
+    )
+
+    candidates = []
+    for line in str(raw_text).splitlines():
+        text = line.strip()
+        if not text:
+            continue
+        if text.startswith(blocked_prefixes):
+            continue
+        lowered = text.lower()
+        if 'today' in lowered or '7-day average' in lowered or 'outlier' in lowered:
+            continue
+        if any('가' <= ch <= '힣' for ch in text):
+            candidates.append(text)
+
+    if not candidates:
+        return ''
+
+    best = candidates[-1]
+    if len(best) > 120:
+        return ''
+    return best
+
 def _qry(con, sql, params=()):
     cur = con.cursor()
     cur.execute(sql, params)
@@ -490,7 +531,7 @@ def format_telegram(report):
             timeout=22,
             cwd=PROJECT_ROOT,
         )
-        insight = (proc.stdout or '').strip()
+        insight = sanitize_insight_line((proc.stdout or '').strip())
         if insight:
             result += f"\n\n🔍 AI: {insight}"
     except Exception as e:
