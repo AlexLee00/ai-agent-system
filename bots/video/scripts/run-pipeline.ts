@@ -450,40 +450,26 @@ function countSubtitleEntries(filePath) {
 }
 
 async function notifyFailure(step, title, error) {
-  const episodicHint = await pipelineMemory.recall(
+  const episodicHint = await pipelineMemory.recallHint(
     [String(step || ''), String(title || ''), 'video pipeline failure'].filter(Boolean).join(' '),
     {
       type: 'episodic',
       limit: 2,
       threshold: 0.35,
+      title: '최근 유사 실패',
+      separator: 'pipe',
     },
-  ).then((rows) => {
-    if (!rows || rows.length === 0) return '';
-    const lines = rows.slice(0, 2).map((row) => {
-      const createdAt = row?.created_at ? String(row.created_at).slice(0, 10) : 'unknown';
-      const similarity = Number(row?.similarity || 0);
-      const headline = String(row?.content || '').split(' | ')[0] || '기록 없음';
-      return `${createdAt} / 유사도 ${similarity.toFixed(2)} / ${headline}`;
-    });
-    return `\n최근 유사 실패:\n- ${lines.join('\n- ')}`;
-  }).catch(() => '');
-  const semanticHint = await pipelineMemory.recall(
+  ).catch(() => '');
+  const semanticHint = await pipelineMemory.recallHint(
     [String(step || ''), String(title || ''), 'consolidated video pipeline pattern'].filter(Boolean).join(' '),
     {
       type: 'semantic',
       limit: 2,
       threshold: 0.28,
+      title: '최근 통합 패턴',
+      separator: 'newline',
     },
-  ).then((rows) => {
-    if (!rows || rows.length === 0) return '';
-    const lines = rows.slice(0, 2).map((row) => {
-      const createdAt = row?.created_at ? String(row.created_at).slice(0, 10) : 'unknown';
-      const similarity = Number(row?.similarity || 0);
-      const headline = String(row?.content || '').split('\n')[0] || '패턴 요약 없음';
-      return `${createdAt} / 유사도 ${similarity.toFixed(2)} / ${headline}`;
-    });
-    return `\n최근 통합 패턴:\n- ${lines.join('\n- ')}`;
-  }).catch(() => '');
+  ).catch(() => '');
   const message = [
     '[비디오] 실패',
     `제목: ${title}`,
