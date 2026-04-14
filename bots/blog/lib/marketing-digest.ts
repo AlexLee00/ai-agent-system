@@ -8,9 +8,11 @@ const { diagnoseWeeklyPerformance } = require('./performance-diagnostician.ts');
 const fs = require('fs');
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
+const { detectTitlePattern } = require('./performance-diagnostician.ts');
 
 const STRATEGY_DIR = path.join(env.PROJECT_ROOT, 'bots/blog/output/strategy');
 const LATEST_STRATEGY_PATH = path.join(STRATEGY_DIR, 'latest-strategy.json');
+const BLOG_OUTPUT_DIR = path.join(env.PROJECT_ROOT, 'bots/blog/output');
 
 async function getAutonomySummary(days = 14) {
   try {
@@ -261,6 +263,88 @@ function getStrategySummary() {
   };
 }
 
+function parseGeneralOutputFilename(filename = '') {
+  const matched = filename.match(/^(\d{4}-\d{2}-\d{2}|[A-Z][a-z]{2} .+?)_general_([^ ]+)\s+(.+)\.html$/);
+  if (!matched) return null;
+  const [, dateString, category, title] = matched;
+  return {
+    dateString: String(dateString || '').slice(0, 10),
+    category: String(category || '').trim(),
+    title: String(title || '').trim(),
+    filename,
+    pattern: detectTitlePattern(String(title || '').trim()),
+  };
+}
+
+function getRecentGeneralStrategyAdoption(strategy = {}, maxPosts = 5) {
+  try {
+    const files = fs.readdirSync(BLOG_OUTPUT_DIR)
+      .filter((name) => name.includes('_general_') && name.endsWith('.html'))
+      .sort()
+      .reverse();
+
+    const recentPosts = files
+      .map(parseGeneralOutputFilename)
+      .filter(Boolean)
+      .slice(0, maxPosts);
+
+    const preferredCategory = strategy?.preferredCategory || null;
+    const preferredPattern = strategy?.preferredTitlePattern || null;
+    const preferredCategoryPosts = preferredCategory
+      ? recentPosts.filter((post) => post.category === preferredCategory)
+      : [];
+    const patternMatches = preferredPattern
+      ? recentPosts.filter((post) => post.pattern === preferredPattern)
+      : [];
+    const combinedMatches =
+      preferredCategory && preferredPattern
+        ? recentPosts.filter((post) => post.category === preferredCategory && post.pattern === preferredPattern)
+        : [];
+    const latestPost = recentPosts[0] || null;
+    const latestAligned = Boolean(
+      latestPost
+      && (!preferredCategory || latestPost.category === preferredCategory)
+      && (!preferredPattern || latestPost.pattern === preferredPattern)
+    );
+
+    let status = 'warming_up';
+    if (recentPosts.length > 0) {
+      status = latestAligned
+        ? 'aligned'
+        : combinedMatches.length > 0 || patternMatches.length > 0 || preferredCategoryPosts.length > 0
+          ? 'partial'
+          : 'off_track';
+    }
+
+    return {
+      status,
+      recentCount: recentPosts.length,
+      preferredCategory,
+      preferredPattern,
+      preferredCategoryCount: preferredCategoryPosts.length,
+      preferredPatternCount: patternMatches.length,
+      preferredCategoryPatternCount: combinedMatches.length,
+      latestAligned,
+      latestPost,
+      sampledPosts: recentPosts.slice(0, 3),
+    };
+  } catch (error) {
+    return {
+      status: 'error',
+      recentCount: 0,
+      preferredCategory: strategy?.preferredCategory || null,
+      preferredPattern: strategy?.preferredTitlePattern || null,
+      preferredCategoryCount: 0,
+      preferredPatternCount: 0,
+      preferredCategoryPatternCount: 0,
+      latestAligned: false,
+      latestPost: null,
+      sampledPosts: [],
+      error: error.message,
+    };
+  }
+}
+
 function buildChannelWatchHint(item = {}) {
   const metadata = item.metadata || {};
   if (item.channel === 'instagram') {
@@ -390,6 +474,7 @@ async function buildMarketingDigest(options = {}) {
   const health = buildHealth({ senseSummary, revenueCorrelation, diagnosis, autonomySummary, channelPerformance });
   const recommendations = buildRecommendations({ senseSummary, revenueCorrelation, diagnosis, autonomySummary, channelPerformance });
   const strategy = getStrategySummary();
+  const strategyAdoption = getRecentGeneralStrategyAdoption(strategy, Number(options.adoptionWindow || 5));
 
   return {
     generatedAt: new Date().toISOString(),
@@ -401,6 +486,7 @@ async function buildMarketingDigest(options = {}) {
     snapshotTrend,
     channelPerformance,
     strategy,
+    strategyAdoption,
     recommendations,
   };
 }

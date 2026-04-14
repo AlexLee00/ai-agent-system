@@ -197,7 +197,24 @@ defmodule TeamJay.Blog.SummaryFormatter do
         _ -> ""
       end
 
-    weakness <> current_watch <> channel
+    adoption =
+      case Map.get(latest, :strategy_adoption, %{}) do
+        %{} = value ->
+          base = Map.get(value, :preferred_category_count, 0)
+          matched = Map.get(value, :preferred_category_pattern_count, 0)
+          status = Map.get(value, :status)
+
+          cond do
+            is_binary(status) and status != "" -> ",adopt=#{status}:#{matched}/#{base}"
+            is_atom(status) -> ",adopt=#{status}:#{matched}/#{base}"
+            true -> ""
+          end
+
+        _ ->
+          ""
+      end
+
+    weakness <> current_watch <> channel <> adoption
   end
 
   defp compact_channel_watch_hint(value) when is_binary(value) do

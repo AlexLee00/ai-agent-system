@@ -599,6 +599,12 @@ async function buildMarketingExpansionHealth() {
         `  strategy: ${strategy?.preferredCategory || 'none'} / ${strategy?.preferredTitlePattern || 'none'}`,
       );
     }
+    const adoption = digest?.strategyAdoption || null;
+    if (adoption?.status) {
+      ok.push(
+        `  strategy adoption: ${adoption.status} (${Number(adoption?.preferredCategoryPatternCount || 0)}/${Number(adoption?.preferredCategoryCount || 0)})`,
+      );
+    }
     const hotspotCategory = strategy?.categoryPatternHotspot?.category || null;
     const hotspotPattern = strategy?.categoryPatternHotspot?.topPattern || null;
     if (hotspotCategory || hotspotPattern) {
@@ -655,6 +661,7 @@ async function buildMarketingExpansionHealth() {
       suppressedTitlePattern: strategy?.suppressedTitlePattern || null,
       categoryPatternHotspot: strategy?.categoryPatternHotspot || null,
       hotspotTrend: strategy?.hotspotTrend || null,
+      strategyAdoption: digest?.strategyAdoption || null,
     };
   } catch (error) {
     const reason = String(error?.message || error).slice(0, 160);
@@ -677,6 +684,7 @@ async function buildMarketingExpansionHealth() {
       suppressedTitlePattern: null,
       categoryPatternHotspot: null,
       hotspotTrend: null,
+      strategyAdoption: null,
     };
   }
 }
