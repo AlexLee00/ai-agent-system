@@ -162,12 +162,15 @@ fi
 # 텔레그램 복구 완료 알림
 ELAPSED=$(( $(date +%s) - START_TIME ))
 run "node -e \"
-  const openclawClient = require('$PROJECT_DIR/packages/core/lib/openclaw-client');
-  openclawClient.postAlarm({
-    team: 'emergency',
-    message: '🚨 재해 복구 완료\\\\n맥북에서 OPS 전환됨\\\\n소요: ${ELAPSED}초\\\\n백업: $(basename $LATEST)',
-    alertLevel: 4,
-    fromBot: 'disaster-recovery'
+  const { publishToWebhook } = require('$PROJECT_DIR/packages/core/lib/reporting-hub');
+  publishToWebhook({
+    event: {
+      from_bot: 'disaster-recovery',
+      team: 'emergency',
+      event_type: 'disaster_recovery_completed',
+      alert_level: 4,
+      message: '🚨 재해 복구 완료\\\\n맥북에서 OPS 전환됨\\\\n소요: ${ELAPSED}초\\\\n백업: $(basename $LATEST)'
+    }
   });
 \""
 ok "텔레그램 CRITICAL 알림 발송"
