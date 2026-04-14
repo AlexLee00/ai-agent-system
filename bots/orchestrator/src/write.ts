@@ -2,8 +2,8 @@
 
 const { execSync } = require('child_process') as typeof import('node:child_process');
 
-const { postAlarm } = require('../../../packages/core/lib/openclaw-client') as {
-  postAlarm: (payload: { message: string; team: string; alertLevel: number; fromBot: string }) => Promise<{ ok?: boolean }>;
+const { publishToWebhook } = require('../../../packages/core/lib/reporting-hub') as {
+  publishToWebhook: (payload: { event: { from_bot: string; team: string; event_type: string; alert_level: number; message: string } }) => Promise<{ ok?: boolean }>;
 };
 const kst = require('../../../packages/core/lib/kst') as { datetimeStr: () => string };
 const env = require('../../../packages/core/lib/env') as { PROJECT_ROOT: string };
@@ -131,7 +131,15 @@ export async function runOnPush(options: WriteOptions = {}): Promise<Record<stri
   const archiveResult = options.test ? { moved: completed.map((item) => item.file), commitHash: null } : docArchiver.archiveCompletedCodex(completed);
   const trackerResult = options.test ? { added: untrackedFiles.slice(0, 5), commitHash: null } : docArchiver.updateTracker(untrackedFiles);
   const message = formatPushReport(syncIssues, changelogEntry, archiveResult, trackerResult);
-  const sent = options.test ? false : Boolean((await postAlarm({ message, team: 'general', alertLevel: 2, fromBot: 'write' })).ok);
+  const sent = options.test ? false : Boolean((await publishToWebhook({
+    event: {
+      from_bot: 'write',
+      team: 'general',
+      event_type: 'write_on_push_report',
+      alert_level: 2,
+      message,
+    },
+  })).ok);
   return { changedFiles, syncIssues, changelogEntry, archiveResult, trackerResult, sent, message };
 }
 
@@ -188,7 +196,15 @@ ${JSON.stringify(collected, null, 2).slice(0, 2000)}`;
   }
 
   const message = messageLines.join('\n');
-  const sent = options.test ? false : Boolean((await postAlarm({ message, team: 'general', alertLevel: 2, fromBot: 'write' })).ok);
+  const sent = options.test ? false : Boolean((await publishToWebhook({
+    event: {
+      from_bot: 'write',
+      team: 'general',
+      event_type: 'write_daily_report',
+      alert_level: 2,
+      message,
+    },
+  })).ok);
   return { collected, sent, message };
 }
 
