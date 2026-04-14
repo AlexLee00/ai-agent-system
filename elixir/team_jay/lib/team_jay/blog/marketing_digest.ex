@@ -258,6 +258,8 @@ defmodule TeamJay.Blog.MarketingDigest do
       status: hotspot_value(metadata, :status),
       preferred_category_count: int(hotspot_value(metadata, :preferredCategoryCount) || 0),
       preferred_category_pattern_count: int(hotspot_value(metadata, :preferredCategoryPatternCount) || 0),
+      metadata_coverage_count: int(hotspot_value(metadata, :metadataCoverageCount) || 0),
+      metadata_coverage_ratio: to_float(hotspot_value(metadata, :metadataCoverageRatio)) || 0.0,
       latest_preview_aligned: hotspot_value(metadata, :latestPreviewAligned),
       latest_preview_overlap: to_float(hotspot_value(metadata, :latestPreviewOverlap)) || 0.0
     }

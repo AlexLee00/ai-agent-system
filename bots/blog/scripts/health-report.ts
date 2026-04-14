@@ -604,6 +604,9 @@ async function buildMarketingExpansionHealth() {
       ok.push(
         `  strategy adoption: ${adoption.status} (${Number(adoption?.preferredCategoryPatternCount || 0)}/${Number(adoption?.preferredCategoryCount || 0)})`,
       );
+      ok.push(
+        `  adoption metadata coverage: ${Number(adoption?.metadataCoverageCount || 0)}/${Number(adoption?.recentCount || 0)} (${(Number(adoption?.metadataCoverageRatio || 0) * 100).toFixed(0)}%)`,
+      );
       if (typeof adoption?.latestPreviewOverlap === 'number') {
         ok.push(
           `  latest title overlap: ${Number(adoption.latestPreviewOverlap || 0).toFixed(2)} (${adoption?.latestPreviewAligned ? 'preview aligned' : 'preview drift'})`,
