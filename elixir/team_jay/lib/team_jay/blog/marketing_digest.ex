@@ -82,7 +82,8 @@ defmodule TeamJay.Blog.MarketingDigest do
             latest_weakness: latest_weakness,
             channel_watch_hint: latest_channel_watch,
             channel_watch_count: latest_channel_watch_count,
-            strategy_adoption: extract_strategy_adoption(latest)
+            strategy_adoption: extract_strategy_adoption(latest),
+            next_general_preview: extract_next_general_preview(latest)
           },
           else: nil
         ),
@@ -176,7 +177,8 @@ defmodule TeamJay.Blog.MarketingDigest do
       metadata->'health'->>'status' AS status,
       metadata->'diagnosis'->'primaryWeakness'->>'code' AS latest_weakness,
       metadata->'channelPerformance' AS channel_performance,
-      metadata->'strategyAdoption' AS strategy_adoption
+      metadata->'strategyAdoption' AS strategy_adoption,
+      metadata->'nextGeneralPreview' AS next_general_preview
     FROM agent.event_lake
     WHERE event_type = 'blog_marketing_snapshot'
       AND team = 'blog'
@@ -256,6 +258,20 @@ defmodule TeamJay.Blog.MarketingDigest do
       status: hotspot_value(metadata, :status),
       preferred_category_count: int(hotspot_value(metadata, :preferredCategoryCount) || 0),
       preferred_category_pattern_count: int(hotspot_value(metadata, :preferredCategoryPatternCount) || 0)
+    }
+  end
+
+  defp extract_next_general_preview(nil), do: %{}
+  defp extract_next_general_preview(latest) when latest == %{}, do: %{}
+  defp extract_next_general_preview(latest) do
+    metadata = Map.get(latest, :next_general_preview) || %{}
+
+    %{
+      category: hotspot_value(metadata, :category),
+      title: hotspot_value(metadata, :title),
+      compact_title: hotspot_value(metadata, :compactTitle),
+      pattern: hotspot_value(metadata, :pattern),
+      predicted_adoption: hotspot_value(metadata, :predictedAdoption)
     }
   end
 

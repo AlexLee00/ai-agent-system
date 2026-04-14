@@ -28,6 +28,7 @@ function buildPayload(digest = {}) {
     channelPerformance: digest?.channelPerformance || {},
     strategy: digest?.strategy || {},
     strategyAdoption: digest?.strategyAdoption || {},
+    nextGeneralPreview: digest?.nextGeneralPreview || {},
     recommendations: Array.isArray(digest?.recommendations) ? digest.recommendations : [],
   };
 }
@@ -42,10 +43,12 @@ function buildBrief(digest = {}) {
   const adoptionStatus = digest?.strategyAdoption?.status || 'warming_up';
   const adoptionMatched = Number(digest?.strategyAdoption?.preferredCategoryPatternCount || 0);
   const adoptionBase = Number(digest?.strategyAdoption?.preferredCategoryCount || 0);
+  const nextCategory = digest?.nextGeneralPreview?.category || 'none';
+  const nextPattern = digest?.nextGeneralPreview?.pattern || 'none';
   const channelHint = digest?.channelPerformance?.primaryWatchChannel
     ? ` channel=${digest.channelPerformance.primaryWatchChannel}`
     : '';
-  return `marketing=${status} signals=${signals} impact=${impactPct}% autonomy=${autonomyCount} channels_watch=${channelWatch} weakness=${weakness} adopt=${adoptionStatus}:${adoptionMatched}/${adoptionBase}${channelHint}`;
+  return `marketing=${status} signals=${signals} impact=${impactPct}% autonomy=${autonomyCount} channels_watch=${channelWatch} weakness=${weakness} adopt=${adoptionStatus}:${adoptionMatched}/${adoptionBase} next=${nextCategory}/${nextPattern}${channelHint}`;
 }
 
 async function persist(digest) {
