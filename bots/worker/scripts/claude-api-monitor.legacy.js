@@ -24,9 +24,11 @@ const {
   publishEventPipeline,
   buildSeverityTargets,
 } = require('../../../packages/core/lib/reporting-hub');
+const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
 
 const SPAWN_LOG   = path.join(os.homedir(), '.openclaw', 'workspace', 'logs', 'claude-code-spawns.jsonl');
 const CONFIG_YAML = path.join(__dirname, '../../investment/config.yaml');
+const monitorMemory = createAgentMemory({ agentId: 'worker.claude-api-monitor', team: 'worker' });
 
 // ── 설정 ──────────────────────────────────────────────────────────────
 const ALERT_THRESHOLD_SPAWNS = 3;    // 1분 내 Claude Code 3회 이상 → 알림
@@ -40,6 +42,14 @@ function loadApiKey() {
     const m = yaml.match(/^anthropic:\s*\n(?:.*\n)*?.*api_key:\s*"([^"]+)"/m);
     return m ? m[1] : process.env.ANTHROPIC_API_KEY || '';
   } catch { return process.env.ANTHROPIC_API_KEY || ''; }
+}
+
+function buildMonitorMemoryQuery(kind, extras = []) {
+  return [
+    'worker claude api monitor',
+    kind,
+    ...extras,
+  ].filter(Boolean).join(' ');
 }
 
 // ── Anthropic Usage API ───────────────────────────────────────────────
@@ -118,6 +128,7 @@ async function main() {
   const dbCost = dbRows.reduce((s, r) => s + (parseFloat(r.cost_usd) || 0), 0);
   const now    = kst.datetimeStr();
   const hasAlert = spawns >= ALERT_THRESHOLD_SPAWNS || dbCost >= ALERT_THRESHOLD_COST;
+  const kind = hasAlert ? 'alert' : 'report';
 
   // alert-only 모드에서는 임계값 초과 시만 전송
   if (isAlert && !hasAlert) {
@@ -158,7 +169,34 @@ async function main() {
     lines.push(``, `ℹ️ Anthropic Usage API: 연결 불가 (네트워크/엔드포인트 미지원)`);
   }
 
+  const memoryQuery = buildMonitorMemoryQuery(kind, [
+    `${spawns}-spawns`,
+    dbCost >= ALERT_THRESHOLD_COST ? 'cost-threshold' : 'cost-normal',
+  ]);
+  const episodicHint = await monitorMemory.recallCountHint(memoryQuery, {
+    type: 'episodic',
+    limit: 2,
+    threshold: 0.33,
+    title: '최근 유사 모니터링',
+    separator: 'pipe',
+    metadataKey: 'kind',
+    labels: {
+      alert: '경고',
+      report: '정상',
+    },
+    order: ['alert', 'report'],
+  }).catch(() => '');
+  const semanticHint = await monitorMemory.recallHint(`${memoryQuery} consolidated usage pattern`, {
+    type: 'semantic',
+    limit: 2,
+    threshold: 0.28,
+    title: '최근 통합 패턴',
+    separator: 'newline',
+  }).catch(() => '');
+
   if (hasAlert) lines.unshift(`🚨 *임계값 초과 감지!*`, ``);
+  if (episodicHint) lines.push('', ...episodicHint.trimStart().split('\n'));
+  if (semanticHint) lines.push('', ...semanticHint.trimStart().split('\n'));
 
   const baseMsg = lines.join('\n');
   const alertLevel = hasAlert ? 3 : 1;
@@ -202,6 +240,22 @@ async function main() {
   } catch (e) {
     console.error('[claude-monitor] 텔레그램 전송 실패:', e.message);
   }
+
+  await monitorMemory.remember(msg, 'episodic', {
+    importance: hasAlert ? 0.78 : 0.58,
+    expiresIn: 1000 * 60 * 60 * 24 * 30,
+    metadata: {
+      kind,
+      spawns,
+      dbCost: Number(dbCost.toFixed(4)),
+      hasAnthropicUsageApi: Boolean(anthropicRes),
+      anthropicStatus: anthropicRes?.status || null,
+    },
+  }).catch(() => {});
+  await monitorMemory.consolidate({
+    olderThanDays: 14,
+    limit: 10,
+  }).catch(() => {});
 
   process.exit(0);
 }
