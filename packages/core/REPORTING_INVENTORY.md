@@ -87,6 +87,7 @@
 - worker approval request telegram alerts → reporting-hub telegram_api target
 - dexter autofix blocked-action alerts → reporting-hub notice + severity fanout
 - shared telegram reporter wrapper → reporting-hub webhook fanout
+- shared telegram sender current fanout → reporting-hub webhook fanout
 - file-guard blocked-write alerts → reporting-hub webhook fanout
 - reservation RAG writes → reporting-hub rag target
 - luna L33 trade RAG write → reporting-hub rag target
@@ -103,6 +104,8 @@
 - blog daily report and failure notice → reporting-hub report/notice format
 - orchestrator write reports → reporting-hub webhook fanout
 - sigma daily/meta-review alerts → reporting-hub webhook fanout
+- reboot notices → reporting-hub webhook fanout
+- disaster recovery completion alert → reporting-hub webhook fanout
 - orchestrator batch formatter → 공용 notice/snippet 서식 정렬
 - orchestrator queue consumer → payload headline/detail 우선 사용
 - dexter/luna producer payload → 표준 `title/summary/details/action` 키 적용 시작
@@ -116,8 +119,8 @@
 
 ## Next Moves
 
-1. `rebecca`와 기타 reporter 경로를 reporting-hub fanout으로 통일
+1. blog current `postAlarm(...)` surface를 별도 배치로 정리
 2. severity, dedupe, throttle, quiet-hours 정책을 reporting-hub로 승격
 3. remaining `rag.store(...)` matches are now mostly helper adapters, shared-client aliases, search-only consumers, or test/legacy paths; keep pruning non-current surfaces while reporting-hub remains the canonical current write path
 4. reporter/rebecca/night-handler 문구를 공용 notice/report formatter로 추가 통일
-5. mainbot consumer도 envelope/target 기반으로 일반화
+5. canonical transport (`openclaw-client.ts`, `reporting-hub.ts`) 바깥 non-blog current delivery는 사실상 1차 정리 완료 상태로 유지

@@ -46,6 +46,10 @@
 - [packages/core/lib/telegram/reporter.ts](/Users/alexlee/projects/ai-agent-system/packages/core/lib/telegram/reporter.ts)
 - [packages/core/lib/file-guard.ts](/Users/alexlee/projects/ai-agent-system/packages/core/lib/file-guard.ts)
 - [bots/orchestrator/src/write.ts](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/src/write.ts)
+- [packages/core/lib/telegram-sender.ts](/Users/alexlee/projects/ai-agent-system/packages/core/lib/telegram-sender.ts)
+- [scripts/pre-reboot.sh](/Users/alexlee/projects/ai-agent-system/scripts/pre-reboot.sh)
+- [scripts/post-reboot.sh](/Users/alexlee/projects/ai-agent-system/scripts/post-reboot.sh)
+- [scripts/disaster-recovery.sh](/Users/alexlee/projects/ai-agent-system/scripts/disaster-recovery.sh)
 
 즉 지금은
 - alert publisher 발행
@@ -63,6 +67,8 @@
 - investment ops / reporter / sweeper current fanout
 - orchestrator write / sigma current webhook fanout
 - shared reporter / file-guard webhook fanout
+- shared telegram sender current fanout
+- reboot / recovery notice current fanout
  이 같은 이벤트 정규화 레이어를 탄다.
 
 최근 재집계 기준으로 남는 `rag.store(...)` 매치의 대부분은 아래에 해당한다.
@@ -72,6 +78,12 @@
 - test/legacy/js compatibility rail
 
 즉 current production write의 canonical path는 실질적으로 reporting-hub 쪽으로 올라온 상태다.
+
+최근 재집계 기준으로 남는 non-legacy current direct `postAlarm(...)`는 사실상 아래 둘로 압축된다.
+- blog current surface
+- canonical transport 자체 (`openclaw-client.ts`, `reporting-hub.ts`)
+
+즉 blog current fanout을 별도 배치로 다루면, non-blog current delivery는 사실상 reporting-hub rail 정리 1차가 닫힌 상태다.
 
 ## Next Extraction Targets
 
