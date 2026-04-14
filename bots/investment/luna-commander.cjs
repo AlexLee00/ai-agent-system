@@ -36,7 +36,7 @@ const {
   markUnrecognizedPromoted,
 } = require('../../packages/core/lib/intent-store');
 const {
-  publishToQueue,
+  publishToWebhook,
 } = require('../../packages/core/lib/reporting-hub');
 
 // ─── 봇 정보 ─────────────────────────────────────────────────────────
@@ -89,18 +89,16 @@ function acquireLock() {
   ['SIGTERM', 'SIGINT'].forEach(s => process.on(s, () => process.exit(0)));
 }
 
-// ─── 메인봇 알람 발행 ────────────────────────────────────────────────
+// ─── 알림 발행 ──────────────────────────────────────────────────────
 
 /**
- * 마스터에게 텔레그램 알람 발행
+ * OpenClaw webhook을 통해 운영 알림 발행
  * @param {string} message   - 발송할 메시지
  * @param {number} level     - 알람 레벨 (1=info, 2=warn, 3=error)
  */
 async function publishAlert(message, level = 1) {
   try {
-    const result = await publishToQueue({
-      pgPool,
-      schema: 'claude',
+    const result = await publishToWebhook({
       event: {
         from_bot: BOT_ID,
         team: 'investment',
@@ -114,7 +112,7 @@ async function publishAlert(message, level = 1) {
       },
     });
     if (result.ok && !result.skipped) {
-      console.log(`[루나] 마스터 알람 발행 (level ${level})`);
+      console.log(`[루나] 운영 알림 발행 (level ${level})`);
     }
   } catch (e) {
     console.error(`[루나] 알람 발행 실패:`, e.message);

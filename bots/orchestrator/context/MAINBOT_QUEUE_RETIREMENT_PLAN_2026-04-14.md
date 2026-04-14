@@ -19,11 +19,14 @@ These still write or can write into `mainbot_queue`.
 - [reporting-hub.ts](/Users/alexlee/projects/ai-agent-system/packages/core/lib/reporting-hub.ts)
   - `publishToQueue(...)`
   - `publishEventPipeline(... target.type === 'queue')`
+
+Recently removed from this bucket:
+
 - [luna-commander.cjs](/Users/alexlee/projects/ai-agent-system/bots/investment/luna-commander.cjs)
-  - explicit `publishToQueue(...)`
+  - `publishToQueue(...)` -> `publishToWebhook(...)`
 
 Interpretation:
-- This is the biggest functional blocker for full retirement.
+- The generic reporting-hub queue target is now the biggest functional blocker for full retirement.
 - Queue retirement must start by turning these producers off or rerouting them.
 
 ### 2. Legacy consumer/runtime path
