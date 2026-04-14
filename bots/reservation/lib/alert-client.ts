@@ -39,4 +39,5 @@ export async function publishReservationAlert({
   return result.ok === true;
 }
 
+export const publishAlert = publishReservationAlert;
 export const publishToMainBot = publishReservationAlert;

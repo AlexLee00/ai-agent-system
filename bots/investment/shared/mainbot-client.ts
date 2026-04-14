@@ -1,6 +1,6 @@
 // @ts-nocheck
 /**
- * shared/mainbot-client.js — 루나팀 → 메인봇 알람 발행 클라이언트 (ESM)
+ * shared/mainbot-client.js — 루나팀 알람 발행 클라이언트 (ESM)
  *
  * OpenClaw webhook 경유로 전달한다.
  */
@@ -36,3 +36,5 @@ export async function publishToMainBot({ from_bot, team = 'investment', event_ty
   console.warn(`[mainbot-client] webhook 실패/스킵: ${webhookResult.error || webhookResult.reason || 'unknown'}`);
   return false;
 }
+
+export const publishAlert = publishToMainBot;
