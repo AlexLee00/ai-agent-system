@@ -605,6 +605,15 @@ async function buildMarketingExpansionHealth() {
         `  strategy adoption: ${adoption.status} (${Number(adoption?.preferredCategoryPatternCount || 0)}/${Number(adoption?.preferredCategoryCount || 0)})`,
       );
     }
+    const nextPreview = digest?.nextGeneralPreview || null;
+    if (nextPreview?.category || nextPreview?.pattern) {
+      ok.push(
+        `  next preview: ${nextPreview?.category || 'none'} / ${nextPreview?.pattern || 'none'} / ${nextPreview?.predictedAdoption || 'warming_up'}`,
+      );
+    }
+    if (nextPreview?.title) {
+      ok.push(`  next title: ${nextPreview.title}`);
+    }
     const hotspotCategory = strategy?.categoryPatternHotspot?.category || null;
     const hotspotPattern = strategy?.categoryPatternHotspot?.topPattern || null;
     if (hotspotCategory || hotspotPattern) {
@@ -662,6 +671,7 @@ async function buildMarketingExpansionHealth() {
       categoryPatternHotspot: strategy?.categoryPatternHotspot || null,
       hotspotTrend: strategy?.hotspotTrend || null,
       strategyAdoption: digest?.strategyAdoption || null,
+      nextGeneralPreview: digest?.nextGeneralPreview || null,
     };
   } catch (error) {
     const reason = String(error?.message || error).slice(0, 160);
@@ -685,6 +695,7 @@ async function buildMarketingExpansionHealth() {
       categoryPatternHotspot: null,
       hotspotTrend: null,
       strategyAdoption: null,
+      nextGeneralPreview: null,
     };
   }
 }

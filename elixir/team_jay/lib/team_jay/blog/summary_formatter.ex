@@ -163,14 +163,17 @@ defmodule TeamJay.Blog.SummaryFormatter do
   defp render_marketing_latest(latest) do
     weakness = Map.get(latest, :latest_weakness)
     channel_hint = Map.get(latest, :channel_watch_hint)
+    next_preview = render_marketing_next_preview(latest)
 
     cond do
       is_binary(weakness) and weakness != "" and is_binary(channel_hint) and channel_hint != "" ->
-        ", latest weakness #{weakness}, channel #{channel_hint}"
+        ", latest weakness #{weakness}, channel #{channel_hint}#{next_preview}"
       is_binary(weakness) and weakness != "" ->
-        ", latest weakness #{weakness}"
+        ", latest weakness #{weakness}#{next_preview}"
       is_binary(channel_hint) and channel_hint != "" ->
-        ", channel #{channel_hint}"
+        ", channel #{channel_hint}#{next_preview}"
+      next_preview != "" ->
+        next_preview
       true ->
         ""
     end
@@ -214,7 +217,43 @@ defmodule TeamJay.Blog.SummaryFormatter do
           ""
       end
 
-    weakness <> current_watch <> channel <> adoption
+    weakness <> current_watch <> channel <> adoption <> render_marketing_next_preview_brief(latest)
+  end
+
+  defp render_marketing_next_preview(nil), do: ""
+  defp render_marketing_next_preview(latest) when latest == %{}, do: ""
+  defp render_marketing_next_preview(latest) do
+    preview = Map.get(latest, :next_general_preview, %{})
+    category = Map.get(preview, :category)
+    pattern = Map.get(preview, :pattern)
+    title = Map.get(preview, :compact_title) || Map.get(preview, :title)
+
+    cond do
+      is_binary(category) and category != "" and is_binary(pattern) and pattern != "" and is_binary(title) and title != "" ->
+        ", next #{category}/#{pattern} #{title}"
+      is_binary(category) and category != "" and is_binary(pattern) and pattern != "" ->
+        ", next #{category}/#{pattern}"
+      true ->
+        ""
+    end
+  end
+
+  defp render_marketing_next_preview_brief(nil), do: ""
+  defp render_marketing_next_preview_brief(latest) when latest == %{}, do: ""
+  defp render_marketing_next_preview_brief(latest) do
+    preview = Map.get(latest, :next_general_preview, %{})
+    category = Map.get(preview, :category)
+    pattern = Map.get(preview, :pattern)
+    predicted = Map.get(preview, :predicted_adoption)
+
+    cond do
+      is_binary(category) and category != "" and is_binary(pattern) and pattern != "" and is_binary(predicted) and predicted != "" ->
+        ",next=#{category}/#{pattern}:#{predicted}"
+      is_binary(category) and category != "" and is_binary(pattern) and pattern != "" ->
+        ",next=#{category}/#{pattern}"
+      true ->
+        ""
+    end
   end
 
   defp compact_channel_watch_hint(value) when is_binary(value) do

@@ -9,6 +9,8 @@ const fs = require('fs');
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const { detectTitlePattern } = require('./performance-diagnostician.ts');
+const { getNextGeneralCategory } = require('./category-rotation.ts');
+const { getRecentPosts, selectAndValidateTopic } = require('./topic-selector.ts');
 
 const STRATEGY_DIR = path.join(env.PROJECT_ROOT, 'bots/blog/output/strategy');
 const LATEST_STRATEGY_PATH = path.join(STRATEGY_DIR, 'latest-strategy.json');
@@ -263,6 +265,63 @@ function getStrategySummary() {
   };
 }
 
+function compactPreviewTitle(title = '', maxLength = 42) {
+  const text = String(title || '').replace(/\s+/g, ' ').trim();
+  if (!text) return 'none';
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(0, maxLength - 1)).trim()}…`;
+}
+
+async function buildNextGeneralPreview(strategy = {}, sense = null, revenueCorrelation = null) {
+  try {
+    const next = await getNextGeneralCategory(strategy);
+    const category = next?.category || null;
+    if (!category) {
+      return {
+        category: null,
+        title: null,
+        pattern: null,
+        predictedAdoption: 'warming_up',
+        compactTitle: 'none',
+      };
+    }
+
+    const topic = selectAndValidateTopic(
+      category,
+      getRecentPosts(category, 10),
+      strategy,
+      sense,
+      revenueCorrelation
+    );
+
+    const pattern = topic?.pattern || null;
+    const categoryAligned = Boolean(strategy?.preferredCategory) && category === strategy.preferredCategory;
+    const patternAligned = Boolean(strategy?.preferredTitlePattern) && pattern === strategy.preferredTitlePattern;
+    const predictedAdoption = categoryAligned && patternAligned
+      ? 'aligned'
+      : (categoryAligned || patternAligned)
+        ? 'partial'
+        : 'off_track';
+
+    return {
+      category,
+      title: topic?.title || null,
+      pattern,
+      predictedAdoption,
+      compactTitle: compactPreviewTitle(topic?.title || ''),
+    };
+  } catch (error) {
+    return {
+      category: null,
+      title: null,
+      pattern: null,
+      predictedAdoption: 'error',
+      compactTitle: 'none',
+      error: error.message,
+    };
+  }
+}
+
 function parseGeneralOutputFilename(filename = '') {
   const matched = filename.match(/^(\d{4}-\d{2}-\d{2}|[A-Z][a-z]{2} .+?)_general_([^ ]+)\s+(.+)\.html$/);
   if (!matched) return null;
@@ -475,6 +534,7 @@ async function buildMarketingDigest(options = {}) {
   const recommendations = buildRecommendations({ senseSummary, revenueCorrelation, diagnosis, autonomySummary, channelPerformance });
   const strategy = getStrategySummary();
   const strategyAdoption = getRecentGeneralStrategyAdoption(strategy, Number(options.adoptionWindow || 5));
+  const nextGeneralPreview = await buildNextGeneralPreview(strategy, sense, revenueCorrelation);
 
   return {
     generatedAt: new Date().toISOString(),
@@ -487,6 +547,7 @@ async function buildMarketingDigest(options = {}) {
     channelPerformance,
     strategy,
     strategyAdoption,
+    nextGeneralPreview,
     recommendations,
   };
 }
