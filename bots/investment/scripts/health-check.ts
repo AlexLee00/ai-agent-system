@@ -18,6 +18,12 @@ import { validateTradeReview } from './validate-trade-review.ts';
 
 const require = createRequire(import.meta.url);
 const hsm     = require('../../../packages/core/lib/health-state-manager');
+const { createHealthMemoryHelper } = require('../../../packages/core/lib/health-memory');
+const { buildIssueHints, rememberHealthEvent } = createHealthMemoryHelper({
+  agentId: 'investment.health',
+  team: 'investment',
+  domain: 'investment health',
+});
 
 // 상시 실행 서비스 (PID 있어야 정상) — KeepAlive=true인 데몬만
 const CONTINUOUS = [
@@ -172,13 +178,16 @@ async function main() {
   // 이슈 알림 발송
   for (const { key, level, msg } of issues) {
     console.warn(`[루나 헬스체크] 이슈: ${msg}`);
-    await notify(msg, level);
+    const memoryHints = await buildIssueHints(key, msg);
+    await notify(`${msg}${memoryHints}`, level);
+    await rememberHealthEvent(key, 'issue', msg, level);
     hsm.recordAlert(state, key);
   }
 
   // 회복 알림 발송
   for (const msg of recovers) {
     await notify(msg, 1);
+    await rememberHealthEvent(`recover:${msg.split('\n')[0] || 'investment-health'}`, 'recovery', msg, 1);
   }
 
   hsm.saveState(state);
