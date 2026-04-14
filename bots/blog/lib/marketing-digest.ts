@@ -141,11 +141,19 @@ async function getChannelPerformanceSummary(days = 7) {
       metadata: row.metadata || {},
     }));
 
+    const watchRows = normalized.filter((item) => item.status === 'watch');
+    const primaryWatch = watchRows[0] || null;
+    const primaryWatchHint = primaryWatch
+      ? buildChannelWatchHint(primaryWatch)
+      : null;
+
     return {
       latestDate: snapshotDate,
       totalChannels: normalized.length,
       activeChannels: normalized.filter((item) => item.status === 'ok').length,
-      watchChannels: normalized.filter((item) => item.status === 'watch').length,
+      watchChannels: watchRows.length,
+      primaryWatchChannel: primaryWatch?.channel || null,
+      primaryWatchHint,
       rows: normalized,
     };
   } catch (error) {
@@ -154,10 +162,36 @@ async function getChannelPerformanceSummary(days = 7) {
       totalChannels: 0,
       activeChannels: 0,
       watchChannels: 0,
+      primaryWatchChannel: null,
+      primaryWatchHint: null,
       rows: [],
       error: error.message,
     };
   }
+}
+
+function buildChannelWatchHint(item = {}) {
+  const metadata = item.metadata || {};
+  if (item.channel === 'instagram') {
+    const failed = Number(metadata.failedCount || 0);
+    const events = Number(metadata.eventCount || 0);
+    const authFailed = Number(metadata.authFailedCount || 0);
+    const uploadFailed = Number(metadata.uploadFailedCount || 0);
+    const publishFailed = Number(metadata.publishFailedCount || 0);
+    if (failed > 0) {
+      if (authFailed > 0) return `instagram auth watch: 최근 ${events}건 중 인증 실패 ${authFailed}건`;
+      if (uploadFailed > 0) return `instagram upload watch: 최근 ${events}건 중 업로드 실패 ${uploadFailed}건`;
+      if (publishFailed > 0) return `instagram publish watch: 최근 ${events}건 중 게시 실패 ${publishFailed}건`;
+      return `instagram watch: 최근 ${events}건 중 실패 ${failed}건`;
+    }
+    return 'instagram watch: 실행 안정화 점검 필요';
+  }
+
+  if (item.channel === 'naver_blog' && Number(item.publishedCount || 0) === 0) {
+    return 'naver_blog warming-up: 최근 게시 성과 데이터가 아직 없습니다';
+  }
+
+  return `${item.channel} ${item.status}`;
 }
 
 function summarizeSense(sense = {}) {
@@ -202,7 +236,7 @@ function buildRecommendations({ senseSummary, revenueCorrelation, diagnosis, aut
     ? channelPerformance.rows.find((item) => item.channel === 'instagram')
     : null;
   if (instagram?.status === 'watch') {
-    recommendations.push('인스타 실행 결과에 실패가 남아 있어 릴스/캡션 발행보다 실행 안정화와 재시도율 점검을 먼저 보는 편이 좋습니다.');
+    recommendations.push(`${buildChannelWatchHint(instagram)} — 릴스/캡션 발행보다 실행 안정화와 재시도율 점검을 먼저 보는 편이 좋습니다.`);
   }
 
   const naverBlog = Array.isArray(channelPerformance?.rows)

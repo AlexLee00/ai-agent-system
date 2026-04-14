@@ -597,9 +597,17 @@ async function buildMarketingExpansionHealth() {
         `  strategy: ${strategy?.preferredCategory || 'none'} / ${strategy?.preferredTitlePattern || 'none'}`,
       );
     }
+    if (digest?.channelPerformance?.latestDate) {
+      ok.push(
+        `  channels: ${digest?.channelPerformance?.totalChannels ?? 0}개 / watch ${digest?.channelPerformance?.watchChannels ?? 0}개`,
+      );
+    }
     const warn = [];
     if (digest?.senseSummary?.topSignal?.message) {
       warn.push(`  top signal: ${digest.senseSummary.topSignal.message}`);
+    }
+    if (digest?.channelPerformance?.primaryWatchHint) {
+      warn.push(`  channel watch: ${digest.channelPerformance.primaryWatchHint}`);
     }
     if (Number(digest?.snapshotTrend?.watchCount || 0) > 0) {
       warn.push(`  snapshot watch: 최근 7일 ${Number(digest.snapshotTrend.watchCount || 0)}건`);
@@ -624,6 +632,8 @@ async function buildMarketingExpansionHealth() {
       snapshotCount: Number(digest?.snapshotTrend?.totalCount || 0),
       snapshotWatchCount: Number(digest?.snapshotTrend?.watchCount || 0),
       snapshotAvgRevenueImpactPct: Number(digest?.snapshotTrend?.avgRevenueImpactPct || 0),
+      channelWatchCount: Number(digest?.channelPerformance?.watchChannels || 0),
+      primaryChannelWatchHint: digest?.channelPerformance?.primaryWatchHint || null,
       autonomyDecisionCount: Number(digest?.autonomySummary?.totalCount || 0),
       preferredCategory: strategy?.preferredCategory || null,
       preferredTitlePattern: strategy?.preferredTitlePattern || null,
@@ -642,6 +652,8 @@ async function buildMarketingExpansionHealth() {
       snapshotCount: 0,
       snapshotWatchCount: 0,
       snapshotAvgRevenueImpactPct: 0,
+      channelWatchCount: 0,
+      primaryChannelWatchHint: null,
       autonomyDecisionCount: 0,
       preferredCategory: null,
       preferredTitlePattern: null,

@@ -100,6 +100,13 @@ defmodule TeamJay.Blog.SocialExecutionMonitor do
   end
 
   defp summarize_result(channel, result) do
+    smoke_test =
+      case Map.get(result, :smoke_test) || get_in(result, [:payload, :smoke_test]) do
+        true -> true
+        "true" -> true
+        _ -> false
+      end
+
     %{
       target: channel,
       run_status: Map.get(result, :run_status),
@@ -108,6 +115,8 @@ defmodule TeamJay.Blog.SocialExecutionMonitor do
       post_type: get_in(result, [:payload, :post_type]),
       writer: get_in(result, [:payload, :writer]),
       date: get_in(result, [:payload, :date]),
+      smoke_test: smoke_test,
+      failure_kind: detect_failure_kind(result),
       finished_at: Map.get(result, :finished_at),
       duration_ms: Map.get(result, :duration_ms)
     }
@@ -121,7 +130,7 @@ defmodule TeamJay.Blog.SocialExecutionMonitor do
       severity: if(summary.ok, do: "info", else: "warn"),
       title: "[blog-phase1-social] #{summary.target} #{summary.run_status}",
       message:
-        "target=#{summary.target} post_type=#{summary.post_type} writer=#{summary.writer} date=#{summary.date} ok=#{summary.ok} exit_code=#{inspect(summary.exit_code)}",
+        "target=#{summary.target} post_type=#{summary.post_type} writer=#{summary.writer} date=#{summary.date} ok=#{summary.ok} exit_code=#{inspect(summary.exit_code)} failure_kind=#{summary.failure_kind || "none"} smoke_test=#{summary.smoke_test}",
       tags: ["phase1", "blog", "social_execution", "target:#{summary.target}"],
       metadata: summary
     })
@@ -137,7 +146,9 @@ defmodule TeamJay.Blog.SocialExecutionMonitor do
         writer: summary.writer,
         date: summary.date,
         run_status: summary.run_status,
-        exit_code: summary.exit_code
+        exit_code: summary.exit_code,
+        failure_kind: summary.failure_kind,
+        smoke_test: summary.smoke_test
       }
     end
   end
@@ -150,9 +161,37 @@ defmodule TeamJay.Blog.SocialExecutionMonitor do
       severity: "warn",
       title: "[blog-phase1-social-alert] #{alert.target} #{alert.run_status}",
       message:
-        "target=#{alert.target} post_type=#{alert.post_type} writer=#{alert.writer} date=#{alert.date} exit_code=#{inspect(alert.exit_code)}",
+        "target=#{alert.target} post_type=#{alert.post_type} writer=#{alert.writer} date=#{alert.date} exit_code=#{inspect(alert.exit_code)} failure_kind=#{alert.failure_kind || "none"} smoke_test=#{alert.smoke_test}",
       tags: ["phase1", "blog", "social_execution_alert", "target:#{alert.target}"],
       metadata: alert
     })
+  end
+
+  defp detect_failure_kind(result) do
+    if Map.get(result, :ok, false) do
+      nil
+    else
+      explicit = Map.get(result, :failure_kind) || get_in(result, [:payload, :failure_kind])
+
+      cond do
+        is_binary(explicit) and explicit != "" ->
+          explicit
+
+        Map.get(result, :run_status) in [:forced_failure, "forced_failure"] ->
+          "smoke"
+
+        Map.get(result, :exit_code) in [401, 403] ->
+          "auth"
+
+        Map.get(result, :exit_code) in [422, 429] ->
+          "upload"
+
+        Map.get(result, :exit_code) in [500, 502, 503, 504] ->
+          "publish"
+
+        true ->
+          "unknown"
+      end
+    end
   end
 end

@@ -65,17 +65,27 @@ async function collectSocialExecutionStats(channel, days = 7) {
     SELECT
       COUNT(*)::int AS event_count,
       COALESCE(COUNT(*) FILTER (WHERE COALESCE(metadata->>'ok', 'false') = 'true'), 0)::int AS ok_count,
-      COALESCE(COUNT(*) FILTER (WHERE COALESCE(metadata->>'ok', 'false') <> 'true'), 0)::int AS failed_count
+      COALESCE(COUNT(*) FILTER (WHERE COALESCE(metadata->>'ok', 'false') <> 'true'), 0)::int AS failed_count,
+      COALESCE(COUNT(*) FILTER (WHERE COALESCE(metadata->>'failure_kind', '') = 'auth'), 0)::int AS auth_failed_count,
+      COALESCE(COUNT(*) FILTER (WHERE COALESCE(metadata->>'failure_kind', '') = 'upload'), 0)::int AS upload_failed_count,
+      COALESCE(COUNT(*) FILTER (WHERE COALESCE(metadata->>'failure_kind', '') = 'publish'), 0)::int AS publish_failed_count,
+      COALESCE(COUNT(*) FILTER (WHERE COALESCE(metadata->>'failure_kind', '') = 'unknown'), 0)::int AS unknown_failed_count
     FROM agent.event_lake
     WHERE event_type = 'blog_phase1_social_execution_result'
       AND team = 'blog'
       AND COALESCE(metadata->>'target', '') = $1
+      AND COALESCE(metadata->>'smoke_test', 'false') <> 'true'
+      AND COALESCE(metadata->>'run_status', '') <> 'forced_failure'
       AND created_at >= NOW() - ($2::text || ' days')::interval
   `, [channel, days]).catch(() => null);
 
   const eventCount = Number(row?.event_count || 0);
   const okCount = Number(row?.ok_count || 0);
   const failedCount = Number(row?.failed_count || 0);
+  const authFailedCount = Number(row?.auth_failed_count || 0);
+  const uploadFailedCount = Number(row?.upload_failed_count || 0);
+  const publishFailedCount = Number(row?.publish_failed_count || 0);
+  const unknownFailedCount = Number(row?.unknown_failed_count || 0);
 
   return {
     channel,
@@ -91,6 +101,10 @@ async function collectSocialExecutionStats(channel, days = 7) {
       eventCount,
       okCount,
       failedCount,
+      authFailedCount,
+      uploadFailedCount,
+      publishFailedCount,
+      unknownFailedCount,
       note: 'blog_phase1_social_execution_result 기반 집계',
     },
   };

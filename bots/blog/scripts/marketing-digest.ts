@@ -47,8 +47,12 @@ function formatText(digest = {}) {
 
   const channels = Array.isArray(digest?.channelPerformance?.rows) ? digest.channelPerformance.rows : [];
   channels.slice(0, 3).forEach((row) => {
-    lines.push(`- ${row.channel}: ${row.status}, published ${row.publishedCount}, engagement ${Number(row.engagementRate || 0).toFixed(1)}`);
+  lines.push(`- ${row.channel}: ${row.status}, published ${row.publishedCount}, engagement ${Number(row.engagementRate || 0).toFixed(1)}`);
   });
+
+  if (digest?.channelPerformance?.primaryWatchHint) {
+    lines.push(`- primary watch: ${digest.channelPerformance.primaryWatchHint}`);
+  }
 
   const recommendations = Array.isArray(digest?.recommendations) ? digest.recommendations : [];
   if (recommendations.length) {

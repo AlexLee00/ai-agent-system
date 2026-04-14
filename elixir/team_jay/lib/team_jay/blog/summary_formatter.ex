@@ -162,15 +162,59 @@ defmodule TeamJay.Blog.SummaryFormatter do
   defp render_marketing_latest(latest) when latest == %{}, do: ""
   defp render_marketing_latest(latest) do
     weakness = Map.get(latest, :latest_weakness)
-    if is_binary(weakness) and weakness != "", do: ", latest weakness #{weakness}", else: ""
+    channel_hint = Map.get(latest, :channel_watch_hint)
+
+    cond do
+      is_binary(weakness) and weakness != "" and is_binary(channel_hint) and channel_hint != "" ->
+        ", latest weakness #{weakness}, channel #{channel_hint}"
+      is_binary(weakness) and weakness != "" ->
+        ", latest weakness #{weakness}"
+      is_binary(channel_hint) and channel_hint != "" ->
+        ", channel #{channel_hint}"
+      true ->
+        ""
+    end
   end
 
   defp render_marketing_brief(nil), do: ""
   defp render_marketing_brief(latest) when latest == %{}, do: ""
   defp render_marketing_brief(latest) do
-    case Map.get(latest, :latest_weakness) do
-      value when is_binary(value) and value != "" -> ",weak=#{value}"
-      _ -> ""
+    weakness =
+      case Map.get(latest, :latest_weakness) do
+        value when is_binary(value) and value != "" -> ",weak=#{value}"
+        _ -> ""
+      end
+
+    channel =
+      case Map.get(latest, :channel_watch_hint) do
+        value when is_binary(value) and value != "" -> ",channel=#{compact_channel_watch_hint(value)}"
+        _ -> ""
+      end
+
+    current_watch =
+      case Map.get(latest, :channel_watch_count, 0) do
+        value when is_integer(value) and value >= 0 -> ",ch=#{value}"
+        _ -> ""
+      end
+
+    weakness <> current_watch <> channel
+  end
+
+  defp compact_channel_watch_hint(value) when is_binary(value) do
+    cond do
+      String.starts_with?(value, "instagram watch:") and String.contains?(value, "실패") ->
+        case Regex.run(~r/실패\s+(\d+)건/u, value) do
+          [_, failed] -> "instagram:fail#{failed}"
+          _ -> "instagram:watch"
+        end
+
+      String.starts_with?(value, "naver_blog warming-up:") ->
+        "naver_blog:warming_up"
+
+      true ->
+        value
+        |> String.replace(" ", "_")
+        |> String.replace(",", "_")
     end
   end
 
