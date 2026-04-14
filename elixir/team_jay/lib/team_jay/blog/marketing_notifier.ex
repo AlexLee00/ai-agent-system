@@ -49,6 +49,18 @@ defmodule TeamJay.Blog.MarketingNotifier do
       end
 
     parts =
+      case render_channel_watch_hint(latest) do
+        "none" -> parts
+        value -> parts ++ ["channel=#{compact_channel_watch_hint(value)}"]
+      end
+
+    parts =
+      case Map.get(latest, :channel_watch_count, 0) do
+        value when is_integer(value) and value >= 0 -> parts ++ ["ch=#{value}"]
+        _ -> parts
+      end
+
+    parts =
       case render_strategy_hint(strategy) do
         "none" -> parts
         value -> parts ++ ["plan=#{value}"]
@@ -70,6 +82,7 @@ defmodule TeamJay.Blog.MarketingNotifier do
       "Avg signal count: #{Map.get(health, :avg_signal_count, 0)}",
       "Avg revenue impact: #{render_pct(Map.get(health, :avg_revenue_impact_pct, 0))}",
       "최근 weakness: #{render_recent_weakness(latest)}",
+      "채널 watch: #{render_channel_watch_hint(latest)}",
       "현재 전략: #{render_strategy_hint(strategy)}",
       "추천: #{render_recommendation(digest)}"
     ]
@@ -83,6 +96,34 @@ defmodule TeamJay.Blog.MarketingNotifier do
     case Map.get(latest, :latest_weakness) do
       value when is_binary(value) and value != "" -> value
       _ -> "none"
+    end
+  end
+
+  defp render_channel_watch_hint(nil), do: "none"
+  defp render_channel_watch_hint(latest) when latest == %{}, do: "none"
+
+  defp render_channel_watch_hint(latest) do
+    case Map.get(latest, :channel_watch_hint) do
+      value when is_binary(value) and value != "" -> value
+      _ -> "none"
+    end
+  end
+
+  defp compact_channel_watch_hint(value) when is_binary(value) do
+    cond do
+      String.starts_with?(value, "instagram watch:") and String.contains?(value, "실패") ->
+        case Regex.run(~r/실패\s+(\d+)건/u, value) do
+          [_, failed] -> "instagram:fail#{failed}"
+          _ -> "instagram:watch"
+        end
+
+      String.starts_with?(value, "naver_blog warming-up:") ->
+        "naver_blog:warming_up"
+
+      true ->
+        value
+        |> String.replace(" ", "_")
+        |> String.replace(",", "_")
     end
   end
 

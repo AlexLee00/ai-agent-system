@@ -6,6 +6,7 @@ defmodule TeamJay.Blog.MarketingSnapshot do
   """
 
   alias TeamJay.EventLake
+  alias TeamJay.Config
 
   @blog_root "/Users/alexlee/projects/ai-agent-system/bots/blog"
   @script Path.join(@blog_root, "scripts/marketing-digest.ts")
@@ -14,6 +15,10 @@ defmodule TeamJay.Blog.MarketingSnapshot do
     {output, 0} =
       System.cmd("node", [@script, "--json"],
         cd: @blog_root,
+        env: [
+          {"PG_DIRECT", "1"},
+          {"TEAM_JAY_REPO_ROOT", Config.repo_root()}
+        ],
         stderr_to_stdout: true
       )
 

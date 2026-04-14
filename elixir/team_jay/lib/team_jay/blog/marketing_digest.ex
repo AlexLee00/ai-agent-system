@@ -55,6 +55,13 @@ defmodule TeamJay.Blog.MarketingDigest do
 
     latest_status = latest |> Map.get(:status) |> to_status_atom()
     latest_weakness = Map.get(latest, :latest_weakness)
+    latest_channel_watch =
+      latest
+      |> extract_channel_watch_hint()
+
+    latest_channel_watch_count =
+      latest
+      |> extract_channel_watch_count()
 
     %{
       generated_at: DateTime.utc_now(),
@@ -72,12 +79,14 @@ defmodule TeamJay.Blog.MarketingDigest do
           do: %{
             created_at: Map.get(latest, :created_at),
             status: latest_status,
-            latest_weakness: latest_weakness
+            latest_weakness: latest_weakness,
+            channel_watch_hint: latest_channel_watch,
+            channel_watch_count: latest_channel_watch_count
           },
           else: nil
         ),
       strategy: read_latest_strategy(),
-      recommendations: build_recommendations(total, watch_count, latest_weakness)
+      recommendations: build_recommendations(total, watch_count, latest_weakness, latest_channel_watch)
     }
   end
 
@@ -119,19 +128,27 @@ defmodule TeamJay.Blog.MarketingDigest do
     end
   end
 
-  defp build_recommendations(0, _watch_count, _weakness),
+  defp build_recommendations(0, _watch_count, _weakness, _channel_hint),
     do: ["marketing snapshot이 아직 없어 마케팅 확장 루프는 warming-up 상태입니다."]
 
-  defp build_recommendations(_total, watch_count, weakness) when watch_count > 0 and is_binary(weakness) and weakness != "",
+  defp build_recommendations(_total, watch_count, weakness, channel_hint)
+       when watch_count > 0 and is_binary(channel_hint) and channel_hint != "" and is_binary(weakness) and weakness != "",
+    do: ["최근 marketing snapshot에 watch 신호가 있고 #{channel_hint}, 약점은 #{weakness}라 제목/CTA/채널 안정화를 함께 점검하는 편이 좋습니다."]
+
+  defp build_recommendations(_total, watch_count, _weakness, channel_hint)
+       when watch_count > 0 and is_binary(channel_hint) and channel_hint != "",
+    do: ["최근 marketing snapshot에 watch 신호가 있고 #{channel_hint} 상태라 실험보다 채널 안정 운영 비중을 높이는 편이 좋습니다."]
+
+  defp build_recommendations(_total, watch_count, weakness, _channel_hint) when watch_count > 0 and is_binary(weakness) and weakness != "",
     do: ["최근 marketing snapshot에 watch 신호가 있고 약점은 #{weakness}라 제목/CTA/전환형 비중을 함께 점검하는 편이 좋습니다."]
 
-  defp build_recommendations(_total, watch_count, _weakness) when watch_count > 0,
+  defp build_recommendations(_total, watch_count, _weakness, _channel_hint) when watch_count > 0,
     do: ["최근 marketing snapshot에 watch 신호가 있어 실험보다 안정 운영 비중을 높이는 편이 좋습니다."]
 
-  defp build_recommendations(_total, _watch_count, weakness) when is_binary(weakness) and weakness != "",
+  defp build_recommendations(_total, _watch_count, weakness, _channel_hint) when is_binary(weakness) and weakness != "",
     do: ["현재는 안정 구간이지만 최신 약점 #{weakness}를 다음 회차 품질 보정 포인트로 잡는 편이 좋습니다."]
 
-  defp build_recommendations(_total, _watch_count, _weakness),
+  defp build_recommendations(_total, _watch_count, _weakness, _channel_hint),
     do: ["marketing snapshot 추세가 안정적이라 weekly diagnosis와 함께 회고 데이터로 활용하기 좋습니다."]
 
   defp summary_sql(days) do
@@ -154,7 +171,8 @@ defmodule TeamJay.Blog.MarketingDigest do
     SELECT
       created_at,
       metadata->'health'->>'status' AS status,
-      metadata->'diagnosis'->'primaryWeakness'->>'code' AS latest_weakness
+      metadata->'diagnosis'->'primaryWeakness'->>'code' AS latest_weakness,
+      metadata->'channelPerformance' AS channel_performance
     FROM agent.event_lake
     WHERE event_type = 'blog_marketing_snapshot'
       AND team = 'blog'
@@ -193,4 +211,35 @@ defmodule TeamJay.Blog.MarketingDigest do
   defp to_status_atom(nil), do: nil
   defp to_status_atom(other) when is_binary(other), do: String.to_atom(other)
   defp to_status_atom(other), do: other
+
+  defp extract_channel_watch_hint(nil), do: nil
+  defp extract_channel_watch_hint(latest) when latest == %{}, do: nil
+  defp extract_channel_watch_hint(latest) do
+    metadata = Map.get(latest, :channel_performance) || %{}
+
+    cond do
+      is_map(metadata) and is_binary(Map.get(metadata, "primaryWatchHint")) and Map.get(metadata, "primaryWatchHint") != "" ->
+        Map.get(metadata, "primaryWatchHint")
+
+      is_map(metadata) and is_binary(Map.get(metadata, :primaryWatchHint)) and Map.get(metadata, :primaryWatchHint) != "" ->
+        Map.get(metadata, :primaryWatchHint)
+
+      true ->
+        nil
+    end
+  end
+
+  defp extract_channel_watch_count(nil), do: 0
+  defp extract_channel_watch_count(latest) when latest == %{}, do: 0
+  defp extract_channel_watch_count(latest) do
+    metadata = Map.get(latest, :channel_performance) || %{}
+
+    value =
+      cond do
+        is_map(metadata) -> Map.get(metadata, "watchChannels") || Map.get(metadata, :watchChannels) || 0
+        true -> 0
+      end
+
+    int(value)
+  end
 end

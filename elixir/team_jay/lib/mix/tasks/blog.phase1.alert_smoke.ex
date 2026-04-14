@@ -93,10 +93,12 @@ defmodule Mix.Tasks.Blog.Phase1.AlertSmoke do
         target: "instagram",
         run_status: :forced_failure,
         ok: false,
+        smoke_test: true,
+        failure_kind: "smoke",
         exit_code: 91,
         finished_at: DateTime.utc_now(),
         duration_ms: 12,
-        payload: %{post_type: :general, writer: "gems", date: Date.utc_today() |> Date.to_iso8601()}
+        payload: %{post_type: :general, writer: "gems", date: Date.utc_today() |> Date.to_iso8601(), smoke_test: true}
       })
   end
 
@@ -106,10 +108,12 @@ defmodule Mix.Tasks.Blog.Phase1.AlertSmoke do
         target: "naver_blog",
         run_status: :forced_failure,
         ok: false,
+        smoke_test: true,
+        failure_kind: "smoke",
         exit_code: 92,
         finished_at: DateTime.utc_now(),
         duration_ms: 14,
-        payload: %{post_type: :lecture, writer: "pos", date: Date.utc_today() |> Date.to_iso8601()}
+        payload: %{post_type: :lecture, writer: "pos", date: Date.utc_today() |> Date.to_iso8601(), smoke_test: true}
       })
   end
 

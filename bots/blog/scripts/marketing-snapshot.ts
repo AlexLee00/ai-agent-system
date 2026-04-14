@@ -37,7 +37,10 @@ function buildBrief(digest = {}) {
   const autonomyCount = Number(digest?.autonomySummary?.totalCount || 0);
   const weakness = digest?.diagnosis?.primaryWeakness?.code || 'stable';
   const channelWatch = Number(digest?.channelPerformance?.watchChannels || 0);
-  return `marketing=${status} signals=${signals} impact=${impactPct}% autonomy=${autonomyCount} channels_watch=${channelWatch} weakness=${weakness}`;
+  const channelHint = digest?.channelPerformance?.primaryWatchChannel
+    ? ` channel=${digest.channelPerformance.primaryWatchChannel}`
+    : '';
+  return `marketing=${status} signals=${signals} impact=${impactPct}% autonomy=${autonomyCount} channels_watch=${channelWatch} weakness=${weakness}${channelHint}`;
 }
 
 async function persist(digest) {
