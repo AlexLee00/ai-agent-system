@@ -272,6 +272,26 @@ function compactPreviewTitle(title = '', maxLength = 42) {
   return `${text.slice(0, Math.max(0, maxLength - 1)).trim()}…`;
 }
 
+function normalizeTitleWords(text = '') {
+  return String(text || '')
+    .replace(/^\[[^\]]+\]\s*/, '')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/)
+    .map((token) => token.trim().toLowerCase())
+    .filter((token) => token.length >= 2);
+}
+
+function calculateTitleOverlap(a = '', b = '') {
+  const first = new Set(normalizeTitleWords(a));
+  const second = new Set(normalizeTitleWords(b));
+  if (!first.size || !second.size) return 0;
+  let matched = 0;
+  for (const token of first) {
+    if (second.has(token)) matched += 1;
+  }
+  return Number((matched / Math.max(first.size, second.size)).toFixed(2));
+}
+
 async function buildNextGeneralPreview(strategy = {}, sense = null, revenueCorrelation = null) {
   try {
     const next = await getNextGeneralCategory(strategy);
@@ -335,7 +355,7 @@ function parseGeneralOutputFilename(filename = '') {
   };
 }
 
-function getRecentGeneralStrategyAdoption(strategy = {}, maxPosts = 5) {
+function getRecentGeneralStrategyAdoption(strategy = {}, nextPreview = null, maxPosts = 5) {
   try {
     const files = fs.readdirSync(BLOG_OUTPUT_DIR)
       .filter((name) => name.includes('_general_') && name.endsWith('.html'))
@@ -349,6 +369,9 @@ function getRecentGeneralStrategyAdoption(strategy = {}, maxPosts = 5) {
 
     const preferredCategory = strategy?.preferredCategory || null;
     const preferredPattern = strategy?.preferredTitlePattern || null;
+    const previewCategory = nextPreview?.category || preferredCategory || null;
+    const previewPattern = nextPreview?.pattern || preferredPattern || null;
+    const previewTitle = nextPreview?.title || null;
     const preferredCategoryPosts = preferredCategory
       ? recentPosts.filter((post) => post.category === preferredCategory)
       : [];
@@ -365,10 +388,19 @@ function getRecentGeneralStrategyAdoption(strategy = {}, maxPosts = 5) {
       && (!preferredCategory || latestPost.category === preferredCategory)
       && (!preferredPattern || latestPost.pattern === preferredPattern)
     );
+    const latestPreviewOverlap = latestPost && previewTitle
+      ? calculateTitleOverlap(latestPost.title, previewTitle)
+      : 0;
+    const previewAligned = Boolean(
+      latestPost
+      && (!previewCategory || latestPost.category === previewCategory)
+      && (!previewPattern || latestPost.pattern === previewPattern)
+      && latestPreviewOverlap >= 0.4
+    );
 
     let status = 'warming_up';
     if (recentPosts.length > 0) {
-      status = latestAligned
+      status = latestAligned || previewAligned
         ? 'aligned'
         : combinedMatches.length > 0 || patternMatches.length > 0 || preferredCategoryPosts.length > 0
           ? 'partial'
@@ -380,10 +412,15 @@ function getRecentGeneralStrategyAdoption(strategy = {}, maxPosts = 5) {
       recentCount: recentPosts.length,
       preferredCategory,
       preferredPattern,
+      previewCategory,
+      previewPattern,
+      previewTitle,
       preferredCategoryCount: preferredCategoryPosts.length,
       preferredPatternCount: patternMatches.length,
       preferredCategoryPatternCount: combinedMatches.length,
       latestAligned,
+      latestPreviewAligned: previewAligned,
+      latestPreviewOverlap,
       latestPost,
       sampledPosts: recentPosts.slice(0, 3),
     };
@@ -393,10 +430,15 @@ function getRecentGeneralStrategyAdoption(strategy = {}, maxPosts = 5) {
       recentCount: 0,
       preferredCategory: strategy?.preferredCategory || null,
       preferredPattern: strategy?.preferredTitlePattern || null,
+      previewCategory: nextPreview?.category || null,
+      previewPattern: nextPreview?.pattern || null,
+      previewTitle: nextPreview?.title || null,
       preferredCategoryCount: 0,
       preferredPatternCount: 0,
       preferredCategoryPatternCount: 0,
       latestAligned: false,
+      latestPreviewAligned: false,
+      latestPreviewOverlap: 0,
       latestPost: null,
       sampledPosts: [],
       error: error.message,
@@ -533,8 +575,8 @@ async function buildMarketingDigest(options = {}) {
   const health = buildHealth({ senseSummary, revenueCorrelation, diagnosis, autonomySummary, channelPerformance });
   const recommendations = buildRecommendations({ senseSummary, revenueCorrelation, diagnosis, autonomySummary, channelPerformance });
   const strategy = getStrategySummary();
-  const strategyAdoption = getRecentGeneralStrategyAdoption(strategy, Number(options.adoptionWindow || 5));
   const nextGeneralPreview = await buildNextGeneralPreview(strategy, sense, revenueCorrelation);
+  const strategyAdoption = getRecentGeneralStrategyAdoption(strategy, nextGeneralPreview, Number(options.adoptionWindow || 5));
 
   return {
     generatedAt: new Date().toISOString(),
