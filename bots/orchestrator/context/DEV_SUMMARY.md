@@ -11,6 +11,7 @@
   - 2026-04-14 기준 OPS live는 `MAINBOT_QUEUE_CONSUMER_ENABLED=false` 상태로 정상 운영 중
   - 해당 설정에서는 queue polling뿐 아니라 queue-specific cleanup도 같이 건너뜀
   - legacy queue publish도 `MAINBOT_QUEUE_PUBLISH_ENABLED=true`일 때만 opt-in으로 허용
+  - DB live table도 같은 날 read-only compatibility view 구조로 freeze 적용됨
 - **팀장 지휘**: bot_commands DB를 통해 스카/루나/클로드팀에 명령 전달
 
 ## 아키텍처

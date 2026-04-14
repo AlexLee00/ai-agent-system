@@ -36,6 +36,18 @@ Archive status:
   - `pending_confirms_archive_20260414 = 0`
   - `morning_queue_archive_20260414 = 2`
 
+Freeze status:
+- completed on 2026-04-14
+- renamed live tables:
+  - `claude.mainbot_queue` -> `claude.mainbot_queue_legacy_live`
+  - `claude.pending_confirms` -> `claude.pending_confirms_legacy_live`
+  - `claude.morning_queue` -> `claude.morning_queue_legacy_live`
+- recreated compatibility views:
+  - `claude.mainbot_queue`
+  - `claude.pending_confirms`
+  - `claude.morning_queue`
+- verified live view counts match legacy tables
+
 Interpretation:
 - no fresh queue intake is visible
 - no active confirmation flow depends on `pending_confirms`
@@ -106,11 +118,14 @@ Why:
 
 ### Phase 3. Freeze writes at schema level
 
-After archive is verified:
-1. remove active producer paths or leave them guarded by explicit env opt-in only
-2. consider renaming live tables to make accidental reuse harder
-   - example: `mainbot_queue` -> `mainbot_queue_legacy`
-3. or keep empty shell tables temporarily if rollback safety is still desired
+Status:
+- completed
+
+Completed action:
+1. kept active producer paths behind explicit env opt-in
+2. renamed live tables to `*_legacy_live`
+3. recreated original names as read-only compatibility views
+4. prepared rollback script
 
 Prepared scripts:
 - [mainbot_queue_freeze_20260414.sql](/Users/alexlee/projects/ai-agent-system/scripts/sql/mainbot_queue_freeze_20260414.sql)
@@ -143,5 +158,5 @@ Only after a quiet period:
 The next safe operational step is:
 
 1. keep observing runtime for a short quiet window
-2. decide whether live tables should be renamed, emptied, or fully retired
-3. only then consider destructive cleanup
+2. decide whether compatibility views should be kept or dropped
+3. only then consider destructive cleanup of legacy live tables
