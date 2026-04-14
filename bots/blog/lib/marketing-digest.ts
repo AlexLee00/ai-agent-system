@@ -473,6 +473,7 @@ function inferTitleAlignmentFromSnapshots(post, snapshots = []) {
 }
 
 async function loadRecentGeneralPosts(maxPosts = 5) {
+  let fallbackReason = null;
   try {
     const rows = await pgPool.query('blog', `
       SELECT id, title, category, publish_date, metadata
@@ -490,7 +491,7 @@ async function loadRecentGeneralPosts(maxPosts = 5) {
       return { rows: enriched, source: 'blog.posts' };
     }
   } catch (error) {
-    // Fall through to output-file fallback when DB rows are unavailable.
+    fallbackReason = error?.message || String(error || 'unknown_error');
   }
 
   const files = fs.readdirSync(BLOG_OUTPUT_DIR)
@@ -509,6 +510,7 @@ async function loadRecentGeneralPosts(maxPosts = 5) {
       hasTitleAlignment: false,
     })),
     source: 'output_files',
+    sourceReason: fallbackReason,
   };
 }
 
@@ -592,6 +594,7 @@ async function backfillRecentGeneralTitleAlignment(options = {}) {
     inferred,
     updated,
     source: loaded.source || 'unknown',
+    sourceReason: loaded.sourceReason || null,
     items,
   };
 }
@@ -841,6 +844,9 @@ async function buildMarketingDigest(options = {}) {
   const strategy = getStrategySummary();
   const nextGeneralPreview = await buildNextGeneralPreview(strategy, sense, revenueCorrelation);
   const strategyAdoption = await getRecentGeneralStrategyAdoption(strategy, nextGeneralPreview, Number(options.adoptionWindow || 5));
+  if ((strategyAdoption?.inferredCoverageCount || 0) > (strategyAdoption?.metadataCoverageCount || 0)) {
+    recommendations.unshift('최근 일반 글 정렬값이 snapshot 추정에 더 의존하고 있어 title alignment backfill을 한 번 돌려 실측 커버리지를 올리는 편이 좋습니다.');
+  }
 
   return {
     generatedAt: new Date().toISOString(),
