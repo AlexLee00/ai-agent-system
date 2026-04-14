@@ -1163,7 +1163,7 @@ export function buildSeverityTargets({
   sender,
   topicTeam,
   telegramPrefix = '',
-  includeQueue = true,
+  includeQueue = false,
   includeTelegram = true,
   includeN8n = true,
   criticalTelegramMode = 'both',
