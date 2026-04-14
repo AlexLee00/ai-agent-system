@@ -169,6 +169,16 @@ async function approve({ requestId, approverId, approverRole = 'member', approve
   } catch (e) {
     console.warn('[approval] agent memory 승인 기록 실패:', e.message);
   }
+  try {
+    await approvalMemory.consolidate({
+      olderThanDays: 14,
+      limit: 10,
+      sourceType: 'episodic',
+      targetType: 'semantic',
+    });
+  } catch (e) {
+    console.warn('[approval] agent memory 승인 통합 실패:', e.message);
+  }
   return req;
 }
 
@@ -242,6 +252,16 @@ async function reject({ requestId, approverId, reason, approverRole = 'member', 
     );
   } catch (e) {
     console.warn('[approval] agent memory 반려 기록 실패:', e.message);
+  }
+  try {
+    await approvalMemory.consolidate({
+      olderThanDays: 14,
+      limit: 10,
+      sourceType: 'episodic',
+      targetType: 'semantic',
+    });
+  } catch (e) {
+    console.warn('[approval] agent memory 반려 통합 실패:', e.message);
   }
   return req;
 }
