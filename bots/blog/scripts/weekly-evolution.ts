@@ -40,6 +40,13 @@ function buildWeeklyLines(diagnosis = {}, evolution = {}, marketingDigest = null
     diagnosis.byTitlePattern.slice(0, 4).forEach((item) => lines.push(`- ${item.key}: ${item.count}`));
   }
 
+  if (Array.isArray(diagnosis.byCategoryPattern) && diagnosis.byCategoryPattern.length) {
+    lines.push('', '카테고리별 제목 패턴 hotspot:');
+    diagnosis.byCategoryPattern.slice(0, 3).forEach((item) => {
+      lines.push(`- ${item.category}: ${item.topPattern || 'none'} (${Math.round((Number(item.topRatio || 0)) * 100)}%)`);
+    });
+  }
+
   return lines;
 }
 
