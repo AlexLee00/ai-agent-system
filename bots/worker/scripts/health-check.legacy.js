@@ -23,6 +23,12 @@ const {
   buildSeverityTargets,
   publishEventPipeline,
 } = require('../../../packages/core/lib/reporting-hub');
+const { createHealthMemoryHelper } = require('../../../packages/core/lib/health-memory');
+const { buildIssueHints, rememberHealthEvent } = createHealthMemoryHelper({
+  agentId: 'worker.health',
+  team: 'worker',
+  domain: 'worker health',
+});
 
 // 상시 실행 서비스 (PID 있어야 정상)
 const CONTINUOUS = ['ai.worker.web', 'ai.worker.nextjs', 'ai.worker.lead', 'ai.worker.task-runner'];
@@ -121,7 +127,9 @@ async function main() {
 
     // 미로드 → 회복
     if (state[`unloaded:${label}`]) {
-      await notify(`✅ [워커 헬스] ${shortName} 회복\nlaunchd 정상 로드 — 자동 감지`, 1);
+      const recoveryMsg = `✅ [워커 헬스] ${shortName} 회복\nlaunchd 정상 로드 — 자동 감지`;
+      await notify(recoveryMsg, 1);
+      await rememberHealthEvent(`unloaded:${label}`, 'recovery', recoveryMsg, 1);
       hsm.clearAlert(state, `unloaded:${label}`);
     }
 
@@ -133,7 +141,9 @@ async function main() {
           issues.push({ key, level: hsm.getAlertLevel(label), msg: `🔴 [워커 헬스] ${shortName} 다운\nPID 없음 — API/웹 서버 응답 불가` });
         }
       } else if (state[`down:${label}`]) {
-        await notify(`✅ [워커 헬스] ${shortName} 회복\nPID 정상 확인 — 자동 감지`, 1);
+        const recoveryMsg = `✅ [워커 헬스] ${shortName} 회복\nPID 정상 확인 — 자동 감지`;
+        await notify(recoveryMsg, 1);
+        await rememberHealthEvent(`down:${label}`, 'recovery', recoveryMsg, 1);
         hsm.clearAlert(state, `down:${label}`);
       }
     }
@@ -147,7 +157,9 @@ async function main() {
     } else {
       const prevKeys = Object.keys(state).filter(k => k.startsWith(`exitcode:${label}:`));
       if (prevKeys.length > 0) {
-        await notify(`✅ [워커 헬스] ${shortName} 회복\nexit code 정상 (0) — 자동 감지`, 1);
+        const recoveryMsg = `✅ [워커 헬스] ${shortName} 회복\nexit code 정상 (0) — 자동 감지`;
+        await notify(recoveryMsg, 1);
+        await rememberHealthEvent(`exitcode:${label}:0`, 'recovery', recoveryMsg, 1);
         prevKeys.forEach(k => hsm.clearAlert(state, k));
       }
     }
@@ -169,7 +181,9 @@ async function main() {
         });
       }
     } else if (state[check.key]) {
-      await notify(`✅ [워커 헬스] ${check.name} 회복\nHTTP 응답 정상 — 자동 감지`, 1);
+      const recoveryMsg = `✅ [워커 헬스] ${check.name} 회복\nHTTP 응답 정상 — 자동 감지`;
+      await notify(recoveryMsg, 1);
+      await rememberHealthEvent(check.key, 'recovery', recoveryMsg, 1);
       hsm.clearAlert(state, check.key);
     }
   }
@@ -185,14 +199,18 @@ async function main() {
       });
     }
   } else if (state['ws:ai.worker.web']) {
-    await notify('✅ [워커 헬스] worker websocket 회복\n실시간 채널 준비 상태 정상 — 자동 감지', 1);
+    const recoveryMsg = '✅ [워커 헬스] worker websocket 회복\n실시간 채널 준비 상태 정상 — 자동 감지';
+    await notify(recoveryMsg, 1);
+    await rememberHealthEvent('ws:ai.worker.web', 'recovery', recoveryMsg, 1);
     hsm.clearAlert(state, 'ws:ai.worker.web');
   }
 
   // 알림 발송 + 상태 기록
   for (const { key, msg, level } of issues) {
     console.warn(`[워커 헬스체크] 이슈: ${msg}`);
-    await notify(msg, level);
+    const memoryHints = await buildIssueHints(key, msg);
+    await notify(`${msg}${memoryHints}`, level);
+    await rememberHealthEvent(key, 'issue', msg, level);
     hsm.recordAlert(state, key);
   }
 
