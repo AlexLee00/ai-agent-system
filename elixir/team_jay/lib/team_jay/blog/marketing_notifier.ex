@@ -33,6 +33,7 @@ defmodule TeamJay.Blog.MarketingNotifier do
     health = Map.get(digest, :health, %{})
     latest = Map.get(digest, :latest_snapshot, %{})
     strategy = Map.get(digest, :strategy, %{})
+    preview = Map.get(latest, :next_general_preview, %{})
 
     parts = [
       "marketing=#{render_health(Map.get(health, :status, :warming_up))}",
@@ -66,6 +67,12 @@ defmodule TeamJay.Blog.MarketingNotifier do
         value -> parts ++ ["plan=#{value}"]
       end
 
+    parts =
+      case render_next_preview_brief(preview) do
+        "none" -> parts
+        value -> parts ++ ["next=#{value}"]
+      end
+
     Enum.join(parts, " ")
   end
 
@@ -73,6 +80,7 @@ defmodule TeamJay.Blog.MarketingNotifier do
     health = Map.get(digest, :health, %{})
     latest = Map.get(digest, :latest_snapshot, %{})
     strategy = Map.get(digest, :strategy, %{})
+    preview = Map.get(latest, :next_general_preview, %{})
 
     [
       "블로그 마케팅 확장 리포트",
@@ -84,6 +92,7 @@ defmodule TeamJay.Blog.MarketingNotifier do
       "최근 weakness: #{render_recent_weakness(latest)}",
       "채널 watch: #{render_channel_watch_hint(latest)}",
       "현재 전략: #{render_strategy_hint(strategy)}",
+      "다음 preview: #{render_next_preview(preview)}",
       "추천: #{render_recommendation(digest)}"
     ]
     |> Enum.join("\n")
@@ -150,6 +159,41 @@ defmodule TeamJay.Blog.MarketingNotifier do
         category
       is_binary(pattern) and pattern != "" ->
         pattern
+      true ->
+        "none"
+    end
+  end
+
+  defp render_next_preview(nil), do: "none"
+  defp render_next_preview(preview) when preview == %{}, do: "none"
+  defp render_next_preview(preview) do
+    category = Map.get(preview, :category)
+    pattern = Map.get(preview, :pattern)
+    title = Map.get(preview, :compact_title) || Map.get(preview, :title)
+    predicted = Map.get(preview, :predicted_adoption) || Map.get(preview, :predictedAdoption)
+
+    cond do
+      is_binary(category) and category != "" and is_binary(pattern) and pattern != "" and is_binary(title) and title != "" and is_binary(predicted) and predicted != "" ->
+        "#{category}/#{pattern}/#{predicted} — #{title}"
+      is_binary(category) and category != "" and is_binary(pattern) and pattern != "" ->
+        "#{category}/#{pattern}"
+      true ->
+        "none"
+    end
+  end
+
+  defp render_next_preview_brief(nil), do: "none"
+  defp render_next_preview_brief(preview) when preview == %{}, do: "none"
+  defp render_next_preview_brief(preview) do
+    category = Map.get(preview, :category)
+    pattern = Map.get(preview, :pattern)
+    predicted = Map.get(preview, :predicted_adoption) || Map.get(preview, :predictedAdoption)
+
+    cond do
+      is_binary(category) and category != "" and is_binary(pattern) and pattern != "" and is_binary(predicted) and predicted != "" ->
+        "#{category}/#{pattern}:#{predicted}"
+      is_binary(category) and category != "" and is_binary(pattern) and pattern != "" ->
+        "#{category}/#{pattern}"
       true ->
         "none"
     end
