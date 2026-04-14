@@ -19,11 +19,13 @@ const fs = require('fs');
 const path = require('path');
 const { parseArgs } = require('../../lib/args');
 const { fail } = require('../../lib/cli');
+const { createAgentMemory } = require('../../../../packages/core/lib/agent-memory');
 
 const WORKSPACE = path.join(process.env.HOME, '.openclaw', 'workspace');
 const BOOKINGS_FILE = path.join(WORKSPACE, 'naver-bookings-full.json');
 
 const ARGS = parseArgs(process.argv);
+const queryMemory = createAgentMemory({ agentId: 'reservation.pickko-query', team: 'reservation' });
 
 type Booking = {
   date: string;
@@ -36,6 +38,38 @@ type Booking = {
     name?: string;
   };
 };
+
+function buildQueryMemoryQuery(kind: string, extras: string[] = []): string {
+  return [
+    'reservation pickko query',
+    kind,
+    ...extras,
+  ].filter(Boolean).join(' ');
+}
+
+async function buildQueryMemoryHints(memoryQuery: string, order: string[]) {
+  const episodicHint = await queryMemory.recallCountHint(memoryQuery, {
+    type: 'episodic',
+    limit: 2,
+    threshold: 0.33,
+    title: '최근 유사 조회',
+    separator: 'pipe',
+    metadataKey: 'kind',
+    labels: {
+      result: '결과',
+      empty: '없음',
+    },
+    order,
+  }).catch(() => '');
+  const semanticHint = await queryMemory.recallHint(`${memoryQuery} consolidated query pattern`, {
+    type: 'semantic',
+    limit: 2,
+    threshold: 0.28,
+    title: '최근 통합 패턴',
+    separator: 'newline',
+  }).catch(() => '');
+  return { episodicHint, semanticHint };
+}
 
 function resolveDate(dateArg: string | undefined): string | null {
   const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
@@ -114,8 +148,39 @@ const filterLabel = filterDesc.length > 0 ? filterDesc.join(' · ') : '전체';
 
 if (filtered.length === 0) {
   const message = `${filterLabel}\n\n예약 없음`;
-  process.stdout.write(`${JSON.stringify({ success: true, count: 0, message, bookings: [] })}\n`);
-  process.exit(0);
+  (async () => {
+    const memoryQuery = buildQueryMemoryQuery('empty', [filterLabel]);
+    const { episodicHint, semanticHint } = await buildQueryMemoryHints(memoryQuery, ['empty', 'result']);
+    process.stdout.write(`${JSON.stringify({
+      success: true,
+      count: 0,
+      message,
+      bookings: [],
+      memoryHints: {
+        episodicHint,
+        semanticHint,
+      },
+    })}\n`);
+    await queryMemory.remember([
+      '픽코 예약 조회',
+      `filter: ${filterLabel}`,
+      '예약 없음',
+    ].join('\n'), 'episodic', {
+      importance: 0.58,
+      expiresIn: 1000 * 60 * 60 * 24 * 30,
+      metadata: {
+        kind: 'empty',
+        filterLabel,
+        count: 0,
+      },
+    }).catch(() => {});
+    await queryMemory.consolidate({
+      olderThanDays: 14,
+      limit: 10,
+    }).catch(() => {});
+    process.exit(0);
+  })();
+  return;
 }
 
 const groups: Record<string, Booking[]> = {};
@@ -133,11 +198,36 @@ for (const [date, list] of Object.entries(groups).sort()) {
   }
 }
 message = message.trim();
-
-process.stdout.write(`${JSON.stringify({
-  success: true,
-  count: filtered.length,
-  message,
-  bookings: filtered,
-})}\n`);
-process.exit(0);
+const memoryQuery = buildQueryMemoryQuery('result', [filterLabel, `${filtered.length}-bookings`]);
+(async () => {
+  const { episodicHint, semanticHint } = await buildQueryMemoryHints(memoryQuery, ['result', 'empty']);
+  process.stdout.write(`${JSON.stringify({
+    success: true,
+    count: filtered.length,
+    message,
+    bookings: filtered,
+    memoryHints: {
+      episodicHint,
+      semanticHint,
+    },
+  })}\n`);
+  await queryMemory.remember([
+    '픽코 예약 조회',
+    `filter: ${filterLabel}`,
+    `count: ${filtered.length}`,
+    message,
+  ].join('\n'), 'episodic', {
+    importance: 0.62,
+    expiresIn: 1000 * 60 * 60 * 24 * 30,
+    metadata: {
+      kind: 'result',
+      filterLabel,
+      count: filtered.length,
+    },
+  }).catch(() => {});
+  await queryMemory.consolidate({
+    olderThanDays: 14,
+    limit: 10,
+  }).catch(() => {});
+  process.exit(0);
+})();
