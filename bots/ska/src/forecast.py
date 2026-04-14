@@ -31,6 +31,7 @@ import sys
 import os
 import json
 import math
+import subprocess
 import warnings
 import psycopg2
 import pandas as pd
