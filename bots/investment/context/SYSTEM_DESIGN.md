@@ -87,7 +87,7 @@ bots/investment/
 │   ├── db.js           # DuckDB 래퍼 (investment.duckdb)
 │   ├── secrets.js      # 설정 로더 (장 시간 체크 포함)
 │   ├── cost-tracker.js # 비용 추적 (JSON, Haiku 전용)
-│   └── mainbot-client.js # 제이 큐 전송
+│   └── alert-publisher.ts # 공용 알림 발행 (mainbot 호환 alias 유지)
 ├── scripts/            # CLI 유틸
 │   └── trading-journal.js # 매매 일지 (npm run journal)
 ├── context/

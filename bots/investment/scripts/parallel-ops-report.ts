@@ -2,7 +2,7 @@
 // @ts-nocheck
 
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
-import { publishAlert } from '../shared/mainbot-client.ts';
+import { publishAlert } from '../shared/alert-publisher.ts';
 import { buildScreeningHistoryReport } from './screening-history-report.ts';
 import { execFileSync } from 'child_process';
 import path from 'path';

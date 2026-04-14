@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { createPipelineSession, runNode } from './node-runner.ts';
 import { finishPipelineRun } from './pipeline-db.ts';
-import { publishAlert } from './mainbot-client.ts';
+import { publishAlert } from './alert-publisher.ts';
 import { getInvestmentNode } from '../nodes/index.ts';
 
 const COLLECT_NODE_SETS = {

@@ -2,7 +2,7 @@
 
 ## Goal
 
-알람과 리포팅이 팀별 `mainbot-client`, 텔레그램 유틸, 브리핑 조립, RAG 저장, n8n escalation에 흩어져 있는 상태를 줄이고,
+알람과 리포팅이 팀별 `alert-publisher`/호환 alias, 텔레그램 유틸, 브리핑 조립, RAG 저장, n8n escalation에 흩어져 있는 상태를 줄이고,
 공용 발행 허브를 통해 같은 이벤트 계약을 지나가게 만든다.
 
 ## Current Shared Layer
@@ -22,14 +22,14 @@
 
 ## Applied So Far
 
-- [bots/reservation/lib/mainbot-client.ts](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/mainbot-client.ts)
-- [bots/investment/shared/mainbot-client.js](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/mainbot-client.js)
-- [bots/claude/lib/mainbot-client.js](/Users/alexlee/projects/ai-agent-system/bots/claude/lib/mainbot-client.js)
+- [bots/reservation/lib/alert-client.ts](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/alert-client.ts)
+- [bots/investment/shared/alert-publisher.ts](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/alert-publisher.ts)
+- [bots/claude/lib/alert-publisher.ts](/Users/alexlee/projects/ai-agent-system/bots/claude/lib/alert-publisher.ts)
 - [bots/reservation/lib/telegram.ts](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/telegram.ts)
 - [packages/core/scripts/publish-python-report.js](/Users/alexlee/projects/ai-agent-system/packages/core/scripts/publish-python-report.js)
 
 즉 지금은
-- mainbot queue 발행
+- alert publisher 발행
 - 팀 topic 텔레그램 발행
 - Python 리포터 stdout 브릿지
 이 같은 이벤트 정규화 레이어를 탄다.

@@ -16,7 +16,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { publishAlert } = require('../lib/mainbot-client');
+const { publishAlert } = require('../lib/alert-publisher');
 const hsm = require('../../../packages/core/lib/health-state-manager');
 const {
   getLaunchctlStatus,

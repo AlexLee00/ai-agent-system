@@ -15,7 +15,7 @@
  *   npm run check:claude | check:ska | check:luna | check:all
  */
 
-const { publishAlert } = require('../lib/mainbot-client');
+const { publishAlert } = require('../lib/alert-publisher');
 const kst = require('../../../packages/core/lib/kst');
 
 const ICON = { ok: '✅', warn: '⚠️', error: '❌' };

@@ -10,7 +10,7 @@
  */
 
 import * as db from './db.ts';
-import { publishAlert } from './mainbot-client.ts';
+import { publishAlert } from './alert-publisher.ts';
 
 const DIVIDER = '──────────';
 

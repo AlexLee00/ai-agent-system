@@ -19,7 +19,7 @@
  */
 
 import * as db from '../shared/db.ts';
-import { publishAlert } from '../shared/mainbot-client.ts';
+import { publishAlert } from '../shared/alert-publisher.ts';
 import { loadPreScreened } from './pre-market-screen.ts';
 import { getInvestmentProfile } from './investment-profile.ts';
 import { getKisMarketStatus, getKisOverseasMarketStatus } from '../shared/secrets.ts';

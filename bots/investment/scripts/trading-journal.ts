@@ -17,7 +17,7 @@
  */
 
 import * as db from '../shared/db.ts';
-import { publishAlert } from '../shared/mainbot-client.ts';
+import { publishAlert } from '../shared/alert-publisher.ts';
 import { initJournalSchema } from '../shared/trade-journal-db.ts';
 import { createRequire } from 'module';
 

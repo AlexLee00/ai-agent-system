@@ -23,7 +23,7 @@ const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
 import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { initHubSecrets, getKisSymbols, getKisMarketStatus, getKisExecutionModeInfo, getDomesticScreeningMaxDynamic, getInvestmentTradeMode } from '../shared/secrets.ts';
-import { publishAlert } from '../shared/mainbot-client.ts';
+import { publishAlert } from '../shared/alert-publisher.ts';
 import { tracker } from '../shared/cost-tracker.ts';
 import { parseUniverseCliFlags } from '../shared/screening-runtime.ts';
 import { resolveSymbolsWithFallback, appendHeldSymbols, capDynamicUniverse } from '../shared/universe-fallback.ts';

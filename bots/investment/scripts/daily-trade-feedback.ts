@@ -18,7 +18,7 @@
  */
 
 import { callLLM, parseJSON } from '../shared/llm-client.ts';
-import { publishAlert } from '../shared/mainbot-client.ts';
+import { publishAlert } from '../shared/alert-publisher.ts';
 import * as db from '../shared/db.ts';
 import * as rag from '../shared/rag-client.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';

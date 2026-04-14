@@ -10,7 +10,7 @@
 
 import * as db from './db.ts';
 import { isPaperMode } from './secrets.ts';
-import { publishAlert } from './mainbot-client.ts';
+import { publishAlert } from './alert-publisher.ts';
 import { getCapitalConfig } from './capital-manager.ts';
 
 export const ACTIONS = Object.freeze({

@@ -6,11 +6,11 @@
 
 ## Current Producers
 
-### Queue/Mainbot Producers
+### Queue/Alert Producers
 
-- [bots/reservation/lib/mainbot-client.ts](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/mainbot-client.ts)
-- [bots/investment/shared/mainbot-client.js](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/mainbot-client.js)
-- [bots/claude/lib/mainbot-client.js](/Users/alexlee/projects/ai-agent-system/bots/claude/lib/mainbot-client.js)
+- [bots/reservation/lib/alert-client.ts](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/alert-client.ts)
+- [bots/investment/shared/alert-publisher.ts](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/alert-publisher.ts)
+- [bots/claude/lib/alert-publisher.ts](/Users/alexlee/projects/ai-agent-system/bots/claude/lib/alert-publisher.ts)
 
 ### Direct Telegram Producers
 
