@@ -50,6 +50,7 @@ const { pickEditorPersona }                         = require(path.join(env.PROJ
 const { loadLatestStrategy }                        = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/strategy-loader.ts'));
 const { senseDailyState }                          = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/sense-engine.ts'));
 const { analyzeMarketingToRevenue }                = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/marketing-revenue-correlation.ts'));
+const { detectTitlePattern }                       = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/performance-diagnostician.ts'));
 const { decideAutonomy }                           = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/autonomy-gate.ts'));
 const { accumulatePostExperience }                 = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/rag-accumulator.ts'));
 const {
@@ -272,6 +273,49 @@ function _buildMarketingResearchContext(category, dailyState = {}) {
     marketing_signal_summary: signalTypes.length ? signalTypes.join(' / ') : '특이 신호 없음',
     marketing_recommendations: recommendations,
     marketing_cta_hint: ctaHint,
+  };
+}
+
+function _normalizeTitleTokens(text = '') {
+  return String(text || '')
+    .replace(/^\[[^\]]+\]\s*/, '')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/)
+    .map((token) => token.trim().toLowerCase())
+    .filter((token) => token.length >= 2);
+}
+
+function _calculateTitleTokenOverlap(a = '', b = '') {
+  const first = new Set(_normalizeTitleTokens(a));
+  const second = new Set(_normalizeTitleTokens(b));
+  if (!first.size || !second.size) return 0;
+  let matched = 0;
+  for (const token of first) {
+    if (second.has(token)) matched += 1;
+  }
+  return Number((matched / Math.max(first.size, second.size)).toFixed(2));
+}
+
+function _buildGeneralTitleAlignmentMetadata(post, context = {}) {
+  const previewTitle = String(context?.researchData?.topic_title_candidate || '').trim();
+  const previewPattern = String(context?.researchData?.strategy_preferred_pattern || '').trim();
+  const finalTitle = String(post?.title || '').trim();
+  const finalPattern = detectTitlePattern(finalTitle.replace(/^\[[^\]]+\]\s*/, '').trim());
+  const overlap = previewTitle ? _calculateTitleTokenOverlap(finalTitle, previewTitle) : 0;
+  const categoryAligned = String(context?.category || '').trim() === String(context?.strategyPlan?.preferredCategory || context?.category || '').trim();
+  const patternAligned = previewPattern ? finalPattern === previewPattern : false;
+  const aligned = Boolean(previewTitle) && categoryAligned && patternAligned && overlap >= 0.4;
+
+  return {
+    preview_category: context?.category || null,
+    preview_title: previewTitle || null,
+    preview_pattern: previewPattern || null,
+    final_title: finalTitle || null,
+    final_pattern: finalPattern || null,
+    title_overlap: overlap,
+    category_aligned: categoryAligned,
+    pattern_aligned: patternAligned,
+    aligned,
   };
 }
 
@@ -1021,6 +1065,15 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
     postType: 'general',
     category: context.category,
   }, context.daily || {});
+  const titleAlignment = _buildGeneralTitleAlignmentMetadata({
+    ...post,
+    title: genTitle,
+  }, context);
+  const metadata = {};
+  if (autonomy) metadata.autonomy = autonomy;
+  if (titleAlignment?.preview_title || titleAlignment?.final_title) {
+    metadata.title_alignment = titleAlignment;
+  }
 
   const published = await _publishAndTrack({
     title:     genTitle,
@@ -1031,7 +1084,7 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
     writerName,
     images,
     scheduleId,
-    metadata: autonomy ? { autonomy } : undefined,
+    metadata: Object.keys(metadata).length ? metadata : undefined,
   }, scheduleId, traceCtx, {
     type: 'general',
     category: context.category,
