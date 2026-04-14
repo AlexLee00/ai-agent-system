@@ -14,6 +14,11 @@ const kst = require('../../../../packages/core/lib/kst') as { today: () => strin
 const { publishToWebhook } = require('../../../../packages/core/lib/reporting-hub') as {
   publishToWebhook: (payload: { event: { from_bot: string; team: string; event_type: string; alert_level: number; message: string } }) => Promise<{ ok?: boolean }>;
 };
+const { createAgentMemory } = require('../../../../packages/core/lib/agent-memory') as {
+  createAgentMemory: (opts: { agentId: string; team: string }) => {
+    remember: (content: string, type: 'episodic' | 'semantic' | 'procedural', opts?: Record<string, any>) => Promise<number | null>;
+  };
+};
 const eventLake = require('../../../../packages/core/lib/event-lake') as {
   initSchema: () => Promise<void>;
   search: (payload: Record<string, any>) => Promise<any[]>;
@@ -251,6 +256,7 @@ export async function measurePastFeedbackEffectiveness(): Promise<any[]> {
 }
 
 export async function weeklyMetaReview(): Promise<Record<string, any>> {
+  const sigmaMemory = createAgentMemory({ agentId: 'sigma.analyst', team: 'sigma' });
   const rows = await pgPool.query(SCHEMA, `
     SELECT
       analyst_used,
@@ -324,6 +330,23 @@ export async function weeklyMetaReview(): Promise<Record<string, any>> {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.warn(`[sigma-feedback] 메타리뷰 RAG 저장 실패: ${message}`);
+  }
+
+  try {
+    await sigmaMemory.remember(lines.join('\n'), 'episodic', {
+      keywords: ['sigma', 'weekly', 'meta-review'],
+      importance: rows.length >= 3 ? 0.74 : 0.64,
+      expiresIn: 30 * 24 * 60 * 60,
+      metadata: {
+        type: 'sigma_meta_review',
+        period: '7d',
+        analystCount: rows.length,
+        rows,
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`[sigma-feedback] agent memory 저장 실패: ${message}`);
   }
 
   return { ok: true, sent: result?.ok === true, rows };
