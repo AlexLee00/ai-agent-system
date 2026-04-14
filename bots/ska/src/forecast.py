@@ -174,6 +174,26 @@ def build_daily_fallback_insight(result_row, recent_mape=None):
     return f'내일 예상 매출은 {yhat:,}원이며 예약과 환경 변수에 따라 변동 가능성이 있습니다.'
 
 
+def build_period_fallback_insight(label, total, avg_value, results):
+    """주간/월간 예측에 붙일 결정론적 한 줄 요약."""
+    if not results:
+        return ''
+
+    first = results[0]
+    last = results[-1]
+    delta = int((last.get('yhat') or 0) - (first.get('yhat') or 0))
+    if abs(delta) >= max(20000, avg_value * 0.12):
+        direction = '상승' if delta > 0 else '하락'
+        return f'{label} 예상 매출은 총 {total:,}원이며 후반으로 갈수록 {direction} 흐름이 예상됩니다.'
+
+    peak = max(int(r.get('yhat') or 0) for r in results)
+    trough = min(int(r.get('yhat') or 0) for r in results)
+    if peak - trough >= max(30000, avg_value * 0.15):
+        return f'{label} 예상 매출은 총 {total:,}원이며 일별 변동폭이 큰 편입니다.'
+
+    return f'{label} 예상 매출은 총 {total:,}원, 일 평균 {avg_value:,}원 수준으로 비교적 안정적입니다.'
+
+
 # ─── 모델 파라미터 관리 ────────────────────────────────────────────────────────
 
 def _load_model_params():
@@ -1700,7 +1720,45 @@ def format_weekly(results, base_date):
             f'  {d.month}/{d.day}({wd})  {r["yhat"]:>8,}원'
             f'  ({r["yhat_lower"]:,}~{r["yhat_upper"]:,})'
         )
-    lines += ['', f'💰 7일 합계: ~{total:,}원', f'   일 평균: ~{total // len(results):,}원', '']
+    daily_avg = total // len(results)
+    lines += ['', f'💰 7일 합계: ~{total:,}원', f'   일 평균: ~{daily_avg:,}원', '']
+
+    try:
+        prompt = f"""당신은 스터디카페 매출 예측 분석가입니다.
+향후 7일 예상 매출 합계: {total:,}원
+일 평균 예상 매출: {daily_avg:,}원
+최고 예상 일매출: {max(r['yhat'] for r in results):,}원
+최저 예상 일매출: {min(r['yhat'] for r in results):,}원
+
+주간 예측 해석을 한국어 1줄로 간결하게 작성하세요."""
+        proc = subprocess.run(
+            [
+                'node',
+                GEMMA_PILOT_CLI,
+                '--team=ska',
+                '--purpose=gemma-insight',
+                '--bot=forecast',
+                '--requestType=weekly-forecast-insight',
+                '--maxTokens=150',
+                '--temperature=0.7',
+                '--timeoutMs=20000',
+            ],
+            input=prompt,
+            capture_output=True,
+            text=True,
+            timeout=22,
+            cwd=PROJECT_ROOT,
+        )
+        insight = sanitize_insight_line((proc.stdout or '').strip())
+        if not insight:
+            insight = build_period_fallback_insight('향후 7일', total, daily_avg, results)
+        if insight:
+            lines += [f'🔍 AI: {insight}', '']
+    except Exception as e:
+        print(f'[forecast] weekly 인사이트 생략: {e}', file=sys.stderr)
+        fallback_insight = build_period_fallback_insight('향후 7일', total, daily_avg, results)
+        if fallback_insight:
+            lines += [f'🔍 AI: {fallback_insight}', '']
     return '\n'.join(lines)
 
 
@@ -1731,6 +1789,43 @@ def format_monthly(results, base_date):
             f'{w_total:,}원'
         )
     lines.append('')
+
+    try:
+        prompt = f"""당신은 스터디카페 매출 예측 분석가입니다.
+향후 30일 예상 매출 합계: {total:,}원
+일 평균 예상 매출: {avg:,}원
+최고 예상 일매출: {max(r['yhat'] for r in results):,}원
+최저 예상 일매출: {min(r['yhat'] for r in results):,}원
+
+월간 예측 해석을 한국어 1줄로 간결하게 작성하세요."""
+        proc = subprocess.run(
+            [
+                'node',
+                GEMMA_PILOT_CLI,
+                '--team=ska',
+                '--purpose=gemma-insight',
+                '--bot=forecast',
+                '--requestType=monthly-forecast-insight',
+                '--maxTokens=150',
+                '--temperature=0.7',
+                '--timeoutMs=20000',
+            ],
+            input=prompt,
+            capture_output=True,
+            text=True,
+            timeout=22,
+            cwd=PROJECT_ROOT,
+        )
+        insight = sanitize_insight_line((proc.stdout or '').strip())
+        if not insight:
+            insight = build_period_fallback_insight('향후 30일', total, avg, results)
+        if insight:
+            lines += [f'🔍 AI: {insight}', '']
+    except Exception as e:
+        print(f'[forecast] monthly 인사이트 생략: {e}', file=sys.stderr)
+        fallback_insight = build_period_fallback_insight('향후 30일', total, avg, results)
+        if fallback_insight:
+            lines += [f'🔍 AI: {fallback_insight}', '']
     return '\n'.join(lines)
 
 
