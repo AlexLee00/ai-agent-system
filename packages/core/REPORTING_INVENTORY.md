@@ -111,6 +111,6 @@
 
 1. `rebecca`와 기타 reporter 경로를 reporting-hub fanout으로 통일
 2. severity, dedupe, throttle, quiet-hours 정책을 reporting-hub로 승격
-3. remaining direct `rag.store(...)` writers, especially search-only rag consumers plus a few test/legacy paths, continue to be narrowed and any leftover non-shared writers also absorb into reporting-hub rag target composition
+3. remaining `rag.store(...)` matches are now mostly helper adapters, shared-client aliases, search-only consumers, or test/legacy paths; keep pruning non-current surfaces while reporting-hub remains the canonical current write path
 4. reporter/rebecca/night-handler 문구를 공용 notice/report formatter로 추가 통일
 5. mainbot consumer도 envelope/target 기반으로 일반화
