@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 const rag = require('./rag');
-const { postAlarm } = require('./openclaw-client');
+const { publishToWebhook } = require('./reporting-hub');
 
 type RagGuardState = {
   disabledUntil: number;
@@ -84,13 +84,16 @@ function _isCapacityError(error: unknown): boolean {
 }
 
 async function _publish(message: string, payload: Record<string, unknown>, fromBot = 'rag'): Promise<void> {
-  await postAlarm({
-    message,
-    team: 'system',
-    alertLevel: payload?.status === 'recovered' ? 1 : 2,
-    fromBot,
-    payload: payload || {},
-  } as any);
+  await publishToWebhook({
+    event: {
+      from_bot: fromBot,
+      team: 'system',
+      event_type: String(payload?.status === 'recovered' ? 'rag_recovered' : 'rag_degraded'),
+      alert_level: payload?.status === 'recovered' ? 1 : 2,
+      message,
+      payload: payload || {},
+    },
+  });
 }
 
 async function _notifyDegraded(reason: string, operation: string, collection: string, sourceBot = 'rag'): Promise<void> {
