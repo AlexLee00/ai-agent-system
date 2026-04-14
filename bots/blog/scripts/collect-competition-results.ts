@@ -4,7 +4,7 @@
 
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const competitionEngine = require('../../../packages/core/lib/competition-engine');
-const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const { publishToWebhook } = require('../../../packages/core/lib/reporting-hub');
 
 const TEAM = 'blog';
 const COMPETITION_TIMEOUT_HOURS = 24;
@@ -458,14 +458,18 @@ async function main() {
     completed += 1;
     console.log(`[competition-collector] #${comp.id} 완료 — winner=${outcome.result.winner} diff=${outcome.result.qualityDiff}`);
 
-    await postAlarm({
-      message:
-        `🏆 경쟁 #${comp.id} 완료\n` +
-        `📋 ${comp.topic}\n` +
-        `🥇 승자: ${outcome.result.winner === 'a' ? 'A그룹' : 'B그룹'}\n` +
-        `📊 차이: ${outcome.result.qualityDiff}`,
-      team: TEAM,
-      fromBot: 'competition-collector',
+    await publishToWebhook({
+      event: {
+        from_bot: 'competition-collector',
+        team: TEAM,
+        event_type: 'blog_competition_completed',
+        alert_level: 2,
+        message:
+          `🏆 경쟁 #${comp.id} 완료\n` +
+          `📋 ${comp.topic}\n` +
+          `🥇 승자: ${outcome.result.winner === 'a' ? 'A그룹' : 'B그룹'}\n` +
+          `📊 차이: ${outcome.result.qualityDiff}`,
+      },
     }).catch((error) => {
       console.warn(`[competition-collector] 알림 실패 #${comp.id}: ${error.message}`);
     });
