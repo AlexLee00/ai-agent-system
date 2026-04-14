@@ -5,6 +5,9 @@ import * as db from '../shared/db.ts';
 import { publishAlert } from '../shared/alert-publisher.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { runVectorBtGrid } from '../shared/vectorbt-runner.ts';
+const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
+
+const taOptimizationMemory = createAgentMemory({ agentId: 'investment.ta-optimization', team: 'investment' });
 
 function parseArg(name, fallback = null) {
   return process.argv.slice(2).find((arg) => arg.startsWith(`--${name}=`))?.split('=')[1] || fallback;
@@ -63,6 +66,15 @@ function buildOptimizationMessage(symbol, days, results = []) {
   return lines.join('\n');
 }
 
+function buildOptimizationMemoryQuery(symbol, days, results = []) {
+  return [
+    'investment ta optimization',
+    symbol,
+    `${days}d`,
+    results[0]?.params?.timeframe || null,
+  ].filter(Boolean).join(' ');
+}
+
 export async function runOptimization(symbol = 'BTC/USDT', days = 90, { alert = true } = {}) {
   const results = runVectorBtGrid(symbol, days);
   if (!Array.isArray(results)) {
@@ -93,16 +105,51 @@ export async function runOptimization(symbol = 'BTC/USDT', days = 90, { alert = 
   const topResults = await persistTopResults(symbol, results);
 
   if (alert && topResults.length > 0) {
+    const memoryQuery = buildOptimizationMemoryQuery(symbol, days, topResults);
+    const episodicHint = await taOptimizationMemory.recallCountHint(memoryQuery, {
+      type: 'episodic',
+      limit: 2,
+      threshold: 0.33,
+      title: '최근 유사 최적화',
+      separator: 'pipe',
+      metadataKey: 'kind',
+      labels: {
+        optimization: '최적화',
+      },
+      order: ['optimization'],
+    }).catch(() => '');
+    const semanticHint = await taOptimizationMemory.recallHint(`${memoryQuery} consolidated optimization pattern`, {
+      type: 'semantic',
+      limit: 2,
+      threshold: 0.28,
+      title: '최근 통합 패턴',
+      separator: 'newline',
+    }).catch(() => '');
+    const message = `${buildOptimizationMessage(symbol, days, topResults)}${episodicHint}${semanticHint}`;
     await publishAlert({
       from_bot: 'luna-optimize-ta',
       event_type: 'ta_optimization_report',
       alert_level: 1,
-      message: buildOptimizationMessage(symbol, days, topResults),
+      message,
       payload: {
         symbol,
         days,
         topResults,
       },
+    }).catch(() => {});
+    await taOptimizationMemory.remember(message, 'episodic', {
+      importance: 0.68,
+      expiresIn: 1000 * 60 * 60 * 24 * 30,
+      metadata: {
+        kind: 'optimization',
+        symbol,
+        days,
+        topSharpe: topResults[0]?.sharpe_ratio ?? null,
+      },
+    }).catch(() => {});
+    await taOptimizationMemory.consolidate({
+      olderThanDays: 14,
+      limit: 10,
     }).catch(() => {});
   }
 
