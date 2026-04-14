@@ -14,6 +14,7 @@ const { createAgentMemory } = require('../../../packages/core/lib/agent-memory')
   createAgentMemory: (opts: { agentId: string; team: string }) => {
     remember: (content: string, type: 'episodic' | 'semantic' | 'procedural', opts?: Record<string, any>) => Promise<number | null>;
     recall: (query: string, opts?: Record<string, any>) => Promise<Array<Record<string, any>>>;
+    consolidate: (opts?: Record<string, any>) => Promise<{ scanned: number; created: number; sourceIds: number[]; memoryId: number | null }>;
   };
 };
 const kst = require('../../../packages/core/lib/kst') as { today: () => string };
@@ -182,6 +183,19 @@ export async function runDaily({ test = false }: SigmaDailyOptions = {}): Promis
     console.warn(`[sigma-daily] agent memory 저장 실패: ${message}`);
   }
 
+  let consolidation = { scanned: 0, created: 0, sourceIds: [], memoryId: null as number | null };
+  try {
+    consolidation = await sigmaMemory.consolidate({
+      olderThanDays: 14,
+      limit: 12,
+      sourceType: 'episodic',
+      targetType: 'semantic',
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`[sigma-daily] agent memory 통합 실패: ${message}`);
+  }
+
   let metaReview = null;
   if (new Date().getDay() === 5) {
     metaReview = await weeklyMetaReview();
@@ -205,6 +219,7 @@ export async function runDaily({ test = false }: SigmaDailyOptions = {}): Promis
     measuredCount: measured.length,
     dailyRunId: dailyRun?.id || null,
     feedbackCount: feedbackRows.length,
+    consolidation,
     metaReview: metaReview ? { sent: !!metaReview.sent, skipped: !!metaReview.skipped } : null,
     message: analysis.report,
   };
