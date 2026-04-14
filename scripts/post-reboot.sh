@@ -38,15 +38,18 @@ send_telegram() {
   PROJECT_DIR_ENV="$PROJECT_DIR" MSG_FILE_ENV="$msg_file" \
   "$TELEGRAM_NODE" - <<'NODE' 2>/dev/null || true
 const fs = require('fs');
-const openclawClient = require(process.env.PROJECT_DIR_ENV + '/packages/core/lib/openclaw-client');
+const { publishToWebhook } = require(process.env.PROJECT_DIR_ENV + '/packages/core/lib/reporting-hub');
 
 (async () => {
   const text = fs.readFileSync(process.env.MSG_FILE_ENV, 'utf-8');
-  await openclawClient.postAlarm({
-    team: 'claude-lead',
-    message: text,
-    alertLevel: 1,
-    fromBot: 'post-reboot',
+  await publishToWebhook({
+    event: {
+      from_bot: 'post-reboot',
+      team: 'claude-lead',
+      event_type: 'post_reboot_notice',
+      alert_level: 1,
+      message: text,
+    },
   });
 })().catch(() => {});
 NODE
