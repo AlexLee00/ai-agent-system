@@ -34,6 +34,19 @@ Shared providers:
 - `buildHttpChecks()`
 - `buildFileActivityHealth()`
 
+### Health Memory Helpers
+
+- [health-memory.ts](/Users/alexlee/projects/ai-agent-system/packages/core/lib/health-memory.ts)
+- [agent-memory.ts](/Users/alexlee/projects/ai-agent-system/packages/core/lib/agent-memory.ts)
+
+Shared concerns:
+
+- health issue/recovery memory query building
+- recent similar issue summary hints
+- consolidated semantic pattern hints
+- health issue/recovery episodic persistence
+- episodic to semantic consolidation for recurring health signals
+
 ### DB Metric Helpers
 
 - [health-db.js](/Users/alexlee/projects/ai-agent-system/packages/core/lib/health-db.js)
@@ -62,6 +75,15 @@ Shared concerns:
 - [bots/blog/scripts/health-report.js](/Users/alexlee/projects/ai-agent-system/bots/blog/scripts/health-report.js)
 - [bots/ska/src/forecast_health.py](/Users/alexlee/projects/ai-agent-system/bots/ska/src/forecast_health.py)
 
+Health memory-enabled consumers:
+
+- [bots/blog/scripts/health-check.ts](/Users/alexlee/projects/ai-agent-system/bots/blog/scripts/health-check.ts)
+- [bots/reservation/scripts/health-check.ts](/Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/health-check.ts)
+- [bots/investment/scripts/health-check.ts](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/health-check.ts)
+- [bots/worker/scripts/health-check.legacy.js](/Users/alexlee/projects/ai-agent-system/bots/worker/scripts/health-check.legacy.js)
+- [bots/claude/scripts/health-check.ts](/Users/alexlee/projects/ai-agent-system/bots/claude/scripts/health-check.ts)
+- [bots/hub/lib/routes/health.ts](/Users/alexlee/projects/ai-agent-system/bots/hub/lib/routes/health.ts)
+
 ## Boundary Split
 
 ### Shared Core Owns
@@ -74,6 +96,8 @@ Shared concerns:
 6. file staleness checks
 7. reusable DB backlog checks
 8. CLI execution pattern
+9. health issue/recovery memory hinting
+10. health signal consolidation for recurring incidents
 
 ### Team Adapters Own
 
