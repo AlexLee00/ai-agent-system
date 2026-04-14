@@ -8,6 +8,7 @@
 - **OpenClaw 에이전트**: 사장님과 Telegram 자연어 대화
 - **orchestrator runtime**: OpenClaw alert/webhook fanout과 legacy `mainbot_queue` 소비를 함께 맡는 백그라운드 프로세스
   - legacy queue consumer는 `MAINBOT_QUEUE_CONSUMER_ENABLED=false`로 단계적 비활성화 가능
+  - 2026-04-14 기준 OPS live는 `MAINBOT_QUEUE_CONSUMER_ENABLED=false` 상태로 정상 운영 중
 - **팀장 지휘**: bot_commands DB를 통해 스카/루나/클로드팀에 명령 전달
 
 ## 아키텍처
@@ -85,6 +86,7 @@
 
 - `ai.orchestrator` — orchestrator runtime KeepAlive, 2초 폴링
   - 필요 시 `MAINBOT_QUEUE_CONSUMER_ENABLED=false`로 queue polling만 끄고 다른 loop는 유지 가능
+  - 현재 OPS live trial도 같은 설정으로 정상 통과
 - 재시작: `launchctl kickstart -k gui/$(id -u)/ai.orchestrator`
 
 ## token_usage 테이블 (claude-team.db)
