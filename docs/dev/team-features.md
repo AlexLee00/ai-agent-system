@@ -309,7 +309,7 @@ npm run patch:status        # 패치 현황 콘솔
 
 **위치**: `bots/orchestrator/`
 **상태**: ✅ OPS 운영 중 (launchd: `ai.orchestrator`, KeepAlive)
-**설명**: 현재 주 경로는 OpenClaw webhook/alert publisher이며, 오케스트레이터는 `mainbot_queue` legacy 큐와 사용자 명령 라우팅을 함께 관리한다. 큐로 들어온 알람은 필터링/배치/무음 처리 후 텔레그램으로 fanout된다. legacy queue consumer는 `MAINBOT_QUEUE_CONSUMER_ENABLED=false`로 단계적으로 비활성화할 수 있다.
+**설명**: 현재 주 경로는 OpenClaw webhook/alert publisher이며, 오케스트레이터는 `mainbot_queue` legacy 큐와 사용자 명령 라우팅을 함께 관리한다. 큐로 들어온 알람은 필터링/배치/무음 처리 후 텔레그램으로 fanout된다. legacy queue consumer는 `MAINBOT_QUEUE_CONSUMER_ENABLED=false`로 단계적으로 비활성화할 수 있고, 2026-04-14 기준 OPS live trial도 정상 통과했다.
 
 ### 핵심 기능
 

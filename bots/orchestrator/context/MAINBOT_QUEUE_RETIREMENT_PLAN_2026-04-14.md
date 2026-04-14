@@ -10,6 +10,12 @@ Current preferred path:
 
 `mainbot_queue` is still alive as a legacy rail and cannot be removed yet.
 
+Live OPS status as of 2026-04-14:
+- `ai.orchestrator` is running with `MAINBOT_QUEUE_CONSUMER_ENABLED=false`
+- operator paths now use `recent-alerts.json`
+- recent queue telemetry file `/tmp/mainbot-queue-usage.jsonl` is still empty
+- live queue had no fresh `pending` rows during the disable trial
+
 ## Current Usage Classification
 
 ### 1. Legacy producer write path
@@ -39,6 +45,7 @@ These still read from `mainbot_queue` as part of orchestrator behavior.
 - [mainbot.legacy.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/src/mainbot.legacy.js)
   - queue polling / processing loop
   - now supports `MAINBOT_QUEUE_CONSUMER_ENABLED=false` for staged disable
+  - live OPS trial completed successfully with consumer disabled
 - [router.ts](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/src/router.ts)
   - `queue` command summary
   - `mute_last_alert`
@@ -109,7 +116,6 @@ Exit condition:
 The next safe implementation step is:
 
 1. observe `/tmp/mainbot-queue-usage.jsonl` for remaining runtime writers
-2. finish router `/queue` + mute/unmute migration to `recent-alerts.json`
-3. verify snapshot-based dashboard and operator flows in live runtime
-4. trial `MAINBOT_QUEUE_CONSUMER_ENABLED=false` in live runtime after telemetry stays quiet
-5. then evaluate whether legacy consumer loop still needs live queue visibility
+2. keep observing OPS runtime for any queue writer reappearance
+3. if telemetry stays quiet, treat `mainbot.legacy.js` queue polling as retired-by-default
+4. then evaluate table retirement / archival timing
