@@ -150,28 +150,28 @@ const WHITELIST = {
  * @returns {Promise<RecoveryResult>}
  */
 async function execute(taskType, params = {}, requestedBy = 'dexter') {
-  const recentRecoveryHint = await doctorMemory.recall(
+  const recentRecoveryHint = await doctorMemory.recallCountHint(
     [String(taskType || ''), String(requestedBy || ''), String(params?.label || '')].filter(Boolean).join(' '),
     {
       type: 'episodic',
       limit: 2,
       threshold: 0.35,
+      title: '최근 유사 복구',
+      separator: 'pipe',
+      metadataKey: 'success',
+      labels: {
+        true: '성공',
+        false: '실패',
+      },
+      order: ['true', 'false'],
+      caution: {
+        key: 'false',
+        minCount: 2,
+        moreThanKey: 'true',
+        message: '주의: 최근 유사 복구에서 실패 비중이 높습니다. 수동 점검을 우선 고려하세요.',
+      },
     },
-  ).then((rows) => {
-    if (!rows || rows.length === 0) return '';
-    const successCount = rows.filter((row) => String(row?.metadata?.success || '') === 'true' || row?.metadata?.success === true).length;
-    const failureCount = rows.length - successCount;
-    const caution = failureCount >= 2 && failureCount > successCount
-      ? '\n주의: 최근 유사 복구에서 실패 비중이 높습니다. 수동 점검을 우선 고려하세요.'
-      : '';
-    const lines = rows.slice(0, 2).map((row) => {
-      const createdAt = row?.created_at ? String(row.created_at).slice(0, 10) : 'unknown';
-      const similarity = Number(row?.similarity || 0);
-      const headline = String(row?.content || '').split(' | ')[0] || '기록 없음';
-      return `${createdAt} / 유사도 ${similarity.toFixed(2)} / ${headline}`;
-    });
-    return `\n최근 유사 복구: 성공 ${successCount}건 / 실패 ${failureCount}건${caution}\n- ${lines.join('\n- ')}`;
-  }).catch(() => '');
+  ).catch(() => '');
   const semanticRecoveryHint = await doctorMemory.recallHint(
     [String(taskType || ''), String(params?.label || ''), 'consolidated recovery pattern'].filter(Boolean).join(' '),
     {
