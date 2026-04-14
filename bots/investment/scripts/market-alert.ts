@@ -25,6 +25,9 @@ import { getInvestmentProfile } from './investment-profile.ts';
 import { getKisMarketStatus, getKisOverseasMarketStatus } from '../shared/secrets.ts';
 import { createRequire } from 'module';
 const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
+const { createAgentMemory } = createRequire(import.meta.url)('../../../packages/core/lib/agent-memory');
+
+const marketAlertMemory = createAgentMemory({ agentId: 'investment.market-alert', team: 'investment' });
 
 // ── 인수 파싱 ──────────────────────────────────────────────────────────
 
@@ -93,6 +96,15 @@ function shouldSkipMarketAlert(status) {
   if (!status || status.open) return false;
   const reason = String(status.reason || '');
   return /주말|휴장|holiday|Weekend/i.test(reason);
+}
+
+function buildMarketAlertMemoryQuery(kind, market, extras = []) {
+  return [
+    'investment market alert',
+    kind,
+    market,
+    ...extras,
+  ].filter(Boolean).join(' ');
 }
 
 // KST 기준 오늘 날짜
@@ -178,13 +190,51 @@ async function sendOpenAlert(market, label) {
     lines.push(`[보유 포지션] 없음`);
   }
 
+  const memoryQuery = buildMarketAlertMemoryQuery('open', market, [profile.mode, `${aggregatedPositions.length}-positions`]);
+  const episodicHint = await marketAlertMemory.recallCountHint(memoryQuery, {
+    type: 'episodic',
+    limit: 2,
+    threshold: 0.33,
+    title: '최근 유사 알림',
+    separator: 'pipe',
+    metadataKey: 'kind',
+    labels: {
+      open: '시작',
+      close: '마감',
+      daily: '일일',
+    },
+    order: ['open', 'close', 'daily'],
+  }).catch(() => '');
+  const semanticHint = await marketAlertMemory.recallHint(`${memoryQuery} consolidated market pattern`, {
+    type: 'semantic',
+    limit: 2,
+    threshold: 0.28,
+    title: '최근 통합 패턴',
+    separator: 'newline',
+  }).catch(() => '');
+  const message = `${lines.join('\n')}${episodicHint}${semanticHint}`;
+
   await publishAlert({
     from_bot:    'luna',
     event_type:  'market_open',
     alert_level: 1,
-    message:     lines.join('\n'),
+    message,
     payload:     { market, exchange, symbols, positionCount: aggregatedPositions.length },
   });
+  await marketAlertMemory.remember(message, 'episodic', {
+    importance: 0.64,
+    expiresIn: 1000 * 60 * 60 * 24 * 30,
+    metadata: {
+      kind: 'open',
+      market,
+      positionCount: aggregatedPositions.length,
+      screeningCount: symbols.length,
+    },
+  }).catch(() => {});
+  await marketAlertMemory.consolidate({
+    olderThanDays: 14,
+    limit: 10,
+  }).catch(() => {});
 
   console.log(`[market-alert] ${label} 장 시작 알림 발송 완료`);
 }
@@ -281,13 +331,52 @@ async function sendCloseReport(market, label) {
   lines.push(DIVIDER);
   lines.push(`${label} 장 마감. 수고하셨습니다! 🙏`);
 
+  const memoryQuery = buildMarketAlertMemoryQuery('close', market, [profile.mode, trades.length > 0 ? 'trade-day' : 'quiet-day']);
+  const episodicHint = await marketAlertMemory.recallCountHint(memoryQuery, {
+    type: 'episodic',
+    limit: 2,
+    threshold: 0.33,
+    title: '최근 유사 알림',
+    separator: 'pipe',
+    metadataKey: 'kind',
+    labels: {
+      close: '마감',
+      open: '시작',
+      daily: '일일',
+    },
+    order: ['close', 'open', 'daily'],
+  }).catch(() => '');
+  const semanticHint = await marketAlertMemory.recallHint(`${memoryQuery} consolidated market pattern`, {
+    type: 'semantic',
+    limit: 2,
+    threshold: 0.28,
+    title: '최근 통합 패턴',
+    separator: 'newline',
+  }).catch(() => '');
+  const message = `${lines.join('\n')}${episodicHint}${semanticHint}`;
+
   await publishAlert({
     from_bot:    'luna',
     event_type:  'market_close_report',
     alert_level: trades.length > 0 ? 2 : 1,
-    message:     lines.join('\n'),
+    message,
     payload:     { market, exchange, tradeCount: trades.length, positionCount: aggregatedPositions.length, date: today },
   });
+  await marketAlertMemory.remember(message, 'episodic', {
+    importance: trades.length > 0 ? 0.72 : 0.62,
+    expiresIn: 1000 * 60 * 60 * 24 * 30,
+    metadata: {
+      kind: 'close',
+      market,
+      tradeCount: trades.length,
+      positionCount: aggregatedPositions.length,
+      date: today,
+    },
+  }).catch(() => {});
+  await marketAlertMemory.consolidate({
+    olderThanDays: 14,
+    limit: 10,
+  }).catch(() => {});
 
   console.log(`[market-alert] ${label} 장 마감 매매일지 발송 완료 (거래 ${trades.length}건)`);
 }
@@ -347,13 +436,52 @@ async function sendCryptoDailyReport(label) {
     lines.push(`[보유 포지션] 없음`);
   }
 
+  const memoryQuery = buildMarketAlertMemoryQuery('daily', 'crypto', [profile.mode, trades.length > 0 ? 'trade-day' : 'quiet-day']);
+  const episodicHint = await marketAlertMemory.recallCountHint(memoryQuery, {
+    type: 'episodic',
+    limit: 2,
+    threshold: 0.33,
+    title: '최근 유사 알림',
+    separator: 'pipe',
+    metadataKey: 'kind',
+    labels: {
+      daily: '일일',
+      close: '마감',
+      open: '시작',
+    },
+    order: ['daily', 'close', 'open'],
+  }).catch(() => '');
+  const semanticHint = await marketAlertMemory.recallHint(`${memoryQuery} consolidated market pattern`, {
+    type: 'semantic',
+    limit: 2,
+    threshold: 0.28,
+    title: '최근 통합 패턴',
+    separator: 'newline',
+  }).catch(() => '');
+  const message = `${lines.join('\n')}${episodicHint}${semanticHint}`;
+
   await publishAlert({
     from_bot:    'luna',
     event_type:  'crypto_daily_report',
     alert_level: 1,
-    message:     lines.join('\n'),
+    message,
     payload:     { market: 'crypto', tradeCount: trades.length, positionCount: aggregatedPositions.length, date: today },
   });
+  await marketAlertMemory.remember(message, 'episodic', {
+    importance: 0.66,
+    expiresIn: 1000 * 60 * 60 * 24 * 30,
+    metadata: {
+      kind: 'daily',
+      market: 'crypto',
+      tradeCount: trades.length,
+      positionCount: aggregatedPositions.length,
+      date: today,
+    },
+  }).catch(() => {});
+  await marketAlertMemory.consolidate({
+    olderThanDays: 14,
+    limit: 10,
+  }).catch(() => {});
 
   console.log(`[market-alert] 암호화폐 일일 보고 발송 완료 (거래 ${trades.length}건)`);
 }
