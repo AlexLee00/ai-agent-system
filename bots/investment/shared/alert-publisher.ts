@@ -20,7 +20,7 @@ const { publishToWebhook } = require('../../../packages/core/lib/reporting-hub')
  * @param {string} opts.message      사람이 읽는 메시지
  * @param {object} [opts.payload]    JSON 구조화 데이터
  */
-export async function publishToMainBot({ from_bot, team = 'investment', event_type, alert_level = 2, message, payload }) {
+export async function publishAlert({ from_bot, team = 'investment', event_type, alert_level = 2, message, payload }) {
   const event = { from_bot, team, event_type, alert_level, message, payload };
 
   const webhookResult = await publishToWebhook({
@@ -33,8 +33,11 @@ export async function publishToMainBot({ from_bot, team = 'investment', event_ty
   if (webhookResult.ok && !webhookResult.skipped) {
     return true;
   }
-  console.warn(`[mainbot-client] webhook 실패/스킵: ${webhookResult.error || webhookResult.reason || 'unknown'}`);
+  console.warn(`[alert-publisher] webhook 실패/스킵: ${webhookResult.error || webhookResult.reason || 'unknown'}`);
   return false;
 }
 
-export const publishAlert = publishToMainBot;
+/**
+ * @deprecated Use publishAlert instead.
+ */
+export const publishToMainBot = publishAlert;
