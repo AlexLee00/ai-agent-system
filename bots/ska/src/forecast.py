@@ -32,6 +32,7 @@ import os
 import json
 import math
 import subprocess
+import logging
 import warnings
 import psycopg2
 import pandas as pd
@@ -50,6 +51,7 @@ except Exception:
     sync_training_feature_store = None
 
 warnings.filterwarnings('ignore')  # Prophet Stan 경고 억제
+logging.getLogger('prophet.plot').setLevel(logging.CRITICAL)
 
 PG_SKA = "dbname=jay options='-c search_path=ska,public'"
 
