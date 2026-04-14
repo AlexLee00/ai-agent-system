@@ -81,7 +81,8 @@ defmodule TeamJay.Blog.MarketingDigest do
             status: latest_status,
             latest_weakness: latest_weakness,
             channel_watch_hint: latest_channel_watch,
-            channel_watch_count: latest_channel_watch_count
+            channel_watch_count: latest_channel_watch_count,
+            strategy_adoption: extract_strategy_adoption(latest)
           },
           else: nil
         ),
@@ -174,7 +175,8 @@ defmodule TeamJay.Blog.MarketingDigest do
       created_at,
       metadata->'health'->>'status' AS status,
       metadata->'diagnosis'->'primaryWeakness'->>'code' AS latest_weakness,
-      metadata->'channelPerformance' AS channel_performance
+      metadata->'channelPerformance' AS channel_performance,
+      metadata->'strategyAdoption' AS strategy_adoption
     FROM agent.event_lake
     WHERE event_type = 'blog_marketing_snapshot'
       AND team = 'blog'
@@ -244,4 +246,22 @@ defmodule TeamJay.Blog.MarketingDigest do
 
     int(value)
   end
+
+  defp extract_strategy_adoption(nil), do: %{}
+  defp extract_strategy_adoption(latest) when latest == %{}, do: %{}
+  defp extract_strategy_adoption(latest) do
+    metadata = Map.get(latest, :strategy_adoption) || %{}
+
+    %{
+      status: hotspot_value(metadata, :status),
+      preferred_category_count: int(hotspot_value(metadata, :preferredCategoryCount) || 0),
+      preferred_category_pattern_count: int(hotspot_value(metadata, :preferredCategoryPatternCount) || 0)
+    }
+  end
+
+  defp hotspot_value(map, key) when is_map(map) do
+    Map.get(map, key) || Map.get(map, Atom.to_string(key))
+  end
+
+  defp hotspot_value(_map, _key), do: nil
 end
