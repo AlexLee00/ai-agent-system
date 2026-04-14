@@ -3,6 +3,7 @@
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const { publishToWebhook } = require('../../../packages/core/lib/reporting-hub');
+const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
 const {
   getInstagramTokenConfig,
   getTokenHealth,
@@ -11,6 +12,7 @@ const {
   getInstagramImageHostConfig,
 } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-image-host.ts'));
 const { getInstagramConfig } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-graph.ts'));
+const instagramMonitorMemory = createAgentMemory({ agentId: 'blog.instagram-monitor', team: 'blog' });
 
 /**
  * @typedef {{
@@ -80,6 +82,14 @@ function buildAlertMessage(payload) {
   return lines.join('\n');
 }
 
+function buildMemoryQuery(payload) {
+  return [
+    payload?.tokenHealth?.critical ? 'instagram token critical' : 'instagram upload readiness',
+    payload?.host?.ready ? 'host-ready' : 'host-missing',
+    payload?.host?.mode || 'unknown-host-mode',
+  ].filter(Boolean).join(' ');
+}
+
 /**
  * @param {InstagramMonitorPayload} payload
  * @param {MonitorArgs} options
@@ -91,10 +101,48 @@ async function maybeSendAlert(payload, options) {
   const message = tokenHealth.critical
     ? `인스타 토큰 만료 임박\n${buildAlertMessage(payload)}`
     : `인스타 업로드 준비 확인 필요\n${buildAlertMessage(payload)}`;
+  const memoryQuery = buildMemoryQuery(payload);
 
   if (!shouldAlert || options.dryRun) {
+    if (!shouldAlert && !options.dryRun) {
+      await instagramMonitorMemory.remember(`인스타 준비 상태 정상\n${buildAlertMessage(payload)}`, 'episodic', {
+        importance: 0.58,
+        expiresIn: 1000 * 60 * 60 * 24 * 30,
+        metadata: {
+          kind: 'recovery',
+          critical: false,
+          hostReady: host.ready,
+          hostMode: host.mode || 'unknown',
+        },
+      }).catch(() => {});
+      await instagramMonitorMemory.consolidate({
+        olderThanDays: 14,
+        limit: 10,
+      }).catch(() => {});
+    }
     return { shouldAlert, alertLevel, message, sent: false };
   }
+
+  const episodicHint = await instagramMonitorMemory.recallCountHint(memoryQuery, {
+    type: 'episodic',
+    limit: 2,
+    threshold: 0.33,
+    title: '최근 유사 이슈',
+    separator: 'pipe',
+    metadataKey: 'kind',
+    labels: {
+      issue: '이슈',
+      recovery: '회복',
+    },
+    order: ['issue', 'recovery'],
+  }).catch(() => '');
+  const semanticHint = await instagramMonitorMemory.recallHint(`${memoryQuery} consolidated instagram pattern`, {
+    type: 'semantic',
+    limit: 2,
+    threshold: 0.28,
+    title: '최근 통합 패턴',
+    separator: 'newline',
+  }).catch(() => '');
 
   await publishToWebhook({
     event: {
@@ -102,10 +150,24 @@ async function maybeSendAlert(payload, options) {
       team: 'blog',
       event_type: tokenHealth.critical ? 'instagram_token_critical' : 'instagram_upload_readiness_warning',
       alert_level: alertLevel,
-      message,
+      message: `${message}${episodicHint}${semanticHint}`,
       payload,
     },
   });
+  await instagramMonitorMemory.remember(message, 'episodic', {
+    importance: tokenHealth.critical ? 0.78 : 0.68,
+    expiresIn: 1000 * 60 * 60 * 24 * 30,
+    metadata: {
+      kind: 'issue',
+      critical: Boolean(tokenHealth.critical),
+      hostReady: host.ready,
+      hostMode: host.mode || 'unknown',
+    },
+  }).catch(() => {});
+  await instagramMonitorMemory.consolidate({
+    olderThanDays: 14,
+    limit: 10,
+  }).catch(() => {});
   return { shouldAlert, alertLevel, message, sent: true };
 }
 
