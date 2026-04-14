@@ -6,14 +6,15 @@
 
 제이(Jay)는 AI 봇 시스템의 총괄 오케스트레이터.
 - **OpenClaw 에이전트**: 사장님과 Telegram 자연어 대화
-- **orchestrator runtime**: 알람 큐(mainbot_queue) 처리 전용 백그라운드 프로세스
+- **orchestrator runtime**: OpenClaw alert/webhook fanout과 legacy `mainbot_queue` 소비를 함께 맡는 백그라운드 프로세스
 - **팀장 지휘**: bot_commands DB를 통해 스카/루나/클로드팀에 명령 전달
 
 ## 아키텍처
 
 ```
 사장님(Telegram) → OpenClaw(Jay/Gemini) → bot_commands → 팀장 커맨더
-                                        ← mainbot_queue ← 팀봇 알람
+                                        ← alert publisher / webhook ← 팀봇 알람
+                                        ← mainbot_queue (legacy)    ← 구형 producer
 ```
 
 ## 핵심 파일
@@ -23,7 +24,7 @@
 | `src/orchestrator.ts` | 현재 source of truth 엔트리 |
 | `dist/ts-runtime/bots/orchestrator/src/orchestrator.js` | 실제 launchd 런타임 엔트리 |
 | `src/mainbot.js` | 호환 alias 엔트리 |
-| `src/router.js` | 인텐트 → 핸들러 매핑 + bot_commands 연동 |
+| `src/router.js` | 인텐트 → 핸들러 매핑 + bot_commands + legacy queue 소비 |
 | `src/filter.js` | 무음·중복·야간 필터 |
 | `src/dashboard.js` | /status 빌더 |
 | `lib/intent-parser.js` | 4단계 파싱 (slash→learned→keyword→LLM fallback) + nlp-learnings.json 5분 리로드 |

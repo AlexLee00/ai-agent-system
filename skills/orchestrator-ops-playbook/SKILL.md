@@ -1,6 +1,6 @@
 ---
 name: orchestrator-ops-playbook
-description: Use when operating, debugging, or improving the orchestrator and OpenClaw stack in this repository, especially when working on mainbot queue flow, orchestrator runtime behavior, unified ops health, critical n8n webhook delivery, or briefing and batch formatting.
+description: Use when operating, debugging, or improving the orchestrator and OpenClaw stack in this repository, especially when working on alert publisher/webhook fanout, legacy mainbot queue flow, orchestrator runtime behavior, unified ops health, critical n8n webhook delivery, or briefing and batch formatting.
 ---
 
 # Orchestrator Ops Playbook
@@ -9,7 +9,8 @@ description: Use when operating, debugging, or improving the orchestrator and Op
 
 주요 대상:
 
-- `mainbot_queue`
+- alert publisher / webhook fanout
+- `mainbot_queue` (legacy queue rail)
 - `orchestrator runtime`
 - OpenClaw gateway
 - `critical webhook`
@@ -42,7 +43,7 @@ description: Use when operating, debugging, or improving the orchestrator and Op
 ## 기본 원칙
 
 - 오케스트레이터는 producer보다 consumer/orchestrator 성격이 강하다.
-- 문제를 볼 때는 `queue 적체`, `gateway 상태`, `critical webhook`, `브리핑/배치 소비`를 분리해서 본다.
+- 문제를 볼 때는 `alert publisher/webhook fanout`, `legacy queue 적체`, `gateway 상태`, `critical webhook`, `브리핑/배치 소비`를 분리해서 본다.
 - `/ops-health`와 `/orchestrator-health`는 같은 신호를 보되, 통합 뷰와 전용 뷰의 역할을 섞지 않는다.
 - reporting payload 문제는 문자열 첫 줄보다 structured payload를 우선 확인한다.
 
@@ -52,8 +53,8 @@ description: Use when operating, debugging, or improving the orchestrator and Op
 
 순서:
 
-1. producer가 `mainbot_queue`에 적재
-2. `orchestrator` runtime이 폴링
+1. producer가 alert publisher/webhook 또는 legacy `mainbot_queue`로 들어온다
+2. `orchestrator` runtime이 webhook fanout과 queue 소비를 처리한다
 3. `filter.js`가 defer/batch 경로 결정
 4. `batch-formatter.js`가 렌더링
 5. gateway 또는 telegram 경로로 발송

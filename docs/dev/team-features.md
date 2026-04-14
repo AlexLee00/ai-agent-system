@@ -309,13 +309,13 @@ npm run patch:status        # 패치 현황 콘솔
 
 **위치**: `bots/orchestrator/`
 **상태**: ✅ OPS 운영 중 (launchd: `ai.orchestrator`, KeepAlive)
-**설명**: 모든 팀 알람을 mainbot_queue(DB)로 수신 → 필터링/배치/무음 처리 → 텔레그램 발송. 사용자 명령 라우팅.
+**설명**: 현재 주 경로는 OpenClaw webhook/alert publisher이며, 오케스트레이터는 `mainbot_queue` legacy 큐와 사용자 명령 라우팅을 함께 관리한다. 큐로 들어온 알람은 필터링/배치/무음 처리 후 텔레그램으로 fanout된다.
 
 ### 핵심 기능
 
 | 기능 | 설명 |
 |------|------|
-| 알람 통합 | 스카팀/루나팀/클로드팀 모든 알람을 DB 큐로 수신 |
+| 알람 통합 | OpenClaw webhook/alert publisher를 기본으로 받고, 남은 legacy 큐 입력도 함께 소비 |
 | 필터링 | 무음/야간 보류/배치 집약 3단계 |
 | 명령 파싱 | 슬래시→키워드→Groq Scout 3단계 파싱 |
 | LLM 토큰 추적 | 전 봇 무료/유료 토큰 사용 통합 기록 |
