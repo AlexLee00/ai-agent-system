@@ -20,7 +20,7 @@ const { publishReservationAlert } = require('../lib/alert-client');
 const { initHubSecrets } = require('../lib/secrets');
 const hsm = require('../../../packages/core/lib/health-state-manager');
 const { getLaunchctlStatus, DEFAULT_NORMAL_EXIT_CODES } = require('../../../packages/core/lib/health-provider');
-const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
+const { createHealthMemoryHelper } = require('../../../packages/core/lib/health-memory');
 
 // 상시 실행 서비스 (PID 있어야 정상)
 const CONTINUOUS = ['ai.ska.commander', 'ai.ska.naver-monitor'];
@@ -44,7 +44,11 @@ const SCHEDULED_SERVICES = [
 
 const ALL_SERVICES = [...CORE_SERVICES, ...SCHEDULED_SERVICES];
 const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;
-const healthMemory = createAgentMemory({ agentId: 'reservation.health', team: 'reservation' });
+const { buildIssueHints, rememberHealthEvent } = createHealthMemoryHelper({
+  agentId: 'reservation.health',
+  team: 'reservation',
+  domain: 'reservation health',
+});
 
 // naver-monitor 로그 staleness 체크
 const NAVER_LOG = '/tmp/naver-ops-mode.log';
@@ -66,56 +70,6 @@ function checkNaverLogStaleness() {
   } catch {
     return { exists: false, ageMs: null, stale: false }; // 파일 없으면 스킵
   }
-}
-
-function buildMemoryQuery(key, msg) {
-  const headline = String(msg || '').split('\n')[0] || '';
-  return [String(key || ''), headline, 'reservation health'].filter(Boolean).join(' ');
-}
-
-async function rememberHealthEvent(key, kind, msg, level = 1) {
-  try {
-    await healthMemory.remember(String(msg || ''), 'episodic', {
-      importance: kind === 'issue' ? 0.76 : 0.62,
-      expiresIn: 1000 * 60 * 60 * 24 * 30,
-      metadata: {
-        kind,
-        issueKey: key,
-        level,
-      },
-    });
-    await healthMemory.consolidate({
-      olderThanDays: 14,
-      limit: 10,
-    });
-  } catch (_error) {
-    // ignore
-  }
-}
-
-async function buildIssueHints(key, msg) {
-  const query = buildMemoryQuery(key, msg);
-  const episodicHint = await healthMemory.recallCountHint(query, {
-    type: 'episodic',
-    limit: 2,
-    threshold: 0.33,
-    title: '최근 유사 이슈',
-    separator: 'pipe',
-    metadataKey: 'kind',
-    labels: {
-      issue: '이슈',
-      recovery: '회복',
-    },
-    order: ['issue', 'recovery'],
-  }).catch(() => '');
-  const semanticHint = await healthMemory.recallHint(`${query} consolidated health pattern`, {
-    type: 'semantic',
-    limit: 2,
-    threshold: 0.28,
-    title: '최근 통합 패턴',
-    separator: 'newline',
-  }).catch(() => '');
-  return `${episodicHint}${semanticHint}`;
 }
 
 // ─── 메인 ───────────────────────────────────────────────────────
