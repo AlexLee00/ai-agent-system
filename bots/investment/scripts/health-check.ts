@@ -13,11 +13,11 @@
 
 import { execSync } from 'child_process';
 import { createRequire } from 'module';
+import { publishAlert } from '../shared/alert-publisher.ts';
 import { validateTradeReview } from './validate-trade-review.ts';
 
 const require = createRequire(import.meta.url);
 const hsm     = require('../../../packages/core/lib/health-state-manager');
-const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 
 // 상시 실행 서비스 (PID 있어야 정상) — KeepAlive=true인 데몬만
 const CONTINUOUS = [
@@ -52,11 +52,11 @@ const NORMAL_EXIT_CODES = new Set([0, -9, -15]);
 
 async function notify(msg, level = 3) {
   try {
-    await postAlarm({
+    await publishAlert({
+      from_bot: 'luna-health-check',
+      event_type: 'health_check',
+      alert_level: level,
       message: msg,
-      team: 'luna',
-      alertLevel: level,
-      fromBot: 'luna-health-check',
     });
   } catch { /* 무시 */ }
 }
