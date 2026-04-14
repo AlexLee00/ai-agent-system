@@ -15,7 +15,7 @@
  *   npm run check:claude | check:ska | check:luna | check:all
  */
 
-const { publishToMainBot } = require('../lib/mainbot-client');
+const { publishAlert } = require('../lib/mainbot-client');
 const kst = require('../../../packages/core/lib/kst');
 
 const ICON = { ok: '✅', warn: '⚠️', error: '❌' };
@@ -149,7 +149,7 @@ async function main() {
   process.stderr.write(`\n${message}\n\n`);
 
   if (doTelegram) {
-    publishToMainBot({ from_bot: 'dexter', event_type: 'report', alert_level: 1, message });
+    publishAlert({ from_bot: 'dexter', event_type: 'report', alert_level: 1, message });
   }
 
   console.log(JSON.stringify({ success: true, message }));

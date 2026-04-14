@@ -16,7 +16,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { publishToMainBot } = require('../lib/mainbot-client');
+const { publishAlert } = require('../lib/mainbot-client');
 const hsm = require('../../../packages/core/lib/health-state-manager');
 const {
   getLaunchctlStatus,
@@ -152,7 +152,7 @@ async function main() {
 
   for (const { key, level, msg } of issues) {
     console.warn(`[클로드 헬스체크] 이슈: ${msg}`);
-    await publishToMainBot({
+    await publishAlert({
       from_bot: 'claude',
       event_type: 'health_check',
       alert_level: level,
@@ -162,7 +162,7 @@ async function main() {
   }
 
   for (const opts of recovers) {
-    await publishToMainBot(opts);
+    await publishAlert(opts);
   }
 
   hsm.saveState(state);
