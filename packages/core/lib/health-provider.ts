@@ -18,6 +18,7 @@ type LaunchctlServiceStatus = {
   pid: number | null;
   exitCode: number;
   loaded?: boolean;
+  state?: string;
 };
 
 type LaunchctlStatusMap = Record<string, LaunchctlServiceStatus>;
@@ -85,6 +86,7 @@ function getLaunchctlPrintStatus(label: string): LaunchctlServiceStatus | null {
   try {
     const raw = execSync(`launchctl print gui/$(id -u)/${label} 2>/dev/null`, { encoding: 'utf-8' });
     const running = /^\s*state = running$/m.test(raw);
+    const stateMatch = raw.match(/^\s*state = (.+)$/m);
     const pidMatch = raw.match(/^\s*pid = (\d+)$/m);
     const exitMatch = raw.match(/^\s*last exit code = (?:\((?:never exited)\)|(-?\d+))/m);
     return {
@@ -92,6 +94,7 @@ function getLaunchctlPrintStatus(label: string): LaunchctlServiceStatus | null {
       pid: pidMatch ? Number.parseInt(pidMatch[1], 10) : null,
       exitCode: exitMatch && exitMatch[1] ? Number.parseInt(exitMatch[1], 10) : 0,
       loaded: true,
+      state: stateMatch ? stateMatch[1].trim() : undefined,
     };
   } catch {
     return null;
@@ -117,10 +120,19 @@ function getLaunchctlStatus(labels: string[] = []): LaunchctlStatusMap {
     };
   }
   for (const label of labels) {
-    if (!label || services[label]) continue;
     const detailed = getLaunchctlPrintStatus(label);
     if (detailed) {
-      services[label] = detailed;
+      services[label] = {
+        ...services[label],
+        ...detailed,
+      };
+    } else if (!services[label]) {
+      services[label] = {
+        running: false,
+        pid: null,
+        exitCode: 0,
+        loaded: false,
+      };
     }
   }
   return services;

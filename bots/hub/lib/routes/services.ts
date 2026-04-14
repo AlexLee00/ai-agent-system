@@ -30,6 +30,7 @@ type LaunchctlServiceStatus = {
   pid: number | null;
   exitCode: number;
   loaded?: boolean;
+  state?: string;
 };
 
 type LaunchctlStatusMap = Record<string, LaunchctlServiceStatus>;
@@ -37,9 +38,25 @@ type LaunchctlStatusMap = Record<string, LaunchctlServiceStatus>;
 type ServiceSummary = {
   total: number;
   running: number;
+  idle: string[];
   down: string[];
   core_down: string[];
 };
+
+const EXPECTED_IDLE_SERVICE_LABELS = new Set([
+  'ai.claude.dexter',
+  'ai.worker.lead',
+  'ai.worker.task-runner',
+  'ai.investment.crypto',
+]);
+
+function isExpectedIdle(label: string, service?: LaunchctlServiceStatus): boolean {
+  if (!service) return false;
+  if (service.running) return false;
+  if (!EXPECTED_IDLE_SERVICE_LABELS.has(label)) return false;
+  if (service.state === 'spawn scheduled') return true;
+  return service.exitCode === 0;
+}
 
 export function summarizeServiceStatus(
   status: LaunchctlStatusMap,
@@ -51,12 +68,14 @@ export function summarizeServiceStatus(
     coreLabels?: string[];
   } = {},
 ): ServiceSummary {
-  const down = labels.filter((label) => !status?.[label]?.running);
+  const idle = labels.filter((label) => isExpectedIdle(label, status?.[label]));
+  const down = labels.filter((label) => !status?.[label]?.running && !idle.includes(label));
   const coreDown = coreLabels.filter((label) => !status?.[label]?.running);
 
   return {
     total: labels.length,
-    running: labels.length - down.length,
+    running: labels.filter((label) => status?.[label]?.running).length,
+    idle,
     down,
     core_down: coreDown,
   };
