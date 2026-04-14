@@ -8,9 +8,11 @@ const { logToolCall } = require('../../../packages/core/lib/tool-logger');
 const { publishToWebhook } = require('../../../packages/core/lib/reporting-hub');
 const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
 const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
+const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
 
 const BOT_NAME = 'subtitle-corrector';
 const TEAM_NAME = 'video';
+const subtitleMemory = createAgentMemory({ agentId: 'video.subtitle', team: 'video' });
 const CHUNK_SIZE = 50;
 const SYSTEM_PROMPT = `당신은 FlutterFlow, Firebase, Supabase, Dart, Widget, API, JSON,
 Authentication, Database, Query, Column, Row, Navigation, Action,
@@ -276,6 +278,43 @@ async function correctFile(inputSrtPath, outputSrtPath, config) {
     const result = await correctSubtitle(originalSrt, config);
     fs.mkdirSync(path.dirname(outputSrtPath), { recursive: true });
     fs.writeFileSync(outputSrtPath, result.correctedSrt, 'utf8');
+    try {
+      await subtitleMemory.remember(
+        [
+          `자막 교정 성공: ${path.basename(inputSrtPath)}`,
+          `chunks=${result.stats?.chunks || 0}`,
+          `provider=${result.stats?.provider || 'unknown'}`,
+          `fallback=${result.stats?.provider === 'fallback_original' ? 'yes' : 'no'}`,
+        ].join(' | '),
+        'episodic',
+        {
+          keywords: ['video', 'subtitle', 'completed', path.basename(inputSrtPath)].filter(Boolean).slice(0, 8),
+          importance: result.stats?.provider === 'fallback_original' ? 0.58 : 0.66,
+          expiresIn: 30 * 24 * 60 * 60,
+          metadata: {
+            type: 'video_subtitle_correction',
+            outcome: 'completed',
+            file: path.basename(inputSrtPath),
+            chunks: result.stats?.chunks || 0,
+            provider: result.stats?.provider || null,
+            fallbackUsed: result.stats?.provider === 'fallback_original',
+          },
+        },
+      );
+      await subtitleMemory.consolidate({
+        olderThanDays: 14,
+        limit: 8,
+        sourceType: 'episodic',
+        targetType: 'semantic',
+      });
+    } catch (memoryError) {
+      await logToolCall('subtitle_corrector', 'agent_memory_write_failed', {
+        bot: BOT_NAME,
+        success: false,
+        error: memoryError.message,
+        metadata: { file: path.basename(inputSrtPath) },
+      });
+    }
     return {
       outputPath: outputSrtPath,
       stats: result.stats,
@@ -284,6 +323,40 @@ async function correctFile(inputSrtPath, outputSrtPath, config) {
   } catch (error) {
     fs.mkdirSync(path.dirname(outputSrtPath), { recursive: true });
     fs.writeFileSync(outputSrtPath, originalSrt, 'utf8');
+    const episodicHint = await subtitleMemory.recall(
+      [path.basename(inputSrtPath), 'subtitle correction failure'].filter(Boolean).join(' '),
+      {
+        type: 'episodic',
+        limit: 2,
+        threshold: 0.35,
+      },
+    ).then((rows) => {
+      if (!rows || rows.length === 0) return '';
+      const lines = rows.slice(0, 2).map((row) => {
+        const createdAt = row?.created_at ? String(row.created_at).slice(0, 10) : 'unknown';
+        const similarity = Number(row?.similarity || 0);
+        const headline = String(row?.content || '').split(' | ')[0] || '기록 없음';
+        return `${createdAt} / 유사도 ${similarity.toFixed(2)} / ${headline}`;
+      });
+      return `\n최근 유사 실패:\n- ${lines.join('\n- ')}`;
+    }).catch(() => '');
+    const semanticHint = await subtitleMemory.recall(
+      [path.basename(inputSrtPath), 'consolidated subtitle correction pattern'].filter(Boolean).join(' '),
+      {
+        type: 'semantic',
+        limit: 2,
+        threshold: 0.28,
+      },
+    ).then((rows) => {
+      if (!rows || rows.length === 0) return '';
+      const lines = rows.slice(0, 2).map((row) => {
+        const createdAt = row?.created_at ? String(row.created_at).slice(0, 10) : 'unknown';
+        const similarity = Number(row?.similarity || 0);
+        const headline = String(row?.content || '').split('\n')[0] || '패턴 요약 없음';
+        return `${createdAt} / 유사도 ${similarity.toFixed(2)} / ${headline}`;
+      });
+      return `\n최근 통합 패턴:\n- ${lines.join('\n- ')}`;
+    }).catch(() => '');
     await publishToWebhook({
       event: {
         from_bot: 'subtitle-corrector',
@@ -295,9 +368,42 @@ async function correctFile(inputSrtPath, outputSrtPath, config) {
           `파일: ${path.basename(inputSrtPath)}`,
           `사유: ${error.message}`,
           '조치: 원본 SRT로 폴백되어 파이프라인은 계속 진행됩니다.',
-        ].join('\n'),
+        ].join('\n') + episodicHint + semanticHint,
       },
     });
+    try {
+      await subtitleMemory.remember(
+        [
+          `자막 교정 실패: ${path.basename(inputSrtPath)}`,
+          `reason=${error.message}`,
+        ].join(' | '),
+        'episodic',
+        {
+          keywords: ['video', 'subtitle', 'failed', path.basename(inputSrtPath)].filter(Boolean).slice(0, 8),
+          importance: 0.82,
+          expiresIn: 30 * 24 * 60 * 60,
+          metadata: {
+            type: 'video_subtitle_correction',
+            outcome: 'failed',
+            file: path.basename(inputSrtPath),
+            errorMessage: error.message,
+          },
+        },
+      );
+      await subtitleMemory.consolidate({
+        olderThanDays: 14,
+        limit: 8,
+        sourceType: 'episodic',
+        targetType: 'semantic',
+      });
+    } catch (memoryError) {
+      await logToolCall('subtitle_corrector', 'agent_memory_write_failed', {
+        bot: BOT_NAME,
+        success: false,
+        error: memoryError.message,
+        metadata: { file: path.basename(inputSrtPath), stage: 'failure' },
+      });
+    }
     return {
       outputPath: outputSrtPath,
       stats: {
