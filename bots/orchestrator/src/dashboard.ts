@@ -6,7 +6,11 @@ const pgPool = require('../../../packages/core/lib/pg-pool') as {
   query: (schema: string, sql: string, params?: any[]) => Promise<any[]>;
   get: (schema: string, sql: string, params?: any[]) => Promise<any>;
 };
-const kst = require('../../../packages/core/lib/kst') as { today: () => string };
+const {
+  readRecentAlertSnapshot,
+} = require('../../../packages/core/lib/openclaw-client') as {
+  readRecentAlertSnapshot: (limit?: number) => any[];
+};
 
 type LaunchdService = {
   id: string;
@@ -26,19 +30,19 @@ type AgentStatusRow = {
   last_error?: string | null;
 };
 
-type QueueStats = {
-  total?: number;
-  sent?: number;
-  muted?: number;
-  deferred?: number;
-  pending?: number;
-  max_level?: number;
+type AlertSnapshotStats = {
+  total: number;
+  eventTagged: number;
+  high: number;
+  critical: number;
 };
 
 type RecentAlertRow = {
   from_bot: string;
   alert_level: number;
   message: string;
+  event_type?: string | null;
+  created_at?: string;
 };
 
 type ActiveMuteRow = {
@@ -83,42 +87,23 @@ async function getAgentStatuses(): Promise<AgentStatusRow[]> {
   }
 }
 
-async function getQueueStats(): Promise<QueueStats> {
+function getRecentAlertStats(): AlertSnapshotStats {
   try {
-    const today = kst.today();
-    return (
-      await pgPool.get(
-        'claude',
-        `
-      SELECT
-        COUNT(*) AS total,
-        SUM(CASE WHEN status='sent'     THEN 1 ELSE 0 END) AS sent,
-        SUM(CASE WHEN status='muted'    THEN 1 ELSE 0 END) AS muted,
-        SUM(CASE WHEN status='deferred' THEN 1 ELSE 0 END) AS deferred,
-        SUM(CASE WHEN status='pending'  THEN 1 ELSE 0 END) AS pending,
-        MAX(alert_level) AS max_level
-      FROM mainbot_queue
-      WHERE created_at::date = $1::date
-    `,
-        [today],
-      )
-    ) || {};
+    const rows = readRecentAlertSnapshot(50) as RecentAlertRow[];
+    return {
+      total: rows.length,
+      eventTagged: rows.filter((row) => row.event_type).length,
+      high: rows.filter((row) => Number(row.alert_level) >= 3).length,
+      critical: rows.filter((row) => Number(row.alert_level) >= 4).length,
+    };
   } catch {
-    return {};
+    return { total: 0, eventTagged: 0, high: 0, critical: 0 };
   }
 }
 
-async function getRecentAlerts(): Promise<RecentAlertRow[]> {
+function getRecentAlerts(): RecentAlertRow[] {
   try {
-    return await pgPool.query(
-      'claude',
-      `
-      SELECT from_bot, event_type, alert_level, message, created_at
-      FROM mainbot_queue
-      ORDER BY created_at DESC
-      LIMIT 5
-    `,
-    );
+    return readRecentAlertSnapshot(5) as RecentAlertRow[];
   } catch {
     return [];
   }
@@ -148,9 +133,9 @@ export async function buildStatus(): Promise<string> {
   return cached('status', async () => {
     const kstNow = new Date(Date.now() + 9 * 3600 * 1000).toISOString().replace('T', ' ').slice(0, 16);
     const agents = await getAgentStatuses();
-    const queueStats = await getQueueStats();
+    const alertStats = getRecentAlertStats();
     const mutes = await getActiveMutes();
-    const recents = await getRecentAlerts();
+    const recents = getRecentAlerts();
 
     const lines = [`🤖 JayLabs 시스템 현황`, `📅 ${kstNow} KST`, ``];
 
@@ -177,8 +162,8 @@ export async function buildStatus(): Promise<string> {
       lines.push('');
     }
 
-    lines.push(`📬 오늘 알람 큐`);
-    lines.push(`  총 ${queueStats.total || 0}건 | 발송 ${queueStats.sent || 0} | 무음 ${queueStats.muted || 0} | 보류 ${queueStats.deferred || 0} | 대기 ${queueStats.pending || 0}`);
+    lines.push(`📬 최근 알람 snapshot`);
+    lines.push(`  총 ${alertStats.total}건 | 이벤트태그 ${alertStats.eventTagged} | 높음 ${alertStats.high} | 긴급 ${alertStats.critical}`);
     lines.push('');
 
     if (mutes.length > 0) {
@@ -193,7 +178,8 @@ export async function buildStatus(): Promise<string> {
       lines.push(`📋 최근 알람`);
       for (const recent of recents) {
         const icon = ALERT_ICONS[recent.alert_level] || '⚪';
-        lines.push(`  ${icon} [${recent.from_bot}] ${recent.message.split('\n')[0].slice(0, 50)}`);
+        const time = recent.created_at ? ` ${String(recent.created_at).slice(11, 16)}` : '';
+        lines.push(`  ${icon}${time} [${recent.from_bot}] ${recent.message.split('\n')[0].slice(0, 50)}`);
       }
     }
 

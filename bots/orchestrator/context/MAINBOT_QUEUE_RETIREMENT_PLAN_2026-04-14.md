@@ -53,8 +53,7 @@ Interpretation:
 These only read queue state for status/reporting.
 
 - [dashboard.ts](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/src/dashboard.ts)
-  - queue totals
-  - recent alerts
+  - now migrating to `recent-alerts.json` snapshot for totals and recent alerts
 
 Interpretation:
 - These can be migrated last.
@@ -110,4 +109,5 @@ The next safe implementation step is:
 
 1. observe `/tmp/mainbot-queue-usage.jsonl` for remaining runtime writers
 2. finish router `/queue` + mute/unmute migration to `recent-alerts.json`
-3. then move dashboard monitoring off `mainbot_queue`
+3. verify snapshot-based dashboard and operator flows in live runtime
+4. then evaluate whether legacy consumer loop still needs live queue visibility
