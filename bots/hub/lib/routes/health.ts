@@ -1,7 +1,12 @@
 const env = require('../../../../packages/core/lib/env');
 const pgPool = require('../../../../packages/core/lib/pg-pool');
-const { checkHttp } = require('../../../../packages/core/lib/health-provider');
+const { checkHttp, getLaunchctlStatus } = require('../../../../packages/core/lib/health-provider');
 const PG_POOL_WARN_THRESHOLD = 0.8;
+const CORE_SERVICE_LABELS = [
+  'ai.openclaw.gateway',
+  'ai.orchestrator',
+  'ai.n8n.server',
+];
 
 type HealthResource = {
   status: 'ok' | 'warn';
@@ -64,6 +69,20 @@ export async function collectHealthSnapshot(): Promise<HealthSnapshot> {
       status: 'ok',
       detail: 'disabled in current mode',
     };
+  }
+
+  if (env.LAUNCHD_AVAILABLE) {
+    const serviceStatus = getLaunchctlStatus(CORE_SERVICE_LABELS);
+    const downServices = CORE_SERVICE_LABELS.filter((label) => !serviceStatus?.[label]?.running);
+    resources.core_services = downServices.length === 0
+      ? {
+          status: 'ok',
+          detail: 'core launchd services healthy',
+        }
+      : {
+          status: 'warn',
+          detail: downServices.join(', '),
+        };
   }
 
   const hasWarn = Object.values(resources).some((item) => item.status !== 'ok');
