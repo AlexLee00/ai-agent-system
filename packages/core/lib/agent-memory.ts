@@ -30,6 +30,18 @@ type RecallHintOptions = RecallOptions & {
   separator?: 'pipe' | 'newline';
 };
 
+type RecallCountHintOptions = RecallHintOptions & {
+  metadataKey: string;
+  labels?: Record<string, string>;
+  order?: string[];
+  caution?: {
+    key: string;
+    minCount?: number;
+    moreThanKey?: string;
+    message: string;
+  } | null;
+};
+
 type ConsolidateOptions = {
   olderThanDays?: number;
   limit?: number;
@@ -111,6 +123,44 @@ function formatRecallHint(rows: AgentMemoryRow[], opts: RecallHintOptions = {}):
     return `${createdAt} / 유사도 ${similarity.toFixed(2)} / ${headline}`;
   });
   return `\n${title}:\n- ${lines.join('\n- ')}`;
+}
+
+function formatRecallCountHint(rows: AgentMemoryRow[], opts: RecallCountHintOptions): string {
+  if (!rows || rows.length === 0) return '';
+  const title = String(opts.title || '최근 기억');
+  const separator = opts.separator || 'newline';
+  const metadataKey = String(opts.metadataKey || '').trim();
+  if (!metadataKey) return formatRecallHint(rows, opts);
+
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const value = String(row?.metadata?.[metadataKey] ?? 'unknown');
+    counts.set(value, (counts.get(value) || 0) + 1);
+  }
+
+  const order = Array.isArray(opts.order) && opts.order.length
+    ? opts.order
+    : Array.from(counts.keys());
+  const labels = opts.labels || {};
+  const summary = order
+    .filter((key) => counts.has(key))
+    .map((key) => `${labels[key] || key} ${counts.get(key)}건`)
+    .join(' / ');
+
+  const caution = opts.caution
+    && (counts.get(opts.caution.key) || 0) >= Number(opts.caution.minCount || 1)
+    && (!opts.caution.moreThanKey || (counts.get(opts.caution.key) || 0) > (counts.get(opts.caution.moreThanKey) || 0))
+      ? `\n${opts.caution.message}`
+      : '';
+
+  const lines = rows.slice(0, normalizeLimit(opts.limit || 2)).map((row) => {
+    const createdAt = row?.created_at ? String(row.created_at).slice(0, 10) : 'unknown';
+    const similarity = Number(row?.similarity || 0);
+    const headline = extractHeadline(String(row?.content || ''), separator);
+    return `${createdAt} / 유사도 ${similarity.toFixed(2)} / ${headline}`;
+  });
+
+  return `\n${title}: ${summary}${caution}\n- ${lines.join('\n- ')}`;
 }
 
 function summarizeMemories(rows: AgentMemoryRow[]): string {
@@ -386,6 +436,11 @@ class AgentMemory {
   async recallHint(query: string, opts: RecallHintOptions = {}): Promise<string> {
     const rows = await this.recall(query, opts);
     return formatRecallHint(rows, opts);
+  }
+
+  async recallCountHint(query: string, opts: RecallCountHintOptions): Promise<string> {
+    const rows = await this.recall(query, opts);
+    return formatRecallCountHint(rows, opts);
   }
 
   async consolidate(opts: ConsolidateOptions = {}): Promise<ConsolidateResult> {

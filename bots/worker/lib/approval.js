@@ -431,19 +431,22 @@ async function sendApprovalRequest({ chatId, requestId, action, requesterName, p
       action: '승인/반려 버튼 확인',
     },
   });
-  const memoryHint = await approvalMemory.recall(
+  const memoryHint = await approvalMemory.recallCountHint(
     [String(action || ''), String(requesterName || '')].filter(Boolean).join(' '),
     {
       type: 'episodic',
       limit: 2,
       threshold: 0.35,
+      title: '최근 유사 승인 기록',
+      separator: 'pipe',
+      metadataKey: 'decision',
+      labels: {
+        approved: '승인',
+        rejected: '반려',
+      },
+      order: ['approved', 'rejected'],
     },
-  ).then((rows) => {
-    if (!rows || rows.length === 0) return '';
-    const approved = rows.filter((row) => String(row?.metadata?.decision || '') === 'approved').length;
-    const rejected = rows.filter((row) => String(row?.metadata?.decision || '') === 'rejected').length;
-    return `\n최근 유사 승인 기록: 승인 ${approved}건 / 반려 ${rejected}건`;
-  }).catch(() => '');
+  ).catch(() => '');
   const semanticMemoryHint = await approvalMemory.recallHint(
     [String(action || ''), String(requesterName || ''), 'consolidated approval pattern'].filter(Boolean).join(' '),
     {
