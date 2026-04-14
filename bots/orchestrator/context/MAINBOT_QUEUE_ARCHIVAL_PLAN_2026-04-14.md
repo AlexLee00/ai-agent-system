@@ -112,6 +112,15 @@ After archive is verified:
    - example: `mainbot_queue` -> `mainbot_queue_legacy`
 3. or keep empty shell tables temporarily if rollback safety is still desired
 
+Prepared scripts:
+- [mainbot_queue_freeze_20260414.sql](/Users/alexlee/projects/ai-agent-system/scripts/sql/mainbot_queue_freeze_20260414.sql)
+- [mainbot_queue_freeze_rollback_20260414.sql](/Users/alexlee/projects/ai-agent-system/scripts/sql/mainbot_queue_freeze_rollback_20260414.sql)
+
+Recommended freeze mode:
+- rename live tables to `*_legacy_live`
+- recreate original names as read-only views
+- this keeps historical reads working but blocks fresh writes loudly
+
 ### Phase 4. Final retirement
 
 Only after a quiet period:
