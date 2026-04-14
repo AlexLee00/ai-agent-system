@@ -7,6 +7,9 @@ const rag = require('../../../../packages/core/lib/rag') as {
   initSchema: () => Promise<void>;
   store: (kind: string, content: string, metadata: Record<string, any>, scope: string) => Promise<void>;
 };
+const { publishToRag } = require('../../../../packages/core/lib/reporting-hub') as {
+  publishToRag: (payload: Record<string, any>) => Promise<{ id?: unknown }>;
+};
 const kst = require('../../../../packages/core/lib/kst') as { today: () => string };
 const { postAlarm } = require('../../../../packages/core/lib/openclaw-client') as {
   postAlarm: (payload: { message: string; team: string; alertLevel: number; fromBot: string }) => Promise<{ ok?: boolean }>;
@@ -282,12 +285,39 @@ export async function weeklyMetaReview(): Promise<Record<string, any>> {
 
   try {
     await rag.initSchema();
-    await rag.store('experience', `${lines.join('\n')}\n[이유: 주간 메타 리뷰 ${rows.length}건 분석]`, {
-      type: 'sigma_meta_review',
-      period: '7d',
-      rows,
-      why: `주간 메타 리뷰 ${rows.length}건 분석`,
-    }, 'sigma');
+    await publishToRag({
+      ragStore: {
+        async store(collection: string, ragContent: string, metadata: Record<string, any> = {}, sourceBot = 'sigma') {
+          return rag.store(collection, ragContent, metadata, sourceBot);
+        },
+      },
+      collection: 'experience',
+      sourceBot: 'sigma',
+      event: {
+        from_bot: 'sigma',
+        team: 'sigma',
+        event_type: 'sigma_meta_review_rag',
+        alert_level: 1,
+        message: lines.join('\n'),
+        payload: {
+          title: '시그마 주간 메타 리뷰',
+          summary: `${rows.length}건 분석`,
+          details: rows.map((row) => `${row.analyst_used || 'unknown'}: ${row.effective_count}/${row.total}, 평균 ${row.avg_effect}`),
+        },
+      },
+      metadata: {
+        type: 'sigma_meta_review',
+        period: '7d',
+        rows,
+        why: `주간 메타 리뷰 ${rows.length}건 분석`,
+      },
+      contentBuilder: () => `${lines.join('\n')}\n[이유: 주간 메타 리뷰 ${rows.length}건 분석]`,
+      policy: {
+        dedupe: true,
+        key: `sigma-meta-review:${kst.today()}`,
+        cooldownMs: 24 * 60 * 60 * 1000,
+      },
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.warn(`[sigma-feedback] 메타리뷰 RAG 저장 실패: ${message}`);
