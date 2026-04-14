@@ -4,6 +4,9 @@ const rag = require('../../../packages/core/lib/rag') as {
   initSchema: () => Promise<void>;
   store: (kind: string, content: string, metadata: Record<string, any>, scope: string) => Promise<void>;
 };
+const { publishToRag } = require('../../../packages/core/lib/reporting-hub') as {
+  publishToRag: (payload: Record<string, any>) => Promise<{ id?: unknown }>;
+};
 const { postAlarm } = require('../../../packages/core/lib/openclaw-client') as {
   postAlarm: (payload: { message: string; team: string; alertLevel: number; fromBot: string }) => Promise<{ ok?: boolean }>;
 };
@@ -77,10 +80,30 @@ export async function runDaily({ test = false }: SigmaDailyOptions = {}): Promis
 
   try {
     await rag.initSchema();
-    await rag.store(
-      'experience',
-      `${analysis.report}\n[이유: 일일 크로스팀 분석 ${feedbackRows.length}건 피드백 생성]`,
-      {
+    await publishToRag({
+      ragStore: {
+        async store(collection: string, ragContent: string, metadata: Record<string, any> = {}, sourceBot = 'sigma') {
+          return rag.store(collection, ragContent, metadata, sourceBot);
+        },
+      },
+      collection: 'experience',
+      sourceBot: 'sigma',
+      event: {
+        from_bot: 'sigma',
+        team: 'sigma',
+        event_type: 'sigma_daily_rag',
+        alert_level: 1,
+        message: analysis.report,
+        payload: {
+          title: '시그마 일일 크로스팀 분석',
+          summary: `${feedbackRows.length}건 피드백 생성`,
+          details: [
+            `teams: ${(formation.targetTeams || []).join(', ')}`,
+            `analysts: ${(formation.analysts || []).join(', ')}`,
+          ],
+        },
+      },
+      metadata: {
         type: 'sigma_daily_report',
         date: kst.today(),
         teams: formation.targetTeams,
@@ -89,8 +112,13 @@ export async function runDaily({ test = false }: SigmaDailyOptions = {}): Promis
         scout_quality: scoutQuality,
         why: `일일 크로스팀 분석 ${feedbackRows.length}건 피드백 생성`,
       },
-      'sigma',
-    );
+      contentBuilder: () => `${analysis.report}\n[이유: 일일 크로스팀 분석 ${feedbackRows.length}건 피드백 생성]`,
+      policy: {
+        dedupe: true,
+        key: `sigma-daily-rag:${kst.today()}`,
+        cooldownMs: 12 * 60 * 60 * 1000,
+      },
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.warn(`[sigma-daily] RAG 저장 실패: ${message}`);

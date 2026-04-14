@@ -87,6 +87,7 @@
 - luna L33 trade RAG write → reporting-hub rag target
 - investment shared rag-client store → reporting-hub rag target
 - investment review/analysis script RAG writes → shared rag-client → reporting-hub rag target
+- sigma daily/meta-review RAG writes → reporting-hub rag target
 - blog publ RAG writes → reporting-hub rag target
 - blog rag accumulator RAG writes → reporting-hub rag target
 - blog curriculum notices → reporting-hub notice + severity fanout
