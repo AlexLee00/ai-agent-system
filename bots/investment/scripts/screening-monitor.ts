@@ -8,7 +8,7 @@
  */
 
 import { createRequire } from 'module';
-import { publishAlert } from '../shared/mainbot-client.ts';
+import { publishAlert } from '../shared/alert-publisher.ts';
 
 const require      = createRequire(import.meta.url);
 const pgPool       = require('../../../packages/core/lib/pg-pool');

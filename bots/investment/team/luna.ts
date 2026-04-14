@@ -25,7 +25,7 @@ import { callLLM, cachedCallLLM, parseJSON } from '../shared/llm-client.ts';
 import { search as searchRag, store as storeRag } from '../shared/rag-client.ts';
 import { ACTIONS, ANALYST_TYPES, SIGNAL_STATUS, validateSignal } from '../shared/signal.ts';
 import { notifySignal, notifyError } from '../shared/report.ts';
-import { publishAlert } from '../shared/mainbot-client.ts';
+import { publishAlert } from '../shared/alert-publisher.ts';
 import { isPaperMode, isValidationTradeMode } from '../shared/secrets.ts';
 import { getAvailableBalance, getAvailableUSDT } from '../shared/capital-manager.ts';
 import { getDomesticBalance } from '../shared/kis-client.ts';

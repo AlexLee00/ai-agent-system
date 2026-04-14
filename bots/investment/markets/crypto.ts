@@ -25,7 +25,7 @@ const { writeHeartbeat } = require('../../../packages/core/lib/agent-heartbeats'
 import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { initHubSecrets, getSymbols, getMarketExecutionModeInfo, getInvestmentTradeMode, getCryptoScreeningMaxDynamic } from '../shared/secrets.ts';
-import { publishAlert } from '../shared/mainbot-client.ts';
+import { publishAlert } from '../shared/alert-publisher.ts';
 import { tracker } from '../shared/cost-tracker.ts';
 import { getLunaParams } from '../shared/time-mode.ts';
 import { parseUniverseCliFlags } from '../shared/screening-runtime.ts';

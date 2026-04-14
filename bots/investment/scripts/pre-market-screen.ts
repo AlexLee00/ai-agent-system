@@ -24,7 +24,7 @@ import {
   getKisSymbols,
   getKisOverseasSymbols,
 } from '../shared/secrets.ts';
-import { publishAlert } from '../shared/mainbot-client.ts';
+import { publishAlert } from '../shared/alert-publisher.ts';
 import { resolveSymbolsWithFallback } from '../shared/universe-fallback.ts';
 import { getMockUntradableSymbolCooldownMinutes } from '../shared/runtime-config.ts';
 import { createRequire } from 'module';

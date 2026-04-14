@@ -18,7 +18,7 @@
  */
 
 import { callLLM, parseJSON } from '../shared/llm-client.ts';
-import { publishAlert } from '../shared/mainbot-client.ts';
+import { publishAlert } from '../shared/alert-publisher.ts';
 import * as db from '../shared/db.ts';
 import { adjustAnalystWeights } from '../shared/analyst-accuracy.ts';
 import { validateTradeReview } from './validate-trade-review.ts';
