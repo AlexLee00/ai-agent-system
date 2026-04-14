@@ -217,6 +217,7 @@ const runtimeEntryPoints = [
   path.join(root, 'bots/claude/migrations/001_team_bus.ts'),
   path.join(root, 'bots/claude/migrations/002_dexter_patterns.ts'),
   path.join(root, 'bots/claude/migrations/003_agent_heartbeats.ts'),
+  path.join(root, 'bots/orchestrator/src/orchestrator.ts'),
   path.join(root, 'bots/investment/shared/analyst-accuracy.ts'),
   path.join(root, 'bots/investment/shared/capital-manager.ts'),
   path.join(root, 'bots/investment/shared/cost-tracker.ts'),

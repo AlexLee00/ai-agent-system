@@ -1,11 +1,11 @@
 {
   "name": "@ai-agent/orchestrator",
   "version": "1.0.0",
-  "description": "🤖 메인봇 (오케스트레이터) - 알람 통합 허브, 명령 라우팅, 봇 총괄",
-  "main": "src/mainbot.js",
+  "description": "🤖 오케스트레이터 - 알람 통합 허브, 명령 라우팅, 봇 총괄",
+  "main": "dist/ts-runtime/bots/orchestrator/src/orchestrator.js",
   "type": "commonjs",
   "scripts": {
-    "start": "node src/mainbot.js",
+    "start": "node dist/ts-runtime/bots/orchestrator/src/orchestrator.js",
     "migrate": "node migrations/002_mainbot.js",
     "check:n8n-critical": "node scripts/check-n8n-critical-path.js"
   },

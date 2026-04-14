@@ -1,4 +1,4 @@
 // @ts-nocheck
 'use strict';
 
-module.exports = require('./mainbot.legacy.js');
+module.exports = require('./orchestrator');
