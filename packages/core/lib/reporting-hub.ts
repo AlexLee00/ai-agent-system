@@ -25,6 +25,7 @@ const DELIVERY_STATE = new Map();
 const DEFAULT_CRITICAL_WEBHOOK_URL = process.env.N8N_CRITICAL_WEBHOOK || 'http://127.0.0.1:5678/webhook/critical';
 const PAYLOAD_WARNING_LOG = process.env.REPORTING_PAYLOAD_WARNING_LOG || '/tmp/reporting-payload-warnings.jsonl';
 const LEGACY_QUEUE_USAGE_LOG = process.env.MAINBOT_QUEUE_USAGE_LOG || '/tmp/mainbot-queue-usage.jsonl';
+const LEGACY_QUEUE_PUBLISH_ENABLED = process.env.MAINBOT_QUEUE_PUBLISH_ENABLED === 'true';
 const MAX_WARNING_LOG_BYTES = 512 * 1024;
 const TELEGRAM_API_RETRY_ATTEMPTS = 2;
 const LEGACY_QUEUE_WARNED_KEYS = new Set<string>();
@@ -560,6 +561,15 @@ export async function publishToQueue({
   policy,
 }: QueuePublisherInput) {
   const normalized = normalizeEvent(event);
+  if (!LEGACY_QUEUE_PUBLISH_ENABLED) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: 'legacy_queue_publish_disabled',
+      channel: 'queue',
+      event: normalized,
+    };
+  }
   recordLegacyQueueUsage(normalized, schema, table);
   const decision = evaluateDeliveryPolicy('queue', normalized, policy);
   if (!decision.allowed) {
