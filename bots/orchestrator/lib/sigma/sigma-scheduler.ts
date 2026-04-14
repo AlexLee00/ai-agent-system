@@ -202,11 +202,20 @@ function buildMemoryAwareTaskHint(baseHint: string, memoryBoostTeams: string[] =
 }
 
 export async function decideTodayFormation(
-  { date = new Date(), recentMemories = [] }: { date?: Date; recentMemories?: MemorySnippet[] } = {},
+  {
+    date = new Date(),
+    recentMemories = [],
+    recentSemanticMemories = [],
+  }: {
+    date?: Date;
+    recentMemories?: MemorySnippet[];
+    recentSemanticMemories?: MemorySnippet[];
+  } = {},
 ): Promise<Formation> {
   const events = await collectYesterdayEvents();
   const targetTeams = new Set<string>();
   const weekday = date.getDay();
+  const memoryContext = [...recentMemories, ...recentSemanticMemories];
 
   if (events.postsPublished > 0) targetTeams.add('blog');
   if (events.tradesExecuted > 0) targetTeams.add('luna');
@@ -221,11 +230,11 @@ export async function decideTodayFormation(
   }
 
   targetTeams.add(ROTATION[weekday % ROTATION.length]);
-  const memoryBoostTeams = deriveMemoryTeams(recentMemories);
+  const memoryBoostTeams = deriveMemoryTeams(memoryContext);
   for (const team of memoryBoostTeams) targetTeams.add(team);
 
   const analysts = [...CORE_ANALYSTS];
-  const memoryPerspectiveHint = deriveMemoryPerspectiveHint(recentMemories);
+  const memoryPerspectiveHint = deriveMemoryPerspectiveHint(memoryContext);
   const perspectiveHint = memoryPerspectiveHint || selectPerspectiveHint(events, date);
   const memoryAwareHint = buildMemoryAwareTaskHint(perspectiveHint, memoryBoostTeams);
   const perspectiveAnalyst = await selectBestAgent('analyst', 'sigma', {
