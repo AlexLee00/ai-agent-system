@@ -6,6 +6,9 @@ const path = require('path');
 
 const { compareVideos } = require('../lib/reference-quality');
 const { SAMPLE_MAP } = require('./test-reference-quality');
+const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
+
+const structureGapMemory = createAgentMemory({ agentId: 'video.final-structure-gap', team: 'video' });
 
 function parseArgs(argv) {
   const parsed = {
@@ -146,7 +149,31 @@ function buildFindings(comparison, edlSummary) {
   return findings;
 }
 
-function printReport(sampleName, comparison, edlSummary, findings) {
+function buildStructureGapMemoryQuery(args, comparison, edlSummary) {
+  const durationRatio = round(safeNumber(comparison.generated.durationSec) / Math.max(safeNumber(comparison.reference.durationSec), 1), 3);
+  return [
+    'video final structure gap',
+    args.sample || 'custom',
+    durationRatio < 0.5 ? 'compressed' : 'balanced',
+    edlSummary.repeated_short_window_count > 0 ? 'repeated-short-window' : 'no-short-repeat',
+    edlSummary.hold_clip_count > 0 ? 'hold-present' : 'hold-absent',
+  ].filter(Boolean).join(' ');
+}
+
+function buildStructureGapSummary(args, comparison, edlSummary, findings) {
+  const durationRatio = round(safeNumber(comparison.generated.durationSec) / Math.max(safeNumber(comparison.reference.durationSec), 1), 4);
+  return [
+    '비디오 final structure gap 분석',
+    `sample: ${args.sample || 'custom'}`,
+    `duration_ratio: ${durationRatio}`,
+    `overall_score: ${comparison.scores.overall}`,
+    `hold_clip_count: ${edlSummary.hold_clip_count}`,
+    `repeated_short_window_count: ${edlSummary.repeated_short_window_count}`,
+    findings.length ? `주요 소견: ${findings.slice(0, 3).join(' | ')}` : null,
+  ].filter(Boolean).join('\n');
+}
+
+function printReport(sampleName, comparison, edlSummary, findings, memoryHints = {}) {
   const durationRatio = round(safeNumber(comparison.generated.durationSec) / Math.max(safeNumber(comparison.reference.durationSec), 1), 3);
   console.log(`[final-structure-gap] sample=${sampleName || 'custom'}`);
   console.log(`[final-structure-gap] generated=${comparison.generated.path}`);
@@ -160,6 +187,8 @@ function printReport(sampleName, comparison, edlSummary, findings) {
   for (const finding of findings) {
     console.log(`[final-structure-gap] finding: ${finding}`);
   }
+  if (memoryHints.episodicHint) console.log(memoryHints.episodicHint.trimStart());
+  if (memoryHints.semanticHint) console.log(memoryHints.semanticHint.trimStart());
 }
 
 async function main() {
@@ -180,6 +209,26 @@ async function main() {
   const edl = loadJson(edlPath);
   const edlSummary = summarizeEdl(edl);
   const findings = buildFindings(comparison, edlSummary);
+  const memoryQuery = buildStructureGapMemoryQuery(args, comparison, edlSummary);
+  const episodicHint = await structureGapMemory.recallCountHint(memoryQuery, {
+    type: 'episodic',
+    limit: 2,
+    threshold: 0.33,
+    title: '최근 유사 분석',
+    separator: 'pipe',
+    metadataKey: 'kind',
+    labels: {
+      analysis: '분석',
+    },
+    order: ['analysis'],
+  }).catch(() => '');
+  const semanticHint = await structureGapMemory.recallHint(`${memoryQuery} consolidated structure pattern`, {
+    type: 'semantic',
+    limit: 2,
+    threshold: 0.28,
+    title: '최근 통합 패턴',
+    separator: 'newline',
+  }).catch(() => '');
   const payload = {
     sample: args.sample || null,
     generated: comparison.generated,
@@ -189,14 +238,33 @@ async function main() {
     duration_ratio: round(safeNumber(comparison.generated.durationSec) / Math.max(safeNumber(comparison.reference.durationSec), 1), 4),
     edl: edlSummary,
     findings,
+    memoryHints: {
+      episodicHint,
+      semanticHint,
+    },
   };
 
   if (args.json) {
     console.log(JSON.stringify(payload, null, 2));
-    return;
+  } else {
+    printReport(args.sample, comparison, edlSummary, findings, { episodicHint, semanticHint });
   }
 
-  printReport(args.sample, comparison, edlSummary, findings);
+  await structureGapMemory.remember(buildStructureGapSummary(args, comparison, edlSummary, findings), 'episodic', {
+    importance: 0.66,
+    expiresIn: 1000 * 60 * 60 * 24 * 30,
+    metadata: {
+      kind: 'analysis',
+      sample: args.sample || null,
+      durationRatio: payload.duration_ratio,
+      holdClipCount: edlSummary.hold_clip_count,
+      repeatedShortWindowCount: edlSummary.repeated_short_window_count,
+    },
+  }).catch(() => {});
+  await structureGapMemory.consolidate({
+    olderThanDays: 14,
+    limit: 10,
+  }).catch(() => {});
 }
 
 if (require.main === module) {
