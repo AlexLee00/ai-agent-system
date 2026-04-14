@@ -12,6 +12,7 @@ const { buildReservationId } = require('../../lib/reservation-key');
 const kst = require('../../../../packages/core/lib/kst');
 const { fail } = require('../../lib/cli');
 const { IS_OPS } = require('../../../../packages/core/lib/env');
+const { createAgentMemory } = require('../../../../packages/core/lib/agent-memory');
 
 const ARGS = parseArgs(process.argv);
 
@@ -22,6 +23,8 @@ type RegisterInput = {
   end: string;
   room: string;
 };
+
+const registerMemory = createAgentMemory({ agentId: 'reservation.pickko-register', team: 'reservation' });
 
 const VALID_ROOMS = ['A1', 'A2', 'B'];
 const MODE = IS_OPS ? 'ops' : 'dev';
@@ -58,6 +61,16 @@ if (!VALID_ROOMS.includes(normalized.room)) {
 }
 
 const customerName = (ARGS.name || '고객').replace(/대리예약.*/, '').trim().slice(0, 20) || '고객';
+
+function buildRegisterMemoryQuery(kind: string) {
+  return [
+    'reservation pickko register',
+    kind,
+    normalized.room,
+    normalized.date,
+    `${normalized.start}-${normalized.end}`,
+  ].filter(Boolean).join(' ');
+}
 
 const accurateScript = path.join(
   __dirname,
@@ -107,10 +120,59 @@ child.on('close', async (code: number | null) => {
   const now = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
 
   if (didTimeout) {
+    const memoryQuery = buildRegisterMemoryQuery('timeout');
+    const episodicHint = await registerMemory.recallCountHint(memoryQuery, {
+      type: 'episodic',
+      limit: 2,
+      threshold: 0.33,
+      title: '최근 유사 등록',
+      separator: 'pipe',
+      metadataKey: 'kind',
+      labels: {
+        success: '성공',
+        timeout: '시간초과',
+        failure: '실패',
+      },
+      order: ['timeout', 'failure', 'success'],
+    }).catch(() => '');
+    const semanticHint = await registerMemory.recallHint(`${memoryQuery} consolidated register pattern`, {
+      type: 'semantic',
+      limit: 2,
+      threshold: 0.28,
+      title: '최근 통합 패턴',
+      separator: 'newline',
+    }).catch(() => '');
+    const timeoutMessage = `예약 등록 시간 초과 (${Math.round(PICKKO_ACCURATE_TIMEOUT_MS / 1000)}초)`;
     process.stdout.write(`${JSON.stringify({
       success: false,
-      message: `예약 등록 시간 초과 (${Math.round(PICKKO_ACCURATE_TIMEOUT_MS / 1000)}초)`,
+      message: timeoutMessage,
+      memoryHints: {
+        episodicHint,
+        semanticHint,
+      },
     })}\n`);
+    await registerMemory.remember([
+      '픽코 예약 등록 시간 초과',
+      `phone: ${normalized.phone}`,
+      `date: ${normalized.date}`,
+      `time: ${normalized.start}~${normalized.end}`,
+      `room: ${normalized.room}`,
+      timeoutMessage,
+    ].join('\n'), 'episodic', {
+      importance: 0.84,
+      expiresIn: 1000 * 60 * 60 * 24 * 30,
+      metadata: {
+        kind: 'timeout',
+        room: normalized.room,
+        date: normalized.date,
+        start: normalized.start,
+        end: normalized.end,
+      },
+    }).catch(() => {});
+    await registerMemory.consolidate({
+      olderThanDays: 14,
+      limit: 10,
+    }).catch(() => {});
     process.exit(1);
   }
 
@@ -211,15 +273,118 @@ child.on('close', async (code: number | null) => {
           ? `결제대기 예약 등록 완료: ${normalized.phone} ${normalized.date} ${normalized.start}~${normalized.end} ${normalized.room}룸 (${customerName})`
           : `결제대기 예약 등록 완료: ${normalized.phone} ${normalized.date} ${normalized.start}~${normalized.end} ${normalized.room}룸 (${customerName}) — 네이버 예약불가 자동 처리 요청 완료 (실패 시 kiosk-monitor가 재시도)`
         : SKIP_NAVER_BLOCK
-          ? `예약 등록 완료: ${normalized.phone} ${normalized.date} ${normalized.start}~${normalized.end} ${normalized.room}룸 (${customerName}) — 재등록 모드로 네이버 차단은 생략`
+        ? `예약 등록 완료: ${normalized.phone} ${normalized.date} ${normalized.start}~${normalized.end} ${normalized.room}룸 (${customerName}) — 재등록 모드로 네이버 차단은 생략`
           : `예약 등록 완료: ${normalized.phone} ${normalized.date} ${normalized.start}~${normalized.end} ${normalized.room}룸 (${customerName}) — 네이버 예약불가 자동 처리 요청 완료 (실패 시 kiosk-monitor가 재시도)`;
-    process.stdout.write(`${JSON.stringify({ success: true, message })}\n`);
+    const kind = code === 2 ? 'timeout' : 'success';
+    const memoryQuery = buildRegisterMemoryQuery(kind);
+    const episodicHint = await registerMemory.recallCountHint(memoryQuery, {
+      type: 'episodic',
+      limit: 2,
+      threshold: 0.33,
+      title: '최근 유사 등록',
+      separator: 'pipe',
+      metadataKey: 'kind',
+      labels: {
+        success: '성공',
+        timeout: '시간초과',
+        failure: '실패',
+      },
+      order: ['success', 'timeout', 'failure'],
+    }).catch(() => '');
+    const semanticHint = await registerMemory.recallHint(`${memoryQuery} consolidated register pattern`, {
+      type: 'semantic',
+      limit: 2,
+      threshold: 0.28,
+      title: '최근 통합 패턴',
+      separator: 'newline',
+    }).catch(() => '');
+    await registerMemory.remember([
+      '픽코 예약 등록 결과',
+      `phone: ${normalized.phone}`,
+      `date: ${normalized.date}`,
+      `time: ${normalized.start}~${normalized.end}`,
+      `room: ${normalized.room}`,
+      message,
+    ].join('\n'), 'episodic', {
+      importance: code === 2 ? 0.74 : 0.66,
+      expiresIn: 1000 * 60 * 60 * 24 * 30,
+      metadata: {
+        kind,
+        room: normalized.room,
+        date: normalized.date,
+        start: normalized.start,
+        end: normalized.end,
+        pickkoStatus,
+      },
+    }).catch(() => {});
+    await registerMemory.consolidate({
+      olderThanDays: 14,
+      limit: 10,
+    }).catch(() => {});
+    process.stdout.write(`${JSON.stringify({
+      success: true,
+      message,
+      memoryHints: {
+        episodicHint,
+        semanticHint,
+      },
+    })}\n`);
     process.exit(0);
   }
 
+  const memoryQuery = buildRegisterMemoryQuery('failure');
+  const episodicHint = await registerMemory.recallCountHint(memoryQuery, {
+    type: 'episodic',
+    limit: 2,
+    threshold: 0.33,
+    title: '최근 유사 등록',
+    separator: 'pipe',
+    metadataKey: 'kind',
+    labels: {
+      success: '성공',
+      timeout: '시간초과',
+      failure: '실패',
+    },
+    order: ['failure', 'timeout', 'success'],
+  }).catch(() => '');
+  const semanticHint = await registerMemory.recallHint(`${memoryQuery} consolidated register pattern`, {
+    type: 'semantic',
+    limit: 2,
+    threshold: 0.28,
+    title: '최근 통합 패턴',
+    separator: 'newline',
+  }).catch(() => '');
+  const failureMessage = `예약 등록 실패 (exit: ${code}) — 픽코 로그 확인 필요`;
   process.stdout.write(`${JSON.stringify({
     success: false,
-    message: `예약 등록 실패 (exit: ${code}) — 픽코 로그 확인 필요`,
+    message: failureMessage,
+    memoryHints: {
+      episodicHint,
+      semanticHint,
+    },
   })}\n`);
+  await registerMemory.remember([
+    '픽코 예약 등록 실패',
+    `phone: ${normalized.phone}`,
+    `date: ${normalized.date}`,
+    `time: ${normalized.start}~${normalized.end}`,
+    `room: ${normalized.room}`,
+    failureMessage,
+  ].join('\n'), 'episodic', {
+    importance: 0.8,
+    expiresIn: 1000 * 60 * 60 * 24 * 30,
+    metadata: {
+      kind: 'failure',
+      room: normalized.room,
+      date: normalized.date,
+      start: normalized.start,
+      end: normalized.end,
+      exitCode: code,
+    },
+  }).catch(() => {});
+  await registerMemory.consolidate({
+    olderThanDays: 14,
+    limit: 10,
+  }).catch(() => {});
   process.exit(1);
 });
