@@ -15,6 +15,8 @@ const HOOK_URL = 'http://127.0.0.1:18789/hooks/agent';
 const TIMEOUT_MS = 30_000;
 const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
 const TELEGRAM_RETRY_ATTEMPTS = 2;
+const RECENT_ALERT_SNAPSHOT_PATH = path.join(env.OPENCLAW_WORKSPACE, 'recent-alerts.json');
+const RECENT_ALERT_LIMIT = 50;
 
 const TEAM_TOPIC = {
   general: 'general',
@@ -85,6 +87,16 @@ type InlineTelegramInput = {
 
 type ExecError = Error & {
   status?: number;
+};
+
+type RecentAlertSnapshotRow = {
+  from_bot: string;
+  team: string;
+  event_type: string | null;
+  alert_level: number;
+  message: string;
+  status: string;
+  created_at: string;
 };
 
 let _token: string | null = null;
@@ -210,6 +222,70 @@ function _postHookViaCurl({ token, payload }: { token: string; payload: Record<s
   }
 }
 
+function _extractEventType(message: string, payload: unknown): string | null {
+  const payloadEventType = (
+    payload &&
+    typeof payload === 'object' &&
+    !Array.isArray(payload) &&
+    typeof (payload as Record<string, unknown>).event_type === 'string'
+  )
+    ? String((payload as Record<string, unknown>).event_type || '').trim()
+    : '';
+  if (payloadEventType) {
+    return payloadEventType;
+  }
+
+  const match = String(message || '').match(/(?:^|\n)\s*event_type\s*:\s*([^\n]+)/i);
+  return match?.[1]?.trim() || null;
+}
+
+function _readRecentAlertSnapshot(): RecentAlertSnapshotRow[] {
+  try {
+    if (!fs.existsSync(RECENT_ALERT_SNAPSHOT_PATH)) {
+      return [];
+    }
+    const rows = JSON.parse(fs.readFileSync(RECENT_ALERT_SNAPSHOT_PATH, 'utf8'));
+    return Array.isArray(rows) ? rows : [];
+  } catch {
+    return [];
+  }
+}
+
+function _writeRecentAlertSnapshot(row: RecentAlertSnapshotRow): void {
+  try {
+    fs.mkdirSync(path.dirname(RECENT_ALERT_SNAPSHOT_PATH), { recursive: true });
+    const current = _readRecentAlertSnapshot();
+    const next = [row, ...current].slice(0, RECENT_ALERT_LIMIT);
+    fs.writeFileSync(RECENT_ALERT_SNAPSHOT_PATH, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
+  } catch (error) {
+    console.warn(`[openclaw-client] recent alert snapshot 저장 실패: ${(error as Error).message}`);
+  }
+}
+
+function _recordRecentAlertSnapshot({
+  message,
+  team,
+  alertLevel,
+  fromBot,
+  payload,
+}: {
+  message: string;
+  team: string;
+  alertLevel: number;
+  fromBot: string;
+  payload: unknown;
+}): void {
+  _writeRecentAlertSnapshot({
+    from_bot: fromBot,
+    team,
+    event_type: _extractEventType(message, payload),
+    alert_level: alertLevel,
+    message,
+    status: 'sent',
+    created_at: new Date().toISOString(),
+  });
+}
+
 async function _sendInlineTelegram({ message, team, fromBot, topicId, groupId, inlineKeyboard }: InlineTelegramInput) {
   const botToken = team === 'darwin'
     ? (await _getDarwinTelegramBotToken()) || (await _getTelegramBotToken())
@@ -266,6 +342,7 @@ export async function postAlarm({
   alertLevel = 2,
   fromBot = 'unknown',
   sessionKey,
+  payload = null,
   inlineKeyboard = null,
 }: PostAlarmInput) {
   const token = await _getToken();
@@ -283,7 +360,7 @@ export async function postAlarm({
     : undefined;
 
   if (Array.isArray(inlineKeyboard) && inlineKeyboard.length > 0) {
-    return _sendInlineTelegram({
+    const inlineResult = await _sendInlineTelegram({
       message: `${prefix}${message}`,
       team,
       fromBot,
@@ -291,9 +368,13 @@ export async function postAlarm({
       groupId,
       inlineKeyboard,
     });
+    if (inlineResult?.ok) {
+      _recordRecentAlertSnapshot({ message, team, alertLevel, fromBot, payload });
+    }
+    return inlineResult;
   }
 
-  const payload = {
+  const requestPayload = {
     message: `${prefix}[${fromBot}→${team}] ${message}`,
     name: fromBot,
     agentId: 'main',
@@ -312,20 +393,28 @@ export async function postAlarm({
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(requestPayload),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
 
     const body = await res.json().catch(() => null);
+    if (res.ok) {
+      _recordRecentAlertSnapshot({ message, team, alertLevel, fromBot, payload });
+    }
     return { ok: res.ok, status: res.status, body };
   } catch (e) {
     const error = e as ExecError;
     console.warn(`[openclaw-client] webhook 실패: ${error.message}`);
-    const fallback = _postHookViaCurl({ token, payload });
+    const fallback = _postHookViaCurl({ token, payload: requestPayload });
     if (fallback.ok) {
       console.warn('[openclaw-client] webhook curl 폴백 성공');
+      _recordRecentAlertSnapshot({ message, team, alertLevel, fromBot, payload });
       return fallback;
     }
     return { ok: false, error: fallback.error || error.message };
   }
+}
+
+export function readRecentAlertSnapshot(limit = 10): RecentAlertSnapshotRow[] {
+  return _readRecentAlertSnapshot().slice(0, Math.max(0, limit));
 }
