@@ -28,6 +28,7 @@ const {
   buildHttpChecks,
   buildResolvedWebhookHealth,
 } = require('../../../packages/core/lib/health-provider');
+const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
 
 const CONTINUOUS = ['ai.worker.web', 'ai.worker.nextjs', 'ai.worker.lead', 'ai.worker.task-runner'];
 const ALL_SERVICES = ['ai.worker.web', 'ai.worker.nextjs', 'ai.worker.lead', 'ai.worker.task-runner'];
@@ -37,6 +38,30 @@ const n8nRuntimeConfig = getWorkerN8nRuntimeConfig();
 const N8N_HEALTH_URL = process.env.N8N_HEALTH_URL || n8nRuntimeConfig.healthUrl;
 const DEFAULT_WORKER_WEBHOOK_URL = process.env.N8N_WORKER_WEBHOOK || n8nRuntimeConfig.workerWebhookUrl;
 const HTTP_TIMEOUT_MS = Number(healthRuntimeConfig.httpTimeoutMs || 5000);
+const healthReportMemory = createAgentMemory({ agentId: 'worker.health-report', team: 'worker' });
+
+function buildHealthReportMemoryQuery(report) {
+  return [
+    'worker health report',
+    report.decision?.recommended ? 'attention-needed' : 'stable',
+    `${report.serviceHealth?.warnCount || 0}-service-warn`,
+    `${report.endpointHealth?.warnCount || 0}-endpoint-warn`,
+    `${report.n8nIntakeHealth?.warnCount || 0}-intake-warn`,
+  ].filter(Boolean).join(' ');
+}
+
+function buildHealthReportMemorySummary(report) {
+  return [
+    '워커 운영 헬스 리포트',
+    `서비스 경고: ${report.serviceHealth?.warnCount || 0}건`,
+    `엔드포인트 경고: ${report.endpointHealth?.warnCount || 0}건`,
+    `n8n intake 경고: ${report.n8nIntakeHealth?.warnCount || 0}건`,
+    `운영 판단: ${report.decision?.recommended ? `주의 필요 (${report.decision.level})` : '안정'}`,
+    Array.isArray(report.decision?.reasons) && report.decision.reasons.length
+      ? `주요 사유: ${report.decision.reasons.slice(0, 2).join(' | ')}`
+      : null,
+  ].filter(Boolean).join('\n');
+}
 
 async function buildEndpointHealth() {
   const checks = await buildHttpChecks([
@@ -141,6 +166,18 @@ function formatText(report) {
           okText: '현재는 추가 조치보다 관찰 유지',
         }),
       },
+      report.memoryHints?.episodicHint
+        ? {
+            title: '■ 최근 유사 리포트',
+            lines: report.memoryHints.episodicHint.trimStart().split('\n'),
+          }
+        : null,
+      report.memoryHints?.semanticHint
+        ? {
+            title: '■ 최근 통합 패턴',
+            lines: report.memoryHints.semanticHint.trimStart().split('\n'),
+          }
+        : null,
     ].filter(Boolean),
     footer: ['실행: node bots/worker/scripts/health-report.js --json'],
   });
@@ -185,6 +222,50 @@ async function buildReport() {
     },
     decision,
   };
+
+  const memoryQuery = buildHealthReportMemoryQuery(report);
+  const episodicHint = await healthReportMemory.recallCountHint(memoryQuery, {
+    type: 'episodic',
+    limit: 2,
+    threshold: 0.33,
+    title: '최근 유사 리포트',
+    separator: 'pipe',
+    metadataKey: 'kind',
+    labels: {
+      report: '리포트',
+    },
+    order: ['report'],
+  }).catch(() => '');
+  const semanticHint = await healthReportMemory.recallHint(`${memoryQuery} consolidated worker health pattern`, {
+    type: 'semantic',
+    limit: 2,
+    threshold: 0.28,
+    title: '최근 통합 패턴',
+    separator: 'newline',
+  }).catch(() => '');
+
+  report.memoryHints = {
+    episodicHint,
+    semanticHint,
+  };
+
+  await healthReportMemory.remember(buildHealthReportMemorySummary(report), 'episodic', {
+    importance: report.decision.recommended ? 0.72 : 0.6,
+    expiresIn: 1000 * 60 * 60 * 24 * 30,
+    metadata: {
+      kind: 'report',
+      serviceWarnCount: report.serviceHealth.warnCount,
+      endpointWarnCount: report.endpointHealth.warnCount,
+      intakeWarnCount: report.n8nIntakeHealth.warnCount,
+      recommended: report.decision.recommended,
+      level: report.decision.level,
+    },
+  }).catch(() => {});
+  await healthReportMemory.consolidate({
+    olderThanDays: 14,
+    limit: 10,
+  }).catch(() => {});
+
   return report;
 }
 
