@@ -625,6 +625,7 @@ async function storeReviewToRAG(summary, review, trades, rrSection = null) {
       rr_ratio:    rrSection?.currentRR ?? null,
       win_rate:    rrSection?.winRate   ?? null,
       ts:          Date.now(),
+      event_type:  'weekly_trade_review_rag',
     }, 'luna');
     console.log('  ✅ [RAG] 주간 리뷰 저장 완료');
   } catch (e) {

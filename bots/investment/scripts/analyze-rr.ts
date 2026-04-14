@@ -305,7 +305,6 @@ async function analyzeRR() {
 
   // ── 7. RAG 저장 (분석 결과 영구 기록) ────────────────────────────────
   try {
-    await rag.initSchema();
     const ragSummary =
       `[R/R 분석 ${kst.today()}] ` +
       `총 ${total}건 | 승률 ${winRate}% | 실현 R/R ${currentRR} | ` +
@@ -316,6 +315,7 @@ async function analyzeRR() {
       win_rate:    parseFloat(winRate),
       current_rr:  parseFloat(currentRR) || null,
       days:        DAYS,
+      event_type:  'rr_analysis_rag',
     }, 'nemesis');
     console.log('✅ [RAG] R/R 분석 결과 rag_trades 저장 완료');
   } catch (e) {
