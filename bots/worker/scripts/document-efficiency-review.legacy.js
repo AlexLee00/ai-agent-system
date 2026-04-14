@@ -10,8 +10,10 @@
 
 const path = require('path');
 const pgPool = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'));
+const { createAgentMemory } = require(path.join(__dirname, '../../../packages/core/lib/agent-memory'));
 
 const SCHEMA = 'worker';
+const reviewMemory = createAgentMemory({ agentId: 'worker.document-efficiency-review', team: 'worker' });
 
 function parseArgs(argv = process.argv.slice(2)) {
   return {
@@ -217,7 +219,34 @@ function toSlimRow(row) {
   };
 }
 
-function printHuman(review) {
+function buildReviewMemoryQuery(review) {
+  return [
+    'worker document efficiency review',
+    review.improveCandidates.length > 0 ? 'improve-present' : 'improve-empty',
+    review.templateCandidates.length > 0 ? 'template-present' : 'template-empty',
+    review.ocrReviewCandidates.length > 0 ? 'ocr-present' : 'ocr-empty',
+    `${review.totalDocuments}-documents`,
+  ].filter(Boolean).join(' ');
+}
+
+function buildReviewMemorySummary(review) {
+  const improveNames = review.improveCandidates.slice(0, 2).map((row) => row.filename).filter(Boolean);
+  const templateNames = review.templateCandidates.slice(0, 2).map((row) => row.filename).filter(Boolean);
+  const ocrNames = review.ocrReviewCandidates.slice(0, 2).map((row) => row.filename).filter(Boolean);
+
+  return [
+    '워커 문서 효율 리뷰',
+    `총 문서: ${review.totalDocuments}건`,
+    `개선 우선: ${review.improveCandidates.length}건`,
+    `좋은 템플릿: ${review.templateCandidates.length}건`,
+    `OCR 재검토: ${review.ocrReviewCandidates.length}건`,
+    improveNames.length ? `개선 후보 예시: ${improveNames.join(', ')}` : null,
+    templateNames.length ? `템플릿 후보 예시: ${templateNames.join(', ')}` : null,
+    ocrNames.length ? `OCR 후보 예시: ${ocrNames.join(', ')}` : null,
+  ].filter(Boolean).join('\n');
+}
+
+function printHuman(review, memoryHints = {}) {
   const sections = [];
   sections.push(`📄 워커 문서 효율 리뷰`);
   sections.push('');
@@ -247,6 +276,9 @@ function printHuman(review) {
     sections.push('');
   }
 
+  if (memoryHints.episodicHint) sections.push(memoryHints.episodicHint.trimStart(), '');
+  if (memoryHints.semanticHint) sections.push(memoryHints.semanticHint.trimStart(), '');
+
   process.stdout.write(`${sections.join('\n')}\n`);
 }
 
@@ -254,18 +286,58 @@ async function main() {
   const { companyId, limit, json } = parseArgs();
   const rows = enrichRows(await loadDocuments(companyId));
   const review = buildReview(rows, limit);
+  const memoryQuery = buildReviewMemoryQuery(review);
+  const episodicHint = await reviewMemory.recallCountHint(memoryQuery, {
+    type: 'episodic',
+    limit: 2,
+    threshold: 0.33,
+    title: '최근 유사 리뷰',
+    separator: 'pipe',
+    metadataKey: 'kind',
+    labels: {
+      review: '리뷰',
+    },
+    order: ['review'],
+  }).catch(() => '');
+  const semanticHint = await reviewMemory.recallHint(`${memoryQuery} consolidated efficiency pattern`, {
+    type: 'semantic',
+    limit: 2,
+    threshold: 0.28,
+    title: '최근 통합 패턴',
+    separator: 'newline',
+  }).catch(() => '');
+  const memorySummary = buildReviewMemorySummary(review);
 
   if (json) {
     process.stdout.write(`${JSON.stringify({
       ...review,
+      memoryHints: {
+        episodicHint,
+        semanticHint,
+      },
       improveCandidates: review.improveCandidates.map(toSlimRow),
       templateCandidates: review.templateCandidates.map(toSlimRow),
       ocrReviewCandidates: review.ocrReviewCandidates.map(toSlimRow),
     }, null, 2)}\n`);
-    return;
+  } else {
+    printHuman(review, { episodicHint, semanticHint });
   }
 
-  printHuman(review);
+  await reviewMemory.remember(memorySummary, 'episodic', {
+    importance: 0.64,
+    expiresIn: 1000 * 60 * 60 * 24 * 30,
+    metadata: {
+      kind: 'review',
+      totalDocuments: review.totalDocuments,
+      improveCount: review.improveCandidates.length,
+      templateCount: review.templateCandidates.length,
+      ocrCount: review.ocrReviewCandidates.length,
+    },
+  }).catch(() => {});
+  await reviewMemory.consolidate({
+    olderThanDays: 14,
+    limit: 10,
+  }).catch(() => {});
 }
 
 main().catch((error) => {
