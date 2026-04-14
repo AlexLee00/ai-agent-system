@@ -192,6 +192,7 @@ function extractStrategySummary(payload = {}) {
   const plan = payload?.plan || {};
   return {
     preferredCategory: plan.preferredCategory || null,
+    preferredCategoryWeightBoost: Number(plan.preferredCategoryWeightBoost || 0),
     suppressedCategory: plan.suppressedCategory || null,
     preferredTitlePattern: plan.preferredTitlePattern || null,
     suppressedTitlePattern: plan.suppressedTitlePattern || null,

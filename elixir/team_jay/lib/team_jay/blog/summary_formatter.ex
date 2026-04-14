@@ -289,17 +289,24 @@ defmodule TeamJay.Blog.SummaryFormatter do
   defp render_marketing_strategy(strategy) do
     category = Map.get(strategy, :preferred_category)
     pattern = Map.get(strategy, :preferred_title_pattern)
+    boost = Map.get(strategy, :preferred_category_weight_boost, 0)
     hotspot = render_marketing_hotspot(strategy)
+    recovery =
+      case boost do
+        value when is_integer(value) and value > 0 -> ", recovery +#{value}"
+        value when is_float(value) and value > 0 -> ", recovery +#{trunc(value)}"
+        _ -> ""
+      end
 
     cond do
       is_binary(category) and category != "" and is_binary(pattern) and pattern != "" ->
-        ", strategy #{category}/#{pattern}#{hotspot}"
+        ", strategy #{category}/#{pattern}#{recovery}#{hotspot}"
       is_binary(category) and category != "" ->
-        ", strategy #{category}#{hotspot}"
+        ", strategy #{category}#{recovery}#{hotspot}"
       is_binary(pattern) and pattern != "" ->
-        ", strategy #{pattern}#{hotspot}"
-      hotspot != "" ->
-        hotspot
+        ", strategy #{pattern}#{recovery}#{hotspot}"
+      recovery != "" or hotspot != "" ->
+        recovery <> hotspot
       true ->
         ""
     end
@@ -310,18 +317,27 @@ defmodule TeamJay.Blog.SummaryFormatter do
   defp render_marketing_strategy_brief(strategy) do
     category = Map.get(strategy, :preferred_category)
     pattern = Map.get(strategy, :preferred_title_pattern)
+    boost = Map.get(strategy, :preferred_category_weight_boost, 0)
     hotspot = render_marketing_hotspot_brief(strategy)
     trend = render_marketing_hotspot_trend_brief(strategy)
+    recovery =
+      case boost do
+        value when is_integer(value) and value > 0 -> ",recovery=+#{value}"
+        value when is_float(value) and value > 0 -> ",recovery=+#{trunc(value)}"
+        _ -> ""
+      end
 
     cond do
       is_binary(category) and category != "" and is_binary(pattern) and pattern != "" ->
-        ",plan=#{category}:#{pattern}#{hotspot}#{trend}"
+        ",plan=#{category}:#{pattern}#{recovery}#{hotspot}#{trend}"
       is_binary(category) and category != "" ->
-        ",plan=#{category}#{hotspot}#{trend}"
+        ",plan=#{category}#{recovery}#{hotspot}#{trend}"
       is_binary(pattern) and pattern != "" ->
-        ",plan=#{pattern}#{hotspot}#{trend}"
+        ",plan=#{pattern}#{recovery}#{hotspot}#{trend}"
       hotspot != "" ->
-        hotspot <> trend
+        recovery <> hotspot <> trend
+      recovery != "" ->
+        recovery <> trend
       trend != "" ->
         trend
       true ->

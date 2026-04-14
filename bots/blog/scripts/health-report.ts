@@ -599,6 +599,9 @@ async function buildMarketingExpansionHealth() {
         `  strategy: ${strategy?.preferredCategory || 'none'} / ${strategy?.preferredTitlePattern || 'none'}`,
       );
     }
+    if (Number(strategy?.preferredCategoryWeightBoost || 0) > 0) {
+      ok.push(`  strategy recovery boost: +${Number(strategy.preferredCategoryWeightBoost || 0)}`);
+    }
     const adoption = digest?.strategyAdoption || null;
     if (adoption?.status) {
       ok.push(
@@ -677,6 +680,7 @@ async function buildMarketingExpansionHealth() {
       primaryChannelWatchHint: digest?.channelPerformance?.primaryWatchHint || null,
       autonomyDecisionCount: Number(digest?.autonomySummary?.totalCount || 0),
       preferredCategory: strategy?.preferredCategory || null,
+      preferredCategoryWeightBoost: Number(strategy?.preferredCategoryWeightBoost || 0),
       preferredTitlePattern: strategy?.preferredTitlePattern || null,
       suppressedTitlePattern: strategy?.suppressedTitlePattern || null,
       categoryPatternHotspot: strategy?.categoryPatternHotspot || null,
@@ -701,6 +705,7 @@ async function buildMarketingExpansionHealth() {
       primaryChannelWatchHint: null,
       autonomyDecisionCount: 0,
       preferredCategory: null,
+      preferredCategoryWeightBoost: 0,
       preferredTitlePattern: null,
       suppressedTitlePattern: null,
       categoryPatternHotspot: null,
