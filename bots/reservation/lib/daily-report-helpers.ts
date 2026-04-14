@@ -86,7 +86,7 @@ export function buildDailySummaryMessage(
     if (isMidnight) {
       const generalRevenue = pickkoStats ? Number(pickkoStats.generalRevenue || 0) : 0;
       return {
-        msg: `${base}\n\n💰 총 매출: ${formatAmount(generalRevenue)}\n\n❓ 오늘 매출을 확정하시겠습니까?`,
+        msg: `${base}\n\n💰 총 매출: ${formatAmount(generalRevenue)}`,
         totalAmount: generalRevenue,
         roomAmounts: {},
       };
@@ -148,8 +148,7 @@ export function buildDailySummaryMessage(
     for (const [room, amount] of Object.entries(roomAmounts).sort(([a], [b]) => a.localeCompare(b))) {
       msg += `  ${room}: ${formatAmount(amount)}\n`;
     }
-    msg += `  합계: ${formatAmount(grandTotal)}\n`;
-    msg += `\n❓ 오늘 매출을 확정하시겠습니까?`;
+    msg += `  합계: ${formatAmount(grandTotal)}`;
     return { msg, totalAmount: grandTotal, roomAmounts };
   }
 

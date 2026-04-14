@@ -8,7 +8,7 @@ const { getPickkoLaunchOptions, setupDialogHandler } = require('../../lib/browse
 const { loginToPickko, fetchPickkoEntries } = require('../../lib/pickko');
 const { publishReservationAlert } = require('../../lib/alert-client');
 const {
-  getAllNaverKeys, upsertDailySummary, getUnconfirmedSummaryBefore,
+  getAllNaverKeys, upsertDailySummary, getUnconfirmedSummaryBefore, confirmDailySummary,
 } = require('../../lib/db');
 const { fetchDailyDetail } = require('../../lib/pickko-stats');
 const { maskName } = require('../../lib/formatting');
@@ -153,6 +153,18 @@ async function main() {
     });
     log(`  daily_summary 저장: ${reportDate} | ${totalAmount}원 | ${entries.length}건`);
 
+    // 자정 리포트 → 매출 자동 확정! (알람 없이 기록만!)
+    if (isMidnight) {
+      try {
+        const autoConfirm = await confirmDailySummary(reportDate);
+        if (autoConfirm) {
+          log(`  ✅ ${reportDate} 매출 자동 확정 완료: ${totalAmount}원`);
+        }
+      } catch (confirmErr: any) {
+        log(`  ⚠️ ${reportDate} 매출 자동 확정 에러: ${confirmErr.message}`);
+      }
+    }
+
     if (!isMidnight) {
       const cutoff3days = new Date(today);
       cutoff3days.setDate(cutoff3days.getDate() - 3);
@@ -161,17 +173,17 @@ async function main() {
 
       if (unconfirmed && unconfirmed.date >= cutoff3str) {
         const prevHeader = formatDateHeader(unconfirmed.date);
-        const prevRoomLines = Object.entries(unconfirmed.roomAmounts)
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([r, a]) => `  ${r}: ${formatAmount(a)}`)
-          .join('\n');
-        const remindMsg =
-          `⚠️ 미컨펌 알림 — ${prevHeader}\n\n` +
-          `${prevRoomLines}\n` +
-          `  합계: ${formatAmount(unconfirmed.total_amount)}\n\n` +
-          `❓ ${prevHeader} 매출이 아직 확정되지 않았습니다. 지금 확정하시겠습니까?`;
-        log('\n미컨펌 리마인드 발송:\n' + remindMsg);
-        publishReservationAlert({ from_bot: 'ska', event_type: 'report', alert_level: 2, message: remindMsg });
+        log(`\n미컨펌 감지 — ${prevHeader} → 자동 확정 처리`);
+        try {
+          const confirmResult = await confirmDailySummary(unconfirmed.date);
+          if (confirmResult) {
+            log(`  ✅ ${prevHeader} 매출 자동 확정 완료: ${unconfirmed.total_amount}원`);
+          } else {
+            log(`  ⚠️ ${prevHeader} 매출 자동 확정 실패 (데이터 없음)`);
+          }
+        } catch (confirmErr: any) {
+          log(`  ⚠️ ${prevHeader} 매출 자동 확정 에러: ${confirmErr.message}`);
+        }
       }
     }
 

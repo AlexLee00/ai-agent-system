@@ -520,6 +520,7 @@ export async function marketSellOverseas(symbol, qty, dryRun = false) {
       OVRS_ORD_UNPR:   currentPrice.toFixed(2),
       CTAC_TLNO:       '',
       MGCO_APTM_ODNO:  '',
+      SLL_TYPE:        '00',
       ORD_SVR_DVSN_CD: '0',           // 주문서버구분코드 (필수)
     },
   });
