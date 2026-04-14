@@ -167,6 +167,11 @@ function deriveMemoryTeams(memories: MemorySnippet[] = []): string[] {
     .map(([team]) => team);
 }
 
+function buildMemoryAwareTaskHint(baseHint: string, memoryBoostTeams: string[] = []): string {
+  if (!memoryBoostTeams.length) return baseHint;
+  return `${baseHint} / 최근 기억 집중팀: ${memoryBoostTeams.join(', ')}`;
+}
+
 export async function decideTodayFormation(
   { date = new Date(), recentMemories = [] }: { date?: Date; recentMemories?: MemorySnippet[] } = {},
 ): Promise<Formation> {
@@ -192,9 +197,10 @@ export async function decideTodayFormation(
 
   const analysts = [...CORE_ANALYSTS];
   const perspectiveHint = selectPerspectiveHint(events, date);
+  const memoryAwareHint = buildMemoryAwareTaskHint(perspectiveHint, memoryBoostTeams);
   const perspectiveAnalyst = await selectBestAgent('analyst', 'sigma', {
     mode: 'balanced',
-    taskHint: perspectiveHint,
+    taskHint: memoryAwareHint,
     excludeNames: analysts,
   });
   if (perspectiveAnalyst?.name) analysts.push(perspectiveAnalyst.name);
@@ -221,7 +227,9 @@ export async function decideTodayFormation(
   if (targetTeams.has('luna')) {
     const forecaster = await selectBestAgent('predictor', 'sigma', {
       mode: 'balanced',
-      taskHint: '성과 예측 forecast',
+      taskHint: memoryBoostTeams.includes('luna')
+        ? '성과 예측 forecast / 최근 기억상 luna 집중'
+        : '성과 예측 forecast',
       excludeNames: analysts,
     });
     if (forecaster?.name) analysts.push(forecaster.name);
