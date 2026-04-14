@@ -30,7 +30,7 @@ const PG_CONFIG = {
   connectionTimeoutMillis: 5000,
 };
 
-const VALID_SCHEMAS = new Set(['claude', 'reservation', 'investment', 'ska', 'worker', 'blog', 'agent', 'sigma', 'public']);
+const VALID_SCHEMAS = new Set(['claude', 'reservation', 'investment', 'ska', 'worker', 'blog', 'agent', 'sigma', 'rag', 'public']);
 const pools = new Map<string, PgPoolLike>();
 
 const MAX_RECONNECT_ATTEMPTS = 10;
