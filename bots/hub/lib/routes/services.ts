@@ -1,6 +1,12 @@
 const env = require('../../../../packages/core/lib/env');
 const { getLaunchctlStatus } = require('../../../../packages/core/lib/health-provider');
 
+export const HUB_CORE_SERVICE_LABELS = [
+  'ai.openclaw.gateway',
+  'ai.orchestrator',
+  'ai.n8n.server',
+];
+
 const SERVICE_LABELS = [
   'ai.orchestrator',
   'ai.openclaw.gateway',
@@ -19,6 +25,43 @@ const SERVICE_LABELS = [
   'ai.hub.resource-api',
 ];
 
+type LaunchctlServiceStatus = {
+  running: boolean;
+  pid: number | null;
+  exitCode: number;
+  loaded?: boolean;
+};
+
+type LaunchctlStatusMap = Record<string, LaunchctlServiceStatus>;
+
+type ServiceSummary = {
+  total: number;
+  running: number;
+  down: string[];
+  core_down: string[];
+};
+
+export function summarizeServiceStatus(
+  status: LaunchctlStatusMap,
+  {
+    labels = SERVICE_LABELS,
+    coreLabels = HUB_CORE_SERVICE_LABELS,
+  }: {
+    labels?: string[];
+    coreLabels?: string[];
+  } = {},
+): ServiceSummary {
+  const down = labels.filter((label) => !status?.[label]?.running);
+  const coreDown = coreLabels.filter((label) => !status?.[label]?.running);
+
+  return {
+    total: labels.length,
+    running: labels.length - down.length,
+    down,
+    core_down: coreDown,
+  };
+}
+
 export async function servicesStatusRoute(_req: any, res: any) {
   if (!env.LAUNCHD_AVAILABLE) {
     return res.json({
@@ -28,9 +71,22 @@ export async function servicesStatusRoute(_req: any, res: any) {
     });
   }
 
-  const status = getLaunchctlStatus(SERVICE_LABELS);
+  const allStatus = getLaunchctlStatus(SERVICE_LABELS);
+  const status = Object.fromEntries(
+    SERVICE_LABELS.map((label) => [
+      label,
+      allStatus[label] || {
+        running: false,
+        pid: null,
+        exitCode: 0,
+        loaded: false,
+      },
+    ]),
+  );
+  const summary = summarizeServiceStatus(status);
   return res.json({
-    status: 'ok',
+    status: summary.core_down.length === 0 ? 'ok' : 'warn',
+    summary,
     services: status,
   });
 }
