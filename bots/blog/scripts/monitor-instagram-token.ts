@@ -2,7 +2,7 @@
 
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
-const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const { publishToWebhook } = require('../../../packages/core/lib/reporting-hub');
 const {
   getInstagramTokenConfig,
   getTokenHealth,
@@ -96,11 +96,15 @@ async function maybeSendAlert(payload, options) {
     return { shouldAlert, alertLevel, message, sent: false };
   }
 
-  await postAlarm({
-    message,
-    team: 'blog',
-    alertLevel,
-    fromBot: 'blog-instagram-monitor',
+  await publishToWebhook({
+    event: {
+      from_bot: 'blog-instagram-monitor',
+      team: 'blog',
+      event_type: tokenHealth.critical ? 'instagram_token_critical' : 'instagram_upload_readiness_warning',
+      alert_level: alertLevel,
+      message,
+      payload,
+    },
   });
   return { shouldAlert, alertLevel, message, sent: true };
 }

@@ -21,7 +21,7 @@ const {
   getLaunchctlStatus,
   DEFAULT_NORMAL_EXIT_CODES,
 } = require('../../../packages/core/lib/health-provider');
-const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const { publishToWebhook } = require('../../../packages/core/lib/reporting-hub');
 
 const runtimeConfig = getBlogHealthRuntimeConfig();
 const NODE_SERVER_HEALTH_URL = new URL(runtimeConfig.nodeServerHealthUrl || 'http://127.0.0.1:3100/health');
@@ -31,11 +31,14 @@ const N8N_HEALTH_TIMEOUT_MS = Number(runtimeConfig.n8nHealthTimeoutMs || 2500);
 
 async function notify(msg, level = 3) {
   try {
-    await postAlarm({
-      message: msg,
-      team: 'blog',
-      alertLevel: level,
-      fromBot: 'blog-health',
+    await publishToWebhook({
+      event: {
+        from_bot: 'blog-health',
+        team: 'blog',
+        event_type: 'blog_health_check',
+        alert_level: level,
+        message: msg,
+      },
     });
   } catch {
     // ignore
