@@ -55,6 +55,14 @@
 - blog post/quality accumulation RAG 저장
  이 같은 이벤트 정규화 레이어를 탄다.
 
+최근 재집계 기준으로 남는 `rag.store(...)` 매치의 대부분은 아래에 해당한다.
+- `publishToRag(...)` 내부에서 최종 저장을 수행하는 adapter/helper 구현
+- migrated shared client를 `rag` 이름으로 import한 current caller
+- search-only consumer (`rag.search(...)`, `_rag.search(...)`)
+- test/legacy/js compatibility rail
+
+즉 current production write의 canonical path는 실질적으로 reporting-hub 쪽으로 올라온 상태다.
+
 ## Next Extraction Targets
 
 1. RAG 저장 연동
