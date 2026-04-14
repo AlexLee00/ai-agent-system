@@ -12,6 +12,66 @@ function ensureStrategyDir() {
   if (!fs.existsSync(STRATEGY_DIR)) fs.mkdirSync(STRATEGY_DIR, { recursive: true });
 }
 
+function readJsonSafe(filePath) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function readPreviousStrategyPlan(currentWeekOf) {
+  try {
+    const candidates = fs.readdirSync(STRATEGY_DIR)
+      .filter((name) => /^\d{4}-\d{2}-\d{2}_strategy\.json$/.test(name))
+      .sort()
+      .reverse();
+
+    for (const name of candidates) {
+      const payload = readJsonSafe(path.join(STRATEGY_DIR, name));
+      const plan = payload?.plan || null;
+      if (!plan?.weekOf || plan.weekOf === currentWeekOf) continue;
+      return plan;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function buildHotspotTrend(currentHotspot, previousHotspot, previousWeekOf = null) {
+  if (!currentHotspot || !previousHotspot) {
+    return {
+      status: 'warming_up',
+      currentRatio: Number(currentHotspot?.topRatio || 0),
+      previousRatio: Number(previousHotspot?.topRatio || 0),
+      delta: null,
+      previousWeekOf,
+    };
+  }
+
+  const currentRatio = Number(currentHotspot.topRatio || 0);
+  const previousRatio = Number(previousHotspot.topRatio || 0);
+  const delta = Number((currentRatio - previousRatio).toFixed(4));
+  const sameCategory = currentHotspot.category && previousHotspot.category
+    && currentHotspot.category === previousHotspot.category;
+
+  let status = 'stable';
+  if (sameCategory && delta <= -0.05) status = 'improving';
+  else if (sameCategory && delta >= 0.05) status = 'worsening';
+  else if (!sameCategory) status = 'shifted';
+
+  return {
+    status,
+    currentRatio,
+    previousRatio,
+    delta,
+    previousWeekOf,
+    currentCategory: currentHotspot.category || null,
+    previousCategory: previousHotspot.category || null,
+  };
+}
+
 function applyMarketingFeedbackToPlan(plan = {}, marketingDigest = null) {
   if (!marketingDigest || typeof marketingDigest !== 'object') return plan;
 
@@ -134,6 +194,13 @@ function createStrategyPlan(diagnosis = {}, options = {}) {
       || diagnosis.primaryWeakness?.code === 'category_title_pattern_bias',
     categoryPatternHotspot: topCategoryPattern || null,
   };
+
+  const previousPlan = readPreviousStrategyPlan(plan.weekOf);
+  plan.hotspotTrend = buildHotspotTrend(
+    plan.categoryPatternHotspot,
+    previousPlan?.categoryPatternHotspot || null,
+    previousPlan?.weekOf || null,
+  );
 
   return applyMarketingFeedbackToPlan(plan, options.marketingDigest);
 }

@@ -245,16 +245,19 @@ defmodule TeamJay.Blog.SummaryFormatter do
     category = Map.get(strategy, :preferred_category)
     pattern = Map.get(strategy, :preferred_title_pattern)
     hotspot = render_marketing_hotspot_brief(strategy)
+    trend = render_marketing_hotspot_trend_brief(strategy)
 
     cond do
       is_binary(category) and category != "" and is_binary(pattern) and pattern != "" ->
-        ",plan=#{category}:#{pattern}#{hotspot}"
+        ",plan=#{category}:#{pattern}#{hotspot}#{trend}"
       is_binary(category) and category != "" ->
-        ",plan=#{category}#{hotspot}"
+        ",plan=#{category}#{hotspot}#{trend}"
       is_binary(pattern) and pattern != "" ->
-        ",plan=#{pattern}#{hotspot}"
+        ",plan=#{pattern}#{hotspot}#{trend}"
       hotspot != "" ->
-        hotspot
+        hotspot <> trend
+      trend != "" ->
+        trend
       true ->
         ""
     end
@@ -285,6 +288,19 @@ defmodule TeamJay.Blog.SummaryFormatter do
 
     cond do
       is_binary(category) and category != "" -> ",hot=#{category}"
+      true -> ""
+    end
+  end
+
+  defp render_marketing_hotspot_trend_brief(nil), do: ""
+  defp render_marketing_hotspot_trend_brief(strategy) when strategy == %{}, do: ""
+  defp render_marketing_hotspot_trend_brief(strategy) do
+    trend = Map.get(strategy, :hotspot_trend) || %{}
+    status = hotspot_value(trend, :status)
+
+    cond do
+      is_binary(status) and status != "" -> ",trend=#{status}"
+      is_atom(status) -> ",trend=#{status}"
       true -> ""
     end
   end

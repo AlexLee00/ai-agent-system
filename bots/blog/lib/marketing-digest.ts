@@ -5,6 +5,12 @@ const pgPool = require('../../../packages/core/lib/pg-pool');
 const { senseDailyState } = require('./sense-engine.ts');
 const { analyzeMarketingToRevenue } = require('./marketing-revenue-correlation.ts');
 const { diagnoseWeeklyPerformance } = require('./performance-diagnostician.ts');
+const fs = require('fs');
+const path = require('path');
+const env = require('../../../packages/core/lib/env');
+
+const STRATEGY_DIR = path.join(env.PROJECT_ROOT, 'bots/blog/output/strategy');
+const LATEST_STRATEGY_PATH = path.join(STRATEGY_DIR, 'latest-strategy.json');
 
 async function getAutonomySummary(days = 14) {
   try {
@@ -170,6 +176,91 @@ async function getChannelPerformanceSummary(days = 7) {
   }
 }
 
+function readJsonSafe(filePath) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function extractStrategySummary(payload = {}) {
+  const plan = payload?.plan || {};
+  return {
+    preferredCategory: plan.preferredCategory || null,
+    suppressedCategory: plan.suppressedCategory || null,
+    preferredTitlePattern: plan.preferredTitlePattern || null,
+    suppressedTitlePattern: plan.suppressedTitlePattern || null,
+    weakness: plan.weakness || null,
+    categoryPatternHotspot: plan.categoryPatternHotspot || null,
+    weekOf: plan.weekOf || null,
+  };
+}
+
+function buildHotspotTrend(current = null, previous = null) {
+  const currentHotspot = current?.categoryPatternHotspot || null;
+  const previousHotspot = previous?.categoryPatternHotspot || null;
+
+  if (!currentHotspot || !previousHotspot) {
+    return {
+      status: 'warming_up',
+      currentRatio: Number(currentHotspot?.topRatio || 0),
+      previousRatio: Number(previousHotspot?.topRatio || 0),
+      delta: null,
+      previousWeekOf: previous?.weekOf || null,
+    };
+  }
+
+  const currentRatio = Number(currentHotspot.topRatio || 0);
+  const previousRatio = Number(previousHotspot.topRatio || 0);
+  const delta = Number((currentRatio - previousRatio).toFixed(4));
+  const sameCategory = currentHotspot.category && previousHotspot.category
+    && currentHotspot.category === previousHotspot.category;
+
+  let status = 'stable';
+  if (sameCategory && delta <= -0.05) status = 'improving';
+  else if (sameCategory && delta >= 0.05) status = 'worsening';
+  else if (!sameCategory) status = 'shifted';
+
+  return {
+    status,
+    currentRatio,
+    previousRatio,
+    delta,
+    previousWeekOf: previous?.weekOf || null,
+    currentCategory: currentHotspot.category || null,
+    previousCategory: previousHotspot.category || null,
+  };
+}
+
+function getStrategySummary() {
+  const latestPayload = readJsonSafe(LATEST_STRATEGY_PATH);
+  const latest = extractStrategySummary(latestPayload);
+
+  let previous = null;
+  try {
+    const candidates = fs.readdirSync(STRATEGY_DIR)
+      .filter((name) => /^\d{4}-\d{2}-\d{2}_strategy\.json$/.test(name))
+      .sort()
+      .reverse();
+
+    for (const name of candidates) {
+      const payload = readJsonSafe(path.join(STRATEGY_DIR, name));
+      const summary = extractStrategySummary(payload);
+      if (!summary.weekOf || summary.weekOf === latest.weekOf) continue;
+      previous = summary;
+      break;
+    }
+  } catch {
+    previous = null;
+  }
+
+  return {
+    ...latest,
+    hotspotTrend: buildHotspotTrend(latest, previous),
+  };
+}
+
 function buildChannelWatchHint(item = {}) {
   const metadata = item.metadata || {};
   if (item.channel === 'instagram') {
@@ -298,6 +389,7 @@ async function buildMarketingDigest(options = {}) {
   const senseSummary = summarizeSense(sense);
   const health = buildHealth({ senseSummary, revenueCorrelation, diagnosis, autonomySummary, channelPerformance });
   const recommendations = buildRecommendations({ senseSummary, revenueCorrelation, diagnosis, autonomySummary, channelPerformance });
+  const strategy = getStrategySummary();
 
   return {
     generatedAt: new Date().toISOString(),
@@ -308,6 +400,7 @@ async function buildMarketingDigest(options = {}) {
     autonomySummary,
     snapshotTrend,
     channelPerformance,
+    strategy,
     recommendations,
   };
 }

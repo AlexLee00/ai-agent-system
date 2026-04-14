@@ -574,14 +574,16 @@ async function buildPhase4CompetitionHealth() {
 async function buildMarketingExpansionHealth() {
   try {
     const digest = await buildMarketingDigest();
-    let strategy = null;
-    try {
-      if (fs.existsSync(BLOG_STRATEGY_PATH)) {
-        const parsed = JSON.parse(fs.readFileSync(BLOG_STRATEGY_PATH, 'utf8'));
-        strategy = parsed?.plan || null;
+    let strategy = digest?.strategy || null;
+    if (!strategy) {
+      try {
+        if (fs.existsSync(BLOG_STRATEGY_PATH)) {
+          const parsed = JSON.parse(fs.readFileSync(BLOG_STRATEGY_PATH, 'utf8'));
+          strategy = parsed?.plan || null;
+        }
+      } catch {
+        strategy = null;
       }
-    } catch {
-      strategy = null;
     }
     const ok = [
       `  status: ${digest?.health?.status || 'unknown'}`,
@@ -602,6 +604,12 @@ async function buildMarketingExpansionHealth() {
     if (hotspotCategory || hotspotPattern) {
       ok.push(
         `  pattern hotspot: ${hotspotCategory || 'none'} / ${hotspotPattern || 'none'}`,
+      );
+    }
+    const hotspotTrendStatus = strategy?.hotspotTrend?.status || null;
+    if (hotspotTrendStatus) {
+      ok.push(
+        `  hotspot trend: ${hotspotTrendStatus} (${Number(strategy?.hotspotTrend?.previousRatio || 0).toFixed(2)} -> ${Number(strategy?.hotspotTrend?.currentRatio || 0).toFixed(2)})`,
       );
     }
     if (digest?.channelPerformance?.latestDate) {
@@ -646,6 +654,7 @@ async function buildMarketingExpansionHealth() {
       preferredTitlePattern: strategy?.preferredTitlePattern || null,
       suppressedTitlePattern: strategy?.suppressedTitlePattern || null,
       categoryPatternHotspot: strategy?.categoryPatternHotspot || null,
+      hotspotTrend: strategy?.hotspotTrend || null,
     };
   } catch (error) {
     const reason = String(error?.message || error).slice(0, 160);
@@ -667,6 +676,7 @@ async function buildMarketingExpansionHealth() {
       preferredTitlePattern: null,
       suppressedTitlePattern: null,
       categoryPatternHotspot: null,
+      hotspotTrend: null,
     };
   }
 }
