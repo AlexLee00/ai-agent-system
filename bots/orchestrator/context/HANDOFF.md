@@ -4,7 +4,7 @@
 
 ## 현재 상태
 
-- **mainbot.js** ✅ 실행 중 (ai.orchestrator, 알람 큐 처리 전용)
+- **orchestrator runtime** ✅ 실행 중 (ai.orchestrator, 알람 큐 처리 전용)
 - **OpenClaw** ✅ 실행 중 (ai.openclaw.gateway, Jay 페르소나 로드됨)
 - **스카 커맨더** ✅ 실행 중 (ai.ska.commander)
 - **루나 커맨더** ✅ 실행 중 (ai.investment.commander)
@@ -13,7 +13,7 @@
 ## 최근 주요 변경 (2026-03-04)
 
 1. **제이 OpenClaw 전환**: IDENTITY.md/MEMORY.md/TOOLS.md/HEARTBEAT.md 교체
-2. **mainbot.js 슬림화**: Telegram 폴링 제거, 알람 큐 처리만 담당
+2. **알람 큐 runtime 슬림화**: Telegram 폴링 제거, 알람 큐 처리만 담당
 3. **bot_commands 테이블**: DB 마이그레이션 v4, 팀장 지휘 채널
 4. **팀장 커맨더 3종**: ska.js, luna-commander.cjs, claude-commander.js
 5. **LLM 명칭 일반화**: Gemini 고정 → LLM_FALLBACK_MODEL/PROVIDER (소스별 표기: 'slash'|'learned'|'keyword'|'llm')
@@ -71,7 +71,7 @@
 
 ## 트러블슈팅
 
-### mainbot.js 재시작
+### ai.orchestrator 재시작
 ```bash
 launchctl kickstart -k gui/$(id -u)/ai.orchestrator
 ```

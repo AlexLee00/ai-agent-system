@@ -6,7 +6,7 @@
 
 제이(Jay)는 AI 봇 시스템의 총괄 오케스트레이터.
 - **OpenClaw 에이전트**: 사장님과 Telegram 자연어 대화
-- **mainbot.js**: 알람 큐(mainbot_queue) 처리 전용 백그라운드 프로세스
+- **orchestrator runtime**: 알람 큐(mainbot_queue) 처리 전용 백그라운드 프로세스
 - **팀장 지휘**: bot_commands DB를 통해 스카/루나/클로드팀에 명령 전달
 
 ## 아키텍처
@@ -20,7 +20,9 @@
 
 | 파일 | 역할 |
 |------|------|
-| `src/mainbot.js` | 알람 큐 폴링(2초) + 아침 브리핑 + 정리 작업 |
+| `src/orchestrator.ts` | 현재 source of truth 엔트리 |
+| `dist/ts-runtime/bots/orchestrator/src/orchestrator.js` | 실제 launchd 런타임 엔트리 |
+| `src/mainbot.js` | 호환 alias 엔트리 |
 | `src/router.js` | 인텐트 → 핸들러 매핑 + bot_commands 연동 |
 | `src/filter.js` | 무음·중복·야간 필터 |
 | `src/dashboard.js` | /status 빌더 |
@@ -69,14 +71,14 @@
 
 ## 정체성 유지 시스템
 
-- **제이(mainbot.js)**: 6시간마다 `runCommanderIdentityCheck()` → 각 팀장 COMMANDER_IDENTITY.md 점검·복원
+- **제이(orchestrator runtime)**: 6시간마다 `runCommanderIdentityCheck()` → 각 팀장 COMMANDER_IDENTITY.md 점검·복원
 - **각 팀장**: 6시간마다 팀원 `bot-identities/[id].json` 점검·갱신
 - **모든 커맨더**: 시작 시 + 6시간마다 `loadBotIdentity()` → `BOT_IDENTITY` 로드 (LLM 없이 작동)
 - **이슈 시**: Telegram 보고 + 자동 복원. 정상이면 침묵.
 
 ## launchd
 
-- `ai.orchestrator` — mainbot.js KeepAlive, 2초 폴링
+- `ai.orchestrator` — orchestrator runtime KeepAlive, 2초 폴링
 - 재시작: `launchctl kickstart -k gui/$(id -u)/ai.orchestrator`
 
 ## token_usage 테이블 (claude-team.db)
