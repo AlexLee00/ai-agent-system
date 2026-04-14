@@ -371,6 +371,78 @@ function normalizeGeneralPostFromDb(row = {}) {
     pattern,
     titleAlignment: alignment && typeof alignment === 'object' ? alignment : null,
     hasTitleAlignment: Boolean(alignment && typeof alignment === 'object' && (alignment.preview_title || alignment.final_title)),
+    alignmentSource: alignment && typeof alignment === 'object' && (alignment.preview_title || alignment.final_title)
+      ? 'post_metadata'
+      : null,
+  };
+}
+
+async function loadRecentMarketingSnapshots(days = 14) {
+  try {
+    const rows = await pgPool.query('agent', `
+      SELECT created_at, metadata->'nextGeneralPreview' AS next_general_preview
+      FROM agent.event_lake
+      WHERE event_type = 'blog_marketing_snapshot'
+        AND team = 'blog'
+        AND created_at >= NOW() - ($1::text || ' days')::interval
+      ORDER BY created_at DESC
+    `, [days]);
+
+    return (rows || []).map((row) => ({
+      createdAt: row.created_at ? new Date(row.created_at) : null,
+      preview: row.next_general_preview || {},
+    })).filter((row) => row.createdAt instanceof Date && !Number.isNaN(row.createdAt.getTime()));
+  } catch {
+    return [];
+  }
+}
+
+function inferTitleAlignmentFromSnapshots(post, snapshots = []) {
+  if (!post || post.hasTitleAlignment) return post;
+
+  const publishDate = post.dateString ? new Date(post.dateString) : null;
+  if (!(publishDate instanceof Date) || Number.isNaN(publishDate.getTime())) return post;
+
+  const upperBound = new Date(publishDate.getTime());
+  upperBound.setUTCDate(upperBound.getUTCDate() + 1);
+  const lowerBound = new Date(publishDate.getTime());
+  lowerBound.setUTCDate(lowerBound.getUTCDate() - 3);
+
+  const matched = snapshots.find((snapshot) => {
+    const createdAt = snapshot.createdAt;
+    if (!(createdAt instanceof Date) || Number.isNaN(createdAt.getTime())) return false;
+    return createdAt <= upperBound && createdAt >= lowerBound;
+  });
+
+  const preview = matched?.preview || {};
+  const previewTitle = String(preview.title || '').trim();
+  const previewPattern = String(preview.pattern || '').trim();
+  const previewCategory = String(preview.category || '').trim();
+  if (!previewTitle && !previewPattern && !previewCategory) return post;
+
+  const finalPattern = post.pattern || detectTitlePattern(String(post.title || '').replace(/^\[[^\]]+\]\s*/, '').trim());
+  const overlap = previewTitle ? calculateTitleOverlap(post.title, previewTitle) : 0;
+  const categoryAligned = previewCategory ? post.category === previewCategory : false;
+  const patternAligned = previewPattern ? finalPattern === previewPattern : false;
+  const inferredAlignment = {
+    preview_category: previewCategory || null,
+    preview_title: previewTitle || null,
+    preview_pattern: previewPattern || null,
+    final_title: post.title || null,
+    final_pattern: finalPattern || null,
+    title_overlap: overlap,
+    category_aligned: categoryAligned,
+    pattern_aligned: patternAligned,
+    aligned: Boolean(previewTitle) && categoryAligned && patternAligned && overlap >= 0.4,
+    inferred_from_snapshot: true,
+  };
+
+  return {
+    ...post,
+    titleAlignment: inferredAlignment,
+    hasTitleAlignment: true,
+    alignmentSource: 'snapshot_backfill',
+    pattern: finalPattern,
   };
 }
 
@@ -387,7 +459,9 @@ async function loadRecentGeneralPosts(maxPosts = 5) {
 
     const normalized = (rows || []).map(normalizeGeneralPostFromDb).filter((row) => row.title);
     if (normalized.length > 0) {
-      return { rows: normalized, source: 'blog.posts' };
+      const snapshots = await loadRecentMarketingSnapshots(Math.max(14, maxPosts * 4));
+      const enriched = normalized.map((row) => inferTitleAlignmentFromSnapshots(row, snapshots));
+      return { rows: enriched, source: 'blog.posts' };
     }
   } catch (error) {
     // Fall through to output-file fallback when DB rows are unavailable.
@@ -422,7 +496,9 @@ async function getRecentGeneralStrategyAdoption(strategy = {}, nextPreview = nul
     const previewCategory = nextPreview?.category || preferredCategory || null;
     const previewPattern = nextPreview?.pattern || preferredPattern || null;
     const previewTitle = nextPreview?.title || null;
-    const metadataCoverageCount = recentPosts.filter((post) => post.hasTitleAlignment).length;
+    const alignmentCoverageCount = recentPosts.filter((post) => post.hasTitleAlignment).length;
+    const metadataCoverageCount = recentPosts.filter((post) => post.alignmentSource === 'post_metadata').length;
+    const inferredCoverageCount = recentPosts.filter((post) => post.alignmentSource === 'snapshot_backfill').length;
     const preferredCategoryPosts = preferredCategory
       ? recentPosts.filter((post) => post.category === preferredCategory)
       : [];
@@ -481,7 +557,10 @@ async function getRecentGeneralStrategyAdoption(strategy = {}, nextPreview = nul
       preferredCategoryCount: preferredCategoryPosts.length,
       preferredPatternCount: patternMatches.length,
       preferredCategoryPatternCount: combinedMatches.length,
+      alignmentCoverageCount,
+      alignmentCoverageRatio: recentPosts.length > 0 ? Number((alignmentCoverageCount / recentPosts.length).toFixed(2)) : 0,
       metadataCoverageCount,
+      inferredCoverageCount,
       metadataCoverageRatio: recentPosts.length > 0 ? Number((metadataCoverageCount / recentPosts.length).toFixed(2)) : 0,
       latestAligned,
       latestPreviewAligned: previewAligned,
@@ -502,7 +581,10 @@ async function getRecentGeneralStrategyAdoption(strategy = {}, nextPreview = nul
       preferredCategoryCount: 0,
       preferredPatternCount: 0,
       preferredCategoryPatternCount: 0,
+      alignmentCoverageCount: 0,
+      alignmentCoverageRatio: 0,
       metadataCoverageCount: 0,
+      inferredCoverageCount: 0,
       metadataCoverageRatio: 0,
       latestAligned: false,
       latestPreviewAligned: false,
