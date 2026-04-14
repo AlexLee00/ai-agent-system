@@ -242,11 +242,51 @@ async function _buildBookReviewSkillInput(researchData = {}) {
   };
 }
 
-function _applyGeneralTopicStrategy(preparedResearch, category, strategyPlan) {
+function _buildMarketingResearchContext(category, dailyState = {}) {
+  const senseState = dailyState?.senseState || null;
+  const revenueCorrelation = dailyState?.revenueCorrelation || null;
+  const signals = Array.isArray(senseState?.signals) ? senseState.signals : [];
+  const signalTypes = signals.map((signal) => String(signal?.type || '')).filter(Boolean);
+  const recommendations = [];
+  let ctaHint = '';
+
+  if (signalTypes.includes('revenue_anomaly') || signalTypes.includes('revenue_decline') || Number(revenueCorrelation?.revenueImpactPct || 0) < 0) {
+    recommendations.push('매출/전환 하락 신호가 있어 독자가 바로 행동할 수 있는 CTA를 과하지 않게 연결');
+    if (['홈페이지와App', '개발기획과컨설팅', '성장과성공'].includes(category)) {
+      ctaHint = '체험 예약, 문의, 상담, 방문 유도 중 하나를 본문 후반부에 자연스럽게 연결';
+    }
+  }
+
+  if (signalTypes.includes('exam_period') || Number(senseState?.skaEnvironment?.exam_score || 0) > 0) {
+    recommendations.push('시험기간 신호가 있어 학습 효율, 몰입 환경, 루틴 유지 포인트를 본문에 포함');
+    if (!ctaHint) {
+      ctaHint = '시험기간 독자가 바로 적용할 집중 루틴 또는 학습 효율 팁을 결론부에 연결';
+    }
+  }
+
+  if (signalTypes.includes('holiday') || !!senseState?.skaEnvironment?.holiday_flag) {
+    recommendations.push('공휴일 맥락이 있어 무겁기보다 가볍게 읽히는 체크리스트형 전개를 우선');
+  }
+
+  return {
+    marketing_signal_summary: signalTypes.length ? signalTypes.join(' / ') : '특이 신호 없음',
+    marketing_recommendations: recommendations,
+    marketing_cta_hint: ctaHint,
+  };
+}
+
+function _applyGeneralTopicStrategy(preparedResearch, category, strategyPlan, dailyState = {}) {
   if (preparedResearch.topic_hint) return preparedResearch;
 
   const recentPosts = getRecentPosts(category, 10);
-  const selectedTopic = selectAndValidateTopic(category, recentPosts, strategyPlan);
+  const selectedTopic = selectAndValidateTopic(
+    category,
+    recentPosts,
+    strategyPlan,
+    dailyState?.senseState || null,
+    dailyState?.revenueCorrelation || null
+  );
+  const marketingContext = _buildMarketingResearchContext(category, dailyState);
 
   return {
     ...preparedResearch,
@@ -259,8 +299,14 @@ function _applyGeneralTopicStrategy(preparedResearch, category, strategyPlan) {
     topic_key_questions: Array.isArray(selectedTopic.keyQuestions) ? selectedTopic.keyQuestions : [],
     topic_closing_angle: selectedTopic.closingAngle || '',
     topic_freshness_summary: selectedTopic.freshnessSummary || '',
+    topic_marketing_signal_summary: selectedTopic.marketingSignalSummary || marketingContext.marketing_signal_summary,
+    topic_marketing_recommendations: Array.isArray(selectedTopic.marketingRecommendations) ? selectedTopic.marketingRecommendations : marketingContext.marketing_recommendations,
+    topic_marketing_cta_hint: selectedTopic.marketingCtaHint || marketingContext.marketing_cta_hint,
     strategy_focus: Array.isArray(strategyPlan?.focus) ? strategyPlan.focus : [],
-    strategy_recommendations: Array.isArray(strategyPlan?.recommendations) ? strategyPlan.recommendations : [],
+    strategy_recommendations: [
+      ...(Array.isArray(strategyPlan?.recommendations) ? strategyPlan.recommendations : []),
+      ...(Array.isArray(selectedTopic.marketingRecommendations) ? selectedTopic.marketingRecommendations : []),
+    ],
     strategy_preferred_pattern: strategyPlan?.preferredTitlePattern || null,
     strategy_suppressed_pattern: strategyPlan?.suppressedTitlePattern || null,
     _selectedTopic: selectedTopic,
@@ -795,7 +841,7 @@ async function _prepareLectureContext(researchData, traceCtx, preloaded = {}) {
   });
 }
 
-async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, scheduleId = null) {
+async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, scheduleId = null, dailyState = {}) {
   const { category } = preloaded.category ? preloaded : { category: '자기계발' };
   const sectionVariation = preloaded.sectionVariation || {};
   const needsBook = category === '도서리뷰';
@@ -814,7 +860,7 @@ async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, sc
   }
   if (!needsBook && !preparedResearch.topic_hint) {
     try {
-      preparedResearch = _applyGeneralTopicStrategy(preparedResearch, category, strategyPlan);
+      preparedResearch = _applyGeneralTopicStrategy(preparedResearch, category, strategyPlan, dailyState);
       const selectedTopic = preparedResearch._selectedTopic;
       console.log(`[젬스] 주제 다양화 선택: ${selectedTopic.title}${selectedTopic.forced ? ' (forced)' : ''}`);
       delete preparedResearch._selectedTopic;
@@ -1139,14 +1185,16 @@ function _buildPhase1FastLectureResult(lectureCtx, options = {}) {
 }
 
 function _buildPhase1FastGeneralResult(generalCtx, options = {}) {
-  const suffix = generalCtx.category === '도서리뷰'
-    ? '도서 후보/큐 연결 점검'
-    : '카테고리 라우팅 점검';
+  const previewTitle = generalCtx?.book_info?.title
+    || generalCtx?.topicHint
+    || (generalCtx.category === '도서리뷰'
+      ? '도서 후보/큐 연결 점검'
+      : '카테고리 라우팅 점검');
 
   return {
     type: 'general',
     category: generalCtx.category,
-    title: `[Phase1 Fast Dry-Run][${generalCtx.category}] ${suffix}`,
+    title: `[Phase1 Fast Dry-Run][${generalCtx.category}] ${previewTitle}`,
     charCount: 0,
     quality: true,
     aiRisk: {
@@ -1175,10 +1223,33 @@ function _buildDailyGuideLine(result) {
   return `${result.type === 'lecture' ? `[${result.number}강]` : `[${result.category}]`} ${_buildRewriteGuide(result.aiRisk)}`;
 }
 
-function _buildDailyReportLines(results, traceCtx) {
+function _summarizeDailyMarketing(daily = {}) {
+  const senseState = daily?.senseState || {};
+  const revenueCorrelation = daily?.revenueCorrelation || {};
+  const strategyPlan = loadLatestStrategy() || {};
+  const signal = senseState?.signals?.[0] || null;
+  const signalLabel = signal?.message || (Array.isArray(senseState?.signals) && senseState.signals.length ? `${senseState.signals.length}개 신호 감지` : '특이 신호 없음');
+  const revenueImpact = Number(revenueCorrelation?.revenueImpactPct || 0);
+  const preferredCategory = strategyPlan?.preferredCategory || 'none';
+  const preferredPattern = strategyPlan?.preferredTitlePattern || 'none';
+  const suppressedPattern = strategyPlan?.suppressedTitlePattern || 'none';
+
+  return {
+    signalLabel,
+    revenueImpactPct: revenueImpact,
+    preferredCategory,
+    preferredPattern,
+    suppressedPattern,
+    briefLine: `📈 마케팅 전략: signal=${signalLabel} | impact=${(revenueImpact * 100).toFixed(1)}% | plan=${preferredCategory}/${preferredPattern} | suppress=${suppressedPattern}`,
+  };
+}
+
+function _buildDailyReportLines(results, traceCtx, daily = {}) {
+  const marketing = _summarizeDailyMarketing(daily);
   return [
     '📝 [블로그팀] 일간 작업 완료',
     `🔖 trace: ${traceCtx.trace_id.slice(0, 8)}`,
+    marketing.briefLine,
     '',
     ...results.map(_formatDailyResultLine),
     '',
@@ -1241,7 +1312,8 @@ async function _executeWithWriterContract(traceCtx, startTime, contractId, runne
 
 async function _sendDailyReport(results, traceCtx, options = {}) {
   const hasErrors = results.some(r => r.error);
-  const reportLines = _buildDailyReportLines(results, traceCtx);
+  const marketing = _summarizeDailyMarketing(options.daily || {});
+  const reportLines = _buildDailyReportLines(results, traceCtx, options.daily || {});
 
   const reportEvent = buildReportEvent({
     from_bot: 'blog-blo',
@@ -1258,6 +1330,15 @@ async function _sendDailyReport(results, traceCtx, options = {}) {
       {
         title: '리라이팅 가이드',
         lines: results.filter(r => !r.error && !r.skipped).map(_buildDailyGuideLine),
+      },
+      {
+        title: '마케팅 전략',
+        lines: [
+          `signal: ${marketing.signalLabel}`,
+          `impact: ${(marketing.revenueImpactPct * 100).toFixed(1)}%`,
+          `plan: ${marketing.preferredCategory}/${marketing.preferredPattern}`,
+          `suppress: ${marketing.suppressedPattern}`,
+        ],
       },
     ],
     footer: '파일 위치: bots/blog/output/ | 예약 발행: 내일 오전 07:00',
@@ -1315,6 +1396,7 @@ async function _sendDailyReport(results, traceCtx, options = {}) {
 }
 
 function _buildVerifyResult(daily) {
+  const marketing = _summarizeDailyMarketing(daily);
   return {
     type: 'verify',
     ok: true,
@@ -1324,6 +1406,7 @@ function _buildVerifyResult(daily) {
     generalScheduled: !!daily.generalCtx,
     lectureCount: Number(daily.config?.lecture_count || 0),
     generalCount: Number(daily.config?.general_count || 0),
+    marketing,
   };
 }
 
@@ -1355,7 +1438,7 @@ async function _runLectureStage(daily, traceCtx, options = {}) {
 
     return await runLecturePost(researchData, traceCtx, {
       number, seriesName, lectureTitle,
-    }, lectureSchedule?.id, options);
+    }, lectureSchedule?.id, options, daily);
   } catch (e) {
     console.error('[블로] 강의 포스팅 실패:', e.message);
     if (lectureSchedule?.id && !options.dryRun) {
@@ -1371,7 +1454,11 @@ async function _runGeneralStage(daily, traceCtx, options = {}) {
   if (!generalCtx || config.general_count <= 0) return null;
 
   if (options.dryRun && options.phase1FastDryRun) {
-    return _buildPhase1FastGeneralResult(generalCtx, options);
+    const prepared = await _prepareGeneralContext(researchData, traceCtx, generalCtx, generalCtx.scheduleId, daily);
+    if (prepared?.skipped) {
+      return prepared.result || { type: 'general', skipped: true, reason: 'skipped' };
+    }
+    return _buildPhase1FastGeneralResult(prepared.context, options);
   }
 
   const { category, scheduleId, bookInfo } = generalCtx;
@@ -1385,7 +1472,7 @@ async function _runGeneralStage(daily, traceCtx, options = {}) {
     return await runGeneralPost(researchData, traceCtx, {
       category,
       bookInfo,
-    }, scheduleId, options);
+    }, scheduleId, options, daily);
   } catch (e) {
     console.error('[블로] 일반 포스팅 실패:', e.message);
     if (scheduleId && !options.dryRun) {
@@ -1408,13 +1495,13 @@ async function _runPostPublishChecks(options = {}) {
 
 // ─── 강의 포스팅 ──────────────────────────────────────────────────────
 
-async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId = null, options = {}) {
+async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId = null, options = {}, dailyState = {}) {
   const prepared = await _prepareLectureContext(researchData, traceCtx, preloaded);
   if (prepared.skipped) return prepared.result;
   const context = prepared.context;
   context.daily = {
-    senseState: daily.senseState || null,
-    revenueCorrelation: daily.revenueCorrelation || null,
+    senseState: dailyState.senseState || null,
+    revenueCorrelation: dailyState.revenueCorrelation || null,
   };
   const startTime = Date.now();
   const writerName = await _selectBlogWriter('강의', 'pos', '기술 강의 IT');
@@ -1461,8 +1548,8 @@ async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId
 
 // ─── 일반 포스팅 ──────────────────────────────────────────────────────
 
-async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId = null, options = {}) {
-  const prepared = await _prepareGeneralContext(researchData, traceCtx, preloaded, scheduleId);
+async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId = null, options = {}, dailyState = {}) {
+  const prepared = await _prepareGeneralContext(researchData, traceCtx, preloaded, scheduleId, dailyState);
   if (prepared?.skipped) {
     const skippedResult = prepared.result || { type: 'general', skipped: true, reason: 'skipped' };
     const canFallbackCategory = skippedResult.category === '도서리뷰' && !preloaded._bookFallbackTried;
@@ -1481,7 +1568,7 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId
         category: fallbackCategory,
         bookInfo: null,
         _bookFallbackTried: true,
-      }, scheduleId);
+      }, scheduleId, options, dailyState);
     }
     if (!DEV_HUB_READONLY) {
       await advanceGeneralCategory();
@@ -1490,8 +1577,8 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId
   }
   const context = prepared.context;
   context.daily = {
-    senseState: daily.senseState || null,
-    revenueCorrelation: daily.revenueCorrelation || null,
+    senseState: dailyState.senseState || null,
+    revenueCorrelation: dailyState.revenueCorrelation || null,
   };
   const startTime = Date.now();
   const writerName = await _selectBlogWriter(
@@ -1574,7 +1661,7 @@ async function run(options = {}) {
   const generalResult = await _runGeneralStage(daily, traceCtx, options);
   if (generalResult) results.push(generalResult);
 
-  await _sendDailyReport(results, traceCtx, options);
+  await _sendDailyReport(results, traceCtx, { ...options, daily });
   await _runPostPublishChecks(options);
 
   console.log('\n📝 [블로] 일간 작업 완료\n');

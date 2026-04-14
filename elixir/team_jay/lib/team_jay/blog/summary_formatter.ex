@@ -26,6 +26,7 @@ defmodule TeamJay.Blog.SummaryFormatter do
     autonomy_latest = Map.get(autonomy, :latest_decision, %{})
     marketing_health = Map.get(marketing, :health, %{})
     marketing_latest = Map.get(marketing, :latest_snapshot, %{})
+    marketing_strategy = Map.get(marketing, :strategy, %{})
     recent_feedback = render_recent_feedback(phase3_feedback)
     fail_signals = Map.get(phase3_health, :failed_signal_count, 0)
     fail_hint = render_phase3_fail_hint(phase3_execution, phase3_social)
@@ -40,7 +41,7 @@ defmodule TeamJay.Blog.SummaryFormatter do
       "Phase 3: #{render_health(Map.get(phase3_health, :status, :warming_up))}, feedback #{Map.get(phase3_feedback, :feedback_count, 0)}, failed signals #{fail_signals}#{recent_feedback}#{fail_hint}",
       "Phase 4: #{render_health(Map.get(phase4_health, :status, :warming_up))}, competitions #{Map.get(phase4_health, :total_count, 0)}, timeout #{Map.get(phase4_health, :timeout_count, 0)}, avg diff #{Map.get(phase4_quality, :avg_quality_diff, "n/a")}",
       "Autonomy: #{render_health(Map.get(autonomy_health, :status, :warming_up))}, decisions #{Map.get(autonomy_health, :total_count, 0)}, auto #{Map.get(autonomy_health, :auto_publish_count, 0)}, review #{Map.get(autonomy_health, :master_review_count, 0)}#{render_autonomy_latest(autonomy_latest)}",
-      "Marketing: #{render_health(Map.get(marketing_health, :status, :warming_up))}, snapshots #{Map.get(marketing_health, :total_count, 0)}, watch #{Map.get(marketing_health, :watch_count, 0)}, avg impact #{render_pct(Map.get(marketing_health, :avg_revenue_impact_pct))}#{render_marketing_latest(marketing_latest)}"
+      "Marketing: #{render_health(Map.get(marketing_health, :status, :warming_up))}, snapshots #{Map.get(marketing_health, :total_count, 0)}, watch #{Map.get(marketing_health, :watch_count, 0)}, avg impact #{render_pct(Map.get(marketing_health, :avg_revenue_impact_pct))}#{render_marketing_latest(marketing_latest)}#{render_marketing_strategy(marketing_strategy)}"
     ]
     |> Enum.join("\n")
   end
@@ -61,6 +62,7 @@ defmodule TeamJay.Blog.SummaryFormatter do
     autonomy_latest = Map.get(autonomy, :latest_decision, %{})
     marketing_health = Map.get(marketing, :health, %{})
     marketing_latest = Map.get(marketing, :latest_snapshot, %{})
+    marketing_strategy = Map.get(marketing, :strategy, %{})
     phase3_parts = [
       render_health(Map.get(phase3_health, :status, :warming_up)),
       "feedback=#{Map.get(phase3_feedback, :feedback_count, 0)}"
@@ -76,7 +78,7 @@ defmodule TeamJay.Blog.SummaryFormatter do
       "phase3(#{Enum.join(phase3_parts, ",")})",
       "phase4(#{render_health(Map.get(phase4_health, :status, :warming_up))},comp=#{Map.get(phase4_health, :total_count, 0)},timeout=#{Map.get(phase4_health, :timeout_count, 0)})",
       "autonomy(#{render_health(Map.get(autonomy_health, :status, :warming_up))},n=#{Map.get(autonomy_health, :total_count, 0)},auto=#{Map.get(autonomy_health, :auto_publish_count, 0)}#{render_autonomy_brief(autonomy_latest)})",
-      "marketing(#{render_health(Map.get(marketing_health, :status, :warming_up))},snap=#{Map.get(marketing_health, :total_count, 0)},watch=#{Map.get(marketing_health, :watch_count, 0)}#{render_marketing_brief(marketing_latest)})"
+      "marketing(#{render_health(Map.get(marketing_health, :status, :warming_up))},snap=#{Map.get(marketing_health, :total_count, 0)},watch=#{Map.get(marketing_health, :watch_count, 0)}#{render_marketing_brief(marketing_latest)}#{render_marketing_strategy_brief(marketing_strategy)})"
     ]
     |> Enum.join(" ")
   end
@@ -169,6 +171,42 @@ defmodule TeamJay.Blog.SummaryFormatter do
     case Map.get(latest, :latest_weakness) do
       value when is_binary(value) and value != "" -> ",weak=#{value}"
       _ -> ""
+    end
+  end
+
+  defp render_marketing_strategy(nil), do: ""
+  defp render_marketing_strategy(strategy) when strategy == %{}, do: ""
+  defp render_marketing_strategy(strategy) do
+    category = Map.get(strategy, :preferred_category)
+    pattern = Map.get(strategy, :preferred_title_pattern)
+
+    cond do
+      is_binary(category) and category != "" and is_binary(pattern) and pattern != "" ->
+        ", strategy #{category}/#{pattern}"
+      is_binary(category) and category != "" ->
+        ", strategy #{category}"
+      is_binary(pattern) and pattern != "" ->
+        ", strategy #{pattern}"
+      true ->
+        ""
+    end
+  end
+
+  defp render_marketing_strategy_brief(nil), do: ""
+  defp render_marketing_strategy_brief(strategy) when strategy == %{}, do: ""
+  defp render_marketing_strategy_brief(strategy) do
+    category = Map.get(strategy, :preferred_category)
+    pattern = Map.get(strategy, :preferred_title_pattern)
+
+    cond do
+      is_binary(category) and category != "" and is_binary(pattern) and pattern != "" ->
+        ",plan=#{category}:#{pattern}"
+      is_binary(category) and category != "" ->
+        ",plan=#{category}"
+      is_binary(pattern) and pattern != "" ->
+        ",plan=#{pattern}"
+      true ->
+        ""
     end
   end
 

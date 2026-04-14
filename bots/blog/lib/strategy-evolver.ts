@@ -12,7 +12,64 @@ function ensureStrategyDir() {
   if (!fs.existsSync(STRATEGY_DIR)) fs.mkdirSync(STRATEGY_DIR, { recursive: true });
 }
 
-function createStrategyPlan(diagnosis = {}) {
+function applyMarketingFeedbackToPlan(plan = {}, marketingDigest = null) {
+  if (!marketingDigest || typeof marketingDigest !== 'object') return plan;
+
+  const next = {
+    ...plan,
+    marketingFeedback: {
+      generatedAt: marketingDigest.generatedAt || new Date().toISOString(),
+      health: marketingDigest.health || null,
+      senseSummary: marketingDigest.senseSummary || null,
+      revenueImpactPct: Number(marketingDigest?.revenueCorrelation?.revenueImpactPct || 0),
+      snapshotTrend: marketingDigest.snapshotTrend || null,
+      autonomySummary: marketingDigest.autonomySummary || null,
+    },
+  };
+
+  const focus = Array.isArray(next.focus) ? [...next.focus] : [];
+  const recommendations = Array.isArray(next.recommendations) ? [...next.recommendations] : [];
+  const revenueImpactPct = Number(marketingDigest?.revenueCorrelation?.revenueImpactPct || 0);
+  const signalCount = Number(marketingDigest?.senseSummary?.signalCount || 0);
+  const topSignalType = String(marketingDigest?.senseSummary?.topSignal?.type || '');
+  const topSignalMessage = String(marketingDigest?.senseSummary?.topSignal?.message || '');
+  const latestWeakness = String(marketingDigest?.snapshotTrend?.latestWeakness || '');
+  const watchCount = Number(marketingDigest?.snapshotTrend?.watchCount || 0);
+
+  if (revenueImpactPct < -0.05) {
+    focus.unshift('매출 하락 구간용 전환형 주제와 CTA 강화');
+    recommendations.unshift('예약 문의, 상담 신청, 무료 체험처럼 자연스러운 전환 CTA를 일반 글 후반부에 더 자주 배치하세요.');
+    next.preferredCategory = next.preferredCategory || '홈페이지와App';
+  } else if (revenueImpactPct > 0.05) {
+    focus.unshift('매출 우세 신호가 있는 포맷 재사용');
+    recommendations.unshift('매출 반응이 좋았던 포맷은 제목 패턴과 CTA 위치를 유지한 채 카테고리만 바꿔 재검증하세요.');
+  }
+
+  if (topSignalType === 'exam_period') {
+    focus.unshift('시험기간 학습 효율형 콘텐츠 비중 확대');
+    recommendations.unshift('스터디 루틴, 집중 유지, 좌석 선택, 공부 동선처럼 학습 효율 주제를 우선 노출하세요.');
+    next.preferredCategory = '성장과성공';
+  }
+
+  if (topSignalType === 'holiday' || /공휴일/.test(topSignalMessage)) {
+    recommendations.unshift('공휴일 구간에는 부담이 적은 체크리스트형·가벼운 실전 팁형 콘텐츠를 우선 배치하세요.');
+    next.preferredTitlePattern = next.preferredTitlePattern || 'checklist';
+  }
+
+  if (latestWeakness === 'title_pattern_bias' || watchCount > 0) {
+    recommendations.push('최근 스냅샷 경고가 남아 있어 제목 패턴과 CTA 위치를 동시에 한 번에 바꾸기보다 하나씩만 바꿔 검증하세요.');
+  }
+
+  if (signalCount >= 3) {
+    recommendations.push('오늘 감지된 운영 신호가 많으니, 실험성 제목보다 독자 문제를 바로 짚는 안정형 제목을 우선 쓰는 편이 좋습니다.');
+  }
+
+  next.focus = [...new Set(focus.filter(Boolean))];
+  next.recommendations = [...new Set(recommendations.filter(Boolean))];
+  return next;
+}
+
+function createStrategyPlan(diagnosis = {}, options = {}) {
   const topCategory = diagnosis.byCategory?.[0]?.key || null;
   const topPattern = diagnosis.byTitlePattern?.[0]?.key || null;
   const preferredPatternOrder = ['checklist', 'experience', 'warning', 'trend', 'why'];
@@ -38,7 +95,12 @@ function createStrategyPlan(diagnosis = {}) {
     focus.push('현재 분포 유지, 제목 패턴만 순환 테스트');
   }
 
-  return {
+  const forcedPreferredPattern =
+    diagnosis.primaryWeakness?.code === 'title_pattern_bias' && topPattern === 'default'
+      ? 'checklist'
+      : null;
+
+  const plan = {
     evolvedAt: new Date().toISOString(),
     weekOf: kst.today(),
     weakness: diagnosis.primaryWeakness,
@@ -47,17 +109,20 @@ function createStrategyPlan(diagnosis = {}) {
     preferredCategory: diagnosis.byCategory?.[1]?.key || diagnosis.byCategory?.[0]?.key || null,
     suppressedCategory: diagnosis.byCategory?.[0]?.key || null,
     preferredTitlePattern:
-      preferredAlternative
+      forcedPreferredPattern
+      || preferredAlternative
       || safePatternFallback
       || diagnosis.byTitlePattern?.[0]?.key
       || null,
     suppressedTitlePattern: diagnosis.byTitlePattern?.[0]?.key || null,
     hardSuppressTitlePattern: diagnosis.primaryWeakness?.code === 'title_pattern_bias',
   };
+
+  return applyMarketingFeedbackToPlan(plan, options.marketingDigest);
 }
 
 async function evolveStrategy(diagnosis = {}, options = {}) {
-  const plan = createStrategyPlan(diagnosis);
+  const plan = createStrategyPlan(diagnosis, options);
   if (options.dryRun) {
     return {
       saved: false,
@@ -89,4 +154,5 @@ async function evolveStrategy(diagnosis = {}, options = {}) {
 module.exports = {
   evolveStrategy,
   createStrategyPlan,
+  applyMarketingFeedbackToPlan,
 };

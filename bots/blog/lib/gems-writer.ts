@@ -447,10 +447,44 @@ function _defaultQuestionSection(category) {
   ].join('\n');
 }
 
+function _defaultGreetingSection(category, weatherContext) {
+  return [
+    '[승호아빠 인사말]',
+    `${weatherContext} 같은 날에는 일의 속도보다 먼저 점검해야 할 기준이 더 분명해집니다. 오늘은 ${category} 이야기를 조금 더 실무적으로 풀어보려고 합니다. 비슷한 문제를 여러 번 겪고 나면 결국 답은 화려한 방법론보다도 먼저 무엇을 확인해야 하는지에 있다는 걸 자주 느끼게 됩니다. 저 역시 최근 글을 쓰고 운영을 점검하면서, 겉으로는 비슷해 보여도 어디에서 판단이 갈리는지가 결과를 크게 바꾼다는 걸 다시 확인했습니다. 그래서 이번 글에서는 막연한 조언보다 바로 적용할 수 있는 기준과 질문 위주로 정리해보겠습니다.`,
+  ].join('\n');
+}
+
+function _defaultMainSection(marker, category) {
+  const sectionIndex = marker === '본론 섹션 1' ? 1 : marker === '본론 섹션 2' ? 2 : 3;
+  const opening = sectionIndex === 1
+    ? `${category} 문제를 볼 때 많은 분들이 바로 해결책부터 찾으려 하지만, 실제로는 문제 정의가 흔들려 있는 경우가 훨씬 많습니다. 겉으로는 같은 고민처럼 보여도 사용자 맥락, 실행 시점, 실패 비용이 다르면 선택해야 할 기준도 완전히 달라집니다. 그래서 첫 번째로 필요한 일은 '무엇이 안 되고 있는가'보다 '어디서부터 어긋났는가'를 구분하는 것입니다. 이 구분이 잡히지 않으면 좋은 도구를 써도 체감 성과가 적고, 오히려 팀 안에서 설명 비용만 커질 수 있습니다.`
+    : `${category} 주제를 조금 더 실전적으로 보려면, 이미 알고 있는 상식보다 실제 실행 과정에서 무엇이 자주 어긋나는지를 봐야 합니다. 같은 목표를 두고도 결과가 다른 이유는 도구 차이보다 판단 순서 차이인 경우가 많습니다. 그래서 이 구간에서는 어떤 기준을 앞에 두고, 어떤 설명을 뒤로 미뤄야 하는지를 차분히 짚어보는 것이 중요합니다.`;
+  const middle = sectionIndex === 2
+    ? `여기서 한 단계 더 들어가면, 같은 ${category} 주제라도 실행 과정에서 반복적으로 등장하는 걸림돌이 있습니다. 첫째, 기준이 문서로 남지 않아 담당자마다 다른 판단을 한다는 점입니다. 둘째, 지금 해결해야 할 문제와 나중에 다뤄도 되는 문제를 한 번에 풀려고 하면서 집중도가 흐려집니다. 셋째, 결과를 측정하는 방식이 모호해 개선 여부를 체감하지 못합니다. 이런 상황에서는 더 많은 아이디어보다도 우선순위를 좁히고, 실행 후 확인할 지표를 먼저 정하는 편이 훨씬 안정적입니다.`
+    : `${category} 글을 읽고도 실행이 잘 안 되는 이유는, 적용 단위가 너무 크거나 확인 기준이 모호하기 때문입니다. 그래서 실제로는 큰 전략보다 작은 적용 질문이 먼저 필요합니다. 지금 바로 바꿀 수 있는 한 가지는 무엇인지, 이 선택이 실제로 어떤 변화를 만드는지, 다음 판단에 남길 기록은 무엇인지를 분리해서 보는 편이 훨씬 안정적으로 작동합니다.`;
+  const ending = sectionIndex === 3
+    ? `실제로 적용 단계에서는 세 가지 정도만 먼저 고정해도 훨씬 덜 흔들립니다. 첫째, 이번 주 안에 바로 실행 가능한 한 가지 행동을 정합니다. 둘째, 그 행동이 어떤 변화를 만들었는지 기록할 기준을 정합니다. 셋째, 예상과 다를 경우 무엇을 버리고 무엇을 유지할지 미리 정해둡니다. 이 세 가지가 있으면 ${category} 주제를 읽고 '좋은 말이었다'에서 끝나지 않고, 다음 판단의 근거가 생깁니다. 결국 실전에서는 더 복잡한 전략보다도 작은 실행 루프를 반복하는 쪽이 더 멀리 갑니다.`
+    : `그리고 여기서 중요한 건 설명의 순서를 바꾸는 일입니다. 많은 경우 사람들은 결과를 먼저 듣고 싶어 하지만, 실제 현장에서는 배경과 제약을 먼저 공유할 때 합의가 더 빨라집니다. ${category} 주제도 마찬가지입니다. 지금 왜 이 문제를 다시 봐야 하는지, 실패했을 때 어떤 비용이 생기는지, 그래서 어떤 선택을 미루고 어떤 선택을 당겨야 하는지를 차근차근 설명해야 이후 실행이 덜 흔들립니다. 이런 구조를 잡아두면 팀원이나 고객과 대화를 나눌 때도 설득이 쉬워집니다.`;
+
+  return [
+    `[${marker}]`,
+    opening,
+    middle,
+    ending,
+  ].join('\n');
+}
+
 function _defaultCafeSection(weatherContext) {
   return [
     '[스터디카페 홍보 섹션]',
     `${weatherContext}처럼 집중력이 쉽게 흔들리는 날에는 작업 공간의 질이 생각보다 큰 차이를 만든다. 매장 이름은 커피랑도서관 분당서현점이고, 세스코 에어는 이 공간에서 운영하는 공기질 관리 기능이다. 커피랑도서관 분당서현점은 조용한 좌석 환경과 안정적인 작업 동선을 갖춰서 글쓰기, 기획, 개발 문서 정리 같은 깊은 집중 작업을 이어가기 좋다. 특히 장시간 앉아 있어도 답답하지 않도록 세스코 에어 시스템으로 공기 질을 관리하고 있어, 머리가 무거워지기 쉬운 오후 시간대에도 작업 리듬을 비교적 안정적으로 유지할 수 있다. 실제로 복잡한 기획서를 다듬거나 긴 글을 마무리해야 할 때는 주변 소음보다도 ‘얼마나 바로 다시 몰입할 수 있는가’가 중요한데, 이런 점에서 커피랑도서관 분당서현점은 공부뿐 아니라 실무 작업 공간으로도 충분히 설득력이 있다.`,
+  ].join('\n');
+}
+
+function _defaultClosingSection(category) {
+  return [
+    '[마무리 제언]',
+    `${category} 이야기를 오래 보다 보면 결국 중요한 건 더 많은 정보를 모으는 일이 아니라, 오늘 당장 무엇을 점검할지 분명히 하는 일이라는 생각이 듭니다. 솔직히 저도 한 번에 정답을 찾기보다, 기준을 다시 세우면서 시행착오를 줄이는 방식이 더 오래 간다는 걸 여러 번 확인했습니다. 오늘 글이 막연한 고민을 조금 더 구체적인 실행 질문으로 바꾸는 데 도움이 되었으면 합니다. 이번 주에는 내용을 다 읽는 것보다도, 여기서 한 가지라도 바로 적용해보시면 좋겠습니다.`,
   ].join('\n');
 }
 
@@ -541,6 +575,75 @@ function _buildSelectedTopicDirection(researchData = {}) {
   return lines.join('\n');
 }
 
+function _defaultGeneralSection(marker, category, weatherContext, relatedPosts) {
+  switch (marker) {
+    case 'AI 스니펫 요약':
+      return _defaultGeneralSnippet(category, category);
+    case '이 글에서 배울 수 있는 것':
+      return _defaultLearningPointsSection(category);
+    case '승호아빠 인사말':
+      return _defaultGreetingSection(category, weatherContext);
+    case '본론 섹션 1':
+    case '본론 섹션 2':
+    case '본론 섹션 3':
+      return _defaultMainSection(marker, category);
+    case '스터디카페 홍보 섹션':
+      return _defaultCafeSection(weatherContext);
+    case '마무리 제언':
+      return _defaultClosingSection(category);
+    case '함께 읽으면 좋은 글':
+      return _defaultLinkingSection(relatedPosts);
+    case '해시태그':
+      return _defaultHashtags(category);
+    case '질문형 Q&A':
+      return _defaultQuestionSection(category);
+    default:
+      return '';
+  }
+}
+
+function _expandGeneralFallback(content, { category, weatherContext, relatedPosts, minChars }) {
+  let next = String(content || '').trim();
+  if (!next) return next;
+
+  const fillOrder = [
+    '승호아빠 인사말',
+    '본론 섹션 1',
+    '본론 섹션 2',
+    '본론 섹션 3',
+    '스터디카페 홍보 섹션',
+    '질문형 Q&A',
+    '마무리 제언',
+    '함께 읽으면 좋은 글',
+    '해시태그',
+  ];
+
+  for (const marker of fillOrder) {
+    if (_findMarkerIndex(next, marker) >= 0) continue;
+    const section = _defaultGeneralSection(marker, category, weatherContext, relatedPosts);
+    if (section) next = `${next}\n\n${section}`.trim();
+  }
+
+  const expansions = [
+    _defaultChecklistSection(category),
+    [
+      '[실무 적용 포인트 정리]',
+      `${category} 주제는 읽는 순간에는 이해가 되는 것 같아도, 실제 현장에서는 우선순위와 설명 순서 때문에 자주 어긋납니다. 그래서 적용 단계에서는 먼저 지금 해결하려는 문제가 누구의 문제인지, 바로 줄여야 할 마찰이 무엇인지, 그리고 이번 주 안에 확인할 수 있는 변화가 무엇인지를 적어두는 게 좋습니다. 이 세 가지가 정리되면 실행이 훨씬 가벼워지고, 다음 회고도 쉬워집니다. 결국 실무에서는 더 대단한 방법보다도 작은 검증 루프를 끊기지 않게 유지하는 사람이 끝까지 갑니다.`,
+    ].join('\n'),
+    [
+      '[실행 후 점검 질문]',
+      `첫째, 오늘 정리한 ${category} 기준이 지금 하는 일에 바로 붙는가? 둘째, 실행하고 나서 무엇이 달라졌는지 한 문장으로 설명할 수 있는가? 셋째, 다시 같은 문제를 만났을 때 더 빨리 판단할 근거가 남았는가? 이 세 질문에 답할 수 있으면 이번 글은 단순한 정보 정리가 아니라 실제 판단 기준으로 남습니다. 반대로 답이 흐리다면, 오늘 내용 중 한 단락만 골라 더 구체적인 실행 항목으로 쪼개보는 것이 좋습니다.`,
+    ].join('\n'),
+  ];
+
+  for (const block of expansions) {
+    if (next.length >= minChars) break;
+    next = `${next}\n\n${block}`.trim();
+  }
+
+  return next;
+}
+
 function _ensureGeneralQualityFloor(content, { category, weatherContext, relatedPosts, minChars }) {
   let next = String(content || '').trim();
   if (!next) return next;
@@ -575,7 +678,7 @@ function _ensureGeneralQualityFloor(content, { category, weatherContext, related
   }
 
   if (next.length < minChars) {
-    next = `${next}\n\n${_defaultChecklistSection(category)}`;
+    next = _expandGeneralFallback(next, { category, weatherContext, relatedPosts, minChars });
   }
 
   return next.trim();
@@ -901,6 +1004,15 @@ function _buildVariationBlock(variation = {}) {
     lines.push(`편집자 페르소나: ${variation.editorPersona.name} — ${variation.editorPersona.focus}`);
     lines.push(`편집자 지시: ${variation.editorPersona.instruction}`);
   }
+  if (variation.marketingContext?.signalTypes?.length) {
+    lines.push(`마케팅 신호: ${variation.marketingContext.signalTypes.join(', ')}`);
+  }
+  if (variation.marketingContext?.notes?.length) {
+    lines.push(`마케팅 지시: ${variation.marketingContext.notes.join(' / ')}`);
+  }
+  if (variation.marketingContext?.ctaMode === 'conversion') {
+    lines.push('CTA 강도: 예약/문의/체험 전환으로 이어지되 광고처럼 과하게 밀지 말고 본문 후반에 자연스럽게 연결');
+  }
 
   // ★ 보너스 인사이트 지시
   if (variation.bonusInsights?.length > 0) {
@@ -950,6 +1062,9 @@ async function writeGeneralPost(category, researchData, sectionVariation = {}) {
   const topicTitleCandidate = String(researchData.topic_title_candidate || '').trim();
   const strategyFocus = (researchData.strategy_focus || []).filter(Boolean).join(' / ');
   const strategyRecommendations = (researchData.strategy_recommendations || []).filter(Boolean).join(' / ');
+  const marketingSignalSummary = String(researchData.topic_marketing_signal_summary || '').trim();
+  const marketingRecommendations = (researchData.topic_marketing_recommendations || []).filter(Boolean).join(' / ');
+  const marketingCtaHint = String(researchData.topic_marketing_cta_hint || '').trim();
   const selectedTopicDirection = _buildSelectedTopicDirection(researchData);
   const bonusInsights = sectionVariation.bonusInsights || [];
   const sectionPlan = calculateSectionChars('gems', bonusInsights);
@@ -1022,6 +1137,9 @@ ${topicDiff ? `[최근 글과의 차별화 포인트]\n${topicDiff}\n` : ''}
 ${topicTitleCandidate ? `[제목 후보 예시]\n${topicTitleCandidate}\n` : ''}
 ${strategyFocus ? `[이번 주 전략 포커스]\n${strategyFocus}\n` : ''}
 ${strategyRecommendations ? `[전략 권고]\n${strategyRecommendations}\n` : ''}
+${marketingSignalSummary ? `[매출/시즌 신호]\n${marketingSignalSummary}\n` : ''}
+${marketingRecommendations ? `[마케팅 반영 지시]\n${marketingRecommendations}\n` : ''}
+${marketingCtaHint ? `[전환 CTA 힌트]\n${marketingCtaHint}\n` : ''}
 ${charInstruction}
 ${topicHint
   ? `이번 수동 재작성은 위 [주제 힌트]를 중심 주제로 유지하여, 같은 문제의식을 새 글로 다시 작성하라.
@@ -1080,7 +1198,7 @@ ${_buildVariationBlock(sectionVariation)}
     }).catch(() => {});
   }
 
-  const MIN_CHARS_GENERAL = Number(generationRuntimeConfig.gemsMinChars || 6000);
+  const MIN_CHARS_GENERAL = Number(generationRuntimeConfig.gemsMinChars || 7000);
 
   // ── Continue 이어쓰기: 글자수 부족 시 2차 호출 (_THE_END_ 여부 무관) ──
   if (content.length < MIN_CHARS_GENERAL) {
@@ -1381,7 +1499,7 @@ ${strategyRecommendations ? `\n[전략 권고]\n${strategyRecommendations}` : ''
   const chunks = [
     {
       id:       'group_a',
-      minChars: 1900,
+      minChars: 2200,
       prompt: `${baseCtx}
 
 카테고리 "${category}"에 맞는 주제를 선정하여 아래 섹션을 작성하라.
@@ -1398,12 +1516,12 @@ ${strategyRecommendations ? `\n[전략 권고]\n${strategyRecommendations}` : ''
 6. ━━━━━━━━━━━━━━━━━━━━━
 7. [본론 섹션 1] — 주제 도입 + 번호 리스트 상세 설명, 1,400자 이상
 
-글자수 요구: 전체 1,900자 이상. 본론 섹션 1은 최소 1,400자.
+글자수 요구: 전체 2,200자 이상. 본론 섹션 1은 최소 1,500자.
 ${_buildVariationBlock(sectionVariation)}`,
     },
     {
       id:       'group_b',
-      minChars: 2700,
+      minChars: 3000,
       prompt: `${baseCtx}
 
 카테고리 "${category}" 포스팅의 중반부를 작성하라.
@@ -1414,11 +1532,11 @@ ${_buildVariationBlock(sectionVariation)}`,
 2. ━━━━━━━━━━━━━━━━━━━━━
 3. [본론 섹션 3] — 실천 전략 3가지 (번호 리스트, 각 전략 280자 이상), 1,350자 이상
 
-글자수 요구: 전체 2,700자 이상. 각 섹션 최소 1,350자.`,
+글자수 요구: 전체 3,000자 이상. 각 섹션 최소 1,450자.`,
     },
     {
       id:       'group_c',
-      minChars: 1250,
+      minChars: 1900,
       prompt: `${baseCtx}
 카테고리 "${category}" 포스팅의 마무리 섹션을 작성하라.
 앞서 작성된 3개의 본론 섹션에 이어 자연스럽게 마무리하라.
@@ -1431,11 +1549,11 @@ ${_buildVariationBlock(sectionVariation)}`,
 4. ━━━━━━━━━━━━━━━━━━━━━
 5. [마무리 제언] — 명언형 인용 + 결론 한줄 + 감사 인사 + 좋아요/댓글 독려, 400자 이상
 
-글자수 요구: 전체 1,700자 이상. 스터디카페 섹션 최소 600자, 질문형 Q&A 최소 450자.`,
+글자수 요구: 전체 1,900자 이상. 스터디카페 섹션 최소 700자, 질문형 Q&A 최소 500자.`,
     },
     {
       id:       'group_d',
-      minChars: 220,
+      minChars: 350,
       prompt: `${baseCtx}
 ${linkingBlock}
 카테고리 "${category}" 포스팅의 마감 메타 정보를 작성하라.
@@ -1445,7 +1563,7 @@ ${linkingBlock}
 1. [함께 읽으면 좋은 글] — 관련 포스팅 3개 추천
 2. [해시태그] — 주제 관련 15개 + 스터디카페 홍보 12개 = 27개 이상 (질문형 키워드 포함)
 
-글자수 요구: 전체 220자 이상.`,
+글자수 요구: 전체 350자 이상.`,
     },
   ];
 

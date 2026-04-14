@@ -10,6 +10,7 @@ defmodule TeamJay.Blog.MarketingDigest do
   alias TeamJay.Repo
 
   @default_days 7
+  @strategy_path "/Users/alexlee/projects/ai-agent-system/bots/blog/output/strategy/latest-strategy.json"
 
   def build(days \\ @default_days) do
     query_days = normalize_days(days)
@@ -75,6 +76,7 @@ defmodule TeamJay.Blog.MarketingDigest do
           },
           else: nil
         ),
+      strategy: read_latest_strategy(),
       recommendations: build_recommendations(total, watch_count, latest_weakness)
     }
   end
@@ -92,8 +94,29 @@ defmodule TeamJay.Blog.MarketingDigest do
         avg_revenue_impact_pct: 0.0
       },
       latest_snapshot: nil,
+      strategy: nil,
       recommendations: ["marketing digest 조회 실패: #{inspect(reason)}"]
     }
+  end
+
+  defp read_latest_strategy do
+    with true <- File.exists?(@strategy_path),
+         {:ok, content} <- File.read(@strategy_path),
+         {:ok, decoded} <- Jason.decode(content) do
+      plan = Map.get(decoded, "plan", %{})
+
+      %{
+        preferred_category: Map.get(plan, "preferredCategory"),
+        suppressed_category: Map.get(plan, "suppressedCategory"),
+        preferred_title_pattern: Map.get(plan, "preferredTitlePattern"),
+        suppressed_title_pattern: Map.get(plan, "suppressedTitlePattern"),
+        weakness: Map.get(plan, "weakness"),
+        focus: Map.get(plan, "focus", []),
+        recommendations: Map.get(plan, "recommendations", [])
+      }
+    else
+      _ -> nil
+    end
   end
 
   defp build_recommendations(0, _watch_count, _weakness),

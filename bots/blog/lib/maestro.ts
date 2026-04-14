@@ -108,6 +108,31 @@ function buildDynamicPipeline(postType, history) {
   return { pipeline: nodes, variations };
 }
 
+function _buildMarketingContext(payload = {}) {
+  const senseState = payload?.daily?.senseState || payload?.senseState || null;
+  const revenueCorrelation = payload?.daily?.revenueCorrelation || payload?.revenueCorrelation || null;
+  const signals = Array.isArray(senseState?.signals) ? senseState.signals.map((signal) => String(signal?.type || '')).filter(Boolean) : [];
+  const notes = [];
+  let ctaMode = 'soft';
+
+  if (signals.includes('revenue_anomaly') || signals.includes('revenue_decline') || Number(revenueCorrelation?.revenueImpactPct || 0) < 0) {
+    notes.push('매출 하락/이상 신호가 있어 전환형 CTA를 자연스럽게 강화');
+    ctaMode = 'conversion';
+  }
+  if (signals.includes('exam_period') || Number(senseState?.skaEnvironment?.exam_score || 0) > 0) {
+    notes.push('시험기간 신호가 있어 학습 효율/몰입 환경 내용을 본문에 포함');
+  }
+  if (signals.includes('holiday') || !!senseState?.skaEnvironment?.holiday_flag) {
+    notes.push('공휴일 맥락이 있어 가볍고 빠르게 읽히는 구성 선호');
+  }
+
+  return {
+    signalTypes: signals,
+    notes,
+    ctaMode,
+  };
+}
+
 async function _getDefaultWebhookCandidates() {
   const configured = process.env.N8N_BLOG_WEBHOOK;
   return buildWebhookCandidates({
@@ -292,6 +317,7 @@ async function run(postType, directRunner = null, payload = {}) {
   }
 
   const { pipeline, variations } = buildDynamicPipeline(postType, history);
+  variations.marketingContext = _buildMarketingContext(payload);
   _logMaestroSession(postType, sessionId, pipeline, variations, gemmaRecommendation);
 
   const body = _buildMaestroPayload(postType, sessionId, pipeline, variations, gemmaRecommendation, payload);
