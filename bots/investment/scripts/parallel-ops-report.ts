@@ -2,7 +2,7 @@
 // @ts-nocheck
 
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
-import { publishToMainBot } from '../shared/mainbot-client.ts';
+import { publishAlert } from '../shared/mainbot-client.ts';
 import { buildScreeningHistoryReport } from './screening-history-report.ts';
 import { execFileSync } from 'child_process';
 import path from 'path';
@@ -222,7 +222,7 @@ async function main() {
   if (publish) {
     const payload = json ? report : await buildParallelOpsReport({ json: true });
     try {
-      await publishToMainBot({
+      await publishAlert({
         from_bot: 'luna',
         event_type: 'report',
         alert_level: payload.decision.status === 'baseline_ok' ? 1 : 2,

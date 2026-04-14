@@ -7,7 +7,7 @@
  *   - 최근 7일 trade_journal 조회 (종료 거래)
  *   - LLM(Groq Scout) 자동 분석 → 잘한 점 / 개선점 / 다음 주 전략
  *   - RAG 저장 (rag_trades 컬렉션 — 향후 luna.js가 과거 피드백 참조)
- *   - 텔레그램 리포트 전송 (publishToMainBot)
+ *   - 텔레그램 리포트 전송 (publishAlert)
  *
  * 실행:
  *   node scripts/weekly-trade-review.js
@@ -18,7 +18,7 @@
  */
 
 import { callLLM, parseJSON } from '../shared/llm-client.ts';
-import { publishToMainBot } from '../shared/mainbot-client.ts';
+import { publishAlert } from '../shared/mainbot-client.ts';
 import * as db from '../shared/db.ts';
 import { adjustAnalystWeights } from '../shared/analyst-accuracy.ts';
 import { validateTradeReview } from './validate-trade-review.ts';
@@ -797,7 +797,7 @@ async function main() {
     console.log('\n' + noTradeSummary);
 
     if (!DRY_RUN) {
-      publishToMainBot({
+      publishAlert({
         from_bot: 'luna',
         event_type: 'weekly_review',
         alert_level: 1,
@@ -849,7 +849,7 @@ async function main() {
 
   if (!DRY_RUN) {
     const msg = buildTelegramMessage(trades, review, rrSection);
-    publishToMainBot({ from_bot: 'luna', event_type: 'weekly_review', alert_level: 1, message: msg });
+    publishAlert({ from_bot: 'luna', event_type: 'weekly_review', alert_level: 1, message: msg });
     console.log('  ✅ 텔레그램 발송 완료');
   } else {
     console.log('\n--- 텔레그램 미리보기 (dry-run) ---');

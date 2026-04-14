@@ -25,7 +25,7 @@ const { writeHeartbeat } = require('../../../packages/core/lib/agent-heartbeats'
 import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { initHubSecrets, getSymbols, getMarketExecutionModeInfo, getInvestmentTradeMode, getCryptoScreeningMaxDynamic } from '../shared/secrets.ts';
-import { publishToMainBot } from '../shared/mainbot-client.ts';
+import { publishAlert } from '../shared/mainbot-client.ts';
 import { tracker } from '../shared/cost-tracker.ts';
 import { getLunaParams } from '../shared/time-mode.ts';
 import { parseUniverseCliFlags } from '../shared/screening-runtime.ts';
@@ -156,7 +156,7 @@ async function checkLowUsdtBalance() {
     const usdtFree = await fetchUsdtBalance();
     if (usdtFree < USDT_LOW_THRESHOLD) {
       const msg = `⚠️ [루나팀] USDT 잔고 부족\n현재: $${usdtFree.toFixed(2)} (권장 $${USDT_LOW_THRESHOLD}↑)\n바이낸스 입금이 필요합니다.`;
-      publishToMainBot({ from_bot: 'luna', event_type: 'alert', alert_level: 2, message: msg });
+      publishAlert({ from_bot: 'luna', event_type: 'alert', alert_level: 2, message: msg });
       console.warn(`⚠️ USDT 잔고 부족: $${usdtFree.toFixed(2)}`);
       saveState({ ...state, lastUsdtAlertAt: now });
     }
@@ -172,7 +172,7 @@ tracker.once('BUDGET_EXCEEDED', async ({ type }) => {
   const cost  = tracker.getToday();
   const msg   = `💸 [예산 초과] ${label} LLM 예산 초과 — 암호화폐 사이클 중단\n일간: $${cost.usage.toFixed(4)} | 월간: $${cost.monthUsage.toFixed(4)}`;
   console.error(msg);
-  publishToMainBot({ from_bot: 'luna', event_type: 'alert', alert_level: 3, message: msg });
+  publishAlert({ from_bot: 'luna', event_type: 'alert', alert_level: 3, message: msg });
   process.exit(1);
 });
 
@@ -279,7 +279,7 @@ export async function runCryptoCycle(symbols, universeMeta = {}) {
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     console.error(`\n❌ 사이클 오류 (${elapsed}초): ${e.message}`);
     console.error(e.stack);
-    publishToMainBot({ from_bot: 'luna', event_type: 'system_error', alert_level: 3, message: `❌ 암호화폐 사이클 오류\n${e.message}` });
+    publishAlert({ from_bot: 'luna', event_type: 'system_error', alert_level: 3, message: `❌ 암호화폐 사이클 오류\n${e.message}` });
     throw e;
   }
 }
@@ -358,7 +358,7 @@ if (isDirectExecution(import.meta.url)) {
 
       if (check.emergency) {
         console.log(`🚨 긴급 트리거: ${check.reason}`);
-        publishToMainBot({ from_bot: 'luna', event_type: 'alert', alert_level: 3, message: `🚨 암호화폐 긴급 트리거\n${check.reason}` });
+        publishAlert({ from_bot: 'luna', event_type: 'alert', alert_level: 3, message: `🚨 암호화폐 긴급 트리거\n${check.reason}` });
       } else {
         console.log(`🔄 ${check.reason}`);
       }
