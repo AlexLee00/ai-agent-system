@@ -28,6 +28,8 @@ Recently removed from this bucket:
 Interpretation:
 - The generic reporting-hub queue target is now the biggest functional blocker for full retirement.
 - Queue retirement must start by turning these producers off or rerouting them.
+- `publishToQueue(...)` now emits legacy queue usage telemetry to `/tmp/mainbot-queue-usage.jsonl`
+  so remaining runtime callers can be observed before removal.
 
 ### 2. Legacy consumer/runtime path
 
@@ -61,8 +63,9 @@ Interpretation:
 ### Phase A. Stop new writes
 
 1. Audit every `publishToQueue(...)` caller.
-2. Replace current runtime producers with webhook / reporting-hub non-queue targets.
-3. Keep queue reads temporarily for compatibility.
+2. Observe `/tmp/mainbot-queue-usage.jsonl` to confirm real runtime callers.
+3. Replace current runtime producers with webhook / reporting-hub non-queue targets.
+4. Keep queue reads temporarily for compatibility.
 
 Exit condition:
 - no current producer writes to `mainbot_queue`
