@@ -27,6 +27,33 @@ Recommended checks before destructive cleanup:
 5. no queue telemetry file or no new queue telemetry entries
 6. orchestrator health still normal
 
+## Latest Live Verification
+
+Latest verification snapshot on `2026-04-14`:
+
+- `ai.orchestrator` live state: `running`
+- `MAINBOT_QUEUE_CONSUMER_ENABLED=false` confirmed in launchd environment
+- `/tmp/mainbot-queue-usage.jsonl`: absent
+- `claude.mainbot_queue = 7`
+- `claude.mainbot_queue_legacy_live = 7`
+- `claude.pending_confirms = 0`
+- `claude.pending_confirms_legacy_live = 0`
+- `claude.morning_queue = 2`
+- `claude.morning_queue_legacy_live = 2`
+- `claude.mainbot_queue_legacy_live` status counts:
+  - `pending = 0`
+  - `deferred = 2`
+  - `sent = 5`
+- `claude.morning_queue_legacy_live` unsent rows:
+  - `sent_at IS NULL = 0`
+
+Interpretation:
+
+- quiet window checks remain green
+- no current signal suggests active legacy queue usage
+- final destructive cleanup is operationally ready, but still requires an
+  explicit go/no-go decision
+
 ## Planned Cleanup
 
 Prepared SQL:
