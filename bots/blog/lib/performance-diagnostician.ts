@@ -109,6 +109,37 @@ function summarizeTitlePatterns(posts = []) {
   return groupCount(posts, (post) => detectTitlePattern(post.title));
 }
 
+function summarizeCategoryPatternHotspots(posts = []) {
+  const generalPosts = posts.filter((post) => post.postType === 'general');
+  const grouped = new Map();
+
+  for (const post of generalPosts) {
+    const category = post.category || 'unknown';
+    const pattern = detectTitlePattern(post.title);
+    if (!grouped.has(category)) grouped.set(category, []);
+    grouped.get(category).push(pattern);
+  }
+
+  return [...grouped.entries()]
+    .map(([category, patterns]) => {
+      const counts = groupCount(patterns, (item) => item);
+      const top = counts[0] || null;
+      const total = patterns.length;
+      return {
+        category,
+        total,
+        topPattern: top?.key || null,
+        topCount: top?.count || 0,
+        topRatio: total > 0 ? Number(((top?.count || 0) / total).toFixed(4)) : 0,
+        patterns: counts,
+      };
+    })
+    .sort((a, b) => {
+      if ((b.topRatio || 0) !== (a.topRatio || 0)) return (b.topRatio || 0) - (a.topRatio || 0);
+      return (b.total || 0) - (a.total || 0);
+    });
+}
+
 function summarizeVariationUsage(rows = []) {
   return {
     greeting: groupCount(rows, (row) => row?.variations?.greetingStyle),
@@ -117,12 +148,23 @@ function summarizeVariationUsage(rows = []) {
   };
 }
 
-function identifyPrimaryWeakness({ categoryStats, patternStats, posts }) {
+function identifyPrimaryWeakness({ categoryStats, patternStats, categoryPatternHotspots, posts }) {
   const generalPosts = posts.filter((post) => post.postType === 'general');
   if (generalPosts.length >= 3 && categoryStats[0] && (categoryStats[0].count / generalPosts.length) >= 0.6) {
     return {
       code: 'category_bias',
       message: `일반 글이 ${categoryStats[0].key} 카테고리에 편중됨`,
+    };
+  }
+
+  const hotspot = categoryPatternHotspots.find((item) => item.topPattern === 'default' && item.total >= 3 && item.topRatio >= 0.65);
+  if (hotspot) {
+    return {
+      code: 'category_title_pattern_bias',
+      message: `${hotspot.category} 카테고리에서 default 제목 패턴 비중이 높음`,
+      category: hotspot.category,
+      pattern: hotspot.topPattern,
+      ratio: hotspot.topRatio,
     };
   }
 
@@ -146,11 +188,15 @@ function identifyPrimaryWeakness({ categoryStats, patternStats, posts }) {
   };
 }
 
-function buildRecommendations({ categoryStats, patternStats, variationStats, weakness }) {
+function buildRecommendations({ categoryStats, patternStats, categoryPatternHotspots, variationStats, weakness }) {
   const recommendations = [];
 
   if (weakness.code === 'category_bias' && categoryStats[0]) {
     recommendations.push(`다음 주 일반 글은 ${categoryStats[0].key} 외 카테고리를 1편 이상 우선 배정하세요.`);
+  }
+
+  if (weakness.code === 'category_title_pattern_bias' && weakness.category) {
+    recommendations.push(`${weakness.category} 카테고리에서는 default 대신 checklist·experience 패턴을 우선 배정하세요.`);
   }
 
   if (weakness.code === 'title_pattern_bias' && patternStats[0]) {
@@ -169,6 +215,11 @@ function buildRecommendations({ categoryStats, patternStats, variationStats, wea
     recommendations.push('현재 전략을 유지하되, 다음 주에는 제목 패턴과 카테고리만 한 단계씩 바꿔 테스트하세요.');
   }
 
+  const secondaryHotspot = categoryPatternHotspots.find((item) => item.topPattern === 'default' && item.total >= 3);
+  if (secondaryHotspot && weakness.code !== 'category_title_pattern_bias') {
+    recommendations.push(`${secondaryHotspot.category} 카테고리도 default 제목이 반복돼, 다음 회차엔 패턴을 한 단계 바꿔 검증하는 편이 좋습니다.`);
+  }
+
   return recommendations;
 }
 
@@ -180,11 +231,13 @@ async function diagnoseWeeklyPerformance(days = 7) {
 
   const categoryStats = summarizeCategoryPerformance(posts);
   const patternStats = summarizeTitlePatterns(posts);
+  const categoryPatternHotspots = summarizeCategoryPatternHotspots(posts);
   const variationStats = summarizeVariationUsage(executionRows);
-  const weakness = identifyPrimaryWeakness({ categoryStats, patternStats, posts });
+  const weakness = identifyPrimaryWeakness({ categoryStats, patternStats, categoryPatternHotspots, posts });
   const recommendations = buildRecommendations({
     categoryStats,
     patternStats,
+    categoryPatternHotspots,
     variationStats,
     weakness,
   });
@@ -195,6 +248,7 @@ async function diagnoseWeeklyPerformance(days = 7) {
     executionCount: executionRows.length,
     byCategory: categoryStats,
     byTitlePattern: patternStats,
+    byCategoryPattern: categoryPatternHotspots,
     byVariation: variationStats,
     primaryWeakness: weakness,
     recommendations,

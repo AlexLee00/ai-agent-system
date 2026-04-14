@@ -72,6 +72,10 @@ function applyMarketingFeedbackToPlan(plan = {}, marketingDigest = null) {
 function createStrategyPlan(diagnosis = {}, options = {}) {
   const topCategory = diagnosis.byCategory?.[0]?.key || null;
   const topPattern = diagnosis.byTitlePattern?.[0]?.key || null;
+  const topCategoryPattern =
+    diagnosis.primaryWeakness?.category
+      ? diagnosis.byCategoryPattern?.find((item) => item?.category === diagnosis.primaryWeakness.category) || null
+      : diagnosis.byCategoryPattern?.[0] || null;
   const preferredPatternOrder = ['checklist', 'experience', 'warning', 'trend', 'why'];
   const alternativePatterns = Array.isArray(diagnosis.byTitlePattern)
     ? diagnosis.byTitlePattern
@@ -88,6 +92,9 @@ function createStrategyPlan(diagnosis = {}, options = {}) {
   if (diagnosis.primaryWeakness?.code === 'category_bias' && topCategory) {
     focus.push(`다음 주에는 ${topCategory} 외 카테고리 우선 편성`);
   }
+  if (diagnosis.primaryWeakness?.code === 'category_title_pattern_bias' && diagnosis.primaryWeakness?.category) {
+    focus.push(`${diagnosis.primaryWeakness.category} 카테고리의 default 제목 패턴 교정`);
+  }
   if (diagnosis.primaryWeakness?.code === 'title_pattern_bias' && topPattern) {
     focus.push(`${topPattern} 패턴 비중 축소, 경험형/체크리스트형 강화`);
   }
@@ -96,7 +103,8 @@ function createStrategyPlan(diagnosis = {}, options = {}) {
   }
 
   const forcedPreferredPattern =
-    diagnosis.primaryWeakness?.code === 'title_pattern_bias' && topPattern === 'default'
+    (diagnosis.primaryWeakness?.code === 'title_pattern_bias' && topPattern === 'default')
+      || (diagnosis.primaryWeakness?.code === 'category_title_pattern_bias' && diagnosis.primaryWeakness?.pattern === 'default')
       ? 'checklist'
       : null;
 
@@ -106,8 +114,14 @@ function createStrategyPlan(diagnosis = {}, options = {}) {
     weakness: diagnosis.primaryWeakness,
     focus,
     recommendations: diagnosis.recommendations || [],
-    preferredCategory: diagnosis.byCategory?.[1]?.key || diagnosis.byCategory?.[0]?.key || null,
-    suppressedCategory: diagnosis.byCategory?.[0]?.key || null,
+    preferredCategory:
+      diagnosis.primaryWeakness?.code === 'category_title_pattern_bias'
+        ? diagnosis.primaryWeakness?.category
+        : diagnosis.byCategory?.[1]?.key || diagnosis.byCategory?.[0]?.key || null,
+    suppressedCategory:
+      diagnosis.primaryWeakness?.code === 'category_title_pattern_bias'
+        ? null
+        : diagnosis.byCategory?.[0]?.key || null,
     preferredTitlePattern:
       forcedPreferredPattern
       || preferredAlternative
@@ -115,7 +129,10 @@ function createStrategyPlan(diagnosis = {}, options = {}) {
       || diagnosis.byTitlePattern?.[0]?.key
       || null,
     suppressedTitlePattern: diagnosis.byTitlePattern?.[0]?.key || null,
-    hardSuppressTitlePattern: diagnosis.primaryWeakness?.code === 'title_pattern_bias',
+    hardSuppressTitlePattern:
+      diagnosis.primaryWeakness?.code === 'title_pattern_bias'
+      || diagnosis.primaryWeakness?.code === 'category_title_pattern_bias',
+    categoryPatternHotspot: topCategoryPattern || null,
   };
 
   return applyMarketingFeedbackToPlan(plan, options.marketingDigest);
