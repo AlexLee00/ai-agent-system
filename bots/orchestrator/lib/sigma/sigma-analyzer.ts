@@ -13,6 +13,13 @@ type Formation = {
   };
 };
 
+type MemorySnippet = {
+  content?: string;
+  created_at?: string;
+  similarity?: number;
+  metadata?: Record<string, any>;
+};
+
 type Feedback = {
   targetTeam: string;
   feedbackType: string;
@@ -65,7 +72,10 @@ function buildRecommendation(team: string, metric: any, primaryAnalyst: string, 
   return `${team}의 핵심 지표를 일일 기준으로 추적하고 다음 실행에 반영할 개선점을 정리하세요.${extra}`;
 }
 
-export async function analyzeFormation(formation: Formation): Promise<{
+export async function analyzeFormation(
+  formation: Formation,
+  opts: { recentMemories?: MemorySnippet[] } = {},
+): Promise<{
   report: string;
   metricsByTeam: Record<string, any>;
   feedbacks: Feedback[];
@@ -75,6 +85,7 @@ export async function analyzeFormation(formation: Formation): Promise<{
   const analysts = Array.isArray(formation?.analysts) ? formation.analysts : [];
   const primaryAnalyst = analysts.find((name) => ['hawk', 'dove', 'owl'].includes(name)) || 'pivot';
   const specialists = analysts.filter((name) => ['optimizer', 'librarian', 'forecaster'].includes(name));
+  const recentMemories = Array.isArray(opts.recentMemories) ? opts.recentMemories : [];
   const metricsByTeam: Record<string, any> = {};
   const feedbacks: Feedback[] = [];
   const lines = [
@@ -82,9 +93,19 @@ export async function analyzeFormation(formation: Formation): Promise<{
     `- 대상 팀: ${targetTeams.join(', ') || '없음'}`,
     `- 편성: ${analysts.join(', ') || '없음'}`,
     `- 기준: ${formation?.formationReason || '일일 로테이션'}`,
-    '',
-    '팀별 관찰:',
   ];
+
+  if (recentMemories.length > 0) {
+    lines.push('', '최근 기억 참고:');
+    recentMemories.slice(0, 3).forEach((memory, idx) => {
+      const headline = String(memory?.content || '').split('\n').find((line) => line.trim()) || '내용 없음';
+      const createdAt = memory?.created_at ? String(memory.created_at).slice(0, 10) : 'unknown';
+      const similarity = Number(memory?.similarity || 0);
+      lines.push(`- ${idx + 1}. ${createdAt} / 유사도 ${similarity.toFixed(2)} / ${headline}`);
+    });
+  }
+
+  lines.push('', '팀별 관찰:');
 
   for (const team of targetTeams) {
     const metric = await collectTeamMetric(team);
