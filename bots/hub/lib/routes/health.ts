@@ -29,6 +29,11 @@ type HealthSnapshot = {
   uptime_s: number;
   latency_ms: number;
   resources: HealthResources;
+  readiness_summary: {
+    core_service_total: number;
+    core_service_down: number;
+    resource_warn_count: number;
+  };
 };
 
 export async function collectHealthSnapshot(): Promise<HealthSnapshot> {
@@ -95,7 +100,11 @@ export async function collectHealthSnapshot(): Promise<HealthSnapshot> {
         };
   }
 
-  const hasWarn = Object.values(resources).some((item) => item.status !== 'ok');
+  const resourceWarnCount = Object.values(resources).filter((item) => item.status !== 'ok').length;
+  const coreServiceDown = resources.core_services?.status === 'warn'
+    ? resources.core_services.detail.split(',').map((value) => value.trim()).filter(Boolean).length
+    : 0;
+  const hasWarn = resourceWarnCount > 0;
 
   return {
     status: hasWarn ? 'warn' : 'ok',
@@ -103,6 +112,11 @@ export async function collectHealthSnapshot(): Promise<HealthSnapshot> {
     uptime_s: Math.round(process.uptime()),
     latency_ms: Date.now() - started,
     resources,
+    readiness_summary: {
+      core_service_total: HUB_CORE_SERVICE_LABELS.length,
+      core_service_down: coreServiceDown,
+      resource_warn_count: resourceWarnCount,
+    },
   };
 }
 

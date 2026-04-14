@@ -38,6 +38,7 @@ GET  /hub/agents/*            — 에이전트 레지스트리
 ## 운영 해석
 - `/hub/health/ready`
   - 코어 서비스(`ai.openclaw.gateway`, `ai.orchestrator`, `ai.n8n.server`) 기준 readiness 신호
+  - `readiness_summary.core_service_total`, `core_service_down`, `resource_warn_count` 포함
 - `/hub/services/status`
   - 허브가 직접 보는 핵심 launchd 서비스만 반환
   - 각 서비스 row에 `classification`과 `core`가 같이 들어감
