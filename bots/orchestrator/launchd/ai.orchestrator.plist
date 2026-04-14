@@ -18,14 +18,14 @@
 	<key>ProgramArguments</key>
 	<array>
 		<string>/opt/homebrew/bin/node</string>
-		<string>/Users/alexlee/projects/ai-agent-system/bots/orchestrator/src/mainbot.js</string>
+		<string>/Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/orchestrator/src/orchestrator.js</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>
 	<key>StandardErrorPath</key>
-	<string>/Users/alexlee/.openclaw/logs/mainbot-error.log</string>
+	<string>/Users/alexlee/.openclaw/logs/orchestrator-error.log</string>
 	<key>StandardOutPath</key>
-	<string>/Users/alexlee/.openclaw/logs/mainbot.log</string>
+	<string>/Users/alexlee/.openclaw/logs/orchestrator.log</string>
 	<key>ThrottleInterval</key>
 	<integer>10</integer>
 	<key>WorkingDirectory</key>

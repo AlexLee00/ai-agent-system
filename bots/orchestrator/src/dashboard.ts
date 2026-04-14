@@ -48,7 +48,7 @@ type ActiveMuteRow = {
 
 const LAUNCHD_SERVICES: LaunchdService[] = [
   { id: 'ai.openclaw.gateway', name: 'OpenClaw 게이트웨이' },
-  { id: 'ai.orchestrator', name: '메인봇' },
+  { id: 'ai.orchestrator', name: '오케스트레이터' },
   { id: 'ai.reservation.monitor', name: '앤디(네이버모니터)' },
   { id: 'ai.kiosk.monitor', name: '지미(키오스크)' },
   { id: 'ai.investment.crypto', name: '루나팀 크립토' },
