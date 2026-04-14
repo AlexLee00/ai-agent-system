@@ -14,10 +14,10 @@
 대표 producer:
 
 - `bots/claude/lib/reporter.js`
-- `bots/claude/lib/mainbot-client.js`
+- `bots/claude/lib/alert-publisher.ts`
 - `bots/investment/team/reporter.js`
-- `bots/investment/shared/mainbot-client.js`
+- `bots/investment/shared/alert-publisher.ts`
 - `bots/investment/shared/report.js`
-- `bots/reservation/lib/mainbot-client.ts`
+- `bots/reservation/lib/alert-client.ts`
 - `bots/reservation/lib/telegram.ts`
 - `bots/blog/scripts/health-check.js`

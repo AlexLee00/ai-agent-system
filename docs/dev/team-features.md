@@ -327,9 +327,9 @@ npm run patch:status        # 패치 현황 콘솔
 ### 팀별 Alert Publisher 클라이언트
 | 팀 | 파일 | 모듈 방식 |
 |----|------|---------|
-| 스카팀 | `bots/reservation/lib/mainbot-client.ts` | TS |
-| 루나팀 | `bots/investment/shared/mainbot-client.js` | ESM |
-| 클로드팀 | `bots/claude/lib/mainbot-client.js` | CJS |
+| 스카팀 | `bots/reservation/lib/alert-client.ts` | TS |
+| 루나팀 | `bots/investment/shared/alert-publisher.ts` | ESM |
+| 클로드팀 | `bots/claude/lib/alert-publisher.ts` | CJS 호환 |
 
 ### launchd 등록
 ```bash
