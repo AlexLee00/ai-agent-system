@@ -355,17 +355,65 @@ function parseGeneralOutputFilename(filename = '') {
   };
 }
 
-function getRecentGeneralStrategyAdoption(strategy = {}, nextPreview = null, maxPosts = 5) {
-  try {
-    const files = fs.readdirSync(BLOG_OUTPUT_DIR)
-      .filter((name) => name.includes('_general_') && name.endsWith('.html'))
-      .sort()
-      .reverse();
+function normalizeGeneralPostFromDb(row = {}) {
+  const metadata = row.metadata || {};
+  const alignment = metadata.title_alignment || {};
+  const title = String(row.title || '').trim();
+  const category = String(row.category || '').trim();
+  const pattern = alignment.final_pattern || detectTitlePattern(title.replace(/^\[[^\]]+\]\s*/, '').trim());
 
-    const recentPosts = files
-      .map(parseGeneralOutputFilename)
-      .filter(Boolean)
-      .slice(0, maxPosts);
+  return {
+    id: row.id || null,
+    dateString: row.publish_date || null,
+    category,
+    title,
+    filename: metadata.filename || null,
+    pattern,
+    titleAlignment: alignment && typeof alignment === 'object' ? alignment : null,
+  };
+}
+
+async function loadRecentGeneralPosts(maxPosts = 5) {
+  try {
+    const rows = await pgPool.query('blog', `
+      SELECT id, title, category, publish_date, metadata
+      FROM blog.posts
+      WHERE post_type = 'general'
+        AND status IN ('ready', 'published')
+      ORDER BY publish_date DESC, id DESC
+      LIMIT $1
+    `, [maxPosts]);
+
+    const normalized = (rows || []).map(normalizeGeneralPostFromDb).filter((row) => row.title);
+    if (normalized.length > 0) {
+      return { rows: normalized, source: 'blog.posts' };
+    }
+  } catch (error) {
+    // Fall through to output-file fallback when DB rows are unavailable.
+  }
+
+  const files = fs.readdirSync(BLOG_OUTPUT_DIR)
+    .filter((name) => name.includes('_general_') && name.endsWith('.html'))
+    .sort()
+    .reverse();
+
+  return {
+    rows: files
+    .map(parseGeneralOutputFilename)
+    .filter(Boolean)
+    .slice(0, maxPosts)
+    .map((post) => ({
+      ...post,
+      titleAlignment: null,
+    })),
+    source: 'output_files',
+  };
+}
+
+async function getRecentGeneralStrategyAdoption(strategy = {}, nextPreview = null, maxPosts = 5) {
+  try {
+    const loaded = await loadRecentGeneralPosts(maxPosts);
+    const recentPosts = Array.isArray(loaded?.rows) ? loaded.rows : [];
 
     const preferredCategory = strategy?.preferredCategory || null;
     const preferredPattern = strategy?.preferredTitlePattern || null;
@@ -383,19 +431,31 @@ function getRecentGeneralStrategyAdoption(strategy = {}, nextPreview = null, max
         ? recentPosts.filter((post) => post.category === preferredCategory && post.pattern === preferredPattern)
         : [];
     const latestPost = recentPosts[0] || null;
+    const latestAlignment = latestPost?.titleAlignment || null;
     const latestAligned = Boolean(
-      latestPost
-      && (!preferredCategory || latestPost.category === preferredCategory)
-      && (!preferredPattern || latestPost.pattern === preferredPattern)
+      latestAlignment
+        ? latestAlignment.aligned === true
+        : latestPost
+          && (!preferredCategory || latestPost.category === preferredCategory)
+          && (!preferredPattern || latestPost.pattern === preferredPattern)
     );
-    const latestPreviewOverlap = latestPost && previewTitle
-      ? calculateTitleOverlap(latestPost.title, previewTitle)
-      : 0;
+    const latestPreviewOverlap = latestAlignment?.title_overlap != null
+      ? Number(latestAlignment.title_overlap || 0)
+      : latestPost && previewTitle
+        ? calculateTitleOverlap(latestPost.title, previewTitle)
+        : 0;
     const previewAligned = Boolean(
-      latestPost
-      && (!previewCategory || latestPost.category === previewCategory)
-      && (!previewPattern || latestPost.pattern === previewPattern)
-      && latestPreviewOverlap >= 0.4
+      latestAlignment
+        ? latestAlignment.aligned === true
+          || (
+            (!previewCategory || latestAlignment.preview_category === previewCategory || latestPost?.category === previewCategory)
+            && (!previewPattern || latestAlignment.preview_pattern === previewPattern || latestPost?.pattern === previewPattern)
+            && latestPreviewOverlap >= 0.4
+          )
+        : latestPost
+          && (!previewCategory || latestPost.category === previewCategory)
+          && (!previewPattern || latestPost.pattern === previewPattern)
+          && latestPreviewOverlap >= 0.4
     );
 
     let status = 'warming_up';
@@ -423,6 +483,7 @@ function getRecentGeneralStrategyAdoption(strategy = {}, nextPreview = null, max
       latestPreviewOverlap,
       latestPost,
       sampledPosts: recentPosts.slice(0, 3),
+      source: loaded?.source || 'unknown',
     };
   } catch (error) {
     return {
@@ -441,6 +502,7 @@ function getRecentGeneralStrategyAdoption(strategy = {}, nextPreview = null, max
       latestPreviewOverlap: 0,
       latestPost: null,
       sampledPosts: [],
+      source: 'error',
       error: error.message,
     };
   }
@@ -576,7 +638,7 @@ async function buildMarketingDigest(options = {}) {
   const recommendations = buildRecommendations({ senseSummary, revenueCorrelation, diagnosis, autonomySummary, channelPerformance });
   const strategy = getStrategySummary();
   const nextGeneralPreview = await buildNextGeneralPreview(strategy, sense, revenueCorrelation);
-  const strategyAdoption = getRecentGeneralStrategyAdoption(strategy, nextGeneralPreview, Number(options.adoptionWindow || 5));
+  const strategyAdoption = await getRecentGeneralStrategyAdoption(strategy, nextGeneralPreview, Number(options.adoptionWindow || 5));
 
   return {
     generatedAt: new Date().toISOString(),
