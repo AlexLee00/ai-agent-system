@@ -8,7 +8,8 @@ Current preferred path:
 - team producers -> alert publisher / OpenClaw webhook
 - orchestrator -> filter / batch / Telegram fanout
 
-`mainbot_queue` is still alive as a legacy rail and cannot be removed yet.
+`mainbot_queue` no longer exists on the live DB surface as an active or
+compatibility object.
 
 Live OPS status as of 2026-04-14:
 - `ai.orchestrator` is running with `MAINBOT_QUEUE_CONSUMER_ENABLED=false`
@@ -16,11 +17,13 @@ Live OPS status as of 2026-04-14:
 - recent queue telemetry file `/tmp/mainbot-queue-usage.jsonl` is still empty
 - live queue had no fresh `pending` rows during the disable trial
 - `publishToQueue(...)` now requires `MAINBOT_QUEUE_PUBLISH_ENABLED=true`
+- final destructive cleanup completed successfully
 
 Related archive planning:
 - [MAINBOT_QUEUE_ARCHIVAL_PLAN_2026-04-14.md](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/context/MAINBOT_QUEUE_ARCHIVAL_PLAN_2026-04-14.md)
   - archive tables created and row-count verified on 2026-04-14
   - live freeze applied on 2026-04-14
+  - final destructive cleanup applied on 2026-04-14
   - rollback SQL script prepared
 - [MAINBOT_QUEUE_FINAL_RETIREMENT_CHECKLIST_2026-04-14.md](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/context/MAINBOT_QUEUE_FINAL_RETIREMENT_CHECKLIST_2026-04-14.md)
   - final destructive cleanup gate
@@ -43,10 +46,10 @@ Recently removed from this bucket:
   - `publishToQueue(...)` -> `publishToWebhook(...)`
 
 Interpretation:
-- The generic reporting-hub queue target is now the biggest functional blocker for full retirement.
-- Queue retirement must start by turning these producers off or rerouting them.
-- `publishToQueue(...)` now emits legacy queue usage telemetry to `/tmp/mainbot-queue-usage.jsonl`
-  so remaining runtime callers can be observed before removal.
+- The generic reporting-hub queue target was the biggest functional blocker for full retirement.
+- It is now retired-by-default and remains only as an explicit compatibility rail.
+- `publishToQueue(...)` still emits legacy queue usage telemetry to `/tmp/mainbot-queue-usage.jsonl`
+  if anyone explicitly re-enables it.
 
 ### 2. Legacy consumer/runtime path
 
@@ -64,8 +67,8 @@ These still read from `mainbot_queue` as part of orchestrator behavior.
   - now migrating to `recent-alerts.json` snapshot written by `postAlarm(...)`
 
 Interpretation:
-- This is user-visible behavior, but not the preferred ingestion path anymore.
-- It should be migrated after producer writes are cut down.
+- This path has been retired in live OPS.
+- The remaining code is compatibility-oriented and no longer backed by live queue tables.
 
 ### 3. Monitoring-only usage
 
@@ -75,8 +78,8 @@ These only read queue state for status/reporting.
   - now migrating to `recent-alerts.json` snapshot for totals and recent alerts
 
 Interpretation:
-- These can be migrated last.
-- They should move to alert publisher/webhook delivery metrics or reporting-hub telemetry.
+- These have already been migrated away from direct queue reads.
+- Current operator visibility comes from alert snapshot / webhook flow.
 
 ## Recommended Retirement Order
 
@@ -122,11 +125,13 @@ Exit condition:
 - Do not remove queue reads before operator commands have replacement data sources.
 - Treat dashboard reads as the last migration step, not the first.
 
-## Next Practical Step
+## Current Outcome
 
-The next safe implementation step is:
+Current state:
 
-1. observe `/tmp/mainbot-queue-usage.jsonl` for any explicit re-enable caller
-2. keep observing OPS runtime for any queue writer reappearance
-3. if telemetry stays quiet, treat queue publish and queue polling as retired-by-default
-4. then evaluate compatibility-view retention and final destructive retirement timing
+1. queue publish is retired-by-default
+2. queue consumer is disabled in live OPS
+3. queue-specific maintenance is disabled in live OPS
+4. operator affordances use alert snapshot data
+5. live queue views and frozen live tables have been removed
+6. archive tables remain as the retained legacy record

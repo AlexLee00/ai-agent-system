@@ -48,6 +48,18 @@ Freeze status:
   - `claude.morning_queue`
 - verified live view counts match legacy tables
 
+Final retirement status:
+- completed on 2026-04-14
+- removed compatibility views:
+  - `claude.mainbot_queue`
+  - `claude.pending_confirms`
+  - `claude.morning_queue`
+- removed frozen live tables:
+  - `claude.mainbot_queue_legacy_live`
+  - `claude.pending_confirms_legacy_live`
+  - `claude.morning_queue_legacy_live`
+- archive tables remain as canonical retained legacy source
+
 Interpretation:
 - no fresh queue intake is visible
 - no active confirmation flow depends on `pending_confirms`
@@ -141,13 +153,15 @@ Recommended freeze mode:
 
 ### Phase 4. Final retirement
 
-Only after a quiet period:
-1. remove queue-specific monitoring references
-2. deprecate queue migration docs
-3. drop or freeze:
-   - `claude.mainbot_queue`
-   - `claude.pending_confirms`
-   - `claude.morning_queue`
+Status:
+- completed
+
+Completed action:
+1. completed quiet-window verification
+2. ran final destructive cleanup SQL
+3. removed compatibility views
+4. removed `*_legacy_live` frozen tables
+5. kept archive tables as rollback source
 
 ## Guardrails
 
@@ -160,6 +174,6 @@ Only after a quiet period:
 
 The next safe operational step is:
 
-1. keep observing runtime for a short quiet window
-2. decide whether compatibility views should be kept or dropped
-3. only then consider destructive cleanup of legacy live tables
+1. keep archive tables retained for audit / rollback
+2. leave restore SQL available unless policy changes
+3. treat `mainbot_queue` as fully retired from live runtime and live DB surface
