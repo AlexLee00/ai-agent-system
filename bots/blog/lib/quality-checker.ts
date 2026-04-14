@@ -7,6 +7,7 @@
 
 const https = require('https');
 const builtinModules = new Set(require('module').builtinModules || []);
+const { detectTitlePattern } = require('./performance-diagnostician.ts');
 
 const MIN_CHARS = { lecture: 8000, general: 7000 };
 const GOAL_CHARS = { lecture: 9000, general: 8000 };
@@ -111,6 +112,33 @@ function countAnsweredFaqPairs(content) {
     if (answerLine) answered += 1;
   }
   return answered;
+}
+
+function extractFirstContentLine(content) {
+  return String(content || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => line.length > 0) || '';
+}
+
+function normalizeTitleWords(text = '') {
+  return String(text || '')
+    .replace(/^\[[^\]]+\]\s*/, '')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/)
+    .map((token) => token.trim().toLowerCase())
+    .filter((token) => token.length >= 2);
+}
+
+function calculateTitleOverlap(a = '', b = '') {
+  const first = new Set(normalizeTitleWords(a));
+  const second = new Set(normalizeTitleWords(b));
+  if (!first.size || !second.size) return 0;
+  let matched = 0;
+  for (const token of first) {
+    if (second.has(token)) matched += 1;
+  }
+  return matched / Math.max(first.size, second.size);
 }
 
 function checkBriefingStructure(content, type) {
@@ -331,6 +359,38 @@ async function checkQualityEnhanced(content, type, options = {}) {
       }
       if (expectedAuthor && !String(content || '').includes(expectedAuthor)) {
         issues.push({ severity: 'warn', msg: `도서리뷰 본문에 검증된 저자명이 약하게 나타남: "${expectedAuthor}"` });
+      }
+    }
+  }
+
+  if (type === 'general') {
+    const titleLine = extractFirstContentLine(content);
+    const normalizedTitle = String(titleLine || '').replace(/^\[[^\]]+\]\s*/, '').trim();
+    const expectedPattern = String(options.expectedTitlePattern || '').trim();
+    const topicTitleCandidate = String(options.topicTitleCandidate || '').trim();
+
+    if (expectedPattern && normalizedTitle) {
+      const detectedPattern = detectTitlePattern(normalizedTitle);
+      if (detectedPattern !== expectedPattern) {
+        issues.push({
+          severity: 'warn',
+          msg: `제목 패턴 이탈 가능: 현재 ${detectedPattern} / 기대 ${expectedPattern}`,
+        });
+      }
+    }
+
+    if (topicTitleCandidate && normalizedTitle) {
+      const overlap = calculateTitleOverlap(normalizedTitle, topicTitleCandidate);
+      if (overlap < 0.2) {
+        issues.push({
+          severity: 'error',
+          msg: `제목 방향 이탈: 제목 후보와 핵심 키워드 겹침이 약함 (${overlap.toFixed(2)})`,
+        });
+      } else if (overlap < 0.4) {
+        issues.push({
+          severity: 'warn',
+          msg: `제목 후보 반영이 약함: 핵심 키워드 겹침 ${overlap.toFixed(2)}`,
+        });
       }
     }
   }

@@ -539,6 +539,10 @@ async function _runQualityRepair(kind, context, draft, variation, repairFn) {
     expectedLectureTitle: kind === 'lecture' ? context.lectureTitle : null,
     category: kind === 'general' ? context.category : null,
     bookInfo: kind === 'general' ? context.book_info || context.data?.book_info || null : null,
+    topicTitleCandidate: kind === 'general' ? context.researchData?.topic_title_candidate || null : null,
+    expectedTitlePattern: kind === 'general'
+      ? context.researchData?.strategy_preferred_pattern || null
+      : null,
   });
   _logQualityResult(quality, post.charCount);
 
@@ -550,6 +554,10 @@ async function _runQualityRepair(kind, context, draft, variation, repairFn) {
       expectedLectureTitle: kind === 'lecture' ? context.lectureTitle : null,
       category: kind === 'general' ? context.category : null,
       bookInfo: kind === 'general' ? context.book_info || context.data?.book_info || null : null,
+      topicTitleCandidate: kind === 'general' ? context.researchData?.topic_title_candidate || null : null,
+      expectedTitlePattern: kind === 'general'
+        ? context.researchData?.strategy_preferred_pattern || null
+        : null,
     });
     post = retry;
     quality = retryQuality;
