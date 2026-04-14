@@ -92,6 +92,26 @@ def sanitize_insight_line(raw_text):
         return ''
     return best
 
+
+def build_fallback_insight(today_revenue, avg_revenue, anomalies):
+    """LLM 보조 인사이트가 비어도 항상 붙일 수 있는 결정론적 한 줄 요약."""
+    if anomalies:
+        first = str(anomalies[0]).strip()
+        if first:
+            return first
+
+    if not avg_revenue:
+        return f'오늘 매출은 {today_revenue:,}원으로 집계되었습니다.'
+
+    delta = today_revenue - avg_revenue
+    pct = abs(delta) / avg_revenue * 100 if avg_revenue else 0.0
+
+    if abs(delta) < max(10000, avg_revenue * 0.05):
+        return '오늘 매출은 최근 7일 평균과 비슷한 흐름입니다.'
+    if delta > 0:
+        return f'오늘 매출은 7일 평균보다 {pct:.1f}% 높았습니다.'
+    return f'오늘 매출은 7일 평균보다 {pct:.1f}% 낮았습니다.'
+
 def _qry(con, sql, params=()):
     cur = con.cursor()
     cur.execute(sql, params)
@@ -532,10 +552,23 @@ def format_telegram(report):
             cwd=PROJECT_ROOT,
         )
         insight = sanitize_insight_line((proc.stdout or '').strip())
+        if not insight:
+            insight = build_fallback_insight(
+                d.get('revenue', 0),
+                avg.get('avg_revenue', 0),
+                anomalies,
+            )
         if insight:
             result += f"\n\n🔍 AI: {insight}"
     except Exception as e:
         print(f"[rebecca] gemma4 인사이트 생략: {e}", file=sys.stderr)
+        fallback_insight = build_fallback_insight(
+            d.get('revenue', 0),
+            avg.get('avg_revenue', 0),
+            anomalies,
+        )
+        if fallback_insight:
+            result += f"\n\n🔍 AI: {fallback_insight}"
 
     return result
 
