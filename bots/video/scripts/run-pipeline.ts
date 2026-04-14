@@ -11,6 +11,7 @@ const pgPool = require('../../../packages/core/lib/pg-pool');
 const { publishToWebhook } = require('../../../packages/core/lib/reporting-hub');
 const { logToolCall } = require('../../../packages/core/lib/tool-logger');
 const { startTrace, withTrace } = require('../../../packages/core/lib/trace');
+const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
 
 const { loadConfig } = require('../src/index');
 const {
@@ -34,6 +35,7 @@ const { processIntroOutro } = require('../lib/intro-outro-handler');
 
 const BOT_NAME = 'video';
 const TEAM_NAME = 'video';
+const pipelineMemory = createAgentMemory({ agentId: 'video.pipeline', team: 'video' });
 const PROJECT_ROOT = path.join(__dirname, '..');
 const SAMPLES_DIR = path.join(PROJECT_ROOT, 'samples');
 const RAW_DIR = path.join(SAMPLES_DIR, 'raw');
@@ -448,12 +450,46 @@ function countSubtitleEntries(filePath) {
 }
 
 async function notifyFailure(step, title, error) {
+  const episodicHint = await pipelineMemory.recall(
+    [String(step || ''), String(title || ''), 'video pipeline failure'].filter(Boolean).join(' '),
+    {
+      type: 'episodic',
+      limit: 2,
+      threshold: 0.35,
+    },
+  ).then((rows) => {
+    if (!rows || rows.length === 0) return '';
+    const lines = rows.slice(0, 2).map((row) => {
+      const createdAt = row?.created_at ? String(row.created_at).slice(0, 10) : 'unknown';
+      const similarity = Number(row?.similarity || 0);
+      const headline = String(row?.content || '').split(' | ')[0] || '기록 없음';
+      return `${createdAt} / 유사도 ${similarity.toFixed(2)} / ${headline}`;
+    });
+    return `\n최근 유사 실패:\n- ${lines.join('\n- ')}`;
+  }).catch(() => '');
+  const semanticHint = await pipelineMemory.recall(
+    [String(step || ''), String(title || ''), 'consolidated video pipeline pattern'].filter(Boolean).join(' '),
+    {
+      type: 'semantic',
+      limit: 2,
+      threshold: 0.28,
+    },
+  ).then((rows) => {
+    if (!rows || rows.length === 0) return '';
+    const lines = rows.slice(0, 2).map((row) => {
+      const createdAt = row?.created_at ? String(row.created_at).slice(0, 10) : 'unknown';
+      const similarity = Number(row?.similarity || 0);
+      const headline = String(row?.content || '').split('\n')[0] || '패턴 요약 없음';
+      return `${createdAt} / 유사도 ${similarity.toFixed(2)} / ${headline}`;
+    });
+    return `\n최근 통합 패턴:\n- ${lines.join('\n- ')}`;
+  }).catch(() => '');
   const message = [
     '[비디오] 실패',
     `제목: ${title}`,
     `단계: ${step}`,
     `사유: ${toErrorMessage(error)}`,
-  ].join('\n');
+  ].join('\n') + episodicHint + semanticHint;
   await publishToWebhook({
     event: {
       from_bot: 'run-pipeline',
@@ -744,6 +780,38 @@ async function main() {
           ].join('\n'),
         },
       });
+      try {
+        await pipelineMemory.remember(
+          [
+            `비디오 파이프라인 성공: ${titleForMessage}`,
+            `step=render_final`,
+            `duration_ms=${totalMs}`,
+            `output=${renderResult.outputPath}`,
+          ].join(' | '),
+          'episodic',
+          {
+            keywords: ['video', 'pipeline', 'completed', String(titleForMessage || '')].filter(Boolean).slice(0, 8),
+            importance: 0.68,
+            expiresIn: 30 * 24 * 60 * 60,
+            metadata: {
+              type: 'video_pipeline_run',
+              outcome: 'completed',
+              title: titleForMessage || null,
+              step: 'render_final',
+              totalMs,
+              outputPath: renderResult.outputPath || null,
+            },
+          },
+        );
+        await pipelineMemory.consolidate({
+          olderThanDays: 14,
+          limit: 8,
+          sourceType: 'episodic',
+          targetType: 'semantic',
+        });
+      } catch (memoryError) {
+        console.warn('[video] agent memory 저장 실패 (무시):', toErrorMessage(memoryError));
+      }
 
       try {
         const transitionCount = (edl?.edits || []).filter((item) => item.type === 'transition').length;
@@ -786,6 +854,37 @@ async function main() {
         status: 'failed',
         error_message: message,
       });
+      try {
+        await pipelineMemory.remember(
+          [
+            `비디오 파이프라인 실패: ${titleForMessage}`,
+            `step=${currentStep}`,
+            `reason=${message}`,
+          ].join(' | '),
+          'episodic',
+          {
+            keywords: ['video', 'pipeline', 'failed', String(currentStep || ''), String(titleForMessage || '')].filter(Boolean).slice(0, 8),
+            importance: 0.82,
+            expiresIn: 30 * 24 * 60 * 60,
+            metadata: {
+              type: 'video_pipeline_run',
+              outcome: 'failed',
+              title: titleForMessage || null,
+              step: currentStep || null,
+              errorMessage: message,
+              traceId,
+            },
+          },
+        );
+        await pipelineMemory.consolidate({
+          olderThanDays: 14,
+          limit: 8,
+          sourceType: 'episodic',
+          targetType: 'semantic',
+        });
+      } catch (memoryError) {
+        console.warn('[video] agent memory 실패 기록 저장 실패 (무시):', toErrorMessage(memoryError));
+      }
       await notifyFailure('run-pipeline', titleForMessage, error);
       await logToolCall('video_pipeline', 'run_pipeline', {
         bot: BOT_NAME,
