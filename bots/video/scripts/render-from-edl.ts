@@ -9,6 +9,7 @@ applyMediaBinaryEnv(process.env);
 
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const { publishToWebhook } = require('../../../packages/core/lib/reporting-hub');
+const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
 const { loadConfig } = require('../src/index');
 const { loadEDL, renderFinal } = require('../lib/edl-builder');
 const { probeDurationMs } = require('../lib/ffmpeg-preprocess');
@@ -18,6 +19,7 @@ const TEAM_NAME = 'video';
 const PROJECT_ROOT = path.join(__dirname, '..');
 const TEMP_ROOT = path.join(PROJECT_ROOT, 'temp');
 const EXPORTS_DIR = path.join(PROJECT_ROOT, 'exports');
+const renderMemory = createAgentMemory({ agentId: 'video.render', team: TEAM_NAME });
 
 function parseArgs(argv) {
   const parsed = { editId: null };
@@ -38,6 +40,14 @@ function sanitizeTitle(title) {
 
 function toErrorMessage(error) {
   return error?.message || error?.stderr || error?.stdout || String(error || '알 수 없는 오류');
+}
+
+function buildRenderMemoryQuery(edit, kind) {
+  return [
+    'video render from edl',
+    kind,
+    String(edit?.title || edit?.id || '').trim(),
+  ].filter(Boolean).join(' ');
 }
 
 async function updateVideoEdit(id, fields) {
@@ -137,20 +147,56 @@ async function main() {
       status: 'completed',
     });
     await updateSessionStatus(edit.session_id);
+    const memoryQuery = buildRenderMemoryQuery(edit, 'completed');
+    const episodicHint = await renderMemory.recallCountHint(memoryQuery, {
+      type: 'episodic',
+      limit: 2,
+      threshold: 0.33,
+      title: '최근 유사 렌더',
+      separator: 'pipe',
+      metadataKey: 'kind',
+      labels: {
+        completed: '완료',
+        failed: '실패',
+      },
+      order: ['completed', 'failed'],
+    }).catch(() => '');
+    const semanticHint = await renderMemory.recallHint(`${memoryQuery} consolidated render pattern`, {
+      type: 'semantic',
+      limit: 2,
+      threshold: 0.28,
+      title: '최근 통합 패턴',
+      separator: 'newline',
+    }).catch(() => '');
+    const successMessage = [
+      '[비디오] 최종 렌더 완료',
+      `세트 ID: ${edit.id}`,
+      `제목: ${edit.title || edit.id}`,
+      `파일: ${result.outputPath}`,
+    ].join('\n');
     await publishToWebhook({
       event: {
         from_bot: 'render-from-edl',
         team: TEAM_NAME,
         event_type: 'video_render_completed',
         alert_level: 2,
-        message: [
-          '[비디오] 최종 렌더 완료',
-          `세트 ID: ${edit.id}`,
-          `제목: ${edit.title || edit.id}`,
-          `파일: ${result.outputPath}`,
-        ].join('\n'),
+        message: `${successMessage}${episodicHint}${semanticHint}`,
       },
     });
+    await renderMemory.remember(successMessage, 'episodic', {
+      importance: 0.68,
+      expiresIn: 1000 * 60 * 60 * 24 * 30,
+      metadata: {
+        kind: 'completed',
+        editId: edit.id,
+        title: edit.title || null,
+        outputPath: result.outputPath,
+      },
+    }).catch(() => {});
+    await renderMemory.consolidate({
+      olderThanDays: 14,
+      limit: 10,
+    }).catch(() => {});
   } catch (error) {
     await updateVideoEdit(edit.id, {
       status: 'failed',
@@ -165,20 +211,56 @@ async function main() {
         WHERE id = $1`,
       [edit.session_id, toErrorMessage(error)]
     );
+    const memoryQuery = buildRenderMemoryQuery(edit, 'failed');
+    const episodicHint = await renderMemory.recallCountHint(memoryQuery, {
+      type: 'episodic',
+      limit: 2,
+      threshold: 0.33,
+      title: '최근 유사 렌더',
+      separator: 'pipe',
+      metadataKey: 'kind',
+      labels: {
+        failed: '실패',
+        completed: '완료',
+      },
+      order: ['failed', 'completed'],
+    }).catch(() => '');
+    const semanticHint = await renderMemory.recallHint(`${memoryQuery} consolidated render pattern`, {
+      type: 'semantic',
+      limit: 2,
+      threshold: 0.28,
+      title: '최근 통합 패턴',
+      separator: 'newline',
+    }).catch(() => '');
+    const failureMessage = [
+      '[비디오] 최종 렌더 실패',
+      `세트 ID: ${edit.id}`,
+      `제목: ${edit.title || edit.id}`,
+      `사유: ${toErrorMessage(error)}`,
+    ].join('\n');
     await publishToWebhook({
       event: {
         from_bot: 'render-from-edl',
         team: TEAM_NAME,
         event_type: 'video_render_failed',
         alert_level: 2,
-        message: [
-          '[비디오] 최종 렌더 실패',
-          `세트 ID: ${edit.id}`,
-          `제목: ${edit.title || edit.id}`,
-          `사유: ${toErrorMessage(error)}`,
-        ].join('\n'),
+        message: `${failureMessage}${episodicHint}${semanticHint}`,
       },
     });
+    await renderMemory.remember(failureMessage, 'episodic', {
+      importance: 0.8,
+      expiresIn: 1000 * 60 * 60 * 24 * 30,
+      metadata: {
+        kind: 'failed',
+        editId: edit.id,
+        title: edit.title || null,
+        reason: toErrorMessage(error),
+      },
+    }).catch(() => {});
+    await renderMemory.consolidate({
+      olderThanDays: 14,
+      limit: 10,
+    }).catch(() => {});
     throw error;
   }
 }
