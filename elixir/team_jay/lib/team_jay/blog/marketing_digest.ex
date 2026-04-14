@@ -120,6 +120,7 @@ defmodule TeamJay.Blog.MarketingDigest do
         preferred_title_pattern: Map.get(plan, "preferredTitlePattern"),
         suppressed_title_pattern: Map.get(plan, "suppressedTitlePattern"),
         category_pattern_hotspot: Map.get(plan, "categoryPatternHotspot"),
+        hotspot_trend: Map.get(plan, "hotspotTrend"),
         weakness: Map.get(plan, "weakness"),
         focus: Map.get(plan, "focus", []),
         recommendations: Map.get(plan, "recommendations", [])

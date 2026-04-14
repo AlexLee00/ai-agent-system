@@ -26,6 +26,7 @@ function buildPayload(digest = {}) {
     },
     autonomySummary: digest?.autonomySummary || {},
     channelPerformance: digest?.channelPerformance || {},
+    strategy: digest?.strategy || {},
     recommendations: Array.isArray(digest?.recommendations) ? digest.recommendations : [],
   };
 }
