@@ -22,6 +22,7 @@ const path       = require('path');
 const { execSync } = require('child_process');
 const pgPool     = require('../../../packages/core/lib/pg-pool');
 const eventLake  = require('../../../packages/core/lib/event-lake');
+const { publishToRag } = require('../../../packages/core/lib/reporting-hub');
 
 const SCHEMA = 'reservation';
 const LAUNCHD_DIR = path.join(os.homedir(), 'Library', 'LaunchAgents');
@@ -302,12 +303,41 @@ async function pollDoctorTasks() {
             `원인: ${params.original_issue?.detail || params.reason || ''}`,
             `복구 방법: ${result.message || taskType}`,
           ].join(' | ');
-          await recoveryRagStore.store('operations', content, {
-            task_type: taskType,
-            success:   true,
-            category:  'recovery',
-            team:      'claude',
-          }, 'doctor');
+          await publishToRag({
+            ragStore: {
+              async store(collection, ragContent, metadata = {}, sourceBot = 'doctor') {
+                return recoveryRagStore.store(collection, ragContent, metadata, sourceBot);
+              },
+            },
+            collection: 'operations',
+            sourceBot: 'doctor',
+            event: {
+              from_bot: 'doctor',
+              team: 'claude',
+              event_type: 'doctor_recovery_rag',
+              alert_level: 1,
+              message: content,
+              payload: {
+                title: `복구 성공: ${taskType}`,
+                summary: result.message || taskType,
+                details: [
+                  `원인: ${params.original_issue?.detail || params.reason || ''}`,
+                ],
+              },
+            },
+            metadata: {
+              task_type: taskType,
+              success: true,
+              category: 'recovery',
+              team: 'claude',
+            },
+            contentBuilder: () => content,
+            policy: {
+              dedupe: true,
+              key: `doctor-recovery:${taskType}:${params.original_issue?.detail || params.reason || result.message || ''}`,
+              cooldownMs: 12 * 60 * 60 * 1000,
+            },
+          });
         } catch (e) {
           console.warn('[doctor] RAG 저장 실패 (무시):', e.message);
         }
@@ -321,12 +351,41 @@ async function pollDoctorTasks() {
             `원인: ${params.original_issue?.detail || params.reason || ''}`,
             `실패 이유: ${result.message || '알 수 없음'}`,
           ].join(' | ');
-          await failureRagStore.store('operations', content, {
-            task_type: taskType,
-            success:   false,
-            category:  'recovery_failure',
-            team:      'claude',
-          }, 'doctor');
+          await publishToRag({
+            ragStore: {
+              async store(collection, ragContent, metadata = {}, sourceBot = 'doctor') {
+                return failureRagStore.store(collection, ragContent, metadata, sourceBot);
+              },
+            },
+            collection: 'operations',
+            sourceBot: 'doctor',
+            event: {
+              from_bot: 'doctor',
+              team: 'claude',
+              event_type: 'doctor_recovery_failure_rag',
+              alert_level: 1,
+              message: content,
+              payload: {
+                title: `복구 실패: ${taskType}`,
+                summary: result.message || '알 수 없음',
+                details: [
+                  `원인: ${params.original_issue?.detail || params.reason || ''}`,
+                ],
+              },
+            },
+            metadata: {
+              task_type: taskType,
+              success: false,
+              category: 'recovery_failure',
+              team: 'claude',
+            },
+            contentBuilder: () => content,
+            policy: {
+              dedupe: true,
+              key: `doctor-recovery-failure:${taskType}:${params.original_issue?.detail || params.reason || result.message || ''}`,
+              cooldownMs: 12 * 60 * 60 * 1000,
+            },
+          });
         } catch (e) {
           console.warn('[doctor] RAG 실패 이력 저장 실패 (무시):', e.message);
         }
