@@ -38,6 +38,7 @@
 - [bots/video/lib/video-rag.ts](/Users/alexlee/projects/ai-agent-system/bots/video/lib/video-rag.ts)
 - [bots/worker/web/server.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/server.js)
 - [bots/claude/lib/doctor.ts](/Users/alexlee/projects/ai-agent-system/bots/claude/lib/doctor.ts)
+- [bots/ska/lib/rag_client.py](/Users/alexlee/projects/ai-agent-system/bots/ska/lib/rag_client.py)
 
 즉 지금은
 - alert publisher 발행
@@ -49,6 +50,7 @@
 - video edit result/feedback RAG 저장
 - worker document/journal/schedule RAG 저장
 - claude doctor recovery/failure RAG 저장
+- ska python rebecca/forecast RAG 저장
 - blog publish / performance RAG 저장
 - blog post/quality accumulation RAG 저장
  이 같은 이벤트 정규화 레이어를 탄다.

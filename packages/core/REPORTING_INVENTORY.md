@@ -91,6 +91,7 @@
 - video edit result/feedback RAG writes → reporting-hub rag target
 - worker document/journal/schedule RAG writes → reporting-hub rag target
 - claude doctor recovery/failure RAG writes → reporting-hub rag target
+- ska python rebecca/forecast RAG writes → reporting-hub rag target (fallback direct insert retained)
 - blog publ RAG writes → reporting-hub rag target
 - blog rag accumulator RAG writes → reporting-hub rag target
 - blog curriculum notices → reporting-hub notice + severity fanout

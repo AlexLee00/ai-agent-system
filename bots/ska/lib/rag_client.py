@@ -13,6 +13,7 @@ OpenAI text-embedding-3-small (1536차원) 사용.
 
 import os
 import json
+import subprocess
 import psycopg2
 
 PG_RES  = "dbname=jay options='-c search_path=reservation,public'"
@@ -66,6 +67,73 @@ def _create_embedding(text, api_key):
         input=text[:8000],
     )
     return resp.data[0].embedding
+
+
+def _publish_via_reporting_hub(collection, content, metadata=None, source_bot='unknown'):
+    """reporting-hub 경유 RAG 저장 (실패 시 None)"""
+    try:
+        root = os.path.join(os.path.dirname(__file__), '../../../')
+        payload = json.dumps({
+            'collection': collection,
+            'content': content,
+            'metadata': metadata or {},
+            'source_bot': source_bot,
+            'event_type': f'{source_bot}_rag',
+            'message': str(content or '')[:500],
+            'title': f'{source_bot} rag',
+            'summary': str((metadata or {}).get('type') or source_bot),
+            'details': [],
+        }, ensure_ascii=False)
+        script = """
+const payload = JSON.parse(process.argv[1]);
+const { publishToRag } = require('./packages/core/lib/reporting-hub');
+const rag = require('./packages/core/lib/rag-safe');
+
+(async () => {
+  const result = await publishToRag({
+    ragStore: {
+      async store(collection, ragContent, metadata = {}, targetSourceBot = 'unknown') {
+        return rag.store(collection, ragContent, metadata, targetSourceBot);
+      },
+    },
+    collection: payload.collection,
+    sourceBot: payload.source_bot || 'ska-python',
+    event: {
+      from_bot: payload.source_bot || 'ska-python',
+      team: 'ska',
+      event_type: payload.event_type || 'ska_python_rag',
+      alert_level: 1,
+      message: payload.message || String(payload.content || '').slice(0, 500),
+      payload: {
+        title: payload.title || 'ska rag',
+        summary: payload.summary || String(payload.content || '').slice(0, 120),
+        details: Array.isArray(payload.details) ? payload.details : [],
+      },
+    },
+    metadata: payload.metadata || {},
+    contentBuilder: () => payload.content || '',
+  });
+  process.stdout.write(JSON.stringify({ ok: true, id: result?.id ?? null }));
+})().catch((error) => {
+  process.stderr.write(String(error?.stack || error || 'unknown error'));
+  process.exit(1);
+});
+"""
+        result = subprocess.run(
+            ['node', '-e', script, payload],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        if result.returncode != 0:
+            print(f'[RAG] reporting-hub publish 실패 (fallback): {result.stderr.strip() or result.stdout.strip()}')
+            return None
+        parsed = json.loads(result.stdout.strip() or '{}')
+        return parsed.get('id')
+    except Exception as e:
+        print(f'[RAG] reporting-hub publish 실패 (fallback): {e}')
+        return None
 
 
 class RagClient:
@@ -155,6 +223,10 @@ class RagClient:
 
         반환: 삽입된 id (실패 시 None)
         """
+        via_hub = _publish_via_reporting_hub(collection, content, metadata, source_bot)
+        if via_hub is not None:
+            return via_hub
+
         if not self._api_key:
             return None
         try:
