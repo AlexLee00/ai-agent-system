@@ -36,6 +36,7 @@
 - [bots/orchestrator/src/sigma-daily.ts](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/src/sigma-daily.ts)
 - [bots/orchestrator/lib/sigma/sigma-feedback.ts](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/lib/sigma/sigma-feedback.ts)
 - [bots/video/lib/video-rag.ts](/Users/alexlee/projects/ai-agent-system/bots/video/lib/video-rag.ts)
+- [bots/worker/web/server.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/server.js)
 
 즉 지금은
 - alert publisher 발행
@@ -45,6 +46,7 @@
 - investment review/analysis RAG 저장
 - sigma daily/meta-review RAG 저장
 - video edit result/feedback RAG 저장
+- worker document/journal/schedule RAG 저장
 - blog publish / performance RAG 저장
 - blog post/quality accumulation RAG 저장
  이 같은 이벤트 정규화 레이어를 탄다.
