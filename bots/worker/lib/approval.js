@@ -411,7 +411,20 @@ async function sendApprovalRequest({ chatId, requestId, action, requesterName, p
       action: '승인/반려 버튼 확인',
     },
   });
-  const text = renderNoticeEvent(notice) || _buildApprovalText(requestId, action, requesterName, payload);
+  const memoryHint = await approvalMemory.recall(
+    [String(action || ''), String(requesterName || '')].filter(Boolean).join(' '),
+    {
+      type: 'episodic',
+      limit: 2,
+      threshold: 0.35,
+    },
+  ).then((rows) => {
+    if (!rows || rows.length === 0) return '';
+    const approved = rows.filter((row) => String(row?.metadata?.decision || '') === 'approved').length;
+    const rejected = rows.filter((row) => String(row?.metadata?.decision || '') === 'rejected').length;
+    return `\n최근 유사 승인 기록: 승인 ${approved}건 / 반려 ${rejected}건`;
+  }).catch(() => '');
+  const text = `${renderNoticeEvent(notice) || _buildApprovalText(requestId, action, requesterName, payload)}${memoryHint}`;
 
   try {
     await publishToWebhook({
