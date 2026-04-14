@@ -65,6 +65,7 @@ const {
 // ── AI 모듈 ───────────────────────────────────────────────────────────
 const llmRouter   = require(path.join(__dirname, '../../../packages/core/lib/llm-router'));
 const rag         = require(path.join(__dirname, '../../../packages/core/lib/rag-safe'));
+const { publishToRag } = require(path.join(__dirname, '../../../packages/core/lib/reporting-hub'));
 const { extractDocument } = require(path.join(__dirname, '../../../packages/core/lib/document-parser'));
 const { searchFeedbackCases } = require(path.join(__dirname, '../../../packages/core/lib/feedback-rag'));
 const videoApi = require('./routes/video-api');
@@ -546,6 +547,43 @@ function buildDocumentRagText({ category, filename, summary, extractionText }) {
   if (summary) parts.push(summary);
   if (extractionText) parts.push(String(extractionText).slice(0, 12000));
   return parts.filter(Boolean).join('\n\n').trim();
+}
+
+async function publishWorkerRagEntry({
+  collection,
+  sourceBot,
+  eventType,
+  message,
+  payload,
+  metadata,
+  content,
+  dedupeKey,
+  cooldownMs = 30 * 60 * 1000,
+}) {
+  await publishToRag({
+    ragStore: {
+      async store(targetCollection, ragContent, targetMetadata = {}, targetSourceBot = sourceBot) {
+        return rag.store(targetCollection, ragContent, targetMetadata, targetSourceBot);
+      },
+    },
+    collection,
+    sourceBot,
+    event: {
+      from_bot: sourceBot,
+      team: 'worker',
+      event_type: eventType,
+      alert_level: 1,
+      message,
+      payload,
+    },
+    metadata,
+    contentBuilder: () => String(content || ''),
+    policy: {
+      dedupe: true,
+      key: dedupeKey,
+      cooldownMs,
+    },
+  });
 }
 
 function buildExtractionPreview(text = '', maxLength = 4000) {
@@ -3795,13 +3833,24 @@ app.post('/api/documents/upload',
           extraction.text ? new Date() : null,
         ]);
       // RAG 자동 저장 (실패해도 본 기능 영향 없음)
-      rag.store('rag_work_docs', buildDocumentRagText({
-        category: detectedCategory,
-        filename,
-        extractionText: extraction.text,
-      }),
-        { company_id: req.user.company_id, document_id: doc.id, category: detectedCategory }, 'emily'
-      ).catch(() => {});
+      publishWorkerRagEntry({
+        collection: 'rag_work_docs',
+        sourceBot: 'emily',
+        eventType: 'worker_document_rag',
+        message: `[문서] ${filename}`,
+        payload: {
+          title: filename,
+          summary: detectedCategory || '기타',
+          details: [`document_id: ${doc.id}`],
+        },
+        metadata: { company_id: req.user.company_id, document_id: doc.id, category: detectedCategory },
+        content: buildDocumentRagText({
+          category: detectedCategory,
+          filename,
+          extractionText: extraction.text,
+        }),
+        dedupeKey: `worker-doc-rag:${req.user.company_id}:${doc.id}`,
+      }).catch(() => {});
       res.status(201).json({
         document: {
           ...doc,
@@ -4094,20 +4143,30 @@ app.post('/api/documents/proposals/:id/confirm',
           extraction.text ? new Date() : null,
         ]);
 
-      rag.store('rag_work_docs', buildDocumentRagText({
-        category: proposal.category || '기타',
-        filename: document.filename,
-        summary: proposal.request_summary || '',
-        extractionText: extraction.text,
-      }),
-        {
+      publishWorkerRagEntry({
+        collection: 'rag_work_docs',
+        sourceBot: 'emily',
+        eventType: 'worker_document_rag',
+        message: `[문서확정] ${document.filename}`,
+        payload: {
+          title: document.filename,
+          summary: proposal.category || '기타',
+          details: [`document_id: ${document.id}`, `feedback_session_id: ${session.id}`],
+        },
+        metadata: {
           company_id: req.user.company_id,
           document_id: document.id,
           category: proposal.category || '기타',
           feedback_session_id: session.id,
         },
-        'emily'
-      ).catch(() => {});
+        content: buildDocumentRagText({
+          category: proposal.category || '기타',
+          filename: document.filename,
+          summary: proposal.request_summary || '',
+          extractionText: extraction.text,
+        }),
+        dedupeKey: `worker-doc-rag:${req.user.company_id}:${document.id}:${session.id}`,
+      }).catch(() => {});
 
       await markWorkerFeedbackCommitted({
         sessionId: session.id,
@@ -4298,9 +4357,20 @@ app.post('/api/journals/proposals/:id/confirm', requireAuth, companyFilter, asyn
       companyId: req.companyId,
     });
 
-    rag.store('rag_work_docs', `[업무일지] ${proposal.content.slice(0, 500)}`,
-      { company_id: req.companyId, journal_id: journal.id, category: proposal.category || 'general' }, 'emily'
-    ).catch(() => {});
+    publishWorkerRagEntry({
+      collection: 'rag_work_docs',
+      sourceBot: 'emily',
+      eventType: 'worker_journal_rag',
+      message: `[업무일지] ${proposal.content.slice(0, 500)}`,
+      payload: {
+        title: '업무일지',
+        summary: proposal.category || 'general',
+        details: [`journal_id: ${journal.id}`],
+      },
+      metadata: { company_id: req.companyId, journal_id: journal.id, category: proposal.category || 'general' },
+      content: `[업무일지] ${proposal.content.slice(0, 500)}`,
+      dedupeKey: `worker-journal-rag:${req.companyId}:${journal.id}`,
+    }).catch(() => {});
 
     await markWorkerFeedbackConfirmed({
       sessionId: session.id,
@@ -4365,9 +4435,20 @@ app.post('/api/journals',
          VALUES ($1,$2,$3,$4,$5) RETURNING *`,
         [req.companyId, empId, date || new Date().toISOString().slice(0,10), content, normalizedCategory || 'general']);
       // RAG 자동 저장 (실패해도 본 기능 영향 없음)
-      rag.store('rag_work_docs', `[업무일지] ${content.slice(0, 500)}`,
-        { company_id: req.companyId, journal_id: row.id, category: normalizedCategory || 'general' }, 'emily'
-      ).catch(() => {});
+      publishWorkerRagEntry({
+        collection: 'rag_work_docs',
+        sourceBot: 'emily',
+        eventType: 'worker_journal_rag',
+        message: `[업무일지] ${content.slice(0, 500)}`,
+        payload: {
+          title: '업무일지',
+          summary: normalizedCategory || 'general',
+          details: [`journal_id: ${row.id}`],
+        },
+        metadata: { company_id: req.companyId, journal_id: row.id, category: normalizedCategory || 'general' },
+        content: `[업무일지] ${content.slice(0, 500)}`,
+        dedupeKey: `worker-journal-rag:${req.companyId}:${row.id}`,
+      }).catch(() => {});
       res.status(201).json({ journal: row });
     } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
   }
@@ -5139,10 +5220,20 @@ app.post('/api/schedules',
          location||null, JSON.stringify(attendees||[]),
          recurrence||null, reminder??30, employeeId]);
       // RAG 자동 저장 (실패해도 본 기능 영향 없음)
-      rag.store('rag_schedule',
-        `[일정] ${title} | ${start_time}${end_time ? '~' + end_time : ''} | ${type || 'task'}`,
-        { company_id: req.companyId, schedule_id: row.id, type: type || 'task' }, 'chloe'
-      ).catch(() => {});
+      publishWorkerRagEntry({
+        collection: 'rag_schedule',
+        sourceBot: 'chloe',
+        eventType: 'worker_schedule_rag',
+        message: `[일정] ${title} | ${start_time}${end_time ? '~' + end_time : ''} | ${type || 'task'}`,
+        payload: {
+          title,
+          summary: `${start_time}${end_time ? `~${end_time}` : ''} | ${type || 'task'}`,
+          details: [`schedule_id: ${row.id}`],
+        },
+        metadata: { company_id: req.companyId, schedule_id: row.id, type: type || 'task' },
+        content: `[일정] ${title} | ${start_time}${end_time ? '~' + end_time : ''} | ${type || 'task'}`,
+        dedupeKey: `worker-schedule-rag:${req.companyId}:${row.id}`,
+      }).catch(() => {});
       res.status(201).json({ schedule: row });
     } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
   }
@@ -5243,10 +5334,20 @@ app.post('/api/schedules/proposals/:id/confirm', requireAuth, companyFilter, asy
       submittedSnapshot: committedSnapshot,
       eventMeta: { source: 'schedule_confirm', schedule_id: row.id },
     });
-    rag.store('rag_schedule',
-      `[일정] ${proposal.title} | ${proposal.start_time}${proposal.end_time ? `~${proposal.end_time}` : ''} | ${proposal.type || 'task'}`,
-      { company_id: req.companyId, schedule_id: row.id, type: proposal.type || 'task' }, 'chloe'
-    ).catch(() => {});
+    publishWorkerRagEntry({
+      collection: 'rag_schedule',
+      sourceBot: 'chloe',
+      eventType: 'worker_schedule_rag',
+      message: `[일정] ${proposal.title} | ${proposal.start_time}${proposal.end_time ? `~${proposal.end_time}` : ''} | ${proposal.type || 'task'}`,
+      payload: {
+        title: proposal.title,
+        summary: `${proposal.start_time}${proposal.end_time ? `~${proposal.end_time}` : ''} | ${proposal.type || 'task'}`,
+        details: [`schedule_id: ${row.id}`],
+      },
+      metadata: { company_id: req.companyId, schedule_id: row.id, type: proposal.type || 'task' },
+      content: `[일정] ${proposal.title} | ${proposal.start_time}${proposal.end_time ? `~${proposal.end_time}` : ''} | ${proposal.type || 'task'}`,
+      dedupeKey: `worker-schedule-rag:${req.companyId}:${row.id}`,
+    }).catch(() => {});
     res.json({ ok: true, schedule: row, proposal: committedSnapshot });
   } catch (error) {
     res.status(500).json({ error: error.message || '일정 확정 처리 중 오류가 발생했습니다.', code: 'SCHEDULE_CONFIRM_FAILED' });
