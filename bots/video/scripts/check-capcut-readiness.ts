@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
 const yaml = require('js-yaml');
+const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
 
 const configPath = path.join(__dirname, '..', 'config', 'video-config.yaml');
 const config = yaml.load(fs.readFileSync(configPath, 'utf8'));
@@ -10,6 +11,15 @@ const config = yaml.load(fs.readFileSync(configPath, 'utf8'));
 const capcutHost = config.capcut_api?.host || 'http://localhost:9001';
 const capcutRepoDir = config.capcut_api?.mcp_cwd;
 const capcutDesktopDraftDir = config.paths?.capcut_drafts;
+const capcutReadinessMemory = createAgentMemory({ agentId: 'video.capcut-readiness', team: 'video' });
+
+function buildCapcutReadinessMemoryQuery(kind, extras = []) {
+  return [
+    'video capcut readiness',
+    kind,
+    ...extras,
+  ].filter(Boolean).join(' ');
+}
 
 function execFileAsync(cmd, args = [], options = {}) {
   return new Promise((resolve, reject) => {
@@ -131,10 +141,80 @@ async function main() {
     console.log('[check] 다음 단계: 과제 5에서는 save_draft 후 repo 내부 dfd_*를 찾아 copyToCapCut()으로 이동해야 합니다.');
   }
 
+  const kind = createdDesktopDraft ? 'healthy' : 'issue';
+  const memoryQuery = buildCapcutReadinessMemoryQuery(kind, [
+    desktopRunning ? 'desktop-running' : 'desktop-stopped',
+    createdRepoDraft ? 'repo-draft-created' : 'repo-draft-missing',
+    createdDesktopDraft ? 'desktop-draft-created' : 'desktop-draft-missing',
+  ]);
+  const episodicHint = await capcutReadinessMemory.recallCountHint(memoryQuery, {
+    type: 'episodic',
+    limit: 2,
+    threshold: 0.33,
+    title: '최근 유사 readiness',
+    separator: 'pipe',
+    metadataKey: 'kind',
+    labels: {
+      healthy: '정상',
+      issue: '이슈',
+    },
+    order: ['issue', 'healthy'],
+  }).catch(() => '');
+  const semanticHint = await capcutReadinessMemory.recallHint(`${memoryQuery} consolidated capcut readiness pattern`, {
+    type: 'semantic',
+    limit: 2,
+    threshold: 0.28,
+    title: '최근 통합 패턴',
+    separator: 'newline',
+  }).catch(() => '');
+  const summary = [
+    'CapCut readiness 점검',
+    `desktopRunning: ${desktopRunning}`,
+    `repoDraftCreated: ${Boolean(createdRepoDraft)}`,
+    `desktopDraftCreated: ${Boolean(createdDesktopDraft)}`,
+    createdRepoDraft ? `repoDraft: ${createdRepoDraft}` : null,
+    createdDesktopDraft ? `desktopDraft: ${createdDesktopDraft}` : null,
+  ].filter(Boolean).join('\n');
+
+  if (episodicHint) console.log(episodicHint.trimStart());
+  if (semanticHint) console.log(semanticHint.trimStart());
+
+  await capcutReadinessMemory.remember(summary, 'episodic', {
+    importance: kind === 'issue' ? 0.76 : 0.6,
+    expiresIn: 1000 * 60 * 60 * 24 * 30,
+    metadata: {
+      kind,
+      desktopRunning,
+      repoDraftCreated: Boolean(createdRepoDraft),
+      desktopDraftCreated: Boolean(createdDesktopDraft),
+    },
+  }).catch(() => {});
+  await capcutReadinessMemory.consolidate({
+    olderThanDays: 14,
+    limit: 10,
+  }).catch(() => {});
+
   console.log('[check] CapCut readiness 완료');
 }
 
 main().catch((error) => {
+  const message = error?.message || String(error);
+  capcutReadinessMemory.remember([
+    'CapCut readiness 점검 실패',
+    `reason: ${message}`,
+  ].join('\n'), 'episodic', {
+    importance: 0.84,
+    expiresIn: 1000 * 60 * 60 * 24 * 30,
+    metadata: {
+      kind: 'issue',
+      failed: true,
+      reason: message,
+    },
+  }).catch(() => {});
+  capcutReadinessMemory.consolidate({
+    olderThanDays: 14,
+    limit: 10,
+  }).catch(() => {});
   console.error(`[check] 실패: ${error.message}`);
   process.exit(1);
 });
