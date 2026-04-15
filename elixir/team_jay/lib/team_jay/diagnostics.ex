@@ -88,6 +88,7 @@ defmodule TeamJay.Diagnostics do
     :last_check,
     :last_overlap_signature,
     :last_pilot_signature,
+    :last_memory_signature,
     :memory_warn_streak
   ]
 
@@ -106,6 +107,7 @@ defmodule TeamJay.Diagnostics do
        last_check: nil,
        last_overlap_signature: nil,
        last_pilot_signature: nil,
+       last_memory_signature: nil,
        memory_warn_streak: 0
      }}
   end
@@ -115,6 +117,8 @@ defmodule TeamJay.Diagnostics do
     results = run_diagnostics()
     {alerts, memory_warn_streak} = filter_runtime_alerts(results, state.memory_warn_streak)
     overlap_signature = maybe_record_launchd_overlap(results, state.last_overlap_signature)
+    memory_signature =
+      maybe_record_memory_pressure(results, state.last_memory_signature, memory_warn_streak)
     report =
       build_shadow_report(%{
         state
@@ -146,7 +150,8 @@ defmodule TeamJay.Diagnostics do
          memory_warn_streak: memory_warn_streak,
          last_check: DateTime.utc_now(),
          last_overlap_signature: overlap_signature,
-         last_pilot_signature: pilot_signature
+         last_pilot_signature: pilot_signature,
+         last_memory_signature: memory_signature
      }}
   end
 
@@ -449,6 +454,29 @@ defmodule TeamJay.Diagnostics do
     signature
   end
 
+  defp maybe_record_memory_pressure(results, last_signature, memory_warn_streak) do
+    memory_result = Enum.find(results, &(&1.name == "memory_total"))
+
+    signature =
+      case memory_result do
+        nil ->
+          "missing"
+
+        result ->
+          Enum.join([
+            Atom.to_string(result.severity),
+            Integer.to_string(result.value || 0),
+            Integer.to_string(memory_warn_streak)
+          ], "|")
+      end
+
+    if signature != last_signature do
+      record_memory_pressure_event(memory_result, signature, memory_warn_streak)
+    end
+
+    signature
+  end
+
   defp build_shadow_report(state) do
     overlap_result = Enum.find(state.checks, &(&1.name == "launchd_phase3_overlap")) || %{}
 
@@ -738,6 +766,48 @@ defmodule TeamJay.Diagnostics do
       message: "#{candidate.name}(#{candidate.team}) score=#{candidate.priority_score}",
       tags: ["phase3", "diagnostics", "pilot_candidate"],
       metadata: %{signature: signature, candidate: candidate, blockers: blockers}
+    })
+  end
+
+  defp record_memory_pressure_event(nil, signature, memory_warn_streak) do
+    TeamJay.EventLake.record(%{
+      event_type: "beam_memory_pressure_changed",
+      team: "system",
+      bot_name: "diagnostics",
+      severity: "warn",
+      title: "BEAM 메모리 상태 불명",
+      message: "memory_total 결과를 찾지 못했습니다",
+      tags: ["phase3", "diagnostics", "beam_memory"],
+      metadata: %{signature: signature, streak: memory_warn_streak}
+    })
+  end
+
+  defp record_memory_pressure_event(memory_result, signature, memory_warn_streak) do
+    severity =
+      case memory_result.severity do
+        :warn -> "warn"
+        :error -> "error"
+        _ -> "info"
+      end
+
+    TeamJay.EventLake.record(%{
+      event_type: "beam_memory_pressure_changed",
+      team: "system",
+      bot_name: "diagnostics",
+      severity: severity,
+      title: "BEAM 메모리 상태 변경",
+      message: memory_result.message,
+      tags: ["phase3", "diagnostics", "beam_memory"],
+      metadata: %{
+        signature: signature,
+        streak: memory_warn_streak,
+        severity: memory_result.severity,
+        total: memory_result.value,
+        processes: Map.get(memory_result, :processes),
+        binary: Map.get(memory_result, :binary),
+        ets: Map.get(memory_result, :ets),
+        atom: Map.get(memory_result, :atom)
+      }
     })
   end
 
