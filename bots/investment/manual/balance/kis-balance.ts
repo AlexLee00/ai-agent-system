@@ -8,6 +8,7 @@
  */
 
 import { getDomesticBalance, getOverseasBalance } from '../../shared/kis-client.ts';
+import { buildInvestmentCliInsight } from '../../shared/cli-insight.ts';
 
 async function main() {
   const args = Object.fromEntries(
@@ -29,9 +30,36 @@ async function main() {
       result.overseas = await getOverseasBalance();
     }
 
+    result.aiSummary = await buildInvestmentCliInsight({
+      bot: 'kis-balance',
+      requestType: 'balance',
+      title: 'KIS 잔고 조회 결과',
+      data: {
+        type,
+        hasDomestic: Boolean(result.domestic),
+        hasOverseas: Boolean(result.overseas),
+        domesticKeys: result.domestic ? Object.keys(result.domestic).slice(0, 8) : [],
+        overseasKeys: result.overseas ? Object.keys(result.overseas).slice(0, 8) : [],
+      },
+      fallback: type === 'all'
+        ? '국내외 KIS 잔고가 함께 조회돼 현재 증권 계좌 상태를 한 번에 점검할 수 있습니다.'
+        : type === 'domestic'
+          ? '국내 KIS 잔고가 정상 조회돼 원화 계좌 상태 확인이 가능합니다.'
+          : '해외 KIS 잔고가 정상 조회돼 달러 계좌 상태 확인이 가능합니다.',
+    });
     output(result);
   } catch (e) {
-    output({ ok: false, error: e.message });
+    const aiSummary = await buildInvestmentCliInsight({
+      bot: 'kis-balance',
+      requestType: 'balance',
+      title: 'KIS 잔고 조회 결과',
+      data: {
+        type,
+        error: e.message,
+      },
+      fallback: 'KIS 잔고 조회가 실패해 증권 계좌 상태를 수동으로 다시 확인하는 편이 좋습니다.',
+    });
+    output({ ok: false, error: e.message, aiSummary });
   }
 }
 
