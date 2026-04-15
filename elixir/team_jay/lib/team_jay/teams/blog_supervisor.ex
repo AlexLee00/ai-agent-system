@@ -6,7 +6,10 @@ defmodule TeamJay.Teams.BlogSupervisor do
     %{name: :blog_daily, script: "bots/blog/scripts/run-daily.ts", schedule: {:daily_at, 6, 0}},
     %{name: :blog_collect_performance, script: "bots/blog/scripts/collect-performance.ts", schedule: {:daily_at, 21, 0}},
     %{name: :blog_collect_competition, script: "bots/blog/scripts/collect-competition-results.ts", schedule: {:weekly_at, [1, 3, 5], 22, 0}},
-    %{name: :blog_weekly_evolution, script: "bots/blog/scripts/weekly-evolution.ts", schedule: {:weekly_at, [1], 21, 30}}
+    %{name: :blog_weekly_evolution, script: "bots/blog/scripts/weekly-evolution.ts", schedule: {:weekly_at, [1], 21, 30}},
+    %{name: :blog_sync_book_catalog, script: "bots/blog/scripts/sync-book-catalog.ts --json", schedule: {:daily_at, 5, 40}},
+    %{name: :blog_sync_book_review_queue, script: "bots/blog/scripts/build-book-review-queue.ts --json --limit 5", schedule: {:daily_at, 5, 50}},
+    %{name: :blog_collect_views, script: "bots/blog/scripts/collect-views.ts", schedule: {:daily_at, 23, 0}}
   ]
 
   def start_link(opts \\ []) do
