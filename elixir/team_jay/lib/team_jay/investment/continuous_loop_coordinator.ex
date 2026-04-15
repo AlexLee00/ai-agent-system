@@ -8,9 +8,11 @@ defmodule TeamJay.Investment.ContinuousLoopCoordinator do
 
   use GenServer
 
+  alias Ecto.Adapters.SQL
   alias TeamJay.Investment.Events
   alias TeamJay.Investment.PubSub
   alias TeamJay.Investment.Topics
+  alias TeamJay.Repo
 
   def start_link(opts) do
     symbol = Keyword.fetch!(opts, :symbol)
@@ -24,6 +26,7 @@ defmodule TeamJay.Investment.ContinuousLoopCoordinator do
   @impl true
   def init(opts) do
     symbol = Keyword.fetch!(opts, :symbol)
+    ensure_table!()
 
     Enum.each(
       [
@@ -49,7 +52,10 @@ defmodule TeamJay.Investment.ContinuousLoopCoordinator do
        cycle_count: 0,
        last_action: :hold,
        last_readiness: :partial,
-       last_completed_at: nil
+       last_completed_at: nil,
+       persisted_count: 0,
+       last_persist_status: :idle,
+       last_persisted_at: nil
      }}
   end
 
@@ -61,7 +67,10 @@ defmodule TeamJay.Investment.ContinuousLoopCoordinator do
        cycle_count: state.cycle_count,
        last_action: state.last_action,
        last_readiness: state.last_readiness,
-       last_completed_at: state.last_completed_at
+       last_completed_at: state.last_completed_at,
+       persisted_count: state.persisted_count,
+       last_persist_status: state.last_persist_status,
+       last_persisted_at: state.last_persisted_at
      }, state}
   end
 
@@ -127,6 +136,8 @@ defmodule TeamJay.Investment.ContinuousLoopCoordinator do
         market_mode: state.last_market_mode
       )
 
+    {persisted_count, persist_status, persisted_at} = persist_snapshot(state.symbol, snapshot)
+
     PubSub.broadcast_autonomous_cycle(state.symbol, {:autonomous_cycle, snapshot})
 
     %{
@@ -134,7 +145,10 @@ defmodule TeamJay.Investment.ContinuousLoopCoordinator do
       | cycle_count: state.cycle_count + 1,
         last_action: action,
         last_readiness: readiness,
-        last_completed_at: snapshot.completed_at
+        last_completed_at: snapshot.completed_at,
+        persisted_count: state.persisted_count + persisted_count,
+        last_persist_status: persist_status,
+        last_persisted_at: persisted_at
     }
   end
 
@@ -155,4 +169,113 @@ defmodule TeamJay.Investment.ContinuousLoopCoordinator do
   end
 
   defp decide(_condition, _strategy, _circuit, _resource, _market_mode), do: {:hold, :observe, :partial}
+
+  defp ensure_table! do
+    SQL.query!(Repo, "CREATE SCHEMA IF NOT EXISTS investment", [])
+
+    SQL.query!(
+      Repo,
+      """
+      CREATE TABLE IF NOT EXISTS investment.autonomous_cycle_events (
+        id BIGSERIAL PRIMARY KEY,
+        symbol TEXT NOT NULL,
+        mode TEXT NOT NULL,
+        action TEXT NOT NULL,
+        phase TEXT NOT NULL,
+        readiness TEXT NOT NULL,
+        cycle_count INTEGER NOT NULL DEFAULT 0,
+        loop_cycle JSONB NOT NULL DEFAULT '{}'::jsonb,
+        condition_check JSONB NOT NULL DEFAULT '{}'::jsonb,
+        strategy_update JSONB NOT NULL DEFAULT '{}'::jsonb,
+        circuit_breaker JSONB NOT NULL DEFAULT '{}'::jsonb,
+        resource_feedback JSONB NOT NULL DEFAULT '{}'::jsonb,
+        market_mode JSONB NOT NULL DEFAULT '{}'::jsonb,
+        payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+        completed_at TIMESTAMPTZ NOT NULL,
+        inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+      """,
+      []
+    )
+
+    SQL.query!(
+      Repo,
+      """
+      CREATE INDEX IF NOT EXISTS autonomous_cycle_events_symbol_completed_at_idx
+      ON investment.autonomous_cycle_events (symbol, completed_at DESC)
+      """,
+      []
+    )
+  end
+
+  defp persist_snapshot(symbol, snapshot) do
+    now = DateTime.utc_now()
+
+    case SQL.query(
+           Repo,
+           """
+           INSERT INTO investment.autonomous_cycle_events (
+             symbol,
+             mode,
+             action,
+             phase,
+             readiness,
+             cycle_count,
+             loop_cycle,
+             condition_check,
+             strategy_update,
+             circuit_breaker,
+             resource_feedback,
+             market_mode,
+             payload,
+             completed_at,
+             inserted_at
+           )
+           VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb, $13::jsonb, $14, $15)
+           """,
+           [
+             symbol,
+             Atom.to_string(snapshot.mode),
+             Atom.to_string(snapshot.action),
+             Atom.to_string(snapshot.phase),
+             Atom.to_string(snapshot.readiness),
+             snapshot.cycle_count,
+             Jason.encode!(json_ready(Map.get(snapshot, :loop_cycle, %{}))),
+             Jason.encode!(json_ready(Map.get(snapshot, :condition_check, %{}))),
+             Jason.encode!(json_ready(Map.get(snapshot, :strategy_update, %{}))),
+             Jason.encode!(json_ready(Map.get(snapshot, :circuit_breaker, %{}))),
+             Jason.encode!(json_ready(Map.get(snapshot, :resource_feedback, %{}))),
+             Jason.encode!(json_ready(Map.get(snapshot, :market_mode, %{}))),
+             Jason.encode!(json_ready(snapshot)),
+             snapshot.completed_at,
+             now
+           ]
+         ) do
+      {:ok, %{num_rows: num_rows}} when num_rows > 0 ->
+        {num_rows, :persisted, now}
+
+      {:ok, _result} ->
+        {0, :noop, nil}
+
+      {:error, _reason} ->
+        {0, :error, nil}
+    end
+  end
+
+  defp json_ready(%DateTime{} = value), do: DateTime.to_iso8601(value)
+  defp json_ready(%NaiveDateTime{} = value), do: NaiveDateTime.to_iso8601(value)
+  defp json_ready(%Date{} = value), do: Date.to_iso8601(value)
+  defp json_ready(%Time{} = value), do: Time.to_iso8601(value)
+  defp json_ready(%_{} = struct), do: struct |> Map.from_struct() |> json_ready()
+  defp json_ready(map) when is_map(map), do: Map.new(map, fn {k, v} -> {json_key(k), json_ready(v)} end)
+  defp json_ready(list) when is_list(list), do: Enum.map(list, &json_ready/1)
+  defp json_ready(tuple) when is_tuple(tuple), do: tuple |> Tuple.to_list() |> Enum.map(&json_ready/1)
+  defp json_ready(atom) when is_atom(atom), do: Atom.to_string(atom)
+  defp json_ready(pid) when is_pid(pid), do: inspect(pid)
+  defp json_ready(reference) when is_reference(reference), do: inspect(reference)
+  defp json_ready(function) when is_function(function), do: inspect(function)
+  defp json_ready(value), do: value
+
+  defp json_key(key) when is_atom(key), do: Atom.to_string(key)
+  defp json_key(key), do: key
 end

@@ -6,6 +6,7 @@ defmodule TeamJay.Investment.Phase5AutonomyHarness do
   alias TeamJay.Investment.PipelineDynamicSupervisor
   alias TeamJay.Investment.PipelineStarter
   alias TeamJay.Investment.PubSub
+  alias TeamJay.Investment.ContinuousLoopCoordinator
   alias TeamJay.Investment.Topics
 
   @default_timeout 6_000
@@ -35,7 +36,11 @@ defmodule TeamJay.Investment.Phase5AutonomyHarness do
 
     result =
       case started do
-        {:ok, _pid} -> collect(symbol, timeout_ms, [])
+        {:ok, _pid} ->
+          symbol
+          |> collect(timeout_ms, [])
+          |> attach_store_status(symbol)
+
         error -> %{status: :failed_to_start, completed: false, error: inspect(error), events: []}
       end
 
@@ -59,6 +64,16 @@ defmodule TeamJay.Investment.Phase5AutonomyHarness do
   defp collect(symbol, timeout_ms, events) do
     deadline = System.monotonic_time(:millisecond) + timeout_ms
     loop(symbol, deadline, events)
+  end
+
+  defp attach_store_status(result, symbol) do
+    autonomy_status = ContinuousLoopCoordinator.status(symbol)
+
+    Map.merge(result, %{
+      persisted_count: Map.get(autonomy_status, :persisted_count, 0),
+      persist_status: Map.get(autonomy_status, :last_persist_status, :idle),
+      last_persisted_at: Map.get(autonomy_status, :last_persisted_at)
+    })
   end
 
   defp loop(symbol, deadline, events) do
