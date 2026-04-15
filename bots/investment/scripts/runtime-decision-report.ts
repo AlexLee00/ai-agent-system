@@ -14,10 +14,19 @@ function parseArgs(argv = []) {
   return args;
 }
 
+function normalizeMarket(market = 'all') {
+  const value = String(market || 'all').toLowerCase();
+  if (value === 'crypto') return 'binance';
+  if (value === 'domestic') return 'kis';
+  if (value === 'overseas') return 'kis_overseas';
+  return value;
+}
+
 async function loadRuntimeDecisions({ market = 'all', limit = 5 } = {}) {
+  const normalizedMarket = normalizeMarket(market);
   let where = `pipeline = 'luna_pipeline' AND meta->>'bridge_status' IS NOT NULL`;
-  if (market !== 'all') {
-    const safeMarket = String(market).replace(/'/g, "''");
+  if (normalizedMarket !== 'all') {
+    const safeMarket = String(normalizedMarket).replace(/'/g, "''");
     where += ` AND market = '${safeMarket}'`;
   }
   const safeLimit = Math.max(1, Number(limit || 5));
@@ -114,10 +123,11 @@ function renderText(rows = [], args = {}) {
 }
 
 export async function buildRuntimeDecisionReport({ market = 'all', limit = 5, json = false } = {}) {
-  const rows = await loadRuntimeDecisions({ market, limit });
+  const normalizedMarket = normalizeMarket(market);
+  const rows = await loadRuntimeDecisions({ market: normalizedMarket, limit });
   const payload = {
     ok: true,
-    market,
+    market: normalizedMarket,
     limit,
     count: rows.length,
     summary: buildSummary(rows),
@@ -125,7 +135,7 @@ export async function buildRuntimeDecisionReport({ market = 'all', limit = 5, js
   };
 
   if (json) return payload;
-  return renderText(rows, { market, limit });
+  return renderText(rows, { market: normalizedMarket, limit });
 }
 
 async function main() {
