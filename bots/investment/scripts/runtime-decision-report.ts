@@ -3,6 +3,7 @@
 
 import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import { buildInvestmentCliInsight } from '../shared/cli-insight.ts';
 
 function parseArgs(argv = []) {
   const args = { market: 'all', limit: 5, json: false, includeSmoke: false };
@@ -111,6 +112,7 @@ function renderText(rows = [], args = {}) {
     `Runtime decision sessions: ${rows.length}`,
     `market: ${args.market}`,
     `limit: ${args.limit}`,
+    args.aiSummary ? `🔍 AI: ${args.aiSummary}` : null,
     `byMarket: ${formatMap(summary.byMarket)}`,
     `approvedSignals: ${summary.approvedSignals}`,
     `executedSymbols: ${summary.executedSymbols}`,
@@ -124,7 +126,22 @@ function renderText(rows = [], args = {}) {
     );
   }
 
-  return lines.join('\n');
+  return lines.filter(Boolean).join('\n');
+}
+
+function buildRuntimeDecisionFallback(payload = {}) {
+  const summary = payload.summary || {};
+  const warnings = Array.isArray(summary.warnings) ? summary.warnings : [];
+  if ((payload.count || 0) === 0) {
+    return '최근 runtime decision 세션 표본이 없어 먼저 세션 누적 상태를 확인하는 것이 좋습니다.';
+  }
+  if ((summary.riskRejected || 0) > 0) {
+    return `최근 runtime decision ${payload.count || 0}건 중 risk reject가 ${summary.riskRejected || 0}건 보여, 상위 reject 사유를 먼저 점검하는 편이 좋습니다.`;
+  }
+  if (warnings.length > 0) {
+    return `최근 runtime decision ${payload.count || 0}건은 실행됐지만 경고 ${warnings.length}종이 있어 bridge 상태를 함께 보는 것이 좋습니다.`;
+  }
+  return `최근 runtime decision ${payload.count || 0}건은 approved ${summary.approvedSignals || 0}, executed ${summary.executedSymbols || 0} 기준으로 비교적 안정적입니다.`;
 }
 
 export async function buildRuntimeDecisionReport({ market = 'all', limit = 5, json = false, includeSmoke = false } = {}) {
@@ -139,9 +156,23 @@ export async function buildRuntimeDecisionReport({ market = 'all', limit = 5, js
     summary: buildSummary(rows),
     rows,
   };
+  payload.aiSummary = await buildInvestmentCliInsight({
+    bot: 'runtime-decision-report',
+    requestType: 'runtime-decision-report',
+    title: '투자 runtime decision 리포트 요약',
+    data: {
+      market: normalizedMarket,
+      limit,
+      includeSmoke,
+      count: rows.length,
+      summary: payload.summary,
+      topRows: rows.slice(0, 5),
+    },
+    fallback: buildRuntimeDecisionFallback(payload),
+  });
 
   if (json) return payload;
-  return renderText(rows, { market: normalizedMarket, limit });
+  return renderText(rows, { market: normalizedMarket, limit, aiSummary: payload.aiSummary });
 }
 
 async function main() {

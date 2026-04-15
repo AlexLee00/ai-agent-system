@@ -3,6 +3,7 @@
 
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { buildRuntimeDecisionReport } from './runtime-decision-report.ts';
+import { buildInvestmentCliInsight } from '../shared/cli-insight.ts';
 
 const MARKETS = [
   { key: 'binance', label: 'crypto' },
@@ -98,6 +99,7 @@ function renderText(payload) {
     '🗺️ Runtime Market Coverage',
     `status: ${payload.decision.status}`,
     `headline: ${payload.decision.headline}`,
+    payload.aiSummary ? `🔍 AI: ${payload.aiSummary}` : null,
     '',
     '근거:',
     ...payload.decision.reasons.map((reason) => `- ${reason}`),
@@ -110,7 +112,19 @@ function renderText(payload) {
     '권장 조치:',
     ...payload.decision.actionItems.map((item) => `- ${item}`),
   ];
-  return lines.join('\n');
+  return lines.filter(Boolean).join('\n');
+}
+
+function buildRuntimeMarketCoverageFallback(payload = {}) {
+  const decision = payload.decision || {};
+  const metrics = decision.metrics || {};
+  if (decision.status === 'coverage_gap') {
+    return `runtime decision coverage가 ${metrics.covered || 0}/${metrics.totalMarkets || 0} 시장만 채워져 있어 비어 있는 시장부터 표본 누적이 필요합니다.`;
+  }
+  if ((metrics.plannerMissing || 0) > 0) {
+    return `시장 coverage는 있으나 planner 메타가 ${metrics.plannerMissing || 0}개 시장에서 비어 있어 bridge 누적 상태를 먼저 보는 편이 좋습니다.`;
+  }
+  return `runtime market coverage는 ${metrics.covered || 0}/${metrics.totalMarkets || 0} 시장 기준으로 비교적 안정적이며 현재 추세 누적 위주로 보면 됩니다.`;
 }
 
 export async function buildRuntimeMarketCoverageReport({ limit = 5, json = false } = {}) {
@@ -127,6 +141,17 @@ export async function buildRuntimeMarketCoverageReport({ limit = 5, json = false
     reports,
     decision,
   };
+  payload.aiSummary = await buildInvestmentCliInsight({
+    bot: 'runtime-market-coverage-report',
+    requestType: 'runtime-market-coverage-report',
+    title: '투자 runtime market coverage 요약',
+    data: {
+      limit,
+      rows,
+      decision,
+    },
+    fallback: buildRuntimeMarketCoverageFallback(payload),
+  });
   if (json) return payload;
   return renderText(payload);
 }

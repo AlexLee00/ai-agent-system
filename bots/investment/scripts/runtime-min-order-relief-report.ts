@@ -3,6 +3,7 @@
 
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { getInvestmentRuntimeConfig } from '../shared/runtime-config.ts';
+import { buildInvestmentCliInsight } from '../shared/cli-insight.ts';
 import { buildRuntimeMinOrderPressureReport } from './runtime-min-order-pressure-report.ts';
 
 function parseArgs(argv = process.argv.slice(2)) {
@@ -97,6 +98,7 @@ function renderText(payload) {
     '💡 Runtime Min Order Relief',
     `status: ${payload.decision.status}`,
     `headline: ${payload.decision.headline}`,
+    payload.aiSummary ? `🔍 AI: ${payload.aiSummary}` : null,
     '',
     '현재 값:',
     `- buyDefault: ${formatKrw(m.buyDefault)}`,
@@ -116,7 +118,22 @@ function renderText(payload) {
     '',
     '권장 조치:',
     ...payload.decision.actionItems.map((item) => `- ${item}`),
-  ].join('\n');
+  ].filter(Boolean).join('\n');
+}
+
+function buildRuntimeMinOrderReliefFallback(payload = {}) {
+  const decision = payload.decision || {};
+  const metrics = decision.metrics || {};
+  if (decision.status === 'relief_blocked_by_order_cap') {
+    return 'required notional이 주문 상한을 넘어, allow 파라미터 조정보다 주문 상한 또는 예외 전략 분리가 먼저 필요합니다.';
+  }
+  if (decision.status === 'relief_candidate_ready') {
+    return 'starter approve와 기본 주문값을 함께 조정하면 min-order relief 후보를 만들 수 있는 상태입니다.';
+  }
+  if (decision.status === 'relief_observe') {
+    return '병목은 보이지만 즉시 relief 후보를 만들 정도는 아니어서 required notional 분포를 더 누적하는 편이 좋습니다.';
+  }
+  return `현재 min-order relief는 급하지 않으며 gap ${formatKrw(metrics.gap)} 추이만 계속 관찰하면 됩니다.`;
 }
 
 export async function buildRuntimeMinOrderReliefReport({ days = 14, json = false } = {}) {
@@ -133,6 +150,18 @@ export async function buildRuntimeMinOrderReliefReport({ days = 14, json = false
     },
     decision,
   };
+  payload.aiSummary = await buildInvestmentCliInsight({
+    bot: 'runtime-min-order-relief-report',
+    requestType: 'runtime-min-order-relief-report',
+    title: '투자 runtime min-order relief 리포트 요약',
+    data: {
+      days,
+      decision,
+      runtimeConfig: payload.runtimeConfig,
+      pressureDecision: pressure?.decision,
+    },
+    fallback: buildRuntimeMinOrderReliefFallback(payload),
+  });
   if (json) return payload;
   return renderText(payload);
 }
