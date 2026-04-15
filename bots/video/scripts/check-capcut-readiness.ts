@@ -4,6 +4,7 @@ const path = require('path');
 const { execFile } = require('child_process');
 const yaml = require('js-yaml');
 const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
+const { buildVideoCliInsight } = require('../lib/cli-insight.js');
 
 const configPath = path.join(__dirname, '..', 'config', 'video-config.yaml');
 const config = yaml.load(fs.readFileSync(configPath, 'utf8'));
@@ -65,6 +66,23 @@ function pickNewDraft(before, after) {
   const beforeSet = new Set(before);
   const created = after.filter((name) => !beforeSet.has(name));
   return created[0] || null;
+}
+
+function buildCapcutReadinessFallback({
+  desktopRunning,
+  createdRepoDraft,
+  createdDesktopDraft,
+} = {}) {
+  if (!desktopRunning) {
+    return 'CapCut Desktop가 꺼져 있어 readiness보다 먼저 앱 실행 상태를 확인하는 것이 좋습니다.';
+  }
+  if (!createdDesktopDraft && createdRepoDraft) {
+    return 'CapCut draft는 생성됐지만 Desktop 프로젝트 폴더로 바로 떨어지지 않아 repo→Desktop 이동 경로를 먼저 확인하는 편이 좋습니다.';
+  }
+  if (!createdRepoDraft && !createdDesktopDraft) {
+    return 'CapCut readiness 점검에서 새 draft가 확인되지 않아 API 저장 경로와 draft 생성 응답을 먼저 확인하는 것이 좋습니다.';
+  }
+  return 'CapCut readiness는 비교적 안정적이며 현재 draft 생성과 저장 흐름이 정상으로 보입니다.';
 }
 
 async function main() {
@@ -175,9 +193,28 @@ async function main() {
     createdRepoDraft ? `repoDraft: ${createdRepoDraft}` : null,
     createdDesktopDraft ? `desktopDraft: ${createdDesktopDraft}` : null,
   ].filter(Boolean).join('\n');
+  const aiSummary = await buildVideoCliInsight({
+    bot: 'check-capcut-readiness',
+    requestType: 'capcut-readiness',
+    title: '비디오 CapCut readiness 점검 요약',
+    data: {
+      desktopRunning,
+      repoDraftCreated: Boolean(createdRepoDraft),
+      desktopDraftCreated: Boolean(createdDesktopDraft),
+      createdRepoDraft,
+      createdDesktopDraft,
+      host: capcutHost,
+    },
+    fallback: buildCapcutReadinessFallback({
+      desktopRunning,
+      createdRepoDraft,
+      createdDesktopDraft,
+    }),
+  });
 
   if (episodicHint) console.log(episodicHint.trimStart());
   if (semanticHint) console.log(semanticHint.trimStart());
+  console.log(`🔍 AI: ${aiSummary}`);
 
   await capcutReadinessMemory.remember(summary, 'episodic', {
     importance: kind === 'issue' ? 0.76 : 0.6,
@@ -199,6 +236,18 @@ async function main() {
 
 main().catch((error) => {
   const message = error?.message || String(error);
+  buildVideoCliInsight({
+    bot: 'check-capcut-readiness',
+    requestType: 'capcut-readiness',
+    title: '비디오 CapCut readiness 실패 요약',
+    data: {
+      error: message,
+      host: capcutHost,
+    },
+    fallback: 'CapCut readiness 점검이 실패해 API 응답과 Desktop 프로젝트 경로를 먼저 확인하는 것이 좋습니다.',
+  }).then((aiSummary) => {
+    if (aiSummary) console.error(`🔍 AI: ${aiSummary}`);
+  }).catch(() => {});
   capcutReadinessMemory.remember([
     'CapCut readiness 점검 실패',
     `reason: ${message}`,
