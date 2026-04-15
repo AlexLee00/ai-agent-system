@@ -145,13 +145,19 @@ function runStartupPickkoVerification() {
   if (!NAVER_MONITOR_RUNTIME.verifyBeforeUnresolvedReport) return;
 
   try {
-    const verifyScript = path.join(
-      __dirname,
-      '../../../../dist/ts-runtime/bots/reservation/manual/admin/pickko-verify.js',
-    );
+    const verifyScriptCandidates = [
+      path.join(__dirname, '../../manual/admin/pickko-verify.js'),
+      path.join(
+        __dirname,
+        '../../../../dist/ts-runtime/bots/reservation/manual/admin/pickko-verify.js',
+      ),
+    ];
+    const verifyScript =
+      verifyScriptCandidates.find((candidate) => fs.existsSync(candidate)) ||
+      verifyScriptCandidates[0];
     log('🔎 [시작 검증] pickko-verify 백그라운드 실행');
     const child = spawn('node', [verifyScript], {
-      cwd: path.join(__dirname, '../../manual/admin'),
+      cwd: path.dirname(verifyScript),
       env: process.env,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
