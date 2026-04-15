@@ -13,6 +13,7 @@ const kst = require('../../../../packages/core/lib/kst');
 const { fail } = require('../../lib/cli');
 const { IS_OPS } = require('../../../../packages/core/lib/env');
 const { createAgentMemory } = require('../../../../packages/core/lib/agent-memory');
+const { buildReservationCliInsight } = require('../../lib/cli-insight');
 
 const ARGS = parseArgs(process.argv);
 
@@ -143,9 +144,23 @@ child.on('close', async (code: number | null) => {
       separator: 'newline',
     }).catch(() => '');
     const timeoutMessage = `예약 등록 시간 초과 (${Math.round(PICKKO_ACCURATE_TIMEOUT_MS / 1000)}초)`;
+    const aiSummary = await buildReservationCliInsight({
+      bot: 'pickko-register',
+      requestType: 'register-result',
+      title: '픽코 예약 등록 결과',
+      data: {
+        kind: 'timeout',
+        room: normalized.room,
+        date: normalized.date,
+        start: normalized.start,
+        end: normalized.end,
+      },
+      fallback: '등록이 시간 초과되어 픽코 처리 상태와 같은 슬롯 점유 여부를 먼저 확인하는 편이 좋습니다.',
+    });
     process.stdout.write(`${JSON.stringify({
       success: false,
       message: timeoutMessage,
+      aiSummary,
       memoryHints: {
         episodicHint,
         semanticHint,
@@ -321,9 +336,27 @@ child.on('close', async (code: number | null) => {
       olderThanDays: 14,
       limit: 10,
     }).catch(() => {});
+    const aiSummary = await buildReservationCliInsight({
+      bot: 'pickko-register',
+      requestType: 'register-result',
+      title: '픽코 예약 등록 결과',
+      data: {
+        kind,
+        room: normalized.room,
+        date: normalized.date,
+        start: normalized.start,
+        end: normalized.end,
+        pickkoStatus,
+        skipNaverBlock: SKIP_NAVER_BLOCK,
+      },
+      fallback: code === 2
+        ? '시간 경과로 자동 등록이 멈춰 후속 수동 확인이 필요합니다.'
+        : '등록이 완료되어 네이버 차단 요청 상태만 후속 확인하면 됩니다.',
+    });
     process.stdout.write(`${JSON.stringify({
       success: true,
       message,
+      aiSummary,
       memoryHints: {
         episodicHint,
         semanticHint,
@@ -355,9 +388,24 @@ child.on('close', async (code: number | null) => {
     separator: 'newline',
   }).catch(() => '');
   const failureMessage = `예약 등록 실패 (exit: ${code}) — 픽코 로그 확인 필요`;
+  const aiSummary = await buildReservationCliInsight({
+    bot: 'pickko-register',
+    requestType: 'register-result',
+    title: '픽코 예약 등록 결과',
+    data: {
+      kind: 'failure',
+      room: normalized.room,
+      date: normalized.date,
+      start: normalized.start,
+      end: normalized.end,
+      exitCode: code,
+    },
+    fallback: '등록이 실패해 픽코 로그와 같은 시간대 슬롯 상태를 함께 확인하는 편이 좋습니다.',
+  });
   process.stdout.write(`${JSON.stringify({
     success: false,
     message: failureMessage,
+    aiSummary,
     memoryHints: {
       episodicHint,
       semanticHint,

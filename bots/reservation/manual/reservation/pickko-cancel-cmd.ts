@@ -9,6 +9,7 @@ const { parseArgs } = require('../../lib/args');
 const { fail } = require('../../lib/cli');
 const { IS_OPS } = require('../../../../packages/core/lib/env');
 const { createAgentMemory } = require('../../../../packages/core/lib/agent-memory');
+const { buildReservationCliInsight } = require('../../lib/cli-insight');
 
 const ARGS = parseArgs(process.argv);
 
@@ -106,9 +107,25 @@ runScript(cancelScript, cancelArgs, 'pickko-cancel').then(async (cancelOk) => {
 
   if (!cancelOk) {
     const message = '예약 취소 실패 — 픽코 수동 취소 필요';
+    const aiSummary = await buildReservationCliInsight({
+      bot: 'pickko-cancel-cmd',
+      requestType: 'cancel-result',
+      title: '픽코 예약 취소 결과',
+      data: {
+        kind,
+        room,
+        date: ARGS.date,
+        start: ARGS.start,
+        end: ARGS.end,
+        phone: phoneRaw,
+        success: false,
+      },
+      fallback: '취소가 실패해 픽코 수동 확인이 필요하며, 같은 시간대 슬롯 상태를 먼저 점검하는 편이 좋습니다.',
+    });
     process.stdout.write(`${JSON.stringify({
       success: false,
       message,
+      aiSummary,
       memoryHints: {
         episodicHint,
         semanticHint,
@@ -142,10 +159,26 @@ runScript(cancelScript, cancelArgs, 'pickko-cancel').then(async (cancelOk) => {
   const nameStr = ARGS.name ? ` (${ARGS.name})` : '';
   const baseInfo = `${phoneRaw} ${ARGS.date} ${ARGS.start}~${ARGS.end} ${room}룸${nameStr}`;
   const successMessage = `예약 취소 완료: ${baseInfo}`;
+  const aiSummary = await buildReservationCliInsight({
+    bot: 'pickko-cancel-cmd',
+    requestType: 'cancel-result',
+    title: '픽코 예약 취소 결과',
+    data: {
+      kind,
+      room,
+      date: ARGS.date,
+      start: ARGS.start,
+      end: ARGS.end,
+      phone: phoneRaw,
+      success: true,
+    },
+    fallback: '취소가 정상 완료되어 같은 슬롯의 중복 예약 여부만 후속 확인하면 됩니다.',
+  });
 
   process.stdout.write(`${JSON.stringify({
     success: true,
     message: successMessage,
+    aiSummary,
     memoryHints: {
       episodicHint,
       semanticHint,
