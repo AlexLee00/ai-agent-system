@@ -24,14 +24,14 @@ function _mergeDeep(base, override) {
 // 팀별 lib/ 디렉토리에서 .js 파일을 자동 수집 (신규 팀 추가 시 자동 포함)
 function _scanBotFiles() {
   const fixed = [
-    'bots/reservation/lib/secrets.js',
-    'bots/reservation/lib/db.js',
+    'bots/reservation/lib/secrets.ts',
+    'bots/reservation/lib/db.ts',
     'bots/reservation/auto/monitors/start-ops.sh',
-    'bots/investment/markets/crypto.js',
-    'bots/investment/markets/domestic.js',
-    'bots/investment/markets/overseas.js',
-    'bots/investment/shared/secrets.js',
-    'bots/investment/shared/llm-client.js',
+    'bots/investment/markets/crypto.ts',
+    'bots/investment/markets/domestic.ts',
+    'bots/investment/markets/overseas.ts',
+    'bots/investment/shared/secrets.ts',
+    'bots/investment/shared/llm-client.ts',
     'bots/claude/src/dexter.js',
   ];
 
