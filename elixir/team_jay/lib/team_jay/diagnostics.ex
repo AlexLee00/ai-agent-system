@@ -212,13 +212,26 @@ defmodule TeamJay.Diagnostics do
   defp check_memory do
     mem = :erlang.memory()
     total = mem[:total]
+    processes = mem[:processes] || 0
+    binary = mem[:binary] || 0
+    ets = mem[:ets] || 0
+    atom = mem[:atom] || 0
 
     %{
       name: "memory_total",
       value: total,
       severity: if(total > @memory_warn, do: :warn, else: :ok),
-      message: "#{Float.round(total / 1_000_000, 1)}MB"
+      processes: processes,
+      binary: binary,
+      ets: ets,
+      atom: atom,
+      message:
+        "#{format_mb(total)}MB (proc=#{format_mb(processes)}MB, binary=#{format_mb(binary)}MB, ets=#{format_mb(ets)}MB, atom=#{format_mb(atom)}MB)"
     }
+  end
+
+  defp format_mb(bytes) when is_integer(bytes) do
+    Float.round(bytes / 1_000_000, 1)
   end
 
   defp check_supervisors do
