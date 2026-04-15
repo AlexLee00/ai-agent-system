@@ -16,9 +16,23 @@ const SCHEMA = 'claude';
 
 // 패턴 분석에서 제외할 레이블 (개발 중 자연스러운 상태 — false positive 방지)
 const PATTERN_SKIP_LABELS = ['git 상태', 'Git 변경사항', 'Git 생성 산출물'];
+const PATTERN_SKIP_REGEXES = [
+  /^mainbot_queue(?:\s|$)/,
+  /^문법: (secrets|db|crypto|domestic|overseas|llm-client)\.js$/,
+  /^bots\/reservation\/lib\/(?:secrets|db)\.js$/,
+  /^bots\/investment\/markets\/(?:crypto|domestic|overseas)\.js$/,
+  /^bots\/investment\/shared\/(?:secrets|llm-client)\.js$/,
+];
 
 // 저장 제외 체크명 — 이 체크 결과는 메타 데이터이므로 피드백 루프 방지를 위해 DB 저장 안 함
 const SKIP_CHECK_NAMES = ['오류 패턴 분석'];
+
+function shouldSkipHistory(checkName, label) {
+  const normalized = String(label || '').trim();
+  if (SKIP_CHECK_NAMES.includes(checkName)) return true;
+  if (PATTERN_SKIP_LABELS.includes(normalized)) return true;
+  return PATTERN_SKIP_REGEXES.some((re) => re.test(normalized));
+}
 
 /**
  * 체크 결과에서 error/warn 항목을 모두 저장 (upsert — 같은 패턴은 카운트만 증가)
@@ -26,10 +40,9 @@ const SKIP_CHECK_NAMES = ['오류 패턴 분석'];
 async function saveErrorItems(results) {
   try {
     for (const r of results) {
-      if (SKIP_CHECK_NAMES.includes(r.name)) continue;  // 메타 체크 제외
       for (const item of (r.items || [])) {
         if (item.status === 'error' || item.status === 'warn') {
-          if (PATTERN_SKIP_LABELS.includes(item.label.trim())) continue;
+          if (shouldSkipHistory(r.name, item.label)) continue;
           await pgPool.run(SCHEMA, `
             INSERT INTO dexter_error_log (check_name, label, status, detail, occurrence_count, first_seen, detected_at)
             VALUES ($1, $2, $3, $4, 1, to_char(now(), 'YYYY-MM-DD HH24:MI:SS'), to_char(now(), 'YYYY-MM-DD HH24:MI:SS'))
@@ -51,7 +64,7 @@ async function saveErrorItems(results) {
 async function getPatterns(days = 7, minCount = 3) {
   try {
     const cutoff = new Date(Date.now() - days * 86400 * 1000).toISOString();
-    return await pgPool.query(SCHEMA, `
+    const rows = await pgPool.query(SCHEMA, `
       SELECT
         check_name,
         label,
@@ -65,6 +78,7 @@ async function getPatterns(days = 7, minCount = 3) {
       ORDER BY severity DESC, occurrence_count DESC
       LIMIT 20
     `, [cutoff, minCount]);
+    return rows.filter((row) => !shouldSkipHistory(row.check_name, row.label));
   } catch { return []; }
 }
 
@@ -127,7 +141,7 @@ async function getNewErrors(recentHours = 8, prevDays = 7) {
     const recentCutoff = new Date(Date.now() - recentHours * 3600 * 1000).toISOString();
     const prevCutoff   = new Date(Date.now() - prevDays   * 86400 * 1000).toISOString();
 
-    return await pgPool.query(SCHEMA, `
+    const rows = await pgPool.query(SCHEMA, `
       SELECT check_name, label, status,
              MIN(detail)      AS detail,
              MIN(detected_at) AS detected_at
@@ -144,6 +158,7 @@ async function getNewErrors(recentHours = 8, prevDays = 7) {
       ORDER BY detected_at ASC
       LIMIT 10
     `, [recentCutoff, prevCutoff]);
+    return rows.filter((row) => !shouldSkipHistory(row.check_name, row.label));
   } catch { return []; }
 }
 
