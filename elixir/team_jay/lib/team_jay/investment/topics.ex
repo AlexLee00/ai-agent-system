@@ -18,5 +18,6 @@ defmodule TeamJay.Investment.Topics do
   def condition_checks(symbol), do: "investment:condition_checks:#{symbol}"
   def loop_cycles(symbol), do: "investment:loop_cycles:#{symbol}"
   def strategy_updates(symbol), do: "investment:strategy_updates:#{symbol}"
+  def runtime_overrides(symbol), do: "investment:runtime_overrides:#{symbol}"
   def feedback(symbol), do: "investment:feedback:#{symbol}"
 end

@@ -53,4 +53,9 @@ defmodule TeamJay.Investment.PubSub do
     TeamJay.Investment.Topics.strategy_updates(symbol)
     |> broadcast(update_payload)
   end
+
+  def broadcast_runtime_override(symbol, override_payload) do
+    TeamJay.Investment.Topics.runtime_overrides(symbol)
+    |> broadcast(override_payload)
+  end
 end
