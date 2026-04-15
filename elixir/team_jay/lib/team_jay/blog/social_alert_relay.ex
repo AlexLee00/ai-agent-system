@@ -11,7 +11,7 @@ defmodule TeamJay.Blog.SocialAlertRelay do
   alias TeamJay.Blog.PubSub
   alias TeamJay.Blog.Topics
 
-  @channels ["instagram", "naver_blog"]
+  @channels ["instagram", "naver_blog", "facebook"]
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -32,7 +32,8 @@ defmodule TeamJay.Blog.SocialAlertRelay do
        alert_count: 0,
        by_channel: %{
          "instagram" => %{alert_count: 0},
-         "naver_blog" => %{alert_count: 0}
+         "naver_blog" => %{alert_count: 0},
+         "facebook" => %{alert_count: 0}
        },
        last_alert_at: nil,
        last_alerts: []

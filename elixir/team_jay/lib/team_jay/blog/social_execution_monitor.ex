@@ -12,7 +12,7 @@ defmodule TeamJay.Blog.SocialExecutionMonitor do
   alias TeamJay.Blog.Topics
   alias TeamJay.EventLake
 
-  @channels ["instagram", "naver_blog"]
+  @channels ["instagram", "naver_blog", "facebook"]
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -36,7 +36,8 @@ defmodule TeamJay.Blog.SocialExecutionMonitor do
        alert_count: 0,
        by_channel: %{
          "instagram" => %{total_count: 0, ok_count: 0, failed_count: 0},
-          "naver_blog" => %{total_count: 0, ok_count: 0, failed_count: 0}
+         "naver_blog" => %{total_count: 0, ok_count: 0, failed_count: 0},
+         "facebook" => %{total_count: 0, ok_count: 0, failed_count: 0}
         },
         last_seen_at: nil,
        last_alert_at: nil,
