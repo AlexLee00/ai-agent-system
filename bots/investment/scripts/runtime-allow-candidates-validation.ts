@@ -41,6 +41,9 @@ function inferReadiness(candidate, runtimeSummary) {
   } else if (topRisk.includes('최대 포지션')) {
     readiness = 'blocked';
     reason = '현재는 최대 포지션 제한이 우세해 파라미터 비교보다 포지션 정리가 우선입니다.';
+  } else if (topRisk.includes('최소 주문 미달')) {
+    readiness = 'blocked';
+    reason = '현재는 최소 주문금액 가드가 우세해 파라미터 비교보다 주문 단위/예산 병목 해소가 우선입니다.';
   } else if (metrics.riskRejected > metrics.executedSymbols) {
     readiness = 'observe';
     reason = '리스크 거절 비중이 높아 파라미터 비교 전 가드 병목을 더 봐야 합니다.';

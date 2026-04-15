@@ -45,6 +45,8 @@
     "runtime:decision-report": "node scripts/runtime-decision-report.ts --limit=5",
     "runtime:decision-summary": "node scripts/runtime-decision-summary.ts --limit=5",
     "runtime:decision-history": "node scripts/runtime-decision-history.ts --limit=5",
+    "runtime:market-coverage": "node scripts/runtime-market-coverage-report.ts",
+    "runtime:market-coverage-history": "node scripts/runtime-market-coverage-history.ts",
     "runtime:allow-candidates": "node scripts/runtime-allow-candidates-report.ts",
     "runtime:allow-candidates-history": "node scripts/runtime-allow-candidates-history.ts",
     "runtime:allow-candidates-validation": "node scripts/runtime-allow-candidates-validation.ts",
