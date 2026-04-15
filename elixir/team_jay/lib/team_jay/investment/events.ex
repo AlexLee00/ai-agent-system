@@ -260,4 +260,21 @@ defmodule TeamJay.Investment.Events do
       Map.new(attrs)
     )
   end
+
+  def resource_health(symbol, attrs \\ %{}) do
+    Map.merge(
+      %{
+        symbol: symbol,
+        source: :resource_health_scaffold,
+        status: :observe,
+        ready: false,
+        health_score: 0.0,
+        ready_resources: 0,
+        active_guards: [],
+        action: :hold,
+        measured_at: DateTime.utc_now()
+      },
+      Map.new(attrs)
+    )
+  end
 end

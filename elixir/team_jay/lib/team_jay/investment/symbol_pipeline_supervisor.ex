@@ -31,6 +31,7 @@ defmodule TeamJay.Investment.SymbolPipelineSupervisor do
   alias TeamJay.Investment.StrategyAdjuster
   alias TeamJay.Investment.TradingLoop
   alias TeamJay.Investment.ResourceFeedbackCoordinator
+  alias TeamJay.Investment.ResourceHealth
 
   def start_link(opts) do
     symbol = Keyword.fetch!(opts, :symbol)
@@ -68,6 +69,7 @@ defmodule TeamJay.Investment.SymbolPipelineSupervisor do
       {StrategyProfileManager, symbol: symbol},
       {ResourceFeedbackCoordinator, symbol: symbol},
       {ContinuousLoopCoordinator, symbol: symbol},
+      {ResourceHealth, symbol: symbol},
       {RealtimeFeedbackWorker, symbol: symbol}
     ] ++ analyst_children(symbol)
 

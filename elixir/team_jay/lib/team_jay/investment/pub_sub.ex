@@ -93,4 +93,9 @@ defmodule TeamJay.Investment.PubSub do
     TeamJay.Investment.Topics.autonomous_cycles(symbol)
     |> broadcast(autonomous_cycle_payload)
   end
+
+  def broadcast_resource_health(symbol, resource_health_payload) do
+    TeamJay.Investment.Topics.resource_health(symbol)
+    |> broadcast(resource_health_payload)
+  end
 end
