@@ -6,6 +6,7 @@
 
 const { parseArgs } = require('../../lib/args');
 const pgPool = require('../../../../packages/core/lib/pg-pool');
+const { buildReservationCliInsight } = require('../../lib/cli-insight');
 
 const ARGS = parseArgs(process.argv);
 const hours = parseInt(ARGS.hours || '24', 10);
@@ -89,10 +90,23 @@ function fmt(r: AlertRow) {
     if (dateF) filters.push(`date=${dateF}`);
     if (startF) filters.push(`start=${startF}`);
     const filterText = filters.length ? ` (${filters.join(', ')})` : '';
+    const aiSummary = await buildReservationCliInsight({
+      bot: 'pickko-alerts-query',
+      requestType: 'alerts-query',
+      title: '픽코 알림 조회 결과',
+      data: {
+        hours,
+        scope,
+        filters,
+        count: 0,
+      },
+      fallback: '조건에 맞는 최근 알림이 없어 현재는 추가 후속 처리 없이 관찰 유지 상태입니다.',
+    });
     console.log(JSON.stringify({
       success: true,
       count: 0,
       message: `최근 ${hours}시간 ${scope} 알림${filterText} 없음`,
+      aiSummary,
     }));
     return;
   }
@@ -106,7 +120,22 @@ function fmt(r: AlertRow) {
   if (unresCnt > 0) header += `, 미해결 ${unresCnt}건`;
 
   const message = [header, '', ...lines].join('\n');
-  console.log(JSON.stringify({ success: true, count: rows.length, message }));
+  const aiSummary = await buildReservationCliInsight({
+    bot: 'pickko-alerts-query',
+    requestType: 'alerts-query',
+    title: '픽코 알림 조회 결과',
+    data: {
+      hours,
+      count: rows.length,
+      errorCount: errCnt,
+      unresolvedCount: unresCnt,
+      types: Array.from(new Set(rows.map((row) => row.type))),
+    },
+    fallback: errCnt > 0 || unresCnt > 0
+      ? `최근 알림 ${rows.length}건 중 실패 ${errCnt}건, 미해결 ${unresCnt}건이라 후속 확인 우선순위를 바로 잡기 좋습니다.`
+      : `최근 알림 ${rows.length}건은 모두 정리된 상태라 운영 흐름은 비교적 안정적입니다.`,
+  });
+  console.log(JSON.stringify({ success: true, count: rows.length, message, aiSummary }));
 })().catch((error: unknown) => {
   if (error instanceof Error) {
     console.error(error.stack || error.message);
