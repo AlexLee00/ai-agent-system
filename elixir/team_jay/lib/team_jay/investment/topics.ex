@@ -21,5 +21,7 @@ defmodule TeamJay.Investment.Topics do
   def runtime_overrides(symbol), do: "investment:runtime_overrides:#{symbol}"
   def memory_snapshots(symbol), do: "investment:memory_snapshots:#{symbol}"
   def reflections(symbol), do: "investment:reflections:#{symbol}"
+  def market_modes(symbol), do: "investment:market_modes:#{symbol}"
+  def strategy_profiles(symbol), do: "investment:strategy_profiles:#{symbol}"
   def feedback(symbol), do: "investment:feedback:#{symbol}"
 end

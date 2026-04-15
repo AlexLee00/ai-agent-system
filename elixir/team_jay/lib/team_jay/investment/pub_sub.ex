@@ -68,4 +68,14 @@ defmodule TeamJay.Investment.PubSub do
     TeamJay.Investment.Topics.reflections(symbol)
     |> broadcast(reflection_payload)
   end
+
+  def broadcast_market_mode(symbol, market_mode_payload) do
+    TeamJay.Investment.Topics.market_modes(symbol)
+    |> broadcast(market_mode_payload)
+  end
+
+  def broadcast_strategy_profile(symbol, strategy_profile_payload) do
+    TeamJay.Investment.Topics.strategy_profiles(symbol)
+    |> broadcast(strategy_profile_payload)
+  end
 end
