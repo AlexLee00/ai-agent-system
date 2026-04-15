@@ -7,6 +7,7 @@ const { parseArgs } = require('../../lib/args');
 const { formatPhone, toKoreanTime, pickkoEndTime } = require('../../lib/formatting');
 const { getPickkoLaunchOptions, setupDialogHandler } = require('../../lib/browser');
 const { loginToPickko } = require('../../lib/pickko');
+const { buildReservationCliInsight } = require('../../lib/cli-insight');
 const { IS_DEV, IS_OPS } = require('../../../../packages/core/lib/env');
 
 const SECRETS = loadSecrets();
@@ -25,6 +26,31 @@ const ROOM = (ARGS.room || '').toUpperCase();
 function exitJson(payload: any, code = 0): never {
   process.stdout.write(JSON.stringify(payload) + '\n');
   process.exit(code);
+}
+
+async function exitJsonWithInsight({
+  payload,
+  code = 0,
+  title,
+  requestType,
+  data,
+  fallback,
+}: {
+  payload: Record<string, any>;
+  code?: number;
+  title: string;
+  requestType: string;
+  data: Record<string, any>;
+  fallback: string;
+}): Promise<never> {
+  const aiSummary = await buildReservationCliInsight({
+    bot: 'pickko-pay-pending',
+    requestType,
+    title,
+    data,
+    fallback,
+  });
+  exitJson({ ...payload, aiSummary }, code);
 }
 
 if (!PHONE_RAW || !DATE || !START || !END || !ROOM) {
@@ -341,7 +367,21 @@ async function run() {
 
     if (viewInfo.isCompleted && !viewInfo.isPending) {
       log('ℹ️ 이미 결제완료 상태 → 처리 불필요');
-      exitJson({ success: true, message: '이미 결제완료 상태' }, 0);
+      await exitJsonWithInsight({
+        payload: { success: true, message: '이미 결제완료 상태' },
+        code: 0,
+        title: '픽코 결제대기 수동 처리 결과',
+        requestType: 'pay-pending',
+        data: {
+          mode: 'already_completed',
+          phone: PHONE_RAW,
+          date: DATE,
+          start: START,
+          end: END,
+          room: ROOM,
+        },
+        fallback: '이미 결제완료 상태라 추가 처리 없이 종료해도 됩니다.',
+      });
     }
 
     log('\n[6단계] view 페이지에서 결제하기 버튼 확인');
@@ -352,10 +392,24 @@ async function run() {
 
     if (!hasPayBtn) {
       log('⚠️ view 페이지에 결제하기 버튼 없음 → 수동 확인 필요');
-      exitJson({
-        success: false,
-        message: `결제하기 버튼 미발견 — 픽코 관리자에서 수동 처리 필요: ${DATE} ${START}~${END} ${ROOM} (${PHONE_RAW})`,
-      }, 1);
+      await exitJsonWithInsight({
+        payload: {
+          success: false,
+          message: `결제하기 버튼 미발견 — 픽코 관리자에서 수동 처리 필요: ${DATE} ${START}~${END} ${ROOM} (${PHONE_RAW})`,
+        },
+        code: 1,
+        title: '픽코 결제대기 수동 처리 결과',
+        requestType: 'pay-pending',
+        data: {
+          mode: 'missing_pay_button',
+          phone: PHONE_RAW,
+          date: DATE,
+          start: START,
+          end: END,
+          room: ROOM,
+        },
+        fallback: '자동 결제대기 처리가 막혀 있어 픽코 관리자에서 직접 확인하는 편이 안전합니다.',
+      });
     }
 
     log('\n[7단계] 결제 모달 처리 (0원 현금)');
@@ -364,13 +418,57 @@ async function run() {
 
     const info = `${DATE} ${START}~${END} ${ROOM}룸 (${PHONE_RAW})`;
     if (payResult.success) {
-      exitJson({ success: true, message: `결제완료 처리: ${info}` }, 0);
+      await exitJsonWithInsight({
+        payload: { success: true, message: `결제완료 처리: ${info}` },
+        code: 0,
+        title: '픽코 결제대기 수동 처리 결과',
+        requestType: 'pay-pending',
+        data: {
+          mode: 'success',
+          phone: PHONE_RAW,
+          date: DATE,
+          start: START,
+          end: END,
+          room: ROOM,
+        },
+        fallback: '결제대기 건이 정상 반영되어 같은 슬롯의 후속 확인 부담이 줄었습니다.',
+      });
     } else {
-      exitJson({ success: false, message: payResult.reason }, 1);
+      await exitJsonWithInsight({
+        payload: { success: false, message: payResult.reason },
+        code: 1,
+        title: '픽코 결제대기 수동 처리 결과',
+        requestType: 'pay-pending',
+        data: {
+          mode: 'failure',
+          phone: PHONE_RAW,
+          date: DATE,
+          start: START,
+          end: END,
+          room: ROOM,
+          reason: payResult.reason,
+        },
+        fallback: '결제대기 처리가 중단돼 같은 예약 슬롯을 수동 재확인하는 편이 좋습니다.',
+      });
     }
   } catch (err: any) {
     log(`❌ 오류: ${err.message}`);
-    exitJson({ success: false, message: err.message }, 1);
+    await exitJsonWithInsight({
+      payload: { success: false, message: err.message },
+      code: 1,
+      title: '픽코 결제대기 수동 처리 결과',
+      requestType: 'pay-pending',
+      data: {
+        mode: 'error',
+        phone: PHONE_RAW,
+        date: DATE,
+        start: START,
+        end: END,
+        room: ROOM,
+        error: err.message,
+      },
+      fallback: '처리 중 오류가 발생해 이번 건은 즉시 수동 점검으로 넘기는 편이 안전합니다.',
+    });
   } finally {
     try { if (browser) await browser.close(); } catch (_e) {}
   }

@@ -2,6 +2,7 @@
 
 const { log } = require('../../lib/utils');
 const { publishReservationAlert } = require('../../lib/alert-client');
+const { buildReservationCliInsight } = require('../../lib/cli-insight');
 const { createAgentMemory } = require('../../../../packages/core/lib/agent-memory');
 const {
   buildRevenueConfirmMessage,
@@ -59,7 +60,16 @@ async function main() {
       metadata: { kind: 'no_pending' },
     }).catch(() => {});
     await revenueConfirmMemory.consolidate({ olderThanDays: 14, limit: 10 }).catch(() => {});
-    console.log(JSON.stringify({ ok: false, reason: 'no_pending' }));
+    const aiSummary = await buildReservationCliInsight({
+      bot: 'pickko-revenue-confirm',
+      requestType: 'revenue-confirm',
+      title: '픽코 매출 컨펌 결과',
+      data: {
+        mode: 'no_pending',
+      },
+      fallback: '컨펌 대기 매출이 없어 오늘은 추가 확정 작업이 필요하지 않습니다.',
+    });
+    console.log(JSON.stringify({ ok: false, reason: 'no_pending', aiSummary }));
     return;
   }
 
@@ -98,7 +108,18 @@ async function main() {
       metadata: { kind: 'failure', date: pending.date, entriesCount: pending.entries_count || 0 },
     }).catch(() => {});
     await revenueConfirmMemory.consolidate({ olderThanDays: 14, limit: 10 }).catch(() => {});
-    console.log(JSON.stringify({ ok: false, reason: 'confirm_failed' }));
+    const aiSummary = await buildReservationCliInsight({
+      bot: 'pickko-revenue-confirm',
+      requestType: 'revenue-confirm',
+      title: '픽코 매출 컨펌 결과',
+      data: {
+        mode: 'confirm_failed',
+        date: pending.date,
+        entriesCount: pending.entries_count || 0,
+      },
+      fallback: '매출 컨펌이 실패해 오늘 요약 정산은 수동 확인이 필요합니다.',
+    });
+    console.log(JSON.stringify({ ok: false, reason: 'confirm_failed', aiSummary }));
     return;
   }
 
@@ -142,11 +163,24 @@ async function main() {
   }).catch(() => {});
   await revenueConfirmMemory.consolidate({ olderThanDays: 14, limit: 10 }).catch(() => {});
 
+  const aiSummary = await buildReservationCliInsight({
+    bot: 'pickko-revenue-confirm',
+    requestType: 'revenue-confirm',
+    title: '픽코 매출 컨펌 결과',
+    data: {
+      mode: 'confirmed',
+      date: result.date,
+      totalAmount: result.totalAmount,
+      roomAmounts: result.roomAmounts,
+    },
+    fallback: '매출 컨펌이 마무리돼 일일 정산 흐름이 정상적으로 이어졌습니다.',
+  });
   console.log(JSON.stringify({
     ok: true,
     date: result.date,
     totalAmount: result.totalAmount,
     roomAmounts: result.roomAmounts,
+    aiSummary,
   }));
 }
 
@@ -168,8 +202,18 @@ main().catch((err: any) => {
   })
     .then(() => revenueConfirmMemory.consolidate({ olderThanDays: 14, limit: 10 }))
     .catch(() => {})
-    .finally(() => {
-      console.log(JSON.stringify({ ok: false, reason: err.message }));
+    .finally(async () => {
+      const aiSummary = await buildReservationCliInsight({
+        bot: 'pickko-revenue-confirm',
+        requestType: 'revenue-confirm',
+        title: '픽코 매출 컨펌 결과',
+        data: {
+          mode: 'fatal_error',
+          error: err.message,
+        },
+        fallback: '치명 오류로 컨펌이 중단돼 즉시 수동 확인이 필요합니다.',
+      }).catch(() => '치명 오류로 컨펌이 중단돼 즉시 수동 확인이 필요합니다.');
+      console.log(JSON.stringify({ ok: false, reason: err.message, aiSummary }));
       process.exit(1);
     });
 });
