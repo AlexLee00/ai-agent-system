@@ -13,6 +13,8 @@ type SendAlertFn = (options: Record<string, any>) => Promise<void>;
 type RagSaveFn = (booking: Record<string, any>, status?: string) => Promise<void>;
 type RunPickkoFn = (booking: Record<string, any>, bookingId?: string | null, page?: any) => Promise<number>;
 type BuildReservationIdFn = (phoneRaw: string, date: string, start: string) => string;
+type BuildCancelKeyFn = (booking: Record<string, any>, todaySeoul?: string | null) => string;
+type RemoveCancelledKeyFn = (key: string) => Promise<any>;
 type FormatVipBadgeFn = (phone: string) => Promise<string>;
 type MaskPhoneFn = (phone: string) => string;
 
@@ -45,6 +47,8 @@ export type CreateNaverCandidateServiceDeps = {
   ragSaveReservation: RagSaveFn;
   runPickko: RunPickkoFn;
   buildReservationId: BuildReservationIdFn;
+  buildCancelKey: BuildCancelKeyFn;
+  removeCancelledKey: RemoveCancelledKeyFn;
   formatVipBadge: FormatVipBadgeFn;
   maskPhone: MaskPhoneFn;
   mode: string;
@@ -68,6 +72,8 @@ export function createNaverCandidateService(deps: CreateNaverCandidateServiceDep
     ragSaveReservation,
     runPickko,
     buildReservationId,
+    buildCancelKey,
+    removeCancelledKey,
     formatVipBadge,
     maskPhone,
     mode,
@@ -116,11 +122,24 @@ export function createNaverCandidateService(deps: CreateNaverCandidateServiceDep
       existing: existingRows[index],
     }));
     const unseenEntries = entries.filter((entry) => !entry.seen);
+    const reactivatedEntries = unseenEntries.filter((entry) => (
+      !!entry.existing
+      && (
+        entry.existing.status === 'cancelled'
+        || ['cancelled', 'time_elapsed'].includes(entry.existing.pickkoStatus)
+      )
+    ));
     const newCandidates: NaverCandidateBooking[] = unseenEntries
       .filter((entry) => !entry.existing)
       .map((entry) => ({ ...entry.booking, _trackingId: entry.booking._key }));
     const candidates: NaverCandidateBooking[] = unseenEntries
-      .filter((entry) => !entry.existing || entry.existing.status === 'pending' || entry.existing.status === 'failed')
+      .filter((entry) => (
+        !entry.existing
+        || entry.existing.status === 'pending'
+        || entry.existing.status === 'failed'
+        || entry.existing.status === 'cancelled'
+        || ['cancelled', 'time_elapsed'].includes(entry.existing.pickkoStatus)
+      ))
       .map((entry) => ({ ...entry.booking, _trackingId: entry.existing?.id || entry.booking._key }));
 
     if (candidates.length === 0) {
@@ -132,6 +151,37 @@ export function createNaverCandidateService(deps: CreateNaverCandidateServiceDep
     if (newCandidates.length > 0) log(`   🆕 신규 감지 ${newCandidates.length}건`);
     const retries = candidates.length - newCandidates.length;
     if (retries > 0) log(`   🔁 재처리 후보 ${retries}건 (pending/failed)`);
+    if (reactivatedEntries.length > 0) log(`   ♻️ 취소 후 재예약 재활성화 ${reactivatedEntries.length}건`);
+
+    for (const entry of reactivatedEntries) {
+      const booking = entry.booking;
+      const existing = entry.existing;
+      const bookingId = String(existing?.id || booking._trackingId || booking._key || buildReservationId(booking.phoneRaw, booking.date, booking.start));
+      const phoneRaw = String(booking.phoneRaw || booking.phone || '').replace(/\D/g, '');
+      const cancelKeys = [
+        buildCancelKey(booking, booking.date),
+        existing?.id ? `cancelid|${existing.id}` : null,
+        phoneRaw ? `cancel_done|${phoneRaw}|${booking.date}|${booking.start}` : null,
+      ].filter(Boolean) as string[];
+
+      for (const cancelKey of new Set(cancelKeys)) {
+        await removeCancelledKey(cancelKey).catch(() => {});
+      }
+
+      await updateBookingState(bookingId, booking, 'pending');
+      await sendAlert({
+        type: 'info',
+        title: '♻️ 취소 후 재예약 재활성화 감지',
+        customer: booking.raw?.name || '고객',
+        phone: booking.phone,
+        date: booking.date,
+        time: `${booking.start}~${booking.end}`,
+        room: booking.room,
+        status: 'pending',
+        action: '기존 취소 키 해제 후 Pickko 재등록 준비',
+      });
+      log(`♻️ [재활성화] ${maskPhone(booking.phone)} ${booking.date} ${booking.start}~${booking.end} ${booking.room} → cancelled key 해제 후 재처리`);
+    }
 
     const devTestPhone = (process.env.DEV_TEST_PHONE || '01035000586').replace(/\D/g, '');
     const allowDevPickko = process.env.DEV_PICKKO_TEST === '1';
