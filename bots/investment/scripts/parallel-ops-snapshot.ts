@@ -3,6 +3,7 @@ import { execFileSync } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { buildScreeningHistoryReport } from './screening-history-report.ts';
+import { generateGemmaPilotText } from '../../../packages/core/lib/gemma-pilot.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -32,6 +33,93 @@ const PORT_AGENT_NAMES = [
   'reporter',
   'daily_feedback',
 ];
+
+function sanitizeInsightLine(text = '') {
+  return String(text || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) =>
+      line &&
+      !/^thinking process/i.test(line) &&
+      !/^[0-9]+\.\s/.test(line) &&
+      !/^<\|/.test(line) &&
+      !/^ai[:：]/i.test(line)
+    ) || '';
+}
+
+function buildSnapshotFallbackInsight(snapshot) {
+  const warnCount = Number(snapshot?.health?.serviceHealth?.warnCount || 0);
+  const overlapCount = Number(snapshot?.overlap?.investment_overlaps?.length || 0);
+  const failingAgents = (snapshot?.portAgents || []).filter((row) => Number(row?.consecutive_failures || 0) > 0);
+  const activeMarkets = ['crypto', 'domestic', 'overseas'].filter((market) => {
+    const latest = Number(snapshot?.screening?.[market]?.summary?.trend?.latestDynamicCount || 0);
+    return latest > 0;
+  });
+
+  if (warnCount > 0) {
+    return `현재 운영 경고 ${warnCount}건이 있어 서비스 헬스와 게이트 상태를 먼저 점검하는 편이 좋습니다.`;
+  }
+  if (overlapCount > 0) {
+    return `투자팀 launchd 중복 ${overlapCount}건이 보여 병렬 실행 충돌 가능성을 우선 확인하는 편이 좋습니다.`;
+  }
+  if (failingAgents.length > 0) {
+    return `PortAgent 실패 누적 ${failingAgents.length}건이 보여 자동화 경로 복구 상태를 먼저 확인하는 편이 좋습니다.`;
+  }
+  if (activeMarkets.length >= 2) {
+    return `운영 상태는 비교적 안정적이고, 현재 스크리닝 동향은 ${activeMarkets.join(', ')} 시장에서 함께 살아 있습니다.`;
+  }
+  return `운영 상태는 대체로 안정적이며, 오늘은 병렬 경로보다 정기 점검과 추세 관찰 비중이 높은 상태입니다.`;
+}
+
+async function buildSnapshotInsight(snapshot) {
+  try {
+    const prompt = `당신은 투자 운영 스냅샷 분석가입니다.
+아래 데이터를 보고 운영자가 바로 읽을 수 있는 핵심 인사이트를 한국어 한 줄로만 작성하세요.
+숫자 재나열보다 위험 신호, 우선 점검 포인트, 운영 안정성 판단을 중심으로 적으세요.
+
+데이터:
+${JSON.stringify({
+  capturedAt: snapshot.capturedAt,
+  launchdCount: snapshot?.launchd?.count,
+  overlapCount: snapshot?.overlap?.investment_overlaps?.length || 0,
+  health: {
+    okCount: snapshot?.health?.serviceHealth?.okCount,
+    warnCount: snapshot?.health?.serviceHealth?.warnCount,
+    cryptoGateWarnCount: snapshot?.health?.cryptoLiveGateHealth?.warn?.length || 0,
+  },
+  portAgents: (snapshot?.portAgents || []).map((row) => ({
+    name: row.name,
+    status: row.status,
+    failures: row.consecutive_failures,
+  })).slice(0, 20),
+  screening: Object.fromEntries(['crypto', 'domestic', 'overseas'].map((market) => [
+    market,
+    snapshot?.screening?.[market]?.summary
+      ? {
+          latestDynamicCount: Number(snapshot.screening[market].summary?.trend?.latestDynamicCount || 0),
+          deltaDynamicCount: Number(snapshot.screening[market].summary?.trend?.deltaDynamicCount || 0),
+          topSymbols: (snapshot.screening[market].summary?.topSymbols || []).slice(0, 3).map((item) => item.symbol),
+        }
+      : null,
+  ])),
+}, null, 2).slice(0, 2200)}`;
+
+    const insight = await generateGemmaPilotText({
+      team: 'investment',
+      purpose: 'gemma-insight',
+      bot: 'parallel-ops-snapshot',
+      requestType: 'ops-snapshot-summary',
+      prompt,
+      maxTokens: 120,
+      temperature: 0.4,
+      timeoutMs: 10000,
+    });
+    return sanitizeInsightLine(insight?.content || '') || buildSnapshotFallbackInsight(snapshot);
+  } catch (error) {
+    console.warn(`[parallel-ops-snapshot] AI 요약 생략: ${error?.message || error}`);
+    return buildSnapshotFallbackInsight(snapshot);
+  }
+}
 
 function runCommand(command, args, options = {}) {
   return execFileSync(command, args, {
@@ -177,7 +265,7 @@ async function buildSnapshot() {
   };
 }
 
-function printText(snapshot) {
+async function printText(snapshot) {
   console.log(`\n📸 병렬 운영 스냅샷 — ${snapshot.capturedAt}`);
   console.log('');
   console.log(`launchd 투자팀: ${snapshot.launchd.count}개`);
@@ -236,6 +324,10 @@ function printText(snapshot) {
     console.log('crypto LIVE gate:');
     snapshot.health.cryptoLiveGateHealth.warn.forEach((line) => console.log(line));
   }
+
+  const aiSummary = await buildSnapshotInsight(snapshot);
+  console.log('');
+  console.log(`🔍 AI: ${aiSummary}`);
 }
 
 async function main() {
@@ -245,7 +337,7 @@ async function main() {
     console.log(JSON.stringify(snapshot, null, 2));
     return;
   }
-  printText(snapshot);
+  await printText(snapshot);
 }
 
 await main();
