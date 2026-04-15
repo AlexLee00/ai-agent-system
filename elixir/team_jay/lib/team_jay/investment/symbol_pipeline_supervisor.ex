@@ -16,6 +16,9 @@ defmodule TeamJay.Investment.SymbolPipelineSupervisor do
   alias TeamJay.Investment.Execution.Worker, as: ExecutionWorker
   alias TeamJay.Investment.Feedback.Realtime, as: RealtimeFeedbackWorker
   alias TeamJay.Investment.Indicator.Worker, as: IndicatorWorker
+  alias TeamJay.Investment.ConditionChecker
+  alias TeamJay.Investment.PositionManager
+  alias TeamJay.Investment.PriceWatcher
   alias TeamJay.Investment.Risk.Nemesis, as: RiskWorker
   alias TeamJay.Investment.Streamer.Worker, as: StreamerWorker
 
@@ -37,10 +40,13 @@ defmodule TeamJay.Investment.SymbolPipelineSupervisor do
 
     children = [
       {StreamerWorker, exchange: exchange, symbol: symbol, interval_ms: interval_ms},
+      {PriceWatcher, exchange: exchange, symbol: symbol, interval_ms: interval_ms},
       {IndicatorWorker, symbol: symbol},
       {DecisionWorker, symbol: symbol},
       {RiskWorker, symbol: symbol},
       {ExecutionWorker, symbol: symbol},
+      {PositionManager, symbol: symbol},
+      {ConditionChecker, symbol: symbol},
       {RealtimeFeedbackWorker, symbol: symbol}
     ] ++ analyst_children(symbol)
 

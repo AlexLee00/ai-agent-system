@@ -17,6 +17,18 @@ defmodule TeamJay.Investment.Events do
     )
   end
 
+  def price_tick(symbol, attrs \\ %{}) do
+    Map.merge(
+      %{
+        symbol: symbol,
+        source: :price_watcher_scaffold,
+        price: 0.0,
+        observed_at: DateTime.utc_now()
+      },
+      Map.new(attrs)
+    )
+  end
+
   def analysis(symbol, analyst_type, attrs \\ %{}) do
     Map.merge(
       %{
@@ -63,6 +75,36 @@ defmodule TeamJay.Investment.Events do
         executed: true,
         executed_at: DateTime.utc_now(),
         approved_signal: approved_signal
+      },
+      Map.new(attrs)
+    )
+  end
+
+  def position_snapshot(symbol, attrs \\ %{}) do
+    Map.merge(
+      %{
+        symbol: symbol,
+        source: :position_manager_scaffold,
+        status: :flat,
+        quantity: 0.0,
+        entry_price: nil,
+        current_price: nil,
+        pnl_pct: 0.0,
+        updated_at: DateTime.utc_now()
+      },
+      Map.new(attrs)
+    )
+  end
+
+  def condition_check(symbol, attrs \\ %{}) do
+    Map.merge(
+      %{
+        symbol: symbol,
+        source: :condition_checker_scaffold,
+        action: :hold,
+        reason: :monitoring,
+        score: 0.0,
+        checked_at: DateTime.utc_now()
       },
       Map.new(attrs)
     )
