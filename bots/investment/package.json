@@ -32,6 +32,7 @@
     "planner:smoke": "node scripts/analysis-planner-smoke.ts",
     "planner:dryrun": "node scripts/pre-screen-planner-dryrun.ts",
     "planner:bridge-smoke": "node scripts/pre-screen-planner-bridge-smoke.ts --market=binance --research-only --regime=volatile --fear-greed=88 --symbol-count=3",
+    "planner:session-smoke": "node scripts/planner-session-smoke.ts --market=binance --research-only --regime=volatile --fear-greed=88 --symbol-count=3",
     "planner:sessions": "node scripts/planner-session-report.ts --limit=10",
     "parallel-snapshot": "node scripts/parallel-ops-snapshot.ts",
     "parallel-report": "node scripts/parallel-ops-report.ts",
