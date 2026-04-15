@@ -17,6 +17,7 @@ import {
   withdrawUsdtToAddress,
   getRecentKrwDepositTime,
 } from '../../shared/upbit-client.ts';
+import { buildInvestmentCliInsight } from '../../shared/cli-insight.ts';
 
 // 24시간 후 시각 계산 (KST 포맷)
 function calcUnlock(depositTime) {
@@ -42,7 +43,17 @@ async function main() {
     steps.push(`1. 업비트 USDT 잔고: ${usdtBalance.toFixed(4)} USDT`);
 
     if (usdtBalance < 1) {
-      output({ ok: false, error: `USDT 잔고 부족: ${usdtBalance} (최소 1 USDT)`, steps });
+      const aiSummary = await buildInvestmentCliInsight({
+        bot: 'upbit-withdraw-only',
+        requestType: 'transfer',
+        title: '업비트 USDT 출금 결과',
+        data: {
+          mode: 'insufficient_usdt',
+          usdtBalance,
+        },
+        fallback: 'USDT 잔고가 부족해 이번 출금은 보류하는 편이 맞습니다.',
+      });
+      output({ ok: false, error: `USDT 잔고 부족: ${usdtBalance} (최소 1 USDT)`, steps, aiSummary });
       return;
     }
 
@@ -61,6 +72,18 @@ async function main() {
       );
       steps.push(`   출금 ID: ${result.withdrawalId}, 상태: ${result.status}`);
 
+      const aiSummary = await buildInvestmentCliInsight({
+        bot: 'upbit-withdraw-only',
+        requestType: 'transfer',
+        title: '업비트 USDT 출금 결과',
+        data: {
+          mode: 'success',
+          usdtAmount: usdtBalance,
+          network: depositInfo.network,
+          status: result.status,
+        },
+        fallback: `업비트에서 ${usdtBalance.toFixed(4)} USDT 출금이 접수돼 전송 흐름은 정상입니다.`,
+      });
       output({
         ok:           true,
         message: [
@@ -76,6 +99,7 @@ async function main() {
         withdrawalId: result.withdrawalId,
         status:       result.status,
         steps,
+        aiSummary,
       });
 
     } catch (withdrawErr) {
@@ -100,6 +124,18 @@ async function main() {
           ? `  ⏰ 예상 해제: ${unlockInfo.unlockAtKst} (약 ${unlockInfo.remainHr}시간 ${unlockInfo.remainMn}분 후)`
           : `  ⏰ 예상 해제: KRW 입금 후 24시간 (업비트 앱에서 확인)`;
 
+        const aiSummary = await buildInvestmentCliInsight({
+          bot: 'upbit-withdraw-only',
+          requestType: 'transfer',
+          title: '업비트 USDT 출금 결과',
+          data: {
+            mode: 'delay',
+            usdtBalance,
+            network: depositInfo.network,
+            unlockAtKst: unlockInfo?.unlockAtKst || null,
+          },
+          fallback: '출금지연제로 묶여 있어 해제 시각까지 기다렸다가 다시 진행하는 편이 맞습니다.',
+        });
         output({
           ok:         false,
           delay:      true,
@@ -116,6 +152,7 @@ async function main() {
             `  📌 해제 후 자동으로 출금을 진행합니다.`,
           ].join('\n'),
           steps,
+          aiSummary,
         });
         return;
       }
@@ -125,7 +162,17 @@ async function main() {
     }
 
   } catch (e) {
-    output({ ok: false, error: e.message, steps });
+    const aiSummary = await buildInvestmentCliInsight({
+      bot: 'upbit-withdraw-only',
+      requestType: 'transfer',
+      title: '업비트 USDT 출금 결과',
+      data: {
+        mode: 'error',
+        error: e.message,
+      },
+      fallback: '출금 중 오류가 발생해 거래소 연결과 출금 제한 상태를 수동으로 확인하는 편이 좋습니다.',
+    });
+    output({ ok: false, error: e.message, steps, aiSummary });
   }
 }
 

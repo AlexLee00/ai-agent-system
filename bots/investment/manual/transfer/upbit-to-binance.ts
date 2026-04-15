@@ -19,6 +19,7 @@ import {
   getBinanceDepositAddress,
   withdrawUsdtToAddress,
 } from '../../shared/upbit-client.ts';
+import { buildInvestmentCliInsight } from '../../shared/cli-insight.ts';
 
 async function main() {
   const steps = [];
@@ -29,7 +30,17 @@ async function main() {
     steps.push(`1. KRW 잔고: ${krwBalance.toLocaleString()}원`);
 
     if (krwBalance < 5000) {
-      output({ ok: false, error: `KRW 잔고 부족: ${krwBalance.toLocaleString()}원`, steps });
+      const aiSummary = await buildInvestmentCliInsight({
+        bot: 'upbit-to-binance',
+        requestType: 'transfer',
+        title: '업비트→바이낸스 전송 결과',
+        data: {
+          mode: 'insufficient_krw',
+          krwBalance,
+        },
+        fallback: '원화 잔고가 부족해 이번 전송은 보류하는 편이 맞습니다.',
+      });
+      output({ ok: false, error: `KRW 잔고 부족: ${krwBalance.toLocaleString()}원`, steps, aiSummary });
       return;
     }
 
@@ -46,7 +57,17 @@ async function main() {
     steps.push(`3. USDT 잔고: ${usdtBalance.toFixed(2)} USDT`);
 
     if (usdtBalance < 1) {
-      output({ ok: false, error: `USDT 매수 후 잔고 없음 (${usdtBalance})`, steps });
+      const aiSummary = await buildInvestmentCliInsight({
+        bot: 'upbit-to-binance',
+        requestType: 'transfer',
+        title: '업비트→바이낸스 전송 결과',
+        data: {
+          mode: 'missing_usdt_after_buy',
+          usdtBalance,
+        },
+        fallback: 'USDT 매수 뒤 잔고가 없어 체결 또는 반영 상태를 먼저 확인하는 편이 좋습니다.',
+      });
+      output({ ok: false, error: `USDT 매수 후 잔고 없음 (${usdtBalance})`, steps, aiSummary });
       return;
     }
 
@@ -64,6 +85,19 @@ async function main() {
     );
     steps.push(`   출금 ID: ${withdrawResult.withdrawalId}, 상태: ${withdrawResult.status}`);
 
+    const aiSummary = await buildInvestmentCliInsight({
+      bot: 'upbit-to-binance',
+      requestType: 'transfer',
+      title: '업비트→바이낸스 전송 결과',
+      data: {
+        mode: 'success',
+        krwSpent: buyResult.krwSpent,
+        usdtAmount: usdtBalance,
+        network: depositInfo.network,
+        status: withdrawResult.status,
+      },
+      fallback: `업비트에서 바이낸스로 ${usdtBalance.toFixed(2)} USDT 전송이 시작돼 자금 이동 흐름은 정상입니다.`,
+    });
     output({
       ok: true,
       message: [
@@ -79,10 +113,21 @@ async function main() {
       network:      depositInfo.network,
       withdrawalId: withdrawResult.withdrawalId,
       steps,
+      aiSummary,
     });
 
   } catch (e) {
-    output({ ok: false, error: e.message, steps });
+    const aiSummary = await buildInvestmentCliInsight({
+      bot: 'upbit-to-binance',
+      requestType: 'transfer',
+      title: '업비트→바이낸스 전송 결과',
+      data: {
+        mode: 'error',
+        error: e.message,
+      },
+      fallback: '전송 과정에서 오류가 발생해 거래소 연결과 출금 상태를 수동으로 확인하는 편이 좋습니다.',
+    });
+    output({ ok: false, error: e.message, steps, aiSummary });
   }
 }
 

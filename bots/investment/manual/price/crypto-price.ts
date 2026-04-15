@@ -9,6 +9,7 @@
 
 import ccxt from 'ccxt';
 import { loadSecrets } from '../../shared/secrets.ts';
+import { buildInvestmentCliInsight } from '../../shared/cli-insight.ts';
 
 const DEFAULT_SYMBOLS = ['BTC', 'ETH', 'SOL', 'BNB'];
 
@@ -51,9 +52,32 @@ async function main() {
       }
     }
 
-    output({ ok: true, symbols: results });
+    const aiSummary = await buildInvestmentCliInsight({
+      bot: 'crypto-price',
+      requestType: 'price',
+      title: '암호화폐 현재가 조회 결과',
+      data: {
+        symbolCount: results.length,
+        topSymbols: results.slice(0, 5).map((item) => item.symbol),
+        positiveCount: results.filter((item) => Number(item.change_pct || 0) > 0).length,
+        negativeCount: results.filter((item) => Number(item.change_pct || 0) < 0).length,
+      },
+      fallback: results.length > 0
+        ? `주요 코인 ${results.length}종 시세가 조회돼 단기 방향성을 빠르게 확인할 수 있습니다.`
+        : '조회된 코인 시세가 없어 심볼 또는 거래소 응답 상태를 다시 확인하는 편이 좋습니다.',
+    });
+    output({ ok: true, symbols: results, aiSummary });
   } catch (e) {
-    output({ ok: false, error: e.message });
+    const aiSummary = await buildInvestmentCliInsight({
+      bot: 'crypto-price',
+      requestType: 'price',
+      title: '암호화폐 현재가 조회 결과',
+      data: {
+        error: e.message,
+      },
+      fallback: '암호화폐 현재가 조회가 실패해 거래소 시세 연결 상태를 다시 점검하는 편이 좋습니다.',
+    });
+    output({ ok: false, error: e.message, aiSummary });
   }
 }
 
