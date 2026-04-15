@@ -22,6 +22,7 @@ defmodule TeamJay.Investment.Phase5FullSuite do
   alias TeamJay.Investment.Phase5AutonomyReport
   alias TeamJay.Investment.Phase5AutonomyPersistenceReport
   alias TeamJay.Investment.Phase5ResourceHealthReport
+  alias TeamJay.Investment.Phase5ResourceHealthPersistenceReport
 
   def run_defaults(opts \\ []) do
     base = Phase5Suite.run_defaults(opts)
@@ -40,6 +41,7 @@ defmodule TeamJay.Investment.Phase5FullSuite do
     autonomy = Phase5AutonomyReport.run_defaults(opts)
     autonomy_persistence = Phase5AutonomyPersistenceReport.run_defaults(opts)
     resource_health = Phase5ResourceHealthReport.run_defaults(opts)
+    resource_health_persistence = Phase5ResourceHealthPersistenceReport.run_defaults(opts)
 
     all_ok =
       Enum.all?(
@@ -59,7 +61,8 @@ defmodule TeamJay.Investment.Phase5FullSuite do
           resource_persistence.result.all_ok,
           autonomy.result.all_ok,
           autonomy_persistence.result.all_ok,
-          resource_health.result.all_ok
+          resource_health.result.all_ok,
+          resource_health_persistence.result.all_ok
         ],
         & &1
       )
@@ -82,7 +85,8 @@ defmodule TeamJay.Investment.Phase5FullSuite do
         phase5_5_8_db: resource_persistence.result,
         phase5_5_9: autonomy.result,
         phase5_5_9_db: autonomy_persistence.result,
-        phase5_resource_health: resource_health.result
+        phase5_resource_health: resource_health.result,
+        phase5_resource_health_db: resource_health_persistence.result
       }
     }
   end

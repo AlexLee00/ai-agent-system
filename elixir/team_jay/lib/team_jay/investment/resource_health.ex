@@ -8,9 +8,11 @@ defmodule TeamJay.Investment.ResourceHealth do
 
   use GenServer
 
+  alias Ecto.Adapters.SQL
   alias TeamJay.Investment.Events
   alias TeamJay.Investment.PubSub
   alias TeamJay.Investment.Topics
+  alias TeamJay.Repo
 
   def start_link(opts) do
     symbol = Keyword.fetch!(opts, :symbol)
@@ -24,6 +26,7 @@ defmodule TeamJay.Investment.ResourceHealth do
   @impl true
   def init(opts) do
     symbol = Keyword.fetch!(opts, :symbol)
+    ensure_table!()
 
     Enum.each(
       [
@@ -46,7 +49,10 @@ defmodule TeamJay.Investment.ResourceHealth do
        last_status: :observe,
        last_health_score: 0.0,
        last_action: :hold,
-       last_measured_at: nil
+       last_measured_at: nil,
+       persisted_count: 0,
+       last_persist_status: :idle,
+       last_persisted_at: nil
      }}
   end
 
@@ -59,7 +65,10 @@ defmodule TeamJay.Investment.ResourceHealth do
        last_status: state.last_status,
        last_health_score: state.last_health_score,
        last_action: state.last_action,
-       last_measured_at: state.last_measured_at
+       last_measured_at: state.last_measured_at,
+       persisted_count: state.persisted_count,
+       last_persist_status: state.last_persist_status,
+       last_persisted_at: state.last_persisted_at
      }, state}
   end
 
@@ -111,6 +120,8 @@ defmodule TeamJay.Investment.ResourceHealth do
         runtime_override: state.last_runtime_override
       )
 
+    {persisted_count, persist_status, persisted_at} = persist_snapshot(state.symbol, snapshot)
+
     PubSub.broadcast_resource_health(state.symbol, {:resource_health, snapshot})
 
     %{
@@ -119,7 +130,10 @@ defmodule TeamJay.Investment.ResourceHealth do
         last_status: status,
         last_health_score: score,
         last_action: action,
-        last_measured_at: snapshot.measured_at
+        last_measured_at: snapshot.measured_at,
+        persisted_count: state.persisted_count + persisted_count,
+        last_persist_status: persist_status,
+        last_persisted_at: persisted_at
     }
   end
 
@@ -171,4 +185,110 @@ defmodule TeamJay.Investment.ResourceHealth do
   defp breaker_score(1), do: 0.7
   defp breaker_score(2), do: 0.4
   defp breaker_score(_), do: 0.0
+
+  defp ensure_table! do
+    SQL.query!(Repo, "CREATE SCHEMA IF NOT EXISTS investment", [])
+
+    SQL.query!(
+      Repo,
+      """
+      CREATE TABLE IF NOT EXISTS investment.resource_health_events (
+        id BIGSERIAL PRIMARY KEY,
+        symbol TEXT NOT NULL,
+        status TEXT NOT NULL,
+        ready BOOLEAN NOT NULL DEFAULT FALSE,
+        health_score DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+        ready_resources INTEGER NOT NULL DEFAULT 0,
+        action TEXT NOT NULL,
+        active_guards JSONB NOT NULL DEFAULT '[]'::jsonb,
+        resource_feedback JSONB NOT NULL DEFAULT '{}'::jsonb,
+        autonomous_cycle JSONB NOT NULL DEFAULT '{}'::jsonb,
+        circuit_breaker JSONB NOT NULL DEFAULT '{}'::jsonb,
+        runtime_override JSONB NOT NULL DEFAULT '{}'::jsonb,
+        payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+        measured_at TIMESTAMPTZ NOT NULL,
+        inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+      """,
+      []
+    )
+
+    SQL.query!(
+      Repo,
+      """
+      CREATE INDEX IF NOT EXISTS resource_health_events_symbol_measured_at_idx
+      ON investment.resource_health_events (symbol, measured_at DESC)
+      """,
+      []
+    )
+  end
+
+  defp persist_snapshot(symbol, snapshot) do
+    now = DateTime.utc_now()
+
+    case SQL.query(
+           Repo,
+           """
+           INSERT INTO investment.resource_health_events (
+             symbol,
+             status,
+             ready,
+             health_score,
+             ready_resources,
+             action,
+             active_guards,
+             resource_feedback,
+             autonomous_cycle,
+             circuit_breaker,
+             runtime_override,
+             payload,
+             measured_at,
+             inserted_at
+           )
+           VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb, $13, $14)
+           """,
+           [
+             symbol,
+             Atom.to_string(snapshot.status),
+             snapshot.ready,
+             snapshot.health_score,
+             snapshot.ready_resources,
+             Atom.to_string(snapshot.action),
+             Jason.encode!(json_ready(Map.get(snapshot, :active_guards, []))),
+             Jason.encode!(json_ready(Map.get(snapshot, :resource_feedback, %{}))),
+             Jason.encode!(json_ready(Map.get(snapshot, :autonomous_cycle, %{}))),
+             Jason.encode!(json_ready(Map.get(snapshot, :circuit_breaker, %{}))),
+             Jason.encode!(json_ready(Map.get(snapshot, :runtime_override, %{}))),
+             Jason.encode!(json_ready(snapshot)),
+             snapshot.measured_at,
+             now
+           ]
+         ) do
+      {:ok, %{num_rows: num_rows}} when num_rows > 0 ->
+        {num_rows, :persisted, now}
+
+      {:ok, _result} ->
+        {0, :noop, nil}
+
+      {:error, _reason} ->
+        {0, :error, nil}
+    end
+  end
+
+  defp json_ready(%DateTime{} = value), do: DateTime.to_iso8601(value)
+  defp json_ready(%NaiveDateTime{} = value), do: NaiveDateTime.to_iso8601(value)
+  defp json_ready(%Date{} = value), do: Date.to_iso8601(value)
+  defp json_ready(%Time{} = value), do: Time.to_iso8601(value)
+  defp json_ready(%_{} = struct), do: struct |> Map.from_struct() |> json_ready()
+  defp json_ready(map) when is_map(map), do: Map.new(map, fn {k, v} -> {json_key(k), json_ready(v)} end)
+  defp json_ready(list) when is_list(list), do: Enum.map(list, &json_ready/1)
+  defp json_ready(tuple) when is_tuple(tuple), do: tuple |> Tuple.to_list() |> Enum.map(&json_ready/1)
+  defp json_ready(atom) when is_atom(atom), do: Atom.to_string(atom)
+  defp json_ready(pid) when is_pid(pid), do: inspect(pid)
+  defp json_ready(reference) when is_reference(reference), do: inspect(reference)
+  defp json_ready(function) when is_function(function), do: inspect(function)
+  defp json_ready(value), do: value
+
+  defp json_key(key) when is_atom(key), do: Atom.to_string(key)
+  defp json_key(key), do: key
 end
