@@ -230,4 +230,34 @@ defmodule TeamJay.Investment.Events do
       Map.new(attrs)
     )
   end
+
+  def resource_feedback(symbol, attrs \\ %{}) do
+    Map.merge(
+      %{
+        symbol: symbol,
+        source: :resource_feedback_coordinator_scaffold,
+        ready_resources: 0,
+        resources: %{},
+        recommendation: :observe,
+        summarized_at: DateTime.utc_now()
+      },
+      Map.new(attrs)
+    )
+  end
+
+  def autonomous_cycle(symbol, attrs \\ %{}) do
+    Map.merge(
+      %{
+        symbol: symbol,
+        source: :continuous_loop_coordinator_scaffold,
+        mode: :mode1_explore,
+        action: :hold,
+        phase: :observe,
+        readiness: :partial,
+        cycle_count: 0,
+        completed_at: DateTime.utc_now()
+      },
+      Map.new(attrs)
+    )
+  end
 end

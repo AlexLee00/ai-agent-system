@@ -83,4 +83,14 @@ defmodule TeamJay.Investment.PubSub do
     TeamJay.Investment.Topics.strategy_profiles(symbol)
     |> broadcast(strategy_profile_payload)
   end
+
+  def broadcast_resource_feedback(symbol, resource_feedback_payload) do
+    TeamJay.Investment.Topics.resource_feedback(symbol)
+    |> broadcast(resource_feedback_payload)
+  end
+
+  def broadcast_autonomous_cycle(symbol, autonomous_cycle_payload) do
+    TeamJay.Investment.Topics.autonomous_cycles(symbol)
+    |> broadcast(autonomous_cycle_payload)
+  end
 end

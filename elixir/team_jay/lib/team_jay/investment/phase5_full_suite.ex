@@ -13,6 +13,8 @@ defmodule TeamJay.Investment.Phase5FullSuite do
   alias TeamJay.Investment.Phase5CircuitReport
   alias TeamJay.Investment.Phase5MemoryReport
   alias TeamJay.Investment.Phase5ModeReport
+  alias TeamJay.Investment.Phase5ResourceReport
+  alias TeamJay.Investment.Phase5AutonomyReport
 
   def run_defaults(opts \\ []) do
     base = Phase5Suite.run_defaults(opts)
@@ -22,6 +24,8 @@ defmodule TeamJay.Investment.Phase5FullSuite do
     circuit = Phase5CircuitReport.run_defaults(opts)
     memory = Phase5MemoryReport.run_defaults(opts)
     modes = Phase5ModeReport.run_defaults(opts)
+    resources = Phase5ResourceReport.run_defaults(opts)
+    autonomy = Phase5AutonomyReport.run_defaults(opts)
 
     all_ok =
       Enum.all?(
@@ -32,7 +36,9 @@ defmodule TeamJay.Investment.Phase5FullSuite do
           overrides.result.all_ok,
           circuit.result.all_ok,
           memory.result.all_ok,
-          modes.result.all_ok
+          modes.result.all_ok,
+          resources.result.all_ok,
+          autonomy.result.all_ok
         ],
         & &1
       )
@@ -46,7 +52,9 @@ defmodule TeamJay.Investment.Phase5FullSuite do
         phase5_5_4: overrides.result,
         phase5_5_5: circuit.result,
         phase5_d: memory.result,
-        phase5_e: modes.result
+        phase5_e: modes.result,
+        phase5_5_8: resources.result,
+        phase5_5_9: autonomy.result
       }
     }
   end

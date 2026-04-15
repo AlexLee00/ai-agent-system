@@ -24,5 +24,7 @@ defmodule TeamJay.Investment.Topics do
   def reflections(symbol), do: "investment:reflections:#{symbol}"
   def market_modes(symbol), do: "investment:market_modes:#{symbol}"
   def strategy_profiles(symbol), do: "investment:strategy_profiles:#{symbol}"
+  def resource_feedback(symbol), do: "investment:resource_feedback:#{symbol}"
+  def autonomous_cycles(symbol), do: "investment:autonomous_cycles:#{symbol}"
   def feedback(symbol), do: "investment:feedback:#{symbol}"
 end
