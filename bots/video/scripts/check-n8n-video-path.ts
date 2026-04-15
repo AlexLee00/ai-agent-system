@@ -7,6 +7,7 @@ const { resolveProductionWebhookUrl } = require('../../../packages/core/lib/n8n-
 const { loadConfig } = require('../src/index');
 const { resolveVideoN8nToken } = require('../lib/video-n8n-config');
 const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
+const { buildVideoCliInsight } = require('../lib/cli-insight.js');
 
 const videoPathMemory = createAgentMemory({ agentId: 'video.n8n-path', team: 'video' });
 
@@ -88,6 +89,23 @@ async function main() {
     resolveError ? `registry resolve error: ${resolveError}` : null,
     webhook.reason ? `reason: ${webhook.reason}` : null,
   ].filter(Boolean).join('\n');
+  const aiSummary = await buildVideoCliInsight({
+    bot: 'check-n8n-video-path',
+    requestType: 'n8n-video-path',
+    title: '비디오 n8n path 진단 결과',
+    data: {
+      n8nHealthy,
+      webhookRegistered,
+      webhookHealthy: webhook.healthy,
+      webhookStatus: webhook.status,
+      webhookReason: webhook.reason,
+      webhookError: webhook.error || null,
+      registryResolveError: resolveError,
+    },
+    fallback: n8nHealthy && webhookRegistered && webhook.healthy
+      ? '비디오 n8n 경로가 정상이라 파이프라인 웹훅 유입은 현재 안정적입니다.'
+      : '비디오 n8n 경로에 경고가 있어 레지스트리 해석과 웹훅 응답 상태를 우선 점검하는 편이 좋습니다.',
+  });
 
   console.log(JSON.stringify({
     healthUrl,
@@ -105,6 +123,7 @@ async function main() {
       episodicHint,
       semanticHint,
     },
+    aiSummary,
   }, null, 2));
 
   await videoPathMemory.remember(summary, 'episodic', {
