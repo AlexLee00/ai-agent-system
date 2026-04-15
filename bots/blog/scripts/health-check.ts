@@ -32,8 +32,12 @@ const { buildIssueHints, rememberHealthEvent } = createHealthMemoryHelper({
 });
 const NODE_SERVER_HEALTH_URL = new URL(runtimeConfig.nodeServerHealthUrl || 'http://127.0.0.1:3100/health');
 const N8N_HEALTH_URL = new URL(runtimeConfig.n8nHealthUrl || 'http://127.0.0.1:5678/healthz');
+const IMAGE_PROVIDER = String(process.env.BLOG_IMAGE_PROVIDER || 'drawthings').toLowerCase();
+const IMAGE_BASE_URL = String(process.env.BLOG_IMAGE_BASE_URL || 'http://127.0.0.1:7860');
+const DRAWTHINGS_HEALTH_URL = new URL('/sdapi/v1/options', IMAGE_BASE_URL.endsWith('/') ? IMAGE_BASE_URL : `${IMAGE_BASE_URL}/`);
 const NODE_SERVER_TIMEOUT_MS = Number(runtimeConfig.nodeServerTimeoutMs || 3000);
 const N8N_HEALTH_TIMEOUT_MS = Number(runtimeConfig.n8nHealthTimeoutMs || 2500);
+const IMAGE_HEALTH_TIMEOUT_MS = 2500;
 
 async function notify(msg, level = 3) {
   try {
@@ -131,6 +135,44 @@ function checkN8nHealth() {
     });
     req.on('error', (e) => {
       resolve({ ok: false, detail: e.code === 'ECONNREFUSED' ? `포트 ${N8N_HEALTH_URL.port || 80} 연결 거부` : e.message.slice(0, 80) });
+    });
+    req.end();
+  });
+}
+
+function checkDrawThingsHealth() {
+  return new Promise((resolve) => {
+    const req = http.request(
+      {
+        hostname: DRAWTHINGS_HEALTH_URL.hostname,
+        port: Number(DRAWTHINGS_HEALTH_URL.port || 80),
+        path: `${DRAWTHINGS_HEALTH_URL.pathname}${DRAWTHINGS_HEALTH_URL.search}`,
+        method: 'GET',
+        timeout: IMAGE_HEALTH_TIMEOUT_MS,
+      },
+      (res) => {
+        let body = '';
+        res.on('data', (d) => body += d);
+        res.on('end', () => {
+          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+            resolve({ ok: true, detail: `drawthings API 응답 정상 (${DRAWTHINGS_HEALTH_URL.host})` });
+            return;
+          }
+          resolve({ ok: false, detail: `drawthings API 응답 비정상 (HTTP ${res.statusCode || 'unknown'})` });
+        });
+      }
+    );
+    req.on('timeout', () => {
+      req.destroy();
+      resolve({ ok: false, detail: `drawthings API 응답 없음 (${IMAGE_HEALTH_TIMEOUT_MS}ms 타임아웃)` });
+    });
+    req.on('error', (e) => {
+      resolve({
+        ok: false,
+        detail: e.code === 'ECONNREFUSED'
+          ? `drawthings API 연결 거부 (${DRAWTHINGS_HEALTH_URL.host})`
+          : `drawthings API 오류: ${e.message.slice(0, 80)}`,
+      });
     });
     req.end();
   });
@@ -243,6 +285,25 @@ async function main() {
     await notify(recoveryMsg, 1);
     await rememberHealthEvent(n8nKey, 'recovery', recoveryMsg, 1);
     hsm.clearAlert(state, n8nKey);
+  }
+
+  if (IMAGE_PROVIDER === 'drawthings' || IMAGE_PROVIDER === 'draw-things') {
+    const imageHealth = await checkDrawThingsHealth();
+    const imageKey = 'drawthings:http';
+    if (!imageHealth.ok) {
+      if (hsm.canAlert(state, imageKey)) {
+        issues.push({
+          key: imageKey,
+          level: 2,
+          msg: `⚠️ [블로그 헬스] drawthings 비정상\n${imageHealth.detail}`,
+        });
+      }
+    } else if (state[imageKey]) {
+      const recoveryMsg = `✅ [블로그 헬스] drawthings 회복\n${imageHealth.detail}`;
+      await notify(recoveryMsg, 1);
+      await rememberHealthEvent(imageKey, 'recovery', recoveryMsg, 1);
+      hsm.clearAlert(state, imageKey);
+    }
   }
 
   const bookCatalog = await checkBookCatalogHealth();
