@@ -29,6 +29,7 @@ defmodule TeamJay.Investment.PipelineInspector do
       strategy_profile_manager: lookup({:investment_strategy_profile_manager, symbol}),
       resource_feedback_coordinator: lookup({:investment_resource_feedback_coordinator, symbol}),
       continuous_loop_coordinator: lookup({:investment_continuous_loop_coordinator, symbol}),
+      resource_health: lookup({:investment_resource_health, symbol}),
       feedback: lookup({:investment_feedback_realtime, symbol})
     }
   end
