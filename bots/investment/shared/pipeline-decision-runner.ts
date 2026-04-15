@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { finishPipelineRun } from './pipeline-db.ts';
+import { getNodeRuns } from './pipeline-db.ts';
 import { getInvestmentNode } from '../nodes/index.ts';
 import { recordNodeResult, runNode } from './node-runner.ts';
 import * as db from './db.ts';
@@ -15,7 +16,7 @@ import { createRequire } from 'module';
 const _require = createRequire(import.meta.url);
 const elixirBridge = _require('../../../packages/core/lib/elixir-bridge');
 
-async function buildBridgeMeta({ sessionId, market, symbol = null, stage, regime = null, planner = null }) {
+export async function buildDecisionBridgeMeta({ sessionId, market, symbol = null, stage, regime = null, planner = null }) {
   const meta = { bridge: 'luna_orchestrate', stage };
   if (planner) meta.planner = planner;
   try {
@@ -39,10 +40,20 @@ async function buildBridgeMeta({ sessionId, market, symbol = null, stage, regime
   }
 }
 
-async function loadSessionPlannerCompact(sessionId) {
+export async function loadDecisionPlannerCompact(sessionId) {
+  let payload = null;
   const latest = await loadLatestNodePayload(sessionId, 'L01').catch(() => null);
-  if (!latest?.payload) return null;
-  const compact = buildPreScreenPlannerCompact(latest.payload);
+  if (latest?.payload) {
+    payload = latest.payload;
+  } else {
+    const runs = await getNodeRuns(sessionId).catch(() => []);
+    const l01Run = [...runs]
+      .filter((row) => row.node_id === 'L01')
+      .sort((a, b) => Number(b.started_at || 0) - Number(a.started_at || 0))[0];
+    payload = l01Run?.metadata?.inline_payload || null;
+  }
+  if (!payload) return null;
+  const compact = buildPreScreenPlannerCompact(payload);
   if (!compact) return null;
   if (compact.market === 'unknown' && compact.timeMode === 'unknown' && compact.mode === 'unknown') {
     return null;
@@ -201,7 +212,7 @@ async function executeApprovedDecision({
     sessionId,
     market: exchange,
     symbol: decision.symbol,
-    meta: await buildBridgeMeta({
+    meta: await buildDecisionBridgeMeta({
       sessionId,
       market: exchange,
       symbol: decision.symbol,
@@ -244,7 +255,7 @@ async function executeApprovedDecision({
     sessionId,
     market: exchange,
     symbol: decision.symbol,
-    meta: await buildBridgeMeta({
+    meta: await buildDecisionBridgeMeta({
       sessionId,
       market: exchange,
       symbol: decision.symbol,
@@ -257,7 +268,7 @@ async function executeApprovedDecision({
     sessionId,
     market: exchange,
     symbol: decision.symbol,
-    meta: await buildBridgeMeta({
+    meta: await buildDecisionBridgeMeta({
       sessionId,
       market: exchange,
       symbol: decision.symbol,
@@ -270,7 +281,7 @@ async function executeApprovedDecision({
     sessionId,
     market: exchange,
     symbol: decision.symbol,
-    meta: await buildBridgeMeta({
+    meta: await buildDecisionBridgeMeta({
       sessionId,
       market: exchange,
       symbol: decision.symbol,
@@ -284,7 +295,7 @@ async function executeApprovedDecision({
     sessionId,
     market: exchange,
     symbol: decision.symbol,
-    meta: await buildBridgeMeta({
+    meta: await buildDecisionBridgeMeta({
       sessionId,
       market: exchange,
       symbol: decision.symbol,
@@ -297,7 +308,7 @@ async function executeApprovedDecision({
     sessionId,
     market: exchange,
     symbol: decision.symbol,
-    meta: await buildBridgeMeta({
+    meta: await buildDecisionBridgeMeta({
       sessionId,
       market: exchange,
       symbol: decision.symbol,
@@ -402,7 +413,7 @@ export async function runDecisionExecutionPipeline({
   let exitBelowMinSkipped = 0;
   const exitResults = [];
   let exitEntrySummary = null;
-  const plannerCompact = await loadSessionPlannerCompact(sessionId);
+  const plannerCompact = await loadDecisionPlannerCompact(sessionId);
 
   function countDecisionActions() {
     const counts = { buy: 0, sell: 0, hold: 0 };
@@ -484,7 +495,7 @@ export async function runDecisionExecutionPipeline({
           sessionId,
           market: exchange,
           symbol: dec.symbol,
-          meta: await buildBridgeMeta({
+          meta: await buildDecisionBridgeMeta({
             sessionId,
             market: exchange,
             symbol: dec.symbol,
@@ -552,7 +563,7 @@ export async function runDecisionExecutionPipeline({
         sessionId,
         market: exchange,
         symbol,
-        meta: await buildBridgeMeta({
+        meta: await buildDecisionBridgeMeta({
           sessionId,
           market: exchange,
           symbol,
@@ -567,7 +578,7 @@ export async function runDecisionExecutionPipeline({
             sessionId,
             market: exchange,
             symbol,
-            meta: await buildBridgeMeta({
+            meta: await buildDecisionBridgeMeta({
               sessionId,
               market: exchange,
               symbol,
@@ -579,7 +590,7 @@ export async function runDecisionExecutionPipeline({
             sessionId,
             market: exchange,
             symbol,
-            meta: await buildBridgeMeta({
+            meta: await buildDecisionBridgeMeta({
               sessionId,
               market: exchange,
               symbol,
@@ -597,7 +608,7 @@ export async function runDecisionExecutionPipeline({
         sessionId,
         market: exchange,
         symbol,
-        meta: await buildBridgeMeta({
+        meta: await buildDecisionBridgeMeta({
           sessionId,
           market: exchange,
           symbol,
@@ -664,7 +675,7 @@ export async function runDecisionExecutionPipeline({
   const portfolioDecisionResult = await runNode(l14Node, {
     sessionId,
     market: exchange,
-    meta: await buildBridgeMeta({
+    meta: await buildDecisionBridgeMeta({
       sessionId,
       market: exchange,
       stage: 'portfolio',
@@ -788,7 +799,7 @@ export async function runDecisionExecutionPipeline({
       sessionId,
       market: exchange,
       symbol: dec.symbol,
-      meta: await buildBridgeMeta({
+      meta: await buildDecisionBridgeMeta({
         sessionId,
         market: exchange,
         symbol: dec.symbol,
@@ -832,7 +843,7 @@ export async function runDecisionExecutionPipeline({
       sessionId,
       market: exchange,
       symbol: dec.symbol,
-      meta: await buildBridgeMeta({
+      meta: await buildDecisionBridgeMeta({
         sessionId,
         market: exchange,
         symbol: dec.symbol,
@@ -845,7 +856,7 @@ export async function runDecisionExecutionPipeline({
       sessionId,
       market: exchange,
       symbol: dec.symbol,
-      meta: await buildBridgeMeta({
+      meta: await buildDecisionBridgeMeta({
         sessionId,
         market: exchange,
         symbol: dec.symbol,
@@ -858,7 +869,7 @@ export async function runDecisionExecutionPipeline({
       sessionId,
       market: exchange,
       symbol: dec.symbol,
-      meta: await buildBridgeMeta({
+      meta: await buildDecisionBridgeMeta({
         sessionId,
         market: exchange,
         symbol: dec.symbol,
@@ -872,7 +883,7 @@ export async function runDecisionExecutionPipeline({
       sessionId,
       market: exchange,
       symbol: dec.symbol,
-      meta: await buildBridgeMeta({
+      meta: await buildDecisionBridgeMeta({
         sessionId,
         market: exchange,
         symbol: dec.symbol,
@@ -885,7 +896,7 @@ export async function runDecisionExecutionPipeline({
       sessionId,
       market: exchange,
       symbol: dec.symbol,
-      meta: await buildBridgeMeta({
+      meta: await buildDecisionBridgeMeta({
         sessionId,
         market: exchange,
         symbol: dec.symbol,

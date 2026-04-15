@@ -35,6 +35,7 @@
     "planner:session-smoke": "node scripts/planner-session-smoke.ts --market=binance --research-only --regime=volatile --fear-greed=88 --symbol-count=3",
     "planner:session-suite": "node scripts/planner-session-suite.ts",
     "planner:sessions": "node scripts/planner-session-report.ts --limit=10",
+    "planner:decision-smoke": "node scripts/decision-planner-smoke.ts",
     "parallel-snapshot": "node scripts/parallel-ops-snapshot.ts",
     "parallel-report": "node scripts/parallel-ops-report.ts",
     "parallel-history": "node scripts/parallel-ops-history.ts",
