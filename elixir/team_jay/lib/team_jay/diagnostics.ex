@@ -7,7 +7,7 @@ defmodule TeamJay.Diagnostics do
 
   @check_interval 30_000
   @msg_queue_warn 100
-  @memory_warn 100_000_000
+  @memory_warn 120_000_000
   @phase3_launchd_labels [
     "ai.ska.naver-monitor",
     "ai.ska.kiosk-monitor",
@@ -163,8 +163,7 @@ defmodule TeamJay.Diagnostics do
 
     severity =
       if(
-        report.overlap_count > 0 or report.summary.failing > 0 or
-          total_required_missing > 0,
+        report.summary.failing > 0 or total_required_missing > 0,
         do: "warn",
         else: "info"
       )
@@ -176,7 +175,7 @@ defmodule TeamJay.Diagnostics do
       severity: severity,
       title: "Phase3 Shadow 리포트",
       message:
-        "겹침 #{report.overlap_count}건 | week1 failing #{report.summary.failing} | week1 missing #{report.summary.missing} | shadow running #{total_shadow_running} | shadow loaded #{total_shadow_loaded} | required missing #{total_required_missing} | next pilot #{format_single_candidate(report.transition_plan.next_pilot_candidate)} | pilot label #{format_runbook_label(report.pilot_runbook)}",
+        "phase3 loaded #{report.overlap_loaded_count}/#{report.overlap_expected_count} | week1 failing #{report.summary.failing} | week1 missing #{report.summary.missing} | shadow running #{total_shadow_running} | shadow loaded #{total_shadow_loaded} | required missing #{total_required_missing} | next pilot #{format_single_candidate(report.transition_plan.next_pilot_candidate)} | pilot label #{format_runbook_label(report.pilot_runbook)}",
       tags: ["phase3", "diagnostics", "shadow_report"],
       metadata: report
     })
@@ -287,9 +286,11 @@ defmodule TeamJay.Diagnostics do
         [
           %{
             name: "launchd_phase3_overlap",
-            severity: if(overlaps == [], do: :ok, else: :warn),
-            message: "겹침 #{length(overlaps)}건",
-            overlaps: overlaps
+            severity: :ok,
+            message: "loaded #{length(overlaps)}건",
+            overlaps: overlaps,
+            loaded_count: length(overlaps),
+            expected_labels: length(@phase3_launchd_labels)
           }
         ]
 
@@ -448,6 +449,8 @@ defmodule TeamJay.Diagnostics do
     %{
       generated_at: DateTime.utc_now(),
       overlap_count: length(Map.get(overlap_result, :overlaps, [])),
+      overlap_loaded_count: Map.get(overlap_result, :loaded_count, length(Map.get(overlap_result, :overlaps, []))),
+      overlap_expected_count: Map.get(overlap_result, :expected_labels, length(@phase3_launchd_labels)),
       overlaps: Map.get(overlap_result, :overlaps, []),
       supervisor_alerts: Enum.map(state.alerts, &Map.take(&1, [:name, :severity, :message])),
       agents: agent_statuses,
@@ -620,16 +623,24 @@ defmodule TeamJay.Diagnostics do
 
   defp record_launchd_overlap_event(overlap_result, signature) do
     overlaps = Map.get(overlap_result, :overlaps, [])
+    loaded_count = Map.get(overlap_result, :loaded_count, length(overlaps))
+    expected_labels = Map.get(overlap_result, :expected_labels, length(@phase3_launchd_labels))
 
     TeamJay.EventLake.record(%{
       event_type: "phase3_launchd_overlap_changed",
       team: "system",
       bot_name: "diagnostics",
-      severity: if(overlaps == [], do: "info", else: "warn"),
+      severity: "info",
       title: "Phase3 launchd overlap 변경",
       message: overlap_result.message,
       tags: ["phase3", "diagnostics", "launchd_overlap"],
-      metadata: %{signature: signature, overlaps: overlaps, overlap_count: length(overlaps)}
+      metadata: %{
+        signature: signature,
+        overlaps: overlaps,
+        overlap_count: length(overlaps),
+        loaded_count: loaded_count,
+        expected_labels: expected_labels
+      }
     })
   end
 
@@ -704,7 +715,7 @@ defmodule TeamJay.Diagnostics do
 
     message = """
     ⚠️ Phase3 Shadow 리포트
-    겹침: #{report.overlap_count}건
+    phase3 loaded: #{report.overlap_loaded_count}/#{report.overlap_expected_count}
     failing: #{report.summary.failing}
     week1 missing: #{report.summary.missing}
     week2 running: #{report.week2_summary.running}
