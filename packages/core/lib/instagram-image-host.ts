@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const env = require('./env');
 
 const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
@@ -24,11 +25,25 @@ function trimLeadingSlash(value = '') {
 }
 
 function slugifySegment(value = '') {
-  return String(value || '')
+  const normalized = String(value || '')
     .trim()
+    .normalize('NFKD')
     .replace(/\s+/g, '-')
-    .replace(/[^A-Za-z0-9._\-가-힣]/g, '-')
-    .replace(/-+/g, '-');
+    .replace(/[^A-Za-z0-9._\-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  if (normalized && /[A-Za-z0-9]/.test(normalized)) {
+    return normalized;
+  }
+
+  const digest = crypto
+    .createHash('sha1')
+    .update(String(value || 'asset'))
+    .digest('hex')
+    .slice(0, 12);
+
+  return `asset-${digest}`;
 }
 
 function getInstagramImageHostConfig() {
