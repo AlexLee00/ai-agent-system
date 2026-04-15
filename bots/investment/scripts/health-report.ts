@@ -13,6 +13,7 @@
 import path from 'path';
 import { createRequire } from 'module';
 import { fileURLToPath, pathToFileURL } from 'url';
+import { generateGemmaPilotText } from '../../../packages/core/lib/gemma-pilot.ts';
 import {
   getKisExecutionModeInfo,
   getKisMarketStatus,
@@ -95,6 +96,93 @@ const SCHEDULED_SERVICE_DEPLOYMENTS = {
     errorLogPath: '/tmp/investment-overseas.err.log',
   },
 };
+
+function sanitizeInsightLine(text = '') {
+  return String(text || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) =>
+      line &&
+      !/^thinking process/i.test(line) &&
+      !/^[0-9]+\.\s/.test(line) &&
+      !/^<\|/.test(line) &&
+      !/^ai[:：]/i.test(line)
+    ) || '';
+}
+
+function buildHealthFallbackInsight(report) {
+  const warnCount = Number(report?.serviceHealth?.warnCount || 0);
+  const findings = Number(report?.tradeReview?.findings || 0);
+  const staleLive = Number(report?.stalePositionHealth?.warnCount || 0);
+  const signalBlocks = Number(report?.signalBlockHealth?.total || 0);
+  const recentBlocks = Number(report?.recentSignalBlockHealth?.total || 0);
+  const liveGateWarn = Number(report?.cryptoLiveGateHealth?.warnCount || 0);
+
+  if (warnCount > 0) {
+    return `서비스 경고 ${warnCount}건이 있어 launchd 상태와 실패 서비스부터 먼저 점검하는 편이 좋습니다.`;
+  }
+  if (findings > 0) {
+    return `trade_review 정합성 점검 필요 ${findings}건이 있어 데이터 정합성 보정을 우선하는 편이 좋습니다.`;
+  }
+  if (staleLive > 0) {
+    return `장기 미결 LIVE 포지션 ${staleLive}건이 있어 실행 대기와 capability 제약을 먼저 확인하는 편이 좋습니다.`;
+  }
+  if (liveGateWarn > 0) {
+    return `암호화폐 LIVE 게이트가 아직 보수 구간이라 PAPER·LIVE 전환 판단 근거를 먼저 확인하는 편이 좋습니다.`;
+  }
+  if (signalBlocks > 0 || recentBlocks > 0) {
+    return `신호 차단 흐름이 남아 있어 자본 가드와 rail 압력부터 복기하는 편이 좋습니다.`;
+  }
+  return '핵심 서비스와 trade_review 정합성은 대체로 안정적이며, 현재는 추가 조치보다 관찰 유지가 적절합니다.';
+}
+
+async function buildHealthInsight(report) {
+  try {
+    const prompt = `당신은 투자 운영 헬스 리포트 분석가입니다.
+아래 데이터를 보고 운영자가 바로 읽을 수 있는 핵심 인사이트를 한국어 한 줄로만 작성하세요.
+숫자 재나열보다 위험 신호, 우선 점검 포인트, 운영 안정성 판단을 중심으로 적으세요.
+
+데이터:
+${JSON.stringify({
+  serviceHealth: {
+    okCount: report?.serviceHealth?.okCount,
+    warnCount: report?.serviceHealth?.warnCount,
+  },
+  tradeReview: report?.tradeReview,
+  signalBlocks: {
+    total: report?.signalBlockHealth?.total,
+    recentTotal: report?.recentSignalBlockHealth?.total,
+    topGroups: (report?.signalBlockHealth?.topReasonGroups || []).slice(0, 5),
+  },
+  staleLive: report?.stalePositionHealth?.readinessSummary,
+  liveGate: {
+    warnCount: report?.cryptoLiveGateHealth?.warnCount,
+    decision: report?.cryptoLiveGateHealth?.review?.liveGate?.decision,
+    reason: report?.cryptoLiveGateHealth?.review?.liveGate?.reason,
+  },
+  tradeLaneHealth: {
+    okCount: report?.tradeLaneHealth?.okCount,
+    warnCount: report?.tradeLaneHealth?.warnCount,
+  },
+  decision: report?.decision,
+}, null, 2).slice(0, 2200)}`;
+
+    const insight = await generateGemmaPilotText({
+      team: 'investment',
+      purpose: 'gemma-insight',
+      bot: 'health-report',
+      requestType: 'health-summary',
+      prompt,
+      maxTokens: 120,
+      temperature: 0.35,
+      timeoutMs: 10000,
+    });
+    return sanitizeInsightLine(insight?.content || '') || buildHealthFallbackInsight(report);
+  } catch (error) {
+    console.warn(`[health-report] AI 요약 생략: ${error?.message || error}`);
+    return buildHealthFallbackInsight(report);
+  }
+}
 
 async function loadTradeReviewHealth() {
   const modulePath = path.resolve(__dirname, './validate-trade-review.ts');
@@ -371,6 +459,10 @@ function buildDecision(
 
 function formatText(report) {
   const sections = [
+    {
+      title: '■ AI 요약',
+      lines: [`  ${report.aiSummary || buildHealthFallbackInsight(report)}`],
+    },
     buildHealthCountSection('■ 서비스 상태', report.serviceHealth),
     {
       title: '■ trade_review 정합성',
@@ -550,6 +642,7 @@ async function buildReport() {
     kisCapabilityHealth,
     decision,
   };
+  report.aiSummary = await buildHealthInsight(report);
   return report;
 }
 
