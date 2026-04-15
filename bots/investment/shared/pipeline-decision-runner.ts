@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { finishPipelineRun } from './pipeline-db.ts';
-import { getNodeRuns } from './pipeline-db.ts';
+import { getNodeRuns, getPipelineRun } from './pipeline-db.ts';
 import { getInvestmentNode } from '../nodes/index.ts';
 import { recordNodeResult, runNode } from './node-runner.ts';
 import * as db from './db.ts';
@@ -51,6 +51,19 @@ export async function loadDecisionPlannerCompact(sessionId) {
       .filter((row) => row.node_id === 'L01')
       .sort((a, b) => Number(b.started_at || 0) - Number(a.started_at || 0))[0];
     payload = l01Run?.metadata?.inline_payload || null;
+  }
+  if (!payload) {
+    const pipelineRun = await getPipelineRun(sessionId).catch(() => null);
+    if (pipelineRun?.meta?.planner_payload) {
+      payload = pipelineRun.meta.planner_payload;
+    } else if (pipelineRun?.meta?.planner_context) {
+      payload = {
+        market: pipelineRun?.market || 'unknown',
+        symbols: Array.isArray(pipelineRun?.symbols) ? pipelineRun.symbols : [],
+        source: 'pipeline_meta',
+        planner_context: pipelineRun.meta.planner_context,
+      };
+    }
   }
   if (!payload) return null;
   const compact = buildPreScreenPlannerCompact(payload);

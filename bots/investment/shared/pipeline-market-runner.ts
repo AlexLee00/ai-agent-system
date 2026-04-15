@@ -3,6 +3,7 @@ import { createPipelineSession, runNode } from './node-runner.ts';
 import { finishPipelineRun } from './pipeline-db.ts';
 import { publishAlert } from './alert-publisher.ts';
 import { getInvestmentNode } from '../nodes/index.ts';
+import { buildPreScreenPlannerContext } from './pre-screen-planner-bridge.ts';
 
 const COLLECT_NODE_SETS = {
   binance: ['L06', 'L02', 'L03', 'L05'],
@@ -60,6 +61,19 @@ function isDataSparsityError(message = '') {
   return text.includes('데이터 부족') || text.toLowerCase().includes('insufficient candle');
 }
 
+function buildRuntimePlannerPayload({ market, symbols = [], meta = {} } = {}) {
+  return {
+    market,
+    symbols: Array.isArray(symbols) ? symbols : [],
+    source: 'market_collect',
+    planner_context: buildPreScreenPlannerContext({
+      market,
+      researchOnly: Boolean(meta?.research_only),
+      tradeMode: meta?.trade_mode || null,
+    }),
+  };
+}
+
 export async function runMarketCollectPipeline({
   market,
   symbols,
@@ -78,7 +92,10 @@ export async function runMarketCollectPipeline({
     symbols,
     triggerType,
     triggerRef,
-    meta,
+    meta: {
+      ...(meta || {}),
+      planner_payload: buildRuntimePlannerPayload({ market, symbols, meta }),
+    },
   });
 
   try {
