@@ -5,10 +5,7 @@ defmodule TeamJay.Teams.ClaudeSupervisor do
     %{name: :dexter, script: "bots/claude/src/dexter.js", schedule: {:interval, 300_000}},
     %{name: :dexter_daily, script: "bots/claude/src/dexter.js --daily-report --telegram", schedule: nil},
     %{name: :dexter_quick, script: "bots/claude/src/dexter-quickcheck.js --telegram --fix", schedule: {:interval, 60_000}},
-    %{name: :claude_commander, script: "bots/claude/src/claude-commander.js", schedule: {:interval, 600_000}},
-    %{name: :archer, script: "bots/claude/src/archer.js", schedule: {:interval, 900_000}},
-    %{name: :claude_health_check, script: "bots/claude/scripts/health-check.js", schedule: {:interval, 600_000}},
-    %{name: :health_dashboard, script: "bots/claude/scripts/health-dashboard-server.js", schedule: {:interval, 600_000}},
+    # launchd가 canonical owner인 상시/캘린더 서비스는 PortAgent 목록에서 제외한다.
     %{name: :speed_test, script: "bots/claude/scripts/speed-test.js", schedule: {:interval, 86_400_000}}
   ]
 
