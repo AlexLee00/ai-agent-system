@@ -25,6 +25,7 @@ const {
   buildSeverityTargets,
 } = require('../../../packages/core/lib/reporting-hub');
 const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
+const { buildWorkerCliInsight } = require('../lib/cli-insight.legacy');
 
 const SPAWN_LOG   = path.join(os.homedir(), '.openclaw', 'workspace', 'logs', 'claude-code-spawns.jsonl');
 const CONFIG_YAML = path.join(__dirname, '../../investment/config.yaml');
@@ -34,6 +35,13 @@ const monitorMemory = createAgentMemory({ agentId: 'worker.claude-api-monitor', 
 const ALERT_THRESHOLD_SPAWNS = 3;    // 1분 내 Claude Code 3회 이상 → 알림
 const ALERT_THRESHOLD_COST   = 0.01; // 1분 내 Anthropic 과금 $0.01 이상 → 알림
 const WINDOW_MS = 1 * 60 * 1000;    // 1분
+
+function buildMonitorFallbackInsight({ spawns, dbCost, hasAlert }) {
+  if (hasAlert) {
+    return `Claude 사용량이 임계 구간으로 올라와, 최근 spawn 급증과 Anthropic 과금 원인을 우선 점검해야 합니다.`;
+  }
+  return `최근 1분 Claude 사용량은 정상 범위이며, 추가 조치보다 추세 관찰이 적절합니다.`;
+}
 
 // ── config.yaml에서 ANTHROPIC_API_KEY 로드 ────────────────────────────
 function loadApiKey() {
@@ -194,7 +202,29 @@ async function main() {
     separator: 'newline',
   }).catch(() => '');
 
+  const aiSummary = await buildWorkerCliInsight({
+    bot: 'worker-claude-api-monitor',
+    requestType: 'worker-claude-api-monitor',
+    title: '워커 Claude API 사용량 모니터',
+    data: {
+      spawns,
+      dbCost: Number(dbCost.toFixed(4)),
+      hasAlert,
+      thresholdSpawns: ALERT_THRESHOLD_SPAWNS,
+      thresholdCost: ALERT_THRESHOLD_COST,
+      dbRows: dbRows.map((row) => ({
+        bot_name: row.bot_name,
+        model: row.model,
+        calls: row.calls,
+        cost_usd: row.cost_usd,
+      })),
+      anthropicStatus: anthropicRes?.status || null,
+    },
+    fallback: buildMonitorFallbackInsight({ spawns, dbCost, hasAlert }),
+  });
+
   if (hasAlert) lines.unshift(`🚨 *임계값 초과 감지!*`, ``);
+  lines.push('', `🔍 AI: ${aiSummary}`);
   if (episodicHint) lines.push('', ...episodicHint.trimStart().split('\n'));
   if (semanticHint) lines.push('', ...semanticHint.trimStart().split('\n'));
 

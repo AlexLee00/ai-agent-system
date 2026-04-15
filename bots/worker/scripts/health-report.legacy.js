@@ -29,6 +29,7 @@ const {
   buildResolvedWebhookHealth,
 } = require('../../../packages/core/lib/health-provider');
 const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
+const { buildWorkerCliInsight } = require('../lib/cli-insight.legacy');
 
 const CONTINUOUS = ['ai.worker.web', 'ai.worker.nextjs', 'ai.worker.lead', 'ai.worker.task-runner'];
 const ALL_SERVICES = ['ai.worker.web', 'ai.worker.nextjs', 'ai.worker.lead', 'ai.worker.task-runner'];
@@ -39,6 +40,17 @@ const N8N_HEALTH_URL = process.env.N8N_HEALTH_URL || n8nRuntimeConfig.healthUrl;
 const DEFAULT_WORKER_WEBHOOK_URL = process.env.N8N_WORKER_WEBHOOK || n8nRuntimeConfig.workerWebhookUrl;
 const HTTP_TIMEOUT_MS = Number(healthRuntimeConfig.httpTimeoutMs || 5000);
 const healthReportMemory = createAgentMemory({ agentId: 'worker.health-report', team: 'worker' });
+
+function buildWorkerHealthFallback(report) {
+  const serviceWarn = Number(report.serviceHealth?.warnCount || 0);
+  const endpointWarn = Number(report.endpointHealth?.warnCount || 0);
+  const intakeWarn = Number(report.n8nIntakeHealth?.warnCount || 0);
+
+  if (serviceWarn || endpointWarn || intakeWarn) {
+    return `워커 운영 경고 ${serviceWarn + endpointWarn + intakeWarn}건으로, launchd·엔드포인트·n8n intake 상태를 우선 점검해야 합니다.`;
+  }
+  return '워커 서비스와 intake 경로가 현재는 안정 구간이며, 추가 조치보다 관찰 유지가 적절합니다.';
+}
 
 function buildHealthReportMemoryQuery(report) {
   return [
@@ -152,6 +164,10 @@ function formatText(report) {
   return buildHealthReport({
     title: '🧰 워커 운영 헬스 리포트',
     sections: [
+      {
+        title: '■ AI 요약',
+        lines: [report.aiSummary || buildWorkerHealthFallback(report)],
+      },
       buildHealthCountSection('■ 서비스 상태', report.serviceHealth),
       buildHealthSampleSection('■ 정상 서비스 샘플', report.serviceHealth),
       buildHealthCountSection('■ 엔드포인트 상태', report.endpointHealth, { okLimit: 3 }),
@@ -248,6 +264,22 @@ async function buildReport() {
     episodicHint,
     semanticHint,
   };
+  report.aiSummary = await buildWorkerCliInsight({
+    bot: 'worker-health-report',
+    requestType: 'worker-health-report',
+    title: '워커 운영 헬스 리포트',
+    data: {
+      serviceWarnCount: report.serviceHealth.warnCount,
+      endpointWarnCount: report.endpointHealth.warnCount,
+      intakeWarnCount: report.n8nIntakeHealth.warnCount,
+      websocketClients: report.endpointHealth.websocketClients,
+      webhookRegistered: report.n8nIntakeHealth.webhookRegistered,
+      recommended: report.decision.recommended,
+      decisionLevel: report.decision.level,
+      reasons: report.decision.reasons,
+    },
+    fallback: buildWorkerHealthFallback(report),
+  });
 
   await healthReportMemory.remember(buildHealthReportMemorySummary(report), 'episodic', {
     importance: report.decision.recommended ? 0.72 : 0.6,
