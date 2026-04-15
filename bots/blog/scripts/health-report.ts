@@ -38,6 +38,9 @@ const runtimeConfig = getBlogHealthRuntimeConfig();
 const DAILY_LOG_STALE_MS = Number(runtimeConfig.dailyLogStaleMs || (36 * 60 * 60 * 1000));
 const NODE_SERVER_HEALTH_URL = runtimeConfig.nodeServerHealthUrl || 'http://127.0.0.1:3100/health';
 const N8N_HEALTH_URL = process.env.N8N_HEALTH_URL || runtimeConfig.n8nHealthUrl || 'http://127.0.0.1:5678/healthz';
+const IMAGE_PROVIDER = String(process.env.BLOG_IMAGE_PROVIDER || 'drawthings').toLowerCase();
+const IMAGE_BASE_URL = String(process.env.BLOG_IMAGE_BASE_URL || 'http://127.0.0.1:7860');
+const DRAWTHINGS_HEALTH_URL = new URL('/sdapi/v1/options', IMAGE_BASE_URL.endsWith('/') ? IMAGE_BASE_URL : `${IMAGE_BASE_URL}/`).toString();
 const DEFAULT_BLOG_WEBHOOK_URL = process.env.N8N_BLOG_WEBHOOK || runtimeConfig.blogWebhookUrl || 'http://127.0.0.1:5678/webhook/blog-pipeline';
 const TEAM_JAY_ROOT = path.join(env.PROJECT_ROOT, 'elixir', 'team_jay');
 
@@ -63,7 +66,7 @@ function extractJsonObjectText(output = '') {
 }
 
 async function buildNodeHealth() {
-  const checks = await buildHttpChecks([
+  const definitions = [
     {
       label: 'nodeServer',
       url: NODE_SERVER_HEALTH_URL,
@@ -82,13 +85,32 @@ async function buildNodeHealth() {
       okText: '  n8n healthz: 정상',
       warnText: '  n8n healthz: 응답 없음',
     },
-  ]);
+  ];
+
+  if (IMAGE_PROVIDER === 'drawthings' || IMAGE_PROVIDER === 'draw-things') {
+    definitions.push({
+      label: 'drawthings',
+      url: DRAWTHINGS_HEALTH_URL,
+      expectJson: true,
+      timeoutMs: 2500,
+      isOk: (data) => Boolean(data && typeof data === 'object'),
+      okText: `  drawthings API: 정상 (${new URL(DRAWTHINGS_HEALTH_URL).host})`,
+      warnText: `  drawthings API: 응답 없음 (${new URL(DRAWTHINGS_HEALTH_URL).host})`,
+    });
+  }
+
+  const checks = await buildHttpChecks(definitions);
+  const drawthingsConfigured = IMAGE_PROVIDER === 'drawthings' || IMAGE_PROVIDER === 'draw-things';
+  const drawthingsOk = drawthingsConfigured
+    ? Boolean(checks.results.drawthings && typeof checks.results.drawthings === 'object')
+    : null;
 
   return {
     ok: checks.ok,
     warn: checks.warn,
     nodeServerOk: Boolean(checks.results.nodeServer?.ok),
     n8nOk: checks.results.n8n?.status === 'ok',
+    drawthingsOk,
   };
 }
 
@@ -728,6 +750,11 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
         active: nodeHealth.warn.length > 0,
         level: 'medium',
         reason: `node-server/n8n 경고 ${nodeHealth.warn.length}건이 있어 실행 백엔드 상태 확인이 필요합니다.`,
+      },
+      {
+        active: IMAGE_PROVIDER === 'drawthings' && nodeHealth.drawthingsOk === false,
+        level: 'medium',
+        reason: 'drawthings 이미지 API 응답이 없어 블로그 이미지 생성 경로를 사용할 수 없습니다.',
       },
       {
         active: dailyRunHealth.warn.length > 0,
