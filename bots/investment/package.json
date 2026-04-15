@@ -60,6 +60,8 @@
     "runtime:autotune-readiness-history": "node scripts/runtime-autotune-readiness-history.ts",
     "runtime:min-order-pressure": "node scripts/runtime-min-order-pressure-report.ts",
     "runtime:min-order-pressure-history": "node scripts/runtime-min-order-pressure-history.ts",
+    "runtime:min-order-relief": "node scripts/runtime-min-order-relief-report.ts",
+    "runtime:min-order-relief-history": "node scripts/runtime-min-order-relief-history.ts",
     "runtime:parameter-governance": "node scripts/runtime-parameter-governance-report.ts",
     "runtime:position-reeval": "node scripts/position-reevaluation-report.ts",
     "runtime:position-reeval-summary": "node scripts/position-reevaluation-summary.ts",
