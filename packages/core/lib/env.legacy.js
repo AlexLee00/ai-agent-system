@@ -31,7 +31,7 @@
  *
  * 환경변수 우선순위:
  *   PROJECT_ROOT > ~/projects/ai-agent-system
- *   MODE         > 'dev'          ('ops' | 'dev')
+ *   MODE         > 'dev'          ('ops' | 'dev' | 'cli')
  *   PAPER_MODE   > 'true'         ('true' | 'false')
  *   NODE_ENV     > 'development'  ('production' | 'development' | 'test')
  */
@@ -96,13 +96,15 @@ function corePath(moduleName) {
 // ─── 환경 ────────────────────────────────────────────────────────────────
 
 const _raw_mode = (process.env.MODE || 'dev').toLowerCase().trim();
+const _mode_alias = { cli: 'dev' };
 const _valid_modes = ['ops', 'dev'];
-if (!_valid_modes.includes(_raw_mode)) {
+const _normalized_mode = _mode_alias[_raw_mode] || _raw_mode;
+if (!_valid_modes.includes(_normalized_mode)) {
   console.warn(`[env] ⚠️ 알 수 없는 MODE: "${_raw_mode}" — dev 로 처리`);
 }
 
 /** 현재 실행 모드 ('ops' | 'dev') */
-const MODE = _valid_modes.includes(_raw_mode) ? _raw_mode : 'dev';
+const MODE = _valid_modes.includes(_normalized_mode) ? _normalized_mode : 'dev';
 
 /** 운영 환경 여부 (MODE=ops) */
 const IS_OPS = MODE === 'ops';

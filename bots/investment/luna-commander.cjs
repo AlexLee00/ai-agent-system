@@ -81,7 +81,11 @@ const WITHDRAW_SCHED_FILE = path.join(os.homedir(), '.openclaw', 'workspace', 'w
 function acquireLock() {
   if (fs.existsSync(LOCK_PATH)) {
     const old = fs.readFileSync(LOCK_PATH, 'utf8').trim();
-    try { process.kill(Number(old), 0); console.error(`${BOT_NAME} 커맨더 이미 실행 중 (PID: ${old})`); process.exit(1); }
+    try {
+      process.kill(Number(old), 0);
+      console.log(`${BOT_NAME} 커맨더 이미 실행 중 (PID: ${old})`);
+      process.exit(0);
+    }
     catch { fs.unlinkSync(LOCK_PATH); }
   }
   fs.writeFileSync(LOCK_PATH, String(process.pid));
