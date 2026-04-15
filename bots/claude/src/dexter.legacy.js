@@ -378,9 +378,10 @@ async function main() {
     }
   }
 
-  // 종료 코드: 오류 있으면 1
-  const hasError = results.some(r => r.status === 'error');
-  process.exit(hasError ? 1 : 0);
+  // PortAgent는 "스크립트 실행 실패"와 "운영 이슈 발견"을 구분해야 한다.
+  // 덱스터는 점검 결과를 teamBus/event bus/텔레그램으로 이미 보고하므로,
+  // 정상 점검이 끝난 뒤에는 error findings가 있어도 exit 0으로 마무리한다.
+  process.exit(0);
 }
 
 // ─── 실행 분기 ──────────────────────────────────────────────────────
