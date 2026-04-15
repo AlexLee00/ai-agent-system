@@ -124,3 +124,24 @@
 3. remaining `rag.store(...)` matches are now mostly helper adapters, shared-client aliases, search-only consumers, or test/legacy paths; keep pruning non-current surfaces while reporting-hub remains the canonical current write path
 4. reporter/rebecca/night-handler 문구를 공용 notice/report formatter로 추가 통일
 5. canonical transport (`openclaw-client.ts`, `reporting-hub.ts`) 바깥 non-blog current delivery는 사실상 1차 정리 완료 상태로 유지
+
+## Current Output Insight Helpers
+
+reporting-hub 정리와 병행해서, human-facing CLI/report outputs에는 additive한 `aiSummary` / `🔍 AI:` helper rollout도 진행 중이다.
+
+- [bots/reservation/lib/cli-insight.ts](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/cli-insight.ts)
+  - pickko reservation/report/admin/diagnostic/payment outputs
+- [bots/investment/shared/cli-insight.ts](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/cli-insight.ts)
+  - balance/price/transfer outputs
+- [bots/worker/lib/cli-insight.legacy.js](/Users/alexlee/projects/ai-agent-system/bots/worker/lib/cli-insight.legacy.js)
+  - expense import / n8n intake outputs
+- [bots/video/lib/cli-insight.js](/Users/alexlee/projects/ai-agent-system/bots/video/lib/cli-insight.js)
+  - n8n path / final structure gap outputs
+- [bots/blog/lib/cli-insight.ts](/Users/alexlee/projects/ai-agent-system/bots/blog/lib/cli-insight.ts)
+  - n8n pipeline / weekly evolution / performance outputs
+
+공통 규칙:
+- 기존 JSON/텍스트 계약 유지
+- `aiSummary` 또는 `🔍 AI:`를 additive하게 부착
+- `team / gemma-insight` runtime 사용
+- sanitize + deterministic fallback 포함

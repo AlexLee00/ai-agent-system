@@ -85,6 +85,23 @@
 
 즉 blog current fanout을 별도 배치로 다루면, non-blog current delivery는 사실상 reporting-hub rail 정리 1차가 닫힌 상태다.
 
+최근 reinforcement 배치에서는 delivery fanout 자체와 별개로, human-facing output에도 additive한 요약 레일을 깔고 있다.
+- reservation: `bots/reservation/lib/cli-insight.ts`
+- investment: `bots/investment/shared/cli-insight.ts`
+- worker: `bots/worker/lib/cli-insight.legacy.js`
+- video: `bots/video/lib/cli-insight.js`
+- blog: `bots/blog/lib/cli-insight.ts`
+
+이 helper들은 reporting-hub를 직접 대체하지는 않지만, 같은 `team / gemma-insight` 런타임을 통해
+- 한 줄 AI 요약
+- sanitize
+- deterministic fallback
+을 공통화하고, JSON/텍스트 결과 표면에 additive하게 얹는다.
+
+즉 현재 shared reinforcement는 두 축으로 진행 중이다.
+- delivery canonicalization: reporting-hub
+- operator-facing output reinforcement: team CLI insight helpers
+
 ## Next Extraction Targets
 
 1. RAG 저장 연동
