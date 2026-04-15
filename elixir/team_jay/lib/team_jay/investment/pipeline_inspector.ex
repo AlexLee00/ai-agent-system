@@ -11,11 +11,14 @@ defmodule TeamJay.Investment.PipelineInspector do
     %{
       pipeline: lookup({:investment_symbol_pipeline, exchange, symbol}),
       streamer: lookup({:investment_streamer, exchange, symbol}),
+      price_watcher: lookup({:investment_price_watcher, exchange, symbol}),
       indicator: lookup({:investment_indicator, symbol}),
       analysts: inspect_analysts(symbol),
       decision: lookup({:investment_decision, symbol}),
       risk: lookup({:investment_risk, symbol}),
       execution: lookup({:investment_execution, symbol}),
+      position_manager: lookup({:investment_position_manager, symbol}),
+      condition_checker: lookup({:investment_condition_checker, symbol}),
       feedback: lookup({:investment_feedback_realtime, symbol})
     }
   end

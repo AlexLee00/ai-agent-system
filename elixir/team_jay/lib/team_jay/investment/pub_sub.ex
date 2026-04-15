@@ -33,4 +33,19 @@ defmodule TeamJay.Investment.PubSub do
     TeamJay.Investment.Topics.indicators(symbol)
     |> broadcast(indicator_payload)
   end
+
+  def broadcast_price_tick(symbol, tick_payload) do
+    TeamJay.Investment.Topics.price_ticks(symbol)
+    |> broadcast(tick_payload)
+  end
+
+  def broadcast_position_state(symbol, position_payload) do
+    TeamJay.Investment.Topics.position_state(symbol)
+    |> broadcast(position_payload)
+  end
+
+  def broadcast_condition_check(symbol, condition_payload) do
+    TeamJay.Investment.Topics.condition_checks(symbol)
+    |> broadcast(condition_payload)
+  end
 end

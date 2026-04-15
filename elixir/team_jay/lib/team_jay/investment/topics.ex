@@ -8,10 +8,13 @@ defmodule TeamJay.Investment.Topics do
 
   def market_events(market), do: "investment:market_events:#{market}"
   def trade_events(symbol), do: "investment:trade_events:#{symbol}"
+  def price_ticks(symbol), do: "investment:price_ticks:#{symbol}"
   def indicators(symbol), do: "investment:indicators:#{symbol}"
   def analysis(symbol), do: "investment:analysis:#{symbol}"
   def signal(symbol), do: "investment:signal:#{symbol}"
   def approved_signal(symbol), do: "investment:approved_signal:#{symbol}"
   def trade_result(symbol), do: "investment:trade_result:#{symbol}"
+  def position_state(symbol), do: "investment:position_state:#{symbol}"
+  def condition_checks(symbol), do: "investment:condition_checks:#{symbol}"
   def feedback(symbol), do: "investment:feedback:#{symbol}"
 end
