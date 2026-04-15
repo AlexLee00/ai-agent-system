@@ -9,6 +9,7 @@
 const pgPool = require('../../../../packages/core/lib/pg-pool');
 const { parseArgs } = require('../../lib/args');
 const { outputResult, fail } = require('../../lib/cli');
+const { buildReservationCliInsight } = require('../../lib/cli-insight');
 
 const SCHEMA = 'reservation';
 const ARGS = parseArgs(process.argv);
@@ -215,7 +216,26 @@ function resolveRange(): RangeInfo {
     const slotStats = calcSlotOccupancy(rows, dates, rooms);
 
     const msg = formatReport(label, roomStats, slotStats, rows.length, dates.length);
-    outputResult({ success: true, message: msg });
+    const aiSummary = await buildReservationCliInsight({
+      bot: 'occupancy-report',
+      requestType: 'occupancy-report',
+      title: '룸별·시간대별 가동률 리포트',
+      data: {
+        label,
+        days: dates.length,
+        reservationCount: rows.length,
+        roomStats: roomStats.map((row) => ({ room: row.room, rate: Number(row.rate.toFixed(1)) })),
+        peakSlots: slotStats
+          .filter((slot) => slot.rate > 0)
+          .sort((a, b) => b.rate - a.rate)
+          .slice(0, 3)
+          .map((slot) => ({ slot: slot.slotH, rate: Number(slot.rate.toFixed(1)) })),
+      },
+      fallback: rows.length > 0
+        ? `최근 ${dates.length}일 기준 가동률 흐름이 정리돼 피크 시간대와 저활용 룸을 바로 비교하기 좋습니다.`
+        : `집계 기간에 예약 데이터가 없어 가동률보다는 수집 상태를 먼저 확인하는 편이 좋습니다.`,
+    });
+    outputResult({ success: true, message: msg, aiSummary });
     process.exit(0);
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e);
