@@ -32,6 +32,7 @@ async function getInstagramConfig() {
   const tokenConfig = getInstagramTokenConfig();
   const accessToken = hubData?.access_token || storeData?.access_token || tokenConfig.accessToken || '';
   const igUserId = hubData?.ig_user_id || storeData?.ig_user_id || tokenConfig.igUserId || '';
+  const pageId = hubData?.page_id || storeData?.page_id || tokenConfig.pageId || '';
   const appId = hubData?.app_id || storeData?.app_id || tokenConfig.appId || '';
   const appSecret = hubData?.app_secret || storeData?.app_secret || tokenConfig.appSecret || '';
   const businessAccountId = hubData?.business_account_id || storeData?.business_account_id || tokenConfig.businessAccountId || '';
@@ -46,6 +47,7 @@ async function getInstagramConfig() {
   return {
     accessToken,
     igUserId,
+    pageId,
     appId,
     appSecret,
     businessAccountId,

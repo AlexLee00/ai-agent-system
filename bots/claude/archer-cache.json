@@ -1,7 +1,7 @@
 {
-  "lastRun": "2026-04-13",
+  "lastRun": "2026-04-15",
   "versions": {
-    "@anthropic-ai/sdk": "0.88.0",
+    "@anthropic-ai/sdk": "0.89.0",
     "@modelcontextprotocol/sdk": "1.29.0",
     "groq-sdk": "1.1.2",
     "duckdb": "1.4.4",
@@ -10,9 +10,9 @@
     "playwright": "1.59.1"
   },
   "lastAnalysis": {
-    "summary": "이번 주 패치 검토 1순위는 axios입니다. 연구 관찰 1순위는 'ALTK-Evolve: On-the-Job Learning for AI Agents'입니다. 웹 하이라이트는 'Our response to the Axios developer tool compromise'입니다. 이번 주 최우선 조치는 axios SSRF critical 취약점 즉시 패치 — 내부 Hub·DB 엔드포인트 노출 위험으로 금일 중 npm audit fix 실행 필요. 루나팀 실투자 사용 패키지(ccxt 4.5.48)와 @anthropic-ai/sdk(0.88.0) 마이너 업그레이드도 이번 주 내 완료 권장. 기술 트렌드 측면에서는 ALTK-Evolve 온더잡 에이전트 학습과 멀티모달 임베딩 강화가 덱스터·닥터·에디팀 업그레이드에 직접 적용 가능한 유망 기법으로 주목됨.",
-    "patchCount": 7,
-    "securityCount": 2,
+    "summary": "이번 주 패치 검토 1순위는 groq-sdk입니다. 연구 관찰 1순위는 'ALTK-Evolve: On-the-Job Learning for AI Agents'입니다. 웹 하이라이트는 'Breaking AI agents; MirrorCode; ten views on gradual disempowerment'입니다. 이번 주 최우선 조치는 axios critical SSRF 취약점으로, Hub 경유 외부 요청 코드 전체를 즉시 점검하고 패치해야 합니다. @anthropic-ai/sdk 0.89.0 업그레이드와 claude-code v2.1.108 갱신도 이번 주 내 DEV 환경에서 적용을 권장합니다. ALTK-Evolve(에이전트 온더잡 러닝)와 Import AI 453(에이전트 공격 기법)은 덱스터·닥터 고도화 및 가디언 신설 설계에 즉시 활용 가치가 높습니다.",
+    "patchCount": 6,
+    "securityCount": 3,
     "llmApiCount": 4
   }
 }

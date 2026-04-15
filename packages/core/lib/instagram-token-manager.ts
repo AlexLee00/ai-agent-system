@@ -62,6 +62,7 @@ function getInstagramTokenConfig() {
   return {
     accessToken: String(storeData?.access_token || process.env.INSTAGRAM_GRAPH_ACCESS_TOKEN || '').trim(),
     igUserId: String(storeData?.ig_user_id || process.env.INSTAGRAM_GRAPH_IG_USER_ID || '').trim(),
+    pageId: String(storeData?.page_id || process.env.FACEBOOK_PAGE_ID || '').trim(),
     appId: String(storeData?.app_id || process.env.INSTAGRAM_APP_ID || '').trim(),
     appSecret: String(storeData?.app_secret || process.env.INSTAGRAM_APP_SECRET || '').trim(),
     businessAccountId: String(storeData?.business_account_id || process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID || '').trim(),
@@ -85,6 +86,7 @@ function getTokenHealth(config = getInstagramTokenConfig()) {
   return {
     hasAccessToken: Boolean(config.accessToken),
     hasIgUserId: Boolean(config.igUserId),
+    hasPageId: Boolean(config.pageId),
     hasAppId: Boolean(config.appId),
     hasAppSecret: Boolean(config.appSecret),
     tokenExpiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
