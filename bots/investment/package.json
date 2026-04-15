@@ -62,6 +62,8 @@
     "runtime:escalate-candidates-history": "node scripts/runtime-escalate-candidates-history.ts",
     "runtime:remodel-closeout": "node scripts/remodel-closeout-report.ts",
     "runtime:remodel-closeout-history": "node scripts/remodel-closeout-history.ts",
+    "runtime:remodel-blockers": "node scripts/remodel-blockers-report.ts",
+    "runtime:remodel-blockers-history": "node scripts/remodel-blockers-history.ts",
     "runtime:min-order-pressure": "node scripts/runtime-min-order-pressure-report.ts",
     "runtime:min-order-pressure-history": "node scripts/runtime-min-order-pressure-history.ts",
     "runtime:min-order-relief": "node scripts/runtime-min-order-relief-report.ts",
