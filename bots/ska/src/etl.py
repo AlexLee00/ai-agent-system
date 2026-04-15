@@ -16,6 +16,7 @@ launchd: 매일 00:30 (ai.ska.etl)
 import sys
 import os
 import json
+import subprocess
 import psycopg2
 from psycopg2.extras import DictCursor
 from datetime import datetime, timedelta, date as date_type
@@ -25,6 +26,8 @@ from bots.ska.lib.feature_store import ensure_training_feature_table, sync_train
 
 PG_RES = "dbname=jay options='-c search_path=reservation,public'"
 PG_SKA = "dbname=jay options='-c search_path=ska,public'"
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..'))
+GEMMA_PILOT_CLI = os.path.join(PROJECT_ROOT, 'packages', 'core', 'scripts', 'gemma-pilot-cli.js')
 
 # 영업시간: 09~22시, 룸 3개 → 하루 최대 39시간
 BIZ_START_H = 9
@@ -77,6 +80,52 @@ def _run(con, sql, params=()):
     cur.execute(sql, params)
     cur.close()
     con.commit()
+
+
+def sanitize_insight_line(raw_text):
+    if not raw_text:
+        return ''
+
+    blocked_prefixes = (
+        '<|channel>',
+        'Thinking Process',
+        'Thinking process',
+        'Analyze',
+        'Calculation',
+        '1.',
+        '2.',
+        '3.',
+        '4.',
+        '5.',
+        '*',
+        '-',
+    )
+
+    candidates = []
+    for line in str(raw_text).splitlines():
+        text = line.strip()
+        if not text:
+            continue
+        if text.startswith(blocked_prefixes):
+            continue
+        if any('가' <= ch <= '힣' for ch in text):
+            candidates.append(text)
+
+    if not candidates:
+        return ''
+
+    best = candidates[-1]
+    if len(best) > 120:
+        return ''
+    return best
+
+
+def build_etl_fallback_insight(upserted, synced, total_rows, nonzero):
+    if upserted <= 0:
+        return '이번 ETL 실행에서는 새로 반영된 일별 매출 데이터가 없습니다.'
+    if synced >= max(10, upserted):
+        return f'매출 집계 {upserted}건 반영과 feature store {synced}행 동기화가 안정적으로 완료되었습니다.'
+    return f'매출 집계 {upserted}건이 반영되었고 현재 revenue_daily에는 {total_rows}행, 유효 매출일 {nonzero}일이 누적되어 있습니다.'
 
 
 # ─── MAPE 추적 ──────────────────────────────────────────────────────────────────
@@ -256,6 +305,42 @@ def run_etl(days_back=90):
         print('[ETL] 최근 5일:')
         for p in preview:
             print(f'  {p[0]}  매출={p[1]:,}원  가동률={p[2]*100:.1f}%  예약={p[3]}건')
+
+        insight = ''
+        try:
+            prompt = f"""당신은 스터디카페 데이터 운영 분석가입니다.
+이번 ETL 반영 건수: {upserted}
+feature store 동기화 행수: {synced}
+revenue_daily 총 행수: {total_rows}
+매출 기록 있는 날 수: {nonzero}
+
+ETL 실행 결과를 한국어 1줄로 간결하게 작성하세요."""
+            proc = subprocess.run(
+                [
+                    'node',
+                    GEMMA_PILOT_CLI,
+                    '--team=ska',
+                    '--purpose=gemma-insight',
+                    '--bot=etl',
+                    '--requestType=etl-insight',
+                    '--maxTokens=150',
+                    '--temperature=0.7',
+                    '--timeoutMs=20000',
+                ],
+                input=prompt,
+                capture_output=True,
+                text=True,
+                timeout=22,
+                cwd=PROJECT_ROOT,
+            )
+            insight = sanitize_insight_line((proc.stdout or '').strip())
+        except Exception as e:
+            print(f'[ETL] gemma 인사이트 생략: {e}', file=sys.stderr)
+
+        if not insight:
+            insight = build_etl_fallback_insight(upserted, synced, total_rows, nonzero)
+        if insight:
+            print(f'[ETL] 🔍 AI: {insight}')
 
         return upserted
     finally:
