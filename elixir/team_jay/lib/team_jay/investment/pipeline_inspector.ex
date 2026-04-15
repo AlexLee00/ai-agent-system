@@ -24,6 +24,8 @@ defmodule TeamJay.Investment.PipelineInspector do
       runtime_override_store: lookup({:investment_runtime_override_store, symbol}),
       agent_memory: lookup({:investment_agent_memory, symbol}),
       self_reflection: lookup({:investment_self_reflection, symbol}),
+      market_mode_selector: lookup({:investment_market_mode_selector, symbol}),
+      strategy_profile_manager: lookup({:investment_strategy_profile_manager, symbol}),
       feedback: lookup({:investment_feedback_realtime, symbol})
     }
   end

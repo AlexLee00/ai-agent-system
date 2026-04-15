@@ -183,4 +183,32 @@ defmodule TeamJay.Investment.Events do
       Map.new(attrs)
     )
   end
+
+  def market_mode(symbol, attrs \\ %{}) do
+    Map.merge(
+      %{
+        symbol: symbol,
+        source: :market_mode_selector_scaffold,
+        mode: :swing,
+        horizon: :mid_term,
+        rationale: :stable_pattern,
+        selected_at: DateTime.utc_now()
+      },
+      Map.new(attrs)
+    )
+  end
+
+  def strategy_profile(symbol, attrs \\ %{}) do
+    Map.merge(
+      %{
+        symbol: symbol,
+        source: :strategy_profile_manager_scaffold,
+        profile: :balanced,
+        trade_style: :hold,
+        parameter_set: %{},
+        selected_at: DateTime.utc_now()
+      },
+      Map.new(attrs)
+    )
+  end
 end
