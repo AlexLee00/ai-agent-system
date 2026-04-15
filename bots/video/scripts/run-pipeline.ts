@@ -32,6 +32,7 @@ const { indexVideo } = require('../lib/scene-indexer');
 const { parseSrt, analyzeSegments } = require('../lib/narration-analyzer');
 const { buildSyncMap, syncMapToEDL } = require('../lib/sync-matcher');
 const { processIntroOutro } = require('../lib/intro-outro-handler');
+const { buildVideoCliInsight } = require('../lib/cli-insight.js');
 
 const BOT_NAME = 'video';
 const TEAM_NAME = 'video';
@@ -220,6 +221,13 @@ function sanitizeTitle(title) {
     .replace(/[\\/:*?"<>|]/g, '_')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function buildPipelineFallbackInsight({ kind, title, step = '', totalMs = 0, error = '' }) {
+  if (kind === 'failed') {
+    return `${title || '비디오 파이프라인'}가 ${step || 'unknown'} 단계에서 멈춰, 입력 자산과 해당 단계 오류를 우선 확인해야 합니다.`;
+  }
+  return `${title || '비디오 파이프라인'}가 정상 완료되어 결과물 검수와 후속 발행 단계로 넘어갈 수 있습니다 (${Math.round(totalMs / 1000)}초).`;
 }
 
 function printBanner(title) {
@@ -741,6 +749,21 @@ async function main() {
       const totalMs = Date.now() - startedAt;
       const outputDurationMs = await probeDurationMs(renderResult.outputPath);
       const outputSizeMb = Number((renderResult.fileSize / 1024 / 1024).toFixed(2));
+      const aiSummary = await buildVideoCliInsight({
+        bot: 'video-pipeline',
+        requestType: 'video-pipeline',
+        title: '비디오 파이프라인 완료',
+        data: {
+          title: titleForMessage,
+          totalMs,
+          renderMs,
+          outputPath: renderResult.outputPath,
+          outputSizeMb,
+          outputDurationMs,
+          traceId,
+        },
+        fallback: buildPipelineFallbackInsight({ kind: 'completed', title: titleForMessage, totalMs }),
+      });
 
       await updateVideoEdit(recordId, {
         output_path: renderResult.outputPath,
@@ -763,9 +786,11 @@ async function main() {
             `제목: ${titleForMessage}`,
             `파일: ${renderResult.outputPath}`,
             `총 시간: ${totalMs}ms`,
+            `🔍 AI: ${aiSummary}`,
           ].join('\n'),
         },
       });
+      console.log(`🔍 AI: ${aiSummary}`);
       try {
         await pipelineMemory.remember(
           [
@@ -834,6 +859,19 @@ async function main() {
     } catch (error) {
       const message = toErrorMessage(error);
       const totalMs = Date.now() - startedAt;
+      const aiSummary = await buildVideoCliInsight({
+        bot: 'video-pipeline',
+        requestType: 'video-pipeline',
+        title: '비디오 파이프라인 실패',
+        data: {
+          title: titleForMessage,
+          step: currentStep,
+          totalMs,
+          error: message,
+          traceId,
+        },
+        fallback: buildPipelineFallbackInsight({ kind: 'failed', title: titleForMessage, step: currentStep, error: message }),
+      });
       await updateVideoEdit(recordId, {
         total_ms: totalMs,
         draft_path: draftPath,
@@ -872,6 +910,7 @@ async function main() {
         console.warn('[video] agent memory 실패 기록 저장 실패 (무시):', toErrorMessage(memoryError));
       }
       await notifyFailure('run-pipeline', titleForMessage, error);
+      console.error(`🔍 AI: ${aiSummary}`);
       await logToolCall('video_pipeline', 'run_pipeline', {
         bot: BOT_NAME,
         success: false,
