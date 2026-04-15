@@ -18,6 +18,7 @@ defmodule TeamJay.Investment.Phase5FullSuite do
   alias TeamJay.Investment.Phase5ModeReport
   alias TeamJay.Investment.Phase5ModePersistenceReport
   alias TeamJay.Investment.Phase5ResourceReport
+  alias TeamJay.Investment.Phase5ResourcePersistenceReport
   alias TeamJay.Investment.Phase5AutonomyReport
   alias TeamJay.Investment.Phase5ResourceHealthReport
 
@@ -34,6 +35,7 @@ defmodule TeamJay.Investment.Phase5FullSuite do
     modes = Phase5ModeReport.run_defaults(opts)
     mode_persistence = Phase5ModePersistenceReport.run_defaults(opts)
     resources = Phase5ResourceReport.run_defaults(opts)
+    resource_persistence = Phase5ResourcePersistenceReport.run_defaults(opts)
     autonomy = Phase5AutonomyReport.run_defaults(opts)
     resource_health = Phase5ResourceHealthReport.run_defaults(opts)
 
@@ -52,6 +54,7 @@ defmodule TeamJay.Investment.Phase5FullSuite do
           modes.result.all_ok,
           mode_persistence.result.all_ok,
           resources.result.all_ok,
+          resource_persistence.result.all_ok,
           autonomy.result.all_ok,
           resource_health.result.all_ok
         ],
@@ -73,6 +76,7 @@ defmodule TeamJay.Investment.Phase5FullSuite do
         phase5_e: modes.result,
         phase5_e_db: mode_persistence.result,
         phase5_5_8: resources.result,
+        phase5_5_8_db: resource_persistence.result,
         phase5_5_9: autonomy.result,
         phase5_resource_health: resource_health.result
       }

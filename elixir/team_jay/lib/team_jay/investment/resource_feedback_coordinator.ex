@@ -8,9 +8,11 @@ defmodule TeamJay.Investment.ResourceFeedbackCoordinator do
 
   use GenServer
 
+  alias Ecto.Adapters.SQL
   alias TeamJay.Investment.Events
   alias TeamJay.Investment.PubSub
   alias TeamJay.Investment.Topics
+  alias TeamJay.Repo
 
   def start_link(opts) do
     symbol = Keyword.fetch!(opts, :symbol)
@@ -24,6 +26,7 @@ defmodule TeamJay.Investment.ResourceFeedbackCoordinator do
   @impl true
   def init(opts) do
     symbol = Keyword.fetch!(opts, :symbol)
+    ensure_table!()
 
     Enum.each(
       [
@@ -45,7 +48,10 @@ defmodule TeamJay.Investment.ResourceFeedbackCoordinator do
        update_count: 0,
        last_ready_resources: 0,
        last_recommendation: :observe,
-       last_summarized_at: nil
+       last_summarized_at: nil,
+       persisted_count: 0,
+       last_persist_status: :idle,
+       last_persisted_at: nil
      }}
   end
 
@@ -57,7 +63,10 @@ defmodule TeamJay.Investment.ResourceFeedbackCoordinator do
        update_count: state.update_count,
        last_ready_resources: state.last_ready_resources,
        last_recommendation: state.last_recommendation,
-       last_summarized_at: state.last_summarized_at
+       last_summarized_at: state.last_summarized_at,
+       persisted_count: state.persisted_count,
+       last_persist_status: state.last_persist_status,
+       last_persisted_at: state.last_persisted_at
      }, state}
   end
 
@@ -102,6 +111,8 @@ defmodule TeamJay.Investment.ResourceFeedbackCoordinator do
         strategy_profile: state.last_profile
       )
 
+    {persisted_count, persist_status, persisted_at} = persist_snapshot(state.symbol, snapshot)
+
     PubSub.broadcast_resource_feedback(state.symbol, {:resource_feedback, snapshot})
 
     %{
@@ -109,7 +120,10 @@ defmodule TeamJay.Investment.ResourceFeedbackCoordinator do
       | update_count: state.update_count + 1,
         last_ready_resources: ready_resources,
         last_recommendation: recommendation,
-        last_summarized_at: snapshot.summarized_at
+        last_summarized_at: snapshot.summarized_at,
+        persisted_count: state.persisted_count + persisted_count,
+        last_persist_status: persist_status,
+        last_persisted_at: persisted_at
     }
   end
 
@@ -125,4 +139,101 @@ defmodule TeamJay.Investment.ResourceFeedbackCoordinator do
       onchain: %{ready: true, status: :watch_enabled, rationale: :resource_loop}
     }
   end
+
+  defp ensure_table! do
+    SQL.query!(Repo, "CREATE SCHEMA IF NOT EXISTS investment", [])
+
+    SQL.query!(
+      Repo,
+      """
+      CREATE TABLE IF NOT EXISTS investment.resource_feedback_events (
+        id BIGSERIAL PRIMARY KEY,
+        symbol TEXT NOT NULL,
+        ready_resources INTEGER NOT NULL DEFAULT 0,
+        recommendation TEXT NOT NULL,
+        resources JSONB NOT NULL DEFAULT '{}'::jsonb,
+        feedback JSONB NOT NULL DEFAULT '{}'::jsonb,
+        runtime_override JSONB NOT NULL DEFAULT '{}'::jsonb,
+        memory_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+        strategy_profile JSONB NOT NULL DEFAULT '{}'::jsonb,
+        payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+        summarized_at TIMESTAMPTZ NOT NULL,
+        inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+      """,
+      []
+    )
+
+    SQL.query!(
+      Repo,
+      """
+      CREATE INDEX IF NOT EXISTS resource_feedback_events_symbol_summarized_at_idx
+      ON investment.resource_feedback_events (symbol, summarized_at DESC)
+      """,
+      []
+    )
+  end
+
+  defp persist_snapshot(symbol, snapshot) do
+    now = DateTime.utc_now()
+
+    case SQL.query(
+           Repo,
+           """
+           INSERT INTO investment.resource_feedback_events (
+             symbol,
+             ready_resources,
+             recommendation,
+             resources,
+             feedback,
+             runtime_override,
+             memory_snapshot,
+             strategy_profile,
+             payload,
+             summarized_at,
+             inserted_at
+           )
+           VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb, $9::jsonb, $10, $11)
+           """,
+           [
+             symbol,
+             snapshot.ready_resources,
+             Atom.to_string(snapshot.recommendation),
+             Jason.encode!(json_ready(snapshot.resources)),
+             Jason.encode!(json_ready(Map.get(snapshot, :feedback, %{}))),
+             Jason.encode!(json_ready(Map.get(snapshot, :runtime_override, %{}))),
+             Jason.encode!(json_ready(Map.get(snapshot, :memory_snapshot, %{}))),
+             Jason.encode!(json_ready(Map.get(snapshot, :strategy_profile, %{}))),
+             Jason.encode!(json_ready(snapshot)),
+             snapshot.summarized_at,
+             now
+           ]
+         ) do
+      {:ok, %{num_rows: num_rows}} when num_rows > 0 ->
+        {num_rows, :persisted, now}
+
+      {:ok, _result} ->
+        {0, :noop, nil}
+
+      {:error, _reason} ->
+        {0, :error, nil}
+    end
+  end
+
+  defp json_ready(%DateTime{} = value), do: DateTime.to_iso8601(value)
+  defp json_ready(%NaiveDateTime{} = value), do: NaiveDateTime.to_iso8601(value)
+  defp json_ready(%Date{} = value), do: Date.to_iso8601(value)
+  defp json_ready(%Time{} = value), do: Time.to_iso8601(value)
+  defp json_ready(%_{} = struct), do: struct |> Map.from_struct() |> json_ready()
+  defp json_ready(map) when is_map(map), do: Map.new(map, fn {k, v} -> {json_key(k), json_ready(v)} end)
+  defp json_ready(list) when is_list(list), do: Enum.map(list, &json_ready/1)
+  defp json_ready(tuple) when is_tuple(tuple), do: tuple |> Tuple.to_list() |> Enum.map(&json_ready/1)
+  defp json_ready(atom) when is_atom(atom), do: Atom.to_string(atom)
+  defp json_ready(pid) when is_pid(pid), do: inspect(pid)
+  defp json_ready(reference) when is_reference(reference), do: inspect(reference)
+  defp json_ready(function) when is_function(function), do: inspect(function)
+  defp json_ready(value), do: value
+
+  defp json_key(key) when is_atom(key), do: Atom.to_string(key)
+  defp json_key(key), do: key
 end
