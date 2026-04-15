@@ -25,6 +25,7 @@ import { tracker }      from '../shared/cost-tracker.ts';
 import { buildAccuracyReport } from '../shared/analyst-accuracy.ts';
 import { buildScreeningHistoryReport } from '../scripts/screening-history-report.ts';
 import { buildPositionReevaluationSummary } from '../scripts/position-reevaluation-summary.ts';
+import { buildRuntimeMinOrderPressureReport } from '../scripts/runtime-min-order-pressure-report.ts';
 
 const _require = createRequire(import.meta.url);
 const shadow   = _require('../../../packages/core/lib/shadow-mode.js');
@@ -371,6 +372,20 @@ async function loadPositionReevaluationSummary() {
   }
 }
 
+async function loadMinOrderPressureSummary() {
+  try {
+    return await buildRuntimeMinOrderPressureReport({
+      market: 'kis',
+      days: 14,
+      json: true,
+    });
+  } catch (error) {
+    return {
+      error: String(error?.message || error),
+    };
+  }
+}
+
 function buildScreeningSummaryLines(screeningSummary = {}) {
   const lines = [];
   for (const market of ['crypto', 'domestic', 'overseas']) {
@@ -403,12 +418,25 @@ function buildPositionReevaluationLines(reevaluationSummary = null) {
   return lines;
 }
 
+function buildMinOrderPressureLines(minOrderPressureSummary = null) {
+  if (!minOrderPressureSummary) return ['조회 결과 없음'];
+  if (minOrderPressureSummary.error) return ['조회 실패'];
+  if (!minOrderPressureSummary.decision) return ['결과 없음'];
+  const decision = minOrderPressureSummary.decision || {};
+  const lines = [`${decision.status}: ${decision.headline}`];
+  if (Array.isArray(decision.reasons)) {
+    lines.push(...decision.reasons.slice(0, 3));
+  }
+  return lines;
+}
+
 // ─── 리포트 생성 ─────────────────────────────────────────────────────
 
 export async function generateReport({ days = 30, telegram = false } = {}) {
   await initHubSecrets().catch(() => false);
   const screeningSummary = await loadScreeningSummary();
   const reevaluationSummary = await loadPositionReevaluationSummary();
+  const minOrderPressureSummary = await loadMinOrderPressureSummary();
   let dbAvailable = true;
   try {
     await db.initSchema();
@@ -442,6 +470,9 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
       '',
       '━━━ 포지션 재평가 ━━━',
       ...buildPositionReevaluationLines(reevaluationSummary).map((line) => `  ${line}`),
+      '',
+      '━━━ 최소 주문 병목 ━━━',
+      ...buildMinOrderPressureLines(minOrderPressureSummary).map((line) => `  ${line}`),
       '',
       '━━━ 상태 ━━━',
       '  DB 미연결로 신호/거래 통계는 생략',
@@ -616,6 +647,10 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
   lines.push(...buildPositionReevaluationLines(reevaluationSummary).map((line) => `  ${line}`));
   lines.push(``);
 
+  lines.push(`━━━ 최소 주문 병목 ━━━`);
+  lines.push(...buildMinOrderPressureLines(minOrderPressureSummary).map((line) => `  ${line}`));
+  lines.push(``);
+
   // 자산 추이 (스냅샷 2개 이상일 때)
   if (equityHistory.length >= 2) {
     lines.push(`━━━ 자산 추이 ━━━`);
@@ -760,6 +795,11 @@ ${JSON.stringify({
     adjusts: Number(reevaluationSummary.decision.metrics?.adjusts || 0),
     exits: Number(reevaluationSummary.decision.metrics?.exits || 0),
   } : null,
+  minOrderPressure: minOrderPressureSummary?.decision ? {
+    status: minOrderPressureSummary.decision.status,
+    headline: minOrderPressureSummary.decision.headline,
+    reasons: minOrderPressureSummary.decision.reasons || [],
+  } : null,
 }, null, 2).slice(0, 2000)}`;
 
     const insight = await generateGemmaPilotText({
@@ -857,6 +897,7 @@ ${JSON.stringify({
         ]),
         buildSection('스크리닝 동향', buildScreeningSummaryLines(screeningSummary)),
         buildSection('포지션 재평가', buildPositionReevaluationLines(reevaluationSummary)),
+        buildSection('최소 주문 병목', buildMinOrderPressureLines(minOrderPressureSummary)),
         buildSection(`신호 통계 (${days}일)`, buildSignalStatsLines({ days, sigTotal, sigExec, sigApproved, sigFailed })),
         buildSection('AI 요약', [aiSummary]),
       ],
@@ -875,6 +916,9 @@ ${JSON.stringify({
           `실행 ${sigExec}개 / 승인대기 ${sigApproved}개 / 실패 ${sigFailed}개`,
           reevaluationSummary?.decision
             ? `재평가 ${reevaluationSummary.decision.status} / EXIT ${reevaluationSummary.decision.metrics?.exits || 0}`
+            : null,
+          minOrderPressureSummary?.decision
+            ? `최소주문 ${minOrderPressureSummary.decision.status}`
             : null,
         ].filter(Boolean),
       },
