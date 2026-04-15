@@ -10,6 +10,7 @@ defmodule TeamJay.Investment.Phase5FullSuite do
   alias TeamJay.Investment.Phase5LoopReport
   alias TeamJay.Investment.Phase5StrategyReport
   alias TeamJay.Investment.Phase5OverrideReport
+  alias TeamJay.Investment.Phase5CircuitReport
   alias TeamJay.Investment.Phase5MemoryReport
   alias TeamJay.Investment.Phase5ModeReport
 
@@ -18,6 +19,7 @@ defmodule TeamJay.Investment.Phase5FullSuite do
     loop = Phase5LoopReport.run_defaults(opts)
     strategy = Phase5StrategyReport.run_defaults(opts)
     overrides = Phase5OverrideReport.run_defaults(opts)
+    circuit = Phase5CircuitReport.run_defaults(opts)
     memory = Phase5MemoryReport.run_defaults(opts)
     modes = Phase5ModeReport.run_defaults(opts)
 
@@ -28,6 +30,7 @@ defmodule TeamJay.Investment.Phase5FullSuite do
           loop.all_ok,
           strategy.result.all_ok,
           overrides.result.all_ok,
+          circuit.result.all_ok,
           memory.result.all_ok,
           modes.result.all_ok
         ],
@@ -41,6 +44,7 @@ defmodule TeamJay.Investment.Phase5FullSuite do
         phase5_b: loop,
         phase5_c: strategy.result,
         phase5_5_4: overrides.result,
+        phase5_5_5: circuit.result,
         phase5_d: memory.result,
         phase5_e: modes.result
       }

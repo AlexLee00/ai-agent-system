@@ -154,6 +154,25 @@ defmodule TeamJay.Investment.Events do
     )
   end
 
+  def circuit_breaker(symbol, attrs \\ %{}) do
+    Map.merge(
+      %{
+        symbol: symbol,
+        source: :circuit_breaker_scaffold,
+        level: 0,
+        action: :live,
+        paper_mode: false,
+        halted: false,
+        size_multiplier: 1.0,
+        loss_streak: 0,
+        paper_win_streak: 0,
+        release_ready: false,
+        updated_at: DateTime.utc_now()
+      },
+      Map.new(attrs)
+    )
+  end
+
   def memory_snapshot(symbol, attrs \\ %{}) do
     Map.merge(
       %{

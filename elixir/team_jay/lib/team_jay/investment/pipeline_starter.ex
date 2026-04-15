@@ -26,7 +26,8 @@ defmodule TeamJay.Investment.PipelineStarter do
       {SymbolPipelineSupervisor,
        exchange: Keyword.fetch!(opts, :exchange),
        symbol: Keyword.fetch!(opts, :symbol),
-       interval_ms: Keyword.get(opts, :interval_ms, 5_000)}
+       interval_ms: Keyword.get(opts, :interval_ms, 5_000),
+       circuit_release_wait_ms: Keyword.get(opts, :circuit_release_wait_ms, 30 * 60 * 1_000)}
 
     DynamicSupervisor.start_child(PipelineDynamicSupervisor, child_spec)
   end

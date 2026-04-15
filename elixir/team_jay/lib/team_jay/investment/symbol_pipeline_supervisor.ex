@@ -17,6 +17,7 @@ defmodule TeamJay.Investment.SymbolPipelineSupervisor do
   alias TeamJay.Investment.Feedback.Realtime, as: RealtimeFeedbackWorker
   alias TeamJay.Investment.Indicator.Worker, as: IndicatorWorker
   alias TeamJay.Investment.ConditionChecker
+  alias TeamJay.Investment.CircuitBreaker
   alias TeamJay.Investment.PositionManager
   alias TeamJay.Investment.PriceWatcher
   alias TeamJay.Investment.Risk.Nemesis, as: RiskWorker
@@ -44,6 +45,7 @@ defmodule TeamJay.Investment.SymbolPipelineSupervisor do
     symbol = Keyword.fetch!(opts, :symbol)
     exchange = Keyword.fetch!(opts, :exchange)
     interval_ms = Keyword.get(opts, :interval_ms, 5_000)
+    circuit_release_wait_ms = Keyword.get(opts, :circuit_release_wait_ms, 30 * 60 * 1_000)
 
     children = [
       {StreamerWorker, exchange: exchange, symbol: symbol, interval_ms: interval_ms},
@@ -57,6 +59,7 @@ defmodule TeamJay.Investment.SymbolPipelineSupervisor do
       {TradingLoop, symbol: symbol},
       {StrategyAdjuster, symbol: symbol},
       {RuntimeOverrideStore, symbol: symbol},
+      {CircuitBreaker, symbol: symbol, release_wait_ms: circuit_release_wait_ms},
       {AgentMemory, symbol: symbol},
       {SelfReflection, symbol: symbol},
       {MarketModeSelector, symbol: symbol},
