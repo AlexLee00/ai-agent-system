@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
+const { buildBlogCliInsight } = require('../lib/cli-insight.ts');
 const {
   getInstagramTokenConfig,
   refreshLongLivedToken,
@@ -43,6 +44,16 @@ function normalizeExpiry(expiresInSeconds) {
   const seconds = Number(expiresInSeconds || 0);
   if (!Number.isFinite(seconds) || seconds <= 0) return null;
   return new Date(Date.now() + (seconds * 1000)).toISOString();
+}
+
+function buildInstagramTokenFallback(payload = {}) {
+  if (!payload.saved && payload.dryRun) {
+    return '인스타 토큰 갱신을 dry-run으로 점검했으며, 실제 저장 전 만료 시각만 확인하면 됩니다.';
+  }
+  if (payload.tokenUpdated) {
+    return `인스타 토큰이 ${payload.mode} 경로로 갱신되어, 다음 만료 시각까지 운영을 이어갈 수 있습니다.`;
+  }
+  return '인스타 토큰 변경은 없지만, 현재 만료 시각과 저장 상태를 계속 확인하는 편이 좋습니다.';
 }
 
 async function runRefresh(mode = 'auto') {
@@ -109,6 +120,13 @@ async function main() {
     tokenExpiresAt: nextExpiry,
     expiresInSeconds: Number(result.response?.expires_in || 0) || null,
   };
+  payload.aiSummary = await buildBlogCliInsight({
+    bot: 'instagram-token-refresh',
+    requestType: 'instagram-token-refresh',
+    title: '인스타그램 토큰 갱신',
+    data: payload,
+    fallback: buildInstagramTokenFallback(payload),
+  });
 
   if (args.json) {
     console.log(JSON.stringify(payload, null, 2));
@@ -117,6 +135,7 @@ async function main() {
 
   console.log(`[인스타 토큰] mode=${payload.mode} ${payload.saved ? 'saved' : 'dry-run'}`);
   console.log(`[인스타 토큰] token=${payload.tokenUpdated ? 'updated' : 'unchanged'} expiresAt=${payload.tokenExpiresAt || 'unknown'}`);
+  console.log(`🔍 AI: ${payload.aiSummary}`);
 }
 
 main().catch((error) => {

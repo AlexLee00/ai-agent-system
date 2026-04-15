@@ -2,6 +2,7 @@
 
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
+const { buildBlogCliInsight } = require('../lib/cli-insight.ts');
 const {
   resolveData4LibraryKey,
   resolveKakaoApiKey,
@@ -24,6 +25,16 @@ function parseArgs(argv = []) {
   }
 
   return args;
+}
+
+function buildReadinessFallback(payload = {}) {
+  if (!payload.ready?.phase2KeysPresent) {
+    return '도서 소스 2단계 키가 아직 부족해, Kakao/Data4Library 인증부터 먼저 맞추는 편이 좋습니다.';
+  }
+  if (Number(payload.sources?.openlibrary?.count || 0) > 0) {
+    return 'OpenLibrary 기준 기본 조회는 가능하며, 추가 소스 키만 맞추면 도서 소스 확장이 가능합니다.';
+  }
+  return '도서 소스 readiness는 아직 watch 상태이며, 쿼리 응답과 인증키 구성을 함께 확인해야 합니다.';
 }
 
 async function main() {
@@ -64,6 +75,13 @@ async function main() {
       phase2KeysPresent: Boolean(data4libraryKey) && Boolean(kakaoKey),
     },
   };
+  payload.aiSummary = await buildBlogCliInsight({
+    bot: 'book-sources-readiness',
+    requestType: 'book-sources-readiness',
+    title: '도서 소스 readiness 점검',
+    data: payload,
+    fallback: buildReadinessFallback(payload),
+  });
 
   if (args.json) {
     console.log(JSON.stringify(payload, null, 2));
@@ -75,6 +93,7 @@ async function main() {
   console.log(`[도서 소스 readiness] kakao configured=${payload.sources.kakao.configured ? 'yes' : 'no'} count=${payload.sources.kakao.count}`);
   console.log(`[도서 소스 readiness] openlibrary configured=yes count=${payload.sources.openlibrary.count}`);
   console.log(`[도서 소스 readiness] phase1=${payload.ready.phase1 ? 'ready' : 'not-ready'} phase2Keys=${payload.ready.phase2KeysPresent ? 'ready' : 'missing'}`);
+  console.log(`🔍 AI: ${payload.aiSummary}`);
   if (payload.sources.data4library.note) {
     console.log(`[도서 소스 readiness] note=${payload.sources.data4library.note}`);
   }
