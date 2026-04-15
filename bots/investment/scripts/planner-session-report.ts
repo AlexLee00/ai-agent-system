@@ -14,13 +14,12 @@ function parseArgs(argv = []) {
 
 async function loadPlannerSessions({ market = 'all', limit = 10 } = {}) {
   await initPipelineSchema();
-  const params = [];
   let where = `meta->>'planner_mode' IS NOT NULL`;
   if (market !== 'all') {
-    params.push(market);
-    where += ` AND market = $${params.length}`;
+    const safeMarket = String(market).replace(/'/g, "''");
+    where += ` AND market = '${safeMarket}'`;
   }
-  params.push(limit);
+  const safeLimit = Math.max(1, Number(limit || 10));
 
   const rows = await db.query(
     `SELECT
@@ -34,8 +33,7 @@ async function loadPlannerSessions({ market = 'all', limit = 10 } = {}) {
      FROM pipeline_runs
      WHERE ${where}
      ORDER BY started_at DESC
-     LIMIT $${params.length}`,
-    params,
+     LIMIT ${safeLimit}`,
   );
 
   return rows.map((row) => ({
@@ -57,10 +55,13 @@ async function loadPlannerSessions({ market = 'all', limit = 10 } = {}) {
 }
 
 function renderTextReport(rows = [], args = {}) {
+  const summary = buildSummary(rows);
   const lines = [
     `Planner sessions: ${rows.length}`,
     `market: ${args.market}`,
     `limit: ${args.limit}`,
+    `byMarket: ${formatSummaryMap(summary.byMarket)}`,
+    `byMode: ${formatSummaryMap(summary.byMode)}`,
   ];
 
   for (const row of rows) {
@@ -72,6 +73,22 @@ function renderTextReport(rows = [], args = {}) {
   return lines.join('\n');
 }
 
+function buildSummary(rows = []) {
+  const byMarket = {};
+  const byMode = {};
+  for (const row of rows) {
+    byMarket[row.market] = (byMarket[row.market] || 0) + 1;
+    byMode[row.plannerMode] = (byMode[row.plannerMode] || 0) + 1;
+  }
+  return { byMarket, byMode };
+}
+
+function formatSummaryMap(map = {}) {
+  const entries = Object.entries(map);
+  if (entries.length === 0) return 'none';
+  return entries.map(([key, count]) => `${key}:${count}`).join(', ');
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const rows = await loadPlannerSessions(args);
@@ -80,6 +97,7 @@ async function main() {
     market: args.market,
     limit: args.limit,
     count: rows.length,
+    summary: buildSummary(rows),
     sessions: rows,
   };
 
