@@ -27,6 +27,8 @@ defmodule TeamJay.Investment.PipelineInspector do
       self_reflection: lookup({:investment_self_reflection, symbol}),
       market_mode_selector: lookup({:investment_market_mode_selector, symbol}),
       strategy_profile_manager: lookup({:investment_strategy_profile_manager, symbol}),
+      resource_feedback_coordinator: lookup({:investment_resource_feedback_coordinator, symbol}),
+      continuous_loop_coordinator: lookup({:investment_continuous_loop_coordinator, symbol}),
       feedback: lookup({:investment_feedback_realtime, symbol})
     }
   end
