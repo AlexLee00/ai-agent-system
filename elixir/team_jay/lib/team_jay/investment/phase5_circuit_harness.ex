@@ -42,25 +42,18 @@ defmodule TeamJay.Investment.Phase5CircuitHarness do
       case started do
         {:ok, _pid} ->
           seed_sequence(symbol, release_wait_ms)
-          collect(symbol, timeout_ms, [])
+          symbol
+          |> collect(timeout_ms, [])
+          |> attach_store_status(symbol)
 
         error ->
           %{status: :failed_to_start, completed: false, error: inspect(error), events: []}
       end
 
-    circuit_status =
-      case CircuitBreaker.status(symbol) do
-        status when is_map(status) -> status
-        _other -> %{}
-      end
-
     _ = PipelineStarter.stop_pipeline(exchange, symbol)
     Enum.each(topics, &PubSub.unsubscribe/1)
 
-    Map.merge(
-      %{exchange: exchange, symbol: symbol, timeout_ms: timeout_ms, circuit_status: circuit_status},
-      result
-    )
+    Map.merge(%{exchange: exchange, symbol: symbol, timeout_ms: timeout_ms}, result)
   end
 
   defp ensure_dynamic_supervisor! do
@@ -109,6 +102,17 @@ defmodule TeamJay.Investment.Phase5CircuitHarness do
   defp collect(symbol, timeout_ms, events) do
     deadline = System.monotonic_time(:millisecond) + timeout_ms
     loop(symbol, deadline, events, %{warn?: false, paper?: false, released?: false})
+  end
+
+  defp attach_store_status(result, symbol) do
+    circuit_status = CircuitBreaker.status(symbol)
+
+    Map.merge(result, %{
+      circuit_status: circuit_status,
+      persisted_count: Map.get(circuit_status, :persisted_count, 0),
+      persist_status: Map.get(circuit_status, :last_persist_status, :idle),
+      last_persisted_at: Map.get(circuit_status, :last_persisted_at)
+    })
   end
 
   defp loop(symbol, deadline, events, flags) do

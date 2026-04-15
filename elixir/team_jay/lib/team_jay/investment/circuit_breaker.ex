@@ -13,9 +13,11 @@ defmodule TeamJay.Investment.CircuitBreaker do
 
   use GenServer
 
+  alias Ecto.Adapters.SQL
   alias TeamJay.Investment.Events
   alias TeamJay.Investment.PubSub
   alias TeamJay.Investment.Topics
+  alias TeamJay.Repo
 
   @default_release_wait_ms 30 * 60 * 1_000
 
@@ -31,6 +33,7 @@ defmodule TeamJay.Investment.CircuitBreaker do
   @impl true
   def init(opts) do
     symbol = Keyword.fetch!(opts, :symbol)
+    ensure_table!()
 
     Enum.each(
       [Topics.feedback(symbol), Topics.market_modes(symbol)],
@@ -53,6 +56,9 @@ defmodule TeamJay.Investment.CircuitBreaker do
        last_action: :live,
        last_market_mode: nil,
        last_feedback: nil,
+       persisted_count: 0,
+       last_persist_status: :idle,
+       last_persisted_at: nil,
        circuit_started_at: nil,
        last_transition_at: nil,
        last_updated_at: nil,
@@ -76,6 +82,9 @@ defmodule TeamJay.Investment.CircuitBreaker do
        auto_release_count: state.auto_release_count,
        last_action: state.last_action,
        last_transition_at: state.last_transition_at,
+       persisted_count: state.persisted_count,
+       last_persist_status: state.last_persist_status,
+       last_persisted_at: state.last_persisted_at,
        history_count: length(state.history)
      }, state}
   end
@@ -165,11 +174,16 @@ defmodule TeamJay.Investment.CircuitBreaker do
         circuit_started_at: state.circuit_started_at
       )
 
+    {persisted_count, persist_status, persisted_at} = persist_snapshot(state.symbol, snapshot)
+
     PubSub.broadcast_circuit_breaker(state.symbol, {:circuit_breaker, snapshot})
 
     %{
       state
       | switch_count: state.switch_count + 1,
+        persisted_count: state.persisted_count + persisted_count,
+        last_persist_status: persist_status,
+        last_persisted_at: persisted_at,
         last_updated_at: snapshot.updated_at,
         history: [snapshot | state.history] |> Enum.take(20)
     }
@@ -221,4 +235,110 @@ defmodule TeamJay.Investment.CircuitBreaker do
   defp wait_elapsed?(state) do
     DateTime.diff(DateTime.utc_now(), state.circuit_started_at, :millisecond) >= state.release_wait_ms
   end
+
+  defp ensure_table! do
+    SQL.query!(Repo, "CREATE SCHEMA IF NOT EXISTS investment", [])
+
+    SQL.query!(
+      Repo,
+      """
+      CREATE TABLE IF NOT EXISTS investment.circuit_breaker_events (
+        id bigserial PRIMARY KEY,
+        symbol text NOT NULL,
+        level integer NOT NULL,
+        action text NOT NULL,
+        paper_mode boolean NOT NULL DEFAULT false,
+        halted boolean NOT NULL DEFAULT false,
+        size_multiplier double precision NOT NULL DEFAULT 1.0,
+        loss_streak integer NOT NULL DEFAULT 0,
+        paper_win_streak integer NOT NULL DEFAULT 0,
+        release_ready boolean NOT NULL DEFAULT false,
+        feedback jsonb NOT NULL DEFAULT '{}'::jsonb,
+        market_mode jsonb NOT NULL DEFAULT '{}'::jsonb,
+        payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+        event_at timestamptz NOT NULL,
+        inserted_at timestamptz NOT NULL DEFAULT now()
+      )
+      """,
+      []
+    )
+
+    SQL.query!(
+      Repo,
+      """
+      CREATE INDEX IF NOT EXISTS circuit_breaker_events_symbol_event_at_idx
+      ON investment.circuit_breaker_events (symbol, event_at DESC)
+      """,
+      []
+    )
+  end
+
+  defp persist_snapshot(symbol, snapshot) do
+    now = DateTime.utc_now()
+
+    case SQL.query(
+           Repo,
+           """
+           INSERT INTO investment.circuit_breaker_events (
+             symbol,
+             level,
+             action,
+             paper_mode,
+             halted,
+             size_multiplier,
+             loss_streak,
+             paper_win_streak,
+             release_ready,
+             feedback,
+             market_mode,
+             payload,
+             event_at,
+             inserted_at
+           )
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12::jsonb, $13, $14)
+           """,
+           [
+             symbol,
+             snapshot.level,
+             Atom.to_string(snapshot.action),
+             snapshot.paper_mode,
+             snapshot.halted,
+             snapshot.size_multiplier,
+             snapshot.loss_streak,
+             snapshot.paper_win_streak,
+             snapshot.release_ready,
+             Jason.encode!(json_ready(Map.get(snapshot, :feedback, %{}))),
+             Jason.encode!(json_ready(Map.get(snapshot, :market_mode, %{}))),
+             Jason.encode!(json_ready(snapshot)),
+             snapshot.updated_at,
+             now
+           ]
+         ) do
+      {:ok, %{num_rows: num_rows}} when num_rows > 0 ->
+        {num_rows, :persisted, now}
+
+      {:ok, _result} ->
+        {0, :noop, nil}
+
+      {:error, _reason} ->
+        {0, :error, nil}
+    end
+  end
+
+  defp json_ready(%DateTime{} = value), do: DateTime.to_iso8601(value)
+  defp json_ready(%NaiveDateTime{} = value), do: NaiveDateTime.to_iso8601(value)
+  defp json_ready(%Date{} = value), do: Date.to_iso8601(value)
+  defp json_ready(%Time{} = value), do: Time.to_iso8601(value)
+  defp json_ready(%_{} = struct), do: struct |> Map.from_struct() |> json_ready()
+  defp json_ready(map) when is_map(map), do: Map.new(map, fn {k, v} -> {json_key(k), json_ready(v)} end)
+  defp json_ready(list) when is_list(list), do: Enum.map(list, &json_ready/1)
+  defp json_ready(tuple) when is_tuple(tuple), do: tuple |> Tuple.to_list() |> Enum.map(&json_ready/1)
+  defp json_ready(atom) when is_atom(atom), do: Atom.to_string(atom)
+  defp json_ready(pid) when is_pid(pid), do: inspect(pid)
+  defp json_ready(reference) when is_reference(reference), do: inspect(reference)
+  defp json_ready(function) when is_function(function), do: inspect(function)
+  defp json_ready(value), do: value
+
+  defp json_key(key) when is_atom(key), do: Atom.to_string(key)
+  defp json_key(key), do: key
 end
