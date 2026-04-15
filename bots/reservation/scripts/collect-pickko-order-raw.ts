@@ -24,6 +24,7 @@ const { loginToPickko, fetchPickkoEntries } = require('../lib/pickko');
 const { fetchDailyDetail } = require('../lib/pickko-stats');
 const { delay } = require('../lib/utils');
 const { calcStudyRoomAmount, normalizeStudyRoomKey } = require('../lib/study-room-pricing');
+const { buildReservationCliInsight } = require('../lib/cli-insight');
 const {
   upsertPickkoOrderRawBatch,
   getPickkoOrderRawByDate,
@@ -139,6 +140,15 @@ function getArg(name: string) {
 
 const asJson = argv.includes('--json');
 const noStore = argv.includes('--no-store');
+
+function buildCollectRawFallback(payload) {
+  const summary = payload?.summary || {};
+  const storedRowCount = Number(payload?.storedRowCount || 0);
+  if ((summary.generalCount || 0) === 0 && (summary.roomCount || 0) === 0) {
+    return '수집 대상 raw order가 거의 없어 Pickko 기준 원천 거래가 비어 있는지 먼저 확인하는 편이 좋습니다.';
+  }
+  return `Pickko raw order는 일반석 ${summary.generalCount || 0}건, 스터디룸 ${summary.roomCount || 0}건 기준으로 수집됐고 저장 확인 ${storedRowCount}건입니다.`;
+}
 
 function buildEntryKey(parts: Array<string | number | null | undefined>) {
   return parts.map((part) => String(part || '')).join('|');
@@ -383,18 +393,33 @@ async function main() {
   }
 
   const storedRows = noStore ? result.rows : await getPickkoOrderRawByDate(targetDate);
-  if (asJson) {
-    console.log(JSON.stringify({
-      ok: true,
-      stored: !noStore,
-      ...result,
+  const payload = {
+    ok: true,
+    stored: !noStore,
+    ...result,
+    storedRowCount: storedRows.length,
+    storedRows,
+  };
+  payload.aiSummary = await buildReservationCliInsight({
+    bot: 'collect-pickko-order-raw',
+    requestType: 'collect-pickko-order-raw',
+    title: 'Pickko raw order 수집 요약',
+    data: {
+      date: targetDate,
+      stored: payload.stored,
+      summary: result.summary,
       storedRowCount: storedRows.length,
-      storedRows,
-    }, null, 2));
+      sampleRows: result.rows.slice(0, 5),
+    },
+    fallback: buildCollectRawFallback(payload),
+  });
+  if (asJson) {
+    console.log(JSON.stringify(payload, null, 2));
     return;
   }
 
   console.log(`📦 Pickko raw order 수집 완료 (${targetDate})`);
+  console.log(`🔍 AI: ${payload.aiSummary}`);
   console.log(`  일반석: ${result.summary.generalCount}건`);
   console.log(`  스터디룸(use): ${result.summary.roomCount}건`);
   console.log(`  저장: ${noStore ? '건너뜀' : `${storedRows.length}건 조회 확인`}`);

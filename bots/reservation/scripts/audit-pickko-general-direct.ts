@@ -22,6 +22,7 @@ const { getPickkoLaunchOptions, setupDialogHandler } = require('../lib/browser')
 const { loginToPickko } = require('../lib/pickko');
 const { fetchDailyDetail } = require('../lib/pickko-stats');
 const { delay } = require('../lib/utils');
+const { buildReservationCliInsight } = require('../lib/cli-insight');
 
 type CandidateRow = {
   date: string;
@@ -86,6 +87,17 @@ function parseRoomAmounts(roomAmountsJson: CandidateRow['room_amounts_json']): R
   } catch (_) {
     return {};
   }
+}
+
+function buildAuditFallback(payload) {
+  const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+  const mismatched = rows.filter((row) =>
+    Number(row?.deltas?.generalRevenue || 0) !== 0 || Number(row?.deltas?.studyRoomRevenue || 0) !== 0
+  ).length;
+  if (mismatched > 0) {
+    return `direct vs derived general audit에서 차이 있는 날짜가 ${mismatched}건 있어 원천 집계 차이를 먼저 확인하는 편이 좋습니다.`;
+  }
+  return `direct vs derived general audit ${rows.length}건은 큰 차이 없이 비교적 안정적으로 맞춰져 있습니다.`;
 }
 
 async function loadCandidateRows({ fromDate, toDate, exactDate, limit }: CandidateQueryArgs): Promise<CandidateRow[]> {
@@ -205,20 +217,41 @@ async function main() {
     await pgPool.closeAll();
   }
 
-  if (AS_JSON) {
-    console.log(JSON.stringify({
-      ok: true,
+  const payload = {
+    ok: true,
+    fromDate,
+    toDate,
+    exactDate,
+    limit,
+    rows: results,
+  };
+  payload.aiSummary = await buildReservationCliInsight({
+    bot: 'audit-pickko-general-direct',
+    requestType: 'audit-pickko-general-direct',
+    title: 'Pickko direct vs derived general audit 요약',
+    data: {
+      exactDate,
       fromDate,
       toDate,
-      exactDate,
       limit,
-      rows: results,
-    }, null, 2));
+      count: results.length,
+      topRows: results.slice(0, 5).map((row) => ({
+        date: row.date,
+        deltas: row.deltas,
+        txCount: row.direct.transactionCount,
+      })),
+    },
+    fallback: buildAuditFallback(payload),
+  });
+
+  if (AS_JSON) {
+    console.log(JSON.stringify(payload, null, 2));
     return;
   }
 
   const lines = [];
   lines.push('📊 Pickko direct vs derived generalRevenue audit');
+  lines.push(`🔍 AI: ${payload.aiSummary}`);
   lines.push('');
   lines.push(`기간: ${exactDate || `${fromDate} ~ ${toDate}`}`);
   lines.push(`건수: ${results.length}`);
