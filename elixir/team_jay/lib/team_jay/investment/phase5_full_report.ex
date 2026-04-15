@@ -34,7 +34,8 @@ defmodule TeamJay.Investment.Phase5FullReport do
       summarize("5.5-8-db", result.phases.phase5_5_8_db),
       summarize("5.5-9", result.phases.phase5_5_9),
       summarize("5.5-9-db", result.phases.phase5_5_9_db),
-      summarize("health", result.phases.phase5_resource_health)
+      summarize("health", result.phases.phase5_resource_health),
+      summarize("health-db", result.phases.phase5_resource_health_db)
     ]
 
     Enum.join([header | lines], "\n")
