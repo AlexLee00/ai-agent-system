@@ -2,6 +2,19 @@
 
 > Day별 테스트 통과/실패 누적 기록
 
+## 2026-04-16
+
+### Luna parallel ops status 재점검
+
+| 테스트 | 결과 |
+|--------|------|
+| `node scripts/parallel-ops-snapshot.ts --json` | ✅ JSON snapshot 출력 성공, `launchd.count=0`, `launchctl list` 오류는 유지 |
+| `node scripts/health-check.ts` | ⚠️ `launchctl list` 단계에서 sandbox 제약으로 실패 |
+| `node scripts/health-report.ts --json` | ⚠️ `pg-pool` 경로에서 `[EPERM]` 실패 |
+| `npm run parallel-report -- --json` | ✅ report JSON 출력, `status=needs_attention`, `health-report 조회 실패` 유지 |
+| `npm run parallel-history -- --json --no-append` | ✅ 히스토리 비교 JSON 출력, `historyCount=0`, `warnDelta=null` |
+| `npm run parallel-report -- --publish` | ⚠️ alert 경로 호출은 성공했으나 `openclaw`/Telegram fetch 및 `127.0.0.1:18789` 연결 실패 경고 발생 |
+
 ## 2026-03-29
 
 ### n8n local bridge 복구 및 webhook end-to-end 재검증

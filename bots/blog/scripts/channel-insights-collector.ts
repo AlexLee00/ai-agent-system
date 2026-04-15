@@ -127,10 +127,13 @@ async function collectInstagramChannelStats(days = 7) {
 async function collectFacebookChannelStats(days = 7) {
   const config = await getInstagramConfig().catch(() => null);
   const hasBusinessAccount = Boolean(config?.businessAccountId);
+  const hasPageId = Boolean(config?.pageId);
+  const hasAccessToken = Boolean(config?.accessToken);
+  const readyForPublish = hasPageId && hasAccessToken;
   return {
     channel: 'facebook',
     source: 'meta_config',
-    status: hasBusinessAccount ? 'warming_up' : 'disabled',
+    status: readyForPublish ? 'warming_up' : 'disabled',
     publishedCount: 0,
     views: 0,
     comments: 0,
@@ -139,8 +142,12 @@ async function collectFacebookChannelStats(days = 7) {
     metadata: {
       windowDays: days,
       hasBusinessAccount,
-      note: hasBusinessAccount
-        ? 'Meta 비즈니스 계정 준비됨 — API collector 확장 대기'
+      hasPageId,
+      hasAccessToken,
+      note: readyForPublish
+        ? 'Facebook 페이지 게시 준비됨 — 실운영 게시/인사이트 수집 확장 가능'
+        : hasBusinessAccount
+          ? 'Meta 비즈니스 계정은 준비됐지만 page_id 또는 access_token이 부족함'
         : 'facebook business/page 연결 정보 없음',
     },
   };

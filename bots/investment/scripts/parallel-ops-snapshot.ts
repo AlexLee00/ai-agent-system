@@ -3,7 +3,7 @@ import { execFileSync } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { buildScreeningHistoryReport } from './screening-history-report.ts';
-import { generateGemmaPilotText } from '../../../packages/core/lib/gemma-pilot.ts';
+import { generateGemmaPilotText } from '../../../packages/core/lib/gemma-pilot.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

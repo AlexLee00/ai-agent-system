@@ -4,6 +4,24 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-04-16: Luna parallel ops 런타임 호환성 보강 및 상태 재점검
+
+- `packages/core/lib/agent-memory.js`
+  - `agent-memory.ts`를 CommonJS로 transpile하는 래퍼를 추가해 `health-memory` 경로가 직접 로드되도록 복구했다.
+- `packages/core/lib/health-memory.js`
+  - `health-memory.ts`를 `require()` 가능한 엔트리로 노출했다.
+- `bots/investment/scripts/parallel-ops-snapshot.ts`
+- `bots/investment/scripts/health-report.ts`
+  - `gemma-pilot.ts` 직접 import를 `gemma-pilot.js` shim으로 전환했다.
+- 검증:
+  - `node scripts/parallel-ops-snapshot.ts --json` → JSON snapshot 출력 성공
+  - `node scripts/health-check.ts` → `launchctl list` 단계에서 sandbox 제약으로 실패
+  - `node scripts/health-report.ts --json` → `pg-pool` `[EPERM]`로 실패
+  - `npm run parallel-report -- --publish` → alert 경로는 호출됐지만 `openclaw`/Telegram fetch 및 `127.0.0.1:18789` 연결 실패 경고 발생
+- 해석:
+  - 스냅샷 실행 자체는 복구됐지만, launchd/Mix/DB 경로는 여전히 현재 샌드박스에서 완전 검증 불가다.
+  - current baseline 대비 regression은 없고, 기존 blocker(launchctl/Mix.PubSub/pg-pool EPERM)는 유지된다.
+
 ## 2026-03-29: n8n local bridge 복구와 worker/blog/ska webhook 정상화
 
 - 맥 스튜디오 migration 이후 `n8n -> localhost -> ::1`로 빠지던 local bridge 경로를 전수 점검했다.

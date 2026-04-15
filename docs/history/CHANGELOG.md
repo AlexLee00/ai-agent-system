@@ -3,6 +3,19 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 13주차 운영 점검 (2026-04-16) — Luna parallel ops 런타임 호환성 보강
+
+- `packages/core/lib/agent-memory.js`
+  - `agent-memory.ts`를 CommonJS로 transpile해 런타임에서 바로 로드할 수 있게 복구
+- `packages/core/lib/health-memory.js`
+  - `health-memory.ts`를 `require()` 가능하게 노출
+- `bots/investment/scripts/parallel-ops-snapshot.ts`
+- `bots/investment/scripts/health-report.ts`
+  - `gemma-pilot.ts` 직접 import를 `gemma-pilot.js` shim으로 정리
+- 의미:
+  - 투자팀 parallel snapshot/report 경로가 다시 실행 가능해졌고, 샌드박스/권한 문제와 코드 로딩 문제를 분리해서 볼 수 있게 됐다.
+  - 남은 blocker는 launchd, Mix.PubSub, pg-pool EPERM 같은 환경 제약이다.
+
 ## 13주차 운영 복구 (2026-03-29) — n8n localhost/IPv6 경로 복구 + worker/blog/ska webhook 정상화
 
 - `bots/worker/context/n8n-worker-chat-workflow.json`
