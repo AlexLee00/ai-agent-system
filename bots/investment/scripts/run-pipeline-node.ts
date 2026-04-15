@@ -2,6 +2,7 @@
 import { finishPipelineRun, getNodeRuns, initPipelineSchema } from '../shared/pipeline-db.ts';
 import { createPipelineSession, runNode } from '../shared/node-runner.ts';
 import { getInvestmentNode, INVESTMENT_NODES } from '../nodes/index.ts';
+import { buildPreScreenPlannerReport } from '../shared/pre-screen-planner-report.ts';
 
 function parseArgs(argv = process.argv.slice(2)) {
   const out = {};
@@ -89,6 +90,10 @@ async function main() {
     }
 
     const nodeRuns = await getNodeRuns(sessionId);
+    const plannerReport = node.id === 'L01'
+      ? buildPreScreenPlannerReport(result.result || {})
+      : null;
+
     console.log(JSON.stringify({
       ok: true,
       session_id: sessionId,
@@ -97,6 +102,7 @@ async function main() {
       symbol,
       output_ref: result.outputRef,
       result: result.result,
+      planner_report: plannerReport,
       node_runs: nodeRuns,
     }, null, 2));
   } catch (err) {
