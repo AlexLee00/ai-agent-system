@@ -22,6 +22,7 @@ defmodule TeamJay.Investment.PipelineInspector do
       trading_loop: lookup({:investment_trading_loop, symbol}),
       strategy_adjuster: lookup({:investment_strategy_adjuster, symbol}),
       runtime_override_store: lookup({:investment_runtime_override_store, symbol}),
+      circuit_breaker: lookup({:investment_circuit_breaker, symbol}),
       agent_memory: lookup({:investment_agent_memory, symbol}),
       self_reflection: lookup({:investment_self_reflection, symbol}),
       market_mode_selector: lookup({:investment_market_mode_selector, symbol}),

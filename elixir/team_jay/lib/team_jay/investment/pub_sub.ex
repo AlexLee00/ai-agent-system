@@ -59,6 +59,11 @@ defmodule TeamJay.Investment.PubSub do
     |> broadcast(override_payload)
   end
 
+  def broadcast_circuit_breaker(symbol, breaker_payload) do
+    TeamJay.Investment.Topics.circuit_breakers(symbol)
+    |> broadcast(breaker_payload)
+  end
+
   def broadcast_memory_snapshot(symbol, snapshot_payload) do
     TeamJay.Investment.Topics.memory_snapshots(symbol)
     |> broadcast(snapshot_payload)
