@@ -13,11 +13,13 @@ function ensureFacebookReady(config) {
   if (!config?.pageId) throw new Error('facebook page_id가 없습니다.');
 }
 
-function buildFacebookPageTokenRequest(config) {
+function buildFacebookPageTokenRequest(config, options = {}) {
   ensureFacebookReady(config);
+  const redactAccessToken = Boolean(options?.redactAccessToken);
+  const accessToken = redactAccessToken ? '{USER_ACCESS_TOKEN}' : config.accessToken;
   return {
     method: 'GET',
-    url: `${config.baseUrl}/${config.apiVersion}/${config.pageId}?fields=access_token&access_token=${encodeURIComponent(config.accessToken)}`,
+    url: `${config.baseUrl}/${config.apiVersion}/${config.pageId}?fields=access_token&access_token=${encodeURIComponent(accessToken)}`,
   };
 }
 
@@ -55,7 +57,7 @@ async function publishFacebookPost({ message, link = '', dryRun = false }) {
       dryRun: true,
       credentialSource: config.credentialSource || 'unknown',
       pageId: config.pageId,
-      pageTokenRequest,
+      pageTokenRequest: buildFacebookPageTokenRequest(config, { redactAccessToken: true }),
       publishRequest: buildFacebookFeedRequest(config, '{PAGE_ACCESS_TOKEN}', { message, link }),
     };
   }

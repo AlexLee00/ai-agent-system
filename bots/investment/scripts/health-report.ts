@@ -13,7 +13,7 @@
 import path from 'path';
 import { createRequire } from 'module';
 import { fileURLToPath, pathToFileURL } from 'url';
-import { generateGemmaPilotText } from '../../../packages/core/lib/gemma-pilot.ts';
+import { generateGemmaPilotText } from '../../../packages/core/lib/gemma-pilot.js';
 import {
   getKisExecutionModeInfo,
   getKisMarketStatus,

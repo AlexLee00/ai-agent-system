@@ -1,18 +1,18 @@
 {
-  "lastRun": "2026-04-15",
+  "lastRun": "2026-04-16",
   "versions": {
     "@anthropic-ai/sdk": "0.89.0",
     "@modelcontextprotocol/sdk": "1.29.0",
     "groq-sdk": "1.1.2",
     "duckdb": "1.4.4",
     "better-sqlite3": "12.9.0",
-    "ccxt": "4.5.48",
+    "ccxt": "4.5.49",
     "playwright": "1.59.1"
   },
   "lastAnalysis": {
-    "summary": "이번 주 패치 검토 1순위는 groq-sdk입니다. 연구 관찰 1순위는 'ALTK-Evolve: On-the-Job Learning for AI Agents'입니다. 웹 하이라이트는 'Breaking AI agents; MirrorCode; ten views on gradual disempowerment'입니다. 이번 주 최우선 조치는 axios critical SSRF 취약점으로, Hub 경유 외부 요청 코드 전체를 즉시 점검하고 패치해야 합니다. @anthropic-ai/sdk 0.89.0 업그레이드와 claude-code v2.1.108 갱신도 이번 주 내 DEV 환경에서 적용을 권장합니다. ALTK-Evolve(에이전트 온더잡 러닝)와 Import AI 453(에이전트 공격 기법)은 덱스터·닥터 고도화 및 가디언 신설 설계에 즉시 활용 가치가 높습니다.",
-    "patchCount": 6,
+    "summary": "이번 주 패치 검토 1순위는 @anthropic-ai/sdk입니다. 연구 관찰 1순위는 'Self-Distillation Zero (SD-Zero)'입니다. 웹 하이라이트는 'The next evolution of the Agents SDK'입니다. 이번 주 최우선 조치는 axios critical SSRF 취약점으로, Hub 내부 네트워크(Tailscale·PostgreSQL)가 노출될 수 있어 즉시 npm audit fix가 필요합니다. 패키지 버전은 npm 기준 대부분 최신이나 duckdb GitHub(v1.5.2)와 npm(v1.4.4) 간 괴리 및 anthropic-sdk-js 버전 미확인 상태를 수동 점검해야 합니다. OpenAI Agents SDK 차세대 발표와 VAKRA 에이전트 실패 모드 분석이 이번 주 핵심 트렌드로, 제이 허브 아키텍처 강화와 덱스터 오류 분류 고도화에 직접 활용 가능합니다.",
+    "patchCount": 8,
     "securityCount": 3,
-    "llmApiCount": 4
+    "llmApiCount": 3
   }
 }
