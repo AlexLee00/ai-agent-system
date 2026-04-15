@@ -21,6 +21,7 @@ defmodule TeamJay.Investment.SymbolPipelineSupervisor do
   alias TeamJay.Investment.PriceWatcher
   alias TeamJay.Investment.Risk.Nemesis, as: RiskWorker
   alias TeamJay.Investment.Streamer.Worker, as: StreamerWorker
+  alias TeamJay.Investment.StrategyAdjuster
   alias TeamJay.Investment.TradingLoop
 
   def start_link(opts) do
@@ -49,6 +50,7 @@ defmodule TeamJay.Investment.SymbolPipelineSupervisor do
       {PositionManager, symbol: symbol},
       {ConditionChecker, symbol: symbol},
       {TradingLoop, symbol: symbol},
+      {StrategyAdjuster, symbol: symbol},
       {RealtimeFeedbackWorker, symbol: symbol}
     ] ++ analyst_children(symbol)
 
