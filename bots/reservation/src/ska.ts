@@ -48,6 +48,20 @@ let BOT_IDENTITY = {
   mission: 'bot_commands 폴링(5초), 예약·매출·알람 조회, 앤디·지미 재시작, 팀원 정체성 점검',
 };
 
+function installStdioPipeGuards() {
+  const ignoreBrokenPipe = (label: string) => (error: unknown) => {
+    const code = error && typeof error === 'object' ? (error as { code?: string }).code : undefined;
+    if (code === 'EPIPE') {
+      console.warn(`[스카] ${label} broken pipe 무시 (EPIPE)`);
+      return;
+    }
+    throw error;
+  };
+
+  process.stdout.on('error', ignoreBrokenPipe('stdout'));
+  process.stderr.on('error', ignoreBrokenPipe('stderr'));
+}
+
 function loadBotIdentity() {
   try {
     if (!fs.existsSync(IDENTITY_FILE)) {
@@ -114,6 +128,7 @@ let _identityCounter = 0;
 
 async function main() {
   await initHubSecrets();
+  installStdioPipeGuards();
   acquireLock();
   loadBotIdentity(); // 시작 시 정체성 로드
   await ensureIntentTables(pgPool, { schema: 'ska' });

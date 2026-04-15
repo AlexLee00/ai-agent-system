@@ -2,6 +2,16 @@ import { spawn as nodeSpawn } from 'child_process';
 
 type Logger = (message: string) => void;
 
+function safeWriteToStream(stream: NodeJS.WriteStream, text: string) {
+  try {
+    stream.write(text);
+  } catch (error) {
+    const code = error && typeof error === 'object' ? (error as { code?: string }).code : undefined;
+    if (code === 'EPIPE') return;
+    throw error;
+  }
+}
+
 export type CreateNaverPickkoRunnerServiceDeps = {
   isCancelledKey: (key: string) => Promise<boolean>;
   getReservation: (id: string) => Promise<any>;
@@ -150,8 +160,8 @@ export function createNaverPickkoRunnerService(deps: CreateNaverPickkoRunnerServ
 
       const spawnCancel = () => {
         const child = spawnImpl('node', args, { cwd: scriptsDir, stdio: ['ignore', 'pipe', 'pipe'] });
-        child.stdout.on('data', (chunk) => process.stdout.write(chunk.toString()));
-        child.stderr.on('data', (chunk) => process.stderr.write(chunk.toString()));
+        child.stdout.on('data', (chunk) => safeWriteToStream(process.stdout, chunk.toString()));
+        child.stderr.on('data', (chunk) => safeWriteToStream(process.stderr, chunk.toString()));
         return child;
       };
 
@@ -267,8 +277,8 @@ export function createNaverPickkoRunnerService(deps: CreateNaverPickkoRunnerServ
 
       const child = spawnImpl('node', args, { cwd: scriptsDir, stdio: ['ignore', 'pipe', 'pipe'] });
       let outputBuf = '';
-      child.stdout.on('data', (chunk) => { const text = chunk.toString(); process.stdout.write(text); outputBuf += text; });
-      child.stderr.on('data', (chunk) => { const text = chunk.toString(); process.stderr.write(text); outputBuf += text; });
+      child.stdout.on('data', (chunk) => { const text = chunk.toString(); safeWriteToStream(process.stdout, text); outputBuf += text; });
+      child.stderr.on('data', (chunk) => { const text = chunk.toString(); safeWriteToStream(process.stderr, text); outputBuf += text; });
       child.on('close', async (code) => {
         log(`🤖 픽코 실행 종료 (exit code: ${code})`);
         const stageMatch = outputBuf.match(/PICKKO_FAILURE_STAGE=([A-Z0-9_]+)/);
