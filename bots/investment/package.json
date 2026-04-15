@@ -71,6 +71,8 @@
     "analyze-rr:30": "node scripts/analyze-rr.ts --days=30",
     "analyze-rr:validate": "node scripts/analyze-rr.ts --validate-backtest",
     "analyze-rr:validate-only": "node scripts/analyze-rr.ts --validate-backtest-only",
+    "backtest:report": "node scripts/vectorbt-backtest-report.ts",
+    "backtest:history": "node scripts/vectorbt-backtest-history.ts",
     "backtest:vectorbt": "python3 scripts/backtest-vectorbt.py --symbol BTC/USDT --days 30",
     "backtest:vectorbt:grid": "python3 scripts/backtest-vectorbt.py --symbol BTC/USDT --days 90 --grid",
     "optimize-ta": "node scripts/optimize-ta-params.ts",
