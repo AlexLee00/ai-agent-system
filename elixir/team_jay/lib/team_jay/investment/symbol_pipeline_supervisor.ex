@@ -22,6 +22,8 @@ defmodule TeamJay.Investment.SymbolPipelineSupervisor do
   alias TeamJay.Investment.Risk.Nemesis, as: RiskWorker
   alias TeamJay.Investment.Streamer.Worker, as: StreamerWorker
   alias TeamJay.Investment.RuntimeOverrideStore
+  alias TeamJay.Investment.AgentMemory
+  alias TeamJay.Investment.SelfReflection
   alias TeamJay.Investment.StrategyAdjuster
   alias TeamJay.Investment.TradingLoop
 
@@ -53,6 +55,8 @@ defmodule TeamJay.Investment.SymbolPipelineSupervisor do
       {TradingLoop, symbol: symbol},
       {StrategyAdjuster, symbol: symbol},
       {RuntimeOverrideStore, symbol: symbol},
+      {AgentMemory, symbol: symbol},
+      {SelfReflection, symbol: symbol},
       {RealtimeFeedbackWorker, symbol: symbol}
     ] ++ analyst_children(symbol)
 

@@ -58,4 +58,14 @@ defmodule TeamJay.Investment.PubSub do
     TeamJay.Investment.Topics.runtime_overrides(symbol)
     |> broadcast(override_payload)
   end
+
+  def broadcast_memory_snapshot(symbol, snapshot_payload) do
+    TeamJay.Investment.Topics.memory_snapshots(symbol)
+    |> broadcast(snapshot_payload)
+  end
+
+  def broadcast_reflection(symbol, reflection_payload) do
+    TeamJay.Investment.Topics.reflections(symbol)
+    |> broadcast(reflection_payload)
+  end
 end

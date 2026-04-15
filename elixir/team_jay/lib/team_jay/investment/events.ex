@@ -153,4 +153,34 @@ defmodule TeamJay.Investment.Events do
       Map.new(attrs)
     )
   end
+
+  def memory_snapshot(symbol, attrs \\ %{}) do
+    Map.merge(
+      %{
+        symbol: symbol,
+        source: :agent_memory_scaffold,
+        episodic: [],
+        semantic: [],
+        procedural: [],
+        snapshot_count: 0,
+        recorded_at: DateTime.utc_now()
+      },
+      Map.new(attrs)
+    )
+  end
+
+  def reflection(symbol, attrs \\ %{}) do
+    Map.merge(
+      %{
+        symbol: symbol,
+        source: :self_reflection_scaffold,
+        status: :observed,
+        insight: "pattern not stable yet",
+        confidence: 0.0,
+        recommended_strategy: :hold,
+        reflected_at: DateTime.utc_now()
+      },
+      Map.new(attrs)
+    )
+  end
 end
