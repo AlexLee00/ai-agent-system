@@ -2,6 +2,7 @@
 // @ts-nocheck
 
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import { buildInvestmentCliInsight } from '../shared/cli-insight.ts';
 import { getParameterGovernance } from '../shared/runtime-parameter-governance.ts';
 import { buildRuntimeAutotuneReadinessReport } from './runtime-autotune-readiness-report.ts';
 import { buildRuntimeMinOrderReliefReport } from './runtime-min-order-relief-report.ts';
@@ -102,6 +103,7 @@ function renderText(payload) {
     '🟡 Runtime Escalate Candidates',
     `status: ${payload.decision.status}`,
     `headline: ${payload.decision.headline}`,
+    payload.aiSummary ? `🔍 AI: ${payload.aiSummary}` : null,
     '',
     '근거:',
     ...payload.decision.reasons.map((reason) => `- ${reason}`),
@@ -115,7 +117,19 @@ function renderText(payload) {
     '',
     '권장 조치:',
     ...payload.decision.actionItems.map((item) => `- ${item}`),
-  ].join('\n');
+  ].filter(Boolean).join('\n');
+}
+
+function buildRuntimeEscalateFallback(payload = {}) {
+  const decision = payload.decision || {};
+  const metrics = decision.metrics || {};
+  if (decision.status === 'escalate_blocked') {
+    return `allow 레일로 못 푸는 policy-blocked 후보가 ${metrics.blockedByPolicy || 0}건 있어 운영 승인 경로로 분리하는 편이 좋습니다.`;
+  }
+  if (decision.status === 'escalate_ready') {
+    return `승인 검토가 필요한 escalate 후보가 ${metrics.approvalNeeded || 0}건 준비돼 있어 운영 판단 문맥과 함께 올리면 됩니다.`;
+  }
+  return '즉시 올릴 escalate 후보는 아직 없어 allow 후보와 autotune readiness 누적을 계속 보면 됩니다.';
 }
 
 export async function buildRuntimeEscalateCandidatesReport({ days = 14, json = false } = {}) {
@@ -133,6 +147,19 @@ export async function buildRuntimeEscalateCandidatesReport({ days = 14, json = f
     relief,
     decision,
   };
+  payload.aiSummary = await buildInvestmentCliInsight({
+    bot: 'runtime-escalate-candidates-report',
+    requestType: 'runtime-escalate-candidates-report',
+    title: '투자 runtime escalate candidates 리포트 요약',
+    data: {
+      days,
+      decision,
+      rows,
+      autotuneDecision: autotune?.decision,
+      reliefDecision: relief?.decision,
+    },
+    fallback: buildRuntimeEscalateFallback(payload),
+  });
   if (json) return payload;
   return renderText(payload);
 }

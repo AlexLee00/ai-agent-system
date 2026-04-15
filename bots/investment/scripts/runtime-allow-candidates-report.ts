@@ -4,6 +4,7 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import { buildInvestmentCliInsight } from '../shared/cli-insight.ts';
 import { buildVectorBtBacktestReport } from './vectorbt-backtest-report.ts';
 
 const execFileAsync = promisify(execFile);
@@ -99,6 +100,7 @@ function renderText(payload) {
     '🟢 Runtime Allow Candidates',
     `status: ${payload.decision.status}`,
     `headline: ${payload.decision.headline}`,
+    payload.aiSummary ? `🔍 AI: ${payload.aiSummary}` : null,
     '',
     '근거:',
     ...payload.decision.reasons.map((reason) => `- ${reason}`),
@@ -111,7 +113,19 @@ function renderText(payload) {
     '권장 조치:',
     ...payload.decision.actionItems.map((item) => `- ${item}`),
   ];
-  return lines.join('\n');
+  return lines.filter(Boolean).join('\n');
+}
+
+function buildRuntimeAllowCandidatesFallback(payload = {}) {
+  const decision = payload.decision || {};
+  const metrics = decision.metrics || {};
+  if (decision.status === 'allow_candidates_ready') {
+    return `allow 등급 자동 적용 후보가 ${metrics.auto || 0}건 보여, 비교 실험 후보로 먼저 분리해 보는 편이 좋습니다.`;
+  }
+  if (decision.status === 'allow_observe_only') {
+    return `allow 제안은 ${metrics.total || 0}건 있지만 아직 observe 위주라 confidence 누적을 더 보는 편이 좋습니다.`;
+  }
+  return '즉시 올릴 allow 후보는 아직 없어 현재는 제안 누적과 추세 관찰 위주로 보면 됩니다.';
 }
 
 export async function buildRuntimeAllowCandidatesReport({ days = 14, limit = 20, json = false } = {}) {
@@ -130,6 +144,19 @@ export async function buildRuntimeAllowCandidatesReport({ days = 14, limit = 20,
     backtest,
     decision,
   };
+  payload.aiSummary = await buildInvestmentCliInsight({
+    bot: 'runtime-allow-candidates-report',
+    requestType: 'runtime-allow-candidates-report',
+    title: '투자 runtime allow candidates 리포트 요약',
+    data: {
+      days,
+      limit,
+      decision,
+      candidates: candidates.slice(0, 10),
+      backtestDecision: backtest?.decision,
+    },
+    fallback: buildRuntimeAllowCandidatesFallback(payload),
+  });
   if (json) return payload;
   return renderText(payload);
 }
