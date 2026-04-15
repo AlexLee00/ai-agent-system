@@ -32,6 +32,7 @@ const fs   = require('fs');
 const path = require('path');
 const { parseArgs } = require('../lib/args');
 const { saveJson } = require('../lib/files');
+const { buildReservationCliInsight } = require('../lib/cli-insight');
 
 const WORKSPACE    = process.env.OPENCLAW_WORKSPACE
   || path.join(process.env.HOME, '.openclaw', 'workspace');
@@ -82,6 +83,21 @@ function shortTs(ts) {
     year: 'numeric', month: 'numeric', day: 'numeric',
     hour: '2-digit', minute: '2-digit', hour12: false
   });
+}
+
+function buildBugListFallback(filter, bugs = []) {
+  if (!bugs.length) return `현재 ${filter} 기준으로 바로 처리할 버그가 없습니다.`;
+  return `${filter} 기준 버그 ${bugs.length}건이 있어, 상단 항목부터 순차 점검하는 것이 좋습니다.`;
+}
+
+function buildBugShowFallback(bug) {
+  if (bug.status === 'resolved') return `${bug.id}는 이미 해결된 상태이며, 마지막 조치 이력만 확인하면 됩니다.`;
+  return `${bug.id}는 아직 ${bug.status} 상태라, 최근 조치 이력과 관련 파일부터 다시 확인하는 편이 좋습니다.`;
+}
+
+function buildMaintenanceFallback(items = []) {
+  if (!items.length) return '최근 유지보수 기록이 없어, 새 변경 이력이 생길 때까지 현재 상태를 유지하면 됩니다.';
+  return `최근 유지보수 ${items.length}건이 기록되어 있어, 상단 변경부터 영향 범위를 따라가면 됩니다.`;
 }
 
 // ─── HANDOFF.md 자동 갱신 ─────────────────────────────────────────────
@@ -231,7 +247,7 @@ function cmdResolve(args) {
   console.log(`✅ [${args.id}] 해결 완료`);
 }
 
-function cmdList(args) {
+async function cmdList(args) {
   const data   = loadTracker();
   const filter = args.status || 'open';
   const bugs   = filter === 'all'
@@ -242,10 +258,36 @@ function cmdList(args) {
       );
 
   if (bugs.length === 0) {
+    const aiSummary = await buildReservationCliInsight({
+      bot: 'reservation-bug-report',
+      requestType: 'reservation-bug-list',
+      title: '예약 버그 목록',
+      data: { filter, count: 0, bugs: [] },
+      fallback: buildBugListFallback(filter, []),
+    });
     console.log(`[버그] ${filter} 상태: 없음`);
+    console.log(`🔍 AI: ${aiSummary}`);
     return;
   }
+  const aiSummary = await buildReservationCliInsight({
+    bot: 'reservation-bug-report',
+    requestType: 'reservation-bug-list',
+    title: '예약 버그 목록',
+    data: {
+      filter,
+      count: bugs.length,
+      bugs: bugs.slice(0, 5).map((b) => ({
+        id: b.id,
+        status: b.status,
+        severity: b.severity,
+        title: b.title,
+        category: b.category,
+      })),
+    },
+    fallback: buildBugListFallback(filter, bugs),
+  });
   console.log(`\n📋 버그 목록 [${filter}] — ${bugs.length}건\n`);
+  console.log(`🔍 AI: ${aiSummary}\n`);
   for (const b of bugs) {
     console.log(`${STATUS_ICON[b.status] || '?'} [${b.id}] ${SEV_ICON[b.severity] || ''} ${b.title}`);
     const detectedBy = b.detectedBy || b.source || '-';
@@ -258,16 +300,32 @@ function cmdList(args) {
   }
 }
 
-function cmdShow(args) {
+async function cmdShow(args) {
   if (!args.id) { console.error('오류: --id 필수'); process.exit(1); }
   const data = loadTracker();
   const bug  = data.bugs.find(b => b.id === args.id);
   if (!bug) { console.error(`오류: [${args.id}] 없음`); process.exit(1); }
+  const aiSummary = await buildReservationCliInsight({
+    bot: 'reservation-bug-report',
+    requestType: 'reservation-bug-show',
+    title: '예약 버그 상세',
+    data: {
+      id: bug.id,
+      status: bug.status,
+      severity: bug.severity,
+      title: bug.title,
+      category: bug.category,
+      actionCount: bug.actions.length,
+      relatedFiles: bug.relatedFiles,
+    },
+    fallback: buildBugShowFallback(bug),
+  });
 
   const line = '─'.repeat(60);
   console.log(`\n${line}`);
   console.log(`${STATUS_ICON[bug.status]} [${bug.id}]  ${bug.title}`);
   console.log(line);
+  console.log(`🔍 AI: ${aiSummary}`);
   console.log(`심각도: ${bug.severity}  |  카테고리: ${bug.category}  |  상태: ${bug.status}`);
   console.log(`발견자: ${bug.detectedBy}  |  발견: ${shortTs(bug.detectedAt)}`);
   if (bug.resolvedAt) console.log(`해결자: ${bug.resolvedBy}  |  해결: ${shortTs(bug.resolvedAt)}`);
@@ -301,16 +359,44 @@ function cmdMaintenance(args) {
   console.log(`✅ [${id}] 유지보수 기록: ${args.title}`);
 }
 
-function cmdMaintList(args) {
+async function cmdMaintList(args) {
   const data  = loadTracker();
   const limit = parseInt(args.limit || '10', 10);
   const items = [...data.maintenance]
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
     .slice(0, limit);
 
-  if (items.length === 0) { console.log('[유지보수] 기록 없음'); return; }
+  if (items.length === 0) {
+    const aiSummary = await buildReservationCliInsight({
+      bot: 'reservation-bug-report',
+      requestType: 'reservation-maint-list',
+      title: '예약 유지보수 기록',
+      data: { limit, count: 0, items: [] },
+      fallback: buildMaintenanceFallback([]),
+    });
+    console.log('[유지보수] 기록 없음');
+    console.log(`🔍 AI: ${aiSummary}`);
+    return;
+  }
+  const aiSummary = await buildReservationCliInsight({
+    bot: 'reservation-bug-report',
+    requestType: 'reservation-maint-list',
+    title: '예약 유지보수 기록',
+    data: {
+      limit,
+      count: items.length,
+      items: items.slice(0, 5).map((m) => ({
+        id: m.id,
+        type: m.type,
+        title: m.title,
+        relatedBugIds: m.relatedBugIds,
+      })),
+    },
+    fallback: buildMaintenanceFallback(items),
+  });
 
   console.log(`\n🔧 유지보수 기록 (최근 ${items.length}건)\n`);
+  console.log(`🔍 AI: ${aiSummary}\n`);
   for (const m of items) {
     const bugs = m.relatedBugIds.length ? ` → [${m.relatedBugIds.join(', ')}]` : '';
     console.log(`[${m.id}] [${m.type}] ${shortTs(m.timestamp)}  ${m.title}${bugs}`);
@@ -324,18 +410,19 @@ function cmdMaintList(args) {
 
 // ─── 메인 ────────────────────────────────────────────────────────────
 
-const args = parseArgs(process.argv);
+async function main() {
+  const args = parseArgs(process.argv);
 
-if      (args.new)           cmdNew(args);
-else if (args.action)        cmdAction(args);
-else if (args.resolve)       cmdResolve(args);
-else if (args.show)          cmdShow(args);
-else if (args.maintenance)   cmdMaintenance(args);
-else if (args['maint-list']) cmdMaintList(args);
-else if (args.list)          cmdList(args);
-else if (args.sync)          { syncHandoff(loadTracker()); console.log('✅ HANDOFF.md 갱신 완료'); }
-else {
-  console.log(`
+  if      (args.new)           cmdNew(args);
+  else if (args.action)        cmdAction(args);
+  else if (args.resolve)       cmdResolve(args);
+  else if (args.show)          await cmdShow(args);
+  else if (args.maintenance)   cmdMaintenance(args);
+  else if (args['maint-list']) await cmdMaintList(args);
+  else if (args.list)          await cmdList(args);
+  else if (args.sync)          { syncHandoff(loadTracker()); console.log('✅ HANDOFF.md 갱신 완료'); }
+  else {
+    console.log(`
 bug-report.js — 스카 버그 추적 & 유지보수 기록 (HANDOFF.md 자동 연동)
 
   --new         --title "제목" [--desc "설명"] [--severity critical|high|medium|low]
@@ -357,4 +444,10 @@ bug-report.js — 스카 버그 추적 & 유지보수 기록 (HANDOFF.md 자동 
 
   --maint-list  [--limit 10]
 `);
+  }
 }
+
+main().catch((error) => {
+  console.error('[bug-report] 실패:', error?.message || error);
+  process.exit(1);
+});
