@@ -10,6 +10,7 @@
 import * as db from '../shared/db.ts';
 import { getInvestmentRuntimeConfig, getValidationSoftBudgetConfig } from '../shared/runtime-config.ts';
 import { getCapitalConfig } from '../shared/capital-manager.ts';
+import { annotateRuntimeSuggestions, buildParameterGovernanceReport } from '../shared/runtime-parameter-governance.ts';
 import { loadCryptoLiveGateReview } from './crypto-live-gate-review.ts';
 
 function parseArgs(argv = process.argv.slice(2)) {
@@ -579,6 +580,7 @@ function buildSuggestions(
 }
 
 function buildReport(days, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, validationBudgetPolicyTrend, suggestions) {
+  const governance = buildParameterGovernanceReport();
   return {
     periodDays: days,
     marketSummary: summaries,
@@ -588,6 +590,7 @@ function buildReport(days, summaries, validationSummaries, validationBudgetSnaps
     validationBudgetPolicy,
     validationBudgetPolicyTrend,
     suggestions,
+    parameterGovernance: governance.summary,
     actionableSuggestions: suggestions.filter(item => item.action === 'adjust').length,
   };
 }
@@ -647,6 +650,9 @@ function printHuman(report) {
     lines.push(`  current: ${item.current}`);
     lines.push(`  suggested: ${item.suggested}`);
     lines.push(`  action: ${item.action} / confidence: ${item.confidence}`);
+    if (item.governance?.tier) {
+      lines.push(`  governance: ${item.governance.tier}${item.governance.min != null && item.governance.max != null ? ` [${item.governance.min}~${item.governance.max}]` : ''}`);
+    }
     lines.push(`  reason: ${item.reason}`);
   }
   return lines.join('\n');
@@ -697,7 +703,9 @@ async function main() {
     validationBudgetPolicy,
     previousPolicySnapshot,
   );
-  const suggestions = buildSuggestions(config, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy);
+  const suggestions = annotateRuntimeSuggestions(
+    buildSuggestions(config, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy),
+  );
   const report = buildReport(
     days,
     summaries,

@@ -39,6 +39,7 @@ function loadCapitalConfig() {
       max_drawdown_pct:           cm.max_drawdown_pct           ?? 0.15,
       min_order_usdt:             cm.min_order_usdt             ?? fallbackCryptoMinOrder,
       max_concurrent_positions:   cm.max_concurrent_positions   ?? 3,
+      max_same_direction_positions: cm.max_same_direction_positions ?? 3,
       max_daily_trades:           cm.max_daily_trades           ?? 15,
       max_daily_loss_pct:         cm.max_daily_loss_pct         ?? 0.10,
       max_weekly_loss_pct:        cm.max_weekly_loss_pct        ?? 0.20,
@@ -53,6 +54,7 @@ function loadCapitalConfig() {
     return {
       max_capital_usage: 0.90,  reserve_ratio: 0.10,          risk_per_trade: 0.02,
       max_position_pct: 0.10,   max_drawdown_pct: 0.15, min_order_usdt: fallbackCryptoMinOrder, max_concurrent_positions: 3,
+      max_same_direction_positions: 3,
       max_daily_trades: 15,     max_daily_loss_pct: 0.10,     max_weekly_loss_pct: 0.20,
       cooldown_after_loss_streak: 3, cooldown_minutes: 60,
       dynamic_min_order: {},
@@ -64,7 +66,6 @@ function loadCapitalConfig() {
 }
 
 export const config = loadCapitalConfig();
-const MAX_SAME_DIRECTION_POSITIONS = 3;
 
 export function getCapitalConfig(exchange = null, tradeMode = null) {
   if (!exchange) return config;
@@ -445,10 +446,12 @@ export async function checkCorrelationGuard(symbol, direction, exchange = 'binan
       return sideDirection === normalizedDirection;
     }).length;
 
-    if (sameDirectionCount >= MAX_SAME_DIRECTION_POSITIONS) {
+    const policy = getCapitalConfig(exchange, tradeMode);
+    const maxSameDirection = Number(policy.max_same_direction_positions || 3);
+    if (sameDirectionCount >= maxSameDirection) {
       return {
         ok: false,
-        reason: `상관관계 가드: 같은 방향(${normalizedDirection}) 포지션 ${sameDirectionCount}개 (한도: ${MAX_SAME_DIRECTION_POSITIONS})`,
+        reason: `상관관계 가드: 같은 방향(${normalizedDirection}) 포지션 ${sameDirectionCount}개 (한도: ${maxSameDirection})`,
       };
     }
 
