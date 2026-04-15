@@ -4,8 +4,10 @@ defmodule TeamJay.Investment.Phase5ModeHarness do
   """
 
   alias TeamJay.Investment.PipelineDynamicSupervisor
+  alias TeamJay.Investment.MarketModeSelector
   alias TeamJay.Investment.PipelineStarter
   alias TeamJay.Investment.PubSub
+  alias TeamJay.Investment.StrategyProfileManager
   alias TeamJay.Investment.Topics
 
   @default_timeout 6_000
@@ -29,7 +31,11 @@ defmodule TeamJay.Investment.Phase5ModeHarness do
 
     result =
       case started do
-        {:ok, _pid} -> collect(symbol, timeout_ms, [])
+        {:ok, _pid} ->
+          symbol
+          |> collect(timeout_ms, [])
+          |> attach_store_status(symbol)
+
         error -> %{status: :failed_to_start, completed: false, error: inspect(error), events: []}
       end
 
@@ -84,5 +90,17 @@ defmodule TeamJay.Investment.Phase5ModeHarness do
           last_topic: events |> List.first() |> then(&(&1 && &1.topic))
         }
     end
+  end
+
+  defp attach_store_status(result, symbol) do
+    mode_status = MarketModeSelector.status(symbol)
+    profile_status = StrategyProfileManager.status(symbol)
+
+    Map.merge(result, %{
+      mode_persisted_count: mode_status.persisted_count,
+      mode_persist_status: mode_status.last_persist_status,
+      profile_persisted_count: profile_status.persisted_count,
+      profile_persist_status: profile_status.last_persist_status
+    })
   end
 end
