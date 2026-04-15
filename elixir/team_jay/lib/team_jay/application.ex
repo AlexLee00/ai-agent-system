@@ -43,6 +43,7 @@ defmodule TeamJay.Application do
       TeamJay.Teams.StewardSupervisor,
       TeamJay.Teams.InvestmentSupervisor,
       TeamJay.Teams.BlogSupervisor,
+      TeamJay.Teams.WorkerSupervisor,
       TeamJay.Teams.BlogShadowSupervisor,
       TeamJay.Teams.WorkerShadowSupervisor,
       TeamJay.Teams.PlatformShadowSupervisor,
