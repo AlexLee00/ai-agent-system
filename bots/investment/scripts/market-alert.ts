@@ -25,9 +25,19 @@ import { getInvestmentProfile } from './investment-profile.ts';
 import { getKisMarketStatus, getKisOverseasMarketStatus } from '../shared/secrets.ts';
 import { createRequire } from 'module';
 const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
-const { createAgentMemory } = createRequire(import.meta.url)('../../../packages/core/lib/agent-memory');
-
-const marketAlertMemory = createAgentMemory({ agentId: 'investment.market-alert', team: 'investment' });
+let marketAlertMemory = null;
+try {
+  const { createAgentMemory } = createRequire(import.meta.url)('../../../packages/core/lib/agent-memory.ts');
+  marketAlertMemory = createAgentMemory({ agentId: 'investment.market-alert', team: 'investment' });
+} catch (error) {
+  console.warn(`  ⚠️ [market-alert] agent-memory 로드 실패(무시): ${error?.message || error}`);
+}
+const safeMarketAlertMemory = marketAlertMemory || {
+  recallCountHint: async () => '',
+  recallHint: async () => '',
+  remember: async () => {},
+  consolidate: async () => {},
+};
 
 // ── 인수 파싱 ──────────────────────────────────────────────────────────
 
@@ -191,7 +201,7 @@ async function sendOpenAlert(market, label) {
   }
 
   const memoryQuery = buildMarketAlertMemoryQuery('open', market, [profile.mode, `${aggregatedPositions.length}-positions`]);
-  const episodicHint = await marketAlertMemory.recallCountHint(memoryQuery, {
+  const episodicHint = await safeMarketAlertMemory.recallCountHint(memoryQuery, {
     type: 'episodic',
     limit: 2,
     threshold: 0.33,
@@ -205,7 +215,7 @@ async function sendOpenAlert(market, label) {
     },
     order: ['open', 'close', 'daily'],
   }).catch(() => '');
-  const semanticHint = await marketAlertMemory.recallHint(`${memoryQuery} consolidated market pattern`, {
+  const semanticHint = await safeMarketAlertMemory.recallHint(`${memoryQuery} consolidated market pattern`, {
     type: 'semantic',
     limit: 2,
     threshold: 0.28,
@@ -221,7 +231,7 @@ async function sendOpenAlert(market, label) {
     message,
     payload:     { market, exchange, symbols, positionCount: aggregatedPositions.length },
   });
-  await marketAlertMemory.remember(message, 'episodic', {
+  await safeMarketAlertMemory.remember(message, 'episodic', {
     importance: 0.64,
     expiresIn: 1000 * 60 * 60 * 24 * 30,
     metadata: {
@@ -231,7 +241,7 @@ async function sendOpenAlert(market, label) {
       screeningCount: symbols.length,
     },
   }).catch(() => {});
-  await marketAlertMemory.consolidate({
+  await safeMarketAlertMemory.consolidate({
     olderThanDays: 14,
     limit: 10,
   }).catch(() => {});
@@ -332,7 +342,7 @@ async function sendCloseReport(market, label) {
   lines.push(`${label} 장 마감. 수고하셨습니다! 🙏`);
 
   const memoryQuery = buildMarketAlertMemoryQuery('close', market, [profile.mode, trades.length > 0 ? 'trade-day' : 'quiet-day']);
-  const episodicHint = await marketAlertMemory.recallCountHint(memoryQuery, {
+  const episodicHint = await safeMarketAlertMemory.recallCountHint(memoryQuery, {
     type: 'episodic',
     limit: 2,
     threshold: 0.33,
@@ -346,7 +356,7 @@ async function sendCloseReport(market, label) {
     },
     order: ['close', 'open', 'daily'],
   }).catch(() => '');
-  const semanticHint = await marketAlertMemory.recallHint(`${memoryQuery} consolidated market pattern`, {
+  const semanticHint = await safeMarketAlertMemory.recallHint(`${memoryQuery} consolidated market pattern`, {
     type: 'semantic',
     limit: 2,
     threshold: 0.28,
@@ -362,7 +372,7 @@ async function sendCloseReport(market, label) {
     message,
     payload:     { market, exchange, tradeCount: trades.length, positionCount: aggregatedPositions.length, date: today },
   });
-  await marketAlertMemory.remember(message, 'episodic', {
+  await safeMarketAlertMemory.remember(message, 'episodic', {
     importance: trades.length > 0 ? 0.72 : 0.62,
     expiresIn: 1000 * 60 * 60 * 24 * 30,
     metadata: {
@@ -373,7 +383,7 @@ async function sendCloseReport(market, label) {
       date: today,
     },
   }).catch(() => {});
-  await marketAlertMemory.consolidate({
+  await safeMarketAlertMemory.consolidate({
     olderThanDays: 14,
     limit: 10,
   }).catch(() => {});
@@ -437,7 +447,7 @@ async function sendCryptoDailyReport(label) {
   }
 
   const memoryQuery = buildMarketAlertMemoryQuery('daily', 'crypto', [profile.mode, trades.length > 0 ? 'trade-day' : 'quiet-day']);
-  const episodicHint = await marketAlertMemory.recallCountHint(memoryQuery, {
+  const episodicHint = await safeMarketAlertMemory.recallCountHint(memoryQuery, {
     type: 'episodic',
     limit: 2,
     threshold: 0.33,
@@ -451,7 +461,7 @@ async function sendCryptoDailyReport(label) {
     },
     order: ['daily', 'close', 'open'],
   }).catch(() => '');
-  const semanticHint = await marketAlertMemory.recallHint(`${memoryQuery} consolidated market pattern`, {
+  const semanticHint = await safeMarketAlertMemory.recallHint(`${memoryQuery} consolidated market pattern`, {
     type: 'semantic',
     limit: 2,
     threshold: 0.28,
@@ -467,7 +477,7 @@ async function sendCryptoDailyReport(label) {
     message,
     payload:     { market: 'crypto', tradeCount: trades.length, positionCount: aggregatedPositions.length, date: today },
   });
-  await marketAlertMemory.remember(message, 'episodic', {
+  await safeMarketAlertMemory.remember(message, 'episodic', {
     importance: 0.66,
     expiresIn: 1000 * 60 * 60 * 24 * 30,
     metadata: {
@@ -478,7 +488,7 @@ async function sendCryptoDailyReport(label) {
       date: today,
     },
   }).catch(() => {});
-  await marketAlertMemory.consolidate({
+  await safeMarketAlertMemory.consolidate({
     olderThanDays: 14,
     limit: 10,
   }).catch(() => {});
