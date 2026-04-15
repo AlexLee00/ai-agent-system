@@ -37,6 +37,7 @@
     "planner:sessions": "node scripts/planner-session-report.ts --limit=10",
     "planner:decision-smoke": "node scripts/decision-planner-smoke.ts",
     "planner:decision-suite": "node scripts/decision-planner-suite.ts",
+    "planner:decision-report": "node scripts/decision-planner-report.ts",
     "planner:e2e": "node scripts/planner-e2e-scenario.ts",
     "planner:e2e-report": "node scripts/planner-e2e-report.ts",
     "parallel-snapshot": "node scripts/parallel-ops-snapshot.ts",
