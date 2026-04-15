@@ -392,6 +392,10 @@ async function addCancelledKey(cancelKey) {
     [cancelKey]);
 }
 
+async function removeCancelledKey(cancelKey) {
+  await pgPool.run(SCHEMA, 'DELETE FROM cancelled_keys WHERE cancel_key = $1', [cancelKey]);
+}
+
 async function pruneOldCancelledKeys(cutoffDate) {
   const result = await pgPool.run(SCHEMA,
     'DELETE FROM cancelled_keys WHERE cancelled_at < $1', [cutoffDate]);
@@ -1231,6 +1235,7 @@ module.exports = {
   // cancelled_keys
   isCancelledKey,
   addCancelledKey,
+  removeCancelledKey,
   pruneOldCancelledKeys,
   // kiosk_blocks
   getKioskBlock,
