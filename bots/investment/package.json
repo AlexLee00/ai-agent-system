@@ -51,6 +51,7 @@
     "runtime:planner-coverage-history": "node scripts/runtime-planner-coverage-history.ts",
     "runtime:planner-attach-smoke": "node scripts/runtime-planner-attach-smoke.ts",
     "runtime:planner-attach-dryrun": "node scripts/runtime-planner-attach-dryrun.ts",
+    "runtime:planner-attach-backfill": "node scripts/runtime-planner-attach-backfill.ts --markets=kis,kis_overseas --repeats=4",
     "runtime:planner-attach-suite": "node scripts/runtime-planner-attach-suite.ts",
     "runtime:allow-candidates": "node scripts/runtime-allow-candidates-report.ts",
     "runtime:allow-candidates-history": "node scripts/runtime-allow-candidates-history.ts",
