@@ -43,6 +43,59 @@ const RR_SCENARIOS = [
   { tp: 1.0, sl: 1.0,  label: 'TP 1.0% / SL 1.0%  (R/R 1:1)' },
 ];
 
+async function ensureVectorBtBacktestSchema() {
+  await db.run(`
+    CREATE TABLE IF NOT EXISTS vectorbt_backtest_runs (
+      id SERIAL PRIMARY KEY,
+      symbol TEXT NOT NULL,
+      days INTEGER NOT NULL,
+      tp_pct DOUBLE PRECISION,
+      sl_pct DOUBLE PRECISION,
+      label TEXT,
+      status TEXT DEFAULT 'ok',
+      sharpe DOUBLE PRECISION,
+      total_return DOUBLE PRECISION,
+      max_drawdown DOUBLE PRECISION,
+      win_rate DOUBLE PRECISION,
+      total_trades INTEGER,
+      metadata JSONB,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+}
+
+async function persistVectorBtBacktestRuns(symbol, days, rows = []) {
+  if (!Array.isArray(rows) || rows.length === 0) return 0;
+  await ensureVectorBtBacktestSchema();
+  for (const row of rows) {
+    await db.run(`
+      INSERT INTO vectorbt_backtest_runs (
+        symbol, days, tp_pct, sl_pct, label, status,
+        sharpe, total_return, max_drawdown, win_rate, total_trades, metadata
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)
+    `, [
+      symbol,
+      days,
+      row.tp ?? null,
+      row.sl ?? null,
+      row.label || null,
+      row.status || (row.error ? 'error' : 'ok'),
+      row.sharpe ?? null,
+      row.totalReturn ?? null,
+      row.maxDrawdown ?? null,
+      row.winRate ?? null,
+      row.totalTrades ?? null,
+      JSON.stringify({
+        install: row.install || null,
+        missing: row.missing || null,
+        error: row.error || null,
+        rawStatus: row.rawStatus || null,
+      }),
+    ]);
+  }
+  return rows.length;
+}
+
 async function validateRRWithBacktest(symbol, days = 90, scenarios = RR_SCENARIOS) {
   console.log(`7. VectorBT 백테스트 검증 (${symbol}, ${days}일)`);
 
@@ -56,10 +109,30 @@ async function validateRRWithBacktest(symbol, days = 90, scenarios = RR_SCENARIO
       if (btResult?.status === 'dependency_missing') {
         console.log(`   ⚠️ 의존성 부족: ${btResult.missing?.join(', ') || 'unknown'}`);
         console.log(`   설치: ${btResult.install}`);
-        return { status: 'dependency_missing', details: btResult };
+        const payload = {
+          status: 'dependency_missing',
+          details: btResult,
+          persisted: 0,
+        };
+        try {
+          await db.initSchema();
+          payload.persisted = await persistVectorBtBacktestRuns(symbol, days, [{
+            tp: null,
+            sl: null,
+            label: 'dependency_missing',
+            status: 'dependency_missing',
+            missing: btResult.missing || [],
+            install: btResult.install || null,
+            rawStatus: btResult.status || null,
+          }]);
+        } catch (error) {
+          console.log(`   ⚠️ 백테스트 저장 생략: ${error.message}`);
+        }
+        return payload;
       }
       results.push({
         ...scenario,
+        status: btResult?.status || 'ok',
         sharpe: btResult?.sharpe_ratio ?? null,
         totalReturn: btResult?.total_return ?? null,
         maxDrawdown: btResult?.max_drawdown ?? null,
@@ -74,11 +147,20 @@ async function validateRRWithBacktest(symbol, days = 90, scenarios = RR_SCENARIO
       );
     } catch (error) {
       console.log(`   ⚠️ ${scenario.label}: 검증 실패 (${error.message})`);
-      results.push({ ...scenario, error: error.message });
+      results.push({ ...scenario, status: 'error', error: error.message });
     }
   }
 
-  return { status: 'ok', results };
+  let persisted = 0;
+  try {
+    await db.initSchema();
+    persisted = await persistVectorBtBacktestRuns(symbol, days, results);
+    console.log(`   💾 VectorBT 결과 저장: ${persisted}건`);
+  } catch (error) {
+    console.log(`   ⚠️ VectorBT 결과 저장 생략: ${error.message}`);
+  }
+
+  return { status: 'ok', results, persisted };
 }
 
 async function analyzeRR() {
