@@ -24,6 +24,7 @@ import { getDomesticPrice, getOverseasPrice } from '../shared/kis-client.ts';
 import { tracker }      from '../shared/cost-tracker.ts';
 import { buildAccuracyReport } from '../shared/analyst-accuracy.ts';
 import { buildScreeningHistoryReport } from '../scripts/screening-history-report.ts';
+import { buildPositionReevaluationSummary } from '../scripts/position-reevaluation-summary.ts';
 
 const _require = createRequire(import.meta.url);
 const shadow   = _require('../../../packages/core/lib/shadow-mode.js');
@@ -354,6 +355,22 @@ async function loadScreeningSummary() {
   return summaryByMarket;
 }
 
+async function loadPositionReevaluationSummary() {
+  try {
+    const result = await buildPositionReevaluationSummary({
+      json: true,
+      paper: false,
+      persist: true,
+      minutesBack: 180,
+    });
+    return result?.decision ? result : null;
+  } catch (error) {
+    return {
+      error: String(error?.message || error),
+    };
+  }
+}
+
 function buildScreeningSummaryLines(screeningSummary = {}) {
   const lines = [];
   for (const market of ['crypto', 'domestic', 'overseas']) {
@@ -372,11 +389,26 @@ function buildScreeningSummaryLines(screeningSummary = {}) {
   return lines;
 }
 
+function buildPositionReevaluationLines(reevaluationSummary = null) {
+  if (!reevaluationSummary) return ['조회 결과 없음'];
+  if (reevaluationSummary.error) return ['조회 실패'];
+  if (!reevaluationSummary.decision) return ['결과 없음'];
+  const metrics = reevaluationSummary.decision.metrics || {};
+  const lines = [
+    `${reevaluationSummary.decision.status}: HOLD ${metrics.holds || 0} / ADJUST ${metrics.adjusts || 0} / EXIT ${metrics.exits || 0}`,
+  ];
+  if (Array.isArray(reevaluationSummary.decision.reasons)) {
+    lines.push(...reevaluationSummary.decision.reasons.slice(0, 2));
+  }
+  return lines;
+}
+
 // ─── 리포트 생성 ─────────────────────────────────────────────────────
 
 export async function generateReport({ days = 30, telegram = false } = {}) {
   await initHubSecrets().catch(() => false);
   const screeningSummary = await loadScreeningSummary();
+  const reevaluationSummary = await loadPositionReevaluationSummary();
   let dbAvailable = true;
   try {
     await db.initSchema();
@@ -407,6 +439,9 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
       '',
       '━━━ 스크리닝 동향 ━━━',
       ...buildScreeningSummaryLines(screeningSummary).map((line) => `  ${line}`),
+      '',
+      '━━━ 포지션 재평가 ━━━',
+      ...buildPositionReevaluationLines(reevaluationSummary).map((line) => `  ${line}`),
       '',
       '━━━ 상태 ━━━',
       '  DB 미연결로 신호/거래 통계는 생략',
@@ -577,6 +612,10 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
   lines.push(...buildScreeningSummaryLines(screeningSummary).map((line) => `  ${line}`));
   lines.push(``);
 
+  lines.push(`━━━ 포지션 재평가 ━━━`);
+  lines.push(...buildPositionReevaluationLines(reevaluationSummary).map((line) => `  ${line}`));
+  lines.push(``);
+
   // 자산 추이 (스냅샷 2개 이상일 때)
   if (equityHistory.length >= 2) {
     lines.push(`━━━ 자산 추이 ━━━`);
@@ -712,9 +751,15 @@ ${JSON.stringify({
     summary?.error ? { error: summary.error } : {
       latestDynamicCount: Number(summary?.trend?.latestDynamicCount || 0),
       deltaDynamicCount: Number(summary?.trend?.deltaDynamicCount || 0),
-      topSymbols: (summary?.topSymbols || []).slice(0, 3).map((item: any) => item.symbol),
+          topSymbols: (summary?.topSymbols || []).slice(0, 3).map((item: any) => item.symbol),
     },
   ])),
+  reevaluation: reevaluationSummary?.decision ? {
+    status: reevaluationSummary.decision.status,
+    holds: Number(reevaluationSummary.decision.metrics?.holds || 0),
+    adjusts: Number(reevaluationSummary.decision.metrics?.adjusts || 0),
+    exits: Number(reevaluationSummary.decision.metrics?.exits || 0),
+  } : null,
 }, null, 2).slice(0, 2000)}`;
 
     const insight = await generateGemmaPilotText({
@@ -811,6 +856,7 @@ ${JSON.stringify({
           `자산 집계 소스: ${balanceSource === 'binance_live' ? '바이낸스 실잔고' : '최신 스냅샷 fallback'}`,
         ]),
         buildSection('스크리닝 동향', buildScreeningSummaryLines(screeningSummary)),
+        buildSection('포지션 재평가', buildPositionReevaluationLines(reevaluationSummary)),
         buildSection(`신호 통계 (${days}일)`, buildSignalStatsLines({ days, sigTotal, sigExec, sigApproved, sigFailed })),
         buildSection('AI 요약', [aiSummary]),
       ],
@@ -827,7 +873,10 @@ ${JSON.stringify({
         details: [
           `신호 ${sigTotal}개`,
           `실행 ${sigExec}개 / 승인대기 ${sigApproved}개 / 실패 ${sigFailed}개`,
-        ],
+          reevaluationSummary?.decision
+            ? `재평가 ${reevaluationSummary.decision.status} / EXIT ${reevaluationSummary.decision.metrics?.exits || 0}`
+            : null,
+        ].filter(Boolean),
       },
     });
     console.log('\n📱 제이 큐 발송 완료');

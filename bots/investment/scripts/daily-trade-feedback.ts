@@ -17,15 +17,27 @@
  *   node scripts/daily-trade-feedback.ts --json
  */
 
+import { createRequire } from 'module';
 import { callLLM, parseJSON } from '../shared/llm-client.ts';
 import { publishAlert } from '../shared/alert-publisher.ts';
 import * as db from '../shared/db.ts';
 import * as rag from '../shared/rag-client.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { buildScreeningHistoryReport } from './screening-history-report.ts';
-const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
-
-const dailyFeedbackMemory = createAgentMemory({ agentId: 'investment.daily-feedback', team: 'investment' });
+import { buildPositionReevaluationSummary } from './position-reevaluation-summary.ts';
+const require = createRequire(import.meta.url);
+let dailyFeedbackMemory = {
+  recallCountHint: async () => '',
+  recallHint: async () => '',
+  remember: async () => {},
+  consolidate: async () => {},
+};
+try {
+  const { createAgentMemory } = require('../../../packages/core/lib/agent-memory.ts');
+  dailyFeedbackMemory = createAgentMemory({ agentId: 'investment.daily-feedback', team: 'investment' });
+} catch (error) {
+  console.warn(`  ⚠️ [daily-feedback] agent-memory 로드 실패(무시): ${error?.message || error}`);
+}
 
 function parseArg(name, fallback = null) {
   return process.argv.slice(2).find((arg) => arg.startsWith(`--${name}=`))?.split('=')[1] || fallback;
@@ -49,7 +61,7 @@ async function fetchDailyTrades(dateKst) {
       SELECT
         trade_id, symbol, exchange, direction, is_paper,
         COALESCE(trade_mode, 'normal') AS trade_mode,
-        pnl_net, pnl_percent, exit_reason, reviewed_at
+        pnl_net, pnl_percent, exit_reason, exit_time
       FROM trade_journal
       WHERE CAST(to_timestamp(exit_time / 1000.0) AT TIME ZONE 'Asia/Seoul' AS DATE) = $1::date
         AND status IN ('closed', 'tp_hit', 'sl_hit', 'force_exit')
@@ -72,7 +84,7 @@ async function fetchDailyAnalystAccuracy(dateKst) {
         AVG(CASE WHEN COALESCE((analyst_accuracy->>'oracle')::boolean, oracle_accurate) = true THEN 1.0 ELSE 0.0 END) AS oracle_accuracy,
         AVG(CASE WHEN COALESCE((analyst_accuracy->>'sentinel')::boolean, hermes_accurate) = true THEN 1.0 ELSE 0.0 END) AS hermes_accuracy
       FROM trade_review
-      WHERE CAST(reviewed_at AT TIME ZONE 'Asia/Seoul' AS DATE) = $1::date
+      WHERE CAST(to_timestamp(reviewed_at / 1000.0) AT TIME ZONE 'Asia/Seoul' AS DATE) = $1::date
     `, [dateKst]);
     return rows[0] || null;
   } catch (error) {
@@ -116,6 +128,22 @@ async function fetchScreeningSummary() {
     }
   }
   return result;
+}
+
+async function fetchPositionReevaluationSummary() {
+  try {
+    const result = await buildPositionReevaluationSummary({
+      json: true,
+      paper: false,
+      persist: true,
+      minutesBack: 180,
+    });
+    return result?.decision ? result : null;
+  } catch (error) {
+    return {
+      error: String(error?.message || error),
+    };
+  }
 }
 
 async function buildDailyFeedback(dateKst, trades, analystAccuracy) {
@@ -173,16 +201,23 @@ function buildScreeningLine(screeningSummary) {
   return parts.length > 0 ? `🔎 screening: ${parts.join(' | ')}` : null;
 }
 
-function buildDailyFeedbackMemoryQuery(dateKst, feedback, screeningSummary) {
+function buildPositionReevaluationLine(reevaluationSummary) {
+  if (!reevaluationSummary || reevaluationSummary.error || !reevaluationSummary.decision) return null;
+  const metrics = reevaluationSummary.decision.metrics || {};
+  return `🔁 reeval: ${reevaluationSummary.decision.status} | HOLD ${metrics.holds || 0} / ADJUST ${metrics.adjusts || 0} / EXIT ${metrics.exits || 0}`;
+}
+
+function buildDailyFeedbackMemoryQuery(dateKst, feedback, screeningSummary, reevaluationSummary) {
   return [
     'investment daily trade feedback',
     dateKst,
     feedback?.stats?.wins > feedback?.stats?.losses ? 'win-day' : 'loss-day',
     screeningSummary?.crypto?.trend ? 'screening-active' : 'screening-light',
+    reevaluationSummary?.decision?.status || null,
   ].filter(Boolean).join(' ');
 }
 
-function buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSummary) {
+function buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary) {
   const lines = [
     `🌓 루나 일일 피드백 (${dateKst})`,
     `📌 ${feedback.summary}`,
@@ -191,17 +226,20 @@ function buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSumma
   ];
   const screeningLine = buildScreeningLine(screeningSummary);
   if (screeningLine) lines.push(screeningLine);
+  const reevaluationLine = buildPositionReevaluationLine(reevaluationSummary);
+  if (reevaluationLine) lines.push(reevaluationLine);
   if (Array.isArray(feedback.nextActions) && feedback.nextActions.length > 0) {
     lines.push(`➡️ 다음 액션: ${feedback.nextActions.join(' / ')}`);
   }
   return lines.join('\n');
 }
 
-async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeningSummary) {
+async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary) {
   const content = [
     `[일일 피드백 ${dateKst}] ${feedback.summary}`,
     `거래 ${feedback.stats.total}건 / 승률 ${(feedback.stats.winRate * 100).toFixed(1)}% / 손익 $${feedback.stats.totalPnl.toFixed(2)}`,
     buildScreeningLine(screeningSummary),
+    buildPositionReevaluationLine(reevaluationSummary),
     `다음 액션: ${(feedback.nextActions || []).join(' / ') || '없음'}`,
   ].filter(Boolean).join('\n');
   await rag.store('trades', content, {
@@ -212,6 +250,7 @@ async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeni
     total_pnl: feedback.stats.totalPnl,
     analyst_accuracy: analystAccuracy || {},
     screening_summary: screeningSummary || {},
+    reevaluation_summary: reevaluationSummary?.decision || {},
   }, 'luna');
 }
 
@@ -219,18 +258,19 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
   const trades = await fetchDailyTrades(dateKst);
   const analystAccuracy = await fetchDailyAnalystAccuracy(dateKst);
   const screeningSummary = await fetchScreeningSummary();
+  const reevaluationSummary = await fetchPositionReevaluationSummary();
   const feedback = await buildDailyFeedback(dateKst, trades, analystAccuracy);
-  const message = buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSummary);
+  const message = buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary);
 
   try {
-    await storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeningSummary);
+    await storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary);
   } catch (error) {
     console.warn(`  ⚠️ [daily-feedback] RAG 저장 실패(무시): ${error?.message || error}`);
   }
 
   if (!dryRun) {
     try {
-      const memoryQuery = buildDailyFeedbackMemoryQuery(dateKst, feedback, screeningSummary);
+      const memoryQuery = buildDailyFeedbackMemoryQuery(dateKst, feedback, screeningSummary, reevaluationSummary);
       const episodicHint = await dailyFeedbackMemory.recallCountHint(memoryQuery, {
         type: 'episodic',
         limit: 2,
@@ -256,7 +296,7 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
         event_type: 'daily_feedback',
         alert_level: 1,
         message: finalMessage,
-        payload: { dateKst, feedback, analystAccuracy, screeningSummary },
+        payload: { dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary },
       });
       await dailyFeedbackMemory.remember(finalMessage, 'episodic', {
         importance: 0.7,
@@ -285,6 +325,7 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
     tradeCount: trades.length,
     analystAccuracy,
     screeningSummary,
+    reevaluationSummary,
     feedback,
     message,
   };
