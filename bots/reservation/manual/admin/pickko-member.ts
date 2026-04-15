@@ -19,6 +19,7 @@ const { getPickkoLaunchOptions, setupDialogHandler } = require('../../lib/browse
 const { loginToPickko, findPickkoMember } = require('../../lib/pickko');
 const { outputResult, fail } = require('../../lib/cli');
 const { maskPhone, maskName } = require('../../lib/formatting');
+const { buildReservationCliInsight } = require('../../lib/cli-insight');
 
 declare const jQuery: any;
 
@@ -144,10 +145,22 @@ async function main() {
 
     if (existing.exists) {
       log(`✅ 기존 회원 확인됨: ${CUSTOMER_NAME} (${PHONE_RAW})`);
+      const aiSummary = await buildReservationCliInsight({
+        bot: 'pickko-member',
+        requestType: 'member-result',
+        title: '픽코 회원 가입 결과',
+        data: {
+          kind: 'existing',
+          phone: PHONE_RAW,
+          name: CUSTOMER_NAME,
+        },
+        fallback: '기존 회원이라 신규 등록 없이 바로 다음 예약 또는 이용권 처리로 넘어가면 됩니다.',
+      });
       outputResult({
         success: true,
         isNew: false,
         message: `기존 회원입니다: ${CUSTOMER_NAME} (${PHONE_RAW.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3')})`,
+        aiSummary,
       });
       return;
     }
@@ -156,11 +169,24 @@ async function main() {
 
     log('\n[3단계] 신규 회원 등록');
     await registerNewMember(page, PHONE_RAW, CUSTOMER_NAME, BIRTH_DATE);
+    const aiSummary = await buildReservationCliInsight({
+      bot: 'pickko-member',
+      requestType: 'member-result',
+      title: '픽코 회원 가입 결과',
+      data: {
+        kind: 'new',
+        phone: PHONE_RAW,
+        name: CUSTOMER_NAME,
+        birthDate: BIRTH_DATE,
+      },
+      fallback: '신규 회원 등록이 끝나서 이제 예약 등록이나 이용권 추가를 바로 진행할 수 있습니다.',
+    });
 
     outputResult({
       success: true,
       isNew: true,
       message: `신규 회원 등록 완료: ${CUSTOMER_NAME} (${PHONE_RAW.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3')})`,
+      aiSummary,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);

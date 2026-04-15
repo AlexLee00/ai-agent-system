@@ -14,6 +14,7 @@ const { loginToPickko, findPickkoMember } = require('../../lib/pickko');
 const { IS_DEV, IS_OPS } = require('../../../../packages/core/lib/env');
 const { outputResult, fail } = require('../../lib/cli');
 const { maskPhone, maskName } = require('../../lib/formatting');
+const { buildReservationCliInsight } = require('../../lib/cli-insight');
 
 declare const jQuery: any;
 
@@ -384,7 +385,20 @@ async function main() {
     const discountNote = DISCOUNT ? ` (전액할인 — ${REASON})` : '';
     const doneMsg = `이용권 추가 완료: ${targetLabel}\n이용권: ${TICKET_NAME} × ${COUNT}${discountNote}`;
     log(`\n✅ ${doneMsg}`);
-    outputResult({ success: true, message: doneMsg });
+    const aiSummary = await buildReservationCliInsight({
+      bot: 'pickko-ticket',
+      requestType: 'ticket-result',
+      title: '픽코 이용권 추가 결과',
+      data: {
+        phone: PHONE_RAW,
+        ticketName: TICKET_NAME,
+        count: COUNT,
+        discount: Boolean(DISCOUNT),
+        reason: REASON,
+      },
+      fallback: '이용권 추가가 완료되어 회원 상세와 결제 메모만 후속 확인하면 됩니다.',
+    });
+    outputResult({ success: true, message: doneMsg, aiSummary });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     log(`❌ 오류: ${message}`);
