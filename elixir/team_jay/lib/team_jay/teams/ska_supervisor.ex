@@ -2,9 +2,9 @@ defmodule TeamJay.Teams.SkaSupervisor do
   use Supervisor
 
   @ska_agents [
-    %{name: :andy, script: "bots/reservation/scripts/naver-monitor.js", schedule: {:interval, 300_000}},
-    %{name: :jimmy, script: "bots/reservation/scripts/kiosk-monitor.js", schedule: {:interval, 300_000}},
-    %{name: :ska_commander, script: "bots/reservation/scripts/commander.js", schedule: {:interval, 600_000}},
+    %{name: :andy, script: "dist/ts-runtime/bots/reservation/auto/monitors/naver-monitor.js", schedule: {:interval, 300_000}},
+    %{name: :jimmy, script: "dist/ts-runtime/bots/reservation/auto/monitors/pickko-kiosk-monitor.js", schedule: {:interval, 300_000}},
+    %{name: :ska_commander, script: "dist/ts-runtime/bots/reservation/src/ska.js", schedule: {:interval, 600_000}},
     %{name: :eve, script: "bots/ska/scripts/eve.js", schedule: {:interval, 3_600_000}},
     %{name: :eve_crawl, script: "bots/ska/scripts/eve-crawl.js", schedule: {:interval, 3_600_000}},
     %{name: :ska_etl, script: "bots/ska/scripts/etl.js", schedule: nil},
