@@ -38,21 +38,28 @@ const ALL_SERVICES = [
 
 function buildLightHealthReport() {
   const launchctl = getLaunchctlStatus();
-  const rows = buildServiceRows({
-    allServices: ALL_SERVICES,
-    continuousServices: CONTINUOUS,
-    launchctlStatus: launchctl,
+  const built = buildServiceRows(launchctl, {
+    labels: ALL_SERVICES,
+    continuous: CONTINUOUS,
     normalExitCodes: DEFAULT_NORMAL_EXIT_CODES,
     shortLabel: (label) => label.replace(/^ai\.investment\./, ''),
   });
-  const okCount = rows.filter((row) => row.status === 'ok').length;
-  const warnCount = rows.filter((row) => row.status !== 'ok').length;
+  const okRows = Array.isArray(built?.ok) ? built.ok : [];
+  const warnRows = Array.isArray(built?.warn) ? built.warn : [];
+  const rows = [
+    ...okRows.map((detail) => ({ status: 'ok', detail })),
+    ...warnRows.map((detail) => ({ status: 'warn', detail })),
+  ];
+  const okCount = okRows.length;
+  const warnCount = warnRows.length;
   return {
     ok: true,
     serviceHealth: {
       okCount,
       warnCount,
       rows,
+      ok: okRows,
+      warn: warnRows,
     },
   };
 }
