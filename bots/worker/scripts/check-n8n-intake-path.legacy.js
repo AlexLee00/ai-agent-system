@@ -8,6 +8,7 @@ const {
 const { resolveProductionWebhookUrl } = require('../../../packages/core/lib/n8n-webhook-registry');
 const { getWorkerN8nRuntimeConfig } = require('../lib/runtime-config');
 const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
+const { buildWorkerCliInsight } = require('../lib/cli-insight.legacy.js');
 
 const runtimeConfig = getWorkerN8nRuntimeConfig();
 const HEALTH_URL = process.env.N8N_HEALTH_URL || runtimeConfig.healthUrl;
@@ -71,6 +72,22 @@ async function main() {
     `webhook status: ${webhook.status}`,
     webhook.reason ? `reason: ${webhook.reason}` : null,
   ].filter(Boolean).join('\n');
+  const aiSummary = await buildWorkerCliInsight({
+    bot: 'check-n8n-intake-path',
+    requestType: 'n8n-intake-path',
+    title: '워커 n8n intake path 진단 결과',
+    data: {
+      n8nHealthy,
+      webhookRegistered,
+      webhookHealthy: webhook.healthy,
+      webhookStatus: webhook.status,
+      webhookReason: webhook.reason,
+      webhookError: webhook.error || null,
+    },
+    fallback: n8nHealthy && webhookRegistered && webhook.healthy
+      ? '워커 n8n intake 경로가 정상이라 자연어 업무 유입은 현재 안정적입니다.'
+      : '워커 n8n intake 경로에 경고가 있어 웹훅 등록과 응답 상태를 우선 점검하는 편이 좋습니다.',
+  });
 
   console.log(JSON.stringify({
     healthUrl: HEALTH_URL,
@@ -87,6 +104,7 @@ async function main() {
       episodicHint,
       semanticHint,
     },
+    aiSummary,
   }, null, 2));
 
   await intakePathMemory.remember(summary, 'episodic', {

@@ -4,6 +4,7 @@ const path = require('path');
 const { extractDocument } = require('../../../packages/core/lib/document-parser');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const { parseExpenseRowsFromXlsxExtraction } = require('../lib/expenses-import');
+const { buildWorkerCliInsight } = require('../lib/cli-insight.legacy.js');
 
 const SCHEMA = 'worker';
 
@@ -137,6 +138,23 @@ async function main() {
        AND deleted_at IS NULL
   `, [companyId]);
 
+  const aiSummary = await buildWorkerCliInsight({
+    bot: 'import-expenses-from-excel',
+    requestType: 'expense-import',
+    title: '워커 엑셀 비용 반영 결과',
+    data: {
+      companyId,
+      fileCount: results.length,
+      importedCount: results.reduce((sum, item) => sum + Number(item.importedCount || 0), 0),
+      skippedCount: results.reduce((sum, item) => sum + Number(item.skippedCount || 0), 0),
+      totalExpensesCount: Number(summary?.count || 0),
+      totalExpensesAmount: Number(summary?.total || 0),
+    },
+    fallback: results.some((item) => Number(item.importedCount || 0) > 0)
+      ? '엑셀 비용 데이터가 반영돼 지출 원장이 최신 상태에 더 가까워졌습니다.'
+      : '새로 반영된 비용은 없고 중복 건만 건너뛰었을 가능성이 높습니다.',
+  });
+
   console.log(JSON.stringify({
     ok: true,
     companyId,
@@ -145,6 +163,7 @@ async function main() {
       expensesCount: Number(summary?.count || 0),
       expensesAmount: Number(summary?.total || 0),
     },
+    aiSummary,
   }, null, 2));
 }
 
