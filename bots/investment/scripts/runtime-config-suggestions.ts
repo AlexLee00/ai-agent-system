@@ -12,6 +12,7 @@ import { getInvestmentRuntimeConfig, getValidationSoftBudgetConfig } from '../sh
 import { getCapitalConfig } from '../shared/capital-manager.ts';
 import { annotateRuntimeSuggestions, buildParameterGovernanceReport } from '../shared/runtime-parameter-governance.ts';
 import { loadCryptoLiveGateReview } from './crypto-live-gate-review.ts';
+import { buildInvestmentCliInsight } from '../shared/cli-insight.ts';
 
 function parseArgs(argv = process.argv.slice(2)) {
   const daysArg = argv.find(arg => arg.startsWith('--days='));
@@ -598,6 +599,7 @@ function buildReport(days, summaries, validationSummaries, validationBudgetSnaps
 function printHuman(report) {
   const lines = [];
   lines.push(`🔧 투자 runtime_config 변경 제안 (${report.periodDays}일)`);
+  if (report.aiSummary) lines.push(`🔍 AI: ${report.aiSummary}`);
   lines.push('');
   lines.push('시장 요약:');
   for (const summary of Object.values(report.marketSummary)) {
@@ -716,6 +718,23 @@ async function main() {
     validationBudgetPolicyTrend,
     suggestions,
   );
+  report.aiSummary = await buildInvestmentCliInsight({
+    bot: 'runtime-config-suggestions',
+    requestType: 'runtime-config-suggestions',
+    title: '투자 runtime config suggestion 리포트 요약',
+    data: {
+      periodDays: report.periodDays,
+      actionableSuggestions: report.actionableSuggestions,
+      parameterGovernance: report.parameterGovernance,
+      topSuggestions: report.suggestions.slice(0, 8),
+      validationBudgetPolicy: report.validationBudgetPolicy,
+      capitalGuardBias: report.capitalGuardBias,
+    },
+    fallback:
+      report.actionableSuggestions > 0
+        ? `runtime config 제안 ${report.suggestions.length}건 중 조정 후보 ${report.actionableSuggestions}건이 있어 governance tier를 먼저 확인하는 편이 좋습니다.`
+        : `runtime config 제안은 ${report.suggestions.length}건이지만 현재는 observe 위주라 추세 누적을 더 보는 편이 좋습니다.`,
+  });
 
   let saved = null;
   if (write) {
