@@ -2,6 +2,7 @@
 // @ts-nocheck
 
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import { buildInvestmentCliInsight } from '../shared/cli-insight.ts';
 import { buildRuntimeAllowCandidatesValidation } from './runtime-allow-candidates-validation.ts';
 import { buildRuntimePlannerCoverageReport } from './runtime-planner-coverage-report.ts';
 import { buildRuntimeMinOrderPressureReport } from './runtime-min-order-pressure-report.ts';
@@ -88,6 +89,7 @@ function renderText(payload) {
     '🧠 Runtime Autotune Readiness',
     `status: ${payload.decision.status}`,
     `headline: ${payload.decision.headline}`,
+    payload.aiSummary ? `🔍 AI: ${payload.aiSummary}` : null,
     '',
     '근거:',
     ...payload.decision.reasons.map((reason) => `- ${reason}`),
@@ -101,7 +103,22 @@ function renderText(payload) {
     '권장 조치:',
     ...payload.decision.actionItems.map((item) => `- ${item}`),
   ];
-  return lines.join('\n');
+  return lines.filter(Boolean).join('\n');
+}
+
+function buildRuntimeAutotuneFallback(payload = {}) {
+  const decision = payload.decision || {};
+  const metrics = decision.metrics || {};
+  if (decision.status === 'autotune_ready') {
+    return `자동 튜닝 준비도가 올라와 ready allow 후보 ${metrics.readyCandidates || 0}건부터 비교 실험을 시작할 수 있습니다.`;
+  }
+  if (decision.status === 'autotune_blocked') {
+    return 'planner와 validation 레일은 준비됐지만 최소 주문 병목이 자동 튜닝을 막고 있어 주문 규칙부터 정리하는 편이 좋습니다.';
+  }
+  if (decision.status === 'autotune_observe') {
+    return 'planner 레일은 준비됐고, 이제 ready allow 후보나 backtest 품질을 더 누적해서 자동 튜닝 시점을 보는 편이 좋습니다.';
+  }
+  return '자동 튜닝 판단에 필요한 레일을 계속 쌓는 단계라 planner와 validation 추세를 더 관찰하면 됩니다.';
 }
 
 export async function buildRuntimeAutotuneReadinessReport({ days = 14, limit = 20, json = false } = {}) {
@@ -129,6 +146,22 @@ export async function buildRuntimeAutotuneReadinessReport({ days = 14, limit = 2
     backtest,
     decision,
   };
+
+  payload.aiSummary = await buildInvestmentCliInsight({
+    bot: 'runtime-autotune-readiness-report',
+    requestType: 'runtime-autotune-readiness-report',
+    title: '투자 runtime autotune readiness 리포트 요약',
+    data: {
+      days,
+      limit,
+      decision,
+      allowValidation: allowValidation?.decision,
+      plannerCoverage: plannerCoverage?.decision,
+      minOrderPressure: minOrderPressure?.decision,
+      backtest: backtest?.decision,
+    },
+    fallback: buildRuntimeAutotuneFallback(payload),
+  });
 
   if (json) return payload;
   return renderText(payload);

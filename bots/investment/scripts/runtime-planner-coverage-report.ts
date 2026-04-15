@@ -2,6 +2,7 @@
 // @ts-nocheck
 
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import { buildInvestmentCliInsight } from '../shared/cli-insight.ts';
 import { buildRuntimeDecisionReport } from './runtime-decision-report.ts';
 
 const MARKETS = [
@@ -92,6 +93,7 @@ function renderText(payload) {
     '🧭 Runtime Planner Coverage',
     `status: ${payload.decision.status}`,
     `headline: ${payload.decision.headline}`,
+    payload.aiSummary ? `🔍 AI: ${payload.aiSummary}` : null,
     '',
     '근거:',
     ...payload.decision.reasons.map((reason) => `- ${reason}`),
@@ -104,7 +106,22 @@ function renderText(payload) {
     '권장 조치:',
     ...payload.decision.actionItems.map((item) => `- ${item}`),
   ];
-  return lines.join('\n');
+  return lines.filter(Boolean).join('\n');
+}
+
+function buildRuntimePlannerCoverageFallback(payload = {}) {
+  const decision = payload.decision || {};
+  const metrics = decision.metrics || {};
+  if (decision.status === 'planner_coverage_gap') {
+    return `planner 메타가 covered market ${metrics.covered || 0}개에 아직 붙지 않아 bridge 메타 누적 상태를 먼저 확인하는 편이 좋습니다.`;
+  }
+  if (decision.status === 'planner_coverage_partial') {
+    return `planner 메타는 일부 market에서만 붙고 있어 attached ${metrics.attachedMarkets || 0}/${metrics.covered || 0} 시장 차이를 비교하는 편이 좋습니다.`;
+  }
+  if (decision.status === 'planner_coverage_waiting') {
+    return '아직 실세션 표본이 적어 planner coverage는 시장 세션이 더 쌓인 뒤 다시 보는 편이 좋습니다.';
+  }
+  return `planner 메타는 covered market ${metrics.covered || 0}개 기준으로 비교적 안정적으로 붙고 있어 현재 추세를 계속 누적하면 됩니다.`;
 }
 
 export async function buildRuntimePlannerCoverageReport({ limit = 5, json = false, includeSmoke = false } = {}) {
@@ -127,6 +144,18 @@ export async function buildRuntimePlannerCoverageReport({ limit = 5, json = fals
     reports,
     decision,
   };
+  payload.aiSummary = await buildInvestmentCliInsight({
+    bot: 'runtime-planner-coverage-report',
+    requestType: 'runtime-planner-coverage-report',
+    title: '투자 runtime planner coverage 리포트 요약',
+    data: {
+      limit,
+      includeSmoke,
+      rows,
+      decision,
+    },
+    fallback: buildRuntimePlannerCoverageFallback(payload),
+  });
   if (json) return payload;
   return renderText(payload);
 }
