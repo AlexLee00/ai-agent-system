@@ -7,6 +7,7 @@
 const { getDailySummary, getDailySummariesInRange, getRoomRevenueSummary } = require('../../lib/db');
 const { parseArgs } = require('../../lib/args');
 const { outputResult, fail } = require('../../lib/cli');
+const { buildReservationCliInsight } = require('../../lib/cli-insight');
 
 const ARGS = parseArgs(process.argv);
 
@@ -24,8 +25,8 @@ type RevenueSummaryRow = {
   days: number;
 };
 
-function ok(message: string) {
-  outputResult({ success: true, message });
+async function ok(message: string, aiSummary?: string) {
+  outputResult({ success: true, message, aiSummary });
   process.exit(0);
 }
 
@@ -140,7 +141,20 @@ const isCumulative = process.argv.includes('--cumulative');
   try {
     if (isCumulative) {
       const rows: RevenueSummaryRow[] = await getRoomRevenueSummary();
-      ok(buildCumulativeMessage(rows));
+      const aiSummary = await buildReservationCliInsight({
+        bot: 'pickko-stats-cmd',
+        requestType: 'revenue-stats',
+        title: '누적 확정 매출 조회',
+        data: {
+          mode: 'cumulative',
+          rowCount: rows.length,
+          totals: rows.map((row) => ({ room: row.room, total: row.total_amount, days: row.days })),
+        },
+        fallback: rows.length > 0
+          ? `누적 확정 매출 흐름이 정리돼 룸별 기여도와 일반이용 비중을 바로 비교할 수 있습니다.`
+          : `확정된 매출 데이터가 없어 집계 상태를 먼저 확인하는 편이 좋습니다.`,
+      });
+      await ok(buildCumulativeMessage(rows), aiSummary);
       return;
     }
 
@@ -153,7 +167,23 @@ const isCumulative = process.argv.includes('--cumulative');
       const lastDay = new Date(y, m, 0).getDate();
       const endDate = `${ARGS.month}-${String(lastDay).padStart(2, '0')}`;
       const rows: SummaryRow[] = await getDailySummariesInRange(startDate, endDate);
-      ok(buildPeriodMessage(rows, `${formatMonth(startDate)} 매출`));
+      const aiSummary = await buildReservationCliInsight({
+        bot: 'pickko-stats-cmd',
+        requestType: 'revenue-stats',
+        title: '월 매출 조회',
+        data: {
+          mode: 'month',
+          startDate,
+          endDate,
+          days: rows.length,
+          totalAmount: rows.reduce((sum, row) => sum + Number(row.total_amount || 0) + Number(row.generalRevenue || 0), 0),
+          confirmedCount: rows.filter((row) => row.confirmed).length,
+        },
+        fallback: rows.length > 0
+          ? `${formatMonth(startDate)} 흐름이 정리돼 확정일과 미확정일 비중을 함께 보기 좋습니다.`
+          : `${formatMonth(startDate)} 집계 데이터가 없어 수집 또는 확정 상태를 먼저 확인하는 편이 좋습니다.`,
+      });
+      await ok(buildPeriodMessage(rows, `${formatMonth(startDate)} 매출`), aiSummary);
       return;
     }
 
@@ -178,7 +208,23 @@ const isCumulative = process.argv.includes('--cumulative');
 
       const endDate = toDateStr(now);
       const rows: SummaryRow[] = await getDailySummariesInRange(startDate, endDate);
-      ok(buildPeriodMessage(rows, label));
+      const aiSummary = await buildReservationCliInsight({
+        bot: 'pickko-stats-cmd',
+        requestType: 'revenue-stats',
+        title: '기간 매출 조회',
+        data: {
+          mode: ARGS.period,
+          startDate,
+          endDate,
+          days: rows.length,
+          totalAmount: rows.reduce((sum, row) => sum + Number(row.total_amount || 0) + Number(row.generalRevenue || 0), 0),
+          confirmedCount: rows.filter((row) => row.confirmed).length,
+        },
+        fallback: rows.length > 0
+          ? `${label} 흐름이 정리돼 기간 매출과 확정 진행도를 함께 보기 좋습니다.`
+          : `${label} 집계 데이터가 없어 수집 또는 확정 상태를 먼저 확인하는 편이 좋습니다.`,
+      });
+      await ok(buildPeriodMessage(rows, label), aiSummary);
       return;
     }
 
@@ -188,7 +234,22 @@ const isCumulative = process.argv.includes('--cumulative');
       if (!resolved) fail(`날짜 형식 오류: ${dateArg} (예: today, yesterday, 2026-02-26)`);
 
       const row: SummaryRow | null = await getDailySummary(resolved);
-      ok(buildDayMessage(row, formatDate(resolved)));
+      const aiSummary = await buildReservationCliInsight({
+        bot: 'pickko-stats-cmd',
+        requestType: 'revenue-stats',
+        title: '일 매출 조회',
+        data: {
+          mode: 'day',
+          date: resolved,
+          totalAmount: Number(row?.total_amount || 0) + Number(row?.generalRevenue || 0),
+          confirmed: Boolean(row?.confirmed),
+          roomAmounts: row?.roomAmounts || {},
+        },
+        fallback: row
+          ? `${formatDate(resolved)} 매출이 정리돼 룸별 금액과 확정 여부를 바로 확인할 수 있습니다.`
+          : `${formatDate(resolved)} 매출 데이터가 없어 집계 상태를 먼저 확인하는 편이 좋습니다.`,
+      });
+      await ok(buildDayMessage(row, formatDate(resolved)), aiSummary);
       return;
     }
 
