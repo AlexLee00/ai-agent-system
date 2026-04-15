@@ -13,6 +13,7 @@ const { createAgentMemory } = require('../../../packages/core/lib/agent-memory')
 const { loadConfig } = require('../src/index');
 const { loadEDL, renderFinal } = require('../lib/edl-builder');
 const { probeDurationMs } = require('../lib/ffmpeg-preprocess');
+const { buildVideoCliInsight } = require('../lib/cli-insight.js');
 
 const BOT_NAME = 'video';
 const TEAM_NAME = 'video';
@@ -48,6 +49,13 @@ function buildRenderMemoryQuery(edit, kind) {
     kind,
     String(edit?.title || edit?.id || '').trim(),
   ].filter(Boolean).join(' ');
+}
+
+function buildRenderFallbackInsight({ kind, edit, renderMs = 0, reason = '' }) {
+  if (kind === 'failed') {
+    return `최종 렌더가 실패해 ${String(edit?.title || edit?.id || '작업')}의 출력 경로와 ffmpeg 오류를 먼저 점검해야 합니다.`;
+  }
+  return `최종 렌더가 완료되어 ${String(edit?.title || edit?.id || '작업')} 결과물을 바로 검수하면 됩니다 (${Math.round(renderMs / 1000)}초).`;
 }
 
 async function updateVideoEdit(id, fields) {
@@ -137,6 +145,20 @@ async function main() {
     const renderMs = Date.now() - startedAt;
     const outputSizeMb = Number((result.fileSize / 1024 / 1024).toFixed(2));
     const outputDurationMs = await probeDurationMs(result.outputPath);
+    const aiSummary = await buildVideoCliInsight({
+      bot: 'video-render',
+      requestType: 'video-render',
+      title: '비디오 최종 렌더 완료',
+      data: {
+        editId: edit.id,
+        title: edit.title || null,
+        outputPath: result.outputPath,
+        renderMs,
+        outputSizeMb,
+        outputDurationMs,
+      },
+      fallback: buildRenderFallbackInsight({ kind: 'completed', edit, renderMs }),
+    });
 
     await updateVideoEdit(edit.id, {
       output_path: result.outputPath,
@@ -173,7 +195,9 @@ async function main() {
       `세트 ID: ${edit.id}`,
       `제목: ${edit.title || edit.id}`,
       `파일: ${result.outputPath}`,
+      `🔍 AI: ${aiSummary}`,
     ].join('\n');
+    console.log(`🔍 AI: ${aiSummary}`);
     await publishToWebhook({
       event: {
         from_bot: 'render-from-edl',
@@ -211,6 +235,17 @@ async function main() {
         WHERE id = $1`,
       [edit.session_id, toErrorMessage(error)]
     );
+    const aiSummary = await buildVideoCliInsight({
+      bot: 'video-render',
+      requestType: 'video-render',
+      title: '비디오 최종 렌더 실패',
+      data: {
+        editId: edit.id,
+        title: edit.title || null,
+        reason: toErrorMessage(error),
+      },
+      fallback: buildRenderFallbackInsight({ kind: 'failed', edit, reason: toErrorMessage(error) }),
+    });
     const memoryQuery = buildRenderMemoryQuery(edit, 'failed');
     const episodicHint = await renderMemory.recallCountHint(memoryQuery, {
       type: 'episodic',
@@ -237,7 +272,9 @@ async function main() {
       `세트 ID: ${edit.id}`,
       `제목: ${edit.title || edit.id}`,
       `사유: ${toErrorMessage(error)}`,
+      `🔍 AI: ${aiSummary}`,
     ].join('\n');
+    console.error(`🔍 AI: ${aiSummary}`);
     await publishToWebhook({
       event: {
         from_bot: 'render-from-edl',
