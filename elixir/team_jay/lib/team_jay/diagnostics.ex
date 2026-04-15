@@ -62,13 +62,13 @@ defmodule TeamJay.Diagnostics do
     {:jimmy, :ska},
     {:ska_commander, :ska},
     {:blog_commenter, :blog},
+    {:blog_daily, :blog},
     {:dexter, :claude},
     {:claude_commander, :claude},
     {:steward_hourly, :steward},
     {:steward_daily, :steward}
   ]
   @week2_shadow_agents [
-    {:blog_daily, :blog, true},
     {:blog_node_server, :blog, true}
   ]
   @week3_shadow_agents [
