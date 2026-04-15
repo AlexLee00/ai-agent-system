@@ -14,6 +14,8 @@ const DEFAULT_CASES = [
 async function runCase(input) {
   const l01Node = getInvestmentNode('L01');
   const l10Node = getInvestmentNode('L10');
+  const l14Node = getInvestmentNode('L14');
+  const l21Node = getInvestmentNode('L21');
   const sessionId = await createPipelineSession({
     pipeline: 'luna_pipeline',
     market: input.market,
@@ -71,15 +73,76 @@ async function runCase(input) {
     planner_compact: plannerCompact,
   });
 
+  await recordNodeResult(l14Node, {
+    sessionId,
+    market: input.market,
+    meta: await buildDecisionBridgeMeta({
+      sessionId,
+      market: input.market,
+      stage: 'portfolio',
+      planner: plannerCompact,
+    }),
+    storeArtifact: false,
+  }, {
+    market: input.market,
+    synthetic: true,
+    planner_compact: plannerCompact,
+    portfolioDecision: {
+      decisions: [
+        {
+          symbol: input.symbol,
+          action: 'BUY',
+          confidence: 0.62,
+          amount_usdt: input.market === 'binance' ? 100 : 500,
+          reasoning: 'synthetic portfolio decision',
+        },
+      ],
+      portfolio_view: 'synthetic',
+      risk_level: 'LOW',
+    },
+  });
+
+  await recordNodeResult(l21Node, {
+    sessionId,
+    market: input.market,
+    symbol: input.symbol,
+    meta: await buildDecisionBridgeMeta({
+      sessionId,
+      market: input.market,
+      symbol: input.symbol,
+      stage: 'risk',
+      planner: plannerCompact,
+    }),
+    storeArtifact: false,
+  }, {
+    market: input.market,
+    symbol: input.symbol,
+    synthetic: true,
+    planner_compact: plannerCompact,
+    risk: {
+      approved: true,
+      adjustedAmount: input.market === 'binance' ? 100 : 500,
+      reason: null,
+    },
+  });
+
   const nodeRuns = await getNodeRuns(sessionId);
   const l10Run = [...nodeRuns].reverse().find((row) => row.node_id === 'L10');
+  const l14Run = [...nodeRuns].reverse().find((row) => row.node_id === 'L14');
+  const l21Run = [...nodeRuns].reverse().find((row) => row.node_id === 'L21');
   return {
     sessionId,
     market: input.market,
     symbol: input.symbol,
     plannerCompact,
-    plannerInMeta: Boolean(l10Run?.metadata?.planner),
-    stage: l10Run?.metadata?.stage || null,
+    l10PlannerInMeta: Boolean(l10Run?.metadata?.planner),
+    l14PlannerInMeta: Boolean(l14Run?.metadata?.planner),
+    l21PlannerInMeta: Boolean(l21Run?.metadata?.planner),
+    stages: {
+      l10: l10Run?.metadata?.stage || null,
+      l14: l14Run?.metadata?.stage || null,
+      l21: l21Run?.metadata?.stage || null,
+    },
   };
 }
 
@@ -91,8 +154,8 @@ async function main() {
 
   const summary = {
     total: results.length,
-    passed: results.filter((row) => row.plannerCompact && row.plannerInMeta).length,
-    failed: results.filter((row) => !(row.plannerCompact && row.plannerInMeta)).length,
+    passed: results.filter((row) => row.plannerCompact && row.l10PlannerInMeta && row.l14PlannerInMeta && row.l21PlannerInMeta).length,
+    failed: results.filter((row) => !(row.plannerCompact && row.l10PlannerInMeta && row.l14PlannerInMeta && row.l21PlannerInMeta)).length,
   };
 
   const payload = {
@@ -108,7 +171,7 @@ async function main() {
 
   console.log(`Decision planner suite: ${summary.passed}/${summary.total}`);
   for (const row of results) {
-    console.log(`${row.market} | ${row.symbol} | planner=${row.plannerCompact ? 'ok' : 'missing'} | meta=${row.plannerInMeta ? 'ok' : 'missing'} | stage=${row.stage || 'n/a'}`);
+    console.log(`${row.market} | ${row.symbol} | planner=${row.plannerCompact ? 'ok' : 'missing'} | l10=${row.l10PlannerInMeta ? 'ok' : 'missing'} | l14=${row.l14PlannerInMeta ? 'ok' : 'missing'} | l21=${row.l21PlannerInMeta ? 'ok' : 'missing'} | stages=${row.stages.l10 || 'n/a'}/${row.stages.l14 || 'n/a'}/${row.stages.l21 || 'n/a'}`);
   }
 }
 
