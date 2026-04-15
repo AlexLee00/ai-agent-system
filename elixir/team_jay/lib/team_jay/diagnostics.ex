@@ -61,6 +61,7 @@ defmodule TeamJay.Diagnostics do
     {:andy, :ska},
     {:jimmy, :ska},
     {:ska_commander, :ska},
+    {:blog_commenter, :blog},
     {:dexter, :claude},
     {:claude_commander, :claude},
     {:steward_hourly, :steward},
@@ -68,7 +69,6 @@ defmodule TeamJay.Diagnostics do
   ]
   @week2_shadow_agents [
     {:blog_daily, :blog, true},
-    {:blog_commenter, :blog, true},
     {:blog_node_server, :blog, true}
   ]
   @week3_shadow_agents [
@@ -311,6 +311,7 @@ defmodule TeamJay.Diagnostics do
       TeamJay.Teams.ClaudeSupervisor,
       TeamJay.Teams.StewardSupervisor,
       TeamJay.Teams.InvestmentSupervisor,
+      TeamJay.Teams.BlogSupervisor,
       TeamJay.Teams.BlogShadowSupervisor,
       TeamJay.Teams.WorkerShadowSupervisor,
       TeamJay.Teams.PlatformShadowSupervisor

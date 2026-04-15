@@ -39,6 +39,7 @@ defmodule TeamJay.Application do
       TeamJay.Teams.ClaudeSupervisor,
       TeamJay.Teams.StewardSupervisor,
       TeamJay.Teams.InvestmentSupervisor,
+      TeamJay.Teams.BlogSupervisor,
       TeamJay.Teams.BlogShadowSupervisor,
       TeamJay.Teams.WorkerShadowSupervisor,
       TeamJay.Teams.PlatformShadowSupervisor,
