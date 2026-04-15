@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const pgPool = require('../../../packages/core/lib/pg-pool');
+const { buildReservationCliInsight } = require('../lib/cli-insight');
 
 function getArg(name) {
   const prefix = `--${name}=`;
@@ -18,6 +19,10 @@ function csvCell(value) {
     return `"${text.replace(/"/g, '""')}"`;
   }
   return text;
+}
+
+function buildExportFallback(payload) {
+  return `스카 매출 CSV는 최근 ${payload.days}일 기준 ${payload.rows}행으로 내보내졌고, 공유용 원본은 ${path.basename(payload.output)}입니다.`;
 }
 
 async function main() {
@@ -63,12 +68,25 @@ async function main() {
   }
 
   fs.writeFileSync(outputPath, lines.join('\n') + '\n', 'utf8');
-  console.log(JSON.stringify({
+  const payload = {
     ok: true,
     output: outputPath,
     rows: rows.length,
     days,
-  }));
+  };
+  payload.aiSummary = await buildReservationCliInsight({
+    bot: 'export-ska-sales-csv',
+    requestType: 'export-ska-sales-csv',
+    title: '스카 매출 CSV 내보내기 요약',
+    data: {
+      output: outputPath,
+      rows: rows.length,
+      days,
+      topDates: rows.slice(0, 5).map((row) => row.date),
+    },
+    fallback: buildExportFallback(payload),
+  });
+  console.log(JSON.stringify(payload));
 }
 
 main().catch(err => {

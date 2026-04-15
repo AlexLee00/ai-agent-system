@@ -22,6 +22,7 @@
 
 const fs   = require('fs');
 const path = require('path');
+const { buildReservationCliInsight } = require('../lib/cli-insight');
 
 const HOME      = process.env.HOME;
 const WORKSPACE = path.join(HOME, '.openclaw', 'workspace');
@@ -149,6 +150,22 @@ function main() {
   purgeOpenclawLogs();
 
   console.log(`[로그 로테이션] 완료 — 로테이션 ${rotated}개, 스킵 ${skipped}개`);
+  buildReservationCliInsight({
+    bot: 'reservation-log-rotate',
+    requestType: 'reservation-log-rotate',
+    title: '예약 로그 로테이션 요약',
+    data: {
+      rotated,
+      skipped,
+      targets: ROTATE_FILES.length,
+    },
+    fallback:
+      rotated > 0
+        ? `예약 로그 로테이션은 ${rotated}개 파일을 정리했고 ${skipped}개는 그대로 유지했습니다.`
+        : `예약 로그 로테이션은 모두 스킵되어 현재는 로그 크기 변화만 더 보면 됩니다.`,
+  }).then((aiSummary) => {
+    if (aiSummary) console.log(`🔍 AI: ${aiSummary}`);
+  }).catch(() => {});
 }
 
 main();
