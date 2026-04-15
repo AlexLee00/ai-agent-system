@@ -5,12 +5,14 @@
 const env = require('../../../packages/core/lib/env');
 const path = require('path');
 const { buildMarketingDigest } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/marketing-digest.ts'));
+const { buildBlogCliInsight } = require('../lib/cli-insight.ts');
 
 const json = process.argv.includes('--json');
 
 function formatText(digest = {}) {
   const lines = [
     '📣 블로그 마케팅 Digest',
+    digest?.aiSummary ? `🔍 AI: ${digest.aiSummary}` : null,
     `상태: ${digest?.health?.status || 'unknown'}`,
     `사유: ${digest?.health?.reason || '없음'}`,
     '',
@@ -66,11 +68,36 @@ function formatText(digest = {}) {
     recommendations.slice(0, 3).forEach((item) => lines.push(`- ${item}`));
   }
 
-  return lines.join('\n');
+  return lines.filter(Boolean).join('\n');
+}
+
+function buildMarketingDigestFallback(digest = {}) {
+  const status = digest?.health?.status || 'unknown';
+  const topSignal = digest?.senseSummary?.topSignal?.message || '';
+  const watchChannels = Number(digest?.channelPerformance?.watchChannels || 0);
+  if (status === 'watch') {
+    return `마케팅 상태가 watch라서 ${topSignal || '상위 신호'}와 watch 채널 ${watchChannels}개를 먼저 점검하는 편이 좋습니다.`;
+  }
+  return `마케팅 상태는 ${status}이며 상위 신호와 채널 추세를 기준으로 현재 운영 흐름은 비교적 안정적입니다.`;
 }
 
 async function main() {
   const digest = await buildMarketingDigest();
+  digest.aiSummary = await buildBlogCliInsight({
+    bot: 'marketing-digest',
+    requestType: 'marketing-digest',
+    title: '블로그 마케팅 digest 요약',
+    data: {
+      health: digest?.health,
+      senseSummary: digest?.senseSummary,
+      revenueCorrelation: digest?.revenueCorrelation,
+      diagnosis: digest?.diagnosis,
+      channelPerformance: digest?.channelPerformance,
+      autonomySummary: digest?.autonomySummary,
+      nextGeneralPreview: digest?.nextGeneralPreview,
+    },
+    fallback: buildMarketingDigestFallback(digest),
+  });
   if (json) {
     console.log(JSON.stringify(digest, null, 2));
     return;

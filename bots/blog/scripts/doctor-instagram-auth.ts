@@ -4,6 +4,7 @@ const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const { getInstagramConfig, buildHostedVideoUrl, verifyPublicMediaUrl } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-graph.ts'));
 const { findLatestReelPath } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-files.ts'));
+const { buildBlogCliInsight } = require('../lib/cli-insight.ts');
 
 function parseArgs(argv = []) {
   return {
@@ -36,6 +37,13 @@ function buildActions({ config, media, reelPath }) {
   }
 
   return actions;
+}
+
+function buildInstagramDoctorFallback(payload = {}) {
+  if (!payload.ready) {
+    return `인스타 업로드 준비가 아직 불완전해 token 상태와 공개 media 경로를 먼저 확인하는 것이 좋습니다.`;
+  }
+  return '인스타 업로드 준비는 갖춰져 있어 실업로드 테스트로 최종 확인하면 됩니다.';
 }
 
 async function main() {
@@ -83,6 +91,19 @@ async function main() {
     media,
     actions: buildActions({ config, media, reelPath }),
   };
+  payload.aiSummary = await buildBlogCliInsight({
+    bot: 'doctor-instagram-auth',
+    requestType: 'doctor-instagram-auth',
+    title: '블로그 인스타그램 doctor 요약',
+    data: {
+      ready: payload.ready,
+      token: payload.token,
+      media: payload.media,
+      actionCount: payload.actions.length,
+      actions: payload.actions.slice(0, 5),
+    },
+    fallback: buildInstagramDoctorFallback(payload),
+  });
 
   if (args.json) {
     console.log(JSON.stringify(payload, null, 2));
@@ -90,6 +111,7 @@ async function main() {
   }
 
   console.log(`[인스타 doctor] ready=${payload.ready ? 'yes' : 'no'} source=${payload.source}`);
+  console.log(`🔍 AI: ${payload.aiSummary}`);
   console.log(`[인스타 doctor] token expires=${payload.token.expiresAt || 'unknown'} daysLeft=${payload.token.daysLeft ?? 'n/a'}`);
   console.log(`[인스타 doctor] media=${payload.media?.ok ? 'ready' : 'not-ready'} ${payload.media?.publicUrl || payload.media?.error || ''}`.trim());
   for (const action of payload.actions) {
