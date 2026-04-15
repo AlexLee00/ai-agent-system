@@ -6,6 +6,7 @@
 
 const path = require('path');
 const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
+const { buildWorkerCliInsight } = require('../lib/cli-insight.legacy');
 
 const setupMemory = createAgentMemory({ agentId: 'worker.setup', team: 'worker' });
 
@@ -41,6 +42,13 @@ function buildSetupMemoryQuery(kind) {
   ].filter(Boolean).join(' ');
 }
 
+function buildSetupFallback({ kind = 'success', migrationCount = 0 } = {}) {
+  if (kind === 'failure') {
+    return `worker setup이 실패해 migration ${migrationCount}건 적용 상태와 첫 오류 원인을 먼저 확인하는 것이 좋습니다.`;
+  }
+  return `worker setup이 완료되어 migration ${migrationCount}건 기준 기본 스키마 상태를 확보했습니다.`;
+}
+
 async function main() {
   const memoryQuery = buildSetupMemoryQuery('success');
   const episodicHint = await setupMemory.recallCountHint(memoryQuery, {
@@ -69,6 +77,17 @@ async function main() {
       await mod.up();
     }
   }
+  const aiSummary = await buildWorkerCliInsight({
+    bot: 'worker-setup',
+    requestType: 'worker-setup',
+    title: '워커 setup 완료 요약',
+    data: {
+      migrationCount: migrations.length,
+      recentSetupHint: episodicHint ? 'present' : 'none',
+      recentPatternHint: semanticHint ? 'present' : 'none',
+    },
+    fallback: buildSetupFallback({ kind: 'success', migrationCount: migrations.length }),
+  });
   if (episodicHint) console.log(episodicHint.trimStart());
   if (semanticHint) console.log(semanticHint.trimStart());
   await setupMemory.remember([
@@ -86,11 +105,24 @@ async function main() {
     olderThanDays: 14,
     limit: 10,
   }).catch(() => {});
+  console.log(`🔍 AI: ${aiSummary}`);
   console.log('✅ worker setup 완료');
 }
 
 if (require.main === module) {
   main().then(() => process.exit(0)).catch((e) => {
+    buildWorkerCliInsight({
+      bot: 'worker-setup',
+      requestType: 'worker-setup',
+      title: '워커 setup 실패 요약',
+      data: {
+        migrationCount: migrations.length,
+        error: e.message,
+      },
+      fallback: buildSetupFallback({ kind: 'failure', migrationCount: migrations.length }),
+    }).then((aiSummary) => {
+      if (aiSummary) console.error(`🔍 AI: ${aiSummary}`);
+    }).catch(() => {});
     setupMemory.remember([
       'worker setup 실패',
       `reason: ${e.message}`,
