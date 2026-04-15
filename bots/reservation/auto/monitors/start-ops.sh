@@ -19,8 +19,6 @@ LOG_FILE="/tmp/naver-ops-mode.log"
 NAVER_PROFILE="$HOME/.openclaw/workspace/naver-profile"
 NAVER_MONITOR_SCRIPT="/Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/auto/monitors/naver-monitor.js"
 KIOSK_PLIST="$HOME/Library/LaunchAgents/ai.ska.kiosk-monitor.plist"
-HEADED_FLAG="$BOT_DIR/.playwright-headed"
-
 NODE_BIN="/opt/homebrew/bin/node"
 [ ! -x "$NODE_BIN" ] && NODE_BIN=$(which node)
 
@@ -192,13 +190,9 @@ while true; do
   cleanup_old
   log "▶ naver-monitor 시작"
 
-  NAVER_HEADLESS_VALUE="${NAVER_HEADLESS:-0}"
-  PLAYWRIGHT_HEADLESS_VALUE="${PLAYWRIGHT_HEADLESS:-false}"
-  if [ -f "$HEADED_FLAG" ]; then
-    NAVER_HEADLESS_VALUE=0
-    PLAYWRIGHT_HEADLESS_VALUE=false
-    log "  👀 headed 플래그 감지 — 보이는 브라우저로 강제 전환"
-  fi
+  NAVER_HEADLESS_VALUE=1
+  PLAYWRIGHT_HEADLESS_VALUE=true
+  log "  🫥 OPS 백그라운드 모드 강제 — headed 플래그 무시"
 
   MODE=ops PICKKO_ENABLE=1 STRICT_TIME=1 \
   PLAYWRIGHT_HEADLESS="$PLAYWRIGHT_HEADLESS_VALUE" NAVER_HEADLESS="$NAVER_HEADLESS_VALUE" \

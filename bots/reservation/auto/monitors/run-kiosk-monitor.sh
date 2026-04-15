@@ -31,7 +31,7 @@ ln -sf "$LOG_FILE" "$LOG_SYMLINK" 2>/dev/null
 
 echo "[$(date)] ▶ pickko-kiosk-monitor 시작" >> "$LOG_FILE"
 
-MODE=ops TELEGRAM_ENABLED=1 "$NODE" "$RUNTIME_SCRIPT" >> "$LOG_FILE" 2>&1
+MODE=ops TELEGRAM_ENABLED=1 PLAYWRIGHT_HEADLESS=true PICKKO_HEADLESS=1 "$NODE" "$RUNTIME_SCRIPT" >> "$LOG_FILE" 2>&1
 EXIT_CODE=$?
 
 echo "[$(date)] ⏹ pickko-kiosk-monitor 완료 (exit: $EXIT_CODE)" >> "$LOG_FILE"
