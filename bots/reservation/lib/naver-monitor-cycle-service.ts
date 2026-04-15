@@ -237,6 +237,16 @@ export function createNaverMonitorCycleService(deps: CreateNaverMonitorCycleServ
         reason: `카운터는 ${delta}건 증가했지만 이번 사이클 신규 취소 처리 0건`,
         action: '취소 탭 / cancelled_keys / naver-monitor 로그를 즉시 확인하세요.',
       });
+    } else if (
+      previousCancelledCount !== null &&
+      cancelledCount === previousCancelledCount &&
+      cancelledCount > 0 &&
+      cycleNewCancelDetections === 0
+    ) {
+      await resolveSystemAlertByTitle(
+        '🚨 네이버 취소 카운터 증가 이상',
+        `오늘 취소 ${cancelledCount}건으로 추가 증가 없이 안정화 확인`,
+      );
     } else if (cancelledCount === 0) {
       await resolveSystemAlertByTitle(
         '🚨 네이버 취소 카운터 증가 이상',

@@ -15,6 +15,7 @@ const recent = !!ARGS.recent;
 const phone = ARGS.phone || null;
 const date = ARGS.date || null;
 const start = ARGS.start || null;
+const title = ARGS.title || null;
 
 type AlertResolveRow = {
   id: string;
@@ -27,9 +28,10 @@ type AlertResolveRow = {
 };
 
 type RecentCandidateRow = {
-  phone: string;
-  date: string;
-  start_time: string;
+  phone: string | null;
+  date: string | null;
+  start_time: string | null;
+  title: string | null;
   latest_timestamp: string | Date;
   alert_count: number | string;
 };
@@ -56,6 +58,7 @@ async function listRecentAlertCandidates(): Promise<RecentCandidateRow[]> {
       phone,
       date,
       start_time,
+      MAX(title) AS title,
       MAX(timestamp) AS latest_timestamp,
       COUNT(*) AS alert_count
     FROM alerts
@@ -141,18 +144,31 @@ async function listRecentAlertCandidates(): Promise<RecentCandidateRow[]> {
     }
 
     const candidate = candidates[0];
-    result = await pgPool.run('reservation', `
-      UPDATE alerts
-      SET resolved = 1, resolved_at = to_char(now(),'YYYY-MM-DD HH24:MI:SS')
-      WHERE resolved = 0 AND type = 'error'
-        AND phone = $1 AND date = $2 AND start_time = $3
-    `, [candidate.phone, candidate.date, candidate.start_time]);
+    if (candidate.phone && candidate.date && candidate.start_time) {
+      result = await pgPool.run('reservation', `
+        UPDATE alerts
+        SET resolved = 1, resolved_at = to_char(now(),'YYYY-MM-DD HH24:MI:SS')
+        WHERE resolved = 0 AND type = 'error'
+          AND phone = $1 AND date = $2 AND start_time = $3
+      `, [candidate.phone, candidate.date, candidate.start_time]);
+    } else if (candidate.title) {
+      result = await pgPool.run('reservation', `
+        UPDATE alerts
+        SET resolved = 1, resolved_at = to_char(now(),'YYYY-MM-DD HH24:MI:SS')
+        WHERE resolved = 0 AND type = 'error'
+          AND title = $1
+      `, [candidate.title]);
+    } else {
+      throw new Error('최근 미해결 알림 후보를 식별할 수 없습니다.');
+    }
 
-    const followups = await resolveOpenKioskBlockFollowups({
-      phone: candidate.phone,
-      date: candidate.date,
-      start: candidate.start_time,
-    });
+    const followups = (candidate.phone && candidate.date && candidate.start_time)
+      ? await resolveOpenKioskBlockFollowups({
+          phone: candidate.phone,
+          date: candidate.date,
+          start: candidate.start_time,
+        })
+      : [];
     const aiSummary = await buildReservationCliInsight({
       bot: 'pickko-alerts-resolve',
       requestType: 'alerts-resolve-recent',
@@ -177,14 +193,24 @@ async function listRecentAlertCandidates(): Promise<RecentCandidateRow[]> {
         phone: candidate.phone,
         date: candidate.date,
         start: candidate.start_time,
+        title: candidate.title,
       },
-      message: `최근 미해결 오류 알림 자동 해결 완료 (${candidate.phone} ${candidate.date} ${candidate.start_time})`,
+      message: candidate.phone && candidate.date && candidate.start_time
+        ? `최근 미해결 오류 알림 자동 해결 완료 (${candidate.phone} ${candidate.date} ${candidate.start_time})`
+        : `최근 미해결 시스템 오류 알림 자동 해결 완료 (${candidate.title || 'title unknown'})`,
     }));
     return;
   }
 
   let followups = [];
-  if (phone && date && start) {
+  if (title) {
+    result = await pgPool.run('reservation', `
+      UPDATE alerts
+      SET resolved = 1, resolved_at = to_char(now(),'YYYY-MM-DD HH24:MI:SS')
+      WHERE resolved = 0 AND type = 'error'
+        AND title = $1
+    `, [title]);
+  } else if (phone && date && start) {
     result = await pgPool.run('reservation', `
       UPDATE alerts
       SET resolved = 1, resolved_at = to_char(now(),'YYYY-MM-DD HH24:MI:SS')
@@ -210,7 +236,7 @@ async function listRecentAlertCandidates(): Promise<RecentCandidateRow[]> {
       requestType: 'alerts-resolve',
       title: '미해결 오류 알림 해결 결과',
       data: {
-        mode: phone && date && start ? 'targeted' : 'all',
+        mode: title ? 'title' : phone && date && start ? 'targeted' : 'all',
         resolved: 0,
         kioskFollowups: 0,
       },
@@ -228,7 +254,7 @@ async function listRecentAlertCandidates(): Promise<RecentCandidateRow[]> {
       requestType: 'alerts-resolve',
       title: '미해결 오류 알림 해결 결과',
       data: {
-        mode: phone && date && start ? 'targeted' : 'all',
+        mode: title ? 'title' : phone && date && start ? 'targeted' : 'all',
         resolved: n,
         kioskFollowups: followupCount,
       },
