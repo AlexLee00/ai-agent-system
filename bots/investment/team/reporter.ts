@@ -29,6 +29,9 @@ const _require = createRequire(import.meta.url);
 const shadow   = _require('../../../packages/core/lib/shadow-mode.js');
 const pgPool   = _require('../../../packages/core/lib/pg-pool.js');
 const kst      = _require('../../../packages/core/lib/kst');
+const { generateGemmaPilotText } = _require('../../../packages/core/lib/gemma-pilot.js') as {
+  generateGemmaPilotText: (payload: Record<string, any>) => Promise<{ ok?: boolean; content?: string }>;
+};
 const {
   buildNoticeEvent,
   renderNoticeEvent,
@@ -203,6 +206,57 @@ function formatAmount(amount, exchange) {
   const unit = getPositionFormat(exchange).amountUnit;
   const decimals = exchange === 'binance' ? 6 : 0;
   return `${Number(amount || 0).toFixed(decimals)}${unit}`;
+}
+
+function sanitizeInvestmentInsightLine(text = '') {
+  return String(text || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) =>
+      line &&
+      !/^thinking process/i.test(line) &&
+      !/^[-*]\s*(thinking|analysis)/i.test(line) &&
+      !/^[0-9]+\.\s/.test(line) &&
+      !/^<\|/.test(line) &&
+      !/^ai[:：]/i.test(line)
+    ) || '';
+}
+
+function buildInvestmentReportFallbackInsight({
+  equity,
+  sigTotal,
+  sigExec,
+  sigFailed,
+  balances,
+  screeningSummary,
+}: {
+  equity: number;
+  sigTotal: number;
+  sigExec: number;
+  sigFailed: number;
+  balances: Array<{ coin?: string; total?: number }>;
+  screeningSummary: Record<string, any>;
+}) {
+  const summaryMarkets = Object.values(screeningSummary || {})
+    .filter((summary: any) => summary && !summary.error);
+  const activeMarketCount = summaryMarkets.filter(
+    (summary: any) => Number(summary?.trend?.latestDynamicCount || 0) > 0,
+  ).length;
+  const hasBinanceBalance = Array.isArray(balances) && balances.some((row) => Number(row?.total || 0) > 0);
+
+  if (sigFailed > 0) {
+    return `신호 ${sigTotal}개 중 실패 ${sigFailed}개가 있어 실행 안정성을 먼저 점검하는 편이 좋습니다.`;
+  }
+  if (activeMarketCount >= 2) {
+    return `총자산은 $${equity.toFixed(2)} 수준이며, 스크리닝 동향이 ${activeMarketCount}개 시장에서 동시에 살아 있습니다.`;
+  }
+  if (sigExec > 0) {
+    return `총자산은 $${equity.toFixed(2)} 수준이며, 오늘은 실행된 신호 ${sigExec}개 중심으로 복기하면 좋습니다.`;
+  }
+  if (hasBinanceBalance) {
+    return `총자산은 $${equity.toFixed(2)} 수준이며, 뚜렷한 실행 신호보다 자산 보전과 관망 비중이 높은 하루입니다.`;
+  }
+  return `총자산은 $${equity.toFixed(2)} 수준이며, 오늘은 신호보다 운영 상태와 비용 흐름을 점검하는 날입니다.`;
 }
 
 function dedupeEquityHistoryByKstDate(equityHistory = []) {
@@ -634,6 +688,63 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
     lines.push(accuracyReport.text);
   }
 
+  let aiSummary = '';
+  try {
+    const prompt = `당신은 투자 운영 리포트 분석가입니다.
+아래 데이터를 보고 오늘의 핵심 인사이트를 한국어 한 줄로만 작성하세요.
+숫자 재나열보다 운영 패턴, 주의 포인트, 복기 우선순위를 짧게 요약하세요.
+
+데이터:
+${JSON.stringify({
+  equity: Number(equity.toFixed(2)),
+  signals: {
+    total: sigTotal,
+    executed: sigExec,
+    approved: sigApproved,
+    failed: sigFailed,
+  },
+  llmCost: {
+    today: Number(cost.usage.toFixed(4)),
+    month: Number(cost.monthUsage.toFixed(4)),
+  },
+  screening: Object.fromEntries(Object.entries(screeningSummary || {}).map(([market, summary]: [string, any]) => [
+    market,
+    summary?.error ? { error: summary.error } : {
+      latestDynamicCount: Number(summary?.trend?.latestDynamicCount || 0),
+      deltaDynamicCount: Number(summary?.trend?.deltaDynamicCount || 0),
+      topSymbols: (summary?.topSymbols || []).slice(0, 3).map((item: any) => item.symbol),
+    },
+  ])),
+}, null, 2).slice(0, 2000)}`;
+
+    const insight = await generateGemmaPilotText({
+      team: 'investment',
+      purpose: 'gemma-insight',
+      bot: 'reporter',
+      requestType: 'daily-report-summary',
+      prompt,
+      maxTokens: 120,
+      temperature: 0.4,
+      timeoutMs: 10000,
+    });
+    aiSummary = sanitizeInvestmentInsightLine(insight?.content || '');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`[reporter] AI 요약 생략: ${message}`);
+  }
+  if (!aiSummary) {
+    aiSummary = buildInvestmentReportFallbackInsight({
+      equity,
+      sigTotal,
+      sigExec,
+      sigFailed,
+      balances,
+      screeningSummary,
+    });
+  }
+  lines.push(``);
+  lines.push(`🔍 AI: ${aiSummary}`);
+
   const report = lines.join('\n');
   console.log('\n' + report);
 
@@ -701,6 +812,7 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
         ]),
         buildSection('스크리닝 동향', buildScreeningSummaryLines(screeningSummary)),
         buildSection(`신호 통계 (${days}일)`, buildSignalStatsLines({ days, sigTotal, sigExec, sigApproved, sigFailed })),
+        buildSection('AI 요약', [aiSummary]),
       ],
       footer: '상세: 콘솔 리포트 참고',
     }));
