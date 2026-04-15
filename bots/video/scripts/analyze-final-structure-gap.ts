@@ -7,6 +7,7 @@ const path = require('path');
 const { compareVideos } = require('../lib/reference-quality');
 const { SAMPLE_MAP } = require('./test-reference-quality');
 const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
+const { buildVideoCliInsight } = require('../lib/cli-insight.js');
 
 const structureGapMemory = createAgentMemory({ agentId: 'video.final-structure-gap', team: 'video' });
 
@@ -173,7 +174,7 @@ function buildStructureGapSummary(args, comparison, edlSummary, findings) {
   ].filter(Boolean).join('\n');
 }
 
-function printReport(sampleName, comparison, edlSummary, findings, memoryHints = {}) {
+function printReport(sampleName, comparison, edlSummary, findings, memoryHints = {}, aiSummary = '') {
   const durationRatio = round(safeNumber(comparison.generated.durationSec) / Math.max(safeNumber(comparison.reference.durationSec), 1), 3);
   console.log(`[final-structure-gap] sample=${sampleName || 'custom'}`);
   console.log(`[final-structure-gap] generated=${comparison.generated.path}`);
@@ -181,6 +182,7 @@ function printReport(sampleName, comparison, edlSummary, findings, memoryHints =
   console.log(`[final-structure-gap] generated_sec=${comparison.generated.durationSec} reference_sec=${comparison.reference.durationSec} ratio=${durationRatio} delta=${comparison.deltas.durationSec}`);
   console.log(`[final-structure-gap] overall=${comparison.scores.overall} duration=${comparison.scores.duration} visual=${comparison.scores.visual_similarity} resolution=${comparison.scores.resolution}`);
   console.log(`[final-structure-gap] clips=${edlSummary.clip_count} main=${edlSummary.main_clip_count} hold=${edlSummary.hold_clip_count} speed_floor=${edlSummary.speed_floor_clip_count} speed_floor_ratio=${edlSummary.speed_floor_ratio}`);
+  if (aiSummary) console.log(`🔍 AI: ${aiSummary}`);
   for (const item of edlSummary.repeated_windows_top3) {
     console.log(`[final-structure-gap] repeated window ${item.source_start}-${item.source_end}s count=${item.count} timeline_total=${item.timeline_total_sec}s segments=${item.segment_ids.join(',')}`);
   }
@@ -243,11 +245,28 @@ async function main() {
       semanticHint,
     },
   };
+  const aiSummary = await buildVideoCliInsight({
+    bot: 'analyze-final-structure-gap',
+    requestType: 'final-structure-gap',
+    title: '비디오 final structure gap 분석 결과',
+    data: {
+      sample: args.sample || null,
+      durationRatio: payload.duration_ratio,
+      overallScore: comparison.scores.overall,
+      holdClipCount: edlSummary.hold_clip_count,
+      repeatedShortWindowCount: edlSummary.repeated_short_window_count,
+      findings,
+    },
+    fallback: edlSummary.repeated_short_window_count > 0 || edlSummary.hold_clip_count > 0
+      ? '구조 반복이나 hold 의존이 보여 최종 편집 다양성을 먼저 보강하는 편이 좋습니다.'
+      : '구조 병목은 크지 않아 현재 편집 흐름은 비교적 안정적으로 보입니다.',
+  });
+  payload.aiSummary = aiSummary;
 
   if (args.json) {
     console.log(JSON.stringify(payload, null, 2));
   } else {
-    printReport(args.sample, comparison, edlSummary, findings, { episodicHint, semanticHint });
+    printReport(args.sample, comparison, edlSummary, findings, { episodicHint, semanticHint }, aiSummary);
   }
 
   await structureGapMemory.remember(buildStructureGapSummary(args, comparison, edlSummary, findings), 'episodic', {
