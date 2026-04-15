@@ -7,15 +7,17 @@ import { ACTIONS, ANALYST_TYPES, validateSignal } from './signal.ts';
 import { getDebateLimit, getExitDecisions, getMinConfidence, getPortfolioDecision, inspectPortfolioContext, shouldDebateForSymbol } from '../team/luna.ts';
 import { evaluateSignal } from '../team/nemesis.ts';
 import { notifyError } from './report.ts';
-import { loadAnalysesForSession } from '../nodes/helpers.ts';
+import { loadAnalysesForSession, loadLatestNodePayload } from '../nodes/helpers.ts';
 import { getInvestmentTradeMode } from './secrets.ts';
+import { buildPreScreenPlannerCompact } from './pre-screen-planner-report.ts';
 import { createRequire } from 'module';
 
 const _require = createRequire(import.meta.url);
 const elixirBridge = _require('../../../packages/core/lib/elixir-bridge');
 
-async function buildBridgeMeta({ sessionId, market, symbol = null, stage, regime = null }) {
+async function buildBridgeMeta({ sessionId, market, symbol = null, stage, regime = null, planner = null }) {
   const meta = { bridge: 'luna_orchestrate', stage };
+  if (planner) meta.planner = planner;
   try {
     const bridgePayload = await elixirBridge.createOrchestrationBridgePayload({
       market,
@@ -35,6 +37,17 @@ async function buildBridgeMeta({ sessionId, market, symbol = null, stage, regime
       bridge_payload_error: error.message,
     };
   }
+}
+
+async function loadSessionPlannerCompact(sessionId) {
+  const latest = await loadLatestNodePayload(sessionId, 'L01').catch(() => null);
+  if (!latest?.payload) return null;
+  const compact = buildPreScreenPlannerCompact(latest.payload);
+  if (!compact) return null;
+  if (compact.market === 'unknown' && compact.timeMode === 'unknown' && compact.mode === 'unknown') {
+    return null;
+  }
+  return compact;
 }
 
 function getDecisionNode(id) {
@@ -122,6 +135,7 @@ async function executeApprovedDecision({
   riskRejectReasons,
   stage = 'execute',
   analystSignalsOverride = null,
+  plannerCompact = null,
 }) {
   const analyses = symbolAnalysesMap.get(decision.symbol) || [];
   const analystSignals = analystSignalsOverride || buildAnalystSignals(analyses);
@@ -177,6 +191,7 @@ async function executeApprovedDecision({
       market: exchange,
       symbol: decision.symbol,
       stage,
+      planner: plannerCompact,
     }),
   }, {
     symbol: decision.symbol,
@@ -219,6 +234,7 @@ async function executeApprovedDecision({
       market: exchange,
       symbol: decision.symbol,
       stage,
+      planner: plannerCompact,
     }),
   });
 
@@ -231,6 +247,7 @@ async function executeApprovedDecision({
       market: exchange,
       symbol: decision.symbol,
       stage,
+      planner: plannerCompact,
     }),
   });
 
@@ -243,6 +260,7 @@ async function executeApprovedDecision({
       market: exchange,
       symbol: decision.symbol,
       stage,
+      planner: plannerCompact,
     }),
     storeArtifact: false,
   });
@@ -256,6 +274,7 @@ async function executeApprovedDecision({
       market: exchange,
       symbol: decision.symbol,
       stage,
+      planner: plannerCompact,
     }),
   });
 
@@ -268,6 +287,7 @@ async function executeApprovedDecision({
       market: exchange,
       symbol: decision.symbol,
       stage,
+      planner: plannerCompact,
     }),
     storeArtifact: false,
   });
@@ -367,6 +387,7 @@ export async function runDecisionExecutionPipeline({
   let exitBelowMinSkipped = 0;
   const exitResults = [];
   let exitEntrySummary = null;
+  const plannerCompact = await loadSessionPlannerCompact(sessionId);
 
   function countDecisionActions() {
     const counts = { buy: 0, sell: 0, hold: 0 };
@@ -453,6 +474,7 @@ export async function runDecisionExecutionPipeline({
             market: exchange,
             symbol: dec.symbol,
             stage: 'exit',
+            planner: plannerCompact,
           }),
         }, {
           symbol: dec.symbol,
@@ -477,6 +499,7 @@ export async function runDecisionExecutionPipeline({
           riskRejectReasons,
           stage: 'exit',
           analystSignalsOverride: 'EXIT_PHASE',
+          plannerCompact,
         });
 
         if (exitResult?.invalidSignal) {
@@ -519,6 +542,7 @@ export async function runDecisionExecutionPipeline({
           market: exchange,
           symbol,
           stage: 'fusion',
+          planner: plannerCompact,
         }),
       });
 
@@ -533,6 +557,7 @@ export async function runDecisionExecutionPipeline({
               market: exchange,
               symbol,
               stage: 'debate',
+              planner: plannerCompact,
             }),
           });
           await runNode(l12Node, {
@@ -544,6 +569,7 @@ export async function runDecisionExecutionPipeline({
               market: exchange,
               symbol,
               stage: 'debate',
+              planner: plannerCompact,
             }),
           });
           debateCount++;
@@ -561,6 +587,7 @@ export async function runDecisionExecutionPipeline({
           market: exchange,
           symbol,
           stage: 'decision',
+          planner: plannerCompact,
         }),
       });
       const decision = decisionResult.result?.decision;
@@ -625,6 +652,7 @@ export async function runDecisionExecutionPipeline({
       sessionId,
       market: exchange,
       stage: 'portfolio',
+      planner: plannerCompact,
     }),
     symbolDecisions,
     portfolio: currentPortfolio,
@@ -749,6 +777,7 @@ export async function runDecisionExecutionPipeline({
         symbol: dec.symbol,
         stage: 'risk',
         regime: riskResult?.strategyConfig?.market_regime || null,
+        planner: plannerCompact,
       }),
     }, {
       symbol: dec.symbol,
@@ -791,6 +820,7 @@ export async function runDecisionExecutionPipeline({
         market: exchange,
         symbol: dec.symbol,
         stage: 'execute',
+        planner: plannerCompact,
       }),
     });
 
@@ -803,6 +833,7 @@ export async function runDecisionExecutionPipeline({
         market: exchange,
         symbol: dec.symbol,
         stage: 'execute',
+        planner: plannerCompact,
       }),
     });
 
@@ -815,6 +846,7 @@ export async function runDecisionExecutionPipeline({
         market: exchange,
         symbol: dec.symbol,
         stage: 'execute',
+        planner: plannerCompact,
       }),
       storeArtifact: false,
     });
@@ -828,6 +860,7 @@ export async function runDecisionExecutionPipeline({
         market: exchange,
         symbol: dec.symbol,
         stage: 'execute',
+        planner: plannerCompact,
       }),
     });
 
@@ -840,6 +873,7 @@ export async function runDecisionExecutionPipeline({
         market: exchange,
         symbol: dec.symbol,
         stage: 'journal',
+        planner: plannerCompact,
       }),
       storeArtifact: false,
     });
