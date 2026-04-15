@@ -55,7 +55,8 @@ defmodule TeamJay.Agents.PortAgent do
       schedule: schedule_to_string(schedule)
     })
     if schedule == :once, do: send(self(), :run)
-    if match?({:interval, _}, schedule) or match?({:daily_at, _, _}, schedule), do: schedule_run(schedule)
+    if match?({:interval, _}, schedule) or match?({:daily_at, _, _}, schedule) or match?({:weekly_at, _, _, _}, schedule),
+      do: schedule_run(schedule)
 
     {:ok,
      %__MODULE__{
@@ -76,7 +77,8 @@ defmodule TeamJay.Agents.PortAgent do
   @impl true
   def handle_info(:run, state) do
     new_state = execute_script(state)
-    if match?({:interval, _}, state.schedule) or match?({:daily_at, _, _}, state.schedule), do: schedule_run(state.schedule)
+    if match?({:interval, _}, state.schedule) or match?({:daily_at, _, _}, state.schedule) or match?({:weekly_at, _, _, _}, state.schedule),
+      do: schedule_run(state.schedule)
     {:noreply, new_state}
   end
 
@@ -197,6 +199,35 @@ defmodule TeamJay.Agents.PortAgent do
     delay_ms = max(NaiveDateTime.diff(next_target, now, :millisecond), 0)
     Process.send_after(self(), :run, delay_ms)
   end
+  defp schedule_run({:weekly_at, weekdays, hour, minute}) do
+    now = NaiveDateTime.local_now() |> NaiveDateTime.truncate(:second)
+    date = NaiveDateTime.to_date(now)
+    {:ok, time} = Time.new(hour, minute, 0)
+
+    normalized_weekdays =
+      weekdays
+      |> List.wrap()
+      |> Enum.uniq()
+      |> Enum.sort()
+
+    next_target =
+      0..7
+      |> Enum.find_value(fn offset ->
+        target_date = Date.add(date, offset)
+        target_weekday = Date.day_of_week(target_date)
+
+        if target_weekday in normalized_weekdays do
+          {:ok, candidate} = NaiveDateTime.new(target_date, time)
+
+          if offset > 0 or NaiveDateTime.compare(candidate, now) == :gt do
+            candidate
+          end
+        end
+      end)
+
+    delay_ms = max(NaiveDateTime.diff(next_target, now, :millisecond), 0)
+    Process.send_after(self(), :run, delay_ms)
+  end
 
   defp record_event(severity, title, event_type, team, bot_name, metadata) do
     TeamJay.EventLake.record(%{
@@ -216,6 +247,14 @@ defmodule TeamJay.Agents.PortAgent do
   defp schedule_to_string({:interval, ms}), do: "interval:#{ms}"
   defp schedule_to_string({:daily_at, hour, minute}),
     do: "daily_at:" <> String.pad_leading(Integer.to_string(hour), 2, "0") <> ":" <> String.pad_leading(Integer.to_string(minute), 2, "0")
+  defp schedule_to_string({:weekly_at, weekdays, hour, minute}),
+    do:
+      "weekly_at:"
+      <> (weekdays |> List.wrap() |> Enum.map_join(",", &Integer.to_string/1))
+      <> "@"
+      <> String.pad_leading(Integer.to_string(hour), 2, "0")
+      <> ":"
+      <> String.pad_leading(Integer.to_string(minute), 2, "0")
 
   defp summarize_output(lines) do
     lines
