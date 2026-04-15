@@ -95,6 +95,21 @@ function buildExitEntryBridgeSummary(exitResults = []) {
   };
 }
 
+function buildPlannerRunMeta(plannerCompact = null) {
+  if (!plannerCompact) return {};
+  return {
+    planner_market: plannerCompact.market || 'unknown',
+    planner_time_mode: plannerCompact.timeMode || 'unknown',
+    planner_trade_mode: plannerCompact.tradeMode || 'normal',
+    planner_mode: plannerCompact.mode || 'unknown',
+    planner_should_analyze: Boolean(plannerCompact.shouldAnalyze),
+    planner_research_depth: Number(plannerCompact.researchDepth || 0),
+    planner_skip_reason: plannerCompact.skipReason || null,
+    planner_research_only: Boolean(plannerCompact.researchOnly),
+    planner_symbol_count: Number(plannerCompact.symbolCount || 0),
+  };
+}
+
 function classifyWeakSignalReason(confidence, minConfidence) {
   const gap = Number(minConfidence || 0) - Number(confidence || 0);
   if (gap <= 0.05) return 'confidence_near_threshold';
@@ -637,6 +652,7 @@ export async function runDecisionExecutionPipeline({
         saved_execution_work: metrics.savedExecutionWork,
         warnings: metrics.warnings,
         investment_trade_mode: investmentTradeMode,
+        ...buildPlannerRunMeta(plannerCompact),
       },
     });
     return {
@@ -695,6 +711,7 @@ export async function runDecisionExecutionPipeline({
         saved_execution_work: metrics.savedExecutionWork,
         warnings: metrics.warnings,
         investment_trade_mode: investmentTradeMode,
+        ...buildPlannerRunMeta(plannerCompact),
       },
     });
     return {
@@ -933,6 +950,7 @@ export async function runDecisionExecutionPipeline({
       saved_execution_work: completedMetrics.savedExecutionWork,
       warnings: completedMetrics.warnings,
       investment_trade_mode: investmentTradeMode,
+      ...buildPlannerRunMeta(plannerCompact),
     },
   });
 
