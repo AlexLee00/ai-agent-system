@@ -16,5 +16,7 @@ defmodule TeamJay.Investment.Topics do
   def trade_result(symbol), do: "investment:trade_result:#{symbol}"
   def position_state(symbol), do: "investment:position_state:#{symbol}"
   def condition_checks(symbol), do: "investment:condition_checks:#{symbol}"
+  def loop_cycles(symbol), do: "investment:loop_cycles:#{symbol}"
+  def strategy_updates(symbol), do: "investment:strategy_updates:#{symbol}"
   def feedback(symbol), do: "investment:feedback:#{symbol}"
 end

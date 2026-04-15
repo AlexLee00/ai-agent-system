@@ -19,6 +19,7 @@ defmodule TeamJay.Investment.PipelineInspector do
       execution: lookup({:investment_execution, symbol}),
       position_manager: lookup({:investment_position_manager, symbol}),
       condition_checker: lookup({:investment_condition_checker, symbol}),
+      trading_loop: lookup({:investment_trading_loop, symbol}),
       feedback: lookup({:investment_feedback_realtime, symbol})
     }
   end

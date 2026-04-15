@@ -109,4 +109,31 @@ defmodule TeamJay.Investment.Events do
       Map.new(attrs)
     )
   end
+
+  def loop_cycle(symbol, attrs \\ %{}) do
+    Map.merge(
+      %{
+        symbol: symbol,
+        source: :trading_loop_scaffold,
+        mode: :mode1_explore,
+        stages: [:collect, :analyze, :evaluate, :decide, :execute, :feedback],
+        cycle_count: 0,
+        completed_at: DateTime.utc_now()
+      },
+      Map.new(attrs)
+    )
+  end
+
+  def strategy_update(symbol, attrs \\ %{}) do
+    Map.merge(
+      %{
+        symbol: symbol,
+        source: :strategy_adjuster_scaffold,
+        action: :hold,
+        reason: :no_change,
+        updated_at: DateTime.utc_now()
+      },
+      Map.new(attrs)
+    )
+  end
 end
