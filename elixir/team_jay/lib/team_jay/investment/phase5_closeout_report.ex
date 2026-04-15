@@ -20,6 +20,8 @@ defmodule TeamJay.Investment.Phase5CloseoutReport do
     lines = [
       "full_scaffold=#{status_word(result.full.all_ok)}",
       "persistence=#{status_word(result.persistence.all_ok)}",
+      "operations=#{status_word(result.operations.ready)}",
+      "governor=#{status_word(result.governor.ready)}",
       "blockers=#{render_blockers(result.blockers)}"
     ]
 

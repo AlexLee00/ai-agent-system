@@ -198,11 +198,19 @@ defmodule TeamJay.Diagnostics do
     total_shadow_running = report.week2_summary.running + report.week3_summary.running
 
     severity =
-      if(
-        report.summary.failing > 0 or total_required_missing > 0,
-        do: "warn",
-        else: "info"
-      )
+      cond do
+        total_required_missing > 0 ->
+          "warn"
+
+        report.summary.missing > 0 ->
+          "warn"
+
+        not report.transition_plan.ready_for_pilot ->
+          "warn"
+
+        true ->
+          "info"
+      end
 
     TeamJay.EventLake.record(%{
       event_type: "phase3_shadow_report",
