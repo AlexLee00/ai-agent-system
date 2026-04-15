@@ -5,6 +5,7 @@ import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { getInvestmentRuntimeConfig } from '../shared/runtime-config.ts';
 import { buildRuntimeDecisionSummary } from './runtime-decision-summary.ts';
+import { buildInvestmentCliInsight } from '../shared/cli-insight.ts';
 
 function parseArgs(argv = process.argv.slice(2)) {
   const daysArg = argv.find((arg) => arg.startsWith('--days='));
@@ -137,6 +138,7 @@ function renderText(payload) {
     `days: ${payload.days}`,
     `status: ${payload.decision.status}`,
     `headline: ${payload.decision.headline}`,
+    payload.aiSummary ? `🔍 AI: ${payload.aiSummary}` : null,
     '',
     '근거:',
     ...payload.decision.reasons.map((reason) => `- ${reason}`),
@@ -150,8 +152,20 @@ function renderText(payload) {
     '',
     '권장 조치:',
     ...payload.decision.actionItems.map((item) => `- ${item}`),
-  ];
+  ].filter(Boolean);
   return lines.join('\n');
+}
+
+function buildMinOrderFallback(payload) {
+  const decision = payload?.decision || {};
+  const metrics = decision.metrics || {};
+  if (decision.status === 'min_order_pressure' || decision.status === 'min_order_runtime_pressure') {
+    return '최소 주문금액 가드가 반복적으로 걸려, 주문 기본값과 실제 gap을 함께 점검하는 것이 좋습니다.';
+  }
+  if (decision.status === 'min_order_watch') {
+    return '최소 주문금액 병목이 간헐적으로 보여, watch 수준으로 계속 누적 관찰하면 됩니다.';
+  }
+  return `최근 최소 주문 병목은 크지 않으며, 현재는 신규 block ${metrics.total || 0}건 추이만 관찰하면 충분합니다.`;
 }
 
 async function loadMinOrderRows({ market = 'kis', days = 14 } = {}) {
@@ -216,6 +230,21 @@ export async function buildRuntimeMinOrderPressureReport({ market = 'kis', days 
     rows,
     decision,
   };
+  payload.aiSummary = await buildInvestmentCliInsight({
+    bot: 'runtime-min-order-pressure',
+    requestType: 'runtime-min-order-pressure',
+    title: '투자 최소 주문 압박 요약',
+    data: {
+      market: normalizedMarket,
+      days,
+      count: rows.length,
+      topRows: rows.slice(0, 5),
+      decision,
+      orderDefaults,
+      runtimeDecision: runtime?.decision,
+    },
+    fallback: buildMinOrderFallback(payload),
+  });
   if (json) return payload;
   return renderText(payload);
 }

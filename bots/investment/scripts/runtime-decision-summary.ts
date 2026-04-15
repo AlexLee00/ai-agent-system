@@ -3,6 +3,7 @@
 
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { buildRuntimeDecisionReport } from './runtime-decision-report.ts';
+import { buildInvestmentCliInsight } from '../shared/cli-insight.ts';
 
 function parseArgs(argv = []) {
   const args = { market: 'all', limit: 5, json: false };
@@ -115,6 +116,7 @@ function formatSummaryText(payload) {
     `limit: ${limit}`,
     `status: ${decision.status}`,
     `headline: ${decision.headline}`,
+    payload.aiSummary ? `🔍 AI: ${payload.aiSummary}` : null,
     '',
     '근거:',
     ...decision.reasons.map((reason) => `- ${reason}`),
@@ -138,7 +140,22 @@ function formatSummaryText(payload) {
   lines.push('');
   lines.push('권장 조치:');
   lines.push(...decision.actionItems.map((item) => `- ${item}`));
-  return lines.join('\n');
+  return lines.filter(Boolean).join('\n');
+}
+
+function buildRuntimeDecisionFallback(payload) {
+  const decision = payload?.decision || {};
+  const metrics = decision.metrics || {};
+  if (decision.status === 'runtime_hold') {
+    return '승인 신호는 보이지만 실행까지 이어지지 않아, 리스크 가드와 실행 게이트를 먼저 점검해야 합니다.';
+  }
+  if (decision.status === 'runtime_risk_heavy') {
+    return '리스크 가드가 의사결정 후반을 강하게 막고 있어, 최상위 거절 사유부터 정리하는 편이 좋습니다.';
+  }
+  if (decision.status === 'runtime_idle') {
+    return '최근 runtime decision 세션이 없어, 실제 세션이 더 쌓일 때까지 관찰 유지가 적절합니다.';
+  }
+  return `최근 ${metrics.count || 0}건의 runtime session은 대체로 안정적이며, approved 대비 executed 비율만 계속 관찰하면 됩니다.`;
 }
 
 export async function buildRuntimeDecisionSummary({ market = 'all', limit = 5, json = false } = {}) {
@@ -151,6 +168,19 @@ export async function buildRuntimeDecisionSummary({ market = 'all', limit = 5, j
     runtime,
     decision,
   };
+  payload.aiSummary = await buildInvestmentCliInsight({
+    bot: 'runtime-decision-summary',
+    requestType: 'runtime-decision-summary',
+    title: '투자 런타임 의사결정 요약',
+    data: {
+      market,
+      limit,
+      decision,
+      summary: runtime.summary,
+      count: runtime.count,
+    },
+    fallback: buildRuntimeDecisionFallback(payload),
+  });
   if (json) return payload;
   return formatSummaryText(payload);
 }

@@ -8,6 +8,7 @@ import { buildRuntimeAutotuneReadinessReport } from './runtime-autotune-readines
 import { buildRuntimeMinOrderReliefReport } from './runtime-min-order-relief-report.ts';
 import { buildRuntimeEscalateCandidatesReport } from './runtime-escalate-candidates-report.ts';
 import { buildVectorBtBacktestReport } from './vectorbt-backtest-report.ts';
+import { buildInvestmentCliInsight } from '../shared/cli-insight.ts';
 
 const require = createRequire(import.meta.url);
 const {
@@ -139,6 +140,7 @@ function renderText(payload) {
     '🧩 Luna Remodel Closeout',
     `status: ${payload.decision.status}`,
     `headline: ${payload.decision.headline}`,
+    payload.aiSummary ? `🔍 AI: ${payload.aiSummary}` : null,
     '',
     '근거:',
     ...payload.decision.reasons.map((reason) => `- ${reason}`),
@@ -153,7 +155,19 @@ function renderText(payload) {
     '',
     '권장 조치:',
     ...payload.decision.actionItems.map((item) => `- ${item}`),
-  ].join('\n');
+  ].filter(Boolean).join('\n');
+}
+
+function buildCloseoutFallback(payload) {
+  const decision = payload?.decision || {};
+  const metrics = decision.metrics || {};
+  if (decision.status === 'remodel_ready_to_close') {
+    return '리모델링 닫힘 기준에 거의 도달해, 남은 운영 전환과 closeout 문서만 정리하면 됩니다.';
+  }
+  if (decision.status === 'remodel_waiting_approval') {
+    return '코드와 관찰 레일은 충분하지만, policy-blocked 또는 approval-needed 항목이 남아 운영 판단이 필요합니다.';
+  }
+  return `리모델링은 아직 진행 중이며, health=${metrics.healthOk ? 'ok' : 'watch'}, planner=${metrics.plannerReady ? 'ready' : 'watch'}, backtest=${metrics.backtestOk ? 'ok' : 'watch'} 축을 계속 누적해야 합니다.`;
 }
 
 export async function buildRemodelCloseoutReport({ days = 14, json = false } = {}) {
@@ -186,6 +200,22 @@ export async function buildRemodelCloseoutReport({ days = 14, json = false } = {
     health,
     decision,
   };
+  payload.aiSummary = await buildInvestmentCliInsight({
+    bot: 'remodel-closeout-report',
+    requestType: 'remodel-closeout-report',
+    title: '루나 리모델 closeout 요약',
+    data: {
+      days,
+      decision,
+      plannerStatus: plannerCoverage?.decision?.status,
+      autotuneStatus: autotune?.decision?.status,
+      reliefStatus: relief?.decision?.status,
+      escalateStatus: escalate?.decision?.status,
+      backtestStatus: backtest?.decision?.status,
+      healthWarnCount: health?.serviceHealth?.warnCount,
+    },
+    fallback: buildCloseoutFallback(payload),
+  });
 
   if (json) return payload;
   return renderText(payload);
