@@ -21,6 +21,7 @@ defmodule TeamJay.Investment.PipelineInspector do
       condition_checker: lookup({:investment_condition_checker, symbol}),
       trading_loop: lookup({:investment_trading_loop, symbol}),
       strategy_adjuster: lookup({:investment_strategy_adjuster, symbol}),
+      runtime_override_store: lookup({:investment_runtime_override_store, symbol}),
       feedback: lookup({:investment_feedback_realtime, symbol})
     }
   end

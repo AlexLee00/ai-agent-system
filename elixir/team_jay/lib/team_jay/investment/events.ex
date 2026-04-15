@@ -138,4 +138,19 @@ defmodule TeamJay.Investment.Events do
       Map.new(attrs)
     )
   end
+
+  def runtime_override(symbol, attrs \\ %{}) do
+    Map.merge(
+      %{
+        symbol: symbol,
+        source: :runtime_override_store_scaffold,
+        status: :idle,
+        approved: false,
+        overrides: [],
+        history_count: 0,
+        recorded_at: DateTime.utc_now()
+      },
+      Map.new(attrs)
+    )
+  end
 end
