@@ -267,7 +267,12 @@ async function checkMainbotQueue(items) {
     }
 
   } catch (e) {
-    items.push({ label: 'mainbot_queue', status: 'warn', detail: e.message.slice(0, 100) });
+    const msg = String(e?.message || '');
+    if (/relation\s+"?mainbot_queue"?\s+does not exist/i.test(msg)) {
+      items.push({ label: 'mainbot_queue', status: 'ok', detail: 'retired-by-default — legacy queue table 없음' });
+      return;
+    }
+    items.push({ label: 'mainbot_queue', status: 'warn', detail: msg.slice(0, 100) });
   }
 }
 
