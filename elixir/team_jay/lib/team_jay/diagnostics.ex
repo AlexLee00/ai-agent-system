@@ -71,6 +71,7 @@ defmodule TeamJay.Diagnostics do
     {:blog_collect_views, :blog},
     {:blog_marketing_snapshot, :blog},
     {:blog_marketing_report, :blog},
+    {:worker_health_check, :worker},
     {:dexter, :claude},
     {:claude_commander, :claude},
     {:steward_hourly, :steward},
@@ -84,7 +85,6 @@ defmodule TeamJay.Diagnostics do
     {:worker_task_runner, :worker, true},
     {:worker_web, :worker, true},
     {:worker_nextjs, :worker, true},
-    {:worker_health_check, :worker, true},
     {:worker_claude_monitor, :worker, true},
     {:darwin_orchestrator, :platform, false},
     {:hub_resource_api, :platform, true}
@@ -670,6 +670,7 @@ defmodule TeamJay.Diagnostics do
   end
 
   defp pilot_safe?(%{team: :investment}), do: false
+  defp pilot_safe?(%{name: :blog_node_server}), do: false
   defp pilot_safe?(%{name: :worker_web}), do: false
   defp pilot_safe?(%{name: :worker_nextjs}), do: false
   defp pilot_safe?(_agent), do: true

@@ -6,7 +6,6 @@ defmodule TeamJay.Teams.WorkerShadowSupervisor do
     %{name: :worker_task_runner, label: "ai.worker.task-runner"},
     %{name: :worker_web, label: "ai.worker.web"},
     %{name: :worker_nextjs, label: "ai.worker.nextjs"},
-    %{name: :worker_health_check, label: "ai.worker.health-check"},
     %{name: :worker_claude_monitor, label: "ai.worker.claude-monitor"}
   ]
 
