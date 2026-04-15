@@ -20,7 +20,7 @@ defmodule TeamJay.Investment.Phase5ModeReport do
 
     lines =
       Enum.map(result.rows, fn row ->
-        "#{row.exchange} | #{row.symbol} | status=#{row.status} | completed=#{row.completed} | events=#{row.event_count} | last=#{row.last_topic}"
+        "#{row.exchange} | #{row.symbol} | status=#{row.status} | completed=#{row.completed} | mode_persisted=#{row.mode_persisted_count} | profile_persisted=#{row.profile_persisted_count} | last=#{row.last_topic}"
       end)
 
     Enum.join([header | lines], "\n")

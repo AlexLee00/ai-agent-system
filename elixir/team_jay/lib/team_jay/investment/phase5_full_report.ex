@@ -28,6 +28,7 @@ defmodule TeamJay.Investment.Phase5FullReport do
       summarize("5-D", result.phases.phase5_d),
       summarize("5-D-db", result.phases.phase5_d_db),
       summarize("5-E", result.phases.phase5_e),
+      summarize("5-E-db", result.phases.phase5_e_db),
       summarize("5.5-8", result.phases.phase5_5_8),
       summarize("5.5-9", result.phases.phase5_5_9),
       summarize("health", result.phases.phase5_resource_health)

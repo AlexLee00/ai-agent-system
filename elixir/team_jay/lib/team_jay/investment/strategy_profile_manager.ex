@@ -7,9 +7,11 @@ defmodule TeamJay.Investment.StrategyProfileManager do
 
   use GenServer
 
+  alias Ecto.Adapters.SQL
   alias TeamJay.Investment.Events
   alias TeamJay.Investment.PubSub
   alias TeamJay.Investment.Topics
+  alias TeamJay.Repo
 
   def start_link(opts) do
     symbol = Keyword.fetch!(opts, :symbol)
@@ -31,7 +33,10 @@ defmodule TeamJay.Investment.StrategyProfileManager do
        selection_count: 0,
        last_profile: :balanced,
        last_trade_style: :hold,
-       last_selected_at: nil
+       last_selected_at: nil,
+       persisted_count: 0,
+       last_persist_status: :idle,
+       last_persisted_at: nil
      }}
   end
 
@@ -43,7 +48,10 @@ defmodule TeamJay.Investment.StrategyProfileManager do
        selection_count: state.selection_count,
        last_profile: state.last_profile,
        last_trade_style: state.last_trade_style,
-       last_selected_at: state.last_selected_at
+       last_selected_at: state.last_selected_at,
+       persisted_count: state.persisted_count,
+       last_persist_status: state.last_persist_status,
+       last_persisted_at: state.last_persisted_at
      }, state}
   end
 
@@ -59,6 +67,8 @@ defmodule TeamJay.Investment.StrategyProfileManager do
         market_mode: mode
       )
 
+    persistence = persist_selection(state.symbol, selection)
+
     PubSub.broadcast_strategy_profile(state.symbol, {:strategy_profile, selection})
 
     {:noreply,
@@ -67,7 +77,10 @@ defmodule TeamJay.Investment.StrategyProfileManager do
        | selection_count: state.selection_count + 1,
          last_profile: profile,
          last_trade_style: trade_style,
-         last_selected_at: selection.selected_at
+         last_selected_at: selection.selected_at,
+         persisted_count: state.persisted_count + persistence.inserted_count,
+         last_persist_status: persistence.status,
+         last_persisted_at: persistence.persisted_at || state.last_persisted_at
      }}
   end
 
@@ -90,4 +103,83 @@ defmodule TeamJay.Investment.StrategyProfileManager do
     {:aggressive, :short_term,
      %{max_position_pct: 0.1, risk_per_trade: 0.02, max_concurrent_positions: 3}}
   end
+
+  defp persist_selection(symbol, selection) do
+    _ = ensure_table()
+
+    params = [
+      symbol,
+      to_string(selection.profile),
+      to_string(selection.trade_style),
+      Jason.encode!(json_ready(selection.parameter_set)),
+      Jason.encode!(json_ready(Map.get(selection, :market_mode, %{}))),
+      selection.selected_at
+    ]
+
+    case SQL.query(
+           Repo,
+           """
+           INSERT INTO investment.strategy_profiles (
+             symbol,
+             profile,
+             trade_style,
+             parameter_set,
+             market_mode,
+             selected_at
+           )
+           VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6)
+           """,
+           params
+         ) do
+      {:ok, _} -> %{status: :persisted, inserted_count: 1, persisted_at: selection.selected_at}
+      {:error, _} -> %{status: :persist_error, inserted_count: 0, persisted_at: nil}
+    end
+  end
+
+  defp ensure_table do
+    with {:ok, _} <-
+           SQL.query(
+             Repo,
+             """
+             CREATE TABLE IF NOT EXISTS investment.strategy_profiles (
+               id BIGSERIAL PRIMARY KEY,
+               symbol TEXT NOT NULL,
+               profile TEXT NOT NULL,
+               trade_style TEXT NOT NULL,
+               parameter_set JSONB NOT NULL DEFAULT '{}'::jsonb,
+               market_mode JSONB NOT NULL DEFAULT '{}'::jsonb,
+               selected_at TIMESTAMPTZ NOT NULL,
+               inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+             )
+             """,
+             []
+           ),
+         {:ok, _} <-
+           SQL.query(
+             Repo,
+             "CREATE INDEX IF NOT EXISTS strategy_profiles_symbol_selected_at_idx ON investment.strategy_profiles (symbol, selected_at DESC)",
+             []
+           ) do
+      :ok
+    else
+      _ -> :error
+    end
+  end
+
+  defp json_ready(%DateTime{} = value), do: DateTime.to_iso8601(value)
+  defp json_ready(%NaiveDateTime{} = value), do: NaiveDateTime.to_iso8601(value)
+  defp json_ready(%Date{} = value), do: Date.to_iso8601(value)
+  defp json_ready(%Time{} = value), do: Time.to_iso8601(value)
+  defp json_ready(%_{} = struct), do: struct |> Map.from_struct() |> json_ready()
+  defp json_ready(map) when is_map(map), do: Map.new(map, fn {k, v} -> {json_key(k), json_ready(v)} end)
+  defp json_ready(list) when is_list(list), do: Enum.map(list, &json_ready/1)
+  defp json_ready(tuple) when is_tuple(tuple), do: tuple |> Tuple.to_list() |> Enum.map(&json_ready/1)
+  defp json_ready(atom) when is_atom(atom), do: Atom.to_string(atom)
+  defp json_ready(pid) when is_pid(pid), do: inspect(pid)
+  defp json_ready(reference) when is_reference(reference), do: inspect(reference)
+  defp json_ready(function) when is_function(function), do: inspect(function)
+  defp json_ready(value), do: value
+
+  defp json_key(key) when is_atom(key), do: Atom.to_string(key)
+  defp json_key(key), do: key
 end

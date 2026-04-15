@@ -7,9 +7,11 @@ defmodule TeamJay.Investment.MarketModeSelector do
 
   use GenServer
 
+  alias Ecto.Adapters.SQL
   alias TeamJay.Investment.Events
   alias TeamJay.Investment.PubSub
   alias TeamJay.Investment.Topics
+  alias TeamJay.Repo
 
   def start_link(opts) do
     symbol = Keyword.fetch!(opts, :symbol)
@@ -37,7 +39,10 @@ defmodule TeamJay.Investment.MarketModeSelector do
        selection_count: 0,
        last_mode: :swing,
        last_horizon: :mid_term,
-       last_selected_at: nil
+       last_selected_at: nil,
+       persisted_count: 0,
+       last_persist_status: :idle,
+       last_persisted_at: nil
      }}
   end
 
@@ -49,7 +54,10 @@ defmodule TeamJay.Investment.MarketModeSelector do
        selection_count: state.selection_count,
        last_mode: state.last_mode,
        last_horizon: state.last_horizon,
-       last_selected_at: state.last_selected_at
+       last_selected_at: state.last_selected_at,
+       persisted_count: state.persisted_count,
+       last_persist_status: state.last_persist_status,
+       last_persisted_at: state.last_persisted_at
      }, state}
   end
 
@@ -78,6 +86,8 @@ defmodule TeamJay.Investment.MarketModeSelector do
         loop_cycle: state.last_loop_cycle
       )
 
+    persistence = persist_selection(state.symbol, selection)
+
     PubSub.broadcast_market_mode(state.symbol, {:market_mode, selection})
 
     %{
@@ -85,7 +95,10 @@ defmodule TeamJay.Investment.MarketModeSelector do
       | selection_count: state.selection_count + 1,
         last_mode: mode,
         last_horizon: horizon,
-        last_selected_at: selection.selected_at
+        last_selected_at: selection.selected_at,
+        persisted_count: state.persisted_count + persistence.inserted_count,
+        last_persist_status: persistence.status,
+        last_persisted_at: persistence.persisted_at || state.last_persisted_at
     }
   end
 
@@ -104,4 +117,86 @@ defmodule TeamJay.Investment.MarketModeSelector do
   defp decide_mode(_reflection, _cycle) do
     {:scalp, :short_term, :reactive_loop}
   end
+
+  defp persist_selection(symbol, selection) do
+    _ = ensure_table()
+
+    params = [
+      symbol,
+      to_string(selection.mode),
+      to_string(selection.horizon),
+      to_string(selection.rationale),
+      Jason.encode!(json_ready(Map.get(selection, :reflection, %{}))),
+      Jason.encode!(json_ready(Map.get(selection, :loop_cycle, %{}))),
+      selection.selected_at
+    ]
+
+    case SQL.query(
+           Repo,
+           """
+           INSERT INTO investment.market_modes (
+             symbol,
+             mode,
+             horizon,
+             rationale,
+             reflection,
+             loop_cycle,
+             selected_at
+           )
+           VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7)
+           """,
+           params
+         ) do
+      {:ok, _} -> %{status: :persisted, inserted_count: 1, persisted_at: selection.selected_at}
+      {:error, _} -> %{status: :persist_error, inserted_count: 0, persisted_at: nil}
+    end
+  end
+
+  defp ensure_table do
+    with {:ok, _} <-
+           SQL.query(
+             Repo,
+             """
+             CREATE TABLE IF NOT EXISTS investment.market_modes (
+               id BIGSERIAL PRIMARY KEY,
+               symbol TEXT NOT NULL,
+               mode TEXT NOT NULL,
+               horizon TEXT NOT NULL,
+               rationale TEXT NOT NULL,
+               reflection JSONB NOT NULL DEFAULT '{}'::jsonb,
+               loop_cycle JSONB NOT NULL DEFAULT '{}'::jsonb,
+               selected_at TIMESTAMPTZ NOT NULL,
+               inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+             )
+             """,
+             []
+           ),
+         {:ok, _} <-
+           SQL.query(
+             Repo,
+             "CREATE INDEX IF NOT EXISTS market_modes_symbol_selected_at_idx ON investment.market_modes (symbol, selected_at DESC)",
+             []
+           ) do
+      :ok
+    else
+      _ -> :error
+    end
+  end
+
+  defp json_ready(%DateTime{} = value), do: DateTime.to_iso8601(value)
+  defp json_ready(%NaiveDateTime{} = value), do: NaiveDateTime.to_iso8601(value)
+  defp json_ready(%Date{} = value), do: Date.to_iso8601(value)
+  defp json_ready(%Time{} = value), do: Time.to_iso8601(value)
+  defp json_ready(%_{} = struct), do: struct |> Map.from_struct() |> json_ready()
+  defp json_ready(map) when is_map(map), do: Map.new(map, fn {k, v} -> {json_key(k), json_ready(v)} end)
+  defp json_ready(list) when is_list(list), do: Enum.map(list, &json_ready/1)
+  defp json_ready(tuple) when is_tuple(tuple), do: tuple |> Tuple.to_list() |> Enum.map(&json_ready/1)
+  defp json_ready(atom) when is_atom(atom), do: Atom.to_string(atom)
+  defp json_ready(pid) when is_pid(pid), do: inspect(pid)
+  defp json_ready(reference) when is_reference(reference), do: inspect(reference)
+  defp json_ready(function) when is_function(function), do: inspect(function)
+  defp json_ready(value), do: value
+
+  defp json_key(key) when is_atom(key), do: Atom.to_string(key)
+  defp json_key(key), do: key
 end
