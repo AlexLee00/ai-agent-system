@@ -13,6 +13,7 @@
  */
 
 const pgPool = require('../../../packages/core/lib/pg-pool');
+const { buildReservationCliInsight } = require('../lib/cli-insight');
 
 type ReservationRow = {
   id: number;
@@ -183,6 +184,9 @@ function printText(report) {
   console.log(`riskyCount: ${report.riskyCount}`);
   console.log(`historicalCount: ${report.historicalCount}`);
   console.log(`unknownCount: ${report.unknownCount}`);
+  if (report.aiSummary) {
+    console.log(`🔍 AI: ${report.aiSummary}`);
+  }
   console.log('');
 
   if (report.risky.length === 0) {
@@ -218,6 +222,22 @@ async function main() {
   const jsonMode = process.argv.includes('--json');
   const groups = await loadDuplicateGroups();
   const report = buildReport(groups);
+  report.aiSummary = await buildReservationCliInsight({
+    bot: 'audit-duplicate-slots',
+    requestType: 'duplicate-slot-audit',
+    title: '예약 duplicate slot audit 결과',
+    data: {
+      totalGroups: report.totalGroups,
+      riskyCount: report.riskyCount,
+      historicalCount: report.historicalCount,
+      unknownCount: report.unknownCount,
+    },
+    fallback: report.riskyCount > 0
+      ? `중복 슬롯 위험군 ${report.riskyCount}건이 있어 canonical row 정리가 우선입니다.`
+      : report.totalGroups > 0
+        ? `현재 중복 슬롯은 주로 historical 이력이라 즉시 복구보다 관찰 유지가 적절합니다.`
+        : '중복 슬롯 위험군이 없어 예약 정합성은 비교적 안정적입니다.',
+  });
 
   if (jsonMode) {
     console.log(JSON.stringify(report, null, 2));
