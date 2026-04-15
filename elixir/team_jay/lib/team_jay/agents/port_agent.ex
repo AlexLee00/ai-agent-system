@@ -7,6 +7,7 @@ defmodule TeamJay.Agents.PortAgent do
     :name,
     :team,
     :script,
+    :runner,
     :schedule,
     :port,
     :status,
@@ -47,11 +48,13 @@ defmodule TeamJay.Agents.PortAgent do
     name = Keyword.fetch!(opts, :name)
     team = Keyword.fetch!(opts, :team)
     script = Keyword.fetch!(opts, :script)
+    runner = Keyword.get(opts, :runner, :node)
     schedule = Keyword.get(opts, :schedule)
 
     Logger.info("[#{name}] 시작!")
     record_event(:info, "#{name} 시작", "port_agent_started", team, name, %{
       script: script,
+      runner: runner_to_string(runner),
       schedule: schedule_to_string(schedule)
     })
     if schedule == :once, do: send(self(), :run)
@@ -63,6 +66,7 @@ defmodule TeamJay.Agents.PortAgent do
        name: name,
        team: team,
        script: script,
+       runner: runner,
        schedule: schedule,
        port: nil,
        status: :idle,
@@ -163,23 +167,37 @@ defmodule TeamJay.Agents.PortAgent do
     Logger.info("[#{state.name}] 실행: #{state.script}")
     record_event(:info, "#{state.name} 실행", "port_agent_run", state.team, state.name, %{
       script: state.script,
+      runner: runner_to_string(state.runner),
       schedule: schedule_to_string(state.schedule),
       runs: state.runs
     })
 
-    port =
-      Port.open({:spawn_executable, System.find_executable("node")}, [
-        :binary,
-        :exit_status,
-        :stderr_to_stdout,
-        args: String.split(state.script, " ", trim: true),
-        cd: TeamJay.Config.repo_root()
-      ])
+    port = open_port(state)
 
     %{state | port: port, status: :running, last_run: DateTime.utc_now()}
   end
 
   defp execute_script(state), do: state
+
+  defp open_port(%{runner: :node, script: script}) do
+    Port.open({:spawn_executable, System.find_executable("node")}, [
+      :binary,
+      :exit_status,
+      :stderr_to_stdout,
+      args: String.split(script, " ", trim: true),
+      cd: TeamJay.Config.repo_root()
+    ])
+  end
+
+  defp open_port(%{runner: {:shell, shell}, script: script}) do
+    Port.open({:spawn_executable, shell}, [
+      :binary,
+      :exit_status,
+      :stderr_to_stdout,
+      args: ["-lc", script],
+      cd: TeamJay.Config.repo_root()
+    ])
+  end
 
   defp schedule_run({:interval, ms}), do: Process.send_after(self(), :run, ms)
   defp schedule_run({:daily_at, hour, minute}) do
@@ -255,6 +273,9 @@ defmodule TeamJay.Agents.PortAgent do
       <> String.pad_leading(Integer.to_string(hour), 2, "0")
       <> ":"
       <> String.pad_leading(Integer.to_string(minute), 2, "0")
+
+  defp runner_to_string(:node), do: "node"
+  defp runner_to_string({:shell, shell}), do: "shell:" <> shell
 
   defp summarize_output(lines) do
     lines
