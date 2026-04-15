@@ -41,7 +41,7 @@ function runPayPending(entry: any) {
       __dirname,
       '../../../../dist/ts-runtime/bots/reservation/manual/reports/pickko-pay-pending.js',
     );
-    const nodeBin = process.execPath || 'node';
+    const nodeBin = '/opt/homebrew/bin/node';
     const args = [
       scriptPath,
       `--phone=${String(entry.phone || '').replace(/\D/g, '')}`,
