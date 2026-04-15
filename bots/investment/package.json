@@ -50,6 +50,7 @@
     "runtime:position-reeval-summary": "node scripts/position-reevaluation-summary.ts",
     "runtime:position-reeval-history": "node scripts/position-reevaluation-history.ts",
     "runtime:position-reeval-loop": "node scripts/position-reevaluation-loop.ts --iterations=1",
+    "runtime:market-data-report": "node scripts/market-data-provider-report.ts",
     "parallel-snapshot": "node scripts/parallel-ops-snapshot.ts",
     "parallel-report": "node scripts/parallel-ops-report.ts",
     "parallel-history": "node scripts/parallel-ops-history.ts",

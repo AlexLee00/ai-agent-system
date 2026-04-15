@@ -17,32 +17,27 @@ from datetime import datetime
 
 
 def load_optional_deps():
-    missing = []
-
     try:
         import yfinance as yf  # type: ignore
     except Exception:
         yf = None
-        missing.append("yfinance")
 
     try:
         from mcp.server.fastmcp import FastMCP  # type: ignore
     except Exception:
         FastMCP = None
-        missing.append("mcp")
 
     return {
         "yf": yf,
         "FastMCP": FastMCP,
-        "missing": missing,
     }
 
 
-def emit_dependency_missing(missing: list[str], as_json: bool):
+def emit_dependency_missing(missing: list[str], as_json: bool, install: str):
     payload = {
         "status": "dependency_missing",
         "missing": missing,
-        "install": "pip3 install yfinance mcp-server --break-system-packages",
+        "install": install,
     }
     if as_json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
@@ -129,10 +124,10 @@ def main():
     args = parser.parse_args()
 
     deps = load_optional_deps()
-    if deps["missing"]:
-        return emit_dependency_missing(deps["missing"], args.json)
 
     if args.test:
+        if deps["yf"] is None:
+            return emit_dependency_missing(["yfinance"], args.json, "pip3 install yfinance")
         try:
             payload = build_test_payload(args.symbol, deps)
         except Exception as exc:
@@ -152,6 +147,8 @@ def main():
         return 0
 
     if args.ohlcv:
+        if deps["yf"] is None:
+            return emit_dependency_missing(["yfinance"], args.json, "pip3 install yfinance")
         if not args.from_date:
             payload = {"status": "error", "message": "--from-date is required with --ohlcv"}
             if args.json:
@@ -183,6 +180,9 @@ def main():
         else:
             print(f"[TradingView MCP] ohlcv ok: {payload['symbol']} {payload['interval']} count={payload['count']}")
         return 0
+
+    if deps["FastMCP"] is None:
+        return emit_dependency_missing(["mcp"], args.json, "pip3 install mcp-server")
 
     payload = {
         "status": "not_implemented",
