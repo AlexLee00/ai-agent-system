@@ -24,6 +24,7 @@ const {
   publishEventPipeline,
 } = require('../../../packages/core/lib/reporting-hub');
 const { createHealthMemoryHelper } = require('../../../packages/core/lib/health-memory');
+const { buildWorkerCliInsight } = require('../lib/cli-insight.legacy');
 const { buildIssueHints, rememberHealthEvent } = createHealthMemoryHelper({
   agentId: 'worker.health',
   team: 'worker',
@@ -216,8 +217,28 @@ async function main() {
 
   hsm.saveState(state);
 
+  const aiSummary = await buildWorkerCliInsight({
+    bot: 'worker-health-check',
+    requestType: 'worker-health-check',
+    title: '워커 헬스체크 요약',
+    data: {
+      serviceCount: ALL_SERVICES.length,
+      issueCount: issues.length,
+      issueKeys: issues.map((item) => item.key),
+      continuousServices: CONTINUOUS,
+      httpChecks: httpChecks.map((item) => item.name),
+    },
+    fallback:
+      issues.length > 0
+        ? `워커 헬스 이슈 ${issues.length}건이 감지되어 launchd와 HTTP 응답 경로를 먼저 확인하는 것이 좋습니다.`
+        : `워커 헬스체크는 전체 ${ALL_SERVICES.length}개 서비스 기준으로 현재 안정적입니다.`,
+  });
+
   if (issues.length === 0) {
+    console.log(`🔍 AI: ${aiSummary}`);
     console.log(`[워커 헬스체크] 정상 — 전체 ${ALL_SERVICES.length}개 서비스 이상 없음`);
+  } else {
+    console.log(`🔍 AI: ${aiSummary}`);
   }
 }
 
