@@ -8,12 +8,22 @@
 
 import ccxt from 'ccxt';
 import { loadSecrets } from '../../shared/secrets.ts';
+import { buildInvestmentCliInsight } from '../../shared/cli-insight.ts';
 
 async function main() {
   try {
     const s = loadSecrets();
     if (!s.binance_api_key || !s.binance_api_secret) {
-      output({ ok: false, error: '바이낸스 API 키 미설정 (config.yaml binance.api_key/api_secret)' });
+      const aiSummary = await buildInvestmentCliInsight({
+        bot: 'binance-balance',
+        requestType: 'balance',
+        title: '바이낸스 잔고 조회 결과',
+        data: {
+          mode: 'missing_api_key',
+        },
+        fallback: '바이낸스 API 키가 없어 잔고 조회 전에 설정 점검이 먼저 필요합니다.',
+      });
+      output({ ok: false, error: '바이낸스 API 키 미설정 (config.yaml binance.api_key/api_secret)', aiSummary });
       return;
     }
 
@@ -50,9 +60,31 @@ async function main() {
       }
     }
 
-    output({ ok: true, balances: result, total_usdt });
+    const aiSummary = await buildInvestmentCliInsight({
+      bot: 'binance-balance',
+      requestType: 'balance',
+      title: '바이낸스 잔고 조회 결과',
+      data: {
+        balanceCount: result.length,
+        totalUsdt: Number(total_usdt.toFixed(2)),
+        topCoins: result.slice(0, 5).map((item) => item.coin),
+      },
+      fallback: result.length > 0
+        ? `바이낸스 잔고 ${result.length}종이 조회됐고 총 평가는 약 ${total_usdt.toFixed(2)} USDT입니다.`
+        : '바이낸스 잔고가 비어 있어 선물/현물 계정 상태를 다시 확인하는 편이 좋습니다.',
+    });
+    output({ ok: true, balances: result, total_usdt, aiSummary });
   } catch (e) {
-    output({ ok: false, error: e.message });
+    const aiSummary = await buildInvestmentCliInsight({
+      bot: 'binance-balance',
+      requestType: 'balance',
+      title: '바이낸스 잔고 조회 결과',
+      data: {
+        error: e.message,
+      },
+      fallback: '바이낸스 잔고 조회가 실패해 거래소 연결 상태를 다시 점검하는 편이 좋습니다.',
+    });
+    output({ ok: false, error: e.message, aiSummary });
   }
 }
 
