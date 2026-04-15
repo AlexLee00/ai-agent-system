@@ -60,6 +60,8 @@
     "runtime:autotune-readiness-history": "node scripts/runtime-autotune-readiness-history.ts",
     "runtime:escalate-candidates": "node scripts/runtime-escalate-candidates-report.ts",
     "runtime:escalate-candidates-history": "node scripts/runtime-escalate-candidates-history.ts",
+    "runtime:remodel-closeout": "node scripts/remodel-closeout-report.ts",
+    "runtime:remodel-closeout-history": "node scripts/remodel-closeout-history.ts",
     "runtime:min-order-pressure": "node scripts/runtime-min-order-pressure-report.ts",
     "runtime:min-order-pressure-history": "node scripts/runtime-min-order-pressure-history.ts",
     "runtime:min-order-relief": "node scripts/runtime-min-order-relief-report.ts",
