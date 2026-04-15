@@ -9,6 +9,7 @@ const pgPool = require('../../../../packages/core/lib/pg-pool');
 const { parseArgs } = require('../../lib/args');
 const { outputResult, fail } = require('../../lib/cli');
 const { upsertKioskBlock, recordKioskBlockAttempt } = require('../../lib/db');
+const { buildReservationCliInsight } = require('../../lib/cli-insight');
 
 const SCHEMA = 'reservation';
 const ARGS = parseArgs(process.argv);
@@ -122,7 +123,17 @@ async function main() {
   const dryRun = Boolean(ARGS['dry-run'] || ARGS.dryRun);
   const rows = await findTargetRows();
   if (rows.length === 0) {
-    outputResult({ success: true, updated: 0, message: '반영할 manual 후속 차단 대상이 없습니다.' });
+    const aiSummary = await buildReservationCliInsight({
+      bot: 'manual-block-followup-resolve',
+      requestType: 'manual-followup-resolve',
+      title: 'manual 후속 차단 원장 반영 결과',
+      data: {
+        dryRun,
+        updated: 0,
+      },
+      fallback: '반영할 manual 후속 차단 대상이 없어 추가 작업은 필요하지 않습니다.',
+    });
+    outputResult({ success: true, updated: 0, aiSummary, message: '반영할 manual 후속 차단 대상이 없습니다.' });
     return;
   }
 
@@ -168,12 +179,27 @@ async function main() {
   const lines = touched.map((item) =>
     `✅ ${item.date} ${item.start}~${item.end} ${item.room || '-'} (${item.phone}) ${item.mode === 'dry_run' ? '[dry-run]' : ''}`.trim(),
   );
+  const aiSummary = await buildReservationCliInsight({
+    bot: 'manual-block-followup-resolve',
+    requestType: 'manual-followup-resolve',
+    title: 'manual 후속 차단 원장 반영 결과',
+    data: {
+      dryRun,
+      updated: touched.length,
+      targetMode: Boolean(ARGS['all-open'] || ARGS.allOpen) ? 'all-open' : 'targeted',
+      rooms: Array.from(new Set(touched.map((row) => row.room || '-'))),
+    },
+    fallback: dryRun
+      ? `dry-run으로 ${touched.length}건 반영 후보를 확인했으니 실제 적용 전에 대상 범위를 다시 검토하면 됩니다.`
+      : `manual 후속 차단 ${touched.length}건이 반영되어 후속 네이버 차단 원장이 정리됐습니다.`,
+  });
 
   outputResult({
     success: true,
     updated: touched.length,
     dryRun,
     rows: touched,
+    aiSummary,
     message: [
       dryRun ? '🧪 manual 후속 차단 원장 반영 dry-run' : '✅ manual 후속 차단 원장 반영 완료',
       `${touched.length}건`,

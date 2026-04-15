@@ -9,6 +9,7 @@ const pgPool = require('../../../../packages/core/lib/pg-pool');
 const { parseArgs } = require('../../lib/args');
 const { outputResult, fail } = require('../../lib/cli');
 const { getKioskBlock, getBlockedKioskBlocks } = require('../../lib/db');
+const { buildReservationCliInsight } = require('../../lib/cli-insight');
 
 const SCHEMA = 'reservation';
 const ARGS = parseArgs(process.argv);
@@ -140,6 +141,23 @@ async function main() {
   const correctedLines = correctedRows.length > 0
     ? ['', '🛠 운영자 정정으로 확인된 실제 차단 슬롯', ...correctedRows.map((row) => `✅ ${row.date} ${row.start_time}~${row.end_time} ${row.room || '-'} (${row.phone}) — 실제 차단 슬롯 / 사유=${row.last_block_reason}`)]
     : [];
+  const aiSummary = await buildReservationCliInsight({
+    bot: 'manual-block-followup-report',
+    requestType: 'manual-followup-report',
+    title: 'manual 등록 후속 네이버 차단 리포트',
+    data: {
+      fromDate,
+      onlyOpen,
+      total: rows.length,
+      openCount: openRows.length,
+      correctedCount: correctedRows.length,
+      missingRows: openRows.filter((row) => !row.kiosk_block_id).length,
+      unblockedRows: openRows.filter((row) => row.kiosk_block_id && Number(row.naver_blocked || 0) !== 1).length,
+    },
+    fallback: openRows.length > 0
+      ? `후속 차단 미완료 ${openRows.length}건이 있어 kiosk_blocks 누락과 차단 미완료 건을 먼저 나눠 보는 편이 좋습니다.`
+      : `manual 등록 후속 차단은 모두 정리된 상태이며, 정정 슬롯 ${correctedRows.length}건만 참고하면 됩니다.`,
+  });
 
   outputResult({
     success: true,
@@ -148,6 +166,7 @@ async function main() {
     correctedCount: correctedRows.length,
     rows: selectedRows,
     correctedRows,
+    aiSummary,
     message: [...header, '', ...lines, ...correctedLines].join('\n'),
   });
 }
