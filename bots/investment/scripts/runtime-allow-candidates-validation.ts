@@ -4,6 +4,7 @@
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { buildRuntimeAllowCandidatesReport } from './runtime-allow-candidates-report.ts';
 import { buildRuntimeDecisionSummary } from './runtime-decision-summary.ts';
+import { buildRuntimeMinOrderPressureReport } from './runtime-min-order-pressure-report.ts';
 
 function parseArgs(argv = process.argv.slice(2)) {
   const daysArg = argv.find((arg) => arg.startsWith('--days='));
@@ -21,10 +22,11 @@ function inferMarketFromKey(key = '') {
   return 'crypto';
 }
 
-function inferReadiness(candidate, runtimeSummary) {
+function inferReadiness(candidate, runtimeSummary, pressureReport = null) {
   const runtime = runtimeSummary?.decision || {};
   const metrics = runtime.metrics || {};
   const topRisk = String(metrics.topRiskReject?.key || '');
+  const minOrderPressure = String(pressureReport?.decision?.status || '');
 
   let readiness = 'observe';
   let reason = '추가 관찰이 필요합니다.';
@@ -41,6 +43,9 @@ function inferReadiness(candidate, runtimeSummary) {
   } else if (topRisk.includes('최대 포지션')) {
     readiness = 'blocked';
     reason = '현재는 최대 포지션 제한이 우세해 파라미터 비교보다 포지션 정리가 우선입니다.';
+  } else if (minOrderPressure === 'min_order_runtime_pressure' || minOrderPressure === 'min_order_pressure') {
+    readiness = 'blocked';
+    reason = '현재는 최소 주문 병목이 실런타임 기준으로 확인돼 파라미터 비교보다 주문 단위/예산 병목 해소가 우선입니다.';
   } else if (topRisk.includes('최소 주문 미달')) {
     readiness = 'blocked';
     reason = '현재는 최소 주문금액 가드가 우세해 파라미터 비교보다 주문 단위/예산 병목 해소가 우선입니다.';
@@ -121,19 +126,26 @@ export async function buildRuntimeAllowCandidatesValidation({ days = 14, limit =
   const markets = [...new Set(autoCandidates.map((item) => inferMarketFromKey(item.key)))];
 
   const runtimeByMarket = {};
+  const pressureByMarket = {};
   for (const market of markets) {
     runtimeByMarket[market] = await buildRuntimeDecisionSummary({ market, limit: 5, json: true }).catch(() => null);
+    if (market === 'domestic' || market === 'overseas') {
+      const pressureMarket = market === 'domestic' ? 'kis' : 'kis_overseas';
+      pressureByMarket[market] = await buildRuntimeMinOrderPressureReport({ market: pressureMarket, days, json: true }).catch(() => null);
+    }
   }
 
   const rows = autoCandidates.map((candidate) => {
     const market = inferMarketFromKey(candidate.key);
     const runtime = runtimeByMarket[market] || null;
-    const evaluation = inferReadiness(candidate, runtime);
+    const pressure = pressureByMarket[market] || null;
+    const evaluation = inferReadiness(candidate, runtime, pressure);
     return {
       ...candidate,
       market,
       runtimeStatus: runtime?.decision?.status || 'runtime_unknown',
       topRiskReject: runtime?.decision?.metrics?.topRiskReject?.key || null,
+      minOrderPressure: pressure?.decision?.status || null,
       readiness: evaluation.readiness,
       reason: evaluation.reason,
     };
@@ -146,6 +158,7 @@ export async function buildRuntimeAllowCandidatesValidation({ days = 14, limit =
     limit,
     rows,
     runtimeByMarket,
+    pressureByMarket,
     decision,
   };
   if (json) return payload;

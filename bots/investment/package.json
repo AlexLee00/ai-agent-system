@@ -52,6 +52,8 @@
     "runtime:allow-candidates-history": "node scripts/runtime-allow-candidates-history.ts",
     "runtime:allow-candidates-validation": "node scripts/runtime-allow-candidates-validation.ts",
     "runtime:allow-candidates-validation-history": "node scripts/runtime-allow-candidates-validation-history.ts",
+    "runtime:min-order-pressure": "node scripts/runtime-min-order-pressure-report.ts",
+    "runtime:min-order-pressure-history": "node scripts/runtime-min-order-pressure-history.ts",
     "runtime:parameter-governance": "node scripts/runtime-parameter-governance-report.ts",
     "runtime:position-reeval": "node scripts/position-reevaluation-report.ts",
     "runtime:position-reeval-summary": "node scripts/position-reevaluation-summary.ts",
