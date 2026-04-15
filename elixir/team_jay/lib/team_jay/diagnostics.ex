@@ -82,7 +82,14 @@ defmodule TeamJay.Diagnostics do
     {:hub_resource_api, :platform, true}
   ]
 
-  defstruct [:checks, :alerts, :last_check, :last_overlap_signature, :last_pilot_signature]
+  defstruct [
+    :checks,
+    :alerts,
+    :last_check,
+    :last_overlap_signature,
+    :last_pilot_signature,
+    :memory_warn_streak
+  ]
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -98,16 +105,23 @@ defmodule TeamJay.Diagnostics do
        alerts: [],
        last_check: nil,
        last_overlap_signature: nil,
-       last_pilot_signature: nil
+       last_pilot_signature: nil,
+       memory_warn_streak: 0
      }}
   end
 
   @impl true
   def handle_info(:check, state) do
     results = run_diagnostics()
-    alerts = Enum.filter(results, &(&1.severity in [:warn, :error]))
+    {alerts, memory_warn_streak} = filter_runtime_alerts(results, state.memory_warn_streak)
     overlap_signature = maybe_record_launchd_overlap(results, state.last_overlap_signature)
-    report = build_shadow_report(%{state | checks: results, alerts: alerts})
+    report =
+      build_shadow_report(%{
+        state
+        | checks: results,
+          alerts: alerts,
+          memory_warn_streak: memory_warn_streak
+      })
     pilot_signature = maybe_record_next_pilot(report, state.last_pilot_signature)
 
     if length(alerts) > 0 do
@@ -129,6 +143,7 @@ defmodule TeamJay.Diagnostics do
        state
        | checks: results,
          alerts: alerts,
+         memory_warn_streak: memory_warn_streak,
          last_check: DateTime.utc_now(),
          last_overlap_signature: overlap_signature,
          last_pilot_signature: pilot_signature
@@ -145,16 +160,32 @@ defmodule TeamJay.Diagnostics do
   @impl true
   def handle_call(:shadow_report, _from, state) do
     results = run_diagnostics()
-    alerts = Enum.filter(results, &(&1.severity in [:warn, :error]))
-    updated_state = %{state | checks: results, alerts: alerts, last_check: DateTime.utc_now()}
+    {alerts, memory_warn_streak} = filter_runtime_alerts(results, state.memory_warn_streak)
+
+    updated_state = %{
+      state
+      | checks: results,
+        alerts: alerts,
+        memory_warn_streak: memory_warn_streak,
+        last_check: DateTime.utc_now()
+    }
+
     {:reply, build_shadow_report(updated_state), updated_state}
   end
 
   @impl true
   def handle_call(:publish_shadow_report, _from, state) do
     results = run_diagnostics()
-    alerts = Enum.filter(results, &(&1.severity in [:warn, :error]))
-    updated_state = %{state | checks: results, alerts: alerts, last_check: DateTime.utc_now()}
+    {alerts, memory_warn_streak} = filter_runtime_alerts(results, state.memory_warn_streak)
+
+    updated_state = %{
+      state
+      | checks: results,
+        alerts: alerts,
+        memory_warn_streak: memory_warn_streak,
+        last_check: DateTime.utc_now()
+    }
+
     report = build_shadow_report(updated_state)
     total_required_missing =
       report.week2_summary.required_missing + report.week3_summary.required_missing
@@ -194,6 +225,33 @@ defmodule TeamJay.Diagnostics do
       check_launchd_overlap()
     ]
     |> List.flatten()
+  end
+
+  defp filter_runtime_alerts(results, previous_memory_warn_streak) do
+    memory_alert = Enum.find(results, &(&1.name == "memory_total"))
+
+    memory_warn_streak =
+      cond do
+        is_nil(memory_alert) -> 0
+        memory_alert.severity in [:warn, :error] -> previous_memory_warn_streak + 1
+        true -> 0
+      end
+
+    alerts =
+      results
+      |> Enum.filter(&(&1.severity in [:warn, :error]))
+      |> Enum.reject(fn alert ->
+        alert.name == "memory_total" and memory_warn_streak < 2
+      end)
+      |> Enum.map(fn alert ->
+        if alert.name == "memory_total" do
+          Map.put(alert, :message, "#{alert.message} | streak=#{memory_warn_streak}")
+        else
+          alert
+        end
+      end)
+
+    {alerts, memory_warn_streak}
   end
 
   defp check_process_count do
