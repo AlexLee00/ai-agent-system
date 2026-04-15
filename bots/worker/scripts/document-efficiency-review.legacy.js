@@ -11,9 +11,23 @@
 const path = require('path');
 const pgPool = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'));
 const { createAgentMemory } = require(path.join(__dirname, '../../../packages/core/lib/agent-memory'));
+const { buildWorkerCliInsight } = require('../lib/cli-insight.legacy');
 
 const SCHEMA = 'worker';
 const reviewMemory = createAgentMemory({ agentId: 'worker.document-efficiency-review', team: 'worker' });
+
+function buildReviewFallbackInsight(review) {
+  if (review.improveCandidates.length > 0) {
+    return `개선 우선 문서 ${review.improveCandidates.length}건이 있어, 재사용 효율이 낮은 자산부터 정리하는 편이 좋습니다.`;
+  }
+  if (review.ocrReviewCandidates.length > 0) {
+    return `OCR 재검토 후보 ${review.ocrReviewCandidates.length}건이 보여, 이미지 문서 품질부터 다시 확인하는 것이 좋습니다.`;
+  }
+  if (review.templateCandidates.length > 0) {
+    return `재사용 효율이 높은 템플릿 후보 ${review.templateCandidates.length}건이 있어, 표준 양식으로 승격할 가치가 있습니다.`;
+  }
+  return '문서 재사용 자산이 전반적으로 안정적이며, 우선 정리할 병목은 크지 않습니다.';
+}
 
 function parseArgs(argv = process.argv.slice(2)) {
   return {
@@ -246,9 +260,11 @@ function buildReviewMemorySummary(review) {
   ].filter(Boolean).join('\n');
 }
 
-function printHuman(review, memoryHints = {}) {
+function printHuman(review, memoryHints = {}, aiSummary = '') {
   const sections = [];
   sections.push(`📄 워커 문서 효율 리뷰`);
+  sections.push('');
+  sections.push(`🔍 AI: ${aiSummary || buildReviewFallbackInsight(review)}`);
   sections.push('');
   sections.push(`- 총 문서: ${review.totalDocuments}`);
   sections.push('');
@@ -307,10 +323,26 @@ async function main() {
     separator: 'newline',
   }).catch(() => '');
   const memorySummary = buildReviewMemorySummary(review);
+  const aiSummary = await buildWorkerCliInsight({
+    bot: 'worker-document-review',
+    requestType: 'worker-document-review',
+    title: '워커 문서 효율 리뷰',
+    data: {
+      totalDocuments: review.totalDocuments,
+      improveCount: review.improveCandidates.length,
+      templateCount: review.templateCandidates.length,
+      ocrCount: review.ocrReviewCandidates.length,
+      topImprove: review.improveCandidates.slice(0, 2).map((row) => row.filename),
+      topTemplate: review.templateCandidates.slice(0, 2).map((row) => row.filename),
+      topOcr: review.ocrReviewCandidates.slice(0, 2).map((row) => row.filename),
+    },
+    fallback: buildReviewFallbackInsight(review),
+  });
 
   if (json) {
     process.stdout.write(`${JSON.stringify({
       ...review,
+      aiSummary,
       memoryHints: {
         episodicHint,
         semanticHint,
@@ -320,7 +352,7 @@ async function main() {
       ocrReviewCandidates: review.ocrReviewCandidates.map(toSlimRow),
     }, null, 2)}\n`);
   } else {
-    printHuman(review, { episodicHint, semanticHint });
+    printHuman(review, { episodicHint, semanticHint }, aiSummary);
   }
 
   await reviewMemory.remember(memorySummary, 'episodic', {
