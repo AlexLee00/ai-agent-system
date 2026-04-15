@@ -11,7 +11,9 @@ defmodule TeamJay.Teams.InvestmentSupervisor do
   """
 
   @investment_agents [
-    %{name: :luna_commander, script: "bots/investment/luna-commander.cjs", schedule: {:interval, 600_000}},
+    # ai.investment.commander launchd 상시 서비스가 canonical owner다.
+    # PortAgent는 상태/수동 실행용 엔트리만 유지하고 주기 실행은 하지 않는다.
+    %{name: :luna_commander, script: "bots/investment/luna-commander.cjs", schedule: nil},
     %{name: :luna_crypto, script: "bots/investment/markets/crypto.ts", schedule: {:interval, 900_000}},
     %{name: :luna_crypto_validation, script: "bots/investment/markets/crypto.ts --validation", schedule: {:interval, 900_000}},
     %{name: :luna_domestic, script: "bots/investment/markets/domestic.ts", schedule: {:interval, 1_800_000}},
