@@ -48,4 +48,9 @@ defmodule TeamJay.Investment.PubSub do
     TeamJay.Investment.Topics.condition_checks(symbol)
     |> broadcast(condition_payload)
   end
+
+  def broadcast_strategy_update(symbol, update_payload) do
+    TeamJay.Investment.Topics.strategy_updates(symbol)
+    |> broadcast(update_payload)
+  end
 end

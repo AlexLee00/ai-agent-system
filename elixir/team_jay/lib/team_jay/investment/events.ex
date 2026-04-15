@@ -131,6 +131,8 @@ defmodule TeamJay.Investment.Events do
         source: :strategy_adjuster_scaffold,
         action: :hold,
         reason: :no_change,
+        governance_tier: :block,
+        proposals: %{},
         updated_at: DateTime.utc_now()
       },
       Map.new(attrs)
