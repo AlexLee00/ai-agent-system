@@ -8,6 +8,7 @@ const registry = require(path.join(__dirname, '../../../packages/core/lib/agent-
 const { publishToWebhook } = require(path.join(__dirname, '../../../packages/core/lib/reporting-hub'));
 const { createAgentMemory } = require(path.join(__dirname, '../../../packages/core/lib/agent-memory'));
 const eventLake = require(path.join(__dirname, '../../../packages/core/lib/event-lake'));
+const { buildBlogCliInsight } = require('../lib/cli-insight.ts');
 const performanceMemory = createAgentMemory({ agentId: 'blog.performance', team: 'blog' });
 
 function parseArgs(argv = process.argv.slice(2)) {
@@ -281,6 +282,21 @@ async function main() {
     reportSent: args.dryRun ? false : reportResult?.ok === true,
     dryRun: args.dryRun,
   };
+  payload.aiSummary = await buildBlogCliInsight({
+    bot: 'analyze-blog-performance',
+    requestType: 'performance-analysis',
+    title: '블로그 성과 분석 결과',
+    data: {
+      analyzedPosts: payload.analyzedPosts,
+      writers: payload.writers,
+      topWriter: payload.topWriters?.[0]?.name || null,
+      reportSent: payload.reportSent,
+      dryRun: payload.dryRun,
+    },
+    fallback: payload.writers > 0
+      ? `성과 분석이 ${payload.writers}명 작가 기준으로 정리돼 다음 피드백 우선순위를 바로 잡기 좋습니다.`
+      : '성과 분석 대상이 적어 이번 주는 추가 피드백보다 데이터 축적을 먼저 보는 편이 좋습니다.',
+  });
 
   if (args.json) {
     console.log(JSON.stringify(payload, null, 2));
@@ -288,6 +304,7 @@ async function main() {
   }
 
   console.log(`✅ 블로팀 성과 피드백 완료: ${rows.length}건, 작가 ${applied.length}명`);
+  console.log(`🔍 AI: ${payload.aiSummary}`);
   applied.forEach((item) => {
     console.log(`- ${item.name}: avgViews=${item.avgViews} avgLikes=${item.avgLikes} avgComments=${item.avgComments} adjustment=${item.adjustment > 0 ? '+' : ''}${item.adjustment}`);
   });
