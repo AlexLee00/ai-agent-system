@@ -55,7 +55,7 @@ defmodule TeamJay.Agents.PortAgent do
       schedule: schedule_to_string(schedule)
     })
     if schedule == :once, do: send(self(), :run)
-    if match?({:interval, _}, schedule), do: schedule_run(schedule)
+    if match?({:interval, _}, schedule) or match?({:daily_at, _, _}, schedule), do: schedule_run(schedule)
 
     {:ok,
      %__MODULE__{
@@ -76,7 +76,7 @@ defmodule TeamJay.Agents.PortAgent do
   @impl true
   def handle_info(:run, state) do
     new_state = execute_script(state)
-    if match?({:interval, _}, state.schedule), do: schedule_run(state.schedule)
+    if match?({:interval, _}, state.schedule) or match?({:daily_at, _, _}, state.schedule), do: schedule_run(state.schedule)
     {:noreply, new_state}
   end
 
@@ -180,6 +180,23 @@ defmodule TeamJay.Agents.PortAgent do
   defp execute_script(state), do: state
 
   defp schedule_run({:interval, ms}), do: Process.send_after(self(), :run, ms)
+  defp schedule_run({:daily_at, hour, minute}) do
+    now = NaiveDateTime.local_now() |> NaiveDateTime.truncate(:second)
+    date = NaiveDateTime.to_date(now)
+    {:ok, time} = Time.new(hour, minute, 0)
+    {:ok, today_target} = NaiveDateTime.new(date, time)
+
+    next_target =
+      if NaiveDateTime.compare(today_target, now) == :gt do
+        today_target
+      else
+        {:ok, tomorrow_target} = NaiveDateTime.new(Date.add(date, 1), time)
+        tomorrow_target
+      end
+
+    delay_ms = max(NaiveDateTime.diff(next_target, now, :millisecond), 0)
+    Process.send_after(self(), :run, delay_ms)
+  end
 
   defp record_event(severity, title, event_type, team, bot_name, metadata) do
     TeamJay.EventLake.record(%{
@@ -197,6 +214,8 @@ defmodule TeamJay.Agents.PortAgent do
   defp schedule_to_string(nil), do: "manual"
   defp schedule_to_string(:once), do: "once"
   defp schedule_to_string({:interval, ms}), do: "interval:#{ms}"
+  defp schedule_to_string({:daily_at, hour, minute}),
+    do: "daily_at:" <> String.pad_leading(Integer.to_string(hour), 2, "0") <> ":" <> String.pad_leading(Integer.to_string(minute), 2, "0")
 
   defp summarize_output(lines) do
     lines

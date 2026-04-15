@@ -2,7 +2,6 @@ defmodule TeamJay.Teams.BlogShadowSupervisor do
   use Supervisor
 
   @blog_agents [
-    %{name: :blog_daily, label: "ai.blog.daily"},
     %{name: :blog_collect_performance, label: "ai.blog.collect-performance"},
     %{name: :blog_collect_competition, label: "ai.blog.collect-competition"},
     %{name: :blog_collect_views, label: "ai.blog.collect-views", required: false},

@@ -2,7 +2,8 @@ defmodule TeamJay.Teams.BlogSupervisor do
   use Supervisor
 
   @blog_agents [
-    %{name: :blog_commenter, script: "bots/blog/scripts/run-commenter.ts", schedule: {:interval, 2_160_000}}
+    %{name: :blog_commenter, script: "bots/blog/scripts/run-commenter.ts", schedule: {:interval, 2_160_000}},
+    %{name: :blog_daily, script: "bots/blog/scripts/run-daily.ts", schedule: {:daily_at, 6, 0}}
   ]
 
   def start_link(opts \\ []) do
