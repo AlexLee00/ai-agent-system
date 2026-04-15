@@ -9,7 +9,19 @@ defmodule TeamJay.Teams.BlogSupervisor do
     %{name: :blog_weekly_evolution, script: "bots/blog/scripts/weekly-evolution.ts", schedule: {:weekly_at, [1], 21, 30}},
     %{name: :blog_sync_book_catalog, script: "bots/blog/scripts/sync-book-catalog.ts --json", schedule: {:daily_at, 5, 40}},
     %{name: :blog_sync_book_review_queue, script: "bots/blog/scripts/build-book-review-queue.ts --json --limit 5", schedule: {:daily_at, 5, 50}},
-    %{name: :blog_collect_views, script: "bots/blog/scripts/collect-views.ts", schedule: {:daily_at, 23, 0}}
+    %{name: :blog_collect_views, script: "bots/blog/scripts/collect-views.ts", schedule: {:daily_at, 23, 0}},
+    %{
+      name: :blog_marketing_snapshot,
+      script: "export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH && cd elixir/team_jay && mix blog.marketing.snapshot",
+      runner: {:shell, "/bin/zsh"},
+      schedule: {:daily_at, 6, 30}
+    },
+    %{
+      name: :blog_marketing_report,
+      script: "export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH && cd elixir/team_jay && mix blog.marketing.notify --brief --send",
+      runner: {:shell, "/bin/zsh"},
+      schedule: {:daily_at, 6, 35}
+    }
   ]
 
   def start_link(opts \\ []) do
@@ -21,7 +33,11 @@ defmodule TeamJay.Teams.BlogSupervisor do
     children =
       Enum.map(@blog_agents, fn agent ->
         {TeamJay.Agents.PortAgent,
-         name: agent.name, team: :blog, script: agent.script, schedule: agent.schedule}
+         name: agent.name,
+         team: :blog,
+         script: agent.script,
+         runner: Map.get(agent, :runner, :node),
+         schedule: agent.schedule}
       end)
 
     Supervisor.init(children, strategy: :one_for_one, max_restarts: 5, max_seconds: 60)

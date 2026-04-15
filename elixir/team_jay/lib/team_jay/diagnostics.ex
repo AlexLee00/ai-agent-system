@@ -69,6 +69,8 @@ defmodule TeamJay.Diagnostics do
     {:blog_sync_book_catalog, :blog},
     {:blog_sync_book_review_queue, :blog},
     {:blog_collect_views, :blog},
+    {:blog_marketing_snapshot, :blog},
+    {:blog_marketing_report, :blog},
     {:dexter, :claude},
     {:claude_commander, :claude},
     {:steward_hourly, :steward},
