@@ -5,9 +5,10 @@ import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 function parseArgs(argv = []) {
-  const args = { market: 'all', limit: 5, json: false };
+  const args = { market: 'all', limit: 5, json: false, includeSmoke: false };
   for (const raw of argv) {
     if (raw === '--json') args.json = true;
+    else if (raw === '--include-smoke') args.includeSmoke = true;
     else if (raw.startsWith('--market=')) args.market = String(raw.split('=').slice(1).join('=') || 'all');
     else if (raw.startsWith('--limit=')) args.limit = Math.max(1, Number(raw.split('=').slice(1).join('=') || 5));
   }
@@ -22,9 +23,13 @@ function normalizeMarket(market = 'all') {
   return value;
 }
 
-async function loadRuntimeDecisions({ market = 'all', limit = 5 } = {}) {
+async function loadRuntimeDecisions({ market = 'all', limit = 5, includeSmoke = false } = {}) {
   const normalizedMarket = normalizeMarket(market);
   let where = `pipeline = 'luna_pipeline' AND meta->>'bridge_status' IS NOT NULL`;
+  if (!includeSmoke) {
+    where += ` AND COALESCE(meta->>'smoke', 'false') != 'true'`;
+    where += ` AND COALESCE(trigger_type, '') != 'smoke'`;
+  }
   if (normalizedMarket !== 'all') {
     const safeMarket = String(normalizedMarket).replace(/'/g, "''");
     where += ` AND market = '${safeMarket}'`;
@@ -122,13 +127,14 @@ function renderText(rows = [], args = {}) {
   return lines.join('\n');
 }
 
-export async function buildRuntimeDecisionReport({ market = 'all', limit = 5, json = false } = {}) {
+export async function buildRuntimeDecisionReport({ market = 'all', limit = 5, json = false, includeSmoke = false } = {}) {
   const normalizedMarket = normalizeMarket(market);
-  const rows = await loadRuntimeDecisions({ market: normalizedMarket, limit });
+  const rows = await loadRuntimeDecisions({ market: normalizedMarket, limit, includeSmoke });
   const payload = {
     ok: true,
     market: normalizedMarket,
     limit,
+    includeSmoke,
     count: rows.length,
     summary: buildSummary(rows),
     rows,

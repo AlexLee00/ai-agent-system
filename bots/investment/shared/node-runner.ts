@@ -4,7 +4,7 @@ import { search as searchRag, store as storeRag } from './rag-client.ts';
 import * as pipelineDb from './pipeline-db.ts';
 import { createRequire } from 'module';
 
-const PIPELINE_NAMESPACE = 'investment_pipeline_store';
+const PIPELINE_NAMESPACE = 'rag_operations';
 const _require = createRequire(import.meta.url);
 const elixirBridge = _require('../../../packages/core/lib/elixir-bridge');
 
