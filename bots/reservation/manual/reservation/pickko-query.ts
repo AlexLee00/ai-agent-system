@@ -20,6 +20,7 @@ const path = require('path');
 const { parseArgs } = require('../../lib/args');
 const { fail } = require('../../lib/cli');
 const { createAgentMemory } = require('../../../../packages/core/lib/agent-memory');
+const { buildReservationCliInsight } = require('../../lib/cli-insight');
 
 const WORKSPACE = path.join(process.env.HOME, '.openclaw', 'workspace');
 const BOOKINGS_FILE = path.join(WORKSPACE, 'naver-bookings-full.json');
@@ -151,10 +152,22 @@ if (filtered.length === 0) {
   (async () => {
     const memoryQuery = buildQueryMemoryQuery('empty', [filterLabel]);
     const { episodicHint, semanticHint } = await buildQueryMemoryHints(memoryQuery, ['empty', 'result']);
+    const aiSummary = await buildReservationCliInsight({
+      bot: 'pickko-query',
+      requestType: 'query-result',
+      title: '픽코 예약 조회 결과',
+      data: {
+        kind: 'empty',
+        filterLabel,
+        count: 0,
+      },
+      fallback: '조회 조건에 맞는 예약이 없어 신규 접수 여부나 날짜 조건을 다시 확인하는 편이 좋습니다.',
+    });
     process.stdout.write(`${JSON.stringify({
       success: true,
       count: 0,
       message,
+      aiSummary,
       bookings: [],
       memoryHints: {
         episodicHint,
@@ -201,10 +214,24 @@ message = message.trim();
 const memoryQuery = buildQueryMemoryQuery('result', [filterLabel, `${filtered.length}-bookings`]);
 (async () => {
   const { episodicHint, semanticHint } = await buildQueryMemoryHints(memoryQuery, ['result', 'empty']);
+  const aiSummary = await buildReservationCliInsight({
+    bot: 'pickko-query',
+    requestType: 'query-result',
+    title: '픽코 예약 조회 결과',
+    data: {
+      kind: 'result',
+      filterLabel,
+      count: filtered.length,
+      groupedDates: Object.keys(groups),
+      rooms: Array.from(new Set(filtered.map((item) => item.room))),
+    },
+    fallback: `조회 결과 ${filtered.length}건이 확인되어 날짜와 룸 기준으로 후속 처리 우선순위를 바로 잡기 좋습니다.`,
+  });
   process.stdout.write(`${JSON.stringify({
     success: true,
     count: filtered.length,
     message,
+    aiSummary,
     bookings: filtered,
     memoryHints: {
       episodicHint,
