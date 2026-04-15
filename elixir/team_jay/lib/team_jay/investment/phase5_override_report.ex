@@ -24,7 +24,7 @@ defmodule TeamJay.Investment.Phase5OverrideReport do
 
     lines =
       Enum.map(result.rows, fn row ->
-        "#{row.exchange} | #{row.symbol} | status=#{row.status} | completed=#{row.completed} | events=#{row.event_count} | last=#{row.last_topic}"
+        "#{row.exchange} | #{row.symbol} | status=#{row.status} | completed=#{row.completed} | persisted=#{row.persisted_count} | persist_status=#{row.persist_status} | last=#{row.last_topic}"
       end)
 
     Enum.join([header | lines], "\n")
