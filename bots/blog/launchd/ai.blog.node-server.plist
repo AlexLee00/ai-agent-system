@@ -22,7 +22,7 @@
 	<key>ProgramArguments</key>
 	<array>
 		<string>/opt/homebrew/bin/node</string>
-		<string>/Users/alexlee/projects/ai-agent-system/bots/blog/api/node-server.ts</string>
+		<string>/Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/blog/api/node-server.js</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>
