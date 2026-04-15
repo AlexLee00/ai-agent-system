@@ -8,9 +8,11 @@ defmodule TeamJay.Investment.AgentMemory do
 
   use GenServer
 
+  alias Ecto.Adapters.SQL
   alias TeamJay.Investment.Events
   alias TeamJay.Investment.PubSub
   alias TeamJay.Investment.Topics
+  alias TeamJay.Repo
 
   def start_link(opts) do
     symbol = Keyword.fetch!(opts, :symbol)
@@ -37,7 +39,10 @@ defmodule TeamJay.Investment.AgentMemory do
        semantic: [],
        procedural: [],
        snapshot_count: 0,
-       last_snapshot_at: nil
+       last_snapshot_at: nil,
+       persisted_count: 0,
+       last_persist_status: :idle,
+       last_persisted_at: nil
      }}
   end
 
@@ -48,6 +53,9 @@ defmodule TeamJay.Investment.AgentMemory do
        symbol: state.symbol,
        snapshot_count: state.snapshot_count,
        last_snapshot_at: state.last_snapshot_at,
+       persisted_count: state.persisted_count,
+       last_persist_status: state.last_persist_status,
+       last_persisted_at: state.last_persisted_at,
        episodic_count: length(state.episodic),
        semantic_count: length(state.semantic),
        procedural_count: length(state.procedural)
@@ -120,12 +128,82 @@ defmodule TeamJay.Investment.AgentMemory do
         snapshot_count: state.snapshot_count + 1
       )
 
+    persistence = persist_snapshot(state.symbol, snapshot)
+
     PubSub.broadcast_memory_snapshot(state.symbol, {:memory_snapshot, snapshot})
 
     %{
       state
       | snapshot_count: state.snapshot_count + 1,
-        last_snapshot_at: snapshot.recorded_at
+        last_snapshot_at: snapshot.recorded_at,
+        persisted_count: state.persisted_count + persistence.inserted_count,
+        last_persist_status: persistence.status,
+        last_persisted_at: persistence.persisted_at || state.last_persisted_at
     }
+  end
+
+  defp persist_snapshot(symbol, snapshot) do
+    _ = ensure_table()
+
+    params = [
+      symbol,
+      Jason.encode!(snapshot.episodic),
+      Jason.encode!(snapshot.semantic),
+      Jason.encode!(snapshot.procedural),
+      snapshot.snapshot_count,
+      snapshot.recorded_at
+    ]
+
+    case SQL.query(
+           Repo,
+           """
+           INSERT INTO investment.agent_memory_snapshots (
+             symbol,
+             episodic,
+             semantic,
+             procedural,
+             snapshot_count,
+             recorded_at
+           )
+           VALUES ($1, $2::jsonb, $3::jsonb, $4::jsonb, $5, $6)
+           """,
+           params
+         ) do
+      {:ok, _} ->
+        %{status: :persisted, inserted_count: 1, persisted_at: snapshot.recorded_at}
+
+      {:error, _reason} ->
+        %{status: :persist_error, inserted_count: 0, persisted_at: nil}
+    end
+  end
+
+  defp ensure_table do
+    with {:ok, _} <-
+           SQL.query(
+             Repo,
+             """
+             CREATE TABLE IF NOT EXISTS investment.agent_memory_snapshots (
+               id BIGSERIAL PRIMARY KEY,
+               symbol TEXT NOT NULL,
+               episodic JSONB NOT NULL DEFAULT '[]'::jsonb,
+               semantic JSONB NOT NULL DEFAULT '[]'::jsonb,
+               procedural JSONB NOT NULL DEFAULT '[]'::jsonb,
+               snapshot_count INTEGER NOT NULL DEFAULT 0,
+               recorded_at TIMESTAMPTZ NOT NULL,
+               inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+             )
+             """,
+             []
+           ),
+         {:ok, _} <-
+           SQL.query(
+             Repo,
+             "CREATE INDEX IF NOT EXISTS agent_memory_snapshots_symbol_recorded_at_idx ON investment.agent_memory_snapshots (symbol, recorded_at DESC)",
+             []
+           ) do
+      :ok
+    else
+      _ -> :error
+    end
   end
 end

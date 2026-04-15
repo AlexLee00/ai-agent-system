@@ -4,8 +4,10 @@ defmodule TeamJay.Investment.Phase5MemoryHarness do
   """
 
   alias TeamJay.Investment.PipelineDynamicSupervisor
+  alias TeamJay.Investment.AgentMemory
   alias TeamJay.Investment.PipelineStarter
   alias TeamJay.Investment.PubSub
+  alias TeamJay.Investment.SelfReflection
   alias TeamJay.Investment.Topics
 
   @default_timeout 6_000
@@ -29,7 +31,11 @@ defmodule TeamJay.Investment.Phase5MemoryHarness do
 
     result =
       case started do
-        {:ok, _pid} -> collect(symbol, timeout_ms, [])
+        {:ok, _pid} ->
+          symbol
+          |> collect(timeout_ms, [])
+          |> attach_store_status(symbol)
+
         error -> %{status: :failed_to_start, completed: false, error: inspect(error), events: []}
       end
 
@@ -84,5 +90,17 @@ defmodule TeamJay.Investment.Phase5MemoryHarness do
           last_topic: events |> List.first() |> then(&(&1 && &1.topic))
         }
     end
+  end
+
+  defp attach_store_status(result, symbol) do
+    memory_status = AgentMemory.status(symbol)
+    reflection_status = SelfReflection.status(symbol)
+
+    Map.merge(result, %{
+      memory_persisted_count: memory_status.persisted_count,
+      memory_persist_status: memory_status.last_persist_status,
+      reflection_persisted_count: reflection_status.persisted_count,
+      reflection_persist_status: reflection_status.last_persist_status
+    })
   end
 end

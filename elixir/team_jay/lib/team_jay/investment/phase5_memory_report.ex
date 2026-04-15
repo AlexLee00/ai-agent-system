@@ -20,7 +20,7 @@ defmodule TeamJay.Investment.Phase5MemoryReport do
 
     lines =
       Enum.map(result.rows, fn row ->
-        "#{row.exchange} | #{row.symbol} | status=#{row.status} | completed=#{row.completed} | events=#{row.event_count} | last=#{row.last_topic}"
+        "#{row.exchange} | #{row.symbol} | status=#{row.status} | completed=#{row.completed} | memory_persisted=#{row.memory_persisted_count} | reflection_persisted=#{row.reflection_persisted_count} | last=#{row.last_topic}"
       end)
 
     Enum.join([header | lines], "\n")
