@@ -13,7 +13,7 @@ defmodule TeamJay.Blog.SocialRelay do
   alias TeamJay.Blog.PubSub
   alias TeamJay.Blog.Topics
 
-  @channels ["instagram", "naver_blog"]
+  @channels ["instagram", "naver_blog", "facebook"]
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
