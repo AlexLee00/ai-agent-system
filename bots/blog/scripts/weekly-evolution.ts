@@ -11,6 +11,7 @@ const { aggregatePatterns } = require('../lib/feedback-learner.ts');
 const { runIfOps } = require('../../../packages/core/lib/mode-guard');
 const { publishToWebhook, buildReportEvent, renderReportEvent } = require('../../../packages/core/lib/reporting-hub');
 const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
+const { buildBlogCliInsight } = require('../lib/cli-insight.ts');
 
 const dryRun = process.argv.includes('--dry-run');
 const json = process.argv.includes('--json');
@@ -192,6 +193,22 @@ async function main() {
     feedbackPatterns,
     evolution,
   };
+  result.aiSummary = await buildBlogCliInsight({
+    bot: 'weekly-evolution',
+    requestType: 'weekly-evolution',
+    title: '블로그 주간 전략 진화 결과',
+    data: {
+      dryRun,
+      postCount: diagnosis.postCount || 0,
+      executionCount: diagnosis.executionCount || 0,
+      weakness: diagnosis.primaryWeakness?.code || 'stable',
+      focus: evolution.plan?.focus || [],
+      currentPhase: autonomy?.currentPhase || null,
+    },
+    fallback: (evolution.plan?.focus || []).length > 0
+      ? `주간 전략 초점이 ${evolution.plan.focus.slice(0, 2).join(', ')}로 정리돼 다음 주 실행 우선순위가 선명해졌습니다.`
+      : '주간 전략은 큰 전환보다 현재 흐름 유지와 관찰에 더 가까운 상태입니다.',
+  });
 
   if (json) {
     console.log(JSON.stringify(result, null, 2));
@@ -199,6 +216,7 @@ async function main() {
     console.log(`[블로] 주간 진단: 최근 포스트 ${diagnosis.postCount}건 / 실행 이력 ${diagnosis.executionCount}건`);
     console.log(`[블로] 주요 약점: ${diagnosis.primaryWeakness?.message || '없음'}`);
     console.log(`[블로] 다음 주 초점: ${(evolution.plan?.focus || []).join(' | ')}`);
+    console.log(`🔍 AI: ${result.aiSummary}`);
     if (autonomy) {
       console.log(`[블로] 자율 Phase: ${autonomy.currentPhase} / 정확도 ${(Number(autonomy.accuracy || 0) * 100).toFixed(1)}%`);
     }
