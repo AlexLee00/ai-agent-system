@@ -140,6 +140,28 @@ defmodule TeamJay.Blog.CommandInbox do
       }
     })
 
+    TeamJay.Blog.PubSub.broadcast_cross_team_command(kind, %{
+      pipeline: pipeline,
+      command: command,
+      summary: summary
+    })
+
+    case kind do
+      :promotion ->
+        TeamJay.Blog.PubSub.broadcast_promotion_request(%{
+          pipeline: pipeline,
+          command: command,
+          summary: summary
+        })
+
+      :investment ->
+        TeamJay.Blog.PubSub.broadcast_investment_content_request(%{
+          pipeline: pipeline,
+          command: command,
+          summary: summary
+        })
+    end
+
     TeamJay.Blog.TopicCurator.curate_now()
 
     _ =

@@ -157,6 +157,17 @@ defmodule TeamJay.Ska.CommandInbox do
 
     TeamJay.Ska.PubSub.broadcast_cross_team_command(kind, metadata)
 
+    case kind do
+      :apply_seo ->
+        TeamJay.Ska.PubSub.broadcast_seo_requested(metadata)
+
+      :notify_budget_surplus ->
+        TeamJay.Ska.PubSub.broadcast_budget_surplus_notified(metadata)
+
+      :reduce_workload ->
+        TeamJay.Ska.PubSub.broadcast_workload_reduction_requested(metadata)
+    end
+
     _ =
       TeamJay.HubClient.command_complete(command_id, "ska",
         bot_name: "ska_command_inbox",

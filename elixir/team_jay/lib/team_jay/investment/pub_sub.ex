@@ -100,10 +100,26 @@ defmodule TeamJay.Investment.PubSub do
   end
 
   def broadcast_cross_team_command(action_type, payload) do
-    broadcast("cross_team_command_received", %{
+    TeamJay.Investment.Topics.cross_team_commands()
+    |> broadcast(%{
       action_type: action_type,
       payload: payload,
       at: DateTime.utc_now()
     })
+  end
+
+  def broadcast_intensity_adjustment(payload) do
+    TeamJay.Investment.Topics.intensity_adjustments()
+    |> broadcast(%{action_type: :adjust_investment_intensity, payload: payload, at: DateTime.utc_now()})
+  end
+
+  def broadcast_trend_candidate_analysis(payload) do
+    TeamJay.Investment.Topics.trend_candidate_analysis()
+    |> broadcast(%{action_type: :analyze_trend_candidates, payload: payload, at: DateTime.utc_now()})
+  end
+
+  def broadcast_workload_reduction(payload) do
+    TeamJay.Investment.Topics.workload_reductions()
+    |> broadcast(%{action_type: :reduce_workload, payload: payload, at: DateTime.utc_now()})
   end
 end

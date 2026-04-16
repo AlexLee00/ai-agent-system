@@ -28,4 +28,8 @@ defmodule TeamJay.Investment.Topics do
   def autonomous_cycles(symbol), do: "investment:autonomous_cycles:#{symbol}"
   def resource_health(symbol), do: "investment:resource_health:#{symbol}"
   def feedback(symbol), do: "investment:feedback:#{symbol}"
+  def cross_team_commands, do: "investment:cross_team_command_received"
+  def intensity_adjustments, do: "investment:intensity_adjustment_requested"
+  def trend_candidate_analysis, do: "investment:trend_candidate_analysis_requested"
+  def workload_reductions, do: "investment:workload_reduction_requested"
 end
