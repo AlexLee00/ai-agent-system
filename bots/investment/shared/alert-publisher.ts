@@ -6,12 +6,12 @@
  */
 
 import { createRequire } from 'module';
-import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
 const require  = createRequire(import.meta.url);
 const { publishToWebhook } = require('../../../packages/core/lib/reporting-hub');
+const { updateCriticalIncidentCache } = require('../../../packages/core/lib/critical-incident');
 
 const ALERT_DEDUPE_PATH = path.join(os.tmpdir(), 'investment-alert-dedupe.json');
 const ALERT_DEDUPE_WINDOW_MS = 15 * 60 * 1000;
@@ -24,14 +24,6 @@ type PublishAlertOptions = {
   message: string;
   payload?: Record<string, unknown>;
 };
-
-type AlertIncidentCache = Record<string, {
-  count: number;
-  first_seen_at: number;
-  last_seen_at: number;
-  latest_message: string;
-  latest_reason: string;
-}>;
 
 function classifyReason(message: string): string {
   const compact = String(message || '').replace(/\s+/g, ' ').trim();
@@ -64,64 +56,14 @@ function updateIncidentCache(signature: string | null, message: string): {
     latest_reason: string;
   };
 } {
-  if (!signature) return { suppress: false, incident: null };
-
-  try {
-    fs.mkdirSync(path.dirname(ALERT_DEDUPE_PATH), { recursive: true });
-    let cache: AlertIncidentCache = {};
-
-    if (fs.existsSync(ALERT_DEDUPE_PATH)) {
-      cache = JSON.parse(fs.readFileSync(ALERT_DEDUPE_PATH, 'utf8') || '{}');
-    }
-
-    const now = Date.now();
-    const latestReason = classifyReason(message);
-    const recent = cache[signature];
-    cache = Object.fromEntries(
-      Object.entries(cache).filter(([, incident]) => now - Number(incident?.last_seen_at || 0) < ALERT_DEDUPE_WINDOW_MS)
-    ) as AlertIncidentCache;
-
-    if (recent && now - Number(recent.last_seen_at || 0) < ALERT_DEDUPE_WINDOW_MS) {
-      cache[signature] = {
-        ...recent,
-        count: Number(recent.count || 0) + 1,
-        last_seen_at: now,
-        latest_message: message,
-        latest_reason: latestReason,
-      };
-      fs.writeFileSync(ALERT_DEDUPE_PATH, JSON.stringify(cache, null, 2));
-      return {
-        suppress: true,
-        incident: {
-          count: cache[signature].count,
-          first_seen_at: new Date(cache[signature].first_seen_at).toISOString(),
-          last_seen_at: new Date(cache[signature].last_seen_at).toISOString(),
-          latest_reason: cache[signature].latest_reason,
-        },
-      };
-    }
-
-    cache[signature] = {
-      count: 1,
-      first_seen_at: now,
-      last_seen_at: now,
-      latest_message: message,
-      latest_reason: latestReason,
-    };
-    fs.writeFileSync(ALERT_DEDUPE_PATH, JSON.stringify(cache, null, 2));
-  } catch (error) {
-    console.warn(`[alert-publisher] dedupe cache 실패: ${String((error as Error)?.message || error)}`);
-  }
-
-  return {
-    suppress: false,
-    incident: {
-      count: 1,
-      first_seen_at: new Date().toISOString(),
-      last_seen_at: new Date().toISOString(),
-      latest_reason: classifyReason(message),
-    },
-  };
+  return updateCriticalIncidentCache({
+    cachePath: ALERT_DEDUPE_PATH,
+    signature,
+    message,
+    latestReason: classifyReason(message),
+    windowMs: ALERT_DEDUPE_WINDOW_MS,
+    logPrefix: 'alert-publisher',
+  });
 }
 
 /**
