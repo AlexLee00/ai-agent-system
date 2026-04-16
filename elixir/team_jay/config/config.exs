@@ -42,5 +42,19 @@ config :team_jay, TeamJay.Scheduler,
     {"30 23 * * *", {TeamJay.Teams.InvestmentScheduler, :run_market_alert_overseas_open, []}},
     {"0 6 * * *", {TeamJay.Teams.InvestmentScheduler, :run_market_alert_overseas_close, []}},
     {"0 8 * * *", {TeamJay.Teams.InvestmentScheduler, :run_reporter, []}},
-    {"0 21 * * *", {TeamJay.Teams.InvestmentScheduler, :run_daily_feedback, []}}
+    {"0 21 * * *", {TeamJay.Teams.InvestmentScheduler, :run_daily_feedback, []}},
+    # ─── CODEX_LUNA_OPS_TRANSITION 신규 (UTC 기준) ───────────────
+    # Scout: 06:30 KST = 21:30 UTC 전날, 18:30 KST = 09:30 UTC
+    {"30 21 * * *", {TeamJay.Teams.InvestmentScheduler, :run_scout, []}},
+    {"30 9 * * *", {TeamJay.Teams.InvestmentScheduler, :run_scout, []}},
+    # 국내장: 09:00~15:30 KST = 00:00~06:30 UTC
+    {"0,30 0-6 * * *", {TeamJay.Teams.InvestmentScheduler, :run_domestic, []}},
+    {"0,30 0-6 * * *", {TeamJay.Teams.InvestmentScheduler, :run_domestic_validation, []}},
+    # 해외장: 22:30 KST = 13:30 UTC, 05:00 KST = 20:00 UTC
+    {"30 13 * * *", {TeamJay.Teams.InvestmentScheduler, :run_overseas, []}},
+    {"0,30 14-19 * * *", {TeamJay.Teams.InvestmentScheduler, :run_overseas, []}},
+    {"0 20 * * *", {TeamJay.Teams.InvestmentScheduler, :run_overseas, []}},
+    {"30 13 * * *", {TeamJay.Teams.InvestmentScheduler, :run_overseas_validation, []}},
+    {"0,30 14-19 * * *", {TeamJay.Teams.InvestmentScheduler, :run_overseas_validation, []}},
+    {"0 20 * * *", {TeamJay.Teams.InvestmentScheduler, :run_overseas_validation, []}}
   ]
