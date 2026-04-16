@@ -50,6 +50,12 @@ function git(cmd, timeoutMs = 8000) {
   }
 }
 
+function resolveGitRoot() {
+  const topLevel = git('rev-parse --show-toplevel');
+  if (!topLevel) return null;
+  return path.resolve(topLevel);
+}
+
 function parseChangedPath(line) {
   if (!line || line.length < 4) return '';
   return line.slice(3).trim().replace(/^"(.*)"$/, '$1');
@@ -65,8 +71,8 @@ async function run() {
   const items = [];
 
   // git 저장소 여부 확인
-  const isGitRepo = fs.existsSync(path.join(PROJECT_ROOT, '.git'));
-  if (!isGitRepo) {
+  const gitRoot = resolveGitRoot();
+  if (!gitRoot) {
     items.push({ label: 'Git 저장소', status: 'warn', detail: '.git 디렉토리 없음 — git 초기화 확인' });
     return { name: 'Git 무결성', status: 'warn', items };
   }
