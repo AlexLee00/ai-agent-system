@@ -32,7 +32,19 @@ function getLaunchdStatus(label) {
     const lastExitCode = Number(out.match(/last exit code = ([^\n]+)/)?.[1]?.trim() || NaN);
     return { state, pid, lastExitCode };
   } catch {
-    return null;
+    try {
+      const out = execSync(`launchctl list ${label}`, { encoding: 'utf8', timeout: 5000 }).trim();
+      const [pidRaw, lastExitRaw] = out.split(/\s+/);
+      const pid = pidRaw === '-' ? '' : pidRaw;
+      const lastExitCode = Number(lastExitRaw);
+      return {
+        state: pid ? 'running' : 'loaded',
+        pid,
+        lastExitCode,
+      };
+    } catch {
+      return null;
+    }
   }
 }
 
