@@ -98,6 +98,11 @@ capital_management:
   max_concurrent_positions: 3
   max_same_direction_positions: 3
   max_daily_trades: 12
+  concentrated_position:
+    enabled: false
+    min_signal_score: 0.85
+    max_single_pct: 0.30
+    require_nemesis_pass: true
   max_daily_loss_pct: 0.05
   max_weekly_loss_pct: 0.12
   cooldown_after_loss_streak: 3
