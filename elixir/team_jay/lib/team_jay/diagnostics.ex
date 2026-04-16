@@ -672,7 +672,6 @@ defmodule TeamJay.Diagnostics do
   defp pilot_safe?(%{name: :blog_node_server}), do: false
   defp pilot_safe?(%{name: :worker_web}), do: false
   defp pilot_safe?(%{name: :worker_nextjs}), do: false
-  defp pilot_safe?(%{name: :hub_resource_api}), do: false
   defp pilot_safe?(_agent), do: true
 
   defp score_transition_candidate(agent) do
