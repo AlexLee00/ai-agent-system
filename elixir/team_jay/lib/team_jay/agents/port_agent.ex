@@ -95,7 +95,14 @@ defmodule TeamJay.Agents.PortAgent do
     if daemon_healthy?(state) do
       {:noreply, state}
     else
-      Logger.warning("[#{state.name}] health 재검증 실패 — daemon 실행 재시도")
+      Logger.info("[#{state.name}] health 재검증 실패 — self-heal 재기동")
+      record_event(:info, "#{state.name} self-heal 재기동", "port_agent_self_heal", state.team, state.name, %{
+        script: state.script,
+        runner: runner_to_string(state.runner),
+        schedule: schedule_to_string(state.schedule),
+        health_url: state.health_url,
+        reason: "post_skip_health_miss"
+      })
       {:noreply, start_script(state)}
     end
   end
