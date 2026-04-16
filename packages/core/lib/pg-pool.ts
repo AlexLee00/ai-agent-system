@@ -48,6 +48,14 @@ const RECONNECT_MESSAGES = ['connection terminated', 'connection destroyed', 'se
 
 const useHub = !env.IS_OPS && !env.IS_CLI && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
 
+function shouldUseHub(schema: string, sql: string): boolean {
+  if (!useHub) return false;
+  // Claude still issues mixed read/write maintenance traffic from long-lived processes.
+  // Keep it on direct PG until its runtime path is fully normalized.
+  if (schema === 'claude') return false;
+  return isReadOnlySql(sql);
+}
+
 function isReadOnlySql(sql: string): boolean {
   const normalized = String(sql || '').trim().toLowerCase();
   if (!normalized) return false;
@@ -170,7 +178,7 @@ async function queryViaHub(schema: string, sql: string, params: any[] = []): Pro
 }
 
 export async function query<T = any>(schema: string, sql: string, params: any[] = []): Promise<T[]> {
-  if (useHub && isReadOnlySql(sql)) {
+  if (shouldUseHub(schema, sql)) {
     const result = await queryViaHub(schema, sql, params);
     return result.rows as T[];
   }
@@ -180,7 +188,7 @@ export async function query<T = any>(schema: string, sql: string, params: any[] 
 }
 
 export async function run(schema: string, sql: string, params: any[] = []): Promise<{ rowCount: number; rows: any[] }> {
-  if (useHub && isReadOnlySql(sql)) return queryViaHub(schema, sql, params);
+  if (shouldUseHub(schema, sql)) return queryViaHub(schema, sql, params);
   const pool = getPool(schema);
   const result = await safeQuery(pool, parameterize(sql), params);
   return { rowCount: result.rowCount, rows: result.rows };

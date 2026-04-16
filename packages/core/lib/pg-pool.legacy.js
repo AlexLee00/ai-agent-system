@@ -134,6 +134,14 @@ async function _queryViaHub(schema, sql, params = []) {
 
 const _useHub = !env.IS_OPS && !env.IS_CLI && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
 
+function _shouldUseHub(schema, sql) {
+  if (!_useHub) return false;
+  // Claude still emits mixed maintenance traffic from long-lived runtime paths.
+  // Keep it on direct PG until that runtime is fully normalized.
+  if (schema === 'claude') return false;
+  return _isReadOnlySql(sql);
+}
+
 function _isReadOnlySql(sql) {
   const normalized = String(sql || '').trim().toLowerCase();
   if (!normalized) return false;
@@ -143,7 +151,7 @@ function _isReadOnlySql(sql) {
 }
 
 async function query(schema, sql, params = []) {
-  if (_useHub && _isReadOnlySql(sql)) {
+  if (_shouldUseHub(schema, sql)) {
     const result = await _queryViaHub(schema, sql, params);
     return result.rows;
   }
@@ -153,7 +161,7 @@ async function query(schema, sql, params = []) {
 }
 
 async function run(schema, sql, params = []) {
-  if (_useHub && _isReadOnlySql(sql)) return _queryViaHub(schema, sql, params);
+  if (_shouldUseHub(schema, sql)) return _queryViaHub(schema, sql, params);
   const pool = getPool(schema);
   const result = await _safeQuery(pool, parameterize(sql), params);
   return { rowCount: result.rowCount, rows: result.rows };

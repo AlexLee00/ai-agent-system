@@ -15,6 +15,7 @@ const fs      = require('fs');
 const path    = require('path');
 const os      = require('os');
 const { execSync, spawn } = require('child_process');
+process.env.PG_DIRECT = process.env.PG_DIRECT || 'true';
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const { initHubConfig } = require('../../../packages/core/lib/llm-keys');
 const teamBus = require('../lib/team-bus');
