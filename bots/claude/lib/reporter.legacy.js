@@ -154,7 +154,7 @@ async function emitDexterEvent(results, elapsed) {
   const warns  = results.flatMap(r => r.items.filter(i => i.status === 'warn'));
 
   try {
-    const stateBus = require('../../reservation/lib/state-bus');
+    const stateBus = require('./state-bus-bridge.js');
     const priority = overall === 'error' ? 'high' : overall === 'warn' ? 'normal' : 'low';
     await stateBus.emitEvent('dexter', 'claude-lead', 'dexter_check_result', {
       overall,
