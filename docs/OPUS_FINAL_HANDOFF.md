@@ -202,13 +202,21 @@ launchctl unload ~/Library/LaunchAgents/ai.investment.overseas.plist
 ### __dirname 전수 제거 (commit a0463979)
 - lib/ai-feedback.ts, gems-writer.ts, social.ts
 - scripts/analyze-blog-performance.ts, collect-views.ts, mark-published-url.ts, record-performance.ts
-- → 모든 blog lib/scripts __dirname 제거 완료
 
-### 문서 정리 (아카이브 2개)
+### @ts-nocheck 전수 제거 (commit afe0b249)
+- lib/ 40개 파일 + scripts/ 34개 파일 (blo.ts, commenter.ts, gems-writer.ts 포함)
+- npx tsc --noEmit 에러 없음 확인
+
+### 문서 정리 (아카이브 4개)
 - CODEX_BLOG_UNIFIED_REDESIGN.md → archive (Part 1~4 분산 구현 완료)
 - CODEX_BLOG_MASTER.md → archive (Phase 0~9 실질 완료)
+- CODEX_BLOG_TS_CONVERSION.md → archive (@ts-nocheck + __dirname 전수 제거 완료)
+- CODEX_BLOG_COMPREHENSIVE.md → archive (Part A/B/C/D 전부 완료)
 - CODEX_BLOG_MARKETING.md 헤더 업데이트: Phase 3 ✅, Phase 4 장기 미착수
-- CODEX_BLOG_TS_CONVERSION.md 헤더 업데이트: __dirname 전수 제거 반영
+
+### 블로팀 코덱스 현황
+- 남은 활성 코덱스: CODEX_BLOG_MARKETING.md (Phase 4 DM챗봇/광고 — 수익 발생 후)
+- 블로팀 핵심 구현 완전 완료
 
 ---
 
