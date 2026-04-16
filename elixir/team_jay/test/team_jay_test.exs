@@ -33,8 +33,8 @@ defmodule TeamJayTest do
   end
 
   test "port agent status is readable through registry" do
-    status = PortAgent.get_status(:eve)
-    assert status.name == :eve
+    status = PortAgent.get_status(:ska_etl)
+    assert status.name == :ska_etl
     assert status.status in [:idle, :running]
   end
 

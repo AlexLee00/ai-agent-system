@@ -12,27 +12,16 @@ defmodule TeamJay.Teams.SkaSupervisor do
   use Supervisor
 
   @ska_agents [
-    # launchd가 canonical owner인 모니터는 PortAgent에서 중복 실행하지 않는다.
-    %{name: :eve, script: "bots/ska/scripts/eve.js", schedule: {:interval, 3_600_000}},
-    %{name: :eve_crawl, script: "bots/ska/scripts/eve-crawl.js", schedule: {:interval, 3_600_000}},
+    # launchd가 canonical owner인 주기 서비스는 PortAgent에서 중복 실행하지 않는다.
     %{
       name: :ska_etl,
       script: "cd /Users/alexlee/projects/ai-agent-system && /Users/alexlee/projects/ai-agent-system/bots/ska/venv/bin/python /Users/alexlee/projects/ai-agent-system/bots/ska/src/etl.py",
       runner: {:shell, "/bin/bash"},
       schedule: nil
     },
-    %{name: :rebecca, script: "bots/ska/scripts/rebecca.js", schedule: {:interval, 3_600_000}},
-    %{name: :forecast_daily, script: "bots/ska/scripts/forecast.js --daily", schedule: nil},
-    %{name: :forecast_weekly, script: "bots/ska/scripts/forecast.js --weekly", schedule: {:interval, 86_400_000}},
-    %{name: :forecast_monthly, script: "bots/ska/scripts/forecast.js --monthly", schedule: {:interval, 86_400_000}},
-    %{name: :pickko_daily_audit, script: "bots/ska/scripts/pickko-daily-audit.js", schedule: {:interval, 86_400_000}},
-    %{name: :pickko_daily_summary, script: "bots/ska/scripts/pickko-daily-summary.js", schedule: {:interval, 86_400_000}},
-    %{name: :pickko_verify, script: "bots/ska/scripts/pickko-verify.js", schedule: {:interval, 86_400_000}},
-    %{name: :today_audit, script: "bots/ska/scripts/today-audit.js", schedule: {:interval, 86_400_000}},
-    # launchd가 canonical owner인 상시/주기 서비스는 PortAgent 목록에서 제외한다.
     %{name: :log_report, script: "bots/ska/scripts/log-report.js", schedule: {:interval, 86_400_000}},
-    %{name: :log_rotate, script: "bots/ska/scripts/log-rotate.js", schedule: {:interval, 86_400_000}},
-    %{name: :db_backup, script: "bots/ska/scripts/db-backup.js", schedule: {:interval, 86_400_000}}
+    # log_report는 현재 launchd owner가 없어서 PortAgent가 유지한다.
+    # log_rotate/db_backup/eve/rebecca/forecast/pickko audit 계열은 launchd가 canonical owner다.
   ]
 
   def start_link(opts \\ []) do
