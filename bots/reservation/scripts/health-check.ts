@@ -20,7 +20,7 @@ const { publishReservationAlert } = require('../lib/alert-client');
 const { initHubSecrets } = require('../lib/secrets');
 const hsm = require('../../../packages/core/lib/health-state-manager');
 const { getLaunchctlStatus, DEFAULT_NORMAL_EXIT_CODES } = require('../../../packages/core/lib/health-provider');
-const { createHealthMemoryHelper } = require('../../../packages/core/lib/health-memory');
+const { createHealthMemoryHelper } = require('../lib/health-memory-bridge');
 
 // 상시 실행 서비스 (PID 있어야 정상)
 const CONTINUOUS = ['ai.ska.commander', 'ai.ska.naver-monitor'];

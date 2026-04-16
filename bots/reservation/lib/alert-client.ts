@@ -1,7 +1,7 @@
 import os from 'os';
 import path from 'path';
 import { publishToWebhook } from '../../../packages/core/lib/reporting-hub';
-import { updateCriticalIncidentCache } from '../../../packages/core/lib/critical-incident';
+import { updateCriticalIncidentCache } from './critical-incident-bridge';
 
 export interface PublishReservationAlertOptions {
   from_bot?: string;
