@@ -8,6 +8,7 @@ const { buildMarketingDigest } = require('../lib/marketing-digest.ts');
 const { analyzeMarketingToRevenue } = require('../lib/marketing-revenue-correlation.ts');
 const { trackWeeklyAutonomy } = require('../lib/autonomy-tracker.ts');
 const { aggregatePatterns } = require('../lib/feedback-learner.ts');
+const { getCrosspostStats } = require('../lib/insta-crosspost.ts');
 const { runIfOps } = require('../../../packages/core/lib/mode-guard');
 const { publishToWebhook, buildReportEvent, renderReportEvent } = require('../../../packages/core/lib/reporting-hub');
 const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
@@ -26,7 +27,7 @@ function buildWeeklyMemoryQuery(diagnosis = {}, evolution = {}, autonomy = null)
   ].filter(Boolean).join(' ');
 }
 
-function buildWeeklyLines(diagnosis = {}, evolution = {}, marketingDigest = null, autonomy = null, revenueCorrelation = null, feedbackPatterns = []) {
+function buildWeeklyLines(diagnosis = {}, evolution = {}, marketingDigest = null, autonomy = null, revenueCorrelation = null, feedbackPatterns = [], crosspostStats = null) {
   const lines = [
     `최근 포스트: ${diagnosis.postCount || 0}건 / 실행 이력: ${diagnosis.executionCount || 0}건`,
     `주요 약점: ${diagnosis.primaryWeakness?.message || '없음'}`,
@@ -49,6 +50,15 @@ function buildWeeklyLines(diagnosis = {}, evolution = {}, marketingDigest = null
     lines.push(
       `매출 영향: ${(Number(revenueCorrelation?.revenueImpactPct || 0) * 100).toFixed(1)}% / 고조회수 다음날 ${Number(revenueCorrelation?.highViewRevenueAfter || 0).toFixed(0)}`
     );
+  }
+
+  // 인스타 크로스포스트 통계
+  if (crosspostStats && crosspostStats.total > 0) {
+    const rate = crosspostStats.successRate !== null ? `${crosspostStats.successRate}%` : 'n/a';
+    const tokenWarn = crosspostStats.tokenErrorCount > 0 ? ` ⚠️ 토큰오류 ${crosspostStats.tokenErrorCount}회` : '';
+    lines.push(`인스타 크로스포스트: ${crosspostStats.okCount}건 성공 / ${crosspostStats.failCount}건 실패 (성공률 ${rate})${tokenWarn}`);
+  } else if (crosspostStats) {
+    lines.push('인스타 크로스포스트: 이번 주 기록 없음');
   }
 
   if (Array.isArray(diagnosis.recommendations) && diagnosis.recommendations.length) {
@@ -83,8 +93,8 @@ function buildWeeklyLines(diagnosis = {}, evolution = {}, marketingDigest = null
   return lines;
 }
 
-async function sendWeeklyReport(diagnosis = {}, evolution = {}, marketingDigest = null, autonomy = null, revenueCorrelation = null, feedbackPatterns = [], options = {}) {
-  const lines = buildWeeklyLines(diagnosis, evolution, marketingDigest, autonomy, revenueCorrelation, feedbackPatterns);
+async function sendWeeklyReport(diagnosis = {}, evolution = {}, marketingDigest = null, autonomy = null, revenueCorrelation = null, feedbackPatterns = [], options = {}, crosspostStats = null) {
+  const lines = buildWeeklyLines(diagnosis, evolution, marketingDigest, autonomy, revenueCorrelation, feedbackPatterns, crosspostStats);
   const memoryQuery = buildWeeklyMemoryQuery(diagnosis, evolution, autonomy);
   const episodicHint = await weeklyEvolutionMemory.recallCountHint(memoryQuery, {
     type: 'episodic',
@@ -170,7 +180,7 @@ async function main() {
     console.log('[블로][dry-run] 전략 파일 저장 없이 진단만 실행');
   }
 
-  const [diagnosis, marketingDigest, autonomy, revenueCorrelation, feedbackPatterns] = await Promise.all([
+  const [diagnosis, marketingDigest, autonomy, revenueCorrelation, feedbackPatterns, crosspostStats] = await Promise.all([
     diagnoseWeeklyPerformance(7),
     buildMarketingDigest({
       revenueWindow: 14,
@@ -181,6 +191,7 @@ async function main() {
     trackWeeklyAutonomy().catch(() => null),
     analyzeMarketingToRevenue(14).catch(() => null),
     aggregatePatterns(30).catch(() => []),
+    getCrosspostStats(7).catch(() => null),
   ]);
   const evolution = await evolveStrategy(diagnosis, { dryRun, marketingDigest });
 
@@ -191,6 +202,7 @@ async function main() {
     autonomy,
     revenueCorrelation,
     feedbackPatterns,
+    crosspostStats,
     evolution,
   };
   result.aiSummary = await buildBlogCliInsight({
@@ -222,7 +234,7 @@ async function main() {
     }
   }
 
-  await sendWeeklyReport(diagnosis, evolution, marketingDigest, autonomy, revenueCorrelation, feedbackPatterns, { dryRun });
+  await sendWeeklyReport(diagnosis, evolution, marketingDigest, autonomy, revenueCorrelation, feedbackPatterns, { dryRun }, crosspostStats);
 }
 
 main().catch((error) => {

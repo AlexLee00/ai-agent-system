@@ -120,16 +120,43 @@ defmodule TeamJay.Jay.TeamConnector do
     posts = query_one("""
       SELECT
         COUNT(*) FILTER (WHERE created_at >= NOW() - interval '7 days' AND status IN ('ready','published'))::int AS published_7d,
-        COUNT(*) FILTER (WHERE status = 'ready')::int AS ready_count,
-        COUNT(*) FILTER (WHERE status = 'draft')::int AS draft_count
+        COUNT(*) FILTER (WHERE status = 'ready')::int  AS ready_count,
+        COUNT(*) FILTER (WHERE status = 'draft')::int  AS draft_count,
+        COALESCE(AVG(view_count) FILTER (WHERE created_at >= NOW() - interval '7 days' AND status IN ('ready','published')), 0)::numeric(10,1) AS avg_views_7d
       FROM blog.posts
     """, "blog")
 
+    top_category = query_one("""
+      SELECT category
+      FROM blog.posts
+      WHERE created_at >= NOW() - interval '7 days'
+        AND status IN ('ready','published')
+        AND category IS NOT NULL
+      GROUP BY category
+      ORDER BY COUNT(*) DESC
+      LIMIT 1
+    """, "blog")
+
+    insta = query_one("""
+      SELECT
+        COUNT(*) FILTER (WHERE status = 'ok')::int          AS ok_7d,
+        COUNT(*) FILTER (WHERE status = 'failed')::int      AS fail_7d,
+        COUNT(*) FILTER (WHERE status = 'token_error')::int AS token_error_7d
+      FROM blog.instagram_crosspost
+      WHERE created_at >= NOW() - interval '7 days'
+        AND dry_run = false
+    """, "blog")
+
     %{
-      metric_type: :content_ops,
-      published_7d: get_in(posts, ["published_7d"]) || 0,
-      ready_count: get_in(posts, ["ready_count"]) || 0,
-      draft_count: get_in(posts, ["draft_count"]) || 0
+      metric_type:       :content_ops,
+      published_7d:      get_in(posts, ["published_7d"])  || 0,
+      ready_count:       get_in(posts, ["ready_count"])   || 0,
+      draft_count:       get_in(posts, ["draft_count"])   || 0,
+      avg_views_7d:      get_in(posts, ["avg_views_7d"])  || 0.0,
+      top_category_7d:   get_in(top_category, ["category"]),
+      insta_ok_7d:       get_in(insta, ["ok_7d"])         || 0,
+      insta_fail_7d:     get_in(insta, ["fail_7d"])       || 0,
+      insta_token_err_7d: get_in(insta, ["token_error_7d"]) || 0
     }
   end
 
