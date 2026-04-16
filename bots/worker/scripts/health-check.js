@@ -1,3 +1,3 @@
 'use strict';
 const path = require('path');
-module.exports = require(path.join(__dirname, '../../../../dist/ts-runtime/bots/worker/scripts/health-check.js'));
+module.exports = require(path.join(__dirname, '../../../dist/ts-runtime/bots/worker/scripts/health-check.js'));
