@@ -8,16 +8,22 @@ defmodule Mix.Tasks.Phase3.Daemon.Cutover do
   상시 서비스(daemon) 후보의 launchd/PortAgent/health 상태를 한 번에 점검하고
   안전한 컷오버 순서를 dry-run으로 출력한다.
 
+  `--execute`를 주면 실제로 짧은 컷오버를 시도한다.
+  실패하면 launchd restore까지 자동으로 수행한다.
+
   ## Examples
 
       mix phase3.daemon.cutover --service hub_resource_api
       mix phase3.daemon.cutover --service blog_node_server --json
+      mix phase3.daemon.cutover --service hub_resource_api --execute
   """
 
   @impl Mix.Task
   def run(args) do
     {opts, _argv, _invalid} =
-      OptionParser.parse(args, strict: [service: :string, json: :boolean])
+      OptionParser.parse(args,
+        strict: [service: :string, json: :boolean, execute: :boolean, timeout_ms: :integer]
+      )
 
     service =
       opts
@@ -44,10 +50,17 @@ defmodule Mix.Tasks.Phase3.Daemon.Cutover do
       recommended_steps: build_steps(candidate)
     }
 
+    final_result =
+      if Keyword.get(opts, :execute, false) do
+        execute_cutover(result, candidate, Keyword.get(opts, :timeout_ms, 10_000))
+      else
+        Map.put(result, :mode, :dry_run)
+      end
+
     if Keyword.get(opts, :json, false) do
-      Mix.shell().info(Jason.encode_to_iodata!(result, pretty: true))
+      Mix.shell().info(Jason.encode_to_iodata!(final_result, pretty: true))
     else
-      Mix.shell().info(render_text(result))
+      Mix.shell().info(render_text(final_result))
     end
   end
 
@@ -101,8 +114,12 @@ defmodule Mix.Tasks.Phase3.Daemon.Cutover do
         %{
           status: :loaded,
           label: label,
-          pid: parse_launchctl_field(output, ~r/"pid"\s*=\s*(\d+)/),
-          last_exit_code: parse_launchctl_field(output, ~r/"last exit code"\s*=\s*(\d+)/),
+          pid: parse_launchctl_field(output, ~r/"pid"\s*=\s*(\d+)|"PID"\s*=\s*(\d+)/),
+          last_exit_code:
+            parse_launchctl_field(
+              output,
+              ~r/"last exit code"\s*=\s*(\d+)|"LastExitStatus"\s*=\s*(\d+)/
+            ),
           detail: String.trim(output)
         }
 
@@ -117,7 +134,8 @@ defmodule Mix.Tasks.Phase3.Daemon.Cutover do
 
   defp parse_launchctl_field(output, regex) do
     case Regex.run(regex, output) do
-      [_, value] -> String.to_integer(value)
+      [_, value] when is_binary(value) and value != "" -> String.to_integer(value)
+      [_, _, value] when is_binary(value) and value != "" -> String.to_integer(value)
       _ -> nil
     end
   end
@@ -159,9 +177,116 @@ defmodule Mix.Tasks.Phase3.Daemon.Cutover do
     ]
   end
 
+  defp execute_cutover(result, candidate, timeout_ms) do
+    if not result.cutover_ready? do
+      Map.merge(result, %{
+        mode: :execute,
+        cutover_executed?: false,
+        cutover_status: :blocked,
+        cutover_reason: "사전 조건이 충족되지 않아 execute를 진행하지 않았습니다"
+      })
+    else
+      label = candidate.label
+      plist_path = plist_path_for!(label)
+      domain_target = "gui/#{macos_uid()}/#{label}"
+
+      case System.cmd("launchctl", ["bootout", domain_target], stderr_to_stdout: true) do
+        {bootout_output, 0} ->
+          TeamJay.Agents.PortAgent.run(candidate.name)
+          Process.sleep(1_500)
+          health = wait_for_health(candidate.health_url, timeout_ms)
+
+          if health.status == :ok do
+            Map.merge(result, %{
+              mode: :execute,
+              cutover_executed?: true,
+              cutover_status: :ok,
+              cutover_reason: "launchd stop 후 PortAgent run과 health 확인까지 성공",
+              cutover_launchd_bootout: String.trim(bootout_output),
+              health_probe: health
+            })
+          else
+            rollback = rollback_launchd(candidate.name, plist_path)
+
+            Map.merge(result, %{
+              mode: :execute,
+              cutover_executed?: true,
+              cutover_status: :rolled_back,
+              cutover_reason: "PortAgent health 확인 실패로 launchd restore 수행",
+              cutover_launchd_bootout: String.trim(bootout_output),
+              health_probe: health,
+              rollback: rollback
+            })
+          end
+
+        {bootout_output, _code} ->
+          Map.merge(result, %{
+            mode: :execute,
+            cutover_executed?: false,
+            cutover_status: :bootout_failed,
+            cutover_reason: String.trim(bootout_output)
+          })
+      end
+    end
+  end
+
+  defp wait_for_health(url, timeout_ms) do
+    started_at = System.monotonic_time(:millisecond)
+    do_wait_for_health(url, timeout_ms, started_at)
+  end
+
+  defp do_wait_for_health(url, timeout_ms, started_at) do
+    health = probe_health(url)
+
+    cond do
+      health.status == :ok ->
+        health
+
+      System.monotonic_time(:millisecond) - started_at >= timeout_ms ->
+        health
+
+      true ->
+        Process.sleep(500)
+        do_wait_for_health(url, timeout_ms, started_at)
+    end
+  end
+
+  defp rollback_launchd(service, plist_path) do
+    TeamJay.Agents.PortAgent.stop(service)
+    Process.sleep(500)
+
+    case System.cmd("launchctl", ["load", plist_path], stderr_to_stdout: true) do
+      {output, 0} ->
+        %{status: :ok, detail: String.trim(output)}
+
+      {output, _code} ->
+        %{status: :error, detail: String.trim(output)}
+    end
+  end
+
+  defp macos_uid do
+    System.cmd("id", ["-u"])
+    |> elem(0)
+    |> String.trim()
+  end
+
+  defp plist_path_for!("ai.hub.resource-api"),
+    do: TeamJay.Config.repo_root() <> "/bots/hub/launchd/ai.hub.resource-api.plist"
+
+  defp plist_path_for!("ai.blog.node-server"),
+    do: TeamJay.Config.repo_root() <> "/bots/blog/launchd/ai.blog.node-server.plist"
+
+  defp plist_path_for!("ai.worker.web"),
+    do: TeamJay.Config.repo_root() <> "/bots/worker/launchd/ai.worker.web.plist"
+
+  defp plist_path_for!("ai.worker.nextjs"),
+    do: TeamJay.Config.repo_root() <> "/bots/worker/launchd/ai.worker.nextjs.plist"
+
+  defp plist_path_for!(label), do: Mix.raise("plist 경로 매핑이 없습니다: #{label}")
+
   defp render_text(result) do
     """
-    Phase3 Daemon Cutover Dry Run
+    Phase3 Daemon Cutover #{if(result[:mode] == :execute, do: "Execute", else: "Dry Run")}
     generated_at: #{DateTime.to_iso8601(result.generated_at)}
 
     service: #{result.service}
@@ -184,6 +309,9 @@ defmodule Mix.Tasks.Phase3.Daemon.Cutover do
     health_probe.http_status=#{Map.get(result.health_probe, :http_status)}
     health_probe.detail=#{Map.get(result.health_probe, :detail)}
     health_probe.sample=#{Map.get(result.health_probe, :sample)}
+
+    cutover_status=#{Map.get(result, :cutover_status)}
+    cutover_reason=#{Map.get(result, :cutover_reason)}
 
     steps:
     #{Enum.with_index(result.recommended_steps, 1) |> Enum.map_join("\n", fn {step, idx} -> "#{idx}. #{step}" end)}
