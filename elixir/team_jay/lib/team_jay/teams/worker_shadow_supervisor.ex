@@ -1,9 +1,7 @@
 defmodule TeamJay.Teams.WorkerShadowSupervisor do
   use Supervisor
 
-  @worker_agents [
-    %{name: :worker_web, label: "ai.worker.web"}
-  ]
+  @worker_agents []
 
   def start_link(opts \\ []) do
     Supervisor.start_link(__MODULE__, opts, name: __MODULE__)
