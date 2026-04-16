@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use strict';
 
 const richer = require('./richer.ts');

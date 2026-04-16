@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * topic-planner.ts — D-1 주제 사전 선정 (품질 크리틱 + 단일 최우선 주제)
  *

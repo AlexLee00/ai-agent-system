@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 'use strict';
 
 const { runNeighborSympathy } = require('../lib/commenter.ts');

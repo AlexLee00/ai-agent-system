@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use strict';
 
 const EXCLUDED_REFERENCE_POST_IDS = new Set([111, 112, 113]);
