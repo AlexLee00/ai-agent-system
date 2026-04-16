@@ -1,6 +1,7 @@
 import path from 'node:path';
 
 const ROOT = path.join(__dirname, '../../..');
+const env = require(path.join(ROOT, 'packages/core/lib/env'));
 const pgPool = require(path.join(ROOT, 'packages/core/lib/pg-pool'));
 const sender = require(path.join(ROOT, 'packages/core/lib/telegram-sender'));
 const { initHubConfig } = require(path.join(ROOT, 'packages/core/lib/llm-keys'));
@@ -32,7 +33,9 @@ async function poll(): Promise<{ sleepMs: number }> {
   const token = getSecret('telegram_bot_token');
   if (!token) {
     if (!missingTokenLogged) {
-      console.log('[worker-lead] telegram_bot_token 없음 — 텔레그램 폴링 비활성');
+      if (!env.IS_OPS) {
+        console.log('[worker-lead] telegram_bot_token 없음 — 텔레그램 폴링 비활성');
+      }
       missingTokenLogged = true;
     }
     return { sleepMs: NO_TOKEN_POLL_MS };
