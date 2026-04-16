@@ -28,7 +28,7 @@ defmodule TeamJay.Ska.ParsingGuard do
   defstruct [:stats, :circuit_breakers]
 
   # Circuit Breaker: 연속 3회 LLM 실패 시 10분 차단
-  @circuit_open_threshold 3
+  @circuit_open_threshold 3   # trip_circuit 호출 시 누적 카운터에 사용
   @circuit_reset_ms 600_000
 
   # ─── Public API ──────────────────────────────────────────
@@ -233,7 +233,7 @@ defmodule TeamJay.Ska.ParsingGuard do
 
   # ─── Private: LLM 셀렉터 자동 생성 ──────────────────────
 
-  defp generate_and_register_selector(html, target, provider) do
+  defp generate_and_register_selector(html, target, _provider) do
     Logger.info("[ParsingGuard] #{target} 새 CSS 셀렉터 자동 생성 중...")
     payload = %{
       chain_id: @selector_gen_chain_id,
@@ -272,17 +272,16 @@ defmodule TeamJay.Ska.ParsingGuard do
 
   # ─── Private: PortBridge LLM 호출 ────────────────────────
 
-  # 현재는 Hub HTTP 경유 (추후 전용 PortAgent로 전환)
-  defp call_llm_via_port(%{chain_id: chain_id} = payload) do
-    case TeamJay.HubClient.post("/api/ska/llm-parse", payload) do
-      {:ok, %{"text" => text, "provider" => provider}} ->
-        {:ok, text, provider}
-      {:ok, %{"error" => err}} ->
-        {:error, err}
-      {:error, reason} ->
-        Logger.error("[ParsingGuard] LLM Hub 호출 실패 (#{chain_id}): #{inspect(reason)}")
-        {:error, reason}
-    end
+  # TODO(Phase 3.5): ska-llm-parse.ts PortAgent 전환 후 실제 구현
+  # 현재는 stub — HubClient.pg_query로 결과 폴링하는 방식 대신
+  # PortAgent 전용 프로세스 경유로 전환 예정
+  defp call_llm_via_port(%{chain_id: chain_id, meta: meta}) do
+    Logger.info("[ParsingGuard] LLM 호출 stub (#{chain_id}) — Phase 3.5 구현 예정")
+    # Phase 3.5 구현 전까지: 에러 반환 (Level 3 실패로 처리됨)
+    # 실제 구현 시: ska-llm-parse.ts를 PortAgent로 실행하고 결과 수신
+    agent = Map.get(meta, :agent, "parsing_guard")
+    Logger.warning("[ParsingGuard] Level 3(LLM) 미구현 — #{agent} 수동 확인 필요")
+    {:error, :llm_not_implemented}
   end
 
   # ─── Private: HTML 셀렉터 적용 (실제 파싱은 Node.js 측에서) ──
@@ -321,8 +320,10 @@ defmodule TeamJay.Ska.ParsingGuard do
   end
 
   defp trip_circuit(state, target) do
-    Logger.warning("[ParsingGuard] #{target} circuit TRIPPED")
-    breaker = %{open: true, opened_at: System.monotonic_time(:millisecond), trips: 1}
+    prev = Map.get(state.circuit_breakers, target, %{trips: 0})
+    trips = Map.get(prev, :trips, 0) + 1
+    Logger.warning("[ParsingGuard] #{target} circuit TRIPPED (#{trips}/#{@circuit_open_threshold})")
+    breaker = %{open: true, opened_at: System.monotonic_time(:millisecond), trips: trips}
     %{state | circuit_breakers: Map.put(state.circuit_breakers, target, breaker)}
   end
 

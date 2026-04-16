@@ -178,7 +178,7 @@ defmodule TeamJay.Ska.Orchestrator do
 
   # ─── Private: 주간 리포트 (Phase 3) ──────────────────────
 
-  defp send_weekly_report(state) do
+  defp send_weekly_report(_state) do
     kpi = compute_kpi()
     failure_stats = TeamJay.Ska.FailureTracker.get_stats()
     parse_stats = TeamJay.Ska.ParsingGuard.get_stats()

@@ -20,6 +20,7 @@ defmodule TeamJay.Ska.SelectorManager do
 
   @promote_threshold 5
   @deprecate_threshold 5
+  # candidate가 @candidate_max_trials 이상 시도됐지만 promoted 안 된 경우 deprecate
   @candidate_max_trials 10
 
   defstruct [:cache]
@@ -172,6 +173,13 @@ defmodule TeamJay.Ska.SelectorManager do
 
   defp check_promotion(selector_id, status, _consec_ok, consec_fail)
     when consec_fail >= @deprecate_threshold and status in ["active", "candidate"] do
+    deprecate_selector(selector_id)
+  end
+
+  # candidate가 @candidate_max_trials 초과 시도됐으나 promoted 안 됐으면 deprecate
+  defp check_promotion(selector_id, "candidate", consec_ok, consec_fail)
+    when consec_ok + consec_fail >= @candidate_max_trials do
+    Logger.warning("[SelectorManager] candidate #{selector_id} #{@candidate_max_trials}회 초과 미승격 → deprecate")
     deprecate_selector(selector_id)
   end
 
