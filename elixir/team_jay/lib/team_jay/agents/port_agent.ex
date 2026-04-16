@@ -228,7 +228,7 @@ defmodule TeamJay.Agents.PortAgent do
   defp skip_daemon_boot?(_state), do: false
 
   defp daemon_healthy?(%{health_url: health_url}) when is_binary(health_url) do
-    case Req.get(health_url) do
+    case Req.get(health_url, retry: false) do
       {:ok, %{status: 200}} -> true
       _ -> false
     end
