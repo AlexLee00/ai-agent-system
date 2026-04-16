@@ -69,30 +69,51 @@ defmodule TeamJay.Jay.TeamConnector do
   end
 
   defp do_collect(:ska) do
-    today_bookings = query_one("""
-      SELECT
-        COUNT(*)::int AS total,
-        COUNT(*) FILTER (WHERE status = 'completed')::int AS completed,
-        COUNT(*) FILTER (WHERE status = 'pending')::int AS pending,
-        COUNT(*) FILTER (WHERE status = 'failed')::int AS failed
-      FROM reservation.reservations
-      WHERE date >= CURRENT_DATE - 1 AND date <= CURRENT_DATE
-    """, "reservation")
+    # Dashboard GenServer에서 집계된 KPI 우선 사용 (빠름 + 캐시)
+    jay_data = try do
+      TeamJay.Ska.Analytics.Dashboard.get_jay_data()
+    rescue
+      _ -> %{}
+    end
 
-    revenue = query_one("""
-      SELECT COALESCE(SUM(amount), 0)::int AS revenue_7d
-      FROM reservation.payments
-      WHERE paid_at >= NOW() - interval '7 days' AND status = 'paid'
-    """, "reservation")
+    if map_size(jay_data) > 0 do
+      %{
+        metric_type: :reservation_ops,
+        revenue_7d: jay_data[:revenue_7d] || 0,
+        revenue_30d: jay_data[:revenue_30d] || 0,
+        parse_rate: jay_data[:parse_rate],
+        recovery_rate: jay_data[:recovery_rate],
+        failed: jay_data[:failed] || 0,
+        pending: jay_data[:pending] || 0,
+        forecast_mape: jay_data[:forecast_mape]
+      }
+    else
+      # Fallback: DB 직접 조회
+      today_bookings = query_one("""
+        SELECT
+          COUNT(*)::int AS total,
+          COUNT(*) FILTER (WHERE status = 'completed')::int AS completed,
+          COUNT(*) FILTER (WHERE status = 'pending')::int AS pending,
+          COUNT(*) FILTER (WHERE status = 'failed')::int AS failed
+        FROM reservation.reservations
+        WHERE date >= CURRENT_DATE - 1 AND date <= CURRENT_DATE
+      """, "reservation")
 
-    %{
-      metric_type: :reservation_ops,
-      bookings_today: get_in(today_bookings, ["total"]) || 0,
-      completed: get_in(today_bookings, ["completed"]) || 0,
-      pending: get_in(today_bookings, ["pending"]) || 0,
-      failed: get_in(today_bookings, ["failed"]) || 0,
-      revenue_7d: get_in(revenue, ["revenue_7d"]) || 0
-    }
+      revenue = query_one("""
+        SELECT COALESCE(SUM(amount), 0)::int AS revenue_7d
+        FROM reservation.payments
+        WHERE paid_at >= NOW() - interval '7 days' AND status = 'paid'
+      """, "reservation")
+
+      %{
+        metric_type: :reservation_ops,
+        bookings_today: get_in(today_bookings, ["total"]) || 0,
+        completed: get_in(today_bookings, ["completed"]) || 0,
+        pending: get_in(today_bookings, ["pending"]) || 0,
+        failed: get_in(today_bookings, ["failed"]) || 0,
+        revenue_7d: get_in(revenue, ["revenue_7d"]) || 0
+      }
+    end
   end
 
   defp do_collect(:blog) do

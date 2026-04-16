@@ -14,6 +14,7 @@ const { errorsRecentRoute, errorsSummaryRoute } = require('../lib/routes/errors'
 const { eventsSearchRoute, eventsStatsRoute, eventsFeedbackRoute } = require('../lib/routes/events');
 const { logsSearchRoute, logsStatsRoute } = require('../lib/routes/logs');
 const { darwinCallbackRoute } = require('../lib/routes/darwin-callback');
+const { memoryRememberRoute, memoryRecallRoute } = require('../lib/routes/memory');
 const {
   agentsListRoute,
   agentsDashboardRoute,
@@ -135,6 +136,8 @@ app.post('/hub/events/feedback', generalLimiter, eventsFeedbackRoute);
 app.get('/hub/logs/search', generalLimiter, logsSearchRoute);
 app.get('/hub/logs/stats', generalLimiter, logsStatsRoute);
 app.post('/hub/darwin/callback', generalLimiter, darwinCallbackRoute);
+app.post('/hub/memory/remember', generalLimiter, memoryRememberRoute);
+app.post('/hub/memory/recall', generalLimiter, memoryRecallRoute);
 app.get('/hub/agents', generalLimiter, agentsListRoute);
 app.get('/hub/agents/dashboard', generalLimiter, agentsDashboardRoute);
 app.get('/hub/agents/always-on', generalLimiter, agentsAlwaysOnRoute);
