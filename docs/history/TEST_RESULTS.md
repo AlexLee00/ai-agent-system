@@ -2,6 +2,19 @@
 
 > Day별 테스트 통과/실패 누적 기록
 
+## 2026-04-17
+
+### Luna parallel ops 재점검 및 report 경로 확인
+
+| 테스트 | 결과 |
+|--------|------|
+| `node bots/investment/scripts/parallel-ops-snapshot.ts --json` | ✅ snapshot 생성 성공, `launchctl`/Mix 경고는 유지 |
+| `node bots/investment/scripts/health-check.ts` | ⚠️ launchd 경로는 여전히 sandbox 제약으로 실패 |
+| `REPO_ROOT=... PROJECT_ROOT=... node bots/investment/scripts/health-report.ts --json` | ⚠️ `pg-pool`에서 `[EPERM]` 실패 |
+| `REPO_ROOT=... PROJECT_ROOT=... node bots/investment/scripts/parallel-ops-report.ts --json` | ✅ `status=needs_attention`, `health-report 조회 실패` 유지 |
+| `REPO_ROOT=... PROJECT_ROOT=... node bots/investment/scripts/parallel-ops-report.ts --publish` | ⚠️ alert 경로 호출은 성공했으나 `openclaw`/Telegram fetch 및 `127.0.0.1:18789` 연결 실패 경고 발생 |
+| `node bots/investment/scripts/parallel-ops-history.ts --json --no-append` | ✅ 비교 JSON 출력, `historyCount=0`, `warnDelta=null` |
+
 ## 2026-04-16
 
 ### Luna parallel ops status 재점검

@@ -4,6 +4,22 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-04-17: Luna parallel ops report 경로 복구 및 재점검
+
+- `bots/investment/scripts/parallel-ops-snapshot.ts`
+- `bots/investment/scripts/health-report.ts`
+- `bots/investment/shared/cli-insight.ts`
+  - `packages/core/lib/gemma-pilot.js`를 default import로 전환해 CommonJS shim과의 ESM named import 충돌을 정리했다.
+- 실행 결과:
+  - `node bots/investment/scripts/parallel-ops-snapshot.ts --json` → snapshot 생성 성공
+  - `node bots/investment/scripts/health-check.ts` → launchd 경로는 여전히 sandbox 제약으로 비정상 종료
+  - `REPO_ROOT=... PROJECT_ROOT=... node bots/investment/scripts/health-report.ts --json` → `[EPERM]` at `node_modules/pg-pool/index.js:45:11`
+  - `REPO_ROOT=... PROJECT_ROOT=... node bots/investment/scripts/parallel-ops-report.ts --json` → `needs_attention`
+  - `REPO_ROOT=... PROJECT_ROOT=... node bots/investment/scripts/parallel-ops-report.ts --publish` → openclaw/Telegram fetch 실패 및 `127.0.0.1:18789` 연결 실패
+- 해석:
+  - 코드 로딩 문제는 줄였지만, launchd/Mix.PubSub/pg-pool EPERM 및 알림 전달 경로 불능은 그대로 남아 있다.
+  - current baseline 대비 regression은 없고, 기존 sandbox blocker를 다시 확인한 세션이다.
+
 ## 2026-04-16: 제이팀 리모델 Phase 3~4 — 크로스파이프라인 + 자율화 (CODEX_JAY_REMODEL)
 
 - **cross_team_router.ex**: JayBus 7토픽 구독 GenServer, 자율화 단계별 gate

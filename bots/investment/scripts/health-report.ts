@@ -13,7 +13,7 @@
 import path from 'path';
 import { createRequire } from 'module';
 import { fileURLToPath, pathToFileURL } from 'url';
-import { generateGemmaPilotText } from '../../../packages/core/lib/gemma-pilot.js';
+import gemmaPilot from '../../../packages/core/lib/gemma-pilot.js';
 import {
   getKisExecutionModeInfo,
   getKisMarketStatus,
@@ -39,6 +39,10 @@ import {
   loadSignalBlockHealth,
   loadTradeLaneHealth,
 } from './health-report-support.ts';
+
+const { generateGemmaPilotText } = gemmaPilot as {
+  generateGemmaPilotText: (payload: Record<string, any>) => Promise<{ ok?: boolean; content?: string }>;
+};
 
 const require = createRequire(import.meta.url);
 const {
