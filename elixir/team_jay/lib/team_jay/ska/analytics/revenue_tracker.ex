@@ -100,7 +100,7 @@ defmodule TeamJay.Ska.Analytics.RevenueTracker do
       WHERE date = '#{date_str}'::date
       LIMIT 1
     """, "ska") do
-      {:ok, %{"rows" => [%{"revenue" => r}]}} -> {:ok, r}
+      {:ok, %{"rows" => [%{"revenue" => r}]}} -> {:ok, normalize_int(r)}
       {:ok, %{"rows" => []}} -> {:ok, 0}
       {:error, reason} ->
         Logger.warning("[RevenueTracker] query_daily 실패: #{inspect(reason)}")
@@ -119,7 +119,7 @@ defmodule TeamJay.Ska.Analytics.RevenueTracker do
       WHERE date >= (CURRENT_DATE - INTERVAL '#{days} days')
         AND date < CURRENT_DATE
     """, "ska") do
-      {:ok, %{"rows" => [%{"total" => t}]}} -> {:ok, t}
+      {:ok, %{"rows" => [%{"total" => t}]}} -> {:ok, normalize_int(t)}
       {:error, reason} ->
         Logger.warning("[RevenueTracker] query_recent(#{days}) 실패: #{inspect(reason)}")
         {:error, reason}
@@ -139,7 +139,11 @@ defmodule TeamJay.Ska.Analytics.RevenueTracker do
       ORDER BY date ASC
     """, "ska") do
       {:ok, %{"rows" => rows}} ->
-        trend = Enum.map(rows, fn %{"date" => d, "revenue" => r} -> %{date: d, revenue: r} end)
+        trend =
+          Enum.map(rows, fn %{"date" => d, "revenue" => r} ->
+            %{date: d, revenue: normalize_int(r)}
+          end)
+
         {:ok, trend}
       {:error, reason} ->
         Logger.warning("[RevenueTracker] query_trend(#{days}) 실패: #{inspect(reason)}")
@@ -190,4 +194,23 @@ defmodule TeamJay.Ska.Analytics.RevenueTracker do
       {result, new_state}
     end
   end
+
+  defp normalize_int(value) when is_integer(value), do: value
+  defp normalize_int(value) when is_float(value), do: trunc(value)
+
+  defp normalize_int(value) when is_binary(value) do
+    value
+    |> String.trim()
+    |> case do
+      "" -> 0
+      trimmed ->
+        case Integer.parse(trimmed) do
+          {int, ""} -> int
+          _ -> 0
+        end
+    end
+  end
+
+  defp normalize_int(nil), do: 0
+  defp normalize_int(_), do: 0
 end
