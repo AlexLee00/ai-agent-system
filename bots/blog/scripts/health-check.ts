@@ -22,7 +22,7 @@ const {
   DEFAULT_NORMAL_EXIT_CODES,
 } = require('../../../packages/core/lib/health-provider');
 const { publishToWebhook } = require('../../../packages/core/lib/reporting-hub');
-const { createHealthMemoryHelper } = require('../../../packages/core/lib/health-memory');
+const { createHealthMemoryHelper } = require('../lib/health-memory-bridge.js');
 const {
   canonicalizeBlogCriticalAlert,
   appendIncidentLine,
