@@ -78,10 +78,7 @@ defmodule TeamJay.Diagnostics do
     {:steward_hourly, :steward},
     {:steward_daily, :steward}
   ]
-  @week2_shadow_agents [
-    {:blog_node_server, :blog, true,
-     %{pilot_mode: :daemon_cutover, health_url: "http://127.0.0.1:3100/health"}}
-  ]
+  @week2_shadow_agents []
   @week3_shadow_agents [
     {:worker_web, :worker, true,
      %{pilot_mode: :daemon_cutover, health_url: "http://127.0.0.1:4000/api/health"}},

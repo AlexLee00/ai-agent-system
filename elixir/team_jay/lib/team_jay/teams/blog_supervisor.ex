@@ -13,7 +13,7 @@ defmodule TeamJay.Teams.BlogSupervisor do
     %{
       name: :blog_node_server,
       script: "dist/ts-runtime/bots/blog/api/node-server.js",
-      schedule: nil
+      schedule: if(Mix.env() == :test, do: nil, else: :once)
     },
     %{
       name: :blog_marketing_snapshot,
