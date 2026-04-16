@@ -3,9 +3,11 @@
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('node:path');
+const { createProcessSingleton } = require('../lib/process-singleton');
 
 const runtimePath = path.join(__dirname, '../../../dist/ts-runtime/bots/worker/src/task-runner.js');
 const legacyPath = path.join(__dirname, 'task-runner.legacy.js');
+const singleton = createProcessSingleton('ai-agent-system-worker-task-runner');
 
 function isRuntimeLoadFailure(error) {
   if (!error) return false;
@@ -33,6 +35,12 @@ function selectTargetPath() {
 }
 
 if (require.main === module) {
+  const lock = singleton.acquire();
+  if (!lock.acquired) {
+    console.warn(`[worker-task-runner] 이미 실행 중인 인스턴스 감지 (PID: ${lock.existingPid})`);
+    process.exit(0);
+  }
+
   const targetPath = selectTargetPath();
   const child = spawn(process.execPath, [targetPath], {
     cwd: __dirname,
@@ -50,6 +58,7 @@ if (require.main === module) {
   process.on('SIGTERM', () => forwardSignal('SIGTERM'));
 
   child.on('exit', (code, signal) => {
+    singleton.cleanup();
     if (signal) {
       process.kill(process.pid, signal);
       return;
