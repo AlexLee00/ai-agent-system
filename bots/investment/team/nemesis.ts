@@ -18,6 +18,7 @@ import { loadLatestScoutIntel, getScoutSignalForSymbol } from '../shared/scout-i
 const _require = createRequire(import.meta.url);
 const kst = _require('../../../packages/core/lib/kst');
 const eventLake = _require('../../../packages/core/lib/event-lake');
+const { AgentMemory } = _require('../../../packages/core/lib/agent-memory');
 import * as journalDb from '../shared/trade-journal-db.ts';
 import { callLLM, parseJSON } from '../shared/llm-client.ts';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.ts';
@@ -663,7 +664,21 @@ export async function evaluateSignal(signal, opts = {}) {
     getCapitalConfig,
     getDailyTradeCount,
   });
-  if (hardRuleResult?.approved === false) return hardRuleResult;
+  if (hardRuleResult?.approved === false) {
+    try {
+      const nemesisMemory = new AgentMemory({ agentId: 'investment.nemesis', team: 'investment' });
+      await nemesisMemory.remember(
+        `[하드룰 거절] ${symbol} ${action} | ${hardRuleResult.reason || '규칙 위반'}`,
+        'episodic',
+        {
+          keywords: [symbol, action, 'REJECT', 'hard_rule'].filter(Boolean),
+          importance: 0.8,
+          metadata: { decision: 'REJECT', source: 'hard_rule', symbol, action, reason: hardRuleResult.reason },
+        }
+      );
+    } catch { /* 무시 */ }
+    return hardRuleResult;
+  }
 
   let amountUsdt = hardRuleResult.amountUsdt;
   let positionCount = hardRuleResult.positionCount;
@@ -764,7 +779,21 @@ export async function evaluateSignal(signal, opts = {}) {
       db,
     });
 
-    if (!adaptiveResult.approved) return adaptiveResult;
+    if (!adaptiveResult.approved) {
+      try {
+        const nemesisMemory = new AgentMemory({ agentId: 'investment.nemesis', team: 'investment' });
+        await nemesisMemory.remember(
+          `[LLM 거절] ${symbol} ${action} | ${adaptiveResult.llm?.reasoning || adaptiveResult.reason || 'LLM 거절'}`,
+          'episodic',
+          {
+            keywords: [symbol, action, 'REJECT', 'llm'].filter(Boolean),
+            importance: 0.7,
+            metadata: { decision: 'REJECT', source: 'llm', symbol, action, llmReasoning: adaptiveResult.llm?.reasoning },
+          }
+        );
+      } catch { /* 무시 */ }
+      return adaptiveResult;
+    }
     amountUsdt = adaptiveResult.adjustedAmount;
 
     if (persist && signal.id) {
@@ -807,6 +836,22 @@ export async function evaluateSignal(signal, opts = {}) {
     await db.updateSignalAmount(signal.id, amountUsdt);
   }
   console.log(`  ✅ [네메시스] ${symbol} ${action} $${amountUsdt} 승인`);
+
+  // ── 에이전트 메모리 기록 (승인) ────────────────────────────────────
+  try {
+    const nemesisMemory = new AgentMemory({ agentId: 'investment.nemesis', team: 'investment' });
+    await nemesisMemory.remember(
+      `[리스크 승인] ${symbol} ${action} $${amountUsdt} | 확신도 ${((signal.confidence || 0) * 100).toFixed(0)}%`,
+      'episodic',
+      {
+        keywords: [symbol, action, signal.exchange, 'APPROVE'].filter(Boolean),
+        importance: signal.confidence || 0.5,
+        metadata: { decision: 'APPROVE', symbol, action, amountUsdt, exchange: signal.exchange },
+      }
+    );
+  } catch {
+    // 메모리 저장 실패 무시
+  }
 
   // dynamicTPSL이 applied=true면 헤파이스토스에 전달할 tp/sl 가격 포함
   const tpslResult = (action === ACTIONS.BUY && dynamicTPSL?.applied)
