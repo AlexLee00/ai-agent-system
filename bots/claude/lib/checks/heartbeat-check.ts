@@ -2,6 +2,7 @@
 'use strict';
 
 const { listHeartbeats } = require('../../../../packages/core/lib/agent-heartbeats');
+const pgPool = require('../../../../packages/core/lib/pg-pool');
 
 const DEFAULT_WARN_MINUTES = 60;
 const DEFAULT_ERROR_MINUTES = 180;
@@ -15,6 +16,50 @@ function resolveStatus(ageMinutes, warnMinutes, errorMinutes) {
   if (ageMinutes >= errorMinutes) return 'error';
   if (ageMinutes >= warnMinutes) return 'warn';
   return 'ok';
+}
+
+async function loadReservationAgentState(agentName) {
+  try {
+    return await pgPool.get(
+      'reservation',
+      'SELECT status, updated_at, last_success_at FROM agent_state WHERE agent = $1 LIMIT 1',
+      [agentName],
+    );
+  } catch (_e) {
+    return null;
+  }
+}
+
+function formatMinutesAgo(ts, now) {
+  const ms = ts ? new Date(ts).getTime() : 0;
+  if (!ms) return null;
+  return Math.floor((now - ms) / 60000);
+}
+
+function softenAndyHeartbeatIfActive(item, reservationState, now) {
+  if (!reservationState) return item;
+
+  const stateStatus = String(reservationState.status || '').toLowerCase();
+  const updatedMinutes = formatMinutesAgo(reservationState.updated_at, now);
+  const successMinutes = formatMinutesAgo(reservationState.last_success_at, now);
+  const recentlyActive =
+    Number.isFinite(updatedMinutes) &&
+    updatedMinutes <= 15 &&
+    (stateStatus === 'idle' || stateStatus === 'running' || stateStatus === 'ok');
+
+  if (!recentlyActive) return item;
+
+  const bits = [
+    `reservation.agent_state=${stateStatus || 'unknown'}`,
+    Number.isFinite(updatedMinutes) ? `${updatedMinutes}분 전 업데이트` : null,
+    Number.isFinite(successMinutes) ? `${successMinutes}분 전 마지막 성공` : null,
+  ].filter(Boolean);
+
+  return {
+    ...item,
+    status: 'ok',
+    detail: `${item.detail} | ${bits.join(', ')}`,
+  };
 }
 
 async function run() {
@@ -45,7 +90,14 @@ async function run() {
     const detail = Number.isFinite(ageMinutes)
       ? `${ageMinutes}분 전 heartbeat (상태: ${row.status})`
       : 'heartbeat 시각 없음';
-    items.push({ label, status, detail });
+    let item = { label, status, detail };
+
+    if (row.agent_name === 'andy' && status !== 'ok') {
+      const reservationState = await loadReservationAgentState('andy');
+      item = softenAndyHeartbeatIfActive(item, reservationState, now);
+    }
+
+    items.push(item);
   }
 
   const overall = items.some(item => item.status === 'error')
