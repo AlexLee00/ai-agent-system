@@ -3,12 +3,13 @@
   "version": "1.0.0",
   "private": true,
   "description": "Resource API Hub for OPS resource proxy",
-  "main": "src/hub.js",
+  "main": "src/hub.ts",
   "scripts": {
-    "start": "node src/hub.js"
+    "start": "tsx src/hub.ts"
   },
   "dependencies": {
     "express": "^4.21.2",
-    "express-rate-limit": "^7.5.0"
+    "express-rate-limit": "^7.5.0",
+    "tsx": "^4.21.0"
   }
 }

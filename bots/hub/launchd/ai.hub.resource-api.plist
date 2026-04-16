@@ -8,8 +8,8 @@
 
   <key>ProgramArguments</key>
   <array>
-    <string>/opt/homebrew/bin/node</string>
-    <string>bots/hub/src/hub.js</string>
+    <string>/Users/alexlee/projects/ai-agent-system/node_modules/.bin/tsx</string>
+    <string>bots/hub/src/hub.ts</string>
   </array>
 
   <key>WorkingDirectory</key>
