@@ -192,31 +192,61 @@ defmodule Mix.Tasks.Phase3.Daemon.Cutover do
 
       case System.cmd("launchctl", ["bootout", domain_target], stderr_to_stdout: true) do
         {bootout_output, 0} ->
-          TeamJay.Agents.PortAgent.run(candidate.name)
-          Process.sleep(1_500)
-          health = wait_for_health(candidate.health_url, timeout_ms)
+          launchd_after_bootout = wait_for_launchd_unloaded(label, timeout_ms)
 
-          if health.status == :ok do
+          if launchd_after_bootout.status != :missing do
             Map.merge(result, %{
               mode: :execute,
-              cutover_executed?: true,
-              cutover_status: :ok,
-              cutover_reason: "launchd stop 후 PortAgent run과 health 확인까지 성공",
+              cutover_executed?: false,
+              cutover_status: :bootout_incomplete,
+              cutover_reason: "launchd bootout 이후에도 서비스가 계속 loaded 상태입니다",
               cutover_launchd_bootout: String.trim(bootout_output),
-              health_probe: health
+              launchd_after_bootout: launchd_after_bootout
             })
           else
-            rollback = rollback_launchd(candidate.name, plist_path)
+            TeamJay.Agents.PortAgent.run(candidate.name)
+            Process.sleep(1_500)
+            health = wait_for_health(candidate.health_url, timeout_ms)
+            launchd_after_cutover = get_launchd_status(label)
 
-            Map.merge(result, %{
-              mode: :execute,
-              cutover_executed?: true,
-              cutover_status: :rolled_back,
-              cutover_reason: "PortAgent health 확인 실패로 launchd restore 수행",
-              cutover_launchd_bootout: String.trim(bootout_output),
-              health_probe: health,
-              rollback: rollback
-            })
+            if health.status == :ok and launchd_after_cutover.status == :missing do
+              Map.merge(result, %{
+                mode: :execute,
+                cutover_executed?: true,
+                cutover_status: :ok,
+                cutover_reason: "launchd stop 후 PortAgent run과 health 확인까지 성공",
+                cutover_launchd_bootout: String.trim(bootout_output),
+                launchd_after_bootout: launchd_after_bootout,
+                launchd_after_cutover: launchd_after_cutover,
+                health_probe: health
+              })
+            else
+              rollback = rollback_launchd(candidate.name, plist_path)
+
+              cutover_reason =
+                cond do
+                  health.status != :ok ->
+                    "PortAgent health 확인 실패로 launchd restore 수행"
+
+                  launchd_after_cutover.status != :missing ->
+                    "PortAgent run 이후에도 launchd owner가 남아 있어 launchd restore 수행"
+
+                  true ->
+                    "PortAgent cutover 확인 실패로 launchd restore 수행"
+                end
+
+              Map.merge(result, %{
+                mode: :execute,
+                cutover_executed?: true,
+                cutover_status: :rolled_back,
+                cutover_reason: cutover_reason,
+                cutover_launchd_bootout: String.trim(bootout_output),
+                launchd_after_bootout: launchd_after_bootout,
+                launchd_after_cutover: launchd_after_cutover,
+                health_probe: health,
+                rollback: rollback
+              })
+            end
           end
 
         {bootout_output, _code} ->
@@ -235,6 +265,11 @@ defmodule Mix.Tasks.Phase3.Daemon.Cutover do
     do_wait_for_health(url, timeout_ms, started_at)
   end
 
+  defp wait_for_launchd_unloaded(label, timeout_ms) do
+    started_at = System.monotonic_time(:millisecond)
+    do_wait_for_launchd_unloaded(label, timeout_ms, started_at)
+  end
+
   defp do_wait_for_health(url, timeout_ms, started_at) do
     health = probe_health(url)
 
@@ -248,6 +283,22 @@ defmodule Mix.Tasks.Phase3.Daemon.Cutover do
       true ->
         Process.sleep(500)
         do_wait_for_health(url, timeout_ms, started_at)
+    end
+  end
+
+  defp do_wait_for_launchd_unloaded(label, timeout_ms, started_at) do
+    launchd = get_launchd_status(label)
+
+    cond do
+      launchd.status == :missing ->
+        launchd
+
+      System.monotonic_time(:millisecond) - started_at >= timeout_ms ->
+        launchd
+
+      true ->
+        Process.sleep(500)
+        do_wait_for_launchd_unloaded(label, timeout_ms, started_at)
     end
   end
 
