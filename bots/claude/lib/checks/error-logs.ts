@@ -7,8 +7,11 @@ const { LAUNCHD_AVAILABLE } = require('../../../../packages/core/lib/env');
 
 const SERVICE_LABEL_MAP = {
   'investment-crypto': 'ai.investment.crypto',
+  'investment-crypto-validation': 'ai.investment.crypto.validation',
   'investment-domestic': 'ai.investment.domestic',
+  'investment-domestic-validation': 'ai.investment.domestic.validation',
   'investment-overseas': 'ai.investment.overseas',
+  'investment-overseas-validation': 'ai.investment.overseas.validation',
   'investment-prescreen-domestic': 'ai.investment.prescreen-domestic',
   'investment-reporter': 'ai.investment.reporter',
   'investment-argos': 'ai.investment.argos',
