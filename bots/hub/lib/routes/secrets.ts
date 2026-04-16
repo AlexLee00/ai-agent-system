@@ -1,9 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { createRequire } from 'node:module';
-
-const require = createRequire(import.meta.url);
-const yaml = require('js-yaml');
+import yaml from 'js-yaml';
 const env = require('../../../../packages/core/lib/env');
 
 const CONFIG_YAML = path.join(env.PROJECT_ROOT, 'bots/investment/config.yaml');
