@@ -185,7 +185,8 @@ defmodule TeamJay.Agents.PortAgent do
       :exit_status,
       :stderr_to_stdout,
       args: String.split(script, " ", trim: true),
-      cd: TeamJay.Config.repo_root()
+      cd: TeamJay.Config.repo_root(),
+      env: port_env()
     ])
   end
 
@@ -195,8 +196,16 @@ defmodule TeamJay.Agents.PortAgent do
       :exit_status,
       :stderr_to_stdout,
       args: ["-lc", script],
-      cd: TeamJay.Config.repo_root()
+      cd: TeamJay.Config.repo_root(),
+      env: port_env()
     ])
+  end
+
+  defp port_env do
+    [
+      {~c"MODE", ~c"ops"},
+      {~c"PROJECT_ROOT", String.to_charlist(TeamJay.Config.repo_root())}
+    ]
   end
 
   defp schedule_run({:interval, ms}), do: Process.send_after(self(), :run, ms)
