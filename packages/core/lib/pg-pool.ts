@@ -38,7 +38,7 @@ const reconnectState = new Map<string, ReconnectState>();
 const RECONNECT_CODES = new Set(['ECONNREFUSED', '57P01', 'ECONNRESET', 'EPIPE']);
 const RECONNECT_MESSAGES = ['connection terminated', 'connection destroyed', 'server closed the connection'];
 
-const useHub = !env.IS_OPS && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
+const useHub = !env.IS_OPS && !env.IS_CLI && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
 
 function isReadOnlySql(sql: string): boolean {
   const normalized = String(sql || '').trim().toLowerCase();

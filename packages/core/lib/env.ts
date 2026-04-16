@@ -95,10 +95,11 @@ export function corePath(moduleName: string): string {
 // ─── 환경 ────────────────────────────────────────────────────────────────
 
 const _raw_mode = (process.env.MODE || 'dev').toLowerCase().trim();
+export const IS_CLI = _raw_mode === 'cli';
 const _mode_alias: Record<string, string> = { cli: 'dev' };
 const _valid_modes = ['ops', 'dev'];
 const _normalized_mode = _mode_alias[_raw_mode] || _raw_mode;
-if (!_valid_modes.includes(_normalized_mode)) {
+if (!_valid_modes.includes(_normalized_mode) && !IS_CLI) {
   console.warn(`[env] ⚠️ 알 수 없는 MODE: "${_raw_mode}" — dev 로 처리`);
 }
 
