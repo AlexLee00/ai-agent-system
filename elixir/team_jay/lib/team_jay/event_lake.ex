@@ -74,7 +74,10 @@ defmodule TeamJay.EventLake do
 
   @impl true
   def handle_cast({:record, attrs}, state) do
-    changeset = EventLakeSchema.changeset(%EventLakeSchema{}, attrs)
+    changeset =
+      attrs
+      |> normalize_record_attrs()
+      |> then(&EventLakeSchema.changeset(%EventLakeSchema{}, &1))
 
     case Repo.insert(changeset) do
       {:ok, _row} -> Logger.debug("[EventLake] 기록 성공: #{Map.get(attrs, :event_type) || Map.get(attrs, "event_type")}")
@@ -82,6 +85,49 @@ defmodule TeamJay.EventLake do
     end
 
     {:noreply, state}
+  end
+
+  defp normalize_record_attrs(attrs) when is_map(attrs) do
+    source = map_get(attrs, :source)
+    payload = map_get(attrs, :payload)
+    metadata = map_get(attrs, :metadata, %{}) |> ensure_map()
+
+    merged_metadata =
+      metadata
+      |> maybe_put_metadata("source", source)
+      |> maybe_put_metadata("payload", payload)
+
+    %{
+      event_type: map_get(attrs, :event_type, "unknown"),
+      team: map_get(attrs, :team, "general"),
+      bot_name: map_get(attrs, :bot_name, map_get(attrs, :bot, source || "unknown")),
+      severity: normalize_severity(map_get(attrs, :severity, "info")),
+      trace_id: map_get(attrs, :trace_id, ""),
+      title: map_get(attrs, :title, ""),
+      message: map_get(attrs, :message, ""),
+      tags: map_get(attrs, :tags, []),
+      metadata: merged_metadata,
+      feedback_score: map_get(attrs, :feedback_score),
+      feedback: map_get(attrs, :feedback)
+    }
+  end
+
+  defp normalize_record_attrs(other), do: %{event_type: inspect(other)}
+
+  defp normalize_severity("warning"), do: "warn"
+  defp normalize_severity(severity) when is_atom(severity), do: severity |> Atom.to_string() |> normalize_severity()
+  defp normalize_severity(severity) when is_binary(severity), do: severity
+  defp normalize_severity(_), do: "info"
+
+  defp ensure_map(value) when is_map(value), do: value
+  defp ensure_map(_), do: %{}
+
+  defp maybe_put_metadata(metadata, _key, nil), do: metadata
+  defp maybe_put_metadata(metadata, _key, ""), do: metadata
+  defp maybe_put_metadata(metadata, key, value), do: Map.put(metadata, key, value)
+
+  defp map_get(map, key, default \\ nil) do
+    Map.get(map, key, Map.get(map, Atom.to_string(key), default))
   end
 
   defp update_stats(stats, event) do
@@ -96,4 +142,3 @@ defmodule TeamJay.EventLake do
     }
   end
 end
-
