@@ -15,7 +15,7 @@ defmodule TeamJay.Jay.CrossTeamRouter do
 
   use GenServer
   require Logger
-  alias TeamJay.Jay.Topics
+  alias TeamJay.Jay.{CommandEnvelope, Topics}
 
   # ────────────────────────────────────────────────────────────────
   # GenServer 생명주기
@@ -80,6 +80,18 @@ defmodule TeamJay.Jay.CrossTeamRouter do
 
   defp handle_ska_to_blog(%{drop_pct: drop_pct, details: details}) do
     revenue = details[:revenue_7d] || 0
+    envelope =
+      CommandEnvelope.build(
+        :create_promotion_content,
+        :ska,
+        :blog,
+        %{
+          drop_pct: drop_pct,
+          revenue_7d: revenue,
+          keyword_hints: ["분당서현 스터디카페", "커피랑도서관 할인"]
+        }
+      )
+
     message = """
     📢 [제이→블로] 스카팀 매출 하락 감지!
     📉 하락률: #{drop_pct}%
@@ -87,8 +99,8 @@ defmodule TeamJay.Jay.CrossTeamRouter do
     🎯 요청: 스카 스터디카페 프로모션 블로그 포스트 1건 긴급 발행
     키워드 힌트: 분당서현 스터디카페, 커피랑도서관 할인
     """
-    TeamJay.HubClient.post_alarm(message, "blog", "jay.cross_team_router")
-    record_pipeline_event(:ska_to_blog, :executed, %{drop_pct: drop_pct, revenue: revenue})
+    dispatch_team_command(:ska_to_blog, "blog", message, envelope)
+    record_pipeline_event(:ska_to_blog, :executed, %{drop_pct: drop_pct, revenue: revenue, command: envelope})
     Logger.info("[CrossTeamRouter] ska→blog 실행: 하락 #{drop_pct}%, #{format_krw(revenue)}")
   end
 
@@ -106,14 +118,22 @@ defmodule TeamJay.Jay.CrossTeamRouter do
       _          -> {"시장 변화", "가상화폐 시장 분석"}
     end
 
+    envelope =
+      CommandEnvelope.build(
+        :create_investment_content,
+        :luna,
+        :blog,
+        %{regime: regime, mood: mood, keyword_hint: keyword_hint}
+      )
+
     message = """
     📢 [제이→블로] 루나팀 시장 급변 감지!
     📊 현재 체제: #{regime} (#{mood})
     🎯 요청: 투자 관련 블로그 포스트 1건 발행
     키워드 힌트: #{keyword_hint}
     """
-    TeamJay.HubClient.post_alarm(message, "blog", "jay.cross_team_router")
-    record_pipeline_event(:luna_to_blog, :executed, %{regime: regime})
+    dispatch_team_command(:luna_to_blog, "blog", message, envelope)
+    record_pipeline_event(:luna_to_blog, :executed, %{regime: regime, command: envelope})
     Logger.info("[CrossTeamRouter] luna→blog 실행: 체제=#{regime}")
   end
 
@@ -125,13 +145,21 @@ defmodule TeamJay.Jay.CrossTeamRouter do
 
   defp handle_blog_to_ska(%{keywords: keywords, details: _details}) do
     kw_list = Enum.join(keywords, ", ")
+    envelope =
+      CommandEnvelope.build(
+        :apply_seo,
+        :blog,
+        :ska,
+        %{keywords: keywords, keyword_count: length(keywords)}
+      )
+
     message = """
     📢 [제이→스카] 블로팀 고성과 키워드 발견!
     🔑 키워드: #{kw_list}
     🎯 요청: 네이버 예약 상품명/설명에 키워드 반영 검토
     """
-    TeamJay.HubClient.post_alarm(message, "ska", "jay.cross_team_router")
-    record_pipeline_event(:blog_to_ska, :executed, %{keyword_count: length(keywords)})
+    dispatch_team_command(:blog_to_ska, "ska", message, envelope)
+    record_pipeline_event(:blog_to_ska, :executed, %{keyword_count: length(keywords), command: envelope})
     Logger.info("[CrossTeamRouter] blog→ska 실행: 키워드 #{length(keywords)}개")
   end
 
@@ -148,13 +176,21 @@ defmodule TeamJay.Jay.CrossTeamRouter do
       true                 -> "보수적"
     end
 
+    envelope =
+      CommandEnvelope.build(
+        :adjust_investment_intensity,
+        :ska,
+        :luna,
+        %{revenue_7d: revenue, recommended_intensity: intensity}
+      )
+
     message = """
     📢 [제이→루나] 스카팀 캐시플로우 업데이트!
     💰 7일 매출: #{format_krw(revenue)}
     📊 권장 투자 강도: #{intensity}
     """
-    TeamJay.HubClient.post_alarm(message, "luna", "jay.cross_team_router")
-    record_pipeline_event(:ska_to_luna, :executed, %{revenue: revenue, intensity: intensity})
+    dispatch_team_command(:ska_to_luna, "luna", message, envelope)
+    record_pipeline_event(:ska_to_luna, :executed, %{revenue: revenue, intensity: intensity, command: envelope})
     Logger.info("[CrossTeamRouter] ska→luna 실행: #{format_krw(revenue)} → #{intensity}")
   end
 
@@ -176,7 +212,15 @@ defmodule TeamJay.Jay.CrossTeamRouter do
     """
 
     Enum.each(teams, fn team ->
-      TeamJay.HubClient.post_alarm(message, team, "jay.cross_team_router")
+      envelope =
+        CommandEnvelope.build(
+          :reduce_workload,
+          :claude,
+          team,
+          %{risk_level: level, affected_services: services}
+        )
+
+      dispatch_team_command(:claude_to_all, team, message, envelope)
     end)
 
     record_pipeline_event(:claude_to_all, :executed, %{risk_level: level, teams_notified: teams})
@@ -191,13 +235,21 @@ defmodule TeamJay.Jay.CrossTeamRouter do
 
   defp handle_blog_to_luna(%{keywords: keywords}) do
     kw_list = Enum.join(keywords, ", ")
+    envelope =
+      CommandEnvelope.build(
+        :analyze_trend_candidates,
+        :blog,
+        :luna,
+        %{keywords: keywords, keyword_count: length(keywords)}
+      )
+
     message = """
     📢 [제이→루나] 블로팀 트렌드 키워드 공유!
     🔑 트렌드: #{kw_list}
     🎯 요청: 관련 종목/코인 분석 검토
     """
-    TeamJay.HubClient.post_alarm(message, "luna", "jay.cross_team_router")
-    record_pipeline_event(:blog_to_luna, :executed, %{keyword_count: length(keywords)})
+    dispatch_team_command(:blog_to_luna, "luna", message, envelope)
+    record_pipeline_event(:blog_to_luna, :executed, %{keyword_count: length(keywords), command: envelope})
     Logger.info("[CrossTeamRouter] blog→luna 실행")
   end
 
@@ -208,13 +260,21 @@ defmodule TeamJay.Jay.CrossTeamRouter do
   # ────────────────────────────────────────────────────────────────
 
   defp handle_luna_to_ska(%{realized_pnl: pnl}) when is_number(pnl) and pnl > 0 do
+    envelope =
+      CommandEnvelope.build(
+        :notify_budget_surplus,
+        :luna,
+        :ska,
+        %{realized_pnl: pnl}
+      )
+
     message = """
     📢 [제이→스카] 루나팀 수익 실현!
     💰 실현 수익: +$#{Float.round(pnl * 1.0, 2)}
     🎯 참고: 운영비 예산 여유 발생
     """
-    TeamJay.HubClient.post_alarm(message, "ska", "jay.cross_team_router")
-    record_pipeline_event(:luna_to_ska, :executed, %{realized_pnl: pnl})
+    dispatch_team_command(:luna_to_ska, "ska", message, envelope)
+    record_pipeline_event(:luna_to_ska, :executed, %{realized_pnl: pnl, command: envelope})
     Logger.info("[CrossTeamRouter] luna→ska 실행: +$#{pnl}")
   end
 
@@ -231,6 +291,18 @@ defmodule TeamJay.Jay.CrossTeamRouter do
       severity: "info",
       payload: details
     })
+  rescue
+    _ -> :ok
+  end
+
+  defp dispatch_team_command(pipeline, target_team, message, envelope) do
+    record_pipeline_event(pipeline, :command_issued, %{
+      target_team: target_team,
+      command: envelope,
+      summary: CommandEnvelope.summary(envelope)
+    })
+
+    TeamJay.HubClient.post_alarm(message, target_team, "jay.cross_team_router")
   rescue
     _ -> :ok
   end
