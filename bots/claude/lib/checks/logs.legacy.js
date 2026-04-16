@@ -15,6 +15,10 @@ const cfg  = require('../config');
 const ERROR_PATTERNS = [/❌/, /ERROR/, /error:/i, /FATAL/, /uncaughtException/, /UnhandledPromiseRejection/];
 const WARN_PATTERNS  = [/⚠️/, /WARN/, /warn:/i, /deprecated/i];
 
+function pathExists(target) {
+  return typeof target === 'string' && target.length > 0 && fs.existsSync(target);
+}
+
 // 로그 품질 특수 패턴
 const QUALITY_PATTERNS = [
   { re: /TimeoutError|timeout.*exceeded|Navigation timeout/i, label: 'Playwright 타임아웃', threshold: 5 },
@@ -23,7 +27,7 @@ const QUALITY_PATTERNS = [
 ];
 
 function readLastN(filePath, n = 200) {
-  if (!fs.existsSync(filePath)) return [];
+  if (!pathExists(filePath)) return [];
   try {
     const content = fs.readFileSync(filePath, 'utf8');
     return content.split('\n').filter(Boolean).slice(-n);
@@ -48,7 +52,7 @@ function detectRepeatedErrors(lines) {
 function analyzeLog(filePath, label) {
   const result = { label, status: 'ok', detail: '' };
 
-  if (!fs.existsSync(filePath)) {
+  if (!pathExists(filePath)) {
     result.status = 'ok';
     result.detail = '로그 없음 (정상 대기)';
     return result;
@@ -97,7 +101,7 @@ function checkLogQuality(items) {
   };
 
   for (const [botLabel, filePath] of Object.entries(LOG_FILES)) {
-    if (!fs.existsSync(filePath)) continue;
+    if (!pathExists(filePath)) continue;
     const lines = readLastN(filePath, 200);
     for (const { re, label, threshold } of QUALITY_PATTERNS) {
       // JSON 데이터 포함 라인(300자 초과)은 앞 300자만 검사 — 전화번호 등 오탐 방지
@@ -123,7 +127,7 @@ async function run() {
   items.push(analyzeLog(cfg.LOGS.overseas, '루나팀 (해외주식 사이클)'));
 
   // OpenClaw 로그 (디렉토리 내 최신 파일)
-  if (fs.existsSync(cfg.LOGS.openclaw)) {
+  if (pathExists(cfg.LOGS.openclaw)) {
     try {
       const files = fs.readdirSync(cfg.LOGS.openclaw)
         .filter(f => f.endsWith('.log'))
@@ -135,7 +139,7 @@ async function run() {
   }
 
   // 덱스터 자신의 이전 로그
-  if (fs.existsSync(cfg.LOGS.dexter)) {
+  if (pathExists(cfg.LOGS.dexter)) {
     const sizeMB = fs.statSync(cfg.LOGS.dexter).size / 1024 / 1024;
     items.push({
       label:  '덱스터 로그',

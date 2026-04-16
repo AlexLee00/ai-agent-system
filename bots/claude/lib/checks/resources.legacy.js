@@ -13,6 +13,10 @@ const fs   = require('fs');
 const { execSync } = require('child_process');
 const cfg  = require('../config');
 
+function pathExists(target) {
+  return typeof target === 'string' && target.length > 0 && fs.existsSync(target);
+}
+
 function getAvailableMemoryGB() {
   try {
     const vmstat = execSync('vm_stat', { encoding: 'utf8', timeout: 3000 });
@@ -78,7 +82,7 @@ function checkLogSizes(items) {
   ];
 
   for (const { path: p, label } of logs) {
-    if (!fs.existsSync(p)) continue;
+    if (!pathExists(p)) continue;
     const mb = fs.statSync(p).size / 1048576;
     if (mb > cfg.THRESHOLDS.logMaxMB) {
       items.push({ label, status: 'warn', detail: `${mb.toFixed(1)}MB — 로테이션 권장: truncate -s 0 ${p}` });
@@ -174,7 +178,7 @@ function checkHugeLogFiles(items) {
 
   let found = 0;
   for (const p of WATCH) {
-    if (!fs.existsSync(p)) continue;
+    if (!pathExists(p)) continue;
     const mb = fs.statSync(p).size / 1048576;
     if (mb > 1024) {
       found++;
