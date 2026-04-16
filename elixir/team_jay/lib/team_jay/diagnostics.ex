@@ -323,6 +323,7 @@ defmodule TeamJay.Diagnostics do
       TeamJay.Teams.InvestmentSupervisor,
       TeamJay.Teams.BlogSupervisor,
       TeamJay.Teams.WorkerSupervisor,
+      TeamJay.Teams.PlatformSupervisor,
       TeamJay.Teams.BlogShadowSupervisor,
       TeamJay.Teams.WorkerShadowSupervisor,
       TeamJay.Teams.PlatformShadowSupervisor
