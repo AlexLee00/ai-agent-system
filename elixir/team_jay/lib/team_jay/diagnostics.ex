@@ -594,6 +594,7 @@ defmodule TeamJay.Diagnostics do
   defp build_launchd_shadow_agents(agents) do
     Enum.map(agents, fn agent ->
       {name, team, required, extra} = normalize_shadow_agent(agent)
+      extra = maybe_enrich_daemon_shadow_agent(name, extra)
 
       case GenServer.whereis(TeamJay.Agents.LaunchdShadowAgent.via(name)) do
         nil ->
@@ -633,10 +634,62 @@ defmodule TeamJay.Diagnostics do
   defp normalize_shadow_agent({name, team, required}), do: {name, team, required, %{}}
   defp normalize_shadow_agent({name, team, required, extra}), do: {name, team, required, extra}
 
+  defp maybe_enrich_daemon_shadow_agent(name, %{pilot_mode: :daemon_cutover} = extra) do
+    health = probe_shadow_health(Map.get(extra, :health_url))
+    port_agent_registered = daemon_port_agent_registered?(name)
+
+    Map.merge(extra, %{
+      daemon_health_status: Map.get(health, :status),
+      daemon_health_http_status: Map.get(health, :http_status),
+      daemon_port_agent_registered: port_agent_registered,
+      cutover_ready:
+        port_agent_registered and Map.get(health, :status) == :ok
+    })
+  end
+
+  defp maybe_enrich_daemon_shadow_agent(_name, extra), do: extra
+
+  defp daemon_port_agent_registered?(name) do
+    case GenServer.whereis(TeamJay.Agents.PortAgent.via(name)) do
+      nil -> false
+      _pid -> true
+    end
+  rescue
+    _ -> false
+  end
+
+  defp probe_shadow_health(nil), do: %{status: :skipped}
+
+  defp probe_shadow_health(url) do
+    case Req.get(url) do
+      {:ok, %{status: 200}} ->
+        %{status: :ok, http_status: 200}
+
+      {:ok, %{status: status}} ->
+        %{status: :error, http_status: status}
+
+      {:error, _error} ->
+        %{status: :error}
+    end
+  end
+
   defp build_transition_candidates(agents) do
     agents
     |> Enum.filter(&(&1.status == :loaded and Map.get(&1, :required, true)))
-    |> Enum.map(&Map.take(&1, [:name, :team, :status, :label, :pilot_mode, :health_url]))
+    |> Enum.map(
+      &Map.take(&1, [
+        :name,
+        :team,
+        :status,
+        :label,
+        :pilot_mode,
+        :health_url,
+        :daemon_health_status,
+        :daemon_health_http_status,
+        :daemon_port_agent_registered,
+        :cutover_ready
+      ])
+    )
   end
 
   defp build_recommended_actions(summary, week2_summary, week3_summary, migration_candidates, transition_plan) do
@@ -681,9 +734,8 @@ defmodule TeamJay.Diagnostics do
   end
 
   defp pilot_safe?(%{team: :investment}), do: false
-  defp pilot_safe?(%{name: :blog_node_server}), do: false
-  defp pilot_safe?(%{name: :worker_web}), do: false
-  defp pilot_safe?(%{name: :worker_nextjs}), do: false
+  defp pilot_safe?(%{pilot_mode: :daemon_cutover, cutover_ready: true}), do: true
+  defp pilot_safe?(%{pilot_mode: :daemon_cutover}), do: false
   defp pilot_safe?(_agent), do: true
 
   defp score_transition_candidate(agent) do
@@ -705,9 +757,30 @@ defmodule TeamJay.Diagnostics do
         _ -> 0
       end
 
-    Map.merge(Map.take(agent, [:name, :team, :status, :label, :pilot_mode, :health_url]), %{
-      priority_score: 100 + team_bonus + name_bonus
-    })
+    daemon_bonus =
+      if Map.get(agent, :cutover_ready) == true do
+        12
+      else
+        0
+      end
+
+    Map.merge(
+      Map.take(agent, [
+        :name,
+        :team,
+        :status,
+        :label,
+        :pilot_mode,
+        :health_url,
+        :daemon_health_status,
+        :daemon_health_http_status,
+        :daemon_port_agent_registered,
+        :cutover_ready
+      ]),
+      %{
+        priority_score: 100 + team_bonus + name_bonus + daemon_bonus
+      }
+    )
   end
 
   defp build_pilot_runbook(nil) do
