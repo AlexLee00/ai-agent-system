@@ -71,18 +71,37 @@ defmodule Mix.Tasks.Phase3.Daemon.Cutover do
   defp parse_service!(value) when is_binary(value), do: String.to_existing_atom(value)
 
   defp find_candidate!(report, service) do
-    (Map.get(report, :week2_shadow_agents, []) ++ Map.get(report, :week3_shadow_agents, []))
-    |> Enum.find(&(Map.get(&1, :name) == service))
-    |> case do
-      nil ->
-        Mix.raise("#{service}는 daemon cutover shadow 후보로 등록되어 있지 않습니다")
+    shadow_candidate =
+      (Map.get(report, :week2_shadow_agents, []) ++ Map.get(report, :week3_shadow_agents, []))
+      |> Enum.find(&(Map.get(&1, :name) == service))
 
+    case shadow_candidate do
       %{pilot_mode: :daemon_cutover} = candidate ->
         candidate
+
+      nil ->
+        if daemon_already_promoted?(service) do
+          Mix.raise("#{service}는 이미 Elixir ownership으로 승격된 daemon입니다")
+        else
+          Mix.raise("#{service}는 daemon cutover shadow 후보로 등록되어 있지 않습니다")
+        end
 
       _candidate ->
         Mix.raise("#{service}는 현재 daemon_cutover 후보가 아닙니다")
     end
+  end
+
+  defp daemon_already_promoted?(service) do
+    case GenServer.whereis(TeamJay.Agents.PortAgent.via(service)) do
+      nil ->
+        false
+
+      _pid ->
+        status = TeamJay.Agents.PortAgent.get_status(service)
+        Map.get(status, :schedule) == :once
+    end
+  rescue
+    _ -> false
   end
 
   defp get_port_agent_status(service) do

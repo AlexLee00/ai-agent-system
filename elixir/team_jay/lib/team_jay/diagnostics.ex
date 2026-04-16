@@ -206,6 +206,9 @@ defmodule TeamJay.Diagnostics do
         report.summary.missing > 0 ->
           "warn"
 
+        report.transition_plan.reinforcement_closed ->
+          "info"
+
         not report.transition_plan.ready_for_pilot ->
           "warn"
 
@@ -709,18 +712,23 @@ defmodule TeamJay.Diagnostics do
 
     top_pilots = Enum.take(pilot_candidates, 3)
     next_pilot_candidate = List.first(top_pilots)
+    reinforcement_closed =
+      Enum.empty?(candidates) and
+        week2_summary.required_missing == 0 and
+        week3_summary.required_missing == 0
 
     blockers =
       []
       |> maybe_add_blocker(week2_summary.required_missing > 0, "Week2 required shadow missing 존재")
       |> maybe_add_blocker(week3_summary.required_missing > 0, "Week3 required shadow missing 존재")
-      |> maybe_add_blocker(Enum.empty?(top_pilots), "즉시 파일럿 가능한 loaded 후보가 부족함")
+      |> maybe_add_blocker(not reinforcement_closed and Enum.empty?(top_pilots), "즉시 파일럿 가능한 loaded 후보가 부족함")
 
     %{
       pilot_candidates: top_pilots,
       next_pilot_candidate: next_pilot_candidate,
       blockers: blockers,
-      ready_for_pilot: blockers == []
+      ready_for_pilot: blockers == [],
+      reinforcement_closed: reinforcement_closed
     }
   end
 
