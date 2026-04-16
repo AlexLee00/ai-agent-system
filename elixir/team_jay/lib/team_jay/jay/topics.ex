@@ -26,7 +26,14 @@ defmodule TeamJay.Jay.Topics do
     :growth_cycle_completed,  # 전체 수집 완료
     :briefing_ready,          # 종합 브리핑 생성 완료
     :weekly_report_ready,     # 주간 리포트 완료
-    :blog_publish_failed,     # 블로그 발행 실패 → PublishGuard 재시도 큐
+    # ── 블로팀 운영 하드닝 토픽 ──
+    :blog_publish_failed,     # 발행 실패 → PublishGuard 재시도 큐
+    :blog_publish_recovered,  # 발행 재시도 성공 → PublishGuard 복구
+    :blog_content_planned,    # D-1 주제 후보 선정 완료 → TopicCurator
+    :blog_token_renewed,      # 인스타 토큰 자동 갱신 완료 → TokenRenewal
+    # ── 블로팀 자율 루프 토픽 (Phase B) ──
+    :blog_insights_collected, # 성과 수집 완료 → InsightsCollector
+    :blog_strategy_updated,   # 전략 자동 조정 완료 → StrategyLearner
   ]
 
   # ────────────────────────────────────────────────────────────────
