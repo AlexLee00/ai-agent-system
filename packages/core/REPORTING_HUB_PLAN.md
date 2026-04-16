@@ -102,6 +102,23 @@
 - delivery canonicalization: reporting-hub
 - operator-facing output reinforcement: team CLI insight helpers
 
+최근 reinforcement에서는 여기에 세 번째 축이 추가됐다.
+- ownership / critical incident normalization:
+  - launchd vs PortAgent canonical owner 정리
+  - repeated critical infra alerts를 대표 incident 1건으로 통합
+
+현재 incident canonicalization이 공용 helper 기반으로 적용된 팀:
+- reservation
+- investment
+- blog
+- worker
+- claude
+
+즉 같은 계열의 고심각 `system_error`/health alert는
+- 새 알림을 계속 쌓지 않고
+- canonical incident 1건에 `count / first_seen / last_seen / latest_reason`만 누적
+하는 방향으로 수렴했다.
+
 ## Next Extraction Targets
 
 1. RAG 저장 연동
