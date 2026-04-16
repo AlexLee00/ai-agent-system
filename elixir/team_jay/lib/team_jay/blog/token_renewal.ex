@@ -167,8 +167,7 @@ defmodule TeamJay.Blog.TokenRenewal do
 
     case System.cmd(tsx, [script_path | args],
            cd: project_root,
-           stderr_to_stdout: true,
-           timeout: 30_000) do
+           stderr_to_stdout: true) do
       {output, 0} -> {:ok, String.trim(output)}
       {output, code} -> {:error, "exit #{code}: #{String.slice(output, 0, 200)}"}
     end
