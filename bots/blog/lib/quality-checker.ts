@@ -9,7 +9,7 @@ const https = require('https');
 const builtinModules = new Set(require('module').builtinModules || []);
 const { detectTitlePattern } = require('./performance-diagnostician.ts');
 
-const MIN_CHARS = { lecture: 8000, general: 7000 };
+const MIN_CHARS = { lecture: 8000, general: 6000 };
 const GOAL_CHARS = { lecture: 9000, general: 8000 };
 const AI_RISK_REWRITE_THRESHOLD = 70;
 

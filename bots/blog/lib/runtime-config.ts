@@ -20,7 +20,7 @@ const DEFAULTS = {
   },
   generation: {
     useN8nPipeline: false,
-    gemsMinChars: 7000,
+    gemsMinChars: 6000,
     posMinChars: 7000,
     continueMaxTokens: 8000,
     writerMaxRetries: 1,

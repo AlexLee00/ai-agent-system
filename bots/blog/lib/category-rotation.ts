@@ -8,7 +8,7 @@ const GENERAL_CATEGORIES = [
   '최신IT트렌드', 'IT정보와분석', '개발기획과컨설팅',
 ];
 
-function _scoreGeneralCategory(category, distance, strategyPlan = null) {
+function _scoreGeneralCategory(category, distance, strategyPlan = null, recentCategory = '') {
   let score = 100 - distance;
   if (!strategyPlan) return score;
   const preferredBoost = Number(strategyPlan.preferredCategoryWeightBoost || 0);
@@ -26,10 +26,13 @@ function _scoreGeneralCategory(category, distance, strategyPlan = null) {
   ) {
     score -= 1;
   }
+  if (recentCategory && category === recentCategory) {
+    score -= 20;
+  }
   return score;
 }
 
-function _pickGeneralCategory(startIndex = 0, strategyPlan = null) {
+function _pickGeneralCategory(startIndex = 0, strategyPlan = null, recentCategory = '') {
   const total = GENERAL_CATEGORIES.length;
   const candidates = GENERAL_CATEGORIES.map((category, absoluteIndex) => {
     const distance = (absoluteIndex - startIndex + total) % total;
@@ -37,7 +40,7 @@ function _pickGeneralCategory(startIndex = 0, strategyPlan = null) {
       category,
       absoluteIndex,
       distance,
-      score: _scoreGeneralCategory(category, distance, strategyPlan),
+      score: _scoreGeneralCategory(category, distance, strategyPlan, recentCategory),
     };
   }).sort((a, b) => {
     if (b.score !== a.score) return b.score - a.score;
@@ -52,6 +55,23 @@ function _pickGeneralCategory(startIndex = 0, strategyPlan = null) {
   };
 }
 
+async function _getLatestGeneralCategory() {
+  try {
+    const row = await pgPool.get('blog', `
+      SELECT category
+      FROM blog.posts
+      WHERE post_type = 'general'
+        AND status IN ('ready', 'published')
+        AND category IS NOT NULL
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1
+    `);
+    return row?.category || '';
+  } catch {
+    return '';
+  }
+}
+
 async function getNextGeneralCategory(strategyPlan = null) {
   try {
     const row = await pgPool.get('blog', `
@@ -60,13 +80,15 @@ async function getNextGeneralCategory(strategyPlan = null) {
     `);
     const idx = row?.current_index ?? 0;
     const effectiveStrategy = strategyPlan || loadLatestStrategy();
-    const picked = _pickGeneralCategory(idx % GENERAL_CATEGORIES.length, effectiveStrategy);
+    const recentCategory = await _getLatestGeneralCategory();
+    const picked = _pickGeneralCategory(idx % GENERAL_CATEGORIES.length, effectiveStrategy, recentCategory);
     return {
       category: picked.category,
       index: idx,
       selectedIndex: picked.absoluteIndex,
       nextIndex: (picked.absoluteIndex + 1) % GENERAL_CATEGORIES.length,
       distance: picked.distance,
+      recentCategory,
       strategyApplied: Boolean(effectiveStrategy?.preferredCategory || effectiveStrategy?.suppressedCategory),
     };
   } catch {
@@ -76,6 +98,7 @@ async function getNextGeneralCategory(strategyPlan = null) {
       selectedIndex: 0,
       nextIndex: 1,
       distance: 0,
+      recentCategory: '',
       strategyApplied: false,
     };
   }
