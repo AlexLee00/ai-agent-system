@@ -72,9 +72,7 @@ defmodule TeamJay.Diagnostics do
     {:worker_task_runner, :worker},
     {:worker_claude_monitor, :worker},
     {:worker_lead, :worker},
-    {:dexter, :claude},
-    {:steward_hourly, :steward},
-    {:steward_daily, :steward}
+    {:dexter, :claude}
   ]
   @week2_shadow_agents []
   @week3_shadow_agents [

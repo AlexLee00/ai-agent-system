@@ -2,9 +2,7 @@ defmodule TeamJay.Teams.StewardSupervisor do
   use Supervisor
 
   @steward_agents [
-    %{name: :steward_hourly, script: "bots/steward/scripts/hourly.js", schedule: {:interval, 3_600_000}},
-    %{name: :steward_daily, script: "bots/steward/scripts/daily.js", schedule: {:interval, 86_400_000}},
-    %{name: :steward_weekly, script: "bots/steward/scripts/weekly.js", schedule: nil}
+    # steward 주기 서비스는 launchd가 canonical owner다.
   ]
 
   def start_link(opts \\ []) do
