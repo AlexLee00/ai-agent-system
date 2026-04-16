@@ -66,8 +66,8 @@ defmodule TeamJayTest do
     assert Map.has_key?(report.transition_plan, :next_pilot_candidate)
     assert is_list(report.recommended_actions)
     assert report.summary.total >= 1
-    assert report.week2_summary.total >= 1
-    assert report.week3_summary.total >= 1
+    assert report.week2_summary.total == length(report.week2_shadow_agents)
+    assert report.week3_summary.total == length(report.week3_shadow_agents)
     assert Map.has_key?(report.week2_summary, :required_missing)
     assert Map.has_key?(report.week2_summary, :optional_missing)
     assert Map.has_key?(report.week3_summary, :required_missing)
@@ -81,8 +81,8 @@ defmodule TeamJayTest do
     assert Map.has_key?(report, :week2_summary)
     assert Map.has_key?(report, :week3_summary)
     assert report.summary.total >= 1
-    assert report.week2_summary.total >= 1
-    assert report.week3_summary.total >= 1
+    assert report.week2_summary.total == length(report.week2_shadow_agents)
+    assert report.week3_summary.total == length(report.week3_shadow_agents)
   end
 
   test "diagnostics status tracks next pilot signature" do
