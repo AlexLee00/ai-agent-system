@@ -2,7 +2,6 @@ defmodule TeamJay.Teams.WorkerShadowSupervisor do
   use Supervisor
 
   @worker_agents [
-    %{name: :worker_lead, label: "ai.worker.lead"},
     %{name: :worker_web, label: "ai.worker.web"},
     %{name: :worker_nextjs, label: "ai.worker.nextjs"}
   ]

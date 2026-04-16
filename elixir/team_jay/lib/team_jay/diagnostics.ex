@@ -74,6 +74,7 @@ defmodule TeamJay.Diagnostics do
     {:worker_health_check, :worker},
     {:worker_task_runner, :worker},
     {:worker_claude_monitor, :worker},
+    {:worker_lead, :worker},
     {:dexter, :claude},
     {:claude_commander, :claude},
     {:steward_hourly, :steward},
@@ -83,7 +84,6 @@ defmodule TeamJay.Diagnostics do
     {:blog_node_server, :blog, true}
   ]
   @week3_shadow_agents [
-    {:worker_lead, :worker, true},
     {:worker_web, :worker, true},
     {:worker_nextjs, :worker, true},
     {:darwin_orchestrator, :platform, false},
