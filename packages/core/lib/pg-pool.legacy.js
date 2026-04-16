@@ -10,8 +10,14 @@ const PG_CONFIG = {
   user: process.env.PG_USER || os.userInfo().username,
   password: process.env.PG_PASSWORD || undefined,
   database: process.env.PG_DATABASE || 'jay',
-  max: 10,
-  idleTimeoutMillis: 60000,
+  max: parseInt(
+    process.env.PG_POOL_MAX || ((env.IS_OPS || env.IS_CLI) ? '2' : '4'),
+    10
+  ),
+  idleTimeoutMillis: parseInt(
+    process.env.PG_IDLE_TIMEOUT_MS || ((env.IS_OPS || env.IS_CLI) ? '5000' : '15000'),
+    10
+  ),
   allowExitOnIdle: true,
   connectionTimeoutMillis: 5000,
 };
