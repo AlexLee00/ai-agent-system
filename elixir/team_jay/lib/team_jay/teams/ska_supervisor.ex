@@ -37,12 +37,28 @@ defmodule TeamJay.Teams.SkaSupervisor do
 
   @impl true
   def init(_opts) do
-    # 네이티브 Elixir GenServer (자기 복구 루프!)
+    # 네이티브 Elixir GenServer (자기 복구 루프 + Phase 1 네이티브!)
     native_children = [
+      # Loop 1: 실패 수집 + 분류
       TeamJay.Ska.FailureTracker,
+      # Loop 2: 파싱 안정화
       TeamJay.Ska.SelectorManager,
       TeamJay.Ska.ParsingGuard,
-      TeamJay.Ska.Orchestrator
+      # 오케스트레이터 (Phase 전환)
+      TeamJay.Ska.Orchestrator,
+      # Phase 1: 네이버 네이티브
+      TeamJay.Ska.Naver.NaverMonitor,
+      TeamJay.Ska.Naver.NaverSession,
+      TeamJay.Ska.Naver.NaverRecovery,
+      # Phase 1: 픽코 네이티브
+      TeamJay.Ska.Pickko.PickkoMonitor,
+      TeamJay.Ska.Pickko.PickkoAudit,
+      # Phase 1: 키오스크
+      TeamJay.Ska.Kiosk.KioskAgent,
+      TeamJay.Ska.Kiosk.KioskBlockFlow,
+      # Phase 1: PortBridge
+      TeamJay.Ska.PortBridge.NaverPort,
+      TeamJay.Ska.PortBridge.PickkoPort
     ]
 
     # PortAgent 래퍼 (Node.js 스크립트!)
