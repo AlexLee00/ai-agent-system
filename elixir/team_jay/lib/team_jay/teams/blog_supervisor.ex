@@ -18,6 +18,7 @@ defmodule TeamJay.Teams.BlogSupervisor do
       schedule: if(Mix.env() == :test, do: nil, else: :once),
       health_url: "http://127.0.0.1:3100/health"
     },
+    %{name: :blog_competitor_analysis, script: "bots/blog/scripts/run-competitor-analysis.ts --json", schedule: {:weekly_at, [1], 5, 0}},
     %{
       name: :blog_marketing_snapshot,
       script: "export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH && cd elixir/team_jay && mix blog.marketing.snapshot",
