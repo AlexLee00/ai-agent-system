@@ -41,6 +41,7 @@ defmodule TeamJay.Agents.PortAgent do
   def via(name), do: {:via, Registry, {TeamJay.AgentRegistry, name}}
 
   def run(name), do: GenServer.cast(via(name), :run)
+  def stop(name), do: GenServer.cast(via(name), :stop)
   def get_status(name), do: GenServer.call(via(name), :get_status)
 
   @impl true
@@ -161,6 +162,17 @@ defmodule TeamJay.Agents.PortAgent do
   end
 
   @impl true
+  def handle_cast(:stop, %{port: nil} = state) do
+    {:noreply, %{state | status: :idle}}
+  end
+
+  @impl true
+  def handle_cast(:stop, %{port: port} = state) do
+    _ = safe_close_port(port)
+    {:noreply, %{state | port: nil, status: :idle, last_output: []}}
+  end
+
+  @impl true
   def handle_call(:get_status, _from, state), do: {:reply, state, state}
 
   defp execute_script(%{port: nil} = state) do
@@ -199,6 +211,14 @@ defmodule TeamJay.Agents.PortAgent do
       cd: TeamJay.Config.repo_root(),
       env: port_env()
     ])
+  end
+
+  defp safe_close_port(port) do
+    Port.close(port)
+  rescue
+    _ -> :ok
+  catch
+    _, _ -> :ok
   end
 
   defp port_env do
