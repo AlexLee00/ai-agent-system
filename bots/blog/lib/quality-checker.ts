@@ -415,10 +415,220 @@ async function checkQualityEnhanced(content, type, options = {}) {
   };
 }
 
+// ─── SEO 점수화 ───────────────────────────────────────────────────────────────
+
+const SEO_TREND_KEYWORDS = [
+  'AI', 'LLM', '자동화', '클라우드', 'SaaS', '생산성', '루틴', '커리어',
+  '체크리스트', '실전', '가이드', '기준', '방법', '노하우', '핵심',
+];
+
+function scoreSEO(content, title = '') {
+  const text = String(content || '');
+  const titleStr = String(title || '').trim();
+  let score = 0;
+  const issues = [];
+
+  // 제목 길이 (15~35자 SEO 적정)
+  const titleLen = titleStr.length;
+  if (titleLen >= 15 && titleLen <= 35) score += 20;
+  else if (titleLen >= 10 && titleLen < 15) { score += 10; issues.push('제목이 짧음 (15자 이상 권장)'); }
+  else if (titleLen > 35) { score += 5; issues.push('제목이 너무 긺 (35자 이하 권장)'); }
+  else { issues.push('제목 길이 부적합'); }
+
+  // 제목에 숫자 또는 질문형 → CTR 향상
+  if (/\d/.test(titleStr)) score += 10;
+  if (/[?？]/.test(titleStr) || /방법|기준|이유|가이드/.test(titleStr)) score += 10;
+
+  // h2 헤딩 최소 3개
+  const h2Count = (text.match(/<h2[^>]*>/gi) || []).length;
+  if (h2Count >= 5) score += 15;
+  else if (h2Count >= 3) score += 10;
+  else { score += 0; issues.push(`h2 헤딩 부족: ${h2Count}개 (최소 3개 권장)`); }
+
+  // FAQ / Q&A 섹션
+  if (/AEO FAQ|질문형 Q&A/i.test(text)) score += 15;
+
+  // 해시태그 15개 이상
+  const hashCount = (text.match(/#[^\s#\n]+/g) || []).length;
+  if (hashCount >= 15) score += 10;
+  else { issues.push(`해시태그 부족: ${hashCount}개`); }
+
+  // 트렌드 키워드 포함
+  const trendHits = SEO_TREND_KEYWORDS.filter(k => text.includes(k)).length;
+  score += Math.min(trendHits * 2, 20);
+
+  return {
+    seoScore: Math.min(score, 100),
+    seoLevel: score >= 70 ? 'good' : score >= 45 ? 'fair' : 'poor',
+    seoIssues: issues,
+  };
+}
+
+// ─── 30일 중복 체크 ───────────────────────────────────────────────────────────
+
+async function checkDuplicate30d(title, category = null) {
+  try {
+    const pgPool = require('../../../packages/core/lib/pg-pool');
+    const cutoff = (() => {
+      const kst = require('../../../packages/core/lib/kst');
+      return kst.daysAgoStr(30);
+    })();
+
+    const whereCategory = category ? `AND category = $2` : '';
+    const params = category ? [cutoff, category] : [cutoff];
+    const rows = await pgPool.query('blog',
+      `SELECT title FROM blog.posts
+       WHERE type = 'general'
+         AND DATE(publish_date) >= $1
+         AND status NOT IN ('failed', 'error')
+         ${whereCategory}
+       ORDER BY publish_date DESC`,
+      params
+    );
+
+    if (!rows || rows.length === 0) return { isDuplicate: false, similarTitle: null };
+
+    // bigram 유사도
+    const normalize = t => String(t || '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+    const bigram = s => {
+      const n = normalize(s);
+      const set = new Set();
+      for (let i = 0; i < n.length - 1; i++) set.add(n.slice(i, i + 2));
+      return set;
+    };
+    const sim = (a, b) => {
+      const A = bigram(a); const B = bigram(b);
+      if (!A.size || !B.size) return 0;
+      let inter = 0; for (const x of A) if (B.has(x)) inter++;
+      return inter / new Set([...A, ...B]).size;
+    };
+
+    for (const row of rows) {
+      if (sim(row.title, title) > 0.4) {
+        return { isDuplicate: true, similarTitle: row.title };
+      }
+    }
+    return { isDuplicate: false, similarTitle: null };
+  } catch {
+    return { isDuplicate: false, similarTitle: null };
+  }
+}
+
+// ─── 5-Round LLM 크리틱 루프 ─────────────────────────────────────────────────
+
+const CRITIC_ROUNDS = [
+  { id: 1, label: '구조 완전성',   aspect: '섹션 구성과 흐름이 독자에게 자연스럽고 완전한가? 누락된 핵심 섹션이 있는가?' },
+  { id: 2, label: 'AI 탐지 리스크', aspect: '개인 경험, 실시간 맥락(날씨/장소/날짜), 감정 표현이 충분히 포함되어 인간적으로 느껴지는가?' },
+  { id: 3, label: 'SEO 적합성',   aspect: '제목, 소제목, FAQ, 해시태그가 검색에 최적화되어 있는가? 핵심 키워드가 자연스럽게 배치되었는가?' },
+  { id: 4, label: '독자 실용 가치', aspect: '독자가 이 글을 읽고 즉시 적용할 수 있는 구체적 행동 지침이 있는가? 정보가 실질적으로 유용한가?' },
+  { id: 5, label: '종합 완성도',   aspect: '전체적으로 네이버 블로그 상위 노출에 적합한 수준인가? 0~10점으로 평가하고 가장 중요한 개선점 1가지를 제시하라.' },
+];
+
+async function runCriticLoop(content, type, options = {}) {
+  let callLocalLlm;
+  try {
+    callLocalLlm = require('../../../packages/core/lib/local-llm-client').callLocalLlm;
+  } catch {
+    return { criticScore: null, criticRounds: [], criticFeedback: 'LLM 클라이언트 로드 실패' };
+  }
+
+  const text = String(content || '');
+  const snippet = text.slice(0, 1500);  // 앞부분만 전달 (속도/비용 절감)
+  const roundResults = [];
+  let totalScore = 0;
+  let finalFeedback = '';
+
+  for (const round of CRITIC_ROUNDS) {
+    try {
+      const prompt = `블로그 포스팅 품질 검토 — Round ${round.id}: ${round.label}
+
+포스팅 앞부분 (${type === 'lecture' ? '강의' : '일반'} 타입):
+---
+${snippet}
+---
+
+평가 기준: ${round.aspect}
+
+${round.id === 5
+  ? '0~10점으로 평가하고 다음 형식으로만 답하라:\n점수: N\n개선점: (한 문장)'
+  : '이 항목 점수를 0~10으로 평가하고 숫자만 답하라.'}`;
+
+      const result = await callLocalLlm({ prompt, model: 'qwen2.5:7b', maxTokens: 60, temperature: 0.2 });
+      const text_ = result?.content || result?.text || '';
+
+      if (round.id === 5) {
+        const scoreMatch = text_.match(/점수\s*:\s*(\d+(?:\.\d+)?)/);
+        const feedbackMatch = text_.match(/개선점\s*:\s*(.+)/);
+        const s = scoreMatch ? Math.min(10, Math.max(0, parseFloat(scoreMatch[1]))) : 5;
+        totalScore += s;
+        finalFeedback = feedbackMatch ? feedbackMatch[1].trim() : '';
+        roundResults.push({ round: round.id, label: round.label, score: s });
+      } else {
+        const numMatch = text_.match(/\d+(?:\.\d+)?/);
+        const s = numMatch ? Math.min(10, Math.max(0, parseFloat(numMatch[0]))) : 5;
+        totalScore += s;
+        roundResults.push({ round: round.id, label: round.label, score: s });
+      }
+    } catch {
+      totalScore += 5;  // 실패 시 중간값
+      roundResults.push({ round: round.id, label: round.label, score: 5, error: true });
+    }
+  }
+
+  const avgScore = totalScore / CRITIC_ROUNDS.length;
+  return {
+    criticScore: Math.round(avgScore * 10),  // 0~100 스케일
+    criticLevel: avgScore >= 7 ? 'good' : avgScore >= 5 ? 'fair' : 'poor',
+    criticRounds: roundResults,
+    criticFeedback: finalFeedback,
+    criticPassed: avgScore >= 6,
+  };
+}
+
+// ─── 통합: checkQualityWithCritic ─────────────────────────────────────────────
+
+async function checkQualityWithCritic(content, type, options = {}) {
+  const [base, seo, dup, critic] = await Promise.allSettled([
+    checkQualityEnhanced(content, type, options),
+    Promise.resolve(scoreSEO(content, options.title || '')),
+    options.title ? checkDuplicate30d(options.title, options.category || null) : Promise.resolve({ isDuplicate: false }),
+    options.skipCritic ? Promise.resolve(null) : runCriticLoop(content, type, options),
+  ]);
+
+  const baseResult  = base.status  === 'fulfilled' ? base.value  : await checkQuality(content, type);
+  const seoResult   = seo.status   === 'fulfilled' ? seo.value   : { seoScore: 0, seoLevel: 'poor', seoIssues: [] };
+  const dupResult   = dup.status   === 'fulfilled' ? dup.value   : { isDuplicate: false };
+  const criticResult = critic.status === 'fulfilled' ? critic.value : null;
+
+  const allIssues = [...(baseResult.issues || [])];
+  if (dupResult.isDuplicate) {
+    allIssues.push({ severity: 'error', msg: `30일 내 유사 제목 존재: "${dupResult.similarTitle}"` });
+  }
+  if (seoResult.seoLevel === 'poor') {
+    allIssues.push({ severity: 'warn', msg: `SEO 점수 낮음 (${seoResult.seoScore}점): ${seoResult.seoIssues.join(', ')}` });
+  }
+  if (criticResult && !criticResult.criticPassed) {
+    allIssues.push({ severity: 'warn', msg: `크리틱 루프 미달 (${criticResult.criticScore}점): ${criticResult.criticFeedback}` });
+  }
+
+  return {
+    ...baseResult,
+    issues: allIssues,
+    passed: !allIssues.some(i => i.severity === 'error'),
+    seo: seoResult,
+    duplicate: dupResult,
+    critic: criticResult,
+  };
+}
+
 module.exports = {
   checkQuality,
   checkQualityEnhanced,
+  checkQualityWithCritic,
   checkAIDetectionRisk,
+  scoreSEO,
+  checkDuplicate30d,
+  runCriticLoop,
   MIN_CHARS,
   GOAL_CHARS,
   REQUIRED_SECTION_MARKERS,
