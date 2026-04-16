@@ -8,55 +8,17 @@ defmodule TeamJay.Diagnostics do
   @check_interval 30_000
   @msg_queue_warn 100
   @memory_warn 120_000_000
-  @phase3_launchd_labels [
-    "ai.ska.naver-monitor",
-    "ai.ska.kiosk-monitor",
-    "ai.ska.commander",
-    "ai.ska.eve",
-    "ai.ska.eve-crawl",
-    "ai.ska.etl",
-    "ai.ska.rebecca",
-    "ai.ska.forecast-daily",
-    "ai.ska.forecast-weekly",
-    "ai.ska.forecast-monthly",
-    "ai.ska.pickko-daily-audit",
-    "ai.ska.pickko-daily-summary",
-    "ai.ska.pickko-verify",
-    "ai.ska.today-audit",
-    "ai.ska.health-check",
-    "ai.ska.log-report",
-    "ai.ska.log-rotate",
-    "ai.ska.db-backup",
-    "ai.claude.dexter",
-    "ai.claude.dexter.daily",
-    "ai.claude.dexter.quick",
-    "ai.claude.commander",
-    "ai.claude.archer",
-    "ai.claude.health-check",
-    "ai.claude.health-dashboard",
-    "ai.claude.speed-test",
-    "ai.steward.hourly",
-    "ai.steward.daily",
-    "ai.steward.weekly",
-    "ai.investment.commander",
-    "ai.investment.crypto",
-    "ai.investment.crypto.validation",
-    "ai.investment.domestic",
-    "ai.investment.domestic.validation",
-    "ai.investment.overseas",
-    "ai.investment.overseas.validation",
-    "ai.investment.argos",
-    "ai.investment.reporter",
-    "ai.investment.health-check",
-    "ai.investment.unrealized-pnl",
-    "ai.investment.prescreen-domestic",
-    "ai.investment.prescreen-overseas",
-    "ai.investment.market-alert-domestic-open",
-    "ai.investment.market-alert-domestic-close",
-    "ai.investment.market-alert-overseas-open",
-    "ai.investment.market-alert-overseas-close",
-    "ai.investment.market-alert-crypto-daily"
-  ]
+  @service_ownership_path Path.expand("../../../../packages/core/config/service-ownership.json", __DIR__)
+  @phase3_launchd_labels (
+                          @service_ownership_path
+                          |> File.read!()
+                          |> Jason.decode!()
+                          |> Enum.filter(fn entry ->
+                            Map.get(entry, "owner") == "launchd" and
+                              not Map.get(entry, "retired", false)
+                          end)
+                          |> Enum.map(&Map.fetch!(&1, "label"))
+                        )
   @shadow_agents [
     {:blog_commenter, :blog},
     {:blog_daily, :blog},
