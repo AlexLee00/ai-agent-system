@@ -126,7 +126,7 @@ async function _queryViaHub(schema, sql, params = []) {
   return { rows: result.rows || [], rowCount: result.rowCount || 0 };
 }
 
-const _useHub = !env.IS_OPS && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
+const _useHub = !env.IS_OPS && !env.IS_CLI && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
 
 function _isReadOnlySql(sql) {
   const normalized = String(sql || '').trim().toLowerCase();

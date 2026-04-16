@@ -96,10 +96,11 @@ function corePath(moduleName) {
 // ─── 환경 ────────────────────────────────────────────────────────────────
 
 const _raw_mode = (process.env.MODE || 'dev').toLowerCase().trim();
+const IS_CLI = _raw_mode === 'cli';
 const _mode_alias = { cli: 'dev' };
 const _valid_modes = ['ops', 'dev'];
 const _normalized_mode = _mode_alias[_raw_mode] || _raw_mode;
-if (!_valid_modes.includes(_normalized_mode)) {
+if (!_valid_modes.includes(_normalized_mode) && !IS_CLI) {
   console.warn(`[env] ⚠️ 알 수 없는 MODE: "${_raw_mode}" — dev 로 처리`);
 }
 
@@ -275,6 +276,7 @@ module.exports = {
   MODE,
   IS_OPS,
   IS_DEV,
+  IS_CLI,
   PAPER_MODE,
   NODE_ENV,
 

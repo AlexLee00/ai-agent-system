@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { generateGemmaPilotText } from '../../../packages/core/lib/gemma-pilot.ts';
+import { generateGemmaPilotText } from '../../../packages/core/lib/gemma-pilot.js';
 
 function sanitizeInsightLine(text = '') {
   return String(text || '')
