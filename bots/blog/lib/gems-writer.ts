@@ -25,6 +25,7 @@ const { getBlogGenerationRuntimeConfig, getBlogLLMSelectorOverrides } = require(
 const { calculateSectionChars, buildCharCountInstruction } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/section-ratio.ts'));
 const { isExcludedReferenceTitle, isExcludedReferenceFilename } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/reference-exclusions.ts'));
 const { detectTitlePattern } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/performance-diagnostician.ts'));
+const { AgentMemory } = require('../../../packages/core/lib/agent-memory');
 
 const generationRuntimeConfig = getBlogGenerationRuntimeConfig();
 const BLOG_WRITER_TIMEOUT_MS = Number(generationRuntimeConfig.writerTimeoutMs || 90000);
@@ -1408,6 +1409,19 @@ ${_buildVariationBlock(sectionVariation)}
   } else {
     console.log(`[젬스] 글자수 미달 (${content.length}자) — 캐시 저장 건너뜀`);
   }
+
+  try {
+    const gemsMemory = new AgentMemory({ agentId: 'blog.gems', team: 'blog' });
+    await gemsMemory.remember(
+      `[젬스 작성] 카테고리 "${category}" 제목 "${result.title || ''}" → ${content.length}자 (${usedModel})`,
+      'episodic',
+      {
+        keywords: [category, result.title, 'general_post'].filter(Boolean),
+        importance: Math.min(content.length / 10000, 1.0),
+        metadata: { category, title: result.title, charCount: content.length, model: usedModel, fallbackUsed },
+      }
+    );
+  } catch { /* 메모리 저장 실패 무시 */ }
 
   return result;
 }
