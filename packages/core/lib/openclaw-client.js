@@ -5,13 +5,34 @@ const path = require('node:path');
 const Module = require('node:module');
 const ts = require('typescript');
 
+function findRepoRoot(startDir) {
+  let current = path.resolve(startDir);
+
+  while (true) {
+    const packageJsonPath = path.join(current, 'package.json');
+    const coreSourcePath = path.join(current, 'packages/core/lib/openclaw-client.ts');
+    if (fs.existsSync(packageJsonPath) && fs.existsSync(coreSourcePath)) {
+      return current;
+    }
+
+    const parent = path.dirname(current);
+    if (parent === current) return null;
+    current = parent;
+  }
+}
+
 function resolveSourcePath() {
-  const repoRoot = process.env.REPO_ROOT || process.env.PROJECT_ROOT || process.cwd();
+  const repoRoot =
+    process.env.REPO_ROOT
+    || process.env.PROJECT_ROOT
+    || findRepoRoot(__dirname)
+    || findRepoRoot(process.cwd());
   const candidates = [
     path.join(__dirname, 'openclaw-client.ts'),
-    path.join(repoRoot, 'packages/core/lib/openclaw-client.ts'),
-    path.join(__dirname, '../../../../packages/core/lib/openclaw-client.ts'),
-    path.join(__dirname, '../../../../../packages/core/lib/openclaw-client.ts'),
+    ...(repoRoot ? [path.join(repoRoot, 'packages/core/lib/openclaw-client.ts')] : []),
+    path.resolve(__dirname, '../../../../packages/core/lib/openclaw-client.ts'),
+    path.resolve(__dirname, '../../../../../packages/core/lib/openclaw-client.ts'),
+    path.resolve(__dirname, '../../../../../../packages/core/lib/openclaw-client.ts'),
   ];
 
   for (const candidate of candidates) {
