@@ -31,6 +31,7 @@ const doctorMemory = createAgentMemory({ agentId: 'claude.doctor', team: 'claude
 const RECOVERY_BLACKLIST = new Set([
   'ai.ops.platform.backend',
   'ai.ops.platform.frontend',
+  'ai.orchestrator',
 ]);
 
 // ─── 블랙리스트 (절대 금지 명령/패턴) ─────────────────────────────────────
