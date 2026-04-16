@@ -65,7 +65,14 @@ defmodule TeamJay.Jay.Sigma.Scheduler do
     %{
       posts_published: (posts["posts_published"] || 0),
       trades_executed: (trades["trades_executed"] || 0),
-      low_score_teams: Enum.map(low_score_rows, &{String.to_atom(&1["team"]), &1["low_count"]})
+      low_score_teams: Enum.map(low_score_rows, fn row ->
+          team_atom = try do
+            String.to_existing_atom(row["team"])
+          rescue
+            ArgumentError -> String.to_atom(row["team"])
+          end
+          {team_atom, row["low_count"]}
+        end)
     }
   end
 

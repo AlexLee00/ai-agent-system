@@ -72,26 +72,25 @@ defmodule TeamJay.Jay.Sigma.Feedback do
 
   @doc "피드백 레코드 저장 (feedback_effectiveness)"
   def record_feedback(target_team, feedback_type, content, analyst, before_metric, opts \\ []) do
+    # HubClient.pg_query는 파라미터 바인딩 미지원 → 안전한 값만 보간
+    # target_team/feedback_type/analyst는 내부 atom → to_string 안전
+    # content/metric/formation은 JSON 직렬화 후 single-quote 이스케이프
     formation = Keyword.get(opts, :formation, %{})
+    team_s    = to_string(target_team)   |> escape_sql()
+    type_s    = to_string(feedback_type) |> escape_sql()
+    content_s = (content || "")          |> escape_sql()
+    analyst_s = to_string(analyst)       |> escape_sql()
+    metric_s  = Jason.encode!(before_metric || %{}) |> escape_sql()
+    form_s    = Jason.encode!(formation)            |> escape_sql()
+
     sql = """
       INSERT INTO #{@schema}.feedback_effectiveness
         (target_team, feedback_type, content, analyst_used, before_metric, formation)
-      VALUES ($1, $2, $3, $4, $5, $6)
-      RETURNING id
+      VALUES ('#{team_s}', '#{type_s}', '#{content_s}', '#{analyst_s}',
+              '#{metric_s}', '#{form_s}')
     """
-    params = [
-      to_string(target_team),
-      to_string(feedback_type),
-      content,
-      to_string(analyst),
-      Jason.encode!(before_metric || %{}),
-      Jason.encode!(formation)
-    ]
 
-    case TeamJay.HubClient.pg_query(
-      sql <> " -- params: #{inspect(params)}",
-      @schema
-    ) do
+    case TeamJay.HubClient.pg_query(sql, @schema) do
       {:ok, _} ->
         Logger.debug("[Sigma.Feedback] 피드백 저장: #{target_team}/#{feedback_type}")
         :ok
@@ -105,21 +104,17 @@ defmodule TeamJay.Jay.Sigma.Feedback do
 
   @doc "일일 실행 기록 저장 (daily_runs)"
   def record_daily_run(formation, events, report, insight_count, feedback_count) do
-    _params = [
-      Jason.encode!(formation),
-      Jason.encode!(events),
-      report,
-      insight_count,
-      feedback_count
-    ]
-
-    # Hub API pg_query는 파라미터 바인딩을 JSON으로 전달
-    TeamJay.HubClient.pg_query(
-      "INSERT INTO #{@schema}.daily_runs (formation, events, report, insight_count, feedback_count) " <>
-      "VALUES ('#{Jason.encode!(formation)}', '#{Jason.encode!(events)}', " <>
-      "'#{String.replace(report || "", "'", "''")}', #{insight_count}, #{feedback_count})",
-      @schema
-    )
+    form_s   = Jason.encode!(formation) |> escape_sql()
+    events_s = Jason.encode!(events)    |> escape_sql()
+    report_s = (report || "")           |> escape_sql()
+    # insight_count/feedback_count는 integer — 보간 안전
+    sql = """
+      INSERT INTO #{@schema}.daily_runs
+        (formation, events, report, insight_count, feedback_count)
+      VALUES ('#{form_s}', '#{events_s}', '#{report_s}',
+              #{insight_count}, #{feedback_count})
+    """
+    TeamJay.HubClient.pg_query(sql, @schema)
     :ok
   rescue
     e ->
@@ -130,16 +125,39 @@ defmodule TeamJay.Jay.Sigma.Feedback do
   @doc "피드백 효과 측정 업데이트 (7일 후 after_metric 비교)"
   def measure_effectiveness(feedback_id, after_metric, effective) do
     effectiveness = if effective, do: 1.0, else: 0.0
-    TeamJay.HubClient.pg_query(
-      "UPDATE #{@schema}.feedback_effectiveness " <>
-      "SET after_metric = '#{Jason.encode!(after_metric)}', " <>
-      "effective = #{effective}, effectiveness = #{effectiveness}, " <>
-      "measured = TRUE, measured_at = NOW() " <>
-      "WHERE id = '#{feedback_id}'",
-      @schema
-    )
-    :ok
+    # feedback_id는 UUID 형식 검증 후 사용
+    unless valid_uuid?(feedback_id) do
+      Logger.warning("[Sigma.Feedback] 잘못된 feedback_id: #{inspect(feedback_id)}")
+      :error
+    else
+      metric_s = Jason.encode!(after_metric) |> escape_sql()
+      sql = """
+        UPDATE #{@schema}.feedback_effectiveness
+        SET after_metric = '#{metric_s}',
+            effective = #{effective},
+            effectiveness = #{effectiveness},
+            measured = TRUE,
+            measured_at = NOW()
+        WHERE id = '#{feedback_id}'
+      """
+      TeamJay.HubClient.pg_query(sql, @schema)
+      :ok
+    end
   rescue
     _ -> :error
   end
+
+  # ────────────────────────────────────────────────────────────────
+  # SQL 안전 헬퍼
+  # ────────────────────────────────────────────────────────────────
+
+  # single-quote 이스케이프 (SQL 표준: ' → '')
+  defp escape_sql(str) when is_binary(str), do: String.replace(str, "'", "''")
+  defp escape_sql(other), do: escape_sql(to_string(other))
+
+  # UUID v4 형식 검증
+  defp valid_uuid?(id) when is_binary(id) do
+    Regex.match?(~r/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, id)
+  end
+  defp valid_uuid?(_), do: false
 end
