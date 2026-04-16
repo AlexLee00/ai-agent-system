@@ -1,0 +1,245 @@
+defmodule TeamJay.Jay.CrossTeamRouter do
+  @moduledoc """
+  팀 간 데이터 파이프라인 실행기 (JayBus 구독자).
+  Topics.broadcast → CrossTeamRouter가 수신 → 대상 팀에 Hub API로 지시.
+
+  7개 파이프라인:
+    ska → blog  : 스카 매출 하락 → 블로팀 프로모션 콘텐츠 요청
+    luna → blog : 루나 시장 급변 → 블로팀 투자 콘텐츠 요청
+    blog → ska  : 블로 고성과 키워드 → 스카 SEO 반영
+    ska → luna  : 스카 캐시플로우 → 루나 투자 강도 조정
+    claude → all: 시스템 위험 → 전체 워크로드 축소
+    blog → luna : 트렌드 → 루나 종목 분석
+    luna → ska  : 루나 수익 실현 → 스카 운영비 알림
+  """
+
+  use GenServer
+  require Logger
+  alias TeamJay.Jay.Topics
+
+  # ────────────────────────────────────────────────────────────────
+  # GenServer 생명주기
+  # ────────────────────────────────────────────────────────────────
+
+  def start_link(_opts) do
+    GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
+  end
+
+  @impl true
+  def init(state) do
+    # 7개 크로스 파이프라인 토픽 구독
+    for topic <- Topics.cross_topics() do
+      Topics.subscribe(topic)
+    end
+    Logger.info("[CrossTeamRouter] 시작! 팀 간 파이프라인 7개 구독 완료")
+    {:ok, state}
+  end
+
+  # ────────────────────────────────────────────────────────────────
+  # JayBus 메시지 수신
+  # ────────────────────────────────────────────────────────────────
+
+  @impl true
+  def handle_info({:jay_bus, topic, payload}, state) when topic in [:ska_to_blog, :luna_to_blog,
+      :blog_to_ska, :ska_to_luna, :blog_to_luna, :luna_to_ska] do
+    # 자율화 단계 gate — Phase 3에서 allow 결정은 발송 생략 (escalate/block은 항상 전달)
+    if TeamJay.Jay.AutonomyController.should_notify_pipeline?(:allow) do
+      dispatch_pipeline(topic, payload)
+    else
+      phase = TeamJay.Jay.AutonomyController.get_phase()
+      Logger.debug("[CrossTeamRouter] #{topic}: Phase #{phase} 자율 — 생략")
+    end
+    {:noreply, state}
+  end
+
+  # claude_to_all은 phase 관계없이 항상 실행 (시스템 안전)
+  @impl true
+  def handle_info({:jay_bus, :claude_to_all, payload}, state) do
+    handle_claude_to_all(payload)
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_info(_msg, state), do: {:noreply, state}
+
+  # ────────────────────────────────────────────────────────────────
+  # 디스패치 라우터
+  # ────────────────────────────────────────────────────────────────
+
+  defp dispatch_pipeline(:ska_to_blog, payload),  do: handle_ska_to_blog(payload)
+  defp dispatch_pipeline(:luna_to_blog, payload), do: handle_luna_to_blog(payload)
+  defp dispatch_pipeline(:blog_to_ska, payload),  do: handle_blog_to_ska(payload)
+  defp dispatch_pipeline(:ska_to_luna, payload),  do: handle_ska_to_luna(payload)
+  defp dispatch_pipeline(:blog_to_luna, payload), do: handle_blog_to_luna(payload)
+  defp dispatch_pipeline(:luna_to_ska, payload),  do: handle_luna_to_ska(payload)
+  defp dispatch_pipeline(topic, _payload), do: Logger.warning("[CrossTeamRouter] 미등록 파이프라인: #{topic}")
+
+  # ────────────────────────────────────────────────────────────────
+  # 파이프라인 1: 스카 → 블로 (매출 하락 → 프로모션)
+  # ────────────────────────────────────────────────────────────────
+
+  defp handle_ska_to_blog(%{drop_pct: drop_pct, details: details}) do
+    revenue = details[:revenue_7d] || 0
+    message = """
+    📢 [제이→블로] 스카팀 매출 하락 감지!
+    📉 하락률: #{drop_pct}%
+    💰 7일 매출: #{format_krw(revenue)}
+    🎯 요청: 스카 스터디카페 프로모션 블로그 포스트 1건 긴급 발행
+    키워드 힌트: 분당서현 스터디카페, 커피랑도서관 할인
+    """
+    TeamJay.HubClient.post_alarm(message, "blog", "jay.cross_team_router")
+    record_pipeline_event(:ska_to_blog, :executed, %{drop_pct: drop_pct, revenue: revenue})
+    Logger.info("[CrossTeamRouter] ska→blog 실행: 하락 #{drop_pct}%, #{format_krw(revenue)}")
+  end
+
+  defp handle_ska_to_blog(_), do: :ok
+
+  # ────────────────────────────────────────────────────────────────
+  # 파이프라인 2: 루나 → 블로 (시장 급변 → 투자 콘텐츠)
+  # ────────────────────────────────────────────────────────────────
+
+  defp handle_luna_to_blog(%{regime: regime, details: _details}) do
+    {mood, keyword_hint} = case regime do
+      "bull"     -> {"상승장", "코인 상승 지금 사야 할까, 비트코인 전망"}
+      "bear"     -> {"하락장", "코인 하락 대응 전략, 하락장 투자 방법"}
+      "volatile" -> {"변동성 확대", "코인 변동성 대응, 리스크 관리"}
+      _          -> {"시장 변화", "가상화폐 시장 분석"}
+    end
+
+    message = """
+    📢 [제이→블로] 루나팀 시장 급변 감지!
+    📊 현재 체제: #{regime} (#{mood})
+    🎯 요청: 투자 관련 블로그 포스트 1건 발행
+    키워드 힌트: #{keyword_hint}
+    """
+    TeamJay.HubClient.post_alarm(message, "blog", "jay.cross_team_router")
+    record_pipeline_event(:luna_to_blog, :executed, %{regime: regime})
+    Logger.info("[CrossTeamRouter] luna→blog 실행: 체제=#{regime}")
+  end
+
+  defp handle_luna_to_blog(_), do: :ok
+
+  # ────────────────────────────────────────────────────────────────
+  # 파이프라인 3: 블로 → 스카 (키워드 → SEO)
+  # ────────────────────────────────────────────────────────────────
+
+  defp handle_blog_to_ska(%{keywords: keywords, details: _details}) do
+    kw_list = Enum.join(keywords, ", ")
+    message = """
+    📢 [제이→스카] 블로팀 고성과 키워드 발견!
+    🔑 키워드: #{kw_list}
+    🎯 요청: 네이버 예약 상품명/설명에 키워드 반영 검토
+    """
+    TeamJay.HubClient.post_alarm(message, "ska", "jay.cross_team_router")
+    record_pipeline_event(:blog_to_ska, :executed, %{keyword_count: length(keywords)})
+    Logger.info("[CrossTeamRouter] blog→ska 실행: 키워드 #{length(keywords)}개")
+  end
+
+  defp handle_blog_to_ska(_), do: :ok
+
+  # ────────────────────────────────────────────────────────────────
+  # 파이프라인 4: 스카 → 루나 (캐시플로우 → 투자 강도)
+  # ────────────────────────────────────────────────────────────────
+
+  defp handle_ska_to_luna(%{revenue_7d: revenue}) do
+    intensity = cond do
+      revenue >= 1_000_000 -> "공격적"
+      revenue >= 500_000   -> "보통"
+      true                 -> "보수적"
+    end
+
+    message = """
+    📢 [제이→루나] 스카팀 캐시플로우 업데이트!
+    💰 7일 매출: #{format_krw(revenue)}
+    📊 권장 투자 강도: #{intensity}
+    """
+    TeamJay.HubClient.post_alarm(message, "luna", "jay.cross_team_router")
+    record_pipeline_event(:ska_to_luna, :executed, %{revenue: revenue, intensity: intensity})
+    Logger.info("[CrossTeamRouter] ska→luna 실행: #{format_krw(revenue)} → #{intensity}")
+  end
+
+  defp handle_ska_to_luna(_), do: :ok
+
+  # ────────────────────────────────────────────────────────────────
+  # 파이프라인 5: 클로드 → 전체 (시스템 위험 → 워크로드 축소)
+  # ────────────────────────────────────────────────────────────────
+
+  defp handle_claude_to_all(%{risk_level: level, affected_services: services}) do
+    teams = ["blog", "luna", "ska", "worker"]
+    service_list = Enum.join(services, ", ")
+
+    message = """
+    🚨 [제이→전체] 시스템 위험 감지!
+    ⚠️ 위험 레벨: #{level}/10
+    🔧 비정상 서비스: #{service_list}
+    🎯 요청: 비필수 작업 일시 중단, 필수 작업만 유지
+    """
+
+    Enum.each(teams, fn team ->
+      TeamJay.HubClient.post_alarm(message, team, "jay.cross_team_router")
+    end)
+
+    record_pipeline_event(:claude_to_all, :executed, %{risk_level: level, teams_notified: teams})
+    Logger.info("[CrossTeamRouter] claude→all 실행: 레벨=#{level}, #{length(teams)}팀 알림")
+  end
+
+  defp handle_claude_to_all(_), do: :ok
+
+  # ────────────────────────────────────────────────────────────────
+  # 파이프라인 6: 블로 → 루나 (트렌드 → 종목 분석)
+  # ────────────────────────────────────────────────────────────────
+
+  defp handle_blog_to_luna(%{keywords: keywords}) do
+    kw_list = Enum.join(keywords, ", ")
+    message = """
+    📢 [제이→루나] 블로팀 트렌드 키워드 공유!
+    🔑 트렌드: #{kw_list}
+    🎯 요청: 관련 종목/코인 분석 검토
+    """
+    TeamJay.HubClient.post_alarm(message, "luna", "jay.cross_team_router")
+    record_pipeline_event(:blog_to_luna, :executed, %{keyword_count: length(keywords)})
+    Logger.info("[CrossTeamRouter] blog→luna 실행")
+  end
+
+  defp handle_blog_to_luna(_), do: :ok
+
+  # ────────────────────────────────────────────────────────────────
+  # 파이프라인 7: 루나 → 스카 (수익 실현 → 운영비)
+  # ────────────────────────────────────────────────────────────────
+
+  defp handle_luna_to_ska(%{realized_pnl: pnl}) when is_number(pnl) and pnl > 0 do
+    message = """
+    📢 [제이→스카] 루나팀 수익 실현!
+    💰 실현 수익: +$#{Float.round(pnl * 1.0, 2)}
+    🎯 참고: 운영비 예산 여유 발생
+    """
+    TeamJay.HubClient.post_alarm(message, "ska", "jay.cross_team_router")
+    record_pipeline_event(:luna_to_ska, :executed, %{realized_pnl: pnl})
+    Logger.info("[CrossTeamRouter] luna→ska 실행: +$#{pnl}")
+  end
+
+  defp handle_luna_to_ska(_), do: :ok
+
+  # ────────────────────────────────────────────────────────────────
+  # EventLake 기록
+  # ────────────────────────────────────────────────────────────────
+
+  defp record_pipeline_event(pipeline, status, details) do
+    TeamJay.EventLake.record(%{
+      source: "jay.cross_team_router",
+      event_type: "cross_pipeline.#{pipeline}.#{status}",
+      severity: "info",
+      payload: details
+    })
+  rescue
+    _ -> :ok
+  end
+
+  # ────────────────────────────────────────────────────────────────
+  # 유틸
+  # ────────────────────────────────────────────────────────────────
+
+  defp format_krw(n) when is_integer(n), do: "#{n}원"
+  defp format_krw(n) when is_number(n), do: "#{trunc(n)}원"
+  defp format_krw(_), do: "N/A"
+end

@@ -31,6 +31,16 @@ defmodule TeamJay.Jay.DailyBriefing do
     header <> body <> cross_section <> footer
   end
 
+  @doc "주간 리포트용 팀 섹션 (공개 — WeeklyReport에서 호출)"
+  def format_team_week(team, nil), do: "#{team_emoji_pub(team)} #{team}팀: 데이터 없음\n"
+  def format_team_week(team, data), do: format_team_section(team, data)
+
+  defp team_emoji_pub(:luna), do: "🌙"
+  defp team_emoji_pub(:ska), do: "☕"
+  defp team_emoji_pub(:blog), do: "✍️"
+  defp team_emoji_pub(:claude), do: "🔧"
+  defp team_emoji_pub(team), do: team_emoji(team)
+
   # ────────────────────────────────────────────────────────────────
   # 팀별 섹션 포맷
   # ────────────────────────────────────────────────────────────────

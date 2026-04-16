@@ -16,7 +16,9 @@ defmodule TeamJay.Teams.JaySupervisor do
     Logger.info("[JaySupervisor] 시작 — 9팀 성장 오케스트레이터")
 
     children = [
+      TeamJay.Jay.AutonomyController,
       TeamJay.Jay.GrowthCycle,
+      TeamJay.Jay.CrossTeamRouter,
     ]
 
     Supervisor.init(children, strategy: :one_for_one)

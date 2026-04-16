@@ -24,6 +24,8 @@ config :team_jay, TeamJay.Scheduler,
     # ─── 제이팀 성장 사이클 ──────────────────────────────────
     # 06:30 KST = 21:30 UTC 전날 (cron은 UTC 기준)
     {"30 21 * * *", {TeamJay.Jay.GrowthCycle, :run_cycle, []}},
+    # 주간 리포트 — 매주 월요일 07:30 KST = 22:30 UTC 일요일
+    {"30 22 * * 0", {TeamJay.Jay.WeeklyReport, :run, []}},
     # 시그마 피드백 효과 측정 (매일 22:00 KST = 13:00 UTC)
     {"0 13 * * *", {TeamJay.Jay.Sigma.Feedback, :ensure_tables, []}},
     # ─── 기존 스케줄 ────────────────────────────────────────

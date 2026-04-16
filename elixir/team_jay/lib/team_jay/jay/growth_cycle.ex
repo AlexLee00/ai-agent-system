@@ -239,9 +239,17 @@ defmodule TeamJay.Jay.GrowthCycle do
     briefing = DailyBriefing.generate(team_data, date)
     Topics.broadcast_briefing_ready(briefing)
 
-    TeamJay.HubClient.post_alarm(briefing, "jay", "growth_cycle")
+    # 자율화 단계에 따라 발송 여부 결정
+    if TeamJay.Jay.AutonomyController.should_send_daily_briefing?() do
+      TeamJay.HubClient.post_alarm(briefing, "jay", "growth_cycle")
+      Logger.info("[GrowthCycle] LEARN: 브리핑 발송 완료 (#{String.length(briefing)}자)")
+    else
+      Logger.info("[GrowthCycle] LEARN: Phase 3 자율 — 브리핑 로그만 (발송 생략)")
+    end
 
-    Logger.info("[GrowthCycle] LEARN: 브리핑 발송 완료 (#{String.length(briefing)}자)")
+    # 이상 없는 날 기록 (자율화 단계 전환용)
+    TeamJay.Jay.AutonomyController.record_clean_day()
+
     briefing
   end
 end
