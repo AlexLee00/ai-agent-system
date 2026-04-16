@@ -40,6 +40,14 @@ const RECONNECT_MESSAGES = ['connection terminated', 'connection destroyed', 'se
 
 const useHub = !env.IS_OPS && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
 
+function isReadOnlySql(sql: string): boolean {
+  const normalized = String(sql || '').trim().toLowerCase();
+  if (!normalized) return false;
+  return normalized.startsWith('select')
+    || normalized.startsWith('with')
+    || normalized.startsWith('explain');
+}
+
 function isConnError(err: any): boolean {
   if (!err) return false;
   return RECONNECT_CODES.has(err.code) || RECONNECT_MESSAGES.some((message) => err.message?.includes(message));
@@ -154,7 +162,7 @@ async function queryViaHub(schema: string, sql: string, params: any[] = []): Pro
 }
 
 export async function query<T = any>(schema: string, sql: string, params: any[] = []): Promise<T[]> {
-  if (useHub) {
+  if (useHub && isReadOnlySql(sql)) {
     const result = await queryViaHub(schema, sql, params);
     return result.rows as T[];
   }
@@ -164,7 +172,7 @@ export async function query<T = any>(schema: string, sql: string, params: any[] 
 }
 
 export async function run(schema: string, sql: string, params: any[] = []): Promise<{ rowCount: number; rows: any[] }> {
-  if (useHub) return queryViaHub(schema, sql, params);
+  if (useHub && isReadOnlySql(sql)) return queryViaHub(schema, sql, params);
   const pool = getPool(schema);
   const result = await safeQuery(pool, parameterize(sql), params);
   return { rowCount: result.rowCount, rows: result.rows };
