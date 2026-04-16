@@ -4,8 +4,7 @@ defmodule TeamJay.Teams.WorkerShadowSupervisor do
   @worker_agents [
     %{name: :worker_lead, label: "ai.worker.lead"},
     %{name: :worker_web, label: "ai.worker.web"},
-    %{name: :worker_nextjs, label: "ai.worker.nextjs"},
-    %{name: :worker_claude_monitor, label: "ai.worker.claude-monitor"}
+    %{name: :worker_nextjs, label: "ai.worker.nextjs"}
   ]
 
   def start_link(opts \\ []) do
