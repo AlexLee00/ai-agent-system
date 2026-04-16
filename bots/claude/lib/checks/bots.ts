@@ -13,6 +13,10 @@ const fs   = require('fs');
 const { execSync } = require('child_process');
 const cfg  = require('../config');
 const { LAUNCHD_AVAILABLE } = require('../../../../packages/core/lib/env');
+const {
+  isElixirOwnedService,
+  isRetiredService,
+} = require('../../../../packages/core/lib/service-ownership.js');
 
 function parsePsLine(line = '') {
   const trimmed = String(line || '').trim();
@@ -99,7 +103,7 @@ function launchdStatus(label) {
 }
 
 function daemonOwnedByElixir(serviceId = '') {
-  return serviceId === 'ai.worker.web' || serviceId === 'ai.worker.nextjs';
+  return isElixirOwnedService(serviceId);
 }
 
 function checkLaunchd(items) {
@@ -111,10 +115,6 @@ function checkLaunchd(items) {
     });
     return;
   }
-
-  const RETIRED_SERVICES = new Set([
-    'ai.orchestrator',
-  ]);
 
   const SERVICES = [
     // 클로드팀
@@ -157,7 +157,7 @@ function checkLaunchd(items) {
   ];
 
   for (const svc of SERVICES) {
-    if (RETIRED_SERVICES.has(svc.id) || svc.retired) {
+    if (isRetiredService(svc.id) || svc.retired) {
       items.push({
         label: svc.label,
         status: 'ok',

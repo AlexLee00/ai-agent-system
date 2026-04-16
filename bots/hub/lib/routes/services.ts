@@ -1,28 +1,15 @@
 const env = require('../../../../packages/core/lib/env');
 const { getLaunchctlStatus } = require('../../../../packages/core/lib/health-provider');
+const {
+  getServiceOwnership,
+  getHubServiceLabels,
+  getHubCoreServiceLabels,
+  isExpectedIdleService,
+} = require('../../../../packages/core/lib/service-ownership.js');
 
-export const HUB_CORE_SERVICE_LABELS = [
-  'ai.openclaw.gateway',
-  'ai.n8n.server',
-];
+export const HUB_CORE_SERVICE_LABELS = getHubCoreServiceLabels();
 
-const SERVICE_LABELS = [
-  'ai.openclaw.gateway',
-  'ai.claude.commander',
-  'ai.claude.dexter',
-  'ai.ska.commander',
-  'ai.ska.naver-monitor',
-  'ai.blog.node-server',
-  'ai.worker.web',
-  'ai.worker.nextjs',
-  'ai.worker.lead',
-  'ai.worker.task-runner',
-  'ai.investment.commander',
-  'ai.investment.crypto',
-  'ai.mlx.server',
-  'ai.n8n.server',
-  'ai.hub.resource-api',
-];
+const SERVICE_LABELS = getHubServiceLabels();
 
 type LaunchctlServiceStatus = {
   running: boolean;
@@ -39,6 +26,7 @@ type ServiceClassification = 'running' | 'idle' | 'down';
 type ServiceStatusResponse = LaunchctlServiceStatus & {
   classification: ServiceClassification;
   core: boolean;
+  owner?: string;
 };
 
 type ServiceStatusMap = Record<string, ServiceStatusResponse>;
@@ -51,19 +39,28 @@ type ServiceSummary = {
   core_down: string[];
 };
 
-const EXPECTED_IDLE_SERVICE_LABELS = new Set([
-  'ai.claude.dexter',
-  'ai.worker.lead',
-  'ai.worker.task-runner',
-  'ai.investment.crypto',
-]);
-
 function isExpectedIdle(label: string, service?: LaunchctlServiceStatus): boolean {
   if (!service) return false;
   if (service.running) return false;
-  if (!EXPECTED_IDLE_SERVICE_LABELS.has(label)) return false;
+  if (!isExpectedIdleService(label)) return false;
   if (service.state === 'spawn scheduled') return true;
   return service.exitCode === 0;
+}
+
+async function probeHealth(url?: string): Promise<boolean> {
+  if (!url) return false;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2500);
+    try {
+      const res = await fetch(url, { signal: controller.signal });
+      return res.status >= 200 && res.status < 400;
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch {
+    return false;
+  }
 }
 
 export function summarizeServiceStatus(
@@ -108,27 +105,46 @@ export async function servicesStatusRoute(_req: any, res: any) {
   }
 
   const allStatus = getLaunchctlStatus(SERVICE_LABELS);
-  const status = Object.fromEntries(
-    SERVICE_LABELS.map((label) => [
-      label,
-      allStatus[label] || {
+  const statusEntries = await Promise.all(
+    SERVICE_LABELS.map(async (label) => {
+      const ownership = getServiceOwnership(label);
+      const base = allStatus[label] || {
         running: false,
         pid: null,
         exitCode: 0,
         loaded: false,
-      },
-    ]),
-  ) as LaunchctlStatusMap;
+      };
+
+      if (base.running) return [label, base];
+      if (ownership?.owner === 'elixir' && ownership.healthUrl) {
+        const healthy = await probeHealth(ownership.healthUrl);
+        if (healthy) {
+          return [label, {
+            ...base,
+            running: true,
+            loaded: false,
+            state: 'elixir-managed',
+          }];
+        }
+      }
+
+      return [label, base];
+    }),
+  );
+
+  const status = Object.fromEntries(statusEntries) as LaunchctlStatusMap;
   const summary = summarizeServiceStatus(status);
   const services = Object.fromEntries(
     SERVICE_LABELS.map((label) => {
       const service = status[label];
+      const ownership = getServiceOwnership(label);
       return [
         label,
         {
           ...service,
           classification: classifyServiceStatus(label, service),
           core: HUB_CORE_SERVICE_LABELS.includes(label),
+          owner: ownership?.owner || 'launchd',
         },
       ];
     }),
