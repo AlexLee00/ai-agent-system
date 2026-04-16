@@ -477,6 +477,50 @@ function selectAndValidateTopic(category, recentPosts = [], strategyPlan = null,
 }
 
 /**
+ * topic_planner.ts가 사전 선정한 단일 최우선 주제 조회.
+ * blog.topic_queue에서 scheduled_date + status='pending' 조회.
+ * 있으면 바로 반환, 없으면 null 반환 → 호출자가 topic_candidates → 풀 폴백.
+ *
+ * @param {string} targetDate - 'YYYY-MM-DD'
+ * @param {string} [category]  - 카테고리 필터 (있으면 일치 확인)
+ * @returns {Promise<object|null>}
+ */
+async function selectPrePlannedTopic(targetDate, category = null) {
+  try {
+    const whereCategory = category ? `AND category = $2` : '';
+    const params = category ? [targetDate, category] : [targetDate];
+    const sql = `
+      SELECT id, category, title, question, diff, reader_problem, opening_angle, closing_angle,
+             quality_score, trend_source
+      FROM blog.topic_queue
+      WHERE scheduled_date = $1
+        AND status = 'pending'
+        ${whereCategory}
+      ORDER BY quality_score DESC
+      LIMIT 1
+    `;
+    const result = await queryOpsDb(sql, 'blog', params);
+    if (!result || !result.rows || result.rows.length === 0) return null;
+    const row = result.rows[0];
+    return {
+      id: row.id,
+      category: row.category,
+      title: row.title,
+      topic: row.title,
+      question: row.question || '',
+      diff: row.diff || '',
+      readerProblem: row.reader_problem || '',
+      openingAngle: row.opening_angle || '',
+      closingAngle: row.closing_angle || '',
+      quality_score: row.quality_score || 0,
+      source: 'topic_queue',
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * D-1 큐레이션 DB에서 날짜별 후보 조회.
  * topic_curator.ex가 미리 저장한 blog.topic_candidates를 우선 사용.
  * 없으면 null 반환 → 호출자가 기존 풀 폴백 처리.
@@ -525,12 +569,43 @@ async function queryDailyCandidates(targetDate, category = null) {
  * @param {object} revenueCorrelation
  */
 async function selectTopicWithCandidateFallback(category, targetDate, recentPosts = [], strategyPlan = null, senseState = null, revenueCorrelation = null) {
+  const recentTitles = recentPosts.map(post => post.title).filter(Boolean);
+  const marketingHints = buildMarketingHints(category, senseState, revenueCorrelation);
+
+  // 1순위: topic_queue (topic-planner.ts가 21:00 KST에 사전 선정한 최우선 주제)
+  const prePlanned = await selectPrePlannedTopic(targetDate, category);
+  if (prePlanned && !isBannedTitle(prePlanned.title)) {
+    const dupCheck = recentTitles.some(rt => {
+      // 간단한 bigram 중복 체크
+      const norm = t => String(t || '').toLowerCase().replace(/\s+/g, '');
+      const sa = norm(rt); const sb = norm(prePlanned.title);
+      let inter = 0;
+      const setA = new Set(); const setB = new Set();
+      for (let i = 0; i < sa.length - 1; i++) setA.add(sa.slice(i, i + 2));
+      for (let i = 0; i < sb.length - 1; i++) setB.add(sb.slice(i, i + 2));
+      for (const b of setA) { if (setB.has(b)) inter++; }
+      const union = new Set([...setA, ...setB]).size;
+      return union > 0 && inter / union > 0.35;
+    });
+
+    if (!dupCheck) {
+      return enrichTopicSelection({
+        ...prePlanned,
+        pattern: 'pre_planned',
+        marketingSignalSummary: marketingHints.signalSummary,
+        marketingRecommendations: marketingHints.recommendations,
+        marketingCtaHint: marketingHints.ctaHint,
+        marketingWeight: marketingHints.categoryWeight,
+        recentTitleCount: recentTitles.length,
+        forced: false,
+      }, category, recentTitles);
+    }
+  }
+
+  // 2순위: topic_candidates (topic_curator.ex가 22:00 KST에 저장한 후보 목록)
   const dbCandidates = await queryDailyCandidates(targetDate, category);
 
   if (dbCandidates && dbCandidates.length > 0) {
-    const recentTitles = recentPosts.map(post => post.title).filter(Boolean);
-    const marketingHints = buildMarketingHints(category, senseState, revenueCorrelation);
-
     // 중복 제목 필터링 후 최고 점수 선택
     const selected = dbCandidates.find(c => {
       if (isBannedTitle(c.title)) return false;
@@ -564,6 +639,7 @@ module.exports = {
   buildMarketingHints,
   selectAndValidateTopic,
   selectTopicWithCandidateFallback,
+  selectPrePlannedTopic,
   queryDailyCandidates,
   similarity,
 };
