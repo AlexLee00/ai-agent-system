@@ -4,6 +4,17 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-04-16: 스카팀 리모델 완료 (CODEX_SKA_REMODEL Phase 0~4-1)
+
+- **Phase 0**: `.legacy.js` 134개 전부 삭제 (0개 달성), state-bus.js esbuild 의존 제거
+- **Phase 1**: Elixir 네이티브 GenServer 13개 (naver×4, pickko×3, kiosk×2, port_bridge×2, PubSub 확장)
+- **Phase 2**: FailureTracker — `ska.failure_cases` DB + Node.js `ska-failure-reporter.ts` Andy/Jimmy 연동
+- **Phase 3**: ParsingGuard+SelectorManager — `ska.selector_history` DB + 셀렉터 16개 시드
+- **Phase 3.5**: `call_llm_via_port` 실제 구현 — `ska-llm-parse.ts` PortAgent (Claude→GPT-4o→Groq)
+- **OPS 마이그레이션**: v010~012 적용 완료 (스키마 v12), 마이그레이션 필터 버그 수정
+- **Phase 4-1**: SKA 스킬 6개 마크다운 문서화 (`packages/core/lib/skills/ska/`)
+- 다음: Phase 4-2 forecast.py 보강, 블로팀 마케팅 연동, RAG 연동
+
 ## 2026-04-16: Luna parallel ops 런타임 호환성 보강 및 상태 재점검
 
 - `packages/core/lib/agent-memory.js`
