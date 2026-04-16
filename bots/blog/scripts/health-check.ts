@@ -23,6 +23,10 @@ const {
 } = require('../../../packages/core/lib/health-provider');
 const { publishToWebhook } = require('../../../packages/core/lib/reporting-hub');
 const { createHealthMemoryHelper } = require('../../../packages/core/lib/health-memory');
+const {
+  canonicalizeBlogCriticalAlert,
+  appendIncidentLine,
+} = require('../lib/critical-alerts.js');
 
 const runtimeConfig = getBlogHealthRuntimeConfig();
 const { buildIssueHints, rememberHealthEvent } = createHealthMemoryHelper({
@@ -41,13 +45,19 @@ const IMAGE_HEALTH_TIMEOUT_MS = 2500;
 
 async function notify(msg, level = 3) {
   try {
+    const incidentState = canonicalizeBlogCriticalAlert({
+      event_type: 'blog_health_check',
+      alert_level: level,
+      message: msg,
+    });
+    if (incidentState.suppress) return;
     await publishToWebhook({
       event: {
         from_bot: 'blog-health',
         team: 'blog',
         event_type: 'blog_health_check',
         alert_level: level,
-        message: msg,
+        message: appendIncidentLine(msg, incidentState.signature, incidentState.incident),
       },
     });
   } catch {
