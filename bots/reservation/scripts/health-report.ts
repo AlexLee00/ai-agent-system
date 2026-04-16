@@ -46,6 +46,7 @@ const SCHEDULED_SERVICES = [
 ];
 const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;
 const NAVER_LOG = '/tmp/naver-ops-mode.log';
+const PICKKO_LOG = '/tmp/pickko-kiosk-monitor.log';
 const LOG_STALE_MS = 15 * 60 * 1000;
 const N8N_HEALTH_URL = process.env.N8N_HEALTH_URL || 'http://127.0.0.1:5678/healthz';
 const DEFAULT_N8N_WEBHOOK_URL = process.env.SKA_N8N_WEBHOOK_URL || 'http://127.0.0.1:5678/webhook/ska-command';
@@ -144,6 +145,87 @@ function buildMonitorHealth() {
       crashLoopReason: null,
     };
   }
+}
+
+function buildKioskMonitorHealth() {
+  const base = buildFileActivityHealth({
+    label: 'kiosk-monitor 로그',
+    filePath: PICKKO_LOG,
+    staleMs: 30 * 60 * 1000,
+    missingText: '  kiosk-monitor 로그: 파일 없음',
+    staleText: (state) => `  kiosk-monitor 로그: ${state.minutesAgo}분 무활동`,
+    okText: (state) => `  kiosk-monitor 로그: 최근 ${state.minutesAgo}분 이내 활동`,
+  });
+
+  try {
+    if (!fs.existsSync(PICKKO_LOG)) return base;
+
+    const text = fs.readFileSync(PICKKO_LOG, 'utf8');
+    const lines = text.split('\n').slice(-200);
+    const errorPatterns = [
+      /⏹ pickko-kiosk-monitor 완료 \(exit:\s*1\)/i,
+      /Cannot find module/i,
+      /❌ 치명 오류/i,
+      /로그인\/조회 실패/i,
+    ];
+    const healthyPatterns = [
+      /⏹ pickko-kiosk-monitor 완료 \(exit:\s*0\)/i,
+      /✅ 신규 예약 없음, 재시도 없음, 취소 없음\. 종료/i,
+      /✅ 픽코 로그인 완료/i,
+      /🗑 픽코 취소 감지:/i,
+    ];
+
+    let lastErrorIndex = -1;
+    let lastHealthyIndex = -1;
+    let matchedError = '';
+
+    lines.forEach((line, index) => {
+      if (healthyPatterns.some((pattern) => pattern.test(line))) {
+        lastHealthyIndex = index;
+      }
+      if (errorPatterns.some((pattern) => pattern.test(line))) {
+        lastErrorIndex = index;
+        matchedError = line.trim();
+      }
+    });
+
+    const recentExitFailures = lines.filter((line) => /⏹ pickko-kiosk-monitor 완료 \(exit:\s*1\)/i.test(line)).length;
+    const likelyCrashLoop =
+      recentExitFailures >= 2 ||
+      (lastErrorIndex >= 0 && lastErrorIndex > lastHealthyIndex);
+
+    if (!likelyCrashLoop) return base;
+
+    return {
+      ...base,
+      ok: [],
+      warn: [
+        `  kiosk-monitor 로그: 최근 크래시 루프 징후 감지 (${(matchedError || `최근 pickko-kiosk-monitor 비정상 종료 ${recentExitFailures}회`).slice(0, 140)})`,
+      ],
+      crashLoopDetected: true,
+      crashLoopReason: matchedError || null,
+    };
+  } catch (error) {
+    return {
+      ...base,
+      ok: [],
+      warn: [`  kiosk-monitor 로그 분석 실패 (${error.message})`],
+      crashLoopDetected: false,
+      crashLoopReason: null,
+    };
+  }
+}
+
+function buildCombinedMonitorHealth() {
+  const naverMonitor = buildMonitorHealth();
+  const kioskMonitor = buildKioskMonitorHealth();
+  return {
+    ok: [...(naverMonitor.ok || []), ...(kioskMonitor.ok || [])],
+    warn: [...(naverMonitor.warn || []), ...(kioskMonitor.warn || [])],
+    minutesAgo: naverMonitor.minutesAgo,
+    naverMonitor,
+    kioskMonitor,
+  };
 }
 
 async function buildN8nCommandHealth() {
@@ -501,7 +583,7 @@ async function buildReport() {
     treatMissingAsOk: true,
     missingOkText: (name) => `  ${name}: 대기 (다음 스케줄 실행 전)`,
   });
-  const monitorHealth = buildMonitorHealth();
+  const monitorHealth = buildCombinedMonitorHealth();
   const n8nCommandHealth = await buildN8nCommandHealth();
   const cancelCounterDriftHealth = await buildCancelCounterDriftHealth();
   const duplicateSlotHealth = await buildDuplicateSlotHealth();
