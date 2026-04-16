@@ -188,9 +188,9 @@ defmodule Mix.Tasks.Phase3.Daemon.Cutover do
     else
       label = candidate.label
       plist_path = plist_path_for!(label)
-      domain_target = "gui/#{macos_uid()}/#{label}"
+      domain = "gui/#{macos_uid()}"
 
-      case System.cmd("launchctl", ["bootout", domain_target], stderr_to_stdout: true) do
+      case bootout_launchd(domain, label, plist_path) do
         {bootout_output, 0} ->
           launchd_after_bootout = wait_for_launchd_unloaded(label, timeout_ms)
 
@@ -312,6 +312,37 @@ defmodule Mix.Tasks.Phase3.Daemon.Cutover do
 
       {output, _code} ->
         %{status: :error, detail: String.trim(output)}
+    end
+  end
+
+  defp bootout_launchd(domain, label, plist_path) do
+    service_target = "#{domain}/#{label}"
+
+    case System.cmd("launchctl", ["bootout", service_target], stderr_to_stdout: true) do
+      {output, 0} ->
+        {output, 0}
+
+      {output, _code} ->
+        fallback_output =
+          String.trim(output)
+
+        case System.cmd("launchctl", ["bootout", domain, plist_path], stderr_to_stdout: true) do
+          {fallback, 0} ->
+            merged =
+              [fallback_output, String.trim(fallback)]
+              |> Enum.reject(&(&1 == ""))
+              |> Enum.join("\n")
+
+            {merged, 0}
+
+          {fallback, fallback_code} ->
+            merged =
+              [fallback_output, String.trim(fallback)]
+              |> Enum.reject(&(&1 == ""))
+              |> Enum.join("\n")
+
+            {merged, fallback_code}
+        end
     end
   end
 
