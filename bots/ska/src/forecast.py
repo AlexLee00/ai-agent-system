@@ -10,12 +10,13 @@ ska-014 추가 (Level 4):
   - 🔮 앙상블 예측 알림 형식 (모델별 상세 출력)
 
 모드:
-  --mode=daily   : 익일 1일 예측 (기본)
-  --mode=weekly  : 다음 7일 예측 (D+1 ~ D+7)
-  --mode=monthly : 다음 30일 예측 (D+1 ~ D+30)
-  --mode=review  : 월간 모델 진단 + LLM 분석 + 자동 파라미터 튜닝
+  --mode=daily      : 익일 1일 예측 (기본)
+  --mode=weekly     : 다음 7일 예측 (D+1 ~ D+7)
+  --mode=monthly    : 다음 30일 예측 (D+1 ~ D+30)
+  --mode=review     : 월간 모델 진단 + LLM 분석 + 자동 파라미터 튜닝
+  --mode=stability  : 파싱 안정성 스코어 대시보드 (selector_history + failure_cases)
   --date=YYYY-MM-DD : 기준 날짜 (기본: 오늘)
-  --json         : JSON 출력 (텔레그램용)
+  --json            : JSON 출력 (텔레그램용)
 
 모델 (prophet-v3 + ensemble):
   - Prophet (weekly_seasonality=True, yearly=False)
@@ -228,6 +229,219 @@ def parse_args():
         elif arg == '--json':
             output_json = True
     return mode, base_date, output_json
+
+
+# ─── 파싱 안정성 스코어 대시보드 ────────────────────────────────────────────────
+
+def load_parsing_stability(con, days=14):
+    """selector_history + failure_cases → 파싱 안정성 지표 계산.
+
+    반환값:
+      {
+        'score': 0~100 (종합 안정성 점수),
+        'grade': 'A'/'B'/'C'/'D',
+        'selectors': [{target, status, success_rate, consecutive_ok, ...}],
+        'failures': [{error_type, agent, count, last_seen}],
+        'total_success': int,
+        'total_fail': int,
+        'promoted_count': int,
+        'deprecated_count': int,
+        'active_llm_count': int,
+        'window_days': days,
+      }
+    """
+    # ── 셀렉터 현황 ──
+    sel_rows = _qry(con, """
+        SELECT
+            target,
+            status,
+            success_count,
+            fail_count,
+            consecutive_ok,
+            consecutive_fail,
+            llm_generated,
+            llm_provider,
+            promoted_at,
+            deprecated_at,
+            updated_at
+        FROM ska.selector_history
+        ORDER BY target, status, updated_at DESC
+    """)
+
+    # ── 최근 N일 실패 현황 ──
+    fail_rows = _qry(con, """
+        SELECT
+            error_type,
+            agent,
+            SUM(count)   AS count,
+            MAX(last_seen) AS last_seen,
+            BOOL_OR(auto_resolved) AS any_resolved
+        FROM ska.failure_cases
+        WHERE last_seen >= NOW() - INTERVAL '%s days'
+        GROUP BY error_type, agent
+        ORDER BY count DESC
+    """ % int(days))
+
+    # ── 셀렉터 집계 ──
+    total_success = sum(r['success_count'] for r in sel_rows)
+    total_fail    = sum(r['fail_count'] for r in sel_rows)
+    promoted      = [r for r in sel_rows if r['status'] == 'promoted']
+    deprecated    = [r for r in sel_rows if r['status'] == 'deprecated']
+    active        = [r for r in sel_rows if r['status'] in ('active', 'promoted')]
+    active_llm    = [r for r in active if r['llm_generated']]
+
+    # ── 타겟별 최신 active 셀렉터 ──
+    seen_targets = {}
+    for r in sel_rows:
+        if r['status'] in ('active', 'promoted', 'candidate'):
+            t = r['target']
+            if t not in seen_targets:
+                total = r['success_count'] + r['fail_count']
+                seen_targets[t] = {
+                    'target': t,
+                    'status': r['status'],
+                    'success_count': r['success_count'],
+                    'fail_count': r['fail_count'],
+                    'success_rate': round(r['success_count'] / total * 100, 1) if total > 0 else None,
+                    'consecutive_ok': r['consecutive_ok'],
+                    'consecutive_fail': r['consecutive_fail'],
+                    'llm_generated': r['llm_generated'],
+                    'updated_at': r['updated_at'],
+                }
+    selectors = list(seen_targets.values())
+
+    # ── 종합 안정성 점수 계산 (0~100) ──
+    # 1. 성공률 기반 (60점 만점)
+    total_attempts = total_success + total_fail
+    success_rate_score = 0
+    if total_attempts > 0:
+        rate = total_success / total_attempts
+        success_rate_score = round(rate * 60)
+
+    # 2. 최근 실패 패널티 (-5점/건, 최대 -30점)
+    recent_fail_count = sum(int(r.get('count', 0)) for r in fail_rows)
+    fail_penalty = min(30, recent_fail_count * 5)
+
+    # 3. promoted 보너스 (+2점/개, 최대 +20점)
+    promo_bonus = min(20, len(promoted) * 2)
+
+    # 4. consecutive_fail 패널티 (-3점/개 타겟)
+    targets_with_consec_fail = [s for s in selectors if (s['consecutive_fail'] or 0) >= 3]
+    consec_fail_penalty = min(15, len(targets_with_consec_fail) * 3)
+
+    score = max(0, min(100, success_rate_score - fail_penalty + promo_bonus - consec_fail_penalty))
+
+    if score >= 85:
+        grade = 'A'
+    elif score >= 70:
+        grade = 'B'
+    elif score >= 50:
+        grade = 'C'
+    else:
+        grade = 'D'
+
+    return {
+        'score': score,
+        'grade': grade,
+        'selectors': selectors,
+        'failures': [dict(r) for r in fail_rows],
+        'total_success': total_success,
+        'total_fail': total_fail,
+        'promoted_count': len(promoted),
+        'deprecated_count': len(deprecated),
+        'active_llm_count': len(active_llm),
+        'window_days': days,
+    }
+
+
+def format_stability_dashboard(stability, base_date):
+    """파싱 안정성 대시보드 텍스트 포맷."""
+    s = stability
+    grade_emoji = {'A': '🟢', 'B': '🟡', 'C': '🟠', 'D': '🔴'}.get(s['grade'], '⚪')
+    lines = [
+        f'',
+        f'══════════════════════════════════════',
+        f'  🔬 SKA 파싱 안정성 대시보드',
+        f'  기준: {base_date}  (최근 {s["window_days"]}일)',
+        f'══════════════════════════════════════',
+        f'',
+        f'  종합 점수: {grade_emoji} {s["score"]}점 (등급 {s["grade"]})',
+        f'',
+        f'  셀렉터 현황',
+        f'  ├ 성공 {s["total_success"]:,}회 / 실패 {s["total_fail"]:,}회',
+    ]
+
+    total = s['total_success'] + s['total_fail']
+    if total > 0:
+        rate = round(s['total_success'] / total * 100, 1)
+        lines.append(f'  ├ 전체 성공률: {rate}%')
+
+    lines += [
+        f'  ├ promoted 셀렉터: {s["promoted_count"]}개',
+        f'  ├ deprecated 셀렉터: {s["deprecated_count"]}개',
+        f'  └ LLM 생성 셀렉터(active): {s["active_llm_count"]}개',
+        f'',
+    ]
+
+    if s['selectors']:
+        lines.append(f'  타겟별 상태')
+        for sel in sorted(s['selectors'], key=lambda x: x['target']):
+            rate_str = f'{sel["success_rate"]}%' if sel["success_rate"] is not None else 'N/A'
+            consec = sel.get('consecutive_fail') or 0
+            warn = ' ⚠️' if consec >= 3 else ''
+            llm_tag = ' [LLM]' if sel['llm_generated'] else ''
+            status_emoji = {
+                'promoted': '✅',
+                'active':   '🔵',
+                'candidate': '🟡',
+            }.get(sel['status'], '⚪')
+            lines.append(
+                f'  {status_emoji} {sel["target"]:<28} {rate_str:>6}{warn}{llm_tag}'
+            )
+        lines.append('')
+
+    if s['failures']:
+        lines.append(f'  최근 {s["window_days"]}일 오류 (상위 {min(5, len(s["failures"]))}건)')
+        for row in s['failures'][:5]:
+            count = int(row.get('count', 0))
+            last = str(row.get('last_seen', ''))[:16]
+            resolved = ' ✓' if row.get('any_resolved') else ''
+            lines.append(
+                f'  ⚡ [{row["agent"]}] {row["error_type"]} ×{count}  {last}{resolved}'
+            )
+        lines.append('')
+
+    lines.append(f'══════════════════════════════════════')
+    return '\n'.join(lines)
+
+
+def run_stability_dashboard(base_date_str=None, output_json=False, window_days=14):
+    """파싱 안정성 대시보드 실행."""
+    base_date = date_type.fromisoformat(base_date_str) if base_date_str \
+                else date_type.today()
+    con = psycopg2.connect(PG_SKA)
+    try:
+        stability = load_parsing_stability(con, days=window_days)
+    except Exception as e:
+        print(f'[STABILITY] ❌ 데이터 로드 실패: {e}')
+        return None
+    finally:
+        con.close()
+
+    if output_json:
+        out = {**stability}
+        # datetime 직렬화
+        for sel in out.get('selectors', []):
+            if sel.get('updated_at'):
+                sel['updated_at'] = str(sel['updated_at'])
+        for f in out.get('failures', []):
+            if f.get('last_seen'):
+                f['last_seen'] = str(f['last_seen'])
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+        return stability
+
+    print(format_stability_dashboard(stability, base_date))
+    return stability
 
 
 # ─── 데이터 로드 ──────────────────────────────────────────────────────────────
@@ -2240,6 +2454,19 @@ def run(mode='daily', base_date_str=None, output_json=False):
     elif mode == 'monthly':
         print(format_monthly(results, base_date))
 
+    # daily 모드: 파싱 안정성 점수 요약 출력 (오류 시 무시)
+    if mode == 'daily':
+        try:
+            con2 = psycopg2.connect(PG_SKA)
+            stability = load_parsing_stability(con2, days=7)
+            con2.close()
+            grade_emoji = {'A': '🟢', 'B': '🟡', 'C': '🟠', 'D': '🔴'}.get(stability['grade'], '⚪')
+            print(f'[FORECAST] 파싱 안정성: {grade_emoji} {stability["score"]}점 ({stability["grade"]}등급)  '
+                  f'성공률 {round(stability["total_success"]/(stability["total_success"]+stability["total_fail"])*100,1) if (stability["total_success"]+stability["total_fail"])>0 else "N/A"}%  '
+                  f'promoted={stability["promoted_count"]}  실패건={len(stability["failures"])}')
+        except Exception:
+            pass
+
     return results
 
 
@@ -2247,5 +2474,7 @@ if __name__ == '__main__':
     mode, base_date, output_json = parse_args()
     if mode == 'review':
         run_monthly_review(base_date)
+    elif mode == 'stability':
+        run_stability_dashboard(base_date, output_json)
     else:
         run(mode, base_date, output_json)
