@@ -57,6 +57,9 @@ export async function pgQueryRoute(req: any, res: any) {
       duration_ms: Date.now() - started,
     });
   } catch (error: any) {
+    console.warn(
+      `[hub/pg] query failed schema=${schemaCheck.schema} reason=${String(error?.message || 'pg_query_failed')} sql=${sqlSnippet}`
+    );
     return res.status(500).json({
       error: 'query failed',
       reason: String(error?.message || 'pg_query_failed'),
