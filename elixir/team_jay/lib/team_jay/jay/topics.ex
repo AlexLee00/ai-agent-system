@@ -26,6 +26,7 @@ defmodule TeamJay.Jay.Topics do
     :growth_cycle_completed,  # 전체 수집 완료
     :briefing_ready,          # 종합 브리핑 생성 완료
     :weekly_report_ready,     # 주간 리포트 완료
+    :blog_publish_failed,     # 블로그 발행 실패 → PublishGuard 재시도 큐
   ]
 
   # ────────────────────────────────────────────────────────────────

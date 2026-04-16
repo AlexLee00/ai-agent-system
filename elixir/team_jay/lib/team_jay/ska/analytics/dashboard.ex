@@ -213,27 +213,38 @@ defmodule TeamJay.Ska.Analytics.Dashboard do
   # ─── 이상 감지 ────────────────────────────────────────────
 
   defp check_anomalies(%{parsing: p, failures: f, revenue: r, forecast: forecast} = _snapshot) do
+    p = ensure_map(p)
+    f = ensure_map(f)
+    r = ensure_map(r)
+    forecast = ensure_map(forecast)
+
     alerts = []
 
-    alerts = if p[:success_rate] && p.success_rate < 90.0 do
-      ["⚠️ 파싱 성공률 #{p.success_rate}% (기준 90%+)" | alerts]
+    parsing_rate = numeric_value(Map.get(p, :success_rate))
+    recovery_rate = numeric_value(Map.get(f, :recovery_rate))
+    weekly_revenue = numeric_value(Map.get(r, :weekly_revenue))
+    revenue_unavailable = truthy?(Map.get(r, :unavailable))
+    forecast_unavailable = truthy?(Map.get(forecast, :unavailable))
+
+    alerts = if is_number(parsing_rate) and parsing_rate < 90.0 do
+      ["⚠️ 파싱 성공률 #{parsing_rate}% (기준 90%+)" | alerts]
     else
       alerts
     end
 
-    alerts = if f[:recovery_rate] && f.recovery_rate < 50.0 do
-      ["⚠️ 자동 복구율 #{f.recovery_rate}% (기준 50%+)" | alerts]
+    alerts = if is_number(recovery_rate) and recovery_rate < 50.0 do
+      ["⚠️ 자동 복구율 #{recovery_rate}% (기준 50%+)" | alerts]
     else
       alerts
     end
 
-    alerts = if not r[:unavailable] and r[:weekly_revenue] == 0 and r[:weekly_revenue] != nil do
+    alerts = if not revenue_unavailable and is_number(weekly_revenue) and weekly_revenue == 0 do
       ["🚨 최근 7일 매출 0원 — 데이터 수집 오류 가능" | alerts]
     else
       alerts
     end
 
-    alerts = if r[:unavailable] or forecast[:unavailable] do
+    alerts = if revenue_unavailable or forecast_unavailable do
       Logger.debug("[Dashboard] 초기 데이터 수집 미완료 — anomaly alert 생략")
       []
     else
@@ -248,4 +259,24 @@ defmodule TeamJay.Ska.Analytics.Dashboard do
   rescue
     e -> Logger.warning("[Dashboard] check_anomalies 예외: #{inspect(e)}")
   end
+
+  defp ensure_map(value) when is_map(value), do: value
+  defp ensure_map(_), do: %{}
+
+  defp truthy?(value), do: value in [true, "true", 1, "1"]
+
+  defp numeric_value(value) when is_integer(value) or is_float(value), do: value
+
+  defp numeric_value(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {int, ""} -> int
+      _ ->
+        case Float.parse(value) do
+          {float, ""} -> float
+          _ -> nil
+        end
+    end
+  end
+
+  defp numeric_value(_), do: nil
 end
