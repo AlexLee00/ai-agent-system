@@ -98,4 +98,12 @@ defmodule TeamJay.Investment.PubSub do
     TeamJay.Investment.Topics.resource_health(symbol)
     |> broadcast(resource_health_payload)
   end
+
+  def broadcast_cross_team_command(action_type, payload) do
+    broadcast("cross_team_command_received", %{
+      action_type: action_type,
+      payload: payload,
+      at: DateTime.utc_now()
+    })
+  end
 end
