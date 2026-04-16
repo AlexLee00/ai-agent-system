@@ -12,8 +12,7 @@ defmodule TeamJay.Teams.SkaSupervisor do
   use Supervisor
 
   @ska_agents [
-    %{name: :andy, script: "dist/ts-runtime/bots/reservation/auto/monitors/naver-monitor.js", schedule: {:interval, 300_000}},
-    %{name: :jimmy, script: "dist/ts-runtime/bots/reservation/auto/monitors/pickko-kiosk-monitor.js", schedule: {:interval, 300_000}},
+    # launchd가 canonical owner인 모니터는 PortAgent에서 중복 실행하지 않는다.
     %{name: :eve, script: "bots/ska/scripts/eve.js", schedule: {:interval, 3_600_000}},
     %{name: :eve_crawl, script: "bots/ska/scripts/eve-crawl.js", schedule: {:interval, 3_600_000}},
     %{name: :ska_etl, script: "bots/ska/scripts/etl.js", schedule: nil},

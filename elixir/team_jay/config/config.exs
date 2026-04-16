@@ -21,6 +21,12 @@ config :team_jay,
 
 config :team_jay, TeamJay.Scheduler,
   jobs: [
+    # ─── 제이팀 성장 사이클 ──────────────────────────────────
+    # 06:30 KST = 21:30 UTC 전날 (cron은 UTC 기준)
+    {"30 21 * * *", {TeamJay.Jay.GrowthCycle, :run_cycle, []}},
+    # 시그마 피드백 효과 측정 (매일 22:00 KST = 13:00 UTC)
+    {"0 13 * * *", {TeamJay.Jay.Sigma.Feedback, :ensure_tables, []}},
+    # ─── 기존 스케줄 ────────────────────────────────────────
     {"0 * * * *", {TeamJay.Agents.PortAgent, :run, [:ska_etl]}},
     {"*/30 * * * *", {TeamJay.Diagnostics, :publish_shadow_report, []}},
     {"0 6 * * *", {TeamJay.Agents.PortAgent, :run, [:forecast_daily]}},

@@ -6,6 +6,8 @@
 	<dict>
 		<key>HOME</key>
 		<string>/Users/alexlee</string>
+		<key>MODE</key>
+		<string>ops</string>
 		<key>PATH</key>
 		<string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
 	</dict>
