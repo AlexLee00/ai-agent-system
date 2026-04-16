@@ -1,15 +1,3 @@
 'use strict';
-
 const path = require('path');
-
-const runtimePath = path.join(
-  __dirname,
-  '../dist/ts-runtime/scripts/llm-selector-override-suggestions.js'
-);
-
-try {
-  module.exports = require(runtimePath);
-} catch (error) {
-  if (error && error.code !== 'MODULE_NOT_FOUND') throw error;
-  module.exports = require('./llm-selector-override-suggestions.legacy.js');
-}
+module.exports = require(path.join(__dirname, '../dist/ts-runtime/scripts/llm-selector-override-suggestions.js'));

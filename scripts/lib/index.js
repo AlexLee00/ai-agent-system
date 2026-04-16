@@ -1,12 +1,3 @@
-/**
- * index.js - scripts/lib 공개 API
- */
-
-module.exports = {
-  ...require('./utils'),
-  ...require('./registry'),
-  ...require('./deployer'),
-  ...require('./doc-patcher'),
-  ...require('./session-schema'),
-  ...require('./reporter'),
-};
+'use strict';
+const path = require('path');
+module.exports = require(path.join(__dirname, '../../dist/ts-runtime/scripts/lib/index.js'));

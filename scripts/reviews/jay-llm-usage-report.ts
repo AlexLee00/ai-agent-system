@@ -1,5 +1,4 @@
 // @ts-nocheck
-#!/usr/bin/env node
 'use strict';
 
 const { parseArgs, collectJayUsage } = require('./lib/jay-usage');
