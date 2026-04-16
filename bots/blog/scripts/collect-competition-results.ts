@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 'use strict';
 
 const pgPool = require('../../../packages/core/lib/pg-pool');

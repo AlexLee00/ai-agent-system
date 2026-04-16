@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use strict';
 
 const { selectBonusInsights } = require('./bonus-insights.ts');

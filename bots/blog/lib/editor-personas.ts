@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use strict';
 
 const EDITOR_PERSONAS = {

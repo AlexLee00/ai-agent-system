@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use strict';
 const kst = require('../../../packages/core/lib/kst');
 const env = require('../../../packages/core/lib/env');
