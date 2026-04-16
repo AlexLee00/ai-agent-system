@@ -14,6 +14,7 @@ defmodule TeamJay.Ska.Analytics.Dashboard do
   require Logger
 
   @refresh_interval_ms 10 * 60 * 1_000  # 10분마다 갱신
+  @initial_refresh_delay_ms 20_000
 
   defstruct snapshot: nil, refreshed_at: nil
 
@@ -43,7 +44,7 @@ defmodule TeamJay.Ska.Analytics.Dashboard do
   @impl true
   def init(_opts) do
     Logger.info("[Dashboard] 스카팀 대시보드 시작")
-    Process.send_after(self(), :initial_refresh, 5_000)
+    Process.send_after(self(), :initial_refresh, @initial_refresh_delay_ms)
     Process.send_after(self(), :periodic_refresh, @refresh_interval_ms)
     {:ok, %__MODULE__{}}
   end
@@ -119,19 +120,19 @@ defmodule TeamJay.Ska.Analytics.Dashboard do
   defp collect_revenue do
     case TeamJay.Ska.Analytics.RevenueTracker.get_summary() do
       {:ok, summary} -> summary
-      {:error, _}    -> %{weekly_revenue: 0, monthly_revenue: 0, daily_avg_7d: 0, trend_7d: []}
+      {:error, _}    -> %{weekly_revenue: nil, monthly_revenue: nil, daily_avg_7d: nil, trend_7d: [], unavailable: true}
     end
   rescue
-    _ -> %{weekly_revenue: 0, monthly_revenue: 0, daily_avg_7d: 0}
+    _ -> %{weekly_revenue: nil, monthly_revenue: nil, daily_avg_7d: nil, unavailable: true}
   end
 
   defp collect_forecast do
     case TeamJay.Ska.Analytics.Forecast.get_summary() do
       {:ok, summary} -> summary
-      {:error, _}    -> %{latest_daily: nil, accuracy_7d_mape: nil}
+      {:error, _}    -> %{latest_daily: nil, accuracy_7d_mape: nil, unavailable: true}
     end
   rescue
-    _ -> %{latest_daily: nil, accuracy_7d_mape: nil}
+    _ -> %{latest_daily: nil, accuracy_7d_mape: nil, unavailable: true}
   end
 
   defp collect_parsing do
@@ -211,7 +212,7 @@ defmodule TeamJay.Ska.Analytics.Dashboard do
 
   # ─── 이상 감지 ────────────────────────────────────────────
 
-  defp check_anomalies(%{parsing: p, failures: f, revenue: r} = _snapshot) do
+  defp check_anomalies(%{parsing: p, failures: f, revenue: r, forecast: forecast} = _snapshot) do
     alerts = []
 
     alerts = if p[:success_rate] && p.success_rate < 90.0 do
@@ -226,8 +227,15 @@ defmodule TeamJay.Ska.Analytics.Dashboard do
       alerts
     end
 
-    alerts = if r[:weekly_revenue] == 0 and r[:weekly_revenue] != nil do
+    alerts = if not r[:unavailable] and r[:weekly_revenue] == 0 and r[:weekly_revenue] != nil do
       ["🚨 최근 7일 매출 0원 — 데이터 수집 오류 가능" | alerts]
+    else
+      alerts
+    end
+
+    alerts = if r[:unavailable] or forecast[:unavailable] do
+      Logger.debug("[Dashboard] 초기 데이터 수집 미완료 — anomaly alert 생략")
+      []
     else
       alerts
     end
