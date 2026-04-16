@@ -60,7 +60,6 @@ defmodule TeamJay.Diagnostics do
   @shadow_agents [
     {:andy, :ska},
     {:jimmy, :ska},
-    {:ska_commander, :ska},
     {:blog_commenter, :blog},
     {:blog_daily, :blog},
     {:blog_collect_performance, :blog},
@@ -76,7 +75,6 @@ defmodule TeamJay.Diagnostics do
     {:worker_claude_monitor, :worker},
     {:worker_lead, :worker},
     {:dexter, :claude},
-    {:claude_commander, :claude},
     {:steward_hourly, :steward},
     {:steward_daily, :steward}
   ]
@@ -320,6 +318,7 @@ defmodule TeamJay.Diagnostics do
       TeamJay.Teams.StewardSupervisor,
       TeamJay.Teams.InvestmentSupervisor,
       TeamJay.Teams.BlogSupervisor,
+      TeamJay.Teams.WorkerSupervisor,
       TeamJay.Teams.BlogShadowSupervisor,
       TeamJay.Teams.WorkerShadowSupervisor,
       TeamJay.Teams.PlatformShadowSupervisor
@@ -673,6 +672,7 @@ defmodule TeamJay.Diagnostics do
   defp pilot_safe?(%{name: :blog_node_server}), do: false
   defp pilot_safe?(%{name: :worker_web}), do: false
   defp pilot_safe?(%{name: :worker_nextjs}), do: false
+  defp pilot_safe?(%{name: :hub_resource_api}), do: false
   defp pilot_safe?(_agent), do: true
 
   defp score_transition_candidate(agent) do
