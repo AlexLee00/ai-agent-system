@@ -25,6 +25,13 @@ const https = require('https');
 // ─── 내부 상태 ──────────────────────────────────────────────────────
 let _isShuttingDown = false;
 
+function isBrokenPipeError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const code = (error as { code?: string }).code;
+  const message = String((error as { message?: string }).message || '');
+  return code === 'EPIPE' || message.includes('write EPIPE') || message.includes('broken pipe');
+}
+
 type ShutdownCleanupOptions = {
   reason?: string;
   error?: boolean;
@@ -310,6 +317,17 @@ async function shutdownCleanup({ reason = '정상 종료', error = false, locks 
 function registerShutdownHandlers({ locks = [], waitMs = 15000 }: ShutdownHandlerOptions = {}) {
   let _handled = false;
 
+  const ignoreBrokenPipe = (label: string) => (error: unknown) => {
+    if (isBrokenPipeError(error)) {
+      console.warn(`      ℹ️  ${label} broken pipe 무시`);
+      return;
+    }
+    throw error;
+  };
+
+  process.stdout?.on?.('error', ignoreBrokenPipe('stdout'));
+  process.stderr?.on?.('error', ignoreBrokenPipe('stderr'));
+
   async function onShutdown(signal) {
     if (_handled) return;
     _handled = true;
@@ -337,6 +355,10 @@ function registerShutdownHandlers({ locks = [], waitMs = 15000 }: ShutdownHandle
   process.on('SIGTERM', () => onShutdown('SIGTERM'));
   process.on('SIGINT',  () => onShutdown('SIGINT'));
   process.on('uncaughtException', async (err: Error) => {
+    if (isBrokenPipeError(err)) {
+      console.warn('\nℹ️  [uncaughtException] broken pipe 무시');
+      return;
+    }
     if (_handled) return;
     _handled = true;
     setShuttingDown();
