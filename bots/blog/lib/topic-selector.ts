@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
+const { queryOpsDb } = require('../../../packages/core/lib/hub-client');
 const { isExcludedReferenceFilename, isExcludedReferenceTitle } = require('./reference-exclusions.ts');
 
 const BLOG_OUTPUT_DIR = path.join(env.PROJECT_ROOT, 'bots/blog/output');
@@ -475,11 +476,94 @@ function selectAndValidateTopic(category, recentPosts = [], strategyPlan = null,
   }, category, recentTitles);
 }
 
+/**
+ * D-1 큐레이션 DB에서 날짜별 후보 조회.
+ * topic_curator.ex가 미리 저장한 blog.topic_candidates를 우선 사용.
+ * 없으면 null 반환 → 호출자가 기존 풀 폴백 처리.
+ *
+ * @param {string} targetDate - 'YYYY-MM-DD'
+ * @param {string} [category]  - 카테고리 필터 (생략 시 전체)
+ * @returns {Promise<Array|null>}
+ */
+async function queryDailyCandidates(targetDate, category = null) {
+  try {
+    const whereCategory = category ? `AND category = $2` : '';
+    const params = category ? [targetDate, category] : [targetDate];
+    const sql = `
+      SELECT id, category, title, question, diff, keywords, score
+      FROM blog.topic_candidates
+      WHERE target_date = $1
+        AND status = 'pending'
+        ${whereCategory}
+      ORDER BY score DESC, id ASC
+    `;
+    const result = await queryOpsDb(sql, 'blog', params);
+    if (!result || !result.rows || result.rows.length === 0) return null;
+    return result.rows.map(row => ({
+      id: row.id,
+      category: row.category,
+      title: row.title,
+      question: row.question || '',
+      diff: row.diff || '',
+      keywords: row.keywords || [],
+      score: row.score || 0.5,
+      source: 'db_curated',
+    }));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 카테고리별 주제 선택 — D-1 후보 우선, 없으면 기존 풀 폴백.
+ *
+ * @param {string} category
+ * @param {string} targetDate - 'YYYY-MM-DD'
+ * @param {Array}  recentPosts
+ * @param {object} strategyPlan
+ * @param {object} senseState
+ * @param {object} revenueCorrelation
+ */
+async function selectTopicWithCandidateFallback(category, targetDate, recentPosts = [], strategyPlan = null, senseState = null, revenueCorrelation = null) {
+  const dbCandidates = await queryDailyCandidates(targetDate, category);
+
+  if (dbCandidates && dbCandidates.length > 0) {
+    const recentTitles = recentPosts.map(post => post.title).filter(Boolean);
+    const marketingHints = buildMarketingHints(category, senseState, revenueCorrelation);
+
+    // 중복 제목 필터링 후 최고 점수 선택
+    const selected = dbCandidates.find(c => {
+      if (isBannedTitle(c.title)) return false;
+      if (recentTitles.some(rt => similarity(rt, c.title) > SIMILARITY_THRESHOLD)) return false;
+      return true;
+    });
+
+    if (selected) {
+      return enrichTopicSelection({
+        ...selected,
+        topic: selected.title,
+        pattern: 'db_curated',
+        marketingSignalSummary: marketingHints.signalSummary,
+        marketingRecommendations: marketingHints.recommendations,
+        marketingCtaHint: marketingHints.ctaHint,
+        marketingWeight: marketingHints.categoryWeight,
+        recentTitleCount: recentTitles.length,
+        forced: false,
+      }, category, recentTitles);
+    }
+  }
+
+  // 폴백: 기존 풀 기반 선택
+  return selectAndValidateTopic(category, recentPosts, strategyPlan, senseState, revenueCorrelation);
+}
+
 module.exports = {
   getRecentPosts,
   getCategorySelectionGuide,
   adjustCategoryWeightsBySense,
   buildMarketingHints,
   selectAndValidateTopic,
+  selectTopicWithCandidateFallback,
+  queryDailyCandidates,
   similarity,
 };

@@ -113,11 +113,13 @@ async function main() {
   }
 
   const payload = {
+    ok: Boolean(nextToken),
     dryRun: args.dryRun,
     mode: result.mode,
     saved: !args.dryRun,
     tokenUpdated: Boolean(nextToken),
     tokenExpiresAt: nextExpiry,
+    newExpiresAt: nextExpiry,
     expiresInSeconds: Number(result.response?.expires_in || 0) || null,
   };
   payload.aiSummary = await buildBlogCliInsight({
