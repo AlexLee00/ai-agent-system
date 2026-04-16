@@ -20,6 +20,7 @@ const env = require('../../../packages/core/lib/env');
 const kst = require('../../../packages/core/lib/kst');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const { callLocalLlm } = require('../../../packages/core/lib/local-llm-client');
+const { loadCategoryPerformanceWeights } = require('../lib/feedback-learner.ts');
 
 // ─── 상수 ──────────────────────────────────────────────────────────────────
 
@@ -103,8 +104,20 @@ async function pickTomorrowCategory(tomorrowDate) {
     );
     const lastCategory = row?.category || null;
     const lastIndex = lastCategory ? CATEGORIES.indexOf(lastCategory) : -1;
-    const nextIndex = (lastIndex + 1) % CATEGORIES.length;
-    return CATEGORIES[nextIndex];
+
+    // 성과 가중치 로드 (실패 시 폴백 — 로테이션만 사용)
+    let perfWeights = {};
+    try { perfWeights = await loadCategoryPerformanceWeights(); } catch {}
+
+    // 가중치 기반 점수 산출: 로테이션 기본 점수 + 성과 가중치 보정
+    const scored = CATEGORIES.map((cat, i) => {
+      const rotationDistance = (i - lastIndex - 1 + CATEGORIES.length) % CATEGORIES.length;
+      const rotationScore = CATEGORIES.length - rotationDistance;  // 가까울수록 높음
+      const perfBoost = (perfWeights[cat] || 1.0) - 1.0;          // 0.0~0.3
+      return { cat, score: rotationScore + perfBoost * 3 };        // 성과 최대 +0.9
+    });
+    scored.sort((a, b) => b.score - a.score);
+    return scored[0].cat;
   } catch {
     return CATEGORIES[0];
   }
