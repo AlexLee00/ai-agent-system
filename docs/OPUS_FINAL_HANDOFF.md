@@ -220,6 +220,31 @@ launchctl unload ~/Library/LaunchAgents/ai.investment.overseas.plist
 
 ---
 
+## ✅ 추가 완료 (2026-04-17 세션 6)
+
+### CODEX_HUB_STABILITY Phase 2 — tsx 런타임 전환 완료
+
+- **launchd plist 변경**: `node bots/hub/src/hub.js` → `tsx bots/hub/src/hub.ts`
+  - ProgramArguments: `/Users/alexlee/projects/ai-agent-system/node_modules/.bin/tsx`
+  - smart-restart.sh plist 감지 → OPS 자동 bootout+bootstrap
+- **tsx 설치**: `bots/hub/package.json` dependencies에 tsx@^4.21.0 추가
+  - npm workspace hoisting → root `node_modules/.bin/tsx` 설치
+  - deploy.sh package.json 변경 감지 → `npm install --production` 실행 → tsx 설치됨
+- **.js 래퍼 15개 전체 삭제**: dist/ts-runtime 경유 체인 완전 제거
+  - `src/hub.js`, `lib/auth.js`, `lib/sql-guard.js`, `lib/runtime-profiles.js`
+  - `lib/routes/agents.js`, `alarm.js`, `darwin-callback.js`, `errors.js`, `events.js`
+  - `health.js` (ts.transpileModule 복잡 구현도 삭제), `logs.js`, `n8n.js`, `pg.js`, `secrets.js`, `services.js`
+  - `scripts/telegram-callback-poller.js`
+- **hub/package.json**: `"main": "src/hub.ts"`, `"start": "tsx src/hub.ts"` 업데이트
+- **CODEX_HUB_STABILITY** → docs/archive/codex-completed/ 아카이브
+
+### OPS 배포 후 필요한 수동 작업
+- deploy.sh 자동: package.json 변경 감지 → npm install --production → tsx 설치
+- smart-restart.sh 자동: plist 변경 감지 → reload_launch_agent → bootout + bootstrap
+- **완전 자동 배포** — 추가 수동 작업 불필요
+
+---
+
 ## 핵심 파일 위치
 
 | 파일 | 경로 |
