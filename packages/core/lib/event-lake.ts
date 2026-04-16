@@ -37,6 +37,16 @@ type EventLakeFeedbackInput = {
   score?: number | null;
   feedback?: string;
 };
+type EventLakeCommandLifecycleInput = {
+  commandId: string;
+  status: 'acknowledged' | 'completed' | 'failed';
+  pipeline?: string;
+  targetTeam?: string;
+  botName?: string;
+  source?: string;
+  message?: string;
+  detail?: unknown;
+};
 
 let _initPromise: Promise<void> | null = null;
 
@@ -296,6 +306,141 @@ export async function recentCommands({
   return {
     total: rows.length,
     results: rows,
+  };
+}
+
+async function _findCommandIssuedEvent(commandId: string, minutes = 7 * 24 * 60) {
+  await initSchema();
+
+  const rows = await pgPool.query(SCHEMA, `
+    SELECT
+      id, event_type, team, bot_name, severity, trace_id,
+      title, message, tags, metadata, feedback_score, feedback,
+      created_at, updated_at
+    FROM ${TABLE}
+    WHERE created_at >= NOW() - ($1::int * INTERVAL '1 minute')
+      AND event_type = 'cross_pipeline.command_issued'
+      AND metadata->'command'->>'command_id' = $2
+    ORDER BY created_at DESC
+    LIMIT 1
+  `, [Math.max(1, Number(minutes || 0) || 1), _text(commandId)]);
+
+  return rows[0] || null;
+}
+
+/**
+ * @param {{ targetTeam?: string, minutes?: number, limit?: number }} [input]
+ */
+export async function commandInbox({
+  targetTeam = '',
+  minutes = 24 * 60,
+  limit = 50,
+} = {}) {
+  await initSchema();
+
+  const rows = await recentCommands({
+    minutes,
+    limit: Math.min(500, Math.max(50, Number(limit || 50) * 5)),
+    targetTeam,
+  });
+
+  const byCommand = new Map<string, any[]>();
+  for (const row of rows.results || []) {
+    const commandId = _text(row?.metadata?.command?.command_id);
+    if (!commandId) continue;
+    const current = byCommand.get(commandId) || [];
+    current.push(row);
+    byCommand.set(commandId, current);
+  }
+
+  const inbox = [];
+  for (const events of byCommand.values()) {
+    const ordered = [...events].sort((a, b) =>
+      String(b.created_at || '').localeCompare(String(a.created_at || ''))
+    );
+    const latest = ordered[0];
+    const lifecycleStatus = _text(latest?.metadata?.lifecycle_status);
+    if (lifecycleStatus === 'issued') {
+      inbox.push({
+        command_id: latest.metadata?.command?.command_id || '',
+        pipeline: latest.metadata?.pipeline || '',
+        target_team: latest.metadata?.target_team || '',
+        summary: latest.metadata?.summary || latest.title || '',
+        command: latest.metadata?.command || null,
+        issued_at: latest.created_at,
+        event: latest,
+      });
+    }
+  }
+
+  const trimmed = inbox
+    .sort((a, b) => String(b.issued_at || '').localeCompare(String(a.issued_at || '')))
+    .slice(0, Math.min(200, Math.max(1, Number(limit || 50) || 50)));
+
+  return {
+    total: trimmed.length,
+    results: trimmed,
+  };
+}
+
+/**
+ * @param {EventLakeCommandLifecycleInput} input
+ */
+export async function appendCommandLifecycle({
+  commandId,
+  status,
+  pipeline = '',
+  targetTeam = '',
+  botName = 'unknown',
+  source = 'hub.command_lifecycle',
+  message = '',
+  detail = null,
+}: EventLakeCommandLifecycleInput) {
+  const normalizedCommandId = _text(commandId);
+  if (!normalizedCommandId) {
+    throw new Error('commandId required');
+  }
+
+  const normalizedStatus = _text(status);
+  if (!['acknowledged', 'completed', 'failed'].includes(normalizedStatus)) {
+    throw new Error('invalid lifecycle status');
+  }
+
+  const issued = await _findCommandIssuedEvent(normalizedCommandId);
+  if (!issued) {
+    return null;
+  }
+
+  const command = issued.metadata?.command || {};
+  const pipelineName = _text(pipeline || issued.metadata?.pipeline);
+  const target = _text(targetTeam || issued.metadata?.target_team || command?.target_team);
+  const summary = _text(issued.metadata?.summary || issued.title || 'cross-team command');
+
+  const eventId = await record({
+    eventType: `cross_pipeline.command_${normalizedStatus}`,
+    team: 'jay',
+    botName: _text(botName, 'unknown'),
+    severity: normalizedStatus === 'failed' ? 'warn' : 'info',
+    title: `[${pipelineName || 'cross-team'}] ${normalizedStatus}`,
+    message: _text(message, summary),
+    tags: ['cross-team', 'command', pipelineName, target, normalizedStatus].filter(Boolean),
+    metadata: {
+      pipeline: pipelineName,
+      target_team: target,
+      lifecycle_status: normalizedStatus,
+      summary,
+      source,
+      detail,
+      command,
+    },
+  });
+
+  return {
+    eventId,
+    commandId: normalizedCommandId,
+    status: normalizedStatus,
+    pipeline: pipelineName,
+    targetTeam: target,
   };
 }
 
