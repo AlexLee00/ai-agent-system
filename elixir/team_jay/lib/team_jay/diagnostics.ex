@@ -19,6 +19,11 @@ defmodule TeamJay.Diagnostics do
                           end)
                           |> Enum.map(&Map.fetch!(&1, "label"))
                         )
+  @service_ownership (
+                       @service_ownership_path
+                       |> File.read!()
+                       |> Jason.decode!()
+                     )
   @shadow_agents [
     {:blog_commenter, :blog},
     {:blog_daily, :blog},
@@ -540,8 +545,61 @@ defmodule TeamJay.Diagnostics do
       pilot_runbook: pilot_runbook,
       recommended_actions: recommended_actions,
       summary: summary,
-      recent_failures: TeamJay.EventLake.get_by_type("port_agent_failed", 5)
+      recent_failures:
+        TeamJay.EventLake.get_by_type("port_agent_failed", 20)
+        |> filter_current_port_agent_failures()
+        |> Enum.take(5)
     }
+  end
+
+  defp filter_current_port_agent_failures(events) do
+    Enum.filter(events, fn event ->
+      team = Map.get(event, "team")
+      bot_name = Map.get(event, "bot_name")
+      label = current_service_label(team, bot_name)
+      owner = label && current_service_owner(label)
+
+      recent_enough?(event) and owner not in ["launchd", "retired"]
+    end)
+  end
+
+  defp recent_enough?(event) do
+    with created_at when is_binary(created_at) <- Map.get(event, "created_at"),
+         {:ok, timestamp, _offset} <- DateTime.from_iso8601(created_at) do
+      DateTime.diff(DateTime.utc_now(), timestamp, :second) <= 3_600
+    else
+      _ -> true
+    end
+  end
+
+  defp current_service_label(team, bot_name) when is_binary(team) and is_binary(bot_name) do
+    normalized_team = normalize_service_token(team)
+    normalized_name = normalize_service_token(bot_name)
+    trimmed_name = String.replace_prefix(normalized_name, normalized_team <> "-", "")
+
+    [normalized_name, trimmed_name]
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.flat_map(fn suffix ->
+      ["ai.#{normalized_team}.#{suffix}"]
+    end)
+    |> Enum.find(&current_service_owner/1)
+  end
+
+  defp current_service_label(_team, _bot_name), do: nil
+
+  defp current_service_owner(label) do
+    @service_ownership
+    |> Enum.find(&(Map.get(&1, "label") == label))
+    |> case do
+      nil -> nil
+      entry -> Map.get(entry, "owner")
+    end
+  end
+
+  defp normalize_service_token(value) do
+    value
+    |> String.trim()
+    |> String.replace("_", "-")
   end
 
   defp build_launchd_shadow_agents(agents) do

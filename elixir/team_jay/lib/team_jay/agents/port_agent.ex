@@ -3,6 +3,13 @@ defmodule TeamJay.Agents.PortAgent do
   use GenServer
   require Logger
 
+  @service_ownership_path Path.expand("../../../../../packages/core/config/service-ownership.json", __DIR__)
+  @service_ownership (
+    @service_ownership_path
+    |> File.read!()
+    |> Jason.decode!()
+  )
+
   defstruct [
     :name,
     :team,
@@ -392,7 +399,8 @@ defmodule TeamJay.Agents.PortAgent do
        }) do
     now = DateTime.utc_now()
 
-    if failures >= @alert_failure_threshold and alert_due?(last_alert_at, now) do
+    if failures >= @alert_failure_threshold and alert_due?(last_alert_at, now) and
+         port_agent_alertable?(team, name) do
       summary =
         output_summary
         |> String.replace("\n", " | ")
@@ -415,5 +423,59 @@ defmodule TeamJay.Agents.PortAgent do
 
   defp alert_due?(last_alert_at, now) do
     DateTime.diff(now, last_alert_at, :second) >= @alert_cooldown_seconds
+  end
+
+  defp port_agent_alertable?(team, name) do
+    ownership =
+      ownership_labels_for(team, name)
+      |> Enum.map(&get_service_ownership/1)
+      |> Enum.reject(&is_nil/1)
+
+    case ownership do
+      [] ->
+        true
+
+      entries ->
+        Enum.any?(entries, fn entry ->
+          owner = Map.get(entry, "owner")
+          owner not in ["launchd", "retired"]
+        end)
+    end
+  end
+
+  defp ownership_labels_for(team, name) when is_atom(team) do
+    ownership_labels_for(Atom.to_string(team), name)
+  end
+
+  defp ownership_labels_for(team, name) when is_atom(name) do
+    ownership_labels_for(team, Atom.to_string(name))
+  end
+
+  defp ownership_labels_for(team, name) do
+    normalized_team = normalize_token(team)
+    normalized_name = normalize_token(name)
+    trimmed_name = String.replace_prefix(normalized_name, normalized_team <> "-", "")
+
+    [normalized_name, trimmed_name]
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.flat_map(fn suffix ->
+      [
+        "ai.#{normalized_team}.#{suffix}",
+        "ai.#{normalized_team}.#{String.replace(suffix, "_", "-")}"
+      ]
+    end)
+    |> Enum.uniq()
+  end
+
+  defp get_service_ownership(label) do
+    Enum.find(@service_ownership, &(Map.get(&1, "label") == label))
+  end
+
+  defp normalize_token(value) when is_atom(value), do: value |> Atom.to_string() |> normalize_token()
+
+  defp normalize_token(value) when is_binary(value) do
+    value
+    |> String.trim()
+    |> String.replace("_", "-")
   end
 end
