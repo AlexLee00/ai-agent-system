@@ -42,6 +42,48 @@ defmodule TeamJay.HubClient do
     )
   end
 
+  def command_inbox(target_team, opts \\ []) do
+    params =
+      opts
+      |> Enum.into(%{})
+      |> Map.put(:target_team, target_team)
+
+    case Req.get("#{hub_url()}/hub/events/commands/inbox", headers: headers(), params: params, retry: false) do
+      {:ok, %{status: 200, body: body}} -> {:ok, body}
+      {:ok, %{status: status, body: body}} -> {:error, "HTTP #{status}: #{inspect(body)}"}
+      {:error, err} -> {:error, err}
+    end
+  end
+
+  def command_ack(command_id, target_team, opts \\ []) do
+    command_lifecycle(command_id, "acknowledged", target_team, opts)
+  end
+
+  def command_complete(command_id, target_team, opts \\ []) do
+    command_lifecycle(command_id, "completed", target_team, opts)
+  end
+
+  def command_fail(command_id, target_team, opts \\ []) do
+    command_lifecycle(command_id, "failed", target_team, opts)
+  end
+
+  defp command_lifecycle(command_id, status, target_team, opts) do
+    body =
+      opts
+      |> Enum.into(%{})
+      |> Map.merge(%{
+        command_id: command_id,
+        status: status,
+        target_team: target_team
+      })
+
+    case Req.post("#{hub_url()}/hub/events/commands/lifecycle", json: body, headers: headers(), retry: false) do
+      {:ok, %{status: 200, body: body}} -> {:ok, body}
+      {:ok, %{status: status, body: body}} -> {:error, "HTTP #{status}: #{inspect(body)}"}
+      {:error, err} -> {:error, err}
+    end
+  end
+
   @doc """
   에이전트 기억 저장 (임베딩 포함).
   type: "episodic" | "semantic" | "procedural"

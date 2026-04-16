@@ -66,3 +66,55 @@ export async function commandEventsRecentRoute(req: any, res: any) {
     return res.status(500).json({ ok: false, error: error.message });
   }
 }
+
+export async function commandEventsInboxRoute(req: any, res: any) {
+  try {
+    const targetTeam = String(req.query.target_team || '').trim();
+    if (!targetTeam) {
+      return res.status(400).json({ ok: false, error: 'target_team required' });
+    }
+
+    const result = await eventLake.commandInbox({
+      targetTeam,
+      minutes: toInt(req.query.minutes, 24 * 60),
+      limit: toInt(req.query.limit, 50),
+    });
+    return res.json({ ok: true, ...result });
+  } catch (error: any) {
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+}
+
+export async function commandEventsLifecycleRoute(req: any, res: any) {
+  try {
+    const commandId = String(req.body?.command_id || '').trim();
+    const status = String(req.body?.status || '').trim();
+
+    if (!commandId) {
+      return res.status(400).json({ ok: false, error: 'command_id required' });
+    }
+
+    if (!status) {
+      return res.status(400).json({ ok: false, error: 'status required' });
+    }
+
+    const result = await eventLake.appendCommandLifecycle({
+      commandId,
+      status,
+      pipeline: req.body?.pipeline || '',
+      targetTeam: req.body?.target_team || '',
+      botName: req.body?.bot_name || req.body?.botName || 'unknown',
+      source: req.body?.source || 'hub.command_lifecycle',
+      message: req.body?.message || '',
+      detail: req.body?.detail,
+    });
+
+    if (!result) {
+      return res.status(404).json({ ok: false, error: 'issued command not found' });
+    }
+
+    return res.json({ ok: true, ...result });
+  } catch (error: any) {
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+}
