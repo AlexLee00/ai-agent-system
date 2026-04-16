@@ -69,7 +69,7 @@ defmodule TeamJay.Blog.TokenRenewal do
 
       cond do
         days_left == nil ->
-          Logger.warning("[TokenRenewal] 토큰 만료일 정보 없음 — 갱신 시도 생략")
+          log_missing_expiry_info(health)
           %{state | last_checked_at: DateTime.utc_now()}
 
         days_left <= 0 ->
@@ -111,6 +111,20 @@ defmodule TeamJay.Blog.TokenRenewal do
         end
       err -> err
     end
+  end
+
+  defp log_missing_expiry_info(health) do
+    warning = Map.get(health, "warning")
+    source = Map.get(health, "source")
+
+    details =
+      [source && "source=#{source}", warning && "warning=#{warning}"]
+      |> Enum.filter(& &1)
+      |> Enum.join(", ")
+
+    suffix = if details == "", do: "", else: " (#{details})"
+
+    Logger.info("[TokenRenewal] 토큰 만료일 정보 없음 — 갱신 시도 생략#{suffix}")
   end
 
   defp attempt_renewal(days_left) do
