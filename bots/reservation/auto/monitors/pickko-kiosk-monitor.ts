@@ -42,6 +42,7 @@ const { createKioskSlotCalendarService } = require('../../lib/kiosk-slot-calenda
 const { createKioskBlockFlowService } = require('../../lib/kiosk-block-flow-service');
 const { createKioskCliService } = require('../../lib/kiosk-cli-service');
 const { createKioskMainService } = require('../../lib/kiosk-main-service');
+const { createSkaReporter } = require('../../lib/ska-failure-reporter');
 
 const SECRETS = loadSecrets();
 const PICKKO_ID = SECRETS.pickko_id;
@@ -376,6 +377,7 @@ const kioskErrorTracker = createErrorTracker({
   label: 'kiosk-monitor',
   threshold: KIOSK_MONITOR_RUNTIME.errorTrackerThreshold,
   persist: true,
+  onReport: createSkaReporter('jimmy'),
 });
 
 function runCli() {

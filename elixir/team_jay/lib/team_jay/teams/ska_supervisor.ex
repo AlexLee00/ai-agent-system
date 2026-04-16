@@ -1,4 +1,14 @@
 defmodule TeamJay.Teams.SkaSupervisor do
+  @moduledoc """
+  스카팀 메인 Supervisor
+
+  자기 복구 Loop 1: FailureTracker (실패 수집 + 분류 + 자동 복구)
+  자기 복구 Loop 2: ParsingGuard + SelectorManager (3단계 파싱 폴백)
+  Orchestrator: 일일 브리핑 + Phase 전환 관리
+
+  → PortAgent 스크립트들 위에서 네이티브 Elixir GenServer가 함께 실행됨!
+  """
+
   use Supervisor
 
   @ska_agents [
@@ -27,11 +37,22 @@ defmodule TeamJay.Teams.SkaSupervisor do
 
   @impl true
   def init(_opts) do
-    children =
+    # 네이티브 Elixir GenServer (자기 복구 루프!)
+    native_children = [
+      TeamJay.Ska.FailureTracker,
+      TeamJay.Ska.SelectorManager,
+      TeamJay.Ska.ParsingGuard,
+      TeamJay.Ska.Orchestrator
+    ]
+
+    # PortAgent 래퍼 (Node.js 스크립트!)
+    port_children =
       Enum.map(@ska_agents, fn agent ->
         {TeamJay.Agents.PortAgent,
          name: agent.name, team: :ska, script: agent.script, schedule: agent.schedule}
       end)
+
+    children = native_children ++ port_children
 
     Supervisor.init(children, strategy: :one_for_one, max_restarts: 10, max_seconds: 60)
   end
