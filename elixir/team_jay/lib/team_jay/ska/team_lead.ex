@@ -230,14 +230,9 @@ defmodule TeamJay.Ska.TeamLead do
               TeamJay.HubClient.post_alarm(msg, "ska", "team_lead")
             end)
 
-            # 매출 하락 시 블로팀 프로모션 트리거 이벤트
+            # 매출 하락 시 MarketingConnector 즉시 점검 트리거
             if today < yesterday do
-              TeamJay.Ska.Analytics.MarketingConnector.trigger_promotion(%{
-                reason: :revenue_drop,
-                delta_pct: Float.round(delta * 100, 1),
-                today_revenue: today,
-                yesterday_revenue: yesterday
-              })
+              TeamJay.Ska.Analytics.MarketingConnector.check_now()
             end
           end
         end
