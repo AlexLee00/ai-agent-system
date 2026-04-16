@@ -21,6 +21,7 @@ defmodule TeamJay.Agents.PortAgent do
 
   @alert_failure_threshold 3
   @alert_cooldown_seconds 900
+  @daemon_skip_verify_ms 3_000
 
   def child_spec(opts) do
     name = Keyword.fetch!(opts, :name)
@@ -88,6 +89,15 @@ defmodule TeamJay.Agents.PortAgent do
     if match?({:interval, _}, state.schedule) or match?({:daily_at, _, _}, state.schedule) or match?({:weekly_at, _, _, _}, state.schedule),
       do: schedule_run(state.schedule)
     {:noreply, new_state}
+  end
+
+  def handle_info(:verify_skipped_daemon, %{port: nil, schedule: :once} = state) do
+    if daemon_healthy?(state) do
+      {:noreply, state}
+    else
+      Logger.warning("[#{state.name}] health 재검증 실패 — daemon 실행 재시도")
+      {:noreply, start_script(state)}
+    end
   end
 
   def handle_info({port, {:data, data}}, %{port: port} = state) do
@@ -189,8 +199,17 @@ defmodule TeamJay.Agents.PortAgent do
         reason: "already_healthy"
       })
 
+      Process.send_after(self(), :verify_skipped_daemon, @daemon_skip_verify_ms)
+
       %{state | status: :idle}
     else
+      start_script(state)
+    end
+  end
+
+  defp execute_script(state), do: state
+
+  defp start_script(state) do
     Logger.info("[#{state.name}] 실행: #{state.script}")
     record_event(:info, "#{state.name} 실행", "port_agent_run", state.team, state.name, %{
       script: state.script,
@@ -202,12 +221,13 @@ defmodule TeamJay.Agents.PortAgent do
     port = open_port(state)
 
     %{state | port: port, status: :running, last_run: DateTime.utc_now()}
-    end
   end
 
-  defp execute_script(state), do: state
+  defp skip_daemon_boot?(%{schedule: :once} = state), do: daemon_healthy?(state)
 
-  defp skip_daemon_boot?(%{schedule: :once, health_url: health_url}) when is_binary(health_url) do
+  defp skip_daemon_boot?(_state), do: false
+
+  defp daemon_healthy?(%{health_url: health_url}) when is_binary(health_url) do
     case Req.get(health_url) do
       {:ok, %{status: 200}} -> true
       _ -> false
@@ -216,7 +236,7 @@ defmodule TeamJay.Agents.PortAgent do
     _ -> false
   end
 
-  defp skip_daemon_boot?(_state), do: false
+  defp daemon_healthy?(_state), do: false
 
   defp open_port(%{runner: :node, script: script}) do
     Port.open({:spawn_executable, System.find_executable("node")}, [
