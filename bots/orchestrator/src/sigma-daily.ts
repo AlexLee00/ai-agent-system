@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 
 const rag = require('../../../packages/core/lib/rag') as {
   initSchema: () => Promise<void>;
