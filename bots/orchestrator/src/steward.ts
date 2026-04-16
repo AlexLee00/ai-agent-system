@@ -15,6 +15,7 @@ const readmeUpdater = require('../lib/steward/readme-updater');
 const openclawSessionManager = require('../lib/steward/openclaw-session-manager');
 const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 const env = require('../../../packages/core/lib/env');
+const memoryConsolidator = require('../../../packages/core/lib/agent-memory-consolidator');
 
 function parseArgs(argv = process.argv.slice(2)) {
   const modeArg = argv.find((arg) => arg.startsWith('--mode='));
@@ -30,8 +31,19 @@ async function runDaily() {
   const drafted = trackerSync.appendToTracker(trackerSync.analyzeCommits(commits));
   const summary = await dailySummary.generateDailySummary();
 
+  // 에이전트 메모리 통합 (에피소딕→시맨틱, 30일 이상 된 기억)
+  let memoryConsolidation = { agents: 0, scanned: 0, created: 0, errors: 0 };
+  try {
+    memoryConsolidation = await memoryConsolidator.consolidateAll({ olderThanDays: 30 });
+    if (memoryConsolidation.agents > 0) {
+      console.log(`[steward] 메모리 통합: ${memoryConsolidation.agents}개 에이전트, ${memoryConsolidation.scanned}개 에피소딕 → ${memoryConsolidation.created}개 시맨틱 생성`);
+    }
+  } catch (err) {
+    console.warn(`[steward] 메모리 통합 실패 (무시): ${err?.message || err}`);
+  }
+
   console.log(summary);
-  return { moved, suspicious: suspicious.length, drafted, commits: commits.length };
+  return { moved, suspicious: suspicious.length, drafted, commits: commits.length, memoryConsolidation };
 }
 
 async function runHourly() {
