@@ -85,7 +85,8 @@ defmodule TeamJay.Diagnostics do
     {:worker_web, :worker, true},
     {:worker_nextjs, :worker, true},
     {:darwin_orchestrator, :platform, false},
-    {:hub_resource_api, :platform, true}
+    {:hub_resource_api, :platform, true,
+     %{pilot_mode: :daemon_cutover, health_url: "http://127.0.0.1:7788/hub/health"}}
   ]
 
   defstruct [
@@ -588,11 +589,12 @@ defmodule TeamJay.Diagnostics do
 
   defp build_launchd_shadow_agents(agents) do
     Enum.map(agents, fn agent ->
-      {name, team, required} = normalize_shadow_agent(agent)
+      {name, team, required, extra} = normalize_shadow_agent(agent)
 
       case GenServer.whereis(TeamJay.Agents.LaunchdShadowAgent.via(name)) do
         nil ->
-          %{
+          Map.merge(
+            %{
             name: name,
             team: team,
             label: nil,
@@ -600,12 +602,15 @@ defmodule TeamJay.Diagnostics do
             pid: nil,
             last_exit_code: nil,
             required: required
-          }
+            },
+            extra
+          )
 
         _pid ->
           status = TeamJay.Agents.LaunchdShadowAgent.get_status(name)
 
-          %{
+          Map.merge(
+            %{
             name: name,
             team: team,
             label: Map.get(status, :label),
@@ -613,18 +618,21 @@ defmodule TeamJay.Diagnostics do
             pid: status.pid,
             last_exit_code: status.last_exit_code,
             required: Map.get(status, :required, true)
-          }
+            },
+            extra
+          )
       end
     end)
   end
 
-  defp normalize_shadow_agent({name, team}), do: {name, team, true}
-  defp normalize_shadow_agent({name, team, required}), do: {name, team, required}
+  defp normalize_shadow_agent({name, team}), do: {name, team, true, %{}}
+  defp normalize_shadow_agent({name, team, required}), do: {name, team, required, %{}}
+  defp normalize_shadow_agent({name, team, required, extra}), do: {name, team, required, extra}
 
   defp build_transition_candidates(agents) do
     agents
     |> Enum.filter(&(&1.status == :loaded and Map.get(&1, :required, true)))
-    |> Enum.map(&Map.take(&1, [:name, :team, :status, :label]))
+    |> Enum.map(&Map.take(&1, [:name, :team, :status, :label, :pilot_mode, :health_url]))
   end
 
   defp build_recommended_actions(summary, week2_summary, week3_summary, migration_candidates, transition_plan) do
@@ -693,7 +701,7 @@ defmodule TeamJay.Diagnostics do
         _ -> 0
       end
 
-    Map.merge(Map.take(agent, [:name, :team, :status, :label]), %{
+    Map.merge(Map.take(agent, [:name, :team, :status, :label, :pilot_mode, :health_url]), %{
       priority_score: 100 + team_bonus + name_bonus
     })
   end
@@ -708,16 +716,33 @@ defmodule TeamJay.Diagnostics do
   end
 
   defp build_pilot_runbook(candidate) do
+    daemon_steps = [
+      "launchd 서비스 #{candidate.label}의 최근 로그와 health 상태를 먼저 확인",
+      "Elixir shadow report에서 #{candidate.name}가 loaded 상태로 2회 이상 안정적으로 유지되는지 확인",
+      "포트 충돌을 피하려면 launchd를 owner로 유지한 채 health/로그/응답 경로를 먼저 고정",
+      "전환 창에서는 launchd stop -> Elixir start -> #{Map.get(candidate, :health_url, "health URL")} 확인 순서로 짧게 컷오버"
+    ]
+
+    standard_steps = [
+      "launchd 서비스 #{candidate.label}의 최근 로그와 health 상태를 먼저 확인",
+      "Elixir shadow report에서 #{candidate.name}가 loaded 상태로 2회 이상 안정적으로 유지되는지 확인",
+      "짧은 창에서 launchd와 Elixir를 병렬 비교하고 결과를 event_lake에 기록",
+      "불일치 0건이면 다음 창에서 launchd off -> Elixir on 파일럿 전환 검토"
+    ]
+
     %{
       ready: true,
       label: candidate.label,
-      steps: [
-        "launchd 서비스 #{candidate.label}의 최근 로그와 health 상태를 먼저 확인",
-        "Elixir shadow report에서 #{candidate.name}가 loaded 상태로 2회 이상 안정적으로 유지되는지 확인",
-        "짧은 창에서 launchd와 Elixir를 병렬 비교하고 결과를 event_lake에 기록",
-        "불일치 0건이면 다음 창에서 launchd off -> Elixir on 파일럿 전환 검토"
-      ],
-      note: "#{candidate.name}(#{candidate.team})를 다음 파일럿 후보로 권장"
+      steps:
+        if(Map.get(candidate, :pilot_mode) == :daemon_cutover,
+          do: daemon_steps,
+          else: standard_steps
+        ),
+      note:
+        if(Map.get(candidate, :pilot_mode) == :daemon_cutover,
+          do: "#{candidate.name}(#{candidate.team})는 daemon-cutover 방식으로 다음 파일럿 후보",
+          else: "#{candidate.name}(#{candidate.team})를 다음 파일럿 후보로 권장"
+        )
     }
   end
 
