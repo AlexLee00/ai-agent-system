@@ -149,9 +149,143 @@ async function calculateAccuracy(days = 7) {
   }
 }
 
+// ─── 고성과 패턴 자동 학습 ────────────────────────────────────────────────────
+
+/**
+ * 최근 30일 고성과 포스트(조회수/공감 상위 20%)에서 카테고리별 성과 가중치 산출.
+ * topic-planner.ts가 카테고리 선택 시 이 가중치를 반영.
+ */
+async function loadCategoryPerformanceWeights() {
+  try {
+    const rows = await pgPool.query('blog', `
+      SELECT
+        category,
+        ROUND(AVG(COALESCE(view_count, 0))::numeric, 1) AS avg_views,
+        COUNT(*) AS post_count
+      FROM blog.posts
+      WHERE type = 'general'
+        AND status = 'published'
+        AND publish_date >= CURRENT_DATE - INTERVAL '30 days'
+        AND category IS NOT NULL
+      GROUP BY category
+      HAVING COUNT(*) >= 2
+      ORDER BY avg_views DESC
+    `);
+
+    if (!rows || rows.length === 0) return {};
+
+    const maxViews = Math.max(...rows.map(r => Number(r.avg_views) || 0));
+    if (maxViews === 0) return {};
+
+    const weights = {};
+    for (const row of rows) {
+      const ratio = (Number(row.avg_views) || 0) / maxViews;
+      // 0.8~1.3 범위 가중치 (너무 극단적이지 않게)
+      weights[row.category] = Math.round((0.8 + ratio * 0.5) * 100) / 100;
+    }
+    return weights;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * 고성과 패턴을 Hub 대도서관(RAG 메모리)에 저장.
+ * 주 1회 호출 — "화요일 최신IT트렌드 평균 조회수 +25%" 같은 패턴 저장.
+ */
+async function saveHighPerfPatternToMemory(pattern) {
+  try {
+    const env = require('../../../packages/core/lib/env');
+    if (!env.HUB_BASE_URL || !env.HUB_AUTH_TOKEN) return null;
+
+    const res = await fetch(`${env.HUB_BASE_URL}/hub/memory/remember`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${env.HUB_AUTH_TOKEN}`,
+      },
+      body: JSON.stringify({
+        agentId: 'blog.feedback-learner',
+        team: 'blog',
+        content: pattern.content,
+        type: 'semantic',
+        keywords: pattern.keywords || [],
+        importance: pattern.importance || 0.7,
+        metadata: pattern.metadata || {},
+      }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.ok ? data.memoryId : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Hub 대도서관에서 성과 패턴 조회.
+ * topic-planner.ts가 "내일 카테고리 선택 근거" 조회 시 사용.
+ */
+async function recallPerfPatternFromMemory(query) {
+  try {
+    const env = require('../../../packages/core/lib/env');
+    if (!env.HUB_BASE_URL || !env.HUB_AUTH_TOKEN) return [];
+
+    const res = await fetch(`${env.HUB_BASE_URL}/hub/memory/recall`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${env.HUB_AUTH_TOKEN}`,
+      },
+      body: JSON.stringify({
+        agentId: 'blog.feedback-learner',
+        team: 'blog',
+        query,
+        type: 'semantic',
+        limit: 3,
+        threshold: 0.5,
+      }),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data.memories) ? data.memories : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 주간 고성과 패턴 학습 + 메모리 저장 (매주 월요일 실행 권장).
+ * topic-planner의 카테고리 선택 정확도를 점진적으로 개선.
+ */
+async function learnHighPerformancePatterns() {
+  const weights = await loadCategoryPerformanceWeights();
+  if (!Object.keys(weights).length) return { learned: 0, weights };
+
+  let learned = 0;
+  for (const [category, weight] of Object.entries(weights)) {
+    if (weight <= 1.0) continue;  // 평균 이하는 저장 불필요
+    const boost = Math.round((weight - 1.0) * 100);
+    const content = `블로그 카테고리 [${category}] 최근 30일 조회수 평균 +${boost}% 우세. 주제 선정 시 우선 고려 권장.`;
+    await saveHighPerfPatternToMemory({
+      content,
+      keywords: [category, '고성과', '카테고리', '조회수'],
+      importance: Math.min(0.5 + boost / 200, 0.95),
+      metadata: { category, weight, source: 'performance_analysis' },
+    });
+    learned++;
+  }
+
+  return { learned, weights };
+}
+
 module.exports = {
   recordFeedback,
   aggregatePatterns,
   buildFeedbackPromptInsert,
   calculateAccuracy,
+  loadCategoryPerformanceWeights,
+  learnHighPerformancePatterns,
+  saveHighPerfPatternToMemory,
+  recallPerfPatternFromMemory,
 };

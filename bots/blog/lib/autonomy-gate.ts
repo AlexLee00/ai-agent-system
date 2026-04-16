@@ -105,21 +105,43 @@ function evaluatePostQuality(post, feedbackPatterns = []) {
 
 /**
  * 자율 판단: 자동 게시 vs 마스터 검토
+ *
+ * @param {object} post           - { content, title, thumbnailPath, category }
+ * @param {object} [qualityExtra] - { seoScore, criticScore } from quality-checker.ts
  */
-async function decideAutonomy(post) {
+async function decideAutonomy(post, qualityExtra = {}) {
   const phase = await getCurrentPhase();
   const feedbackPatterns = await loadFeedbackPatterns();
   const evaluation = evaluatePostQuality(post, feedbackPatterns);
   const threshold = PHASE_THRESHOLDS[phase] || 0.95;
 
-  const decision = evaluation.score >= threshold ? 'auto_publish' : 'master_review';
+  // SEO + 크리틱 점수 통합 (0~1 스케일로 정규화, 각 최대 ±0.05 보정)
+  let compositeScore = evaluation.score;
+  const compositeReasons = [...evaluation.reasons];
+
+  const seoScore   = Number(qualityExtra.seoScore   ?? 50);
+  const criticScore = Number(qualityExtra.criticScore ?? 50);
+
+  // SEO: 70+ → +0.03, 45 미만 → -0.03
+  if (seoScore >= 70)      { compositeScore += 0.03; }
+  else if (seoScore < 45)  { compositeScore -= 0.03; compositeReasons.push(`SEO 점수 낮음 (${seoScore})`); }
+
+  // 크리틱: 70+ → +0.03, 50 미만 → -0.05
+  if (criticScore >= 70)       { compositeScore += 0.03; }
+  else if (criticScore < 50)   { compositeScore -= 0.05; compositeReasons.push(`크리틱 점수 낮음 (${criticScore})`); }
+
+  compositeScore = Math.max(0, Math.min(1, compositeScore));
+  const decision = compositeScore >= threshold ? 'auto_publish' : 'master_review';
 
   return {
     decision,
     phase,
-    score: evaluation.score,
+    score: compositeScore,
+    baseScore: evaluation.score,
+    seoScore,
+    criticScore,
     threshold,
-    reasons: evaluation.reasons,
+    reasons: compositeReasons,
     feedbackPatterns,
   };
 }
