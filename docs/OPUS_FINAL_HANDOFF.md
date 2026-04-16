@@ -270,4 +270,36 @@ launchctl unload ~/Library/LaunchAgents/ai.investment.overseas.plist
 - Quantum cron은 UTC 기준 (기존 패턴 유지), launchd는 KST
 - resource_feedback_coordinator의 ping_http은 동기 호출 — OTP 블로킹 주의 (최대 2초)
 
+---
+
+## ✅ 추가 완료 (2026-04-17 세션 7)
+
+### 즉시 실행 5개 태스크 완료
+
+**Task #14 — oracle/nemesis AgentMemory 연결 (부분 완료)**
+- `bots/investment/team/oracle.ts`: analyzeOnchain() 리턴 전 에피소딕 메모리 저장
+- `bots/investment/team/nemesis.ts`: 3개 판단 경로(하드룰 REJECT / LLM REJECT / APPROVE) 메모리 저장
+- **미완료**: `pos-writer.ts`, `gems-writer.ts` 메모리 훅 미구현 (blog 소비자)
+
+**Task #16 — 투자팀 스킬 문서 3개 신규 생성 ✅**
+- `packages/core/lib/skills/investment/signal.md` — Signal 타입/상수/ANALYST_TYPES 문서
+- `packages/core/lib/skills/investment/vectorbt-runner.md` — VectorBT 백테스팅 헬퍼 API 문서
+- `packages/core/lib/skills/investment/pipeline-decision-runner.md` — 파이프라인 전체 흐름 문서
+
+**Task #17 — PortAgent tsx 지원 추가 ✅**
+- `elixir/team_jay/lib/team_jay/agents/port_agent.ex`: `open_port/1` tsx 런너 추가
+  - `System.find_executable("tsx")` || `node_modules/.bin/tsx` 폴백
+  - `runner_to_string(:tsx)` 추가
+- **미완료**: packages/core/lib 137개 .js → .ts 변환 (Stage 1 잔여)
+
+**Task #18 — TS Prep 변환 완료 ✅**
+- `bots/video/lib/cli-insight.ts`: @ts-nocheck 복사본 생성
+- `bots/orchestrator/lib/*.js` 등 80개 dist-wrapper 삭제
+- `bots/claude/lib/state-bus-bridge.ts`, `team-leads-bridge.ts`: @ts-nocheck prep
+- `bots/worker/lib/` 35개 .ts 파일 생성 (나머지 3개 commit 5fe2b8f9)
+
+### 남은 in_progress 태스크
+- **#14** (부분 완료): pos-writer.ts, gems-writer.ts AgentMemory 훅 미구현
+- **#17** (부분 완료): packages/core/lib 137개 .js→.ts 변환 미착수
+
 > 이전 HANDOFF: 2026-04-17 CODEX_BLOG_AUTONOMOUS_OPS Phase A~D
