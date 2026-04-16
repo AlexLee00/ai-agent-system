@@ -256,6 +256,19 @@ defmodule TeamJay.Agents.PortAgent do
     ])
   end
 
+  defp open_port(%{runner: :tsx, script: script}) do
+    tsx = System.find_executable("tsx") ||
+          Path.join(TeamJay.Config.repo_root(), "node_modules/.bin/tsx")
+    Port.open({:spawn_executable, tsx}, [
+      :binary,
+      :exit_status,
+      :stderr_to_stdout,
+      args: String.split(script, " ", trim: true),
+      cd: TeamJay.Config.repo_root(),
+      env: port_env()
+    ])
+  end
+
   defp open_port(%{runner: {:shell, shell}, script: script}) do
     Port.open({:spawn_executable, shell}, [
       :binary,
@@ -358,6 +371,7 @@ defmodule TeamJay.Agents.PortAgent do
       <> String.pad_leading(Integer.to_string(minute), 2, "0")
 
   defp runner_to_string(:node), do: "node"
+  defp runner_to_string(:tsx), do: "tsx"
   defp runner_to_string({:shell, shell}), do: "shell:" <> shell
 
   defp summarize_output(lines) do
