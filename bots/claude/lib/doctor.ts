@@ -343,7 +343,7 @@ function getAvailableTasks() {
  * dexter.js 마지막에 호출
  */
 async function pollDoctorTasks() {
-  const stateBus = require('../../reservation/lib/state-bus');
+  const stateBus = require('./state-bus-bridge.js');
   let tasks;
   try {
     tasks = await stateBus.getPendingTasks('doctor');

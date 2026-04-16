@@ -21,7 +21,7 @@
 const pgPool    = require('../../../packages/core/lib/pg-pool');
 const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
 const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
-const stateBus  = require('../../reservation/lib/state-bus.legacy.js');
+const stateBus  = require('./state-bus-bridge.js');
 const cfg = require('./config');
 
 const SCHEMA  = 'reservation';   // shadow_log는 reservation 스키마
