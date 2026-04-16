@@ -10,9 +10,9 @@
  */
 
 exports.version = 3;
-exports.name = 'dexter_patterns';
+exports.name    = 'dexter_patterns';
 
-exports.up = function (db) {
+exports.up = function(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS dexter_error_log (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -28,13 +28,14 @@ exports.up = function (db) {
   `);
 };
 
+// ─── 단독 실행 시 마이그레이션 적용 ─────────────────────────────────
 if (require.main === module) {
-  const os = require('os');
-  const path = require('path');
+  const os       = require('os');
+  const path     = require('path');
   const Database = require('better-sqlite3');
 
-  const dbPath = path.join(os.homedir(), '.openclaw', 'workspace', 'claude-team.db');
-  const db = new Database(dbPath);
+  const DB_PATH = path.join(os.homedir(), '.openclaw', 'workspace', 'claude-team.db');
+  const db = new Database(DB_PATH);
   db.pragma('journal_mode = WAL');
 
   const existing = db.prepare(`

@@ -1,4 +1,3 @@
 // @ts-nocheck
-
-export * from './page.legacy.js';
-export { default } from './page.legacy.js';
+import { redirect } from 'next/navigation';
+export default function RootPage() { redirect('/dashboard'); }

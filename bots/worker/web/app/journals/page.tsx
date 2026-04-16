@@ -1,4 +1,6 @@
 // @ts-nocheck
+import { redirect } from 'next/navigation';
 
-export * from './page.legacy.js';
-export { default } from './page.legacy.js';
+export default function JournalsRedirectPage() {
+  redirect('/work-journals');
+}

@@ -1,4 +1,142 @@
 // @ts-nocheck
 'use strict';
 
-module.exports = require('./deps.legacy.js');
+/**
+ * checks/deps.js — 의존성 보안 체크
+ * - npm audit (critical/high 취약점)
+ * - 오래된 패키지 감지
+ */
+
+const { execSync } = require('child_process');
+const path = require('path');
+const cfg  = require('../config');
+const kst  = require('../../../../packages/core/lib/kst');
+
+function npmAudit(botDir, label, workspace) {
+  const cmd = workspace
+    ? `npm audit --json --workspace=${workspace} 2>/dev/null`
+    : `npm audit --json 2>/dev/null`;
+  const env = { ...process.env, PATH: `/usr/local/bin:${process.env.PATH || ''}` };
+  try {
+    const out = execSync(cmd, {
+      cwd: botDir, encoding: 'utf8', timeout: 30000, env,
+    });
+    const report   = JSON.parse(out);
+    const vulns    = report.metadata?.vulnerabilities || {};
+    const critical = vulns.critical || 0;
+    const high     = vulns.high || 0;
+    const moderate = vulns.moderate || 0;
+
+    if (critical > 0) {
+      return { label, status: 'error', detail: `critical ${critical}건, high ${high}건` };
+    } else if (high > 0) {
+      return { label, status: 'warn', detail: `high ${high}건, moderate ${moderate}건` };
+    } else if (moderate > 0) {
+      return { label, status: 'ok', detail: `moderate ${moderate}건 (critical/high 없음)` };
+    }
+    return { label, status: 'ok', detail: '취약점 없음' };
+  } catch (e) {
+    // npm audit가 취약점 발견 시 exit code 1 반환
+    try {
+      const errOut = e.stdout || '';
+      const report = JSON.parse(errOut);
+      const vulns  = report.metadata?.vulnerabilities || {};
+      const critical = vulns.critical || 0;
+      const high     = vulns.high || 0;
+
+      if (critical > 0 || high > 0) {
+        return { label, status: 'warn', detail: `critical ${critical}건, high ${high}건` };
+      }
+      return { label, status: 'ok', detail: '취약점 없음' };
+    } catch {
+      return { label, status: 'warn', detail: 'audit 스킵 (네트워크 오류 또는 lock 없음)' };
+    }
+  }
+}
+
+function checkOutdated(botDir, label) {
+  try {
+    execSync(`npm outdated --json 2>/dev/null`, { cwd: botDir, encoding: 'utf8', timeout: 20000 });
+    return { label: `${label} (패키지 최신)`, status: 'ok', detail: '최신 상태' };
+  } catch (e) {
+    try {
+      const outdated = JSON.parse(e.stdout || '{}');
+      const pkgs     = Object.keys(outdated);
+      if (pkgs.length === 0) return { label: `${label} (패키지)`, status: 'ok', detail: '최신 상태' };
+
+      const majors = pkgs.filter(p => {
+        const info = outdated[p];
+        return info.current && info.latest &&
+          info.current.split('.')[0] !== info.latest.split('.')[0];
+      });
+
+      if (majors.length > 0) {
+        return { label: `${label} (패키지)`, status: 'warn', detail: `메이저 업데이트 ${majors.length}개: ${majors.slice(0,3).join(', ')}` };
+      }
+      return { label: `${label} (패키지)`, status: 'ok', detail: `마이너 업데이트 ${pkgs.length}개` };
+    } catch {
+      return { label: `${label} (패키지)`, status: 'ok', detail: '확인 스킵' };
+    }
+  }
+}
+
+// ─── 패치 티켓 생성 (RAG tech 컬렉션 저장) ───────────────────────────
+
+async function _createPatchTicket(vulnerability) {
+  try {
+    const rag     = require('../../../../packages/core/lib/rag-safe');
+    const content = [
+      `보안 패치 필요: ${vulnerability.label}`,
+      `심각도: ${vulnerability.severity || vulnerability.status}`,
+      `상세: ${vulnerability.detail}`,
+      `발견일: ${kst.today()}`,
+    ].join(' | ');
+    await rag.store('tech', content, {
+      category:  'patch_ticket',
+      severity:  vulnerability.severity || vulnerability.status,
+      label:     vulnerability.label,
+      status:    'pending',
+      team:      'claude',
+    }, 'archer');
+    console.log(`  [deps] 패치 티켓 생성: ${vulnerability.label} (${vulnerability.status})`);
+  } catch (e) {
+    console.warn('[deps] 패치 티켓 RAG 저장 실패 (무시):', e.message);
+  }
+}
+
+async function run(full = false) {
+  const items = [];
+
+  // 워크스페이스 모노레포 구조 — 루트에서 워크스페이스 단위로 audit
+  const ROOT = path.join(__dirname, '../../../../');
+  const BOTS = [
+    { dir: ROOT, label: 'npm audit (스카팀)',  workspace: '@ai-agent/reservation' },
+    { dir: ROOT, label: 'npm audit (루나팀)',  workspace: '@ai-agent/investment'  },
+  ];
+
+  for (const { dir, label, workspace } of BOTS) {
+    const result = npmAudit(dir, label, workspace);
+    items.push(result);
+    // critical/high 취약점 → 패치 티켓 자동 생성
+    if (result.status === 'error' || result.status === 'warn') {
+      await _createPatchTicket({ ...result, severity: result.status === 'error' ? 'critical' : 'high' });
+    }
+  }
+
+  if (full) {
+    for (const { dir, label } of BOTS) {
+      items.push(checkOutdated(dir, label.replace('npm audit', '').trim()));
+    }
+  }
+
+  const hasError = items.some(i => i.status === 'error');
+  const hasWarn  = items.some(i => i.status === 'warn');
+
+  return {
+    name:   '의존성 보안',
+    status: hasError ? 'error' : hasWarn ? 'warn' : 'ok',
+    items,
+  };
+}
+
+module.exports = { run };

@@ -16,20 +16,17 @@
 
 const fs = require('fs');
 const path = require('path');
-const { publishAlert } = require('../lib/alert-publisher');
+const { publishToMainBot } = require('../lib/mainbot-client');
 const hsm = require('../../../packages/core/lib/health-state-manager');
-const { createHealthMemoryHelper } = require('../../../packages/core/lib/health-memory');
 const {
   getLaunchctlStatus,
   DEFAULT_NORMAL_EXIT_CODES,
 } = require('../../../packages/core/lib/health-provider');
-const { buildIssueHints, rememberHealthEvent } = createHealthMemoryHelper({
-  agentId: 'claude.health',
-  team: 'claude',
-  domain: 'claude health',
-});
 
+// 상시 실행 서비스 (PID 있어야 정상)
 const CONTINUOUS = ['ai.claude.commander'];
+
+// 감지할 전체 서비스
 const ALL_SERVICES = [
   'ai.claude.commander',
   'ai.claude.dexter.quick',
@@ -39,6 +36,7 @@ const ALL_SERVICES = [
   'ai.claude.health-dashboard',
 ];
 
+// 정상 종료 코드
 const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;
 const CLAUDE_ROOT = path.join(__dirname, '..');
 
@@ -66,6 +64,8 @@ function isExpectedExit(label, exitCode) {
   return false;
 }
 
+// ─── 메인 ───────────────────────────────────────────────────────
+
 async function main() {
   console.log(`[클로드 헬스체크] 시작 — ${new Date().toISOString()}`);
 
@@ -77,62 +77,46 @@ async function main() {
     process.exit(1);
   }
 
-  const state = hsm.loadState();
-  const issues = [];
-  const recovers = [];
+  const state    = hsm.loadState();
+  const issues   = [];
+  const recovers = []; // 회복 알림 (나중에 일괄 발송)
 
   for (const label of ALL_SERVICES) {
-    const svc = status[label];
+    const svc       = status[label];
     const shortName = hsm.shortLabel(label);
-    const tag = hsm.getAlertTag(label);
+    const tag       = hsm.getAlertTag(label); // 클로드팀 서비스 = '[점검] '
 
+    // 1. 미로드 감지
     if (!svc) {
       const key = `unloaded:${label}`;
       if (hsm.canAlert(state, key)) {
-        issues.push({
-          key,
-          level: hsm.getAlertLevel(label),
-          msg: `🔴 ${tag}[클로드 헬스] ${shortName} 미로드\nlaunchd에 등록되지 않음 → 수동 확인 필요`,
-        });
+        issues.push({ key, level: hsm.getAlertLevel(label), msg: `🔴 ${tag}[클로드 헬스] ${shortName} 미로드\nlaunchd에 등록되지 않음 → 수동 확인 필요` });
       }
       continue;
     }
 
+    // 미로드 → 회복
     if (state[`unloaded:${label}`]) {
-      const recoveryMsg = `✅ ${tag}[클로드 헬스] ${shortName} 회복\nlaunchd 정상 로드 — 자동 감지`;
-      recovers.push({
-        from_bot: 'claude',
-        event_type: 'health_check',
-        alert_level: 1,
-        message: recoveryMsg,
-        recoveryKey: `unloaded:${label}`,
-      });
+      recovers.push({ from_bot: 'claude', event_type: 'health_check', alert_level: 1,
+        message: `✅ ${tag}[클로드 헬스] ${shortName} 회복\nlaunchd 정상 로드 — 자동 감지` });
       hsm.clearAlert(state, `unloaded:${label}`);
     }
 
+    // 2. 상시 서비스 다운 감지
     if (CONTINUOUS.includes(label)) {
       if (!svc.running) {
         const key = `down:${label}`;
         if (hsm.canAlert(state, key)) {
-          issues.push({
-            key,
-            level: hsm.getAlertLevel(label),
-            msg: `🔴 ${tag}[클로드 헬스] ${shortName} 다운\nPID 없음 — launchd 재시작 실패 가능성`,
-          });
+          issues.push({ key, level: hsm.getAlertLevel(label), msg: `🔴 ${tag}[클로드 헬스] ${shortName} 다운\nPID 없음 — launchd 재시작 실패 가능성` });
         }
       } else if (state[`down:${label}`]) {
-        const recoveryMsg = `✅ ${tag}[클로드 헬스] ${shortName} 회복\nPID 정상 확인 — 자동 감지`;
-        recovers.push({
-          from_bot: 'claude',
-          event_type: 'health_check',
-          alert_level: 1,
-          message: recoveryMsg,
-          recoveryKey: `down:${label}`,
-        });
+        recovers.push({ from_bot: 'claude', event_type: 'health_check', alert_level: 1,
+          message: `✅ ${tag}[클로드 헬스] ${shortName} 회복\nPID 정상 확인 — 자동 감지` });
         hsm.clearAlert(state, `down:${label}`);
       }
     }
 
+    // 3. 비정상 종료 코드 감지
     if (
       !NORMAL_EXIT_CODES.has(svc.exitCode) &&
       !isExpectedExit(label, svc.exitCode) &&
@@ -140,44 +124,28 @@ async function main() {
     ) {
       const key = `exitcode:${label}:${svc.exitCode}`;
       if (hsm.canAlert(state, key)) {
-        issues.push({
-          key,
-          level: hsm.getAlertLevel(label),
-          msg: `⚠️ ${tag}[클로드 헬스] ${shortName} 비정상 종료\nexit code: ${svc.exitCode}`,
-        });
+        issues.push({ key, level: hsm.getAlertLevel(label), msg: `⚠️ ${tag}[클로드 헬스] ${shortName} 비정상 종료\nexit code: ${svc.exitCode}` });
       }
     } else {
-      const prevKeys = Object.keys(state).filter((key) => key.startsWith(`exitcode:${label}:`));
+      const prevKeys = Object.keys(state).filter(k => k.startsWith(`exitcode:${label}:`));
       if (prevKeys.length > 0) {
-        const recoveryMsg = `✅ ${tag}[클로드 헬스] ${shortName} 회복\nexit code 정상 (0) — 자동 감지`;
-        recovers.push({
-          from_bot: 'claude',
-          event_type: 'health_check',
-          alert_level: 1,
-          message: recoveryMsg,
-          recoveryKey: `exitcode:${label}:0`,
-        });
-        prevKeys.forEach((key) => hsm.clearAlert(state, key));
+        recovers.push({ from_bot: 'claude', event_type: 'health_check', alert_level: 1,
+          message: `✅ ${tag}[클로드 헬스] ${shortName} 회복\nexit code 정상 (0) — 자동 감지` });
+        prevKeys.forEach(k => hsm.clearAlert(state, k));
       }
     }
   }
 
+  // 이슈 알림 발송 + 상태 기록
   for (const { key, level, msg } of issues) {
     console.warn(`[클로드 헬스체크] 이슈: ${msg}`);
-    const memoryHints = await buildIssueHints(key, msg);
-    await publishAlert({
-      from_bot: 'claude',
-      event_type: 'health_check',
-      alert_level: level,
-      message: `${msg}${memoryHints}`,
-    });
-    await rememberHealthEvent(key, 'issue', msg, level);
+    await publishToMainBot({ from_bot: 'claude', event_type: 'health_check', alert_level: level, message: msg });
     hsm.recordAlert(state, key);
   }
 
+  // 회복 알림 발송
   for (const opts of recovers) {
-    await publishAlert(opts);
-    await rememberHealthEvent(opts.recoveryKey || 'recovery:claude-health', 'recovery', opts.message, opts.alert_level || 1);
+    await publishToMainBot(opts);
   }
 
   hsm.saveState(state);
@@ -187,7 +155,7 @@ async function main() {
   }
 }
 
-main().catch((e) => {
+main().catch(e => {
   console.error(`[클로드 헬스체크] 예외: ${e.message}`);
   process.exit(1);
 });
