@@ -179,7 +179,7 @@ defmodule TeamJay.Ska.Analytics.Dashboard do
         COUNT(*) FILTER (WHERE status = 'pending')::int AS pending,
         COUNT(*) FILTER (WHERE status = 'failed')::int AS failed
       FROM reservations
-      WHERE date = '#{today}'::date
+      WHERE NULLIF(date, '')::date = '#{today}'::date
     """, "reservation") do
       {:ok, %{"rows" => [row]}} ->
         %{
