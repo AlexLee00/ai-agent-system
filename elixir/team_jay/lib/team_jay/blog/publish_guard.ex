@@ -161,40 +161,33 @@ defmodule TeamJay.Blog.PublishGuard do
 
   # ─── 발행 시도 ────────────────────────────────────────────
 
+  # post_id를 pending 상태로 재설정 → 다음 run-daily.ts 실행 시 자동 재처리.
+  # run-daily.ts는 단일 전체 플로우이므로 직접 호출 대신 DB 상태 조작으로 재진입.
   defp attempt_publish(item) do
-    post_id    = item[:post_id]
-    post_type  = item[:type] || "naver"
+    post_id = item[:post_id]
 
     if post_id do
-      script = "bots/blog/scripts/run-daily.ts --retry --post-id=#{post_id} --type=#{post_type} --json"
-      case run_node_script(script) do
-        {:ok, output} ->
-          case Jason.decode(output) do
-            {:ok, %{"ok" => true}} -> :ok
-            _ -> :error
-          end
-        _ -> :error
+      result = TeamJay.HubClient.pg_query("""
+        UPDATE blog.posts
+        SET status = 'pending', updated_at = NOW()
+        WHERE id = #{post_id}
+          AND status IN ('failed', 'error', 'publish_failed')
+        RETURNING id
+      """, "blog")
+
+      case result do
+        {:ok, %{"rows" => [_|_]}} ->
+          Logger.info("[PublishGuard] post_id=#{post_id} → pending 재설정 완료 (다음 run-daily 실행 시 재처리)")
+          :ok
+        {:ok, %{"rows" => []}} ->
+          Logger.warning("[PublishGuard] post_id=#{post_id} — 상태 조건 불충족 (이미 처리됨 또는 없음)")
+          :error
+        _ ->
+          :error
       end
     else
       :error
     end
-  end
-
-  defp run_node_script(script) do
-    project_root = Application.get_env(:team_jay, :project_root, "/Users/alexlee/projects/ai-agent-system")
-    tsx = Path.join(project_root, "node_modules/.bin/tsx")
-    [cmd | args] = String.split(script, " ")
-    script_path = Path.join(project_root, cmd)
-
-    case System.cmd(tsx, [script_path | args],
-           cd: project_root,
-           stderr_to_stdout: true,
-           timeout: 60_000) do
-      {output, 0} -> {:ok, String.trim(output)}
-      {output, code} -> {:error, "exit #{code}: #{String.slice(output, 0, 200)}"}
-    end
-  rescue
-    e -> {:error, inspect(e)}
   end
 
   # ─── JayBus & 알림 ───────────────────────────────────────

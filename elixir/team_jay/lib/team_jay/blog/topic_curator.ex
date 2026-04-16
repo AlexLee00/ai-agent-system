@@ -20,18 +20,8 @@ defmodule TeamJay.Blog.TopicCurator do
   require Logger
   alias TeamJay.Jay.Topics
 
-  @curation_hour_kst 22    # 22:00 KST (= 13:00 UTC)
   @curation_hour_utc 13
   @candidates_per_day 3    # 카테고리당 후보 수
-
-  @categories [
-    "자기계발",
-    "성장과성공",
-    "홈페이지와APP",
-    "최신IT트렌드",
-    "IT정보와분석",
-    "개발기획과컨설팅"
-  ]
 
   defstruct [
     last_curated_date: nil,
