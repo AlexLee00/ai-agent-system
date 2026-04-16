@@ -126,7 +126,7 @@ defmodule TeamJay.Ska.Analytics.MarketingConnector do
 
   defp fetch_previous_week_revenue do
     case TeamJay.HubClient.pg_query("""
-      SELECT COALESCE(SUM(revenue), 0)::bigint AS prev_7d
+      SELECT COALESCE(SUM(actual_revenue), 0)::bigint AS prev_7d
       FROM ska.revenue_daily
       WHERE date >= CURRENT_DATE - INTERVAL '14 days'
         AND date < CURRENT_DATE - INTERVAL '7 days'
