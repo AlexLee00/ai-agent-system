@@ -20,6 +20,7 @@ const { buildBlogSkillBundle } = require(path.join(env.PROJECT_ROOT, 'packages/c
 const { buildAIBriefingSectionOrder, buildAIBriefingChecklist } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/ai-briefing.ts'));
 const { getBlogGenerationRuntimeConfig, getBlogLLMSelectorOverrides } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/runtime-config.ts'));
 const { calculateSectionChars, buildCharCountInstruction } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/section-ratio.ts'));
+const { AgentMemory } = require('../../../packages/core/lib/agent-memory');
 
 const generationRuntimeConfig = getBlogGenerationRuntimeConfig();
 const BLOG_WRITER_TIMEOUT_MS = Number(generationRuntimeConfig.writerTimeoutMs || 90000);
@@ -447,6 +448,19 @@ ${_buildVariationBlock(sectionVariation)}
   } else {
     console.log(`[포스] 글자수 미달 (${content.length}자) — 캐시 저장 건너뜀`);
   }
+
+  try {
+    const posMemory = new AgentMemory({ agentId: 'blog.pos', team: 'blog' });
+    await posMemory.remember(
+      `[포스 작성] 강의 #${lectureNumber} "${lectureTitle}" → ${content.length}자 (${usedModel})`,
+      'episodic',
+      {
+        keywords: [lectureTitle, String(lectureNumber), 'lecture_post'].filter(Boolean),
+        importance: Math.min(content.length / 12000, 1.0),
+        metadata: { lectureNumber, lectureTitle, charCount: content.length, model: usedModel, fallbackUsed },
+      }
+    );
+  } catch { /* 메모리 저장 실패 무시 */ }
 
   return result;
 }
