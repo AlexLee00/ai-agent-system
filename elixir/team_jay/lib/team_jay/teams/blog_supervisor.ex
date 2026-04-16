@@ -13,7 +13,8 @@ defmodule TeamJay.Teams.BlogSupervisor do
     %{
       name: :blog_node_server,
       script: "dist/ts-runtime/bots/blog/api/node-server.js",
-      schedule: if(Mix.env() == :test, do: nil, else: :once)
+      schedule: if(Mix.env() == :test, do: nil, else: :once),
+      health_url: "http://127.0.0.1:3100/health"
     },
     %{
       name: :blog_marketing_snapshot,
@@ -42,7 +43,8 @@ defmodule TeamJay.Teams.BlogSupervisor do
          team: :blog,
          script: agent.script,
          runner: Map.get(agent, :runner, :node),
-         schedule: agent.schedule}
+         schedule: agent.schedule,
+         health_url: Map.get(agent, :health_url)}
       end)
 
     Supervisor.init(children, strategy: :one_for_one, max_restarts: 5, max_seconds: 60)

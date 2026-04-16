@@ -9,6 +9,7 @@ defmodule TeamJay.Agents.PortAgent do
     :script,
     :runner,
     :schedule,
+    :health_url,
     :port,
     :status,
     :last_run,
@@ -51,6 +52,7 @@ defmodule TeamJay.Agents.PortAgent do
     script = Keyword.fetch!(opts, :script)
     runner = Keyword.get(opts, :runner, :node)
     schedule = Keyword.get(opts, :schedule)
+    health_url = Keyword.get(opts, :health_url)
 
     Logger.info("[#{name}] 시작!")
     record_event(:info, "#{name} 시작", "port_agent_started", team, name, %{
@@ -65,13 +67,14 @@ defmodule TeamJay.Agents.PortAgent do
     {:ok,
      %__MODULE__{
        name: name,
-       team: team,
-       script: script,
-       runner: runner,
-       schedule: schedule,
-       port: nil,
-       status: :idle,
-       last_run: nil,
+        team: team,
+        script: script,
+        runner: runner,
+        schedule: schedule,
+        health_url: health_url,
+        port: nil,
+        status: :idle,
+        last_run: nil,
        runs: 0,
        last_output: [],
        consecutive_failures: 0,
@@ -176,6 +179,18 @@ defmodule TeamJay.Agents.PortAgent do
   def handle_call(:get_status, _from, state), do: {:reply, state, state}
 
   defp execute_script(%{port: nil} = state) do
+    if skip_daemon_boot?(state) do
+      Logger.info("[#{state.name}] 실행 생략: 이미 health 응답 중")
+      record_event(:info, "#{state.name} 실행 생략", "port_agent_skipped", state.team, state.name, %{
+        script: state.script,
+        runner: runner_to_string(state.runner),
+        schedule: schedule_to_string(state.schedule),
+        health_url: state.health_url,
+        reason: "already_healthy"
+      })
+
+      %{state | status: :idle}
+    else
     Logger.info("[#{state.name}] 실행: #{state.script}")
     record_event(:info, "#{state.name} 실행", "port_agent_run", state.team, state.name, %{
       script: state.script,
@@ -187,9 +202,21 @@ defmodule TeamJay.Agents.PortAgent do
     port = open_port(state)
 
     %{state | port: port, status: :running, last_run: DateTime.utc_now()}
+    end
   end
 
   defp execute_script(state), do: state
+
+  defp skip_daemon_boot?(%{schedule: :once, health_url: health_url}) when is_binary(health_url) do
+    case Req.get(health_url) do
+      {:ok, %{status: 200}} -> true
+      _ -> false
+    end
+  rescue
+    _ -> false
+  end
+
+  defp skip_daemon_boot?(_state), do: false
 
   defp open_port(%{runner: :node, script: script}) do
     Port.open({:spawn_executable, System.find_executable("node")}, [
