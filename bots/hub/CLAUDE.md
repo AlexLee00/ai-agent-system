@@ -9,7 +9,8 @@ OPS 리소스 프록시 서버. DEV↔OPS 브릿지.
 
 ## 핵심 파일
 - `src/hub.ts` — Express 서버 source of truth
-- `dist/ts-runtime/bots/hub/src/hub.js` — 실제 운영 런타임 엔트리
+- `src/hub.js` — launchd가 직접 타는 source wrapper (`hub.ts` 우선, 실패 시 `hub.legacy.js` 폴백)
+- `dist/ts-runtime/bots/hub/src/hub.js` — targeted dist 재생성 대상 (platform pilot 복구용)
 - `lib/auth.ts` — Bearer 토큰 인증 미들웨어
 - `lib/sql-guard.ts` — SQL 화이트리스트 (SELECT/WITH/EXPLAIN만 허용)
 - `lib/routes/secrets.ts` — secrets-store.json 14섹션 제공
@@ -61,4 +62,5 @@ GET  /hub/agents/*            — 에이전트 레지스트리
 ## 참조
 - DEV 클라이언트: `packages/core/lib/hub-client.ts`
 - 시크릿 소스: `secrets-store.json` (14섹션, git 미추적)
-- 현재 상태: `dist/ts-runtime` 런타임 기준 운영
+- 현재 상태: launchd는 `src/hub.js` wrapper 기준 운영, dist 런타임은 별도 targeted rebuild 대상
+- 런타임 dist 재생성: `npm run build:hub-runtime`
