@@ -1,5 +1,9 @@
 // @ts-nocheck
-import { generateGemmaPilotText } from '../../../packages/core/lib/gemma-pilot.js';
+import gemmaPilot from '../../../packages/core/lib/gemma-pilot.js';
+
+const { generateGemmaPilotText } = gemmaPilot as {
+  generateGemmaPilotText: (payload: Record<string, any>) => Promise<{ ok?: boolean; content?: string }>;
+};
 
 function sanitizeInvestmentInsightLine(text = '') {
   return String(text || '')

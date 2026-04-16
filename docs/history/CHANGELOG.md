@@ -3,6 +3,16 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 13주차 운영 점검 (2026-04-17) — Luna parallel ops report 경로 재정렬
+
+- `bots/investment/scripts/parallel-ops-snapshot.ts`
+- `bots/investment/scripts/health-report.ts`
+- `bots/investment/shared/cli-insight.ts`
+  - `packages/core/lib/gemma-pilot.js`를 default import로 바꿔 CommonJS shim과의 named import 충돌을 해결
+- 의미:
+  - snapshot/report/history 흐름이 Gemma shim 로딩 단계에서 바로 죽는 문제는 제거됐다.
+  - 다만 `launchctl` sandbox 제한, Elixir `Mix.PubSub` `:eperm`, `pg-pool` `[EPERM]`, 그리고 openclaw/Telegram 전달 실패는 여전히 남아 있다.
+
 ## 13주차 운영 점검 (2026-04-16) — Luna parallel ops 런타임 호환성 보강
 
 - `packages/core/lib/agent-memory.js`
