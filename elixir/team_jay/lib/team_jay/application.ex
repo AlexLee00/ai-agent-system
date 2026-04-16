@@ -40,6 +40,7 @@ defmodule TeamJay.Application do
       TeamJay.Blog.SocialAlertRelay,
       TeamJay.Blog.TokenRenewal,
       TeamJay.Blog.PublishGuard,
+      TeamJay.Blog.TopicPlanner,
       TeamJay.Blog.TopicCurator,
       TeamJay.Blog.InsightsCollector,
       TeamJay.Blog.StrategyLearner,
