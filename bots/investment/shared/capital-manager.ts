@@ -619,7 +619,7 @@ export async function checkCircuitBreaker() {
 export async function preTradeCheck(symbol, direction, estimatedAmount = 0, exchange = null, tradeMode = null) {
   const isBuy = direction === 'BUY' || direction === 'buy';
   const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
-  const policy = getCapitalConfig(exchange, effectiveTradeMode);
+  const policy = await getCapitalConfigWithOverrides(exchange, effectiveTradeMode);
   const minOrderUsdt = await getDynamicMinOrderAmount(exchange || 'binance');
 
   // 1. 가용 잔고 (BUY만)
