@@ -103,6 +103,21 @@ function fetchJsonViaCurl(url: string, authToken: string, timeoutMs: number): Hu
   }
 }
 
+async function readResponseReason(res: Response): Promise<string> {
+  try {
+    const text = await res.text();
+    if (!text) return '';
+    try {
+      const json = JSON.parse(text) as { reason?: string; error?: string };
+      return String(json.reason || json.error || '').trim();
+    } catch {
+      return text.slice(0, 160).trim();
+    }
+  } catch {
+    return '';
+  }
+}
+
 export async function fetchHubSecrets(category: string, timeoutMs = 3000): Promise<any | null> {
   if (!env.USE_HUB_SECRETS || !env.HUB_BASE_URL) return null;
   if (!env.HUB_AUTH_TOKEN) {
@@ -189,7 +204,9 @@ export async function queryOpsDb(
     });
 
     if (!res.ok) {
-      warnOnce(`hub-query:${res.status}`, `[hub-client] queryOpsDb: HTTP ${res.status}`);
+      const reason = await readResponseReason(res);
+      const suffix = reason ? ` (${reason})` : '';
+      warnOnce(`hub-query:${res.status}:${reason || 'unknown'}`, `[hub-client] queryOpsDb: HTTP ${res.status}${suffix}`);
       if (res.status === 429) setCached(cacheKey, null, 3000);
       if (res.status === 401) setCached(cacheKey, null, 30000);
       return null;

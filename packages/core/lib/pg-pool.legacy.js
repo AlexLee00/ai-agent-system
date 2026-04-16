@@ -128,8 +128,16 @@ async function _queryViaHub(schema, sql, params = []) {
 
 const _useHub = !env.IS_OPS && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
 
+function _isReadOnlySql(sql) {
+  const normalized = String(sql || '').trim().toLowerCase();
+  if (!normalized) return false;
+  return normalized.startsWith('select') ||
+    normalized.startsWith('with') ||
+    normalized.startsWith('explain');
+}
+
 async function query(schema, sql, params = []) {
-  if (_useHub) {
+  if (_useHub && _isReadOnlySql(sql)) {
     const result = await _queryViaHub(schema, sql, params);
     return result.rows;
   }
@@ -139,7 +147,7 @@ async function query(schema, sql, params = []) {
 }
 
 async function run(schema, sql, params = []) {
-  if (_useHub) return _queryViaHub(schema, sql, params);
+  if (_useHub && _isReadOnlySql(sql)) return _queryViaHub(schema, sql, params);
   const pool = getPool(schema);
   const result = await _safeQuery(pool, parameterize(sql), params);
   return { rowCount: result.rowCount, rows: result.rows };

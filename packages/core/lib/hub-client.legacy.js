@@ -66,6 +66,21 @@ function fetchJsonViaCurl(url, authToken, timeoutMs) {
   }
 }
 
+async function readResponseReason(res) {
+  try {
+    const text = await res.text();
+    if (!text) return '';
+    try {
+      const json = JSON.parse(text);
+      return String(json.reason || json.error || '').trim();
+    } catch {
+      return text.slice(0, 160).trim();
+    }
+  } catch {
+    return '';
+  }
+}
+
 async function fetchHubSecrets(category, timeoutMs = 3000) {
   if (!env.USE_HUB_SECRETS || !env.HUB_BASE_URL) return null;
   if (!env.HUB_AUTH_TOKEN) {
@@ -145,7 +160,9 @@ async function queryOpsDb(sql, schema = 'investment', params = [], timeoutMs = 5
     });
 
     if (!res.ok) {
-      warnOnce(`hub-query:${res.status}`, `[hub-client] queryOpsDb: HTTP ${res.status}`);
+      const reason = await readResponseReason(res);
+      const suffix = reason ? ` (${reason})` : '';
+      warnOnce(`hub-query:${res.status}:${reason || 'unknown'}`, `[hub-client] queryOpsDb: HTTP ${res.status}${suffix}`);
       if (res.status === 429) setCached(cacheKey, null, 3000);
       if (res.status === 401) setCached(cacheKey, null, 30000);
       return null;
