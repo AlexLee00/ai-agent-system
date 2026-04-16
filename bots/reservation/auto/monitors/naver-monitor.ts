@@ -71,6 +71,7 @@ const { writeHeartbeat } = require('../../../../packages/core/lib/agent-heartbea
 const { IS_OPS } = require('../../../../packages/core/lib/env');
 const rag = require('../../../../packages/core/lib/rag-safe');
 const { storeReservationEvent } = require('../../../../packages/core/lib/reservation-rag');
+const { createSkaReporter } = require('../../lib/ska-failure-reporter');
 
 const WORKSPACE = path.join(process.env.HOME, '.openclaw', 'workspace');
 const HEADED_FLAG_PATH = path.join(__dirname, '..', '..', '.playwright-headed');
@@ -491,6 +492,7 @@ async function monitorBookings() {
   const errorTracker = createErrorTracker({
     label: 'naver-monitor',
     threshold: NAVER_MONITOR_RUNTIME.errorTrackerThreshold,
+    onReport: createSkaReporter('andy'),
   });
 
   try {

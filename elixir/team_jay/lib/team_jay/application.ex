@@ -11,6 +11,7 @@ defmodule TeamJay.Application do
       {Registry, keys: :unique, name: TeamJay.AgentRegistry},
       {Registry, keys: :duplicate, name: TeamJay.InvestmentBus},
       {Registry, keys: :duplicate, name: TeamJay.BlogBus},
+      {Registry, keys: :duplicate, name: TeamJay.SkaBus},
       TeamJay.Blog.Orchestrator,
       TeamJay.Blog.Researcher,
       TeamJay.Blog.Writer.Pos,

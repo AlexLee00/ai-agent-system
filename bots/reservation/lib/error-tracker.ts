@@ -11,6 +11,8 @@ export interface ErrorTrackerOptions {
   label?: string;
   threshold?: number;
   persist?: boolean;
+  /** 에러 발생마다 호출되는 콜백 (FailureTracker 연동용) */
+  onReport?: (message: string, count: number) => void;
 }
 
 export interface ErrorTracker {
@@ -24,6 +26,7 @@ export function createErrorTracker({
   label = 'unknown',
   threshold = DEFAULT_THRESHOLD,
   persist = false,
+  onReport,
 }: ErrorTrackerOptions = {}): ErrorTracker {
   const persistPath = path.join(PERSIST_DIR, `ska-${label}-errors.json`);
 
@@ -62,6 +65,11 @@ export function createErrorTracker({
     const message = (error instanceof Error ? error.message : String(error)) || '알 수 없는 오류';
     log(`⚠️ [${label}] 연속 오류 ${count}회: ${message}`);
     saveCount();
+
+    // FailureTracker 연동 콜백 (ska-failure-reporter 등)
+    if (onReport) {
+      try { onReport(message, count); } catch (_) {}
+    }
 
     const isFirstAlert = count === threshold;
     const isEscalation = count > threshold && (count - threshold) % ESCALATION_INTERVAL === 0;
