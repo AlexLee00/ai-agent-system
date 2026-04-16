@@ -26,6 +26,10 @@ const {
 } = require('../../../packages/core/lib/reporting-hub');
 const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
 const { buildWorkerCliInsight } = require('../lib/cli-insight.legacy');
+const {
+  canonicalizeWorkerCriticalAlert,
+  appendIncidentLine,
+} = require('../lib/critical-alerts.legacy');
 
 const SPAWN_LOG   = path.join(os.homedir(), '.openclaw', 'workspace', 'logs', 'claude-code-spawns.jsonl');
 const CONFIG_YAML = path.join(__dirname, '../../investment/config.yaml');
@@ -250,7 +254,17 @@ async function main() {
       action: hasAlert ? '/claude-health | /reporting-health 확인' : '',
     },
   });
-  const msg = renderNoticeEvent(notice) || baseMsg;
+  const incidentState = canonicalizeWorkerCriticalAlert({
+    source: 'worker-monitor',
+    event_type: notice.event_type,
+    alert_level: alertLevel,
+    message: baseMsg,
+  });
+  if (incidentState.suppress) {
+    console.log(`[claude-monitor] duplicate suppressed: ${incidentState.signature}`);
+    return;
+  }
+  const msg = appendIncidentLine(renderNoticeEvent(notice) || baseMsg, incidentState.signature, incidentState.incident);
   console.log(msg);
 
   try {

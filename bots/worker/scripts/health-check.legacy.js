@@ -25,6 +25,10 @@ const {
 } = require('../../../packages/core/lib/reporting-hub');
 const { createHealthMemoryHelper } = require('../../../packages/core/lib/health-memory');
 const { buildWorkerCliInsight } = require('../lib/cli-insight.legacy');
+const {
+  canonicalizeWorkerCriticalAlert,
+  appendIncidentLine,
+} = require('../lib/critical-alerts.legacy');
 const { buildIssueHints, rememberHealthEvent } = createHealthMemoryHelper({
   agentId: 'worker.health',
   team: 'worker',
@@ -46,18 +50,26 @@ const HTTP_TIMEOUT_MS = Number(healthRuntimeConfig.httpTimeoutMs || 5000);
 
 async function notify(msg, level = 3) {
   try {
+    const incidentState = canonicalizeWorkerCriticalAlert({
+      source: 'worker-health-check',
+      event_type: 'alert',
+      alert_level: level,
+      message: msg,
+    });
+    if (incidentState.suppress) return;
+    const finalMessage = appendIncidentLine(msg, incidentState.signature, incidentState.incident);
     const event = buildNoticeEvent({
       from_bot: 'worker-health-check',
       team: 'worker',
       event_type: 'alert',
       alert_level: level,
       title: '워커 헬스 알림',
-      summary: msg.split('\n')[0] || '워커 헬스 알림',
-      details: msg.split('\n').slice(1).filter(Boolean),
+      summary: finalMessage.split('\n')[0] || '워커 헬스 알림',
+      details: finalMessage.split('\n').slice(1).filter(Boolean),
       payload: {
         title: '워커 헬스 알림',
-        summary: msg.split('\n')[0] || '워커 헬스 알림',
-        details: msg.split('\n').slice(1).filter(Boolean),
+        summary: finalMessage.split('\n')[0] || '워커 헬스 알림',
+        details: finalMessage.split('\n').slice(1).filter(Boolean),
       },
     });
     await publishEventPipeline({
