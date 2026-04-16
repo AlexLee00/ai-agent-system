@@ -67,6 +67,83 @@ function loadCapitalConfig() {
 
 export const config = loadCapitalConfig();
 
+// ─── 런타임 오버라이드 (Elixir StrategyAdjuster → DB) ────────────────────
+
+/**
+ * investment.runtime_overrides 테이블에서 유효한 오버라이드 로드.
+ * ALLOW 승인된 항목만 반영. 범위: max_position_pct, risk_per_trade 등 수치형 파라미터.
+ * 비동기 함수 — preTradeCheck 호출 시마다 최신 값 반영.
+ */
+export async function loadRuntimeOverrides(): Promise<Record<string, number>> {
+  try {
+    const rows = await pgPool.get(
+      SCHEMA,
+      `SELECT param_key, override_value
+       FROM investment.runtime_overrides
+       WHERE approved = true
+         AND (valid_until IS NULL OR valid_until > NOW())
+       ORDER BY inserted_at DESC`,
+      []
+    );
+    if (!rows || rows.length === 0) return {};
+
+    // 동일 param_key 중 최신 1개만 적용
+    const seen = new Set<string>();
+    const result: Record<string, number> = {};
+    for (const row of rows) {
+      if (!seen.has(row.param_key)) {
+        seen.add(row.param_key);
+        // override_value는 JSONB (숫자 또는 숫자 문자열)
+        const val = typeof row.override_value === 'number'
+          ? row.override_value
+          : parseFloat(row.override_value);
+        if (!isNaN(val)) result[row.param_key] = val;
+      }
+    }
+    return result;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * 런타임 오버라이드를 반영한 자본 설정 반환.
+ * preTradeCheck / sizeCalculation에서 사용.
+ */
+export async function getCapitalConfigWithOverrides(exchange = null, tradeMode = null) {
+  const base = getCapitalConfig(exchange, tradeMode);
+  const overrides = await loadRuntimeOverrides();
+  if (Object.keys(overrides).length === 0) return base;
+
+  // ALLOW 범위 내 수치 파라미터만 적용 (안전 클램프)
+  const ALLOW_RANGES: Record<string, [number, number]> = {
+    max_position_pct:         [0.05, 0.50],
+    max_capital_usage:        [0.50, 0.95],
+    max_concurrent_positions: [1,    8],
+    risk_per_trade:           [0.01, 0.05],
+    'rr_fallback.tp_pct':     [0.02, 0.15],
+    'rr_fallback.sl_pct':     [0.01, 0.08],
+  };
+
+  const patched = { ...base };
+  for (const [key, value] of Object.entries(overrides)) {
+    const range = ALLOW_RANGES[key];
+    if (!range) continue;
+    const [min, max] = range;
+    const clamped = Math.min(max, Math.max(min, value));
+    // nested key 지원 (e.g. 'rr_fallback.tp_pct')
+    if (key.includes('.')) {
+      const [parent, child] = key.split('.');
+      if (patched[parent] && typeof patched[parent] === 'object') {
+        patched[parent] = { ...patched[parent], [child]: clamped };
+      }
+    } else {
+      (patched as any)[key] = clamped;
+    }
+  }
+  return patched;
+}
+
 export function getCapitalConfig(exchange = null, tradeMode = null) {
   if (!exchange) return config;
   const override = config.by_exchange?.[exchange] || {};

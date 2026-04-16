@@ -1,9 +1,16 @@
 defmodule TeamJay.Investment.ResourceFeedbackCoordinator do
   @moduledoc """
-  Phase 5.5-8 전체 리소스 피드백 루프 참여를 묶는 coordinator scaffold.
+  CODEX_LUNA_AUTONOMOUS_LOOP Phase D — 8개 리소스 피드백 루프 코디네이터.
 
   feedback / runtime_override / memory / strategy_profile 이벤트를 받아
-  8개 리소스의 준비 상태를 요약한 resource_feedback snapshot을 발행한다.
+  8개 리소스의 실제 준비 상태를 요약한 resource_feedback snapshot을 발행한다.
+
+  헬스체크 대상:
+  - LLM: MLX :11434 HTTP ping
+  - n8n: :5678 HTTP ping
+  - market_data: price_watcher 활성 여부 (last_feedback 기반)
+  - agent_memory: memory snapshot count
+  - rag/vectorbt/chronos_ta/onchain: 이벤트 수신 기반 추론
   """
 
   use GenServer
@@ -128,16 +135,36 @@ defmodule TeamJay.Investment.ResourceFeedbackCoordinator do
   end
 
   defp build_resources(state) do
+    llm_ready = ping_http("http://localhost:11434/api/tags", 2_000)
+    n8n_ready = ping_http("http://localhost:5678/healthz", 2_000)
+
+    memory_count = get_in(state, [:last_memory, :snapshot_count]) || 0
+    override_present = not is_nil(state.last_override)
+    profile_present = not is_nil(state.last_profile)
+    feedback_present = not is_nil(state.last_feedback)
+
     %{
-      llm: %{ready: true, status: :scaffolded, rationale: :feedback_seen},
-      rag: %{ready: true, status: :scaffolded, rationale: :memory_available},
-      agent_memory: %{ready: state.last_memory.snapshot_count > 0, status: :tracking, rationale: :memory_snapshot},
-      vectorbt: %{ready: true, status: :guard_ready, rationale: :runtime_override_seen},
-      n8n: %{ready: true, status: :workflow_placeholder, rationale: :coordinator_scaffold},
-      market_data: %{ready: true, status: :loop_active, rationale: :feedback_loop},
-      chronos_ta: %{ready: true, status: :profile_selected, rationale: :strategy_profile},
-      onchain: %{ready: true, status: :watch_enabled, rationale: :resource_loop}
+      llm:          %{ready: llm_ready, status: if(llm_ready, do: :online, else: :offline), rationale: :http_ping},
+      rag:          %{ready: override_present, status: if(override_present, do: :active, else: :idle), rationale: :runtime_override_seen},
+      agent_memory: %{ready: memory_count > 0, status: if(memory_count > 0, do: :tracking, else: :empty), rationale: :memory_snapshot_count},
+      vectorbt:     %{ready: override_present, status: :guard_ready, rationale: :override_guard},
+      n8n:          %{ready: n8n_ready, status: if(n8n_ready, do: :online, else: :offline), rationale: :http_ping},
+      market_data:  %{ready: feedback_present, status: if(feedback_present, do: :active, else: :idle), rationale: :feedback_loop},
+      chronos_ta:   %{ready: profile_present, status: if(profile_present, do: :profile_selected, else: :no_profile), rationale: :strategy_profile},
+      onchain:      %{ready: true, status: :watch_enabled, rationale: :passive_watch}
     }
+  end
+
+  # HTTP ping (sync, 타임아웃 제한)
+  defp ping_http(url, timeout_ms) do
+    case :httpc.request(:get, {String.to_charlist(url), []}, [{:timeout, timeout_ms}], []) do
+      {:ok, {{_, status, _}, _, _}} when status in 200..299 -> true
+      _ -> false
+    end
+  rescue
+    _ -> false
+  catch
+    _, _ -> false
   end
 
   defp ensure_table! do
