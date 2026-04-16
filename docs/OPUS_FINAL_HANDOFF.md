@@ -1,0 +1,240 @@
+# 세션 인수인계 — 2026-04-17 (블로팀 전체 코덱스 구현 완료)
+
+> 세션 범위: CODEX_BLOG_AUTONOMOUS_OPS Phase A~D + CODEX_LUNA_OPS_TRANSITION + CODEX_LUNA_AUTONOMOUS_LOOP Phase A~E + 루나팀/블로팀/스카팀 전체 문서 감사+정리
+
+---
+
+## 작업 요약
+
+블로팀 완전자율 루프(Phase A~D) + OPS 마이그레이션 완료.
+루나팀 OPS_TRANSITION 코드 구현 완료 (launchd→Elixir 전환 준비).
+루나팀 자율 루프 Phase A~E 코드 구현 완료.
+
+---
+
+## ✅ 완료
+
+### Blog Ops — Phase A~D (이전 세션 완료)
+- token_renewal, publish_guard, topic_curator, quality-checker, feedback-learner, autonomy-gate
+- insta-crosspost.ts (Phase D), weekly-evolution.ts 크로스포스트 통계
+- TeamConnector do_collect(:blog) KPI 강화
+- **OPS 마이그레이션 완료 (2026-04-17)**:
+  - `bots/blog/migrations/011-topic-queue.sql` → blog.topic_queue ✅
+  - `bots/blog/migrations/012-instagram-crosspost.sql` → blog.instagram_crosspost ✅
+
+### CODEX_LUNA_AUTONOMOUS_LOOP Phase A/B
+- `trading_loop.ex`: Mode 1(5분)/Mode 3(30초) 자동 타이머 루프
+  - Mode 1→3 전환 시 타이머 교체, mode_tick 브로드캐스트
+
+### CODEX_LUNA_OPS_TRANSITION (코드 완료, 실제 전환은 수동)
+- `investment_supervisor.ex`: @investment_agents 20개 정의
+  - env guard: `INVESTMENT_ELIXIR_ENABLED=true` 시 활성화
+  - interval: commander/crypto/crypto_validation/health_check/unrealized_pnl/argos
+  - calendar: domestic/overseas/validation×2/prescreen/reporter/scout/market_alerts×5
+- `investment_scheduler.ex`: scout/domestic/overseas/validation 트리거 함수 추가
+- `config.exs`: Quantum 스케줄 추가 (scout 2개, domestic, overseas 3개 — UTC)
+
+### CODEX_LUNA_AUTONOMOUS_LOOP Phase C (브리지 완료)
+- `capital-manager.ts`: `loadRuntimeOverrides()` + `getCapitalConfigWithOverrides()` 추가
+  - investment.runtime_overrides 테이블에서 approved=true 오버라이드 로드
+  - ALLOW 범위 클램프 6개 파라미터
+- `strategy_adjuster.ex`: absolute value proposals + market_mode 구독
+  - classify() → absolute proposals (RuntimeOverrideStore가 DB 저장)
+
+### CODEX_LUNA_AUTONOMOUS_LOOP Phase D (헬스체크 실제화)
+- `resource_feedback_coordinator.ex`: build_resources() 실제 HTTP ping
+  - LLM: localhost:11434 ping, n8n: localhost:5678 ping
+
+### CODEX_LUNA_AUTONOMOUS_LOOP Phase E (레짐 동적 전환)
+- `strategy_adjuster.ex`: market_mode 구독 추가
+  - 레짐별 tp/sl 자동 조정: trending(0.09/0.04), ranging(0.04/0.02), volatile(0.05/0.025)
+
+### 아카이브 완료
+- `CODEX_BLOG_AUTONOMOUS_OPS.md` → docs/archive/codex-completed/
+- `CODEX_BLOG_OPS_HARDENING.md` → docs/archive/codex-completed/
+
+---
+
+## 🔜 다음 세션
+
+### 루나팀 실제 전환 (수동 실행 필요)
+
+**launchd → Elixir 리허설 순서:**
+```bash
+# 1단계: Elixir 활성화 (OPS에서 환경변수 설정 후 재시작)
+export INVESTMENT_ELIXIR_ENABLED=true
+
+# 2단계: 비위험 에이전트부터 launchd unload
+launchctl unload ~/Library/LaunchAgents/ai.investment.health-check.plist
+launchctl unload ~/Library/LaunchAgents/ai.investment.reporter.plist
+# → Elixir PortAgent가 동일 작업 수행 확인
+
+# 3단계: 알림 에이전트
+launchctl unload ~/Library/LaunchAgents/ai.investment.market-alert-*.plist
+
+# 4단계: 스크리닝
+launchctl unload ~/Library/LaunchAgents/ai.investment.scout.plist
+launchctl unload ~/Library/LaunchAgents/ai.investment.prescreen-*.plist
+launchctl unload ~/Library/LaunchAgents/ai.investment.argos.plist
+
+# 5단계: 매매 에이전트 (마스터 최종 확인 후)
+launchctl unload ~/Library/LaunchAgents/ai.investment.crypto.plist
+launchctl unload ~/Library/LaunchAgents/ai.investment.domestic.plist
+launchctl unload ~/Library/LaunchAgents/ai.investment.overseas.plist
+```
+
+**해외장 mock SELL 검증 (작업 2):**
+- 미국 개장 시간(22:30 KST) 직전 수동 실행
+
+**LIVE 전환 체크리스트 (작업 3):**
+- launchd 제거 + 24시간 Elixir 단독 정상 확인 후
+- kis_mode: paper → live (마스터 최종 승인 필수)
+
+### ~~getCapitalConfigWithOverrides() 적용~~ ✅ 완료 (2026-04-17)
+- `preTradeCheck()` 내 `getCapitalConfig()` → `await getCapitalConfigWithOverrides()` 교체 완료
+- Elixir 런타임 오버라이드가 매매 전 체크에 실제 반영됨
+- 파일: `bots/investment/shared/capital-manager.ts`
+
+---
+
+## ✅ 추가 완료 (2026-04-17 세션 연속)
+
+- `preTradeCheck()` → `getCapitalConfigWithOverrides()` 연결 완료 (commit cae82236)
+  - Elixir StrategyAdjuster → DB → capital-manager.ts 전체 체인 완성
+
+---
+
+### 남은 코덱스 (docs/codex/ 잔존)
+- `CODEX_CORE_REINFORCEMENT.md` — Phase 3 Step 4 (agent memory 확장) → Phase 4 → Phase 5
+- `CODEX_LUNA_OPS_TRANSITION.md` — Step 5 실행 대기 (crypto/domestic/overseas launchd 제거)
+- `CODEX_LUNA_AUTONOMOUS_LOOP.md` — 코드 완료 → 실제 루프 연결 확인
+- `CODEX_LUNA_PRODUCTION.md` — Elixir 활성화 완료, kis_mode live 전환은 마스터 승인 후
+- `CODEX_LUNA_IMPL.md` — D(VectorBT)/E(TradingView)/G(스킬)/H(피드백) 미착수
+- `CODEX_LUNA_REMODEL.md` — 별도 검토 필요 (대형)
+- `CODEX_BLOG_COMPREHENSIVE.md`, `CODEX_BLOG_BOOK_SKILL.md` — 미착수
+
+### 아카이브 완료 (docs/archive/codex-completed/)
+- CODEX_LUNA_TS_CONVERSION, TS_STATUS, VALIDATION_RAIL, RISK_TUNING, STRATEGY_TASKS, HARDCODED_CONSTANTS
+- CODEX_SKA_REMODEL (Phase 0~4-4 + TeamLead/FailureLibrary/ExceptionDetector 전부 완료)
+
+### 자율 운영 모니터링 (지속)
+- 블로팀 Phase 1 → accuracy 80%+ 4주 연속 시 Phase 2 전환
+- 인스타 크로스포스트 토큰 오류 시 token_renewal.ex 자동 갱신 확인
+- 루나팀 TradingLoop mode_tick 이벤트 정상 발행 확인 (로그)
+
+---
+
+## ✅ 추가 완료 (2026-04-17 세션 2)
+
+### OPS 전환 완료
+- Elixir plist에 `INVESTMENT_ELIXIR_ENABLED=true` 추가 → 기동 확인
+- launchd unload 완료: health-check, reporter, market-alert×5, scout, prescreen×2, argos, unrealized-pnl, crypto.validation, domestic.validation, overseas.validation, commander
+- **남은 launchd**: `ai.investment.crypto`, `ai.investment.domestic`, `ai.investment.overseas` (Step 5 — 24h 관찰 후)
+
+### CODEX_SKA_REMODEL 미완료 3개 모듈 구현 완료
+- `ska/team_lead.ex` — 운영 지능 + 에러 스파이크 감지 + 매출 이상 알림 + 복구 조율자
+- `ska/failure_library.ex` — 실패/복구 이력 대도서관(RAG) 3계층 적재 GenServer
+- `ska/exception_detector.ex` — 새 예외 자동 발견 (패턴비교 + 주기분석 + 교차패턴)
+- `teams/ska_supervisor.ex` — 3개 자식 등록 완료
+- 컴파일 에러/경고 없음 확인
+
+---
+
+## ✅ 추가 완료 (2026-04-17 세션 3)
+
+### 루나팀 문서 정리
+- **아카이브** (docs/archive/codex-completed/로 이동):
+  - CODEX_LUNA_TS_CONVERSION.md ✅
+  - CODEX_LUNA_TS_STATUS.md ✅
+  - CODEX_LUNA_VALIDATION_RAIL.md ✅
+  - CODEX_LUNA_RISK_TUNING.md ✅
+  - CODEX_LUNA_STRATEGY_TASKS.md ✅
+  - CODEX_LUNA_HARDCODED_CONSTANTS.md ✅ (config.yaml maxPositionPct 0.12 반영 확인)
+- **헤더 업데이트** (docs/codex/ 유지):
+  - CODEX_LUNA_AUTONOMOUS_LOOP.md → Phase A~E 코드 완료, 실제 루프 연결 대기
+  - CODEX_LUNA_OPS_TRANSITION.md → Steps 1~4 완료, Step 5 대기 (24h 관찰)
+  - CODEX_LUNA_PRODUCTION.md → Elixir 활성화 완료, kis_mode=paper 유지 중
+  - CODEX_LUNA_IMPL.md → A/B/C/F 완료, D/E/G/H 미착수 명시
+
+### 스카팀 문서 정리
+- CODEX_SKA_REMODEL.md → 최신 내용으로 업데이트 후 archive로 이동 (2026-04-17 모든 코드 완료)
+
+---
+
+## ✅ 추가 완료 (2026-04-17 세션 4)
+
+### 블로팀 문서 정리 + 구현 (9개 codex 전체 감사)
+
+**아카이브** (4개 → docs/archive/codex-completed/):
+- CODEX_BLOG_4STEPS.md ✅ (Elixir전환/경쟁토글/페르소나/주제검토 완료)
+- CODEX_BLOG_REMODEL.md ✅ (Phase 0~4+autonomy completed)
+- CODEX_BLOG_BOOK_SKILL.md ✅ (정보나루 승인됨, 4개 소스 통합 코드 완료)
+- CODEX_BLOG_IMAGE_REDESIGN.md ✅ (Part A: img-gen.ts, Part B: star+shortform-renderer, Part C: insta-crosspost 기구현 확인)
+
+**헤더 업데이트 (docs/codex/ 유지)**:
+- CODEX_BLOG_MARKETING.md → 갭1~5 완료, Phase 0~2 인프라 완료, Phase 3~4 미착수
+- CODEX_BLOG_UNIFIED_REDESIGN.md → Part 1~4 분산 구현 완료 (데이터 축적 진행 중)
+- CODEX_BLOG_COMPREHENSIVE.md, TS_CONVERSION, MASTER → 상태 반영
+
+**코드 구현**:
+- `blog_supervisor.ex`: channel_insights(22:00) + revenue_strategy(월 07:00) 스케줄 등록 (commit e71a7a25)
+
+### 블로팀 남은 작업
+- CODEX_BLOG_MARKETING.md Phase 4 (DM 챗봇/광고 고도화 — 수익 발생 후 장기)
+- CODEX_BLOG_TS_CONVERSION.md Phase 2A (blo.ts, publ.ts @ts-nocheck 제거 — 장기)
+- CODEX_BLOG_COMPREHENSIVE.md Part A (TS 전환 — TS_CONVERSION과 동일 추적)
+
+---
+
+## ✅ 추가 완료 (2026-04-17 세션 5)
+
+### Phase 3 경쟁사 분석 구현 (commit aa771c18)
+- `bots/blog/lib/competitor-analyzer.ts`: 네이버 블로그 검색 + TF-IDF 키워드 분석
+  - 6개 카테고리 CATEGORY_QUERIES, computeTfIdf(), findKeywordGaps()
+  - blog.competitor_keywords 테이블 저장, getLatestCompetitorInsights() API
+- `bots/blog/lib/hashtag-analyzer.ts`: Instagram Graph API 해시태그 트렌드
+  - analyzeHashtagTrend(), analyzeHashtagsForCategory(), getRecommendedHashtags()
+  - 토큰 없으면 시드 기반 폴백, blog.hashtag_trends 테이블
+- `bots/blog/migrations/013-competitor-hashtag.sql`: 2개 테이블
+- `bots/blog/scripts/run-competitor-analysis.ts`: 주간 실행 스크립트
+- BlogSupervisor: :blog_competitor_analysis 월요일 05:00 등록
+
+### __dirname 전수 제거 (commit a0463979)
+- lib/ai-feedback.ts, gems-writer.ts, social.ts
+- scripts/analyze-blog-performance.ts, collect-views.ts, mark-published-url.ts, record-performance.ts
+- → 모든 blog lib/scripts __dirname 제거 완료
+
+### 문서 정리 (아카이브 2개)
+- CODEX_BLOG_UNIFIED_REDESIGN.md → archive (Part 1~4 분산 구현 완료)
+- CODEX_BLOG_MASTER.md → archive (Phase 0~9 실질 완료)
+- CODEX_BLOG_MARKETING.md 헤더 업데이트: Phase 3 ✅, Phase 4 장기 미착수
+- CODEX_BLOG_TS_CONVERSION.md 헤더 업데이트: __dirname 전수 제거 반영
+
+---
+
+## 핵심 파일 위치
+
+| 파일 | 경로 |
+|------|------|
+| InvestmentSupervisor | `elixir/team_jay/lib/team_jay/teams/investment_supervisor.ex` |
+| InvestmentScheduler | `elixir/team_jay/lib/team_jay/teams/investment_scheduler.ex` |
+| TradingLoop | `elixir/team_jay/lib/team_jay/investment/trading_loop.ex` |
+| StrategyAdjuster | `elixir/team_jay/lib/team_jay/investment/strategy_adjuster.ex` |
+| CircuitBreaker | `elixir/team_jay/lib/team_jay/investment/circuit_breaker.ex` |
+| RuntimeOverrideStore | `elixir/team_jay/lib/team_jay/investment/runtime_override_store.ex` |
+| ResourceFeedbackCoordinator | `elixir/team_jay/lib/team_jay/investment/resource_feedback_coordinator.ex` |
+| capital-manager.ts | `bots/investment/shared/capital-manager.ts` |
+| config.exs (Quantum) | `elixir/team_jay/config/config.exs` |
+| launchd plist (20개) | `bots/investment/launchd/ai.investment.*.plist` |
+
+---
+
+## 주의사항
+
+- `INVESTMENT_ELIXIR_ENABLED=true` 없이는 InvestmentSupervisor가 비어있음 (launchd 안전)
+- `getCapitalConfigWithOverrides()` ✅ preTradeCheck에 연결 완료 — Elixir StrategyAdjuster → DB → capital-manager.ts 체인 완성
+- Elixir CircuitBreaker Level 3 halted → capital-manager.ts는 아직 이를 모름 (DB 읽기 구현 완료됐으나 호출 위치 적용 필요)
+- Quantum cron은 UTC 기준 (기존 패턴 유지), launchd는 KST
+- resource_feedback_coordinator의 ping_http은 동기 호출 — OTP 블로킹 주의 (최대 2초)
+
+> 이전 HANDOFF: 2026-04-17 CODEX_BLOG_AUTONOMOUS_OPS Phase A~D
