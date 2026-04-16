@@ -34,6 +34,9 @@ const sigmaObservabilityPlanner = require('./sigma/observability-planner');
 const blogBookReviewBook = require('./blog/book-review-book');
 const blogBookSourceVerify = require('./blog/book-source-verify');
 
+// SKA 스킬 문서 경로 (마크다운 — LLM 컨텍스트용, require 불필요)
+// packages/core/lib/skills/ska/*.md 참조
+
 module.exports = {
   codeReview, verifyLoop, plan,
   securityPipeline, evalHarness, teamOrchestrator, sessionWrap,

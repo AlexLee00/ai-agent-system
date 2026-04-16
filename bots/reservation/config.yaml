@@ -1,5 +1,6 @@
 skills:
-  - eval-harness        # 예약성공률/정합성 일일 측정
+  - eval-harness              # 예약성공률/정합성 일일 측정
+  # SKA 스킬 문서: packages/core/lib/skills/ska/*.md (LLM 컨텍스트 참조용)
 runtime_config:
   browser:
     launchRetries: 3
