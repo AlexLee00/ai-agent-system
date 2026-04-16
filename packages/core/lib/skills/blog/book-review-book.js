@@ -1,3 +1,3 @@
 'use strict';
-
-module.exports = require('./book-review-book.ts');
+const path = require('path');
+module.exports = require(path.join(__dirname, '../../../../../dist/ts-runtime/packages/core/lib/skills/blog/book-review-book.js'));

@@ -1,2 +1,3 @@
 'use strict';
-module.exports = require('./hub-client.legacy.js');
+const path = require('path');
+module.exports = require(path.join(__dirname, '../../../dist/ts-runtime/packages/core/lib/hub-client.js'));
