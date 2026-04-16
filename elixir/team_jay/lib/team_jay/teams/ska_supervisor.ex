@@ -62,7 +62,13 @@ defmodule TeamJay.Teams.SkaSupervisor do
       TeamJay.Ska.Kiosk.KioskBlockFlow,
       # Phase 1: PortBridge
       TeamJay.Ska.PortBridge.NaverPort,
-      TeamJay.Ska.PortBridge.PickkoPort
+      TeamJay.Ska.PortBridge.PickkoPort,
+      # Analytics (Phase 4)
+      TeamJay.Ska.Analytics.RevenueTracker,
+      TeamJay.Ska.Analytics.Forecast,
+      TeamJay.Ska.Analytics.Dashboard,
+      TeamJay.Ska.Analytics.MarketingConnector,
+      TeamJay.Ska.Analytics.OperationsRag
     ]
 
     # PortAgent 래퍼 (Node.js 스크립트!)

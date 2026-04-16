@@ -36,5 +36,32 @@ defmodule TeamJay.HubClient do
       headers: headers()
     )
   end
+
+  @doc """
+  에이전트 기억 저장 (임베딩 포함).
+  type: "episodic" | "semantic" | "procedural"
+  opts: %{keywords, importance, metadata}
+  """
+  def memory_remember(agent_id, team, content, type \\ "episodic", opts \\ %{}) do
+    body = Map.merge(%{agentId: agent_id, team: team, content: content, type: type}, opts)
+    case Req.post("#{hub_url()}/hub/memory/remember", json: body, headers: headers()) do
+      {:ok, %{status: 200, body: body}} -> {:ok, body["memoryId"]}
+      {:ok, %{status: status, body: body}} -> {:error, "HTTP #{status}: #{inspect(body)}"}
+      {:error, err} -> {:error, err}
+    end
+  end
+
+  @doc """
+  유사도 기반 기억 조회.
+  opts: %{type, limit, threshold}
+  """
+  def memory_recall(agent_id, team, query, opts \\ %{}) do
+    body = Map.merge(%{agentId: agent_id, team: team, query: query}, opts)
+    case Req.post("#{hub_url()}/hub/memory/recall", json: body, headers: headers()) do
+      {:ok, %{status: 200, body: body}} -> {:ok, body["memories"] || []}
+      {:ok, %{status: status, body: body}} -> {:error, "HTTP #{status}: #{inspect(body)}"}
+      {:error, err} -> {:error, err}
+    end
+  end
 end
 
