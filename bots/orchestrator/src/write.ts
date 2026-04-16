@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 
 const { execSync } = require('child_process') as typeof import('node:child_process');
 
