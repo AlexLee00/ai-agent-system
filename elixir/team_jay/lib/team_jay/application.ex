@@ -42,6 +42,7 @@ defmodule TeamJay.Application do
       TeamJay.Blog.PublishGuard,
       TeamJay.Blog.TopicPlanner,
       TeamJay.Blog.TopicCurator,
+      TeamJay.Blog.CommandInbox,
       TeamJay.Blog.InsightsCollector,
       TeamJay.Blog.StrategyLearner,
       TeamJay.Blog.ContentLoop,
