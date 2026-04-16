@@ -3,12 +3,10 @@ const { getLaunchctlStatus } = require('../../../../packages/core/lib/health-pro
 
 export const HUB_CORE_SERVICE_LABELS = [
   'ai.openclaw.gateway',
-  'ai.orchestrator',
   'ai.n8n.server',
 ];
 
 const SERVICE_LABELS = [
-  'ai.orchestrator',
   'ai.openclaw.gateway',
   'ai.claude.commander',
   'ai.claude.dexter',
