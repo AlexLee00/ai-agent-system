@@ -263,6 +263,17 @@ function similarity(a, b) {
   return union ? intersection / union : 0;
 }
 
+function tokenOverlapRatio(a = '', b = '') {
+  const first = new Set(normalizeTokens(a));
+  const second = new Set(normalizeTokens(b));
+  if (!first.size || !second.size) return 0;
+  let intersection = 0;
+  for (const token of first) {
+    if (second.has(token)) intersection += 1;
+  }
+  return intersection / Math.max(first.size, second.size);
+}
+
 function isBannedTitle(title = '') {
   const text = String(title || '').trim();
   if (!text || text.length > 50) return true;
@@ -387,6 +398,7 @@ function selectAndValidateTopic(category, recentPosts = [], strategyPlan = null,
   const recentTitles = recentPosts.map((post) => post.title).filter(Boolean);
   const topicPool = pickTopicPool(category);
   const marketingHints = buildMarketingHints(category, senseState, revenueCorrelation);
+  const latestRecentTitle = recentTitles[0] || '';
 
   const candidates = [];
   for (let i = 0; i < topicPool.length; i += 1) {
@@ -425,7 +437,18 @@ function selectAndValidateTopic(category, recentPosts = [], strategyPlan = null,
       ) {
         return false;
       }
-      return !recentTitles.some((recentTitle) => similarity(recentTitle, candidate.title) > SIMILARITY_THRESHOLD);
+      if (recentTitles.some((recentTitle) => similarity(recentTitle, candidate.title) > SIMILARITY_THRESHOLD)) {
+        return false;
+      }
+      if (latestRecentTitle) {
+        const latestSimilarity = similarity(latestRecentTitle, candidate.title);
+        const latestTokenOverlap = tokenOverlapRatio(latestRecentTitle, candidate.title);
+        const topicOverlap = tokenOverlapRatio(latestRecentTitle, candidate.topic);
+        if (latestSimilarity >= 0.28) return false;
+        if (latestTokenOverlap >= 0.45) return false;
+        if (topicOverlap >= 0.5) return false;
+      }
+      return true;
     });
 
   if (selected) {

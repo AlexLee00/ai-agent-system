@@ -575,6 +575,20 @@ function _defaultChecklistSection(category) {
   ].join('\n');
 }
 
+function _defaultScenarioSection(category) {
+  return [
+    '[현장 적용 시나리오]',
+    `${category} 주제를 실제 업무 장면에 놓고 보면, 가장 먼저 흔들리는 지점은 생각보다 거창한 기술 선택이 아닙니다. 예를 들어 담당자 A는 속도를 먼저 말하고, 담당자 B는 완성도를 먼저 말하며, 사용자 입장에서는 지금 무엇이 달라지는지 설명을 듣고 싶어 하는 경우가 많습니다. 이때 가장 좋은 접근은 한 번에 모두를 만족시키려 하기보다, 이번 주에 반드시 바뀌어야 하는 경험 한 가지를 먼저 정하는 것입니다. 그 다음 그 경험을 막는 마찰을 문장으로 적고, 누가 어떤 순서로 그 문제를 풀어야 하는지 나누는 편이 훨씬 현실적입니다. 이렇게 풀면 회의가 길어져도 결정이 흩어지지 않고, 이후 실행 점검도 구체적으로 남습니다. 결국 ${category}는 좋은 아이디어를 많이 모으는 것보다, 같은 문제를 같은 언어로 설명할 수 있게 만드는 데서 힘이 생깁니다.`,
+  ].join('\n');
+}
+
+function _defaultExecutionNotesSection(category) {
+  return [
+    '[실행 메모와 복기 포인트]',
+    `실행 단계에서는 세 가지를 꼭 같이 남겨두는 편이 좋습니다. 첫째, 이번에 정한 기준이 누구를 위한 기준인지 적어야 합니다. 둘째, 실제로 바뀌었는지 확인할 관찰 포인트를 하나라도 남겨야 합니다. 셋째, 예상보다 반응이 약할 때 무엇부터 수정할지 순서를 적어둬야 합니다. 많은 경우 ${category} 관련 작업이 중간에 흐려지는 이유는 열심히 하지 않아서가 아니라, 중간 복기 기준이 없기 때문입니다. 그래서 저는 글을 읽고 바로 적용할 때도 ‘이번 주 안에 바꿀 것 1개, 지켜볼 것 1개, 버릴 것 1개’를 같이 적는 편이 훨씬 낫다고 봅니다. 이 간단한 메모만 있어도 다음 판단이 빨라지고, 같은 실수를 반복할 가능성도 줄어듭니다.`,
+  ].join('\n');
+}
+
 function _defaultLinkingSection(relatedPosts = []) {
   const picks = relatedPosts.slice(0, 3);
   if (!picks.length) return '';
@@ -780,6 +794,14 @@ function _ensureGeneralQualityFloor(content, { category, weatherContext, related
 
   if (next.length < minChars) {
     next = `${next}\n\n${_defaultChecklistSection(category)}`.trim();
+  }
+
+  if (next.length < minChars) {
+    next = `${next}\n\n${_defaultScenarioSection(category)}`.trim();
+  }
+
+  if (next.length < minChars) {
+    next = `${next}\n\n${_defaultExecutionNotesSection(category)}`.trim();
   }
 
   return next.trim();
