@@ -23,13 +23,12 @@ const BLOCKED_KEYWORDS = [
   /\bnotify\b/i,
   /\bset\s+role\b/i,
   /\bpg_sleep\s*\(/i,
-  /;\s*(select|with|explain)?/i,
 ];
 
 export const ALLOWED_SCHEMAS = new Set(['agent', 'claude', 'reservation', 'investment', 'ska', 'worker', 'blog', 'public']);
 
 function normalizeSql(sql: unknown): string {
-  return String(sql || '').trim();
+  return String(sql || '').trim().replace(/;\s*$/, '');
 }
 
 export function validateSchema(schema: unknown): { ok: true; schema: string } | { ok: false; reason: string } {
@@ -47,6 +46,13 @@ export function validateSql(sql: unknown): { ok: true; sql: string } | { ok: fal
   const normalized = normalizeSql(sql);
   if (!normalized) {
     return { ok: false, reason: 'empty sql' };
+  }
+
+  if (normalized.includes(';')) {
+    return {
+      ok: false,
+      reason: 'multiple statements not allowed',
+    };
   }
 
   for (const pattern of BLOCKED_KEYWORDS) {
