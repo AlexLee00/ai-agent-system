@@ -118,7 +118,7 @@ defmodule TeamJay.Ska.Analytics.Forecast do
       WHERE model_version LIKE 'prophet%'
       ORDER BY created_at DESC
       LIMIT 1
-    """, "jay") do
+    """, "ska") do
       {:ok, %{"rows" => [row]}} ->
         {:ok, %{
           forecast_date: row["forecast_date"],
@@ -151,7 +151,7 @@ defmodule TeamJay.Ska.Analytics.Forecast do
       FROM ska.forecast_results
       WHERE forecast_date >= (CURRENT_DATE - INTERVAL '#{days} days')
         AND mape IS NOT NULL
-    """, "jay") do
+    """, "ska") do
       {:ok, %{"rows" => [row]}} ->
         {:ok, %{
           avg_mape: row["avg_mape"],

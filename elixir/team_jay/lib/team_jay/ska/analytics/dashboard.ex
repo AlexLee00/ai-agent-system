@@ -179,7 +179,7 @@ defmodule TeamJay.Ska.Analytics.Dashboard do
         COUNT(*) FILTER (WHERE status = 'failed')::int AS failed
       FROM reservations
       WHERE date = '#{today}'::date
-    """, "jay") do
+    """, "reservation") do
       {:ok, %{"rows" => [row]}} ->
         %{
           confirmed: row["confirmed"] || 0,
