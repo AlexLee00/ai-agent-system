@@ -17,7 +17,7 @@ defmodule TeamJay.Teams.WorkerSupervisor do
       script:
         "export PATH=/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin && cd /Users/alexlee/projects/ai-agent-system/bots/worker/web && npm run start -- -H 0.0.0.0 -p 4001",
       runner: {:shell, "/bin/bash"},
-      schedule: nil
+      schedule: if(Mix.env() == :test, do: nil, else: :once)
     }
   ]
 
