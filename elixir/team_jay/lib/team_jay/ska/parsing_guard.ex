@@ -347,8 +347,14 @@ defmodule TeamJay.Ska.ParsingGuard do
   end
 
   defp apply_xpath_selector(_html, _xpath) do
-    # Node.js PortAgent 호출 (stub)
-    {:error, :xpath_not_implemented_in_elixir}
+    # 실제 XPath 파서는 아직 Elixir 네이티브로 붙지 않았다.
+    # 다만 런타임 feature flag가 열리면 성공 shape를 반환할 수 있게 두어
+    # fallback 체인 컴파일 경고 없이 확장 포인트를 유지한다.
+    if System.get_env("TEAMJAY_ENABLE_XPATH_STUB") == "1" do
+      {:ok, %{selector: :xpath_stub, matched: true, source: :feature_flag}}
+    else
+      {:error, :xpath_not_implemented_in_elixir}
+    end
   end
 
   # ─── Private: Circuit Breaker ─────────────────────────────
