@@ -18,6 +18,9 @@
       "posMinChars": 7000,
       "continueMaxTokens": 8000,
       "writerMaxRetries": 1,
+      "writerTimeoutMs": 180000,
+      "continueTimeoutMs": 180000,
+      "chunkTimeoutMs": 240000,
       "maestroWebhookTimeoutMs": 180000,
       "maestroHealthTimeoutMs": 2500,
       "maestroCircuitCooldownMs": 1800000
@@ -153,6 +156,7 @@
         "chain": [
           { "provider": "openai-oauth", "model": "gpt-5.4", "maxTokens": 16000, "temperature": 0.85 },
           { "provider": "claude-code", "model": "claude-code/sonnet", "maxTokens": 16000, "temperature": 0.85 },
+          { "provider": "groq", "model": "qwen/qwen3-32b", "maxTokens": 12000, "temperature": 0.75 },
           { "provider": "local", "model": "qwen2.5-7b", "maxTokens": 12000, "temperature": 0.75 },
           { "provider": "gemini", "model": "google-gemini-cli/gemini-2.5-flash", "maxTokens": 12000, "temperature": 0.75 }
         ]

@@ -37,6 +37,27 @@ const GEMS_LLM_CHAIN = selectLLMChain('blog.gems.writer', {
   policyOverride: getBlogLLMSelectorOverrides()['blog.gems.writer'],
 });
 
+function _buildForcedChainEntry(modelRef, maxTokens = 16000, temperature = 0.85) {
+  const normalized = String(modelRef || '').trim();
+  if (!normalized) return null;
+  const divider = normalized.indexOf('/');
+  if (divider <= 0) return null;
+  const provider = normalized.slice(0, divider).trim();
+  const model = normalized.slice(divider + 1).trim();
+  if (!provider || !model) return null;
+  return { provider, model, maxTokens, temperature };
+}
+
+function _resolveGemsChain(maxTokens = 16000, temperature = 0.85) {
+  const forced = _buildForcedChainEntry(process.env.BLOG_LLM_MODEL, maxTokens, temperature);
+  if (forced) return [forced];
+  return GEMS_LLM_CHAIN.map((entry) => ({
+    ...entry,
+    maxTokens: Number(entry?.maxTokens || maxTokens),
+    temperature: Number(entry?.temperature ?? temperature),
+  }));
+}
+
 // ─── ai-agent-system 프로젝트 컨텍스트 ──────────────────────────────
 
 const AI_AGENT_CONTEXT = `
@@ -388,10 +409,15 @@ function _findTooSimilarRecentTitle(category, title) {
     const recentNormalized = _normalizeComparableTitle(post.title);
     if (!recentNormalized) continue;
 
-    const exactFrameMatch =
-      currentNormalized === recentNormalized ||
-      currentNormalized.startsWith(recentNormalized.slice(0, 18)) ||
-      recentNormalized.startsWith(currentNormalized.slice(0, 18));
+    const exactFrameMatch = currentNormalized === recentNormalized;
+    const longPrefixFrameMatch = (
+      currentNormalized.length >= 28 &&
+      recentNormalized.length >= 28 &&
+      (
+        currentNormalized.startsWith(recentNormalized.slice(0, 28)) ||
+        recentNormalized.startsWith(currentNormalized.slice(0, 28))
+      )
+    );
 
     const sameQuestionFamily =
       (/^왜 /.test(currentNormalized) && /^왜 /.test(recentNormalized)) ||
@@ -400,7 +426,12 @@ function _findTooSimilarRecentTitle(category, title) {
       (/홈페이지와 앱/.test(currentNormalized) && /홈페이지와 앱/.test(recentNormalized));
 
     const similarity = _jaccardSimilarity(currentBigrams, _titleBigrams(post.title));
-    if (exactFrameMatch || (sameQuestionFamily && similarity >= 0.34) || similarity >= 0.52) {
+    if (
+      exactFrameMatch ||
+      (longPrefixFrameMatch && similarity >= 0.46) ||
+      (sameQuestionFamily && similarity >= 0.34) ||
+      similarity >= 0.52
+    ) {
       return {
         title: post.title,
         dateString: post.dateString,
@@ -728,6 +759,27 @@ function _ensureGeneralQualityFloor(content, { category, weatherContext, related
 
   if (next.length < minChars) {
     next = _expandGeneralFallback(next, { category, weatherContext, relatedPosts, minChars });
+  }
+
+  const requiredLateFill = [
+    'AI 스니펫 요약',
+    '이 글에서 배울 수 있는 것',
+    '본론 섹션 1',
+    '본론 섹션 2',
+    '본론 섹션 3',
+    '질문형 Q&A',
+    '마무리 제언',
+    '해시태그',
+  ];
+
+  for (const marker of requiredLateFill) {
+    if (_findMarkerIndex(next, marker) >= 0) continue;
+    const section = _defaultGeneralSection(marker, category, weatherContext, relatedPosts);
+    if (section) next = `${next}\n\n${section}`.trim();
+  }
+
+  if (next.length < minChars) {
+    next = `${next}\n\n${_defaultChecklistSection(category)}`.trim();
   }
 
   return next.trim();
@@ -1226,10 +1278,11 @@ ${_buildVariationBlock(sectionVariation)}
   let usedModel = 'gpt-4o';
   let fallbackUsed = false;
   let content;
+  const llmChain = _resolveGemsChain(16000, 0.85);
 
   try {
     const result = await callWithFallback({
-      chain:        GEMS_LLM_CHAIN,
+      chain:        llmChain,
       systemPrompt: GEMS_SYSTEM_PROMPT,
       userPrompt,
       timeoutMs: BLOG_WRITER_TIMEOUT_MS,
@@ -1256,7 +1309,7 @@ ${_buildVariationBlock(sectionVariation)}
     // 마지막 800자만 컨텍스트로 전달 (전체 내용 전달 시 LLM이 새 글을 시작하는 문제 방지)
     const tailContext    = content.slice(-800);
     const continuePrompt = `[이전 내용 끝부분 (이미 작성됨 — 절대 반복 금지)]\n${tailContext}\n\n[지시] 위 내용이 끊긴 부분에서 바로 이어서 작성하라. 앞 내용은 이미 완성되었으므로 반드시 끊긴 지점부터 시작하라. 새 글을 처음부터 쓰지 말 것. 남은 섹션을 모두 완성하고 마지막에 _THE_END_ 를 적어라.`;
-    const GEMS_CONTINUE_CHAIN = GEMS_LLM_CHAIN.map(c => ({ ...c, maxTokens: Number(generationRuntimeConfig.continueMaxTokens || 8000) }));
+    const GEMS_CONTINUE_CHAIN = _resolveGemsChain(Number(generationRuntimeConfig.continueMaxTokens || 8000), 0.85);
     try {
       const cont = await callWithFallback({
         chain:        GEMS_CONTINUE_CHAIN,
@@ -1422,10 +1475,11 @@ ${content}
   let usedModel = 'gpt-4o';
   let fallbackUsed = false;
   let repaired;
+  const llmChain = _resolveGemsChain(16000, 0.85);
 
   try {
     const result = await callWithFallback({
-      chain:        GEMS_LLM_CHAIN,
+      chain:        llmChain,
       systemPrompt: GEMS_SYSTEM_PROMPT,
       userPrompt:   repairPrompt,
       timeoutMs: BLOG_WRITER_TIMEOUT_MS,
@@ -1481,7 +1535,7 @@ ${content}
  */
 async function writeGeneralPostChunked(category, researchData, sectionVariation = {}) {
   const today    = new Date().toLocaleDateString('ko-KR');
-  const model    = process.env.BLOG_LLM_MODEL || GEMS_LLM_CHAIN;
+  const model    = _resolveGemsChain(4096, 0.75);
 
   const weather         = researchData.weather || {};
   const itNews          = researchData.it_news || [];
