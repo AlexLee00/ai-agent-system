@@ -188,7 +188,7 @@ async function buildDailySummaryIntegrityHealth() {
       if (totalAmount > 0 && combinedRevenue > 0 && totalAmount !== combinedRevenue) {
         if (roomTotal !== pickkoStudyRoom) {
           policyDivergences.push(
-            `${date}: 예약합계 ${totalAmount}원 vs 픽코직접 ${combinedRevenue}원 (room_amounts_json ${roomTotal}원 / pickko_study_room ${pickkoStudyRoom}원)`,
+            `${date}: booking-axis ${totalAmount}원 vs recognized-axis ${combinedRevenue}원 (room_amounts_json ${roomTotal}원 / pickko_study_room ${pickkoStudyRoom}원)`,
           );
         }
         continue;
@@ -207,7 +207,7 @@ async function buildDailySummaryIntegrityHealth() {
     if (issues.length > 0) {
       return {
         ok: policyDivergences.length > 0
-          ? [`  정책 차이 관찰 ${policyDivergences.length}건 (예약합계 vs 픽코 직접매출)`]
+          ? [`  정책 차이 관찰 ${policyDivergences.length}건 (booking-axis vs recognized-axis, 운영상 정상)`]
           : [],
         warn: [
           `  daily_summary 무결성(스터디룸 축): 경고 ${issues.length}건`,
@@ -223,7 +223,7 @@ async function buildDailySummaryIntegrityHealth() {
       ok: [
         '  daily_summary 무결성(스터디룸 축): 스터디룸 산출식과 저장값이 일치',
         ...(policyDivergences.length > 0
-          ? [`  정책 차이 관찰 ${policyDivergences.length}건 (예약합계 vs 픽코 직접매출)`]
+          ? [`  정책 차이 관찰 ${policyDivergences.length}건 (booking-axis vs recognized-axis, 운영상 정상)`]
           : []),
       ],
       warn: [],
@@ -467,7 +467,7 @@ function formatText(report) {
         ok: report.duplicateSlotHealth.samples || [],
       }, 3),
       buildHealthCountSection('■ daily_summary 무결성', report.dailySummaryIntegrityHealth, { okLimit: 3, warnLimit: 6 }),
-      buildHealthSampleSection('■ 픽코합계 vs 운영산출 차이 샘플', {
+      buildHealthSampleSection('■ booking-axis vs recognized-axis 샘플', {
         ok: report.dailySummaryIntegrityHealth.policyDivergenceSamples || [],
       }, 5),
       {
