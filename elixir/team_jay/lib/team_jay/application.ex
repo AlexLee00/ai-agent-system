@@ -4,7 +4,7 @@ defmodule TeamJay.Application do
 
   @impl true
   def start(_type, _args) do
-    Logger.info("🚀 TeamJay Elixir Phase 3 시작!")
+    Logger.info("🚀 TeamJay Elixir Phase 4 시작! (Jay 성장 오케스트레이터)")
 
     children = [
       TeamJay.Repo,
@@ -12,6 +12,7 @@ defmodule TeamJay.Application do
       {Registry, keys: :duplicate, name: TeamJay.InvestmentBus},
       {Registry, keys: :duplicate, name: TeamJay.BlogBus},
       {Registry, keys: :duplicate, name: TeamJay.SkaBus},
+      {Registry, keys: :duplicate, name: TeamJay.JayBus},
       TeamJay.Blog.Orchestrator,
       TeamJay.Blog.Researcher,
       TeamJay.Blog.Writer.Pos,
@@ -49,6 +50,7 @@ defmodule TeamJay.Application do
       TeamJay.Teams.BlogShadowSupervisor,
       TeamJay.Teams.WorkerShadowSupervisor,
       TeamJay.Teams.PlatformShadowSupervisor,
+      TeamJay.Teams.JaySupervisor,
       TeamJay.Diagnostics,
       TeamJay.Scheduler
     ]
@@ -61,7 +63,7 @@ defmodule TeamJay.Application do
 
       _ =
         TeamJay.HubClient.post_alarm(
-          "🚀 Elixir Phase 3 Week3 시작!\n👥 Week1 Supervisor 유지 + Week2/3 Shadow 감시 확대\n📡 EventLake 수신 중\n🌍 MarketRegime 감지 중\n🔍 Diagnostics 모니터링 중",
+          "🚀 Elixir Phase 4 시작!\n🎯 Jay 성장 오케스트레이터 활성화\n🔄 9팀 일일 환류 사이클 (06:30 KST)\n⚡ 팀 간 파이프라인 7개 준비\n📊 JayBus PubSub 가동",
           "system",
           "elixir"
         )

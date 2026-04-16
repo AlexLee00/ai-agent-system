@@ -58,8 +58,6 @@ defmodule TeamJay.Diagnostics do
     "ai.investment.market-alert-crypto-daily"
   ]
   @shadow_agents [
-    {:andy, :ska},
-    {:jimmy, :ska},
     {:blog_commenter, :blog},
     {:blog_daily, :blog},
     {:blog_collect_performance, :blog},
@@ -344,8 +342,6 @@ defmodule TeamJay.Diagnostics do
     processes = [
       TeamJay.EventLake,
       TeamJay.MarketRegime,
-      TeamJay.Agents.PortAgent.via(:andy),
-      TeamJay.Agents.PortAgent.via(:jimmy),
       TeamJay.Agents.PortAgent.via(:dexter)
     ]
 
