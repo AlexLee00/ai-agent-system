@@ -115,7 +115,6 @@ defmodule TeamJay.Diagnostics do
   def handle_info(:check, state) do
     results = run_diagnostics()
     {alerts, memory_warn_streak} = filter_runtime_alerts(results, state.memory_warn_streak)
-    overlap_signature = maybe_record_launchd_overlap(results, state.last_overlap_signature)
     memory_signature =
       maybe_record_memory_pressure(results, state.last_memory_signature, memory_warn_streak)
     report =
@@ -125,6 +124,12 @@ defmodule TeamJay.Diagnostics do
           alerts: alerts,
           memory_warn_streak: memory_warn_streak
       })
+    overlap_signature =
+      maybe_record_launchd_overlap(
+        results,
+        state.last_overlap_signature,
+        report.transition_plan.reinforcement_closed
+      )
     pilot_signature = maybe_record_next_pilot(report, state.last_pilot_signature)
 
     if length(alerts) > 0 do
@@ -434,7 +439,7 @@ defmodule TeamJay.Diagnostics do
     end
   end
 
-  defp maybe_record_launchd_overlap(results, last_signature) do
+  defp maybe_record_launchd_overlap(results, last_signature, reinforcement_closed) do
     overlap_result = Enum.find(results, &(&1.name == "launchd_phase3_overlap"))
 
     signature =
@@ -444,7 +449,7 @@ defmodule TeamJay.Diagnostics do
         %{message: message} -> message
       end
 
-    if signature != last_signature do
+    if not reinforcement_closed and signature != last_signature do
       record_launchd_overlap_event(overlap_result, signature)
     end
 
@@ -458,7 +463,7 @@ defmodule TeamJay.Diagnostics do
         candidate -> "#{candidate.team}:#{candidate.name}:#{candidate.priority_score}"
       end
 
-    if signature != last_signature do
+    if not report.transition_plan.reinforcement_closed and signature != last_signature do
       record_next_pilot_event(report.transition_plan.next_pilot_candidate, signature, report.transition_plan.blockers)
     end
 
