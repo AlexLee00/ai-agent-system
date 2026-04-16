@@ -66,6 +66,7 @@ const {
 const { ensureBlogCoreSchema }                      = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/schema.ts'));
 const { checkQualityEnhanced }                      = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/quality-checker.ts'));
 const { publishToFile, recordPerformance }          = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/publ.ts'));
+const { crosspostToInstagram }                      = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/insta-crosspost.ts'));
 const pgPool                                        = require('../../../packages/core/lib/pg-pool');
 const rag                                           = require('../../../packages/core/lib/rag-safe');
 const hiringContract                                = require('../../../packages/core/lib/hiring-contract');
@@ -1014,17 +1015,25 @@ async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx
       { thumbPath: null }
     );
 
+  const instaCrosspost = instaContent?.reel?.outputPath
+    ? await crosspostToInstagram(instaContent, postTitle, published.postId, !!options.dryRun).catch(e => {
+      console.warn('[크로스포스트] 강의 처리 중 예외:', e.message);
+      return { ok: false, error: e.message };
+    })
+    : null;
+
   return {
-    type:         'lecture',
-    number:       context.number,
-    title:        context.lectureTitle,
-    instaContent: instaContent || null,
-    charCount:    post.charCount,
-    quality:      quality.passed,
-    aiRisk:       quality.aiRisk,
-    filename:     published.filename,
-    postId:       published.postId,
-    dryRun:       !!options.dryRun,
+    type:           'lecture',
+    number:         context.number,
+    title:          context.lectureTitle,
+    instaContent:   instaContent || null,
+    instaCrosspost: instaCrosspost || null,
+    charCount:      post.charCount,
+    quality:        quality.passed,
+    aiRisk:         quality.aiRisk,
+    filename:       published.filename,
+    postId:         published.postId,
+    dryRun:         !!options.dryRun,
     };
 }
 
@@ -1139,17 +1148,25 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
     advance: advanceGeneralCategory,
   });
 
+  const instaCrosspost = instaContent?.reel?.outputPath
+    ? await crosspostToInstagram(instaContent, genTitle, published.postId, !!options.dryRun).catch(e => {
+      console.warn('[크로스포스트] 일반 처리 중 예외:', e.message);
+      return { ok: false, error: e.message };
+    })
+    : null;
+
   return {
-    type:         'general',
-    category:     context.category,
-    title:        post.title || `[${context.category}]`,
-    charCount:    post.charCount,
-    quality:      quality.passed,
-    aiRisk:       quality.aiRisk,
-    filename:     published.filename,
-    postId:       published.postId,
-    instaContent: instaContent || null,
-    dryRun:       !!options.dryRun,
+    type:           'general',
+    category:       context.category,
+    title:          post.title || `[${context.category}]`,
+    charCount:      post.charCount,
+    quality:        quality.passed,
+    aiRisk:         quality.aiRisk,
+    filename:       published.filename,
+    postId:         published.postId,
+    instaContent:   instaContent || null,
+    instaCrosspost: instaCrosspost || null,
+    dryRun:         !!options.dryRun,
   };
 }
 
