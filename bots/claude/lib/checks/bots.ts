@@ -98,6 +98,10 @@ function launchdStatus(label) {
   } catch { return null; }
 }
 
+function daemonOwnedByElixir(serviceId = '') {
+  return serviceId === 'ai.worker.web' || serviceId === 'ai.worker.nextjs';
+}
+
 function checkLaunchd(items) {
   if (!LAUNCHD_AVAILABLE) {
     items.push({
@@ -148,8 +152,8 @@ function checkLaunchd(items) {
     { id: 'ai.investment.argos',        label: '루나팀 아르고스 모니터 (launchd)', optional: true },
     { id: 'ai.investment.reporter',     label: '루나팀 리포터 (launchd)', optional: true },
     // 워커팀
-    { id: 'ai.worker.web',             label: '워커팀 웹서버 (launchd)' },
-    { id: 'ai.worker.nextjs',          label: '워커팀 Next.js (launchd)' },
+    { id: 'ai.worker.web',             label: '워커팀 웹서버 (Elixir ownership)' },
+    { id: 'ai.worker.nextjs',          label: '워커팀 Next.js (Elixir ownership)' },
   ];
 
   for (const svc of SERVICES) {
@@ -163,6 +167,14 @@ function checkLaunchd(items) {
     }
     const s = launchdStatus(svc.id);
     if (!s) {
+      if (daemonOwnedByElixir(svc.id)) {
+        items.push({
+          label: svc.label,
+          status: 'ok',
+          detail: 'launchd 미등록 정상 — Elixir ownership으로 승격됨',
+        });
+        continue;
+      }
       // optional: 아직 미구현 서비스는 info 수준 (warn 아님)
       const status = svc.optional ? 'ok' : 'warn';
       const detail = svc.optional ? '미등록 (선택적 서비스)' : 'launchd 미등록 또는 중지';
