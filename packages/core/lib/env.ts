@@ -94,7 +94,7 @@ export function corePath(moduleName: string): string {
 
 // ─── 환경 ────────────────────────────────────────────────────────────────
 
-const _raw_mode = (process.env.MODE || 'dev').toLowerCase().trim();
+const _raw_mode = (_envOrLaunchctl('MODE', 'dev')).toLowerCase().trim();
 export const IS_CLI = _raw_mode === 'cli';
 const _mode_alias: Record<string, string> = { cli: 'dev' };
 const _valid_modes = ['ops', 'dev'];
