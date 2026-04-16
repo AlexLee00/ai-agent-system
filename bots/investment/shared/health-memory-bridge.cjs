@@ -1,9 +1,9 @@
 'use strict';
 
-import fs from 'fs';
-import path from 'path';
+const fs = require('fs');
+const path = require('path');
 
-function resolveHealthMemoryModule(): string {
+function resolveHealthMemoryModule() {
   const projectRoot = process.env.PROJECT_ROOT || '';
   const candidates = [
     path.join(__dirname, '../../../packages/core/lib/health-memory.js'),
@@ -19,6 +19,4 @@ function resolveHealthMemoryModule(): string {
   throw new Error('[investment] health-memory bridge target not found');
 }
 
-const healthMemory = require(resolveHealthMemoryModule());
-
-module.exports = healthMemory;
+module.exports = require(resolveHealthMemoryModule());

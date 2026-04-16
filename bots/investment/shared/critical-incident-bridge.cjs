@@ -1,9 +1,9 @@
 'use strict';
 
-import fs from 'fs';
-import path from 'path';
+const fs = require('fs');
+const path = require('path');
 
-function resolveCriticalIncidentModule(): string {
+function resolveCriticalIncidentModule() {
   const projectRoot = process.env.PROJECT_ROOT || '';
   const candidates = [
     path.join(__dirname, '../../../packages/core/lib/critical-incident.js'),
@@ -19,6 +19,4 @@ function resolveCriticalIncidentModule(): string {
   throw new Error('[investment] critical-incident bridge target not found');
 }
 
-const criticalIncident = require(resolveCriticalIncidentModule());
-
-module.exports = criticalIncident;
+module.exports = require(resolveCriticalIncidentModule());
