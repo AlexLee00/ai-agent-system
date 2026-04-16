@@ -4,13 +4,20 @@ defmodule TeamJay.Ska.PubSub do
   블로팀 패턴 재사용!
 
   토픽:
-    - :failure_reported   — 실패 감지 이벤트
-    - :failure_resolved   — 자동 복구 완료
-    - :parsing_degraded   — 파싱 Level 1 → 2 → 3 강등
-    - :selector_promoted  — 셀렉터 승격
-    - :selector_deprecated — 셀렉터 폐기
-    - :phase_changed      — 자율 단계 전환 (Phase 1→2→3)
-    - :weekly_report      — 주간 리포트 (Phase 3)
+    - :failure_reported      — 실패 감지 이벤트
+    - :failure_resolved      — 자동 복구 완료
+    - :parsing_degraded      — 파싱 Level 1 → 2 → 3 강등
+    - :selector_promoted     — 셀렉터 승격
+    - :selector_deprecated   — 셀렉터 폐기
+    - :phase_changed         — 자율 단계 전환 (Phase 1→2→3)
+    - :weekly_report         — 주간 리포트 (Phase 3)
+    - :naver_new_bookings    — 네이버 신규 예약 감지
+    - :session_refreshed     — 세션 갱신 완료
+    - :retry_requested       — 재시도 요청
+    - :reload_requested      — 페이지 재로드 요청
+    - :kiosk_slots_blocked   — 키오스크 슬롯 차단 완료
+    - :kiosk_command_enqueued — 키오스크 명령 큐 추가
+    - :audit_requested       — 감사 요청
   """
 
   @registry TeamJay.SkaBus
@@ -53,6 +60,6 @@ defmodule TeamJay.Ska.PubSub do
   end
 
   def broadcast_phase_changed(from_phase, to_phase) do
-    broadcast(:phase_changed, %{from: from_phase, to: to_phase, at: DateTime.utc_now()})
+    broadcast(:phase_changed, %{from: from_phase, to: to_phase, new_phase: to_phase, at: DateTime.utc_now()})
   end
 end
