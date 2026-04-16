@@ -39,7 +39,6 @@ const DISK_CRITICAL = Number(cfg.RUNTIME?.quickcheck?.diskCriticalPercent || 90)
 // ── 핵심 서비스 목록 ──────────────────────────────────────────────────
 // restartable: Playwright 기반 서비스는 zombie chrome 위험으로 false
 const SERVICES = [
-  { id: 'ai.orchestrator',          label: '오케스트레이터',          restartable: true  },
   { id: 'ai.openclaw.gateway',      label: 'OpenClaw 게이트웨이',     restartable: true  },
   { id: 'ai.ska.commander',         label: '스카 커맨더',             restartable: true  },
   { id: 'ai.investment.crypto',     label: '루나 크립토',             restartable: true  },
