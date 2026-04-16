@@ -52,6 +52,10 @@ defmodule TeamJay.Teams.SkaSupervisor do
       # Phase 1: PortBridge
       TeamJay.Ska.PortBridge.NaverPort,
       TeamJay.Ska.PortBridge.PickkoPort,
+      # 팀장 + 고급 탐지 (Phase 2)
+      TeamJay.Ska.TeamLead,
+      TeamJay.Ska.FailureLibrary,
+      TeamJay.Ska.ExceptionDetector,
       # Analytics (Phase 4)
       TeamJay.Ska.Analytics.RevenueTracker,
       TeamJay.Ska.Analytics.Forecast,
