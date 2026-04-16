@@ -2,7 +2,7 @@
 
 const os = require('os');
 const path = require('path');
-const { updateCriticalIncidentCache } = require('../../../packages/core/lib/critical-incident.legacy');
+const { updateCriticalIncidentCache } = require('../../../packages/core/lib/critical-incident.js');
 
 const ALERT_DEDUPE_PATH = path.join(os.tmpdir(), 'worker-alert-dedupe.json');
 const ALERT_DEDUPE_WINDOW_MS = 15 * 60 * 1000;

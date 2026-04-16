@@ -9,7 +9,7 @@
 const os = require('os');
 const path = require('path');
 const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
-const { updateCriticalIncidentCache } = require('../../../packages/core/lib/critical-incident.legacy');
+const { updateCriticalIncidentCache } = require('../../../packages/core/lib/critical-incident.js');
 
 const ALERT_DEDUPE_PATH = path.join(os.tmpdir(), 'claude-alert-dedupe.json');
 const ALERT_DEDUPE_WINDOW_MS = 15 * 60 * 1000;
