@@ -84,7 +84,7 @@ defmodule TeamJay.Diagnostics do
   ]
   @week3_shadow_agents [
     {:worker_web, :worker, true,
-     %{pilot_mode: :daemon_cutover, health_url: "http://127.0.0.1:4000/health"}},
+     %{pilot_mode: :daemon_cutover, health_url: "http://127.0.0.1:4000/api/health"}},
     {:worker_nextjs, :worker, true,
      %{pilot_mode: :daemon_cutover, health_url: "http://127.0.0.1:4001"}},
     {:darwin_orchestrator, :platform, false},

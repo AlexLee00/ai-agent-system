@@ -11,6 +11,11 @@ defmodule TeamJay.Teams.BlogSupervisor do
     %{name: :blog_sync_book_review_queue, script: "bots/blog/scripts/build-book-review-queue.ts --json --limit 5", schedule: {:daily_at, 5, 50}},
     %{name: :blog_collect_views, script: "bots/blog/scripts/collect-views.ts", schedule: {:daily_at, 23, 0}},
     %{
+      name: :blog_node_server,
+      script: "dist/ts-runtime/bots/blog/api/node-server.js",
+      schedule: nil
+    },
+    %{
       name: :blog_marketing_snapshot,
       script: "export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH && cd elixir/team_jay && mix blog.marketing.snapshot",
       runner: {:shell, "/bin/zsh"},
