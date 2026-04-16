@@ -15,7 +15,12 @@ defmodule TeamJay.Teams.SkaSupervisor do
     # launchd가 canonical owner인 모니터는 PortAgent에서 중복 실행하지 않는다.
     %{name: :eve, script: "bots/ska/scripts/eve.js", schedule: {:interval, 3_600_000}},
     %{name: :eve_crawl, script: "bots/ska/scripts/eve-crawl.js", schedule: {:interval, 3_600_000}},
-    %{name: :ska_etl, script: "bots/ska/scripts/etl.js", schedule: nil},
+    %{
+      name: :ska_etl,
+      script: "cd /Users/alexlee/projects/ai-agent-system && /Users/alexlee/projects/ai-agent-system/bots/ska/venv/bin/python /Users/alexlee/projects/ai-agent-system/bots/ska/src/etl.py",
+      runner: {:shell, "/bin/bash"},
+      schedule: nil
+    },
     %{name: :rebecca, script: "bots/ska/scripts/rebecca.js", schedule: {:interval, 3_600_000}},
     %{name: :forecast_daily, script: "bots/ska/scripts/forecast.js --daily", schedule: nil},
     %{name: :forecast_weekly, script: "bots/ska/scripts/forecast.js --weekly", schedule: {:interval, 86_400_000}},
@@ -64,7 +69,11 @@ defmodule TeamJay.Teams.SkaSupervisor do
     port_children =
       Enum.map(@ska_agents, fn agent ->
         {TeamJay.Agents.PortAgent,
-         name: agent.name, team: :ska, script: agent.script, schedule: agent.schedule}
+         name: agent.name,
+         team: :ska,
+         script: agent.script,
+         runner: Map.get(agent, :runner, :node),
+         schedule: agent.schedule}
       end)
 
     children = native_children ++ port_children
