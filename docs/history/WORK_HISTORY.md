@@ -4,6 +4,18 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-04-16: 제이팀 리모델 Phase 3~4 — 크로스파이프라인 + 자율화 (CODEX_JAY_REMODEL)
+
+- **cross_team_router.ex**: JayBus 7토픽 구독 GenServer, 자율화 단계별 gate
+  dispatch_pipeline 라우터, claude_to_all은 phase 무관 항상 실행
+- **weekly_report.ex**: 월요일 07:30 KST 주간리포트, 팀별 하이라이트 추출
+- **autonomy_controller.ex**: Phase 1(감시)→2(반자율)→3(완전자율) 단계 전환
+  전환 조건: 7일/30일 clean_day, 마스터 개입 시 다운그레이드, DB 영속화
+- **growth_cycle.ex**: Phase 3 자율 시 일일 브리핑 발송 생략 (월요일 주간리포트만)
+- **코드 점검**: SQL 인젝션 수정, String.to_atom 안전화, UUID 검증 추가
+- **테스트**: 42 tests, 0 failures (Jay 순수 함수 단위 테스트)
+- **다음**: Phase 0 .legacy.js 80개 정리 or SKA Phase 4-2 forecast.py 보강
+
 ## 2026-04-16: 제이팀 리모델 Phase 1 — Elixir 성장 오케스트레이터 (CODEX_JAY_REMODEL)
 
 - **jay/topics.ex**: JayBus PubSub 14 토픽 (크로스 파이프라인 7개 + 성장 4 + 결정 4)
