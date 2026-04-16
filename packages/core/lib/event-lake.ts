@@ -247,6 +247,59 @@ export async function stats({ minutes = 24 * 60 } = {}) {
 }
 
 /**
+ * @param {{ minutes?: number, limit?: number, targetTeam?: string, pipeline?: string, commandId?: string }} [input]
+ */
+export async function recentCommands({
+  minutes = 24 * 60,
+  limit = 50,
+  targetTeam = '',
+  pipeline = '',
+  commandId = '',
+} = {}) {
+  await initSchema();
+
+  const params: Array<string | number> = [Math.max(1, Number(minutes || 0) || 1)];
+  const conditions = [
+    `created_at >= NOW() - ($1::int * INTERVAL '1 minute')`,
+    `event_type LIKE 'cross_pipeline.command_%'`,
+  ];
+  let nextParamIndex = 2;
+
+  if (_text(targetTeam)) {
+    params.push(_text(targetTeam));
+    conditions.push(`metadata->>'target_team' = $${nextParamIndex++}`);
+  }
+
+  if (_text(pipeline)) {
+    params.push(_text(pipeline));
+    conditions.push(`metadata->>'pipeline' = $${nextParamIndex++}`);
+  }
+
+  if (_text(commandId)) {
+    params.push(_text(commandId));
+    conditions.push(`metadata->'command'->>'command_id' = $${nextParamIndex++}`);
+  }
+
+  params.push(Math.min(200, Math.max(1, Number(limit || 50) || 50)));
+
+  const rows = await pgPool.query(SCHEMA, `
+    SELECT
+      id, event_type, team, bot_name, severity, trace_id,
+      title, message, tags, metadata, feedback_score, feedback,
+      created_at, updated_at
+    FROM ${TABLE}
+    WHERE ${conditions.join(' AND ')}
+    ORDER BY created_at DESC
+    LIMIT $${params.length}
+  `, params);
+
+  return {
+    total: rows.length,
+    results: rows,
+  };
+}
+
+/**
  * @param {number|string} id
  * @param {EventLakeFeedbackInput} [input]
  */

@@ -15,7 +15,7 @@ defmodule TeamJay.Jay.CrossTeamRouter do
 
   use GenServer
   require Logger
-  alias TeamJay.Jay.{CommandEnvelope, Topics}
+  alias TeamJay.Jay.{CommandEnvelope, CommandTracker, Topics}
 
   # ────────────────────────────────────────────────────────────────
   # GenServer 생명주기
@@ -296,13 +296,36 @@ defmodule TeamJay.Jay.CrossTeamRouter do
   end
 
   defp dispatch_team_command(pipeline, target_team, message, envelope) do
-    record_pipeline_event(pipeline, :command_issued, %{
-      target_team: target_team,
-      command: envelope,
-      summary: CommandEnvelope.summary(envelope)
-    })
+    CommandTracker.issued(pipeline, target_team, envelope, message: message)
 
-    TeamJay.HubClient.post_alarm(message, target_team, "jay.cross_team_router")
+    case TeamJay.HubClient.post_alarm(message, target_team, "jay.cross_team_router") do
+      {:ok, _response} ->
+        CommandTracker.acknowledged(pipeline, target_team, envelope, message: message)
+        :ok
+
+      {:error, error} ->
+        CommandTracker.failed(
+          pipeline,
+          target_team,
+          envelope,
+          message: message,
+          detail: inspect(error),
+          severity: "warn"
+        )
+
+        :ok
+
+      other ->
+        CommandTracker.acknowledged(
+          pipeline,
+          target_team,
+          envelope,
+          message: message,
+          detail: inspect(other)
+        )
+
+        :ok
+    end
   rescue
     _ -> :ok
   end
