@@ -19,4 +19,7 @@ defmodule TeamJay.Blog.Topics do
   def published, do: "blog:published"
   def feedback(post_id), do: "blog:feedback:#{post_id}"
   def social(channel), do: "blog:social:#{channel}"
+  def cross_team_commands, do: "blog:cross_team_command_received"
+  def promotion_requests, do: "blog:promotion_request"
+  def investment_content_requests, do: "blog:investment_content_request"
 end

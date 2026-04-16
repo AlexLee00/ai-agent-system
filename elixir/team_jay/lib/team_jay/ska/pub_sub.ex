@@ -71,4 +71,28 @@ defmodule TeamJay.Ska.PubSub do
       at: DateTime.utc_now()
     })
   end
+
+  def broadcast_seo_requested(payload) do
+    broadcast(:cross_team_command_received, %{
+      action_type: :apply_seo,
+      payload: payload,
+      at: DateTime.utc_now()
+    })
+  end
+
+  def broadcast_budget_surplus_notified(payload) do
+    broadcast(:cross_team_command_received, %{
+      action_type: :notify_budget_surplus,
+      payload: payload,
+      at: DateTime.utc_now()
+    })
+  end
+
+  def broadcast_workload_reduction_requested(payload) do
+    broadcast(:cross_team_command_received, %{
+      action_type: :reduce_workload,
+      payload: payload,
+      at: DateTime.utc_now()
+    })
+  end
 end

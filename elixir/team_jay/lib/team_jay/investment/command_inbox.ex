@@ -157,6 +157,17 @@ defmodule TeamJay.Investment.CommandInbox do
 
     TeamJay.Investment.PubSub.broadcast_cross_team_command(kind, metadata)
 
+    case kind do
+      :adjust_investment_intensity ->
+        TeamJay.Investment.PubSub.broadcast_intensity_adjustment(metadata)
+
+      :analyze_trend_candidates ->
+        TeamJay.Investment.PubSub.broadcast_trend_candidate_analysis(metadata)
+
+      :reduce_workload ->
+        TeamJay.Investment.PubSub.broadcast_workload_reduction(metadata)
+    end
+
     _ =
       TeamJay.HubClient.command_complete(command_id, "luna",
         bot_name: "investment_command_inbox",

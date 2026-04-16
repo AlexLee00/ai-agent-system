@@ -58,4 +58,23 @@ defmodule TeamJay.Blog.PubSub do
     TeamJay.Blog.Topics.execution_alert(target)
     |> broadcast({:execution_alert, target, payload})
   end
+
+  def broadcast_cross_team_command(action_type, payload) do
+    TeamJay.Blog.Topics.cross_team_commands()
+    |> broadcast(%{
+      action_type: action_type,
+      payload: payload,
+      at: DateTime.utc_now()
+    })
+  end
+
+  def broadcast_promotion_request(payload) do
+    TeamJay.Blog.Topics.promotion_requests()
+    |> broadcast(%{kind: :promotion, payload: payload, at: DateTime.utc_now()})
+  end
+
+  def broadcast_investment_content_request(payload) do
+    TeamJay.Blog.Topics.investment_content_requests()
+    |> broadcast(%{kind: :investment, payload: payload, at: DateTime.utc_now()})
+  end
 end
