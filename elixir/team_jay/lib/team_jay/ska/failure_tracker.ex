@@ -294,6 +294,17 @@ defmodule TeamJay.Ska.FailureTracker do
 
   defp maybe_notify(_type, _agent, _failure, _phase), do: :ok
 
+  # ─── Private: 안전한 atom 변환 ───────────────────────────────
+
+  @valid_error_types ~w(network_error selector_broken timeout auth_expired unknown)a
+
+  defp safe_to_atom(str) when is_binary(str) do
+    atom = String.to_existing_atom(str)
+    if atom in @valid_error_types, do: atom, else: :unknown
+  rescue
+    _ -> :unknown
+  end
+
   # ─── Private: DB 폴링 (Node.js 에이전트 실패 수집) ──────────
 
   defp poll_and_resolve(state) do
@@ -309,7 +320,7 @@ defmodule TeamJay.Ska.FailureTracker do
     case TeamJay.Repo.query(sql, [@auto_resolve_threshold]) do
       {:ok, %{rows: rows}} ->
         Enum.reduce(rows, state, fn [id, type_str, message, agent, count], acc ->
-          error_type = String.to_existing_atom(type_str)
+          error_type = safe_to_atom(type_str)
           failure = %{agent: agent, error_type: error_type, message: message, id: id}
 
           # 메모리 카운터 동기화
