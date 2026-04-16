@@ -12,8 +12,32 @@ export interface PublishReservationAlertOptions {
   payload?: Record<string, unknown> | null;
 }
 
-const ALERT_DEDUPE_PATH = path.join(os.homedir(), '.openclaw', 'workspace', 'reservation-alert-dedupe.json');
+const ALERT_DEDUPE_PATH = path.join(os.tmpdir(), 'reservation-alert-dedupe.json');
 const ALERT_DEDUPE_WINDOW_MS = 15 * 60 * 1000;
+type AlertIncidentCache = Record<string, {
+  count: number;
+  first_seen_at: number;
+  last_seen_at: number;
+  latest_message: string;
+  latest_reason: string;
+}>;
+
+function classifyReason(message: string): string {
+  const compact = String(message || '').replace(/\s+/g, ' ').trim();
+  if (/write EPIPE|broken pipe|stdout broken pipe|stderr broken pipe/i.test(compact)) {
+    return 'broken_pipe';
+  }
+  if (/SIGTERM 수신/i.test(compact)) {
+    return 'sigterm_shutdown';
+  }
+  const reasonMatch = compact.match(/사유:\s*(.+)$/);
+  const reason = reasonMatch ? reasonMatch[1].trim() : compact;
+  return reason
+    .toLowerCase()
+    .replace(/\s+/g, '_')
+    .replace(/[^a-z0-9가-힣_:-]/g, '')
+    .slice(0, 80) || 'unknown';
+}
 
 function normalizeAlertSignature({
   team,
@@ -24,41 +48,76 @@ function normalizeAlertSignature({
   if (alert_level == null || alert_level < 3) return null;
   if (event_type !== 'system_error') return null;
 
-  const compact = String(message || '').replace(/\s+/g, ' ').trim();
-  const reasonMatch = compact.match(/사유:\s*(.+)$/);
-  const reason = reasonMatch ? reasonMatch[1].trim() : compact;
-  return `${team || 'reservation'}|${event_type}|${reason}`;
+  return `${team || 'reservation'}|${event_type}|${classifyReason(message)}`;
 }
 
-function shouldSuppressDuplicateAlert(signature: string | null): boolean {
-  if (!signature) return false;
+function updateIncidentCache(signature: string | null, message: string): {
+  suppress: boolean;
+  incident: null | {
+    count: number;
+    first_seen_at: string;
+    last_seen_at: string;
+    latest_reason: string;
+  };
+} {
+  if (!signature) return { suppress: false, incident: null };
 
   try {
     fs.mkdirSync(path.dirname(ALERT_DEDUPE_PATH), { recursive: true });
-    let cache: Record<string, number> = {};
+    let cache: AlertIncidentCache = {};
 
     if (fs.existsSync(ALERT_DEDUPE_PATH)) {
       cache = JSON.parse(fs.readFileSync(ALERT_DEDUPE_PATH, 'utf8') || '{}');
     }
 
     const now = Date.now();
+    const latestReason = classifyReason(message);
     const recent = cache[signature];
     cache = Object.fromEntries(
-      Object.entries(cache).filter(([, ts]) => now - Number(ts || 0) < ALERT_DEDUPE_WINDOW_MS)
-    );
+      Object.entries(cache).filter(([, incident]) => now - Number(incident?.last_seen_at || 0) < ALERT_DEDUPE_WINDOW_MS)
+    ) as AlertIncidentCache;
 
-    if (recent && now - Number(recent) < ALERT_DEDUPE_WINDOW_MS) {
+    if (recent && now - Number(recent.last_seen_at || 0) < ALERT_DEDUPE_WINDOW_MS) {
+      cache[signature] = {
+        ...recent,
+        count: Number(recent.count || 0) + 1,
+        last_seen_at: now,
+        latest_message: message,
+        latest_reason: latestReason,
+      };
       fs.writeFileSync(ALERT_DEDUPE_PATH, JSON.stringify(cache, null, 2));
-      return true;
+      return {
+        suppress: true,
+        incident: {
+          count: cache[signature].count,
+          first_seen_at: new Date(cache[signature].first_seen_at).toISOString(),
+          last_seen_at: new Date(cache[signature].last_seen_at).toISOString(),
+          latest_reason: cache[signature].latest_reason,
+        },
+      };
     }
 
-    cache[signature] = now;
+    cache[signature] = {
+      count: 1,
+      first_seen_at: now,
+      last_seen_at: now,
+      latest_message: message,
+      latest_reason: latestReason,
+    };
     fs.writeFileSync(ALERT_DEDUPE_PATH, JSON.stringify(cache, null, 2));
   } catch (error) {
     console.warn(`[publishReservationAlert] dedupe cache 실패: ${String((error as Error)?.message || error)}`);
   }
 
-  return false;
+  return {
+    suppress: false,
+    incident: {
+      count: 1,
+      first_seen_at: new Date().toISOString(),
+      last_seen_at: new Date().toISOString(),
+      latest_reason: classifyReason(message),
+    },
+  };
 }
 
 export async function publishReservationAlert({
@@ -75,12 +134,18 @@ export async function publishReservationAlert({
   }
 
   const signature = normalizeAlertSignature({ team, event_type, alert_level, message });
-  if (shouldSuppressDuplicateAlert(signature)) {
-    console.log(`[publishReservationAlert] duplicate suppressed: ${signature}`);
+  const incidentState = updateIncidentCache(signature, message);
+  if (incidentState.suppress) {
+    console.log(`[publishReservationAlert] duplicate suppressed: ${signature} (#${incidentState.incident?.count || 1})`);
     return true;
   }
 
   const lines = [message];
+  if (incidentState.incident && signature) {
+    lines.push(
+      `incident: canonical=1 count=${incidentState.incident.count} first_seen=${incidentState.incident.first_seen_at} last_seen=${incidentState.incident.last_seen_at} reason=${incidentState.incident.latest_reason}`
+    );
+  }
   if (payload && typeof payload === 'object') {
     lines.push(`payload: ${JSON.stringify(payload)}`);
   }
