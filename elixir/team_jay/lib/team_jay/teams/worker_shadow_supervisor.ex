@@ -3,7 +3,6 @@ defmodule TeamJay.Teams.WorkerShadowSupervisor do
 
   @worker_agents [
     %{name: :worker_lead, label: "ai.worker.lead"},
-    %{name: :worker_task_runner, label: "ai.worker.task-runner"},
     %{name: :worker_web, label: "ai.worker.web"},
     %{name: :worker_nextjs, label: "ai.worker.nextjs"},
     %{name: :worker_claude_monitor, label: "ai.worker.claude-monitor"}

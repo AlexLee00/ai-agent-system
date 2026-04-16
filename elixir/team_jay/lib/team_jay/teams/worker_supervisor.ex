@@ -2,7 +2,8 @@ defmodule TeamJay.Teams.WorkerSupervisor do
   use Supervisor
 
   @worker_agents [
-    %{name: :worker_health_check, script: "bots/worker/scripts/health-check.js", schedule: {:interval, 600_000}}
+    %{name: :worker_health_check, script: "bots/worker/scripts/health-check.js", schedule: {:interval, 600_000}},
+    %{name: :worker_task_runner, script: "bots/worker/src/task-runner.js", schedule: :once}
   ]
 
   def start_link(opts \\ []) do
