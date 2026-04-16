@@ -43,7 +43,7 @@ function loadMigrationFiles() {
   }
 
   const files = fs.readdirSync(MIGRATIONS_DIR)
-    .filter(f => /^\d+_.+\.js$/.test(f))
+    .filter(f => /^\d+_[^.]+\.js$/.test(f))
     .sort();
 
   return files.map((f): MigrationModule => {
