@@ -205,7 +205,7 @@ async function buildReport() {
   const n8nHealth = await buildN8nHealth();
   const decision = buildDecision(serviceRows, dashboardHealth, n8nHealth);
 
-  return {
+  const report = {
     serviceHealth: {
       okCount: serviceRows.ok.length,
       warnCount: serviceRows.warn.length,
@@ -232,6 +232,7 @@ async function buildReport() {
     },
     decision,
   };
+  return report;
 }
 
 runHealthCli({

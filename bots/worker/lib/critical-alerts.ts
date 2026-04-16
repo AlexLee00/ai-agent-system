@@ -1,3 +1,4 @@
+// @ts-nocheck
 'use strict';
 
 const os = require('os');

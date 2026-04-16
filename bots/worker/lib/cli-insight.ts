@@ -1,3 +1,4 @@
+// @ts-nocheck
 'use strict';
 
 const { generateGemmaPilotText } = require('../../../packages/core/lib/gemma-pilot');

@@ -13,9 +13,9 @@
  */
 
 exports.version = 1;
-exports.name = 'team_bus';
+exports.name    = 'team_bus';
 
-exports.up = function (db) {
+exports.up = function(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       version    INTEGER PRIMARY KEY,
@@ -75,7 +75,7 @@ exports.up = function (db) {
   ).run(exports.version, exports.name);
 };
 
-exports.down = function (db) {
+exports.down = function(db) {
   db.exec(`
     DROP TABLE IF EXISTS check_history;
     DROP TABLE IF EXISTS tech_digest;

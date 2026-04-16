@@ -1,4 +1,102 @@
 // @ts-nocheck
 'use strict';
 
-module.exports = require('./company-guard.legacy.js');
+/**
+ * bots/worker/lib/company-guard.js — 업체 데이터 격리 미들웨어
+ *
+ * requireAuth(req, res, next)         — JWT 검증, req.user 세팅
+ * requireRole(...roles)               — 역할 확인 미들웨어 팩토리
+ * companyFilter(req, res, next)       — master: 전체, 나머지: 자기 업체만
+ * auditLog(action, target)(req, res, next) — audit_log 자동 기록
+ */
+
+const { verifyToken } = require('./auth');
+const path   = require('path');
+const pgPool = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'));
+
+const SCHEMA = 'worker';
+
+// ── 인증 ─────────────────────────────────────────────────────────────
+
+async function requireAuth(req, res, next) {
+  const header = req.headers['authorization'] || '';
+  const token  = header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (!token) return res.status(401).json({ error: '인증이 필요합니다.', code: 'UNAUTHORIZED' });
+
+  try {
+    req.user = await verifyToken(token);
+    next();
+  } catch {
+    return res.status(401).json({ error: '유효하지 않거나 만료된 토큰입니다.', code: 'TOKEN_INVALID' });
+  }
+}
+
+// ── 역할 ─────────────────────────────────────────────────────────────
+
+function requireMaster(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: '인증이 필요합니다.', code: 'UNAUTHORIZED' });
+  if (req.user.role !== 'master') return res.status(403).json({ error: '마스터 권한이 필요합니다.', code: 'FORBIDDEN' });
+  next();
+}
+
+function requireRole(...roles) {
+  return (req, res, next) => {
+    if (!req.user) return res.status(401).json({ error: '인증이 필요합니다.', code: 'UNAUTHORIZED' });
+    if (!roles.includes(req.user.role)) {
+      return res.status(403).json({ error: '권한이 없습니다.', code: 'FORBIDDEN' });
+    }
+    next();
+  };
+}
+
+// ── 업체 필터 ────────────────────────────────────────────────────────
+
+function companyFilter(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: '인증이 필요합니다.', code: 'UNAUTHORIZED' });
+  // 모든 역할: 기본은 본인 소속 업체 (master도 동일)
+  // master가 명시적으로 ?company_id=xxx 전달 시 해당 업체로 필터
+  req.companyId = req.query.company_id || req.user.company_id;
+  next();
+}
+
+// ── audit_log 미들웨어 팩토리 ────────────────────────────────────────
+
+function auditLog(action, target) {
+  return async (req, res, next) => {
+    // 원래 json()을 wrapping하여 응답 후 자동 기록
+    const origJson = res.json.bind(res);
+    res.json = async (body) => {
+      origJson(body);
+      if (res.statusCode < 400) {
+        try {
+          await pgPool.run(SCHEMA, `
+            INSERT INTO worker.audit_log (company_id, user_id, action, target, target_id, detail, ip_address)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+          `, [
+            req.user?.company_id || 'unknown',
+            req.user?.id         || null,
+            action,
+            target,
+            parseInt(body?.id ?? req.params?.id) || null,  // integer만 허용, 문자열 ID는 detail에 기록
+            JSON.stringify({ body: req.body, params: req.params }),
+            req.ip,
+          ]);
+        } catch { /* audit 실패는 무시 */ }
+      }
+    };
+    next();
+  };
+}
+
+// ── 파라미터 대상 업체 접근 권한 확인 ────────────────────────────────
+
+async function assertCompanyAccess(req, res, targetCompanyId) {
+  if (req.user.role === 'master') return true;
+  if (req.user.company_id !== targetCompanyId) {
+    res.status(403).json({ error: '다른 업체 데이터에 접근할 수 없습니다.', code: 'FORBIDDEN' });
+    return false;
+  }
+  return true;
+}
+
+module.exports = { requireAuth, requireMaster, requireRole, companyFilter, auditLog, assertCompanyAccess };
