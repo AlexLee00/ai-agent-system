@@ -145,3 +145,22 @@ reporting-hub 정리와 병행해서, human-facing CLI/report outputs에는 addi
 - `aiSummary` 또는 `🔍 AI:`를 additive하게 부착
 - `team / gemma-insight` runtime 사용
 - sanitize + deterministic fallback 포함
+
+## Current Critical Incident Canonicalization
+
+반복되는 고심각 인프라 알림은 이제 팀별 개별 구현보다 공용 helper 기준으로 통합된다.
+
+- [packages/core/lib/critical-incident.ts](/Users/alexlee/projects/ai-agent-system/packages/core/lib/critical-incident.ts)
+- [packages/core/lib/critical-incident.legacy.js](/Users/alexlee/projects/ai-agent-system/packages/core/lib/critical-incident.legacy.js)
+
+적용 팀:
+- reservation
+- investment
+- blog
+- worker
+- claude
+
+의미:
+- 같은 유형의 `alert_level >= 3` 인프라성 알림은 대표 incident 1건만 유지
+- 이후 유사 이벤트는 새 텔레그램/queue alert를 쌓지 않고, incident metadata만 누적
+- 비즈니스 건별 실패 알림은 그대로 유지해서 민감한 개별 사건은 묶지 않음
