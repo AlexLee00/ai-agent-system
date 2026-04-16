@@ -12,6 +12,7 @@
     "dev": "npm run dev --workspaces --if-present",
     "build": "npm run build --workspaces --if-present",
     "build:ts": "node scripts/build-ts-phase1.mjs",
+    "build:hub-runtime": "node scripts/build-hub-runtime.mjs",
     "test": "npm run test --workspaces --if-present",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "typecheck:strict": "tsc -p tsconfig.strict.json --noEmit",
