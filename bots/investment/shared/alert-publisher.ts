@@ -11,7 +11,7 @@ import path from 'path';
 
 const require  = createRequire(import.meta.url);
 const { publishToWebhook } = require('../../../packages/core/lib/reporting-hub');
-const { updateCriticalIncidentCache } = require('../../../packages/core/lib/critical-incident');
+const { updateCriticalIncidentCache } = require('./critical-incident-bridge.ts');
 
 const ALERT_DEDUPE_PATH = path.join(os.tmpdir(), 'investment-alert-dedupe.json');
 const ALERT_DEDUPE_WINDOW_MS = 15 * 60 * 1000;

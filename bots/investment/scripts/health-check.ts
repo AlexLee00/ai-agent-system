@@ -18,7 +18,7 @@ import { validateTradeReview } from './validate-trade-review.ts';
 
 const require = createRequire(import.meta.url);
 const hsm     = require('../../../packages/core/lib/health-state-manager');
-const { createHealthMemoryHelper } = require('../../../packages/core/lib/health-memory');
+const { createHealthMemoryHelper } = require('../shared/health-memory-bridge.ts');
 const { buildIssueHints, rememberHealthEvent } = createHealthMemoryHelper({
   agentId: 'investment.health',
   team: 'investment',
