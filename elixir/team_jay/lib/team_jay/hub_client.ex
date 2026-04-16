@@ -15,7 +15,7 @@ defmodule TeamJay.HubClient do
   end
 
   def health do
-    case Req.get("#{hub_url()}/hub/health", headers: headers()) do
+    case Req.get("#{hub_url()}/hub/health", headers: headers(), retry: false) do
       {:ok, %{status: 200, body: body}} -> {:ok, body}
       {:ok, %{status: status, body: body}} -> {:error, "HTTP #{status}: #{inspect(body)}"}
       {:error, err} -> {:error, err}
@@ -23,7 +23,11 @@ defmodule TeamJay.HubClient do
   end
 
   def pg_query(sql, schema \\ "public") do
-    case Req.post("#{hub_url()}/hub/pg/query", json: %{sql: sql, schema: schema}, headers: headers()) do
+    case Req.post("#{hub_url()}/hub/pg/query",
+           json: %{sql: sql, schema: schema},
+           headers: headers(),
+           retry: false
+         ) do
       {:ok, %{status: 200, body: body}} -> {:ok, body}
       {:ok, %{status: status, body: body}} -> {:error, "HTTP #{status}: #{inspect(body)}"}
       {:error, err} -> {:error, err}
@@ -33,7 +37,8 @@ defmodule TeamJay.HubClient do
   def post_alarm(message, team \\ "system", from_bot \\ "elixir") do
     Req.post("#{hub_url()}/hub/alarm",
       json: %{message: message, team: team, fromBot: from_bot},
-      headers: headers()
+      headers: headers(),
+      retry: false
     )
   end
 
@@ -44,7 +49,7 @@ defmodule TeamJay.HubClient do
   """
   def memory_remember(agent_id, team, content, type \\ "episodic", opts \\ %{}) do
     body = Map.merge(%{agentId: agent_id, team: team, content: content, type: type}, opts)
-    case Req.post("#{hub_url()}/hub/memory/remember", json: body, headers: headers()) do
+    case Req.post("#{hub_url()}/hub/memory/remember", json: body, headers: headers(), retry: false) do
       {:ok, %{status: 200, body: body}} -> {:ok, body["memoryId"]}
       {:ok, %{status: status, body: body}} -> {:error, "HTTP #{status}: #{inspect(body)}"}
       {:error, err} -> {:error, err}
@@ -57,11 +62,10 @@ defmodule TeamJay.HubClient do
   """
   def memory_recall(agent_id, team, query, opts \\ %{}) do
     body = Map.merge(%{agentId: agent_id, team: team, query: query}, opts)
-    case Req.post("#{hub_url()}/hub/memory/recall", json: body, headers: headers()) do
+    case Req.post("#{hub_url()}/hub/memory/recall", json: body, headers: headers(), retry: false) do
       {:ok, %{status: 200, body: body}} -> {:ok, body["memories"] || []}
       {:ok, %{status: status, body: body}} -> {:error, "HTTP #{status}: #{inspect(body)}"}
       {:error, err} -> {:error, err}
     end
   end
 end
-

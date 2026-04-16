@@ -654,7 +654,7 @@ defmodule TeamJay.Diagnostics do
   defp probe_shadow_health(nil), do: %{status: :skipped}
 
   defp probe_shadow_health(url) do
-    case Req.get(url) do
+    case Req.get(url, retry: false) do
       {:ok, %{status: 200}} ->
         %{status: :ok, http_status: 200}
 
