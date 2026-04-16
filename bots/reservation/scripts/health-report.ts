@@ -226,6 +226,21 @@ async function buildCancelCounterDriftHealth() {
       };
     }
 
+    if (unresolvedAlerts.length === 0 && unresolvedRawRows.length === 0) {
+      const ok = [`  취소 카운터 드리프트: 최근 24시간 resolved 이력 ${rows.length}건`];
+      if (latest?.timestamp) {
+        ok.push(`  최신 resolved 감지: ${latest.timestamp}`);
+      }
+      return {
+        ok,
+        warn: [],
+        samples: alertSamples,
+        totalCount: rows.length,
+        unresolvedCount: 0,
+        latestTimestamp: latest?.timestamp || null,
+      };
+    }
+
     const warn = [
       `  취소 카운터 드리프트: 최근 24시간 알림 ${rows.length}건`,
       `  미해결 알림: ${unresolvedAlerts.length}건`,
