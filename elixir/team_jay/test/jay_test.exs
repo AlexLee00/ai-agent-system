@@ -2,7 +2,7 @@ defmodule TeamJay.JayTest do
   # DB 불필요한 순수 로직 테스트 (async: true 가능)
   use ExUnit.Case, async: true
 
-  alias TeamJay.Jay.{Topics, DailyBriefing, DecisionEngine}
+  alias TeamJay.Jay.{Topics, DailyBriefing, DecisionEngine, WeeklyReport}
 
   # ────────────────────────────────────────────────────────────────
   # Topics
@@ -207,6 +207,58 @@ defmodule TeamJay.JayTest do
   describe "DecisionEngine — 미분류 이벤트" do
     test "알 수 없는 이벤트 → :allow (안전 기본값)" do
       assert DecisionEngine.evaluate(:some_new_event, %{}) == :allow
+    end
+  end
+
+  # ────────────────────────────────────────────────────────────────
+  # WeeklyReport — 순수 함수
+  # ────────────────────────────────────────────────────────────────
+
+  describe "DailyBriefing.format_team_week/2" do
+    test "nil 데이터 → 실패 문자열" do
+      result = DailyBriefing.format_team_week(:luna, nil)
+      assert is_binary(result)
+    end
+
+    test "루나 데이터 포맷" do
+      data = %{metric_type: :trading_ops, market_regime: "bull",
+               trades_7d: 5, pnl_usdt_7d: 200.0, traded_usdt_7d: 1000.0,
+               win_count: 3, live_positions: 1}
+      result = DailyBriefing.format_team_week(:luna, data)
+      assert is_binary(result)
+      assert String.contains?(result, "루나팀")
+    end
+
+    test "알 수 없는 팀 → 기본 포맷" do
+      result = DailyBriefing.format_team_week(:darwin, nil)
+      assert is_binary(result)
+    end
+  end
+
+  # ────────────────────────────────────────────────────────────────
+  # CrossTeamRouter 파이프라인 — 메시지 포맷 간접 확인
+  # ────────────────────────────────────────────────────────────────
+
+  describe "Topics cross-pipeline 브로드캐스트" do
+    test "broadcast_ska_revenue_drop 인터페이스 동작" do
+      # Registry에 구독자 없어도 오류 없음
+      result = Topics.broadcast_ska_revenue_drop(20, %{revenue_7d: 200_000})
+      assert result == :ok
+    end
+
+    test "broadcast_luna_market_shock 인터페이스 동작" do
+      result = Topics.broadcast_luna_market_shock("volatile", %{})
+      assert result == :ok
+    end
+
+    test "broadcast_system_risk 인터페이스 동작" do
+      result = Topics.broadcast_system_risk(7, ["api", "db"])
+      assert result == :ok
+    end
+
+    test "broadcast_blog_keyword_hit 인터페이스 동작" do
+      result = Topics.broadcast_blog_keyword_hit(["분당 스터디카페", "서현 독서실"], %{})
+      assert result == :ok
     end
   end
 end
