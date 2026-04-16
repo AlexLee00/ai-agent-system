@@ -272,16 +272,60 @@ defmodule TeamJay.Ska.ParsingGuard do
 
   # ─── Private: PortBridge LLM 호출 ────────────────────────
 
-  # TODO(Phase 3.5): ska-llm-parse.ts PortAgent 전환 후 실제 구현
-  # 현재는 stub — HubClient.pg_query로 결과 폴링하는 방식 대신
-  # PortAgent 전용 프로세스 경유로 전환 예정
-  defp call_llm_via_port(%{chain_id: chain_id, meta: meta}) do
-    Logger.info("[ParsingGuard] LLM 호출 stub (#{chain_id}) — Phase 3.5 구현 예정")
-    # Phase 3.5 구현 전까지: 에러 반환 (Level 3 실패로 처리됨)
-    # 실제 구현 시: ska-llm-parse.ts를 PortAgent로 실행하고 결과 수신
-    agent = Map.get(meta, :agent, "parsing_guard")
-    Logger.warning("[ParsingGuard] Level 3(LLM) 미구현 — #{agent} 수동 확인 필요")
-    {:error, :llm_not_implemented}
+  @llm_script "dist/ts-runtime/bots/reservation/scripts/ska-llm-parse.js"
+
+  defp call_llm_via_port(payload) do
+    chain_id = Map.get(payload, :chain_id, "unknown")
+    agent = get_in(payload, [:meta, :agent]) || "parsing_guard"
+    Logger.info("[ParsingGuard] LLM 호출: #{chain_id} (#{agent})")
+
+    script_path = Path.join(TeamJay.Config.repo_root(), @llm_script)
+
+    case Jason.encode(payload) do
+      {:ok, json} ->
+        b64 = Base.encode64(json)
+        task = Task.async(fn ->
+          System.cmd(
+            "node",
+            [script_path, "--payload=#{b64}"],
+            cd: TeamJay.Config.repo_root(),
+            stderr_to_stdout: false
+          )
+        end)
+
+        case Task.yield(task, @llm_timeout_ms) || Task.shutdown(task, :brutal_kill) do
+          {:ok, {output, 0}} ->
+            parse_llm_output(output, chain_id)
+
+          {:ok, {output, exit_code}} ->
+            Logger.error("[ParsingGuard] LLM 스크립트 종료 #{exit_code}: #{String.slice(output, 0, 200)}")
+            {:error, :script_error}
+
+          nil ->
+            Logger.error("[ParsingGuard] LLM 호출 타임아웃 (#{@llm_timeout_ms}ms)")
+            {:error, :timeout}
+        end
+
+      {:error, reason} ->
+        Logger.error("[ParsingGuard] JSON 인코딩 실패: #{inspect(reason)}")
+        {:error, :encode_failed}
+    end
+  end
+
+  defp parse_llm_output(output, chain_id) do
+    case Jason.decode(String.trim(output)) do
+      {:ok, %{"text" => text, "provider" => provider}} ->
+        Logger.info("[ParsingGuard] LLM 성공: #{chain_id} / #{provider}")
+        {:ok, text, provider}
+
+      {:ok, %{"error" => err}} ->
+        Logger.warning("[ParsingGuard] LLM 오류 응답: #{err}")
+        {:error, err}
+
+      {:error, _} ->
+        Logger.error("[ParsingGuard] LLM 응답 파싱 실패: #{String.slice(output, 0, 100)}")
+        {:error, :invalid_response}
+    end
   end
 
   # ─── Private: HTML 셀렉터 적용 (실제 파싱은 Node.js 측에서) ──
