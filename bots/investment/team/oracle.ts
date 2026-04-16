@@ -10,11 +10,15 @@
  */
 
 import https from 'https';
+import { createRequire } from 'module';
 import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { callLLM, parseJSON } from '../shared/llm-client.ts';
 import { ANALYST_TYPES, ACTIONS } from '../shared/signal.ts';
 import { getFundingRate, getOpenInterest, getLongShortRatio } from '../shared/onchain-data.ts';
+
+const _req = createRequire(import.meta.url);
+const { AgentMemory } = _req('../../../packages/core/lib/agent-memory');
 
 // ─── 공개 API 수집 ──────────────────────────────────────────────────
 
@@ -163,6 +167,22 @@ export async function analyzeOnchain(symbol = 'BTC/USDT') {
     metadata:  buildOracleAnalysisMetadata(fearGreed, funding, lsRatio, openInterest),
   });
   console.log(`  ✅ [오라클] DB 저장 완료`);
+
+  // ── 에이전트 메모리 기록 ────────────────────────────────────────────
+  try {
+    const oracleMemory = new AgentMemory({ agentId: 'investment.oracle', team: 'investment' });
+    await oracleMemory.remember(
+      `[온체인 분석] ${symbol} → ${signal} (${(confidence * 100).toFixed(0)}%) | ${reasoning}`,
+      'episodic',
+      {
+        keywords: [symbol, signal, fearGreed?.classification].filter(Boolean),
+        importance: confidence,
+        metadata: { signal, confidence, fearGreedValue: fearGreed?.value, symbol, exchange: 'binance' },
+      }
+    );
+  } catch {
+    // 메모리 저장 실패 무시
+  }
 
   return { symbol, signal, confidence, reasoning, fearGreed, funding, lsRatio };
 }
