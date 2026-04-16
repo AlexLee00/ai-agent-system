@@ -299,7 +299,10 @@ launchctl unload ~/Library/LaunchAgents/ai.investment.overseas.plist
 - `bots/worker/lib/` 35개 .ts 파일 생성 (나머지 3개 commit 5fe2b8f9)
 
 ### 남은 in_progress 태스크
-- **#14** (부분 완료): pos-writer.ts, gems-writer.ts AgentMemory 훅 미구현
-- **#17** (부분 완료): packages/core/lib 137개 .js→.ts 변환 미착수
+- **#14 완료** (commit 6746ab3f): pos-writer.ts, gems-writer.ts AgentMemory 에피소딕 저장 추가
+- **#17 완료** (commit fd5aa14f): packages/core/lib 4개 .js → .ts @ts-nocheck prep 완료
+  - service-ownership.ts, skills/blog/skill-loader.ts, *.legacy.ts 2개
+
+### 모든 즉시 실행 태스크 완료 (#14~#18)
 
 > 이전 HANDOFF: 2026-04-17 CODEX_BLOG_AUTONOMOUS_OPS Phase A~D
