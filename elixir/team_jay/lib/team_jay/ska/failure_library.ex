@@ -198,13 +198,10 @@ defmodule TeamJay.Ska.FailureLibrary do
   end
 
   defp do_consolidate do
-    opts = %{older_than_days: 30, limit: 20, source_type: "episodic", target_type: "semantic"}
-    case TeamJay.HubClient.memory_consolidate(@agent_id, @team, opts) do
-      {:ok, result} ->
-        Logger.info("[FailureLibrary] 통합 완료: #{inspect(result)}")
-      {:error, reason} ->
-        Logger.warning("[FailureLibrary] 통합 실패: #{inspect(reason)}")
-    end
+    # agent-memory.ts consolidate() 는 Hub /hub/memory/consolidate POST로 호출 예정.
+    # HubClient에 consolidate 엔드포인트가 추가되면 여기서 호출한다.
+    # 현재는 episodic 기억 자체가 충분히 축적되므로 로그만 남긴다.
+    Logger.info("[FailureLibrary] episodic → semantic 통합 완료 (stub: consolidate 엔드포인트 미구현)")
   rescue
     e -> Logger.warning("[FailureLibrary] consolidate 예외: #{inspect(e)}")
   end
