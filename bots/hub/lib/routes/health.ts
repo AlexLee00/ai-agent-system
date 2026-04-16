@@ -47,6 +47,20 @@ const { buildIssueHints, rememberHealthEvent } = createHealthMemoryHelper({
 });
 let lastRecordedStatus: 'ok' | 'warn' | null = null;
 
+async function fetchJson(url: string, timeoutMs = 3000): Promise<any | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function collectHealthSnapshot(): Promise<HealthSnapshot> {
   const started = Date.now();
   const resources: HealthResources = {};
@@ -91,6 +105,42 @@ export async function collectHealthSnapshot(): Promise<HealthSnapshot> {
     resources.n8n = {
       status: 'ok',
       detail: 'disabled in current mode',
+    };
+  }
+
+  const localLlmStart = Date.now();
+  const localLlmJson = await fetchJson(`${env.LOCAL_LLM_BASE_URL}/v1/models`, 4000);
+  const localLlmModels = Array.isArray(localLlmJson?.data)
+    ? localLlmJson.data.map((item: any) => item?.id).filter(Boolean)
+    : [];
+  resources.local_llm = localLlmModels.length > 0
+    ? {
+        status: 'ok',
+        detail: `models ${localLlmModels.length}개 (${localLlmModels.slice(0, 4).join(', ')})`,
+        latency_ms: Date.now() - localLlmStart,
+      }
+    : {
+        status: 'warn',
+        detail: `unreachable or invalid response (${env.LOCAL_LLM_BASE_URL}/v1/models)`,
+        latency_ms: Date.now() - localLlmStart,
+      };
+
+  try {
+    const ragRows = await pgPool.query('rag', `
+      SELECT count(*)::int AS total_count, max(created_at) AS latest_created_at
+      FROM rag.agent_memory
+    `);
+    const row = ragRows?.[0] || {};
+    const totalCount = Number(row.total_count || 0);
+    const latestCreatedAt = row.latest_created_at ? String(row.latest_created_at) : null;
+    resources.rag = {
+      status: 'ok',
+      detail: `agent_memory ${totalCount}건${latestCreatedAt ? `, latest ${latestCreatedAt}` : ''}`,
+    };
+  } catch (error: any) {
+    resources.rag = {
+      status: 'warn',
+      detail: String(error?.message || 'rag query failed'),
     };
   }
 

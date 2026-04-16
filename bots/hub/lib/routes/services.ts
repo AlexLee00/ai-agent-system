@@ -19,6 +19,7 @@ const SERVICE_LABELS = [
   'ai.worker.task-runner',
   'ai.investment.commander',
   'ai.investment.crypto',
+  'ai.mlx.server',
   'ai.n8n.server',
   'ai.hub.resource-api',
 ];
