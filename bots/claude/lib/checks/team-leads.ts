@@ -1,4 +1,4 @@
 // @ts-nocheck
 'use strict';
 
-module.exports = require('./team-leads.legacy.js');
+module.exports = require('./team-leads-bridge.js');
