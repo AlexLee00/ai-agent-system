@@ -99,7 +99,7 @@ defmodule TeamJay.Ska.Analytics.RevenueTracker do
       FROM ska.revenue_daily
       WHERE date = '#{date_str}'::date
       LIMIT 1
-    """, "jay") do
+    """, "ska") do
       {:ok, %{"rows" => [%{"revenue" => r}]}} -> {:ok, r}
       {:ok, %{"rows" => []}} -> {:ok, 0}
       {:error, reason} ->
@@ -118,7 +118,7 @@ defmodule TeamJay.Ska.Analytics.RevenueTracker do
       FROM ska.revenue_daily
       WHERE date >= (CURRENT_DATE - INTERVAL '#{days} days')
         AND date < CURRENT_DATE
-    """, "jay") do
+    """, "ska") do
       {:ok, %{"rows" => [%{"total" => t}]}} -> {:ok, t}
       {:error, reason} ->
         Logger.warning("[RevenueTracker] query_recent(#{days}) 실패: #{inspect(reason)}")
@@ -137,7 +137,7 @@ defmodule TeamJay.Ska.Analytics.RevenueTracker do
       WHERE date >= (CURRENT_DATE - INTERVAL '#{days} days')
         AND date < CURRENT_DATE
       ORDER BY date ASC
-    """, "jay") do
+    """, "ska") do
       {:ok, %{"rows" => rows}} ->
         trend = Enum.map(rows, fn %{"date" => d, "revenue" => r} -> %{date: d, revenue: r} end)
         {:ok, trend}

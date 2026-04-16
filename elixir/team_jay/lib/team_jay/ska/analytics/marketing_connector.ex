@@ -130,7 +130,7 @@ defmodule TeamJay.Ska.Analytics.MarketingConnector do
       FROM ska.revenue_daily
       WHERE date >= CURRENT_DATE - INTERVAL '14 days'
         AND date < CURRENT_DATE - INTERVAL '7 days'
-    """, "jay") do
+    """, "ska") do
       {:ok, %{"rows" => [row]}} -> {:ok, row["prev_7d"] || 0}
       {:ok, %{"rows" => []}}    -> {:ok, 0}
       {:error, reason}          -> {:error, reason}
