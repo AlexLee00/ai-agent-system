@@ -10,6 +10,8 @@ defmodule TeamJay.Teams.BlogSupervisor do
     %{name: :blog_sync_book_catalog, script: "bots/blog/scripts/sync-book-catalog.ts --json", schedule: {:daily_at, 5, 40}},
     %{name: :blog_sync_book_review_queue, script: "bots/blog/scripts/build-book-review-queue.ts --json --limit 5", schedule: {:daily_at, 5, 50}},
     %{name: :blog_collect_views, script: "bots/blog/scripts/collect-views.ts", schedule: {:daily_at, 23, 0}},
+    %{name: :blog_channel_insights, script: "bots/blog/scripts/channel-insights-collector.ts --json", schedule: {:daily_at, 22, 0}},
+    %{name: :blog_revenue_strategy, script: "bots/blog/scripts/revenue-strategy-updater.ts --json", schedule: {:weekly_at, [1], 7, 0}},
     %{
       name: :blog_node_server,
       script: "dist/ts-runtime/bots/blog/api/node-server.js",
