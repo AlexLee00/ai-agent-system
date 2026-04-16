@@ -75,9 +75,7 @@ defmodule TeamJay.Diagnostics do
     {:dexter, :claude}
   ]
   @week2_shadow_agents []
-  @week3_shadow_agents [
-    {:darwin_orchestrator, :platform, false}
-  ]
+  @week3_shadow_agents []
 
   defstruct [
     :checks,

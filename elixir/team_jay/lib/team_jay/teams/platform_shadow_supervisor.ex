@@ -1,9 +1,7 @@
 defmodule TeamJay.Teams.PlatformShadowSupervisor do
   use Supervisor
 
-  @platform_agents [
-    %{name: :darwin_orchestrator, label: "ai.orchestrator", required: false}
-  ]
+  @platform_agents []
 
   def start_link(opts \\ []) do
     Supervisor.start_link(__MODULE__, opts, name: __MODULE__)
