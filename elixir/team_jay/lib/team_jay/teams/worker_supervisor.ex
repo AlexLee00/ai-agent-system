@@ -10,7 +10,7 @@ defmodule TeamJay.Teams.WorkerSupervisor do
       name: :worker_web,
       script: "/Users/alexlee/projects/ai-agent-system/bots/worker/scripts/start-worker-web.sh",
       runner: {:shell, "/bin/bash"},
-      schedule: nil
+      schedule: if(Mix.env() == :test, do: nil, else: :once)
     },
     %{
       name: :worker_nextjs,
