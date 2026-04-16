@@ -3,11 +3,11 @@
 'use strict';
 
 const path = require('path');
-const pgPool = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'));
-const registry = require(path.join(__dirname, '../../../packages/core/lib/agent-registry'));
-const { publishToWebhook } = require(path.join(__dirname, '../../../packages/core/lib/reporting-hub'));
-const { createAgentMemory } = require(path.join(__dirname, '../../../packages/core/lib/agent-memory'));
-const eventLake = require(path.join(__dirname, '../../../packages/core/lib/event-lake'));
+const pgPool = require('../../../packages/core/lib/pg-pool');
+const registry = require('../../../packages/core/lib/agent-registry');
+const { publishToWebhook } = require('../../../packages/core/lib/reporting-hub');
+const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
+const eventLake = require('../../../packages/core/lib/event-lake');
 const { buildBlogCliInsight } = require('../lib/cli-insight.ts');
 const performanceMemory = createAgentMemory({ agentId: 'blog.performance', team: 'blog' });
 

@@ -17,10 +17,11 @@ const { getBlogLLMSelectorOverrides } = require('./runtime-config.ts');
 
 const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
 const { generateInstaCard } = require('./img-gen.ts');
+const env = require('../../../packages/core/lib/env');
 const fs = require('fs');
 const path = require('path');
 
-const INSTA_DIR = path.join(__dirname, '..', 'output', 'images', 'insta');
+const INSTA_DIR = path.join(env.PROJECT_ROOT, 'bots', 'blog', 'output', 'images', 'insta');
 const GDRIVE_DIR = process.env.GDRIVE_BLOG_INSTA || '/tmp/blog-insta';
 
 const SUMMARIZE_SYSTEM = `

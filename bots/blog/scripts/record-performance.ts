@@ -3,7 +3,7 @@
 'use strict';
 
 const path = require('path');
-const pgPool = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'));
+const pgPool = require('../../../packages/core/lib/pg-pool');
 const { recordPerformance, getPerformanceCollectionCandidates } = require('../lib/publ.ts');
 
 function parseArgs(argv = process.argv.slice(2)) {

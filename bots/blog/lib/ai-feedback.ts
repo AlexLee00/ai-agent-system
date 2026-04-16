@@ -3,18 +3,18 @@
 
 const crypto = require('crypto');
 const path = require('path');
-const pgPool = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'));
+const pgPool = require('../../../packages/core/lib/pg-pool');
 const {
   ensureAiFeedbackTables,
   createFeedbackSession,
   updateFeedbackSession,
   addFeedbackEvent,
-} = require(path.join(__dirname, '../../../packages/core/lib/ai-feedback-store'));
+} = require('../../../packages/core/lib/ai-feedback-store');
 const {
   FEEDBACK_EVENT_TYPES,
   FEEDBACK_STATUSES,
   shouldMarkAcceptedWithoutEdit,
-} = require(path.join(__dirname, '../../../packages/core/lib/ai-feedback-core'));
+} = require('../../../packages/core/lib/ai-feedback-core');
 
 const SCHEMA = 'blog';
 const MASTER_USER_ID = 1;

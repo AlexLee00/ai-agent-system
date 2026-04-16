@@ -75,7 +75,7 @@ const AI_AGENT_CONTEXT = `
 // ─── IT 카테고리 뉴스 분석 섹션 적용 대상 ────────────────────────────
 
 const IT_NEWS_CATEGORIES = ['최신IT트렌드', 'IT정보와분석', '개발기획과컨설팅'];
-const BLOG_OUTPUT_DIR = path.join(__dirname, '..', 'output');
+const BLOG_OUTPUT_DIR = path.join(env.PROJECT_ROOT, 'bots', 'blog', 'output');
 const RECENT_GENERAL_THEME_WINDOW_DAYS = 14;
 const RECENT_GENERAL_THEME_LIMIT = 12;
 const THEME_SIGNAL_MAP = [

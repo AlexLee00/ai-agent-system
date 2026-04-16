@@ -3,8 +3,8 @@
 'use strict';
 
 const path = require('path');
-const pgPool = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'));
-const { parseNaverBlogUrl } = require(path.join(__dirname, '../../../packages/core/lib/naver-blog-url'));
+const pgPool = require('../../../packages/core/lib/pg-pool');
+const { parseNaverBlogUrl } = require('../../../packages/core/lib/naver-blog-url');
 const { markPublished } = require('../lib/publ.ts');
 
 function parseArgs(argv = process.argv.slice(2)) {

@@ -8,7 +8,7 @@ const os = require('os');
 const puppeteer = require('puppeteer');
 
 const env = require('../../../packages/core/lib/env');
-const { parseNaverBlogUrl } = require(path.join(__dirname, '../../../packages/core/lib/naver-blog-url'));
+const { parseNaverBlogUrl } = require('../../../packages/core/lib/naver-blog-url');
 const { getBlogCommenterConfig } = require('../lib/runtime-config.ts');
 const { getViewCollectionCandidates, recordPerformancePartial } = require('../lib/publ.ts');
 
