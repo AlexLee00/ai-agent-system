@@ -18,6 +18,7 @@ defmodule TeamJay.Ska.PubSub do
     - :kiosk_slots_blocked   — 키오스크 슬롯 차단 완료
     - :kiosk_command_enqueued — 키오스크 명령 큐 추가
     - :audit_requested       — 감사 요청
+    - :cross_team_command_received — 외부 팀 command 수신
   """
 
   @registry TeamJay.SkaBus
@@ -61,5 +62,13 @@ defmodule TeamJay.Ska.PubSub do
 
   def broadcast_phase_changed(from_phase, to_phase) do
     broadcast(:phase_changed, %{from: from_phase, to: to_phase, new_phase: to_phase, at: DateTime.utc_now()})
+  end
+
+  def broadcast_cross_team_command(action_type, payload) do
+    broadcast(:cross_team_command_received, %{
+      action_type: action_type,
+      payload: payload,
+      at: DateTime.utc_now()
+    })
   end
 end
