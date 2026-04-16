@@ -148,11 +148,11 @@ defmodule TeamJay.Blog.TokenRenewal do
 
   defp run_node_script(script) do
     project_root = Application.get_env(:team_jay, :project_root, "/Users/alexlee/projects/ai-agent-system")
-    tsx = Path.join(project_root, "node_modules/.bin/tsx")
     script_path = Path.join(project_root, script |> String.split(" ") |> hd())
     args = script |> String.split(" ") |> tl()
+    {runner, runner_args} = resolve_script_runner(project_root)
 
-    case System.cmd(tsx, [script_path | args],
+    case System.cmd(runner, runner_args ++ [script_path | args],
            cd: project_root,
            stderr_to_stdout: true) do
       {output, 0} -> {:ok, String.trim(output)}
@@ -160,6 +160,28 @@ defmodule TeamJay.Blog.TokenRenewal do
     end
   rescue
     e -> {:error, inspect(e)}
+  end
+
+  defp resolve_script_runner(project_root) do
+    tsx_candidates = [
+      Path.join(project_root, "node_modules/.bin/tsx"),
+      Path.join(project_root, "node_modules/tsx/dist/cli.cjs"),
+      System.find_executable("tsx")
+    ]
+
+    case Enum.find(tsx_candidates, &(&1 && File.exists?(&1))) do
+      nil ->
+        node = System.find_executable("node") || "/opt/homebrew/bin/node"
+        {node, []}
+
+      tsx ->
+        if String.ends_with?(tsx, ".cjs") do
+          node = System.find_executable("node") || "/opt/homebrew/bin/node"
+          {node, [tsx]}
+        else
+          {tsx, []}
+        end
+    end
   end
 
   # ─── JayBus & 알림 ───────────────────────────────────────
