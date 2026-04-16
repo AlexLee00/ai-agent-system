@@ -28,6 +28,7 @@ const {
   buildResolvedWebhookHealth,
 } = require('../../../packages/core/lib/health-provider');
 const pgPool = require('../../../packages/core/lib/pg-pool');
+const fs = require('node:fs');
 
 const CONTINUOUS = ['ai.ska.naver-monitor', 'ai.ska.commander'];
 const CORE_SERVICES = [
@@ -71,7 +72,7 @@ function sumRoomAmounts(roomAmountsJson): number {
 }
 
 function buildMonitorHealth() {
-  return buildFileActivityHealth({
+  const base = buildFileActivityHealth({
     label: 'naver-monitor 로그',
     filePath: NAVER_LOG,
     staleMs: LOG_STALE_MS,
@@ -79,6 +80,70 @@ function buildMonitorHealth() {
     staleText: (state) => `  naver-monitor 로그: ${state.minutesAgo}분 무활동`,
     okText: (state) => `  naver-monitor 로그: 최근 ${state.minutesAgo}분 이내 활동`,
   });
+
+  try {
+    if (!fs.existsSync(NAVER_LOG)) return base;
+
+    const text = fs.readFileSync(NAVER_LOG, 'utf8');
+    const lines = text.split('\n').slice(-200);
+    const errorPatterns = [
+      /⏹ naver-monitor 종료 \(exit:\s*1/i,
+      /Attempted to use detached Frame/i,
+      /Cannot find module '\.\/reservation-rag\.legacy\.js'/i,
+      /로그인\/페이지 로드 실패/i,
+    ];
+    const healthyPatterns = [
+      /✅ 페이지 로드 완료/i,
+      /📍 확인 #/i,
+      /예약현황 새로고침/i,
+      /실행 후보 없음/i,
+      /오늘 확정/i,
+    ];
+
+    let lastErrorIndex = -1;
+    let lastHealthyIndex = -1;
+    let matchedError = '';
+
+    lines.forEach((line, index) => {
+      if (healthyPatterns.some((pattern) => pattern.test(line))) {
+        lastHealthyIndex = index;
+      }
+      if (errorPatterns.some((pattern) => pattern.test(line))) {
+        lastErrorIndex = index;
+        matchedError = line.trim();
+      }
+    });
+
+    const recentExitFailures = lines.filter((line) => /⏹ naver-monitor 종료 \(exit:\s*1/i.test(line)).length;
+    const likelyCrashLoop =
+      recentExitFailures >= 2 ||
+      (lastErrorIndex >= 0 && lastErrorIndex > lastHealthyIndex);
+
+    if (!likelyCrashLoop) return base;
+
+    const warn = Array.isArray(base.warn) ? [...base.warn] : [];
+    const ok = Array.isArray(base.ok) ? [] : [];
+    const reason =
+      matchedError ||
+      `최근 naver-monitor 비정상 종료 ${recentExitFailures}회 감지`;
+    warn.unshift(`  naver-monitor 로그: 최근 크래시 루프 징후 감지 (${reason.slice(0, 140)})`);
+
+    return {
+      ...base,
+      ok,
+      warn,
+      crashLoopDetected: true,
+      crashLoopReason: reason,
+    };
+  } catch (error) {
+    return {
+      ...base,
+      ok: [],
+      warn: [`  naver-monitor 로그 분석 실패 (${error.message})`],
+      crashLoopDetected: false,
+      crashLoopReason: null,
+    };
+  }
 }
 
 async function buildN8nCommandHealth() {
