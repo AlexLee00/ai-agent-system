@@ -99,20 +99,7 @@ defmodule TeamJay.Blog.TokenRenewal do
   end
 
   defp fetch_token_health do
-    case TeamJay.HubClient.pg_query("""
-      SELECT
-        (instagram->>'tokenExpiresAt')::timestamptz AS expires_at,
-        EXTRACT(DAY FROM ((instagram->>'tokenExpiresAt')::timestamptz - NOW())) AS days_left
-      FROM (SELECT secrets->'instagram' AS instagram FROM hub.config LIMIT 1) t
-    """, "public") do
-      {:ok, %{"rows" => [row]}} ->
-        {:ok, %{"daysLeft" => round(row["days_left"] || 0)}}
-      _ ->
-        # Hub DB가 없으면 Node.js 스크립트로 직접 조회
-        fetch_token_health_via_script()
-    end
-  rescue
-    _ -> fetch_token_health_via_script()
+    fetch_token_health_via_script()
   end
 
   defp fetch_token_health_via_script do
