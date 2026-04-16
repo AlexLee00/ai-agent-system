@@ -2,9 +2,12 @@
  * ska-llm-parse.ts — 스카팀 LLM 파싱 PortAgent 스크립트
  *
  * Elixir ParsingGuard Level 3에서 PortAgent로 호출됨.
- * stdin으로 JSON payload 수신 → LLM 호출 → stdout으로 결과 반환.
  *
- * 입력 (stdin JSON):
+ * 입력 방식 (두 가지 지원):
+ *   1. --payload=<base64>  인수 (Elixir System.cmd 경유, 권장)
+ *   2. stdin JSON           (기존 방식, 폴백)
+ *
+ * 입력 JSON:
  *   {
  *     chain_id: 'ska.parsing.level3' | 'ska.selector.generate' | 'ska.classify',
  *     system_prompt: string,
@@ -21,13 +24,23 @@
 const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
 const { SKA_CHAIN_REGISTRY } = require('../lib/ska-llm-chains');
 
-async function main() {
+async function readInput(): Promise<string> {
+  // --payload=<base64> 인수 우선 (Elixir System.cmd 경유)
+  const payloadArg = process.argv.find((a) => a.startsWith('--payload='));
+  if (payloadArg) {
+    return Buffer.from(payloadArg.slice('--payload='.length), 'base64').toString('utf8');
+  }
+  // 폴백: stdin 읽기
   let raw = '';
-
   process.stdin.setEncoding('utf8');
   for await (const chunk of process.stdin) {
     raw += chunk;
   }
+  return raw;
+}
+
+async function main() {
+  const raw = await readInput();
 
   let payload: any;
   try {
