@@ -15,15 +15,15 @@ const proposalStore = require('./proposal-store');
 const autonomyLevel = require('./autonomy-level');
 
 const REPO_ROOT = path.join(__dirname, '../../../..');
-const ALLOWED_PREFIXES = ['packages/', 'bots/', 'docs/', 'scripts/', 'config/'];
+const ALLOWED_PREFIXES = ['packages/', 'bots/', 'docs/', 'scripts/', 'config/', 'prototypes/'];
 const TEAM_BASE_DIRS = {
   luna: 'bots/investment/experimental',
   investment: 'bots/investment/experimental',
   blog: 'bots/blog/experimental',
   claude: 'bots/claude/experimental',
   worker: 'bots/worker/experimental',
-  darwin: 'bots/orchestrator/experimental',
-  orchestrator: 'bots/orchestrator/experimental',
+  darwin: 'bots/darwin/experimental',
+  orchestrator: 'bots/darwin/experimental',
   reservation: 'bots/reservation/experimental',
   ska: 'bots/ska/experimental',
 };

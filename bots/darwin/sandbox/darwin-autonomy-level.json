@@ -1,7 +1,7 @@
 {
-  "level": "L3",
-  "reason": "auto_demotion_after_error",
-  "updated_at": "2026-04-08T22:55:49.416Z",
-  "error_count": 4,
-  "last_error": "output_path_not_allowed:prototypes/claw_eval_agent.js"
+  "level": "L4",
+  "reason": "path_error_fixed_prototypes_allowed",
+  "updated_at": "2026-04-17T12:00:00.000Z",
+  "error_count": 0,
+  "last_error": null
 }
