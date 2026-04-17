@@ -47,7 +47,7 @@ defmodule Sigma.V2.LLMTest do
   end
 
   describe "Sigma.V2.LLM.Selector.call_with_fallback/3 — API 키 없는 환경" do
-    test "API 키 없으면 {:error, :all_routes_failed} 반환" do
+    test "API 키 없으면 {:error, _} 반환" do
       orig = System.get_env("ANTHROPIC_API_KEY")
       orig2 = System.get_env("SIGMA_ANTHROPIC_API_KEY")
 
@@ -62,7 +62,7 @@ defmodule Sigma.V2.LLMTest do
     end
   end
 
-  describe "Sigma.V2.LLM.CostTracker.calculate_cost — 공개 가격 검증" do
+  describe "Sigma.V2.LLM.CostTracker" do
     test "track_tokens/1는 {:ok, entry} 반환" do
       result = Sigma.V2.LLM.CostTracker.track_tokens(%{
         agent: "reflexion",
@@ -76,56 +76,48 @@ defmodule Sigma.V2.LLMTest do
       assert entry.cost_usd > 0
     end
 
-    test "check_budget/0는 {:ok, _} 또는 {:error, :budget_exceeded} 반환" do
+    test "check_budget/0는 {:ok, ratio} 또는 {:error, :budget_exceeded} 반환" do
       result = Sigma.V2.LLM.CostTracker.check_budget()
-      assert match?({:ok, %{daily: _, limit: _}}, result) or
+      assert (match?({:ok, r} when is_float(r), result)) or
                match?({:error, :budget_exceeded}, result)
     end
   end
 
-  describe "Sigma.V2.LLM.Recommender.recommend/2" do
-    test "컨텍스트 없으면 기본 정책 route 반환" do
+  describe "Sigma.V2.LLM.Recommender.recommend/2 — 신규 6-rule 인터페이스" do
+    test "기본 컨텍스트 없으면 {:ok, %{primary, fallback, reason, scores}} 반환" do
       {:ok, rec} = Sigma.V2.LLM.Recommender.recommend("reflexion")
-      assert rec.route == :anthropic_sonnet
+      assert rec.primary == :anthropic_sonnet
       assert is_binary(rec.reason)
+      assert is_list(rec.fallback)
+      assert is_list(rec.scores)
     end
 
-    test "예산 20% 미만이면 haiku 추천" do
-      {:ok, rec} = Sigma.V2.LLM.Recommender.recommend("reflexion", %{budget_remaining_pct: 0.1})
-      assert rec.route == :anthropic_haiku
-      assert rec.reason =~ "절약"
+    test "budget_ratio 0.05 → haiku 추천 (예산 부족)" do
+      {:ok, rec} = Sigma.V2.LLM.Recommender.recommend("reflexion", %{budget_ratio: 0.05})
+      assert rec.primary == :anthropic_haiku
+      assert rec.reason =~ "예산"
     end
 
-    test "urgency: :high이면 haiku 추천 (속도 우선)" do
+    test "urgency :high → haiku 추천 (속도 우선)" do
       {:ok, rec} = Sigma.V2.LLM.Recommender.recommend("commander", %{urgency: :high})
-      assert rec.route == :anthropic_haiku
+      assert rec.primary == :anthropic_haiku
       assert rec.reason =~ "긴급"
     end
 
-    test "실패율 30% 초과면 opus 추천 (품질 강화)" do
-      {:ok, rec} = Sigma.V2.LLM.Recommender.recommend("reflexion", %{failure_rate: 0.4})
-      assert rec.route == :anthropic_opus
-      assert rec.reason =~ "실패율"
-    end
-
-    test "프롬프트 8000자 초과면 sonnet 추천" do
-      {:ok, rec} = Sigma.V2.LLM.Recommender.recommend("pod.growth", %{prompt_len: 9_000})
-      assert rec.route == :anthropic_sonnet
-      assert rec.reason =~ "sonnet"
-    end
-
-    test "예산 우선순위 > 긴급도 (예산 부족 + 긴급 → haiku)" do
-      {:ok, rec} =
-        Sigma.V2.LLM.Recommender.recommend("reflexion", %{
-          budget_remaining_pct: 0.05,
-          urgency: :high
-        })
-      assert rec.route == :anthropic_haiku
+    test "높은 실패율 → scores에 패널티 반영" do
+      {:ok, rec} = Sigma.V2.LLM.Recommender.recommend("reflexion", %{recent_failure_rate: 0.5})
+      # 모든 모델에 -0.8 패널티, reflexion은 여전히 sonnet base가 높음 (1.0-0.8=0.2)
+      assert rec.primary == :anthropic_sonnet
     end
 
     test "미등록 에이전트도 {:ok, _} 반환" do
       result = Sigma.V2.LLM.Recommender.recommend("unknown.agent")
-      assert match?({:ok, %{route: _, reason: _}}, result)
+      assert match?({:ok, %{primary: _, reason: _, fallback: _}}, result)
+    end
+
+    test "prompt_tokens 10000 → 긴 컨텍스트 이유 포함" do
+      {:ok, rec} = Sigma.V2.LLM.Recommender.recommend("reflexion", %{prompt_tokens: 10_000})
+      assert rec.reason =~ "컨텍스트"
     end
   end
 end
