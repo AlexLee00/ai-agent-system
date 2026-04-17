@@ -1,9 +1,35 @@
+const fs = require('node:fs');
+const path = require('node:path');
 const env = require('../../../../packages/core/lib/env');
 const { fetchJson, postJson } = require('../../../../packages/core/lib/health-provider');
 
 function buildWebhookUrl(pathValue: unknown) {
   const safePath = String(pathValue || '').replace(/^\/+/, '');
   return `${env.N8N_BASE_URL}/webhook/${safePath}`;
+}
+
+function getN8nApiKey(): string {
+  if (env.N8N_API_KEY) return env.N8N_API_KEY;
+  try {
+    const storePath = path.join(env.PROJECT_ROOT || '', 'bots/hub/secrets-store.json');
+    const store = JSON.parse(fs.readFileSync(storePath, 'utf8'));
+    return store?.n8n_api_key || '';
+  } catch {
+    return '';
+  }
+}
+
+async function n8nApiRequest(method: string, path: string, body?: unknown) {
+  const apiKey = getN8nApiKey();
+  if (!apiKey) return { error: 'n8n_api_key_missing' };
+  const url = `${env.N8N_BASE_URL}/api/v1${path}`;
+  const opts: Record<string, unknown> = {
+    timeoutMs: 8000,
+    headers: { 'X-N8N-API-KEY': apiKey, 'Content-Type': 'application/json' },
+  };
+  if (body) opts.body = JSON.stringify(body);
+  return method === 'GET' ? fetchJson(url, 8000, { headers: { 'X-N8N-API-KEY': apiKey } })
+    : postJson(url, body || {}, opts);
 }
 
 export async function n8nHealthRoute(_req: any, res: any) {
@@ -15,6 +41,22 @@ export async function n8nHealthRoute(_req: any, res: any) {
   if (!data) {
     return res.status(502).json({ error: 'n8n_unreachable' });
   }
+  return res.json(data);
+}
+
+export async function n8nWorkflowsRoute(_req: any, res: any) {
+  if (!env.N8N_ENABLED) return res.status(503).json({ error: 'n8n_disabled' });
+  const data = await n8nApiRequest('GET', '/workflows?limit=100');
+  if (!data || (data as any).error) return res.status(502).json({ error: 'n8n_api_failed' });
+  return res.json(data);
+}
+
+export async function n8nTriggerWorkflowRoute(req: any, res: any) {
+  if (!env.N8N_ENABLED) return res.status(503).json({ error: 'n8n_disabled' });
+  const { workflowId } = req.params;
+  if (!workflowId) return res.status(400).json({ error: 'workflowId required' });
+  const data = await n8nApiRequest('POST', `/workflows/${workflowId}/run`, req.body || {});
+  if (!data || (data as any).error) return res.status(502).json({ error: 'n8n_trigger_failed' });
   return res.json(data);
 }
 

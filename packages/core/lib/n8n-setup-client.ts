@@ -26,6 +26,7 @@ type CredentialSummary = {
 type CreateN8nSetupClientArgs = {
   host?: string;
   port?: number;
+  apiKey?: string;
   email?: string;
   password?: string;
   logger?: LoggerLike;
@@ -46,12 +47,14 @@ function getBodyData<T>(body: unknown): T | undefined {
 export function createN8nSetupClient({
   host = 'localhost',
   port = 5678,
+  apiKey,
   email,
   password,
   logger = console,
 }: CreateN8nSetupClientArgs = {}) {
   let cookie = '';
 
+  // API 키 인증 우선, 없으면 cookie 세션 폴백
   function request(method: string, urlPath: string, body?: unknown): Promise<RequestResponse> {
     return new Promise((resolve, reject) => {
       const payload = body ? JSON.stringify(body) : null;
@@ -64,7 +67,7 @@ export function createN8nSetupClient({
           headers: {
             'Content-Type': 'application/json',
             ...(payload ? { 'Content-Length': Buffer.byteLength(payload) } : {}),
-            ...(cookie ? { Cookie: cookie } : {}),
+            ...(apiKey ? { 'X-N8N-API-KEY': apiKey } : cookie ? { Cookie: cookie } : {}),
           },
         },
         (res) => {
@@ -103,7 +106,8 @@ export function createN8nSetupClient({
   }
 
   async function listWorkflows(): Promise<WorkflowSummary[]> {
-    const res = await request('GET', '/rest/workflows');
+    const path = apiKey ? '/api/v1/workflows?limit=100' : '/rest/workflows';
+    const res = await request('GET', path);
     if (res.status !== 200) {
       throw new Error(`워크플로우 목록 조회 실패: ${JSON.stringify(res.body)}`);
     }
@@ -176,7 +180,8 @@ export function createN8nSetupClient({
   }
 
   async function listCredentials(): Promise<CredentialSummary[]> {
-    const res = await request('GET', '/rest/credentials');
+    const path = apiKey ? '/api/v1/credentials?limit=100' : '/rest/credentials';
+    const res = await request('GET', path);
     if (res.status !== 200) {
       throw new Error(`자격증명 목록 조회 실패: ${JSON.stringify(res.body)}`);
     }

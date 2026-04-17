@@ -19,6 +19,7 @@ defmodule TeamJay.Teams.JaySupervisor do
       TeamJay.Jay.AutonomyController,
       TeamJay.Jay.GrowthCycle,
       TeamJay.Jay.CrossTeamRouter,
+      TeamJay.Jay.N8nBridge,
     ]
 
     Supervisor.init(children, strategy: :one_for_one)
