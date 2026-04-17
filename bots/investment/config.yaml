@@ -24,11 +24,11 @@ binance:
     - ETH/USDT
     - SOL/USDT
     - BNB/USDT
-  deposit_address_usdt: REDACTED_USDT_ADDR
+  # deposit_address_usdt: bots/hub/secrets-store.json → investment_accounts.binance
 upbit:
 kis:
-  account_number: REDACTED_KIS_ACCOUNT
-  paper_account_number: 'REDACTED_KIS_PAPER'
+  # account_number: bots/hub/secrets-store.json → investment_accounts.kis
+  # paper_account_number: bots/hub/secrets-store.json → investment_accounts.kis
   symbols: []
   overseas_symbols: []
 news:

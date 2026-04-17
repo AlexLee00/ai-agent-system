@@ -142,12 +142,21 @@ const CATEGORY_HANDLERS: Record<string, CategoryHandler> = {
 
   exchange: () => {
     const store = loadSecretsStore();
+    const accounts = store?.investment_accounts || {};
     if (store?.binance || store?.upbit || store?.kis) {
       const runtime = loadConfigYaml();
       return {
-        binance: mergeRuntimeAndSecrets(runtime.binance, store.binance),
+        binance: mergeRuntimeAndSecrets(
+          runtime.binance,
+          mergeRuntimeAndSecrets(store.binance, accounts.binance),
+        ),
         upbit: store.upbit || {},
-        kis: sanitizeKisConfig(mergeRuntimeAndSecrets(runtime.kis, store.kis)),
+        kis: sanitizeKisConfig(
+          mergeRuntimeAndSecrets(
+            runtime.kis,
+            mergeRuntimeAndSecrets(store.kis, accounts.kis),
+          ),
+        ),
         trading_mode: runtime.trading_mode,
         paper_mode: runtime.paper_mode,
       };
@@ -155,9 +164,9 @@ const CATEGORY_HANDLERS: Record<string, CategoryHandler> = {
 
     const c = loadConfigYaml();
     return {
-      binance: c.binance || {},
+      binance: mergeRuntimeAndSecrets(c.binance, accounts.binance),
       upbit: c.upbit || {},
-      kis: sanitizeKisConfig(c.kis),
+      kis: sanitizeKisConfig(mergeRuntimeAndSecrets(c.kis, accounts.kis)),
       trading_mode: c.trading_mode,
       paper_mode: c.paper_mode,
     };

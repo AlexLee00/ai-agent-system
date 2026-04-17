@@ -173,6 +173,7 @@ export const HUB_AUTH_TOKEN = _envOrLaunchctl('HUB_AUTH_TOKEN');
 export const USE_HUB_SECRETS = _envOrLaunchctl('USE_HUB_SECRETS') === 'true';
 
 export const HUB_PORT = parseInt(process.env.HUB_PORT || '7788', 10);
+export const HUB_BIND_HOST = _envOrLaunchctl('HUB_BIND_HOST', '127.0.0.1').trim() || '127.0.0.1';
 
 // ─── 모드 보호 ───────────────────────────────────────────────────────────
 
