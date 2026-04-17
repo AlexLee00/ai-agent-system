@@ -351,7 +351,7 @@ async function getPendingComments(limit = 20) {
     SELECT *
     FROM ${TABLE}
     WHERE status = 'pending'
-    ORDER BY detected_at ASC
+    ORDER BY detected_at DESC
     LIMIT $1
   `, [limit]);
 }
@@ -381,8 +381,41 @@ function buildNeighborDedupeKey(targetBlogId, postUrl) {
   return crypto.createHash('sha1').update([String(targetBlogId || '').trim(), String(postUrl || '').trim()].join('|')).digest('hex');
 }
 
+async function hasSuccessfulNeighborCommentForPost(postUrl) {
+  const normalized = String(postUrl || '').trim();
+  if (!normalized) return false;
+
+  const existing = await pgPool.get('blog', `
+    SELECT 1
+    FROM (
+      SELECT post_url
+      FROM ${NEIGHBOR_TABLE}
+      WHERE status = 'posted'
+        AND post_url = $1
+      UNION ALL
+      SELECT target_post_url AS post_url
+      FROM ${ACTION_TABLE}
+      WHERE success = true
+        AND action_type = 'neighbor_comment'
+        AND target_post_url = $1
+    ) hits
+    LIMIT 1
+  `, [normalized]);
+
+  return Boolean(existing);
+}
+
 async function saveNeighborCandidate(candidate) {
   const dedupeKey = buildNeighborDedupeKey(candidate.targetBlogId, candidate.postUrl);
+  const alreadyCommented = await hasSuccessfulNeighborCommentForPost(candidate.postUrl);
+  if (alreadyCommented) {
+    return {
+      inserted: false,
+      id: null,
+      dedupeKey,
+      skippedExistingSuccess: true,
+    };
+  }
   const result = await pgPool.run('blog', `
     INSERT INTO ${NEIGHBOR_TABLE} (
       target_blog_id, target_blog_name, source_type, source_ref,
@@ -406,6 +439,7 @@ async function saveNeighborCandidate(candidate) {
     inserted: result.rowCount > 0,
     id: result.rows?.[0]?.id || null,
     dedupeKey,
+    skippedExistingSuccess: false,
   };
 }
 
@@ -489,8 +523,22 @@ async function saveDetectedComment(comment) {
       comment_text, comment_ref, dedupe_key, meta
     )
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
-    ON CONFLICT (dedupe_key) DO NOTHING
-    RETURNING id
+    ON CONFLICT (dedupe_key) DO UPDATE
+    SET status = CASE
+          WHEN ${TABLE}.reply_at IS NULL
+           AND ${TABLE}.status IN ('failed', 'skipped')
+          THEN 'pending'
+          ELSE ${TABLE}.status
+        END,
+        error_message = CASE
+          WHEN ${TABLE}.reply_at IS NULL
+           AND ${TABLE}.status IN ('failed', 'skipped')
+          THEN NULL
+          ELSE ${TABLE}.error_message
+        END,
+        meta = COALESCE(${TABLE}.meta, '{}'::jsonb) || EXCLUDED.meta
+    RETURNING id,
+      (xmax = 0) AS inserted
   `, [
     comment.postUrl,
     comment.postTitle || null,
@@ -503,9 +551,37 @@ async function saveDetectedComment(comment) {
   ]);
 
   if (result.rowCount > 0) {
-    return { inserted: true, id: result.rows[0].id, dedupeKey };
+    return { inserted: result.rows[0].inserted === true, id: result.rows[0].id, dedupeKey };
   }
   return { inserted: false, dedupeKey };
+}
+
+async function hasSuccessfulReplyForComment(comment) {
+  if (!comment?.id) return false;
+  if (comment.reply_at) return true;
+  if (String(comment.status || '') === 'replied') return true;
+
+  const existing = await pgPool.get('blog', `
+    SELECT id
+    FROM ${ACTION_TABLE}
+    WHERE action_type = 'reply'
+      AND success = true
+      AND (
+        (meta->>'commentId')::int = $1
+        OR (
+          target_post_url = $2
+          AND COALESCE(meta->>'commenterName', '') = $3
+        )
+      )
+    ORDER BY executed_at DESC
+    LIMIT 1
+  `, [
+    Number(comment.id),
+    String(comment.post_url || ''),
+    String(comment.commenter_name || ''),
+  ]);
+
+  return Boolean(existing?.id);
 }
 
 async function fetchManagedBrowserWsEndpoint(config) {
@@ -889,9 +965,9 @@ async function detectNewComments({ testMode = false } = {}) {
 async function getPostSummary(postUrl, { testMode = false } = {}) {
   return withBrowserPage(testMode, async (page) => {
     await goto(page, postUrl);
-    const contentFrame = resolvePostContentFrame(page);
-    await contentFrame.waitForSelector('body', { timeout: testMode ? 5000 : 15000 }).catch(() => {});
+    let contentFrame = await waitForPostContentFrame(page, testMode);
     await humanDelay(1, 2, testMode);
+    contentFrame = await waitForPostContentFrame(page, testMode);
     const result = await contentFrame.evaluate((maxLen) => {
       const metaContent = (selector) => {
         const node = document.querySelector(selector);
@@ -1164,9 +1240,10 @@ async function extractBuddyFeedPosts(page, ownBlogId, limit = 10) {
 
 async function resolveLatestPostForBlog(page, blogId, testMode = false) {
   await goto(page, `https://blog.naver.com/${blogId}`);
-  const frame = resolvePostContentFrame(page);
+  let frame = await waitForPostContentFrame(page, testMode);
   await frame.waitForSelector('a', { timeout: testMode ? 5000 : 15000 }).catch(() => {});
   await humanDelay(1, 2, true);
+  frame = await waitForPostContentFrame(page, testMode);
 
   const candidate = await frame.evaluate((targetBlogId) => {
     const textOf = (el) =>
@@ -1749,7 +1826,51 @@ async function waitForCommentPanel(page, logNo = '') {
 }
 
 function resolvePostContentFrame(page) {
-  return page.frames().find((item) => item.name() === 'mainFrame' || /PostView\.naver/.test(item.url())) || page.mainFrame();
+  return page.frames().find((item) => item.name() === 'mainFrame' || /PostView\.naver/.test(item.url())) || null;
+}
+
+async function waitForPostContentFrame(page, testMode = false) {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const frame = resolvePostContentFrame(page);
+    if (frame) {
+      await frame.waitForSelector('body', { timeout: testMode ? 5000 : 15000 }).catch(() => {});
+      return frame;
+    }
+    await sleep(testMode ? 300 : 800);
+  }
+  return page.mainFrame();
+}
+
+async function waitForCommentCapableFrame(page, logNo = '', testMode = false) {
+  const selectorHints = [
+    logNo ? `#Comi${logNo}` : '',
+    '#btn_comment_2',
+    logNo ? `#naverComment_201_${logNo}_ct` : '',
+    '.commentbox_header',
+    '.u_cbox_wrap',
+  ].filter(Boolean);
+
+  const fallbackFrame = await waitForPostContentFrame(page, testMode);
+
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const frames = page.frames();
+    for (const frame of frames) {
+      try {
+        await frame.waitForSelector('body', { timeout: testMode ? 1500 : 3000 }).catch(() => {});
+        const hasCommentDom = await frame.evaluate((selectors) => {
+          return selectors.some((selector) => Boolean(document.querySelector(selector)));
+        }, selectorHints).catch(() => false);
+        if (hasCommentDom) {
+          return frame;
+        }
+      } catch {
+        // ignore
+      }
+    }
+    await sleep(testMode ? 300 : 800);
+  }
+
+  return fallbackFrame;
 }
 
 function extractLogNo(postUrl) {
@@ -1859,7 +1980,7 @@ async function mountCommentPanel(page, logNo = '', testMode = false) {
     await humanDelay(1, 2, testMode);
     await openCommentPanel(page, logNo, testMode).catch(() => false);
 
-    const mounted = await page.waitForFunction((selector) => {
+    const mounted = await page.waitForFunction((selector, currentLogNo) => {
       const visible = (el) => {
         if (!el) return false;
         const style = window.getComputedStyle(el);
@@ -1867,8 +1988,18 @@ async function mountCommentPanel(page, logNo = '', testMode = false) {
         return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
       };
 
+      const directRoots = [
+        currentLogNo ? document.querySelector(`#naverComment_201_${currentLogNo}_ct`) : null,
+        currentLogNo ? document.querySelector(`#naverComment_201_${currentLogNo}`) : null,
+        currentLogNo ? document.querySelector(`#Comi${currentLogNo}`) : null,
+      ].filter(Boolean);
+
+      if (directRoots.length > 0) {
+        return true;
+      }
+
       return Boolean(Array.from(document.querySelectorAll(selector)).find(visible));
-    }, { timeout: 4000 }, directRootSelector).then(() => true).catch(() => false);
+    }, { timeout: testMode ? 5000 : 8000 }, directRootSelector, logNo).then(() => true).catch(() => false);
 
     if (mounted) {
       return true;
@@ -2194,7 +2325,9 @@ async function activateSympathyInFrame(contentFrame, { testMode = false, postUrl
 async function clickSympathy(postUrl, { testMode = false } = {}) {
   return withBrowserPage(testMode, async (page) => {
     await goto(page, postUrl);
-    const contentFrame = resolvePostContentFrame(page);
+    let contentFrame = await waitForPostContentFrame(page, testMode);
+    await humanDelay(1, 2, testMode);
+    contentFrame = await waitForPostContentFrame(page, testMode);
     return activateSympathyInFrame(contentFrame, { testMode, postUrl });
   });
 }
@@ -2304,52 +2437,56 @@ async function typeReply(frame, browserPage, selector, replyText, config, testMo
   const target = await frame.$(selector);
   if (!target) throw new Error('reply_editor_not_found');
 
-  const editorMeta = await frame.evaluate((targetSelector, nextText) => {
-    const dispatchEditableEvents = (node) => {
-      const events = [
-        new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: nextText }),
-        new InputEvent('input', { bubbles: true, inputType: 'insertText', data: nextText }),
-        new KeyboardEvent('keyup', { bubbles: true, key: 'Process' }),
-        new Event('change', { bubbles: true }),
-        new Event('blur', { bubbles: true }),
-      ];
-      for (const event of events) {
-        node.dispatchEvent(event);
+  const editorPayload = JSON.stringify({ targetSelector: selector, nextText: replyText });
+  const editorMeta = await frame.evaluate(`
+    (() => {
+      const { targetSelector, nextText } = ${editorPayload};
+      const dispatchEditableEvents = (node) => {
+        const events = [
+          new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: nextText }),
+          new InputEvent('input', { bubbles: true, inputType: 'insertText', data: nextText }),
+          new KeyboardEvent('keyup', { bubbles: true, key: 'Process' }),
+          new Event('change', { bubbles: true }),
+          new Event('blur', { bubbles: true }),
+        ];
+        for (const event of events) {
+          node.dispatchEvent(event);
+        }
+      };
+
+      const node = document.querySelector(targetSelector);
+      if (!node) {
+        return { found: false };
       }
-    };
 
-    const node = document.querySelector(targetSelector);
-    if (!node) {
-      return { found: false };
-    }
+      node.focus();
+      const isEditable = node.getAttribute('contenteditable') === 'true';
+      const tagName = String(node.tagName || '').toLowerCase();
 
-    node.focus();
-    const isEditable = node.getAttribute('contenteditable') === 'true';
-    const tagName = String(node.tagName || '').toLowerCase();
+      if (isEditable) {
+        node.innerHTML = '';
+        node.textContent = nextText;
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        range.collapse(false);
+        selection && selection.removeAllRanges();
+        selection && selection.addRange(range);
+        dispatchEditableEvents(node);
+      } else if (tagName === 'textarea' || tagName === 'input') {
+        node.value = nextText;
+        node.dispatchEvent(new Event('input', { bubbles: true }));
+        node.dispatchEvent(new Event('change', { bubbles: true }));
+      }
 
-    if (isEditable) {
-      node.innerHTML = '';
-      node.textContent = nextText;
-      const selection = window.getSelection();
-      const range = document.createRange();
-      range.selectNodeContents(node);
-      range.collapse(false);
-      selection?.removeAllRanges();
-      selection?.addRange(range);
-      dispatchEditableEvents(node);
-    } else if (tagName === 'textarea' || tagName === 'input') {
-      node.value = nextText;
-      node.dispatchEvent(new Event('input', { bubbles: true }));
-      node.dispatchEvent(new Event('change', { bubbles: true }));
-    }
-
-    return {
-      found: true,
-      tagName,
-      isEditable,
-      textLength: String(node.textContent || node.value || '').trim().length,
-    };
-  }, selector, replyText);
+      return {
+        found: true,
+        tagName,
+        isEditable,
+        textLength: String(node.textContent || node.value || '').trim().length,
+      };
+    })()
+  `);
 
   if (!editorMeta?.found) {
     throw new Error('reply_editor_not_found');
@@ -2366,10 +2503,14 @@ async function typeReply(frame, browserPage, selector, replyText, config, testMo
   await browserPage.keyboard.press('Backspace').catch(() => {});
   await browserPage.keyboard.type(replyText, { delay: perCharDelay });
 
-  const typedLength = await frame.evaluate((targetSelector) => {
-    const node = document.querySelector(targetSelector);
-    return String(node?.textContent || node?.value || '').trim().length;
-  }, selector).catch(() => 0);
+  const lengthPayload = JSON.stringify({ targetSelector: selector });
+  const typedLength = await frame.evaluate(`
+    (() => {
+      const { targetSelector } = ${lengthPayload};
+      const node = document.querySelector(targetSelector);
+      return String((node && (node.textContent || node.value)) || '').trim().length;
+    })()
+  `).catch(() => 0);
 
   if (typedLength < Math.min(20, replyText.length)) {
     throw new Error(`reply_editor_text_not_applied:${typedLength}`);
@@ -2381,9 +2522,9 @@ async function postReply(comment, replyText, { testMode = false, dryRun = false 
   const logNo = extractLogNo(comment.post_url);
   return withBrowserPage(testMode, async (page) => {
     await goto(page, comment.post_url);
-    const contentFrame = resolvePostContentFrame(page);
-    await contentFrame.waitForSelector('body');
+    let contentFrame = await waitForCommentCapableFrame(page, logNo, testMode);
     await humanDelay(config.pageReadMinSec, config.pageReadMaxSec, testMode);
+    contentFrame = await waitForCommentCapableFrame(page, logNo, testMode);
     const mounted = await mountCommentPanel(contentFrame, logNo, testMode);
     let opened = false;
     if (mounted) {
@@ -2474,7 +2615,7 @@ async function _submitCommentWithVerification(contentFrame, page, editor, normal
 }
 
 async function _openCommentEditorWithRetry(page, postUrl, logNo, testMode) {
-  let contentFrame = resolvePostContentFrame(page);
+  let contentFrame = await waitForCommentCapableFrame(page, logNo, testMode);
   let lastError = null;
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -2485,8 +2626,7 @@ async function _openCommentEditorWithRetry(page, postUrl, logNo, testMode) {
           attempt: attempt + 1,
         });
         await goto(page, postUrl);
-        contentFrame = resolvePostContentFrame(page);
-        await contentFrame.waitForSelector('body', { timeout: testMode ? 5000 : 15000 }).catch(() => {});
+        contentFrame = await waitForCommentCapableFrame(page, logNo, testMode);
         await humanDelay(1, 2, testMode);
       }
 
@@ -2550,9 +2690,9 @@ async function postComment(postUrl, commentText, { testMode = false, withSympath
       textLength: normalizedComment.length,
     });
     await goto(page, postUrl);
-    let contentFrame = resolvePostContentFrame(page);
-    await contentFrame.waitForSelector('body', { timeout: testMode ? 5000 : 15000 }).catch(() => {});
+    let contentFrame = await waitForCommentCapableFrame(page, logNo, testMode);
     await humanDelay(1, 2, testMode);
+    contentFrame = await waitForCommentCapableFrame(page, logNo, testMode);
     const opened = await _openCommentEditorWithRetry(page, postUrl, logNo, testMode);
     contentFrame = opened.contentFrame;
     const editor = opened.editor;
@@ -2585,6 +2725,14 @@ async function postComment(postUrl, commentText, { testMode = false, withSympath
 }
 
 async function processComment(comment, options = {}) {
+  const alreadyReplied = await hasSuccessfulReplyForComment(comment);
+  if (alreadyReplied) {
+    await updateCommentStatus(comment.id, 'replied', {
+      meta: { phase: 'dedupe', reason: 'existing_successful_reply' },
+    });
+    return { ok: false, skipped: true, reason: 'already_replied' };
+  }
+
   const postInfo = await getPostSummary(comment.post_url, options);
   let generated = await generateReply(postInfo.title || comment.post_title, postInfo.summary, comment.comment_text);
   let validation = validateReply(generated.reply, comment.comment_text);
@@ -2923,6 +3071,20 @@ async function runNeighborCommenter({ testMode = false } = {}) {
 
   for (const candidate of targets) {
     try {
+      const alreadyCommented = await hasSuccessfulNeighborCommentForPost(candidate.post_url);
+      if (alreadyCommented) {
+        skipped += 1;
+        await updateNeighborCommentStatus(candidate.id, 'skipped', {
+          errorMessage: 'already_commented_post',
+          meta: { phase: 'preflight', sourceType: candidate.source_type || null },
+        });
+        traceCommenter('neighborComment:skip-duplicate-post', {
+          candidateId: candidate.id,
+          postUrl: candidate.post_url,
+        });
+        continue;
+      }
+
       const startedAt = Date.now();
       const result = await processNeighborCommentWithTimeout(candidate, { testMode });
       if (result.ok) posted += 1;

@@ -241,7 +241,7 @@ Layer 1: Jido Action (Elixir 네이티브, 고성능)
   - Sigma.V2.Skill.* 모듈, Zoi 스키마
 
 Layer 2: agentskills.io 포맷 (Anthropic 공식 표준)  ← NEW!
-  - bots/sigma/skills/*.md (각 skill 마크다운)
+  - packages/skills/sigma/*.md (각 skill 마크다운)
   - github.com/anthropics/skills 예제 참조
   - Claude Code에서 바로 로드 가능
 
@@ -342,7 +342,7 @@ Igniter는:
 원본 skeleton이 `use Jido.Agent` + NimbleOptions로 썼다면, 실제는 **`use Jido.AI.Agent` + Zoi**. Skeleton 예시 추가:
 
 ```elixir
-# bots/sigma/elixir/lib/sigma/v2/commander.ex
+# elixir/team_jay/lib/team_jay/sigma/v2/commander.ex
 defmodule Sigma.V2.Commander do
   use Jido.AI.Agent,
     name: "sigma_commander",
@@ -353,7 +353,7 @@ defmodule Sigma.V2.Commander do
   # TODO Phase 1: implement formation decision logic
 end
 
-# bots/sigma/elixir/lib/sigma/v2/skill/data_quality_guard.ex
+# elixir/team_jay/lib/team_jay/sigma/v2/skill/data_quality_guard.ex
 defmodule Sigma.V2.Skill.DataQualityGuard do
   use Jido.Action,
     name: "data_quality_guard",
@@ -362,7 +362,7 @@ defmodule Sigma.V2.Skill.DataQualityGuard do
 
   @impl Jido.Action
   def run(params, _context) do
-    # TODO Phase 1: port from bots/sigma/legacy-skills/data-quality-guard.ts
+    # TODO Phase 1: port from packages/core/lib/skills/sigma/data-quality-guard.ts
     {:ok, %{passed: false, quality_score: 0}}
   end
 end
@@ -373,7 +373,7 @@ end
 **새 작업 추가** (Phase 0 확장):
 
 ```
-bots/sigma/skills/                              (신규 디렉토리)
+packages/skills/sigma/                              (신규 디렉토리)
 ├ data-quality-guard.md        — agentskills.io 포맷 skill 문서
 ├ causal-check.md
 ├ experiment-design.md
@@ -391,7 +391,7 @@ bots/sigma/skills/                              (신규 디렉토리)
 ### 6.4 Exit Criteria 추가
 
 ```
-[ ] bots/sigma/skills/ 디렉토리 + 5개 .md 파일 (agentskills.io 포맷)
+[ ] packages/skills/sigma/ 디렉토리 + 5개 .md 파일 (agentskills.io 포맷)
 [ ] 각 .md 파일 `.claude/skills/` 또는 agentskills 규약 경로에 심볼릭 링크 (선택)
 ```
 
