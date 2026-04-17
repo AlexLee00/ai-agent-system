@@ -102,6 +102,8 @@
     "optimize-ta": "node scripts/optimize-ta-params.ts",
     "optimize-ta:no-alert": "node scripts/optimize-ta-params.ts --no-alert",
     "tradingview-mcp:test": "python3 scripts/tradingview-mcp-server.py --test --json",
+    "tradingview-mcp:indicators": "python3 scripts/tradingview-mcp-server.py --indicators --json",
+    "tradingview-mcp:ohlcv": "python3 scripts/tradingview-mcp-server.py --ohlcv --symbol BTC-USD --from-date 2026-04-01 --json",
     "analyze-signals": "node scripts/analyze-signal-correlation.ts",
     "analyze-signals:30": "node scripts/analyze-signal-correlation.ts --days=30"
   },
