@@ -1047,3 +1047,141 @@ aa6a0627  fix(sigma): remove unused truthy? function (V-7 메티 수정)
 **37/38차 세션 — 시그마팀 v2 완성 대장정: Phase 0~5 + LUNA_ALIGN + Phase 2/3/4 구현 + 7일 Shadow 관찰 개시. 38개 Elixir 모듈 + 116 tests 0 failures + 6 DB 테이블 UP + launchd `ai.sigma.daily` 가동 중(LastExitStatus=0). Kill Switch 전부 OFF 유지, SIGMA_V2_ENABLED=true로 Shadow 관찰만. 코덱스 자율성 검증(버그 자발 수정 + Mix task 신설), 메티 독립 검증(V-7 unused function 적발), 마스터 의사결정(옵션 A+X) 전 과정 기록. 2026-04-24 Day 7 종합 판정 → Tier 1 가동 결정 예정. 다음 세션 예고: 다윈팀 완전 분리 + Tier 1 ACTIVATE 프롬프트 작성.**
 
 — 메티 (Metis, 2026-04-18 새벽, 37/38차 세션 완료)
+
+
+---
+
+
+# 🔧 38차 후반 추가 — MLX 임베딩 전용 결정 (2026-04-18 01:30 KST)
+
+## 🎯 마스터 결정 (중요)
+
+**"로컬에 너무 많은 모델을 사용하면 무리가 온다. 임베딩만 사용하자."**
+
+근거:
+- OPS (맥 스튜디오 M4 Max) 통합 메모리 **32GB**
+- 현재 Elixir Supervisor + launchd 50개 + 에이전트 122개+ + Ollama/MLX 동시 가동
+- LLM 모델 (7B/32B) 동시 로드 시 메모리 부하 + 컨텍스트 스위칭 오버헤드
+- Claude API는 이미 안정적, MLX LLM 품질 리스크 대비 이득 작음
+
+## 📋 실행 결정
+
+### 유지
+- **`qwen3-embed-0.6b`** (1024차원 임베딩, 4-bit DWQ, ~300MB)
+  - 시그마 L2 pgvector + 루나팀 RAG가 실시간 사용 중
+  - 비용 $0, 속도 빠름, 품질 검증됨
+
+### 제거 권고
+- **`qwen2.5-7b`** (LM 7B, 4-bit, ~5GB 로드)
+- **`deepseek-r1-32b`** (LM 32B, 4-bit, ~20GB 로드, on-demand)
+- **`gemma4:latest`** (multimodal, ~2GB, on-demand)
+
+### mlx-server-config.yaml 권고 최종 상태
+
+```yaml
+server:
+  host: "0.0.0.0"
+  port: 11434
+  log_level: INFO
+
+models:
+  # 임베딩 전용 — 시그마 L2 + 루나 RAG 실사용
+  - model_path: mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ
+    model_type: embeddings
+    served_model_name: qwen3-embed-0.6b
+```
+
+**실행 방식**: 마스터가 `~/mlx-server-config.yaml` 수정 + `launchctl unload/load ~/Library/LaunchAgents/ai.mlx.server.plist` 재시작. (메티 직접 수정 금지 — 시스템 설정 파일이므로 마스터 권한)
+
+## 🔄 시그마 LLM 정책 원상복구
+
+### 결정: Claude API 전용 (로컬 LLM 제외)
+
+Phase 2 req_llm 통합 시 `Sigma.V2.LLM.Selector`에 **로컬 LLM provider 추가하지 않음**:
+
+```elixir
+# ✅ 유지
+defp provider_from_route(:anthropic_haiku),  do: {:anthropic, "claude-haiku-4-5-20251001"}
+defp provider_from_route(:anthropic_sonnet), do: {:anthropic, "claude-sonnet-4-6"}
+defp provider_from_route(:anthropic_opus),   do: {:anthropic, "claude-opus-4-7"}
+
+# ❌ 제거 (기존 Ollama 참조도 삭제, MLX LLM도 추가 안 함)
+# defp provider_from_route(:ollama_8b),  ...
+# defp provider_from_route(:ollama_32b), ...
+# defp provider_from_route(:mlx_qwen_7b), ... (추가 안 함)
+```
+
+### 에이전트별 정책 최종판 (Claude 전용)
+
+| 에이전트 | 주 모델 | 폴백 | 예산 고려 |
+|----------|---------|------|----------|
+| `reflexion` | claude-sonnet-4-6 | claude-haiku-4-5 | 실패 시만 호출, 빈도 낮음 |
+| `espl.crossover` | claude-sonnet-4-6 | claude-haiku-4-5 | 주 1회 진화 (비용 제한) |
+| `espl.mutation` | claude-haiku-4-5 | — | 주 1회 |
+| `self_rag.retrieve_gate` | claude-haiku-4-5 | — | 고빈도 — 배치 최적화 필요 |
+| `self_rag.relevance` | claude-haiku-4-5 | — | 매우 고빈도 — 배치 필수 |
+| `principle.critique (의미)` | claude-sonnet-4-6 | claude-haiku-4-5 | 차단 판정 정확도 중요 |
+| `commander`, `pod.*`, `skill.*` | **N/A (룰 기반)** | — | 현재 LLM 미사용 |
+
+### 💰 예상 비용 (Claude 전용)
+
+```
+일일 예상:    $5~8/day (기존 추정치)
+월간 예상:    $150~240/month
+예산 한도:    SIGMA_LLM_DAILY_BUDGET_USD = $10 ← 여유 있음
+
+주의: self_rag.relevance가 고빈도 호출 → 배치 + 캐싱 필수
+     (배치 없이 개별 호출 시 월 $500 돌파 가능)
+```
+
+### 비용 통제 장치 (이미 구현됨)
+
+- `SIGMA_LLM_DAILY_BUDGET_USD` 환경변수
+- `Sigma.V2.LLM.CostTracker.check_budget/0` — 한도 초과 시 `{:error, :budget_exceeded}`
+- 모든 Selector 호출 전 사전 체크
+- SelfRAG는 Kill Switch로 기본 OFF — 배치 최적화 후 활성화
+
+## 🛠️ 시그마 코드 상태 (메티 수정 완료)
+
+- ✅ `bots/sigma/elixir/lib/sigma/v2/memory/l2_pgvector.ex` — MLX OpenAI 호환 API 형식 교정 (커밋 `d91c0782`)
+- ✅ HTTP 200 응답 확인 + 1024차원 임베딩 정상 수신
+- ✅ `mix compile --warnings-as-errors` 경고 0
+- ✅ `mix test` 116/0 유지
+
+## 🚨 Phase 2 LLM Selector 실구현 시 주의
+
+기존 코드의 **Ollama 참조 2줄은 제거 필수**:
+
+```elixir
+# bots/sigma/elixir/lib/sigma/v2/llm/selector.ex 65~66줄
+
+# ❌ 제거
+defp provider_from_route(:ollama_8b),  do: {:ollama, "qwen2.5-7b"}
+defp provider_from_route(:ollama_32b), do: {:ollama, "deepseek-r1-32b"}
+
+# ❌ 제거 — @agent_policies에서 `:ollama_*` fallback 참조도 전부 삭제
+```
+
+`@agent_policies` map의 fallback 배열에서 `:ollama_8b`, `:ollama_32b` 전부 제거 → `:anthropic_haiku`로 대체.
+
+## 🔜 다음 세션 Phase 2 착수 체크리스트 (최종)
+
+- [ ] `~/mlx-server-config.yaml` 축소 (LM 3개 제거, 임베딩만 유지)
+- [ ] `launchctl unload/load ~/Library/LaunchAgents/ai.mlx.server.plist` 재시작
+- [ ] `req_llm 1.9` Anthropic provider만 설정 (OpenAI 호환 provider 불필요)
+- [ ] `Sigma.V2.LLM.Selector.do_call/3` TODO 제거 + 실제 구현
+- [ ] fallback chain 실제 실행 (Sonnet 실패 → Haiku)
+- [ ] `@agent_policies`에서 `:ollama_*` 전부 제거
+- [ ] `provider_from_route/1`에서 Ollama/MLX LM 엔트리 제거
+- [ ] `packages/core/lib/llm-model-selector.ts`의 `sigma.agent_policy` Claude 전용 업데이트
+- [ ] SelfRAG 배치 호출 최적화 (활성화 전 필수)
+- [ ] Kill Switch 단계적 활성화 (SIGMA_SELF_RAG_ENABLED=true 등)
+
+## 📝 교훈
+
+1. **로컬 LLM 유혹 경계**: 비용 $0은 매력적이지만 32GB 메모리 환경에선 부담
+2. **임베딩은 다른 이야기**: 0.6B 모델은 부담 작음, 활용 가치 높음 (1024차원 OpenAI 대체)
+3. **Claude API = 프로덕션 기본**: 품질+안정성 우선, 비용은 CostTracker로 통제
+4. **M5 Max 64GB 시 재검토**: 장기 하드웨어 업그레이드 후 로컬 LLM 재도입 가능
+
+— 메티 (2026-04-18 01:30, 마스터 "임베딩만 사용" 결정 반영)
