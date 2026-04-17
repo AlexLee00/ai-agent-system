@@ -1,10 +1,39 @@
-# 세션 인수인계 — 2026-04-18 (CODEX_DARWIN_REMODEL 완료)
+# 세션 인수인계 — 2026-04-18 (CODEX_DARWIN_REMODEL Phase 6 + 버그 수정)
 
-> 세션 범위: CODEX_DARWIN_REMODEL Phase 0~5 전체 완료 — Darwin V2 완전 자율 R&D 에이전트
+> 세션 범위: Darwin V2 Phase 6 Shadow Mode 구현 + 컴파일 버그 2건 수정
 
 ---
 
-## 최신 작업 요약
+## 최신 작업 요약 (Phase 6 Shadow Mode — 커밋: 4691e221)
+
+### 구현 내용
+
+**Phase 6: Shadow Mode (V1 vs V2 병행 비교)**:
+- `Darwin.V2.ShadowRunner` 완전 구현 (JayBus 구독 → V2 독립 평가 → DB 기록 → 7일 승격 판정)
+- `Darwin.V2.ShadowCompare` 신규 (점수 매칭 로직, Jaccard 유사도)
+- `Darwin.V2.TelegramBridge` 신규 (HubClient 경유 알림)
+- `Darwin.V2.MetaReview` 신규 (주간 성과 분석)
+- Supervisor: `DARWIN_SHADOW_MODE` env var 지원, Phase 6 자식 프로세스 추가
+
+**버그 수정**:
+- `commander.ex`: Jido.AI.Agent `skills:` → `tools:` (컴파일 에러 해소)
+- `rollback_scheduler.ex`: `after` 예약어 → `after_m` (syntax error 해소)
+
+**테스트**: 19 tests, 0 failures (darwin 독립 검증)
+
+### Kill Switch 현재 상태
+- `DARWIN_V2_ENABLED=false` (V2 전체 — 기본 OFF)
+- `DARWIN_SHADOW_MODE=false` (Shadow 비교 — 기본 OFF)
+- `DARWIN_LLM_SELECTOR_ENABLED=false` (LLM 호출 — 기본 OFF)
+
+### 다음 세션 즉시 착수 항목
+1. **Phase 6 Shadow Mode 가동**: `DARWIN_SHADOW_MODE=true` + `DARWIN_V2_ENABLED=true`로 7일 관찰 시작
+2. **Phase 7**: 커뮤니티 스캐너 (HN/Reddit 시그널) 구현 예정
+3. **Darwin CLAUDE.md Phase 6 → ✅** 업데이트
+
+---
+
+## 이전 작업 요약 (Phase 0~5 완료 — 커밋: 2455c110)
 
 ### Darwin V2 완전 리모델링 (커밋: 2455c110)
 
