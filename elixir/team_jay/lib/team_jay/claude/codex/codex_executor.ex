@@ -19,7 +19,6 @@ defmodule TeamJay.Claude.Codex.CodexExecutor do
   require Logger
 
   @project_root System.get_env("PROJECT_ROOT", "/Users/alexlee/projects/ai-agent-system")
-  @timeout_ms 600_000  # 10분
 
   def execute(codex_path) do
     Logger.info("[CodexExecutor] 코덱스 실행 시작: #{Path.basename(codex_path)}")
@@ -89,7 +88,6 @@ defmodule TeamJay.Claude.Codex.CodexExecutor do
 
     case System.cmd(claude_bin, args,
            cd: @project_root,
-           timeout: @timeout_ms,
            stderr_to_stdout: true) do
       {output, 0} ->
         {:ok, %{output: output, exit_code: 0, codex: codex_name}}
