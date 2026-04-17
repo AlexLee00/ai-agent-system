@@ -3,10 +3,20 @@ defmodule Mix.Tasks.Sigma.Daily.Shadow do
   require Logger
 
   @shortdoc "Sigma Shadow Mode 일일 실행 (v2 Commander vs v1 baseline 비교)"
-  @requirements ["app.start"]
+
+  # app.config만 로드하고 필요한 앱만 수동 시작 (전체 앱 기동 방지)
+  @requirements ["app.config"]
 
   @impl Mix.Task
   def run(_args) do
+    # HTTP + DB + JSON 최소 스택
+    for app <- [:postgrex, :ecto, :ecto_sql, :jason, :mime, :finch, :req] do
+      Application.ensure_all_started(app)
+    end
+
+    db_config = Application.get_env(:team_jay, TeamJay.Repo)
+    {:ok, _pid} = TeamJay.Repo.start_link(db_config)
+
     date = Date.utc_today()
     Logger.info("[sigma_shadow] #{date} Shadow 실행 시작")
 

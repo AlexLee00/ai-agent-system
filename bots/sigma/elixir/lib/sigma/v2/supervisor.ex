@@ -7,7 +7,8 @@ defmodule Sigma.V2.Supervisor do
   Phase 2: Phoenix.PubSub(Sigma.V2.PubSub) + RollbackScheduler 추가
   Phase 3: RollbackScheduler 활성화
   Phase 5: MCP Server + HTTP(Bandit) 추가
-             - SIGMA_MCP_SERVER_ENABLED=true 시 HTTP 서버 기동 (포트 4000)
+             - SIGMA_HTTP_PORT 설정 시 HTTP 서버 기동 (Shadow: /sigma/* 경로)
+             - SIGMA_MCP_SERVER_ENABLED=true 추가 시 /mcp/* 경로 활성화
   """
 
   use Supervisor
@@ -33,11 +34,12 @@ defmodule Sigma.V2.Supervisor do
   end
 
   defp maybe_http_children do
-    mcp_enabled = System.get_env("SIGMA_MCP_SERVER_ENABLED") == "true"
-    port = String.to_integer(System.get_env("SIGMA_HTTP_PORT", "4000"))
+    port_str = System.get_env("SIGMA_HTTP_PORT")
+    port = if port_str, do: String.to_integer(port_str), else: nil
 
-    # 포트가 이미 사용 중이면 Bandit 기동 건너뜀 (중복 실행/테스트 환경 보호)
-    if mcp_enabled and port_available?(port) do
+    # SIGMA_HTTP_PORT가 설정되고 포트가 비어있을 때 HTTP 서버 기동.
+    # MCP OFF → /sigma/* Shadow 경로만 노출, MCP ON → /mcp/* 추가 활성화.
+    if port && port_available?(port) do
       [{Bandit, plug: Sigma.V2.HTTP.Router, port: port, scheme: :http}]
     else
       []

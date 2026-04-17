@@ -7,21 +7,23 @@
 
   <key>ProgramArguments</key>
   <array>
-    <string>/opt/homebrew/bin/tsx</string>
-    <string>/Users/alexlee/projects/ai-agent-system/bots/sigma/ts/src/sigma-daily.ts</string>
+    <string>/opt/homebrew/bin/mix</string>
+    <string>sigma.daily.shadow</string>
   </array>
 
   <key>WorkingDirectory</key>
-  <string>/Users/alexlee/projects/ai-agent-system</string>
+  <string>/Users/alexlee/projects/ai-agent-system/elixir/team_jay</string>
 
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
-    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin</string>
     <key>HOME</key>
     <string>/Users/alexlee</string>
     <key>MODE</key>
     <string>ops</string>
+    <key>MIX_ENV</key>
+    <string>dev</string>
     <key>SIGMA_V2_ENABLED</key>
     <string>true</string>
     <key>SIGMA_TIER2_AUTO_APPLY</key>
@@ -32,8 +34,10 @@
     <string>false</string>
     <key>SIGMA_SELF_RAG_ENABLED</key>
     <string>false</string>
-    <key>SIGMA_V2_ENDPOINT</key>
-    <string>http://localhost:4010/sigma/v2</string>
+    <key>SIGMA_HTTP_PORT</key>
+    <string>4010</string>
+    <key>SIGMA_LLM_DAILY_BUDGET_USD</key>
+    <string>10.00</string>
   </dict>
 
   <key>StandardOutPath</key>
