@@ -377,3 +377,225 @@ done
 - `docs/` 루트 새 파일 생성 시 `git add` + `git commit`을 작성 직후 즉시 실행해 빈 레이스 윈도우 제거
 - OPS에서 자동 커밋 훅이 돌고 있을 수 있으니 docs 작업 전 `git log --oneline -5` 로 최근 활동 점검
 - 이번 세션 중에도 배웠지만, 동일 리포에서 메티(claude.ai)와 코덱스(Claude Code)가 동시에 작업 중이면 충돌 가능성 상존. 작업 영역이 겹치지 않도록 조율 필요
+
+
+---
+
+## 📍 2차 세션 증분 업데이트 (2026-04-17 오후 메티)
+
+> 1차 세션의 핸드오버를 읽고 2단위(투자팀) 감사를 시작함.
+> 이번 세션은 **헤파이스토스(매매 실행) + 네메시스(리스크) + L31 파이프라인 노드**까지만 점검.
+
+### 🔄 최신 상태 확인 결과
+
+```
+SEC-001 Hub 바인딩:    ❌ 미패치 (app.listen 여전히 '0.0.0.0')
+SEC-002 config.yaml:   ❌ 미패치 (민감값 3종 여전히 origin/main에 있음)
+SEC-003 sql-guard:     ❌ 미패치 (pg_read_file 등 0건)
+→ 코덱스 세션은 PortAgent ownership/drift 작업 중이지 보안 패치는 미착수
+```
+
+### 🆕 이번 세션 신규 발견
+
+**SEC-004 (MEDIUM)** — 헤파이스토스 입구에 네메시스 승인 검증 부재
+
+- 위치: `bots/investment/team/hephaestos.ts:1535` (`executeSignal` 함수)
+- 문제: signal을 받자마자 매매 실행으로 흐르는데 `signal.nemesis_verdict`, `signal.approved` 등 재검증 가드 없음
+- 파이프라인 `nodes/l31-order-execute.ts`는 `saved.status !== 'approved'` 체크만 함 — 이건 L30 저장 노드 상태일 뿐, **네메시스 검토 실사 여부가 아님**
+- 누군가 스크립트로 `executeSignal()`을 직접 호출하면 네메시스 우회 가능
+- 정의형 화이트리스트 (DB signals.status='approved' + 타임스탬프 < 5분) + 헤파이스토스 입구 재검증 이중 방어 제안
+
+### ✅ 투자팀 긍정 확인 요소
+
+- `paper_mode` 분기 일원 관리 (`globalPaperMode` 변수)
+- `maybePromotePaperPositions`(paper→live 승격) 로직은 `!globalPaperMode` 일 때만 실행
+- OCO 주문, 최소 주문 금액 검증, `runBuySafetyGuards` 다중 방어
+- 네메시스 `evaluateSignal` → `checkHardRule` 선행 → 거절 시 즉시 return
+- 루나 파이프라인은 구조적으로 `Luna → 분석팀 → L21(네메시스) → L31(헤파이스토스)` 순서 보장
+
+### 📋 2단위 남은 작업 (다음 세션)
+
+**P0 매매 경로 나머지**:
+- `markets/crypto.ts` (373줄) — 바이낸스 호출 래퍼
+- `markets/domestic.ts` (378줄) — KIS 국내
+- `markets/overseas.ts` (337줄) — KIS 해외
+- `shared/kis-client.ts` (668줄) ⭐ 중요
+- `shared/upbit-client.ts` (219줄)
+
+**P1 인증/시크릿**:
+- `shared/secrets.ts` (664줄) ⭐ 중요 — Hub secrets 소비 경로
+- `luna-commander.cjs` — 자율 루프
+- `nodes/l21-llm-risk.ts` — 네메시스 호출 노드
+
+**2단위 핵심 질문 (다음 세션에서 답해야 할 것)**:
+1. KIS 토큰 갱신 경로에서 토큰이 로그에 남는가?
+2. 바이낸스 API 키가 CCXT 인스턴스에 넘어가는 과정에서 노출 리스크는?
+3. 루나 commander 자율 루프에서 무한 반복/리소스 누수 방어가 있는가?
+4. L21 네메시스 노드에서 검토 실패 시 L31로 흐르는 누수 경로 있는가?
+5. paper→live 승격 결정이 사람 승인 없이 자동으로 이루어지는가?
+
+### 🔧 코덱스 프롬프트 누적 상황
+
+```
+docs/codex/CODEX_SECURITY_AUDIT_01.md  (작성 완료, 미적용)
+  → Task 1 (SEC-001), Task 2 (SEC-002), Task 3 (SEC-003)
+
+docs/codex/CODEX_SECURITY_AUDIT_02.md  (아직 없음)
+  → SEC-004 + 2단위 추가 발견 사항 누적하여 다음 세션 또는 그 다음 세션에 작성 예정
+```
+
+### 📊 감사 진행률 (누적)
+
+```
+1단위 Hub:          ✅ 완료 (SEC-001/002/003)
+2단위 투자팀:        🔶 진행중 (SEC-004 발견 / P0 일부 / P1 미착수)
+3단위 worker:       ⬜ 대기
+4단위 reservation:  ⬜ 대기
+5단위 blog:         ⬜ 대기
+6단위 core/lib:     ⬜ 대기
+7단위 elixir:       ⬜ 대기
+8단위 의존성 감사:   ⬜ 대기
+9단위 Git 히스토리: ⬜ 대기
+
+전체 진행률: 약 15% (1단위 완료 + 2단위 부분)
+```
+
+### 🏷️ 이번 증분 세션 요약 한 줄
+
+**투자팀 2단위 착수 — 헤파이스토스/네메시스/L31 점검 완료. SEC-004(네메시스 승인 검증 부재) 1건 발견. 2단위 나머지(markets/KIS/루나커맨더)는 다음 세션.**
+
+— 메티 (2026-04-17 오후)
+
+
+---
+
+## 📍 3차 세션 증분 업데이트 (2026-04-17 저녁 메티) — 🚨 긴급 대응
+
+> 2차 세션 핸드오버를 읽고 투자팀 2단위 재개하려 했으나, **CRITICAL 보안 사고 발견으로 긴급 모드 전환**.
+
+### 🎉 진행된 것들 (다른 세션 덕분)
+
+```
+커밋 578260b2 "Apply security audit hardening for hub and investment"
+  → SEC-001 ✅ 패치 완료 (Hub BIND_HOST 환경변수화)
+  → SEC-002 🔶 부분 패치 (config.yaml working tree 민감값 제거)
+  → SEC-003 ❌ 미포함
+
+커밋 e8afb396 "security(CRITICAL): untrack docs/codex/ + close SEC-005"  ← 이번 세션
+  → SEC-005 긴급 대응 완료 (origin/main 민감값 노출 중단)
+```
+
+### 🚨 이번 세션 CRITICAL 발견 및 대응 — SEC-005
+
+**발견**:
+- `.gitignore`에 `docs/codex/` 등록되어 있었음
+- 하지만 이미 추적 중인 파일에는 gitignore 효과 없음 (Git 표준 동작)
+- 코덱스가 커밋 `578260b2`에서 `docs/codex/CODEX_SECURITY_AUDIT_01.md`를 Git에 추가
+- 그 파일에는 메티가 1차 세션에서 작성한 **실제 민감값 3건이 평문으로** 포함
+- 결과: **SEC-002 무효화 + Public Git에 민감값 재노출**
+
+**긴급 대응 (이번 세션 실행 완료)**:
+1. 원격 노출 범위 전수 스캔 → 1개 파일에 3건 집중 확인
+2. 워킹트리 `CODEX_SECURITY_AUDIT_01.md` 민감값 → `<KIS_ACCOUNT_PREFIX>` 등 placeholder 치환
+3. `git rm --cached` docs/codex/*.md 6개 파일 추적 해제 (워킹트리 보존)
+4. KNOWN_ISSUES.md 업데이트 (SEC-001 ✅, SEC-002 🔶, SEC-004 신규, SEC-005 긴급)
+5. 커밋 `e8afb396` + push 완료 (pre-commit 보안 검사 통과)
+6. origin/main 재스캔 → **민감값 3종 0건 확인** ✅
+
+### ⚠️ 아직 남은 CRITICAL 작업 (마스터 승인 필요)
+
+히스토리에 민감값이 포함된 커밋들:
+```
+5a14725f "Update security audit progress status"
+578260b2 "Apply security audit hardening for hub and investment"
+bbd51aa5 "chore: config.yaml git 추적 시작 — API 키 제거 완료, 런타임 설정만"
+1d3350ff "chore: config.yaml git 추적 시작 — API 키 제거 완료, 런타임 설정만"
+```
+
+`git log --all -p -S "<KIS_ACCOUNT_NUMBER>"` 로 여전히 조회 가능 (실제 패턴은 secrets-store.json 참조). 완전 제거는:
+- `git filter-repo --replace-text` 로 히스토리 재작성
+- `git push --force-with-lease` (협업자 재클론 공지 필요)
+- **마스터 승인 게이트**
+
+### 🎯 코덱스 SEC-003 구현 진행 중 (세션 종료 시점)
+
+세션 마지막에 확인하니 **다른 세션이 SEC-003 Task 3를 구현 중**:
+```
+Unstaged changes:
+  bots/hub/lib/sql-guard.ts         (위험함수 11개 + 주석 제거 추가)
+  bots/hub/__tests__/sql-guard.test.js  (신규, 프롬프트 명세대로)
+  scripts/db/create-hub-readonly-role.sql (신규)
+  docs/guides/db-roles.md           (신규, 1153 bytes)
+```
+
+이번 메티 세션은 이 파일들을 **건드리지 않고** 코덱스 작업이 자연스럽게 커밋되도록 양보함.
+
+### 📊 감사 진행률 (누적 갱신)
+
+```
+1단위 Hub:
+  SEC-001 (HIGH)     Hub 바인딩     ✅ 완료 (578260b2)
+  SEC-002 (MEDIUM)   config.yaml    🔶 부분 (히스토리 정리 대기)
+  SEC-003 (LOW-MED)  SQL 가드       🔶 구현 진행 중 (다른 세션)
+
+2단위 투자팀:
+  SEC-004 (MEDIUM)   네메시스 재검증 부재   ⏳ 프롬프트 대기
+  P0 매매 경로 나머지: markets/*, kis-client, upbit-client  ⬜ 다음 세션
+  P1 인증/시크릿: secrets.ts, luna-commander.cjs, l21-llm-risk  ⬜ 다음 세션
+
+3차 세션 신규:
+  SEC-005 (CRITICAL) docs/codex 민감값 재노출  🔶 긴급 대응 완료, 히스토리 정리 대기
+
+전체 진행률: 약 25% (SEC-001 완료, 003 진행중, 004/005 대기)
+```
+
+### 📋 다음 세션 최우선 작업 (P0)
+
+```
+1. 히스토리 정리 결정 (마스터 승인):
+   □ git filter-repo 실행?
+   □ 동의되면 실행 후 force push + 협업자 공지
+   □ 미동의되면 노출 상태 수용 (지갑/계좌 로테이션이 중요해짐)
+
+2. 자산 로테이션 검토 (마스터 판단):
+   □ USDT 입금 주소 새로 발급 (블록체인 이미 노출)
+   □ KIS 계좌는 번호 로테이션 불가 → 모니터링 강화
+
+3. 코덱스 SEC-003 구현 검증:
+   □ 다른 세션이 커밋하면 메티가 독립 검증
+   □ sql-guard 테스트 통과 확인
+   □ readonly role 전환 계획 검토 (Hub 쿼리 전수 조사 필요)
+
+4. SEC-004 프롬프트 작성:
+   □ docs/codex/CODEX_SECURITY_AUDIT_02.md (로컬만, Git 추적 금지!)
+   □ 네메시스 재검증 가드 + 타임스탬프 방어
+
+5. 2단위 감사 재개:
+   □ markets/crypto.ts (바이낸스 호출)
+   □ shared/kis-client.ts (토큰 갱신 로깅)
+   □ shared/secrets.ts (Hub secrets 소비)
+```
+
+### 💡 재발 방지 교훈 (중요!)
+
+**원인**: gitignore에 등록되어 있어도 이미 추적 중인 파일에는 효과 없음. 코덱스(또는 자동화)가 `git add -A` 하면 포함될 수 있음.
+
+**방지책 (향후 메티가 docs/codex/ 작업 시 반드시 따를 것)**:
+```bash
+# 새 코덱스 프롬프트 파일 생성 직후 즉시 확인
+cd /Users/alexlee/projects/ai-agent-system
+git check-ignore -v docs/codex/NEW_FILE.md
+# → "docs/codex/ via .gitignore:N"  이 떠야 정상
+
+# 만약 추적되면 즉시:
+git rm --cached docs/codex/NEW_FILE.md
+git commit -m "untrack docs/codex/NEW_FILE (force-tracked by mistake)"
+```
+
+**절대 하지 말 것**: docs/codex/*.md 에 민감값(계좌번호, 지갑주소, API 키 등) 평문 기록
+
+### 🏷️ 3차 세션 요약 한 줄
+
+**CRITICAL 보안 사고 SEC-005 발견·긴급 대응 완료 — origin/main 민감값 노출 중단. 코덱스는 동시에 SEC-003 구현 중. 히스토리 정리는 마스터 승인 대기.**
+
+— 메티 (2026-04-17 저녁)
