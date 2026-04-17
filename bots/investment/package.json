@@ -104,6 +104,10 @@
     "tradingview-mcp:test": "python3 scripts/tradingview-mcp-server.py --test --json",
     "tradingview-mcp:indicators": "python3 scripts/tradingview-mcp-server.py --indicators --json",
     "tradingview-mcp:ohlcv": "python3 scripts/tradingview-mcp-server.py --ohlcv --symbol BTC-USD --from-date 2026-04-01 --json",
+    "hybrid-score": "node scripts/hybrid-scorer.ts --symbols=BTC/USDT,ETH/USDT,SOL/USDT,BNB/USDT",
+    "hybrid-score:news": "node scripts/hybrid-scorer.ts --symbols=BTC/USDT,ETH/USDT,SOL/USDT,BNB/USDT --news",
+    "chart-vision": "node scripts/chart-vision.ts --symbol=BTC/USDT --dry-run",
+    "chart-vision:status": "node scripts/chart-vision.ts --status",
     "analyze-signals": "node scripts/analyze-signal-correlation.ts",
     "analyze-signals:30": "node scripts/analyze-signal-correlation.ts --days=30"
   },

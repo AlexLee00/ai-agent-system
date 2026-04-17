@@ -491,7 +491,7 @@ export async function analyzeCryptoMTF(symbol) {
     }, 'aria');
   } catch { /* RAG 저장 실패 무시 */ }
 
-  return { signal, confidence, reasoning, score: normalizedScore, weightedScore, tfResults, currentPrice, atrRatio };
+  return { signal, confidence, reasoning, score: normalizedScore, weightedScore, tfResults, currentPrice, atrRatio, visionPattern: null };
 }
 
 // ─── 국내/미국주식 단일 타임프레임 분석 ─────────────────────────────
@@ -590,7 +590,7 @@ async function analyzeStockMTF(symbol, exchange, timeframes, exchangeLabel) {
     console.warn(`  ⚠️ [아리아] DB 저장 실패: ${e.message}`);
   }
 
-  return { signal, confidence, reasoning, score: normalizedScore, tfResults, currentPrice };
+  return { signal, confidence, reasoning, score: normalizedScore, tfResults, currentPrice, visionPattern: null };
 }
 
 /**
@@ -623,6 +623,98 @@ export async function analyzeKisOverseasMTF(symbol, force = false) {
     }
   }
   return analyzeStockMTF(symbol, 'kis_overseas', KIS_OVERSEAS_TIMEFRAMES, '미국주식');
+}
+
+// ─── 비전 패턴 병합 헬퍼 (Part J) ───────────────────────────────────────
+
+/**
+ * analyzeChartVision 결과를 아리아 MTF 결과에 병합
+ * 호출 측(luna.ts)이 chart-vision.ts를 별도로 호출한 뒤 이 함수로 합산
+ *
+ * @param {object} ariaResult  analyzeCryptoMTF / analyzeKisMTF / analyzeKisOverseasMTF 반환값
+ * @param {object|null} visionResult  analyzeChartVision 반환값 (null 허용)
+ * @returns {object}  visionPattern 필드가 채워진 ariaResult
+ */
+export function attachVisionPattern(ariaResult, visionResult) {
+  if (!ariaResult || !visionResult || visionResult.skipped) return ariaResult;
+  return {
+    ...ariaResult,
+    visionPattern: {
+      pattern:    visionResult.pattern,
+      signal:     visionResult.signal,
+      confidence: visionResult.confidence,
+      reasoning:  visionResult.reasoning,
+      key_levels: visionResult.key_levels,
+    },
+  };
+}
+
+// ─── 빠른 모멘텀 스캔 (I-2) ────────────────────────────────────────────
+
+/**
+ * 여러 심볼을 1h 봉 기준으로 빠르게 모멘텀 스캔
+ * RSI(30%) + MACD histogram(40%) + BB position(30%) → 0~1 종합 점수
+ *
+ * @param {string[]} symbols  심볼 목록
+ * @param {'binance'|'kis'|'kis_overseas'} exchange
+ * @returns {Promise<Array<{symbol, momentumScore, rsi, macdHist, bbPosition, currentPrice}>>}
+ *          점수 내림차순 정렬
+ */
+export async function quickMomentumScan(symbols, exchange = 'binance') {
+  const results = [];
+
+  await Promise.allSettled(symbols.map(async (symbol) => {
+    try {
+      let ohlcv;
+      if (exchange === 'binance') {
+        ohlcv = await fetchOHLCV(symbol, '1h', 100);
+      } else {
+        const ticker = toYahooTicker(symbol, exchange);
+        ohlcv = await fetchYahooOHLCV(ticker, '1h', '14d');
+      }
+      if (!ohlcv || ohlcv.length < 30) return;
+
+      const closes = ohlcv.map(c => c[4]);
+      const currentPrice = closes[closes.length - 1];
+
+      const rsi = calcRSI(closes);
+      const macdResult = calcMACD(closes);
+      const bb = calcBB(closes);
+
+      if (rsi == null || macdResult == null || bb == null) return;
+
+      const macdHist = macdResult.histogram;
+      const bbPosition = bb.upper === bb.lower
+        ? 0.5
+        : (currentPrice - bb.lower) / (bb.upper - bb.lower);
+
+      results.push({ symbol, rsi, macdHist, bbPosition, currentPrice, _raw: true });
+    } catch (e) {
+      console.log(`  [아리아] quickMomentumScan ${symbol} 실패: ${e.message}`);
+    }
+  }));
+
+  if (results.length === 0) return [];
+
+  // MACD histogram 정규화: 그룹 내 max abs 기준 → [-0.5, 0.5] → [0, 1]
+  const maxAbsHist = Math.max(...results.map(r => Math.abs(r.macdHist)), 1e-10);
+
+  return results
+    .map(r => {
+      const rsiScore   = r.rsi / 100;
+      const macdScore  = 0.5 + Math.max(-0.5, Math.min(0.5, r.macdHist / maxAbsHist * 0.5));
+      const bbScore    = Math.max(0, Math.min(1, r.bbPosition));
+      const momentumScore = rsiScore * 0.30 + macdScore * 0.40 + bbScore * 0.30;
+      return {
+        symbol:        r.symbol,
+        momentumScore: Math.round(momentumScore * 1000) / 1000,
+        rsi:           Math.round(r.rsi * 100) / 100,
+        macdHist:      Math.round(r.macdHist * 10000) / 10000,
+        bbPosition:    Math.round(r.bbPosition * 1000) / 1000,
+        currentPrice:  r.currentPrice,
+      };
+    })
+    .sort((a, b) => b.momentumScore - a.momentumScore);
 }
 
 // CLI 실행
