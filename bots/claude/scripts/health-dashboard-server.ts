@@ -16,6 +16,12 @@ const path     = require('path');
 const os       = require('os');
 const { execSync } = require('child_process');
 const pgPool   = require('../../../packages/core/lib/pg-pool');
+const {
+  getServiceOwnership,
+  isElixirOwnedService,
+  isRetiredService,
+  isExpectedIdleService,
+} = require('../../../packages/core/lib/service-ownership.js');
 // getAllPoolStats는 module.exports에 포함됨
 const { LEAD_MODES, _getLeadMode } = require('../lib/claude-lead-brain');
 
@@ -139,11 +145,33 @@ function getBotStatuses() {
   ];
 
   return BOTS.map(b => {
+    const ownership = getServiceOwnership(b.service);
+
     try {
       execSync(`launchctl list ${b.service} 2>/dev/null`, { timeout: 3000 });
-      return { label: b.label, service: b.service, status: 'running' };
+      return {
+        label: b.label,
+        service: b.service,
+        status: 'running',
+        owner: ownership?.owner || 'launchd',
+      };
     } catch {
-      return { label: b.label, service: b.service, status: 'stopped' };
+      let status = 'stopped';
+
+      if (isRetiredService(b.service)) {
+        status = 'retired';
+      } else if (isElixirOwnedService(b.service)) {
+        status = 'managed-by-elixir';
+      } else if (isExpectedIdleService(b.service)) {
+        status = 'expected-idle';
+      }
+
+      return {
+        label: b.label,
+        service: b.service,
+        status,
+        owner: ownership?.owner || 'launchd',
+      };
     }
   });
 }
