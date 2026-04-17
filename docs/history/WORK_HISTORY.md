@@ -4,6 +4,20 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-04-17: CODEX_SIGMA_REMODEL_PHASE_1 완료 (Elixir Jido 코어 + Shadow Mode)
+
+- **Skill 5개** TS→Elixir 포팅 (Zoi 스키마, run/2 구현): DataQualityGuard, CausalCheck, ExperimentDesign, FeaturePlanner, ObservabilityPlanner
+- **테스트 30개** 통과 (`test/sigma/v2/skill/`)
+- **Commander** `Jido.AI.Agent` 전환 + `decide_formation/4` + `analyze_formation/2`
+- **AgentSelector** (ε-greedy) + Pod 3개 (Risk/Growth/Trend) 구현
+- **Memory L1** (ETS) + **Memory L2** (pgvector + Qwen3 embed) 구현
+- **Principle Loader** (YamlElixir) + `self_critique/2`
+- **Telemetry** (`:telemetry.attach_many` + 파일 exporter)
+- **Supervisor** Memory.L1 등록
+- **ShadowRunner** + **ShadowCompare** (v1 vs v2 일치율)
+- **마이그레이션**: `sigma_v2_shadow_runs` 테이블
+- `mix compile --warnings-as-errors` 경고 0건 / 민감값 0건
+
 ## 2026-04-17: CODEX_LUNA_IMPL 전 구현 완료 (I-2/I-3/J + OPS 작업)
 
 - **KIS live 전환**: config.yaml `kis_mode: paper → live` (커밋 ffab4e5f, push)

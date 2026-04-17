@@ -1,24 +1,85 @@
 defmodule Sigma.V2.Telemetry do
   @moduledoc """
-  Sigma V2 텔레메트리 — Jido.Observe 핸들러 + OpenTelemetry 설정.
-
-  상위 문서: docs/SIGMA_REMODELING_PLAN_2026-04-17.md §5.3.8
-  Phase 0: skeleton only. Phase 0에서는 파일 exporter만 사용.
-
-  역할:
-    - Directive 실행 스팬 (opentelemetry tracer)
-    - 예산 소비 메트릭 (카운터/히스토그램)
-    - Kill Switch 이벤트 로깅
+  Sigma V2 텔레메트리 — Jido 이벤트 핸들러 + 시그마 고유 메트릭 수집.
+  Phase 1: 파일 exporter. Phase 4에서 OTLP로 교체 예정.
   """
 
+  require Logger
+
+  @events [
+    [:jido, :agent, :execute, :start],
+    [:jido, :agent, :execute, :stop],
+    [:jido, :action, :run, :start],
+    [:jido, :action, :run, :stop]
+  ]
+
   def setup do
-    # TODO(Phase 1): :telemetry.attach_many/4 로 Jido 이벤트 핸들러 등록
-    # TODO(Phase 1): OpenTelemetry span 시작/종료 래퍼
+    :telemetry.attach_many(
+      "sigma-v2-handler",
+      @events,
+      &__MODULE__.handle_event/4,
+      nil
+    )
+
     :ok
   end
 
-  def span(_name, _metadata, fun) do
-    # TODO(Phase 1): Tracer.with_span(_name, _metadata, fun)
-    fun.()
+  def handle_event([:jido, :agent, :execute, :start], measurements, metadata, _config) do
+    Logger.debug("[sigma_v2][agent:start] agent=#{inspect(metadata[:agent])} measurements=#{inspect(measurements)}")
   end
+
+  def handle_event([:jido, :agent, :execute, :stop], measurements, metadata, _config) do
+    duration_ms = div(measurements[:duration] || 0, 1_000_000)
+    Logger.info("[sigma_v2][agent:stop] agent=#{inspect(metadata[:agent])} duration=#{duration_ms}ms")
+    record_metric(:agent_execute_duration_ms, duration_ms, metadata)
+  end
+
+  def handle_event([:jido, :action, :run, :start], _measurements, metadata, _config) do
+    Logger.debug("[sigma_v2][action:start] action=#{inspect(metadata[:action])}")
+  end
+
+  def handle_event([:jido, :action, :run, :stop], measurements, metadata, _config) do
+    duration_ms = div(measurements[:duration] || 0, 1_000_000)
+    success = metadata[:result] == :ok
+    Logger.info("[sigma_v2][action:stop] action=#{inspect(metadata[:action])} duration=#{duration_ms}ms success=#{success}")
+    record_metric(:action_run_duration_ms, duration_ms, metadata)
+  end
+
+  def handle_event(event, measurements, metadata, _config) do
+    Logger.debug("[sigma_v2][event] #{inspect(event)} measurements=#{inspect(measurements)} metadata=#{inspect(metadata)}")
+  end
+
+  def span(name, metadata, fun) do
+    start = System.monotonic_time()
+    result = fun.()
+    duration = System.monotonic_time() - start
+    Logger.debug("[sigma_v2][span] #{name} duration=#{div(duration, 1_000_000)}ms metadata=#{inspect(metadata)}")
+    result
+  end
+
+  # -------------------------------------------------------------------
+  # 시그마 고유 메트릭 기록 (파일 exporter → /tmp/sigma_v2_metrics.jsonl)
+  # -------------------------------------------------------------------
+
+  defp record_metric(name, value, metadata) do
+    entry =
+      Jason.encode!(%{
+        metric: name,
+        value: value,
+        metadata: sanitize(metadata),
+        timestamp: DateTime.utc_now() |> DateTime.to_iso8601()
+      })
+
+    File.write("/tmp/sigma_v2_metrics.jsonl", entry <> "\n", [:append])
+  rescue
+    _ -> :ok
+  end
+
+  defp sanitize(metadata) when is_map(metadata) do
+    metadata
+    |> Enum.reject(fn {_k, v} -> is_function(v) or is_pid(v) or is_reference(v) end)
+    |> Enum.map(fn {k, v} -> {k, inspect(v)} end)
+    |> Map.new()
+  end
+  defp sanitize(_), do: %{}
 end
