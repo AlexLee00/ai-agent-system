@@ -28,6 +28,7 @@ function normalizeTeam(value: unknown): string {
     luna: 'luna',
     reservation: 'reservation',
     ska: 'ska',
+    sigma: 'sigma',
     meeting: 'meeting',
     emergency: 'emergency',
     blog: 'blog',

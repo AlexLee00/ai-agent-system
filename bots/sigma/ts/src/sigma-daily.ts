@@ -5,29 +5,53 @@
  * Elixir v2 Commander를 HTTP로 호출하는 adapter.
  */
 
-import axios from 'axios';
-
 const SIGMA_V2_ENDPOINT =
   process.env.SIGMA_V2_ENDPOINT || 'http://localhost:4000/sigma/v2';
 
 export async function runDaily(options: { test?: boolean } = {}): Promise<any> {
-  const response = await axios.post(
-    `${SIGMA_V2_ENDPOINT}/run-daily`,
-    { test: options.test || false },
-    { timeout: 120_000 },
-  );
-  return response.data;
+  const response = await fetch(`${SIGMA_V2_ENDPOINT}/run-daily`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ test: options.test || false }),
+    signal: AbortSignal.timeout(120_000),
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data?.error || `HTTP ${response.status}`);
+  }
+  return data;
 }
 
-if (require.main === module) {
+export async function checkHealth(): Promise<any> {
+  const response = await fetch(`${SIGMA_V2_ENDPOINT}/health`, {
+    signal: AbortSignal.timeout(10_000),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data?.error || `HTTP ${response.status}`);
+  }
+  return data;
+}
+
+const isEntrypoint = (() => {
+  const entry = process.argv[1];
+  return typeof entry === 'string' && import.meta.url === `file://${entry}`;
+})();
+
+if (isEntrypoint) {
   const args = process.argv.slice(2);
-  runDaily({ test: args.includes('--test') })
-    .then((r) => {
-      console.log(JSON.stringify(r, null, 2));
-      process.exit(0);
-    })
-    .catch((e: Error) => {
-      console.error(`[sigma-daily] 실행 실패: ${e.message}`);
-      process.exit(1);
-    });
+  const runner = args.includes('--health')
+    ? checkHealth()
+    : runDaily({ test: args.includes('--test') });
+
+  runner
+      .then((r) => {
+        console.log(JSON.stringify(r, null, 2));
+        process.exit(0);
+      })
+      .catch((e: Error) => {
+        console.error(`[sigma-daily] 실행 실패: ${e.message}`);
+        process.exit(1);
+      });
 }

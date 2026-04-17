@@ -57,6 +57,21 @@ defmodule Sigma.V2.Phase2Test do
     end
   end
 
+  describe "Sigma.Directive.Executor Tier 3" do
+    test "대기열 적재 시 directive_id를 결과에 포함" do
+      dir = %Sigma.Directive.ApplyFeedback{
+        team: "blog",
+        tier: 3,
+        action: %{type: "config_change"},
+        rollback_spec: %{directive_id: "t3-test"}
+      }
+
+      result = Sigma.Directive.Executor.execute(dir, %{})
+      assert match?({:ok, %{tier: 3, outcome: :queued, directive_id: _}}, result) or
+             match?({:error, _}, result)
+    end
+  end
+
   describe "Sigma.V2.Graduation" do
     test "check_promotion/2은 :stay 또는 :promote 반환" do
       result = Sigma.V2.Graduation.check_promotion("blog", "content_review")

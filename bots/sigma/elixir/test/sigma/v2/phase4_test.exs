@@ -51,25 +51,25 @@ defmodule Sigma.V2.Phase4Test do
   end
 
   describe "Sigma.V2.TelegramBridge" do
-    test "notify_pending/1은 :ok 반환 (Hub 미연결 허용)" do
+    test "notify_pending/2는 {:ok, _} 또는 {:error, _} 반환 (Hub 미연결 허용)" do
       dir = %Sigma.Directive.ApplyFeedback{
         team: "blog",
         tier: 3,
         action: %{type: "config_change"},
         rollback_spec: %{directive_id: "t3-test"}
       }
-      result = Sigma.V2.TelegramBridge.notify_pending(dir)
-      assert result == :ok or match?({:error, _}, result)
+      result = Sigma.V2.TelegramBridge.notify_pending(dir, Ecto.UUID.generate())
+      assert match?({:ok, _}, result) or match?({:error, _}, result)
     end
 
-    test "notify_meta_review/1은 :ok 반환 (Hub 미연결 허용)" do
+    test "notify_meta_review/1은 {:ok, _} 또는 {:error, _} 반환 (Hub 미연결 허용)" do
       report = %{
         what_worked: ["test"],
         what_didnt: [],
         what_to_try: ["try this"]
       }
       result = Sigma.V2.TelegramBridge.notify_meta_review(report)
-      assert result == :ok or match?({:error, _}, result)
+      assert match?({:ok, _}, result) or match?({:error, _}, result)
     end
   end
 end

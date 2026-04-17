@@ -6,7 +6,7 @@
 
 ```bash
 # Elixir v2 HTTP 라우터 (Phase 5 추가)
-curl http://localhost:4000/sigma/v2/health
+curl http://localhost:4010/sigma/v2/health
 # 기대 응답: {"status":"ok","enabled":true|false,"last_run":"..."}
 
 # TS v1 (Phase 5 이전 호환)
@@ -51,7 +51,7 @@ cat /tmp/sigma-baseline-$(date +%Y-%m-%d).json | jq '.ok, .targetTeams, .feedbac
 
 ```bash
 # Shadow run 결과
-cd bots/sigma/elixir
+cd elixir/team_jay
 mix run -e "Sigma.V2.ShadowRunner.run_once() |> IO.inspect"
 mix run -e "Sigma.V2.ShadowCompare.recent_match_rate() |> IO.inspect"
 # 기대: match_rate >= 0.85 (85% 일치)
@@ -78,7 +78,7 @@ SELECT COUNT(*) FROM sigma.agent_memory WHERE created_at > NOW() - INTERVAL '7 d
 
 | 증상 | 원인 후보 | 조치 |
 |------|-----------|------|
-| `/sigma/v2/health` 응답 없음 | HTTP 라우터 미기동 | supervisor.ex 상태 확인 |
+| `/sigma/v2/health` 응답 없음 | HTTP 라우터 미기동 또는 포트 오인 | supervisor.ex + SIGMA_HTTP_PORT 확인 |
 | baseline `ok: false` | TS runDaily 실패 | log 확인 후 Kill Switch off |
 | Shadow match_rate < 0.7 | v2 로직 drift | Phase 1 commander.ex 회귀 검토 |
 | `directive_audit` 0 rows | Commander 미호출 | `SIGMA_V2_ENABLED` 확인 |
@@ -95,7 +95,7 @@ echo "SIGMA_V2_ENABLED=false" >> ~/.zprofile
 source ~/.zprofile
 
 # 3. 최근 Directive 자동 적용 롤백 (Tier 2)
-cd bots/sigma/elixir
+cd elixir/team_jay
 mix run -e "Sigma.V2.RollbackScheduler.rollback_last(hours: 1)"
 
 # 4. 슬랙/텔레그램 알림
