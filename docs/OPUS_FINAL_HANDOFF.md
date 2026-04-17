@@ -1185,3 +1185,212 @@ defp provider_from_route(:ollama_32b), do: {:ollama, "deepseek-r1-32b"}
 4. **M5 Max 64GB 시 재검토**: 장기 하드웨어 업그레이드 후 로컬 LLM 재도입 가능
 
 — 메티 (2026-04-18 01:30, 마스터 "임베딩만 사용" 결정 반영)
+
+
+---
+
+# 🎯 38차 최종 — Phase 2 LLM 자율운영 프롬프트 작성 + 코덱스 자율 실행 진행 (2026-04-18 02:00 KST)
+
+## 세션 최종 성과 (메티 작업)
+
+### 📝 대형 프롬프트 작성 완료
+- `docs/codex/CODEX_SIGMA_PHASE2_LLM_AUTONOMOUS.md` **990줄**
+- 12단계 실행 지시서 (사전검증 → Ollama제거 → req_llm → Recommender → Selector → CostTracker → Principle의미 → KillSwitch → 테스트 → 마이그레이션 → API검증 → 최종커밋)
+- LLM Recommender 설계 (6가지 룰: affinity/length/budget/failure/urgency/task_type)
+- DB 스키마 `sigma_v2_llm_routing_log`
+- Exit Criteria + 에스컬레이션 조건 완비
+
+### 🎯 마스터 설계 방향 (불변)
+- **완전 자율운영 목표** + LLM 동적 선택
+- **룰 기반 + LLM 추천 에이전트** 원칙
+  - Commander/Pod/Skill은 룰 기반 유지 (LLM 안 씀)
+  - Reflexion/ESPL/SelfRAG/Principle.Critique만 실제 LLM
+  - Recommender 자체는 룰 엔진 (재귀 방지)
+- **Claude API 전용** (로컬 LLM 전부 제외)
+- **MLX 임베딩만 유지** (qwen3-embed-0.6b, L2 pgvector)
+
+---
+
+## 🤖 코덱스 자율 실행 현황 (인수인계 시점)
+
+**상태**: 코덱스가 프롬프트 읽고 **Step 1~3/4 진행 중** (아직 staging, 미커밋)
+
+### 이미 완료된 부분
+```
+커밋:
+  5f717635 pre: CODEX_SIGMA_PHASE2_LLM_AUTONOMOUS 실행 전 롤백 포인트 ← 코덱스 진입
+
+Staging (아직 commit 전):
+  M bots/sigma/elixir/lib/sigma/v2/llm/cost_tracker.ex
+  M bots/sigma/elixir/lib/sigma/v2/llm/selector.ex
+  M packages/core/lib/llm-model-selector.ts
+  ?? bots/sigma/elixir/lib/sigma/v2/llm/recommender.ex (신규, 65줄)
+```
+
+### 이미 확인된 것 (메티 독립 검증)
+
+- ✅ Ollama 참조 전부 제거 (`grep :ollama_` 결과 없음)
+- ✅ `mix compile --warnings-as-errors` 경고 0
+- ✅ `mix test` **131 tests, 0 failures** (기존 116 + 신규 15개)
+- ✅ `Recommender` 모듈 신설 (65줄, 간소화 버전 — 6가지 룰 중 budget/urgency 구현)
+- ✅ Selector에서 `@anthropic_api_url` 상수 추가 (req_llm 대신 HTTP 직접 호출 선택)
+- ✅ Shadow launchd `ai.sigma.daily` 여전히 가동 (중단 없음, LastExitStatus=0)
+
+### 코덱스의 자율 판단 2가지 (프롬프트 초과)
+
+| # | 코덱스 결정 | 메티 평가 |
+|:-:|------|------|
+| 1 | **req_llm 라이브러리 미사용 → HTTP 직접 호출** | 👍 복잡도 낮음, 디버깅 쉬움, 합리적 |
+| 2 | **Recommender 6룰 중 2룰만 구현 (budget/urgency)** | 🟡 간소화, 추후 확장 필요 가능 |
+
+### 🟡 아직 미완성 (다음 세션에서 확인 필요)
+
+- [ ] CostTracker 실제 가격표 + today_spend 구현 (staging이긴 하지만 내용 미확인)
+- [ ] RoutingLog 모듈 신설 (프롬프트 Step 5)
+- [ ] `sigma_v2_llm_routing_log` 마이그레이션 신규 작성
+- [ ] 의미 기반 Principle.self_critique (프롬프트 Step 6)
+- [ ] `SIGMA_PRINCIPLE_SEMANTIC_CHECK_ENABLED` 환경변수 추가
+- [ ] 실제 Anthropic API 호출 검증 (`ANTHROPIC_API_KEY` 필요)
+- [ ] 최종 커밋 + push
+
+---
+
+## 🔜 다음 세션 진입점
+
+### 첫 번째 액션: **코덱스 진행 상황 확인**
+
+```bash
+cd /Users/alexlee/projects/ai-agent-system
+
+# 1. 코덱스가 아직 실행 중인지 확인
+git status --short
+# M/??  파일이 있다면 코덱스가 아직 작업 중이거나 중단된 상태
+
+# 2. 최근 커밋 확인
+git log --oneline -15
+
+# 3. Shadow 가동 여부 (중단 없어야 함)
+launchctl list | grep sigma  # -  0  ai.sigma.daily 기대
+
+# 4. mix test 상태
+cd elixir/team_jay
+mix compile --warnings-as-errors
+mix test 2>&1 | tail -3
+```
+
+### 분기 A: 코덱스가 이미 완료한 경우 (staging 없음, feat 커밋 있음)
+
+```bash
+# 메티 종합 검증 (Exit Criteria 전수)
+grep -rE ':ollama_' bots/sigma/elixir/           # → 결과 없어야 함
+grep -rE 'TODO: req_llm' bots/sigma/elixir/       # → 결과 없어야 함
+ls bots/sigma/elixir/lib/sigma/v2/llm/recommender.ex  # → 존재
+ls bots/sigma/elixir/lib/sigma/v2/llm/routing_log.ex  # → 존재 (프롬프트 Step 5)
+ls bots/sigma/migrations/*llm_routing_log*        # → 존재
+
+# DB 테이블 확인
+cd elixir/team_jay
+mix run -e '
+  Postgrex.query!(TeamJay.Repo, "SELECT to_regclass($1)", ["sigma_v2_llm_routing_log"])
+  |> IO.inspect
+'
+
+# API key 설정 시 실호출 테스트
+[ -n "$ANTHROPIC_API_KEY" ] && mix run -e '
+  case Sigma.V2.LLM.Selector.call_with_fallback(:"self_rag.retrieve_gate", "test", max_tokens: 20) do
+    {:ok, r} -> IO.puts("✅ #{r.response}")
+    {:error, e} -> IO.puts("❌ #{inspect(e)}")
+  end
+'
+```
+
+### 분기 B: 코덱스가 중단/일시정지 상태 (staging 유지)
+
+```bash
+# 코덱스 세션 재개 또는 별도 코덱스 세션 시작
+# 프롬프트: "docs/codex/CODEX_SIGMA_PHASE2_LLM_AUTONOMOUS.md Step 5부터 계속해줘"
+
+# 또는 메티가 직접 진행도 파악:
+git diff                                          # 변경 내용 검토
+cat bots/sigma/elixir/lib/sigma/v2/llm/recommender.ex  # 신규 파일 확인
+```
+
+### 분기 C: 롤백 필요한 경우
+
+```bash
+# pre 커밋으로 복원
+git stash
+git reset --hard 5f717635~1  # pre 커밋 직전 상태
+# 또는 git reset --hard HEAD~1 (원하는 지점)
+
+# 롤백 후 다시 진행 여부 결정
+```
+
+---
+
+## 📊 38차 세션 최종 대시보드
+
+```
+────────────────────────────────────────────────────────────────
+시그마팀 진척도 (37차 → 38차 후반)
+────────────────────────────────────────────────────────────────
+Elixir 모듈          22 → 38 → 39 (+ recommender.ex)
+테스트               45 → 116 → 131 (신규 15개)
+마이그레이션         3  → 6 (+ routing_log 예정)
+LLM 상태             전부 stub → Selector 실호출 진행 중
+자율운영             룰 기반만 → 룰+LLM 진행 중
+MLX 활용             LLM+임베딩 → 임베딩만 (마스터 결정)
+Kill Switch          전부 OFF (Shadow 유지)
+────────────────────────────────────────────────────────────────
+Shadow 관찰 Day 1    ✅ 진행 중 (2026-04-18 ~ 2026-04-24)
+Day 7 종합 판정      예정 2026-04-24
+Tier 1 가동 결정     Day 7+
+────────────────────────────────────────────────────────────────
+```
+
+## 📝 37~38차 전체 커밋 히스토리
+
+```
+5f717635  pre: CODEX_SIGMA_PHASE2_LLM_AUTONOMOUS 실행 전 롤백 포인트 ← HEAD
+b9396c0d  fix(diagnostics): stop stale memory alarm sources
+137d2c0d  docs(opus): 38차 후반 MLX 임베딩 전용 결정 반영
+d91c0782  fix(sigma): L2 pgvector MLX-openai-server API 형식 교정
+bf96e142  docs(opus): 37/38차 인수인계 — 시그마팀 v2 완성 + Shadow 가동
+ae66d395  docs(sigma): Shadow Deploy 최종 검증 완료
+46d9069c  feat(sigma): Shadow Mode launchd 가동
+69cff88d  docs: Phase 2-4 완전 클로즈
+79d33ca5  test(sigma): Phase 2-4 테스트 116개 + 버그 수정
+52553e0a  feat(codex): CODEX_SIGMA_PHASE_2_3_4_EXECUTE 자동 실행
+4ae43bf3  feat(sigma): Phase 4 완료
+31f5e69a  feat(sigma): Phase 3 완료
+aa6a0627  fix(sigma): V-7 unused truthy? (메티 수정)
+```
+
+## 🫡 메티 다음 세션 첫 명령 대응
+
+마스터가 다음 세션 시작 시 할 만한 질문 → 메티 대응:
+
+| 마스터 질문 | 메티 대응 |
+|------------|---------|
+| "어제 진행 어디까지 됐어?" | 위 대시보드 + git log + staging 확인 |
+| "코덱스 완료됐어?" | `git status` + `grep TODO` + Exit Criteria 체크 |
+| "Day 7 판정 해줘" | 7일치 shadow_runs + LLM 비용 + Tier 1 권고 |
+| "다윈팀 분리 시작" | 루나팀 구조 참고 RELOCATE 프롬프트 작성 |
+| "Recommender 6룰 나머지 추가" | `recommender.ex` 확장 (length/failure/task_type 3룰 추가) |
+
+## 🔑 이번 세션 핵심 결정 (향후 참고)
+
+1. **"로컬 모델 많으면 무리 온다, 임베딩만 사용"** — 마스터 (2026-04-18 01:30)
+   - mlx-server-config.yaml에서 LM 3개 제거 (qwen2.5-7b, deepseek-r1-32b, gemma4)
+   - qwen3-embed-0.6b만 유지
+   - 실행은 마스터 본인 (시스템 설정 파일)
+
+2. **"완전 자율운영 + LLM 적용 프롬프트"** — 마스터 (2026-04-18 01:50)
+   - 룰 기반 + LLM 추천 에이전트 방안
+   - Claude API 전용
+   - 프롬프트 990줄 작성 → 코덱스 자율 실행 개시
+## 🏷️ 38차 세션 요약 한 줄 (최종)
+
+**38차 세션 — 시그마 완전 자율운영 프롬프트 작성 대장정: CODEX_SIGMA_PHASE2_LLM_AUTONOMOUS.md 990줄 설계(LLM Recommender 6룰 + Selector fallback chain + CostTracker 실가격표 + RoutingLog + 의미 기반 Principle + 의 12단계 실행) + 코덱스 자율 실행 개시(Ollama 제거 ✅ / Recommender 65줄 신설 ✅ / Selector HTTP 직접 호출 방식 ✅ / 131 tests 0 failures). MLX 임베딩은 유지, LLM 3개는 제거 결정(32GB 메모리 보호). Claude API 전용으로 정책 전환. Shadow launchd `ai.sigma.daily` 계속 가동(LastExitStatus=0), Day 2~7 관찰 지속. 코덱스 staging 상태로 중단/진행 대기 — 다음 세션에서 완료 여부 확인 + 메티 종합 검증 + API key 설정 시 실호출 테스트 필요. 다음 주요 작업 3갈래: (A) 코덱스 Phase 2 완료 확인 / (B) Day 7 Tier 1 판정 (2026-04-24) / (C) 다윈팀 완전 분리 착수.**
+
+— 메티 (Metis, 2026-04-18 02:10, 38차 세션 완전 종료)
