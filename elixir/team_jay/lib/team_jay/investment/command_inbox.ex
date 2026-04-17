@@ -98,44 +98,79 @@ defmodule TeamJay.Investment.CommandInbox do
     action_type = nested(command, ["action_type"]) || nested(command, [:action_type]) || ""
     summary = nested(entry, ["summary"]) || nested(entry, [:summary]) || ""
 
-    _ =
-      TeamJay.HubClient.command_ack(command_id, "luna",
+    if stale_core_risk_command?(action_type, command) do
+      TeamJay.EventLake.record(%{
+        team: "investment",
         bot_name: "investment_command_inbox",
-        source: "investment.command_inbox",
-        pipeline: pipeline,
-        message: "investment inbox accepted #{action_type}"
-      )
+        event_type: "investment_cross_team_command_suppressed",
+        severity: "info",
+        title: "stale core risk command suppressed",
+        message: "[#{pipeline}] #{summary}",
+        metadata: %{
+          pipeline: pipeline,
+          command: command,
+          summary: summary,
+          reason: "core_health_ok"
+        }
+      })
 
-    case action_type do
-      "adjust_investment_intensity" ->
-        handle_investment_command(:adjust_investment_intensity, command_id, pipeline, summary, command)
-
-      "analyze_trend_candidates" ->
-        handle_investment_command(:analyze_trend_candidates, command_id, pipeline, summary, command)
-
-      "reduce_workload" ->
-        handle_investment_command(:reduce_workload, command_id, pipeline, summary, command)
-
-      other ->
-        TeamJay.EventLake.record(%{
-          team: "investment",
+      _ =
+        TeamJay.HubClient.command_complete(command_id, "luna",
           bot_name: "investment_command_inbox",
-          event_type: "investment_cross_team_command_unsupported",
-          severity: "warn",
-          title: "지원하지 않는 cross-team command",
-          message: "[#{pipeline}] #{other}",
-          metadata: %{pipeline: pipeline, command: command, summary: summary}
-        })
+          source: "investment.command_inbox",
+          pipeline: pipeline,
+          message: "suppressed stale core risk command"
+        )
 
-        _ =
-          TeamJay.HubClient.command_fail(command_id, "luna",
-            bot_name: "investment_command_inbox",
-            source: "investment.command_inbox",
-            pipeline: pipeline,
-            message: "unsupported investment command: #{other}"
+      Logger.info("[InvestmentCommandInbox] #{pipeline} stale core risk command suppressed")
+      :ok
+    else
+
+      _ =
+        TeamJay.HubClient.command_ack(command_id, "luna",
+          bot_name: "investment_command_inbox",
+          source: "investment.command_inbox",
+          pipeline: pipeline,
+          message: "investment inbox accepted #{action_type}"
+        )
+
+      case action_type do
+        "adjust_investment_intensity" ->
+          handle_investment_command(
+            :adjust_investment_intensity,
+            command_id,
+            pipeline,
+            summary,
+            command
           )
 
-        {:error, :unsupported}
+        "analyze_trend_candidates" ->
+          handle_investment_command(:analyze_trend_candidates, command_id, pipeline, summary, command)
+
+        "reduce_workload" ->
+          handle_investment_command(:reduce_workload, command_id, pipeline, summary, command)
+
+        other ->
+          TeamJay.EventLake.record(%{
+            team: "investment",
+            bot_name: "investment_command_inbox",
+            event_type: "investment_cross_team_command_unsupported",
+            severity: "warn",
+            title: "지원하지 않는 cross-team command",
+            message: "[#{pipeline}] #{other}",
+            metadata: %{pipeline: pipeline, command: command, summary: summary}
+          })
+
+          _ =
+            TeamJay.HubClient.command_fail(command_id, "luna",
+              bot_name: "investment_command_inbox",
+              source: "investment.command_inbox",
+              pipeline: pipeline,
+              message: "unsupported investment command: #{other}"
+            )
+
+          {:error, :unsupported}
+      end
     end
   end
 
@@ -243,4 +278,43 @@ defmodule TeamJay.Investment.CommandInbox do
   end
 
   defp nested(_map, _path), do: nil
+
+  defp stale_core_risk_command?(action_type, command) do
+    action_type == "reduce_workload" and core_alias_services_only?(command) and current_core_health_ok?()
+  end
+
+  defp core_alias_services_only?(command) do
+    services =
+      nested(command, ["payload", "affected_services"]) ||
+        nested(command, [:payload, :affected_services]) ||
+        []
+
+    normalized =
+      services
+      |> List.wrap()
+      |> Enum.map(&(&1 |> to_string() |> String.downcase()))
+      |> Enum.reject(&(&1 == ""))
+
+    normalized != [] and
+      Enum.all?(normalized, &(&1 in ["api", "db", "database", "postgres", "postgresql", "pg_pool", "hub"]))
+  end
+
+  defp current_core_health_ok? do
+    case TeamJay.HubClient.health() do
+      {:ok, %{"resources" => resources}} when is_map(resources) ->
+        resource_ok?(resources, "core_services") and
+          resource_ok?(resources, "postgresql") and
+          resource_ok?(resources, "pg_pool")
+
+      _ ->
+        false
+    end
+  end
+
+  defp resource_ok?(resources, key) do
+    case Map.get(resources, key) do
+      %{"status" => "ok"} -> true
+      _ -> false
+    end
+  end
 end
