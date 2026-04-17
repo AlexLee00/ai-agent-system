@@ -1,6 +1,6 @@
 import os from 'node:os';
 import { Pool } from 'pg';
-import env = require('./env');
+const env = require('./env.legacy.js');
 
 type PoolStats = {
   schema: string;
@@ -17,6 +17,7 @@ type ReconnectState = {
 };
 
 type PgPoolLike = InstanceType<typeof Pool>;
+type PoolTarget = 'default' | 'hub_readonly';
 
 const PG_CONFIG = {
   host: process.env.PG_HOST || 'localhost',
@@ -45,8 +46,25 @@ const MAX_RECONNECT_ATTEMPTS = 10;
 const reconnectState = new Map<string, ReconnectState>();
 const RECONNECT_CODES = new Set(['ECONNREFUSED', '57P01', 'ECONNRESET', 'EPIPE']);
 const RECONNECT_MESSAGES = ['connection terminated', 'connection destroyed', 'server closed the connection'];
+const HUB_READONLY_CONFIGURED = !!env.HUB_PG_USER;
 
 const useHub = !env.IS_OPS && !env.IS_CLI && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
+
+function poolKey(schema: string, target: PoolTarget): string {
+  return `${target}:${schema}`;
+}
+
+function buildPoolConfig(target: PoolTarget) {
+  if (target === 'hub_readonly' && HUB_READONLY_CONFIGURED) {
+    return {
+      ...PG_CONFIG,
+      user: env.HUB_PG_USER,
+      password: env.HUB_PG_PASSWORD || undefined,
+      database: env.HUB_PG_DATABASE || PG_CONFIG.database,
+    };
+  }
+  return PG_CONFIG;
+}
 
 function shouldUseHub(schema: string, sql: string): boolean {
   if (!useHub) return false;
@@ -121,30 +139,39 @@ export function parameterize(sql: string): string {
   return sql.replace(/\?/g, () => `$${++idx}`);
 }
 
-export function getPool(schema: string): PgPoolLike {
+function getPoolForTarget(schema: string, target: PoolTarget = 'default'): PgPoolLike {
   if (!VALID_SCHEMAS.has(schema)) {
     throw new Error(`[pg-pool] 유효하지 않은 스키마: ${schema}`);
   }
   if (!/^[a-z_]+$/.test(schema)) {
     throw new Error(`[pg-pool] 스키마명 형식 오류: ${schema}`);
   }
-  if (pools.has(schema)) return pools.get(schema) as PgPoolLike;
+  const key = poolKey(schema, target);
+  if (pools.has(key)) return pools.get(key) as PgPoolLike;
 
   const pool = new Pool({
-    ...PG_CONFIG,
+    ...buildPoolConfig(target),
     options: `-c search_path=${schema},public`,
   });
 
   pool.on('error', (err: any) => {
-    console.error(`[pg-pool:${schema}] 커넥션 오류:`, err.message);
+    console.error(`[pg-pool:${key}] 커넥션 오류:`, err.message);
     if (isConnError(err)) {
-      console.warn(`[pg-pool:${schema}] PostgreSQL 연결 끊김 감지 — 재연결 예약`);
-      scheduleReconnect(schema, pool);
+      console.warn(`[pg-pool:${key}] PostgreSQL 연결 끊김 감지 — 재연결 예약`);
+      scheduleReconnect(key, pool);
     }
   });
 
-  pools.set(schema, pool);
+  pools.set(key, pool);
   return pool;
+}
+
+export function getPool(schema: string): PgPoolLike {
+  return getPoolForTarget(schema, 'default');
+}
+
+export function hasHubReadonlyPool(): boolean {
+  return HUB_READONLY_CONFIGURED;
 }
 
 async function safeQuery(pool: PgPoolLike, sql: string, params: any[]): Promise<any> {
@@ -182,14 +209,21 @@ export async function query<T = any>(schema: string, sql: string, params: any[] 
     const result = await queryViaHub(schema, sql, params);
     return result.rows as T[];
   }
-  const pool = getPool(schema);
+  const pool = getPoolForTarget(schema, 'default');
+  const result = await safeQuery(pool, parameterize(sql), params);
+  return result.rows as T[];
+}
+
+export async function queryReadonly<T = any>(schema: string, sql: string, params: any[] = []): Promise<T[]> {
+  if (!HUB_READONLY_CONFIGURED) return query<T>(schema, sql, params);
+  const pool = getPoolForTarget(schema, 'hub_readonly');
   const result = await safeQuery(pool, parameterize(sql), params);
   return result.rows as T[];
 }
 
 export async function run(schema: string, sql: string, params: any[] = []): Promise<{ rowCount: number; rows: any[] }> {
   if (shouldUseHub(schema, sql)) return queryViaHub(schema, sql, params);
-  const pool = getPool(schema);
+  const pool = getPoolForTarget(schema, 'default');
   const result = await safeQuery(pool, parameterize(sql), params);
   return { rowCount: result.rowCount, rows: result.rows };
 }
@@ -209,7 +243,7 @@ export function prepare(schema: string, sql: string): { get: (...args: any[]) =>
 }
 
 export async function transaction<T = any>(schema: string, fn: (client: any) => Promise<T>): Promise<T> {
-  const pool = getPool(schema);
+  const pool = getPoolForTarget(schema, 'default');
   const client = await pool.connect();
   try {
     await client.query(`SET search_path = ${schema}, public`);
@@ -246,14 +280,25 @@ export async function closeAll(): Promise<void> {
 }
 
 export function getPoolStats(schema?: string): Record<string, PoolStats> | PoolStats | null {
+  return getPoolStatsForTarget(schema, 'default');
+}
+
+export function getReadonlyPoolStats(schema?: string): Record<string, PoolStats> | PoolStats | null {
+  if (!HUB_READONLY_CONFIGURED) return getPoolStatsForTarget(schema, 'default');
+  return getPoolStatsForTarget(schema, 'hub_readonly');
+}
+
+function getPoolStatsForTarget(schema: string | undefined, target: PoolTarget): Record<string, PoolStats> | PoolStats | null {
   if (schema) {
-    const pool = pools.get(schema);
+    const pool = pools.get(poolKey(schema, target));
     if (!pool) return null;
     return snapshotPoolStats(pool, schema);
   }
   const all: Record<string, PoolStats> = {};
   for (const [key, pool] of pools) {
-    all[key] = snapshotPoolStats(pool, key);
+    if (!key.startsWith(`${target}:`)) continue;
+    const schemaName = key.split(':', 2)[1] || key;
+    all[schemaName] = snapshotPoolStats(pool, schemaName);
   }
   return all;
 }

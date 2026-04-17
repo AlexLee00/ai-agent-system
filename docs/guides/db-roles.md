@@ -17,9 +17,13 @@
 1. `scripts/db/create-hub-readonly-role.sql`로 읽기 전용 역할 생성
 2. Hub가 실제로 `SELECT/WITH/EXPLAIN`만 사용하는지 운영 로그로 재확인
 3. Hub 전용 PG 풀 또는 Hub 전용 환경 변수로 `hub_readonly` 연결 분기
+  - `HUB_PG_USER`
+  - `HUB_PG_PASSWORD`
+  - `HUB_PG_DATABASE`
 4. `/hub/pg/query` smoke test
 5. 기존 앱 계정과 Hub 계정이 분리됐는지 확인
 
 ## 주의
 - Hub는 현재 shared `pg-pool`을 사용하므로, 코드 분기 없이 곧바로 readonly 계정으로 바꾸면 다른 런타임에도 영향이 갈 수 있음
 - 따라서 role 생성과 실제 전환은 분리해서 진행하는 것이 안전함
+- 현재 코드는 `HUB_PG_USER`가 설정될 때만 Hub route가 readonly 풀을 사용하고, 없으면 기존 앱 풀로 안전하게 폴백함

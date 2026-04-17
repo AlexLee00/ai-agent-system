@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import yaml from 'js-yaml';
-import env from '../../../../packages/core/lib/env.js';
+import * as env from '../../../../packages/core/lib/env.js';
 
 const CONFIG_YAML = path.join(env.PROJECT_ROOT, 'bots/investment/config.yaml');
 const SECRETS_STORE = path.join(env.PROJECT_ROOT, 'bots/hub/secrets-store.json');

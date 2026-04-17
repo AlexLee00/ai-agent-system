@@ -174,6 +174,9 @@ export const USE_HUB_SECRETS = _envOrLaunchctl('USE_HUB_SECRETS') === 'true';
 
 export const HUB_PORT = parseInt(process.env.HUB_PORT || '7788', 10);
 export const HUB_BIND_HOST = _envOrLaunchctl('HUB_BIND_HOST', '127.0.0.1').trim() || '127.0.0.1';
+export const HUB_PG_USER = _envOrLaunchctl('HUB_PG_USER');
+export const HUB_PG_PASSWORD = _envOrLaunchctl('HUB_PG_PASSWORD');
+export const HUB_PG_DATABASE = _envOrLaunchctl('HUB_PG_DATABASE', process.env.PG_DATABASE || 'jay');
 
 // ─── 모드 보호 ───────────────────────────────────────────────────────────
 
