@@ -474,21 +474,21 @@ function buildSelectorRegistry(): Record<string, any> {
 
     'sigma.agent_policy': ({ agentName }: SelectorOptions = {}) => {
       const SIGMA_ROUTES: Record<string, { route: string; chain: LLMChainEntry[] }> = {
-        commander:                  { route: 'anthropic_sonnet', chain: [{ provider: 'anthropic', model: 'claude-sonnet-4-6' }, { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }, { provider: 'local', model: 'deepseek-r1-32b' }] },
-        'pod.risk':                 { route: 'anthropic_sonnet', chain: [{ provider: 'anthropic', model: 'claude-sonnet-4-6' }, { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }, { provider: 'local', model: 'deepseek-r1-32b' }] },
-        'pod.growth':               { route: 'anthropic_haiku',  chain: [{ provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }, { provider: 'local', model: 'qwen2.5-7b' }] },
-        'pod.trend':                { route: 'anthropic_haiku',  chain: [{ provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }, { provider: 'local', model: 'qwen2.5-7b' }] },
-        'skill.data_quality':       { route: 'ollama_8b',        chain: [{ provider: 'local', model: 'qwen2.5-7b' }, { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }] },
+        commander:                  { route: 'anthropic_sonnet', chain: [{ provider: 'anthropic', model: 'claude-sonnet-4-6' }, { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }] },
+        'pod.risk':                 { route: 'anthropic_sonnet', chain: [{ provider: 'anthropic', model: 'claude-sonnet-4-6' }, { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }] },
+        'pod.growth':               { route: 'anthropic_haiku',  chain: [{ provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }] },
+        'pod.trend':                { route: 'anthropic_haiku',  chain: [{ provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }] },
+        'skill.data_quality':       { route: 'anthropic_haiku',  chain: [{ provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }] },
         'skill.causal':             { route: 'anthropic_sonnet', chain: [{ provider: 'anthropic', model: 'claude-sonnet-4-6' }, { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }] },
         'skill.experiment_design':  { route: 'anthropic_sonnet', chain: [{ provider: 'anthropic', model: 'claude-sonnet-4-6' }, { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }] },
-        'skill.feature_planner':    { route: 'anthropic_haiku',  chain: [{ provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }, { provider: 'local', model: 'qwen2.5-7b' }] },
-        'skill.observability':      { route: 'anthropic_haiku',  chain: [{ provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }, { provider: 'local', model: 'qwen2.5-7b' }] },
+        'skill.feature_planner':    { route: 'anthropic_haiku',  chain: [{ provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }] },
+        'skill.observability':      { route: 'anthropic_haiku',  chain: [{ provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }] },
         'principle.self_critique':  { route: 'anthropic_opus',   chain: [{ provider: 'anthropic', model: 'claude-opus-4-7' }, { provider: 'anthropic', model: 'claude-sonnet-4-6' }] },
         reflexion:                  { route: 'anthropic_sonnet', chain: [{ provider: 'anthropic', model: 'claude-sonnet-4-6' }, { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }] },
         espl:                       { route: 'anthropic_sonnet', chain: [{ provider: 'anthropic', model: 'claude-sonnet-4-6' }, { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }] },
       };
       const key = String(agentName || 'commander');
-      const entry = SIGMA_ROUTES[key] || { route: 'anthropic_haiku', chain: [{ provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }, { provider: 'local', model: 'qwen2.5-7b' }] };
+      const entry = SIGMA_ROUTES[key] || { route: 'anthropic_haiku', chain: [{ provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }] };
       return {
         route: entry.route,
         primary: entry.chain[0] || null,
