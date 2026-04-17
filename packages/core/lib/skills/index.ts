@@ -26,13 +26,23 @@ const justinEvidenceMap = require('./justin/evidence-map');
 const justinJudgeSimulator = require('./justin/judge-simulator');
 const justinPrecedentComparer = require('./justin/precedent-comparer');
 const justinDamagesAnalyst = require('./justin/damages-analyst');
-const sigmaDataQualityGuard = require('./sigma/data-quality-guard');
-const sigmaExperimentDesign = require('./sigma/experiment-design');
-const sigmaCausalCheck = require('./sigma/causal-check');
-const sigmaFeaturePlanner = require('./sigma/feature-planner');
-const sigmaObservabilityPlanner = require('./sigma/observability-planner');
 const blogBookReviewBook = require('./blog/book-review-book');
 const blogBookSourceVerify = require('./blog/book-source-verify');
+
+function optionalRequire(modulePath, fallback = null) {
+  try {
+    return require(modulePath);
+  } catch (error) {
+    if (error && error.code === 'MODULE_NOT_FOUND') return fallback;
+    throw error;
+  }
+}
+
+const sigmaDataQualityGuard = optionalRequire('./sigma/data-quality-guard');
+const sigmaExperimentDesign = optionalRequire('./sigma/experiment-design');
+const sigmaCausalCheck = optionalRequire('./sigma/causal-check');
+const sigmaFeaturePlanner = optionalRequire('./sigma/feature-planner');
+const sigmaObservabilityPlanner = optionalRequire('./sigma/observability-planner');
 
 // SKA 스킬 문서 경로 (마크다운 — LLM 컨텍스트용, require 불필요)
 // packages/core/lib/skills/ska/*.md 참조
