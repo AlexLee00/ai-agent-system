@@ -92,7 +92,8 @@ defmodule TeamJay.Application do
     ] ++
       if(enable_jay_orchestration?(), do: [TeamJay.Teams.JaySupervisor], else: []) ++
       [
-      Sigma.V2.Supervisor
+      Sigma.V2.Supervisor,
+      Darwin.V2.Supervisor
     ]
   end
 

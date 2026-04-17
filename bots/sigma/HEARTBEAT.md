@@ -58,6 +58,10 @@ mix run -e "Sigma.V2.ShadowCompare.recent_match_rate() |> IO.inspect"
 # 기대: match_rate >= 0.85 (85% 일치)
 ```
 
+주의:
+- 운영 launchd는 아직 공용 `team_jay` 인프라를 사용합니다.
+- 하지만 점검/실행 명령은 **항상** `bots/sigma/elixir` entrypoint부터 시작하는 것을 기본으로 합니다.
+
 ## 6. OTel 파일 exporter
 
 ```bash

@@ -2,7 +2,8 @@
 /**
  * bots/sigma/shared/secrets.ts — 시크릿 로더
  *
- * 우선순위: Hub Secrets Store → 환경변수 → bots/sigma/secrets.json
+ * 현재 우선순위: bots/sigma/secrets.json → 환경변수
+ * 참고: Hub Secrets Store 연동은 아직 구현되지 않았다.
  */
 
 import { readFileSync } from 'fs';
