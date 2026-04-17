@@ -55,7 +55,8 @@ defmodule TeamJay.Teams.DarwinSupervisor do
       TeamJay.Darwin.Scanner,
       TeamJay.Darwin.Evaluator,
       TeamJay.Darwin.Applier,
-      TeamJay.Darwin.FeedbackLoop
+      TeamJay.Darwin.FeedbackLoop,
+      TeamJay.Darwin.TeamConnector
     ]
 
     children = native_children ++ interval_children() ++ calendar_children()

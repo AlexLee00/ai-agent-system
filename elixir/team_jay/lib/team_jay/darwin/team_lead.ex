@@ -22,6 +22,7 @@ defmodule TeamJay.Darwin.TeamLead do
   defstruct [
     autonomy_level: 3,       # L3 시작
     consecutive_successes: 0,
+    applied_successes: 0,    # 적용 성공 횟수 (L4→L5 조건)
     last_success_at: nil,
     current_phase: :idle,    # :idle | :discover | :evaluate | :plan | :implement | :verify | :apply | :learn
     active_papers: [],       # 평가 대기 논문
@@ -49,6 +50,10 @@ defmodule TeamJay.Darwin.TeamLead do
 
   def pipeline_success do
     GenServer.cast(__MODULE__, :pipeline_success)
+  end
+
+  def record_application_success do
+    GenServer.cast(__MODULE__, :application_success)
   end
 
   def pipeline_failure(reason) do
@@ -92,6 +97,7 @@ defmodule TeamJay.Darwin.TeamLead do
     {:reply, %{
       autonomy_level: state.autonomy_level,
       consecutive_successes: state.consecutive_successes,
+      applied_successes: state.applied_successes,
       current_phase: state.current_phase,
       active_papers: length(state.active_papers),
       pipeline_runs: state.pipeline_runs
@@ -126,7 +132,19 @@ defmodule TeamJay.Darwin.TeamLead do
       current_phase: :learn
     }
 
-    # 자율 레벨 승격 체크
+    new_state = maybe_upgrade_autonomy(new_state)
+    {:noreply, new_state}
+  end
+
+  def handle_cast(:application_success, state) do
+    new_state = %{state |
+      consecutive_successes: state.consecutive_successes + 1,
+      applied_successes: state.applied_successes + 1,
+      last_success_at: DateTime.utc_now(),
+      pipeline_runs: state.pipeline_runs + 1,
+      current_phase: :learn
+    }
+
     new_state = maybe_upgrade_autonomy(new_state)
     {:noreply, new_state}
   end
@@ -191,12 +209,30 @@ defmodule TeamJay.Darwin.TeamLead do
   end
 
   defp maybe_upgrade_autonomy(%{autonomy_level: level, consecutive_successes: successes,
-                                  pipeline_runs: runs} = state)
-       when level == 4 and successes >= 10 and runs >= 3 do
-    Logger.info("[DarwinLead] L4→L5 자동 승격! (완전 자율)")
-    new_state = %{state | autonomy_level: 5, level_upgraded_at: DateTime.utc_now()}
-    save_autonomy_state(new_state)
-    new_state
+                                  applied_successes: applied,
+                                  level_upgraded_at: upgraded_at} = state)
+       when level == 4 and successes >= 10 and applied >= 3 do
+    days_since = if upgraded_at,
+      do: DateTime.diff(DateTime.utc_now(), upgraded_at, :day),
+      else: 0
+
+    if days_since >= 14 do
+      Logger.info("[DarwinLead] L4→L5 자동 승격! (연속 #{successes}회, 적용 #{applied}회, #{days_since}일 경과)")
+      new_state = %{state | autonomy_level: 5, level_upgraded_at: DateTime.utc_now()}
+      save_autonomy_state(new_state)
+
+      Task.start(fn ->
+        HubClient.post_alarm(
+          "🏆 다윈팀 완전자율 L5 달성!\n연속 성공: #{successes}회\n적용 성공: #{applied}회\n경과: #{days_since}일",
+          "darwin", "darwin"
+        )
+      end)
+
+      new_state
+    else
+      Logger.debug("[DarwinLead] L4 승격 대기 중: #{days_since}/14일 경과")
+      state
+    end
   end
 
   defp maybe_upgrade_autonomy(state), do: state

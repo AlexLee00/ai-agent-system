@@ -31,21 +31,20 @@ defmodule TeamJay.Darwin.FeedbackLoop do
 
   @impl true
   def init(_opts) do
+    Process.send_after(self(), :subscribe_events, 3_000)
     Logger.info("[DarwinLoop] 피드백 루프 시작!")
     {:ok, %__MODULE__{}}
   end
 
   @impl true
-  def handle_call(:get_status, _from, state) do
-    {:reply, %{
-      cycle_count: state.cycle_count,
-      last_cycle_at: state.last_cycle_at,
-      recent_phases: Enum.take(state.phase_history, 10)
-    }, state}
+  def handle_info(:subscribe_events, state) do
+    Registry.register(TeamJay.JayBus, Topics.paper_evaluated(), [])
+    Registry.register(TeamJay.JayBus, Topics.verification_passed(), [])
+    Logger.debug("[DarwinLoop] JayBus 구독 완료")
+    {:noreply, state}
   end
 
   # EventLake 이벤트 기반 트리거
-  @impl true
   def handle_info({:jay_event, topic, payload}, state) do
     cond do
       topic == Topics.paper_evaluated() ->
@@ -74,6 +73,15 @@ defmodule TeamJay.Darwin.FeedbackLoop do
   end
 
   def handle_info(_msg, state), do: {:noreply, state}
+
+  @impl true
+  def handle_call(:get_status, _from, state) do
+    {:reply, %{
+      cycle_count: state.cycle_count,
+      last_cycle_at: state.last_cycle_at,
+      recent_phases: Enum.take(state.phase_history, 10)
+    }, state}
+  end
 
   defp update_phase(state, phase) do
     history = [{phase, DateTime.utc_now()} | Enum.take(state.phase_history, 49)]
