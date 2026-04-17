@@ -3219,3 +3219,75 @@ milestone-api-idor.test.ts (71줄, 7 assertions) — 7/7 통과
 **30차 세션 — 🔍 시그마팀 리모델링 외부 보강 연구 완료. arXiv API + GitHub Raw로 논문 6건(Reflexion/Self-RAG/Constitutional/AI Scientist v2/E-SPL 2026-02 최신/STELLA) + README 4건(Jido/Hermes 95K★/CloudEvents/Reflexion code) 100% 수집. `docs/SIGMA_REMODELING_RESEARCH_SUPPLEMENT.md`(373줄, 민감값 0) 작성. 핵심 변경 3건: GEPA→E-SPL 교체 / agentskills.io 호환 / Constitutional AI 원칙 YAML 추가. 29차 설계 방향성 100% 검증. Phase 0 착수 준비 완료, 마스터 승인 대기.**
 
 — 메티 (2026-04-17 밤, 30차 세션 — 🔍 외부 보강 연구 완료)
+
+---
+
+## 📍 31차 세션 증분 (2026-04-17 밤 메티) — Phase 0 착수 준비물 완성
+
+> 30차에서 미완료된 `git push` 해결 + Phase 0 착수용 산출물 3종 작성.
+> 마스터 승인 대기 중 메티 역할(기획/설계/프롬프트 작성) 범위 내 선제 준비.
+
+### ✅ 30차 미완료 push 해결
+
+- `git push origin main` 성공: `68da4904..02f00086`
+- 30차 커밋 `02f00086 docs(sigma): 30th session — external research supplement` origin 반영 완료
+
+### 📝 Phase 0 착수 산출물 3종 작성
+
+#### 1. `docs/design/DESIGN_SIGMA_PRINCIPLES.yaml.example` (202줄, 추적됨)
+
+Constitutional AI 기반 시그마팀 원칙 YAML 초안. 7개 섹션:
+1. Absolute prohibitions (P-001~004) — 실자금/PII/인증/DB 변경은 Tier 3 강제
+2. Rate limits (P-010~012) — 팀/페어/글로벌 속도 제한
+3. Circuit breakers (P-020~021) — 반복 실패 시 자동 티어 강등
+4. Confidence thresholds (P-030~031) — 자신감 낮을 때 차단
+5. Graduation criteria — 티어 승격 학습 기반 조건
+6. Budgets — 에이전트별 일일/월간 LLM 비용 상한
+7. Self-critique prompt template — Commander 자기평가 템플릿
+
+**민감값 0건** 검증 완료. Phase 0에서 `elixir/team_jay/config/sigma_principles.yaml`로 복사.
+
+#### 2. `docs/codex/CODEX_SIGMA_REMODEL_PHASE_0.md` (199줄, gitignore 보호)
+
+Phase 0 실행용 코덱스 프롬프트 초안 6단계:
+1. Elixir 의존성 추가 (jido/jido_action/jido_signal/jido_ai/req_llm + postgrex/cloudevents/opentelemetry)
+2. v2 네임스페이스 + 11개 skeleton 모듈 (Sigma.V2.Commander/Pod x3/Skill x5/Memory/Principle + Supervisor)
+3. `sigma_principles.yaml` 배치
+4. `.env.sigma.example` Kill Switch 5개
+5. TS `runDaily()` baseline 녹음 (shadow mode 비교용)
+6. 감사 로그 마이그레이션 파일 (실행 X, 파일만)
+
+금지 사항 명시: TS/Elixir v1 코드 불변, Phase 1 로직 구현 금지.
+Exit Criteria 9개 체크박스.
+
+초안 작성 중 자기참조 민감값 1건(체크 명령 예시) 발견 → placeholder로 교체 → 재검증 0건 확인. **28차 교훈 실전 적용**.
+
+#### 3. (이 증분) SESSION_HANDOFF 31차 기록 — 이중 안전장치 준수
+
+`docs/codex/CODEX_SIGMA_REMODEL_PHASE_0.md`의 핵심 요약을 여기 이중 기록. 다른 세션의 아카이브 작업으로 파일 분실 시 복원 가능.
+
+### 🔑 다음 마스터 결정 포인트
+
+| 항목 | 현재 상태 | 마스터 액션 |
+|------|-----------|-------------|
+| `docs/SIGMA_REMODELING_PLAN_2026-04-17.md` | 1,405줄 완성 | **승인 서명** 요청 |
+| `docs/SIGMA_REMODELING_RESEARCH_SUPPLEMENT.md` | 373줄 완성 | (설계서와 함께 승인) |
+| `docs/design/DESIGN_SIGMA_PRINCIPLES.yaml.example` | 202줄 초안 | 원칙 검토 + 조정 |
+| `docs/codex/CODEX_SIGMA_REMODEL_PHASE_0.md` | 199줄 초안 | Phase 0 프롬프트 검토 |
+| 설계서 §9.2 `Hermes Agent 별 수 검증` | 95K★ 확인 완료 | (정보 전달) |
+
+마스터가 승인 서명하면 → 코덱스에게 `docs/codex/CODEX_SIGMA_REMODEL_PHASE_0.md` 실행 지시 → 약 1주 후 Phase 0 Exit Criteria 달성 → 메티가 리뷰 → Phase 1 착수.
+
+### 📊 31차 세션 결과 통계
+
+- 새 파일: 2개 (design 1 추적 + codex 1 로컬)
+- 총 신규 줄: 401줄
+- 민감값: 0건 (자기참조 1건 제거)
+- 30차 push 복구: 성공
+- 설계 Phase 0 준비율: **100%** (마스터 승인만 남음)
+
+### 🏷️ 31차 세션 요약 한 줄
+
+**31차 세션 — Phase 0 준비물 3종 완성. 30차 미완료 push 해결(`02f00086` origin 반영). `docs/design/DESIGN_SIGMA_PRINCIPLES.yaml.example`(202줄, Constitutional AI 원칙 7섹션) + `docs/codex/CODEX_SIGMA_REMODEL_PHASE_0.md`(199줄, 6단계 프롬프트) 작성. 자기참조 민감값 1건 발견→placeholder 교체→0건 재검증(28차 교훈 실전). 마스터가 승인 서명만 주면 즉시 Phase 0 착수 가능.**
+
+— 메티 (2026-04-17 밤, 31차 세션 — Phase 0 착수 준비 완료)
