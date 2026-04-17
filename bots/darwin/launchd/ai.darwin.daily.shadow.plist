@@ -32,8 +32,9 @@
   </dict>
   <key>StartCalendarInterval</key>
   <dict>
-    <key>Hour</key><integer>6</integer>
-    <key>Minute</key><integer>30</integer>
+    <key>Weekday</key><integer>0</integer>
+    <key>Hour</key><integer>5</integer>
+    <key>Minute</key><integer>0</integer>
   </dict>
   <key>StandardOutPath</key><string>/tmp/darwin-daily-shadow.log</string>
   <key>StandardErrorPath</key><string>/tmp/darwin-daily-shadow.err.log</string>
