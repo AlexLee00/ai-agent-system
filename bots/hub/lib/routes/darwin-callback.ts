@@ -3,9 +3,9 @@ const path = require('node:path');
 const env = require('../../../../packages/core/lib/env');
 const { publishToWebhook } = require('../../../../packages/core/lib/reporting-hub');
 const eventLake = require('../../../../packages/core/lib/event-lake');
-const proposalStore = require('../../../orchestrator/lib/research/proposal-store');
-const autonomyLevel = require('../../../orchestrator/lib/research/autonomy-level');
-const researchTasks = require('../../../orchestrator/lib/research/research-tasks');
+const proposalStore = require('../../../darwin/lib/proposal-store');
+const autonomyLevel = require('../../../darwin/lib/autonomy-level');
+const researchTasks = require('../../../darwin/lib/research-tasks');
 
 const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
 

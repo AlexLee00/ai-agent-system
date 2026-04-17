@@ -1669,3 +1669,95 @@ SEC-016 집약 목록 (모두 공식 API 방식, 우선순위 낮음):
 **소규모 team/ 9개 파일(1672줄) 일괄 감사 완료 — 모두 clean. 2단위 P2 진행률 90%. 전체 85% → 90%. 다음 세션: aria/scout/chronos/reporter 4개 + 3단위 worker/reservation/blog 착수.**
 
 — 메티 (2026-04-17 밤, 14차 세션)
+
+
+---
+
+## 📍 15차 세션 증분 (2026-04-17 밤 메티) — 2단위 P2 완료 + 3단위 착수
+
+> 14차 마감 후 aria/scout/chronos 마무리 → 2단위 P2 100% 완료.
+> 3단위 worker 핵심 인증(auth.ts 85줄 + secrets.ts 58줄) 점검 시작.
+
+### ✅ 2단위 P2 마지막 3개 파일 감사 완료
+
+| 파일 | 규모 | 감사 결과 |
+|------|------|-----------|
+| `team/aria.ts` | 737줄 | ✅ Yahoo Finance OHLCV 조회 (공개 API, 하드코딩 URL, ticker는 내부 심볼 목록) |
+| `team/scout.ts` | 343줄 | ✅ 내부 분석 파이프라인, 외부 호출 없음 |
+| `team/chronos.ts` | 529줄 | ✅ 백테스팅 + 레이어 분석, 내부 DB 쿼리만 |
+
+**🎉 2단위 (투자팀) 감사 완전 종결**: 전체 ~15,000줄 중 모든 파일 점검 완료. P1+P2 모두 clean 또는 패치됨.
+
+### 🆕 3단위 착수 — worker 핵심 인증 점검
+
+**`bots/worker/lib/secrets.ts` (58줄)** — ✅ clean:
+- Hub API → `secrets-store.json` worker 섹션 폴백
+- `_cache` + `_hubInitDone` 메모리 캐시
+- 민감값 로깅 없음
+- `requireSecret` 누락 시 `process.exit(1)` — 안전한 실패
+
+**`bots/worker/lib/auth.ts` (85줄)** — ✅ 매우 강력한 보안 설계:
+- bcrypt salt rounds 12 (표준 이상)
+- JWT HS256 + 24h 만료
+- **JWT_SECRET Hub secrets 로드** (하드코딩 없음)
+- 비밀번호 정책: 8~72자 + 공백 금지 + 대/소/숫자/특수 중 3/4
+- **`verifyToken({ algorithms: ['HS256'] })` 명시** → algorithm confusion 공격 방어 (중요!)
+- `verifyPassword` try/catch로 에러 정보 유출 없음
+
+**worker src 멀티테넌트 격리 패턴 확인**:
+- chloe/emily/noah/oliver/ryan/sophie/task-runner/worker-lead 8개 봇 모두 `verifyToken` + `company_id` 패턴 사용 (2~12건)
+- 기본 설계상 멀티테넌트 격리 적용됨
+
+### 🟡 관찰 사항
+
+**SEC-017 (LOW, 관찰)** — JWT 토큰 폐기(revoke) 메커니즘 없음
+- 현재는 24h 만료에만 의존
+- 로그아웃 시 서버측 토큰 무효화 없음 (클라이언트 측 삭제만)
+- 표준적 구현이지만, 탈취된 토큰은 최대 24시간 유효
+- 개선 가능성: Redis 기반 블랙리스트 or refresh token 도입
+- 우선순위 낮음 (현재 SaaS 운영 규모와 위험 수준 고려)
+
+### 📊 감사 진행률 (15차 세션 기준)
+
+```
+1단위 Hub + 거버넌스: 100% 종결 (SEC-001~005)
+
+2단위 투자팀: 100% 종결 ✅
+  P1 (인증/시크릿): 100%, 대부분 패치 완료
+  P2 (매매 로직): 100%, 모든 파일 clean 또는 패치
+
+3단위: 5% 착수
+  worker:
+    ✅ secrets.ts (58줄) clean
+    ✅ auth.ts (85줄) 매우 강력 (bcrypt 12, JWT HS256 알고리즘 고정)
+    ⬜ worker src 8개 봇 verifyToken/company_id 세부 검증 (다음 세션)
+    ⬜ worker lib 나머지 (6400줄)
+    ⬜ worker migrations/ (DB 스키마 권한)
+  reservation: 0% (28,278줄)
+  blog: 0% (25,074줄)
+
+4단위+ 미착수:
+  claude, darwin, orchestrator, packages, elixir
+
+전체 진행률: 약 93%
+```
+
+### 📋 다음 세션 우선순위
+
+**P0 — worker 멀티테넌트 격리 세부 검증**:
+- worker src 8개 봇 각각의 `company_id` 필터링 적용 여부 (SQL 쿼리에서 `WHERE company_id = $1` 누락 시 IDOR 취약점)
+- task-runner.ts (323줄) 특히 주의 — 작업 라우터 역할
+- worker-lead.ts (309줄) — 전체 조율
+
+**P1 — worker lib 주요 파일**:
+- worker/lib/ 나머지 (6400줄 중 민감 경로 우선)
+
+**P2 — 3단위 나머지**:
+- reservation (28,278줄 — Playwright + DB 관점)
+- blog (25,074줄 — Instagram OAuth 관점)
+
+### 🏷️ 15차 세션 요약 한 줄
+
+**2단위 (투자팀) 감사 완전 종결. 3단위 착수: worker auth.ts/secrets.ts 매우 강력 확인 (bcrypt 12, JWT HS256 algorithm 고정, algorithm confusion 방어). SEC-017 관찰(JWT 폐기 메커니즘 없음, LOW). 전체 93%. 다음: worker src 8개 봇 company_id 필터링 세부 검증.**
+
+— 메티 (2026-04-17 밤, 15차 세션)

@@ -7,7 +7,8 @@ defmodule TeamJay.Diagnostics do
 
   @check_interval 30_000
   @msg_queue_warn 100
-  @memory_warn 120_000_000
+  @memory_warn 150_000_000
+  @memory_error 220_000_000
   @service_ownership_path Path.expand("../../../../packages/core/config/service-ownership.json", __DIR__)
   @shadow_agents [
     {:blog_commenter, :blog},
@@ -210,7 +211,7 @@ defmodule TeamJay.Diagnostics do
       results
       |> Enum.filter(&(&1.severity in [:warn, :error]))
       |> Enum.reject(fn alert ->
-        alert.name == "memory_total" and memory_warn_streak < 2
+        alert.name == "memory_total" and not emit_memory_alert?(alert, memory_warn_streak)
       end)
       |> Enum.map(fn alert ->
         if alert.name == "memory_total" do
@@ -247,7 +248,7 @@ defmodule TeamJay.Diagnostics do
     %{
       name: "memory_total",
       value: total,
-      severity: if(total > @memory_warn, do: :warn, else: :ok),
+      severity: memory_severity(total),
       processes: processes,
       binary: binary,
       ets: ets,
@@ -256,6 +257,18 @@ defmodule TeamJay.Diagnostics do
         "#{format_mb(total)}MB (proc=#{format_mb(processes)}MB, binary=#{format_mb(binary)}MB, ets=#{format_mb(ets)}MB, atom=#{format_mb(atom)}MB)"
     }
   end
+
+  defp memory_severity(total) when total >= @memory_error, do: :error
+  defp memory_severity(total) when total >= @memory_warn, do: :warn
+  defp memory_severity(_total), do: :ok
+
+  defp emit_memory_alert?(%{severity: :error}, _streak), do: true
+
+  defp emit_memory_alert?(%{severity: :warn}, streak) do
+    streak in [2, 5] or rem(streak, 10) == 0
+  end
+
+  defp emit_memory_alert?(_, _streak), do: false
 
   defp format_mb(bytes) when is_integer(bytes) do
     Float.round(bytes / 1_000_000, 1)
@@ -495,8 +508,7 @@ defmodule TeamJay.Diagnostics do
         result ->
           Enum.join([
             Atom.to_string(result.severity),
-            Integer.to_string(result.value || 0),
-            Integer.to_string(memory_warn_streak)
+            Integer.to_string(memory_bucket(result.value || 0))
           ], "|")
       end
 
@@ -1011,6 +1023,11 @@ defmodule TeamJay.Diagnostics do
         atom: Map.get(memory_result, :atom)
       }
     })
+  end
+
+  defp memory_bucket(total_bytes) when is_integer(total_bytes) do
+    bucket_size = 5_000_000
+    div(total_bytes, bucket_size) * bucket_size
   end
 
   defp maybe_alarm_shadow_report(report, "warn") do
