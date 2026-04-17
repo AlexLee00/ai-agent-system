@@ -1790,9 +1790,12 @@ async function waitForCommentCapableFrame(page, logNo = '', testMode = false) {
     for (const frame of frames) {
       try {
         await frame.waitForSelector('body', { timeout: testMode ? 1500 : 3000 }).catch(() => {});
-        const hasCommentDom = await frame.evaluate((selectors) => {
-          return selectors.some((selector) => Boolean(document.querySelector(selector)));
-        }, selectorHints).catch(() => false);
+        const hasCommentDom = await frame.evaluate(`
+          (() => {
+            const selectors = ${JSON.stringify(selectorHints)};
+            return selectors.some((selector) => Boolean(document.querySelector(selector)));
+          })()
+        `).catch(() => false);
         if (hasCommentDom) {
           return frame;
         }
@@ -1812,42 +1815,44 @@ function extractLogNo(postUrl) {
 }
 
 async function inspectReplyControls(page) {
-  return page.evaluate(() => {
-    const textOf = (el) =>
-      String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
-    const visible = (el) => {
-      if (!el) return false;
-      const style = window.getComputedStyle(el);
-      const rect = el.getBoundingClientRect();
-      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-    };
+  return page.evaluate(`
+    (() => {
+      const textOf = (el) =>
+        String((el && (el.innerText || el.textContent)) || '').replace(/\\s+/g, ' ').trim();
+      const visible = (el) => {
+        if (!el) return false;
+        const style = window.getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+      };
 
-    const replyButtons = Array.from(document.querySelectorAll('a,button')).filter(visible).filter((btn) => {
-      const text = textOf(btn);
-      const cls = String(btn.className || '');
-      return /답글|답변/.test(text) || /u_cbox_btn_reply|btn_reply|replyButton/.test(cls);
-    }).map((btn) => ({
-      text: textOf(btn).slice(0, 80),
-      className: String(btn.className || '').slice(0, 200),
-      id: btn.id || '',
-    }));
-
-    const editors = Array.from(document.querySelectorAll('textarea, div[contenteditable="true"], div[role="textbox"], div[id*="write_textarea"]'))
-      .filter(visible)
-      .map((el) => ({
-        id: el.id || '',
-        className: String(el.className || '').slice(0, 160),
+      const replyButtons = Array.from(document.querySelectorAll('a,button')).filter(visible).filter((btn) => {
+        const text = textOf(btn);
+        const cls = String(btn.className || '');
+        return /답글|답변/.test(text) || /u_cbox_btn_reply|btn_reply|replyButton/.test(cls);
+      }).map((btn) => ({
+        text: textOf(btn).slice(0, 80),
+        className: String(btn.className || '').slice(0, 200),
+        id: btn.id || '',
       }));
 
-    return {
-      url: location.href,
-      replyButtonCount: replyButtons.length,
-      editorCount: editors.length,
-      replyButtons: replyButtons.slice(0, 5),
-      editors: editors.slice(0, 5),
-      snippet: textOf(document.body).slice(0, 400),
-    };
-  });
+      const editors = Array.from(document.querySelectorAll('textarea, div[contenteditable="true"], div[role="textbox"], div[id*="write_textarea"]'))
+        .filter(visible)
+        .map((el) => ({
+          id: el.id || '',
+          className: String(el.className || '').slice(0, 160),
+        }));
+
+      return {
+        url: location.href,
+        replyButtonCount: replyButtons.length,
+        editorCount: editors.length,
+        replyButtons: replyButtons.slice(0, 5),
+        editors: editors.slice(0, 5),
+        snippet: textOf(document.body).slice(0, 400),
+      };
+    })()
+  `);
 }
 
 async function saveCommentDebugSnapshot(page, comment, stage) {
@@ -1856,16 +1861,18 @@ async function saveCommentDebugSnapshot(page, comment, stage) {
     const logNo = extractLogNo(comment?.post_url);
     const stamp = Date.now();
     const prefix = path.join(BLOG_COMMENTER_DEBUG_DIR, `${stamp}-${stage}-${logNo || 'unknown'}`);
-    const payload = await page.evaluate(() => {
-      const textOf = (el) =>
-        String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
-      return {
-        url: location.href,
-        title: document.title,
-        bodySnippet: textOf(document.body).slice(0, 1200),
-        html: document.documentElement?.outerHTML || '',
-      };
-    }).catch(() => null);
+    const payload = await page.evaluate(`
+      (() => {
+        const textOf = (el) =>
+          String((el && (el.innerText || el.textContent)) || '').replace(/\\s+/g, ' ').trim();
+        return {
+          url: location.href,
+          title: document.title,
+          bodySnippet: textOf(document.body).slice(0, 1200),
+          html: (document.documentElement && document.documentElement.outerHTML) || '',
+        };
+      })()
+    `).catch(() => null);
     if (payload) {
       fs.writeFileSync(`${prefix}.json`, JSON.stringify(payload, null, 2), 'utf8');
       fs.writeFileSync(`${prefix}.html`, payload.html || '', 'utf8');
@@ -1888,51 +1895,60 @@ async function mountCommentPanel(page, logNo = '', testMode = false) {
     '.u_cbox_text_mention',
     '[id*="write_textarea"]',
   ].filter(Boolean).join(', ');
+  const openPayload = JSON.stringify({ currentLogNo: logNo });
 
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    await page.evaluate(({ currentLogNo }) => {
-      window.scrollTo(0, document.body.scrollHeight);
-      const hiddenRoot = currentLogNo ? document.querySelector(`#naverComment_201_${currentLogNo}_ct`) : null;
-      if (hiddenRoot instanceof HTMLElement) {
-        hiddenRoot.style.display = 'block';
-        hiddenRoot.style.visibility = 'visible';
-      }
-      const anchors = [
-        currentLogNo ? document.querySelector(`#Comi${currentLogNo}`) : null,
-        document.querySelector('#btn_comment_2'),
-        document.querySelector('.commentbox_header .btn_write_comment._naverCommentWriteBtn'),
-        document.querySelector('.commentbox_header .btn_write_comment'),
-        currentLogNo ? document.querySelector(`#naverComment_201_${currentLogNo}_ct`) : null,
-      ].filter(Boolean);
-      const target = anchors[0];
-      if (target) {
-        target.scrollIntoView({ block: 'center', behavior: 'instant' });
-      }
-    }, { currentLogNo: logNo }).catch(() => {});
+    await page.evaluate(`
+      (() => {
+        const { currentLogNo } = ${openPayload};
+        window.scrollTo(0, document.body.scrollHeight);
+        const hiddenRoot = currentLogNo ? document.querySelector('#naverComment_201_' + currentLogNo + '_ct') : null;
+        if (hiddenRoot && hiddenRoot instanceof HTMLElement) {
+          hiddenRoot.style.display = 'block';
+          hiddenRoot.style.visibility = 'visible';
+        }
+        const anchors = [
+          currentLogNo ? document.querySelector('#Comi' + currentLogNo) : null,
+          document.querySelector('#btn_comment_2'),
+          document.querySelector('.commentbox_header .btn_write_comment._naverCommentWriteBtn'),
+          document.querySelector('.commentbox_header .btn_write_comment'),
+          currentLogNo ? document.querySelector('#naverComment_201_' + currentLogNo + '_ct') : null,
+        ].filter(Boolean);
+        const target = anchors[0];
+        if (target && target.scrollIntoView) {
+          target.scrollIntoView({ block: 'center', behavior: 'instant' });
+        }
+        return true;
+      })()
+    `).catch(() => {});
 
     await humanDelay(1, 2, testMode);
     await openCommentPanel(page, logNo, testMode).catch(() => false);
 
-    const mounted = await page.waitForFunction((selector, currentLogNo) => {
-      const visible = (el) => {
-        if (!el) return false;
-        const style = window.getComputedStyle(el);
-        const rect = el.getBoundingClientRect();
-        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-      };
+    const mounted = await page.waitForFunction(`
+      (() => {
+        const selector = ${JSON.stringify(directRootSelector)};
+        const currentLogNo = ${JSON.stringify(logNo)};
+        const visible = (el) => {
+          if (!el) return false;
+          const style = window.getComputedStyle(el);
+          const rect = el.getBoundingClientRect();
+          return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+        };
 
-      const directRoots = [
-        currentLogNo ? document.querySelector(`#naverComment_201_${currentLogNo}_ct`) : null,
-        currentLogNo ? document.querySelector(`#naverComment_201_${currentLogNo}`) : null,
-        currentLogNo ? document.querySelector(`#Comi${currentLogNo}`) : null,
-      ].filter(Boolean);
+        const directRoots = [
+          currentLogNo ? document.querySelector('#naverComment_201_' + currentLogNo + '_ct') : null,
+          currentLogNo ? document.querySelector('#naverComment_201_' + currentLogNo) : null,
+          currentLogNo ? document.querySelector('#Comi' + currentLogNo) : null,
+        ].filter(Boolean);
 
-      if (directRoots.length > 0) {
-        return true;
-      }
+        if (directRoots.some(visible)) {
+          return true;
+        }
 
-      return Boolean(Array.from(document.querySelectorAll(selector)).find(visible));
-    }, { timeout: testMode ? 5000 : 8000 }, directRootSelector, logNo).then(() => true).catch(() => false);
+        return Boolean(Array.from(document.querySelectorAll(selector)).find(visible));
+      })()
+    `, { timeout: testMode ? 5000 : 8000 }).then(() => true).catch(() => false);
 
     if (mounted) {
       return true;
@@ -1945,40 +1961,44 @@ async function mountCommentPanel(page, logNo = '', testMode = false) {
 }
 
 async function focusReplyEditor(page) {
-  await page.waitForFunction(() => {
-    const scope = document.querySelector('[data-blog-target-reply-area="true"]');
-    const roots = scope ? [scope] : [document];
-    const nodes = roots.flatMap((root) => Array.from(root.querySelectorAll('textarea, div[contenteditable="true"], div[role="textbox"]')));
-    return nodes.some((node) => {
-      const style = window.getComputedStyle(node);
-      const rect = node.getBoundingClientRect();
-      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-    });
-  }, { timeout: 15000 });
+  await page.waitForFunction(`
+    (() => {
+      const scope = document.querySelector('[data-blog-target-reply-area="true"]');
+      const roots = scope ? [scope] : [document];
+      const nodes = roots.flatMap((root) => Array.from(root.querySelectorAll('textarea, div[contenteditable="true"], div[role="textbox"]')));
+      return nodes.some((node) => {
+        const style = window.getComputedStyle(node);
+        const rect = node.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+      });
+    })()
+  `, { timeout: 15000 });
 
-  return page.evaluate(() => {
-    const visible = (el) => {
-      if (!el) return false;
-      const style = window.getComputedStyle(el);
-      const rect = el.getBoundingClientRect();
-      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-    };
+  return page.evaluate(`
+    (() => {
+      const visible = (el) => {
+        if (!el) return false;
+        const style = window.getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+      };
 
-    const scope = document.querySelector('[data-blog-target-reply-area="true"]');
-    const roots = scope ? [scope] : [document];
-    const nodes = roots
-      .flatMap((root) => Array.from(root.querySelectorAll('textarea, div[contenteditable="true"], div[role="textbox"]')))
-      .filter(visible);
-    const target = nodes[nodes.length - 1];
-    if (!target) return null;
-    target.setAttribute('data-blog-commenter-editor', 'true');
-    target.focus();
-    return {
-      selector: '[data-blog-commenter-editor="true"]',
-      tagName: target.tagName.toLowerCase(),
-      contentEditable: target.getAttribute('contenteditable') === 'true',
-    };
-  });
+      const scope = document.querySelector('[data-blog-target-reply-area="true"]');
+      const roots = scope ? [scope] : [document];
+      const nodes = roots
+        .flatMap((root) => Array.from(root.querySelectorAll('textarea, div[contenteditable="true"], div[role="textbox"]')))
+        .filter(visible);
+      const target = nodes[nodes.length - 1];
+      if (!target) return null;
+      target.setAttribute('data-blog-commenter-editor', 'true');
+      target.focus();
+      return {
+        selector: '[data-blog-commenter-editor="true"]',
+        tagName: String(target.tagName || '').toLowerCase(),
+        contentEditable: target.getAttribute('contenteditable') === 'true',
+      };
+    })()
+  `);
 }
 
 async function focusCommentEditor(page, logNo = '', timeoutMs = 15000) {
@@ -1988,43 +2008,49 @@ async function focusCommentEditor(page, logNo = '', timeoutMs = 15000) {
     'div[contenteditable="true"]:not([data-blog-target-reply-area="true"] *)',
   ].filter(Boolean).join(', ');
 
-  await page.waitForFunction((selector) => {
-    const visible = (el) => {
-      if (!el) return false;
-      const style = window.getComputedStyle(el);
-      const rect = el.getBoundingClientRect();
-      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-    };
-    return Boolean(Array.from(document.querySelectorAll(selector)).find(visible));
-  }, { timeout: timeoutMs }, directSelector);
+  await page.waitForFunction(`
+    (() => {
+      const selector = ${JSON.stringify(directSelector)};
+      const visible = (el) => {
+        if (!el) return false;
+        const style = window.getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+      };
+      return Boolean(Array.from(document.querySelectorAll(selector)).find(visible));
+    })()
+  `, { timeout: timeoutMs });
 
-  return page.evaluate((currentLogNo) => {
-    const visible = (el) => {
-      if (!el) return false;
-      const style = window.getComputedStyle(el);
-      const rect = el.getBoundingClientRect();
-      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-    };
-    const inReplyArea = (node) =>
-      Boolean(node?.closest('.u_cbox_reply_area,[data-blog-target-reply-area="true"]'));
+  return page.evaluate(`
+    (() => {
+      const currentLogNo = ${JSON.stringify(logNo)};
+      const visible = (el) => {
+        if (!el) return false;
+        const style = window.getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+      };
+      const inReplyArea = (node) =>
+        Boolean(node && node.closest('.u_cbox_reply_area,[data-blog-target-reply-area="true"]'));
 
-    const preferred = currentLogNo ? document.querySelector(`#naverComment_201_${currentLogNo}__write_textarea`) : null;
-    const candidates = [
-      preferred,
-      ...Array.from(document.querySelectorAll('textarea, div[contenteditable="true"], div[role="textbox"], div[id*="write_textarea"]')),
-    ].filter(Boolean).filter((node) => visible(node) && !inReplyArea(node));
+      const preferred = currentLogNo ? document.querySelector('#naverComment_201_' + currentLogNo + '__write_textarea') : null;
+      const candidates = [
+        preferred,
+        ...Array.from(document.querySelectorAll('textarea, div[contenteditable="true"], div[role="textbox"], div[id*="write_textarea"]')),
+      ].filter(Boolean).filter((node) => visible(node) && !inReplyArea(node));
 
-    const target = candidates[0];
-    if (!target) return null;
-    document.querySelectorAll('[data-blog-commenter-editor="true"]').forEach((node) => node.removeAttribute('data-blog-commenter-editor'));
-    target.setAttribute('data-blog-commenter-editor', 'true');
-    target.focus();
-    return {
-      selector: '[data-blog-commenter-editor="true"]',
-      tagName: String(target.tagName || '').toLowerCase(),
-      contentEditable: target.getAttribute('contenteditable') === 'true',
-    };
-  }, logNo);
+      const target = candidates[0];
+      if (!target) return null;
+      document.querySelectorAll('[data-blog-commenter-editor="true"]').forEach((node) => node.removeAttribute('data-blog-commenter-editor'));
+      target.setAttribute('data-blog-commenter-editor', 'true');
+      target.focus();
+      return {
+        selector: '[data-blog-commenter-editor="true"]',
+        tagName: String(target.tagName || '').toLowerCase(),
+        contentEditable: target.getAttribute('contenteditable') === 'true',
+      };
+    })()
+  `);
 }
 
 async function submitReply(page) {
@@ -2270,49 +2296,52 @@ async function verifyReplyPosted(page, replyText, testMode = false) {
   if (!needle) return false;
 
   const timeoutMs = testMode ? 4000 : 15000;
-  const matched = await page.waitForFunction((expected) => {
-    const textOf = (el) =>
-      String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
-    const visible = (el) => {
-      if (!el) return false;
-      const style = window.getComputedStyle(el);
-      const rect = el.getBoundingClientRect();
-      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-    };
-    const isEditorArea = (el) => {
-      if (!el) return false;
-      return Boolean(
-        el.closest(
+  const matched = await page.waitForFunction(`
+    (() => {
+      const expected = ${JSON.stringify(needle)};
+      const textOf = (el) =>
+        String((el && (el.innerText || el.textContent)) || '').replace(/\\s+/g, ' ').trim();
+      const visible = (el) => {
+        if (!el) return false;
+        const style = window.getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+      };
+      const isEditorArea = (el) => {
+        if (!el) return false;
+        return Boolean(
+          el.closest(
+            [
+              '.u_cbox_write_box',
+              '.u_cbox_comment_write',
+              '.u_cbox_reply_write',
+              '.u_cbox_text_wrap',
+              '.u_cbox_write_area',
+              '[id*="write"]',
+              '[class*="write"]',
+              '[class*="textarea"]',
+            ].join(', '),
+          ),
+        );
+      };
+
+      const candidates = Array.from(
+        document.querySelectorAll(
           [
-            '.u_cbox_write_box',
-            '.u_cbox_comment_write',
-            '.u_cbox_reply_write',
-            '.u_cbox_text_wrap',
-            '.u_cbox_write_area',
-            '[id*="write"]',
-            '[class*="write"]',
-            '[class*="textarea"]',
+            'li.u_cbox_comment',
+            'li[class*="comment"]',
+            'li[class*="reply"]',
+            'div.u_cbox_comment_box',
+            'div[class*="reply_area"]',
+            'div[class*="reply"]',
+            'div[class*="comment"]',
           ].join(', '),
         ),
-      );
-    };
+      ).filter((node) => visible(node) && !isEditorArea(node));
 
-    const candidates = Array.from(
-      document.querySelectorAll(
-        [
-          'li.u_cbox_comment',
-          'li[class*="comment"]',
-          'li[class*="reply"]',
-          'div.u_cbox_comment_box',
-          'div[class*="reply_area"]',
-          'div[class*="reply"]',
-          'div[class*="comment"]',
-        ].join(', '),
-      ),
-    ).filter((node) => visible(node) && !isEditorArea(node));
-
-    return candidates.some((node) => textOf(node).includes(expected));
-  }, { timeout: timeoutMs }, needle).then(() => true).catch(() => false);
+      return candidates.some((node) => textOf(node).includes(expected));
+    })()
+  `, { timeout: timeoutMs }).then(() => true).catch(() => false);
 
   return matched;
 }
@@ -2322,46 +2351,49 @@ async function verifyCommentPosted(page, commentText, testMode = false) {
   if (!needle) return false;
 
   const timeoutMs = testMode ? 5000 : 15000;
-  return page.waitForFunction((expected) => {
-    const textOf = (el) =>
-      String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
-    const visible = (el) => {
-      if (!el) return false;
-      const style = window.getComputedStyle(el);
-      const rect = el.getBoundingClientRect();
-      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-    };
-    const isEditorArea = (el) => {
-      if (!el) return false;
-      return Boolean(
-        el.closest(
+  return page.waitForFunction(`
+    (() => {
+      const expected = ${JSON.stringify(needle)};
+      const textOf = (el) =>
+        String((el && (el.innerText || el.textContent)) || '').replace(/\\s+/g, ' ').trim();
+      const visible = (el) => {
+        if (!el) return false;
+        const style = window.getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+      };
+      const isEditorArea = (el) => {
+        if (!el) return false;
+        return Boolean(
+          el.closest(
+            [
+              '.u_cbox_write_box',
+              '.u_cbox_comment_write',
+              '.u_cbox_reply_write',
+              '.u_cbox_text_wrap',
+              '.u_cbox_write_area',
+              '[id*="write"]',
+              '[class*="write"]',
+              '[class*="textarea"]',
+            ].join(', '),
+          ),
+        );
+      };
+
+      const candidates = Array.from(
+        document.querySelectorAll(
           [
-            '.u_cbox_write_box',
-            '.u_cbox_comment_write',
-            '.u_cbox_reply_write',
-            '.u_cbox_text_wrap',
-            '.u_cbox_write_area',
-            '[id*="write"]',
-            '[class*="write"]',
-            '[class*="textarea"]',
+            'li.u_cbox_comment',
+            'li[class*="comment"]',
+            'div.u_cbox_comment_box',
+            'div[class*="comment"]',
           ].join(', '),
         ),
-      );
-    };
+      ).filter((node) => visible(node) && !isEditorArea(node));
 
-    const candidates = Array.from(
-      document.querySelectorAll(
-        [
-          'li.u_cbox_comment',
-          'li[class*="comment"]',
-          'div.u_cbox_comment_box',
-          'div[class*="comment"]',
-        ].join(', '),
-      ),
-    ).filter((node) => visible(node) && !isEditorArea(node));
-
-    return candidates.some((node) => textOf(node).includes(expected));
-  }, { timeout: timeoutMs }, needle).then(() => true).catch(() => false);
+      return candidates.some((node) => textOf(node).includes(expected));
+    })()
+  `, { timeout: timeoutMs }).then(() => true).catch(() => false);
 }
 
 async function typeReply(frame, browserPage, selector, replyText, config, testMode) {
