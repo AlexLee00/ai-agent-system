@@ -23,6 +23,11 @@ const { execSync } = require('child_process');
 
 const { publishToMainBot } = require('../lib/mainbot-client');
 const cfg = require('../lib/config');
+const {
+  isElixirOwnedService,
+  isExpectedIdleService,
+  isRetiredService,
+} = require('../../../packages/core/lib/service-ownership.js');
 
 // v2: 핵심 봇 프로세스 빠른 점검 모듈
 const teamLeadsCheck = require('../lib/checks/team-leads');
@@ -129,6 +134,24 @@ async function main() {
 
   // ── 1. 서비스 생존 체크 ─────────────────────────────────────────────
   for (const svc of SERVICES) {
+    if (isRetiredService(svc.id)) {
+      state.services[svc.id] = { status: 'ok', restartCount: 0, restartedAt: null, restartResult: null };
+      continue;
+    }
+
+    if (isElixirOwnedService(svc.id)) {
+      state.services[svc.id] = {
+        status: 'ok',
+        restartCount: 0,
+        restartedAt: null,
+        restartResult: null,
+        note: isExpectedIdleService(svc.id)
+          ? 'elixir-owned-expected-idle'
+          : 'elixir-owned',
+      };
+      continue;
+    }
+
     const info = getLaunchdInfo(svc.id);
     const prev = state.services?.[svc.id] || {};
 
