@@ -4,6 +4,14 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-04-17: CODEX_SIGMA_LUNA_ALIGN 완료 — LLM Selector + 루나 표준 정비
+
+- **Phase A~D**: 이미 commit `0fb5ffe3`에 포함 확인 (bots/sigma/ 이동, 9개 md, LLM Selector 4파일, config 4파일)
+- **Phase C-3**: `sigma.agent_policy` llm-model-selector.ts line 475에 존재 확인 (commander/pod/skill/principle 12개 에이전트 정책)
+- **Phase E**: 5개 canonical SKILL.md v0.1.0→v0.2.0 업그레이드 (Phase 0 skeleton → Phase 5 전체 문서)
+- **중복 제거**: uppercase 5개 파일 `bots/sigma/skills/` 제거 (git rm)
+- **아카이빙**: `CODEX_SIGMA_LUNA_ALIGN.md` → `docs/archive/codex-completed/`
+
 ## 2026-04-17: CODEX_SIGMA_REMODEL_PHASE_5 완료 — 시그마 리모델링 종결
 
 - **TS 폐기**: sigma-daily/scheduler/analyzer/feedback → `docs/archive/sigma-legacy/`
