@@ -730,3 +730,320 @@ npm run parallel-snapshot
 > **다윈팀 REMODEL: Phase 0~4 전체 완료** ✅ (10개 GenServer)
 > **OPS 전환**: git push 완료 (1954bc76), OPS 수동 Step 3 대기
 > 이전 HANDOFF: 2026-04-17 CODEX_BLOG_AUTONOMOUS_OPS Phase A~D
+
+
+---
+
+# 🎯 시그마팀 대장정 완료 (37/38차 세션, 2026-04-17 밤 ~ 04-18 새벽)
+
+## 세션 요약 한 줄
+
+**시그마팀 v2 완성 + OPS Shadow 가동 개시**. 37차(물리 분리 + LUNA_ALIGN + Phase 2/3/4 프롬프트 수정) → 38차(Phase 2-4 구현 + 116 tests + Shadow Deploy 8단계). 38 모듈 + 6 마이그레이션 + 116 tests 0 failures + launchd 등록 + 7일 관찰 개시.
+
+## 📊 시그마팀 완성도 대시보드 (38차 마감)
+
+```
+모듈            22 → 38          (+16: Phase 2~4 + metric + telegram_bridge)
+테스트 파일     7  → 10          (+3: phase2/3/4_test)
+테스트 카운트   45 → 116         (+71)
+마이그레이션    3  → 6           (+3: mailbox + config_snapshots + analyst_prompts)
+경고/실패       0/0              (유지)
+민감값          0건              (유지)
+launchd         미등록 → ✅ 등록  (ai.sigma.daily, LastExitStatus=0)
+환경변수        0/7 → 7/7        (모두 정확)
+Shadow runs     0 → 5건 (Day 1)
+```
+
+## 🗓️ 37/38차 실제 흐름
+
+### 37차 전반 (2026-04-17 밤)
+1. **메티 검증 (Phase 0~5 + LUNA_ALIGN 확인)**
+   - 22 모듈, 7 테스트, 45 tests, 0 failures 확인
+   - `feature_planner.ex`의 미사용 `truthy?/1` 발견 → 메티 직접 수정 (V-7)
+   - 커밋: `aa6a0627 fix(sigma): remove unused truthy? function`
+2. **Phase 2/3/4 미구현 발견**
+   - 커밋 히스토리에 Phase 2~4 커밋 없음
+   - 관련 모듈 0개 (directive/archivist/config/rollback/espl/registry/reflexion 전부 없음)
+   - 시그마 v2는 Shadow 관찰만 가능한 상태
+
+### 37차 후반 (프롬프트 in-place 수정)
+3. **Phase 2/3/4 프롬프트 수정**:
+   - 전제 "Phase 1 Shadow 95%" → "Phase 1 + LUNA_ALIGN 완료"
+   - **LLM 호출 방식 변경**: `Sigma.V2.LLM.complete/2` → `Sigma.V2.LLM.Selector.call_with_fallback/3` (총 9곳)
+   - Phase 3: `Sigma.V2.LLM` thin wrapper (LUNA_ALIGN Selector 위임)
+   - Phase 3: `config_path` 팀별 매핑 (luna/claude/blog/worker/ska/darwin)
+   - 운영 집계 지표 → Shadow 가동 후 수집으로 연기
+4. **통합 실행 프롬프트 작성**:
+   - `docs/codex/CODEX_SIGMA_PHASE_2_3_4_EXECUTE.md` (276줄)
+   - 3 Phase 순차 실행 통합 지시서
+5. **Shadow Deploy 프롬프트 작성**:
+   - `docs/codex/CODEX_SIGMA_SHADOW_DEPLOY.md` (286줄 → 450줄, 38차에 확장)
+
+### 38차 (2026-04-18 새벽, Phase 2-4 구현)
+6. **코덱스 자율 실행 (CODEX_SIGMA_PHASE_2_3_4_EXECUTE)**:
+   - Phase 2: directive/archivist/signal/mailbox/graduation + 5팀 Receiver
+   - Phase 3: config/rollback_scheduler/reflexion/self_rag/memory/llm wrapper
+   - Phase 4: espl/registry/meta_review + 보너스 metric/telegram_bridge
+   - 테스트 20개 신규 (phase2_test + phase3_test + phase4_test)
+   - **메모리/SelfRAG L2 threshold 버그 자율 수정**
+   - 최종: **116 tests, 0 failures**
+
+### 38차 후반 (Shadow Deploy 가동)
+7. **코덱스 자율 실행 (CODEX_SIGMA_SHADOW_DEPLOY)**:
+   - **Step 0**: 마이그레이션 경로 문제 해결 → `mix sigma.migrate` 신설 (priv_paths보다 깨끗)
+   - **Step 1.5**: `mix ecto.migrate` 6개 테이블 UP
+   - **Step 3**: `.zprofile` 환경변수 7개 추가
+   - **Step 4**: plist 업데이트 (`tsx` → `mix sigma.daily.shadow`)
+   - **Step 5**: `launchctl load` 성공, LastExitStatus=0
+   - **Step 6**: 9가지 검증 체크 전수 통과
+   - **Step 7**: 관찰 로그 `SIGMA_SHADOW_OBSERVATION_LOG.md` + 6개 alias
+   - Shadow runs 5건 축적 (Day 1 수동 검증 포함)
+
+
+## 🔐 현재 시그마 OPS 가동 상태 (인수인계 시점)
+
+### launchd 등록
+
+```
+$ launchctl list | grep sigma
+-    0    ai.sigma.daily    ← 등록 완료, 대기 중, 마지막 실행 LastExitStatus=0
+```
+
+### plist 내용 요약
+
+```
+ProgramArguments       = /opt/homebrew/bin/mix sigma.daily.shadow
+WorkingDirectory       = /Users/alexlee/projects/ai-agent-system/elixir/team_jay
+StandardOutPath        = /tmp/sigma-daily.log
+StandardErrorPath      = /tmp/sigma-daily.err.log
+StartCalendarInterval  = Hour=21, Minute=30  (매일 21:30 KST)
+RunAtLoad              = false
+```
+
+### 환경변수 (전부 `.zprofile`에 등록, plist에도 복사)
+
+```
+SIGMA_V2_ENABLED            = true     ← Shadow 관찰 ON (유일하게 true)
+SIGMA_TIER2_AUTO_APPLY      = false    ← Config 자동 수정 차단
+SIGMA_MCP_SERVER_ENABLED    = false    ← 외부 노출 차단
+SIGMA_GEPA_ENABLED          = false    ← ESPL 진화 차단
+SIGMA_SELF_RAG_ENABLED      = false    ← Retrieval gate 차단
+SIGMA_HTTP_PORT             = 4010
+SIGMA_LLM_DAILY_BUDGET_USD  = 10.00
+```
+
+### DB 테이블 6개 (모두 UP)
+
+```
+sigma_v2_directive_audit     (Phase 0)
+sigma_v2_shadow_runs         (Phase 1, 현재 5건)
+sigma_llm_cost_tracking      (LUNA_ALIGN)
+sigma_v2_mailbox             (Phase 2)
+sigma_v2_config_snapshots    (Phase 3)
+sigma_analyst_prompts        (Phase 4)
+```
+
+### Shadow Run 현황 (Day 1)
+
+```
+shadow_run_id = 1~5
+match_score   = null (v1 TS baseline 없음 — 정상, v1 실행 시 자동 연결)
+Config snapshots = 0  (Tier 2 OFF 증명)
+Analyst prompts  = 0  (ESPL OFF 증명)
+```
+
+## 🗓️ 7일 관찰 스케줄 (다음 세션 주체가 수행)
+
+```
+Day 1 (2026-04-18 00:30 KST): ✅ 완료  ← Shadow Deploy + 수동 검증 5건
+Day 2 (2026-04-19 21:30 KST): [대기]  ← 첫 자동 실행
+Day 3 (2026-04-20 21:30 KST): [대기]
+Day 4 (2026-04-21 21:30 KST): [대기]
+Day 5 (2026-04-22 21:30 KST): [대기]
+Day 6 (2026-04-23 21:30 KST): [대기]
+Day 7 (2026-04-24 21:30 KST): [대기]  ← 종합 판정
+```
+
+### 매일 관찰 명령 (마스터 편의)
+
+```bash
+sigma-check   # Sigma.V2.ShadowCompare.daily_report() 실행
+sigma-runs    # 최근 7개 sigma_v2_shadow_runs 조회
+sigma-log     # /tmp/sigma-daily.log 꼬리
+sigma-err     # /tmp/sigma-daily.err.log 꼬리
+sigma-run     # 수동 실행 (HTTP) 또는 mix sigma.daily.shadow
+sigma-migrate # mix sigma.migrate (두 경로 통합)
+```
+
+## 📋 Day 7 종합 판정 (2026-04-24)
+
+### 메티가 확인해야 할 것
+
+- [ ] shadow_runs 총 **7건 이상** 누적
+- [ ] match_score 평균 **95% 이상** (v1 baseline 정상 생성 후)
+- [ ] Tier 3 원칙 위반 **0건** (`blocked_by_principle` NULL만)
+- [ ] LLM 비용 일일 **$10 이내** (`SIGMA_LLM_DAILY_BUDGET_USD`)
+- [ ] Config snapshots = 0 (Tier 2 OFF 유지 확인)
+- [ ] Analyst prompts = 0 (ESPL OFF 유지 확인)
+- [ ] OTel `/tmp/sigma_otel.jsonl` 이벤트 정상 기록
+- [ ] launchd 7일 자동 실행 모두 LastExitStatus=0
+- [ ] 시그마 관련 에러 로그 없음
+
+### 판정 결과별 분기
+
+| 결과 | 조건 | 액션 |
+|------|------|------|
+| ✅ 성공 | 일치율 ≥ 95% + 모든 체크 통과 | **Tier 1 권고 가동** 프롬프트 작성 → advisory signal 가동 |
+| ⚠️ 부분 | 70~94% 또는 일부 체크 실패 | 관찰 기간 14일 연장 + 원인 분석 |
+| 🚨 실패 | < 70% 또는 Tier 3 위반 발견 | Circuit Breaker 자동 차단 + v2 로직 재검토 |
+
+## 🔜 다음 세션 즉시 착수 지점
+
+### 매일 (Day 2~6, 가벼운 체크)
+
+```bash
+# 1분 체크 루틴 (마스터)
+sigma-check   # 일치율 요약
+sigma-runs    # 최근 shadow_runs
+sigma-log     # 에러 없는지
+```
+
+### Day 7 (2026-04-24, 종합 판정)
+
+```bash
+# 7일 전체 데이터 수집
+cd /Users/alexlee/projects/ai-agent-system/elixir/team_jay
+mix run -e '
+  r = Postgrex.query!(TeamJay.Repo,
+    "SELECT run_date, match_score, shadow_run_id FROM sigma_v2_shadow_runs ORDER BY inserted_at", [])
+  Enum.each(r.rows, &IO.inspect/1)
+'
+mix run -e 'Sigma.V2.ShadowCompare.daily_report() |> IO.inspect'
+```
+
+### Day 7 이후 (Tier 1 가동)
+
+메티가 작성할 프롬프트:
+- `docs/codex/CODEX_SIGMA_TIER1_ACTIVATE.md` (신규)
+- 내용:
+  1. `.zprofile` 추가: `SIGMA_TIER1_ADVISORY_ENABLED=true`
+  2. Signal Receiver (5팀) 활성화 확인
+  3. MCP Token 발급 + secrets-store.json 등록
+  4. 첫 advisory signal 전송 테스트
+  5. Archivist `signal_sent` 로그 확인
+
+## 📁 주요 파일 위치 (다음 세션 빠른 참조)
+
+### 시그마팀 코어
+```
+bots/sigma/                          ← 팀 폴더 (38 Elixir 모듈 + 10 tests + 6 migrations)
+bots/sigma/elixir/lib/sigma/v2/*.ex   ← 실제 구현
+bots/sigma/elixir/test/sigma/v2/      ← 테스트
+bots/sigma/shared/*.ts                ← LLM Selector TS 인프라
+bots/sigma/config/sigma_principles.yaml ← 7 원칙
+bots/sigma/launchd/ai.sigma.daily.plist ← Shadow plist
+bots/sigma/{README,AGENTS,BOOTSTRAP,CLAUDE,HEARTBEAT,IDENTITY,SOUL,TOOLS,USER}.md
+```
+
+### 문서
+```
+docs/OPUS_FINAL_HANDOFF.md                          ← 현재 HANDOFF (이 문서)
+docs/history/WORK_HISTORY.md                        ← 작업 히스토리
+docs/codex/SIGMA_SHADOW_OBSERVATION_LOG.md          ← 7일 관찰 로그 (업데이트 대상)
+docs/archive/codex-completed/CODEX_SIGMA_LUNA_ALIGN.md          ← 완료
+docs/archive/codex-completed/CODEX_SIGMA_PHASE_2_3_4_EXECUTE.md ← 완료
+docs/codex/CODEX_SIGMA_SHADOW_DEPLOY.md             ← 완료 (로컬 전용)
+bots/sigma/docs/PLAN.md                             ← 설계서
+bots/sigma/docs/codex/PHASE_{0..5,RELOCATE}.md      ← 완료된 Phase 프롬프트 (로컬 전용)
+```
+
+### 런타임
+```
+~/Library/LaunchAgents/ai.sigma.daily.plist        ← 등록된 plist
+/tmp/sigma-daily.log                                ← 실행 로그
+/tmp/sigma-daily.err.log                            ← 에러 로그
+/tmp/sigma_otel.jsonl                               ← OTel 이벤트 (생성될 예정)
+~/.zprofile                                         ← SIGMA_* 환경변수 7개
+~/.zshrc                                            ← sigma-* alias 6개
+```
+
+## 🎯 다음 세션 Pending 작업
+
+### 즉시 (Day 2부터)
+- [ ] 매일 21:30 launchd 실행 정상 여부 확인 (sigma-log)
+- [ ] shadow_runs 누적 확인 (sigma-runs)
+- [ ] 이상 신호 발견 시 즉시 `launchctl unload` + 보고
+
+### Day 7 이후
+- [ ] 메티 종합 판정 보고 (위 체크리스트 전수)
+- [ ] 성공 시: `CODEX_SIGMA_TIER1_ACTIVATE.md` 작성 + 코덱스 전달
+- [ ] 실패 시: 원인 분석 + 재관찰 / 롤백
+
+### 마스터 미해결 예고
+- [ ] **다윈팀 완전 분리** — userMemories에 예고됨
+  - 현재 `bots/darwin/` 존재하지만 부분 분리 상태
+  - 루나 표준 9 md + LLM Selector(`darwin.agent_policy`) 필요
+  - 설계서: 메티 미작성
+- [ ] **n8n 자격증명 에러** — userMemories 미해결
+- [ ] **인스타그램 API** — Meta Developer 등록 필요
+- [ ] **DEV 재동기화** — 맥북 에어 M3 쪽 최신 git pull
+
+## 📝 커밋 히스토리 (37/38차 전체, 최신 → 과거)
+
+```
+ae66d395  docs(sigma): Shadow Deploy 최종 검증 완료 — shadow_runs 5건 + Exit Criteria 통과
+d3aa06d2  docs(sigma): HANDOFF 38차 업데이트 — Shadow Deploy 재검증
+62199fdd  chore(sigma): priv/repo/migrations에 시그마 마이그레이션 파일 추가
+9b849d4d  docs: Shadow Deploy 핸드오프 + 작업 히스토리 업데이트
+46d9069c  feat(sigma): Shadow Mode launchd 가동 — mix sigma.daily.shadow
+e4a79013  pre: CODEX_SIGMA_SHADOW_DEPLOY 실행 전 롤백 포인트
+69cff88d  docs: Phase 2-4 완전 클로즈 — 테스트 116 + 버그수정 + 아카이브
+79d33ca5  test(sigma): Phase 2-4 테스트 완성 + Memory/SelfRAG 버그 수정
+52553e0a  feat(codex): CODEX_SIGMA_PHASE_2_3_4_EXECUTE 자동 실행 완료
+f5852d37  docs: CODEX_SIGMA_PHASE_2_3_4 세션 인수인계
+4ae43bf3  feat(sigma): Phase 4 완료 — ESPL + Registry + MetaReview + Mailbox UI
+49402822  pre: CODEX_SIGMA_PHASE_4 실행 전 롤백 포인트
+31f5e69a  feat(sigma): Phase 3 완료 — Tier 2 + Reflexion + Self-RAG + Config
+(이전 Phase 2 + pre 커밋들)
+aa6a0627  fix(sigma): remove unused truthy? function (V-7 메티 수정)
+```
+
+## 🔑 중요 결정 기록 (향후 참고)
+
+1. **옵션 A (프롬프트 in-place 수정)** + **옵션 X (Phase 2/3/4 완료 후 Shadow)** — 마스터 승인
+2. **`mix sigma.migrate` Mix task 신설** — 코덱스 자율 판단으로 priv_paths보다 깨끗한 해결
+3. **plist 진입점 `mix sigma.daily.shadow`** — tsx가 아닌 Elixir 직접 실행
+4. **Shadow 모드 v1 baseline match_score=null** — 정상 (v1 실행 누적 후 자동 연결)
+5. **메티의 V-7 직접 수정** — 37차에서 OPS 대량 수정 허가 범위 내 경미 정리
+
+## 🎓 37/38차에서 배운 것
+
+1. **코덱스 자율성 범위 확장 가능**
+   - Phase 실행 중 버그 자발 발견/수정 (memory.ex L2 threshold)
+   - Mix task 신설 등 설계 초과 결정
+   - 문서 아카이브 + HANDOFF 업데이트까지 전 과정
+
+2. **메티 독립 검증의 가치**
+   - V-7에서 `truthy?/1` 미사용 함수 발견 (코덱스 보고 "경고 0"과 불일치)
+   - launchd 미등록 상태 발견 (코덱스 "OPS 배포 완료" 부분 허위)
+   - 실제 실체를 file system으로 검증하는 습관 중요
+
+3. **OPS/DEV 구분**
+   - OPS(맥 스튜디오)에서 대량 수정 세션 가능 (마스터 명시적 허가 필요)
+   - hostname + MODE 환경변수로 구분
+   - 원칙적으로는 DEV 개발 → OPS pull
+
+4. **Phase 역순 완성 가능**
+   - Phase 0 → 1 → 5 → LUNA_ALIGN → 2 → 3 → 4 → Shadow Deploy
+   - 모듈 간 의존성 허용 범위 내에서 유연한 구현 순서
+
+5. **루나 표준 구조의 우수성**
+   - 8개 md + config.yaml + package.json + shared/ + team/ + launchd/
+   - `packages/core/lib/llm-model-selector.js` 중앙 레지스트리 패턴
+   - 다른 팀 분리 시에도 동일 표준 적용 가능
+
+## 🏷️ 37/38차 세션 요약 한 줄 (최종)
+
+**37/38차 세션 — 시그마팀 v2 완성 대장정: Phase 0~5 + LUNA_ALIGN + Phase 2/3/4 구현 + 7일 Shadow 관찰 개시. 38개 Elixir 모듈 + 116 tests 0 failures + 6 DB 테이블 UP + launchd `ai.sigma.daily` 가동 중(LastExitStatus=0). Kill Switch 전부 OFF 유지, SIGMA_V2_ENABLED=true로 Shadow 관찰만. 코덱스 자율성 검증(버그 자발 수정 + Mix task 신설), 메티 독립 검증(V-7 unused function 적발), 마스터 의사결정(옵션 A+X) 전 과정 기록. 2026-04-24 Day 7 종합 판정 → Tier 1 가동 결정 예정. 다음 세션 예고: 다윈팀 완전 분리 + Tier 1 ACTIVATE 프롬프트 작성.**
+
+— 메티 (Metis, 2026-04-18 새벽, 37/38차 세션 완료)
