@@ -32,6 +32,20 @@ const PORT    = portArg ? parseInt(portArg.split('=')[1]) : 3032;
 const HTML_FILE = path.join(__dirname, 'health-dashboard.html');
 const WORKSPACE_LOG_DIR = path.join(os.homedir(), '.openclaw', 'workspace', 'logs');
 
+function getAvailableMemoryGB() {
+  try {
+    const vmstat = execSync('vm_stat', { encoding: 'utf8', timeout: 3000 });
+    const page = 16384;
+    const get = key => {
+      const m = vmstat.match(new RegExp(`${key}:\\s+(\\d+)`));
+      return m ? (parseInt(m[1], 10) * page) / 1073741824 : 0;
+    };
+    return get('Pages free') + get('Pages inactive') + get('Pages speculative');
+  } catch {
+    return os.freemem() / 1073741824;
+  }
+}
+
 function readLogSnapshot(fileName, tailLines = 12) {
   const filePath = path.join(WORKSPACE_LOG_DIR, fileName);
   try {
@@ -168,6 +182,19 @@ function isSoftShadowMatchRow(row) {
   return soft.has(ruleDecision) && soft.has(llmDecision);
 }
 
+function detectShadowMismatchReasons(summary = '') {
+  const text = String(summary || '').toLowerCase();
+  const reasons = [];
+  if (text.includes('openclaw') || text.includes('게이트웨이')) reasons.push('openclaw_memory');
+  if (text.includes('swap')) reasons.push('swap_pressure');
+  if (text.includes('고아 node') || text.includes('orphan node')) reasons.push('orphan_nodes');
+  if (text.includes('덱스터 full') || text.includes('덱스터 quick') || text.includes('덱스터 일일보고')) reasons.push('dexter_launchd');
+  if (text.includes('루나 크립토') || text.includes('crypto 사이클')) reasons.push('luna_crypto_cycle');
+  if (text.includes('ownership alignment')) reasons.push('ownership_alignment');
+  if (text.includes('코드 무결성') || text.includes('체크섬') || text.includes('git 무결성')) reasons.push('code_integrity');
+  return reasons;
+}
+
 async function getShadowStats() {
   try {
     const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -197,9 +224,62 @@ async function getShadowStats() {
       : 0;
     const softAdjusted = rows.filter(row => row?.match === false && isSoftShadowMatchRow(row)).length;
     const mode = rows[0]?.mode || 'shadow';
-    return { total, matched, mismatched, avg_ms: avgMs, mode, soft_adjusted: softAdjusted };
+    const mismatchRows = rows.filter(row => !isSoftShadowMatchRow(row));
+    const decisionPairs = new Map();
+    const reasonCounts = new Map();
+
+    for (const row of mismatchRows) {
+      const ruleDecision = extractDecision(row.rule_result) || 'unknown';
+      const llmDecision = extractDecision(row.llm_result) || 'unknown';
+      const pairKey = `${ruleDecision}->${llmDecision}`;
+      decisionPairs.set(pairKey, (decisionPairs.get(pairKey) || 0) + 1);
+
+      for (const reason of detectShadowMismatchReasons(row.input_summary)) {
+        reasonCounts.set(reason, (reasonCounts.get(reason) || 0) + 1);
+      }
+    }
+
+    const topDecisionPairs = [...decisionPairs.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([pair, count]) => ({ pair, count }));
+
+    const topReasons = [...reasonCounts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6)
+      .map(([reason, count]) => ({ reason, count }));
+
+    const recentMismatchPreview = mismatchRows.slice(0, 3).map(row => ({
+      created_at: row.created_at,
+      rule_decision: extractDecision(row.rule_result) || 'unknown',
+      llm_decision: extractDecision(row.llm_result) || 'unknown',
+      summary: String(row.input_summary || '').slice(0, 180),
+      reasons: detectShadowMismatchReasons(row.input_summary),
+    }));
+
+    return {
+      total,
+      matched,
+      mismatched,
+      avg_ms: avgMs,
+      mode,
+      soft_adjusted: softAdjusted,
+      top_decision_pairs: topDecisionPairs,
+      top_reasons: topReasons,
+      recent_mismatch_preview: recentMismatchPreview,
+    };
   } catch (e) {
-    return { total: 0, matched: 0, mismatched: 0, avg_ms: 0, mode: 'shadow', soft_adjusted: 0 };
+    return {
+      total: 0,
+      matched: 0,
+      mismatched: 0,
+      avg_ms: 0,
+      mode: 'shadow',
+      soft_adjusted: 0,
+      top_decision_pairs: [],
+      top_reasons: [],
+      recent_mismatch_preview: [],
+    };
   }
 }
 
@@ -269,8 +349,9 @@ function getResourceStats() {
   try {
     const cpuCount    = os.cpus().length;
     const totalMem    = os.totalmem();
-    const freeMem     = os.freemem();
-    const usedMemPct  = Math.round((1 - freeMem / totalMem) * 100);
+    const availableMemGB = getAvailableMemoryGB();
+    const totalMemGB = totalMem / (1024 ** 3);
+    const usedMemPct  = Math.max(0, Math.min(100, Math.round(((totalMemGB - availableMemGB) / totalMemGB) * 100)));
     const loadAvg     = os.loadavg();
     const uptimeDays  = Math.floor(os.uptime() / 86400);
 
@@ -284,7 +365,8 @@ function getResourceStats() {
     return {
       cpu_count:    cpuCount,
       mem_used_pct: usedMemPct,
-      mem_total_gb: Math.round(totalMem / (1024 ** 3)),
+      mem_total_gb: Math.round(totalMemGB),
+      mem_available_gb: Number(availableMemGB.toFixed(1)),
       load_1m:      loadAvg[0].toFixed(2),
       load_5m:      loadAvg[1].toFixed(2),
       uptime_days:  uptimeDays,
