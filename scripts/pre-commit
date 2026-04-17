@@ -127,6 +127,30 @@ if [ -n "$JS_STAGED" ]; then
   done
 fi
 
+# ─── 3.5. gitignore 우회 차단 (SEC-005 재발 방지) ────────────────────────
+# 이미 추적 중인 파일은 gitignore 효과 없음. staged 파일 중 gitignore 규칙에
+# 해당하는 것들은 -f(force) 옵션으로만 추가 가능하므로, 실수로 강제 추적되는
+# 것을 방지한다. 특히 docs/codex/는 역사적으로 민감값이 평문으로 들어갔던
+# 경로이므로 엄격히 차단.
+FORCE_TRACKED_PATHS=(
+  "docs/codex/"
+  "docs/strategy/"
+  "PATCH_REQUEST.md"
+)
+
+for protected in "${FORCE_TRACKED_PATHS[@]}"; do
+  # docs/codex/README.md는 예외 허용
+  MATCHES=$(echo "$STAGED" | grep -E "^${protected}" | grep -v '^docs/codex/README\.md$' || true)
+  if [ -n "$MATCHES" ]; then
+    echo -e "${RED}❌ gitignore 우회 차단: '${protected}' 경로 파일 커밋 불가${NC}"
+    echo "$MATCHES" | while read -r f; do echo "   → $f"; done
+    echo -e "   ${YELLOW}→ 이 경로는 .gitignore 등록됨. 추적 중인 파일이면:${NC}"
+    echo -e "   ${YELLOW}    git rm --cached <파일명>${NC}"
+    echo -e "   ${YELLOW}   새 파일이면 -f 없이 add하지 마세요.${NC}"
+    BLOCKED=1
+  fi
+done
+
 # ─── 4. 결과 ─────────────────────────────────────────────────────────────
 if [ $BLOCKED -eq 1 ]; then
   echo ""
