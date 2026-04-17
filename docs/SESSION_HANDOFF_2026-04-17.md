@@ -3082,3 +3082,80 @@ milestone-api-idor.test.ts (71줄, 7 assertions) — 7/7 통과
 **🏆 최종 보고서 `SECURITY_AUDIT_FINAL_REPORT_2026-04-17.md`(548줄, 10 섹션) 작성 완료. 10 섹션 구성: Executive Summary + 감사 범위 + 거버넌스 + 시스템별 평가(5개) + 이슈 상세(19건) + 테스트 + 권고사항 + 히스토리 + 결론. 작성 중 민감값 1건 발견 즉시 placeholder 교체 후 0건 확인. Team Jay 첫 체계적 보안 감사 완전 종결.**
 
 — 메티 (2026-04-17 밤, 28차 세션 — 🏆 최종 보고서 완성)
+
+---
+
+## 📍 29차 세션 증분 (2026-04-17 밤 메티) — 🧠 시그마팀 리모델링 종합 설계
+
+> 28차 최종 보고서 이후 마스터가 시그마팀 리모델링을 지시.
+> 도구 체크 결과 `web_search`/Chrome MCP 미노출이나 `gh` CLI + `curl` + `jq`로 웹서치 대체 가능 확인.
+> 시그마팀 완전 분석 + Jido/Hermes 외부 서칭 + 종합 설계 문서 작성 완료.
+
+### 🔍 도구 체크 결과 (29차 초반)
+
+**현재 세션 가용**: Desktop Commander 9개 (set_config_value/read_multiple_files/write_file/write_pdf/list_directory/edit_block/start_process/interact_with_process/get_prompts)
+**없음**: web_search, web_fetch, Chrome MCP, conversation_search, recent_chats
+**대체**: `start_process`로 `gh` CLI + `curl` + `jq` 실행 — github.com/arxiv.org/huggingface.co 모두 HTTP 200, gh auth 정상 (4993/5000 rate remaining)
+
+### 📂 시그마팀 완전 소스 분석 (1,641 LOC)
+
+**현재 분산 구조**:
+- `bots/orchestrator/src/sigma-daily.ts` (263 LOC) — 진입점
+- `bots/orchestrator/lib/sigma/*.ts` (946 LOC) — 핵심 로직 3파일
+- `elixir/team_jay/lib/team_jay/jay/sigma/*.ex` (387 LOC) — 부분 포트
+- `packages/core/lib/skills/sigma/*.ts` (308 LOC) — 5개 skill **죽은 코드**
+
+**발견 문제 8건**:
+- P1-001 HIGH: 피드백 생성만, 대상 팀 전달/적용 경로 부재
+- P1-002 HIGH: Skills 5개 analyzer/scheduler에서 호출 0건 (죽은 코드)
+- P2-003~008: Elixir SQL 문자열 보간, 이진 effective, OS 의존 execSync, LLM 판단 부재, TS/Elixir 이중화, 주간 리뷰 축소
+
+### 🌐 외부 서칭 (gh + curl)
+
+**Jido** (1,652★ `agentjido/jido`) — **Elixir 자율 에이전트 프레임워크 1순위**
+- 최신 커밋 2026-04-14
+- Agent + Action + Signal(CloudEvents) + Directive(typed effects) + Pod 토폴로지 + Plugin + FSM strategy
+- 생태계: jido / jido_action / jido_signal / jido_ai / req_llm
+
+**Hermes Agent** (95,187★ `NousResearch/hermes-agent`) — 자기 진화 에이전트
+- 4단계 학습 루프 (Execute → Evaluate → Extract → Improve)
+- 3층 메모리 (L1 세션 / L2 영구 / L3 스킬)
+
+**기타**: Hermes Self-Evolution (DSPy+GEPA, 1,840★), Paperclip (31K★), GStack (54K★), AI Scientist v2 (4.4K★), HF Papers 실시간 (2026-01-15 DeepResearchEval 등 실제 논문 확인)
+
+### 📝 산출물: `docs/SIGMA_REMODELING_PLAN_2026-04-17.md`
+
+**크기**: 1,405 LOC / 12 섹션 / 0 민감값 / 100+ Phase 참조
+
+**구성**:
+1. Executive Summary — Before/After 매트릭스 + 기대 성과 5개
+2. 현재 상태 완전 분석 — 코드 분포 + 실행 흐름 + 분석가 체계
+3. 발견 문제점 8건 (P1×2 / P2×4 / P3×2)
+4. 외부 서칭 집대성 (Jido / Hermes / Hermes-SE / Paperclip / GStack / AI Scientist / Reflexion / Self-RAG / Strict Write)
+5. 리모델링 설계 6개 영역:
+   - 5.1 Elixir 전면 전환 (TSX → OTP + Jido)
+   - 5.2 MCP vs Skills 하이브리드
+   - 5.3 완전 자율 운영 — 4티어 리스크 게이트 + Circuit Breaker
+   - 5.4 4 Generation Loop — Reflexion + 24h/7d 이중 측정 + GEPA 진화
+   - 5.5 n8n 미도입 + RAG 3층 + Self-RAG 게이트
+   - 5.6 다윈팀 TS Only 분리 + Signal 연결
+6. Phase 0~5 실행 계획 (약 12주)
+7. 리스크 매트릭스 8건 + Kill Switch 환경변수 + 30초 롤백
+8. KPI + 성공 기준 (마스터 일일 개입 5~10회 → 주 1~2회)
+9. 외부 보강 포인트 (새 세션에서 web_search + Chrome MCP 활용)
+
+### 🎯 핵심 설계 결정
+
+- **Elixir 전면 전환** — Jido 2.0 기반. TS는 Phase 5에서 thin adapter만 남김
+- **4티어 리스크 게이트** — Tier 0/1 자동 (Phase 2) → Tier 2 경량 개입 + 24h 자동 롤백 (Phase 3) → Tier 3만 마스터 승인
+- **피드백 → 실행 연결** (가장 큰 결함 해소) — Directive.ApplyFeedback 기반
+- **Skills 5개를 jido_action + MCP 서버로 이중 노출** — 내부 고성능 + 외부 LLM 접근
+- **n8n 미도입 결정** — Jido가 더 우수, video 워크플로우는 별개
+- **다윈팀 TS only** — 이미 JS 0개, Elixir 포트 확인 후 정리
+- **Strict Write** — effectiveness≥0.3만 semantic 승격, 실패는 procedural AVOID
+
+### 📊 29차 세션 한 줄 요약
+
+**29차 세션 — 🧠 시그마팀 리모델링 종합 설계서 `docs/SIGMA_REMODELING_PLAN_2026-04-17.md` (1,405줄, 12섹션, 민감값 0건) 작성 완료. 현재 소스 1,641 LOC 완전 분석 → 문제 8건 식별 → Jido(1.6K★)/Hermes(95K★) 외부 서칭 → Elixir 전면 전환 + 4티어 자율 게이트 + Reflexion/Self-RAG/GEPA + Strict Write + MCP 하이브리드 + 다윈 TS 분리 설계. Phase 0~5 (약 12주) 로드맵. 마스터 승인 서명 대기.**
+
+— 메티 (2026-04-17 밤, 29차 세션 — 🧠 시그마팀 리모델링 설계)
