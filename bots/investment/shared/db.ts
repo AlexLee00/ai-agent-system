@@ -200,6 +200,8 @@ export async function initSchema() {
     ['block_meta',      'JSONB'],
     ['analyst_signals', 'TEXT'],  // 분석 봇 4인 신호 패턴 (예: "A:B|O:B|H:N|S:B")
     ['trade_mode',      `TEXT DEFAULT 'normal'`],
+    ['nemesis_verdict', 'TEXT'],        // SEC-004: approved | modified | rejected | null(미경유)
+    ['approved_at',     'TIMESTAMPTZ'], // SEC-004: stale signal 감지용
   ]) {
     try { await run(`ALTER TABLE signals ADD COLUMN IF NOT EXISTS ${col} ${type}`); } catch { /* 무시 */ }
   }
