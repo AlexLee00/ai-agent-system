@@ -18,7 +18,7 @@ import { ANALYST_TYPES, ACTIONS } from '../shared/signal.ts';
 import { getFundingRate, getOpenInterest, getLongShortRatio } from '../shared/onchain-data.ts';
 
 const _req = createRequire(import.meta.url);
-const { AgentMemory } = _req('../../../packages/core/lib/agent-memory');
+const { AgentMemory } = _req('../../../packages/core/lib/agent-memory.legacy.js');
 
 // ─── 공개 API 수집 ──────────────────────────────────────────────────
 

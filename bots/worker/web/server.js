@@ -29,14 +29,14 @@ const { WebSocketServer } = require('ws');
 const fs = require('fs');
 
 const pgPool  = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'));
-const { hashPassword, verifyPassword, generateToken, verifyToken, validatePasswordPolicy } = require('../lib/auth');
-const { requireAuth, requireRole, companyFilter, auditLog, assertCompanyAccess } = require('../lib/company-guard');
-const { accessLogger, errorLogger, logAuth } = require('../lib/logger');
-const { getSecret } = require('../lib/secrets');
-const { syncSkaSalesToWorker } = require('../lib/ska-sales-sync');
-const { recalcProgress } = require('../src/ryan');
-const { resolveAiPolicy, validateLlmModeForUser } = require('../lib/ai-policy');
-const { getMenuPolicyForRole } = require('../lib/menu-policy');
+const { hashPassword, verifyPassword, generateToken, verifyToken, validatePasswordPolicy } = require('../lib/auth.ts');
+const { requireAuth, requireRole, companyFilter, auditLog, assertCompanyAccess } = require('../lib/company-guard.ts');
+const { accessLogger, errorLogger, logAuth } = require('../lib/logger.ts');
+const { getSecret } = require('../lib/secrets.ts');
+const { syncSkaSalesToWorker } = require('../lib/ska-sales-sync.ts');
+const { recalcProgress } = require('../src/ryan.ts');
+const { resolveAiPolicy, validateLlmModeForUser } = require('../lib/ai-policy.ts');
+const { getMenuPolicyForRole } = require('../lib/menu-policy.ts');
 const {
   ALLOWED_APIS,
   API_CATALOG,
@@ -48,7 +48,7 @@ const {
   getWorkerSelectorSummary,
   getWorkerMonitoringUsageSummary,
   setWorkerMonitoringPreference,
-} = require('../lib/llm-api-monitoring');
+} = require('../lib/llm-api-monitoring.ts');
 const { parseNaverBlogUrl } = require(path.join(__dirname, '../../../packages/core/lib/naver-blog-url'));
 const { describeLLMSelector } = require(path.join(__dirname, '../../../packages/core/lib/llm-model-selector'));
 const { buildSpeedLookup, buildSelectorAdvice } = require(path.join(__dirname, '../../../packages/core/lib/llm-selector-advisor'));
@@ -60,7 +60,7 @@ const claudeConfig = require(path.join(__dirname, '../../../bots/claude/lib/conf
 const {
   buildAttendanceProposal,
   normalizeAttendanceProposal,
-} = require('../lib/attendance-ai');
+} = require('../lib/attendance-ai.ts');
 
 // ── AI 모듈 ───────────────────────────────────────────────────────────
 const llmRouter   = require(path.join(__dirname, '../../../packages/core/lib/llm-router'));
@@ -75,46 +75,46 @@ const mountAgentRoutes = require('./routes/agents');
 const {
   buildScheduleProposal,
   normalizeScheduleProposal,
-} = require('../lib/schedule-ai');
+} = require('../lib/schedule-ai.ts');
 const {
   buildEmployeeProposal,
   normalizeEmployeeProposal,
-} = require('../lib/employee-ai');
+} = require('../lib/employee-ai.ts');
 const {
   buildPayrollProposal,
   normalizePayrollProposal,
-} = require('../lib/payroll-ai');
+} = require('../lib/payroll-ai.ts');
 const {
   buildSalesProposal,
   normalizeSalesProposal,
-} = require('../lib/sales-ai');
+} = require('../lib/sales-ai.ts');
 const {
   buildExpenseProposal,
   normalizeExpenseProposal,
-} = require('../lib/expenses-ai');
+} = require('../lib/expenses-ai.ts');
 const {
   buildExpenseImportNotice,
   parseExpenseRowsFromXlsxExtraction,
-} = require('../lib/expenses-import');
+} = require('../lib/expenses-import.ts');
 const {
   buildProjectProposal,
   normalizeProjectProposal,
-} = require('../lib/project-ai');
+} = require('../lib/project-ai.ts');
 const {
   buildJournalProposal,
   normalizeJournalProposal,
-} = require('../lib/journal-ai');
+} = require('../lib/journal-ai.ts');
 const {
   buildDocumentProposal,
   normalizeDocumentProposal,
   detectDocumentCategory,
-} = require('../lib/document-ai');
+} = require('../lib/document-ai.ts');
 const {
   buildLeaveProposal,
   normalizeLeaveProposal,
-} = require('../lib/leave-ai');
-const { callLLM, callLLMWithFallback } = require('../lib/ai-client');
-const { buildSQLPrompt, buildSummaryPrompt, extractSQL, isSelectOnly, isSafeQuestion, hasOnlyAllowedTables, hasCompanyFilter } = require('../lib/ai-helper');
+} = require('../lib/leave-ai.ts');
+const { callLLM, callLLMWithFallback } = require('../lib/ai-client.ts');
+const { buildSQLPrompt, buildSummaryPrompt, extractSQL, isSelectOnly, isSafeQuestion, hasOnlyAllowedTables, hasCompanyFilter } = require('../lib/ai-helper.ts');
 const {
   parseUnrecognizedQuery,
   parsePromotionQuery,

@@ -13,7 +13,7 @@
  */
 
 const hsm    = require('../../../packages/core/lib/health-state-manager');
-const { getWorkerHealthRuntimeConfig } = require('../lib/runtime-config');
+const { getWorkerHealthRuntimeConfig } = require('../lib/runtime-config.ts');
 const {
   getLaunchctlStatus,
   DEFAULT_NORMAL_EXIT_CODES,

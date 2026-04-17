@@ -12,7 +12,7 @@
 	<key>ProgramArguments</key>
 	<array>
 		<string>/opt/homebrew/bin/node</string>
-		<string>scripts/claude-api-monitor.js</string>
+		<string>scripts/claude-api-monitor.ts</string>
 		<string>--alert-only</string>
 	</array>
 	<key>RunAtLoad</key>

@@ -18,7 +18,7 @@ import { loadLatestScoutIntel, getScoutSignalForSymbol } from '../shared/scout-i
 const _require = createRequire(import.meta.url);
 const kst = _require('../../../packages/core/lib/kst');
 const eventLake = _require('../../../packages/core/lib/event-lake');
-const { AgentMemory } = _require('../../../packages/core/lib/agent-memory');
+const { AgentMemory } = _require('../../../packages/core/lib/agent-memory.legacy.js');
 import * as journalDb from '../shared/trade-journal-db.ts';
 import { callLLM, parseJSON } from '../shared/llm-client.ts';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.ts';

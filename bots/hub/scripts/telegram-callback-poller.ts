@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import * as env from '../../../packages/core/lib/env';
+import env from '../../../packages/core/lib/env.legacy.js';
 
 const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
 const OFFSET_FILE = '/tmp/telegram-callback-offset.json';
