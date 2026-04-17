@@ -677,6 +677,7 @@ const LUNA_ANGLE_TEMPLATES = {
  * 동기 함수 — DB 호출 없음. 품질 게이트 통과 실패 시 null 반환.
  */
 function synthesizeHybridTopic(category, lunaRequest, recentPosts = [], strategyPlan = null) {
+  if (!lunaRequest) return null;
   const templates = LUNA_ANGLE_TEMPLATES[category];
   if (!templates) return null;
 
