@@ -330,13 +330,13 @@ export async function getRecentAnalysis(symbol, minutesBack = 30, exchange = nul
 
 // ─── signals ────────────────────────────────────────────────────────
 
-export async function insertSignal({ symbol, action, amountUsdt, confidence, reasoning, exchange = 'binance', analystSignals = null, tradeMode = null }) {
+export async function insertSignal({ symbol, action, amountUsdt, confidence, reasoning, exchange = 'binance', analystSignals = null, tradeMode = null, nemesisVerdict = null, approvedAt = null }) {
   const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
   const rows = await query(
-    `INSERT INTO signals (symbol, action, amount_usdt, confidence, reasoning, status, exchange, analyst_signals, trade_mode)
-     VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8)
+    `INSERT INTO signals (symbol, action, amount_usdt, confidence, reasoning, status, exchange, analyst_signals, trade_mode, nemesis_verdict, approved_at)
+     VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8, $9, $10)
      RETURNING id`,
-    [symbol, action, amountUsdt ?? null, confidence ?? null, reasoning ?? null, exchange, analystSignals ?? null, effectiveTradeMode],
+    [symbol, action, amountUsdt ?? null, confidence ?? null, reasoning ?? null, exchange, analystSignals ?? null, effectiveTradeMode, nemesisVerdict ?? null, approvedAt ?? null],
   );
   return rows[0]?.id;
 }
@@ -442,6 +442,8 @@ export async function insertSignalIfFresh({
   analystSignals = null,
   tradeMode = null,
   dedupeWindowMinutes = null,
+  nemesisVerdict = null,
+  approvedAt = null,
 } = {}) {
   const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
   const effectiveWindow = Number.isFinite(Number(dedupeWindowMinutes)) && Number(dedupeWindowMinutes) > 0
@@ -473,6 +475,8 @@ export async function insertSignalIfFresh({
     exchange,
     analystSignals,
     tradeMode: effectiveTradeMode,
+    nemesisVerdict,
+    approvedAt,
   });
 
   return {

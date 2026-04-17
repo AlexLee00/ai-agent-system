@@ -1536,6 +1536,43 @@ export async function executeSignal(signal) {
   await initHubSecrets().catch(() => false);
   const globalPaperMode = isPaperMode();
   const { id: signalId, symbol, action } = signal;
+
+  // ★ SEC-004 가드: 네메시스 승인 재검증
+  const nemesisVerdict = signal.nemesis_verdict || signal.nemesisVerdict;
+  const isApproved = ['approved', 'modified'].includes(String(nemesisVerdict || '').toLowerCase());
+  if (!globalPaperMode && !isApproved) {
+    const reason = `SEC-004: 네메시스 승인 없는 signal 실행 차단 (verdict=${nemesisVerdict || 'null'})`;
+    console.error(`  🛡️ [헤파이스토스] ${reason}`);
+    if (signalId) {
+      await db.updateSignalBlock(signalId, {
+        status: SIGNAL_STATUS.FAILED,
+        reason: reason.slice(0, 180),
+        code: 'sec004_nemesis_bypass_guard',
+        meta: { symbol, action, nemesis_verdict: nemesisVerdict || null, execution_blocked_by: 'hephaestos_entry_guard' },
+      }).catch(() => {});
+    }
+    notifyTradeSkip({ symbol, action, reason }).catch(() => {});
+    return { success: false, reason, code: 'sec004_nemesis_bypass_guard' };
+  }
+  // stale signal 체크 (승인 후 5분 초과)
+  if (!globalPaperMode && signal.approved_at) {
+    const ageMs = Date.now() - new Date(signal.approved_at).getTime();
+    if (ageMs > 5 * 60 * 1000) {
+      const reason = `SEC-004: 승인 후 ${Math.round(ageMs / 1000)}초 경과 (stale signal)`;
+      console.error(`  🛡️ [헤파이스토스] ${reason}`);
+      if (signalId) {
+        await db.updateSignalBlock(signalId, {
+          status: SIGNAL_STATUS.FAILED,
+          reason: reason.slice(0, 180),
+          code: 'sec004_stale_approval',
+          meta: { symbol, action, approved_at: signal.approved_at, age_seconds: Math.round(ageMs / 1000) },
+        }).catch(() => {});
+      }
+      notifyTradeSkip({ symbol, action, reason }).catch(() => {});
+      return { success: false, reason, code: 'sec004_stale_approval' };
+    }
+  }
+
   const amountUsdt = signal.amountUsdt || signal.amount_usdt || 100;
   const signalTradeMode = signal.trade_mode || getInvestmentTradeMode();
   const capitalPolicy = getCapitalConfig('binance', signalTradeMode);
