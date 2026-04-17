@@ -25,7 +25,7 @@ const {
   publishEventPipeline,
   buildSeverityTargets,
 } = require('../../../packages/core/lib/reporting-hub');
-const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
+const { createAgentMemory } = require('../../../packages/core/lib/agent-memory.legacy.js');
 const { buildWorkerCliInsight } = require('../lib/cli-insight.legacy');
 const {
   canonicalizeWorkerCriticalAlert,
