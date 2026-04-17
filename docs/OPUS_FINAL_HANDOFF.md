@@ -406,21 +406,74 @@ Team Jay 9개팀 진행 상태
 
 ---
 
+## ✅ 41차 세션 완료 (2026-04-18 코덱스)
+
+### 처리한 잔여 작업
+
+| 항목 | 결과 |
+|------|------|
+| 테스트 7개 실패 수정 | ✅ **40 tests, 0 failures** |
+| DarwinSupervisor 이중 상태 해소 | ✅ native_children(TeamJay.Darwin.*) 제거 → TS PortAgent 전용 |
+| bots/darwin/launchd/ 신설 | ✅ `ai.darwin.daily.shadow.plist` 생성 (매일 06:30 KST) |
+| .zprofile DARWIN_ 변수 | ⚠️ **마스터 직접 추가 필요** (권한 제한) |
+
+### .zprofile 추가 필요 항목 (마스터 직접)
+
+```bash
+# ===== Darwin v2 Kill Switches (2026-04-18 Shadow 가동) =====
+export DARWIN_V2_ENABLED=true                        # V2 Shadow 관찰 ON
+export DARWIN_TIER2_AUTO_APPLY=false                 # main 자동 적용 차단
+export DARWIN_MCP_SERVER_ENABLED=false               # MCP Server OFF
+export DARWIN_ESPL_ENABLED=false                     # ESPL 진화 OFF
+export DARWIN_SELF_RAG_ENABLED=false                 # Self-RAG OFF
+export DARWIN_PRINCIPLE_SEMANTIC_CHECK_ENABLED=false # 의미 critique OFF
+export DARWIN_SHADOW_MODE=true                       # Shadow Mode ON
+export DARWIN_HTTP_PORT=4020                         # HTTP 라우터 포트
+export DARWIN_LLM_DAILY_BUDGET_USD=10.00             # LLM 일일 예산 $10
+# ==========================================================
+```
+
+### Shadow launchd 설치 (마스터 직접)
+
+```bash
+cp bots/darwin/launchd/ai.darwin.daily.shadow.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/ai.darwin.daily.shadow.plist
+```
+
+### 수정된 버그 상세
+
+1. **reflexion_test**: `stage` → `phase` 필드명 (실제 `reflect/2` 구조와 일치)
+2. **principle/loader**: `@tier3_fallback` atom 키 + P-D001~P-D005 ID 추가, `check_tier3_prohibitions`가 맵 리스트 반환
+3. **espl**: `evolve_weekly/0` 별칭 추가 (`run_weekly/0` 위임)
+4. **shadow_runner**: `enabled?()` 런타임 env 우선 (`DARWIN_SHADOW_MODE=false` → false 확실)
+5. **config.exs**: `shadow_mode` 기본값 `"true"` → `"false"` (테스트 환경 안전)
+
+### 현재 다윈팀 상태
+
+```
+bots/darwin/elixir/ — 60 .ex 파일, 독립 Elixir 앱
+tests: 40/40 통과, 0 실패
+DarwinSupervisor: TS PortAgent 전용 (Elixir V2 중복 없음)
+Darwin.V2.Supervisor: V2 모듈 전담 (DARWIN_V2_ENABLED 제어)
+Shadow: launchd plist 준비 완료 → 마스터 설치 후 Day 1 시작
+```
+
+---
+
 ## 🫡 다음 세션 마스터 첫 명령 대응
 
 | 질문 | 메티 대응 |
 |------|---------|
-| "다윈 이중 상태 정리해줘" | team_jay/darwin 11파일 + supervisor 제거 + team_connector 참조 수정 |
-| "다윈 테스트 수정해줘" | 6 실패 → reflexion/기타 필드 불일치 조정 |
-| "다윈 Shadow 가동 시작" | Kill Switch .zprofile + launchd plist 설치 + Day 1 실행 |
-| "다윈 Day 1 시작" | DARWIN_V2_ENABLED=true + ai.darwin.daily.shadow 로드 |
+| "다윈 Shadow 가동 시작" | .zprofile 추가 + launchd plist 설치 (위 명령 실행) |
+| "다윈 Day 1 보고" | darwin_v2_shadow_runs DB 조회 + match_score 확인 |
 | "시그마 Day 7 판정" | shadow_runs + LLM 비용 + Tier 3 위반 종합 리포트 |
 | "루나-블로 실동작 봤어?" | blog.content_requests + 발행 포스트 확인 |
+| "다윈 테스트 200개 확충" | 현재 40개 → 200개 목표 (각 모듈 단위 테스트 추가) |
 
 ---
 
-## 🏷️ 40차 세션 요약 한 줄
+## 🏷️ 41차 세션 요약 한 줄
 
-**40차 세션 — 다윈팀 완전 자율 R&D 에이전트 리모델링 대장정: 메티가 5,178줄/32파일 전수 분석 + 웹 서치 4건(Jido/AI Scientist-v2/AI-Researcher/Kosmos/MCP/HN Algolia)으로 CODEX_DARWIN_REMODEL.md 1,334줄 대형 프롬프트(gitignore) 작성, Phase 0~9 14일 로드맵 + Kill Switch 7개 + Shadow 기준 완비. 코덱스가 자동 실행으로 Phase 0~8 대부분 완료(bots/darwin/elixir/ 55+ 모듈 생성 — commander/lead/edison/scanner/evaluator/verifier/applier/planner + reflexion/self_rag/espl/principle + memory L1/L2 + LLM 4종 + Shadow + Skill 9개 + MCP 3 + Sensor 4 + Cycle 7 + migrations 4+2SQL). 메티 실증 검증: 경로 버그 1건 수정 후 컴파일 ✅, 40 tests/34 통과, warning 2건(pattern match). 미완: team_jay/darwin 이중 상태 해소, 테스트 6 실패, Kill Switch .zprofile, Shadow launchd, 테스트 40→200 확충. 다음 세션 최우선 = 이중 상태 해소 + 테스트 수정 + Shadow 가동.**
+**41차 세션 — 다윈팀 리모델링 잔여 작업 완료: 테스트 7개 전부 수정(40 tests, 0 failures) + DarwinSupervisor native_children 제거(이중 상태 해소) + Shadow launchd plist 신설. 나머지 .zprofile DARWIN_ 변수는 마스터 직접 추가 필요. 다윈 Shadow Day 1 가동 준비 완료.**
 
-— 메티 (Metis, 2026-04-18 오후, 40차 세션 완전 종료)
+— 코덱스 (2026-04-18, 41차 세션)
