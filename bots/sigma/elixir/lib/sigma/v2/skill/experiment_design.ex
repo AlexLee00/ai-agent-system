@@ -10,20 +10,37 @@ defmodule Sigma.V2.Skill.ExperimentDesign do
     schema: Zoi.object(%{
       hypothesis: Zoi.default(Zoi.string(), ""),
       metric: Zoi.default(Zoi.string(), ""),
+      primary_metric: Zoi.default(Zoi.string(), ""),
       baseline_defined: Zoi.default(Zoi.boolean(), false),
+      baseline: Zoi.default(Zoi.any(), nil),
       variant_count: Zoi.default(Zoi.integer(), 0),
+      variants: Zoi.default(Zoi.any(), nil),
       sample_size: Zoi.default(Zoi.integer(), 0),
-      has_guardrail_metric: Zoi.default(Zoi.boolean(), false)
+      has_guardrail_metric: Zoi.default(Zoi.boolean(), false),
+      guardrails: Zoi.default(Zoi.any(), nil),
+      min_detectable_effect: Zoi.default(Zoi.any(), nil)
     })
 
   @impl Jido.Action
   def run(params, _ctx) do
-    hypothesis = String.trim(params.hypothesis || "")
-    metric = String.trim(params.metric || "")
-    baseline_defined = params.baseline_defined || false
-    variant_count = params.variant_count || 0
-    sample_size = params.sample_size || 0
-    has_guardrail_metric = params.has_guardrail_metric || false
+    hypothesis = String.trim(Map.get(params, :hypothesis, "") || "")
+    # Accept either :metric or :primary_metric
+    metric = String.trim((Map.get(params, :metric) || Map.get(params, :primary_metric, "")) || "")
+    # Accept either :baseline_defined (bool) or :baseline (value present)
+    baseline_defined =
+      Map.get(params, :baseline_defined, false) ||
+        not is_nil(Map.get(params, :baseline))
+    # Accept either :variant_count or :variants (list)
+    variants = Map.get(params, :variants)
+    variant_count =
+      Map.get(params, :variant_count) ||
+        (if is_list(variants), do: length(variants), else: 0)
+    sample_size = Map.get(params, :sample_size, 0) || 0
+    # Accept either :has_guardrail_metric or :guardrails (non-empty list)
+    guardrails = Map.get(params, :guardrails)
+    has_guardrail_metric =
+      Map.get(params, :has_guardrail_metric, false) ||
+        (is_list(guardrails) && length(guardrails) > 0)
 
     {issues, recommendations, score} =
       {[], [], 10.0}

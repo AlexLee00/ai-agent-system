@@ -8,26 +8,33 @@ defmodule Sigma.V2.Skill.FeaturePlanner do
     name: "sigma_v2_feature_planner",
     description: "Plan feature engineering and prioritization for team analytics",
     schema: Zoi.object(%{
-      candidates: Zoi.default(Zoi.list(), [])
+      candidates: Zoi.default(Zoi.list(), []),
+      features: Zoi.default(Zoi.any(), nil)
     })
 
   @impl Jido.Action
   def run(params, _ctx) do
-    candidates = params.candidates || []
+    candidates =
+      Map.get(params, :candidates) ||
+        Map.get(params, :features) ||
+        []
 
     {prioritized, high_risk, quick_wins} =
       Enum.reduce(candidates, {[], [], []}, fn candidate, {pri, hr, qw} ->
         name = to_string(candidate[:name] || candidate["name"] || "feature")
         effort = to_number(candidate[:effort] || candidate["effort"], 5)
         signal = to_number(candidate[:signal] || candidate["signal"], 0)
-        leakage_risk = truthy?(candidate[:leakage_risk] || candidate["leakage_risk"])
+        leakage_risk_val = candidate[:leakage_risk] || candidate["leakage_risk"]
+        is_high_risk =
+          leakage_risk_val == true ||
+            (is_number(leakage_risk_val) && leakage_risk_val >= 4)
 
-        score = Float.round(signal * 2.0 - effort - (if leakage_risk, do: 2.0, else: 0.0), 1)
+        score = Float.round(signal * 2.0 - effort - (if is_high_risk, do: 2.0, else: 0.0), 1)
 
-        item = %{name: name, score: score, effort: effort, signal: signal, leakage_risk: leakage_risk}
+        item = %{name: name, score: score, effort: effort, signal: signal, leakage_risk: leakage_risk_val}
 
-        hr2 = if leakage_risk, do: hr ++ [name], else: hr
-        qw2 = if !leakage_risk and effort <= 3 and signal >= 3, do: qw ++ [name], else: qw
+        hr2 = if is_high_risk, do: hr ++ [item], else: hr
+        qw2 = if !is_high_risk and effort <= 2 and score >= 3, do: qw ++ [item], else: qw
 
         {pri ++ [item], hr2, qw2}
       end)
@@ -35,7 +42,7 @@ defmodule Sigma.V2.Skill.FeaturePlanner do
     sorted = Enum.sort_by(prioritized, & &1.score, :desc)
 
     {:ok, %{
-      prioritized_features: sorted,
+      ranked_features: sorted,
       high_risk_features: high_risk,
       quick_wins: quick_wins
     }}

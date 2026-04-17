@@ -33,6 +33,7 @@ defmodule Sigma.V2.E2ETest do
 
     test "call_tool causal_check — high risk case" do
       params = %{
+        "claim" => "상관관계가 인과관계를 의미한다",
         "correlation" => 0.95,
         "controls" => [],
         "confounders" => ["market_condition"],
@@ -140,15 +141,14 @@ defmodule Sigma.V2.E2ETest do
   describe "DataQualityGuard — 스킬 단독 직접 호출" do
     test "empty rows returns passed: false, score: 0" do
       assert {:ok, %{passed: false, quality_score: 0}} =
-               Jido.Action.run(Sigma.V2.Skill.DataQualityGuard, %{rows: []}, %{})
+               Sigma.V2.Skill.DataQualityGuard.run(%{rows: []}, %{})
     end
 
     test "duplicate rows detected" do
       row = %{id: 1, name: "Alice"}
 
       assert {:ok, result} =
-               Jido.Action.run(
-                 Sigma.V2.Skill.DataQualityGuard,
+               Sigma.V2.Skill.DataQualityGuard.run(
                  %{rows: [row, row]},
                  %{}
                )
@@ -165,7 +165,7 @@ defmodule Sigma.V2.E2ETest do
         features: [%{name: "danger_feature", signal: 5, effort: 1, leakage_risk: 4}]
       }
 
-      assert {:ok, result} = Jido.Action.run(Sigma.V2.Skill.FeaturePlanner, params, %{})
+      assert {:ok, result} = Sigma.V2.Skill.FeaturePlanner.run(params, %{})
       assert length(result.high_risk_features) == 1
     end
 
@@ -174,7 +174,7 @@ defmodule Sigma.V2.E2ETest do
         features: [%{name: "easy_win", signal: 4, effort: 2, leakage_risk: 0}]
       }
 
-      assert {:ok, result} = Jido.Action.run(Sigma.V2.Skill.FeaturePlanner, params, %{})
+      assert {:ok, result} = Sigma.V2.Skill.FeaturePlanner.run(params, %{})
       assert "easy_win" in Enum.map(result.quick_wins, & &1.name)
     end
   end
