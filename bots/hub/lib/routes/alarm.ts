@@ -41,6 +41,27 @@ export async function alarmRoute(req: any, res: any) {
     const fromBot = normalizeText(req.body?.fromBot, 'hub-alarm');
     const severity = normalizeSeverity(req.body?.severity);
     const title = normalizeText(req.body?.title, `${team} alarm`);
+    const cooldownMinutes = Math.max(
+      1,
+      Number(req.body?.dedupeMinutes ?? req.body?.cooldownMinutes ?? 5) || 5,
+    );
+
+    const duplicate = await eventLake.findRecentDuplicateAlarm({
+      team,
+      botName: fromBot,
+      message,
+      minutes: cooldownMinutes,
+    });
+
+    if (duplicate) {
+      return res.json({
+        ok: true,
+        deduped: true,
+        event_id: duplicate.id,
+        delivered: false,
+        delivery_error: null,
+      });
+    }
 
     const eventId = await eventLake.record({
       eventType: 'hub_alarm',

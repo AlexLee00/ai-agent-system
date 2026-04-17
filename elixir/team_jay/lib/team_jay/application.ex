@@ -14,16 +14,18 @@ defmodule TeamJay.Application do
     opts = [strategy: :one_for_one, name: TeamJay.Supervisor]
     result = Supervisor.start_link(children, opts)
 
-    Task.start(fn ->
-      :timer.sleep(2_000)
+    if enable_jay_orchestration?() do
+      Task.start(fn ->
+        :timer.sleep(2_000)
 
-      _ =
-        TeamJay.HubClient.post_alarm(
-          "🚀 Elixir Phase 4 시작!\n🎯 Jay 성장 오케스트레이터 활성화\n🔄 9팀 일일 환류 사이클 (06:30 KST)\n⚡ 팀 간 파이프라인 7개 준비\n📊 JayBus PubSub 가동",
-          "system",
-          "elixir"
-        )
-    end)
+        _ =
+          TeamJay.HubClient.post_alarm(
+            "🚀 Elixir Phase 4 시작!\n🎯 Jay 성장 오케스트레이터 활성화\n🔄 9팀 일일 환류 사이클 (06:30 KST)\n⚡ 팀 간 파이프라인 7개 준비\n📊 JayBus PubSub 가동",
+            "system",
+            "elixir"
+          )
+      end)
+    end
 
     result
   end
@@ -86,8 +88,10 @@ defmodule TeamJay.Application do
       TeamJay.Teams.PlatformSupervisor,
       TeamJay.Teams.BlogShadowSupervisor,
       TeamJay.Teams.WorkerShadowSupervisor,
-      TeamJay.Teams.PlatformShadowSupervisor,
-      TeamJay.Teams.JaySupervisor,
+      TeamJay.Teams.PlatformShadowSupervisor
+    ] ++
+      if(enable_jay_orchestration?(), do: [TeamJay.Teams.JaySupervisor], else: []) ++
+      [
       Sigma.V2.Supervisor
     ]
   end
@@ -104,6 +108,21 @@ defmodule TeamJay.Application do
 
       Mix.env() == :test ->
         true
+
+      true ->
+        Node.alive?()
+    end
+  end
+
+  defp enable_jay_orchestration? do
+    force = String.downcase(String.trim(System.get_env("TEAM_JAY_ENABLE_ORCHESTRATION", "")))
+
+    cond do
+      force in ["1", "true", "yes"] ->
+        true
+
+      force in ["0", "false", "no"] ->
+        false
 
       true ->
         Node.alive?()
