@@ -67,6 +67,31 @@ function isExpectedExit(label, exitCode) {
   return false;
 }
 
+function isBenignShadowMismatch(data = {}) {
+  const leadMode = String(data.lead_mode || '').toLowerCase();
+  const topPairs = Array.isArray(data.shadow_stats?.top_decision_pairs)
+    ? data.shadow_stats.top_decision_pairs
+    : [];
+  const topReasons = Array.isArray(data.shadow_stats?.top_reasons)
+    ? data.shadow_stats.top_reasons
+    : [];
+  const total = Number(data.shadow_stats?.total || 0);
+  const mismatched = Number(data.shadow_stats?.mismatched || 0);
+
+  if (leadMode !== 'shadow' || total < 20 || mismatched <= 0) return false;
+
+  const dominantPair = topPairs[0] || null;
+  const pairMostlyMonitorEscalate =
+    dominantPair?.pair === 'monitor->escalate' &&
+    Number(dominantPair?.count || 0) >= Math.floor(mismatched * 0.9);
+
+  if (!pairMostlyMonitorEscalate) return false;
+
+  const benignReasons = new Set(['code_integrity', 'openclaw_memory', 'swap_pressure']);
+  return topReasons.length > 0
+    && topReasons.every((entry) => benignReasons.has(String(entry?.reason || '')));
+}
+
 async function buildDashboardHealth() {
   const checks = await buildHttpChecks([
     {
@@ -99,6 +124,7 @@ async function buildDashboardHealth() {
   const shadowTotal = Number(data.shadow_stats?.total || 0);
   const mismatched = Number(data.shadow_stats?.mismatched || 0);
   const mismatchRate = shadowTotal > 0 ? (mismatched / shadowTotal) * 100 : 0;
+  const benignShadowMismatch = isBenignShadowMismatch(data);
 
   ok.push(`  lead mode: ${leadMode}`);
   ok.push(`  bot summary: ${runningBots}/${totalBots} running`);
@@ -107,6 +133,8 @@ async function buildDashboardHealth() {
     ok.push('  shadow mismatch: 없음');
   } else if (shadowTotal < 5) {
     ok.push(`  shadow mismatch: ${mismatched}건 (표본 ${shadowTotal}건, 관찰 유지)`);
+  } else if (benignShadowMismatch) {
+    ok.push(`  shadow mismatch: ${mismatched}/${shadowTotal}건 (${mismatchRate.toFixed(1)}%, shadow 관찰 유지)`);
   } else if (mismatchRate >= 20 || mismatched >= 3) {
     warn.push(`  shadow mismatch: ${mismatched}/${shadowTotal}건 (${mismatchRate.toFixed(1)}%)`);
   } else {
@@ -118,11 +146,12 @@ async function buildDashboardHealth() {
     warn,
     leadMode,
     runningBots,
-    totalBots,
-    shadowTotal,
-    mismatched,
-    mismatchRate,
-  };
+      totalBots,
+      shadowTotal,
+      mismatched,
+      mismatchRate,
+      benignShadowMismatch,
+    };
 }
 
 async function buildN8nHealth() {
