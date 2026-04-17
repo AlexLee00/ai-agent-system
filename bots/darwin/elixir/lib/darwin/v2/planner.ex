@@ -13,7 +13,7 @@ defmodule Darwin.V2.Planner do
   use GenServer
   require Logger
 
-  alias Darwin.V2.{Topics, AutonomyLevel, Memory}
+  alias Darwin.V2.Topics
   alias Darwin.V2.Principle.Loader, as: PrincipleLoader
   alias Darwin.V2.Skill.ResourceAnalyst
   alias TeamJay.HubClient
@@ -165,7 +165,7 @@ defmodule Darwin.V2.Planner do
            %{operation: :retrieve, content: title, team: "darwin", top_k: 3},
            %{}
          ) do
-      {:ok, %{results: results}} -> results
+      {:ok, %{hits: results}} -> results
       _ -> []
     end
   rescue

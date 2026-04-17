@@ -24,8 +24,15 @@ config :team_jay, :codex_auto_execute, true
 
 import_config "#{Mix.env()}.exs"
 
-# Darwin V2 설정 — bots/darwin/elixir/config/config.exs 위임
-import_config Path.expand("../../../bots/darwin/elixir/config/config.exs", __DIR__)
+# Darwin V2 설정 — 런타임에 System.get_env로 직접 읽음 (Darwin.V2.Config 참조)
+config :darwin,
+  anthropic_api_key: System.get_env("ANTHROPIC_API_KEY"),
+  llm_daily_budget_usd:
+    System.get_env("DARWIN_LLM_DAILY_BUDGET_USD", "10.0") |> String.to_float(),
+  v2_enabled: System.get_env("DARWIN_V2_ENABLED", "false") == "true",
+  shadow_mode: System.get_env("DARWIN_SHADOW_MODE", "true") == "true",
+  kill_switch: System.get_env("DARWIN_KILL_SWITCH", "true") == "true",
+  http_port: System.get_env("DARWIN_HTTP_PORT", "8180") |> String.to_integer()
 
 
 config :team_jay, TeamJay.Scheduler,

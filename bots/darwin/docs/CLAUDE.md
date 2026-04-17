@@ -1,99 +1,147 @@
-# CLAUDE.md — 다윈팀 작업 지침
+# 다윈팀 (Darwin Team) — Claude Code 작업 지침
 
-Claude Code(코덱스)가 `bots/darwin/` 작업 시 준수해야 하는 규칙.
+> 위치: bots/darwin/
+> 버전: V2 (2026-04-18 리모델링)
 
-## 1. 역할 경계
+## 팀 구조
 
-- **메티 (claude.ai)**: 설계·점검·프롬프트만. 코드 직접 수정 금지.
-- **코덱스 (Claude Code, 이 CLAUDE.md 적용 범위)**: 구현 전담.
+- 팀장: 다윈 (Darwin) — R&D 자율 에이전트
+- 구현자: 에디슨 (Edison) — 논문 구현 (R&D의 D)
+- 감독: 클로드팀 경유 → 마스터 보고
+
+## 역할 경계
+
+- **메티 (claude.ai)**: 설계·점검·프롬프트만. 코드 직접 수정 절대 금지.
+- **코덱스 (Claude Code, 이 파일 적용 범위)**: 구현 전담.
 - **마스터 (제이)**: 최종 승인.
 
-## 2. 다윈팀 작업 원칙
+## 핵심 디렉토리
 
-### 2-1. 기존 TS 코드 수정 최소화
+- `bots/darwin/elixir/` — 독립 Elixir V2 앱
+- `bots/darwin/lib/` — 기존 TS 클라이언트 (arxiv, hf-papers 등) 유지
+- `bots/darwin/sandbox/` — 자율 레벨 상태, 키워드 등 로컬 상태
+- `bots/darwin/experimental/` — 에디슨 구현 결과물
 
-- `bots/darwin/lib/**` — **원본 유지** (외부 API 클라이언트만)
-- Elixir V2 구현이 TS를 Port 방식으로 호출하는 구조 유지
+## V2 아키텍처 (7단계 자율 사이클)
 
-### 2-2. V1 Elixir 코드 보존
+```
+DISCOVER → EVALUATE → PLAN → IMPLEMENT → VERIFY → APPLY → LEARN
+```
 
-- `elixir/team_jay/lib/team_jay/darwin/` — **원본 유지** (Shadow 비교 baseline)
-- V2와 V1 병행 실행, 7일 관찰 후 V2 전환
+각 단계는 `Darwin.V2.Cycle.*` GenServer로 구현됨.
 
-### 2-3. 불변 원칙 준수 (CODEX_DARWIN_REMODEL 섹션 참조)
+## 자율 레벨
 
-1. 시그마 패턴 준수
-2. 기존 자율 레벨 시스템 유지 (L3/L4/L5)
-3. 기존 7단계 사이클 유지
-4. 독립 LLM Selector (`Darwin.V2.LLM.Selector`)
-5. **Claude API 전용** (로컬 LLM 제외, MLX 임베딩만 허용)
-6. JayBus 기존 토픽 유지
-7. 기존 TS 코드 보존
-8. Shadow 우선 (7일 관찰 후 승급)
-9. Kill Switch 기본 OFF
+| 레벨 | 이름 | 조건 | 에디슨 권한 |
+|------|------|------|------------|
+| L3 | 감독 필요 | 기본값 | 수동 승인 필수 |
+| L4 | 반자율 | 5연속 성공 + 7일 | 저위험 자동 허용 |
+| L5 | 완전자율 | 10연속 + 3건 적용 + 14일 | 마스터 승인 필요 |
 
-### 2-4. 보안 규칙
+## Kill Switch 환경변수
 
-커밋 금지:
-- ANTHROPIC_API_KEY
-- Hub 토큰
-- Tailscale IP
-- 모든 API 키
+```
+DARWIN_V2_ENABLED=false      # 기본 OFF — V2 전체 기동
+DARWIN_KILL_SWITCH=true      # 기본 잠김 — L4/L5 자동 액션 차단
+DARWIN_SHADOW_MODE=true      # Shadow Mode 활성화 (V1 vs V2 병행 비교)
+DARWIN_CYCLE_ENABLED=true    # 7단계 사이클 기동
+DARWIN_L5_ENABLED=true       # L5 완전자율 허용
+DARWIN_MCP_ENABLED=true      # MCP Server 활성화
+DARWIN_ESPL_ENABLED=true     # ESPL 주간 진화
+DARWIN_SELF_RAG_ENABLED=true # SelfRAG 4-gate
+DARWIN_LLM_DAILY_BUDGET_USD=10.0  # 일일 LLM 예산
+```
 
-## 3. Darwin V2 Phase별 행동
+## Phase별 상태 (2026-04-18 기준)
 
-| Phase | 상태 | 지시 |
+| Phase | 상태 | 내용 |
 |-------|------|------|
-| 1 | 🔶 진행 | Foundation (Application/Supervisor/LLM Stack) |
-| 2 | ⏳ 예정 | Commander (Jido.AI.Agent) + Memory L1/L2 |
-| 3 | ⏳ 예정 | 7단계 사이클 Elixir 이전 |
-| 4 | ⏳ 예정 | Reflexion + SelfRAG + ESPL |
-| 5 | ⏳ 예정 | Shadow Mode + MCP Server + HTTP |
-| 6 | ⏳ 예정 | Sensors (HN/Reddit/OpenReview) |
-| 7 | ⏳ 예정 | Jido Skills (TreeSearch/VLM/ResourceAnalyst) |
-| 8 | ⏳ 예정 | 테스트 200+ |
+| 0 | ✅ 완료 | 독립 구조 + Kill Switch + mix.exs |
+| 1 | ✅ 완료 | LLM Selector + CostTracker + RoutingLog |
+| 2 | ✅ 완료 | Memory L1/L2 + AutonomyLevel |
+| 3 | ✅ 완료 | Reflexion + SelfRAG + ESPL + Principle Loader |
+| 4 | ✅ 완료 | Commander + Skill 9개 + Cycle 7개 |
+| 5 | ✅ 완료 | MCP Server + Signal + HTTP Router |
+| 6 | ✅ 완료 | ShadowRunner + ShadowCompare + TelegramBridge + RollbackScheduler(24h) |
+| 7 | 🔶 예정 | 커뮤니티 스캐너 완성 (HN/Reddit/OpenReview/RSS) |
+| 8 | 🔶 예정 | 테스트 200+ |
 
-## 4. 코드 작성 표준
+## DB 테이블
 
-### 4-1. Elixir (V2 신규)
-- `use Jido.AI.Agent` (Commander) — 시그마 패턴 복사
-- `use Jido.Action` (Skill) — 시그마 Skill 패턴
-- `@moduledoc` 필수
-- `mix compile --warnings-as-errors` 경고 0건
+- `reservation.rag_research` — 기존 논문 저장소
+- `darwin_v2_shadow_runs` — Shadow 비교 실행 기록
+- `darwin_v2_pipeline_audit` — 파이프라인 단계 감사 로그
+- `darwin_v2_rollback_log` — 롤백 이력 (Phase 6 신규)
 
-### 4-2. 모듈 네이밍
-- `Darwin.V2.*` — 모든 V2 신규 모듈
-- `Darwin.V2.Cycle.*` — 7단계 사이클
-- `Darwin.V2.LLM.*` — LLM 스택
-- `Darwin.V2.Skill.*` — Jido Skills
-- `Darwin.V2.Sensor.*` — 커뮤니티 시그널
+## Shadow Mode 운영 절차
 
-## 5. LLM 정책
+1. `DARWIN_SHADOW_MODE=true` 설정
+2. V1 평가 이벤트 자동 구독 (`darwin.paper.evaluated`)
+3. 7일 이상 + 20건 이상 + avg_match ≥ 95% 달성 시
+4. `Darwin.V2.ShadowRunner.shadow_ready?/0` 반환 `true`
+5. 마스터 텔레그램 알림 → `DARWIN_V2_ENABLED=true` 승인
+
+## LLM 정책
 
 Claude API 전용 (`Darwin.V2.LLM.Selector` 참조):
-- 오케스트레이션/평가/계획: `claude-sonnet-4-6`
-- 배치/분류: `claude-haiku-4-5-20251001`
-- 원칙 비판/복잡 추론: `claude-opus-4-7`
 
-일일 예산: `$10` (`DARWIN_LLM_DAILY_BUDGET_USD`)
+```
+evaluator / planner / verifier → claude-sonnet-4-6
+scanner / applier / learner    → claude-haiku-4-5-20251001
+principle.critique             → claude-opus-4-7
+임베딩                          → qwen3-embed-0.6b (로컬 MLX, 비용 $0)
+```
 
-## 6. 참조 문서
+일일 예산 한도: `$10` (`DARWIN_LLM_DAILY_BUDGET_USD`)
+단일 논문 최대 비용: `$5` (초과 시 자동 중단)
 
-- `docs/standards/01-autonomy-levels.md` — L3/L4/L5 정의
-- `docs/standards/02-signal-topics.md` — JayBus 토픽
-- `docs/standards/03-kill-switches.md` — 환경변수 제어
-- `docs/standards/04-llm-policy.md` — LLM 라우팅 정책
-- `docs/standards/05-memory-schema.md` — 메모리 스키마
-- `docs/standards/09-shadow-criteria.md` — Shadow Mode 기준
+## 코드 작성 표준
 
-## 7. 금지 행동
+### Elixir V2
 
-- ❌ 민감값 노출
-- ❌ V1 코드 수정
-- ❌ 로컬 LLM 사용 (MLX 임베딩 제외)
-- ❌ Kill Switch 없는 L5 즉시 활성화
-- ❌ 마스터 승인 없는 Tier 2 자동 적용
+- `use Jido.AI.Agent` (Commander) — 시그마 패턴 준수
+- `use Jido.Action` + `schema: Zoi.object(...)` (Skill)
+- `@moduledoc` 필수, 한국어 설명
+- 로그 prefix: `[다윈V2 {모듈명}]`
+- `mix compile --warnings-as-errors` 경고 0건 필수
+
+### 모듈 네이밍
+
+```
+Darwin.V2.*         — V2 최상위
+Darwin.V2.Cycle.*   — 7단계 사이클 GenServer
+Darwin.V2.LLM.*     — LLM 스택
+Darwin.V2.Skill.*   — Jido Skills
+Darwin.V2.Sensor.*  — 커뮤니티 시그널
+Darwin.V2.HTTP.*    — Plug/Bandit HTTP
+Darwin.V2.MCP.*     — MCP Server
+Darwin.V2.Memory.*  — L1/L2 메모리
+```
+
+## 절대 규칙
+
+- OPS 직접 수정 금지
+- `verification_passed` 없이 main 적용 금지
+- 단일 논문 LLM 비용 $5 초과 금지
+- secrets 커밋 금지 (pre-commit hook 자동 차단)
+- 로컬 LLM 사용 금지 (MLX 임베딩만 예외)
+- V1 (`elixir/team_jay/lib/team_jay/darwin/`) 코드 수정 금지
+
+## 금지 행동
+
+- 민감값 노출 (API 키, Tailscale IP, Hub 토큰)
+- V1 코드 수정
+- Kill Switch 없는 L5 즉시 활성화
+- 마스터 승인 없는 Tier 2 자동 적용
+- `git mv` 없이 파일 이동
+
+## 막히면
+
+1. **즉시 중단**
+2. 해당 파일에 `# TODO(메티): ...` 주석 추가
+3. 마스터에게 질문 메시지 (코드 커밋 금지)
 
 ---
 
-**참조**: 팀 CLAUDE.md (최상위), CODEX_DARWIN_REMODEL.md (로컬)
+**참조**: `bots/darwin/CLAUDE.md` (최상위), `docs/standards/` (불변 규칙)
+`bots/darwin/docs/PLAN.md` (Phase 로드맵), `bots/darwin/SOUL.md` (7원칙)

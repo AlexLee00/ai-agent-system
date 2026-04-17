@@ -83,21 +83,28 @@ defmodule Darwin.V2.Supervisor do
       [
         Darwin.V2.FeedbackLoop,
         Darwin.V2.KeywordEvolver,
-        Darwin.V2.ResearchMonitor
+        Darwin.V2.ResearchMonitor,
+        Darwin.V2.MetaReview
       ]
     else
       []
     end
   end
 
-  # Shadow Mode 선택적 기동 (env var DARWIN_SHADOW_MODE=true 또는 app config)
+  # Shadow Mode + TelegramBridge 선택적 기동
+  # TelegramBridge는 항상, ShadowRunner는 DARWIN_SHADOW_MODE=true 시에만 기동
   defp maybe_shadow_children do
-    if Darwin.V2.ShadowRunner.enabled?() do
-      Logger.info("[다윈V2] Shadow Mode 활성 — V1 vs V2 병행 비교 기동")
-      [Darwin.V2.ShadowRunner]
-    else
-      []
-    end
+    telegram = [Darwin.V2.TelegramBridge]
+
+    shadow =
+      if Darwin.V2.ShadowRunner.enabled?() do
+        Logger.info("[다윈V2] Shadow Mode 활성 — V1 vs V2 병행 비교 기동")
+        [Darwin.V2.ShadowRunner]
+      else
+        []
+      end
+
+    telegram ++ shadow
   end
 
   # HTTP 서버 선택적 기동 — 포트 사용 가능할 때만
