@@ -84,3 +84,73 @@ DARWIN_SELF_RAG_ENABLED=false  ← SelfRAG 4-gate
 ## 알려진 이슈
 
 없음. 컴파일 경고만 존재 (미구현 함수 참조, 추후 구현).
+
+
+---
+
+# 🔬 40차 세션 — 다윈팀 리모델링 대장정 (2026-04-18 낮)
+
+## 세션 성격
+**리모델링 계획 수립 + 코덱스 자율 실행 완료 + 중간 검증 + 인수인계**
+
+## 핵심 성과
+
+### 1. 다윈팀 전수 분석 + 리모델링 계획 ✅
+### 2. 메티 웹 서치 4건 (최신 자율 연구 에이전트 + Jido + 학술 MCP + 커뮤니티 API) ✅
+### 3. CODEX_DARWIN_REMODEL.md 대형 프롬프트 1,334줄 작성 ✅
+### 4. 코덱스 자동 실행 (Phase 0~8 대부분 완료) ✅ (별도 세션)
+### 5. 컴파일 + 테스트 실증 검증 완료 ✅
+
+---
+
+## 📊 메티 조사 결과 (리모델링 전)
+
+### 규모 (5,178줄, 32 파일)
+```
+TS (bots/darwin)                        2,924줄 / 15 파일
+Elixir (team_jay/lib/team_jay/darwin)   1,722줄 / 11 파일
+Skills (packages/core/lib/skills/darwin)  532줄 /  6 파일
+```
+
+### 강점 (보존)
+- 자율 레벨 L3/L4/L5 + 자동 승격/강등 (현재 L4 `path_error_fixed_prototypes_allowed`)
+- 7단계 사이클 (DISCOVER → EVALUATE → PLAN → IMPLEMENT → VERIFY → APPLY → LEARN)
+- FeedbackLoop GenServer + JayBus 이벤트 기반
+- Sigma Signal Receiver (`sigma.advisory.darwin.*` 구독)
+- callWithFallback LLM 호출 기 사용
+- launchd: ai.research.scanner + ai.research.task-runner
+
+### 약점 (해소 대상)
+- 분산 구조 (bots/darwin + team_jay/lib/team_jay/darwin)
+- Jido 미적용 (단순 GenServer)
+- 독립 LLM Selector 없음
+- Shadow Mode / Reflexion / SelfRAG / ESPL / Principle / Memory L2 전무
+- 테스트 2개 (시그마 172 대비)
+
+---
+
+## 🌐 메티 웹 서치 결과 (최신 자율 연구 에이전트)
+
+### 참조 논문 5건
+- **AI Scientist-v2** (arXiv 2504.08066, ICLR 2025): Progressive agentic tree-search + Experiment Manager + VLM 피드백
+- **AI-Researcher** (HKUDS, NeurIPS 2025 Spotlight): Resource Analyst (수학↔코드 양방향 매핑) + 멘토-학생 피드백
+- **Kosmos** (arXiv 2511.02824): Structured World Model + 200 rollouts + 42K LoC + 1500 papers/run + 79.4% 정확도
+- **Dolphin** (2508.14111 [317]): feedback-driven loop
+- **Coscientist/LLM-RDF**: 특화 역할 에이전트
+
+### 학술 MCP 서버 4건
+- arxiv-mcp-server (blazickjp): search/download/read/citation_graph/topic_watch
+- paper-search-mcp (openags): arXiv + PubMed + bioRxiv + Semantic Scholar 멀티소스
+- semanticscholar-mcp-server (JackKuo666)
+- arXiv-mcp (shoumikdc, Smithery RSS)
+
+### 커뮤니티 소스 API (D옵션)
+- Hacker News Algolia: `https://hn.algolia.com/api/v1/search` (무인증)
+- Reddit JSON: `https://reddit.com/r/*.json` (공개 무인증)
+- Papers with Code: `https://paperswithcode.com/api/v1/`
+- OpenReview (NeurIPS/ICML/ICLR): 무인증
+
+### Jido 2026-04 최신
+- Jido.Agent / Jido.AI.Agent
+- Pods (에이전트 그룹) / Signals (CloudEvents) / Actions / Skills / Sensors
+- jido_ai companion package
