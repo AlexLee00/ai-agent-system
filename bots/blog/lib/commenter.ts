@@ -1422,11 +1422,74 @@ async function openReplyEditor(page, comment) {
         return true;
       }
     }
+
+    const globalReplyButtons = Array.from(document.querySelectorAll('button, a'))
+      .filter(visible)
+      .filter((btn) => {
+        const text = textOf(btn);
+        const cls = String(btn.className || '');
+        return /답글|답변/.test(text) || /btn_reply|reply/i.test(cls);
+      });
+    if (globalReplyButtons.length === 1) {
+      const replyButton = globalReplyButtons[0];
+      const fallbackTarget = replyButton.closest('li.u_cbox_comment, li[class*="comment"], .u_cbox_comment_box, [class*="comment"]');
+      document.querySelectorAll('[data-blog-target-comment],[data-blog-target-reply-button],[data-blog-target-reply-area]').forEach((node) => {
+        node.removeAttribute('data-blog-target-comment');
+        node.removeAttribute('data-blog-target-reply-button');
+        node.removeAttribute('data-blog-target-reply-area');
+      });
+      if (fallbackTarget) {
+        fallbackTarget.setAttribute('data-blog-target-comment', 'true');
+      }
+      replyButton.setAttribute('data-blog-target-reply-button', 'true');
+      const replyArea = fallbackTarget?.parentElement?.querySelector('.u_cbox_reply_area') || fallbackTarget?.querySelector('.u_cbox_reply_area');
+      if (replyArea) {
+        replyArea.setAttribute('data-blog-target-reply-area', 'true');
+      }
+      return true;
+    }
     return false;
   }, {
     commentText: comment.comment_text,
     commenterName: comment.commenter_name,
   });
+}
+
+async function waitForReplyThread(page, comment, testMode = false) {
+  const timeoutMs = testMode ? 12000 : 15000;
+  const commentSnippet = String(comment?.comment_text || '').slice(0, 20);
+  const commenterName = String(comment?.commenter_name || '').trim();
+
+  return page.waitForFunction(({ snippet, name }) => {
+    const textOf = (el) =>
+      String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
+    const visible = (el) => {
+      if (!el) return false;
+      const style = window.getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+    };
+
+    const replyButtons = Array.from(document.querySelectorAll('button, a'))
+      .filter(visible)
+      .filter((btn) => {
+        const text = textOf(btn);
+        const cls = String(btn.className || '');
+        return /답글|답변/.test(text) || /btn_reply|reply/i.test(cls);
+      });
+    if (replyButtons.length > 0) return true;
+
+    const comments = Array.from(document.querySelectorAll('li.u_cbox_comment, li[class*="comment"], .u_cbox_comment_box, [class*="comment"]'))
+      .filter(visible);
+    if (comments.some((node) => {
+      const text = textOf(node);
+      return (snippet && text.includes(snippet)) || (name && text.includes(name));
+    })) {
+      return true;
+    }
+
+    return false;
+  }, { timeout: timeoutMs }, { snippet: commentSnippet, name: commenterName }).then(() => true).catch(() => false);
 }
 
 async function activateReplyMode(page) {
@@ -1473,6 +1536,41 @@ async function activateReplyMode(page) {
     }
     return false;
   }, { timeout: 8000 }).then(() => true).catch(() => false);
+}
+
+async function expandReplyThreads(page) {
+  return page.evaluate(() => {
+    const textOf = (el) =>
+      String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
+    const visible = (el) => {
+      if (!el) return false;
+      const style = window.getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+    };
+
+    const candidates = Array.from(document.querySelectorAll('a, button'))
+      .filter(visible)
+      .filter((node) => {
+        const text = textOf(node);
+        const cls = String(node.className || '');
+        return /댓글\s*\d+|댓글 더보기|이전 댓글|더보기/.test(text)
+          || /u_cbox_btn_more|btn_more|comment_more/i.test(cls);
+      })
+      .slice(0, 8);
+
+    let clicked = 0;
+    for (const node of candidates) {
+      try {
+        node.scrollIntoView({ block: 'center', behavior: 'instant' });
+        node.click();
+        clicked += 1;
+      } catch {
+        // ignore
+      }
+    }
+    return clicked;
+  }).catch(() => 0);
 }
 
 async function openCommentPanel(page, logNo = '', testMode = false) {
@@ -2278,7 +2376,7 @@ async function typeReply(frame, browserPage, selector, replyText, config, testMo
   }
 }
 
-async function postReply(comment, replyText, { testMode = false } = {}) {
+async function postReply(comment, replyText, { testMode = false, dryRun = false } = {}) {
   const config = getCommenterConfig();
   const logNo = extractLogNo(comment.post_url);
   return withBrowserPage(testMode, async (page) => {
@@ -2291,9 +2389,20 @@ async function postReply(comment, replyText, { testMode = false } = {}) {
     if (mounted) {
       await waitForCommentPanel(contentFrame, logNo).catch(() => false);
       await humanDelay(1, 2, testMode);
+      await waitForReplyThread(contentFrame, comment, testMode).catch(() => false);
       opened = await openReplyEditor(contentFrame, comment);
       if (opened) {
         opened = await activateReplyMode(contentFrame);
+      } else {
+        const expanded = await expandReplyThreads(contentFrame);
+        if (expanded > 0) {
+          await humanDelay(1, 2, testMode);
+          await waitForReplyThread(contentFrame, comment, testMode).catch(() => false);
+          opened = await openReplyEditor(contentFrame, comment);
+          if (opened) {
+            opened = await activateReplyMode(contentFrame);
+          }
+        }
       }
     }
 
@@ -2307,6 +2416,15 @@ async function postReply(comment, replyText, { testMode = false } = {}) {
     const editor = await focusReplyEditor(contentFrame);
     if (!editor?.selector) {
       throw new Error('reply_editor_not_found');
+    }
+
+    if (testMode || dryRun) {
+      return {
+        ok: true,
+        dryRun: true,
+        stage: 'reply_editor_ready',
+        editorSelector: editor.selector,
+      };
     }
 
     await typeReply(contentFrame, page, editor.selector, replyText, config, testMode);
