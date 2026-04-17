@@ -44,11 +44,14 @@ defmodule Darwin.V2.ShadowRunner do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
-  @doc "활성화 여부 (DARWIN_SHADOW_MODE=true)."
+  @doc "활성화 여부 (DARWIN_SHADOW_MODE=true 런타임 환경변수 우선)."
   @spec enabled?() :: boolean()
   def enabled? do
-    System.get_env("DARWIN_SHADOW_MODE", "false") == "true" or
-      Application.get_env(:darwin, :shadow_mode, false)
+    case System.get_env("DARWIN_SHADOW_MODE") do
+      "true" -> true
+      "false" -> false
+      nil -> Application.get_env(:darwin, :shadow_mode, false)
+    end
   end
 
   @doc "최근 N일 평균 match_score. 데이터 없으면 0.0."

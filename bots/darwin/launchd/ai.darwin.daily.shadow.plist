@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+                       "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.darwin.daily.shadow</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/mix</string>
+    <string>run</string>
+    <string>-e</string>
+    <string>Darwin.V2.ShadowRunner.run_daily()</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/alexlee/projects/ai-agent-system/bots/darwin/elixir</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key><string>/Users/alexlee</string>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>MIX_ENV</key><string>prod</string>
+    <key>MODE</key><string>ops</string>
+    <key>DARWIN_V2_ENABLED</key><string>true</string>
+    <key>DARWIN_SHADOW_MODE</key><string>true</string>
+    <key>DARWIN_HTTP_PORT</key><string>4020</string>
+    <key>DARWIN_LLM_DAILY_BUDGET_USD</key><string>10.00</string>
+    <key>DARWIN_TIER2_AUTO_APPLY</key><string>false</string>
+    <key>DARWIN_MCP_SERVER_ENABLED</key><string>false</string>
+    <key>DARWIN_ESPL_ENABLED</key><string>false</string>
+    <key>DARWIN_SELF_RAG_ENABLED</key><string>false</string>
+    <key>DARWIN_PRINCIPLE_SEMANTIC_CHECK_ENABLED</key><string>false</string>
+  </dict>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>6</integer>
+    <key>Minute</key><integer>30</integer>
+  </dict>
+  <key>StandardOutPath</key><string>/tmp/darwin-daily-shadow.log</string>
+  <key>StandardErrorPath</key><string>/tmp/darwin-daily-shadow.err.log</string>
+  <key>RunAtLoad</key><false/>
+</dict>
+</plist>

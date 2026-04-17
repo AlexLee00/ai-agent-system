@@ -5,7 +5,7 @@ config :darwin,
   llm_daily_budget_usd:
     System.get_env("DARWIN_LLM_DAILY_BUDGET_USD", "10.0") |> String.to_float(),
   v2_enabled: System.get_env("DARWIN_V2_ENABLED", "false") == "true",
-  shadow_mode: System.get_env("DARWIN_SHADOW_MODE", "true") == "true",
+  shadow_mode: System.get_env("DARWIN_SHADOW_MODE", "false") == "true",
   kill_switch: System.get_env("DARWIN_KILL_SWITCH", "true") == "true",
   http_port: System.get_env("DARWIN_HTTP_PORT", "8180") |> String.to_integer(),
   mcp_enabled: System.get_env("DARWIN_MCP_SERVER_ENABLED", "false") == "true",
