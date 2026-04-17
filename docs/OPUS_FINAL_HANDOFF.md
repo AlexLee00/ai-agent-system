@@ -1,10 +1,38 @@
-# 세션 인수인계 — 2026-04-18 (CODEX_SIGMA_PHASE2_LLM_AUTONOMOUS 완전 완료 + 버그 수정)
+# 세션 인수인계 — 2026-04-18 (CODEX_LUNA_BLOG_PIPELINE 완료)
 
-> 세션 범위: RoutingLog inserted_at 버그 수정 + 167 tests 0 failures 확인 + 실 API 호출 검증
+> 세션 범위: 루나→블로 투자 콘텐츠 자율 요청 파이프라인 완성 + 172 tests 0 failures
 
 ---
 
-## 최신 작업 요약 (PHASE2_LLM_AUTONOMOUS 3차 — 버그 수정 + 완전 검증)
+## 최신 작업 요약 (CODEX_LUNA_BLOG_PIPELINE — 코덱스 구현 완료)
+
+### 구현 내용 (커밋: 47af2d24)
+
+**파이프라인 목표**: 루나 regime 변화 → 자동 블로그 발행 (마스터 개입 불요)
+
+**핵심 원칙** (마스터 결정 2026-04-18 불변):
+- 블로 신규 카테고리 만들지 않음 (IT교육/개발/자기계발 중심 유지)
+- 루나 요청 = "투자/금융 앵글 힌트"로만 작용 (카테고리 바꾸지 않음)
+- 기존 주제 선정 방식(SIMILARITY / BANNED_PATTERNS) 그대로 준수
+
+**구현 목록**:
+- `blog.content_requests` 테이블 신설 (DB 적용 완료) + 인덱스 2개
+- `CrossTeamRouter.handle_luna_to_blog/1`: DB INSERT 추가 (텔레그램 알림 병행)
+- `topic-selector.ts`: `LUNA_ANGLE_TEMPLATES` 6카테고리×4앵글, `synthesizeHybridTopic`, `getPendingLunaRequest`
+- `blo.ts`: `_expireOldRequests` (24h 자동 만료), `_fulfillLunaRequest` (fulfilled 피드백), investment-guard 연동
+- `investment-guard.ts`: 매수권유 감지 + 수익확약 감지 + 면책문구 자동 주입
+- 테스트 3종: `topic-selector-hybrid.test.ts`, `investment-guard.test.ts`, `cross_team_router_test.exs`
+
+**테스트 결과**: 172 tests, 0 failures
+
+### 다음 세션 즉시 착수 항목
+1. **HANDOFF 업데이트 반영** — 시그마 Shadow 7일 관찰 Day 4~7 계속
+2. **실 루나 이벤트 검증**: `blog.content_requests` 에 실제 레코드 쌓이는지 확인
+3. **블로팀 daily 실행 후 피드백 확인**: fulfilled/skipped 상태 체크
+
+---
+
+## 이전 작업 요약 (PHASE2_LLM_AUTONOMOUS 3차 — 버그 수정 + 완전 검증)
 
 ### 수정 내용 (커밋: d480bab2)
 - **`routing_log.ex` 버그 수정**: `sigma_v2_llm_routing_log` INSERT SQL에 `inserted_at` 누락 → NOT NULL 위반
