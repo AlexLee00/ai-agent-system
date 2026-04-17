@@ -19,7 +19,7 @@
 const os         = require('os');
 const fs         = require('fs');
 const path       = require('path');
-const { execSync } = require('child_process');
+const { execSync, execFileSync } = require('child_process');
 const pgPool     = require('../../../packages/core/lib/pg-pool');
 const eventLake  = require('../../../packages/core/lib/event-lake');
 const { publishToRag, publishToWebhook } = require('../../../packages/core/lib/reporting-hub');
@@ -33,6 +33,14 @@ const RECOVERY_BLACKLIST = new Set([
   'ai.ops.platform.frontend',
   'ai.orchestrator',
 ]);
+
+function kickstartLaunchdService(uid, label, timeout = 15000) {
+  return execFileSync(
+    'launchctl',
+    ['kickstart', '-kp', `gui/${uid}/${label}`],
+    { timeout, encoding: 'utf8' },
+  );
+}
 
 // ─── 블랙리스트 (절대 금지 명령/패턴) ─────────────────────────────────────
 const BLACKLIST = [
@@ -85,7 +93,7 @@ const WHITELIST = {
       if (RECOVERY_BLACKLIST.has(label)) throw new Error(`블랙리스트 서비스: ${label}`);
       const uid = process.getuid ? process.getuid() : execSync('id -u', { encoding: 'utf8' }).trim();
       // kickstart -k: 이미 실행 중이면 강제 종료 후 재시작, -p: 출력 보존
-      execSync(`launchctl kickstart -kp gui/${uid}/${label}`, { timeout: 15000, encoding: 'utf8' });
+      kickstartLaunchdService(uid, label, 15000);
       return { restarted: label };
     },
   },
@@ -561,7 +569,7 @@ async function recoverDownServices(downServices) {
   for (const svc of downServices) {
     try {
       console.log(`  🔧 [닥터] ${svc.label} 내려감 (exit: ${svc.status}) → 재시작`);
-      execSync(`launchctl kickstart -kp gui/${uid}/${svc.label}`, { timeout: 15000, encoding: 'utf8' });
+      kickstartLaunchdService(uid, svc.label, 15000);
       await logRecovery('restart_launchd_service', { label: svc.label }, { restarted: svc.label }, true, 'doctor-healthcheck');
       eventLake.record({
         eventType: 'doctor_recovery_success',
