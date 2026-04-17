@@ -24,15 +24,19 @@ defmodule Darwin.MixProject do
 
   defp deps do
     [
-      {:jido, "~> 1.2"},
-      {:jido_ai, "~> 0.4"},
-      {:ecto_sql, "~> 3.11"},
-      {:postgrex, ">= 0.0.0"},
+      {:jido, "~> 2.2"},
+      {:jido_action, "~> 2.2"},
+      {:jido_signal, "~> 2.1"},
+      {:jido_ai, "~> 2.1"},
+      {:ecto_sql, "~> 3.12"},
+      {:postgrex, "~> 0.20"},
       {:jason, "~> 1.4"},
       {:req, "~> 0.5"},
-      {:bandit, "~> 1.5"},
+      {:bandit, "~> 1.6"},
       {:phoenix_pubsub, "~> 2.1"},
-      {:telemetry, "~> 1.2"}
+      {:telemetry, "~> 1.2"},
+      {:pgvector, "~> 0.3"},
+      {:yaml_elixir, "~> 2.11"}
     ]
   end
 
