@@ -3738,3 +3738,131 @@ launchctl unload ~/Library/LaunchAgents/ai.sigma.daily.plist
 **36차 세션 — 시그마팀 옵션 D (bots/sigma/ 물리 이동) 준비 완료. 영향 파일 전수 조사로 추가 7건 발견(tsconfig/launchd plist/team-skill-cli/seed-skills-tools/config.exs/tests/mix.exs). `docs/codex/CODEX_SIGMA_RELOCATE.md`(432줄) 7단계 실행 프롬프트 작성(git mv 엄수, 50+ 파일 매핑, Exit Criteria 10건). Phase 1~5 + PHASE_0_REVIEW 프롬프트 68건 + 설계서/V1/V2/V3/DESIGN 26건 총 94건 경로 치환(sed 일괄, 전수 0 잔존). launchd 매일 21:30 자동 실행 중이라 마스터 사전 unload 필수. 민감값 0건. 마스터 승인 서명 시 코덱스 즉시 착수. 완료 후 다윈팀 분리 예고.**
 
 — 메티 (2026-04-17 밤, 36차 세션 — 시그마팀 옵션 D 준비 완료)
+
+---
+
+## 📍 36차 세션 말미 (2026-04-17 밤 메티) — 옵션 D 실행 + 루나 정비 승인 완료
+
+### 🎯 결정 경로
+
+```
+마스터 "옵션 D로 하자" (36차 초반)
+  → 메티 전수 조사 + RELOCATE.md v3 작성
+  → 코덱스 RELOCATE 실행 (이미 staging 완료)
+  → 마스터 "루나팀 형식 참고 + LLM 셀렉터"
+  → 메티 루나 분석 + 9 md + LUNA_ALIGN 프롬프트 작성
+  → 마스터 "승인한다!! 코덱스에게 전달할게"  ← 현재
+```
+
+### 📦 36차 말미 최종 산출물
+
+**1. 추적 파일 (마스터가 승인한 9 md, untracked 상태)**
+```
+bots/sigma/README.md        84줄
+bots/sigma/AGENTS.md        93줄
+bots/sigma/BOOTSTRAP.md     98줄
+bots/sigma/CLAUDE.md       137줄
+bots/sigma/HEARTBEAT.md    113줄
+bots/sigma/IDENTITY.md      87줄
+bots/sigma/SOUL.md          99줄
+bots/sigma/TOOLS.md        137줄
+bots/sigma/USER.md         129줄
+─────────────────────────────────
+합계                         977줄
+```
+→ 코덱스가 Phase B에서 일괄 커밋 (git add bots/sigma/*.md)
+
+**2. 로컬 전용 (gitignore 보호)**
+- `docs/codex/CODEX_SIGMA_LUNA_ALIGN.md` (801줄)
+- 5개 Phase (A→B→C→D→E) 통합 실행 프롬프트
+- LLM Selector TS + Elixir + 중앙 레지스트리 3층 설계
+- 14개 에이전트 LLM 정책 매핑
+- Exit Criteria 16개
+- 마스터 승인 완료, 코덱스 전달 대기
+
+**3. 이전 산출물 (30~36차 누적)**
+- `docs/codex/CODEX_SIGMA_RELOCATE.md` (478줄, v3)
+- `docs/codex/CODEX_SIGMA_REMODEL_PHASE_{0,0_REVIEW,1,2,3,4,5}.md` (7개)
+- `bots/sigma/docs/PLAN.md` (이미 이동됨, 1,405줄)
+- `bots/sigma/docs/RESEARCH_V{1,2,3}.md` (373+447+526줄)
+- `bots/sigma/config/sigma_principles.yaml` (원칙 운영 정의)
+
+### 🔑 36차 핵심 발견
+
+1. **bots/sigma/ 이미 대부분 이동 완료** (22:13, 47 R staged)
+2. **Phase 5까지 커밋 존재** (aeabdc8c → 29480d44)
+3. **루나팀 = bots/investment/** — 8개 표준 md + nodes/ + team/ + shared/
+4. **LLM Selector 패턴 발견**:
+   - `bots/investment/shared/llm-client.ts` (706줄)
+   - `packages/core/lib/llm-model-selector.js` (중앙 레지스트리)
+   - `packages/core/lib/llm-fallback.js` (폴백 체인)
+5. **Phase 1 이후 Phase 5 스캐폴드 자동 생성**: `http/router.ex`, `mcp/server.ex`, `mcp/auth.ex` (코덱스 자율 작업 추정)
+
+### 🎯 시그마팀 루나 정렬 5 Phase
+
+| Phase | 내용 | 산출 | 담당 | 소요 |
+|-------|------|------|------|:-:|
+| **A** | RELOCATE 작업 커밋 | 47R+6M 커밋 | 코덱스 | 5분 |
+| **B** | 9 표준 md 커밋 | bots/sigma/*.md | 코덱스 | 5분 |
+| **C** | **LLM Selector 구현** | shared/ 4 + llm/ 2 + 마이그레이션 + 정책 | 코덱스 | 30~40분 |
+| **D** | 프로젝트 설정 | package.json + tsconfig + 2 yaml/json | 코덱스 | 10분 |
+| **E** | skills/ 대문자 중복 제거 | 5 파일 삭제 | 코덱스 | 5분 |
+
+### 📋 LLM Selector 14 에이전트 정책 (Phase C 핵심)
+
+| Agent | Route | Fallback |
+|-------|-------|----------|
+| commander | anthropic_sonnet | haiku → ollama_32b |
+| pod.risk | anthropic_sonnet | haiku → ollama_32b |
+| pod.growth | anthropic_haiku | ollama_14b |
+| pod.trend | anthropic_haiku | ollama_14b |
+| skill.data_quality | **ollama_8b** | haiku |
+| skill.causal | anthropic_sonnet | haiku |
+| skill.experiment_design | anthropic_sonnet | haiku |
+| skill.feature_planner | anthropic_haiku | ollama_14b |
+| skill.observability | anthropic_haiku | ollama_14b |
+| principle.self_critique | **anthropic_opus** | sonnet |
+| reflexion | anthropic_sonnet | haiku |
+| espl | anthropic_sonnet | haiku |
+
+- 일일 예산: $10 (SIGMA_LLM_DAILY_BUDGET_USD)
+- 월 예산: $180 (SIGMA_LLM_MONTHLY_BUDGET_USD)
+
+### 📈 준비 완성도
+
+```
+RELOCATE 프롬프트 (v3)          ████████████████████ 100%
+LUNA_ALIGN 프롬프트             ████████████████████ 100%
+9개 표준 md                     ████████████████████ 100% (untracked)
+LLM Selector 설계               ████████████████████ 100%
+사이그마 원칙 YAML              ████████████████████ 100% (이미 배포)
+──────────────────────────────────────────────────────────
+마스터 승인                      ████████████████████ 100% ✅
+코덱스 실행                      ░░░░░░░░░░░░░░░░░░░░   0% (대기)
+```
+
+### 🚨 코덱스 작업 전 주의 (마스터 전달 시 언급 권장)
+
+1. `docs/codex/CODEX_SIGMA_LUNA_ALIGN.md` 읽고 Phase A→E 순차 실행
+2. **Phase C-2 (llm-client.ts)**: 루나 706줄 그대로 복사 금지, 200~300줄 시그마 특화 축약
+3. **Phase C-3 (중앙 레지스트리)**: 기존 `investment.agent_policy` 패턴 참조, 동일 구조로 `sigma.agent_policy` 추가
+4. **민감값 절대 금지** (pre-commit 훅 우회 시도 금지)
+5. **git mv 엄수** (히스토리 보존)
+6. 에러 3건 이상 발생 시 즉시 중단 + 마스터 보고
+
+### 🔄 메티의 다음 임무 (코덱스 완료 후)
+
+1. **독립 검증** (Exit Criteria 16개 전수 확인)
+   - `tsc --noEmit` 에러 0
+   - `mix compile --warnings-as-errors` 경고 0
+   - LLM Selector skeleton 16 파일 존재 확인
+   - `packages/core/lib/llm-model-selector.js`에 `sigma.agent_policy` 추가 확인
+   - 민감값 0건
+2. **마스터 최종 리뷰 지원**
+3. **다윈팀 분리 설계 착수** (마스터 36차 초반 예고)
+
+### 🏷️ 36차 세션 요약 한 줄
+
+**36차 세션 — 시그마팀 옵션 D(bots/sigma/ 물리 이동) 전체 준비 + 루나팀 표준 정비 + LLM Selector 모듈 설계 완료. RELOCATE.md(v3, 478줄) + 9개 루나 표준 md(977줄) + LUNA_ALIGN 코덱스 프롬프트(801줄) 작성. 루나 `bots/investment/shared/llm-client.ts`(706줄) + `packages/core/lib/llm-model-selector.js` 패턴 완전 파악 → 시그마 14개 에이전트 LLM 정책 매핑(commander/pod×3/skill×5/principle/reflexion/espl). Phase 5 스캐폴드 untracked 3 파일(http/router + mcp/server + mcp/auth) 보존 커밋으로 RELOCATE에 통합. 마스터 승인 서명 완료 → 코덱스에게 CODEX_SIGMA_LUNA_ALIGN.md 전달 단계. 5 Phase(A~E) 순차 실행 후 다윈팀 완전 분리 착수 예정.**
+
+— 메티 (2026-04-17 밤, 36차 세션 완료, 코덱스 작업 대기)

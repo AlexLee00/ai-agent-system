@@ -968,45 +968,48 @@ async function getPostSummary(postUrl, { testMode = false } = {}) {
     let contentFrame = await waitForPostContentFrame(page, testMode);
     await humanDelay(1, 2, testMode);
     contentFrame = await waitForPostContentFrame(page, testMode);
-    const result = await contentFrame.evaluate((maxLen) => {
-      const metaContent = (selector) => {
-        const node = document.querySelector(selector);
-        return String(node?.getAttribute?.('content') || '').replace(/\s+/g, ' ').trim();
-      };
+    const result = await contentFrame.evaluate(`
+      (() => {
+        const maxLen = ${JSON.stringify(DEFAULT_SUMMARY_LEN)};
+        const metaContent = (selector) => {
+          const node = document.querySelector(selector);
+          return String((node && node.getAttribute && node.getAttribute('content')) || '').replace(/\\s+/g, ' ').trim();
+        };
 
-      const textOf = (selector) => {
-        const node = document.querySelector(selector);
-        return String(node?.innerText || node?.textContent || '').replace(/\s+/g, ' ').trim();
-      };
+        const textOf = (selector) => {
+          const node = document.querySelector(selector);
+          return String((node && (node.innerText || node.textContent)) || '').replace(/\\s+/g, ' ').trim();
+        };
 
-      const firstText = (selectors) => {
-        for (const selector of selectors) {
-          const text = textOf(selector);
-          if (text) return text;
-        }
-        return '';
-      }
+        const firstText = (selectors) => {
+          for (const selector of selectors) {
+            const text = textOf(selector);
+            if (text) return text;
+          }
+          return '';
+        };
 
-      const title =
-        metaContent('meta[property="og:title"]')
-        || firstText(['.se-title-text', '.pcol1 .htitle', '.tit_view', 'h3', 'h1', 'title']);
-      const body = [
-        '.se-main-container',
-        '.se-component-content',
-        '#post-view',
-        '#postViewArea',
-        '.post_ct',
-        '.post-view',
-        '.contents_style',
-        '.view',
-        'body',
-      ].map((selector) => textOf(selector)).find((text) => text && text.length > 120) || firstText(['body']) || '';
+        const title =
+          metaContent('meta[property="og:title"]')
+          || firstText(['.se-title-text', '.pcol1 .htitle', '.tit_view', 'h3', 'h1', 'title']);
+        const body = [
+          '.se-main-container',
+          '.se-component-content',
+          '#post-view',
+          '#postViewArea',
+          '.post_ct',
+          '.post-view',
+          '.contents_style',
+          '.view',
+          'body',
+        ].map((selector) => textOf(selector)).find((text) => text && text.length > 120) || firstText(['body']) || '';
 
-      return {
-        title,
-        summary: body.length > maxLen ? `${body.slice(0, maxLen - 1)}…` : body,
-      };
-    }, DEFAULT_SUMMARY_LEN);
+        return {
+          title,
+          summary: body.length > maxLen ? body.slice(0, maxLen - 1) + '…' : body,
+        };
+      })()
+    `);
     return {
       title: squeezeText(result?.title, 120),
       summary: squeezeText(result?.summary, DEFAULT_SUMMARY_LEN),
@@ -2054,28 +2057,30 @@ async function focusCommentEditor(page, logNo = '', timeoutMs = 15000) {
 }
 
 async function submitReply(page) {
-  const clicked = await page.evaluate(() => {
-    const visible = (el) => {
-      if (!el) return false;
-      const style = window.getComputedStyle(el);
-      const rect = el.getBoundingClientRect();
-      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-    };
-    const replyScope = document.querySelector('[data-blog-target-reply-area="true"]');
-    const roots = replyScope ? [replyScope] : [document];
-    const candidates = roots.flatMap((root) => Array.from(root.querySelectorAll('button[type="button"], button, a')));
-    const submit = candidates.find((btn) => {
-      if (!visible(btn)) return false;
-      const dataAction = String(btn.getAttribute('data-action') || '');
-      const uiSelector = String(btn.getAttribute('data-ui-selector') || '');
-      return dataAction.includes('reply#') && dataAction.includes('#write#request') && /^replyButton_/.test(uiSelector);
-    });
+  const clicked = await page.evaluate(`
+    (() => {
+      const visible = (el) => {
+        if (!el) return false;
+        const style = window.getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+      };
+      const replyScope = document.querySelector('[data-blog-target-reply-area="true"]');
+      const roots = replyScope ? [replyScope] : [document];
+      const candidates = roots.flatMap((root) => Array.from(root.querySelectorAll('button[type="button"], button, a')));
+      const submit = candidates.find((btn) => {
+        if (!visible(btn)) return false;
+        const dataAction = String(btn.getAttribute('data-action') || '');
+        const uiSelector = String(btn.getAttribute('data-ui-selector') || '');
+        return dataAction.includes('reply#') && dataAction.includes('#write#request') && /^replyButton_/.test(uiSelector);
+      });
 
-    if (!submit) return false;
-    submit.scrollIntoView({ block: 'center', behavior: 'instant' });
-    submit.click();
-    return true;
-  });
+      if (!submit) return false;
+      submit.scrollIntoView({ block: 'center', behavior: 'instant' });
+      submit.click();
+      return true;
+    })()
+  `);
 
   if (!clicked) {
     throw new Error('reply_submit_not_found');
@@ -2083,25 +2088,27 @@ async function submitReply(page) {
 }
 
 async function submitComment(page) {
-  const clicked = await page.evaluate(() => {
-    const visible = (el) => {
-      if (!el) return false;
-      const style = window.getComputedStyle(el);
-      const rect = el.getBoundingClientRect();
-      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-    };
-    const candidates = Array.from(document.querySelectorAll('button[type="button"], button, a'));
-    const submit = candidates.find((btn) => {
-      if (!visible(btn)) return false;
-      const dataAction = String(btn.getAttribute('data-action') || '');
-      const uiSelector = String(btn.getAttribute('data-ui-selector') || '');
-      return dataAction === 'write#request' && uiSelector === 'writeButton';
-    });
-    if (!submit) return false;
-    submit.scrollIntoView({ block: 'center', behavior: 'instant' });
-    submit.click();
-    return true;
-  });
+  const clicked = await page.evaluate(`
+    (() => {
+      const visible = (el) => {
+        if (!el) return false;
+        const style = window.getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+      };
+      const candidates = Array.from(document.querySelectorAll('button[type="button"], button, a'));
+      const submit = candidates.find((btn) => {
+        if (!visible(btn)) return false;
+        const dataAction = String(btn.getAttribute('data-action') || '');
+        const uiSelector = String(btn.getAttribute('data-ui-selector') || '');
+        return dataAction === 'write#request' && uiSelector === 'writeButton';
+      });
+      if (!submit) return false;
+      submit.scrollIntoView({ block: 'center', behavior: 'instant' });
+      submit.click();
+      return true;
+    })()
+  `);
 
   if (!clicked) {
     throw new Error('comment_submit_not_found');
