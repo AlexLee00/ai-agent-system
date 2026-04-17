@@ -149,6 +149,15 @@ function getBotStatuses() {
 
     try {
       execSync(`launchctl list ${b.service} 2>/dev/null`, { timeout: 3000 });
+      if (isRetiredService(b.service)) {
+        return {
+          label: b.label,
+          service: b.service,
+          status: 'retired',
+          owner: ownership?.owner || 'retired',
+        };
+      }
+
       return {
         label: b.label,
         service: b.service,
@@ -223,7 +232,8 @@ async function getHealthData() {
     poolStats = pgPool.getAllPoolStats();
   } catch {}
 
-  const runningCount = botStatuses.filter(b => b.status === 'running').length;
+  const healthyStatuses = new Set(['running', 'managed-by-elixir', 'expected-idle']);
+  const runningCount = botStatuses.filter(b => healthyStatuses.has(b.status)).length;
   const totalBots    = botStatuses.length;
 
   return {
