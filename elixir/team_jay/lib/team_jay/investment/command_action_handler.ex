@@ -77,13 +77,15 @@ defmodule TeamJay.Investment.CommandActionHandler do
         :ok
     end
 
-    _ =
-      TeamJay.HubClient.command_complete(command_id, "luna",
-        bot_name: "investment_command_action_handler",
-        source: "investment.command_action_handler",
-        pipeline: pipeline,
-        message: "investment handled #{kind} command"
-      )
+    case TeamJay.HubClient.command_complete(command_id, "luna",
+           bot_name: "investment_command_action_handler",
+           source: "investment.command_action_handler",
+           pipeline: pipeline,
+           message: "investment handled #{kind} command"
+         ) do
+      {:ok, _} -> :ok
+      {:error, reason} -> raise "command_complete failed: #{inspect(reason)}"
+    end
 
     Logger.info("[InvestmentCommandActionHandler] #{pipeline} 처리 완료 → #{kind}")
     :ok

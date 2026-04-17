@@ -64,13 +64,15 @@ defmodule TeamJay.Blog.CommandActionHandler do
     TeamJay.Blog.TopicCurator.curate_now()
     TeamJay.Blog.InsightsCollector.collect_now()
 
-    _ =
-      TeamJay.HubClient.command_complete(command_id, "blog",
-        bot_name: "blog_command_action_handler",
-        source: "blog.command_action_handler",
-        pipeline: pipeline,
-        message: "blog handled #{kind} command via planner/curator/insights"
-      )
+    case TeamJay.HubClient.command_complete(command_id, "blog",
+           bot_name: "blog_command_action_handler",
+           source: "blog.command_action_handler",
+           pipeline: pipeline,
+           message: "blog handled #{kind} command via planner/curator/insights"
+         ) do
+      {:ok, _} -> :ok
+      {:error, reason} -> raise "command_complete failed: #{inspect(reason)}"
+    end
 
     Logger.info("[BlogCommandActionHandler] #{pipeline} 처리 완료 → #{kind}")
     :ok

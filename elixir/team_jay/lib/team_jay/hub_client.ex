@@ -1,6 +1,11 @@
 defmodule TeamJay.HubClient do
   @moduledoc "Hub API HTTP 클라이언트"
 
+  require Logger
+
+  @command_retry_attempts 3
+  @command_retry_sleep_ms 250
+
   defp hub_url, do: TeamJay.Config.hub_url()
   defp hub_token, do: TeamJay.Config.hub_token()
 
@@ -77,12 +82,39 @@ defmodule TeamJay.HubClient do
         target_team: target_team
       })
 
+    do_command_lifecycle(body, @command_retry_attempts)
+  end
+
+  defp do_command_lifecycle(body, attempts_left) when attempts_left > 0 do
     case Req.post("#{hub_url()}/hub/events/commands/lifecycle", json: body, headers: headers(), retry: false) do
-      {:ok, %{status: 200, body: body}} -> {:ok, body}
-      {:ok, %{status: status, body: body}} -> {:error, "HTTP #{status}: #{inspect(body)}"}
-      {:error, err} -> {:error, err}
+      {:ok, %{status: 200, body: response_body}} ->
+        {:ok, response_body}
+
+      {:ok, %{status: status, body: response_body}} ->
+        {:error, "HTTP #{status}: #{inspect(response_body)}"}
+
+      {:error, %Req.TransportError{reason: reason} = err} when reason in [:closed, :econnrefused] ->
+        if attempts_left > 1 do
+          Logger.debug(
+            "[HubClient] command lifecycle retry #{status_label(body["status"])} " <>
+              "(#{body["command_id"]}) reason=#{inspect(reason)} attempts_left=#{attempts_left - 1}"
+          )
+
+          Process.sleep(@command_retry_sleep_ms)
+          do_command_lifecycle(body, attempts_left - 1)
+        else
+          {:error, err}
+        end
+
+      {:error, err} ->
+        {:error, err}
     end
   end
+
+  defp status_label("acknowledged"), do: "ack"
+  defp status_label("completed"), do: "complete"
+  defp status_label("failed"), do: "fail"
+  defp status_label(status), do: to_string(status)
 
   @doc """
   에이전트 기억 저장 (임베딩 포함).
