@@ -21,7 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 # ── 의존성 로드 ──────────────────────────────────────────────────────────────
@@ -194,7 +194,7 @@ def build_test_payload(symbol: str, deps: dict):
         "symbol": symbol,
         "quote": quote,
         "capabilities": ["quote", "ohlcv", "indicators"],
-        "checkedAt": datetime.utcnow().isoformat() + "Z",
+        "checkedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
 
 
