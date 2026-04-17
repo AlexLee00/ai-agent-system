@@ -39,6 +39,19 @@ defmodule TeamJay.HubClient do
     end
   end
 
+  def post_n8n_webhook(webhook_path, body \\ %{}) do
+    case Req.post("#{hub_url()}/hub/n8n/webhook/#{webhook_path}",
+      json: body,
+      headers: headers(),
+      retry: false,
+      receive_timeout: 15_000
+    ) do
+      {:ok, %{status: status}} when status in 200..299 -> {:ok, status}
+      {:ok, %{status: status, body: b}} -> {:error, "HTTP #{status}: #{inspect(b)}"}
+      {:error, err} -> {:error, err}
+    end
+  end
+
   def post_alarm(message, team \\ "system", from_bot \\ "elixir") do
     Req.post("#{hub_url()}/hub/alarm",
       json: %{message: message, team: team, fromBot: from_bot},

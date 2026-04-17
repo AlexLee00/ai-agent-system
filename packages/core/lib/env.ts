@@ -126,6 +126,8 @@ export const N8N_ENABLED = IS_OPS
   ? (process.env.N8N_ENABLED !== 'false')
   : (process.env.N8N_ENABLED === 'true');
 
+export const N8N_API_KEY = process.env.N8N_API_KEY || '';
+
 export const PG_HOST = process.env.PG_HOST || 'localhost';
 export const PG_PORT = parseInt(process.env.PG_PORT || '5432', 10);
 

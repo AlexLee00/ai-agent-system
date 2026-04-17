@@ -25,7 +25,7 @@ OPS 리소스 프록시 서버. DEV↔OPS 브릿지.
 - `lib/routes/health.ts` — live/ready 포함 헬스 체크
 - `lib/routes/services.ts` — launchd 서비스 상태 + 환경 변수
 - `lib/routes/agents.ts` — 에이전트 레지스트리 엔드포인트
-- `lib/routes/n8n.ts` — n8n 웹훅 프록시
+- `lib/routes/n8n.ts` — n8n 웹훅 프록시 + 워크플로우 관리 API
 
 ## API 엔드포인트
 ```
@@ -40,6 +40,9 @@ GET  /hub/errors/summary      — 에러 현황 요약
 GET  /hub/services/status     — launchd 서비스 상태
 GET  /hub/env                 — 환경 변수 요약
 GET  /hub/agents/*            — 에이전트 레지스트리
+GET  /hub/n8n/workflows       — n8n 워크플로우 목록 (API 키 기반)
+POST /hub/n8n/workflows/:id/run — n8n 워크플로우 실행
+POST /hub/n8n/webhook/:path   — n8n 웹훅 프록시
 ```
 
 ## 운영 해석
