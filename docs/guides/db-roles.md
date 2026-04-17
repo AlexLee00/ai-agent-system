@@ -23,6 +23,14 @@
 4. `/hub/pg/query` smoke test
 5. 기존 앱 계정과 Hub 계정이 분리됐는지 확인
 
+## 현재 상태
+- `SEC-003` live cutover 완료
+- live Hub launch agent는 로컬 LaunchAgent에서만 실제 `HUB_PG_PASSWORD`를 보관
+- 저장소의 [ai.hub.resource-api.plist](/Users/alexlee/projects/ai-agent-system/bots/hub/launchd/ai.hub.resource-api.plist)은 placeholder만 유지
+- 운영 확인 기준:
+  - `/hub/pg/query`의 `SELECT current_user`가 `hub_readonly`
+  - `/hub/health`의 `readonly_db.status`가 `ok`
+
 ## 주의
 - Hub는 현재 shared `pg-pool`을 사용하므로, 코드 분기 없이 곧바로 readonly 계정으로 바꾸면 다른 런타임에도 영향이 갈 수 있음
 - 따라서 role 생성과 실제 전환은 분리해서 진행하는 것이 안전함
