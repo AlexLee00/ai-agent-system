@@ -2,10 +2,47 @@ const fs = require('node:fs');
 const path = require('node:path');
 const env = require('../../../../packages/core/lib/env');
 const { fetchJson, postJson } = require('../../../../packages/core/lib/health-provider');
+const pgPool = require('../../../../packages/core/lib/pg-pool');
 
-function buildWebhookUrl(pathValue: unknown) {
+// n8n.webhook_entity에서 실제 웹훅 경로를 조회 (short name → full path)
+// 예: "rag-ingest" → "D1HhD70CSezffE02/webhook/rag-ingest"
+//     "critical"   → "critical"
+const _webhookPathCache = new Map<string, { fullPath: string; cachedAt: number }>();
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5분
+let _n8nPool: any = null;
+
+async function resolveWebhookPath(shortPath: string): Promise<string> {
+  const cached = _webhookPathCache.get(shortPath);
+  if (cached && Date.now() - cached.cachedAt < CACHE_TTL_MS) {
+    return cached.fullPath;
+  }
+  try {
+    // pg-pool은 n8n 스키마를 허용하지 않으므로 node-postgres 직접 사용 (싱글톤)
+    if (!_n8nPool) {
+      const { Pool } = require('pg');
+      _n8nPool = new Pool({ database: 'jay', host: '127.0.0.1', port: 5432, max: 2 });
+    }
+    const result = await _n8nPool.query(
+      `SELECT "webhookPath" FROM n8n.webhook_entity
+       WHERE "webhookPath" = $1 OR "webhookPath" LIKE $2
+       LIMIT 1`,
+      [shortPath, `%/${shortPath}`]
+    );
+    if (result.rows.length > 0) {
+      const fullPath = result.rows[0].webhookPath;
+      _webhookPathCache.set(shortPath, { fullPath, cachedAt: Date.now() });
+      return fullPath;
+    }
+  } catch {
+    // fallback: short path 그대로 사용
+  }
+  return shortPath;
+}
+
+async function buildWebhookUrl(pathValue: unknown): Promise<string> {
   const safePath = String(pathValue || '').replace(/^\/+/, '');
-  return `${env.N8N_BASE_URL}/webhook/${safePath}`;
+  const resolvedPath = await resolveWebhookPath(safePath);
+  return `${env.N8N_BASE_URL}/webhook/${resolvedPath}`;
 }
 
 function getN8nApiKey(): string {
@@ -74,7 +111,8 @@ export async function n8nWebhookRoute(req: any, res: any) {
     return res.status(503).json({ error: 'n8n_disabled' });
   }
 
-  const result = await postJson(buildWebhookUrl(req.params.path), req.body || {}, {
+  const webhookUrl = await buildWebhookUrl(req.params.path);
+  const result = await postJson(webhookUrl, req.body || {}, {
     timeoutMs: 10000,
     headers: req.headers['x-health-probe'] ? { 'x-health-probe': req.headers['x-health-probe'] } : {},
   });
