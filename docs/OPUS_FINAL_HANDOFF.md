@@ -1,3 +1,29 @@
+# 세션 인수인계 — 2026-04-18 (CODEX_JAY_DARWIN_INDEPENDENCE 전체 완료)
+
+> 세션 범위: Darwin Commander 9 tools + sigma 파일 이전 + TeamJay 네임스페이스 최종 정리 + 문서화
+
+---
+
+## 최신 작업 요약 (최종 정리)
+
+### 수정/완성 내용
+
+1. **Darwin Commander 9 tools 확장** — 기존 3개(ResourceAnalyst/PaperSynthesis/TreeSearch)에서 6개 추가:
+   EvaluatePaper / ExperimentDesign / LearnFromCycle / PlanImplementation / Replication / VlmFeedback
+2. **`@compile no_warn_undefined` TeamJay → Jay.Core** — shadow_runner.ex + rollback_scheduler.ex
+3. **`alias TeamJay.{Repo, HubClient}` → `Jay.Core.{Repo, HubClient}`** — 동일 파일 2개
+4. **`jay/sigma/*.ex` 이전** — `elixir/team_jay/lib/team_jay/jay/sigma/` → `bots/jay/elixir/lib/jay/v2/sigma/` (git mv)
+5. **`packages/elixir_core/README.md`** 작성
+6. **`bots/jay/docs/PLAN.md`** 작성
+
+### 최종 검증 결과
+- Darwin: **337 tests, 0 failures** (9 excluded) ✅
+- Jay: **58 tests, 0 failures** (4 excluded) ✅
+- team_jay + sigma + darwin + jay 통합 컴파일 ✅
+- `TeamJay.Repo/HubClient/EventLake/JayBus` 잔여 참조 0건 ✅
+
+---
+
 # 세션 인수인계 — 2026-04-18 (CODEX_JAY_DARWIN_INDEPENDENCE Phase 3 완료)
 
 > 세션 범위: Jay V2 독립 — `bots/jay/elixir/` 신설 + `Jay.V2.Commander` (Jido.AI.Agent) + 6 Skills

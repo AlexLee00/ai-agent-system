@@ -4,6 +4,15 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-04-18: CODEX_JAY_DARWIN_INDEPENDENCE 완료 — 팀제이 + 다윈 독립 대장정 (42차 세션)
+
+- **Phase 1**: `elixir/team_jay/darwin/` dead code 제거 + Darwin Commander 9 tools 완성 + Jido 2.2 정렬
+- **Phase 2**: `packages/elixir_core/` 공용 라이브러리 추출 (Jay.Core.*) — team_jay + sigma + darwin + jay 의존
+- **Phase 3**: `bots/jay/elixir/` 제이팀 독립 + `Jay.V2.Commander` (Jido.AI.Agent, 6 skills) + `Jay.V2.Sigma.*` 3종
+- **최종 정리**: Darwin Commander 9 tools 완성 + `jay/sigma/*.ex` git mv + TeamJay → Jay.Core 네임스페이스 완료
+- **문서화**: `packages/elixir_core/README.md`, `bots/jay/docs/PLAN.md` 작성
+- **테스트**: Darwin 337 / Jay 58 / team_jay 통합 컴파일 모두 ✅
+
 ## 2026-04-18: CODEX_DARWIN_REMODEL 완료 — 다윈팀 완전자율 R&D 에이전트 (40차 세션)
 
 - **독립 구조**: `bots/darwin/elixir/` + `Darwin.V2.*` 네임스페이스 (Sigma 패턴 동일)

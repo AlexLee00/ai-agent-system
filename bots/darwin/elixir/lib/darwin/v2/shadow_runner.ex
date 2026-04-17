@@ -28,9 +28,9 @@ defmodule Darwin.V2.ShadowRunner do
   use GenServer
   require Logger
 
-  @compile {:no_warn_undefined, [TeamJay.Repo, TeamJay.HubClient]}
+  @compile {:no_warn_undefined, [Jay.Core.Repo, Jay.Core.HubClient]}
 
-  alias TeamJay.{Repo, HubClient}
+  alias Jay.Core.{Repo, HubClient}
   alias Darwin.V2.ShadowCompare
 
   @match_tolerance    1.0
