@@ -29,6 +29,7 @@ const {
   LOCAL_MODEL_DEEP,
   LOCAL_MODEL_FAST,
 } = createRequire(import.meta.url)('../../../packages/core/lib/local-llm-client');
+const { callWithFallback } = createRequire(import.meta.url)('../../../packages/core/lib/llm-fallback.js');
 
 // ─── 크로노스 가드 ───────────────────────────────────────────────────
 
@@ -82,7 +83,7 @@ export async function runBacktest(symbol, from, to, strategy = 'default', option
   return { ...judged, paper: guard.paper, layer };
 }
 
-function computeLayer2Quality(layer2Signals = []) {
+function computeLayer2Quality(layer2Signals = [], model = LOCAL_MODEL_FAST) {
   const measured = layer2Signals.filter((signal) => Number.isFinite(signal?.sentiment?.score));
   const matched = measured.filter((signal) => {
     const score = Number(signal?.sentiment?.score);
@@ -95,7 +96,7 @@ function computeLayer2Quality(layer2Signals = []) {
     : 0;
 
   return {
-    model: LOCAL_MODEL_FAST,
+    model,
     layer: 2,
     sampleCount: measured.length,
     matchRate: measured.length > 0 ? matched / measured.length : 0,
@@ -108,7 +109,7 @@ function computeLayer2Quality(layer2Signals = []) {
   };
 }
 
-function computeLayer3Quality(finalSignals = []) {
+function computeLayer3Quality(finalSignals = [], model = LOCAL_MODEL_DEEP) {
   const measured = finalSignals.filter((signal) => signal?.judge);
   const matched = measured.filter((signal) => {
     const decision = String(signal?.judge?.action || 'HOLD').toUpperCase();
@@ -119,7 +120,7 @@ function computeLayer3Quality(finalSignals = []) {
     : 0;
 
   return {
-    model: LOCAL_MODEL_DEEP,
+    model,
     layer: 3,
     sampleCount: measured.length,
     matchRate: measured.length > 0 ? matched / measured.length : 0,
@@ -152,10 +153,10 @@ async function persistBacktestQuality(symbol, qualityItems = []) {
 async function measureBacktestQuality(result, { persist = true } = {}) {
   const quality = [];
   if (Array.isArray(result.layer2Signals) && result.layer2Signals.length > 0) {
-    quality.push(computeLayer2Quality(result.layer2Signals));
+    quality.push(computeLayer2Quality(result.layer2Signals, result.layer2ModelUsed || LOCAL_MODEL_FAST));
   }
   if (Array.isArray(result.finalSignals) && result.finalSignals.length > 0) {
-    quality.push(computeLayer3Quality(result.finalSignals));
+    quality.push(computeLayer3Quality(result.finalSignals, result.layer3ModelUsed || LOCAL_MODEL_DEEP));
   }
   if (persist && quality.length > 0) {
     try {
@@ -230,6 +231,78 @@ function normalizeSentimentScore(rawSentiment) {
   return 0.5;
 }
 
+function safeJsonParse(text) {
+  const cleaned = String(text || '')
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/```json/gi, '```')
+    .trim();
+  if (!cleaned) return null;
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const fenced = cleaned.match(/```([\s\S]*?)```/);
+    if (fenced) {
+      try {
+        return JSON.parse(String(fenced[1] || '').trim());
+      } catch {
+        // continue
+      }
+    }
+    const firstBrace = cleaned.indexOf('{');
+    const lastBrace = cleaned.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace > firstBrace) {
+      try {
+        return JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+}
+
+function splitProviderModel(spec = '') {
+  const text = String(spec || '');
+  if (text.startsWith('groq/')) {
+    return { provider: 'groq', model: text.slice('groq/'.length) };
+  }
+  return { provider: 'local', model: text };
+}
+
+async function callChronosStructuredModel(modelSpec, prompt, { maxTokens = 256, temperature = 0.1, timeoutMs = 30000 } = {}) {
+  const { provider, model } = splitProviderModel(modelSpec);
+
+  if (provider === 'local') {
+    const parsed = await callLocalLLMJSON(model, prompt, { max_tokens: maxTokens, temperature, timeoutMs });
+    return {
+      parsed,
+      source: parsed ? 'local_llm' : 'fallback',
+      model,
+    };
+  }
+
+  const systemPrompt = prompt.find((item) => item.role === 'system')?.content || '';
+  const userPrompt = prompt.find((item) => item.role === 'user')?.content || '';
+  const { text } = await callWithFallback({
+    chain: [{ provider, model, maxTokens, temperature, timeoutMs }],
+    systemPrompt,
+    userPrompt,
+    logMeta: {
+      team: 'investment',
+      bot: 'chronos',
+      requestType: 'backtest_quality_eval',
+    },
+    timeoutMs,
+    team: 'investment',
+    purpose: 'backtest_quality_eval',
+  });
+  return {
+    parsed: safeJsonParse(text),
+    source: provider,
+    model: modelSpec,
+  };
+}
+
 function passesLayer2SentimentGate(action, sentimentScore) {
   if (!Number.isFinite(sentimentScore)) return false;
 
@@ -244,24 +317,27 @@ function passesLayer2SentimentGate(action, sentimentScore) {
 }
 
 function normalizeLayer2Signal(signal, response = null) {
-  const sentimentScore = normalizeSentimentScore(response?.sentiment);
+  const parsed = response?.parsed || response;
+  const sentimentScore = normalizeSentimentScore(parsed?.sentiment);
   const passedLayer2 = passesLayer2SentimentGate(signal.action, sentimentScore);
   return {
     ...signal,
     sentiment: {
       score: sentimentScore,
-      reason: response?.reason || response?.reasoning || '',
-      source: response ? 'local_llm' : 'fallback',
-      raw: response || null,
+      reason: parsed?.reason || parsed?.reasoning || '',
+      source: response?.source || (parsed ? 'local_llm' : 'fallback'),
+      model: response?.model || null,
+      raw: parsed || null,
     },
     passedLayer2,
   };
 }
 
 function normalizeLayer3Decision(signal, response = null) {
-  const action = String(response?.decision || response?.action || 'HOLD').toUpperCase();
-  const confidence = Number(response?.confidence || 0);
-  const riskLevel = String(response?.riskLevel || response?.risk_level || 'high');
+  const parsed = response?.parsed || response;
+  const action = String(parsed?.decision || parsed?.action || 'HOLD').toUpperCase();
+  const confidence = Number(parsed?.confidence || 0);
+  const riskLevel = String(parsed?.riskLevel || parsed?.risk_level || 'high');
   const atrRatio = signal.indicators?.atr && signal.close ? signal.indicators.atr / signal.close : null;
   const riskAdjustedAction = atrRatio != null && atrRatio > 0.05 ? 'HOLD' : action;
 
@@ -270,10 +346,11 @@ function normalizeLayer3Decision(signal, response = null) {
     judge: {
       action,
       confidence: Number.isFinite(confidence) ? confidence : 0,
-      reasoning: response?.reason || response?.reasoning || 'local_llm_unparsed',
+      reasoning: parsed?.reason || parsed?.reasoning || 'local_llm_unparsed',
       riskLevel,
-      source: response ? 'local_llm' : 'fallback',
-      raw: response || null,
+      source: response?.source || (parsed ? 'local_llm' : 'fallback'),
+      model: response?.model || null,
+      raw: parsed || null,
     },
     finalAction: riskAdjustedAction,
   };
@@ -420,11 +497,14 @@ async function runLayer1(symbol, from, to, options = {}, timeframe = '1h') {
 }
 
 async function runLayer2(layer1Result, options = {}) {
-  const available = await isLocalLLMAvailable();
+  const layer2Model = String(options.layer2Model || LOCAL_MODEL_FAST);
+  const { provider: layer2Provider } = splitProviderModel(layer2Model);
+  const available = layer2Provider !== 'local' ? true : await isLocalLLMAvailable();
   if (!available) {
     return {
       ...layer1Result,
       layer2Status: 'llm_unavailable',
+      layer2ModelUsed: layer2Model,
       layer2Signals: [],
       layer2PassedSignals: [],
       layer2Summary: { buy: 0, sell: 0, hold: 0, passed: 0 },
@@ -440,7 +520,7 @@ async function runLayer2(layer1Result, options = {}) {
       { role: 'system', content: '암호화폐 감성 분석가다. 반드시 JSON만 답한다. 형식: {"sentiment":0.65,"reason":"이유"} sentiment는 0~1 범위다.' },
       { role: 'user', content: `symbol=${layer1Result.symbol}, ts=${signal.ts}, RSI=${signal.indicators.rsi?.toFixed?.(2) || 'null'}, MACD_hist=${signal.indicators.macd?.histogram?.toFixed?.(4) || 'null'}, volume_ratio=${signal.indicators.volumeRatio?.toFixed?.(2) || 'null'}, action=${signal.action}` },
     ];
-    const sentiment = await callLocalLLMJSON(LOCAL_MODEL_FAST, prompt, { max_tokens: 180, temperature: 0.1 });
+    const sentiment = await callChronosStructuredModel(layer2Model, prompt, { maxTokens: 180, temperature: 0.1, timeoutMs: 30000 });
     layer2Signals.push(normalizeLayer2Signal(signal, sentiment));
   }
 
@@ -450,6 +530,7 @@ async function runLayer2(layer1Result, options = {}) {
   return {
     ...layer1Result,
     layer2Status: 'ok',
+    layer2ModelUsed: layer2Model,
     layer2Signals,
     layer2PassedSignals,
     layer2Summary: {
@@ -465,11 +546,14 @@ async function runLayer2(layer1Result, options = {}) {
 }
 
 async function runLayer3(layer2Result, options = {}) {
-  const available = await isLocalLLMAvailable();
+  const layer3Model = String(options.layer3Model || LOCAL_MODEL_DEEP);
+  const { provider: layer3Provider } = splitProviderModel(layer3Model);
+  const available = layer3Provider !== 'local' ? true : await isLocalLLMAvailable();
   if (!available) {
     return {
       ...layer2Result,
       layer3Status: 'llm_unavailable',
+      layer3ModelUsed: layer3Model,
       finalSignals: [],
       finalSummary: { buy: 0, sell: 0, hold: 0 },
     };
@@ -484,7 +568,11 @@ async function runLayer3(layer2Result, options = {}) {
       { role: 'system', content: '당신은 루나 투자 팀장이다. 추론 설명이나 <think>, 마크다운 없이 JSON 객체 하나만 답한다. 형식: {"decision":"BUY|SELL|HOLD","confidence":0.75,"reason":"이유","riskLevel":"low|medium|high"}' },
       { role: 'user', content: `symbol=${layer2Result.symbol}, ts=${signal.ts}, 기술=${signal.action}, score=${signal.score}, RSI=${signal.indicators.rsi?.toFixed?.(2) || 'null'}, sentiment=${signal.sentiment?.score ?? 0.5}` },
     ];
-    const judge = await callLocalLLMJSON(LOCAL_MODEL_DEEP, prompt, { max_tokens: 512, temperature: 0.1, timeoutMs: 180000 });
+    const judge = await callChronosStructuredModel(layer3Model, prompt, {
+      maxTokens: 512,
+      temperature: 0.1,
+      timeoutMs: /deepseek|32b|70b|reason/i.test(layer3Model) ? 180000 : 45000,
+    });
     finalSignals.push(normalizeLayer3Decision(signal, judge));
   }
 
@@ -493,6 +581,7 @@ async function runLayer3(layer2Result, options = {}) {
   return {
     ...layer2Result,
     layer3Status: 'ok',
+    layer3ModelUsed: layer3Model,
     finalSignals,
     finalSummary: summarizeLayerActions(finalSignals, 'finalAction'),
     totalTrades: finalTradeStats.totalTrades,
@@ -512,9 +601,13 @@ if (isDirectExecution(import.meta.url)) {
       const toArg = parseArg('to', kst.today());
       const layerArg = parseArg('layer', '1');
       const maxSignalsArg = parseArg('max-signals', null);
+      const layer2ModelArg = parseArg('layer2-model', null);
+      const layer3ModelArg = parseArg('layer3-model', null);
       const measureQuality = parseArg('measure-quality', null) != null;
       const result = await runBacktest(symbolArg, fromArg, toArg, layerArg, {
         maxSignals: maxSignalsArg == null ? null : Number(maxSignalsArg),
+        layer2Model: layer2ModelArg || undefined,
+        layer3Model: layer3ModelArg || undefined,
       });
       if (measureQuality) {
         result.quality = await measureBacktestQuality(result, { persist: true });
