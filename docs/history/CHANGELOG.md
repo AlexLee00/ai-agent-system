@@ -3,6 +3,30 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 13주차 보안 패치 (2026-04-17) — SEC-004/005 완전 밀폐
+
+### SEC-005 (CRITICAL) — docs/codex/ 구조적 재발 방지 3중 방어
+- `.gitignore`: `docs/codex/` → `docs/codex/*` + `!docs/codex/README.md` (파일단위 ignore)
+- `scripts/pre-commit` 섹션 3.5: gitignore 우회 강제 추적 차단 (docs/codex/, docs/strategy/, PATCH_REQUEST.md)
+- `docs/codex/README.md` 신규 생성 (유일 추적 파일 — 규칙 명문화)
+
+### SEC-004 (MEDIUM) — 네메시스 재검증 가드 전 경로 밀폐
+- `hephaestos.ts executeSignal`: BUY 전용 가드 (SELL=포지션청산 예외, PAPER모드 예외)
+  - verdict 없음/rejected → `sec004_nemesis_bypass_guard` 차단
+  - 승인 후 5분 초과 stale → `sec004_stale_approval` 차단
+  - CLI 어드민 직접실행에 `nemesis_verdict: 'approved'` 주입
+- `nemesis.ts evaluateSignal`: `nemesis_verdict: 'approved'|'modified'|'rejected'` + `approved_at` 모든 리턴 경로에 포함
+  - ADJUST 경로 `finalVerdict='modified'` 정확 반영
+  - `adaptiveResult` 스코프 상단 선언 (BUY 블록 밖 참조 보장)
+- `db.ts insertSignal / insertSignalIfFresh`: `nemesis_verdict`, `approved_at` INSERT/pass-through
+- `db.ts initSchema`: `nemesis_verdict TEXT`, `approved_at TIMESTAMPTZ` 자동 컬럼 추가 루프
+- `l30-signal-save.ts`: `risk.nemesis_verdict`, `risk.approved_at` → DB 저장
+- `force-exit-runner.ts createForceExitSignal`: `nemesisVerdict: 'approved'` 주입 (SELL 이중 보호)
+- `migrations/20260417_sec004_signal_verdict.sql`: 마이그레이션 파일 생성
+- `__tests__/hephaestos-guard.test.ts`: 15개 케이스 전부 통과
+
+---
+
 ## 13주차 운영 점검 (2026-04-17) — Luna parallel ops report 경로 재정렬
 
 - `bots/investment/scripts/parallel-ops-snapshot.ts`
