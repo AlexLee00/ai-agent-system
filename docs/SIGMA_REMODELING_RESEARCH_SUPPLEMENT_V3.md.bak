@@ -172,7 +172,7 @@ skills/claude-api/
 ### 3.4 skill 포맷 1개로 3계층 노출 (DRY)
 
 ```
-bots/sigma/skills/data-quality-guard/
+packages/skills/sigma/data-quality-guard/
 ├ SKILL.md              ← Layer 2: Claude Code가 로드 (Anthropic 포맷)
 ├ elixir/
 │   └ data_quality_guard.ex   ← Layer 1: Jido.Action 네이티브 구현
@@ -302,7 +302,7 @@ end
 ```
 Layer 2 (v3 최종): anthropics/skills 호환 Claude Code Plugin
   ├ .claude-plugin/                 ← 메타데이터 (plugin-name, version, dependencies)
-  ├ bots/sigma/skills/           ← 스킬 5개 디렉토리
+  ├ packages/skills/sigma/           ← 스킬 5개 디렉토리
   │   ├ data-quality-guard/
   │   │   ├ SKILL.md                 ← Layer 2 표면
   │   │   └ elixir/
@@ -419,14 +419,14 @@ Phase 5에서 필요시 재검토 (다른 팀 리모델 시).
 ### 7.2 §2 Skeleton에 추가 모듈 2개
 
 ```
-bots/sigma/elixir/lib/sigma/v2/
+elixir/team_jay/lib/team_jay/sigma/v2/
 ├ (기존 31차 설계)
 ├ telemetry.ex                  — v3 추가: Jido.Observe handler + OTel setup
 └ memory/
    └ l2_pgvector.ex             — v3 추가: Sigma.V2.Memory.L2 (pgvector action)
 ```
 
-### 7.3 §3 `bots/sigma/skills/` 5개 SKILL.md 추가
+### 7.3 §3 `packages/skills/sigma/` 5개 SKILL.md 추가
 
 v2에서 언급만 했던 skill 마크다운을 **Phase 0에서 완성**.
 
@@ -439,7 +439,7 @@ v2에서 언급만 했던 skill 마크다운을 **Phase 0에서 완성**.
 
 ### 7.4 §4 Claude Code Plugin 메타데이터
 
-새 파일: `bots/sigma/skills/.claude-plugin/plugin.json`
+새 파일: `packages/skills/sigma/.claude-plugin/plugin.json`
 
 ```json
 {
@@ -460,10 +460,10 @@ v2에서 언급만 했던 skill 마크다운을 **Phase 0에서 완성**.
 ### 7.5 Exit Criteria v3 추가
 
 ```
-[ ] bots/sigma/skills/.claude-plugin/plugin.json 생성
+[ ] packages/skills/sigma/.claude-plugin/plugin.json 생성
 [ ] 5개 skill 디렉토리 + SKILL.md (각 3~6KB)
-[ ] bots/sigma/elixir/lib/sigma/v2/telemetry.ex skeleton
-[ ] bots/sigma/elixir/lib/sigma/v2/memory/l2_pgvector.ex skeleton
+[ ] elixir/team_jay/lib/team_jay/sigma/v2/telemetry.ex skeleton
+[ ] elixir/team_jay/lib/team_jay/sigma/v2/memory/l2_pgvector.ex skeleton
 [ ] mix deps.get 성공 (pgvector 포함)
 [ ] Claude Code에서 /plugin install sigma-skills@local 테스트 (선택, 마스터 확인용)
 ```

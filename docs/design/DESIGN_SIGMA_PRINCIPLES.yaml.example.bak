@@ -9,7 +9,7 @@
 #      대해 "이 원칙과 부합하는가"를 판단. 부합하지 않으면 Directive 차단
 #      또는 Tier 강등.
 #
-# 실제 배포 파일: bots/sigma/config/sigma_principles.yaml (Phase 0에서 생성)
+# 실제 배포 파일: elixir/team_jay/config/sigma_principles.yaml (Phase 0에서 생성)
 
 version: "1.0.0"
 last_updated: "2026-04-17"

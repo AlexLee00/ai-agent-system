@@ -80,7 +80,7 @@
 ├───────────────────────────────────────────────────────────┤
 │ bots/orchestrator/src/            │    1   │   263        │  ← 진입점
 │   └ sigma-daily.ts                                         │
-│ bots/sigma/ts/lib/      │    3   │   946        │  ← 핵심 로직
+│ bots/orchestrator/lib/sigma/      │    3   │   946        │  ← 핵심 로직
 │   ├ sigma-analyzer.ts                         168          │
 │   ├ sigma-scheduler.ts                        287          │
 │   └ sigma-feedback.ts                         491          │
@@ -88,7 +88,7 @@
 │   ├ analyzer.ex                                86          │
 │   ├ scheduler.ex                              138          │
 │   └ feedback.ex                               163          │
-│ bots/sigma/legacy-skills/   │    5   │   308        │  ← 죽은 코드
+│ packages/core/lib/skills/sigma/   │    5   │   308        │  ← 죽은 코드
 │   ├ data-quality-guard.ts                     114          │
 │   ├ causal-check.ts                            52          │
 │   ├ experiment-design.ts                       63          │
@@ -201,7 +201,7 @@ return pgPool.get(SCHEMA, `
 
 ### 🔴 P1-002 [HIGH] Skills 5개 죽은 코드
 
-**문제**: `bots/sigma/legacy-skills/*.ts`가 존재하지만 `grep -r 'evaluateDataset\|evaluateCausalRisk\|evaluateExperimentDesign\|planFeatures\|buildObservabilityPlan' bots/orchestrator/` 결과 0건.
+**문제**: `packages/core/lib/skills/sigma/*.ts`가 존재하지만 `grep -r 'evaluateDataset\|evaluateCausalRisk\|evaluateExperimentDesign\|planFeatures\|buildObservabilityPlan' bots/orchestrator/` 결과 0건.
 
 **영향**: 300줄의 잘 설계된 함수가 운영에 기여하지 않음. 보수 비용만 발생.
 
@@ -536,7 +536,7 @@ end
 
 #### 5.2.1 현재 상태
 
-**Skills**: `bots/sigma/legacy-skills/*.ts` 5개, **Node.js 내부 함수**로만 사용 가능. 다른 에이전트(claude.ai 대화, Codex, 외부 LLM)에서 호출 불가.
+**Skills**: `packages/core/lib/skills/sigma/*.ts` 5개, **Node.js 내부 함수**로만 사용 가능. 다른 에이전트(claude.ai 대화, Codex, 외부 LLM)에서 호출 불가.
 
 **MCP**: 프로젝트에 이미 `bots/investment/scripts/tradingview-mcp-server.py` 존재. Anthropic MCP 타입 패키지 설치됨 (`bots/ska/venv/.../anthropic/types/beta/beta_mcp_*`).
 
@@ -569,7 +569,7 @@ end
 │   - Progressive Disclosure: 이름만 먼저, 호출 시 전체 로드    │
 │                                                             │
 │ Layer 3: TS Skill 폐기 (Phase 3)                            │
-│   bots/sigma/legacy-skills/*.ts → archive             │
+│   packages/core/lib/skills/sigma/*.ts → archive             │
 │   단, JS/TS 봇이 여전히 필요 시 MCP client로 접근            │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -962,7 +962,7 @@ end
 │   크기: 수 GB까지 무제한 (pgvector)                             │
 ├────────────────────────────────────────────────────────────────┤
 │ L3 — 스킬 메모리 (마크다운 파일, 점진적 노출)                    │
-│   `bots/sigma/legacy-skills/` 각 스킬은                   │
+│   `packages/core/lib/skills/sigma/` 각 스킬은                   │
 │     L0: 이름 + 1줄 설명 (기본 로드, 20토큰/skill)              │
 │     L1: 전체 스킬 문서 (호출 시에만 로드)                       │
 │   Jido plugin이 on-demand 로드                                  │
@@ -1100,7 +1100,7 @@ ls elixir/team_jay/lib/team_jay/darwin/ 2>/dev/null
 
 **작업**:
 1. `mix.exs`에 Jido 생태계 의존성 추가 (`jido ~> 2.0`, `jido_action`, `jido_signal`, `jido_ai`, `req_llm`)
-2. `bots/sigma/elixir/lib/sigma/v2/` 새 디렉토리 생성 (v2 네임스페이스)
+2. `elixir/team_jay/lib/team_jay/sigma/v2/` 새 디렉토리 생성 (v2 네임스페이스)
 3. 기존 `lib/team_jay/jay/sigma/*`는 유지 (shadow mode 비교용)
 4. `docs/SIGMA_REMODELING_PLAN_2026-04-17.md` 마스터 승인
 5. 롤백 계획 문서 작성 (`docs/SIGMA_REMODELING_ROLLBACK.md`)
@@ -1231,9 +1231,9 @@ ls elixir/team_jay/lib/team_jay/darwin/ 2>/dev/null
 **작업**:
 
 **5.1 TS 시그마 폐기**
-- `bots/sigma/ts/lib/*.ts` → `docs/archive/sigma-legacy/` 이관
-- `bots/sigma/ts/src/sigma-daily.ts` → thin adapter로 축소 (Jido v2 호출)
-- `bots/sigma/legacy-skills/*.ts` → Elixir Jido Action으로 교체 완료 후 archive
+- `bots/orchestrator/lib/sigma/*.ts` → `docs/archive/sigma-legacy/` 이관
+- `bots/orchestrator/src/sigma-daily.ts` → thin adapter로 축소 (Jido v2 호출)
+- `packages/core/lib/skills/sigma/*.ts` → Elixir Jido Action으로 교체 완료 후 archive
 
 **5.2 Sigma MCP Server**
 - `elixir/team_jay/lib/team_jay/sigma/mcp_server.ex`
