@@ -15,7 +15,9 @@ defmodule Sigma.V2.Memory.L2 do
       threshold: Zoi.default(Zoi.float(), 0.3)
     })
 
-  @embed_url "http://localhost:11434/api/embeddings"
+  # MLX-openai-server (OpenAI 호환, launchd ai.mlx.server, port 11434)
+  # 루나팀 실사용 중인 형식 (POST /v1/embeddings with "input" key)
+  @embed_url "http://localhost:11434/v1/embeddings"
   @embed_model "qwen3-embed-0.6b"
 
   @impl Jido.Action
@@ -79,12 +81,20 @@ defmodule Sigma.V2.Memory.L2 do
     end
   end
 
-  @doc "쿼리 텍스트를 Qwen3-Embedding-0.6B로 1024차원 벡터로 변환."
+  @doc """
+  쿼리 텍스트를 MLX Qwen3-Embedding-0.6B로 1024차원 벡터로 변환.
+  OpenAI 호환 API (`/v1/embeddings`, `input` 키, `data[0].embedding` 응답).
+  """
   @spec encode(String.t()) :: {:ok, [float()]} | {:error, term()}
   def encode(text) when is_binary(text) do
-    body = Jason.encode!(%{model: @embed_model, prompt: text})
+    body = Jason.encode!(%{model: @embed_model, input: text})
 
     case Req.post(@embed_url, body: body, headers: [{"content-type", "application/json"}], receive_timeout: 10_000) do
+      # OpenAI 호환 형식: {"data": [{"embedding": [...]}]}
+      {:ok, %{status: 200, body: %{"data" => [%{"embedding" => embedding} | _]}}} when is_list(embedding) ->
+        {:ok, embedding}
+
+      # 폴백: 혹시 Ollama 형식 응답 (다른 버전 호환용)
       {:ok, %{status: 200, body: %{"embedding" => embedding}}} when is_list(embedding) ->
         {:ok, embedding}
 
