@@ -5,6 +5,13 @@ defmodule Jay.Core.Diagnostics do
   use GenServer
   require Logger
 
+  @compile {:no_warn_undefined, [
+    TeamJay.Teams.InvestmentSupervisor,
+    TeamJay.Teams.BlogSupervisor,
+    TeamJay.Teams.WorkerSupervisor,
+    TeamJay.Teams.PlatformSupervisor
+  ]}
+
   @check_interval 30_000
   @msg_queue_warn 100
   @memory_warn 260_000_000
@@ -370,7 +377,6 @@ defmodule Jay.Core.Diagnostics do
 
     actual_elixir =
       [
-        TeamJay.Teams.DarwinSupervisor.agent_labels(),
         TeamJay.Teams.InvestmentSupervisor.agent_labels(),
         TeamJay.Teams.BlogSupervisor.agent_labels(),
         TeamJay.Teams.WorkerSupervisor.agent_labels(),
