@@ -65,6 +65,7 @@ defmodule TeamJay.Application do
       TeamJay.Teams.WorkerShadowSupervisor,
       TeamJay.Teams.PlatformShadowSupervisor,
       TeamJay.Teams.JaySupervisor,
+      Sigma.V2.Supervisor,
       TeamJay.Diagnostics,
       TeamJay.Scheduler
     ]
