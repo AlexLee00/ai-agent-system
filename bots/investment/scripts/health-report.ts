@@ -11,6 +11,7 @@
  */
 
 import path from 'path';
+import fs from 'node:fs';
 import { createRequire } from 'module';
 import { fileURLToPath, pathToFileURL } from 'url';
 import gemmaPilot from '../../../packages/core/lib/gemma-pilot.js';
@@ -74,6 +75,14 @@ const CONTINUOUS = [
   'ai.investment.commander',
 ];
 
+const CONTINUOUS_RUNTIME_CHECKS = {
+  'ai.investment.commander': {
+    type: 'lockfile',
+    path: path.join(process.env.HOME || '', '.openclaw', 'workspace', 'luna-commander.lock'),
+    description: '루나 commander 실행 중',
+  },
+};
+
 const ALL_SERVICES = [
   'ai.investment.commander',
   'ai.investment.crypto',
@@ -125,6 +134,32 @@ function labelToPortAgentName(label) {
     .replace(/[.-]+/g, '_');
 }
 
+function isPidAlive(pid) {
+  try {
+    process.kill(Number(pid), 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isContinuousServiceHealthy(label = '') {
+  const check = CONTINUOUS_RUNTIME_CHECKS[label];
+  if (!check) return false;
+
+  if (check.type === 'lockfile') {
+    try {
+      if (!fs.existsSync(check.path)) return false;
+      const pid = String(fs.readFileSync(check.path, 'utf8') || '').trim();
+      return pid !== '' && isPidAlive(pid);
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
+}
+
 async function loadElixirOwnedInvestmentRows(labels = []) {
   if (!labels.length) return { ok: [], warn: [] };
 
@@ -164,6 +199,10 @@ async function loadElixirOwnedInvestmentRows(labels = []) {
 
     const eventType = String(latest.event_type || '');
     if (eventType === 'port_agent_failed') {
+      if (CONTINUOUS.includes(label) && isContinuousServiceHealthy(label)) {
+        ok.push(`  ${shortName}: Elixir ownership (runtime healthy despite prior failure)`);
+        continue;
+      }
       warn.push(`  ${shortName}: Elixir ownership / 최근 PortAgent 실패`);
       continue;
     }
