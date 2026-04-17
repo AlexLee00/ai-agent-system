@@ -711,3 +711,140 @@ grep -A 3 "3.5. gitignore 우회 차단" .git/hooks/pre-commit
 **SEC-003 완전 완료(다른 세션). SEC-005 재발 방지 3중 방어(gitignore + 훅 + README) 구축 완료. 2단위 감사는 다음 세션에.**
 
 — 메티 (2026-04-17 밤)
+
+
+---
+
+## 📍 5차 세션 증분 업데이트 (2026-04-17 밤 메티) — 정정 + SEC-004/005 프롬프트 작성
+
+> 4차 세션 핸드오버를 읽고 검증 중 **핸드오버 주장과 실제 상태 불일치** 발견. 정정 기록.
+
+### 🎉 세션 열기 전 완료된 것들
+
+```
+커밋 55629754 "docs(handoff): append 4th session increment — SEC-005 structural prevention"
+커밋 665d6e75 "chore(js-to-ts): launchd 전환 완료 — 모든 서비스 tsx 기반 전환"
+```
+
+**중요**: 4차 핸드오버는 커밋 `d37a85f4`로 SEC-005 방어 3건을 구축했다고 주장하지만, 실제 Git에 해당 SHA 없음. filter-repo 재작성 과정에서 소실된 것으로 추정.
+
+**현재 실제 상태 (5차 세션 점검 결과)**:
+```
+.gitignore        → 원래 상태 (docs/codex/ 단일 라인, README 예외 없음)
+scripts/pre-commit → 원래 상태 (섹션 3.5 없음)
+docs/codex/README.md → 존재하지 않음
+```
+
+**즉 SEC-005 구조적 방어는 아직 미구축 상태**. 다음 세션에서 반드시 구축 필요.
+
+### 🏆 마스터가 직접 완료한 것 (큰 진전)
+
+1. **히스토리 정리**: filter-repo로 main 브랜치 민감값 완전 제거
+2. **Elixir 브랜치 3개 삭제**: phase1/2/3-prototype 원격 삭제 → 최종 노출 제거
+
+**현재 origin 상태 (이번 세션 검증 완료)**:
+```
+원격 브랜치: origin/main 1개만 남음 (깔끔)
+원격 히스토리 민감값: 3종 패턴 (<KIS_ACCOUNT_PREFIX>, <KIS_PAPER_PREFIX>, <USDT_ADDR_PREFIX>) 모두 0건
+```
+
+**🎉 SEC-002 + SEC-005 실질적 종결** (Public Git 어디서도 민감값 조회 불가 상태).
+
+### 📝 이번 세션 작업
+
+**작성 완료**: `docs/codex/CODEX_SECURITY_AUDIT_02.md` (476줄)
+
+- **Task 1 (SEC-005)**: 구조적 재발 방지 3중 방어
+  - `.gitignore` 리팩터 (`docs/codex/*` + `!docs/codex/README.md`)
+  - `scripts/pre-commit` 섹션 3.5 추가 (gitignore 우회 차단)
+  - `docs/codex/README.md` 신규 (규칙 명문화, 유일한 추적 파일)
+
+- **Task 2 (SEC-004)**: 네메시스 재검증 가드
+  - `hephaestos.ts:executeSignal` 시작부 가드
+  - `nemesis_verdict` 필드 + `approved_at` 타임스탬프 검증
+  - paper 모드는 우회 (테스트 편의), live 모드만 엄격
+  - stale signal 5분 초과 거절
+  - signals 테이블 마이그레이션 포함
+
+각 태스크 수락 기준 + 검증 절차 + 테스트 케이스 포함.
+
+### 🛑 커밋 보류 이유
+
+다른 Claude Code 세션이 **tsx 전환 작업 중** (`665d6e75`). 로컬 워킹트리에 대규모 변경 진행 중 (`.js` → `.legacy.js` 리네임 17개 파일). 경합 방지 위해 이 세션에서는 **커밋/push 하지 않음**.
+
+**남긴 것**:
+- `docs/codex/CODEX_SECURITY_AUDIT_02.md` — 로컬 전용, gitignore에 의해 자동 보호됨
+- 이 핸드오버 증분 섹션 (다음 세션이 커밋 결정)
+
+### 📊 감사 진행률 (5차 세션 기준, 정확한 수치)
+
+```
+1단위 Hub:
+  SEC-001 (HIGH)     Hub 바인딩        ✅ 완료
+  SEC-002 (MEDIUM)   config.yaml       ✅ 완료 (히스토리 정리 + 브랜치 삭제로 종결)
+  SEC-003 (LOW-MED)  SQL 가드          ✅ 완료
+
+2단위 투자팀:
+  SEC-004 (MEDIUM)   네메시스 재검증   ⏳ 프롬프트 작성 완료, 구현 대기
+  P0 매매 경로 나머지: markets/*, kis-client, upbit-client  ⬜ 다음 세션
+  P1 인증/시크릿: secrets.ts, luna-commander.cjs, l21-llm-risk  ⬜ 다음 세션
+
+거버넌스:
+  SEC-005 (CRITICAL) docs/codex 민감값 재노출
+    - 사건 대응: ✅ 완료 (origin/main 노출 0건)
+    - 구조 방어: ⏳ 프롬프트 작성 완료, 구현 대기
+
+전체 진행률: 약 50%
+  - SEC-001/002/003 완료
+  - SEC-004/005 프롬프트 준비 완료, 구현 대기
+  - 2단위 감사 나머지 대기
+```
+
+### 📋 다음 세션 최우선 작업
+
+```
+1. 다른 세션 tsx 작업 완료 확인:
+   □ git log --oneline -3 → "chore(js-to-ts)" 이후 추가 커밋 확인
+   □ git status → 로컬 워킹트리 깨끗한지 (대규모 .js/.legacy.js 삭제/추가 남았는지)
+
+2. SEC-005 구축 (P0):
+   □ docs/codex/CODEX_SECURITY_AUDIT_02.md Task 1 코덱스에 전달
+   □ 또는 메티가 직접 구축 (간단한 파일 3개 작업)
+   □ 검증 후 커밋: "security(SEC-005): ..."
+
+3. SEC-004 구축 (P1):
+   □ CODEX_SECURITY_AUDIT_02.md Task 2 코덱스에 전달
+   □ paper 모드 먼저 배포 → 관찰 → live 적용
+   □ 기존 signal backfill 여부 판단 (nemesis_verdict 컬럼 신설 시)
+
+4. 2단위 감사 재개:
+   □ markets/crypto.ts, kis-client.ts, upbit-client.ts
+   □ shared/secrets.ts (Hub secrets 소비)
+   □ luna-commander.cjs (자율 루프 방어)
+   □ nodes/l21-llm-risk.ts (네메시스 호출 경로)
+
+5. USDT 지갑 로테이션 결정:
+   □ 블록체인에 이미 노출된 주소
+   □ 새 주소 발급 → 기존 주소 비우기 → 운영 전환
+   □ 마스터 판단
+```
+
+### ⚠️ 다음 메티가 주의할 것
+
+**4차 세션 핸드오버의 d37a85f4 커밋 참조는 실제로 존재하지 않음**. 이번 5차 세션이 정정 기록 남김. 앞으로 핸드오버 읽을 때 **커밋 SHA가 실제 존재하는지 먼저 확인**하는 습관 필요:
+
+```bash
+git log --all --oneline | grep <SHA> || echo "⚠️ 핸드오버 주장과 달리 존재하지 않음"
+```
+
+### 💡 이번 세션 재발 방지 교훈
+
+- **"주장"과 "구현" 구분**: 핸드오버 문서는 작성자의 주관이 섞일 수 있음. 항상 실제 Git 상태로 검증.
+- **동시 세션 경합**: 여러 Claude Code 세션이 동시에 돌면 커밋이 사라질 수 있음. 메티 작업은 docs/ 영역에 국한시키는 것이 안전.
+- **gitignore 자동 보호 신뢰**: 이번 세션에서 CODEX_SECURITY_AUDIT_02.md는 `git check-ignore`로 확인했고 자동으로 보호됨. `git status`에도 안 떠서 실수 커밋 방지.
+
+### 🏷️ 5차 세션 요약 한 줄
+
+**마스터가 히스토리 정리 + Elixir 브랜치 삭제로 SEC-002/005 종결. 메티는 CODEX_SECURITY_AUDIT_02.md (SEC-004/005 구조 방어) 작성 후 다른 세션 tsx 작업 완료 대기.**
+
+— 메티 (2026-04-17 밤, 5차 세션)

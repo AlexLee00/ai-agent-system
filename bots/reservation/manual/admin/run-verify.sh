@@ -9,8 +9,8 @@
 #   4. 로그 → /tmp/pickko-verify.log (최근 500줄 유지)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-NODE="/opt/homebrew/bin/node"
-RUNTIME_SCRIPT="/Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/admin/pickko-verify.js"
+NODE="/opt/homebrew/bin/tsx"
+RUNTIME_SCRIPT="/Users/alexlee/projects/ai-agent-system/bots/reservation/manual/admin/pickko-verify.ts"
 LOCK_FILE="$HOME/.openclaw/workspace/pickko-verify.lock"
 LOG_FILE="/tmp/pickko-verify.log"
 

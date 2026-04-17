@@ -2,8 +2,8 @@
 # pickko-pay-scan 자동 실행 래퍼
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-NODE="/opt/homebrew/bin/node"
-RUNTIME_SCRIPT="/Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/auto/scheduled/pickko-pay-scan.js"
+NODE="/opt/homebrew/bin/tsx"
+RUNTIME_SCRIPT="/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/scheduled/pickko-pay-scan.ts"
 LOCK_FILE="$HOME/.openclaw/workspace/pickko-pay-scan.lock"
 LOG_FILE="/tmp/pickko-pay-scan.log"
 

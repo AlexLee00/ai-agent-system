@@ -5,8 +5,8 @@
 # - 로그 유지 (날짜별 아카이브, 7일 보존)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-NODE="/opt/homebrew/bin/node"
-RUNTIME_SCRIPT="/Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/auto/monitors/pickko-kiosk-monitor.js"
+NODE="/opt/homebrew/bin/tsx"
+RUNTIME_SCRIPT="/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/pickko-kiosk-monitor.ts"
 LOCK_FILE="$HOME/.openclaw/workspace/pickko-kiosk-monitor.lock"
 LOG_DIR="/tmp"
 LOG_DATE=$(date '+%Y-%m-%d')

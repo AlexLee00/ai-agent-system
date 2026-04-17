@@ -6,7 +6,7 @@ set -euo pipefail
 
 PLIST="$HOME/Library/LaunchAgents/ai.ska.naver-monitor.plist"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-MONITOR="/Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/auto/monitors/naver-monitor.js"
+MONITOR="/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/naver-monitor.ts"
 SERVICE="gui/$(id -u)/ai.ska.naver-monitor"
 
 ensure_launchd_service() {

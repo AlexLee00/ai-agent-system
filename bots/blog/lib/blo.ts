@@ -79,7 +79,7 @@ const {
   buildNoticeEvent,
   renderNoticeEvent,
 }                                                   = require('../../../packages/core/lib/reporting-hub');
-const stateBus                                      = require(path.join(env.PROJECT_ROOT, 'dist/ts-runtime/bots/reservation/lib/state-bus.js'));
+const stateBus                                      = require(path.join(env.PROJECT_ROOT, 'bots/reservation/lib/state-bus.js'));
 const DEV_HUB_READONLY                              = env.IS_DEV && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
 const competitionRuntimeConfig                      = getBlogCompetitionRuntimeConfig();
 const COMPETITION_ENABLED                           = competitionRuntimeConfig.enabled === true;
