@@ -1,4 +1,4 @@
-import env = require('./env');
+const env = require('./env.legacy.js');
 const { execFileSync } = require('child_process');
 
 type CacheEntry = {

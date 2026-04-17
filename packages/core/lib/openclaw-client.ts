@@ -8,8 +8,8 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const env = require('./env');
-const { fetchHubSecrets } = require('./hub-client');
+const env = require('./env.legacy.js');
+const { fetchHubSecrets } = require('./hub-client.legacy.js');
 
 const HOOK_URL = 'http://127.0.0.1:18789/hooks/agent';
 const TIMEOUT_MS = 30_000;

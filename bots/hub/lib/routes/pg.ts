@@ -25,7 +25,7 @@ export async function pgQueryRoute(req: any, res: any) {
     return res.status(400).json({ error: 'query rejected', reason: 'params must be an array' });
   }
 
-  const poolStats = pgPool.getPoolStats?.(schemaCheck.schema);
+  const poolStats = pgPool.getReadonlyPoolStats?.(schemaCheck.schema) || pgPool.getPoolStats?.(schemaCheck.schema);
   if (poolStats && typeof poolStats === 'object') {
     const waiting = Number(poolStats.waiting || 0);
     const active = Number(poolStats.active || 0);
@@ -48,7 +48,9 @@ export async function pgQueryRoute(req: any, res: any) {
   }
 
   try {
-    const rows = await pgPool.query(schemaCheck.schema, sqlCheck.sql, params);
+    const rows = await pgPool.queryReadonly
+      ? await pgPool.queryReadonly(schemaCheck.schema, sqlCheck.sql, params)
+      : await pgPool.query(schemaCheck.schema, sqlCheck.sql, params);
     return res.json({
       ok: true,
       schema: schemaCheck.schema,
