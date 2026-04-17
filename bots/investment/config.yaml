@@ -1,6 +1,6 @@
 trading_mode: live
 binance_mode: inherit
-kis_mode: paper
+kis_mode: live
 paper_mode: false
 dynamic_tp_sl_enabled: true
 anthropic:
