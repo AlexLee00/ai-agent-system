@@ -1663,21 +1663,20 @@ async function expandReplyThreads(page) {
 }
 
 async function openCommentPanel(page, logNo = '', testMode = false) {
-  const directSelector = [
-    logNo ? `#Comi${logNo}` : '',
-    '#btn_comment_2',
-    '.commentbox_header .btn_write_comment._naverCommentWriteBtn',
-    '.commentbox_header .btn_write_comment',
-  ]
-    .filter(Boolean)
-    .join(', ');
-
-  if (directSelector) {
-    const handle = await page.$(directSelector);
-    if (handle) {
-      await handle.evaluate((node) => node.scrollIntoView({ block: 'center', behavior: 'instant' })).catch(() => {});
-      await handle.click().catch(() => {});
-      await handle.evaluate((node) => {
+  const payload = JSON.stringify({ currentLogNo: logNo });
+  const result = await page.evaluate(`
+    (() => {
+      const { currentLogNo } = ${payload};
+      const visible = (el) => {
+        if (!el) return false;
+        const style = window.getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+      };
+      const clickNode = (node) => {
+        if (!node) return false;
+        node.scrollIntoView({ block: 'center', behavior: 'instant' });
+        try { node.click(); } catch {}
         const rect = node.getBoundingClientRect();
         const eventInit = {
           bubbles: true,
@@ -1694,147 +1693,69 @@ async function openCommentPanel(page, logNo = '', testMode = false) {
         node.dispatchEvent(new MouseEvent('mouseup', eventInit));
         node.dispatchEvent(new MouseEvent('click', eventInit));
         return true;
-      }).catch(() => false);
-      return true;
-    }
+      };
+
+      const root = currentLogNo ? document.querySelector('#naverComment_201_' + currentLogNo + '_ct') : null;
+      if (root) {
+        root.style.display = 'block';
+        root.style.visibility = 'visible';
+      }
+
+      const exactToggle =
+        (currentLogNo && document.querySelector('#Comi' + currentLogNo))
+        || document.querySelector('#btn_comment_2');
+      if (exactToggle) {
+        clickNode(exactToggle);
+      }
+
+      const writeButton = document.querySelector('.commentbox_header .btn_write_comment._naverCommentWriteBtn, .commentbox_header .btn_write_comment');
+      if (writeButton && visible(writeButton)) {
+        clickNode(writeButton);
+      }
+
+      const commentRoot = root || document.querySelector('[id^="naverComment_"][id$="_ct"], [id^="naverComment_"].u_cbox, .u_cbox_wrap');
+      if (commentRoot) {
+        commentRoot.scrollIntoView({ block: 'center', behavior: 'instant' });
+      }
+
+      return {
+        rootExists: !!root,
+        rootVisible: visible(root),
+        writeVisible: visible(writeButton),
+        toggleExists: !!exactToggle,
+      };
+    })()
+  `).catch(() => null);
+
+  if (!result?.rootVisible) {
+    await sleep(testMode ? 500 : 1200);
   }
-
-  return page.evaluate(({ currentLogNo }) => {
-    const textOf = (el) =>
-      String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
-    const visible = (el) => {
-      if (!el) return false;
-      const style = window.getComputedStyle(el);
-      const rect = el.getBoundingClientRect();
-      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-    };
-    const hiddenRoot = currentLogNo ? document.querySelector(`#naverComment_201_${currentLogNo}_ct`) : null;
-    if (hiddenRoot instanceof HTMLElement) {
-      hiddenRoot.style.display = 'block';
-      hiddenRoot.style.visibility = 'visible';
-      const writeButton = hiddenRoot.querySelector('.btn_write_comment._naverCommentWriteBtn, .btn_write_comment');
-      if (visible(writeButton)) {
-        writeButton.scrollIntoView({ block: 'center', behavior: 'instant' });
-        const rect = writeButton.getBoundingClientRect();
-        const eventInit = {
-          bubbles: true,
-          cancelable: true,
-          composed: true,
-          button: 0,
-          buttons: 1,
-          clientX: rect.left + rect.width / 2,
-          clientY: rect.top + rect.height / 2,
-        };
-        writeButton.dispatchEvent(new MouseEvent('pointerdown', eventInit));
-        writeButton.dispatchEvent(new MouseEvent('mousedown', eventInit));
-        writeButton.dispatchEvent(new MouseEvent('pointerup', eventInit));
-        writeButton.dispatchEvent(new MouseEvent('mouseup', eventInit));
-        writeButton.dispatchEvent(new MouseEvent('click', eventInit));
-        return true;
-      }
-    }
-
-    const commentRoot = document.querySelector(
-      '[id^="naverComment_"][id$="_ct"], [id^="naverComment_"].u_cbox, .u_cbox_wrap, .u_cbox_write_box, .u_cbox_comment_write, .u_cbox_write_area',
-    );
-    if (commentRoot) {
-      commentRoot.scrollIntoView({ block: 'center', behavior: 'instant' });
-      return true;
-    }
-
-    const directTargets = [
-      currentLogNo ? document.querySelector(`#Comi${currentLogNo}`) : null,
-      document.querySelector('#btn_comment_2'),
-      document.querySelector('.commentbox_header .btn_write_comment._naverCommentWriteBtn'),
-      document.querySelector('.commentbox_header .btn_write_comment'),
-    ].filter(Boolean);
-    for (const target of directTargets) {
-      if (visible(target)) {
-        target.scrollIntoView({ block: 'center', behavior: 'instant' });
-        const rect = target.getBoundingClientRect();
-        const eventInit = {
-          bubbles: true,
-          cancelable: true,
-          composed: true,
-          button: 0,
-          buttons: 1,
-          clientX: rect.left + rect.width / 2,
-          clientY: rect.top + rect.height / 2,
-        };
-        target.dispatchEvent(new MouseEvent('pointerdown', eventInit));
-        target.dispatchEvent(new MouseEvent('mousedown', eventInit));
-        target.dispatchEvent(new MouseEvent('pointerup', eventInit));
-        target.dispatchEvent(new MouseEvent('mouseup', eventInit));
-        target.dispatchEvent(new MouseEvent('click', eventInit));
-        return true;
-      }
-    }
-
-    const buttons = Array.from(document.querySelectorAll('button, a')).filter(visible);
-    const toggles = buttons.filter((btn) => /댓글\s*\d+|댓글$|댓글쓰기|댓글 쓰기/i.test(textOf(btn)) || btn.id === 'btn_comment_2' || /^Comi\d+/.test(btn.id));
-    if (!toggles.length) return false;
-    toggles[0].scrollIntoView({ block: 'center', behavior: 'instant' });
-    const rect = toggles[0].getBoundingClientRect();
-    const eventInit = {
-      bubbles: true,
-      cancelable: true,
-      composed: true,
-      button: 0,
-      buttons: 1,
-      clientX: rect.left + rect.width / 2,
-      clientY: rect.top + rect.height / 2,
-    };
-    toggles[0].dispatchEvent(new MouseEvent('pointerdown', eventInit));
-    toggles[0].dispatchEvent(new MouseEvent('mousedown', eventInit));
-    toggles[0].dispatchEvent(new MouseEvent('pointerup', eventInit));
-    toggles[0].dispatchEvent(new MouseEvent('mouseup', eventInit));
-    toggles[0].dispatchEvent(new MouseEvent('click', eventInit));
-    return true;
-  }, { currentLogNo: logNo });
+  return Boolean(result?.toggleExists || result?.rootExists);
 }
 
 async function waitForCommentPanel(page, logNo = '') {
-  const directRootSelector = [
-    logNo ? `#naverComment_201_${logNo}_ct` : '',
-    logNo ? `#naverComment_201_${logNo}` : '',
-    '.u_cbox_wrap',
-    '.u_cbox_write_box',
-    '.u_cbox_comment_write',
-    '.u_cbox_write_area',
-    '.u_cbox_btn_reply',
-    '.u_cbox_text_mention',
-    '[id*="write_textarea"]',
-  ].filter(Boolean).join(', ');
+  const payload = JSON.stringify({ currentLogNo: logNo });
+  await page.waitForFunction(`
+    (() => {
+      const { currentLogNo } = ${payload};
+      const visible = (el) => {
+        if (!el) return false;
+        const style = window.getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+      };
 
-  if (directRootSelector) {
-    await page.waitForSelector(directRootSelector, { timeout: 15000 }).catch(() => {});
-  }
+      const directRoots = [
+        currentLogNo ? document.querySelector('#naverComment_201_' + currentLogNo + '_ct') : null,
+        currentLogNo ? document.querySelector('#naverComment_201_' + currentLogNo) : null,
+      ].filter(Boolean);
+      if (directRoots.some(visible)) {
+        return true;
+      }
 
-  await page.waitForFunction(({ currentLogNo }) => {
-    const visible = (el) => {
-      if (!el) return false;
-      const style = window.getComputedStyle(el);
-      const rect = el.getBoundingClientRect();
-      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-    };
-
-    const directRoots = [
-      currentLogNo ? document.querySelector(`#naverComment_201_${currentLogNo}_ct`) : null,
-      currentLogNo ? document.querySelector(`#naverComment_201_${currentLogNo}`) : null,
-      currentLogNo ? document.querySelector(`#Comi${currentLogNo}`) : null,
-    ].filter(Boolean);
-    if (directRoots.find(visible)) {
-      return true;
-    }
-
-    return Boolean(
-      Array.from(
-        document.querySelectorAll(
-          '[id^="naverComment_"][id$="_ct"], [id^="naverComment_"].u_cbox, .u_cbox_wrap, .u_cbox_write_box, .u_cbox_comment_write, .u_cbox_write_area, .u_cbox_btn_reply, .u_cbox_text_mention, [id*="write_textarea"]',
-        ),
-      ).find(visible),
-    );
-  }, { timeout: 15000 }, { currentLogNo: logNo });
+      return Array.from(document.querySelectorAll('[id^="naverComment_"][id$="_ct"], [id^="naverComment_"].u_cbox, .u_cbox_wrap, .u_cbox_write_box, .u_cbox_comment_write, .u_cbox_write_area, .u_cbox_btn_reply, .u_cbox_text_mention, [id*="write_textarea"]')).some(visible);
+    })()
+  `, { timeout: 15000 });
 }
 
 function resolvePostContentFrame(page) {
