@@ -17,6 +17,8 @@ defmodule TeamJay.Jay.CrossTeamRouter do
   require Logger
   alias TeamJay.Jay.{CommandEnvelope, CommandTracker, Topics}
 
+  @system_risk_cooldown_seconds 900
+
   # ────────────────────────────────────────────────────────────────
   # GenServer 생명주기
   # ────────────────────────────────────────────────────────────────
@@ -32,7 +34,7 @@ defmodule TeamJay.Jay.CrossTeamRouter do
       Topics.subscribe(topic)
     end
     Logger.info("[CrossTeamRouter] 시작! 팀 간 파이프라인 7개 구독 완료")
-    {:ok, state}
+    {:ok, Map.put(state, :last_system_risk, nil)}
   end
 
   # ────────────────────────────────────────────────────────────────
@@ -55,8 +57,7 @@ defmodule TeamJay.Jay.CrossTeamRouter do
   # claude_to_all은 phase 관계없이 항상 실행 (시스템 안전)
   @impl true
   def handle_info({:jay_bus, :claude_to_all, payload}, state) do
-    handle_claude_to_all(payload)
-    {:noreply, state}
+    {:noreply, handle_claude_to_all(payload, state)}
   end
 
   @impl true
@@ -200,34 +201,62 @@ defmodule TeamJay.Jay.CrossTeamRouter do
   # 파이프라인 5: 클로드 → 전체 (시스템 위험 → 워크로드 축소)
   # ────────────────────────────────────────────────────────────────
 
-  defp handle_claude_to_all(%{risk_level: level, affected_services: services}) do
-    teams = ["blog", "luna", "ska", "worker"]
-    service_list = Enum.join(services, ", ")
+  defp handle_claude_to_all(%{risk_level: level, affected_services: services}, state) do
+    signature = system_risk_signature(level, services)
 
-    message = """
-    🚨 [제이→전체] 시스템 위험 감지!
-    ⚠️ 위험 레벨: #{level}/10
-    🔧 비정상 서비스: #{service_list}
-    🎯 요청: 비필수 작업 일시 중단, 필수 작업만 유지
-    """
+    if suppress_duplicate_system_risk?(state[:last_system_risk], signature) do
+      Logger.info("[CrossTeamRouter] claude→all 중복 억제: 레벨=#{level}, 서비스=#{inspect(signature.services)}")
+      record_pipeline_event(:claude_to_all, :suppressed, %{risk_level: level, affected_services: services})
+      state
+    else
+      teams = ["blog", "luna", "ska", "worker"]
+      service_list = Enum.join(services, ", ")
 
-    Enum.each(teams, fn team ->
-      envelope =
-        CommandEnvelope.build(
-          :reduce_workload,
-          :claude,
-          team,
-          %{risk_level: level, affected_services: services}
-        )
+      message = """
+      🚨 [제이→전체] 시스템 위험 감지!
+      ⚠️ 위험 레벨: #{level}/10
+      🔧 비정상 서비스: #{service_list}
+      🎯 요청: 비필수 작업 일시 중단, 필수 작업만 유지
+      """
 
-      dispatch_team_command(:claude_to_all, team, message, envelope)
-    end)
+      Enum.each(teams, fn team ->
+        envelope =
+          CommandEnvelope.build(
+            :reduce_workload,
+            :claude,
+            team,
+            %{risk_level: level, affected_services: services}
+          )
 
-    record_pipeline_event(:claude_to_all, :executed, %{risk_level: level, teams_notified: teams})
-    Logger.info("[CrossTeamRouter] claude→all 실행: 레벨=#{level}, #{length(teams)}팀 알림")
+        dispatch_team_command(:claude_to_all, team, message, envelope)
+      end)
+
+      record_pipeline_event(:claude_to_all, :executed, %{risk_level: level, teams_notified: teams})
+      Logger.info("[CrossTeamRouter] claude→all 실행: 레벨=#{level}, #{length(teams)}팀 알림")
+      Map.put(state, :last_system_risk, signature)
+    end
   end
 
-  defp handle_claude_to_all(_), do: :ok
+  defp handle_claude_to_all(_, state), do: state
+
+  defp system_risk_signature(level, services) do
+    %{
+      risk_level: level,
+      services: services |> List.wrap() |> Enum.map(&to_string/1) |> Enum.sort(),
+      observed_at: DateTime.utc_now()
+    }
+  end
+
+  defp suppress_duplicate_system_risk?(nil, _signature), do: false
+
+  defp suppress_duplicate_system_risk?(
+         %{risk_level: level, services: services, observed_at: observed_at},
+         %{risk_level: level, services: services, observed_at: now}
+       ) do
+    DateTime.diff(now, observed_at, :second) < @system_risk_cooldown_seconds
+  end
+
+  defp suppress_duplicate_system_risk?(_, _), do: false
 
   # ────────────────────────────────────────────────────────────────
   # 파이프라인 6: 블로 → 루나 (트렌드 → 종목 분석)
