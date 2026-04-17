@@ -157,28 +157,55 @@ defmodule TeamJay.Darwin.TeamConnector do
   end
 
   defp fetch_darwin_kpi do
-    case Repo.query("""
-      SELECT
-        COUNT(*)::int AS papers_7d,
-        COUNT(*) FILTER (WHERE score >= 6)::int AS high_quality_7d,
-        COALESCE(AVG(score), 0)::numeric(4,1) AS avg_score,
-        MAX(created_at) AS last_scan_at
-      FROM rag_research
-      WHERE created_at >= NOW() - INTERVAL '7 days'
-    """, []) do
-      {:ok, %{rows: [[papers, high, avg, last_at]]}} ->
-        %{
-          metric_type: :research_ops,
-          papers_7d: papers || 0,
-          high_quality_7d: high || 0,
-          avg_score: avg || 0.0,
-          last_scan_at: last_at,
-          autonomy_level: TeamLead.get_autonomy_level()
-        }
-      _ ->
-        %{metric_type: :research_ops, papers_7d: 0, high_quality_7d: 0,
-          autonomy_level: TeamLead.get_autonomy_level()}
+    if darwin_kpi_query_enabled?() and rag_research_available?() do
+      case Repo.query("""
+        SELECT
+          COUNT(*)::int AS papers_7d,
+          COUNT(*) FILTER (WHERE score >= 6)::int AS high_quality_7d,
+          COALESCE(AVG(score), 0)::numeric(4,1) AS avg_score,
+          MAX(created_at) AS last_scan_at
+        FROM reservation.rag_research
+        WHERE created_at >= NOW() - INTERVAL '7 days'
+      """, []) do
+        {:ok, %{rows: [[papers, high, avg, last_at]]}} ->
+          %{
+            metric_type: :research_ops,
+            papers_7d: papers || 0,
+            high_quality_7d: high || 0,
+            avg_score: avg || 0.0,
+            last_scan_at: last_at,
+            autonomy_level: TeamLead.get_autonomy_level()
+          }
+
+        _ ->
+          default_darwin_kpi()
+      end
+    else
+      default_darwin_kpi()
     end
+  end
+
+  defp darwin_kpi_query_enabled? do
+    Mix.env() != :test or System.get_env("TEAMJAY_TEST_ALLOW_DARWIN_KPI_QUERY") == "1"
+  end
+
+  defp rag_research_available? do
+    case Repo.query("SELECT to_regclass('reservation.rag_research')", []) do
+      {:ok, %{rows: [[nil]]}} -> false
+      {:ok, %{rows: [[_relation]]}} -> true
+      _ -> false
+    end
+  end
+
+  defp default_darwin_kpi do
+    %{
+      metric_type: :research_ops,
+      papers_7d: 0,
+      high_quality_7d: 0,
+      avg_score: 0.0,
+      last_scan_at: nil,
+      autonomy_level: TeamLead.get_autonomy_level()
+    }
   end
 
   defp broadcast(topic, payload) do
