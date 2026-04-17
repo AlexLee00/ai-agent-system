@@ -404,11 +404,54 @@ npm run parallel-snapshot
 
 ---
 
+---
+
+## ✅ 추가 완료 (2026-04-17 세션 10 — 컨텍스트 이어받기)
+
+### CODEX_CLAUDE_REMODEL Phase 4 — 팀 간 연동 완료 (commit 9fa72edc)
+
+**`feedback_loop.ex`** — 크로스팀 에러 이벤트 자동 출동
+- PG NOTIFY `event_lake_insert` 구독
+- `port_agent_failed`, `system_error`, `investment_error` → Layer 1 (TestRunner.run_now(1))
+- `ska_error_spike` → Layer 2 전체 점검 + Doctor.Dispatch 출동 + HubClient 알림
+- `blog/ska_cross_team_command_failed` → Layer 1
+- `codex_approval` 이벤트 → CodexPipeline.approve(codex_name)
+- `codex_rejection` 이벤트 → CodexPipeline.reject(codex_name)
+
+**`history_writer.ex`** — 주간 RAG 축적 (월 09:00 KST)
+- 지난 주 코덱스 실행 이력 (claude.deployment_monitor) → Hub RAG API 저장
+- 지난 주 에러 패턴 통계 (agent.event_lake) → Hub RAG API 저장
+
+**`claude_supervisor.ex`** 업데이트
+- `native_children`에 FeedbackLoop + HistoryWriter 추가 (총 8개 native 자식)
+
+**`claude-commander.ts`** 업데이트
+- `codex_approve` 핸들러: `agent.event_lake`에 `codex_approval` 이벤트 INSERT
+- `codex_reject` 핸들러: `agent.event_lake`에 `codex_rejection` 이벤트 INSERT
+- NLP 인텐트 목록에 codex_approve/codex_reject 추가
+
+### CODEX_CLAUDE_REMODEL 전체 현황
+
+| Phase | 내용 | 상태 |
+|-------|------|------|
+| Phase 0 | Elixir 기반 구조 (supervisor, topics, config) | ✅ |
+| Phase 1 | Dexter 진화 (ErrorTracker, TestRunner) | ✅ |
+| Phase 2 | Doctor 진화 (Dispatch, PatchEngine, SnapshotManager, VerifyEngine) | ✅ |
+| Phase 3 | Codex 자동 실행 파이프라인 (CodexWatcher, CodexExecutor, CodexPipeline, DeploymentMonitor) | ✅ |
+| Phase 4 | 팀 간 연동 (FeedbackLoop, HistoryWriter, Commander codex_approve/reject) | ✅ |
+
+**남은 항목**:
+- `@auto_execute = true` 전환 (현재 Phase 1 모드 — 마스터 수동 승인 필요)
+- darwin/feedback_loop.ex Phase 3 완성 (darwin teamlead 연동)
+- Elixir 앱 재시작으로 FeedbackLoop + HistoryWriter hot-load 필요
+
+---
+
 ### 현재 활성 코덱스 (`docs/codex/`)
 | 파일 | 상태 |
 |------|------|
-| CODEX_CLAUDE_REMODEL | 미착수 (대형) |
-| CODEX_DARWIN_REMODEL | 미착수 (대형) |
+| CODEX_CLAUDE_REMODEL | Phase 4 완료, @auto_execute 전환 대기 |
+| CODEX_DARWIN_REMODEL | Phase 0~1 완료, Phase 2~3 미착수 |
 | CODEX_ELIXIR_MONITORING | 운영 runbook (상시) |
 | CODEX_SECURITY_AUDIT_01 | filter-repo + 히스토리 정리 — 마스터 재승인 후 |
 
@@ -419,5 +462,6 @@ npm run parallel-snapshot
 
 > **루나팀 코드 구현: 완전 완료** ✅
 > **SEC-004/005: 완전 밀폐** ✅
+> **클로드팀 REMODEL Phase 4: 완료** ✅
 > **OPS 전환**: git push 완료 (1954bc76), OPS 수동 Step 3 대기
 > 이전 HANDOFF: 2026-04-17 CODEX_BLOG_AUTONOMOUS_OPS Phase A~D
