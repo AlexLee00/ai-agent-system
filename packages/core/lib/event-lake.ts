@@ -160,6 +160,43 @@ export async function record({
 }
 
 /**
+ * @param {{ team?: string, botName?: string, message?: string, minutes?: number }} [input]
+ */
+export async function findRecentDuplicateAlarm({
+  team = 'general',
+  botName = 'unknown',
+  message = '',
+  minutes = 5,
+} = {}) {
+  await initSchema();
+
+  const normalizedMessage = _text(message);
+  if (!normalizedMessage) return null;
+
+  const rows = await pgPool.query(SCHEMA, `
+    SELECT
+      id, event_type, team, bot_name, severity, trace_id,
+      title, message, tags, metadata, feedback_score, feedback,
+      created_at, updated_at
+    FROM ${TABLE}
+    WHERE created_at >= NOW() - ($1::int * INTERVAL '1 minute')
+      AND event_type = 'hub_alarm'
+      AND team = $2
+      AND bot_name = $3
+      AND message = $4
+    ORDER BY created_at DESC
+    LIMIT 1
+  `, [
+    Math.max(1, Number(minutes || 0) || 1),
+    _text(team, 'general'),
+    _text(botName, 'unknown'),
+    normalizedMessage,
+  ]);
+
+  return rows[0] || null;
+}
+
+/**
  * @param {EventLakeSearchInput} [input]
  */
 export async function search({
