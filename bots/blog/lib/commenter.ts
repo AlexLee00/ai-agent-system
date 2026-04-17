@@ -2310,7 +2310,17 @@ async function focusCommentEditor(page, logNo = '', timeoutMs = 15000) {
   `);
 }
 
-async function submitReply(page) {
+async function submitReply(page, browserPage = null) {
+  if (browserPage && process.env.BLOG_COMMENTER_KEYBOARD_SUBMIT === 'true') {
+    traceCommenter('postReply:submit-keyboard-start');
+    await browserPage.keyboard.press('Tab').catch(() => {});
+    await sleep(150);
+    await browserPage.keyboard.press('Enter').catch(() => {});
+    traceCommenter('postReply:submit-keyboard-done');
+    return;
+  }
+
+  traceCommenter('postReply:submit-locate-start', { selectorCount: 1 });
   const clicked = await page.evaluate(`
     (() => {
       const visible = (el) => {
@@ -2319,26 +2329,47 @@ async function submitReply(page) {
         const rect = el.getBoundingClientRect();
         return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
       };
-      const replyScope = document.querySelector('[data-blog-target-reply-area="true"]');
-      const roots = replyScope ? [replyScope] : [document];
-      const candidates = roots.flatMap((root) => Array.from(root.querySelectorAll('button[type="button"], button, a')));
-      const submit = candidates.find((btn) => {
-        if (!visible(btn)) return false;
-        const dataAction = String(btn.getAttribute('data-action') || '');
-        const uiSelector = String(btn.getAttribute('data-ui-selector') || '');
-        return dataAction.includes('reply#') && dataAction.includes('#write#request') && /^replyButton_/.test(uiSelector);
-      });
+      const submitSelector = 'button[data-ui-selector^="replyButton_"][data-action*="reply#"][data-action*="#write#request"], a[data-ui-selector^="replyButton_"][data-action*="reply#"][data-action*="#write#request"]';
+      const targetReplyArea = document.querySelector('[data-blog-target-reply-area="true"]');
+      const targetComment = document.querySelector('[data-blog-target-comment="true"]');
+      const targetEditor = document.querySelector('[data-blog-commenter-editor="true"]');
+      const roots = [
+        targetReplyArea,
+        targetEditor && targetEditor.closest('.u_cbox_write_box, .u_cbox_reply_write, .u_cbox_reply_area, .u_cbox_comment_box'),
+        targetComment && targetComment.parentElement,
+        targetComment,
+      ].filter(Boolean);
 
-      if (!submit) return false;
-      submit.scrollIntoView({ block: 'center', behavior: 'instant' });
-      submit.click();
+      let node = null;
+      for (const root of roots) {
+        node = root.querySelector(submitSelector);
+        if (node && visible(node)) break;
+        node = null;
+      }
+      if (!node) {
+        const globalNode = document.querySelector(submitSelector);
+        if (globalNode && visible(globalNode)) {
+          node = globalNode;
+        }
+      }
+      if (!node) return false;
+
+      node.scrollIntoView({ block: 'center', behavior: 'instant' });
+      node.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true, view: window, button: 0, buttons: 1 }));
+      node.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window, button: 0, buttons: 1 }));
+      node.dispatchEvent(new MouseEvent('pointerup', { bubbles: true, cancelable: true, view: window, button: 0, buttons: 0 }));
+      node.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window, button: 0, buttons: 0 }));
+      node.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window, button: 0, buttons: 0 }));
       return true;
     })()
-  `);
+  `).catch(() => false);
 
-  if (!clicked) {
-    throw new Error('reply_submit_not_found');
+  if (clicked) {
+    traceCommenter('postReply:submit-click-done', { scoped: true });
+    return;
   }
+
+  throw new Error('reply_submit_not_found');
 }
 
 async function submitComment(page) {
@@ -2858,7 +2889,7 @@ async function postReply(comment, replyText, { testMode = false, dryRun = false,
       replyLength: String(replyText || '').length,
     });
     await humanDelay(1, 2, testMode);
-    await submitReply(contentFrame);
+    await submitReply(contentFrame, page);
     traceCommenter('postReply:submitted', { commentId: comment.id });
     const posted = await verifyReplyPosted(contentFrame, replyText, comment, testMode);
     traceCommenter('postReply:verified', { commentId: comment.id, posted });

@@ -79,6 +79,11 @@ const _token  = () => _secrets().telegram_bot_token || process.env.TELEGRAM_BOT_
 const _chatId = () => _secrets().telegram_group_id  || _secrets().telegram_chat_id || process.env.TELEGRAM_CHAT_ID || '';
 const _topics = () => _secrets().telegram_topic_ids || {};
 
+function _alertsDisabled(): boolean {
+  // Temporary global kill switch per operator request.
+  return true;
+}
+
 // ── Team → secrets.json 키 매핑 ──────────────────────────────────────
 // telegram_topic_ids.{ general, ska, luna, claude_lead, meeting, emergency }
 const TOPIC_KEYS = {
@@ -269,7 +274,7 @@ async function _flushBatch(topic: string): Promise<void> {
  * @returns {Promise<boolean>}
  */
 export async function send(team: string, message: string): Promise<boolean> {
-  if (process.env.TELEGRAM_ENABLED === '0') return true;
+  if (_alertsDisabled()) return true;
   const normalized = _normalizeForMobile(message);
 
   if (_isFilenameLeak(normalized)) {
@@ -318,7 +323,7 @@ export async function send(team: string, message: string): Promise<boolean> {
 }
 
 async function sendBuffered(team: string, message: string): Promise<boolean> {
-  if (process.env.TELEGRAM_ENABLED === '0') return true;
+  if (_alertsDisabled()) return true;
   const normalized = _normalizeForMobile(message);
 
   if (_isFilenameLeak(normalized)) {
@@ -349,7 +354,7 @@ async function sendBuffered(team: string, message: string): Promise<boolean> {
 }
 
 async function sendWithOptions(team: string, message: string, options: SendOptions = {}): Promise<boolean> {
-  if (process.env.TELEGRAM_ENABLED === '0') return true;
+  if (_alertsDisabled()) return true;
   const normalized = _normalizeForMobile(message);
 
   if (_isFilenameLeak(normalized)) {
@@ -380,7 +385,7 @@ async function sendWithOptions(team: string, message: string, options: SendOptio
 }
 
 async function sendDirect(chatId: string, message: string, options: SendOptions = {}): Promise<boolean> {
-  if (process.env.TELEGRAM_ENABLED === '0') return true;
+  if (_alertsDisabled()) return true;
   if (!chatId) return false;
   const normalized = _normalizeForMobile(message);
 
