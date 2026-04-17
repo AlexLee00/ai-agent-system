@@ -402,6 +402,8 @@ async function handleAnalyzeUnknown(args) {
 - claude_action command=run_fix         : 덱스터 자동 수정
 - claude_action command=daily_report    : 덱스터 일일 보고
 - claude_action command=run_archer      : 아처 기술 트렌드 분석
+- claude_action command=codex_approve codex_name=<이름> : 코덱스 승인
+- claude_action command=codex_reject  codex_name=<이름> : 코덱스 거부
 - claude_ask  query=<질문내용>           : 클로드 AI에게 직접 질문
 - cost    : LLM 비용·토큰 사용량
 - brief   : 야간 보류 알람 브리핑
@@ -641,6 +643,45 @@ function handleSessionClose(args) {
   }
 }
 
+/**
+ * 코덱스 승인 — Elixir FeedbackLoop → CodexPipeline.approve
+ * agent.event_lake에 codex_approval 이벤트 삽입 → PG NOTIFY → FeedbackLoop 처리
+ */
+async function handleCodexApprove(args) {
+  const codexName = (args.codex_name || args.name || '').trim();
+  if (!codexName) return { ok: false, error: '코덱스 이름 없음 (codex_name 필요)' };
+
+  try {
+    await pgPool.run('jay', `
+      INSERT INTO agent.event_lake (event_type, team, bot_name, title, severity)
+      VALUES ('codex_approval', 'claude', 'claude-commander', $1, 'info')
+    `, [codexName]);
+    console.log(`[클로드] 코덱스 승인 이벤트 발송: ${codexName}`);
+    return { ok: true, message: `✅ 코덱스 승인: ${codexName}\nElixir FeedbackLoop → CodexPipeline 처리 중` };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
+ * 코덱스 거부 — Elixir FeedbackLoop → CodexPipeline.reject
+ */
+async function handleCodexReject(args) {
+  const codexName = (args.codex_name || args.name || '').trim();
+  if (!codexName) return { ok: false, error: '코덱스 이름 없음 (codex_name 필요)' };
+
+  try {
+    await pgPool.run('jay', `
+      INSERT INTO agent.event_lake (event_type, team, bot_name, title, severity)
+      VALUES ('codex_rejection', 'claude', 'claude-commander', $1, 'info')
+    `, [codexName]);
+    console.log(`[클로드] 코덱스 거부 이벤트 발송: ${codexName}`);
+    return { ok: true, message: `❌ 코덱스 거부: ${codexName}` };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
 // ─── 명령 디스패처 ────────────────────────────────────────────────────
 
 const HANDLERS = {
@@ -652,6 +693,8 @@ const HANDLERS = {
   ask_claude:      handleAskClaude,
   analyze_unknown: handleAnalyzeUnknown,
   session_close:   handleSessionClose,
+  codex_approve:   handleCodexApprove,
+  codex_reject:    handleCodexReject,
 };
 
 async function processCommands() {

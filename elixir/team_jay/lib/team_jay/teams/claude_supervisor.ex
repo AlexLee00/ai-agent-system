@@ -26,7 +26,11 @@ defmodule TeamJay.Teams.ClaudeSupervisor do
       TeamJay.Claude.Monitor.DeploymentMonitor,
       # 코덱스 파이프라인
       TeamJay.Claude.Codex.CodexWatcher,
-      TeamJay.Claude.Codex.CodexPipeline
+      TeamJay.Claude.Codex.CodexPipeline,
+      # 크로스팀 피드백 루프
+      TeamJay.Claude.FeedbackLoop,
+      # 히스토리 라이터 (주간 RAG 축적)
+      TeamJay.Claude.HistoryWriter
     ]
 
     port_children =
