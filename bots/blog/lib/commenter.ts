@@ -735,101 +735,99 @@ async function extractAdminComments(page, limit = 20, ownBlogId = '') {
     maxItems: Number(limit || 20),
     ownBlogId: String(ownBlogId || '').trim(),
   };
-  return page.evaluate(({ maxItems, ownBlogId }) => {
-    function textOf(el) {
-      return String((el && (el.innerText || el.textContent)) || '').replace(/\s+/g, ' ').trim();
-    }
-
-    function pickText(root, selectors) {
-      for (const selector of selectors) {
-        const node = root.querySelector(selector);
-        const text = textOf(node);
-        if (text) return text;
+  const inputJson = JSON.stringify(payload);
+  const script = `
+    (() => {
+      var input = ${inputJson};
+      var maxItems = Number(input && input.maxItems ? input.maxItems : 20);
+      var ownBlogId = String((input && input.ownBlogId) || '').trim();
+      function textOf(el) {
+        return String((el && (el.innerText || el.textContent)) || '').replace(/\\s+/g, ' ').trim();
       }
-      return '';
-    }
-
-    function visible(el) {
-      if (!el) return false;
-      const style = window.getComputedStyle(el);
-      const rect = el.getBoundingClientRect();
-      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-    }
-
-    var selectors = ['tr', 'li[class*="comment"]', 'div[class*="comment"]', 'li'];
-    var roots = [];
-    for (var selectorIndex = 0; selectorIndex < selectors.length; selectorIndex += 1) {
-      var selector = selectors[selectorIndex];
-      var nodes = document.querySelectorAll(selector);
-      for (var nodeIndex = 0; nodeIndex < nodes.length; nodeIndex += 1) {
-        var node = nodes[nodeIndex];
-        if (!visible(node)) continue;
-        var text = textOf(node);
-        if (text.length < 10 || text.length > 4000) continue;
-        var anchor = node.querySelector('a[href*="blog.naver.com"], a[href*="m.blog.naver.com"], a[href*="PostView.naver"]');
-        if (!anchor) continue;
-        roots.push(node);
+      function pickText(root, selectors) {
+        for (var i = 0; i < selectors.length; i += 1) {
+          var node = root.querySelector(selectors[i]);
+          var text = textOf(node);
+          if (text) return text;
+        }
+        return '';
       }
-    }
-
-    var deduped = [];
-    for (var dedupeIndex = 0; dedupeIndex < roots.length; dedupeIndex += 1) {
-      var dedupeNode = roots[dedupeIndex];
-      if (deduped.indexOf(dedupeNode) === -1) deduped.push(dedupeNode);
-      if (deduped.length >= maxItems * 5) break;
-    }
-    var results = [];
-
-    for (var rootIndex = 0; rootIndex < deduped.length; rootIndex += 1) {
-      var root = deduped[rootIndex];
-      var rootText = textOf(root);
-      var anchorNodes = root.querySelectorAll('a[href*="blog.naver.com"], a[href*="m.blog.naver.com"], a[href*="PostView.naver"]');
-      var postAnchor = null;
-      var longestAnchorText = -1;
-      for (var anchorIndex = 0; anchorIndex < anchorNodes.length; anchorIndex += 1) {
-        var anchorNode = anchorNodes[anchorIndex];
-        var anchorText = textOf(anchorNode);
-        if (anchorText.length > longestAnchorText) {
-          longestAnchorText = anchorText.length;
-          postAnchor = anchorNode;
+      function visible(el) {
+        if (!el) return false;
+        var style = window.getComputedStyle(el);
+        var rect = el.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+      }
+      var selectors = ['tr', 'li[class*="comment"]', 'div[class*="comment"]', 'li'];
+      var roots = [];
+      for (var selectorIndex = 0; selectorIndex < selectors.length; selectorIndex += 1) {
+        var selector = selectors[selectorIndex];
+        var nodes = document.querySelectorAll(selector);
+        for (var nodeIndex = 0; nodeIndex < nodes.length; nodeIndex += 1) {
+          var node = nodes[nodeIndex];
+          if (!visible(node)) continue;
+          var nodeText = textOf(node);
+          if (nodeText.length < 10 || nodeText.length > 4000) continue;
+          var anchor = node.querySelector('a[href*="blog.naver.com"], a[href*="m.blog.naver.com"], a[href*="PostView.naver"]');
+          if (!anchor) continue;
+          roots.push(node);
         }
       }
-      var postUrl = postAnchor && postAnchor.href ? postAnchor.href : '';
-      var postTitle = textOf(postAnchor);
-
-      var commenterName = pickText(root, ['._writerNickname', '.nickname', '.nick', '.name', '.writer', 'strong']);
-      var commenterId = pickText(root, ['._writerId', '.blogid']);
-      var commentText = pickText(root, ['._replyRealContents', '._replyContents', '.comment_text', '.text', '.desc', 'p', 'span']);
-      var commentKeyNode = root.querySelector('input[name="commentKey"]');
-      var commentRef = root.getAttribute('data-comment-id')
-        || root.getAttribute('data-comment-no')
-        || root.getAttribute('data-log-no')
-        || (commentKeyNode ? commentKeyNode.value : '')
-        || root.id
-        || '';
-
-      if (!postUrl || !commentText) continue;
-      if (commenterId && ownBlogId && commenterId === ownBlogId) continue;
-      if (/^(작성자|내용)$/.test(commenterName) || /^(작성자 내용)$/.test(rootText)) continue;
-      if (postTitle && !/\[글\]/.test(postTitle) && !/blog\.naver\.com|m\.blog\.naver\.com|PostView\.naver/.test(postUrl)) continue;
-
-      results.push({
-        postUrl,
-        postTitle,
-        commenterId: root.getAttribute('data-user-id') || root.getAttribute('data-member-id') || commenterId || commenterName || '',
-        commenterName,
-        commentText,
-        commentRef,
-        meta: {
-          source: 'admin-comment',
-          snippet: rootText.slice(0, 240),
-          currentUrl: location.href,
-        },
-      });
-    }
-
-    return results.slice(0, maxItems);
-  }, payload);
+      var deduped = [];
+      for (var dedupeIndex = 0; dedupeIndex < roots.length; dedupeIndex += 1) {
+        var dedupeNode = roots[dedupeIndex];
+        if (deduped.indexOf(dedupeNode) === -1) deduped.push(dedupeNode);
+        if (deduped.length >= maxItems * 5) break;
+      }
+      var results = [];
+      for (var rootIndex = 0; rootIndex < deduped.length; rootIndex += 1) {
+        var root = deduped[rootIndex];
+        var rootText = textOf(root);
+        var anchorNodes = root.querySelectorAll('a[href*="blog.naver.com"], a[href*="m.blog.naver.com"], a[href*="PostView.naver"]');
+        var postAnchor = null;
+        var longestAnchorText = -1;
+        for (var anchorIndex = 0; anchorIndex < anchorNodes.length; anchorIndex += 1) {
+          var anchorNode = anchorNodes[anchorIndex];
+          var anchorText = textOf(anchorNode);
+          if (anchorText.length > longestAnchorText) {
+            longestAnchorText = anchorText.length;
+            postAnchor = anchorNode;
+          }
+        }
+        var postUrl = postAnchor && postAnchor.href ? postAnchor.href : '';
+        var postTitle = textOf(postAnchor);
+        var commenterName = pickText(root, ['._writerNickname', '.nickname', '.nick', '.name', '.writer', 'strong']);
+        var commenterId = pickText(root, ['._writerId', '.blogid']);
+        var commentText = pickText(root, ['._replyRealContents', '._replyContents', '.comment_text', '.text', '.desc', 'p', 'span']);
+        var commentKeyNode = root.querySelector('input[name="commentKey"]');
+        var commentRef = root.getAttribute('data-comment-id')
+          || root.getAttribute('data-comment-no')
+          || root.getAttribute('data-log-no')
+          || (commentKeyNode ? commentKeyNode.value : '')
+          || root.id
+          || '';
+        if (!postUrl || !commentText) continue;
+        if (commenterId && ownBlogId && commenterId === ownBlogId) continue;
+        if (/^(작성자|내용)$/.test(commenterName) || /^(작성자 내용)$/.test(rootText)) continue;
+        if (postTitle && !/\\[글\\]/.test(postTitle) && !/blog\\.naver\\.com|m\\.blog\\.naver\\.com|PostView\\.naver/.test(postUrl)) continue;
+        results.push({
+          postUrl: postUrl,
+          postTitle: postTitle,
+          commenterId: root.getAttribute('data-user-id') || root.getAttribute('data-member-id') || commenterId || commenterName || '',
+          commenterName: commenterName,
+          commentText: commentText,
+          commentRef: commentRef,
+          meta: {
+            source: 'admin-comment',
+            snippet: rootText.slice(0, 240),
+            currentUrl: location.href
+          }
+        });
+      }
+      return results.slice(0, maxItems);
+    })()
+  `;
+  return page.evaluate(script);
 }
 
 async function resolveAdminCommentFrame(page, blogId) {
