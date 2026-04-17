@@ -1,6 +1,43 @@
-# 세션 인수인계 — 2026-04-18 (CODEX_JAY_DARWIN_INDEPENDENCE Phase 1 완료)
+# 세션 인수인계 — 2026-04-18 (CODEX_JAY_DARWIN_INDEPENDENCE Phase 2 완료)
 
-> 세션 범위: Darwin 최종 독립 — DarwinSupervisor 제거 + Jido 2.2 정렬 + 335 tests 유지
+> 세션 범위: 공용 레이어 packages/elixir_core 추출 — Jay.Core.* 네임스페이스 + JayBus 신설
+
+---
+
+## 최신 작업 요약 (Phase 2 — 커밋: 45a26a84)
+
+### CODEX_JAY_DARWIN_INDEPENDENCE Phase 2 완료
+
+**구현 내용**:
+1. `packages/elixir_core/` 신설 (jay_core 라이브러리, Application 없음)
+2. 공용 12모듈 git mv (Repo/Config/HubClient/EventLake/MarketRegime/Diagnostics/Scheduler + agents 4개 + schemas 1개)
+3. `Jay.Core.JayBus` 신설 (Registry 래퍼 — 기존 TeamJay.JayBus 대체)
+4. Namespace 전체 변환: `TeamJay.*` → `Jay.Core.*` (team_jay/darwin/sigma sed 일괄)
+5. team_jay mix.exs: `{:jay_core, path: "../../packages/elixir_core"}` 추가
+6. application.ex: Registry child → `Jay.Core.JayBus` child_spec
+7. config.exs: Repo/Scheduler 키 업데이트
+8. Darwin.V2.TeamConnector: `get_status/0` 추가
+9. packages/elixir_core/.gitignore 추가 (_build/deps 추적 제외)
+
+**검증**:
+- `jay_core` 단독 컴파일 ✅
+- `team_jay` 컴파일 ✅
+- 505 tests, 0 failures (14 excluded) — team_jay 통합 테스트
+- darwin standalone: **335 tests, 0 failures** (11 excluded) ✅
+
+**불변 원칙 준수**:
+- darwin 335 tests 0 failures 유지 ✅
+- Shadow Mode launchd 가동 유지 (변경 없음) ✅
+- git mv 엄수 (공용 파일 12개) ✅
+
+### 다음 세션 즉시 착수 항목 (Phase 3 — 제이팀 독립)
+
+1. **git tag**: `pre-phase-3-jay` 생성
+2. **bots/jay/elixir/** 스캐폴딩 (`mix new . --sup --module Jay`)
+3. **jay/ 11 파일 git mv** → `bots/jay/elixir/lib/jay/v2/`
+4. **Namespace 변환**: `TeamJay.Jay.*` → `Jay.V2.*`
+5. **Jay.V2.Commander 신설** (Jido.AI.Agent — 9팀 오케스트레이터)
+6. **launchd**: `ai.jay.growth.plist` 작성
 
 ---
 
