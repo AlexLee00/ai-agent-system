@@ -1,14 +1,15 @@
-# 세션 인수인계 — 2026-04-17 (블로팀 전체 코덱스 구현 완료)
+# 세션 인수인계 — 2026-04-17 (루나팀 CODEX_LUNA_IMPL 전 구현 완료)
 
-> 세션 범위: CODEX_BLOG_AUTONOMOUS_OPS Phase A~D + CODEX_LUNA_OPS_TRANSITION + CODEX_LUNA_AUTONOMOUS_LOOP Phase A~E + 루나팀/블로팀/스카팀 전체 문서 감사+정리
+> 세션 범위: CODEX_LUNA_IMPL I/J + OPS_TRANSITION Step 5 + KIS live 전환 + 자율 루프 확인
 
 ---
 
 ## 작업 요약
 
-블로팀 완전자율 루프(Phase A~D) + OPS 마이그레이션 완료.
-루나팀 OPS_TRANSITION 코드 구현 완료 (launchd→Elixir 전환 준비).
-루나팀 자율 루프 Phase A~E 코드 구현 완료.
+루나팀 CODEX_LUNA_IMPL 10개 구현 과제 전부 코드 완료.
+KIS live 전환 (config.yaml kis_mode: live, 커밋 ffab4e5f).
+OPS_TRANSITION Step 5: launchd 3개 plist 제거 — Elixir InvestmentSupervisor 인수 확인.
+자율 루프: autonomous_cycle_events DB 이벤트로 mode3_manage readiness=ready 확인.
 
 ---
 
