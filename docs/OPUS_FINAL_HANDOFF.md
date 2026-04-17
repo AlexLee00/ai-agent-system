@@ -1,4 +1,60 @@
-# 세션 인수인계 — 2026-04-18 (CODEX_SIGMA_PHASE_2_3_4_EXECUTE 완료 — Directive + Reflexion + ESPL)
+# 세션 인수인계 — 2026-04-18 (CODEX_SIGMA_SHADOW_DEPLOY 완료 — Shadow Mode OPS 가동)
+
+> 세션 범위: Shadow Mode launchd 배포 + mix sigma.daily.shadow task + Supervisor 수정
+
+---
+
+## 최신 작업 요약 (Shadow Deploy)
+
+`CODEX_SIGMA_SHADOW_DEPLOY` 완료. OPS에서 Sigma Shadow Mode 가동 확인.
+
+### 구현/변경 목록
+
+- **mix task** `sigma.daily.shadow.ex`: Repo만 수동 시작 (전체 앱 미기동, @requirements ["app.config"])
+- **plist 업데이트**: tsx → `mix sigma.daily.shadow` + SIGMA_* 7개 env vars (MIX_ENV=dev)
+- **Supervisor 수정**: MCP OFF여도 SIGMA_HTTP_PORT 설정 시 HTTP 서버 기동 가능
+- **launchd 등록**: `ai.sigma.daily` → `~/Library/LaunchAgents/` 복사 + `launchctl load`
+- **수동 실행 검증**: `LastExitStatus=0`, `shadow_run_id=3`, DB에 4 rows 기록
+
+### 검증 결과
+- `mix compile --warnings-as-errors`: **0 warnings** ✅
+- `mix test`: **116 tests, 0 failures** ✅
+- `launchctl list ai.sigma.daily`: `LastExitStatus=0` ✅
+- `sigma_v2_shadow_runs`: 4 rows 기록됨 ✅
+- `match_score=null`: v1 `sigma.daily_runs` 비교 레코드 없음 (정상 — v1 먼저 실행 필요)
+
+### 주요 결정 사항
+- tsx 방식(HTTP 서버 필요) → mix task 방식(자체 완결)으로 변경
+- SIGMA_HTTP_PORT 설정 시 HTTP 서버 기동 (MCP flag에 무관)
+- 전체 TeamJay 앱 미기동 → blog/investment 에이전트 간섭 없음
+
+### 다음 단계 (7일 관찰)
+
+1. **.zprofile** 환경변수 수동 추가 (민감 파일 차단으로 코덱스 불가):
+   ```
+   export SIGMA_V2_ENABLED=true
+   export SIGMA_TIER2_AUTO_APPLY=false
+   export SIGMA_MCP_SERVER_ENABLED=false
+   export SIGMA_GEPA_ENABLED=false
+   export SIGMA_SELF_RAG_ENABLED=false
+   export SIGMA_HTTP_PORT=4010
+   export SIGMA_LLM_DAILY_BUDGET_USD=10.00
+   ```
+2. **.zshrc** alias 수동 추가 (sigma-check / sigma-log / sigma-err / sigma-status)
+3. **매일 21:30 KST** launchd 자동 실행 → shadow_runs 누적
+4. **match_score 모니터링**: `sigma.daily_runs`에 v1 baseline이 없으면 null 지속
+   → v1 TS daily_runs가 실행되는 시점부터 비교 가능
+5. **7일 후 결정**: match_score 평균 95%+ → Phase 2/3/4 구현 + Tier 1 가동
+
+### 알림: match_score 현재 null
+
+v1 TS sigma baseline(`sigma.daily_runs` 테이블)에 최근 실행 기록이 없어 비교 불가.
+`sigma-daily.ts`가 실행되어 `sigma.daily_runs`에 row가 생기면 자동으로 match_score 계산됨.
+현재는 v2 편성 결정 로직 자체의 동작 여부만 검증됨 (정상).
+
+---
+
+# 이전 인수인계 — 2026-04-18 (CODEX_SIGMA_PHASE_2_3_4_EXECUTE 완료 — Directive + Reflexion + ESPL)
 
 > 세션 범위: Sigma V2 Phase 2 (Directive/Signal/Mailbox) + Phase 3 (Config/Reflexion/Self-RAG) + Phase 4 (ESPL/MetaReview/Grafana)
 
