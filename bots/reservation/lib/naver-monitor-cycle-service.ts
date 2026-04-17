@@ -170,6 +170,13 @@ export function createNaverMonitorCycleService(deps: CreateNaverMonitorCycleServ
       }));
     } catch (err: any) {
       log(`⚠️ (상시) 오늘 확정 처리 실패: ${err.message}`);
+      if (err?.stack) {
+        const stackPreview = String(err.stack)
+          .split('\n')
+          .slice(0, 6)
+          .join(' | ');
+        log(`🧵 오늘 확정 처리 실패 stack: ${stackPreview}`);
+      }
       try { await page.goto(naverUrl, { waitUntil: 'networkidle2' }); } catch (_) {}
     }
 

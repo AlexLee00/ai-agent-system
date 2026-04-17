@@ -43,16 +43,30 @@ export function createNaverConfirmedCycleService(deps: CreateNaverConfirmedCycle
       confirmedCount,
       cancelledCount,
     } = await page.evaluate(() => {
-      const clean = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, ' ').trim();
+      function clean(s: string | null | undefined) {
+        return (s ?? '').replace(/\s+/g, ' ').trim();
+      }
       const links = Array.from(document.querySelectorAll('a'));
-      const confirmed = links.find((x) => clean(x.textContent).includes('오늘 확정') && String((x as HTMLAnchorElement).href || '').includes('booking-list-view')) as HTMLAnchorElement | undefined;
-      const cancelled = links.find((x) => clean(x.textContent).includes('오늘 취소') && String((x as HTMLAnchorElement).href || '').includes('booking-list-view')) as HTMLAnchorElement | undefined;
-      const getCount = (el?: Element | null) => {
+      let confirmed: HTMLAnchorElement | undefined;
+      let cancelled: HTMLAnchorElement | undefined;
+      for (const link of links) {
+        const anchor = link as HTMLAnchorElement;
+        const text = clean(anchor.textContent);
+        const href = String(anchor.href || '');
+        if (!confirmed && text.includes('오늘 확정') && href.includes('booking-list-view')) {
+          confirmed = anchor;
+        }
+        if (!cancelled && text.includes('오늘 취소') && href.includes('booking-list-view')) {
+          cancelled = anchor;
+        }
+        if (confirmed && cancelled) break;
+      }
+      function getCount(el?: Element | null) {
         if (!el) return 0;
         const strong = el.querySelector('strong');
         const num = parseInt(((strong ? strong.textContent : el.textContent) || '').replace(/\D/g, ''), 10);
         return Number.isNaN(num) ? 0 : num;
-      };
+      }
       return {
         confirmedHref: confirmed ? confirmed.href : null,
         cancelledHref: cancelled ? cancelled.href : null,
