@@ -4,6 +4,24 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-04-18: CODEX_DARWIN_REMODEL 완료 — 다윈팀 완전자율 R&D 에이전트 (40차 세션)
+
+- **독립 구조**: `bots/darwin/elixir/` + `Darwin.V2.*` 네임스페이스 (Sigma 패턴 동일)
+- **LLM 인프라**: Darwin.V2.LLM.{Selector,CostTracker,RoutingLog} — 로컬우선 멀티프로바이더
+- **메모리**: Memory.L1(ETS 세션) + Memory.L2(pgvector 1024차원 Qwen3-Embedding)
+- **자기개선**: Reflexion(arXiv 2303.11366) + SelfRAG(arXiv 2310.11511) + ESPL(arXiv 2602.14697) + Principle.Loader
+- **7단계 사이클**: Cycle.{Discover,Evaluate,Plan,Implement,Verify,Apply,Learn} GenServer
+- **Commander**: Jido.AI.Agent 7단계 오케스트레이터 + Skill {EvaluatePaper, PlanImplementation, LearnFromCycle}
+- **커뮤니티**: CommunityScanner (HN/Reddit) + Sensor.{ArxivRSS, HackerNews, Reddit, OpenReview}
+- **Shadow/Signal**: ShadowRunner + SignalReceiver (Sigma advisory 구독)
+- **MCP Server**: 내부 HTTP REST (scan/evaluate/autonomy/memory 엔드포인트)
+- **Kill Switch**: 환경변수 7개 단계적 활성화 (기본 ALL OFF)
+- **자율 레벨**: L3→L4(5회+7일)→L5(10회+적용3회+14일) 자동 승격 (ETS+JSON 이중 영속)
+- **9 표준 문서**: AGENTS, BOOTSTRAP, CLAUDE, HEARTBEAT, IDENTITY, README, SOUL, TOOLS, USER
+- **DB 마이그레이션**: 4개 (autonomy_level, cycle_results, routing_log, cost_tracking)
+- **통합**: team_jay mix.exs/application.ex/config.exs Darwin.V2.Supervisor 등록
+- **커밋**: 2455c110 (전체 69 Elixir 파일 + 문서 + 마이그레이션)
+
 ## 2026-04-18: CODEX_SIGMA_PHASE2_LLM_AUTONOMOUS 완료 — LLM 통합 완전 자율운영
 
 - **Selector 재작성**: Ollama 전면 제거 → Claude API 직접 호출 (Req HTTP), Recommender 통합
