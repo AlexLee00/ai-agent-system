@@ -9,10 +9,30 @@ defmodule TeamJay.Investment.Phase5MasterStatusSuite do
   alias TeamJay.Investment.Phase5PersistenceSuite
 
   def run_defaults(opts \\ []) do
-    full = Phase5FullSuite.run_defaults(opts)
-    persistence = Phase5PersistenceSuite.run_defaults(opts)
-    closeout = Phase5CloseoutSuite.run_defaults(opts)
-    history = Phase5CloseoutHistory.run_defaults(opts)
+    full = Keyword.get_lazy(opts, :full, fn -> Phase5FullSuite.run_defaults(opts) end)
+
+    persistence =
+      Keyword.get_lazy(opts, :persistence, fn ->
+        Phase5PersistenceSuite.run_defaults(Keyword.put(opts, :full, full))
+      end)
+
+    closeout =
+      Keyword.get_lazy(opts, :closeout, fn ->
+        Phase5CloseoutSuite.run_defaults(
+          opts
+          |> Keyword.put(:full, full)
+          |> Keyword.put(:persistence, persistence)
+        )
+      end)
+
+    history =
+      Keyword.get_lazy(opts, :history, fn ->
+        Phase5CloseoutHistory.run_defaults(
+          opts
+          |> Keyword.put(:full, full)
+          |> Keyword.put(:persistence, persistence)
+        )
+      end)
 
     blockers =
       []

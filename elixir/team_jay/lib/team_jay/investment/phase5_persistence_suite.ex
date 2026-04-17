@@ -23,7 +23,7 @@ defmodule TeamJay.Investment.Phase5PersistenceSuite do
   ]
 
   def run_defaults(opts \\ []) do
-    full = Phase5FullSuite.run_defaults(opts)
+    full = Keyword.get_lazy(opts, :full, fn -> Phase5FullSuite.run_defaults(opts) end)
 
     rows =
       Enum.map(@tables, fn {key, label, table_name} ->

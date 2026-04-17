@@ -4,11 +4,25 @@ defmodule TeamJay.Investment.Phase5TrendSuite do
   """
 
   alias TeamJay.Investment.Phase5MasterStatusHistory
+  alias TeamJay.Investment.Phase5CloseoutHistory
+  alias TeamJay.Investment.Phase5CloseoutSuite
+  alias TeamJay.Investment.Phase5FullSuite
   alias TeamJay.Investment.Phase5PersistenceHistory
 
   def run_defaults(opts \\ []) do
-    master = Phase5MasterStatusHistory.run_defaults(opts)
-    persistence = Phase5PersistenceHistory.run_defaults(opts)
+    full = Keyword.get_lazy(opts, :full, fn -> Phase5FullSuite.run_defaults(opts) end)
+    persistence = Phase5PersistenceHistory.run_defaults(Keyword.put(opts, :full, full))
+    closeout = Phase5CloseoutSuite.run_defaults(opts |> Keyword.put(:full, full) |> Keyword.put(:persistence, persistence))
+    history = Phase5CloseoutHistory.run_defaults(opts |> Keyword.put(:full, full) |> Keyword.put(:persistence, persistence))
+
+    master =
+      Phase5MasterStatusHistory.run_defaults(
+        opts
+        |> Keyword.put(:full, full)
+        |> Keyword.put(:persistence, persistence)
+        |> Keyword.put(:closeout, closeout)
+        |> Keyword.put(:history, history)
+      )
 
     positive_tables = Enum.count(persistence.rows, &(&1.delta_rows > 0))
     stagnant_tables = Enum.count(persistence.rows, &(&1.delta_rows == 0))

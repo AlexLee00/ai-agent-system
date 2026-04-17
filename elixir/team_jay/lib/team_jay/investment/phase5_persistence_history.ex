@@ -10,7 +10,15 @@ defmodule TeamJay.Investment.Phase5PersistenceHistory do
   def run_defaults(opts \\ []) do
     ensure_table!()
 
-    result = Phase5PersistenceSuite.run_defaults(opts)
+    full = Keyword.get(opts, :full)
+    suite_opts =
+      if full do
+        Keyword.put(opts, :full, full)
+      else
+        opts
+      end
+
+    result = Phase5PersistenceSuite.run_defaults(suite_opts)
     batch_id = System.unique_integer([:positive, :monotonic])
     recorded_at = DateTime.utc_now()
 

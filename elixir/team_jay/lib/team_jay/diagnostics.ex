@@ -7,8 +7,8 @@ defmodule TeamJay.Diagnostics do
 
   @check_interval 30_000
   @msg_queue_warn 100
-  @memory_warn 220_000_000
-  @memory_error 280_000_000
+  @memory_warn 260_000_000
+  @memory_error 340_000_000
   @service_ownership_path Path.expand("../../../../packages/core/config/service-ownership.json", __DIR__)
   @shadow_agents [
     {:blog_commenter, :blog},
