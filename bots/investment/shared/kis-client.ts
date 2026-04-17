@@ -94,6 +94,40 @@ function tokenCachePath(paper) {
   return path.join(os.tmpdir(), paper ? 'kis-token-paper.json' : 'kis-token-live.json');
 }
 
+function writeSecureJson(filePath, payload) {
+  const serialized = JSON.stringify(payload);
+  fs.writeFileSync(filePath, serialized, { mode: 0o600 });
+  try {
+    fs.chmodSync(filePath, 0o600);
+  } catch {
+    // macOS / tmp 환경에선 mode 지정만으로 충분한 경우가 많다.
+  }
+}
+
+function truncateKisMessage(value, maxLength = 180) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  return text.length > maxLength ? `${text.slice(0, maxLength)}…` : text;
+}
+
+function parseKisErrorBody(raw = '') {
+  const text = String(raw || '').trim();
+  if (!text) return '';
+
+  try {
+    const data = JSON.parse(text);
+    const code = truncateKisMessage(data?.msg_cd || data?.rt_cd || '');
+    const message = truncateKisMessage(data?.msg1 || data?.message || '');
+    if (code && message) return `[${code}] ${message}`;
+    if (message) return message;
+    if (code) return `[${code}]`;
+  } catch {
+    // plain text fallback below
+  }
+
+  return truncateKisMessage(text);
+}
+
 async function getToken(paper) {
   const cacheKey = paper ? 'paper' : 'live';
 
@@ -131,16 +165,17 @@ async function getToken(paper) {
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`KIS 토큰 발급 실패: ${res.status} ${text}`);
+    const reason = parseKisErrorBody(text);
+    throw new Error(`KIS 토큰 발급 실패: HTTP ${res.status}${reason ? ` ${reason}` : ''}`);
   }
 
   const data      = await res.json();
   const expiresAt = new Date(Date.now() + data.expires_in * 1000).toISOString();
 
-  fs.writeFileSync(tokenCachePath(paper), JSON.stringify({
+  writeSecureJson(tokenCachePath(paper), {
     access_token: data.access_token,
     expires_at:   expiresAt,
-  }));
+  });
 
   _tokenCache[cacheKey] = {
     token:   data.access_token,
@@ -200,7 +235,9 @@ async function kisRequest(method, endpoint, { trId, params, body, paper } = {}, 
     }
 
     if (data.rt_cd !== '0') {
-      throw new Error(`KIS API 오류 [${data.msg_cd}]: ${data.msg1 || JSON.stringify(data)}`);
+      const code = truncateKisMessage(data.msg_cd || data.rt_cd || '');
+      const message = truncateKisMessage(data.msg1 || data.message || '');
+      throw new Error(`KIS API 오류${code ? ` [${code}]` : ''}${message ? `: ${message}` : ''}`);
     }
 
     return data;
