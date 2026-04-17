@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+                       "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>ai.jay.growth</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/opt/homebrew/bin/elixir</string>
+		<string>--sname</string>
+		<string>team_jay</string>
+		<string>-S</string>
+		<string>mix</string>
+		<string>run</string>
+		<string>-e</string>
+		<string>Jay.V2.Commander.daily_growth_cycle() |> IO.inspect(label: "growth_cycle")</string>
+	</array>
+	<key>WorkingDirectory</key>
+	<string>/Users/alexlee/projects/ai-agent-system/elixir/team_jay</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/Users/alexlee</string>
+		<key>MIX_ENV</key>
+		<string>prod</string>
+		<key>JAY_V2_ENABLED</key>
+		<string>true</string>
+		<key>JAY_COMMANDER_ENABLED</key>
+		<string>false</string>
+		<key>JAY_LLM_DAILY_BUDGET_USD</key>
+		<string>5.00</string>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+		<key>REPO_ROOT</key>
+		<string>/Users/alexlee/projects/ai-agent-system</string>
+	</dict>
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Hour</key>
+		<integer>21</integer>
+		<key>Minute</key>
+		<integer>30</integer>
+	</dict>
+	<key>StandardOutPath</key>
+	<string>/tmp/jay-growth.log</string>
+	<key>StandardErrorPath</key>
+	<string>/tmp/jay-growth.err.log</string>
+	<key>RunAtLoad</key>
+	<false/>
+</dict>
+</plist>

@@ -1,4 +1,4 @@
-defmodule TeamJay.Jay.GrowthCycle do
+defmodule Jay.V2.GrowthCycle do
   @moduledoc """
   9팀 일일 성장 환류 사이클 GenServer.
   매일 06:30 KST 자동 실행.
@@ -8,7 +8,7 @@ defmodule TeamJay.Jay.GrowthCycle do
 
   use GenServer
   require Logger
-  alias TeamJay.Jay.{Topics, TeamConnector, DailyBriefing, DecisionEngine}
+  alias Jay.V2.{Topics, TeamConnector, DailyBriefing, DecisionEngine}
 
   @cycle_timeout_ms 30 * 60 * 1_000  # 30분 타임아웃
 
@@ -285,7 +285,7 @@ defmodule TeamJay.Jay.GrowthCycle do
     Topics.broadcast_briefing_ready(briefing)
 
     # 자율화 단계에 따라 발송 여부 결정
-    if TeamJay.Jay.AutonomyController.should_send_daily_briefing?() do
+    if Jay.V2.AutonomyController.should_send_daily_briefing?() do
       Jay.Core.HubClient.post_alarm(briefing, "jay", "growth_cycle")
       Logger.info("[GrowthCycle] LEARN: 브리핑 발송 완료 (#{String.length(briefing)}자)")
     else
@@ -293,7 +293,7 @@ defmodule TeamJay.Jay.GrowthCycle do
     end
 
     # 이상 없는 날 기록 (자율화 단계 전환용)
-    TeamJay.Jay.AutonomyController.record_clean_day()
+    Jay.V2.AutonomyController.record_clean_day()
 
     briefing
   end

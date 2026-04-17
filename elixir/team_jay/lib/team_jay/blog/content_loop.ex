@@ -17,7 +17,7 @@ defmodule TeamJay.Blog.ContentLoop do
 
   use GenServer
   require Logger
-  alias TeamJay.Jay.Topics
+  alias Jay.V2.Topics
 
   @daily_check_hour_utc 22
 

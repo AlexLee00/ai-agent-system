@@ -1,4 +1,4 @@
-defmodule TeamJay.Jay.DailyBriefing do
+defmodule Jay.V2.DailyBriefing do
   @moduledoc """
   9팀 데이터를 종합한 일일 브리핑 생성기.
   growth_cycle.ex가 07:30에 호출 → 텔레그램 발송.

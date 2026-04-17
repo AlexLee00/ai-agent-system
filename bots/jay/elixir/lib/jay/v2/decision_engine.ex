@@ -1,11 +1,11 @@
-defmodule TeamJay.Jay.DecisionEngine do
+defmodule Jay.V2.DecisionEngine do
   @moduledoc """
   Progressive Autonomy — 팀 간 연동 판단 엔진.
   ElixirData 패턴: ALLOW / MODIFY / ESCALATE / BLOCK
   """
 
   require Logger
-  alias TeamJay.Jay.Topics
+  alias Jay.V2.Topics
 
   @type decision :: :allow | :modify | :escalate | :block
 

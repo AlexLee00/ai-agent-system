@@ -1,4 +1,4 @@
-defmodule TeamJay.Jay.CommandTracker do
+defmodule Jay.V2.CommandTracker do
   @moduledoc """
   Cross-team command lifecycle tracker.
 
@@ -6,7 +6,7 @@ defmodule TeamJay.Jay.CommandTracker do
   EventLake에 일관된 형태로 남긴다.
   """
 
-  alias TeamJay.Jay.CommandEnvelope
+  alias Jay.V2.CommandEnvelope
 
   @event_prefix "cross_pipeline.command"
 

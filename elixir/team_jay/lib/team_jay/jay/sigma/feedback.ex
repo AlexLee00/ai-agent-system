@@ -1,4 +1,4 @@
-defmodule TeamJay.Jay.Sigma.Feedback do
+defmodule Jay.V2.Sigma.Feedback do
   @moduledoc """
   시그마 피드백 수집기 (sigma-feedback.ts Elixir 포트).
   팀별 피드백을 DB에 기록 + RAG 저장.
@@ -67,7 +67,7 @@ defmodule TeamJay.Jay.Sigma.Feedback do
 
   @doc "팀별 메트릭 수집 (sigma-feedback.ts collectTeamMetric 포트)"
   def collect_team_metric(team) when is_atom(team) do
-    TeamJay.Jay.TeamConnector.collect(team)
+    Jay.V2.TeamConnector.collect(team)
   end
 
   @doc "피드백 레코드 저장 (feedback_effectiveness)"

@@ -17,7 +17,7 @@ defmodule TeamJay.Blog.StrategyLearner do
 
   use GenServer
   require Logger
-  alias TeamJay.Jay.Topics
+  alias Jay.V2.Topics
 
   @weekly_evolution_hour_utc 22  # 일요일 22:00 UTC = 월요일 07:00 KST
 

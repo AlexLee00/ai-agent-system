@@ -1,4 +1,4 @@
-defmodule TeamJay.Jay.TeamConnector do
+defmodule Jay.V2.TeamConnector do
   @moduledoc """
   Hub API를 통해 9팀 데이터를 수집하는 커넥터.
   growth_cycle.ex가 SENSE 단계에서 호출.

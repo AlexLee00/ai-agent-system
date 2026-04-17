@@ -1,4 +1,4 @@
-defmodule TeamJay.Jay.CrossTeamRouter do
+defmodule Jay.V2.CrossTeamRouter do
   @moduledoc """
   팀 간 데이터 파이프라인 실행기 (JayBus 구독자).
   Topics.broadcast → CrossTeamRouter가 수신 → 대상 팀에 Hub API로 지시.
@@ -15,7 +15,7 @@ defmodule TeamJay.Jay.CrossTeamRouter do
 
   use GenServer
   require Logger
-  alias TeamJay.Jay.{CommandEnvelope, CommandTracker, Topics}
+  alias Jay.V2.{CommandEnvelope, CommandTracker, Topics}
 
   @system_risk_cooldown_seconds 900
 
@@ -45,10 +45,10 @@ defmodule TeamJay.Jay.CrossTeamRouter do
   def handle_info({:jay_bus, topic, payload}, state) when topic in [:ska_to_blog, :luna_to_blog,
       :blog_to_ska, :ska_to_luna, :blog_to_luna, :luna_to_ska] do
     # 자율화 단계 gate — Phase 3에서 allow 결정은 발송 생략 (escalate/block은 항상 전달)
-    if TeamJay.Jay.AutonomyController.should_notify_pipeline?(:allow) do
+    if Jay.V2.AutonomyController.should_notify_pipeline?(:allow) do
       dispatch_pipeline(topic, payload)
     else
-      phase = TeamJay.Jay.AutonomyController.get_phase()
+      phase = Jay.V2.AutonomyController.get_phase()
       Logger.debug("[CrossTeamRouter] #{topic}: Phase #{phase} 자율 — 생략")
     end
     {:noreply, state}

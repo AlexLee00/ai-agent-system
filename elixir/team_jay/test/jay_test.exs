@@ -2,7 +2,7 @@ defmodule TeamJay.JayTest do
   # DB 불필요한 순수 로직 테스트 (async: true 가능)
   use ExUnit.Case, async: true
 
-  alias TeamJay.Jay.{Topics, DailyBriefing, DecisionEngine, WeeklyReport}
+  alias Jay.V2.{Topics, DailyBriefing, DecisionEngine, WeeklyReport}
 
   # ────────────────────────────────────────────────────────────────
   # Topics

@@ -1,4 +1,4 @@
-defmodule TeamJay.Jay.Sigma.Scheduler do
+defmodule Jay.V2.Sigma.Scheduler do
   @moduledoc """
   시그마 팀 편성 스케줄러 (sigma-scheduler.ts Elixir 포트).
   어제 이벤트 기반으로 오늘 팀 편성 결정.

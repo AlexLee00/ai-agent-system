@@ -1,3 +1,42 @@
+# 세션 인수인계 — 2026-04-18 (CODEX_JAY_DARWIN_INDEPENDENCE Phase 3 완료)
+
+> 세션 범위: Jay V2 독립 — `bots/jay/elixir/` 신설 + `Jay.V2.Commander` (Jido.AI.Agent) + 6 Skills
+
+---
+
+## 최신 작업 요약 (Phase 3)
+
+### 구현 내용
+
+1. **`bots/jay/elixir/` 신설** — sigma/darwin 패턴의 얇은 래퍼 mix.exs
+2. **11 파일 git mv** — `elixir/team_jay/lib/team_jay/jay/*.ex` → `bots/jay/elixir/lib/jay/v2/`
+3. **jay_supervisor.ex git mv** → `bots/jay/elixir/lib/jay/v2/supervisor.ex`
+4. **Namespace 전체 변환**: `TeamJay.Jay.*` → `Jay.V2.*` (모든 .ex, .exs 파일)
+5. **`Jay.V2.Commander`** 신설 (`use Jido.AI.Agent, model: :smart, tools: [6 skills]`)
+6. **6개 Skill** 신설: TeamHealthCheck / FormationDecision / CrossTeamPipeline / AutonomyGovernor / DailyBriefingComposer / WeeklyReviewer
+7. **`Jay.V2.Supervisor`** 갱신 — `JAY_V2_ENABLED` gate 추가
+8. **`Jay.Application`** 신설
+9. **`bots/jay/launchd/ai.jay.growth.plist`** 생성 (launchctl 등록은 마스터 승인 후)
+10. **`team_jay/application.ex`** — `JaySupervisor` 게이트 제거, `Jay.V2.Supervisor` 직접 child 등록
+11. **`team_jay/mix.exs`** — elixirc_paths + test_paths에 jay 경로 추가
+12. **테스트 58개** 신설 (jay 전용, 4 excluded)
+
+### 검증 결과
+- `mix compile --warnings-as-errors` ✅ (경고 0건)
+- Darwin standalone: **337 tests, 0 failures** (9 excluded) ✅
+- Sigma standalone: **124 tests, 0 failures** ✅
+- Jay standalone: **58 tests, 0 failures** (4 excluded) ✅
+- team_jay 통합: **564 tests, 0 failures** (17 excluded) ✅
+- 시그마 + 다윈 Shadow launchd 가동 유지 ✅
+
+### 다음 세션 즉시 착수 항목 (Phase 4)
+1. **launchctl 등록**: `launchctl load ~/Library/LaunchAgents/ai.jay.growth.plist` (마스터 명시적 승인 후)
+2. **Jay.V2.Commander AgentServer 기동**: `JAY_COMMANDER_ENABLED=true` + Supervisor child 추가
+3. **FormationDecision LLM 실제 호출**: Jido.AI.Agent `chat/2` 또는 Darwin 패턴 LLM.Selector 사용
+4. **team_jay 슬림화**: 남은 팀들도 `bots/*/elixir/`로 점진적 독립 (Phase 4+)
+
+---
+
 # 세션 인수인계 — 2026-04-18 (컴파일 경고 수정 + 테스트 안정화)
 
 > 세션 범위: `mix compile --warnings-as-errors` 통과 + 전체 504 tests, 0 failures 달성

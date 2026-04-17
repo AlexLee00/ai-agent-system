@@ -1,10 +1,10 @@
-defmodule TeamJay.Jay.CrossTeamRouterTest do
+defmodule Jay.V2.CrossTeamRouterTest do
   use ExUnit.Case, async: false
 
   # CrossTeamRouter 가 기동 중일 때만 의미 있는 테스트.
   # 프로세스 미기동 시 skip.
   setup do
-    pid = Process.whereis(TeamJay.Jay.CrossTeamRouter)
+    pid = Process.whereis(Jay.V2.CrossTeamRouter)
     {:ok, pid: pid}
   end
 
