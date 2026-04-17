@@ -54,8 +54,12 @@ defmodule TeamJay.Teams.DarwinSupervisor do
       TeamJay.Darwin.TeamLead,
       TeamJay.Darwin.Scanner,
       TeamJay.Darwin.Evaluator,
+      TeamJay.Darwin.Edison,
+      TeamJay.Darwin.ProofR,
       TeamJay.Darwin.Applier,
       TeamJay.Darwin.FeedbackLoop,
+      TeamJay.Darwin.KeywordEvolver,
+      TeamJay.Darwin.ResearchMonitor,
       TeamJay.Darwin.TeamConnector
     ]
 
