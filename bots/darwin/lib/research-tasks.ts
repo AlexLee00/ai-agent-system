@@ -7,10 +7,10 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { callWithFallback } = require('../../../../packages/core/lib/llm-fallback');
-const pgPool = require('../../../../packages/core/lib/pg-pool');
-const githubClient = require('../../../../packages/core/lib/github-client');
-const env = require('../../../../packages/core/lib/env');
+const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
+const pgPool = require('../../../packages/core/lib/pg-pool');
+const githubClient = require('../../../packages/core/lib/github-client');
+const env = require('../../../packages/core/lib/env');
 const {
   analyzeRepoStructure,
   extractCodePatterns,

@@ -4,7 +4,7 @@
  * 다윈 논문 평가기 — 한국어 요약 + 적합성 점수
  */
 
-const { callWithFallback } = require('../../../../packages/core/lib/llm-fallback');
+const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
 
 const SYSTEM_PROMPT = `당신은 팀 제이의 연구 분석가입니다.
 팀 제이는 113개 AI 에이전트를 운영하는 멀티에이전트 자동화 플랫폼입니다.

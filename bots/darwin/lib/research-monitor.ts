@@ -4,10 +4,10 @@
  * 다윈 연구 스캐너 모니터링
  */
 
-const rag = require('../../../../packages/core/lib/rag');
-const pgPool = require('../../../../packages/core/lib/pg-pool');
-const { postAlarm } = require('../../../../packages/core/lib/openclaw-client');
-const kst = require('../../../../packages/core/lib/kst');
+const rag = require('../../../packages/core/lib/rag');
+const pgPool = require('../../../packages/core/lib/pg-pool');
+const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const kst = require('../../../packages/core/lib/kst');
 
 const SCHEMA = 'reservation';
 const TABLE = 'rag_research';

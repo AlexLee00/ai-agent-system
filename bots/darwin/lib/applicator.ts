@@ -7,9 +7,9 @@
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
-const { callWithFallback } = require('../../../../packages/core/lib/llm-fallback');
-const { postAlarm } = require('../../../../packages/core/lib/openclaw-client');
-const eventLake = require('../../../../packages/core/lib/event-lake');
+const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
+const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const eventLake = require('../../../packages/core/lib/event-lake');
 const proposalStore = require('./proposal-store');
 
 function buildDarwinFeedbackButtons(eventId) {
