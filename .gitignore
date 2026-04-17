@@ -3,6 +3,7 @@ dist/
 .env
 .env.*
 !.env.example
+!.env.*.example
 .env.development
 .env.production
 .env.local
@@ -19,6 +20,7 @@ naver-profile/
 *.out
 *.pid
 *.lock
+!mix.lock
 
 # OS
 .DS_Store
@@ -189,3 +191,6 @@ docs/research/proposals/
 docs/research/tasks/
 PATCH_REQUEST.md
 docs/STRATEGY.md
+
+# Sigma V2 principles (환경별 변형 방지)
+elixir/team_jay/config/sigma_principles.yaml

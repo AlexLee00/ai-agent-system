@@ -1,0 +1,13 @@
+{
+  "name": "sigma-skills",
+  "version": "0.1.0",
+  "description": "Team Jay Sigma team analytics skills",
+  "author": "Team Jay / Master Jay",
+  "skills": [
+    "data-quality-guard",
+    "causal-check",
+    "experiment-design",
+    "feature-planner",
+    "observability-planner"
+  ]
+}
