@@ -1,4 +1,43 @@
-# 세션 인수인계 — 2026-04-17 (CODEX_SIGMA_REMODEL_PHASE_5 완료 — 리모델링 최종)
+# 세션 인수인계 — 2026-04-17 (CODEX_SIGMA_LUNA_ALIGN 완료 — LLM Selector + 루나 표준 정비)
+
+> 세션 범위: CODEX_SIGMA_LUNA_ALIGN Phase A~E 전체 완료 (이미 구현됨 확인 + Phase E 실행)
+
+---
+
+## 최신 작업 요약 (SIGMA_LUNA_ALIGN)
+
+CODEX_SIGMA_LUNA_ALIGN 전체 Exit Criteria 달성. 아카이빙 완료.
+
+### 확인된 완료 항목 (이미 커밋됨)
+- **Phase A**: `bots/sigma/` 이동 작업 커밋 (commit `0fb5ffe3`)
+- **Phase B**: 9개 표준 md (README/AGENTS/BOOTSTRAP/CLAUDE/HEARTBEAT/IDENTITY/SOUL/TOOLS/USER)
+- **Phase C**: LLM Selector 모듈 — `bots/sigma/shared/` 4 TS 파일 + `bots/sigma/elixir/lib/sigma/v2/llm/` 2 ex 파일
+- **Phase C-3**: `packages/core/lib/llm-model-selector.ts` — `sigma.agent_policy` (line 475) 추가
+- **Phase C-5**: `bots/sigma/migrations/20260502000001_add_sigma_llm_cost_tracking.exs`
+- **Phase D**: package.json / tsconfig.json / config.yaml.example / secrets.example.json
+
+### 이번 세션 구현 (Phase E, commit `26cfff5f`)
+- **5개 canonical SKILL.md 업그레이드**: Phase 0 skeleton → Phase 5 전체 문서 (agentskills.io 프론트매터 유지)
+  - `bots/sigma/skills/data-quality-guard/SKILL.md` (v0.1.0 → v0.2.0, 132줄)
+  - `bots/sigma/skills/causal-check/SKILL.md`
+  - `bots/sigma/skills/experiment-design/SKILL.md`
+  - `bots/sigma/skills/feature-planner/SKILL.md`
+  - `bots/sigma/skills/observability-planner/SKILL.md`
+- **uppercase 중복 5개 제거**: `bots/sigma/skills/*.md` (초기 생성 잔재)
+- **codex 아카이빙**: `CODEX_SIGMA_LUNA_ALIGN.md` → `docs/archive/codex-completed/`
+
+### 다음 단계 (OPS 배포 — Sigma Phase 1~5)
+
+1. `cd elixir/team_jay && mix deps.get` (Plug + Bandit 신규 의존성)
+2. `mix ecto.migrate` (Phase 0 audit + Phase 1 shadow_runs + Phase C sigma_llm_cost_tracking)
+3. OPS `.env`에 `SIGMA_MCP_TOKEN=<비밀값>` 추가
+4. `SIGMA_MCP_SERVER_ENABLED=true`로 HTTP 서버 기동 테스트
+5. `mix test --only e2e`로 E2E 검증
+6. Shadow Mode 7일 운영 후 ShadowCompare.weekly_report() → 95%+ 일치율 확인
+
+---
+
+# 이전 인수인계 — 2026-04-17 (CODEX_SIGMA_REMODEL_PHASE_5 완료 — 리모델링 최종)
 
 > 세션 범위: TS 폐기 + MCP Server HTTP 노출 + 다윈 Signal Receiver + E2E 테스트
 
