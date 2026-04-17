@@ -81,6 +81,21 @@ export async function commandEventsSummaryRoute(req: any, res: any) {
   }
 }
 
+export async function commandEventsStuckRoute(req: any, res: any) {
+  try {
+    const result = await eventLake.stuckCommands({
+      minutes: toInt(req.query.minutes, 24 * 60),
+      thresholdMinutes: toInt(req.query.threshold_minutes, 15),
+      limit: toInt(req.query.limit, 20),
+      targetTeam: req.query.target_team || '',
+      pipeline: req.query.pipeline || '',
+    });
+    return res.json({ ok: true, ...result });
+  } catch (error: any) {
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+}
+
 export async function commandEventsInboxRoute(req: any, res: any) {
   try {
     const targetTeam = String(req.query.target_team || '').trim();

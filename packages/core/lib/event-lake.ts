@@ -376,6 +376,66 @@ export async function commandSummary({
   };
 }
 
+/**
+ * @param {{ minutes?: number, thresholdMinutes?: number, targetTeam?: string, pipeline?: string, limit?: number }} [input]
+ */
+export async function stuckCommands({
+  minutes = 24 * 60,
+  thresholdMinutes = 15,
+  targetTeam = '',
+  pipeline = '',
+  limit = 20,
+} = {}) {
+  const summary = await commandSummary({
+    minutes,
+    targetTeam,
+    pipeline,
+    limit: 1000,
+  });
+
+  const nowMs = Date.now();
+  const stuck = (summary.recent || [])
+    .map((command: any) => {
+      const updatedAt = String(command?.updated_at || '');
+      const ageMinutes =
+        updatedAt ? Math.max(0, Math.floor((nowMs - Date.parse(updatedAt)) / 60_000)) : null;
+
+      return {
+        ...command,
+        age_minutes: ageMinutes,
+        stuck: Boolean(
+          ageMinutes != null &&
+            ageMinutes >= Math.max(1, Number(thresholdMinutes || 0) || 1) &&
+            ['issued', 'acknowledged'].includes(_text(command?.status))
+        ),
+      };
+    })
+    .filter((command: any) => command.stuck)
+    .sort((a: any, b: any) => {
+      const ageA = Number(a?.age_minutes || 0);
+      const ageB = Number(b?.age_minutes || 0);
+      if (ageB !== ageA) return ageB - ageA;
+      return String(b?.updated_at || '').localeCompare(String(a?.updated_at || ''));
+    });
+
+  return {
+    total: stuck.length,
+    window_minutes: summary.window_minutes,
+    threshold_minutes: Math.max(1, Number(thresholdMinutes || 0) || 1),
+    target_team_counts: stuck.reduce((acc: Record<string, number>, row: any) => {
+      const key = _text(row?.target_team, 'unknown');
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {}),
+    pipeline_counts: stuck.reduce((acc: Record<string, number>, row: any) => {
+      const key = _text(row?.pipeline, 'unknown');
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {}),
+    results: stuck.slice(0, Math.min(200, Math.max(1, Number(limit || 20) || 20))),
+  };
+}
+
 async function _findCommandIssuedEvent(commandId: string, minutes = 7 * 24 * 60) {
   await initSchema();
 

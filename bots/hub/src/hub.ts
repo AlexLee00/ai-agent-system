@@ -17,6 +17,7 @@ const {
   eventsFeedbackRoute,
   commandEventsRecentRoute,
   commandEventsSummaryRoute,
+  commandEventsStuckRoute,
   commandEventsInboxRoute,
   commandEventsLifecycleRoute,
 } = require('../lib/routes/events');
@@ -141,6 +142,7 @@ app.get('/hub/errors/summary', generalLimiter, errorsSummaryRoute);
 app.get('/hub/events/search', generalLimiter, eventsSearchRoute);
 app.get('/hub/events/commands', generalLimiter, commandEventsRecentRoute);
 app.get('/hub/events/commands/summary', generalLimiter, commandEventsSummaryRoute);
+app.get('/hub/events/commands/stuck', generalLimiter, commandEventsStuckRoute);
 app.get('/hub/events/commands/inbox', generalLimiter, commandEventsInboxRoute);
 app.post('/hub/events/commands/lifecycle', generalLimiter, commandEventsLifecycleRoute);
 app.get('/hub/events/stats', generalLimiter, eventsStatsRoute);
