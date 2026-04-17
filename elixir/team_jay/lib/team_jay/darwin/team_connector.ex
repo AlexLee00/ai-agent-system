@@ -15,11 +15,23 @@ defmodule TeamJay.Darwin.TeamConnector do
   use GenServer
   require Logger
 
-  alias TeamJay.Darwin.Topics
+  alias TeamJay.Darwin.{Topics, TeamLead, Scanner}
   alias TeamJay.Claude.Topics, as: ClaudeTopics
+  alias TeamJay.Claude.Dexter.TestRunner
   alias TeamJay.HubClient
+  alias TeamJay.EventLake
+  alias TeamJay.Repo
 
   @target_teams [:luna, :blog, :claude, :ska, :jay]
+
+  # 팀별 관련 연구 키워드
+  @team_keywords %{
+    "luna"    => ["investment", "trading", "portfolio"],
+    "blog"    => ["content", "nlp", "text generation"],
+    "claude"  => ["code quality", "testing", "debugging"],
+    "ska"     => ["web scraping", "parsing", "automation"],
+    "jay"     => ["orchestration", "multi-agent", "workflow"]
+  }
 
   defstruct [forwarded_count: 0, last_forwarded_at: nil]
 
@@ -38,17 +50,25 @@ defmodule TeamJay.Darwin.TeamConnector do
     {:ok, %__MODULE__{}}
   end
 
+  @doc "다윈팀 KPI 수집 (제이팀 GrowthCycle용)"
+  def collect_kpi do
+    GenServer.call(__MODULE__, :collect_kpi, 10_000)
+  end
+
   @impl true
   def handle_info(:subscribe_events, state) do
     Enum.each(@target_teams, fn team ->
       Registry.register(TeamJay.JayBus, Topics.applied(to_string(team)), [])
     end)
-    Logger.debug("[DarwinConnector] #{length(@target_teams)}개 팀 이벤트 구독 완료")
+    # 타 팀 에러 이벤트도 구독 → 관련 연구 제안
+    Registry.register(TeamJay.JayBus, "system_error", [])
+    Registry.register(TeamJay.JayBus, "port_agent_failed", [])
+    Logger.debug("[DarwinConnector] #{length(@target_teams) + 2}개 토픽 구독 완료")
     {:noreply, state}
   end
 
-  def handle_info({:jay_event, topic, payload}, state) do
-    team = extract_team(topic)
+  def handle_info({:jay_event, "darwin.applied." <> team_str, payload}, state) do
+    team = String.to_existing_atom(team_str)
     paper = payload[:paper] || payload
     title = paper["title"] || paper[:title] || "unknown"
     Logger.info("[DarwinConnector] 연구 적용 전달: :#{team} ← #{title}")
@@ -62,6 +82,17 @@ defmodule TeamJay.Darwin.TeamConnector do
     {:noreply, new_state}
   end
 
+  # 타 팀 에러 → 관련 논문 스캔 제안 (L4+)
+  def handle_info({:jay_event, event_type, payload}, state)
+      when event_type in ["system_error", "port_agent_failed"] do
+    team = to_string(payload[:team] || payload["team"] || "unknown")
+    if TeamLead.get_autonomy_level() >= 4 do
+      Task.start(fn -> suggest_scan_for_team(team) end)
+    end
+    {:noreply, state}
+  end
+
+  def handle_info({:jay_event, _topic, _payload}, state), do: {:noreply, state}
   def handle_info(_msg, state), do: {:noreply, state}
 
   @impl true
@@ -71,6 +102,11 @@ defmodule TeamJay.Darwin.TeamConnector do
       last_forwarded_at: state.last_forwarded_at,
       target_teams: @target_teams
     }, state}
+  end
+
+  def handle_call(:collect_kpi, _from, state) do
+    kpi = fetch_darwin_kpi()
+    {:reply, kpi, %{state | last_forwarded_at: DateTime.utc_now()}}
   end
 
   # ── 팀별 포워딩 ─────────────────────────────────────────────────────
