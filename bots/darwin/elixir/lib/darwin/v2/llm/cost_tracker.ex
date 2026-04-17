@@ -43,6 +43,11 @@ defmodule Darwin.V2.LLM.CostTracker do
     GenServer.call(__MODULE__, :check_budget)
   end
 
+  @doc "오늘 누적 비용 (USD). {:ok, float} | {:error, term}"
+  def today_total_usd do
+    GenServer.call(__MODULE__, :today_total_usd)
+  end
+
   # -------------------------------------------------------------------
   # GenServer 콜백
   # -------------------------------------------------------------------
@@ -121,6 +126,22 @@ defmodule Darwin.V2.LLM.CostTracker do
       end
 
     {:reply, result, new_state}
+  end
+
+  @impl true
+  def handle_call(:today_total_usd, _from, state) do
+    today = Date.utc_today()
+
+    total =
+      case TeamJay.Repo.query(
+             "SELECT COALESCE(SUM(cost_usd), 0.0) FROM darwin_llm_cost_tracking WHERE timestamp::date = CURRENT_DATE",
+             []
+           ) do
+        {:ok, %{rows: [[sum]]}} when is_number(sum) -> sum
+        _ -> if state.date == today, do: state.daily_spent, else: 0.0
+      end
+
+    {:reply, {:ok, total}, %{state | daily_spent: total, date: today}}
   end
 
   # -------------------------------------------------------------------

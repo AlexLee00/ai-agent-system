@@ -8,6 +8,7 @@ defmodule Darwin.V2.Supervisor do
   Phase 3: 팀장(Lead) + 7개 사이클 에이전트 활성화
   Phase 4: FeedbackLoop + KeywordEvolver + ResearchMonitor 추가
   Phase 5: ShadowRunner (Shadow Mode) + HTTP(Bandit) + MCP Server 활성화
+  Phase 6: TelegramBridge + 강화된 RollbackScheduler (24h 효과 측정) 추가
   """
 
   use Supervisor
@@ -89,12 +90,9 @@ defmodule Darwin.V2.Supervisor do
     end
   end
 
-  # Shadow Mode 선택적 기동 (env var DARWIN_SHADOW_ENABLED=true 또는 app config)
+  # Shadow Mode 선택적 기동 (env var DARWIN_SHADOW_MODE=true 또는 app config)
   defp maybe_shadow_children do
-    shadow_env = System.get_env("DARWIN_SHADOW_ENABLED", "false") == "true"
-    shadow_cfg = Application.get_env(:darwin, :shadow_mode, false)
-
-    if shadow_env or shadow_cfg do
+    if Darwin.V2.ShadowRunner.enabled?() do
       Logger.info("[다윈V2] Shadow Mode 활성 — V1 vs V2 병행 비교 기동")
       [Darwin.V2.ShadowRunner]
     else

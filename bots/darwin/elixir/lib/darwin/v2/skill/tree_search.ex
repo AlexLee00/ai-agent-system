@@ -287,9 +287,8 @@ defmodule Darwin.V2.Skill.TreeSearch do
 
   defp check_principle(goal, paper_ctx) do
     case Darwin.V2.Principle.Loader.check(:tree_search, %{goal: goal, paper_ctx: paper_ctx}) do
-      :ok              -> :ok
-      {:ok, _}         -> :ok
-      {:error, reason} -> {:error, {:principle_violation, reason}}
+      {:approved, _} -> :ok
+      {:blocked, reasons} -> {:error, {:principle_violation, reasons}}
     end
   rescue
     _ -> :ok

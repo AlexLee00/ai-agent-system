@@ -31,13 +31,14 @@ defmodule Darwin.V2.ShadowCompare do
   @doc """
   점수 일치 여부. 기본 허용 오차 ±1.0 (10점 스케일).
   """
-  @spec score_match?(number(), number(), number()) :: boolean()
-  def score_match?(v1_score, v2_score, tolerance \\ 1.0)
-      when is_number(v1_score) and is_number(v2_score) do
-    abs(v1_score - v2_score) <= tolerance
+  @spec score_match?(term(), term(), number()) :: boolean()
+  def score_match?(v1_score, v2_score, tolerance \\ 1.0) do
+    if is_number(v1_score) and is_number(v2_score) do
+      abs(v1_score - v2_score) <= tolerance
+    else
+      false
+    end
   end
-
-  def score_match?(_, _, _), do: false
 
   @doc """
   전체 비교 리포트 생성.

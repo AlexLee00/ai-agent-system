@@ -24,6 +24,9 @@ defmodule Darwin.Application do
   end
 
   defp start_v2 do
+    # Telemetry 핸들러를 수퍼바이저 기동 전에 등록
+    Darwin.V2.Telemetry.setup()
+
     children = [Darwin.V2.Supervisor]
     opts = [strategy: :one_for_one, name: Darwin.Supervisor]
     Supervisor.start_link(children, opts)
