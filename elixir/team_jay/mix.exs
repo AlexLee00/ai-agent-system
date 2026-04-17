@@ -7,8 +7,20 @@ defmodule TeamJay.MixProject do
       version: "0.1.0",
       elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
+      elixirc_paths: elixirc_paths(Mix.env()),
+      test_paths: test_paths(),
       deps: deps()
     ]
+  end
+
+  defp elixirc_paths(_env) do
+    sigma_lib = Path.expand("../../bots/sigma/elixir/lib", __DIR__)
+    ["lib", sigma_lib]
+  end
+
+  defp test_paths do
+    sigma_test = Path.expand("../../bots/sigma/elixir/test", __DIR__)
+    ["test", sigma_test]
   end
 
   # Run "mix help compile.app" to learn about applications.

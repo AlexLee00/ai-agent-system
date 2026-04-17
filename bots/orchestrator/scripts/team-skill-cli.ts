@@ -5,7 +5,7 @@ const fs = require('fs');
 const { parseArgs } = require('../../reservation/lib/args');
 const darwin = require('../../../packages/core/lib/skills/darwin/source-ranking');
 const justin = require('../../../packages/core/lib/skills/justin/citation-audit');
-const sigma = require('../../../packages/core/lib/skills/sigma/data-quality-guard');
+const sigma = require('../../sigma/legacy-skills/data-quality-guard');
 
 const SKILL_MAP = {
   'darwin/source-ranking': (input) => darwin.rankSources(input.items || []),
