@@ -163,8 +163,16 @@ defmodule TeamJay.Jay.TeamConnector do
   defp do_collect(:claude) do
     health = query_rows("""
       SELECT service, exit_code, checked_at
-      FROM claude.service_health
-      WHERE checked_at >= NOW() - interval '1 hour'
+      FROM (
+        SELECT
+          service,
+          exit_code,
+          checked_at,
+          ROW_NUMBER() OVER (PARTITION BY service ORDER BY checked_at DESC) AS rn
+        FROM claude.service_health
+        WHERE checked_at >= NOW() - interval '1 hour'
+      ) latest
+      WHERE rn = 1
       ORDER BY checked_at DESC
     """, "claude")
 
