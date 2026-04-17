@@ -19,8 +19,8 @@ defmodule TeamJay.Teams.SkaSupervisor do
       runner: {:shell, "/bin/bash"},
       schedule: nil
     },
-    %{name: :log_report, script: "bots/ska/scripts/log-report.js", schedule: {:interval, 86_400_000}},
-    # log_report는 현재 launchd owner가 없어서 PortAgent가 유지한다.
+    # log_report: log-report.js 삭제 후 .ts 미생성 — 스크립트 재작성 필요 (KI 추가)
+    # %{name: :log_report, script: "bots/ska/scripts/log-report.ts", runner: :tsx, schedule: {:interval, 86_400_000}},
     # log_rotate/db_backup/eve/rebecca/forecast/pickko audit 계열은 launchd가 canonical owner다.
   ]
 
@@ -71,7 +71,7 @@ defmodule TeamJay.Teams.SkaSupervisor do
          name: agent.name,
          team: :ska,
          script: agent.script,
-         runner: Map.get(agent, :runner, :node),
+         runner: Map.get(agent, :runner, :tsx),
          schedule: agent.schedule}
       end)
 
