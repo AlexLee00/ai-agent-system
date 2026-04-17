@@ -7,6 +7,12 @@ OPS 리소스 프록시 서버. DEV↔OPS 브릿지.
 ## 포트
 `:7788` (OPS 맥 스튜디오, launchd `ai.hub.resource-api`)
 
+## 네트워크 바인딩
+- 기본 바인딩은 `HUB_BIND_HOST=127.0.0.1`
+- 운영에선 loopback-only를 기본값으로 유지
+- 외부 접근이 필요하면 SSH 터널 또는 Tailscale IP를 명시적으로 사용
+- `0.0.0.0` 바인딩은 예외 상황에서만 사용
+
 ## 핵심 파일
 - `src/hub.ts` — Express 서버 source of truth
 - `src/hub.js` — launchd가 직접 타는 source wrapper (`hub.ts` 우선, 실패 시 `hub.legacy.js` 폴백)

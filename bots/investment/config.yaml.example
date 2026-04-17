@@ -39,7 +39,7 @@ binance:
     - "ETH/USDT"
     - "SOL/USDT"
     - "BNB/USDT"
-  deposit_address_usdt: ""
+  # deposit_address_usdt: bots/hub/secrets-store.json → investment_accounts.binance
 
 upbit:
   access_key: "YOUR_UPBIT_ACCESS_KEY"
@@ -50,8 +50,8 @@ kis:
   app_secret: "YOUR_KIS_APP_SECRET"
   paper_app_key: "YOUR_KIS_PAPER_APP_KEY"
   paper_app_secret: "YOUR_KIS_PAPER_APP_SECRET"
-  account_number: ""
-  paper_account_number: ""
+  # account_number: bots/hub/secrets-store.json → investment_accounts.kis
+  # paper_account_number: bots/hub/secrets-store.json → investment_accounts.kis
   symbols:
     - "005930"
     - "000660"

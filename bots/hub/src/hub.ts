@@ -53,6 +53,7 @@ env.printModeBanner('Resource API Hub');
 
 const app = express();
 const PORT = env.HUB_PORT || 7788;
+const BIND_HOST = String(env.HUB_BIND_HOST || '127.0.0.1').trim() || '127.0.0.1';
 const SHUTDOWN_TIMEOUT_MS = 10000;
 const UNCAUGHT_OVERFLOW_LIMIT = 3;
 const UNCAUGHT_RESET_MS = 5 * 60 * 1000;
@@ -227,10 +228,13 @@ async function gracefulShutdown(reason: string, exitCode = 0) {
   }
 }
 
-server = app.listen(PORT, '0.0.0.0', () => {
+server = app.listen(PORT, BIND_HOST, () => {
   startupComplete = true;
-  console.log(`🌐 Resource API Hub 시작 — http://0.0.0.0:${PORT}/hub/health`);
+  console.log(`🌐 Resource API Hub 시작 — http://${BIND_HOST}:${PORT}/hub/health`);
   console.log(`   인증: ${env.HUB_AUTH_TOKEN ? 'Bearer Token 활성' : '⚠️ HUB_AUTH_TOKEN 미설정'}`);
+  if (BIND_HOST === '0.0.0.0') {
+    console.warn('⚠️  Hub가 모든 인터페이스(0.0.0.0)에 바인딩됨 — 운영 환경에서는 권장하지 않음');
+  }
 });
 
 server.on('connection', (socket: any) => {
