@@ -21,6 +21,12 @@
     <string>ops</string>
     <key>PATH</key>
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>HUB_PG_USER</key>
+    <string>hub_readonly</string>
+    <key>HUB_PG_PASSWORD</key>
+    <string>__SET_IN_LOCAL_LAUNCHAGENT__</string>
+    <key>HUB_PG_DATABASE</key>
+    <string>jay</string>
   </dict>
 
   <key>RunAtLoad</key>
