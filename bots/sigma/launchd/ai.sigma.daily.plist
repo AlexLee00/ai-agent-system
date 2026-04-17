@@ -7,8 +7,8 @@
 
   <key>ProgramArguments</key>
   <array>
-    <string>/opt/homebrew/bin/node</string>
-    <string>/Users/alexlee/projects/ai-agent-system/bots/sigma/ts/src/sigma-daily.js</string>
+    <string>/opt/homebrew/bin/tsx</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/sigma/ts/src/sigma-daily.ts</string>
   </array>
 
   <key>WorkingDirectory</key>
@@ -18,8 +18,22 @@
   <dict>
     <key>PATH</key>
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>HOME</key>
+    <string>/Users/alexlee</string>
     <key>MODE</key>
     <string>ops</string>
+    <key>SIGMA_V2_ENABLED</key>
+    <string>true</string>
+    <key>SIGMA_TIER2_AUTO_APPLY</key>
+    <string>false</string>
+    <key>SIGMA_MCP_SERVER_ENABLED</key>
+    <string>false</string>
+    <key>SIGMA_GEPA_ENABLED</key>
+    <string>false</string>
+    <key>SIGMA_SELF_RAG_ENABLED</key>
+    <string>false</string>
+    <key>SIGMA_V2_ENDPOINT</key>
+    <string>http://localhost:4010/sigma/v2</string>
   </dict>
 
   <key>StandardOutPath</key>
