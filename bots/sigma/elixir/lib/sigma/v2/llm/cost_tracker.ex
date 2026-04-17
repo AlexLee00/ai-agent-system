@@ -9,31 +9,45 @@ defmodule Sigma.V2.LLM.CostTracker do
   require Logger
 
   @doc """
-  토큰 사용 기록.
+  토큰 사용 기록 — sigma_llm_cost_tracking INSERT.
   """
   def track_tokens(%{agent: _, model: _, provider: _, tokens_in: _, tokens_out: _} = entry) do
     cost_usd = calculate_cost(entry.model, entry.tokens_in, entry.tokens_out)
 
-    # Phase 2에서 실제 DB INSERT 연동 예정
-    # Postgrex.query!(Sigma.Repo, """
-    #   INSERT INTO sigma_llm_cost_tracking
-    #     (timestamp, agent, model, provider, tokens_in, tokens_out, cost_usd)
-    #   VALUES (NOW(), $1, $2, $3, $4, $5, $6)
-    # """, [entry.agent, entry.model, entry.provider, entry.tokens_in, entry.tokens_out, cost_usd])
+    result =
+      TeamJay.Repo.query(
+        """
+        INSERT INTO sigma_llm_cost_tracking
+          (timestamp, agent, model, provider, tokens_in, tokens_out, cost_usd, inserted_at, updated_at)
+        VALUES (NOW(), $1, $2, $3, $4, $5, $6, NOW(), NOW())
+        """,
+        [entry.agent, entry.model, entry.provider, entry.tokens_in, entry.tokens_out, cost_usd]
+      )
+
+    case result do
+      {:ok, _} -> :ok
+      {:error, e} -> Logger.error("[sigma/cost] DB INSERT 실패: #{inspect(e)}")
+    end
 
     {:ok, Map.put(entry, :cost_usd, cost_usd)}
   end
 
   @doc """
-  일일 예산 확인.
+  일일 예산 확인 — 오늘 사용량 합계 조회.
   """
   def check_budget do
     daily_limit =
       System.get_env("SIGMA_LLM_DAILY_BUDGET_USD", "10.0")
       |> String.to_float()
 
-    # Phase 2: SELECT SUM(cost_usd) FROM sigma_llm_cost_tracking WHERE timestamp::date = CURRENT_DATE
-    daily_spent = 0.0
+    daily_spent =
+      case TeamJay.Repo.query(
+             "SELECT COALESCE(SUM(cost_usd), 0.0) FROM sigma_llm_cost_tracking WHERE timestamp::date = CURRENT_DATE",
+             []
+           ) do
+        {:ok, %{rows: [[sum]]}} when is_number(sum) -> sum
+        _ -> 0.0
+      end
 
     if daily_spent < daily_limit do
       {:ok, %{daily: daily_spent, limit: daily_limit}}
@@ -53,5 +67,5 @@ defmodule Sigma.V2.LLM.CostTracker do
   defp calculate_cost("claude-haiku-4-5-20251001", tokens_in, tokens_out),
     do: tokens_in * 8.0e-7 + tokens_out * 4.0e-6
 
-  defp calculate_cost(_ollama_or_other, _in, _out), do: 0.0
+  defp calculate_cost(_other, _in, _out), do: 0.0
 end

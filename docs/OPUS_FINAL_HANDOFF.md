@@ -1,4 +1,47 @@
-# 세션 인수인계 — 2026-04-18 (CODEX_SIGMA_SHADOW_DEPLOY 38차 완전 검증)
+# 세션 인수인계 — 2026-04-18 (CODEX_SIGMA_PHASE2_LLM_AUTONOMOUS 완료)
+
+> 세션 범위: LLM Selector TODO 제거 + Anthropic API 통합 + Recommender 신규 + Claude 전용 정책 완성
+
+---
+
+## 최신 작업 요약 (PHASE2_LLM_AUTONOMOUS)
+
+`CODEX_SIGMA_PHASE2_LLM_AUTONOMOUS` 핵심 LLM 통합 완료.
+
+### 구현 목록
+
+- **`selector.ex` 완성**: Ollama 참조 전부 제거 + 실제 Anthropic API 직접 호출 + `try_routes/4` fallback chain
+  - `ANTHROPIC_API_KEY` / `SIGMA_ANTHROPIC_API_KEY` 환경변수 사용
+  - HTTP 실패/API 키 없음 → 다음 route 자동 폴백
+  - 성공 호출 시 `CostTracker.track_tokens/1` 연동
+- **`cost_tracker.ex` 완성**: 실제 DB INSERT (`sigma_llm_cost_tracking`) + 일일 SUM SELECT
+  - `inserted_at`/`updated_at` 포함 (Ecto timestamps 호환)
+- **`recommender.ex` 신규** (`Sigma.V2.LLM.Recommender`): 룰 기반 동적 모델 추천 (LLM 미사용)
+  - 예산 잔여 20% 미만 → haiku / urgency: :high → haiku / failure_rate > 30% → opus / prompt_len > 8000 → sonnet
+- **`llm-model-selector.ts` 업데이트**: sigma.agent_policy 전 에이전트 Claude 전용 (local provider 제거)
+- **`llm_test.exs` 신규** (15 tests): policy 검증 + API 키 없는 환경 + CostTracker + Recommender 전 경로
+
+### 검증 결과
+- `mix compile --warnings-as-errors`: **0 warnings** ✅
+- 시그마 테스트: **87 tests, 0 failures** ✅ (기존 72 + 신규 15)
+- 전체: 131 tests, 3 failures (3개는 pre-existing Diagnostics 실패, 내 변경 무관)
+- DB INSERT 정상 동작 확인 (sigma_llm_cost_tracking 실 기록)
+
+### 다음 세션 즉시 착수 항목
+
+1. **ANTHROPIC_API_KEY** OPS `.zprofile`에 추가 → 실제 LLM 호출 활성화
+2. **Kill Switch 단계적 해제**:
+   - `SIGMA_SELF_RAG_ENABLED=true`: SelfRAG 배치 최적화 후
+   - `SIGMA_GEPA_ENABLED=true`: ESPL 진화, 수동 검증 후
+3. **7일 Shadow 관찰 계속** (Day 2~7): `sigma-check`, `sigma-runs`, `sigma-log`
+4. **Day 7 종합 판정** (2026-04-24): match_score ≥ 95% → Tier 1 가동 결정
+
+### 비목표 (이번에 안 함)
+- ❌ Tier 2 자동 적용 / MCP Server 외부 노출 / ESPL 자동 활성화
+
+---
+
+# 이전 인수인계 — 2026-04-18 (CODEX_SIGMA_SHADOW_DEPLOY 38차 완전 검증)
 
 > 세션 범위: Shadow Mode 전체 8단계 재검증 + 마이그레이션 경로 수정 + commit push
 
