@@ -87,9 +87,8 @@ launchctl unload ~/Library/LaunchAgents/ai.investment.overseas.plist
 **해외장 mock SELL 검증 (작업 2):**
 - 미국 개장 시간(22:30 KST) 직전 수동 실행
 
-**LIVE 전환 체크리스트 (작업 3):**
-- launchd 제거 + 24시간 Elixir 단독 정상 확인 후
-- kis_mode: paper → live (마스터 최종 승인 필수)
+**~~LIVE 전환 체크리스트 (작업 3):~~** ✅ 완료 (커밋 ffab4e5f)
+- ~~kis_mode: paper → live~~ → `config.yaml kis_mode: live` 확인됨 (마스터 승인 완료)
 
 ### ~~getCapitalConfigWithOverrides() 적용~~ ✅ 완료 (2026-04-17)
 - `preTradeCheck()` 내 `getCapitalConfig()` → `await getCapitalConfigWithOverrides()` 교체 완료
