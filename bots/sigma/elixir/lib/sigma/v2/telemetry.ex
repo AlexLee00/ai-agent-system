@@ -1,7 +1,8 @@
 defmodule Sigma.V2.Telemetry do
   @moduledoc """
   Sigma V2 텔레메트리 — Jido 이벤트 핸들러 + 시그마 고유 메트릭 수집.
-  Phase 1: 파일 exporter. Phase 4에서 OTLP로 교체 예정.
+  Phase 1: 파일 exporter.
+  Phase 4: SIGMA_OTEL_EXPORTER=otlp 설정 시 OTLP 엔드포인트로 전송.
   """
 
   require Logger
@@ -70,7 +71,21 @@ defmodule Sigma.V2.Telemetry do
         timestamp: DateTime.utc_now() |> DateTime.to_iso8601()
       })
 
-    File.write("/tmp/sigma_v2_metrics.jsonl", entry <> "\n", [:append])
+    case System.get_env("SIGMA_OTEL_EXPORTER") do
+      "otlp" ->
+        # Phase 4 OTLP 전송 — 기본은 파일 유지
+        otlp_endpoint = System.get_env("OTLP_ENDPOINT", "http://localhost:4318")
+        Task.start(fn ->
+          Req.post("#{otlp_endpoint}/v1/metrics",
+            body: entry,
+            headers: [{"content-type", "application/json"}],
+            receive_timeout: 3_000
+          )
+        end)
+
+      _ ->
+        File.write("/tmp/sigma_v2_metrics.jsonl", entry <> "\n", [:append])
+    end
   rescue
     _ -> :ok
   end

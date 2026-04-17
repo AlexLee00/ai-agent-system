@@ -1,0 +1,45 @@
+{
+  "dashboard": {
+    "uid": "sigma-v2-team-jay",
+    "title": "Sigma V2 — Team Jay",
+    "tags": ["sigma", "team-jay"],
+    "timezone": "browser",
+    "schemaVersion": 38,
+    "version": 1,
+    "refresh": "5m",
+    "panels": [
+      {
+        "id": 1,
+        "title": "분석가 효과 Heatmap (주간)",
+        "type": "heatmap",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+        "targets": [{"expr": "sigma_effectiveness_pct{analyst=~\".*\"}", "legendFormat": "{{analyst}}"}],
+        "options": {"color": {"scheme": "Oranges"}}
+      },
+      {
+        "id": 2,
+        "title": "Tier 분포 (7일 누적)",
+        "type": "piechart",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+        "targets": [{"rawSql": "SELECT tier::text AS metric, COUNT(*)::float AS value FROM sigma_v2_directive_audit WHERE executed_at >= NOW() - interval '7 days' GROUP BY tier ORDER BY tier", "format": "table"}]
+      },
+      {
+        "id": 3,
+        "title": "Rollback 타임라인",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+        "targets": [{"rawSql": "SELECT date_trunc('hour', executed_at) AS time, COUNT(*) AS rollbacks FROM sigma_v2_directive_audit WHERE outcome = 'rollback' AND executed_at >= NOW() - interval '7 days' GROUP BY 1 ORDER BY 1", "format": "time_series"}]
+      },
+      {
+        "id": 4,
+        "title": "LLM 예산 소비 (일일 USD)",
+        "type": "stat",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+        "targets": [{"rawSql": "SELECT agent AS metric, COALESCE(SUM(cost_usd),0)::float AS value FROM sigma_llm_cost_tracking WHERE timestamp::date = CURRENT_DATE GROUP BY agent ORDER BY value DESC", "format": "table"}],
+        "fieldConfig": {"defaults": {"unit": "currencyUSD", "thresholds": {"steps": [{"color": "green","value": 0},{"color": "yellow","value": 5},{"color": "red","value": 10}]}}}
+      }
+    ]
+  },
+  "overwrite": true,
+  "folderId": 0
+}
