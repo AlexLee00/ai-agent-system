@@ -97,44 +97,73 @@ defmodule TeamJay.Ska.CommandInbox do
     action_type = nested(command, ["action_type"]) || nested(command, [:action_type]) || ""
     summary = nested(entry, ["summary"]) || nested(entry, [:summary]) || ""
 
-    _ =
-      TeamJay.HubClient.command_ack(command_id, "ska",
+    if stale_core_risk_command?(action_type, command) do
+      TeamJay.EventLake.record(%{
+        team: "ska",
         bot_name: "ska_command_inbox",
-        source: "ska.command_inbox",
-        pipeline: pipeline,
-        message: "ska inbox accepted #{action_type}"
-      )
+        event_type: "ska_cross_team_command_suppressed",
+        severity: "info",
+        title: "stale core risk command suppressed",
+        message: "[#{pipeline}] #{summary}",
+        metadata: %{
+          pipeline: pipeline,
+          command: command,
+          summary: summary,
+          reason: "core_health_ok"
+        }
+      })
 
-    case action_type do
-      "apply_seo" ->
-        handle_ska_command(:apply_seo, command_id, pipeline, summary, command)
-
-      "notify_budget_surplus" ->
-        handle_ska_command(:notify_budget_surplus, command_id, pipeline, summary, command)
-
-      "reduce_workload" ->
-        handle_ska_command(:reduce_workload, command_id, pipeline, summary, command)
-
-      other ->
-        TeamJay.EventLake.record(%{
-          team: "ska",
+      _ =
+        TeamJay.HubClient.command_complete(command_id, "ska",
           bot_name: "ska_command_inbox",
-          event_type: "ska_cross_team_command_unsupported",
-          severity: "warn",
-          title: "지원하지 않는 cross-team command",
-          message: "[#{pipeline}] #{other}",
-          metadata: %{pipeline: pipeline, command: command, summary: summary}
-        })
+          source: "ska.command_inbox",
+          pipeline: pipeline,
+          message: "suppressed stale core risk command"
+        )
 
-        _ =
-          TeamJay.HubClient.command_fail(command_id, "ska",
+      Logger.info("[SkaCommandInbox] #{pipeline} stale core risk command suppressed")
+      :ok
+    else
+
+      _ =
+        TeamJay.HubClient.command_ack(command_id, "ska",
+          bot_name: "ska_command_inbox",
+          source: "ska.command_inbox",
+          pipeline: pipeline,
+          message: "ska inbox accepted #{action_type}"
+        )
+
+      case action_type do
+        "apply_seo" ->
+          handle_ska_command(:apply_seo, command_id, pipeline, summary, command)
+
+        "notify_budget_surplus" ->
+          handle_ska_command(:notify_budget_surplus, command_id, pipeline, summary, command)
+
+        "reduce_workload" ->
+          handle_ska_command(:reduce_workload, command_id, pipeline, summary, command)
+
+        other ->
+          TeamJay.EventLake.record(%{
+            team: "ska",
             bot_name: "ska_command_inbox",
-            source: "ska.command_inbox",
-            pipeline: pipeline,
-            message: "unsupported ska command: #{other}"
-          )
+            event_type: "ska_cross_team_command_unsupported",
+            severity: "warn",
+            title: "지원하지 않는 cross-team command",
+            message: "[#{pipeline}] #{other}",
+            metadata: %{pipeline: pipeline, command: command, summary: summary}
+          })
 
-        {:error, :unsupported}
+          _ =
+            TeamJay.HubClient.command_fail(command_id, "ska",
+              bot_name: "ska_command_inbox",
+              source: "ska.command_inbox",
+              pipeline: pipeline,
+              message: "unsupported ska command: #{other}"
+            )
+
+          {:error, :unsupported}
+      end
     end
   end
 
@@ -242,4 +271,43 @@ defmodule TeamJay.Ska.CommandInbox do
   end
 
   defp nested(_map, _path), do: nil
+
+  defp stale_core_risk_command?(action_type, command) do
+    action_type == "reduce_workload" and core_alias_services_only?(command) and current_core_health_ok?()
+  end
+
+  defp core_alias_services_only?(command) do
+    services =
+      nested(command, ["payload", "affected_services"]) ||
+        nested(command, [:payload, :affected_services]) ||
+        []
+
+    normalized =
+      services
+      |> List.wrap()
+      |> Enum.map(&(&1 |> to_string() |> String.downcase()))
+      |> Enum.reject(&(&1 == ""))
+
+    normalized != [] and
+      Enum.all?(normalized, &(&1 in ["api", "db", "database", "postgres", "postgresql", "pg_pool", "hub"]))
+  end
+
+  defp current_core_health_ok? do
+    case TeamJay.HubClient.health() do
+      {:ok, %{"resources" => resources}} when is_map(resources) ->
+        resource_ok?(resources, "core_services") and
+          resource_ok?(resources, "postgresql") and
+          resource_ok?(resources, "pg_pool")
+
+      _ ->
+        false
+    end
+  end
+
+  defp resource_ok?(resources, key) do
+    case Map.get(resources, key) do
+      %{"status" => "ok"} -> true
+      _ -> false
+    end
+  end
 end
