@@ -18,7 +18,7 @@ const ACTION_TABLE = 'blog.comment_actions';
 const NEIGHBOR_TABLE = 'blog.neighbor_comments';
 const DEFAULT_SUMMARY_LEN = 220;
 const BROWSER_CONNECT_TIMEOUT_MS = 5000;
-const BROWSER_PROTOCOL_TIMEOUT_MS = 120000;
+const BROWSER_PROTOCOL_TIMEOUT_MS = 180000;
 const NAVER_NAVIGATION_TIMEOUT_MS = 45000;
 const NAVER_MONITOR_WS_FILE = path.join(env.OPENCLAW_WORKSPACE, 'naver-monitor-ws.txt');
 const BLOG_COMMENTER_DEBUG_DIR = path.join(env.PROJECT_ROOT, 'tmp', 'blog-commenter-debug');
@@ -221,9 +221,9 @@ async function processNeighborCommentWithTimeout(candidate, { testMode = false }
 }
 
 async function processCommentWithTimeout(comment, { testMode = false } = {}) {
-  const timeoutMs = testMode ? 30000 : 90000;
+  const timeoutMs = testMode ? 30000 : 150000;
   return Promise.race([
-    processComment(comment, { testMode }),
+    processComment(comment, { testMode, operationTimeoutMs: timeoutMs }),
     new Promise((_, reject) => {
       setTimeout(() => {
         reject(createTimeoutError('reply_process_timeout', `reply_process_timeout:${timeoutMs}`));
@@ -861,7 +861,7 @@ async function goto(page, url) {
       currentUrl.includes('m.blog.naver.com');
 
     if (sameTarget) {
-      await page.waitForFunction(() => document.readyState !== 'loading', { timeout: 5000 }).catch(() => {});
+      await page.waitForFunction(`document.readyState !== 'loading'`, { timeout: 5000 }).catch(() => {});
       return;
     }
 
@@ -1306,60 +1306,63 @@ async function extractBuddyFeedPosts(page, ownBlogId, limit = 10) {
   await page.waitForSelector('body', { timeout: 15000 }).catch(() => {});
   await humanDelay(1, 2, true);
 
-  const extracted = await page.evaluate((maxItems) => {
-    const textOf = (el) =>
-      String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
-    const uniquePush = (store, item) => {
-      if (!item?.href) return;
-      if (store.seen.has(item.href)) return;
-      store.seen.add(item.href);
-      store.items.push(item);
-    };
+  const extracted = await page.evaluate(`
+    (() => {
+      const maxItems = ${JSON.stringify(Math.max(1, limit))};
+      const textOf = (el) =>
+        String((el && (el.innerText || el.textContent)) || '').replace(/\\s+/g, ' ').trim();
+      const uniquePush = (store, item) => {
+        if (!item || !item.href) return;
+        if (store.seen.has(item.href)) return;
+        store.seen.add(item.href);
+        store.items.push(item);
+      };
 
-    const store = { seen: new Set(), items: [] };
-    const cards = Array.from(document.querySelectorAll('li.add_img, li[class*="list"], ul li')).slice(0, maxItems * 8);
+      const store = { seen: new Set(), items: [] };
+      const cards = Array.from(document.querySelectorAll('li.add_img, li[class*="list"], ul li')).slice(0, maxItems * 8);
 
-    for (const card of cards) {
-      const postAnchor = Array.from(card.querySelectorAll('a[href*="blog.naver.com"], a[href*="PostView.naver"], a[href*="m.blog.naver.com"]')).find((anchor) => {
-        const href = String(anchor.href || '');
-        return /blog\.naver\.com\/[^/?#]+\/\d{8,}|logNo=\d{8,}/i.test(href);
-      });
-      if (!postAnchor) continue;
+      for (const card of cards) {
+        const postAnchor = Array.from(card.querySelectorAll('a[href*="blog.naver.com"], a[href*="PostView.naver"], a[href*="m.blog.naver.com"]')).find((anchor) => {
+          const href = String(anchor.href || '');
+          return /blog\\.naver\\.com\\/[^/?#]+\\/\\d{8,}|logNo=\\d{8,}/i.test(href);
+        });
+        if (!postAnchor) continue;
 
-      const blogAnchor = Array.from(card.querySelectorAll('a[href*="blog.naver.com"]')).find((anchor) => {
-        const href = String(anchor.href || '');
-        return /blog\.naver\.com\/[^/?#]+\/?$/i.test(href);
-      });
+        const blogAnchor = Array.from(card.querySelectorAll('a[href*="blog.naver.com"]')).find((anchor) => {
+          const href = String(anchor.href || '');
+          return /blog\\.naver\\.com\\/[^/?#]+\\/?$/i.test(href);
+        });
 
-      const title =
-        textOf(postAnchor)
-        || textOf(card.querySelector('.title'))
-        || textOf(card.querySelector('.tit'))
-        || textOf(card.querySelector('.template_briefContents')).slice(0, 80);
+        const title =
+          textOf(postAnchor)
+          || textOf(card.querySelector('.title'))
+          || textOf(card.querySelector('.tit'))
+          || textOf(card.querySelector('.template_briefContents')).slice(0, 80);
 
-      const blogName =
-        textOf(blogAnchor)
-        || textOf(card.querySelector('.list_data a'))
-        || textOf(card.querySelector('.name'))
-        || '';
+        const blogName =
+          textOf(blogAnchor)
+          || textOf(card.querySelector('.list_data a'))
+          || textOf(card.querySelector('.name'))
+          || '';
 
-      const snippet =
-        textOf(card.querySelector('.list_content'))
-        || textOf(card.querySelector('.template_briefContents'))
-        || textOf(card).slice(0, 240);
+        const snippet =
+          textOf(card.querySelector('.list_content'))
+          || textOf(card.querySelector('.template_briefContents'))
+          || textOf(card).slice(0, 240);
 
-      uniquePush(store, {
-        href: String(postAnchor.href || '').trim(),
-        title,
-        blogName,
-        snippet,
-      });
+        uniquePush(store, {
+          href: String(postAnchor.href || '').trim(),
+          title,
+          blogName,
+          snippet,
+        });
 
-      if (store.items.length >= maxItems * 4) break;
-    }
+        if (store.items.length >= maxItems * 4) break;
+      }
 
-    return store.items;
-  }, Math.max(1, limit));
+      return store.items;
+    })()
+  `);
 
   return extracted
     .map((item) => {
@@ -1384,22 +1387,25 @@ async function resolveLatestPostForBlog(page, blogId, testMode = false) {
   await humanDelay(1, 2, true);
   frame = await waitForPostContentFrame(page, testMode);
 
-  const candidate = await frame.evaluate((targetBlogId) => {
-    const textOf = (el) =>
-      String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
+  const candidate = await frame.evaluate(`
+    (() => {
+      const targetBlogId = ${JSON.stringify(blogId)};
+      const textOf = (el) =>
+        String((el && (el.innerText || el.textContent)) || '').replace(/\\s+/g, ' ').trim();
 
-    const anchors = Array.from(document.querySelectorAll('a[href*="blog.naver.com"], a[href*="PostView.naver"], a[href*="m.blog.naver.com"]'));
-    for (const anchor of anchors) {
-      const href = String(anchor.href || '').trim();
-      const text = textOf(anchor);
-      if (!href) continue;
-      if (!new RegExp(`blogId=${targetBlogId}|blog\\.naver\\.com/${targetBlogId}/`, 'i').test(href)) continue;
-      if (!/\d{8,}/.test(href)) continue;
-      if (!text || text.length < 4) continue;
-      return { href, title: text };
-    }
-    return null;
-  }, blogId);
+      const anchors = Array.from(document.querySelectorAll('a[href*="blog.naver.com"], a[href*="PostView.naver"], a[href*="m.blog.naver.com"]'));
+      for (const anchor of anchors) {
+        const href = String(anchor.href || '').trim();
+        const text = textOf(anchor);
+        if (!href) continue;
+        if (!new RegExp('blogId=' + targetBlogId + '|blog\\\\.naver\\\\.com/' + targetBlogId + '/', 'i').test(href)) continue;
+        if (!/\\d{8,}/.test(href)) continue;
+        if (!text || text.length < 4) continue;
+        return { href, title: text };
+      }
+      return null;
+    })()
+  `);
 
   if (!candidate?.href) return null;
   const normalized = normalizePostUrl(candidate.href);
@@ -1800,38 +1806,40 @@ async function activateReplyMode(page) {
 }
 
 async function expandReplyThreads(page) {
-  return page.evaluate(() => {
-    const textOf = (el) =>
-      String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
-    const visible = (el) => {
-      if (!el) return false;
-      const style = window.getComputedStyle(el);
-      const rect = el.getBoundingClientRect();
-      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-    };
+  return page.evaluate(`
+    (() => {
+      const textOf = (el) =>
+        String((el && (el.innerText || el.textContent)) || '').replace(/\\s+/g, ' ').trim();
+      const visible = (el) => {
+        if (!el) return false;
+        const style = window.getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+      };
 
-    const candidates = Array.from(document.querySelectorAll('a, button'))
-      .filter(visible)
-      .filter((node) => {
-        const text = textOf(node);
-        const cls = String(node.className || '');
-        return /댓글\s*\d+|댓글 더보기|이전 댓글|더보기/.test(text)
-          || /u_cbox_btn_more|btn_more|comment_more/i.test(cls);
-      })
-      .slice(0, 8);
+      const candidates = Array.from(document.querySelectorAll('a, button'))
+        .filter(visible)
+        .filter((node) => {
+          const text = textOf(node);
+          const cls = String(node.className || '');
+          return /댓글\\s*\\d+|댓글 더보기|이전 댓글|더보기/.test(text)
+            || /u_cbox_btn_more|btn_more|comment_more/i.test(cls);
+        })
+        .slice(0, 8);
 
-    let clicked = 0;
-    for (const node of candidates) {
-      try {
-        node.scrollIntoView({ block: 'center', behavior: 'instant' });
-        node.click();
-        clicked += 1;
-      } catch {
-        // ignore
+      let clicked = 0;
+      for (const node of candidates) {
+        try {
+          node.scrollIntoView({ block: 'center', behavior: 'instant' });
+          node.click();
+          clicked += 1;
+        } catch {
+          // ignore
+        }
       }
-    }
-    return clicked;
-  }).catch(() => 0);
+      return clicked;
+    })()
+  `).catch(() => 0);
 }
 
 async function openCommentPanel(page, logNo = '', testMode = false) {
@@ -2711,7 +2719,7 @@ async function typeReply(frame, browserPage, selector, replyText, config, testMo
   }
 }
 
-async function postReply(comment, replyText, { testMode = false, dryRun = false } = {}) {
+async function postReply(comment, replyText, { testMode = false, dryRun = false, operationTimeoutMs = 0 } = {}) {
   const config = getCommenterConfig();
   const logNo = extractLogNo(comment.post_url);
   return withBrowserPage(testMode, async (page) => {
@@ -2772,6 +2780,9 @@ async function postReply(comment, replyText, { testMode = false, dryRun = false 
     }
     await humanDelay(config.betweenCommentsMinSec, config.betweenCommentsMaxSec, testMode);
     return { ok: true };
+  }, {
+    timeoutMs: Number(operationTimeoutMs || 0),
+    timeoutCode: 'reply_process_timeout',
   });
 }
 
@@ -2972,13 +2983,14 @@ async function processComment(comment, options = {}) {
 }
 
 function _checkOpsAndWindow(config, { testMode = false, enabledForceEnv = '' } = {}) {
+  const forceEnabled = enabledForceEnv === 'true';
   if (!env.IS_OPS && !process.env.BLOG_COMMENTER_ALLOW_DEV) {
     return { skipped: true, reason: 'ops_only' };
   }
-  if (!config.enabled && !testMode && enabledForceEnv !== 'true') {
+  if (!config.enabled && !testMode && !forceEnabled) {
     return { skipped: true, reason: 'disabled' };
   }
-  if (!testMode && !isWithinActiveWindow(config)) {
+  if (!testMode && !forceEnabled && !isWithinActiveWindow(config)) {
     return { skipped: true, reason: 'inactive_window' };
   }
   return null;
@@ -3382,6 +3394,7 @@ module.exports = {
   postComment,
   postReply,
   processComment,
+  processCommentWithTimeout,
   requeueRecoverableReplyFailures,
   runNeighborCommenter,
   runNeighborSympathy,
