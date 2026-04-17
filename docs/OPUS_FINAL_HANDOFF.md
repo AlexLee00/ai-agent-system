@@ -1,56 +1,47 @@
-# 세션 인수인계 — 2026-04-18 (CODEX_SIGMA_SHADOW_DEPLOY 완료 — Shadow Mode OPS 가동)
+# 세션 인수인계 — 2026-04-18 (CODEX_SIGMA_SHADOW_DEPLOY 38차 완전 검증)
 
-> 세션 범위: Shadow Mode launchd 배포 + mix sigma.daily.shadow task + Supervisor 수정
+> 세션 범위: Shadow Mode 전체 8단계 재검증 + 마이그레이션 경로 수정 + commit push
 
 ---
 
-## 최신 작업 요약 (Shadow Deploy)
+## 최신 작업 요약 (Shadow Deploy 38차 재검증)
 
-`CODEX_SIGMA_SHADOW_DEPLOY` 완료. OPS에서 Sigma Shadow Mode 가동 확인.
+`CODEX_SIGMA_SHADOW_DEPLOY` 8단계 전체 완료. OPS에서 Sigma Shadow Mode 가동 확인.
 
 ### 구현/변경 목록
 
-- **mix task** `sigma.daily.shadow.ex`: Repo만 수동 시작 (전체 앱 미기동, @requirements ["app.config"])
-- **plist 업데이트**: tsx → `mix sigma.daily.shadow` + SIGMA_* 7개 env vars (MIX_ENV=dev)
-- **Supervisor 수정**: MCP OFF여도 SIGMA_HTTP_PORT 설정 시 HTTP 서버 기동 가능
-- **launchd 등록**: `ai.sigma.daily` → `~/Library/LaunchAgents/` 복사 + `launchctl load`
-- **수동 실행 검증**: `LastExitStatus=0`, `shadow_run_id=3`, DB에 4 rows 기록
+- **마이그레이션 파일 복사**: `bots/sigma/migrations/*.exs` → `elixir/team_jay/priv/repo/migrations/` (mix ecto.migrations 파일 인식)
+- **commit**: `62199fdd` — chore(sigma): priv/repo/migrations에 시그마 마이그레이션 파일 추가
+- **환경변수 확인**: `.zprofile` SIGMA_* 7개 이미 설정됨, 값 모두 정확
+- **plist**: `ai.sigma.daily` LaunchAgents 배포 완료, plutil lint OK
+- **수동 실행**: shadow_run_id=4 생성, LastExitStatus=0
+- **관찰 로그**: `docs/codex/SIGMA_SHADOW_OBSERVATION_LOG.md` Day 1 업데이트
 
-### 검증 결과
+### 검증 결과 (38차)
 - `mix compile --warnings-as-errors`: **0 warnings** ✅
 - `mix test`: **116 tests, 0 failures** ✅
 - `launchctl list ai.sigma.daily`: `LastExitStatus=0` ✅
-- `sigma_v2_shadow_runs`: 4 rows 기록됨 ✅
-- `match_score=null`: v1 `sigma.daily_runs` 비교 레코드 없음 (정상 — v1 먼저 실행 필요)
+- `sigma_v2_shadow_runs`: id=4 (누적 4건) ✅
+- `sigma_v2_config_snapshots` 0건 (Tier 2 OFF 증명) ✅
+- `sigma_analyst_prompts` 0건 (ESPL OFF 증명) ✅
+- match_score: `no_v1_pair` (v1 TS baseline 없음 — 정상)
 
-### 주요 결정 사항
-- tsx 방식(HTTP 서버 필요) → mix task 방식(자체 완결)으로 변경
-- SIGMA_HTTP_PORT 설정 시 HTTP 서버 기동 (MCP flag에 무관)
-- 전체 TeamJay 앱 미기동 → blog/investment 에이전트 간섭 없음
+### sigma-check alias 수정 필요 (수동)
+
+`.zshrc` 권한 차단으로 코덱스 미수정. 수동으로:
+```bash
+# 기존 (오류): recent_match_rate/0 함수 없음
+# 수정:
+alias sigma-check='cd /Users/alexlee/projects/ai-agent-system/elixir/team_jay && mix run -e "Sigma.V2.ShadowCompare.daily_report() |> IO.inspect(label: \"daily_report\")"'
+```
 
 ### 다음 단계 (7일 관찰)
 
-1. **.zprofile** 환경변수 수동 추가 (민감 파일 차단으로 코덱스 불가):
-   ```
-   export SIGMA_V2_ENABLED=true
-   export SIGMA_TIER2_AUTO_APPLY=false
-   export SIGMA_MCP_SERVER_ENABLED=false
-   export SIGMA_GEPA_ENABLED=false
-   export SIGMA_SELF_RAG_ENABLED=false
-   export SIGMA_HTTP_PORT=4010
-   export SIGMA_LLM_DAILY_BUDGET_USD=10.00
-   ```
-2. **.zshrc** alias 수동 추가 (sigma-check / sigma-log / sigma-err / sigma-status)
-3. **매일 21:30 KST** launchd 자동 실행 → shadow_runs 누적
-4. **match_score 모니터링**: `sigma.daily_runs`에 v1 baseline이 없으면 null 지속
-   → v1 TS daily_runs가 실행되는 시점부터 비교 가능
-5. **7일 후 결정**: match_score 평균 95%+ → Phase 2/3/4 구현 + Tier 1 가동
-
-### 알림: match_score 현재 null
-
-v1 TS sigma baseline(`sigma.daily_runs` 테이블)에 최근 실행 기록이 없어 비교 불가.
-`sigma-daily.ts`가 실행되어 `sigma.daily_runs`에 row가 생기면 자동으로 match_score 계산됨.
-현재는 v2 편성 결정 로직 자체의 동작 여부만 검증됨 (정상).
+1. **매일 21:30 KST** launchd 자동 실행 → shadow_runs 누적
+2. **match_score 모니터링**: `daily_report()` 함수 사용 (recent_match_rate 아님)
+   - 현재: no_v1_pair (v1 TS sigma-daily.ts 실행 시 자동 페어링)
+3. **7일 후 결정**: 일치율 평균 95%+ → Tier 1 가동 준비
+4. **OTel 파일**: `/tmp/sigma_v2_metrics.jsonl` (sigma_otel.jsonl 아님)
 
 ---
 
