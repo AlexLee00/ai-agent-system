@@ -59,6 +59,9 @@
 | SEC-013 | 🟢 LOW | `bots/investment/shared/db.ts:943` | `getActiveStrategies`의 `market/limit`를 allowlist + `$1/$2` 파라미터로 정규화해 템플릿 기반 SQL 조합을 제거 | 2026-04-17 | ✅ 11차 세션 해결 (`4f092f9` 이후 `getActiveStrategies()` 파라미터화 완료) |
 | SEC-014 | 🟡 MEDIUM | `bots/investment/nodes/l31-order-execute.ts:3-4` | L31 실행 레일을 `shared/signal.ts` 단일 진입점으로 통합해 `checkSafetyGates()`와 공용 거래소 라우팅을 우회하지 않도록 수정 | 2026-04-17 | ✅ 11차 세션 해결 (`L31 -> shared executeSignal` 전환 완료) |
 | SEC-015 | 🟡 MEDIUM | `bots/investment/team/hanul.ts:616, 768` (executeSignal, executeOverseasSignal) | hanul(KIS 국내/해외) 진입부에도 `nemesis_verdict` 재검증 + `approved_at` stale 차단을 이식해 hephaestos와 동일한 승인 우회 방어선을 적용 | 2026-04-17 | ✅ 11차 세션 해결 (`SEC-015` domestic/overseas 한울 entry guard 추가) |
+| SEC-016 | 🟢 LOW (관찰) | `argos.ts:338` / `hermes.ts:143,288` / `sophia.ts:246` | 외부 API 키(CoinGecko `x_cg_demo_api_key`, DART `crtfc_key`, CryptoPanic `auth_token`)를 URL 쿼리스트링으로 전달. 각 API의 공식 인증 방식이나 서버 로그/프록시 경유 시 잠재 노출 경로. 실질 리스크 매우 낮음 (정부 공개 API + demo key) | 2026-04-17 | ⬜ 14차 세션 관찰 (공식 방식이라 조치 불요, 헤더 방식 전환은 선택적) |
+| SEC-017 | 🟢 LOW (관찰) | `bots/worker/lib/auth.ts` | JWT 토큰 폐기(revoke) 메커니즘 없음. 24h 만료에만 의존. 탈취된 토큰은 최대 24시간 유효 | 2026-04-17 | ⬜ 15차 세션 관찰 (표준적 구현, 규모 고려 우선순위 낮음. Redis 블랙리스트 or refresh token 도입은 장기 개선) |
+| SEC-018 | 🟡 MEDIUM | `bots/worker/src/ryan.ts:82-92` (`/milestone_done`) + `ryan.ts:30-49` (`recalcProgress`) | Telegram 봇 `/milestone_done <ID>` 명령이 `UPDATE worker.milestones WHERE id=$1` 만 필터링 → **company_id 필터 누락**. 인증된 사용자가 정수 ID 추측으로 다른 회사의 마일스톤 완료 처리 + 프로젝트 진행률 조작 가능. `recalcProgress`도 동일 문제 | 2026-04-17 | ⬜ 17차 세션 발견 (IDOR, AUDIT_05 프롬프트 작성 필요 — milestone UPDATE에 JOIN으로 company_id 필터 추가) |
 
 ---
 
