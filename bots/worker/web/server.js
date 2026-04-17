@@ -5143,28 +5143,35 @@ app.post('/api/projects/:id/milestones',
         `INSERT INTO worker.milestones (project_id, company_id, title, description, due_date, assigned_to)
          VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
         [req.params.id, req.companyId, title, description||null, due_date||null, assigned_to||null]);
-      await recalcProgress(req.params.id);
+      await recalcProgress(req.params.id, req.companyId);
       res.status(201).json({ milestone: row });
     } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
   }
 );
 
 app.put('/api/milestones/:id',
-  requireAuth, requireRole('master','admin'), auditLog('UPDATE', 'milestones'),
+  requireAuth, companyFilter, requireRole('master','admin'), auditLog('UPDATE', 'milestones'),
   async (req, res) => {
     const { title, description, status, due_date, assigned_to } = req.body;
     try {
       const row = await pgPool.get(SCHEMA,
-        `UPDATE worker.milestones
-         SET title=COALESCE($1,title), description=COALESCE($2,description),
-             status=COALESCE($3,status), due_date=COALESCE($4,due_date),
-             assigned_to=COALESCE($5,assigned_to),
-             completed_at=CASE WHEN $3='completed' THEN NOW() ELSE completed_at END
-         WHERE id=$6 AND deleted_at IS NULL RETURNING *`,
+        `UPDATE worker.milestones AS m
+         SET title=COALESCE($1, m.title),
+             description=COALESCE($2, m.description),
+             status=COALESCE($3, m.status),
+             due_date=COALESCE($4, m.due_date),
+             assigned_to=COALESCE($5, m.assigned_to),
+             completed_at=CASE WHEN $3='completed' THEN NOW() ELSE m.completed_at END
+         FROM worker.projects AS p
+         WHERE m.id=$6
+           AND m.deleted_at IS NULL
+           AND m.project_id = p.id
+           AND p.company_id = $7
+         RETURNING m.*`,
         [title||null, description||null, status||null, due_date||null,
-         assigned_to||null, req.params.id]);
+         assigned_to||null, req.params.id, req.companyId]);
       if (!row) return res.status(404).json({ error: '마일스톤 없음', code: 'NOT_FOUND' });
-      await recalcProgress(row.project_id);
+      await recalcProgress(row.project_id, req.companyId);
       res.json({ milestone: row });
     } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
   }
