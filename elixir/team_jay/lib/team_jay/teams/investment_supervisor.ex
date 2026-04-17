@@ -174,6 +174,12 @@ defmodule TeamJay.Teams.InvestmentSupervisor do
   def agent_labels do
     [
       "ai.investment.commander",
+      "ai.investment.crypto",
+      "ai.investment.crypto.validation",
+      "ai.investment.domestic",
+      "ai.investment.domestic.validation",
+      "ai.investment.overseas",
+      "ai.investment.overseas.validation",
       "ai.investment.argos",
       "ai.investment.reporter",
       "ai.investment.health-check",

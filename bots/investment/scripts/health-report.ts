@@ -119,6 +119,64 @@ function sanitizeInsightLine(text = '') {
     ) || '';
 }
 
+function labelToPortAgentName(label) {
+  return String(label || '')
+    .replace(/^ai\.investment\./, '')
+    .replace(/[.-]+/g, '_');
+}
+
+async function loadElixirOwnedInvestmentRows(labels = []) {
+  if (!labels.length) return { ok: [], warn: [] };
+
+  const botNames = labels.map(labelToPortAgentName);
+  const rows = await pgPool.query(
+    'agent',
+    `
+    SELECT DISTINCT ON (bot_name)
+      bot_name,
+      event_type,
+      created_at
+    FROM agent.event_lake
+    WHERE team = 'investment'
+      AND bot_name = ANY($1)
+      AND event_type IN ('port_agent_started', 'port_agent_run', 'port_agent_completed', 'port_agent_failed')
+      AND created_at::timestamptz >= NOW() - INTERVAL '6 hours'
+    ORDER BY bot_name, created_at::timestamptz DESC
+  `,
+    [botNames],
+  ).catch(() => []);
+
+  const latestByBot = new Map((rows || []).map((row) => [String(row.bot_name || ''), row]));
+  const ok = [];
+  const warn = [];
+
+  for (const label of labels) {
+    const shortName = hsm.shortLabel(label);
+    const ownership = getServiceOwnership(label);
+    const botName = labelToPortAgentName(label);
+    const latest = latestByBot.get(botName);
+
+    if (!latest) {
+      const ownerText = ownership?.expectedIdle ? 'Elixir ownership (scheduled)' : 'Elixir ownership';
+      ok.push(`  ${shortName}: ${ownerText}`);
+      continue;
+    }
+
+    const eventType = String(latest.event_type || '');
+    if (eventType === 'port_agent_failed') {
+      warn.push(`  ${shortName}: Elixir ownership / 최근 PortAgent 실패`);
+      continue;
+    }
+
+    const ownerText = ownership?.expectedIdle
+      ? 'Elixir ownership (recent PortAgent activity)'
+      : 'Elixir ownership';
+    ok.push(`  ${shortName}: ${ownerText}`);
+  }
+
+  return { ok, warn };
+}
+
 function buildHealthFallbackInsight(report) {
   const warnCount = Number(report?.serviceHealth?.warnCount || 0);
   const findings = Number(report?.tradeReview?.findings || 0);
@@ -570,14 +628,7 @@ async function buildReport() {
   const scheduledDeploymentState = buildScheduledDeploymentState(SCHEDULED_SERVICE_DEPLOYMENTS);
   const capitalPolicy = loadCapitalPolicySnapshot(path.resolve(__dirname, '..', 'config.yaml'));
   const launchdOwnedLabels = ALL_SERVICES.filter((label) => !isElixirOwnedService(label) && !isRetiredService(label));
-  const elixirOwnedOkRows = ALL_SERVICES
-    .filter((label) => isElixirOwnedService(label))
-    .map((label) => {
-      const shortName = hsm.shortLabel(label);
-      const ownership = getServiceOwnership(label);
-      const ownerText = ownership?.expectedIdle ? 'Elixir ownership (scheduled)' : 'Elixir ownership';
-      return `  ${shortName}: ${ownerText}`;
-    });
+  const elixirOwnedLabels = ALL_SERVICES.filter((label) => isElixirOwnedService(label));
 
   const launchdServiceRows = buildServiceRows(status, {
     labels: launchdOwnedLabels,
@@ -590,9 +641,10 @@ async function buildReport() {
       return scheduledDeploymentState[label]?.staleFailure === true;
     },
   });
+  const elixirOwnedRows = await loadElixirOwnedInvestmentRows(elixirOwnedLabels);
   const serviceRows = {
-    ok: [...launchdServiceRows.ok, ...elixirOwnedOkRows],
-    warn: launchdServiceRows.warn,
+    ok: [...launchdServiceRows.ok, ...elixirOwnedRows.ok],
+    warn: [...launchdServiceRows.warn, ...elixirOwnedRows.warn],
   };
   const tradeReview = await loadTradeReviewHealth();
   const guardHealth = buildGuardHealth(billingGuard);
