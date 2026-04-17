@@ -1,6 +1,7 @@
 defmodule TeamJayTest do
   use ExUnit.Case
   alias TeamJay.Agents.PortAgent
+  alias TeamJay.Darwin.TeamConnector
   alias TeamJay.Diagnostics
   alias TeamJay.EventLake
   alias TeamJay.MarketRegime
@@ -93,5 +94,23 @@ defmodule TeamJayTest do
     _report = Diagnostics.shadow_report()
     status = Diagnostics.get_status()
     assert Map.has_key?(status, :last_pilot_signature)
+  end
+
+  test "darwin team connector exposes stable status" do
+    status = TeamConnector.get_status()
+
+    assert is_map(status)
+    assert status.forwarded_count >= 0
+    assert status.target_teams == [:luna, :blog, :claude, :ska, :jay]
+  end
+
+  test "darwin team connector collects KPI shape" do
+    kpi = TeamConnector.collect_kpi()
+
+    assert is_map(kpi)
+    assert kpi.metric_type == :research_ops
+    assert Map.has_key?(kpi, :papers_7d)
+    assert Map.has_key?(kpi, :high_quality_7d)
+    assert Map.has_key?(kpi, :autonomy_level)
   end
 end
