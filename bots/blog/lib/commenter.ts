@@ -220,6 +220,18 @@ async function processNeighborCommentWithTimeout(candidate, { testMode = false }
   ]);
 }
 
+async function processCommentWithTimeout(comment, { testMode = false } = {}) {
+  const timeoutMs = testMode ? 30000 : 90000;
+  return Promise.race([
+    processComment(comment, { testMode }),
+    new Promise((_, reject) => {
+      setTimeout(() => {
+        reject(createTimeoutError('reply_process_timeout', `reply_process_timeout:${timeoutMs}`));
+      }, timeoutMs);
+    }),
+  ]);
+}
+
 async function humanDelay(minSec, maxSec, testMode = false) {
   const delayMs = calcDelayMs(minSec, maxSec, testMode);
   if (delayMs > 0) {
@@ -2942,6 +2954,9 @@ async function processComment(comment, options = {}) {
   }
 
   await postReply(comment, generated.reply, options);
+  if (options?.testMode) {
+    return { ok: true, dryRun: true, reply: generated.reply };
+  }
   await updateCommentStatus(comment.id, 'replied', {
     replyText: generated.reply,
     meta: { tone: generated.tone || null },
@@ -3015,7 +3030,7 @@ async function runCommentReply({ testMode = false } = {}) {
 
   for (const comment of targets) {
     try {
-      const result = await processComment(comment, { testMode });
+      const result = await processCommentWithTimeout(comment, { testMode });
       if (result.ok) replied += 1;
       else if (result.skipped) skipped += 1;
     } catch (error) {
