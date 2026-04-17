@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use strict';
 
 const tasks = require('../lib/research/research-tasks');

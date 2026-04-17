@@ -55,6 +55,7 @@ defmodule TeamJay.Application do
       TeamJay.Ska.CommandActionHandler,
       TeamJay.Teams.SkaSupervisor,
       TeamJay.Teams.ClaudeSupervisor,
+      TeamJay.Teams.DarwinSupervisor,
       TeamJay.Teams.StewardSupervisor,
       TeamJay.Teams.InvestmentSupervisor,
       TeamJay.Teams.BlogSupervisor,
