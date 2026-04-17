@@ -15,6 +15,7 @@ const cfg  = require('../config');
 const { LAUNCHD_AVAILABLE } = require('../../../../packages/core/lib/env');
 const {
   isElixirOwnedService,
+  isExpectedIdleService,
   isRetiredService,
 } = require('../../../../packages/core/lib/service-ownership.js');
 
@@ -76,10 +77,14 @@ function isAllowedNodeCommand(command = '') {
   const ALLOWED_PATTERNS = [
     ' n8n start',
     'node_modules/.bin/next start',
+    'scripts/telegram-callback-poller.js',
     'bots/worker/web/server.js',
     'bots/worker/scripts/',
+    'bots/hub/src/hub.ts',
     'bots/claude/src/dexter.js',
     'bots/claude/src/dexter-quickcheck.js',
+    'bots/claude/src/claude-commander.js',
+    'bots/claude/scripts/health-dashboard-server.js',
     'bots/orchestrator/',
     'bots/investment/',
     'bots/reservation/',
@@ -87,6 +92,17 @@ function isAllowedNodeCommand(command = '') {
     'scripts/reviews/',
   ];
   return ALLOWED_PATTERNS.some((pattern) => cmd.includes(pattern));
+}
+
+function classifySuspiciousNode(proc) {
+  const cmd = String(proc?.command || '');
+  if (cmd.includes('bots/worker/src/task-runner.legacy.js') || cmd.includes('bots/worker/src/worker-lead.legacy.js')) {
+    return 'worker-legacy';
+  }
+  if (cmd.includes('bots/worker/src/task-runner.ts') || cmd.includes('bots/worker/src/worker-lead.ts')) {
+    return 'worker-duplicate';
+  }
+  return 'other';
 }
 
 // launchd 서비스 상태
@@ -167,6 +183,14 @@ function checkLaunchd(items) {
     }
     const s = launchdStatus(svc.id);
     if (!s) {
+      if (isExpectedIdleService(svc.id)) {
+        items.push({
+          label: svc.label,
+          status: 'ok',
+          detail: '미등록 정상 — expected-idle 서비스',
+        });
+        continue;
+      }
       if (daemonOwnedByElixir(svc.id)) {
         items.push({
           label: svc.label,
@@ -244,19 +268,41 @@ function checkOrphanProcesses(items) {
       return etimeToMinutes(proc.etime) >= 10;
     });
 
-    if (suspicious.length > 2) {
+    if (suspicious.length === 0) {
+      items.push({
+        label: '고아 Node 프로세스 (ppid=1)',
+        status: 'ok',
+        detail: `${lines.length}개 중 모두 정상 서비스/최근 프로세스로 판단`,
+      });
+      return;
+    }
+
+    const groups = suspicious.reduce((acc, proc) => {
+      const key = classifySuspiciousNode(proc);
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+    const otherCount = groups.other || 0;
+    const workerLegacyCount = groups['worker-legacy'] || 0;
+    const workerDuplicateCount = groups['worker-duplicate'] || 0;
+
+    if (otherCount > 2) {
       items.push({
         label:  '고아 Node 프로세스 (ppid=1)',
         status: 'warn',
-        detail: `${suspicious.length}개 — 비정상 프로세스 의심 (launchd/정상 서비스 제외)`,
+        detail: `${suspicious.length}개 — 미분류 비정상 프로세스 의심 (worker duplicate ${workerDuplicateCount}, legacy ${workerLegacyCount}, other ${otherCount})`,
+      });
+    } else if (workerLegacyCount + workerDuplicateCount > 0) {
+      items.push({
+        label: '워커 중복/legacy Node 프로세스',
+        status: workerLegacyCount >= 4 ? 'warn' : 'ok',
+        detail: `duplicate ${workerDuplicateCount}개, legacy ${workerLegacyCount}개 — launchd 외 잔존 워커 점검 권장`,
       });
     } else {
       items.push({
         label: '고아 Node 프로세스 (ppid=1)',
         status: 'ok',
-        detail: suspicious.length > 0
-          ? `${suspicious.length}개 (관찰 범위)`
-          : `${lines.length}개 중 모두 정상 서비스/최근 프로세스로 판단`,
+        detail: `${suspicious.length}개 (관찰 범위)`,
       });
     }
   } catch {

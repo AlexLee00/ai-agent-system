@@ -20,6 +20,7 @@ const GENERATED_PATH_PATTERNS = [
   /^bots\/video\/temp\//,
   /^bots\/worker\/web\/\.next\//,
   /^bots\/worker\/web\/\.next_bak_/,
+  /^docs\//,
   /^tmp\//,
   /^sync_map\.json$/,
   /^=$/,
