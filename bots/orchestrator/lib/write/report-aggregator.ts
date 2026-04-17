@@ -13,27 +13,27 @@ const REPORT_JOBS = [
   {
     key: 'luna',
     label: '루나',
-    args: ['bots/investment/scripts/health-report.js', '--json'],
+    args: ['bots/investment/scripts/health-report.ts', '--json'],
   },
   {
     key: 'claude',
     label: '클로드',
-    args: ['bots/claude/scripts/health-report.js', '--json'],
+    args: ['bots/claude/scripts/health-report.ts', '--json'],
   },
   {
     key: 'ska',
     label: '스카',
-    args: ['dist/ts-runtime/bots/reservation/auto/scheduled/pickko-daily-summary.js'],
+    args: ['bots/reservation/auto/scheduled/pickko-daily-summary.ts'],
   },
   {
     key: 'common',
     label: '공용',
-    args: ['scripts/api-usage-report.js'],
+    args: ['scripts/api-usage-report.ts'],
   },
 ];
 
 function runLocalNode(args) {
-  return execSync(`${JSON.stringify(process.execPath)} ${args.map((arg) => JSON.stringify(arg)).join(' ')}`, {
+  return execSync(`/opt/homebrew/bin/tsx ${args.map((arg) => JSON.stringify(arg)).join(' ')}`, {
     cwd: ROOT,
     stdio: 'pipe',
     encoding: 'utf8',

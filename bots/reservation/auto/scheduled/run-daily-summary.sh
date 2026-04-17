@@ -5,8 +5,8 @@
 # - 로그 유지 (/tmp/pickko-daily-summary.log, 최신 500줄)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-NODE="/opt/homebrew/bin/node"
-RUNTIME_SCRIPT="/Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/auto/scheduled/pickko-daily-summary.js"
+NODE="/opt/homebrew/bin/tsx"
+RUNTIME_SCRIPT="/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/scheduled/pickko-daily-summary.ts"
 LOCK_FILE="$HOME/.openclaw/workspace/pickko-daily-summary.lock"
 LOG_FILE="/tmp/pickko-daily-summary.log"
 
