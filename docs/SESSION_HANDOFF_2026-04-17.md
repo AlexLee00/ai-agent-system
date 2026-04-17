@@ -3159,3 +3159,63 @@ milestone-api-idor.test.ts (71줄, 7 assertions) — 7/7 통과
 **29차 세션 — 🧠 시그마팀 리모델링 종합 설계서 `docs/SIGMA_REMODELING_PLAN_2026-04-17.md` (1,405줄, 12섹션, 민감값 0건) 작성 완료. 현재 소스 1,641 LOC 완전 분석 → 문제 8건 식별 → Jido(1.6K★)/Hermes(95K★) 외부 서칭 → Elixir 전면 전환 + 4티어 자율 게이트 + Reflexion/Self-RAG/GEPA + Strict Write + MCP 하이브리드 + 다윈 TS 분리 설계. Phase 0~5 (약 12주) 로드맵. 마스터 승인 서명 대기.**
 
 — 메티 (2026-04-17 밤, 29차 세션 — 🧠 시그마팀 리모델링 설계)
+
+---
+
+## 📍 30차 세션 증분 (2026-04-17 밤 메티) — 외부 보강 연구 완료
+
+> 29차 시그마팀 리모델링 설계서 §9 외부 보강 10건 실행.
+> `curl` + `gh CLI` + `arXiv API`로 논문 6건 + GitHub README 4건 수집.
+> `docs/SIGMA_REMODELING_RESEARCH_SUPPLEMENT.md` (373줄) 작성 완료.
+
+### ✅ 10건 외부 서칭 100% 성공
+
+**논문 6건** (arXiv API, HTTPS + User-Agent 필수 확인):
+1. Reflexion (2303.11366, Shinn et al.) — NeurIPS 2023
+2. Self-RAG (2310.11511, Asai et al.) — ICLR 2024
+3. Constitutional AI (2212.08073, Bai et al., Anthropic) — RLAIF 원류
+4. AI Scientist v2 (2504.08066, Yamada et al., SakanaAI) — 피어리뷰 통과
+5. **E-SPL Evolutionary System Prompt Learning** (2602.14697, Zhang et al.) — **2026-02-16 최신, GEPA 대체**
+6. STELLA biomedical self-evolving (2507.02004, Jin et al.)
+
+**GitHub README 4건**:
+7. Jido (agentjido/jido, 1,652★, 2026-04-14 최신 커밋)
+8. Hermes Agent (NousResearch/hermes-agent, 95,187★)
+9. CloudEvents v1.0 spec
+10. Reflexion 공식 코드 (noahshinn/reflexion)
+
+### 🎯 핵심 발견 3건 (설계 변경 유발)
+
+1. **GEPA → E-SPL 교체**: 29차에서 언급된 "GEPA" 대신 2026-02-16 최신 E-SPL 논문이 더 정확. arxiv 2602.14697. Algorithm 1 기반으로 `Sigma.ESPL.evolve_weekly/0` 구현.
+
+2. **Hermes가 `agentskills.io` 오픈 표준 준수**: Sigma MCP Server를 이 표준에 맞춰 설계하면 Hermes 95K★ 생태계와 즉시 호환. 원본 §5.2에 §5.2.6 추가.
+
+3. **`hermes claw migrate` 기능 존재**: OpenClaw→Hermes 이주 공식 지원. 시그마 범위 밖이지만 향후 로드맵.
+
+### 📝 원본 설계 Delta (7건 변경/추가)
+
+1. §5.1 Elixir 전면 전환 — **변경 없음, 100% 유효 확인**
+2. §5.2 MCP/Skills — `agentskills.io` 표준 호환 조항 추가
+3. §5.3 자율 운영 — **§5.3.7 신설**: Constitutional AI 기반 `config/sigma_principles.yaml`
+4. §5.4 피드백 루프 — GEPA→E-SPL 명칭 + Self-RAG reflection tokens 강화
+5. §5.5 RAG — FTS5 검토 → PostgreSQL tsvector로 충분 결론
+6. §5.6 다윈 분리 — AI Scientist v2 패턴 참조 링크
+7. Phase 0 의존성 — postgrex + opentelemetry + cloudevents 추가
+
+### 🆙 승격 10건 / ❌ 기각 7건 / 📋 보류 4건
+
+승격: Reflexion 3-step, Self-RAG reflection tokens, Constitutional 원칙, E-SPL, STELLA template library, agentskills.io, tsvector hybrid, AI Scientist v2, jido_action, CloudEvents type 규약
+
+기각: Hermes 전면 도입, `hermes claw migrate` 실행, E-SPL weight update, AI Scientist v2 직접 도입, DSPy/GEPA SDK, Paperclip v2, agntcy/oasf
+
+### 📊 산출물 통계
+
+- `docs/SIGMA_REMODELING_RESEARCH_SUPPLEMENT.md` (373줄, 5 섹션, 민감값 0)
+- 29차 설계서 `SIGMA_REMODELING_PLAN_2026-04-17.md` 방향성 100% 검증
+- Phase 0 Exit Criteria 재정의 (원칙 YAML 초안 + Kill Switch .env 추가)
+
+### 🏷️ 30차 세션 요약 한 줄
+
+**30차 세션 — 🔍 시그마팀 리모델링 외부 보강 연구 완료. arXiv API + GitHub Raw로 논문 6건(Reflexion/Self-RAG/Constitutional/AI Scientist v2/E-SPL 2026-02 최신/STELLA) + README 4건(Jido/Hermes 95K★/CloudEvents/Reflexion code) 100% 수집. `docs/SIGMA_REMODELING_RESEARCH_SUPPLEMENT.md`(373줄, 민감값 0) 작성. 핵심 변경 3건: GEPA→E-SPL 교체 / agentskills.io 호환 / Constitutional AI 원칙 YAML 추가. 29차 설계 방향성 100% 검증. Phase 0 착수 준비 완료, 마스터 승인 대기.**
+
+— 메티 (2026-04-17 밤, 30차 세션 — 🔍 외부 보강 연구 완료)
