@@ -12,7 +12,7 @@ defmodule Darwin.V2.Scanner do
   use GenServer
   require Logger
 
-  alias Darwin.V2.{Topics, Lead, AutonomyLevel}
+  alias Darwin.V2.{Topics, Lead}
   alias TeamJay.HubClient
 
   @poll_interval_ms 6 * 3_600_000  # 6시간마다 DB 폴링

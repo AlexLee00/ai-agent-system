@@ -26,7 +26,7 @@ defmodule Darwin.V2.Lead do
   use GenServer
   require Logger
 
-  alias Darwin.V2.{Topics, AutonomyLevel, KillSwitch}
+  alias Darwin.V2.{Topics, AutonomyLevel}
   alias TeamJay.HubClient
 
   @autonomy_file "bots/darwin/sandbox/darwin-autonomy-level.json"
@@ -397,8 +397,9 @@ defmodule Darwin.V2.Lead do
   # ──────────────────────────────────────────────
 
   defp fetch_daily_cost do
-    case Darwin.V2.LLM.CostTracker.today_total_usd() do
-      {:ok, usd} -> usd
+    case Darwin.V2.LLM.CostTracker.check_budget() do
+      {:ok, %{total_usd: usd}} -> usd
+      {:ok, budget} when is_map(budget) -> Map.get(budget, :total_usd, 0.0)
       _ -> 0.0
     end
   rescue

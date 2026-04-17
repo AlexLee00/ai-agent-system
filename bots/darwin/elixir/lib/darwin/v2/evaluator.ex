@@ -13,7 +13,7 @@ defmodule Darwin.V2.Evaluator do
   use GenServer
   require Logger
 
-  alias Darwin.V2.{Topics, Lead, AutonomyLevel, ESPL, Memory}
+  alias Darwin.V2.{Topics, Lead, ESPL, Memory}
   alias TeamJay.HubClient
 
   @batch_size       5        # 5개 모이면 평가 실행

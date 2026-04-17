@@ -230,9 +230,8 @@ defmodule Darwin.V2.Skill.VLMFeedback do
 
   defp check_principle(expected_description) do
     case Darwin.V2.Principle.Loader.check(:vlm_feedback, %{expected_description: expected_description}) do
-      :ok              -> :ok
-      {:ok, _}         -> :ok
-      {:error, reason} -> {:error, {:principle_violation, reason}}
+      {:approved, _} -> :ok
+      {:blocked, reasons} -> {:error, {:principle_violation, reasons}}
     end
   rescue
     _ -> :ok

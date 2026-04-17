@@ -155,9 +155,8 @@ defmodule Darwin.V2.Skill.PaperSynthesis do
 
   defp check_principle(papers, goal) do
     case Darwin.V2.Principle.Loader.check(:paper_synthesis, %{papers: papers, goal: goal}) do
-      :ok              -> :ok
-      {:ok, _}         -> :ok
-      {:error, reason} -> {:error, {:principle_violation, reason}}
+      {:approved, _} -> :ok
+      {:blocked, reasons} -> {:error, {:principle_violation, reasons}}
     end
   rescue
     _ -> :ok

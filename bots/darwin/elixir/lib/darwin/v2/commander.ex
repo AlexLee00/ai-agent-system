@@ -21,13 +21,12 @@ defmodule Darwin.V2.Commander do
 
   use Jido.AI.Agent,
     name: "darwin_commander",
-    description: "다윈팀 R&D 파이프라인 오케스트레이터",
-    actions: [
+    model: :smart,
+    tools: [
       Darwin.V2.Skill.ResourceAnalyst,
       Darwin.V2.Skill.PaperSynthesis,
       Darwin.V2.Skill.TreeSearch
     ],
-    model: [provider: :anthropic, model: "claude-opus-4-7"],
     system_prompt: """
     당신은 다윈팀 Commander v2입니다. AI 연구 자동화 에이전트 시스템의 오케스트레이터로,
     매일 새로운 AI 논문을 수집·평가·구현하는 7단계 자율 연구 사이클을 관장합니다.
@@ -96,7 +95,7 @@ defmodule Darwin.V2.Commander do
   @spec analyze_results(map(), keyword()) ::
           {:ok, %{verdict: :apply | :defer | :discard, reason: String.t(), confidence: float()}}
           | {:error, term()}
-  def analyze_results(implementation_result, opts \\ []) do
+  def analyze_results(implementation_result, _opts \\ []) do
     paper = implementation_result[:paper] || implementation_result["paper"] || %{}
     paper_title = paper[:title] || paper["title"] || "unknown"
     metrics = implementation_result[:metrics] || implementation_result["metrics"] || %{}
@@ -166,7 +165,7 @@ defmodule Darwin.V2.Commander do
   @spec decide_learning(map(), keyword()) ::
           {:ok, %{keyword_updates: [String.t()], threshold_adjustment: float(), lessons: [String.t()]}}
           | {:error, term()}
-  def decide_learning(cycle_summary, opts \\ []) do
+  def decide_learning(cycle_summary, _opts \\ []) do
     successes   = cycle_summary[:successes] || cycle_summary["successes"] || 0
     failures    = cycle_summary[:failures]  || cycle_summary["failures"]  || 0
     applied     = cycle_summary[:applied]   || cycle_summary["applied"]   || []

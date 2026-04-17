@@ -210,9 +210,8 @@ defmodule Darwin.V2.Skill.ExperimentDesign do
 
   defp check_principle(paper) do
     case Darwin.V2.Principle.Loader.check(:experiment_design, %{paper: paper}) do
-      :ok              -> :ok
-      {:ok, _}         -> :ok
-      {:error, reason} -> {:error, {:principle_violation, reason}}
+      {:approved, _} -> :ok
+      {:blocked, reasons} -> {:error, {:principle_violation, reasons}}
     end
   rescue
     _ -> :ok
