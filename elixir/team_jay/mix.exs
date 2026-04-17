@@ -9,7 +9,15 @@ defmodule TeamJay.MixProject do
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
       test_paths: test_paths(),
-      deps: deps()
+      deps: deps(),
+      aliases: aliases()
+    ]
+  end
+
+  defp aliases do
+    [
+      # 통합 마이그레이션: team_jay 기본 + Sigma V2 두 경로 한번에
+      "sigma.migrate": ["sigma.migrate"]
     ]
   end
 
