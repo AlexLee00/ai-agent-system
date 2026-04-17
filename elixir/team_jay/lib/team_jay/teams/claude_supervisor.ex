@@ -18,7 +18,8 @@ defmodule TeamJay.Teams.ClaudeSupervisor do
   def init(_opts) do
     native_children = [
       TeamJay.Claude.Dexter.ErrorTracker,
-      TeamJay.Claude.Dexter.TestRunner
+      TeamJay.Claude.Dexter.TestRunner,
+      TeamJay.Claude.Doctor.Dispatch
     ]
 
     port_children =
