@@ -6,8 +6,9 @@
 
 const fs = require('fs');
 const path = require('path');
+const env = require('../../../packages/core/lib/env');
 
-const STATE_FILE = path.join(__dirname, 'sandbox', 'darwin-autonomy-level.json');
+const STATE_FILE = path.join(env.PROJECT_ROOT, 'bots/darwin/sandbox/darwin-autonomy-level.json');
 const DEFAULT_STATE = {
   level: 'L4',
   reason: 'master_approval_required',

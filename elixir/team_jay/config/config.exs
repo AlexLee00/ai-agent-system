@@ -59,5 +59,10 @@ config :team_jay, TeamJay.Scheduler,
     {"0 20 * * *", {TeamJay.Teams.InvestmentScheduler, :run_overseas, []}},
     {"30 13 * * *", {TeamJay.Teams.InvestmentScheduler, :run_overseas_validation, []}},
     {"0,30 14-19 * * *", {TeamJay.Teams.InvestmentScheduler, :run_overseas_validation, []}},
-    {"0 20 * * *", {TeamJay.Teams.InvestmentScheduler, :run_overseas_validation, []}}
+    {"0 20 * * *", {TeamJay.Teams.InvestmentScheduler, :run_overseas_validation, []}},
+    # ─── 다윈팀 연구 스케줄 (UTC 기준) ─────────────────────────────
+    # 논문 스캔: 06:00 KST = 21:00 UTC (전날)
+    {"0 21 * * *", {TeamJay.Agents.PortAgent, :run, [:darwin_scanner]}},
+    # 연구 태스크 실행: 07:00 KST = 22:00 UTC (전날)
+    {"0 22 * * *", {TeamJay.Agents.PortAgent, :run, [:darwin_task_runner]}}
   ]
