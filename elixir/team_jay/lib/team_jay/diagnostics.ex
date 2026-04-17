@@ -370,6 +370,7 @@ defmodule TeamJay.Diagnostics do
 
     actual_elixir =
       [
+        TeamJay.Teams.DarwinSupervisor.agent_labels(),
         TeamJay.Teams.InvestmentSupervisor.agent_labels(),
         TeamJay.Teams.BlogSupervisor.agent_labels(),
         TeamJay.Teams.WorkerSupervisor.agent_labels(),

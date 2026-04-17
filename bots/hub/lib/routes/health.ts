@@ -176,6 +176,56 @@ export async function collectHealthSnapshot(): Promise<HealthSnapshot> {
   }
 
   try {
+    const darwinRows = await pgPool.query('agent', `
+      SELECT
+        bot_name,
+        event_type,
+        created_at
+      FROM agent.event_lake
+      WHERE team = 'darwin'
+        AND bot_name IN ('darwin_monitor', 'darwin_scanner', 'darwin_task_runner')
+        AND event_type IN ('port_agent_completed', 'port_agent_failed')
+      ORDER BY created_at DESC
+      LIMIT 12
+    `);
+
+    const latestCompleted = (darwinRows || []).find((row: any) => row?.event_type === 'port_agent_completed');
+    const latestFailure = (darwinRows || []).find((row: any) => row?.event_type === 'port_agent_failed');
+
+    if (latestCompleted?.created_at) {
+      const completedAt = new Date(String(latestCompleted.created_at)).getTime();
+      const ageMinutes = Math.max(0, Math.round((Date.now() - completedAt) / 60000));
+      const failureAt = latestFailure?.created_at ? new Date(String(latestFailure.created_at)).getTime() : 0;
+      const completedAfterFailure = completedAt >= failureAt;
+
+      resources.darwin_activity = completedAfterFailure
+        ? {
+            status: 'ok',
+            detail: `recent ${latestCompleted.bot_name} completion ${ageMinutes}분 전`,
+          }
+        : {
+            status: 'warn',
+            detail: `latest failure after completion (${String(latestFailure?.bot_name || 'unknown')})`,
+          };
+    } else if (latestFailure?.created_at) {
+      resources.darwin_activity = {
+        status: 'warn',
+        detail: `latest ${String(latestFailure.bot_name || 'darwin')} failure at ${String(latestFailure.created_at)}`,
+      };
+    } else {
+      resources.darwin_activity = {
+        status: 'warn',
+        detail: 'no recent darwin port-agent activity',
+      };
+    }
+  } catch (error: any) {
+    resources.darwin_activity = {
+      status: 'warn',
+      detail: String(error?.message || 'darwin activity query failed'),
+    };
+  }
+
+  try {
     const ownershipRows = await pgPool.query('agent', `
       SELECT metadata->'ownership_alignment' AS ownership_alignment
       FROM agent.event_lake
