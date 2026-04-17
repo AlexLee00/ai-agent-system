@@ -52,9 +52,10 @@ DB: PostgreSQL 단일 (jay DB) + pgvector — 별도 DB 추가 금지
   reservation/worker secrets.json = 삭제됨 (Hub 경유)
 
 LLM 아키텍처:
-  로컬 MLX (:11434) — qwen2.5-7b(빠른) + deepseek-r1-32b(깊은) + qwen3-embed-0.6b(임베딩) + gemma4:latest(e2b-it-4bit, Gemma 파일럿)
+  로컬 MLX (:11434) — qwen2.5-7b(현재 배포 fast) + deepseek-r1-32b(현재 배포 deep) + qwen3-embed-0.6b(임베딩) + gemma4:latest(gemma-4-e2b-it-4bit 로컬 alias, Gemma 파일럿)
+  최신 공식 계열 참고: Qwen3 / Qwen3-Embedding / Gemma 3·3n / DeepSeek V3.x
   7/10 에이전트 로컬화: hermes/sophia/zeus/athena/nemesis/oracle → local_fast
-  루나 → groq_with_local (Groq Kimi K2 → deepseek 폴백)
+  루나 → groq_with_local (Groq Qwen3-32B → local deepseek-r1-32b 폴백)
   임베딩: Qwen3-Embedding-0.6B (1024차원, 로컬, 비용$0)
   DEV DB 접근: PG_DIRECT=true → SSH 터널 직접 연결 (INSERT 가능)
 ```
@@ -107,7 +108,7 @@ LLM 아키텍처:
 - **LLM 호출**: `packages/core/lib/llm-fallback.js` — 프로바이더별 폴백 체인 (local/groq/anthropic/openai/gemini)
 - **LLM 키**: `packages/core/lib/llm-keys.js` — Hub secrets-store에서 API 키 로딩 (initHubConfig 필수!)
 - **LLM 선택**: `packages/core/lib/llm-model-selector.js` — 에이전트별 라우팅 (local_fast/local_deep/groq_with_local)
-- **LLM 로컬**: `packages/core/lib/local-llm-client.js` — 로컬 MLX LLM (qwen2.5-7b/deepseek-r1-32b)
+- **LLM 로컬**: `packages/core/lib/local-llm-client.js` — 로컬 MLX LLM (현재 배포: qwen2.5-7b/deepseek-r1-32b, 임베딩: qwen3-embed-0.6b)
 - **RAG**: `packages/core/lib/rag.js` — 로컬 MLX 임베딩 (Qwen3-Embedding-0.6B, 1024차원, pgvector)
 - **스킬**: `packages/core/lib/skills/` — 14개 공용 스킬 + loader.js (봇 config에서 자동 로딩)
 - **환경**: `packages/core/lib/env.js` — DEV/OPS 환경 분기

@@ -5,9 +5,9 @@
  * bots/claude/scripts/speed-test.ts — 로컬 LLM 속도 벤치마크
  *
  * 측정 대상:
- *   - qwen2.5-7b (LOCAL_MODEL_FAST): 빠른 응답용
- *   - deepseek-r1-32b (LOCAL_MODEL_DEEP): 깊은 추론용
- *   - 임베딩 모델 (qwen3-embed-0.6b): 벡터화 속도
+ *   - qwen2.5-7b (LOCAL_MODEL_FAST): 현재 배포 fast 모델
+ *   - deepseek-r1-32b (LOCAL_MODEL_DEEP): 현재 배포 deep 모델
+ *   - 임베딩 모델 (qwen3-embed-0.6b): 현재 배포 embedding 모델
  *
  * 프롬프트: 짧은 한국어 추론 질문 (3회 평균)
  * 임계치: fast > 5000ms, deep > 60000ms → 경고 알림
