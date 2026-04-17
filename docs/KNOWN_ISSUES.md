@@ -41,9 +41,11 @@
 
 | ID | 심각도 | 컴포넌트 | 이슈 | 발견일 | 상태 |
 |----|-------|----------|------|--------|------|
-| SEC-001 | 🔴 HIGH | `bots/hub/src/hub.ts` | Hub `app.listen(PORT, '0.0.0.0')` — 전략 §9-2(loopback만 바인딩) 위반. lsof로 `*:7788` 확인됨. Bearer Token은 있으나 네트워크 레이어 방어 부재 | 2026-04-17 | 코덱스 패치 대기 (Task 1) |
-| SEC-002 | 🟡 MEDIUM | `bots/investment/config.yaml` | Public Git 리포에 실 KIS 계좌번호 및 USDT 지갑주소가 커밋됨 (구체값은 `docs/codex/CODEX_SECURITY_AUDIT_01.md` 내부 참조 — gitignore). OSINT 공격 표면 | 2026-04-17 | 코덱스 패치 대기 (Task 2) — Git 히스토리 정리는 마스터 승인 필요 |
-| SEC-003 | 🟢 LOW-MED | `bots/hub/lib/sql-guard.ts` | 블랙리스트 방식. `pg_read_file`, `pg_ls_dir`, `dblink` 등 PostgreSQL 위험 함수 미차단. 주석(`--`, `/* */`) 기반 우회 가능성 | 2026-04-17 | 코덱스 패치 대기 (Task 3) |
+| SEC-001 | 🔴 HIGH | `bots/hub/src/hub.ts` | Hub `app.listen(PORT, '0.0.0.0')` — 전략 §9-2(loopback만 바인딩) 위반. lsof로 `*:7788` 확인됨. Bearer Token은 있으나 네트워크 레이어 방어 부재 | 2026-04-17 | ✅ 패치 완료 (커밋 `578260b2`, BIND_HOST 환경변수화) |
+| SEC-002 | 🟡 MEDIUM | `bots/investment/config.yaml` | Public Git 리포에 실 KIS 계좌번호 및 USDT 지갑주소가 커밋됨. OSINT 공격 표면 | 2026-04-17 | 🔶 부분 패치 (커밋 `578260b2`로 working tree에서 제거. 히스토리 정리는 대기, SEC-005 여파로 필수가 됨) |
+| SEC-003 | 🟢 LOW-MED | `bots/hub/lib/sql-guard.ts` | 블랙리스트 방식. `pg_read_file`, `pg_ls_dir`, `dblink` 등 PostgreSQL 위험 함수 미차단. 주석(`--`, `/* */`) 기반 우회 가능성 | 2026-04-17 | 코덱스 패치 대기 (Task 3 미착수) |
+| SEC-004 | 🟡 MEDIUM | `bots/investment/team/hephaestos.ts:1535` | `executeSignal()`가 signal을 받을 때 네메시스 승인 여부(`nemesis_verdict`, `approved`, 타임스탬프 등) 재검증 가드 없음. 스크립트 직접 호출 시 네메시스 우회 가능 | 2026-04-17 | 코덱스 패치 대기 — 2차 세션 발견 |
+| SEC-005 | 🔴 CRITICAL | `docs/codex/CODEX_SECURITY_AUDIT_01.md` | `.gitignore`에 `docs/codex/` 등록됐으나 **이미 추적 중인 파일에는 효과 없음**. 커밋 `578260b2`에서 이 파일이 추가되면서 KIS 계좌번호(2건)와 USDT 주소(1건)가 Public Git에 노출. SEC-002 완전 무효화 수준 | 2026-04-17 | 🔶 3차 세션 긴급 대응 중: `git rm --cached docs/codex/*.md` + working tree placeholder 치환 완료, push + filter-repo는 마스터 승인 대기 |
 
 ---
 
