@@ -460,8 +460,54 @@ npm run parallel-snapshot
 - CODEX_SECURITY_AUDIT_02 ✅ (SEC-004/005 완료)
 - CODEX_PORTAGENT_OWNERSHIP_INVENTORY ✅ (참조 문서)
 
+---
+
+## ✅ 추가 완료 (2026-04-17 세션 11 — 클로드+다윈 Phase 완성)
+
+### CodexPipeline Phase 3 자동 실행 활성화 (commit 185a6986)
+- `config.exs`: `codex_auto_execute: true` → Phase 3 모드 전환
+- `codex_executor.ex`: `System.cmd :timeout` 미지원 옵션 제거 (실행 에러 수정)
+- 앱 재시작 후 CodexPipeline이 4개 codex 자동 실행 시도 확인
+  - CODEX_CLAUDE_REMODEL / CODEX_DARWIN_REMODEL / CODEX_ELIXIR_MONITORING / CODEX_TEST_BYPASS
+  - `pre: ... 실행 전 롤백 포인트` 커밋 자동 생성 확인
+
+### CODEX_DARWIN_REMODEL Phase 1+2 완료 (commit ed617a31)
+
+**Phase 1 — Elixir 핵심 모듈:**
+- `darwin/scanner.ex`: rag_research 폴링(6h) → paper_discovered JayBus 브로드캐스트 + TeamLead 연동
+- `darwin/evaluator.ex`: paper_discovered 배치 큐(5개 or 1분) → darwin_evaluator PortAgent 트리거
+  → 6점↑ → TeamLead.paper_evaluated() / 미달 → paper_rejected 브로드캐스트
+
+**Phase 2 — 완전자율 루프:**
+- `darwin/applier.ex`: verification_passed → L3: 마스터 승인 요청 / L4+: 자동 적용
+  → applicator.ts 실행 + EventLake 기록 + DeploymentMonitor 7일 등록
+- `darwin/feedback_loop.ex`: APPLY 단계 구현 (Applier.apply_now() 연결)
+- `darwin_supervisor.ex`: Scanner/Evaluator/Applier native_children 추가 (총 5개)
+
+### CODEX_DARWIN_REMODEL 전체 현황
+
+| Phase | 내용 | 상태 |
+|-------|------|------|
+| Phase 0 | bots/darwin/ 독립 분리 + TS Only | ✅ |
+| Phase 1 | Elixir 핵심 모듈 (Scanner, Evaluator, TeamLead, Topics) | ✅ |
+| Phase 2 | 완전자율 루프 (Applier, FeedbackLoop APPLY, L4+ 자동 적용) | ✅ |
+| Phase 3 | 팀 간 연동 + L4→L5 자동 승격 | 🔜 다음 세션 |
+
+**남은 항목 (Phase 3)**:
+- `darwin/team_connector.ex` — 타 팀과 PubSub 연결
+- L4→L5 조건 모니터링 (10회 연속 성공 + pipeline_runs ≥ 3)
+
+### 현재 활성 코덱스 (`docs/codex/`)
+| 파일 | 상태 |
+|------|------|
+| CODEX_CLAUDE_REMODEL | Phase 0~4 완료, Phase 3 자동 실행 활성화 ✅ |
+| CODEX_DARWIN_REMODEL | Phase 0~2 완료, Phase 3 다음 세션 |
+| CODEX_ELIXIR_MONITORING | 운영 runbook (상시) |
+| CODEX_SECURITY_AUDIT_01 | filter-repo + 히스토리 정리 — 마스터 재승인 후 |
+
 > **루나팀 코드 구현: 완전 완료** ✅
 > **SEC-004/005: 완전 밀폐** ✅
-> **클로드팀 REMODEL Phase 4: 완료** ✅
+> **클로드팀 REMODEL: Phase 0~4 완료, Phase 3 자동 실행 활성화** ✅
+> **다윈팀 REMODEL: Phase 0~2 완료** ✅
 > **OPS 전환**: git push 완료 (1954bc76), OPS 수동 Step 3 대기
 > 이전 HANDOFF: 2026-04-17 CODEX_BLOG_AUTONOMOUS_OPS Phase A~D
