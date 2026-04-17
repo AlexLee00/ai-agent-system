@@ -34,6 +34,7 @@ defmodule Sigma.V2.LLM.CostTracker do
 
   @doc """
   일일 예산 확인 — 오늘 사용량 합계 조회.
+  반환: {:ok, budget_ratio} (1.0=여유, 0.0=소진) | {:error, :budget_exceeded}
   """
   def check_budget do
     daily_limit =
@@ -50,7 +51,8 @@ defmodule Sigma.V2.LLM.CostTracker do
       end
 
     if daily_spent < daily_limit do
-      {:ok, %{daily: daily_spent, limit: daily_limit}}
+      ratio = 1.0 - daily_spent / max(daily_limit, 0.001)
+      {:ok, Float.round(ratio, 4)}
     else
       Logger.error("[sigma/cost] 일일 예산 초과: $#{daily_spent} / $#{daily_limit}")
       {:error, :budget_exceeded}
