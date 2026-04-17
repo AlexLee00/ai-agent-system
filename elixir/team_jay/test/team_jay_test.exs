@@ -111,6 +111,8 @@ defmodule TeamJayTest do
     assert kpi.metric_type == :research_ops
     assert Map.has_key?(kpi, :papers_7d)
     assert Map.has_key?(kpi, :high_quality_7d)
+    assert Map.has_key?(kpi, :avg_score)
+    assert Map.has_key?(kpi, :last_scan_at)
     assert Map.has_key?(kpi, :autonomy_level)
   end
 end
