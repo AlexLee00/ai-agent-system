@@ -3291,3 +3291,79 @@ Exit Criteria 9개 체크박스.
 **31차 세션 — Phase 0 준비물 3종 완성. 30차 미완료 push 해결(`02f00086` origin 반영). `docs/design/DESIGN_SIGMA_PRINCIPLES.yaml.example`(202줄, Constitutional AI 원칙 7섹션) + `docs/codex/CODEX_SIGMA_REMODEL_PHASE_0.md`(199줄, 6단계 프롬프트) 작성. 자기참조 민감값 1건 발견→placeholder 교체→0건 재검증(28차 교훈 실전). 마스터가 승인 서명만 주면 즉시 Phase 0 착수 가능.**
 
 — 메티 (2026-04-17 밤, 31차 세션 — Phase 0 착수 준비 완료)
+
+---
+
+## 📍 32차 세션 증분 (2026-04-17 밤 메티) — 외부 보강 v2 (실전 구현 층)
+
+> 31차 이후 마스터 선택 `C — 외부 보강 추가 서칭` 실행.
+> v1(개념·논문) 넘어 **v2(실전·버전·API)** 층으로 심화.
+> `docs/SIGMA_REMODELING_RESEARCH_SUPPLEMENT_V2.md` (447줄) 작성 완료.
+
+### 🔍 수집한 실전 자료 (v2)
+
+1. **Jido 2.2.0 실제 API 샘플** — hexdocs + jido_ai README
+2. **hex.pm 패키지 버전 전수 조회** — jido/jido_action/jido_signal/jido_ai/req_llm/postgrex/opentelemetry/cloudevents
+3. **Jido 릴리스 히스토리** — 2.0.0-rc.4 (2026-02-07) → 2.2.0 (2026-03-29) 매우 활발
+4. **agentskills GitHub README** — 16,451★, maintained by **Anthropic 공식**!
+5. **agentskills 예제 리포** — github.com/anthropics/skills 존재 확인
+6. **Self-RAG 공식 코드** — AkariAsai/self-rag 2,360★
+7. **req_llm 다운로드 89,895회** — Jido 생태계 가장 인기
+
+### 🎯 5대 핵심 발견
+
+1. **Jido 실제 최신 2.2.0** (2026-03-29, downloads 34,155, weekly 2,513)
+2. **4개 jido_* 패키지 + req_llm 모두 별도 설치 확인** — 29차 설계 구조 유효
+3. **Jido 2.2는 Zoi 스키마 + `Jido.AI.Agent` 매크로 사용** — v1 설계와 API 차이
+4. **req_llm 1.9.0이 가장 인기** (89,895 다운로드) — Anthropic/OpenAI/Google 통합
+5. **🏆 agentskills.io = Anthropic 공식 오픈 포맷** — Claude Code 즉시 호환
+
+### 📝 설계 변경 5건 (D-01 ~ D-05)
+
+| # | 변경 | 영향 |
+|---|------|------|
+| D-01 | 의존성 버전 2.x/1.9.x로 명시 | Phase 0 mix.exs |
+| D-02 | NimbleOptions → Zoi 스키마 | 모든 Skill Action |
+| D-03 | `Jido.AI.Agent` 매크로 사용 | Commander + Pod |
+| D-04 | Skills을 agentskills.io 포맷으로 | Layer 2 신설 |
+| D-05 | CloudEvents 별도 패키지 제거 | mix.exs 간소화 |
+
+### 🔧 Phase 0 코덱스 프롬프트 v2 수정 적용
+
+`docs/codex/CODEX_SIGMA_REMODEL_PHASE_0.md` (로컬 전용) 수정:
+
+**§1 의존성 버전 업데이트 완료**:
+- `jido "~> 2.2"` (2.0 → 2.2)
+- `jido_action "~> 2.2"` (1.0 → 2.2)
+- `jido_signal "~> 2.1"` (1.0 → 2.1)
+- `jido_ai "~> 2.1"` (1.0 → 2.1)
+- `req_llm "~> 1.9"` (1.0 → 1.9)
+- `opentelemetry "~> 1.7"` (1.5 → 1.7)
+- **cloudevents 패키지 제거** (jido_signal 포함)
+
+v2 문서에 §6.2~6.4 추가 수정 사항 명시 (Skeleton Zoi + Jido.AI.Agent + agentskills.io 포맷 마크다운).
+
+### 📊 v2 산출물 통계
+
+- `docs/SIGMA_REMODELING_RESEARCH_SUPPLEMENT_V2.md`: **447줄**, 7 섹션, 민감값 0
+- `docs/codex/CODEX_SIGMA_REMODEL_PHASE_0.md`: §1 수정 완료 (로컬 전용 유지)
+- 시그마 리모델 총 문서 분량: **2,626줄** (설계 1,405 + v1 373 + v2 447 + 원칙 202 + 코덱스 199)
+
+### 📈 전체 시그마 리모델링 현황
+
+```
+설계서 완성도        ████████████████████ 100%
+v1 보강 (개념/논문)   ████████████████████ 100%
+v2 보강 (실전/버전)   ████████████████████ 100%
+원칙 YAML 초안       ████████████████████ 100%
+Phase 0 프롬프트 v2   ████████████████████ 100%
+─────────────────────────────────────────────
+마스터 승인 서명     ░░░░░░░░░░░░░░░░░░░░   0%
+Phase 0 구현         ░░░░░░░░░░░░░░░░░░░░   0%
+```
+
+### 🏷️ 32차 세션 요약 한 줄
+
+**32차 세션 — 시그마팀 외부 보강 v2(실전·버전·API 층) 완료. hex.pm API로 Jido 생태계 실제 버전 전수 조회 — `jido 2.2.0 / jido_action 2.2.1 / jido_signal 2.1.1 / jido_ai 2.1.0 / req_llm 1.9.0`. 🏆 `agentskills.io = Anthropic 공식 오픈 포맷` (16,451★) 대발견 → Layer 2 신설로 Claude Code 즉시 호환. Jido 2.2 실제 API 샘플로 Zoi 스키마 + Jido.AI.Agent 매크로 사용 확인. `docs/SIGMA_REMODELING_RESEARCH_SUPPLEMENT_V2.md`(447줄) + `docs/codex/CODEX_SIGMA_REMODEL_PHASE_0.md` v2 수정 완료. 설계 변경 5건(D-01~D-05) 반영. Phase 0 모든 준비 100%, 마스터 승인만 대기.**
+
+— 메티 (2026-04-17 밤, 32차 세션 — 외부 보강 v2 완료)
