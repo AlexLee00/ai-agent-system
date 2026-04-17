@@ -5249,3 +5249,31 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 - 2026-03-29: `node bots/claude/src/dexter.js --update-checksums`를 다시 실행해 checksum baseline 89개 파일을 현재 기준으로 정렬했다.
 
 - 2026-04-18: CODEX_SIGMA_SHADOW_DEPLOY 실행 — Shadow Mode OPS 가동. mix sigma.daily.shadow task 생성, plist 업데이트(tsx→mix), Supervisor 수정(MCP OFF 시 HTTP 서버 가능), launchd 등록+수동 실행 검증(LastExitStatus=0, shadow_run_id=3). match_score=null (v1 baseline 미존재 — 정상). commit 46d9069c.
+
+## 2026-04-18 (40차 세션)
+
+### CODEX_DARWIN_REMODEL — Darwin V2 완전 자율 R&D 에이전트 리모델링
+
+**커밋**: 2455c110 (+ 40faee5a, 6c3a676e)
+
+**구현 범위**:
+- 독립 Elixir 앱 (`bots/darwin/elixir/`, 69 파일)
+- LLM Selector: 로컬우선(qwen2.5-7b/$0 → deepseek-r1-32b/$0 → groq → anthropic)
+- Memory L1(세션) + L2(pgvector Qwen3-Embedding-0.6B 1024차원)
+- Reflexion + SelfRAG + ESPL + Principle Loader (Constitutional AI)
+- 7단계 자율 사이클: Discover/Evaluate/Plan/Implement(Edison)/Verify/Apply/Learn
+- Community Scanner: HN/Reddit AI 논문 시그널
+- Shadow Runner (V1/V2 병렬 비교), Signal Receiver (Sigma advisory)
+- MCP Server (다윈 전용 내부 도구)
+- 9개 표준 MD + darwin_principles.yaml
+- 4개 DB 마이그레이션 + darwin.migrate Mix Task
+- team_jay 통합 (mix.exs elixirc_paths + application.ex + config.exs)
+
+**자율 레벨**: L3 (기본) → L4 (연속 5회+7일) → L5 (10회+적용3+14일+L5_ENABLED)
+
+**마스터 결정 이행**:
+- ✅ 독립 구조 (시그마와 동일한 패턴)
+- ✅ 완전자율 R&D (7단계 사이클 + L5 조건부 활성화)
+- ✅ 커뮤니티 범위 확장 (HN/Reddit 추가)
+- ✅ Darwin 전용 LLM Selector (로컬 우선, 비용 최소화)
+- ✅ Kill Switch 체계 (단계적 활성화)
