@@ -18,7 +18,7 @@ async function main() {
 
   if (!row) throw new Error(`comment_not_found:${id}`);
 
-  const result = await commenter.processComment(row, { testMode });
+  const result = await commenter.processCommentWithTimeout(row, { testMode });
   console.log(JSON.stringify({ id, testMode, result }, null, 2));
 }
 

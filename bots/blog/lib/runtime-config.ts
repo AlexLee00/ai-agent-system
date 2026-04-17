@@ -135,6 +135,7 @@ const DEFAULTS = {
     maxReplyLen: 200,
     maxDetectPerCycle: 20,
     maxProcessPerCycle: 20,
+    processTimeoutMs: 240000,
   },
   neighborCommenter: {
     enabled: false,
@@ -204,15 +205,15 @@ const DEFAULTS = {
     },
     'blog.commenter.reply': {
       chain: [
-        { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 600, temperature: 0.5, timeoutMs: 12000 },
         { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 600, temperature: 0.65, timeoutMs: 15000 },
+        { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 600, temperature: 0.5, timeoutMs: 12000 },
         { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 600, temperature: 0.75, timeoutMs: 12000 },
       ],
     },
     'blog.commenter.neighbor': {
       chain: [
-        { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 700, temperature: 0.55, timeoutMs: 12000 },
         { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 700, temperature: 0.7, timeoutMs: 15000 },
+        { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 700, temperature: 0.55, timeoutMs: 12000 },
         { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 700, temperature: 0.8, timeoutMs: 15000 },
       ],
     },
