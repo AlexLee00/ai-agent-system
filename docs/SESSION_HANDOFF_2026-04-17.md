@@ -1387,3 +1387,104 @@ P2 (3단위):
 **2단위 P2 40% 점검 — SEC-013(LOW) + SEC-014(MEDIUM, 설계이슈) + SEC-015(MEDIUM, SEC-004 빈틈) 발견. KNOWN_ISSUES 업데이트 완료. 다음 세션 우선순위: SEC-014/015 프롬프트(AUDIT_04) + luna/argos/hermes 감사.**
 
 — 메티 (2026-04-17 밤, 11차 세션)
+
+
+---
+
+## 📍 12차 세션 증분 (2026-04-17 밤 메티) — AUDIT_04 작성 + luna.ts 감사
+
+> 11차 P0 작업(AUDIT_04 프롬프트 작성) + luna.ts 감사 완료.
+> **중요 정정**: SEC-008 실구현 검증 중 실제 패치가 이미 **거의 완료**된 것 발견.
+
+### ✅ 구현 상태 재검증 결과
+
+이전 세션들에서 SEC 패치 상태를 주석·키워드 grep으로만 판단해 **오판이 있었음**. 이번 세션에서 실제 코드를 읽어 정확히 재확인:
+
+| ID | 실구현 상태 | 증거 |
+|----|-----------|------|
+| SEC-006 | ✅ 완료 | `kis-client.ts:99-101` `{ mode: 0o600 }` + `chmodSync` |
+| SEC-008 | ✅ 거의 완료 | `upbit-client.ts:190-224` 화이트리스트 주소 + 허용 네트워크 + `UPBIT_WITHDRAW_MAX_USDT` 1회 한도 |
+| SEC-012 | ✅ 완료 | `router.ts:248-267` `assertLunaTransferGuard` (confirmation 모드 + slash only) |
+| SEC-007 | ❌ 미구현 | `KIS_DEBUG` 환경변수 0건 — AUDIT_04 Task 4 |
+| SEC-011 | ✅ 완료 | `d35d2556 Harden remaining Luna secret handling checks` 커밋 |
+
+**SEC-008 보완 권고 (옵션)**: 일일 누적 cap은 아직 없음. 현재 1회 한도만으로도 상당한 방어력이지만, 하루 여러 번 호출 시나리오 대비하려면 `upbit_withdraw_daily_cap_usdt` 추가 고려. 하지만 원래 Telegram confirmation 모드 + slash 명령 게이트가 다층 방어하므로 **우선순위 낮음**.
+
+### 📝 AUDIT_04 작성 완료
+
+**파일**: `docs/codex/CODEX_SECURITY_AUDIT_04.md` (466줄, gitignore 자동 보호)
+
+- Task 1 (SEC-015, P0): hanul.ts 두 진입점에 SEC-004 가드 이식 — **최우선**
+- Task 2 (SEC-014, P0): L31이 signal.ts 경유하도록 변경 (옵션 A 권장)
+- Task 3 (SEC-008, P1): 일일 누적 cap 추가 (현재 대부분 완료, 선택적)
+- Task 4 (SEC-007, P2): KIS 에러 메시지 정화
+- Task 5 (SEC-013, P3): `getActiveStrategies` 파라미터화
+
+각 Task별 수락 기준, 테스트 케이스, 커밋 분리 가이드 포함.
+
+### ✅ luna.ts 감사 결과 (1296줄)
+
+**취약점 없음**. 자율 루프 핵심이지만 "결정자" 역할:
+
+- 위험 키워드 0건 (`withdraw`, `api_key`, `execSync`, `child_process`, `eval` 없음)
+- 순수 의사결정 엔진 (LLM 호출 + 분석 통합 + 포트폴리오 결정)
+- `executeSignal` 호출 없음 → 매매 실행은 hephaestos/hanul 담당
+- DB 쿼리 모두 파라미터화 (`db.getRecentAnalysis(symbol, 180, exchange)` 등)
+- Fallback 설계 견고 (LLM 실패 시 emergency/vote fallback)
+- `inspectPortfolioContext`만 export (외부 호출 읽기 전용)
+
+luna는 signal 생성자이고, 실행자 보안은 hephaestos(SEC-004 완료) + hanul(SEC-015 대기)이 책임.
+
+### 📊 감사 진행률 (12차 세션 기준)
+
+```
+1단위 Hub + 거버넌스: 100% 종결 (SEC-001~005)
+
+2단위 투자팀:
+  P1 (인증/시크릿): 100% 점검
+    ✅ SEC-006 완료 (파일 권한)
+    ❌ SEC-007 미구현 (AUDIT_04 Task 4)
+    ✅ SEC-008 거의 완료 (일일 cap만 옵션)
+    ⬜ SEC-009/010 (LOW, 후순위)
+    ✅ SEC-011 완료 (d35d2556)
+    ✅ SEC-012 완료
+
+  P2 (매매 로직): 50% 점검
+    ⏳ SEC-013 LOW     (AUDIT_04 Task 5)
+    ⏳ SEC-014 MEDIUM  (AUDIT_04 Task 2)
+    ⏳ SEC-015 MEDIUM  (AUDIT_04 Task 1)  ← 최우선
+    ✅ luna.ts 감사 완료 — 취약점 없음
+
+  P2 미착수:
+    ⬜ team/argos.ts (1254줄)   — 외부 API 소비
+    ⬜ team/aria.ts (737줄)     — TA
+    ⬜ team/hermes.ts (445줄)   — 뉴스
+    ⬜ team/scout.ts (343줄)    — 종목 발굴
+    ⬜ team/chronos.ts (529줄)  — 타이밍
+    ⬜ team/reporter.ts (1004줄) — 보고서
+    ⬜ 소규모 (sophia/athena/zeus/oracle/sentinel/sweeper/budget/scout-scraper)
+
+전체 진행률: 약 80%
+```
+
+### 📋 다음 세션 우선순위
+
+**P0 — AUDIT_04 코덱스 실행**:
+- Task 1 (SEC-015): hanul.ts 가드 이식 — 즉시 적용 가능, 리스크 낮음
+- Task 2 (SEC-014): L31 경유 변경 — 리그레션 테스트 필요
+- Task 4 (SEC-007): KIS 에러 정화 — 간단
+
+**P1 — 2단위 P2 나머지 감사**:
+- team/argos.ts (1254줄) — 바이낸스 24h API 소비자
+- team/hermes.ts (445줄) — 뉴스 API 소비자
+- team/aria.ts (737줄) — TA 지표
+
+**P2 — 3단위 착수**:
+- bots/worker/ (JWT 멀티테넌트)
+- bots/reservation/
+
+### 🏷️ 12차 세션 요약 한 줄
+
+**AUDIT_04 466줄 작성 완료(Task 1~5). luna.ts 감사 완료(취약점 없음). SEC-008 실구현 재검증 — 거의 완료 상태(일일 cap만 옵션). 감사 진행률 80%. 다음 세션 P0: Task 1(SEC-015) 코덱스 실행 + argos.ts/hermes.ts 감사.**
+
+— 메티 (2026-04-17 밤, 12차 세션)
