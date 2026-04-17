@@ -451,6 +451,29 @@ async function processAgentEvent(event) {
       break;
     }
 
+    case 'daily_start':
+    case 'post_completed':
+    case 'post_failed': {
+      if (String(from_agent || '').startsWith('blog-blo')) {
+        const type = p.type || 'unknown';
+        const trace = String(p.traceId || p.trace_id || '').slice(0, 8);
+        const icon = event_type === 'post_failed'
+          ? '⚠️'
+          : event_type === 'post_completed'
+            ? '✅'
+            : '🗓️';
+        const suffix = [
+          type !== 'unknown' ? `type=${type}` : null,
+          trace ? `trace=${trace}` : null,
+        ].filter(Boolean).join(' ');
+        console.log(`  [클로드 팀장] 블로그 상태 — ${icon} ${event_type}${suffix ? ` (${suffix})` : ''}`);
+        break;
+      }
+
+      console.log(`  [클로드 팀장] 이벤트 수신 — [${from_agent}/${event_type}] (상태 이벤트)`);
+      break;
+    }
+
     default: {
       // 알 수 없는 이벤트 타입 — 일단 로그만
       console.log(`  [클로드 팀장] 이벤트 수신 — [${from_agent}/${event_type}] (미처리 타입)`);
