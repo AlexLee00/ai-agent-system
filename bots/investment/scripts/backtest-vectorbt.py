@@ -12,7 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 
 def load_optional_deps():
@@ -56,7 +56,7 @@ def fetch_ohlcv(symbol: str, days: int, deps: dict):
     if pd is None or ccxt is None:
         raise RuntimeError("pandas 또는 ccxt가 설치되지 않았습니다.")
 
-    end = datetime.utcnow()
+    end = datetime.now(timezone.utc).replace(tzinfo=None)
     start = end - timedelta(days=days)
     exchange = ccxt.binance()
     since = int(start.timestamp() * 1000)
