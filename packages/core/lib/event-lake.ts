@@ -466,38 +466,26 @@ export async function commandInbox({
   minutes = 24 * 60,
   limit = 50,
 } = {}) {
-  await initSchema();
-
-  const rows = await recentCommands({
+  const summary = await commandSummary({
     minutes,
     limit: Math.min(500, Math.max(50, Number(limit || 50) * 5)),
     targetTeam,
   });
 
-  const byCommand = new Map<string, any[]>();
-  for (const row of rows.results || []) {
-    const commandId = _text(row?.metadata?.command?.command_id);
-    if (!commandId) continue;
-    const current = byCommand.get(commandId) || [];
-    current.push(row);
-    byCommand.set(commandId, current);
-  }
-
   const inbox = [];
-  for (const events of byCommand.values()) {
-    const ordered = [...events].sort((a, b) =>
-      String(b.created_at || '').localeCompare(String(a.created_at || ''))
-    );
-    const latest = ordered[0];
-    const lifecycleStatus = _text(latest?.metadata?.lifecycle_status);
-    if (lifecycleStatus === 'issued') {
+  for (const command of summary.recent || []) {
+    const latest = command?.event;
+    const lifecycleStatus = _text(command?.status);
+    if (['issued', 'acknowledged'].includes(lifecycleStatus)) {
       inbox.push({
-        command_id: latest.metadata?.command?.command_id || '',
-        pipeline: latest.metadata?.pipeline || '',
-        target_team: latest.metadata?.target_team || '',
-        summary: latest.metadata?.summary || latest.title || '',
-        command: latest.metadata?.command || null,
-        issued_at: latest.created_at,
+        command_id: command?.command_id || '',
+        pipeline: command?.pipeline || '',
+        target_team: command?.target_team || '',
+        summary: command?.summary || latest?.title || '',
+        status: lifecycleStatus,
+        command: latest?.metadata?.command || null,
+        issued_at: latest?.created_at || null,
+        updated_at: command?.updated_at || latest?.updated_at || latest?.created_at || null,
         event: latest,
       });
     }
