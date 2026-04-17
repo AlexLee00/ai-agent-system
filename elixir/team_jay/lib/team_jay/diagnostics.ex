@@ -7,8 +7,8 @@ defmodule TeamJay.Diagnostics do
 
   @check_interval 30_000
   @msg_queue_warn 100
-  @memory_warn 150_000_000
-  @memory_error 220_000_000
+  @memory_warn 220_000_000
+  @memory_error 280_000_000
   @service_ownership_path Path.expand("../../../../packages/core/config/service-ownership.json", __DIR__)
   @shadow_agents [
     {:blog_commenter, :blog},
@@ -265,7 +265,7 @@ defmodule TeamJay.Diagnostics do
   defp emit_memory_alert?(%{severity: :error}, _streak), do: true
 
   defp emit_memory_alert?(%{severity: :warn}, streak) do
-    streak in [2, 5] or rem(streak, 10) == 0
+    streak in [3, 10] or rem(streak, 20) == 0
   end
 
   defp emit_memory_alert?(_, _streak), do: false
