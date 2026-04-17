@@ -532,7 +532,7 @@ function buildSelectorRegistry(): Record<string, any> {
           { provider: 'groq', model: groqScoutModel },
         ],
         groq_with_local: [
-          { provider: 'groq', model: 'moonshotai/kimi-k2-instruct-0905', maxTokens: 2048, temperature: 0.1 },
+          { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 2048, temperature: 0.1 },
           { provider: 'local', model: 'deepseek-r1-32b', maxTokens: 2048, temperature: 0.1 },
         ],
       };
