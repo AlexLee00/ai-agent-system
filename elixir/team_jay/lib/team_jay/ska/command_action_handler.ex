@@ -80,13 +80,15 @@ defmodule TeamJay.Ska.CommandActionHandler do
         :ok
     end
 
-    _ =
-      TeamJay.HubClient.command_complete(command_id, "ska",
-        bot_name: "ska_command_action_handler",
-        source: "ska.command_action_handler",
-        pipeline: pipeline,
-        message: "ska handled #{kind} command"
-      )
+    case TeamJay.HubClient.command_complete(command_id, "ska",
+           bot_name: "ska_command_action_handler",
+           source: "ska.command_action_handler",
+           pipeline: pipeline,
+           message: "ska handled #{kind} command"
+         ) do
+      {:ok, _} -> :ok
+      {:error, reason} -> raise "command_complete failed: #{inspect(reason)}"
+    end
 
     Logger.info("[SkaCommandActionHandler] #{pipeline} 처리 완료 → #{kind}")
     :ok
