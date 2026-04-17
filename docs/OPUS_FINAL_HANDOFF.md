@@ -1,6 +1,43 @@
-# 세션 인수인계 — 2026-04-18 (CODEX_DARWIN_REMODEL Phase 7/8 완료)
+# 세션 인수인계 — 2026-04-18 (CODEX_JAY_DARWIN_INDEPENDENCE Phase 1 완료)
 
-> 세션 범위: Darwin V2 Phase 7 커뮤니티 스캐너 완성 + Phase 8 테스트 335개 (0 failures) + DB 마이그레이션 5개
+> 세션 범위: Darwin 최종 독립 — DarwinSupervisor 제거 + Jido 2.2 정렬 + 335 tests 유지
+
+---
+
+## 최신 작업 요약 (Phase 1 — 커밋: 602009a5)
+
+### CODEX_JAY_DARWIN_INDEPENDENCE Phase 1 완료
+
+**사전 확인**:
+- 롤백 포인트: `e0376c18` (pre: CODEX_JAY_DARWIN_INDEPENDENCE 실행 전)
+- git tag: `pre-phase-1-darwin`
+- Darwin dead code 11파일: 42차 세션(4b620c8c)에서 이미 제거됨 — 중복 작업 없음
+
+**Phase 1 실행 내용**:
+1. `teams/darwin_supervisor.ex` 제거 (git rm) — TS PortAgent shell, Darwin.V2.Supervisor가 전담
+2. `application.ex`에서 `TeamJay.Teams.DarwinSupervisor` 제거
+3. `bots/darwin/elixir/mix.exs` Jido 버전 정렬:
+   - jido 1.2 → 2.2, jido_ai 0.4 → 2.1
+   - jido_action 2.2, jido_signal 2.1 신규
+   - ecto_sql 3.12, postgrex 0.20, bandit 1.6, pgvector 0.3, yaml_elixir 2.11
+
+**검증**:
+- `mix compile --warnings-as-errors` exit:0 (경고 0건)
+- `335 tests, 0 failures` (11 excluded) — 불변 유지
+
+### 다음 세션 즉시 착수 항목 (Phase 2 — 공용 레이어)
+
+1. **Phase 2 시작**: `packages/elixir_core/` 신설
+   - `Jay.Core.Repo`, `Jay.Core.HubClient`, `Jay.Core.EventLake`, `Jay.Core.JayBus`
+   - `Jay.Core.MarketRegime`, `Jay.Core.Diagnostics`, `Jay.Core.Config`
+   - agents/: PortAgent, Andy, Jimmy, LaunchdShadowAgent
+   - schemas/: EventLake Ecto 스키마
+   - `mix.exs`: library only (Application 없음)
+2. **git tag**: `pre-phase-2-core` 생성 후 작업
+3. **Namespace 변경**: `TeamJay.*` → `Jay.Core.*` (sed 일괄, 파일별 확인)
+4. **불변 원칙**: sigma/darwin elixirc_paths 의존 유지하면서 Jay.Core alias 추가
+
+---
 
 ---
 
