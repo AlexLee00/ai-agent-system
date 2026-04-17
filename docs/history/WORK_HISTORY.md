@@ -4,6 +4,17 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-04-18: CODEX_SIGMA_PHASE2_LLM_AUTONOMOUS 완료 — LLM 통합 완전 자율운영
+
+- **Selector 재작성**: Ollama 전면 제거 → Claude API 직접 호출 (Req HTTP), Recommender 통합
+- **Recommender 신규**: 6차원 룰 기반 동적 모델 추천 (affinity/length/budget/failure/urgency/task_type)
+- **RoutingLog 신규**: sigma_v2_llm_routing_log INSERT + 24h 실패율 피드백 → Recommender 개선 루프
+- **CostTracker 실구현**: 모델별 정확한 요금 계산, 일일 예산 체크 (SIGMA_LLM_DAILY_BUDGET_USD)
+- **Principle.Loader**: 2단계 평가 — keyword 1차 필터 + LLM semantic check (Kill Switch 기본 OFF)
+- **마이그레이션**: sigma_v2_llm_routing_log 테이블 (적용 완료)
+- **테스트 36개 신규**: 167 tests, 3 failures (pre-existing, 무관) ✅
+- 남은 항목: ANTHROPIC_API_KEY OPS .zprofile 추가, Kill Switch 단계적 해제 (Day 7 이후)
+
 ## 2026-04-18: CODEX_SIGMA_PHASE_2_3_4_EXECUTE 완료 — Directive + Reflexion + ESPL + 테스트
 
 - **Phase 2**: Directive 프로토콜 (Tier 0~3), Archivist DB 로깅, Signal PubSub, 5팀 Signal Receiver (TS), Mailbox 큐, Graduation watcher

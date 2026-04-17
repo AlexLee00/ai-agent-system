@@ -20,8 +20,9 @@ defmodule Sigma.V2.LLM.RoutingLog do
     INSERT INTO sigma_v2_llm_routing_log
       (agent_name, model_primary, model_used, fallback_used,
        prompt_tokens, response_tokens, latency_ms, cost_usd,
-       response_ok, error_reason, urgency, task_type, budget_ratio, recommended_reason)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+       response_ok, error_reason, urgency, task_type, budget_ratio, recommended_reason,
+       inserted_at)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW())
     """
 
     TeamJay.Repo.query(sql, [

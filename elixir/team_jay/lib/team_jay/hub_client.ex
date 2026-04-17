@@ -53,11 +53,21 @@ defmodule TeamJay.HubClient do
   end
 
   def post_alarm(message, team \\ "system", from_bot \\ "elixir") do
-    Req.post("#{hub_url()}/hub/alarm",
-      json: %{message: message, team: team, fromBot: from_bot},
-      headers: headers(),
-      retry: false
-    )
+    if alerts_disabled?() do
+      Logger.debug("[HubClient] post_alarm globally suppressed team=#{team} from_bot=#{from_bot}")
+      {:ok, %{suppressed: true, reason: :alerts_disabled}}
+    else
+      if alarm_delivery_enabled?() do
+        Req.post("#{hub_url()}/hub/alarm",
+          json: %{message: message, team: team, fromBot: from_bot},
+          headers: headers(),
+          retry: false
+        )
+      else
+        Logger.debug("[HubClient] post_alarm suppressed team=#{team} from_bot=#{from_bot}")
+        {:ok, %{suppressed: true}}
+      end
+    end
   end
 
   def command_inbox(target_team, opts \\ []) do
@@ -128,6 +138,33 @@ defmodule TeamJay.HubClient do
   defp status_label("completed"), do: "complete"
   defp status_label("failed"), do: "fail"
   defp status_label(status), do: to_string(status)
+
+  defp alarm_delivery_enabled? do
+    force =
+      "TEAM_JAY_ENABLE_ALARM_DELIVERY"
+      |> System.get_env("")
+      |> String.trim()
+      |> String.downcase()
+
+    cond do
+      force in ["1", "true", "yes"] ->
+        true
+
+      force in ["0", "false", "no"] ->
+        false
+
+      is_boolean(Application.get_env(:team_jay, :hub_alarm_delivery_enabled)) ->
+        Application.get_env(:team_jay, :hub_alarm_delivery_enabled)
+
+      true ->
+        Node.alive?()
+    end
+  end
+
+  defp alerts_disabled? do
+    # Temporary global kill switch per operator request.
+    true
+  end
 
   @doc """
   에이전트 기억 저장 (임베딩 포함).
