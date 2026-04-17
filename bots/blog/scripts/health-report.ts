@@ -113,8 +113,8 @@ async function buildNodeHealth() {
   };
 }
 
-function buildDailyRunHealth() {
-  return buildFileActivityHealth({
+function buildDailyRunHealth(dailyServiceStatus = null) {
+  const base = buildFileActivityHealth({
     label: 'daily log',
     filePath: DAILY_LOG,
     staleMs: DAILY_LOG_STALE_MS,
@@ -122,6 +122,23 @@ function buildDailyRunHealth() {
     staleText: (state) => `  daily log: ${state.minutesAgo}분 무활동`,
     okText: (state) => `  daily log: 최근 ${state.minutesAgo}분 이내 활동`,
   });
+
+  const serviceLooksScheduledOnly =
+    dailyServiceStatus &&
+    dailyServiceStatus.loaded === true &&
+    dailyServiceStatus.running === false &&
+    Number(dailyServiceStatus.exitCode || 0) === 0;
+
+  if (!serviceLooksScheduledOnly || !Array.isArray(base.warn) || base.warn.length === 0) {
+    return base;
+  }
+
+  return {
+    ...base,
+    warn: [
+      `  daily log: ${base.minutesAgo}분 무활동 (launchd는 정상 등록, 재부팅 후 오늘 캘린더 실행을 놓쳤을 가능성)`,
+    ],
+  };
 }
 
 async function buildN8nPipelineHealth() {
@@ -896,7 +913,7 @@ function formatText(report) {
 }
 
 async function buildReport() {
-  const status = getLaunchctlStatus();
+  const status = getLaunchctlStatus(ALL_SERVICES);
   const serviceRows = buildServiceRows(status, {
     labels: ALL_SERVICES,
     continuous: CONTINUOUS,
@@ -904,7 +921,7 @@ async function buildReport() {
     shortLabel: (label) => label.replace('ai.blog.', ''),
   });
   const nodeHealth = await buildNodeHealth();
-  const dailyRunHealth = buildDailyRunHealth();
+  const dailyRunHealth = buildDailyRunHealth(status['ai.blog.daily']);
   const n8nPipelineHealth = await buildN8nPipelineHealth();
   const instagramHealth = await buildInstagramHealth();
   const phase1Health = await buildPhase1Health();

@@ -50,6 +50,8 @@ const PICKKO_LOG = '/tmp/pickko-kiosk-monitor.log';
 const LOG_STALE_MS = 15 * 60 * 1000;
 const N8N_HEALTH_URL = process.env.N8N_HEALTH_URL || 'http://127.0.0.1:5678/healthz';
 const DEFAULT_N8N_WEBHOOK_URL = process.env.SKA_N8N_WEBHOOK_URL || 'http://127.0.0.1:5678/webhook/ska-command';
+const RESERVATION_COMMAND_WORKFLOW_NAME =
+  process.env.RESERVATION_COMMAND_WORKFLOW_NAME || '스카팀 읽기 명령 intake';
 const CANCEL_COUNTER_DRIFT_TITLE = '🚨 네이버 취소 카운터 증가 이상';
 
 function reservationServiceLabel(label) {
@@ -245,7 +247,9 @@ function buildCombinedMonitorHealth() {
 
 async function buildN8nCommandHealth() {
   return buildResolvedWebhookHealth({
-    workflowName: '예약팀 읽기 명령 intake',
+    // Keep the operator-facing wording as "예약팀" while resolving against the
+    // current n8n workflow name that is still registered under the legacy Ska label.
+    workflowName: RESERVATION_COMMAND_WORKFLOW_NAME,
     pathSuffix: 'ska-command',
     healthUrl: N8N_HEALTH_URL,
     defaultWebhookUrl: DEFAULT_N8N_WEBHOOK_URL,
