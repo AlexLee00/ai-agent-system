@@ -1,6 +1,6 @@
 'use strict';
 
-const tasks = require('../lib/research/research-tasks');
+const tasks = require('../lib/research-tasks');
 const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 
 const MAX_TASKS_PER_RUN = 3;
