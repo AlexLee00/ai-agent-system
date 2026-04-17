@@ -108,6 +108,76 @@ async function failHanulSignal(signalId, {
   return { success: false, reason: reason || error || null, error: error || null };
 }
 
+async function enforceHanulNemesisApproval(signal, market = 'domestic') {
+  const paperMode = isPaperMode();
+  const { id: signalId, symbol, action } = signal;
+
+  if (action === ACTIONS.SELL || paperMode) return { approved: true };
+
+  const nemesisVerdict = signal.nemesis_verdict || signal.nemesisVerdict;
+  const isApproved = ['approved', 'modified'].includes(String(nemesisVerdict || '').toLowerCase());
+  const marketPrefix = market === 'overseas' ? 'sec015_overseas' : 'sec015';
+
+  if (!isApproved) {
+    const reason = `SEC-015: 네메시스 승인 없는 ${market} BUY signal 실행 차단 (verdict=${nemesisVerdict || 'null'})`;
+    console.error(`  🛡️ [한울] ${reason}`);
+    if (signalId) {
+      await db.updateSignalBlock(signalId, {
+        status: SIGNAL_STATUS.FAILED,
+        reason: reason.slice(0, 180),
+        code: `${marketPrefix}_nemesis_bypass_guard`,
+        meta: {
+          market,
+          symbol,
+          action,
+          nemesis_verdict: nemesisVerdict || null,
+          execution_blocked_by: 'hanul_entry_guard',
+        },
+      }).catch(() => {});
+    }
+    return failHanulSignal(signalId, {
+      reason,
+      code: `${marketPrefix}_nemesis_bypass_guard`,
+      market,
+      symbol,
+      action,
+      amount: signal.amount_usdt,
+    });
+  }
+
+  if (signal.approved_at) {
+    const ageMs = Date.now() - new Date(signal.approved_at).getTime();
+    if (ageMs > 5 * 60 * 1000) {
+      const reason = `SEC-015: 승인 후 ${Math.round(ageMs / 1000)}초 경과 (${market} stale signal)`;
+      console.error(`  🛡️ [한울] ${reason}`);
+      if (signalId) {
+        await db.updateSignalBlock(signalId, {
+          status: SIGNAL_STATUS.FAILED,
+          reason: reason.slice(0, 180),
+          code: `${marketPrefix}_stale_approval`,
+          meta: {
+            market,
+            symbol,
+            action,
+            approved_at: signal.approved_at,
+            age_seconds: Math.round(ageMs / 1000),
+          },
+        }).catch(() => {});
+      }
+      return failHanulSignal(signalId, {
+        reason,
+        code: `${marketPrefix}_stale_approval`,
+        market,
+        symbol,
+        action,
+        amount: signal.amount_usdt,
+      });
+    }
+  }
+
+  return { approved: true };
+}
+
 function inferHanulBlockCode(reason = '', market = 'domestic') {
   if (!reason) return market === 'overseas' ? 'overseas_order_rejected' : 'domestic_order_rejected';
   if (reason.includes('[90000000]') || reason.includes('모의투자에서는 해당업무가 제공되지 않습니다')) return 'mock_operation_unsupported';
@@ -624,6 +694,9 @@ export async function executeSignal(signal) {
   console.log(`\n⚡ [한울] ${symbol} ${action} ${amountKrw?.toLocaleString()}원 ${tag}`);
 
   try {
+    const approvalGuard = await enforceHanulNemesisApproval(signal, 'domestic');
+    if (approvalGuard?.success === false) return approvalGuard;
+
     const preflight = await getKisExecutionPreflight({ market: 'domestic', action });
     if (!preflight.ok) {
       console.log(`  ⛔ 실행 사전 차단: ${preflight.reason}`);
@@ -776,6 +849,9 @@ export async function executeOverseasSignal(signal) {
   console.log(`\n⚡ [한울] 해외 ${symbol} ${action} $${amountUsd} ${tag}`);
 
   try {
+    const approvalGuard = await enforceHanulNemesisApproval(signal, 'overseas');
+    if (approvalGuard?.success === false) return approvalGuard;
+
     const preflight = await getKisExecutionPreflight({ market: 'overseas', action });
     if (!preflight.ok) {
       console.log(`  ⛔ 실행 사전 차단: ${preflight.reason}`);
