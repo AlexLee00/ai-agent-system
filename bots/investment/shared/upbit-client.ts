@@ -33,6 +33,7 @@ function getUpbit() {
 // ─── 바이낸스 인스턴스 ───────────────────────────────────────────────
 
 let _binance = null;
+const DEFAULT_UPBIT_WITHDRAW_MAX_USDT = 1000;
 
 function getBinance() {
   if (_binance) return _binance;
@@ -199,10 +200,33 @@ export async function withdrawUsdtToAddress(amount, address, network = 'TRC20', 
   const raw            = amount > 0 ? Math.min(amount, available) : available;
   const withdrawAmount = Math.floor(raw * 1e6) / 1e6;
 
+  const s = loadSecrets();
+  const whitelistedAddress = String(s.binance_deposit_address_usdt || '').trim();
+  if (!whitelistedAddress) {
+    throw new Error('업비트 출금 차단: binance_deposit_address_usdt 화이트리스트가 설정되지 않았습니다');
+  }
+  if (String(address || '').trim() !== whitelistedAddress) {
+    throw new Error('업비트 출금 차단: 화이트리스트에 없는 주소입니다');
+  }
+
+  const normalizedNetwork = String(network || '').trim().toUpperCase();
+  const allowedNetworks = new Set(['TRC20', 'ERC20']);
+  if (!allowedNetworks.has(normalizedNetwork)) {
+    throw new Error(`업비트 출금 차단: 허용되지 않은 네트워크입니다 (${network})`);
+  }
+
+  const configuredMax = Number(process.env.UPBIT_WITHDRAW_MAX_USDT || DEFAULT_UPBIT_WITHDRAW_MAX_USDT);
+  const maxWithdrawAmount = Number.isFinite(configuredMax) && configuredMax > 0
+    ? configuredMax
+    : DEFAULT_UPBIT_WITHDRAW_MAX_USDT;
+  if (withdrawAmount > maxWithdrawAmount) {
+    throw new Error(`업비트 출금 차단: 1회 한도 ${maxWithdrawAmount} USDT 초과 (${withdrawAmount.toFixed(6)} USDT)`);
+  }
+
   // 업비트 net_type 매핑 (ccxt가 표준→업비트 변환을 지원 안 함)
   // TRC20(Tron) → TRX, ERC20(Ethereum) → ETH
   const UPBIT_NETWORK_MAP = { TRC20: 'TRX', ERC20: 'ETH', BEP20: 'BNB', MATIC: 'MATIC' };
-  const upbitNetwork = UPBIT_NETWORK_MAP[network] ?? network;
+  const upbitNetwork = UPBIT_NETWORK_MAP[normalizedNetwork] ?? normalizedNetwork;
 
   const params = { network: upbitNetwork, net_type: upbitNetwork };
   if (tag) params.tag = tag;
