@@ -30,6 +30,77 @@ const portArg = args.find(a => a.startsWith('--port='));
 const PORT    = portArg ? parseInt(portArg.split('=')[1]) : 3032;
 
 const HTML_FILE = path.join(__dirname, 'health-dashboard.html');
+const WORKSPACE_LOG_DIR = path.join(os.homedir(), '.openclaw', 'workspace', 'logs');
+
+function readLogSnapshot(fileName, tailLines = 12) {
+  const filePath = path.join(WORKSPACE_LOG_DIR, fileName);
+  try {
+    const stat = fs.statSync(filePath);
+    const content = fs.readFileSync(filePath, 'utf8');
+    const lines = content.trim().split('\n').slice(-tailLines);
+    return {
+      exists: true,
+      path: filePath,
+      mtimeMs: stat.mtimeMs,
+      size: stat.size,
+      tail: lines,
+    };
+  } catch {
+    return {
+      exists: false,
+      path: filePath,
+      mtimeMs: 0,
+      size: 0,
+      tail: [],
+    };
+  }
+}
+
+function summarizeLogState({ label, stdoutFile, stderrFile, healthy = false }) {
+  const stdout = readLogSnapshot(stdoutFile);
+  const stderr = readLogSnapshot(stderrFile);
+  const latestStdout = stdout.mtimeMs || 0;
+  const latestStderr = stderr.mtimeMs || 0;
+  const latestTail = stderr.tail.join('\n');
+  const now = Date.now();
+  const ageMinutes = latestStderr > 0
+    ? Math.max(0, Math.round((now - latestStderr) / 60000))
+    : null;
+  const benignPatterns = [
+    '이미 실행 중',
+    'terminated: 15',
+    'sigterm',
+    'module_not_found',
+  ];
+  const hasBenignTail = benignPatterns.some(pattern =>
+    latestTail.toLowerCase().includes(pattern.toLowerCase()),
+  );
+
+  let status = 'ok';
+  let detail = healthy ? '현재 서비스 정상' : '최근 에러 로그 없음';
+
+  if (stderr.exists) {
+    if (healthy && latestStdout >= latestStderr) {
+      status = 'stale';
+      detail = `과거 에러 흔적 (${ageMinutes ?? 0}분 전, 최신 stdout이 더 새로움)`;
+    } else if (healthy && hasBenignTail) {
+      status = 'stale';
+      detail = `현재 서비스 정상, benign/stale stderr (${ageMinutes ?? 0}분 전)`;
+    } else if (!healthy && latestStderr > 0) {
+      status = 'warn';
+      detail = `최근 stderr 존재 (${ageMinutes ?? 0}분 전)`;
+    }
+  }
+
+  return {
+    label,
+    status,
+    detail,
+    stdout_mtime: latestStdout ? new Date(latestStdout).toISOString() : null,
+    stderr_mtime: latestStderr ? new Date(latestStderr).toISOString() : null,
+    stderr_size: stderr.size,
+  };
+}
 
 // ─── 데이터 조회 ─────────────────────────────────────────────────────
 
@@ -185,6 +256,15 @@ function getBotStatuses() {
   });
 }
 
+function isLaunchdServiceRunning(service) {
+  try {
+    execSync(`launchctl list ${service} 2>/dev/null`, { timeout: 3000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function getResourceStats() {
   try {
     const cpuCount    = os.cpus().length;
@@ -235,6 +315,22 @@ async function getHealthData() {
   const healthyStatuses = new Set(['running', 'managed-by-elixir', 'expected-idle']);
   const runningCount = botStatuses.filter(b => healthyStatuses.has(b.status)).length;
   const totalBots    = botStatuses.length;
+  const commanderHealthy = isLaunchdServiceRunning('ai.claude.commander');
+  const dashboardHealthy = isLaunchdServiceRunning('ai.claude.health-dashboard');
+  const logHealth = [
+    summarizeLogState({
+      label: 'claude commander',
+      stdoutFile: 'claude-commander.log',
+      stderrFile: 'claude-commander-error.log',
+      healthy: commanderHealthy,
+    }),
+    summarizeLogState({
+      label: 'health dashboard',
+      stdoutFile: 'claude-health-dashboard.log',
+      stderrFile: 'claude-health-dashboard-error.log',
+      healthy: dashboardHealthy,
+    }),
+  ];
 
   return {
     generated_at:  new Date().toISOString(),
@@ -246,6 +342,7 @@ async function getHealthData() {
     recent_issues: recentIssues,
     shadow_stats:  shadowStats,
     pool_stats:    poolStats,
+    log_health:    logHealth,
     resources,
   };
 }
