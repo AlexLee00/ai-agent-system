@@ -23,16 +23,18 @@
 > 자동 관리: `dist/ts-runtime/.../bug-report.js` 실행 시 갱신 | 수동 등록: `node dist/ts-runtime/bots/reservation/src/bug-report.js --new --title "..." --by ska`
 
 <!-- bug-tracker:issues:start -->
-_현재 미해결 이슈 없음_
+| 상태 | 심각도 | ID | 제목 | 발견자 | 경과 |
+|------|--------|----|------|--------|------|
+| 🔴 | 🔴 | `BUG-016` | 픽코 자동 등록 실패 | ska | 0분 전 |
 
 **최근 해결:**
 - ✅ `BUG-006` **BOOT 재시작 시 파일명 텔레그램 출력 이슈**
-  버그 최초 보고 (0분 전)
+  버그 최초 보고 (44일 전)
 - ✅ `BUG-012` **pickko-member.js 회원 등록 중 Runtime.callFunctionOn 타임아웃 발생**
-  010-9075-3796 유선욱 고객 회원 등록 중 Runtime.callFunctionOn timed out 오류 발생. Puppeteer protocolTimeout이 부족하거나 다른 원인으로 인해 회원 등록 프로세스가 완료되지 못함. (2분 전)
+  010-9075-3796 유선욱 고객 회원 등록 중 Runtime.callFunctionOn timed out 오류 발생. Puppeteer protocolTimeout이 부족하거나 다른 원인으로 인해 회원 등록 프로세스가 완료되지 못함. (44일 전)
 - ✅ `DXT-552824` **[덱스터] DB 무결성 오류**
   DuckDB (루나): Command failed: node "/var/folders/5r/5024qfb56hx2lkvw6jc_ldbm0000gn/T/dexter-db-1772410550619.js"
-{"error":"Connection Error: Connection was never established or has been closed already"} (2분 전)
+{"error":"Connection Error: Connection was never established or has been closed already"} (44일 전)
 <!-- bug-tracker:issues:end -->
 
 ---

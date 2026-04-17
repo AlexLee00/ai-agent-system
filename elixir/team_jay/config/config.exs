@@ -19,6 +19,9 @@ config :team_jay,
 config :team_jay,
   repo_root: System.get_env("REPO_ROOT", "/Users/alexlee/projects/ai-agent-system")
 
+# Phase 3: 코덱스 자동 실행 (true = 마스터 승인 없이 자동 실행)
+config :team_jay, :codex_auto_execute, true
+
 config :team_jay, TeamJay.Scheduler,
   jobs: [
     # ─── 제이팀 성장 사이클 ──────────────────────────────────
