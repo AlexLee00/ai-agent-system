@@ -484,7 +484,7 @@ const CLAUDE_BOT_ID_DIR = path.join(os.homedir(), '.openclaw', 'workspace', 'bot
 
 const CLAUDE_TEAM = [
   {
-    id: 'dexter', name: '덱스터', launchd: 'ai.claude.dexter',
+    id: 'dexter', name: '덱스터', launchd: null,
     role: '시스템 점검 (코드 무결성·보안·DB)',
     mission: '1시간마다 자동 점검, 이상 발견 시 Telegram 알람 발송',
     source: path.join(CWD, 'src/dexter.js'),
