@@ -16,10 +16,12 @@
 - **마이그레이션**: sigma_v2_mailbox / sigma_v2_config_snapshots / sigma_analyst_prompts (총 6개)
 - **Kill Switches 기본 OFF**: SIGMA_TIER2_AUTO_APPLY / SIGMA_SELF_RAG_ENABLED / SIGMA_GEPA_ENABLED
 
-### 검증 결과
+### 검증 결과 (최종 — 2026-04-18 cont.)
 - `mix compile --warnings-as-errors`: **0 warnings** ✅
-- `mix test`: **89 tests, 0 failures** ✅
+- `mix test`: **116 tests, 0 failures** ✅ (Phase 2: 7, Phase 3: 11, Phase 4: 9 추가)
 - 민감값 0건 ✅
+- 버그 수정: `memory.ex` + `self_rag.ex` L2 threshold 누락 수정 (commit `79d33ca5`)
+- CODEX 아카이브 완료: `docs/archive/codex-completed/CODEX_SIGMA_PHASE_2_3_4_EXECUTE.md`
 
 ### 주요 설계 결정
 - Bandit port 충돌 방지: `port_available?/1` via `:gen_tcp.listen` (OPS와 test 환경 공존)
