@@ -43,6 +43,7 @@ const KIS_MIN_INTERVAL_MS = 380;
 const KIS_ORDER_MIN_INTERVAL_MS = 980;
 const KIS_RATE_LIMIT_RETRY_MS = 1100;
 const KIS_RATE_LIMIT_MAX_RETRIES = 2;
+const KIS_DEBUG_ENABLED = process.env.KIS_DEBUG === '1';
 
 const _requestState = {
   paper: {
@@ -110,6 +111,15 @@ function truncateKisMessage(value, maxLength = 180) {
   return text.length > maxLength ? `${text.slice(0, maxLength)}…` : text;
 }
 
+function logKisDebug(label, payload = null) {
+  if (!KIS_DEBUG_ENABLED) return;
+  if (payload == null) {
+    console.warn(`[KIS_DEBUG] ${label}`);
+    return;
+  }
+  console.warn(`[KIS_DEBUG] ${label}: ${truncateKisMessage(payload, 600)}`);
+}
+
 function parseKisErrorBody(raw = '') {
   const text = String(raw || '').trim();
   if (!text) return '';
@@ -166,6 +176,7 @@ async function getToken(paper) {
   if (!res.ok) {
     const text = await res.text();
     const reason = parseKisErrorBody(text);
+    logKisDebug(`token_http_${res.status}`, text);
     throw new Error(`KIS 토큰 발급 실패: HTTP ${res.status}${reason ? ` ${reason}` : ''}`);
   }
 
@@ -231,12 +242,14 @@ async function kisRequest(method, endpoint, { trId, params, body, paper } = {}, 
     try {
       data = JSON.parse(raw);
     } catch {
+      logKisDebug(`json_parse_${res.status}`, raw);
       throw new Error(`KIS JSON 파싱 실패 (${res.status})`);
     }
 
     if (data.rt_cd !== '0') {
       const code = truncateKisMessage(data.msg_cd || data.rt_cd || '');
       const message = truncateKisMessage(data.msg1 || data.message || '');
+      logKisDebug(`api_error_${res.status}`, raw);
       throw new Error(`KIS API 오류${code ? ` [${code}]` : ''}${message ? `: ${message}` : ''}`);
     }
 
