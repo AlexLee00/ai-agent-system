@@ -11,20 +11,20 @@ const applicator = require('./applicator');
 const keywordEvolver = require('./keyword-evolver');
 const monitor = require('./research-monitor');
 const researchTasks = require('./research-tasks');
-const githubClient = require('../../../../packages/core/lib/github-client');
-const { createLogger } = require('../../../../packages/core/lib/central-logger');
+const githubClient = require('../../../packages/core/lib/github-client');
+const { createLogger } = require('../../../packages/core/lib/central-logger');
 const {
   analyzeRepoStructure,
   extractCodePatterns,
   generateAnalysisSummary,
-} = require('../../../../packages/core/lib/skills/darwin/github-analysis');
-const rag = require('../../../../packages/core/lib/rag');
-const eventLake = require('../../../../packages/core/lib/event-lake');
-const hiringContract = require('../../../../packages/core/lib/hiring-contract');
-const registry = require('../../../../packages/core/lib/agent-registry');
-const pgPool = require('../../../../packages/core/lib/pg-pool');
-const { postAlarm } = require('../../../../packages/core/lib/openclaw-client');
-const kst = require('../../../../packages/core/lib/kst');
+} = require('../../../packages/core/lib/skills/darwin/github-analysis');
+const rag = require('../../../packages/core/lib/rag');
+const eventLake = require('../../../packages/core/lib/event-lake');
+const hiringContract = require('../../../packages/core/lib/hiring-contract');
+const registry = require('../../../packages/core/lib/agent-registry');
+const pgPool = require('../../../packages/core/lib/pg-pool');
+const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const kst = require('../../../packages/core/lib/kst');
 
 const MAX_EVALUATIONS_PER_RUN = 40;
 const EVALUATION_DELAY_MS = 1_000;

@@ -4,7 +4,7 @@
  * 키워드 자기진화 — 최근 고적합 논문 기반 추천
  */
 
-const pgPool = require('../../../../packages/core/lib/pg-pool');
+const pgPool = require('../../../packages/core/lib/pg-pool');
 
 const SCHEMA = 'reservation';
 const TABLE = 'rag_research';

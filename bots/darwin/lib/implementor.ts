@@ -7,10 +7,10 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { callWithFallback } = require('../../../../packages/core/lib/llm-fallback');
-const { createLogger } = require('../../../../packages/core/lib/central-logger');
-const { postAlarm } = require('../../../../packages/core/lib/openclaw-client');
-const eventLake = require('../../../../packages/core/lib/event-lake');
+const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
+const { createLogger } = require('../../../packages/core/lib/central-logger');
+const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const eventLake = require('../../../packages/core/lib/event-lake');
 const proposalStore = require('./proposal-store');
 const autonomyLevel = require('./autonomy-level');
 
