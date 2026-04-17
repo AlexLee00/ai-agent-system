@@ -1580,3 +1580,92 @@ luna는 signal 생성자이고, 실행자 보안은 hephaestos(SEC-004 완료) +
 **AUDIT_04 4개 Task(SEC-007/013/014/015) 모두 실구현 검증 완료. argos/hermes 감사 clean. 감사 진행률 85%. 다음 세션: 소규모 team/ 파일 일괄 감사 + 3단위 worker/reservation 착수.**
 
 — 메티 (2026-04-17 밤, 13차 세션)
+
+
+---
+
+## 📍 14차 세션 증분 (2026-04-17 밤 메티) — 소규모 team/ 파일 일괄 감사
+
+> 13차 증분 커밋 `0deb0591` push 완료 후 소규모 team/ 9개 파일 일괄 스캔.
+> 모두 clean — 2단위 P2 진행률 대폭 상승.
+
+### ✅ 감사 완료 (9개 파일, 1672줄) — 취약점 0건
+
+| 파일 | 규모 | 주요 기능 | 감사 결과 |
+|------|------|----------|----------|
+| `team/athena.ts` | 67줄 | 약세 리서처 | ✅ clean |
+| `team/zeus.ts` | 65줄 | 강세 리서처 | ✅ clean |
+| `team/adaptive-risk.ts` | 76줄 | 적응형 리스크 조정 | ✅ clean |
+| `team/sentinel.ts` | 97줄 | 외부 인텔 통합 래퍼 | ✅ clean |
+| `team/budget.ts` | 135줄 | 예산 관리 | ✅ clean |
+| `team/oracle.ts` | 204줄 | 온체인·거시 | ✅ clean |
+| `team/sweeper.ts` | 233줄 | 더스트 청소 | ✅ CCXT binance 표준 사용 |
+| `team/scout-scraper.ts` | 292줄 | 종목 스크래핑 | ✅ clean |
+| `team/sophia.ts` | 503줄 | 감성 분석 (뉴스·소셜) | ✅ execFile(curl) 안전, CryptoPanic 공식 방식 |
+
+### 🟡 SEC-016 확장 (관찰 사항, 취약점 아님)
+
+CryptoPanic API key가 `auth_token=${apiKey}` URL 쿼리스트링으로 전달됨 (`sophia.ts:246`). CryptoPanic 공식 API 방식이고 argos(CoinGecko), hermes(DART) 패턴과 동일. 실질 리스크 매우 낮음.
+
+SEC-016 집약 목록 (모두 공식 API 방식, 우선순위 낮음):
+- argos.ts → CoinGecko `x_cg_demo_api_key`
+- hermes.ts → DART `crtfc_key`
+- sophia.ts → CryptoPanic `auth_token`
+
+**대응 필요 없음** (공식 API 방식이고, 로깅 누출 대비는 별도 레이어의 책임).
+
+### ✅ 긍정 확인
+
+- **sweeper.ts**: `ccxt.binance({ apiKey, secret, defaultType: 'spot' })` 표준 CCXT 사용. HMAC 서명은 CCXT가 처리. `fetchBalance` 기반 더스트 청소용으로 매매 리스크 없음.
+- **sophia.ts**: `execFile('curl', args, ...)` 쉘 없이 실행 (쉘 주입 불가). args는 코드 내부 구성.
+- **oracle.ts / sentinel.ts**: LLM 분석 중심, 민감값 없음.
+- **athena.ts / zeus.ts**: 프롬프트 빌더 + LLM 호출만, 공격 표면 없음.
+
+### 📊 감사 진행률 (14차 세션 기준)
+
+```
+1단위 Hub + 거버넌스: 100% 종결 (SEC-001~005)
+
+2단위 투자팀:
+  P1 (인증/시크릿): 100%, 대부분 패치 완료
+    ✅ SEC-006/007/008/011/012 완료
+    ⬜ SEC-009/010 (LOW, 후순위)
+
+  P2 (매매 로직): 90% 점검 완료  ← 대폭 진전
+    ✅ SEC-013/014/015 완료
+    ✅ luna.ts / argos.ts / hermes.ts 감사
+    ✅ sophia/athena/zeus/oracle/sentinel/sweeper/budget 감사
+    ✅ scout-scraper/adaptive-risk 감사
+    ⬜ team/aria.ts (737줄) — TA 지표
+    ⬜ team/scout.ts (343줄) — 종목 발굴
+    ⬜ team/chronos.ts (529줄) — 타이밍
+    ⬜ team/reporter.ts (1004줄) — 보고서
+
+전체 진행률: 약 90%
+```
+
+### 📋 다음 세션 우선순위
+
+**P0 — 2단위 P2 마무리** (남은 중규모 4개):
+- team/aria.ts (737줄) — TA
+- team/scout.ts (343줄) — 종목 발굴
+- team/chronos.ts (529줄) — 타이밍
+- team/reporter.ts (1004줄) — 보고서
+
+예상: 이 4개는 모두 내부 분석·타이밍·리포트 역할로 외부 API 입력 없음. 위험 키워드 일괄 스캔 먼저 실행 후 세부 점검.
+
+**P1 — 3단위 착수**:
+- bots/worker/ (JWT 멀티테넌트 격리) — 공격 표면 가능성 있음
+- bots/reservation/ (Playwright + DB 암호화)
+- bots/blog/ (Instagram OAuth)
+
+**P2**:
+- bots/claude/ + bots/darwin/ (다른 세션 활발 작업 중이므로 나중)
+- bots/orchestrator/ 전수 (router.ts 2800+줄)
+- packages/core/lib/
+
+### 🏷️ 14차 세션 요약 한 줄
+
+**소규모 team/ 9개 파일(1672줄) 일괄 감사 완료 — 모두 clean. 2단위 P2 진행률 90%. 전체 85% → 90%. 다음 세션: aria/scout/chronos/reporter 4개 + 3단위 worker/reservation/blog 착수.**
+
+— 메티 (2026-04-17 밤, 14차 세션)
