@@ -454,8 +454,9 @@ export async function loadDomesticCollectPressure(deployments, logLines = 200) {
   }
 
   const warn = [];
+  const ok = [];
   if (latestMetrics?.symbols != null || latestMetrics?.tasks != null) {
-    warn.push(`  최신 cycle 메트릭: symbols ${latestMetrics.symbols ?? 'n/a'} / tasks ${latestMetrics.tasks ?? 'n/a'} / concurrency ${latestMetrics.concurrency ?? 'n/a'} / failed ${latestMetrics.failed ?? 'n/a'}`);
+    ok.push(`  최신 cycle 메트릭: symbols ${latestMetrics.symbols ?? 'n/a'} / tasks ${latestMetrics.tasks ?? 'n/a'} / concurrency ${latestMetrics.concurrency ?? 'n/a'} / failed ${latestMetrics.failed ?? 'n/a'}`);
   }
   if (counts.collectOverload > 0 || counts.wideUniverse > 0 || counts.concurrencyGuard > 0) {
     warn.push(`  수집 압력: overload ${counts.collectOverload} / wide ${counts.wideUniverse} / concurrency ${counts.concurrencyGuard}`);
@@ -467,7 +468,20 @@ export async function loadDomesticCollectPressure(deployments, logLines = 200) {
     warn.push(`  data_sparsity: ${counts.dataSparsity}건 / 심볼 ${sparseSymbols.size}개`);
   }
   if (counts.externalQuoteFailures > 0) {
-    warn.push(`  외부 시세/순위 조회 실패: ${counts.externalQuoteFailures}건`);
+    const canDowngradeExternalFailures =
+      counts.collectOverload === 0 &&
+      counts.wideUniverse === 0 &&
+      counts.concurrencyGuard === 0 &&
+      counts.debateCapacityHot === 0 &&
+      counts.dataSparsity === 0 &&
+      Number(latestMetrics?.failed || 0) === 0;
+
+    const line = `  외부 시세/순위 조회 실패: ${counts.externalQuoteFailures}건`;
+    if (canDowngradeExternalFailures) {
+      ok.push(`${line} (보조 랭킹 조회 노이즈)`);
+    } else {
+      warn.push(line);
+    }
   }
 
   return {
@@ -475,7 +489,7 @@ export async function loadDomesticCollectPressure(deployments, logLines = 200) {
     windowLines: windowLines.length,
     okCount: warn.length === 0 ? 1 : 0,
     warnCount: warn.length,
-    ok: warn.length === 0 ? ['  최근 국내장 수집 압력 신호 없음'] : [],
+    ok: warn.length === 0 ? (ok.length ? ok : ['  최근 국내장 수집 압력 신호 없음']) : ok,
     warn,
     counts,
     sparseSymbols: [...sparseSymbols].slice(0, 20),
