@@ -1,4 +1,4 @@
-defmodule TeamJay.Jay.CommandEnvelope do
+defmodule Jay.V2.CommandEnvelope do
   @moduledoc """
   제이팀 cross-team 자동화용 typed command envelope.
 

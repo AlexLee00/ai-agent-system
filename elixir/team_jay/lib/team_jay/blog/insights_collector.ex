@@ -14,7 +14,7 @@ defmodule TeamJay.Blog.InsightsCollector do
 
   use GenServer
   require Logger
-  alias TeamJay.Jay.Topics
+  alias Jay.V2.Topics
 
   @collection_hour_utc 13
 

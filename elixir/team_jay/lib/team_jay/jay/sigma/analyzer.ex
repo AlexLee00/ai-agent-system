@@ -1,11 +1,11 @@
-defmodule TeamJay.Jay.Sigma.Analyzer do
+defmodule Jay.V2.Sigma.Analyzer do
   @moduledoc """
   시그마 편성 분석기 (sigma-analyzer.ts Elixir 포트).
   편성 + 어제 메트릭 기반으로 팀별 피드백 컨텍스트 생성.
   """
 
   require Logger
-  alias TeamJay.Jay.TeamConnector
+  alias Jay.V2.TeamConnector
 
   @type analyst_rec :: %{
     team: atom(),

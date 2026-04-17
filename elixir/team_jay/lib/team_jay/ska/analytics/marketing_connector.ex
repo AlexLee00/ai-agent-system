@@ -12,7 +12,7 @@ defmodule TeamJay.Ska.Analytics.MarketingConnector do
 
   use GenServer
   require Logger
-  alias TeamJay.Jay.Topics
+  alias Jay.V2.Topics
 
   @drop_threshold_pct 15.0          # 15% 이상 하락 시 블로팀 요청
   @fallback_check_ms 24 * 60 * 60 * 1_000   # GrowthCycle 미발행 시 fallback 타이머

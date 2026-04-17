@@ -1,11 +1,11 @@
-defmodule TeamJay.Jay.WeeklyReport do
+defmodule Jay.V2.WeeklyReport do
   @moduledoc """
   주간 리포트 생성기 — 매주 월요일 07:30 KST.
   7일 데이터 종합 → 팀별 성과 분석 → 마스터 텔레그램 발송.
   """
 
   require Logger
-  alias TeamJay.Jay.{TeamConnector, Topics, DailyBriefing}
+  alias Jay.V2.{TeamConnector, Topics, DailyBriefing}
 
   @teams TeamConnector.all_teams()
 
@@ -109,7 +109,7 @@ defmodule TeamJay.Jay.WeeklyReport do
   # ────────────────────────────────────────────────────────────────
 
   defp record_to_sigma(week_start, week_end, report, highlights) do
-    TeamJay.Jay.Sigma.Feedback.record_daily_run(
+    Jay.V2.Sigma.Feedback.record_daily_run(
       %{week_start: week_start, week_end: week_end, type: "weekly"},
       %{highlight_count: length(highlights)},
       report,

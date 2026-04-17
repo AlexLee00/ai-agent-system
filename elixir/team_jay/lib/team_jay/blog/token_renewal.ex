@@ -14,7 +14,7 @@ defmodule TeamJay.Blog.TokenRenewal do
 
   use GenServer
   require Logger
-  alias TeamJay.Jay.Topics
+  alias Jay.V2.Topics
 
   @renew_threshold_days 7    # 만료 X일 이전부터 갱신 시도
   @check_interval_ms 24 * 60 * 60 * 1_000   # 24시간마다 체크

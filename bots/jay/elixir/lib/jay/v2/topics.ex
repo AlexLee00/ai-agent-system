@@ -1,4 +1,4 @@
-defmodule TeamJay.Jay.Topics do
+defmodule Jay.V2.Topics do
   @moduledoc """
   JayBus PubSub 토픽 정의
   9팀 일일 성장 환류 사이클 + 팀 간 데이터 파이프라인

@@ -18,7 +18,7 @@ defmodule TeamJay.Blog.TopicCurator do
 
   use GenServer
   require Logger
-  alias TeamJay.Jay.Topics
+  alias Jay.V2.Topics
 
   @curation_hour_utc 13
   @candidates_per_day 3    # 카테고리당 후보 수

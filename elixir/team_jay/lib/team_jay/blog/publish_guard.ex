@@ -14,7 +14,7 @@ defmodule TeamJay.Blog.PublishGuard do
 
   use GenServer
   require Logger
-  alias TeamJay.Jay.Topics
+  alias Jay.V2.Topics
 
   @max_retries 3
   @retry_base_ms 60_000      # 1분 베이스

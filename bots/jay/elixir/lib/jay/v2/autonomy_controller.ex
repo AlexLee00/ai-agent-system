@@ -1,4 +1,4 @@
-defmodule TeamJay.Jay.AutonomyController do
+defmodule Jay.V2.AutonomyController do
   @moduledoc """
   제이팀 자율화 단계 관리 GenServer.
 

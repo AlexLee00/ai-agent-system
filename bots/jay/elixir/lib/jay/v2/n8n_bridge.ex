@@ -1,4 +1,4 @@
-defmodule TeamJay.Jay.N8nBridge do
+defmodule Jay.V2.N8nBridge do
   @moduledoc """
   JayBus ↔ n8n 웹훅 브릿지
 
