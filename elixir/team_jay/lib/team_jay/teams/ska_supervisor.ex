@@ -19,8 +19,7 @@ defmodule TeamJay.Teams.SkaSupervisor do
       runner: {:shell, "/bin/bash"},
       schedule: nil
     },
-    # log_report: log-report.js 삭제 후 .ts 미생성 — 스크립트 재작성 필요 (KI 추가)
-    # %{name: :log_report, script: "bots/ska/scripts/log-report.ts", runner: :tsx, schedule: {:interval, 86_400_000}},
+    %{name: :log_report, script: "bots/ska/scripts/log-report.ts", runner: :tsx, schedule: {:interval, 86_400_000}},
     # log_rotate/db_backup/eve/rebecca/forecast/pickko audit 계열은 launchd가 canonical owner다.
   ]
 
