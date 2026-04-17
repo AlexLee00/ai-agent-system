@@ -18,6 +18,11 @@ import { validateTradeReview } from './validate-trade-review.ts';
 
 const require = createRequire(import.meta.url);
 const hsm     = require('../../../packages/core/lib/health-state-manager');
+const {
+  getServiceOwnership,
+  isElixirOwnedService,
+  isRetiredService,
+} = require('../../../packages/core/lib/service-ownership');
 const { createHealthMemoryHelper } = require('../shared/health-memory-bridge.cjs');
 const { buildIssueHints, rememberHealthEvent } = createHealthMemoryHelper({
   agentId: 'investment.health',
@@ -105,12 +110,19 @@ async function main() {
   for (const label of ALL_SERVICES) {
     const svc       = status[label];
     const shortName = hsm.shortLabel(label);
+    const ownership = getServiceOwnership(label);
 
     // 1. 미로드 감지
     if (!svc) {
+      if (isElixirOwnedService(label) || isRetiredService(label)) {
+        hsm.clearAlert(state, `unloaded:${label}`);
+        continue;
+      }
+
       const key = `unloaded:${label}`;
       if (hsm.canAlert(state, key)) {
-        issues.push({ key, level: hsm.getAlertLevel(label), msg: `🔴 [루나 헬스] ${shortName} 미로드\nlaunchd에 등록되지 않음 → 수동 확인 필요` });
+        const ownerHint = ownership?.owner === 'launchd' ? '' : `\nownership=${ownership?.owner || 'unknown'}`;
+        issues.push({ key, level: hsm.getAlertLevel(label), msg: `🔴 [루나 헬스] ${shortName} 미로드\nlaunchd에 등록되지 않음 → 수동 확인 필요${ownerHint}` });
       }
       continue;
     }
