@@ -2,7 +2,7 @@
 'use strict';
 
 const pgPool = require('../packages/core/lib/pg-pool');
-const { parseArgs, collectJayUsage } = require('./lib/jay-usage');
+const { parseArgs, collectJayUsage } = require('./reviews/lib/jay-usage');
 
 function fmt(n) {
   return Number(n || 0).toLocaleString();
