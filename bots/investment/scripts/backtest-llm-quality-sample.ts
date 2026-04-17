@@ -4,6 +4,7 @@
 import { createRequire } from 'module';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { runBacktest } from '../team/chronos.ts';
+import * as db from '../shared/db.ts';
 
 const require = createRequire(import.meta.url);
 const {
@@ -38,12 +39,14 @@ function parseArgs(argv = []) {
     samples: DEFAULT_SAMPLES,
     layer: 'both',
     json: false,
+    persist: false,
     layer2Models: [],
     layer3Models: [],
   };
 
   for (const raw of argv) {
     if (raw === '--json') args.json = true;
+    else if (raw === '--persist') args.persist = true;
     else if (raw.startsWith('--symbol=')) args.symbol = raw.split('=').slice(1).join('=');
     else if (raw.startsWith('--from=')) args.from = raw.split('=').slice(1).join('=');
     else if (raw.startsWith('--to=')) args.to = raw.split('=').slice(1).join('=');
@@ -333,6 +336,75 @@ function renderText(report) {
   return lines.join('\n');
 }
 
+async function persistReport(report) {
+  await db.initSchema();
+  const rows = [];
+
+  if (report.layer2?.results?.length) {
+    for (const item of report.layer2.results) {
+      rows.push({
+        model: item.spec,
+        layer: 2,
+        accuracy: item.parseRate,
+        matchRate: item.passRate,
+        sampleCount: item.total,
+        summary: {
+          type: 'quality_sample',
+          baselineSignalCount: report.layer1.signalCount,
+          avgLatencyMs: item.avgLatencyMs,
+          avgSentiment: item.avgSentiment,
+          successCount: item.successCount,
+          passedCount: item.passedCount,
+          actionSummary: item.actionSummary,
+          errors: item.errors,
+        },
+      });
+    }
+  }
+
+  if (report.layer3?.results?.length) {
+    for (const item of report.layer3.results) {
+      rows.push({
+        model: item.spec,
+        layer: 3,
+        accuracy: item.parseRate,
+        matchRate: item.parseRate,
+        sampleCount: item.total,
+        summary: {
+          type: 'quality_sample',
+          baselineSignalCount: report.layer1.signalCount,
+          baselineCount: report.layer3.baselineCount,
+          baselineModel: report.layer3.baselineModel,
+          avgLatencyMs: item.avgLatencyMs,
+          avgConfidence: item.avgConfidence,
+          successCount: item.successCount,
+          decisionSummary: item.decisionSummary,
+          riskSummary: item.riskSummary,
+          errors: item.errors,
+        },
+      });
+    }
+  }
+
+  for (const row of rows) {
+    await db.run(`
+      INSERT INTO llm_backtest_quality (
+        model, symbol, layer, accuracy, match_rate, sample_count, summary
+      ) VALUES (?, ?, ?, ?, ?, ?, ?::jsonb)
+    `, [
+      row.model,
+      report.symbol,
+      row.layer,
+      row.accuracy ?? null,
+      row.matchRate ?? null,
+      row.sampleCount ?? 0,
+      JSON.stringify(row.summary || {}),
+    ]);
+  }
+
+  return rows.length;
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const layer1 = await runBacktest(args.symbol, args.from, args.to, '1', { maxSignals: args.samples });
@@ -366,6 +438,10 @@ async function main() {
       models: args.layer3Models,
       results: await evaluateLayer3(args.symbol, baselineSignals, args.layer3Models),
     };
+  }
+
+  if (args.persist) {
+    report.persistedRows = await persistReport(report);
   }
 
   if (args.json) return report;
