@@ -677,7 +677,7 @@ export async function evaluateSignal(signal, opts = {}) {
         }
       );
     } catch { /* 무시 */ }
-    return hardRuleResult;
+    return { ...hardRuleResult, nemesis_verdict: 'rejected' };
   }
 
   let amountUsdt = hardRuleResult.amountUsdt;
@@ -685,6 +685,7 @@ export async function evaluateSignal(signal, opts = {}) {
   let todayPnl = hardRuleResult.todayPnl;
   let dynamicTPSL;
   let marketRegime = null;
+  let adaptiveResult: any = null; // SEC-004: finalVerdict 계산을 위해 스코프 상단 선언
 
   // ── v2: 조정 계수 ──
   if (action === ACTIONS.BUY) {
@@ -761,7 +762,7 @@ export async function evaluateSignal(signal, opts = {}) {
       dynamicTPSL = applyRegimeGuideToTPSL(dynamicTPSL, marketRegime.guide, opts.currentPrice || null);
     }
 
-    const adaptiveResult = await evaluateAdaptiveRisk(signal, {
+    adaptiveResult = await evaluateAdaptiveRisk(signal, {
       amountUsdt,
       rules,
       persist,
@@ -858,5 +859,7 @@ export async function evaluateSignal(signal, opts = {}) {
     ? { tpPrice: dynamicTPSL.tpPrice, slPrice: dynamicTPSL.slPrice, tpslSource: dynamicTPSL.source }
     : {};
 
-  return { approved: true, adjustedAmount: amountUsdt, traceId, ...tpslResult };
+  // SEC-004: LLM이 ADJUST(금액 조정)한 경우 'modified', 그 외 'approved'
+  const finalVerdict = adaptiveResult?.llm?.decision === 'ADJUST' ? 'modified' : 'approved';
+  return { approved: true, adjustedAmount: amountUsdt, traceId, nemesis_verdict: finalVerdict, approved_at: new Date().toISOString(), ...tpslResult };
 }

@@ -136,6 +136,8 @@ async function createForceExitSignal(candidate, reason) {
     reasoning: `승인형 force-exit 실행 (${reason})`,
     exchange: candidate.exchange,
     tradeMode: candidate.tradeMode || 'normal',
+    nemesisVerdict: 'approved', // SEC-004: force-exit은 관리자 승인 SELL — 가드 예외
+    approvedAt: new Date().toISOString(),
   });
 
   const signal = await db.getSignalById(signalId);
