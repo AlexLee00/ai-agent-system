@@ -506,14 +506,18 @@ npm run parallel-snapshot
 ### 현재 활성 코덱스 (`docs/codex/`)
 | 파일 | 상태 |
 |------|------|
-| CODEX_CLAUDE_REMODEL | Phase 0~4 완료, Phase 3 자동 실행 활성화 ✅ |
-| CODEX_DARWIN_REMODEL | Phase 0~3 전체 완료 ✅ |
 | CODEX_ELIXIR_MONITORING | 운영 runbook (상시) |
 | CODEX_SECURITY_AUDIT_01 | filter-repo + 히스토리 정리 — 마스터 재승인 후 |
+| CODEX_SECURITY_AUDIT_04 | SEC-015/014 (P0), SEC-008 완성 (P1), SEC-007/013 (P2/P3) |
+
+### 아카이브 처리 (2026-04-17 세션 12)
+- CODEX_DARWIN_REMODEL → archive (Phase 0~4 전체 완료, Edison/ProofR/KeywordEvolver/ResearchMonitor 구현)
+- CODEX_TEST_BYPASS → archive (더미 파일)
+- CODEX_SECURITY_AUDIT_03 → archive (SEC-006 ✅, 잔여 항목 AUDIT_04 이관)
 
 > **루나팀 코드 구현: 완전 완료** ✅
 > **SEC-004/005: 완전 밀폐** ✅
 > **클로드팀 REMODEL: Phase 0~4 완료, Phase 3 자동 실행 활성화** ✅
-> **다윈팀 REMODEL: Phase 0~3 전체 완료** ✅
+> **다윈팀 REMODEL: Phase 0~4 전체 완료** ✅ (10개 GenServer)
 > **OPS 전환**: git push 완료 (1954bc76), OPS 수동 Step 3 대기
 > 이전 HANDOFF: 2026-04-17 CODEX_BLOG_AUTONOMOUS_OPS Phase A~D
