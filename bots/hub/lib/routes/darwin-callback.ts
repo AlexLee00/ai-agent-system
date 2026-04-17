@@ -81,7 +81,7 @@ export async function darwinCallbackRoute(req: any, res: any) {
     if (action === 'darwin_approve') {
       proposalStore.updateStatus(proposalId, 'approved', { approved_at: new Date().toISOString() });
       await answerCallbackQuery(callbackQueryId, '승인 완료! edison이 구현을 시작합니다.');
-      const implementor = require('../../../orchestrator/lib/research/implementor');
+      const implementor = require('../../../darwin/lib/implementor');
       setImmediate(() => implementor.triggerImplementation(proposalId));
       return res.json({ ok: true, action: 'approved', proposalId });
     }
@@ -100,7 +100,7 @@ export async function darwinCallbackRoute(req: any, res: any) {
 
     if (action === 'darwin_merge') {
       await answerCallbackQuery(callbackQueryId, '머지를 시작합니다.');
-      const verifier = require('../../../orchestrator/lib/research/verifier');
+      const verifier = require('../../../darwin/lib/verifier');
       setImmediate(() => verifier.mergeVerifiedProposal(proposalId));
       return res.json({ ok: true, action: 'merge_started', proposalId });
     }
@@ -111,7 +111,7 @@ export async function darwinCallbackRoute(req: any, res: any) {
         return res.status(404).json({ ok: false, error: 'skill task branch missing' });
       }
       await answerCallbackQuery(callbackQueryId, '스킬 브랜치 머지를 시작합니다.');
-      const verifier = require('../../../orchestrator/lib/research/verifier');
+      const verifier = require('../../../darwin/lib/verifier');
       setImmediate(async () => {
         try {
           await verifier.mergeBranch(task.result.branch, task.id);

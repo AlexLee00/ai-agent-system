@@ -15,13 +15,13 @@ const {
   stepsToSyncMap,
   saveSteps,
   loadSteps,
-} = require(path.join(__dirname, '../../../../bots/video/lib/step-proposal-engine'));
+} = require('../../../video/lib/step-proposal-engine');
 const {
   generateCutProposals,
   getNextCutIndex,
   applyCutAction,
   summarizeCutStats,
-} = require(path.join(__dirname, '../../../../bots/video/lib/cut-proposal-engine'));
+} = require('../../../video/lib/cut-proposal-engine');
 const {
   createVideoStepFeedbackSession,
   getVideoFeedbackSessionForStep,
@@ -30,11 +30,11 @@ const {
   markVideoFeedbackConfirmed,
   markVideoFeedbackRejected,
   markVideoFeedbackCommitted,
-} = require(path.join(__dirname, '../../../../bots/video/lib/video-feedback-service'));
-const { syncMapToEDL } = require(path.join(__dirname, '../../../../bots/video/lib/sync-matcher'));
-const { saveEDL, renderPreview } = require(path.join(__dirname, '../../../../bots/video/lib/edl-builder'));
-const { loadConfig } = require(path.join(__dirname, '../../../../bots/video/src/index'));
-const { buildMediaBinaryEnv } = require(path.join(__dirname, '../../../../bots/video/lib/media-binary-env'));
+} = require('../../../video/lib/video-feedback-service');
+const { syncMapToEDL } = require('../../../video/lib/sync-matcher');
+const { saveEDL, renderPreview } = require('../../../video/lib/edl-builder');
+const { loadConfig } = require('../../../video/src/index');
+const { buildMediaBinaryEnv } = require('../../../video/lib/media-binary-env');
 
 const router = express.Router();
 const CONFIG = loadConfig();
