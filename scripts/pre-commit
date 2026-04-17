@@ -30,6 +30,7 @@ BLOCKED_FILES=(
 )
 
 STAGED=$(git diff --cached --name-only 2>/dev/null)
+STAGED_DELETIONS=$(git diff --cached --diff-filter=D --name-only 2>/dev/null)
 
 for pattern in "${BLOCKED_FILES[@]}"; do
   # 파일명이 패턴과 정확히 일치하는 경우 (경로 무관)
@@ -139,8 +140,10 @@ FORCE_TRACKED_PATHS=(
 )
 
 for protected in "${FORCE_TRACKED_PATHS[@]}"; do
-  # docs/codex/README.md는 예외 허용
-  MATCHES=$(echo "$STAGED" | grep -E "^${protected}" | grep -v '^docs/codex/README\.md$' || true)
+  MATCHES=$(echo "$STAGED" | grep -E "^${protected}" || true)
+  if [ -n "$MATCHES" ] && [ -n "$STAGED_DELETIONS" ]; then
+    MATCHES=$(echo "$MATCHES" | grep -vxF -f <(echo "$STAGED_DELETIONS") || true)
+  fi
   if [ -n "$MATCHES" ]; then
     echo -e "${RED}❌ gitignore 우회 차단: '${protected}' 경로 파일 커밋 불가${NC}"
     echo "$MATCHES" | while read -r f; do echo "   → $f"; done
