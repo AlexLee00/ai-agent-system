@@ -1490,3 +1490,93 @@ luna는 signal 생성자이고, 실행자 보안은 hephaestos(SEC-004 완료) +
 **AUDIT_04 466줄 작성 완료(Task 1~5). luna.ts 감사 완료(취약점 없음). SEC-007/008 실구현 재검증 완료. 감사 진행률 80%. 다음 세션 P0: Task 1(SEC-015) 코덱스 실행 + argos.ts/hermes.ts 감사.**
 
 — 메티 (2026-04-17 밤, 12차 세션)
+
+
+---
+
+## 📍 13차 세션 증분 (2026-04-17 밤 메티) — AUDIT_04 실구현 검증 + argos/hermes 감사
+
+> 12차 세션 마감 후 다른 세션이 AUDIT_04를 즉시 실행(`9d26cddd`, `b352dadc`).
+> 13차에서 실구현을 직접 검증 + 2단위 P2 나머지 핵심 감사 완료.
+
+### ✅ AUDIT_04 실구현 검증 결과 (모두 완벽)
+
+| Task | 커밋 | 구현 검증 |
+|------|------|-----------|
+| Task 1 (SEC-015) | `9d26cddd` | ✅ `hanul.ts:111` `enforceHanulNemesisApproval` 함수 + `executeSignal:697` + `executeOverseasSignal:852` 양쪽 호출. SELL/paper 예외, stale 5분 체크, DB `updateSignalBlock` + `failHanulSignal` 이중 기록. AUDIT_04 명세 그대로 |
+| Task 2 (SEC-014) | `9d26cddd` | ✅ `l31-order-execute.ts`가 `shared/signal.ts`의 `executeApprovedSignal` 경유하도록 단순화. 6원칙 안전장치 복원 |
+| Task 4 (SEC-007) | `b352dadc` | ✅ `kis-client.ts:46` `KIS_DEBUG_ENABLED` 상수 + `logKisDebug()` 헬퍼. 토큰 HTTP 에러(line 176), JSON 파싱 실패(244), API 오류(249) 3곳에서 raw body를 디버그 로그로만 기록, Error 메시지에는 최소 정보만 |
+| Task 5 (SEC-013) | `9d26cddd` | ✅ `db.ts:942` `getActiveStrategies` — `normalizedMarket` allowlist(`['all','crypto','stocks']`) + `normalizedLimit` clamp(1~50) + `$1/$2` 파라미터. 원본 메티 제안보다 **더 견고**(allowlist 추가) |
+| Task 3 (SEC-008 일일 cap) | 미적용 | ⬜ 1회 한도만으로 충분 판단, 일일 cap은 선택적 (우선순위 낮음) |
+
+### 📋 KNOWN_ISSUES 상태 (자동 업데이트 확인)
+
+다른 세션이 구현과 함께 KNOWN_ISSUES도 업데이트 완료:
+
+- ✅ SEC-007 패치 완료
+- ✅ SEC-013 해결 (파라미터화)
+- ✅ SEC-014 해결 (L31 단일 진입점)
+- ✅ SEC-015 해결 (hanul entry guard)
+
+메티가 추가 수정할 항목 없음. 11차/13차 표기 혼동 있으나 실질은 문제 없음.
+
+### ✅ 2단위 P2 나머지 감사 결과
+
+**`team/argos.ts` (1254줄)** — 외부 API 소비자, 취약점 없음:
+- `execFile('curl', args, ...)` 쉘 없이 실행, args 하드코딩 (line 74)
+- `https.get`/`fetch` 4곳 모두 하드코딩 URL
+- `ccxt.binance` 인스턴스 인증 없음 (공개 시세만 조회)
+- 관찰: CoinGecko API key가 URL 쿼리스트링 포함(line 338) — 공식 방식
+
+**`team/hermes.ts` (445줄)** — 뉴스·공시 API 소비자, 취약점 없음:
+- Naver 뉴스: **헤더 인증** (`X-Naver-Client-Id/Secret`) — 완벽
+- DART 공시: URL 쿼리스트링 `crtfc_key` — DART 공식 방식
+- `httpsGetRaw` 유틸 경유, 외부 입력 직접 주입 없음
+
+**종합 관찰 사항 (취약점 아님)**:
+- SEC-016 (LOW, 관찰): CoinGecko + DART가 URL 쿼리스트링으로 API key 전송. 둘 다 공식 방식이지만 서버 로그 누출 잠재 리스크. **실질 리스크 매우 낮음** (DART는 정부 공개 API, CoinGecko는 demo key)
+
+### 📊 감사 진행률 (13차 세션 기준)
+
+```
+1단위 Hub + 거버넌스: 100% 종결 (SEC-001~005)
+
+2단위 투자팀:
+  P1 (인증/시크릿): 100%, 대부분 패치 완료
+    ✅ SEC-006/007/008/011/012 완료
+    ⬜ SEC-009/010 (LOW, 후순위)
+
+  P2 (매매 로직): 70% 점검 완료
+    ✅ SEC-013/014/015 완료
+    ✅ luna.ts 감사 (clean)
+    ✅ argos.ts 감사 (clean)
+    ✅ hermes.ts 감사 (clean)
+    ⬜ team/aria.ts (737줄) — TA 지표
+    ⬜ team/scout.ts (343줄) — 종목 발굴
+    ⬜ team/chronos.ts (529줄) — 타이밍
+    ⬜ team/reporter.ts (1004줄) — 보고서
+    ⬜ 소규모 팀 (sophia/athena/zeus/oracle 등)
+
+전체 진행률: 약 85%
+```
+
+### 📋 다음 세션 우선순위
+
+**P0 — 2단위 P2 마무리** (규모 작은 파일들 일괄):
+- team/sophia.ts (503줄) / athena.ts (67줄) / zeus.ts (65줄) / oracle.ts (204줄)
+- team/sentinel.ts (97줄) / sweeper.ts (233줄) / budget.ts (135줄)
+- team/scout-scraper.ts (292줄)
+
+**P1 — 중규모 감사**:
+- team/aria.ts (737줄) — TA
+- team/chronos.ts (529줄) — 타이밍
+
+**P2 — 3단위 착수**:
+- bots/worker/ (JWT 멀티테넌트)
+- bots/reservation/
+
+### 🏷️ 13차 세션 요약 한 줄
+
+**AUDIT_04 4개 Task(SEC-007/013/014/015) 모두 실구현 검증 완료. argos/hermes 감사 clean. 감사 진행률 85%. 다음 세션: 소규모 team/ 파일 일괄 감사 + 3단위 worker/reservation 착수.**
+
+— 메티 (2026-04-17 밤, 13차 세션)
