@@ -11,6 +11,7 @@ const {
   getWorkerFeedbackSessionForTask,
   markWorkerFeedbackCommitted,
 } = require('../lib/ai-feedback-service');
+const { createProcessSingleton } = require('../lib/process-singleton');
 
 const emily = require('./emily');
 const noah = require('./noah');
@@ -21,6 +22,13 @@ const chloe = require('./chloe');
 
 const SCHEMA = 'worker';
 const POLL_MS = parseInt(process.env.WORKER_TASK_POLL_MS || '15000', 10);
+const singleton = createProcessSingleton('worker-task-runner');
+const singletonState = singleton.acquire();
+
+if (!singletonState.acquired) {
+  console.log(`[worker-task-runner] 이미 실행 중인 프로세스 감지 — skip (PID: ${singletonState.existingPid})`);
+  process.exit(0);
+}
 
 function parsePayload(payload: unknown) {
   if (!payload) return {};

@@ -8,6 +8,7 @@ const { initHubConfig } = require(path.join(ROOT, 'packages/core/lib/llm-keys'))
 const { initHubSecrets, getSecret } = require('../lib/secrets');
 const { getWorkerLeadRuntimeConfig } = require('../lib/runtime-config');
 const { ensureChatSchema, handleChatMessage } = require('../lib/chat-agent');
+const { createProcessSingleton } = require('../lib/process-singleton');
 
 const emily = require('./emily');
 const noah = require('./noah');
@@ -25,6 +26,13 @@ const DEFAULT_POLL_MS = Number(leadRuntimeConfig.defaultPollMs || 2000);
 const NO_TOKEN_POLL_MS = Number(leadRuntimeConfig.noTokenPollMs || 30000);
 const TELEGRAM_LONG_POLL_SECONDS = Number(leadRuntimeConfig.telegramLongPollSeconds || 10);
 const TELEGRAM_REQUEST_TIMEOUT_MS = Number(leadRuntimeConfig.telegramRequestTimeoutMs || 15000);
+const singleton = createProcessSingleton('worker-lead');
+const singletonState = singleton.acquire();
+
+if (!singletonState.acquired) {
+  console.log(`[worker-lead] 이미 실행 중인 프로세스 감지 — skip (PID: ${singletonState.existingPid})`);
+  process.exit(0);
+}
 
 let offset = 0;
 let missingTokenLogged = false;

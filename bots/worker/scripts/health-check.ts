@@ -30,6 +30,10 @@ const {
   canonicalizeWorkerCriticalAlert,
   appendIncidentLine,
 } = require('../lib/critical-alerts.legacy');
+const {
+  isElixirOwnedService,
+  isExpectedIdleService,
+} = require('../../../packages/core/lib/service-ownership');
 const { buildIssueHints, rememberHealthEvent } = createHealthMemoryHelper({
   agentId: 'worker.health',
   team: 'worker',
@@ -132,6 +136,12 @@ async function main() {
 
     // 1. 미로드 감지
     if (!svc) {
+      if (isElixirOwnedService(label) || isExpectedIdleService(label)) {
+        if (state[`unloaded:${label}`]) {
+          hsm.clearAlert(state, `unloaded:${label}`);
+        }
+        continue;
+      }
       const key = `unloaded:${label}`;
       if (hsm.canAlert(state, key)) {
         issues.push({ key, level: hsm.getAlertLevel(label), msg: `🔴 [워커 헬스] ${shortName} 미로드\nlaunchd에 등록되지 않음 → 수동 확인 필요` });

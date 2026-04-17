@@ -3367,3 +3367,91 @@ Phase 0 구현         ░░░░░░░░░░░░░░░░░░░
 **32차 세션 — 시그마팀 외부 보강 v2(실전·버전·API 층) 완료. hex.pm API로 Jido 생태계 실제 버전 전수 조회 — `jido 2.2.0 / jido_action 2.2.1 / jido_signal 2.1.1 / jido_ai 2.1.0 / req_llm 1.9.0`. 🏆 `agentskills.io = Anthropic 공식 오픈 포맷` (16,451★) 대발견 → Layer 2 신설로 Claude Code 즉시 호환. Jido 2.2 실제 API 샘플로 Zoi 스키마 + Jido.AI.Agent 매크로 사용 확인. `docs/SIGMA_REMODELING_RESEARCH_SUPPLEMENT_V2.md`(447줄) + `docs/codex/CODEX_SIGMA_REMODEL_PHASE_0.md` v2 수정 완료. 설계 변경 5건(D-01~D-05) 반영. Phase 0 모든 준비 100%, 마스터 승인만 대기.**
 
 — 메티 (2026-04-17 밤, 32차 세션 — 외부 보강 v2 완료)
+
+---
+
+## 📍 33차 세션 증분 (2026-04-17 밤 메티) — 외부 보강 v3 (예제·SDK·관측성 층) 완료
+
+> 32차 이후 마스터 선택 `v3 보강` 실행.
+> v1(개념·논문) → v2(버전·API) → **v3(예제·SDK·관측성)** 3단계 심화 완성.
+> `docs/SIGMA_REMODELING_RESEARCH_SUPPLEMENT_V3.md` (526줄) 작성 + 커밋.
+> Phase 0 코덱스 프롬프트 v3 반영 완료 (로컬).
+
+### 🔍 수집한 실전 자료 (v3)
+
+1. **`anthropics/skills` 리포 구조** — 119,340★ (agentskills 16K의 **7.4배**)
+2. **`/plugin marketplace add anthropics/skills`** Claude Code 즉시 설치 명령
+3. **Skill 템플릿 140 bytes** (단 5줄) + `claude-api` skill 33KB 프로덕션 비교
+4. **spec/agent-skills-spec.md** 실제 내용 (agentskills.io/specification 리다이렉트)
+5. **Elixir `pgvector 0.3.1`** 존재 (773,986 다운로드)
+6. **`jido_memory` 패키지 NOT_FOUND** (Hermes 3층 수동 포팅 확정)
+7. **Jido.Observe 모듈 hexdocs** HTTP 200 (813줄 HTML, 실재 확인)
+8. **Ecto 3.13.5 (140M)** + **ecto_sql 3.13.5 (122M)** vs Postgrex (134M) 비교
+9. **13개 카테고리 skill 디렉토리** (algorithmic-art/brand-guidelines/**claude-api**/docx 등)
+10. **`anthropics/skills` README Claude Code/Claude.ai/API 3 surface 지원 확인**
+
+### 🎯 6대 핵심 발견
+
+1. **`anthropics/skills` = Claude Code Plugin 마켓 자체** — 119K★ 규모
+2. **Skill 포맷은 5줄 미니멀 ~ 33KB 프로덕션까지** 자유도 높음
+3. **`claude-api` skill은 언어별 서브디렉토리** 구조 (python/typescript/java/go/ruby/php/csharp)
+4. **pgvector Elixir 0.3.1** — Memory L2 완전 Elixir 네이티브 구현 가능
+5. **Postgrex 직접 사용** 결정 (Ecto 미도입) — 시그마 규모에 적합
+6. **Jido.Observe + OpenTelemetry 1.7** 확인, Phase 0은 파일 exporter만
+
+### 📝 추가 설계 변경 5건 (D-06 ~ D-10, 누적 10건)
+
+| # | 변경 | 영향 |
+|---|------|------|
+| D-06 | Claude Code Plugin Marketplace 등록 | `.claude-plugin/plugin.json` 추가 |
+| D-07 | Skill 프로덕션 수준 상향 (3~6KB, Before/Defaults/Subcommands) | SKILL.md 품질 기준 |
+| D-08 | pgvector Elixir 바인딩 추가 | Memory L2 Elixir 네이티브 |
+| D-09 | Postgrex 직접 (Ecto 미도입) | 데이터 계층 단순화 |
+| D-10 | Jido.Observe + OTel 1.7 파일 exporter | Phase 0 관측성 확정 |
+
+### 🔧 Phase 0 코덱스 프롬프트 v3 반영 완료 (로컬)
+
+`docs/codex/CODEX_SIGMA_REMODEL_PHASE_0.md` 199줄 → **257줄** 확장:
+
+**§1 의존성 업데이트**:
+- `{:pgvector, "~> 0.3"}` 추가
+- `{:opentelemetry_exporter, "~> 1.7"}` 추가
+- `{:ecto/ecto_sql/jido_memory}` 미도입 명시
+
+**§2 v2 namespace 확장 (11 → 13 모듈)**:
+- `telemetry.ex` 추가 (Jido.Observe handler + OTel setup)
+- `memory/l2_pgvector.ex` 추가 (Sigma.V2.Memory.L2)
+
+**§7 신규 섹션** (Anthropic skills 포맷):
+- `packages/skills/sigma/` 디렉토리 + 5개 SKILL.md + `.claude-plugin/plugin.json`
+- claude-api skill 패턴 (Before/Input Schema/Process/Defaults/Integration)
+
+**Exit Criteria 2건 추가**:
+- `packages/skills/sigma/.claude-plugin/plugin.json` 생성
+- 5개 skill SKILL.md skeleton
+
+### 📊 v3 산출물 통계
+
+- `docs/SIGMA_REMODELING_RESEARCH_SUPPLEMENT_V3.md`: **526줄**, 8 섹션, 민감값 0
+- `docs/codex/CODEX_SIGMA_REMODEL_PHASE_0.md`: 199 → **257줄** (v3 반영, 로컬 전용)
+- 시그마 리모델 총 문서 분량: **3,154줄** (설계 1,405 + v1 373 + v2 447 + v3 526 + 원칙 202 + 코덱스 201 실질)
+
+### 📈 전체 시그마 리모델링 현황
+
+```
+설계서 완성도            ████████████████████ 100%
+v1 보강 (개념/논문)       ████████████████████ 100%
+v2 보강 (실전/버전)       ████████████████████ 100%
+v3 보강 (예제/SDK/관측성)  ████████████████████ 100%
+원칙 YAML 초안           ████████████████████ 100%
+Phase 0 프롬프트 v3      ████████████████████ 100%
+─────────────────────────────────────────────────
+마스터 승인 서명         ░░░░░░░░░░░░░░░░░░░░   0% (병목)
+Phase 0 구현             ░░░░░░░░░░░░░░░░░░░░   0%
+```
+
+### 🏷️ 33차 세션 요약 한 줄
+
+**33차 세션 — 시그마팀 외부 보강 v3(예제·SDK·관측성 층) 완료. 🏆 `anthropics/skills = 119K★` Claude Code Plugin Marketplace 자체 대발견 (agentskills 16K의 7.4배). Skill 포맷 5줄 미니멀(template) ~ 33KB 프로덕션(claude-api) 범위 확인, 시그마는 중간 3~6KB 지향. pgvector Elixir 0.3.1(773K↓) 도입 확정 → Memory L2 네이티브, Postgrex 직접(Ecto 미도입), Jido.Observe + OTel 1.7 파일 exporter(Phase 0), jido_memory NOT_FOUND로 agent-memory 수동 포팅 확정. `SIGMA_REMODELING_RESEARCH_SUPPLEMENT_V3.md`(526줄) + 코덱스 프롬프트 v3 반영(199→257줄, 로컬). 누적 설계 변경 10건(D-01~D-10). 총 문서 3,154줄. Phase 0 착수 준비 완전 100%, 마스터 승인만 남음.**
+
+— 메티 (2026-04-17 밤, 33차 세션 — 외부 보강 v3 완료)
