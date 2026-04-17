@@ -736,25 +736,24 @@ async function extractAdminComments(page, limit = 20, ownBlogId = '') {
     ownBlogId: String(ownBlogId || '').trim(),
   };
   return page.evaluate(({ maxItems, ownBlogId }) => {
-    function textOf(el) {
-      return String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
-    }
+    const textOf = (el) =>
+      String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
 
-    function pickText(root, selectors) {
+    const pickText = (root, selectors) => {
       for (const selector of selectors) {
         const node = root.querySelector(selector);
         const text = textOf(node);
         if (text) return text;
       }
       return '';
-    }
+    };
 
-    function visible(el) {
+    const visible = (el) => {
       if (!el) return false;
       const style = window.getComputedStyle(el);
       const rect = el.getBoundingClientRect();
       return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-    }
+    };
 
     const selectors = ['tr', 'li[class*="comment"]', 'div[class*="comment"]', 'li'];
     const roots = [];
@@ -876,17 +875,17 @@ async function getPostSummary(postUrl, { testMode = false } = {}) {
     await contentFrame.waitForSelector('body', { timeout: testMode ? 5000 : 15000 }).catch(() => {});
     await humanDelay(1, 2, testMode);
     const result = await contentFrame.evaluate((maxLen) => {
-      function metaContent(selector) {
+      const metaContent = (selector) => {
         const node = document.querySelector(selector);
         return String(node?.getAttribute?.('content') || '').replace(/\s+/g, ' ').trim();
-      }
+      };
 
-      function textOf(selector) {
+      const textOf = (selector) => {
         const node = document.querySelector(selector);
         return String(node?.innerText || node?.textContent || '').replace(/\s+/g, ' ').trim();
-      }
+      };
 
-      function firstText(selectors) {
+      const firstText = (selectors) => {
         for (const selector of selectors) {
           const text = textOf(selector);
           if (text) return text;
@@ -1075,15 +1074,14 @@ async function extractBuddyFeedPosts(page, ownBlogId, limit = 10) {
   await humanDelay(1, 2, true);
 
   const extracted = await page.evaluate((maxItems) => {
-    function textOf(el) {
-      return String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
-    }
-    function uniquePush(store, item) {
+    const textOf = (el) =>
+      String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
+    const uniquePush = (store, item) => {
       if (!item?.href) return;
       if (store.seen.has(item.href)) return;
       store.seen.add(item.href);
       store.items.push(item);
-    }
+    };
 
     const store = { seen: new Set(), items: [] };
     const cards = Array.from(document.querySelectorAll('li.add_img, li[class*="list"], ul li')).slice(0, maxItems * 8);
@@ -1153,9 +1151,8 @@ async function resolveLatestPostForBlog(page, blogId, testMode = false) {
   await humanDelay(1, 2, true);
 
   const candidate = await frame.evaluate((targetBlogId) => {
-    function textOf(el) {
-      return String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
-    }
+    const textOf = (el) =>
+      String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
 
     const anchors = Array.from(document.querySelectorAll('a[href*="blog.naver.com"], a[href*="PostView.naver"], a[href*="m.blog.naver.com"]'));
     for (const anchor of anchors) {
@@ -1360,15 +1357,14 @@ function validateNeighborCommentWithCandidate(comment, summary, candidate, confi
 
 async function openReplyEditor(page, comment) {
   return page.evaluate(({ commentText, commenterName }) => {
-    function textOf(el) {
-      return String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
-    }
-    function visible(el) {
+    const textOf = (el) =>
+      String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
+    const visible = (el) => {
       if (!el) return false;
       const style = window.getComputedStyle(el);
       const rect = el.getBoundingClientRect();
       return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-    }
+    };
 
     const selectors = ['li.u_cbox_comment', 'li[class*="comment"]', 'div[class*="comment"]', 'article', 'section'];
     const candidates = [];
@@ -1440,12 +1436,12 @@ async function activateReplyMode(page) {
   }).catch(() => {});
 
   return page.waitForFunction(() => {
-    function visible(el) {
+    const visible = (el) => {
       if (!el) return false;
       const style = window.getComputedStyle(el);
       const rect = el.getBoundingClientRect();
       return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-    }
+    };
 
     const replyArea = document.querySelector('[data-blog-target-reply-area="true"]');
     if (visible(replyArea)) {
@@ -1499,15 +1495,14 @@ async function openCommentPanel(page, logNo = '', testMode = false) {
   }
 
   return page.evaluate(({ currentLogNo }) => {
-    function textOf(el) {
-      return String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
-    }
-    function visible(el) {
+    const textOf = (el) =>
+      String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
+    const visible = (el) => {
       if (!el) return false;
       const style = window.getComputedStyle(el);
       const rect = el.getBoundingClientRect();
       return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-    }
+    };
     const hiddenRoot = currentLogNo ? document.querySelector(`#naverComment_201_${currentLogNo}_ct`) : null;
     if (hiddenRoot instanceof HTMLElement) {
       hiddenRoot.style.display = 'block';
@@ -1611,12 +1606,12 @@ async function waitForCommentPanel(page, logNo = '') {
   }
 
   await page.waitForFunction(({ currentLogNo }) => {
-    function visible(el) {
+    const visible = (el) => {
       if (!el) return false;
       const style = window.getComputedStyle(el);
       const rect = el.getBoundingClientRect();
       return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-    }
+    };
 
     const directRoots = [
       currentLogNo ? document.querySelector(`#naverComment_201_${currentLogNo}_ct`) : null,
@@ -1648,15 +1643,14 @@ function extractLogNo(postUrl) {
 
 async function inspectReplyControls(page) {
   return page.evaluate(() => {
-    function textOf(el) {
-      return String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
-    }
-    function visible(el) {
+    const textOf = (el) =>
+      String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
+    const visible = (el) => {
       if (!el) return false;
       const style = window.getComputedStyle(el);
       const rect = el.getBoundingClientRect();
       return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-    }
+    };
 
     const replyButtons = Array.from(document.querySelectorAll('a,button')).filter(visible).filter((btn) => {
       const text = textOf(btn);
@@ -1693,9 +1687,8 @@ async function saveCommentDebugSnapshot(page, comment, stage) {
     const stamp = Date.now();
     const prefix = path.join(BLOG_COMMENTER_DEBUG_DIR, `${stamp}-${stage}-${logNo || 'unknown'}`);
     const payload = await page.evaluate(() => {
-      function textOf(el) {
-        return String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
-      }
+      const textOf = (el) =>
+        String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
       return {
         url: location.href,
         title: document.title,
@@ -1751,12 +1744,12 @@ async function mountCommentPanel(page, logNo = '', testMode = false) {
     await openCommentPanel(page, logNo, testMode).catch(() => false);
 
     const mounted = await page.waitForFunction((selector) => {
-      function visible(el) {
+      const visible = (el) => {
         if (!el) return false;
         const style = window.getComputedStyle(el);
         const rect = el.getBoundingClientRect();
         return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-      }
+      };
 
       return Boolean(Array.from(document.querySelectorAll(selector)).find(visible));
     }, { timeout: 4000 }, directRootSelector).then(() => true).catch(() => false);
@@ -1784,12 +1777,12 @@ async function focusReplyEditor(page) {
   }, { timeout: 15000 });
 
   return page.evaluate(() => {
-    function visible(el) {
+    const visible = (el) => {
       if (!el) return false;
       const style = window.getComputedStyle(el);
       const rect = el.getBoundingClientRect();
       return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-    }
+    };
 
     const scope = document.querySelector('[data-blog-target-reply-area="true"]');
     const roots = scope ? [scope] : [document];
@@ -1816,25 +1809,24 @@ async function focusCommentEditor(page, logNo = '', timeoutMs = 15000) {
   ].filter(Boolean).join(', ');
 
   await page.waitForFunction((selector) => {
-    function visible(el) {
+    const visible = (el) => {
       if (!el) return false;
       const style = window.getComputedStyle(el);
       const rect = el.getBoundingClientRect();
       return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-    }
+    };
     return Boolean(Array.from(document.querySelectorAll(selector)).find(visible));
   }, { timeout: timeoutMs }, directSelector);
 
   return page.evaluate((currentLogNo) => {
-    function visible(el) {
+    const visible = (el) => {
       if (!el) return false;
       const style = window.getComputedStyle(el);
       const rect = el.getBoundingClientRect();
       return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-    }
-    function inReplyArea(node) {
-      return Boolean(node?.closest('.u_cbox_reply_area,[data-blog-target-reply-area="true"]'));
-    }
+    };
+    const inReplyArea = (node) =>
+      Boolean(node?.closest('.u_cbox_reply_area,[data-blog-target-reply-area="true"]'));
 
     const preferred = currentLogNo ? document.querySelector(`#naverComment_201_${currentLogNo}__write_textarea`) : null;
     const candidates = [
@@ -1857,12 +1849,12 @@ async function focusCommentEditor(page, logNo = '', timeoutMs = 15000) {
 
 async function submitReply(page) {
   const clicked = await page.evaluate(() => {
-    function visible(el) {
+    const visible = (el) => {
       if (!el) return false;
       const style = window.getComputedStyle(el);
       const rect = el.getBoundingClientRect();
       return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-    }
+    };
     const replyScope = document.querySelector('[data-blog-target-reply-area="true"]');
     const roots = replyScope ? [replyScope] : [document];
     const candidates = roots.flatMap((root) => Array.from(root.querySelectorAll('button[type="button"], button, a')));
@@ -1886,12 +1878,12 @@ async function submitReply(page) {
 
 async function submitComment(page) {
   const clicked = await page.evaluate(() => {
-    function visible(el) {
+    const visible = (el) => {
       if (!el) return false;
       const style = window.getComputedStyle(el);
       const rect = el.getBoundingClientRect();
       return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-    }
+    };
     const candidates = Array.from(document.querySelectorAll('button[type="button"], button, a'));
     const submit = candidates.find((btn) => {
       if (!visible(btn)) return false;
@@ -1912,43 +1904,41 @@ async function submitComment(page) {
 
 async function getSympathyState(page) {
   return page.evaluate(() => {
-    function visible(el) {
+    const visible = (el) => {
       if (!el) return false;
       const style = window.getComputedStyle(el);
       const rect = el.getBoundingClientRect();
       return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-    }
+    };
 
-    function textOf(node) {
-      return String(node?.innerText || node?.textContent || '').replace(/\s+/g, ' ').trim();
-    }
+    const textOf = (node) =>
+      String(node?.innerText || node?.textContent || '').replace(/\s+/g, ' ').trim();
 
-    function getReactionModule() {
-      return document.querySelector('.area_sympathy .my_reaction .u_likeit_list_module[data-markuserreaction="true"]')
+    const getReactionModule = () =>
+      document.querySelector('.area_sympathy .my_reaction .u_likeit_list_module[data-markuserreaction="true"]')
         || document.querySelector('.my_reaction .u_likeit_list_module[data-markuserreaction="true"]')
         || document.querySelector('.area_sympathy .my_reaction .u_likeit_list_module')
         || document.querySelector('.my_reaction .u_likeit_list_module')
         || document.querySelector('.area_sympathy .my_reaction')
         || document.querySelector('.my_reaction')
         || document;
-    }
 
-    function findPrimarySympathyButton() {
+    const findPrimarySympathyButton = () => {
       const scope = getReactionModule();
       const likeButton = scope.querySelector('a.u_likeit_list_button._button[data-type="like"][href*="#ratingbutton-like"]');
       if (likeButton) return likeButton;
       const faceButton = scope.querySelector('a.u_likeit_button._face[role="button"]');
       if (visible(faceButton)) return faceButton;
       return null;
-    }
+    };
 
-    function isPrimarySympathyButton(node) {
+    const isPrimarySympathyButton = (node) => {
       if (!node) return false;
       const text = textOf(node);
       const cls = String(node.className || '');
       const href = String(node.getAttribute('href') || '');
       return /공감/.test(text) && /u_likeit_list_button/.test(cls) && /ratingbutton-like/i.test(href);
-    }
+    };
 
     const candidates = Array.from(document.querySelectorAll('a,button')).filter(visible);
     const target = findPrimarySympathyButton()
@@ -1986,28 +1976,26 @@ async function activateSympathyInFrame(contentFrame, { testMode = false, postUrl
   }
 
   const clicked = await contentFrame.evaluate(() => {
-    function visible(el) {
+    const visible = (el) => {
       if (!el) return false;
       const style = window.getComputedStyle(el);
       const rect = el.getBoundingClientRect();
       return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-    }
+    };
 
-    function textOf(node) {
-      return String(node?.innerText || node?.textContent || '').replace(/\s+/g, ' ').trim();
-    }
+    const textOf = (node) =>
+      String(node?.innerText || node?.textContent || '').replace(/\s+/g, ' ').trim();
 
-    function getReactionModule() {
-      return document.querySelector('.area_sympathy .my_reaction .u_likeit_list_module[data-markuserreaction="true"]')
+    const getReactionModule = () =>
+      document.querySelector('.area_sympathy .my_reaction .u_likeit_list_module[data-markuserreaction="true"]')
         || document.querySelector('.my_reaction .u_likeit_list_module[data-markuserreaction="true"]')
         || document.querySelector('.area_sympathy .my_reaction .u_likeit_list_module')
         || document.querySelector('.my_reaction .u_likeit_list_module')
         || document.querySelector('.area_sympathy .my_reaction')
         || document.querySelector('.my_reaction')
         || document;
-    }
 
-    function clickNode(target) {
+    const clickNode = (target) => {
       if (!target) return false;
       if (visible(target)) {
         target.scrollIntoView({ block: 'center', behavior: 'instant' });
@@ -2016,18 +2004,18 @@ async function activateSympathyInFrame(contentFrame, { testMode = false, postUrl
       target.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
       target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
       return true;
-    }
+    };
 
-    function findPrimarySympathyButton() {
+    const findPrimarySympathyButton = () => {
       const scope = getReactionModule();
       const likeButton = scope.querySelector('a.u_likeit_list_button._button[data-type="like"][href*="#ratingbutton-like"]');
       if (likeButton) return likeButton;
       const faceButton = scope.querySelector('a.u_likeit_button._face[role="button"]');
       if (visible(faceButton)) return faceButton;
       return null;
-    }
+    };
 
-    function isPrimarySympathyButton(node) {
+    const isPrimarySympathyButton = (node) => {
       if (!node) return false;
       const text = textOf(node);
       const cls = String(node.className || '');
@@ -2036,7 +2024,7 @@ async function activateSympathyInFrame(contentFrame, { testMode = false, postUrl
       const ariaSelected = String(node.getAttribute('aria-selected') || '').trim().toLowerCase();
       if (ariaPressed === 'true' || ariaSelected === 'true' || /\bon\b/.test(cls)) return false;
       return /공감/.test(text) && /u_likeit_list_button/.test(cls) && /ratingbutton-like/i.test(href);
-    }
+    };
 
     const candidates = Array.from(document.querySelectorAll('a,button')).filter(visible);
     const target = findPrimarySympathyButton()
@@ -2101,16 +2089,15 @@ async function verifyReplyPosted(page, replyText, testMode = false) {
 
   const timeoutMs = testMode ? 4000 : 15000;
   const matched = await page.waitForFunction((expected) => {
-    function textOf(el) {
-      return String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
-    }
-    function visible(el) {
+    const textOf = (el) =>
+      String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
+    const visible = (el) => {
       if (!el) return false;
       const style = window.getComputedStyle(el);
       const rect = el.getBoundingClientRect();
       return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-    }
-    function isEditorArea(el) {
+    };
+    const isEditorArea = (el) => {
       if (!el) return false;
       return Boolean(
         el.closest(
@@ -2126,7 +2113,7 @@ async function verifyReplyPosted(page, replyText, testMode = false) {
           ].join(', '),
         ),
       );
-    }
+    };
 
     const candidates = Array.from(
       document.querySelectorAll(
@@ -2154,16 +2141,15 @@ async function verifyCommentPosted(page, commentText, testMode = false) {
 
   const timeoutMs = testMode ? 5000 : 15000;
   return page.waitForFunction((expected) => {
-    function textOf(el) {
-      return String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
-    }
-    function visible(el) {
+    const textOf = (el) =>
+      String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
+    const visible = (el) => {
       if (!el) return false;
       const style = window.getComputedStyle(el);
       const rect = el.getBoundingClientRect();
       return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-    }
-    function isEditorArea(el) {
+    };
+    const isEditorArea = (el) => {
       if (!el) return false;
       return Boolean(
         el.closest(
@@ -2179,7 +2165,7 @@ async function verifyCommentPosted(page, commentText, testMode = false) {
           ].join(', '),
         ),
       );
-    }
+    };
 
     const candidates = Array.from(
       document.querySelectorAll(
@@ -2203,7 +2189,7 @@ async function typeReply(frame, browserPage, selector, replyText, config, testMo
   if (!target) throw new Error('reply_editor_not_found');
 
   const editorMeta = await frame.evaluate((targetSelector, nextText) => {
-    function dispatchEditableEvents(node) {
+    const dispatchEditableEvents = (node) => {
       const events = [
         new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: nextText }),
         new InputEvent('input', { bubbles: true, inputType: 'insertText', data: nextText }),
@@ -2214,7 +2200,7 @@ async function typeReply(frame, browserPage, selector, replyText, config, testMo
       for (const event of events) {
         node.dispatchEvent(event);
       }
-    }
+    };
 
     const node = document.querySelector(targetSelector);
     if (!node) {
