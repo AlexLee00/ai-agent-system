@@ -9,21 +9,6 @@ defmodule TeamJay.Diagnostics do
   @msg_queue_warn 100
   @memory_warn 120_000_000
   @service_ownership_path Path.expand("../../../../packages/core/config/service-ownership.json", __DIR__)
-  @phase3_launchd_labels (
-                          @service_ownership_path
-                          |> File.read!()
-                          |> Jason.decode!()
-                          |> Enum.filter(fn entry ->
-                            Map.get(entry, "owner") == "launchd" and
-                              not Map.get(entry, "retired", false)
-                          end)
-                          |> Enum.map(&Map.fetch!(&1, "label"))
-                        )
-  @service_ownership (
-                       @service_ownership_path
-                       |> File.read!()
-                       |> Jason.decode!()
-                     )
   @shadow_agents [
     {:blog_commenter, :blog},
     {:blog_daily, :blog},
@@ -333,10 +318,12 @@ defmodule TeamJay.Diagnostics do
   end
 
   defp check_launchd_overlap do
+    phase3_launchd_labels = phase3_launchd_labels()
+
     case get_loaded_launchd_labels() do
       {:ok, loaded} ->
         overlaps =
-          @phase3_launchd_labels
+          phase3_launchd_labels
           |> Enum.filter(&MapSet.member?(loaded, &1))
 
         [
@@ -346,7 +333,7 @@ defmodule TeamJay.Diagnostics do
             message: "loaded #{length(overlaps)}건",
             overlaps: overlaps,
             loaded_count: length(overlaps),
-            expected_labels: length(@phase3_launchd_labels)
+            expected_labels: length(phase3_launchd_labels)
           }
         ]
 
@@ -363,7 +350,7 @@ defmodule TeamJay.Diagnostics do
 
   defp check_ownership_alignment do
     manifest_elixir =
-      @service_ownership
+      service_ownership()
       |> Enum.filter(&(Map.get(&1, "owner") == "elixir"))
       |> Enum.map(&Map.fetch!(&1, "label"))
       |> MapSet.new()
@@ -407,6 +394,21 @@ defmodule TeamJay.Diagnostics do
         missing_from_manifest: missing_from_manifest
       }
     ]
+  end
+
+  defp service_ownership do
+    @service_ownership_path
+    |> File.read!()
+    |> Jason.decode!()
+  end
+
+  defp phase3_launchd_labels do
+    service_ownership()
+    |> Enum.filter(fn entry ->
+      Map.get(entry, "owner") == "launchd" and
+        not Map.get(entry, "retired", false)
+    end)
+    |> Enum.map(&Map.fetch!(&1, "label"))
   end
 
   defp get_loaded_launchd_labels do
@@ -577,7 +579,8 @@ defmodule TeamJay.Diagnostics do
       generated_at: DateTime.utc_now(),
       overlap_count: length(Map.get(overlap_result, :overlaps, [])),
       overlap_loaded_count: Map.get(overlap_result, :loaded_count, length(Map.get(overlap_result, :overlaps, []))),
-      overlap_expected_count: Map.get(overlap_result, :expected_labels, length(@phase3_launchd_labels)),
+      overlap_expected_count:
+        Map.get(overlap_result, :expected_labels, length(phase3_launchd_labels())),
       overlaps: Map.get(overlap_result, :overlaps, []),
       ownership_alignment: build_ownership_alignment_summary(state.checks),
       supervisor_alerts: Enum.map(state.alerts, &Map.take(&1, [:name, :severity, :message])),
@@ -651,7 +654,7 @@ defmodule TeamJay.Diagnostics do
   defp current_service_label(_team, _bot_name), do: nil
 
   defp current_service_owner(label) do
-    @service_ownership
+    service_ownership()
     |> Enum.find(&(Map.get(&1, "label") == label))
     |> case do
       nil -> nil
@@ -921,7 +924,8 @@ defmodule TeamJay.Diagnostics do
   defp record_launchd_overlap_event(overlap_result, signature) do
     overlaps = Map.get(overlap_result, :overlaps, [])
     loaded_count = Map.get(overlap_result, :loaded_count, length(overlaps))
-    expected_labels = Map.get(overlap_result, :expected_labels, length(@phase3_launchd_labels))
+    expected_labels =
+      Map.get(overlap_result, :expected_labels, length(phase3_launchd_labels()))
 
     TeamJay.EventLake.record(%{
       event_type: "phase3_launchd_overlap_changed",
