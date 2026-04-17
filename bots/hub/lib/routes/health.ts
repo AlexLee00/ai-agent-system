@@ -94,6 +94,36 @@ export async function collectHealthSnapshot(): Promise<HealthSnapshot> {
     };
   }
 
+  if (pgPool.hasHubReadonlyPool?.()) {
+    try {
+      const readonlyRows = await pgPool.queryReadonly('public', `
+        SELECT current_user AS db_user, current_database() AS db_name
+      `);
+      const readonlyRow = readonlyRows?.[0] || {};
+      const dbUser = String(readonlyRow.db_user || '');
+      const dbName = String(readonlyRow.db_name || '');
+      resources.readonly_db = dbUser === 'hub_readonly'
+        ? {
+            status: 'ok',
+            detail: `readonly active (${dbUser}@${dbName})`,
+          }
+        : {
+            status: 'warn',
+            detail: `unexpected readonly identity (${dbUser || 'unknown'}@${dbName || 'unknown'})`,
+          };
+    } catch (error: any) {
+      resources.readonly_db = {
+        status: 'warn',
+        detail: String(error?.message || 'readonly query failed'),
+      };
+    }
+  } else {
+    resources.readonly_db = {
+      status: 'warn',
+      detail: 'readonly pool not configured',
+    };
+  }
+
   if (env.N8N_ENABLED) {
     const n8nStart = Date.now();
     const ok = await checkHttp(`${env.N8N_BASE_URL}/healthz`, 3000);
