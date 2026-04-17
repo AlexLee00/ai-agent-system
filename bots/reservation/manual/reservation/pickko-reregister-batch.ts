@@ -39,7 +39,7 @@ const reservations: Reservation[] = [
 
 const REGISTER_SCRIPT = path.join(
   ROOT,
-  'dist/ts-runtime/bots/reservation/manual/reservation/pickko-accurate.js',
+  'bots/reservation/manual/reservation/pickko-accurate.ts',
 );
 
 function runRegister(res: Reservation, index: number): Promise<number | null> {
@@ -54,7 +54,7 @@ function runRegister(res: Reservation, index: number): Promise<number | null> {
       `--room=${res.room}`,
       `--name=${res.name}`,
     ];
-    const child = spawn('node', args, {
+    const child = spawn('/opt/homebrew/bin/tsx', args, {
       stdio: 'inherit',
       env: { ...process.env, MODE: 'ops' },
     });

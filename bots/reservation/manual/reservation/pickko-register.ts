@@ -40,7 +40,7 @@ const missing = required.filter((k) => !ARGS[k]);
 if (missing.length > 0) {
   fail(
     `필수 인자 누락: ${missing.join(', ')}\n` +
-    '사용법: node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/reservation/pickko-register.js --date=YYYY-MM-DD --start=HH:MM --end=HH:MM --room=A1|A2|B --phone=01000000000 --name=이름',
+    '사용법: node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-register.ts --date=YYYY-MM-DD --start=HH:MM --end=HH:MM --room=A1|A2|B --phone=01000000000 --name=이름',
   );
 }
 
@@ -75,7 +75,7 @@ function buildRegisterMemoryQuery(kind: string) {
 
 const accurateScript = path.join(
   __dirname,
-  '../../../../dist/ts-runtime/bots/reservation/manual/reservation/pickko-accurate.js',
+  '../../../../bots/reservation/manual/reservation/pickko-accurate.ts',
 );
 const childArgs = [
   accurateScript,
@@ -87,7 +87,7 @@ const childArgs = [
   `--name=${customerName}`,
 ];
 
-const child = spawn('node', childArgs, {
+const child = spawn('/opt/homebrew/bin/tsx', childArgs, {
   cwd: __dirname,
   env: {
     ...process.env,
@@ -248,7 +248,7 @@ child.on('close', async (code: number | null) => {
       });
 
       const blockArgs = [
-        path.join(__dirname, '../../../../dist/ts-runtime/bots/reservation/auto/monitors/pickko-kiosk-monitor.js'),
+        path.join(__dirname, '../../../../bots/reservation/auto/monitors/pickko-kiosk-monitor.ts'),
         '--block-slot',
         `--date=${normalized.date}`,
         `--start=${normalized.start}`,
@@ -257,7 +257,7 @@ child.on('close', async (code: number | null) => {
         `--phone=${normalized.phone}`,
         `--name=${customerName}`,
       ];
-      const blockChild = spawn('node', blockArgs, {
+      const blockChild = spawn('/opt/homebrew/bin/tsx', blockArgs, {
         cwd: __dirname,
         env: process.env,
         stdio: ['ignore', process.stderr, process.stderr],
