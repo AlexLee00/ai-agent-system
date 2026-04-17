@@ -34,6 +34,19 @@
 
 ---
 
+## 🔐 보안 감사 발견 (1차, 2026-04-17)
+
+> 메티가 Desktop Commander로 OPS 소스 직접 분석하여 확인.
+> 패치 프롬프트: `docs/codex/CODEX_SECURITY_AUDIT_01.md`
+
+| ID | 심각도 | 컴포넌트 | 이슈 | 발견일 | 상태 |
+|----|-------|----------|------|--------|------|
+| SEC-001 | 🔴 HIGH | `bots/hub/src/hub.ts` | Hub `app.listen(PORT, '0.0.0.0')` — 전략 §9-2(loopback만 바인딩) 위반. lsof로 `*:7788` 확인됨. Bearer Token은 있으나 네트워크 레이어 방어 부재 | 2026-04-17 | 코덱스 패치 대기 (Task 1) |
+| SEC-002 | 🟡 MEDIUM | `bots/investment/config.yaml` | Public Git 리포에 실 KIS 계좌번호 및 USDT 지갑주소가 커밋됨 (구체값은 `docs/codex/CODEX_SECURITY_AUDIT_01.md` 내부 참조 — gitignore). OSINT 공격 표면 | 2026-04-17 | 코덱스 패치 대기 (Task 2) — Git 히스토리 정리는 마스터 승인 필요 |
+| SEC-003 | 🟢 LOW-MED | `bots/hub/lib/sql-guard.ts` | 블랙리스트 방식. `pg_read_file`, `pg_ls_dir`, `dblink` 등 PostgreSQL 위험 함수 미차단. 주석(`--`, `/* */`) 기반 우회 가능성 | 2026-04-17 | 코덱스 패치 대기 (Task 3) |
+
+---
+
 ## ✅ 해결됨
 
 | ID | 컴포넌트 | 이슈 | 해결일 | 해결 방법 |

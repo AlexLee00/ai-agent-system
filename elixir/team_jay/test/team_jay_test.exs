@@ -42,6 +42,7 @@ defmodule TeamJayTest do
     report = Diagnostics.shadow_report()
     assert is_map(report)
     assert Map.has_key?(report, :overlap_count)
+    assert Map.has_key?(report, :ownership_alignment)
     assert Map.has_key?(report, :agents)
     assert Map.has_key?(report, :summary)
     assert Map.has_key?(report, :week2_shadow_agents)
@@ -65,6 +66,9 @@ defmodule TeamJayTest do
     assert is_list(report.pilot_runbook.steps)
     assert Map.has_key?(report.transition_plan, :next_pilot_candidate)
     assert is_list(report.recommended_actions)
+    assert Map.has_key?(report.ownership_alignment, :message)
+    assert Map.has_key?(report.ownership_alignment, :missing_from_runtime)
+    assert Map.has_key?(report.ownership_alignment, :missing_from_manifest)
     assert report.summary.total >= 1
     assert report.week2_summary.total == length(report.week2_shadow_agents)
     assert report.week3_summary.total == length(report.week3_shadow_agents)

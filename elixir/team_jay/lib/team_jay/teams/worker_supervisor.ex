@@ -42,4 +42,14 @@ defmodule TeamJay.Teams.WorkerSupervisor do
 
     Supervisor.init(children, strategy: :one_for_one, max_restarts: 5, max_seconds: 60)
   end
+
+  @doc "ownership manifest와 대조할 Elixir-managed launch labels"
+  def agent_labels do
+    [
+      "ai.worker.web",
+      "ai.worker.nextjs",
+      "ai.worker.lead",
+      "ai.worker.task-runner"
+    ]
+  end
 end
