@@ -1,3 +1,34 @@
+# 세션 인수인계 — 2026-04-18 (컴파일 경고 수정 + 테스트 안정화)
+
+> 세션 범위: `mix compile --warnings-as-errors` 통과 + 전체 504 tests, 0 failures 달성
+
+---
+
+## 최신 작업 요약 (컴파일/테스트 수정)
+
+### 수정 내용
+
+1. **`packages/elixir_core/lib/jay/core/diagnostics.ex`**
+   - `TeamJay.Teams.DarwinSupervisor` 참조 제거 (Phase 1에서 삭제된 모듈)
+   - 나머지 4개 supervisor에 `@compile {:no_warn_undefined, [...]}` 추가 (컴파일 순서 문제)
+
+2. **`bots/darwin/elixir/lib/darwin/v2/rollback_scheduler.ex`**
+   - `@compile {:no_warn_undefined, [TeamJay.Repo, TeamJay.HubClient]}` 추가
+
+3. **`bots/darwin/elixir/lib/darwin/v2/shadow_runner.ex`**
+   - `@compile {:no_warn_undefined, [TeamJay.Repo, TeamJay.HubClient]}` 추가
+
+4. **`elixir/team_jay/test/team_jay_test.exs`**
+   - "darwin team connector collects KPI shape" 테스트에 `@tag :integration` 추가 (Darwin.V2.Lead GenServer 미가동)
+
+### 검증 결과
+- `mix compile --warnings-as-errors` ✅ (경고 0건)
+- Darwin standalone: **335 tests, 0 failures** (11 excluded) ✅
+- Sigma standalone: **124 tests, 0 failures** ✅ (172는 이전 다른 컨텍스트 수치, 실제 파일 합계 124)
+- team_jay 통합: **504 tests, 0 failures** (15 excluded) ✅
+
+---
+
 # 세션 인수인계 — 2026-04-18 (CODEX_JAY_DARWIN_INDEPENDENCE Phase 2 완료)
 
 > 세션 범위: 공용 레이어 packages/elixir_core 추출 — Jay.Core.* 네임스페이스 + JayBus 신설

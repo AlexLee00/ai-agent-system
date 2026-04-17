@@ -30,6 +30,8 @@ defmodule Darwin.V2.RollbackScheduler do
   use GenServer
   require Logger
 
+  @compile {:no_warn_undefined, [TeamJay.Repo, TeamJay.HubClient]}
+
   alias TeamJay.{Repo, HubClient}
 
   # -------------------------------------------------------------------

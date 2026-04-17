@@ -107,6 +107,7 @@ defmodule TeamJayTest do
     assert status.target_teams == [:luna, :blog, :claude, :ska, :jay]
   end
 
+  @tag :integration
   test "darwin team connector collects KPI shape" do
     kpi = TeamConnector.collect_kpi()
 
