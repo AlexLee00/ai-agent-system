@@ -29,6 +29,12 @@ type TeamProfiles = Record<string, RuntimeProfile>;
 
 const LOCAL_LLM_BASE_URL = 'http://127.0.0.1:11434';
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11435';
+// Current deployed routes. These are intentionally separated from "latest official"
+// model families so runtime profiles reflect live ops first.
+const LOCAL_FAST_ROUTE = 'local/qwen2.5-7b';
+const GROQ_SCOUT_ROUTE = 'groq/meta-llama/llama-4-scout-17b-16e-instruct';
+const GROQ_QWEN3_ROUTE = 'groq/qwen/qwen3-32b';
+const LOCAL_FAST_MODEL = 'qwen2.5-7b';
 
 export const PROFILES: Record<string, TeamProfiles> = {
   "blog": {
@@ -42,7 +48,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
-        "local/qwen2.5-7b",
+        LOCAL_FAST_ROUTE,
         "google-gemini-cli/gemini-2.5-flash"
       ]
     },
@@ -56,7 +62,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
-        "local/qwen2.5-7b",
+        LOCAL_FAST_ROUTE,
         "google-gemini-cli/gemini-2.5-flash"
       ]
     },
@@ -83,7 +89,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
-        "groq/qwen/qwen3-32b"
+        GROQ_QWEN3_ROUTE
       ]
     },
     "image-local": {
@@ -106,7 +112,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_settings": "/Users/alexlee/.openclaw/.claude/blog-writer.settings.json",
       "provider": "local",
       "base_url": "http://127.0.0.1:11434",
-      "model": "qwen2.5-7b",
+      "model": LOCAL_FAST_MODEL,
       "timeout_ms": 10000,
       "max_tokens": 200,
       "temperature": 0.8
@@ -123,8 +129,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "claude-code/sonnet"
       ],
       "fallback_routes": [
-        "local/qwen2.5-7b",
-        "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+        LOCAL_FAST_ROUTE,
+        GROQ_SCOUT_ROUTE
       ]
     },
     "analyst": {
@@ -137,8 +143,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "claude-code/sonnet"
       ],
       "fallback_routes": [
-        "local/qwen2.5-7b",
-        "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+        LOCAL_FAST_ROUTE,
+        GROQ_SCOUT_ROUTE
       ]
     },
     "validator": {
@@ -151,8 +157,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
-        "local/qwen2.5-7b",
-        "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+        LOCAL_FAST_ROUTE,
+        GROQ_SCOUT_ROUTE
       ]
     },
     "commander": {
@@ -180,8 +186,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
-        "local/qwen2.5-7b",
-        "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+        LOCAL_FAST_ROUTE,
+        GROQ_SCOUT_ROUTE
       ]
     },
     "research": {
@@ -194,8 +200,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
-        "local/qwen2.5-7b",
-        "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+        LOCAL_FAST_ROUTE,
+        GROQ_SCOUT_ROUTE
       ]
     },
     "synthesis": {
@@ -208,7 +214,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "claude-code/sonnet"
       ],
       "fallback_routes": [
-        "local/qwen2.5-7b"
+        LOCAL_FAST_ROUTE
       ]
     },
     "review": {
@@ -236,8 +242,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
-        "local/qwen2.5-7b",
-        "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+        LOCAL_FAST_ROUTE,
+        GROQ_SCOUT_ROUTE
       ]
     },
     "citation": {
@@ -250,7 +256,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
-        "local/qwen2.5-7b"
+        LOCAL_FAST_ROUTE
       ]
     },
     "analysis": {
@@ -263,7 +269,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "claude-code/sonnet"
       ],
       "fallback_routes": [
-        "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+        GROQ_SCOUT_ROUTE
       ]
     },
     "opinion": {
@@ -437,7 +443,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_settings": "/Users/alexlee/.openclaw/.claude/jay-orchestrator.settings.json",
       "provider": "local",
       "base_url": "http://127.0.0.1:11434",
-      "model": "qwen2.5-7b",
+      "model": LOCAL_FAST_MODEL,
       "timeout_ms": 10000,
       "max_tokens": 300,
       "temperature": 0.7
