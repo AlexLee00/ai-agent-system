@@ -1,5 +1,7 @@
 const env = require('../../../../packages/core/lib/env');
 const pgPool = require('../../../../packages/core/lib/pg-pool');
+const fs = require('fs');
+const path = require('path');
 const { createHealthMemoryHelper } = require('../../../../packages/core/lib/health-memory');
 const { checkHttp, getLaunchctlStatus } = require('../../../../packages/core/lib/health-provider');
 const { getServiceCatalog } = require('../../../../packages/core/lib/service-ownership');
@@ -47,6 +49,7 @@ const { buildIssueHints, rememberHealthEvent } = createHealthMemoryHelper({
   domain: 'hub health',
 });
 let lastRecordedStatus: 'ok' | 'warn' | null = null;
+const DARWIN_AUTONOMY_PATH = path.join(env.PROJECT_ROOT, 'bots/darwin/sandbox/darwin-autonomy-level.json');
 
 async function fetchJson(url: string, timeoutMs = 3000): Promise<any | null> {
   const controller = new AbortController();
@@ -222,6 +225,38 @@ export async function collectHealthSnapshot(): Promise<HealthSnapshot> {
     resources.darwin_activity = {
       status: 'warn',
       detail: String(error?.message || 'darwin activity query failed'),
+    };
+  }
+
+  try {
+    const kpiRows = await pgPool.query('reservation', `
+      SELECT
+        COUNT(*)::int AS papers_7d,
+        COUNT(*) FILTER (WHERE score >= 6)::int AS high_quality_7d,
+        COALESCE(AVG(score), 0)::numeric(4,1) AS avg_score,
+        MAX(created_at) AS last_scan_at
+      FROM reservation.rag_research
+      WHERE created_at >= NOW() - INTERVAL '7 days'
+    `);
+    const row = kpiRows?.[0] || {};
+    let autonomyLevel = 'unknown';
+
+    try {
+      const autonomyRaw = fs.readFileSync(DARWIN_AUTONOMY_PATH, 'utf8');
+      const autonomyJson = JSON.parse(autonomyRaw);
+      autonomyLevel = String(autonomyJson?.level || 'unknown');
+    } catch {
+      autonomyLevel = 'unknown';
+    }
+
+    resources.darwin_kpi = {
+      status: 'ok',
+      detail: `papers_7d ${Number(row.papers_7d || 0)}건 | high_quality ${Number(row.high_quality_7d || 0)}건 | avg_score ${Number(row.avg_score || 0)} | autonomy ${autonomyLevel}${row.last_scan_at ? ` | last ${String(row.last_scan_at)}` : ''}`,
+    };
+  } catch (error: any) {
+    resources.darwin_kpi = {
+      status: 'warn',
+      detail: String(error?.message || 'darwin kpi query failed'),
     };
   }
 
