@@ -24,6 +24,9 @@ config :team_jay, :codex_auto_execute, true
 
 import_config "#{Mix.env()}.exs"
 
+# Darwin V2 설정 — bots/darwin/elixir/config/config.exs 위임
+import_config Path.expand("../../../../bots/darwin/elixir/config/config.exs", __DIR__)
+
 config :team_jay, TeamJay.Scheduler,
   jobs: [
     # ─── 제이팀 성장 사이클 ──────────────────────────────────
