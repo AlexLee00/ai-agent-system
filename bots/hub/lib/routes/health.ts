@@ -144,6 +144,37 @@ export async function collectHealthSnapshot(): Promise<HealthSnapshot> {
     };
   }
 
+  try {
+    const ownershipRows = await pgPool.query('agent', `
+      SELECT metadata->'ownership_alignment' AS ownership_alignment
+      FROM agent.event_lake
+      WHERE event_type = 'phase3_shadow_report'
+        AND bot_name = 'diagnostics'
+      ORDER BY created_at DESC
+      LIMIT 1
+    `);
+    const ownership = ownershipRows?.[0]?.ownership_alignment || {};
+    const message = String(ownership?.message || 'ownership alignment unavailable');
+    const missingFromRuntime = Array.isArray(ownership?.missing_from_runtime) ? ownership.missing_from_runtime : [];
+    const missingFromManifest = Array.isArray(ownership?.missing_from_manifest) ? ownership.missing_from_manifest : [];
+    const driftCount = missingFromRuntime.length + missingFromManifest.length;
+
+    resources.ownership_alignment = driftCount === 0
+      ? {
+          status: 'ok',
+          detail: message,
+        }
+      : {
+          status: 'warn',
+          detail: `${message} | runtime_missing=${missingFromRuntime.join(', ') || 'none'} | manifest_missing=${missingFromManifest.join(', ') || 'none'}`,
+        };
+  } catch (error: any) {
+    resources.ownership_alignment = {
+      status: 'warn',
+      detail: String(error?.message || 'ownership query failed'),
+    };
+  }
+
   if (env.LAUNCHD_AVAILABLE) {
     const serviceStatus = getLaunchctlStatus(HUB_CORE_SERVICE_LABELS);
     const summary = summarizeServiceStatus(serviceStatus, {
