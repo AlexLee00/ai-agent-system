@@ -50,7 +50,12 @@ defmodule TeamJay.Teams.DarwinSupervisor do
 
   @impl true
   def init(_opts) do
-    children = interval_children() ++ calendar_children()
+    native_children = [
+      TeamJay.Darwin.TeamLead,
+      TeamJay.Darwin.FeedbackLoop
+    ]
+
+    children = native_children ++ interval_children() ++ calendar_children()
     Supervisor.init(children, strategy: :one_for_one, max_restarts: 5, max_seconds: 60)
   end
 

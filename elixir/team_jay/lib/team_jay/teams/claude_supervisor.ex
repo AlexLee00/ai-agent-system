@@ -16,13 +16,18 @@ defmodule TeamJay.Teams.ClaudeSupervisor do
 
   @impl true
   def init(_opts) do
-    children =
+    native_children = [
+      TeamJay.Claude.Dexter.ErrorTracker,
+      TeamJay.Claude.Dexter.TestRunner
+    ]
+
+    port_children =
       Enum.map(@claude_agents, fn agent ->
         {TeamJay.Agents.PortAgent,
          name: agent.name, team: :claude, script: agent.script,
          runner: Map.get(agent, :runner, :tsx), schedule: agent.schedule}
       end)
 
-    Supervisor.init(children, strategy: :one_for_one, max_restarts: 8, max_seconds: 60)
+    Supervisor.init(native_children ++ port_children, strategy: :one_for_one, max_restarts: 8, max_seconds: 60)
   end
 end
