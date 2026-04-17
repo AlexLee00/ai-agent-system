@@ -17,10 +17,10 @@ LOCK_FILE="$HOME/.openclaw/workspace/naver-monitor.lock"
 SELF_LOCK="$HOME/.openclaw/workspace/start-ops.lock"
 LOG_FILE="/tmp/naver-ops-mode.log"
 NAVER_PROFILE="$HOME/.openclaw/workspace/naver-profile"
-NAVER_MONITOR_SCRIPT="/Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/auto/monitors/naver-monitor.js"
+NAVER_MONITOR_SCRIPT="/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/naver-monitor.ts"
 KIOSK_PLIST="$HOME/Library/LaunchAgents/ai.ska.kiosk-monitor.plist"
-NODE_BIN="/opt/homebrew/bin/node"
-[ ! -x "$NODE_BIN" ] && NODE_BIN=$(which node)
+NODE_BIN="/opt/homebrew/bin/tsx"
+[ ! -x "$NODE_BIN" ] && NODE_BIN=$(which tsx)
 
 log() {
   local msg="[$(date '+%Y-%m-%d %H:%M:%S')] $1"
@@ -100,7 +100,7 @@ log "━━━ [1중 체크] 통과 ━━━━━━━━━━━━━━�
 # ================================================================
 log "━━━ [2중 체크] Node.js 프리플라이트 ━━━━━━━━━━━━━━━━━━━━━━━"
 
-MODE=ops "$NODE_BIN" "/Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/scripts/preflight.js" 2>&1 | tee -a "$LOG_FILE"
+MODE=ops "$NODE_BIN" "/Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/preflight.ts" 2>&1 | tee -a "$LOG_FILE"
 PREFLIGHT_EXIT=${PIPESTATUS[0]}
 
 if [ $PREFLIGHT_EXIT -ne 0 ]; then
@@ -114,7 +114,7 @@ log "━━━ [2중 체크] 통과 ━━━━━━━━━━━━━━�
 # ================================================================
 log "━━━ [3중 체크] API 연결성 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-MODE=ops "$NODE_BIN" "/Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/scripts/preflight.js" --conn 2>&1 | tee -a "$LOG_FILE"
+MODE=ops "$NODE_BIN" "/Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/preflight.ts" --conn 2>&1 | tee -a "$LOG_FILE"
 CONN_EXIT=${PIPESTATUS[0]}
 
 if [ $CONN_EXIT -ne 0 ]; then
@@ -140,7 +140,7 @@ cleanup_old() {
   fi
 
   # 잔존 naver-monitor 프로세스 정리
-  STALE_PIDS=$(pgrep -f "$NAVER_MONITOR_SCRIPT" 2>/dev/null)
+  STALE_PIDS=$(pgrep -f "naver-monitor" 2>/dev/null)
   if [ -n "$STALE_PIDS" ]; then
     log "  🔍 잔존 프로세스 발견 (PID: $STALE_PIDS) → 종료"
     echo "$STALE_PIDS" | xargs kill 2>/dev/null
