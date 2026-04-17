@@ -133,10 +133,11 @@ async function main() {
   for (const label of ALL_SERVICES) {
     const svc       = status[label];
     const shortName = hsm.shortLabel(label);
+    const ownershipManaged = isElixirOwnedService(label) || isExpectedIdleService(label);
 
     // 1. 미로드 감지
     if (!svc) {
-      if (isElixirOwnedService(label) || isExpectedIdleService(label)) {
+      if (ownershipManaged) {
         if (state[`unloaded:${label}`]) {
           hsm.clearAlert(state, `unloaded:${label}`);
         }
@@ -158,7 +159,7 @@ async function main() {
     }
 
     // 2. 상시 서비스 다운 감지
-    if (CONTINUOUS.includes(label)) {
+    if (CONTINUOUS.includes(label) && !ownershipManaged) {
       if (!svc.running) {
         const key = `down:${label}`;
         if (hsm.canAlert(state, key)) {
@@ -173,7 +174,7 @@ async function main() {
     }
 
     // 3. 비정상 종료 코드 감지
-    if (!NORMAL_EXIT_CODES.has(svc.exitCode) && !(CONTINUOUS.includes(label) && svc.running)) {
+    if (!ownershipManaged && !NORMAL_EXIT_CODES.has(svc.exitCode) && !(CONTINUOUS.includes(label) && svc.running)) {
       const key = `exitcode:${label}:${svc.exitCode}`;
       if (hsm.canAlert(state, key)) {
         issues.push({ key, level: hsm.getAlertLevel(label), msg: `⚠️ [워커 헬스] ${shortName} 비정상 종료\nexit code: ${svc.exitCode}` });
