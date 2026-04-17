@@ -13,7 +13,7 @@ defmodule TeamJay.Darwin.FeedbackLoop do
   use GenServer
   require Logger
 
-  alias TeamJay.Darwin.{TeamLead, Topics}
+  alias TeamJay.Darwin.{TeamLead, Topics, Applier}
 
   defstruct [
     cycle_count: 0,
@@ -57,13 +57,16 @@ defmodule TeamJay.Darwin.FeedbackLoop do
         {:noreply, state}
 
       topic == Topics.verification_passed() ->
+        paper = payload[:paper] || payload
         Logger.info("[DarwinLoop] 검증 통과 → APPLY 단계")
         level = TeamLead.get_autonomy_level()
         if level >= 4 do
           Logger.info("[DarwinLoop] L#{level}: 자동 적용!")
-          # applier.ts 트리거 (Phase 2에서 구현)
+          Applier.apply_now(paper)
+        else
+          Logger.info("[DarwinLoop] L#{level}: 마스터 승인 필요")
         end
-        {:noreply, state}
+        {:noreply, update_phase(state, :apply)}
 
       true ->
         {:noreply, state}
@@ -71,4 +74,9 @@ defmodule TeamJay.Darwin.FeedbackLoop do
   end
 
   def handle_info(_msg, state), do: {:noreply, state}
+
+  defp update_phase(state, phase) do
+    history = [{phase, DateTime.utc_now()} | Enum.take(state.phase_history, 49)]
+    %{state | phase_history: history, last_cycle_at: DateTime.utc_now()}
+  end
 end

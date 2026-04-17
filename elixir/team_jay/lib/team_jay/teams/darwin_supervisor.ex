@@ -52,6 +52,9 @@ defmodule TeamJay.Teams.DarwinSupervisor do
   def init(_opts) do
     native_children = [
       TeamJay.Darwin.TeamLead,
+      TeamJay.Darwin.Scanner,
+      TeamJay.Darwin.Evaluator,
+      TeamJay.Darwin.Applier,
       TeamJay.Darwin.FeedbackLoop
     ]
 
