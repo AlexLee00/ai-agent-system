@@ -1,5 +1,5 @@
-const { publishToRag } = require('./reporting-hub');
-const { sanitizeFeedbackValue } = require('./ai-feedback-core');
+const { publishToRag } = require('./reporting-hub.js');
+const { sanitizeFeedbackValue } = require('./ai-feedback-core.legacy.js');
 
 type RagLike = {
   store?: (collection: string, content: string, metadata?: Record<string, unknown>, sourceBot?: string) => Promise<unknown>;

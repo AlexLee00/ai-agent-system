@@ -1,13 +1,13 @@
 // @ts-nocheck
 'use strict';
 
-const { WARNING_CODES } = require('../constants');
+const { WARNING_CODES } = require('../constants.ts');
 const {
   createBaseMetadata,
   decodeTextBuffer,
   finalizeExtraction,
   safeReadFileBuffer,
-} = require('../utils');
+} = require('../utils.ts');
 
 async function extractTextDocument({ filePath }) {
   const warnings = [];

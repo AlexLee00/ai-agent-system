@@ -1,7 +1,7 @@
 // @ts-nocheck
 'use strict';
 
-const { WARNING_CODES } = require('./constants');
+const { WARNING_CODES } = require('./constants.ts');
 
 function safeNumber(value, fallback = null) {
   if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;

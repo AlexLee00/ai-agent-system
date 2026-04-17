@@ -3,14 +3,14 @@
 
 const os = require('os');
 const path = require('path');
-const { WARNING_CODES } = require('../constants');
+const { WARNING_CODES } = require('../constants.ts');
 const {
   buildSection,
   createBaseMetadata,
   finalizeExtraction,
   normalizeText,
   runCommand,
-} = require('../utils');
+} = require('../utils.ts');
 
 const SWIFT_SCRIPT = path.join(__dirname, '../swift/ocr.swift');
 const PDF_NATIVE_MIN_TEXT = 48;

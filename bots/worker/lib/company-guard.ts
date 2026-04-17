@@ -10,7 +10,7 @@
  * auditLog(action, target)(req, res, next) — audit_log 자동 기록
  */
 
-const { verifyToken } = require('./auth');
+const { verifyToken } = require('./auth.ts');
 const path   = require('path');
 const pgPool = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'));
 

@@ -63,8 +63,8 @@ DARWIN_LLM_DAILY_BUDGET_USD=10.0  # 일일 LLM 예산
 | 4 | ✅ 완료 | Commander + Skill 9개 + Cycle 7개 |
 | 5 | ✅ 완료 | MCP Server + Signal + HTTP Router |
 | 6 | ✅ 완료 | ShadowRunner + ShadowCompare + TelegramBridge + RollbackScheduler(24h) |
-| 7 | 🔶 예정 | 커뮤니티 스캐너 완성 (HN/Reddit/OpenReview/RSS) |
-| 8 | 🔶 예정 | 테스트 200+ |
+| 7 | ✅ 완료 | 커뮤니티 스캐너 완성 (ArxivRSS/HN/Reddit/OpenReview 센서 4종 + CommunityScanner) |
+| 8 | ✅ 완료 | 테스트 335개 (0 failures, 11 excluded) + DB 마이그레이션 5개 |
 
 ## DB 테이블
 

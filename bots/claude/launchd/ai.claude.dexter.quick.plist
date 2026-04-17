@@ -18,7 +18,7 @@
 	<key>ProgramArguments</key>
 	<array>
 		<string>/opt/homebrew/bin/node</string>
-		<string>/Users/alexlee/projects/ai-agent-system/bots/claude/src/dexter-quickcheck.js</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/claude/src/dexter-quickcheck.ts</string>
 		<string>--telegram</string>
 		<string>--fix</string>
 	</array>

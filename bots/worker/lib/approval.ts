@@ -13,7 +13,7 @@
 
 const path   = require('path');
 const pgPool = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'));
-const { getSecret } = require('./secrets');
+const { getSecret } = require('./secrets.ts');
 const { postAlarm } = require(path.join(__dirname, '../../../packages/core/lib/openclaw-client'));
 const {
   buildNoticeEvent,
@@ -23,7 +23,7 @@ const {
   markWorkerFeedbackConfirmed,
   markWorkerFeedbackRejected,
   replaceWorkerFeedbackEdits,
-} = require('./ai-feedback-service');
+} = require('./ai-feedback-service.ts');
 
 const SCHEMA     = 'worker';
 const SEP_SINGLE = '───────────────';

@@ -1,12 +1,12 @@
 import path from 'node:path';
 
-const { WARNING_CODES } = require('./document-parsing/constants');
-const { createExtractorRegistry } = require('./document-parsing/registry');
+const { WARNING_CODES } = require('./document-parsing/constants.ts');
+const { createExtractorRegistry } = require('./document-parsing/registry.ts');
 const {
   createBaseMetadata,
   detectFileType,
   finalizeExtraction,
-} = require('./document-parsing/utils');
+} = require('./document-parsing/utils.ts');
 
 type ExtractInput = {
   filePath?: string;

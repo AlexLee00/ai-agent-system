@@ -4,7 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { EXTENSION_MAP } = require('./constants');
+const { EXTENSION_MAP } = require('./constants.ts');
 
 function normalizeText(text = '') {
   return String(text || '')

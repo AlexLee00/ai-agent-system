@@ -17,8 +17,8 @@ const {
 const {
   getWorkerMonitoringPreference,
   isProviderConfigured,
-} = require('./llm-api-monitoring');
-const { getWorkerLLMSelectorOverrides } = require('./runtime-config');
+} = require('./llm-api-monitoring.ts');
+const { getWorkerLLMSelectorOverrides } = require('./runtime-config.ts');
 
 async function callLLM(model, system, user, maxTokens = 1024, logMeta = {}) {
   const result = await callWithFallback({

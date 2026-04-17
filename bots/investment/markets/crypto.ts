@@ -21,7 +21,7 @@ import https from 'https';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const kst = require('../../../packages/core/lib/kst');
-const { writeHeartbeat } = require('../../../packages/core/lib/agent-heartbeats');
+const { writeHeartbeat } = require('../../../packages/core/lib/agent-heartbeats.legacy.js');
 import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { initHubSecrets, getSymbols, getMarketExecutionModeInfo, getInvestmentTradeMode, getCryptoScreeningMaxDynamic } from '../shared/secrets.ts';
