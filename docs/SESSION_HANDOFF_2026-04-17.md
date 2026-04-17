@@ -2074,3 +2074,86 @@ UPDATE/DELETE 쿼리 중 company_id 필터 누락 여부 자동 체크:
 **AUDIT_05.md(262줄, SEC-018 패치 프롬프트) 작성 완료. worker src 6개 봇 IDOR 패턴 스캔 — ryan.ts만 실질 IDOR, noah.ts는 간접 격리 안전 확인. 17차 커밋 push 완료. 전체 97%. 다음 P0: AUDIT_05 구현 모니터링 + worker lib 마무리.**
 
 — 메티 (2026-04-17 밤, 18차 세션)
+
+
+---
+
+## 📍 19차 세션 증분 (2026-04-17 밤 메티) — AUDIT_05.md 재작성
+
+> 18차 마감 시 AUDIT_05.md 생존 불확실 → 19차 시작 시 실제 삭제 확인.
+> docs/codex 전체 파일(AUDIT_01~05)이 다른 세션의 아카이브 청소로 정리됨.
+> AUDIT_05만 아직 미실행 상태였으므로 재작성.
+
+### 🔄 AUDIT_05.md 재작성 완료
+
+- **178줄** (18차 262줄 대비 간결화)
+- 민감값 0건, gitignore 자동 보호
+- Task 1 (SEC-018 ryan.ts IDOR 패치) 포함
+- 이중 안전장치: 이번 세션부터 AUDIT 핵심 요약을 SESSION_HANDOFF에도 기록
+
+### 🛡️ AUDIT_05 핵심 요약 (파일 분실 대비 중복 기록)
+
+**SEC-018 패치 지침**:
+
+1. `ryan.ts:82-92` `/milestone_done`:
+   ```sql
+   UPDATE worker.milestones m SET status='completed', completed_at=NOW()
+   FROM worker.projects p
+   WHERE m.id=$1 AND m.deleted_at IS NULL
+     AND m.project_id = p.id AND p.company_id = $2
+   RETURNING m.project_id, m.title
+   ```
+
+2. `ryan.ts:30-49` `recalcProgress(projectId, companyId)` 시그니처 확장:
+   - SELECT에 `JOIN worker.projects p ON p.id = m.project_id` + `p.company_id=$2`
+   - UPDATE에 `WHERE id=$2 AND company_id=$3`
+
+3. 외부 호출자 확인: `grep -rn 'recalcProgress' bots/worker --include='*.ts' --include='*.js'`
+
+4. 테스트 4개 케이스: blocks other company / allows own / blocks recalcProgress / handles missing
+
+5. 커밋 메시지: `security(SEC-018): ryan.ts milestone IDOR — company_id enforcement`
+
+### 📊 감사 진행률 (19차 세션 기준)
+
+```
+1단위 Hub + 거버넌스: 100% 종결
+2단위 투자팀: 100% 종결
+
+3단위 worker: 50% (변동 없음, 이번 세션은 AUDIT_05 재작성에 집중)
+3단위 reservation: 0%
+3단위 blog: 0%
+
+전체 진행률: 약 97% (변동 없음)
+```
+
+### 📋 다음 세션 우선순위
+
+**P0 — AUDIT_05 코덱스 실행 모니터링**:
+- 다른 세션(코덱스)이 읽고 구현하는지 확인
+- 파일 생존 점검 먼저: `ls -la docs/codex/CODEX_SECURITY_AUDIT_05.md`
+- 만약 또 사라지면 SESSION_HANDOFF의 AUDIT_05 핵심 요약(위)에서 복원
+
+**P1 — worker lib 마무리**:
+- `bots/worker/lib/ai-feedback-service.ts` (승인 플로우 연동)
+- `bots/worker/lib/document-reuse.ts`
+- `bots/worker/lib/chat-agent.ts` 전수 (517줄 추정)
+
+**P2 — reservation 착수**:
+- `bots/reservation/src/ska.ts` (171줄)
+- `bots/reservation/lib/ska-command-queue.ts` (INSERT 경로)
+- `bots/reservation/lib/secrets.ts`
+
+### ⚠️ 주의 사항 업데이트
+
+docs/codex 파일들이 **다른 세션의 아카이브 작업에 의해 삭제될 수 있음**. 이후 메티는:
+
+1. AUDIT 파일 작성 후 즉시 핵심 요약을 SESSION_HANDOFF에도 기록 (이중 안전장치)
+2. 커밋/push 직전 AUDIT 파일 ls 재확인
+3. 사라진 경우 SESSION_HANDOFF에서 복원
+
+### 🏷️ 19차 세션 요약 한 줄
+
+**AUDIT_05.md 재작성(178줄, 이전 262줄의 간결판) + SESSION_HANDOFF에 핵심 요약 중복 기록(이중 안전장치). 전체 97%. 다음 P0: AUDIT_05 파일 생존 확인 + 코덱스 실행 모니터링. P1: worker lib 마무리. P2: reservation 착수.**
+
+— 메티 (2026-04-17 밤, 19차 세션)
