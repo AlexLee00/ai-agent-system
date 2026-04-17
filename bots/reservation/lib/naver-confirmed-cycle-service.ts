@@ -43,15 +43,12 @@ export function createNaverConfirmedCycleService(deps: CreateNaverConfirmedCycle
       confirmedCount,
       cancelledCount,
     } = await page.evaluate(() => {
-      function clean(s: string | null | undefined) {
-        return (s ?? '').replace(/\s+/g, ' ').trim();
-      }
       const links = Array.from(document.querySelectorAll('a'));
       let confirmed: HTMLAnchorElement | undefined;
       let cancelled: HTMLAnchorElement | undefined;
       for (const link of links) {
         const anchor = link as HTMLAnchorElement;
-        const text = clean(anchor.textContent);
+        const text = String(anchor.textContent || '').replace(/\s+/g, ' ').trim();
         const href = String(anchor.href || '');
         if (!confirmed && text.includes('오늘 확정') && href.includes('booking-list-view')) {
           confirmed = anchor;
@@ -61,17 +58,23 @@ export function createNaverConfirmedCycleService(deps: CreateNaverConfirmedCycle
         }
         if (confirmed && cancelled) break;
       }
-      function getCount(el?: Element | null) {
-        if (!el) return 0;
-        const strong = el.querySelector('strong');
-        const num = parseInt(((strong ? strong.textContent : el.textContent) || '').replace(/\D/g, ''), 10);
-        return Number.isNaN(num) ? 0 : num;
+      let confirmedCountValue = 0;
+      let cancelledCountValue = 0;
+      if (confirmed) {
+        const strong = confirmed.querySelector('strong');
+        const num = parseInt(String((strong ? strong.textContent : confirmed.textContent) || '').replace(/\D/g, ''), 10);
+        confirmedCountValue = Number.isNaN(num) ? 0 : num;
+      }
+      if (cancelled) {
+        const strong = cancelled.querySelector('strong');
+        const num = parseInt(String((strong ? strong.textContent : cancelled.textContent) || '').replace(/\D/g, ''), 10);
+        cancelledCountValue = Number.isNaN(num) ? 0 : num;
       }
       return {
         confirmedHref: confirmed ? confirmed.href : null,
         cancelledHref: cancelled ? cancelled.href : null,
-        confirmedCount: getCount(confirmed),
-        cancelledCount: getCount(cancelled),
+        confirmedCount: confirmedCountValue,
+        cancelledCount: cancelledCountValue,
       };
     });
 

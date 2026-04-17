@@ -103,35 +103,11 @@ export function createNaverListScrapeService(deps: CreateNaverListScrapeServiceD
     }, { timeout: 20000 });
 
     return page.evaluate((n: number) => {
-      function clean(value: unknown) {
-        return String(value ?? '').replace(/\s+/g, ' ').trim();
-      }
       const noData = document.querySelector('[class*="nodata-area"], [class*="nodata"], .nodata');
       if (noData) return [];
 
       const rows = Array.from(document.querySelectorAll('a[class*="contents-user"]')).slice(0, n);
       if (rows.length === 0) return [];
-
-      function to24Start(ampm: string, hh: string, mm: string) {
-        let hour = parseInt(hh, 10);
-        const minute = String(parseInt(mm, 10)).padStart(2, '0');
-        if (ampm === '오후' && hour < 12) hour += 12;
-        if (ampm === '오전' && hour === 12) hour = 0;
-        return `${String(hour).padStart(2, '0')}:${minute}`;
-      }
-
-      function to24End(ampm: string, hh: string, mm: string) {
-        let hour = parseInt(hh, 10);
-        const minute = String(parseInt(mm, 10)).padStart(2, '0');
-        if (ampm === '오후' && hour < 12) hour += 12;
-        if (ampm === '오전' && hour === 12) hour = 0;
-        return `${String(hour).padStart(2, '0')}:${minute}`;
-      }
-
-      function formatPhone(phone: string) {
-        if (!phone || phone.length !== 11) return phone;
-        return `${phone.slice(0, 3)}-${phone.slice(3, 7)}-${phone.slice(7)}`;
-      }
 
       const out: any[] = [];
       for (const row of rows) {
@@ -141,12 +117,12 @@ export function createNaverListScrapeService(deps: CreateNaverListScrapeServiceD
         const hostEl = row.querySelector('[class*="host__"]');
         const bookIdEl = row.querySelector('[class*="book-number__"]');
 
-        const name = clean(nameEl?.textContent);
-        const phoneText = clean(phoneEl?.textContent);
+        const name = String(nameEl?.textContent || '').replace(/\s+/g, ' ').trim();
+        const phoneText = String(phoneEl?.textContent || '').replace(/\s+/g, ' ').trim();
         const phone = phoneText ? phoneText.replace(/\D/g, '') : null;
-        const bookingId = clean(bookIdEl?.textContent);
+        const bookingId = String(bookIdEl?.textContent || '').replace(/\s+/g, ' ').trim();
 
-        const dateTimeText = clean(bookDateEl?.textContent);
+        const dateTimeText = String(bookDateEl?.textContent || '').replace(/\s+/g, ' ').trim();
         let date: string | null = null;
         let start: string | null = null;
         let end: string | null = null;
@@ -182,17 +158,28 @@ export function createNaverListScrapeService(deps: CreateNaverListScrapeServiceD
               }
             }
 
-            start = to24Start(startAmpm, String(startHour), String(startMin).padStart(2, '0'));
-            end = to24End(endAmpm, String(endHour), String(endMin).padStart(2, '0'));
+            let startHour24 = startHour;
+            let endHour24 = endHour;
+            const startMinute = String(startMin).padStart(2, '0');
+            const endMinute = String(endMin).padStart(2, '0');
+            if (startAmpm === '오후' && startHour24 < 12) startHour24 += 12;
+            if (startAmpm === '오전' && startHour24 === 12) startHour24 = 0;
+            if (endAmpm === '오후' && endHour24 < 12) endHour24 += 12;
+            if (endAmpm === '오전' && endHour24 === 12) endHour24 = 0;
+            start = `${String(startHour24).padStart(2, '0')}:${startMinute}`;
+            end = `${String(endHour24).padStart(2, '0')}:${endMinute}`;
           }
         }
 
-        const hostText = clean(hostEl?.textContent);
+        const hostText = String(hostEl?.textContent || '').replace(/\s+/g, ' ').trim();
         const roomMatch = hostText.match(/\b(A1|A2|B)\b/i);
         const room = roomMatch ? roomMatch[1].toUpperCase() : null;
 
         if (phone && start && end && date) {
-          const phoneFormatted = formatPhone(phone);
+          let phoneFormatted = phone;
+          if (phoneFormatted.length === 11) {
+            phoneFormatted = `${phoneFormatted.slice(0, 3)}-${phoneFormatted.slice(3, 7)}-${phoneFormatted.slice(7)}`;
+          }
           const uniqueId = `${date}|${start}|${end}|${room}|${phone}`;
           out.push({
             bookingId: bookingId || uniqueId,
