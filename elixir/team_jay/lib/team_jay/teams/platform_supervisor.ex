@@ -28,4 +28,11 @@ defmodule TeamJay.Teams.PlatformSupervisor do
 
     Supervisor.init(children, strategy: :one_for_one, max_restarts: 3, max_seconds: 60)
   end
+
+  @doc "ownership manifest와 대조할 Elixir-managed launch labels"
+  def agent_labels do
+    [
+      "ai.hub.resource-api"
+    ]
+  end
 end

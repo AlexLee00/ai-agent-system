@@ -169,4 +169,22 @@ defmodule TeamJay.Teams.InvestmentSupervisor do
     (@interval_agents ++ @calendar_agents)
     |> Enum.map(& &1.name)
   end
+
+  @doc "ownership manifest와 대조할 Elixir-managed launch labels"
+  def agent_labels do
+    [
+      "ai.investment.commander",
+      "ai.investment.argos",
+      "ai.investment.reporter",
+      "ai.investment.health-check",
+      "ai.investment.unrealized-pnl",
+      "ai.investment.prescreen-domestic",
+      "ai.investment.prescreen-overseas",
+      "ai.investment.market-alert-domestic-open",
+      "ai.investment.market-alert-domestic-close",
+      "ai.investment.market-alert-overseas-open",
+      "ai.investment.market-alert-overseas-close",
+      "ai.investment.market-alert-crypto-daily"
+    ]
+  end
 end

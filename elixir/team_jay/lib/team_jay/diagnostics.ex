@@ -205,7 +205,8 @@ defmodule TeamJay.Diagnostics do
       check_memory(),
       check_supervisors(),
       check_message_queues(),
-      check_launchd_overlap()
+      check_launchd_overlap(),
+      check_ownership_alignment()
     ]
     |> List.flatten()
   end
@@ -358,6 +359,54 @@ defmodule TeamJay.Diagnostics do
           }
         ]
     end
+  end
+
+  defp check_ownership_alignment do
+    manifest_elixir =
+      @service_ownership
+      |> Enum.filter(&(Map.get(&1, "owner") == "elixir"))
+      |> Enum.map(&Map.fetch!(&1, "label"))
+      |> MapSet.new()
+
+    actual_elixir =
+      [
+        TeamJay.Teams.InvestmentSupervisor.agent_labels(),
+        TeamJay.Teams.BlogSupervisor.agent_labels(),
+        TeamJay.Teams.WorkerSupervisor.agent_labels(),
+        TeamJay.Teams.PlatformSupervisor.agent_labels()
+      ]
+      |> List.flatten()
+      |> MapSet.new()
+
+    missing_from_runtime =
+      manifest_elixir
+      |> MapSet.difference(actual_elixir)
+      |> MapSet.to_list()
+      |> Enum.sort()
+
+    missing_from_manifest =
+      actual_elixir
+      |> MapSet.difference(manifest_elixir)
+      |> MapSet.to_list()
+      |> Enum.sort()
+
+    severity =
+      if missing_from_runtime == [] and missing_from_manifest == [],
+        do: :ok,
+        else: :warn
+
+    [
+      %{
+        name: "ownership_alignment",
+        severity: severity,
+        message:
+          "manifest=#{MapSet.size(manifest_elixir)} runtime=#{MapSet.size(actual_elixir)} drift=#{length(missing_from_runtime) + length(missing_from_manifest)}",
+        manifest_elixir_labels: MapSet.to_list(manifest_elixir) |> Enum.sort(),
+        runtime_elixir_labels: MapSet.to_list(actual_elixir) |> Enum.sort(),
+        missing_from_runtime: missing_from_runtime,
+        missing_from_manifest: missing_from_manifest
+      }
+    ]
   end
 
   defp get_loaded_launchd_labels do
@@ -530,6 +579,7 @@ defmodule TeamJay.Diagnostics do
       overlap_loaded_count: Map.get(overlap_result, :loaded_count, length(Map.get(overlap_result, :overlaps, []))),
       overlap_expected_count: Map.get(overlap_result, :expected_labels, length(@phase3_launchd_labels)),
       overlaps: Map.get(overlap_result, :overlaps, []),
+      ownership_alignment: build_ownership_alignment_summary(state.checks),
       supervisor_alerts: Enum.map(state.alerts, &Map.take(&1, [:name, :severity, :message])),
       agents: agent_statuses,
       week2_shadow_agents: week2_shadow_agents,
@@ -549,6 +599,19 @@ defmodule TeamJay.Diagnostics do
         TeamJay.EventLake.get_by_type("port_agent_failed", 20)
         |> filter_current_port_agent_failures()
         |> Enum.take(5)
+    }
+  end
+
+  defp build_ownership_alignment_summary(checks) do
+    result = Enum.find(checks, &(&1.name == "ownership_alignment")) || %{}
+
+    %{
+      severity: Map.get(result, :severity, :warn),
+      message: Map.get(result, :message, "ownership alignment 상태 불명"),
+      missing_from_runtime: Map.get(result, :missing_from_runtime, []),
+      missing_from_manifest: Map.get(result, :missing_from_manifest, []),
+      manifest_elixir_labels: Map.get(result, :manifest_elixir_labels, []),
+      runtime_elixir_labels: Map.get(result, :runtime_elixir_labels, [])
     }
   end
 
