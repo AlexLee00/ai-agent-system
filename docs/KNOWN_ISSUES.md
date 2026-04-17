@@ -52,6 +52,10 @@
 | SEC-006 | 🟡 MEDIUM | `bots/investment/shared/kis-client.ts:140` | `/tmp/kis-token-{paper,live}.json`에 access_token 평문 저장. `fs.writeFileSync` 권한 미지정 → umask 0022 기본 644. 24시간 유효 토큰 탈취 시 실매매 가능 | 2026-04-17 | ⏳ 프롬프트 작성 (CODEX_SECURITY_AUDIT_03 Task 1) — 8차 세션 발견 |
 | SEC-007 | 🟢 LOW-MED | `bots/investment/shared/kis-client.ts:137,197` | 토큰 발급 실패·API 오류 시 KIS 서버 response body 전체가 Error 메시지로 전파. Sentry/telegram 등 상위 로깅으로 유출 잠재 통로 (실질 리스크 낮음) | 2026-04-17 | ⏳ 프롬프트 작성 (CODEX_SECURITY_AUDIT_03 Task 2) — 8차 세션 발견 |
 | SEC-008 | 🟡 MEDIUM | `bots/investment/shared/upbit-client.ts:171` + `luna-commander.cjs:511` | `withdrawUsdtToAddress`가 실자금 출금 함수인데 cap·화이트리스트·승인 없음. `luna-commander`의 `HANDLERS.upbit_withdraw_only`가 외부 command 입력으로 트리거 가능 | 2026-04-17 | ⏳ 프롬프트 작성 (CODEX_SECURITY_AUDIT_03 Task 3) — 8차 세션 발견 |
+| SEC-009 | 🟢 LOW | `bots/investment/shared/secrets.ts:207` | `secrets.json` 폴백 로드 시 파일 권한 미검증. Hub API 실패 시만 트리거되므로 실질 리스크 낮음. 로컬에 secrets.json 파일 부재 확인 (gitignore 보호) | 2026-04-17 | ⬜ 9차 세션 발견 (실질 리스크 낮음, 우선순위 후순위) |
+| SEC-010 | 🟢 LOW-MED | `bots/investment/shared/secrets.ts:235` | `hostname().includes('MacStudio')` 기반 live 차단. hostname은 이론상 변경 가능 but OPS 접근 자체가 필요하므로 실질 리스크 매우 낮음 | 2026-04-17 | ⬜ 9차 세션 발견 (OPS 접근 통제 강화로 우회 어려움, 우선순위 후순위) |
+| SEC-011 | 🟢 LOW | `bots/investment/shared/secrets.ts:642` | `hasKisApiKey`가 `length > 5`만 검증. 실제 KIS 키는 36자 이상이므로 dummy/test 값이 통과할 수 있음 | 2026-04-17 | ⬜ 9차 세션 발견 (length ≥ 16 상향 권고) |
+| SEC-012 | 🟡 MEDIUM | `bots/orchestrator/src/router.ts:2096` (case 'upbit_withdraw') | Telegram `chat_id` 화이트리스트만으로 출금 가능. 세션 탈취 시 2차 인증 없이 자금 유출. **SEC-008의 3중 가드가 이 경로도 커버** → 실질적으로 같은 해결책 | 2026-04-17 | ⬜ 9차 세션 발견 (SEC-008 패치와 함께 자동 해결) |
 
 ---
 

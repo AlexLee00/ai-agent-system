@@ -1154,3 +1154,121 @@ docs/codex/ 원격 추적:    0개 파일 (완전 분리)
 **2단위 P1 인증 경로 점검 — SEC-006/007/008 신규 발견, CODEX_SECURITY_AUDIT_03.md 프롬프트 작성 완료. 2단위 P1 나머지(secrets, markets, HANDLERS 전수, l21)는 다음 세션.**
 
 — 메티 (2026-04-17 밤, 8차 세션)
+
+
+---
+
+## 📍 9차 세션 증분 업데이트 (2026-04-17 밤 메티) — 2단위 P1 완료
+
+> 8차 세션 핸드오버로 재개. 2단위 P1 나머지(secrets, markets, HANDLERS, l21) 점검 완료.
+> 신규 4건 발견 (모두 LOW~LOW-MED, 즉시 조치 불요)
+
+### 🆕 이번 세션 신규 발견
+
+**SEC-009 (LOW)** — secrets.json 폴백 파일 권한 검증 없음
+- 위치: `bots/investment/shared/secrets.ts:207`
+- Hub API 실패 시만 트리거. 로컬에 `secrets.json` 부재 확인 (gitignore 보호)
+- 실질 리스크 낮음. 즉시 조치 불필요.
+
+**SEC-010 (LOW-MED)** — hostname 기반 live 차단 우회 이론상 가능
+- 위치: `secrets.ts:235` `hostname().includes('MacStudio')`
+- hostname은 `sudo scutil --set HostName ...`으로 변경 가능
+- 그러나 OPS 접근 자체가 공격자 전제. 실질 리스크 매우 낮음.
+
+**SEC-011 (LOW)** — KIS 키 존재 검증이 `length > 5`만
+- 위치: `secrets.ts:642` `hasKisApiKey`
+- 실제 KIS 키는 36자 이상 → dummy 5~10자 값 통과 가능
+- 수정 권고: `length > 16` 또는 정규식 검증
+
+**SEC-012 (MEDIUM)** — Telegram `chat_id` 인증만으로 출금 가능
+- 위치: `bots/orchestrator/src/router.ts:2096` `case 'upbit_withdraw'`
+- **SEC-008의 3중 가드(주소 화이트리스트 + 1회 cap + 일일 cap)가 이 경로도 커버**
+- 추가 프롬프트 불필요, SEC-008 구현이 해결
+
+### ✅ 점검 완료 파일 (긍정 확인)
+
+**`shared/secrets.ts` (664줄)** — 매우 강력한 다층 방어:
+- Hub API → config.yaml → secrets.json → paper 기본값 (순차 폴백)
+- `applyDevSafetyOverrides`: OPS 아니면 live → paper 강제
+- hostname 최종 관문: MacStudio 아니면 live → paper
+- 민감값 로깅 없음
+- warnOnce 패턴으로 노이즈 방지
+- 보수적 기본값 (모든 실수 경로가 paper로 수렴)
+
+**`markets/crypto.ts / domestic.ts / overseas.ts` (1088줄)** — 순수 오케스트레이션:
+- 민감 키워드 전혀 없음
+- 파이프라인 호출 + 스케줄링만 담당
+- 실제 API/인증은 `shared/kis-client.ts`, `shared/upbit-client.ts`, CCXT 라이브러리가 담당
+
+**`nodes/l21-llm-risk.ts` (61줄)** — 깔끔한 중계 노드:
+- L13 결정 → nemesis.evaluateSignal 호출
+- `persist: false` (L30이 저장 담당)
+- SEC-004의 hephaestos 가드가 이미 후단에서 방어
+
+**`luna-commander.cjs` HANDLERS 출처 추적**:
+- 외부 command 출처: Telegram Bot → router.ts → bot_commands 테이블
+- **`isAuthorized(chat_id)` 검증 존재** (allowed chat_id 화이트리스트)
+- 출금은 Telegram 개인/그룹 chat_id로부터만 가능
+- 2차 인증 없음 → SEC-008 3중 가드가 해결
+
+### 📊 감사 진행률 (9차 세션 기준)
+
+```
+1단위 Hub + 거버넌스: 100% 종결
+  ✅ SEC-001~005
+
+2단위 투자팀 P1 (인증/시크릿): 100% 점검 완료
+  ⏳ SEC-006 (MEDIUM)  KIS 토큰 파일 권한   (프롬프트 완료)
+  ⏳ SEC-007 (LOW-MED) KIS 에러 정화         (프롬프트 완료)
+  ⏳ SEC-008 (MEDIUM)  업비트 출금 3중 가드  (프롬프트 완료 — SEC-012 함께 해결)
+  ⬜ SEC-009 (LOW)     secrets.json 폴백 권한 (우선순위 낮음)
+  ⬜ SEC-010 (LOW-MED) hostname 기반 차단    (실질 리스크 매우 낮음)
+  ⬜ SEC-011 (LOW)     KIS 키 길이 검증      (length > 16 상향 권고)
+  ⬜ SEC-012 (MEDIUM)  Telegram 단일 인증    (SEC-008 패치가 자동 해결)
+
+2단위 투자팀 P2 대기:
+  ⬜ bots/investment/team/*.ts (아리아/아테나/소피아/조나탄/제우스/헬리오스/한울 등)
+  ⬜ bots/investment/scripts/* (force-exit-runner, 자금 이동 관련)
+  ⬜ bots/investment/shared/db.ts (SQL injection 가능성)
+  ⬜ bots/investment/shared/signal.ts
+
+3~N단위 대기 (worker, reservation, blog, core, elixir, 의존성, git 히스토리)
+
+전체 진행률: 약 65%
+  - 1단위 100% 종결
+  - 2단위 P1 100% 점검 완료 (구현은 3건 대기)
+  - 2단위 P2 0% 시작
+```
+
+### 📋 다음 세션 최우선 작업
+
+```
+P0 (마스터 승인/지시 대기):
+- USDT 지갑 주소 로테이션 여부
+- SEC-008 cap 수치 (upbit_withdraw_max_usdt, daily_cap)
+- SEC-008 LUNA_AUTONOMY_WITHDRAW 초기값
+- CODEX_SECURITY_AUDIT_03.md 코덱스 전달 타이밍
+
+P1 (2단위 P2 감사):
+- bots/investment/team/*.ts 전수 (아리아/아테나/소피아 등 15+ 에이전트)
+- bots/investment/scripts/force-exit-runner.ts (자금 청산 경로)
+- bots/investment/shared/db.ts (SQL 쿼리 파라미터화 점검)
+- bots/investment/shared/signal.ts (signal 생성·검증 로직)
+
+P2 (3단위):
+- bots/worker/ (JWT 멀티테넌트 격리)
+- bots/reservation/ (Playwright 자동화 + DB 암호화)
+```
+
+### ⚠️ 다음 메티 주의사항
+
+- 다른 세션들 병행 중 (claude Phase 3/4, darwin REMODEL, elixir 모니터링)
+- 로컬 HEAD가 origin보다 앞서있는 경우 빈번 → `git log --oneline origin/main..HEAD`로 확인
+- 메티는 `docs/` 영역만 커밋하고, 다른 세션 작업물(bots/claude, bots/darwin, elixir/)은 그대로 둠
+- `bots/investment/shared/` 변경은 코덱스가 SEC-006/007/008 구현할 때까지 대기
+
+### 🏷️ 9차 세션 요약 한 줄
+
+**2단위 P1 100% 점검 완료 — SEC-009~012 신규 발견(모두 LOW급, 즉시 조치 불요). SEC-012는 SEC-008 패치가 자동 해결. 다음 세션 P2(team/*.ts + scripts/ + db.ts) 착수.**
+
+— 메티 (2026-04-17 밤, 9차 세션)
