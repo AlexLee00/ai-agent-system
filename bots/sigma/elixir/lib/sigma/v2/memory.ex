@@ -72,7 +72,8 @@ defmodule Sigma.V2.Memory do
            operation: :retrieve,
            content: query,
            team: "sigma",
-           top_k: limit
+           top_k: limit,
+           threshold: threshold
          }, %{}) do
       {:ok, %{hits: hits}} ->
         Enum.filter(hits, fn h ->
