@@ -1,0 +1,25 @@
+-- Hub read-only database role bootstrap
+-- Apply only after confirming hub query traffic is fully read-only in production.
+
+CREATE ROLE hub_readonly WITH LOGIN PASSWORD 'REPLACE_WITH_SECURE_PASSWORD';
+
+GRANT USAGE ON SCHEMA agent, claude, reservation, investment, ska, worker, blog, public
+  TO hub_readonly;
+
+GRANT SELECT ON ALL TABLES IN SCHEMA agent TO hub_readonly;
+GRANT SELECT ON ALL TABLES IN SCHEMA claude TO hub_readonly;
+GRANT SELECT ON ALL TABLES IN SCHEMA reservation TO hub_readonly;
+GRANT SELECT ON ALL TABLES IN SCHEMA investment TO hub_readonly;
+GRANT SELECT ON ALL TABLES IN SCHEMA ska TO hub_readonly;
+GRANT SELECT ON ALL TABLES IN SCHEMA worker TO hub_readonly;
+GRANT SELECT ON ALL TABLES IN SCHEMA blog TO hub_readonly;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO hub_readonly;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA agent GRANT SELECT ON TABLES TO hub_readonly;
+ALTER DEFAULT PRIVILEGES IN SCHEMA claude GRANT SELECT ON TABLES TO hub_readonly;
+ALTER DEFAULT PRIVILEGES IN SCHEMA reservation GRANT SELECT ON TABLES TO hub_readonly;
+ALTER DEFAULT PRIVILEGES IN SCHEMA investment GRANT SELECT ON TABLES TO hub_readonly;
+ALTER DEFAULT PRIVILEGES IN SCHEMA ska GRANT SELECT ON TABLES TO hub_readonly;
+ALTER DEFAULT PRIVILEGES IN SCHEMA worker GRANT SELECT ON TABLES TO hub_readonly;
+ALTER DEFAULT PRIVILEGES IN SCHEMA blog GRANT SELECT ON TABLES TO hub_readonly;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO hub_readonly;
