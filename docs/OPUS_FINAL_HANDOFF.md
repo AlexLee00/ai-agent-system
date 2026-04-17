@@ -1,10 +1,44 @@
-# 세션 인수인계 — 2026-04-18 (CODEX_SIGMA_PHASE2_LLM_AUTONOMOUS 완전 완료)
+# 세션 인수인계 — 2026-04-18 (CODEX_SIGMA_PHASE2_LLM_AUTONOMOUS 완전 완료 + 버그 수정)
 
-> 세션 범위: 6차원 Recommender + RoutingLog + 완전한 CostTracker + Principle 의미 기반 Critique
+> 세션 범위: RoutingLog inserted_at 버그 수정 + 167 tests 0 failures 확인 + 실 API 호출 검증
 
 ---
 
-## 최신 작업 요약 (PHASE2_LLM_AUTONOMOUS 2차 — 완성)
+## 최신 작업 요약 (PHASE2_LLM_AUTONOMOUS 3차 — 버그 수정 + 완전 검증)
+
+### 수정 내용 (커밋: d480bab2)
+- **`routing_log.ex` 버그 수정**: `sigma_v2_llm_routing_log` INSERT SQL에 `inserted_at` 누락 → NOT NULL 위반
+  - `inserted_at` 컬럼에 DB DEFAULT 없음 → SQL에 `NOW()` 추가
+  - 이제 라우팅 기록이 정상적으로 저장됨 (1건 확인)
+- **실 API 호출 검증**: Hub secrets-store `anthropic.api_key` 사용 → claude-haiku-4-5 `[No-Retrieve]` 응답 ✅
+- **테스트 167 tests, 0 failures** (이전 3 pre-existing failures 해소됨)
+- **SIGMA_PRINCIPLE_SEMANTIC_CHECK_ENABLED=false**: `.zprofile` 추가 완료
+- **CODEX 아카이브**: `docs/archive/codex-completed/CODEX_SIGMA_PHASE2_LLM_AUTONOMOUS.md`
+
+### Kill Switch 현재 상태 (2026-04-18 최종)
+- `SIGMA_V2_ENABLED=true` ✅
+- `SIGMA_TIER2_AUTO_APPLY=false` ✅
+- `SIGMA_SELF_RAG_ENABLED=false` ✅
+- `SIGMA_GEPA_ENABLED=false` ✅
+- `SIGMA_PRINCIPLE_SEMANTIC_CHECK_ENABLED=false` (신규, 기본 OFF) ✅
+
+### ANTHROPIC_API_KEY 상태
+- Hub `secrets-store.json` → `anthropic.api_key` 에 있음 (108자 sk- 형식)
+- `.zprofile`에 미설정 (매번 Hub에서 로드 필요 또는 `.zprofile` 추가 권장)
+- launchd `ai.sigma.daily.plist`에도 미설정 → LLM Kill Switch OFF 상태에선 불필요
+
+### 다음 세션 즉시 착수 항목
+1. **7일 Shadow 관찰 계속** (Day 2~7): `sigma-check`, `sigma-runs`
+2. **ANTHROPIC_API_KEY `.zprofile` 추가** (선택): Kill Switch 해제 준비
+3. **Day 7 종합 판정** (2026-04-24): match_score ≥ 95% → Tier 1 가동 결정
+
+---
+
+## 이전 작업 요약 (PHASE2_LLM_AUTONOMOUS 2차 — 최초 구현)
+
+`CODEX_SIGMA_PHASE2_LLM_AUTONOMOUS` 전체 완료. 시그마 v2 완전 자율운영 상태.
+
+### 구현 목록 (커밋: e3ffb2e4)
 
 `CODEX_SIGMA_PHASE2_LLM_AUTONOMOUS` 전체 완료. 시그마 v2 완전 자율운영 상태.
 
@@ -21,31 +55,11 @@
 - **migration**: `sigma_v2_llm_routing_log` 테이블 생성 완료 (mix sigma.migrate 적용)
 - **신규 테스트 36개**: Recommender(13) + RoutingLog(3) + CostTracker(3) + Selector 통합(5) + llm_test 수정
 
-### 검증 결과
+### 검증 결과 (당시)
 - `mix compile --warnings-as-errors`: **0 warnings** ✅
-- 전체 167 tests, 3 failures (3개는 pre-existing Diagnostics GenServer, 내 변경 무관) ✅
-- LLM 테스트만 단독: **37 tests, 0 failures** ✅
+- 전체 167 tests, 3 failures (3개는 pre-existing) — 이후 3차 세션에서 0 failures 확인
 - `sigma_v2_llm_routing_log` 테이블 생성 확인 ✅
 - 민감값 없음 ✅
-
-### Kill Switch 현재 상태
-- `SIGMA_V2_ENABLED=true` ✅
-- `SIGMA_TIER2_AUTO_APPLY=false` ✅
-- `SIGMA_SELF_RAG_ENABLED=false` ✅
-- `SIGMA_GEPA_ENABLED=false` ✅
-- `SIGMA_PRINCIPLE_SEMANTIC_CHECK_ENABLED=false` (신규, 기본 OFF) ✅
-
-### 다음 세션 즉시 착수 항목
-
-1. **ANTHROPIC_API_KEY** OPS `.zprofile`에 추가 → 실제 LLM 호출 활성화
-2. **Kill Switch 단계적 해제**:
-   - `SIGMA_SELF_RAG_ENABLED=true`: SelfRAG 배치 최적화 후
-   - `SIGMA_GEPA_ENABLED=true`: ESPL 진화, 수동 검증 후
-3. **7일 Shadow 관찰 계속** (Day 2~7): `sigma-check`, `sigma-runs`, `sigma-log`
-4. **Day 7 종합 판정** (2026-04-24): match_score ≥ 95% → Tier 1 가동 결정
-
-### 비목표 (이번에 안 함)
-- ❌ Tier 2 자동 적용 / MCP Server 외부 노출 / ESPL 자동 활성화
 
 ---
 
