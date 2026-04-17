@@ -19,17 +19,26 @@ function getN8nApiKey(): string {
   }
 }
 
-async function n8nApiRequest(method: string, path: string, body?: unknown) {
+async function n8nApiRequest(method: string, apiPath: string, body?: unknown) {
   const apiKey = getN8nApiKey();
   if (!apiKey) return { error: 'n8n_api_key_missing' };
-  const url = `${env.N8N_BASE_URL}/api/v1${path}`;
-  const opts: Record<string, unknown> = {
-    timeoutMs: 8000,
-    headers: { 'X-N8N-API-KEY': apiKey, 'Content-Type': 'application/json' },
-  };
-  if (body) opts.body = JSON.stringify(body);
-  return method === 'GET' ? fetchJson(url, 8000, { headers: { 'X-N8N-API-KEY': apiKey } })
-    : postJson(url, body || {}, opts);
+  const url = `${env.N8N_BASE_URL}/api/v1${apiPath}`;
+  try {
+    const fetchOpts: RequestInit = {
+      method,
+      headers: {
+        'X-N8N-API-KEY': apiKey,
+        'Content-Type': 'application/json',
+      },
+      signal: AbortSignal.timeout(8000),
+    };
+    if (body && method !== 'GET') fetchOpts.body = JSON.stringify(body);
+    const resp = await fetch(url, fetchOpts);
+    if (!resp.ok) return { error: `n8n_api_http_${resp.status}` };
+    return await resp.json();
+  } catch (err: any) {
+    return { error: err.message || 'n8n_api_request_failed' };
+  }
 }
 
 export async function n8nHealthRoute(_req: any, res: any) {
@@ -46,8 +55,8 @@ export async function n8nHealthRoute(_req: any, res: any) {
 
 export async function n8nWorkflowsRoute(_req: any, res: any) {
   if (!env.N8N_ENABLED) return res.status(503).json({ error: 'n8n_disabled' });
-  const data = await n8nApiRequest('GET', '/workflows?limit=100');
-  if (!data || (data as any).error) return res.status(502).json({ error: 'n8n_api_failed' });
+  const data = await n8nApiRequest('GET', '/workflows?limit=100') as any;
+  if (!data || data.error) return res.status(502).json({ error: 'n8n_api_failed', detail: data?.error });
   return res.json(data);
 }
 
