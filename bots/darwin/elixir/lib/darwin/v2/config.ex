@@ -1,0 +1,96 @@
+defmodule Darwin.V2.Config do
+  @moduledoc """
+  다윈팀 V2 Kill Switch + 환경 설정.
+
+  모든 Kill Switch는 기본값 false (단계적 활성화).
+  DARWIN_V2_ENABLED=true → 전체 V2 기능 게이트.
+  """
+
+  @doc """
+  다윈 V2 전체 활성화 여부.
+  환경변수: DARWIN_V2_ENABLED (기본 false)
+  """
+  def v2_enabled? do
+    System.get_env("DARWIN_V2_ENABLED", "false") == "true"
+  end
+
+  @doc """
+  Darwin.V2.LLM.Selector 활성화 여부.
+  환경변수: DARWIN_LLM_SELECTOR_ENABLED (기본 false)
+  v2_enabled? AND DARWIN_LLM_SELECTOR_ENABLED=true 모두 필요.
+  """
+  def llm_selector_enabled? do
+    v2_enabled?() and
+      System.get_env("DARWIN_LLM_SELECTOR_ENABLED", "false") == "true"
+  end
+
+  @doc """
+  Shadow Mode 활성화 여부 (L3 병행 검증).
+  환경변수: DARWIN_SHADOW_MODE_ENABLED (기본 false)
+  """
+  def shadow_mode_enabled? do
+    v2_enabled?() and
+      System.get_env("DARWIN_SHADOW_MODE_ENABLED", "false") == "true"
+  end
+
+  @doc """
+  Reflexion 자기 개선 루프 활성화.
+  환경변수: DARWIN_REFLEXION_ENABLED (기본 false)
+  """
+  def reflexion_enabled? do
+    v2_enabled?() and
+      System.get_env("DARWIN_REFLEXION_ENABLED", "false") == "true"
+  end
+
+  @doc """
+  Self-RAG 컨텍스트 검색 활성화.
+  환경변수: DARWIN_SELF_RAG_ENABLED (기본 false)
+  """
+  def self_rag_enabled? do
+    v2_enabled?() and
+      System.get_env("DARWIN_SELF_RAG_ENABLED", "false") == "true"
+  end
+
+  @doc """
+  Tier 2 자동 적용 활성화 (L4+ 자율 배포).
+  환경변수: DARWIN_TIER2_AUTO_APPLY (기본 false — Shadow 7일 관찰 후 활성화)
+  """
+  def tier2_auto_apply? do
+    v2_enabled?() and
+      System.get_env("DARWIN_TIER2_AUTO_APPLY", "false") == "true"
+  end
+
+  @doc """
+  MCP Server 활성화.
+  환경변수: DARWIN_MCP_SERVER_ENABLED (기본 false)
+  """
+  def mcp_server_enabled? do
+    v2_enabled?() and
+      System.get_env("DARWIN_MCP_SERVER_ENABLED", "false") == "true"
+  end
+
+  @doc """
+  일일 LLM 예산 (USD).
+  환경변수: DARWIN_LLM_DAILY_BUDGET_USD (기본 5.0)
+  """
+  def daily_budget_usd do
+    System.get_env("DARWIN_LLM_DAILY_BUDGET_USD", "5.0")
+    |> String.to_float()
+  end
+
+  @doc """
+  현재 활성화된 Kill Switch 상태 요약.
+  """
+  def status do
+    %{
+      v2_enabled:            v2_enabled?(),
+      llm_selector_enabled:  llm_selector_enabled?(),
+      shadow_mode_enabled:   shadow_mode_enabled?(),
+      reflexion_enabled:     reflexion_enabled?(),
+      self_rag_enabled:      self_rag_enabled?(),
+      tier2_auto_apply:      tier2_auto_apply?(),
+      mcp_server_enabled:    mcp_server_enabled?(),
+      daily_budget_usd:      daily_budget_usd()
+    }
+  end
+end
