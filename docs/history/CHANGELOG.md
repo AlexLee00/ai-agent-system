@@ -3,6 +3,17 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 13주차 보안 검증 마감 (2026-04-17) — SEC-004/005 재검증 완료
+
+- `SEC-004`
+  - [bots/investment/team/hephaestos.ts](/Users/alexlee/projects/ai-agent-system/bots/investment/team/hephaestos.ts) 엔트리 가드가 live BUY 경로에서 네메시스 verdict/stale approval을 다시 검사함을 확인
+  - [bots/investment/__tests__/hephaestos-guard.test.ts](/Users/alexlee/projects/ai-agent-system/bots/investment/__tests__/hephaestos-guard.test.ts) 15/15 통과
+- `SEC-005`
+  - `.gitignore`의 `docs/codex/*` 차단과 `scripts/pre-commit` 섹션 3.5가 현재 저장소와 로컬 훅 양쪽에 동기화된 상태를 재확인
+  - `docs/codex/archive/CODEX_SECURITY_AUDIT_02.md`는 ignored, `docs/codex/README.md`만 예외 추적 상태임을 재확인
+- 의미:
+  - 2차 감사 문서 기준 남아 있던 `SEC-004`, `SEC-005`는 현재 구현/가드/검증 상태가 실제 저장소와 일치한다.
+
 ## 13주차 보안 패치 (2026-04-17) — SEC-004/005 완전 밀폐
 
 ### SEC-005 (CRITICAL) — docs/codex/ 구조적 재발 방지 3중 방어
