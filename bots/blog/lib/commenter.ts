@@ -30,8 +30,8 @@ function traceCommenter(...args) {
 
 function buildCommenterFallbackChain(maxTokens, temperature) {
   return [
-    { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens, temperature },
     { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens, temperature: Math.min(temperature, 0.7), timeoutMs: 15000 },
+    { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens, temperature, timeoutMs: 12000 },
     { provider: 'local', model: 'qwen2.5-7b', maxTokens, temperature: Math.min(temperature, 0.7) },
     { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens, temperature, timeoutMs: 12000 },
     { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens, temperature: Math.min(temperature, 0.7) },
@@ -98,6 +98,7 @@ function getCommenterConfig() {
     maxReplyLen: Number(runtime.maxReplyLen || 200),
     maxDetectPerCycle: Number(runtime.maxDetectPerCycle || 20),
     maxProcessPerCycle: Number(runtime.maxProcessPerCycle || 20),
+    processTimeoutMs: Number(runtime.processTimeoutMs || 240000),
   };
 }
 
@@ -221,7 +222,8 @@ async function processNeighborCommentWithTimeout(candidate, { testMode = false }
 }
 
 async function processCommentWithTimeout(comment, { testMode = false } = {}) {
-  const timeoutMs = testMode ? 30000 : 150000;
+  const config = getCommenterConfig();
+  const timeoutMs = testMode ? Math.min(Number(config.processTimeoutMs || 240000), 45000) : Number(config.processTimeoutMs || 240000);
   return Promise.race([
     processComment(comment, { testMode, operationTimeoutMs: timeoutMs }),
     new Promise((_, reject) => {
