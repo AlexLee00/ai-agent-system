@@ -326,3 +326,54 @@ userMemories 기준, 보안 감사와 별개로 진행 중이던 작업들:
 - **스케줄 잡 vs 상시 잡 구분 기준**: plist의 `StartInterval` / `StartCalendarInterval` 있으면 스케줄, `KeepAlive=true` + `RunAtLoad=true`면 상시
 - **실매매 연관 서비스**: `ai.investment.commander`는 C그룹이지만 실투자 중이므로 선결 조건 충족 전 절대 전환 금지
 - **Hub 바인딩 이슈(SEC-001)와의 관계**: hub_resource_api는 C그룹. 보안 Task 1(0.0.0.0→127.0.0.1) 패치 먼저 반영 후 C그룹 조건부 전환 검토
+
+---
+
+## 🚨 P0 — 세션 종료 직전 Git 경합 발생 (2026-04-17 09:41) — ✅ 검증 완료
+
+> 다음 세션 메티가 **가장 먼저** 확인해야 할 항목이었음.
+> **결과: 원격 오염 없음 확인 (세션 종료 시점에 재검증 완료).**
+
+### 최종 검증 결과 (세션 종료 직전)
+
+```
+git show origin/main:docs/SESSION_HANDOFF_2026-04-17.md | grep <KIS_ACCOUNT_PREFIX>   # 0 히트
+git show origin/main:docs/SESSION_HANDOFF_2026-04-17.md | grep <USDT_ADDRESS_PREFIX>  # 0 히트
+git show origin/main:docs/KNOWN_ISSUES.md              | grep <KIS_ACCOUNT_PREFIX>   # 0 히트
+git show origin/main:docs/KNOWN_ISSUES.md              | grep <USDT_ADDRESS_PREFIX>  # 0 히트
+```
+
+**→ 외부 커밋 `439f7f2f`에 포함된 제 두 문서는 이미 placeholder 버전이었음. SEC-002 확장 피해 없음.**
+
+> 실제 패턴 문자열은 `docs/codex/CODEX_SECURITY_AUDIT_01.md`(gitignore) 참조.
+
+### 그럼에도 다음 세션에서 재확인 권장
+
+원격 상태를 다시 한번 확인하여 이후 커밋에도 민감값이 유입되지 않았는지 점검:
+
+```bash
+cd /Users/alexlee/projects/ai-agent-system
+git fetch origin
+
+# 실제 패턴 값은 docs/codex/CODEX_SECURITY_AUDIT_01.md 의 Task 2 섹션 참조
+PATTERNS=("<KIS_ACCOUNT>" "<KIS_PAPER>" "<USDT_ADDR>")
+
+for f in docs/SESSION_HANDOFF_2026-04-17.md docs/KNOWN_ISSUES.md bots/investment/config.yaml; do
+  for pattern in "${PATTERNS[@]}"; do
+    count=$(git show origin/main:$f 2>/dev/null | grep -c "$pattern")
+    echo "$f — $pattern: $count"
+  done
+done
+# docs/* 파일들은 모두 0이어야 함 (config.yaml은 SEC-002 패치 전까지는 히트 있음)
+```
+
+### 원인 분석 (참고)
+
+이 세션 도중 다른 Claude Code 세션이 Elixir ownership drift 작업을 마무리하며 커밋 `439f7f2f` ("Add ownership drift checks to diagnostics")을 push. 이때 내가 만든 untracked 파일 두 개가 함께 스테이징되어 커밋됨. 커밋 시점에는 이미 placeholder 버전이었기에 오염은 없었음.
+
+### 재발 방지 교훈 (중요)
+
+- 메티 세션에서 문서 작성 시 **민감값은 처음부터 placeholder**로 작성할 것
+- `docs/` 루트 새 파일 생성 시 `git add` + `git commit`을 작성 직후 즉시 실행해 빈 레이스 윈도우 제거
+- OPS에서 자동 커밋 훅이 돌고 있을 수 있으니 docs 작업 전 `git log --oneline -5` 로 최근 활동 점검
+- 이번 세션 중에도 배웠지만, 동일 리포에서 메티(claude.ai)와 코덱스(Claude Code)가 동시에 작업 중이면 충돌 가능성 상존. 작업 영역이 겹치지 않도록 조율 필요

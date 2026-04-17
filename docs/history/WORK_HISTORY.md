@@ -4,6 +4,20 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-04-17: CODEX_LUNA_IMPL 전 구현 완료 (I-2/I-3/J + OPS 작업)
+
+- **KIS live 전환**: config.yaml `kis_mode: paper → live` (커밋 ffab4e5f, push)
+- **TradingView MCP (E)**: FastMCP 서버 구현 + Homebrew Python 3.12 의존성 설치 완료
+- **OPS_TRANSITION Step 5**: crypto/domestic/overseas launchd 3개 plist 제거
+  - Elixir InvestmentSupervisor가 port_agent_run/completed 이벤트로 실행 확인
+- **자율 루프 확인**: autonomous_cycle_events: mode3_manage/readiness=ready 확인
+- **Part I-2**: aria.ts `quickMomentumScan()` — 다심볼 1h RSI/MACD/BB 모멘텀 스캔
+- **Part I-3**: scripts/hybrid-scorer.ts — 아르고스(25%)+아리아(25%)+오라클(25%)+헤르메스(25%) 하이브리드 스코어링
+- **Part J**: scripts/chart-vision.ts — Puppeteer 차트 스크린샷 + GPT-4o Vision 패턴 분석 (일 5회 제한)
+  - aria.ts: visionPattern 필드 + attachVisionPattern() 헬퍼 추가
+- **CODEX 정리**: OPS_TRANSITION/PRODUCTION/AUTONOMOUS_LOOP → 로컬 아카이브 이동
+- CODEX_LUNA_IMPL 헤더 → 10개 과제 전부 완료 마킹
+
 ## 2026-04-17: Luna parallel ops report 경로 복구 및 재점검
 
 - `bots/investment/scripts/parallel-ops-snapshot.ts`
