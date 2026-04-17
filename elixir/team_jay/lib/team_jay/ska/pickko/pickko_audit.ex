@@ -74,7 +74,7 @@ defmodule TeamJay.Ska.Pickko.PickkoAudit do
       notify_anomalies(anomalies)
     end
 
-    TeamJay.EventLake.record(%{
+    Jay.Core.EventLake.record(%{
       event_type: "ska_pickko_audit",
       team: "ska",
       bot_name: "pickko_audit",
@@ -163,7 +163,7 @@ defmodule TeamJay.Ska.Pickko.PickkoAudit do
       "⚠️ #{type}: #{inspect(data)}"
     end)
 
-    TeamJay.HubClient.post_alarm(
+    Jay.Core.HubClient.post_alarm(
       "🔍 픽코 감사 이상 감지!\n#{anomaly_text}",
       "ska", "pickko_audit"
     )

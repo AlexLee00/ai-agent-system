@@ -11,7 +11,7 @@ defmodule TeamJay.Claude.Dexter.ErrorTracker do
   use GenServer
   require Logger
 
-  alias TeamJay.HubClient
+  alias Jay.Core.HubClient
   alias TeamJay.Claude.Topics
 
   @max_errors 500
@@ -49,8 +49,8 @@ defmodule TeamJay.Claude.Dexter.ErrorTracker do
 
   @impl true
   def init(_opts) do
-    db_opts = TeamJay.Config.notification_db_opts()
-    channel = TeamJay.Config.pg_notify_channel()
+    db_opts = Jay.Core.Config.notification_db_opts()
+    channel = Jay.Core.Config.pg_notify_channel()
 
     {:ok, pid} = Postgrex.Notifications.start_link(db_opts)
     {:ok, ref} = Postgrex.Notifications.listen(pid, channel)
@@ -115,7 +115,7 @@ defmodule TeamJay.Claude.Dexter.ErrorTracker do
     new_state = maybe_trigger_doctor(pattern_key, new_patterns[pattern_key], error_entry, new_state)
 
     # Claude Topics broadcast
-    TeamJay.JayBus |> Registry.dispatch(Topics.error_detected(), fn entries ->
+    Jay.Core.JayBus |> Registry.dispatch(Topics.error_detected(), fn entries ->
       Enum.each(entries, fn {pid, _} -> send(pid, {:claude_event, Topics.error_detected(), error_entry}) end)
     end)
 

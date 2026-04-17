@@ -8,7 +8,7 @@ defmodule TeamJay.Blog.Notifier do
 
   alias TeamJay.Blog.DailySummary
   alias TeamJay.Blog.SummaryFormatter
-  alias TeamJay.HubClient
+  alias Jay.Core.HubClient
 
   def build_message(style \\ :ops) do
     DailySummary.build()

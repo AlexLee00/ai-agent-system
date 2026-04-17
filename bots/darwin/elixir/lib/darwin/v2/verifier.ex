@@ -14,7 +14,7 @@ defmodule Darwin.V2.Verifier do
 
   alias Darwin.V2.{Topics, Lead, Reflexion}
   alias Darwin.V2.Skill.{Replication, ExperimentDesign}
-  alias TeamJay.HubClient
+  alias Jay.Core.HubClient
 
   @max_retry         2
   @repro_threshold   0.7   # 재현 점수 최소치
@@ -50,7 +50,7 @@ defmodule Darwin.V2.Verifier do
 
   @impl GenServer
   def handle_info(:subscribe_events, state) do
-    Registry.register(TeamJay.JayBus, Topics.implementation_ready(), [])
+    Registry.register(Jay.Core.JayBus, Topics.implementation_ready(), [])
     Logger.debug("[다윈V2 검증자] JayBus 구독 완료")
     {:noreply, state}
   end
@@ -265,7 +265,7 @@ defmodule Darwin.V2.Verifier do
       WHERE id = $2
       """
 
-      case Ecto.Adapters.SQL.query(TeamJay.Repo, sql, [status, paper_id]) do
+      case Ecto.Adapters.SQL.query(Jay.Core.Repo, sql, [status, paper_id]) do
         {:ok, _} -> :ok
         {:error, reason} ->
           Logger.warning("[다윈V2 검증자] DB 업데이트 실패: #{inspect(reason)}")
@@ -294,7 +294,7 @@ defmodule Darwin.V2.Verifier do
   end
 
   defp broadcast(topic, payload) do
-    Registry.dispatch(TeamJay.JayBus, topic, fn entries ->
+    Registry.dispatch(Jay.Core.JayBus, topic, fn entries ->
       for {pid, _} <- entries, do: send(pid, {:jay_event, topic, payload})
     end)
 

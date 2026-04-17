@@ -11,7 +11,7 @@ defmodule TeamJay.Investment.MarketModeSelector do
   alias TeamJay.Investment.Events
   alias TeamJay.Investment.PubSub
   alias TeamJay.Investment.Topics
-  alias TeamJay.Repo
+  alias Jay.Core.Repo
 
   def start_link(opts) do
     symbol = Keyword.fetch!(opts, :symbol)

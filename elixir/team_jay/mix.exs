@@ -44,6 +44,9 @@ defmodule TeamJay.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
+      # 공용 레이어
+      {:jay_core, path: "../../packages/elixir_core"},
+
       # 기존 의존성
       {:ecto_sql, "~> 3.12"},
       {:postgrex, "~> 0.20"},

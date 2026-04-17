@@ -62,7 +62,7 @@ defmodule Darwin.V2.LLM.CostTracker do
     cost_usd = calculate_cost(entry.model, entry.tokens_input, entry.tokens_output)
 
     result =
-      TeamJay.Repo.query(
+      Jay.Core.Repo.query(
         """
         INSERT INTO darwin_llm_cost_tracking
           (timestamp, agent, model, provider, tokens_in, tokens_out, cost_usd, inserted_at, updated_at)
@@ -106,7 +106,7 @@ defmodule Darwin.V2.LLM.CostTracker do
     today = Date.utc_today()
 
     daily_spent =
-      case TeamJay.Repo.query(
+      case Jay.Core.Repo.query(
              "SELECT COALESCE(SUM(cost_usd), 0.0) FROM darwin_llm_cost_tracking WHERE timestamp::date = CURRENT_DATE",
              []
            ) do
@@ -133,7 +133,7 @@ defmodule Darwin.V2.LLM.CostTracker do
     today = Date.utc_today()
 
     total =
-      case TeamJay.Repo.query(
+      case Jay.Core.Repo.query(
              "SELECT COALESCE(SUM(cost_usd), 0.0) FROM darwin_llm_cost_tracking WHERE timestamp::date = CURRENT_DATE",
              []
            ) do

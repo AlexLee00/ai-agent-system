@@ -11,8 +11,8 @@ defmodule TeamJay.Claude.Monitor.DeploymentMonitor do
   use GenServer
   require Logger
 
-  alias TeamJay.Repo
-  alias TeamJay.HubClient
+  alias Jay.Core.Repo
+  alias Jay.Core.HubClient
 
   @check_interval 86_400_000  # 24시간
   @monitor_days 7

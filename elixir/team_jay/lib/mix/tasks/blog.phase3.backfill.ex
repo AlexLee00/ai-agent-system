@@ -16,8 +16,8 @@ defmodule Mix.Tasks.Blog.Phase3.Backfill do
   """
 
   alias Ecto.Adapters.SQL
-  alias TeamJay.Repo
-  alias TeamJay.Schemas.EventLake
+  alias Jay.Core.Repo
+  alias Jay.Core.Schemas.EventLake
 
   @impl Mix.Task
   def run(args) do

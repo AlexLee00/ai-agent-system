@@ -38,7 +38,7 @@ defmodule TeamJay.Investment.CommandInbox do
   def handle_info(_msg, state), do: {:noreply, state}
 
   defp poll_inbox(state) do
-    case TeamJay.HubClient.command_inbox("luna", limit: 20, minutes: 7 * 24 * 60) do
+    case Jay.Core.HubClient.command_inbox("luna", limit: 20, minutes: 7 * 24 * 60) do
       {:ok, %{"results" => results}} when is_list(results) ->
         results
         |> Enum.reverse()
@@ -99,7 +99,7 @@ defmodule TeamJay.Investment.CommandInbox do
     summary = nested(entry, ["summary"]) || nested(entry, [:summary]) || ""
 
     if stale_core_risk_command?(action_type, command) do
-      TeamJay.EventLake.record(%{
+      Jay.Core.EventLake.record(%{
         team: "investment",
         bot_name: "investment_command_inbox",
         event_type: "investment_cross_team_command_suppressed",
@@ -115,7 +115,7 @@ defmodule TeamJay.Investment.CommandInbox do
       })
 
       _ =
-        TeamJay.HubClient.command_complete(command_id, "luna",
+        Jay.Core.HubClient.command_complete(command_id, "luna",
           bot_name: "investment_command_inbox",
           source: "investment.command_inbox",
           pipeline: pipeline,
@@ -127,7 +127,7 @@ defmodule TeamJay.Investment.CommandInbox do
     else
 
       _ =
-        TeamJay.HubClient.command_ack(command_id, "luna",
+        Jay.Core.HubClient.command_ack(command_id, "luna",
           bot_name: "investment_command_inbox",
           source: "investment.command_inbox",
           pipeline: pipeline,
@@ -151,7 +151,7 @@ defmodule TeamJay.Investment.CommandInbox do
           handle_investment_command(:reduce_workload, command_id, pipeline, summary, command)
 
         other ->
-          TeamJay.EventLake.record(%{
+          Jay.Core.EventLake.record(%{
             team: "investment",
             bot_name: "investment_command_inbox",
             event_type: "investment_cross_team_command_unsupported",
@@ -162,7 +162,7 @@ defmodule TeamJay.Investment.CommandInbox do
           })
 
           _ =
-            TeamJay.HubClient.command_fail(command_id, "luna",
+            Jay.Core.HubClient.command_fail(command_id, "luna",
               bot_name: "investment_command_inbox",
               source: "investment.command_inbox",
               pipeline: pipeline,
@@ -183,7 +183,7 @@ defmodule TeamJay.Investment.CommandInbox do
       action_type: Atom.to_string(kind)
     }
 
-    TeamJay.EventLake.record(%{
+    Jay.Core.EventLake.record(%{
       team: "investment",
       bot_name: "investment_command_inbox",
       event_type: "investment_cross_team_command_received",
@@ -211,7 +211,7 @@ defmodule TeamJay.Investment.CommandInbox do
     :ok
   rescue
     error ->
-      TeamJay.EventLake.record(%{
+      Jay.Core.EventLake.record(%{
         team: "investment",
         bot_name: "investment_command_inbox",
         event_type: "investment_cross_team_command_failed",
@@ -222,7 +222,7 @@ defmodule TeamJay.Investment.CommandInbox do
       })
 
       _ =
-        TeamJay.HubClient.command_fail(command_id, "luna",
+        Jay.Core.HubClient.command_fail(command_id, "luna",
           bot_name: "investment_command_inbox",
           source: "investment.command_inbox",
           pipeline: pipeline,
@@ -300,7 +300,7 @@ defmodule TeamJay.Investment.CommandInbox do
   end
 
   defp current_core_health_ok? do
-    case TeamJay.HubClient.health() do
+    case Jay.Core.HubClient.health() do
       {:ok, %{"resources" => resources}} when is_map(resources) ->
         resource_ok?(resources, "core_services") and
           resource_ok?(resources, "postgresql") and

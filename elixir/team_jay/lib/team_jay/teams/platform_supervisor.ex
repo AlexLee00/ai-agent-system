@@ -19,7 +19,7 @@ defmodule TeamJay.Teams.PlatformSupervisor do
   def init(_opts) do
     children =
       Enum.map(@platform_agents, fn agent ->
-        {TeamJay.Agents.PortAgent,
+        {Jay.Core.Agents.PortAgent,
          name: agent.name,
          team: :platform,
          script: agent.script,

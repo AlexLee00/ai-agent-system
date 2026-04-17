@@ -27,7 +27,7 @@ defmodule Darwin.V2.Lead do
   require Logger
 
   alias Darwin.V2.{Topics, AutonomyLevel}
-  alias TeamJay.HubClient
+  alias Jay.Core.HubClient
 
   @autonomy_file "bots/darwin/sandbox/darwin-autonomy-level.json"
 
@@ -115,11 +115,11 @@ defmodule Darwin.V2.Lead do
 
   @impl GenServer
   def handle_info(:subscribe_events, state) do
-    Registry.register(TeamJay.JayBus, Topics.paper_discovered(), [])
-    Registry.register(TeamJay.JayBus, Topics.paper_evaluated(), [])
-    Registry.register(TeamJay.JayBus, Topics.verification_passed(), [])
-    Registry.register(TeamJay.JayBus, Topics.verification_failed(), [])
-    Registry.register(TeamJay.JayBus, Topics.applied("claude"), [])
+    Registry.register(Jay.Core.JayBus, Topics.paper_discovered(), [])
+    Registry.register(Jay.Core.JayBus, Topics.paper_evaluated(), [])
+    Registry.register(Jay.Core.JayBus, Topics.verification_passed(), [])
+    Registry.register(Jay.Core.JayBus, Topics.verification_failed(), [])
+    Registry.register(Jay.Core.JayBus, Topics.applied("claude"), [])
     Logger.debug("[다윈V2 리드] JayBus 이벤트 구독 완료")
     {:noreply, state}
   end
@@ -295,7 +295,7 @@ defmodule Darwin.V2.Lead do
   end
 
   defp broadcast_topic(topic, payload) do
-    Registry.dispatch(TeamJay.JayBus, topic, fn entries ->
+    Registry.dispatch(Jay.Core.JayBus, topic, fn entries ->
       for {pid, _} <- entries do
         send(pid, {:jay_event, topic, payload})
       end

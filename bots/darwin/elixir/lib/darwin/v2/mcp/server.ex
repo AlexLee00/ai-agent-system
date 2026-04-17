@@ -235,7 +235,7 @@ defmodule Darwin.V2.MCP.Server do
     ORDER BY published_at DESC
     LIMIT $2
     """
-    case TeamJay.Repo.query(sql, ["%#{query}%", limit]) do
+    case Jay.Core.Repo.query(sql, ["%#{query}%", limit]) do
       {:ok, %{rows: rows, columns: cols}} ->
         Enum.map(rows, fn row ->
           cols |> Enum.zip(row) |> Map.new(fn {k, v} -> {String.to_atom(k), v} end)
@@ -268,7 +268,7 @@ defmodule Darwin.V2.MCP.Server do
     ORDER BY applied_at DESC
     LIMIT $2
     """
-    case TeamJay.Repo.query(sql, [cutoff, limit]) do
+    case Jay.Core.Repo.query(sql, [cutoff, limit]) do
       {:ok, %{rows: rows, columns: cols}} ->
         insights = Enum.map(rows, fn row ->
           cols |> Enum.zip(row) |> Map.new(fn {k, v} -> {String.to_atom(k), v} end)

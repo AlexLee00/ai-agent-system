@@ -19,7 +19,7 @@ defmodule Sigma.V2.Metric do
     GROUP BY principle_check_result->>'analyst'
     """
 
-    case TeamJay.Repo.query(sql, []) do
+    case Jay.Core.Repo.query(sql, []) do
       {:ok, %{rows: rows}} ->
         Enum.map(rows, fn [analyst, total, positive] ->
           score = if total > 0, do: Float.round(positive / total, 3), else: 0.0
@@ -35,7 +35,7 @@ defmodule Sigma.V2.Metric do
 
   @doc "현재 최대 세대 번호 + 1."
   def next_generation_number do
-    case TeamJay.Repo.query(
+    case Jay.Core.Repo.query(
            "SELECT COALESCE(MAX(generation), 0) + 1 FROM sigma_analyst_prompts",
            []
          ) do

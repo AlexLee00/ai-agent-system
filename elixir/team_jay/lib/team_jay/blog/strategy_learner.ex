@@ -149,7 +149,7 @@ defmodule TeamJay.Blog.StrategyLearner do
         "[블로팀] 전략 자동 적용: 분석 #{analyzed}건"
       end
 
-    TeamJay.HubClient.post_alarm(message, "blog", "strategy_learner")
+    Jay.Core.HubClient.post_alarm(message, "blog", "strategy_learner")
   rescue
     _ -> :ok
   end
@@ -165,7 +165,7 @@ defmodule TeamJay.Blog.StrategyLearner do
         "[블로팀] 전략 자동 적용: 분석 #{length(analyzed)}건"
       end
 
-    TeamJay.HubClient.post_alarm(message, "blog", "strategy_learner")
+    Jay.Core.HubClient.post_alarm(message, "blog", "strategy_learner")
   rescue
     _ -> :ok
   end

@@ -168,7 +168,7 @@ defmodule TeamJay.Jay.CrossTeamRouter do
     RETURNING id
     """
 
-    case TeamJay.Repo.query(sql, [
+    case Jay.Core.Repo.query(sql, [
       source_team, source_event, regime, mood,
       angle, keywords, urgency, Jason.encode!(metadata)
     ]) do
@@ -370,7 +370,7 @@ defmodule TeamJay.Jay.CrossTeamRouter do
   end
 
   defp recent_system_risk_rows do
-    TeamJay.HubClient.pg_query(
+    Jay.Core.HubClient.pg_query(
       """
       SELECT metadata
       FROM agent.event_lake
@@ -385,7 +385,7 @@ defmodule TeamJay.Jay.CrossTeamRouter do
   end
 
   defp current_core_health_ok? do
-    case TeamJay.HubClient.health() do
+    case Jay.Core.HubClient.health() do
       {:ok, %{"resources" => resources}} when is_map(resources) ->
         resource_ok?(resources, "core_services") and
           resource_ok?(resources, "postgresql") and
@@ -459,7 +459,7 @@ defmodule TeamJay.Jay.CrossTeamRouter do
   # ────────────────────────────────────────────────────────────────
 
   defp record_pipeline_event(pipeline, status, details) do
-    TeamJay.EventLake.record(%{
+    Jay.Core.EventLake.record(%{
       source: "jay.cross_team_router",
       event_type: "cross_pipeline.#{pipeline}.#{status}",
       severity: "info",
@@ -472,7 +472,7 @@ defmodule TeamJay.Jay.CrossTeamRouter do
   defp dispatch_team_command(pipeline, target_team, message, envelope) do
     CommandTracker.issued(pipeline, target_team, envelope, message: message)
 
-    case TeamJay.HubClient.post_alarm(message, target_team, "jay.cross_team_router") do
+    case Jay.Core.HubClient.post_alarm(message, target_team, "jay.cross_team_router") do
       {:ok, _response} ->
         CommandTracker.acknowledged(pipeline, target_team, envelope, message: message)
         :ok

@@ -169,14 +169,14 @@ defmodule TeamJay.Ska.TeamLead do
 
     # 클로드팀(닥터) 자동 출동 요청
     Task.start(fn ->
-      TeamJay.HubClient.post_alarm(
+      Jay.Core.HubClient.post_alarm(
         "🚨 스카팀 에러 스파이크!\n1시간 내 #{count}건 발생\n→ 닥터(클로드팀) 점검 요청",
         "ska",
         "team_lead"
       )
     end)
 
-    TeamJay.EventLake.record(%{
+    Jay.Core.EventLake.record(%{
       event_type: "ska_error_spike",
       team: "ska",
       bot_name: "team_lead",
@@ -215,7 +215,7 @@ defmodule TeamJay.Ska.TeamLead do
     LIMIT 2
     """
 
-    case TeamJay.Repo.query(sql, []) do
+    case Jay.Core.Repo.query(sql, []) do
       {:ok, %{rows: [[_today_date, today_rev], [_yesterday_date, yesterday_rev]]}} ->
         today = to_float(today_rev)
         yesterday = to_float(yesterday_rev)
@@ -227,7 +227,7 @@ defmodule TeamJay.Ska.TeamLead do
             msg = "📊 [스카팀] 매출 이상 감지 #{direction}\n전일: #{format_krw(yesterday)}\n오늘: #{format_krw(today)}\n변동: #{Float.round(delta * 100, 1)}%"
             Logger.warning("[TeamLead] #{msg}")
             Task.start(fn ->
-              TeamJay.HubClient.post_alarm(msg, "ska", "team_lead")
+              Jay.Core.HubClient.post_alarm(msg, "ska", "team_lead")
             end)
 
             # 매출 하락 시 MarketingConnector 즉시 점검 트리거

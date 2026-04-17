@@ -16,7 +16,7 @@ defmodule Darwin.V2.Planner do
   alias Darwin.V2.Topics
   alias Darwin.V2.Principle.Loader, as: PrincipleLoader
   alias Darwin.V2.Skill.ResourceAnalyst
-  alias TeamJay.HubClient
+  alias Jay.Core.HubClient
 
   @plan_score_threshold 7   # 계획 수립 최소 점수
   @plans_table "darwin_implementation_plans"
@@ -51,7 +51,7 @@ defmodule Darwin.V2.Planner do
 
   @impl GenServer
   def handle_info(:subscribe_events, state) do
-    Registry.register(TeamJay.JayBus, Topics.paper_evaluated(), [])
+    Registry.register(Jay.Core.JayBus, Topics.paper_evaluated(), [])
     Logger.debug("[다윈V2 플래너] JayBus 구독 완료")
     {:noreply, state}
   end
@@ -207,7 +207,7 @@ defmodule Darwin.V2.Planner do
     resource_json = Jason.encode!(plan.resource_estimate)
     created_at = NaiveDateTime.utc_now()
 
-    case Ecto.Adapters.SQL.query(TeamJay.Repo, sql, [
+    case Ecto.Adapters.SQL.query(Jay.Core.Repo, sql, [
       plan.paper_id,
       plan.paper_title,
       plan.score,
@@ -230,7 +230,7 @@ defmodule Darwin.V2.Planner do
     topic = Topics.plan_ready()
     payload = %{paper: paper, plan: plan}
 
-    Registry.dispatch(TeamJay.JayBus, topic, fn entries ->
+    Registry.dispatch(Jay.Core.JayBus, topic, fn entries ->
       for {pid, _} <- entries, do: send(pid, {:jay_event, topic, payload})
     end)
 

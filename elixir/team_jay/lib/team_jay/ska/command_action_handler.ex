@@ -38,7 +38,7 @@ defmodule TeamJay.Ska.CommandActionHandler do
     command = Map.get(payload, :command, %{})
     command_payload = command_payload(command)
 
-    TeamJay.EventLake.record(%{
+    Jay.Core.EventLake.record(%{
       team: "ska",
       bot_name: "ska_command_action_handler",
       event_type: "ska_cross_team_command_handling",
@@ -66,7 +66,7 @@ defmodule TeamJay.Ska.CommandActionHandler do
 
         pnl = Map.get(command_payload, "realized_pnl") || Map.get(command_payload, :realized_pnl) || 0
 
-        TeamJay.HubClient.post_alarm(
+        Jay.Core.HubClient.post_alarm(
           "💰 [스카팀] 운영비 예산 여유 감지\n실현 수익 반영: +$#{format_usd(pnl)}\n→ 마케팅/운영 점검 갱신",
           "ska",
           "ska.command_action_handler"
@@ -80,7 +80,7 @@ defmodule TeamJay.Ska.CommandActionHandler do
         :ok
     end
 
-    case TeamJay.HubClient.command_complete(command_id, "ska",
+    case Jay.Core.HubClient.command_complete(command_id, "ska",
            bot_name: "ska_command_action_handler",
            source: "ska.command_action_handler",
            pipeline: pipeline,
@@ -99,7 +99,7 @@ defmodule TeamJay.Ska.CommandActionHandler do
       summary = Map.get(payload, :summary, "")
       command = Map.get(payload, :command, %{})
 
-      TeamJay.EventLake.record(%{
+      Jay.Core.EventLake.record(%{
         team: "ska",
         bot_name: "ska_command_action_handler",
         event_type: "ska_cross_team_command_action_failed",
@@ -116,7 +116,7 @@ defmodule TeamJay.Ska.CommandActionHandler do
       })
 
       _ =
-        TeamJay.HubClient.command_fail(command_id, "ska",
+        Jay.Core.HubClient.command_fail(command_id, "ska",
           bot_name: "ska_command_action_handler",
           source: "ska.command_action_handler",
           pipeline: pipeline,
@@ -137,7 +137,7 @@ defmodule TeamJay.Ska.CommandActionHandler do
       PubSub.broadcast_phase_changed(current_phase, 1)
     end
 
-    TeamJay.HubClient.post_alarm(
+    Jay.Core.HubClient.post_alarm(
       "⚠️ [스카팀] 시스템 위험 기반 workload reduction 적용\nrisk_level=#{risk_level}\n현재 복구 phase=#{current_phase}#{phase_note(risk_level, current_phase)}",
       "ska",
       "ska.command_action_handler"

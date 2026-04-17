@@ -282,7 +282,7 @@ defmodule Darwin.V2.Commander do
   @doc "JayBus로 연구 사이클 이벤트 브로드캐스트."
   @spec broadcast(String.t(), map()) :: :ok
   def broadcast(topic, payload) do
-    Registry.dispatch(TeamJay.JayBus, topic, fn entries ->
+    Registry.dispatch(Jay.Core.JayBus, topic, fn entries ->
       for {pid, _} <- entries do
         send(pid, {:jay_event, topic, payload})
       end

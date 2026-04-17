@@ -78,7 +78,7 @@ defmodule TeamJay.Blog.TopicPlanner do
 
       {:error, reason} ->
         Logger.error("[TopicPlanner] 실행 실패: #{inspect(reason)}")
-        TeamJay.HubClient.post_alarm(
+        Jay.Core.HubClient.post_alarm(
           "[블로팀] ⚠️ D-1 주제 선정 실패 (#{tomorrow_str}): #{inspect(reason)}",
           "blog",
           "topic_planner"
@@ -101,7 +101,7 @@ defmodule TeamJay.Blog.TopicPlanner do
 
         Logger.info("[TopicPlanner] ✅ 내일 주제: [#{category}] #{title} (점수: #{score}, id: #{saved_id})")
 
-        TeamJay.HubClient.post_alarm(
+        Jay.Core.HubClient.post_alarm(
           "[블로팀] 📅 내일 주제 확정 (#{tomorrow_str})\n[#{category}] #{title}\n품질 점수: #{score}",
           "blog",
           "topic_planner"

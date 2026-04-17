@@ -140,7 +140,7 @@ defmodule Sigma.V2.Archivist do
     LIMIT 50
     """
 
-    case TeamJay.Repo.query(sql, [team, since_iso]) do
+    case Jay.Core.Repo.query(sql, [team, since_iso]) do
       {:ok, %{rows: rows, columns: cols}} ->
         atom_cols = Enum.map(cols, &String.to_atom/1)
         Enum.map(rows, &(Enum.zip(atom_cols, &1) |> Map.new()))
@@ -171,7 +171,7 @@ defmodule Sigma.V2.Archivist do
     WHERE team = $1 AND outcome = 'observed'
     """
 
-    case TeamJay.Repo.query(sql, [team]) do
+    case Jay.Core.Repo.query(sql, [team]) do
       {:ok, %{rows: [[count]]}} -> count
       _ -> 0
     end
@@ -182,7 +182,7 @@ defmodule Sigma.V2.Archivist do
   # ---
 
   defp run_query(sql, params) do
-    case TeamJay.Repo.query(sql, params) do
+    case Jay.Core.Repo.query(sql, params) do
       {:ok, _} -> :ok
       {:error, reason} -> {:error, reason}
     end

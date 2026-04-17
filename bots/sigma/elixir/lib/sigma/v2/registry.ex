@@ -14,7 +14,7 @@ defmodule Sigma.V2.Registry do
     ORDER BY name, generation DESC
     """
 
-    case TeamJay.Repo.query(sql, []) do
+    case Jay.Core.Repo.query(sql, []) do
       {:ok, %{rows: rows, columns: cols}} ->
         atom_cols = Enum.map(cols, &String.to_atom/1)
         Enum.map(rows, &(Enum.zip(atom_cols, &1) |> Map.new()))
@@ -35,7 +35,7 @@ defmodule Sigma.V2.Registry do
       VALUES ($1, $2, $3, 'shadow', $4, NOW())
       """
 
-      TeamJay.Repo.query(sql, [
+      Jay.Core.Repo.query(sql, [
         child[:name] || child.name,
         child[:system_prompt] || child.system_prompt || "",
         child[:generation] || child.generation || 1,
@@ -62,8 +62,8 @@ defmodule Sigma.V2.Registry do
     WHERE name = $1 AND generation = $2
     """
 
-    with {:ok, _} <- TeamJay.Repo.query(archive_sql, [name]),
-         {:ok, _} <- TeamJay.Repo.query(promote_sql, [name, generation]) do
+    with {:ok, _} <- Jay.Core.Repo.query(archive_sql, [name]),
+         {:ok, _} <- Jay.Core.Repo.query(promote_sql, [name, generation]) do
       :ok
     end
   rescue

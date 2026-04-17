@@ -17,7 +17,7 @@ defmodule TeamJay.Investment.CircuitBreaker do
   alias TeamJay.Investment.Events
   alias TeamJay.Investment.PubSub
   alias TeamJay.Investment.Topics
-  alias TeamJay.Repo
+  alias Jay.Core.Repo
 
   @default_release_wait_ms 30 * 60 * 1_000
 

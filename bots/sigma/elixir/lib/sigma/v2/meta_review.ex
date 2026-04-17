@@ -164,7 +164,7 @@ defmodule Sigma.V2.MetaReview do
   end
 
   defp run_raw_query(sql, mapper, params \\ []) do
-    case TeamJay.Repo.query(sql, params) do
+    case Jay.Core.Repo.query(sql, params) do
       {:ok, %{rows: rows}} -> Enum.map(rows, mapper)
       _ -> []
     end

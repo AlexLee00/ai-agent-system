@@ -194,7 +194,7 @@ defmodule TeamJay.Jay.GrowthCycle do
 
         :escalate ->
           Logger.info("[GrowthCycle] ACT: #{pipeline} ESCALATE → 마스터 알림")
-          TeamJay.HubClient.post_alarm(
+          Jay.Core.HubClient.post_alarm(
             "⚡ [제이] #{pipeline} 연동 판단: ESCALATE\n마스터 확인 필요",
             "jay", "growth_cycle"
           )
@@ -245,7 +245,7 @@ defmodule TeamJay.Jay.GrowthCycle do
   defp stale_core_system_risk?(_), do: false
 
   defp current_core_health_ok? do
-    case TeamJay.HubClient.health() do
+    case Jay.Core.HubClient.health() do
       {:ok, %{"resources" => resources}} when is_map(resources) ->
         resource_ok?(resources, "core_services") and
           resource_ok?(resources, "postgresql") and
@@ -264,7 +264,7 @@ defmodule TeamJay.Jay.GrowthCycle do
   end
 
   defp measure(date, team_data, analysis, decisions) do
-    TeamJay.EventLake.record(%{
+    Jay.Core.EventLake.record(%{
       source: "jay.growth_cycle",
       event_type: "growth_cycle.measured",
       severity: "info",
@@ -286,7 +286,7 @@ defmodule TeamJay.Jay.GrowthCycle do
 
     # 자율화 단계에 따라 발송 여부 결정
     if TeamJay.Jay.AutonomyController.should_send_daily_briefing?() do
-      TeamJay.HubClient.post_alarm(briefing, "jay", "growth_cycle")
+      Jay.Core.HubClient.post_alarm(briefing, "jay", "growth_cycle")
       Logger.info("[GrowthCycle] LEARN: 브리핑 발송 완료 (#{String.length(briefing)}자)")
     else
       Logger.info("[GrowthCycle] LEARN: Phase 3 자율 — 브리핑 로그만 (발송 생략)")

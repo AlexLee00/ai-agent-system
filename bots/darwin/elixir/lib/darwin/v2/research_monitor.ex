@@ -22,7 +22,7 @@ defmodule Darwin.V2.ResearchMonitor do
   require Logger
 
   alias Darwin.V2.AutonomyLevel
-  alias TeamJay.HubClient
+  alias Jay.Core.HubClient
 
   @check_interval_ms  10 * 60 * 1000   # 10분
   @ets_table          :darwin_v2_monitor_cache
@@ -181,7 +181,7 @@ defmodule Darwin.V2.ResearchMonitor do
     WHERE inserted_at >= NOW() - INTERVAL '24 hours'
     """
 
-    case TeamJay.Repo.query(sql, []) do
+    case Jay.Core.Repo.query(sql, []) do
       {:ok, %{rows: [[discovered, evaluated, high_quality]]}} ->
         {:ok, %{
           discovered:   discovered   || 0,
@@ -208,7 +208,7 @@ defmodule Darwin.V2.ResearchMonitor do
     WHERE inserted_at >= NOW() - INTERVAL '7 days'
     """
 
-    case TeamJay.Repo.query(sql, []) do
+    case Jay.Core.Repo.query(sql, []) do
       {:ok, %{rows: [[implemented, verified, applied, avg_score, avg_cost]]}} ->
         {:ok, %{
           implemented: implemented || 0,
@@ -308,7 +308,7 @@ defmodule Darwin.V2.ResearchMonitor do
       timestamp:       DateTime.utc_now()
     }
 
-    Registry.dispatch(TeamJay.JayBus, "sigma.advisory", fn entries ->
+    Registry.dispatch(Jay.Core.JayBus, "sigma.advisory", fn entries ->
       for {pid, _} <- entries do
         send(pid, {:jay_event, "sigma.advisory", payload})
       end

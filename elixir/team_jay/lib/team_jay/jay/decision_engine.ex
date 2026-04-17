@@ -62,7 +62,7 @@ defmodule TeamJay.Jay.DecisionEngine do
   # ────────────────────────────────────────────────────────────────
 
   defp record_decision(event_type, decision, context) do
-    TeamJay.EventLake.record(%{
+    Jay.Core.EventLake.record(%{
       source: "jay.decision_engine",
       event_type: "decision.#{decision}",
       severity: decision_severity(decision),

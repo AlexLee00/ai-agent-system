@@ -15,7 +15,7 @@ defmodule Sigma.V2.LLM.CostTracker do
     cost_usd = calculate_cost(entry.model, entry.tokens_in, entry.tokens_out)
 
     result =
-      TeamJay.Repo.query(
+      Jay.Core.Repo.query(
         """
         INSERT INTO sigma_llm_cost_tracking
           (timestamp, agent, model, provider, tokens_in, tokens_out, cost_usd, inserted_at, updated_at)
@@ -42,7 +42,7 @@ defmodule Sigma.V2.LLM.CostTracker do
       |> String.to_float()
 
     daily_spent =
-      case TeamJay.Repo.query(
+      case Jay.Core.Repo.query(
              "SELECT COALESCE(SUM(cost_usd), 0.0) FROM sigma_llm_cost_tracking WHERE timestamp::date = CURRENT_DATE",
              []
            ) do

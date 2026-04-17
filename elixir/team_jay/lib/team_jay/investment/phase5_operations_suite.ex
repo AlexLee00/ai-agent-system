@@ -4,7 +4,7 @@ defmodule TeamJay.Investment.Phase5OperationsSuite do
   """
 
   alias Ecto.Adapters.SQL
-  alias TeamJay.Repo
+  alias Jay.Core.Repo
 
   def run_defaults(_opts \\ []) do
     mission_control = latest_simple_snapshot("investment.phase5_mission_control_snapshots", :phase5_mission_control_check)

@@ -22,7 +22,7 @@ defmodule Darwin.V2.Edison do
 
   alias Darwin.V2.{Topics, AutonomyLevel, Lead}
   alias Darwin.V2.Skill.TreeSearch
-  alias TeamJay.HubClient
+  alias Jay.Core.HubClient
 
   @quality_threshold  7.0    # 이 미만이면 TreeSearch 트리거
   @experimental_base  "bots/darwin/experimental"
@@ -57,7 +57,7 @@ defmodule Darwin.V2.Edison do
 
   @impl GenServer
   def handle_info(:subscribe_events, state) do
-    Registry.register(TeamJay.JayBus, Topics.plan_ready(), [])
+    Registry.register(Jay.Core.JayBus, Topics.plan_ready(), [])
     Logger.debug("[다윈V2 에디슨] JayBus 구독 완료 (plan_ready)")
     {:noreply, state}
   end
@@ -328,7 +328,7 @@ defmodule Darwin.V2.Edison do
           implementation_summary = $1
       WHERE id = $2
       """
-      Ecto.Adapters.SQL.query(TeamJay.Repo, sql1, [summary, paper_id])
+      Ecto.Adapters.SQL.query(Jay.Core.Repo, sql1, [summary, paper_id])
     end
 
     # darwin_implementation_plans 업데이트
@@ -339,7 +339,7 @@ defmodule Darwin.V2.Edison do
       SET status = 'implemented', updated_at = NOW()
       WHERE paper_id = $1
       """
-      Ecto.Adapters.SQL.query(TeamJay.Repo, sql2, [plan_paper_id])
+      Ecto.Adapters.SQL.query(Jay.Core.Repo, sql2, [plan_paper_id])
     end
   rescue
     _ -> :ok
@@ -357,7 +357,7 @@ defmodule Darwin.V2.Edison do
       }
     }
 
-    Registry.dispatch(TeamJay.JayBus, topic, fn entries ->
+    Registry.dispatch(Jay.Core.JayBus, topic, fn entries ->
       for {pid, _} <- entries, do: send(pid, {:jay_event, topic, payload})
     end)
 

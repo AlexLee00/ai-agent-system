@@ -187,7 +187,7 @@ defmodule TeamJay.Ska.FailureLibrary do
 
   defp remember(memory_type, content, keywords, importance, metadata) do
     opts = %{keywords: keywords, importance: importance, metadata: metadata}
-    case TeamJay.HubClient.memory_remember(@agent_id, @team, content, memory_type, opts) do
+    case Jay.Core.HubClient.memory_remember(@agent_id, @team, content, memory_type, opts) do
       {:ok, id} ->
         Logger.debug("[FailureLibrary] 기억 저장 OK (#{memory_type}): id=#{id}")
       {:error, reason} ->

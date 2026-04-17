@@ -13,7 +13,7 @@ defmodule TeamJay.Teams.BlogShadowSupervisor do
   def init(_opts) do
     children =
       Enum.map(@blog_agents, fn agent ->
-        {TeamJay.Agents.LaunchdShadowAgent,
+        {Jay.Core.Agents.LaunchdShadowAgent,
          name: agent.name,
          team: :blog,
          label: agent.label,

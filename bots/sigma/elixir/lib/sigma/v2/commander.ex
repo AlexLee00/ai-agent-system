@@ -520,7 +520,7 @@ defmodule Sigma.V2.Commander do
   defp format_metric_line(team, _), do: "- #{team}: 메트릭 없음"
 
   defp query_one(sql, params, default) do
-    case TeamJay.Repo.query(sql, params) do
+    case Jay.Core.Repo.query(sql, params) do
       {:ok, %{rows: [row | _], columns: cols}} ->
         Enum.zip(Enum.map(cols, &String.to_atom/1), row) |> Map.new()
 
@@ -532,7 +532,7 @@ defmodule Sigma.V2.Commander do
   end
 
   defp query_many(sql, params, default) do
-    case TeamJay.Repo.query(sql, params) do
+    case Jay.Core.Repo.query(sql, params) do
       {:ok, %{rows: rows, columns: cols}} ->
         atom_cols = Enum.map(cols, &String.to_atom/1)
         Enum.map(rows, &(Enum.zip(atom_cols, &1) |> Map.new()))

@@ -94,7 +94,7 @@ defmodule TeamJay.Ska.Analytics.RevenueTracker do
   # ─── 쿼리 ────────────────────────────────────────────────
 
   defp query_daily(date_str) do
-    case TeamJay.HubClient.pg_query("""
+    case Jay.Core.HubClient.pg_query("""
       SELECT actual_revenue::bigint AS revenue
       FROM ska.revenue_daily
       WHERE date = '#{date_str}'::date
@@ -113,7 +113,7 @@ defmodule TeamJay.Ska.Analytics.RevenueTracker do
   end
 
   defp query_recent(days) do
-    case TeamJay.HubClient.pg_query("""
+    case Jay.Core.HubClient.pg_query("""
       SELECT COALESCE(SUM(actual_revenue), 0)::bigint AS total
       FROM ska.revenue_daily
       WHERE date >= (CURRENT_DATE - INTERVAL '#{days} days')
@@ -131,7 +131,7 @@ defmodule TeamJay.Ska.Analytics.RevenueTracker do
   end
 
   defp query_trend(days) do
-    case TeamJay.HubClient.pg_query("""
+    case Jay.Core.HubClient.pg_query("""
       SELECT date::text, COALESCE(actual_revenue, 0)::bigint AS revenue
       FROM ska.revenue_daily
       WHERE date >= (CURRENT_DATE - INTERVAL '#{days} days')

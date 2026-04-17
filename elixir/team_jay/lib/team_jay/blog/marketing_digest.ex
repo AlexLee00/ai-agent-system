@@ -7,7 +7,7 @@ defmodule TeamJay.Blog.MarketingDigest do
   """
 
   alias Ecto.Adapters.SQL
-  alias TeamJay.Repo
+  alias Jay.Core.Repo
 
   @default_days 7
   @strategy_path "/Users/alexlee/projects/ai-agent-system/bots/blog/output/strategy/latest-strategy.json"

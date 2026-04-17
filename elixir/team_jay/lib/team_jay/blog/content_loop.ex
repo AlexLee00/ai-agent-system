@@ -136,7 +136,7 @@ defmodule TeamJay.Blog.ContentLoop do
   defp check_db_stages(state, date) do
     date_str = Date.to_iso8601(date)
 
-    result = TeamJay.HubClient.pg_query(
+    result = Jay.Core.HubClient.pg_query(
       "SELECT COUNT(*) FROM blog.posts WHERE DATE(publish_date) = '#{date_str}' AND status = 'published'",
       "blog"
     )
@@ -207,7 +207,7 @@ defmodule TeamJay.Blog.ContentLoop do
     date_str = Date.to_iso8601(loop_date)
     message = "[블로팀] ✅ 6단계 루프 완료 (#{date_str}): PLAN✅ CREATE✅ PUBLISH✅ COLLECT✅ ANALYZE✅ LEARN✅"
 
-    TeamJay.HubClient.post_alarm(message, "blog", "content_loop")
+    Jay.Core.HubClient.post_alarm(message, "blog", "content_loop")
   rescue
     _ -> :ok
   end
@@ -217,7 +217,7 @@ defmodule TeamJay.Blog.ContentLoop do
     stages_str = Enum.join(incomplete_stages, ", ")
     message = "[블로팀] ⚠️ 루프 미완료 경고 (#{date_str}): #{stages_str} 단계 미완료"
 
-    TeamJay.HubClient.post_alarm(message, "blog", "content_loop")
+    Jay.Core.HubClient.post_alarm(message, "blog", "content_loop")
   rescue
     _ -> :ok
   end

@@ -1,7 +1,7 @@
 defmodule Sigma.V2.TelegramBridge do
   @moduledoc """
   Sigma V2 → Telegram 알림 브리지.
-  TeamJay.HubClient.post_alarm/3 경유.
+  Jay.Core.HubClient.post_alarm/3 경유.
   참조: bots/sigma/docs/PLAN.md §6 Phase 4
   """
 
@@ -23,7 +23,7 @@ defmodule Sigma.V2.TelegramBridge do
     거절: POST /sigma/mailbox/#{directive_id}/reject
     """
 
-    TeamJay.HubClient.post_alarm(message, "sigma", "elixir")
+    Jay.Core.HubClient.post_alarm(message, "sigma", "elixir")
   rescue
     e ->
       Logger.warning("[sigma/telegram] 알림 전송 실패: #{inspect(e)}")
@@ -55,7 +55,7 @@ defmodule Sigma.V2.TelegramBridge do
     #{Enum.map_join(what_didnt, "\n", &format_review_item(&1, :didnt))}
     """
 
-    TeamJay.HubClient.post_alarm(message, "sigma", "elixir")
+    Jay.Core.HubClient.post_alarm(message, "sigma", "elixir")
   rescue
     e ->
       Logger.warning("[sigma/telegram] 메타리뷰 알림 실패: #{inspect(e)}")

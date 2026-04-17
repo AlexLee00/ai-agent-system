@@ -8,8 +8,8 @@ defmodule TeamJay.Application do
 
     children =
       base_children() ++
-        if(enable_diagnostics?(), do: [TeamJay.Diagnostics], else: []) ++
-        [TeamJay.Scheduler]
+        if(enable_diagnostics?(), do: [Jay.Core.Diagnostics], else: []) ++
+        [Jay.Core.Scheduler]
 
     opts = [strategy: :one_for_one, name: TeamJay.Supervisor]
     result = Supervisor.start_link(children, opts)
@@ -19,7 +19,7 @@ defmodule TeamJay.Application do
         :timer.sleep(2_000)
 
         _ =
-          TeamJay.HubClient.post_alarm(
+          Jay.Core.HubClient.post_alarm(
             "🚀 Elixir Phase 4 시작!\n🎯 Jay 성장 오케스트레이터 활성화\n🔄 9팀 일일 환류 사이클 (06:30 KST)\n⚡ 팀 간 파이프라인 7개 준비\n📊 JayBus PubSub 가동",
             "system",
             "elixir"
@@ -32,12 +32,12 @@ defmodule TeamJay.Application do
 
   defp base_children do
     [
-      TeamJay.Repo,
+      Jay.Core.Repo,
       {Registry, keys: :unique, name: TeamJay.AgentRegistry},
       {Registry, keys: :duplicate, name: TeamJay.InvestmentBus},
       {Registry, keys: :duplicate, name: TeamJay.BlogBus},
       {Registry, keys: :duplicate, name: TeamJay.SkaBus},
-      {Registry, keys: :duplicate, name: TeamJay.JayBus},
+      Jay.Core.JayBus,
       TeamJay.Blog.Orchestrator,
       TeamJay.Blog.Researcher,
       TeamJay.Blog.Writer.Pos,
@@ -74,8 +74,8 @@ defmodule TeamJay.Application do
       TeamJay.Blog.InsightsCollector,
       TeamJay.Blog.StrategyLearner,
       TeamJay.Blog.ContentLoop,
-      TeamJay.EventLake,
-      TeamJay.MarketRegime,
+      Jay.Core.EventLake,
+      Jay.Core.MarketRegime,
       TeamJay.Ska.CommandInbox,
       TeamJay.Ska.CommandActionHandler,
       TeamJay.Teams.SkaSupervisor,

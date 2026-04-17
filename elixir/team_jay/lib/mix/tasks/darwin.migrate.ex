@@ -20,7 +20,7 @@ defmodule Mix.Tasks.Darwin.Migrate do
   def run(args) do
     Mix.Task.run("app.start", [])
 
-    repo = TeamJay.Repo
+    repo = Jay.Core.Repo
     base_dir = Path.expand("priv/repo/migrations", Mix.Project.app_path())
     darwin_dir = Path.expand(@darwin_migrations_rel, File.cwd!())
 

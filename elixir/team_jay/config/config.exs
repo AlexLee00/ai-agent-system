@@ -1,9 +1,9 @@
 import Config
 
 config :team_jay,
-  ecto_repos: [TeamJay.Repo]
+  ecto_repos: [Jay.Core.Repo]
 
-config :team_jay, TeamJay.Repo,
+config :team_jay, Jay.Core.Repo,
   database: System.get_env("TEAM_JAY_DB_NAME", "jay"),
   username: System.get_env("TEAM_JAY_DB_USER", "alexlee"),
   password: System.get_env("TEAM_JAY_DB_PASS"),
@@ -35,7 +35,7 @@ config :darwin,
   http_port: System.get_env("DARWIN_HTTP_PORT", "8180") |> String.to_integer()
 
 
-config :team_jay, TeamJay.Scheduler,
+config :team_jay, Jay.Core.Scheduler,
   jobs: [
     # ─── 제이팀 성장 사이클 ──────────────────────────────────
     # 06:30 KST = 21:30 UTC 전날 (cron은 UTC 기준)
@@ -45,11 +45,11 @@ config :team_jay, TeamJay.Scheduler,
     # 시그마 피드백 효과 측정 (매일 22:00 KST = 13:00 UTC)
     {"0 13 * * *", {TeamJay.Jay.Sigma.Feedback, :ensure_tables, []}},
     # ─── 기존 스케줄 ────────────────────────────────────────
-    {"0 * * * *", {TeamJay.Agents.PortAgent, :run, [:ska_etl]}},
-    {"*/30 * * * *", {TeamJay.Diagnostics, :publish_shadow_report, []}},
-    {"0 6 * * *", {TeamJay.Agents.PortAgent, :run, [:forecast_daily]}},
-    {"0 9 * * *", {TeamJay.Agents.PortAgent, :run, [:dexter_daily]}},
-    {"0 10 * * 1", {TeamJay.Agents.PortAgent, :run, [:steward_weekly]}},
+    {"0 * * * *", {Jay.Core.Agents.PortAgent, :run, [:ska_etl]}},
+    {"*/30 * * * *", {Jay.Core.Diagnostics, :publish_shadow_report, []}},
+    {"0 6 * * *", {Jay.Core.Agents.PortAgent, :run, [:forecast_daily]}},
+    {"0 9 * * *", {Jay.Core.Agents.PortAgent, :run, [:dexter_daily]}},
+    {"0 10 * * 1", {Jay.Core.Agents.PortAgent, :run, [:steward_weekly]}},
     {"0 8 * * *", {TeamJay.Teams.InvestmentScheduler, :run_prescreen_domestic, []}},
     {"0 21 * * *", {TeamJay.Teams.InvestmentScheduler, :run_prescreen_overseas, []}},
     {"0 9 * * *", {TeamJay.Teams.InvestmentScheduler, :run_market_alert_crypto_daily, []}},
@@ -75,7 +75,7 @@ config :team_jay, TeamJay.Scheduler,
     {"0 20 * * *", {TeamJay.Teams.InvestmentScheduler, :run_overseas_validation, []}},
     # ─── 다윈팀 연구 스케줄 (UTC 기준) ─────────────────────────────
     # 논문 스캔: 06:00 KST = 21:00 UTC (전날)
-    {"0 21 * * *", {TeamJay.Agents.PortAgent, :run, [:darwin_scanner]}},
+    {"0 21 * * *", {Jay.Core.Agents.PortAgent, :run, [:darwin_scanner]}},
     # 연구 태스크 실행: 07:00 KST = 22:00 UTC (전날)
-    {"0 22 * * *", {TeamJay.Agents.PortAgent, :run, [:darwin_task_runner]}}
+    {"0 22 * * *", {Jay.Core.Agents.PortAgent, :run, [:darwin_task_runner]}}
   ]

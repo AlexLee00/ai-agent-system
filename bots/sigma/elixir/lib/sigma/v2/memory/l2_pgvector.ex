@@ -28,7 +28,7 @@ defmodule Sigma.V2.Memory.L2 do
     case encode(content) do
       {:ok, embedding} ->
         result =
-          TeamJay.Repo.query(
+          Jay.Core.Repo.query(
             """
             INSERT INTO agent_memory (team, content, embedding, memory_type, inserted_at, updated_at)
             VALUES ($1, $2, $3::vector, 'semantic', NOW(), NOW())
@@ -63,7 +63,7 @@ defmodule Sigma.V2.Memory.L2 do
         LIMIT $3
         """
 
-        case TeamJay.Repo.query(sql, [embedding, threshold, top_k]) do
+        case Jay.Core.Repo.query(sql, [embedding, threshold, top_k]) do
           {:ok, %{rows: rows}} ->
             hits =
               Enum.map(rows, fn [content, metadata, sim] ->

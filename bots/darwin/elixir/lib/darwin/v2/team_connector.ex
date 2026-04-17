@@ -6,7 +6,16 @@ defmodule Darwin.V2.TeamConnector do
   """
 
   require Logger
-  alias TeamJay.Repo
+  alias Jay.Core.Repo
+
+  @spec get_status() :: map()
+  def get_status do
+    %{
+      forwarded_count: 0,
+      target_teams: [:luna, :blog, :claude, :ska, :jay],
+      status: :ready
+    }
+  end
 
   @spec collect_kpi() :: map()
   def collect_kpi do

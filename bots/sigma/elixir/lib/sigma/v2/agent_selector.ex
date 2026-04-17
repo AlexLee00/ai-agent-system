@@ -40,7 +40,7 @@ defmodule Sigma.V2.AgentSelector do
     LIMIT 10
     """
 
-    case TeamJay.Repo.query(sql, [role, team]) do
+    case Jay.Core.Repo.query(sql, [role, team]) do
       {:ok, %{rows: rows, columns: cols}} ->
         atom_cols = Enum.map(cols, &String.to_atom/1)
 

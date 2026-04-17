@@ -136,7 +136,7 @@ defmodule TeamJay.Ska.ParsingGuard do
                   Logger.error("[ParsingGuard] #{target} Level 3(LLM) 실패: #{inspect(reason3)}")
                   new_state3 = bump_stat(new_state2, :level3_fail)
                   new_state4 = trip_circuit(new_state3, target)
-                  TeamJay.HubClient.post_alarm(
+                  Jay.Core.HubClient.post_alarm(
                     "🚨 #{target} 파싱 3단계 모두 실패!\n#{agent} 수동 확인 필요",
                     "ska",
                     "parsing_guard"
@@ -279,7 +279,7 @@ defmodule TeamJay.Ska.ParsingGuard do
     agent = get_in(payload, [:meta, :agent]) || "parsing_guard"
     Logger.info("[ParsingGuard] LLM 호출: #{chain_id} (#{agent})")
 
-    script_path = Path.join(TeamJay.Config.repo_root(), @llm_script)
+    script_path = Path.join(Jay.Core.Config.repo_root(), @llm_script)
 
     case Jason.encode(payload) do
       {:ok, json} ->
@@ -288,7 +288,7 @@ defmodule TeamJay.Ska.ParsingGuard do
           System.cmd(
             "node",
             [script_path, "--payload=#{b64}"],
-            cd: TeamJay.Config.repo_root(),
+            cd: Jay.Core.Config.repo_root(),
             stderr_to_stdout: false
           )
         end)
@@ -388,7 +388,7 @@ defmodule TeamJay.Ska.ParsingGuard do
   end
 
   defp record_success(target, level) do
-    TeamJay.EventLake.record(%{
+    Jay.Core.EventLake.record(%{
       event_type: "ska_parse_success",
       team: "ska",
       bot_name: "parsing_guard",

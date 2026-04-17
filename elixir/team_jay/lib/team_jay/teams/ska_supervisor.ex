@@ -66,7 +66,7 @@ defmodule TeamJay.Teams.SkaSupervisor do
     # PortAgent 래퍼 (Node.js 스크립트!)
     port_children =
       Enum.map(@ska_agents, fn agent ->
-        {TeamJay.Agents.PortAgent,
+        {Jay.Core.Agents.PortAgent,
          name: agent.name,
          team: :ska,
          script: agent.script,

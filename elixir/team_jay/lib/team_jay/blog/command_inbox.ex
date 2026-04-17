@@ -37,7 +37,7 @@ defmodule TeamJay.Blog.CommandInbox do
   def handle_info(_msg, state), do: {:noreply, state}
 
   defp poll_inbox(state) do
-    case TeamJay.HubClient.command_inbox("blog", limit: 20, minutes: 7 * 24 * 60) do
+    case Jay.Core.HubClient.command_inbox("blog", limit: 20, minutes: 7 * 24 * 60) do
       {:ok, %{"results" => results}} when is_list(results) ->
         results
         |> Enum.reverse()
@@ -88,7 +88,7 @@ defmodule TeamJay.Blog.CommandInbox do
     summary = nested(entry, ["summary"]) || nested(entry, [:summary]) || ""
 
     _ =
-      TeamJay.HubClient.command_ack(command_id, "blog",
+      Jay.Core.HubClient.command_ack(command_id, "blog",
         bot_name: "blog_command_inbox",
         source: "blog.command_inbox",
         pipeline: pipeline,
@@ -103,7 +103,7 @@ defmodule TeamJay.Blog.CommandInbox do
         handle_content_command(:investment, command_id, pipeline, summary, command)
 
       other ->
-        TeamJay.EventLake.record(%{
+        Jay.Core.EventLake.record(%{
           team: "blog",
           bot_name: "blog_command_inbox",
           event_type: "blog_cross_team_command_unsupported",
@@ -114,7 +114,7 @@ defmodule TeamJay.Blog.CommandInbox do
         })
 
         _ =
-          TeamJay.HubClient.command_fail(command_id, "blog",
+          Jay.Core.HubClient.command_fail(command_id, "blog",
             bot_name: "blog_command_inbox",
             source: "blog.command_inbox",
             pipeline: pipeline,
@@ -134,7 +134,7 @@ defmodule TeamJay.Blog.CommandInbox do
       kind: kind
     }
 
-    TeamJay.EventLake.record(%{
+    Jay.Core.EventLake.record(%{
       team: "blog",
       bot_name: "blog_command_inbox",
       event_type: "blog_cross_team_command_received",
@@ -165,7 +165,7 @@ defmodule TeamJay.Blog.CommandInbox do
     :ok
   rescue
     error ->
-      TeamJay.EventLake.record(%{
+      Jay.Core.EventLake.record(%{
         team: "blog",
         bot_name: "blog_command_inbox",
         event_type: "blog_cross_team_command_failed",
@@ -176,7 +176,7 @@ defmodule TeamJay.Blog.CommandInbox do
       })
 
       _ =
-        TeamJay.HubClient.command_fail(command_id, "blog",
+        Jay.Core.HubClient.command_fail(command_id, "blog",
           bot_name: "blog_command_inbox",
           source: "blog.command_inbox",
           pipeline: pipeline,

@@ -162,7 +162,7 @@ defmodule TeamJay.Blog.TopicCurator do
       score     = c["score"] || 0.5
       keywords_pg = "{#{Enum.map(keywords, &~s("#{&1}")) |> Enum.join(",")}}"
 
-      result = TeamJay.HubClient.pg_query("""
+      result = Jay.Core.HubClient.pg_query("""
         INSERT INTO blog.topic_candidates
           (category, title, question, diff, keywords, score, status, target_date)
         VALUES (
@@ -215,7 +215,7 @@ defmodule TeamJay.Blog.TopicCurator do
       end)
       |> Enum.join("\n")
 
-    TeamJay.HubClient.post_alarm(
+    Jay.Core.HubClient.post_alarm(
       "📋 [블로팀] #{target_date} 포스팅 후보 #{length(candidates)}건 준비됨\n#{summary}",
       "blog",
       "topic_curator"

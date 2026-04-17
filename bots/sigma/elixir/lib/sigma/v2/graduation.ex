@@ -34,7 +34,7 @@ defmodule Sigma.V2.Graduation do
     ) sub
     """
 
-    case TeamJay.Repo.query(sql, [team, @tier0_min_observations]) do
+    case Jay.Core.Repo.query(sql, [team, @tier0_min_observations]) do
       {:ok, %{rows: [[nil]]}} -> 0.0
       {:ok, %{rows: [[v]]}} when is_float(v) -> v
       _ -> 0.0

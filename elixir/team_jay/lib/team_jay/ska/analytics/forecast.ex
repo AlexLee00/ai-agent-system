@@ -112,7 +112,7 @@ defmodule TeamJay.Ska.Analytics.Forecast do
 
   defp query_latest(mode) do
     mode_str = Atom.to_string(mode)
-    case TeamJay.HubClient.pg_query("""
+    case Jay.Core.HubClient.pg_query("""
       SELECT forecast_date::text, predictions, mape, model_version, created_at::text
       FROM ska.forecast_results
       WHERE model_version LIKE 'prophet%'
@@ -142,7 +142,7 @@ defmodule TeamJay.Ska.Analytics.Forecast do
   end
 
   defp query_accuracy(days) do
-    case TeamJay.HubClient.pg_query("""
+    case Jay.Core.HubClient.pg_query("""
       SELECT
         ROUND(AVG(mape)::numeric, 2) AS avg_mape,
         COUNT(*) AS sample_count,
@@ -191,7 +191,7 @@ defmodule TeamJay.Ska.Analytics.Forecast do
         {:ok, output}
       {output, exit_code} ->
         Logger.error("[Forecast] 실패 (mode=#{mode}, exit=#{exit_code}): #{String.slice(output, 0, 500)}")
-        TeamJay.HubClient.post_alarm(
+        Jay.Core.HubClient.post_alarm(
           "⚠️ [스카] forecast.py 실패 (mode=#{mode}, exit=#{exit_code})\n#{String.slice(output, 0, 300)}",
           "ska", "forecast"
         )

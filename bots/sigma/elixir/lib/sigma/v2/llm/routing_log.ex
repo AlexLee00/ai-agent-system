@@ -25,7 +25,7 @@ defmodule Sigma.V2.LLM.RoutingLog do
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW())
     """
 
-    TeamJay.Repo.query(sql, [
+    Jay.Core.Repo.query(sql, [
       to_string(entry.agent_name),
       to_string(entry.model_primary),
       if(entry.model_used, do: to_string(entry.model_used), else: nil),
@@ -64,7 +64,7 @@ defmodule Sigma.V2.LLM.RoutingLog do
       AND inserted_at > NOW() - INTERVAL '1 day'
     """
 
-    case TeamJay.Repo.query(sql, [to_string(agent_name)]) do
+    case Jay.Core.Repo.query(sql, [to_string(agent_name)]) do
       {:ok, %{rows: [[rate]]}} when is_number(rate) -> rate
       {:ok, %{rows: [[rate]]}} when is_float(rate)  -> rate
       _ -> 0.0

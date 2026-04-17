@@ -8,7 +8,7 @@ defmodule TeamJay.Blog.CompetitionDigest do
   """
 
   alias Ecto.Adapters.SQL
-  alias TeamJay.Repo
+  alias Jay.Core.Repo
 
   @default_days 7
 

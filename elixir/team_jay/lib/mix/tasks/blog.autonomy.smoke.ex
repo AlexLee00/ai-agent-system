@@ -18,7 +18,7 @@ defmodule Mix.Tasks.Blog.Autonomy.Smoke do
 
   alias Ecto.Adapters.SQL
   alias TeamJay.Blog.AutonomyDigest
-  alias TeamJay.Repo
+  alias Jay.Core.Repo
 
   @impl Mix.Task
   def run(args) do

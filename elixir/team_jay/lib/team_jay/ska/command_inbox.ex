@@ -37,7 +37,7 @@ defmodule TeamJay.Ska.CommandInbox do
   def handle_info(_msg, state), do: {:noreply, state}
 
   defp poll_inbox(state) do
-    case TeamJay.HubClient.command_inbox("ska", limit: 20, minutes: 7 * 24 * 60) do
+    case Jay.Core.HubClient.command_inbox("ska", limit: 20, minutes: 7 * 24 * 60) do
       {:ok, %{"results" => results}} when is_list(results) ->
         results
         |> Enum.reverse()
@@ -98,7 +98,7 @@ defmodule TeamJay.Ska.CommandInbox do
     summary = nested(entry, ["summary"]) || nested(entry, [:summary]) || ""
 
     if stale_core_risk_command?(action_type, command) do
-      TeamJay.EventLake.record(%{
+      Jay.Core.EventLake.record(%{
         team: "ska",
         bot_name: "ska_command_inbox",
         event_type: "ska_cross_team_command_suppressed",
@@ -114,7 +114,7 @@ defmodule TeamJay.Ska.CommandInbox do
       })
 
       _ =
-        TeamJay.HubClient.command_complete(command_id, "ska",
+        Jay.Core.HubClient.command_complete(command_id, "ska",
           bot_name: "ska_command_inbox",
           source: "ska.command_inbox",
           pipeline: pipeline,
@@ -126,7 +126,7 @@ defmodule TeamJay.Ska.CommandInbox do
     else
 
       _ =
-        TeamJay.HubClient.command_ack(command_id, "ska",
+        Jay.Core.HubClient.command_ack(command_id, "ska",
           bot_name: "ska_command_inbox",
           source: "ska.command_inbox",
           pipeline: pipeline,
@@ -144,7 +144,7 @@ defmodule TeamJay.Ska.CommandInbox do
           handle_ska_command(:reduce_workload, command_id, pipeline, summary, command)
 
         other ->
-          TeamJay.EventLake.record(%{
+          Jay.Core.EventLake.record(%{
             team: "ska",
             bot_name: "ska_command_inbox",
             event_type: "ska_cross_team_command_unsupported",
@@ -155,7 +155,7 @@ defmodule TeamJay.Ska.CommandInbox do
           })
 
           _ =
-            TeamJay.HubClient.command_fail(command_id, "ska",
+            Jay.Core.HubClient.command_fail(command_id, "ska",
               bot_name: "ska_command_inbox",
               source: "ska.command_inbox",
               pipeline: pipeline,
@@ -176,7 +176,7 @@ defmodule TeamJay.Ska.CommandInbox do
       action_type: Atom.to_string(kind)
     }
 
-    TeamJay.EventLake.record(%{
+    Jay.Core.EventLake.record(%{
       team: "ska",
       bot_name: "ska_command_inbox",
       event_type: "ska_cross_team_command_received",
@@ -204,7 +204,7 @@ defmodule TeamJay.Ska.CommandInbox do
     :ok
   rescue
     error ->
-      TeamJay.EventLake.record(%{
+      Jay.Core.EventLake.record(%{
         team: "ska",
         bot_name: "ska_command_inbox",
         event_type: "ska_cross_team_command_failed",
@@ -215,7 +215,7 @@ defmodule TeamJay.Ska.CommandInbox do
       })
 
       _ =
-        TeamJay.HubClient.command_fail(command_id, "ska",
+        Jay.Core.HubClient.command_fail(command_id, "ska",
           bot_name: "ska_command_inbox",
           source: "ska.command_inbox",
           pipeline: pipeline,
@@ -293,7 +293,7 @@ defmodule TeamJay.Ska.CommandInbox do
   end
 
   defp current_core_health_ok? do
-    case TeamJay.HubClient.health() do
+    case Jay.Core.HubClient.health() do
       {:ok, %{"resources" => resources}} when is_map(resources) ->
         resource_ok?(resources, "core_services") and
           resource_ok?(resources, "postgresql") and

@@ -123,14 +123,14 @@ defmodule TeamJay.Jay.Sigma.Scheduler do
   # ────────────────────────────────────────────────────────────────
 
   defp query_one(sql, schema) do
-    case TeamJay.HubClient.pg_query(sql, schema) do
+    case Jay.Core.HubClient.pg_query(sql, schema) do
       {:ok, %{"rows" => [row | _]}} -> row
       _ -> %{}
     end
   end
 
   defp query_rows(sql, schema) do
-    case TeamJay.HubClient.pg_query(sql, schema) do
+    case Jay.Core.HubClient.pg_query(sql, schema) do
       {:ok, %{"rows" => rows}} -> rows
       _ -> []
     end

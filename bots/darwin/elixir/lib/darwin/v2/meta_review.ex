@@ -24,7 +24,7 @@ defmodule Darwin.V2.MetaReview do
   require Logger
 
   alias Darwin.V2.{FeedbackLoop, KeywordEvolver, ResearchMonitor, ESPL}
-  alias TeamJay.HubClient
+  alias Jay.Core.HubClient
 
   @review_interval_ms 7 * 24 * 60 * 60 * 1000  # 7일
 
@@ -204,8 +204,8 @@ defmodule Darwin.V2.MetaReview do
     WHERE timestamp >= NOW() - INTERVAL '7 days'
     """
 
-    with {:ok, %{rows: [[applied, failed, avg]]}} <- TeamJay.Repo.query(sql, []),
-         {:ok, %{rows: [[cost]]}} <- TeamJay.Repo.query(cost_sql, []) do
+    with {:ok, %{rows: [[applied, failed, avg]]}} <- Jay.Core.Repo.query(sql, []),
+         {:ok, %{rows: [[cost]]}} <- Jay.Core.Repo.query(cost_sql, []) do
       {:ok, %{
         applied_7d:    applied || 0,
         failed_7d:     failed  || 0,
@@ -234,7 +234,7 @@ defmodule Darwin.V2.MetaReview do
         AND stage LIKE 'shadow_%'
       """
 
-      case TeamJay.Repo.query(sql, []) do
+      case Jay.Core.Repo.query(sql, []) do
         {:ok, %{rows: [[matches, mismatches]]}} ->
           total = (matches || 0) + (mismatches || 0)
           rate  = if total > 0, do: Float.round((matches || 0) / total, 3), else: nil
@@ -399,7 +399,7 @@ defmodule Darwin.V2.MetaReview do
       recommendations: review.recommendations
     })
 
-    case TeamJay.Repo.query(sql, ["주간 메타 리뷰 #{review.date}", meta]) do
+    case Jay.Core.Repo.query(sql, ["주간 메타 리뷰 #{review.date}", meta]) do
       {:ok, _} ->
         Logger.info("[다윈V2 메타리뷰] DB 저장 완료")
 
@@ -419,7 +419,7 @@ defmodule Darwin.V2.MetaReview do
       health:          get_in(review, [:sections, :pipeline, :health])
     }
 
-    Registry.dispatch(TeamJay.JayBus, "darwin.meta_review", fn entries ->
+    Registry.dispatch(Jay.Core.JayBus, "darwin.meta_review", fn entries ->
       for {pid, _} <- entries do
         send(pid, {:jay_event, "darwin.meta_review", payload})
       end

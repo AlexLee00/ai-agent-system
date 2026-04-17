@@ -21,7 +21,7 @@ defmodule Darwin.V2.TelegramBridge do
   use GenServer
   require Logger
 
-  alias TeamJay.HubClient
+  alias Jay.Core.HubClient
 
   @verification_score_threshold 7    # 이 점수 이상이면 검증 완료 알림
   @pipeline_failure_threshold   3    # 연속 실패 N회 이상이면 알림
@@ -162,11 +162,11 @@ defmodule Darwin.V2.TelegramBridge do
 
   defp subscribe_to_events_internal do
     Enum.each(@subscribed_topics, fn topic ->
-      Registry.register(TeamJay.JayBus, topic, [])
+      Registry.register(Jay.Core.JayBus, topic, [])
     end)
 
     # 성공 이벤트도 구독 (실패 카운터 리셋용)
-    Registry.register(TeamJay.JayBus, "darwin.pipeline.succeeded", [])
+    Registry.register(Jay.Core.JayBus, "darwin.pipeline.succeeded", [])
 
     Logger.debug("[다윈V2 텔레그램] #{length(@subscribed_topics) + 1}개 토픽 구독 완료")
   end

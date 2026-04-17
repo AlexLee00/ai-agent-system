@@ -136,7 +136,7 @@ defmodule TeamJay.Ska.SelectorManager do
     VALUES ($1, $2, $3, 'candidate', TRUE, $4)
     RETURNING id
     """
-    case TeamJay.Repo.query(sql, [target, css, xpath, llm_provider]) do
+    case Jay.Core.Repo.query(sql, [target, css, xpath, llm_provider]) do
       {:ok, %{rows: [[id]]}} ->
         Logger.info("[SelectorManager] 신규 candidate #{id} 등록: #{target}")
         {:ok, id}
@@ -158,7 +158,7 @@ defmodule TeamJay.Ska.SelectorManager do
     WHERE id = $1
     RETURNING status, consecutive_ok, consecutive_fail
     """
-    case TeamJay.Repo.query(sql, [selector_id, ok_delta, fail_delta, success?, not success?]) do
+    case Jay.Core.Repo.query(sql, [selector_id, ok_delta, fail_delta, success?, not success?]) do
       {:ok, %{rows: [[status, consec_ok, consec_fail]]}} ->
         check_promotion(selector_id, status, consec_ok, consec_fail)
       {:error, err} ->
@@ -192,7 +192,7 @@ defmodule TeamJay.Ska.SelectorManager do
     WHERE id = $1
     RETURNING target
     """
-    case TeamJay.Repo.query(sql, [selector_id]) do
+    case Jay.Core.Repo.query(sql, [selector_id]) do
       {:ok, %{rows: [[target]]}} ->
         Logger.info("[SelectorManager] ✅ 셀렉터 #{selector_id} promoted! (#{target})")
         TeamJay.Ska.PubSub.broadcast_selector_promoted(target, selector_id)
@@ -207,7 +207,7 @@ defmodule TeamJay.Ska.SelectorManager do
     WHERE id = $1
     RETURNING target
     """
-    case TeamJay.Repo.query(sql, [selector_id]) do
+    case Jay.Core.Repo.query(sql, [selector_id]) do
       {:ok, %{rows: [[target]]}} ->
         Logger.warning("[SelectorManager] ❌ 셀렉터 #{selector_id} deprecated (#{target})")
         TeamJay.Ska.PubSub.broadcast_selector_deprecated(target, selector_id)
@@ -216,7 +216,7 @@ defmodule TeamJay.Ska.SelectorManager do
   end
 
   defp query_rows(sql, params) do
-    case TeamJay.Repo.query(sql, params) do
+    case Jay.Core.Repo.query(sql, params) do
       {:ok, %{rows: rows, columns: cols}} ->
         keys = Enum.map(cols, &String.to_atom/1)
         Enum.map(rows, fn row -> Enum.zip(keys, row) |> Map.new() end)

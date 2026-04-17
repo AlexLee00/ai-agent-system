@@ -6,7 +6,7 @@ defmodule TeamJay.Investment.Feedback.Daily do
   향후 일일 피드백 로직을 Elixir 네이티브로 옮길 때 교체 지점으로 사용한다.
   """
 
-  alias TeamJay.Agents.PortAgent
+  alias Jay.Core.Agents.PortAgent
   alias TeamJay.Investment.Feedback.Events
 
   def run do

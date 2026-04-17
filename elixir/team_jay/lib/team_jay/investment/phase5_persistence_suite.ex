@@ -8,7 +8,7 @@ defmodule TeamJay.Investment.Phase5PersistenceSuite do
 
   alias Ecto.Adapters.SQL
   alias TeamJay.Investment.Phase5FullSuite
-  alias TeamJay.Repo
+  alias Jay.Core.Repo
 
   @tables [
     {:runtime_overrides, "5.5-4 runtime overrides", "investment.runtime_overrides"},

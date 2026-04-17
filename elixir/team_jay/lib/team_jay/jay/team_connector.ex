@@ -249,7 +249,7 @@ defmodule TeamJay.Jay.TeamConnector do
   # ────────────────────────────────────────────────────────────────
 
   defp query_one(sql, schema) do
-    case TeamJay.HubClient.pg_query(sql, schema) do
+    case Jay.Core.HubClient.pg_query(sql, schema) do
       {:ok, %{"rows" => [row | _]}} -> row
       {:ok, %{"rows" => []}} -> nil
       _ -> nil
@@ -257,14 +257,14 @@ defmodule TeamJay.Jay.TeamConnector do
   end
 
   defp query_rows(sql, schema) do
-    case TeamJay.HubClient.pg_query(sql, schema) do
+    case Jay.Core.HubClient.pg_query(sql, schema) do
       {:ok, %{"rows" => rows}} -> rows
       _ -> []
     end
   end
 
   defp current_core_health do
-    case TeamJay.HubClient.health() do
+    case Jay.Core.HubClient.health() do
       {:ok, %{"resources" => resources}} when is_map(resources) -> resources
       _ -> %{}
     end

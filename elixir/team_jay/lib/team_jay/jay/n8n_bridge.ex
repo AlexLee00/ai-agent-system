@@ -17,7 +17,7 @@ defmodule TeamJay.Jay.N8nBridge do
   use GenServer
   require Logger
 
-  alias TeamJay.HubClient
+  alias Jay.Core.HubClient
 
   # JayBus 구독 토픽 → n8n 웹훅 경로 매핑
   # Hub가 n8n.webhook_entity DB에서 {workflowId}/webhook/{path} 자동 리졸브
@@ -52,11 +52,11 @@ defmodule TeamJay.Jay.N8nBridge do
   @impl true
   def handle_info(:subscribe_events, state) do
     Enum.each(Map.keys(@topic_webhook_map), fn topic ->
-      Registry.register(TeamJay.JayBus, topic, [])
+      Jay.Core.JayBus.subscribe( topic, [])
     end)
     # darwin.applied.* 전체 구독 (팀별)
     Enum.each([:luna, :blog, :claude, :ska, :jay], fn team ->
-      Registry.register(TeamJay.JayBus, "darwin.applied.#{team}", [])
+      Jay.Core.JayBus.subscribe( "darwin.applied.#{team}", [])
     end)
     Logger.debug("[N8nBridge] #{map_size(@topic_webhook_map) + 5}개 토픽 구독 완료")
     {:noreply, state}

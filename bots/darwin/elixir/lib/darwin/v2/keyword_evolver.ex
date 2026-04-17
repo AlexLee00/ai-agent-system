@@ -89,8 +89,8 @@ defmodule Darwin.V2.KeywordEvolver do
 
   @impl GenServer
   def handle_info(:subscribe_events, state) do
-    Registry.register(TeamJay.JayBus, Topics.applied("darwin"), [])
-    Registry.register(TeamJay.JayBus, Topics.keyword_evolved(), [])
+    Registry.register(Jay.Core.JayBus, Topics.applied("darwin"), [])
+    Registry.register(Jay.Core.JayBus, Topics.keyword_evolved(), [])
     Logger.debug("[다윈V2 키워드진화] JayBus 구독 완료")
     {:noreply, state}
   end

@@ -43,7 +43,7 @@ defmodule TeamJay.Blog.CommandActionHandler do
     summary = Map.get(payload, :summary, "")
     command = Map.get(payload, :command, %{})
 
-    TeamJay.EventLake.record(%{
+    Jay.Core.EventLake.record(%{
       team: "blog",
       bot_name: "blog_command_action_handler",
       event_type: "blog_cross_team_command_handling",
@@ -64,7 +64,7 @@ defmodule TeamJay.Blog.CommandActionHandler do
     TeamJay.Blog.TopicCurator.curate_now()
     TeamJay.Blog.InsightsCollector.collect_now()
 
-    case TeamJay.HubClient.command_complete(command_id, "blog",
+    case Jay.Core.HubClient.command_complete(command_id, "blog",
            bot_name: "blog_command_action_handler",
            source: "blog.command_action_handler",
            pipeline: pipeline,
@@ -83,7 +83,7 @@ defmodule TeamJay.Blog.CommandActionHandler do
       summary = Map.get(payload, :summary, "")
       command = Map.get(payload, :command, %{})
 
-      TeamJay.EventLake.record(%{
+      Jay.Core.EventLake.record(%{
         team: "blog",
         bot_name: "blog_command_action_handler",
         event_type: "blog_cross_team_command_action_failed",
@@ -100,7 +100,7 @@ defmodule TeamJay.Blog.CommandActionHandler do
       })
 
       _ =
-        TeamJay.HubClient.command_fail(command_id, "blog",
+        Jay.Core.HubClient.command_fail(command_id, "blog",
           bot_name: "blog_command_action_handler",
           source: "blog.command_action_handler",
           pipeline: pipeline,

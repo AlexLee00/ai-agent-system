@@ -5,7 +5,7 @@ defmodule TeamJay.Investment.Phase5MasterStatusHistory do
 
   alias Ecto.Adapters.SQL
   alias TeamJay.Investment.Phase5MasterStatusSuite
-  alias TeamJay.Repo
+  alias Jay.Core.Repo
 
   def run_defaults(opts \\ []) do
     ensure_table!()
