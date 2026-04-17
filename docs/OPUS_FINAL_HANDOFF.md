@@ -1,31 +1,39 @@
-# 세션 인수인계 — 2026-04-18 (CODEX_SIGMA_PHASE2_LLM_AUTONOMOUS 완료)
+# 세션 인수인계 — 2026-04-18 (CODEX_SIGMA_PHASE2_LLM_AUTONOMOUS 완전 완료)
 
-> 세션 범위: LLM Selector TODO 제거 + Anthropic API 통합 + Recommender 신규 + Claude 전용 정책 완성
+> 세션 범위: 6차원 Recommender + RoutingLog + 완전한 CostTracker + Principle 의미 기반 Critique
 
 ---
 
-## 최신 작업 요약 (PHASE2_LLM_AUTONOMOUS)
+## 최신 작업 요약 (PHASE2_LLM_AUTONOMOUS 2차 — 완성)
 
-`CODEX_SIGMA_PHASE2_LLM_AUTONOMOUS` 핵심 LLM 통합 완료.
+`CODEX_SIGMA_PHASE2_LLM_AUTONOMOUS` 전체 완료. 시그마 v2 완전 자율운영 상태.
 
-### 구현 목록
+### 구현 목록 (커밋: e3ffb2e4)
 
-- **`selector.ex` 완성**: Ollama 참조 전부 제거 + 실제 Anthropic API 직접 호출 + `try_routes/4` fallback chain
-  - `ANTHROPIC_API_KEY` / `SIGMA_ANTHROPIC_API_KEY` 환경변수 사용
-  - HTTP 실패/API 키 없음 → 다음 route 자동 폴백
-  - 성공 호출 시 `CostTracker.track_tokens/1` 연동
-- **`cost_tracker.ex` 완성**: 실제 DB INSERT (`sigma_llm_cost_tracking`) + 일일 SUM SELECT
-  - `inserted_at`/`updated_at` 포함 (Ecto timestamps 호환)
-- **`recommender.ex` 신규** (`Sigma.V2.LLM.Recommender`): 룰 기반 동적 모델 추천 (LLM 미사용)
-  - 예산 잔여 20% 미만 → haiku / urgency: :high → haiku / failure_rate > 30% → opus / prompt_len > 8000 → sonnet
-- **`llm-model-selector.ts` 업데이트**: sigma.agent_policy 전 에이전트 Claude 전용 (local provider 제거)
-- **`llm_test.exs` 신규** (15 tests): policy 검증 + API 키 없는 환경 + CostTracker + Recommender 전 경로
+- **`recommender.ex` 전면 재작성**: 6차원 룰 기반 점수 계산 메타 에이전트
+  - agent_affinity(6개 에이전트) / length_bias / budget_bias / failure_bias / urgency_bias / task_type_bias
+  - fallback 리스트 = 양수 점수 모델만 포함
+- **`routing_log.ex` 신규**: `sigma_v2_llm_routing_log` INSERT + 24h 실패율 조회 (Recommender 피드백)
+- **`selector.ex`**: Recommender 통합 (context 빌드 → recommend → try_routes → RoutingLog 기록)
+  - `infer_task_type/1`, `safe_failure_rate/1`, `log_routing/7` 추가
+- **`cost_tracker.ex`**: 모델별 정확한 요금표, 예산 초과 시 `{:error, :budget_exceeded}`
+- **`principle/loader.ex`**: `SIGMA_PRINCIPLE_SEMANTIC_CHECK_ENABLED=true` 시 의미 기반 판정 (기본 OFF)
+- **migration**: `sigma_v2_llm_routing_log` 테이블 생성 완료 (mix sigma.migrate 적용)
+- **신규 테스트 36개**: Recommender(13) + RoutingLog(3) + CostTracker(3) + Selector 통합(5) + llm_test 수정
 
 ### 검증 결과
 - `mix compile --warnings-as-errors`: **0 warnings** ✅
-- 시그마 테스트: **87 tests, 0 failures** ✅ (기존 72 + 신규 15)
-- 전체: 131 tests, 3 failures (3개는 pre-existing Diagnostics 실패, 내 변경 무관)
-- DB INSERT 정상 동작 확인 (sigma_llm_cost_tracking 실 기록)
+- 전체 167 tests, 3 failures (3개는 pre-existing Diagnostics GenServer, 내 변경 무관) ✅
+- LLM 테스트만 단독: **37 tests, 0 failures** ✅
+- `sigma_v2_llm_routing_log` 테이블 생성 확인 ✅
+- 민감값 없음 ✅
+
+### Kill Switch 현재 상태
+- `SIGMA_V2_ENABLED=true` ✅
+- `SIGMA_TIER2_AUTO_APPLY=false` ✅
+- `SIGMA_SELF_RAG_ENABLED=false` ✅
+- `SIGMA_GEPA_ENABLED=false` ✅
+- `SIGMA_PRINCIPLE_SEMANTIC_CHECK_ENABLED=false` (신규, 기본 OFF) ✅
 
 ### 다음 세션 즉시 착수 항목
 
