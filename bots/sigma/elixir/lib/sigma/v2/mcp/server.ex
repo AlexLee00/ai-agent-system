@@ -94,19 +94,19 @@ defmodule Sigma.V2.MCP.Server do
 
     case name do
       "data_quality_guard" ->
-        Jido.Action.run(Sigma.V2.Skill.DataQualityGuard, atom_params, %{})
+        Sigma.V2.Skill.DataQualityGuard.run(atom_params, %{})
 
       "causal_check" ->
-        Jido.Action.run(Sigma.V2.Skill.CausalCheck, atom_params, %{})
+        Sigma.V2.Skill.CausalCheck.run(atom_params, %{})
 
       "experiment_design" ->
-        Jido.Action.run(Sigma.V2.Skill.ExperimentDesign, atom_params, %{})
+        Sigma.V2.Skill.ExperimentDesign.run(atom_params, %{})
 
       "feature_planner" ->
-        Jido.Action.run(Sigma.V2.Skill.FeaturePlanner, atom_params, %{})
+        Sigma.V2.Skill.FeaturePlanner.run(atom_params, %{})
 
       "observability_planner" ->
-        Jido.Action.run(Sigma.V2.Skill.ObservabilityPlanner, atom_params, %{})
+        Sigma.V2.Skill.ObservabilityPlanner.run(atom_params, %{})
 
       _ ->
         {:error, :unknown_tool}

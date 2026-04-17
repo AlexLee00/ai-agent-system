@@ -18,7 +18,7 @@ defmodule Sigma.V2.HTTP.Router do
   post "/sigma/v2/run-daily" do
     test_mode = get_in(conn.body_params, ["test"]) || false
 
-    case Sigma.V2.Commander.run_daily(test: test_mode) do
+    case Sigma.V2.ShadowRunner.run(%{test: test_mode}) do
       {:ok, result} ->
         conn
         |> put_resp_content_type("application/json")
