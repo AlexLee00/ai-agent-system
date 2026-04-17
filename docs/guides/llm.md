@@ -1,7 +1,8 @@
 # LLM API 개발 문서 참조
 
 > AI Agent System에서 사용하는 모든 LLM API 참조 문서
-> 최종 업데이트: 2026-03-05
+> 최종 업데이트: 2026-04-17
+> 주의: 이 문서는 `현재 배포 모델`과 `공식 최신 모델 계열`을 함께 기록한다. 운영 중인 로컬 MLX 모델은 `qwen2.5-7b / deepseek-r1-32b / qwen3-embed-0.6b / gemma4:latest(alias)`이고, 공식 최신 계열 참고선은 `Qwen3 / Qwen3 Embedding / Gemma 3·3n / DeepSeek V3.x`다.
 
 ---
 
@@ -14,7 +15,7 @@
 5. [OpenAI API](#5-openai-api)
 6. [SambaNova API](#6-sambanova-api)
 7. [xAI Grok API](#7-xai-grok-api)
-8. [DeepSeek R1 + Qwen 2.5 (Ollama 로컬)](#8-deepseek-r1--qwen-25-ollama-로컬)
+8. [DeepSeek + Qwen (MLX 로컬)](#8-deepseek--qwen-mlx-로컬)
 9. [Telegram Bot API](#9-telegram-bot-api)
 10. [OpenClaw Gateway](#10-openclaw-gateway)
 11. [멀티에이전트 시스템용 모델 선택 가이드](#11-멀티에이전트-시스템용-모델-선택-가이드)
@@ -799,7 +800,21 @@ const response = await client.responses.create({
 
 ---
 
-## 8. DeepSeek R1 + Qwen 2.5 (Ollama 로컬)
+## 8. DeepSeek + Qwen (MLX 로컬)
+
+현재 OPS 로컬 서버는 Ollama가 아니라 `MLX OpenAI 호환 서버(:11434)`를 사용한다.
+
+- 현재 배포 fast: `qwen2.5-7b`
+- 현재 배포 deep: `deepseek-r1-32b`
+- 현재 배포 embedding: `qwen3-embed-0.6b`
+- 현재 배포 Gemma 파일럿: `gemma4:latest` (`gemma-4-e2b-it-4bit` 로컬 alias)
+
+최신 공식 계열 관점에서는 다음 라인이 더 최신이다.
+
+- Qwen: `Qwen3`
+- 임베딩: `Qwen3 Embedding`
+- Gemma: `Gemma 3 / 3n`
+- DeepSeek: `DeepSeek V3.x`
 
 ### 8.1 DeepSeek R1 모델 변형 및 요구 RAM
 
@@ -1060,22 +1075,22 @@ npm update -g openclaw
 
 | 봇 | Primary | Fallback | 이유 |
 |----|---------|---------|------|
-| 메인봇 (오케스트레이터) | `claude-sonnet-4-6` | `kimi-k2p5` | 최고 에이전트 조율 능력 |
-| 스카봇 (예약관리) | `gemini-2.5-flash` | `qwen2.5:7b` | ~~2.0-flash~~ 은퇴 예정 |
+| 메인봇 (오케스트레이터) | `claude-sonnet-4-6` | `qwen/qwen3-32b` | 최고 에이전트 조율 능력 + 최신 무료 Groq fallback |
+| 스카봇 (예약관리) | `gemini-2.5-flash` | `qwen2.5-7b` | 현재 로컬 fast 배포 모델 기준 |
 | 투자 메인봇 | `claude-sonnet-4-6` | `gemini-2.5-flash` | 복잡한 멀티에이전트 결정 |
-| 기술 분석가 | `llama-3.3-70b` (Groq) | `claude-haiku-4-5` | 속도 + 무료 |
+| 기술 분석가 | `meta-llama/llama-4-scout-17b-16e-instruct` (Groq) | `claude-haiku-4-5` | 속도 + 무료 |
 | 감성 분석가 | `grok-3-mini` + X검색 | `gemini-2.5-flash` | 실시간 X 데이터 필수 |
-| 온체인/뉴스 | `llama-3.1-8b` (Groq) | `claude-haiku-4-5` | 대용량 처리, 무료 |
-| 강세/약세 리서처 | `claude-haiku-4-5` | `llama-4-scout-17b` | 토론 품질 |
-| 학술봇/판례봇 | `deepseek-r1:32b` (로컬) | `claude-opus-4-6` | 논문 추론, 비용 무료 |
-| 백테스팅 | `deepseek-r1:14b` (로컬) | — | 수학적 추론, 로컬 |
+| 온체인/뉴스 | `openai/gpt-oss-20b` (Groq) | `claude-haiku-4-5` | 대용량 처리, 무료 |
+| 강세/약세 리서처 | `claude-haiku-4-5` | `meta-llama/llama-4-scout-17b-16e-instruct` | 토론 품질 |
+| 학술봇/판례봇 | `deepseek-r1-32b` (로컬 배포) | `claude-opus-4-6` | 논문 추론, 비용 무료 |
+| 백테스팅 | `deepseek-r1-32b` (로컬 배포) | — | 수학적 추론, 로컬 |
 | 일반 태스크 (외부 API) | `gpt-4o-mini` | `gpt-4.1-mini` | OpenAI 호환성 필요 시 |
 
 ### 11.2 투자팀 5분 사이클 타임라인
 
 ```
 T+0s   :  tick 수신
-T+0~5s :  [병렬] 기술(Groq 70b) + 감성(Grok X검색) + 온체인(Groq 8b) + 뉴스(Groq 8b)
+T+0~5s :  [병렬] 기술(Groq Scout) + 감성(Grok X검색) + 온체인(Groq GPT-OSS) + 뉴스(Groq GPT-OSS)
 T+5~10s:  [토론] 강세 리서처 ↔ 약세 리서처 (claude-haiku)
 T+10~13s: 리스크 매니저 최종 검토 (claude-haiku)
 T+13~14s: 투자 메인봇 결정 → 실행봇 명령 (sonnet-4-6)
@@ -1087,7 +1102,7 @@ T+14~15s: 바이낸스/업비트 실행봇 주문 실행 (LLM 없음)
 1. **Groq 무료 모델** → 고빈도 신호 처리 (투자 분석가 4명)
 2. **Haiku 4.5** → 에이전트 루프, 툴 호출 (~1/3 Sonnet 비용)
 3. **Prompt Caching** → 정적 컨텍스트(거래 규칙, 전략 정의) 캐싱
-4. **로컬 Ollama** → 장기 분석, 배치 작업 (학술봇, 백테스팅)
+4. **로컬 MLX** → 장기 분석, 배치 작업 (학술봇, 백테스팅)
 5. **수익 기반 업그레이드 로드맵:**
    - $0→$100/월: 현재 (Groq 무료 + Haiku + 로컬)
    - $100→$500/월: 리서처팀 Sonnet으로 업그레이드
