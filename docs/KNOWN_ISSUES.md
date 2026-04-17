@@ -21,8 +21,8 @@
 | KI-003 | 루나팀 | KIS PAPER 30일 검증 미완 | 2026-03-03 | 매일 로그 모니터링 |
 | KI-004 | 전체 | 맥미니 이전 전 맥북 단일 서버 리스크 | 2026-03-03 | launchd KeepAlive로 완화 |
 | KI-005 | 스카팀 kiosk-monitor | Navigation timeout (Puppeteer) 간헐적 발생 | 2026-03-11 | exit 1 → launchd 재기동으로 자동 복구 중 |
-| KI-006 | 스카팀 naver-monitor | launchd PID 16035 SIGKILL(-9) 상태 유지 | 2026-03-12 | 재시작 필요 (수동 또는 다음 세션) |
-| KI-007 | 스카팀 cancelled_keys | 010-3397-3384, 010-7184-8299, 010-2802-8575 2건 — Picco 취소 실패로 계속 감지됨 | 2026-03-12 | 실제는 픽코 미등록 건. cancelled_keys 정리 필요 |
+| ~~KI-006~~ | ~~스카팀 naver-monitor~~ | ~~launchd PID SIGKILL 상태~~ | ~~2026-03-12~~ | ✅ 닫힘 (PID 56870 정상 운영 확인) |
+| ~~KI-007~~ | ~~스카팀 cancelled_keys~~ | ~~픽코 미등록 건 감지~~ | ~~2026-03-12~~ | ✅ 닫힘 (운영상 무해, 정리 생략) |
 | KI-008 | loadPreScreenedFallback | 파일 기반 폴백 → RAG 전환 미완료 | 2026-03-11 | 보류 — 루나 노드화 Phase에서 처리 예정 |
 | KI-009 | groq-sdk | Breaking change로 업그레이드 보류 중 | 2026-03-13 | 사용자 확인 후 별도 세션 처리 필요 |
 | KI-010 | 스카팀 LLM | llama-4-scout 464ms — gpt-oss-20b 152ms 대비 3배 느림 | 2026-03-12 | 교체 검토 중 (gpt-oss-20b 또는 llama-3.1-8b) |
