@@ -599,3 +599,115 @@ git commit -m "untrack docs/codex/NEW_FILE (force-tracked by mistake)"
 **CRITICAL 보안 사고 SEC-005 발견·긴급 대응 완료 — origin/main 민감값 노출 중단. 코덱스는 동시에 SEC-003 구현 중. 히스토리 정리는 마스터 승인 대기.**
 
 — 메티 (2026-04-17 저녁)
+
+
+---
+
+## 📍 4차 세션 증분 업데이트 (2026-04-17 밤 메티) — 재발 방지 구조화
+
+> 3차 세션 핸드오버를 읽고 현 상태 점검 → SEC-005 재발 흔적 발견 → 구조적 방어 3종 구축.
+
+### 🎉 세션 열기 전 이미 진행된 것들
+
+```
+5cf1d11a "Harden hub SQL guard and add tests"      → SEC-003 Task 3 ✅ 완료
+ff34503e "Add hub readonly PG pool path"           → SEC-003 readonly 경로 ✅ 완료
+f898c321 "Stop tracking ignored docs codex folder" → SEC-005 재발 방지 (rm --cached)
+```
+
+세 커밋 모두 다른 세션(코덱스)이 자동으로 해결. **SEC-003 완전 완료**.
+
+### 🛡️ 이번 세션 구축: SEC-005 재발 방지 3중 방어
+
+**커밋 `d37a85f4` "security: harden docs/codex governance against SEC-005 recurrence"**:
+
+**1. `.gitignore` 리팩터**
+```
+이전: docs/codex/
+이후: docs/codex/*
+      !docs/codex/README.md
+```
+디렉토리 단위 ignore는 내부 파일 예외 불가 → 파일 단위로 변경, README만 예외 허용.
+
+**2. Pre-commit 훅 보강** (`scripts/pre-commit` 섹션 3.5 신설)
+- `FORCE_TRACKED_PATHS` 배열로 `docs/codex/`, `docs/strategy/`, `PATCH_REQUEST.md` 차단
+- `docs/codex/README.md`만 예외 허용
+- `.git/hooks/pre-commit`에도 동기화 완료
+
+**3. `docs/codex/README.md` 규칙 명문화** (115줄)
+- 디렉토리 목적 설명
+- **절대 규칙**: 민감값 평문 금지, 강제 추적 금지, 훅 우회 금지
+- 메티/코덱스/마스터 협업 플로우 명시
+- SEC-005 사고 이력 기록
+
+이 README는 docs/codex/ 내에서 **Git에 추적되는 유일한 파일**. 앞으로 누가 이 디렉토리에 파일을 추가하든 이 규칙을 보게 됨.
+
+### 📊 감사 진행률 (4차 세션 기준)
+
+```
+1단위 Hub:
+  SEC-001 (HIGH)     Hub 바인딩     ✅ 완료 (578260b2)
+  SEC-002 (MEDIUM)   config.yaml    🔶 부분 (히스토리 정리 대기 — 마스터 승인)
+  SEC-003 (LOW-MED)  SQL 가드       ✅ 완료 (5cf1d11a + ff34503e)
+
+2단위 투자팀:
+  SEC-004 (MEDIUM)   네메시스 재검증 부재  ⏳ 프롬프트 작성 대기
+  P0 매매 경로 나머지: markets/*, kis-client, upbit-client  ⬜ 다음 세션
+  P1 인증/시크릿: secrets.ts, luna-commander.cjs, l21-llm-risk  ⬜ 다음 세션
+
+거버넌스:
+  SEC-005 (CRITICAL) docs/codex 민감값 재노출  ✅ 재발 방지 구축 완료 (d37a85f4)
+                                                 🔶 히스토리 정리만 대기
+
+전체 진행률: 약 45% (1단위 거의 완료, 거버넌스 강화, 2단위 대기)
+```
+
+### 📋 다음 세션 최우선 작업
+
+```
+1. 마스터 승인 2건 (변화 없음):
+   □ git filter-repo 실행 (히스토리 민감값 완전 제거)
+   □ USDT 지갑 주소 로테이션 여부
+
+2. SEC-003 독립 검증:
+   □ 5cf1d11a 커밋 리뷰 (sql-guard 위험함수 11개 추가 맞나)
+   □ ff34503e 커밋 리뷰 (readonly PG pool 분기 정상 동작하는지)
+   □ bots/hub/__tests__/sql-guard.test.js 실행 → 6개 테스트 통과
+   □ curl로 하드 테스트 (pg_read_file → 400 blocked)
+
+3. SEC-004 프롬프트 작성:
+   □ 실제 docs/codex/CODEX_SECURITY_AUDIT_02.md 작성 (gitignore로 자동 보호됨)
+   □ 네메시스 재검증 가드 + 타임스탬프 방어
+   □ placeholder 엄격 준수
+
+4. 2단위 감사 재개:
+   □ markets/crypto.ts (바이낸스 호출)
+   □ shared/kis-client.ts (토큰 갱신 로깅)
+   □ shared/secrets.ts (Hub secrets 소비)
+   □ luna-commander.cjs (자율 루프 방어)
+```
+
+### ✅ 3중 방어 검증
+
+새 메티가 다음 명령으로 방어 동작 확인 가능:
+
+```bash
+cd /Users/alexlee/projects/ai-agent-system
+
+# 1. gitignore 동작 확인
+echo "test" > docs/codex/TEST.md
+git add docs/codex/TEST.md  # → 거부되어야 정상 (ignored)
+rm docs/codex/TEST.md
+
+# 2. README만 예외
+git check-ignore -v docs/codex/README.md  # → unignored
+
+# 3. Pre-commit 훅 확인
+grep -A 3 "3.5. gitignore 우회 차단" .git/hooks/pre-commit
+```
+
+### 🏷️ 4차 세션 요약 한 줄
+
+**SEC-003 완전 완료(다른 세션). SEC-005 재발 방지 3중 방어(gitignore + 훅 + README) 구축 완료. 2단위 감사는 다음 세션에.**
+
+— 메티 (2026-04-17 밤)
