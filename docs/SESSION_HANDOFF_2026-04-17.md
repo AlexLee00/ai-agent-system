@@ -3622,3 +3622,119 @@ Exit Criteria 14개 전수 PASS (의존성 / 14 skeleton / principles YAML / Kil
 **35차 세션 — 마스터 지시 "Phase 1~5 일괄 작성 + 루나팀 착수" 수행. **Phase 1~5 코덱스 프롬프트 5개 총 1,973줄 작성** (Phase 1: Jido 코어/461줄, Phase 2: Directive Tier 0/1/341줄, Phase 3: Tier 2 + Self-RAG + Reflexion/449줄, Phase 4: E-SPL + 메타리뷰/395줄, Phase 5: TS 폐기 + MCP 서버/327줄). Phase 0 검증 불일치 2건(Jido.AI.Agent + Zoi)을 Phase 1 §1에 교정 태스크로 명시. 민감값 0건 / 모두 docs/codex gitignore 보호. 이어서 루나팀 리모델링 착수 (현재 상태 분석 시작).**
 
 — 메티 (2026-04-17 밤, 35차 세션 — Phase 1~5 일괄 작성 완료)
+
+---
+
+## 📍 36차 세션 증분 (2026-04-17 밤 메티) — 시그마팀 bots/sigma/ 분리 준비 완료 (옵션 D)
+
+> 35차 Phase 1~5 프롬프트 일괄 작성 이후 마스터 지시로 옵션 D (물리적 이동) 착수.
+> "나만의 시스템이기 때문에 무리가 있더라도 이번에 수정하는 것이 맞다" (마스터)
+
+### 🔍 영향 파일 전수 조사 결과
+
+코드 기반 전역 grep으로 발견한 **추가 영향 파일 7건**:
+
+| # | 파일 | 수정 지점 | 비고 |
+|---|------|-----------|------|
+| 1 | `tsconfig.json` | L68~L71 (4개 경로) | TS 빌드 설정 |
+| 2 | `bots/orchestrator/launchd/ai.sigma.daily.plist` | L11 `sigma-daily.js` | **매일 21:30 자동 실행 중** |
+| 3 | `bots/orchestrator/scripts/team-skill-cli.ts` | L8 require | CLI 도구 |
+| 4 | `bots/orchestrator/scripts/seed-skills-tools.ts` | L31~L35 | DB seed (5개) |
+| 5 | `elixir/team_jay/config/config.exs` | L33 | v1 크론, 수정 X (v1 유지) |
+| 6 | `elixir/team_jay/test/sigma/v2/skill/*_test.exs` | 5개 테스트 | 함께 이동 필요 |
+| 7 | `elixir/team_jay/mix.exs` | elixirc_paths | 새 경로 컴파일 포함 |
+
+### 📝 36차 산출물
+
+**1. `docs/codex/CODEX_SIGMA_RELOCATE.md` (432줄, 로컬 전용)**
+- 7단계 실행 계획 (사전 체크 → 디렉토리 생성 → git mv → 경로 참조 수정 → 검증 → 커밋/push → launchd 재등록)
+- 50+ 파일 이동 매핑 (14 Elixir + 5 tests + 4 TS + 5 legacy-skills + 6 skills + 3 config/env/migration + 1 launchd + 12 docs)
+- Exit Criteria 10건
+- `git mv` 사용 명시 (히스토리 보존)
+- mix.exs `elixirc_paths` 예시 + 심볼릭 링크 대안
+- launchd 재등록 절차 명시 (마스터 수동 조치)
+
+**2. Phase 1~5 + PHASE_0_REVIEW 프롬프트 경로 치환**
+- 치환 전: 68건 (PHASE_1 13 + PHASE_2 6 + PHASE_3 6 + PHASE_4 3 + PHASE_5 12 + REVIEW 28)
+- 치환 후: **0건 전 파일**
+- 치환 규칙 16종 sed 일괄 적용
+- 백업 파일 생성 후 제거
+
+**3. 설계서 + 보강서 경로 치환**
+- SIGMA_REMODELING_PLAN 11 → 0건 (1건 MCP server 경로 수동 수정)
+- SIGMA_REMODELING_RESEARCH_SUPPLEMENT_V2 6 → 0건
+- SIGMA_REMODELING_RESEARCH_SUPPLEMENT_V3 8 → 0건
+- design/DESIGN_SIGMA_PRINCIPLES.yaml.example 1 → 0건
+
+### 🎯 목표 디렉토리 구조 (마스터 승인 대기)
+
+```
+bots/sigma/                                  ← 신규 최상위 폴더
+├ README.md
+├ .env.sigma.example
+├ elixir/
+│  ├ lib/sigma/v2/*                          (14 파일)
+│  └ test/sigma/v2/skill/*                   (5 파일)
+├ ts/
+│  ├ src/sigma-daily.ts
+│  └ lib/sigma-{analyzer,feedback,scheduler}.ts
+├ legacy-skills/*.ts                          (5 파일, v1)
+├ skills/                                     (agentskills.io 포맷)
+│  ├ .claude-plugin/plugin.json
+│  └ <skill>/SKILL.md                         (5 파일)
+├ config/sigma_principles.yaml
+├ migrations/*_add_sigma_v2_audit.exs
+├ launchd/ai.sigma.daily.plist
+└ docs/
+   ├ PLAN.md / RESEARCH_V{1,2,3}.md / DESIGN_PRINCIPLES.yaml.example
+   └ codex/                                    (로컬 전용)
+      ├ PHASE_{0,0_REVIEW,1,2,3,4,5}.md
+      └ RELOCATE.md
+```
+
+### ⚠️ 마스터 사전 조치 (코덱스 실행 전)
+
+**OPS(Mac Studio) 배포된 경우**:
+```bash
+launchctl unload ~/Library/LaunchAgents/ai.sigma.daily.plist
+```
+
+**DEV(현재)**: 조치 불필요.
+
+이동 완료 후 새 경로로 `launchctl load` 재등록.
+
+### 🔧 다음 단계 (마스터 결정)
+
+| 단계 | 담당 | 작업 |
+|------|------|------|
+| **현재** | 메티 | 36차 HANDOFF 커밋 + push |
+| 1 | 마스터 | `docs/codex/CODEX_SIGMA_RELOCATE.md` 검토 + 승인 서명 |
+| 2 | 마스터 | OPS launchd unload (해당 시) |
+| 3 | 마스터 | 롤백 포인트 커밋 (또는 코덱스가 Step 1에서 자동) |
+| 4 | 코덱스 | RELOCATE.md 7단계 실행 |
+| 5 | 메티 | 독립 검증 + 일관성 확인 |
+| 6 | 마스터 | OPS launchd 재등록 |
+| 7 | 메티 | **다윈팀 분리 설계 착수** (마스터 예고) |
+
+### 🚨 리스크 매트릭스
+
+| 리스크 | 확률 | 영향 | 완화 |
+|--------|:-:|:-:|------|
+| launchd 실행 중 이동 → 실행 실패 | 중 | 중 | 사전 unload (마스터) |
+| mix.exs elixirc_paths 상대경로 미작동 | 중 | 고 | 대안: 심볼릭 링크 |
+| tsc 빌드 에러 (tsconfig 수정 실수) | 저 | 중 | tsc --noEmit 사전 검증 |
+| git mv 히스토리 손실 | 저 | 중 | git mv 엄수 |
+| tsx runDaily 경로 에러 | 중 | 중 | baseline diff 비교 |
+
+### 📊 36차 세션 통계
+
+- 신규 파일: 1개 (`docs/codex/CODEX_SIGMA_RELOCATE.md`, 432줄, 로컬 전용)
+- 수정 파일: 8개 (PLAN + V2 + V3 + DESIGN_PRINCIPLES + PHASE_1~5 + PHASE_0_REVIEW)
+- 치환 규모: 총 94건 (프롬프트 68 + 설계서 26)
+- 민감값: 0건 (전체 신규/수정 파일)
+
+### 🏷️ 36차 세션 요약 한 줄
+
+**36차 세션 — 시그마팀 옵션 D (bots/sigma/ 물리 이동) 준비 완료. 영향 파일 전수 조사로 추가 7건 발견(tsconfig/launchd plist/team-skill-cli/seed-skills-tools/config.exs/tests/mix.exs). `docs/codex/CODEX_SIGMA_RELOCATE.md`(432줄) 7단계 실행 프롬프트 작성(git mv 엄수, 50+ 파일 매핑, Exit Criteria 10건). Phase 1~5 + PHASE_0_REVIEW 프롬프트 68건 + 설계서/V1/V2/V3/DESIGN 26건 총 94건 경로 치환(sed 일괄, 전수 0 잔존). launchd 매일 21:30 자동 실행 중이라 마스터 사전 unload 필수. 민감값 0건. 마스터 승인 서명 시 코덱스 즉시 착수. 완료 후 다윈팀 분리 예고.**
+
+— 메티 (2026-04-17 밤, 36차 세션 — 시그마팀 옵션 D 준비 완료)

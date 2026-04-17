@@ -1236,7 +1236,7 @@ ls elixir/team_jay/lib/team_jay/darwin/ 2>/dev/null
 - `bots/sigma/legacy-skills/*.ts` → Elixir Jido Action으로 교체 완료 후 archive
 
 **5.2 Sigma MCP Server**
-- `elixir/team_jay/lib/team_jay/sigma/mcp_server.ex`
+- `bots/sigma/elixir/lib/sigma/v2/mcp/server.ex`
 - 5개 skill을 MCP tool로 노출
 - Progressive Disclosure (L0 이름만 → L1 전체)
 
