@@ -173,6 +173,48 @@ async function createEmbedding(text: string): Promise<number[]> {
   return vec;
 }
 
+// 배치 임베딩 — 최대 BATCH_EMBED_SIZE개씩 묶어서 단일 API 호출 (Step 1)
+const BATCH_EMBED_SIZE = 16;
+
+async function createEmbeddingBatch(texts: string[]): Promise<number[][]> {
+  if (!texts.length) return [];
+  if (texts.length === 1) return [await createEmbedding(texts[0])];
+
+  const embedModel = await resolveEmbeddingModel(EMBED_MODEL);
+  const results: number[][] = [];
+
+  for (let i = 0; i < texts.length; i += BATCH_EMBED_SIZE) {
+    const chunk = texts.slice(i, i + BATCH_EMBED_SIZE).map((t) => t.slice(0, 8000));
+    const payload = JSON.stringify({ model: embedModel, input: chunk });
+
+    const raw = await execCurl([
+      '-sS',
+      '-m', String(30 + chunk.length * 5),
+      getEmbedUrl(),
+      '-H', 'Content-Type: application/json',
+      '-d', payload,
+    ]);
+
+    const resp = JSON.parse(raw) as {
+      error?: { message?: string };
+      data?: Array<{ embedding?: number[]; index?: number }>;
+    };
+    if (resp.error) throw new Error(resp.error.message || JSON.stringify(resp.error));
+    const data = resp.data || [];
+    // data는 index 순서 보장 (OpenAI 호환 스펙)
+    for (let j = 0; j < chunk.length; j++) {
+      const item = data.find((d) => d.index === j) || data[j];
+      const vec = item?.embedding;
+      if (!Array.isArray(vec) || vec.length !== EMBED_DIM) {
+        throw new Error(`배치 임베딩 차원 오류 [${i + j}]: ${vec?.length ?? '없음'} (기대: ${EMBED_DIM})`);
+      }
+      results.push(vec);
+    }
+  }
+
+  return results;
+}
+
 async function store(
   collection: string,
   content: string,
@@ -202,10 +244,27 @@ async function storeBatch(
   items: Array<{ content: string; metadata?: Record<string, unknown> }>,
   sourceBot = 'unknown',
 ): Promise<Array<number | null>> {
+  if (!items.length) return [];
+  const table = _validateCollection(collection);
+
+  // 배치 임베딩 — 단일 API 호출로 전체 처리
+  const embeddings = await createEmbeddingBatch(items.map((item) => item.content));
+
   const ids: Array<number | null> = [];
-  for (const item of items) {
-    const id = await store(collection, item.content, item.metadata || {}, sourceBot);
-    ids.push(id);
+  for (let i = 0; i < items.length; i++) {
+    const { content, metadata = {} } = items[i];
+    const vecStr = `[${embeddings[i].join(',')}]`;
+    try {
+      const rows = await pgPool.query<{ id: number }>(SCHEMA, `
+        INSERT INTO ${SCHEMA}.${table} (content, embedding, metadata, source_bot)
+        VALUES ($1, $2::vector, $3, $4)
+        RETURNING id
+      `, [content, vecStr, JSON.stringify(metadata), sourceBot]);
+      ids.push(rows[0]?.id ?? null);
+    } catch (err: unknown) {
+      console.warn(`[rag] storeBatch 항목 ${i} 실패: ${err instanceof Error ? err.message : err}`);
+      ids.push(null);
+    }
   }
   return ids;
 }
@@ -344,6 +403,7 @@ async function searchExperience(
 export = {
   initSchema,
   createEmbedding,
+  createEmbeddingBatch,
   store,
   storeBatch,
   search,

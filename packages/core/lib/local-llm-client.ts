@@ -1,6 +1,31 @@
 const env = require('./env');
 const { execFile } = require('node:child_process');
 
+// ─── LLM 동시성 제한 세마포어 (32GB 메모리 가드, Step 4) ─────────────────
+const LLM_MAX_CONCURRENT = Number(process.env.LLM_MAX_CONCURRENT || 2);
+
+function makeSemaphore(max) {
+  let count = 0;
+  const queue = [];
+
+  function acquire() {
+    if (count < max) { count++; return Promise.resolve(); }
+    return new Promise((resolve) => {
+      queue.push(() => { count++; resolve(); });
+    });
+  }
+
+  function release() {
+    count--;
+    const next = queue.shift();
+    if (next) next();
+  }
+
+  return { acquire, release };
+}
+
+const llmSemaphore = makeSemaphore(LLM_MAX_CONCURRENT);
+
 type RequestOptions = RequestInit & {
   baseUrl?: string;
   maxAttempts?: number;
@@ -172,19 +197,24 @@ async function callLocalLLM(model: string, messages: unknown[], options: Request
   const resolvedModel = await resolveRequestedModel(model);
   const timeoutMs = Number(options.timeoutMs || ((model === LOCAL_MODEL_DEEP || resolvedModel === LOCAL_MODEL_DEEP) ? 120000 : 30000));
 
-  const json = await requestJson('/v1/chat/completions', {
-    baseUrl: options.baseUrl,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: resolvedModel,
-      messages,
-      max_tokens: options.max_tokens || options.maxTokens || 512,
-      temperature: options.temperature ?? 0.2,
-    }),
-  }, timeoutMs) as ChatCompletionResponse | null;
+  await llmSemaphore.acquire();
+  try {
+    const json = await requestJson('/v1/chat/completions', {
+      baseUrl: options.baseUrl,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: resolvedModel,
+        messages,
+        max_tokens: options.max_tokens || options.maxTokens || 512,
+        temperature: options.temperature ?? 0.2,
+      }),
+    }, timeoutMs) as ChatCompletionResponse | null;
 
-  return json?.choices?.[0]?.message?.content || null;
+    return json?.choices?.[0]?.message?.content || null;
+  } finally {
+    llmSemaphore.release();
+  }
 }
 
 function cleanLocalLLMText(text: string): string {
@@ -265,6 +295,51 @@ async function callLocalLLMJSON(model: string, messages: unknown[], options: Req
   return null;
 }
 
+type LLMHealthStatus = {
+  available: boolean;
+  models: string[];
+  fastModelOk: boolean;
+  embedModelOk: boolean;
+  responseMs: number | null;
+  error?: string;
+};
+
+async function checkLocalLLMHealth(): Promise<LLMHealthStatus> {
+  const start = Date.now();
+  try {
+    const models = await getAvailableModels();
+    if (!models.length) {
+      return { available: false, models: [], fastModelOk: false, embedModelOk: false, responseMs: Date.now() - start, error: 'Ollama 모델 없음' };
+    }
+
+    const fastModelOk = models.some((m) => m === LOCAL_MODEL_FAST || /qwen/i.test(m) || /gemma/i.test(m));
+    const embedModelOk = models.some((m) => /embed/i.test(m) || m === LOCAL_MODEL_EMBED);
+
+    // 빠른 inference 테스트 (최대 5초)
+    const testResult = await callLocalLLM(LOCAL_MODEL_FAST, [
+      { role: 'user', content: '1+1=?' },
+    ], { maxTokens: 8, timeoutMs: 5000 });
+
+    return {
+      available: true,
+      models,
+      fastModelOk,
+      embedModelOk,
+      responseMs: Date.now() - start,
+      error: testResult === null ? '추론 테스트 실패 (응답 없음)' : undefined,
+    };
+  } catch (err: unknown) {
+    return {
+      available: false,
+      models: [],
+      fastModelOk: false,
+      embedModelOk: false,
+      responseMs: Date.now() - start,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 export = {
   LOCAL_MODEL_FAST,
   LOCAL_MODEL_DEEP,
@@ -273,6 +348,7 @@ export = {
   getEmbeddingsUrl,
   getAvailableModels,
   isLocalLLMAvailable,
+  checkLocalLLMHealth,
   resolveEmbeddingModel,
   callLocalLLM,
   callLocalLLMJSON,
