@@ -32,7 +32,8 @@ defmodule Sigma.V2.SelfRAG do
                operation: :retrieve,
                content: query,
                team: "sigma",
-               top_k: limit
+               top_k: limit,
+               threshold: 0.3
              }, %{}) do
           {:ok, %{hits: raw_hits}} ->
             relevant = Enum.filter(raw_hits, &relevant?(&1, query))
