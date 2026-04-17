@@ -2,6 +2,7 @@ const env = require('../../../../packages/core/lib/env');
 const pgPool = require('../../../../packages/core/lib/pg-pool');
 const { createHealthMemoryHelper } = require('../../../../packages/core/lib/health-memory');
 const { checkHttp, getLaunchctlStatus } = require('../../../../packages/core/lib/health-provider');
+const { getServiceCatalog } = require('../../../../packages/core/lib/service-ownership');
 const {
   HUB_CORE_SERVICE_LABELS,
   summarizeServiceStatus,
@@ -172,6 +173,46 @@ export async function collectHealthSnapshot(): Promise<HealthSnapshot> {
     resources.ownership_alignment = {
       status: 'warn',
       detail: String(error?.message || 'ownership query failed'),
+    };
+  }
+
+  try {
+    const daemonCandidates = getServiceCatalog()
+      .filter((entry: any) => entry?.owner === 'elixir' && entry?.healthUrl);
+
+    const daemonResults = await Promise.all(
+      daemonCandidates.map(async (entry: any) => {
+        if (String(entry.label) === 'ai.hub.resource-api') {
+          return {
+            label: String(entry.label),
+            ok: true,
+          };
+        }
+
+        const ok = await checkHttp(String(entry.healthUrl), 3000);
+        return {
+          label: String(entry.label),
+          ok,
+        };
+      })
+    );
+
+    const down = daemonResults.filter((item) => !item.ok).map((item) => item.label);
+    const up = daemonResults.filter((item) => item.ok).map((item) => item.label);
+
+    resources.daemon_cutover = down.length === 0
+      ? {
+          status: 'ok',
+          detail: `healthy ${up.length}/${daemonResults.length}${up.length > 0 ? ` (${up.join(', ')})` : ''}`,
+        }
+      : {
+          status: 'warn',
+          detail: `healthy ${up.length}/${daemonResults.length} | down=${down.join(', ')}`,
+        };
+  } catch (error: any) {
+    resources.daemon_cutover = {
+      status: 'warn',
+      detail: String(error?.message || 'daemon cutover probe failed'),
     };
   }
 
