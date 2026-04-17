@@ -49,25 +49,25 @@ const {
   getWorkerMonitoringUsageSummary,
   setWorkerMonitoringPreference,
 } = require('../lib/llm-api-monitoring.ts');
-const { parseNaverBlogUrl } = require(path.join(__dirname, '../../../packages/core/lib/naver-blog-url'));
-const { describeLLMSelector } = require(path.join(__dirname, '../../../packages/core/lib/llm-model-selector'));
-const { buildSpeedLookup, buildSelectorAdvice } = require(path.join(__dirname, '../../../packages/core/lib/llm-selector-advisor'));
+const { parseNaverBlogUrl } = require(path.join(__dirname, '../../../packages/core/lib/naver-blog-url.js'));
+const { describeLLMSelector } = require(path.join(__dirname, '../../../packages/core/lib/llm-model-selector.js'));
+const { buildSpeedLookup, buildSelectorAdvice } = require(path.join(__dirname, '../../../packages/core/lib/llm-selector-advisor.legacy.js'));
 const { markPublished } = require(path.join(__dirname, '../../blog/lib/publ.ts'));
-const orchestratorRuntime = require(path.join(__dirname, '../../../bots/orchestrator/lib/runtime-config'));
-const workerRuntime = require('../lib/runtime-config');
+const orchestratorRuntime = require(path.join(__dirname, '../../../bots/orchestrator/lib/runtime-config.ts'));
+const workerRuntime = require('../lib/runtime-config.ts');
 const blogRuntime = require(path.join(__dirname, '../../../bots/blog/lib/runtime-config.ts'));
-const claudeConfig = require(path.join(__dirname, '../../../bots/claude/lib/config'));
+const claudeConfig = require(path.join(__dirname, '../../../bots/claude/lib/config.ts'));
 const {
   buildAttendanceProposal,
   normalizeAttendanceProposal,
 } = require('../lib/attendance-ai.ts');
 
 // ── AI 모듈 ───────────────────────────────────────────────────────────
-const llmRouter   = require(path.join(__dirname, '../../../packages/core/lib/llm-router'));
-const rag         = require(path.join(__dirname, '../../../packages/core/lib/rag-safe'));
-const { publishToRag } = require(path.join(__dirname, '../../../packages/core/lib/reporting-hub'));
-const { extractDocument } = require(path.join(__dirname, '../../../packages/core/lib/document-parser'));
-const { searchFeedbackCases } = require(path.join(__dirname, '../../../packages/core/lib/feedback-rag'));
+const llmRouter   = require(path.join(__dirname, '../../../packages/core/lib/llm-router.legacy.js'));
+const rag         = require(path.join(__dirname, '../../../packages/core/lib/rag-safe.js'));
+const { publishToRag } = require(path.join(__dirname, '../../../packages/core/lib/reporting-hub.js'));
+const { extractDocument } = require(path.join(__dirname, '../../../packages/core/lib/document-parser.legacy.js'));
+const { searchFeedbackCases } = require(path.join(__dirname, '../../../packages/core/lib/feedback-rag.legacy.js'));
 const videoApi = require('./routes/video-api');
 const videoStepApi = require('./routes/video-step-api');
 const videoInternalApi = require('./routes/video-internal-api');
@@ -123,7 +123,7 @@ const {
   getPromotionCandidateStatus,
   getPromotionEventReason,
   normalizeIntentText,
-} = require(path.join(__dirname, '../../../packages/core/lib/intent-core'));
+} = require(path.join(__dirname, '../../../packages/core/lib/intent-core.js'));
 const {
   getPromotionSummary,
   getPromotionRows,
@@ -138,19 +138,19 @@ const {
   addLearnedPattern,
   removeLearnedPatterns,
   getNamedIntentLearningPath,
-} = require(path.join(__dirname, '../../../packages/core/lib/intent-store'));
+} = require(path.join(__dirname, '../../../packages/core/lib/intent-store.js'));
 const {
   ensureChatSchema,
   handleChatMessage,
   listSessions: listChatSessions,
   listMessages: listChatMessages,
   resolveEmployeeId,
-} = require('../lib/chat-agent');
+} = require('../lib/chat-agent.ts');
 const {
   approve: approveApprovalRequest,
   reject: rejectApprovalRequest,
   review: reviewApprovalRequest,
-} = require('../lib/approval');
+} = require('../lib/approval.ts');
 const {
   createWorkerProposalFeedbackSession,
   getWorkerFeedbackSessionById,
@@ -159,7 +159,7 @@ const {
   markWorkerFeedbackRejected,
   markWorkerFeedbackSubmitted,
   markWorkerFeedbackCommitted,
-} = require('../lib/ai-feedback-service');
+} = require('../lib/ai-feedback-service.ts');
 
 // ── 파일 업로드 (multer) ──────────────────────────────────────────────
 const multer = require('multer');
@@ -5849,7 +5849,7 @@ app.use((err, req, res, _next) => {
 // ── Claude Code (SSE 스트리밍 + DB 동기화) ───────────────────────────
 const NODE_BIN         = '/opt/homebrew/bin/node';
 const CLAUDE_CLI       = process.env.CLAUDE_CODE_CLI || '/opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/cli.js';
-const { PROJECT_ROOT: CLAUDE_WORKDIR } = require('../../../packages/core/lib/env');
+const { PROJECT_ROOT: CLAUDE_WORKDIR } = require('../../../packages/core/lib/env.js');
 const CLAUDE_SPAWN_LOG = require('path').join(require('os').homedir(), '.openclaw', 'workspace', 'logs', 'claude-code-spawns.jsonl');
 
 function logClaudeSpawn(event) {
@@ -6259,7 +6259,7 @@ function setupChatWebSocket(server) {
 
 // ── 서버 기동 ────────────────────────────────────────────────────────
 if (require.main === module) {
-  const { initHubSecrets } = require('../lib/secrets');
+  const { initHubSecrets } = require('../lib/secrets.ts');
   // RAG 스키마 초기화 (pgvector 테이블, 비동기 — 실패해도 서버 기동 계속)
   rag.initSchema().catch(e => console.error('[RAG] 스키마 초기화 실패:', e.message));
   ensureChatSchema().catch(e => console.error('[worker/chat] 스키마 초기화 실패:', e.message));

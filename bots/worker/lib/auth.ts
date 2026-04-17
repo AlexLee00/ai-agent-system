@@ -13,7 +13,7 @@
 
 const bcrypt = require('bcrypt');
 const jwt    = require('jsonwebtoken');
-const { initHubSecrets, getSecret } = require('./secrets');
+const { initHubSecrets, getSecret } = require('./secrets.ts');
 
 const SALT_ROUNDS = 12;
 

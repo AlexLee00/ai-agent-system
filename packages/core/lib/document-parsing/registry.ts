@@ -1,13 +1,13 @@
 // @ts-nocheck
 'use strict';
 
-const textExtractor = require('./extractors/text');
-const xlsxExtractor = require('./extractors/xlsx');
-const docxExtractor = require('./extractors/docx');
-const docExtractor = require('./extractors/doc');
-const pptxExtractor = require('./extractors/pptx');
-const imageExtractor = require('./extractors/image');
-const pdfExtractor = require('./extractors/pdf');
+const textExtractor = require('./extractors/text.ts');
+const xlsxExtractor = require('./extractors/xlsx.ts');
+const docxExtractor = require('./extractors/docx.ts');
+const docExtractor = require('./extractors/doc.ts');
+const pptxExtractor = require('./extractors/pptx.ts');
+const imageExtractor = require('./extractors/image.ts');
+const pdfExtractor = require('./extractors/pdf.ts');
 
 function createExtractorRegistry() {
   const extractors = [

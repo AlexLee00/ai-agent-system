@@ -2,7 +2,7 @@
 'use strict';
 
 const path = require('path');
-const { WARNING_CODES } = require('../constants');
+const { WARNING_CODES } = require('../constants.ts');
 const {
   buildSection,
   createBaseMetadata,
@@ -10,7 +10,7 @@ const {
   finalizeExtraction,
   normalizeText,
   runCommand,
-} = require('../utils');
+} = require('../utils.ts');
 
 const MAX_SHEETS = 20;
 const MAX_ROWS_PER_SHEET = 2000;

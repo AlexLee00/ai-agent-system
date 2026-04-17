@@ -7,7 +7,7 @@ const pgPool = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'
 const kst = require(path.join(__dirname, '../../../packages/core/lib/kst'));
 const { callWithFallback } = require(path.join(__dirname, '../../../packages/core/lib/llm-fallback'));
 const { selectLLMChain } = require(path.join(__dirname, '../../../packages/core/lib/llm-model-selector'));
-const { getWorkerLLMSelectorOverrides } = require('./runtime-config');
+const { getWorkerLLMSelectorOverrides } = require('./runtime-config.ts');
 const {
   createLearnedPatternReloader,
   createPromotedIntentExampleLoader,
@@ -28,11 +28,11 @@ const {
   markUnrecognizedPromoted,
   addLearnedPattern,
 } = require(path.join(__dirname, '../../../packages/core/lib/intent-store'));
-const { createRequest: createApprovalRequest, attachTarget: attachApprovalTarget } = require('./approval');
+const { createRequest: createApprovalRequest, attachTarget: attachApprovalTarget } = require('./approval.ts');
 const {
   ensureWorkerFeedbackTables,
   createWorkerProposalFeedbackSession,
-} = require('./ai-feedback-service');
+} = require('./ai-feedback-service.ts');
 
 const SCHEMA = 'worker';
 const WORKER_INTENT_LEARNINGS_PATH = getNamedIntentLearningPath('worker');

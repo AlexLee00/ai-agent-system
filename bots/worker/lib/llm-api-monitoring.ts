@@ -13,8 +13,8 @@ const { describeLLMSelector } = require(path.join(__dirname, '../../../packages/
 const {
   buildSpeedLookup,
   buildSelectorAdvice,
-} = require(path.join(__dirname, '../../../packages/core/lib/llm-selector-advisor'));
-const { getWorkerLLMSelectorOverrides } = require('./runtime-config');
+} = require(path.join(__dirname, '../../../packages/core/lib/llm-selector-advisor.legacy.js'));
+const { getWorkerLLMSelectorOverrides } = require('./runtime-config.ts');
 
 const SCHEMA = 'worker';
 const PREFERENCE_KEY = 'worker_monitoring_llm_api';

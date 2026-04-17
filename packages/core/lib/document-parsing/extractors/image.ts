@@ -3,14 +3,14 @@
 
 const os = require('os');
 const path = require('path');
-const { WARNING_CODES } = require('../constants');
-const { evaluateImageOcrQuality } = require('../image-quality');
+const { WARNING_CODES } = require('../constants.ts');
+const { evaluateImageOcrQuality } = require('../image-quality.ts');
 const {
   buildSection,
   createBaseMetadata,
   finalizeExtraction,
   runCommand,
-} = require('../utils');
+} = require('../utils.ts');
 
 const SWIFT_SCRIPT = path.join(__dirname, '../swift/ocr.swift');
 

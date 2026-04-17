@@ -33,11 +33,13 @@ defmodule Darwin.V2.Principle.LoaderTest do
       on_exit(fn -> Application.delete_env(:darwin, :principle_semantic_check) end)
     end
 
+    @tag :integration
     test "일반 계획 → approved" do
       plan = %{title: "정상 계획", skip_verification: false, auto_apply: false}
       assert {:approved, []} = Loader.self_critique(plan)
     end
 
+    @tag :integration
     test "skip_verification: true → P-D002 blocked" do
       plan = %{skip_verification: true}
       case Loader.self_critique(plan) do
@@ -49,6 +51,7 @@ defmodule Darwin.V2.Principle.LoaderTest do
       end
     end
 
+    @tag :integration
     test "auto_apply: true + L3 레벨 → P-D005 blocked (L3이 기본)" do
       plan = %{auto_apply: true}
       result = Loader.self_critique(plan)

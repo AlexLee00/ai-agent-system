@@ -247,7 +247,6 @@ stop_service_if_registered "ai.ska.today-audit" "스카 금일 감사"
 
 log "📝 블로그팀"
 stop_service_if_registered "ai.blog.node-server" "블로그 node-server"
-stop_service_if_registered "ai.blog.comfyui" "블로그 ComfyUI"
 stop_service_if_registered "ai.blog.daily" "블로그 daily"
 stop_service_if_registered "ai.blog.health-check" "블로그 health-check"
 stop_service_if_registered "ai.blog.collect-performance" "블로그 성과 수집"

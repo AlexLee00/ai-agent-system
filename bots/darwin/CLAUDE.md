@@ -40,7 +40,8 @@ API 키, Tailscale IP, Hub 토큰은 절대 커밋 금지.
 | 4 | ✅ 완료 | Commander (Jido.AI.Agent) + Skill 3개 + Cycle 7개 |
 | 5 | ✅ 완료 | MCP Server + Signal |
 | 6 | ✅ 완료 | Shadow Mode (V1 vs V2 병행 비교, ShadowRunner + ShadowCompare + TelegramBridge) |
-| 7 | 🔶 예정 | 커뮤니티 스캐너 (HN/Reddit/Twitter 시그널) |
+| 7 | ✅ 완료 | 커뮤니티 스캐너 (HN/Reddit/OpenReview/ArxivRSS 센서 4종 + CommunityScanner) |
+| 8 | ✅ 완료 | 테스트 335개 (0 failures, 11 excluded) + DB 마이그레이션 5개 |
 
 ## 4. 코드 작성 표준
 

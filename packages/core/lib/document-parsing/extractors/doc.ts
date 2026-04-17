@@ -1,13 +1,13 @@
 // @ts-nocheck
 'use strict';
 
-const { WARNING_CODES } = require('../constants');
+const { WARNING_CODES } = require('../constants.ts');
 const {
   createBaseMetadata,
   finalizeExtraction,
   normalizeText,
   runCommand,
-} = require('../utils');
+} = require('../utils.ts');
 
 function resolveDocConverter() {
   try {

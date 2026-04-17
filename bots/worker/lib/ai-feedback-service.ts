@@ -9,7 +9,7 @@ const {
   FEEDBACK_STATUSES,
   buildFieldDiffEvents,
   shouldMarkAcceptedWithoutEdit,
-} = require(path.join(__dirname, '../../../packages/core/lib/ai-feedback-core'));
+} = require(path.join(__dirname, '../../../packages/core/lib/ai-feedback-core.legacy.js'));
 const {
   ensureAiFeedbackTables,
   createFeedbackSession,
@@ -19,10 +19,10 @@ const {
   clearFeedbackEditEvents,
   getFeedbackSessionById,
   getFeedbackSessionBySource,
-} = require(path.join(__dirname, '../../../packages/core/lib/ai-feedback-store'));
+} = require(path.join(__dirname, '../../../packages/core/lib/ai-feedback-store.legacy.js'));
 const {
   publishFeedbackSessionToRag,
-} = require(path.join(__dirname, '../../../packages/core/lib/feedback-rag'));
+} = require(path.join(__dirname, '../../../packages/core/lib/feedback-rag.legacy.js'));
 
 const SCHEMA = 'worker';
 

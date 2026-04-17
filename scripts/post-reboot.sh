@@ -201,7 +201,6 @@ check_periodic "ai.ska.today-audit"          "스카 금일 감사"
 
 log "📝 블로그팀"
 check_svc      "ai.blog.node-server"         "블로그 node-server"
-check_svc      "ai.blog.comfyui"             "블로그 ComfyUI"
 check_periodic "ai.blog.daily"               "블로그 daily"
 check_periodic "ai.blog.health-check"        "블로그 health-check"
 check_periodic "ai.blog.collect-performance" "블로그 성과 수집"

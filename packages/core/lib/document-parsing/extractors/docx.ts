@@ -1,7 +1,7 @@
 // @ts-nocheck
 'use strict';
 
-const { WARNING_CODES } = require('../constants');
+const { WARNING_CODES } = require('../constants.ts');
 const {
   buildSection,
   createBaseMetadata,
@@ -9,7 +9,7 @@ const {
   finalizeExtraction,
   normalizeText,
   runCommand,
-} = require('../utils');
+} = require('../utils.ts');
 
 const MAX_PARAGRAPHS = 1200;
 const PARAGRAPH_BLOCK_SIZE = 40;

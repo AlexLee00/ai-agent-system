@@ -15,21 +15,25 @@
 ## 40차 세션 작업 내역
 
 ### 완료
-- [x] CODEX_DARWIN_REMODEL Phase 0-5 전체 구현
+- [x] CODEX_DARWIN_REMODEL Phase 0-6 전체 구현
 - [x] bots/darwin/elixir/ 독립 구조 확립
-- [x] Darwin.V2.* 네임스페이스 20+ 모듈 생성
-- [x] mix.exs에 darwin elixir lib 경로 추가
-- [x] application.ex에 Darwin.V2.Supervisor 등록
-- [x] DB 마이그레이션 생성 (darwin_v2_llm_cost_tracking, routing_log)
-- [x] 표준 md 문서 9개 생성
+- [x] Darwin.V2.* 네임스페이스 40+ 모듈 생성
+- [x] Phase 7: 커뮤니티 스캐너 (ArxivRSS/HackerNews/Reddit/OpenReview 센서 4종 + CommunityScanner)
+- [x] Phase 8: 테스트 335개 (0 failures) — `mix test` 통과
+- [x] DB 마이그레이션 5개 생성 (priv/repo/migrations/)
+  - 20260418000001: darwin_v2_llm_routing_log + darwin_llm_cost_tracking
+  - 20260418000002: darwin_papers_embeddings (pgvector 1024차원)
+  - 20260418000003: darwin_v2_shadow_runs
+  - 20260418000004: darwin_v2_principle_violations
+  - 20260418000005: darwin_v2_reflexion_memory
+- [x] rollback_scheduler.ex 컴파일 경고 2건 수정
+- [x] test/test_helper.exs integration/db/pending 태그 exclude 설정
 
 ### 다음 작업 (41차 세션)
-- [ ] `mix compile --warnings-as-errors` 검증 + 오류 수정
-- [ ] Phase 6: Shadow Mode (Darwin.V2.ShadowRunner)
-- [ ] DB 마이그레이션 OPS에 적용
-- [ ] DARWIN_V2_ENABLED=true OPS 환경변수 설정
-- [ ] 테스트 파일 생성 (최소 20개)
-- [ ] Cycle GenServer 실제 비즈니스 로직 구현
+- [ ] Shadow Mode 7일 관찰 (avg_match ≥ 95% 달성 확인)
+- [ ] `DARWIN_V2_ENABLED=true` OPS 환경변수 설정 (마스터 승인 후)
+- [ ] DB 마이그레이션 OPS 적용 (`mix darwin.migrate`)
+- [ ] Tier 1 → Tier 2 자동 승급 조건 모니터링
 
 ## 파일 목록 (Darwin V2)
 

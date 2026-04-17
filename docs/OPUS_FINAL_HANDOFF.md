@@ -1,4 +1,40 @@
-# 세션 인수인계 — 2026-04-18 (CODEX_DARWIN_REMODEL Phase 6 + 버그 수정)
+# 세션 인수인계 — 2026-04-18 (CODEX_DARWIN_REMODEL Phase 7/8 완료)
+
+> 세션 범위: Darwin V2 Phase 7 커뮤니티 스캐너 완성 + Phase 8 테스트 335개 (0 failures) + DB 마이그레이션 5개
+
+---
+
+## 최신 작업 요약 (Phase 7/8 완료)
+
+### Phase 7 — 커뮤니티 스캐너 완성
+- `Darwin.V2.Sensor.ArxivRSS` — RSS 30분 폴링, ETS 24h 중복제거
+- `Darwin.V2.Sensor.HackerNews` — Algolia API 2h 주기
+- `Darwin.V2.Sensor.Reddit` — 4개 서브레딧 JSON
+- `Darwin.V2.Sensor.OpenReview` — NeurIPS/ICML/ICLR API
+- `Darwin.V2.CommunityScanner` — 4개 센서 집계
+
+### Phase 8 — 테스트 완성
+- **335 tests, 0 failures** (11 excluded: integration/db/pending)
+- 신규 테스트 파일 30+ 개 (Cycle×7, Skill×6, Sensor×4, MCP×2, Memory×2 등)
+- DB 마이그레이션 5개: pgvector embeddings, shadow_runs, reflexion_memory, principle_violations, routing_log
+
+### rollback_scheduler.ex 버그 수정
+- `start_link(_opts)` 미사용 opts 수정
+- `Memory.store/3` API 맞게 수정
+
+### Kill Switch 현재 상태
+- `DARWIN_V2_ENABLED=false` (기본 OFF)
+- `DARWIN_SHADOW_MODE=false` (Shadow 비교 — 기본 OFF)
+- 모든 Kill Switch OFF 상태로 안전하게 준비 완료
+
+### 다음 세션 즉시 착수 항목
+1. **Shadow Mode 가동**: `DARWIN_SHADOW_MODE=true` + `DARWIN_V2_ENABLED=true` OPS 설정 (마스터 승인)
+2. **DB 마이그레이션 OPS 적용**: `mix darwin.migrate`
+3. **7일 Shadow 관찰**: avg_match ≥ 95% 달성 시 Tier 2 승급
+
+---
+
+## 이전 작업 요약 (Phase 6 Shadow Mode — 커밋: 4691e221)
 
 > 세션 범위: Darwin V2 Phase 6 Shadow Mode 구현 + 컴파일 버그 2건 수정
 

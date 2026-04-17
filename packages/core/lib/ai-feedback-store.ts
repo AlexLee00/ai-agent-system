@@ -1,6 +1,6 @@
 const {
   sanitizeFeedbackValue,
-} = require('./ai-feedback-core');
+} = require('./ai-feedback-core.legacy.js');
 
 type PgPool = {
   run: (schema: string, sql: string, params?: unknown[]) => Promise<unknown>;

@@ -2,10 +2,10 @@
 'use strict';
 
 /**
- * scripts/health-report.ts — 스카팀 운영자용 헬스 리포트
+ * scripts/health-report.ts — 예약팀 운영자용 헬스 리포트
  *
  * 목적:
- *   - launchd 서비스 상태와 naver-monitor 로그 활동성을 사람이 읽기 쉽게 요약
+ *   - 예약 운영 backing 서비스와 데이터 무결성을 사람이 읽기 쉽게 요약
  *   - 공용 health-core 포맷을 사용하는 운영 리포트
  *
  * 실행:
@@ -51,6 +51,21 @@ const LOG_STALE_MS = 15 * 60 * 1000;
 const N8N_HEALTH_URL = process.env.N8N_HEALTH_URL || 'http://127.0.0.1:5678/healthz';
 const DEFAULT_N8N_WEBHOOK_URL = process.env.SKA_N8N_WEBHOOK_URL || 'http://127.0.0.1:5678/webhook/ska-command';
 const CANCEL_COUNTER_DRIFT_TITLE = '🚨 네이버 취소 카운터 증가 이상';
+
+function reservationServiceLabel(label) {
+  const mapped = {
+    'ai.ska.commander': 'reservation-commander',
+    'ai.ska.naver-monitor': 'booking-monitor',
+    'ai.ska.kiosk-monitor': 'kiosk-monitor',
+    'ai.ska.health-check': 'reservation-health-check',
+    'ai.ska.pickko-verify': 'pickko-verify',
+    'ai.ska.pickko-daily-audit': 'pickko-daily-audit',
+    'ai.ska.pickko-daily-summary': 'pickko-daily-summary',
+    'ai.ska.db-backup': 'reservation-db-backup',
+    'ai.ska.log-rotate': 'reservation-log-rotate',
+  };
+  return mapped[label] || label.replace('ai.ska.', '');
+}
 
 function sumRoomAmounts(roomAmountsJson): number {
   if (!roomAmountsJson) return 0;
@@ -230,7 +245,7 @@ function buildCombinedMonitorHealth() {
 
 async function buildN8nCommandHealth() {
   return buildResolvedWebhookHealth({
-    workflowName: '스카팀 읽기 명령 intake',
+    workflowName: '예약팀 읽기 명령 intake',
     pathSuffix: 'ska-command',
     healthUrl: N8N_HEALTH_URL,
     defaultWebhookUrl: DEFAULT_N8N_WEBHOOK_URL,
@@ -492,7 +507,7 @@ function buildDecision(coreServiceRows, monitorHealth, n8nCommandHealth, dailySu
       {
         active: coreServiceRows.warn.length > 0,
         level: 'high',
-        reason: `핵심 스카 서비스 경고 ${coreServiceRows.warn.length}건이 있어 점검이 필요합니다.`,
+        reason: `핵심 예약 운영 서비스 경고 ${coreServiceRows.warn.length}건이 있어 점검이 필요합니다.`,
       },
       {
         active: monitorHealth.warn.length > 0,
@@ -502,17 +517,17 @@ function buildDecision(coreServiceRows, monitorHealth, n8nCommandHealth, dailySu
       {
         active: !n8nCommandHealth.n8nHealthy,
         level: 'medium',
-        reason: 'n8n healthz 응답이 없어 스카 command 노드 경로를 사용할 수 없습니다.',
+        reason: 'n8n healthz 응답이 없어 예약 command 노드 경로를 사용할 수 없습니다.',
       },
       {
         active: n8nCommandHealth.n8nHealthy && !n8nCommandHealth.webhookRegistered,
         level: 'medium',
-        reason: `n8n은 살아 있지만 ska command webhook이 미등록 상태입니다 (${n8nCommandHealth.webhookReason}).`,
+        reason: `n8n은 살아 있지만 reservation command webhook이 미등록 상태입니다 (${n8nCommandHealth.webhookReason}).`,
       },
       {
         active: dailySummaryIntegrityHealth.warn.length > 0,
         level: 'medium',
-        reason: `daily_summary 저장값 경고 ${dailySummaryIntegrityHealth.warn.length}건이 있어 스카 매출 저장 구조를 점검해야 합니다.`,
+        reason: `daily_summary 저장값 경고 ${dailySummaryIntegrityHealth.warn.length}건이 있어 예약 매출 저장 구조를 점검해야 합니다.`,
       },
       {
         active: cancelCounterDriftHealth.warn.length > 0,
@@ -527,19 +542,19 @@ function buildDecision(coreServiceRows, monitorHealth, n8nCommandHealth, dailySu
         reason: `같은 슬롯의 non-cancelled duplicate group ${duplicateSlotHealth.riskyCount}건이 있어 중복 예약 상태를 점검해야 합니다.`,
       },
     ],
-    okReason: '스카 서비스와 naver-monitor 로그 활동성이 현재는 안정 구간입니다.',
+    okReason: '예약 운영 서비스와 booking monitor 로그 활동성이 현재는 안정 구간입니다.',
   });
 }
 
 function formatText(report) {
   return buildHealthReport({
-    title: '📅 스카 운영 헬스 리포트',
+    title: '📅 예약 운영 헬스 리포트',
     sections: [
       buildHealthCountSection('■ 핵심 서비스 상태', report.coreServiceHealth),
       buildHealthSampleSection('■ 핵심 서비스 샘플', report.coreServiceHealth),
       buildHealthCountSection('■ 스케줄 작업 상태', report.scheduledServiceHealth),
       buildHealthCountSection('■ 모니터 상태', report.monitorHealth, { okLimit: 3 }),
-      buildHealthCountSection('■ n8n 명령 경로', report.n8nCommandHealth, { okLimit: 2 }),
+      buildHealthCountSection('■ n8n 예약 명령 경로', report.n8nCommandHealth, { okLimit: 2 }),
       buildHealthCountSection('■ 취소 카운터 드리프트', report.cancelCounterDriftHealth, { okLimit: 2, warnLimit: 4 }),
       buildHealthSampleSection('■ 취소 카운터 드리프트 샘플', {
         ok: report.cancelCounterDriftHealth.samples || [],
@@ -573,13 +588,13 @@ async function buildReport() {
     labels: CORE_SERVICES,
     continuous: CONTINUOUS,
     normalExitCodes: NORMAL_EXIT_CODES,
-    shortLabel: (label) => label.replace('ai.ska.', ''),
+    shortLabel: reservationServiceLabel,
   });
   const scheduledServiceRows = buildServiceRows(status, {
     labels: SCHEDULED_SERVICES,
     continuous: [],
     normalExitCodes: NORMAL_EXIT_CODES,
-    shortLabel: (label) => label.replace('ai.ska.', ''),
+    shortLabel: reservationServiceLabel,
     treatMissingAsOk: true,
     missingOkText: (name) => `  ${name}: 대기 (다음 스케줄 실행 전)`,
   });
@@ -657,5 +672,5 @@ async function buildReport() {
 runHealthCli({
   buildReport,
   formatText,
-  errorPrefix: '[스카 운영 헬스 리포트]',
+  errorPrefix: '[예약 운영 헬스 리포트]',
 });

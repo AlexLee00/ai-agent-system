@@ -21,8 +21,8 @@ const os   = require('os');
 const path = require('path');
 const { execSync } = require('child_process');
 
-const { publishToMainBot } = require('../lib/mainbot-client');
-const cfg = require('../lib/config');
+const { publishToMainBot } = require('../lib/mainbot-client.js');
+const cfg = require('../lib/config.ts');
 const {
   isElixirOwnedService,
   isExpectedIdleService,
@@ -30,7 +30,7 @@ const {
 } = require('../../../packages/core/lib/service-ownership.js');
 
 // v2: 핵심 봇 프로세스 빠른 점검 모듈
-const teamLeadsCheck = require('../lib/checks/team-leads');
+const teamLeadsCheck = require('../lib/checks/team-leads.legacy.js');
 // NOTE: openclawCheck (lsof 기반 포트 검사)는 1시간 주기 dexter.js에서만 실행
 
 // ── 상수 ─────────────────────────────────────────────────────────────

@@ -36,7 +36,7 @@ defmodule Darwin.V2.RollbackScheduler do
   # Public API
   # -------------------------------------------------------------------
 
-  def start_link(opts \\ []) do
+  def start_link(_opts \\ []) do
     GenServer.start_link(__MODULE__, %{pending: %{}}, name: __MODULE__)
   end
 
@@ -253,9 +253,8 @@ defmodule Darwin.V2.RollbackScheduler do
   defp store_success_memory(snapshot_id, effectiveness) do
     try do
       Darwin.V2.Memory.store(
-        :semantic,
         "v2_success:#{snapshot_id}",
-        %{effectiveness: effectiveness, stored_at: DateTime.utc_now()},
+        %{type: :semantic, effectiveness: effectiveness, stored_at: DateTime.utc_now()},
         importance: min(effectiveness, 1.0)
       )
     rescue
