@@ -39,7 +39,7 @@ function runPayPending(entry: any) {
   return new Promise<any>((resolve) => {
     const scriptPath = path.join(
       __dirname,
-      '../../../../dist/ts-runtime/bots/reservation/manual/reports/pickko-pay-pending.js',
+      '../../../../bots/reservation/manual/reports/pickko-pay-pending.ts',
     );
     const nodeBin = '/opt/homebrew/bin/node';
     const args = [

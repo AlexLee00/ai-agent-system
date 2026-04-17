@@ -22,7 +22,7 @@ const missing = required.filter((k) => !ARGS[k]);
 if (missing.length > 0) {
   fail(
     `필수 인자 누락: ${missing.join(', ')}\n` +
-    '사용법: node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/reservation/pickko-cancel-cmd.js --phone=01000000000 --date=YYYY-MM-DD --start=HH:MM --end=HH:MM --room=A1|A2|B',
+    '사용법: node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-cancel-cmd.ts --phone=01000000000 --date=YYYY-MM-DD --start=HH:MM --end=HH:MM --room=A1|A2|B',
   );
 }
 
@@ -53,7 +53,7 @@ function buildCancelCommandMemoryQuery(kind: string) {
 
 function runScript(scriptPath: string, args: string[], label: string): RunScriptResult {
   return new Promise<boolean>((resolve) => {
-    const child = spawn('node', [scriptPath, ...args], {
+    const child = spawn('/opt/homebrew/bin/tsx', [scriptPath, ...args], {
       cwd: __dirname,
       env: { ...process.env, MODE: IS_OPS ? 'ops' : 'dev' },
       stdio: ['ignore', process.stderr, process.stderr],
@@ -68,7 +68,7 @@ function runScript(scriptPath: string, args: string[], label: string): RunScript
 
 const cancelScript = path.join(
   __dirname,
-  '../../../../dist/ts-runtime/bots/reservation/manual/reservation/pickko-cancel.js',
+  '../../../../bots/reservation/manual/reservation/pickko-cancel.ts',
 );
 const cancelArgs = [
   `--phone=${phoneRaw}`,

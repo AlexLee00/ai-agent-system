@@ -196,7 +196,7 @@ function runPickko(entry: ReservationLike): Promise<number | null> {
     const args = [
       path.join(
         __dirname,
-        '../../../../dist/ts-runtime/bots/reservation/manual/reservation/pickko-accurate.js',
+        '../../../../bots/reservation/manual/reservation/pickko-accurate.ts',
       ),
       `--phone=${phone}`,
       `--date=${entry.date}`,
@@ -206,7 +206,7 @@ function runPickko(entry: ReservationLike): Promise<number | null> {
       `--name=${entry.raw?.name || '고객'}`,
     ];
     log(`  🤖 픽코 등록 실행: ${maskPhone(phone)} ${entry.date} ${entry.start}~${entry.end} ${entry.room}룸`);
-    const child = spawn('node', args, {
+    const child = spawn('/opt/homebrew/bin/tsx', args, {
       cwd: path.dirname(args[0]),
       stdio: 'inherit',
     });

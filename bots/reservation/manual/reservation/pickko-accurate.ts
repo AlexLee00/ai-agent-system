@@ -487,8 +487,8 @@ async function main() {
       await releaseLock();
 
       await new Promise((resolve) => {
-        const child = spawn('node', [
-          path.join(__dirname, '../../../../dist/ts-runtime/bots/reservation/manual/reports/pickko-pay-pending.js'),
+        const child = spawn('/opt/homebrew/bin/tsx', [
+          path.join(__dirname, '../../../../bots/reservation/manual/reports/pickko-pay-pending.ts'),
           `--phone=${PHONE_NOHYPHEN}`,
           `--date=${DATE}`,
           `--start=${START_TIME}`,
