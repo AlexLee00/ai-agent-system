@@ -1272,3 +1272,118 @@ P2 (3단위):
 **2단위 P1 100% 점검 완료 — SEC-009~012 신규 발견(모두 LOW급, 즉시 조치 불요). SEC-012는 SEC-008 패치가 자동 해결. 다음 세션 P2(team/*.ts + scripts/ + db.ts) 착수.**
 
 — 메티 (2026-04-17 밤, 9차 세션)
+
+
+---
+
+## 📍 10+11차 세션 증분 업데이트 (2026-04-17 밤 메티) — 2단위 P2 부분 완료
+
+> 10차 세션이 감사는 수행했으나 문서화를 못 끝냄 → 11차가 통합 기록.
+> 2단위 P2 핵심 파일(db.ts, signal.ts, force-exit-runner, hanul.ts, hard-rule.ts) 점검 완료.
+
+### 🆕 10+11차 신규 발견 3건
+
+**SEC-013 (LOW)** — `db.ts:943` SQL 템플릿 리터럴
+- `getActiveStrategies`의 `marketFilter`가 `` `AND (market = '${market}' ...)` ``
+- `limit`도 템플릿 리터럴 삽입
+- 호출자(`argos.ts:603`)가 내부 통제값(`'crypto'/'stocks'/'all'`)만 전달 → 실질 리스크 낮음
+- 수정 권고: `$1, $2` 파라미터화
+
+**SEC-014 (MEDIUM)** — L31 노드가 signal.ts `executeSignal` 우회
+- `nodes/l31-order-execute.ts:3-4`에서 hephaestos/hanul **직접** 호출
+- `shared/signal.ts:executeSignal`의 6원칙 안전장치(특히 원칙 5 쿨다운, 원칙 6 DD) **프로덕션 비활성**
+- hephaestos 내부 `runBuySafetyGuards`는 원칙 1~4만 일부 커버
+- 수정 옵션 A: L31이 signal.ts 경유하도록 변경
+- 수정 옵션 B: hephaestos/hanul 진입부에 `checkSafetyGates` 호출 추가
+
+**SEC-015 (MEDIUM)** — hanul.ts에 SEC-004 가드 누락
+- `team/hanul.ts:616, 768` (executeSignal, executeOverseasSignal)에 nemesis_verdict 재검증 없음
+- hephaestos에만 SEC-004 가드 적용되고 hanul은 동일 구조인데 빠짐
+- `checkKisRisk`/`checkKisOverseasRisk`는 주문금액/예수금/심볼만 체크
+- **KIS 매매 경로(국내+해외) SEC-004 우회 가능**
+- 수정: hephaestos와 동일한 가드 로직 이식 필요
+
+### ✅ 점검 완료 파일 (긍정 확인)
+
+**`shared/db.ts` (1090줄)**:
+- SQL injection 전수 스캔 통과 (conditions/sets/params 기반 동적 쿼리 모두 안전)
+- ALTER TABLE col/type은 하드코딩 리터럴, 외부 입력 아님
+- SEC-013 한 곳만 예외 (내부 통제값이라 LOW)
+
+**`shared/signal.ts` (282줄)**:
+- 6원칙 안전장치 설계 견고 (단일/총자본/포지션수/일손실/연속손실/DD)
+- 단일 진입점 원칙 명확
+- SQL 파라미터화 모두 준수
+- 다만 L31이 이를 우회 → SEC-014
+
+**`scripts/force-exit-runner.ts` (256줄)**:
+- 이중 확인 플래그(`--execute` + `--confirm=force-exit`) 엄격
+- SEC-004 호환 (`nemesis_verdict='approved'` + `approved_at` 주입)
+- preflight 점검(mock 해외 SELL 차단, 장외시간 차단)
+
+**`team/hard-rule.ts` (155줄)**:
+- 네메시스 하드룰 실행부, 취약점 없음
+- deps 주입 기반 파라미터화 완벽
+- 모든 reject 경로 일관성 있음
+
+### 📊 감사 진행률 (11차 세션 기준)
+
+```
+1단위 Hub + 거버넌스: 100% 종결
+  ✅ SEC-001~005
+
+2단위 투자팀:
+  P1 (인증/시크릿): 100% 점검 완료
+    ⏳ SEC-006 (MEDIUM)  KIS 토큰 파일 권한   (프롬프트 대기)
+    ⏳ SEC-007 (LOW-MED) KIS 에러 정화         (프롬프트 대기)
+    ⏳ SEC-008 (MEDIUM)  업비트 출금 3중 가드  (프롬프트 대기)
+    ⬜ SEC-009/010/011 (모두 LOW) — 후순위
+
+  P2 (매매 로직): 40% 점검 완료
+    ⏳ SEC-013 (LOW)     SQL 템플릿 리터럴
+    ⏳ SEC-014 (MEDIUM)  L31 signal.ts 우회   ← 설계 이슈
+    ⏳ SEC-015 (MEDIUM)  hanul SEC-004 누락   ← 중요 빈틈
+
+  P2 미착수:
+    ⬜ team/luna.ts (1296줄) — 자율 루프 핵심
+    ⬜ team/argos.ts (1254줄) — 시장 스크리닝
+    ⬜ team/aria.ts (737줄) — TA 분석
+    ⬜ team/hermes.ts (445줄) — 뉴스 분석
+    ⬜ team/scout.ts (343줄) — 종목 발굴
+    ⬜ team/chronos.ts (529줄) — 타이밍
+    ⬜ team/reporter.ts (1004줄) — 보고서
+    ⬜ 기타 team/ (sophia/athena/zeus/oracle 등 소규모)
+
+전체 진행률: 약 75%
+```
+
+### 📋 다음 세션 최우선 작업
+
+**P0 — SEC-014/015 프롬프트 작성 (CODEX_SECURITY_AUDIT_04.md)**:
+- Task 1: SEC-015 — hanul.ts 두 진입점(executeSignal/executeOverseasSignal)에 SEC-004 가드 이식
+- Task 2: SEC-014 — L31이 signal.ts 경유 또는 hephaestos/hanul 진입부에 checkSafetyGates
+- Task 3 (optional): SEC-013 — db.ts 파라미터화
+
+**P1 — 2단위 P2 나머지 감사**:
+- team/luna.ts (1296줄) — 자율 루프 안전장치
+- team/argos.ts (1254줄) — 외부 데이터 수집 (바이낸스 24h API)
+- team/hermes.ts (445줄) — 뉴스 API 소비
+
+**P2 — 3단위 착수**:
+- bots/worker/ (JWT 멀티테넌트)
+- bots/reservation/ (Playwright + DB)
+
+### ⚠️ 다른 세션 병행 중 (이번 세션 동안 관찰)
+
+- Claude REMODEL Phase 3/4 (자동 실행 활성화)
+- Darwin REMODEL Phase 1/2/3 (팀 간 연동)
+- Codex 자동 실행 파이프라인
+- 롤백 포인트 커밋들 (pre: CODEX_*)
+
+→ 메티는 **docs/ 영역만** 건드리고 다른 세션 영역(bots/claude, bots/darwin, elixir/)은 절대 수정하지 않음
+
+### 🏷️ 10+11차 세션 요약 한 줄
+
+**2단위 P2 40% 점검 — SEC-013(LOW) + SEC-014(MEDIUM, 설계이슈) + SEC-015(MEDIUM, SEC-004 빈틈) 발견. KNOWN_ISSUES 업데이트 완료. 다음 세션 우선순위: SEC-014/015 프롬프트(AUDIT_04) + luna/argos/hermes 감사.**
+
+— 메티 (2026-04-17 밤, 11차 세션)
