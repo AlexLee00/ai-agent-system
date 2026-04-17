@@ -8,7 +8,7 @@
   <key>ProgramArguments</key>
   <array>
     <string>/opt/homebrew/bin/node</string>
-    <string>/Users/alexlee/projects/ai-agent-system/bots/orchestrator/src/sigma-daily.js</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/sigma/ts/src/sigma-daily.js</string>
   </array>
 
   <key>WorkingDirectory</key>

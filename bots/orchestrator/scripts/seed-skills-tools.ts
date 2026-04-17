@@ -28,11 +28,11 @@ const SKILLS = [
   { name: 'judge-simulator', display_name: '판사시뮬', team: 'justin', category: 'analysis', code_path: 'packages/core/lib/skills/justin/judge-simulator.js' },
   { name: 'precedent-comparer', display_name: '판례비교', team: 'justin', category: 'search', code_path: 'packages/core/lib/skills/justin/precedent-comparer.js' },
   { name: 'damages-analyst', display_name: '손해분석', team: 'justin', category: 'analysis', code_path: 'packages/core/lib/skills/justin/damages-analyst.js' },
-  { name: 'data-quality-guard', display_name: '데이터품질', team: 'sigma', category: 'validation', score: 7.0, code_path: 'packages/core/lib/skills/sigma/data-quality-guard.js' },
-  { name: 'experiment-design', display_name: '실험설계', team: 'sigma', category: 'analysis', code_path: 'packages/core/lib/skills/sigma/experiment-design.js' },
-  { name: 'causal-check', display_name: '인과검증', team: 'sigma', category: 'validation', code_path: 'packages/core/lib/skills/sigma/causal-check.js' },
-  { name: 'feature-planner', display_name: '피처계획', team: 'sigma', category: 'analysis', code_path: 'packages/core/lib/skills/sigma/feature-planner.js' },
-  { name: 'observability-planner', display_name: '관측성계획', team: 'sigma', category: 'analysis', code_path: 'packages/core/lib/skills/sigma/observability-planner.js' },
+  { name: 'data-quality-guard', display_name: '데이터품질', team: 'sigma', category: 'validation', score: 7.0, code_path: 'bots/sigma/legacy-skills/data-quality-guard.js' },
+  { name: 'experiment-design', display_name: '실험설계', team: 'sigma', category: 'analysis', code_path: 'bots/sigma/legacy-skills/experiment-design.js' },
+  { name: 'causal-check', display_name: '인과검증', team: 'sigma', category: 'validation', code_path: 'bots/sigma/legacy-skills/causal-check.js' },
+  { name: 'feature-planner', display_name: '피처계획', team: 'sigma', category: 'analysis', code_path: 'bots/sigma/legacy-skills/feature-planner.js' },
+  { name: 'observability-planner', display_name: '관측성계획', team: 'sigma', category: 'analysis', code_path: 'bots/sigma/legacy-skills/observability-planner.js' },
 ];
 
 const TOOLS = [

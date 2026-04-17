@@ -182,6 +182,7 @@ bots/claude/reports/patches/*.json
 
 # ── 내부 문서 (공개 불필요!) ──
 docs/codex/*
+bots/sigma/docs/codex/*
 docs/strategy/
 docs/OPUS_FINAL_HANDOFF.md
 docs/PLATFORM_IMPLEMENTATION_TRACKER.md
@@ -193,4 +194,4 @@ PATCH_REQUEST.md
 docs/STRATEGY.md
 
 # Sigma V2 principles (환경별 변형 방지)
-elixir/team_jay/config/sigma_principles.yaml
+bots/sigma/config/sigma_principles.yaml
