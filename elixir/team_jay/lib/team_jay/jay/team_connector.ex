@@ -203,7 +203,7 @@ defmodule TeamJay.Jay.TeamConnector do
 
   defp do_collect(:darwin) do
     try do
-      TeamJay.Darwin.TeamConnector.collect_kpi()
+      Darwin.V2.TeamConnector.collect_kpi()
     rescue
       _ ->
         # Fallback: rag_research 직접 조회
