@@ -47,6 +47,7 @@ const {
   synthesizeHybridTopic,
   getPendingLunaRequest,
 }                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/topic-selector.ts'));
+const { checkInvestmentContent }                    = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/investment-guard.ts'));
 const { isExcludedReferencePost }                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/reference-exclusions.ts'));
 const { agenticSearch }                             = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/agentic-rag.ts'));
 const { getWriterPersona }                          = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/writer-personas.ts'));
@@ -946,6 +947,7 @@ async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, sc
           usedLunaRequestId = lunaRequest.id;
         } else {
           console.log(`[젬스] 루나 하이브리드 주제 품질 게이트 실패 — 기본 로테이션으로 폴백 (regime=${lunaRequest.regime})`);
+          await _skipLunaRequest(lunaRequest.id, `${category}×${lunaRequest.regime} 합성 실패`);
         }
       } catch (error) {
         console.warn('[젬스] 루나 하이브리드 주제 합성 실패 — 기본 로테이션 유지:', error.message);
@@ -1091,6 +1093,19 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
   }
 
   const genTitle = post.title || `[${context.category}] 오늘의 포스팅`;
+
+  // 루나 요청 유래 포스트만 투자 가드레일 적용
+  if (context.usedLunaRequestId) {
+    const guard = checkInvestmentContent(post.content || '', genTitle);
+    if (!guard.passed) {
+      console.error('[블로/investment-guard] 투자 콘텐츠 가드 실패:', guard.warnings);
+      await _skipLunaRequest(context.usedLunaRequestId, `투자 가드 실패: ${guard.warnings.join(', ')}`);
+      throw new Error(`투자 콘텐츠 가드 실패: ${guard.warnings.join(', ')}`);
+    }
+    if (guard.mustAdd.length > 0) {
+      post.content = (post.content || '') + guard.mustAdd.join('\n');
+    }
+  }
   const images = options.dryRun
     ? null
     : await generatePostImages({ title: genTitle, postType: 'general', category: context.category }).catch(e => {
@@ -1213,8 +1228,26 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
   };
 }
 
+async function _expireOldRequests() {
+  try {
+    const result = await pgPool.run('blog', `
+      UPDATE blog.content_requests
+      SET status = 'expired'
+      WHERE status = 'pending' AND expires_at <= NOW()
+      RETURNING id
+    `);
+    const count = result?.rowCount || 0;
+    if (count > 0) {
+      console.log(`[블로/content_requests] ${count}건 만료 처리`);
+    }
+  } catch (err) {
+    console.warn('[블로/content_requests] 만료 처리 실패 (무시):', err.message);
+  }
+}
+
 async function _prepareDailyRun(traceCtx, options = {}) {
   await ensureSchema();
+  await _expireOldRequests();
 
   const config = await getConfig();
   if (!config.active) {
@@ -1716,14 +1749,36 @@ async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId
 
 // ─── 일반 포스팅 ──────────────────────────────────────────────────────
 
-async function _fulfillLunaRequest(requestId, postId) {
+async function _fulfillLunaRequest(requestId, postId, category = null, topic = null) {
   await pgPool.run('blog', `
     UPDATE blog.content_requests
-    SET status = 'fulfilled', fulfilled_post_id = $2, fulfilled_at = NOW()
+    SET status = 'fulfilled',
+        fulfilled_post_id = $2,
+        fulfilled_at = NOW(),
+        fulfilled_category = $3,
+        fulfilled_topic = $4
     WHERE id = $1 AND status = 'pending'
-  `, [requestId, postId]);
+  `, [requestId, postId, category, topic]);
   console.log(`[블로] 루나 요청 완료 처리: requestId=${requestId}, postId=${postId}`);
-  await _emitEvent('luna_request_fulfilled', { requestId, postId });
+  await _emitEvent('cross_pipeline.luna_blog.fulfilled', {
+    request_id: requestId,
+    post_id: postId,
+    category,
+    topic,
+  });
+}
+
+async function _skipLunaRequest(requestId, reason) {
+  try {
+    await pgPool.run('blog', `
+      UPDATE blog.content_requests
+      SET status = 'skipped', skip_reason = $2
+      WHERE id = $1 AND status = 'pending'
+    `, [requestId, reason]);
+    console.log(`[블로/content_requests] #${requestId} → skipped: ${reason}`);
+  } catch (err) {
+    console.warn('[블로/content_requests] skipped 처리 실패 (무시):', err.message);
+  }
 }
 
 async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId = null, options = {}, dailyState = {}, lunaRequest = null) {
@@ -1800,7 +1855,12 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId
 
       const finalized = await _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx, writerName, options);
       if (context.usedLunaRequestId && finalized.postId && !options.dryRun) {
-        await _fulfillLunaRequest(context.usedLunaRequestId, finalized.postId).catch(e =>
+        await _fulfillLunaRequest(
+          context.usedLunaRequestId,
+          finalized.postId,
+          context.category,
+          finalized.title || null
+        ).catch(e =>
           console.warn('[블로] 루나 요청 완료 처리 실패 (무시):', e.message)
         );
       }

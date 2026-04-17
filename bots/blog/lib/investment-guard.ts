@@ -1,13 +1,13 @@
 'use strict';
 
-const BUY_PROMOTION_PATTERNS: RegExp[] = [
+const BUY_PROMOTION_PATTERNS = [
   /[A-Z]{3,5}\s*(매수|사세요|추천합니다|추천)/,
   /지금\s*(사야|매수해야)/,
   /꼭\s*사세요/,
   /무조건\s*(사야|매수)/,
 ];
 
-const GUARANTEE_PATTERNS: RegExp[] = [
+const GUARANTEE_PATTERNS = [
   /수익\s*보장/,
   /원금\s*보장/,
   /\d+%\s*수익\s*확정/,
@@ -20,19 +20,14 @@ const DISCLAIMER_RE =
 const DISCLAIMER_TEXT =
   '\n\n> 📌 본 글은 정보 제공 목적이며 투자 권유가 아닙니다. 투자 판단과 책임은 본인에게 있습니다.';
 
-export interface GuardResult {
-  passed: boolean;
-  warnings: string[];
-  mustAdd: string[];
-}
-
 /**
- * 투자 앵글이 포함된 포스트(루나 요청 유래)에만 적용.
+ * 루나 요청 유래 포스트에만 적용.
  * 매수 권유·수익 확약 감지 + 면책 문구 필수 추가.
+ * @returns {{ passed: boolean, warnings: string[], mustAdd: string[] }}
  */
-export function checkInvestmentContent(body: string, title: string): GuardResult {
-  const warnings: string[] = [];
-  const mustAdd: string[] = [];
+function checkInvestmentContent(body, title) {
+  const warnings = [];
+  const mustAdd  = [];
   const combined = `${title}\n${body}`;
 
   for (const p of BUY_PROMOTION_PATTERNS) {
