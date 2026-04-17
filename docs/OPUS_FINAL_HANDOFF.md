@@ -1,4 +1,44 @@
-# 세션 인수인계 — 2026-04-17 (CODEX_SIGMA_LUNA_ALIGN 완료 — LLM Selector + 루나 표준 정비)
+# 세션 인수인계 — 2026-04-18 (CODEX_SIGMA_PHASE_2_3_4_EXECUTE 완료 — Directive + Reflexion + ESPL)
+
+> 세션 범위: Sigma V2 Phase 2 (Directive/Signal/Mailbox) + Phase 3 (Config/Reflexion/Self-RAG) + Phase 4 (ESPL/MetaReview/Grafana)
+
+---
+
+## 최신 작업 요약 (Phase 2~4)
+
+`CODEX_SIGMA_PHASE_2_3_4_EXECUTE` 전체 Exit Criteria 달성.
+
+### 구현 목록
+
+- **Phase 2** (commit `c9aa7ca1`): Directive 프로토콜 + Archivist + Signal PubSub + 5팀 TS Signal Receiver + Mailbox + Graduation
+- **Phase 3** (commit `31f5e69a`): Config snapshot/restore + RollbackScheduler + Reflexion + Self-RAG + Memory facade + LLM thin wrapper + Metric + TelegramBridge
+- **Phase 4** (commit `4ae43bf3`): ESPL (E-SPL 진화) + Registry + MetaReview + Mailbox HTTP UI + Grafana dashboard + OTLP 텔레메트리
+- **마이그레이션**: sigma_v2_mailbox / sigma_v2_config_snapshots / sigma_analyst_prompts (총 6개)
+- **Kill Switches 기본 OFF**: SIGMA_TIER2_AUTO_APPLY / SIGMA_SELF_RAG_ENABLED / SIGMA_GEPA_ENABLED
+
+### 검증 결과
+- `mix compile --warnings-as-errors`: **0 warnings** ✅
+- `mix test`: **89 tests, 0 failures** ✅
+- 민감값 0건 ✅
+
+### 주요 설계 결정
+- Bandit port 충돌 방지: `port_available?/1` via `:gen_tcp.listen` (OPS와 test 환경 공존)
+- Config 안전 게이트: ±20% 수치 필드 제약 (luna/ska/blog/worker/claude)
+- Reflexion 결과 → `:procedural` 메모리 타입에 `AVOID:` 태그로 저장
+- Self-RAG L2 연산: `operation: :retrieve` (`:recall` 아님 — 스키마 고정)
+
+### 다음 단계 (CODEX_SIGMA_SHADOW_DEPLOY)
+
+1. OPS `.zprofile`에 환경변수 5개 추가: `SIGMA_V2_ENABLED=true`, `SIGMA_MCP_SERVER_ENABLED=true`, `SIGMA_MCP_TOKEN=<비밀값>`, `SIGMA_HTTP_PORT=4010`, `SIGMA_TIER2_AUTO_APPLY=false`
+2. `launchctl load` 또는 OPS mix 재시작
+3. `mix ecto.migrate` — sigma_v2_mailbox / sigma_v2_config_snapshots / sigma_analyst_prompts
+4. secrets-store.json에 MCP Token 등록
+5. 21:30 KST 일일 Shadow 관찰 개시
+6. 7일 일치율 95%+ 확인 → Tier 1 가동 결정
+
+---
+
+# 이전 인수인계 — 2026-04-17 (CODEX_SIGMA_LUNA_ALIGN 완료 — LLM Selector + 루나 표준 정비)
 
 > 세션 범위: CODEX_SIGMA_LUNA_ALIGN Phase A~E 전체 완료 (이미 구현됨 확인 + Phase E 실행)
 
