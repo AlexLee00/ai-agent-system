@@ -3,7 +3,8 @@ defmodule TeamJay.Investment.CommandInbox do
   Investment team cross-team command inbox consumer.
 
   Jay가 발행한 cross-team command를 허브 inbox에서 읽고,
-  investment 팀 내부 이벤트로 연결한 뒤 ack/completed를 남긴다.
+  investment 팀 내부 이벤트로 연결한 뒤 ack만 남긴다.
+  completed/failed는 실제 action handler가 마무리한다.
   """
 
   use GenServer
@@ -139,6 +140,7 @@ defmodule TeamJay.Investment.CommandInbox do
   defp handle_investment_command(kind, command_id, pipeline, summary, command) do
     metadata = %{
       pipeline: pipeline,
+      command_id: command_id,
       command: command,
       summary: summary,
       action_type: Atom.to_string(kind)
@@ -167,14 +169,6 @@ defmodule TeamJay.Investment.CommandInbox do
       :reduce_workload ->
         TeamJay.Investment.PubSub.broadcast_workload_reduction(metadata)
     end
-
-    _ =
-      TeamJay.HubClient.command_complete(command_id, "luna",
-        bot_name: "investment_command_inbox",
-        source: "investment.command_inbox",
-        pipeline: pipeline,
-        message: "investment accepted #{kind} command"
-      )
 
     Logger.info("[InvestmentCommandInbox] #{pipeline} 수신 → #{kind} 반영")
     :ok

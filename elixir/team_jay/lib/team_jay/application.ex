@@ -45,6 +45,7 @@ defmodule TeamJay.Application do
       TeamJay.Blog.CommandInbox,
       TeamJay.Blog.CommandActionHandler,
       TeamJay.Investment.CommandInbox,
+      TeamJay.Investment.CommandActionHandler,
       TeamJay.Blog.InsightsCollector,
       TeamJay.Blog.StrategyLearner,
       TeamJay.Blog.ContentLoop,
