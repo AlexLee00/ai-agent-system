@@ -5236,3 +5236,5 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
   - `bots/reservation/launchd/ai.ska.rebecca-weekly.plist`와 live plist의 PATH를 `bots/ska/venv/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin`으로 맞췄다.
 - 2026-03-29: `bots/ska/scripts/run-forecast.sh`의 Node 경로도 `/opt/homebrew/bin/node`로 정리했다. rebecca와 동일한 발행 래퍼 패턴을 맞춰, forecast daily 검증에서 `forecast_results 저장`, `training_feature_daily 동기화`, `reporting-hub 발행 완료`를 확인했다.
 - 2026-03-29: `node bots/claude/src/dexter.js --update-checksums`를 다시 실행해 checksum baseline 89개 파일을 현재 기준으로 정렬했다.
+
+- 2026-04-18: CODEX_SIGMA_SHADOW_DEPLOY 실행 — Shadow Mode OPS 가동. mix sigma.daily.shadow task 생성, plist 업데이트(tsx→mix), Supervisor 수정(MCP OFF 시 HTTP 서버 가능), launchd 등록+수동 실행 검증(LastExitStatus=0, shadow_run_id=3). match_score=null (v1 baseline 미존재 — 정상). commit 46d9069c.
