@@ -6,8 +6,8 @@ defmodule TeamJay.Investment.ResourceFeedbackCoordinator do
   8개 리소스의 실제 준비 상태를 요약한 resource_feedback snapshot을 발행한다.
 
   헬스체크 대상:
-  - LLM: MLX :11434 HTTP ping
-  - n8n: :5678 HTTP ping
+  - LLM: MLX OpenAI-compatible `/v1/models`
+  - n8n: `/healthz`
   - market_data: price_watcher 활성 여부 (last_feedback 기반)
   - agent_memory: memory snapshot count
   - rag/vectorbt/chronos_ta/onchain: 이벤트 수신 기반 추론
@@ -16,6 +16,7 @@ defmodule TeamJay.Investment.ResourceFeedbackCoordinator do
   use GenServer
 
   alias Ecto.Adapters.SQL
+  alias TeamJay.Config
   alias TeamJay.Investment.Events
   alias TeamJay.Investment.PubSub
   alias TeamJay.Investment.Topics
@@ -135,8 +136,8 @@ defmodule TeamJay.Investment.ResourceFeedbackCoordinator do
   end
 
   defp build_resources(state) do
-    llm_ready = ping_http("http://localhost:11434/api/tags", 2_000)
-    n8n_ready = ping_http("http://localhost:5678/healthz", 2_000)
+    llm_ready = ping_http("#{Config.local_llm_base_url()}/v1/models", 2_000)
+    n8n_ready = ping_http("#{Config.n8n_base_url()}/healthz", 2_000)
 
     memory_count = get_in(state, [:last_memory, :snapshot_count]) || 0
     override_present = not is_nil(state.last_override)
