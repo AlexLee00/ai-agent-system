@@ -42,6 +42,8 @@
   { "label": "ai.investment.market-alert-crypto-daily", "owner": "elixir", "optional": true, "expectedIdle": true },
 
   { "label": "ai.blog.node-server", "owner": "elixir", "healthUrl": "http://127.0.0.1:3100/health" },
+  { "label": "ai.research.scanner", "owner": "elixir", "optional": true, "expectedIdle": true },
+  { "label": "ai.research.task-runner", "owner": "elixir", "optional": true, "expectedIdle": true },
   { "label": "ai.worker.web", "owner": "elixir", "healthUrl": "http://127.0.0.1:4000/api/health" },
   { "label": "ai.worker.nextjs", "owner": "elixir", "healthUrl": "http://127.0.0.1:4001" },
   { "label": "ai.worker.lead", "owner": "elixir" },
