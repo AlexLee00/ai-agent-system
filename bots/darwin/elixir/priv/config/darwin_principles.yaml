@@ -1,0 +1,77 @@
+# Darwin 연구팀 원칙 — darwin_principles.yaml
+# 다윈 Constitutional AI 원칙 체계
+# 로더: Darwin.V2.Principle.Loader
+
+tiers:
+  - tier: 1
+    name: "선호"
+    description: "권장되는 행동 방식"
+    guidelines:
+      - principle: "논문_재현_우선"
+        description: "새 논문 시작 전 기존 실패 교훈을 먼저 검토"
+      - principle: "점진적_복잡도"
+        description: "단순한 베이스라인부터 시작하여 점진적으로 복잡도 증가"
+      - principle: "비용_최소화"
+        description: "로컬 LLM 우선 사용, 클라우드는 필요 시에만"
+
+  - tier: 2
+    name: "규칙"
+    description: "기본적으로 준수해야 하는 규칙 (예외 승인 필요)"
+    rules:
+      - principle: "검증_필수"
+        description: "모든 구현은 검증 단계를 거쳐야 함"
+        exception: "긴급 패치의 경우 마스터 승인 후 사후 검증 허용"
+      - principle: "재현성_기록"
+        description: "모든 실험 결과는 재현 가능하도록 기록"
+        exception: "탐색 단계 실험은 간략 메모만 허용"
+      - principle: "팀_경계_준수"
+        description: "다른 팀 DB나 코드에 직접 접근 금지"
+
+  - tier: 3
+    name: "절대금지"
+    description: "어떠한 상황에서도 위반 불가"
+    prohibitions:
+      - principle: "표절_금지"
+        action: "copy_without_modification"
+        description: "다른 구현을 수정 없이 그대로 복사하는 것 금지"
+        keywords:
+          - "copy_verbatim"
+          - "plagiarize"
+          - "copy_without_modification"
+          - "직접복사"
+
+      - principle: "검증없이_main_적용_금지"
+        action: "apply_to_main"
+        description: "verification_passed 없이 main 코드 수정 금지"
+        keywords:
+          - "skip_verification"
+          - "apply_to_main"
+          - "force_apply"
+          - "bypass_verification"
+
+      - principle: "재현불가_폐기"
+        action: "persist_unreproducible"
+        description: "3회 시도 후 재현 불가한 논문은 폐기"
+        keywords:
+          - "unreproducible"
+          - "persist_failed"
+          - "keep_failed_paper"
+          - "ignore_reproduction_failure"
+
+      - principle: "비용_상한"
+        action: "exceed_paper_budget"
+        description: "단일 논문 LLM 비용 $5 초과 금지"
+        keywords:
+          - "exceed_budget"
+          - "exceed_paper_budget"
+          - "overspend"
+          - "ignore_cost_limit"
+
+      - principle: "ops_직접수정_금지"
+        action: "modify_ops_directly"
+        description: "OPS 시스템 직접 수정 금지 — DEV 경유 필수"
+        keywords:
+          - "modify_ops"
+          - "modify_ops_directly"
+          - "direct_ops_change"
+          - "ops_direct_write"

@@ -16,19 +16,21 @@ defmodule TeamJay.MixProject do
 
   defp aliases do
     [
-      # 통합 마이그레이션: team_jay 기본 + Sigma V2 두 경로 한번에
-      "sigma.migrate": ["sigma.migrate"]
+      "sigma.migrate": ["sigma.migrate"],
+      "darwin.migrate": ["darwin.migrate"]
     ]
   end
 
   defp elixirc_paths(_env) do
     sigma_lib = Path.expand("../../bots/sigma/elixir/lib", __DIR__)
-    ["lib", sigma_lib]
+    darwin_lib = Path.expand("../../bots/darwin/elixir/lib", __DIR__)
+    ["lib", sigma_lib, darwin_lib]
   end
 
   defp test_paths do
     sigma_test = Path.expand("../../bots/sigma/elixir/test", __DIR__)
-    ["test", sigma_test]
+    darwin_test = Path.expand("../../bots/darwin/elixir/test", __DIR__)
+    ["test", sigma_test, darwin_test]
   end
 
   # Run "mix help compile.app" to learn about applications.

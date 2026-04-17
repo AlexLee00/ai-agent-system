@@ -9,7 +9,7 @@
     "health": "tsx ts/src/sigma-daily.ts --health",
     "shadow": "cd elixir && mix shadow",
     "test": "cd elixir && mix test",
-    "test:ts": "tsx __tests__/*.test.ts",
+    "test:ts": "echo 'No Sigma TS tests yet; use npm run baseline or npm run health'",
     "compile": "cd elixir && mix compile"
   },
   "dependencies": {

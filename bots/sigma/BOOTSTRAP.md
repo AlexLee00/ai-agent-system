@@ -40,6 +40,11 @@ tsx ts/src/sigma-daily.ts --test > /tmp/sigma-baseline-check.json
 cat /tmp/sigma-baseline-check.json | head -20
 ```
 
+중요:
+- 시그마는 **독립 팀 entrypoint**로 작업합니다.
+- 하지만 현재 Elixir/DB/허브 인프라는 `elixir/team_jay`를 공유합니다.
+- 그래서 `bots/sigma/elixir`에서 시작하되, 내부적으로 공용 인프라를 위임 호출하는 구조입니다.
+
 ## 4. Kill Switch 확인
 
 시그마는 기본 OFF 상태. 활성화는 `.env.sigma` 파일 복사:
@@ -73,6 +78,7 @@ cp .env.sigma.example .env.sigma
 - `docs/codex/PHASE_*.md` 실행 지시만 따름
 - 기존 TS/Elixir v1 수정 금지
 - `git mv` 엄수 (히스토리 보존)
+- 새 스크립트/문서/launchd는 가능하면 `bots/sigma/*` 경로를 먼저 기준으로 둠
 
 ### 마스터 (제이, 승인)
 - 각 Phase 승인 전 `pre: ...롤백 포인트` 커밋

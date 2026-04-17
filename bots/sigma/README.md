@@ -64,10 +64,17 @@ bots/sigma/
 - **Tier 2 — 자동 적용** (config patch + 24h 롤백 스케줄)
 - **Tier 3 — 강제 오버라이드** (절대 금지 사항 위반 차단)
 
+## 운영 원칙
+
+- 시그마는 **독립 팀 진입점**을 가집니다.
+- 다만 현재 런타임/DB/허브 인프라는 `elixir/team_jay`를 **공유**합니다.
+- 따라서 개발/운영 명령은 `bots/sigma/elixir`에서 시작하고, 실제 실행은 내부 wrapper가 공용 인프라로 위임합니다.
+
 ## 상태
 
 - ✅ Phase 0~5 코덱스 구현 완료
 - ✅ `bots/sigma/` 물리적 분리 완료 (2026-04-17)
+- ✅ `bots/sigma/elixir` 독립 Mix 진입점 복구
 - 🔶 LLM Selector 모듈 구현 대기 (Phase 1.5 후속)
 - 🔶 루나팀 표준 정비 중 (LUNA_ALIGN 진행)
 

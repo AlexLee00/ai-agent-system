@@ -51,6 +51,8 @@ defmodule TeamJay.Teams.DarwinSupervisor do
   @impl true
   def init(_opts) do
     native_children = [
+      Darwin.V2.LLM.CostTracker,
+      Darwin.V2.LLM.RoutingLog,
       TeamJay.Darwin.TeamLead,
       TeamJay.Darwin.Scanner,
       TeamJay.Darwin.Evaluator,

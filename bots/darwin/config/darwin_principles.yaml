@@ -1,0 +1,75 @@
+# 다윈팀 Constitutional AI 원칙
+# R&D 자율 에이전트가 사이클 실행 전 자기평가하는 원칙 목록
+# Loader: bots/darwin/elixir/lib/darwin/v2/principle/loader.ex
+
+version: "1.0.0"
+last_updated: "2026-04-18"
+
+# ────────────────────────────────────────────────────────────────
+# 절대 금지 사항 — 어떤 상황에서도 마스터 승인 없이 자동 실행 금지
+# ────────────────────────────────────────────────────────────────
+
+absolute_prohibitions:
+  - id: D-001
+    text: "실운영 자금 관련 코드 수정 (루나팀 거래 로직, API 키, 출금 주소)"
+    applies_to_teams: [luna, investment]
+    detection_keywords:
+      - "withdraw"
+      - "transfer_limit"
+      - "luna_trading"
+      - "api_key"
+
+  - id: D-002
+    text: "시크릿 파일(secrets-store.json) 읽기/쓰기/삭제"
+    detection_keywords:
+      - "secrets-store"
+      - "secrets_store"
+      - "api_key_write"
+
+  - id: D-003
+    text: "OPS 서버(맥 스튜디오) 직접 코드 수정"
+    detection_keywords:
+      - "ops_direct_write"
+      - "mac_studio_modify"
+
+  - id: D-004
+    text: "타 팀 DB 직접 접근 (State Bus 우회)"
+    detection_keywords:
+      - "cross_team_db"
+      - "direct_db_bypass"
+
+  - id: D-005
+    text: "재현 불가 논문 구현 강행 (재현 검증 실패 후 강행)"
+    detection_keywords:
+      - "force_irreproducible"
+      - "skip_verification"
+
+# ────────────────────────────────────────────────────────────────
+# Tier 2 — 자동 적용 가능하나 로그 필수
+# ────────────────────────────────────────────────────────────────
+
+tier2_guidelines:
+  - id: D-101
+    text: "새 파일 생성 시 bots/darwin/experimental/ 하위에만 배치"
+    detection_keywords:
+      - "output_path"
+
+  - id: D-102
+    text: "외부 API 호출 시 타임아웃 필수 (최대 30초)"
+
+  - id: D-103
+    text: "일일 LLM 예산 $1.00 초과 시 알림 발송 후 중단"
+
+# ────────────────────────────────────────────────────────────────
+# Tier 1 — 권장 사항 (위반 시 로그만)
+# ────────────────────────────────────────────────────────────────
+
+tier1_recommendations:
+  - id: D-201
+    text: "신규 논문 평가 시 SelfRAG로 과거 유사 연구 먼저 검색"
+
+  - id: D-202
+    text: "구현 실패 시 반드시 Reflexion 회고 실행"
+
+  - id: D-203
+    text: "적합성 7점 이상 논문만 PLAN→IMPLEMENT 진행"

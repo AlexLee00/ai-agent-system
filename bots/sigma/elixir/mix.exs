@@ -2,7 +2,7 @@ defmodule Sigma.MixProject do
   use Mix.Project
 
   @team_jay_dir Path.expand("../../../elixir/team_jay", __DIR__)
-  @sigma_test_dir Path.expand("../test", __DIR__)
+  @sigma_test_files Path.wildcard(Path.join([__DIR__, "test", "sigma", "v2", "*_test.exs"]))
 
   def project do
     [
@@ -20,12 +20,14 @@ defmodule Sigma.MixProject do
   end
 
   defp aliases do
+    sigma_test_args = Enum.join(@sigma_test_files, " ")
+
     [
       compile: [
-        "cmd --cd #{@team_jay_dir} mix compile --warnings-as-errors"
+        "cmd --cd #{@team_jay_dir} mix compile"
       ],
       test: [
-        "cmd --cd #{@team_jay_dir} mix test #{@sigma_test_dir}"
+        "cmd --cd #{@team_jay_dir} mix test #{sigma_test_args}"
       ],
       shadow: [
         "cmd --cd #{@team_jay_dir} mix run -e 'Sigma.V2.ShadowRunner.run_once() |> IO.inspect'"

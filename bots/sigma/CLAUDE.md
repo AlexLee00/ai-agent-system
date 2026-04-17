@@ -15,9 +15,12 @@ Claude Code(코덱스)가 `bots/sigma/` 작업 시 반드시 준수해야 하는
 - `bots/sigma/ts/**` — **원본 유지** (Phase 5에서 thin adapter로 교체)
 - `bots/sigma/legacy-skills/**` — **원본 유지** (죽은 코드지만 비교 baseline)
 
-### 2-2. Elixir v1 (`elixir/team_jay/lib/team_jay/jay/sigma/`) 수정 금지
+### 2-2. 공용 인프라 직접 수정은 신중하게
 
-v1은 그대로 유지. Phase 5에서 shadow run 비교 후 제거.
+- 시그마의 **공식 entrypoint**는 `bots/sigma/**` 입니다.
+- 다만 현재 런타임/DB/허브는 `elixir/team_jay` 인프라를 공유합니다.
+- 따라서 `elixir/team_jay` 쪽 수정은 시그마 독립 경로를 살리기 위한 **공용 인프라 보수**일 때만 허용합니다.
+- 옛 시그마 포트(`elixir/team_jay/lib/team_jay/jay/sigma/`)는 shadow 비교 목적 외에는 확장하지 않습니다.
 
 ### 2-3. `git mv` 엄수
 

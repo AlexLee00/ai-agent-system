@@ -8,11 +8,11 @@
   <key>ProgramArguments</key>
   <array>
     <string>/opt/homebrew/bin/mix</string>
-    <string>sigma.daily.shadow</string>
+    <string>shadow</string>
   </array>
 
   <key>WorkingDirectory</key>
-  <string>/Users/alexlee/projects/ai-agent-system/elixir/team_jay</string>
+  <string>/Users/alexlee/projects/ai-agent-system/bots/sigma/elixir</string>
 
   <key>EnvironmentVariables</key>
   <dict>
