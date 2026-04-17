@@ -1042,3 +1042,115 @@ docs/codex/ 원격 추적:    0개 파일 (완전 분리)
 **완전 격리 달성 — 커밋 4503d920로 docs/codex/ 예외 모두 제거. 3중 방어 실동작 검증 통과. 감사 1단위 + 거버넌스 완전 종결.**
 
 — 메티 (2026-04-17 밤, 7차 세션)
+
+
+---
+
+## 📍 8차 세션 증분 업데이트 (2026-04-17 밤 메티) — 2단위 P1 인증 경로 점검
+
+> 7차 세션 완전 격리 마감 후 2단위 감사 재개.
+> P1 인증/시크릿 경로(`kis-client`, `upbit-client`, `luna-commander`) 점검 완료.
+> **신규 취약점 3건 발견** → 프롬프트 작성 완료, 구현 대기.
+
+### 🆕 이번 세션 신규 발견
+
+**SEC-006 (MEDIUM)** — KIS 토큰 파일 무권한 저장
+- 위치: `bots/investment/shared/kis-client.ts:140`
+- `/tmp/kis-token-{paper|live}.json` access_token 평문 + 권한 미지정 (umask 0022 → 644)
+- 24시간 유효 토큰 탈취 시 실매매 가능
+- 수정: `fs.writeFileSync({ mode: 0o600 })` 추가 + 기존 파일 권한 자동 복구
+
+**SEC-007 (LOW-MED)** — KIS 에러 메시지 원문 전파
+- 위치: `bots/investment/shared/kis-client.ts:137` 토큰 에러 + `:197` API 에러
+- KIS server response body 전체가 Error 메시지로 전파 → 상위 로깅 누출 통로
+- 수정: 에러코드만 추출, 전체 body는 `KIS_DEBUG=true` 시에만 stderr 디버그
+
+**SEC-008 (MEDIUM)** — 업비트 자율 출금 경로
+- 위치: `bots/investment/shared/upbit-client.ts:171` + `luna-commander.cjs:511`
+- `withdrawUsdtToAddress(amount=0, ...)` 전량 출금 가능
+- `HANDLERS.upbit_withdraw_only`가 외부 command 입력으로 트리거됨 (자율 루프)
+- 수정: 3중 가드 (목적지 화이트리스트 + 1회 cap + 일일 누적 cap) + `LUNA_AUTONOMY_WITHDRAW` 환경변수 게이트
+
+### ✅ 점검 완료 파일 (긍정 확인)
+
+**`shared/kis-client.ts` (668줄)**:
+- 토큰·키 로깅 없음 (만료 시각만 로그)
+- appkey/appsecret은 헤더에만, 에러 메시지 제외하면 안전
+- Rate limit 다중 방어 (quote/order lane 별도)
+- paper/live 분기 명확 (BASE_URL_PAPER vs BASE_URL_LIVE)
+
+**`shared/upbit-client.ts` (219줄)**:
+- CCXT 라이브러리 통한 HMAC 서명 (검증된 방식)
+- Singleton 패턴 (`_upbit`, `_binance` 재사용)
+- `binance_deposit_address_usdt` secrets 설정값 우선 사용 (source='config')
+- 출금 지연제 감지 + 재시도 로직
+
+### 📝 프롬프트 작성
+
+**작성 완료**: `docs/codex/CODEX_SECURITY_AUDIT_03.md` (414줄, gitignore 자동 보호 확인)
+
+- Task 1 (SEC-006): 파일 권한 0o600 + 자동 복구
+- Task 2 (SEC-007): 에러 메시지 정화 + KIS_DEBUG 환경변수
+- Task 3 (SEC-008): 출금 3중 가드 + LUNA_AUTONOMY_WITHDRAW 게이트
+
+각 Task별 수락 기준, 검증 명령, 테스트 방법 포함.
+
+### 📊 감사 진행률 (8차 세션 기준)
+
+```
+1단위 Hub + 거버넌스 (완료):
+  ✅ SEC-001 (HIGH)     Hub 바인딩
+  ✅ SEC-002 (MEDIUM)   config.yaml
+  ✅ SEC-003 (LOW-MED)  SQL 가드
+  ✅ SEC-004 (MEDIUM)   네메시스 재검증
+  ✅ SEC-005 (CRITICAL) docs/codex 완전 격리
+
+2단위 투자팀 P1 (진행 중):
+  ⏳ SEC-006 (MEDIUM)   KIS 토큰 파일 권한   (프롬프트 작성 완료)
+  ⏳ SEC-007 (LOW-MED)  KIS 에러 정화        (프롬프트 작성 완료)
+  ⏳ SEC-008 (MEDIUM)   업비트 출금 가드     (프롬프트 작성 완료)
+
+2단위 P1 나머지 (대기):
+  ⬜ shared/secrets.ts (664줄) — Hub secrets 소비 경로
+  ⬜ markets/crypto.ts (373줄) — 바이낸스 호출 래퍼
+  ⬜ markets/domestic.ts / overseas.ts — KIS 호출 래퍼
+  ⬜ nodes/l21-llm-risk.ts — 네메시스 호출 노드
+  ⬜ luna-commander.cjs HANDLERS 전수 — 외부 command 입력 출처
+
+전체 진행률: 약 60%
+  - 1단위 100% 종결
+  - 2단위 P1 30% 진행 (3/~10)
+```
+
+### 📋 다음 세션 최우선 작업
+
+```
+1. 코덱스 SEC-006/007/008 구현 지시:
+   □ docs/codex/CODEX_SECURITY_AUDIT_03.md 내용을 코덱스에 전달
+   □ Task 1/2 즉시 적용 가능
+   □ Task 3는 마스터 승인 (max/cap 수치, 자율 모드 기본값)
+
+2. 2단위 P1 나머지 감사:
+   □ shared/secrets.ts 전수 (Hub secrets loader)
+   □ markets/crypto.ts, domestic.ts, overseas.ts
+   □ luna-commander HANDLERS 전수 (외부 command 출처)
+   □ nodes/l21-llm-risk.ts
+
+3. 마스터 승인 포인트 (SEC-008):
+   □ upbit_withdraw_max_usdt 기본값 (500 USDT 적절?)
+   □ upbit_withdraw_daily_cap_usdt 기본값 (2000 USDT 적절?)
+   □ LUNA_AUTONOMY_WITHDRAW 초기값 (enabled vs disabled)?
+```
+
+### ⚠️ 다음 메티가 주의할 것
+
+- 다른 세션이 `claude Phase 4` + `darwin` + `tsx 전환` 여러 작업 병행 중
+- 로컬이 1커밋 앞서 있는 경우 자주 발생 (다른 세션 commit 후 push 전 상태)
+- 보안 작업은 **docs/ 영역만** 건드리는 편이 안전 (다른 세션과 영역 겹침 최소)
+- `bots/investment/shared/` 쪽은 코덱스 구현 대기 중이니 메티 직접 수정 금지
+
+### 🏷️ 8차 세션 요약 한 줄
+
+**2단위 P1 인증 경로 점검 — SEC-006/007/008 신규 발견, CODEX_SECURITY_AUDIT_03.md 프롬프트 작성 완료. 2단위 P1 나머지(secrets, markets, HANDLERS 전수, l21)는 다음 세션.**
+
+— 메티 (2026-04-17 밤, 8차 세션)

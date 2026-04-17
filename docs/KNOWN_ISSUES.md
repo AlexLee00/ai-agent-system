@@ -48,7 +48,10 @@
 | SEC-002 | 🟡 MEDIUM | `bots/investment/config.yaml` | Public Git 리포에 실 KIS 계좌번호 및 USDT 지갑주소가 커밋됨. OSINT 공격 표면 | 2026-04-17 | ✅ 패치 완료 (working tree 제거 + secrets-store 이관 + 원격 히스토리 재작성 완료) |
 | SEC-003 | 🟢 LOW-MED | `bots/hub/lib/sql-guard.ts` | 블랙리스트 방식. `pg_read_file`, `pg_ls_dir`, `dblink` 등 PostgreSQL 위험 함수 미차단. 주석(`--`, `/* */`) 기반 우회 가능성 | 2026-04-17 | ✅ 패치 완료 (SQL guard 강화 + readonly PG 풀 + live `hub_readonly@jay` 검증 완료) |
 | SEC-004 | 🟡 MEDIUM | `bots/investment/team/hephaestos.ts:1535` | `executeSignal()`가 signal을 받을 때 네메시스 승인 여부(`nemesis_verdict`, `approved`, 타임스탬프 등) 재검증 가드 없음. 스크립트 직접 호출 시 네메시스 우회 가능 | 2026-04-17 | ✅ 패치 완료 (커밋 `3666d579`, `1ddcafbe` — BUY가드+SELL예외+stale체크+전경로nemesis_verdict주입) |
-| SEC-005 | 🔴 CRITICAL | `docs/codex/CODEX_SECURITY_AUDIT_01.md` | `.gitignore`에 `docs/codex/` 등록됐으나 **이미 추적 중인 파일에는 효과 없음**. 커밋 `578260b2`에서 이 파일이 추가되면서 KIS 계좌번호(2건)와 USDT 주소(1건)가 Public Git에 노출. SEC-002 완전 무효화 수준 | 2026-04-17 | ✅ 패치 완료 (커밋 `1954bc76` 구조 방어 + 마스터 히스토리 정리 + Elixir 브랜치 삭제 — .gitignore 파일단위+pre-commit 섹션3.5+codex README 3중 방어) |
+| SEC-005 | 🔴 CRITICAL | `docs/codex/CODEX_SECURITY_AUDIT_01.md` | `.gitignore`에 `docs/codex/` 등록됐으나 **이미 추적 중인 파일에는 효과 없음**. 커밋 `578260b2`에서 이 파일이 추가되면서 KIS 계좌번호(2건)와 USDT 주소(1건)가 Public Git에 노출. SEC-002 완전 무효화 수준 | 2026-04-17 | ✅ 패치 완료 (커밋 `1954bc76`+`4503d920` — 완전 격리. 마스터 히스토리 정리 + Elixir 브랜치 삭제로 종결) |
+| SEC-006 | 🟡 MEDIUM | `bots/investment/shared/kis-client.ts:140` | `/tmp/kis-token-{paper,live}.json`에 access_token 평문 저장. `fs.writeFileSync` 권한 미지정 → umask 0022 기본 644. 24시간 유효 토큰 탈취 시 실매매 가능 | 2026-04-17 | ⏳ 프롬프트 작성 (CODEX_SECURITY_AUDIT_03 Task 1) — 8차 세션 발견 |
+| SEC-007 | 🟢 LOW-MED | `bots/investment/shared/kis-client.ts:137,197` | 토큰 발급 실패·API 오류 시 KIS 서버 response body 전체가 Error 메시지로 전파. Sentry/telegram 등 상위 로깅으로 유출 잠재 통로 (실질 리스크 낮음) | 2026-04-17 | ⏳ 프롬프트 작성 (CODEX_SECURITY_AUDIT_03 Task 2) — 8차 세션 발견 |
+| SEC-008 | 🟡 MEDIUM | `bots/investment/shared/upbit-client.ts:171` + `luna-commander.cjs:511` | `withdrawUsdtToAddress`가 실자금 출금 함수인데 cap·화이트리스트·승인 없음. `luna-commander`의 `HANDLERS.upbit_withdraw_only`가 외부 command 입력으로 트리거 가능 | 2026-04-17 | ⏳ 프롬프트 작성 (CODEX_SECURITY_AUDIT_03 Task 3) — 8차 세션 발견 |
 
 ---
 
