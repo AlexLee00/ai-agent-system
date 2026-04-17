@@ -31,8 +31,9 @@ function traceCommenter(...args) {
 function buildCommenterFallbackChain(maxTokens, temperature) {
   return [
     { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens, temperature },
-    { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens, temperature },
+    { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens, temperature: Math.min(temperature, 0.7), timeoutMs: 15000 },
     { provider: 'local', model: 'qwen2.5-7b', maxTokens, temperature: Math.min(temperature, 0.7) },
+    { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens, temperature, timeoutMs: 12000 },
     { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens, temperature: Math.min(temperature, 0.7) },
   ];
 }
@@ -1887,18 +1888,34 @@ async function waitForCommentPanel(page, logNo = '') {
         const rect = el.getBoundingClientRect();
         return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
       };
+      const hasMountedCommentContent = () => {
+        const host = currentLogNo ? document.querySelector('#naverComment_201_' + currentLogNo) : null;
+        const mountedRoots = [host, document].filter(Boolean);
+        return mountedRoots.some((root) =>
+          Array.from(root.querySelectorAll([
+            'li.u_cbox_comment',
+            'div.u_cbox_comment_box',
+            '.u_cbox_btn_reply',
+            'textarea[id*="write_textarea"]',
+            '.u_cbox_write_box',
+            '.u_cbox_comment_write',
+            '.u_cbox_text_mention',
+            '.btn_write_comment',
+          ].join(', '))).some(visible)
+        );
+      };
 
       const directRoots = [
         currentLogNo ? document.querySelector('#naverComment_201_' + currentLogNo + '_ct') : null,
         currentLogNo ? document.querySelector('#naverComment_201_' + currentLogNo) : null,
       ].filter(Boolean);
-      if (directRoots.some(visible)) {
+      if (directRoots.some(visible) && hasMountedCommentContent()) {
         return true;
       }
 
-      return Array.from(document.querySelectorAll('[id^="naverComment_"][id$="_ct"], [id^="naverComment_"].u_cbox, .u_cbox_wrap, .u_cbox_write_box, .u_cbox_comment_write, .u_cbox_write_area, .u_cbox_btn_reply, .u_cbox_text_mention, [id*="write_textarea"]')).some(visible);
+      return hasMountedCommentContent();
     })()
-  `, { timeout: 15000 });
+  `, { timeout: 25000 });
 }
 
 function resolvePostContentFrame(page) {
@@ -2078,6 +2095,22 @@ async function mountCommentPanel(page, logNo = '', testMode = false) {
           const rect = el.getBoundingClientRect();
           return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
         };
+        const hasMountedCommentContent = () => {
+          const host = currentLogNo ? document.querySelector('#naverComment_201_' + currentLogNo) : null;
+          const mountedRoots = [host, document].filter(Boolean);
+          return mountedRoots.some((root) =>
+            Array.from(root.querySelectorAll([
+              'li.u_cbox_comment',
+              'div.u_cbox_comment_box',
+              '.u_cbox_btn_reply',
+              'textarea[id*="write_textarea"]',
+              '.u_cbox_write_box',
+              '.u_cbox_comment_write',
+              '.u_cbox_text_mention',
+              '.btn_write_comment',
+            ].join(', '))).some(visible)
+          );
+        };
 
         const directRoots = [
           currentLogNo ? document.querySelector('#naverComment_201_' + currentLogNo + '_ct') : null,
@@ -2085,13 +2118,13 @@ async function mountCommentPanel(page, logNo = '', testMode = false) {
           currentLogNo ? document.querySelector('#Comi' + currentLogNo) : null,
         ].filter(Boolean);
 
-        if (directRoots.some(visible)) {
+        if (directRoots.some(visible) && hasMountedCommentContent()) {
           return true;
         }
 
-        return Boolean(Array.from(document.querySelectorAll(selector)).find(visible));
+        return Boolean(Array.from(document.querySelectorAll(selector)).find(visible)) && hasMountedCommentContent();
       })()
-    `, { timeout: testMode ? 5000 : 8000 }).then(() => true).catch(() => false);
+    `, { timeout: testMode ? 12000 : 18000 }).then(() => true).catch(() => false);
 
     if (mounted) {
       return true;
