@@ -1,7 +1,7 @@
 {
   "name": "@ai-agent/investment",
   "version": "2.1.0",
-  "description": "🌙 루나팀 Phase 3-A — 암호화폐·국내외주식 자동매매 (PAPER_MODE 기본값)",
+  "description": "🌙 루나팀 Phase 3-A — 암호화폐·국내외주식 자동매매 (실거래 기본, PAPER_MODE로 오버라이드 가능)",
   "main": "markets/crypto.ts",
   "type": "module",
   "scripts": {
