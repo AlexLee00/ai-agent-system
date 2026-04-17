@@ -436,6 +436,45 @@ export async function stuckCommands({
   };
 }
 
+/**
+ * @param {{ minutes?: number, targetTeam?: string, pipeline?: string, limit?: number }} [input]
+ */
+export async function failedCommands({
+  minutes = 24 * 60,
+  targetTeam = '',
+  pipeline = '',
+  limit = 20,
+} = {}) {
+  const summary = await commandSummary({
+    minutes,
+    targetTeam,
+    pipeline,
+    limit: 1000,
+  });
+
+  const failed = (summary.recent || [])
+    .filter((command: any) => _text(command?.status) === 'failed')
+    .sort((a: any, b: any) =>
+      String(b?.updated_at || '').localeCompare(String(a?.updated_at || ''))
+    );
+
+  return {
+    total: failed.length,
+    window_minutes: summary.window_minutes,
+    target_team_counts: failed.reduce((acc: Record<string, number>, row: any) => {
+      const key = _text(row?.target_team, 'unknown');
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {}),
+    pipeline_counts: failed.reduce((acc: Record<string, number>, row: any) => {
+      const key = _text(row?.pipeline, 'unknown');
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {}),
+    results: failed.slice(0, Math.min(200, Math.max(1, Number(limit || 20) || 20))),
+  };
+}
+
 async function _findCommandIssuedEvent(commandId: string, minutes = 7 * 24 * 60) {
   await initSchema();
 
