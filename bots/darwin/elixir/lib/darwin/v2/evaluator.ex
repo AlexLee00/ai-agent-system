@@ -14,7 +14,6 @@ defmodule Darwin.V2.Evaluator do
   require Logger
 
   alias Darwin.V2.{Topics, Lead, ESPL, Memory}
-  alias TeamJay.HubClient
 
   @batch_size       5        # 5개 모이면 평가 실행
   @batch_wait_ms    60_000   # 또는 60초 대기

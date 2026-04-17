@@ -208,7 +208,7 @@ defmodule Darwin.V2.Edison do
     ]
   end
 
-  defp assess_code_quality(code_content, paper) do
+  defp assess_code_quality(code_content, _paper) do
     # 간단한 휴리스틱 품질 평가
     base_score = 5.0
     penalties = []
@@ -255,7 +255,7 @@ defmodule Darwin.V2.Edison do
     }
 
     case TreeSearch.run(params, %{}) do
-      {:ok, %{best_path: path, final_quality: q}} when length(path) > 0 ->
+      {:ok, %{best_path: [_ | _] = path, final_quality: q}} ->
         Logger.info("[다윈V2 에디슨] TreeSearch 완료: #{q}점")
         best_node = List.last(path)
         if q > current_quality and is_binary(best_node[:code_sketch]) do
@@ -315,7 +315,7 @@ defmodule Darwin.V2.Edison do
       nil
   end
 
-  defp update_implementation_db(paper, plan, code, path, quality) do
+  defp update_implementation_db(paper, plan, _code, path, quality) do
     title    = paper["title"] || paper[:title] || "unknown"
     paper_id = paper["id"] || paper[:id]
 

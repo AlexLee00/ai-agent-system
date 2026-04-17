@@ -21,11 +21,10 @@ defmodule Darwin.V2.ResearchMonitor do
   use GenServer
   require Logger
 
-  alias Darwin.V2.{Topics, AutonomyLevel}
+  alias Darwin.V2.AutonomyLevel
   alias TeamJay.HubClient
 
   @check_interval_ms  10 * 60 * 1000   # 10분
-  @stale_threshold_h  24
   @ets_table          :darwin_v2_monitor_cache
 
   defstruct [
@@ -320,5 +319,4 @@ defmodule Darwin.V2.ResearchMonitor do
     e -> Logger.warning("[다윈V2 모니터] Sigma 어드바이저리 실패: #{Exception.message(e)}")
   end
 
-  defp _stale_threshold_h, do: @stale_threshold_h
 end

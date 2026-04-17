@@ -23,7 +23,7 @@ defmodule Darwin.V2.MetaReview do
   use GenServer
   require Logger
 
-  alias Darwin.V2.{FeedbackLoop, KeywordEvolver, ResearchMonitor, Memory, ESPL}
+  alias Darwin.V2.{FeedbackLoop, KeywordEvolver, ResearchMonitor, ESPL}
   alias TeamJay.HubClient
 
   @review_interval_ms 7 * 24 * 60 * 60 * 1000  # 7일
