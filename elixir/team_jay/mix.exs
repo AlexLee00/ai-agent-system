@@ -43,7 +43,11 @@ defmodule TeamJay.MixProject do
 
       # Phase 1 명시적 추가 (transitive → explicit)
       {:zoi, "~> 0.17"},
-      {:yaml_elixir, "~> 2.11"}
+      {:yaml_elixir, "~> 2.11"},
+
+      # Phase 5: MCP Server HTTP 노출
+      {:plug, "~> 1.16"},
+      {:bandit, "~> 1.6"}
     ]
   end
 end
