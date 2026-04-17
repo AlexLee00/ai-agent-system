@@ -305,4 +305,30 @@ launchctl unload ~/Library/LaunchAgents/ai.investment.overseas.plist
 
 ### 모든 즉시 실행 태스크 완료 (#14~#18)
 
+---
+
+## ✅ 추가 완료 (2026-04-17 세션 8)
+
+### 아카이브 처리
+- `CODEX_JAY_REMODEL` → archive: Phase 0~4 Elixir 구현 완료 확인 (orchestrator.ts 버그 픽스)
+- `CODEX_TS_PREP_CONVERSION` → archive: video+core prep 전체 완료
+- `CODEX_DRAW_THINGS_TEST` → archive: Draw Things 실운영 중 (완료)
+- `CODEX_CORE_REINFORCEMENT` → archive: Phase 0~4 전체 완료
+
+### CODEX_CORE_REINFORCEMENT Phase 3 Step 5
+- `packages/core/lib/agent-memory-consolidator.ts` 신규 생성 (commit 7c7ea70a)
+  - getAgentsWithEpisodicMemory(): 30일+ 에피소딕 보유 에이전트 전체 조회
+  - consolidateAll(): 병렬 4개씩 AgentMemory.consolidate() 자동 실행
+- steward.ts runDaily()에 연결 → 매일 08:00 KST 자동 통합
+
+### CODEX_CORE_REINFORCEMENT Phase 4 로컬 LLM 보강 (commit f8e914cd)
+- Step 1: `rag.ts` createEmbeddingBatch() + storeBatch() 배치 임베딩
+- Step 2: `local-llm-client.ts` checkLocalLLMHealth() + steward hourly 연결
+- Step 3: `packages/core/lib/semantic-cache.ts` 신규 — pgvector 유사도 캐시 (TTL 7일)
+- Step 4: `local-llm-client.ts` makeSemaphore(2) 동시 LLM 요청 제한
+
+### 남은 미착수 항목 (별도 세션 필요)
+- Phase 5 n8n 보강: n8n 자격증명 에러 → OPS 수동 해결 후 진행
+- Phase 1.5 mainbot 제거: 196곳 리네임 대형 리팩터
+
 > 이전 HANDOFF: 2026-04-17 CODEX_BLOG_AUTONOMOUS_OPS Phase A~D
