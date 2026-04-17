@@ -94,89 +94,16 @@ defmodule TeamJay.Darwin.Evaluator do
   end
 
   defp flush_batch(state) do
-    count = length(state.queue)
-    Logger.info("[DarwinEvaluator] 평가 배치 실행: #{count}건")
+    Logger.info("[DarwinEvaluator] 평가 배치 실행: #{length(state.queue)}건")
+    PortAgent.run(:darwin_evaluator)
 
-    if darwin_v2_llm_enabled?() do
-      # Darwin.V2.LLM 인라인 평가 (Kill Switch ON 시)
-      Task.start(fn -> evaluate_inline(state.queue) end)
-    else
-      # 기존 PortAgent 경로 (기본값)
-      PortAgent.run(:darwin_evaluator)
-
-      Task.start(fn ->
-        :timer.sleep(30_000)
-        process_evaluation_results()
-      end)
-    end
-
-    %{state | queue: [], evaluated_count: state.evaluated_count + count}
-  end
-
-  defp evaluate_inline([]), do: :ok
-
-  defp evaluate_inline(papers) do
-    Logger.info("[DarwinEvaluator] Darwin.V2.LLM 인라인 평가 시작: #{length(papers)}건")
-
-    Enum.each(papers, fn paper ->
-      title  = paper["title"]  || paper[:title]  || "unknown"
-      url    = paper["url"]    || paper[:url]     || ""
-      source = paper["source"] || paper[:source]  || "unknown"
-
-      prompt = """
-      다음 논문이 AI 에이전트 시스템(루나/블로/스카/시그마/다윈팀)에 적합한지 평가해주세요.
-
-      제목: #{title}
-      출처: #{source}
-      URL: #{url}
-
-      요약: (1-2줄 한국어 요약)
-      적합성: (0-10 숫자만)
-      이유: (한 줄 이유)
-      """
-
-      case DarwinLLM.call_with_fallback("paper_evaluator", prompt, task_type: :binary_classification) do
-        {:ok, %{response: text}} ->
-          {score, summary} = parse_evaluation(text)
-          Logger.info("[DarwinEvaluator] #{title} → #{score}점")
-
-          Repo.query(
-            """
-            INSERT INTO rag_research (title, url, score, summary, source, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-            ON CONFLICT (url) DO UPDATE SET score = $3, summary = $4, updated_at = NOW()
-            """,
-            [title, url, score, summary, source]
-          )
-
-          dispatch_evaluated_paper(%{"title" => title, "url" => url, "score" => score, "summary" => summary, "source" => source})
-
-        {:error, reason} ->
-          Logger.warning("[DarwinEvaluator] 인라인 평가 실패 (#{title}): #{inspect(reason)}, PortAgent 폴백")
-          PortAgent.run(:darwin_evaluator)
-      end
+    # 실행 후 결과 체크 (비동기, 30초 대기)
+    Task.start(fn ->
+      :timer.sleep(30_000)
+      process_evaluation_results()
     end)
-  end
 
-  defp parse_evaluation(text) do
-    score_match = Regex.run(~r/적합성:\s*(\d+(?:\.\d+)?)/u, text)
-    summary_match = Regex.run(~r/요약:\s*(.+?)(?:\n|$)/u, text)
-
-    score = case score_match do
-      [_, s] -> s |> Float.parse() |> elem(0) |> round() |> min(10) |> max(0)
-      _ -> 0
-    end
-
-    summary = case summary_match do
-      [_, s] -> String.trim(s)
-      _ -> "자동 평가됨"
-    end
-
-    {score, summary}
-  end
-
-  defp darwin_v2_llm_enabled? do
-    System.get_env("DARWIN_V2_LLM_ENABLED", "false") == "true"
+    %{state | queue: [], evaluated_count: state.evaluated_count + length(state.queue)}
   end
 
   defp check_unscored_papers do
