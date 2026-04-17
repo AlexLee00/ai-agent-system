@@ -4,14 +4,16 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
-## 2026-04-18: CODEX_SIGMA_PHASE_2_3_4_EXECUTE 완료 — Directive + Reflexion + ESPL
+## 2026-04-18: CODEX_SIGMA_PHASE_2_3_4_EXECUTE 완료 — Directive + Reflexion + ESPL + 테스트
 
 - **Phase 2**: Directive 프로토콜 (Tier 0~3), Archivist DB 로깅, Signal PubSub, 5팀 Signal Receiver (TS), Mailbox 큐, Graduation watcher
 - **Phase 3**: Config snapshot/restore (±20% 안전 게이트), Tier 2 자동 적용 Kill Switch(SIGMA_TIER2_AUTO_APPLY), Reflexion 패턴 (arXiv 2303.11366), Self-RAG 4게이트 (SIGMA_SELF_RAG_ENABLED), Memory facade (L1+L2 통합)
 - **Phase 4**: E-SPL 진화 엔진 (arXiv 2602.14697, SIGMA_GEPA_ENABLED), Registry, 5D MetaReview, Mailbox 승인 UI (HTTP 라우터), Grafana 대시보드, OTLP 텔레메트리 옵션
 - **마이그레이션 3개**: sigma_v2_mailbox, sigma_v2_config_snapshots, sigma_analyst_prompts
-- **모든 Kill Switch 기본 OFF**: SIGMA_TIER2_AUTO_APPLY / SIGMA_SELF_RAG_ENABLED / SIGMA_GEPA_ENABLED
-- `mix compile --warnings-as-errors` 0건 / `mix test` 89 tests, 0 failures
+- **버그 수정**: memory.ex + self_rag.ex L2 threshold 누락 수정
+- **테스트 완성**: Phase 2 (7) + Phase 3 (11) + Phase 4 (9) = 27개 신규 테스트
+- **최종 검증**: `mix compile --warnings-as-errors` 0건 / `mix test` 116 tests, 0 failures ✅
+- **아카이브**: CODEX_SIGMA_PHASE_2_3_4_EXECUTE → docs/archive/codex-completed/
 - 다음 단계: CODEX_SIGMA_SHADOW_DEPLOY (launchctl + 7일 관찰 → Tier 1 가동)
 
 ## 2026-04-17: CODEX_SIGMA_LUNA_ALIGN 완료 — LLM Selector + 루나 표준 정비
