@@ -111,34 +111,78 @@ defmodule TeamJay.Jay.CrossTeamRouter do
   # 파이프라인 2: 루나 → 블로 (시장 급변 → 투자 콘텐츠)
   # ────────────────────────────────────────────────────────────────
 
-  defp handle_luna_to_blog(%{regime: regime, details: _details}) do
-    {mood, keyword_hint} = case regime do
-      "bull"     -> {"상승장", "코인 상승 지금 사야 할까, 비트코인 전망"}
-      "bear"     -> {"하락장", "코인 하락 대응 전략, 하락장 투자 방법"}
-      "volatile" -> {"변동성 확대", "코인 변동성 대응, 리스크 관리"}
-      _          -> {"시장 변화", "가상화폐 시장 분석"}
-    end
+  defp handle_luna_to_blog(%{regime: regime, details: details}) do
+    {mood, keyword_hint, angle_hint, urgency} = regime_to_blog_params(regime)
+
+    content_request_id = record_content_request(%{
+      source_team: "luna",
+      source_event: "market_shock",
+      regime: regime,
+      mood: mood,
+      angle_hint: angle_hint,
+      keyword_hints: String.split(keyword_hint, ", "),
+      urgency: urgency,
+      metadata: %{regime: regime, mood: mood, details: details}
+    })
 
     envelope =
       CommandEnvelope.build(
         :create_investment_content,
         :luna,
         :blog,
-        %{regime: regime, mood: mood, keyword_hint: keyword_hint}
+        %{regime: regime, mood: mood, keyword_hint: keyword_hint, content_request_id: content_request_id}
       )
 
     message = """
     📢 [제이→블로] 루나팀 시장 급변 감지!
     📊 현재 체제: #{regime} (#{mood})
-    🎯 요청: 투자 관련 블로그 포스트 1건 발행
+    🎯 요청 ID: #{content_request_id || "N/A"} (blog.content_requests)
+    🔑 앵글: #{angle_hint}
     키워드 힌트: #{keyword_hint}
     """
     dispatch_team_command(:luna_to_blog, "blog", message, envelope)
-    record_pipeline_event(:luna_to_blog, :executed, %{regime: regime, command: envelope})
-    Logger.info("[CrossTeamRouter] luna→blog 실행: 체제=#{regime}")
+    record_pipeline_event(:luna_to_blog, :executed, %{regime: regime, content_request_id: content_request_id, command: envelope})
+    Logger.info("[CrossTeamRouter] luna→blog 실행: 체제=#{regime}, 요청 ID=#{content_request_id}")
   end
 
   defp handle_luna_to_blog(_), do: :ok
+
+  defp regime_to_blog_params(regime) do
+    case regime do
+      "bull"     -> {"상승장",     "코인 상승 지금 사야 할까, 비트코인 전망",   "상승장 판단",   "normal"}
+      "bear"     -> {"하락장",     "코인 하락 대응 전략, 하락장 투자 방법",     "하락장 대응",   "urgent"}
+      "volatile" -> {"변동성 확대", "코인 변동성 대응, 리스크 관리",             "변동성 관리",   "urgent"}
+      "crisis"   -> {"위기 국면",   "시장 위기 대응, 포지션 방어",               "위기 대응",     "urgent"}
+      _          -> {"시장 변화",   "가상화폐 시장 분석",                         "시장 점검",     "low"}
+    end
+  end
+
+  defp record_content_request(%{source_team: source_team, source_event: source_event,
+                                regime: regime, mood: mood,
+                                angle_hint: angle, keyword_hints: keywords,
+                                urgency: urgency, metadata: metadata}) do
+    sql = """
+    INSERT INTO blog.content_requests
+      (source_team, source_event, regime, mood, angle_hint, keyword_hints, urgency, metadata, expires_at)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, NOW() + INTERVAL '24 hours')
+    RETURNING id
+    """
+
+    case TeamJay.Repo.query(sql, [
+      source_team, source_event, regime, mood,
+      angle, keywords, urgency, Jason.encode!(metadata)
+    ]) do
+      {:ok, %{rows: [[id]]}} ->
+        id
+      {:error, reason} ->
+        Logger.error("[CrossTeamRouter] content_requests INSERT 실패: #{inspect(reason)}")
+        nil
+    end
+  rescue
+    e ->
+      Logger.error("[CrossTeamRouter] content_requests INSERT 예외: #{inspect(e)}")
+      nil
+  end
 
   # ────────────────────────────────────────────────────────────────
   # 파이프라인 3: 블로 → 스카 (키워드 → SEO)
