@@ -331,4 +331,21 @@ launchctl unload ~/Library/LaunchAgents/ai.investment.overseas.plist
 - Phase 5 n8n 보강: n8n 자격증명 에러 → OPS 수동 해결 후 진행
 - Phase 1.5 mainbot 제거: 196곳 리네임 대형 리팩터
 
+### CODEX_BLOG_MARKETING → archive
+- Phase 0~3.5 완료 (인스타/FB/경쟁사/해시태그/매출피드백루프)
+- Phase 4 (DM챗봇/광고): 수익 발생 후 장기 → 별도 코덱스로 분리
+
+### 현재 활성 코덱스 (`docs/codex/`)
+| 파일 | 상태 |
+|------|------|
+| CODEX_CLAUDE_REMODEL | 미착수 (대형) |
+| CODEX_DARWIN_REMODEL | 미착수 (대형) |
+| CODEX_ELIXIR_MONITORING | 운영 runbook (상시) |
+| CODEX_JS_TO_TS_STAGE1 | Stage 2/3 미착수 |
+| CODEX_LUNA_AUTONOMOUS_LOOP | OPS 확인 대기 |
+| CODEX_LUNA_IMPL | D/E/H/I/J 미착수 |
+| CODEX_LUNA_OPS_TRANSITION | Step 5 대기 |
+| CODEX_LUNA_PRODUCTION | 24h 관찰 후 |
+| CODEX_LUNA_REMODEL | 별도 검토 필요 |
+
 > 이전 HANDOFF: 2026-04-17 CODEX_BLOG_AUTONOMOUS_OPS Phase A~D
