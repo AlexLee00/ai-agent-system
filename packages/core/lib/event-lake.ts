@@ -271,7 +271,7 @@ export async function recentCommands({
   const params: Array<string | number> = [Math.max(1, Number(minutes || 0) || 1)];
   const conditions = [
     `created_at >= NOW() - ($1::int * INTERVAL '1 minute')`,
-    `event_type LIKE 'cross_pipeline.command_%'`,
+    `(event_type LIKE 'cross_pipeline.command_%' OR event_type LIKE 'cross_pipeline.command.%')`,
   ];
   let nextParamIndex = 2;
 
@@ -309,6 +309,73 @@ export async function recentCommands({
   };
 }
 
+/**
+ * @param {{ minutes?: number, targetTeam?: string, pipeline?: string, limit?: number }} [input]
+ */
+export async function commandSummary({
+  minutes = 24 * 60,
+  targetTeam = '',
+  pipeline = '',
+  limit = 20,
+} = {}) {
+  const recent = await recentCommands({
+    minutes,
+    limit: 1000,
+    targetTeam,
+    pipeline,
+  });
+
+  const latestByCommand = new Map<string, any>();
+
+  for (const row of recent.results || []) {
+    const commandId = _text(row?.metadata?.command?.command_id);
+    if (!commandId) continue;
+
+    const current = latestByCommand.get(commandId);
+    if (!current || String(row?.created_at || '') > String(current?.created_at || '')) {
+      latestByCommand.set(commandId, row);
+    }
+  }
+
+  const statusCounts: Record<string, number> = {};
+  const pipelineCounts: Record<string, number> = {};
+  const targetCounts: Record<string, number> = {};
+
+  const commands = Array.from(latestByCommand.values())
+    .map((row) => {
+      const lifecycleStatus = _text(row?.metadata?.lifecycle_status, 'unknown');
+      const pipelineName = _text(row?.metadata?.pipeline, 'unknown');
+      const targetName =
+        _text(row?.metadata?.target_team) ||
+        _text(row?.metadata?.command?.target_team, 'unknown');
+
+      statusCounts[lifecycleStatus] = (statusCounts[lifecycleStatus] || 0) + 1;
+      pipelineCounts[pipelineName] = (pipelineCounts[pipelineName] || 0) + 1;
+      targetCounts[targetName] = (targetCounts[targetName] || 0) + 1;
+
+      return {
+        command_id: _text(row?.metadata?.command?.command_id),
+        pipeline: pipelineName,
+        target_team: targetName,
+        status: lifecycleStatus,
+        summary: _text(row?.metadata?.summary || row?.title),
+        bot_name: _text(row?.bot_name, 'unknown'),
+        updated_at: row?.created_at || row?.updated_at || null,
+        event: row,
+      };
+    })
+    .sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
+
+  return {
+    total: commands.length,
+    window_minutes: Math.max(1, Number(minutes || 0) || 1),
+    status_counts: statusCounts,
+    pipeline_counts: pipelineCounts,
+    target_team_counts: targetCounts,
+    recent: commands.slice(0, Math.min(200, Math.max(1, Number(limit || 20) || 20))),
+  };
+}
+
 async function _findCommandIssuedEvent(commandId: string, minutes = 7 * 24 * 60) {
   await initSchema();
 
@@ -319,7 +386,10 @@ async function _findCommandIssuedEvent(commandId: string, minutes = 7 * 24 * 60)
       created_at, updated_at
     FROM ${TABLE}
     WHERE created_at >= NOW() - ($1::int * INTERVAL '1 minute')
-      AND event_type = 'cross_pipeline.command_issued'
+      AND (
+        event_type = 'cross_pipeline.command_issued'
+        OR event_type = 'cross_pipeline.command.issued'
+      )
       AND metadata->'command'->>'command_id' = $2
     ORDER BY created_at DESC
     LIMIT 1
@@ -417,7 +487,7 @@ export async function appendCommandLifecycle({
   const summary = _text(issued.metadata?.summary || issued.title || 'cross-team command');
 
   const eventId = await record({
-    eventType: `cross_pipeline.command_${normalizedStatus}`,
+    eventType: `cross_pipeline.command.${normalizedStatus}`,
     team: 'jay',
     botName: _text(botName, 'unknown'),
     severity: normalizedStatus === 'failed' ? 'warn' : 'info',
