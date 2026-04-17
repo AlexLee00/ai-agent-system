@@ -191,7 +191,31 @@ defmodule TeamJay.Jay.TeamConnector do
     }
   end
 
-  defp do_collect(team) when team in [:platform, :darwin, :justin, :video] do
+  defp do_collect(:darwin) do
+    try do
+      TeamJay.Darwin.TeamConnector.collect_kpi()
+    rescue
+      _ ->
+        # Fallback: rag_research 직접 조회
+        research = query_one("""
+          SELECT
+            COUNT(*)::int AS papers_7d,
+            COUNT(*) FILTER (WHERE score >= 6)::int AS high_quality_7d,
+            COALESCE(AVG(score), 0)::numeric(4,1) AS avg_score
+          FROM rag_research
+          WHERE created_at >= NOW() - INTERVAL '7 days'
+        """, "jay")
+
+        %{
+          metric_type: :research_ops,
+          papers_7d: get_in(research, ["papers_7d"]) || 0,
+          high_quality_7d: get_in(research, ["high_quality_7d"]) || 0,
+          avg_score: get_in(research, ["avg_score"]) || 0.0
+        }
+    end
+  end
+
+  defp do_collect(team) when team in [:platform, :justin, :video] do
     agents = query_one("""
       SELECT
         COUNT(*)::int AS active_agents,

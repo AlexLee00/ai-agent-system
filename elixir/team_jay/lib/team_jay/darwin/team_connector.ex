@@ -19,7 +19,6 @@ defmodule TeamJay.Darwin.TeamConnector do
   alias TeamJay.Claude.Topics, as: ClaudeTopics
   alias TeamJay.Claude.Dexter.TestRunner
   alias TeamJay.HubClient
-  alias TeamJay.EventLake
   alias TeamJay.Repo
 
   @target_teams [:luna, :blog, :claude, :ska, :jay]
@@ -112,14 +111,21 @@ defmodule TeamJay.Darwin.TeamConnector do
   # ── 팀별 포워딩 ─────────────────────────────────────────────────────
 
   defp forward_to_team(:claude, paper) do
-    # 클로드팀: SDLC 코드리뷰+테스트 트리거
+    title = paper["title"] || paper[:title] || "unknown"
+    # JayBus: 클로드팀 리뷰 트리거
     broadcast(ClaudeTopics.review_started(), %{
       source: "darwin",
-      paper_title: paper["title"] || paper[:title] || "unknown",
+      paper_title: title,
       paper_url: paper["url"] || paper[:url],
       request_type: "research_review"
     })
-    Logger.info("[DarwinConnector] 클로드팀 코드리뷰 트리거 전송")
+    # 덱스터 Layer 1 즉시 테스트 요청
+    try do
+      TestRunner.run_now(1)
+    rescue
+      _ -> :ok
+    end
+    Logger.info("[DarwinConnector] 클로드팀 리뷰+테스트 트리거")
   end
 
   defp forward_to_team(team, paper) do
@@ -136,12 +142,43 @@ defmodule TeamJay.Darwin.TeamConnector do
 
   # ── 헬퍼 ────────────────────────────────────────────────────────────
 
-  defp extract_team(topic) do
-    # "darwin.applied.luna" → :luna
-    topic
-    |> String.split(".")
-    |> List.last()
-    |> String.to_atom()
+  defp suggest_scan_for_team(team_str) do
+    keywords = Map.get(@team_keywords, team_str, [])
+    if keywords != [] do
+      Logger.info("[DarwinConnector] #{team_str} 에러 → 관련 논문 스캔 제안: #{inspect(keywords)}")
+      HubClient.post_alarm(
+        "🔬 다윈팀 제안: #{team_str} 에러 감지 → 관련 연구 스캔\n키워드: #{Enum.join(keywords, ", ")}",
+        "darwin-suggestion", "darwin"
+      )
+      Scanner.trigger_scan()
+    end
+  rescue
+    _ -> :ok
+  end
+
+  defp fetch_darwin_kpi do
+    case Repo.query("""
+      SELECT
+        COUNT(*)::int AS papers_7d,
+        COUNT(*) FILTER (WHERE score >= 6)::int AS high_quality_7d,
+        COALESCE(AVG(score), 0)::numeric(4,1) AS avg_score,
+        MAX(created_at) AS last_scan_at
+      FROM rag_research
+      WHERE created_at >= NOW() - INTERVAL '7 days'
+    """, []) do
+      {:ok, %{rows: [[papers, high, avg, last_at]]}} ->
+        %{
+          metric_type: :research_ops,
+          papers_7d: papers || 0,
+          high_quality_7d: high || 0,
+          avg_score: avg || 0.0,
+          last_scan_at: last_at,
+          autonomy_level: TeamLead.get_autonomy_level()
+        }
+      _ ->
+        %{metric_type: :research_ops, papers_7d: 0, high_quality_7d: 0,
+          autonomy_level: TeamLead.get_autonomy_level()}
+    end
   end
 
   defp broadcast(topic, payload) do
