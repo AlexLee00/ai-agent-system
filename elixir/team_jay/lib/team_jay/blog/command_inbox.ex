@@ -124,6 +124,14 @@ defmodule TeamJay.Blog.CommandInbox do
   end
 
   defp handle_content_command(kind, command_id, pipeline, summary, command) do
+    payload = %{
+      pipeline: pipeline,
+      command: command,
+      command_id: command_id,
+      summary: summary,
+      kind: kind
+    }
+
     TeamJay.EventLake.record(%{
       team: "blog",
       bot_name: "blog_command_inbox",
@@ -136,43 +144,22 @@ defmodule TeamJay.Blog.CommandInbox do
         pipeline: pipeline,
         content_kind: Atom.to_string(kind),
         command: command,
+        command_id: command_id,
         summary: summary
       }
     })
 
-    TeamJay.Blog.PubSub.broadcast_cross_team_command(kind, %{
-      pipeline: pipeline,
-      command: command,
-      summary: summary
-    })
+    TeamJay.Blog.PubSub.broadcast_cross_team_command(kind, payload)
 
     case kind do
       :promotion ->
-        TeamJay.Blog.PubSub.broadcast_promotion_request(%{
-          pipeline: pipeline,
-          command: command,
-          summary: summary
-        })
+        TeamJay.Blog.PubSub.broadcast_promotion_request(payload)
 
       :investment ->
-        TeamJay.Blog.PubSub.broadcast_investment_content_request(%{
-          pipeline: pipeline,
-          command: command,
-          summary: summary
-        })
+        TeamJay.Blog.PubSub.broadcast_investment_content_request(payload)
     end
 
-    TeamJay.Blog.TopicCurator.curate_now()
-
-    _ =
-      TeamJay.HubClient.command_complete(command_id, "blog",
-        bot_name: "blog_command_inbox",
-        source: "blog.command_inbox",
-        pipeline: pipeline,
-        message: "blog queued #{kind} command for topic curation"
-      )
-
-    Logger.info("[BlogCommandInbox] #{pipeline} 수신 → #{kind} 큐레이션 트리거")
+    Logger.info("[BlogCommandInbox] #{pipeline} 수신 → #{kind} internal handler dispatch")
     :ok
   rescue
     error ->
