@@ -64,33 +64,24 @@ defmodule Sigma.V2.LLM.Selector do
     end
   end
 
-  defp do_call(agent_name, %{route: route, fallback: fallback_routes}, prompt, opts) do
-    timeout = @default_timeouts[route] || 30_000
+  defp do_call(agent_name, %{route: route, fallback: fallback_routes}, _prompt, _opts) do
+    _timeout = @default_timeouts[route] || 30_000
     {provider, model} = provider_from_route(route)
 
     # Phase 2에서 req_llm 실제 통합 예정
-    # result = ReqLLM.generate_text(provider, model: model, prompt: prompt, timeout: timeout)
-    result = {:ok, %{response: "TODO: req_llm Phase 2", model: model, tokens: %{in: 0, out: 0}}}
+    # result = ReqLLM.generate_text(provider, model: model, prompt: prompt, timeout: _timeout)
+    resp = %{response: "TODO: req_llm Phase 2", model: model, tokens: %{in: 0, out: 0}}
 
-    case result do
-      {:ok, resp} ->
-        Sigma.V2.LLM.CostTracker.track_tokens(%{
-          agent: to_string(agent_name),
-          model: model,
-          provider: to_string(provider),
-          tokens_in: get_in(resp, [:tokens, :in]) || 0,
-          tokens_out: get_in(resp, [:tokens, :out]) || 0,
-        })
-        {:ok, resp}
+    Sigma.V2.LLM.CostTracker.track_tokens(%{
+      agent: to_string(agent_name),
+      model: model,
+      provider: to_string(provider),
+      tokens_in: get_in(resp, [:tokens, :in]) || 0,
+      tokens_out: get_in(resp, [:tokens, :out]) || 0,
+    })
 
-      {:error, reason} when fallback_routes != [] ->
-        Logger.warn("[sigma/llm] #{agent_name} → #{provider}/#{model} 실패: #{inspect(reason)}, fallback 시도")
-        do_call(agent_name, %{route: hd(fallback_routes), fallback: tl(fallback_routes)}, prompt, opts)
-
-      {:error, reason} ->
-        Logger.error("[sigma/llm] #{agent_name}: 모든 폴백 실패 — #{inspect(reason)}")
-        {:error, reason}
-    end
+    _ = fallback_routes  # Phase 2에서 실제 fallback 구현
+    {:ok, resp}
   end
 
   defp provider_from_route(:anthropic_haiku),  do: {:anthropic, "claude-haiku-4-5-20251001"}
@@ -98,5 +89,5 @@ defmodule Sigma.V2.LLM.Selector do
   defp provider_from_route(:anthropic_opus),   do: {:anthropic, "claude-opus-4-7"}
   defp provider_from_route(:ollama_8b),        do: {:ollama, "qwen2.5-7b"}
   defp provider_from_route(:ollama_32b),       do: {:ollama, "deepseek-r1-32b"}
-  defp provider_from_route(other),             do: {:anthropic, "claude-haiku-4-5-20251001"}
+  defp provider_from_route(_),                 do: {:anthropic, "claude-haiku-4-5-20251001"}
 end
