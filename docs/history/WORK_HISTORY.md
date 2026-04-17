@@ -4,6 +4,18 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-04-17: CODEX_SIGMA_REMODEL_PHASE_5 완료 — 시그마 리모델링 종결
+
+- **TS 폐기**: sigma-daily/scheduler/analyzer/feedback → `docs/archive/sigma-legacy/`
+- **Thin Adapter**: `bots/orchestrator/src/sigma-daily.ts` 35줄 (Elixir HTTP 위임)
+- **Plug + Bandit HTTP**: mix.exs 추가, `Sigma.V2.HTTP.Router` 생성 (Port 4000)
+- **MCP Server**: `Sigma.V2.MCP.Server` 5개 도구, Bearer Auth, agentskills.io 표준
+- **Supervisor**: SIGMA_MCP_SERVER_ENABLED=true 시 Bandit 자식 기동
+- **SKILL.md 5개**: `bots/sigma/skills/` (각 3~4KB, Before You Start / Schema / Process / Defaults / Integration / Examples / Failure Modes)
+- **Darwin Signal Receiver**: `bots/darwin/src/signal-receiver.ts` (sigma advisory 구독)
+- **E2E 테스트**: `test/sigma/v2/e2e_test.exs` (14 케이스)
+- **완료 보고서**: `docs/SIGMA_REMODELING_COMPLETE.md`
+
 ## 2026-04-17: CODEX_SIGMA_REMODEL_PHASE_1 완료 (Elixir Jido 코어 + Shadow Mode)
 
 - **Skill 5개** TS→Elixir 포팅 (Zoi 스키마, run/2 구현): DataQualityGuard, CausalCheck, ExperimentDesign, FeaturePlanner, ObservabilityPlanner

@@ -1,4 +1,43 @@
-# 세션 인수인계 — 2026-04-17 (CODEX_SIGMA_REMODEL_PHASE_1 완료)
+# 세션 인수인계 — 2026-04-17 (CODEX_SIGMA_REMODEL_PHASE_5 완료 — 리모델링 최종)
+
+> 세션 범위: TS 폐기 + MCP Server HTTP 노출 + 다윈 Signal Receiver + E2E 테스트
+
+---
+
+## 최신 작업 요약 (Phase 5)
+
+CODEX_SIGMA_REMODEL_PHASE_5 전체 구현 완료. **시그마팀 리모델링 종결**.
+
+### 구현 목록
+
+- **TS 레거시 아카이브**: sigma-daily/scheduler/analyzer/feedback → `docs/archive/sigma-legacy/`
+- **Thin Adapter**: `bots/orchestrator/src/sigma-daily.ts` (35줄, Elixir HTTP 위임)
+- **mix.exs**: `plug ~> 1.16`, `bandit ~> 1.6` 추가 (Phoenix 미사용 환경에 맞춤)
+- **HTTP Router**: `Sigma.V2.HTTP.Router` — `/sigma/v2/run-daily` + `/mcp/sigma/tools` 경로
+- **MCP Server**: `Sigma.V2.MCP.Server` — 5개 도구 (agentskills.io 표준)
+- **MCP Auth**: `Sigma.V2.MCP.Auth` — Bearer Token (SIGMA_MCP_TOKEN 환경변수)
+- **Supervisor 개정**: `SIGMA_MCP_SERVER_ENABLED=true` 시 Bandit HTTP 서버 자식 기동
+- **SKILL.md 5개**: `bots/sigma/skills/` 신규 디렉토리 (각 3~4KB, 7섹션 완비)
+- **Darwin Signal Receiver**: `bots/darwin/src/signal-receiver.ts` (sigma advisory 구독)
+- **E2E 테스트**: `test/sigma/v2/e2e_test.exs` (14 케이스: MCP + Auth + Skill 직접 호출)
+- **완료 보고서**: `docs/SIGMA_REMODELING_COMPLETE.md`
+
+### 다음 단계 (OPS 배포)
+
+1. `cd elixir/team_jay && mix deps.get` (Plug + Bandit 신규 의존성)
+2. `mix ecto.migrate` (Phase 1 마이그레이션 적용)
+3. OPS `.env` 에 `SIGMA_MCP_TOKEN=<비밀값>` 추가
+4. `SIGMA_MCP_SERVER_ENABLED=true` 로 HTTP 서버 기동 테스트
+5. TS thin adapter: `SIGMA_V2_ENDPOINT=http://localhost:4000/sigma/v2` 확인
+6. `mix test --only e2e` 로 E2E 검증
+
+### 알림: Phoenix 없는 환경
+
+코덱스는 Phoenix 기반 controller/router 구조를 제안했으나 현재 Elixir 앱은 순수 OTP (team_jay_web 없음). **Plug + Bandit**으로 동등한 HTTP 기능 구현. 포트 4000 동일.
+
+---
+
+# 이전 인수인계 — 2026-04-17 (CODEX_SIGMA_REMODEL_PHASE_1 완료)
 
 > 세션 범위: Sigma V2 Elixir Jido 코어 + Shadow Mode 구현 (Phase 1)
 
