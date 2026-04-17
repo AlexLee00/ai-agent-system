@@ -23,9 +23,15 @@ defmodule Darwin.V2.Commander do
     name: "darwin_commander",
     model: :smart,
     tools: [
-      Darwin.V2.Skill.ResourceAnalyst,
+      Darwin.V2.Skill.EvaluatePaper,
+      Darwin.V2.Skill.ExperimentDesign,
+      Darwin.V2.Skill.LearnFromCycle,
       Darwin.V2.Skill.PaperSynthesis,
-      Darwin.V2.Skill.TreeSearch
+      Darwin.V2.Skill.PlanImplementation,
+      Darwin.V2.Skill.Replication,
+      Darwin.V2.Skill.ResourceAnalyst,
+      Darwin.V2.Skill.TreeSearch,
+      Darwin.V2.Skill.VlmFeedback
     ],
     system_prompt: """
     당신은 다윈팀 Commander v2입니다. AI 연구 자동화 에이전트 시스템의 오케스트레이터로,
