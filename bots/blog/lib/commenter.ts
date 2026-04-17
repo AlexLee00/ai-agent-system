@@ -28,6 +28,10 @@ function traceCommenter(...args) {
   console.log('[blog-commenter]', ...args);
 }
 
+function shouldCaptureHeavyCommentDebug() {
+  return process.env.BLOG_COMMENTER_TRACE === 'true' || process.env.BLOG_COMMENTER_HEAVY_DEBUG === 'true';
+}
+
 function buildCommenterFallbackChain(maxTokens, temperature) {
   return [
     { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens, temperature: Math.min(temperature, 0.7), timeoutMs: 15000 },
@@ -2053,6 +2057,45 @@ async function inspectReplyControls(page) {
   `);
 }
 
+async function inspectReplyControlsLite(page) {
+  return page.evaluate(`
+    (() => {
+      const textOf = (el) =>
+        String((el && (el.innerText || el.textContent)) || '').replace(/\\s+/g, ' ').trim();
+      const visible = (el) => {
+        if (!el) return false;
+        const style = window.getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+      };
+
+      const replyButtons = Array.from(document.querySelectorAll('a,button')).filter(visible).filter((btn) => {
+        const text = textOf(btn);
+        const cls = String(btn.className || '');
+        return /답글|답변/.test(text) || /u_cbox_btn_reply|btn_reply|replyButton/.test(cls);
+      });
+
+      const editors = Array.from(document.querySelectorAll('textarea, div[contenteditable="true"], div[role="textbox"], div[id*="write_textarea"]'))
+        .filter(visible);
+
+      const targetComment = document.querySelector('[data-blog-target-comment="true"]');
+      const targetReplyArea = document.querySelector('[data-blog-target-reply-area="true"]');
+      const targetReplyButton = document.querySelector('[data-blog-target-reply-button="true"]');
+
+      return {
+        url: location.href,
+        replyButtonCount: replyButtons.length,
+        editorCount: editors.length,
+        targetCommentFound: Boolean(targetComment),
+        targetReplyAreaFound: Boolean(targetReplyArea),
+        targetReplyAreaVisible: visible(targetReplyArea),
+        targetReplyButtonFound: Boolean(targetReplyButton),
+        targetReplyButtonText: textOf(targetReplyButton).slice(0, 40),
+      };
+    })()
+  `);
+}
+
 async function saveCommentDebugSnapshot(page, comment, stage) {
   try {
     ensureDir(BLOG_COMMENTER_DEBUG_DIR);
@@ -2725,40 +2768,77 @@ async function postReply(comment, replyText, { testMode = false, dryRun = false,
   const config = getCommenterConfig();
   const logNo = extractLogNo(comment.post_url);
   return withBrowserPage(testMode, async (page) => {
+    traceCommenter('postReply:start', {
+      commentId: comment.id,
+      logNo,
+      dryRun,
+      testMode,
+      operationTimeoutMs: Number(operationTimeoutMs || 0),
+    });
     await goto(page, comment.post_url);
     let contentFrame = await waitForCommentCapableFrame(page, logNo, testMode);
+    traceCommenter('postReply:frame-ready', { commentId: comment.id, logNo });
     await humanDelay(config.pageReadMinSec, config.pageReadMaxSec, testMode);
     contentFrame = await waitForCommentCapableFrame(page, logNo, testMode);
+    traceCommenter('postReply:frame-refreshed', { commentId: comment.id, logNo });
     const mounted = await mountCommentPanel(contentFrame, logNo, testMode);
+    traceCommenter('postReply:panel-mounted', { commentId: comment.id, mounted });
     let opened = false;
     if (mounted) {
       await waitForCommentPanel(contentFrame, logNo).catch(() => false);
       await humanDelay(1, 2, testMode);
       await waitForReplyThread(contentFrame, comment, testMode).catch(() => false);
+      traceCommenter('postReply:reply-thread-ready', { commentId: comment.id });
       opened = await openReplyEditor(contentFrame, comment);
+      traceCommenter('postReply:reply-button-targeted', { commentId: comment.id, opened });
       if (opened) {
         opened = await activateReplyMode(contentFrame);
+        traceCommenter('postReply:reply-mode-activated', { commentId: comment.id, opened });
       } else {
         const expanded = await expandReplyThreads(contentFrame);
+        traceCommenter('postReply:reply-thread-expanded', { commentId: comment.id, expanded });
         if (expanded > 0) {
           await humanDelay(1, 2, testMode);
           await waitForReplyThread(contentFrame, comment, testMode).catch(() => false);
           opened = await openReplyEditor(contentFrame, comment);
+          traceCommenter('postReply:reply-button-retargeted', { commentId: comment.id, opened });
           if (opened) {
             opened = await activateReplyMode(contentFrame);
+            traceCommenter('postReply:reply-mode-reactivated', { commentId: comment.id, opened });
           }
         }
       }
     }
 
     if (!opened) {
-      const debug = await inspectReplyControls(contentFrame).catch(() => null);
-      const snapshotPrefix = await saveCommentDebugSnapshot(contentFrame, comment, mounted ? 'reply-open-failed' : 'comment-panel-not-mounted');
+      const debug = await inspectReplyControlsLite(contentFrame).catch(() => null);
+      let snapshotPrefix = '';
+      if (shouldCaptureHeavyCommentDebug()) {
+        const heavyDebug = await inspectReplyControls(contentFrame).catch(() => null);
+        snapshotPrefix = await saveCommentDebugSnapshot(contentFrame, comment, mounted ? 'reply-open-failed' : 'comment-panel-not-mounted');
+        traceCommenter('postReply:reply-open-failed', {
+          commentId: comment.id,
+          mounted,
+          debug: heavyDebug,
+          snapshotPrefix,
+        });
+      } else {
+        traceCommenter('postReply:reply-open-failed-lite', {
+          commentId: comment.id,
+          mounted,
+          debug,
+        });
+      }
       throw new Error(`reply_button_not_found:${JSON.stringify({ ...(debug || {}), snapshotPrefix }).slice(0, 500)}`);
     }
 
     await humanDelay(1, 2, testMode);
     const editor = await focusReplyEditor(contentFrame);
+    traceCommenter('postReply:editor-focused', {
+      commentId: comment.id,
+      hasEditor: Boolean(editor?.selector),
+      selector: editor?.selector || '',
+    });
     if (!editor?.selector) {
       throw new Error('reply_editor_not_found');
     }
@@ -2773,14 +2853,30 @@ async function postReply(comment, replyText, { testMode = false, dryRun = false,
     }
 
     await typeReply(contentFrame, page, editor.selector, replyText, config, testMode);
+    traceCommenter('postReply:typed', {
+      commentId: comment.id,
+      replyLength: String(replyText || '').length,
+    });
     await humanDelay(1, 2, testMode);
     await submitReply(contentFrame);
+    traceCommenter('postReply:submitted', { commentId: comment.id });
     const posted = await verifyReplyPosted(contentFrame, replyText, comment, testMode);
+    traceCommenter('postReply:verified', { commentId: comment.id, posted });
     if (!posted) {
-      const snapshotPrefix = await saveCommentDebugSnapshot(contentFrame, comment, 'reply-submit-not-confirmed');
-      throw new Error(`reply_submit_not_confirmed:${snapshotPrefix}`);
+      let snapshotPrefix = '';
+      if (shouldCaptureHeavyCommentDebug()) {
+        snapshotPrefix = await saveCommentDebugSnapshot(contentFrame, comment, 'reply-submit-not-confirmed');
+      }
+      const debug = await inspectReplyControlsLite(contentFrame).catch(() => null);
+      traceCommenter('postReply:submit-not-confirmed', {
+        commentId: comment.id,
+        debug,
+        snapshotPrefix,
+      });
+      throw new Error(`reply_submit_not_confirmed:${JSON.stringify({ ...(debug || {}), snapshotPrefix }).slice(0, 500)}`);
     }
     await humanDelay(config.betweenCommentsMinSec, config.betweenCommentsMaxSec, testMode);
+    traceCommenter('postReply:done', { commentId: comment.id });
     return { ok: true };
   }, {
     timeoutMs: Number(operationTimeoutMs || 0),
