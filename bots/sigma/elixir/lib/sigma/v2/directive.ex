@@ -71,9 +71,14 @@ defimpl Sigma.Directive.Executor, for: Sigma.Directive.ApplyFeedback do
   end
 
   def execute(%{tier: 3} = dir, _ctx) do
-    Sigma.V2.Mailbox.enqueue(dir)
-    Sigma.V2.TelegramBridge.notify_pending(dir)
-    {:ok, %{tier: 3, outcome: :queued}}
+    case Sigma.V2.Mailbox.enqueue(dir) do
+      {:ok, directive_id} ->
+        Sigma.V2.TelegramBridge.notify_pending(dir, directive_id)
+        {:ok, %{tier: 3, outcome: :queued, directive_id: directive_id}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
   def execute(%{tier: _t} = _dir, _ctx) do

@@ -47,6 +47,10 @@ defmodule Sigma.V2.ShadowRunner do
     end
   end
 
+  @doc "문서/스크립트 하위호환용 별칭."
+  @spec run_once(map()) :: {:ok, map()} | {:error, term()}
+  def run_once(opts \\ %{}), do: run(opts)
+
   # -------------------------------------------------------------------
   # Private
   # -------------------------------------------------------------------

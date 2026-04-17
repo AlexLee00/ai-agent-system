@@ -5,18 +5,18 @@
 ## 빠른 시작
 
 ```bash
-# Elixir v2 (Jido 기반, 프로덕션)
-cd bots/sigma/elixir
+# Elixir v2 (Jido 기반, 프로덕션 코드 위치는 team_jay Mix 프로젝트)
+cd elixir/team_jay
 mix deps.get
 mix compile --warnings-as-errors
-mix test
+mix test ../../bots/sigma/elixir/test
 
 # TS v1 (레거시, Phase 5에서 thin adapter)
-cd ../ts
-tsx src/sigma-daily.ts --test
+cd ../../bots/sigma
+tsx ts/src/sigma-daily.ts --test
 
 # baseline 녹음
-tsx src/sigma-daily.ts --test > /tmp/sigma-baseline-$(date +%Y-%m-%d).json
+tsx ts/src/sigma-daily.ts --test > /tmp/sigma-baseline-$(date +%Y-%m-%d).json
 ```
 
 ## 디렉토리 구조

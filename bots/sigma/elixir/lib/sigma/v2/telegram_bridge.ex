@@ -8,10 +8,9 @@ defmodule Sigma.V2.TelegramBridge do
   require Logger
 
   @doc "Tier 3 대기 Directive 마스터 알림."
-  def notify_pending(directive) do
-    team = directive[:team] || "unknown"
-    action = directive[:action] || %{}
-    directive_id = Ecto.UUID.generate()
+  def notify_pending(directive, directive_id) do
+    team = Map.get(directive, :team, "unknown")
+    action = Map.get(directive, :action, %{})
 
     message = """
     🔔 Tier 3 Directive 승인 대기
@@ -50,10 +49,10 @@ defmodule Sigma.V2.TelegramBridge do
     🏆 최고 분석가: #{top_analyst}
 
     [What Worked]
-    #{Enum.map_join(what_worked, "\n", fn w -> "- #{w[:team]}: #{inspect(w[:action])}" end)}
+    #{Enum.map_join(what_worked, "\n", &format_review_item(&1, :worked))}
 
     [What Didn't]
-    #{Enum.map_join(what_didnt, "\n", fn w -> "- #{w[:team]}: #{w[:outcome]}" end)}
+    #{Enum.map_join(what_didnt, "\n", &format_review_item(&1, :didnt))}
     """
 
     TeamJay.HubClient.post_alarm(message, "sigma", "elixir")
@@ -62,4 +61,13 @@ defmodule Sigma.V2.TelegramBridge do
       Logger.warning("[sigma/telegram] 메타리뷰 알림 실패: #{inspect(e)}")
       {:error, e}
   end
+
+  defp format_review_item(item, mode) when is_map(item) do
+    case mode do
+      :worked -> "- #{item[:team] || "unknown"}: #{inspect(item[:action] || item)}"
+      :didnt -> "- #{item[:team] || "unknown"}: #{item[:outcome] || inspect(item)}"
+    end
+  end
+
+  defp format_review_item(item, _mode), do: "- #{inspect(item)}"
 end

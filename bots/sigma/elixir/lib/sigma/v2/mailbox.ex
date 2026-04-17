@@ -7,6 +7,8 @@ defmodule Sigma.V2.Mailbox do
 
   @doc "Tier 3 Directive 대기열 추가."
   def enqueue(directive) do
+    directive_id = Ecto.UUID.generate()
+
     sql = """
     INSERT INTO sigma_v2_mailbox
       (directive_id, tier, team, action, enqueued_at, status)
@@ -14,12 +16,12 @@ defmodule Sigma.V2.Mailbox do
     """
 
     case TeamJay.Repo.query(sql, [
-           Ecto.UUID.generate(),
+           directive_id,
            directive.tier,
            directive.team,
            Jason.encode!(directive.action)
          ]) do
-      {:ok, _} -> :ok
+      {:ok, _} -> {:ok, directive_id}
       {:error, reason} -> {:error, reason}
     end
   rescue
