@@ -9,9 +9,9 @@ defmodule TeamJay.JayTest do
   # ────────────────────────────────────────────────────────────────
 
   describe "Topics" do
-    test "16개 토픽 정의 확인 (크로스 7 + 성장 5 + 결정 4)" do
+    test "22개 토픽 정의 확인 (크로스 7 + 성장 11 + 결정 4)" do
       topics = Topics.all_topics()
-      assert length(topics) == 16
+      assert length(topics) == 22
     end
 
     test "크로스 파이프라인 7개 포함" do
@@ -26,9 +26,9 @@ defmodule TeamJay.JayTest do
       assert :luna_to_ska in cross
     end
 
-    test "성장 사이클 토픽 5개 포함" do
+    test "성장 사이클 토픽 11개 포함" do
       growth = Topics.growth_topics()
-      assert length(growth) == 5
+      assert length(growth) == 11
       assert :growth_cycle_started in growth
       assert :briefing_ready in growth
     end

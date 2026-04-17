@@ -74,6 +74,62 @@ defmodule Sigma.V2.HTTP.Router do
     end
   end
 
+  # Phase 2: Signal poll — TS receiver가 호출: GET /sigma/signals?team=blog&since=<ts>
+  get "/sigma/signals" do
+    team = conn.query_params["team"] || ""
+    since = conn.query_params["since"] || DateTime.to_iso8601(DateTime.utc_now())
+
+    signals = Sigma.V2.Archivist.recent_signals(team, since)
+
+    conn
+    |> put_resp_content_type("application/json")
+    |> send_resp(200, Jason.encode!(%{signals: signals}))
+  end
+
+  # Phase 2: Signal ack — TS receiver가 수용 카운트 기록: POST /sigma/signals/:id/ack
+  post "/sigma/signals/:id/ack" do
+    Sigma.V2.Archivist.record_acceptance(id)
+
+    conn
+    |> put_resp_content_type("application/json")
+    |> send_resp(200, Jason.encode!(%{ok: true}))
+  end
+
+  # Phase 4: Mailbox — 대기 중인 Tier 3 목록: GET /sigma/mailbox
+  get "/sigma/mailbox" do
+    pending = Sigma.V2.Mailbox.pending_items(limit: 20)
+
+    conn
+    |> put_resp_content_type("application/json")
+    |> send_resp(200, Jason.encode!(%{pending: pending, count: length(pending)}))
+  end
+
+  # Phase 4: Mailbox 처리: POST /sigma/mailbox/:id/approve
+  post "/sigma/mailbox/:id/approve" do
+    decision = get_in(conn.body_params, ["decision"]) || "approve"
+    patch_action = get_in(conn.body_params, ["patch_action"])
+
+    result =
+      case {decision, patch_action} do
+        {"approve", nil} -> Sigma.V2.Mailbox.execute(id)
+        {"approve", patch} -> Sigma.V2.Mailbox.execute_with_patch(id, patch)
+        {"reject", _} -> Sigma.V2.Mailbox.reject(id, nil)
+        _ -> {:error, :unknown_decision}
+      end
+
+    case result do
+      :ok ->
+        conn
+        |> put_resp_content_type("application/json")
+        |> send_resp(200, Jason.encode!(%{ok: true}))
+
+      {:error, reason} ->
+        conn
+        |> put_resp_content_type("application/json")
+        |> send_resp(500, Jason.encode!(%{error: inspect(reason)}))
+    end
+  end
+
   match _ do
     send_resp(conn, 404, Jason.encode!(%{error: "not found"}))
   end
