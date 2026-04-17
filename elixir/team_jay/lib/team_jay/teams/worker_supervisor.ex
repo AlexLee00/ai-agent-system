@@ -31,7 +31,7 @@ defmodule TeamJay.Teams.WorkerSupervisor do
   def init(_opts) do
     children =
       Enum.map(@worker_agents, fn agent ->
-        {TeamJay.Agents.PortAgent,
+        {Jay.Core.Agents.PortAgent,
          name: agent.name,
          team: :worker,
          script: agent.script,

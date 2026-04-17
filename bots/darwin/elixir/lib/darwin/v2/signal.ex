@@ -24,7 +24,7 @@ defmodule Darwin.V2.Signal do
 
     # JayBus 브로드캐스트
     topic = "darwin.#{type}"
-    Registry.dispatch(TeamJay.JayBus, topic, fn entries ->
+    Registry.dispatch(Jay.Core.JayBus, topic, fn entries ->
       for {pid, _} <- entries do
         send(pid, {:jay_event, topic, event})
       end
@@ -41,7 +41,7 @@ defmodule Darwin.V2.Signal do
   @doc "다윈 V2 이벤트 구독 (현재 프로세스 등록)."
   def subscribe(type) do
     topic = "darwin.#{type}"
-    Registry.register(TeamJay.JayBus, topic, [])
+    Registry.register(Jay.Core.JayBus, topic, [])
   end
 
   # 주요 이벤트 헬퍼

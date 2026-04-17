@@ -96,7 +96,7 @@ defmodule Darwin.V2.ShadowRunner do
 
   @impl GenServer
   def handle_info(:subscribe, state) do
-    Registry.register(TeamJay.JayBus, "darwin.paper.evaluated", [])
+    Registry.register(Jay.Core.JayBus, "darwin.paper.evaluated", [])
     Logger.debug("[다윈V2 섀도우] JayBus 구독 완료 (darwin.paper.evaluated)")
     {:noreply, state}
   end

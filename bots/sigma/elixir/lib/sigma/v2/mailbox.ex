@@ -15,7 +15,7 @@ defmodule Sigma.V2.Mailbox do
     VALUES ($1, $2, $3, $4, NOW(), 'pending')
     """
 
-    case TeamJay.Repo.query(sql, [
+    case Jay.Core.Repo.query(sql, [
            directive_id,
            directive.tier,
            directive.team,
@@ -40,7 +40,7 @@ defmodule Sigma.V2.Mailbox do
     LIMIT $1
     """
 
-    case TeamJay.Repo.query(sql, [limit]) do
+    case Jay.Core.Repo.query(sql, [limit]) do
       {:ok, %{rows: rows, columns: cols}} ->
         atom_cols = Enum.map(cols, &String.to_atom/1)
         Enum.map(rows, &(Enum.zip(atom_cols, &1) |> Map.new()))
@@ -54,7 +54,7 @@ defmodule Sigma.V2.Mailbox do
 
   @doc "대기 중인 Directive 수 조회."
   def pending_count do
-    case TeamJay.Repo.query("SELECT COUNT(*)::int FROM sigma_v2_mailbox WHERE status = 'pending'", []) do
+    case Jay.Core.Repo.query("SELECT COUNT(*)::int FROM sigma_v2_mailbox WHERE status = 'pending'", []) do
       {:ok, %{rows: [[count]]}} -> count
       _ -> 0
     end
@@ -80,7 +80,7 @@ defmodule Sigma.V2.Mailbox do
     WHERE directive_id = $2
     """
 
-    case TeamJay.Repo.query(sql, [Jason.encode!(patch_action), directive_id]) do
+    case Jay.Core.Repo.query(sql, [Jason.encode!(patch_action), directive_id]) do
       {:ok, _} -> :ok
       {:error, reason} -> {:error, reason}
     end
@@ -97,7 +97,7 @@ defmodule Sigma.V2.Mailbox do
     WHERE directive_id = $2
     """
 
-    case TeamJay.Repo.query(sql, [status, directive_id]) do
+    case Jay.Core.Repo.query(sql, [status, directive_id]) do
       {:ok, _} -> :ok
       {:error, reason} -> {:error, reason}
     end

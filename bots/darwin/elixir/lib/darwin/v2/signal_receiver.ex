@@ -57,7 +57,7 @@ defmodule Darwin.V2.SignalReceiver do
 
   defp handle_knowledge_capture(data) do
     Task.start(fn ->
-      TeamJay.HubClient.post_alarm(
+      Jay.Core.HubClient.post_alarm(
         "[다윈] 시그마 권고 → 스탠딩 오더 승격: #{data[:topic] || "(미명시)"}",
         "darwin",
         "darwin"

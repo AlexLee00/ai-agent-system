@@ -13,7 +13,7 @@ defmodule TeamJay.Teams.StewardSupervisor do
   def init(_opts) do
     children =
       Enum.map(@steward_agents, fn agent ->
-        {TeamJay.Agents.PortAgent,
+        {Jay.Core.Agents.PortAgent,
          name: agent.name, team: :steward, script: agent.script, schedule: agent.schedule}
       end)
 

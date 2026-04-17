@@ -56,7 +56,7 @@ defmodule TeamJay.Jay.Sigma.Feedback do
     ]
 
     Enum.each(sqls, fn sql ->
-      TeamJay.HubClient.pg_query(sql, "public")
+      Jay.Core.HubClient.pg_query(sql, "public")
     end)
     :ok
   rescue
@@ -90,7 +90,7 @@ defmodule TeamJay.Jay.Sigma.Feedback do
               '#{metric_s}', '#{form_s}')
     """
 
-    case TeamJay.HubClient.pg_query(sql, @schema) do
+    case Jay.Core.HubClient.pg_query(sql, @schema) do
       {:ok, _} ->
         Logger.debug("[Sigma.Feedback] 피드백 저장: #{target_team}/#{feedback_type}")
         :ok
@@ -114,7 +114,7 @@ defmodule TeamJay.Jay.Sigma.Feedback do
       VALUES ('#{form_s}', '#{events_s}', '#{report_s}',
               #{insight_count}, #{feedback_count})
     """
-    TeamJay.HubClient.pg_query(sql, @schema)
+    Jay.Core.HubClient.pg_query(sql, @schema)
     :ok
   rescue
     e ->
@@ -140,7 +140,7 @@ defmodule TeamJay.Jay.Sigma.Feedback do
             measured_at = NOW()
         WHERE id = '#{feedback_id}'
       """
-      TeamJay.HubClient.pg_query(sql, @schema)
+      Jay.Core.HubClient.pg_query(sql, @schema)
       :ok
     end
   rescue

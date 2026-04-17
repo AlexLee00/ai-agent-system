@@ -17,7 +17,7 @@ defmodule Sigma.V2.Config do
       {:ok, content} ->
         snapshot_id = Ecto.UUID.generate()
 
-        case TeamJay.Repo.query(
+        case Jay.Core.Repo.query(
                "INSERT INTO sigma_v2_config_snapshots (id, team, content, created_at) VALUES ($1, $2, $3, NOW())",
                [snapshot_id, team, content]
              ) do
@@ -130,7 +130,7 @@ defmodule Sigma.V2.Config do
   end
 
   defp fetch_snapshot(snapshot_id, team) do
-    case TeamJay.Repo.query(
+    case Jay.Core.Repo.query(
            "SELECT content FROM sigma_v2_config_snapshots WHERE id = $1 AND team = $2 LIMIT 1",
            [snapshot_id, team]
          ) do

@@ -116,7 +116,7 @@ defmodule TeamJay.Blog.InsightsCollector do
     views = naver["views"] || 0
     engagement = naver["engagementRate"] || 0.0
 
-    TeamJay.HubClient.post_alarm(
+    Jay.Core.HubClient.post_alarm(
       "[블로팀] 성과 수집 완료: 네이버 조회수 #{views}, 참여율 #{engagement}%",
       "blog",
       "insights_collector"

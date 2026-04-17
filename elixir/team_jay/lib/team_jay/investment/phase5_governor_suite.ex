@@ -4,7 +4,7 @@ defmodule TeamJay.Investment.Phase5GovernorSuite do
   """
 
   alias Ecto.Adapters.SQL
-  alias TeamJay.Repo
+  alias Jay.Core.Repo
 
   def run_defaults(_opts \\ []) do
     operations = latest_operations()

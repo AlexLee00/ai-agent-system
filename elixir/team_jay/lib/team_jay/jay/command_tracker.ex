@@ -36,7 +36,7 @@ defmodule TeamJay.Jay.CommandTracker do
     detail = Keyword.get(opts, :detail)
     pipeline_name = to_string(pipeline)
 
-    TeamJay.EventLake.record(%{
+    Jay.Core.EventLake.record(%{
       team: "jay",
       bot_name: "cross_team_router",
       source: "jay.cross_team_router",

@@ -198,7 +198,7 @@ defmodule Darwin.V2.Sensor.HackerNews do
 
   defp emit(paper) do
     topic = Darwin.V2.Topics.paper_discovered()
-    Registry.dispatch(TeamJay.JayBus, topic, fn entries ->
+    Registry.dispatch(Jay.Core.JayBus, topic, fn entries ->
       for {pid, _} <- entries, do: send(pid, {:jay_event, topic, paper})
     end)
   end

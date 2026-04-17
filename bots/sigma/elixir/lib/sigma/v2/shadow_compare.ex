@@ -118,7 +118,7 @@ defmodule Sigma.V2.ShadowCompare do
     ORDER BY id ASC
     """
 
-    case TeamJay.Repo.query(sql, [date]) do
+    case Jay.Core.Repo.query(sql, [date]) do
       {:ok, %{rows: rows, columns: cols}} ->
         atom_cols = Enum.map(cols, &String.to_atom/1)
         Enum.map(rows, &(Enum.zip(atom_cols, &1) |> Map.new()))
@@ -138,7 +138,7 @@ defmodule Sigma.V2.ShadowCompare do
     ORDER BY id ASC
     """
 
-    case TeamJay.Repo.query(sql, [date]) do
+    case Jay.Core.Repo.query(sql, [date]) do
       {:ok, %{rows: rows, columns: cols}} ->
         atom_cols = Enum.map(cols, &String.to_atom/1)
         Enum.map(rows, &(Enum.zip(atom_cols, &1) |> Map.new()))

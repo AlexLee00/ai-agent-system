@@ -1,11 +1,11 @@
 defmodule TeamJayTest do
   use ExUnit.Case
-  alias TeamJay.Agents.PortAgent
-  alias TeamJay.Darwin.TeamConnector
-  alias TeamJay.Diagnostics
-  alias TeamJay.EventLake
-  alias TeamJay.MarketRegime
-  alias TeamJay.Schemas.EventLake, as: EventLakeSchema
+  alias Jay.Core.Agents.PortAgent
+  alias Darwin.V2.TeamConnector
+  alias Jay.Core.Diagnostics
+  alias Jay.Core.EventLake
+  alias Jay.Core.MarketRegime
+  alias Jay.Core.Schemas.EventLake, as: EventLakeSchema
   import TeamJay.ChangesetHelpers
 
   test "event lake changeset requires event_type" do
@@ -39,6 +39,7 @@ defmodule TeamJayTest do
     assert status.status in [:idle, :running]
   end
 
+  @tag :integration
   test "shadow report summarizes overlap and agent states" do
     report = Diagnostics.shadow_report()
     assert is_map(report)
@@ -79,6 +80,7 @@ defmodule TeamJayTest do
     assert Map.has_key?(report.week3_summary, :optional_missing)
   end
 
+  @tag :integration
   test "shadow report can be published" do
     report = Diagnostics.publish_shadow_report()
     assert is_map(report)
@@ -90,6 +92,7 @@ defmodule TeamJayTest do
     assert report.week3_summary.total == length(report.week3_shadow_agents)
   end
 
+  @tag :integration
   test "diagnostics status tracks next pilot signature" do
     _report = Diagnostics.shadow_report()
     status = Diagnostics.get_status()

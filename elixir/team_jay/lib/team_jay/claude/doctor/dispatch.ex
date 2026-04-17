@@ -14,7 +14,7 @@ defmodule TeamJay.Claude.Doctor.Dispatch do
   use GenServer
   require Logger
 
-  alias TeamJay.HubClient
+  alias Jay.Core.HubClient
   alias TeamJay.Claude.Topics
 
   defstruct [
@@ -54,7 +54,7 @@ defmodule TeamJay.Claude.Doctor.Dispatch do
 
   @impl true
   def handle_info(:subscribe, state) do
-    Registry.register(TeamJay.JayBus, Topics.error_escalated(), [])
+    Jay.Core.JayBus.subscribe( Topics.error_escalated(), [])
     Logger.debug("[Doctor.Dispatch] 에러 에스컬레이션 구독 완료")
     {:noreply, state}
   end

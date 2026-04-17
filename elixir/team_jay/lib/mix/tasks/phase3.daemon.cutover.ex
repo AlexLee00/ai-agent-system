@@ -30,7 +30,7 @@ defmodule Mix.Tasks.Phase3.Daemon.Cutover do
       |> Keyword.get(:service)
       |> parse_service!()
 
-    report = TeamJay.Diagnostics.shadow_report()
+    report = Jay.Core.Diagnostics.shadow_report()
     candidate = find_candidate!(report, service)
     port_agent = get_port_agent_status(service)
     launchd = get_launchd_status(candidate.label)
@@ -92,12 +92,12 @@ defmodule Mix.Tasks.Phase3.Daemon.Cutover do
   end
 
   defp daemon_already_promoted?(service) do
-    case GenServer.whereis(TeamJay.Agents.PortAgent.via(service)) do
+    case GenServer.whereis(Jay.Core.Agents.PortAgent.via(service)) do
       nil ->
         false
 
       _pid ->
-        status = TeamJay.Agents.PortAgent.get_status(service)
+        status = Jay.Core.Agents.PortAgent.get_status(service)
         Map.get(status, :schedule) == :once
     end
   rescue
@@ -105,12 +105,12 @@ defmodule Mix.Tasks.Phase3.Daemon.Cutover do
   end
 
   defp get_port_agent_status(service) do
-    case GenServer.whereis(TeamJay.Agents.PortAgent.via(service)) do
+    case GenServer.whereis(Jay.Core.Agents.PortAgent.via(service)) do
       nil ->
         %{registered?: false, status: :missing}
 
       _pid ->
-        state = TeamJay.Agents.PortAgent.get_status(service)
+        state = Jay.Core.Agents.PortAgent.get_status(service)
 
         %{
           registered?: true,
@@ -223,7 +223,7 @@ defmodule Mix.Tasks.Phase3.Daemon.Cutover do
               launchd_after_bootout: launchd_after_bootout
             })
           else
-            TeamJay.Agents.PortAgent.run(candidate.name)
+            Jay.Core.Agents.PortAgent.run(candidate.name)
             Process.sleep(1_500)
             health = wait_for_health(candidate.health_url, timeout_ms)
             launchd_after_cutover = get_launchd_status(label)
@@ -322,7 +322,7 @@ defmodule Mix.Tasks.Phase3.Daemon.Cutover do
   end
 
   defp rollback_launchd(service, plist_path) do
-    TeamJay.Agents.PortAgent.stop(service)
+    Jay.Core.Agents.PortAgent.stop(service)
     Process.sleep(500)
 
     case System.cmd("launchctl", ["load", plist_path], stderr_to_stdout: true) do
@@ -372,16 +372,16 @@ defmodule Mix.Tasks.Phase3.Daemon.Cutover do
   end
 
   defp plist_path_for!("ai.hub.resource-api"),
-    do: TeamJay.Config.repo_root() <> "/bots/hub/launchd/ai.hub.resource-api.plist"
+    do: Jay.Core.Config.repo_root() <> "/bots/hub/launchd/ai.hub.resource-api.plist"
 
   defp plist_path_for!("ai.blog.node-server"),
-    do: TeamJay.Config.repo_root() <> "/bots/blog/launchd/ai.blog.node-server.plist"
+    do: Jay.Core.Config.repo_root() <> "/bots/blog/launchd/ai.blog.node-server.plist"
 
   defp plist_path_for!("ai.worker.web"),
-    do: TeamJay.Config.repo_root() <> "/bots/worker/launchd/ai.worker.web.plist"
+    do: Jay.Core.Config.repo_root() <> "/bots/worker/launchd/ai.worker.web.plist"
 
   defp plist_path_for!("ai.worker.nextjs"),
-    do: TeamJay.Config.repo_root() <> "/bots/worker/launchd/ai.worker.nextjs.plist"
+    do: Jay.Core.Config.repo_root() <> "/bots/worker/launchd/ai.worker.nextjs.plist"
 
   defp plist_path_for!(label), do: Mix.raise("plist 경로 매핑이 없습니다: #{label}")
 

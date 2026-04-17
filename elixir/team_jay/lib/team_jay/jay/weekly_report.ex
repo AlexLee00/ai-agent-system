@@ -22,7 +22,7 @@ defmodule TeamJay.Jay.WeeklyReport do
                           team_data: team_data, highlights: highlights)
 
     Topics.broadcast(:weekly_report_ready, %{report: report, week_start: week_start})
-    TeamJay.HubClient.post_alarm(report, "jay", "weekly_report")
+    Jay.Core.HubClient.post_alarm(report, "jay", "weekly_report")
 
     record_to_sigma(week_start, week_end, report, highlights)
     Logger.info("[WeeklyReport] 완료 (#{String.length(report)}자)")

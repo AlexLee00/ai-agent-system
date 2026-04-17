@@ -144,7 +144,7 @@ defmodule TeamJay.Teams.InvestmentSupervisor do
 
   defp interval_children do
     Enum.map(@interval_agents, fn agent ->
-      {TeamJay.Agents.PortAgent,
+      {Jay.Core.Agents.PortAgent,
        name: agent.name,
        team: :investment,
        script: agent.script,
@@ -155,7 +155,7 @@ defmodule TeamJay.Teams.InvestmentSupervisor do
 
   defp calendar_children do
     Enum.map(@calendar_agents, fn agent ->
-      {TeamJay.Agents.PortAgent,
+      {Jay.Core.Agents.PortAgent,
        name: agent.name,
        team: :investment,
        script: agent.script,

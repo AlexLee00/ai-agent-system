@@ -14,8 +14,8 @@ defmodule Mix.Tasks.Sigma.Daily.Shadow do
       Application.ensure_all_started(app)
     end
 
-    db_config = Application.get_env(:team_jay, TeamJay.Repo)
-    {:ok, _pid} = TeamJay.Repo.start_link(db_config)
+    db_config = Application.get_env(:team_jay, Jay.Core.Repo)
+    {:ok, _pid} = Jay.Core.Repo.start_link(db_config)
 
     date = Date.utc_today()
     Logger.info("[sigma_shadow] #{date} Shadow 실행 시작")

@@ -9,7 +9,7 @@ defmodule TeamJay.Blog.FeedbackDigest do
   alias TeamJay.Blog.StatusSnapshot
   alias TeamJay.Blog.AutonomyDigest
   alias Ecto.Adapters.SQL
-  alias TeamJay.Repo
+  alias Jay.Core.Repo
 
   def build(snapshot \\ StatusSnapshot.collect()) do
     feedback = build_feedback_store()

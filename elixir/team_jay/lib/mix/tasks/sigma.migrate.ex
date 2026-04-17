@@ -27,7 +27,7 @@ defmodule Mix.Tasks.Sigma.Migrate do
   def run(args) do
     Mix.Task.run("app.start", [])
 
-    repo = TeamJay.Repo
+    repo = Jay.Core.Repo
     base_dir = Path.expand("priv/repo/migrations", Mix.Project.app_path())
     sigma_dir = Path.expand(@sigma_migrations_rel, File.cwd!())
 

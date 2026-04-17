@@ -7,7 +7,7 @@ defmodule TeamJay.Blog.AutonomyDigest do
   """
 
   alias Ecto.Adapters.SQL
-  alias TeamJay.Repo
+  alias Jay.Core.Repo
 
   @default_days 14
 

@@ -85,7 +85,7 @@ defmodule Sigma.V2.RollbackScheduler do
     SELECT COALESCE(ROUND(AVG(score)::numeric, 2), 5.0)::float AS avg_score
     FROM agent.registry WHERE team = $1
     """
-    case TeamJay.Repo.query(sql, [team]) do
+    case Jay.Core.Repo.query(sql, [team]) do
       {:ok, %{rows: [[v]]}} when is_float(v) -> %{avg_score: v}
       _ -> %{avg_score: 5.0}
     end

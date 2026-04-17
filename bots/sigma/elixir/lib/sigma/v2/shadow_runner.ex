@@ -62,7 +62,7 @@ defmodule Sigma.V2.ShadowRunner do
     RETURNING id
     """
 
-    case TeamJay.Repo.query(sql, [
+    case Jay.Core.Repo.query(sql, [
            date,
            Jason.encode!(formation),
            Jason.encode!(analysis),
@@ -101,7 +101,7 @@ defmodule Sigma.V2.ShadowRunner do
   defp fetch_v1_run(id) do
     sql = "SELECT formation FROM sigma.daily_runs WHERE id = $1 LIMIT 1"
 
-    case TeamJay.Repo.query(sql, [id]) do
+    case Jay.Core.Repo.query(sql, [id]) do
       {:ok, %{rows: [[formation]]}} -> formation
       _ -> nil
     end

@@ -231,7 +231,7 @@ defmodule TeamJay.Ska.FailureTracker do
     Logger.error("[FailureTracker] #{agent}: unknown error (count >= #{@auto_resolve_threshold})")
     notify_if_needed(phase, :error,
       "❓ #{agent} 미분류 에러 #{@auto_resolve_threshold}회+ → 케이스 등록됨")
-    TeamJay.EventLake.record(%{
+    Jay.Core.EventLake.record(%{
       event_type: "ska_unknown_failure",
       team: "ska",
       bot_name: agent,
@@ -246,12 +246,12 @@ defmodule TeamJay.Ska.FailureTracker do
 
   defp attempt_escalate(error_type, agent, failure, _phase) do
     Logger.error("[FailureTracker] 🚨 에스컬레이션: #{agent} / #{error_type} #{@escalate_threshold}회+")
-    TeamJay.HubClient.post_alarm(
+    Jay.Core.HubClient.post_alarm(
       "🚨 스카팀 에스컬레이션!\n에이전트: #{agent}\n에러유형: #{error_type}\n반복횟수: #{@escalate_threshold}+\n→ 코덱스 수정 요청 등록",
       "ska",
       "failure_tracker"
     )
-    TeamJay.EventLake.record(%{
+    Jay.Core.EventLake.record(%{
       event_type: "ska_failure_escalated",
       team: "ska",
       bot_name: agent,
@@ -266,16 +266,16 @@ defmodule TeamJay.Ska.FailureTracker do
 
   defp notify_if_needed(1, _level, msg) do
     # Phase 1: 모든 복구 시도 알림
-    TeamJay.HubClient.post_alarm(msg, "ska", "failure_tracker")
+    Jay.Core.HubClient.post_alarm(msg, "ska", "failure_tracker")
   end
 
   defp notify_if_needed(2, :error, msg) do
     # Phase 2: 실패 복구만 알림
-    TeamJay.HubClient.post_alarm(msg, "ska", "failure_tracker")
+    Jay.Core.HubClient.post_alarm(msg, "ska", "failure_tracker")
   end
 
   defp notify_if_needed(2, :warning, msg) do
-    TeamJay.HubClient.post_alarm(msg, "ska", "failure_tracker")
+    Jay.Core.HubClient.post_alarm(msg, "ska", "failure_tracker")
   end
 
   defp notify_if_needed(2, :info, _msg), do: :ok
@@ -317,7 +317,7 @@ defmodule TeamJay.Ska.FailureTracker do
     ORDER BY last_seen DESC
     LIMIT 50
     """
-    case TeamJay.Repo.query(sql, [@auto_resolve_threshold]) do
+    case Jay.Core.Repo.query(sql, [@auto_resolve_threshold]) do
       {:ok, %{rows: rows}} ->
         Enum.reduce(rows, state, fn [id, type_str, message, agent, count], acc ->
           error_type = safe_to_atom(type_str)
@@ -358,7 +358,7 @@ defmodule TeamJay.Ska.FailureTracker do
       count    = ska.failure_cases.count + 1,
       last_seen = NOW()
     """
-    case TeamJay.Repo.query(sql, [to_string(error_type), message, agent]) do
+    case Jay.Core.Repo.query(sql, [to_string(error_type), message, agent]) do
       {:ok, _} -> :ok
       {:error, err} ->
         Logger.error("[FailureTracker] DB upsert 실패: #{inspect(err)}")
@@ -373,7 +373,7 @@ defmodule TeamJay.Ska.FailureTracker do
     ORDER BY last_seen DESC
     LIMIT $1
     """
-    case TeamJay.Repo.query(sql, [limit]) do
+    case Jay.Core.Repo.query(sql, [limit]) do
       {:ok, %{rows: rows, columns: cols}} ->
         keys = Enum.map(cols, &String.to_atom/1)
         Enum.map(rows, fn row -> Enum.zip(keys, row) |> Map.new() end)

@@ -116,7 +116,7 @@ defmodule Darwin.V2.Memory.L2 do
         tags_json = Jason.encode!(tags)
 
         result =
-          TeamJay.Repo.query(
+          Jay.Core.Repo.query(
             """
             INSERT INTO #{@table}
               (team, content, embedding, memory_type, importance, context, tags, inserted_at)
@@ -176,7 +176,7 @@ defmodule Darwin.V2.Memory.L2 do
 
         query_params = [embedding, team, threshold] ++ extra_params
 
-        case TeamJay.Repo.query(sql, query_params) do
+        case Jay.Core.Repo.query(sql, query_params) do
           {:ok, %{rows: rows}} ->
             hits =
               Enum.map(rows, fn [content, importance, mem_type, context, tags, sim] ->

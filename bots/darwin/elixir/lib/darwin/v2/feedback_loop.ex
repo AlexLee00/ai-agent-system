@@ -86,7 +86,7 @@ defmodule Darwin.V2.FeedbackLoop do
     ]
 
     Enum.each(topics, fn topic ->
-      Registry.register(TeamJay.JayBus, topic, [])
+      Registry.register(Jay.Core.JayBus, topic, [])
     end)
 
     Logger.debug("[다윈V2 피드백루프] JayBus 구독 완료 (#{length(topics)}개 토픽)")
@@ -223,7 +223,7 @@ defmodule Darwin.V2.FeedbackLoop do
     ON CONFLICT DO NOTHING
     """
 
-    case TeamJay.Repo.query(sql, [paper_url, paper_title, stage, score, meta_json]) do
+    case Jay.Core.Repo.query(sql, [paper_url, paper_title, stage, score, meta_json]) do
       {:ok, _} ->
         Logger.debug("[다윈V2 피드백루프] audit 저장 완료 (stage=#{stage})")
 
@@ -244,7 +244,7 @@ defmodule Darwin.V2.FeedbackLoop do
     WHERE paper_url = $1
     """
 
-    case TeamJay.Repo.query(sql, [paper_url]) do
+    case Jay.Core.Repo.query(sql, [paper_url]) do
       {:ok, %{rows: [[successes, failures, total]]}} when total > 0 ->
         rate = successes / max(total, 1)
         {successes, failures, Float.round(rate, 3)}
@@ -270,7 +270,7 @@ defmodule Darwin.V2.FeedbackLoop do
     WHERE inserted_at >= NOW() - INTERVAL '24 hours'
     """
 
-    case TeamJay.Repo.query(sql, []) do
+    case Jay.Core.Repo.query(sql, []) do
       {:ok, %{rows: [[total, evaluated, implemented, verified, applied]]}} ->
         %{state |
           total:       total       || 0,
@@ -298,7 +298,7 @@ defmodule Darwin.V2.FeedbackLoop do
     WHERE agent_name = $1 AND status = 'operational'
     """
 
-    case TeamJay.Repo.query(sql, [to_string(agent_name)]) do
+    case Jay.Core.Repo.query(sql, [to_string(agent_name)]) do
       {:ok, _} ->
         Logger.debug("[다윈V2 피드백루프] ESPL 효과성 업데이트 완료 (agent=#{agent_name})")
 

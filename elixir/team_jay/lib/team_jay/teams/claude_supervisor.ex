@@ -34,7 +34,7 @@ defmodule TeamJay.Teams.ClaudeSupervisor do
 
     port_children =
       Enum.map(@claude_agents, fn agent ->
-        {TeamJay.Agents.PortAgent,
+        {Jay.Core.Agents.PortAgent,
          name: agent.name, team: :claude, script: agent.script,
          runner: Map.get(agent, :runner, :tsx), schedule: agent.schedule}
       end)

@@ -7,7 +7,7 @@ defmodule TeamJay.Teams.InvestmentScheduler do
   시장 휴장/주말 판단은 각 스크립트 내부 가드에서 처리.
   """
 
-  alias TeamJay.Agents.PortAgent
+  alias Jay.Core.Agents.PortAgent
   alias TeamJay.Investment.Feedback.Daily, as: DailyFeedback
 
   # ────────────────────────────────────────────────────────────────

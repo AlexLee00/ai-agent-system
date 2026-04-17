@@ -14,7 +14,7 @@ defmodule TeamJay.Claude.HistoryWriter do
   use GenServer
   require Logger
 
-  alias TeamJay.Repo
+  alias Jay.Core.Repo
 
   @check_interval_ms 3_600_000  # 1시간마다 체크
   @weekly_hour_kst   9           # 09:00 KST
@@ -142,8 +142,8 @@ defmodule TeamJay.Claude.HistoryWriter do
 
   defp write_to_rag(content, tag) do
     # Hub RAG API 호출 (packages/core/lib/rag.js와 동일한 엔드포인트)
-    hub_url = TeamJay.Config.hub_url()
-    hub_token = TeamJay.Config.hub_token()
+    hub_url = Jay.Core.Config.hub_url()
+    hub_token = Jay.Core.Config.hub_token()
 
     if is_nil(hub_url) or is_nil(hub_token) do
       Logger.warning("[HistoryWriter] Hub URL/Token 없음, RAG 저장 건너뜀")

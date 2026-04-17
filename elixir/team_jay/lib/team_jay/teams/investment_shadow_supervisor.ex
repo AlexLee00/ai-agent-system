@@ -30,7 +30,7 @@ defmodule TeamJay.Teams.InvestmentShadowSupervisor do
   def init(_opts) do
     children =
       Enum.map(@investment_agents, fn agent ->
-        {TeamJay.Agents.LaunchdShadowAgent,
+        {Jay.Core.Agents.LaunchdShadowAgent,
          name: agent.name,
          team: :investment,
          label: agent.label,

@@ -17,7 +17,7 @@ defmodule Darwin.V2.Applier do
 
   alias Darwin.V2.{Topics, AutonomyLevel, Lead}
   alias Darwin.V2.Principle.Loader, as: PrincipleLoader
-  alias TeamJay.HubClient
+  alias Jay.Core.HubClient
 
   # 팀별 라우팅 규칙: {키워드 목록, 팀 아톰, 설명}
   @team_routes [
@@ -53,7 +53,7 @@ defmodule Darwin.V2.Applier do
 
   @impl GenServer
   def handle_info(:subscribe_events, state) do
-    Registry.register(TeamJay.JayBus, Topics.verification_passed(), [])
+    Registry.register(Jay.Core.JayBus, Topics.verification_passed(), [])
     Logger.debug("[다윈V2 적용자] JayBus 구독 완료")
     {:noreply, state}
   end
@@ -178,7 +178,7 @@ defmodule Darwin.V2.Applier do
       applied_at: DateTime.utc_now()
     }
 
-    Registry.dispatch(TeamJay.JayBus, topic, fn entries ->
+    Registry.dispatch(Jay.Core.JayBus, topic, fn entries ->
       for {pid, _} <- entries, do: send(pid, {:jay_event, topic, payload})
     end)
 
@@ -229,7 +229,7 @@ defmodule Darwin.V2.Applier do
       WHERE id = $1
       """
 
-      case Ecto.Adapters.SQL.query(TeamJay.Repo, sql, [paper_id]) do
+      case Ecto.Adapters.SQL.query(Jay.Core.Repo, sql, [paper_id]) do
         {:ok, _} -> :ok
         {:error, reason} ->
           Logger.warning("[다윈V2 적용자] DB 업데이트 실패: #{inspect(reason)}")

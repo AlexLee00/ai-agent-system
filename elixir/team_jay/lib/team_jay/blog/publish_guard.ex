@@ -167,7 +167,7 @@ defmodule TeamJay.Blog.PublishGuard do
     post_id = item[:post_id]
 
     if post_id do
-      result = TeamJay.HubClient.pg_query("""
+      result = Jay.Core.HubClient.pg_query("""
         UPDATE blog.posts
         SET status = 'pending', updated_at = NOW()
         WHERE id = #{post_id}
@@ -202,7 +202,7 @@ defmodule TeamJay.Blog.PublishGuard do
   end
 
   defp notify_expired(item) do
-    TeamJay.HubClient.post_alarm(
+    Jay.Core.HubClient.post_alarm(
       "[블로팀] 발행 재시도 만료 (24h): #{inspect(item[:title] || "unknown")}",
       "blog",
       "publish_guard"
@@ -212,7 +212,7 @@ defmodule TeamJay.Blog.PublishGuard do
   end
 
   defp notify_max_retries(item) do
-    TeamJay.HubClient.post_alarm(
+    Jay.Core.HubClient.post_alarm(
       "[블로팀 CRITICAL] 발행 #{@max_retries}회 재시도 실패: #{inspect(item[:title] || "unknown")}",
       "blog",
       "publish_guard"

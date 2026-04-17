@@ -166,7 +166,7 @@ defmodule TeamJay.Jay.AutonomyController do
 
   defp escalation_today? do
     today = Date.utc_today() |> Date.to_string()
-    case TeamJay.HubClient.pg_query("""
+    case Jay.Core.HubClient.pg_query("""
       SELECT COUNT(*)::int AS cnt
       FROM agent.event_lake
       WHERE event_type = 'decision.escalate'
@@ -185,7 +185,7 @@ defmodule TeamJay.Jay.AutonomyController do
   # ────────────────────────────────────────────────────────────────
 
   defp load_phase_from_db do
-    case TeamJay.HubClient.pg_query("""
+    case Jay.Core.HubClient.pg_query("""
       SELECT value FROM agent.kv_store
       WHERE key = '#{@phase_key}'
       LIMIT 1
@@ -200,7 +200,7 @@ defmodule TeamJay.Jay.AutonomyController do
   end
 
   defp save_phase_to_db(phase) do
-    TeamJay.HubClient.pg_query("""
+    Jay.Core.HubClient.pg_query("""
       INSERT INTO agent.kv_store (key, value, updated_at)
       VALUES ('#{@phase_key}', #{phase}, NOW())
       ON CONFLICT (key) DO UPDATE SET value = #{phase}, updated_at = NOW()
@@ -210,11 +210,11 @@ defmodule TeamJay.Jay.AutonomyController do
   end
 
   defp broadcast_phase_change(from, to) do
-    TeamJay.HubClient.post_alarm(
+    Jay.Core.HubClient.post_alarm(
       "🤖 [제이] 자율화 단계 전환!\n#{phase_label(from)} → #{phase_label(to)}",
       "jay", "autonomy_controller"
     )
-    TeamJay.EventLake.record(%{
+    Jay.Core.EventLake.record(%{
       source: "jay.autonomy_controller",
       event_type: "autonomy.phase_changed",
       severity: "info",

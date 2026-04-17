@@ -12,7 +12,7 @@ defmodule TeamJay.Blog.Feedback do
 
   alias TeamJay.Blog.PubSub
   alias TeamJay.Blog.Topics
-  alias TeamJay.EventLake
+  alias Jay.Core.EventLake
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)

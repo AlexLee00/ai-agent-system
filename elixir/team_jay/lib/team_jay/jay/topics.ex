@@ -55,7 +55,7 @@ defmodule TeamJay.Jay.Topics do
 
   @doc "JayBus에 브로드캐스트"
   def broadcast(topic, payload) when topic in @all_topics do
-    Registry.dispatch(TeamJay.JayBus, topic, fn entries ->
+    Registry.dispatch(Jay.Core.JayBus, topic, fn entries ->
       for {pid, _} <- entries do
         send(pid, {:jay_bus, topic, payload})
       end
@@ -64,7 +64,7 @@ defmodule TeamJay.Jay.Topics do
 
   @doc "JayBus 토픽 구독"
   def subscribe(topic) when topic in @all_topics do
-    Registry.register(TeamJay.JayBus, topic, nil)
+    Jay.Core.JayBus.subscribe( topic, nil)
   end
 
   # ────────────────────────────────────────────────────────────────

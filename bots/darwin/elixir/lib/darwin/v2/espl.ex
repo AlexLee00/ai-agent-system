@@ -71,7 +71,7 @@ defmodule Darwin.V2.ESPL do
     LIMIT 1
     """
 
-    case TeamJay.Repo.query(sql, [agent_name]) do
+    case Jay.Core.Repo.query(sql, [agent_name]) do
       {:ok, %{rows: [[prompt]]}} -> prompt
       _ -> nil
     end
@@ -128,7 +128,7 @@ defmodule Darwin.V2.ESPL do
     LIMIT 2
     """
 
-    case TeamJay.Repo.query(sql, [agent_name]) do
+    case Jay.Core.Repo.query(sql, [agent_name]) do
       {:ok, %{rows: rows}} ->
         prompts = Enum.map(rows, fn [p, _eff] -> p end)
         {:ok, prompts}
@@ -143,7 +143,7 @@ defmodule Darwin.V2.ESPL do
   defp next_generation(agent_name) do
     sql = "SELECT COALESCE(MAX(generation), 0) + 1 FROM #{@prompts_table} WHERE agent_name = $1"
 
-    case TeamJay.Repo.query(sql, [agent_name]) do
+    case Jay.Core.Repo.query(sql, [agent_name]) do
       {:ok, %{rows: [[n]]}} -> n
       _ -> 1
     end
@@ -216,7 +216,7 @@ defmodule Darwin.V2.ESPL do
     VALUES ($1, $2, $3, 'shadow', NULL, NOW())
     """
 
-    case TeamJay.Repo.query(sql, [agent_name, prompt_text, generation]) do
+    case Jay.Core.Repo.query(sql, [agent_name, prompt_text, generation]) do
       {:ok, _} ->
         Logger.info("[다윈V2 ESPL] #{agent_name} shadow 프롬프트 저장 — generation=#{generation}")
 

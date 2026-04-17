@@ -10,7 +10,7 @@ defmodule TeamJay.Blog.SocialExecutionMonitor do
 
   alias TeamJay.Blog.PubSub
   alias TeamJay.Blog.Topics
-  alias TeamJay.EventLake
+  alias Jay.Core.EventLake
 
   @channels ["instagram", "naver_blog", "facebook"]
 

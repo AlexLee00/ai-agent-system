@@ -8,7 +8,7 @@ defmodule TeamJay.Blog.RemodelSnapshot do
 
   alias TeamJay.Blog.DailySummary
   alias TeamJay.Blog.SummaryFormatter
-  alias TeamJay.EventLake
+  alias Jay.Core.EventLake
 
   def build(summary \\ DailySummary.build()) do
     phase3 = Map.get(summary, :phase3_feedback, %{})

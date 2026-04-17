@@ -96,7 +96,7 @@ defmodule TeamJay.Ska.Naver.NaverSession do
 
     if new_attempts > @refresh_max_retries do
       Logger.error("[NaverSession] 재로그인 #{@refresh_max_retries}회 초과 → :failed")
-      TeamJay.HubClient.post_alarm(
+      Jay.Core.HubClient.post_alarm(
         "🔑 네이버 세션 갱신 #{@refresh_max_retries}회 실패 → 수동 확인 필요",
         "ska", "naver_session"
       )

@@ -5,8 +5,8 @@ defmodule TeamJay.Blog.MarketingSnapshot do
   Node 쪽 marketing digest를 읽어 event_lake에 적재한다.
   """
 
-  alias TeamJay.EventLake
-  alias TeamJay.Config
+  alias Jay.Core.EventLake
+  alias Jay.Core.Config
 
   @blog_root "/Users/alexlee/projects/ai-agent-system/bots/blog"
   @script Path.join(@blog_root, "scripts/marketing-digest.ts")

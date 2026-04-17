@@ -7,7 +7,7 @@ defmodule TeamJay.Blog.MarketingNotifier do
   """
 
   alias TeamJay.Blog.MarketingDigest
-  alias TeamJay.HubClient
+  alias Jay.Core.HubClient
 
   def build_message(style \\ :ops) do
     MarketingDigest.build()

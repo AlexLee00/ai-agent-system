@@ -9,7 +9,7 @@ defmodule Darwin.V2.AutonomyLevel do
   use GenServer
   require Logger
 
-  alias TeamJay.HubClient
+  alias Jay.Core.HubClient
 
   @autonomy_file "bots/darwin/sandbox/darwin-autonomy-level.json"
   @table :darwin_v2_autonomy

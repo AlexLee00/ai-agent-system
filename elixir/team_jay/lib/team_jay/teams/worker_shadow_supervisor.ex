@@ -11,7 +11,7 @@ defmodule TeamJay.Teams.WorkerShadowSupervisor do
   def init(_opts) do
     children =
       Enum.map(@worker_agents, fn agent ->
-        {TeamJay.Agents.LaunchdShadowAgent,
+        {Jay.Core.Agents.LaunchdShadowAgent,
          name: agent.name,
          team: :worker,
          label: agent.label,

@@ -42,7 +42,7 @@ defmodule TeamJay.Teams.BlogSupervisor do
   def init(_opts) do
     children =
       Enum.map(@blog_agents, fn agent ->
-        {TeamJay.Agents.PortAgent,
+        {Jay.Core.Agents.PortAgent,
          name: agent.name,
          team: :blog,
          script: agent.script,

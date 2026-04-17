@@ -54,7 +54,7 @@ defmodule Darwin.V2.Evaluator do
 
   @impl GenServer
   def handle_info(:subscribe_events, state) do
-    Registry.register(TeamJay.JayBus, Topics.paper_discovered(), [])
+    Registry.register(Jay.Core.JayBus, Topics.paper_discovered(), [])
     Logger.debug("[다윈V2 평가자] JayBus 구독 완료")
     {:noreply, state}
   end
@@ -120,7 +120,7 @@ defmodule Darwin.V2.Evaluator do
     LIMIT 5
     """
 
-    case Ecto.Adapters.SQL.query(TeamJay.Repo, sql, []) do
+    case Ecto.Adapters.SQL.query(Jay.Core.Repo, sql, []) do
       {:ok, %{rows: rows, columns: cols}} when rows != [] ->
         Logger.info("[다윈V2 평가자] 미평가 논문 #{length(rows)}건 발견")
         Enum.each(rows, fn row ->
@@ -250,7 +250,7 @@ defmodule Darwin.V2.Evaluator do
       WHERE id = $2
       """
 
-      case Ecto.Adapters.SQL.query(TeamJay.Repo, sql, [score, paper_id]) do
+      case Ecto.Adapters.SQL.query(Jay.Core.Repo, sql, [score, paper_id]) do
         {:ok, _} ->
           Logger.debug("[다윈V2 평가자] DB score 업데이트 완료: id=#{paper_id}")
         {:error, reason} ->
@@ -272,7 +272,7 @@ defmodule Darwin.V2.Evaluator do
   end
 
   defp broadcast(topic, payload) do
-    Registry.dispatch(TeamJay.JayBus, topic, fn entries ->
+    Registry.dispatch(Jay.Core.JayBus, topic, fn entries ->
       for {pid, _} <- entries, do: send(pid, {:jay_event, topic, payload})
     end)
 

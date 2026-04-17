@@ -21,7 +21,7 @@ defmodule TeamJay.Claude.FeedbackLoop do
   alias TeamJay.Claude.Dexter.{TestRunner, ErrorTracker}
   alias TeamJay.Claude.Doctor.Dispatch
   alias TeamJay.Claude.Codex.CodexPipeline
-  alias TeamJay.HubClient
+  alias Jay.Core.HubClient
 
   # 타 팀 에러 이벤트 → 트리거 레이어 매핑
   @team_error_events %{
@@ -50,8 +50,8 @@ defmodule TeamJay.Claude.FeedbackLoop do
 
   @impl true
   def init(_opts) do
-    db_opts = TeamJay.Config.notification_db_opts()
-    channel = TeamJay.Config.pg_notify_channel()
+    db_opts = Jay.Core.Config.notification_db_opts()
+    channel = Jay.Core.Config.pg_notify_channel()
 
     {:ok, pid} = Postgrex.Notifications.start_link(db_opts)
     {:ok, ref} = Postgrex.Notifications.listen(pid, channel)

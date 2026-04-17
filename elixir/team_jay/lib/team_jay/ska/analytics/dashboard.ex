@@ -173,7 +173,7 @@ defmodule TeamJay.Ska.Analytics.Dashboard do
 
   defp collect_reservations do
     today = Date.utc_today() |> Date.to_string()
-    case TeamJay.HubClient.pg_query("""
+    case Jay.Core.HubClient.pg_query("""
       SELECT
         COUNT(*) FILTER (WHERE status = 'confirmed')::int AS confirmed,
         COUNT(*) FILTER (WHERE status = 'pending')::int AS pending,
@@ -253,7 +253,7 @@ defmodule TeamJay.Ska.Analytics.Dashboard do
 
     if length(alerts) > 0 do
       msg = "📊 [스카 대시보드] 이상 감지\n#{Enum.join(alerts, "\n")}"
-      TeamJay.HubClient.post_alarm(msg, "ska", "dashboard")
+      Jay.Core.HubClient.post_alarm(msg, "ska", "dashboard")
       Logger.warning("[Dashboard] 이상 감지: #{Enum.join(alerts, " | ")}")
     end
   rescue

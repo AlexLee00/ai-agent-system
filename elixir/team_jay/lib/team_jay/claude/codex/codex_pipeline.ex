@@ -22,7 +22,7 @@ defmodule TeamJay.Claude.Codex.CodexPipeline do
 
   alias TeamJay.Claude.Codex.{CodexExecutor}
   alias TeamJay.Claude.Dexter.TestRunner
-  alias TeamJay.HubClient
+  alias Jay.Core.HubClient
 
   @project_root System.get_env("PROJECT_ROOT", "/Users/alexlee/projects/ai-agent-system")
 

@@ -125,7 +125,7 @@ defmodule TeamJay.Ska.Analytics.MarketingConnector do
   end
 
   defp fetch_previous_week_revenue do
-    case TeamJay.HubClient.pg_query("""
+    case Jay.Core.HubClient.pg_query("""
       SELECT COALESCE(SUM(actual_revenue), 0)::bigint AS prev_7d
       FROM ska.revenue_daily
       WHERE date >= CURRENT_DATE - INTERVAL '14 days'
@@ -187,7 +187,7 @@ defmodule TeamJay.Ska.Analytics.MarketingConnector do
   # ─── EventLake 기록 ───────────────────────────────────────
 
   defp record_event(type, details) do
-    TeamJay.EventLake.record(%{
+    Jay.Core.EventLake.record(%{
       source: "ska.marketing_connector",
       event_type: "cross_pipeline.#{type}",
       severity: "info",

@@ -1,4 +1,4 @@
-ExUnit.start()
+ExUnit.start(exclude: [:integration])
 
 defmodule TeamJay.ChangesetHelpers do
   def errors_on(changeset) do

@@ -104,7 +104,7 @@ defmodule TeamJay.Ska.Naver.NaverRecovery do
       update_recovery_state(state, :network_error, {:retrying, attempt})
     else
       Logger.error("[NaverRecovery] network_error 최대 재시도 초과")
-      TeamJay.HubClient.post_alarm(
+      Jay.Core.HubClient.post_alarm(
         "⚠️ 앤디 네트워크 오류 #{@backoff_max_retries}회 재시도 실패",
         "ska", "naver_recovery"
       )

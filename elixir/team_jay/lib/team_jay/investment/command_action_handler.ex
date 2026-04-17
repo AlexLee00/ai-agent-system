@@ -46,7 +46,7 @@ defmodule TeamJay.Investment.CommandActionHandler do
     command = Map.get(payload, :command, %{})
     command_payload = command_payload(command)
 
-    TeamJay.EventLake.record(%{
+    Jay.Core.EventLake.record(%{
       team: "investment",
       bot_name: "investment_command_action_handler",
       event_type: "investment_cross_team_command_handling",
@@ -77,7 +77,7 @@ defmodule TeamJay.Investment.CommandActionHandler do
         :ok
     end
 
-    case TeamJay.HubClient.command_complete(command_id, "luna",
+    case Jay.Core.HubClient.command_complete(command_id, "luna",
            bot_name: "investment_command_action_handler",
            source: "investment.command_action_handler",
            pipeline: pipeline,
@@ -96,7 +96,7 @@ defmodule TeamJay.Investment.CommandActionHandler do
       summary = Map.get(payload, :summary, "")
       command = Map.get(payload, :command, %{})
 
-      TeamJay.EventLake.record(%{
+      Jay.Core.EventLake.record(%{
         team: "investment",
         bot_name: "investment_command_action_handler",
         event_type: "investment_cross_team_command_action_failed",
@@ -113,7 +113,7 @@ defmodule TeamJay.Investment.CommandActionHandler do
       })
 
       _ =
-        TeamJay.HubClient.command_fail(command_id, "luna",
+        Jay.Core.HubClient.command_fail(command_id, "luna",
           bot_name: "investment_command_action_handler",
           source: "investment.command_action_handler",
           pipeline: pipeline,
@@ -135,7 +135,7 @@ defmodule TeamJay.Investment.CommandActionHandler do
       trend_status: trend.status
     )
 
-    TeamJay.HubClient.post_alarm(
+    Jay.Core.HubClient.post_alarm(
       "📈 [루나팀] 투자 강도 조정 command 반영\n" <>
         "overview=#{overview.status} trend=#{trend.status}\n" <>
         "requested_intensity=#{inspect(Map.get(command_payload, "intensity") || Map.get(command_payload, :intensity) || :observe)}",
@@ -148,7 +148,7 @@ defmodule TeamJay.Investment.CommandActionHandler do
     trend = Phase5TrendSuite.run_defaults()
     control_tower = Phase5ControlTowerSuite.run_defaults()
 
-    TeamJay.EventLake.record(%{
+    Jay.Core.EventLake.record(%{
       team: "investment",
       bot_name: "investment_command_action_handler",
       event_type: "investment_trend_candidate_analysis_completed",
@@ -162,7 +162,7 @@ defmodule TeamJay.Investment.CommandActionHandler do
       }
     })
 
-    TeamJay.HubClient.post_alarm(
+    Jay.Core.HubClient.post_alarm(
       "🧭 [루나팀] trend candidate 분석 갱신\n" <>
         "trend=#{trend.status} (delta=#{trend.total_delta_rows})\n" <>
         "control_tower=#{control_tower.status}",
@@ -182,7 +182,7 @@ defmodule TeamJay.Investment.CommandActionHandler do
       control_tower_status: control_tower.status
     )
 
-    TeamJay.HubClient.post_alarm(
+    Jay.Core.HubClient.post_alarm(
       "⚠️ [루나팀] workload reduction command 반영\n" <>
         "overview=#{overview.status}\n" <>
         "control_tower=#{control_tower.status}\n" <>

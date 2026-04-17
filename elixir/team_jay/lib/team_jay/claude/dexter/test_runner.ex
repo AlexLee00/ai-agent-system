@@ -102,7 +102,7 @@ defmodule TeamJay.Claude.Dexter.TestRunner do
     new_history = [entry | Enum.take(state.run_history, 9)]
 
     # broadcast
-    TeamJay.JayBus |> Registry.dispatch(Topics.test_started("layer#{layer}"), fn entries ->
+    Jay.Core.JayBus |> Registry.dispatch(Topics.test_started("layer#{layer}"), fn entries ->
       Enum.each(entries, fn {pid, _} ->
         send(pid, {:claude_event, Topics.test_started("layer#{layer}"), entry})
       end)

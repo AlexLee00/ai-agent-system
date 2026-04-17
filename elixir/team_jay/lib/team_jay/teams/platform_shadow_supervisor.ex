@@ -11,7 +11,7 @@ defmodule TeamJay.Teams.PlatformShadowSupervisor do
   def init(_opts) do
     children =
       Enum.map(@platform_agents, fn agent ->
-        {TeamJay.Agents.LaunchdShadowAgent,
+        {Jay.Core.Agents.LaunchdShadowAgent,
          name: agent.name,
          team: :platform,
          label: agent.label,

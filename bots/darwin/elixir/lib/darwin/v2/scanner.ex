@@ -57,12 +57,12 @@ defmodule Darwin.V2.Scanner do
   @impl GenServer
   def handle_info(:subscribe_events, state) do
     # V2 센서들(arxiv_rss, hackernews, reddit, openreview)이 방출하는 토픽 구독
-    Registry.register(TeamJay.JayBus, Topics.paper_discovered(), [])
+    Registry.register(Jay.Core.JayBus, Topics.paper_discovered(), [])
     # 센서별 원시 시그널 토픽도 구독
-    Registry.register(TeamJay.JayBus, "darwin.sensor.arxiv", [])
-    Registry.register(TeamJay.JayBus, "darwin.sensor.hackernews", [])
-    Registry.register(TeamJay.JayBus, "darwin.sensor.reddit", [])
-    Registry.register(TeamJay.JayBus, "darwin.sensor.openreview", [])
+    Registry.register(Jay.Core.JayBus, "darwin.sensor.arxiv", [])
+    Registry.register(Jay.Core.JayBus, "darwin.sensor.hackernews", [])
+    Registry.register(Jay.Core.JayBus, "darwin.sensor.reddit", [])
+    Registry.register(Jay.Core.JayBus, "darwin.sensor.openreview", [])
     Logger.debug("[다윈V2 스캐너] JayBus 구독 완료 (센서 4종)")
     {:noreply, state}
   end
@@ -136,7 +136,7 @@ defmodule Darwin.V2.Scanner do
     LIMIT 50
     """
 
-    case Ecto.Adapters.SQL.query(TeamJay.Repo, sql, [since_str]) do
+    case Ecto.Adapters.SQL.query(Jay.Core.Repo, sql, [since_str]) do
       {:ok, %{rows: rows, columns: cols}} ->
         Enum.map(rows, fn row ->
           cols |> Enum.zip(row) |> Map.new()
@@ -200,7 +200,7 @@ defmodule Darwin.V2.Scanner do
     topic = Topics.paper_discovered()
     payload = %{paper: paper}
 
-    Registry.dispatch(TeamJay.JayBus, topic, fn entries ->
+    Registry.dispatch(Jay.Core.JayBus, topic, fn entries ->
       for {pid, _} <- entries, do: send(pid, {:jay_event, topic, payload})
     end)
 
@@ -208,7 +208,7 @@ defmodule Darwin.V2.Scanner do
   end
 
   defp broadcast_internal(topic, payload) do
-    Registry.dispatch(TeamJay.JayBus, topic, fn entries ->
+    Registry.dispatch(Jay.Core.JayBus, topic, fn entries ->
       for {pid, _} <- entries, do: send(pid, {:jay_event, topic, payload})
     end)
   end

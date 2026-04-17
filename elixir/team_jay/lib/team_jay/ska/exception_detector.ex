@@ -162,7 +162,7 @@ defmodule TeamJay.Ska.ExceptionDetector do
     LIMIT 10
     """
 
-    case TeamJay.Repo.query(sql, [agent]) do
+    case Jay.Core.Repo.query(sql, [agent]) do
       {:ok, %{rows: []}} ->
         # 과거 유사 케이스 없음 → 새 예외!
         register_novel_exception(:new_unknown, message, agent, payload)
@@ -202,7 +202,7 @@ defmodule TeamJay.Ska.ExceptionDetector do
     ORDER BY total DESC
     """
 
-    case TeamJay.Repo.query(sql, []) do
+    case Jay.Core.Repo.query(sql, []) do
       {:ok, %{rows: rows}} ->
         Enum.each(rows, fn [etype, total, _earliest, _latest, avg_days] ->
           if avg_days && avg_days > 0 do
@@ -228,7 +228,7 @@ defmodule TeamJay.Ska.ExceptionDetector do
     WHERE error_type = $1
     """
 
-    case TeamJay.Repo.query(sql, [to_string(error_type)]) do
+    case Jay.Core.Repo.query(sql, [to_string(error_type)]) do
       {:ok, %{rows: [[last_seen]]}} when not is_nil(last_seen) ->
         days_since = DateTime.diff(DateTime.utc_now(), last_seen, :second) / 86400.0
         ratio = days_since / cycle_days
@@ -237,7 +237,7 @@ defmodule TeamJay.Ska.ExceptionDetector do
           msg = "⚠️ [스카팀] #{error_type} 재발 임박!\n주기: #{cycle_days}일 / 마지막 발생: #{Float.round(days_since, 1)}일 전\n→ 선제 모니터링 강화"
           Logger.warning("[ExceptionDetector] #{msg}")
           Task.start(fn ->
-            TeamJay.HubClient.post_alarm(msg, "ska", "exception_detector")
+            Jay.Core.HubClient.post_alarm(msg, "ska", "exception_detector")
           end)
         end
 
@@ -266,8 +266,8 @@ defmodule TeamJay.Ska.ExceptionDetector do
       Logger.warning("[ExceptionDetector] #{msg}")
 
       Task.start(fn ->
-        TeamJay.HubClient.post_alarm(msg, "ska", "exception_detector")
-        TeamJay.EventLake.record(%{
+        Jay.Core.HubClient.post_alarm(msg, "ska", "exception_detector")
+        Jay.Core.EventLake.record(%{
           event_type: "ska_cross_pattern_detected",
           team: "ska",
           bot_name: "exception_detector",
@@ -308,7 +308,7 @@ defmodule TeamJay.Ska.ExceptionDetector do
 
     meta_json = Jason.encode!(sanitize_metadata(payload))
 
-    case TeamJay.Repo.query(sql, [to_string(event_type), String.slice(message, 0, 500), agent, meta_json]) do
+    case Jay.Core.Repo.query(sql, [to_string(event_type), String.slice(message, 0, 500), agent, meta_json]) do
       {:ok, %{rows: [[id, 1]]}} ->
         Logger.warning("[ExceptionDetector] 🆕 새 예외 케이스 등록! id=#{id} type=#{event_type} agent=#{agent}")
         notify_new_exception(event_type, message, agent, id)
@@ -325,8 +325,8 @@ defmodule TeamJay.Ska.ExceptionDetector do
 
   defp notify_new_exception(event_type, message, agent, id) do
     msg = "🆕 [스카팀] 새로운 예외 유형 발견!\nID: #{id}\n유형: #{event_type}\n에이전트: #{agent}\n내용: #{String.slice(message, 0, 150)}"
-    TeamJay.HubClient.post_alarm(msg, "ska", "exception_detector")
-    TeamJay.EventLake.record(%{
+    Jay.Core.HubClient.post_alarm(msg, "ska", "exception_detector")
+    Jay.Core.EventLake.record(%{
       event_type: "ska_novel_exception",
       team: "ska",
       bot_name: "exception_detector",
@@ -347,7 +347,7 @@ defmodule TeamJay.Ska.ExceptionDetector do
     ORDER BY last_seen DESC
     LIMIT $1
     """
-    case TeamJay.Repo.query(sql, [limit]) do
+    case Jay.Core.Repo.query(sql, [limit]) do
       {:ok, %{rows: rows, columns: cols}} ->
         keys = Enum.map(cols, &String.to_atom/1)
         Enum.map(rows, &Enum.zip(keys, &1) |> Map.new())
@@ -376,9 +376,9 @@ defmodule TeamJay.Ska.ExceptionDetector do
     ON ska.novel_exceptions (agent, md5(description))
     """
 
-    case TeamJay.Repo.query(sql, []) do
+    case Jay.Core.Repo.query(sql, []) do
       {:ok, _} ->
-        TeamJay.Repo.query(idx_sql, [])
+        Jay.Core.Repo.query(idx_sql, [])
         Logger.debug("[ExceptionDetector] ska.novel_exceptions 테이블 확인 완료")
       {:error, err} ->
         Logger.warning("[ExceptionDetector] 테이블 생성 실패: #{inspect(err)}")

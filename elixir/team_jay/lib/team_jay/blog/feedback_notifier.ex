@@ -7,7 +7,7 @@ defmodule TeamJay.Blog.FeedbackNotifier do
   """
 
   alias TeamJay.Blog.FeedbackDigest
-  alias TeamJay.HubClient
+  alias Jay.Core.HubClient
 
   def build_message(style \\ :ops) do
     FeedbackDigest.build()

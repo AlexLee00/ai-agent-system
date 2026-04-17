@@ -16,11 +16,11 @@ defmodule TeamJay.Investment.ResourceFeedbackCoordinator do
   use GenServer
 
   alias Ecto.Adapters.SQL
-  alias TeamJay.Config
+  alias Jay.Core.Config
   alias TeamJay.Investment.Events
   alias TeamJay.Investment.PubSub
   alias TeamJay.Investment.Topics
-  alias TeamJay.Repo
+  alias Jay.Core.Repo
 
   def start_link(opts) do
     symbol = Keyword.fetch!(opts, :symbol)

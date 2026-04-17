@@ -120,12 +120,12 @@ defmodule TeamJay.Ska.Orchestrator do
 
     # Phase별 알림 전송
     case state.phase do
-      1 -> TeamJay.HubClient.post_alarm(msg, "ska", "orchestrator")
-      2 -> TeamJay.HubClient.post_alarm(msg, "ska", "orchestrator")
+      1 -> Jay.Core.HubClient.post_alarm(msg, "ska", "orchestrator")
+      2 -> Jay.Core.HubClient.post_alarm(msg, "ska", "orchestrator")
       3 -> :ok  # Phase 3: 주간 리포트만
     end
 
-    TeamJay.EventLake.record(%{
+    Jay.Core.EventLake.record(%{
       event_type: "ska_daily_broadcast",
       team: "ska",
       bot_name: "orchestrator",
@@ -167,7 +167,7 @@ defmodule TeamJay.Ska.Orchestrator do
     복구율: #{Float.round(kpi.recovery_rate * 100, 1)}%
     파싱 성공률: #{Float.round(kpi.parse_success_rate * 100, 1)}%
     """
-    TeamJay.HubClient.post_alarm(msg, "ska", "orchestrator")
+    Jay.Core.HubClient.post_alarm(msg, "ska", "orchestrator")
 
     %{state |
       phase: new_phase,
@@ -199,7 +199,7 @@ defmodule TeamJay.Ska.Orchestrator do
     #{Date.utc_today() |> Date.to_string()} 기준
     """
 
-    TeamJay.HubClient.post_alarm(msg, "ska", "orchestrator")
+    Jay.Core.HubClient.post_alarm(msg, "ska", "orchestrator")
     Logger.info("[Orchestrator] 주간 리포트 발송 완료")
   end
 

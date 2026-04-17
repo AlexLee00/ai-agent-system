@@ -146,7 +146,7 @@ defmodule TeamJay.Ska.Analytics.OperationsRag do
       metadata: Map.merge(%{event_type: event_type}, metadata)
     }
 
-    case TeamJay.HubClient.memory_remember(@agent_id, @team, content, type, opts) do
+    case Jay.Core.HubClient.memory_remember(@agent_id, @team, content, type, opts) do
       {:ok, memory_id} ->
         Logger.debug("[OperationsRag] 기억 저장: #{event_type} → id=#{memory_id}")
       {:error, reason} ->
@@ -158,7 +158,7 @@ defmodule TeamJay.Ska.Analytics.OperationsRag do
 
   defp do_recall(query, limit) do
     opts = %{type: "episodic", limit: limit, threshold: 0.5}
-    case TeamJay.HubClient.memory_recall(@agent_id, @team, query, opts) do
+    case Jay.Core.HubClient.memory_recall(@agent_id, @team, query, opts) do
       {:ok, memories} -> memories
       {:error, _} -> []
     end

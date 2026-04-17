@@ -170,7 +170,7 @@ defmodule TeamJay.Ska.Kiosk.KioskBlockFlow do
 
     unless Enum.empty?(orphans) do
       Logger.warning("[KioskBlockFlow] 고아 차단 #{length(orphans)}건 감지")
-      TeamJay.HubClient.post_alarm(
+      Jay.Core.HubClient.post_alarm(
         "⚠️ 키오스크 고아 차단 #{length(orphans)}건 (#{@orphan_threshold_minutes}분 이상 :blocking 상태)",
         "ska", "kiosk_block_flow"
       )

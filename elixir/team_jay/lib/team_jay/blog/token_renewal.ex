@@ -211,7 +211,7 @@ defmodule TeamJay.Blog.TokenRenewal do
   end
 
   defp send_critical_alert(message) do
-    TeamJay.HubClient.post_alarm(
+    Jay.Core.HubClient.post_alarm(
       "[블로팀 CRITICAL] #{message}",
       "blog",
       "token_renewal"
@@ -226,7 +226,7 @@ defmodule TeamJay.Blog.TokenRenewal do
     expires_val = if new_expires_at, do: "'#{new_expires_at}'", else: "NULL"
     error_val   = if error_message, do: "'#{String.replace(error_message, "'", "''")}'", else: "NULL"
 
-    TeamJay.HubClient.pg_query("""
+    Jay.Core.HubClient.pg_query("""
       INSERT INTO blog.token_renewal_log
         (provider, result, days_left, new_expires_at, error_message)
       VALUES ('instagram', '#{result}', #{days_left || "NULL"}, #{expires_val}, #{error_val})
