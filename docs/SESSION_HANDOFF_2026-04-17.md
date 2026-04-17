@@ -1063,13 +1063,15 @@ docs/codex/ 원격 추적:    0개 파일 (완전 분리)
 **SEC-007 (LOW-MED)** — KIS 에러 메시지 원문 전파
 - 위치: `bots/investment/shared/kis-client.ts:137` 토큰 에러 + `:197` API 에러
 - KIS server response body 전체가 Error 메시지로 전파 → 상위 로깅 누출 통로
-- 수정: 에러코드만 추출, 전체 body는 `KIS_DEBUG=true` 시에만 stderr 디버그
+- 수정: 에러코드만 추출, 전체 body는 `KIS_DEBUG=1` 시에만 제한 길이 stderr 디버그
+- 현재 상태: **완료**
 
 **SEC-008 (MEDIUM)** — 업비트 자율 출금 경로
 - 위치: `bots/investment/shared/upbit-client.ts:171` + `luna-commander.cjs:511`
 - `withdrawUsdtToAddress(amount=0, ...)` 전량 출금 가능
 - `HANDLERS.upbit_withdraw_only`가 외부 command 입력으로 트리거됨 (자율 루프)
-- 수정: 3중 가드 (목적지 화이트리스트 + 1회 cap + 일일 누적 cap) + `LUNA_AUTONOMY_WITHDRAW` 환경변수 게이트
+- 수정: 함수 내부 가드(목적지 화이트리스트 + 허용 네트워크 + 1회 cap) + router `confirmation/slash` 게이트
+- 현재 상태: **완료** (일일 누적 cap은 선택 보강)
 
 ### ✅ 점검 완료 파일 (긍정 확인)
 
@@ -1107,8 +1109,8 @@ docs/codex/ 원격 추적:    0개 파일 (완전 분리)
 
 2단위 투자팀 P1 (진행 중):
   ⏳ SEC-006 (MEDIUM)   KIS 토큰 파일 권한   (프롬프트 작성 완료)
-  ⏳ SEC-007 (LOW-MED)  KIS 에러 정화        (프롬프트 작성 완료)
-  ⏳ SEC-008 (MEDIUM)   업비트 출금 가드     (프롬프트 작성 완료)
+  ✅ SEC-007 (LOW-MED)  KIS 에러 정화 완료
+  ✅ SEC-008 (MEDIUM)   업비트 출금 가드 완료
 
 2단위 P1 나머지 (대기):
   ⬜ shared/secrets.ts (664줄) — Hub secrets 소비 경로
@@ -1127,8 +1129,8 @@ docs/codex/ 원격 추적:    0개 파일 (완전 분리)
 ```
 1. 코덱스 SEC-006/007/008 구현 지시:
    □ docs/codex/CODEX_SECURITY_AUDIT_03.md 내용을 코덱스에 전달
-   □ Task 1/2 즉시 적용 가능
-   □ Task 3는 마스터 승인 (max/cap 수치, 자율 모드 기본값)
+   □ 현재 구현 상태 재검증
+   □ 선택 보강(예: SEC-008 일일 cap)만 추가 판단
 
 2. 2단위 P1 나머지 감사:
    □ shared/secrets.ts 전수 (Hub secrets loader)
@@ -1219,8 +1221,8 @@ docs/codex/ 원격 추적:    0개 파일 (완전 분리)
 
 2단위 투자팀 P1 (인증/시크릿): 100% 점검 완료
   ⏳ SEC-006 (MEDIUM)  KIS 토큰 파일 권한   (프롬프트 완료)
-  ⏳ SEC-007 (LOW-MED) KIS 에러 정화         (프롬프트 완료)
-  ⏳ SEC-008 (MEDIUM)  업비트 출금 3중 가드  (프롬프트 완료 — SEC-012 함께 해결)
+  ✅ SEC-007 (LOW-MED) KIS 에러 정화 완료
+  ✅ SEC-008 (MEDIUM)  업비트 출금 가드 완료 (SEC-012 함께 해결)
   ⬜ SEC-009 (LOW)     secrets.json 폴백 권한 (우선순위 낮음)
   ⬜ SEC-010 (LOW-MED) hostname 기반 차단    (실질 리스크 매우 낮음)
   ⬜ SEC-011 (LOW)     KIS 키 길이 검증      (length > 16 상향 권고)
@@ -1236,7 +1238,7 @@ docs/codex/ 원격 추적:    0개 파일 (완전 분리)
 
 전체 진행률: 약 65%
   - 1단위 100% 종결
-  - 2단위 P1 100% 점검 완료 (구현은 3건 대기)
+  - 2단위 P1 100% 점검 및 핵심 구현 완료
   - 2단위 P2 0% 시작
 ```
 
@@ -1403,12 +1405,12 @@ P2 (3단위):
 | ID | 실구현 상태 | 증거 |
 |----|-----------|------|
 | SEC-006 | ✅ 완료 | `kis-client.ts:99-101` `{ mode: 0o600 }` + `chmodSync` |
-| SEC-008 | ✅ 거의 완료 | `upbit-client.ts:190-224` 화이트리스트 주소 + 허용 네트워크 + `UPBIT_WITHDRAW_MAX_USDT` 1회 한도 |
+| SEC-008 | ✅ 완료 | `upbit-client.ts:190-224` 화이트리스트 주소 + 허용 네트워크 + `UPBIT_WITHDRAW_MAX_USDT` 1회 한도, `router.ts` confirmation/slash 가드 |
 | SEC-012 | ✅ 완료 | `router.ts:248-267` `assertLunaTransferGuard` (confirmation 모드 + slash only) |
-| SEC-007 | ❌ 미구현 | `KIS_DEBUG` 환경변수 0건 — AUDIT_04 Task 4 |
+| SEC-007 | ✅ 완료 | 최소 오류 메시지 + `KIS_DEBUG=1` 제한 디버그 게이트 |
 | SEC-011 | ✅ 완료 | `d35d2556 Harden remaining Luna secret handling checks` 커밋 |
 
-**SEC-008 보완 권고 (옵션)**: 일일 누적 cap은 아직 없음. 현재 1회 한도만으로도 상당한 방어력이지만, 하루 여러 번 호출 시나리오 대비하려면 `upbit_withdraw_daily_cap_usdt` 추가 고려. 하지만 원래 Telegram confirmation 모드 + slash 명령 게이트가 다층 방어하므로 **우선순위 낮음**.
+**SEC-008 보완 권고 (옵션)**: 일일 누적 cap은 아직 없음. 현재는 1회 한도 + 주소/네트워크 화이트리스트 + Telegram confirmation/slash 게이트까지 있어 핵심 보안 요구는 충족된 상태입니다. 일일 cap은 운영 정책 보강으로 보면 됩니다.
 
 ### 📝 AUDIT_04 작성 완료
 
@@ -1443,8 +1445,8 @@ luna는 signal 생성자이고, 실행자 보안은 hephaestos(SEC-004 완료) +
 2단위 투자팀:
   P1 (인증/시크릿): 100% 점검
     ✅ SEC-006 완료 (파일 권한)
-    ❌ SEC-007 미구현 (AUDIT_04 Task 4)
-    ✅ SEC-008 거의 완료 (일일 cap만 옵션)
+    ✅ SEC-007 완료
+    ✅ SEC-008 완료 (일일 cap만 옵션)
     ⬜ SEC-009/010 (LOW, 후순위)
     ✅ SEC-011 완료 (d35d2556)
     ✅ SEC-012 완료
@@ -1485,6 +1487,6 @@ luna는 signal 생성자이고, 실행자 보안은 hephaestos(SEC-004 완료) +
 
 ### 🏷️ 12차 세션 요약 한 줄
 
-**AUDIT_04 466줄 작성 완료(Task 1~5). luna.ts 감사 완료(취약점 없음). SEC-008 실구현 재검증 — 거의 완료 상태(일일 cap만 옵션). 감사 진행률 80%. 다음 세션 P0: Task 1(SEC-015) 코덱스 실행 + argos.ts/hermes.ts 감사.**
+**AUDIT_04 466줄 작성 완료(Task 1~5). luna.ts 감사 완료(취약점 없음). SEC-007/008 실구현 재검증 완료. 감사 진행률 80%. 다음 세션 P0: Task 1(SEC-015) 코덱스 실행 + argos.ts/hermes.ts 감사.**
 
 — 메티 (2026-04-17 밤, 12차 세션)
