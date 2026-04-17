@@ -103,33 +103,35 @@ export function createNaverListScrapeService(deps: CreateNaverListScrapeServiceD
     }, { timeout: 20000 });
 
     return page.evaluate((n: number) => {
-      const clean = (value: unknown) => String(value ?? '').replace(/\s+/g, ' ').trim();
+      function clean(value: unknown) {
+        return String(value ?? '').replace(/\s+/g, ' ').trim();
+      }
       const noData = document.querySelector('[class*="nodata-area"], [class*="nodata"], .nodata');
       if (noData) return [];
 
       const rows = Array.from(document.querySelectorAll('a[class*="contents-user"]')).slice(0, n);
       if (rows.length === 0) return [];
 
-      const to24Start = (ampm: string, hh: string, mm: string) => {
+      function to24Start(ampm: string, hh: string, mm: string) {
         let hour = parseInt(hh, 10);
         const minute = String(parseInt(mm, 10)).padStart(2, '0');
         if (ampm === '오후' && hour < 12) hour += 12;
         if (ampm === '오전' && hour === 12) hour = 0;
         return `${String(hour).padStart(2, '0')}:${minute}`;
-      };
+      }
 
-      const to24End = (ampm: string, hh: string, mm: string) => {
+      function to24End(ampm: string, hh: string, mm: string) {
         let hour = parseInt(hh, 10);
         const minute = String(parseInt(mm, 10)).padStart(2, '0');
         if (ampm === '오후' && hour < 12) hour += 12;
         if (ampm === '오전' && hour === 12) hour = 0;
         return `${String(hour).padStart(2, '0')}:${minute}`;
-      };
+      }
 
-      const formatPhone = (phone: string) => {
+      function formatPhone(phone: string) {
         if (!phone || phone.length !== 11) return phone;
         return `${phone.slice(0, 3)}-${phone.slice(3, 7)}-${phone.slice(7)}`;
-      };
+      }
 
       const out: any[] = [];
       for (const row of rows) {
