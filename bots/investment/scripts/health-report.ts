@@ -55,6 +55,11 @@ const {
 const { runHealthCli } = require('../../../packages/core/lib/health-runner');
 const hsm = require('../../../packages/core/lib/health-state-manager');
 const {
+  getServiceOwnership,
+  isElixirOwnedService,
+  isRetiredService,
+} = require('../../../packages/core/lib/service-ownership.legacy.js');
+const {
   DEFAULT_NORMAL_EXIT_CODES,
   getLaunchctlStatus,
   buildServiceRows,
@@ -564,8 +569,18 @@ async function buildReport() {
   const status = getLaunchctlStatus();
   const scheduledDeploymentState = buildScheduledDeploymentState(SCHEDULED_SERVICE_DEPLOYMENTS);
   const capitalPolicy = loadCapitalPolicySnapshot(path.resolve(__dirname, '..', 'config.yaml'));
-  const serviceRows = buildServiceRows(status, {
-    labels: ALL_SERVICES,
+  const launchdOwnedLabels = ALL_SERVICES.filter((label) => !isElixirOwnedService(label) && !isRetiredService(label));
+  const elixirOwnedOkRows = ALL_SERVICES
+    .filter((label) => isElixirOwnedService(label))
+    .map((label) => {
+      const shortName = hsm.shortLabel(label);
+      const ownership = getServiceOwnership(label);
+      const ownerText = ownership?.expectedIdle ? 'Elixir ownership (scheduled)' : 'Elixir ownership';
+      return `  ${shortName}: ${ownerText}`;
+    });
+
+  const launchdServiceRows = buildServiceRows(status, {
+    labels: launchdOwnedLabels,
     continuous: CONTINUOUS,
     normalExitCodes: NORMAL_EXIT_CODES,
     shortLabel: (label) => hsm.shortLabel(label),
@@ -575,6 +590,10 @@ async function buildReport() {
       return scheduledDeploymentState[label]?.staleFailure === true;
     },
   });
+  const serviceRows = {
+    ok: [...launchdServiceRows.ok, ...elixirOwnedOkRows],
+    warn: launchdServiceRows.warn,
+  };
   const tradeReview = await loadTradeReviewHealth();
   const guardHealth = buildGuardHealth(billingGuard);
   const signalBlockHealth = await loadSignalBlockHealth(pgPool);
