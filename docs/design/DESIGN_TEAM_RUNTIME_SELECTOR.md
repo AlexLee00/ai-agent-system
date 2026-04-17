@@ -4,6 +4,12 @@
 > 작성일: 2026-04-03
 > 대상: blog, luna, darwin, justin, sigma, claude, orchestrator, ska, video, worker
 
+> 운영 메모 (2026-04-17):
+> - 현재 배포 local fast route는 `local/qwen2.5-7b`
+> - 현재 배포 local deep route는 `local/deepseek-r1-32b`
+> - 현재 배포 embedding route는 `qwen3-embed-0.6b`
+> - 차기 업그레이드 후보는 `Qwen3 fast 계열`이지만, 이 문서의 예시는 "현재 배포 기준"으로 읽는다
+
 ---
 
 ## 1. 비전

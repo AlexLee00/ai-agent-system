@@ -5,6 +5,10 @@
 > 상태: 설계 단계
 > v2 역할: 제이 랜드 핵심 엔진 — 기술 서칭→구현/실험→에이전트 반영→필드→피드백
 
+> 운영 메모 (2026-04-17):
+> - 이 문서의 `local/qwen2.5-7b` 표기는 현재 OPS 배포 fast 로컬 모델을 뜻한다
+> - 최신 공식 계열 기준으로는 `Qwen3`가 차기 fast 후보지만, 아직 운영 기본값 교체는 완료되지 않았다
+
 ---
 
 ## 1. 팀 개요
@@ -49,12 +53,12 @@
   골드 (Gold) — 투자/트레이딩 전략 서칭
     분야: 퀀트 전략, 기술적 분석, 시장 미시구조, 리스크 관리, DeFi
     소스: arXiv (q-fin), SSRN, GitHub (trading-strategy), TradingView
-    모델: groq/llama + local/qwen2.5-7b
+    모델: groq/llama + local/qwen2.5-7b (현재 배포 fast)
 
   잉크 (Ink) — 콘텐츠/SEO/블로그 서칭
     분야: SEO 트렌드, AEO/GEO, AI 콘텐츠 탐지 우회, 독자 참여율
     소스: Google Search Central 블로그, Moz, Ahrefs 블로그, DEV.to
-    모델: local/qwen2.5-7b (빈번한 서칭, 비용 $0)
+    모델: local/qwen2.5-7b (현재 배포 fast, 빈번한 서칭, 비용 $0)
 
   가벨 (Gavel) — 법률/SW감정 서칭
     분야: SW 감정 방법론, 법원 판례, 디지털 포렌식, 소스코드 분석 기법
@@ -64,23 +68,23 @@
   매트릭스 (Matrix) — 데이터 사이언스/분석 서칭
     분야: 데이터 파이프라인, 이상 탐지, 시계열 분석, MLOps, 관측성
     소스: arXiv (cs.DB, stat.ML), Databricks/Snowflake 블로그, KDnuggets
-    모델: local/qwen2.5-7b
+    모델: local/qwen2.5-7b (현재 배포 fast)
 
   프레임 (Frame) — 영상/편집 기술 서칭
     분야: AI 영상 편집, 자동 자막, 썸네일 생성, CapCut/Twick 기술
     소스: GitHub (video-editing, ffmpeg), YouTube API, arXiv (cs.CV)
-    모델: local/qwen2.5-7b
+    모델: local/qwen2.5-7b (현재 배포 fast)
 
   기어 (Gear) — 시스템/인프라/보안 서칭
     분야: 로컬 LLM 최적화, macOS 자동화, 보안 패치, 모니터링
     소스: GitHub (mlx, ollama), Homebrew, Apple Developer, CVE 데이터베이스
-    모델: local/qwen2.5-7b
+    모델: local/qwen2.5-7b (현재 배포 fast)
 
   펄스 (Pulse) — 마케팅/수익화 서칭
     분야: 네이버 인기 키워드, 광고 수익 최적화(애드센스/제휴), SNS 마케팅 전략,
           경쟁 블로그/채널 분석, 콘텐츠 바이럴 패턴, 수익화 모델
     소스: 네이버 키워드 도구, Google Trends, SNS 분석 도구, 마케팅 블로그
-    모델: local/qwen2.5-7b (빈번한 서칭, 비용 $0)
+    모델: local/qwen2.5-7b (현재 배포 fast, 빈번한 서칭, 비용 $0)
 
   서칭 에이전트 공통 패턴:
     입력: 연구 주제 키워드 (다윈이 배정)
