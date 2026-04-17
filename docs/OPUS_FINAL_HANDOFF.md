@@ -491,23 +491,29 @@ npm run parallel-snapshot
 | Phase 0 | bots/darwin/ 독립 분리 + TS Only | ✅ |
 | Phase 1 | Elixir 핵심 모듈 (Scanner, Evaluator, TeamLead, Topics) | ✅ |
 | Phase 2 | 완전자율 루프 (Applier, FeedbackLoop APPLY, L4+ 자동 적용) | ✅ |
-| Phase 3 | 팀 간 연동 + L4→L5 자동 승격 | 🔜 다음 세션 |
+| Phase 3 | 팀 간 연동 + L4→L5 자동 승격 | ✅ |
 
-**남은 항목 (Phase 3)**:
-- `darwin/team_connector.ex` — 타 팀과 PubSub 연결
-- L4→L5 조건 모니터링 (10회 연속 성공 + pipeline_runs ≥ 3)
+**Phase 3 완료 (commit 6ef432a9)**:
+- `darwin/team_connector.ex` — 신규: darwin.applied.{team} 수신 → 팀별 포워딩
+  - :claude → ClaudeTopics.review_started() JayBus 트리거
+  - 나머지 → HubClient.post_alarm() 알림
+- `feedback_loop.ex` — JayBus 구독 누락 버그 수정 (subscribe_events 추가)
+- `team_lead.ex` — applied_successes 카운터 + L4→L5 14일 조건 추가
+  - L4→L5: 연속 10회 + 적용 3회 + 14일 경과
+- `applier.ex` — pipeline_success → record_application_success() 호출 교체
+- `darwin_supervisor.ex` — TeamConnector 자식 프로세스 등록
 
 ### 현재 활성 코덱스 (`docs/codex/`)
 | 파일 | 상태 |
 |------|------|
 | CODEX_CLAUDE_REMODEL | Phase 0~4 완료, Phase 3 자동 실행 활성화 ✅ |
-| CODEX_DARWIN_REMODEL | Phase 0~2 완료, Phase 3 다음 세션 |
+| CODEX_DARWIN_REMODEL | Phase 0~3 전체 완료 ✅ |
 | CODEX_ELIXIR_MONITORING | 운영 runbook (상시) |
 | CODEX_SECURITY_AUDIT_01 | filter-repo + 히스토리 정리 — 마스터 재승인 후 |
 
 > **루나팀 코드 구현: 완전 완료** ✅
 > **SEC-004/005: 완전 밀폐** ✅
 > **클로드팀 REMODEL: Phase 0~4 완료, Phase 3 자동 실행 활성화** ✅
-> **다윈팀 REMODEL: Phase 0~2 완료** ✅
+> **다윈팀 REMODEL: Phase 0~3 전체 완료** ✅
 > **OPS 전환**: git push 완료 (1954bc76), OPS 수동 Step 3 대기
 > 이전 HANDOFF: 2026-04-17 CODEX_BLOG_AUTONOMOUS_OPS Phase A~D
