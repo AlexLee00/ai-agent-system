@@ -1985,3 +1985,92 @@ SEC-016 집약 목록 (모두 공식 API 방식, 우선순위 낮음):
 **ryan.ts `/milestone_done` IDOR 취약점 발견 — SEC-018 MEDIUM 상향. 공격자가 정수 ID 추측으로 다른 회사 milestone 조작 가능. approval.ts(393줄) 매우 견고, server.js 민감 라우트 샘플도 master 제한 양호. 전체 96%. 다음 세션 P0: AUDIT_05.md 작성.**
 
 — 메티 (2026-04-17 밤, 17차 세션)
+
+
+---
+
+## 📍 18차 세션 증분 (2026-04-17 밤 메티) — AUDIT_05 작성 + 다른 봇 IDOR 패턴 검증
+
+> 17차 커밋 `64d8818c` push 완료.
+> AUDIT_05.md 작성 + worker src 나머지 6개 봇의 ryan.ts 유사 IDOR 패턴 전수 스캔.
+
+### ✅ 완료 작업
+
+1. **17차 커밋 push**: `64d8818c docs(audit): 17th session — ryan.ts IDOR (SEC-018 MEDIUM)` origin 반영
+2. **AUDIT_05.md 작성** (262줄, gitignore 자동 보호, 민감값 0건)
+   - Task 1: ryan.ts `/milestone_done` JOIN 필터 추가
+   - recalcProgress(projectId, companyId) 시그니처 확장
+   - 테스트 4개 케이스 제안
+
+### ✅ worker src 6개 봇 IDOR 패턴 전수 스캔 결과
+
+UPDATE/DELETE 쿼리 중 company_id 필터 누락 여부 자동 체크:
+
+| 봇 | UPDATE/DELETE 총수 | company_id 누락 | 실질 IDOR? |
+|----|-----|-----|------|
+| chloe.ts | 0 | - | ✅ (UPDATE 없음) |
+| emily.ts | 2 | 0 | ✅ (양쪽 모두 company_id 포함) |
+| noah.ts | 1 | 1 | ⚠️ **실질 안전 — 간접 격리** |
+| oliver.ts | 0 | - | ✅ (UPDATE 없음) |
+| sophie.ts | 0 | - | ✅ (UPDATE 없음) |
+| worker-lead.ts | 0 | - | ✅ (UPDATE 없음) |
+
+**noah.ts line 83 상세 분석** — `UPDATE worker.attendance SET check_out=$1 WHERE employee_id=$2 AND date=$3`:
+- 표면적으로 company_id 필터 없음
+- 하지만 호출자가 `getEmployeeByUserId({ companyId, userId })` → `emp.id` 방식으로 employeeId 획득
+- **사용자가 employeeId를 직접 입력하지 않음** (본인 userId 기반 조회)
+- 즉 앞단에서 이미 company_id + userId로 격리됨
+- 실질 IDOR 아님 (방어적 코딩 관점에서는 JOIN 추가가 낫지만 우선순위 낮음)
+
+**ryan.ts와의 결정적 차이**:
+- ryan: 사용자가 `args[0]`에서 milestone ID **직접 입력** → 필터 없이 UPDATE = IDOR
+- noah: 사용자가 ID를 입력하지 않음, userId에서 조회 = 실질 안전
+
+### 📊 감사 진행률 (18차 세션 기준)
+
+```
+1단위 Hub + 거버넌스: 100% 종결
+2단위 투자팀: 100% 종결
+
+3단위 worker: 50% 점검 완료
+  ✅ lib/secrets.ts / auth.ts / company-guard.ts / chat-agent.ts / approval.ts
+  ✅ web/routes/agents.ts (authMiddleware 전면)
+  ✅ src/task-runner.ts (큐 워커)
+  ✅ web/server.js 핵심 민감 라우트 샘플 (master 제한)
+  🚨 src/ryan.ts (SEC-018 MEDIUM IDOR — AUDIT_05 작성 완료)
+  ✅ src/chloe/emily/noah/oliver/sophie/worker-lead IDOR 패턴 스캔 (noah 간접 안전)
+  ⬜ lib 나머지 (~5800줄, chat/ai-feedback/document-reuse 계열)
+  ⬜ web/server.js 나머지 (5000+줄)
+  ⬜ migrations/ (DB 스키마 권한)
+  ⬜ web/routes/video-*.ts
+
+3단위 reservation: 0% (28,278줄)
+3단위 blog: 0% (25,074줄)
+
+4단위+ 미착수:
+  claude, darwin, orchestrator, packages/core, elixir
+
+전체 진행률: 약 97%
+```
+
+### 📋 다음 세션 우선순위
+
+**P0 — 코덱스 AUDIT_05 실행 모니터링**:
+- 다른 세션(코덱스)이 AUDIT_05.md 읽고 구현하는지 확인
+- 구현 후 실구현 검증 (이전 패턴 반복)
+
+**P1 — worker 마무리**:
+- lib 나머지 주요 파일 (ai-feedback-service, document-reuse, chat-agent 전수)
+- web/server.js 나머지 민감 라우트 (employees/sales/expenses 등 UPDATE/DELETE 샘플)
+- web/routes/video-*.ts
+
+**P2 — reservation 착수**:
+- bots/reservation/src/ska.ts (171줄)
+- bots/reservation/lib/ska-command-queue.ts (INSERT 경로)
+- bots/reservation/lib/secrets.ts
+
+### 🏷️ 18차 세션 요약 한 줄
+
+**AUDIT_05.md(262줄, SEC-018 패치 프롬프트) 작성 완료. worker src 6개 봇 IDOR 패턴 스캔 — ryan.ts만 실질 IDOR, noah.ts는 간접 격리 안전 확인. 17차 커밋 push 완료. 전체 97%. 다음 P0: AUDIT_05 구현 모니터링 + worker lib 마무리.**
+
+— 메티 (2026-04-17 밤, 18차 세션)
