@@ -1,4 +1,44 @@
-# 세션 인수인계 — 2026-04-17 (루나팀 CODEX_LUNA_IMPL 전 구현 완료)
+# 세션 인수인계 — 2026-04-17 (CODEX_SIGMA_REMODEL_PHASE_1 완료)
+
+> 세션 범위: Sigma V2 Elixir Jido 코어 + Shadow Mode 구현 (Phase 1)
+
+---
+
+## 최신 작업 요약
+
+CODEX_SIGMA_REMODEL_PHASE_1 전체 구현 완료.
+`mix compile --warnings-as-errors` 경고 0건. `mix test test/sigma/v2/skill/` 30개 모두 통과.
+
+### 구현 목록
+- **mix.exs**: `{:zoi, "~> 0.17"}`, `{:yaml_elixir, "~> 2.11"}` 명시적 추가
+- **Skill 5개** (TS 1:1 포팅, Zoi 스키마):
+  - `data_quality_guard.ex` — 중복/누락/신선도/이상값 (TS output 일치 확인)
+  - `causal_check.ex` — 인과성 리스크 평가
+  - `experiment_design.ex` — A/B 실험 설계
+  - `feature_planner.ex` — 피처 우선순위
+  - `observability_planner.ex` — OTel 계획
+- **테스트**: `test/sigma/v2/skill/` 5개 파일, 30개 케이스 통과
+- **Commander**: `use Jido.AI.Agent` + `decide_formation/4` + `analyze_formation/2` 구현
+- **AgentSelector**: ε-greedy 에이전트 선택 (DB agent.registry)
+- **Pod 3개**: `Risk` (hawk/optimizer), `Growth` (dove/librarian), `Trend` (owl/forecaster)
+- **Memory L1**: ETS GenServer (put/get/clear/flush_to_l2)
+- **Memory L2**: pgvector Jido.Action + Qwen3-Embedding-0.6B embed
+- **Principle Loader**: YamlElixir + self_critique/2
+- **Telemetry**: :telemetry.attach_many + handle_event + /tmp/sigma_v2_metrics.jsonl
+- **Supervisor**: Memory.L1 등록 (SIGMA_V2_ENABLED=true 시)
+- **ShadowRunner**: v2 편성 결정 + sigma_v2_shadow_runs DB 기록
+- **ShadowCompare**: v1 vs v2 일치율 계산 + weekly_report/0
+- **마이그레이션**: `20260501000001_add_sigma_v2_shadow_runs.exs`
+
+### 다음 단계 (Phase 1 Exit Criteria 잔여)
+- `mix ecto.migrate` 실행 (Phase 0 audit + Phase 1 shadow_runs 마이그레이션)
+- Shadow Mode 7일 운영: `SIGMA_V2_ENABLED=false` (기본) 상태로 cron에서 `ShadowRunner.run()` 호출
+- 7일 후 `ShadowCompare.weekly_report()` → 95%+ 일치율 확인 후 Phase 2 착수
+- Phase 2: Directive Executor / Tier 적용 / Reflexion / E-SPL
+
+---
+
+## 이전 작업 (2026-04-17 루나팀)
 
 > 세션 범위: CODEX_LUNA_IMPL I/J + OPS_TRANSITION Step 5 + KIS live 전환 + 자율 루프 확인
 

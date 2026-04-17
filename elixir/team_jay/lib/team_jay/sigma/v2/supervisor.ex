@@ -1,13 +1,8 @@
 defmodule Sigma.V2.Supervisor do
   @moduledoc """
   Sigma V2 OTP Supervisor — v2 에이전트 트리 관리.
-
-  상위 문서: docs/SIGMA_REMODELING_PLAN_2026-04-17.md §6
-  Phase 0: skeleton only. SIGMA_V2_ENABLED=false 시 시작 건너뜀.
-
-  자식 프로세스 (Phase 1에서 활성화):
-    - Sigma.V2.Memory.L1    — ETS 세션 메모리
-    - Sigma.V2.Commander    — Jido.AI.Agent 허브
+  SIGMA_V2_ENABLED=true 시에만 자식 프로세스 기동.
+  Phase 1: Memory.L1 활성화. Commander는 Phase 2에서 AgentServer로 기동.
   """
 
   use Supervisor
@@ -19,9 +14,9 @@ defmodule Sigma.V2.Supervisor do
   def init(_opts) do
     if System.get_env("SIGMA_V2_ENABLED") == "true" do
       children = [
-        # TODO(Phase 1): Sigma.V2.Memory.L1
-        # TODO(Phase 1): Sigma.V2.Commander
+        Sigma.V2.Memory.L1
       ]
+
       Supervisor.init(children, strategy: :one_for_one)
     else
       Supervisor.init([], strategy: :one_for_one)
