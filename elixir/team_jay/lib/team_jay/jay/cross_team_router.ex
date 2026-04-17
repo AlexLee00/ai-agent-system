@@ -202,38 +202,60 @@ defmodule TeamJay.Jay.CrossTeamRouter do
   # ────────────────────────────────────────────────────────────────
 
   defp handle_claude_to_all(%{risk_level: level, affected_services: services}, state) do
-    signature = system_risk_signature(level, services)
+    normalized_services = normalize_affected_services(services)
+    signature = system_risk_signature(level, normalized_services)
 
-    if suppress_duplicate_system_risk?(state[:last_system_risk], signature) do
-      Logger.info("[CrossTeamRouter] claude→all 중복 억제: 레벨=#{level}, 서비스=#{inspect(signature.services)}")
-      record_pipeline_event(:claude_to_all, :suppressed, %{risk_level: level, affected_services: services})
-      state
-    else
-      teams = ["blog", "luna", "ska", "worker"]
-      service_list = Enum.join(services, ", ")
+    cond do
+      stale_core_system_risk?(signature) ->
+        Logger.info("[CrossTeamRouter] claude→all stale core 위험 억제: 레벨=#{level}, 서비스=#{inspect(signature.services)}")
+        record_pipeline_event(:claude_to_all, :suppressed, %{
+          risk_level: level,
+          affected_services: normalized_services,
+          reason: "core_health_ok"
+        })
+        Map.put(state, :last_system_risk, signature)
 
-      message = """
-      🚨 [제이→전체] 시스템 위험 감지!
-      ⚠️ 위험 레벨: #{level}/10
-      🔧 비정상 서비스: #{service_list}
-      🎯 요청: 비필수 작업 일시 중단, 필수 작업만 유지
-      """
+      suppress_duplicate_system_risk?(state[:last_system_risk], signature) or
+          persisted_duplicate_system_risk?(signature) ->
+        Logger.info("[CrossTeamRouter] claude→all 중복 억제: 레벨=#{level}, 서비스=#{inspect(signature.services)}")
+        record_pipeline_event(:claude_to_all, :suppressed, %{
+          risk_level: level,
+          affected_services: normalized_services,
+          reason: "cooldown"
+        })
+        Map.put(state, :last_system_risk, signature)
 
-      Enum.each(teams, fn team ->
-        envelope =
-          CommandEnvelope.build(
-            :reduce_workload,
-            :claude,
-            team,
-            %{risk_level: level, affected_services: services}
-          )
+      true ->
+        teams = ["blog", "luna", "ska", "worker"]
+        service_list = Enum.join(normalized_services, ", ")
 
-        dispatch_team_command(:claude_to_all, team, message, envelope)
-      end)
+        message = """
+        🚨 [제이→전체] 시스템 위험 감지!
+        ⚠️ 위험 레벨: #{level}/10
+        🔧 비정상 서비스: #{service_list}
+        🎯 요청: 비필수 작업 일시 중단, 필수 작업만 유지
+        """
 
-      record_pipeline_event(:claude_to_all, :executed, %{risk_level: level, teams_notified: teams})
-      Logger.info("[CrossTeamRouter] claude→all 실행: 레벨=#{level}, #{length(teams)}팀 알림")
-      Map.put(state, :last_system_risk, signature)
+        Enum.each(teams, fn team ->
+          envelope =
+            CommandEnvelope.build(
+              :reduce_workload,
+              :claude,
+              team,
+              %{risk_level: level, affected_services: normalized_services}
+            )
+
+          dispatch_team_command(:claude_to_all, team, message, envelope)
+        end)
+
+        record_pipeline_event(:claude_to_all, :executed, %{
+          risk_level: level,
+          affected_services: normalized_services,
+          teams_notified: teams
+        })
+
+        Logger.info("[CrossTeamRouter] claude→all 실행: 레벨=#{level}, #{length(teams)}팀 알림")
+        Map.put(state, :last_system_risk, signature)
     end
   end
 
@@ -257,6 +279,85 @@ defmodule TeamJay.Jay.CrossTeamRouter do
   end
 
   defp suppress_duplicate_system_risk?(_, _), do: false
+
+  defp normalize_affected_services(services) do
+    services
+    |> List.wrap()
+    |> Enum.map(&(&1 |> to_string() |> String.trim() |> String.downcase()))
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.uniq()
+    |> Enum.sort()
+  end
+
+  defp stale_core_system_risk?(%{services: services}) do
+    core_aliases =
+      MapSet.new([
+        "api",
+        "db",
+        "database",
+        "postgres",
+        "postgresql",
+        "pg_pool",
+        "hub",
+        "dashboard",
+        "health-dashboard"
+      ])
+
+    service_set = MapSet.new(services)
+
+    MapSet.size(service_set) > 0 and
+      MapSet.subset?(service_set, core_aliases) and
+      current_core_health_ok?()
+  end
+
+  defp persisted_duplicate_system_risk?(signature) do
+    case recent_system_risk_rows() do
+      {:ok, %{"rows" => rows}} ->
+        Enum.any?(rows, fn row ->
+          payload = get_in(row, ["metadata", "command", "payload"]) || %{}
+          risk_level = get_in(payload, ["risk_level"])
+          services = normalize_affected_services(get_in(payload, ["affected_services"]) || [])
+          risk_level == signature.risk_level and services == signature.services
+        end)
+
+      _ ->
+        false
+    end
+  end
+
+  defp recent_system_risk_rows do
+    TeamJay.HubClient.pg_query(
+      """
+      SELECT metadata
+      FROM agent.event_lake
+      WHERE created_at >= NOW() - interval '15 minutes'
+        AND event_type IN ('cross_pipeline.command.issued', 'cross_pipeline.command_issued')
+        AND metadata->>'pipeline' = 'claude_to_all'
+      ORDER BY created_at DESC
+      LIMIT 100
+      """,
+      "agent"
+    )
+  end
+
+  defp current_core_health_ok? do
+    case TeamJay.HubClient.health() do
+      {:ok, %{"resources" => resources}} when is_map(resources) ->
+        resource_ok?(resources, "core_services") and
+          resource_ok?(resources, "postgresql") and
+          resource_ok?(resources, "pg_pool")
+
+      _ ->
+        false
+    end
+  end
+
+  defp resource_ok?(resources, key) when is_map(resources) do
+    case Map.get(resources, key) do
+      %{"status" => "ok"} -> true
+      _ -> false
+    end
+  end
 
   # ────────────────────────────────────────────────────────────────
   # 파이프라인 6: 블로 → 루나 (트렌드 → 종목 분석)
