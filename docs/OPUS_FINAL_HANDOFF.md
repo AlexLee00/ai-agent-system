@@ -1,10 +1,47 @@
-# 세션 인수인계 — 2026-04-18 (CODEX_LUNA_BLOG_PIPELINE 완료)
+# 세션 인수인계 — 2026-04-18 (CODEX_DARWIN_REMODEL Phase 1 완료)
 
-> 세션 범위: 루나→블로 투자 콘텐츠 자율 요청 파이프라인 완성 + 172 tests 0 failures
+> 세션 범위: CODEX_DARWIN_REMODEL Phase 1 — Darwin V2 독립 Elixir 앱 기반 구축 + 컴파일 0 에러
 
 ---
 
-## 최신 작업 요약 (CODEX_LUNA_BLOG_PIPELINE — 코덱스 구현 완료)
+## 최신 작업 요약 (CODEX_DARWIN_REMODEL Phase 1 — 코덱스 구현 완료)
+
+### Darwin V2 Phase 1 구현 (커밋: 6c3a676e)
+
+**목표**: 다윈팀을 시그마팀과 같은 독립 구조 + 완전자율 R&D 에이전트로 진화
+
+**Phase 1 완료 항목**:
+- `bots/darwin/elixir/` 독립 Elixir 앱 구조 (mix.exs 완성)
+- `Darwin.V2.LLM.{Selector,Recommender,CostTracker,RoutingLog}` — Claude 전용 독립 LLM 스택
+- `Darwin.V2.{Supervisor,KillSwitch,AutonomyLevel,Application}` — 기반 인프라
+- `Darwin.V2.{Memory.L1,Memory.L2,Memory}` — ETS + pgvector 메모리
+- `Darwin.V2.{Reflexion,SelfRAG,ESPL,Principle.Loader}` — 자기 개선 루프
+- `Darwin.V2.{Commander,Lead,Scanner,Evaluator,Planner,Edison,Verifier,Applier}` — 에이전트 스텁
+- `Darwin.V2.Cycle.*` (7개) — DISCOVER~LEARN 사이클 스텁
+- `Darwin.V2.Skill.*` (9개) — ResourceAnalyst, TreeSearch, VLMFeedback, PaperSynthesis 등
+- `Darwin.V2.Sensor.*` (4개) — arXiv RSS, HackerNews, Reddit, OpenReview
+- `Darwin.V2.{MCP.Client,MCP.Server,HTTP.Router,ShadowRunner,Signal,Topics}` — 인프라
+- 9개 표준 문서 (01-autonomy-levels ~ 09-shadow-criteria)
+- DB 마이그레이션 3개 (20260604, 20260604, 20260701)
+- `bots/darwin/CLAUDE.md` 작성 완료
+- `mix compile` 에러 0건 확인 (경고만 존재 — 미구현 함수 참조)
+
+**Kill Switch 현황** (기본 ALL OFF):
+```
+DARWIN_V2_ENABLED=false     → V2 전체 비활성
+DARWIN_CYCLE_ENABLED=false  → 7단계 사이클 비활성
+DARWIN_SHADOW_ENABLED=false → Shadow Mode 비활성
+```
+
+**남은 작업 (Phase 2~10)**:
+- Phase 2: Commander Jido.AI.Agent 완성 + Shadow Mode 활성화
+- Phase 3: 7단계 사이클 Elixir 실제 구현 (V1 이전)
+- Phase 4: 테스트 200+ 작성
+- Phase 5~: Sensors 활성화, ESPL 주간 진화, MCP 노출
+
+---
+
+## 이전 작업 요약 (CODEX_LUNA_BLOG_PIPELINE — 코덱스 구현 완료)
 
 ### 구현 내용 (커밋: 47af2d24)
 
