@@ -1451,168 +1451,180 @@ function validateNeighborCommentWithCandidate(comment, summary, candidate, confi
 }
 
 async function openReplyEditor(page, comment) {
-  return page.evaluate(({ commentText, commenterName }) => {
-    const textOf = (el) =>
-      String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
-    const visible = (el) => {
-      if (!el) return false;
-      const style = window.getComputedStyle(el);
-      const rect = el.getBoundingClientRect();
-      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-    };
+  const payload = JSON.stringify({
+    commentText: comment.comment_text,
+    commenterName: comment.commenter_name,
+  });
+  return page.evaluate(`
+    (() => {
+      const { commentText, commenterName } = ${payload};
+      const textOf = (el) =>
+        String((el && (el.innerText || el.textContent)) || '').replace(/\\s+/g, ' ').trim();
+      const visible = (el) => {
+        if (!el) return false;
+        const style = window.getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+      };
 
-    const selectors = ['li.u_cbox_comment', 'li[class*="comment"]', 'div[class*="comment"]', 'article', 'section'];
-    const candidates = [];
-    for (const selector of selectors) {
-      for (const node of document.querySelectorAll(selector)) {
-        if (!visible(node)) continue;
-        const text = textOf(node);
-        if (!text) continue;
-        let score = 0;
-        if (commentText && text.includes(commentText.slice(0, Math.min(20, commentText.length)))) score += 3;
-        if (commenterName && text.includes(commenterName)) score += 2;
-        if (score > 0) candidates.push({ node, score });
+      const selectors = ['li.u_cbox_comment', 'li[class*="comment"]', 'div[class*="comment"]', 'article', 'section'];
+      const candidates = [];
+      for (const selector of selectors) {
+        for (const node of document.querySelectorAll(selector)) {
+          if (!visible(node)) continue;
+          const text = textOf(node);
+          if (!text) continue;
+          let score = 0;
+          if (commentText && text.includes(commentText.slice(0, Math.min(20, commentText.length)))) score += 3;
+          if (commenterName && text.includes(commenterName)) score += 2;
+          if (score > 0) candidates.push({ node, score });
+        }
       }
-    }
-    candidates.sort((a, b) => b.score - a.score);
-    const matchedNode = candidates[0]?.node;
-    const target = matchedNode?.closest?.('li.u_cbox_comment, li[class*="comment"]') || matchedNode;
-    if (target) {
-      document.querySelectorAll('[data-blog-target-comment],[data-blog-target-reply-button],[data-blog-target-reply-area]').forEach((node) => {
-        node.removeAttribute('data-blog-target-comment');
-        node.removeAttribute('data-blog-target-reply-button');
-        node.removeAttribute('data-blog-target-reply-area');
-      });
-      target.setAttribute('data-blog-target-comment', 'true');
-      const buttons = Array.from(target.querySelectorAll('button, a')).filter(visible);
-      const replyButton = buttons.find((btn) => {
-        const text = textOf(btn);
-        const cls = String(btn.className || '');
-        return /답글|답변/.test(text) || /btn_reply|reply/i.test(cls);
-      });
-      if (replyButton) {
+      candidates.sort((a, b) => b.score - a.score);
+      const matchedNode = candidates[0] && candidates[0].node;
+      const target = matchedNode && (matchedNode.closest('li.u_cbox_comment, li[class*="comment"]') || matchedNode);
+      if (target) {
+        document.querySelectorAll('[data-blog-target-comment],[data-blog-target-reply-button],[data-blog-target-reply-area]').forEach((node) => {
+          node.removeAttribute('data-blog-target-comment');
+          node.removeAttribute('data-blog-target-reply-button');
+          node.removeAttribute('data-blog-target-reply-area');
+        });
+        target.setAttribute('data-blog-target-comment', 'true');
+        const buttons = Array.from(target.querySelectorAll('button, a')).filter(visible);
+        const replyButton = buttons.find((btn) => {
+          const text = textOf(btn);
+          const cls = String(btn.className || '');
+          return /답글|답변/.test(text) || /btn_reply|reply/i.test(cls);
+        });
+        if (replyButton) {
+          replyButton.setAttribute('data-blog-target-reply-button', 'true');
+          const replyArea = (target.parentElement && target.parentElement.querySelector('.u_cbox_reply_area')) || target.querySelector('.u_cbox_reply_area');
+          if (replyArea) {
+            replyArea.setAttribute('data-blog-target-reply-area', 'true');
+          }
+          return true;
+        }
+      }
+
+      const globalReplyButtons = Array.from(document.querySelectorAll('button, a'))
+        .filter(visible)
+        .filter((btn) => {
+          const text = textOf(btn);
+          const cls = String(btn.className || '');
+          return (/답글|답변/.test(text) || /btn_reply|reply/i.test(cls)) && !/widget_recent_reply/i.test(cls);
+        });
+      if (globalReplyButtons.length === 1) {
+        const replyButton = globalReplyButtons[0];
+        const fallbackTarget = replyButton.closest('li.u_cbox_comment, li[class*="comment"], .u_cbox_comment_box, [class*="comment"]');
+        document.querySelectorAll('[data-blog-target-comment],[data-blog-target-reply-button],[data-blog-target-reply-area]').forEach((node) => {
+          node.removeAttribute('data-blog-target-comment');
+          node.removeAttribute('data-blog-target-reply-button');
+          node.removeAttribute('data-blog-target-reply-area');
+        });
+        if (fallbackTarget) {
+          fallbackTarget.setAttribute('data-blog-target-comment', 'true');
+        }
         replyButton.setAttribute('data-blog-target-reply-button', 'true');
-        const replyArea = target.parentElement?.querySelector('.u_cbox_reply_area') || target.querySelector('.u_cbox_reply_area');
+        const replyArea = (fallbackTarget && fallbackTarget.parentElement && fallbackTarget.parentElement.querySelector('.u_cbox_reply_area')) || (fallbackTarget && fallbackTarget.querySelector('.u_cbox_reply_area'));
         if (replyArea) {
           replyArea.setAttribute('data-blog-target-reply-area', 'true');
         }
         return true;
       }
-    }
-
-    const globalReplyButtons = Array.from(document.querySelectorAll('button, a'))
-      .filter(visible)
-      .filter((btn) => {
-        const text = textOf(btn);
-        const cls = String(btn.className || '');
-        return /답글|답변/.test(text) || /btn_reply|reply/i.test(cls);
-      });
-    if (globalReplyButtons.length === 1) {
-      const replyButton = globalReplyButtons[0];
-      const fallbackTarget = replyButton.closest('li.u_cbox_comment, li[class*="comment"], .u_cbox_comment_box, [class*="comment"]');
-      document.querySelectorAll('[data-blog-target-comment],[data-blog-target-reply-button],[data-blog-target-reply-area]').forEach((node) => {
-        node.removeAttribute('data-blog-target-comment');
-        node.removeAttribute('data-blog-target-reply-button');
-        node.removeAttribute('data-blog-target-reply-area');
-      });
-      if (fallbackTarget) {
-        fallbackTarget.setAttribute('data-blog-target-comment', 'true');
-      }
-      replyButton.setAttribute('data-blog-target-reply-button', 'true');
-      const replyArea = fallbackTarget?.parentElement?.querySelector('.u_cbox_reply_area') || fallbackTarget?.querySelector('.u_cbox_reply_area');
-      if (replyArea) {
-        replyArea.setAttribute('data-blog-target-reply-area', 'true');
-      }
-      return true;
-    }
-    return false;
-  }, {
-    commentText: comment.comment_text,
-    commenterName: comment.commenter_name,
-  });
+      return false;
+    })()
+  `);
 }
 
 async function waitForReplyThread(page, comment, testMode = false) {
   const timeoutMs = testMode ? 12000 : 15000;
   const commentSnippet = String(comment?.comment_text || '').slice(0, 20);
   const commenterName = String(comment?.commenter_name || '').trim();
+  const payload = JSON.stringify({ snippet: commentSnippet, name: commenterName });
+  const predicate = `
+    (() => {
+      const { snippet, name } = ${payload};
+      const textOf = (el) =>
+        String((el && (el.innerText || el.textContent)) || '').replace(/\\s+/g, ' ').trim();
+      const visible = (el) => {
+        if (!el) return false;
+        const style = window.getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+      };
 
-  return page.waitForFunction(({ snippet, name }) => {
-    const textOf = (el) =>
-      String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
-    const visible = (el) => {
-      if (!el) return false;
-      const style = window.getComputedStyle(el);
-      const rect = el.getBoundingClientRect();
-      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-    };
+      const replyButtons = Array.from(document.querySelectorAll('button, a'))
+        .filter(visible)
+        .filter((btn) => {
+          const text = textOf(btn);
+          const cls = String(btn.className || '');
+          return (/답글|답변/.test(text) || /btn_reply|reply/i.test(cls)) && !/widget_recent_reply/i.test(cls);
+        });
+      if (replyButtons.length > 0) return true;
 
-    const replyButtons = Array.from(document.querySelectorAll('button, a'))
-      .filter(visible)
-      .filter((btn) => {
-        const text = textOf(btn);
-        const cls = String(btn.className || '');
-        return /답글|답변/.test(text) || /btn_reply|reply/i.test(cls);
+      const comments = Array.from(document.querySelectorAll('li.u_cbox_comment, li[class*="comment"], .u_cbox_comment_box, [class*="comment"]'))
+        .filter(visible);
+      return comments.some((node) => {
+        const text = textOf(node);
+        return (snippet && text.includes(snippet)) || (name && text.includes(name));
       });
-    if (replyButtons.length > 0) return true;
-
-    const comments = Array.from(document.querySelectorAll('li.u_cbox_comment, li[class*="comment"], .u_cbox_comment_box, [class*="comment"]'))
-      .filter(visible);
-    if (comments.some((node) => {
-      const text = textOf(node);
-      return (snippet && text.includes(snippet)) || (name && text.includes(name));
-    })) {
-      return true;
-    }
-
-    return false;
-  }, { timeout: timeoutMs }, { snippet: commentSnippet, name: commenterName }).then(() => true).catch(() => false);
+    })()
+  `;
+  return page.waitForFunction(predicate, { timeout: timeoutMs }).then(() => true).catch(() => false);
 }
 
 async function activateReplyMode(page) {
   const replyButton = await page.$('[data-blog-target-reply-button="true"]');
   if (!replyButton) return false;
 
-  await replyButton.evaluate((node) => node.scrollIntoView({ block: 'center', behavior: 'instant' })).catch(() => {});
   await replyButton.click().catch(() => {});
-  await replyButton.evaluate((node) => {
-    const rect = node.getBoundingClientRect();
-    const eventInit = {
-      bubbles: true,
-      cancelable: true,
-      composed: true,
-      button: 0,
-      buttons: 1,
-      clientX: rect.left + rect.width / 2,
-      clientY: rect.top + rect.height / 2,
-    };
-    node.dispatchEvent(new MouseEvent('pointerdown', eventInit));
-    node.dispatchEvent(new MouseEvent('mousedown', eventInit));
-    node.dispatchEvent(new MouseEvent('pointerup', eventInit));
-    node.dispatchEvent(new MouseEvent('mouseup', eventInit));
-    node.dispatchEvent(new MouseEvent('click', eventInit));
-  }).catch(() => {});
+  await page.evaluate(`
+    (() => {
+      const node = document.querySelector('[data-blog-target-reply-button="true"]');
+      if (!node) return false;
+      node.scrollIntoView({ block: 'center', behavior: 'instant' });
+      const rect = node.getBoundingClientRect();
+      const eventInit = {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        button: 0,
+        buttons: 1,
+        clientX: rect.left + rect.width / 2,
+        clientY: rect.top + rect.height / 2,
+      };
+      node.dispatchEvent(new MouseEvent('pointerdown', eventInit));
+      node.dispatchEvent(new MouseEvent('mousedown', eventInit));
+      node.dispatchEvent(new MouseEvent('pointerup', eventInit));
+      node.dispatchEvent(new MouseEvent('mouseup', eventInit));
+      node.dispatchEvent(new MouseEvent('click', eventInit));
+      return true;
+    })()
+  `).catch(() => false);
 
-  return page.waitForFunction(() => {
-    const visible = (el) => {
-      if (!el) return false;
-      const style = window.getComputedStyle(el);
-      const rect = el.getBoundingClientRect();
-      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-    };
+  return page.waitForFunction(`
+    (() => {
+      const visible = (el) => {
+        if (!el) return false;
+        const style = window.getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+      };
 
-    const replyArea = document.querySelector('[data-blog-target-reply-area="true"]');
-    if (visible(replyArea)) {
-      const replyEditors = Array.from(replyArea.querySelectorAll('textarea, div[contenteditable="true"], div[role="textbox"]'));
-      if (replyEditors.some(visible)) return true;
-    }
-    const stateOnButton = document.querySelector('[data-blog-target-reply-button="true"].u_cbox_btn_reply_on');
-    if (visible(stateOnButton)) {
-      const scopedReplyArea = document.querySelector('[data-blog-target-comment="true"]')?.parentElement?.querySelector('.u_cbox_reply_area');
-      return visible(scopedReplyArea);
-    }
-    return false;
-  }, { timeout: 8000 }).then(() => true).catch(() => false);
+      const replyArea = document.querySelector('[data-blog-target-reply-area="true"]');
+      if (visible(replyArea)) {
+        const replyEditors = Array.from(replyArea.querySelectorAll('textarea, div[contenteditable=\"true\"], div[role=\"textbox\"]'));
+        if (replyEditors.some(visible)) return true;
+      }
+      const stateOnButton = document.querySelector('[data-blog-target-reply-button=\"true\"].u_cbox_btn_reply_on');
+      if (visible(stateOnButton)) {
+        const targetComment = document.querySelector('[data-blog-target-comment=\"true\"]');
+        const scopedReplyArea = targetComment && targetComment.parentElement && targetComment.parentElement.querySelector('.u_cbox_reply_area');
+        return visible(scopedReplyArea);
+      }
+      return false;
+    })()
+  `, { timeout: 8000 }).then(() => true).catch(() => false);
 }
 
 async function expandReplyThreads(page) {
