@@ -57,10 +57,4 @@ defmodule Sigma.V2.Skill.FeaturePlanner do
     end
   end
   defp to_number(_, default), do: default * 1.0
-
-  defp truthy?(nil), do: false
-  defp truthy?(false), do: false
-  defp truthy?(0), do: false
-  defp truthy?(""), do: false
-  defp truthy?(_), do: true
 end
