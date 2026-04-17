@@ -203,13 +203,25 @@ defmodule TeamJay.Blog.StrategyLearner do
     tsx = Path.join(project_root, "node_modules/.bin/tsx")
     [cmd | args] = String.split(script, " ")
     script_path = Path.join(project_root, cmd)
+    timeout_ms = 120_000
 
-    case System.cmd(tsx, [script_path | args],
-           cd: project_root,
-           stderr_to_stdout: true,
-           timeout: 120_000) do
-      {output, 0} -> {:ok, String.trim(output)}
-      {output, code} -> {:error, "exit #{code}: #{String.slice(output, 0, 300)}"}
+    task =
+      Task.async(fn ->
+        System.cmd(tsx, [script_path | args],
+          cd: project_root,
+          stderr_to_stdout: true
+        )
+      end)
+
+    case Task.yield(task, timeout_ms) || Task.shutdown(task, :brutal_kill) do
+      {:ok, {output, 0}} ->
+        {:ok, String.trim(output)}
+
+      {:ok, {output, code}} ->
+        {:error, "exit #{code}: #{String.slice(output, 0, 300)}"}
+
+      nil ->
+        {:error, "command_timeout after #{timeout_ms}ms"}
     end
   rescue
     e -> {:error, inspect(e)}
