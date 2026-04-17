@@ -30,13 +30,12 @@ psql -c "SELECT extname FROM pg_extension WHERE extname='vector';"
 ## 3. 첫 실행
 
 ```bash
-cd elixir/team_jay
-mix deps.get
-mix compile --warnings-as-errors
-mix test ../../bots/sigma/elixir/test
+cd bots/sigma/elixir
+mix compile
+mix test
 
 # TS v1 baseline 녹음 (Phase 5 이전 호환)
-cd ../../bots/sigma
+cd ..
 tsx ts/src/sigma-daily.ts --test > /tmp/sigma-baseline-check.json
 cat /tmp/sigma-baseline-check.json | head -20
 ```

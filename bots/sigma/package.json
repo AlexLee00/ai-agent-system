@@ -7,10 +7,10 @@
   "scripts": {
     "baseline": "tsx ts/src/sigma-daily.ts --test",
     "health": "tsx ts/src/sigma-daily.ts --health",
-    "shadow": "cd ../../elixir/team_jay && mix run -e 'Sigma.V2.ShadowRunner.run_once() |> IO.inspect'",
-    "test": "cd ../../elixir/team_jay && mix test ../../bots/sigma/elixir/test",
+    "shadow": "cd elixir && mix shadow",
+    "test": "cd elixir && mix test",
     "test:ts": "tsx __tests__/*.test.ts",
-    "compile": "cd ../../elixir/team_jay && mix compile --warnings-as-errors"
+    "compile": "cd elixir && mix compile"
   },
   "dependencies": {
     "tsx": "^4.19.0"

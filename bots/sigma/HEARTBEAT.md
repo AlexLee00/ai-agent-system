@@ -51,8 +51,9 @@ cat /tmp/sigma-baseline-$(date +%Y-%m-%d).json | jq '.ok, .targetTeams, .feedbac
 
 ```bash
 # Shadow run 결과
-cd elixir/team_jay
-mix run -e "Sigma.V2.ShadowRunner.run_once() |> IO.inspect"
+cd bots/sigma/elixir
+mix shadow
+cd ../../../elixir/team_jay
 mix run -e "Sigma.V2.ShadowCompare.recent_match_rate() |> IO.inspect"
 # 기대: match_rate >= 0.85 (85% 일치)
 ```

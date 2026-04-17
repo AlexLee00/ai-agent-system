@@ -5,14 +5,13 @@
 ## 빠른 시작
 
 ```bash
-# Elixir v2 (Jido 기반, 프로덕션 코드 위치는 team_jay Mix 프로젝트)
-cd elixir/team_jay
-mix deps.get
-mix compile --warnings-as-errors
-mix test ../../bots/sigma/elixir/test
+# Elixir v2 (독립 진입점, 내부적으로 team_jay 인프라 공유)
+cd bots/sigma/elixir
+mix compile
+mix test
 
 # TS v1 (레거시, Phase 5에서 thin adapter)
-cd ../../bots/sigma
+cd ..
 tsx ts/src/sigma-daily.ts --test
 
 # baseline 녹음
