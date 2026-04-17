@@ -159,9 +159,18 @@ defmodule TeamJay.Jay.GrowthCycle do
 
     # 시스템 위험 → 워크로드 축소
     decisions = case team_data[:claude] do
+      %{unhealthy_count: n, unhealthy_services: services} when n >= 3 ->
+        if stale_core_system_risk?(services) do
+          decisions
+        else
+          decision = DecisionEngine.evaluate(:system_risk, %{risk_level: min(n * 2, 10), count: n})
+          [{:claude_to_all, decision} | decisions]
+        end
+
       %{unhealthy_count: n} when n >= 3 ->
         decision = DecisionEngine.evaluate(:system_risk, %{risk_level: min(n * 2, 10), count: n})
         [{:claude_to_all, decision} | decisions]
+
       _ -> decisions
     end
 
@@ -217,6 +226,42 @@ defmodule TeamJay.Jay.GrowthCycle do
   end
 
   defp trigger_pipeline(_, _), do: :ok
+
+  defp stale_core_system_risk?(services) when is_list(services) do
+    normalized =
+      services
+      |> Enum.map(fn
+        {service, _code} -> service
+        service -> service
+      end)
+      |> Enum.map(&(&1 |> to_string() |> String.downcase()))
+      |> Enum.reject(&(&1 == ""))
+
+    normalized != [] and
+      Enum.all?(normalized, &(&1 in ["api", "db", "database", "postgres", "postgresql", "pg_pool", "hub"])) and
+      current_core_health_ok?()
+  end
+
+  defp stale_core_system_risk?(_), do: false
+
+  defp current_core_health_ok? do
+    case TeamJay.HubClient.health() do
+      {:ok, %{"resources" => resources}} when is_map(resources) ->
+        resource_ok?(resources, "core_services") and
+          resource_ok?(resources, "postgresql") and
+          resource_ok?(resources, "pg_pool")
+
+      _ ->
+        false
+    end
+  end
+
+  defp resource_ok?(resources, key) do
+    case Map.get(resources, key) do
+      %{"status" => "ok"} -> true
+      _ -> false
+    end
+  end
 
   defp measure(date, team_data, analysis, decisions) do
     TeamJay.EventLake.record(%{
