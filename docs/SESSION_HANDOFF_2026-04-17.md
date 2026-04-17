@@ -1865,3 +1865,123 @@ SEC-016 집약 목록 (모두 공식 API 방식, 우선순위 낮음):
 **worker 멀티테넌트 격리 세부 검증 완료 — 3중 방어 체계(authMiddleware + companyFilter + assertCompanyAccess + 3-필드 쿼리 필터 + auditLog) 매우 강력. IDOR 취약점 없음. SEC-018(ryan.ts 명시적 필터 1건만, LOW) 관찰. 전체 95%.**
 
 — 메티 (2026-04-17 밤, 16차 세션)
+
+
+---
+
+## 📍 17차 세션 증분 (2026-04-17 밤 메티) — ryan.ts IDOR 발견 + approval/server 검증
+
+> 16차 커밋 `dfa45407` push 후 P0 작업.
+> **ryan.ts에서 실제 IDOR 취약점 발견 — SEC-018 MEDIUM으로 상향.**
+
+### 🚨 이번 세션 핵심 발견
+
+**SEC-018 (MEDIUM으로 상향)** — ryan.ts `/milestone_done` IDOR 취약점
+
+**위치**: `bots/worker/src/ryan.ts:82-92`
+
+```javascript
+'/milestone_done': async (companyId, args) => {
+  const id = parseInt(args[0]);
+  if (!id) return '사용법: /milestone_done {마일스톤ID}';
+  const ms = await pgPool.get(SCHEMA,
+    `UPDATE worker.milestones SET status='completed', completed_at=NOW()
+     WHERE id=$1 AND deleted_at IS NULL RETURNING project_id, title`,  // ★ company_id 필터 없음!
+    [id]);
+  if (!ms) return `❌ 마일스톤 ID ${id} 없음`;
+  const progress = await recalcProgress(ms.project_id);  // ★ recalcProgress도 company_id 필터 없음
+  return `✅ 마일스톤 완료: ${ms.title}\n프로젝트 진행률: ${progress}%`;
+}
+```
+
+**추가 IDOR: `recalcProgress` (line 30-49)**:
+- `SELECT COUNT(*) FROM worker.milestones WHERE project_id=$1` — company_id 필터 없음
+- `UPDATE worker.projects SET progress=$1 WHERE id=$2` — company_id 필터 없음
+
+**공격 시나리오**:
+- 인증된 사용자가 Telegram 봇으로 `/milestone_done <다른 회사 milestone ID>` 전송
+- 정수 ID 추측 공격 (milestones 테이블은 순차 ID이므로 추측 용이)
+- 다른 회사의 마일스톤을 임의로 "완료" 처리 + 진행률 조작 가능
+
+**수정안** (다음 세션 AUDIT_05 프롬프트 대상):
+```javascript
+// milestone UPDATE에 JOIN으로 company_id 필터 적용
+`UPDATE worker.milestones m SET status='completed', completed_at=NOW()
+ FROM worker.projects p
+ WHERE m.id=$1 AND m.deleted_at IS NULL
+   AND m.project_id = p.id AND p.company_id = $2
+ RETURNING m.project_id, m.title`,
+[id, companyId]
+
+// recalcProgress도 동일 패턴으로 company_id 필터 추가
+```
+
+### ✅ 점검 완료 파일
+
+**`bots/worker/lib/approval.ts` (393줄)** — **매우 견고한 IDOR 방어**:
+- `approve()` / `reject()` / `review()`: `approverRole !== 'master'` 시 `AND company_id=$N` 자동 추가 (line 110/145/189)
+- `getPendingRequests`: `WHERE ar.company_id=$1` 명시 (line 264)
+- `_syncTargetStatus`: `WHERE id=$1 AND approval_id=$2` 이중 필터 (line 87/96)
+- 관찰: `attachTarget`(line 71)은 company_id 필터 없지만 내부 헬퍼로 보임
+
+**`bots/worker/web/server.js` (6270줄)** — 핵심 민감 엔드포인트 샘플 확인:
+- `PUT /api/companies/:id` (line 2033): `requireAuth` + `requireRole('master')` + `auditLog` ✅
+- `DELETE /api/companies/:id` (line 2051): 동일 3중 미들웨어 ✅
+- `POST /api/companies/:id/restore` (line 2069): master 제한 ✅
+- 업체 변경은 master 전용으로 잘 보호됨
+
+### 📊 감사 진행률 (17차 세션 기준)
+
+```
+1단위 Hub + 거버넌스: 100% 종결
+2단위 투자팀: 100% 종결
+
+3단위 worker: 40% 점검 완료
+  ✅ lib/secrets.ts / auth.ts / company-guard.ts / chat-agent.ts
+  ✅ web/routes/agents.ts (authMiddleware 전면)
+  ✅ src/task-runner.ts (큐 워커)
+  ✅ lib/approval.ts (매우 견고)
+  ✅ web/server.js 핵심 민감 라우트 샘플 (master 제한 확인)
+  🚨 src/ryan.ts (SEC-018 MEDIUM IDOR 발견)
+  ⬜ src 나머지 6개 봇 세부 (chloe/emily/noah/oliver/sophie/worker-lead)
+  ⬜ lib 나머지 (~5800줄, chat/ai 계열)
+  ⬜ web/server.js 나머지 (5000+줄)
+  ⬜ migrations/ (DB 스키마 권한)
+
+3단위 reservation: 0% (28,278줄)
+3단위 blog: 0% (25,074줄)
+
+4단위+ 미착수:
+  claude, darwin, orchestrator, packages/core, elixir
+
+전체 진행률: 약 96%
+```
+
+### 🆕 AUDIT_05 프롬프트 필요
+
+**SEC-018 패치 (MEDIUM)** — ryan.ts milestone IDOR:
+- Task 1: `/milestone_done` UPDATE에 JOIN으로 company_id 필터 추가
+- Task 2: `recalcProgress`에 companyId 파라미터 받고 projects/milestones 쿼리에 필터 추가
+- Task 3: `recalcProgress` 호출 지점 모두 companyId 전달하도록 수정 (가장 주요: `/milestone_done` 내 호출)
+
+다음 세션에서 `docs/codex/CODEX_SECURITY_AUDIT_05.md` 작성.
+
+### 📋 다음 세션 우선순위
+
+**P0 — SEC-018 AUDIT_05 프롬프트 작성** (ryan.ts IDOR 패치)
+
+**P1 — worker 마무리**:
+- chat-agent.ts 전수 검증 (agent_tasks INSERT 경로 이외)
+- worker/lib 주요 파일 (ai-feedback-service, document-reuse 등)
+- worker/src 나머지 6개 봇 완독
+
+**P2 — reservation 착수**:
+- bots/reservation/src/ska.ts (171줄)
+- bots/reservation/lib/ska-command-queue.ts (126줄 근처 INSERT)
+- bots/reservation/lib/secrets.ts
+
+### 🏷️ 17차 세션 요약 한 줄
+
+**ryan.ts `/milestone_done` IDOR 취약점 발견 — SEC-018 MEDIUM 상향. 공격자가 정수 ID 추측으로 다른 회사 milestone 조작 가능. approval.ts(393줄) 매우 견고, server.js 민감 라우트 샘플도 master 제한 양호. 전체 96%. 다음 세션 P0: AUDIT_05.md 작성.**
+
+— 메티 (2026-04-17 밤, 17차 세션)
