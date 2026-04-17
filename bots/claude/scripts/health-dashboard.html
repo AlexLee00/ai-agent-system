@@ -24,6 +24,7 @@
   .badge-warn    { background: #2a2a1a; color: #ffb74d; }
   .badge-error   { background: #3a1a1a; color: #ef5350; }
   .badge-stopped { background: #3a1a1a; color: #ef5350; }
+  .badge-stale   { background: #1f2d3a; color: #90caf9; }
   .badge-shadow  { background: #1a2a3a; color: #4fc3f7; }
   .badge-auto-low { background: #1a3a2a; color: #a5d6a7; }
   .badge-auto-all { background: #2a3a1a; color: #ffcc80; }
@@ -61,6 +62,7 @@ function badge(status) {
     error:   ['error',   '오류'],
     running: ['running', '실행중'],
     stopped: ['stopped', '중단'],
+    stale:   ['stale',   '과거흔적'],
   };
   const [cls, label] = map[status] || ['warn', status];
   return `<span class="badge badge-${cls}">${label}</span>`;
@@ -160,7 +162,27 @@ function render(data) {
       </table>
     </div>`;
 
-  // 5. 리소스 카드
+  // 5. 로그 freshness 카드
+  let logRows = '';
+  if (data.log_health?.length > 0) {
+    logRows = data.log_health.map(r => `<tr>
+      <td>${r.label}</td>
+      <td>${badge(r.status)}</td>
+      <td>${r.detail || '—'}</td>
+    </tr>`).join('');
+  } else {
+    logRows = '<tr><td colspan="3" class="empty">로그 상태 정보 없음</td></tr>';
+  }
+  const logCard = `
+    <div class="card">
+      <div class="card-title">🧾 로그 상태</div>
+      <table>
+        <thead><tr><th>대상</th><th>상태</th><th>설명</th></tr></thead>
+        <tbody>${logRows}</tbody>
+      </table>
+    </div>`;
+
+  // 6. 리소스 카드
   const res = data.resources || {};
   const memStatus = res.mem_used_pct >= 90 ? 'error' : res.mem_used_pct >= 75 ? 'warn' : 'ok';
   const resourceCard = `
@@ -173,7 +195,7 @@ function render(data) {
       <div class="res-row"><span class="res-label">CPU 코어</span><span class="res-val">${res.cpu_count || '?'}코어</span></div>
     </div>`;
 
-  grid.innerHTML = botCard + leadCard + doctorCard + issueCard + resourceCard;
+  grid.innerHTML = botCard + leadCard + doctorCard + issueCard + logCard + resourceCard;
   document.getElementById('last-updated').textContent =
     '마지막 갱신: ' + new Date().toLocaleTimeString('ko-KR');
 }
