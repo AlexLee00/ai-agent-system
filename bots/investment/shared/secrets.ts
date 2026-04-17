@@ -6,7 +6,7 @@
  * 하위 호환을 위해 기존 함수 시그니처 유지
  */
 
-import { readFileSync } from 'fs';
+import { chmodSync, readFileSync, statSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { createRequire } from 'module';
@@ -28,6 +28,25 @@ function warnOnce(key, message) {
   if (_warnedKeys.has(key)) return;
   _warnedKeys.add(key);
   console.warn(message);
+}
+
+function ensureSecretFileMode(filePath, label) {
+  try {
+    const stat = statSync(filePath);
+    const mode = stat.mode & 0o777;
+    if ((mode & 0o077) === 0) return;
+
+    warnOnce(
+      `secret-mode:${filePath}`,
+      `⚠️ [secrets] ${label} 권한이 과도합니다 (${mode.toString(8)}) → 600으로 보정`,
+    );
+    chmodSync(filePath, 0o600);
+  } catch (error) {
+    warnOnce(
+      `secret-mode-failed:${filePath}`,
+      `⚠️ [secrets] ${label} 권한 점검 실패: ${error?.message || error}`,
+    );
+  }
 }
 
 function normalizeMode(value) {
@@ -203,7 +222,9 @@ export function loadSecrets() {
 
   // secrets.json fallback
   try {
-    _secrets = JSON.parse(readFileSync(join(__dirname, '..', 'secrets.json'), 'utf8'));
+    const secretsPath = join(__dirname, '..', 'secrets.json');
+    ensureSecretFileMode(secretsPath, 'investment secrets.json');
+    _secrets = JSON.parse(readFileSync(secretsPath, 'utf8'));
     return _secrets;
   } catch {
     console.warn('⚠️ config.yaml / secrets.json 없음 — executionMode=paper 기본값');
@@ -649,8 +670,8 @@ export function getKisAccount() {
 
 export function hasKisApiKey() {
   const s = loadSecrets();
-  if (isKisPaper()) return !!(s.kis_paper_app_key && s.kis_paper_app_key.length > 5);
-  return !!(s.kis_app_key && s.kis_app_key.length > 5);
+  if (isKisPaper()) return !!(s.kis_paper_app_key && s.kis_paper_app_key.length >= 16);
+  return !!(s.kis_app_key && s.kis_app_key.length >= 16);
 }
 
 export function getKisAppKey() {
