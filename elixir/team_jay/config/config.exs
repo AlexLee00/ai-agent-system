@@ -22,6 +22,8 @@ config :team_jay,
 # Phase 3: 코덱스 자동 실행 (true = 마스터 승인 없이 자동 실행)
 config :team_jay, :codex_auto_execute, true
 
+import_config "#{Mix.env()}.exs"
+
 config :team_jay, TeamJay.Scheduler,
   jobs: [
     # ─── 제이팀 성장 사이클 ──────────────────────────────────

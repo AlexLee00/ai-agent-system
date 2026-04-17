@@ -45,12 +45,20 @@ defmodule Sigma.V2.Commander do
   # Public API
   # -------------------------------------------------------------------
 
-  @doc "오늘 편성 결정. TS decideTodayFormation() 포팅."
+  @doc "오늘 편성 결정. TS decideTodayFormation() 포팅. Phase 3: Reflexion 주입."
   @spec decide_formation(Date.t(), [memory_snippet()], [memory_snippet()], map() | nil) ::
           {:ok, formation()} | {:error, term()}
   def decide_formation(date \\ Date.utc_today(), memories \\ [], recent_semantic \\ [], yesterday_events \\ nil) do
     events = yesterday_events || collect_yesterday_events()
-    memory_context = memories ++ recent_semantic
+
+    # Phase 3: 최근 실패 Reflexion 회수 → memory_context에 주입
+    reflexion_memories =
+      case Sigma.V2.Memory.recall("AVOID", limit: 3, threshold: 0.35) do
+        {:ok, %{hits: hits}} -> Enum.map(hits, &%{content: &1[:content], importance: 0.7})
+        _ -> []
+      end
+
+    memory_context = memories ++ recent_semantic ++ reflexion_memories
 
     target_teams =
       MapSet.new()
@@ -83,6 +91,29 @@ defmodule Sigma.V2.Commander do
        events: events,
        formation_reason: reason
      }}
+  end
+
+  @doc """
+  Directive 실행 — Principle Gate → Executor → Archivist.
+  Phase 2: self_critique 통합.
+  """
+  @spec apply_directive(struct()) :: {:ok, map()} | {:blocked, [String.t()]} | {:error, term()}
+  def apply_directive(directive) do
+    case Sigma.V2.Principle.Loader.self_critique(directive) do
+      {:approved, []} ->
+        case Sigma.Directive.Executor.execute(directive, %{}) do
+          {:ok, result} ->
+            {:ok, result}
+
+          {:error, reason} ->
+            Sigma.V2.Archivist.log_failure(directive, reason)
+            {:error, reason}
+        end
+
+      {:blocked, blocked_principles} ->
+        Sigma.V2.Archivist.log_blocked(directive, blocked_principles)
+        {:blocked, blocked_principles}
+    end
   end
 
   @doc "편성 분석 → 팀별 피드백 생성. TS analyzeFormation() 포팅."
