@@ -41,7 +41,12 @@ const {
 }                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/curriculum-planner.ts'));
 const richer                                        = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/richer.ts'));
 const { collectAllResearch }                        = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/parallel-collector.ts'));
-const { getRecentPosts, selectAndValidateTopic }    = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/topic-selector.ts'));
+const {
+  getRecentPosts,
+  selectAndValidateTopic,
+  synthesizeHybridTopic,
+  getPendingLunaRequest,
+}                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/topic-selector.ts'));
 const { isExcludedReferencePost }                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/reference-exclusions.ts'));
 const { agenticSearch }                             = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/agentic-rag.ts'));
 const { getWriterPersona }                          = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/writer-personas.ts'));
@@ -893,7 +898,7 @@ async function _prepareLectureContext(researchData, traceCtx, preloaded = {}) {
   });
 }
 
-async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, scheduleId = null, dailyState = {}) {
+async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, scheduleId = null, dailyState = {}, lunaRequest = null) {
   const { category } = preloaded.category ? preloaded : { category: '자기계발' };
   const sectionVariation = preloaded.sectionVariation || {};
   const needsBook = category === '도서리뷰';
@@ -907,17 +912,55 @@ async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, sc
   console.log(`[블로] MessageEnvelope → 젬스 (${writeReq.message_id.slice(0, 8)})`);
 
   let preparedResearch = { ...researchData };
+  let usedLunaRequestId = null;
   if (preloaded.topicHint) {
     preparedResearch.topic_hint = String(preloaded.topicHint).trim();
   }
   if (!needsBook && !preparedResearch.topic_hint) {
-    try {
-      preparedResearch = _applyGeneralTopicStrategy(preparedResearch, category, strategyPlan, dailyState);
-      const selectedTopic = preparedResearch._selectedTopic;
-      console.log(`[젬스] 주제 다양화 선택: ${selectedTopic.title}${selectedTopic.forced ? ' (forced)' : ''}`);
-      delete preparedResearch._selectedTopic;
-    } catch (error) {
-      console.warn('[젬스] 주제 다양화 선택 실패 — 기본 자율 주제 유지:', error.message);
+    // 0순위: 루나 요청 앵글 합성 (있을 때만)
+    if (lunaRequest) {
+      try {
+        const recentPosts = getRecentPosts(category, 10);
+        const hybridTopic = synthesizeHybridTopic(category, lunaRequest, recentPosts, strategyPlan);
+        if (hybridTopic) {
+          console.log(`[젬스] 루나 하이브리드 주제 선택: ${hybridTopic.title} (regime=${lunaRequest.regime})`);
+          preparedResearch = {
+            ...preparedResearch,
+            topic_hint: hybridTopic.topic,
+            topic_question: hybridTopic.question,
+            topic_diff: hybridTopic.diff,
+            topic_title_candidate: hybridTopic.title,
+            topic_reader_problem: hybridTopic.readerProblem || '',
+            topic_opening_angle: hybridTopic.openingAngle || '',
+            topic_key_questions: Array.isArray(hybridTopic.keyQuestions) ? hybridTopic.keyQuestions : [],
+            topic_closing_angle: hybridTopic.closingAngle || '',
+            topic_freshness_summary: hybridTopic.freshnessSummary || '',
+            topic_marketing_signal_summary: hybridTopic.marketingSignalSummary || '',
+            topic_marketing_recommendations: hybridTopic.marketingRecommendations || [],
+            topic_marketing_cta_hint: hybridTopic.marketingCtaHint || '',
+            strategy_focus: [],
+            strategy_recommendations: [],
+            strategy_preferred_pattern: hybridTopic.pattern || null,
+            strategy_suppressed_pattern: null,
+          };
+          usedLunaRequestId = lunaRequest.id;
+        } else {
+          console.log(`[젬스] 루나 하이브리드 주제 품질 게이트 실패 — 기본 로테이션으로 폴백 (regime=${lunaRequest.regime})`);
+        }
+      } catch (error) {
+        console.warn('[젬스] 루나 하이브리드 주제 합성 실패 — 기본 로테이션 유지:', error.message);
+      }
+    }
+    // 루나 앵글 없거나 품질 게이트 실패 시: 기존 로테이션
+    if (!preparedResearch.topic_hint) {
+      try {
+        preparedResearch = _applyGeneralTopicStrategy(preparedResearch, category, strategyPlan, dailyState);
+        const selectedTopic = preparedResearch._selectedTopic;
+        console.log(`[젬스] 주제 다양화 선택: ${selectedTopic.title}${selectedTopic.forced ? ' (forced)' : ''}`);
+        delete preparedResearch._selectedTopic;
+      } catch (error) {
+        console.warn('[젬스] 주제 다양화 선택 실패 — 기본 자율 주제 유지:', error.message);
+      }
     }
   }
   if (needsBook) {
@@ -944,6 +987,7 @@ async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, sc
     topicQuestion: preparedResearch.topic_question || null,
     topicDiff: preparedResearch.topic_diff || null,
     strategyPlan,
+    usedLunaRequestId,
   });
 }
 
@@ -1233,6 +1277,14 @@ async function _prepareDailyRun(traceCtx, options = {}) {
 
   const researchData = await collectAllResearch('general', false);
 
+  const lunaRequest = await getPendingLunaRequest().catch((error) => {
+    console.warn('[블로] 루나 요청 조회 실패 (무시):', error.message);
+    return null;
+  });
+  if (lunaRequest) {
+    console.log(`[블로] 루나 콘텐츠 요청 감지: regime=${lunaRequest.regime}, urgency=${lunaRequest.urgency}`);
+  }
+
   return {
     inactive: false,
     complete: false,
@@ -1240,6 +1292,7 @@ async function _prepareDailyRun(traceCtx, options = {}) {
     researchData,
     senseState,
     revenueCorrelation,
+    lunaRequest,
     ...scheduleContext,
   };
 }
@@ -1587,7 +1640,7 @@ async function _runGeneralStage(daily, traceCtx, options = {}) {
     return await runGeneralPost(researchData, traceCtx, {
       category,
       bookInfo,
-    }, scheduleId, options, daily);
+    }, scheduleId, options, daily, daily.lunaRequest || null);
   } catch (e) {
     console.error('[블로] 일반 포스팅 실패:', e.message);
     if (scheduleId && !options.dryRun) {
@@ -1663,8 +1716,18 @@ async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId
 
 // ─── 일반 포스팅 ──────────────────────────────────────────────────────
 
-async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId = null, options = {}, dailyState = {}) {
-  const prepared = await _prepareGeneralContext(researchData, traceCtx, preloaded, scheduleId, dailyState);
+async function _fulfillLunaRequest(requestId, postId) {
+  await pgPool.run('blog', `
+    UPDATE blog.content_requests
+    SET status = 'fulfilled', fulfilled_post_id = $2, fulfilled_at = NOW()
+    WHERE id = $1 AND status = 'pending'
+  `, [requestId, postId]);
+  console.log(`[블로] 루나 요청 완료 처리: requestId=${requestId}, postId=${postId}`);
+  await _emitEvent('luna_request_fulfilled', { requestId, postId });
+}
+
+async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId = null, options = {}, dailyState = {}, lunaRequest = null) {
+  const prepared = await _prepareGeneralContext(researchData, traceCtx, preloaded, scheduleId, dailyState, lunaRequest);
   if (prepared?.skipped) {
     const skippedResult = prepared.result || { type: 'general', skipped: true, reason: 'skipped' };
     const canFallbackCategory = skippedResult.category === '도서리뷰' && !preloaded._bookFallbackTried;
@@ -1736,6 +1799,11 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId
       );
 
       const finalized = await _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx, writerName, options);
+      if (context.usedLunaRequestId && finalized.postId && !options.dryRun) {
+        await _fulfillLunaRequest(context.usedLunaRequestId, finalized.postId).catch(e =>
+          console.warn('[블로] 루나 요청 완료 처리 실패 (무시):', e.message)
+        );
+      }
       return _attachQualitySummary(finalized, quality);
     });
 }

@@ -631,6 +631,128 @@ async function selectTopicWithCandidateFallback(category, targetDate, recentPost
   return selectAndValidateTopic(category, recentPosts, strategyPlan, senseState, revenueCorrelation);
 }
 
+// ─── 루나 투자 앵글 합성 템플릿 ──────────────────────────────────────────
+
+const LUNA_ANGLE_TEMPLATES = {
+  '자기계발': {
+    bear:     { topic: '하락장에서 흔들리지 않는 투자 마인드 루틴',    question: '시장이 내려갈 때 심리적으로 버티는 방법은 무엇일까', diff: '재테크 기술보다 감정 관리 관점' },
+    volatile: { topic: '변동성 장세에서 집중력을 지키는 일상 루틴',    question: '시장 불안이 일상에 침투할 때 어떻게 루틴을 유지할까', diff: '투자 전략보다 일상 루틴 관점' },
+    bull:     { topic: '상승장 기회 앞에서 흔들리지 않는 의사결정법',  question: '좋은 기회가 왔을 때 왜 자꾸 망설이게 될까', diff: '낙관주의보다 실행 기준 관점' },
+    crisis:   { topic: '위기 상황에서도 무너지지 않는 멘탈 관리 루틴', question: '예상치 못한 충격이 왔을 때 어떻게 빠르게 회복할까', diff: '위기 대응보다 회복력 설계 관점' },
+  },
+  '최신IT트렌드': {
+    bear:     { topic: 'AI 트레이딩 시스템이 하락장에서 배운 것',       question: '자동화 시스템은 하락장에서 어떻게 반응하는가', diff: '트레이딩 기법보다 AI 시스템 설계 관점' },
+    volatile: { topic: '변동성 장세에서 AI 자동매매가 보여주는 패턴',  question: '시장 불안정성이 AI 모델의 예측력에 어떤 영향을 줄까', diff: 'AI 정확성보다 불확실성 처리 방식' },
+    bull:     { topic: '상승장에서 AI 투자 보조 도구의 진짜 한계',      question: '좋은 장세에서도 알고리즘이 틀릴 수 있는 이유는', diff: '성능 자랑보다 한계 인식 관점' },
+    crisis:   { topic: '시장 위기 때 AI 알림 시스템이 실제로 유용한가', question: 'AI가 위기를 먼저 감지하려면 어떤 데이터가 필요할까', diff: '기술 소개보다 실용성 판단 관점' },
+  },
+  '개발기획과컨설팅': {
+    bear:     { topic: '시장 하락 시 서비스 운영 계획 재수립하는 법',   question: '비용 절감이 필요할 때 어떤 기능부터 줄여야 할까', diff: '위기 대응보다 우선순위 재정렬 관점' },
+    volatile: { topic: '불확실한 시장에서 프로덕트 로드맵 유지하는 법', question: '시장이 자주 바뀔 때 기획 문서를 어떻게 관리해야 할까', diff: '완벽한 계획보다 빠른 재조정 구조' },
+    bull:     { topic: '성장 국면에서 개발 우선순위를 다시 세우는 법',  question: '기회가 많을 때 왜 더 선택이 어려워질까', diff: '기능 추가보다 집중 범위 정리' },
+    crisis:   { topic: '위기 때 최소 운영 체계로 서비스를 유지하는 법', question: '인프라가 흔들릴 때 어떤 것을 끝까지 살려야 할까', diff: '복구 계획보다 생존 우선순위 관점' },
+  },
+  '홈페이지와App': {
+    bear:     { topic: '수익 전환이 잘 되는 투자 대시보드 UX',          question: '투자 정보를 보여줄 때 어떤 화면 구성이 신뢰를 만들까', diff: '데이터 표시보다 의사결정 지원 UX' },
+    volatile: { topic: '실시간 데이터 표시 화면에서 불안감 줄이는 법',  question: '숫자가 자주 바뀔 때 사용자에게 어떻게 안정감을 줄까', diff: '정보 밀도보다 감정 반응 관점' },
+    bull:     { topic: '성과 지표 대시보드가 오히려 판단을 흐리는 이유', question: '좋은 숫자가 가득할 때 왜 오히려 결정이 늦어질까', diff: '데이터 시각화보다 인지 부하 관점' },
+    crisis:   { topic: '위기 상황 앱 UX — 사용자를 어떻게 붙잡을까',   question: '서비스가 흔들릴 때 사용자 신뢰를 지키는 화면 요소는', diff: '기능 추가보다 위기 커뮤니케이션 UX' },
+  },
+  'IT정보와분석': {
+    bear:     { topic: '코인 하락장에서 시장 분석가들이 놓치는 신호',   question: '하락 국면에서 어떤 지표가 실제 바닥을 알려줄까', diff: '뉴스 나열보다 판단 기준 정리' },
+    volatile: { topic: '가상화폐 변동성 지표를 제대로 읽는 법',          question: '공포-탐욕 지수 외에 어떤 신호를 봐야 할까', diff: '숫자 소개보다 해석 기준 중심' },
+    bull:     { topic: '상승장 과열 신호를 먼저 읽는 법',                question: '모두가 낙관적일 때 어떤 지표가 경고를 보낼까', diff: '호황 분석보다 리스크 인식 관점' },
+    crisis:   { topic: '시장 위기 신호 — 뉴스보다 데이터가 먼저 말한다', question: '패닉 이전에 어떤 데이터 패턴이 나타나는가', diff: '사후 분석보다 선행 지표 관점' },
+  },
+  '성장과성공': {
+    bear:     { topic: '하락장에서도 흔들리지 않는 재테크 마인드셋',    question: '손실이 반복될 때 어떻게 판단 기준을 유지할까', diff: '투자 기술보다 심리 회복력 관점' },
+    volatile: { topic: '불확실성 속에서도 기준을 지키는 원칙 설계법',   question: '상황이 자주 바뀔 때 나만의 원칙을 어떻게 세울까', diff: '성공 공식보다 원칙 수립 과정' },
+    bull:     { topic: '상승장 심리가 판단력을 망치는 이유',             question: '수익이 날수록 왜 욕심이 커지고 실수가 늘어날까', diff: '전략 소개보다 행동 심리학 관점' },
+    crisis:   { topic: '위기를 성장 기회로 바꾼 사람들의 공통점',        question: '모두가 멈출 때 오히려 앞으로 나아갈 수 있는 조건은', diff: '위기 회고보다 전환점 심리 관점' },
+  },
+};
+
+/**
+ * 루나 요청 + 오늘 카테고리를 합성해 하이브리드 주제를 만든다.
+ * 동기 함수 — DB 호출 없음. 품질 게이트 통과 실패 시 null 반환.
+ */
+function synthesizeHybridTopic(category, lunaRequest, recentPosts = [], strategyPlan = null) {
+  const templates = LUNA_ANGLE_TEMPLATES[category];
+  if (!templates) return null;
+
+  const rawRegime = String(lunaRequest?.regime || 'volatile');
+  const regime = Object.prototype.hasOwnProperty.call(templates, rawRegime) ? rawRegime : 'volatile';
+  const template = templates[regime];
+  if (!template) return null;
+
+  const recentTitles = recentPosts.map(p => p.title).filter(Boolean);
+
+  const preferredPatterns = CATEGORY_PATTERN_PREFERENCES[category] || [];
+  const preferredFrame = TITLE_FRAMES.find(f => preferredPatterns.includes(f.pattern)) || TITLE_FRAMES[0];
+  const title = buildTitle(preferredFrame.template, template, 0);
+
+  if (isBannedTitle(title)) return null;
+  if (recentTitles.some(rt => similarity(rt, title) > SIMILARITY_THRESHOLD)) return null;
+  if (recentTitles.length) {
+    const latest = recentTitles[0];
+    if (similarity(latest, title) >= 0.28) return null;
+    if (tokenOverlapRatio(latest, title) >= 0.45) return null;
+  }
+
+  const guide = getCategorySelectionGuide(category);
+  return enrichTopicSelection({
+    title,
+    topic: template.topic,
+    question: template.question,
+    diff: template.diff,
+    pattern: preferredFrame.pattern,
+    source: 'luna_hybrid',
+    lunaRequestId: lunaRequest?.id || null,
+    lunaRegime: rawRegime,
+    recentTitleCount: recentTitles.length,
+    forced: false,
+    marketingSignalSummary: `루나 시장 이벤트: ${lunaRequest?.regime || 'volatile'} (${lunaRequest?.mood || ''})`,
+    marketingRecommendations: [
+      '투자/금융 맥락을 자연스럽게 카테고리 내에 녹여 독자 공감을 유도',
+      ...(guide.keyQuestions?.slice(0, 1) || []),
+    ],
+    marketingCtaHint: '',
+    marketingWeight: 1,
+  }, category, recentTitles);
+}
+
+/**
+ * DB에서 pending 루나 콘텐츠 요청 1건 조회 (urgency DESC, requested_at ASC).
+ * 24시간 내 만료되지 않은 요청만 대상.
+ */
+async function getPendingLunaRequest() {
+  try {
+    const result = await queryOpsDb(`
+      SELECT id, regime, mood, angle_hint, keyword_hints, urgency, requested_at, metadata
+      FROM blog.content_requests
+      WHERE status = 'pending'
+        AND expires_at > NOW()
+        AND source_team = 'luna'
+      ORDER BY urgency DESC, requested_at ASC
+      LIMIT 1
+    `, 'blog', []);
+    if (!result?.rows?.length) return null;
+    const row = result.rows[0];
+    return {
+      id: row.id,
+      regime: row.regime || 'volatile',
+      mood: row.mood || '',
+      angleHint: row.angle_hint || '',
+      keywordHints: row.keyword_hints || '',
+      urgency: row.urgency || 5,
+      requestedAt: row.requested_at,
+      metadata: row.metadata || {},
+    };
+  } catch {
+    return null;
+  }
+}
+
 module.exports = {
   getRecentPosts,
   getCategorySelectionGuide,
@@ -641,4 +763,6 @@ module.exports = {
   selectPrePlannedTopic,
   queryDailyCandidates,
   similarity,
+  synthesizeHybridTopic,
+  getPendingLunaRequest,
 };
