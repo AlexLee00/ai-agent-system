@@ -14,7 +14,8 @@ defmodule TeamJay.Teams.BlogSupervisor do
     %{name: :blog_revenue_strategy, script: "bots/blog/scripts/revenue-strategy-updater.ts --json", schedule: {:weekly_at, [1], 7, 0}},
     %{
       name: :blog_node_server,
-      script: "dist/ts-runtime/bots/blog/api/node-server.js",
+      script: "bots/blog/api/node-server.ts",
+      runner: :tsx,
       schedule: if(Mix.env() == :test, do: nil, else: :once),
       health_url: "http://127.0.0.1:3100/health"
     },
@@ -45,7 +46,7 @@ defmodule TeamJay.Teams.BlogSupervisor do
          name: agent.name,
          team: :blog,
          script: agent.script,
-         runner: Map.get(agent, :runner, :node),
+         runner: Map.get(agent, :runner, :tsx),
          schedule: agent.schedule,
          health_url: Map.get(agent, :health_url)}
       end)

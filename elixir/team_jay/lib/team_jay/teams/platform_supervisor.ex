@@ -4,7 +4,8 @@ defmodule TeamJay.Teams.PlatformSupervisor do
   @platform_agents [
     %{
       name: :hub_resource_api,
-      script: "dist/ts-runtime/bots/hub/src/hub.js",
+      script: "bots/hub/src/hub.ts",
+      runner: :tsx,
       schedule: if(Mix.env() == :test, do: nil, else: :once),
       health_url: "http://127.0.0.1:7788/hub/health"
     }
@@ -22,6 +23,7 @@ defmodule TeamJay.Teams.PlatformSupervisor do
          name: agent.name,
          team: :platform,
          script: agent.script,
+         runner: Map.get(agent, :runner, :tsx),
          schedule: agent.schedule,
          health_url: Map.get(agent, :health_url)}
       end)

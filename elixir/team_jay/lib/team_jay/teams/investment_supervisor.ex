@@ -27,31 +27,31 @@ defmodule TeamJay.Teams.InvestmentSupervisor do
     # 5분 암호화폐 매매 (LIVE)
     %{name: :crypto,
       script: "bots/investment/markets/crypto.ts",
-      runner: :node,
+      runner: :tsx,
       schedule: {:interval, 300_000}},
 
     # 15분 암호화폐 매매 (VALIDATION)
     %{name: :crypto_validation,
-      script: "NODE_ENV=production INVESTMENT_TRADE_MODE=validation node bots/investment/markets/crypto.ts",
+      script: "NODE_ENV=production INVESTMENT_TRADE_MODE=validation tsx bots/investment/markets/crypto.ts",
       runner: {:shell, "/bin/zsh"},
       schedule: {:interval, 900_000}},
 
     # 10분 헬스체크
     %{name: :health_check,
       script: "bots/investment/scripts/health-check.ts",
-      runner: :node,
+      runner: :tsx,
       schedule: {:interval, 600_000}},
 
     # 10분 미실현 손익 업데이트
     %{name: :unrealized_pnl,
       script: "bots/investment/scripts/update-unrealized-pnl.ts",
-      runner: :node,
+      runner: :tsx,
       schedule: {:interval, 600_000}},
 
     # 6시간 기술지표 스크리닝 (Argos)
     %{name: :argos,
       script: "bots/investment/team/argos.ts",
-      runner: :node,
+      runner: :tsx,
       schedule: {:interval, 21_600_000}},
   ]
 
@@ -60,59 +60,59 @@ defmodule TeamJay.Teams.InvestmentSupervisor do
     # 국내장 (09:00~15:30 KST, 30분)
     %{name: :domestic,
       script: "bots/investment/markets/domestic.ts",
-      runner: :node},
+      runner: :tsx},
 
     # 국내장 검증
     %{name: :domestic_validation,
-      script: "NODE_ENV=production INVESTMENT_TRADE_MODE=validation node bots/investment/markets/domestic.ts",
+      script: "NODE_ENV=production INVESTMENT_TRADE_MODE=validation tsx bots/investment/markets/domestic.ts",
       runner: {:shell, "/bin/zsh"}},
 
     # 해외장 (22:30~05:00 KST, 30분)
     %{name: :overseas,
       script: "bots/investment/markets/overseas.ts",
-      runner: :node},
+      runner: :tsx},
 
     # 해외장 검증
     %{name: :overseas_validation,
-      script: "NODE_ENV=production INVESTMENT_TRADE_MODE=validation node bots/investment/markets/overseas.ts",
+      script: "NODE_ENV=production INVESTMENT_TRADE_MODE=validation tsx bots/investment/markets/overseas.ts",
       runner: {:shell, "/bin/zsh"}},
 
     # 국내 사전 스크리닝 (08:00 KST)
     %{name: :prescreen_domestic,
       script: "bots/investment/scripts/pre-market-screen.ts domestic",
-      runner: :node},
+      runner: :tsx},
 
     # 해외 사전 스크리닝 (21:00 KST)
     %{name: :prescreen_overseas,
       script: "bots/investment/scripts/pre-market-screen.ts overseas",
-      runner: :node},
+      runner: :tsx},
 
     # 리포터 (08:00 KST)
     %{name: :reporter,
       script: "bots/investment/team/reporter.ts --telegram",
-      runner: :node},
+      runner: :tsx},
 
     # 스카우트 (06:30, 18:30 KST)
     %{name: :scout,
       script: "bots/investment/team/scout.ts",
-      runner: :node},
+      runner: :tsx},
 
     # 시장 알림
     %{name: :market_alert_domestic_open,
       script: "bots/investment/scripts/market-alert.ts --market=domestic --event=open",
-      runner: :node},
+      runner: :tsx},
     %{name: :market_alert_domestic_close,
       script: "bots/investment/scripts/market-alert.ts --market=domestic --event=close",
-      runner: :node},
+      runner: :tsx},
     %{name: :market_alert_overseas_open,
       script: "bots/investment/scripts/market-alert.ts --market=overseas --event=open",
-      runner: :node},
+      runner: :tsx},
     %{name: :market_alert_overseas_close,
       script: "bots/investment/scripts/market-alert.ts --market=overseas --event=close",
-      runner: :node},
+      runner: :tsx},
     %{name: :market_alert_crypto_daily,
       script: "bots/investment/scripts/market-alert.ts --market=crypto --event=daily",
-      runner: :node},
+      runner: :tsx},
   ]
 
   # ────────────────────────────────────────────────────────────────
@@ -148,7 +148,7 @@ defmodule TeamJay.Teams.InvestmentSupervisor do
        name: agent.name,
        team: :investment,
        script: agent.script,
-       runner: agent[:runner] || :node,
+       runner: agent[:runner] || :tsx,
        schedule: agent.schedule}
     end)
   end
@@ -159,7 +159,7 @@ defmodule TeamJay.Teams.InvestmentSupervisor do
        name: agent.name,
        team: :investment,
        script: agent.script,
-       runner: agent[:runner] || :node,
+       runner: agent[:runner] || :tsx,
        schedule: nil}
     end)
   end
