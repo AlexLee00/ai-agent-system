@@ -89,9 +89,13 @@ defmodule Darwin.V2.Supervisor do
     end
   end
 
-  # Shadow Mode 선택적 기동
+  # Shadow Mode 선택적 기동 (env var DARWIN_SHADOW_ENABLED=true 또는 app config)
   defp maybe_shadow_children do
-    if Application.get_env(:darwin, :shadow_mode, false) do
+    shadow_env = System.get_env("DARWIN_SHADOW_ENABLED", "false") == "true"
+    shadow_cfg = Application.get_env(:darwin, :shadow_mode, false)
+
+    if shadow_env or shadow_cfg do
+      Logger.info("[다윈V2] Shadow Mode 활성 — V1 vs V2 병행 비교 기동")
       [Darwin.V2.ShadowRunner]
     else
       []
