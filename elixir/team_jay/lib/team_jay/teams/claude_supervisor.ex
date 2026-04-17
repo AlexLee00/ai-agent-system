@@ -6,8 +6,7 @@ defmodule TeamJay.Teams.ClaudeSupervisor do
     %{name: :dexter_daily, script: "bots/claude/src/dexter.ts --daily-report --telegram", runner: :tsx, schedule: nil},
     %{name: :dexter_quick, script: "bots/claude/src/dexter-quickcheck.ts --telegram --fix", runner: :tsx, schedule: {:interval, 60_000}},
     # launchd가 canonical owner인 상시/캘린더 서비스는 PortAgent 목록에서 제외한다.
-    # speed_test: speed-test.js 삭제 후 .ts 미생성 — 재작성 필요
-    # %{name: :speed_test, script: "bots/claude/scripts/speed-test.ts", runner: :tsx, schedule: {:interval, 86_400_000}}
+    %{name: :speed_test, script: "bots/claude/scripts/speed-test.ts", runner: :tsx, schedule: {:interval, 86_400_000}},
   ]
 
   def start_link(opts \\ []) do
