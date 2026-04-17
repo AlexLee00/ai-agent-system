@@ -113,6 +113,28 @@ export async function commandEventsStuckRoute(req: any, res: any) {
   }
 }
 
+export async function commandEventsFailedRoute(req: any, res: any) {
+  try {
+    const result = await eventLake.failedCommands({
+      minutes: toInt(req.query.minutes, 24 * 60),
+      limit: toInt(req.query.limit, 20),
+      targetTeam: req.query.target_team || '',
+      pipeline: req.query.pipeline || '',
+    });
+    const health = await collectHealthSnapshot().catch(() => null);
+    const runtimeAlignment = health?.resources
+      ? {
+          ownership_alignment: health.resources.ownership_alignment || null,
+          daemon_cutover: health.resources.daemon_cutover || null,
+        }
+      : null;
+
+    return res.json({ ok: true, ...result, runtime_alignment: runtimeAlignment });
+  } catch (error: any) {
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+}
+
 export async function commandEventsInboxRoute(req: any, res: any) {
   try {
     const targetTeam = String(req.query.target_team || '').trim();
