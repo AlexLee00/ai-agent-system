@@ -1125,6 +1125,48 @@ function validateReply(reply, commentText, config = getCommenterConfig()) {
   return { ok: true };
 }
 
+function assessInboundComment(comment) {
+  const text = normalizeText(comment?.comment_text || '');
+  const lower = text.toLowerCase();
+  if (!text) {
+    return { ok: false, reason: 'empty_comment' };
+  }
+
+  const hasUrl = /https?:\/\/|www\./i.test(text);
+  const promoPatterns = [
+    /협찬/i,
+    /노출\s*순위/i,
+    /유입이?\s*뚫/i,
+    /이 방법/i,
+    /제 블로그/i,
+    /들러주시면/i,
+    /방문하시면/i,
+    /도움이\s*되실/i,
+    /광고/i,
+    /홍보/i,
+  ];
+  if (promoPatterns.some((pattern) => pattern.test(text))) {
+    return { ok: false, reason: hasUrl ? 'promotional_comment_with_url' : 'promotional_comment' };
+  }
+
+  if (hasUrl && !/blog\.naver\.com/i.test(lower)) {
+    return { ok: false, reason: 'external_url_comment' };
+  }
+
+  const genericPatterns = [
+    /잘\s*읽고\s*갑니다/i,
+    /좋은\s*하루\s*되세요/i,
+    /항상\s*좋은\s*일만/i,
+    /행복한\s*시간/i,
+    /감사합니다[!~.\s]*$/i,
+  ];
+  if (text.length < 35 && genericPatterns.some((pattern) => pattern.test(text))) {
+    return { ok: false, reason: 'generic_greeting_comment' };
+  }
+
+  return { ok: true };
+}
+
 function normalizePostUrl(rawUrl) {
   const parsed = parseNaverBlogUrl(rawUrl);
   if (parsed?.ok && parsed.blogId && parsed.logNo) {
@@ -2705,6 +2747,15 @@ async function processComment(comment, options = {}) {
     return { ok: false, skipped: true, reason: 'already_replied' };
   }
 
+  const inboundAssessment = assessInboundComment(comment);
+  if (!inboundAssessment.ok) {
+    await updateCommentStatus(comment.id, 'skipped', {
+      errorMessage: inboundAssessment.reason,
+      meta: { phase: 'inbound_filter' },
+    });
+    return { ok: false, skipped: true, reason: inboundAssessment.reason };
+  }
+
   const postInfo = await getPostSummary(comment.post_url, options);
   let generated = await generateReply(postInfo.title || comment.post_title, postInfo.summary, comment.comment_text);
   let validation = validateReply(generated.reply, comment.comment_text);
@@ -3137,6 +3188,7 @@ module.exports = {
   generateReply,
   generateNeighborComment,
   validateReply,
+  assessInboundComment,
   validateNeighborComment,
   validateNeighborCommentWithCandidate,
   getPostSummary,
