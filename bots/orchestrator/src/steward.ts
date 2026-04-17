@@ -16,6 +16,7 @@ const openclawSessionManager = require('../lib/steward/openclaw-session-manager'
 const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 const env = require('../../../packages/core/lib/env');
 const memoryConsolidator = require('../../../packages/core/lib/agent-memory-consolidator');
+const localLLMClient = require('../../../packages/core/lib/local-llm-client');
 
 function parseArgs(argv = process.argv.slice(2)) {
   const modeArg = argv.find((arg) => arg.startsWith('--mode='));
@@ -66,7 +67,24 @@ async function runHourly() {
       fromBot: 'steward',
     });
   }
-  return { ...sync, sessionRepair };
+
+  // 로컬 LLM 헬스체크 (Step 2)
+  let llmHealth = null;
+  try {
+    llmHealth = await localLLMClient.checkLocalLLMHealth();
+    if (!llmHealth.available || llmHealth.error) {
+      await postAlarm({
+        message: `⚠️ [스튜어드] 로컬 LLM 이상: ${llmHealth.error || 'Ollama 응답 없음'} (${llmHealth.responseMs}ms)`,
+        team: 'general',
+        alertLevel: 2,
+        fromBot: 'steward',
+      });
+    }
+  } catch (err) {
+    console.warn(`[steward] LLM 헬스체크 실패 (무시): ${err?.message || err}`);
+  }
+
+  return { ...sync, sessionRepair, llmHealth };
 }
 
 async function runSession() {
