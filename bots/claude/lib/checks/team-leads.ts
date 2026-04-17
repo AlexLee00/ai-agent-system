@@ -16,6 +16,11 @@ const { execSync } = require('child_process');
 const fs           = require('fs');
 const path         = require('path');
 const { LAUNCHD_AVAILABLE } = require('../../../../packages/core/lib/env');
+const {
+  isElixirOwnedService,
+  isExpectedIdleService,
+  isRetiredService,
+} = require('../../../../packages/core/lib/service-ownership.js');
 
 // crashed 알람 쿨다운: 동일 서비스 1시간 이내 중복 발송 방지
 const CRASH_COOLDOWN_MS = 60 * 60 * 1000;
@@ -75,10 +80,31 @@ async function run() {
 
   // launchd 핵심 서비스 점검
   for (const svc of CRITICAL_SERVICES) {
+    if (isRetiredService(svc.id)) {
+      items.push({
+        label: svc.label,
+        status: 'ok',
+        detail: '퇴역 서비스 — 점검 제외',
+        _key: svc.key,
+      });
+      continue;
+    }
+
     const info = getLaunchdStatus(svc.id);
     const crashKey = `crash:${svc.key}`;
 
     if (info === null) {
+      if (isElixirOwnedService(svc.id)) {
+        items.push({
+          label: svc.label,
+          status: 'ok',
+          detail: isExpectedIdleService(svc.id)
+            ? 'Elixir ownership — 주기 실행형 정상 대기'
+            : 'Elixir ownership — launchd 미등록 정상',
+          _key: svc.key,
+        });
+        continue;
+      }
       items.push({
         label:  svc.label,
         status: 'warn',

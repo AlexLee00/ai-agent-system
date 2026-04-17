@@ -15,6 +15,7 @@ const { execSync } = require('child_process');
 const cfg    = require('../config');
 
 const CHECKSUM_FILE = path.join(cfg.BOTS.claude, '.checksums.json');
+const TS_RUNTIME_AUDIT_SCRIPT = path.join(cfg.ROOT, 'scripts', 'audit', 'ts-runtime-paths.js');
 const GENERATED_PATH_PATTERNS = [
   /^bots\/video\/temp\//,
   /^bots\/worker\/web\/\.next\//,
@@ -174,6 +175,42 @@ async function run() {
   }
   if (syntaxErrors === 0) {
     items.push({ label: '문법 검사', status: 'ok', detail: `JS ${jsTargets.length}개 이상 없음` });
+  }
+
+  // 4. TS 전환 런타임 경로 감사
+  try {
+    const raw = execSync(`"${process.execPath}" "${TS_RUNTIME_AUDIT_SCRIPT}"`, {
+      encoding: 'utf8',
+      timeout: 15000,
+      cwd: cfg.ROOT,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+    const audit = JSON.parse(raw || '{}');
+    const brokenCount = Number(audit?.brokenCount || 0);
+    if (brokenCount > 0) {
+      const preview = (audit.broken || [])
+        .slice(0, 3)
+        .map((entry) => `${entry.file} -> ${entry.specifier}`)
+        .join(' | ');
+      items.push({
+        label: 'TS 런타임 경로 감사',
+        status: 'error',
+        detail: `끊긴 참조 ${brokenCount}건${preview ? ` | ${preview}` : ''}`,
+      });
+    } else {
+      items.push({
+        label: 'TS 런타임 경로 감사',
+        status: 'ok',
+        detail: `경로 단절 0건 (scanned ${Number(audit?.scannedFiles || 0)} files)`,
+      });
+    }
+  } catch (error) {
+    const output = String(error?.stdout || error?.stderr || error?.message || '').trim();
+    items.push({
+      label: 'TS 런타임 경로 감사',
+      status: 'warn',
+      detail: output.slice(0, 220) || '감사 실행 실패',
+    });
   }
 
   const hasError = items.some(i => i.status === 'error');
