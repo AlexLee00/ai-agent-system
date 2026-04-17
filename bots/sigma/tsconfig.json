@@ -1,0 +1,21 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@sigma/*": ["./*"],
+      "@shared/*": ["shared/*"]
+    },
+    "outDir": "./dist"
+  },
+  "include": [
+    "ts/**/*.ts",
+    "shared/**/*.ts",
+    "legacy-skills/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "elixir"
+  ]
+}

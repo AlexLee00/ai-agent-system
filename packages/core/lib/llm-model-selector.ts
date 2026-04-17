@@ -472,6 +472,31 @@ function buildSelectorRegistry(): Record<string, any> {
     'video._default': () => resolveFromTeamDefault('video._default'),
     'video.step-proposal': () => resolveFromTeamDefault('video.step-proposal'),
 
+    'sigma.agent_policy': ({ agentName }: SelectorOptions = {}) => {
+      const SIGMA_ROUTES: Record<string, { route: string; chain: LLMChainEntry[] }> = {
+        commander:                  { route: 'anthropic_sonnet', chain: [{ provider: 'anthropic', model: 'claude-sonnet-4-6' }, { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }, { provider: 'local', model: 'deepseek-r1-32b' }] },
+        'pod.risk':                 { route: 'anthropic_sonnet', chain: [{ provider: 'anthropic', model: 'claude-sonnet-4-6' }, { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }, { provider: 'local', model: 'deepseek-r1-32b' }] },
+        'pod.growth':               { route: 'anthropic_haiku',  chain: [{ provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }, { provider: 'local', model: 'qwen2.5-7b' }] },
+        'pod.trend':                { route: 'anthropic_haiku',  chain: [{ provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }, { provider: 'local', model: 'qwen2.5-7b' }] },
+        'skill.data_quality':       { route: 'ollama_8b',        chain: [{ provider: 'local', model: 'qwen2.5-7b' }, { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }] },
+        'skill.causal':             { route: 'anthropic_sonnet', chain: [{ provider: 'anthropic', model: 'claude-sonnet-4-6' }, { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }] },
+        'skill.experiment_design':  { route: 'anthropic_sonnet', chain: [{ provider: 'anthropic', model: 'claude-sonnet-4-6' }, { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }] },
+        'skill.feature_planner':    { route: 'anthropic_haiku',  chain: [{ provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }, { provider: 'local', model: 'qwen2.5-7b' }] },
+        'skill.observability':      { route: 'anthropic_haiku',  chain: [{ provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }, { provider: 'local', model: 'qwen2.5-7b' }] },
+        'principle.self_critique':  { route: 'anthropic_opus',   chain: [{ provider: 'anthropic', model: 'claude-opus-4-7' }, { provider: 'anthropic', model: 'claude-sonnet-4-6' }] },
+        reflexion:                  { route: 'anthropic_sonnet', chain: [{ provider: 'anthropic', model: 'claude-sonnet-4-6' }, { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }] },
+        espl:                       { route: 'anthropic_sonnet', chain: [{ provider: 'anthropic', model: 'claude-sonnet-4-6' }, { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }] },
+      };
+      const key = String(agentName || 'commander');
+      const entry = SIGMA_ROUTES[key] || { route: 'anthropic_haiku', chain: [{ provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }, { provider: 'local', model: 'qwen2.5-7b' }] };
+      return {
+        route: entry.route,
+        primary: entry.chain[0] || null,
+        fallbacks: entry.chain.slice(1),
+        fallbackChain: entry.chain,
+      };
+    },
+
     'investment.agent_policy': ({ agentName, agentModel = null, openaiPerfModel = 'gpt-5.4', policyOverride }: SelectorOptions = {}) => {
       const defaultRoutes: Record<string, string> = {
         luna: 'openai_perf',
