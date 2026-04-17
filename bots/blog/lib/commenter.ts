@@ -1207,14 +1207,30 @@ function assessInboundComment(comment) {
     return { ok: false, reason: 'external_url_comment' };
   }
 
-  const genericPatterns = [
+  const courtesyPatterns = [
+    /좋은\s*포스팅/i,
     /잘\s*읽고\s*갑니다/i,
     /좋은\s*하루\s*되세요/i,
     /항상\s*좋은\s*일만/i,
     /행복한\s*시간/i,
-    /감사합니다[!~.\s]*$/i,
+    /감사합니다/i,
+    /공감하고\s*갑니다/i,
+    /응원하고\s*갑니다/i,
+    /잘\s*보고\s*갑니다/i,
   ];
-  if (text.length < 35 && genericPatterns.some((pattern) => pattern.test(text))) {
+
+  const hasQuestionIntent = /[?？]|궁금|어떻게|왜|어디|무엇|뭔가|알려|추천/i.test(text);
+  const hasSpecificDiscussion = /차이|비교|방법|설명|후기|리뷰|추천|근거|전략|실행|운영|구조|포인트/i.test(text);
+  const courtesyHits = courtesyPatterns.filter((pattern) => pattern.test(text)).length;
+
+  if (
+    !hasQuestionIntent
+    && !hasSpecificDiscussion
+    && (
+      (text.length < 35 && courtesyHits >= 1)
+      || courtesyHits >= 2
+    )
+  ) {
     return { ok: false, reason: 'generic_greeting_comment' };
   }
 
