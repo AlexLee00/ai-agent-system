@@ -177,6 +177,8 @@ defmodule TeamJay.Jay.TeamConnector do
     """, "claude")
 
     unhealthy = Enum.filter(health || [], &(&1["exit_code"] != 0))
+    core_health = current_core_health()
+    unhealthy = suppress_stale_core_aliases(unhealthy, core_health)
 
     %{
       metric_type: :system_health,
@@ -258,6 +260,35 @@ defmodule TeamJay.Jay.TeamConnector do
     case TeamJay.HubClient.pg_query(sql, schema) do
       {:ok, %{"rows" => rows}} -> rows
       _ -> []
+    end
+  end
+
+  defp current_core_health do
+    case TeamJay.HubClient.health() do
+      {:ok, %{"resources" => resources}} when is_map(resources) -> resources
+      _ -> %{}
+    end
+  end
+
+  defp suppress_stale_core_aliases(unhealthy_services, resources) when is_list(unhealthy_services) do
+    api_ok? = resource_ok?(resources, "core_services")
+    db_ok? = resource_ok?(resources, "postgresql") and resource_ok?(resources, "pg_pool")
+
+    Enum.reject(unhealthy_services, fn row ->
+      service = row["service"] |> to_string() |> String.downcase()
+
+      cond do
+        api_ok? and service in ["api", "health-dashboard", "dashboard", "hub"] -> true
+        db_ok? and service in ["db", "database", "postgres", "postgresql", "pg_pool"] -> true
+        true -> false
+      end
+    end)
+  end
+
+  defp resource_ok?(resources, key) when is_map(resources) do
+    case Map.get(resources, key) do
+      %{"status" => "ok"} -> true
+      _ -> false
     end
   end
 end
