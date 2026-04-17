@@ -364,11 +364,42 @@ launchctl unload ~/Library/LaunchAgents/ai.investment.overseas.plist
 ### 아카이브
 - `CODEX_SECURITY_AUDIT_02.md` → docs/codex/archive/ (SEC-004/005 전부 완료)
 
-### OPS 필수: DB 마이그레이션 적용
+### OPS 전환 체크리스트 (Mac Studio에서 수동 실행)
+
+**Step 1 — DB 마이그레이션 (SEC-004 컬럼)**
 ```bash
-# OPS(Mac Studio)에서 실행 필요
-psql -U postgres -d jay -f bots/investment/migrations/20260417_sec004_signal_verdict.sql
-# 또는 initSchema가 자동 적용 (서비스 재시작 시)
+# initSchema가 서비스 재시작 시 자동 적용 (or 직접):
+psql -U postgres -d jay -f /Users/alexlee/projects/ai-agent-system/bots/investment/migrations/20260417_sec004_signal_verdict.sql
+```
+
+**Step 2 — git pull (코드 반영)**
+```bash
+cd /Users/alexlee/projects/ai-agent-system && git pull
+# deploy.sh 5분 cron이 자동으로 처리 — 수동 불필요
+```
+
+**Step 3 — 루나팀 launchd 완전 제거 (마지막 3개)**
+
+전제조건: Elixir PortAgent에서 crypto/domestic/overseas 24시간 이상 안정 운영 확인 후
+```bash
+# 1. Elixir 상태 확인
+cd /Users/alexlee/projects/ai-agent-system/elixir/team_jay
+mix run -e 'for name <- [:luna_crypto, :luna_domestic, :luna_overseas], do: IO.inspect({name, TeamJay.Agents.PortAgent.get_status(name).status})'
+
+# 2. launchd 제거 (마지막 3개)
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/ai.investment.crypto.plist
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/ai.investment.domestic.plist
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/ai.investment.overseas.plist
+mv ~/Library/LaunchAgents/ai.investment.crypto.plist ~/Library/LaunchAgents/ai.investment.crypto.plist.disabled
+mv ~/Library/LaunchAgents/ai.investment.domestic.plist ~/Library/LaunchAgents/ai.investment.domestic.plist.disabled
+mv ~/Library/LaunchAgents/ai.investment.overseas.plist ~/Library/LaunchAgents/ai.investment.overseas.plist.disabled
+
+# 3. 24시간 모니터링
+cd /Users/alexlee/projects/ai-agent-system/bots/investment
+npm run parallel-snapshot
+
+# 완료 후 커밋:
+# "ops(elixir): 루나팀 launchd 완전 제거 — Elixir 단독 운영"
 ```
 
 ---
@@ -379,9 +410,14 @@ psql -U postgres -d jay -f bots/investment/migrations/20260417_sec004_signal_ver
 | CODEX_CLAUDE_REMODEL | 미착수 (대형) |
 | CODEX_DARWIN_REMODEL | 미착수 (대형) |
 | CODEX_ELIXIR_MONITORING | 운영 runbook (상시) |
-| CODEX_LUNA_REMODEL | OPS 후속 작업만 잔존 (launchd 제거 리허설 — OPS에서 수동) |
-| CODEX_PORTAGENT_OWNERSHIP_INVENTORY | 참조 문서 |
 | CODEX_SECURITY_AUDIT_01 | filter-repo + 히스토리 정리 — 마스터 재승인 후 |
 
-> 루나팀 코드 구현: 완전 완료 ✅ (OPS 전환 작업만 잔존)
+**아카이브 완료** (docs/codex/archive/):
+- CODEX_LUNA_REMODEL ✅ (Phase 0~5 코드 완료, OPS 전환 절차는 위 HANDOFF 참조)
+- CODEX_SECURITY_AUDIT_02 ✅ (SEC-004/005 완료)
+- CODEX_PORTAGENT_OWNERSHIP_INVENTORY ✅ (참조 문서)
+
+> **루나팀 코드 구현: 완전 완료** ✅
+> **SEC-004/005: 완전 밀폐** ✅
+> **OPS 전환**: git push 완료 (1954bc76), OPS 수동 Step 3 대기
 > 이전 HANDOFF: 2026-04-17 CODEX_BLOG_AUTONOMOUS_OPS Phase A~D
