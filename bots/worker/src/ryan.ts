@@ -29,22 +29,32 @@ const STATUS_LABEL = {
 /**
  * 마일스톤 완료율 기반 프로젝트 진행률 갱신
  */
-async function recalcProgress(projectId) {
+async function recalcProgress(projectId, companyId) {
   const [total, done] = await Promise.all([
     pgPool.get(SCHEMA,
-      `SELECT COUNT(*) AS cnt FROM worker.milestones WHERE project_id=$1 AND deleted_at IS NULL`,
-      [projectId]),
+      `SELECT COUNT(*) AS cnt
+       FROM worker.milestones m
+       JOIN worker.projects p ON p.id = m.project_id
+       WHERE m.project_id=$1 AND m.deleted_at IS NULL
+         AND p.company_id=$2`,
+      [projectId, companyId]),
     pgPool.get(SCHEMA,
-      `SELECT COUNT(*) AS cnt FROM worker.milestones
-       WHERE project_id=$1 AND deleted_at IS NULL AND status='completed'`,
-      [projectId]),
+      `SELECT COUNT(*) AS cnt
+       FROM worker.milestones m
+       JOIN worker.projects p ON p.id = m.project_id
+       WHERE m.project_id=$1 AND m.deleted_at IS NULL
+         AND m.status='completed'
+         AND p.company_id=$2`,
+      [projectId, companyId]),
   ]);
   const totalCnt = Number(total?.cnt ?? 0);
   const doneCnt  = Number(done?.cnt  ?? 0);
   const progress = totalCnt > 0 ? Math.round((doneCnt / totalCnt) * 100) : 0;
   await pgPool.run(SCHEMA,
-    `UPDATE worker.projects SET progress=$1, updated_at=NOW() WHERE id=$2`,
-    [progress, projectId]);
+    `UPDATE worker.projects
+     SET progress=$1, updated_at=NOW()
+     WHERE id=$2 AND company_id=$3`,
+    [progress, projectId, companyId]);
   return progress;
 }
 
@@ -78,11 +88,17 @@ const CMD_HANDLERS = {
     const id = parseInt(args[0]);
     if (!id) return '사용법: /milestone_done {마일스톤ID}';
     const ms = await pgPool.get(SCHEMA,
-      `UPDATE worker.milestones SET status='completed', completed_at=NOW()
-       WHERE id=$1 AND deleted_at IS NULL RETURNING project_id, title`,
-      [id]);
-    if (!ms) return `❌ 마일스톤 ID ${id} 없음`;
-    const progress = await recalcProgress(ms.project_id);
+      `UPDATE worker.milestones AS m
+       SET status='completed', completed_at=NOW()
+       FROM worker.projects AS p
+       WHERE m.id=$1
+         AND m.deleted_at IS NULL
+         AND m.project_id = p.id
+         AND p.company_id = $2
+       RETURNING m.project_id, m.title`,
+      [id, companyId]);
+    if (!ms) return `❌ 마일스톤 ID ${id} 없음 (또는 접근 권한 없음)`;
+    const progress = await recalcProgress(ms.project_id, companyId);
     return `✅ 마일스톤 완료: ${ms.title}\n프로젝트 진행률: ${progress}%`;
   },
 };
