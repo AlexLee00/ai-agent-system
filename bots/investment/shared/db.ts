@@ -940,16 +940,21 @@ export async function upsertStrategy(s) {
 }
 
 export async function getActiveStrategies(market = 'all', limit = 5) {
-  const marketFilter = market === 'all' ? '' : `AND (market = '${market}' OR market = 'all')`;
-  return query(`
-    SELECT * FROM strategy_pool
-    WHERE applicable_now = true
-      AND quality_score >= 0.6
-      AND collected_at > now() - INTERVAL '7 days'
-      ${marketFilter}
-    ORDER BY quality_score DESC
-    LIMIT ${limit}
-  `);
+  const normalizedMarket = ['all', 'crypto', 'stocks'].includes(String(market)) ? String(market) : 'all';
+  const normalizedLimit = Math.max(1, Math.min(50, Number.parseInt(String(limit), 10) || 5));
+
+  return query(
+    `
+      SELECT * FROM strategy_pool
+      WHERE applicable_now = true
+        AND quality_score >= 0.6
+        AND collected_at > now() - INTERVAL '7 days'
+        AND ($1 = 'all' OR market = $1 OR market = 'all')
+      ORDER BY quality_score DESC
+      LIMIT $2
+    `,
+    [normalizedMarket, normalizedLimit],
+  );
 }
 
 export async function recordStrategyResult(strategyName, won) {

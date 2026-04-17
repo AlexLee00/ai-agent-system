@@ -1,7 +1,6 @@
 // @ts-nocheck
 import * as db from '../shared/db.ts';
-import { executeSignal as executeBinanceSignal } from '../team/hephaestos.ts';
-import { executeSignal as executeKisSignal, executeOverseasSignal } from '../team/hanul.ts';
+import { executeSignal as executeApprovedSignal } from '../shared/signal.ts';
 import { loadLatestNodePayload } from './helpers.ts';
 
 const NODE_ID = 'L31';
@@ -33,16 +32,22 @@ async function run({ sessionId, market, symbol }) {
     tpslSource: saved.risk?.tpslSource ?? null,
   };
 
-  let result;
-  if (market === 'binance') {
-    result = await executeBinanceSignal(executionInput);
-  } else if (market === 'kis') {
-    result = await executeKisSignal(executionInput);
-  } else if (market === 'kis_overseas') {
-    result = await executeOverseasSignal(executionInput);
-  } else {
+  const exchange = market === 'binance'
+    ? 'binance'
+    : market === 'kis'
+      ? 'kis'
+      : market === 'kis_overseas'
+        ? 'kis_overseas'
+        : null;
+
+  if (!exchange) {
     throw new Error(`지원하지 않는 market: ${market}`);
   }
+
+  const result = await executeApprovedSignal({
+    ...executionInput,
+    exchange,
+  });
 
   const updatedSignal = await db.getSignalById(saved.signalId).catch(() => null);
   const trade = await db.getLatestTradeBySignalId(saved.signalId).catch(() => null);

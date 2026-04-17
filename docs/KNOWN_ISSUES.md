@@ -56,9 +56,9 @@
 | SEC-010 | 🟢 LOW-MED | `bots/investment/shared/secrets.ts:235` | `hostname().includes('MacStudio')` 기반 live 차단. hostname은 이론상 변경 가능 but OPS 접근 자체가 필요하므로 실질 리스크 매우 낮음 | 2026-04-17 | ✅ 패치 완료 (exact host allowlist + `INVESTMENT_LIVE_HOSTS` 지원) |
 | SEC-011 | 🟢 LOW | `bots/investment/shared/secrets.ts:642` | `hasKisApiKey`가 `length > 5`만 검증. 실제 KIS 키는 36자 이상이므로 dummy/test 값이 통과할 수 있음 | 2026-04-17 | ✅ 패치 완료 (`length >= 16` 상향) |
 | SEC-012 | 🟡 MEDIUM | `bots/orchestrator/src/router.ts:2096` (case 'upbit_withdraw') | Telegram `chat_id` 화이트리스트만으로 출금 가능. 세션 탈취 시 2차 인증 없이 자금 유출. **SEC-008의 3중 가드가 이 경로도 커버** → 실질적으로 같은 해결책 | 2026-04-17 | ✅ 패치 완료 (confirmation 모드 + 명시 슬래시 명령 요구) |
-| SEC-013 | 🟢 LOW | `bots/investment/shared/db.ts:943` | `getActiveStrategies`의 `marketFilter`가 템플릿 리터럴로 SQL에 `${market}`, `${limit}` 직접 삽입. 호출자는 `'crypto'/'stocks'/'all'` 내부 통제값만 전달하므로 실질 SQL injection 리스크 낮으나 defensive coding 원칙 위반 | 2026-04-17 | ⬜ 10차 세션 발견 (실질 리스크 낮음, `$1/$2` 파라미터화 권고) |
-| SEC-014 | 🟡 MEDIUM | `bots/investment/nodes/l31-order-execute.ts:3-4` | L31이 `shared/signal.ts`의 `executeSignal`(6원칙 안전장치 포함)을 **우회**하고 `hephaestos`/`hanul`을 직접 호출. 원칙 5(연속 손실 쿨다운) + 원칙 6(최대 드로우다운) 가드가 프로덕션 파이프라인에서 비활성 상태 | 2026-04-17 | ⬜ 10차 세션 발견 (코덱스 프롬프트 필요 — L31이 signal.ts 경유하도록 또는 hephaestos/hanul 진입부에 checkSafetyGates 추가) |
-| SEC-015 | 🟡 MEDIUM | `bots/investment/team/hanul.ts:616, 768` (executeSignal, executeOverseasSignal) | SEC-004 가드(nemesis_verdict 재검증 + stale 체크)가 hephaestos에만 적용되고 hanul(KIS 국내/해외)에는 **누락됨**. 스크립트 직접 호출로 KIS 매매 네메시스 우회 가능. `checkKisRisk`는 주문금액/예수금/심볼만 체크 | 2026-04-17 | ⬜ 11차 세션 발견 (SEC-004와 동일한 가드 로직을 hanul에 이식 필요) |
+| SEC-013 | 🟢 LOW | `bots/investment/shared/db.ts:943` | `getActiveStrategies`의 `market/limit`를 allowlist + `$1/$2` 파라미터로 정규화해 템플릿 기반 SQL 조합을 제거 | 2026-04-17 | ✅ 11차 세션 해결 (`4f092f9` 이후 `getActiveStrategies()` 파라미터화 완료) |
+| SEC-014 | 🟡 MEDIUM | `bots/investment/nodes/l31-order-execute.ts:3-4` | L31 실행 레일을 `shared/signal.ts` 단일 진입점으로 통합해 `checkSafetyGates()`와 공용 거래소 라우팅을 우회하지 않도록 수정 | 2026-04-17 | ✅ 11차 세션 해결 (`L31 -> shared executeSignal` 전환 완료) |
+| SEC-015 | 🟡 MEDIUM | `bots/investment/team/hanul.ts:616, 768` (executeSignal, executeOverseasSignal) | hanul(KIS 국내/해외) 진입부에도 `nemesis_verdict` 재검증 + `approved_at` stale 차단을 이식해 hephaestos와 동일한 승인 우회 방어선을 적용 | 2026-04-17 | ✅ 11차 세션 해결 (`SEC-015` domestic/overseas 한울 entry guard 추가) |
 
 ---
 
