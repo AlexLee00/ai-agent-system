@@ -154,3 +154,244 @@ Skills (packages/core/lib/skills/darwin)  532줄 /  6 파일
 - Jido.Agent / Jido.AI.Agent
 - Pods (에이전트 그룹) / Signals (CloudEvents) / Actions / Skills / Sensors
 - jido_ai companion package
+
+---
+
+## 🎯 마스터 6가지 결정 (불변)
+
+1. **이름 유지**: "다윈팀" + 에디슨 = 구현자 (R&D의 D)
+2. **개념**: 자율적으로 연구 과제 수집/분석/평가 → 실제 구현까지 완전 자율
+3. **커뮤니티 범위**: C(컨퍼런스 proceedings) + D(Twitter/X/Reddit/HN 커뮤니티) 확장
+4. **MCP Server**: 다윈 전용 → 나중에 전체 확장
+5. **LLM 구조**: 시그마와 **동일한 독립 Selector** (`Darwin.V2.LLM.Selector`, 추후 공통 승격)
+6. **구현 방식**: 대형 프롬프트 한 번에 + Phase 단위 순차 검증
+
+---
+
+## 📋 CODEX_DARWIN_REMODEL.md 프롬프트 (1,334줄, gitignore 보호)
+
+### 전체 구조
+```
+배경 + 목표 + 최신 연구 반영 + 불변 원칙 9개 + 타깃 아키텍처
+  ↓
+자율성 10요소 구성 + 핵심 설계 2개 (Planner + TreeSearch)
+  ↓
+Phase 0~9 (총 14일 예상)
+  ├─ Phase 0: 사전 준비 + 의존성 매핑 (0.5일)
+  ├─ Phase 1: 독립 폴더 구조 확립 (1일)
+  ├─ Phase 2: Elixir 코드 이전 (1일)
+  ├─ Phase 3: Jido.AI.Agent 전환 (2일)
+  ├─ Phase 4: 독립 LLM 인프라 (1일)
+  ├─ Phase 5: 자기 개선 루프 Reflexion+SelfRAG+ESPL+Principle (3일)
+  ├─ Phase 6: Memory L2 pgvector (1일)
+  ├─ Phase 7: Shadow Mode (1.5일)
+  ├─ Phase 8: 6 Skill + MCP + 4 Sensor (2일)
+  └─ Phase 9: 200+ 테스트 + 9 표준 md + HANDOFF (1일)
+  ↓
+Exit Criteria + 에스컬레이션 조건 + 참조 파일
+```
+
+### Kill Switch 초기 구성 (Shadow 안전 모드)
+```bash
+DARWIN_V2_ENABLED=true                          # Shadow 관찰 ON
+DARWIN_TIER2_AUTO_APPLY=false                   # main 자동 적용 차단
+DARWIN_MCP_SERVER_ENABLED=false                 # 외부 노출 차단
+DARWIN_GEPA_ENABLED=false                       # ESPL 차단
+DARWIN_SELF_RAG_ENABLED=false                   # SelfRAG 차단
+DARWIN_PRINCIPLE_SEMANTIC_CHECK_ENABLED=false   # 의미 critique 차단
+DARWIN_HTTP_PORT=4020
+DARWIN_LLM_DAILY_BUDGET_USD=10.00
+```
+
+---
+
+## 🚀 코덱스 자동 실행 결과 (별도 세션)
+
+### 완료 상태 (Phase 0~8 대부분 완료)
+
+**`bots/darwin/elixir/` 독립 프로젝트 생성됨**:
+```
+bots/darwin/elixir/
+├── mix.exs                      ← Jido 1.2 + jido_ai 0.4 + postgrex + bandit
+├── config/config.exs            
+├── lib/darwin/v2/               ← 55개 모듈 (시그마 40개 초과)
+│   ├── application.ex / supervisor.ex / commander.ex
+│   ├── lead.ex / edison.ex / scanner.ex / evaluator.ex / verifier.ex / applier.ex / planner.ex
+│   ├── feedback_loop.ex / research_monitor.ex / keyword_evolver.ex / community_scanner.ex
+│   ├── reflexion.ex / self_rag.ex / espl.ex / principle/loader.ex    ← 자기개선 4종
+│   ├── memory/l1_session.ex / memory/l2_pgvector.ex / memory.ex
+│   ├── llm/selector.ex / recommender.ex / routing_log.ex / cost_tracker.ex
+│   ├── shadow_runner.ex / rollback_scheduler.ex
+│   ├── skill/ (9개 — experiment_design / paper_synthesis / plan_implementation /
+│   │   tree_search / resource_analyst / vlm_feedback / learn_from_cycle /
+│   │   evaluate_paper / replication)
+│   ├── mcp/client.ex / auth.ex / server.ex
+│   ├── sensor/arxiv_rss.ex / hackernews.ex / reddit.ex / openreview.ex
+│   ├── cycle/discover / plan / verify / evaluate / apply / learn / implement (7개 신설)
+│   ├── kill_switch.ex / autonomy_level.ex / config.ex / signal.ex / signal_receiver.ex
+│   ├── topics.ex / telemetry.ex / http/router.ex
+│   └── (기타)
+├── test/darwin/v2/               ← 7개 test files (40 tests)
+├── migrations/                    ← 4 migration + 2 SQL
+└── docs/ (CLAUDE.md / PLAN.md / TRACKER.md + codex/ + standards/)
+```
+
+### 메티 검증 결과 (이번 세션)
+
+**컴파일**: ✅ 성공 (경로 버그 1건 수정 후)
+- team_jay/config/config.exs line 29: `../../../../` → `../../..` 수정
+- 소프트 컴파일 통과 (warnings 2건 — unreachable pattern, 실제 로직 오류 아님)
+
+**테스트**: 🟡 40 tests / 34 통과 / 6 실패
+- 실패 원인: reflexion_test.exs 등에서 필드 불일치 (`entry.stage` 등)
+- 수정 난이도: 낮음 (필드명 조정 수준)
+
+**Warning 2건 (--warnings-as-errors 재활성화 시 수정 필요)**:
+- `tree_search.ex:292` `check_principle/2` 에서 `{:error, _}` 패턴 도달 불가
+- `resource_analyst.ex:227` `check_principle/1` 동일
+- 원인: `Principle.Loader.check/2` 반환 타입이 `{:approved, _} | {:blocked, _}`만 있음
+
+---
+
+## ⚠️ 미완 사항 (다음 세션 우선 처리)
+
+### 🔴 중요 (즉시)
+1. **`elixir/team_jay/lib/team_jay/darwin/` 11 파일 제거** — 이중 상태
+   - `team_jay/lib/team_jay/teams/darwin_supervisor.ex` 도 제거
+   - `team_jay/lib/team_jay/jay/team_connector.ex` 는 `TeamJay.Darwin` 참조 수정 필요 (bridge)
+2. **test 6 실패 수정** — 필드 불일치 조정
+3. **warning 2건 수정** → `--warnings-as-errors` 복구
+
+### 🟡 중간
+4. **테스트 40 → 200 확충** (Phase 9 목표)
+5. **Shadow launchd 설치** (`ai.darwin.daily.shadow.plist` 작성 + load)
+6. **Kill Switch .zprofile 추가** (7개 env)
+7. **9 표준 md 최종 완성**
+
+### 🟢 연기 가능
+8. **MCP 서버 설치** (uvx로 arxiv-mcp-server 등 설치)
+9. **Python 의존성 확인** (pgvector extension 활성화 여부)
+10. **Day 1 Shadow 실행 준비**
+
+---
+
+## 🔜 다음 세션 진입점
+
+### 우선순위 1: 이중 상태 해소 + 테스트 수정
+
+```bash
+cd /Users/alexlee/projects/ai-agent-system
+
+# 1. team_jay/darwin 제거
+git rm elixir/team_jay/lib/team_jay/darwin/*.ex
+git rm elixir/team_jay/lib/team_jay/teams/darwin_supervisor.ex
+
+# 2. team_connector 참조 수정 (TeamJay.Darwin → Darwin.V2)
+grep -n 'TeamJay.Darwin' elixir/team_jay/lib/team_jay/jay/team_connector.ex
+# 수동 수정 필요
+
+# 3. application.ex에서 DarwinSupervisor 참조 제거
+
+# 4. 재컴파일
+cd bots/darwin/elixir && mix compile
+
+# 5. 테스트 재실행
+mix test
+# 6 실패 → 0 실패 목표
+
+# 6. warning 수정 (tree_search.ex + resource_analyst.ex pattern match)
+```
+
+### 우선순위 2: Shadow 가동 준비
+
+```bash
+# Kill Switch 추가 (.zprofile)
+cat >> ~/.zprofile <<'EOF'
+# Darwin V2 Kill Switches
+export DARWIN_V2_ENABLED=true
+export DARWIN_TIER2_AUTO_APPLY=false
+export DARWIN_MCP_SERVER_ENABLED=false
+export DARWIN_GEPA_ENABLED=false
+export DARWIN_SELF_RAG_ENABLED=false
+export DARWIN_PRINCIPLE_SEMANTIC_CHECK_ENABLED=false
+export DARWIN_HTTP_PORT=4020
+export DARWIN_LLM_DAILY_BUDGET_USD=10.00
+EOF
+
+# launchd plist 생성 + load (CODEX_DARWIN_REMODEL.md Phase 7 참조)
+```
+
+---
+
+## 📊 40차 세션 최종 대시보드
+
+```
+────────────────────────────────────────────────────────────────────
+이번 세션 (40차) 성과
+────────────────────────────────────────────────────────────────────
+메티 조사                            다윈 5,178줄 / 32 파일 전수 분석
+메티 웹 서치                         4건 (Jido / 자율연구 / MCP / 커뮤니티)
+CODEX_DARWIN_REMODEL.md             1,334줄 대형 프롬프트 (gitignore)
+코덱스 자동 실행                     Phase 0~8 대부분 완료 (별도 세션)
+메티 컴파일 검증                     ✅ 성공 (경로 버그 1건 수정)
+메티 테스트 실행                     40 tests / 34 통과 / 6 실패
+────────────────────────────────────────────────────────────────────
+bots/darwin/elixir/ 상태
+────────────────────────────────────────────────────────────────────
+모듈 수                              55개+ (시그마 40 초과)
+자기개선 4종                         reflexion / self_rag / espl / principle
+LLM 4종                              selector / recommender / routing_log / cost_tracker
+Memory                               L1 + L2 (pgvector)
+Skills                               9개 (목표 6개 초과)
+MCP                                  client / auth / server
+Sensors                              4개 (arxiv / HN / reddit / openreview)
+Cycle 모듈                           7개 (discover/plan/verify/evaluate/apply/learn/implement)
+테스트                               40 / 200 목표 (20% 완료)
+Migrations                           4 + 2 SQL
+────────────────────────────────────────────────────────────────────
+미완 사항 (다음 세션)
+────────────────────────────────────────────────────────────────────
+team_jay/darwin 11 파일              ❌ 아직 존재 (이중 상태)
+team_jay/teams/darwin_supervisor.ex  ❌ 아직 존재
+team_connector.ex TeamJay.Darwin 참조 ❌ 수정 필요
+테스트 6 실패                        ❌ 필드 불일치
+warning 2건                          ❌ pattern match 도달불가
+Shadow launchd                       ❌ 미설치
+Kill Switch .zprofile               ❌ 미추가
+MCP 서버 Python 설치                 ❌ uvx 미실행
+9 표준 md                            🟡 초안만
+테스트 40 → 200                      🟡 진행 중 (20%)
+────────────────────────────────────────────────────────────────────
+Team Jay 9개팀 진행 상태
+────────────────────────────────────────────────────────────────────
+시그마팀     ✅ Shadow 관찰 중 (Day 3, shadow_run_id=5, runs=4)
+다윈팀       🟡 리모델링 85% (bots/darwin/elixir 완료, 이중 상태 해소 대기)
+루나팀       ✅ Part A~G 완료, 블로팀 크로스 파이프라인 E2E 검증
+블로팀       ✅ 루나 하이브리드 주제 + 투자 가드레일 완비
+스카팀       ✅ 30초 launchd → Elixir Supervisor 전환
+클로드팀     ✅ Elixir Phase 3 Week 3 main 머지
+워커팀       🟡 플랫폼 마이그레이션 중
+에디팀       🟢 Phase 3 대기 (CapCut급 UI + RED/BLUE 검증)
+감정팀       🟢 대기
+```
+
+---
+
+## 🫡 다음 세션 마스터 첫 명령 대응
+
+| 질문 | 메티 대응 |
+|------|---------|
+| "다윈 이중 상태 정리해줘" | team_jay/darwin 11파일 + supervisor 제거 + team_connector 참조 수정 |
+| "다윈 테스트 수정해줘" | 6 실패 → reflexion/기타 필드 불일치 조정 |
+| "다윈 Shadow 가동 시작" | Kill Switch .zprofile + launchd plist 설치 + Day 1 실행 |
+| "다윈 Day 1 시작" | DARWIN_V2_ENABLED=true + ai.darwin.daily.shadow 로드 |
+| "시그마 Day 7 판정" | shadow_runs + LLM 비용 + Tier 3 위반 종합 리포트 |
+| "루나-블로 실동작 봤어?" | blog.content_requests + 발행 포스트 확인 |
+
+---
+
+## 🏷️ 40차 세션 요약 한 줄
+
+**40차 세션 — 다윈팀 완전 자율 R&D 에이전트 리모델링 대장정: 메티가 5,178줄/32파일 전수 분석 + 웹 서치 4건(Jido/AI Scientist-v2/AI-Researcher/Kosmos/MCP/HN Algolia)으로 CODEX_DARWIN_REMODEL.md 1,334줄 대형 프롬프트(gitignore) 작성, Phase 0~9 14일 로드맵 + Kill Switch 7개 + Shadow 기준 완비. 코덱스가 자동 실행으로 Phase 0~8 대부분 완료(bots/darwin/elixir/ 55+ 모듈 생성 — commander/lead/edison/scanner/evaluator/verifier/applier/planner + reflexion/self_rag/espl/principle + memory L1/L2 + LLM 4종 + Shadow + Skill 9개 + MCP 3 + Sensor 4 + Cycle 7 + migrations 4+2SQL). 메티 실증 검증: 경로 버그 1건 수정 후 컴파일 ✅, 40 tests/34 통과, warning 2건(pattern match). 미완: team_jay/darwin 이중 상태 해소, 테스트 6 실패, Kill Switch .zprofile, Shadow launchd, 테스트 40→200 확충. 다음 세션 최우선 = 이중 상태 해소 + 테스트 수정 + Shadow 가동.**
+
+— 메티 (Metis, 2026-04-18 오후, 40차 세션 완전 종료)
