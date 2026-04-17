@@ -20,11 +20,13 @@ defmodule TeamJay.Jay.N8nBridge do
   alias TeamJay.HubClient
 
   # JayBus 구독 토픽 → n8n 웹훅 경로 매핑
+  # Hub가 n8n.webhook_entity DB에서 {workflowId}/webhook/{path} 자동 리졸브
   @topic_webhook_map %{
-    "blog.post.published"     => "blog-dynamic-posting",
-    "system_error"            => "critical-alert-escalation",
-    "port_agent_failed"       => "critical-alert-escalation",
-    "investment.trade.closed" => "weekly-trade-summary"
+    "blog.post.published"     => "blog-marketing",
+    "system_error"            => "critical",
+    "port_agent_failed"       => "critical",
+    "investment.trade.closed" => "weekly-trade-summary",
+    "rag.ingest.request"      => "rag-ingest"
   }
 
   # darwin.applied.* 패턴은 별도 처리
