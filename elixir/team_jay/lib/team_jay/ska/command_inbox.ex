@@ -140,6 +140,7 @@ defmodule TeamJay.Ska.CommandInbox do
     metadata = %{
       pipeline: pipeline,
       command: command,
+      command_id: command_id,
       summary: summary,
       action_type: Atom.to_string(kind)
     }
@@ -168,15 +169,7 @@ defmodule TeamJay.Ska.CommandInbox do
         TeamJay.Ska.PubSub.broadcast_workload_reduction_requested(metadata)
     end
 
-    _ =
-      TeamJay.HubClient.command_complete(command_id, "ska",
-        bot_name: "ska_command_inbox",
-        source: "ska.command_inbox",
-        pipeline: pipeline,
-        message: "ska accepted #{kind} command"
-      )
-
-    Logger.info("[SkaCommandInbox] #{pipeline} 수신 → #{kind} 반영")
+    Logger.info("[SkaCommandInbox] #{pipeline} 수신 → #{kind} internal handler dispatch")
     :ok
   rescue
     error ->

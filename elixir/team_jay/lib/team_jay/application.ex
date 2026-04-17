@@ -51,6 +51,7 @@ defmodule TeamJay.Application do
       TeamJay.EventLake,
       TeamJay.MarketRegime,
       TeamJay.Ska.CommandInbox,
+      TeamJay.Ska.CommandActionHandler,
       TeamJay.Teams.SkaSupervisor,
       TeamJay.Teams.ClaudeSupervisor,
       TeamJay.Teams.StewardSupervisor,
