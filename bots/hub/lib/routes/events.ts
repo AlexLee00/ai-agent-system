@@ -99,7 +99,15 @@ export async function commandEventsStuckRoute(req: any, res: any) {
       targetTeam: req.query.target_team || '',
       pipeline: req.query.pipeline || '',
     });
-    return res.json({ ok: true, ...result });
+    const health = await collectHealthSnapshot().catch(() => null);
+    const runtimeAlignment = health?.resources
+      ? {
+          ownership_alignment: health.resources.ownership_alignment || null,
+          daemon_cutover: health.resources.daemon_cutover || null,
+        }
+      : null;
+
+    return res.json({ ok: true, ...result, runtime_alignment: runtimeAlignment });
   } catch (error: any) {
     return res.status(500).json({ ok: false, error: error.message });
   }

@@ -12,8 +12,9 @@ defmodule TeamJay.Investment.CommandInbox do
 
   @poll_ms 60_000
   @max_seen 200
+  @retry_after_ms 5 * 60_000
 
-  defstruct seen_ids: MapSet.new(), seen_order: []
+  defstruct seen: %{}, seen_order: []
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -63,12 +64,13 @@ defmodule TeamJay.Investment.CommandInbox do
 
   defp process_inbox_entry(entry, state) do
     command_id = nested(entry, ["command_id"]) || nested(entry, [:command_id])
+    status = nested(entry, ["status"]) || nested(entry, [:status]) || "issued"
 
     cond do
       is_nil(command_id) or command_id == "" ->
         state
 
-      MapSet.member?(state.seen_ids, command_id) ->
+      should_skip_command?(state, command_id, status) ->
         state
 
       true ->
@@ -197,8 +199,32 @@ defmodule TeamJay.Investment.CommandInbox do
 
   defp remember_command(state, command_id) do
     next_order = [command_id | state.seen_order] |> Enum.take(@max_seen)
-    next_seen = MapSet.new(next_order)
-    %{state | seen_ids: next_seen, seen_order: next_order}
+    now_ms = System.monotonic_time(:millisecond)
+
+    next_seen =
+      next_order
+      |> Enum.reduce(%{}, fn id, acc ->
+        Map.put(acc, id, Map.get(state.seen, id, now_ms))
+      end)
+      |> Map.put(command_id, now_ms)
+
+    %{state | seen: next_seen, seen_order: next_order}
+  end
+
+  defp should_skip_command?(state, command_id, status) do
+    case Map.get(state.seen, command_id) do
+      nil ->
+        false
+
+      seen_at ->
+        age_ms = System.monotonic_time(:millisecond) - seen_at
+
+        if status in ["issued", "acknowledged"] and age_ms >= @retry_after_ms do
+          false
+        else
+          true
+        end
+    end
   end
 
   defp maybe_log_poll_error(reason) do
