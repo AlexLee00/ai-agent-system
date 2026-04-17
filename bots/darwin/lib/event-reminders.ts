@@ -5,7 +5,7 @@
  * launchd로 매일 09:00 KST 실행
  */
 
-const { postAlarm } = require('../../../../packages/core/lib/openclaw-client');
+const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 
 // 이벤트 정의
 const EVENTS = [
