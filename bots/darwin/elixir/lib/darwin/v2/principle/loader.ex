@@ -31,34 +31,44 @@ defmodule Darwin.V2.Principle.Loader do
   # Tier 3 금지 규칙 하드코딩 폴백 (YAML 없을 때 사용)
   @tier3_fallback [
     %{
-      "principle" => "표절_금지",
-      "action" => "copy_without_modification",
-      "description" => "다른 구현을 수정 없이 그대로 복사하는 것 금지",
-      "keywords" => ["copy_verbatim", "plagiarize", "copy_without_modification"]
+      id: "P-D001",
+      desc: "다른 구현을 수정 없이 그대로 복사하는 것 금지",
+      principle: "표절_금지",
+      action: "copy_without_modification",
+      description: "다른 구현을 수정 없이 그대로 복사하는 것 금지",
+      keywords: ["copy_verbatim", "plagiarize", "copy_without_modification"]
     },
     %{
-      "principle" => "검증없이_main_적용_금지",
-      "action" => "apply_to_main",
-      "description" => "verification_passed 없이 main 코드 수정 금지",
-      "keywords" => ["skip_verification", "apply_to_main", "force_apply"]
+      id: "P-D002",
+      desc: "verification_passed 없이 main 코드 수정 금지",
+      principle: "검증없이_main_적용_금지",
+      action: "apply_to_main",
+      description: "verification_passed 없이 main 코드 수정 금지",
+      keywords: ["skip_verification", "apply_to_main", "force_apply"]
     },
     %{
-      "principle" => "재현불가_폐기",
-      "action" => "persist_unreproducible",
-      "description" => "3회 시도 후 재현 불가한 논문은 폐기",
-      "keywords" => ["unreproducible", "persist_failed", "keep_failed_paper"]
+      id: "P-D003",
+      desc: "3회 시도 후 재현 불가한 논문은 폐기",
+      principle: "재현불가_폐기",
+      action: "persist_unreproducible",
+      description: "3회 시도 후 재현 불가한 논문은 폐기",
+      keywords: ["unreproducible", "persist_failed", "keep_failed_paper"]
     },
     %{
-      "principle" => "비용_상한",
-      "action" => "exceed_paper_budget",
-      "description" => "단일 논문 LLM 비용 $5 초과 금지",
-      "keywords" => ["exceed_budget", "exceed_paper_budget", "overspend"]
+      id: "P-D004",
+      desc: "단일 논문 LLM 비용 $5 초과 금지",
+      principle: "비용_상한",
+      action: "exceed_paper_budget",
+      description: "단일 논문 LLM 비용 $5 초과 금지",
+      keywords: ["exceed_budget", "exceed_paper_budget", "overspend"]
     },
     %{
-      "principle" => "ops_직접수정_금지",
-      "action" => "modify_ops_directly",
-      "description" => "OPS 시스템 직접 수정 금지",
-      "keywords" => ["modify_ops", "modify_ops_directly", "direct_ops_change"]
+      id: "P-D005",
+      desc: "OPS 시스템 직접 수정 금지",
+      principle: "ops_직접수정_금지",
+      action: "modify_ops_directly",
+      description: "OPS 시스템 직접 수정 금지",
+      keywords: ["modify_ops", "modify_ops_directly", "direct_ops_change"]
     }
   ]
 
@@ -89,7 +99,7 @@ defmodule Darwin.V2.Principle.Loader do
   context: 추가 컨텍스트 map (paper_id, phase, skip_verification 등)
   """
   @spec check(String.t() | atom(), map()) ::
-          {:approved, []} | {:blocked, [String.t()]}
+          {:approved, []} | {:blocked, [map()]}
   def check(action, context \\ %{}) do
     resolved_principles =
       case load() do
@@ -145,15 +155,29 @@ defmodule Darwin.V2.Principle.Loader do
       end) or check_context_flags(rule, context)
     end)
     |> Enum.map(fn rule ->
-      principle = rule["principle"] || rule[:principle] || "unknown"
-      description = rule["description"] || rule[:description] || ""
-      "#{principle}: #{description}"
+      %{
+        id: rule[:id] || rule["id"] || (rule["principle"] || rule[:principle] || "unknown"),
+        desc: rule[:desc] || rule["desc"] || rule["description"] || rule[:description] || ""
+      }
     end)
   end
 
-  # 컨텍스트 플래그 기반 추가 체크
+  # 컨텍스트 플래그 기반 추가 체크 (atom key + string key 둘 다 지원)
+  defp check_context_flags(%{principle: "검증없이_main_적용_금지"}, context) do
+    context[:skip_verification] == true or context["skip_verification"] == true
+  end
+
   defp check_context_flags(%{"principle" => "검증없이_main_적용_금지"}, context) do
     context[:skip_verification] == true or context["skip_verification"] == true
+  end
+
+  defp check_context_flags(%{principle: "비용_상한"}, _context) do
+    case Darwin.V2.LLM.CostTracker.check_budget() do
+      {:error, :budget_exceeded} -> true
+      _ -> false
+    end
+  rescue
+    _ -> false
   end
 
   defp check_context_flags(%{"principle" => "비용_상한"}, _context) do
@@ -219,7 +243,7 @@ defmodule Darwin.V2.Principle.Loader do
         if String.contains?(text, "[BLOCKED]") do
           violation = extract_violation(text)
           Logger.warning("[다윈V2 원칙] Tier 3 위반 (semantic): #{violation}")
-          {:blocked, [violation]}
+          {:blocked, [%{id: "semantic", desc: violation}]}
         else
           {:approved, []}
         end

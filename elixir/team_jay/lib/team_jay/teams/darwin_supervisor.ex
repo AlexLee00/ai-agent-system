@@ -50,22 +50,9 @@ defmodule TeamJay.Teams.DarwinSupervisor do
 
   @impl true
   def init(_opts) do
-    native_children = [
-      Darwin.V2.LLM.CostTracker,
-      Darwin.V2.LLM.RoutingLog,
-      TeamJay.Darwin.TeamLead,
-      TeamJay.Darwin.Scanner,
-      TeamJay.Darwin.Evaluator,
-      TeamJay.Darwin.Edison,
-      TeamJay.Darwin.ProofR,
-      TeamJay.Darwin.Applier,
-      TeamJay.Darwin.FeedbackLoop,
-      TeamJay.Darwin.KeywordEvolver,
-      TeamJay.Darwin.ResearchMonitor,
-      TeamJay.Darwin.TeamConnector
-    ]
-
-    children = native_children ++ interval_children() ++ calendar_children()
+    # V2 Elixir 에이전트는 Darwin.V2.Supervisor에서 관리 (bots/darwin/elixir)
+    # 여기서는 TS PortAgent만 관리
+    children = interval_children() ++ calendar_children()
     Supervisor.init(children, strategy: :one_for_one, max_restarts: 5, max_seconds: 60)
   end
 

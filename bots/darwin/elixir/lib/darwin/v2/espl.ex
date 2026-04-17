@@ -41,6 +41,10 @@ defmodule Darwin.V2.ESPL do
     end
   end
 
+  @doc "run_weekly/0 하위 호환 별칭."
+  @spec evolve_weekly() :: {:ok, map()} | {:error, term()}
+  defdelegate evolve_weekly(), to: __MODULE__, as: :run_weekly
+
   @doc """
   단일 에이전트 프롬프트 진화 (shadow 세대 제안).
   """
