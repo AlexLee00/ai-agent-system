@@ -8,9 +8,13 @@ function resolveStateBusModule() {
   const projectRoot = process.env.PROJECT_ROOT || '';
   const candidates = [
     path.join(__dirname, '../../reservation/lib/state-bus.js'),
+    path.join(__dirname, '../../reservation/lib/state-bus.ts'),
     path.join(__dirname, '../../reservation/lib/state-bus.legacy.js'),
+    path.join(__dirname, '../../reservation/lib/state-bus.legacy.ts'),
     projectRoot ? path.join(projectRoot, 'bots/reservation/lib/state-bus.js') : '',
+    projectRoot ? path.join(projectRoot, 'bots/reservation/lib/state-bus.ts') : '',
     projectRoot ? path.join(projectRoot, 'bots/reservation/lib/state-bus.legacy.js') : '',
+    projectRoot ? path.join(projectRoot, 'bots/reservation/lib/state-bus.legacy.ts') : '',
   ].filter(Boolean);
 
   for (const candidate of candidates) {
