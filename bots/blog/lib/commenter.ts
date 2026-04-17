@@ -736,55 +736,75 @@ async function extractAdminComments(page, limit = 20, ownBlogId = '') {
     ownBlogId: String(ownBlogId || '').trim(),
   };
   return page.evaluate(({ maxItems, ownBlogId }) => {
-    const textOf = (el) =>
-      String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
+    function textOf(el) {
+      return String((el && (el.innerText || el.textContent)) || '').replace(/\s+/g, ' ').trim();
+    }
 
-    const pickText = (root, selectors) => {
+    function pickText(root, selectors) {
       for (const selector of selectors) {
         const node = root.querySelector(selector);
         const text = textOf(node);
         if (text) return text;
       }
       return '';
-    };
+    }
 
-    const visible = (el) => {
+    function visible(el) {
       if (!el) return false;
       const style = window.getComputedStyle(el);
       const rect = el.getBoundingClientRect();
       return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-    };
+    }
 
-    const selectors = ['tr', 'li[class*="comment"]', 'div[class*="comment"]', 'li'];
-    const roots = [];
-    for (const selector of selectors) {
-      for (const node of document.querySelectorAll(selector)) {
+    var selectors = ['tr', 'li[class*="comment"]', 'div[class*="comment"]', 'li'];
+    var roots = [];
+    for (var selectorIndex = 0; selectorIndex < selectors.length; selectorIndex += 1) {
+      var selector = selectors[selectorIndex];
+      var nodes = document.querySelectorAll(selector);
+      for (var nodeIndex = 0; nodeIndex < nodes.length; nodeIndex += 1) {
+        var node = nodes[nodeIndex];
         if (!visible(node)) continue;
-        const text = textOf(node);
+        var text = textOf(node);
         if (text.length < 10 || text.length > 4000) continue;
-        const anchor = node.querySelector('a[href*="blog.naver.com"], a[href*="m.blog.naver.com"], a[href*="PostView.naver"]');
+        var anchor = node.querySelector('a[href*="blog.naver.com"], a[href*="m.blog.naver.com"], a[href*="PostView.naver"]');
         if (!anchor) continue;
         roots.push(node);
       }
     }
 
-    const deduped = Array.from(new Set(roots)).slice(0, maxItems * 5);
-    const results = [];
+    var deduped = [];
+    for (var dedupeIndex = 0; dedupeIndex < roots.length; dedupeIndex += 1) {
+      var dedupeNode = roots[dedupeIndex];
+      if (deduped.indexOf(dedupeNode) === -1) deduped.push(dedupeNode);
+      if (deduped.length >= maxItems * 5) break;
+    }
+    var results = [];
 
-    for (const root of deduped) {
-      const rootText = textOf(root);
-      const anchorCandidates = Array.from(root.querySelectorAll('a[href*="blog.naver.com"], a[href*="m.blog.naver.com"], a[href*="PostView.naver"]'));
-      const postAnchor = anchorCandidates.sort((a, b) => textOf(b).length - textOf(a).length)[0];
-      const postUrl = postAnchor?.href || '';
-      const postTitle = textOf(postAnchor);
+    for (var rootIndex = 0; rootIndex < deduped.length; rootIndex += 1) {
+      var root = deduped[rootIndex];
+      var rootText = textOf(root);
+      var anchorNodes = root.querySelectorAll('a[href*="blog.naver.com"], a[href*="m.blog.naver.com"], a[href*="PostView.naver"]');
+      var postAnchor = null;
+      var longestAnchorText = -1;
+      for (var anchorIndex = 0; anchorIndex < anchorNodes.length; anchorIndex += 1) {
+        var anchorNode = anchorNodes[anchorIndex];
+        var anchorText = textOf(anchorNode);
+        if (anchorText.length > longestAnchorText) {
+          longestAnchorText = anchorText.length;
+          postAnchor = anchorNode;
+        }
+      }
+      var postUrl = postAnchor && postAnchor.href ? postAnchor.href : '';
+      var postTitle = textOf(postAnchor);
 
-      const commenterName = pickText(root, ['._writerNickname', '.nickname', '.nick', '.name', '.writer', 'strong']);
-      const commenterId = pickText(root, ['._writerId', '.blogid']);
-      const commentText = pickText(root, ['._replyRealContents', '._replyContents', '.comment_text', '.text', '.desc', 'p', 'span']);
-      const commentRef = root.getAttribute('data-comment-id')
+      var commenterName = pickText(root, ['._writerNickname', '.nickname', '.nick', '.name', '.writer', 'strong']);
+      var commenterId = pickText(root, ['._writerId', '.blogid']);
+      var commentText = pickText(root, ['._replyRealContents', '._replyContents', '.comment_text', '.text', '.desc', 'p', 'span']);
+      var commentKeyNode = root.querySelector('input[name="commentKey"]');
+      var commentRef = root.getAttribute('data-comment-id')
         || root.getAttribute('data-comment-no')
         || root.getAttribute('data-log-no')
-        || root.querySelector('input[name="commentKey"]')?.value
+        || (commentKeyNode ? commentKeyNode.value : '')
         || root.id
         || '';
 
