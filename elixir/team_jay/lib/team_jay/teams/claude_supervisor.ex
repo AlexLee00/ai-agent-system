@@ -17,9 +17,16 @@ defmodule TeamJay.Teams.ClaudeSupervisor do
   @impl true
   def init(_opts) do
     native_children = [
+      # 덱스터
       TeamJay.Claude.Dexter.ErrorTracker,
       TeamJay.Claude.Dexter.TestRunner,
-      TeamJay.Claude.Doctor.Dispatch
+      # 닥터
+      TeamJay.Claude.Doctor.Dispatch,
+      # 모니터
+      TeamJay.Claude.Monitor.DeploymentMonitor,
+      # 코덱스 파이프라인
+      TeamJay.Claude.Codex.CodexWatcher,
+      TeamJay.Claude.Codex.CodexPipeline
     ]
 
     port_children =
