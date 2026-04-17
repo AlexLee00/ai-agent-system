@@ -39,6 +39,8 @@ async function run({ sessionId, market, symbol }) {
     reasoning: `[노드:${NODE_ID}] ${decision.reasoning || ''}`.slice(0, 255),
     exchange: market,
     analystSignals,
+    nemesisVerdict: risk?.nemesis_verdict ?? null,
+    approvedAt: risk?.approved_at ?? null,
   });
   const signalId = signalInsert.id;
 
