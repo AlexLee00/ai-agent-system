@@ -17,14 +17,17 @@
 - **수동 실행**: shadow_run_id=4 생성, LastExitStatus=0
 - **관찰 로그**: `docs/codex/SIGMA_SHADOW_OBSERVATION_LOG.md` Day 1 업데이트
 
-### 검증 결과 (38차)
+### 검증 결과 (최종 39차)
 - `mix compile --warnings-as-errors`: **0 warnings** ✅
 - `mix test`: **116 tests, 0 failures** ✅
 - `launchctl list ai.sigma.daily`: `LastExitStatus=0` ✅
-- `sigma_v2_shadow_runs`: id=4 (누적 4건) ✅
-- `sigma_v2_config_snapshots` 0건 (Tier 2 OFF 증명) ✅
-- `sigma_analyst_prompts` 0건 (ESPL OFF 증명) ✅
-- match_score: `no_v1_pair` (v1 TS baseline 없음 — 정상)
+- `launchctl list ai.elixir.supervisor`: PID=78289 ✅
+- `sigma_v2_shadow_runs`: 5건 (HTTP 1회 + mix task 3회 + launchctl 1회) ✅
+- HTTP /sigma/mailbox 응답 ✅ (포트 4010 정상)
+- Tier 2 kill switch: `{:error, :tier2_disabled}` ✅
+- `mix sigma.migrate`: 두 경로 모두 0건(all up) ✅
+- plist plutil lint OK ✅
+- match_score: `null/no_v1_pair` (v1 TS baseline 없음 — 정상)
 
 ### sigma-check alias 수정 필요 (수동)
 
