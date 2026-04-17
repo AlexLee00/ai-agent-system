@@ -55,6 +55,30 @@ function normalizeMode(value) {
   return null;
 }
 
+function normalizeHostName(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\.local$/i, '')
+    .split('.')[0];
+}
+
+function getLiveTradingAllowedHosts() {
+  const configured = String(process.env.INVESTMENT_LIVE_HOSTS || '')
+    .split(',')
+    .map(normalizeHostName)
+    .filter(Boolean);
+
+  if (configured.length > 0) return configured;
+  return ['macstudio'];
+}
+
+function isLiveTradingHostAllowed() {
+  if (env.IS_OPS) return true;
+  const currentHost = normalizeHostName(hostname());
+  return getLiveTradingAllowedHosts().includes(currentHost);
+}
+
 function normalizeInvestmentTradeMode(value) {
   const normalized = String(value || '').trim().toLowerCase();
   if (normalized === 'normal' || normalized === 'validation') return normalized;
@@ -252,9 +276,9 @@ export function getTradingMode() {
     resolved = normalizeMode(s.trading_mode) || (s.paper_mode === false ? 'live' : 'paper');
   }
 
-  // ── 안전장치: 운영 서버(MacStudio)가 아닌 곳에서 live 차단 ──
-  // 환경변수·config 어디서 live가 왔든 최종 관문으로 hostname 체크
-  if (resolved === 'live' && !hostname().includes('MacStudio') && !env.IS_OPS) {
+  // ── 안전장치: 운영 서버 allowlist 밖에선 live 차단 ──
+  // 환경변수·config 어디서 live가 왔든 최종 관문으로 exact host allowlist 체크
+  if (resolved === 'live' && !isLiveTradingHostAllowed()) {
     console.warn(`⚠️ [secrets] 비운영 서버(${hostname()})에서 live 모드 감지 → paper 강제 전환`);
     return 'paper';
   }

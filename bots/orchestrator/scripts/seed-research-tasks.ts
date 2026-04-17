@@ -1,7 +1,6 @@
-// @ts-nocheck
 'use strict';
 
-const tasks = require('../lib/research/research-tasks');
+const tasks = require('../../darwin/lib/research-tasks');
 
 const seeded = [
   tasks.createTask({
