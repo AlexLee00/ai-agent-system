@@ -97,8 +97,8 @@ defmodule TeamJay.Darwin.Applier do
       register_monitoring(paper, team)
     end)
 
-    # 성공 보고
-    TeamLead.pipeline_success()
+    # 성공 보고 (적용 성공 카운터 증가 → L4→L5 승격 조건 누적)
+    TeamLead.record_application_success()
     HubClient.post_alarm(
       "🔬 다윈팀 연구 적용!\n논문: #{paper["title"] || "unknown"}\n대상 팀: #{Enum.join(target_teams, ", ")}\n자율 레벨: L#{TeamLead.get_autonomy_level()}",
       "darwin-applied", "darwin"
