@@ -9,7 +9,7 @@ async function main() {
   env.printModeBanner('blog commenter');
 
   const result = await runCommentReply({ testMode });
-  if (result?.skipped) {
+  if (result?.ok !== true && result?.skipped === true) {
     console.log(`[커멘터] 스킵: ${result.reason}`);
     return;
   }

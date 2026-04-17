@@ -18,6 +18,7 @@ const ACTION_TABLE = 'blog.comment_actions';
 const NEIGHBOR_TABLE = 'blog.neighbor_comments';
 const DEFAULT_SUMMARY_LEN = 220;
 const BROWSER_CONNECT_TIMEOUT_MS = 5000;
+const BROWSER_PROTOCOL_TIMEOUT_MS = 120000;
 const NAVER_NAVIGATION_TIMEOUT_MS = 45000;
 const NAVER_MONITOR_WS_FILE = path.join(env.OPENCLAW_WORKSPACE, 'naver-monitor-ws.txt');
 const BLOG_COMMENTER_DEBUG_DIR = path.join(env.PROJECT_ROOT, 'tmp', 'blog-commenter-debug');
@@ -171,7 +172,8 @@ function isWithinActiveWindow(config = getCommenterConfig()) {
 function calcDelayMs(minSec, maxSec, testMode = false) {
   const min = Number(minSec || 0);
   const max = Number(maxSec || min);
-  const factor = testMode ? 0.03 : 1;
+  const fastDebug = process.env.BLOG_COMMENTER_FAST_DEBUG === 'true';
+  const factor = (testMode || fastDebug) ? 0.03 : 1;
   const jitter = min + Math.random() * Math.max(0, max - min);
   return Math.round(jitter * 1000 * factor);
 }
@@ -354,6 +356,57 @@ async function getPendingComments(limit = 20) {
     ORDER BY detected_at DESC
     LIMIT $1
   `, [limit]);
+}
+
+function isRecoverableReplyFailure(row) {
+  const status = String(row?.status || '');
+  const errorMessage = String(row?.error_message || '');
+  if (!['failed', 'skipped'].includes(status)) return false;
+  if (!errorMessage) return false;
+  return (
+    errorMessage === '__name is not defined'
+    || errorMessage === 'reply_button_not_found'
+    || errorMessage.startsWith('reply_button_not_found:')
+    || errorMessage === 'reply_ui_unavailable'
+    || errorMessage === 'comment_panel_not_mounted'
+    || errorMessage.startsWith('comment_panel_not_mounted:')
+  );
+}
+
+async function requeueRecoverableReplyFailures(limit = 10) {
+  const rows = await pgPool.query('blog', `
+    SELECT *
+    FROM ${TABLE}
+    WHERE reply_at IS NULL
+      AND status IN ('failed', 'skipped')
+    ORDER BY detected_at DESC
+    LIMIT $1
+  `, [Math.max(limit * 3, limit)]);
+
+  let requeued = 0;
+  for (const row of rows) {
+    if (requeued >= limit) break;
+    if (!isRecoverableReplyFailure(row)) continue;
+    const inboundAssessment = assessInboundComment(row);
+    if (!inboundAssessment.ok) continue;
+
+    await pgPool.run('blog', `
+      UPDATE ${TABLE}
+      SET status = 'pending',
+          error_message = NULL,
+          meta = COALESCE(meta, '{}'::jsonb) || $2::jsonb
+      WHERE id = $1
+    `, [
+      row.id,
+      JSON.stringify({
+        phase: 'recoverable_requeue',
+        previous_error: row.error_message || null,
+      }),
+    ]);
+    requeued += 1;
+  }
+
+  return requeued;
 }
 
 async function updateCommentStatus(id, status, options = {}) {
@@ -678,7 +731,7 @@ async function connectBrowser(testMode = false) {
     try {
       const browser = await puppeteer.connect({
         browserWSEndpoint: wsFileEndpoint,
-        protocolTimeout: testMode ? 15000 : 60000,
+        protocolTimeout: testMode ? 15000 : BROWSER_PROTOCOL_TIMEOUT_MS,
       });
       return { browser, managed: true, mode: 'connect-ws-file' };
     } catch (error) {
@@ -690,7 +743,7 @@ async function connectBrowser(testMode = false) {
   if (wsEndpoint) {
     const browser = await puppeteer.connect({
       browserWSEndpoint: wsEndpoint,
-      protocolTimeout: testMode ? 15000 : 60000,
+      protocolTimeout: testMode ? 15000 : BROWSER_PROTOCOL_TIMEOUT_MS,
     });
     return { browser, managed: true, mode: 'connect' };
   }
@@ -705,7 +758,7 @@ async function connectBrowser(testMode = false) {
     headless: false,
     pipe: false,
     defaultViewport: null,
-    protocolTimeout: testMode ? 15000 : 60000,
+    protocolTimeout: testMode ? 15000 : BROWSER_PROTOCOL_TIMEOUT_MS,
     userDataDir: config.profileDir,
     args: [
       '--no-sandbox',
@@ -1191,6 +1244,18 @@ function normalizePostUrl(rawUrl) {
   return { ok: false, blogId: '', logNo: '', postUrl: '' };
 }
 
+function parseCommentRef(commentRef) {
+  const raw = String(commentRef || '').trim();
+  if (!raw) return { raw: '', commentNo: '', commenterId: '', logNo: '' };
+  const parts = raw.split('|').map((part) => String(part || '').trim());
+  return {
+    raw,
+    logNo: parts[0] || '',
+    commenterId: parts[1] || '',
+    commentNo: parts[2] || '',
+  };
+}
+
 async function getCommenterNetworkCandidates(limit = 10, ownBlogId = '') {
   return pgPool.query('blog', `
     SELECT DISTINCT ON (commenter_id)
@@ -1496,13 +1561,16 @@ function validateNeighborCommentWithCandidate(comment, summary, candidate, confi
 }
 
 async function openReplyEditor(page, comment) {
+  const parsedCommentRef = parseCommentRef(comment?.comment_ref);
   const payload = JSON.stringify({
     commentText: comment.comment_text,
     commenterName: comment.commenter_name,
+    commenterId: comment.commenter_id || parsedCommentRef.commenterId || '',
+    commentNo: parsedCommentRef.commentNo || '',
   });
   return page.evaluate(`
     (() => {
-      const { commentText, commenterName } = ${payload};
+      const { commentText, commenterName, commenterId, commentNo } = ${payload};
       const textOf = (el) =>
         String((el && (el.innerText || el.textContent)) || '').replace(/\\s+/g, ' ').trim();
       const visible = (el) => {
@@ -1511,6 +1579,31 @@ async function openReplyEditor(page, comment) {
         const rect = el.getBoundingClientRect();
         return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
       };
+
+      if (commentNo) {
+        const targetedButton = Array.from(document.querySelectorAll('button, a')).find((node) => {
+          if (!visible(node)) return false;
+          const cls = String(node.className || '');
+          return cls.includes('idx-commentNo-' + commentNo);
+        });
+        if (targetedButton) {
+          document.querySelectorAll('[data-blog-target-comment],[data-blog-target-reply-button],[data-blog-target-reply-area]').forEach((node) => {
+            node.removeAttribute('data-blog-target-comment');
+            node.removeAttribute('data-blog-target-reply-button');
+            node.removeAttribute('data-blog-target-reply-area');
+          });
+          const fallbackTarget = targetedButton.closest('li.u_cbox_comment, li[class*="comment"], .u_cbox_comment_box, [class*="comment"]');
+          if (fallbackTarget) {
+            fallbackTarget.setAttribute('data-blog-target-comment', 'true');
+          }
+          targetedButton.setAttribute('data-blog-target-reply-button', 'true');
+          const replyArea = (fallbackTarget && fallbackTarget.parentElement && fallbackTarget.parentElement.querySelector('.u_cbox_reply_area')) || (fallbackTarget && fallbackTarget.querySelector('.u_cbox_reply_area'));
+          if (replyArea) {
+            replyArea.setAttribute('data-blog-target-reply-area', 'true');
+          }
+          return true;
+        }
+      }
 
       const selectors = ['li.u_cbox_comment', 'li[class*="comment"]', 'div[class*="comment"]', 'article', 'section'];
       const candidates = [];
@@ -1522,6 +1615,7 @@ async function openReplyEditor(page, comment) {
           let score = 0;
           if (commentText && text.includes(commentText.slice(0, Math.min(20, commentText.length)))) score += 3;
           if (commenterName && text.includes(commenterName)) score += 2;
+          if (commenterId && text.includes(commenterId)) score += 1;
           if (score > 0) candidates.push({ node, score });
         }
       }
@@ -1660,6 +1754,10 @@ async function activateReplyMode(page) {
       if (visible(replyArea)) {
         const replyEditors = Array.from(replyArea.querySelectorAll('textarea, div[contenteditable=\"true\"], div[role=\"textbox\"]'));
         if (replyEditors.some(visible)) return true;
+      }
+      const globalEditors = Array.from(document.querySelectorAll('textarea, div[contenteditable="true"], div[role="textbox"], div[id*="write_textarea"]'));
+      if (globalEditors.some(visible)) {
+        return true;
       }
       const stateOnButton = document.querySelector('[data-blog-target-reply-button=\"true\"].u_cbox_btn_reply_on');
       if (visible(stateOnButton)) {
@@ -2340,14 +2438,20 @@ async function clickSympathy(postUrl, { testMode = false } = {}) {
   });
 }
 
-async function verifyReplyPosted(page, replyText, testMode = false) {
+async function verifyReplyPosted(page, replyText, comment, testMode = false) {
   const needle = normalizeText(replyText).slice(0, 24);
-  if (!needle) return false;
+  const commentRef = parseCommentRef(comment?.comment_ref);
+  const normalizedPost = normalizePostUrl(comment?.post_url || '');
+  const replyEditorId = (normalizedPost.ok && commentRef.commentNo)
+    ? `naverComment_201_${normalizedPost.logNo}__reply_textarea_${commentRef.commentNo}`
+    : '';
+  if (!needle && !replyEditorId) return false;
 
   const timeoutMs = testMode ? 4000 : 15000;
   const matched = await page.waitForFunction(`
     (() => {
       const expected = ${JSON.stringify(needle)};
+      const replyEditorId = ${JSON.stringify(replyEditorId)};
       const textOf = (el) =>
         String((el && (el.innerText || el.textContent)) || '').replace(/\\s+/g, ' ').trim();
       const visible = (el) => {
@@ -2388,7 +2492,22 @@ async function verifyReplyPosted(page, replyText, testMode = false) {
         ),
       ).filter((node) => visible(node) && !isEditorArea(node));
 
-      return candidates.some((node) => textOf(node).includes(expected));
+      if (expected && candidates.some((node) => textOf(node).includes(expected))) {
+        return true;
+      }
+
+      if (replyEditorId) {
+        const replyEditor = document.getElementById(replyEditorId);
+        if (!visible(replyEditor)) {
+          const targetReplyArea = document.querySelector('[data-blog-target-reply-area="true"]');
+          const activeReplyEditors = Array.from(document.querySelectorAll('textarea[id*="reply_textarea"], div[id*="reply_textarea"]')).filter(visible);
+          if (!visible(targetReplyArea) && activeReplyEditors.length === 0) {
+            return true;
+          }
+        }
+      }
+
+      return false;
     })()
   `, { timeout: timeoutMs }).then(() => true).catch(() => false);
 
@@ -2585,7 +2704,7 @@ async function postReply(comment, replyText, { testMode = false, dryRun = false 
     await typeReply(contentFrame, page, editor.selector, replyText, config, testMode);
     await humanDelay(1, 2, testMode);
     await submitReply(contentFrame);
-    const posted = await verifyReplyPosted(contentFrame, replyText, testMode);
+    const posted = await verifyReplyPosted(contentFrame, replyText, comment, testMode);
     if (!posted) {
       const snapshotPrefix = await saveCommentDebugSnapshot(contentFrame, comment, 'reply-submit-not-confirmed');
       throw new Error(`reply_submit_not_confirmed:${snapshotPrefix}`);
@@ -2821,9 +2940,11 @@ async function runCommentReply({ testMode = false } = {}) {
 
   await ensureSchema();
 
+  const requeued = await requeueRecoverableReplyFailures(testMode ? 1 : 5).catch(() => 0);
+
   const todayCount = await getTodayReplyCount();
   if (todayCount >= config.maxDaily) {
-    return { skipped: true, reason: 'daily_limit', count: todayCount };
+    return { skipped: true, reason: 'daily_limit', count: todayCount, requeued };
   }
 
   let newComments;
@@ -2894,6 +3015,7 @@ async function runCommentReply({ testMode = false } = {}) {
     failed,
     skipped,
     total: todayCount + replied,
+    requeued,
     testMode,
   };
 }
@@ -3195,6 +3317,8 @@ module.exports = {
   clickSympathy,
   postComment,
   postReply,
+  processComment,
+  requeueRecoverableReplyFailures,
   runNeighborCommenter,
   runNeighborSympathy,
   runCommentReply,
