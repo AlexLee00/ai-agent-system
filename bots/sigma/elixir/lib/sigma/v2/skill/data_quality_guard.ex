@@ -17,11 +17,11 @@ defmodule Sigma.V2.Skill.DataQualityGuard do
 
   @impl Jido.Action
   def run(params, _ctx) do
-    rows = params.rows || []
-    required_fields = params.required_fields || []
+    rows = Map.get(params, :rows, []) || []
+    required_fields = Map.get(params, :required_fields, []) || []
     freshness_field = Map.get(params, :freshness_field)
-    freshness_threshold_days = params.freshness_threshold_days || 7
-    numeric_fields = params.numeric_fields || []
+    freshness_threshold_days = Map.get(params, :freshness_threshold_days, 7) || 7
+    numeric_fields = Map.get(params, :numeric_fields, []) || []
 
     if rows == [] do
       {:ok, %{

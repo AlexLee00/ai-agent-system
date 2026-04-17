@@ -17,11 +17,11 @@ defmodule Sigma.V2.Skill.CausalCheck do
 
   @impl Jido.Action
   def run(params, _ctx) do
-    claim = String.trim(params.claim || "")
-    correlation = params.correlation || 0.0
-    controls = Enum.filter(params.controls || [], &(&1 != nil and &1 != ""))
-    confounders = Enum.filter(params.confounders || [], &(&1 != nil and &1 != ""))
-    sample_size = params.sample_size || 0
+    claim = String.trim(Map.get(params, :claim, "") || "")
+    correlation = Map.get(params, :correlation, 0.0) || 0.0
+    controls = Enum.filter(Map.get(params, :controls, []) || [], &(&1 != nil and &1 != ""))
+    confounders = Enum.filter(Map.get(params, :confounders, []) || [], &(&1 != nil and &1 != ""))
+    sample_size = Map.get(params, :sample_size, 0) || 0
 
     {flags, recommendations, risk_score} = evaluate(claim, correlation, controls, confounders, sample_size)
 
@@ -46,6 +46,7 @@ defmodule Sigma.V2.Skill.CausalCheck do
     |> check_missing_claim(claim)
     |> check_correlation_without_controls(correlation, controls)
     |> check_missing_confounders(confounders)
+    |> check_uncontrolled_confounders(confounders, controls)
     |> check_small_sample(sample_size)
   end
 
@@ -72,6 +73,16 @@ defmodule Sigma.V2.Skill.CausalCheck do
     }
   end
   defp check_missing_confounders(acc, _), do: acc
+
+  defp check_uncontrolled_confounders({flags, recs, score}, confounders, controls)
+    when confounders != [] and controls == [] do
+    {
+      flags ++ ["known confounders with no controls"],
+      recs ++ ["add controls to account for identified confounders"],
+      score + 1.5
+    }
+  end
+  defp check_uncontrolled_confounders(acc, _confounders, _controls), do: acc
 
   defp check_small_sample({flags, recs, score}, sample_size)
     when sample_size > 0 and sample_size < 300 do
