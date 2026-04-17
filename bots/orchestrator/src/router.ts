@@ -245,6 +245,27 @@ async function insertBotCommand(toBot, command, args = {}) {
   return rows[0]?.id;
 }
 
+async function assertLunaTransferGuard(intent, parsed) {
+  const mode = await shadowMode.getTeamMode('luna');
+  if (mode !== 'confirmation') {
+    return [
+      '❌ 루나 실출금/전송은 confirmation 모드에서만 허용됩니다.',
+      `현재 모드: ${mode}`,
+      '먼저 /luna_confirm 으로 전환한 뒤, 명시 슬래시 명령으로 다시 요청해 주세요.',
+    ].join('\n');
+  }
+
+  if (parsed?.source !== 'slash') {
+    return [
+      '❌ 루나 실출금/전송은 명시 슬래시 명령으로만 허용됩니다.',
+      intent === 'upbit_withdraw' ? '사용 예: /withdraw' : '사용 예: /transfer',
+      '자연어 요청은 오인 실행을 막기 위해 차단됩니다.',
+    ].join('\n');
+  }
+
+  return null;
+}
+
 /**
  * bot_commands 결과 폴링 (2초 간격)
  * @returns {string|null} result JSON 문자열 or null (타임아웃)
@@ -2094,6 +2115,8 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
     }
 
     case 'upbit_withdraw': {
+      const guardMessage = await assertLunaTransferGuard('upbit_withdraw', parsed);
+      if (guardMessage) return guardMessage;
       await notify(`⏳ 업비트 USDT 출금 중... (~30초, TRC20 수수료 ~1 USDT 차감)`);
       const cmdId = await insertBotCommand('luna', 'upbit_withdraw_only', {});
       const raw   = await waitForCommandResult(cmdId, 60000);
@@ -2111,6 +2134,8 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
     }
 
     case 'upbit_transfer': {
+      const guardMessage = await assertLunaTransferGuard('upbit_transfer', parsed);
+      if (guardMessage) return guardMessage;
       await notify(`⏳ 업비트 잔고 확인 중... (소요: ~2분)`);
       const cmdId = await insertBotCommand('luna', 'upbit_to_binance', args || {});
       const raw   = await waitForCommandResult(cmdId, 180000); // 3분 타임아웃
