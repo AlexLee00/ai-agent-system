@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use strict';
 /**
  * bots/orchestrator/lib/research/event-reminders.js
