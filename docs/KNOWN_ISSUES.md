@@ -33,6 +33,7 @@
 | KI-015 | 투자 legacy 실패 이력 | 과거 `legacy_*` 실패는 일부만 구조화되어 `block_code`, `block_meta` 백필이 완전하지 않음 | 2026-03-18 | backfill 구조화 후속 필요 |
 | KI-016 | SkaSupervisor | `bots/ska/scripts/log-report.js` JS→TS 전환 시 삭제됐으나 .ts 미생성. PortAgent 비활성화 상태 | 2026-04-17 | log-report.ts 재작성 필요 (launchd owner 없음) |
 | KI-017 | ClaudeSupervisor | `bots/claude/scripts/speed-test.js` JS→TS 전환 시 삭제됐으나 .ts 미생성. PortAgent 비활성화 상태 | 2026-04-17 | speed-test.ts 재작성 필요 |
+| ~~KI-018~~ | ~~다윈팀~~ | ~~autonomy-level L3 강등 (output_path_not_allowed:prototypes/ 에러)~~ | ~~2026-04-17~~ | ✅ 해결됨: implementor.ts prototypes/ 허용 + L4 리셋 (d8d42ab3) |
 
 ---
 
