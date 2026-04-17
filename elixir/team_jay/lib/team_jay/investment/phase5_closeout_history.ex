@@ -10,7 +10,15 @@ defmodule TeamJay.Investment.Phase5CloseoutHistory do
   def run_defaults(opts \\ []) do
     ensure_table!()
 
-    result = Phase5CloseoutSuite.run_defaults(opts)
+    full = Keyword.get(opts, :full)
+    persistence = Keyword.get(opts, :persistence)
+
+    suite_opts =
+      opts
+      |> maybe_put_opt(:full, full)
+      |> maybe_put_opt(:persistence, persistence)
+
+    result = Phase5CloseoutSuite.run_defaults(suite_opts)
     recorded_at = DateTime.utc_now()
     previous = previous_snapshot()
     blockers = normalize_blockers(result.blockers)
@@ -125,6 +133,9 @@ defmodule TeamJay.Investment.Phase5CloseoutHistory do
   end
 
   defp normalize_blockers(_), do: []
+
+  defp maybe_put_opt(opts, _key, nil), do: opts
+  defp maybe_put_opt(opts, key, value), do: Keyword.put(opts, key, value)
 
   defp to_known_atom(value) when is_binary(value) do
     try do

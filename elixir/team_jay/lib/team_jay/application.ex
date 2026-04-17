@@ -6,7 +6,30 @@ defmodule TeamJay.Application do
   def start(_type, _args) do
     Logger.info("🚀 TeamJay Elixir Phase 4 시작! (Jay 성장 오케스트레이터)")
 
-    children = [
+    children =
+      base_children() ++
+        if(enable_diagnostics?(), do: [TeamJay.Diagnostics], else: []) ++
+        [TeamJay.Scheduler]
+
+    opts = [strategy: :one_for_one, name: TeamJay.Supervisor]
+    result = Supervisor.start_link(children, opts)
+
+    Task.start(fn ->
+      :timer.sleep(2_000)
+
+      _ =
+        TeamJay.HubClient.post_alarm(
+          "🚀 Elixir Phase 4 시작!\n🎯 Jay 성장 오케스트레이터 활성화\n🔄 9팀 일일 환류 사이클 (06:30 KST)\n⚡ 팀 간 파이프라인 7개 준비\n📊 JayBus PubSub 가동",
+          "system",
+          "elixir"
+        )
+    end)
+
+    result
+  end
+
+  defp base_children do
+    [
       TeamJay.Repo,
       {Registry, keys: :unique, name: TeamJay.AgentRegistry},
       {Registry, keys: :duplicate, name: TeamJay.InvestmentBus},
@@ -65,25 +88,25 @@ defmodule TeamJay.Application do
       TeamJay.Teams.WorkerShadowSupervisor,
       TeamJay.Teams.PlatformShadowSupervisor,
       TeamJay.Teams.JaySupervisor,
-      Sigma.V2.Supervisor,
-      TeamJay.Diagnostics,
-      TeamJay.Scheduler
+      Sigma.V2.Supervisor
     ]
+  end
 
-    opts = [strategy: :one_for_one, name: TeamJay.Supervisor]
-    result = Supervisor.start_link(children, opts)
+  defp enable_diagnostics? do
+    force = String.downcase(String.trim(System.get_env("TEAM_JAY_ENABLE_DIAGNOSTICS", "")))
 
-    Task.start(fn ->
-      :timer.sleep(2_000)
+    cond do
+      force in ["1", "true", "yes"] ->
+        true
 
-      _ =
-        TeamJay.HubClient.post_alarm(
-          "🚀 Elixir Phase 4 시작!\n🎯 Jay 성장 오케스트레이터 활성화\n🔄 9팀 일일 환류 사이클 (06:30 KST)\n⚡ 팀 간 파이프라인 7개 준비\n📊 JayBus PubSub 가동",
-          "system",
-          "elixir"
-        )
-    end)
+      force in ["0", "false", "no"] ->
+        false
 
-    result
+      Mix.env() == :test ->
+        true
+
+      true ->
+        Node.alive?()
+    end
   end
 end

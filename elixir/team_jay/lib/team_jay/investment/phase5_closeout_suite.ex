@@ -9,8 +9,11 @@ defmodule TeamJay.Investment.Phase5CloseoutSuite do
   alias TeamJay.Investment.Phase5PersistenceSuite
 
   def run_defaults(opts \\ []) do
-    full = Phase5FullSuite.run_defaults(opts)
-    persistence = Phase5PersistenceSuite.run_defaults(opts)
+    full = Keyword.get_lazy(opts, :full, fn -> Phase5FullSuite.run_defaults(opts) end)
+    persistence =
+      Keyword.get_lazy(opts, :persistence, fn ->
+        Phase5PersistenceSuite.run_defaults(Keyword.put(opts, :full, full))
+      end)
     operations = Phase5OperationsSuite.run_defaults(opts)
     governor = Phase5GovernorSuite.run_defaults(opts)
 
