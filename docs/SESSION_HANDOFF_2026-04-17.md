@@ -950,3 +950,95 @@ origin/main 민감값 스캔: <KIS_ACCOUNT> <KIS_PAPER> <USDT_ADDR> 모두 0건
 **SEC-001~005 종결 재검증 완료 — 15/15 테스트 통과, 3중 방어 실동작 확인, 민감값 0건 유지. 감사 1단위 완전 종결. 2단위 감사(투자팀 매매 경로)는 다음 세션에.**
 
 — 메티 (2026-04-17 오후, 6차 세션)
+
+
+---
+
+## 📍 7차 세션 최종 마감 (2026-04-17 밤 메티) — 완전 격리 확정
+
+> 6차 세션 요약 컨텍스트로 재진입. 마스터 지시: **"완전 격리하자! 예외를 계속 추가하면 안 됨!"**
+
+### ✅ 세션 열자마자 확인: 이미 완전 격리 완료 상태
+
+다른 세션이 커밋 `4503d920 Stop tracking docs codex completely`로 이미 작업 완료:
+
+```
+.gitignore:          !docs/codex/README.md 예외 라인 제거
+scripts/pre-commit:  FORCE_TRACKED_PATHS 루프에서 README 화이트리스트 로직 제거
+                     STAGED_DELETIONS 예외 추가 (git rm --cached 삭제는 허용)
+docs/codex/README.md: Git 추적 해제 (워킹트리는 로컬 참고용 보존)
+```
+
+이로써 **docs/codex/ 디렉토리 전체가 Git에서 완전히 분리**됨.
+
+### 🧪 이번 세션 검증 시나리오 (모두 통과)
+
+```
+시나리오 1: git add docs/codex/NEW_FILE.md
+  → ✅ gitignore가 거절 ("paths are ignored")
+
+시나리오 2: git add docs/codex/README.md
+  → ✅ 이제 README도 거절 (완전 격리 확정)
+
+시나리오 3: git add -f + git commit
+  → ✅ pre-commit 훅이 "gitignore 우회 차단" 메시지로 거절
+```
+
+### 🎯 마스터 원칙 적용 결과
+
+**"예외를 계속 추가하면 안 됨"**이 의미하는 보안 원칙:
+
+1. **예외는 공격 표면**: README 하나의 예외가 있으면, 다음에 "이것만 추가"의 논리가 생김 → SEC-005 재발 경로
+2. **단순성이 방어력**: 복잡한 예외 규칙은 실수 유발. "docs/codex/ = 전부 로컬" 원칙이 가장 명확
+3. **규칙 문서는 다른 곳에**: 코드/보안 규칙은 `CLAUDE.md`, 루트 `README.md`, 또는 별도 `docs/ROLE_PRINCIPLES.md`에 기재. docs/codex/ 내부에 둘 필요 없음
+
+### 📊 감사 최종 상태
+
+```
+✅ SEC-001 (HIGH)     Hub 바인딩          완료
+✅ SEC-002 (MEDIUM)   config.yaml         완료 (히스토리 + Elixir 브랜치 삭제)
+✅ SEC-003 (LOW-MED)  SQL 가드            완료 (readonly PG 풀 포함)
+✅ SEC-004 (MEDIUM)   네메시스 재검증    완료 (15/15 테스트 통과)
+✅ SEC-005 (CRITICAL) docs/codex 노출    완료 (3중 방어 + 완전 격리)
+
+origin/main 민감값 스캔:  3종 모두 0건
+docs/codex/ 원격 추적:    0개 파일 (완전 분리)
+```
+
+### 📋 다음 세션 우선순위 (변화 없음)
+
+**P0 (마스터 판단)**:
+- USDT 지갑 주소 로테이션 여부 (블록체인 이미 노출)
+
+**P1 (2단위 감사 재개)**:
+- `markets/crypto.ts` (바이낸스 호출)
+- `markets/domestic.ts`, `markets/overseas.ts` (KIS API)
+- `shared/kis-client.ts` (토큰 갱신 경로)
+- `shared/upbit-client.ts`
+- `shared/secrets.ts` (Hub secrets 소비)
+- `luna-commander.cjs` (자율 루프 방어)
+- `nodes/l21-llm-risk.ts` (네메시스 호출 경로)
+
+### ⚠️ 다음 메티가 docs/codex/ 사용 시 따를 것
+
+이제 이 디렉토리는 **완전히 로컬 전용**입니다:
+
+1. **docs/codex/에 새 코덱스 프롬프트 작성 시**:
+   - 파일명 `CODEX_<TASK>.md` 자유롭게
+   - `git check-ignore -v docs/codex/CODEX_<TASK>.md` → ignored 메시지 확인
+   - 민감값 평문 금지 (placeholder 사용)
+   - 작업 완료 후 `docs/codex/archive/`로 이동
+
+2. **Git 추적은 절대 하지 말 것**:
+   - 실수로 `git add -f` 했더라도 pre-commit 훅이 차단
+   - 훅 우회(`--no-verify`)는 절대 금지
+
+3. **규칙 문서 참조**:
+   - 과거 로컬 `docs/codex/README.md` 파일이 있었지만 Git 추적 안 됨
+   - 규칙이 필요하면 이 SESSION_HANDOFF 또는 CLAUDE.md 참조
+
+### 🏷️ 7차 세션 요약 한 줄
+
+**완전 격리 달성 — 커밋 4503d920로 docs/codex/ 예외 모두 제거. 3중 방어 실동작 검증 통과. 감사 1단위 + 거버넌스 완전 종결.**
+
+— 메티 (2026-04-17 밤, 7차 세션)
