@@ -513,3 +513,47 @@ Shadow: launchd plist 준비 완료 → 마스터 설치 후 Day 1 시작
 **41차 세션 — 다윈팀 리모델링 잔여 작업 완료: 테스트 7개 전부 수정(40 tests, 0 failures) + DarwinSupervisor native_children 제거(이중 상태 해소) + Shadow launchd plist 신설. 나머지 .zprofile DARWIN_ 변수는 마스터 직접 추가 필요. 다윈 Shadow Day 1 가동 준비 완료.**
 
 — 코덱스 (2026-04-18, 41차 세션)
+
+---
+
+## ✅ 42차 세션 완료 (2026-04-18 코덱스)
+
+### 처리한 잔여 작업
+
+| 항목 | 결과 |
+|------|------|
+| `team_jay/darwin/` 11개 파일 이중 상태 | ✅ **git rm 완료** (히스토리 보존) |
+| `Darwin.V2.TeamConnector` 신설 | ✅ `collect_kpi/0` 구현 |
+| `jay/team_connector.ex:206` 참조 | ✅ `Darwin.V2.TeamConnector.collect_kpi()` 전환 |
+| team_jay 컴파일 | ✅ 성공 |
+| darwin/elixir 테스트 | ✅ **335 tests, 0 failures** |
+
+### 다윈팀 리모델링 완료 상태
+
+```
+bots/darwin/elixir/ — 61 .ex 파일, 독립 Elixir 앱
+elixir/team_jay/lib/team_jay/darwin/ — ✅ 완전 삭제 (이중 상태 해소)
+tests: 335/335 통과, 0 실패
+Shadow launchd: ~/Library/LaunchAgents/ai.darwin.daily.shadow.plist 설치됨
+9 표준 md: bots/darwin/docs/standards/ 완성
+```
+
+### 남은 마스터 직접 작업 (.zprofile 추가)
+
+```bash
+export DARWIN_V2_ENABLED=true
+export DARWIN_TIER2_AUTO_APPLY=false
+export DARWIN_MCP_SERVER_ENABLED=false
+export DARWIN_ESPL_ENABLED=false
+export DARWIN_SELF_RAG_ENABLED=false
+export DARWIN_PRINCIPLE_SEMANTIC_CHECK_ENABLED=false
+export DARWIN_SHADOW_MODE=true
+export DARWIN_HTTP_PORT=4020
+export DARWIN_LLM_DAILY_BUDGET_USD=10.00
+```
+
+## 🏷️ 42차 세션 요약 한 줄
+
+**42차 세션 — 다윈팀 이중 상태 완전 해소: team_jay/darwin 11개 파일 git rm + Darwin.V2.TeamConnector 신설 + Jay 참조 전환. 335 tests 0 failures, CODEX_DARWIN_REMODEL 100% 완료.**
+
+— 코덱스 (2026-04-18, 42차 세션)
