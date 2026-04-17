@@ -336,17 +336,52 @@ launchctl unload ~/Library/LaunchAgents/ai.investment.overseas.plist
 - Phase 0~3.5 완료 (인스타/FB/경쟁사/해시태그/매출피드백루프)
 - Phase 4 (DM챗봇/광고): 수익 발생 후 장기 → 별도 코덱스로 분리
 
+---
+
+## ✅ 추가 완료 (2026-04-17 세션 9)
+
+### SEC-004 네메시스 재검증 가드 — 전 경로 완전 밀폐 (커밋 3666d579, 1ddcafbe, 128887d2)
+
+- `hephaestos.ts`: BUY 전용 SEC-004 가드 (SELL=포지션청산 예외, PAPER모드 예외)
+  - verdict 없음/rejected → `sec004_nemesis_bypass_guard` 차단
+  - 승인 후 5분 초과 stale → `sec004_stale_approval` 차단
+  - CLI 어드민 직접실행에 `nemesis_verdict: 'approved', approved_at: now` 주입
+- `nemesis.ts`: `nemesis_verdict` + `approved_at` 모든 리턴 경로 포함
+  - ADJUST → `modified`, 승인 → `approved`, 하드룰거절 → `rejected`
+  - `adaptiveResult` 스코프 상단 let 선언 (BUY 블록 밖 참조 보장)
+- `db.ts insertSignal/insertSignalIfFresh`: nemesis_verdict, approved_at INSERT/pass-through
+- `db.ts initSchema`: nemesis 컬럼 자동 추가 루프
+- `l30-signal-save.ts`: `risk.nemesis_verdict`, `risk.approved_at` → DB 저장
+- `force-exit-runner.ts`: `createForceExitSignal`에 `nemesisVerdict: 'approved'` 주입
+- `migrations/20260417_sec004_signal_verdict.sql`: DB 마이그레이션 파일
+- `__tests__/hephaestos-guard.test.ts`: 15개 케이스 전부 통과
+
+### SEC-005 3중 방어 (이전 세션 완료, 커밋 3666d579)
+- `.gitignore`: `docs/codex/*` + `!docs/codex/README.md`
+- `scripts/pre-commit` 섹션 3.5: gitignore 우회 강제 추적 차단
+- `docs/codex/README.md` 신규 생성 (유일 추적 파일)
+
+### 아카이브
+- `CODEX_SECURITY_AUDIT_02.md` → docs/codex/archive/ (SEC-004/005 전부 완료)
+
+### OPS 필수: DB 마이그레이션 적용
+```bash
+# OPS(Mac Studio)에서 실행 필요
+psql -U postgres -d jay -f bots/investment/migrations/20260417_sec004_signal_verdict.sql
+# 또는 initSchema가 자동 적용 (서비스 재시작 시)
+```
+
+---
+
 ### 현재 활성 코덱스 (`docs/codex/`)
 | 파일 | 상태 |
 |------|------|
 | CODEX_CLAUDE_REMODEL | 미착수 (대형) |
 | CODEX_DARWIN_REMODEL | 미착수 (대형) |
 | CODEX_ELIXIR_MONITORING | 운영 runbook (상시) |
-| CODEX_JS_TO_TS_STAGE1 | Stage 2/3 미착수 |
-| CODEX_LUNA_AUTONOMOUS_LOOP | OPS 확인 대기 |
-| CODEX_LUNA_IMPL | D/E/H/I/J 미착수 |
-| CODEX_LUNA_OPS_TRANSITION | Step 5 대기 |
-| CODEX_LUNA_PRODUCTION | 24h 관찰 후 |
-| CODEX_LUNA_REMODEL | 별도 검토 필요 |
+| CODEX_LUNA_REMODEL | OPS 후속 작업만 잔존 (launchd 제거 리허설 — OPS에서 수동) |
+| CODEX_PORTAGENT_OWNERSHIP_INVENTORY | 참조 문서 |
+| CODEX_SECURITY_AUDIT_01 | filter-repo + 히스토리 정리 — 마스터 재승인 후 |
 
+> 루나팀 코드 구현: 완전 완료 ✅ (OPS 전환 작업만 잔존)
 > 이전 HANDOFF: 2026-04-17 CODEX_BLOG_AUTONOMOUS_OPS Phase A~D
