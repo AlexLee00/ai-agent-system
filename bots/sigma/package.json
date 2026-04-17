@@ -1,0 +1,21 @@
+{
+  "name": "sigma-team",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Team Jay Sigma — meta orchestrator for 9 teams, 122 agents",
+  "scripts": {
+    "baseline": "tsx ts/src/sigma-daily.ts --test",
+    "shadow": "cd elixir && mix run -e 'Sigma.V2.ShadowRunner.run_once() |> IO.inspect'",
+    "test": "cd elixir && mix test",
+    "test:ts": "tsx __tests__/*.test.ts",
+    "compile": "cd elixir && mix compile --warnings-as-errors"
+  },
+  "dependencies": {
+    "tsx": "^4.19.0"
+  },
+  "engines": {
+    "node": ">=22",
+    "elixir": ">=1.17"
+  }
+}

@@ -1,0 +1,40 @@
+# bots/sigma/config.yaml — 시그마팀 런타임 설정
+# 실제 값은 이 파일을 config.yaml로 복사 후 수정 (config.yaml은 gitignored)
+
+# Kill Switch (환경변수로 오버라이드 가능)
+enabled: false                    # SIGMA_V2_ENABLED
+tier2_auto_apply: false           # SIGMA_TIER2_AUTO_APPLY
+gepa_enabled: false               # SIGMA_GEPA_ENABLED (= ESPL)
+mcp_server_enabled: false         # SIGMA_MCP_SERVER_ENABLED
+self_rag_enabled: false           # SIGMA_SELF_RAG_ENABLED
+
+# LLM 예산
+llm_budget:
+  daily_usd: 10.00
+  monthly_usd: 180.00
+
+# 속도 제한 (sigma_principles.yaml §2와 일치)
+rate_limits:
+  tier2_per_team_weekly: 2
+  reflexion_daily: 10
+  espl_weekly: 1
+
+# Shadow mode
+shadow:
+  enabled: true
+  min_match_rate: 0.85            # Shadow → Production 전환 임계
+
+# 관측성
+telemetry:
+  exporter: file                  # file | otlp
+  file_path: /tmp/sigma_otel.jsonl
+
+# DB
+database:
+  url: postgresql://localhost:5432/team_jay
+  pool_size: 10
+
+# MCP Server
+mcp:
+  port: 4000
+  bearer_auth_enabled: true
