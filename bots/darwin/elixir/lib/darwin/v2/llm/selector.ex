@@ -42,6 +42,8 @@ defmodule Darwin.V2.LLM.Selector do
     "darwin.espl"           => %{route: :anthropic_haiku,  fallback: [:anthropic_sonnet]},
     "darwin.self_rag"                => %{route: :anthropic_haiku,  fallback: []},
     "darwin.self_rewarding_judge"    => %{route: :anthropic_haiku,  fallback: [:anthropic_sonnet]},
+    "darwin.rag.query_planner"       => %{route: :anthropic_haiku,  fallback: []},
+    "darwin.rag.synthesizer"         => %{route: :anthropic_haiku,  fallback: [:anthropic_sonnet]},
     "commander"             => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]},
     "evaluator"             => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]},
     "planner"               => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]},
