@@ -34,6 +34,16 @@
     <string>false</string>
     <key>SIGMA_SELF_RAG_ENABLED</key>
     <string>false</string>
+    <key>SIGMA_MAPEK_ENABLED</key>
+    <string>false</string>
+    <key>SIGMA_SELF_REWARDING_ENABLED</key>
+    <string>false</string>
+    <key>SIGMA_AGENTIC_RAG_ENABLED</key>
+    <string>false</string>
+    <key>SIGMA_UCB_ENABLED</key>
+    <string>false</string>
+    <key>SIGMA_TELEGRAM_ENHANCED</key>
+    <string>false</string>
     <key>SIGMA_HTTP_PORT</key>
     <string>4010</string>
     <key>SIGMA_LLM_DAILY_BUDGET_USD</key>

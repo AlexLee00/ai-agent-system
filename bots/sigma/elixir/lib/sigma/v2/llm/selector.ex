@@ -39,9 +39,15 @@ defmodule Sigma.V2.LLM.Selector do
     "skill.experiment_design" => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]},
     "skill.feature_planner"   => %{route: :anthropic_haiku,  fallback: []},
     "skill.observability"     => %{route: :anthropic_haiku,  fallback: []},
-    "principle.self_critique" => %{route: :anthropic_opus,   fallback: [:anthropic_sonnet]},
-    "reflexion"               => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]},
-    "espl"                    => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]},
+    "principle.self_critique"    => %{route: :anthropic_opus,   fallback: [:anthropic_sonnet]},
+    "reflexion"                  => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]},
+    "espl"                       => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]},
+    "self_rewarding_judge"       => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]},
+    "mapek.monitor"              => %{route: :anthropic_haiku,  fallback: []},
+    "rag.query_planner"          => %{route: :anthropic_haiku,  fallback: []},
+    "rag.retriever"              => %{route: :anthropic_haiku,  fallback: []},
+    "rag.quality_evaluator"      => %{route: :anthropic_haiku,  fallback: []},
+    "rag.synthesizer"            => %{route: :anthropic_haiku,  fallback: []},
   }
 
   @default_policy %{route: :anthropic_haiku, fallback: []}
