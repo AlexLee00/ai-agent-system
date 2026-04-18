@@ -21,6 +21,7 @@ import yaml from 'js-yaml';
 import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { callLLM, parseJSON } from '../shared/llm-client.ts';
+import { callLLMWithHub } from '../shared/hub-llm-client.ts';
 import { publishAlert } from '../shared/alert-publisher.ts';
 import { search as searchRag } from '../shared/rag-client.ts';
 import { getDomesticRanking, getVolumeRank } from '../shared/kis-client.ts';
@@ -532,7 +533,7 @@ async function evaluatePost(post, market) {
     `이 포스트에서 트레이딩 전략을 추출하고 평가하시오.`,
   ].join('\n');
 
-  const raw = await callLLM('argos', ARGOS_SYSTEM, userMsg, 300);
+  const raw = await callLLMWithHub('argos', ARGOS_SYSTEM, userMsg, callLLM, 300);
   return normalizeEvaluatedStrategy(parseJSON(raw), market, post);
 }
 

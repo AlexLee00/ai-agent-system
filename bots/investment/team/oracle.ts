@@ -14,6 +14,7 @@ import { createRequire } from 'module';
 import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { callLLM, parseJSON } from '../shared/llm-client.ts';
+import { callLLMWithHub } from '../shared/hub-llm-client.ts';
 import { ANALYST_TYPES, ACTIONS } from '../shared/signal.ts';
 import { getFundingRate, getOpenInterest, getLongShortRatio } from '../shared/onchain-data.ts';
 
@@ -112,7 +113,7 @@ function buildOracleUserMessage(symbol, futureSymbol, fearGreed, funding, lsRati
 }
 
 async function resolveOracleDecision(symbol, userMsg, fearGreed, funding, lsRatio) {
-  const responseText = await callLLM('oracle', SYSTEM_PROMPT, userMsg, 200, { symbol });
+  const responseText = await callLLMWithHub('oracle', SYSTEM_PROMPT, userMsg, callLLM, 200, { symbol });
   const parsed = parseJSON(responseText);
   if (parsed?.action) {
     return {

@@ -9,6 +9,7 @@
  */
 
 import { callLLM, parseJSON } from '../shared/llm-client.ts';
+import { callLLMWithHub } from '../shared/hub-llm-client.ts';
 
 const PROMPTS = {
   binance: `당신은 암호화폐 약세(Bearish) 리서처입니다.
@@ -52,7 +53,7 @@ export async function runBearResearcher(symbol, analysisSummary, currentPrice, e
   const prompt   = PROMPTS[exchange] || PROMPTS.binance;
   const userMsg  = `심볼: ${symbol} (${label}) | 현재가: ${priceStr}\n\n시장 분석:\n${analysisSummary}\n\n약세 관점 투자 의견을 제시하세요.`;
 
-  const raw    = await callLLM('athena', prompt, userMsg, 300, { symbol });
+  const raw    = await callLLMWithHub('athena', prompt, userMsg, callLLM, 300, { symbol });
   const parsed = parseJSON(raw);
   if (!parsed) return null;
 

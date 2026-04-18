@@ -212,3 +212,46 @@ async function _saveShadowLog(
     // DB 저장 실패는 무시 (운영 중단 방지)
   }
 }
+
+// ─── 편의 래퍼: 에이전트 파일에서 callLLM 대체용 ──────────────────────────
+// 사용 패턴:
+//   const text = await callLLMWithHub('luna', systemPrompt, userMsg, callLLM, 768, { symbol });
+
+export async function callLLMWithHub(
+  agentName: string,
+  systemPrompt: string,
+  userMsg: string,
+  directFn: (agent: string, system: string, user: string, maxTokens: number, opts?: unknown) => Promise<string>,
+  maxTokens?: number,
+  opts: { symbol?: string; market?: string; cacheTTL?: number } = {}
+): Promise<string> {
+  const shadow = isHubShadow();
+  const enabled = isHubEnabled();
+
+  if (!enabled && !shadow) {
+    return directFn(agentName, systemPrompt, userMsg, maxTokens ?? 512, opts);
+  }
+
+  if (shadow) {
+    // Shadow: Hub 호출(비동기, 로깅용) + 직접 호출(실제 결과)
+    const directResult = await directFn(agentName, systemPrompt, userMsg, maxTokens ?? 512, opts);
+    callViaHub(agentName, systemPrompt, userMsg, {
+      maxTokens,
+      symbol: opts.symbol,
+      market: opts.market,
+      shadowCompare: directResult,
+    }).catch(() => {});
+    return directResult;
+  }
+
+  // Hub 활성: Hub 우선, 실패 시 직접 호출 폴백
+  const hubResult = await callViaHub(agentName, systemPrompt, userMsg, {
+    maxTokens,
+    symbol: opts.symbol,
+    market: opts.market,
+  });
+  if (hubResult.ok) return hubResult.text;
+
+  console.warn(`[hub-llm] ${agentName} Hub 실패(${hubResult.error}), 직접 호출 폴백`);
+  return directFn(agentName, systemPrompt, userMsg, maxTokens ?? 512, opts);
+}

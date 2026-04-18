@@ -22,6 +22,7 @@ import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 const _require = createRequire(import.meta.url);
 const shadow   = _require('../../../packages/core/lib/shadow-mode.js');
 import { callLLM, cachedCallLLM, parseJSON } from '../shared/llm-client.ts';
+import { callLLMWithHub } from '../shared/hub-llm-client.ts';
 import { search as searchRag, store as storeRag } from '../shared/rag-client.ts';
 import { ACTIONS, ANALYST_TYPES, SIGNAL_STATUS, validateSignal } from '../shared/signal.ts';
 import { notifySignal, notifyError } from '../shared/report.ts';
@@ -891,7 +892,7 @@ export async function getSymbolDecision(symbol, analyses, exchange = 'binance', 
       context:   'symbol_decision',
       input:     userMsg,
       ruleEngine: async () => {
-        const raw    = await cachedCallLLM('luna', getLunaSystem(exchange), userMsg, 256, /** @type {any} */ ({ cacheTTL: 300, symbol }));
+        const raw    = await callLLMWithHub('luna', getLunaSystem(exchange), userMsg, cachedCallLLM, 256, { symbol });
         const parsed = parseJSON(raw);
         if (!parsed?.action) {
           return buildVoteFallbackDecision(analyses, exchange, '분석가 투표 기반 (LLM fallback)');
@@ -937,7 +938,7 @@ export async function getPortfolioDecision(symbolDecisions, portfolio, exchange 
 
   let raw;
   try {
-    raw = await callLLM('luna', systemPrompt, userMsg, 768);
+    raw = await callLLMWithHub('luna', systemPrompt, userMsg, callLLM, 768);
   } catch (err) {
     if (String(err?.message || '').includes('LLM 긴급 차단 중')) {
       console.warn(`[luna] portfolio decision LLM 긴급 차단 fallback 적용 (${exchange}): ${err.message}`);
@@ -960,7 +961,7 @@ export async function getExitDecisions(openPositions, exchange = 'binance') {
 
   let raw;
   try {
-    raw = await callLLM('luna', LUNA_EXIT_SYSTEM, userPrompt, 1024);
+    raw = await callLLMWithHub('luna', LUNA_EXIT_SYSTEM, userPrompt, callLLM, 1024);
   } catch (err) {
     if (String(err?.message || '').includes('LLM 긴급 차단 중')) {
       console.warn(`[luna] exit decision LLM 긴급 차단 fallback 적용 (${exchange}): ${err.message}`);

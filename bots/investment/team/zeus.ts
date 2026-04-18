@@ -9,6 +9,7 @@
  */
 
 import { callLLM, parseJSON } from '../shared/llm-client.ts';
+import { callLLMWithHub } from '../shared/hub-llm-client.ts';
 
 const PROMPTS = {
   binance: `당신은 암호화폐 강세(Bullish) 리서처입니다.
@@ -51,7 +52,7 @@ export async function runBullResearcher(symbol, analysisSummary, currentPrice, e
   const prompt   = PROMPTS[exchange] || PROMPTS.binance;
   const userMsg  = `심볼: ${symbol} (${label}) | 현재가: ${priceStr}\n\n시장 분석:\n${analysisSummary}\n\n강세 관점 투자 의견을 제시하세요.`;
 
-  const raw    = await callLLM('zeus', prompt, userMsg, 300);
+  const raw    = await callLLMWithHub('zeus', prompt, userMsg, callLLM, 300);
   const parsed = parseJSON(raw);
   if (!parsed) return null;
 
