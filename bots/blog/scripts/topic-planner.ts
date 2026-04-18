@@ -15,6 +15,7 @@
  */
 'use strict';
 
+const fs = require('fs');
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const kst = require('../../../packages/core/lib/kst');
@@ -26,6 +27,7 @@ const {
   normalizeTitle,
   similarity,
   isTooCloseToRecentTitle,
+  mergeRecentTitles,
 } = require('../lib/topic-title-guard.ts');
 
 // ─── 상수 ──────────────────────────────────────────────────────────────────
@@ -82,6 +84,7 @@ const CATEGORY_GUIDES = {
 };
 
 const PREPLANNED_CANDIDATE_COUNT = 3;
+const BLOG_OUTPUT_DIR = path.join(env.PROJECT_ROOT, 'bots/blog/output');
 
 const CATEGORY_TOPIC_LANES = {
   '자기계발': [
@@ -325,6 +328,31 @@ async function getRecentTitles30d(tomorrowDate) {
   }
 }
 
+function parseRecentOutputPost(filename) {
+  const match = String(filename || '').match(/^(\d{4}-\d{2}-\d{2})_(general|lecture)_(.+)\.html$/);
+  if (!match) return null;
+  const [, dateString, postType, title] = match;
+  return {
+    dateString,
+    postType,
+    title: String(title || '').trim(),
+  };
+}
+
+function getRecentOutputTitles(limit = 40) {
+  try {
+    return fs.readdirSync(BLOG_OUTPUT_DIR)
+      .map(parseRecentOutputPost)
+      .filter(Boolean)
+      .sort((a, b) => String(b.dateString).localeCompare(String(a.dateString)))
+      .slice(0, limit)
+      .map((post) => post.title)
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 function isDuplicate(title, recentTitles) {
   return isTooCloseToRecentTitle({ title }, recentTitles);
 }
@@ -547,7 +575,10 @@ async function main() {
   const rawCandidates = await generateCandidates(category, issues, tomorrowDate);
 
   // 4. 30일 최근 제목 로드
-  const recentTitles = await getRecentTitles30d(tomorrowDate);
+  const recentTitles = mergeRecentTitles(
+    await getRecentTitles30d(tomorrowDate),
+    getRecentOutputTitles()
+  );
 
   // 5. 품질 점수화 (순차 — LLM 호출 포함)
   const scored = [];

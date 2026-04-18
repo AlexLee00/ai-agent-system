@@ -74,6 +74,11 @@ const { ensureBlogCoreSchema }                      = require(path.join(env.PROJ
 const { checkQualityEnhanced }                      = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/quality-checker.ts'));
 const { publishToFile, recordPerformance }          = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/publ.ts'));
 const { crosspostToInstagram }                      = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/insta-crosspost.ts'));
+const {
+  diagnoseImageGeneration,
+  reportImageGenFailure,
+  reportImageDiagnosis,
+}                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/img-gen-doctor.ts'));
 const pgPool                                        = require('../../../packages/core/lib/pg-pool');
 const rag                                           = require('../../../packages/core/lib/rag-safe');
 const hiringContract                                = require('../../../packages/core/lib/hiring-contract');
@@ -1146,12 +1151,14 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
   }
   const images = options.dryRun
     ? null
-    : await generatePostImages({ title: genTitle, postType: 'general', category: context.category }).catch(e => {
-      console.warn('[이미지] 생성 실패 (일반):', e.message); return null;
+    : await generatePostImages({ title: genTitle, postType: 'general', category: context.category }).catch(async e => {
+      console.error('[이미지] 생성 실패 (일반):', e.message);
+      await reportImageGenFailure(genTitle, e.message);
+      const diag = await diagnoseImageGeneration();
+      if (!diag.healthy) await reportImageDiagnosis(diag.issues);
+      console.log('[이미지] 일반 포스팅은 이미지 없이 발행 계속 진행');
+      return null;
     });
-  if (!images && !options.dryRun) {
-    console.log('[이미지] 일반 포스팅은 이미지 없이 발행 계속 진행');
-  }
 
   const instaContent = options.dryRun
     ? null

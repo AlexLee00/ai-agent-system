@@ -104,6 +104,16 @@ async function crosspostToInstagram(instaContent, postTitle, postId = null, dryR
     });
 
     console.log(`[크로스포스트] 인스타 업로드 성공: publishId=${result.publishId}`);
+    await runIfOps(
+      'blog-insta-publish-ok',
+      () => postAlarm({
+        message: `✅ [블로팀] 인스타 발행 성공\n글: ${postTitle}\npublishId: ${result.publishId}`,
+        team: 'blog',
+        bot: 'insta-crosspost',
+        level: 'info',
+      }),
+      () => {}
+    ).catch(() => {});
     return { ok: true, publishId: result.publishId, creationId: result.creationId, status: 'ok' };
 
   } catch (err) {
