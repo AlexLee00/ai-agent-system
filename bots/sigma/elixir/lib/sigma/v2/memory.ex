@@ -21,7 +21,7 @@ defmodule Sigma.V2.Memory do
     if importance >= 0.7 do
       Sigma.V2.Memory.L2.run(%{
         operation: :store,
-        content: to_string(content),
+        content: serialize_content(content),
         team: "sigma",
         top_k: 5
       }, %{})
@@ -120,7 +120,13 @@ defmodule Sigma.V2.Memory do
     team = feedback[:target_team] || feedback[:team] || "unknown"
     type = feedback[:feedback_type] || "general"
     content = feedback[:content] || inspect(feedback)
-    "#{team}/#{type}: #{String.slice(to_string(content), 0, 200)}"
+    "#{team}/#{type}: #{String.slice(serialize_content(content), 0, 200)}"
   end
-  defp summarize(other), do: String.slice(to_string(other), 0, 200)
+  defp summarize(other), do: String.slice(serialize_content(other), 0, 200)
+
+  defp serialize_content(value) when is_binary(value), do: value
+  defp serialize_content(value) when is_atom(value), do: Atom.to_string(value)
+  defp serialize_content(value) when is_number(value), do: to_string(value)
+  defp serialize_content(value) when is_map(value) or is_list(value), do: inspect(value)
+  defp serialize_content(value), do: inspect(value)
 end

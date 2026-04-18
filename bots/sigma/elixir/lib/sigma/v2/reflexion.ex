@@ -10,9 +10,9 @@ defmodule Sigma.V2.Reflexion do
 
   @doc "실패한 Directive에 대한 리플렉션 생성 + 메모리 저장."
   def reflect(directive, outcome) do
-    team = directive[:team] || directive.team || "unknown"
-    analyst = directive[:analyst] || directive.analyst || "unknown"
-    action = directive[:action] || directive.action || %{}
+    team = get_field(directive, :team, "unknown")
+    analyst = get_field(directive, :analyst, "unknown")
+    action = get_field(directive, :action, %{})
 
     prompt = """
     시그마 분석가 "#{analyst}"가 팀 "#{team}"에
@@ -37,9 +37,11 @@ defmodule Sigma.V2.Reflexion do
           "reflection_unavailable"
       end
 
+    rollback_spec = get_field(directive, :rollback_spec, %{})
+
     directive_id =
-      get_in(directive, [:rollback_spec, :directive_id]) ||
-        get_in(directive, ["rollback_spec", "directive_id"]) ||
+      get_in(rollback_spec, [:directive_id]) ||
+        get_in(rollback_spec, ["directive_id"]) ||
         Ecto.UUID.generate()
 
     entry = %{
@@ -71,4 +73,10 @@ defmodule Sigma.V2.Reflexion do
     |> Enum.take(5)
   end
   defp extract_tags(_), do: []
+
+  defp get_field(value, key, default) when is_map(value) do
+    Map.get(value, key) || Map.get(value, Atom.to_string(key)) || default
+  end
+
+  defp get_field(_value, _key, default), do: default
 end

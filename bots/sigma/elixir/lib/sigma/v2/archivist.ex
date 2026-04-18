@@ -11,7 +11,7 @@ defmodule Sigma.V2.Archivist do
       """
       INSERT INTO sigma_v2_directive_audit
         (directive_id, tier, team, action, executed_at, outcome)
-      VALUES ($1, $2, $3, $4, NOW(), 'observed')
+      VALUES ($1, $2, $3, $4::jsonb, NOW(), 'observed')
       """,
       [
         Ecto.UUID.generate(),
@@ -28,7 +28,7 @@ defmodule Sigma.V2.Archivist do
       """
       INSERT INTO sigma_v2_directive_audit
         (directive_id, tier, team, action, executed_at, outcome, principle_check_result)
-      VALUES ($1, $2, $3, $4, NOW(), 'signal_sent', $5)
+      VALUES ($1, $2, $3, $4::jsonb, NOW(), 'signal_sent', $5::jsonb)
       """,
       [
         Ecto.UUID.generate(),
@@ -46,7 +46,7 @@ defmodule Sigma.V2.Archivist do
       """
       INSERT INTO sigma_v2_directive_audit
         (directive_id, tier, team, action, executed_at, outcome, principle_check_result)
-      VALUES ($1, $2, $3, $4, NOW(), 'failure', $5)
+      VALUES ($1, $2, $3, $4::jsonb, NOW(), 'failure', $5::jsonb)
       """,
       [
         Ecto.UUID.generate(),
@@ -64,7 +64,7 @@ defmodule Sigma.V2.Archivist do
       """
       INSERT INTO sigma_v2_directive_audit
         (directive_id, tier, team, action, executed_at, outcome, principle_check_result)
-      VALUES ($1, $2, $3, $4, NOW(), 'blocked', $5)
+      VALUES ($1, $2, $3, $4::jsonb, NOW(), 'blocked', $5::jsonb)
       """,
       [
         Ecto.UUID.generate(),
@@ -82,7 +82,7 @@ defmodule Sigma.V2.Archivist do
       """
       INSERT INTO sigma_v2_directive_audit
         (directive_id, tier, team, action, executed_at, outcome, principle_check_result)
-      VALUES ($1, $2, $3, $4, NOW(), 'tier2_applied', $5)
+      VALUES ($1, $2, $3, $4::jsonb, NOW(), 'tier2_applied', $5::jsonb)
       """,
       [
         Ecto.UUID.generate(),
@@ -100,7 +100,7 @@ defmodule Sigma.V2.Archivist do
       """
       INSERT INTO sigma_v2_directive_audit
         (directive_id, tier, team, action, executed_at, outcome, principle_check_result)
-      VALUES ($1, 2, $2, $3, NOW(), 'rollback', $4)
+      VALUES ($1, 2, $2, $3::jsonb, NOW(), 'rollback', $4::jsonb)
       """,
       [
         Ecto.UUID.generate(),
@@ -117,7 +117,7 @@ defmodule Sigma.V2.Archivist do
       """
       INSERT INTO sigma_v2_directive_audit
         (directive_id, tier, team, action, executed_at, outcome, principle_check_result)
-      VALUES ($1, 0, $2, $3, NOW(), 'reflexion', $4)
+      VALUES ($1, 0, $2, $3::jsonb, NOW(), 'reflexion', $4::jsonb)
       """,
       [
         Ecto.UUID.generate(),
