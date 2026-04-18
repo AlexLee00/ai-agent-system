@@ -589,28 +589,57 @@ async function getRecentNeighborBlogIds(recentWindowDays = 14) {
 
 async function saveDetectedComment(comment) {
   const dedupeKey = buildDedupeKey(comment.postUrl, comment.commenterId, comment.commentText);
+  const existing = await pgPool.get('blog', `
+    SELECT *
+    FROM ${TABLE}
+    WHERE dedupe_key = $1
+    LIMIT 1
+  `, [dedupeKey]);
+
+  if (existing?.id) {
+    const recoverable = isRecoverableReplyFailure(existing);
+    const inboundAssessment = assessInboundComment(existing);
+    const shouldRequeue = Boolean(
+      !existing.reply_at
+      && ['failed', 'skipped'].includes(String(existing.status || ''))
+      && recoverable
+      && inboundAssessment.ok
+    );
+
+    await pgPool.run('blog', `
+      UPDATE ${TABLE}
+      SET status = CASE
+            WHEN $2 THEN 'pending'
+            ELSE status
+          END,
+          error_message = CASE
+            WHEN $2 THEN NULL
+            ELSE error_message
+          END,
+          meta = COALESCE(meta, '{}'::jsonb) || $3::jsonb
+      WHERE id = $1
+    `, [
+      existing.id,
+      shouldRequeue,
+      JSON.stringify({
+        ...(comment.meta || {}),
+        ...(shouldRequeue ? {
+          phase: 'recoverable_requeue',
+          previous_error: existing.error_message || null,
+        } : {}),
+      }),
+    ]);
+
+    return { inserted: false, id: existing.id, dedupeKey, requeued: shouldRequeue };
+  }
+
   const result = await pgPool.run('blog', `
     INSERT INTO ${TABLE} (
       post_url, post_title, commenter_id, commenter_name,
       comment_text, comment_ref, dedupe_key, meta
     )
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
-    ON CONFLICT (dedupe_key) DO UPDATE
-    SET status = CASE
-          WHEN ${TABLE}.reply_at IS NULL
-           AND ${TABLE}.status IN ('failed', 'skipped')
-          THEN 'pending'
-          ELSE ${TABLE}.status
-        END,
-        error_message = CASE
-          WHEN ${TABLE}.reply_at IS NULL
-           AND ${TABLE}.status IN ('failed', 'skipped')
-          THEN NULL
-          ELSE ${TABLE}.error_message
-        END,
-        meta = COALESCE(${TABLE}.meta, '{}'::jsonb) || EXCLUDED.meta
-    RETURNING id,
-      (xmax = 0) AS inserted
+    RETURNING id
   `, [
     comment.postUrl,
     comment.postTitle || null,
@@ -623,9 +652,9 @@ async function saveDetectedComment(comment) {
   ]);
 
   if (result.rowCount > 0) {
-    return { inserted: result.rows[0].inserted === true, id: result.rows[0].id, dedupeKey };
+    return { inserted: true, id: result.rows[0].id, dedupeKey, requeued: false };
   }
-  return { inserted: false, dedupeKey };
+  return { inserted: false, dedupeKey, requeued: false };
 }
 
 async function hasSuccessfulReplyForComment(comment) {
