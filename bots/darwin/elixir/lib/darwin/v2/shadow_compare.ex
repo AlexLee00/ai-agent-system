@@ -164,6 +164,39 @@ defmodule Darwin.V2.ShadowCompare do
     }
   end
 
+  @doc """
+  주간 Shadow 누적 통계 (Phase M).
+  V1 vs V2 비교 집계 — darwin-weekly-review.ts에서 호출.
+
+  반환: %{total_runs, v1_success_rate, v2_success_rate, avg_match, regression_count}
+  DB 접근 불가 시 빈 집계 반환.
+  """
+  @spec weekly_aggregate() :: map()
+  def weekly_aggregate do
+    sql = """
+    SELECT
+      COUNT(*) AS total_runs,
+      AVG(match_score) AS avg_match,
+      COUNT(*) FILTER (WHERE match_score < 0.8) AS regressions
+    FROM darwin_v2_shadow_runs
+    WHERE run_at >= NOW() - INTERVAL '7 days'
+    """
+
+    case Jay.Core.Repo.query(sql, []) do
+      {:ok, %{rows: [[total, avg, regressions]]}} ->
+        %{
+          total_runs:       if(is_nil(total), do: 0, else: round(total * 1.0)),
+          avg_match:        if(is_nil(avg), do: nil, else: Float.round(avg * 1.0, 4)),
+          regression_count: if(is_nil(regressions), do: 0, else: round(regressions * 1.0))
+        }
+
+      _ ->
+        %{total_runs: 0, avg_match: nil, regression_count: 0}
+    end
+  rescue
+    _ -> %{total_runs: 0, avg_match: nil, regression_count: 0}
+  end
+
   # -------------------------------------------------------------------
   # Private
   # -------------------------------------------------------------------
