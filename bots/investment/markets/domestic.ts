@@ -118,6 +118,12 @@ async function filterMockUntradableDomesticCandidates(symbols, tradeMode = getIn
  * @param {string[]} symbols  ex) ['005930', '000660']
  */
 export async function runDomesticCycle(symbols) {
+  // Phase 5c Kill Switch — LUNA_LIVE_DOMESTIC=true 이어야 실행
+  if (process.env.LUNA_LIVE_DOMESTIC !== 'true') {
+    console.log('[domestic] LIVE OFF — 사이클 스킵 (LUNA_LIVE_DOMESTIC 미설정)');
+    return { ok: false, mode: 'mock', reason: 'kill_switch_off' };
+  }
+
   await initHubSecrets();
   const { paper: paperMode, tag } = getKisExecutionModeInfo('국내주식');
   const startTime = Date.now();

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>ai.luna.shadow-auto-promote</string>
+
+	<key>ProgramArguments</key>
+	<array>
+		<string>/opt/homebrew/bin/node</string>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/luna-shadow-auto-promote.ts</string>
+	</array>
+
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/Users/alexlee</string>
+		<key>NODE_ENV</key>
+		<string>production</string>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+	</dict>
+
+	<!-- 매일 KST 09:00 = UTC 00:00 (국내 시장 개장 직전 마스터 결정 지원) -->
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Hour</key>
+		<integer>0</integer>
+		<key>Minute</key>
+		<integer>0</integer>
+	</dict>
+
+	<key>WorkingDirectory</key>
+	<string>/Users/alexlee/projects/ai-agent-system</string>
+
+	<key>StandardOutPath</key>
+	<string>/tmp/luna-shadow-auto-promote.log</string>
+
+	<key>StandardErrorPath</key>
+	<string>/tmp/luna-shadow-auto-promote.err.log</string>
+
+	<key>RunAtLoad</key>
+	<false/>
+
+	<key>KeepAlive</key>
+	<false/>
+</dict>
+</plist>

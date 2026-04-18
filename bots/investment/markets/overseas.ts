@@ -83,6 +83,12 @@ tracker.once('BUDGET_EXCEEDED', async ({ type }) => {
  * @param {string[]} symbols  ex) ['AAPL', 'TSLA', 'NVDA']
  */
 export async function runOverseasCycle(symbols) {
+  // Phase 5c Kill Switch — LUNA_LIVE_OVERSEAS=true 이어야 실행
+  if (process.env.LUNA_LIVE_OVERSEAS !== 'true') {
+    console.log('[overseas] LIVE OFF — 사이클 스킵 (LUNA_LIVE_OVERSEAS 미설정)');
+    return { ok: false, mode: 'mock', reason: 'kill_switch_off' };
+  }
+
   await initHubSecrets();
   const { paper: paperMode, tag } = getKisExecutionModeInfo('해외주식');
   const startTime = Date.now();
