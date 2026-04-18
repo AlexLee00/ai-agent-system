@@ -22,6 +22,11 @@ const pgPool = require('../../../packages/core/lib/pg-pool');
 const { callLocalLlm } = require('../../../packages/core/lib/local-llm-client');
 const { ensureBlogCoreSchema } = require('../lib/schema.ts');
 const { ensureSchedule, getScheduleByDate } = require('../lib/schedule.ts');
+const {
+  normalizeTitle,
+  similarity,
+  isTooCloseToRecentTitle,
+} = require('../lib/topic-title-guard.ts');
 
 // ─── 상수 ──────────────────────────────────────────────────────────────────
 
@@ -307,44 +312,21 @@ async function getRecentTitles30d(tomorrowDate) {
     const cutoffStr = cutoffDate.toISOString().slice(0, 10);
     const rows = await pgPool.query('blog',
       `SELECT title FROM blog.posts
-       WHERE type = 'general'
+       WHERE type IN ('general', 'lecture')
          AND DATE(publish_date) >= $1
-         AND status NOT IN ('failed', 'error')
-       ORDER BY publish_date DESC`,
-      [cutoffStr]
+         AND DATE(publish_date) <= $2
+         AND COALESCE(status, '') NOT IN ('failed', 'error', 'archived')
+       ORDER BY publish_date DESC, id DESC`,
+      [cutoffStr, tomorrowDate]
     );
-    return (rows || []).map(r => String(r.title || '').toLowerCase());
+    return (rows || []).map(r => String(r.title || '').trim()).filter(Boolean);
   } catch {
     return [];
   }
 }
 
-function normalizeTitle(text = '') {
-  return String(text || '')
-    .replace(/^\[[^\]]+\]\s*/, '')
-    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
-}
-
-function titleSimilarity(a, b) {
-  const normalize = t => normalizeTitle(t).replace(/\s+/g, '');
-  const sa = normalize(a);
-  const sb = normalize(b);
-  if (!sa || !sb) return 0;
-  const setA = new Set();
-  const setB = new Set();
-  for (let i = 0; i < sa.length - 1; i++) setA.add(sa.slice(i, i + 2));
-  for (let i = 0; i < sb.length - 1; i++) setB.add(sb.slice(i, i + 2));
-  let inter = 0;
-  for (const bi of setA) { if (setB.has(bi)) inter++; }
-  const union = new Set([...setA, ...setB]).size;
-  return union ? inter / union : 0;
-}
-
 function isDuplicate(title, recentTitles) {
-  return recentTitles.some(rt => titleSimilarity(rt, title) > 0.35);
+  return isTooCloseToRecentTitle({ title }, recentTitles);
 }
 
 function inferCandidateLane(category, candidate) {
@@ -374,7 +356,7 @@ function selectDiverseCandidates(candidates, category, limit = PREPLANNED_CANDID
   for (const candidate of sorted) {
     if (selected.length >= limit) break;
     const lane = inferCandidateLane(category, candidate);
-    const tooSimilar = selected.some(existing => titleSimilarity(existing.title, candidate.title) > 0.24);
+    const tooSimilar = selected.some(existing => similarity(existing.title, candidate.title) > 0.24);
     if (usedLanes.has(lane) || tooSimilar) continue;
     selected.push({ ...candidate, lane });
     usedLanes.add(lane);
@@ -383,7 +365,7 @@ function selectDiverseCandidates(candidates, category, limit = PREPLANNED_CANDID
   for (const candidate of sorted) {
     if (selected.length >= limit) break;
     const exists = selected.some(existing => existing.title === candidate.title);
-    const tooSimilar = selected.some(existing => titleSimilarity(existing.title, candidate.title) > 0.32);
+    const tooSimilar = selected.some(existing => similarity(existing.title, candidate.title) > 0.32);
     if (exists || tooSimilar) continue;
     selected.push({ ...candidate, lane: inferCandidateLane(category, candidate) });
   }
