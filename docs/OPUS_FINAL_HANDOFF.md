@@ -1,6 +1,48 @@
-# 세션 인수인계 — 2026-04-19 (CODEX_DARWIN_EVOLUTION 완료 — 50차 세션 추가)
+# 세션 인수인계 — 2026-04-19 (CODEX_SKA_EVOLUTION Phase 1~2 완료 — 51차 세션 추가)
 
-> 세션 범위: CODEX_LUNA_REMODEL Phase 1 — 9개 에이전트 Hub LLM 라우팅 마이그레이션 완료
+> 세션 범위: CODEX_SKA_EVOLUTION Phase 1~2 — Skill Registry + 8개 스킬 구현
+
+## 완료 요약 ✅ (51차 세션 추가)
+
+### CODEX_SKA_EVOLUTION Phase 1~2 — Skill-Based Architecture 기반 구축
+
+**Phase 1 구현 완료**:
+- `TeamJay.Ska.Skill` Behaviour 신설 (`run/2`, `metadata/0`, `health_check/0`)
+- `TeamJay.Ska.SkillRegistry` GenServer+ETS: 등록/조회/실행/통계/헬스체크
+  Kill Switch: `SKA_SKILL_REGISTRY_ENABLED` (기본 true)
+- 공통 스킬 5개: `DetectSessionExpiry` / `NotifyFailure` / `PersistCycleMetrics` / `TriggerRecovery` / `AuditDbIntegrity`
+- DB 마이그레이션: `ska_skill_execution_log` + `ska_cycle_metrics` + `ska_skill_performance_24h` MView
+- `SkaSupervisor`: SkillRegistry 첫 번째 자식으로 추가
+
+**Phase 2 구현 완료**:
+- 도메인 스킬 3개: `ParseNaverHtml` / `ClassifyKioskState` / `AuditPosTransactions`
+- `SkillRegistry` builtin_skills에 Phase 2 스킬 등록
+- `NaverMonitor.process_cycle_with_skills/1` 신규 추가
+  Kill Switch: `SKA_NAVER_SKILL_ENABLED` (기본 false — 점진적 전환)
+
+**테스트**: 39개 신규 (Phase 1: 21개, Phase 2: 18개)
+**커밋**: `8fbcec0f` (Phase 1) + `f906532e` (Phase 2)
+**Git Tags**: `pre-phase-1-ska-evolution`, `pre-phase-2-ska-evolution`
+
+**CODEX 잔여 Phase (Phase 3~7)**:
+CODEX 문서가 Phase 2 중반까지만 작성됨 — 다음 세션에서 메티가 Phase 3~7 설계 필요:
+- Phase 3: 분석 스킬 4개 (ForecastDemand/AnalyzeRevenue/DetectAnomaly/GenerateReport)
+- Phase 4: MAPE-K Loop (`TeamJay.Ska.MapeKLoop`)
+- Phase 5: Self-Rewarding + Skill 성과 학습
+- Phase 6: Dynamic Agent Composition (ε-greedy 편성)
+- Phase 7: Telegram 채널 고도화 + 주간 Skill 리포트
+
+## 다음 단계
+
+1. **SKA Phase 3 CODEX 작성**: 메티가 Phase 3~7 설계서 완성
+2. **SKA_NAVER_SKILL_ENABLED=true 검증**: NaverMonitor Skill 모드 활성화 후 사이클 테스트
+3. **DB 마이그레이션 OPS 적용**: `20261001000020_ska_skill_tables.exs` 적용
+
+## 🏷️ 51차 세션 요약
+
+**51차 세션 — CODEX_SKA_EVOLUTION Phase 1~2: Skill Behaviour/Registry/8개 스킬 구현, 39개 테스트, Kill Switch 2개 설정 후 커밋 완료.**
+
+---
 
 ## 완료 요약 ✅ (50차 세션 추가)
 
