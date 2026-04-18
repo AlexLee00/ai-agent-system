@@ -1,3 +1,74 @@
+# 세션 인수인계 — 2026-04-18 (CODEX_DARWIN_EVOLUTION Phase S+A+R2 완료)
+
+> 세션 범위: CODEX_DARWIN_EVOLUTION Phase S (Self-Rewarding) + Phase A (Agentic RAG) + Phase R2 (Research Registry)
+
+## 완료 요약 ✅
+
+### Phase S — Self-Rewarding DPO 피드백 루프
+
+- `Darwin.V2.SelfRewarding` 완전 구현 (스텁 → 풀 구현)
+  - `evaluate_cycle/1`: 맵(전체 결과) 또는 cycle_id 모두 수용
+  - LLM-as-a-Judge: `darwin.self_rewarding_judge` 에이전트 (haiku → sonnet 폴백)
+  - DPO 분류: preferred(≥0.7) / rejected(≤0.4) / neutral
+  - `evaluate_week/0`: 지난 7일 미평가 사이클 일괄 처리
+  - `rebalance_recommender_monthly/0`: preferred_ratio ≤ 0.3 Telegram 알림 (자동 변경 금지)
+  - 모든 LLM/DB 오류는 silent `:ok` (무해 실패)
+- MapeKLoop: `evaluate_cycle(cycle_result)` 전달로 변경 (cycle_id만 → 전체 맵)
+- Migration: `darwin_cycle_history` + `darwin_dpo_preference_pairs` + `darwin_recommender_history`
+- 신규 테스트 9개
+
+### Phase A — Agentic RAG 고도화
+
+- `Darwin.V2.Rag.AgenticRag` 진입점 신설 (kill switch OFF → SelfRAG fallback)
+- `Darwin.V2.Rag.QueryPlanner`: LLM 기반 sub-query 분해 + 규칙 기반 fallback
+- `Darwin.V2.Rag.MultiSourceRetriever`: L2 memory + cycle_history 병렬 검색
+- `Darwin.V2.Rag.QualityEvaluator`: freshness/source_weight 품질 평가 + 재검색 판단
+- `Darwin.V2.Rag.ResponseSynthesizer`: LLM 통합 응답 + concat fallback
+- 신규 테스트 12개
+
+### Phase R2 — Research Registry + 자율 레벨 승격
+
+- `Darwin.V2.ResearchRegistry` 완전 구현
+  - `register_paper/1`: 논문 등록 (discovered 단계)
+  - `transition/3`: 단계 전이 기록 + 유효성 검사 (역행 금지)
+  - `link_effect/2`: 구현 효과 링크 + improvement_pct 자동 계산
+  - `record_cycle_result/1`: 사이클 → 단계 자동 매핑
+  - 단방향 원칙: 삭제 금지, retired만 허용
+- `Darwin.V2.AutonomyLevel.check_promotion_conditions/0`: L3→L4, L4→L5 조건 체크 + Telegram 알림
+- 마이그레이션: `darwin_research_registry` + `darwin_research_effects` + `darwin_research_promotion_log` + `darwin_autonomy_promotion_log`
+- 신규 테스트 12개
+
+### 최종 테스트 현황
+```
+386 tests, 0 failures (16 excluded)
+```
+
+### Kill Switch 현재 상태 (Phase R2 완료 후)
+```
+DARWIN_MAPEK_ENABLED=false              (활성화 대기)
+DARWIN_SELF_REWARDING_ENABLED=false     (Phase S 완료 — 활성화 가능)
+DARWIN_AGENTIC_RAG_ENABLED=false        (Phase A 완료 — 활성화 가능)
+DARWIN_RESEARCH_REGISTRY_ENABLED=false  (Phase R2 완료 — 활성화 가능)
+DARWIN_TELEGRAM_ENHANCED_ENABLED=false  (Phase O 미구현)
+DARWIN_AUTO_PROMOTION_ENABLED=false     (마스터 승인 필요)
+```
+
+### 다음 단계 (Phase O — Operations: Telegram 강화 + Daily Report)
+
+Phase O 구현 대상:
+1. Telegram 5채널 리포트 강화 (`Darwin.V2.TelegramBridge` 확장)
+2. Daily Report 스크립트 (`bots/darwin/scripts/darwin-daily-report.ts`)
+3. Weekly Report + 자율 레벨 승격 후보 알림
+4. `git tag pre-phase-o-darwin-evolution` 후 시작
+
+DB 마이그레이션 OPS 적용 필요:
+- `bots/darwin/migrations/20260418000008_add_darwin_self_rewarding.exs`
+- `bots/darwin/migrations/20260418000009_add_darwin_research_registry.exs`
+- `bots/darwin/migrations/20260418000010_add_darwin_autonomy_promotion.exs`
+- `bots/darwin/elixir/priv/repo/migrations/20261001000002_create_darwin_self_rewarding_tables.exs`
+
+---
+
 # 세션 인수인계 — 2026-04-18 (CODEX_DARWIN_EVOLUTION Phase R 완료)
 
 > 세션 범위: CODEX_DARWIN_EVOLUTION Phase R — MAPE-K 루프 통합
