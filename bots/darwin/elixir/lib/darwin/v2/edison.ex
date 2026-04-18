@@ -90,7 +90,7 @@ defmodule Darwin.V2.Edison do
 
   defp handle_implement(paper, plan, state) do
     level      = AutonomyLevel.level()
-    kill_sw    = Application.get_env(:darwin, :kill_switch, true)
+    kill_sw    = Darwin.V2.Config.kill_switch?()
     title      = paper["title"] || paper[:title] || "unknown"
 
     cond do

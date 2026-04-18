@@ -214,7 +214,7 @@ defmodule Darwin.V2.Memory.L2 do
   @spec encode(String.t()) :: {:ok, [float()]} | {:error, term()}
   def encode(text) when is_binary(text) do
     embed_url =
-      Application.get_env(:darwin, :mlx_base_url, "http://localhost:11434") <> "/v1/embeddings"
+      Darwin.V2.Config.mlx_base_url() <> "/v1/embeddings"
 
     body = Jason.encode!(%{model: @embed_model, input: text})
 

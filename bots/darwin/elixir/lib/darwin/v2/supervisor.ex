@@ -19,8 +19,8 @@ defmodule Darwin.V2.Supervisor do
   end
 
   def init(_opts) do
-    if Application.get_env(:darwin, :v2_enabled, false) do
-      kill_switch_on = Application.get_env(:darwin, :kill_switch, true)
+    if Darwin.V2.Config.v2_enabled?() do
+      kill_switch_on = Darwin.V2.Config.kill_switch?()
 
       children =
         core_children() ++
@@ -111,8 +111,8 @@ defmodule Darwin.V2.Supervisor do
 
   # HTTP 서버 선택적 기동 — 포트 사용 가능할 때만
   defp maybe_http_children do
-    port = Application.get_env(:darwin, :http_port, 8180)
-    mcp_enabled = Application.get_env(:darwin, :mcp_enabled, false)
+    port = Darwin.V2.Config.http_port()
+    mcp_enabled = Darwin.V2.Config.mcp_server_enabled?()
 
     if check_port_available(port) do
       router = if mcp_enabled, do: Darwin.V2.HTTP.MCPRouter, else: Darwin.V2.HTTP.Router

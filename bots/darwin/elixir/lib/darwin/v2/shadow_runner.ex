@@ -52,7 +52,7 @@ defmodule Darwin.V2.ShadowRunner do
     case System.get_env("DARWIN_SHADOW_MODE") do
       "true" -> true
       "false" -> false
-      nil -> Application.get_env(:darwin, :shadow_mode, false)
+      nil -> Darwin.V2.Config.shadow_mode_active?()
     end
   end
 

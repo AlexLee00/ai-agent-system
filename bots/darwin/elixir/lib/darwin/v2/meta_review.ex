@@ -119,7 +119,7 @@ defmodule Darwin.V2.MetaReview do
       Task.start(fn -> broadcast_review(review) end)
 
       # ESPL 진화 트리거 (활성화 시)
-      if Application.get_env(:darwin, :espl_enabled, false) do
+      if Darwin.V2.Config.espl_enabled?() do
         Task.start(fn -> trigger_espl_evolution(sections) end)
       end
 
@@ -221,8 +221,7 @@ defmodule Darwin.V2.MetaReview do
 
   defp collect_shadow_stats do
     shadow_enabled =
-      System.get_env("DARWIN_SHADOW_ENABLED", "false") == "true" or
-      Application.get_env(:darwin, :shadow_mode, false)
+      Darwin.V2.Config.shadow_mode_active?()
 
     if shadow_enabled do
       sql = """

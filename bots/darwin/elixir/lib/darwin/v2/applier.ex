@@ -76,7 +76,7 @@ defmodule Darwin.V2.Applier do
 
   defp handle_apply(paper, verification_payload, state) do
     level     = AutonomyLevel.level()
-    kill_sw   = Application.get_env(:darwin, :kill_switch, true)
+    kill_sw   = Darwin.V2.Config.kill_switch?()
     title     = paper["title"] || paper[:title] || "unknown"
 
     cond do
