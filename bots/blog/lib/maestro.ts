@@ -14,7 +14,6 @@ const kst = require('../../../packages/core/lib/kst');
 const crypto = require('crypto');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const env = require('../../../packages/core/lib/env');
-const competitionEngine = require('../../../packages/core/lib/competition-engine');
 const { buildWebhookCandidates } = require('../../../packages/core/lib/n8n-webhook-registry');
 const { getBlogGenerationRuntimeConfig, getBlogCompetitionRuntimeConfig } = require('./runtime-config.ts');
 const { generateGemmaPilotText } = require('../../../packages/core/lib/gemma-pilot');
@@ -37,6 +36,17 @@ const _n8nCircuit = {
   disabledUntil: 0,
   reason: '',
 };
+
+let _competitionEngine = null;
+function _getCompetitionEngine() {
+  if (_competitionEngine) return _competitionEngine;
+  try {
+    _competitionEngine = require('../../../packages/core/lib/competition-engine.ts');
+  } catch (error) {
+    _competitionEngine = { __loadError: error };
+  }
+  return _competitionEngine;
+}
 
 function _shuffle(arr) {
   const a = [...arr];
@@ -197,6 +207,10 @@ async function runCompetition(topic, postType) {
 
   console.log(`[경쟁] 그룹 경쟁 시작: ${topic} (${postType})`);
   try {
+    const competitionEngine = _getCompetitionEngine();
+    if (competitionEngine?.__loadError || !competitionEngine?.startCompetition) {
+      throw competitionEngine?.__loadError || new Error('competition-engine unavailable');
+    }
     const competition = await competitionEngine.startCompetition(topic, 'blog');
     console.log(`[경쟁] 그룹 A: ${competition.groupA.join(',')} / B: ${competition.groupB.join(',')}`);
     return competition;

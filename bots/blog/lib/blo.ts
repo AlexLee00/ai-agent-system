@@ -34,7 +34,9 @@ const {
   updateScheduleCategory,
 }                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/schedule.ts'));
 const { getBlogCompetitionRuntimeConfig }           = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/runtime-config.ts'));
-const { blog: blogSkills }                          = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/skills/index.js'));
+const blogSkills = {
+  bookReviewBook: require(path.join(env.PROJECT_ROOT, 'packages/core/lib/skills/blog/book-review-book.ts')),
+};
 const {
   dailyCurriculumCheck,
   transitionSeries,

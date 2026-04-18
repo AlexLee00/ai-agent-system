@@ -13,8 +13,8 @@ const {
   resolveGoogleBooksApiKey,
   resolveData4LibraryKey,
   resolveKakaoApiKey,
-} = require('../../news-credentials');
-const { verifyBookSources } = require('./book-source-verify');
+} = require('../../news-credentials.ts');
+const { verifyBookSources } = require('./book-source-verify.ts');
 
 const COVER_DIR = path.join(env.PROJECT_ROOT, 'bots', 'blog', 'output', 'images', 'books');
 const COVER_SOURCE_PRIORITY = ['kakao', 'data4library', 'naver', 'google', 'openlibrary'];
