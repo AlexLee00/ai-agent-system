@@ -4,6 +4,21 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-04-19: CODEX_BLOG_EVOLUTION Phase 2~5 완료 — 블로팀 자율진화 마케팅 (55차 세션)
+
+- **Phase 2 매출 연동**: ska-revenue-bridge / attribution-tracker / roi-dashboard / compute-attribution launchd (05:30)
+  - DB: post_revenue_attribution + roi_daily_summary MView + category_revenue_performance
+  - topic-selector Revenue-Driven 가중치 (adjustCategoryWeightsBySense 4번째 파라미터)
+- **Phase 3 자율진화 루프**: evolution-cycle (5단계) / content-market-fit (Animalz CMF) / aarrr-metrics (해적 지표)
+  - DB: evolution_cycles + strategy_versions + content_market_fit + aarrr_daily
+  - launchd: ai.blog.evolution-cycle 매일 23:00 KST
+- **Phase 4 멀티 플랫폼**: platform-orchestrator / cross-platform-adapter / time-slot-optimizer / ab-testing
+  - DB: ab_tests + platform_schedules
+- **Phase 5 Signal Collector**: signals/naver-trend-collector / signals/brand-mention-collector
+  - DB: keyword_trends + brand_mentions
+- **테스트 총계**: 118개 전체 통과 (기존 52 + 신규 66)
+- **Kill Switch 전체 OFF** (BLOG_REVENUE_CORRELATION_ENABLED / BLOG_EVOLUTION_CYCLE_ENABLED / BLOG_MULTI_PLATFORM_ENABLED / BLOG_SIGNAL_COLLECTOR_ENABLED)
+
 ## 2026-04-19: CODEX_SKA_EVOLUTION Phase 3~6 완료 — SKA팀 완전자율 진화 (54차 세션)
 
 - **Phase 3 분석 스킬**: ForecastDemand / AnalyzeRevenue / DetectAnomaly(Z-score+IQR) / GenerateReport

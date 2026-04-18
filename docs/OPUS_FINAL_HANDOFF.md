@@ -1,3 +1,69 @@
+# 세션 인수인계 — 2026-04-19 (CODEX_BLOG_EVOLUTION Phase 2~5 완료 — 55차 세션 추가)
+
+> 세션 범위: CODEX_BLOG_EVOLUTION Phase 2~5 — 매출 연동 + 자율진화 + 멀티 플랫폼 + Signal Collector
+
+## 완료 요약 ✅ (55차 세션 추가)
+
+### CODEX_BLOG_EVOLUTION Phase 2~5 완료
+
+**Phase 2 — 스카팀 매출 연동 + ROI 추적**:
+- `ska-revenue-bridge.ts`: SKA revenue_daily 조회 + attribution 일괄 계산
+- `attribution-tracker.ts`: UTM 추적 링크 생성 + 발행 attribution 기록
+- `compute-attribution.ts`: 매일 05:30 attribution 계산 + 월요일 주간 ROI 리포트
+- `roi-dashboard.ts`: `/roi/summary, /top-posts, /category-weights` API 엔드포인트
+- `topic-selector.ts`: Revenue-Driven 가중치 (fetchRevenueAttributionWeights + adjustCategoryWeightsBySense 4번째 파라미터)
+- `blo.ts`: 일일 상태 초기화 시 attributionCategoryWeights 병렬 조회
+- DB: `post_revenue_attribution + roi_daily_summary MView + category_revenue_performance`
+- launchd: `ai.blog.compute-attribution` 매일 05:30 KST (Kill Switch: BLOG_REVENUE_CORRELATION_ENABLED=false)
+
+**Phase 3 — 자율진화 루프 + AARRR + Content-Market Fit**:
+- `evolution-cycle.ts`: 5단계 루프 (활용→수집→분석→피드백→전략)
+- `content-market-fit.ts`: Animalz CMF (Reach×Resonance×Retention) 지표
+- `aarrr-metrics.ts`: Growth Hacking 해적 지표
+- `run-evolution-cycle.ts`: 실행 스크립트
+- DB: `evolution_cycles + strategy_versions + content_market_fit + aarrr_daily`
+- launchd: `ai.blog.evolution-cycle` 매일 23:00 KST (Kill Switch: BLOG_EVOLUTION_CYCLE_ENABLED=false)
+
+**Phase 4 — 멀티 플랫폼 오케스트레이션**:
+- `platform-orchestrator.ts`: 3 플랫폼 일일 오케스트레이션 (Kill Switch: BLOG_MULTI_PLATFORM_ENABLED=false)
+- `cross-platform-adapter.ts`: 블로그→인스타 캡션/페북 포스트/릴스 스크립트 변환
+- `time-slot-optimizer.ts`: 시간대별 engagement 학습 + 최적 시간 추천
+- `ab-testing.ts`: A/B 테스트 생성/분석 + 카이제곱 통계 검증
+- DB: `ab_tests + platform_schedules`
+
+**Phase 5 — Signal Collector 강화**:
+- `signals/naver-trend-collector.ts`: 네이버 데이터랩 트렌드 수집 + 급상승 감지
+- `signals/brand-mention-collector.ts`: 브랜드 멘션 감성 분석 + 부정 멘션 긴급 알림
+- DB: `keyword_trends + brand_mentions`
+- Kill Switch: `BLOG_SIGNAL_COLLECTOR_ENABLED=false`
+
+**테스트**: 118개 (Phase 2: 16개, Phase 3: 15개, Phase 4: 19개, Phase 5: 16개 + 기존 52개)
+**커밋**: Phase 2~5 각 1커밋 (총 4커밋)
+
+## 다음 단계 (55차 이후)
+
+1. **Phase 6 (Self-Rewarding + Agentic RAG for Marketing)** — 미구현
+   - 성공 콘텐츠 패턴 DPO
+   - 실패 Taxonomy 자동 분류
+   - Cross-Platform Transfer Learning
+2. **Phase 7 (Integration Test + Production 전환)** — 미구현
+3. **OPS 마이그레이션 적용** (마스터 승인 후):
+   - `015-revenue-attribution.sql`
+   - `016-evolution-cycles.sql`
+   - `017-platform-orchestration.sql`
+   - `018-signal-collectors.sql`
+4. **Kill Switch 단계적 활성화** (순서 엄수):
+   - Step 1: `BLOG_REVENUE_CORRELATION_ENABLED=true` (attribution 계산 시작)
+   - Step 2: `BLOG_EVOLUTION_CYCLE_ENABLED=true` (자율진화 루프 활성화)
+   - Step 3: `BLOG_MULTI_PLATFORM_ENABLED=true` (3 플랫폼 통합 발행)
+   - Step 4: `BLOG_SIGNAL_COLLECTOR_ENABLED=true` (신호 수집 활성화)
+5. **Meta Developer 수동 등록** (마스터 작업 항목):
+   - Instagram access_token + ig_user_id
+   - Facebook Page access_token + Page ID
+   - `docs/blog/INSTAGRAM_SETUP_GUIDE.md` 참조
+
+---
+
 # 세션 인수인계 — 2026-04-19 (CODEX_SKA_EVOLUTION Phase 3~6 완료 — 54차 세션 추가)
 
 > 세션 범위: CODEX_SKA_EVOLUTION Phase 3~6 — 분석 스킬 + MAPE-K + SelfRewarding + KillSwitch + AgenticRag
