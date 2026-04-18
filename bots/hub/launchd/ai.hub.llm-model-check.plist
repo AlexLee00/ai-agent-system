@@ -24,13 +24,12 @@
   <string>/tmp/hub-llm-model-check.log</string>
   <key>StandardErrorPath</key>
   <string>/tmp/hub-llm-model-check.err.log</string>
-  <!-- 매주 일요일 12:00 KST (UTC 03:00) -->
   <key>StartCalendarInterval</key>
   <dict>
     <key>Weekday</key>
     <integer>0</integer>
     <key>Hour</key>
-    <integer>3</integer>
+    <integer>12</integer>
     <key>Minute</key>
     <integer>0</integer>
   </dict>
