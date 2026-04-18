@@ -1,6 +1,31 @@
-# 세션 인수인계 — 2026-04-18 (CODEX_LLM_ROUTING_REFACTOR Phase 1~3 완료)
+# 세션 인수인계 — 2026-04-18 (CODEX_LLM_ROUTING_REFACTOR Phase 1~5 전체 완료)
 
-> 세션 범위: LLM 라우팅 리팩토링 — Hub LLM 엔드포인트 신설 + Sigma/Darwin Selector Hub 경유 전환
+> 세션 범위: LLM 라우팅 리팩토링 — Hub LLM 엔드포인트 신설 + Sigma/Darwin Selector Hub 경유 전환 + 모니터링 + 7차원 Recommender
+
+## 완료 요약 (Phase 4~5 추가 — 동일 세션 연속)
+
+### Phase 4 — LLM 모니터링 + Telegram 일일 리포트 ✅
+- `/hub/llm/stats` 확장: summary/by_agent/by_hour/totals 4섹션, team 필터, hours 파라미터
+- `bots/hub/scripts/llm-daily-report.ts`: 매일 KST 06:00 Telegram 전송
+- `bots/hub/launchd/ai.llm.daily-report.plist`: launchd 등록 완료 (`ai.llm.daily-report`)
+- 수동 테스트 성공 (Telegram 수신 확인)
+- 롤백 태그: `pre-phase-4-llm-monitoring`
+
+### Phase 5 — accuracy_bias 7차원 Recommender + Shadow 분석 스크립트 ✅
+- `Sigma.V2.LLM.Recommender` + `Darwin.V2.LLM.Recommender`: 6차원→7차원 (accuracy_bias)
+  - `:critical` → opus +0.5, sonnet +0.2, haiku -0.3
+  - `:high` → sonnet +0.3, opus +0.1, haiku -0.1
+  - `:normal` → 0.0 (기본, 기존 동작 불변)
+- `bots/hub/scripts/llm-shadow-analysis.ts`: sigma/darwin 비교 집계 + Telegram (수동 실행용)
+- Groq 429 재시도: groq-fallback.ts에 이미 구현됨 (3회, blacklist 60초) — 확인 완료
+- 롤백 태그: `pre-phase-5-optimization`
+
+### 최종 상태
+- 564 tests, 0 failures (17 excluded)
+- launchd 6개: ai.elixir.supervisor / ai.hub.resource-api / ai.sigma.daily / ai.darwin.daily.shadow / ai.jay.growth / ai.llm.daily-report
+- Hub PID 38322 정상 운영
+
+---
 
 ---
 
