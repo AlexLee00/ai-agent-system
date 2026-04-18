@@ -614,6 +614,18 @@ function formatText(report) {
             `  dominant guard: ${report.capitalGuardBreakdown.laneSnapshot?.topReason?.label || 'n/a'} ${report.capitalGuardBreakdown.laneSnapshot?.topReason?.count || 0}건`,
             ...report.capitalGuardBreakdown.byReasonGroup.map((row) => `  ${row.label}: ${row.count}건`),
             ...report.capitalGuardBreakdown.byTradeMode.map((row) => `  mode ${row.tradeMode}: ${row.count}건`),
+            ...(report.capitalGuardBreakdown.hotspots?.length
+              ? [
+                  '  hotspot:',
+                  ...report.capitalGuardBreakdown.hotspots.map((row) => `    ${row.label}: ${row.count}건`),
+                ]
+              : []),
+            ...(report.capitalGuardBreakdown.overlapHotspots?.length
+              ? [
+                  '  validation/live overlap hotspot:',
+                  ...report.capitalGuardBreakdown.overlapHotspots.map((row) => `    ${row.label}: ${row.count}건`),
+                ]
+              : []),
           ]
         : ['  최근 crypto capital guard 차단 없음'],
     },
