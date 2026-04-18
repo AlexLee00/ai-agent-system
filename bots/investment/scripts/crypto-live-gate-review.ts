@@ -186,6 +186,9 @@ function buildReview({ days, pipeline, trades, blocks, closedReviews }) {
   const recommendations = [];
   const validationTrades = getTradeModeCounts(trades, 'validation');
   const normalTrades = getTradeModeCounts(trades, 'normal');
+  const paperValidationSamples = Number(validationTrades.paper || 0);
+  const hasPaperValidation = paperValidationSamples > 0;
+  const sufficientPaperValidation = paperValidationSamples >= 3;
 
   facts.push(`최근 ${days}일 암호화폐 decision ${pipeline.decision}건, BUY ${pipeline.buy}건, approved ${pipeline.approved}건, executed ${pipeline.executed}건`);
   facts.push(`최근 ${days}일 암호화폐 체결 ${trades.total}건 (LIVE ${trades.live} / PAPER ${trades.paper})`);
@@ -222,7 +225,10 @@ function buildReview({ days, pipeline, trades, blocks, closedReviews }) {
     inferred.push('현재 암호화폐 validation은 PAPER 검증이 아니라 LIVE 소액 검증 레일로 운영되고 있다');
     recommendations.push('LIVE gate 문구와 health 리포트에서 validation LIVE와 PAPER 부족을 분리해 해석해야 한다');
   } else if (validationTrades.paper > 0) {
-    inferred.push('암호화폐 validation 레일에 PAPER 검증 표본이 일부 존재한다');
+    inferred.push(`암호화폐 validation 레일에 PAPER 검증 표본이 일부 존재한다 (${paperValidationSamples}건)`);
+    if (!sufficientPaperValidation) {
+      recommendations.push(`PAPER validation 표본을 최소 3건까지 더 확보해 표본 해석을 안정화하는 편이 좋다 (현재 ${paperValidationSamples}건)`);
+    }
   }
 
   const maxPositionRejects = Number(pipeline.riskRejectReasons.max_positions || 0);
@@ -235,11 +241,23 @@ function buildReview({ days, pipeline, trades, blocks, closedReviews }) {
   }
 
   let liveDecision = 'blocked';
-  let liveReason = 'validation LIVE 표본은 있으나 PAPER 검증 표본이 부족하고 near-threshold weak가 아직 높음';
+  let liveReason = hasPaperValidation
+    ? `PAPER validation 표본은 ${paperValidationSamples}건 확보됐지만 아직 얇고, weak 신호 분포를 더 관찰해야 한다`
+    : 'validation LIVE 표본은 있으나 PAPER 검증 표본이 아직 없다';
   if (maxPositionRejects > 0 || validationLiveOverlap > 0) {
-    liveReason = `validation LIVE 표본은 있으나 PAPER 검증 표본이 부족하고, 최근 실행 병목은 max positions ${maxPositionRejects}건 / validation LIVE overlap ${validationLiveOverlap}건이다`;
+    if (hasPaperValidation) {
+      liveReason = `PAPER validation 표본 ${paperValidationSamples}건은 확보됐고, 현재 직접 병목은 max positions ${maxPositionRejects}건 / validation LIVE overlap ${validationLiveOverlap}건이다`;
+    } else {
+      liveReason = `PAPER 검증 표본이 아직 없고, 최근 실행 병목은 max positions ${maxPositionRejects}건 / validation LIVE overlap ${validationLiveOverlap}건이다`;
+    }
   }
-  if (trades.live > 0 && closedReviews >= 3 && blocks.liveReentry === 0 && pipeline.weak <= Math.max(5, pipeline.executed)) {
+  if (
+    trades.live > 0 &&
+    sufficientPaperValidation &&
+    closedReviews >= 3 &&
+    blocks.liveReentry === 0 &&
+    pipeline.weak <= Math.max(5, pipeline.executed)
+  ) {
     liveDecision = 'candidate';
     liveReason = '제한형 LIVE 검토 후보 조건에 일부 접근';
   }
