@@ -1022,3 +1022,49 @@ export DARWIN_LLM_DAILY_BUDGET_USD=10.00
 **42차 세션 — 다윈팀 이중 상태 완전 해소: team_jay/darwin 11개 파일 git rm + Darwin.V2.TeamConnector 신설 + Jay 참조 전환. 335 tests 0 failures, CODEX_DARWIN_REMODEL 100% 완료.**
 
 — 코덱스 (2026-04-18, 42차 세션)
+
+---
+
+## ✅ 43차 세션 검증 (2026-04-18 코덱스)
+
+### CODEX_DARWIN_REMODEL 최종 상태 확인
+
+이전 세션(42차)에서 완료된 내용을 재검증 — 모든 Exit Criteria 통과 확인.
+
+| 항목 | 상태 |
+|------|------|
+| `bots/darwin/elixir/` 독립 프로젝트 | ✅ 38 모듈 (`lib/darwin/v2/`) |
+| `mix compile` 성공 | ✅ 경고 없음 |
+| 335 tests, 0 failures | ✅ 확인 |
+| 9 표준 md | ✅ `bots/darwin/docs/standards/` |
+| 5 migrations | ✅ `priv/repo/migrations/` (6개, provider 컬럼 추가 포함) |
+| launchd plist | ✅ `~/Library/LaunchAgents/ai.darwin.daily.shadow.plist` |
+| L4 자율 레벨 보존 | ✅ `darwin-autonomy-level.json` |
+| `team_jay/darwin/` 제거 | ✅ 디렉토리 없음 |
+| LLM Selector/Recommender/RoutingLog/CostTracker | ✅ 4 모듈 |
+| Memory L1/L2 + pgvector | ✅ 2 모듈 |
+| ShadowRunner/Compare | ✅ 2 모듈 |
+| 6 Skills (PaperSynthesis, Replication, ResourceAnalyst, ExperimentDesign, VlmFeedback, TreeSearch) | ✅ |
+| 4 Sensors (ArxivRss, HackerNews, Reddit, OpenReview) | ✅ |
+| MCP Client/Server/Auth | ✅ 3 모듈 |
+| Reflexion/SelfRAG/ESPL/Principle.Loader | ✅ 4 모듈 |
+
+### 마스터 직접 작업 (.zprofile 추가) — 미완료 상태 유지
+
+```bash
+export DARWIN_V2_ENABLED=true
+export DARWIN_TIER2_AUTO_APPLY=false
+export DARWIN_MCP_SERVER_ENABLED=false
+export DARWIN_ESPL_ENABLED=false
+export DARWIN_SELF_RAG_ENABLED=false
+export DARWIN_PRINCIPLE_SEMANTIC_CHECK_ENABLED=false
+export DARWIN_SHADOW_MODE=true
+export DARWIN_HTTP_PORT=4020
+export DARWIN_LLM_DAILY_BUDGET_USD=10.00
+```
+
+## 🏷️ 43차 세션 요약 한 줄
+
+**43차 세션 — CODEX_DARWIN_REMODEL 재검증: 335 tests 0 failures, 38+ 모듈 전부 정상, Exit Criteria 전항목 통과 재확인. 마스터 .zprofile 환경변수 추가 후 Shadow Day 1 가동 가능.**
+
+— 코덱스 (2026-04-18, 43차 세션)
