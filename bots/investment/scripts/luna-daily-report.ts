@@ -21,7 +21,7 @@ const require = createRequire(import.meta.url);
 const path = require('path');
 const PROJECT_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../..');
 
-const { pool, query } = require(path.join(PROJECT_ROOT, 'packages/core/lib/pg-pool'));
+const { query, closeAll } = require(path.join(PROJECT_ROOT, 'packages/core/lib/pg-pool'));
 const telegramSender   = require(path.join(PROJECT_ROOT, 'packages/core/lib/telegram-sender'));
 const { today }        = require(path.join(PROJECT_ROOT, 'packages/core/lib/kst'));
 
@@ -117,7 +117,7 @@ async function main() {
   }
 
   console.log('[luna-daily-report] 완료');
-  await pool.end();
+  await closeAll();
 }
 
 main().catch((e) => {
