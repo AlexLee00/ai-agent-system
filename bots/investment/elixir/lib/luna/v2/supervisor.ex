@@ -41,7 +41,11 @@ defmodule Luna.V2.Supervisor do
   end
 
   defp core_children do
-    [{Phoenix.PubSub, name: Luna.V2.PubSub}]
+    [
+      {Phoenix.PubSub, name: Luna.V2.PubSub},
+      Luna.V2.LLM.CostTracker,
+      Luna.V2.LLM.RoutingLog,
+    ]
   end
 
   defp mapek_children do

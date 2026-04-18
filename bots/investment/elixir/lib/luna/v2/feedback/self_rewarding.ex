@@ -98,9 +98,6 @@ defmodule Luna.V2.Feedback.SelfRewarding do
   end
 
   defp llm_judge(trade, rationale, outcome) do
-    hub_url = System.get_env("HUB_BASE_URL", "http://localhost:7788")
-    hub_token = System.get_env("HUB_AUTH_TOKEN", "")
-
     prompt = """
     당신은 엄격한 퀀트 트레이딩 심사관입니다.
 
@@ -120,21 +117,13 @@ defmodule Luna.V2.Feedback.SelfRewarding do
     {"score": 0.75, "critique": "...", "improvements": ["...", "..."]}
     """
 
-    case Req.post("#{hub_url}/hub/llm/call",
-           json: %{
-             prompt: prompt,
-             abstractModel: "anthropic_haiku",
-             agent: "luna.self_rewarding_judge",
-             callerTeam: "luna",
-             urgency: "low",
-             taskType: "trade_evaluation"
-           },
-           headers: [{"Authorization", "Bearer #{hub_token}"}],
-           receive_timeout: 30_000) do
-      {:ok, %Req.Response{status: 200, body: %{"result" => text}}} when is_binary(text) ->
-        parse_judgment(text)
-      _ ->
-        {:ok, %{score: 0.5, critique: "LLM 평가 불가", improvements: []}}
+    case Luna.V2.LLM.Selector.call_with_fallback("luna.self_rewarding_judge", prompt,
+           urgency: :low,
+           task_type: :trade_evaluation,
+           max_tokens: 512
+         ) do
+      {:ok, text} -> parse_judgment(text)
+      _           -> {:ok, %{score: 0.5, critique: "LLM 평가 불가", improvements: []}}
     end
   end
 

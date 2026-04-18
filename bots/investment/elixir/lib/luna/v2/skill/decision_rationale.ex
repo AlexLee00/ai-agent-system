@@ -49,27 +49,18 @@ defmodule Luna.V2.Skill.DecisionRationale do
   end
 
   defp generate_rationale(candidate, market) do
-    # Hub LLM 호출로 rationale 생성 (실패 시 기본 템플릿)
-    hub_url = System.get_env("HUB_BASE_URL", "http://localhost:7788")
-    hub_token = System.get_env("HUB_AUTH_TOKEN", "")
-
     prompt = """
     다음 매매 결정에 대해 간결한 투자 근거를 한국어 2~3문장으로 작성하세요.
     심볼: #{candidate[:symbol]}, 시장: #{market}, 방향: #{candidate[:direction]},
     신호 점수: #{candidate[:score]}, 시장 레짐: #{candidate[:regime]}
     """
 
-    case Req.post("#{hub_url}/hub/llm/call",
-           json: %{
-             prompt: prompt,
-             abstractModel: "anthropic_haiku",
-             agent: "luna.decision_rationale",
-             callerTeam: "luna",
-             urgency: "low"
-           },
-           headers: [{"Authorization", "Bearer #{hub_token}"}],
-           receive_timeout: 30_000) do
-      {:ok, %Req.Response{status: 200, body: %{"result" => text}}} when is_binary(text) ->
+    case Luna.V2.LLM.Selector.call_with_fallback("luna.decision_rationale", prompt,
+           urgency: :low,
+           task_type: :rationale_generation,
+           max_tokens: 256
+         ) do
+      {:ok, text} ->
         text
       _ ->
         "#{candidate[:symbol]} #{candidate[:direction]} 포지션 진입 — 신호 점수 #{Float.round(candidate[:score] || 0.0, 2)}, regime: #{candidate[:regime]}"

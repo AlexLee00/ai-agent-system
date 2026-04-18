@@ -30,9 +30,6 @@ defmodule Luna.V2.Rag.QueryPlanner do
   # ─── Internal ─────────────────────────────────────────────────────
 
   defp llm_decompose(query, _context) do
-    hub_url   = System.get_env("HUB_BASE_URL", "http://localhost:7788")
-    hub_token = System.get_env("HUB_AUTH_TOKEN", "")
-
     prompt = """
     다음 투자 쿼리를 pgvector 검색에 최적화된 2~3개의 독립적인 서브쿼리로 분해하세요.
     각 서브쿼리는 한 줄씩 JSON 배열로 반환하세요.
@@ -43,22 +40,13 @@ defmodule Luna.V2.Rag.QueryPlanner do
     ["서브쿼리1", "서브쿼리2", "서브쿼리3"]
     """
 
-    case Req.post("#{hub_url}/hub/llm/call",
-           json: %{
-             prompt: prompt,
-             abstractModel: "anthropic_haiku",
-             agent: "luna.rag_query_planner",
-             callerTeam: "luna",
-             urgency: "low",
-             taskType: "query_decomposition"
-           },
-           headers: [{"Authorization", "Bearer #{hub_token}"}],
-           receive_timeout: 15_000) do
-      {:ok, %Req.Response{status: 200, body: %{"result" => text}}} when is_binary(text) ->
-        parse_subqueries(text)
-
-      _ ->
-        {:error, :llm_unavailable}
+    case Luna.V2.LLM.Selector.call_with_fallback("luna.rag_query_planner", prompt,
+           urgency: :low,
+           task_type: :query_decomposition,
+           max_tokens: 256
+         ) do
+      {:ok, text} -> parse_subqueries(text)
+      _           -> {:error, :llm_unavailable}
     end
   rescue
     _ -> {:error, :llm_failed}
