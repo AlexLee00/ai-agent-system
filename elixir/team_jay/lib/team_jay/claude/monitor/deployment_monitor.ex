@@ -88,8 +88,9 @@ defmodule TeamJay.Claude.Monitor.DeploymentMonitor do
   end
 
   defp ensure_schema do
-    sql = """
-    CREATE SCHEMA IF NOT EXISTS claude;
+    Repo.query("CREATE SCHEMA IF NOT EXISTS claude")
+
+    Repo.query("""
     CREATE TABLE IF NOT EXISTS claude.deployment_monitor (
       id SERIAL PRIMARY KEY,
       feature_name TEXT NOT NULL,
@@ -99,9 +100,8 @@ defmodule TeamJay.Claude.Monitor.DeploymentMonitor do
       status TEXT DEFAULT 'monitoring',
       daily_checks JSONB DEFAULT '[]'::jsonb,
       created_at TIMESTAMPTZ DEFAULT NOW()
-    );
-    """
-    Repo.query(sql)
+    )
+    """)
   rescue
     _ -> :ok
   end
