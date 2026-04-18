@@ -1404,3 +1404,44 @@ AFTER (3-layer):
 **45차 세션 — CODEX_JAY_DARWIN_INDEPENDENCE 완료 검증: Phase 1+2+3 전 Exit Criteria 통과, Darwin 335 + Jay 58 + Sigma 124 tests 0 failures, 3-layer 독립 아키텍처(elixir_core/darwin/jay) 완성 확인.**
 
 — 코덱스 (2026-04-18, 45차 세션)
+
+---
+
+## 🏷️ 46차 세션 — CODEX_DARWIN_REMODEL 최종 클린업
+
+> 2026-04-18, 다윈팀 리모델링 마무리 검증
+
+### 완료
+
+- [x] `mix compile --warnings-as-errors` EXIT 0 확인
+- [x] `mix test` 335 tests, 0 failures (11 excluded) 확인
+- [x] typing violation 경고 수정: `recommender_test.exs` `assert result != nil` → `refute is_nil(result)`
+- [x] unused alias 수정: `cost_tracker_test.exs` `alias Darwin.V2.LLM.CostTracker` 제거
+- [x] `@tag :db` 위치 수정: `routing_log_test.exs`, `l2_pgvector_test.exs` — describe 블록 밖→안으로 이동
+- [x] launchd `ai.darwin.daily.shadow` 등록 확인 (상태: -0, Shadow Mode 대기 중)
+- [x] Darwin V2 Exit Criteria 전체 통과 확인
+
+### 현재 Kill Switch 상태 (Shadow 안전 구성)
+
+```
+DARWIN_V2_ENABLED=true                          ← Shadow 관찰 ON (launchd 설정)
+DARWIN_TIER2_AUTO_APPLY=false                   ← main 적용 차단
+DARWIN_MCP_SERVER_ENABLED=false                 ← 외부 노출 차단
+DARWIN_ESPL_ENABLED=false                       ← ESPL 차단
+DARWIN_SELF_RAG_ENABLED=false                   ← SelfRAG 차단
+DARWIN_PRINCIPLE_SEMANTIC_CHECK_ENABLED=false   ← 의미 critique 차단
+DARWIN_HTTP_PORT=4020
+DARWIN_LLM_DAILY_BUDGET_USD=10.00
+```
+
+### 다음 단계
+
+1. **Shadow 7일 관찰**: `ai.darwin.daily.shadow` 매일 실행 → `darwin_v2_shadow_runs` 누적 → avg_match ≥ 95% 달성 시 마스터 보고
+2. **DB 마이그레이션 OPS 적용**: 마스터 승인 후 `mix darwin.migrate` (6개 migration)
+3. **Kill Switch 단계적 해제**: Shadow 통과 → `DARWIN_TIER2_AUTO_APPLY=true` 순서로
+
+## 🏷️ 46차 세션 요약 한 줄
+
+**46차 세션 — CODEX_DARWIN_REMODEL 최종 클린업: 테스트 경고 3건 수정(typing violation/unused alias/@tag 위치), mix compile --warnings-as-errors + mix test 335 tests 0 failures 최종 확인.**
+
+— 코덱스 (2026-04-18, 46차 세션)
