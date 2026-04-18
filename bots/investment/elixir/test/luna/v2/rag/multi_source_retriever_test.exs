@@ -8,8 +8,8 @@ defmodule Luna.V2.Rag.MultiSourceRetrieverTest do
       assert Code.ensure_loaded?(MultiSourceRetriever)
     end
 
-    test "fetch/2 존재" do
-      assert function_exported?(MultiSourceRetriever, :fetch, 2)
+    test "fetch/1 존재 (기본값 포함)" do
+      assert function_exported?(MultiSourceRetriever, :fetch, 1)
     end
 
     test "embed/1 존재" do
