@@ -43,8 +43,8 @@ defmodule Darwin.V2.Memory.L2Test do
     end
   end
 
-  @describetag :db
   describe "db_integration" do
+    @tag :db
     test "pgvector 저장/회수는 DB 통합 테스트" do
       assert true
     end
