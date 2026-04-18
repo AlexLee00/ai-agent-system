@@ -4,6 +4,18 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-04-19: CODEX_LLM_ROUTING_V2 Phase 2 완료 — Jay.Core.LLM 공용 레이어 추출
+
+- **공용 6모듈** (packages/elixir_core/lib/jay/llm/):
+  - Policy Behaviour, Selector (Impl 포함), CostTracker (GenServer 매크로+calculate_cost), RoutingLog (plain 매크로+Impl), HubClient (매크로+Impl), Recommender (6차원 bias)
+- **팀별 Policy 3개** (Sigma/Darwin/Luna): Jay.Core.LLM.Policy 구현, 각 팀 특성 반영
+- **Selector 3개** 얇은 래퍼로 축소 (~400줄 → ~15줄)
+- **HubClient 3개** use 매크로로 전환 (~100줄 → 5줄)
+- **Darwin/Luna CostTracker**: use GenServer 매크로; Sigma: plain 모듈 유지
+- **Darwin/Luna RoutingLog**: GenServer 유지 (Supervisor 호환), Impl DB 위임
+- **테스트**: packages/elixir_core 47개 신규 + 기존 636개 전체 통과
+- 커밋: `3bec72a0`
+
 ## 2026-04-18: CODEX_CLAUDE_EVOLUTION Phase A+N+D+T 완료 — 클로드팀 완전자율 운영 + 구현 계획 알림
 
 - **Phase A** (Agents): Reviewer/Guardian/Builder 3 에이전트 완전 구현

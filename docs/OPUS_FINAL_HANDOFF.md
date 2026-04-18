@@ -1,3 +1,50 @@
+# 세션 인수인계 — 2026-04-19 (CODEX_LLM_ROUTING_V2 Phase 2 완료 — 49차 세션 최종)
+
+> 세션 범위: LLM Routing V2 Phase 2 — 공용 레이어 추출 (Jay.Core.LLM.* 6모듈 신설)
+
+## 완료 요약 ✅
+
+### CODEX_LLM_ROUTING_V2 Phase 2 — 공용 레이어 추출
+
+**packages/elixir_core/lib/jay/llm/ 6모듈 신설**:
+- `policy_behaviour.ex`: `Jay.Core.LLM.Policy` Behaviour (12 callbacks, kill_switch? optional)
+- `selector.ex`: `Jay.Core.LLM.Selector` — `__using__` 매크로 + Impl (budget→recommend→route 체인)
+- `cost_tracker.ex`: `Jay.Core.LLM.CostTracker` — GenServer 매크로 + `calculate_cost/3` 공용 함수
+- `routing_log.ex`: `Jay.Core.LLM.RoutingLog` — plain module 매크로 + Impl DB 로직
+- `hub_client.ex`: `Jay.Core.LLM.HubClient` — Hub HTTP 호출 매크로 + Impl
+- `recommender.ex`: `Jay.Core.LLM.Recommender` — 6차원 bias 함수 공용 레이어
+
+**팀별 Policy 모듈 3개 신설**:
+- `Sigma.V2.LLM.Policy`: api_key (env+file), hub env 확인, kill_switch 없음
+- `Darwin.V2.LLM.Policy`: Darwin.V2.Config 위임, kill_switch? 구현
+- `Luna.V2.LLM.Policy`: LUNA_ prefix env 변수, hub shadow 포함
+
+**팀별 리팩토링**:
+- Selector 3개: ~400줄 → ~15줄 (Sigma는 legacy 반환 형식 override 유지)
+- HubClient 3개: ~100줄 → 5줄 (use 매크로)
+- Darwin/Luna CostTracker: use 매크로 GenServer로 전환
+- Sigma CostTracker: plain 모듈 유지 (Impl 위임, Supervisor 미포함)
+- Darwin/Luna RoutingLog: GenServer 유지 (Supervisor 호환), Impl DB 위임
+- Sigma RoutingLog: use 매크로 plain 모듈 적용
+
+**테스트**:
+- packages/elixir_core/test/ 47개 신규 (0 failures)
+  - recommender_test: 28개 (bias 함수 + scores_to_recommendation)
+  - cost_tracker_test: 8개 (calculate_cost 정확도)
+  - selector_test: 11개 (policy_for + call_with_fallback + behaviour)
+- 기존 636개 전체 통과 (Sigma 112 + Darwin 386 + Luna 138)
+
+**커밋**: `3bec72a0` refactor(llm): Phase 2 완료 — 공용 레이어 추출 + 팀별 정책 주입
+
+### 마스터 다음 액션
+
+1. **Phase 3** (옵션): Hub LLM Cache 통합 — Hub 응답 캐싱으로 중복 API 호출 제거
+2. **Phase 4** (옵션): Central Dashboard — 3팀 LLM 비용/라우팅 통합 뷰
+3. **Phase 5** (옵션): llm-models.json 중앙화 — route_to_model 하드코딩 제거
+4. **Phase 6** (옵션): Budget Guardian GenServer — 팀간 예산 공유 조율
+
+---
+
 # 세션 인수인계 — 2026-04-19 (CODEX_SIGMA_EVOLUTION Phase R/S/A/O/M/P 완료 — 48차 세션 최종)
 
 > 세션 범위: CODEX_SIGMA_EVOLUTION.md 6-Phase 전체 구현 완료
