@@ -82,7 +82,7 @@ defmodule Darwin.V2.LLM.Selector do
   def complete(agent_name, messages, opts \\ []) do
     kill_switch_enabled = Darwin.V2.Config.kill_switch?()
 
-    case Darwin.V2.LLM.CostTracker.check_budget() do
+    case safe_budget_check() do
       {:ok, budget_ratio} ->
         context = build_context(agent_name, messages, opts, budget_ratio)
 
@@ -231,7 +231,7 @@ defmodule Darwin.V2.LLM.Selector do
       {:ok, content, usage} ->
         latency_ms = System.monotonic_time(:millisecond) - start_ms
 
-        Darwin.V2.LLM.CostTracker.track_tokens(%{
+        safe_track_tokens(%{
           agent:         to_string(agent_name),
           model:         model,
           provider:      "direct_anthropic",
@@ -309,6 +309,30 @@ defmodule Darwin.V2.LLM.Selector do
     Darwin.V2.LLM.RoutingLog.recent_failure_rate(agent_name)
   rescue
     _ -> 0.0
+  catch
+    :exit, _ -> 0.0
+  end
+
+  defp safe_budget_check do
+    Darwin.V2.LLM.CostTracker.check_budget()
+  rescue
+    _ ->
+      {:ok, 1.0}
+  catch
+    :exit, _ ->
+      Logger.debug("[다윈V2 LLM] CostTracker 미기동 — 예산 체크 기본값 사용")
+      {:ok, 1.0}
+  end
+
+  defp safe_track_tokens(entry) do
+    Darwin.V2.LLM.CostTracker.track_tokens(entry)
+  rescue
+    _ ->
+      {:ok, entry}
+  catch
+    :exit, _ ->
+      Logger.debug("[다윈V2 LLM] CostTracker 미기동 — 토큰 기록 생략")
+      {:ok, entry}
   end
 
   # messages 리스트 → Hub prompt 문자열 변환
@@ -332,7 +356,7 @@ defmodule Darwin.V2.LLM.Selector do
   # -------------------------------------------------------------------
 
   defp log_routing(agent_name, primary, used_route, resp, ok, ctx, err_reason, provider) do
-    Darwin.V2.LLM.RoutingLog.record(%{
+    safe_record_routing(%{
       agent_name:         to_string(agent_name),
       model_primary:      to_string(primary),
       model_used:         if(used_route, do: to_string(used_route), else: nil),
@@ -349,6 +373,17 @@ defmodule Darwin.V2.LLM.Selector do
       recommended_reason: nil,
       provider:           provider,
     })
+  end
+
+  defp safe_record_routing(entry) do
+    Darwin.V2.LLM.RoutingLog.record(entry)
+  rescue
+    _ ->
+      :ok
+  catch
+    :exit, _ ->
+      Logger.debug("[다윈V2 LLM] RoutingLog 미기동 — 라우팅 기록 생략")
+      :ok
   end
 
   # -------------------------------------------------------------------

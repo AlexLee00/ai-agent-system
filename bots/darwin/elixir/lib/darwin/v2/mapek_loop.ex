@@ -187,6 +187,9 @@ defmodule Darwin.V2.MapeKLoop do
       Darwin.V2.MetaReview.run_review()
     rescue
       e -> Logger.warning("[Darwin.V2.MapeKLoop] MetaReview 실패: #{inspect(e)}")
+    catch
+      :exit, reason ->
+        Logger.warning("[Darwin.V2.MapeKLoop] MetaReview 미기동 또는 종료됨: #{inspect(reason)}")
     end
 
     check_promotion_conditions()
