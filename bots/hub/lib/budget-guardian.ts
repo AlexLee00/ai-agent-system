@@ -1,6 +1,6 @@
 // @ts-nocheck
 const path = require('path');
-const PROJECT_ROOT = path.resolve(__dirname, '../../../..');
+const PROJECT_ROOT = path.resolve(__dirname, '../../..');
 const pgPool = require(path.join(PROJECT_ROOT, 'packages/core/lib/pg-pool'));
 
 const TEAM_QUOTAS: Record<string, number> = {
