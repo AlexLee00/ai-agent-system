@@ -25,6 +25,7 @@ const {
 const { logsSearchRoute, logsStatsRoute } = require('../lib/routes/logs');
 const { darwinCallbackRoute } = require('../lib/routes/darwin-callback');
 const { memoryRememberRoute, memoryRecallRoute } = require('../lib/routes/memory');
+const { llmCallRoute, llmOAuthRoute, llmGroqRoute, llmStatsRoute } = require('../lib/routes/llm');
 const {
   agentsListRoute,
   agentsDashboardRoute,
@@ -186,6 +187,18 @@ const secretsLimiter = rateLimit({
   message: { error: 'secrets rate limit exceeded (60/min)' },
 });
 app.get('/hub/secrets/:category', secretsLimiter, secretsRoute);
+
+const llmLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'LLM rate limit exceeded (30/min)' },
+});
+app.post('/hub/llm/call', llmLimiter, llmCallRoute);
+app.post('/hub/llm/oauth', llmLimiter, llmOAuthRoute);
+app.post('/hub/llm/groq', llmLimiter, llmGroqRoute);
+app.get('/hub/llm/stats', generalLimiter, llmStatsRoute);
 
 app.use('/hub', (req: any, res: any) => {
   res.status(404).json({ error: `unknown endpoint: ${req.method} ${req.path}` });
