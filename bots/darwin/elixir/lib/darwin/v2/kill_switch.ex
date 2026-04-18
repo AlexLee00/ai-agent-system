@@ -42,7 +42,21 @@ defmodule Darwin.V2.KillSwitch do
   # ---
 
   defp all_features do
-    [:v2, :cycle, :shadow, :l5, :mcp, :espl, :self_rag]
+    [
+      :v2, :cycle, :shadow, :l5, :mcp, :espl, :self_rag,
+      # Phase R 신규
+      :mapek,
+      # Phase S 신규
+      :self_rewarding,
+      # Phase A 신규
+      :agentic_rag,
+      # Phase K 신규
+      :research_registry,
+      # Phase O 신규
+      :telegram_enhanced,
+      # 자율 레벨 승격 관련
+      :auto_promotion
+    ]
   end
 
   defp feature_env(:v2), do: "DARWIN_V2_ENABLED"
@@ -52,5 +66,12 @@ defmodule Darwin.V2.KillSwitch do
   defp feature_env(:mcp), do: "DARWIN_MCP_ENABLED"
   defp feature_env(:espl), do: "DARWIN_ESPL_ENABLED"
   defp feature_env(:self_rag), do: "DARWIN_SELF_RAG_ENABLED"
+  # Phase R~O 신규
+  defp feature_env(:mapek), do: "DARWIN_MAPEK_ENABLED"
+  defp feature_env(:self_rewarding), do: "DARWIN_SELF_REWARDING_ENABLED"
+  defp feature_env(:agentic_rag), do: "DARWIN_AGENTIC_RAG_ENABLED"
+  defp feature_env(:research_registry), do: "DARWIN_RESEARCH_REGISTRY_ENABLED"
+  defp feature_env(:telegram_enhanced), do: "DARWIN_TELEGRAM_ENHANCED_ENABLED"
+  defp feature_env(:auto_promotion), do: "DARWIN_AUTO_PROMOTION_ENABLED"
   defp feature_env(other), do: "DARWIN_#{String.upcase(to_string(other))}_ENABLED"
 end

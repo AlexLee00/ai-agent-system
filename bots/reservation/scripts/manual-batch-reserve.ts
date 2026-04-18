@@ -3,11 +3,11 @@
 /**
  * scripts/manual-batch-reserve.js — 대리예약 배치 스크립트
  *
- * 1단계: pickko-accurate.js   → 픽코 예약 등록
+ * 1단계: pickko-accurate.ts/js shim → 픽코 예약 등록
  *   - 슬롯 사용 중이면 A1→A2→B 순으로 자동 폴백
- * 2단계: pickko-kiosk-monitor.js --block-slot → 네이버 예약불가 처리
+ * 2단계: pickko-kiosk-monitor.ts/js shim --block-slot → 네이버 예약불가 처리
  *
- * 실행: node dist/ts-runtime/bots/reservation/scripts/manual-batch-reserve.js
+ * 실행: tsx bots/reservation/scripts/manual-batch-reserve.ts
  */
 
 const { spawn } = require('child_process');
@@ -40,8 +40,8 @@ const ROOM_FALLBACK: Record<Booking['room'], Booking['room'][]> = {
   B: ['B'],
 };
 
-const PICKKO_SCRIPT  = path.join(__dirname, '../../../dist/ts-runtime/bots/reservation/manual/reservation/pickko-accurate.js');
-const KIOSK_MONITOR  = path.join(__dirname, '../../../dist/ts-runtime/bots/reservation/auto/monitors/pickko-kiosk-monitor.js');
+const PICKKO_SCRIPT  = path.join(__dirname, '../manual/reservation/pickko-accurate.js');
+const KIOSK_MONITOR  = path.join(__dirname, '../auto/monitors/pickko-kiosk-monitor.js');
 
 // ── 유틸 ─────────────────────────────────────────────────────────────
 
@@ -64,7 +64,7 @@ const SLOT_FAIL_EXIT = 1;
 
 // ── 메인 ─────────────────────────────────────────────────────────────
 
-(async () => {
+async function main() {
   console.log(`\n${'═'.repeat(60)}`);
   console.log(`대리예약 배치: ${BOOKINGS.length}건`);
   console.log(`${'═'.repeat(60)}`);
@@ -146,4 +146,19 @@ const SLOT_FAIL_EXIT = 1;
   console.log(`${'═'.repeat(60)}\n`);
 
   if (pickkoFail > 0 || naverFail > 0) process.exit(1);
-})();
+}
+
+module.exports = {
+  BOOKINGS,
+  ROOM_FALLBACK,
+  runNode,
+  main,
+};
+
+if (require.main === module) {
+  main().catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`❌ 배치 실행 오류: ${message}`);
+    process.exit(1);
+  });
+}

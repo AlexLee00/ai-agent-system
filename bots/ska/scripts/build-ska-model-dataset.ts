@@ -295,10 +295,12 @@ async function main() {
   }));
 }
 
-main().catch(err => {
-  console.error(JSON.stringify({
-    ok: false,
-    error: err.message,
-  }));
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch(err => {
+    console.error(JSON.stringify({
+      ok: false,
+      error: err.message,
+    }));
+    process.exit(1);
+  });
+}

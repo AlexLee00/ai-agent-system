@@ -361,7 +361,7 @@ function runSingleReservationRegistration(
 ): SingleReservationResult {
   const scriptPath = path.join(
     __dirname,
-    '../../../dist/ts-runtime/bots/reservation/manual/reservation/pickko-register.js',
+    '../manual/reservation/pickko-register.js',
   );
   const childArgs = [
     scriptPath,

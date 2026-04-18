@@ -44,7 +44,7 @@ export function buildSlotCandidates(slots: string[]): SlotCandidate[] {
       start,
       end,
       slotCount,
-      durationMin: (slotCount - 1) * 30,
+      durationMin: slotCount * 30,
       reason,
     });
   };
