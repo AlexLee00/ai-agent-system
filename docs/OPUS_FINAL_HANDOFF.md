@@ -1147,4 +1147,47 @@ export DARWIN_LLM_DAILY_BUDGET_USD=10.00
 
 **44차 세션 — CODEX_DARWIN_REMODEL 3차 재검증: 68 모듈, 335 tests 0 failures, launchd plist 정상 확인. CODEX_DARWIN_REMODEL 완전 완료 상태 유지.**
 
+---
+
+## 45차 세션 — CODEX_DARWIN_REMODEL 4차 재검증 (2026-04-18)
+
+### 검증 결과
+
+| 항목 | 결과 | 상세 |
+|------|------|------|
+| `bots/darwin/elixir/` 모듈 수 | ✅ 62개 .ex | cycle/skill/sensor/mcp/llm/memory 전부 포함 |
+| `mix compile --warnings-as-errors` | ✅ 0 errors | exit 0 |
+| `mix test` (db/integration/pending 제외) | ✅ 335 tests, 0 failures (11 excluded) | |
+| 9 표준 md | ✅ standards/ 9개 | |
+| launchd plist | ✅ `~/Library/LaunchAgents/ai.darwin.daily.shadow.plist` 설치됨 | DARWIN_V2_ENABLED=true, SHADOW_MODE=true, 예산 $10, Kill Switch 전부 포함 |
+| `elixir/team_jay/lib/team_jay/darwin/` | ✅ 제거됨 | Darwin 코드 완전 이전 |
+| team_jay → TeamJay.Darwin 참조 | ✅ 없음 | Darwin.V2.Supervisor만 app.ex:80에 등록 |
+| 6 migrations | ✅ 6개 | llm_tables, memory_l2, shadow_runs, principle_log, reflexion_memory, routing_log_provider |
+| 사이클 7단계 | ✅ cycle/ 폴더 | discover/evaluate/plan/implement/verify/apply/learn |
+| 스킬 9개 | ✅ skill/ 폴더 | paper_synthesis/replication/resource_analyst/experiment_design/vlm_feedback/tree_search/evaluate_paper/plan_implementation/learn_from_cycle |
+| 센서 4개 | ✅ sensor/ 폴더 | arxiv_rss/hackernews/reddit/openreview |
+
+### 미완료 (마스터 직접 필요)
+
+- ⚠️ `.zprofile` DARWIN_ 환경변수 미추가 (Shadow 수동 실행 시 필요)
+  - launchd plist에는 이미 포함됨 → 06:30 자동 실행은 정상 작동
+  - 터미널 수동 실행 필요 시: `source ~/.zprofile` 후 `DARWIN_V2_ENABLED=true` 추가
+
+### Kill Switch 현재 상태 (launchd plist 기준)
+
+```
+DARWIN_V2_ENABLED=true           ← Shadow 관찰 ON
+DARWIN_SHADOW_MODE=true          ← Shadow 기록 ON
+DARWIN_TIER2_AUTO_APPLY=false    ← main 자동 적용 차단
+DARWIN_MCP_SERVER_ENABLED=false  ← MCP 외부 노출 차단
+DARWIN_HTTP_PORT=4020
+DARWIN_LLM_DAILY_BUDGET_USD=10.00
+```
+
+## 🏷️ 45차 세션 요약 한 줄
+
+**45차 세션 — CODEX_DARWIN_REMODEL 4차 재검증: 62 모듈, 335 tests 0 failures, 9 표준 md, launchd 설치 확인. 모든 Exit Criteria 통과. 마스터 .zprofile 환경변수 추가 시 Shadow Day 1 즉시 가동 가능.**
+
+— 코덱스 (2026-04-18, 45차 세션)
+
 — 코덱스 (2026-04-18, 44차 세션)
