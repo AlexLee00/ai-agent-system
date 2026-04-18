@@ -129,6 +129,20 @@ defmodule Darwin.V2.Config do
   end
 
   @doc """
+  Darwin 로컬 fast 모델명.
+  """
+  def local_model_fast do
+    System.get_env("LOCAL_MODEL_FAST", "qwen2.5-7b")
+  end
+
+  @doc """
+  Darwin 로컬 deep 모델명.
+  """
+  def local_model_deep do
+    System.get_env("LOCAL_MODEL_DEEP", "deepseek-r1-32b")
+  end
+
+  @doc """
   현재 활성화된 Kill Switch 상태 요약.
   """
   def status do
@@ -144,7 +158,9 @@ defmodule Darwin.V2.Config do
       mcp_server_enabled:    mcp_server_enabled?(),
       daily_budget_usd:      daily_budget_usd(),
       http_port:             http_port(),
-      mlx_base_url:          mlx_base_url()
+      mlx_base_url:          mlx_base_url(),
+      local_model_fast:      local_model_fast(),
+      local_model_deep:      local_model_deep()
     }
   end
 end

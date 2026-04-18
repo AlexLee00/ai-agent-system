@@ -78,6 +78,45 @@ const CATEGORY_GUIDES = {
 
 const PREPLANNED_CANDIDATE_COUNT = 3;
 
+const CATEGORY_TOPIC_LANES = {
+  '자기계발': [
+    { key: 'habit', terms: ['습관', '루틴', '꾸준', '실천', '반복'] },
+    { key: 'focus', terms: ['집중', '몰입', '방해', '주의', '시간관리'] },
+    { key: 'reading', terms: ['독서', '책', '기록', '메모', '학습'] },
+    { key: 'goal', terms: ['목표', '계획', '분기', '성과', '점검'] },
+  ],
+  '성장과성공': [
+    { key: 'career', terms: ['커리어', '이직', '취업', '포지션', '역량'] },
+    { key: 'leadership', terms: ['리더', '리더십', '팀', '조직', '매니저'] },
+    { key: 'decision', terms: ['판단', '선택', '우선순위', '방향', '기준'] },
+    { key: 'execution', terms: ['실행', '행동', '루틴', '습관', '추진'] },
+  ],
+  '홈페이지와App': [
+    { key: 'ux', terms: ['ux', 'ui', '경험', '인터페이스', '탐색'] },
+    { key: 'conversion', terms: ['전환', '가입', '온보딩', '이탈', '완료율'] },
+    { key: 'trust', terms: ['신뢰', '상태', '설명', '안내', '오해'] },
+    { key: 'flow', terms: ['흐름', '구조', '정보구조', '동선', '설계'] },
+  ],
+  '최신IT트렌드': [
+    { key: 'ai', terms: ['ai', 'llm', 'agent', '생성형', '모델'] },
+    { key: 'cloud', terms: ['클라우드', 'infra', '인프라', '쿠버네티스', '서버리스'] },
+    { key: 'saas', terms: ['saas', '구독', '제품', '플랫폼', '워크플로우'] },
+    { key: 'automation', terms: ['자동화', 'ops', '생산성', '도구', '연결'] },
+  ],
+  'IT정보와분석': [
+    { key: 'security', terms: ['보안', '위협', '취약점', '인증', '공격'] },
+    { key: 'data', terms: ['데이터', '지표', '분석', '통계', '리포트'] },
+    { key: 'architecture', terms: ['아키텍처', '구조', 'api', '성능', '병목'] },
+    { key: 'operations', terms: ['운영', '장애', '헬스', '모니터링', '복구'] },
+  ],
+  '개발기획과컨설팅': [
+    { key: 'requirements', terms: ['요구사항', '명세', '범위', 'scope', '전제'] },
+    { key: 'handoff', terms: ['handoff', '인수인계', '정렬', '전달', '커뮤니케이션'] },
+    { key: 'roadmap', terms: ['로드맵', '일정', '우선순위', '계획', '마일스톤'] },
+    { key: 'feedback', terms: ['피드백', '고객', '요청', '해석', 'rework'] },
+  ],
+};
+
 // ─── 인수 파싱 ─────────────────────────────────────────────────────────────
 
 function parseArgs() {
@@ -275,6 +314,50 @@ function isDuplicate(title, recentTitles) {
   return recentTitles.some(rt => titleSimilarity(rt, title) > 0.35);
 }
 
+function inferCandidateLane(category, candidate) {
+  const lanes = CATEGORY_TOPIC_LANES[category] || [];
+  const text = normalizeTitle([
+    candidate?.title || '',
+    candidate?.question || '',
+    candidate?.diff || '',
+  ].join(' '));
+
+  for (const lane of lanes) {
+    if (lane.terms.some(term => text.includes(normalizeTitle(term)))) {
+      return lane.key;
+    }
+  }
+
+  return 'generic';
+}
+
+function selectDiverseCandidates(candidates, category, limit = PREPLANNED_CANDIDATE_COUNT) {
+  const sorted = Array.isArray(candidates)
+    ? [...candidates].sort((a, b) => (b.quality_score || 0) - (a.quality_score || 0))
+    : [];
+  const selected = [];
+  const usedLanes = new Set();
+
+  for (const candidate of sorted) {
+    if (selected.length >= limit) break;
+    const lane = inferCandidateLane(category, candidate);
+    const tooSimilar = selected.some(existing => titleSimilarity(existing.title, candidate.title) > 0.24);
+    if (usedLanes.has(lane) || tooSimilar) continue;
+    selected.push({ ...candidate, lane });
+    usedLanes.add(lane);
+  }
+
+  for (const candidate of sorted) {
+    if (selected.length >= limit) break;
+    const exists = selected.some(existing => existing.title === candidate.title);
+    const tooSimilar = selected.some(existing => titleSimilarity(existing.title, candidate.title) > 0.32);
+    if (exists || tooSimilar) continue;
+    selected.push({ ...candidate, lane: inferCandidateLane(category, candidate) });
+  }
+
+  return selected.slice(0, limit);
+}
+
 // ─── 품질 점수화 ────────────────────────────────────────────────────────────
 
 async function scoreCandidateWithCritic(candidate, category, recentTitles) {
@@ -351,9 +434,7 @@ async function replacePendingTopicPlan(_category, tomorrowDate) {
 }
 
 async function saveToTopicCandidates(category, candidates, tomorrowDate, issues) {
-  const topCandidates = Array.isArray(candidates)
-    ? candidates.slice(0, PREPLANNED_CANDIDATE_COUNT)
-    : [];
+  const topCandidates = selectDiverseCandidates(candidates, category, PREPLANNED_CANDIDATE_COUNT);
 
   if (!topCandidates.length) return [];
 
