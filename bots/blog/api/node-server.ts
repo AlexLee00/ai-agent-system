@@ -28,6 +28,7 @@ const pgPool = require('../../../packages/core/lib/pg-pool');
 const { initHubConfig } = require('../../../packages/core/lib/llm-keys');
 const { parseNaverBlogUrl } = require('../../../packages/core/lib/naver-blog-url');
 const { markPublished } = require('../lib/publ.ts');
+const { createRoiRouter } = require('./roi-dashboard.ts');
 
 const PORT = process.env.BLOG_API_PORT || 3100;
 const HOST = process.env.BLOG_API_HOST || '127.0.0.1';
@@ -68,6 +69,9 @@ async function bootstrap() {
 app.get('/health', (_req: any, res: any) => {
   res.json({ ok: true, port: PORT });
 });
+
+// Phase 2: ROI 대시보드 (로컬 접근 전용)
+app.use('/roi', requireLocalNodeAccess, createRoiRouter(express));
 
 async function findTargetPost({ postId, scheduleId }: { postId?: number | null; scheduleId?: string | number | null }) {
   if (postId) {

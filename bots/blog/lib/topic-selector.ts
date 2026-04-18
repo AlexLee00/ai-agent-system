@@ -142,7 +142,7 @@ function _hasSenseSignal(senseState = null, signalType = '') {
   return signals.some((signal) => String(signal?.type || '') === signalType);
 }
 
-function adjustCategoryWeightsBySense(baseWeights = {}, senseState = null, revenueCorrelation = null) {
+function adjustCategoryWeightsBySense(baseWeights = {}, senseState = null, revenueCorrelation = null, attributionWeights = {}) {
   const next = {
     홈페이지와App: 1,
     개발기획과컨설팅: 1,
@@ -152,6 +152,11 @@ function adjustCategoryWeightsBySense(baseWeights = {}, senseState = null, reven
     도서리뷰: 1,
     ...baseWeights,
   };
+
+  // Phase 2: Revenue-Driven 가중치 적용 (attribution 기반 상위 카테고리 부스팅)
+  for (const [cat, boost] of Object.entries(attributionWeights)) {
+    if (next[cat] !== undefined) next[cat] += boost;
+  }
 
   const revenueDown = _hasSenseSignal(senseState, 'revenue_anomaly') || _hasSenseSignal(senseState, 'revenue_decline');
   const examPeriod = _hasSenseSignal(senseState, 'exam_period') || Number(senseState?.skaEnvironment?.exam_score || 0) > 0;
@@ -712,6 +717,30 @@ async function getPendingLunaRequest() {
   }
 }
 
+/**
+ * Revenue-Driven 카테고리 가중치 조회 (Phase 2)
+ * blog.category_revenue_performance 기반으로 상위 카테고리 부스팅
+ * Kill Switch: BLOG_REVENUE_CORRELATION_ENABLED=true 일 때만 반환값 있음
+ */
+async function fetchRevenueAttributionWeights() {
+  if (process.env.BLOG_REVENUE_CORRELATION_ENABLED !== 'true') return {};
+  try {
+    const bridge = require('./ska-revenue-bridge');
+    const topCategories = await bridge.getTopRevenueCategories(30);
+    if (!topCategories || topCategories.length === 0) return {};
+
+    const weights = {};
+    // 1위: +2, 2위: +1.5, 3위+: +1 부스팅
+    topCategories.forEach((cat, idx) => {
+      if (!cat.category || Number(cat.avg_uplift_krw || 0) <= 0) return;
+      weights[cat.category] = idx === 0 ? 2 : idx === 1 ? 1.5 : 1;
+    });
+    return weights;
+  } catch {
+    return {};
+  }
+}
+
 module.exports = {
   getRecentPosts,
   getCategorySelectionGuide,
@@ -724,4 +753,5 @@ module.exports = {
   similarity,
   synthesizeHybridTopic,
   getPendingLunaRequest,
+  fetchRevenueAttributionWeights,
 };

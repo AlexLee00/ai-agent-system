@@ -57,6 +57,7 @@ const { pickEditorPersona }                         = require(path.join(env.PROJ
 const { loadLatestStrategy }                        = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/strategy-loader.ts'));
 const { senseDailyState }                          = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/sense-engine.ts'));
 const { analyzeMarketingToRevenue }                = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/marketing-revenue-correlation.ts'));
+const { fetchRevenueAttributionWeights }           = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/topic-selector.ts'));
 const { detectTitlePattern }                       = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/performance-diagnostician.ts'));
 const { decideAutonomy }                           = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/autonomy-gate.ts'));
 const { accumulatePostExperience }                 = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/rag-accumulator.ts'));
@@ -1342,7 +1343,7 @@ async function _prepareDailyRun(traceCtx, options = {}) {
     };
   }
 
-  const [senseState, revenueCorrelation] = await Promise.all([
+  const [senseState, revenueCorrelation, attributionCategoryWeights] = await Promise.all([
     senseDailyState().catch((error) => {
       console.warn('[블로] sense-engine 실패 (무시):', error.message);
       return null;
@@ -1351,6 +1352,7 @@ async function _prepareDailyRun(traceCtx, options = {}) {
       console.warn('[블로] revenue-correlation 실패 (무시):', error.message);
       return null;
     }),
+    fetchRevenueAttributionWeights().catch(() => ({})),
   ]);
 
   const researchData = await collectAllResearch('general', false);
@@ -1370,6 +1372,7 @@ async function _prepareDailyRun(traceCtx, options = {}) {
     researchData,
     senseState,
     revenueCorrelation,
+    attributionCategoryWeights,
     lunaRequest,
     ...scheduleContext,
   };
