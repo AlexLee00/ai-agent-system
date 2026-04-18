@@ -4,6 +4,18 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-04-19: CODEX_LLM_ROUTING_V2 Phase 1~7 완료 — LLM 라우팅 인프라 고도화 (53차 세션)
+
+- **Phase 1 gap**: Luna DB 마이그레이션 + selector/recommender/cost_tracker/routing_log 테스트
+- **Phase 2 gap**: Jay.Core.LLM.Telemetry + Models (Elixir), llm-models.json SSoT (TS)
+- **Phase 3 Cache**: cache.ts (SHA256, TTL 계층), llm_cache 마이그레이션, cleanup launchd
+- **Phase 4 Dashboard**: /hub/llm/dashboard Chart.js, /hub/llm/cache-stats
+- **Phase 5 Model Manager**: check-llm-model-updates.ts, 주간 launchd
+- **Phase 6 Budget Guardian**: TypeScript Singleton, 팀별 할당, budget 라우트
+- **Phase 7 OAuth**: oauth-monitor.ts, test-groq-fallback.ts, /hub/llm/health, launchd plists
+- **unified-caller.ts**: 예산→캐시→OAuth→캐시저장→Groq 순서 재구성
+- 커밋: `7be3e4d6` (27 files, +1623줄)
+
 ## 2026-04-19: CODEX_LLM_ROUTING_V2 Phase 2 완료 — Jay.Core.LLM 공용 레이어 추출
 
 - **공용 6모듈** (packages/elixir_core/lib/jay/llm/):
