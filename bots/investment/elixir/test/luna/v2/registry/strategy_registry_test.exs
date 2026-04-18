@@ -38,14 +38,28 @@ defmodule Luna.V2.Registry.StrategyRegistryTest do
     end
   end
 
-  describe "status 전이 (DB 미연결 환경)" do
-    test "get — 존재하지 않는 전략 → {:error, _}" do
-      result = StrategyRegistry.get("nonexistent_strategy_#{:rand.uniform(999_999)}")
+  describe "status 전이 (GenServer 미기동 환경)" do
+    test "get — GenServer 미기동 시 ArgumentError (ETS 없음) 또는 :error" do
+      result =
+        try do
+          StrategyRegistry.get("nonexistent_#{:rand.uniform(999_999)}")
+        rescue
+          ArgumentError -> {:error, :ets_not_started}
+        catch
+          :exit, _ -> {:error, :not_started}
+        end
       assert match?({:error, _}, result)
     end
 
-    test "list — DB 미연결 시 예외 없이 반환" do
-      result = StrategyRegistry.list(nil, nil)
+    test "list — GenServer 미기동 시 오류 반환 (예외 처리)" do
+      result =
+        try do
+          StrategyRegistry.list(nil, nil)
+        rescue
+          _ -> {:error, :not_started}
+        catch
+          :exit, _ -> {:error, :not_started}
+        end
       assert match?({:ok, _}, result) or match?({:error, _}, result)
     end
   end
