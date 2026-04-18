@@ -13,7 +13,8 @@ defmodule Sigma.V2.LLM.RoutingLog do
   entry 필드:
     agent_name, model_primary, model_used, fallback_used,
     prompt_tokens, response_tokens, latency_ms, cost_usd,
-    response_ok, error_reason, urgency, task_type, budget_ratio, recommended_reason
+    response_ok, error_reason, urgency, task_type, budget_ratio, recommended_reason,
+    provider (선택, Phase 2 이후)
   """
   def record(entry) do
     sql = """
@@ -21,8 +22,9 @@ defmodule Sigma.V2.LLM.RoutingLog do
       (agent_name, model_primary, model_used, fallback_used,
        prompt_tokens, response_tokens, latency_ms, cost_usd,
        response_ok, error_reason, urgency, task_type, budget_ratio, recommended_reason,
+       provider,
        inserted_at)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW())
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,NOW())
     """
 
     Jay.Core.Repo.query(sql, [
@@ -39,7 +41,8 @@ defmodule Sigma.V2.LLM.RoutingLog do
       if(entry.urgency, do: to_string(entry.urgency), else: "medium"),
       if(entry.task_type, do: to_string(entry.task_type), else: "unknown"),
       entry.budget_ratio,
-      entry.recommended_reason
+      entry.recommended_reason,
+      Map.get(entry, :provider, "direct_anthropic"),
     ])
 
     :ok
