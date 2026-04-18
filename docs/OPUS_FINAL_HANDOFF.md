@@ -1,4 +1,93 @@
-# 세션 인수인계 — 2026-04-18 (CODEX_LUNA_REMODEL Phase 1~4 완료)
+# 세션 인수인계 — 2026-04-18 (CODEX_LUNA_REMODEL 전체 완료)
+
+> 세션 범위: 루나팀 완전자율 자동매매 에이전트 진화 — Phase 1~5 전체 구현 완료
+
+## 완료 요약 (CODEX_LUNA_REMODEL Phase 3~5) ✅ (커밋: 2f0c9a4d)
+
+### Phase 3 — Jido Commander 완성 + Policy 5엔진
+
+**Policy 5엔진 신설**:
+- `Luna.V2.Policy.HardRuleEngine` — min/max 주문, 블랙리스트, 잔고 부족, 시장 시간
+- `Luna.V2.Policy.AdaptiveRiskEngine` — regime(calm/normal/volatile/extreme) × 배율(1.2/1.0/0.6/0.3)
+- `Luna.V2.Policy.BudgetPolicyEngine` — 일일 예산 한도 (validation/normal lane)
+- `Luna.V2.Policy.ReentryPolicyEngine` — 손절 24h 쿨다운 + 연속 3회 7일 차단
+- `Luna.V2.Policy.ExposurePolicyEngine` — 단일종목 10% / 시장별 비중 한도
+
+**Skills 6개 신설**:
+- `ResearchAggregator` — 11 분석가 병렬 수집 + Zeus/Athena 조건부 토론
+- `CandidateScreening` — 제약형 후보 선정 (허용 유니버스 × 가중 점수)
+- `PolicyGate` — 5개 정책 엔진 순차 적용
+- `DecisionRationale` — Hub LLM rationale 생성 + luna_rag_documents thesis 저장
+- `ExecutionDispatcher` — Hephaestos(crypto) / Hanul(KIS) 라우팅
+- `ReviewFeedback` — MAPE-K Knowledge + RAG 인덱싱 비동기 트리거
+
+**Commander.run_cycle/2**: Research→Screening→Policy→Rationale→Execute→Review 풀 파이프라인
+**luna_v2_shadow_comparison** 테이블 (shadow 모드 비교 로그)
+
+### Phase 4 — 완전자율 피드백루프
+
+- `Luna.V2.Registry.StrategyRegistry` — ETS 캐시 + DB 전략 버전 관리 (승격/강등 이력)
+- `Luna.V2.Validation.Engine` — GenServer, 매일 03:00 KST 자동 실행, Backtest/WalkForward/Shadow/PromotionGate
+- `Luna.V2.Prediction.Engine` — GenServer, breakout/trend/regime/vol_band/mean_rev 5개 feature (deterministic)
+- `Luna.V2.Rag.AgenticRag` — pgvector HNSW 1024차원 + Query decomposition + Self-correction (품질 0.7 미달 시 재시도)
+- `Luna.V2.Feedback.SelfRewarding` — LLM-as-a-Judge + DPO 데이터셋 축적
+- `Luna.V2.MapeKLoop` — 시장별 완전자율 루프 (crypto 60s 24/7 / domestic 120s 장중 / overseas 120s 장중)
+- `Luna.V2.N8nOrchestration` — 주간 리뷰 webhook + 일일 리포트 webhook
+
+### Phase 5 — LIVE 전환 + 24/7
+
+- `Luna.V2.MarketHoursGate` — crypto 24/7 / domestic 09:00~15:30 KST / overseas 22:30~05:00 KST
+- `Luna.V2.KillSwitch` — LIVE 4단계: `LUNA_LIVE_CRYPTO`(true) / `LUNA_LIVE_DOMESTIC`(false) / `LUNA_LIVE_OVERSEAS`(false) / `LUNA_AUTO_MODE`(false)
+- `Luna.V2.Supervisor` — 전체 V2 구성요소 단계적 기동 (6단계 Kill Switch)
+- DB 마이그레이션 (`20260418_luna_v2_full.sql`):
+  - `luna_v2_shadow_comparison`
+  - `luna_strategy_registry` + `luna_strategy_validation_runs` + `luna_strategy_promotion_log`
+  - `luna_prediction_feature_snapshot`
+  - `luna_rag_documents` (pgvector HNSW)
+  - `luna_dpo_preference_pairs`
+
+### Kill Switch 현재 상태 (기본값 유지)
+```
+LUNA_V2_ENABLED=true              ← Luna.V2.Supervisor 기동
+LUNA_MAPEK_ENABLED=false          ← MAPE-K (활성화 대기)
+LUNA_LIVE_CRYPTO=true             ← 암호화폐 실거래 유지
+LUNA_LIVE_DOMESTIC=false          ← 국내 MOCK 유지 (마스터 전환 시 true)
+LUNA_LIVE_OVERSEAS=false          ← 국외 MOCK 유지 (마스터 전환 시 true)
+LUNA_AUTO_MODE=false              ← 완전 자율 (마스터 명시 활성화)
+LUNA_VALIDATION_ENABLED=false     ← Validation Engine (DB 마이그레이션 후 활성화)
+LUNA_PREDICTION_ENABLED=false     ← Prediction Engine
+LUNA_RAG_ENABLED=false            ← Agentic RAG
+```
+
+### 검증 결과
+- `mix compile --warnings-as-errors` 경고 0건 ✅
+- **578 tests, 0 failures** (19 excluded) ✅
+
+### 다음 세션 착수 항목
+
+1. **DB 마이그레이션 실행** (OPS에서):
+   ```bash
+   psql -d jay -f bots/investment/migrations/20260418_luna_v2_full.sql
+   ```
+2. **Validation + Prediction + RAG 활성화**:
+   ```
+   LUNA_VALIDATION_ENABLED=true
+   LUNA_PREDICTION_ENABLED=true
+   LUNA_RAG_ENABLED=true
+   ```
+3. **MAPE-K 활성화**: `LUNA_MAPEK_ENABLED=true`
+4. **국내/해외 LIVE 전환** (마스터 소액 검증 후):
+   ```
+   LUNA_LIVE_DOMESTIC=true
+   LUNA_LIVE_OVERSEAS=true
+   ```
+5. **Auto Mode** (3일 관찰 후): `LUNA_AUTO_MODE=true`
+6. **KIS WS 활성화**: `LUNA_KIS_WS_ENABLED=true`
+7. **n8n 워크플로우 등록**: `luna-weekly-review` + `luna-daily-report` webhook
+
+---
+
+## 이전 세션: CODEX_LUNA_REMODEL Phase 1~2 완료)
 
 > 세션 범위: 루나팀 완전자율 자동매매 에이전트 진화 — LLM Hub 라우팅 + Luna.V2 Elixir + MAPE-K + 실시간 데이터
 
