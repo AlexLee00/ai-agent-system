@@ -1,3 +1,51 @@
+# 세션 인수인계 — 2026-04-18 (CODEX_DARWIN_EVOLUTION Phase R 완료)
+
+> 세션 범위: CODEX_DARWIN_EVOLUTION Phase R — MAPE-K 루프 통합
+
+## 완료 요약 (CODEX_DARWIN_EVOLUTION Phase R) ✅
+
+### 구현된 내용
+
+**Phase R — MAPE-K 완전자율 루프 통합**
+- `Darwin.V2.MapeKLoop` GenServer 신설 (`bots/darwin/elixir/lib/darwin/v2/mapek_loop.ex`)
+  - 일일 tick (24h): Monitor + 자율 레벨 체크
+  - 주간 tick (6일): Self-Rewarding + ResearchRegistry + MetaReview + 승격 판정
+  - `on_cycle_complete/1`: Commander LEARN 단계 후 Knowledge 환류 진입점
+- `Darwin.V2.KillSwitch` 신규 키 6개 추가:
+  - `:mapek` → `DARWIN_MAPEK_ENABLED`
+  - `:self_rewarding` → `DARWIN_SELF_REWARDING_ENABLED`
+  - `:agentic_rag` → `DARWIN_AGENTIC_RAG_ENABLED`
+  - `:research_registry` → `DARWIN_RESEARCH_REGISTRY_ENABLED`
+  - `:telegram_enhanced` → `DARWIN_TELEGRAM_ENHANCED_ENABLED`
+  - `:auto_promotion` → `DARWIN_AUTO_PROMOTION_ENABLED`
+- `Darwin.V2.Commander.notify_mapek_loop/1` 추가 (LEARN 단계 완료 시 MapeKLoop 알림)
+- `Darwin.V2.Supervisor` core_children에 `MapeKLoop` 등록
+- `Darwin.V2.SelfRewarding` 스텁 신설 (Phase S 대비)
+- `Darwin.V2.ResearchRegistry` 스텁 신설 (Phase K 대비)
+- `Darwin.V2.Topics` MAPE-K/Self-Rewarding/Research Registry 토픽 12개 추가
+- 테스트: **353 tests, 0 failures** (기존 335 + 신규 18개)
+
+### Kill Switch 현재 상태
+```
+DARWIN_MAPEK_ENABLED=false              (기본 OFF — 모든 신규 기능 비활성)
+DARWIN_SELF_REWARDING_ENABLED=false     (Phase S 구현 후 활성화)
+DARWIN_AGENTIC_RAG_ENABLED=false        (Phase A 구현 후 활성화)
+DARWIN_RESEARCH_REGISTRY_ENABLED=false  (Phase K 구현 후 활성화)
+DARWIN_TELEGRAM_ENHANCED_ENABLED=false  (Phase O 구현 후 활성화)
+DARWIN_AUTO_PROMOTION_ENABLED=false     (마스터 명시 승인 필요)
+```
+
+### 다음 단계 (Phase S — Self-Rewarding DPO)
+
+1. `CODEX_DARWIN_EVOLUTION.md` Phase S 스펙 완성 필요 (현재 530줄에서 끊김)
+2. Phase S 구현 대상:
+   - `Darwin.V2.SelfRewarding` 완전 구현 (LLM-as-a-Judge, DPO 선호 쌍)
+   - DB 마이그레이션: `darwin_dpo_preference_pairs` 테이블
+   - Recommender affinity 월간 재조정 로직
+3. `git tag pre-phase-s-darwin-evolution` 후 시작
+
+---
+
 # 세션 인수인계 — 2026-04-18 (CODEX_LLM_ROUTING_REFACTOR Phase 1~4 완료)
 
 > 세션 범위: 시그마 + 다윈 LLM 라우팅 → Hub 중앙화 (Claude Code OAuth + Groq 폴백 체인)
