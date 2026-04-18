@@ -162,6 +162,7 @@ function classifyGuardReason(row = {}) {
   const reason = String(row.block_reason || '').toLowerCase();
   if (code === 'mock_operation_unsupported') return 'mock_policy_limit';
   if (code !== 'capital_guard_rejected') return code;
+  if (reason.includes('상관관계 가드')) return 'correlation_guard';
   if (reason.includes('일간 매매 한도')) return 'daily_trade_limit';
   if (reason.includes('최대 동시 포지션') || reason.includes('최대 포지션 도달')) return 'max_concurrent_positions';
   if (reason.includes('reserve') || reason.includes('보유 부족') || reason.includes('현금 보유')) return 'cash_reserve';
@@ -174,6 +175,8 @@ function formatGuardReasonGroup(group) {
   switch (group) {
     case 'mock_policy_limit':
       return 'mock policy limit';
+    case 'correlation_guard':
+      return 'correlation guard';
     case 'daily_trade_limit':
       return 'daily trade limit';
     case 'max_concurrent_positions':

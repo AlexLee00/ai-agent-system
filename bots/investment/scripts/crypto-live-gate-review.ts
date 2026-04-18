@@ -61,13 +61,15 @@ async function loadBlockRows(days) {
   return db.query(`
     SELECT
       COALESCE(NULLIF(block_code, ''), 'legacy_unclassified') AS block_code,
+      COALESCE(block_reason, '') AS block_reason,
+      COALESCE(trade_mode, 'normal') AS trade_mode,
       COUNT(*) AS cnt
     FROM signals
     WHERE exchange = 'binance'
       AND CAST(created_at AT TIME ZONE 'Asia/Seoul' AS DATE) >= CURRENT_DATE - ($1::int - 1)
       AND status IN ('failed', 'rejected', 'expired')
-    GROUP BY 1
-    ORDER BY cnt DESC, block_code ASC
+    GROUP BY 1, 2, 3
+    ORDER BY cnt DESC, block_code ASC, trade_mode ASC
   `, [days]).catch(() => []);
 }
 
@@ -168,16 +170,76 @@ function getTradeModeCounts(trades, mode) {
 
 function aggregateBlocks(blockRows) {
   const mapped = {};
+  const persistedCapitalGuardByTradeMode = new Map();
+  const persistedCapitalGuardByReason = new Map();
   for (const row of blockRows) {
-    mapped[String(row.block_code || 'legacy_unclassified')] = Number(row.cnt || 0);
+    const code = String(row.block_code || 'legacy_unclassified');
+    const count = Number(row.cnt || 0);
+    mapped[code] = (mapped[code] || 0) + count;
+    if (code !== 'capital_guard_rejected') continue;
+
+    const tradeMode = String(row.trade_mode || 'normal');
+    const reason = String(row.block_reason || '');
+    persistedCapitalGuardByTradeMode.set(
+      tradeMode,
+      (persistedCapitalGuardByTradeMode.get(tradeMode) || 0) + count,
+    );
+    const reasonGroup = classifyPersistedCapitalGuardReason(reason);
+    persistedCapitalGuardByReason.set(
+      reasonGroup,
+      (persistedCapitalGuardByReason.get(reasonGroup) || 0) + count,
+    );
   }
+  const persistedByTradeMode = [...persistedCapitalGuardByTradeMode.entries()]
+    .map(([tradeMode, count]) => ({ tradeMode, count }))
+    .sort((a, b) => b.count - a.count || a.tradeMode.localeCompare(b.tradeMode, 'ko'));
+  const persistedByReason = [...persistedCapitalGuardByReason.entries()]
+    .map(([reasonGroup, count]) => ({ reasonGroup, count, label: formatPersistedCapitalGuardReason(reasonGroup) }))
+    .sort((a, b) => b.count - a.count || a.reasonGroup.localeCompare(b.reasonGroup, 'ko'));
+
   return {
     raw: mapped,
     top: Object.entries(mapped).sort((a, b) => b[1] - a[1])[0] || null,
     paperReentry: mapped.paper_position_reentry_blocked || 0,
     liveReentry: mapped.live_position_reentry_blocked || 0,
     sameDayReentry: mapped.same_day_reentry_blocked || 0,
+    persistedCapitalGuard: {
+      total: Number(mapped.capital_guard_rejected || 0),
+      byTradeMode: persistedByTradeMode,
+      byReason: persistedByReason,
+      topReason: persistedByReason[0] || null,
+    },
   };
+}
+
+function classifyPersistedCapitalGuardReason(reason = '') {
+  const text = String(reason || '').toLowerCase();
+  if (text.includes('상관관계 가드')) return 'correlation_guard';
+  if (text.includes('최대 동시 포지션') || text.includes('최대 포지션 도달')) return 'max_concurrent_positions';
+  if (text.includes('일간 매매 한도')) return 'daily_trade_limit';
+  if (text.includes('reserve') || text.includes('보유 부족') || text.includes('현금 보유')) return 'cash_reserve';
+  if (text.includes('최소 주문')) return 'min_order_size';
+  if (text.includes('cooldown')) return 'loss_cooldown';
+  return 'capital_guard_other';
+}
+
+function formatPersistedCapitalGuardReason(reasonGroup = '') {
+  switch (reasonGroup) {
+    case 'correlation_guard':
+      return 'correlation guard';
+    case 'max_concurrent_positions':
+      return 'max positions';
+    case 'daily_trade_limit':
+      return 'daily trade limit';
+    case 'cash_reserve':
+      return 'cash reserve';
+    case 'min_order_size':
+      return 'min order size';
+    case 'loss_cooldown':
+      return 'loss cooldown';
+    default:
+      return 'capital guard other';
+  }
 }
 
 function buildReview({ days, pipeline, trades, blocks, closedReviews }) {
@@ -196,6 +258,18 @@ function buildReview({ days, pipeline, trades, blocks, closedReviews }) {
   facts.push(`weakSignalSkipped ${pipeline.weak}건${pipeline.weakTop ? `, 최다 사유 ${pipeline.weakTop}` : ''}`);
   facts.push(`재진입 차단: PAPER ${blocks.paperReentry}건 / LIVE ${blocks.liveReentry}건 / same-day ${blocks.sameDayReentry}건`);
   facts.push(`최근 ${days}일 종료된 암호화폐 거래 리뷰 ${closedReviews}건`);
+  if (blocks.persistedCapitalGuard.total > 0) {
+    const topPersistedReason = blocks.persistedCapitalGuard.topReason;
+    const validationPersisted = Number(
+      blocks.persistedCapitalGuard.byTradeMode.find((row) => row.tradeMode === 'validation')?.count || 0,
+    );
+    const normalPersisted = Number(
+      blocks.persistedCapitalGuard.byTradeMode.find((row) => row.tradeMode === 'normal')?.count || 0,
+    );
+    facts.push(
+      `signals 기준 persisted capital guard ${blocks.persistedCapitalGuard.total}건 (validation ${validationPersisted} / normal ${normalPersisted})${topPersistedReason ? `, 최다 ${topPersistedReason.label} ${topPersistedReason.count}건` : ''}`,
+    );
+  }
 
   if (pipeline.weakTop === 'confidence_near_threshold') {
     inferred.push('신호 품질이 완전히 낮다기보다 confidence 임계값 바로 아래에서 많이 잘리고 있을 가능성이 큼');
@@ -238,6 +312,21 @@ function buildReview({ days, pipeline, trades, blocks, closedReviews }) {
   }
   if (validationLiveOverlap > 0) {
     inferred.push(`validation 레일은 LIVE 포지션 중복 차단도 받고 있다 (${validationLiveOverlap}건)`);
+  }
+  if (blocks.persistedCapitalGuard.total > 0) {
+    const topPersistedReason = blocks.persistedCapitalGuard.topReason;
+    const validationPersisted = Number(
+      blocks.persistedCapitalGuard.byTradeMode.find((row) => row.tradeMode === 'validation')?.count || 0,
+    );
+    const normalPersisted = Number(
+      blocks.persistedCapitalGuard.byTradeMode.find((row) => row.tradeMode === 'normal')?.count || 0,
+    );
+    if (topPersistedReason?.reasonGroup === 'correlation_guard') {
+      inferred.push(`실제 persisted capital guard는 validation보다 normal lane 상관관계 가드가 중심이다 (normal ${normalPersisted} / validation ${validationPersisted})`);
+      recommendations.push('LIVE gate 조정 전에는 validation 표본 확대보다 normal lane 심볼 군집도와 상관관계 슬롯 점유를 먼저 줄이는 편이 효과적이다');
+    } else if (topPersistedReason) {
+      inferred.push(`실제 persisted capital guard 최다 사유는 ${topPersistedReason.label}이다 (${topPersistedReason.count}건)`);
+    }
   }
 
   let liveDecision = 'blocked';
