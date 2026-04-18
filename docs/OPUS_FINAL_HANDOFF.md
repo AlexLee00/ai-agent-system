@@ -1191,3 +1191,78 @@ DARWIN_LLM_DAILY_BUDGET_USD=10.00
 — 코덱스 (2026-04-18, 45차 세션)
 
 — 코덱스 (2026-04-18, 44차 세션)
+
+---
+
+## ✅ 45차 세션 — CODEX_JAY_DARWIN_INDEPENDENCE 검증 (2026-04-18 코덱스)
+
+### 세션 목적
+
+CODEX_JAY_DARWIN_INDEPENDENCE (Phase 1+2+3) 전체 Exit Criteria 검증.
+이전 세션들에서 이미 구현이 완료된 상태를 재확인하고 최종 정리.
+
+### 검증 결과 요약
+
+| Phase | 항목 | 결과 |
+|-------|------|------|
+| **Phase 1** | darwin dead code 11파일 git rm | ✅ 완료 |
+| **Phase 1** | darwin_supervisor.ex 제거 | ✅ 완료 |
+| **Phase 1** | team_connector Darwin 참조 0건 | ✅ 완료 |
+| **Phase 1** | darwin Jido 2.2 | ✅ 완료 |
+| **Phase 1** | darwin Commander 9 tools | ✅ `use Jido.AI.Agent` 9 tools |
+| **Phase 1** | darwin 335 tests 0 failures | ✅ **335 tests, 0 failures** |
+| **Phase 2** | `packages/elixir_core/` 생성 | ✅ 13개 Jay.Core.* 모듈 |
+| **Phase 2** | Jay.Core.JayBus (Registry 래퍼) | ✅ 완료 |
+| **Phase 2** | TeamJay.* → Jay.Core.* 변환 | ✅ 0 remnants |
+| **Phase 2** | team_jay mix.exs jay_core path dep | ✅ `{:jay_core, path: ...}` |
+| **Phase 2** | 전체 앱 mix compile 성공 | ✅ EXIT 0 |
+| **Phase 3** | bots/jay/elixir/ 독립 앱 | ✅ 23개 모듈 |
+| **Phase 3** | Jay.V2.Commander (Jido.AI.Agent) | ✅ 6 tools + 9팀 오케스트레이터 |
+| **Phase 3** | Jay.V2.Skill.* 6종 | ✅ TeamHealthCheck/FormationDecision/CrossTeamPipeline/AutonomyGovernor/DailyBriefingComposer/WeeklyReviewer |
+| **Phase 3** | Jay.V2.Supervisor (Commander 포함) | ✅ 완료 |
+| **Phase 3** | ai.jay.growth.plist | ✅ `bots/jay/launchd/` 생성 |
+| **Phase 3** | Jay 58 tests 0 failures | ✅ **58 tests, 0 failures** |
+| **Phase 3** | bots/jay/docs/CLAUDE.md | ✅ 완료 |
+| **Phase 3** | packages/elixir_core/README.md | ✅ 완료 |
+
+### 테스트 최종 결과
+
+```
+Darwin:  335 tests, 0 failures (11 excluded)
+Jay V2:   58 tests, 0 failures (4 excluded)
+Sigma:   124 tests, 0 failures
+Luna:    전체 suite에서 2 flaky (단독 실행 시 통과 — 기존 타이밍 이슈)
+```
+
+### Git 상태
+
+- Git tags: `pre-phase-1-darwin`, `pre-phase-2-core`, `pre-phase-3-jay` 모두 존재 ✅
+- Working directory: clean ✅
+- 병행 세션(44차)이 HANDOFF 업데이트 커밋 중 → 정상
+
+### 아키텍처 완료 상태
+
+```
+AFTER (3-layer):
+  packages/elixir_core/   ← Jay.Core.* (13 모듈, 공용 라이브러리)
+  bots/darwin/elixir/     ← Darwin.V2.* (Jido 2.2, 9 tools Commander)
+  bots/jay/elixir/        ← Jay.V2.* (23 모듈, Jido.AI.Agent Commander)
+  bots/sigma/elixir/      ← Sigma.V2.* (기존, 124 tests)
+  elixir/team_jay/        ← 슬림 (blog/ska/claude/investment/luna — Phase 4+ 대상)
+```
+
+### 미완료 / 다음 단계
+
+1. **maunchd 등록**: `ai.jay.growth.plist` 생성됐으나 launchctl 등록은 마스터 승인 후
+   ```bash
+   launchctl load ~/Library/LaunchAgents/ai.jay.growth.plist  # 마스터 직접
+   ```
+2. **Jay Commander Kill Switch**: 현재 `JAY_COMMANDER_ENABLED=false` → 단계적 활성화 필요
+3. **Luna V2 flaky test**: `engine_test.exs` 전체 suite 실행 시 2 failures (단독 pass) — 별도 처리 필요
+4. **Phase 4+**: blog/ska/claude/investment/luna 독립 → 나중 별도 CODEX
+
+## 🏷️ 45차 세션 요약 한 줄
+
+**45차 세션 — CODEX_JAY_DARWIN_INDEPENDENCE 완료 검증: Phase 1+2+3 전 Exit Criteria 통과, Darwin 335 + Jay 58 + Sigma 124 tests 0 failures, 3-layer 독립 아키텍처(elixir_core/darwin/jay) 완성 확인.**
+
+— 코덱스 (2026-04-18, 45차 세션)
