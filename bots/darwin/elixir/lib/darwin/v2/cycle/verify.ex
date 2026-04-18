@@ -4,6 +4,8 @@ defmodule Darwin.V2.Cycle.Verify do
   use GenServer
   require Logger
 
+  alias Darwin.V2.ResearchRegistry
+
   def start_link(opts \\ []), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
   @impl GenServer
@@ -13,7 +15,7 @@ defmodule Darwin.V2.Cycle.Verify do
   end
 
   @doc "이 단계를 즉시 실행."
-  def run_now(payload\\ %{}) do
+  def run_now(payload \\ %{}) do
     GenServer.cast(__MODULE__, {:run, payload})
   end
 
@@ -28,6 +30,13 @@ defmodule Darwin.V2.Cycle.Verify do
   @impl GenServer
   def handle_cast({:run, payload}, state) do
     Logger.debug("[darwin/cycle.verify] Verify 실행 — payload=#{inspect(payload)}")
+
+    # Research Registry 단계 전이: implemented → verified
+    if paper_id = Map.get(payload, :paper_id) do
+      verification_passed = Map.get(payload, :passed, false)
+      ResearchRegistry.transition(paper_id, "verified", %{passed: verification_passed})
+    end
+
     new_state = %{state | runs: state.runs + 1, last_run_at: DateTime.utc_now()}
     {:noreply, new_state}
   end
