@@ -965,8 +965,17 @@ async function _runGeneralPostRepairPasses(category, researchData, content, sect
   let repairedContent = String(content || '').trim();
   let nextUsedModel = usedModel;
   let nextFallbackUsed = fallbackUsed;
+  const weatherContext = weatherToContext(researchData.weather || {}, { detailed: false });
+  const relatedPosts = researchData.relatedPosts || [];
 
   for (let attempt = 1; attempt <= 2; attempt += 1) {
+    repairedContent = _ensureGeneralQualityFloor(repairedContent, {
+      category,
+      weatherContext,
+      relatedPosts,
+      minChars: minCharsGeneral,
+    });
+
     const missingMarkers = _getMissingMarkers(repairedContent);
     const shortSections = _getShortSections(repairedContent, category);
     const needsRepair = repairedContent.length < minCharsGeneral || missingMarkers.length > 0 || shortSections.length > 0;
