@@ -682,9 +682,147 @@ async function handleCodexReject(args) {
   }
 }
 
+// ─── Phase A/C/D/N 신규 핸들러 ────────────────────────────────────────
+
+/**
+ * 코드 리뷰 실행 (Reviewer)
+ */
+async function handleRunReview(args) {
+  try {
+    const reviewer = require('./reviewer');
+    const result = await reviewer.runReview({ force: true, test: Boolean(args.test) });
+    return { ok: true, message: result.message, data: { pass: result.summary?.pass } };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
+ * 보안 풀스캔 (Guardian 6계층)
+ */
+async function handleRunGuardian(args) {
+  try {
+    const guardian = require('./guardian');
+    const result = await guardian.runFullSecurityScan({ force: true, test: Boolean(args.test) });
+    return { ok: true, message: result.message, data: { pass: result.pass, critical: result.critical.length, high: result.high.length } };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
+ * 빌드 실행 (Builder)
+ */
+async function handleRunBuilder(args) {
+  try {
+    const builder = require('./builder');
+    const result = await builder.runBuildCheck({ force: true, test: Boolean(args.test) });
+    return { ok: true, message: result.message, data: { pass: result.pass } };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
+ * 전체 품질 체크 — Reviewer → Guardian → Builder 순차 실행
+ */
+async function handleRunFullQuality(args) {
+  const results = { reviewer: null, guardian: null, builder: null, overall: 'pass' };
+  try {
+    const reviewer = require('./reviewer');
+    const guardian = require('./guardian');
+    const builder  = require('./builder');
+
+    // 1. Reviewer
+    const reviewResult = await reviewer.runReview({ force: true });
+    results.reviewer = { pass: reviewResult.summary?.pass, message: reviewResult.message };
+
+    // 2. Guardian (Reviewer 통과 후)
+    if (reviewResult.summary?.pass !== false) {
+      const guardResult = await guardian.runFullSecurityScan({ force: true });
+      results.guardian = { pass: guardResult.pass, message: guardResult.message };
+    }
+
+    // 3. Builder (Reviewer + Guardian 통과 후)
+    if (results.reviewer?.pass !== false && results.guardian?.pass !== false) {
+      const buildResult = await builder.runBuildCheck({ force: true });
+      results.builder = { pass: buildResult.pass, message: buildResult.message };
+    }
+
+    if (results.reviewer?.pass === false ||
+        results.guardian?.pass === false ||
+        results.builder?.pass === false) {
+      results.overall = 'fail';
+    }
+
+    const summary = [
+      `리뷰어: ${results.reviewer ? (results.reviewer.pass ? '✅' : '❌') : '스킵'}`,
+      `가디언: ${results.guardian ? (results.guardian.pass ? '✅' : '❌') : '스킵'}`,
+      `빌더: ${results.builder ? (results.builder.pass ? '✅' : '❌') : '스킵'}`,
+      `종합: ${results.overall === 'pass' ? '✅ PASS' : '❌ FAIL'}`,
+    ].join('\n');
+
+    return { ok: true, message: `🔍 전체 품질 체크\n${summary}`, data: results };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
+ * 코덱스 알림 수동 테스트
+ */
+async function handleTestCodexNotifier(args) {
+  try {
+    const notifier = require('../lib/codex-plan-notifier');
+    const result = await notifier.runManualTest(args.message || '테스트 알림');
+    return { ok: true, message: result.message };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
+ * 현재 코덱스 상태 조회
+ */
+async function handleShowCodexStatus(args) {
+  try {
+    const notifier = require('../lib/codex-plan-notifier');
+    const state = notifier.loadCurrentState();
+    if (!state || Object.keys(state).length === 0) {
+      return { ok: true, message: '📋 현재 실행 중인 코덱스 프로세스 없음' };
+    }
+    const lines = ['📋 코덱스 상태'];
+    for (const [pid, exec] of Object.entries(state)) {
+      lines.push(`  PID: ${pid}`);
+      lines.push(`  상태: ${exec.status}`);
+      lines.push(`  완료 Phase: ${(exec.completed_phases || []).length}/${(exec.total_phases || []).length}`);
+      lines.push(`  최신 커밋: ${exec.last_commit_sha?.slice(0, 8) || 'N/A'}`);
+    }
+    return { ok: true, message: lines.join('\n'), data: state };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
+ * Doctor Verify Loop 수동 실행
+ */
+async function handleRunDoctorVerify(args) {
+  try {
+    const doctor = require('../lib/doctor');
+    const taskType = args.task_type || args.action;
+    if (!taskType) return { ok: false, error: 'task_type 파라미터 필요' };
+    const result = await doctor.executeWithVerifyLoop(taskType, args.params || {}, 'claude-commander');
+    return { ok: result.success, message: result.message, data: result };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
 // ─── 명령 디스패처 ────────────────────────────────────────────────────
 
 const HANDLERS = {
+  // 기존 10개
   run_check:       handleRunCheck,
   run_full:        handleRunFull,
   run_fix:         handleRunFix,
@@ -695,6 +833,19 @@ const HANDLERS = {
   session_close:   handleSessionClose,
   codex_approve:   handleCodexApprove,
   codex_reject:    handleCodexReject,
+
+  // Phase A 신규 4개
+  run_review:       handleRunReview,
+  run_guardian:     handleRunGuardian,
+  run_builder:      handleRunBuilder,
+  run_full_quality: handleRunFullQuality,
+
+  // Phase N 신규 2개
+  test_codex_notifier: handleTestCodexNotifier,
+  show_codex_status:   handleShowCodexStatus,
+
+  // Phase D 신규 1개
+  run_doctor_verify: handleRunDoctorVerify,
 };
 
 async function processCommands() {

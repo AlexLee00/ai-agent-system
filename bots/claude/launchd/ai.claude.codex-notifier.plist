@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/Users/alexlee</string>
+		<key>MODE</key>
+		<string>ops</string>
+		<key>PATH</key>
+		<string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+		<key>CLAUDE_CODEX_NOTIFIER_ENABLED</key>
+		<string>false</string>
+		<key>CLAUDE_NOTIFIER_SHADOW</key>
+		<string>true</string>
+	</dict>
+	<key>KeepAlive</key>
+	<true/>
+	<key>Label</key>
+	<string>ai.claude.codex-notifier</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/opt/homebrew/bin/node</string>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/claude/scripts/codex-notifier-runner.ts</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/Users/alexlee/projects/ai-agent-system/bots/claude/codex-notifier.err.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/alexlee/projects/ai-agent-system/bots/claude/codex-notifier.log</string>
+	<key>WorkingDirectory</key>
+	<string>/Users/alexlee/projects/ai-agent-system</string>
+</dict>
+</plist>

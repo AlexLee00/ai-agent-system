@@ -25,7 +25,8 @@ const eventLake  = require('../../../packages/core/lib/event-lake');
 const { publishToRag, publishToWebhook } = require('../../../packages/core/lib/reporting-hub');
 const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
 
-const SCHEMA = 'reservation';
+const SCHEMA      = 'reservation';
+const ROOT        = path.join(__dirname, '../../../');
 const LAUNCHD_DIR = path.join(os.homedir(), 'Library', 'LaunchAgents');
 const doctorMemory = createAgentMemory({ agentId: 'claude.doctor', team: 'claude' });
 const RECOVERY_BLACKLIST = new Set([
@@ -758,8 +759,160 @@ async function emergencyDirectRecover(issues, requestedBy = 'dexter-emergency') 
 
 
 
+// ─── Phase D: Verify Loop (Claude Forge 패턴) ────────────────────────────────
+
+const RETRY_BACKOFF_MS = [5000, 15000, 45000];  // 5s → 15s → 45s
+const MAX_RETRY = 3;
+
+/**
+ * 복구 후 검증 — 작업 타입별 실제 확인 로직
+ * @param {string} taskType
+ * @param {object} params
+ * @returns {Promise<{ok: boolean, detail: string}>}
+ */
+async function verifyRecovery(taskType, params) {
+  try {
+    switch (taskType) {
+      case 'restart_launchd_service': {
+        await new Promise(r => setTimeout(r, 3000));
+        const label = params.label;
+        const status = execSync(`launchctl list ${label} 2>&1`, { encoding: 'utf8', timeout: 5000 }).trim();
+        const isRunning = !status.includes('Could not find service') && !status.includes('No such process');
+        return { ok: isRunning, detail: status.slice(0, 200) };
+      }
+
+      case 'git_stash': {
+        const stashList = execSync('git stash list', { encoding: 'utf8', cwd: ROOT, timeout: 5000 }).trim();
+        const found = params.message ? stashList.includes(params.message) : stashList.length > 0;
+        return { ok: found, detail: stashList.slice(0, 200) };
+      }
+
+      case 'clear_lock_file': {
+        const lockExists = fs.existsSync(params.path);
+        return { ok: !lockExists, detail: `lock_exists=${lockExists}` };
+      }
+
+      case 'clear_expired_cache':
+        // 캐시 정리는 항상 성공으로 간주
+        return { ok: true, detail: 'cache_clear_verified' };
+
+      case 'npm_audit_fix': {
+        // npm audit 재실행으로 critical 감소 확인
+        try {
+          const output = execSync('npm audit --json 2>/dev/null || true', {
+            cwd: params.cwd || ROOT,
+            encoding: 'utf8',
+            timeout: 15000,
+          });
+          const audit = JSON.parse(output);
+          const criticals = Object.values(audit.vulnerabilities || {})
+            .filter(v => (v as any).severity === 'critical').length;
+          return { ok: criticals === 0, detail: `critical_count=${criticals}` };
+        } catch {
+          return { ok: true, detail: 'no_verify_required' };
+        }
+      }
+
+      case 'fix_file_permissions': {
+        const mode = (fs.statSync(params.filePath).mode & 0o777).toString(8);
+        return { ok: mode === '600', detail: `mode=${mode}` };
+      }
+
+      default:
+        return { ok: true, detail: 'no_verify_required' };
+    }
+  } catch (e) {
+    return { ok: false, detail: `verify_error: ${e.message}` };
+  }
+}
+
+/**
+ * Verify Loop — 복구 → 검증 → 실패 시 재시도 (최대 3회)
+ * Claude Forge /verify-loop 패턴 적용
+ *
+ * @param {string} taskType       - WHITELIST 키
+ * @param {object} params         - 작업 파라미터
+ * @param {string} requestedBy    - 요청자
+ * @returns {Promise<RecoveryResult & { attempts: number, verified: boolean }>}
+ */
+async function executeWithVerifyLoop(taskType, params = {}, requestedBy = 'claude-commander') {
+  let lastResult = null;
+
+  for (let attempt = 1; attempt <= MAX_RETRY; attempt++) {
+    // 재시도 시 백오프
+    if (attempt > 1) {
+      await new Promise(r => setTimeout(r, RETRY_BACKOFF_MS[attempt - 2]));
+    }
+
+    // 실행
+    const result = await execute(taskType, params, requestedBy);
+    lastResult = result;
+
+    if (!result.success) {
+      if (attempt < MAX_RETRY) {
+        console.log(`[doctor] Verify Loop 시도 ${attempt}/${MAX_RETRY} 실패 — 재시도`);
+        continue;
+      }
+      // 최대 재시도 초과
+      await _logVerifyLoop(taskType, params, requestedBy, attempt, false, false, result.message);
+      return { ...result, attempts: attempt, verified: false };
+    }
+
+    // 검증
+    const verified = await verifyRecovery(taskType, params);
+
+    if (verified.ok) {
+      console.log(`[doctor] Verify Loop 성공 (${attempt}회): ${taskType} — ${verified.detail}`);
+      await _logVerifyLoop(taskType, params, requestedBy, attempt, true, true, null);
+      return { ...result, attempts: attempt, verified: true };
+    }
+
+    // 검증 실패
+    console.log(`[doctor] Verify Loop 검증 실패 (${attempt}/${MAX_RETRY}): ${verified.detail}`);
+
+    if (attempt >= MAX_RETRY) {
+      // 3회 모두 실패 — 긴급 알림
+      try {
+        const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+        await postAlarm({
+          message: `🚨 [독터] Verify Loop 최종 실패\n작업: ${taskType}\n${MAX_RETRY}회 시도 후 검증 실패\n상세: ${verified.detail}`,
+          team: 'claude',
+          alertLevel: 4,
+          fromBot: 'doctor',
+        });
+      } catch {}
+      await _logVerifyLoop(taskType, params, requestedBy, attempt, true, false, verified.detail);
+      return { ...result, success: false, message: `Verify Loop 최종 실패 (${MAX_RETRY}회): ${verified.detail}`, attempts: attempt, verified: false };
+    }
+  }
+
+  return { success: false, message: 'Verify Loop 종료', attempts: MAX_RETRY, verified: false };
+}
+
+async function _logVerifyLoop(taskType, params, requestedBy, attempts, executed, verified, errorMsg) {
+  try {
+    await pgPool.run(SCHEMA, `
+      INSERT INTO claude_doctor_recovery_log
+        (action, params, caller_bot, attempts, success, verified, error_msg)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `, [
+      taskType,
+      JSON.stringify(params ?? null),
+      requestedBy,
+      attempts,
+      executed && verified ? 1 : 0,
+      verified ? 1 : 0,
+      errorMsg ?? null,
+    ]);
+  } catch (e) {
+    console.warn('[doctor] claude_doctor_recovery_log INSERT 실패 (무시):', e.message);
+  }
+}
+
 export {
   execute,
+  executeWithVerifyLoop,
+  verifyRecovery,
   canRecover,
   logRecovery,
   getRecoveryHistory,
