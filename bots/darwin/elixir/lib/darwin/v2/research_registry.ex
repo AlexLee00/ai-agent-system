@@ -34,6 +34,8 @@ defmodule Darwin.V2.ResearchRegistry do
     "retired"       => []
   }
 
+  @registry_bootstrap_key {__MODULE__, :bootstrapped}
+
   # ─────────────────────────────────────────────────
   # 공개 API
   # ─────────────────────────────────────────────────
@@ -42,6 +44,7 @@ defmodule Darwin.V2.ResearchRegistry do
   @spec register_paper(map()) :: :ok
   def register_paper(paper) do
     unless enabled?(), do: (Logger.debug("[Darwin.V2.ResearchRegistry] kill switch OFF"); :ok)
+    ensure_tables!()
 
     sql = """
     INSERT INTO darwin_research_registry
@@ -87,6 +90,7 @@ defmodule Darwin.V2.ResearchRegistry do
   @spec link_effect(String.t(), map()) :: :ok
   def link_effect(paper_id, effect) do
     unless enabled?(), do: :ok
+    ensure_tables!()
 
     improvement = calc_improvement(effect[:before_metrics], effect[:after_metrics])
 
@@ -120,6 +124,7 @@ defmodule Darwin.V2.ResearchRegistry do
   @spec record_cycle_result(map()) :: :ok
   def record_cycle_result(cycle_result) do
     unless enabled?(), do: :ok
+    ensure_tables!()
 
     paper_id = cycle_result[:paper_id] || cycle_result[:paper_title]
     stage = cycle_result_to_stage(cycle_result)
@@ -139,6 +144,7 @@ defmodule Darwin.V2.ResearchRegistry do
   @spec refresh_effects() :: :ok
   def refresh_effects do
     unless enabled?(), do: :ok
+    ensure_tables!()
 
     sql = """
     SELECT paper_id FROM darwin_research_registry
@@ -170,6 +176,81 @@ defmodule Darwin.V2.ResearchRegistry do
   # ─────────────────────────────────────────────────
 
   defp enabled?, do: Darwin.V2.KillSwitch.enabled?(:research_registry)
+
+  defp ensure_tables! do
+    unless Process.get(@registry_bootstrap_key) do
+      ensure_registry_tables()
+      Process.put(@registry_bootstrap_key, true)
+    end
+
+    :ok
+  end
+
+  defp ensure_registry_tables do
+    statements = [
+      """
+      CREATE TABLE IF NOT EXISTS darwin_research_registry (
+        id bigserial PRIMARY KEY,
+        paper_id varchar(120) NOT NULL,
+        title text NOT NULL,
+        authors text[] DEFAULT ARRAY[]::text[],
+        source varchar(50) NOT NULL,
+        url text,
+        discovered_at timestamp,
+        stage varchar(30) NOT NULL,
+        keywords text[] DEFAULT ARRAY[]::text[],
+        metadata jsonb DEFAULT '{}'::jsonb,
+        inserted_at timestamp NOT NULL DEFAULT NOW(),
+        updated_at timestamp NOT NULL DEFAULT NOW()
+      )
+      """,
+      "CREATE UNIQUE INDEX IF NOT EXISTS darwin_research_registry_paper_id_index ON darwin_research_registry (paper_id)",
+      "CREATE INDEX IF NOT EXISTS darwin_research_registry_stage_index ON darwin_research_registry (stage)",
+      "CREATE INDEX IF NOT EXISTS darwin_research_registry_inserted_at_index ON darwin_research_registry (inserted_at)",
+      """
+      CREATE TABLE IF NOT EXISTS darwin_research_effects (
+        id bigserial PRIMARY KEY,
+        paper_id varchar(120) NOT NULL,
+        effect_type varchar(50) NOT NULL,
+        target text,
+        commit_sha varchar(60),
+        before_metrics jsonb,
+        after_metrics jsonb,
+        improvement_pct decimal(7,2),
+        measured_at timestamp,
+        inserted_at timestamp NOT NULL DEFAULT NOW()
+      )
+      """,
+      "CREATE INDEX IF NOT EXISTS darwin_research_effects_paper_id_index ON darwin_research_effects (paper_id)",
+      "CREATE INDEX IF NOT EXISTS darwin_research_effects_improvement_pct_index ON darwin_research_effects (improvement_pct)",
+      """
+      CREATE TABLE IF NOT EXISTS darwin_research_promotion_log (
+        id bigserial PRIMARY KEY,
+        paper_id varchar(120) NOT NULL,
+        from_stage varchar(30),
+        to_stage varchar(30) NOT NULL,
+        metadata jsonb DEFAULT '{}'::jsonb,
+        inserted_at timestamp NOT NULL DEFAULT NOW()
+      )
+      """,
+      "CREATE INDEX IF NOT EXISTS darwin_research_promotion_log_paper_id_index ON darwin_research_promotion_log (paper_id)",
+      "CREATE INDEX IF NOT EXISTS darwin_research_promotion_log_inserted_at_index ON darwin_research_promotion_log (inserted_at)"
+    ]
+
+    Enum.each(statements, fn sql ->
+      case Jay.Core.Repo.query(sql, []) do
+        {:ok, _} ->
+          :ok
+
+        {:error, error} ->
+          Logger.debug("[Darwin.V2.ResearchRegistry] bootstrap skipped: #{inspect(error)}")
+      end
+    end)
+  rescue
+    error ->
+      Logger.debug("[Darwin.V2.ResearchRegistry] bootstrap error: #{inspect(error)}")
+      :ok
+  end
 
   defp do_transition(paper_id, to_stage, metadata) do
     current = fetch_current_stage(paper_id)
