@@ -1,3 +1,47 @@
+# 세션 인수인계 — 2026-04-18 (CODEX_LLM_ROUTING_REFACTOR Phase 1~3 완료)
+
+> 세션 범위: LLM 라우팅 리팩토링 — Hub LLM 엔드포인트 신설 + Sigma/Darwin Selector Hub 경유 전환
+
+---
+
+## 최신 작업 요약 (Phase 1~3)
+
+### Phase 1 — Hub LLM 엔드포인트 신설 ✅
+- `bots/hub/lib/llm/` 5개 모듈: types / secrets-loader / claude-code-oauth / groq-fallback / unified-caller
+- `bots/hub/lib/routes/llm.ts`: POST `/hub/llm/call|oauth|groq`, GET `/hub/llm/stats`
+- `bots/hub/src/hub.ts`: LLM route 등록 + 30rpm rate limiter
+- `elixir/team_jay/priv/repo/migrations/20261001000001_create_llm_routing_log.exs`
+- 롤백 태그: `pre-phase-1-llm-routing`
+
+### Phase 2 — Sigma Selector Hub 경유 ✅
+- `Sigma.V2.LLM.HubClient` 신설 (`/hub/llm/call` HTTP 클라이언트)
+- `Sigma.V2.LLM.Selector` 리팩토링: Hub 경유 + Shadow Mode + 직접 Anthropic fallback
+- `sigma_v2_llm_routing_log.provider` 컬럼 추가 마이그레이션
+- `ai.sigma.daily.plist`: `LLM_HUB_ROUTING_SHADOW=true`, `ENABLED=false`
+- 롤백 태그: `pre-phase-2-sigma-hub`
+
+### Phase 3 — Darwin Selector Hub 경유 ✅
+- `Darwin.V2.LLM.HubClient` 신설 (Sigma 동일 패턴, callerTeam=darwin)
+- `Darwin.V2.LLM.Selector` 리팩토링: Hub 경유 + Shadow + Kill Switch 유지 + messages→prompt 직렬화
+- `darwin_v2_llm_routing_log.provider` 컬럼 추가 마이그레이션
+- `ai.darwin.daily.shadow.plist`: 동일 환경변수 추가
+- 롤백 태그: `pre-phase-3-darwin-hub`
+
+### Kill Switch 상태
+| 환경변수 | 현재값 | 의미 |
+|---------|--------|------|
+| `LLM_HUB_ROUTING_ENABLED` | `false` | Hub 경유 비활성 (안전) |
+| `LLM_HUB_ROUTING_SHADOW` | `true` | Shadow Mode 활성 (비교 데이터 수집) |
+
+### 다음 단계 (Phase 4)
+1. Hub 재시작 (launchd bootout/bootstrap) — OPS에서만
+2. `llm_routing_log` 테이블 생성 (`mix ecto.migrate`)
+3. `sigma_v2_llm_routing_log.provider` 컬럼 추가 (migration 실행)
+4. Shadow Mode 3일 가동 → 품질/비용/레이턴시 비교
+5. `LLM_HUB_ROUTING_ENABLED=true` 전환
+
+---
+
 # 세션 인수인계 — 2026-04-18 (CODEX_JAY_DARWIN_INDEPENDENCE 전체 완료)
 
 > 세션 범위: Darwin Commander 9 tools + sigma 파일 이전 + TeamJay 네임스페이스 최종 정리 + 문서화
