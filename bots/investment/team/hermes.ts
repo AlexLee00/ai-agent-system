@@ -19,6 +19,7 @@ import http  from 'http';
 import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { callLLM, parseJSON } from '../shared/llm-client.ts';
+import { callLLMWithHub } from '../shared/hub-llm-client.ts';
 import { loadSecrets }        from '../shared/secrets.ts';
 import { ANALYST_TYPES, ACTIONS } from '../shared/signal.ts';
 import { loadLatestScoutIntel, getScoutSignalForSymbol } from '../shared/scout-intel.ts';
@@ -398,7 +399,7 @@ export async function analyzeNews(symbol = 'BTC/USDT', exchange = 'binance') {
       : null,
     `최신 뉴스 ${relevant.length}건:\n${headlines}`,
   ].filter(Boolean).join('\n');
-  const responseText = await callLLM('hermes', systemPrompt, userMsg, 300, { symbol });
+  const responseText = await callLLMWithHub('hermes', systemPrompt, userMsg, callLLM, 300, { symbol });
   const parsed       = parseJSON(responseText);
 
   let signal, confidence, reasoning, sentiment = '중립';

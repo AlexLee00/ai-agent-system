@@ -21,6 +21,7 @@ const eventLake = _require('../../../packages/core/lib/event-lake');
 const { AgentMemory } = _require('../../../packages/core/lib/agent-memory.legacy.js');
 import * as journalDb from '../shared/trade-journal-db.ts';
 import { callLLM, parseJSON } from '../shared/llm-client.ts';
+import { callLLMWithHub } from '../shared/hub-llm-client.ts';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.ts';
 import { notifyRiskRejection }    from '../shared/report.ts';
 import {
@@ -336,7 +337,7 @@ async function evaluateWithLLM({ signal, adjustedAmount, volFactor, corrFactor, 
     `최종 리스크 판단:`,
   ].join('\n');
 
-  const raw    = await callLLM('nemesis', getNemesisSystem(exchange), userMsg, 256, { symbol: signal.symbol });
+  const raw    = await callLLMWithHub('nemesis', getNemesisSystem(exchange), userMsg, callLLM, 256, { symbol: signal.symbol });
   const parsed = parseJSON(raw);
   if (!parsed?.decision) {
     return { decision: 'APPROVE', adjusted_amount: adjustedAmount, reasoning: 'LLM 파싱 실패 — 기본 승인' };

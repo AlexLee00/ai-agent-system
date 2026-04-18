@@ -30,6 +30,7 @@ const {
   LOCAL_MODEL_FAST,
 } = createRequire(import.meta.url)('../../../packages/core/lib/local-llm-client');
 const { callWithFallback } = createRequire(import.meta.url)('../../../packages/core/lib/llm-fallback.js');
+import { callViaHub, isHubEnabled } from '../shared/hub-llm-client.ts';
 
 // ─── 크로노스 가드 ───────────────────────────────────────────────────
 
@@ -283,19 +284,36 @@ async function callChronosStructuredModel(modelSpec, prompt, { maxTokens = 256, 
 
   const systemPrompt = prompt.find((item) => item.role === 'system')?.content || '';
   const userPrompt = prompt.find((item) => item.role === 'user')?.content || '';
-  const { text } = await callWithFallback({
-    chain: [{ provider, model, maxTokens, temperature, timeoutMs }],
-    systemPrompt,
-    userPrompt,
-    logMeta: {
+  let text: string;
+  if (isHubEnabled()) {
+    const hubResult = await callViaHub('chronos', systemPrompt, userPrompt, { maxTokens });
+    if (hubResult.ok) {
+      text = hubResult.text;
+    } else {
+      const fallbackResult = await callWithFallback({
+        chain: [{ provider, model, maxTokens, temperature, timeoutMs }],
+        systemPrompt, userPrompt,
+        logMeta: { team: 'investment', bot: 'chronos', requestType: 'backtest_quality_eval' },
+        timeoutMs, team: 'investment', purpose: 'backtest_quality_eval',
+      });
+      text = fallbackResult.text;
+    }
+  } else {
+    const fallbackResult = await callWithFallback({
+      chain: [{ provider, model, maxTokens, temperature, timeoutMs }],
+      systemPrompt,
+      userPrompt,
+      logMeta: {
+        team: 'investment',
+        bot: 'chronos',
+        requestType: 'backtest_quality_eval',
+      },
+      timeoutMs,
       team: 'investment',
-      bot: 'chronos',
-      requestType: 'backtest_quality_eval',
-    },
-    timeoutMs,
-    team: 'investment',
-    purpose: 'backtest_quality_eval',
-  });
+      purpose: 'backtest_quality_eval',
+    });
+    text = fallbackResult.text;
+  }
   return {
     parsed: safeJsonParse(text),
     source: provider,
