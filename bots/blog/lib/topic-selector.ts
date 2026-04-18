@@ -5,10 +5,17 @@ const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const { queryOpsDb } = require('../../../packages/core/lib/hub-client');
 const { isExcludedReferenceFilename, isExcludedReferenceTitle } = require('./reference-exclusions.ts');
+const {
+  normalizeTitle,
+  normalizeTokens,
+  similarity,
+  tokenOverlapRatio,
+  isTooCloseToRecentTitle,
+  mergeRecentTitles,
+} = require('./topic-title-guard.ts');
 
 const BLOG_OUTPUT_DIR = path.join(env.PROJECT_ROOT, 'bots/blog/output');
 const RECENT_POST_LIMIT = 10;
-const SIMILARITY_THRESHOLD = 0.4;
 const BANNED_PATTERNS = [
   /^왜\s/,
   /보다.*더.*(중요|먼저)/i,
@@ -231,79 +238,6 @@ function parseRecentGeneralPost(filename) {
   };
 }
 
-function normalizeTitle(text = '') {
-  return String(text || '')
-    .replace(/^\[[^\]]+\]\s*/, '')
-    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
-}
-
-function normalizeTokens(text = '') {
-  return normalizeTitle(text)
-    .split(' ')
-    .map((token) => token.trim())
-    .filter((token) => token.length >= 2);
-}
-
-function toBigrams(text = '') {
-  const normalized = normalizeTitle(text).replace(/\s+/g, '');
-  const set = new Set();
-  for (let i = 0; i < normalized.length - 1; i += 1) {
-    set.add(normalized.slice(i, i + 2));
-  }
-  return set;
-}
-
-function similarity(a, b) {
-  const first = toBigrams(a);
-  const second = toBigrams(b);
-  if (!first.size || !second.size) return 0;
-  let intersection = 0;
-  for (const item of first) {
-    if (second.has(item)) intersection += 1;
-  }
-  const union = new Set([...first, ...second]).size;
-  return union ? intersection / union : 0;
-}
-
-function tokenOverlapRatio(a = '', b = '') {
-  const first = new Set(normalizeTokens(a));
-  const second = new Set(normalizeTokens(b));
-  if (!first.size || !second.size) return 0;
-  let intersection = 0;
-  for (const token of first) {
-    if (second.has(token)) intersection += 1;
-  }
-  return intersection / Math.max(first.size, second.size);
-}
-
-function _isTooCloseToRecentTitle(candidate, recentTitles = []) {
-  if (!recentTitles.length) return false;
-  const latestRecentTitle = recentTitles[0] || '';
-
-  if (recentTitles.some((recentTitle) => similarity(recentTitle, candidate.title) > SIMILARITY_THRESHOLD)) {
-    return true;
-  }
-
-  if (latestRecentTitle) {
-    const latestSimilarity = similarity(latestRecentTitle, candidate.title);
-    const latestTokenOverlap = tokenOverlapRatio(latestRecentTitle, candidate.title);
-    const topicOverlap = tokenOverlapRatio(latestRecentTitle, candidate.topic);
-    if (latestSimilarity >= 0.28) return true;
-    if (latestTokenOverlap >= 0.45) return true;
-    if (topicOverlap >= 0.5) return true;
-  }
-
-  return recentTitles.some((recentTitle) => {
-    const titleTopicOverlap = tokenOverlapRatio(recentTitle, candidate.topic);
-    const titleQuestionOverlap = tokenOverlapRatio(recentTitle, candidate.question);
-    const titleDiffOverlap = tokenOverlapRatio(recentTitle, candidate.diff);
-    return titleTopicOverlap >= 0.34 || titleQuestionOverlap >= 0.34 || titleDiffOverlap >= 0.4;
-  });
-}
-
 function isBannedTitle(title = '') {
   const text = String(title || '').trim();
   if (!text || text.length > 50) return true;
@@ -424,8 +358,10 @@ function getRecentPosts(category, limit = RECENT_POST_LIMIT) {
     .slice(0, limit);
 }
 
-function selectAndValidateTopic(category, recentPosts = [], strategyPlan = null, senseState = null, revenueCorrelation = null) {
-  const recentTitles = recentPosts.map((post) => post.title).filter(Boolean);
+function selectAndValidateTopic(category, recentPosts = [], strategyPlan = null, senseState = null, revenueCorrelation = null, recentTitleCorpus = null) {
+  const recentTitles = Array.isArray(recentTitleCorpus) && recentTitleCorpus.length
+    ? recentTitleCorpus
+    : recentPosts.map((post) => post.title).filter(Boolean);
   const topicPool = pickTopicPool(category);
   const marketingHints = buildMarketingHints(category, senseState, revenueCorrelation);
 
@@ -466,7 +402,7 @@ function selectAndValidateTopic(category, recentPosts = [], strategyPlan = null,
       ) {
         return false;
       }
-      return !_isTooCloseToRecentTitle(candidate, recentTitles);
+      return !isTooCloseToRecentTitle(candidate, recentTitles);
     });
 
   if (selected) {
@@ -575,6 +511,25 @@ async function queryDailyCandidates(targetDate, category = null) {
   }
 }
 
+async function getRecentPublishedTitles(targetDate, days = 45, limit = 40) {
+  try {
+    const result = await queryOpsDb(
+      `SELECT title
+       FROM blog.posts
+       WHERE DATE(publish_date) <= $1::date
+         AND DATE(publish_date) >= ($1::date - ($2::text || ' days')::interval)
+         AND COALESCE(status, '') NOT IN ('failed', 'error', 'archived')
+       ORDER BY publish_date DESC, id DESC
+       LIMIT $3`,
+      'blog',
+      [targetDate, String(days), Number(limit)]
+    );
+    return (result?.rows || []).map((row) => String(row?.title || '').trim()).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 /**
  * 카테고리별 주제 선택 — D-1 후보 우선, 없으면 기존 풀 폴백.
  *
@@ -586,26 +541,16 @@ async function queryDailyCandidates(targetDate, category = null) {
  * @param {object} revenueCorrelation
  */
 async function selectTopicWithCandidateFallback(category, targetDate, recentPosts = [], strategyPlan = null, senseState = null, revenueCorrelation = null) {
-  const recentTitles = recentPosts.map(post => post.title).filter(Boolean);
+  const recentTitles = mergeRecentTitles(
+    recentPosts.map(post => post.title).filter(Boolean),
+    await getRecentPublishedTitles(targetDate)
+  );
   const marketingHints = buildMarketingHints(category, senseState, revenueCorrelation);
 
   // 1순위: topic_queue (topic-planner.ts가 21:00 KST에 사전 선정한 최우선 주제)
   const prePlanned = await selectPrePlannedTopic(targetDate, category);
   if (prePlanned && !isBannedTitle(prePlanned.title)) {
-    const dupCheck = recentTitles.some(rt => {
-      // 간단한 bigram 중복 체크
-      const norm = t => String(t || '').toLowerCase().replace(/\s+/g, '');
-      const sa = norm(rt); const sb = norm(prePlanned.title);
-      let inter = 0;
-      const setA = new Set(); const setB = new Set();
-      for (let i = 0; i < sa.length - 1; i++) setA.add(sa.slice(i, i + 2));
-      for (let i = 0; i < sb.length - 1; i++) setB.add(sb.slice(i, i + 2));
-      for (const b of setA) { if (setB.has(b)) inter++; }
-      const union = new Set([...setA, ...setB]).size;
-      return union > 0 && inter / union > 0.35;
-    });
-
-    if (!dupCheck) {
+    if (!isTooCloseToRecentTitle(prePlanned, recentTitles)) {
       return enrichTopicSelection({
         ...prePlanned,
         pattern: 'pre_planned',
@@ -626,7 +571,7 @@ async function selectTopicWithCandidateFallback(category, targetDate, recentPost
     // 중복 제목 필터링 후 최고 점수 선택
     const selected = dbCandidates.find(c => {
       if (isBannedTitle(c.title)) return false;
-      if (recentTitles.some(rt => similarity(rt, c.title) > SIMILARITY_THRESHOLD)) return false;
+      if (isTooCloseToRecentTitle(c, recentTitles)) return false;
       return true;
     });
 
@@ -646,7 +591,7 @@ async function selectTopicWithCandidateFallback(category, targetDate, recentPost
   }
 
   // 폴백: 기존 풀 기반 선택
-  return selectAndValidateTopic(category, recentPosts, strategyPlan, senseState, revenueCorrelation);
+  return selectAndValidateTopic(category, recentPosts, strategyPlan, senseState, revenueCorrelation, recentTitles);
 }
 
 // ─── 루나 투자 앵글 합성 템플릿 ──────────────────────────────────────────
@@ -711,12 +656,7 @@ function synthesizeHybridTopic(category, lunaRequest, recentPosts = [], strategy
   const title = buildTitle(preferredFrame.template, template, 0);
 
   if (isBannedTitle(title)) return null;
-  if (recentTitles.some(rt => similarity(rt, title) > SIMILARITY_THRESHOLD)) return null;
-  if (recentTitles.length) {
-    const latest = recentTitles[0];
-    if (similarity(latest, title) >= 0.28) return null;
-    if (tokenOverlapRatio(latest, title) >= 0.45) return null;
-  }
+  if (isTooCloseToRecentTitle({ title, topic: template.topic, question: template.question, diff: template.diff }, recentTitles)) return null;
 
   const guide = getCategorySelectionGuide(category);
   return enrichTopicSelection({
