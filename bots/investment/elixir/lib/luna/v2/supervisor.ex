@@ -28,7 +28,9 @@ defmodule Luna.V2.Supervisor do
         registry_children() ++
         validation_children() ++
         prediction_children() ++
-        mapek_loop_children()
+        mapek_loop_children() ++
+        scheduler_children() ++
+        telegram_children()
 
       Logger.info("[루나V2] 수퍼바이저 기동 — #{length(children)}개 자식")
       Supervisor.init(children, strategy: :one_for_one, max_restarts: 5, max_seconds: 60)
@@ -77,6 +79,22 @@ defmodule Luna.V2.Supervisor do
   defp mapek_loop_children do
     if KillSwitch.mapek_enabled?() and KillSwitch.auto_mode?() do
       [Luna.V2.MapeKLoop]
+    else
+      []
+    end
+  end
+
+  defp scheduler_children do
+    if KillSwitch.scheduler_enabled?() do
+      [Luna.V2.Scheduler]
+    else
+      []
+    end
+  end
+
+  defp telegram_children do
+    if KillSwitch.telegram_enabled?() do
+      [Luna.V2.TelegramReporter]
     else
       []
     end

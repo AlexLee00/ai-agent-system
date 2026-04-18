@@ -47,4 +47,8 @@ defmodule Luna.V2.KillSwitch do
   def prediction_enabled?, do: Application.get_env(:luna, :prediction_enabled, false)
   def rag_enabled?,        do: Application.get_env(:luna, :rag_enabled, false)
   def strategy_registry_enabled?, do: v2_enabled?()
+
+  # Phase 5a
+  def scheduler_enabled?,  do: Application.get_env(:luna, :scheduler_enabled, false)
+  def telegram_enabled?,   do: Application.get_env(:luna, :telegram_enabled, false)
 end
