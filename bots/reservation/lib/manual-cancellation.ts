@@ -102,7 +102,7 @@ export function runManualReservationCancellation(args: ManualCancellationArgs = 
   const reservation = parsed.reservation;
   const scriptPath = path.join(
     __dirname,
-    '../../../dist/ts-runtime/bots/reservation/manual/reservation/pickko-cancel-cmd.js',
+    '../manual/reservation/pickko-cancel-cmd.js',
   );
   const childArgs = [
     scriptPath,

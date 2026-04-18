@@ -120,6 +120,7 @@ export async function getCapitalConfigWithOverrides(exchange = null, tradeMode =
     max_position_pct:         [0.05, 0.50],
     max_capital_usage:        [0.50, 0.95],
     max_concurrent_positions: [1,    8],
+    max_same_direction_positions: [1, 6],
     risk_per_trade:           [0.01, 0.05],
     'rr_fallback.tp_pct':     [0.02, 0.15],
     'rr_fallback.sl_pct':     [0.01, 0.08],
@@ -523,7 +524,7 @@ export async function checkCorrelationGuard(symbol, direction, exchange = 'binan
       return sideDirection === normalizedDirection;
     }).length;
 
-    const policy = getCapitalConfig(exchange, tradeMode);
+    const policy = await getCapitalConfigWithOverrides(exchange, tradeMode);
     const maxSameDirection = Number(policy.max_same_direction_positions || 3);
     if (sameDirectionCount >= maxSameDirection) {
       return {

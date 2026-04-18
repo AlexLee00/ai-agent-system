@@ -16,6 +16,7 @@
 
 import { query } from '../../../packages/core/lib/pg-pool';
 import { publishToWebhook } from '../../../packages/core/lib/reporting-hub';
+import { fileURLToPath } from 'url';
 
 const BOT_NAME = 'ska-log-report';
 
@@ -196,7 +197,13 @@ async function main() {
   console.log(`[${BOT_NAME}] 완료`);
 }
 
-main().catch((err) => {
-  console.error(`[${BOT_NAME}] 오류:`, err.message);
-  process.exit(1);
-});
+function isDirectExecution() {
+  return process.argv[1] === fileURLToPath(import.meta.url);
+}
+
+if (isDirectExecution()) {
+  main().catch((err) => {
+    console.error(`[${BOT_NAME}] 오류:`, err.message);
+    process.exit(1);
+  });
+}

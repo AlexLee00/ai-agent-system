@@ -90,7 +90,7 @@ defmodule Sigma.V2.HTTP.Router do
     end
   end
 
-  # Phase 2: Signal poll — TS receiver가 호출: GET /sigma/signals?team=blog&since=<ts>
+  # Phase 2: Shared advisory signal poll — team receiver가 호출: GET /sigma/signals?team=<team>&since=<ts>
   get "/sigma/signals" do
     team = conn.query_params["team"] || ""
     since = conn.query_params["since"] || DateTime.to_iso8601(DateTime.utc_now())
@@ -102,7 +102,7 @@ defmodule Sigma.V2.HTTP.Router do
     |> send_resp(200, Jason.encode!(%{signals: signals}))
   end
 
-  # Phase 2: Signal ack — TS receiver가 수용 카운트 기록: POST /sigma/signals/:id/ack
+  # Phase 2: Shared advisory signal ack — team receiver가 수용 카운트 기록: POST /sigma/signals/:id/ack
   post "/sigma/signals/:id/ack" do
     Sigma.V2.Archivist.record_acceptance(id)
 

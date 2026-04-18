@@ -225,6 +225,7 @@ defmodule Darwin.V2.Commander do
           importance: 0.8
         )
 
+        notify_mapek_loop(cycle_summary)
         {:ok, result}
 
       {:error, reason} ->
@@ -283,6 +284,19 @@ defmodule Darwin.V2.Commander do
   @spec apply_principle_gate(map()) :: {:approved, []} | {:blocked, [String.t()]}
   def apply_principle_gate(plan) do
     Darwin.V2.Principle.Loader.self_critique(plan)
+  end
+
+  # 사이클 완료 시 MapeKLoop에 이벤트 전송 (MAPE-K 환류)
+  defp notify_mapek_loop(cycle_summary) do
+    if Darwin.V2.KillSwitch.enabled?(:mapek) do
+      cycle_result = Map.put(cycle_summary, :cycle_id, Map.get(cycle_summary, :cycle_id, make_ref()))
+
+      Task.start(fn ->
+        Darwin.V2.MapeKLoop.on_cycle_complete(cycle_result)
+      end)
+    end
+
+    :ok
   end
 
   @doc "JayBus로 연구 사이클 이벤트 브로드캐스트."

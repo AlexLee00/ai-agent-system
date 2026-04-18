@@ -28,3 +28,4 @@
 - `ska / gemma-insight` 보조 라우팅은 현재 `qwen2.5-7b` 기준으로 맞춰져 있다.
 - LLM 응답이 비거나 형식이 어색해도, 각 리포트는 결정론적 fallback 한 줄을 붙여 본문 품질을 유지한다.
 - `run-rebecca.sh`, `run-forecast.sh`는 `stdout`만 발송하고 `stderr`는 로그에만 남긴다. 그래서 경고/오류 문구가 텔레그램 리포트 본문에 섞이지 않는다.
+- `scripts/signal-receiver.ts`는 스카 전용 버스가 아니라 `Sigma advisory feed`를 소비하는 팀별 리시버다. 이름보다 실제 역할은 "shared signal consumer"에 가깝다.
