@@ -14,14 +14,17 @@ defmodule Luna.V2.Rag.QueryPlanner do
   반환: [query, sub1, sub2, ...]
   """
   def decompose(query, context \\ %{}) do
-    case llm_decompose(query, context) do
-      {:ok, subqueries} when length(subqueries) > 1 ->
-        subqueries
+    subqueries =
+      case llm_decompose(query, context) do
+        {:ok, subs} when length(subs) > 1 ->
+          subs
 
-      _ ->
-        Logger.debug("[QueryPlanner] LLM fallback → 규칙 기반 분해")
-        rule_based_decompose(query, context)
-    end
+        _ ->
+          Logger.debug("[QueryPlanner] LLM fallback → 규칙 기반 분해")
+          rule_based_decompose(query, context)
+      end
+
+    subqueries |> Enum.uniq() |> Enum.take(5)
   end
 
   # ─── Internal ─────────────────────────────────────────────────────
