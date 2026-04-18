@@ -31,6 +31,8 @@ defmodule TeamJay.Teams.SkaSupervisor do
   def init(_opts) do
     # 네이티브 Elixir GenServer (자기 복구 루프 + Phase 1 네이티브!)
     native_children = [
+      # Skill Registry — 가장 먼저 시작 (다른 모듈이 의존)
+      TeamJay.Ska.SkillRegistry,
       # Loop 1: 실패 수집 + 분류
       TeamJay.Ska.FailureTracker,
       # Loop 2: 파싱 안정화
