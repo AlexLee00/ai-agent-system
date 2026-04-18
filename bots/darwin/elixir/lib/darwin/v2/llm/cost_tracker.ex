@@ -59,7 +59,11 @@ defmodule Darwin.V2.LLM.CostTracker do
 
   @impl true
   def handle_call({:track_tokens, entry}, _from, state) do
-    cost_usd = calculate_cost(entry.model, entry.tokens_input, entry.tokens_output)
+    cost_usd =
+      case Map.get(entry, :cost_usd) do
+        v when is_number(v) -> v
+        _                   -> calculate_cost(entry.model, entry.tokens_input, entry.tokens_output)
+      end
 
     result =
       Jay.Core.Repo.query(

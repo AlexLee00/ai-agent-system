@@ -29,6 +29,9 @@
     <key>DARWIN_ESPL_ENABLED</key><string>false</string>
     <key>DARWIN_SELF_RAG_ENABLED</key><string>false</string>
     <key>DARWIN_PRINCIPLE_SEMANTIC_CHECK_ENABLED</key><string>false</string>
+    <key>LLM_HUB_ROUTING_ENABLED</key><string>false</string>
+    <key>LLM_HUB_ROUTING_SHADOW</key><string>true</string>
+    <key>HUB_BASE_URL</key><string>http://localhost:7788</string>
   </dict>
   <key>StartCalendarInterval</key>
   <dict>
