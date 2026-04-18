@@ -1,3 +1,35 @@
+# 세션 인수인계 — 2026-04-19 (CODEX_LUNA_REMODEL Phase 1 완료 — 49차 세션 추가)
+
+> 세션 범위: CODEX_LUNA_REMODEL Phase 1 — 9개 에이전트 Hub LLM 라우팅 마이그레이션 완료
+
+## 완료 요약 ✅ (추가)
+
+### CODEX_LUNA_REMODEL Phase 1 — 9개 에이전트 Hub LLM 라우팅 마이그레이션
+
+**Phase 1 구현 완료**:
+- `hub-llm-client.ts`에 `callLLMWithHub` 헬퍼 추가
+- 9개 에이전트 (`luna/nemesis/zeus/athena/sophia/hermes/oracle/argos/chronos`) callLLM → Hub 경유 전환
+- `luna-hub-llm.ts` 명칭 별칭 파일 추가
+- Kill Switch: `INVESTMENT_LLM_HUB_ENABLED=true` (기본 OFF)
+- Shadow Mode: `INVESTMENT_LLM_HUB_SHADOW=true` — 두 경로 병렬 실행 + 비교 로깅
+
+**이미 구현된 Phase 2-5**:
+- Phase 2: tradingview-ws(306줄), binance-ws-enhanced(167줄), kis-ws-client(278줄), jay-bus-bridge(79줄) ✅
+- Phase 3: Luna.V2.Commander + 5 Policy Engines + 8 Skills ✅
+- Phase 4: Validation Engine + Strategy Registry + AgenticRAG + SelfRewarding + MapeKLoop ✅
+- Phase 5: MarketHoursGate + Scheduler + TelegramReporter + launchd 7개 + LIVE switch ✅
+- DB 마이그레이션: 20260418_luna_v2_full.sql (8개 테이블) ✅
+
+**커밋**: `e40898fb feat(luna): Phase 1 완료 — 9개 에이전트 Hub LLM 라우팅 마이그레이션`
+
+**아카이브**: `docs/codex/CODEX_LUNA_REMODEL.md` → `docs/archive/codex-completed/` ✅
+
+### 다음 단계
+- `INVESTMENT_LLM_HUB_SHADOW=true` 설정 후 3일 Shadow 검증
+- Shadow 검증 통과 후 `INVESTMENT_LLM_HUB_ENABLED=true` 전환
+
+---
+
 # 세션 인수인계 — 2026-04-19 (CODEX_LLM_ROUTING_V2 Phase 2 완료 — 49차 세션 최종)
 
 > 세션 범위: LLM Routing V2 Phase 2 — 공용 레이어 추출 (Jay.Core.LLM.* 6모듈 신설)
