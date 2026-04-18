@@ -4,6 +4,16 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-04-18: CODEX_LLM_ROUTING_REFACTOR Phase 1~3 완료 — Hub LLM 라우팅 + Sigma/Darwin 전환
+
+- **Phase 1**: Hub LLM 엔드포인트 신설 — `/hub/llm/call|oauth|groq|stats` + `lib/llm/` 5개 모듈
+  - Claude Code OAuth (`claude -p` subprocess) + Groq 9계정 풀 + unified fallback 체인
+- **Phase 2**: Sigma Selector → Hub 경유 전환 (Shadow Mode ON, Kill Switch OFF)
+  - `Sigma.V2.LLM.HubClient` 신설, Selector 분기 로직 추가
+- **Phase 3**: Darwin Selector → Hub 경유 전환 (동일 패턴, messages→prompt 직렬화 추가)
+- **롤백 태그**: pre-phase-1, pre-phase-2-sigma-hub, pre-phase-3-darwin-hub
+- **DB 마이그레이션 3건**: llm_routing_log (신규) + sigma/darwin routing_log.provider 컬럼
+
 ## 2026-04-18: CODEX_JAY_DARWIN_INDEPENDENCE 완료 — 팀제이 + 다윈 독립 대장정 (42차 세션)
 
 - **Phase 1**: `elixir/team_jay/darwin/` dead code 제거 + Darwin Commander 9 tools 완성 + Jido 2.2 정렬
