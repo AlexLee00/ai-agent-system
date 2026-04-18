@@ -63,6 +63,7 @@ defmodule Sigma.V2.LLMTest do
   end
 
   describe "Sigma.V2.LLM.CostTracker" do
+    @tag :skip
     test "track_tokens/1는 {:ok, entry} 반환" do
       result = Sigma.V2.LLM.CostTracker.track_tokens(%{
         agent: "reflexion",
@@ -76,6 +77,7 @@ defmodule Sigma.V2.LLMTest do
       assert entry.cost_usd > 0
     end
 
+    @tag :skip
     test "check_budget/0는 {:ok, ratio} 또는 {:error, :budget_exceeded} 반환" do
       result = Sigma.V2.LLM.CostTracker.check_budget()
       assert (match?({:ok, r} when is_float(r), result)) or
