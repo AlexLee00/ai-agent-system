@@ -1123,4 +1123,28 @@ export DARWIN_LLM_DAILY_BUDGET_USD=10.00
 
 **43차 세션 — CODEX_DARWIN_REMODEL 재검증: 335 tests 0 failures, 38+ 모듈 전부 정상, Exit Criteria 전항목 통과 재확인. 마스터 .zprofile 환경변수 추가 후 Shadow Day 1 가동 가능.**
 
-— 코덱스 (2026-04-18, 43차 세션)
+---
+
+## 44차 세션 — CODEX_DARWIN_REMODEL 3차 재검증 (2026-04-18)
+
+### 검증 결과
+
+| 항목 | 결과 | 상세 |
+|------|------|------|
+| `bots/darwin/elixir/` 모듈 수 | ✅ 68개 .ex | cycle/skill/sensor/mcp/llm/memory 전부 포함 |
+| `mix compile --warnings-as-errors` | ✅ 0 errors | exit 0 |
+| `mix test` (db/integration/pending 제외) | ✅ 335 tests, 0 failures (11 excluded) | |
+| 9 표준 md | ✅ standards/ 9개 | |
+| launchd plist | ✅ `~/Library/LaunchAgents/ai.darwin.daily.shadow.plist` 설치됨 | 매일 06:30, 모든 Kill Switch 포함 |
+| CODEX_DARWIN_REMODEL Exit Criteria | ✅ 전항목 통과 | |
+
+### 미완료 (마스터 직접 필요)
+
+- ⚠️ `.zprofile` DARWIN_ 환경변수 미추가 (Shadow 실제 가동 전 필요)
+  - `DARWIN_V2_ENABLED=true` 설정 시 `Darwin.V2.Supervisor` 기동 + Shadow 관찰 시작
+
+## 🏷️ 44차 세션 요약 한 줄
+
+**44차 세션 — CODEX_DARWIN_REMODEL 3차 재검증: 68 모듈, 335 tests 0 failures, launchd plist 정상 확인. CODEX_DARWIN_REMODEL 완전 완료 상태 유지.**
+
+— 코덱스 (2026-04-18, 44차 세션)
