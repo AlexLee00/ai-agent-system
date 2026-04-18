@@ -1,6 +1,70 @@
-# 세션 인수인계 — 2026-04-18 (CODEX_LUNA_REMODEL Phase 1~3 완료)
+# 세션 인수인계 — 2026-04-18 (CODEX_LUNA_REMODEL Phase 1~4 완료)
 
-> 세션 범위: 루나팀 완전자율 자동매매 에이전트 진화 — LLM Hub 라우팅 + Luna.V2 Elixir + MAPE-K
+> 세션 범위: 루나팀 완전자율 자동매매 에이전트 진화 — LLM Hub 라우팅 + Luna.V2 Elixir + MAPE-K + 실시간 데이터
+
+## 완료 요약 (CODEX_LUNA_REMODEL Phase 4 — 실시간 데이터 강화) ✅
+
+### Phase 4 — 실시간 WebSocket 데이터 인프라 ✅ (커밋: d7076eed)
+
+**TradingView WebSocket 마이크로서비스**:
+- `bots/investment/services/tradingview-ws/src/index.js` 신설 (dovudo 패턴)
+  - WebSocket API 서버 (:8082) + Prometheus 메트릭스 (:8083/metrics)
+  - 동적 구독/해지 (심볼 + 타임프레임)
+  - Stale detection (30초 임계값) + 개별 재구독 + 전체 재연결
+  - JayBus Hub 브릿지: `/hub/events/publish` 경유
+
+**Binance WebSocket 강화**:
+- `bots/investment/shared/binance-ws-enhanced.js` 신설
+  - Combined Stream: orderbook(@depth20@100ms) + trade + kline(1m/5m)
+  - 5개 심볼 병렬, 완성 봉(closed=true)만 JayBus 발행
+  - Kill Switch: `LUNA_BINANCE_WS_ENABLED`
+
+**KIS WebSocket 클라이언트**:
+- `bots/investment/shared/kis-ws-client.js` 신설
+  - 국내: H0STCNT0(체결) + H0STASP0(호가)
+  - 해외: HDFSCNT0(체결) + HDFSASP0(호가)
+  - Hub secrets에서 approval key 자동 발급
+  - PINGPONG 30초 + 지수 백오프 재연결
+  - Kill Switch: `LUNA_KIS_WS_ENABLED` (기본 false)
+
+**JayBus + 브릿지**:
+- `Jay.Core.JayBus` — 루나 토픽 15개 추가 + `publish_luna/subscribe_luna` 헬퍼
+- `bots/investment/shared/jay-bus-bridge.ts` — TS→Elixir JayBus Hub 브릿지 + `LunaTopic` 상수
+
+**launchd 4개 신설**:
+- `ai.luna.tradingview-ws.plist` — KeepAlive, :8082
+- `ai.luna.binance-ws.plist` — KeepAlive, LUNA_BINANCE_WS_ENABLED=true
+- `ai.luna.kis-ws-domestic.plist` — LUNA_KIS_WS_ENABLED=false (Phase 5 전환)
+- `ai.luna.kis-ws-overseas.plist` — LUNA_KIS_WS_ENABLED=false (Phase 5 전환)
+
+**검증**: 컴파일 경고 0건, 567 tests 0 failures
+
+### Kill Switch 현재 상태 (기본값)
+```
+LUNA_V2_ENABLED=true              ← Luna.V2.Supervisor 기동
+LUNA_MAPEK_ENABLED=false          ← MAPE-K (활성화 대기)
+LUNA_BINANCE_WS_ENABLED=true      ← Binance WS 활성
+LUNA_KIS_WS_ENABLED=false         ← KIS WS (Phase 5에서 활성화)
+INVESTMENT_LLM_HUB_SHADOW=true    ← Shadow 비교 ON
+```
+
+### 다음 세션 착수 항목 (Phase 5 — Validation + LIVE 전환)
+1. **Phase 5: Validation Engine + Strategy Registry**
+   - Chronos 승격 → `Luna.V2.Validation.Engine` 신설
+   - Strategy Registry (버전 객체 + 승격/강등 이력)
+   - Prediction Engine (확률 feature)
+2. **MAPE-K 활성화**: launchd에서 `LUNA_MAPEK_ENABLED=true`
+3. **KIS LIVE 전환**: `KIS_MODE=live` + `LUNA_KIS_WS_ENABLED=true`
+4. **launchd 설치** (OPS에서):
+   ```bash
+   cp bots/investment/launchd/ai.luna.*.plist ~/Library/LaunchAgents/
+   launchctl load ~/Library/LaunchAgents/ai.luna.tradingview-ws.plist
+   launchctl load ~/Library/LaunchAgents/ai.luna.binance-ws.plist
+   ```
+5. **services/tradingview-ws npm install**: `cd bots/investment/services/tradingview-ws && npm install`
+6. **Agentic RAG 통합**: pgvector 거래 회고 인덱싱 구현
+
+---
 
 ## 완료 요약 (CODEX_LUNA_REMODEL)
 
