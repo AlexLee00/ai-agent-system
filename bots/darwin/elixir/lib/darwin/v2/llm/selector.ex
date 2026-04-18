@@ -1,12 +1,17 @@
 defmodule Darwin.V2.LLM.Selector do
   @moduledoc """
-  다윈 V2 LLM 게이트웨이 — Anthropic API 전용 + Recommender 통합.
+  다윈 V2 LLM 게이트웨이 — Hub 경유 라우팅 + 직접 Anthropic 폴백.
 
-  Claude 전용 (마스터 결정 2026-04-18).
-  Recommender가 컨텍스트 기반 동적 모델 추천, 정적 정책은 폴백.
-  모든 라우팅 결과는 RoutingLog에 기록.
+  라우팅 전략 (마스터 결정 2026-04-18):
+    Primary:  Hub /hub/llm/call → Claude Code OAuth → Groq 폴백
+    Fallback: Anthropic API 직접 호출 (kill switch off 또는 Hub 장애 시)
 
-  Kill switch: Application.get_env(:darwin, :kill_switch, true) + 예산 초과 시
+  환경변수:
+    LLM_HUB_ROUTING_ENABLED=true  → Hub 경유 활성화 (기본 false)
+    LLM_HUB_ROUTING_SHADOW=true   → Shadow Mode: 양쪽 병렬 실행, 직접호출 결과 반환
+    HUB_BASE_URL                  → Hub 주소 (기본 http://localhost:7788)
+
+  Kill Switch: Application.get_env(:darwin, :kill_switch, true) + 예산 초과 시
   {:error, :kill_switch} 반환.
 
   공개 API:
@@ -26,9 +31,7 @@ defmodule Darwin.V2.LLM.Selector do
   }
 
   # 에이전트별 정적 정책 (Recommender 실패 시 폴백)
-  # darwin.* 키: V2 네임스페이스 / 단축 키: 구버전 호환
   @agent_policies %{
-    # V2 네임스페이스
     "darwin.scanner"        => %{route: :anthropic_haiku,  fallback: [:anthropic_sonnet]},
     "darwin.evaluator"      => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]},
     "darwin.planner"        => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]},
@@ -38,7 +41,6 @@ defmodule Darwin.V2.LLM.Selector do
     "darwin.reflexion"      => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]},
     "darwin.espl"           => %{route: :anthropic_haiku,  fallback: [:anthropic_sonnet]},
     "darwin.self_rag"       => %{route: :anthropic_haiku,  fallback: []},
-    # 구버전 호환 키
     "commander"             => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]},
     "evaluator"             => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]},
     "planner"               => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]},
@@ -63,7 +65,7 @@ defmodule Darwin.V2.LLM.Selector do
   end
 
   @doc """
-  agent_name + messages → LLM 호출 (Recommender + Kill Switch + 예산 체크 + 폴백 포함).
+  agent_name + messages → LLM 호출 (Recommender + Hub 경유 or 직접 Anthropic + Kill Switch + fallback 포함).
 
   opts:
     :max_tokens   — 최대 출력 토큰 (기본 1024)
@@ -97,7 +99,16 @@ defmodule Darwin.V2.LLM.Selector do
           ([primary | fallback_chain] ++ [:anthropic_haiku])
           |> Enum.uniq()
 
-        try_routes(agent_name, all_routes, messages, opts, context, primary)
+        cond do
+          Darwin.V2.LLM.HubClient.shadow?() ->
+            call_shadow(agent_name, messages, primary, fallback_chain, all_routes, opts, context)
+
+          Darwin.V2.LLM.HubClient.enabled?() ->
+            call_via_hub(agent_name, messages, primary, fallback_chain, all_routes, opts, context)
+
+          true ->
+            call_direct(agent_name, all_routes, messages, opts, context, primary)
+        end
 
       {:error, :budget_exceeded} ->
         if kill_switch_enabled do
@@ -116,20 +127,99 @@ defmodule Darwin.V2.LLM.Selector do
   end
 
   # -------------------------------------------------------------------
-  # Private — route chain
+  # Private — Hub 경유 호출
   # -------------------------------------------------------------------
 
-  defp try_routes(agent_name, [], _messages, _opts, ctx, primary) do
+  defp call_via_hub(agent_name, messages, primary, _fallback_chain, all_routes, opts, context) do
+    prompt       = messages_to_prompt(messages)
+    system_msg   = Keyword.get(opts, :system)
+
+    request = %{
+      prompt:         prompt,
+      abstract_model: primary,
+      system_prompt:  system_msg,
+      timeout_ms:     opts[:timeout_ms] || 60_000,
+      agent:          agent_name,
+      urgency:        context[:urgency],
+      task_type:      context[:task_type],
+    }
+
+    case Darwin.V2.LLM.HubClient.call(request) do
+      {:ok, hub_resp} ->
+        Darwin.V2.LLM.CostTracker.track_tokens(%{
+          agent:         to_string(agent_name),
+          model:         hub_resp.provider,
+          provider:      hub_resp.provider,
+          tokens_input:  0,
+          tokens_output: 0,
+          cost_usd:      hub_resp.cost_usd,
+        })
+
+        resp = %{
+          content:    hub_resp.result,
+          model:      hub_resp.provider,
+          tokens:     %{in: 0, out: 0},
+          latency_ms: hub_resp.latency_ms
+        }
+
+        log_routing(agent_name, primary, :hub, resp, true, context, nil, hub_resp.provider)
+        {:ok, hub_resp.result}
+
+      {:error, reason} ->
+        Logger.warning("[다윈V2 LLM] Hub 호출 실패 (#{inspect(reason)}) — agent=#{agent_name}, 직접 호출 fallback")
+        call_direct(agent_name, all_routes, messages, opts, context, primary)
+    end
+  end
+
+  # -------------------------------------------------------------------
+  # Private — Shadow Mode: 양쪽 병렬 실행
+  # -------------------------------------------------------------------
+
+  defp call_shadow(agent_name, messages, primary, fallback_chain, all_routes, opts, context) do
+    hub_task    = Task.async(fn ->
+      call_via_hub(agent_name, messages, primary, fallback_chain, all_routes, opts, context)
+    end)
+    direct_task = Task.async(fn ->
+      call_direct(agent_name, all_routes, messages, opts, context, primary)
+    end)
+
+    hub_result    = Task.yield(hub_task,    65_000) || Task.shutdown(hub_task)
+    direct_result = Task.yield(direct_task, 65_000) || Task.shutdown(direct_task)
+
+    hub_r    = unwrap_task(hub_result)
+    direct_r = unwrap_task(direct_result)
+
+    log_shadow_comparison(agent_name, hub_r, direct_r)
+
+    # Shadow Mode: 항상 직접 호출 결과 반환 (안전)
+    direct_r
+  end
+
+  defp unwrap_task({:ok, result}), do: result
+  defp unwrap_task(nil),           do: {:error, :task_timeout}
+  defp unwrap_task(_),             do: {:error, :task_error}
+
+  defp log_shadow_comparison(agent_name, hub_r, direct_r) do
+    hub_ok    = match?({:ok, _}, hub_r)
+    direct_ok = match?({:ok, _}, direct_r)
+    Logger.info("[다윈V2 LLM/shadow] #{agent_name} — hub=#{hub_ok}, direct=#{direct_ok}")
+  end
+
+  # -------------------------------------------------------------------
+  # Private — 직접 Anthropic API 호출 (레거시/fallback)
+  # -------------------------------------------------------------------
+
+  defp call_direct(agent_name, [], _messages, _opts, ctx, primary) do
     Logger.error("[다윈V2 LLM] 모든 route 실패 — agent=#{agent_name}")
-    log_routing(agent_name, primary, nil, nil, false, ctx, "all_routes_failed")
+    log_routing(agent_name, primary, nil, nil, false, ctx, "all_routes_failed", "direct_anthropic")
     {:error, :all_routes_failed}
   end
 
-  defp try_routes(agent_name, [route | remaining], messages, opts, ctx, primary) do
-    timeout = Map.get(@default_timeouts, route, 30_000)
-    {_provider, model} = route_to_model(route)
+  defp call_direct(agent_name, [route | remaining], messages, opts, ctx, primary) do
+    timeout    = Map.get(@default_timeouts, route, 30_000)
+    {_prov, model} = route_to_model(route)
     max_tokens = Keyword.get(opts, :max_tokens, 1024)
-    system = Keyword.get(opts, :system)
+    system     = Keyword.get(opts, :system)
 
     start_ms = System.monotonic_time(:millisecond)
 
@@ -140,7 +230,7 @@ defmodule Darwin.V2.LLM.Selector do
         Darwin.V2.LLM.CostTracker.track_tokens(%{
           agent:         to_string(agent_name),
           model:         model,
-          provider:      "anthropic",
+          provider:      "direct_anthropic",
           tokens_input:  usage.input_tokens,
           tokens_output: usage.output_tokens
         })
@@ -152,12 +242,12 @@ defmodule Darwin.V2.LLM.Selector do
           latency_ms: latency_ms
         }
 
-        log_routing(agent_name, primary, route, resp, true, ctx, nil)
+        log_routing(agent_name, primary, route, resp, true, ctx, nil, "direct_anthropic")
         {:ok, content}
 
       {:error, reason} ->
         Logger.warning("[다윈V2 LLM] #{model} 실패 (#{inspect(reason)}) — agent=#{agent_name}, 다음 폴백 시도")
-        try_routes(agent_name, remaining, messages, opts, ctx, primary)
+        call_direct(agent_name, remaining, messages, opts, ctx, primary)
     end
   end
 
@@ -217,11 +307,27 @@ defmodule Darwin.V2.LLM.Selector do
     _ -> 0.0
   end
 
+  # messages 리스트 → Hub prompt 문자열 변환
+  defp messages_to_prompt(messages) when is_list(messages) do
+    messages
+    |> Enum.reject(fn m -> to_string(Map.get(m, :role, Map.get(m, "role", ""))) == "system" end)
+    |> Enum.map(fn
+      %{role: r, content: c}         -> if to_string(r) == "user", do: c, else: "[#{r}]: #{c}"
+      %{"role" => r, "content" => c} -> if r == "user", do: c, else: "[#{r}]: #{c}"
+      _                              -> ""
+    end)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.join("\n\n")
+  end
+
+  defp messages_to_prompt(text) when is_binary(text), do: text
+  defp messages_to_prompt(_), do: ""
+
   # -------------------------------------------------------------------
   # Private — 라우팅 로그
   # -------------------------------------------------------------------
 
-  defp log_routing(agent_name, primary, used_route, resp, ok, ctx, err_reason) do
+  defp log_routing(agent_name, primary, used_route, resp, ok, ctx, err_reason, provider) do
     Darwin.V2.LLM.RoutingLog.record(%{
       agent_name:         to_string(agent_name),
       model_primary:      to_string(primary),
@@ -236,7 +342,8 @@ defmodule Darwin.V2.LLM.Selector do
       urgency:            ctx[:urgency],
       task_type:          ctx[:task_type],
       budget_ratio:       ctx[:budget_ratio],
-      recommended_reason: nil
+      recommended_reason: nil,
+      provider:           provider,
     })
   end
 
