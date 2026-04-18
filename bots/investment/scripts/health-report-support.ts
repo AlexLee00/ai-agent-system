@@ -310,6 +310,49 @@ export async function loadCapitalGuardBreakdown(pgPool, periodDays = 14) {
     [periodDays],
   ).catch(() => []);
 
+  const hotspotRows = await pgPool.query(
+    'investment',
+    `
+      SELECT
+        COALESCE(NULLIF(symbol, ''), 'unknown') AS symbol,
+        LOWER(COALESCE(side, 'buy')) AS side,
+        COALESCE(trade_mode, 'normal') AS trade_mode,
+        COUNT(*)::int AS cnt
+      FROM investment.signals
+      WHERE exchange = 'binance'
+        AND created_at >= NOW() - INTERVAL '1 day' * $1
+        AND status IN ('failed', 'blocked', 'rejected')
+        AND COALESCE(block_code, '') = 'capital_guard_rejected'
+      GROUP BY 1, 2, 3
+      ORDER BY cnt DESC, symbol ASC, side ASC, trade_mode ASC
+      LIMIT 8
+    `,
+    [periodDays],
+  ).catch(() => []);
+
+  const overlapRows = await pgPool.query(
+    'investment',
+    `
+      SELECT
+        COALESCE(NULLIF(symbol, ''), 'unknown') AS symbol,
+        LOWER(COALESCE(side, 'buy')) AS side,
+        COALESCE(trade_mode, 'normal') AS trade_mode,
+        COUNT(*)::int AS cnt
+      FROM investment.signals
+      WHERE exchange = 'binance'
+        AND created_at >= NOW() - INTERVAL '1 day' * $1
+        AND status IN ('failed', 'blocked', 'rejected')
+        AND (
+          COALESCE(block_reason, '') ILIKE '%동일 LIVE 포지션%'
+          OR COALESCE(block_code, '') = 'live_position_reentry_blocked'
+        )
+      GROUP BY 1, 2, 3
+      ORDER BY cnt DESC, symbol ASC, side ASC, trade_mode ASC
+      LIMIT 8
+    `,
+    [periodDays],
+  ).catch(() => []);
+
   const byReasonGroup = new Map();
   const byTradeMode = new Map();
   for (const row of rows) {
@@ -329,12 +372,28 @@ export async function loadCapitalGuardBreakdown(pgPool, periodDays = 14) {
   const normalCount = Number(tradeModeRows.find((row) => row.tradeMode === 'normal')?.count || 0);
   const validationRatio = total > 0 ? Number(((validationCount / total) * 100).toFixed(1)) : 0;
   const topReason = reasonRows[0] || null;
+  const hotspots = hotspotRows.map((row) => ({
+    symbol: row.symbol,
+    side: row.side,
+    tradeMode: row.trade_mode,
+    count: Number(row.cnt || 0),
+    label: `${row.symbol} ${String(row.side || 'buy').toUpperCase()} / ${row.trade_mode}`,
+  }));
+  const overlapHotspots = overlapRows.map((row) => ({
+    symbol: row.symbol,
+    side: row.side,
+    tradeMode: row.trade_mode,
+    count: Number(row.cnt || 0),
+    label: `${row.symbol} ${String(row.side || 'buy').toUpperCase()} / ${row.trade_mode}`,
+  }));
 
   return {
     periodDays,
     total,
     byReasonGroup: reasonRows,
     byTradeMode: tradeModeRows,
+    hotspots,
+    overlapHotspots,
     laneSnapshot: {
       validationCount,
       normalCount,
