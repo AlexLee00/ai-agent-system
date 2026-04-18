@@ -2,6 +2,8 @@ export type LLMProvider = 'claude-code-oauth' | 'groq' | 'failed';
 
 export type AbstractModel = 'anthropic_haiku' | 'anthropic_sonnet' | 'anthropic_opus';
 
+export type CallerTeam = 'sigma' | 'darwin' | 'luna' | 'claude' | 'blog' | 'worker' | 'editor' | 'data';
+
 export interface LLMCallRequest {
   prompt: string;
   abstractModel: AbstractModel;
@@ -10,9 +12,11 @@ export interface LLMCallRequest {
   timeoutMs?: number;
   maxBudgetUsd?: number;
   agent?: string;
-  callerTeam?: 'sigma' | 'darwin';
+  callerTeam?: CallerTeam;
   urgency?: 'low' | 'medium' | 'high';
   taskType?: string;
+  cacheEnabled?: boolean;
+  cacheType?: 'realtime' | 'analysis' | 'research' | 'default';
 }
 
 export interface LLMCallResponse {
@@ -28,4 +32,6 @@ export interface LLMCallResponse {
   primaryError?: string;
   fallbackCount?: number;
   error?: string;
+  cacheHit?: boolean;
+  cachedAt?: Date;
 }

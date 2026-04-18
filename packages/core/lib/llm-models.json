@@ -1,0 +1,53 @@
+{
+  "last_updated": "2026-04-19",
+  "source": "https://docs.anthropic.com/en/docs/about-claude/models",
+  "models": {
+    "anthropic_haiku": {
+      "current": "claude-haiku-4-5-20251001",
+      "previous": ["claude-haiku-4-5-preview-20250815"],
+      "released_at": "2025-10-01",
+      "cost_per_1m_input_usd": 0.8,
+      "cost_per_1m_output_usd": 4.0,
+      "max_context_tokens": 200000,
+      "recommended_for": ["fast_classification", "batch_processing", "rule_based_decisions"]
+    },
+    "anthropic_sonnet": {
+      "current": "claude-sonnet-4-6",
+      "previous": ["claude-sonnet-4-5-20250929"],
+      "released_at": "2026-02-15",
+      "cost_per_1m_input_usd": 3.0,
+      "cost_per_1m_output_usd": 15.0,
+      "max_context_tokens": 200000,
+      "recommended_for": ["structured_reasoning", "code_generation", "analysis"]
+    },
+    "anthropic_opus": {
+      "current": "claude-opus-4-7",
+      "previous": ["claude-opus-4-6"],
+      "released_at": "2026-04-01",
+      "cost_per_1m_input_usd": 15.0,
+      "cost_per_1m_output_usd": 75.0,
+      "max_context_tokens": 200000,
+      "recommended_for": ["constitutional_ai", "complex_reasoning", "creative_generation"]
+    }
+  },
+  "groq_fallback_models": {
+    "anthropic_haiku": {
+      "current": "llama-3.1-8b-instant",
+      "provider": "groq",
+      "cost_per_1m_input_usd": 0.05,
+      "cost_per_1m_output_usd": 0.08
+    },
+    "anthropic_sonnet": {
+      "current": "llama-3.3-70b-versatile",
+      "provider": "groq",
+      "cost_per_1m_input_usd": 0.59,
+      "cost_per_1m_output_usd": 0.79
+    },
+    "anthropic_opus": {
+      "current": "qwen-qwq-32b",
+      "provider": "groq",
+      "cost_per_1m_input_usd": 0.29,
+      "cost_per_1m_output_usd": 0.39
+    }
+  }
+}

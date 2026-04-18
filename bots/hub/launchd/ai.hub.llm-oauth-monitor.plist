@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.hub.llm-oauth-monitor</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/node</string>
+    <string>-e</string>
+    <string>
+const { checkTokenHealth } = require('/Users/alexlee/projects/ai-agent-system/bots/hub/dist/lib/llm/oauth-monitor.js');
+checkTokenHealth().then(h => {
+  if (!h.healthy) console.error('[oauth] 토큰 만료:', h.error);
+  else if (h.needs_refresh) console.warn('[oauth] 토큰 갱신 필요: ' + h.expires_in_hours.toFixed(1) + 'h 후 만료');
+  else console.log('[oauth] 정상:', h.expires_in_hours.toFixed(1) + 'h 남음');
+  process.exit(0);
+}).catch(e => { console.error(e); process.exit(1); });
+    </string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/alexlee/projects/ai-agent-system</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>HOME</key>
+    <string>/Users/alexlee</string>
+    <key>MODE</key>
+    <string>ops</string>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/tmp/hub-llm-oauth-monitor.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/hub-llm-oauth-monitor.err.log</string>
+  <!-- 매 6시간: 00:00 / 06:00 / 12:00 / 18:00 KST = UTC 15:00 / 21:00 / 03:00 / 09:00 -->
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>21</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
+  </array>
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>
