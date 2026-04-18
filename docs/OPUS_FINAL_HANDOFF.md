@@ -1,3 +1,72 @@
+# 세션 인수인계 — 2026-04-19 (CODEX_SIGMA_EVOLUTION Phase R/S/A/O/M/P 완료 — 48차 세션 최종)
+
+> 세션 범위: CODEX_SIGMA_EVOLUTION.md 6-Phase 전체 구현 완료
+
+## 완료 요약 ✅
+
+### CODEX_SIGMA_EVOLUTION — 6 Phase 전체 구현
+
+**Phase P — PodSelectorV2** (`bots/sigma/elixir/lib/sigma/v2/pod_selector_v2.ex`):
+- 4전략 Multi-Armed Bandit: ε-greedy / UCB1 / Thompson Sampling (Beta distribution, Johnk's method) / Contextual Bandit
+- Kill Switch: `SIGMA_POD_DYNAMIC_V2_ENABLED=true` (기본 OFF → ε-greedy fallback)
+- `update_reward/3`: sigma_pod_bandit_stats UPSERT (successes/failures 분리)
+- `pod_stats/2`: 팀별 Pod 성과 조회
+
+**DB Migrations** (3개 신규):
+- `20261006000001`: sigma_pod_performance_log (Pod 주기별 성과 집계)
+- `20261007000001`: sigma_pod_performance_dashboard (Materialized View), sigma_directive_effectiveness (Materialized View)
+- `20261008000001`: sigma_pod_bandit_stats + sigma_pod_selection_log (Contextual bandit 학습용)
+
+**TypeScript 리포트 스크립트** (2개 신규):
+- `sigma-daily-report.ts`: MAPE-K 사이클 + Directive + DPO + LLM 비용 → Telegram
+- `sigma-weekly-review.ts`: 7일 종합 + Pod bandit 통계 + DPO + 팀별 집계 → Telegram
+- Kill Switch: `SIGMA_TELEGRAM_ENHANCED=true` 시 전송 활성화
+
+**launchd 서비스** (2개 신규, 설치 완료):
+- `ai.sigma.daily-report`: UTC 21:30 (KST 06:30), LastExitStatus=0 ✅
+- `ai.sigma.weekly-review`: 일요일 UTC 10:00 (KST 19:00), LastExitStatus=0 ✅
+
+**테스트** (6종 신규, 총 66 tests, 0 failures):
+- mapek_loop_test.exs: GenServer 상태 + 소스 구조 (async: false, try/catch :exit 패턴)
+- self_rewarding_test.exs: Kill Switch + 빈/결과 사이클 + 소스 구조
+- monitoring_test.exs: daily/weekly summary 구조 + Pod.Performance 직접 호출
+- telegram_reporter_test.exs: Kill Switch + Urgent 함수 + 소스 구조
+- agentic_rag_test.exs: Kill Switch + 4 하위 모듈 직접 호출 + 소스 구조
+- pod_selector_v2_test.exs: 4전략 + update_reward + pod_stats + 소스 구조
+
+**전체 테스트 결과**: 820 tests, 0 failures, 24 excluded ✅
+
+**주요 기술 해결**:
+- `function_exported?` → test 환경에서 false 반환 문제 → 직접 함수 호출로 교체
+- `@sigma_lib Path.join(__DIR__, "../../../lib")` 패턴 (test/sigma/v2/ 기준 3단계 상위)
+- `duplicate :rescue` 컴파일 에러 → `log_selection`을 `try do ... rescue` 블록으로 래핑
+
+**문서** (2개 신규):
+- `bots/sigma/docs/EVOLUTION_ARCHITECTURE.md`: 전체 아키텍처 다이어그램 + Phase별 모듈 매핑
+- `bots/sigma/docs/POD_SELECTOR_V2_GUIDE.md`: 4전략 수식 설명 + DB 스키마 + 운영 가이드
+
+### 마스터 다음 액션
+
+1. **DB Migration 적용**:
+   ```bash
+   # OPS 서버에서
+   cd /path/to/project && mix ecto.migrate --migrations-path bots/sigma/migrations/
+   ```
+
+2. **Shadow 모드 활성화** (3일 검증 후 Telegram 전송 ON):
+   ```bash
+   launchctl setenv SIGMA_TELEGRAM_ENHANCED true
+   launchctl kickstart -k gui/$(id -u)/ai.sigma.daily-report
+   ```
+
+3. **PodSelectorV2 단계적 활성화**:
+   ```bash
+   # UCB1 기본값으로 활성화
+   launchctl setenv SIGMA_POD_DYNAMIC_V2_ENABLED true
+   ```
+
+---
+
 # 세션 인수인계 — 2026-04-18 (CODEX_CLAUDE_EVOLUTION Phase I 완료 — 47차 세션 최종)
 
 > 세션 범위: Phase I (Integration Tests + Load Tests) + launchd 14개 설치 완료
