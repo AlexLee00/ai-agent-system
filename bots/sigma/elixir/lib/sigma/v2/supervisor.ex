@@ -3,12 +3,11 @@ defmodule Sigma.V2.Supervisor do
   Sigma V2 OTP Supervisor — v2 에이전트 트리 관리.
   SIGMA_V2_ENABLED=true 시에만 자식 프로세스 기동.
 
-  Phase 1: Memory.L1 활성화
-  Phase 2: Phoenix.PubSub(Sigma.V2.PubSub) + RollbackScheduler 추가
-  Phase 3: RollbackScheduler 활성화
-  Phase 5: MCP Server + HTTP(Bandit) 추가
-             - SIGMA_HTTP_PORT 설정 시 HTTP 서버 기동 (Shadow: /sigma/* 경로)
-             - SIGMA_MCP_SERVER_ENABLED=true 추가 시 /mcp/* 경로 활성화
+  Phase 1:   Memory.L1 활성화
+  Phase 2:   Phoenix.PubSub(Sigma.V2.PubSub) + RollbackScheduler 추가
+  Phase 3:   RollbackScheduler 활성화
+  Phase 5:   MCP Server + HTTP(Bandit) 추가
+  Phase A+N: MapeKLoop GenServer 추가 (SIGMA_MAPEK_ENABLED=true 시 활성)
   """
 
   use Supervisor
@@ -23,7 +22,8 @@ defmodule Sigma.V2.Supervisor do
         [
           {Phoenix.PubSub, name: Sigma.V2.PubSub},
           Sigma.V2.Memory.L1,
-          Sigma.V2.RollbackScheduler
+          Sigma.V2.RollbackScheduler,
+          Sigma.V2.MapeKLoop
         ] ++
           maybe_http_children()
 
