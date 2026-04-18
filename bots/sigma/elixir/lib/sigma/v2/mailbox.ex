@@ -12,7 +12,7 @@ defmodule Sigma.V2.Mailbox do
     sql = """
     INSERT INTO sigma_v2_mailbox
       (directive_id, tier, team, action, enqueued_at, status)
-    VALUES ($1, $2, $3, $4, NOW(), 'pending')
+    VALUES ($1, $2, $3, $4::jsonb, NOW(), 'pending')
     """
 
     case Jay.Core.Repo.query(sql, [
@@ -76,7 +76,7 @@ defmodule Sigma.V2.Mailbox do
   def execute_with_patch(directive_id, patch_action) do
     sql = """
     UPDATE sigma_v2_mailbox
-    SET status = 'approved', action = $1, resolved_at = NOW()
+    SET status = 'approved', action = $1::jsonb, resolved_at = NOW()
     WHERE directive_id = $2
     """
 

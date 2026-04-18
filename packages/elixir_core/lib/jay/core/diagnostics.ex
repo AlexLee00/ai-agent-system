@@ -16,7 +16,7 @@ defmodule Jay.Core.Diagnostics do
   @msg_queue_warn 100
   @memory_warn 260_000_000
   @memory_error 340_000_000
-  @service_ownership_path Path.expand("../../../../packages/core/config/service-ownership.json", __DIR__)
+  @service_ownership_path Path.expand("../../../../core/config/service-ownership.json", __DIR__)
   @shadow_agents [
     {:blog_commenter, :blog},
     {:blog_daily, :blog},

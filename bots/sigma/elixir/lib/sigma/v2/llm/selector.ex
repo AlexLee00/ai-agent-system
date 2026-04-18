@@ -315,7 +315,29 @@ defmodule Sigma.V2.LLM.Selector do
 
   defp api_key do
     System.get_env("ANTHROPIC_API_KEY") ||
-      System.get_env("SIGMA_ANTHROPIC_API_KEY")
+      System.get_env("SIGMA_ANTHROPIC_API_KEY") ||
+      load_api_key_from_secrets()
+  end
+
+  defp load_api_key_from_secrets do
+    candidates = [
+      System.get_env("SIGMA_SECRETS_PATH"),
+      Path.expand("../../../../../secrets.json", __DIR__),
+      Path.join(File.cwd!(), "bots/sigma/secrets.json")
+    ]
+
+    candidates
+    |> Enum.reject(&is_nil/1)
+    |> Enum.find_value(fn path ->
+      with true <- File.exists?(path),
+           {:ok, body} <- File.read(path),
+           {:ok, decoded} <- Jason.decode(body),
+           key when is_binary(key) and key != "" <- Map.get(decoded, "anthropic_api_key") do
+        key
+      else
+        _ -> nil
+      end
+    end)
   end
 
   defp route_to_model(:anthropic_haiku),  do: {:anthropic, "claude-haiku-4-5-20251001"}

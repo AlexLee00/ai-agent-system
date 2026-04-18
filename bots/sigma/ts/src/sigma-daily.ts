@@ -5,8 +5,9 @@
  * Elixir v2 Commander를 HTTP로 호출하는 adapter.
  */
 
+const SIGMA_HTTP_PORT = process.env.SIGMA_HTTP_PORT || '4010';
 const SIGMA_V2_ENDPOINT =
-  process.env.SIGMA_V2_ENDPOINT || 'http://localhost:4000/sigma/v2';
+  process.env.SIGMA_V2_ENDPOINT || `http://127.0.0.1:${SIGMA_HTTP_PORT}/sigma/v2`;
 
 export async function runDaily(options: { test?: boolean } = {}): Promise<any> {
   const response = await fetch(`${SIGMA_V2_ENDPOINT}/run-daily`, {
