@@ -151,11 +151,16 @@ defmodule TeamJay.Ska.SkillRegistry do
 
   defp builtin_skills do
     [
+      # Phase 1: 공통 스킬
       {:detect_session_expiry, TeamJay.Ska.Skill.DetectSessionExpiry, %{domain: :common}},
       {:notify_failure, TeamJay.Ska.Skill.NotifyFailure, %{domain: :common}},
       {:persist_cycle_metrics, TeamJay.Ska.Skill.PersistCycleMetrics, %{domain: :common}},
       {:trigger_recovery, TeamJay.Ska.Skill.TriggerRecovery, %{domain: :common}},
-      {:audit_db_integrity, TeamJay.Ska.Skill.AuditDbIntegrity, %{domain: :common}}
+      {:audit_db_integrity, TeamJay.Ska.Skill.AuditDbIntegrity, %{domain: :common}},
+      # Phase 2: 도메인 스킬
+      {:parse_naver_html, TeamJay.Ska.Skill.ParseNaverHtml, %{domain: :naver}},
+      {:classify_kiosk_state, TeamJay.Ska.Skill.ClassifyKioskState, %{domain: :kiosk}},
+      {:audit_pos_transactions, TeamJay.Ska.Skill.AuditPosTransactions, %{domain: :pickko}}
     ]
   end
 

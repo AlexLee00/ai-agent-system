@@ -8,13 +8,20 @@ defmodule TeamJay.Ska.Naver.NaverMonitor do
     - 세션 상태 추적 → NaverSession 연동
     - 사이클 KPI 누적 (성공률, 응답시간)
 
+  Phase 2 (Skill-Based):
+    - process_cycle_with_skills/1 — SkillRegistry 경유 처리
+    - Kill Switch: SKA_NAVER_SKILL_ENABLED (기본 false, 점진적 전환)
+
   PortAgent(:andy)가 실행 완료 시 이벤트를 발행하면 여기서 수신.
   """
 
   use GenServer
   require Logger
 
+  alias TeamJay.Ska.SkillRegistry, as: Skill
+
   @cycle_window 20  # 최근 N 사이클 KPI 유지
+  @skill_enabled_env "SKA_NAVER_SKILL_ENABLED"
 
   defstruct [
     :phase,
@@ -43,6 +50,53 @@ defmodule TeamJay.Ska.Naver.NaverMonitor do
   @doc "사이클 완료 보고 (PortAgent에서 직접 호출 또는 PubSub 수신)"
   def report_cycle(result) when is_map(result) do
     GenServer.cast(__MODULE__, {:cycle_result, result})
+  end
+
+  @doc "Skill 기반 HTML 사이클 처리 (Phase 2 신규 — SKA_NAVER_SKILL_ENABLED=true 필요)"
+  def process_cycle_with_skills(%{html: html, status_code: code} = params) do
+    if skill_enabled?() do
+      start = System.monotonic_time(:millisecond)
+
+      with {:ok, session} <- Skill.execute(:detect_session_expiry, %{
+                               agent: :andy, response_html: html, status_code: code
+                             }, %{caller_agent: :andy}),
+           :healthy <- session[:status] do
+        case Skill.execute(:parse_naver_html, %{html: html, selectors_version: "latest"},
+                           %{caller_agent: :andy}) do
+          {:ok, parsed} ->
+            elapsed = System.monotonic_time(:millisecond) - start
+            Skill.execute(:persist_cycle_metrics, %{
+              agent: :andy, success: true,
+              duration_ms: elapsed, items_processed: parsed[:parsed_count]
+            }, %{caller_agent: :andy})
+            {:ok, parsed[:bookings]}
+
+          {:error, reason} ->
+            Skill.execute(:notify_failure, %{
+              agent: :andy, severity: :warning, message: "파싱 실패: #{inspect(reason)}"
+            }, %{caller_agent: :andy})
+            Skill.execute(:trigger_recovery, %{
+              agent: :andy, failure_type: :parse_failed, context: params
+            }, %{caller_agent: :andy})
+            {:error, reason}
+        end
+      else
+        :expired ->
+          Skill.execute(:trigger_recovery, %{
+            agent: :andy, failure_type: :session_expired, context: params
+          }, %{caller_agent: :andy})
+          Skill.execute(:notify_failure, %{
+            agent: :andy, severity: :error, message: "세션 만료"
+          }, %{caller_agent: :andy})
+          {:error, :session_expired}
+
+        :suspicious ->
+          Logger.warning("[NaverMonitor] 의심스러운 응답 감지 — 모니터링 중")
+          {:error, :suspicious_response}
+      end
+    else
+      {:error, :skill_mode_disabled}
+    end
   end
 
   # ─── Callbacks ───────────────────────────────────────────
@@ -122,6 +176,12 @@ defmodule TeamJay.Ska.Naver.NaverMonitor do
 
   @impl true
   def handle_info(_msg, state), do: {:noreply, state}
+
+  # ─── 내부 헬퍼 ───────────────────────────────────────────────
+
+  defp skill_enabled? do
+    System.get_env(@skill_enabled_env, "false") == "true"
+  end
 
   @impl true
   def handle_call({:get_recent_cycles, limit}, _from, state) do
