@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.luna.tradingview-ws</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-c</string>
+    <string>cd /opt/ai-agent-system/bots/investment/services/tradingview-ws &amp;&amp; node src/index.js 2&gt;&gt;/tmp/ai.luna.tradingview-ws.err.log</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>TV_WS_PORT</key>
+    <string>8082</string>
+    <key>TV_METRICS_PORT</key>
+    <string>8083</string>
+    <key>TV_STALE_THRESHOLD_MS</key>
+    <string>30000</string>
+    <!-- HUB_BASE_URL / HUB_AUTH_TOKEN은 launchctl setenv로 주입 -->
+  </dict>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/ai.luna.tradingview-ws.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/ai.luna.tradingview-ws.err.log</string>
+</dict>
+</plist>
