@@ -146,7 +146,7 @@ defmodule Darwin.V2.MapeKLoop do
 
     if KillSwitch.enabled?(:self_rewarding) do
       try do
-        Darwin.V2.SelfRewarding.evaluate_cycle(Map.get(cycle_result, :cycle_id))
+        Darwin.V2.SelfRewarding.evaluate_cycle(cycle_result)
       rescue
         e -> Logger.warning("[Darwin.V2.MapeKLoop] SelfRewarding 평가 실패: #{inspect(e)}")
       end
