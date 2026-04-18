@@ -38,6 +38,12 @@
     <string>4010</string>
     <key>SIGMA_LLM_DAILY_BUDGET_USD</key>
     <string>10.00</string>
+    <key>LLM_HUB_ROUTING_ENABLED</key>
+    <string>false</string>
+    <key>LLM_HUB_ROUTING_SHADOW</key>
+    <string>true</string>
+    <key>HUB_BASE_URL</key>
+    <string>http://localhost:7788</string>
   </dict>
 
   <key>StandardOutPath</key>
