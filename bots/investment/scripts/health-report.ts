@@ -368,9 +368,10 @@ async function loadStalePositionHealth() {
 
 async function loadCryptoLiveGateHealth() {
   try {
-  const modulePath = path.resolve(__dirname, './crypto-live-gate-review.ts');
+    const modulePath = path.resolve(__dirname, './crypto-live-gate-review.ts');
     const mod = await import(pathToFileURL(modulePath).href);
-    const review = await mod.loadCryptoLiveGateReview(3);
+    const periodDays = Number(mod.DEFAULT_CRYPTO_LIVE_GATE_DAYS || 7);
+    const review = await mod.loadCryptoLiveGateReview(periodDays);
     const decision = String(review?.liveGate?.decision || 'unknown');
     const maxPositions = Number(review?.metrics?.pipeline?.riskRejectReasons?.max_positions || 0);
     const validationLiveOverlap = Number(review?.metrics?.pipeline?.riskRejectReasons?.validation_live_overlap || 0);
@@ -391,6 +392,7 @@ async function loadCryptoLiveGateHealth() {
       ok: decision === 'candidate' ? lines : [],
       warn: decision === 'blocked' ? lines : [],
       review,
+      periodDays,
     };
   } catch (error) {
     return {
@@ -399,6 +401,7 @@ async function loadCryptoLiveGateHealth() {
       ok: [],
       warn: [`  LIVE 게이트 리뷰 로드 실패: ${error?.message || String(error)}`],
       review: null,
+      periodDays: 0,
     };
   }
 }
@@ -637,7 +640,7 @@ function formatText(report) {
           ]
         : ['  장기 미결 LIVE 포지션 없음'],
     },
-    buildHealthCountSection('■ 암호화폐 LIVE 게이트(최근 3일)', report.cryptoLiveGateHealth, { okLimit: 1, warnLimit: 1 }),
+    buildHealthCountSection(`■ 암호화폐 LIVE 게이트(최근 ${report.cryptoLiveGateHealth?.periodDays || 7}일)`, report.cryptoLiveGateHealth, { okLimit: 1, warnLimit: 1 }),
     buildHealthCountSection('■ KIS 실행 capability', report.kisCapabilityHealth, { okLimit: 1, warnLimit: 2 }),
     buildHealthCountSection('■ rail별 신규 진입 한도(오늘)', report.tradeLaneHealth, { okLimit: 6, warnLimit: 6 }),
     {
