@@ -17,22 +17,25 @@ defmodule TeamJay.MixProject do
   defp aliases do
     [
       "sigma.migrate": ["sigma.migrate"],
-      "darwin.migrate": ["darwin.migrate"]
+      "darwin.migrate": ["darwin.migrate"],
+      "luna.migrate":  ["luna.migrate"]
     ]
   end
 
   defp elixirc_paths(_env) do
-    sigma_lib = Path.expand("../../bots/sigma/elixir/lib", __DIR__)
+    sigma_lib  = Path.expand("../../bots/sigma/elixir/lib", __DIR__)
     darwin_lib = Path.expand("../../bots/darwin/elixir/lib", __DIR__)
-    jay_lib = Path.expand("../../bots/jay/elixir/lib", __DIR__)
-    ["lib", sigma_lib, darwin_lib, jay_lib]
+    jay_lib    = Path.expand("../../bots/jay/elixir/lib", __DIR__)
+    luna_lib   = Path.expand("../../bots/investment/elixir/lib", __DIR__)
+    ["lib", sigma_lib, darwin_lib, jay_lib, luna_lib]
   end
 
   defp test_paths do
-    sigma_test = Path.expand("../../bots/sigma/elixir/test", __DIR__)
+    sigma_test  = Path.expand("../../bots/sigma/elixir/test", __DIR__)
     darwin_test = Path.expand("../../bots/darwin/elixir/test", __DIR__)
-    jay_test = Path.expand("../../bots/jay/elixir/test", __DIR__)
-    ["test", sigma_test, darwin_test, jay_test]
+    jay_test    = Path.expand("../../bots/jay/elixir/test", __DIR__)
+    luna_test   = Path.expand("../../bots/investment/elixir/test", __DIR__)
+    ["test", sigma_test, darwin_test, jay_test, luna_test]
   end
 
   # Run "mix help compile.app" to learn about applications.

@@ -4,6 +4,24 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-04-18: CODEX_LUNA_REMODEL Phase 1~3 완료 — 루나팀 LLM Hub 라우팅 + Elixir V2 + MAPE-K
+
+- **Phase 1**: Investment LLM Hub 라우팅
+  - `hub-llm-client.ts` 신설 (Hub /llm/call TypeScript 클라이언트, Shadow Mode)
+  - `llm-client.ts` 수정 (Hub경유/Shadow/직접 3모드, 폴백 안전)
+  - `investment.llm_routing_log` 마이그레이션
+- **Phase 2**: Luna.V2 Elixir 앱 신설
+  - `bots/investment/elixir/` (mix.exs, config, Application)
+  - `Luna.V2.Supervisor` + `KillSwitch` + `Commander` (Jido.AI.Agent)
+  - 5개 Skills: MarketRegimeDetector/PortfolioMonitor/RiskGovernor/SignalAggregator/FeedbackReporter
+  - MAPE-K: Monitor (10분 감시) + Knowledge (패턴 학습 저장)
+  - `mapek_knowledge` + `market_regime_snapshots` 마이그레이션
+- **Phase 3**: team_jay 통합
+  - `mix.exs` luna lib/test 경로 추가
+  - `application.ex` Luna.V2.Supervisor 등록
+  - `mix luna.migrate` task + launchd plist (ALL OFF 안전 시작)
+- **검증**: 567 tests, 0 failures (19 excluded)
+
 ## 2026-04-18: CODEX_LLM_ROUTING_REFACTOR Phase 1~3 완료 — Hub LLM 라우팅 + Sigma/Darwin 전환
 
 - **Phase 1**: Hub LLM 엔드포인트 신설 — `/hub/llm/call|oauth|groq|stats` + `lib/llm/` 5개 모듈
