@@ -33,6 +33,11 @@ const CATEGORY_TOPIC_POOL = {
     { topic: '요구사항 정의 전에 먼저 정리할 전제', question: '일정이 밀리기 전에 무엇을 먼저 문서화해야 할까', diff: '기능 목록보다 전제와 범위 점검' },
     { topic: '개발 일정 산정을 망치는 커뮤니케이션', question: '왜 같은 요구사항을 두고 서로 다른 일정을 말하게 될까', diff: '기술 난이도보다 의사소통 관점' },
     { topic: '기획 문서가 실제 구현으로 이어지는 조건', question: '좋아 보이는 문서가 왜 실행 단계에서 무너질까', diff: '문서 형식보다 전달력과 결정 구조' },
+    { topic: '우선순위 회의가 길어질 때 다시 세워야 할 기준', question: '회의 시간이 늘어날수록 무엇을 먼저 버려야 할까', diff: '일정 산정이 아닌 의사결정 구조 관점' },
+    { topic: '담당자 handoff에서 빠지기 쉬운 핵심 정보', question: '인수인계 문서가 있어도 왜 실행 품질이 흔들릴까', diff: '요구사항 정의가 아닌 handoff 품질 관점' },
+    { topic: '고객 피드백을 기능 요청으로만 받으면 생기는 비용', question: '요청을 바로 기능화하기 전에 무엇을 다시 물어야 할까', diff: '기능 목록보다 문제 재정의 관점' },
+    { topic: '범위 확장을 멈추게 하는 scope freeze 타이밍', question: '좋은 아이디어가 많은데도 언제 멈춰야 프로젝트가 산으로 가지 않을까', diff: '커뮤니케이션이 아닌 범위 통제 관점' },
+    { topic: '실행 전에 리스크 리뷰를 짧게 끝내는 질문', question: '긴 위험 회의 없이도 꼭 확인해야 할 항목은 무엇일까', diff: '사전 점검이지만 일정/요구사항이 아닌 리스크 검토 관점' },
   ],
   '자기계발': [
     { topic: '하루 30분 루틴을 무너지지 않게 만드는 기준', question: '의욕보다 먼저 설계해야 할 습관 장치는 무엇일까', diff: '동기부여보다 유지 가능한 구조' },
@@ -274,6 +279,31 @@ function tokenOverlapRatio(a = '', b = '') {
   return intersection / Math.max(first.size, second.size);
 }
 
+function _isTooCloseToRecentTitle(candidate, recentTitles = []) {
+  if (!recentTitles.length) return false;
+  const latestRecentTitle = recentTitles[0] || '';
+
+  if (recentTitles.some((recentTitle) => similarity(recentTitle, candidate.title) > SIMILARITY_THRESHOLD)) {
+    return true;
+  }
+
+  if (latestRecentTitle) {
+    const latestSimilarity = similarity(latestRecentTitle, candidate.title);
+    const latestTokenOverlap = tokenOverlapRatio(latestRecentTitle, candidate.title);
+    const topicOverlap = tokenOverlapRatio(latestRecentTitle, candidate.topic);
+    if (latestSimilarity >= 0.28) return true;
+    if (latestTokenOverlap >= 0.45) return true;
+    if (topicOverlap >= 0.5) return true;
+  }
+
+  return recentTitles.some((recentTitle) => {
+    const titleTopicOverlap = tokenOverlapRatio(recentTitle, candidate.topic);
+    const titleQuestionOverlap = tokenOverlapRatio(recentTitle, candidate.question);
+    const titleDiffOverlap = tokenOverlapRatio(recentTitle, candidate.diff);
+    return titleTopicOverlap >= 0.34 || titleQuestionOverlap >= 0.34 || titleDiffOverlap >= 0.4;
+  });
+}
+
 function isBannedTitle(title = '') {
   const text = String(title || '').trim();
   if (!text || text.length > 50) return true;
@@ -398,7 +428,6 @@ function selectAndValidateTopic(category, recentPosts = [], strategyPlan = null,
   const recentTitles = recentPosts.map((post) => post.title).filter(Boolean);
   const topicPool = pickTopicPool(category);
   const marketingHints = buildMarketingHints(category, senseState, revenueCorrelation);
-  const latestRecentTitle = recentTitles[0] || '';
 
   const candidates = [];
   for (let i = 0; i < topicPool.length; i += 1) {
@@ -437,18 +466,7 @@ function selectAndValidateTopic(category, recentPosts = [], strategyPlan = null,
       ) {
         return false;
       }
-      if (recentTitles.some((recentTitle) => similarity(recentTitle, candidate.title) > SIMILARITY_THRESHOLD)) {
-        return false;
-      }
-      if (latestRecentTitle) {
-        const latestSimilarity = similarity(latestRecentTitle, candidate.title);
-        const latestTokenOverlap = tokenOverlapRatio(latestRecentTitle, candidate.title);
-        const topicOverlap = tokenOverlapRatio(latestRecentTitle, candidate.topic);
-        if (latestSimilarity >= 0.28) return false;
-        if (latestTokenOverlap >= 0.45) return false;
-        if (topicOverlap >= 0.5) return false;
-      }
-      return true;
+      return !_isTooCloseToRecentTitle(candidate, recentTitles);
     });
 
   if (selected) {

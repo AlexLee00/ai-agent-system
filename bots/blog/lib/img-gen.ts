@@ -9,9 +9,20 @@ const kst = require('../../../packages/core/lib/kst');
 
 const fs = require('fs');
 const path = require('path');
+const { pathToFileURL } = require('url');
 const env = require('../../../packages/core/lib/env');
 const { selectRuntime } = require('../../../packages/core/lib/runtime-selector');
-const { generateWithComfyUI } = require('../../../packages/core/lib/local-image-client');
+
+let _localImageClientPromise = null;
+async function _loadLocalImageClient() {
+  if (!_localImageClientPromise) {
+    const moduleUrl = pathToFileURL(
+      path.join(env.PROJECT_ROOT, 'packages/core/lib/local-image-client.ts')
+    ).href;
+    _localImageClientPromise = import(moduleUrl);
+  }
+  return _localImageClientPromise;
+}
 
 const OUTPUT_DIR = path.join(env.PROJECT_ROOT, 'bots/blog/output');
 const IMAGES_DIR = path.join(OUTPUT_DIR, 'images');
@@ -20,6 +31,7 @@ const GDRIVE_DIR = process.env.GDRIVE_BLOG_IMAGES || '/tmp/blog-images';
 async function generateImage(prompt, opts = {}) {
   const { outputPath, ...genOpts } = opts;
   const runtimeProfile = await selectRuntime('blog', 'image-local');
+  const { generateWithComfyUI } = await _loadLocalImageClient();
   const result = await generateWithComfyUI(prompt, {
     provider: process.env.BLOG_IMAGE_PROVIDER || 'drawthings',
     baseUrl: process.env.BLOG_IMAGE_BASE_URL || 'http://127.0.0.1:7860',
