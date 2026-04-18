@@ -1256,8 +1256,10 @@ function assessInboundComment(comment) {
 
   const courtesyPatterns = [
     /좋은\s*포스팅/i,
+    /좋은\s*글\s*잘\s*보고\s*갑니다/i,
     /잘\s*읽고\s*갑니다/i,
     /좋은\s*하루\s*되세요/i,
+    /행복한\s*(중살|주말|하루|시간)\s*보내세요/i,
     /항상\s*좋은\s*일만/i,
     /행복한\s*시간/i,
     /감사합니다/i,
