@@ -1,3 +1,62 @@
+# 세션 인수인계 — 2026-04-18 (CODEX_LLM_ROUTING_REFACTOR Phase 1~4 완료)
+
+> 세션 범위: 시그마 + 다윈 LLM 라우팅 → Hub 중앙화 (Claude Code OAuth + Groq 폴백 체인)
+
+## 완료 요약 (CODEX_LLM_ROUTING_REFACTOR) ✅
+
+### 구현된 내용
+
+**Phase 1 — Hub LLM 엔드포인트 신설** ✅
+- `bots/hub/lib/llm/` 5개 모듈: `types.ts`, `secrets-loader.ts`, `claude-code-oauth.ts`, `groq-fallback.ts`, `unified-caller.ts`
+- `bots/hub/lib/routes/llm.ts`: `/hub/llm/call`, `/hub/llm/oauth`, `/hub/llm/groq`, `/hub/llm/stats`
+- `bots/hub/src/hub.ts` route 등록 + LLM rate limiter (30rpm)
+- DB 마이그레이션: `elixir/team_jay/priv/repo/migrations/20261001000001_create_llm_routing_log.exs`
+
+**Phase 2 — 시그마 Selector Hub 경유** ✅
+- `Sigma.V2.LLM.HubClient` 신설 (callerTeam="sigma")
+- `Sigma.V2.LLM.Selector` 리팩토링 (Hub 경유 + Shadow Mode + 직접 fallback)
+- `sigma_v2_llm_routing_log` provider 컬럼 포함 (`20261001000002_create_sigma_v2_llm_routing_log.exs`)
+- launchd: `LLM_HUB_ROUTING_ENABLED=false`, `LLM_HUB_ROUTING_SHADOW=true`
+
+**Phase 3 — 다윈 Selector Hub 경유** ✅
+- `Darwin.V2.LLM.HubClient` 신설 (callerTeam="darwin")
+- `Darwin.V2.LLM.Selector` 리팩토링 (complete/3 + Shadow Mode + Kill Switch 보존)
+- `darwin_v2_llm_routing_log` provider 컬럼 (`20261001000001_add_provider_to_darwin_routing_log.exs`)
+- launchd: `LLM_HUB_ROUTING_ENABLED=false`, `LLM_HUB_ROUTING_SHADOW=true`
+
+**Phase 4 — 모니터링 + Telegram 일일 리포트** ✅
+- `bots/hub/scripts/llm-daily-report.ts`: 매일 KST 06:00 Telegram 전송
+- `bots/hub/launchd/ai.llm.daily-report.plist`
+- `/hub/llm/stats` 다차원 집계 (provider × team × agent × hour)
+
+### Kill Switch 현재 상태
+
+```
+LLM_HUB_ROUTING_ENABLED=false    (기본 OFF — Shadow 관찰 후 단계적 활성화)
+LLM_HUB_ROUTING_SHADOW=true      (병렬 실행, 직접 호출 결과 반환)
+```
+
+### 다음 단계
+
+1. **DB 마이그레이션 OPS 적용** (OPS에서 `mix ecto.migrate` 실행 필요):
+   - `20261001000001_create_llm_routing_log.exs` (team_jay 공용)
+   - `20261001000002_create_sigma_v2_llm_routing_log.exs` (sigma)
+   - `20261001000001_add_provider_to_darwin_routing_log.exs` (darwin)
+2. **Shadow Mode 관찰**: 시그마 3일, 다윈 3주 (일요일 실행)
+3. **Telegram 리포트 확인**: `/hub/llm/stats` 응답 + 일일 리포트 수신
+4. **전환 결정**: 품질/비용/레이턴시 확인 후 `LLM_HUB_ROUTING_ENABLED=true`
+
+### 기대 효과 (목표)
+
+```
+월 비용:
+  시그마: $300/월 → $50~100/월
+  다윈:   $300/월 → $40/월
+  합계:   $600/월 → $90~140/월 (약 80% 절감)
+```
+
+---
+
 # 세션 인수인계 — 2026-04-18 (CODEX_DARWIN_REMODEL 재검증 완료)
 
 > 세션 범위: CODEX_DARWIN_REMODEL Exit Criteria 전수 점검 — 335 tests, 0 failures 재확인
