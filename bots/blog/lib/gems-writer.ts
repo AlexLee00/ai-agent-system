@@ -467,6 +467,34 @@ function _normalizeCategoryTitleLine(category, title) {
   return cleanTitle ? `[${category}] ${cleanTitle}` : `[${category}]`;
 }
 
+function _extractPrimaryBookAuthor(author) {
+  return String(author || '')
+    .split(/[\^,]/)[0]
+    .trim();
+}
+
+function _buildBookReviewTitleCandidate(bookInfo = {}) {
+  const title = String(bookInfo.title || '').trim();
+  if (!title) return '';
+  return `${title}를 읽고 지금 다시 보게 된 질문 3가지`;
+}
+
+function _buildBookReviewIdentitySection(bookInfo = {}) {
+  const title = String(bookInfo.title || '').trim();
+  const primaryAuthor = _extractPrimaryBookAuthor(bookInfo.author);
+  if (!title) return '';
+
+  const authorLine = primaryAuthor
+    ? `이번 글에서 다루는 책은 "${title}"이고, 저자는 ${primaryAuthor}입니다.`
+    : `이번 글에서 다루는 책은 "${title}"입니다.`;
+
+  return [
+    '[도서 정보 한눈에 보기]',
+    authorLine,
+    `서론과 본문에서는 반드시 책 제목 "${title}"을 그대로 유지해 다루고, 감상보다 적용 포인트를 중심으로 정리하겠습니다.`,
+  ].join('\n');
+}
+
 function _enforceGeneralTitleAlignment(content, category, researchData = {}) {
   const text = String(content || '').trim();
   if (!text) return text;
@@ -476,7 +504,10 @@ function _enforceGeneralTitleAlignment(content, category, researchData = {}) {
   if (firstIndex < 0) return text;
 
   const currentTitle = lines[firstIndex].trim();
-  const candidateTitle = String(researchData.topic_title_candidate || '').trim();
+  const bookReviewCandidate = category === '도서리뷰'
+    ? _buildBookReviewTitleCandidate(researchData.book_info || {})
+    : '';
+  const candidateTitle = String(researchData.topic_title_candidate || bookReviewCandidate).trim();
   const expectedPattern = String(researchData.strategy_preferred_pattern || '').trim();
   if (!candidateTitle) {
     if (!currentTitle.startsWith(`[${category}]`)) {
@@ -497,6 +528,40 @@ function _enforceGeneralTitleAlignment(content, category, researchData = {}) {
     : _normalizeCategoryTitleLine(category, currentTitle);
 
   return lines.join('\n').trim();
+}
+
+function _ensureBookReviewIdentity(content, category, researchData = {}) {
+  if (category !== '도서리뷰') return String(content || '').trim();
+
+  const text = String(content || '').trim();
+  if (!text) return text;
+
+  const bookInfo = researchData.book_info || {};
+  const expectedTitle = String(bookInfo.title || '').trim();
+  const expectedAuthor = _extractPrimaryBookAuthor(bookInfo.author);
+  if (!expectedTitle) return text;
+
+  const lines = text.split('\n');
+  const firstIndex = lines.findIndex((line) => line.trim().length > 0);
+  if (firstIndex >= 0) {
+    const currentTitle = lines[firstIndex].trim();
+    if (!currentTitle.includes(expectedTitle)) {
+      const alignedTitle = String(researchData.topic_title_candidate || _buildBookReviewTitleCandidate(bookInfo)).trim();
+      lines[firstIndex] = _normalizeCategoryTitleLine(category, alignedTitle || expectedTitle);
+    } else if (!currentTitle.startsWith(`[${category}]`)) {
+      lines[firstIndex] = _normalizeCategoryTitleLine(category, currentTitle);
+    }
+  }
+
+  let next = lines.join('\n').trim();
+  if (!next.includes(expectedTitle) || (expectedAuthor && !next.includes(expectedAuthor))) {
+    const titleLine = lines[firstIndex >= 0 ? firstIndex : 0] || _normalizeCategoryTitleLine(category, expectedTitle);
+    const body = next.slice(titleLine.length).trim();
+    const identitySection = _buildBookReviewIdentitySection(bookInfo);
+    next = [titleLine, identitySection, body].filter(Boolean).join('\n\n').trim();
+  }
+
+  return next;
 }
 
 function _defaultGeneralSnippet(title, category) {
@@ -1061,6 +1126,7 @@ ISBN13이 없는 도서는 실존 검증 실패로 간주한다.
 ${bookInfo.description ? `- 소개: ${bookInfo.description.slice(0, 300)}` : ''}
 
 도서리뷰 작성 규칙:
+0. 글 첫 줄 제목과 서론 초반에는 반드시 책 제목 "${bookInfo.title}"을 그대로 넣고, 저자 ${bookInfo.author || '정보 없음'}도 자연스럽게 언급하라.
 1. 위에 제공된 도서 외의 다른 책을 절대 지어내지 마라.
 2. ISBN이 없는 도서는 실존 검증 실패로 간주한다.
 3. 책 정보가 비어 있거나 의심스러우면 리뷰를 작성하지 마라.
@@ -1392,6 +1458,7 @@ ${_buildVariationBlock(sectionVariation)}
     minChars: MIN_CHARS_GENERAL,
   });
   content = _enforceGeneralTitleAlignment(content, category, researchData);
+  content = _ensureBookReviewIdentity(content, category, researchData);
 
   if (content.length < MIN_CHARS_GENERAL) {
     console.log(`[젬스] repair 이후에도 글자수 미달: ${content.length}자`);
@@ -1719,7 +1786,8 @@ ${linkingBlock}
       console.log(`[젬스청크] ${id} (${index + 1}/${chunks.length}): ${charCount}자`),
   });
 
-  const content   = _enforceGeneralTitleAlignment(result.content, category, researchData);
+  let content   = _enforceGeneralTitleAlignment(result.content, category, researchData);
+  content = _ensureBookReviewIdentity(content, category, researchData);
   const firstLine = content.split('\n').find(l => l.trim().length > 0) || '';
   const title     = firstLine.slice(0, 80).trim();
   _assertDistinctGeneralTitle(category, title);

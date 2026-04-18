@@ -401,7 +401,31 @@ async function _refillBookReviewQueue(targetSize = 5) {
   }
 }
 
+function _buildBookReviewTopicMeta(bookInfo = {}) {
+  const title = String(bookInfo.title || '').trim();
+  const primaryAuthor = String(bookInfo.author || '').split(/[\^,]/)[0].trim();
+  if (!title) return {};
+  return {
+    topic_hint: `${title}를 읽고 지금 다시 붙잡아야 할 질문`,
+    topic_question: `${title}는 지금 어떤 독자에게 왜 다시 읽힐 가치가 있는가`,
+    topic_diff: '줄거리 요약보다 핵심 주장과 실무 적용 포인트 중심으로 정리',
+    topic_title_candidate: `${title}를 읽고 지금 다시 보게 된 질문 3가지`,
+    topic_reader_problem: '책 소개보다 이 책이 지금 왜 유효한지 알고 싶은 독자',
+    topic_opening_angle: primaryAuthor
+      ? `${primaryAuthor}의 문제의식을 오늘의 일과 삶에 다시 연결하는 장면에서 시작`
+      : '책의 핵심 문제의식을 오늘의 일과 삶에 다시 연결하는 장면에서 시작',
+    topic_key_questions: [
+      `${title}가 지금 어떤 독자에게 유효한가`,
+      '핵심 주장이나 장면을 실무와 삶의 판단 기준으로 어떻게 번역할 수 있는가',
+      '읽고 난 뒤 바로 적용할 수 있는 질문은 무엇인가',
+    ],
+    topic_closing_angle: '책 소개를 넘어서 독자의 다음 행동과 질문으로 연결하며 마무리',
+    topic_freshness_summary: `도서명 "${title}"과 핵심 질문을 제목/서론에서 명확히 고정`,
+  };
+}
+
 async function _resolveScheduledBookResearch(preparedResearch, scheduledBook, scheduleId = null) {
+
   if (scheduledBook?.book_title && scheduledBook?.book_isbn) {
     const duplicateBook = await _findExistingReviewedBook(scheduledBook);
     if (duplicateBook) {
@@ -422,6 +446,10 @@ async function _resolveScheduledBookResearch(preparedResearch, scheduledBook, sc
           isbn: scheduledBook.book_isbn,
           source: 'schedule',
         },
+        ..._buildBookReviewTopicMeta({
+          title: scheduledBook.book_title,
+          author: scheduledBook.book_author || '',
+        }),
       },
     };
   }
@@ -447,6 +475,7 @@ async function _resolveScheduledBookResearch(preparedResearch, scheduledBook, sc
     researchData: {
       ...preparedResearch,
       book_info: book,
+      ..._buildBookReviewTopicMeta(book),
     },
   };
 }
@@ -470,6 +499,7 @@ async function _resolveDynamicBookResearch(preparedResearch, researchData, sched
     researchData: {
       ...preparedResearch,
       book_info: book,
+      ..._buildBookReviewTopicMeta(book),
     },
   };
 }
