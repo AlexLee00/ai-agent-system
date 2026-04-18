@@ -1,8 +1,6 @@
 defmodule Darwin.V2.LLM.CostTrackerTest do
   use ExUnit.Case, async: false
 
-  alias Darwin.V2.LLM.CostTracker
-
   describe "calculate_cost (private — via track_tokens)" do
     test "claude-sonnet-4-6 비용 계산 정확도 (Repo mock 없이 가격 로직만 검증)" do
       sonnet_in  = 3.0e-6

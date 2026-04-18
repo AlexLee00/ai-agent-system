@@ -25,7 +25,7 @@ defmodule Darwin.V2.LLM.RoutingLogTest do
     end
   end
 
-  @tag :db
+  @describetag :db
   describe "db_write" do
     test "DB INSERT는 통합 테스트에서만" do
       assert true
