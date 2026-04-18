@@ -1,0 +1,15 @@
+{
+  "name": "luna-tradingview-ws",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "TradingView WebSocket OHLCV 브로드캐스트 마이크로서비스 (dovudo 패턴)",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0",
+    "prom-client": "^15.1.3"
+  }
+}

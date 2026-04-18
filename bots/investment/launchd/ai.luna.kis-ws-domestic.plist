@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.luna.kis-ws-domestic</string>
+
+  <!-- 국내장: 월~금 09:00~15:30 KST (StartCalendarInterval: KST 기준) -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-c</string>
+    <string>cd /opt/ai-agent-system/bots/investment &amp;&amp; node --input-type=module &lt;&lt;&lt; "import './shared/kis-ws-client.js'" 2&gt;&gt;/tmp/ai.luna.kis-ws-domestic.err.log</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>LUNA_KIS_WS_ENABLED</key>
+    <string>false</string>
+    <!-- false → LIVE 전환 시 true로 변경 (Phase 5) -->
+    <key>KIS_MARKET</key>
+    <string>domestic</string>
+    <key>KIS_MODE</key>
+    <string>mock</string>
+    <!-- mock → live 전환 시 Phase 5에서 변경 -->
+    <key>KIS_WS_SYMBOLS</key>
+    <string>005930,000660,035420,005380,051910</string>
+    <!-- 삼성전자,SK하이닉스,NAVER,현대차,LG화학 -->
+  </dict>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/ai.luna.kis-ws-domestic.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/ai.luna.kis-ws-domestic.err.log</string>
+</dict>
+</plist>

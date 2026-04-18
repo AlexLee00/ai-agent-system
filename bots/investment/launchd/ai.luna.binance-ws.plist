@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.luna.binance-ws</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-c</string>
+    <string>cd /opt/ai-agent-system/bots/investment &amp;&amp; node --input-type=module &lt;&lt;&lt; "import './shared/binance-ws-enhanced.js'" 2&gt;&gt;/tmp/ai.luna.binance-ws.err.log</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <!-- Kill Switch: 기본 OFF, 검증 후 true로 전환 -->
+    <key>LUNA_BINANCE_WS_ENABLED</key>
+    <string>true</string>
+    <key>LUNA_BINANCE_SYMBOLS</key>
+    <string>btcusdt,ethusdt,solusdt,bnbusdt,xrpusdt</string>
+  </dict>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>ThrottleInterval</key>
+  <integer>5</integer>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/ai.luna.binance-ws.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/ai.luna.binance-ws.err.log</string>
+</dict>
+</plist>
