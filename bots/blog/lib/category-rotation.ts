@@ -1,95 +1,27 @@
 'use strict';
 
 const pgPool = require('../../../packages/core/lib/pg-pool');
-const { loadLatestStrategy } = require('./strategy-loader.ts');
-
 const GENERAL_CATEGORIES = [
   '자기계발', '도서리뷰', '성장과성공', '홈페이지와App',
   '최신IT트렌드', 'IT정보와분석', '개발기획과컨설팅',
 ];
 
-function _scoreGeneralCategory(category, distance, strategyPlan = null, recentCategory = '') {
-  let score = 100 - distance;
-  if (!strategyPlan) return score;
-  const preferredBoost = Number(strategyPlan.preferredCategoryWeightBoost || 0);
-
-  if (strategyPlan.preferredCategory && category === strategyPlan.preferredCategory) {
-    score += 8 + preferredBoost;
-  }
-  if (strategyPlan.suppressedCategory && category === strategyPlan.suppressedCategory) {
-    score -= 4;
-  }
-  if (
-    strategyPlan.hardSuppressTitlePattern &&
-    strategyPlan.preferredCategory &&
-    category !== strategyPlan.preferredCategory
-  ) {
-    score -= 1;
-  }
-  if (recentCategory && category === recentCategory) {
-    score -= 20;
-  }
-  return score;
-}
-
-function _pickGeneralCategory(startIndex = 0, strategyPlan = null, recentCategory = '') {
-  const total = GENERAL_CATEGORIES.length;
-  const candidates = GENERAL_CATEGORIES.map((category, absoluteIndex) => {
-    const distance = (absoluteIndex - startIndex + total) % total;
-    return {
-      category,
-      absoluteIndex,
-      distance,
-      score: _scoreGeneralCategory(category, distance, strategyPlan, recentCategory),
-    };
-  }).sort((a, b) => {
-    if (b.score !== a.score) return b.score - a.score;
-    return a.distance - b.distance;
-  });
-
-  return candidates[0] || {
-    category: GENERAL_CATEGORIES[startIndex % total],
-    absoluteIndex: startIndex % total,
-    distance: 0,
-    score: 100,
-  };
-}
-
-async function _getLatestGeneralCategory() {
-  try {
-    const row = await pgPool.get('blog', `
-      SELECT category
-      FROM blog.posts
-      WHERE post_type = 'general'
-        AND status IN ('ready', 'published')
-        AND category IS NOT NULL
-      ORDER BY created_at DESC, id DESC
-      LIMIT 1
-    `);
-    return row?.category || '';
-  } catch {
-    return '';
-  }
-}
-
-async function getNextGeneralCategory(strategyPlan = null) {
+async function getNextGeneralCategory() {
   try {
     const row = await pgPool.get('blog', `
       SELECT current_index FROM blog.category_rotation
       WHERE rotation_type = 'general_category' LIMIT 1
     `);
     const idx = row?.current_index ?? 0;
-    const effectiveStrategy = strategyPlan || loadLatestStrategy();
-    const recentCategory = await _getLatestGeneralCategory();
-    const picked = _pickGeneralCategory(idx % GENERAL_CATEGORIES.length, effectiveStrategy, recentCategory);
+    const selectedIndex = idx % GENERAL_CATEGORIES.length;
     return {
-      category: picked.category,
+      category: GENERAL_CATEGORIES[selectedIndex],
       index: idx,
-      selectedIndex: picked.absoluteIndex,
-      nextIndex: (picked.absoluteIndex + 1) % GENERAL_CATEGORIES.length,
-      distance: picked.distance,
-      recentCategory,
-      strategyApplied: Boolean(effectiveStrategy?.preferredCategory || effectiveStrategy?.suppressedCategory),
+      selectedIndex,
+      nextIndex: (selectedIndex + 1) % GENERAL_CATEGORIES.length,
+      distance: 0,
+      recentCategory: '',
+      strategyApplied: false,
     };
   } catch {
     return {

@@ -8,8 +8,6 @@ const {
   getNextGeneralCategory,
 } = require('./category-rotation.ts');
 const { ensureBlogCoreSchema } = require('./schema.ts');
-const { loadLatestStrategy } = require('./strategy-loader.ts');
-
 const GENERAL_CATEGORIES = [
   '자기계발', '도서리뷰', '성장과성공', '홈페이지와App',
   '최신IT트렌드', 'IT정보와분석', '개발기획과컨설팅',
@@ -56,29 +54,12 @@ async function _buildSyntheticSchedule(date = _today()) {
   ];
 }
 
-function _nextGeneralCategoryFrom(previousCategory, strategyPlan = null) {
+function _nextGeneralCategoryFrom(previousCategory) {
   const previousIndex = GENERAL_CATEGORIES.indexOf(previousCategory);
   const baseIndex = previousIndex >= 0
     ? (previousIndex + 1) % GENERAL_CATEGORIES.length
     : 0;
-
-  const preferred = String(strategyPlan?.preferredCategory || '').trim();
-  const preferredBoost = Number(strategyPlan?.preferredCategoryWeightBoost || 0);
-  const suppressed = String(strategyPlan?.suppressedCategory || '').trim();
-
-  const candidates = GENERAL_CATEGORIES.map((category, absoluteIndex) => {
-    const distance = (absoluteIndex - baseIndex + GENERAL_CATEGORIES.length) % GENERAL_CATEGORIES.length;
-    let score = 100 - distance;
-    if (preferred && category === preferred) score += 8 + preferredBoost;
-    if (suppressed && category === suppressed) score -= 4;
-    if (previousCategory && category === previousCategory) score -= 20;
-    return { category, distance, score };
-  }).sort((a, b) => {
-    if (b.score !== a.score) return b.score - a.score;
-    return a.distance - b.distance;
-  });
-
-  return candidates[0]?.category || GENERAL_CATEGORIES[baseIndex];
+  return GENERAL_CATEGORIES[baseIndex];
 }
 
 async function _resolveLecturePlan(date = _today()) {
@@ -125,7 +106,6 @@ async function _resolveLecturePlan(date = _today()) {
 }
 
 async function _resolveGeneralPlan(date = _today()) {
-  const strategyPlan = loadLatestStrategy();
   const realToday = _realToday();
   const futurePrevious = date > realToday
     ? await pgPool.get('blog', `
@@ -153,10 +133,10 @@ async function _resolveGeneralPlan(date = _today()) {
     `, [date]);
 
   if (previous?.category && futurePrevious?.category) {
-    return { category: _nextGeneralCategoryFrom(previous.category, strategyPlan) };
+    return { category: _nextGeneralCategoryFrom(previous.category) };
   }
 
-  return getNextGeneralCategory(strategyPlan).catch(() => ({ category: '자기계발' }));
+  return getNextGeneralCategory().catch(() => ({ category: '자기계발' }));
 }
 
 async function getTodaySchedule() {
