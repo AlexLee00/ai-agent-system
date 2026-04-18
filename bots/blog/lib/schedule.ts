@@ -8,6 +8,12 @@ const {
   getNextGeneralCategory,
 } = require('./category-rotation.ts');
 const { ensureBlogCoreSchema } = require('./schema.ts');
+const { loadLatestStrategy } = require('./strategy-loader.ts');
+
+const GENERAL_CATEGORIES = [
+  '자기계발', '도서리뷰', '성장과성공', '홈페이지와App',
+  '최신IT트렌드', 'IT정보와분석', '개발기획과컨설팅',
+];
 
 let _curriculumPlanner = null;
 function _getPlanner() {
@@ -25,16 +31,132 @@ function _today() {
   return RUN_DATE || kst.today();
 }
 
+function _realToday() {
+  return kst.today();
+}
+
 function _isDbPermissionError(error) {
   return String(error?.code || '').trim() === 'EPERM';
 }
 
 async function _buildSyntheticSchedule(date = _today()) {
-  const { category } = await getNextGeneralCategory().catch(() => ({ category: '자기계발' }));
+  const lecture = await _resolveLecturePlan(date).catch(() => ({ number: 1, lectureTitle: '제1강', seriesName: 'nodejs_120' }));
+  const general = await _resolveGeneralPlan(date).catch(() => ({ category: '자기계발' }));
   return [
-    { id: null, publish_date: date, post_type: 'lecture', category: 'Node.js강의', status: 'scheduled' },
-    { id: null, publish_date: date, post_type: 'general', category, status: 'scheduled' },
+    {
+      id: null,
+      publish_date: date,
+      post_type: 'lecture',
+      category: 'Node.js강의',
+      lecture_number: lecture.number,
+      lecture_title: lecture.lectureTitle,
+      status: 'scheduled',
+    },
+    { id: null, publish_date: date, post_type: 'general', category: general.category, status: 'scheduled' },
   ];
+}
+
+function _nextGeneralCategoryFrom(previousCategory, strategyPlan = null) {
+  const previousIndex = GENERAL_CATEGORIES.indexOf(previousCategory);
+  const baseIndex = previousIndex >= 0
+    ? (previousIndex + 1) % GENERAL_CATEGORIES.length
+    : 0;
+
+  const preferred = String(strategyPlan?.preferredCategory || '').trim();
+  const preferredBoost = Number(strategyPlan?.preferredCategoryWeightBoost || 0);
+  const suppressed = String(strategyPlan?.suppressedCategory || '').trim();
+
+  const candidates = GENERAL_CATEGORIES.map((category, absoluteIndex) => {
+    const distance = (absoluteIndex - baseIndex + GENERAL_CATEGORIES.length) % GENERAL_CATEGORIES.length;
+    let score = 100 - distance;
+    if (preferred && category === preferred) score += 8 + preferredBoost;
+    if (suppressed && category === suppressed) score -= 4;
+    if (previousCategory && category === previousCategory) score -= 20;
+    return { category, distance, score };
+  }).sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return a.distance - b.distance;
+  });
+
+  return candidates[0]?.category || GENERAL_CATEGORIES[baseIndex];
+}
+
+async function _resolveLecturePlan(date = _today()) {
+  const realToday = _realToday();
+  const futurePrevious = date > realToday
+    ? await pgPool.get('blog', `
+      SELECT COALESCE(s.lecture_number, p.lecture_number) AS lecture_number
+      FROM blog.publish_schedule s
+      LEFT JOIN blog.posts p ON p.id = s.post_id
+      WHERE s.post_type = 'lecture'
+        AND s.publish_date < $1
+        AND s.publish_date > $2
+      ORDER BY s.publish_date DESC, s.id DESC
+      LIMIT 1
+    `, [date, realToday])
+    : null;
+
+  const previous = futurePrevious?.lecture_number
+    ? futurePrevious
+    : await pgPool.get('blog', `
+      SELECT COALESCE(s.lecture_number, p.lecture_number) AS lecture_number
+      FROM blog.publish_schedule s
+      LEFT JOIN blog.posts p ON p.id = s.post_id
+      WHERE s.post_type = 'lecture'
+        AND s.publish_date < $1
+      ORDER BY s.publish_date DESC, s.id DESC
+      LIMIT 1
+    `, [date]);
+
+  if (previous?.lecture_number) {
+    const seriesName = 'nodejs_120';
+    const number = Number(previous.lecture_number) + 1;
+    const lectureTitle = await getLectureTitle(number, seriesName).catch(() => null);
+    return { number, seriesName, lectureTitle: lectureTitle || `제${number}강` };
+  }
+
+  const nextLecture = await getNextLectureNumber();
+  const lectureTitle = await getLectureTitle(nextLecture.number, nextLecture.seriesName).catch(() => null);
+  return {
+    number: nextLecture.number,
+    seriesName: nextLecture.seriesName,
+    lectureTitle: lectureTitle || `제${nextLecture.number}강`,
+  };
+}
+
+async function _resolveGeneralPlan(date = _today()) {
+  const strategyPlan = loadLatestStrategy();
+  const realToday = _realToday();
+  const futurePrevious = date > realToday
+    ? await pgPool.get('blog', `
+      SELECT category
+      FROM blog.publish_schedule
+      WHERE post_type = 'general'
+        AND publish_date < $1
+        AND publish_date > $2
+        AND category IS NOT NULL
+      ORDER BY publish_date DESC, id DESC
+      LIMIT 1
+    `, [date, realToday])
+    : null;
+
+  const previous = futurePrevious?.category
+    ? futurePrevious
+    : await pgPool.get('blog', `
+      SELECT category
+      FROM blog.publish_schedule
+      WHERE post_type = 'general'
+        AND publish_date < $1
+        AND category IS NOT NULL
+      ORDER BY publish_date DESC, id DESC
+      LIMIT 1
+    `, [date]);
+
+  if (previous?.category && futurePrevious?.category) {
+    return { category: _nextGeneralCategoryFrom(previous.category, strategyPlan) };
+  }
+
+  return getNextGeneralCategory(strategyPlan).catch(() => ({ category: '자기계발' }));
 }
 
 async function getTodaySchedule() {
@@ -99,28 +221,69 @@ async function updateScheduleCategory(id, category) {
   }
 }
 
+async function _repairExistingSchedule(date, rows = []) {
+  if (!rows.length || DEV_HUB_READONLY) return rows;
+
+  const lectureRow = rows.find((row) => row.post_type === 'lecture');
+  const generalRow = rows.find((row) => row.post_type === 'general');
+  const lecturePlan = await _resolveLecturePlan(date);
+  const generalPlan = await _resolveGeneralPlan(date);
+
+  if (
+    lectureRow &&
+    lectureRow.status === 'scheduled' &&
+    !lectureRow.post_id &&
+    (
+      Number(lectureRow.lecture_number || 0) !== Number(lecturePlan.number) ||
+      String(lectureRow.lecture_title || '').trim() !== String(lecturePlan.lectureTitle || '').trim()
+    )
+  ) {
+    await pgPool.run('blog', `
+      UPDATE blog.publish_schedule
+      SET lecture_number = $1,
+          lecture_title = $2,
+          updated_at = NOW()
+      WHERE id = $3
+    `, [lecturePlan.number, lecturePlan.lectureTitle, lectureRow.id]);
+  }
+
+  if (
+    generalRow &&
+    generalRow.status === 'scheduled' &&
+    !generalRow.post_id &&
+    String(generalRow.category || '').trim() !== String(generalPlan.category || '').trim()
+  ) {
+    await updateScheduleCategory(generalRow.id, generalPlan.category);
+  }
+
+  return getScheduleByDate(date);
+}
+
 async function ensureSchedule(date = _today()) {
   try {
     await ensureBlogCoreSchema();
     const existing = await getScheduleByDate(date);
-    if (existing.length > 0) return existing;
+    if (existing.length > 0) {
+      return _repairExistingSchedule(date, existing);
+    }
 
-    const { category } = await getNextGeneralCategory();
+    const lecturePlan = await _resolveLecturePlan(date);
+    const generalPlan = await _resolveGeneralPlan(date);
 
     if (DEV_HUB_READONLY) {
-      console.log(`[스케줄] DEV/HUB 읽기 전용 — ${date} 합성 스케줄 사용 (${category})`);
+      console.log(`[스케줄] DEV/HUB 읽기 전용 — ${date} 합성 스케줄 사용 (${generalPlan.category})`);
       return _buildSyntheticSchedule(date);
     }
 
     await pgPool.run('blog', `
-      INSERT INTO blog.publish_schedule (publish_date, post_type, category, status)
+      INSERT INTO blog.publish_schedule (publish_date, post_type, lecture_number, lecture_title, category, status)
       VALUES
-        ($1, 'lecture', 'Node.js강의', 'scheduled'),
-        ($1, 'general', $2,            'scheduled')
+        ($1, 'lecture', $2, $3, 'Node.js강의', 'scheduled'),
+        ($1, 'general', NULL, NULL, $4, 'scheduled')
       ON CONFLICT DO NOTHING
-    `, [date, category]);
+    `, [date, lecturePlan.number, lecturePlan.lectureTitle, generalPlan.category]);
 
-    console.log(`[스케줄] ${date} 자동 생성 — 일반 카테고리: ${category}`);
+    console.log(`[스케줄] ${date} 자동 생성 — 강의 ${lecturePlan.number}강 / 일반 카테고리: ${generalPlan.category}`);
     const created = await getScheduleByDate(date);
     return created.length > 0 ? created : _buildSyntheticSchedule(date);
   } catch (e) {
@@ -155,15 +318,16 @@ async function getTodayContext() {
     if (IS_TEST) {
       lectureCtx = await resolveTestLecture();
     } else {
-      const nextLecture = await getNextLectureNumber();
-      const number = Number(lectureRow.lecture_number || nextLecture.number);
-      const seriesName = nextLecture.seriesName;
+      const seriesName = 'nodejs_120';
+      const fallbackLecture = await _resolveLecturePlan(_today()).catch(() => ({ number: 1, lectureTitle: null, seriesName }));
+      const number = Number(lectureRow.lecture_number || fallbackLecture.number);
       const planner = _getPlanner();
       const curriculumTitle = planner
         ? await planner.getNextLectureTitle(seriesName, number).catch(() => null)
         : null;
       const title = lectureRow.lecture_title
         || curriculumTitle
+        || fallbackLecture.lectureTitle
         || (await getLectureTitle(number, seriesName))
         || `제${number}강`;
       lectureCtx = { number, seriesName, lectureTitle: title };
