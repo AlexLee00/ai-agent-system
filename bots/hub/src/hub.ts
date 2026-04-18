@@ -200,6 +200,20 @@ app.post('/hub/llm/oauth', llmLimiter, llmOAuthRoute);
 app.post('/hub/llm/groq', llmLimiter, llmGroqRoute);
 app.get('/hub/llm/stats', generalLimiter, llmStatsRoute);
 
+const { llmDashboardRoute, llmCacheStatsRoute } = require('../lib/routes/llm-dashboard');
+const { llmHealthRoute } = require('../lib/routes/llm-health');
+const { reserveBudgetRoute, budgetUsageRoute } = require('../lib/routes/budget');
+
+// Static file serving for public assets
+const path = require('path');
+app.use('/hub/public', express.static(path.join(__dirname, '../public')));
+
+app.get('/hub/llm/dashboard', generalLimiter, llmDashboardRoute);
+app.get('/hub/llm/cache-stats', generalLimiter, llmCacheStatsRoute);
+app.get('/hub/llm/health', generalLimiter, llmHealthRoute);
+app.post('/hub/budget/reserve', generalLimiter, reserveBudgetRoute);
+app.get('/hub/budget/usage', generalLimiter, budgetUsageRoute);
+
 app.use('/hub', (req: any, res: any) => {
   res.status(404).json({ error: `unknown endpoint: ${req.method} ${req.path}` });
 });

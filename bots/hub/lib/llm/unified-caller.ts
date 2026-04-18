@@ -1,5 +1,6 @@
 import { callClaudeCodeOAuth } from './claude-code-oauth';
 import { callGroqFallback } from './groq-fallback';
+import { checkCache, saveCache } from './cache';
 import type { LLMCallRequest, LLMCallResponse, AbstractModel } from './types';
 
 // Recommender abstract atom → Claude Code 모델명
@@ -19,8 +20,50 @@ const GROQ_MODEL: Record<AbstractModel, string> = {
 export async function callWithFallback(req: LLMCallRequest): Promise<LLMCallResponse> {
   const ccModel = CLAUDE_CODE_MODEL[req.abstractModel] ?? 'sonnet';
   const groqModel = GROQ_MODEL[req.abstractModel] ?? 'llama-3.3-70b-versatile';
+  const team = req.callerTeam ?? 'worker';
 
-  // 1차: Claude Code OAuth
+  // 0. Budget check
+  if (process.env.HUB_BUDGET_GUARDIAN_ENABLED !== 'false') {
+    try {
+      const { BudgetGuardian } = require('../budget-guardian');
+      const budgetCheck = BudgetGuardian.getInstance().checkAndReserve(team, 0.01);
+      if (!budgetCheck.ok) {
+        console.warn(`[llm/unified] 예산 차단 (${team}): ${budgetCheck.reason}`);
+        return {
+          ok: false,
+          provider: 'failed',
+          error: `budget_exceeded: ${budgetCheck.reason}`,
+          durationMs: 0,
+        };
+      }
+    } catch (e: any) {
+      console.warn('[llm/unified] BudgetGuardian 오류 (무시):', e.message);
+    }
+  }
+
+  // 1. Cache check
+  if (req.cacheEnabled) {
+    try {
+      const cacheKey = { abstractModel: req.abstractModel, prompt: req.prompt, systemPrompt: req.systemPrompt };
+      const cached = await checkCache(cacheKey);
+      if (cached.hit) {
+        console.log(`[llm/unified] 캐시 히트 (${req.abstractModel})`);
+        return {
+          ok: true,
+          provider: 'claude-code-oauth',
+          result: cached.response,
+          durationMs: 0,
+          totalCostUsd: 0,
+          cacheHit: true,
+          cachedAt: cached.cachedAt,
+        };
+      }
+    } catch (e: any) {
+      console.warn('[llm/unified] 캐시 조회 오류 (무시):', e.message);
+    }
+  }
+
+  // 2. Primary: Claude Code OAuth
   const primary = await callClaudeCodeOAuth({
     prompt: req.prompt,
     model: ccModel,
@@ -31,10 +74,21 @@ export async function callWithFallback(req: LLMCallRequest): Promise<LLMCallResp
   });
 
   if (primary.ok) {
-    return { ...primary, provider: 'claude-code-oauth' };
+    // 3. Cache save on success
+    if (req.cacheEnabled && primary.result) {
+      try {
+        const cacheKey = { abstractModel: req.abstractModel, prompt: req.prompt, systemPrompt: req.systemPrompt };
+        const tokensIn = (primary.modelUsage as any)?.input_tokens ?? 0;
+        const tokensOut = (primary.modelUsage as any)?.output_tokens ?? 0;
+        await saveCache(cacheKey, primary.result, { in: tokensIn, out: tokensOut }, primary.totalCostUsd ?? 0, req.cacheType ?? 'default');
+      } catch (e: any) {
+        console.warn('[llm/unified] 캐시 저장 오류 (무시):', e.message);
+      }
+    }
+    return { ...primary, provider: 'claude-code-oauth', cacheHit: false };
   }
 
-  // 2차: Groq 폴백
+  // 4. Groq 폴백
   console.warn(`[llm/unified] Primary 실패: ${primary.error} → Groq 폴백 (${groqModel})`);
   const fallback = await callGroqFallback({
     prompt: req.prompt,
@@ -47,5 +101,6 @@ export async function callWithFallback(req: LLMCallRequest): Promise<LLMCallResp
     provider: fallback.ok ? 'groq' : 'failed',
     primaryError: primary.error,
     fallbackCount: 1,
+    cacheHit: false,
   };
 }
