@@ -27,8 +27,8 @@ defmodule Luna.V2.Validation.EngineTest do
       assert Code.ensure_loaded?(Luna.V2.Validation.PromotionGate)
     end
 
-    test "Engine에 validate_strategy/2 함수 존재" do
-      assert function_exported?(Luna.V2.Validation.Engine, :validate_strategy, 2)
+    test "Engine에 validate_strategy/1 함수 존재 (기본값 포함)" do
+      assert function_exported?(Luna.V2.Validation.Engine, :validate_strategy, 1)
     end
 
     test "Engine에 run_all_pending/0 함수 존재" do
