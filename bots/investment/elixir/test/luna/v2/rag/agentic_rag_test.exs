@@ -2,6 +2,13 @@ defmodule Luna.V2.Rag.AgenticRagTest do
   use ExUnit.Case, async: true
 
   alias Luna.V2.Rag.AgenticRag
+  alias Luna.V2.Rag.ResponseSynthesizer
+
+  setup_all do
+    Code.ensure_compiled!(AgenticRag)
+    Code.ensure_compiled!(ResponseSynthesizer)
+    :ok
+  end
 
   describe "모듈 구조 확인" do
     test "AgenticRag 컴파일됨" do
@@ -44,8 +51,6 @@ defmodule Luna.V2.Rag.AgenticRagTest do
   end
 
   describe "ResponseSynthesizer 단위 확인" do
-    alias Luna.V2.Rag.ResponseSynthesizer
-
     test "빈 리스트 → 빈 결과" do
       assert ResponseSynthesizer.combine([]) == []
     end

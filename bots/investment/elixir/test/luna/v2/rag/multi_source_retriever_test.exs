@@ -3,6 +3,11 @@ defmodule Luna.V2.Rag.MultiSourceRetrieverTest do
 
   alias Luna.V2.Rag.MultiSourceRetriever
 
+  setup_all do
+    Code.ensure_compiled!(MultiSourceRetriever)
+    :ok
+  end
+
   describe "모듈 구조" do
     test "MultiSourceRetriever 컴파일됨" do
       assert Code.ensure_loaded?(MultiSourceRetriever)
