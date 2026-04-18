@@ -84,41 +84,100 @@ export async function llmGroqRoute(req: any, res: any) {
   }
 }
 
-// GET /hub/llm/stats — provider별 비용/레이턴시 집계
+// GET /hub/llm/stats — provider × team × agent 다차원 집계
 export async function llmStatsRoute(req: any, res: any) {
   const hours = Math.min(Math.max(Number(req.query?.hours ?? 24), 1), 168);
+  const team = req.query?.team as string | undefined;
+
+  const teamFilter = team ? 'AND caller_team = $2' : '';
+  const params: any[] = team ? [hours, team] : [hours];
 
   try {
-    const result = await pgPool.query(`
-      SELECT
-        provider,
-        COUNT(*)                                              AS total_calls,
-        SUM(CASE WHEN success THEN 1 ELSE 0 END)             AS success_count,
-        ROUND(AVG(duration_ms))                              AS avg_duration_ms,
-        ROUND(SUM(cost_usd)::numeric, 6)                     AS total_cost_usd,
-        COUNT(DISTINCT agent)                                AS unique_agents
-      FROM llm_routing_log
-      WHERE created_at > NOW() - ($1 || ' hours')::interval
-      GROUP BY provider
-      ORDER BY total_calls DESC
-    `, [hours]);
+    const [summaryRes, byAgentRes, byHourRes] = await Promise.all([
+      pgPool.query(`
+        SELECT
+          provider,
+          caller_team,
+          COUNT(*)                                                AS total_calls,
+          SUM(CASE WHEN success THEN 1 ELSE 0 END)               AS success_count,
+          ROUND(AVG(duration_ms))::integer                       AS avg_duration_ms,
+          MAX(duration_ms)                                       AS max_duration_ms,
+          ROUND(SUM(cost_usd)::numeric, 6)                       AS total_cost_usd,
+          COUNT(DISTINCT agent)                                  AS unique_agents,
+          SUM(fallback_count)                                    AS total_fallbacks
+        FROM llm_routing_log
+        WHERE created_at > NOW() - ($1 || ' hours')::interval ${teamFilter}
+        GROUP BY provider, caller_team
+        ORDER BY total_calls DESC
+      `, params),
+      pgPool.query(`
+        SELECT agent, provider,
+          COUNT(*)                                               AS calls,
+          ROUND(AVG(duration_ms))::integer                      AS avg_ms,
+          ROUND(SUM(cost_usd)::numeric, 6)                      AS cost
+        FROM llm_routing_log
+        WHERE created_at > NOW() - ($1 || ' hours')::interval ${teamFilter}
+          AND agent IS NOT NULL
+        GROUP BY agent, provider
+        ORDER BY calls DESC
+        LIMIT 20
+      `, params),
+      pgPool.query(`
+        SELECT
+          date_trunc('hour', created_at)                        AS hour,
+          provider,
+          COUNT(*)                                              AS calls,
+          ROUND(SUM(cost_usd)::numeric, 6)                     AS cost
+        FROM llm_routing_log
+        WHERE created_at > NOW() - ($1 || ' hours')::interval ${teamFilter}
+        GROUP BY hour, provider
+        ORDER BY hour DESC
+      `, params),
+    ]);
+
+    const summary = summaryRes.rows;
+    const totalCalls = summary.reduce((s: number, r: any) => s + Number(r.total_calls), 0);
+    const totalCost = summary.reduce((s: number, r: any) => s + Number(r.total_cost_usd || 0), 0);
+    const totalSuccess = summary.reduce((s: number, r: any) => s + Number(r.success_count), 0);
 
     return res.json({
       ok: true,
       hours,
+      team: team || 'all',
       groq_pool_size: loadGroqAccounts().length,
-      stats: result.rows,
+      summary,
+      by_agent: byAgentRes.rows,
+      by_hour: byHourRes.rows,
+      totals: {
+        total_calls: totalCalls,
+        total_cost_usd: totalCost,
+        success_rate: totalCalls > 0 ? totalSuccess / totalCalls : 0,
+        provider_share: computeProviderShare(summary),
+      },
     });
   } catch (err: any) {
-    // llm_routing_log 테이블 미생성 시 빈 결과 반환 (마이그레이션 전)
     return res.json({
       ok: true,
       hours,
+      team: team || 'all',
       groq_pool_size: loadGroqAccounts().length,
-      stats: [],
+      summary: [],
+      by_agent: [],
+      by_hour: [],
+      totals: { total_calls: 0, total_cost_usd: 0, success_rate: 0, provider_share: {} },
       note: err.message.includes('does not exist') ? 'llm_routing_log 테이블 미생성 — 마이그레이션 필요' : undefined,
     });
   }
+}
+
+function computeProviderShare(rows: any[]): Record<string, number> {
+  const total = rows.reduce((s: number, r: any) => s + Number(r.total_calls), 0);
+  if (total === 0) return {};
+  const share: Record<string, number> = {};
+  for (const r of rows) {
+    share[r.provider] = (share[r.provider] || 0) + Number(r.total_calls) / total;
+  }
+  return share;
 }
 
 async function logRouting(resp: any, body: any): Promise<void> {
