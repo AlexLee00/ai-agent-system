@@ -39,6 +39,12 @@ export function pickGroqApiKey(): string | null {
   if (accounts.length === 0) return null;
 
   const now = Date.now();
+
+  // Clean up expired entries to prevent memory leak
+  for (const [k, until] of blacklistedKeys) {
+    if (until <= now) blacklistedKeys.delete(k);
+  }
+
   for (let attempt = 0; attempt < accounts.length; attempt++) {
     const idx = (rotationIndex + attempt) % accounts.length;
     const key = accounts[idx];

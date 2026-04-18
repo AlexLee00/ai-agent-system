@@ -106,9 +106,10 @@ defmodule Sigma.V2.LLM.Selector do
 
     case Sigma.V2.LLM.HubClient.call(request) do
       {:ok, hub_resp} ->
+        abstract_model_str = to_string(primary)
         resp = %{
           response:   hub_resp.result,
-          model:      hub_resp.provider,
+          model:      abstract_model_str,
           provider:   hub_resp.provider,
           tokens:     %{in: 0, out: 0},
           latency_ms: hub_resp.latency_ms
@@ -116,7 +117,7 @@ defmodule Sigma.V2.LLM.Selector do
 
         Sigma.V2.LLM.CostTracker.track_tokens(%{
           agent:     to_string(agent_name),
-          model:     hub_resp.provider,
+          model:     abstract_model_str,
           provider:  hub_resp.provider,
           tokens_in: 0,
           tokens_out: 0,
