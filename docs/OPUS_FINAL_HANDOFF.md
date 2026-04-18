@@ -1,8 +1,53 @@
-# 세션 인수인계 — 2026-04-19 (CODEX_LUNA_REMODEL Phase 1 완료 — 49차 세션 추가)
+# 세션 인수인계 — 2026-04-19 (CODEX_DARWIN_EVOLUTION 완료 — 50차 세션 추가)
 
 > 세션 범위: CODEX_LUNA_REMODEL Phase 1 — 9개 에이전트 Hub LLM 라우팅 마이그레이션 완료
 
-## 완료 요약 ✅ (추가)
+## 완료 요약 ✅ (50차 세션 추가)
+
+### CODEX_DARWIN_EVOLUTION Phase R~M — Darwin V2 자율 진화 시스템 완성
+
+**구현 완료**:
+- `cycle/evaluate.ex` + `cycle/plan.ex`: AgenticRag.retrieve 적용 (DARWIN_AGENTIC_RAG_ENABLED kill switch, OFF시 SelfRAG fallback)
+- `cycle/discover.ex`: ResearchRegistry.register_paper 연동
+- `cycle/implement.ex` + `verify.ex` + `apply.ex` + `learn.ex`: ResearchRegistry.transition 단계별 호출
+- `cycle/apply.ex`: ResearchRegistry.link_effect (구현 효과 기록)
+- `bots/darwin/docs/EVOLUTION_ARCHITECTURE.md` 신설 (7단계→MAPE-K 매핑 + 전체 아키텍처)
+- `bots/darwin/docs/AUTONOMY_PROMOTION_GUIDE.md` 신설 (L3→L4→L5 승격 절차 불변 규정)
+
+**사전 구현 확인된 Phase 모듈들**:
+- Phase R: `Darwin.V2.MapeKLoop` (GenServer, 일/주간 tick, 자율 사이클 환류)
+- Phase S: `Darwin.V2.SelfRewarding` (LLM-as-a-Judge DPO, darwin_dpo_preference_pairs)
+- Phase A: `Darwin.V2.Rag.AgenticRag` + QueryPlanner/MultiSourceRetriever/QualityEvaluator/ResponseSynthesizer
+- Phase R2: `Darwin.V2.ResearchRegistry` (논문 라이프사이클) + `Darwin.V2.AutonomyLevel` 확장
+- Phase O: `Darwin.V2.TelegramReporter` + darwin-daily-report.ts + darwin-weekly-review.ts + launchd 2개
+- Phase M: `Darwin.V2.Monitoring` + shadow_compare.weekly_aggregate + darwin_autonomy_dashboard
+- Kill Switch: DARWIN_MAPEK/SELF_REWARDING/AGENTIC_RAG/RESEARCH_REGISTRY/TELEGRAM_ENHANCED 5개
+
+**테스트**: 386 tests, 0 failures (16 excluded) — 기존 335 + 51 신규
+**커밋**: `06982b56 feat(darwin): Darwin Evolution Phase R~M 완료`
+**CODEX 아카이브**: `docs/archive/codex-completed/`로 이동 완료
+
+### Shadow Mode 활성화 완료 (직전 세션)
+
+투자봇 4개 launchd에 INVESTMENT_LLM_HUB_SHADOW=true 설정 + 서비스 재로드:
+- ai.investment.argos (PID 31553)
+- ai.investment.crypto (PID 32020, RunAtLoad)
+- ai.investment.domestic + overseas (스케줄 등록)
+
+## 다음 단계
+
+1. **Darwin Shadow 7일 관찰**: `ai.darwin.daily.shadow` (일요일 05:00 KST) 실행 결과 확인
+2. **Darwin Kill Switch 단계적 활성화**: DARWIN_MAPEK_ENABLED=true → DARWIN_RESEARCH_REGISTRY_ENABLED=true → 순서로
+3. **투자봇 Hub Shadow 3일 검증**: investment.llm_routing_log에서 shadow 비교 결과 확인 (목표: ≥90% 유사도)
+4. **DB 마이그레이션 OPS 적용**: 마이그레이션 10개 (8~11번) 순차 적용
+
+## 🏷️ 50차 세션 요약
+
+**50차 세션 — CODEX_DARWIN_EVOLUTION Phase R~M: cycle 7개 모듈에 AgenticRag/ResearchRegistry 연동, docs 2개 신설, 386 tests 0 failures 확인 후 아카이브.**
+
+---
+
+## 완료 요약 ✅ (49차 세션 추가)
 
 ### CODEX_LUNA_REMODEL Phase 1 — 9개 에이전트 Hub LLM 라우팅 마이그레이션
 
