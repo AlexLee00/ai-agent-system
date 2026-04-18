@@ -141,6 +141,60 @@ async function ensureBlogCoreSchema() {
   `);
 
   await pgPool.run('blog', `
+    CREATE TABLE IF NOT EXISTS blog.topic_candidates (
+      id SERIAL PRIMARY KEY,
+      category VARCHAR(50) NOT NULL,
+      title TEXT NOT NULL,
+      question TEXT,
+      diff TEXT,
+      keywords TEXT[] DEFAULT '{}',
+      source_issues JSONB DEFAULT '[]',
+      score FLOAT DEFAULT 0.5,
+      status VARCHAR(20) DEFAULT 'pending',
+      target_date DATE NOT NULL,
+      selected_at TIMESTAMP,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  await pgPool.run('blog', `
+    CREATE INDEX IF NOT EXISTS idx_topic_candidates_date
+    ON blog.topic_candidates (target_date)
+  `);
+
+  await pgPool.run('blog', `
+    CREATE INDEX IF NOT EXISTS idx_topic_candidates_status
+    ON blog.topic_candidates (status)
+  `);
+
+  await pgPool.run('blog', `
+    CREATE TABLE IF NOT EXISTS blog.topic_queue (
+      id SERIAL PRIMARY KEY,
+      category VARCHAR(50) NOT NULL,
+      title TEXT NOT NULL,
+      question TEXT,
+      diff TEXT,
+      reader_problem TEXT,
+      opening_angle TEXT,
+      key_questions TEXT[],
+      closing_angle TEXT,
+      trend_source TEXT,
+      trend_summary TEXT,
+      quality_score FLOAT DEFAULT 0,
+      duplicate_check BOOLEAN DEFAULT FALSE,
+      status VARCHAR(20) DEFAULT 'pending',
+      scheduled_date DATE NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      consumed_at TIMESTAMPTZ
+    )
+  `);
+
+  await pgPool.run('blog', `
+    CREATE INDEX IF NOT EXISTS idx_topic_queue_date_status
+    ON blog.topic_queue (scheduled_date, status)
+  `);
+
+  await pgPool.run('blog', `
     CREATE TABLE IF NOT EXISTS blog.autonomy_decisions (
       id SERIAL PRIMARY KEY,
       decision_date DATE NOT NULL DEFAULT CURRENT_DATE,

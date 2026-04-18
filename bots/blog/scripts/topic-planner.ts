@@ -1,13 +1,14 @@
 /**
- * topic-planner.ts — D-1 주제 사전 선정 (품질 크리틱 + 단일 최우선 주제)
+ * topic-planner.ts — D-1 주제 사전 선정 (품질 크리틱 + 후보 3건 + 단일 최우선 주제)
  *
  * 매일 21:00 KST (TopicPlanner.ex 호출):
  *   1. 카테고리 로테이션으로 내일 카테고리 결정
  *   2. GitHub Trending + HN 이슈 수집
  *   3. LLM으로 해당 카테고리 후보 5건 생성
  *   4. 품질 검토: 30일 중복 체크 + LLM 크리틱 점수화
- *   5. 최고 점수 1건 → blog.topic_queue 저장
- *   6. JSON 출력 (Elixir → 텔레그램 알림)
+ *   5. 상위 3건 → blog.topic_candidates 저장
+ *   6. 최고 점수 1건 → blog.topic_queue 저장
+ *   7. JSON 출력 (Elixir → 텔레그램 알림)
  *
  * 사용법:
  *   tsx scripts/topic-planner.ts --date=2026-04-18 --json
@@ -19,7 +20,8 @@ const env = require('../../../packages/core/lib/env');
 const kst = require('../../../packages/core/lib/kst');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const { callLocalLlm } = require('../../../packages/core/lib/local-llm-client');
-const { loadCategoryPerformanceWeights } = require('../lib/feedback-learner.ts');
+const { ensureBlogCoreSchema } = require('../lib/schema.ts');
+const { ensureSchedule, getScheduleByDate } = require('../lib/schedule.ts');
 
 // ─── 상수 ──────────────────────────────────────────────────────────────────
 
@@ -74,6 +76,8 @@ const CATEGORY_GUIDES = {
   },
 };
 
+const PREPLANNED_CANDIDATE_COUNT = 3;
+
 // ─── 인수 파싱 ─────────────────────────────────────────────────────────────
 
 function parseArgs() {
@@ -95,28 +99,24 @@ function parseArgs() {
 
 async function pickTomorrowCategory(tomorrowDate) {
   try {
+    await ensureSchedule(tomorrowDate);
+    const scheduled = await getScheduleByDate(tomorrowDate);
+    const generalRow = (scheduled || []).find(row => row.post_type === 'general' && row.category);
+    if (generalRow?.category) return generalRow.category;
+
     const row = await pgPool.get('blog',
-      `SELECT category FROM blog.posts
-       WHERE type = 'general' AND DATE(publish_date) < $1
-       ORDER BY publish_date DESC LIMIT 1`,
+      `SELECT category
+       FROM blog.publish_schedule
+       WHERE post_type = 'general'
+         AND publish_date < $1
+         AND category IS NOT NULL
+       ORDER BY publish_date DESC, id DESC
+       LIMIT 1`,
       [tomorrowDate]
     );
     const lastCategory = row?.category || null;
     const lastIndex = lastCategory ? CATEGORIES.indexOf(lastCategory) : -1;
-
-    // 성과 가중치 로드 (실패 시 폴백 — 로테이션만 사용)
-    let perfWeights = {};
-    try { perfWeights = await loadCategoryPerformanceWeights(); } catch {}
-
-    // 가중치 기반 점수 산출: 로테이션 기본 점수 + 성과 가중치 보정
-    const scored = CATEGORIES.map((cat, i) => {
-      const rotationDistance = (i - lastIndex - 1 + CATEGORIES.length) % CATEGORIES.length;
-      const rotationScore = CATEGORIES.length - rotationDistance;  // 가까울수록 높음
-      const perfBoost = (perfWeights[cat] || 1.0) - 1.0;          // 0.0~0.3
-      return { cat, score: rotationScore + perfBoost * 3 };        // 성과 최대 +0.9
-    });
-    scored.sort((a, b) => b.score - a.score);
-    return scored[0].cat;
+    return CATEGORIES[(lastIndex + 1 + CATEGORIES.length) % CATEGORIES.length];
   } catch {
     return CATEGORIES[0];
   }
@@ -334,18 +334,70 @@ async function scoreCandidateWithCritic(candidate, category, recentTitles) {
 
 // ─── DB 저장 ───────────────────────────────────────────────────────────────
 
-async function saveToTopicQueue(category, best, tomorrowDate, trendSource) {
-  const guide = CATEGORY_GUIDES[category] || {};
-
-  const existing = await pgPool.get('blog',
-    `SELECT id FROM blog.topic_queue WHERE scheduled_date = $1 AND status = 'pending'`,
+async function replacePendingTopicPlan(_category, tomorrowDate) {
+  await pgPool.query('blog',
+    `DELETE FROM blog.topic_candidates
+     WHERE target_date = $1
+       AND status = 'pending'`,
     [tomorrowDate]
   );
 
-  if (existing) {
-    console.warn(`[topic-planner] ${tomorrowDate} 이미 topic_queue 존재 (id=${existing.id}) — 덮어쓰기 건너뜀`);
-    return existing.id;
+  await pgPool.query('blog',
+    `DELETE FROM blog.topic_queue
+     WHERE scheduled_date = $1
+       AND status = 'pending'`,
+    [tomorrowDate]
+  );
+}
+
+async function saveToTopicCandidates(category, candidates, tomorrowDate, issues) {
+  const topCandidates = Array.isArray(candidates)
+    ? candidates.slice(0, PREPLANNED_CANDIDATE_COUNT)
+    : [];
+
+  if (!topCandidates.length) return [];
+
+  const sourceIssues = JSON.stringify(
+    (issues || []).slice(0, 12).map(issue => ({
+      title: issue?.title || '',
+      description: issue?.description || '',
+      url: issue?.url || '',
+      stars: issue?.stars || 0,
+      points: issue?.points || 0,
+    }))
+  );
+
+  const saved = [];
+
+  for (const candidate of topCandidates) {
+    const row = await pgPool.get('blog',
+      `INSERT INTO blog.topic_candidates
+         (category, title, question, diff, keywords, source_issues, score, status, target_date)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, 'pending', $8)
+       RETURNING id`,
+      [
+        category,
+        candidate.title,
+        candidate.question || null,
+        candidate.diff || null,
+        candidate.keywords || [],
+        sourceIssues,
+        candidate.quality_score || candidate.score || 0.5,
+        tomorrowDate,
+      ]
+    );
+
+    saved.push({
+      ...candidate,
+      id: row?.id || null,
+    });
   }
+
+  return saved;
+}
+
+async function saveToTopicQueue(category, best, tomorrowDate, trendSource) {
+  const guide = CATEGORY_GUIDES[category] || {};
 
   const row = await pgPool.get('blog',
     `INSERT INTO blog.topic_queue
@@ -376,6 +428,7 @@ async function saveToTopicQueue(category, best, tomorrowDate, trendSource) {
 async function main() {
   const args = parseArgs();
   const tomorrowDate = args.date;
+  await ensureBlogCoreSchema();
 
   // 1. 카테고리 결정
   const category = await pickTomorrowCategory(tomorrowDate);
@@ -419,6 +472,8 @@ async function main() {
   };
 
   // 7. DB 저장
+  await replacePendingTopicPlan(category, tomorrowDate);
+  const savedCandidates = await saveToTopicCandidates(category, scored, tomorrowDate, issues);
   const savedId = await saveToTopicQueue(category, best, tomorrowDate, trendSource);
 
   const output = {
@@ -430,9 +485,15 @@ async function main() {
     quality_score: best.quality_score,
     duplicate_check: best.duplicate_check,
     trend_source: trendSource,
-    candidates_count: rawCandidates.length,
+    candidates_count: savedCandidates.length,
     passed_candidates: scored.length,
     saved_id: savedId || null,
+    candidates: savedCandidates.map(candidate => ({
+      id: candidate.id,
+      title: candidate.title,
+      question: candidate.question || '',
+      quality_score: candidate.quality_score || candidate.score || 0,
+    })),
     sources: { github: githubItems.length, hn: hnItems.length },
   };
 
@@ -441,7 +502,7 @@ async function main() {
   } else {
     console.log(`[topic-planner] ✅ 내일 주제 확정: [${category}] ${best.title}`);
     console.log(`  품질 점수: ${best.quality_score} / 중복 통과: ${best.duplicate_check}`);
-    console.log(`  후보 ${rawCandidates.length}건 → 통과 ${scored.length}건`);
+    console.log(`  후보 ${rawCandidates.length}건 → 통과 ${scored.length}건 → 저장 ${savedCandidates.length}건`);
   }
 
   return output;
