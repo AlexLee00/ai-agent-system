@@ -49,6 +49,19 @@ defmodule Luna.V2.LLM.SelectorTest do
     def hub_shadow?, do: false
   end
 
+  defmodule TestRoutingLog do
+    def record(_params), do: :ok
+    def recent_failure_rate(_agent_name), do: 0.0
+  end
+
+  defmodule TestCostTracker do
+    def track_tokens(entry), do: {:ok, Map.put(entry, :cost_usd, 0.0)}
+  end
+
+  defmodule TestRecommender do
+    def recommend(_agent_name, _context), do: {:error, :no_recommendation}
+  end
+
   defmodule TestSelector do
     use Jay.Core.LLM.Selector, policy_module: Luna.V2.LLM.SelectorTest.TestPolicy
   end
