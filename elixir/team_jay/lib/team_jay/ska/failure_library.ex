@@ -47,6 +47,11 @@ defmodule TeamJay.Ska.FailureLibrary do
     GenServer.cast(__MODULE__, {:ingest_recovery, type, strategy, agent, outcome, metadata})
   end
 
+  @doc "MAPE-K 사이클 결과를 L2/L3에 축적 (MapeKLoop 호출)"
+  def ingest_mapek_cycle(analysis, plan) do
+    GenServer.cast(__MODULE__, {:ingest_mapek, analysis, plan})
+  end
+
   @doc "누적 통계 조회"
   def stats do
     GenServer.call(__MODULE__, :stats)
@@ -83,6 +88,11 @@ defmodule TeamJay.Ska.FailureLibrary do
   @impl true
   def handle_cast({:ingest_recovery, type, strategy, agent, outcome, metadata}, state) do
     Task.start(fn -> store_recovery(type, strategy, agent, outcome, metadata) end)
+    {:noreply, bump(state)}
+  end
+
+  def handle_cast({:ingest_mapek, analysis, plan}, state) do
+    Task.start(fn -> store_mapek_cycle(analysis, plan) end)
     {:noreply, bump(state)}
   end
 
@@ -204,6 +214,23 @@ defmodule TeamJay.Ska.FailureLibrary do
     Logger.info("[FailureLibrary] episodic → semantic 통합 완료 (stub: consolidate 엔드포인트 미구현)")
   rescue
     e -> Logger.warning("[FailureLibrary] consolidate 예외: #{inspect(e)}")
+  end
+
+  defp store_mapek_cycle(analysis, plan) do
+    summary = """
+    MAPE-K 사이클: 활성 스킬 #{analysis[:total_skills_active] || 0}개
+    성공률 하락 #{length(analysis[:low_success_skills] || [])}개
+    고지연 #{length(analysis[:high_latency_skills] || [])}개
+    조치 필요 #{length(plan[:actions] || [])}건
+    분석 시각: #{analysis[:analyzed_at]}
+    """
+
+    # L2: 사이클 서머리 저장
+    remember("episodic", summary, ["mapek", "cycle", "skill_performance"], 0.7, %{
+      event: :mapek_cycle,
+      analysis: analysis,
+      plan: plan
+    })
   end
 
   defp bump(state) do
