@@ -1,11 +1,14 @@
 defmodule Luna.V2.Supervisor do
   @moduledoc """
-  Luna V2 OTP Supervisor — 투자팀 자율 에이전트 트리 관리.
+  Luna V2 OTP Supervisor — 투자팀 완전자율 에이전트 트리 관리.
 
   Kill Switch(환경변수) 기반 단계적 기동:
-    Phase 1: PubSub + MAPE-K Monitor (항상 ON, 시장 감시)
-    Phase 2: Commander (Jido.AI.Agent) — LUNA_COMMANDER_ENABLED=true
-    Phase 3: MAPE-K 전체 루프 — LUNA_MAPEK_ENABLED=true
+    Phase 1: PubSub + MAPE-K Monitor (항상 ON)
+    Phase 2: MAPE-K Knowledge + 전체 루프 — LUNA_MAPEK_ENABLED=true
+    Phase 3: Strategy Registry — LUNA_V2_ENABLED=true
+    Phase 4: Validation Engine — LUNA_VALIDATION_ENABLED=true
+    Phase 5: Prediction Engine — LUNA_PREDICTION_ENABLED=true
+    Phase 6: MapeK Loop (MAPE-K 완전자율) — LUNA_MAPEK_ENABLED=true
   """
 
   use Supervisor
@@ -19,11 +22,18 @@ defmodule Luna.V2.Supervisor do
 
   def init(_opts) do
     if KillSwitch.v2_enabled?() do
-      children = core_children() ++ commander_children() ++ mapek_children()
-      Logger.info("[루나V2] 수퍼바이저 기동 — #{length(children)}개 자식 프로세스")
+      children =
+        core_children() ++
+        mapek_children() ++
+        registry_children() ++
+        validation_children() ++
+        prediction_children() ++
+        mapek_loop_children()
+
+      Logger.info("[루나V2] 수퍼바이저 기동 — #{length(children)}개 자식")
       Supervisor.init(children, strategy: :one_for_one, max_restarts: 5, max_seconds: 60)
     else
-      Logger.info("[루나V2] V2 비활성 — 빈 수퍼바이저 트리")
+      Logger.info("[루나V2] V2 비활성 — 빈 수퍼바이저")
       Supervisor.init([], strategy: :one_for_one)
     end
   end
@@ -32,18 +42,41 @@ defmodule Luna.V2.Supervisor do
     [{Phoenix.PubSub, name: Luna.V2.PubSub}]
   end
 
-  defp commander_children do
-    # Commander는 Jido.AI.Agent 모듈 — GenServer로 직접 기동하지 않음
-    # 향후 AgentServer 패턴 도입 시 활성화
-    []
-  end
-
   defp mapek_children do
     if KillSwitch.mapek_enabled?() do
-      [
-        Luna.V2.MAPEK.Monitor,
-        Luna.V2.MAPEK.Knowledge,
-      ]
+      [Luna.V2.MAPEK.Monitor, Luna.V2.MAPEK.Knowledge]
+    else
+      [Luna.V2.MAPEK.Monitor]  # Monitor는 항상 기동 (시장 감시)
+    end
+  end
+
+  defp registry_children do
+    if KillSwitch.strategy_registry_enabled?() do
+      [Luna.V2.Registry.StrategyRegistry]
+    else
+      []
+    end
+  end
+
+  defp validation_children do
+    if KillSwitch.validation_enabled?() do
+      [Luna.V2.Validation.Engine]
+    else
+      []
+    end
+  end
+
+  defp prediction_children do
+    if KillSwitch.prediction_enabled?() do
+      [Luna.V2.Prediction.Engine]
+    else
+      []
+    end
+  end
+
+  defp mapek_loop_children do
+    if KillSwitch.mapek_enabled?() and KillSwitch.auto_mode?() do
+      [Luna.V2.MapeKLoop]
     else
       []
     end
