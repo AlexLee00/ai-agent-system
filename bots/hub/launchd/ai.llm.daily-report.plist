@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.llm.daily-report</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/tsx</string>
+    <string>bots/hub/scripts/llm-daily-report.ts</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/alexlee/projects/ai-agent-system</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>HOME</key>
+    <string>/Users/alexlee</string>
+    <key>HUB_BASE_URL</key>
+    <string>http://localhost:7788</string>
+  </dict>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>6</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/llm-daily-report.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/tmp/llm-daily-report.err.log</string>
+</dict>
+</plist>
