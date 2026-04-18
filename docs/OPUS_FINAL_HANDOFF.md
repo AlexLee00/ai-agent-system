@@ -1,3 +1,92 @@
+# 세션 인수인계 — 2026-04-18 (CODEX_CLAUDE_EVOLUTION Phase A+N+D+T 완료)
+
+> 세션 범위: CODEX_CLAUDE_EVOLUTION Phase A (Agents) + Phase N (Notifier ★) + Phase D (Doctor Verify Loop) + Phase T (Telegram)
+
+## 완료 요약 ✅
+
+### Phase A — Reviewer/Guardian/Builder 3 에이전트 완전 구현
+
+- **reviewer.ts** (~260줄): `analyzeChanges`/`testCoverageDelta`/TypeScript 지원/Telegram 보고
+  - Kill Switch: `CLAUDE_REVIEWER_ENABLED=true` (기본 false)
+- **guardian.ts** (~250줄): 6계층 보안 완전 구현
+  - L1 gitignore / L2 커밋 시크릿 스캔 / L3 의심 패키지 / L4 npm audit / L5 파일권한 / L6 네트워크
+  - Kill Switch: `CLAUDE_GUARDIAN_ENABLED=true` (기본 false)
+- **builder.ts** (~230줄): TypeScript + Elixir(mix compile) + Next.js 멀티 빌드
+  - 6개 빌드 플랜: worker-web/packages-core/elixir-team-jay/elixir-investment/elixir-darwin/elixir-sigma
+  - Kill Switch: `CLAUDE_BUILDER_ENABLED=true` (기본 false)
+- **launchd plist 3개** 신설 (reviewer 30분/guardian 03:00 KST/builder 1시간)
+
+### Phase N ★ — 코덱스 구현 계획 알림 브로드캐스터 (마스터 최우선 요구사항)
+
+- **codex-plan-notifier.ts** (lib/): 핵심 구현
+  - 5분 주기로 `ps aux` 기반 claude CLI 프로세스 감지
+  - 프롬프트 파일에서 Phase 목록/예상 파일/Kill Switch 파싱
+  - 4종 알림: 시작/진행/완료/정체(30분 이상 커밋 없을 때)
+  - Rate Limit 20건/시간 + 1분 내 중복 차단
+- **Shadow 모드** 기본 ON (`CLAUDE_NOTIFIER_SHADOW=false` 시 실제 발송)
+- **Kill Switch**: `CLAUDE_CODEX_NOTIFIER_ENABLED=true` (기본 false)
+- **launchd plist**: `ai.claude.codex-notifier.plist` (KeepAlive=true 상주)
+
+**마스터가 기대하는 알림 예시:**
+```
+📋 코덱스 Phase A 시작
+🎯 Agents — 3개 스켈레톤 완전 구현
+⏰ 예상 소요: 2~3일
+```
+
+### Phase A+C — Commander 17 핸들러
+
+7개 신규: `run_review`/`run_guardian`/`run_builder`/`run_full_quality`/`test_codex_notifier`/`show_codex_status`/`run_doctor_verify`
+
+### Phase D — Doctor Verify Loop
+
+- **executeWithVerifyLoop**: 최대 3회 재시도, 지수 백오프 (5s→15s→45s)
+- **verifyRecovery**: 5종 검증 (launchd/git stash/lock file/npm audit/파일권한)
+- **Migration 004**: `claude_doctor_recovery_log` 테이블 (reservation 스키마)
+- 3회 모두 실패 시 Telegram urgent 알림
+
+### Phase T — Telegram 5채널 리포터
+
+- **telegram-reporter.ts**: `urgent`(항상 활성)/`hourly`/`daily`/`weekly`/`meta` 5채널
+- **Kill Switch**: `CLAUDE_TELEGRAM_ENHANCED=true` (기본 false, urgent 제외)
+- **launchd plist 2개**: daily(06:30 KST) + weekly(일요일 19:00 KST)
+
+### 커밋
+```
+99c6400c feat(claude): Phase A+N+D+T 완료 — 클로드팀 완전자율 운영 + 구현 계획 알림 시스템
+```
+
+### 마스터 다음 액션
+
+1. **DB 마이그레이션** (OPS에서 실행):
+   ```sql
+   -- bots/claude/migrations/004_claude_doctor_recovery_log.sql 실행
+   ```
+
+2. **launchd plist OPS 설치** (총 6개 신규):
+   ```bash
+   for p in reviewer guardian builder codex-notifier daily-report weekly-report; do
+     launchctl load ~/Library/LaunchAgents/ai.claude.$p.plist
+   done
+   ```
+
+3. **Phase N Shadow 모드 3일 검증 후 활성화**:
+   ```bash
+   # plist에서 Kill Switch 수정
+   CLAUDE_CODEX_NOTIFIER_ENABLED=true
+   CLAUDE_NOTIFIER_SHADOW=false  # 실제 발송
+   ```
+
+4. **단계별 Kill Switch 활성화**:
+   - `CLAUDE_REVIEWER_ENABLED=true` → 코드 리뷰 자동화
+   - `CLAUDE_GUARDIAN_ENABLED=true` → 6계층 보안 스캔
+   - `CLAUDE_BUILDER_ENABLED=true` → 빌드 자동화
+   - `CLAUDE_TELEGRAM_ENHANCED=true` → 5채널 리포트
+
+5. **남은 Phase**: Phase C (Commander NLP 확장 완료) → 이미 완성됨 (17 핸들러)
+
+---
+
 # 세션 인수인계 — 2026-04-18 (CODEX_DARWIN_EVOLUTION Phase O+M 완료)
 
 > 세션 범위: CODEX_DARWIN_EVOLUTION Phase O (Operations) + Phase M (Monitoring)

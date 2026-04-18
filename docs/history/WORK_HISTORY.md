@@ -4,6 +4,24 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-04-18: CODEX_CLAUDE_EVOLUTION Phase A+N+D+T 완료 — 클로드팀 완전자율 운영 + 구현 계획 알림
+
+- **Phase A** (Agents): Reviewer/Guardian/Builder 3 에이전트 완전 구현
+  - reviewer.ts: analyzeChanges + testCoverageDelta + TypeScript 지원 (CLAUDE_REVIEWER_ENABLED)
+  - guardian.ts: 6계층 보안 (gitignore→시크릿→패키지→취약점→파일권한→네트워크)
+  - builder.ts: 6개 빌드 플랜 (Next.js/TS/Elixir 통합)
+  - launchd plist 3개 신설
+- **Phase N ★** (Notifier, 마스터 최우선): 코덱스 구현 계획 알림 브로드캐스터
+  - codex-plan-notifier.ts: 5분 주기 프로세스 감지 + Phase 파싱 + Shadow 알림
+  - ai.claude.codex-notifier.plist: KeepAlive=true 상주 데몬
+  - Rate Limit 20건/시간 + 중복 차단
+- **Phase A+C** (Commander): 17 핸들러 체계 (7개 신규 추가)
+- **Phase D** (Doctor Verify Loop): executeWithVerifyLoop 3회 재시도 + 검증 로직 5종
+  - Migration 004: claude_doctor_recovery_log 테이블
+- **Phase T** (Telegram): 5채널 리포터 (urgent 항상 활성 + 4채널 Kill Switch)
+  - 일일 06:30 KST + 주간 일요일 19:00 KST launchd 자동화
+- 커밋: `99c6400c`
+
 ## 2026-04-18: CODEX_LUNA_REMODEL Phase 1~3 완료 — 루나팀 LLM Hub 라우팅 + Elixir V2 + MAPE-K
 
 - **Phase 1**: Investment LLM Hub 라우팅
