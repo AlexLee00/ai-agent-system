@@ -75,7 +75,7 @@ defmodule Luna.V2.Rag.MultiSourceRetriever do
   defp search_by_vector(embedding, filter, limit) do
     vec_str = "[" <> Enum.join(Enum.map(embedding, &Float.to_string/1), ",") <> "]"
 
-    {where_clauses, params} = build_filters(filter, [vec_str])
+    {where_clauses, params, _} = build_filters(filter, [vec_str])
     where_sql = if where_clauses == [], do: "", else: "WHERE " <> Enum.join(where_clauses, " AND ")
 
     sql = """
@@ -103,7 +103,7 @@ defmodule Luna.V2.Rag.MultiSourceRetriever do
 
   defp build_filters(filter, base_params) do
     param_idx = length(base_params) + 1
-    {clauses, params, _idx} =
+    {clauses, params, idx} =
       Enum.reduce([
         {:category, filter[:category]},
         {:symbol,   filter[:symbol]},
@@ -119,7 +119,7 @@ defmodule Luna.V2.Rag.MultiSourceRetriever do
             {clauses, params, idx}
           end
       end)
-    {Enum.reverse(clauses), params, _idx}
+    {Enum.reverse(clauses), params, idx}
   end
 
   defp valid_value?(:category, val), do: to_string(val) in @valid_categories
