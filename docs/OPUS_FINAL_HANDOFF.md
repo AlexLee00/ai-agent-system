@@ -1,3 +1,59 @@
+# 세션 인수인계 — 2026-04-18 (CODEX_DARWIN_REMODEL 재검증 완료)
+
+> 세션 범위: CODEX_DARWIN_REMODEL Exit Criteria 전수 점검 — 335 tests, 0 failures 재확인
+
+## 완료 요약 (CODEX_DARWIN_REMODEL 재검증) ✅
+
+### Exit Criteria 전수 점검 결과
+
+**코드 / 구조**
+- `bots/darwin/elixir/` 독립 프로젝트 — `mix compile --warnings-as-errors` 경고 0건 ✅
+- 63개 .ex 모듈 (목표 40+ 초과) — `bots/darwin/elixir/lib/darwin/v2/` ✅
+- `elixir/team_jay/lib/team_jay/darwin/` 제거 완료 ✅
+- 9 표준 md 완성 (`bots/darwin/docs/standards/`) ✅
+
+**자율 10요소**
+- `Darwin.V2.Commander` (Jido.AI.Agent) ✅
+- `Darwin.V2.LLM.{Selector, Recommender, RoutingLog, CostTracker, HubClient}` ✅
+- `Darwin.V2.{Reflexion, SelfRAG, ESPL, Principle.Loader}` ✅
+- `Darwin.V2.Memory.{L1, L2}` + pgvector 테이블 ✅
+- `Darwin.V2.{ShadowRunner, ShadowCompare, RollbackScheduler, MetaReview}` ✅
+
+**신규 역량 (최신 연구 반영)**
+- `Darwin.V2.Planner` (AI-Researcher Resource Analyst 패턴) ✅
+- 9 Skills (PaperSynthesis/Replication/ResourceAnalyst/ExperimentDesign/VlmFeedback/TreeSearch 등) ✅
+- `Darwin.V2.MCP.{Client, Server, Auth}` ✅
+- `Darwin.V2.Sensor.{ArxivRss, HackerNews, Reddit, OpenReview}` ✅
+
+**인프라**
+- 6개 migrations (목표 5+ 초과) ✅
+- `ai.darwin.daily.shadow.plist` launchd 등록 ✅
+
+**품질 (최종)**
+- **335 tests, 0 failures** (11 excluded) ✅
+- `mix compile --warnings-as-errors` 통과 ✅
+
+### Kill Switch 현재 상태
+```
+DARWIN_V2_ENABLED=false                          (OPS 활성화 대기)
+DARWIN_SHADOW_MODE=false                         (Shadow 비교 — OPS 설정 후 활성화)
+DARWIN_TIER2_AUTO_APPLY=false                    (main 적용 차단)
+DARWIN_MCP_SERVER_ENABLED=false                  (외부 노출 차단)
+DARWIN_GEPA_ENABLED=false                        (ESPL 차단)
+DARWIN_SELF_RAG_ENABLED=false                    (SelfRAG 차단)
+DARWIN_PRINCIPLE_SEMANTIC_CHECK_ENABLED=false    (의미 critique 차단)
+DARWIN_HTTP_PORT=4020
+DARWIN_LLM_DAILY_BUDGET_USD=10.00
+```
+
+### 다음 단계 (OPS 활성화)
+1. **DB 마이그레이션 OPS 적용**: `mix darwin.migrate` (또는 SQL 직접 실행)
+2. **Shadow Mode 가동**: `DARWIN_V2_ENABLED=true` + `DARWIN_SHADOW_MODE=true`
+3. **Day 7 match_score 95%+ 확인** → Tier 1 승급 판정
+4. **단계적 Kill Switch 해제**: `DARWIN_SELF_RAG_ENABLED=true` → `DARWIN_GEPA_ENABLED=true` → `DARWIN_TIER2_AUTO_APPLY=true` (L5 달성 후)
+
+---
+
 # 세션 인수인계 — 2026-04-18 (CODEX_LUNA_REMODEL 전체 완료)
 
 > 세션 범위: 루나팀 완전자율 자동매매 에이전트 진화 — Phase 1~5 전체 구현 완료
