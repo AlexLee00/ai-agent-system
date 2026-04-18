@@ -62,7 +62,10 @@ defmodule TeamJay.Teams.SkaSupervisor do
       TeamJay.Ska.Analytics.Forecast,
       TeamJay.Ska.Analytics.Dashboard,
       TeamJay.Ska.Analytics.MarketingConnector,
-      TeamJay.Ska.Analytics.OperationsRag
+      TeamJay.Ska.Analytics.OperationsRag,
+      # Phase 4: MAPE-K + 성과 추적
+      TeamJay.Ska.SkillPerformanceTracker,
+      TeamJay.Ska.MapeKLoop
     ]
 
     # PortAgent 래퍼 (Node.js 스크립트!)
