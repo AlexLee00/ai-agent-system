@@ -1,3 +1,76 @@
+# 세션 인수인계 — 2026-04-18 (CODEX_LUNA_REMODEL Phase 1~3 완료)
+
+> 세션 범위: 루나팀 완전자율 자동매매 에이전트 진화 — LLM Hub 라우팅 + Luna.V2 Elixir + MAPE-K
+
+## 완료 요약 (CODEX_LUNA_REMODEL)
+
+### Phase 1 — Investment LLM Hub 라우팅 ✅
+- `bots/investment/shared/hub-llm-client.ts` 신설
+  - Hub /hub/llm/call HTTP 클라이언트 (TypeScript)
+  - Kill Switch: `INVESTMENT_LLM_HUB_ENABLED` / `INVESTMENT_LLM_HUB_SHADOW`
+  - Shadow Mode: Hub 호출 후 직접 호출 결과와 신호 비교 로깅
+  - `investment.llm_routing_log` DB 저장 (비동기, 실패 무시)
+  - callerTeam: "investment", 에이전트별 abstract model 매핑
+- `bots/investment/shared/llm-client.ts` 수정
+  - `callLLM()` → Hub 경유 모드 추가 (Hub직접/Shadow/직접 3모드)
+  - Hub 실패 시 자동 폴백 (직접 호출)
+  - `_callDirect()` 내부 함수로 분리
+- `bots/investment/migrations/20260418_llm_routing_log.sql` 신설
+- 롤백 포인트: `9a18079b` (pre: CODEX_LUNA_REMODEL)
+
+### Phase 2 — Luna.V2 Elixir 앱 + MAPE-K ✅
+- `bots/investment/elixir/` 신설 (Darwin/Sigma 패턴)
+  - `mix.exs` (team_jay 위임 빌드)
+  - `config/config.exs` (Kill Switch 환경변수 6개)
+- `Luna.V2.Supervisor` — Kill Switch 기반 단계적 기동
+- `Luna.V2.KillSwitch` — v2/commander/mapek/shadow/hub_routing
+- `Luna.V2.Commander` — Jido.AI.Agent (5개 Skills, system_prompt)
+- **5개 Skills**:
+  - `MarketRegimeDetector` — trending_bull/bear/ranging/volatile 분류
+  - `PortfolioMonitor` — 포지션 현황 + 손익 요약
+  - `RiskGovernor` — 단일 포지션/일일 손실 한도 점검
+  - `SignalAggregator` — 가중 평균 신호 점수 계산
+  - `FeedbackReporter` — MAPE-K Knowledge 저장 + 텔레그램 알림
+- **MAPE-K 모듈**:
+  - `Luna.V2.MAPEK.Monitor` — 10분 감시 (stale 포지션, 일일 손실 80% 임박)
+  - `Luna.V2.MAPEK.Knowledge` — 거래 결과/리스크 위반 Knowledge 저장
+- `bots/investment/migrations/20260418_mapek_knowledge.sql` (mapek_knowledge + market_regime_snapshots)
+
+### Phase 3 — team_jay 통합 + launchd ✅
+- `elixir/team_jay/mix.exs` — luna lib/test 경로 추가
+- `elixir/team_jay/lib/team_jay/application.ex` — `Luna.V2.Supervisor` 등록
+- `elixir/team_jay/lib/mix/tasks/luna.migrate.ex` — Mix task
+- `bots/investment/launchd/ai.luna.commander.plist` — Kill Switch ALL OFF (안전 시작)
+
+### 검증 결과 ✅
+- `mix compile --warnings-as-errors` 경고 0건
+- **567 tests, 0 failures** (19 excluded) — 전체 통합 테스트
+
+### Kill Switch 현재 상태 (기본 ALL OFF)
+```
+LUNA_V2_ENABLED=false           ← Luna.V2.Supervisor 기동
+LUNA_COMMANDER_ENABLED=false    ← Commander 기동 (향후)
+LUNA_MAPEK_ENABLED=false        ← MAPE-K Monitor + Knowledge
+LUNA_LLM_HUB_ENABLED=false      ← Hub LLM 라우팅 활성
+LUNA_LLM_HUB_SHADOW=false       ← Shadow 비교 모드
+INVESTMENT_LLM_HUB_ENABLED=false  ← TS 레이어 Hub 활성
+INVESTMENT_LLM_HUB_SHADOW=true    ← TS Shadow 비교 ON (데이터 수집)
+```
+
+### 다음 세션 즉시 착수 항목
+1. **DB 마이그레이션 실행** (OPS에서): `mix luna.migrate`
+2. **Shadow 가동 시작**:
+   - `INVESTMENT_LLM_HUB_SHADOW=true` 이미 launchd plist에 설정
+   - 3~7일 관찰 후 Hub 일치율 확인
+3. **MAPE-K 활성화**:
+   - `LUNA_V2_ENABLED=true`, `LUNA_MAPEK_ENABLED=true`
+4. **다음 구현 대상** (CODEX_LUNA_REMODEL 미완성):
+   - Phase 4: TradingView WebSocket 실시간 피드 (dovudo 패턴)
+   - Phase 5: Validation Engine + Strategy Registry
+   - Phase 6: Chronos 승격 (Layer 2~3 활성화)
+
+---
+
 # 세션 인수인계 — 2026-04-18 (CODEX_LLM_ROUTING_REFACTOR Phase 1~5 전체 완료)
 
 > 세션 범위: LLM 라우팅 리팩토링 — Hub LLM 엔드포인트 신설 + Sigma/Darwin Selector Hub 경유 전환 + 모니터링 + 7차원 Recommender

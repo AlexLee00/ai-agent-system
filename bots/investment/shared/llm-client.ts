@@ -241,6 +241,20 @@ export function parseJSON(text) {
   try { return JSON.parse(clean); } catch { return null; }
 }
 
+// ─── Hub LLM 클라이언트 (지연 로드) ─────────────────────────────────
+
+let _hubLLM = null;
+function getHubLLM() {
+  if (!_hubLLM) {
+    try {
+      _hubLLM = require('./hub-llm-client.ts');
+    } catch {
+      _hubLLM = { isHubEnabled: () => false, isHubShadow: () => false, callViaHub: async () => ({ ok: false }) };
+    }
+  }
+  return _hubLLM;
+}
+
 // ─── 통합 LLM 호출 ───────────────────────────────────────────────────
 
 /**
@@ -258,6 +272,42 @@ export async function callLLM(agentName, systemPrompt, userPrompt, maxTokens = 5
     const r = _billingGuard.getBlockReason(guardScope);
     throw new Error(`🚨 LLM 긴급 차단 중: ${r?.reason || '알 수 없음'} — 마스터 해제 필요`);
   }
+
+  const hub = getHubLLM();
+  const hubEnabled = hub.isHubEnabled();
+  const hubShadow  = hub.isHubShadow();
+
+  // ── Hub 직접 활성 모드 (INVESTMENT_LLM_HUB_ENABLED=true, Shadow=false) ──
+  if (hubEnabled && !hubShadow) {
+    const result = await hub.callViaHub(agentName, systemPrompt, userPrompt, {
+      maxTokens,
+      symbol:  options.symbol,
+      market:  options.market || getCurrentInvestmentMarket(),
+      urgency: agentName === 'luna' ? 'high' : 'medium',
+    });
+    if (result.ok) return result.text;
+    // Hub 실패 시 직접 호출로 폴백
+    console.warn(`[llm-client] Hub 실패(${result.error}) → 직접 호출 폴백`);
+  }
+
+  // ── 직접 호출 (기존 로직) ──
+  const directText = await _callDirect(agentName, systemPrompt, userPrompt, maxTokens, options, guardScope);
+
+  // ── Shadow Mode: 직접 결과로 Hub 비교 로그 ──
+  if (hubShadow) {
+    hub.callViaHub(agentName, systemPrompt, userPrompt, {
+      maxTokens,
+      symbol:        options.symbol,
+      market:        options.market || getCurrentInvestmentMarket(),
+      urgency:       agentName === 'luna' ? 'high' : 'medium',
+      shadowCompare: directText,
+    }).catch(() => {});
+  }
+
+  return directText;
+}
+
+async function _callDirect(agentName, systemPrompt, userPrompt, maxTokens, options, guardScope) {
   const registryAgent = await getRegistryAgent(agentName).catch(() => null);
   const agentPolicy = selectLLMPolicy('investment.agent_policy', {
     agentName,

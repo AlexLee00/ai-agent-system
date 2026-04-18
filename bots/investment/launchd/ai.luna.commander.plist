@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.luna.commander</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-c</string>
+    <string>cd /opt/ai-agent-system/elixir/team_jay &amp;&amp; mix run --no-halt 2&gt;&gt;/tmp/ai.luna.commander.err.log</string>
+  </array>
+
+  <!-- KST 기준 환경변수 (UTC 변환 없음) -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>MIX_ENV</key>
+    <string>prod</string>
+
+    <!-- Luna V2 Kill Switches (기본 ALL OFF, 단계적 활성화) -->
+    <key>LUNA_V2_ENABLED</key>
+    <string>true</string>
+    <key>LUNA_COMMANDER_ENABLED</key>
+    <string>false</string>
+    <key>LUNA_MAPEK_ENABLED</key>
+    <string>false</string>
+
+    <!-- LLM Hub 라우팅 (Shadow 먼저, 검증 후 ENABLED=true) -->
+    <key>LUNA_LLM_HUB_ENABLED</key>
+    <string>false</string>
+    <key>LUNA_LLM_HUB_SHADOW</key>
+    <string>true</string>
+    <key>INVESTMENT_LLM_HUB_ENABLED</key>
+    <string>false</string>
+    <key>INVESTMENT_LLM_HUB_SHADOW</key>
+    <string>true</string>
+
+    <key>LUNA_HTTP_PORT</key>
+    <string>4030</string>
+  </dict>
+
+  <key>StandardErrorPath</key>
+  <string>/tmp/ai.luna.commander.err.log</string>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/ai.luna.commander.out.log</string>
+
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>ThrottleInterval</key>
+  <integer>60</integer>
+</dict>
+</plist>
