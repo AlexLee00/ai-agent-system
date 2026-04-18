@@ -36,7 +36,7 @@ defmodule TeamJay.Ska.Skill.DetectSessionExpiry do
         String.contains?(html, "로그인이 필요") ->
           %{status: :expired, reason: "login_required_message"}
 
-        byte_size(html) < 500 and status_code == 200 ->
+        params[:response_html] != nil and byte_size(html) < 500 and status_code == 200 ->
           %{status: :suspicious, reason: "suspicious_short_response"}
 
         true ->

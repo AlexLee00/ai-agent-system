@@ -18,15 +18,25 @@ defmodule TeamJay.Ska.SkillRegistryTest do
   end
 
   setup do
-    # 각 테스트에서 독립적인 SkillRegistry 프로세스를 시작
-    # ETS 테이블 이름 충돌 방지를 위해 기존 프로세스 종료
-    case Process.whereis(SkillRegistry) do
-      nil -> :ok
-      pid -> GenServer.stop(pid)
-    end
+    # 실행 중인 SkillRegistry를 사용하거나 없으면 새로 시작
+    # 슈퍼바이저가 즉시 재시작할 수 있으므로 {:already_started, pid} 도 허용
+    pid =
+      case SkillRegistry.start_link([]) do
+        {:ok, new_pid} ->
+          new_pid
 
-    {:ok, pid} = SkillRegistry.start_link([])
-    on_exit(fn -> GenServer.stop(pid) end)
+        {:error, {:already_started, existing_pid}} ->
+          existing_pid
+      end
+
+    on_exit(fn ->
+      try do
+        if Process.alive?(pid), do: GenServer.stop(pid)
+      catch
+        :exit, _ -> :ok
+      end
+    end)
+
     {:ok, %{registry: pid}}
   end
 
