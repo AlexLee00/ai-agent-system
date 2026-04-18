@@ -1,3 +1,59 @@
+# 세션 인수인계 — 2026-04-18 (CODEX_DARWIN_EVOLUTION Phase O+M 완료)
+
+> 세션 범위: CODEX_DARWIN_EVOLUTION Phase O (Operations) + Phase M (Monitoring)
+
+## 완료 요약 ✅
+
+### Phase O — Telegram 5채널 + Daily/Weekly 리포트 + launchd
+
+- `Darwin.V2.TelegramReporter` 신설 (5채널 패턴, 루나팀 적용)
+  - urgent: 사이클 실패 / 원칙 위반 / 승격 후보 즉시 알림
+  - daily: 06:30 KST 일일 리포트 (`darwin-daily-report.ts` 호출)
+  - weekly: 일요일 19:00 KST 주간 리뷰 (`darwin-weekly-review.ts` 호출)
+  - meta: ESPL/Self-Rewarding/Recommender 변화 알림
+  - Kill Switch: `DARWIN_TELEGRAM_ENHANCED_ENABLED=true`
+- `bots/darwin/scripts/darwin-daily-report.ts`: DB 집계 → Hub 경유 Telegram 발송
+- `bots/darwin/scripts/darwin-weekly-review.ts`: 주간 사이클/DPO/Shadow 통계 발송
+- `bots/darwin/launchd/ai.darwin.daily-report.plist`: 06:30 KST 일일 자동 실행 (OPS 수동 설치)
+- `bots/darwin/launchd/ai.darwin.weekly-review.plist`: 일요일 19:00 KST 자동 실행 (OPS 수동 설치)
+
+### Phase M — 통합 모니터링 + ShadowCompare 확장
+
+- `Darwin.V2.Monitoring` 신설: `daily_summary/0`, `weekly_summary/0` 집계 API
+- `Darwin.V2.ShadowCompare.weekly_aggregate/0` 추가: V1 vs V2 주간 누적 집계
+- Migration 11: `darwin_autonomy_dashboard` Materialized View (30일 사이클 집계)
+
+### 최종 테스트 현황
+```
+386 tests, 0 failures (16 excluded)
+컴파일: 433 files, 0 warnings (--warnings-as-errors 통과)
+```
+
+### Kill Switch 현재 상태 (Phase O+M 완료)
+```
+DARWIN_MAPEK_ENABLED=false              (활성화 가능)
+DARWIN_SELF_REWARDING_ENABLED=false     (활성화 가능)
+DARWIN_AGENTIC_RAG_ENABLED=false        (활성화 가능)
+DARWIN_RESEARCH_REGISTRY_ENABLED=false  (활성화 가능)
+DARWIN_TELEGRAM_ENHANCED_ENABLED=false  (Phase O 완료 — 활성화 가능)
+DARWIN_AUTO_PROMOTION_ENABLED=false     (마스터 승인 필요)
+```
+
+### 마스터 다음 액션
+1. OPS DB 마이그레이션 실행 (migrations 08~11)
+2. launchd plist 2개 OPS에 설치:
+   ```
+   launchctl load ~/Library/LaunchAgents/ai.darwin.daily-report.plist
+   launchctl load ~/Library/LaunchAgents/ai.darwin.weekly-review.plist
+   ```
+3. Kill Switch 단계별 활성화:
+   - `DARWIN_SELF_REWARDING_ENABLED=true` → Self-Rewarding DPO 가동
+   - `DARWIN_AGENTIC_RAG_ENABLED=true` → Agentic RAG 가동
+   - `DARWIN_TELEGRAM_ENHANCED_ENABLED=true` → 5채널 리포트 가동
+4. 1주 Shadow Mode 관찰 후 `DARWIN_MAPEK_ENABLED=true` 검토
+
+---
+
 # 세션 인수인계 — 2026-04-18 (CODEX_DARWIN_EVOLUTION Phase S+A+R2 완료)
 
 > 세션 범위: CODEX_DARWIN_EVOLUTION Phase S (Self-Rewarding) + Phase A (Agentic RAG) + Phase R2 (Research Registry)
