@@ -83,10 +83,24 @@ defmodule TeamJay.Ska.SkillRegistry do
 
   @impl true
   def init(_opts) do
-    :ets.new(@table, [:set, :protected, :named_table, read_concurrency: true])
-    register_builtin_skills()
-    Logger.info("[SkillRegistry] 시작 (v#{@version}) — 내장 스킬 #{length(builtin_skills())}개 등록")
-    {:ok, %__MODULE__{skills: %{}, stats: %{}, started_at: DateTime.utc_now()}}
+    # named ETS 테이블 생성 — 이미 존재하면 기존 것 사용
+    try do
+      :ets.new(@table, [:set, :public, :named_table, read_concurrency: true])
+    catch
+      :error, :badarg ->
+        # 다른 프로세스가 이미 보유 중 — 기존 테이블 재사용 (테스트 환경)
+        Logger.debug("[SkillRegistry] ETS 테이블 기존 재사용: #{@table}")
+    end
+
+    {:ok, %__MODULE__{skills: %{}, stats: %{}, started_at: DateTime.utc_now()},
+     {:continue, :register_builtin_skills}}
+  end
+
+  @impl true
+  def handle_continue(:register_builtin_skills, state) do
+    new_state = do_register_builtin_skills(state)
+    Logger.info("[SkillRegistry] 시작 (v#{@version}) — 내장 스킬 #{map_size(new_state.skills)}개 등록")
+    {:noreply, new_state}
   end
 
   @impl true
@@ -104,7 +118,7 @@ defmodule TeamJay.Ska.SkillRegistry do
 
     :ets.insert(@table, {name, skill})
     Logger.info("[SkillRegistry] 스킬 등록: #{name} (#{module})")
-    {:reply, {:ok, skill}, put_in(state.skills[name], skill)}
+    {:reply, {:ok, skill}, %{state | skills: Map.put(state.skills, name, skill)}}
   end
 
   @impl true
@@ -160,14 +174,34 @@ defmodule TeamJay.Ska.SkillRegistry do
       # Phase 2: 도메인 스킬
       {:parse_naver_html, TeamJay.Ska.Skill.ParseNaverHtml, %{domain: :naver}},
       {:classify_kiosk_state, TeamJay.Ska.Skill.ClassifyKioskState, %{domain: :kiosk}},
-      {:audit_pos_transactions, TeamJay.Ska.Skill.AuditPosTransactions, %{domain: :pickko}}
+      {:audit_pos_transactions, TeamJay.Ska.Skill.AuditPosTransactions, %{domain: :pickko}},
+      # Phase 3: 분석 스킬
+      {:forecast_demand, TeamJay.Ska.Skill.ForecastDemand, %{domain: :analytics}},
+      {:analyze_revenue, TeamJay.Ska.Skill.AnalyzeRevenue, %{domain: :analytics}},
+      {:detect_anomaly, TeamJay.Ska.Skill.DetectAnomaly, %{domain: :analytics}},
+      {:generate_report, TeamJay.Ska.Skill.GenerateReport, %{domain: :analytics}}
     ]
   end
 
-  defp register_builtin_skills do
-    Enum.each(builtin_skills(), fn {name, module, meta} ->
-      register(name, module, meta)
-    end)
+  defp do_register_builtin_skills(state) do
+    new_skills =
+      Enum.reduce(builtin_skills(), state.skills, fn {name, module, meta}, acc ->
+        skill = %{
+          name: name,
+          module: module,
+          version: Map.get(meta, :version, "1.0"),
+          domain: Map.get(meta, :domain, :general),
+          description: Map.get(meta, :description, ""),
+          input_schema: Map.get(meta, :input_schema, %{}),
+          output_schema: Map.get(meta, :output_schema, %{}),
+          registered_at: DateTime.utc_now()
+        }
+
+        :ets.insert(@table, {name, skill})
+        Map.put(acc, name, skill)
+      end)
+
+    %{state | skills: new_skills}
   end
 
   defp persist_execution(skill_name, status, elapsed, context) do
