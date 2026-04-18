@@ -1,6 +1,6 @@
 defmodule Sigma.V2.LLM.Recommender do
   @moduledoc """
-  LLM 모델 추천 메타 에이전트 — 룰 기반 6차원 점수 계산으로 동적 모델 추천.
+  LLM 모델 추천 메타 에이전트 — 룰 기반 7차원 점수 계산으로 동적 모델 추천.
 
   입력: agent_name + context map
     :prompt_tokens        — 프롬프트 토큰 수 추정 (integer)
@@ -9,8 +9,12 @@ defmodule Sigma.V2.LLM.Recommender do
     :urgency              — :high | :medium | :low (atom)
     :task_type            — :binary_classification | :structured_reasoning |
                             :creative_generation | :batch_filtering | :unknown
+    :accuracy             — :critical | :high | :normal (atom, 기본 :normal)
 
   출력: {:ok, %{primary: atom, fallback: [atom], reason: string, scores: [...]}}
+
+  7차원: base_affinity + length_bias + budget_bias + failure_bias + urgency_bias
+          + task_type_bias + accuracy_bias
 
   재귀 방지: Recommender 자체는 LLM 호출 없음 (순수 룰).
   참조: docs/codex/CODEX_SIGMA_PHASE2_LLM_AUTONOMOUS.md
@@ -44,7 +48,8 @@ defmodule Sigma.V2.LLM.Recommender do
           budget_bias(context[:budget_ratio] || 1.0, model) +
           failure_bias(context[:recent_failure_rate] || 0.0, agent_name, model) +
           urgency_bias(context[:urgency] || :medium, model) +
-          task_type_bias(context[:task_type] || :unknown, model)
+          task_type_bias(context[:task_type] || :unknown, model) +
+          accuracy_bias(context[:accuracy] || :normal, model)
         {model, Float.round(total, 3)}
       end)
       |> Enum.sort_by(fn {m, s} -> {-s, Map.get(@model_order, m, 99)} end)
@@ -180,6 +185,29 @@ defmodule Sigma.V2.LLM.Recommender do
   defp task_type_bias(_, _), do: 0.0
 
   # -------------------------------------------------------------------
+  # 룰 6: 정확도 요구 수준 (accuracy_bias) — 7차원
+  # -------------------------------------------------------------------
+
+  defp accuracy_bias(:critical, model) do
+    case model do
+      :anthropic_opus   -> 0.5
+      :anthropic_sonnet -> 0.2
+      :anthropic_haiku  -> -0.3
+    end
+  end
+
+  defp accuracy_bias(:high, model) do
+    case model do
+      :anthropic_sonnet -> 0.3
+      :anthropic_opus   -> 0.1
+      :anthropic_haiku  -> -0.1
+    end
+  end
+
+  defp accuracy_bias(:normal, _model), do: 0.0
+  defp accuracy_bias(_, _model),       do: 0.0
+
+  # -------------------------------------------------------------------
   # 이유 생성
   # -------------------------------------------------------------------
 
@@ -188,12 +216,14 @@ defmodule Sigma.V2.LLM.Recommender do
     urgency       = ctx[:urgency]
     failure_rate  = ctx[:recent_failure_rate]
     prompt_tokens = ctx[:prompt_tokens]
+    accuracy      = ctx[:accuracy]
 
     reasons = []
     reasons = if is_number(budget_ratio) and budget_ratio < 0.30, do: reasons ++ ["예산 부족"], else: reasons
     reasons = if urgency == :high, do: reasons ++ ["긴급"], else: reasons
     reasons = if is_number(failure_rate) and failure_rate > 0.15, do: reasons ++ ["실패율 높음"], else: reasons
     reasons = if is_integer(prompt_tokens) and prompt_tokens > 8_000, do: reasons ++ ["긴 컨텍스트"], else: reasons
+    reasons = if accuracy in [:critical, :high], do: reasons ++ ["정확도 #{accuracy}"], else: reasons
 
     if reasons == [], do: "정책 권장", else: Enum.join(reasons, " / ")
   end
