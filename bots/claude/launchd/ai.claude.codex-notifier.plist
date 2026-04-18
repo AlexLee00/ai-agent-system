@@ -21,7 +21,7 @@
 	<string>ai.claude.codex-notifier</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/opt/homebrew/bin/node</string>
+		<string>/opt/homebrew/bin/tsx</string>
 		<string>/Users/alexlee/projects/ai-agent-system/bots/claude/scripts/codex-notifier-runner.ts</string>
 	</array>
 	<key>RunAtLoad</key>

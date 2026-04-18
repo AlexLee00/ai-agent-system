@@ -41,7 +41,7 @@ defmodule Darwin.V2.MapeKLoopTest do
 
       assert new_state.total_cycles == 4
       assert new_state.last_cycle_id == "test-cycle-001"
-      assert new_state.last_cycle_at != nil
+      assert %DateTime{} = new_state.last_cycle_at
     end
 
     test "cycle_complete 수신 시 last_cycle_at 갱신" do
