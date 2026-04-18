@@ -14,9 +14,24 @@ const require = createRequire(import.meta.url);
 const telegramSender = require('../../../packages/core/lib/telegram-sender');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 
-const TEAM = process.argv.includes('--team')
+const VALID_TEAMS = ['sigma', 'darwin'] as const;
+type TeamName = typeof VALID_TEAMS[number];
+
+const rawTeamArg = process.argv.includes('--team')
   ? process.argv[process.argv.indexOf('--team') + 1]
-  : 'all';
+  : undefined;
+
+if (rawTeamArg !== undefined && !(VALID_TEAMS as readonly string[]).includes(rawTeamArg)) {
+  console.error(`[shadow-analysis] 잘못된 --team 값: "${rawTeamArg}". sigma 또는 darwin 만 허용`);
+  process.exit(1);
+}
+
+const TEAM = rawTeamArg ?? 'all';
+
+const SHADOW_TABLES: Record<TeamName, string> = {
+  sigma:  'sigma_shadow_comparison',
+  darwin: 'darwin_shadow_comparison',
+};
 
 interface ShadowStats {
   team: string;
@@ -30,8 +45,8 @@ interface ShadowStats {
   avg_similarity: number;
 }
 
-async function analyzeTeam(team: 'sigma' | 'darwin'): Promise<ShadowStats | null> {
-  const table = `${team}_shadow_comparison`;
+async function analyzeTeam(team: TeamName): Promise<ShadowStats | null> {
+  const table = SHADOW_TABLES[team];
   try {
     const result = await pgPool.query(`
       SELECT
@@ -83,7 +98,7 @@ function formatStats(stats: ShadowStats): string[] {
 }
 
 async function main() {
-  const teams: ('sigma' | 'darwin')[] = TEAM === 'all' ? ['sigma', 'darwin'] : [TEAM as 'sigma' | 'darwin'];
+  const teams: TeamName[] = TEAM === 'all' ? ['sigma', 'darwin'] : [TEAM as TeamName];
 
   const lines: string[] = ['📊 *LLM Shadow Mode 비교 분석*', ''];
 
