@@ -9,17 +9,19 @@
  *
  * 실행:
  *   node bots/investment/scripts/crypto-live-gate-review.js
- *   node bots/investment/scripts/crypto-live-gate-review.js --days=3
+ *   node bots/investment/scripts/crypto-live-gate-review.js --days=7
  *   node bots/investment/scripts/crypto-live-gate-review.js --json
  */
 
 import * as db from '../shared/db.ts';
 import { pathToFileURL } from 'url';
 
+export const DEFAULT_CRYPTO_LIVE_GATE_DAYS = 7;
+
 function parseArgs(argv = process.argv.slice(2)) {
   const daysArg = argv.find(arg => arg.startsWith('--days='));
   return {
-    days: Math.max(1, Number(daysArg?.split('=')[1] || 3)),
+    days: Math.max(1, Number(daysArg?.split('=')[1] || DEFAULT_CRYPTO_LIVE_GATE_DAYS)),
     json: argv.includes('--json'),
   };
 }
@@ -285,7 +287,7 @@ function printHuman(review) {
   return lines.join('\n');
 }
 
-export async function loadCryptoLiveGateReview(days = 3) {
+export async function loadCryptoLiveGateReview(days = DEFAULT_CRYPTO_LIVE_GATE_DAYS) {
   await db.initSchema();
 
   const [pipelineRows, tradeRows, blockRows, closedReviewRows] = await Promise.all([

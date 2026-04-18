@@ -693,7 +693,7 @@ async function main() {
     cryptoValidation: buildValidationBudgetSnapshot('binance', 'validation', todayTradeModeTradeRows, todaySignalBlockRows),
   };
   const capitalGuardBias = buildCapitalGuardBiasSnapshot(capitalGuardTradeModeRows);
-  const cryptoLiveGateReview = await loadCryptoLiveGateReview(3);
+  const cryptoLiveGateReview = await loadCryptoLiveGateReview();
   const recentLogs = await db.getRecentRuntimeConfigSuggestionLogs(2).catch(() => []);
   const previousPolicySnapshot = recentLogs?.[0]?.policy_snapshot || null;
   const validationBudgetPolicy = buildValidationBudgetPolicySnapshot(
