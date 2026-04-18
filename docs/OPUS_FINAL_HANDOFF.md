@@ -113,6 +113,85 @@ DARWIN_LLM_DAILY_BUDGET_USD=10.00
 
 ---
 
+# 세션 인수인계 — 2026-04-18 (CODEX_LUNA_REMODEL Phase R1/R2/5a-5d/Q 완료)
+
+> 세션 범위: CODEX_LUNA_REMODEL 잔여 세분화 + Phase 5 전체 구현 완료
+
+## 완료 요약 (Phase R1 → R2 → 5a → 5b → 5c → 5d → Q) ✅
+
+### Phase R1 — Validation Engine 5개 하위 모듈 분리
+- `Luna.V2.Validation.Backtest` — 6개월 trade_history Sharpe/hit_rate/max_dd
+- `Luna.V2.Validation.WalkForward` — 90일 rolling 3구간 실 walk-forward
+- `Luna.V2.Validation.ShadowValidation` — luna_v2_shadow_comparison 7일 집계
+- `Luna.V2.Validation.ValidationLive` — 소액 실계좌(≤100,000 KRW) 14일
+- `Luna.V2.Validation.PromotionGate` — sharpe≥1.5, hit≥0.55, max_dd>-0.15 → `:promote | :hold | :demote`
+- `validation/engine.ex` 183→113줄 (위임만 남음)
+- 테스트 5개 (backtest/walk_forward/shadow_validation/promotion_gate/engine_test)
+
+### Phase R2 — Agentic RAG 4개 하위 모듈 분리
+- `Luna.V2.Rag.QueryPlanner` — Hub haiku 호출 쿼리 분해 + 규칙 기반 fallback
+- `Luna.V2.Rag.MultiSourceRetriever` — pgvector 1024차원 HNSW + whitelist 필터
+- `Luna.V2.Rag.QualityEvaluator` — count×0.4 + sim×0.3 + diversity×0.3 = 0.0~1.0
+- `Luna.V2.Rag.ResponseSynthesizer` — 카테고리별 top-2 × max 5개
+- `rag/agentic_rag.ex` 202→130줄 (위임만)
+- 테스트 4개 (quality_evaluator/query_planner/multi_source_retriever/agentic_rag_test)
+
+### Phase 5a — Scheduler + TelegramReporter
+- `Luna.V2.Scheduler` — GenServer, crypto 60s / stock 180s, MarketHoursGate 게이트
+- `Luna.V2.TelegramReporter` — 5채널(general/luna_domestic/luna_overseas/luna_crypto/luna_risk), Hub `/hub/telegram/send` 경유
+- `kill_switch.ex` — `scheduler_enabled?/0`, `telegram_enabled?/0` 추가
+- `supervisor.ex` — `scheduler_children()`, `telegram_children()` 추가 (Kill Switch 조건부)
+- 테스트 2개
+
+### Phase 5b — 일일/주간 리포트 스크립트 + launchd
+- `scripts/luna-daily-report.ts` — 24h PnL + LLM 비용 + DPO 점수 (3 시장 동시 전송)
+- `scripts/luna-weekly-review.ts` — 7일 PnL + 전략 승격/강등 + RAG 품질 추세 (general 채널)
+- `launchd/ai.luna.daily-report.plist` — KST 06:00 (UTC 21:00)
+- `launchd/ai.luna.weekly-review.plist` — 일요일 KST 18:00 (UTC 09:00)
+
+### Phase 5c — markets LIVE 게이트 (domestic/overseas)
+- `markets/domestic.ts` — `LUNA_LIVE_DOMESTIC !== 'true'` 시 사이클 즉시 반환
+- `markets/overseas.ts` — `LUNA_LIVE_OVERSEAS !== 'true'` 시 사이클 즉시 반환
+- `markets/crypto.ts` — 수정 없음 (Hephaestos LIVE 보존)
+
+### Phase 5d — Shadow 자동 검증 알림 cron
+- `scripts/luna-shadow-auto-promote.ts` — 72h runs≥50 & avg_similarity≥0.85 → Telegram general 알림 (자동 flip 없음, 마스터 승인 필수)
+- `launchd/ai.luna.shadow-auto-promote.plist` — 매일 KST 09:00
+
+### Phase Q — 테스트 6개 추가
+- `feedback/self_rewarding_test.exs` — evaluate_trade 안전성 검증
+- `prediction/engine_test.exs` — 5 feature 구조 검증
+- `market_hours_gate_test.exs` — open?/seconds_until_open/active_markets 전수 검증
+- `mapek_loop_test.exs` — 시장별 분기 + KillSwitch 연동
+- `commander_test.exs` — Jido.AI.Agent smoke + Skills 존재 확인
+- `registry/strategy_registry_test.exs` — CRUD + status 전이 (ETS 미기동 안전 처리)
+
+### 최종 검증
+- **138 tests, 0 failures** (luna/v2/ 전체)
+- `mix compile --warnings-as-errors` 경고 0건
+
+### Kill Switch 현재 상태 (Phase 5 이후)
+```
+LUNA_V2_ENABLED=true              ← V2 Supervisor 기동
+LUNA_LIVE_CRYPTO=true             ← 암호화폐 실거래 유지
+LUNA_LIVE_DOMESTIC=false          ← 국내 MOCK (Shadow 3일 후 마스터 승인시 true)
+LUNA_LIVE_OVERSEAS=false          ← 국외 MOCK
+LUNA_SCHEDULER_ENABLED=false      ← Scheduler (마스터 활성화 대기)
+LUNA_TELEGRAM_ENABLED=false       ← TelegramReporter (마스터 활성화 대기)
+LUNA_MAPEK_ENABLED=false          ← MAPE-K 루프
+LUNA_AUTO_MODE=false              ← 완전 자율
+```
+
+### 마스터 체크리스트 (Phase 5 활성화 순서)
+1. DB 마이그레이션: `psql -d jay -f bots/investment/migrations/20260418_luna_v2_full.sql`
+2. Shadow 3일 관찰: `launchctl setenv LUNA_V2_ENABLED true && launchctl setenv LUNA_LLM_HUB_SHADOW true`
+3. `luna-shadow-auto-promote.ts` cron 등록: `launchctl bootstrap gui/501 launchd/ai.luna.shadow-auto-promote.plist`
+4. Telegram 리포트 등록: `launchctl bootstrap gui/501 launchd/ai.luna.daily-report.plist`
+5. Shadow 3일 완료 알림 수신 → `launchctl setenv LUNA_LIVE_DOMESTIC true`
+6. Scheduler 활성화: `launchctl setenv LUNA_SCHEDULER_ENABLED true`
+
+---
+
 # 세션 인수인계 — 2026-04-18 (CODEX_LUNA_REMODEL 전체 완료)
 
 > 세션 범위: 루나팀 완전자율 자동매매 에이전트 진화 — Phase 1~5 전체 구현 완료
