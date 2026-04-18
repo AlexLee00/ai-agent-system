@@ -11,7 +11,7 @@ defmodule Darwin.V2.LLM.Selector do
     LLM_HUB_ROUTING_SHADOW=true   → Shadow Mode: 양쪽 병렬 실행, 직접호출 결과 반환
     HUB_BASE_URL                  → Hub 주소 (기본 http://localhost:7788)
 
-  Kill Switch: Application.get_env(:darwin, :kill_switch, true) + 예산 초과 시
+  Kill Switch: Darwin.V2.Config.kill_switch?() + 예산 초과 시
   {:error, :kill_switch} 반환.
 
   공개 API:
@@ -77,7 +77,7 @@ defmodule Darwin.V2.LLM.Selector do
   Kill switch=true + 예산 초과 → {:error, :kill_switch}
   """
   def complete(agent_name, messages, opts \\ []) do
-    kill_switch_enabled = Application.get_env(:darwin, :kill_switch, true)
+    kill_switch_enabled = Darwin.V2.Config.kill_switch?()
 
     case Darwin.V2.LLM.CostTracker.check_budget() do
       {:ok, budget_ratio} ->
@@ -393,9 +393,7 @@ defmodule Darwin.V2.LLM.Selector do
   end
 
   defp api_key do
-    Application.get_env(:darwin, :anthropic_api_key) ||
-      System.get_env("ANTHROPIC_API_KEY") ||
-      System.get_env("DARWIN_ANTHROPIC_API_KEY")
+    Darwin.V2.Config.anthropic_api_key()
   end
 
   defp route_to_model(:anthropic_haiku),  do: {:anthropic, "claude-haiku-4-5-20251001"}

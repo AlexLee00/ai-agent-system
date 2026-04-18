@@ -15,6 +15,14 @@ defmodule Darwin.V2.Config do
   end
 
   @doc """
+  Darwin V2 kill switch 상태.
+  환경변수: DARWIN_KILL_SWITCH (기본 true)
+  """
+  def kill_switch? do
+    System.get_env("DARWIN_KILL_SWITCH", "true") == "true"
+  end
+
+  @doc """
   Darwin.V2.LLM.Selector 활성화 여부.
   환경변수: DARWIN_LLM_SELECTOR_ENABLED (기본 false)
   v2_enabled? AND DARWIN_LLM_SELECTOR_ENABLED=true 모두 필요.
@@ -31,6 +39,25 @@ defmodule Darwin.V2.Config do
   def shadow_mode_enabled? do
     v2_enabled?() and
       System.get_env("DARWIN_SHADOW_MODE_ENABLED", "false") == "true"
+  end
+
+  @doc """
+  운영 shadow mode 활성 상태.
+  DARWIN_SHADOW_MODE 또는 DARWIN_SHADOW_ENABLED 둘 중 하나라도 true면 활성.
+  """
+  def shadow_mode_active? do
+    System.get_env("DARWIN_SHADOW_MODE", "false") == "true" or
+      System.get_env("DARWIN_SHADOW_ENABLED", "false") == "true" or
+      shadow_mode_enabled?()
+  end
+
+  @doc """
+  ESPL 활성화 여부.
+  환경변수: DARWIN_ESPL_ENABLED (기본 false)
+  """
+  def espl_enabled? do
+    v2_enabled?() and
+      System.get_env("DARWIN_ESPL_ENABLED", "false") == "true"
   end
 
   @doc """
@@ -70,6 +97,15 @@ defmodule Darwin.V2.Config do
   end
 
   @doc """
+  Darwin HTTP 포트.
+  환경변수: DARWIN_HTTP_PORT (기본 8180)
+  """
+  def http_port do
+    System.get_env("DARWIN_HTTP_PORT", "8180")
+    |> String.to_integer()
+  end
+
+  @doc """
   일일 LLM 예산 (USD).
   환경변수: DARWIN_LLM_DAILY_BUDGET_USD (기본 5.0)
   """
@@ -79,18 +115,36 @@ defmodule Darwin.V2.Config do
   end
 
   @doc """
+  Anthropic API 키.
+  """
+  def anthropic_api_key do
+    System.get_env("ANTHROPIC_API_KEY") || System.get_env("DARWIN_ANTHROPIC_API_KEY")
+  end
+
+  @doc """
+  MLX base URL.
+  """
+  def mlx_base_url do
+    System.get_env("MLX_BASE_URL", "http://localhost:11434")
+  end
+
+  @doc """
   현재 활성화된 Kill Switch 상태 요약.
   """
   def status do
     %{
       v2_enabled:            v2_enabled?(),
+      kill_switch:           kill_switch?(),
       llm_selector_enabled:  llm_selector_enabled?(),
-      shadow_mode_enabled:   shadow_mode_enabled?(),
+      shadow_mode_enabled:   shadow_mode_active?(),
+      espl_enabled:          espl_enabled?(),
       reflexion_enabled:     reflexion_enabled?(),
       self_rag_enabled:      self_rag_enabled?(),
       tier2_auto_apply:      tier2_auto_apply?(),
       mcp_server_enabled:    mcp_server_enabled?(),
-      daily_budget_usd:      daily_budget_usd()
+      daily_budget_usd:      daily_budget_usd(),
+      http_port:             http_port(),
+      mlx_base_url:          mlx_base_url()
     }
   end
 end

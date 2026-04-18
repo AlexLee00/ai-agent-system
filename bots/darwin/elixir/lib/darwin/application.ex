@@ -11,7 +11,7 @@ defmodule Darwin.Application do
 
   @impl true
   def start(_type, _args) do
-    if Application.get_env(:darwin, :v2_enabled, false) do
+    if Darwin.V2.Config.v2_enabled?() do
       Logger.info("[다윈V2] V2 활성화 — 수퍼바이저 트리 기동")
       start_v2()
     else

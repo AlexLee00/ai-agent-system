@@ -5,7 +5,7 @@ defmodule Darwin.V2.SelfRAG do
   [Retrieve] → [Relevant] → [Supporting] → [Useful] 4-gate 회수 검증.
   논문 관련성, 실패 교훈, 구현 전략 등 연구 메모리를 검증하며 회수.
 
-  Kill switch: Application.get_env(:darwin, :self_rag_enabled, false)
+  Kill switch: Darwin.V2.Config.self_rag_enabled?()
     (기본 false — 명시적 활성화 필요)
   비활성 시: 기본 L2 recall로 폴백.
 
@@ -25,7 +25,7 @@ defmodule Darwin.V2.SelfRAG do
   @spec recall_and_validate(String.t(), map(), keyword()) ::
           {:ok, [map()]} | {:no_passage}
   def recall_and_validate(query, context \\ %{}, opts \\ []) do
-    if Application.get_env(:darwin, :self_rag_enabled, false) do
+    if Darwin.V2.Config.self_rag_enabled?() do
       Logger.debug("[다윈V2 SelfRAG] 4-gate 검증 모드 활성")
       do_recall_with_gates(query, context, opts)
     else
@@ -127,7 +127,7 @@ defmodule Darwin.V2.SelfRAG do
     top_k = Keyword.get(opts, :top_k, 10)
     threshold = Keyword.get(opts, :threshold, 0.6)
 
-    if Application.get_env(:darwin, :self_rag_enabled, false) do
+    if Darwin.V2.Config.self_rag_enabled?() do
       with {:ok, %{hits: hits}} <- Darwin.V2.Memory.L2.retrieve(query, "darwin", top_k: top_k, threshold: threshold),
            filtered <- Enum.filter(hits, &relevant?(&1, query)),
            filtered <- Enum.filter(filtered, &supporting?(&1, query)) do

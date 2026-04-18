@@ -5,16 +5,13 @@ defmodule Darwin.V2.Reflexion do
   파이프라인 실패, 낮은 평가 점수, 검증 거부 시 트리거.
   3가지 연구 특화 질문으로 LLM 회고 생성 → L2 :failure_lesson으로 저장.
 
-  Kill switch: Application.get_env(:darwin, :reflexion_enabled, true)
+  Kill switch: Darwin.V2.Config.reflexion_enabled?()
     (예산 초과 시에만 비활성화 — 기본값 true)
 
   LLM: Darwin.V2.LLM.Selector.call_with_fallback("reflexion", ...) 경유.
   """
 
   require Logger
-
-  # Kill switch — 예산 초과 시만 비활성화 (기본 true)
-  @kill_switch_key :reflexion_enabled
 
   @doc """
   실패 컨텍스트에 대한 연구 특화 회고 생성 + L2 메모리(:failure_lesson) 저장.
@@ -29,7 +26,7 @@ defmodule Darwin.V2.Reflexion do
   """
   @spec reflect(map(), map() | nil) :: {:ok, map()} | {:error, term()}
   def reflect(failure_context, paper \\ nil) do
-    unless Application.get_env(:darwin, @kill_switch_key, true) do
+    unless Darwin.V2.Config.reflexion_enabled?() do
       Logger.info("[다윈V2 회고] Kill switch 비활성 — 회고 건너뜀")
       {:error, :reflexion_disabled}
     else

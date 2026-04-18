@@ -3,7 +3,7 @@ defmodule Darwin.V2.ESPL do
   E-SPL (Evolutionary System Prompt Learning) — arXiv 2602.14697.
   다윈 evaluator/planner/verifier 프롬프트를 유전 알고리즘으로 주간 진화.
 
-  Kill switch: Application.get_env(:darwin, :espl_enabled, false)
+  Kill switch: Darwin.V2.Config.espl_enabled?()
 
   Operators:
     crossover_prompt — 두 최우수 프롬프트 혼합
@@ -33,7 +33,7 @@ defmodule Darwin.V2.ESPL do
   """
   @spec run_weekly() :: {:ok, map()} | {:error, term()}
   def run_weekly do
-    unless Application.get_env(:darwin, :espl_enabled, false) do
+    unless Darwin.V2.Config.espl_enabled?() do
       Logger.info("[다윈V2 ESPL] Kill switch 비활성 — 진화 건너뜀")
       {:error, :espl_disabled}
     else
@@ -50,7 +50,7 @@ defmodule Darwin.V2.ESPL do
   """
   @spec evolve(String.t()) :: {:ok, map()} | {:error, term()}
   def evolve(agent_name) do
-    unless Application.get_env(:darwin, :espl_enabled, false) do
+    unless Darwin.V2.Config.espl_enabled?() do
       Logger.info("[다윈V2 ESPL] Kill switch 비활성 — #{agent_name} 진화 건너뜀")
       {:error, :espl_disabled}
     else
