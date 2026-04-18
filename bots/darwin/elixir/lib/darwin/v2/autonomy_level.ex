@@ -40,6 +40,37 @@ defmodule Darwin.V2.AutonomyLevel do
   @spec record_failure(term()) :: :ok
   def record_failure(reason), do: GenServer.cast(__MODULE__, {:failure, reason})
 
+  @doc """
+  승격 조건 점검 후 Telegram 알림 + DB 기록.
+  자동 flip 절대 금지 — 알림만 발송하고 마스터 승인 대기.
+  MapeKLoop 주간 Knowledge 단계에서 호출.
+  """
+  @spec check_promotion_conditions() :: :ok
+  def check_promotion_conditions do
+    try do
+      state = GenServer.call(__MODULE__, :get)
+      current = state.level
+      successes = state.consecutive_successes
+      applied = state.applied_successes
+      days = days_since_struct(state.level_upgraded_at)
+
+      cond do
+        current == 3 and successes >= 5 and days >= 7 ->
+          log_candidate(current, 4, %{successes: successes, applications: applied, days: days, violations: 0})
+
+        current == 4 and successes >= 10 and applied >= 3 and days >= 14
+            and Darwin.V2.KillSwitch.enabled?(:l5) ->
+          log_candidate(current, 5, %{successes: successes, applications: applied, days: days, violations: 0})
+
+        true ->
+          Logger.debug("[darwin/autonomy] 승격 조건 미충족 (L#{current}, 성공 #{successes}, 경과 #{days}일)")
+      end
+    rescue
+      e -> Logger.warning("[darwin/autonomy] check_promotion_conditions 오류: #{inspect(e)}")
+    end
+    :ok
+  end
+
   # ---
 
   @impl GenServer
@@ -134,6 +165,33 @@ defmodule Darwin.V2.AutonomyLevel do
 
   defp days_since(nil), do: 0
   defp days_since(dt), do: DateTime.diff(DateTime.utc_now(), dt, :day)
+
+  defp days_since_struct(nil), do: 0
+  defp days_since_struct(%DateTime{} = dt), do: DateTime.diff(DateTime.utc_now(), dt, :day)
+  defp days_since_struct(_), do: 0
+
+  defp log_candidate(from_level, to_level, stats) do
+    sql = """
+    INSERT INTO darwin_autonomy_promotion_log
+      (from_level, to_level, stats, approver, telegram_sent_at, inserted_at)
+    VALUES ($1, $2, $3::jsonb, 'candidate', NOW(), NOW())
+    """
+    Jay.Core.Repo.query(sql, [from_level, to_level, Jason.encode!(stats)])
+
+    msg = """
+    🧬 다윈 자율 레벨 승격 후보 감지
+    현재: L#{from_level} → 제안: L#{to_level}
+    - 성공 사이클: #{stats.successes}회
+    - 적용 완료: #{stats.applications}회
+    - 경과 일수: #{stats.days}일
+    마스터 승인 후 DARWIN_AUTONOMY_LEVEL=#{to_level} 적용 (자동 flip 없음)
+    """
+
+    Task.start(fn -> HubClient.post_alarm(msg, "darwin", "darwin") end)
+    Logger.info("[darwin/autonomy] 승격 후보 기록: L#{from_level}→L#{to_level}")
+  rescue
+    e -> Logger.warning("[darwin/autonomy] log_candidate 오류: #{inspect(e)}")
+  end
 
   defp sync_ets(state) do
     :ets.insert(@table, {:level, state.level})
