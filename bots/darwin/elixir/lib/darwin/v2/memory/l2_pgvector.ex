@@ -112,6 +112,7 @@ defmodule Darwin.V2.Memory.L2 do
 
     case encode(content) do
       {:ok, embedding} ->
+        vector_literal = embedding_to_vector_literal(embedding)
         context_json = Jason.encode!(context)
         tags_json = Jason.encode!(tags)
 
@@ -120,11 +121,11 @@ defmodule Darwin.V2.Memory.L2 do
             """
             INSERT INTO #{@table}
               (team, content, embedding, memory_type, importance, context, tags, inserted_at)
-            VALUES ($1, $2, $3::vector, $4, $5, $6::jsonb, $7::jsonb, NOW())
+            VALUES ($1, $2, '#{vector_literal}'::vector, $3, $4, $5::jsonb, $6::jsonb, NOW())
             ON CONFLICT DO NOTHING
             RETURNING id
             """,
-            [team, content, embedding, memory_type, importance, context_json, tags_json]
+            [team, content, memory_type, importance, context_json, tags_json]
           )
 
         case result do
@@ -136,8 +137,7 @@ defmodule Darwin.V2.Memory.L2 do
             {:ok, %{stored: false, reason: :conflict}}
 
           {:error, reason} ->
-            Logger.error("[다윈V2 메모리L2] DB 저장 실패: #{inspect(reason)}")
-            {:error, reason}
+            handle_pgvector_store_error(reason)
         end
 
       {:error, reason} ->
@@ -156,6 +156,7 @@ defmodule Darwin.V2.Memory.L2 do
 
     case encode(query) do
       {:ok, embedding} ->
+        vector_literal = embedding_to_vector_literal(embedding)
         {where_extra, extra_params} =
           if memory_type_filter do
             {" AND memory_type = $4", [to_string(memory_type_filter)]}
@@ -165,16 +166,16 @@ defmodule Darwin.V2.Memory.L2 do
 
         sql = """
         SELECT content, importance, memory_type, context, tags,
-               1 - (embedding <=> $1::vector) AS similarity
+               1 - (embedding <=> '#{vector_literal}'::vector) AS similarity
         FROM #{@table}
-        WHERE team = $2
-          AND 1 - (embedding <=> $1::vector) >= $3
+        WHERE team = $1
+          AND 1 - (embedding <=> '#{vector_literal}'::vector) >= $2
           #{where_extra}
-        ORDER BY embedding <=> $1::vector ASC
+        ORDER BY embedding <=> '#{vector_literal}'::vector ASC
         LIMIT #{top_k}
         """
 
-        query_params = [embedding, team, threshold] ++ extra_params
+        query_params = [team, threshold] ++ extra_params
 
         case Jay.Core.Repo.query(sql, query_params) do
           {:ok, %{rows: rows}} ->
@@ -194,8 +195,7 @@ defmodule Darwin.V2.Memory.L2 do
             {:ok, %{hits: hits}}
 
           {:error, reason} ->
-            Logger.error("[다윈V2 메모리L2] DB 검색 실패: #{inspect(reason)}")
-            {:error, reason}
+            handle_pgvector_retrieve_error(reason)
         end
 
       {:error, reason} ->
@@ -238,5 +238,40 @@ defmodule Darwin.V2.Memory.L2 do
       {:error, reason} ->
         {:error, "embed request failed: #{inspect(reason)}"}
     end
+  end
+
+  defp handle_pgvector_store_error(reason) do
+    if pgvector_unavailable?(reason) do
+      Logger.warning("[다윈V2 메모리L2] pgvector 미사용 환경 — 저장 스킵")
+      {:ok, %{stored: false, reason: :pgvector_unavailable}}
+    else
+      Logger.error("[다윈V2 메모리L2] DB 저장 실패: #{inspect(reason)}")
+      {:error, reason}
+    end
+  end
+
+  defp handle_pgvector_retrieve_error(reason) do
+    if pgvector_unavailable?(reason) do
+      Logger.warning("[다윈V2 메모리L2] pgvector 미사용 환경 — 검색 빈 결과로 폴백")
+      {:ok, %{hits: []}}
+    else
+      Logger.error("[다윈V2 메모리L2] DB 검색 실패: #{inspect(reason)}")
+      {:error, reason}
+    end
+  end
+
+  defp pgvector_unavailable?(%Postgrex.QueryError{message: message}) when is_binary(message) do
+    String.contains?(message, "type `vector` can not be handled")
+  end
+
+  defp pgvector_unavailable?(_), do: false
+
+  defp embedding_to_vector_literal(embedding) when is_list(embedding) do
+    values =
+      embedding
+      |> Enum.map(&to_string/1)
+      |> Enum.join(",")
+
+    "[" <> values <> "]"
   end
 end

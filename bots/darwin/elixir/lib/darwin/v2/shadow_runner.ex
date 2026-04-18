@@ -74,6 +74,21 @@ defmodule Darwin.V2.ShadowRunner do
     GenServer.call(__MODULE__, {:run_comparison, paper}, 30_000)
   end
 
+  @doc """
+  하드 테스트/운영 smoke용 단일 비교 실행.
+  ShadowRunner GenServer가 안 떠 있어도 직접 비교 경로를 태운다.
+  """
+  @spec run_once() :: map()
+  def run_once do
+    sample_paper = %{
+      title: "Darwin shadow smoke paper",
+      source: "shadow_smoke",
+      score: 7
+    }
+
+    do_run_comparison(sample_paper)
+  end
+
   @doc "승격 조건 충족 여부 (avg_match ≥ 95% AND total_runs ≥ 20 AND days ≥ 7)."
   @spec shadow_ready?() :: boolean()
   def shadow_ready? do
