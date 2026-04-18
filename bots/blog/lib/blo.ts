@@ -750,8 +750,14 @@ function _createLocalDraftRunner({
 }) {
   return async (variation) => {
     let post;
+    const forceSinglePass = process.env.BLOG_FORCE_SINGLE_PASS === '1';
     try {
-      post = await chunkedWriter(...buildChunkedArgs(context, variation));
+      if (forceSinglePass) {
+        console.log(`[블로] ${chunkedLabel} 분할 생성 우회 — 단일 생성 강제`);
+        post = await singleWriter(...buildSingleArgs(context, variation));
+      } else {
+        post = await chunkedWriter(...buildChunkedArgs(context, variation));
+      }
     } catch (e) {
       console.warn(`[블로] ${chunkedLabel} 분할 생성 실패 — 단일 생성 폴백:`, e.message);
       post = await singleWriter(...buildSingleArgs(context, variation));

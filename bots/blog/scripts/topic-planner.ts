@@ -117,6 +117,39 @@ const CATEGORY_TOPIC_LANES = {
   ],
 };
 
+const CATEGORY_FALLBACK_CANDIDATES = {
+  '자기계발': [
+    { title: '아침 루틴보다 먼저 점검할 에너지 설계 기준 3가지', question: '루틴을 오래 유지하려면 무엇을 먼저 설계해야 하나', diff: '의지보다 지속 가능성에 초점', trend_relevance: 0.54 },
+    { title: '독서 메모가 쌓이기만 할 때 다시 연결하는 질문 3가지', question: '읽은 내용을 실행으로 바꾸려면 어떤 질문이 필요할까', diff: '지식 축적보다 연결과 적용 중심', trend_relevance: 0.5 },
+    { title: '계획이 자주 밀릴 때 일정표보다 먼저 고쳐야 할 기준', question: '계획이 무너질 때 가장 먼저 의심해야 할 전제는 무엇인가', diff: '시간관리보다 기준 재설계 관점', trend_relevance: 0.48 },
+  ],
+  '성장과성공': [
+    { title: '열심히 하는데 성장감이 약할 때 먼저 점검할 기준 3가지', question: '노력과 성장이 어긋날 때 무엇부터 다시 봐야 할까', diff: '실행량보다 성장 기준의 선명도에 초점', trend_relevance: 0.56 },
+    { title: '커리어 방향이 흔들릴 때 이직보다 먼저 정리할 질문', question: '지금의 흔들림이 환경 문제인지 방향 문제인지 어떻게 구분할까', diff: '결정 전에 기준을 세우는 관점', trend_relevance: 0.53 },
+    { title: '성과 압박이 커질수록 더 자주 놓치는 우선순위 설계', question: '성과를 내야 할수록 무엇을 덜어내야 할까', diff: '성과 압박 속 선택 기준 재정렬', trend_relevance: 0.51 },
+  ],
+  '홈페이지와App': [
+    { title: '서비스 신뢰를 만드는 상태 설명 UX 체크리스트 3가지', question: '사용자가 불안해하지 않으려면 어떤 상태 설명이 필요할까', diff: '기능보다 설명 가능한 상태 중심', trend_relevance: 0.55 },
+    { title: '회원가입을 망치는 첫 화면에서 먼저 줄여야 할 마찰', question: '전환을 높이려면 첫 화면에서 무엇을 덜어내야 할까', diff: 'UI 미세조정보다 흐름의 마찰 제거에 초점', trend_relevance: 0.53 },
+    { title: '사용자가 길을 잃는 정보구조에서 바로 드러나는 신호 3가지', question: '탐색이 어려운 구조는 어떤 신호로 보일까', diff: '메뉴 개수보다 정보구조 해석 중심', trend_relevance: 0.5 },
+  ],
+  '최신IT트렌드': [
+    { title: 'AI 도입 논의가 많아질수록 먼저 확인할 운영 비용 기준', question: '기술 화제와 실제 도입 기준을 어떻게 분리할까', diff: '트렌드 소개보다 운영 현실 점검', trend_relevance: 0.57 },
+    { title: '자동화 툴이 늘어날수록 오히려 복잡도가 커지는 이유', question: '연결이 많아질수록 무엇이 병목이 될까', diff: '생산성 홍보보다 운영 복잡도 해석', trend_relevance: 0.54 },
+    { title: '요즘 SaaS 비교에서 기능표보다 먼저 봐야 할 차이', question: '도입 전 어떤 관점으로 SaaS를 비교해야 할까', diff: '기능 나열보다 운영 적합성 중심', trend_relevance: 0.5 },
+  ],
+  'IT정보와분석': [
+    { title: '장애가 반복될 때 로그보다 먼저 정리할 운영 질문 3가지', question: '문제 해결 속도를 높이려면 어떤 질문을 먼저 세워야 할까', diff: '로그 해석보다 운영 가설 수립 중심', trend_relevance: 0.55 },
+    { title: '보안 이슈를 뉴스로만 보면 놓치기 쉬운 영향 판단 기준', question: '보안 뉴스를 우리 시스템 언어로 번역하려면 무엇이 필요할까', diff: '사건 소개보다 영향도 해석 중심', trend_relevance: 0.53 },
+    { title: '지표가 많을수록 더 헷갈릴 때 남겨야 할 핵심 숫자 3개', question: '운영 판단을 위해 최소한 어떤 지표를 봐야 할까', diff: '대시보드 나열보다 기준 축소 관점', trend_relevance: 0.5 },
+  ],
+  '개발기획과컨설팅': [
+    { title: '요구사항 정의 전에 먼저 정리할 전제 체크리스트 3가지', question: '요구사항 회의 전에 무엇을 먼저 합의해야 할까', diff: '명세 작성 전 전제 정렬 중심', trend_relevance: 0.56 },
+    { title: '고객 피드백을 기능 요청으로만 받으면 생기는 비용', question: '피드백을 어떤 기준으로 다시 해석해야 할까', diff: '요청 수집보다 해석 체계에 초점', trend_relevance: 0.53 },
+    { title: '개발 handoff가 자꾸 흔들릴 때 문서보다 먼저 맞출 것', question: 'handoff 실패는 어떤 전제 불일치에서 시작될까', diff: '문서 양보다 전달 기준 정렬 관점', trend_relevance: 0.5 },
+  ],
+};
+
 // ─── 인수 파싱 ─────────────────────────────────────────────────────────────
 
 function parseArgs() {
@@ -257,12 +290,12 @@ ${issuesSummary || '(이슈 없음)'}
 }
 
 function generateFallbackCandidates(category) {
-  const keywords = CATEGORY_KEYWORDS[category] || ['실전', '기준', '체크리스트'];
-  return [
-    { title: `${category} 실전 체크리스트`, question: '지금 먼저 확인해야 할 것은 무엇인가', diff: '이론보다 실행 중심', trend_relevance: 0.5 },
-    { title: `${category}에서 놓치기 쉬운 판단 기준`, question: '실수를 줄이려면 무엇을 먼저 확인해야 하나', diff: '개념보다 의사결정 관점', trend_relevance: 0.4 },
-    { title: `2026년 ${category} 변화 핵심 정리`, question: '달라진 것과 변하지 않은 것은 무엇인가', diff: '트렌드 나열보다 맥락 해석', trend_relevance: 0.45 },
-  ];
+  return CATEGORY_FALLBACK_CANDIDATES[category]
+    || [
+      { title: `${category} 실전 체크리스트`, question: '지금 먼저 확인해야 할 것은 무엇인가', diff: '이론보다 실행 중심', trend_relevance: 0.5 },
+      { title: `${category}에서 놓치기 쉬운 판단 기준`, question: '실수를 줄이려면 무엇을 먼저 확인해야 하나', diff: '개념보다 의사결정 관점', trend_relevance: 0.4 },
+      { title: `2026년 ${category} 변화 핵심 정리`, question: '달라진 것과 변하지 않은 것은 무엇인가', diff: '트렌드 나열보다 맥락 해석', trend_relevance: 0.45 },
+    ];
 }
 
 // ─── 30일 중복 체크 ────────────────────────────────────────────────────────

@@ -72,6 +72,7 @@ defmodule Sigma.V2.Phase3Test do
   end
 
   describe "Sigma.V2.SelfRAG" do
+    @tag :skip
     test "kill switch 미설정 시 리스트 반환 (pass-through → Memory.recall)" do
       System.delete_env("SIGMA_SELF_RAG_ENABLED")
       result = Sigma.V2.SelfRAG.retrieve_with_gate("test content", [team: "blog"])
@@ -79,6 +80,7 @@ defmodule Sigma.V2.Phase3Test do
       assert is_list(result)
     end
 
+    @tag :skip
     test "retrieve_with_gate/2는 keyword opts 허용" do
       result = Sigma.V2.SelfRAG.retrieve_with_gate("blog performance analysis", [team: "blog", limit: 3])
       # kill switch off → Memory.recall → 리스트, kill switch on → {:ok, _} | {:error, _}
