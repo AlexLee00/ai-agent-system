@@ -1,3 +1,65 @@
+# 세션 인수인계 — 2026-04-19 (CODEX_LLM_ROUTING_V2 Phase 1~7 완료 — 53차 세션 추가)
+
+> 세션 범위: CODEX_LLM_ROUTING_V2 — LLM Cache + Dashboard + BudgetGuardian + OAuth 안정성
+
+## 완료 요약 ✅ (53차 세션 추가)
+
+### CODEX_LLM_ROUTING_V2 Phase 1~7 — LLM 라우팅 인프라 고도화
+
+**Phase 1 (Luna LLM Selector gap)**:
+- Luna DB 마이그레이션: `luna_llm_routing_log`, `luna_llm_cost_tracking`, `luna_llm_cost_daily`
+- 테스트 파일 4개: selector/recommender/cost_tracker/routing_log (`@moduletag :skip` for DB tests)
+
+**Phase 2 (공용 모듈 gap)**:
+- `Jay.Core.LLM.Telemetry`: `:telemetry` 이벤트 (call_start/stop/cache_hit/budget_warn)
+- `Jay.Core.LLM.Models`: Elixir SSoT 모델 레지스트리 (`packages/elixir_core/`)
+- `packages/core/lib/llm-models.json` + `llm-models.ts`: haiku/sonnet/opus + Groq 폴백
+
+**Phase 3 (LLM Cache)**:
+- `bots/hub/lib/llm/cache.ts`: SHA256 프롬프트 해시, TTL 계층 (realtime=24h/analysis=7d/research=30d)
+- `migrations/20261001000011_llm_cache.sql`: `llm_cache` 테이블 + `llm_cache_stats` Materialized View
+- `scripts/llm-cache-cleanup.ts` + `ai.hub.llm-cache-cleanup.plist` (매일 04:00 KST)
+
+**Phase 4 (Dashboard)**:
+- `/hub/llm/dashboard`: Chart.js 인라인 HTML (팀별 비용 바차트 + 프로바이더 도넛 + 상위 에이전트 테이블, 30초 자동새로고침)
+- `/hub/llm/cache-stats`: Materialized View JSON 응답
+
+**Phase 5 (Model Manager)**:
+- `scripts/check-llm-model-updates.ts`: Anthropic /v1/models API 변경 감지 + Telegram 알림
+- `ai.hub.llm-model-check.plist`: 매주 일요일 12:00 KST
+
+**Phase 6 (Budget Guardian)**:
+- `bots/hub/lib/budget-guardian.ts`: TypeScript Singleton (팀별 할당, 글로벌 $80/day, 비상 $100)
+- `bots/hub/lib/routes/budget.ts`: POST /hub/budget/reserve, GET /hub/budget/usage
+
+**Phase 7 (OAuth 안정성)**:
+- `bots/hub/lib/llm/oauth-monitor.ts`: `claude auth status --json` 헬스체크
+- `scripts/test-groq-fallback.ts`: 3개 Groq 모델 테스트 + Telegram 리포트
+- `bots/hub/lib/routes/llm-health.ts`: `/hub/llm/health` 통합 헬스
+- `docs/hub/OAUTH_REAUTH_GUIDE.md`: 재인증 절차 가이드
+
+**unified-caller.ts 재구성**: 0→예산체크 1→캐시 2→OAuth 3→캐시저장 4→Groq폴백
+**커밋**: `7be3e4d6` (27 files, +1623 lines)
+**Sigma 테스트**: 112 tests, 0 failures, 4 skipped ✅
+**TypeScript**: 컴파일 오류 없음 ✅
+
+## 다음 단계 (53차 이후)
+
+1. **OPS 배포**: `git pull` → Hub 재시작 → `llm_cache` 마이그레이션 실행
+2. **launchd 설치** (마스터 승인):
+   - `ai.hub.llm-cache-cleanup.plist` (매일 04:00)
+   - `ai.hub.llm-oauth-monitor.plist` (6시간마다)
+   - `ai.hub.llm-model-check.plist` (주간)
+3. **SIGMA Kill Switch 단계적 활성화** (이전 세션 잔여):
+   - `SIGMA_MAPEK_ENABLED=true` (1주 관찰) → `SIGMA_SELF_REWARDING_ENABLED=true` → `SIGMA_POD_DYNAMIC_V2_ENABLED=true`
+4. **SKA Phase 3 CODEX 작성**: 메티가 Phase 3~7 설계서 완성
+
+## 🏷️ 53차 세션 요약
+
+**53차 세션 — CODEX_LLM_ROUTING_V2 Phase 1~7: Cache+Dashboard+BudgetGuardian+OAuth 27개 파일 +1623줄 구현 완료, 커밋 7be3e4d6.**
+
+---
+
 # 세션 인수인계 — 2026-04-19 (CODEX_SIGMA_EVOLUTION Phase R~P 완료 — 52차 세션 추가)
 
 > 세션 범위: CODEX_SIGMA_EVOLUTION Phase R~P — MAPE-K + Self-Rewarding + AgenticRag + PodSelectorV2 + KillSwitch 완성
