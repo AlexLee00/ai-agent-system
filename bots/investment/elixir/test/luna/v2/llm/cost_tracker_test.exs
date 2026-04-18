@@ -25,7 +25,7 @@ defmodule Luna.V2.LLM.CostTrackerTest do
   describe "track_tokens/1" do
     test "track_tokens returns cost_usd in result" do
       entry = %{
-        agent_name: "luna.commander",
+        agent: "luna.commander",
         model: "anthropic_sonnet",
         provider: "claude-code-oauth",
         tokens_in: 1000,
@@ -37,13 +37,13 @@ defmodule Luna.V2.LLM.CostTrackerTest do
 
     test "cost calculation for haiku is cheaper than sonnet" do
       haiku_entry = %{
-        agent_name: "luna.rag.query_planner",
+        agent: "luna.rag.query_planner",
         model: "anthropic_haiku",
         tokens_in: 1000,
         tokens_out: 200
       }
       sonnet_entry = %{
-        agent_name: "luna.commander",
+        agent: "luna.commander",
         model: "anthropic_sonnet",
         tokens_in: 1000,
         tokens_out: 200
