@@ -15,7 +15,12 @@ async function ensureInit() {
 }
 
 // 저스틴팀 표준 LLM 폴백 체인
+// Primary: Claude Code OAuth (구독 활용, Anthropic API 크레딧 절약)
+// Fallback 1: Anthropic API (OAuth 장애 시)
+// Fallback 2: Groq (빠른 속도)
+// Fallback 3: Local Ollama (완전 오프라인 안전망)
 const LEGAL_CHAIN = [
+  { provider: 'claude-code', model: 'sonnet', maxTokens: 8192, temperature: 0.1 },
   { provider: 'anthropic', model: 'claude-sonnet-4-6', maxTokens: 8192, temperature: 0.1 },
   { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 4096, temperature: 0.1 },
   { provider: 'local', model: 'deepseek-r1-32b', maxTokens: 4096, temperature: 0.1 },
