@@ -139,13 +139,25 @@ defmodule Jay.Core.LLM.CostTracker do
     defp insert_sql(table) do
       layout = table_layout(table)
 
-      columns =
-        [layout.timestamp_column, layout.agent_column, "model", "provider", "tokens_in", "tokens_out", "cost_usd", "inserted_at"] ++
-          if(layout.has_updated_at, do: ["updated_at"], else: [])
-
-      values =
-        ["NOW()", "$1", "$2", "$3", "$4", "$5", "$6", "NOW()"] ++
-          if(layout.has_updated_at, do: ["NOW()"], else: [])
+      {columns, values} =
+        [{layout.timestamp_column, "NOW()"},
+         {layout.agent_column, "$1"},
+         {"model", "$2"},
+         {"provider", "$3"},
+         {"tokens_in", "$4"},
+         {"tokens_out", "$5"},
+         {"cost_usd", "$6"},
+         {"inserted_at", "NOW()"}]
+        |> then(fn pairs ->
+          if layout.has_updated_at, do: pairs ++ [{"updated_at", "NOW()"}], else: pairs
+        end)
+        |> Enum.reduce({[], []}, fn {column, value}, {cols, vals} ->
+          if column in cols do
+            {cols, vals}
+          else
+            {cols ++ [column], vals ++ [value]}
+          end
+        end)
 
       """
       INSERT INTO #{table}
