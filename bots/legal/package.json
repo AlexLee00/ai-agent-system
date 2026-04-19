@@ -10,6 +10,7 @@
     "health": "node scripts/health-check.js"
   },
   "dependencies": {
-    "@ai-agent/core": "*"
+    "@ai-agent/core": "*",
+    "docx": "^9.6.1"
   }
 }

@@ -16,25 +16,29 @@ async function createCase(input) {
     plaintiff,
     defendant,
     appraisal_items = [],
+    assigned_agents = null,
     deadline,
     notes,
   } = input;
 
   const rows = await query(SCHEMA,
     `INSERT INTO legal.cases
-      (case_number, court, case_type, plaintiff, defendant, appraisal_items, deadline, notes)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+      (case_number, court, case_type, plaintiff, defendant, appraisal_items, assigned_agents, deadline, notes)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
      ON CONFLICT (case_number) DO UPDATE
        SET court = EXCLUDED.court,
            case_type = EXCLUDED.case_type,
            plaintiff = EXCLUDED.plaintiff,
            defendant = EXCLUDED.defendant,
            appraisal_items = EXCLUDED.appraisal_items,
+           assigned_agents = COALESCE(EXCLUDED.assigned_agents, legal.cases.assigned_agents),
            deadline = EXCLUDED.deadline,
            notes = EXCLUDED.notes,
            updated_at = NOW()
      RETURNING *`,
-    [case_number, court, case_type, plaintiff, defendant, JSON.stringify(appraisal_items), deadline, notes]
+    [case_number, court, case_type, plaintiff, defendant,
+     JSON.stringify(appraisal_items), assigned_agents ? JSON.stringify(assigned_agents) : null,
+     deadline, notes]
   );
   return rows[0];
 }

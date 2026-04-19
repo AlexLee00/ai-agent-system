@@ -65,6 +65,7 @@ sleep 20
 
 REPORT_LINES=()
 OK=0
+INFO=0
 WARN=0
 FAIL=0
 
@@ -168,9 +169,9 @@ check_periodic() {
     append_report "⏳ ${label} 대기중(최근 정상)"
     ((WARN++)) || true
   elif [ "$runs" -eq 0 ] || [ -z "$exit_code" ] || [ "$exit_raw" = "(never)" ]; then
-    log "   ⏳ ${label} (등록됨, 첫 트리거 대기 중)"
-    append_report "⏳ ${label} 대기중"
-    ((WARN++)) || true
+    log "   ℹ️  ${label} (등록됨, 첫 트리거 대기 중)"
+    append_report "ℹ️ ${label} 대기중"
+    ((INFO++)) || true
   elif [ "$svc" = "ai.claude.dexter" ] && [ "$exit_code" = "1" ] && has_recent_dexter_report; then
     log "   ✅ ${label} (최근 점검 결과 존재, exit=1 허용)"
     append_report "✅ ${label} (최근 점검 결과 있음)"
@@ -296,10 +297,10 @@ if [ "$FAIL" -eq 0 ] && [ "$WARN" -eq 0 ]; then
   STATUS_TEXT="전체 정상"
 elif [ "$FAIL" -eq 0 ]; then
   STATUS_ICON="⚠️"
-  STATUS_TEXT="치명 오류 없음, 일부 대기/미등록 ${WARN}건"
+  STATUS_TEXT="치명 오류 없음, 경고 ${WARN}건 / 정보 ${INFO}건"
 else
   STATUS_ICON="❌"
-  STATUS_TEXT="오류 ${FAIL}건, 대기/미등록 ${WARN}건"
+  STATUS_TEXT="오류 ${FAIL}건, 경고 ${WARN}건 / 정보 ${INFO}건"
 fi
 
 MSG_FILE="/tmp/post-reboot-msg.txt"
@@ -325,7 +326,7 @@ send_telegram "$MSG_FILE"
 
 log ""
 log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-log "✅ 재부팅 후 시작 루틴 완료 (OK: ${OK}, WARN: ${WARN}, FAIL: ${FAIL})"
+log "✅ 재부팅 후 시작 루틴 완료 (OK: ${OK}, INFO: ${INFO}, WARN: ${WARN}, FAIL: ${FAIL})"
 if [ "$FAIL" -gt 0 ] || [ "$WARN" -gt 0 ]; then
   log "⚠️  launchd 상태와 팀별 health-report를 함께 재확인하세요."
 fi

@@ -15,6 +15,7 @@ const env = require('../../../packages/core/lib/env');
 const store = require(path.join(env.PROJECT_ROOT, 'bots/legal/lib/appraisal-store'));
 const { callLegal } = require(path.join(env.PROJECT_ROOT, 'bots/legal/lib/llm-helper'));
 const briefing = require(path.join(env.PROJECT_ROOT, 'bots/legal/lib/briefing'));
+const { getAgentRoute } = require(path.join(env.PROJECT_ROOT, 'bots/legal/lib/case-router'));
 const lens = require(path.join(env.PROJECT_ROOT, 'bots/legal/lib/lens'));
 const garam = require(path.join(env.PROJECT_ROOT, 'bots/legal/lib/garam'));
 const atlas = require(path.join(env.PROJECT_ROOT, 'bots/legal/lib/atlas'));
@@ -56,6 +57,13 @@ async function receiveCase(input) {
 
   const classification = await classifyCase(document_text, appraisal_items);
 
+  const agentRoute = getAgentRoute(classification.case_type);
+  const assigned_agents = {
+    required: agentRoute.required,
+    optional: agentRoute.optional,
+    classification_source: 'llm',
+  };
+
   const caseRecord = await store.createCase({
     case_number,
     court,
@@ -63,6 +71,7 @@ async function receiveCase(input) {
     plaintiff,
     defendant,
     appraisal_items,
+    assigned_agents,
     deadline,
     notes,
   });
@@ -214,6 +223,82 @@ async function writeQueryLetter(caseId, caseData, queryRound = 1) {
   return briefing.writeQueryLetter(caseId, caseData, queryRound);
 }
 
+// ─── Phase 7·9: 인터뷰 기록 ──────────────────────────────────
+
+async function recordInterview(caseId, round, payload) {
+  const { question, response, analysis, interviewer, notes, conducted_at } = payload || {};
+  const statusMap = { 1: 'interview1', 2: 'interview2' };
+
+  console.log(`[저스틴] Phase ${round === 1 ? 7 : 9}: ${round}차 인터뷰 기록`);
+
+  const record = await store.saveInterview({
+    case_id: caseId,
+    interview_type: `query${round}_interview`,
+    interviewer: interviewer || '저스틴',
+    content: question || '',
+    response: response || '',
+    analysis: analysis || '',
+    conducted_at: conducted_at || new Date(),
+  });
+
+  const newStatus = statusMap[round];
+  if (newStatus) await store.updateCaseStatus(caseId, newStatus);
+
+  return record;
+}
+
+// ─── Phase 10: 현장실사계획서 작성 ───────────────────────────
+
+async function writeInspectionPlan(caseId, caseData) {
+  console.log(`[저스틴] Phase 10: 현장실사계획서 작성`);
+  await store.updateCaseStatus(caseId, 'inspection_plan');
+  return briefing.writeInspectionPlan(caseId, caseData);
+}
+
+// ─── Phase 13: 법원 제출 ──────────────────────────────────────
+
+async function submitCase(caseId, { signedBy = '마스터', notes = '' } = {}) {
+  console.log(`[저스틴] Phase 13: 최종 제출 처리 — 사건 ID ${caseId}`);
+
+  const caseRecord = await store.getCaseById(caseId);
+  if (!caseRecord) throw new Error(`사건 ID ${caseId}를 찾을 수 없습니다`);
+
+  const report = await store.getLatestReport(caseId, 'final');
+
+  if (report && report.content_md) {
+    try {
+      const rag = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/rag'));
+      await rag.store(
+        'rag_legal',
+        report.content_md.slice(0, 8000),
+        {
+          case_number: caseRecord.case_number,
+          case_type: caseRecord.case_type,
+          court: caseRecord.court,
+          report_type: 'final',
+          signed_by: signedBy,
+          submitted_at: new Date().toISOString(),
+        },
+        'justin'
+      );
+      console.log(`[저스틴] RAG 적재 완료 — 사건 ${caseRecord.case_number}`);
+    } catch (ragErr) {
+      console.warn(`[저스틴] RAG 적재 실패 (비치명적): ${ragErr.message}`);
+    }
+  }
+
+  await store.updateCaseStatus(caseId, 'submitted');
+
+  try {
+    const sender = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/telegram-sender'));
+    const msg = `✅ [저스틴팀] 감정서 법원 제출 완료\n사건: ${caseRecord.case_number}\n서명인: ${signedBy}${notes ? `\n비고: ${notes}` : ''}`;
+    await sender.send('legal', msg);
+  } catch (_) {}
+
+  console.log(`[저스틴] 사건 ${caseRecord.case_number} 제출 완료`);
+  return { caseId, case_number: caseRecord.case_number, status: 'submitted', signedBy };
+}
+
 // ─── 상태 조회 ────────────────────────────────────────────────
 
 async function getStatus() {
@@ -241,5 +326,8 @@ module.exports = {
   runFullWorkflow,
   writeInceptionPlan,
   writeQueryLetter,
+  recordInterview,
+  writeInspectionPlan,
+  submitCase,
   getStatus,
 };
