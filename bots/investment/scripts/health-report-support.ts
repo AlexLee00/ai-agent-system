@@ -420,6 +420,37 @@ export async function loadCapitalGuardBreakdown(pgPool, periodDays = 14) {
       [periodDays, drilldownSymbols],
     ).catch(() => [])
     : [];
+  const tradeContextRows = drilldownSymbols.length > 0
+    ? await pgPool.query(
+      'investment',
+      `
+        SELECT
+          symbol,
+          COUNT(*)::int AS trade_cnt,
+          COUNT(*) FILTER (WHERE paper = false)::int AS live_trade_cnt,
+          COUNT(*) FILTER (WHERE paper = true)::int AS paper_trade_cnt,
+          MAX(executed_at) AS last_executed_at
+        FROM investment.trades
+        WHERE exchange = 'binance'
+          AND executed_at >= NOW() - INTERVAL '1 day' * $1
+          AND symbol = ANY($2)
+        GROUP BY 1
+        ORDER BY trade_cnt DESC, symbol ASC
+      `,
+      [periodDays, drilldownSymbols],
+    ).catch(() => [])
+    : [];
+  const tradeContextBySymbol = new Map(
+    tradeContextRows.map((row) => [
+      row.symbol,
+      {
+        tradeCount: Number(row.trade_cnt || 0),
+        liveTradeCount: Number(row.live_trade_cnt || 0),
+        paperTradeCount: Number(row.paper_trade_cnt || 0),
+        lastExecutedAt: row.last_executed_at || null,
+      },
+    ]),
+  );
   const actionHints = [];
   const actionCandidates = [];
 
@@ -470,6 +501,12 @@ export async function loadCapitalGuardBreakdown(pgPool, periodDays = 14) {
   const actionCandidateDetails = drilldownRows.map((row) => {
     const capitalGuardCount = Number(row.capital_guard_cnt || 0);
     const overlapCount = Number(row.overlap_cnt || 0);
+    const tradeContext = tradeContextBySymbol.get(row.symbol) || {
+      tradeCount: 0,
+      liveTradeCount: 0,
+      paperTradeCount: 0,
+      lastExecutedAt: null,
+    };
     const recommendation = overlapCount > 0
       ? 'validation/LIVE overlap 분리 우선'
       : 'normal lane 군집 분산 우선';
@@ -478,8 +515,12 @@ export async function loadCapitalGuardBreakdown(pgPool, periodDays = 14) {
       capitalGuardCount,
       overlapCount,
       lastSeenAt: row.last_seen_at || null,
+      tradeCount: tradeContext.tradeCount,
+      liveTradeCount: tradeContext.liveTradeCount,
+      paperTradeCount: tradeContext.paperTradeCount,
+      lastExecutedAt: tradeContext.lastExecutedAt,
       recommendation,
-      label: `${row.symbol} guard ${capitalGuardCount} / overlap ${overlapCount}`,
+      label: `${row.symbol} guard ${capitalGuardCount} / overlap ${overlapCount} / trades ${tradeContext.tradeCount} (LIVE ${tradeContext.liveTradeCount} / PAPER ${tradeContext.paperTradeCount})`,
     };
   });
 
