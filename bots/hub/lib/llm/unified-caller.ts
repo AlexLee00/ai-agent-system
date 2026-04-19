@@ -1,20 +1,21 @@
 import { callClaudeCodeOAuth } from './claude-code-oauth';
 import { callGroqFallback } from './groq-fallback';
 import { checkCache, saveCache } from './cache';
+import { getGroqFallback } from '../../../../packages/core/lib/llm-models';
 import type { LLMCallRequest, LLMCallResponse, AbstractModel } from './types';
 
-// Recommender abstract atom → Claude Code 모델명
+// Recommender abstract atom → Claude Code OAuth 모델 단축명
 const CLAUDE_CODE_MODEL: Record<AbstractModel, 'haiku' | 'sonnet' | 'opus'> = {
   anthropic_haiku:  'haiku',
   anthropic_sonnet: 'sonnet',
   anthropic_opus:   'opus',
 };
 
-// Recommender abstract atom → Groq 폴백 모델
+// llm-models.json SSoT → Groq 폴백 모델 동적 참조
 const GROQ_MODEL: Record<AbstractModel, string> = {
-  anthropic_haiku:  'llama-3.1-8b-instant',
-  anthropic_sonnet: 'llama-3.3-70b-versatile',
-  anthropic_opus:   'qwen-qwq-32b',
+  anthropic_haiku:  getGroqFallback('anthropic_haiku'),
+  anthropic_sonnet: getGroqFallback('anthropic_sonnet'),
+  anthropic_opus:   getGroqFallback('anthropic_opus'),
 };
 
 export async function callWithFallback(req: LLMCallRequest): Promise<LLMCallResponse> {
