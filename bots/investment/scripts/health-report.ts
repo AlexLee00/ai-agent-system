@@ -104,6 +104,7 @@ const ALL_SERVICES = [
 ];
 
 const LOCAL_LLM_HEALTH_HISTORY_FILE = '/tmp/investment-local-llm-health-history.jsonl';
+const SECONDARY_LOCAL_LABEL = 'ai.mlx.server.secondary';
 
 const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;
 const SCHEDULED_SERVICE_DEPLOYMENTS = {
@@ -179,16 +180,21 @@ function summarizeLocalLlmFlapping(history = []) {
   return { status, transitionCount, okCount, failCount, lastError };
 }
 
-function summarizeLocalLlmRedundancy(circuits = []) {
+function summarizeLocalLlmRedundancy(circuits = [], launchctlStatus = {}) {
   const primary = circuits.find((entry) => entry?.role === 'primary') || null;
   const secondary = circuits.find((entry) => entry?.role === 'secondary') || null;
   const templatePath = '/Users/alexlee/projects/ai-agent-system/bots/investment/launchd/ai.mlx.server.secondary.plist';
+  const secondaryLaunchd = launchctlStatus?.[SECONDARY_LOCAL_LABEL] || null;
+  const launchdSummary = secondaryLaunchd
+    ? `${SECONDARY_LOCAL_LABEL} ${secondaryLaunchd.running ? `running(pid=${secondaryLaunchd.pid})` : `stopped(exit=${secondaryLaunchd.exitCode})`}`
+    : `${SECONDARY_LOCAL_LABEL} 미로드`;
 
   if (!secondary) {
     return {
       status: 'single_primary',
       summary: 'secondary endpoint 없음',
       templatePath,
+      launchdSummary,
     };
   }
 
@@ -198,6 +204,7 @@ function summarizeLocalLlmRedundancy(circuits = []) {
       status: 'redundant',
       summary: 'primary + secondary 모두 생성 가능',
       templatePath,
+      launchdSummary,
     };
   }
 
@@ -207,6 +214,7 @@ function summarizeLocalLlmRedundancy(circuits = []) {
     primaryBaseUrl: primary?.baseUrl || null,
     secondaryBaseUrl: secondary?.baseUrl || null,
     templatePath,
+    launchdSummary,
   };
 }
 
@@ -542,7 +550,7 @@ async function loadKisCapabilityHealth() {
   };
 }
 
-async function loadLocalLlmHealth() {
+async function loadLocalLlmHealth(launchctlStatus = {}) {
   const runtimeProfile = await selectRuntime('luna', 'analyst').catch(() => null);
   const primaryBaseUrl = String(runtimeProfile?.local_llm_base_url || env.LOCAL_LLM_BASE_URL || 'http://127.0.0.1:11434').trim();
   const fallbackBaseUrl = String(env.OLLAMA_BASE_URL || '').trim();
@@ -598,7 +606,7 @@ async function loadLocalLlmHealth() {
   appendJsonLine(LOCAL_LLM_HEALTH_HISTORY_FILE, historyEntry);
   const probeHistory = safeReadJsonLines(LOCAL_LLM_HEALTH_HISTORY_FILE, 12);
   const flapping = summarizeLocalLlmFlapping(probeHistory);
-  const redundancy = summarizeLocalLlmRedundancy(circuits);
+  const redundancy = summarizeLocalLlmRedundancy(circuits, launchctlStatus);
 
   return {
     okCount: warnCount === 0 ? 1 : 0,
@@ -928,6 +936,7 @@ function formatText(report) {
         ? [
             `  status: ${report.localLlmHealth.redundancy.status}`,
             `  summary: ${report.localLlmHealth.redundancy.summary}`,
+            report.localLlmHealth.redundancy.launchdSummary ? `  launchd: ${report.localLlmHealth.redundancy.launchdSummary}` : '',
             report.localLlmHealth.redundancy.templatePath ? `  template: ${report.localLlmHealth.redundancy.templatePath}` : '',
           ]
             .filter(Boolean)
@@ -1004,7 +1013,7 @@ async function buildReport() {
     cryptoLiveGateHealth,
     capitalGuardBreakdown,
   );
-  const localLlmHealth = await loadLocalLlmHealth();
+  const localLlmHealth = await loadLocalLlmHealth(status);
   const cryptoGateActionPlan = buildCryptoGateActionPlan(capitalGuardBreakdown);
   const kisCapabilityHealth = await loadKisCapabilityHealth();
   const decision = buildDecision(
