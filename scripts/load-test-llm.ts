@@ -38,6 +38,26 @@ interface CallResult {
   wallMs: number;
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getScenarioConfig() {
+  if (SCENARIO === 'quick-smoke') {
+    return {
+      concurrency: 1,
+      throttleMsBetweenBatches: 2500,
+      note: 'rate-limit 친화적 quick smoke',
+    };
+  }
+
+  return {
+    concurrency: CONCURRENCY,
+    throttleMsBetweenBatches: 0,
+    note: 'default load test',
+  };
+}
+
 async function singleCall(index: number): Promise<CallResult> {
   const start = Date.now();
   try {
@@ -144,9 +164,11 @@ async function saveSummary(summary: {
 }
 
 async function main() {
+  const scenarioConfig = getScenarioConfig();
   console.log(`\n🔥 LLM 부하 테스트 시작`);
   console.log(`   Hub: ${HUB_URL}`);
-  console.log(`   동시성: ${CONCURRENCY} / 총 요청: ${TOTAL} / 팀: ${TEAM} / 시나리오: ${SCENARIO}\n`);
+  console.log(`   동시성: ${scenarioConfig.concurrency} / 총 요청: ${TOTAL} / 팀: ${TEAM} / 시나리오: ${SCENARIO}`);
+  console.log(`   모드: ${scenarioConfig.note}\n`);
 
   await checkCircuitStatus();
   console.log('');
@@ -154,8 +176,8 @@ async function main() {
   const results: CallResult[] = [];
   const batches: number[][] = [];
 
-  for (let i = 0; i < TOTAL; i += CONCURRENCY) {
-    const batch = Array.from({ length: Math.min(CONCURRENCY, TOTAL - i) }, (_, j) => i + j + 1);
+  for (let i = 0; i < TOTAL; i += scenarioConfig.concurrency) {
+    const batch = Array.from({ length: Math.min(scenarioConfig.concurrency, TOTAL - i) }, (_, j) => i + j + 1);
     batches.push(batch);
   }
 
@@ -168,6 +190,10 @@ async function main() {
     done += batchResults.length;
     const ok = batchResults.filter((r) => r.ok).length;
     console.log(`  배치 ${done}/${TOTAL}: ${ok}/${batchResults.length} 성공, 평균 ${Math.round(batchResults.reduce((s, r) => s + r.wallMs, 0) / batchResults.length)}ms`);
+
+    if (scenarioConfig.throttleMsBetweenBatches > 0 && done < TOTAL) {
+      await sleep(scenarioConfig.throttleMsBetweenBatches);
+    }
   }
 
   const totalMs = Date.now() - totalStart;
@@ -222,7 +248,8 @@ async function main() {
   const notes = JSON.stringify({
     source: 'load-test-llm',
     team: TEAM,
-    concurrency: CONCURRENCY,
+    concurrency: scenarioConfig.concurrency,
+    scenarioNote: scenarioConfig.note,
     providerCounts,
     totalFallbacks,
   });
