@@ -179,26 +179,47 @@ export async function llmLoadTestsRoute(req: any, res: any) {
   const params: any[] = scenario ? [scenario, limit] : [limit];
 
   try {
-    const rows = await pgPool.query('public', `
-      SELECT
-        id,
-        run_at,
-        scenario,
-        total_requests,
-        failed_requests,
-        fail_rate,
-        p95_latency_ms AS p95_ms,
-        p99_latency_ms AS p99_ms,
-        avg_latency_ms AS avg_ms,
-        duration_s,
-        notes
-      FROM hub.load_test_results
-      ${whereClause}
-      ORDER BY run_at DESC
-      LIMIT $${params.length}
-    `, params);
+    const [rows, scenarioRows] = await Promise.all([
+      pgPool.query('public', `
+        SELECT
+          id,
+          run_at,
+          scenario,
+          total_requests,
+          failed_requests,
+          fail_rate,
+          p95_latency_ms AS p95_ms,
+          p99_latency_ms AS p99_ms,
+          avg_latency_ms AS avg_ms,
+          duration_s,
+          notes
+        FROM hub.load_test_results
+        ${whereClause}
+        ORDER BY run_at DESC
+        LIMIT $${params.length}
+      `, params),
+      pgPool.query('public', `
+        SELECT DISTINCT ON (scenario)
+          scenario,
+          run_at,
+          total_requests,
+          failed_requests,
+          fail_rate,
+          p95_latency_ms AS p95_ms,
+          p99_latency_ms AS p99_ms,
+          avg_latency_ms AS avg_ms,
+          duration_s,
+          notes
+        FROM hub.load_test_results
+        ORDER BY scenario, run_at DESC
+      `),
+    ]);
 
     const normalizedRows = rows.map((row: any) => ({
+      ...row,
+      notes: parseLoadTestNotes(row.notes),
+    }));
+    const scenarioSummary = scenarioRows.map((row: any) => ({
       ...row,
       notes: parseLoadTestNotes(row.notes),
     }));
@@ -208,6 +229,7 @@ export async function llmLoadTestsRoute(req: any, res: any) {
       count: normalizedRows.length,
       scenario: scenario || 'all',
       latest,
+      scenario_summary: scenarioSummary,
       results: normalizedRows,
     });
   } catch (err: any) {
@@ -216,6 +238,7 @@ export async function llmLoadTestsRoute(req: any, res: any) {
       count: 0,
       scenario: scenario || 'all',
       latest: null,
+      scenario_summary: [],
       results: [],
       note: err.message.includes('does not exist') ? 'hub.load_test_results 테이블 미생성 — 마이그레이션 필요' : err.message,
     });
