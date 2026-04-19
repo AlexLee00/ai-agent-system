@@ -25,6 +25,15 @@ const {
 const { logsSearchRoute, logsStatsRoute } = require('../lib/routes/logs');
 const { darwinCallbackRoute } = require('../lib/routes/darwin-callback');
 const { memoryRememberRoute, memoryRecallRoute } = require('../lib/routes/memory');
+const {
+  legalCaseCreateRoute,
+  legalCasesListRoute,
+  legalCaseDetailRoute,
+  legalCaseStatusRoute,
+  legalCaseApproveRoute,
+  legalCaseFeedbackRoute,
+  legalCaseReportRoute,
+} = require('../lib/routes/legal');
 const { llmCallRoute, llmOAuthRoute, llmGroqRoute, llmStatsRoute, llmLoadTestsRoute, llmCircuitRoute } = require('../lib/routes/llm');
 const {
   agentsListRoute,
@@ -158,6 +167,13 @@ app.get('/hub/logs/stats', generalLimiter, logsStatsRoute);
 app.post('/hub/darwin/callback', generalLimiter, darwinCallbackRoute);
 app.post('/hub/memory/remember', generalLimiter, memoryRememberRoute);
 app.post('/hub/memory/recall', generalLimiter, memoryRecallRoute);
+app.post('/hub/legal/case', generalLimiter, legalCaseCreateRoute);
+app.get('/hub/legal/cases', generalLimiter, legalCasesListRoute);
+app.post('/hub/legal/case/:id/approve', generalLimiter, legalCaseApproveRoute);
+app.post('/hub/legal/case/:id/feedback', generalLimiter, legalCaseFeedbackRoute);
+app.get('/hub/legal/case/:id/status', generalLimiter, legalCaseStatusRoute);
+app.get('/hub/legal/case/:id/report', generalLimiter, legalCaseReportRoute);
+app.get('/hub/legal/case/:id', generalLimiter, legalCaseDetailRoute);
 app.get('/hub/agents', generalLimiter, agentsListRoute);
 app.get('/hub/agents/dashboard', generalLimiter, agentsDashboardRoute);
 app.get('/hub/agents/always-on', generalLimiter, agentsAlwaysOnRoute);

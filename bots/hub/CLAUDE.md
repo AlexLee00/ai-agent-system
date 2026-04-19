@@ -43,6 +43,13 @@ GET  /hub/agents/*            — 에이전트 레지스트리
 GET  /hub/n8n/workflows       — n8n 워크플로우 목록 (API 키 기반)
 POST /hub/n8n/workflows/:id/run — n8n 워크플로우 실행
 POST /hub/n8n/webhook/:path   — n8n 웹훅 프록시
+POST /hub/legal/case               — 새 사건 접수 (저스틴팀)
+GET  /hub/legal/cases              — 사건 목록 (?status= 필터)
+GET  /hub/legal/case/:id           — 사건 상세
+GET  /hub/legal/case/:id/status    — 진행 상태 요약 (분석/판례/감정서 수)
+POST /hub/legal/case/:id/approve   — 마스터 승인 (status 전환)
+POST /hub/legal/case/:id/feedback  — 판결 피드백 등록
+GET  /hub/legal/case/:id/report    — 최신 감정서 조회
 ```
 
 ## 운영 해석
