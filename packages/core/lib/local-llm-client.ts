@@ -63,8 +63,13 @@ function getBaseUrl(options: { baseUrl?: string } = {}): string {
   return normalizeBaseUrl(options.baseUrl || env.LOCAL_LLM_CHAT_BASE_URL || env.OLLAMA_BASE_URL || env.LOCAL_LLM_BASE_URL || '');
 }
 
+function getEmbeddingsBaseUrl(options: { baseUrl?: string } = {}): string {
+  const raw = normalizeBaseUrl(options.baseUrl || process.env.EMBED_URL || env.LOCAL_LLM_BASE_URL || env.LOCAL_LLM_CHAT_BASE_URL || '');
+  return raw.replace(/\/v1\/embeddings$/i, '');
+}
+
 function getEmbeddingsUrl(options: { baseUrl?: string } = {}): string {
-  const baseUrl = normalizeBaseUrl(options.baseUrl || process.env.EMBED_URL || env.LOCAL_LLM_BASE_URL || env.LOCAL_LLM_CHAT_BASE_URL || '');
+  const baseUrl = getEmbeddingsBaseUrl(options);
   return baseUrl ? `${baseUrl}/v1/embeddings` : '';
 }
 
@@ -174,18 +179,24 @@ async function resolveRequestedModel(model: string, options: { baseUrl?: string 
   return model;
 }
 
-async function resolveEmbeddingModel(model = LOCAL_MODEL_EMBED): Promise<string> {
-  const models = await getAvailableModels();
-  if (models.length === 0 || models.includes(model)) return model;
+async function resolveEmbeddingModel(model = LOCAL_MODEL_EMBED, options: { baseUrl?: string } = {}): Promise<string> {
+  const baseUrl = getEmbeddingsBaseUrl(options);
+  const models = await getAvailableModels({ baseUrl });
+  if (models.length === 0) return model;
 
-  const remapped = models.find((candidate) => /embed/i.test(candidate))
-    || models.find((candidate) => /qwen/i.test(candidate))
-    || models[0];
-  if (remapped && remapped !== model) {
-    console.warn(`[local-llm-client] embedding model '${model}' 없음 → '${remapped}' 사용`);
+  const hasRequestedModel = models.includes(model);
+  const requestedLooksLikeEmbed = /embed/i.test(model);
+  if (hasRequestedModel && requestedLooksLikeEmbed) return model;
+
+  const remapped = models.find((candidate) => /embed/i.test(candidate)) || null;
+  if (remapped) {
+    if (remapped !== model) {
+      console.warn(`[local-llm-client] embedding model '${model}' 없음/부적합 → '${remapped}' 사용`);
+    }
     return remapped;
   }
-  return model;
+
+  throw new Error(`지원되는 embedding 모델 없음: requested='${model}', available='${models.join(', ')}'`);
 }
 
 async function isLocalLLMAvailable(options: { baseUrl?: string } = {}): Promise<boolean> {
