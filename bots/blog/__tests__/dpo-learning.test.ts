@@ -249,9 +249,9 @@ describe('cross-platform-transfer', () => {
     expect(hooks[0].hook_style).toBe('list');
   });
 
-  test('runTransferLearning — Kill Switch OFF 시 null 반환', async () => {
+  test('runTransferLearning — Kill Switch OFF 시 skipped 반환', async () => {
     const result = await transfer.runTransferLearning();
-    expect(result).toBeNull();
+    expect(result).toHaveProperty('skipped', true);
   });
 });
 
@@ -320,8 +320,8 @@ describe('marketing-rag', () => {
     expect(eval_result.results.length).toBeGreaterThan(0);
   });
 
-  test('runMarketingRag — Kill Switch OFF 시 null 반환', async () => {
+  test('runMarketingRag — Kill Switch OFF 시 skipped 반환', async () => {
     const result = await rag.runMarketingRag('비수기 대응 전략');
-    expect(result).toBeNull();
+    expect(result).toHaveProperty('skipped', true);
   });
 });

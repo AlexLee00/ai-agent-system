@@ -1,3 +1,67 @@
+# 세션 인수인계 — 2026-04-19 (CODEX_BLOG_EVOLUTION Phase 6+7 완료 — 58차 세션 추가)
+
+> 세션 범위: CODEX_BLOG_EVOLUTION Phase 6 (Self-Rewarding + Agentic RAG) + Phase 7 (E2E + 부하 테스트 + 운영 문서)
+
+## 완료 요약 ✅ (58차 세션 추가)
+
+### CODEX_BLOG_EVOLUTION Phase 6+7 완료
+
+**Phase 6 — Self-Rewarding + Agentic RAG for Marketing**:
+- `lib/self-rewarding/marketing-dpo.ts`: DPO 선호 쌍 생성 + LLM-as-a-Judge + 성공 패턴 라이브러리 + 실패 Taxonomy
+- `lib/agentic-rag/marketing-rag.ts`: 4 모듈 (QueryPlanner/MultiSourceRetriever/QualityEvaluator/ResponseSynthesizer)
+- `lib/self-rewarding/cross-platform-transfer.ts`: 인스타 Hook → 블로그/페북 전이 학습
+- `topic-selector.ts`: DPO 힌트 통합 (_loadDpoHints + _applyDpoScore, Kill Switch ON 시만 활성)
+- `scripts/run-dpo-learning.ts`: 주간 실행 스크립트
+- `launchd/ai.blog.dpo-learning.plist`: 매주 월요일 03:00 KST (BLOG_DPO_ENABLED=false 기본)
+- `migrations/020-dpo-self-rewarding.sql`: dpo_preference_pairs + success_pattern_library + failure_taxonomy
+- Kill Switch: `BLOG_DPO_ENABLED` / `BLOG_MARKETING_RAG_ENABLED` (기본 false)
+
+**Phase 7 — Integration Test + 운영 문서**:
+- `__tests__/dpo-self-rewarding.test.ts`: 37개 (DPO/RAG/Transfer 전체)
+- `__tests__/e2e/full-cycle.test.ts`: 22개 (5 시나리오 E2E)
+- `__tests__/load/stress.test.ts`: 8개 (3 시나리오 부하)
+- `docs/blog/EVOLUTION_ARCHITECTURE.md`: 7 Layer 구조 + Kill Switch + 7주 활성화 로드맵
+- `docs/blog/DPO_LEARNING_GUIDE.md`: DPO 학습 가이드
+- `docs/blog/ROI_DASHBOARD_GUIDE.md`: 스카팀 매출 연동 ROI 가이드
+
+**테스트 현황**: 264개 전체 (`bots/blog/__tests__/` 기준)
+**커밋**: `b0fe6714`
+
+## CODEX_BLOG_EVOLUTION 전체 완료 ✅
+
+| Phase | 내용 | 커밋 |
+|-------|------|------|
+| 1 | 이미지 복구 + 3 플랫폼 보고 + launchd | (55차 이전) |
+| 2 | 스카팀 매출 연동 + ROI 추적 | (55차) |
+| 3 | 자율진화 루프 + AARRR + CMF | (55차) |
+| 4 | 멀티 플랫폼 오케스트레이션 + A/B | (55차) |
+| 5 | Signal Collector 강화 | (55차) |
+| 6 | Self-Rewarding + Agentic RAG + DPO | `b0fe6714` |
+| 7 | E2E + 부하 테스트 + 운영 문서 | `b0fe6714` |
+
+## 다음 단계 (58차 이후)
+
+1. **OPS 마이그레이션 적용** (마스터 승인 후):
+   - `015-revenue-attribution.sql` ~ `020-dpo-self-rewarding.sql`
+2. **7주 Kill Switch 단계적 활성화**:
+   - Week 1: `BLOG_PUBLISH_REPORTER_ENABLED=true` + Meta 수동 등록
+   - Week 2: `BLOG_REVENUE_CORRELATION_ENABLED=true`
+   - Week 3: `BLOG_EVOLUTION_CYCLE_ENABLED=true`
+   - Week 4: `BLOG_MULTI_PLATFORM_ENABLED=true`
+   - Week 5: `BLOG_SIGNAL_COLLECTOR_ENABLED=true`
+   - Week 6: `BLOG_DPO_ENABLED=true` + `BLOG_MARKETING_RAG_ENABLED=true`
+   - Week 7: Production 완전 전환
+3. **마스터 수동 작업** (블로팀 작동 전제):
+   - Meta Developer 등록 → Instagram access_token + ig_user_id
+   - Facebook Page access_token + Page ID
+   - `docs/blog/INSTAGRAM_SETUP_GUIDE.md` 참조
+
+## 🏷️ 58차 세션 요약
+
+**58차 세션 — CODEX_BLOG_EVOLUTION Phase 6+7 완료: DPO Self-Rewarding + Agentic RAG + E2E 22개 + 부하 8개 + 운영 문서 3개, 전체 264 tests (0 failures).**
+
+---
+
 # 세션 인수인계 — 2026-04-19 (CODEX_LLM_ROUTING_V2 미구현 완료 — 57차 세션 추가)
 
 > 세션 범위: CODEX_LLM_ROUTING_V2 코드점검 + 미구현 완료 (57차) / CODEX_SKA_EVOLUTION Phase 7 (56차)
