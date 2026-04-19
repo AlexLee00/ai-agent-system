@@ -161,6 +161,19 @@ const EVAL_EXCLUDED_PROVIDERS = new Set(['openai-oauth', 'openai', 'anthropic'])
 const MAX_CONSECUTIVE_FAILURES = 5;
 const FAILURE_COOLDOWN_MS = 60_000;
 const _providerFailures = new Map<string, ProviderFailureState>();
+let _localCircuitBreaker: {
+  isCircuitOpen?: (baseUrl: string) => boolean;
+} | null = null;
+
+function _getLocalCircuitBreaker() {
+  if (_localCircuitBreaker) return _localCircuitBreaker;
+  try {
+    _localCircuitBreaker = require('./local-circuit-breaker');
+  } catch {
+    _localCircuitBreaker = {};
+  }
+  return _localCircuitBreaker;
+}
 
 function _isProviderCoolingDown(provider: string): boolean {
   const entry = _providerFailures.get(provider);
@@ -840,12 +853,23 @@ export async function callWithFallback({ chain, systemPrompt, userPrompt, logMet
   const runtimeSelectionReason = runtimeProfile ? 'team-runtime-profile' : 'env-fallback';
   const traceRoute = logMeta.selectorKey || logMeta.requestType || null;
   const trace = traceCollector.startTrace(logMeta.agentName || logMeta.bot || null, logMeta.team || null, traceRoute);
+  const skippedProviders: string[] = [];
 
   let lastError;
   for (let i = 0; i < chain.length; i++) {
     const cfg     = chain[i];
+    if (cfg.provider === 'local') {
+      const localBaseUrl = String(runtimeProfile?.local_llm_base_url || env.OLLAMA_BASE_URL || '').trim();
+      const localCircuit = _getLocalCircuitBreaker();
+      if (localBaseUrl && typeof localCircuit.isCircuitOpen === 'function' && localCircuit.isCircuitOpen(localBaseUrl)) {
+        console.warn(`[llm-fallback] local circuit OPEN → 체인에서 건너뜀 (${localBaseUrl})`);
+        skippedProviders.push(`local:circuit_open`);
+        continue;
+      }
+    }
     if (_isProviderCoolingDown(cfg.provider)) {
       console.warn(`[llm-fallback] ${cfg.provider} 연속 ${MAX_CONSECUTIVE_FAILURES}회 실패 → 쿨다운 중, 건너뜀`);
+      skippedProviders.push(`${cfg.provider}:provider_cooldown`);
       continue;
     }
     const t0      = Date.now();
@@ -978,11 +1002,13 @@ export async function callWithFallback({ chain, systemPrompt, userPrompt, logMet
   }
 
   if (!lastError) {
-    const coolingProviders = chain
-      .filter((c) => _isProviderCoolingDown(c.provider))
-      .map((c) => c.provider);
+    const coolingProviders = skippedProviders.length > 0
+      ? skippedProviders
+      : chain
+        .filter((c) => _isProviderCoolingDown(c.provider))
+        .map((c) => `${c.provider}:provider_cooldown`);
     lastError = new Error(
-      `모든 LLM provider가 연속 실패로 쿨다운 중: [${coolingProviders.join(', ')}]. ` +
+      `사용 가능한 LLM provider가 없어 체인을 건너뜀: [${coolingProviders.join(', ')}]. ` +
       `${FAILURE_COOLDOWN_MS / 1000}초 후 자동 재시도됩니다.`
     );
   }

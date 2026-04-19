@@ -336,7 +336,14 @@ async function _callDirect(agentName, systemPrompt, userPrompt, maxTokens, optio
 }
 
 async function callSharedFallback(agentName, agentPolicy, systemPrompt, userPrompt, maxTokens, options = {}) {
-  const chain = (agentPolicy.fallbackChain || []).map((entry) => ({
+  const isExitCritical = String(options.purpose || '').toLowerCase().includes('exit');
+  const filteredChain = (agentPolicy.fallbackChain || []).filter((entry) => {
+    if (agentName !== 'luna') return true;
+    if (!isExitCritical) return true;
+    return entry.provider !== 'local';
+  });
+
+  const chain = filteredChain.map((entry) => ({
     provider: entry.provider,
     model: entry.model,
     maxTokens: entry.maxTokens || maxTokens,
