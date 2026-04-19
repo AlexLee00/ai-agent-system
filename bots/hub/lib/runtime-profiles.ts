@@ -29,7 +29,7 @@ type RuntimeProfile = {
 type TeamProfiles = Record<string, RuntimeProfile>;
 
 const LOCAL_LLM_BASE_URL = 'http://127.0.0.1:11434';
-const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11435';
+const OLLAMA_BASE_URL = process.env.LOCAL_LLM_CHAT_BASE_URL || process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11435';
 // Current deployed routes. These are intentionally separated from "latest official"
 // model families so runtime profiles reflect live ops first.
 const LOCAL_FAST_ROUTE = 'local/qwen2.5-7b';
@@ -655,6 +655,14 @@ export const PROFILES: Record<string, TeamProfiles> = {
     }
   }
 };
+
+for (const teamProfiles of Object.values(PROFILES)) {
+  for (const profile of Object.values(teamProfiles)) {
+    if (profile?.local_llm_base_url === LOCAL_LLM_BASE_URL) {
+      profile.local_llm_base_url = OLLAMA_BASE_URL;
+    }
+  }
+}
 
 export function selectRuntimeProfile(team: string | null | undefined, purpose = 'default'): RuntimeProfile | null {
   const normalizedTeam = String(team || '').trim().toLowerCase();

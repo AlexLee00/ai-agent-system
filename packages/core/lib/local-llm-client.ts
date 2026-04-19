@@ -60,11 +60,11 @@ function normalizeBaseUrl(value: unknown): string {
 }
 
 function getBaseUrl(options: { baseUrl?: string } = {}): string {
-  return normalizeBaseUrl(options.baseUrl || env.LOCAL_LLM_BASE_URL || '');
+  return normalizeBaseUrl(options.baseUrl || env.LOCAL_LLM_CHAT_BASE_URL || env.OLLAMA_BASE_URL || env.LOCAL_LLM_BASE_URL || '');
 }
 
 function getEmbeddingsUrl(options: { baseUrl?: string } = {}): string {
-  const baseUrl = getBaseUrl(options);
+  const baseUrl = normalizeBaseUrl(options.baseUrl || process.env.EMBED_URL || env.LOCAL_LLM_BASE_URL || env.LOCAL_LLM_CHAT_BASE_URL || '');
   return baseUrl ? `${baseUrl}/v1/embeddings` : '';
 }
 
