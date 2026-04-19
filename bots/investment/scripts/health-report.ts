@@ -179,6 +179,33 @@ function summarizeLocalLlmFlapping(history = []) {
   return { status, transitionCount, okCount, failCount, lastError };
 }
 
+function summarizeLocalLlmRedundancy(circuits = []) {
+  const primary = circuits.find((entry) => entry?.role === 'primary') || null;
+  const secondary = circuits.find((entry) => entry?.role === 'secondary') || null;
+
+  if (!secondary) {
+    return {
+      status: 'single_primary',
+      summary: 'secondary endpoint 없음',
+    };
+  }
+
+  const secondaryReady = secondary?.probe?.available && !secondary?.probe?.error;
+  if (secondaryReady) {
+    return {
+      status: 'redundant',
+      summary: 'primary + secondary 모두 생성 가능',
+    };
+  }
+
+  return {
+    status: 'primary_only',
+    summary: secondary?.probe?.error ? `secondary 미가동 (${secondary.probe.error})` : 'secondary 생성 불가',
+    primaryBaseUrl: primary?.baseUrl || null,
+    secondaryBaseUrl: secondary?.baseUrl || null,
+  };
+}
+
 function sanitizeInsightLine(text = '') {
   return String(text || '')
     .split('\n')
@@ -567,6 +594,7 @@ async function loadLocalLlmHealth() {
   appendJsonLine(LOCAL_LLM_HEALTH_HISTORY_FILE, historyEntry);
   const probeHistory = safeReadJsonLines(LOCAL_LLM_HEALTH_HISTORY_FILE, 12);
   const flapping = summarizeLocalLlmFlapping(probeHistory);
+  const redundancy = summarizeLocalLlmRedundancy(circuits);
 
   return {
     okCount: warnCount === 0 ? 1 : 0,
@@ -578,6 +606,7 @@ async function loadLocalLlmHealth() {
     probe: primary.probe,
     probeHistory,
     flapping,
+    redundancy,
     circuits,
   };
 }
@@ -718,9 +747,9 @@ function buildDecision(
         reason: `암호화폐 LIVE 게이트 ${cryptoLiveGateHealth.review?.liveGate?.decision || 'blocked'} — ${cryptoLiveGateHealth.review?.liveGate?.reason || 'PAPER/LIVE 전환 데이터 부족'}`,
       },
       {
-        active: localLlmHealth.warnCount > 0 || localLlmHealth.flapping?.status === 'flapping',
+        active: localLlmHealth.warnCount > 0 || localLlmHealth.flapping?.status === 'flapping' || localLlmHealth.redundancy?.status === 'primary_only',
         level: 'medium',
-        reason: `local LLM ${localLlmHealth.flapping?.status === 'flapping' ? `flapping(${localLlmHealth.flapping.transitionCount}회 전환)` : localLlmHealth.probe?.error ? `probe 실패(${localLlmHealth.probe.error})` : `circuit ${localLlmHealth.status?.state || 'OPEN'}`} — ${localLlmHealth.baseUrl}${localLlmHealth.status?.state === 'OPEN' ? ` / ${Math.ceil(Number(localLlmHealth.status?.remainingMs || 0) / 1000)}초 후 재시도` : ''}`,
+        reason: `local LLM ${localLlmHealth.flapping?.status === 'flapping' ? `flapping(${localLlmHealth.flapping.transitionCount}회 전환)` : localLlmHealth.probe?.error ? `probe 실패(${localLlmHealth.probe.error})` : `circuit ${localLlmHealth.status?.state || 'OPEN'}`} — ${localLlmHealth.baseUrl}${localLlmHealth.status?.state === 'OPEN' ? ` / ${Math.ceil(Number(localLlmHealth.status?.remainingMs || 0) / 1000)}초 후 재시도` : ''}${localLlmHealth.redundancy?.status === 'primary_only' ? ` / standby 없음(${localLlmHealth.redundancy.summary})` : ''}`,
       },
     ],
     okReason: '핵심 서비스와 trade_review 정합성이 현재는 안정 구간입니다.',
@@ -888,6 +917,15 @@ function formatText(report) {
             ...(report.localLlmHealth.flapping.lastError ? [`  last error: ${report.localLlmHealth.flapping.lastError}`] : []),
           ]
         : ['  probe history 없음'],
+    },
+    {
+      title: '■ local LLM redundancy',
+      lines: report.localLlmHealth?.redundancy
+        ? [
+            `  status: ${report.localLlmHealth.redundancy.status}`,
+            `  summary: ${report.localLlmHealth.redundancy.summary}`,
+          ]
+        : ['  redundancy 정보 없음'],
     },
     buildHealthCountSection('■ KIS 실행 capability', report.kisCapabilityHealth, { okLimit: 1, warnLimit: 2 }),
     buildHealthCountSection('■ rail별 신규 진입 한도(오늘)', report.tradeLaneHealth, { okLimit: 6, warnLimit: 6 }),
