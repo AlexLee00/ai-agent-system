@@ -20,6 +20,9 @@ const HUB_AUTH_TOKEN = process.env.HUB_AUTH_TOKEN || '';
 const CONCURRENCY = Number(process.argv[2] || 5);
 const TOTAL = Number(process.argv[3] || 20);
 const TEAM = process.argv[4] || 'luna';
+const SCENARIO = process.argv[5] || 'quick-smoke';
+
+const pgPool = require('../packages/core/lib/pg-pool');
 
 if (!HUB_AUTH_TOKEN) {
   console.error('[load-test] HUB_AUTH_TOKEN 환경변수 필수');
@@ -106,10 +109,44 @@ async function checkCircuitStatus(): Promise<void> {
   }
 }
 
+async function saveSummary(summary: {
+  totalRequests: number;
+  failedRequests: number;
+  failRate: number;
+  p95LatencyMs: number;
+  p99LatencyMs: number;
+  avgLatencyMs: number;
+  durationS: number;
+  notes: string;
+}): Promise<void> {
+  try {
+    await pgPool.run(
+      'public',
+      `INSERT INTO hub.load_test_results
+       (scenario, total_requests, failed_requests, fail_rate, p95_latency_ms, p99_latency_ms, avg_latency_ms, duration_s, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [
+        SCENARIO,
+        summary.totalRequests,
+        summary.failedRequests,
+        summary.failRate,
+        summary.p95LatencyMs,
+        summary.p99LatencyMs,
+        summary.avgLatencyMs,
+        summary.durationS,
+        summary.notes,
+      ],
+    );
+    console.log(`[load-test] 결과 저장 완료: scenario=${SCENARIO}`);
+  } catch (err: any) {
+    console.warn(`[load-test] 결과 저장 실패 (${SCENARIO}): ${err.message}`);
+  }
+}
+
 async function main() {
   console.log(`\n🔥 LLM 부하 테스트 시작`);
   console.log(`   Hub: ${HUB_URL}`);
-  console.log(`   동시성: ${CONCURRENCY} / 총 요청: ${TOTAL} / 팀: ${TEAM}\n`);
+  console.log(`   동시성: ${CONCURRENCY} / 총 요청: ${TOTAL} / 팀: ${TEAM} / 시나리오: ${SCENARIO}\n`);
 
   await checkCircuitStatus();
   console.log('');
@@ -181,6 +218,24 @@ async function main() {
       console.log(`    ${r.provider}: ${r.error}`);
     }
   }
+
+  const notes = JSON.stringify({
+    source: 'load-test-llm',
+    team: TEAM,
+    concurrency: CONCURRENCY,
+    providerCounts,
+    totalFallbacks,
+  });
+  await saveSummary({
+    totalRequests: TOTAL,
+    failedRequests: failed.length,
+    failRate: TOTAL > 0 ? failed.length / TOTAL : 0,
+    p95LatencyMs: p95,
+    p99LatencyMs: p99,
+    avgLatencyMs: avg,
+    durationS: Math.round(totalMs / 1000),
+    notes,
+  });
 
   console.log('');
   await checkCircuitStatus();
