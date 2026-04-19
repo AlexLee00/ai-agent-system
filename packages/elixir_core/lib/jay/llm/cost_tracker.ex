@@ -111,6 +111,54 @@ defmodule Jay.Core.LLM.CostTracker do
 
     require Logger
 
+    defp table_layout(table) do
+      case table do
+        "luna_llm_cost_tracking" ->
+          %{
+            timestamp_column: "inserted_at",
+            agent_column: "agent_name",
+            has_updated_at: false
+          }
+
+        "darwin_llm_cost_tracking" ->
+          %{
+            timestamp_column: "logged_at",
+            agent_column: "agent",
+            has_updated_at: true
+          }
+
+        _ ->
+          %{
+            timestamp_column: "timestamp",
+            agent_column: "agent",
+            has_updated_at: true
+          }
+      end
+    end
+
+    defp insert_sql(table) do
+      layout = table_layout(table)
+
+      columns =
+        [layout.timestamp_column, layout.agent_column, "model", "provider", "tokens_in", "tokens_out", "cost_usd", "inserted_at"] ++
+          if(layout.has_updated_at, do: ["updated_at"], else: [])
+
+      values =
+        ["NOW()", "$1", "$2", "$3", "$4", "$5", "$6", "NOW()"] ++
+          if(layout.has_updated_at, do: ["NOW()"], else: [])
+
+      """
+      INSERT INTO #{table}
+        (#{Enum.join(columns, ", ")})
+      VALUES (#{Enum.join(values, ", ")})
+      """
+    end
+
+    defp today_sum_sql(table) do
+      layout = table_layout(table)
+      "SELECT COALESCE(SUM(cost_usd), 0.0) FROM #{table} WHERE #{layout.timestamp_column}::date = CURRENT_DATE"
+    end
+
     def track_and_insert(table, log_prefix, entry, state) do
       cost_usd =
         case Map.get(entry, :cost_usd) do
@@ -127,11 +175,7 @@ defmodule Jay.Core.LLM.CostTracker do
 
       insert_result =
         Jay.Core.Repo.query(
-          """
-          INSERT INTO #{table}
-            (timestamp, agent, model, provider, tokens_in, tokens_out, cost_usd, inserted_at, updated_at)
-          VALUES (NOW(), $1, $2, $3, $4, $5, $6, NOW(), NOW())
-          """,
+          insert_sql(table),
           [entry.agent, entry.model, provider, tokens_in, tokens_out, cost_usd]
         )
 
@@ -158,11 +202,7 @@ defmodule Jay.Core.LLM.CostTracker do
       tokens_out = Map.get(entry, :tokens_out, Map.get(entry, :tokens_output, 0))
 
       case Jay.Core.Repo.query(
-             """
-             INSERT INTO #{table}
-               (timestamp, agent, model, provider, tokens_in, tokens_out, cost_usd, inserted_at, updated_at)
-             VALUES (NOW(), $1, $2, $3, $4, $5, $6, NOW(), NOW())
-             """,
+             insert_sql(table),
              [entry.agent, entry.model, provider, tokens_in, tokens_out, cost_usd]
            ) do
         {:ok, _}    -> {:ok, Map.put(entry, :cost_usd, cost_usd)}
@@ -183,7 +223,7 @@ defmodule Jay.Core.LLM.CostTracker do
 
       daily_spent =
         case Jay.Core.Repo.query(
-               "SELECT COALESCE(SUM(cost_usd), 0.0) FROM #{table} WHERE timestamp::date = CURRENT_DATE",
+               today_sum_sql(table),
                []
              ) do
           {:ok, %{rows: [[sum]]}} when is_number(sum) -> sum
@@ -209,7 +249,7 @@ defmodule Jay.Core.LLM.CostTracker do
 
       total =
         case Jay.Core.Repo.query(
-               "SELECT COALESCE(SUM(cost_usd), 0.0) FROM #{table} WHERE timestamp::date = CURRENT_DATE",
+               today_sum_sql(table),
                []
              ) do
           {:ok, %{rows: [[sum]]}} when is_number(sum) -> sum
