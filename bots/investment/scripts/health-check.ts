@@ -12,6 +12,7 @@
  */
 
 import { execSync } from 'child_process';
+import fs from 'node:fs';
 import { createRequire } from 'module';
 import { publishAlert } from '../shared/alert-publisher.ts';
 import { validateTradeReview } from './validate-trade-review.ts';
@@ -58,6 +59,7 @@ const ALL_SERVICES = [
 
 // 정상 종료 코드
 const NORMAL_EXIT_CODES = new Set([0, -9, -15]);
+const LOCAL_LLM_HEALTH_HISTORY_FILE = '/tmp/investment-local-llm-health-history.jsonl';
 
 // ─── 알림 발송 ───────────────────────────────────────────────────
 
@@ -70,6 +72,58 @@ async function notify(msg, level = 3) {
       message: msg,
     });
   } catch { /* 무시 */ }
+}
+
+function loadRecentLocalProbeTrend() {
+  try {
+    if (!fs.existsSync(LOCAL_LLM_HEALTH_HISTORY_FILE)) {
+      return { status: 'unknown', okCount: 0, failCount: 0, transitionCount: 0, lastError: null, latest: null };
+    }
+
+    const recent = String(fs.readFileSync(LOCAL_LLM_HEALTH_HISTORY_FILE, 'utf8') || '')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .slice(-6)
+      .map((line) => {
+        try {
+          return JSON.parse(line);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+
+    if (recent.length === 0) {
+      return { status: 'unknown', okCount: 0, failCount: 0, transitionCount: 0, lastError: null, latest: null };
+    }
+
+    let transitionCount = 0;
+    for (let i = 1; i < recent.length; i += 1) {
+      if (Boolean(recent[i - 1]?.probeOk) !== Boolean(recent[i]?.probeOk)) transitionCount += 1;
+    }
+
+    const okCount = recent.filter((row) => row?.probeOk).length;
+    const failCount = recent.filter((row) => row && !row.probeOk).length;
+    const latest = recent[recent.length - 1] || null;
+    const lastError = recent.slice().reverse().find((row) => row && !row.probeOk)?.probeError || null;
+
+    let status = 'stable';
+    if (recent.length < 2) status = 'warming_up';
+    else if (failCount > 0 && transitionCount >= 2) status = 'flapping';
+    else if (latest && !latest.probeOk) status = 'degraded';
+
+    return { status, okCount, failCount, transitionCount, lastError, latest };
+  } catch (error) {
+    return {
+      status: 'unknown',
+      okCount: 0,
+      failCount: 0,
+      transitionCount: 0,
+      lastError: error?.message || String(error),
+      latest: null,
+    };
+  }
 }
 
 // ─── launchctl 파싱 ──────────────────────────────────────────────
@@ -185,6 +239,34 @@ async function main() {
         msg: `⚠️ [루나 헬스] trade_review 점검 실패\n${e.message}`,
       });
     }
+  }
+
+  const localLlmTrend = loadRecentLocalProbeTrend();
+  if (localLlmTrend.status === 'flapping') {
+    const key = 'local-llm-flapping';
+    if (hsm.canAlert(state, key)) {
+      issues.push({
+        key,
+        level: 3,
+        msg: `⚠️ [루나 헬스] local LLM flapping\n최근 probe ok ${localLlmTrend.okCount} / fail ${localLlmTrend.failCount} / 전환 ${localLlmTrend.transitionCount}회${localLlmTrend.lastError ? `\nlast error: ${localLlmTrend.lastError}` : ''}`,
+      });
+    }
+  } else if (localLlmTrend.status === 'degraded') {
+    const key = 'local-llm-degraded';
+    if (hsm.canAlert(state, key)) {
+      issues.push({
+        key,
+        level: 2,
+        msg: `⚠️ [루나 헬스] local LLM degraded\n최근 생성 probe 실패${localLlmTrend.lastError ? `\n${localLlmTrend.lastError}` : ''}`,
+      });
+    }
+  } else {
+    ['local-llm-flapping', 'local-llm-degraded'].forEach((key) => {
+      if (state[key]) {
+        recovers.push({ key, msg: `✅ [루나 헬스] local LLM 회복\n최근 생성 probe 기준 ${localLlmTrend.status} 상태 — 자동 감지` });
+        hsm.clearAlert(state, key);
+      }
+    });
   }
 
   // 이슈 알림 발송
