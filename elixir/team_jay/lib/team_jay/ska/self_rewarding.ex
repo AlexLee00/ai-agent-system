@@ -13,7 +13,6 @@ defmodule TeamJay.Ska.SelfRewarding do
   """
   require Logger
 
-  @preferred_threshold 0.7
   @rejected_threshold 0.4
   @rejection_trigger_count 10
 
@@ -86,7 +85,12 @@ defmodule TeamJay.Ska.SelfRewarding do
 
           if low_affinity != [] do
             names = Enum.map_join(low_affinity, ", ", & &1["skill_name"])
-            TeamJay.Telegram.send_urgent("⚠️ [SelfRewarding] 월간 affinity 하락 스킬: #{names} — 마스터 검토 필요")
+
+            Jay.Core.HubClient.post_alarm(
+              "⚠️ [SelfRewarding] 월간 affinity 하락 스킬: #{names} — 마스터 검토 필요",
+              "ska",
+              "self_rewarding"
+            )
           end
 
           {:ok, data}
@@ -275,37 +279,27 @@ defmodule TeamJay.Ska.SelfRewarding do
     """
 
     try do
-      TeamJay.Telegram.send_urgent(message)
+      Jay.Core.HubClient.post_alarm(message, "ska", "self_rewarding")
     rescue
-      e -> Logger.warning("[SelfRewarding] Telegram 발송 실패: #{inspect(e)}")
+      e -> Logger.warning("[SelfRewarding] 알람 발송 실패: #{inspect(e)}")
     end
   end
 
   defp call_llm(prompt) do
-    # Hub LLM HTTP API 경유 — local_fast 우선 (비용 절감)
-    body = Jason.encode!(%{
-      agent_id: "ska.self_rewarding",
-      model: "local_fast",
-      prompt: prompt,
-      max_tokens: 512
-    })
-
     try do
-      case Jay.Core.HubClient.post("/hub/llm/call", body) do
-        {:ok, %{"content" => content}} ->
-          case Jason.decode(content) do
-            {:ok, parsed} ->
-              {:ok, parsed}
-
-            {:error, _} ->
-              {:ok, %{
-                "score" => 0.5,
-                "category" => "neutral",
-                "failure_cause" => "n/a",
-                "critique" => content,
-                "improvement_hint" => ""
-              }}
-          end
+      case Jay.Core.LLM.HubClient.Impl.call(
+             %{
+               prompt: prompt,
+               abstract_model: :local_fast,
+               timeout_ms: 30_000,
+               agent: :ska_self_rewarding,
+               urgency: :low,
+               task_type: :analysis
+             },
+             "ska"
+           ) do
+        {:ok, %{result: content}} ->
+          normalize_llm_result(content)
 
         {:error, reason} ->
           Logger.warning("[SelfRewarding] Hub LLM 호출 실패: #{inspect(reason)}")
@@ -317,6 +311,26 @@ defmodule TeamJay.Ska.SelfRewarding do
         {:error, :llm_call_failed}
     end
   end
+
+  defp normalize_llm_result(content) when is_binary(content) do
+    case Jason.decode(content) do
+      {:ok, parsed} ->
+        {:ok, parsed}
+
+      {:error, _} ->
+        {:ok,
+         %{
+           "score" => 0.5,
+           "category" => "neutral",
+           "failure_cause" => "n/a",
+           "critique" => content,
+           "improvement_hint" => ""
+         }}
+    end
+  end
+
+  defp normalize_llm_result(content) when is_map(content), do: {:ok, content}
+  defp normalize_llm_result(content), do: {:ok, %{"score" => 0.5, "category" => "neutral", "critique" => inspect(content)}}
 
   defp enabled? do
     System.get_env("SKA_SELF_REWARDING_ENABLED", "false") == "true"

@@ -157,7 +157,7 @@ defmodule TeamJay.Ska.SkillRegistry do
     System.get_env(@enabled_env, "true") != "true"
   end
 
-  defp match_filter?(skill, filter) when map_size(filter) == 0, do: true
+  defp match_filter?(_skill, filter) when map_size(filter) == 0, do: true
 
   defp match_filter?(skill, filter) do
     Enum.all?(filter, fn {k, v} -> Map.get(skill, k) == v end)
@@ -205,27 +205,41 @@ defmodule TeamJay.Ska.SkillRegistry do
   end
 
   defp persist_execution(skill_name, status, elapsed, context) do
-    caller = Map.get(context, :caller_agent, "unknown")
-    error_reason = if status == :failure, do: Map.get(context, :error_reason), else: nil
+    unless repo_available?() do
+      Logger.debug("[SkillRegistry] Repo 미기동 환경 — 실행 로그 저장 생략: #{skill_name}")
+      :ok
+    else
+      caller = Map.get(context, :caller_agent, "unknown")
+      error_reason = if status == :failure, do: Map.get(context, :error_reason), else: nil
 
-    sql = """
-    INSERT INTO ska_skill_execution_log
-      (skill_name, caller_agent, status, duration_ms, error_reason, input_summary, inserted_at)
-    VALUES ($1, $2, $3, $4, $5, $6, NOW())
-    """
+      sql = """
+      INSERT INTO ska_skill_execution_log
+        (skill_name, caller_agent, status, duration_ms, error_reason, input_summary, inserted_at)
+      VALUES ($1, $2, $3, $4, $5, $6, NOW())
+      """
 
-    args = [
-      to_string(skill_name),
-      to_string(caller),
-      to_string(status),
-      elapsed,
-      error_reason,
-      Jason.encode!(%{caller: caller})
-    ]
+      args = [
+        to_string(skill_name),
+        to_string(caller),
+        to_string(status),
+        elapsed,
+        error_reason,
+        Jason.encode!(%{caller: caller})
+      ]
 
-    case Jay.Core.Repo.query(sql, args) do
-      {:ok, _} -> :ok
-      {:error, err} -> Logger.warning("[SkillRegistry] 실행 로그 저장 실패: #{inspect(err)}")
+      try do
+        case Jay.Core.Repo.query(sql, args) do
+          {:ok, _} -> :ok
+          {:error, err} -> Logger.warning("[SkillRegistry] 실행 로그 저장 실패: #{inspect(err)}")
+        end
+      catch
+        :exit, reason ->
+          Logger.debug("[SkillRegistry] Repo 종료 경쟁 상태 — 실행 로그 저장 생략: #{inspect(reason)}")
+      end
     end
+  end
+
+  defp repo_available? do
+    Code.ensure_loaded?(Jay.Core.Repo) and Process.whereis(Jay.Core.Repo) != nil
   end
 end

@@ -69,18 +69,28 @@ defmodule TeamJay.Ska.Rag.MultiSourceRetriever do
     if subquery[:type] == :error_class and
        subquery[:value] == :selector_parse_failure do
       try do
-        case TeamJay.Ska.SelectorManager.get_version_history(:andy) do
-          {:ok, history} ->
-            Enum.map(history, fn v ->
-              %{
-                source: :selector_history,
-                content: "셀렉터 버전 #{v[:version]} — 성공률 #{v[:success_rate]}%",
-                score: 0.6,
-                metadata: v
-              }
-            end)
-          _ -> []
-        end
+        TeamJay.Ska.SelectorManager.get_all("naver_list")
+        |> Enum.reject(&(&1.status == "deprecated"))
+        |> Enum.take(5)
+        |> Enum.map(fn selector ->
+          success_count = selector.success_count || 0
+          fail_count = selector.fail_count || 0
+          total = success_count + fail_count
+
+          success_rate =
+            if total > 0 do
+              Float.round(success_count / total * 100, 1)
+            else
+              0.0
+            end
+
+          %{
+            source: :selector_history,
+            content: "셀렉터 버전 #{selector.version} — 상태 #{selector.status} / 성공률 #{success_rate}%",
+            score: 0.6,
+            metadata: selector
+          }
+        end)
       rescue
         _ -> []
       end
@@ -89,7 +99,7 @@ defmodule TeamJay.Ska.Rag.MultiSourceRetriever do
     end
   end
 
-  defp fetch_cross_team_incidents(subquery) do
+  defp fetch_cross_team_incidents(_subquery) do
     try do
       sql = """
       SELECT team, event_type, payload, inserted_at
@@ -115,17 +125,21 @@ defmodule TeamJay.Ska.Rag.MultiSourceRetriever do
 
   defp fetch_operations_rag(subquery) do
     try do
-      case TeamJay.Ska.Analytics.OperationsRag.search(inspect(subquery[:value]), limit: 3) do
-        {:ok, docs} ->
-          Enum.map(docs, fn d -> Map.put(d, :source, :operations_rag) end)
-        _ -> []
-      end
+      TeamJay.Ska.Analytics.OperationsRag.recall_similar_failures(inspect(subquery[:value]), 3)
+      |> Enum.map(fn doc ->
+        %{
+          source: :operations_rag,
+          content: doc["content"] || doc[:content] || inspect(doc),
+          score: doc["similarity"] || doc[:similarity] || 0.5,
+          metadata: doc
+        }
+      end)
     rescue
       _ -> []
     end
   end
 
-  defp fetch_past_recoveries(subquery) do
+  defp fetch_past_recoveries(_subquery) do
     try do
       sql = """
       SELECT skill_name, category, critique, improvement_hint, score, inserted_at
@@ -179,13 +193,14 @@ defmodule TeamJay.Ska.Rag.MultiSourceRetriever do
 
   defp query_hub_memory(team, query, opts) do
     limit = Keyword.get(opts, :limit, 5)
-    params = %{team: team, query: inspect(query), limit: limit}
 
-    case Jay.Core.HubClient.post("/hub/memory/search", params) do
-      {:ok, %{"results" => results}} ->
-        {:ok, Enum.map(results, fn r ->
-          %{source: :hub_memory, content: r["content"] || "", score: r["score"] || 0.5}
-        end)}
+    case Jay.Core.HubClient.memory_recall("ska.failure_library", team, inspect(query), %{limit: limit, threshold: 0.4}) do
+      {:ok, results} ->
+        {:ok,
+         Enum.map(results, fn r ->
+           %{source: :hub_memory, content: r["content"] || "", score: r["score"] || 0.5, metadata: r}
+         end)}
+
       _ ->
         {:error, :hub_unavailable}
     end
