@@ -1,9 +1,38 @@
 {
   "skills": [
-    "justin/citation-audit"
+    "justin/citation-audit",
+    "justin/damages-analyst",
+    "justin/evidence-map",
+    "justin/judge-simulator",
+    "justin/precedent-comparer"
   ],
   "mcps": [
     "postgresql",
     "filesystem"
-  ]
+  ],
+  "team": "legal",
+  "teamLeader": "justin",
+  "llm": {
+    "primary": "anthropic/claude-sonnet-4-6",
+    "fallback_chain": [
+      { "provider": "anthropic", "model": "claude-sonnet-4-6", "maxTokens": 4096, "temperature": 0.1 },
+      { "provider": "groq", "model": "qwen/qwen3-32b", "maxTokens": 4096, "temperature": 0.1 },
+      { "provider": "local", "model": "deepseek-r1-32b", "maxTokens": 4096, "temperature": 0.1 }
+    ]
+  },
+  "agents": {
+    "justin": { "model": "anthropic/claude-sonnet-4-6", "role": "orchestrator" },
+    "briefing": { "model": "anthropic/claude-sonnet-4-6", "role": "analyst" },
+    "lens": { "model": "anthropic/claude-sonnet-4-6", "role": "code_analyst" },
+    "garam": { "model": "anthropic/claude-sonnet-4-6", "role": "legal_researcher" },
+    "atlas": { "model": "anthropic/claude-sonnet-4-6", "role": "legal_researcher" },
+    "claim": { "model": "anthropic/claude-sonnet-4-6", "role": "analyst" },
+    "defense": { "model": "anthropic/claude-sonnet-4-6", "role": "analyst" },
+    "quill": { "model": "anthropic/claude-sonnet-4-6", "role": "writer" },
+    "balance": { "model": "anthropic/claude-sonnet-4-6", "role": "reviewer" },
+    "contro": { "model": "anthropic/claude-sonnet-4-6", "role": "contract_analyst" }
+  },
+  "db": {
+    "schema": "legal"
+  }
 }
