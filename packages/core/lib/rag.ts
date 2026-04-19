@@ -73,8 +73,15 @@ type ExperienceInput = {
 };
 
 const SCHEMA = 'reservation';
-const EMBED_MODEL = process.env.EMBED_MODEL || 'qwen3-embed-0.6b';
+const DEFAULT_EMBED_MODEL = 'qwen3-embed-0.6b';
+const EMBED_MODEL = /embed/i.test(process.env.EMBED_MODEL || '')
+  ? String(process.env.EMBED_MODEL)
+  : DEFAULT_EMBED_MODEL;
 const EMBED_DIM = Number(process.env.EMBED_DIM) || 1024;
+
+if (process.env.EMBED_MODEL && !/embed/i.test(process.env.EMBED_MODEL)) {
+  console.warn(`[rag] EMBED_MODEL='${process.env.EMBED_MODEL}' 부적합 → '${DEFAULT_EMBED_MODEL}' 사용`);
+}
 
 function getEmbedUrl(): string {
   return process.env.EMBED_URL || getEmbeddingsUrl() || 'http://127.0.0.1:11434/v1/embeddings';
