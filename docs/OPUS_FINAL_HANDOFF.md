@@ -1,6 +1,24 @@
-# 세션 인수인계 — 2026-04-19 (CODEX_SKA_EVOLUTION Phase 7 완료 — 56차 세션 추가)
+# 세션 인수인계 — 2026-04-19 (CODEX_LLM_ROUTING_V2 미구현 완료 — 57차 세션 추가)
 
-> 세션 범위: CODEX_SKA_EVOLUTION Phase 7 — E2E + 부하 테스트 + 운영 문서 + OPS 배포
+> 세션 범위: CODEX_LLM_ROUTING_V2 코드점검 + 미구현 완료 (57차) / CODEX_SKA_EVOLUTION Phase 7 (56차)
+
+## 완료 요약 ✅ (57차 세션 추가)
+
+### CODEX_LLM_ROUTING_V2 미구현 완료 (코드점검 기반)
+
+**점검 결과**: Phase 1~7 전체 구현됨, 4가지 누락 항목 발견 후 구현
+
+**구현 내용**:
+- `Jay.Core.LLM` 테스트 4파일 신설: routing_log_test / hub_client_test / models_test / telemetry_test
+  → 47 → **96 tests, 0 failures**
+- `Luna.V2.LLM.HubClient` 테스트 신설
+  → 159 → **171 tests, 0 failures (8 skipped)**
+- `unified-caller.ts` GROQ_MODEL → `llm-models.json` SSoT 동적 참조 (`getGroqFallback` import)
+- `docs/hub/LLM_ROUTING_V2_ARCHITECTURE.md` — 5계층 아키텍처 + 파일 목록
+- `docs/hub/BUDGET_GUARDIAN_GUIDE.md` — 팀 quota/API/Emergency 운영 가이드
+- `CODEX_LLM_ROUTING_V2.md` → `docs/archive/codex-completed/` 아카이빙 완료
+
+**커밋**: `b8d8f085`
 
 ## 완료 요약 ✅ (56차 세션 추가)
 
