@@ -28,10 +28,7 @@ log() {
 send_telegram() {
   local msg_file="$1"
   if [ "$DRY_RUN" -eq 1 ]; then
-    log "🧪 dry-run 모드 — 텔레그램 발송 생략"
-    while IFS= read -r line; do
-      log "   $line"
-    done < "$msg_file"
+    log "🧪 dry-run 모드 — 텔레그램 발송 생략 (미리보기: $msg_file)"
     return 0
   fi
 
@@ -257,7 +254,6 @@ check_periodic "ai.claude.archer"           "아처"
 check_periodic "ai.claude.health-check"     "클로드 health-check"
 check_periodic "ai.claude.speed-test"       "클로드 speed-test"
 
-log "🔬 연구팀"
 check_periodic "ai.research.scanner"     "리서치 스캐너"
 
 log "🏠 집사 (Steward)"
