@@ -11,15 +11,15 @@
  *      - 0.0.0.0 바인딩 → CRITICAL (보안 위험)
  *      - 미바인딩 → error
  *   3. 프로세스 메모리 사용량
- *      - > MEM_WARN_MB(800MB)  → warn (모니터링)
- *      - > MEM_CRIT_MB(1500MB) → _autoRestart (--fix 자동 재시작)
- *   4. 메모리 누수 추세 (6시간 윈도우, 300MB 이상 증가 → 자동 재시작)
- *   5. 프로세스 장기 운영 (7일+ → 주기적 재시작 트리거)
+ *      - > MEM_WARN_MB(700MB)  → warn (모니터링)
+ *      - > MEM_CRIT_MB(1200MB) → _autoRestart (--fix 자동 재시작)
+ *   4. 메모리 누수 추세 (6시간 윈도우, 200MB 이상 증가 → 자동 재시작)
+ *   5. 프로세스 장기 운영 (5일+ → 주기적 재시작 트리거)
  *
  * 자동 재시작 조건 (--fix 모드에서 autofix.js가 처리):
  *   - MEM_CRIT_MB 초과
- *   - 6시간 내 LEAK_THRESHOLD_MB(300MB) 이상 증가 추세
- *   - UPTIME_RESTART_DAYS(7일) 이상 장기 운영
+ *   - 6시간 내 LEAK_THRESHOLD_MB(200MB) 이상 증가 추세
+ *   - UPTIME_RESTART_DAYS(5일) 이상 장기 운영
  *
  * 참고: network.js의 OpenClaw 포트 체크와 중복 없이
  *       여기서는 보안 바인딩·메모리·launchd 상태에 집중
@@ -34,16 +34,16 @@ const OPENCLAW_SERVICE = 'ai.openclaw.gateway';
 const OPENCLAW_PORT    = ENV_OPENCLAW_PORT > 0 ? ENV_OPENCLAW_PORT : 18789;
 
 // 메모리 임계값
-const MEM_WARN_MB = 800;    // 경고 (재시작 직후 기준선 ~520MB 포함 여유)
-const MEM_CRIT_MB = 1500;   // 자동 재시작 (1.5GB 초과 → 명백한 누수)
+const MEM_WARN_MB = 700;    // 경고 (재시작 후 700MB대부터 조기 감시)
+const MEM_CRIT_MB = 1200;   // 자동 재시작 (1.2GB 초과 → 장기 체류 전 정리)
 
 // 누수 추세 감지
 const LEAK_WINDOW_MS    = 6 * 60 * 60 * 1000; // 6시간 윈도우
-const LEAK_THRESHOLD_MB = 300;                  // 6시간 내 300MB 이상 증가 → 누수
+const LEAK_THRESHOLD_MB = 200;                  // 6시간 내 200MB 이상 증가 → 누수
 const MAX_HISTORY       = 72;                   // 최대 72개 (full 1h 기준 3일분)
 
 // 장기 운영 재시작
-const UPTIME_RESTART_DAYS = 7;
+const UPTIME_RESTART_DAYS = 5;
 
 // 메모리 시계열 state 파일
 const STATE_FILE = path.join(

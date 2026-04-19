@@ -151,11 +151,15 @@ export const LOCAL_LLM_BASE_URL = process.env.LOCAL_LLM_BASE_URL || (
     : process.env.MLX_URL || 'http://localhost:11434'
 );
 
-export const LOCAL_LLM_CHAT_BASE_URL = process.env.LOCAL_LLM_CHAT_BASE_URL || process.env.OLLAMA_BASE_URL || (
-  IS_OPS
-    ? 'http://127.0.0.1:11435'
-    : process.env.MLX_URL_ALT || 'http://localhost:11435'
-);
+export const ENABLE_LOCAL_LLM_STANDBY = process.env.ENABLE_LOCAL_LLM_STANDBY === '1';
+
+export const LOCAL_LLM_CHAT_BASE_URL = ENABLE_LOCAL_LLM_STANDBY
+  ? (process.env.LOCAL_LLM_CHAT_BASE_URL || process.env.OLLAMA_BASE_URL || (
+      IS_OPS
+        ? 'http://127.0.0.1:11435'
+        : process.env.MLX_URL_ALT || 'http://localhost:11435'
+    ))
+  : '';
 
 export const OLLAMA_BASE_URL = LOCAL_LLM_CHAT_BASE_URL;
 

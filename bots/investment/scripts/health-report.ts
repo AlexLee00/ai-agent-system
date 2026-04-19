@@ -105,6 +105,7 @@ const ALL_SERVICES = [
 
 const LOCAL_LLM_HEALTH_HISTORY_FILE = '/tmp/investment-local-llm-health-history.jsonl';
 const SECONDARY_LOCAL_LABEL = 'ai.mlx.server.secondary';
+const LOCAL_STANDBY_ENABLED = process.env.ENABLE_LOCAL_LLM_STANDBY === '1';
 
 const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;
 const SCHEDULED_SERVICE_DEPLOYMENTS = {
@@ -181,6 +182,14 @@ function summarizeLocalLlmFlapping(history = []) {
 }
 
 function summarizeLocalLlmRedundancy(circuits = [], launchctlStatus = {}) {
+  if (!LOCAL_STANDBY_ENABLED) {
+    return {
+      status: 'standby_disabled',
+      summary: 'secondary standby 비활성화됨 — Groq 우선',
+      templatePath: '/Users/alexlee/projects/ai-agent-system/bots/investment/launchd/ai.mlx.server.secondary.plist',
+      launchdSummary: `${SECONDARY_LOCAL_LABEL} 비활성화 정책`,
+    };
+  }
   const primary = circuits.find((entry) => entry?.role === 'primary') || null;
   const secondary = circuits.find((entry) => entry?.role === 'secondary') || null;
   const templatePath = '/Users/alexlee/projects/ai-agent-system/bots/investment/launchd/ai.mlx.server.secondary.plist';

@@ -67,10 +67,10 @@ function getBaseUrlCandidates(options: { baseUrl?: string } = {}): string[] {
   const candidates = [
     options.baseUrl,
     env.LOCAL_LLM_BASE_URL,
-    env.LOCAL_LLM_CHAT_BASE_URL,
-    env.OLLAMA_BASE_URL,
+    env.ENABLE_LOCAL_LLM_STANDBY ? env.LOCAL_LLM_CHAT_BASE_URL : null,
+    env.ENABLE_LOCAL_LLM_STANDBY ? env.OLLAMA_BASE_URL : null,
     process.env.MLX_URL,
-    process.env.MLX_URL_ALT,
+    env.ENABLE_LOCAL_LLM_STANDBY ? process.env.MLX_URL_ALT : null,
   ]
     .map(normalizeBaseUrl)
     .filter(Boolean);

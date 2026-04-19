@@ -13,12 +13,14 @@
 
 const path = require('path');
 const fs = require('fs');
+const zlib = require('zlib');
 const { execSync } = require('child_process');
 const { publishReservationAlert } = require('../lib/alert-client');
 const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
 
 const BACKUP_DIR = path.join(process.env.HOME, '.openclaw', 'workspace', 'backups');
 const KEEP_DAYS = 7;
+const KEEP_RAW_DAYS = 3;
 const DB_NAME = 'jay';
 const SCHEMA = 'reservation';
 // launchd 환경에서 PATH에 PostgreSQL bin 없음 → 절대 경로
@@ -33,15 +35,51 @@ function getDateStr() {
   return `${y}-${m}-${d}`;
 }
 
-function purgeOldBackups() {
-  const files = fs.readdirSync(BACKUP_DIR)
-    .filter(f => f.match(/^reservation-\d{4}-\d{2}-\d{2}\.sql$/))
+function listBackupFiles() {
+  return fs.readdirSync(BACKUP_DIR)
+    .filter(f => f.match(/^reservation-\d{4}-\d{2}-\d{2}\.sql(\.gz)?$/))
     .sort();
+}
 
-  const expired = files.slice(0, Math.max(0, files.length - KEEP_DAYS));
-  for (const f of expired) {
-    fs.unlinkSync(path.join(BACKUP_DIR, f));
-    console.log(`[백업] 만료 삭제: ${f}`);
+function extractDateKey(fileName) {
+  const match = fileName.match(/^reservation-(\d{4}-\d{2}-\d{2})\.sql(?:\.gz)?$/);
+  return match ? match[1] : null;
+}
+
+function compressBackup(fileName) {
+  if (!fileName.endsWith('.sql')) return fileName;
+  const sourcePath = path.join(BACKUP_DIR, fileName);
+  const targetPath = `${sourcePath}.gz`;
+  if (!fs.existsSync(sourcePath) || fs.existsSync(targetPath)) return path.basename(targetPath);
+
+  const input = fs.readFileSync(sourcePath);
+  const output = zlib.gzipSync(input, { level: zlib.constants.Z_BEST_SPEED });
+  fs.writeFileSync(targetPath, output);
+  fs.unlinkSync(sourcePath);
+  console.log(`[백업] 압축 보관: ${path.basename(targetPath)}`);
+  return path.basename(targetPath);
+}
+
+function enforceBackupRetention() {
+  const files = listBackupFiles();
+  const uniqueDates = [...new Set(files.map(extractDateKey).filter(Boolean))].sort();
+  const keepDates = new Set(uniqueDates.slice(-KEEP_DAYS));
+  const keepRawDates = new Set(uniqueDates.slice(-KEEP_RAW_DAYS));
+
+  for (const fileName of files) {
+    const dateKey = extractDateKey(fileName);
+    if (!dateKey) continue;
+    const fullPath = path.join(BACKUP_DIR, fileName);
+
+    if (!keepDates.has(dateKey)) {
+      fs.unlinkSync(fullPath);
+      console.log(`[백업] 만료 삭제: ${fileName}`);
+      continue;
+    }
+
+    if (!keepRawDates.has(dateKey) && fileName.endsWith('.sql')) {
+      compressBackup(fileName);
+    }
   }
 }
 
@@ -75,11 +113,10 @@ async function main() {
     const stat = fs.statSync(destPath);
     const sizeKB = Math.round(stat.size / 1024);
 
-    // 만료 백업 정리
-    purgeOldBackups();
+    // 백업 보관 정책 적용 (최근 3일 원본 유지, 그 이전은 gzip 보관, 전체 7일 초과 삭제)
+    enforceBackupRetention();
 
-    const remaining = fs.readdirSync(BACKUP_DIR)
-      .filter(f => f.match(/^reservation-\d{4}-\d{2}-\d{2}\.sql$/)).length;
+    const remaining = listBackupFiles().length;
 
     const successMessage = `✅ [스카 백업 완료]\n${dateStr} / ${sizeKB}KB / 보관 ${remaining}개`;
     const memoryQuery = buildBackupMemoryQuery('success', dateStr);
