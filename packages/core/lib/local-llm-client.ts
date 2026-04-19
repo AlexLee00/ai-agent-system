@@ -360,6 +360,7 @@ async function callLocalLLMJSON(model: string, messages: unknown[], options: Req
 type HealthCheckOptions = {
   baseUrl?: string;
   timeoutMs?: number;
+  embeddingsOnly?: boolean;
 };
 
 type LLMHealthStatus = {
@@ -368,6 +369,7 @@ type LLMHealthStatus = {
   fastModelOk: boolean;
   embedModelOk: boolean;
   responseMs: number | null;
+  mode?: 'chat' | 'embeddings';
   error?: string;
 };
 
@@ -375,14 +377,27 @@ async function checkLocalLLMHealth(options: HealthCheckOptions = {}): Promise<LL
   const start = Date.now();
   const baseUrl = getBaseUrl(options);
   const timeoutMs = Number(options.timeoutMs || 5000);
+  const embeddingsOnly = options.embeddingsOnly === true;
   try {
     const models = await getAvailableModels({ baseUrl });
     if (!models.length) {
-      return { available: false, models: [], fastModelOk: false, embedModelOk: false, responseMs: Date.now() - start, error: 'local 모델 없음' };
+      return { available: false, models: [], fastModelOk: false, embedModelOk: false, responseMs: Date.now() - start, mode: embeddingsOnly ? 'embeddings' : 'chat', error: 'local 모델 없음' };
     }
 
     const fastModelOk = models.some((m) => m === LOCAL_MODEL_FAST || /qwen/i.test(m) || /gemma/i.test(m));
     const embedModelOk = models.some((m) => /embed/i.test(m) || m === LOCAL_MODEL_EMBED);
+
+    if (embeddingsOnly) {
+      return {
+        available: embedModelOk,
+        models,
+        fastModelOk,
+        embedModelOk,
+        responseMs: Date.now() - start,
+        mode: 'embeddings',
+        error: embedModelOk ? undefined : 'embedding 모델 없음',
+      };
+    }
 
     // 빠른 inference 테스트 (최대 5초)
     const testResult = await callLocalLLM(LOCAL_MODEL_FAST, [
@@ -395,6 +410,7 @@ async function checkLocalLLMHealth(options: HealthCheckOptions = {}): Promise<LL
       fastModelOk,
       embedModelOk,
       responseMs: Date.now() - start,
+      mode: 'chat',
       error: testResult === null ? '추론 테스트 실패 (응답 없음)' : undefined,
     };
   } catch (err: unknown) {
@@ -404,6 +420,7 @@ async function checkLocalLLMHealth(options: HealthCheckOptions = {}): Promise<LL
       fastModelOk: false,
       embedModelOk: false,
       responseMs: Date.now() - start,
+      mode: embeddingsOnly ? 'embeddings' : 'chat',
       error: err instanceof Error ? err.message : String(err),
     };
   }

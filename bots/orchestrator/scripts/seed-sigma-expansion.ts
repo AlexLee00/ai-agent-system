@@ -28,7 +28,7 @@ const NEW_SIGMA_AGENTS = [
     team: 'sigma',
     role: 'analyst',
     specialty: '장기추세분석+주간월간트렌드+구조적변화감지',
-    llm_model: 'local/deepseek-r1-32b',
+    llm_model: 'groq/qwen/qwen3-32b',
     dot_character: { color: '#8b5cf6', accessory: 'glasses' },
   },
   {
@@ -37,7 +37,7 @@ const NEW_SIGMA_AGENTS = [
     team: 'sigma',
     role: 'workflow',
     specialty: '워크플로우최적화+핸드오프분석+LLM비용분석+병목제거',
-    llm_model: 'local/qwen2.5-7b',
+    llm_model: 'groq/qwen/qwen3-32b',
     dot_character: { color: '#f97316', accessory: 'compass' },
   },
   {
@@ -46,7 +46,7 @@ const NEW_SIGMA_AGENTS = [
     team: 'sigma',
     role: 'rag',
     specialty: 'RAG대도서관관리+triplet축적+지식그래프+StandingOrders승격',
-    llm_model: 'local/qwen2.5-7b',
+    llm_model: 'claude-code/sonnet',
     dot_character: { color: '#14b8a6', accessory: 'book' },
   },
   {
@@ -55,7 +55,7 @@ const NEW_SIGMA_AGENTS = [
     team: 'sigma',
     role: 'predictor',
     specialty: '성과예측+매매예측+트래픽예측+리소스예측',
-    llm_model: 'local/deepseek-r1-32b',
+    llm_model: 'openai-oauth/gpt-5.4',
     dot_character: { color: '#3b82f6', accessory: 'chart' },
   },
 ];

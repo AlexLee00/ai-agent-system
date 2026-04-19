@@ -23,7 +23,7 @@
   "bots/legal/lib/hub-legal-client.js": "396427666ca891577bcf9a52f3b2dfa7a3c1582b2c502f89f862653b76ab9ea3",
   "bots/legal/lib/justin.js": "d480429cdbde694290590b19b8352ff2d631030b47d98983aee48c62453cba74",
   "bots/legal/lib/lens.js": "1627263a4664a3d2ea9e4d088945ff034b2841c095897165299e7c4ebc3514bf",
-  "bots/legal/lib/llm-helper.js": "51d39c940cd5067a0f63261473ca3ca0e317269856e382f61b43f203e990f349",
+  "bots/legal/lib/llm-helper.js": "f0edbbd53cdf611b12ae15f5dc82e54efbb616ad7d59dae71dddf0f6a0468802",
   "bots/legal/lib/pdf-generator.js": "17f3354fa1945451f2c641029e3de07633f028c9b27f451ed81d94e9e5d464a5",
   "bots/legal/lib/quill.js": "dc2112a58687ae5c5a212899bf68deb7a6397f2da02962b7bf9141fa6c609a7c",
   "bots/legal/lib/similarity-engine.js": "ce0552aaf8dc534a193d846ba926198aefcbda759c93a118a23ea516e4566cc4",

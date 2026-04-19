@@ -183,21 +183,18 @@ module.exports = {
         'claude.archer.tech_analysis': {
           chain: [
             { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 4096, temperature: 0.2 },
-            { provider: 'local', model: 'qwen2.5-7b', maxTokens: 4096, temperature: 0.2 },
             { provider: 'groq', model: 'llama-4-scout-17b-16e-instruct', maxTokens: 4096, temperature: 0.3 },
           ],
         },
         'claude.lead.system_issue_triage': {
           chain: [
             { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 300, temperature: 0.1 },
-            { provider: 'local', model: 'qwen2.5-7b', maxTokens: 300, temperature: 0.1 },
             { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 300, temperature: 0.1 },
           ],
         },
         'claude.dexter.ai_analyst': {
           chain: [
             { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 300, temperature: 0.1 },
-            { provider: 'local', model: 'qwen2.5-7b', maxTokens: 300, temperature: 0.1 },
             { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 300, temperature: 0.1 },
           ],
         },

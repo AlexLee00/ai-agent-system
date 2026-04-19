@@ -5,7 +5,8 @@
   "description": "Resource API Hub for OPS resource proxy",
   "main": "src/hub.ts",
   "scripts": {
-    "start": "tsx src/hub.ts"
+    "start": "tsx src/hub.ts",
+    "local-llm-policy": "tsx scripts/local-llm-policy-report.ts"
   },
   "dependencies": {
     "express": "^4.21.2",

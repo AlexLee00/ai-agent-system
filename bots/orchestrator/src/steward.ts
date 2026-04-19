@@ -71,10 +71,10 @@ async function runHourly() {
   // 로컬 LLM 헬스체크 (Step 2)
   let llmHealth = null;
   try {
-    llmHealth = await localLLMClient.checkLocalLLMHealth();
+    llmHealth = await localLLMClient.checkLocalLLMHealth({ embeddingsOnly: true });
     if (!llmHealth.available || llmHealth.error) {
       await postAlarm({
-        message: `⚠️ [스튜어드] 로컬 LLM 이상: ${llmHealth.error || 'Ollama 응답 없음'} (${llmHealth.responseMs}ms)`,
+        message: `⚠️ [스튜어드] 로컬 임베딩 이상: ${llmHealth.error || 'embedding 응답 없음'} (${llmHealth.responseMs}ms)`,
         team: 'general',
         alertLevel: 2,
         fromBot: 'steward',

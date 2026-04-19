@@ -73,7 +73,7 @@ const BLOG_REINFORCEMENTS = [
     team: 'blog',
     role: 'visual',
     specialty: '이미지다이어그램큐레이터(삽입위치+설명문+대체텍스트,시각자료풍부화)',
-    llm_model: 'local/qwen2.5-7b',
+    llm_model: 'groq/llama-3.1-8b-instant',
     dot_character: { color: '#ec4899', accessory: 'chart' },
   },
   {
@@ -82,7 +82,7 @@ const BLOG_REINFORCEMENTS = [
     team: 'blog',
     role: 'analyst',
     specialty: '성과분석가(7일후조회수/체류/공감수집,작가+편집조합추천,데이터기반최적화)',
-    llm_model: 'local/qwen2.5-7b',
+    llm_model: 'openai-oauth/gpt-5.4-mini',
     dot_character: { color: '#f59e0b', accessory: 'chart' },
   },
   {
@@ -91,7 +91,7 @@ const BLOG_REINFORCEMENTS = [
     team: 'blog',
     role: 'social',
     specialty: '소셜미디어적응(블로그→인스타캡션+트위터요약+네이버카페,크로스플랫폼)',
-    llm_model: 'local/qwen2.5-7b',
+    llm_model: 'groq/llama-3.1-8b-instant',
     dot_character: { color: '#3b82f6', accessory: 'compass' },
   },
 ];

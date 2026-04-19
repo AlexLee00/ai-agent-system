@@ -29,13 +29,13 @@ type RuntimeProfile = {
 type TeamProfiles = Record<string, RuntimeProfile>;
 
 const LOCAL_LLM_BASE_URL = 'http://127.0.0.1:11434';
+const ENABLE_LOCAL_LLM_STANDBY = process.env.ENABLE_LOCAL_LLM_STANDBY === '1';
 const OLLAMA_BASE_URL = process.env.LOCAL_LLM_CHAT_BASE_URL || process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11435';
 // Current deployed routes. These are intentionally separated from "latest official"
 // model families so runtime profiles reflect live ops first.
-const LOCAL_FAST_ROUTE = 'local/qwen2.5-7b';
 const GROQ_SCOUT_ROUTE = 'groq/llama-3.1-8b-instant';
 const GROQ_VERSATILE_ROUTE = 'groq/llama-3.3-70b-versatile';
-const LOCAL_FAST_MODEL = 'qwen2.5-7b';
+const OPENAI_FAST_ROUTE = 'openai-oauth/gpt-5.4-mini';
 
 export const PROFILES: Record<string, TeamProfiles> = {
   "blog": {
@@ -49,7 +49,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
-        LOCAL_FAST_ROUTE,
+        GROQ_SCOUT_ROUTE,
         "google-gemini-cli/gemini-2.5-flash"
       ]
     },
@@ -63,7 +63,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
-        LOCAL_FAST_ROUTE,
+        GROQ_SCOUT_ROUTE,
         "google-gemini-cli/gemini-2.5-flash"
       ]
     },
@@ -111,9 +111,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "openclaw_agent": "blog-writer",
       "claude_code_name": "blog-writer",
       "claude_code_settings": "/Users/alexlee/.openclaw/.claude/blog-writer.settings.json",
-      "provider": "local",
-      "base_url": "http://127.0.0.1:11434",
-      "model": LOCAL_FAST_MODEL,
+      "provider": "groq",
+      "model": "llama-3.1-8b-instant",
       "timeout_ms": 10000,
       "max_tokens": 200,
       "temperature": 0.8
@@ -131,7 +130,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        LOCAL_FAST_ROUTE
+        OPENAI_FAST_ROUTE
       ]
     },
     "analyst": {
@@ -145,7 +144,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        LOCAL_FAST_ROUTE
+        OPENAI_FAST_ROUTE
       ]
     },
     "validator": {
@@ -159,7 +158,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        LOCAL_FAST_ROUTE
+        OPENAI_FAST_ROUTE
       ]
     },
     "commander": {
@@ -213,7 +212,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         GROQ_VERSATILE_ROUTE,
-        LOCAL_FAST_ROUTE
+        OPENAI_FAST_ROUTE
       ],
       "critical": false
     }
@@ -230,7 +229,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        LOCAL_FAST_ROUTE
+        OPENAI_FAST_ROUTE
       ]
     },
     "research": {
@@ -244,7 +243,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        LOCAL_FAST_ROUTE
+        OPENAI_FAST_ROUTE
       ]
     },
     "synthesis": {
@@ -258,7 +257,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        LOCAL_FAST_ROUTE
+        OPENAI_FAST_ROUTE
       ]
     },
     "review": {
@@ -287,7 +286,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        LOCAL_FAST_ROUTE
+        OPENAI_FAST_ROUTE
       ]
     },
     "citation": {
@@ -301,7 +300,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        LOCAL_FAST_ROUTE
+        OPENAI_FAST_ROUTE
       ]
     },
     "analysis": {
@@ -328,7 +327,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        LOCAL_FAST_ROUTE
+        OPENAI_FAST_ROUTE
       ]
     }
   },
@@ -344,7 +343,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         "openai-oauth/gpt-5.4",
-        LOCAL_FAST_ROUTE
+        OPENAI_FAST_ROUTE
       ]
     },
     "quality": {
@@ -358,7 +357,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        LOCAL_FAST_ROUTE
+        OPENAI_FAST_ROUTE
       ]
     },
     "experiment": {
@@ -372,7 +371,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        LOCAL_FAST_ROUTE
+        OPENAI_FAST_ROUTE
       ]
     },
     "analysis": {
@@ -386,7 +385,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        LOCAL_FAST_ROUTE
+        OPENAI_FAST_ROUTE
       ]
     }
   },
@@ -402,7 +401,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         "openai-oauth/gpt-5.4",
-        LOCAL_FAST_ROUTE
+        OPENAI_FAST_ROUTE
       ]
     },
     "reporting": {
@@ -416,7 +415,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        LOCAL_FAST_ROUTE
+        OPENAI_FAST_ROUTE
       ]
     },
     "triage": {
@@ -430,7 +429,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        LOCAL_FAST_ROUTE
+        OPENAI_FAST_ROUTE
       ]
     },
     "lead": {
@@ -444,7 +443,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        LOCAL_FAST_ROUTE
+        OPENAI_FAST_ROUTE
       ]
     }
   },
@@ -493,9 +492,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "openclaw_agent": "jay-orchestrator",
       "claude_code_name": "jay-orchestrator",
       "claude_code_settings": "/Users/alexlee/.openclaw/.claude/jay-orchestrator.settings.json",
-      "provider": "local",
-      "base_url": "http://127.0.0.1:11434",
-      "model": LOCAL_FAST_MODEL,
+      "provider": "groq",
+      "model": "llama-3.1-8b-instant",
       "timeout_ms": 10000,
       "max_tokens": 300,
       "temperature": 0.7
@@ -513,7 +511,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        LOCAL_FAST_ROUTE,
+        OPENAI_FAST_ROUTE,
         "google-gemini-cli/gemini-2.5-flash"
       ]
     },
@@ -521,9 +519,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "openclaw_agent": "ska-ops",
       "claude_code_name": "ska-ops",
       "claude_code_settings": "/Users/alexlee/.openclaw/.claude/ska-ops.settings.json",
-      "provider": "local",
-      "base_url": "http://127.0.0.1:11434",
-      "model": "qwen2.5-7b",
+      "provider": "groq",
+      "model": "llama-3.1-8b-instant",
       "timeout_ms": 10000,
       "max_tokens": 150,
       "temperature": 0.7
@@ -539,7 +536,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        LOCAL_FAST_ROUTE
+        OPENAI_FAST_ROUTE
       ]
     },
     "reporting": {
@@ -553,7 +550,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        LOCAL_FAST_ROUTE
+        OPENAI_FAST_ROUTE
       ]
     }
   },
@@ -612,7 +609,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         "openai-oauth/gpt-5.4",
-        LOCAL_FAST_ROUTE
+        OPENAI_FAST_ROUTE
       ]
     }
   },
@@ -628,7 +625,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        LOCAL_FAST_ROUTE,
+        OPENAI_FAST_ROUTE,
         "google-gemini-cli/gemini-2.5-flash"
       ]
     },
@@ -643,7 +640,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        LOCAL_FAST_ROUTE
+        OPENAI_FAST_ROUTE
       ]
     },
     "analysis": {
@@ -657,7 +654,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        LOCAL_FAST_ROUTE
+        OPENAI_FAST_ROUTE
       ]
     },
     "stt": {
@@ -689,10 +686,12 @@ export const PROFILES: Record<string, TeamProfiles> = {
   }
 };
 
-for (const teamProfiles of Object.values(PROFILES)) {
-  for (const profile of Object.values(teamProfiles)) {
-    if (profile?.local_llm_base_url === LOCAL_LLM_BASE_URL) {
-      profile.local_llm_base_url = OLLAMA_BASE_URL;
+if (ENABLE_LOCAL_LLM_STANDBY) {
+  for (const teamProfiles of Object.values(PROFILES)) {
+    for (const profile of Object.values(teamProfiles)) {
+      if (profile?.local_llm_base_url === LOCAL_LLM_BASE_URL) {
+        profile.local_llm_base_url = OLLAMA_BASE_URL;
+      }
     }
   }
 }

@@ -1,6 +1,7 @@
 import { logLLMCall } from './llm-logger';
 import { selectRuntime } from './runtime-selector';
 import { callLocalLLM } from './local-llm-client';
+import { callWithFallback } from './llm-fallback';
 
 type Runtime = {
   provider?: string;
@@ -43,7 +44,7 @@ export async function generateGemmaPilotText({
   const startedAt = Date.now();
   const fallbackResult = { ok: false, content: '', runtime: runtime || null };
 
-  if (!runtime || !runtime.provider || !runtime.base_url || !runtime.model || !prompt) {
+  if (!runtime || !runtime.provider || !runtime.model || !prompt) {
     return fallbackResult;
   }
   const resolvedTimeoutMs = Number(timeoutMs || runtime.timeout_ms || 10000);
@@ -86,6 +87,27 @@ export async function generateGemmaPilotText({
       } finally {
         clearTimeout(timer);
       }
+    } else if (runtime.provider === 'groq' || runtime.provider === 'openai-oauth' || runtime.provider === 'openai' || runtime.provider === 'claude-code' || runtime.provider === 'gemini') {
+      const result = await callWithFallback({
+        chain: [{
+          provider: runtime.provider,
+          model: runtime.model,
+          maxTokens: maxTokens ?? runtime.max_tokens ?? 256,
+          temperature: temperature ?? runtime.temperature ?? 0.7,
+          timeoutMs: resolvedTimeoutMs,
+        }],
+        systemPrompt: '',
+        userPrompt: safePrompt,
+        logMeta: {
+          team: safeTeam,
+          bot: safeBot,
+          requestType: safeRequestType || 'gemma_pilot',
+        },
+        timeoutMs: resolvedTimeoutMs,
+        team: safeTeam || null,
+        purpose: safePurpose || null,
+      });
+      content = String(result?.text || '').trim();
     } else {
       return fallbackResult;
     }

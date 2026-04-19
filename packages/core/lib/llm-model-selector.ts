@@ -139,29 +139,29 @@ const TEAM_SELECTOR_DEFAULTS: Record<string, any> = {
     dexter: {
       primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 300, temperature: 0.1 },
       fallbacks: [
-        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 300, temperature: 0.1 },
         { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 300, temperature: 0.1 },
+        { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 300, temperature: 0.1 },
       ],
     },
     archer: {
       primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 4096, temperature: 0.2 },
       fallbacks: [
-        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 4096, temperature: 0.2 },
         { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 4096, temperature: 0.3 },
+        { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 4096, temperature: 0.2 },
       ],
     },
     lead: {
       primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 300, temperature: 0.1 },
       fallbacks: [
-        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 300, temperature: 0.1 },
         { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 300, temperature: 0.1 },
+        { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 300, temperature: 0.1 },
       ],
     },
     _fallback: {
       primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 1024, temperature: 0.1 },
       fallbacks: [
-        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.1 },
         { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 1024, temperature: 0.1 },
+        { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 1024, temperature: 0.1 },
       ],
     },
   },
@@ -177,7 +177,7 @@ const TEAM_SELECTOR_DEFAULTS: Record<string, any> = {
       primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 16000, temperature: 0.85 },
       fallbacks: [
         { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 16000, temperature: 0.85 },
-        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 12000, temperature: 0.75 },
+        { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 12000, temperature: 0.75 },
         { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 12000, temperature: 0.75 },
       ],
     },
@@ -185,7 +185,7 @@ const TEAM_SELECTOR_DEFAULTS: Record<string, any> = {
       primary: { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 1024, temperature: 0.1 },
       fallbacks: [
         { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 1024, temperature: 0.1 },
-        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.1 },
+        { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 1024, temperature: 0.1 },
       ],
     },
     'social.caption': {
@@ -229,15 +229,15 @@ const TEAM_SELECTOR_DEFAULTS: Record<string, any> = {
     'chat.task_intake': {
       primary: { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 250, temperature: 0.1 },
       fallbacks: [
-        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 250, temperature: 0.1 },
         { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxTokens: 250, temperature: 0.1 },
+        { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 250, temperature: 0.1 },
       ],
     },
     _fallback: {
       primary: { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 1024, temperature: 0.1 },
       fallbacks: [
-        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.1 },
         { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxTokens: 1024, temperature: 0.1 },
+        { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 1024, temperature: 0.1 },
       ],
     },
   },
@@ -246,27 +246,27 @@ const TEAM_SELECTOR_DEFAULTS: Record<string, any> = {
       primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 4096, temperature: 0.75 },
       fallbacks: [
         { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 4096, temperature: 0.75 },
-        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 4096, temperature: 0.75 },
+        { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 4096, temperature: 0.75 },
       ],
     },
     'chunked.default': {
       primary: { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 4096, temperature: 0.75 },
       fallbacks: [
         { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 4096, temperature: 0.75 },
-        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 4096, temperature: 0.75 },
+        { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 4096, temperature: 0.75 },
       ],
     },
     _fallback: {
       primary: { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 4096, temperature: 0.75 },
       fallbacks: [
-        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 4096, temperature: 0.75 },
+        { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 4096, temperature: 0.75 },
       ],
     },
   },
   video: {
     'step-proposal': {
       primary: { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 180, temperature: 0.1 },
-      fallbacks: [{ provider: 'local', model: 'qwen2.5-7b', maxTokens: 180, temperature: 0.1 }],
+      fallbacks: [{ provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 180, temperature: 0.1 }],
     },
     critic: {
       primary: { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 512, temperature: 0.1 },
@@ -279,35 +279,35 @@ const TEAM_SELECTOR_DEFAULTS: Record<string, any> = {
       primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 4096, temperature: 0.1 },
       fallbacks: [
         { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 4096, temperature: 0.1 },
-        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 4096, temperature: 0.1 },
+        { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 4096, temperature: 0.1 },
       ],
     },
     'scene-indexer': {
       primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 2048, temperature: 0.1 },
       fallbacks: [
         { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 2048, temperature: 0.1 },
-        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 2048, temperature: 0.1 },
+        { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 2048, temperature: 0.1 },
       ],
     },
     'narration-analyzer': {
       primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 4096, temperature: 0.1 },
       fallbacks: [
         { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 4096, temperature: 0.1 },
-        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 4096, temperature: 0.1 },
+        { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 4096, temperature: 0.1 },
       ],
     },
     refiner: {
       primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 1024, temperature: 0.1 },
       fallbacks: [
         { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 1024, temperature: 0.1 },
-        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.1 },
+        { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 1024, temperature: 0.1 },
       ],
     },
     'intro-outro': {
       primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 1024, temperature: 0.2 },
       fallbacks: [
         { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 1024, temperature: 0.2 },
-        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.2 },
+        { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 1024, temperature: 0.2 },
       ],
     },
     _fallback: {
@@ -417,31 +417,25 @@ function buildSelectorRegistry(): Record<string, any> {
     'worker.ai.fallback': ({
       groqModel = 'llama-3.1-8b-instant',
       preferredApi = 'groq',
-      configuredProviders = ['groq', 'local', 'claude-code', 'anthropic', 'gemini', 'openai'],
+      configuredProviders = ['groq', 'claude-code', 'anthropic', 'gemini', 'openai'],
       maxTokens = 1024,
       policyOverride = null,
     }: SelectorOptions = {}) => {
       const configured = new Set(sanitizeConfiguredProviders(preferredApi, configuredProviders));
       const providerModels = {
         groq: stripGroqPrefix(policyOverride?.providerModels?.groq || groqModel),
-        local: policyOverride?.providerModels?.local || 'qwen2.5-7b',
         'claude-code': policyOverride?.providerModels?.['claude-code'] || 'claude-code/sonnet',
         anthropic: policyOverride?.providerModels?.anthropic || 'claude-haiku-4-5-20251001',
         gemini: policyOverride?.providerModels?.gemini || 'gemini-2.5-flash',
         openai: policyOverride?.providerModels?.openai || 'gpt-4o-mini',
       };
       const primary = resolvePreferredProvider(preferredApi, providerModels.groq, maxTokens);
-      if (preferredApi === 'local') {
-        primary.provider = 'local';
-        primary.model = providerModels.local;
-      }
       if (preferredApi === 'claude-code') primary.model = providerModels['claude-code'];
       if (preferredApi === 'anthropic') primary.model = providerModels.anthropic;
       if (preferredApi === 'openai') primary.model = providerModels.openai;
       if (preferredApi === 'gemini') primary.model = providerModels.gemini;
       const fallback = [
         { provider: 'groq', model: `groq/${providerModels.groq}`, maxTokens, temperature: 0.1 },
-        { provider: 'local', model: providerModels.local, maxTokens, temperature: 0.1 },
         { provider: 'claude-code', model: providerModels['claude-code'], maxTokens, temperature: 0.1 },
         { provider: 'anthropic', model: providerModels.anthropic, maxTokens, temperature: 0.1 },
         { provider: 'gemini', model: providerModels.gemini, maxTokens, temperature: 0.1 },
@@ -533,7 +527,6 @@ function buildSelectorRegistry(): Record<string, any> {
           { provider: 'groq', model: groqScoutModel },
           { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 1024, temperature: 0.1 },
           { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 1024, temperature: 0.1 },
-          { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.1 },
         ],
         dual_groq: [
           { provider: 'groq', model: groqCompetitionModels[0] || 'openai/gpt-oss-20b' },
@@ -548,26 +541,28 @@ function buildSelectorRegistry(): Record<string, any> {
           { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 1024, temperature: 0.1 },
         ],
         local_primary: [
-          { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.1 },
           { provider: 'groq', model: groqScoutModel },
           { provider: 'openai-oauth', model: openaiMiniModel },
+          { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 1024, temperature: 0.1 },
         ],
         groq_scout: [
           { provider: 'groq', model: groqScoutModel },
           { provider: 'groq', model: groqCompetitionModels[0] || 'openai/gpt-oss-20b' },
-          { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.1 },
+          { provider: 'openai-oauth', model: openaiMiniModel },
         ],
         local_fast: [
-          { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.1 },
           { provider: 'groq', model: groqScoutModel },
+          { provider: 'openai-oauth', model: openaiMiniModel },
         ],
         local_deep: [
-          { provider: 'local', model: 'deepseek-r1-32b', maxTokens: 2048, temperature: 0.1 },
-          { provider: 'groq', model: groqScoutModel },
+          { provider: 'groq', model: groqCompetitionModels[0] || 'openai/gpt-oss-20b', maxTokens: 2048, temperature: 0.1 },
+          { provider: 'openai-oauth', model: openaiPerfModel },
+          { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 2048, temperature: 0.1 },
         ],
         groq_with_local: [
           { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 2048, temperature: 0.1 },
-          { provider: 'local', model: 'deepseek-r1-32b', maxTokens: 2048, temperature: 0.1 },
+          { provider: 'openai-oauth', model: openaiMiniModel, maxTokens: 2048, temperature: 0.1 },
+          { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 2048, temperature: 0.1 },
         ],
       };
       return {

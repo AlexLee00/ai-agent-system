@@ -258,7 +258,9 @@ async function main() {
   }
 
   const secondaryLocal = status[SECONDARY_LOCAL_LABEL];
-  if (!secondaryLocal || !secondaryLocal.running) {
+  if (!LOCAL_STANDBY_ENABLED) {
+    hsm.clearAlert(state, 'local-llm-standby-missing');
+  } else if (!secondaryLocal || !secondaryLocal.running) {
     const key = 'local-llm-standby-missing';
     if (hsm.canAlert(state, key)) {
       const reason = !secondaryLocal

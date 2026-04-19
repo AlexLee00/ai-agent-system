@@ -28,8 +28,8 @@ async function evaluatePaper(paper) {
   try {
     const result = await callWithFallback({
       chain: [
-        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 220, temperature: 0.3 },
         { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 220, temperature: 0.3 },
+        { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 220, temperature: 0.3 },
       ],
       systemPrompt: SYSTEM_PROMPT,
       userPrompt: `제목: ${paper.title}\n초록: ${paper.summary}`,

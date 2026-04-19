@@ -264,23 +264,35 @@ function safeJsonParse(text) {
 
 function splitProviderModel(spec = '') {
   const text = String(spec || '');
+  const legacyCompatMap: Record<string, { provider: string; model: string }> = {
+    'local/qwen2.5-7b': { provider: 'groq', model: 'qwen/qwen3-32b' },
+    'qwen2.5-7b': { provider: 'groq', model: 'qwen/qwen3-32b' },
+    'local/deepseek-r1-32b': { provider: 'openai-oauth', model: 'openai-oauth/gpt-5.4-mini' },
+    'deepseek-r1-32b': { provider: 'openai-oauth', model: 'openai-oauth/gpt-5.4-mini' },
+  };
+  if (legacyCompatMap[text]) {
+    return legacyCompatMap[text];
+  }
+  if (text.startsWith('openai-oauth/')) {
+    return { provider: 'openai-oauth', model: text };
+  }
+  if (text.startsWith('claude-code/')) {
+    return { provider: 'claude-code', model: text };
+  }
+  if (text.startsWith('gemini/') || text.startsWith('google-gemini-cli/')) {
+    return { provider: 'gemini', model: text };
+  }
+  if (text.startsWith('anthropic/')) {
+    return { provider: 'anthropic', model: text.replace(/^anthropic\//, '') };
+  }
   if (text.startsWith('groq/')) {
     return { provider: 'groq', model: text.slice('groq/'.length) };
   }
-  return { provider: 'local', model: text };
+  return { provider: 'groq', model: text };
 }
 
 async function callChronosStructuredModel(modelSpec, prompt, { maxTokens = 256, temperature = 0.1, timeoutMs = 30000 } = {}) {
   const { provider, model } = splitProviderModel(modelSpec);
-
-  if (provider === 'local') {
-    const parsed = await callLocalLLMJSON(model, prompt, { max_tokens: maxTokens, temperature, timeoutMs });
-    return {
-      parsed,
-      source: parsed ? 'local_llm' : 'fallback',
-      model,
-    };
-  }
 
   const systemPrompt = prompt.find((item) => item.role === 'system')?.content || '';
   const userPrompt = prompt.find((item) => item.role === 'user')?.content || '';

@@ -29,7 +29,7 @@ const TEAM_CONTEXT = `팀 제이 시스템 구조:
 - 저스틴(감정 18에이전트): 소스코드 분석, 감정서 작성
 - 시그마(데이터 13에이전트): ETL, ML, 시각화
 - 스카(스터디카페 4), 워커(SaaS 2), 비디오(영상 1), 제이(오케스트레이터 2)
-- LLM: qwen2.5-7b(로컬) + groq + openai + claude-code 폴백 체인
+- LLM: groq + openai + claude-code 중심 폴백 체인, 로컬은 임베딩 전용
 - DB: PostgreSQL + pgvector (RAG)
 - 인프라: Mac Studio M4 Max (OPS) + MacBook Air M3 (DEV)`;
 
@@ -37,7 +37,7 @@ async function generateProposal(paper) {
   const result = await callWithFallback({
     chain: [
       { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 800, temperature: 0.5 },
-      { provider: 'local', model: 'qwen2.5-7b', maxTokens: 800, temperature: 0.5 },
+      { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 800, temperature: 0.5 },
     ],
     systemPrompt: `당신은 팀 제이의 기술 적용 전문가(graft)입니다.
 ${TEAM_CONTEXT}
@@ -69,7 +69,7 @@ async function generatePrototype(paper, proposal) {
   const result = await callWithFallback({
     chain: [
       { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1200, temperature: 0.3 },
-      { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1200, temperature: 0.3 },
+      { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 1200, temperature: 0.3 },
     ],
     systemPrompt: `당신은 팀 제이의 프로토타입 개발자(edison)입니다.
 ${TEAM_CONTEXT}

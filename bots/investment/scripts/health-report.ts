@@ -571,20 +571,23 @@ async function loadLocalLlmHealth(launchctlStatus = {}) {
     const probe = await localLlmClient.checkLocalLLMHealth({
       baseUrl,
       timeoutMs: baseUrl === primaryBaseUrl ? 2500 : 1500,
+      embeddingsOnly: true,
     }).catch((error) => ({
       available: false,
       models: [],
       fastModelOk: false,
       embedModelOk: false,
       responseMs: null,
+      mode: 'embeddings',
       error: error?.message || String(error),
     }));
     const remainingSec = Number.isFinite(Number(status.remainingMs))
       ? Math.ceil(Number(status.remainingMs) / 1000)
       : 0;
+    const probeModeSuffix = probe?.mode === 'embeddings' ? ' (embeddings-only)' : '';
     const probeSummary = probe?.available
-      ? `probe ${probe.error ? `warn:${probe.error}` : 'ok'}${Number.isFinite(Number(probe.responseMs)) ? ` / ${Number(probe.responseMs)}ms` : ''}`
-      : `probe fail${probe?.error ? `:${probe.error}` : ''}`;
+      ? `probe ${probe.error ? `warn:${probe.error}` : 'ok'}${probeModeSuffix}${Number.isFinite(Number(probe.responseMs)) ? ` / ${Number(probe.responseMs)}ms` : ''}`
+      : `probe fail${probeModeSuffix}${probe?.error ? `:${probe.error}` : ''}`;
 
     circuits.push({
       baseUrl,
@@ -613,7 +616,9 @@ async function loadLocalLlmHealth(launchctlStatus = {}) {
     circuitState: primary?.status?.state || 'UNKNOWN',
   };
   appendJsonLine(LOCAL_LLM_HEALTH_HISTORY_FILE, historyEntry);
-  const probeHistory = safeReadJsonLines(LOCAL_LLM_HEALTH_HISTORY_FILE, 12);
+  const probeHistory = safeReadJsonLines(LOCAL_LLM_HEALTH_HISTORY_FILE, 24)
+    .filter((entry) => String(entry?.baseUrl || '').trim() === primary.baseUrl)
+    .slice(-12);
   const flapping = summarizeLocalLlmFlapping(probeHistory);
   const redundancy = summarizeLocalLlmRedundancy(circuits, launchctlStatus);
 

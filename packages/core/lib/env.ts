@@ -152,6 +152,7 @@ export const LOCAL_LLM_BASE_URL = process.env.LOCAL_LLM_BASE_URL || (
 );
 
 export const ENABLE_LOCAL_LLM_STANDBY = process.env.ENABLE_LOCAL_LLM_STANDBY === '1';
+export const ENABLE_LOCAL_LLM_CHAT = _envOrLaunchctl('ENABLE_LOCAL_LLM_CHAT', IS_OPS ? 'false' : 'true') === 'true';
 
 export const LOCAL_LLM_CHAT_BASE_URL = ENABLE_LOCAL_LLM_STANDBY
   ? (process.env.LOCAL_LLM_CHAT_BASE_URL || process.env.OLLAMA_BASE_URL || (

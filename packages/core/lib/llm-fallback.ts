@@ -867,6 +867,16 @@ export async function callWithFallback({ chain, systemPrompt, userPrompt, logMet
   for (let i = 0; i < chain.length; i++) {
     const cfg     = chain[i];
     if (cfg.provider === 'local') {
+      if (!env.ENABLE_LOCAL_LLM_CHAT) {
+        skippedProviders.push('local:chat_disabled');
+        attemptTrace.push({
+          provider: cfg.provider,
+          model: cfg.model,
+          status: 'skipped',
+          reason: 'chat_disabled',
+        });
+        continue;
+      }
       const localClient = require('./local-llm-client');
       const localCircuit = _getLocalCircuitBreaker();
       const candidateBaseUrls = typeof localClient.getBaseUrlCandidates === 'function'

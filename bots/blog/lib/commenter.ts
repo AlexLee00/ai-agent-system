@@ -37,7 +37,6 @@ function buildCommenterFallbackChain(maxTokens, temperature) {
   return [
     { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens, temperature: Math.min(temperature, 0.7), timeoutMs: 15000 },
     { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens, temperature, timeoutMs: 12000 },
-    { provider: 'local', model: 'qwen2.5-7b', maxTokens, temperature: Math.min(temperature, 0.7) },
     { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens, temperature, timeoutMs: 12000 },
     { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens, temperature: Math.min(temperature, 0.7) },
   ];

@@ -38,7 +38,7 @@ const NEW_BLOG_AGENTS = [
     team: 'blog',
     role: 'planner',
     specialty: '트렌드기획',
-    llm_model: 'local/qwen2.5-7b',
+    llm_model: 'groq/llama-3.1-8b-instant',
     dot_character: { color: '#ec4899', accessory: 'compass' },
   },
   {
@@ -47,7 +47,7 @@ const NEW_BLOG_AGENTS = [
     team: 'blog',
     role: 'planner',
     specialty: '감성주제기획',
-    llm_model: 'local/qwen2.5-7b',
+    llm_model: 'groq/llama-3.1-8b-instant',
     dot_character: { color: '#d946ef', accessory: 'compass' },
   },
   {
@@ -56,7 +56,7 @@ const NEW_BLOG_AGENTS = [
     team: 'blog',
     role: 'researcher',
     specialty: '도서정보수집',
-    llm_model: 'local/qwen2.5-7b',
+    llm_model: 'groq/llama-3.1-8b-instant',
     dot_character: { color: '#14b8a6', accessory: 'book' },
   },
   {
@@ -65,7 +65,7 @@ const NEW_BLOG_AGENTS = [
     team: 'blog',
     role: 'researcher',
     specialty: '심리학수집',
-    llm_model: 'local/qwen2.5-7b',
+    llm_model: 'groq/llama-3.1-8b-instant',
     dot_character: { color: '#06b6d4', accessory: 'magnifier' },
   },
   {
@@ -74,7 +74,7 @@ const NEW_BLOG_AGENTS = [
     team: 'blog',
     role: 'researcher',
     specialty: 'SEO분석수집',
-    llm_model: 'local/qwen2.5-7b',
+    llm_model: 'groq/llama-3.1-8b-instant',
     dot_character: { color: '#22c55e', accessory: 'chart' },
   },
   {
