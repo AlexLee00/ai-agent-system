@@ -1,29 +1,29 @@
-// Critical Chain Registry
-// Identifies team/agent combos where local LLMs must be excluded (realtime decisions)
-// Used by unified-caller to enable aggressive (immediate) fallback on first failure.
+'use strict';
 
-import { selectRuntimeProfile } from '../runtime-profiles';
+// Critical Chain Registry — luna/exit_decision 같은 치명적 경로 판별
 
-export function isCriticalChain(team: string, agent: string): boolean {
+const { selectRuntimeProfile, PROFILES } = require('../runtime-profiles');
+
+function isCriticalChain(team, agent) {
   const profile = selectRuntimeProfile(team, agent);
-  return profile?.critical === true;
+  return profile && profile.critical === true;
 }
 
-export function getTimeoutForChain(team: string, agent: string): number {
+function getTimeoutForChain(team, agent) {
   const profile = selectRuntimeProfile(team, agent);
-  return profile?.timeout_ms ?? 30_000;
+  return (profile && profile.timeout_ms) || 30_000;
 }
 
-// Returns all critical chains in PROFILES for documentation/monitoring
-export function listCriticalChains(): Array<{ team: string; agent: string; timeout_ms: number }> {
-  const { PROFILES } = require('../runtime-profiles');
-  const result: Array<{ team: string; agent: string; timeout_ms: number }> = [];
-  for (const [team, agents] of Object.entries(PROFILES as Record<string, Record<string, any>>)) {
-    for (const [agent, profile] of Object.entries(agents)) {
-      if (profile?.critical === true) {
-        result.push({ team, agent, timeout_ms: profile.timeout_ms ?? 30_000 });
+function listCriticalChains() {
+  const result = [];
+  for (const [team, agents] of Object.entries(PROFILES || {})) {
+    for (const [agent, profile] of Object.entries(agents || {})) {
+      if (profile && profile.critical === true) {
+        result.push({ team, agent, timeout_ms: profile.timeout_ms || 30_000 });
       }
     }
   }
   return result;
 }
+
+module.exports = { isCriticalChain, getTimeoutForChain, listCriticalChains };

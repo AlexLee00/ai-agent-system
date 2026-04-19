@@ -1,18 +1,18 @@
-// Lightweight Prometheus-compatible metrics endpoint (no prom-client dependency)
-// Exposes provider health + circuit breaker state in text format and JSON.
+'use strict';
 
-import { getProviderStats } from '../llm/provider-registry';
+// Prometheus-compatible metrics (no prom-client dep — text/JSON format)
+
 const pgPool = require('../../../../packages/core/lib/pg-pool');
+const { getProviderStats } = require('../llm/provider-registry');
 
-// Prometheus text format helpers
-function gauge(name: string, labels: Record<string, string>, value: number): string {
+function gauge(name, labels, value) {
   const lblStr = Object.entries(labels).map(([k, v]) => `${k}="${v}"`).join(',');
   return `${name}{${lblStr}} ${value}`;
 }
 
-export async function metricsRoute(_req: any, res: any): Promise<void> {
+async function metricsRoute(_req, res) {
   const stats = getProviderStats();
-  const lines: string[] = [];
+  const lines = [];
 
   lines.push('# HELP llm_circuit_state Circuit Breaker state (0=CLOSED, 1=HALF_OPEN, 2=OPEN)');
   lines.push('# TYPE llm_circuit_state gauge');
@@ -24,16 +24,15 @@ export async function metricsRoute(_req: any, res: any): Promise<void> {
   lines.push('# HELP llm_failure_rate Provider failure rate (0.0-1.0)');
   lines.push('# TYPE llm_failure_rate gauge');
   for (const [provider, s] of Object.entries(stats)) {
-    lines.push(gauge('llm_failure_rate', { provider }, s.failure_rate ?? 0));
+    lines.push(gauge('llm_failure_rate', { provider }, s.failure_rate || 0));
   }
 
   lines.push('# HELP llm_avg_latency_ms Provider average latency in ms');
   lines.push('# TYPE llm_avg_latency_ms gauge');
   for (const [provider, s] of Object.entries(stats)) {
-    lines.push(gauge('llm_avg_latency_ms', { provider }, s.avg_latency_ms ?? 0));
+    lines.push(gauge('llm_avg_latency_ms', { provider }, s.avg_latency_ms || 0));
   }
 
-  // Budget usage from DB
   try {
     const result = await pgPool.query(`
       SELECT caller_team, ROUND(SUM(cost_usd)::numeric, 4) AS daily_cost_usd
@@ -44,7 +43,7 @@ export async function metricsRoute(_req: any, res: any): Promise<void> {
     lines.push('# HELP llm_daily_cost_usd Daily LLM cost in USD per team');
     lines.push('# TYPE llm_daily_cost_usd gauge');
     for (const row of result.rows) {
-      lines.push(gauge('llm_daily_cost_usd', { team: row.caller_team ?? 'unknown' }, Number(row.daily_cost_usd)));
+      lines.push(gauge('llm_daily_cost_usd', { team: row.caller_team || 'unknown' }, Number(row.daily_cost_usd)));
     }
   } catch {}
 
@@ -52,10 +51,9 @@ export async function metricsRoute(_req: any, res: any): Promise<void> {
   res.end(lines.join('\n') + '\n');
 }
 
-export async function metricsJsonRoute(_req: any, res: any): Promise<void> {
+async function metricsJsonRoute(_req, res) {
   const stats = getProviderStats();
-
-  let costByTeam: Record<string, number> = {};
+  let costByTeam = {};
   try {
     const result = await pgPool.query(`
       SELECT caller_team, ROUND(SUM(cost_usd)::numeric, 4) AS daily_cost_usd
@@ -64,7 +62,7 @@ export async function metricsJsonRoute(_req: any, res: any): Promise<void> {
       GROUP BY caller_team
     `);
     for (const row of result.rows) {
-      costByTeam[row.caller_team ?? 'unknown'] = Number(row.daily_cost_usd);
+      costByTeam[row.caller_team || 'unknown'] = Number(row.daily_cost_usd);
     }
   } catch {}
 
@@ -74,9 +72,11 @@ export async function metricsJsonRoute(_req: any, res: any): Promise<void> {
     providers: stats,
     daily_cost_by_team: costByTeam,
     summary: {
-      healthy: Object.values(stats).filter((s: any) => s.state === 'CLOSED').length,
-      degraded: Object.values(stats).filter((s: any) => s.state === 'HALF_OPEN').length,
-      down: Object.values(stats).filter((s: any) => s.state === 'OPEN').length,
+      healthy: Object.values(stats).filter(s => s.state === 'CLOSED').length,
+      degraded: Object.values(stats).filter(s => s.state === 'HALF_OPEN').length,
+      down: Object.values(stats).filter(s => s.state === 'OPEN').length,
     },
   });
 }
+
+module.exports = { metricsRoute, metricsJsonRoute };

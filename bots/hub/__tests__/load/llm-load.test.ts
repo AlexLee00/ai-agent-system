@@ -13,6 +13,26 @@ jest.mock('../../../../packages/core/lib/telegram-sender', () => ({
 jest.mock('../../../../packages/core/lib/llm-models', () => ({
   getGroqFallback: jest.fn().mockReturnValue('llama-3.3-70b-versatile'),
 }));
+jest.mock('../../lib/llm/cache', () => ({
+  checkCache: jest.fn().mockResolvedValue({ hit: false }),
+  saveCache: jest.fn().mockResolvedValue(undefined),
+}));
+jest.mock('../../lib/runtime-profiles', () => ({
+  selectRuntimeProfile: jest.fn((team, agent) => {
+    if (team === 'luna' && (agent === 'exit_decision' || agent === 'portfolio_decision')) {
+      return { primary_routes: ['claude-code/sonnet'], fallback_routes: ['groq/qwen3'], critical: true, timeout_ms: 10_000 };
+    }
+    if (team === 'blog' && agent === 'writer') {
+      return { primary_routes: ['claude-code/sonnet'], fallback_routes: ['groq/qwen3', 'local/qwen2.5-7b'] };
+    }
+    return null;
+  }),
+}));
+jest.mock('../../lib/budget-guardian', () => ({
+  BudgetGuardian: { getInstance: jest.fn(() => ({ checkAndReserve: jest.fn(() => ({ ok: true })) })) },
+}), { virtual: true });
+
+beforeEach(() => jest.clearAllMocks());
 
 const { callWithFallback } = require('../../lib/llm/unified-caller');
 const { callClaudeCodeOAuth } = require('../../lib/llm/claude-code-oauth');
@@ -82,14 +102,14 @@ describe('Scenario 3: Chaos — 모든 provider 실패 (Fallback Exhaustion)', (
   });
 
   it('모든 provider 실패 → fallback_exhausted 에러 반환', async () => {
-    const result = await callWithFallback(makeReq());
+    const result = await callWithFallback(makeReq('blog', 'writer'));
     expect(result.ok).toBe(false);
     expect(result.error).toContain('fallback_exhausted');
   });
 
   it('5회 chaos 호출 — 실패율 100%', async () => {
     const results = await Promise.all(
-      Array.from({ length: 5 }, () => callWithFallback(makeReq()))
+      Array.from({ length: 5 }, () => callWithFallback(makeReq('blog', 'writer')))
     );
     expect(results.every(r => !r.ok)).toBe(true);
   });

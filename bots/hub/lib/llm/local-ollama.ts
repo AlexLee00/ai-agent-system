@@ -1,25 +1,21 @@
-// Local Ollama HTTP caller with Circuit Breaker + empty-response detection
-// Uses fetch (no axios dependency). Default timeout 15s (short to fail fast).
+'use strict';
 
-import * as registry from './provider-registry';
-import type { LLMCallResponse } from './types';
+// Local Ollama HTTP caller with Circuit Breaker + empty-response detection
+// Default timeout 15s. Uses fetch (no axios). Calls /v1/chat/completions (OpenAI compat).
+
+const registry = require('./provider-registry');
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 const MIN_RESPONSE_LENGTH = 3;
-const LOCAL_OLLAMA_URL = process.env.LOCAL_LLM_BASE_URL || 'http://127.0.0.1:11434';
 
-export interface LocalOllamaRequest {
-  prompt: string;
-  model: string;           // e.g. 'qwen2.5-7b'
-  systemPrompt?: string;
-  baseUrl?: string;
-  timeoutMs?: number;
+function getBaseUrl(baseUrl) {
+  return baseUrl || process.env.LOCAL_LLM_BASE_URL || 'http://127.0.0.1:11434';
 }
 
-export async function callLocalOllama(req: LocalOllamaRequest): Promise<LLMCallResponse> {
+async function callLocalOllama(req) {
   const providerKey = `local/${req.model}`;
-  const baseUrl = req.baseUrl || LOCAL_OLLAMA_URL;
-  const timeoutMs = req.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const baseUrl = getBaseUrl(req.baseUrl);
+  const timeoutMs = req.timeoutMs || DEFAULT_TIMEOUT_MS;
 
   if (!registry.canCall(providerKey)) {
     return { ok: false, provider: 'failed', error: `circuit_open:${providerKey}`, durationMs: 0 };
@@ -30,7 +26,7 @@ export async function callLocalOllama(req: LocalOllamaRequest): Promise<LLMCallR
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const messages: Array<{ role: string; content: string }> = [];
+    const messages = [];
     if (req.systemPrompt) messages.push({ role: 'system', content: req.systemPrompt });
     messages.push({ role: 'user', content: req.prompt });
 
@@ -49,8 +45,8 @@ export async function callLocalOllama(req: LocalOllamaRequest): Promise<LLMCallR
       return { ok: false, provider: 'failed', error: `${reason}:${res.status}`, durationMs: latency };
     }
 
-    const json: any = await res.json();
-    const text: string = json?.choices?.[0]?.message?.content ?? '';
+    const json = await res.json();
+    const text = (json && json.choices && json.choices[0] && json.choices[0].message && json.choices[0].message.content) || '';
 
     if (!text || text.trim().length < MIN_RESPONSE_LENGTH) {
       registry.recordFailure(providerKey, 'empty_response', latency);
@@ -59,13 +55,15 @@ export async function callLocalOllama(req: LocalOllamaRequest): Promise<LLMCallR
 
     registry.recordSuccess(providerKey, latency);
     return { ok: true, provider: 'failed', result: text, durationMs: latency, totalCostUsd: 0 };
-  } catch (err: any) {
+  } catch (err) {
     const latency = Date.now() - start;
-    const reason = err?.name === 'AbortError' ? 'timeout'
-      : (err?.code === 'ECONNREFUSED' ? 'network' : 'unknown');
+    const reason = (err && err.name === 'AbortError') ? 'timeout'
+      : (err && err.code === 'ECONNREFUSED') ? 'network' : 'unknown';
     registry.recordFailure(providerKey, reason, latency);
-    return { ok: false, provider: 'failed', error: `${reason}:${err.message}`, durationMs: latency };
+    return { ok: false, provider: 'failed', error: `${reason}:${(err && err.message) || 'unknown'}`, durationMs: latency };
   } finally {
     clearTimeout(timer);
   }
 }
+
+module.exports = { callLocalOllama };
