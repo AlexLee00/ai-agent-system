@@ -512,6 +512,17 @@ async function rejectExecution({
   return { success: false, reason };
 }
 
+function buildGuardTelemetryMeta(symbol, action, signalTradeMode, meta = {}, extras = {}) {
+  return {
+    symbol,
+    side: String(action || 'BUY').toLowerCase(),
+    tradeMode: signalTradeMode,
+    guardKind: extras.guardKind || meta.guardKind || null,
+    pressureSource: extras.pressureSource || meta.pressureSource || null,
+    ...meta,
+  };
+}
+
 async function runBuySafetyGuards({
   persistFailure,
   symbol,
@@ -543,10 +554,13 @@ async function runBuySafetyGuards({
       action,
       reason,
       code: 'capital_guard_rejected',
-      meta: {
+      meta: buildGuardTelemetryMeta(symbol, action, signalTradeMode, {
         openPositions: openPositionsSafe.length,
         maxPositions: capitalPolicy.max_concurrent_positions,
-      },
+      }, {
+        guardKind: 'max_positions',
+        pressureSource: 'capital_policy',
+      }),
       notify: 'skip',
     });
   }
@@ -561,10 +575,13 @@ async function runBuySafetyGuards({
       action,
       reason,
       code: 'capital_guard_rejected',
-      meta: {
+      meta: buildGuardTelemetryMeta(symbol, action, signalTradeMode, {
         dailyTrades: dailyTradesSafe,
         maxDailyTrades: capitalPolicy.max_daily_trades,
-      },
+      }, {
+        guardKind: 'daily_trade_limit',
+        pressureSource: 'capital_policy',
+      }),
       notify: 'skip',
     });
   }
@@ -706,11 +723,13 @@ async function checkBuyReentryGuards({
       action,
       reason,
       code: 'live_position_reentry_blocked',
-      meta: {
+      meta: buildGuardTelemetryMeta(symbol, action, signalTradeMode, {
         existingPaper: livePosition.paper,
         requestedPaper: effectivePaperMode,
-        tradeMode: signalTradeMode,
-      },
+      }, {
+        guardKind: 'validation_live_overlap',
+        pressureSource: 'live_position_overlap',
+      }),
       notify: 'skip',
     });
   }
@@ -1073,12 +1092,15 @@ async function resolveBuyExecutionMode({
     action,
     reason: check.reason,
     code: check.circuit ? 'capital_circuit_breaker' : 'capital_guard_rejected',
-    meta: {
+    meta: buildGuardTelemetryMeta(symbol, action, signalTradeMode, {
       circuit: Boolean(check.circuit),
       circuitType: check.circuitType ?? null,
       openPositions: !check.circuit ? (await getOpenPositions('binance', false, signalTradeMode).catch(() => [])).length : undefined,
       maxPositions: !check.circuit ? capitalPolicy.max_concurrent_positions : undefined,
-    },
+    }, {
+      guardKind: check.circuit ? 'capital_circuit_breaker' : 'capital_guard_rejected',
+      pressureSource: check.circuit ? 'circuit_breaker' : 'pre_trade_check',
+    }),
     notify: check.circuit ? 'circuit' : 'skip',
   });
 }

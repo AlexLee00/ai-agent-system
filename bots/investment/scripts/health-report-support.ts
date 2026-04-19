@@ -315,8 +315,8 @@ export async function loadCapitalGuardBreakdown(pgPool, periodDays = 14) {
     `
       SELECT
         COALESCE(NULLIF(symbol, ''), 'unknown') AS symbol,
-        LOWER(COALESCE(side, 'buy')) AS side,
-        COALESCE(trade_mode, 'normal') AS trade_mode,
+        LOWER(COALESCE(action, 'buy')) AS side,
+        COALESCE(trade_mode, COALESCE(block_meta->>'tradeMode', 'normal')) AS trade_mode,
         COUNT(*)::int AS cnt
       FROM investment.signals
       WHERE exchange = 'binance'
@@ -335,8 +335,8 @@ export async function loadCapitalGuardBreakdown(pgPool, periodDays = 14) {
     `
       SELECT
         COALESCE(NULLIF(symbol, ''), 'unknown') AS symbol,
-        LOWER(COALESCE(side, 'buy')) AS side,
-        COALESCE(trade_mode, 'normal') AS trade_mode,
+        LOWER(COALESCE(action, 'buy')) AS side,
+        COALESCE(trade_mode, COALESCE(block_meta->>'tradeMode', 'normal')) AS trade_mode,
         COUNT(*)::int AS cnt
       FROM investment.signals
       WHERE exchange = 'binance'
