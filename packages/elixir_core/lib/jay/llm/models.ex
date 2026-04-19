@@ -17,7 +17,7 @@ defmodule Jay.Core.LLM.Models do
   @doc "추상 모델명 → Groq 폴백 모델 ID."
   def get_groq_fallback("anthropic_haiku"),  do: "llama-3.1-8b-instant"
   def get_groq_fallback("anthropic_sonnet"), do: "llama-3.3-70b-versatile"
-  def get_groq_fallback("anthropic_opus"),   do: "qwen-qwq-32b"
+  def get_groq_fallback("anthropic_opus"),   do: "llama-3.3-70b-versatile"
   def get_groq_fallback(_),                  do: "llama-3.3-70b-versatile"
 
   @doc "토큰 비용 계산 (USD)."

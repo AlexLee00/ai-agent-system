@@ -34,7 +34,7 @@ const OLLAMA_BASE_URL = process.env.LOCAL_LLM_CHAT_BASE_URL || process.env.OLLAM
 // model families so runtime profiles reflect live ops first.
 const LOCAL_FAST_ROUTE = 'local/qwen2.5-7b';
 const GROQ_SCOUT_ROUTE = 'groq/llama-3.1-8b-instant';
-const GROQ_QWEN3_ROUTE = 'groq/qwen-qwq-32b';
+const GROQ_VERSATILE_ROUTE = 'groq/llama-3.3-70b-versatile';
 const LOCAL_FAST_MODEL = 'qwen2.5-7b';
 
 export const PROFILES: Record<string, TeamProfiles> = {
@@ -90,7 +90,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
-        GROQ_QWEN3_ROUTE
+        GROQ_VERSATILE_ROUTE
       ]
     },
     "image-local": {
@@ -184,7 +184,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "claude-code/sonnet"
       ],
       "fallback_routes": [
-        GROQ_QWEN3_ROUTE
+        GROQ_VERSATILE_ROUTE
       ],
       "timeout_ms": 10_000,
       "critical": true
@@ -197,7 +197,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "claude-code/sonnet"
       ],
       "fallback_routes": [
-        GROQ_QWEN3_ROUTE
+        GROQ_VERSATILE_ROUTE
       ],
       "timeout_ms": 10_000,
       "critical": true
@@ -210,7 +210,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "claude-code/sonnet"
       ],
       "fallback_routes": [
-        GROQ_QWEN3_ROUTE,
+        GROQ_VERSATILE_ROUTE,
         LOCAL_FAST_ROUTE
       ],
       "critical": false
