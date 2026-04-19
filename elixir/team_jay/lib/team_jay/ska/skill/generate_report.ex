@@ -127,11 +127,11 @@ defmodule TeamJay.Ska.Skill.GenerateReport do
     message = "#{tag}\n\n#{markdown}"
 
     try do
-      TeamJay.Telegram.send_general(message)
+      Jay.Core.HubClient.post_alarm(message, "ska", "generate_report")
       true
     rescue
       e ->
-        Logger.warning("[GenerateReport] Telegram 발송 실패: #{inspect(e)}")
+        Logger.warning("[GenerateReport] 리포트 알람 발송 실패: #{inspect(e)}")
         false
     end
   end

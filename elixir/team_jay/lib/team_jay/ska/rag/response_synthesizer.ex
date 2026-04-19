@@ -95,7 +95,7 @@ defmodule TeamJay.Ska.Rag.ResponseSynthesizer do
     "전략 #{strategy} — #{length(docs)}개 문서 참조 (소스: #{Enum.join(sources, ", ")})"
   end
 
-  defp fallback_strategy(failure_context) do
+  defp fallback_strategy(_failure_context) do
     %{
       strategy: :escalate_to_master,
       confidence: 0.1,

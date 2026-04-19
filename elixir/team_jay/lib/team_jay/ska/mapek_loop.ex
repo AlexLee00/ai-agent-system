@@ -13,7 +13,7 @@ defmodule TeamJay.Ska.MapeKLoop do
   use GenServer
   require Logger
 
-  alias TeamJay.Ska.{SkillRegistry, SkillPerformanceTracker, FailureLibrary}
+  alias TeamJay.Ska.{SkillPerformanceTracker, FailureLibrary}
 
   @hourly_ms 60 * 60 * 1_000
   @daily_ms 24 * 60 * 60 * 1_000

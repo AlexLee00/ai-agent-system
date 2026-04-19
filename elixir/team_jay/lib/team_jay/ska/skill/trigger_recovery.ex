@@ -37,39 +37,96 @@ defmodule TeamJay.Ska.Skill.TriggerRecovery do
   defp decide_strategy(_, _), do: :escalate_to_master
 
   defp execute_recovery(:naver_relogin, _params) do
-    TeamJay.Ska.Naver.NaverRecovery.refresh_session()
+    safe_broadcast_failure(%{
+      agent: "andy",
+      error_type: :auth_expired,
+      action: :session_refresh
+    })
+
     {:ok, %{recovery_triggered: true, strategy: :naver_relogin}}
   end
 
   defp execute_recovery(:selector_rollback, params) do
-    agent = params[:agent]
-    TeamJay.Ska.SelectorManager.rollback_to_last_working(agent)
+    target =
+      params
+      |> Map.get(:context, %{})
+      |> Map.get(:target, "naver_list")
+
+    TeamJay.Ska.SelectorManager.invalidate_cache(target)
+    safe_broadcast_failure(%{
+      agent: "andy",
+      error_type: :selector_broken,
+      target: target,
+      action: :parsing_fallback
+    })
+
     {:ok, %{recovery_triggered: true, strategy: :selector_rollback}}
   end
 
   defp execute_recovery(:kiosk_restart, _params) do
-    TeamJay.Ska.Kiosk.KioskAgent.restart_session()
+    safe_enqueue_kiosk_verify(%{
+      reason: :kiosk_restart,
+      requested_by: :trigger_recovery
+    })
+
     {:ok, %{recovery_triggered: true, strategy: :kiosk_restart}}
   end
 
   defp execute_recovery(:kiosk_reconnect, _params) do
-    TeamJay.Ska.Kiosk.KioskAgent.reconnect()
+    safe_enqueue_kiosk_verify(%{
+      reason: :kiosk_reconnect,
+      requested_by: :trigger_recovery
+    })
+
     {:ok, %{recovery_triggered: true, strategy: :kiosk_reconnect}}
   end
 
   defp execute_recovery(:pickko_reconnect, _params) do
-    TeamJay.Ska.Pickko.PickkoMonitor.reconnect()
+    safe_broadcast(:retry_requested, %{
+      agent: "jimmy",
+      reason: :pickko_reconnect,
+      requested_by: :trigger_recovery
+    })
+
     {:ok, %{recovery_triggered: true, strategy: :pickko_reconnect}}
   end
 
   defp execute_recovery(:backoff_retry, params) do
     agent = params[:agent]
-    TeamJay.Ska.FailureTracker.schedule_retry(agent)
+
+    safe_broadcast(:retry_requested, %{
+      agent: to_string(agent),
+      reason: :network_error,
+      requested_by: :trigger_recovery
+    })
+
     {:ok, %{recovery_triggered: true, strategy: :backoff_retry}}
   end
 
   defp execute_recovery(:escalate_to_master, _params) do
-    TeamJay.Telegram.send_urgent("🚨 복구 전략 미정의 — 마스터 수동 개입 필요")
+    Jay.Core.HubClient.post_alarm(
+      "🚨 [SKA] 복구 전략 미정의 — 마스터 수동 개입 필요",
+      "ska",
+      "trigger_recovery"
+    )
+
     {:ok, %{recovery_triggered: false, strategy: :escalate_to_master}}
+  end
+
+  defp safe_broadcast_failure(payload), do: safe_broadcast(:failure_reported, payload)
+
+  defp safe_broadcast(topic, payload) do
+    try do
+      TeamJay.Ska.PubSub.broadcast(topic, payload)
+    rescue
+      ArgumentError -> :ok
+    end
+  end
+
+  defp safe_enqueue_kiosk_verify(payload) do
+    case Process.whereis(TeamJay.Ska.Kiosk.KioskAgent) do
+      nil -> :ok
+      _pid -> TeamJay.Ska.Kiosk.KioskAgent.enqueue_verify(payload)
+    end
   end
 end

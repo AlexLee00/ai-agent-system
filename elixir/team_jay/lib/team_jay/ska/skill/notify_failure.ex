@@ -41,14 +41,24 @@ defmodule TeamJay.Ska.Skill.NotifyFailure do
   end
 
   defp dispatch(:telegram_urgent, msg, _params) do
-    TeamJay.Telegram.send_urgent(msg)
+    Jay.Core.HubClient.post_alarm(msg, "ska", "notify_failure")
   end
 
   defp dispatch(:telegram_general, msg, _params) do
-    TeamJay.Telegram.send_general(msg)
+    Jay.Core.HubClient.post_alarm(msg, "ska", "notify_failure")
   end
 
   defp dispatch(:event_lake, _msg, params) do
-    TeamJay.EventLake.insert(Map.put(params, :event_type, :agent_failure))
+    if Process.whereis(Jay.Core.EventLake) do
+      Jay.Core.EventLake.record(
+        params
+        |> Map.put(:event_type, "agent_failure")
+        |> Map.put_new(:team, "ska")
+        |> Map.put_new(:bot_name, "notify_failure")
+        |> Map.put_new(:severity, "warn")
+        |> Map.put_new(:message, params[:message] || params["message"] || "agent failure")
+        |> Map.put_new(:metadata, %{})
+      )
+    end
   end
 end
