@@ -1,0 +1,77 @@
+groups:
+  - name: llm_hub_alerts
+    interval: 30s
+    rules:
+
+      - alert: ProviderCircuitOpen
+        expr: llm_circuit_state == 2
+        for: 1m
+        labels:
+          severity: critical
+          team: ops
+        annotations:
+          summary: "Circuit Breaker OPEN: {{ $labels.provider }}"
+          description: "Provider {{ $labels.provider }}의 Circuit Breaker가 OPEN 상태입니다. 연속 실패로 자동 강등됐습니다."
+          runbook: "docs/hub/EMERGENCY_RUNBOOK.md#시나리오-1"
+
+      - alert: ProviderHighFailureRate
+        expr: llm_failure_rate > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          team: ops
+        annotations:
+          summary: "Provider 실패율 > 10%: {{ $labels.provider }}"
+          description: "Provider {{ $labels.provider }}의 실패율이 {{ $value | humanizePercentage }}입니다."
+
+      - alert: ProviderCriticalFailureRate
+        expr: llm_failure_rate > 0.3
+        for: 1m
+        labels:
+          severity: critical
+          team: ops
+        annotations:
+          summary: "Provider 실패율 > 30%: {{ $labels.provider }}"
+          description: "Provider {{ $labels.provider }}의 실패율이 {{ $value | humanizePercentage }}으로 심각합니다."
+
+      - alert: ProviderHighLatency
+        expr: llm_avg_latency_ms > 8000
+        for: 3m
+        labels:
+          severity: warning
+          team: ops
+        annotations:
+          summary: "Provider 레이턴시 > 8s: {{ $labels.provider }}"
+          description: "Provider {{ $labels.provider }}의 평균 레이턴시가 {{ $value | humanizeDuration }}입니다."
+
+      - alert: DailyCostExceedingWarning
+        expr: llm_daily_cost_usd > 50
+        for: 5m
+        labels:
+          severity: warning
+          team: ops
+        annotations:
+          summary: "LLM 일일 비용 > $50 (팀: {{ $labels.team }})"
+          description: "팀 {{ $labels.team }}의 오늘 LLM 비용이 ${{ $value }}입니다."
+
+      - alert: DailyCostExceedingCritical
+        expr: llm_daily_cost_usd > 100
+        for: 5m
+        labels:
+          severity: critical
+          team: master
+        annotations:
+          summary: "LLM 일일 비용 > $100 (팀: {{ $labels.team }})"
+          description: "팀 {{ $labels.team }}의 오늘 LLM 비용이 ${{ $value }}로 예산 초과 위험입니다."
+          runbook: "docs/hub/BUDGET_GUARDIAN_GUIDE.md"
+
+      - alert: AllProvidersDown
+        expr: count(llm_circuit_state == 0) == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: master
+        annotations:
+          summary: "모든 LLM Provider OPEN — Fallback Exhaustion 위험"
+          description: "CLOSED 상태 provider가 없습니다. Team Jay 전체 LLM 호출이 실패합니다."
+          runbook: "docs/hub/EMERGENCY_RUNBOOK.md#시나리오-3"

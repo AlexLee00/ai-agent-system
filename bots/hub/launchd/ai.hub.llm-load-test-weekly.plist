@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.hub.llm-load-test-weekly</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/alexlee/projects/ai-agent-system/tests/load/run-all.sh</string>
+    <string>--skip-chaos</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/alexlee/projects/ai-agent-system</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>HOME</key>
+    <string>/Users/alexlee</string>
+    <key>MODE</key>
+    <string>ops</string>
+    <key>HUB_URL</key>
+    <string>http://127.0.0.1:7788</string>
+    <key>SHORT_MODE</key>
+    <string>false</string>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/tmp/hub-llm-load-test-weekly.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/hub-llm-load-test-weekly.err.log</string>
+  <!-- 매주 토요일 03:00 KST (UTC 18:00 금요일) -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key>
+    <integer>5</integer>
+    <key>Hour</key>
+    <integer>18</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>
