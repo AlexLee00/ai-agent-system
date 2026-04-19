@@ -168,6 +168,7 @@ async function createInstaContent(content, title, category, cardCount = 3, optio
   const { caption, hashtags, cta, fullText } = await generateInstaCaption(content, title, category);
   console.log(`  캡션 완료 (해시태그 ${hashtags.length}개)`);
 
+  // @ts-ignore checkJs default-param inference is too narrow here
   const thumbPath = resolveThumbPath(title, options.thumbPath || null);
   let reel = null;
   let plan = null;
@@ -176,7 +177,9 @@ async function createInstaContent(content, title, category, cardCount = 3, optio
       title,
       category,
       thumbPath,
+      // @ts-ignore checkJs default-param inference is too narrow here
       blogUrl: options.blogUrl || '',
+      // @ts-ignore checkJs default-param inference is too narrow here
       durationSec: options.durationSec || SHORTFORM_DEFAULT_DURATION_SEC,
       content,
     });

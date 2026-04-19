@@ -30,6 +30,7 @@ async function main() {
     timeoutMs: Number(runtimeConfig.webhookTimeoutMs || 5000),
   });
 
+  /** @type {any} */
   const payload = {
     healthUrl: HEALTH_URL,
     webhookUrl,
@@ -42,7 +43,7 @@ async function main() {
     webhookHealthy: webhook.healthy,
     webhookError: webhook.error || null,
   };
-  payload.aiSummary = await buildBlogCliInsight({
+  const aiSummary = await buildBlogCliInsight({
     bot: 'check-n8n-pipeline-path',
     requestType: 'n8n-pipeline-path',
     title: '블로그 n8n pipeline path 진단 결과',
@@ -58,8 +59,12 @@ async function main() {
       ? '블로그 n8n 파이프라인 경로가 정상이라 동적 포스팅 웹훅 유입은 현재 안정적입니다.'
       : '블로그 n8n 파이프라인 경로에 경고가 있어 웹훅 등록과 응답 상태를 우선 점검하는 편이 좋습니다.',
   });
+  /** @type {any} */
+  const typedPayload = /** @type {any} */ (payload);
+  // @ts-ignore payload is intentionally extended with aiSummary at runtime
+  typedPayload.aiSummary = aiSummary;
 
-  console.log(JSON.stringify(payload, null, 2));
+  console.log(JSON.stringify(typedPayload, null, 2));
 }
 
 main().catch((error) => {

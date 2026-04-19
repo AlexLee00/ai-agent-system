@@ -20,14 +20,23 @@ const { reportPublishSuccess, reportPublishFailure } = require(path.join(env.PRO
 
 const DRY_RUN = process.argv.includes('--dry-run');
 
+/**
+ * @typedef {{
+ *   postId: string | number | null,
+ *   postTitle: string | null,
+ *   fbPostId?: string | null,
+ *   status: string,
+ *   errorMsg?: string | null
+ * }} FacebookPublishRecord
+ */
+
 async function getTodayLatestPost() {
   const rows = await pgPool.query('blog', `
     SELECT id, title, naver_url, category, post_type
     FROM blog.posts
     WHERE publish_date = CURRENT_DATE
       AND status = 'published'
-      AND dry_run = false
-    ORDER BY published_at DESC
+    ORDER BY COALESCE(publish_date::timestamp, created_at) DESC, id DESC
     LIMIT 1
   `);
   return rows?.[0] || null;
@@ -48,7 +57,8 @@ async function hasFacebookPublishToday() {
   }
 }
 
-async function recordFacebookPublish({ postId, postTitle, postId: fbPostId, status, errorMsg }) {
+/** @param {FacebookPublishRecord} record */
+async function recordFacebookPublish({ postId, postTitle, fbPostId = null, status, errorMsg = null }) {
   try {
     await pgPool.query('blog', `
       INSERT INTO blog.facebook_publish_log

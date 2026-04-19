@@ -15,7 +15,7 @@
 	<string>ai.blog.instagram-publish</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/opt/homebrew/bin/node</string>
+		<string>/Users/alexlee/projects/ai-agent-system/node_modules/.bin/tsx</string>
 		<string>/Users/alexlee/projects/ai-agent-system/bots/blog/scripts/auto-instagram-publish.ts</string>
 	</array>
 	<key>RunAtLoad</key>

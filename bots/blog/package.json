@@ -6,6 +6,10 @@
   "type": "commonjs",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run test:smoke && npm run test:unit && npm run test:daily-dry",
+    "test:smoke": "../../node_modules/.bin/tsx scripts/health-report.ts && ../../node_modules/.bin/tsx scripts/health-check.ts && ../../node_modules/.bin/tsx scripts/weekly-evolution.ts --json",
+    "test:unit": "../../node_modules/.bin/jest __tests__/evolution-cycle.test.ts __tests__/platform-orchestration.test.ts --runInBand",
+    "test:daily-dry": "../../node_modules/.bin/tsx scripts/run-daily.ts --dry-run",
     "daily": "../../node_modules/.bin/tsx scripts/run-daily.ts",
     "weekly-evolution": "node scripts/weekly-evolution.ts",
     "prepare-shortform": "node scripts/prepare-shortform.ts",
@@ -42,6 +46,9 @@
     "check:n8n-pipeline": "node scripts/check-n8n-pipeline-path.ts",
     "seed-curriculum": "node scripts/seed-curriculum.ts",
     "seed-curriculum:dry": "node scripts/seed-curriculum.ts --dry-run"
+  },
+  "devDependencies": {
+    "jest": "^30.2.0"
   },
   "dependencies": {
     "@ai-agent/core": "*",

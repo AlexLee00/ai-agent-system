@@ -37,11 +37,18 @@ function isExcludedReferenceFilename(filename = '') {
   return EXCLUDED_REFERENCE_FILENAMES.has(String(filename || '').trim());
 }
 
+/**
+ * @param {{ id?: number|string, title?: string, filename?: string, metadata?: { filename?: string, fileName?: string } }} [post]
+ */
 function isExcludedReferencePost(post = {}) {
+  // @ts-ignore JS checkJs default-param inference is too narrow here
   const id = Number(post?.id || 0);
   if (id && EXCLUDED_REFERENCE_POST_IDS.has(id)) return true;
+  // @ts-ignore JS checkJs default-param inference is too narrow here
   if (isExcludedReferenceTitle(post?.title)) return true;
+  // @ts-ignore JS checkJs default-param inference is too narrow here
   if (isExcludedReferenceFilename(post?.filename)) return true;
+  // @ts-ignore JS checkJs default-param inference is too narrow here
   const metadataFilename = post?.metadata?.filename || post?.metadata?.fileName;
   if (isExcludedReferenceFilename(metadataFilename)) return true;
   return false;

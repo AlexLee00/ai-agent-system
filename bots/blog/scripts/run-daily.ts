@@ -5,7 +5,10 @@
  * 블로그팀 일간 실행 스크립트
  * launchd 또는 수동 실행
  *
- * 실행: node bots/blog/scripts/run-daily.ts
+ * 실행:
+ *   ../../node_modules/.bin/tsx bots/blog/scripts/run-daily.ts
+ * launchd:
+ *   ai.blog.daily -> tsx bots/blog/scripts/run-daily.ts
  */
 
 const { initHubConfig } = require('../../../packages/core/lib/llm-keys');

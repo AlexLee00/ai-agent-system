@@ -40,6 +40,7 @@ function buildActions({ config, media, reelPath }) {
 }
 
 function buildInstagramDoctorFallback(payload = {}) {
+  // @ts-ignore checkJs default-param inference is too narrow here
   if (!payload.ready) {
     return `인스타 업로드 준비가 아직 불완전해 token 상태와 공개 media 경로를 먼저 확인하는 것이 좋습니다.`;
   }
@@ -71,6 +72,7 @@ async function main() {
     }
   }
 
+  /** @type {any} */
   const payload = {
     ready: Boolean(
       config.accessToken
@@ -91,7 +93,7 @@ async function main() {
     media,
     actions: buildActions({ config, media, reelPath }),
   };
-  payload.aiSummary = await buildBlogCliInsight({
+  const aiSummary = await buildBlogCliInsight({
     bot: 'doctor-instagram-auth',
     requestType: 'doctor-instagram-auth',
     title: '블로그 인스타그램 doctor 요약',
@@ -104,17 +106,22 @@ async function main() {
     },
     fallback: buildInstagramDoctorFallback(payload),
   });
+  /** @type {any} */
+  const typedPayload = /** @type {any} */ (payload);
+  // @ts-ignore payload is intentionally extended with aiSummary at runtime
+  typedPayload.aiSummary = aiSummary;
 
   if (args.json) {
     console.log(JSON.stringify(payload, null, 2));
     return;
   }
 
-  console.log(`[인스타 doctor] ready=${payload.ready ? 'yes' : 'no'} source=${payload.source}`);
-  console.log(`🔍 AI: ${payload.aiSummary}`);
-  console.log(`[인스타 doctor] token expires=${payload.token.expiresAt || 'unknown'} daysLeft=${payload.token.daysLeft ?? 'n/a'}`);
-  console.log(`[인스타 doctor] media=${payload.media?.ok ? 'ready' : 'not-ready'} ${payload.media?.publicUrl || payload.media?.error || ''}`.trim());
-  for (const action of payload.actions) {
+  console.log(`[인스타 doctor] ready=${typedPayload.ready ? 'yes' : 'no'} source=${typedPayload.source}`);
+  // @ts-ignore payload is intentionally extended with aiSummary at runtime
+  console.log(`🔍 AI: ${typedPayload.aiSummary}`);
+  console.log(`[인스타 doctor] token expires=${typedPayload.token.expiresAt || 'unknown'} daysLeft=${typedPayload.token.daysLeft ?? 'n/a'}`);
+  console.log(`[인스타 doctor] media=${typedPayload.media?.ok ? 'ready' : 'not-ready'} ${typedPayload.media?.publicUrl || typedPayload.media?.error || ''}`.trim());
+  for (const action of typedPayload.actions) {
     console.log(`- ${action}`);
   }
 }

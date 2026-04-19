@@ -36,6 +36,7 @@ function redactUrl(url = '') {
 }
 
 function buildInstagramTokenFallback(payload = {}) {
+  // @ts-ignore checkJs default-param inference is too narrow here
   const health = payload.health || {};
   if (health.critical) {
     return '인스타 토큰이 임계 구간에 가까워 보여 즉시 refresh 경로와 만료일 저장 상태를 점검하는 편이 좋습니다.';
@@ -49,8 +50,8 @@ function buildInstagramTokenFallback(payload = {}) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const runtimeConfig = await getInstagramConfig();
-  const config = getInstagramTokenConfig();
-  const health = getTokenHealth(config);
+  const config = /** @type {any} */ (getInstagramTokenConfig());
+  const health = /** @type {any} */ (getTokenHealth(config));
   const exchangeRequest = health.readyForExchange ? buildExchangeTokenRequest(config) : null;
   const refreshRequest = health.readyForRefresh ? buildRefreshLongLivedTokenRequest(config) : null;
 
@@ -66,10 +67,13 @@ async function main() {
     note: '장기 토큰은 만료 14일 전 갱신, 3일 전 CRITICAL 알림 기준으로 운영하는 것을 권장합니다.',
   };
 
+  /** @type {any} */
+  const typedPayload = /** @type {any} */ (payload);
   if (!health.tokenExpiresAt) {
-    payload.warning = 'token_expires_at가 아직 저장되지 않았습니다. 만료 추적을 위해 refresh/exchange 성공 후 저장이 필요합니다.';
+    // @ts-ignore payload is intentionally extended with warning at runtime
+    typedPayload.warning = 'token_expires_at가 아직 저장되지 않았습니다. 만료 추적을 위해 refresh/exchange 성공 후 저장이 필요합니다.';
   }
-  payload.aiSummary = await buildBlogCliInsight({
+  const aiSummary = await buildBlogCliInsight({
     bot: 'check-instagram-token-health',
     requestType: 'check-instagram-token-health',
     title: '블로그 인스타그램 토큰 health 요약',
@@ -77,21 +81,25 @@ async function main() {
       ready: payload.ready,
       source: payload.source,
       health: payload.health,
-      warning: payload.warning || null,
+      // @ts-ignore payload is intentionally extended with warning at runtime
+      warning: typedPayload.warning || null,
       requests: payload.requests,
     },
     fallback: buildInstagramTokenFallback(payload),
   });
+  // @ts-ignore payload is intentionally extended with aiSummary at runtime
+  typedPayload.aiSummary = aiSummary;
 
   if (args.json) {
     console.log(JSON.stringify(payload, null, 2));
     return;
   }
 
-  console.log(`[인스타 토큰] ready=${payload.ready ? 'yes' : 'no'}`);
-  console.log(`🔍 AI: ${payload.aiSummary}`);
-  console.log(`[인스타 토큰] expiresAt=${payload.health.tokenExpiresAt || 'unknown'} daysLeft=${payload.health.daysLeft ?? 'n/a'}`);
-  console.log(`[인스타 토큰] refresh=${payload.health.needsRefresh ? 'needed' : 'not-yet'} critical=${payload.health.critical ? 'yes' : 'no'}`);
+  console.log(`[인스타 토큰] ready=${typedPayload.ready ? 'yes' : 'no'}`);
+  // @ts-ignore payload is intentionally extended with aiSummary at runtime
+  console.log(`🔍 AI: ${typedPayload.aiSummary}`);
+  console.log(`[인스타 토큰] expiresAt=${typedPayload.health.tokenExpiresAt || 'unknown'} daysLeft=${typedPayload.health.daysLeft ?? 'n/a'}`);
+  console.log(`[인스타 토큰] refresh=${typedPayload.health.needsRefresh ? 'needed' : 'not-yet'} critical=${typedPayload.health.critical ? 'yes' : 'no'}`);
 }
 
 main().catch((error) => {

@@ -80,7 +80,7 @@ function analyzeTrend(keyword, datalabData) {
   }
 
   const data = datalabData.results[0].data;
-  const sorted = data.sort((a, b) => new Date(a.period) - new Date(b.period));
+  const sorted = data.sort((a, b) => new Date(a.period).getTime() - new Date(b.period).getTime());
   const recent = sorted.slice(-7);
   const previous = sorted.slice(-14, -7);
 

@@ -12,6 +12,25 @@ const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 
 const PLATFORM_LABELS = { naver: '네이버 블로그', instagram: '인스타그램', facebook: '페이스북' };
 
+/**
+ * @typedef {{
+ *   platform: string,
+ *   status: string,
+ *   title: string,
+ *   url?: string,
+ *   error?: string,
+ *   duration_ms?: number,
+ *   post_id?: string | number | null
+ * }} PublishReport
+ */
+
+/**
+ * @typedef {{
+ *   durationMs?: number,
+ *   postId?: string | number | null
+ * }} PublishReportOptions
+ */
+
 async function _saveToDb(platform, status, title, url, error, durationMs, postId) {
   try {
     await pgPool.query('blog', `
@@ -25,7 +44,7 @@ async function _saveToDb(platform, status, title, url, error, durationMs, postId
 
 /**
  * 통합 발행 보고 (E2E/내부 호출용)
- * @param {object} report - { platform, status, title, url?, error?, duration_ms?, post_id? }
+ * @param {PublishReport} report
  */
 async function reportPublish(report) {
   const { platform, status, title, url, error, duration_ms, post_id } = report;
@@ -44,13 +63,21 @@ async function reportPublish(report) {
 /**
  * 플랫폼 발행 성공 보고 (레거시 호환)
  */
+/**
+ * @param {string} platform
+ * @param {string} title
+ * @param {string} [url]
+ * @param {PublishReportOptions} [opts]
+ */
 async function reportPublishSuccess(platform, title, url, opts = {}) {
   return reportPublish({
     platform,
     status: 'success',
     title,
     url,
+    // @ts-ignore JS checkJs default-param inference is too narrow here
     duration_ms: opts.durationMs,
+    // @ts-ignore JS checkJs default-param inference is too narrow here
     post_id: opts.postId,
   });
 }
@@ -58,13 +85,21 @@ async function reportPublishSuccess(platform, title, url, opts = {}) {
 /**
  * 플랫폼 발행 실패 보고 (레거시 호환)
  */
+/**
+ * @param {string} platform
+ * @param {string} title
+ * @param {string} error
+ * @param {PublishReportOptions} [opts]
+ */
 async function reportPublishFailure(platform, title, error, opts = {}) {
   return reportPublish({
     platform,
     status: 'failed',
     title,
     error,
+    // @ts-ignore JS checkJs default-param inference is too narrow here
     duration_ms: opts.durationMs,
+    // @ts-ignore JS checkJs default-param inference is too narrow here
     post_id: opts.postId,
   });
 }
@@ -87,14 +122,17 @@ async function reportDailySummary(date = null) {
     if (!list.length) return null;
 
     const lines = ['📊 [블로팀] 오늘 발행 요약', `날짜: ${targetDate}`];
+    /** @type {Record<string, { success: number, failed: number }>} */
     const byPlatform = {};
     for (const r of list) {
       if (!byPlatform[r.platform]) byPlatform[r.platform] = { success: 0, failed: 0 };
       byPlatform[r.platform][r.status] = Number(r.cnt);
     }
-    for (const [plat, counts] of Object.entries(byPlatform)) {
+    for (const [plat, counts] of /** @type {Array<[string, any]>} */ (Object.entries(byPlatform))) {
       const label = PLATFORM_LABELS[plat] || plat;
-      lines.push(`${label}: ✅${counts.success || 0} ❌${counts.failed || 0}`);
+      const typedCounts = /** @type {any} */ (counts);
+      // @ts-ignore Object.entries over Record still narrows counts to unknown in checkJs
+      lines.push(`${label}: ✅${typedCounts.success || 0} ❌${typedCounts.failed || 0}`);
     }
 
     const msg = lines.join('\n');

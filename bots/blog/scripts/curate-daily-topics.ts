@@ -92,8 +92,11 @@ async function fetchHNTop() {
       )
     );
     return stories
-      .filter(s => s.status === 'fulfilled' && s.value?.title)
-      .map(s => ({ title: s.value.title, url: s.value.url || '', points: s.value.score || 0 }));
+      .filter((s) => s.status === 'fulfilled' && s.value?.title)
+      .map((s) => {
+        const value = s.status === 'fulfilled' ? s.value : null;
+        return { title: value?.title || '', url: value?.url || '', points: value?.score || 0 };
+      });
   } catch {
     return [];
   }

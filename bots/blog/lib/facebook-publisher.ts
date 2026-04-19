@@ -4,18 +4,35 @@ const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const { getInstagramConfig } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-graph.ts'));
 
+/**
+ * @typedef {{
+ *   accessToken?: string,
+ *   pageId?: string,
+ *   baseUrl?: string,
+ *   apiVersion?: string,
+ *   credentialSource?: string
+ * }} FacebookPublishConfig
+ */
+
+/** @returns {Promise<FacebookPublishConfig>} */
 function getFacebookPublishConfig() {
-  return getInstagramConfig();
+  return /** @type {Promise<FacebookPublishConfig>} */ (getInstagramConfig());
 }
 
+/** @param {FacebookPublishConfig} config */
 function ensureFacebookReady(config) {
   if (!config?.accessToken) throw new Error('facebook access token(meta access token)이 없습니다.');
   if (!config?.pageId) throw new Error('facebook page_id가 없습니다.');
 }
 
+/**
+ * @param {FacebookPublishConfig} config
+ * @param {{ redactAccessToken?: boolean }} [options]
+ */
 function buildFacebookPageTokenRequest(config, options = {}) {
   ensureFacebookReady(config);
-  const redactAccessToken = Boolean(options?.redactAccessToken);
+  // @ts-ignore JS checkJs default-param inference is too narrow here
+  const redactAccessToken = Boolean(options.redactAccessToken);
   const accessToken = redactAccessToken ? '{USER_ACCESS_TOKEN}' : config.accessToken;
   return {
     method: 'GET',
@@ -23,12 +40,22 @@ function buildFacebookPageTokenRequest(config, options = {}) {
   };
 }
 
+/**
+ * @param {FacebookPublishConfig} config
+ * @param {string} pageAccessToken
+ * @param {{ message: string, link?: string }} param2
+ */
 function buildFacebookFeedRequest(config, pageAccessToken, { message, link }) {
   ensureFacebookReady(config);
   if (!message) throw new Error('facebook 게시 message가 필요합니다.');
 
+  /** @type {any} */
   const body = { message };
-  if (link) body.link = link;
+  // @ts-ignore checkJs still narrows body too aggressively here
+  if (link) {
+    // @ts-ignore checkJs still narrows body too aggressively here
+    body.link = link;
+  }
 
   return {
     method: 'POST',

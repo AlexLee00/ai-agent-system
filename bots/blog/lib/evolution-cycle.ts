@@ -77,13 +77,14 @@ async function collectAllSignals(days = 7) {
       `, [days]).catch(() => []),
     ]);
 
+    /** @type {Record<string, number>} */
     const platformSignals = {};
     for (const r of (platformRows || [])) {
       platformSignals[r.channel] = Number(r.cnt || 0);
     }
 
     return {
-      total_signals: Object.values(platformSignals).reduce((a, b) => a + b, 0),
+      total_signals: Object.values(platformSignals).reduce((a, b) => Number(a) + Number(b), 0),
       platform_signals: platformSignals,
       revenue_signals: Number(revenueRows?.[0]?.cnt || 0),
       competitor_signals: Number(competitorRows?.[0]?.cnt || 0),

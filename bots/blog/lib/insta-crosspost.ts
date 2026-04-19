@@ -23,9 +23,34 @@ const { runIfOps } = require('../../../packages/core/lib/mode-guard');
 const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 
 /**
+ * @typedef {{
+ *   postId?: number | null,
+ *   postTitle?: string | null,
+ *   videoPath?: string | null,
+ *   caption?: string | null,
+ *   status: string,
+ *   creationId?: string | null,
+ *   publishId?: string | null,
+ *   errorMsg?: string | null,
+ *   dryRun?: boolean
+ * }} InstagramCrosspostRecord
+ */
+
+/**
  * DB에 크로스포스트 결과 기록
  */
-async function recordCrosspost({ postId, postTitle, videoPath, caption, status, creationId, publishId, errorMsg, dryRun }) {
+/** @param {InstagramCrosspostRecord} record */
+async function recordCrosspost({
+  postId = null,
+  postTitle = null,
+  videoPath = null,
+  caption = null,
+  status,
+  creationId = null,
+  publishId = null,
+  errorMsg = null,
+  dryRun = false,
+}) {
   try {
     await pgPool.query('blog', `
       INSERT INTO blog.instagram_crosspost
@@ -68,7 +93,7 @@ async function notifyTokenError(errMsg, diagnosis) {
 /**
  * 인스타 릴스 크로스포스팅
  *
- * @param {object}  instaContent  - star.ts createInstaContent() 결과
+ * @param {{ reel?: { outputPath?: string }, fullText?: string, caption?: string }} instaContent
  * @param {string}  postTitle     - 블로그 포스트 제목
  * @param {number|null} postId    - blog.posts.id (선택)
  * @param {boolean} dryRun

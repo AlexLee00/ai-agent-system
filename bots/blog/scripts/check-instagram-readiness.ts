@@ -18,7 +18,9 @@ function parseArgs(argv = []) {
 }
 
 function buildInstagramReadinessFallback(payload = {}) {
+  // @ts-ignore checkJs default-param inference is too narrow here
   if (!payload.ready) {
+    // @ts-ignore checkJs default-param inference is too narrow here
     return `인스타 업로드 준비가 아직 불완전해 missing 항목 ${Array.isArray(payload.missing) ? payload.missing.length : 0}개를 먼저 채우는 편이 좋습니다.`;
   }
   return '인스타 업로드 readiness는 현재 갖춰져 있어 실제 게시 전 마지막 공개 URL 확인만 하면 됩니다.';
@@ -39,6 +41,7 @@ async function main() {
   if (reelPath && !hosted?.ready) missing.push('instagram.public_media_url');
   if (reelPath && hosted?.mode === 'github_pages' && !staged) missing.push('instagram.staged_media');
 
+  /** @type {any} */
   const payload = {
     ready: missing.length === 0,
     missing,
@@ -63,7 +66,7 @@ async function main() {
         }
       : null,
   };
-  payload.aiSummary = await buildBlogCliInsight({
+  const aiSummary = await buildBlogCliInsight({
     bot: 'check-instagram-readiness',
     requestType: 'check-instagram-readiness',
     title: '블로그 인스타그램 readiness 요약',
@@ -75,16 +78,21 @@ async function main() {
     },
     fallback: buildInstagramReadinessFallback(payload),
   });
+  /** @type {any} */
+  const typedPayload = /** @type {any} */ (payload);
+  // @ts-ignore payload is intentionally extended with aiSummary at runtime
+  typedPayload.aiSummary = aiSummary;
 
   if (args.json) {
     console.log(JSON.stringify(payload, null, 2));
     return;
   }
 
-  console.log(`[인스타 readiness] ready=${payload.ready ? 'yes' : 'no'}`);
-  console.log(`🔍 AI: ${payload.aiSummary}`);
-  console.log(`[인스타 readiness] token=${payload.source.hasAccessToken ? 'yes' : 'no'} igUserId=${payload.source.hasIgUserId ? 'yes' : 'no'}`);
-  console.log(`[인스타 readiness] reel=${payload.reel ? payload.reel.path : 'missing'}`);
+  console.log(`[인스타 readiness] ready=${typedPayload.ready ? 'yes' : 'no'}`);
+  // @ts-ignore payload is intentionally extended with aiSummary at runtime
+  console.log(`🔍 AI: ${typedPayload.aiSummary}`);
+  console.log(`[인스타 readiness] token=${typedPayload.source.hasAccessToken ? 'yes' : 'no'} igUserId=${typedPayload.source.hasIgUserId ? 'yes' : 'no'}`);
+  console.log(`[인스타 readiness] reel=${typedPayload.reel ? typedPayload.reel.path : 'missing'}`);
   if (missing.length) {
     console.log(`[인스타 readiness] missing=${missing.join(', ')}`);
   }

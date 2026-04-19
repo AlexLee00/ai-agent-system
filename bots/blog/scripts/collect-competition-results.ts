@@ -168,6 +168,7 @@ function _collectGroupResultFromRows(rows = [], agents = [], options = {}) {
   const normalizedAgents = _normalizeArray(agents)
     .map((name) => String(name || '').trim())
     .filter(Boolean);
+  // @ts-ignore checkJs default-param inference is too narrow here
   const allowShared = options.allowShared === true;
 
   if (normalizedAgents.length === 0 || !Array.isArray(rows) || rows.length === 0) {
@@ -295,6 +296,7 @@ async function _markSuperseded(competitionId, reason, metadata = {}) {
 async function _collectCompetitionOutcome(comp, options = {}) {
   const contractIdsA = _normalizeArray(comp.group_a_contract_ids);
   const contractIdsB = _normalizeArray(comp.group_b_contract_ids);
+  // @ts-ignore checkJs default-param inference is too narrow here
   const windowEnd = options.ignoreNextCompetitionBoundary
     ? _resolveAbsoluteWindowEnd(comp.created_at)
     : await _resolveWindowEnd(comp.team || TEAM, comp.created_at);
@@ -315,6 +317,7 @@ async function _collectCompetitionOutcome(comp, options = {}) {
     return { status: 'no_result', contractIdsA, contractIdsB };
   }
 
+  // @ts-ignore checkJs default-param inference is too narrow here
   if (options.dryRun) {
     return {
       status: 'dry_run_ready',
@@ -342,6 +345,7 @@ async function _collectCompetitionOutcome(comp, options = {}) {
 }
 
 async function _repairTimeoutCompetitions(options = {}) {
+  // @ts-ignore checkJs default-param inference is too narrow here
   const targets = await _fetchRepairableTimeoutCompetitions(options.days);
   if (targets.length === 0) {
     return { scanned: 0, repaired: 0, superseded: 0, unresolved: 0, dryRunReady: 0 };
@@ -378,6 +382,7 @@ async function _repairTimeoutCompetitions(options = {}) {
       null;
 
     if (supersedeReason) {
+      // @ts-ignore checkJs default-param inference is too narrow here
       if (options.dryRun) {
         superseded += 1;
         console.log(`[competition-collector] #${comp.id} supersede 가능 (dry-run: ${supersedeReason})`);

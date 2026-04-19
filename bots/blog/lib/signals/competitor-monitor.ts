@@ -60,6 +60,7 @@ async function fetchNaverBlogPosts(keywords) {
   if (!clientId || !clientSecret) return [];
 
   const https = require('https');
+  /** @type {{ title?: string, description?: string, postdate?: string }[]} */
   const allPosts = [];
 
   for (const kw of keywords.slice(0, 3)) {
@@ -85,11 +86,11 @@ async function fetchNaverBlogPosts(keywords) {
               const data = JSON.parse(body);
               allPosts.push(...(data.items || []));
             } catch {}
-            resolve();
+            resolve(undefined);
           });
         }
       );
-      req.on('error', () => resolve());
+      req.on('error', () => resolve(undefined));
       req.end();
     });
   }
@@ -98,6 +99,7 @@ async function fetchNaverBlogPosts(keywords) {
 }
 
 function extractTopKeywords(posts) {
+  /** @type {Record<string, number>} */
   const freq = {};
   const stopwords = new Set([
     '이', '가', '을', '를', '은', '는', '에', '의', '과', '와', '로', '한',
@@ -116,7 +118,7 @@ function extractTopKeywords(posts) {
   }
 
   return Object.entries(freq)
-    .sort(([, a], [, b]) => b - a)
+    .sort(([, a], [, b]) => Number(b) - Number(a))
     .slice(0, 10)
     .map(([w]) => w);
 }
@@ -206,12 +208,13 @@ async function benchmarkCompetitorContent() {
     allTitles.push(...posts.slice(0, 5).map((p) => (p.title || '').replace(/<[^>]+>/g, '')));
   }
 
+  /** @type {Record<string, number>} */
   const kwFreq = {};
   for (const kw of allKeywords) {
     kwFreq[kw] = (kwFreq[kw] || 0) + 1;
   }
   const topAngles = Object.entries(kwFreq)
-    .sort(([, a], [, b]) => b - a)
+    .sort(([, a], [, b]) => Number(b) - Number(a))
     .slice(0, 10)
     .map(([w]) => w);
 

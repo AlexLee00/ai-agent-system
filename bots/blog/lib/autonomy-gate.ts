@@ -108,6 +108,10 @@ function evaluatePostQuality(post, feedbackPatterns = []) {
  * @param {object} post           - { content, title, thumbnailPath, category }
  * @param {object} [qualityExtra] - { seoScore, criticScore } from quality-checker.ts
  */
+/**
+ * @param {object} post
+ * @param {{ seoScore?: number, criticScore?: number }} [qualityExtra]
+ */
 async function decideAutonomy(post, qualityExtra = {}) {
   const phase = await getCurrentPhase();
   const feedbackPatterns = await loadFeedbackPatterns();
@@ -118,7 +122,9 @@ async function decideAutonomy(post, qualityExtra = {}) {
   let compositeScore = evaluation.score;
   const compositeReasons = [...evaluation.reasons];
 
-  const seoScore   = Number(qualityExtra.seoScore   ?? 50);
+  // @ts-ignore JS checkJs default-param inference is too narrow here
+  const seoScore = Number(qualityExtra.seoScore ?? 50);
+  // @ts-ignore JS checkJs default-param inference is too narrow here
   const criticScore = Number(qualityExtra.criticScore ?? 50);
 
   // SEO: 70+ → +0.03, 45 미만 → -0.03

@@ -190,14 +190,18 @@ async function orchestrateDailyPublishing(dryRun = false) {
     if (igSuccess) {
       await publishReporter.reportPublishSuccess('instagram', blogPost.title, '').catch(() => {});
     } else {
-      const igErr = igResult.reason?.message || '알 수 없는 오류';
+      const igErr = igResult.status === 'rejected'
+        ? (igResult.reason?.message || '알 수 없는 오류')
+        : '알 수 없는 오류';
       await publishReporter.reportPublishFailure('instagram', blogPost.title, igErr).catch(() => {});
     }
 
     if (fbSuccess) {
       await publishReporter.reportPublishSuccess('facebook', blogPost.title, '').catch(() => {});
     } else {
-      const fbErr = fbResult.reason?.message || '알 수 없는 오류';
+      const fbErr = fbResult.status === 'rejected'
+        ? (fbResult.reason?.message || '알 수 없는 오류')
+        : '알 수 없는 오류';
       await publishReporter.reportPublishFailure('facebook', blogPost.title, fbErr).catch(() => {});
     }
   }

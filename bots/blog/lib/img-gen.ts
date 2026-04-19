@@ -28,8 +28,16 @@ const OUTPUT_DIR = path.join(env.PROJECT_ROOT, 'bots/blog/output');
 const IMAGES_DIR = path.join(OUTPUT_DIR, 'images');
 const GDRIVE_DIR = process.env.GDRIVE_BLOG_IMAGES || '/tmp/blog-images';
 
+/**
+ * @param {string} prompt
+ * @param {{ outputPath?: string } & Record<string, any>} [opts]
+ */
 async function generateImage(prompt, opts = {}) {
-  const { outputPath, ...genOpts } = opts;
+  // @ts-ignore JS checkJs default-param inference is too narrow here
+  const outputPath = opts.outputPath;
+  const genOpts = { ...(/** @type {any} */ (opts)) };
+  // @ts-ignore JS checkJs default-param inference is too narrow here
+  delete genOpts.outputPath;
   const runtimeProfile = await selectRuntime('blog', 'image-local');
   const { generateWithComfyUI } = await _loadLocalImageClient();
   const result = await generateWithComfyUI(prompt, {

@@ -99,9 +99,11 @@ async function buildPreferencePairs(periodDays = 30) {
   }
 
   const pairs = [];
-  for (const [, catPosts] of Object.entries(byCategory)) {
+  for (const [, catPosts] of /** @type {Array<[string, any[]]>} */ (Object.entries(byCategory))) {
+    // @ts-ignore Object.entries over dynamic buckets still narrows to unknown in checkJs
     if (catPosts.length < 2) continue;
 
+    // @ts-ignore Object.entries over dynamic buckets still narrows to unknown in checkJs
     const sorted = [...catPosts].sort((a, b) => b.score - a.score);
     const cutTop = Math.max(1, Math.ceil(sorted.length * 0.2));
     const cutBot = Math.max(1, Math.ceil(sorted.length * 0.2));
@@ -241,6 +243,7 @@ async function updateFailureTaxonomy(pairs) {
   }
 
   for (const [category, data] of Object.entries(failureMap)) {
+    const typedData = /** @type {any} */ (data);
     try {
       await pgPool.query('blog', `
         INSERT INTO blog.failure_taxonomy
@@ -253,10 +256,13 @@ async function updateFailureTaxonomy(pairs) {
           last_seen_at = NOW()
       `, [
         category,
-        data.post_ids,
-        JSON.stringify({ hook_type: category.replace('poor_hook_', ''), count: data.count }),
+        // @ts-ignore failure taxonomy map value is dynamic runtime data
+        typedData.post_ids,
+        // @ts-ignore failure taxonomy map value is dynamic runtime data
+        JSON.stringify({ hook_type: category.replace('poor_hook_', ''), count: typedData.count }),
         `${category.replace('poor_hook_', '')} 스타일 제목은 engagement가 낮음 — 대안 훅 스타일 사용`,
-        data.count,
+        // @ts-ignore failure taxonomy map value is dynamic runtime data
+        typedData.count,
       ]);
     } catch {
       // 무시

@@ -41,8 +41,7 @@ async function getTodayPendingCrosspost() {
       ON ic.post_id = p.id
     WHERE p.publish_date = CURRENT_DATE
       AND p.status = 'published'
-      AND p.dry_run = false
-    ORDER BY p.published_at DESC
+    ORDER BY COALESCE(p.publish_date::timestamp, p.created_at) DESC, p.id DESC
     LIMIT 1
   `);
   return rows?.[0] || null;

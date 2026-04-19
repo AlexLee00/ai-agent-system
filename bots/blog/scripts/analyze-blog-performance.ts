@@ -113,7 +113,7 @@ function aggregateByWriter(rows) {
       avgLikes: round(avgLikes),
       avgComments: round(avgComments),
       score: round(score),
-      topCategory: Object.entries(item.categories).sort((a, b) => b[1] - a[1])[0]?.[0] || null,
+      topCategory: Object.entries(item.categories).sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0))[0]?.[0] || null,
     };
   }).sort((a, b) => b.score - a.score);
 
@@ -281,7 +281,10 @@ async function main() {
     reportSent: args.dryRun ? false : reportResult?.ok === true,
     dryRun: args.dryRun,
   };
-  payload.aiSummary = await buildBlogCliInsight({
+  /** @type {any} */
+  const typedPayload = payload;
+  // @ts-ignore payload is intentionally extended with aiSummary at runtime
+  typedPayload.aiSummary = await buildBlogCliInsight({
     bot: 'analyze-blog-performance',
     requestType: 'performance-analysis',
     title: '블로그 성과 분석 결과',
@@ -303,7 +306,8 @@ async function main() {
   }
 
   console.log(`✅ 블로팀 성과 피드백 완료: ${rows.length}건, 작가 ${applied.length}명`);
-  console.log(`🔍 AI: ${payload.aiSummary}`);
+  // @ts-ignore payload is intentionally extended with aiSummary at runtime
+  console.log(`🔍 AI: ${typedPayload.aiSummary}`);
   applied.forEach((item) => {
     console.log(`- ${item.name}: avgViews=${item.avgViews} avgLikes=${item.avgLikes} avgComments=${item.avgComments} adjustment=${item.adjustment > 0 ? '+' : ''}${item.adjustment}`);
   });

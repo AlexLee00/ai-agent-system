@@ -118,7 +118,9 @@ function buildDynamicPipeline(postType, history) {
 }
 
 function _buildMarketingContext(payload = {}) {
+  // @ts-ignore JS checkJs default-param inference is too narrow here
   const senseState = payload?.daily?.senseState || payload?.senseState || null;
+  // @ts-ignore JS checkJs default-param inference is too narrow here
   const revenueCorrelation = payload?.daily?.revenueCorrelation || payload?.revenueCorrelation || null;
   const signals = Array.isArray(senseState?.signals) ? senseState.signals.map((signal) => String(signal?.type || '')).filter(Boolean) : [];
   const notes = [];
@@ -334,7 +336,8 @@ async function run(postType, directRunner = null, payload = {}) {
   _logMaestroSession(postType, sessionId, pipeline, variations, gemmaRecommendation);
 
   const body = _buildMaestroPayload(postType, sessionId, pipeline, variations, gemmaRecommendation, payload);
-  const dryRun = !!payload?.dryRun;
+  // @ts-ignore JS checkJs default-param inference is too narrow here
+  const dryRun = !!payload.dryRun;
   const n8nOk = await _triggerN8nPipeline(body, dryRun);
 
   if (!dryRun) {

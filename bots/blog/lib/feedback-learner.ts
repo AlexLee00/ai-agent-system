@@ -263,14 +263,15 @@ async function learnHighPerformancePatterns() {
 
   let learned = 0;
   for (const [category, weight] of Object.entries(weights)) {
-    if (weight <= 1.0) continue;  // 평균 이하는 저장 불필요
-    const boost = Math.round((weight - 1.0) * 100);
+    const numericWeight = Number(weight || 0);
+    if (numericWeight <= 1.0) continue;  // 평균 이하는 저장 불필요
+    const boost = Math.round((numericWeight - 1.0) * 100);
     const content = `블로그 카테고리 [${category}] 최근 30일 조회수 평균 +${boost}% 우세. 주제 선정 시 우선 고려 권장.`;
     await saveHighPerfPatternToMemory({
       content,
       keywords: [category, '고성과', '카테고리', '조회수'],
       importance: Math.min(0.5 + boost / 200, 0.95),
-      metadata: { category, weight, source: 'performance_analysis' },
+      metadata: { category, weight: numericWeight, source: 'performance_analysis' },
     });
     learned++;
   }

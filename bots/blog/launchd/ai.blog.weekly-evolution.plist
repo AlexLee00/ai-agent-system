@@ -15,7 +15,7 @@
 	<string>ai.blog.weekly-evolution</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/opt/homebrew/bin/node</string>
+		<string>/Users/alexlee/projects/ai-agent-system/node_modules/.bin/tsx</string>
 		<string>/Users/alexlee/projects/ai-agent-system/bots/blog/scripts/weekly-evolution.ts</string>
 	</array>
 	<key>RunAtLoad</key>

@@ -35,13 +35,19 @@ function printRows(rows = []) {
 }
 
 function buildBookQueueFallback(payload = {}) {
+  // @ts-ignore checkJs default-param inference is too narrow here
   if (payload.action === 'list') {
+    // @ts-ignore checkJs default-param inference is too narrow here
     if (Number(payload.count || 0) === 0) return '현재 대기 중인 도서 리뷰 큐가 없어, 신규 적재나 상태 점검이 필요합니다.';
+    // @ts-ignore checkJs default-param inference is too narrow here
     return `도서 리뷰 큐 ${payload.count || 0}건이 대기 중이며, 우선순위 상단 항목부터 순차 처리하면 됩니다.`;
   }
+  // @ts-ignore checkJs default-param inference is too narrow here
   if (Number(payload.inserted || 0) > 0) {
+    // @ts-ignore checkJs default-param inference is too narrow here
     return `도서 리뷰 후보를 ${payload.inserted || 0}건 적재해, 다음 리뷰 파이프라인 입력이 확보됐습니다.`;
   }
+  // @ts-ignore checkJs default-param inference is too narrow here
   return `새로 적재된 도서 리뷰 후보는 없고, 기존 큐 ${payload.count || 0}건 상태를 유지하면 됩니다.`;
 }
 

@@ -187,13 +187,16 @@ async function main() {
     charCount: draft.charCount,
     model: draft.model,
   };
+  /** @type {any} */
+  const typedPayload = payload;
 
   if (args.save) {
     const draftDir = path.join(env.PROJECT_ROOT, 'bots', 'blog', 'output', 'drafts');
     fs.mkdirSync(draftDir, { recursive: true });
     const filePath = path.join(draftDir, `${slugify(draft.title || selection.selected.title)}.md`);
     fs.writeFileSync(filePath, String(draft.content || ''), 'utf8');
-    payload.filePath = filePath;
+    // @ts-ignore payload is intentionally extended with filePath at runtime
+    typedPayload.filePath = filePath;
   }
 
   if (args.json) {
@@ -203,7 +206,8 @@ async function main() {
 
   console.log(`[book-review draft] title=${payload.title}`);
   console.log(`[book-review draft] chars=${payload.charCount} model=${payload.model}`);
-  if (payload.filePath) console.log(`[book-review draft] file=${payload.filePath}`);
+  // @ts-ignore payload is intentionally extended with filePath at runtime
+  if (typedPayload.filePath) console.log(`[book-review draft] file=${typedPayload.filePath}`);
 }
 
 main().catch((error) => {
