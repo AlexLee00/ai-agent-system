@@ -54,6 +54,9 @@ const {
   buildHealthDecisionSection,
 } = require('../../../packages/core/lib/health-core');
 const { runHealthCli } = require('../../../packages/core/lib/health-runner');
+const localCircuitBreaker = require('../../../packages/core/lib/local-circuit-breaker.js');
+const env = require('../../../packages/core/lib/env');
+const { selectRuntime } = require('../../../packages/core/lib/runtime-selector');
 const hsm = require('../../../packages/core/lib/health-state-manager');
 const {
   getServiceOwnership,
@@ -447,6 +450,44 @@ async function loadKisCapabilityHealth() {
   };
 }
 
+async function loadLocalLlmHealth() {
+  const runtimeProfile = await selectRuntime('luna', 'analyst').catch(() => null);
+  const primaryBaseUrl = String(runtimeProfile?.local_llm_base_url || env.LOCAL_LLM_BASE_URL || 'http://127.0.0.1:11434').trim();
+  const fallbackBaseUrl = String(env.OLLAMA_BASE_URL || '').trim();
+  const urls = [...new Set([primaryBaseUrl, fallbackBaseUrl].filter(Boolean))];
+
+  const circuits = urls.map((baseUrl) => {
+    const status = localCircuitBreaker.getCircuitStatus(baseUrl);
+    const remainingSec = Number.isFinite(Number(status.remainingMs))
+      ? Math.ceil(Number(status.remainingMs) / 1000)
+      : 0;
+    return {
+      baseUrl,
+      role: baseUrl === primaryBaseUrl ? 'primary' : 'secondary',
+      status,
+      line: `  [${baseUrl === primaryBaseUrl ? 'primary' : 'secondary'}] ${baseUrl} / state ${status.state} / failures ${status.failures}${status.state === 'OPEN' ? ` / retry ${remainingSec}s` : ''}`,
+    };
+  });
+
+  const primary = circuits.find((entry) => entry.baseUrl === primaryBaseUrl) || circuits[0] || {
+    baseUrl: primaryBaseUrl,
+    role: 'primary',
+    status: { state: 'CLOSED', failures: 0 },
+    line: `  [primary] ${primaryBaseUrl} / state CLOSED / failures 0`,
+  };
+  const warnCount = primary.status.state === 'CLOSED' ? 0 : 1;
+
+  return {
+    okCount: warnCount === 0 ? 1 : 0,
+    warnCount,
+    ok: warnCount === 0 ? circuits.map((entry) => entry.line) : [],
+    warn: warnCount === 0 ? [] : circuits.map((entry) => entry.line),
+    baseUrl: primary.baseUrl,
+    status: primary.status,
+    circuits,
+  };
+}
+
 function buildDecision(
   serviceRows,
   tradeReview,
@@ -465,6 +506,7 @@ function buildDecision(
   cryptoLiveGateHealth,
   capitalGuardBreakdown,
   cryptoValidationBudgetPolicyHealth,
+  localLlmHealth,
 ) {
   const topBlock = signalBlockHealth.top[0] || null;
   const topReasonGroup = signalBlockHealth.topReasonGroups?.[0] || null;
@@ -580,6 +622,11 @@ function buildDecision(
         active: cryptoLiveGateHealth.warnCount > 0,
         level: 'medium',
         reason: `암호화폐 LIVE 게이트 ${cryptoLiveGateHealth.review?.liveGate?.decision || 'blocked'} — ${cryptoLiveGateHealth.review?.liveGate?.reason || 'PAPER/LIVE 전환 데이터 부족'}`,
+      },
+      {
+        active: localLlmHealth.warnCount > 0,
+        level: 'medium',
+        reason: `local LLM circuit ${localLlmHealth.status?.state || 'OPEN'} — ${localLlmHealth.baseUrl} / ${Math.ceil(Number(localLlmHealth.status?.remainingMs || 0) / 1000)}초 후 재시도`,
       },
     ],
     okReason: '핵심 서비스와 trade_review 정합성이 현재는 안정 구간입니다.',
@@ -737,6 +784,7 @@ function formatText(report) {
         : ['  장기 미결 LIVE 포지션 없음'],
     },
     buildHealthCountSection(`■ 암호화폐 LIVE 게이트(최근 ${report.cryptoLiveGateHealth?.periodDays || 7}일)`, report.cryptoLiveGateHealth, { okLimit: 1, warnLimit: 1 }),
+    buildHealthCountSection('■ local LLM circuit', report.localLlmHealth, { okLimit: 1, warnLimit: 1 }),
     buildHealthCountSection('■ KIS 실행 capability', report.kisCapabilityHealth, { okLimit: 1, warnLimit: 2 }),
     buildHealthCountSection('■ rail별 신규 진입 한도(오늘)', report.tradeLaneHealth, { okLimit: 6, warnLimit: 6 }),
     {
@@ -808,6 +856,7 @@ async function buildReport() {
     cryptoLiveGateHealth,
     capitalGuardBreakdown,
   );
+  const localLlmHealth = await loadLocalLlmHealth();
   const cryptoGateActionPlan = buildCryptoGateActionPlan(capitalGuardBreakdown);
   const kisCapabilityHealth = await loadKisCapabilityHealth();
   const decision = buildDecision(
@@ -828,6 +877,7 @@ async function buildReport() {
     cryptoLiveGateHealth,
     capitalGuardBreakdown,
     cryptoValidationBudgetPolicyHealth,
+    localLlmHealth,
   );
 
   const report = {
@@ -851,6 +901,7 @@ async function buildReport() {
     cryptoSentinelFallbackHealth,
     stalePositionHealth,
     cryptoLiveGateHealth,
+    localLlmHealth,
     capitalGuardBreakdown,
     cryptoGateActionPlan,
     cryptoValidationBudgetPolicyHealth,
