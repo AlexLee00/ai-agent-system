@@ -157,7 +157,14 @@ export function notifyCircuitBreaker({ reason, type, dailyPnL, weeklyPnL }) {
 
 /** @param {string} context @param {any} error */
 export function notifyError(context, error) {
-  const msg = `❌ [오류] ${context}\n${error?.message || error}`;
+  const trace = Array.isArray(error?.llmTrace) ? error.llmTrace : [];
+  const traceLine = trace.length > 0
+    ? `\nLLM trace: ${trace
+      .slice(0, 5)
+      .map((entry) => `${entry.provider}/${entry.model}:${entry.status}${entry.reason ? `(${String(entry.reason).slice(0, 32)})` : ''}`)
+      .join(' -> ')}`
+    : '';
+  const msg = `❌ [오류] ${context}\n${error?.message || error}${traceLine}`;
   return publishLunaMessage({
     message: msg,
     eventType: 'alert',
