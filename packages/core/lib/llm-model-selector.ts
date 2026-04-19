@@ -498,6 +498,7 @@ function buildSelectorRegistry(): Record<string, any> {
     },
 
     'investment.agent_policy': ({ agentName, agentModel = null, openaiPerfModel = 'gpt-5.4', policyOverride }: SelectorOptions = {}) => {
+      const normalizedAgentName = String(agentName || '');
       const defaultRoutes: Record<string, string> = {
         luna: 'openai_perf',
         nemesis: 'dual_groq',
@@ -506,7 +507,7 @@ function buildSelectorRegistry(): Record<string, any> {
         sophia: 'local_primary',
         zeus: 'groq_scout',
         athena: 'groq_scout',
-        argos: 'local_fast',
+        argos: 'groq_scout',
         scout: 'groq_scout',
       };
       const configuredRoutes = isObject(policyOverride?.agentRoutes) ? { ...defaultRoutes, ...policyOverride.agentRoutes } : defaultRoutes;
@@ -516,12 +517,16 @@ function buildSelectorRegistry(): Record<string, any> {
         ? clone(policyOverride.groqCompetitionModels)
         : ['openai/gpt-oss-20b', 'meta-llama/llama-4-scout-17b-16e-instruct'];
       const anthropicModel = policyOverride?.anthropicModel || 'claude-haiku-4-5-20251001';
-      const route = buildRouteFromAgentModel(agentModel, {
+      const modelDerivedRoute = buildRouteFromAgentModel(agentModel, {
         openaiPerfModel,
         openaiMiniModel,
         groqScoutModel,
         groqCompetitionModels,
-      }) || configuredRoutes[String(agentName || '')] || 'groq_scout';
+      });
+      const configuredRoute = configuredRoutes[normalizedAgentName] || null;
+      const route = normalizedAgentName === 'argos'
+        ? (configuredRoute || modelDerivedRoute || 'groq_scout')
+        : (modelDerivedRoute || configuredRoute || 'groq_scout');
       const routeChains: Record<string, LLMChainEntry[]> = {
         openai_perf: [
           { provider: 'openai-oauth', model: openaiPerfModel },
