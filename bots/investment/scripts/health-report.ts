@@ -707,7 +707,7 @@ function formatText(report) {
               '  심볼 근거:',
               ...report.capitalGuardBreakdown.actionCandidateDetails.map(
                 (detail) =>
-                  `    ${detail.symbol}: guard ${detail.capitalGuardCount}건 / overlap ${detail.overlapCount}건 / ${detail.recommendation}`,
+                  `    ${detail.symbol}: guard ${detail.capitalGuardCount}건 / overlap ${detail.overlapCount}건 / trades ${detail.tradeCount}건 (LIVE ${detail.liveTradeCount} / PAPER ${detail.paperTradeCount}) / ${detail.recommendation}`,
               ),
             ]
           : []),
