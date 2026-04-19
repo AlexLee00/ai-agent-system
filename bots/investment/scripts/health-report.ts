@@ -702,6 +702,15 @@ function formatText(report) {
               ...report.cryptoGateActionPlan.later.map((candidate) => `    ${candidate.label}: ${candidate.summary}`),
             ]
           : []),
+        ...(report.capitalGuardBreakdown.actionCandidateDetails?.length
+          ? [
+              '  심볼 근거:',
+              ...report.capitalGuardBreakdown.actionCandidateDetails.map(
+                (detail) =>
+                  `    ${detail.symbol}: guard ${detail.capitalGuardCount}건 / overlap ${detail.overlapCount}건 / ${detail.recommendation}`,
+              ),
+            ]
+          : []),
       ],
     },
     {
