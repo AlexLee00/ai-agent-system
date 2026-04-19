@@ -344,11 +344,36 @@ export function createNaverPickkoRunnerService(deps: CreateNaverPickkoRunnerServ
           || outputBuf.match(/Error[:\s]+(.+)/m);
         const rawErrorMsg = errMatch ? errMatch[1].trim().substring(0, 200) : `exit code ${code}`;
         const errorMsg = failureStage ? `[${failureStage}] ${rawErrorMsg}` : rawErrorMsg;
+        const needsManualPendingFollowup = failureStage === 'ALREADY_REGISTERED';
 
         if (bookingId) {
           const recovered = await verifyRecoverablePickkoFailure(String(bookingId), booking, failureStage, outputBuf);
           if (recovered) {
             resolve(0);
+            return;
+          }
+
+          if (needsManualPendingFollowup) {
+            await updateBookingState(String(bookingId), booking, 'completed');
+            await updateReservation(String(bookingId), {
+              pickkoStatus: 'manual_pending',
+              errorReason: `pay_pending_failed: ${errorMsg}`,
+            });
+            await Promise.resolve(sendAlert({
+              type: 'error',
+              title: '⚠️ 픽코 예약 등록됨, 결제 확인 필요',
+              customer: booking.phoneText || '고객',
+              phone: booking.phone,
+              date: booking.date,
+              time: `${booking.start}~${booking.end}`,
+              room: booking.room,
+              status: 'manual_pending',
+              reason: errorMsg,
+              action: 'pickko-pay-scan 또는 운영 화면에서 결제대기 후속 확인 필요',
+            }));
+            await Promise.resolve(ragSaveReservation(booking, '픽코완료(결제대기후속필요)'));
+            log(`⚠️ [manual_pending] 기존 등록 슬롯은 확인됐지만 결제 후속 확인이 필요합니다: ${maskPhone(booking.phone)} ${booking.date} ${booking.start}`);
+            resolve(1);
             return;
           }
 

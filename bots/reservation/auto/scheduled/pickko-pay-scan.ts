@@ -41,7 +41,7 @@ function runPayPending(entry: any) {
       __dirname,
       '../../../../bots/reservation/manual/reports/pickko-pay-pending.ts',
     );
-    const nodeBin = '/opt/homebrew/bin/node';
+    const tsxBin = path.join(__dirname, '../../../../node_modules/.bin/tsx');
     const args = [
       scriptPath,
       `--phone=${String(entry.phone || '').replace(/\D/g, '')}`,
@@ -51,7 +51,7 @@ function runPayPending(entry: any) {
       `--room=${entry.room}`,
     ];
 
-    const child = spawn(nodeBin, args, {
+    const child = spawn(tsxBin, args, {
       cwd: path.dirname(scriptPath),
       env: { ...process.env, MODE: 'ops' },
       stdio: ['ignore', 'pipe', 'pipe'],

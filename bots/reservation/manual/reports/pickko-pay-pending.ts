@@ -151,6 +151,19 @@ async function waitTotalZeroStable(page: any) {
   return { ok: false, snap: await readTotals(page) };
 }
 
+async function installBrowserEvalShim(page: any) {
+  try {
+    await page.evaluateOnNewDocument(() => {
+      (window as any).__name = (value: any) => value;
+    });
+    await page.evaluate(() => {
+      (window as any).__name = (value: any) => value;
+    }).catch(() => null);
+  } catch {
+    // Ignore shim failures here; downstream browser errors will remain visible.
+  }
+}
+
 async function preClickReassertZero(page: any) {
   try { await page.$eval('#od_add_item_price', (el: any) => { el.setAttribute('price', '0'); el.setAttribute('ea', '0'); }); } catch (_e) {}
   try { await page.$eval('#od_total_price', (el: any) => { el.value = '0'; }); } catch (_e) {}
@@ -270,6 +283,7 @@ async function run() {
     const page = pages[0] || await browser.newPage();
     page.setDefaultTimeout(30000);
     setupDialogHandler(page, log);
+    await installBrowserEvalShim(page);
 
     log('\n[1단계] 픽코 로그인');
     await loginToPickko(page, PICKKO_ID, PICKKO_PW, delay);

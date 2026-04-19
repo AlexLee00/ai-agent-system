@@ -386,7 +386,12 @@ async function main() {
 
     setStage('SAVE_PRECHECK');
     log('\n[7단계] 저장');
-    await pickkoSavePrecheckService.runSavePrecheck(page);
+    await pickkoSavePrecheckService.runSavePrecheck(page, {
+      startDate: DATE,
+      startTime: chosen.start,
+      endDate: DATE,
+      endTime: chosen.end,
+    });
     await pickkoSavePrecheckService.submitDraft(page);
 
     await delay(1500);
@@ -486,7 +491,7 @@ async function main() {
       try { await browser.close(); } catch (e) {}
       await releaseLock();
 
-      await new Promise((resolve) => {
+      const payPendingResult = await new Promise<{ exitCode: number; success: boolean | null }>((resolve) => {
         const child = spawn('/opt/homebrew/bin/tsx', [
           path.join(__dirname, '../../../../bots/reservation/manual/reports/pickko-pay-pending.ts'),
           `--phone=${PHONE_NOHYPHEN}`,
@@ -497,16 +502,47 @@ async function main() {
         ], {
           cwd: __dirname,
           env: { ...process.env, MODE: IS_OPS ? 'ops' : 'dev' },
-          stdio: ['ignore', process.stdout, process.stderr],
+          stdio: ['ignore', 'pipe', 'pipe'],
         });
-        child.on('close', resolve);
+        let outputBuf = '';
+        child.stdout.on('data', (chunk) => {
+          const text = chunk.toString();
+          process.stdout.write(text);
+          outputBuf += text;
+        });
+        child.stderr.on('data', (chunk) => {
+          const text = chunk.toString();
+          process.stderr.write(text);
+          outputBuf += text;
+        });
+        child.on('close', (code) => {
+          const jsonLine = outputBuf
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter(Boolean)
+            .reverse()
+            .find((line) => line.startsWith('{') && line.endsWith('}'));
+          let success: boolean | null = null;
+          if (jsonLine) {
+            try {
+              success = Boolean(JSON.parse(jsonLine)?.success);
+            } catch {
+              success = null;
+            }
+          }
+          resolve({ exitCode: Number(code || 0), success });
+        });
         child.on('error', (e) => {
           log(`⚠️ pickko-pay-pending 실행 오류: ${e.message}`);
-          resolve(1);
+          resolve({ exitCode: 1, success: false });
         });
       });
 
-      process.exit(0);
+      if (payPendingResult.exitCode === 0 && payPendingResult.success !== false) {
+        process.exit(0);
+      }
+
+      process.exit(1);
     }
 
     logStageFailure(err.stageCode || currentStage || 'UNKNOWN_STAGE', err.message, { currentStage });
