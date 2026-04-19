@@ -16,36 +16,11 @@ function isEnabled() {
   return process.env.BLOG_MULTI_PLATFORM_ENABLED === 'true';
 }
 
-type StoryType = 'quote' | 'tip' | 'behind_the_scenes' | 'poll';
+const STORY_TYPE_ROTATION = ['quote', 'tip', 'behind_the_scenes', 'poll'];
 
-interface StoryContent {
-  type: StoryType;
-  headline: string;
-  body: string;
-  cta: string;
-  link?: string;
-  poll_question?: string;
-  poll_options?: [string, string];
-  hashtags: string[];
-}
-
-interface StoryPublishResult {
-  success: boolean;
-  story_id?: string;
-  error?: string;
-  story_type: StoryType;
-  published_at: string;
-}
-
-const STORY_TYPE_ROTATION: StoryType[] = ['quote', 'tip', 'behind_the_scenes', 'poll'];
-
-const STORY_TEMPLATES: Record<StoryType, { headlines: string[]; bodies: string[] }> = {
+const STORY_TEMPLATES = {
   quote: {
-    headlines: [
-      '오늘의 공부 명언 💬',
-      '집중력을 높이는 한마디 ✨',
-      '지금 이 순간에 집중 🎯',
-    ],
+    headlines: ['오늘의 공부 명언 💬', '집중력을 높이는 한마디 ✨', '지금 이 순간에 집중 🎯'],
     bodies: [
       '"공부는 재능이 아니라 습관이다."',
       '"집중된 1시간이 산만한 하루보다 낫다."',
@@ -76,25 +51,19 @@ const STORY_TEMPLATES: Record<StoryType, { headlines: string[]; bodies: string[]
   },
 };
 
-const POLL_QUESTIONS: Array<{ question: string; options: [string, string] }> = [
+const POLL_QUESTIONS = [
   { question: '공부할 때 선호하는 환경은?', options: ['조용한 스터디카페 🏛️', '카페 분위기 ☕'] },
   { question: '오늘 집중력 점수는?', options: ['완벽 집중 100점 💯', '조금 힘들었어 😅'] },
   { question: '공부 시작 시간은?', options: ['아침형 🌅', '저녁형 🌙'] },
   { question: '공부 중 음료는?', options: ['커피가 필수 ☕', '물이면 충분 💧'] },
 ];
 
-/**
- * 오늘의 스토리 타입 선택 (요일 기반 순환)
- */
-function selectStoryType(): StoryType {
-  const dayOfWeek = new Date().getDay(); // 0=일, 1=월, ...
+function selectStoryType() {
+  const dayOfWeek = new Date().getDay();
   return STORY_TYPE_ROTATION[dayOfWeek % STORY_TYPE_ROTATION.length];
 }
 
-/**
- * 스토리 콘텐츠 생성
- */
-export function generateStoryContent(type: StoryType, blogUrl?: string): StoryContent {
+function generateStoryContent(type, blogUrl) {
   const template = STORY_TEMPLATES[type];
   const headline = template.headlines[Math.floor(Math.random() * template.headlines.length)];
   const body = template.bodies[Math.floor(Math.random() * template.bodies.length)];
@@ -124,66 +93,32 @@ export function generateStoryContent(type: StoryType, blogUrl?: string): StoryCo
   };
 }
 
-/**
- * 인스타그램 스토리 발행 (Meta Graph API)
- * POST /me/photos 또는 /me/video (스토리)
- */
-async function callInstagramStoryApi(content: StoryContent): Promise<string | null> {
+async function callInstagramStoryApi(content) {
   const accessToken = process.env.INSTAGRAM_ACCESS_TOKEN || '';
   const igUserId = process.env.INSTAGRAM_USER_ID || '';
+  const storyImageUrl = process.env.STORY_DEFAULT_IMAGE_URL || '';
 
-  if (!accessToken || !igUserId) {
-    console.warn('[인스타스토리] access_token / ig_user_id 미설정 — 발행 스킵');
+  if (!accessToken || !igUserId || !storyImageUrl) {
+    console.warn('[인스타스토리] 필수 환경변수 미설정 — 발행 스킵');
     return null;
   }
 
   const https = require('https');
-
-  // 스토리 이미지 URL (기본 이미지 사용)
-  const storyImageUrl = process.env.STORY_DEFAULT_IMAGE_URL || '';
-  if (!storyImageUrl) {
-    console.warn('[인스타스토리] STORY_DEFAULT_IMAGE_URL 미설정 — 발행 스킵');
-    return null;
-  }
-
-  const caption = [
-    content.headline,
-    '',
-    content.body,
-    '',
-    content.cta,
-    '',
-    content.hashtags.join(' '),
-  ].join('\n');
-
-  // 1단계: 미디어 컨테이너 생성
-  const mediaParams = new URLSearchParams({
-    image_url: storyImageUrl,
-    caption,
-    media_type: 'IMAGE',
-    is_carousel_item: 'false',
-    access_token: accessToken,
-  });
+  const caption = [content.headline, '', content.body, '', content.cta, '', content.hashtags.join(' ')].join('\n');
+  const mediaParams = new URLSearchParams({ image_url: storyImageUrl, caption, media_type: 'IMAGE', is_carousel_item: 'false', access_token: accessToken });
 
   return new Promise((resolve) => {
     const req = https.request(
-      {
-        hostname: 'graph.facebook.com',
-        path: `/v18.0/${igUserId}/media`,
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      },
-      (res: any) => {
+      { hostname: 'graph.facebook.com', path: `/v18.0/${igUserId}/media`, method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
+      (res) => {
         let body = '';
-        res.on('data', (d: Buffer) => (body += d));
+        res.on('data', (d) => (body += d));
         res.on('end', () => {
           try {
             const data = JSON.parse(body);
             if (data.id) {
-              // 2단계: 발행 (publish)
               publishMediaContainer(igUserId, data.id, accessToken).then(resolve).catch(() => resolve(null));
             } else {
-              console.warn('[인스타스토리] 컨테이너 생성 실패:', data.error?.message);
               resolve(null);
             }
           } catch {
@@ -198,35 +133,18 @@ async function callInstagramStoryApi(content: StoryContent): Promise<string | nu
   });
 }
 
-async function publishMediaContainer(
-  igUserId: string,
-  containerId: string,
-  accessToken: string
-): Promise<string | null> {
+async function publishMediaContainer(igUserId, containerId, accessToken) {
   const https = require('https');
-  const params = new URLSearchParams({
-    creation_id: containerId,
-    access_token: accessToken,
-  });
+  const params = new URLSearchParams({ creation_id: containerId, access_token: accessToken });
 
   return new Promise((resolve) => {
     const req = https.request(
-      {
-        hostname: 'graph.facebook.com',
-        path: `/v18.0/${igUserId}/media_publish`,
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      },
-      (res: any) => {
+      { hostname: 'graph.facebook.com', path: `/v18.0/${igUserId}/media_publish`, method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
+      (res) => {
         let body = '';
-        res.on('data', (d: Buffer) => (body += d));
+        res.on('data', (d) => (body += d));
         res.on('end', () => {
-          try {
-            const data = JSON.parse(body);
-            resolve(data.id || null);
-          } catch {
-            resolve(null);
-          }
+          try { resolve(JSON.parse(body).id || null); } catch { resolve(null); }
         });
       }
     );
@@ -236,17 +154,9 @@ async function publishMediaContainer(
   });
 }
 
-/**
- * 일일 스토리 발행 메인 함수
- */
-export async function publishDailyStory(blogUrl?: string): Promise<StoryPublishResult> {
+async function publishDailyStory(blogUrl) {
   if (!isEnabled()) {
-    return {
-      success: false,
-      error: 'BLOG_MULTI_PLATFORM_ENABLED=false',
-      story_type: 'tip',
-      published_at: new Date().toISOString(),
-    };
+    return { success: false, error: 'BLOG_MULTI_PLATFORM_ENABLED=false', story_type: 'tip', published_at: new Date().toISOString() };
   }
 
   const storyType = selectStoryType();
@@ -256,7 +166,7 @@ export async function publishDailyStory(blogUrl?: string): Promise<StoryPublishR
 
   const storyId = await runIfOps(() => callInstagramStoryApi(content));
 
-  const result: StoryPublishResult = {
+  const result = {
     success: !!storyId,
     story_id: storyId || undefined,
     error: storyId ? undefined : '발행 실패 (API 오류 또는 미설정)',
@@ -264,30 +174,17 @@ export async function publishDailyStory(blogUrl?: string): Promise<StoryPublishR
     published_at: new Date().toISOString(),
   };
 
-  // Telegram 보고
   if (result.success) {
-    await runIfOps(() =>
-      postAlarm(`📱 인스타 스토리 발행 성공\n타입: ${storyType}\n헤드라인: ${content.headline}`)
-    );
-  } else {
-    console.warn('[인스타스토리] 발행 실패:', result.error);
+    await runIfOps(() => postAlarm(`📱 인스타 스토리 발행 성공\n타입: ${storyType}\n헤드라인: ${content.headline}`));
   }
 
-  // DB 기록
   try {
     await pgPool.query(
       'blog',
-      `INSERT INTO blog.publish_log
-         (platform, status, title, error, duration_ms, post_id, created_at)
-       VALUES ('instagram_story', $1, $2, $3, 0, $4, NOW())`,
-      [
-        result.success ? 'success' : 'failed',
-        content.headline,
-        result.error || null,
-        result.story_id || null,
-      ]
+      `INSERT INTO blog.publish_log (platform, status, title, error, duration_ms, post_id, created_at) VALUES ('instagram_story', $1, $2, $3, 0, $4, NOW())`,
+      [result.success ? 'success' : 'failed', content.headline, result.error || null, result.story_id || null]
     );
-  } catch (e: any) {
+  } catch (e) {
     console.warn('[인스타스토리] DB 기록 실패:', e.message);
   }
 

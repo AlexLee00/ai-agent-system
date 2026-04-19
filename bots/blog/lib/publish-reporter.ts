@@ -8,7 +8,6 @@
  */
 
 const pgPool = require('../../../packages/core/lib/pg-pool');
-const { runIfOps } = require('../../../packages/core/lib/mode-guard');
 const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 
 const PLATFORM_LABELS = { naver: '네이버 블로그', instagram: '인스타그램', facebook: '페이스북' };
@@ -36,13 +35,9 @@ async function reportPublish(report) {
     ? [`✅ [블로팀] ${label} 발행 성공`, `제목: ${title}`, url ? `링크: ${url}` : ''].filter(Boolean).join('\n')
     : `🔴 [블로팀] ${label} 발행 실패\n제목: ${title}\n원인: ${error}`;
 
-  await Promise.all([
+  await Promise.allSettled([
     _saveToDb(platform, status, title, url, error, duration_ms, post_id),
-    runIfOps(
-      `blog-pub-${status}-${platform}`,
-      () => postAlarm(msg),
-      () => (status === 'success' ? console.log('[DEV]', msg) : console.error('[DEV]', msg))
-    ).catch(() => {}),
+    postAlarm(msg, { team: 'blog', bot: 'publish-reporter', level: status === 'success' ? 'info' : 'critical' }).catch(() => {}),
   ]);
 }
 
@@ -103,11 +98,7 @@ async function reportDailySummary(date = null) {
     }
 
     const msg = lines.join('\n');
-    await runIfOps(
-      `blog-daily-summary-${targetDate}`,
-      () => postAlarm(msg),
-      () => console.log('[DEV]', msg)
-    ).catch(() => {});
+    await postAlarm(msg, { team: 'blog', bot: 'publish-reporter', level: 'info' }).catch(() => {});
 
     return byPlatform;
   } catch (e) {
