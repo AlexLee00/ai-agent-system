@@ -37,12 +37,12 @@ run_scenario "peak" "peak.js"
 
 if [[ "$1" != "--skip-chaos" ]]; then
   echo ""
-  echo "===== [chaos] — Ollama 중단 후 시작 ====="
-  echo "⚠️  MLX/Ollama를 중단해주세요 (pkill -f ollama 또는 launchctl unload)"
+  echo "===== [chaos] — local MLX 중단 후 시작 ====="
+  echo "⚠️  local MLX primary/secondary를 중단해주세요 (예: launchctl bootout gui/$(id -u)/ai.mlx.server, ai.mlx.server.secondary)"
   echo "   30초 후 자동 시작..."
   sleep 30
   run_scenario "chaos" "chaos.js"
-  echo "✅ Ollama를 다시 시작해주세요"
+  echo "✅ local MLX primary/secondary를 다시 시작해주세요"
 fi
 
 run_scenario "multi-team" "multi-team.js"

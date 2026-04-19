@@ -1,5 +1,5 @@
-// k6 Chaos Test — Ollama 중단 상태에서 Circuit Breaker 동작 확인
-// 실행 전: Ollama를 중단하거나 MLX 포트 막기
+// k6 Chaos Test — local/MLX 중단 상태에서 Circuit Breaker 동작 확인
+// 실행 전: local MLX primary/secondary를 중단하거나 포트를 막기
 // k6 run --out json=results/chaos.json tests/load/chaos.js
 import http from 'k6/http';
 import { check, sleep } from 'k6';
