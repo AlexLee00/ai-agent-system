@@ -55,6 +55,7 @@ const {
 } = require('../../../packages/core/lib/health-core');
 const { runHealthCli } = require('../../../packages/core/lib/health-runner');
 const localCircuitBreaker = require('../../../packages/core/lib/local-circuit-breaker.js');
+const localLlmClient = require('../../../packages/core/lib/local-llm-client.ts');
 const env = require('../../../packages/core/lib/env');
 const { selectRuntime } = require('../../../packages/core/lib/runtime-selector');
 const hsm = require('../../../packages/core/lib/health-state-manager');
@@ -456,26 +457,45 @@ async function loadLocalLlmHealth() {
   const fallbackBaseUrl = String(env.OLLAMA_BASE_URL || '').trim();
   const urls = [...new Set([primaryBaseUrl, fallbackBaseUrl].filter(Boolean))];
 
-  const circuits = urls.map((baseUrl) => {
+  const circuits = [];
+  for (const baseUrl of urls) {
     const status = localCircuitBreaker.getCircuitStatus(baseUrl);
+    const probe = await localLlmClient.checkLocalLLMHealth({
+      baseUrl,
+      timeoutMs: baseUrl === primaryBaseUrl ? 2500 : 1500,
+    }).catch((error) => ({
+      available: false,
+      models: [],
+      fastModelOk: false,
+      embedModelOk: false,
+      responseMs: null,
+      error: error?.message || String(error),
+    }));
     const remainingSec = Number.isFinite(Number(status.remainingMs))
       ? Math.ceil(Number(status.remainingMs) / 1000)
       : 0;
-    return {
+    const probeSummary = probe?.available
+      ? `probe ${probe.error ? `warn:${probe.error}` : 'ok'}${Number.isFinite(Number(probe.responseMs)) ? ` / ${Number(probe.responseMs)}ms` : ''}`
+      : `probe fail${probe?.error ? `:${probe.error}` : ''}`;
+
+    circuits.push({
       baseUrl,
       role: baseUrl === primaryBaseUrl ? 'primary' : 'secondary',
       status,
-      line: `  [${baseUrl === primaryBaseUrl ? 'primary' : 'secondary'}] ${baseUrl} / state ${status.state} / failures ${status.failures}${status.state === 'OPEN' ? ` / retry ${remainingSec}s` : ''}`,
-    };
-  });
+      probe,
+      line: `  [${baseUrl === primaryBaseUrl ? 'primary' : 'secondary'}] ${baseUrl} / state ${status.state} / failures ${status.failures}${status.state === 'OPEN' ? ` / retry ${remainingSec}s` : ''} / ${probeSummary}`,
+    });
+  }
 
   const primary = circuits.find((entry) => entry.baseUrl === primaryBaseUrl) || circuits[0] || {
     baseUrl: primaryBaseUrl,
     role: 'primary',
     status: { state: 'CLOSED', failures: 0 },
-    line: `  [primary] ${primaryBaseUrl} / state CLOSED / failures 0`,
+    probe: { available: false, models: [], fastModelOk: false, embedModelOk: false, responseMs: null, error: 'probe unavailable' },
+    line: `  [primary] ${primaryBaseUrl} / state CLOSED / failures 0 / probe unavailable`,
   };
-  const warnCount = primary.status.state === 'CLOSED' ? 0 : 1;
+  const primaryProbeFailed = !primary?.probe?.available || !!primary?.probe?.error;
+  const warnCount = primary.status.state === 'CLOSED' && !primaryProbeFailed ? 0 : 1;
 
   return {
     okCount: warnCount === 0 ? 1 : 0,
@@ -484,6 +504,7 @@ async function loadLocalLlmHealth() {
     warn: warnCount === 0 ? [] : circuits.map((entry) => entry.line),
     baseUrl: primary.baseUrl,
     status: primary.status,
+    probe: primary.probe,
     circuits,
   };
 }
@@ -626,7 +647,7 @@ function buildDecision(
       {
         active: localLlmHealth.warnCount > 0,
         level: 'medium',
-        reason: `local LLM circuit ${localLlmHealth.status?.state || 'OPEN'} — ${localLlmHealth.baseUrl} / ${Math.ceil(Number(localLlmHealth.status?.remainingMs || 0) / 1000)}초 후 재시도`,
+        reason: `local LLM ${localLlmHealth.probe?.error ? `probe 실패(${localLlmHealth.probe.error})` : `circuit ${localLlmHealth.status?.state || 'OPEN'}`} — ${localLlmHealth.baseUrl}${localLlmHealth.status?.state === 'OPEN' ? ` / ${Math.ceil(Number(localLlmHealth.status?.remainingMs || 0) / 1000)}초 후 재시도` : ''}`,
       },
     ],
     okReason: '핵심 서비스와 trade_review 정합성이 현재는 안정 구간입니다.',
