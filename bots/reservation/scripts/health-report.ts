@@ -38,6 +38,7 @@ const CORE_SERVICES = [
   'ai.ska.health-check',
 ];
 const SCHEDULED_SERVICES = [
+  'ai.ska.today-audit',
   'ai.ska.pickko-verify',
   'ai.ska.pickko-daily-audit',
   'ai.ska.pickko-daily-summary',
@@ -60,6 +61,7 @@ function reservationServiceLabel(label) {
     'ai.ska.naver-monitor': 'booking-monitor',
     'ai.ska.kiosk-monitor': 'kiosk-monitor',
     'ai.ska.health-check': 'reservation-health-check',
+    'ai.ska.today-audit': 'today-audit',
     'ai.ska.pickko-verify': 'pickko-verify',
     'ai.ska.pickko-daily-audit': 'pickko-daily-audit',
     'ai.ska.pickko-daily-summary': 'pickko-daily-summary',
