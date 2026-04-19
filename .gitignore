@@ -157,6 +157,9 @@ pending-telegrams.jsonl
 # 블로그 자동 생성 출력
 bots/blog/output/
 
+# 블로그 디버그 임시 파일
+tmp/blog-commenter-debug/
+
 # 덱스터/아처 운영 이력
 bots/claude/*.log
 bots/claude/dexter-fixes.json
