@@ -130,8 +130,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "claude-code/sonnet"
       ],
       "fallback_routes": [
-        LOCAL_FAST_ROUTE,
-        GROQ_SCOUT_ROUTE
+        GROQ_SCOUT_ROUTE,
+        LOCAL_FAST_ROUTE
       ]
     },
     "analyst": {
@@ -144,8 +144,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "claude-code/sonnet"
       ],
       "fallback_routes": [
-        LOCAL_FAST_ROUTE,
-        GROQ_SCOUT_ROUTE
+        GROQ_SCOUT_ROUTE,
+        LOCAL_FAST_ROUTE
       ]
     },
     "validator": {
@@ -158,8 +158,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
-        LOCAL_FAST_ROUTE,
-        GROQ_SCOUT_ROUTE
+        GROQ_SCOUT_ROUTE,
+        LOCAL_FAST_ROUTE
       ]
     },
     "commander": {
@@ -227,8 +227,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
-        LOCAL_FAST_ROUTE,
-        GROQ_SCOUT_ROUTE
+        GROQ_SCOUT_ROUTE,
+        LOCAL_FAST_ROUTE
       ]
     },
     "research": {
@@ -241,8 +241,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
-        LOCAL_FAST_ROUTE,
-        GROQ_SCOUT_ROUTE
+        GROQ_SCOUT_ROUTE,
+        LOCAL_FAST_ROUTE
       ]
     },
     "synthesis": {
@@ -255,6 +255,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "claude-code/sonnet"
       ],
       "fallback_routes": [
+        GROQ_SCOUT_ROUTE,
         LOCAL_FAST_ROUTE
       ]
     },
@@ -283,8 +284,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
-        LOCAL_FAST_ROUTE,
-        GROQ_SCOUT_ROUTE
+        GROQ_SCOUT_ROUTE,
+        LOCAL_FAST_ROUTE
       ]
     },
     "citation": {
@@ -297,6 +298,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
+        GROQ_SCOUT_ROUTE,
         LOCAL_FAST_ROUTE
       ]
     },
@@ -323,7 +325,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
-        "local/qwen2.5-7b"
+        GROQ_SCOUT_ROUTE,
+        LOCAL_FAST_ROUTE
       ]
     }
   },
@@ -338,7 +341,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
-        "local/qwen2.5-7b"
+        GROQ_SCOUT_ROUTE,
+        LOCAL_FAST_ROUTE
       ]
     },
     "quality": {
@@ -351,7 +355,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
-        "local/qwen2.5-7b"
+        GROQ_SCOUT_ROUTE,
+        LOCAL_FAST_ROUTE
       ]
     },
     "experiment": {
@@ -364,7 +369,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "claude-code/sonnet"
       ],
       "fallback_routes": [
-        "local/qwen2.5-7b"
+        GROQ_SCOUT_ROUTE,
+        LOCAL_FAST_ROUTE
       ]
     },
     "analysis": {
@@ -377,7 +383,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "claude-code/sonnet"
       ],
       "fallback_routes": [
-        "local/qwen2.5-7b"
+        GROQ_SCOUT_ROUTE,
+        LOCAL_FAST_ROUTE
       ]
     }
   },
@@ -392,8 +399,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "claude-code/sonnet"
       ],
       "fallback_routes": [
-        "local/qwen2.5-7b",
-        GROQ_SCOUT_ROUTE
+        GROQ_SCOUT_ROUTE,
+        LOCAL_FAST_ROUTE
       ]
     },
     "reporting": {
@@ -406,7 +413,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
-        "local/qwen2.5-7b"
+        GROQ_SCOUT_ROUTE,
+        LOCAL_FAST_ROUTE
       ]
     },
     "triage": {
@@ -419,8 +427,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "claude-code/sonnet"
       ],
       "fallback_routes": [
-        "local/qwen2.5-7b",
-        GROQ_SCOUT_ROUTE
+        GROQ_SCOUT_ROUTE,
+        LOCAL_FAST_ROUTE
       ]
     },
     "lead": {
@@ -433,7 +441,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "claude-code/sonnet"
       ],
       "fallback_routes": [
-        "local/qwen2.5-7b"
+        GROQ_SCOUT_ROUTE,
+        LOCAL_FAST_ROUTE
       ]
     }
   },
@@ -501,7 +510,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "claude-code/sonnet"
       ],
       "fallback_routes": [
-        "local/qwen2.5-7b",
+        GROQ_SCOUT_ROUTE,
+        LOCAL_FAST_ROUTE,
         "google-gemini-cli/gemini-2.5-flash"
       ]
     },
@@ -526,7 +536,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "claude-code/sonnet"
       ],
       "fallback_routes": [
-        "local/qwen2.5-7b"
+        GROQ_SCOUT_ROUTE,
+        LOCAL_FAST_ROUTE
       ]
     },
     "reporting": {
@@ -539,7 +550,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
-        "local/qwen2.5-7b"
+        GROQ_SCOUT_ROUTE,
+        LOCAL_FAST_ROUTE
       ]
     }
   },
@@ -597,7 +609,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "claude-code/sonnet"
       ],
       "fallback_routes": [
-        "local/qwen2.5-7b",
+        GROQ_SCOUT_ROUTE,
+        LOCAL_FAST_ROUTE,
         "google-gemini-cli/gemini-2.5-flash"
       ]
     },
@@ -611,7 +624,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "claude-code/sonnet"
       ],
       "fallback_routes": [
-        "local/qwen2.5-7b"
+        GROQ_SCOUT_ROUTE,
+        LOCAL_FAST_ROUTE
       ]
     },
     "analysis": {
@@ -624,7 +638,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "claude-code/sonnet"
       ],
       "fallback_routes": [
-        "local/qwen2.5-7b"
+        GROQ_SCOUT_ROUTE,
+        LOCAL_FAST_ROUTE
       ]
     },
     "stt": {
