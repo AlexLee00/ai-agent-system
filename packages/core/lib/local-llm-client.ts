@@ -134,11 +134,11 @@ async function requestJson(path: string, options: RequestOptions = {}, timeoutMs
   return null;
 }
 
-async function getAvailableModels(): Promise<string[]> {
-  const json = await requestJson('/v1/models') as ModelListResponse | null;
+async function getAvailableModels(options: { baseUrl?: string } = {}): Promise<string[]> {
+  const json = await requestJson('/v1/models', { baseUrl: options.baseUrl }) as ModelListResponse | null;
   if (!json?.data || !Array.isArray(json.data)) return [];
   const models = json.data.map((item) => item.id).filter(Boolean) as string[];
-  const baseUrl = getBaseUrl();
+  const baseUrl = getBaseUrl(options);
   if (/127\.0\.0\.1:11434|localhost:11434/.test(baseUrl)) {
     const hasExpectedMlxModel = models.some((model) => EXPECTED_MLX_MODELS.has(model));
     if (!hasExpectedMlxModel && models.length > 0) {
@@ -161,8 +161,8 @@ function pickGemmaModel(models: string[], preferLarge = false): string | null {
     || null;
 }
 
-async function resolveRequestedModel(model: string): Promise<string> {
-  const models = await getAvailableModels();
+async function resolveRequestedModel(model: string, options: { baseUrl?: string } = {}): Promise<string> {
+  const models = await getAvailableModels({ baseUrl: options.baseUrl });
   if (models.length === 0 || models.includes(model)) return model;
 
   const preferLarge = model === LOCAL_MODEL_DEEP || /deepseek|32b|70b|reason/i.test(model);
@@ -188,8 +188,8 @@ async function resolveEmbeddingModel(model = LOCAL_MODEL_EMBED): Promise<string>
   return model;
 }
 
-async function isLocalLLMAvailable(): Promise<boolean> {
-  const models = await getAvailableModels();
+async function isLocalLLMAvailable(options: { baseUrl?: string } = {}): Promise<boolean> {
+  const models = await getAvailableModels({ baseUrl: options.baseUrl });
   return models.length > 0;
 }
 
@@ -204,13 +204,13 @@ async function callLocalLLM(model: string, messages: unknown[], options: Request
   }
 
   // 빠른 헬스 체크 (3s timeout) — Ollama 다운 시 90s hang 방지
-  const available = await isLocalLLMAvailable();
+  const available = await isLocalLLMAvailable({ baseUrl });
   if (!available) {
     cb.recordFailure(baseUrl);
     return null;
   }
 
-  const resolvedModel = await resolveRequestedModel(model);
+  const resolvedModel = await resolveRequestedModel(model, { baseUrl });
   const timeoutMs = Number(options.timeoutMs || ((model === LOCAL_MODEL_DEEP || resolvedModel === LOCAL_MODEL_DEEP) ? 120000 : 30000));
 
   await llmSemaphore.acquire();
@@ -320,6 +320,11 @@ async function callLocalLLMJSON(model: string, messages: unknown[], options: Req
   return null;
 }
 
+type HealthCheckOptions = {
+  baseUrl?: string;
+  timeoutMs?: number;
+};
+
 type LLMHealthStatus = {
   available: boolean;
   models: string[];
@@ -329,10 +334,12 @@ type LLMHealthStatus = {
   error?: string;
 };
 
-async function checkLocalLLMHealth(): Promise<LLMHealthStatus> {
+async function checkLocalLLMHealth(options: HealthCheckOptions = {}): Promise<LLMHealthStatus> {
   const start = Date.now();
+  const baseUrl = getBaseUrl(options);
+  const timeoutMs = Number(options.timeoutMs || 5000);
   try {
-    const models = await getAvailableModels();
+    const models = await getAvailableModels({ baseUrl });
     if (!models.length) {
       return { available: false, models: [], fastModelOk: false, embedModelOk: false, responseMs: Date.now() - start, error: 'Ollama 모델 없음' };
     }
@@ -343,7 +350,7 @@ async function checkLocalLLMHealth(): Promise<LLMHealthStatus> {
     // 빠른 inference 테스트 (최대 5초)
     const testResult = await callLocalLLM(LOCAL_MODEL_FAST, [
       { role: 'user', content: '1+1=?' },
-    ], { maxTokens: 8, timeoutMs: 5000 });
+    ], { baseUrl, maxTokens: 8, timeoutMs });
 
     return {
       available: true,
