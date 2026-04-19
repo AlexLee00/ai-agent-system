@@ -1,4 +1,28 @@
-# 세션 인수인계 — 2026-04-19 (CODEX_JUSTIN_EVOLUTION Phase 1 완성 + getStatus 수정 — 65차 세션 추가)
+# 세션 인수인계 — 2026-04-19 (CODEX_JUSTIN_EVOLUTION Phase 3+4 스크립트 — 66차 세션)
+
+## 완료 요약 ✅ (66차 세션)
+
+### CODEX_JUSTIN_EVOLUTION Phase 3+4 — PDF 생성 + 현장실사 CLI
+
+**이번 세션 (66차)**:
+- `bots/legal/scripts/generate-pdf.js`: 마크다운 → HTML → PDF 변환 (puppeteer Chromium)
+  - 법원 문서 CSS 스타일 (A4, Noto Sans KR, 초안 워터마크, 서명란)
+  - `--format html` 옵션으로 HTML만 생성 가능 (PDF 없이)
+  - `--input` 옵션으로 파일 직접 지정 가능
+- `bots/legal/scripts/inspect-sw.js`: 현장실사 SW 기능 3단계 분류 CLI (Phase 4)
+  - `legal.sw_functions` 테이블 INSERT/UPDATE
+  - `--list` / `--summary` (기능 이행률 자동 계산)
+  - 상태: working(가동) / partial(부분가동) / broken(불가동)
+
+**테스트**: 39 tests, 0 failures (변동 없음)
+**커밋**: `de5cc3a4`
+
+**다음 우선순위**:
+1. Anthropic timeout 조사 (항상 Groq 폴백 — claude-code 10초 타임아웃이 원인으로 추정)
+2. E2E 전체 워크플로우 테스트 (`node scripts/test-e2e-workflow.js --full`)
+3. Phase 7 테스트 확대 — generate-pdf.js 단위 테스트
+
+---
 
 ## 완료 요약 ✅ (65차 세션 추가)
 
