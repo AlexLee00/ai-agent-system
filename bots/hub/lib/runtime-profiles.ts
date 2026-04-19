@@ -33,8 +33,8 @@ const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11435';
 // Current deployed routes. These are intentionally separated from "latest official"
 // model families so runtime profiles reflect live ops first.
 const LOCAL_FAST_ROUTE = 'local/qwen2.5-7b';
-const GROQ_SCOUT_ROUTE = 'groq/meta-llama/llama-4-scout-17b-16e-instruct';
-const GROQ_QWEN3_ROUTE = 'groq/qwen/qwen3-32b';
+const GROQ_SCOUT_ROUTE = 'groq/llama-3.1-8b-instant';
+const GROQ_QWEN3_ROUTE = 'groq/qwen-qwq-32b';
 const LOCAL_FAST_MODEL = 'qwen2.5-7b';
 
 export const PROFILES: Record<string, TeamProfiles> = {
@@ -74,7 +74,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         "openai-oauth/gpt-5.4-mini",
-        "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+        GROQ_SCOUT_ROUTE
       ],
       "fallback_routes": [
         "claude-code/sonnet"
@@ -172,7 +172,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "claude-code/sonnet"
       ],
       "fallback_routes": [
-        "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+        GROQ_SCOUT_ROUTE
       ]
     },
     // 🔴 CRITICAL — 실시간 매매 판단 경로, local 제외, 즉시 fallback
@@ -268,7 +268,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
-        "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+        GROQ_SCOUT_ROUTE
       ]
     }
   },
@@ -393,7 +393,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         "local/qwen2.5-7b",
-        "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+        GROQ_SCOUT_ROUTE
       ]
     },
     "reporting": {
@@ -420,7 +420,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         "local/qwen2.5-7b",
-        "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+        GROQ_SCOUT_ROUTE
       ]
     },
     "lead": {
@@ -448,7 +448,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "claude-code/sonnet"
       ],
       "fallback_routes": [
-        "groq/meta-llama/llama-4-scout-17b-16e-instruct",
+        GROQ_SCOUT_ROUTE,
         "google-gemini-cli/gemini-2.5-flash"
       ]
     },
@@ -462,7 +462,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "claude-code/sonnet"
       ],
       "fallback_routes": [
-        "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+        GROQ_SCOUT_ROUTE
       ]
     },
     "fallback": {
@@ -472,7 +472,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         "claude-code/sonnet",
-        "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+        GROQ_SCOUT_ROUTE
       ],
       "fallback_routes": [
         "google-gemini-cli/gemini-2.5-flash"
@@ -550,7 +550,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_settings": "/Users/alexlee/.openclaw/.claude/worker-ops.settings.json",
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
-        "groq/llama-4-scout-17b-16e-instruct",
+        GROQ_SCOUT_ROUTE,
         "claude-code/sonnet"
       ],
       "fallback_routes": [
@@ -564,7 +564,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_settings": "/Users/alexlee/.openclaw/.claude/worker-ops.settings.json",
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
-        "groq/llama-4-scout-17b-16e-instruct",
+        GROQ_SCOUT_ROUTE,
         "claude-code/sonnet"
       ],
       "fallback_routes": [
@@ -579,7 +579,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         "claude-code/sonnet",
-        "groq/llama-4-scout-17b-16e-instruct"
+        GROQ_SCOUT_ROUTE
       ],
       "fallback_routes": [
         "openai/gpt-4o-mini"
