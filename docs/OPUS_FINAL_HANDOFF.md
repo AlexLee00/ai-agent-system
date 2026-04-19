@@ -1,3 +1,33 @@
+# 세션 인수인계 — 2026-04-19 (CODEX_LLM_ROUTING_HARDENING Phase 2-5 완료 — 61차 세션 추가)
+
+## 완료 요약 ✅ (61차 세션 추가)
+
+### CODEX_LLM_ROUTING_HARDENING — Phase 2-5 전체 완료 + CODEX 아카이빙
+
+**구현 완료**:
+- `bots/hub/lib/llm/provider-registry.ts`: per-provider 통계 + Telegram/DB circuit 이벤트 로깅
+- `bots/hub/lib/llm/local-ollama.ts`: Ollama HTTP 클라이언트 (15s timeout, empty_response 감지, circuit 연동)
+- `bots/hub/lib/llm/unified-caller.ts`: runtime-profile 기반 multi-route dispatch (primary→fallback→legacy 2-step), module.exports 호환
+- `bots/hub/lib/llm/critical-chain-registry.ts`: isCriticalChain/getTimeoutForChain/listCriticalChains
+- `bots/hub/lib/metrics/prometheus-exporter.ts`: /hub/metrics (text) + /hub/metrics/json (prom-client 미사용)
+- `bots/hub/migrations/20261001000040_circuit_breaker.sql`: hub.circuit_events + provider_health_hourly view
+- `bots/hub/src/hub.ts`: /hub/metrics 엔드포인트 등록
+- 테스트 25/25 통과 (circuit-breaker, local-ollama, llm-load 6시나리오)
+
+**핵심 발견 (다음 세션 주의)**:
+- hub Jest는 `babel-jest` (TypeScript preset 없음) → `.ts`파일이라도 TypeScript 문법 금지 (`type =`, `interface`, `import type`, `export`)
+- `jest.mock()` factory에서 외부 변수 참조 시 이름을 `mock`로 시작해야 함
+- runtime-profiles.ts는 TypeScript 타입 선언 포함 → 테스트에서 반드시 mock 처리
+
+**아카이빙**: `docs/codex/CODEX_LLM_ROUTING_HARDENING.md` → `docs/archive/codex-completed/`
+**커밋**: `8a1256f4`
+
+## 🏷️ 61차 세션 요약
+
+**61차 세션 — CODEX_LLM_ROUTING_HARDENING Phase 2-5: Provider Registry + Local Ollama + Unified Caller Profile Chain + Prometheus Metrics + 25 tests ✅ + CODEX 아카이빙.**
+
+---
+
 # 세션 인수인계 — 2026-04-19 (CODEX_LLM_ROUTING_HARDENING Phase 1 완료 — 60차 세션 추가)
 
 ## 완료 요약 ✅ (60차 세션 추가)

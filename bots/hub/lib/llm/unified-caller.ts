@@ -10,6 +10,7 @@ const { callLocalOllama } = require('./local-ollama');
 const { checkCache, saveCache } = require('./cache');
 const { selectRuntimeProfile } = require('../runtime-profiles');
 const { getGroqFallback } = require('../../../../packages/core/lib/llm-models');
+const { callWithFallback: callCoreWithFallback } = require('../../../../packages/core/lib/llm-fallback');
 const sender = require('../../../../packages/core/lib/telegram-sender');
 
 const CLAUDE_CODE_MODEL = {
@@ -116,29 +117,111 @@ async function _callLegacy(req, _team) {
 }
 
 async function _callRoute(route, req, timeoutMs) {
-  if (route.startsWith('claude-code/')) {
-    const model = route.split('/')[1];
+  const normalizedRoute = _normalizeRoute(route, req.abstractModel);
+
+  if (normalizedRoute.startsWith('claude-code/')) {
+    const model = normalizedRoute.split('/')[1];
     return callClaudeCodeOAuth({ prompt: req.prompt, model, systemPrompt: req.systemPrompt, jsonSchema: req.jsonSchema, timeoutMs, maxBudgetUsd: req.maxBudgetUsd });
   }
-  if (route.startsWith('groq/')) {
-    const model = route.slice('groq/'.length);
+  if (normalizedRoute.startsWith('groq/')) {
+    const model = normalizedRoute.slice('groq/'.length);
     return callGroqFallback({ prompt: req.prompt, model, systemPrompt: req.systemPrompt });
   }
-  if (route.startsWith('local/')) {
-    const model = route.slice('local/'.length);
+  if (normalizedRoute.startsWith('local/')) {
+    const model = normalizedRoute.slice('local/'.length);
     return callLocalOllama({ prompt: req.prompt, model, systemPrompt: req.systemPrompt, timeoutMs });
+  }
+  if (
+    normalizedRoute.startsWith('openai-oauth/')
+    || normalizedRoute.startsWith('openai/')
+    || normalizedRoute.startsWith('google-gemini-cli/')
+    || normalizedRoute.startsWith('gemini/')
+  ) {
+    return _callViaCoreFallback(normalizedRoute, req, timeoutMs);
   }
   return { ok: false, provider: 'failed', error: `unsupported_provider:${route}`, durationMs: 0 };
 }
 
 function _isProviderSupported(route) {
-  return route.startsWith('claude-code/') || route.startsWith('groq/') || route.startsWith('local/');
+  return route.startsWith('claude-code/')
+    || route.startsWith('groq/')
+    || route.startsWith('local/')
+    || route.startsWith('openai-oauth/')
+    || route.startsWith('openai/')
+    || route.startsWith('google-gemini-cli/')
+    || route.startsWith('gemini/');
 }
 
 function _routeToProvider(route) {
-  if (route.startsWith('claude-code/')) return 'claude-code-oauth';
-  if (route.startsWith('groq/')) return 'groq';
+  const normalizedRoute = _normalizeRoute(route);
+  if (normalizedRoute.startsWith('claude-code/')) return 'claude-code-oauth';
+  if (normalizedRoute.startsWith('groq/')) return 'groq';
+  if (normalizedRoute.startsWith('openai-oauth/')) return 'openai-oauth';
+  if (normalizedRoute.startsWith('openai/')) return 'openai';
+  if (normalizedRoute.startsWith('google-gemini-cli/') || normalizedRoute.startsWith('gemini/')) return 'gemini';
   return route;
+}
+
+function _normalizeRoute(route, abstractModel = 'anthropic_sonnet') {
+  const staleGroqRoutes = new Set([
+    'groq/llama-4-scout-17b-16e-instruct',
+    'groq/meta-llama/llama-4-scout-17b-16e-instruct',
+    'groq/qwen/qwen3-32b',
+  ]);
+
+  if (staleGroqRoutes.has(route)) {
+    const replacement = `groq/${getGroqFallback(abstractModel)}`;
+    console.warn(`[llm/unified] stale groq route 정규화: ${route} -> ${replacement}`);
+    return replacement;
+  }
+
+  return route;
+}
+
+async function _callViaCoreFallback(route, req, timeoutMs) {
+  const provider = _routeToProvider(route);
+  const model = route.startsWith('gemini/') ? route.slice('gemini/'.length) : route;
+  const started = Date.now();
+
+  try {
+    const result = await callCoreWithFallback({
+      chain: [{
+        provider,
+        model,
+        maxTokens: 1024,
+        temperature: 0.3,
+        timeoutMs,
+      }],
+      systemPrompt: req.systemPrompt || '',
+      userPrompt: req.prompt,
+      timeoutMs,
+      team: req.callerTeam || 'worker',
+      purpose: req.taskType || 'default',
+      logMeta: {
+        team: req.callerTeam || 'worker',
+        bot: req.agent || 'hub-unified',
+        requestType: req.taskType || 'hub_call',
+        selectorKey: req.agent || 'hub-unified',
+        purpose: req.taskType || 'default',
+      },
+    });
+
+    return {
+      ok: true,
+      provider,
+      result: result.text,
+      durationMs: Date.now() - started,
+      apiDurationMs: Date.now() - started,
+      cacheHit: false,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      provider: 'failed',
+      durationMs: Date.now() - started,
+      error: e && e.message ? e.message : `provider_failed:${route}`,
+    };
+  }
 }
 
 async function _saveCache(req, resp) {
