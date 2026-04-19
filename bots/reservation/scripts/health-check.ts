@@ -93,10 +93,23 @@ function readTodayAuditStatus() {
     const lines = text.split('\n').map((line) => line.trimEnd()).filter(Boolean);
     const completeLines = lines.filter((line) => line.includes('⏹ today-audit 완료'));
     const auditStartLines = lines.filter((line) => line.includes('📋 [오늘 예약 검증]'));
+    const auditSummaryLines = lines.filter((line) => line.includes('✅ 오늘 예약 검증 완료'));
     const lastCompletedLine = completeLines[completeLines.length - 1] || null;
     const lastAuditStartLine = auditStartLines[auditStartLines.length - 1] || null;
+    const lastAuditSummaryLine = auditSummaryLines[auditSummaryLines.length - 1] || null;
     const match = lastCompletedLine ? lastCompletedLine.match(/exit:\s*(\d+)/i) : null;
     const lastExitCode = match ? Number(match[1]) : null;
+    const summaryMatch = lastAuditSummaryLine
+      ? lastAuditSummaryLine.match(/확인:\s*(\d+),\s*차단추가:\s*(\d+),\s*해제:\s*(\d+),\s*실패:\s*(\d+)/)
+      : null;
+    const summary = summaryMatch
+      ? {
+        okCount: Number(summaryMatch[1]),
+        blockedCount: Number(summaryMatch[2]),
+        unblockedCount: Number(summaryMatch[3]),
+        failedCount: Number(summaryMatch[4]),
+      }
+      : null;
     const lastAuditDate = lastAuditStartLine ? (lastAuditStartLine.match(/(\d{4}-\d{2}-\d{2})/) || [])[1] || null : null;
     const kst = getCurrentKstParts();
     const shouldHaveRunToday = kst.hour > 9 || (kst.hour === 9 && kst.minute >= 0);
@@ -108,6 +121,7 @@ function readTodayAuditStatus() {
       lastCompletedLine,
       lastAuditDate,
       missingTodayRun,
+      summary,
       recentSuccess: lastExitCode === 0,
     };
   } catch (error) {
@@ -117,6 +131,7 @@ function readTodayAuditStatus() {
       lastCompletedLine: `read-failed:${error.message}`,
       lastAuditDate: null,
       missingTodayRun: false,
+      summary: null,
       recentSuccess: false,
     };
   }
@@ -247,6 +262,15 @@ async function main() {
         msg: `⚠️ [스카 헬스] today-audit 오늘 실행 누락 의심\n오늘(${getCurrentKstParts().isoDate}) 성공 이력 없음`,
       });
     }
+  } else if (todayAudit.exists && todayAudit.recentSuccess && todayAudit.summary?.failedCount > 0) {
+    const key = `audit-partial:ai.ska.today-audit:${todayAudit.summary.failedCount}`;
+    if (canAlert(state, key)) {
+      issues.push({
+        key,
+        level: 2,
+        msg: `⚠️ [스카 헬스] today-audit 내부 실패 감지\n확인 ${todayAudit.summary.okCount} / 차단추가 ${todayAudit.summary.blockedCount} / 해제 ${todayAudit.summary.unblockedCount} / 실패 ${todayAudit.summary.failedCount}`,
+      });
+    }
   } else if (todayAudit.exists && todayAudit.lastExitCode != null && todayAudit.lastExitCode !== 0) {
     const key = `audit-failed:ai.ska.today-audit:${todayAudit.lastExitCode}`;
     if (canAlert(state, key)) {
@@ -258,7 +282,9 @@ async function main() {
     }
   } else if (todayAudit.exists && todayAudit.recentSuccess) {
     const prevKeys = Object.keys(state).filter((k) =>
-      k.startsWith('audit-failed:ai.ska.today-audit:') || k === 'audit-missing:ai.ska.today-audit');
+      k.startsWith('audit-failed:ai.ska.today-audit:')
+      || k === 'audit-missing:ai.ska.today-audit'
+      || k.startsWith('audit-partial:ai.ska.today-audit:'));
     if (prevKeys.length > 0) {
       console.log('[헬스체크] today-audit 최근 성공 확인');
       const recoveryMsg = `✅ [스카 헬스] today-audit 회복\n최근 실행 성공 — 자동 감지`;

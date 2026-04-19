@@ -289,15 +289,30 @@ function buildTodayAuditHealth() {
     const kst = getCurrentKstParts();
     const shouldHaveRunToday = kst.hour > 9 || (kst.hour === 9 && kst.minute >= 0);
     const missingTodayRun = shouldHaveRunToday && lastAuditDate !== kst.isoDate;
+    const summaryLine = completionIndex >= 0
+      ? [...candidateLines].reverse().find((line) => line.includes('✅ 오늘 예약 검증 완료')) || null
+      : null;
+    const summaryMatch = summaryLine
+      ? summaryLine.match(/확인:\s*(\d+),\s*차단추가:\s*(\d+),\s*해제:\s*(\d+),\s*실패:\s*(\d+)/)
+      : null;
+    const summary = summaryMatch
+      ? {
+        okCount: Number(summaryMatch[1]),
+        blockedCount: Number(summaryMatch[2]),
+        unblockedCount: Number(summaryMatch[3]),
+        failedCount: Number(summaryMatch[4]),
+      }
+      : null;
     const samples = completionIndex >= 0
       ? recentLines.slice(Math.max(0, completionIndex - 4), completionIndex + 1).map((line) => `  ${line}`)
       : recentLines.slice(-5).map((line) => `  ${line}`);
 
-    if (recentSuccess && !missingTodayRun) {
+    if (recentSuccess && !missingTodayRun && (!summary || summary.failedCount === 0)) {
       return {
         ok: [
           '  today-audit 로그: 최근 실행 성공',
           ...(lastCompleted ? [`  latest completion: ${lastCompleted}`] : []),
+          ...(summary ? [`  latest summary: 확인 ${summary.okCount}, 차단추가 ${summary.blockedCount}, 해제 ${summary.unblockedCount}, 실패 ${summary.failedCount}`] : []),
         ],
         warn: [],
         samples,
@@ -307,6 +322,7 @@ function buildTodayAuditHealth() {
         lastWrapperStartedAt: lastWrapperStarted,
         lastAuditDate,
         missingTodayRun,
+        summary,
         recentSuccess,
       };
     }
@@ -316,8 +332,11 @@ function buildTodayAuditHealth() {
       warn: [
         missingTodayRun
           ? `  today-audit 로그: 오늘(${kst.isoDate}) 성공 이력 없음`
+          : summary && summary.failedCount > 0
+            ? `  today-audit 로그: 최근 실행은 완료됐지만 내부 실패 ${summary.failedCount}건`
           : `  today-audit 로그: 최근 실행 실패${lastExitCode != null ? ` (exit ${lastExitCode})` : ''}`,
         ...(lastCompleted ? [`  latest completion: ${lastCompleted}`] : []),
+        ...(summary ? [`  latest summary: 확인 ${summary.okCount}, 차단추가 ${summary.blockedCount}, 해제 ${summary.unblockedCount}, 실패 ${summary.failedCount}`] : []),
       ],
       samples,
       lastExitCode,
@@ -326,6 +345,7 @@ function buildTodayAuditHealth() {
       lastWrapperStartedAt: lastWrapperStarted,
       lastAuditDate,
       missingTodayRun,
+      summary,
       recentSuccess,
     };
   } catch (error) {
@@ -339,6 +359,7 @@ function buildTodayAuditHealth() {
       lastWrapperStartedAt: null,
       lastAuditDate: null,
       missingTodayRun: false,
+      summary: null,
       recentSuccess: false,
     };
   }
@@ -649,6 +670,8 @@ function buildDecision(coreServiceRows, monitorHealth, n8nCommandHealth, dailySu
         level: 'medium',
         reason: todayAuditHealth.missingTodayRun
           ? 'today-audit가 오늘 예정 실행 이후에도 성공 이력이 없어 당일 예약 검증 누락 여부를 확인해야 합니다.'
+          : todayAuditHealth.summary?.failedCount > 0
+            ? `today-audit 최근 실행에서 내부 실패 ${todayAuditHealth.summary.failedCount}건이 있어 차단/해제 결과를 확인해야 합니다.`
           : `today-audit 최근 실행이 비정상 상태라 당일 예약 검증 로그를 확인해야 합니다.${todayAuditHealth.lastExitCode != null ? ` (exit ${todayAuditHealth.lastExitCode})` : ''}`,
       },
     ],
@@ -752,6 +775,7 @@ async function buildReport() {
       lastWrapperStartedAt: todayAuditHealth.lastWrapperStartedAt,
       lastAuditDate: todayAuditHealth.lastAuditDate,
       missingTodayRun: todayAuditHealth.missingTodayRun,
+      summary: todayAuditHealth.summary,
       recentSuccess: todayAuditHealth.recentSuccess,
     },
     n8nCommandHealth: {
