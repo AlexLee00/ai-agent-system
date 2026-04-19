@@ -60,6 +60,7 @@ const ALL_SERVICES = [
 // 정상 종료 코드
 const NORMAL_EXIT_CODES = new Set([0, -9, -15]);
 const LOCAL_LLM_HEALTH_HISTORY_FILE = '/tmp/investment-local-llm-health-history.jsonl';
+const SECONDARY_LOCAL_PORT = Number(String(process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11435').match(/:(\d+)/)?.[1] || '11435');
 
 // ─── 알림 발송 ───────────────────────────────────────────────────
 
@@ -123,6 +124,15 @@ function loadRecentLocalProbeTrend() {
       lastError: error?.message || String(error),
       latest: null,
     };
+  }
+}
+
+function getLocalStandbySummary() {
+  try {
+    const output = execSync(`lsof -nP -iTCP:${SECONDARY_LOCAL_PORT} -sTCP:LISTEN`, { encoding: 'utf8' });
+    return output.trim() ? `standby 준비됨 (127.0.0.1:${SECONDARY_LOCAL_PORT})` : `standby 없음 (127.0.0.1:${SECONDARY_LOCAL_PORT})`;
+  } catch {
+    return `standby 없음 (127.0.0.1:${SECONDARY_LOCAL_PORT})`;
   }
 }
 
@@ -242,13 +252,14 @@ async function main() {
   }
 
   const localLlmTrend = loadRecentLocalProbeTrend();
+  const standbySummary = getLocalStandbySummary();
   if (localLlmTrend.status === 'flapping') {
     const key = 'local-llm-flapping';
     if (hsm.canAlert(state, key)) {
       issues.push({
         key,
         level: 3,
-        msg: `⚠️ [루나 헬스] local LLM flapping\n최근 probe ok ${localLlmTrend.okCount} / fail ${localLlmTrend.failCount} / 전환 ${localLlmTrend.transitionCount}회${localLlmTrend.lastError ? `\nlast error: ${localLlmTrend.lastError}` : ''}`,
+        msg: `⚠️ [루나 헬스] local LLM flapping\n최근 probe ok ${localLlmTrend.okCount} / fail ${localLlmTrend.failCount} / 전환 ${localLlmTrend.transitionCount}회\n${standbySummary}${localLlmTrend.lastError ? `\nlast error: ${localLlmTrend.lastError}` : ''}`,
       });
     }
   } else if (localLlmTrend.status === 'degraded') {
@@ -257,7 +268,7 @@ async function main() {
       issues.push({
         key,
         level: 2,
-        msg: `⚠️ [루나 헬스] local LLM degraded\n최근 생성 probe 실패${localLlmTrend.lastError ? `\n${localLlmTrend.lastError}` : ''}`,
+        msg: `⚠️ [루나 헬스] local LLM degraded\n최근 생성 probe 실패\n${standbySummary}${localLlmTrend.lastError ? `\n${localLlmTrend.lastError}` : ''}`,
       });
     }
   } else {
