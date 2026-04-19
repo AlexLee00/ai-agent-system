@@ -171,6 +171,9 @@ bots/blog/*.log
 bots/worker/uploads/
 bots/blog/output/
 
+# ─── 저스틴팀 — 소송 소스코드 보안 (절대 공개 금지) ───
+bots/legal/cases/
+
 # ─── OCR 학습 데이터 (대용량) ───
 *.traineddata
 

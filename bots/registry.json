@@ -405,16 +405,21 @@
       "deployTargets": []
     },
     "legal": {
-      "name": "판례봇",
-      "description": "국내외 판례 서칭 및 분석",
-      "status": "planned",
+      "name": "저스틴팀",
+      "teamLeader": "저스틴 (Justin)",
+      "description": "법원 SW 감정 자동화 — 마스터(Jay) 법원 감정인 업무 지원. 9에이전트(저스틴/브리핑/렌즈/가람/아틀라스/클레임/디펜스/퀼/밸런스/컨트로)",
+      "status": "active",
       "contextPath": "bots/legal/context",
       "model": {
-        "primary": "ollama/deepseek-r1:32b",
+        "primary": "anthropic/claude-sonnet-4-6",
         "fallbacks": [
-          "anthropic/claude-sonnet-4-6"
+          "groq/qwen3-32b",
+          "local/deepseek-r1-32b"
         ]
       },
+      "agents": ["justin", "briefing", "lens", "garam", "atlas", "claim", "defense", "quill", "balance", "contro"],
+      "db_schema": "legal",
+      "security": "cases/ directory gitignored — no push to GitHub",
       "deployTargets": []
     },
     "orchestrator": {
