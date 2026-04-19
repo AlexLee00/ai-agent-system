@@ -4,6 +4,16 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-04-19: CODEX_LLM_ROUTING_HARDENING Phase 2-5 완료 + CODEX 아카이빙 (61차 세션)
+
+- **provider-registry.ts**: per-provider 통계 + Telegram/DB circuit 이벤트 로깅
+- **local-ollama.ts**: Ollama HTTP 클라이언트 (15s timeout, empty_response, circuit 연동)
+- **unified-caller.ts**: runtime-profile 기반 multi-route dispatch (primary→fallback→legacy)
+- **critical-chain-registry.ts**: isCriticalChain/getTimeoutForChain/listCriticalChains
+- **prometheus-exporter.ts**: /hub/metrics (Prometheus text) + /hub/metrics/json
+- **테스트 25/25 통과**: circuit-breaker, local-ollama, llm-load 6시나리오
+- **CODEX 아카이빙**: CODEX_LLM_ROUTING_HARDENING.md → archive/codex-completed/
+
 ## 2026-04-19: CODEX_LLM_ROUTING_HARDENING Phase 1 — local Ollama circuit breaker (60차 세션)
 
 - **local-circuit-breaker.ts 신규**: CLOSED/OPEN/HALF_OPEN 3-state, 3회 실패→30s OPEN
