@@ -867,10 +867,16 @@ export async function callWithFallback({ chain, systemPrompt, userPrompt, logMet
   for (let i = 0; i < chain.length; i++) {
     const cfg     = chain[i];
     if (cfg.provider === 'local') {
-      const localBaseUrl = String(runtimeProfile?.local_llm_base_url || env.OLLAMA_BASE_URL || '').trim();
+      const localClient = require('./local-llm-client');
       const localCircuit = _getLocalCircuitBreaker();
-      if (localBaseUrl && typeof localCircuit.isCircuitOpen === 'function' && localCircuit.isCircuitOpen(localBaseUrl)) {
-        console.warn(`[llm-fallback] local circuit OPEN → 체인에서 건너뜀 (${localBaseUrl})`);
+      const candidateBaseUrls = typeof localClient.getBaseUrlCandidates === 'function'
+        ? localClient.getBaseUrlCandidates({ baseUrl: runtimeProfile?.local_llm_base_url || null })
+        : [String(runtimeProfile?.local_llm_base_url || env.OLLAMA_BASE_URL || '').trim()].filter(Boolean);
+      const allCircuitsOpen = candidateBaseUrls.length > 0
+        && typeof localCircuit.isCircuitOpen === 'function'
+        && candidateBaseUrls.every((baseUrl: string) => localCircuit.isCircuitOpen(baseUrl));
+      if (allCircuitsOpen) {
+        console.warn(`[llm-fallback] local circuits OPEN → 체인에서 건너뜀 (${candidateBaseUrls.join(', ')})`);
         skippedProviders.push(`local:circuit_open`);
         attemptTrace.push({
           provider: cfg.provider,

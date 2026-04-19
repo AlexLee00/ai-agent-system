@@ -1,5 +1,6 @@
 import path from 'path';
 import { spawnSync } from 'child_process';
+const NODE_BIN = process.execPath || '/opt/homebrew/bin/node';
 const {
   parseDateFromText,
   parseTimeRangeFromText,
@@ -117,7 +118,7 @@ export function runManualReservationCancellation(args: ManualCancellationArgs = 
     childArgs.push(`--name=${reservation.name}`);
   }
 
-  const result = spawnSync('node', childArgs, {
+  const result = spawnSync(NODE_BIN, childArgs, {
     cwd: path.dirname(scriptPath),
     env: { ...process.env, MODE: IS_OPS ? 'ops' : 'dev' },
     encoding: 'utf8',

@@ -338,22 +338,21 @@ async function _callDirect(agentName, systemPrompt, userPrompt, maxTokens, optio
 async function callSharedFallback(agentName, agentPolicy, systemPrompt, userPrompt, maxTokens, options = {}) {
   const isExitCritical = String(options.purpose || '').toLowerCase().includes('exit');
   const filteredChain = (agentPolicy.fallbackChain || []).filter((entry) => {
-    if (agentName !== 'luna') return true;
-    if (!isExitCritical) return true;
-    return entry.provider !== 'local';
+    if (agentName !== 'luna' || !isExitCritical) return true;
+    return !String(entry.model || '').includes('openai/gpt-oss-20b');
   });
 
   const chain = filteredChain.map((entry) => ({
     provider: entry.provider,
     model: entry.model,
-    maxTokens: entry.maxTokens || maxTokens,
+    maxTokens: isExitCritical ? Math.min(entry.maxTokens || maxTokens, 512) : (entry.maxTokens || maxTokens),
     temperature: entry.temperature ?? 0.1,
   }));
   const result = await callWithFallback({
     chain,
     systemPrompt,
     userPrompt,
-    timeoutMs: options.timeoutMs || null,
+    timeoutMs: options.timeoutMs || (isExitCritical ? 45000 : null),
     logMeta: {
       team: 'luna',
       purpose: options.purpose || (String(options.requestType || '').toLowerCase().includes('valid') ? 'validator' : 'analyst'),
