@@ -74,7 +74,8 @@ function getProviderStats() {
 
 async function _logEvent(provider, eventType, reason, latencyMs) {
   try {
-    await pgPool.query(
+    await pgPool.run(
+      'public',
       'INSERT INTO hub.circuit_events (provider, event_type, reason, latency_ms) VALUES ($1, $2, $3, $4)',
       [provider, eventType, reason, latencyMs]
     );

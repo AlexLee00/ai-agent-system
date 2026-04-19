@@ -2,7 +2,10 @@
 
 // Circuit Breaker + Provider Registry + Critical Chain Registry 단위 테스트
 
-jest.mock('../../../packages/core/lib/pg-pool', () => ({ query: jest.fn().mockResolvedValue({ rows: [] }) }));
+jest.mock('../../../packages/core/lib/pg-pool', () => ({
+  query: jest.fn().mockResolvedValue([]),
+  run: jest.fn().mockResolvedValue({ rowCount: 1, rows: [] }),
+}));
 jest.mock('../../../packages/core/lib/telegram-sender', () => ({
   send: jest.fn().mockResolvedValue(true),
   sendCritical: jest.fn().mockResolvedValue(true),
