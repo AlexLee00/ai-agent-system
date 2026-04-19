@@ -186,6 +186,8 @@ bots/sigma/docs/codex/*
 docs/strategy/
 docs/OPUS_FINAL_HANDOFF.md
 docs/PLATFORM_IMPLEMENTATION_TRACKER.md
+bots/investment/config.yaml
+bots/reservation/context/HANDOFF.md
 docs/PLATFORM_IMPLEMENTATION_TRACKER.md.steward-draft
 docs/archive/
 docs/research/proposals/

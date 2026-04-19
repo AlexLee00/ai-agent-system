@@ -4,6 +4,19 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-04-19: CODEX_LLM_ROUTING_V2 미구현 완료 — 코드점검 + 테스트/문서/SSoT (57차 세션)
+
+- **코드점검**: Phase 1~7 전체 구현 상태 확인, 누락 항목 4종 파악
+- **테스트 4종 신설** (Jay.Core.LLM): routing_log_test / hub_client_test / models_test / telemetry_test
+  → Jay.Core.LLM 47 → 96 tests (0 failures)
+- **Luna hub_client_test.exs 신설**: Luna.V2.LLM.HubClient 환경변수 연동 검증
+  → Luna LLM 159 → 171 tests (0 failures)
+- **unified-caller.ts GROQ_MODEL SSoT 연동**: `getGroqFallback` import from llm-models.json
+- **docs/hub/LLM_ROUTING_V2_ARCHITECTURE.md**: 5계층 아키텍처 + 파일 목록 + Kill Switch 순서
+- **docs/hub/BUDGET_GUARDIAN_GUIDE.md**: 팀 quota/API/알림/Emergency 운영 가이드
+- **CODEX 아카이빙**: `docs/archive/codex-completed/CODEX_LLM_ROUTING_V2.md`
+- 커밋: `b8d8f085`
+
 ## 2026-04-19: CODEX_SKA_EVOLUTION Phase 7 완료 — E2E+부하 테스트 + OPS 배포 (56차 세션)
 
 - **OPS 배포**: git pull → Hub 재시작 (budget-guardian PROJECT_ROOT 3레벨 수정) → llm_cache 마이그레이션 (sigma provider 컬럼 수동 추가) → launchd plists KST 시간 수정 후 설치
