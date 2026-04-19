@@ -586,6 +586,20 @@ function buildDecision(
   });
 }
 
+function buildCryptoGateActionPlan(capitalGuardBreakdown) {
+  const candidates = capitalGuardBreakdown?.actionCandidates || [];
+  const now = candidates.filter((candidate) => candidate.priority === 'high');
+  const next = candidates.filter((candidate) => candidate.priority === 'medium');
+  const later = candidates.filter((candidate) => candidate.priority !== 'high' && candidate.priority !== 'medium');
+
+  return {
+    now,
+    next,
+    later,
+    summary: now[0]?.summary || next[0]?.summary || later[0]?.summary || '추가 action candidate 없음',
+  };
+}
+
 function formatText(report) {
   const sections = [
     {
@@ -666,6 +680,29 @@ function formatText(report) {
               : []),
           ]
         : ['  최근 crypto capital guard 차단 없음'],
+    },
+    {
+      title: '■ crypto gate action plan',
+      lines: [
+        ...(report.cryptoGateActionPlan?.now?.length
+          ? [
+              '  지금:',
+              ...report.cryptoGateActionPlan.now.map((candidate) => `    ${candidate.label}: ${candidate.summary}`),
+            ]
+          : ['  지금: 즉시 실행 후보 없음']),
+        ...(report.cryptoGateActionPlan?.next?.length
+          ? [
+              '  다음:',
+              ...report.cryptoGateActionPlan.next.map((candidate) => `    ${candidate.label}: ${candidate.summary}`),
+            ]
+          : []),
+        ...(report.cryptoGateActionPlan?.later?.length
+          ? [
+              '  보류:',
+              ...report.cryptoGateActionPlan.later.map((candidate) => `    ${candidate.label}: ${candidate.summary}`),
+            ]
+          : []),
+      ],
     },
     {
       title: `■ 최근 ${report.recentLaneBlockPressure.windowMinutes}분 rail 압력`,
@@ -762,6 +799,7 @@ async function buildReport() {
     cryptoLiveGateHealth,
     capitalGuardBreakdown,
   );
+  const cryptoGateActionPlan = buildCryptoGateActionPlan(capitalGuardBreakdown);
   const kisCapabilityHealth = await loadKisCapabilityHealth();
   const decision = buildDecision(
     serviceRows,
@@ -805,6 +843,7 @@ async function buildReport() {
     stalePositionHealth,
     cryptoLiveGateHealth,
     capitalGuardBreakdown,
+    cryptoGateActionPlan,
     cryptoValidationBudgetPolicyHealth,
     kisCapabilityHealth,
     decision,
