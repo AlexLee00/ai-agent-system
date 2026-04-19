@@ -411,8 +411,9 @@
       "status": "active",
       "contextPath": "bots/legal/context",
       "model": {
-        "primary": "anthropic/claude-sonnet-4-6",
+        "primary": "claude-code/sonnet",
         "fallbacks": [
+          "anthropic/claude-sonnet-4-6",
           "groq/qwen3-32b",
           "local/deepseek-r1-32b"
         ]
