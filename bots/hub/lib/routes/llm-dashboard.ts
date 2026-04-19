@@ -151,16 +151,23 @@ function renderLoadTests(loadTests) {
 
   const latest = loadTests.latest;
   const notes = latest.notes || {};
+  const scenarioSummary = Array.isArray(loadTests.scenario_summary) ? loadTests.scenario_summary : [];
   const scenarioNote = notes.scenarioNote ? '<div class="label" style="margin-top:8px">' + notes.scenarioNote + '</div>' : '';
   const providerCounts = notes.providerCounts
     ? Object.entries(notes.providerCounts).map(([k, v]) => k + ': ' + v).join(', ')
     : '-';
+  const summaryLines = scenarioSummary.length
+    ? '<div class="label" style="margin-top:12px">시나리오별 최신: ' + scenarioSummary.map((item) =>
+      item.scenario + ' ' + (Number(item.fail_rate || 0) * 100).toFixed(0) + '% / ' + Math.round(Number(item.avg_ms || 0)) + 'ms'
+    ).join(' | ') + '</div>'
+    : '';
 
   container.innerHTML =
     '<div class="metric">' + (latest.scenario || '-') + '</div>' +
     '<div class="label">실패율 ' + (Number(latest.fail_rate || 0) * 100).toFixed(1) + '% | 평균 ' + Math.round(Number(latest.avg_ms || 0)) + 'ms</div>' +
     '<div class="label" style="margin-top:8px">총 ' + (latest.total_requests || 0) + '건 / 실패 ' + (latest.failed_requests || 0) + '건 / duration ' + Number(latest.duration_s || 0).toFixed(1) + 's</div>' +
     '<div class="label" style="margin-top:8px">provider: ' + providerCounts + '</div>' +
+    summaryLines +
     scenarioNote;
 }
 
