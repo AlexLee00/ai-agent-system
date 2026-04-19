@@ -4,6 +4,21 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-04-20: CODEX_JUSTIN_EVOLUTION 점검 + 미구현 완전 구현 검증 (72차 세션)
+
+- **CODEX_JUSTIN_EVOLUTION.md 전체 점검**: 문서상 "미구현" vs 실제 구현 상태 전수 조사
+- **실태 확인**: 71차 세션(`dc7cdabd`)에서 이미 모든 미구현 항목 통합 완료
+- **신규 구현 확인된 항목** (71차 통합, 72차 재검증):
+  - `justin.js`: `recordInterview`·`writeInspectionPlan`·`submitCase` + `assigned_agents` 자동 저장
+  - `appraisal-store.js`: `createCase` 파라미터 `assigned_agents` 지원
+  - `scripts/record-interview.js`: Phase 7·9 인터뷰 기록 CLI
+  - `scripts/submit-case.js`: Phase 13 법원 제출 + RAG 아카이브 CLI
+  - `scripts/daemon.js`: SLA 위반 감지 데몬 (10개 상태별 기준)
+  - `launchd/ai.legal.daemon.plist`: 15분 주기 데몬
+  - 신규 테스트 3개 (justin-orchestration, llm-fallback, multi-case-parallel)
+- **CODEX_JUSTIN_EVOLUTION.md Phase 3/4/6/7/8 상태 현행화** (모두 ✅ 완료로 업데이트)
+- **테스트**: 197 tests / 11 suites / 0 failures 확인
+
 ## 2026-04-19: JUSTIN_EVOLUTION Phase 8 — Hub API /hub/legal/* + hub-legal-client (68차 세션)
 
 - **bots/hub/lib/routes/legal.ts**: 7개 엔드포인트 신규 (사건 접수/목록/상세/상태/승인/피드백/감정서)
