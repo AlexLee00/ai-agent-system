@@ -13,6 +13,9 @@ jest.mock('../../../../packages/core/lib/telegram-sender', () => ({
 jest.mock('../../../../packages/core/lib/llm-models', () => ({
   getGroqFallback: jest.fn().mockReturnValue('llama-3.3-70b-versatile'),
 }));
+jest.mock('../../../../packages/core/lib/llm-fallback', () => ({
+  callWithFallback: jest.fn().mockResolvedValue({ ok: false, provider: 'failed', error: 'core_fallback_mock', durationMs: 0 }),
+}), { virtual: true });
 jest.mock('../../lib/llm/cache', () => ({
   checkCache: jest.fn().mockResolvedValue({ hit: false }),
   saveCache: jest.fn().mockResolvedValue(undefined),
