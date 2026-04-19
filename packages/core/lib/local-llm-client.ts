@@ -194,6 +194,22 @@ async function isLocalLLMAvailable(): Promise<boolean> {
 }
 
 async function callLocalLLM(model: string, messages: unknown[], options: RequestOptions = {}): Promise<string | null> {
+  const baseUrl = getBaseUrl(options);
+  const cb = require('./local-circuit-breaker');
+
+  // Circuit open → 즉시 null 반환 (대기 없음)
+  if (cb.isCircuitOpen(baseUrl)) {
+    console.warn(`[local-llm-client] circuit OPEN, skip (${baseUrl})`);
+    return null;
+  }
+
+  // 빠른 헬스 체크 (3s timeout) — Ollama 다운 시 90s hang 방지
+  const available = await isLocalLLMAvailable();
+  if (!available) {
+    cb.recordFailure(baseUrl);
+    return null;
+  }
+
   const resolvedModel = await resolveRequestedModel(model);
   const timeoutMs = Number(options.timeoutMs || ((model === LOCAL_MODEL_DEEP || resolvedModel === LOCAL_MODEL_DEEP) ? 120000 : 30000));
 
@@ -211,7 +227,16 @@ async function callLocalLLM(model: string, messages: unknown[], options: Request
       }),
     }, timeoutMs) as ChatCompletionResponse | null;
 
-    return json?.choices?.[0]?.message?.content || null;
+    const result = json?.choices?.[0]?.message?.content || null;
+    if (result) {
+      cb.recordSuccess(baseUrl);
+    } else {
+      cb.recordFailure(baseUrl);
+    }
+    return result;
+  } catch (err) {
+    cb.recordFailure(baseUrl);
+    throw err;
   } finally {
     llmSemaphore.release();
   }

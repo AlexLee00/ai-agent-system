@@ -25,7 +25,7 @@ const {
 const { logsSearchRoute, logsStatsRoute } = require('../lib/routes/logs');
 const { darwinCallbackRoute } = require('../lib/routes/darwin-callback');
 const { memoryRememberRoute, memoryRecallRoute } = require('../lib/routes/memory');
-const { llmCallRoute, llmOAuthRoute, llmGroqRoute, llmStatsRoute } = require('../lib/routes/llm');
+const { llmCallRoute, llmOAuthRoute, llmGroqRoute, llmStatsRoute, llmCircuitRoute } = require('../lib/routes/llm');
 const {
   agentsListRoute,
   agentsDashboardRoute,
@@ -199,6 +199,8 @@ app.post('/hub/llm/call', llmLimiter, llmCallRoute);
 app.post('/hub/llm/oauth', llmLimiter, llmOAuthRoute);
 app.post('/hub/llm/groq', llmLimiter, llmGroqRoute);
 app.get('/hub/llm/stats', generalLimiter, llmStatsRoute);
+app.get('/hub/llm/circuit', generalLimiter, llmCircuitRoute);
+app.delete('/hub/llm/circuit', generalLimiter, llmCircuitRoute);
 
 const { llmDashboardRoute, llmCacheStatsRoute } = require('../lib/routes/llm-dashboard');
 const { llmHealthRoute } = require('../lib/routes/llm-health');
