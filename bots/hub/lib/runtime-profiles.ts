@@ -337,11 +337,11 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_settings": "/Users/alexlee/.openclaw/.claude/sigma-data.settings.json",
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
-        "claude-code/sonnet",
-        "openai-oauth/gpt-5.4"
+        GROQ_SCOUT_ROUTE,
+        "claude-code/sonnet"
       ],
       "fallback_routes": [
-        GROQ_SCOUT_ROUTE,
+        "openai-oauth/gpt-5.4",
         LOCAL_FAST_ROUTE
       ]
     },
@@ -395,11 +395,11 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_settings": "/Users/alexlee/.openclaw/.claude/claude-ops.settings.json",
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
-        "openai-oauth/gpt-5.4",
+        GROQ_SCOUT_ROUTE,
         "claude-code/sonnet"
       ],
       "fallback_routes": [
-        GROQ_SCOUT_ROUTE,
+        "openai-oauth/gpt-5.4",
         LOCAL_FAST_ROUTE
       ]
     },
