@@ -526,6 +526,8 @@ function buildSelectorRegistry(): Record<string, any> {
         openai_perf: [
           { provider: 'openai-oauth', model: openaiPerfModel },
           { provider: 'groq', model: groqScoutModel },
+          { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 1024, temperature: 0.1 },
+          { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 1024, temperature: 0.1 },
           { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.1 },
         ],
         dual_groq: [
@@ -537,6 +539,8 @@ function buildSelectorRegistry(): Record<string, any> {
           { provider: 'openai-oauth', model: openaiMiniModel },
           { provider: 'groq', model: groqScoutModel },
           { provider: 'openai-oauth', model: openaiPerfModel },
+          { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 1024, temperature: 0.1 },
+          { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 1024, temperature: 0.1 },
         ],
         local_primary: [
           { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.1 },
