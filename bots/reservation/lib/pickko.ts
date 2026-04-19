@@ -252,13 +252,11 @@ async function fetchPickkoEntries(
         const tds = Array.from(tr.querySelectorAll('td'));
         if (!tr.querySelector('a[href*="/study/view/"]')) continue;
         if (tds.length < 3) continue;
-
-        const getText = (idx) => idx >= 0 && tds[idx]
-          ? tds[idx].textContent.replace(/\s+/g, ' ').trim() : '';
+        const texts = tds.map((td) => (td && td.textContent ? td.textContent.replace(/\s+/g, ' ').trim() : ''));
 
         // 접수일시 필터 (receiptDate가 있을 때만)
         if (rd && cm.receiptTime >= 0) {
-          const rText = getText(cm.receiptTime);
+          const rText = cm.receiptTime >= 0 && texts[cm.receiptTime] ? texts[cm.receiptTime] : '';
           let rDate = (rText.match(/(\d{4})-(\d{2})-(\d{2})/) || [])[0] || '';
           if (!rDate) {
             const m = rText.match(/(\d{2,4})[.\s]+(\d{1,2})[.\s]+(\d{1,2})/);
@@ -274,23 +272,23 @@ async function fetchPickkoEntries(
 
         // 상태 필터
         if (sk) {
-          const statusText = cm.status >= 0 ? getText(cm.status) : tr.textContent;
+          const statusText = cm.status >= 0 && texts[cm.status] ? texts[cm.status] : tr.textContent;
           if (!statusText.includes(sk)) continue;
         }
 
         // 이용금액 필터
         if (ma > 0) {
-          const amtText = cm.amount >= 0 ? getText(cm.amount) : '';
+          const amtText = cm.amount >= 0 && texts[cm.amount] ? texts[cm.amount] : '';
           const amtNum = parseInt((amtText || '0').replace(/[^0-9]/g, ''), 10);
           if (cm.amount >= 0 && amtNum < ma) continue;
         }
 
-        const name        = getText(cm.name);
-        const phoneRaw    = getText(cm.phone).replace(/[^0-9]/g, '');
-        const room        = getText(cm.room);
-        const combinedText = cm.startTime >= 0 ? getText(cm.startTime) : '';
-        const endText     = cm.isCombined ? '' : (cm.endTime >= 0 ? getText(cm.endTime) : '');
-        const receiptText = cm.receiptTime >= 0 ? getText(cm.receiptTime) : '';
+        const name = cm.name >= 0 && texts[cm.name] ? texts[cm.name] : '';
+        const phoneRaw = (cm.phone >= 0 && texts[cm.phone] ? texts[cm.phone] : '').replace(/[^0-9]/g, '');
+        const room = cm.room >= 0 && texts[cm.room] ? texts[cm.room] : '';
+        const combinedText = cm.startTime >= 0 && texts[cm.startTime] ? texts[cm.startTime] : '';
+        const endText = cm.isCombined ? '' : (cm.endTime >= 0 && texts[cm.endTime] ? texts[cm.endTime] : '');
+        const receiptText = cm.receiptTime >= 0 && texts[cm.receiptTime] ? texts[cm.receiptTime] : '';
 
         let reservationDate = '', startText = combinedText;
         const dm = combinedText.match(/(\d{4})-(\d{2})-(\d{2})/)
@@ -304,7 +302,7 @@ async function fetchPickkoEntries(
         const ti         = startText.indexOf('~');
         const parsedStart = ti >= 0 ? startText.slice(0, ti).trim() : startText;
         const parsedEnd   = cm.isCombined ? (ti >= 0 ? startText.slice(ti + 1).trim() : '') : endText;
-        const amtText2    = cm.amount >= 0 ? getText(cm.amount) : '';
+        const amtText2 = cm.amount >= 0 && texts[cm.amount] ? texts[cm.amount] : '';
         entries.push({ name, phoneRaw, room, reservationDate, startText: parsedStart, endText: parsedEnd, amtText: amtText2, receiptText });
       }
       return entries;
