@@ -91,29 +91,45 @@ function readTodayAuditStatus() {
 
     const text = fs.readFileSync(TODAY_AUDIT_LOG, 'utf8');
     const lines = text.split('\n').map((line) => line.trimEnd()).filter(Boolean);
-    const completeLines = lines.filter((line) => line.includes('⏹ today-audit 완료'));
-    const auditStartLines = lines.filter((line) => line.includes('📋 [오늘 예약 검증]'));
-    const auditSummaryLines = lines.filter((line) => line.includes('✅ 오늘 예약 검증 완료'));
-    const lastCompletedLine = completeLines[completeLines.length - 1] || null;
-    const lastAuditStartLine = auditStartLines[auditStartLines.length - 1] || null;
-    const lastAuditSummaryLine = auditSummaryLines[auditSummaryLines.length - 1] || null;
-    const match = lastCompletedLine ? lastCompletedLine.match(/exit:\s*(\d+)/i) : null;
-    const lastExitCode = match ? Number(match[1]) : null;
-    const summaryMatch = lastAuditSummaryLine
-      ? lastAuditSummaryLine.match(/확인:\s*(\d+),\s*차단추가:\s*(\d+),\s*해제:\s*(\d+),\s*실패:\s*(\d+)/)
-      : null;
-    const summary = summaryMatch
-      ? {
-        okCount: Number(summaryMatch[1]),
-        blockedCount: Number(summaryMatch[2]),
-        unblockedCount: Number(summaryMatch[3]),
-        failedCount: Number(summaryMatch[4]),
-      }
-      : null;
-    const lastAuditDate = lastAuditStartLine ? (lastAuditStartLine.match(/(\d{4}-\d{2}-\d{2})/) || [])[1] || null : null;
     const kst = getCurrentKstParts();
     const shouldHaveRunToday = kst.hour > 9 || (kst.hour === 9 && kst.minute >= 0);
-    const missingTodayRun = shouldHaveRunToday && lastAuditDate !== kst.isoDate;
+    const completionRows = lines.map((line, index) => ({ line, index }))
+      .filter((row) => row.line.includes('⏹ today-audit 완료'))
+      .map((row) => {
+        const candidateLines = lines.slice(0, row.index + 1);
+        const lastAuditStartLine = [...candidateLines].reverse().find((line) => line.includes('📋 [오늘 예약 검증]')) || null;
+        const lastAuditSummaryLine = [...candidateLines].reverse().find((line) => line.includes('✅ 오늘 예약 검증 완료')) || null;
+        const match = row.line.match(/exit:\s*(\d+)/i);
+        const lastExitCode = match ? Number(match[1]) : null;
+        const summaryMatch = lastAuditSummaryLine
+          ? lastAuditSummaryLine.match(/확인:\s*(\d+),\s*차단추가:\s*(\d+),\s*해제:\s*(\d+),\s*실패:\s*(\d+)/)
+          : null;
+        const summary = summaryMatch
+          ? {
+            okCount: Number(summaryMatch[1]),
+            blockedCount: Number(summaryMatch[2]),
+            unblockedCount: Number(summaryMatch[3]),
+            failedCount: Number(summaryMatch[4]),
+          }
+          : null;
+        const lastAuditDate = lastAuditStartLine ? (lastAuditStartLine.match(/(\d{4}-\d{2}-\d{2})/) || [])[1] || null : null;
+        return {
+          ...row,
+          lastExitCode,
+          lastAuditDate,
+          summary,
+        };
+      });
+    const latestCompletion = completionRows[completionRows.length - 1] || null;
+    const latestSuccessfulToday = [...completionRows].reverse().find((row) =>
+      row.lastExitCode === 0 && row.lastAuditDate === kst.isoDate
+    ) || null;
+    const selected = latestSuccessfulToday || latestCompletion;
+    const lastCompletedLine = selected?.line || null;
+    const lastExitCode = selected?.lastExitCode ?? null;
+    const summary = selected?.summary || null;
+    const lastAuditDate = selected?.lastAuditDate || null;
+    const missingTodayRun = shouldHaveRunToday && !latestSuccessfulToday && lastAuditDate !== kst.isoDate;
 
     return {
       exists: true,
@@ -122,7 +138,7 @@ function readTodayAuditStatus() {
       lastAuditDate,
       missingTodayRun,
       summary,
-      recentSuccess: lastExitCode === 0,
+      recentSuccess: Boolean(latestSuccessfulToday || lastExitCode === 0),
     };
   } catch (error) {
     return {

@@ -274,35 +274,55 @@ function buildTodayAuditHealth() {
     const text = fs.readFileSync(TODAY_AUDIT_LOG, 'utf8');
     const lines = text.split('\n').map((line) => line.trimEnd()).filter(Boolean);
     const recentLines = lines.slice(-200);
-    const completionIndex = recentLines.map((line, index) => ({ line, index }))
-      .filter((row) => row.line.includes('⏹ today-audit 완료'))
-      .slice(-1)[0]?.index ?? -1;
-    const lastCompleted = completionIndex >= 0 ? recentLines[completionIndex] : null;
-    const candidateLines = completionIndex >= 0 ? recentLines.slice(0, completionIndex + 1) : recentLines;
-    const lastAuditStarted = [...candidateLines].reverse().find((line) => line.includes('📋 [오늘 예약 검증]')) || null;
-    const lastWrapperStarted = [...candidateLines].reverse().find((line) => line.includes('▶ today-audit 시작')) || null;
-    const lastStarted = lastAuditStarted || lastWrapperStarted;
-    const exitMatch = lastCompleted ? lastCompleted.match(/exit:\s*(\d+)/i) : null;
-    const lastExitCode = exitMatch ? Number(exitMatch[1]) : null;
-    const recentSuccess = lastExitCode === 0;
-    const lastAuditDate = lastAuditStarted?.match(/(\d{4}-\d{2}-\d{2})/)?.[1] || null;
     const kst = getCurrentKstParts();
     const shouldHaveRunToday = kst.hour > 9 || (kst.hour === 9 && kst.minute >= 0);
-    const missingTodayRun = shouldHaveRunToday && lastAuditDate !== kst.isoDate;
-    const summaryLine = completionIndex >= 0
-      ? [...candidateLines].reverse().find((line) => line.includes('✅ 오늘 예약 검증 완료')) || null
-      : null;
-    const summaryMatch = summaryLine
-      ? summaryLine.match(/확인:\s*(\d+),\s*차단추가:\s*(\d+),\s*해제:\s*(\d+),\s*실패:\s*(\d+)/)
-      : null;
-    const summary = summaryMatch
-      ? {
-        okCount: Number(summaryMatch[1]),
-        blockedCount: Number(summaryMatch[2]),
-        unblockedCount: Number(summaryMatch[3]),
-        failedCount: Number(summaryMatch[4]),
-      }
-      : null;
+    const completionRows = recentLines.map((line, index) => ({ line, index }))
+      .filter((row) => row.line.includes('⏹ today-audit 완료'))
+      .map((row) => {
+        const candidateLines = recentLines.slice(0, row.index + 1);
+        const lastAuditStarted = [...candidateLines].reverse().find((line) => line.includes('📋 [오늘 예약 검증]')) || null;
+        const lastWrapperStarted = [...candidateLines].reverse().find((line) => line.includes('▶ today-audit 시작')) || null;
+        const summaryLine = [...candidateLines].reverse().find((line) => line.includes('✅ 오늘 예약 검증 완료')) || null;
+        const exitMatch = row.line.match(/exit:\s*(\d+)/i);
+        const lastExitCode = exitMatch ? Number(exitMatch[1]) : null;
+        const lastAuditDate = lastAuditStarted?.match(/(\d{4}-\d{2}-\d{2})/)?.[1] || null;
+        const summaryMatch = summaryLine
+          ? summaryLine.match(/확인:\s*(\d+),\s*차단추가:\s*(\d+),\s*해제:\s*(\d+),\s*실패:\s*(\d+)/)
+          : null;
+        const summary = summaryMatch
+          ? {
+            okCount: Number(summaryMatch[1]),
+            blockedCount: Number(summaryMatch[2]),
+            unblockedCount: Number(summaryMatch[3]),
+            failedCount: Number(summaryMatch[4]),
+          }
+          : null;
+        return {
+          ...row,
+          lastAuditStarted,
+          lastWrapperStarted,
+          lastStarted: lastAuditStarted || lastWrapperStarted,
+          lastExitCode,
+          lastAuditDate,
+          summaryLine,
+          summary,
+        };
+      });
+
+    const latestCompletion = completionRows[completionRows.length - 1] || null;
+    const latestSuccessfulToday = [...completionRows].reverse().find((row) =>
+      row.lastExitCode === 0 && row.lastAuditDate === kst.isoDate
+    ) || null;
+    const selected = latestSuccessfulToday || latestCompletion;
+    const lastCompleted = selected?.line || null;
+    const lastExitCode = selected?.lastExitCode ?? null;
+    const lastAuditDate = selected?.lastAuditDate || null;
+    const lastStarted = selected?.lastStarted || null;
+    const lastWrapperStarted = selected?.lastWrapperStarted || null;
+    const summary = selected?.summary || null;
+    const recentSuccess = Boolean(latestSuccessfulToday || lastExitCode === 0);
+    const missingTodayRun = shouldHaveRunToday && !latestSuccessfulToday && lastAuditDate !== kst.isoDate;
+    const completionIndex = selected?.index ?? -1;
     const samples = completionIndex >= 0
       ? recentLines.slice(Math.max(0, completionIndex - 4), completionIndex + 1).map((line) => `  ${line}`)
       : recentLines.slice(-5).map((line) => `  ${line}`);
