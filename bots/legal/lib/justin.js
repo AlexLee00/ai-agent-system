@@ -214,6 +214,22 @@ async function writeQueryLetter(caseId, caseData, queryRound = 1) {
   return briefing.writeQueryLetter(caseId, caseData, queryRound);
 }
 
+// ─── 상태 조회 ────────────────────────────────────────────────
+
+async function getStatus() {
+  const active = await store.listCases();
+  return {
+    active_cases: active.length,
+    cases: active.map(c => ({
+      id: c.id,
+      case_number: c.case_number,
+      case_type: c.case_type,
+      status: c.status,
+      deadline: c.deadline,
+    })),
+  };
+}
+
 module.exports = {
   receiveCase,
   classifyCase,
@@ -225,4 +241,5 @@ module.exports = {
   runFullWorkflow,
   writeInceptionPlan,
   writeQueryLetter,
+  getStatus,
 };
