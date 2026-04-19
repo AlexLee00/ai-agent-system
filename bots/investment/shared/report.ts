@@ -7,17 +7,62 @@
 
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
+import fs from 'node:fs';
 import { formatExecutionTag, getMarketExecutionModeInfo } from './secrets.ts';
 const { createEventReporter } = require('../../../packages/core/lib/telegram/reporter');
 
 const DIVIDER = '──────────';
 const SMALL_DIVIDER = '──────────';
+const LOCAL_LLM_HEALTH_HISTORY_FILE = '/tmp/investment-local-llm-health-history.jsonl';
 
 function compactReasoning(reasoning, maxLength = 90) {
   const text = String(reasoning || '').replace(/\s+/g, ' ').trim();
   if (!text) return '';
   if (text.length <= maxLength) return text;
   return `${text.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
+function loadRecentLocalLlmStatus() {
+  try {
+    if (!fs.existsSync(LOCAL_LLM_HEALTH_HISTORY_FILE)) return null;
+    const rows = String(fs.readFileSync(LOCAL_LLM_HEALTH_HISTORY_FILE, 'utf8') || '')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .slice(-6)
+      .map((line) => {
+        try {
+          return JSON.parse(line);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+    if (!rows.length) return null;
+
+    const latest = rows[rows.length - 1] || null;
+    let transitionCount = 0;
+    for (let i = 1; i < rows.length; i += 1) {
+      if (Boolean(rows[i - 1]?.probeOk) !== Boolean(rows[i]?.probeOk)) transitionCount += 1;
+    }
+
+    const okCount = rows.filter((row) => row?.probeOk).length;
+    const failCount = rows.filter((row) => row && !row.probeOk).length;
+    let status = 'stable';
+    if (rows.length < 2) status = 'warming_up';
+    else if (failCount > 0 && transitionCount >= 2) status = 'flapping';
+    else if (latest && !latest.probeOk) status = 'degraded';
+
+    return {
+      status,
+      latest,
+      transitionCount,
+      okCount,
+      failCount,
+    };
+  } catch {
+    return null;
+  }
 }
 
 const publishLunaMessage = createEventReporter({
@@ -158,13 +203,17 @@ export function notifyCircuitBreaker({ reason, type, dailyPnL, weeklyPnL }) {
 /** @param {string} context @param {any} error */
 export function notifyError(context, error) {
   const trace = Array.isArray(error?.llmTrace) ? error.llmTrace : [];
+  const localStatus = loadRecentLocalLlmStatus();
   const traceLine = trace.length > 0
     ? `\nLLM trace: ${trace
       .slice(0, 5)
       .map((entry) => `${entry.provider}/${entry.model}:${entry.status}${entry.reason ? `(${String(entry.reason).slice(0, 32)})` : ''}`)
       .join(' -> ')}`
     : '';
-  const msg = `❌ [오류] ${context}\n${error?.message || error}${traceLine}`;
+  const localLine = /로컬 LLM 응답 없음|local llm/i.test(String(error?.message || error || '')) && localStatus
+    ? `\nLocal probe: ${localStatus.status} / ok ${localStatus.okCount} / fail ${localStatus.failCount}${localStatus.latest?.probeError ? ` / ${localStatus.latest.probeError}` : ''}`
+    : '';
+  const msg = `❌ [오류] ${context}\n${error?.message || error}${traceLine}${localLine}`;
   return publishLunaMessage({
     message: msg,
     eventType: 'alert',
