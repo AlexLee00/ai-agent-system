@@ -265,14 +265,17 @@ function buildTodayAuditHealth() {
     const text = fs.readFileSync(TODAY_AUDIT_LOG, 'utf8');
     const lines = text.split('\n').map((line) => line.trimEnd()).filter(Boolean);
     const recentLines = lines.slice(-200);
-    const startLines = recentLines.filter((line) => line.includes('▶ today-audit 시작'));
-    const completeLines = recentLines.filter((line) => line.includes('⏹ today-audit 완료'));
-    const lastStarted = startLines[startLines.length - 1] || null;
-    const lastCompleted = completeLines[completeLines.length - 1] || null;
+    const completionIndex = recentLines.map((line, index) => ({ line, index }))
+      .filter((row) => row.line.includes('⏹ today-audit 완료'))
+      .slice(-1)[0]?.index ?? -1;
+    const lastCompleted = completionIndex >= 0 ? recentLines[completionIndex] : null;
+    const candidateLines = completionIndex >= 0 ? recentLines.slice(0, completionIndex + 1) : recentLines;
+    const lastAuditStarted = [...candidateLines].reverse().find((line) => line.includes('📋 [오늘 예약 검증]')) || null;
+    const lastWrapperStarted = [...candidateLines].reverse().find((line) => line.includes('▶ today-audit 시작')) || null;
+    const lastStarted = lastAuditStarted || lastWrapperStarted;
     const exitMatch = lastCompleted ? lastCompleted.match(/exit:\s*(\d+)/i) : null;
     const lastExitCode = exitMatch ? Number(exitMatch[1]) : null;
     const recentSuccess = lastExitCode === 0;
-    const completionIndex = lastCompleted ? recentLines.lastIndexOf(lastCompleted) : -1;
     const samples = completionIndex >= 0
       ? recentLines.slice(Math.max(0, completionIndex - 4), completionIndex + 1).map((line) => `  ${line}`)
       : recentLines.slice(-5).map((line) => `  ${line}`);
@@ -288,6 +291,7 @@ function buildTodayAuditHealth() {
         lastExitCode,
         lastCompletedAt: lastCompleted,
         lastStartedAt: lastStarted,
+        lastWrapperStartedAt: lastWrapperStarted,
         recentSuccess,
       };
     }
@@ -302,6 +306,7 @@ function buildTodayAuditHealth() {
       lastExitCode,
       lastCompletedAt: lastCompleted,
       lastStartedAt: lastStarted,
+      lastWrapperStartedAt: lastWrapperStarted,
       recentSuccess,
     };
   } catch (error) {
@@ -312,6 +317,7 @@ function buildTodayAuditHealth() {
       lastExitCode: null,
       lastCompletedAt: null,
       lastStartedAt: null,
+      lastWrapperStartedAt: null,
       recentSuccess: false,
     };
   }
@@ -720,6 +726,7 @@ async function buildReport() {
       lastExitCode: todayAuditHealth.lastExitCode,
       lastCompletedAt: todayAuditHealth.lastCompletedAt,
       lastStartedAt: todayAuditHealth.lastStartedAt,
+      lastWrapperStartedAt: todayAuditHealth.lastWrapperStartedAt,
       recentSuccess: todayAuditHealth.recentSuccess,
     },
     n8nCommandHealth: {
