@@ -8,12 +8,14 @@
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 import fs from 'node:fs';
+import { execSync } from 'node:child_process';
 import { formatExecutionTag, getMarketExecutionModeInfo } from './secrets.ts';
 const { createEventReporter } = require('../../../packages/core/lib/telegram/reporter');
 
 const DIVIDER = '──────────';
 const SMALL_DIVIDER = '──────────';
 const LOCAL_LLM_HEALTH_HISTORY_FILE = '/tmp/investment-local-llm-health-history.jsonl';
+const SECONDARY_LOCAL_PORT = Number(String(process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11435').match(/:(\d+)/)?.[1] || '11435');
 
 function compactReasoning(reasoning, maxLength = 90) {
   const text = String(reasoning || '').replace(/\s+/g, ' ').trim();
@@ -62,6 +64,18 @@ function loadRecentLocalLlmStatus() {
     };
   } catch {
     return null;
+  }
+}
+
+function getLocalStandbySummary() {
+  try {
+    const output = execSync(`lsof -nP -iTCP:${SECONDARY_LOCAL_PORT} -sTCP:LISTEN`, {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return output.trim() ? `standby 준비됨 (127.0.0.1:${SECONDARY_LOCAL_PORT})` : `standby 없음 (127.0.0.1:${SECONDARY_LOCAL_PORT})`;
+  } catch {
+    return `standby 없음 (127.0.0.1:${SECONDARY_LOCAL_PORT})`;
   }
 }
 
@@ -211,7 +225,7 @@ export function notifyError(context, error) {
       .join(' -> ')}`
     : '';
   const localLine = /로컬 LLM 응답 없음|local llm/i.test(String(error?.message || error || '')) && localStatus
-    ? `\nLocal probe: ${localStatus.status} / ok ${localStatus.okCount} / fail ${localStatus.failCount}${localStatus.latest?.probeError ? ` / ${localStatus.latest.probeError}` : ''}`
+    ? `\nLocal probe: ${localStatus.status} / ok ${localStatus.okCount} / fail ${localStatus.failCount}${localStatus.latest?.probeError ? ` / ${localStatus.latest.probeError}` : ''}\nLocal standby: ${getLocalStandbySummary()}`
     : '';
   const msg = `❌ [오류] ${context}\n${error?.message || error}${traceLine}${localLine}`;
   return publishLunaMessage({
