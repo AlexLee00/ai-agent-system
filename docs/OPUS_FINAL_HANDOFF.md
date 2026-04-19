@@ -1,3 +1,43 @@
+# 세션 인수인계 — 2026-04-20 (CODEX_JUSTIN_EVOLUTION Phase 6 피드백 루프 — 70차 세션)
+
+## 완료 요약 ✅ (70차 세션)
+
+### CODEX_JUSTIN_EVOLUTION Phase 6 — 피드백 루프 + 테스트 확대
+
+**이번 세션 (70차)**:
+- `bots/legal/scripts/record-feedback.js`: 신규 — 법원 판결 수신 → `legal.feedback` DB + `rag_legal` RAG 저장
+  - `--case-id`/`--case` 사건 조회
+  - `--decision` 판결 요지, `--accuracy` (accurate/partial/inaccurate) 정확도
+  - `--no-rag` 플래그: MLX 미기동 시 RAG 건너뜀
+  - 피드백 등록 시 사건 status → `submitted` 자동 갱신
+- `packages/core/lib/rag.ts`: `rag_legal` 컬렉션 추가 (이미 HEAD에 포함 확인)
+- `bots/legal/__tests__/inspect-sw.test.js`: 신규 — 30개 단위 테스트
+  - STATUS_MAP 변환 (working→operational, broken→inoperative)
+  - parseArgs (cat2/cat3 포함), 요약 통계 로직 검증
+- `bots/legal/__tests__/record-feedback.test.js`: 신규 — 25개 단위 테스트
+  - ACCURACY_KR/EMOJI, parseArgs, buildRagContent (court 미상/메모 없음 등 엣지케이스)
+- `packages/core/lib/pg-pool.ts`: `checkPoolHealth` 버그 수정 — `stat.total` → `stat.active`
+
+**테스트**: 92 → 132 tests (+40), 0 failures
+**커밋**: `bbc04f29`
+
+**발견된 이슈 (수정 완료)**:
+- `inspect-sw.js`가 HEAD에서 이미 STATUS_MAP/category1 수정 반영된 상태 확인
+- `rag.ts`에 `rag_legal` 이미 포함 확인 → 재추가 시도는 no-op
+
+**Phase 6 완료 현황**:
+- [x] `legal.feedback` DB 테이블 (001-appraisal-schema.sql 기존 포함)
+- [x] `record-feedback.js` CLI
+- [x] `rag_legal` 컬렉션 RAG 저장 (`storeToRag` 실패 시 경고만, 서비스 중단 없음)
+- [ ] 피드백 기반 자동 학습 개선 (Phase 6 장기 목표)
+
+**다음 세션 우선순위**:
+1. OPS Hub 재시작 후 `/hub/legal/` API 실제 동작 + 텔레그램 알림 검증
+2. `launchctl load ~/Library/LaunchAgents/ai.legal.health-check.plist` OPS 등록
+3. Phase 5 — 대법원 API 키 확보 후 `garam.js` 실제 연동
+
+---
+
 # 세션 인수인계 — 2026-04-19 (CODEX_JUSTIN_EVOLUTION Phase 8 완성 — 69차 세션)
 
 ## 완료 요약 ✅ (69차 세션)
