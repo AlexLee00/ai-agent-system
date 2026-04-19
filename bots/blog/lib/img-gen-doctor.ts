@@ -95,11 +95,7 @@ async function diagnoseImageGeneration() {
  */
 async function reportImageGenFailure(title, errorMessage) {
   const message = `🔴 [블로팀] 이미지 생성 실패\n글: ${title}\n원인: ${errorMessage}`;
-  await runIfOps(
-    'blog-img-fail',
-    () => postAlarm({ message, team: 'blog', bot: 'img-gen-doctor', level: 'critical' }),
-    () => console.error('[DEV]', message)
-  ).catch(() => {});
+  await postAlarm(message, { team: 'blog', bot: 'img-gen-doctor', level: 'critical' }).catch(() => {});
 }
 
 /**
@@ -108,15 +104,33 @@ async function reportImageGenFailure(title, errorMessage) {
 async function reportImageDiagnosis(issues) {
   if (!issues?.length) return;
   const message = `🔴 [블로팀] 이미지 생성 진단 결과\n${issues.join('\n')}`;
-  await runIfOps(
-    'blog-img-diag',
-    () => postAlarm({ message, team: 'blog', bot: 'img-gen-doctor', level: 'critical' }),
-    () => console.error('[DEV]', message)
-  ).catch(() => {});
+  await postAlarm(message, { team: 'blog', bot: 'img-gen-doctor', level: 'critical' }).catch(() => {});
+}
+
+/**
+ * Fallback 썸네일 반환 (Draw Things 실패 시)
+ * 카테고리별 미리 준비된 기본 썸네일 경로 반환
+ */
+async function useFallbackThumbnail(category) {
+  try {
+    const env = require('../../../packages/core/lib/env');
+    const path = require('path');
+    const fs = require('fs');
+    const fallbackDir = path.join(env.PROJECT_ROOT, 'bots', 'blog', 'assets', 'fallback-thumbs');
+    if (!fs.existsSync(fallbackDir)) return null;
+    const files = fs.readdirSync(fallbackDir).filter(f => f.endsWith('.jpg') || f.endsWith('.png'));
+    if (!files.length) return null;
+    // 카테고리 매칭 또는 첫 번째 파일 사용
+    const matched = files.find(f => f.includes(category)) || files[0];
+    return path.join(fallbackDir, matched);
+  } catch {
+    return null;
+  }
 }
 
 module.exports = {
   diagnoseImageGeneration,
   reportImageGenFailure,
   reportImageDiagnosis,
+  useFallbackThumbnail,
 };

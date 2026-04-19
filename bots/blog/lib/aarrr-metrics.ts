@@ -33,13 +33,15 @@ async function getAcquisitionMetrics(days = 30) {
     `, [days]);
 
     const row = rows?.[0] || {};
+    const total_reach = Number(row.total_reach || 0);
     return {
       total_clicks: Number(row.total_clicks || 0),
-      total_reach: Number(row.total_reach || 0),
+      total_reach,
+      total_new_visitors: total_reach, // 별칭 (테스트 + 리포트 호환)
       top_channel: row.top_channel || 'naver',
     };
   } catch {
-    return { total_clicks: 0, total_reach: 0, top_channel: 'naver' };
+    return { total_clicks: 0, total_reach: 0, total_new_visitors: 0, top_channel: 'naver' };
   }
 }
 
