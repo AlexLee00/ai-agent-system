@@ -40,7 +40,9 @@ type TeamKey =
   | 'claude-lead'
   | 'meeting'
   | 'emergency'
-  | 'blog';
+  | 'blog'
+  | 'legal'
+  | 'justin';
 
 type SecretPayload = {
   telegram_bot_token?: string;
@@ -85,7 +87,7 @@ function _alertsDisabled(): boolean {
 }
 
 // ── Team → secrets.json 키 매핑 ──────────────────────────────────────
-// telegram_topic_ids.{ general, ska, luna, claude_lead, meeting, emergency }
+// telegram_topic_ids.{ general, ska, luna, claude_lead, meeting, emergency, legal }
 const TOPIC_KEYS = {
   'general':     'general',
   'reservation': 'ska',
@@ -97,6 +99,8 @@ const TOPIC_KEYS = {
   'meeting':     'meeting',
   'emergency':   'emergency',
   'blog':        'blog',
+  'legal':       'legal',
+  'justin':      'legal',
 };
 
 function _getThreadId(team: string): string | null {

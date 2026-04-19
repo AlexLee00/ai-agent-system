@@ -14,6 +14,22 @@ const path = require('path');
 const env = require('../../../../packages/core/lib/env');
 
 const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots/legal/lib/appraisal-store');
+const SENDER_PATH = path.join(env.PROJECT_ROOT, 'packages/core/lib/telegram-sender');
+
+function _notifyNewCase(row: any): void {
+  try {
+    const sender = require(SENDER_PATH);
+    const typeLabel: Record<string, string> = {
+      copyright: '저작권 침해', contract: '계약 위반',
+      patent: '특허 침해', trade_secret: '영업비밀 침해', other: '기타',
+    };
+    const label = typeLabel[row.case_type] || row.case_type;
+    const msg = `⚖️ [저스틴팀] 새 감정 사건 접수\n사건번호: ${row.case_number}\n법원: ${row.court}\n유형: ${label}\n원고: ${row.plaintiff}\n피고: ${row.defendant}`;
+    sender.send('legal', msg).catch(() => {/* 알림 실패는 무시 */});
+  } catch {
+    // telegram-sender 로드 실패 시 무시 (알림은 부가 기능)
+  }
+}
 
 const VALID_CASE_TYPES = ['copyright', 'contract', 'patent', 'trade_secret', 'other'] as const;
 const VALID_STATUSES = ['received', 'analyzing', 'drafting', 'review', 'approved', 'submitted', 'closed'] as const;
@@ -73,6 +89,7 @@ export async function legalCaseCreateRoute(req: any, res: any) {
     const row = await store.createCase({ case_number, court, case_type, plaintiff, defendant, appraisal_items, deadline, notes });
 
     console.log(`[HubLegal] 사건 접수: ${case_number} (id=${row.id})`);
+    _notifyNewCase(row);
     return res.status(201).json({ ok: true, case: row });
   } catch (err: any) {
     console.error('[HubLegal] case 생성 실패:', err.message);

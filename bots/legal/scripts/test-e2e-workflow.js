@@ -57,7 +57,7 @@ async function testCaseIntake(store, justin, router) {
     }
 
     // 사건 유형 분류 (키워드 기반)
-    const routerResult = router.classifyByKeyword('소스코드 유사도 저작권 침해 GUI 화면구성');
+    const routerResult = router.inferTypeFromKeywords('소스코드 유사도 저작권 침해 GUI 화면구성');
     pass(`키워드 분류: ${routerResult || '(LLM 분류 필요)'}`);
 
     // 사건 생성
