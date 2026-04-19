@@ -53,6 +53,7 @@ const { buildIssueHints, rememberHealthEvent } = createHealthMemoryHelper({
 
 // naver-monitor 로그 staleness 체크
 const NAVER_LOG = '/tmp/naver-ops-mode.log';
+const TODAY_AUDIT_LOG = '/tmp/today-audit.log';
 const LOG_STALE_MS = 15 * 60 * 1000; // 15분 무활동 → 크래시루프 의심
 
 // ─── 상태 파일 (공통 모듈 위임) ─────────────────────────────────
@@ -70,6 +71,35 @@ function checkNaverLogStaleness() {
     return { exists: true, ageMs, stale: ageMs > LOG_STALE_MS };
   } catch {
     return { exists: false, ageMs: null, stale: false }; // 파일 없으면 스킵
+  }
+}
+
+function readTodayAuditStatus() {
+  try {
+    if (!fs.existsSync(TODAY_AUDIT_LOG)) {
+      return { exists: false, lastExitCode: null, lastCompletedLine: null, recentSuccess: false };
+    }
+
+    const text = fs.readFileSync(TODAY_AUDIT_LOG, 'utf8');
+    const lines = text.split('\n').map((line) => line.trimEnd()).filter(Boolean);
+    const completeLines = lines.filter((line) => line.includes('⏹ today-audit 완료'));
+    const lastCompletedLine = completeLines[completeLines.length - 1] || null;
+    const match = lastCompletedLine ? lastCompletedLine.match(/exit:\s*(\d+)/i) : null;
+    const lastExitCode = match ? Number(match[1]) : null;
+
+    return {
+      exists: true,
+      lastExitCode,
+      lastCompletedLine,
+      recentSuccess: lastExitCode === 0,
+    };
+  } catch (error) {
+    return {
+      exists: true,
+      lastExitCode: null,
+      lastCompletedLine: `read-failed:${error.message}`,
+      recentSuccess: false,
+    };
   }
 }
 
@@ -184,6 +214,31 @@ async function main() {
       });
       await rememberHealthEvent('stale:ai.ska.naver-monitor', 'recovery', recoveryMsg, 1);
       delete state['stale:ai.ska.naver-monitor'];
+    }
+  }
+
+  // 5. today-audit 최근 실행 결과 체크
+  const todayAudit = readTodayAuditStatus();
+  if (todayAudit.exists && todayAudit.lastExitCode != null && todayAudit.lastExitCode !== 0) {
+    const key = `audit-failed:ai.ska.today-audit:${todayAudit.lastExitCode}`;
+    if (canAlert(state, key)) {
+      issues.push({
+        key,
+        level: 3,
+        msg: `⚠️ [스카 헬스] today-audit 최근 실행 실패\n${todayAudit.lastCompletedLine || `exit code: ${todayAudit.lastExitCode}`}`,
+      });
+    }
+  } else if (todayAudit.exists && todayAudit.recentSuccess) {
+    const prevKeys = Object.keys(state).filter((k) => k.startsWith('audit-failed:ai.ska.today-audit:'));
+    if (prevKeys.length > 0) {
+      console.log('[헬스체크] today-audit 최근 성공 확인');
+      const recoveryMsg = `✅ [스카 헬스] today-audit 회복\n최근 실행 성공 — 자동 감지`;
+      await publishReservationAlert({
+        from_bot: 'ska', event_type: 'health_check', alert_level: 1,
+        message: recoveryMsg,
+      });
+      await rememberHealthEvent('audit-failed:ai.ska.today-audit:0', 'recovery', recoveryMsg, 1);
+      prevKeys.forEach((k) => delete state[k]);
     }
   }
 
