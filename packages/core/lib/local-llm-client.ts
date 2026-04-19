@@ -182,10 +182,16 @@ async function resolveRequestedModel(model: string, options: { baseUrl?: string 
 async function resolveEmbeddingModel(model = LOCAL_MODEL_EMBED, options: { baseUrl?: string } = {}): Promise<string> {
   const baseUrl = getEmbeddingsBaseUrl(options);
   const models = await getAvailableModels({ baseUrl });
-  if (models.length === 0) return model;
+  const requestedLooksLikeEmbed = /embed/i.test(model);
+  if (models.length === 0) {
+    if (!requestedLooksLikeEmbed && LOCAL_MODEL_EMBED !== model) {
+      console.warn(`[local-llm-client] embedding model '${model}' 부적합 → 기본 embedding 모델 '${LOCAL_MODEL_EMBED}' 사용`);
+      return LOCAL_MODEL_EMBED;
+    }
+    return requestedLooksLikeEmbed ? model : LOCAL_MODEL_EMBED;
+  }
 
   const hasRequestedModel = models.includes(model);
-  const requestedLooksLikeEmbed = /embed/i.test(model);
   if (hasRequestedModel && requestedLooksLikeEmbed) return model;
 
   const remapped = models.find((candidate) => /embed/i.test(candidate)) || null;
