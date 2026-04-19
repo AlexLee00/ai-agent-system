@@ -21,15 +21,22 @@ const LEGAL_CHAIN = [
   { provider: 'local', model: 'deepseek-r1-32b', maxTokens: 4096, temperature: 0.1 },
 ];
 
+function stripThinkTags(text) {
+  if (!text) return text;
+  return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+}
+
 async function callLegal({ systemPrompt, userPrompt, agent, requestType, maxTokens = 8192 }) {
   await ensureInit();
   const chain = LEGAL_CHAIN.map(e => ({ ...e, maxTokens: Math.min(e.maxTokens, maxTokens) }));
-  return callWithFallback({
+  const result = await callWithFallback({
     chain,
     systemPrompt,
     userPrompt,
     logMeta: { team: 'legal', bot: agent, requestType },
   });
+  if (result && result.text) result.text = stripThinkTags(result.text);
+  return result;
 }
 
 module.exports = { callLegal };
