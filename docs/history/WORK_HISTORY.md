@@ -4,6 +4,17 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-04-19: CODEX_BLOG_EVOLUTION Phase 6+7 완료 — Marketing Self-Rewarding + Agentic RAG (58차 세션)
+
+- **Phase 6 — Self-Rewarding DPO**: marketing-dpo.ts (선호 쌍 + LLM-as-a-Judge), cross-platform-transfer.ts (인스타→블로그/페북), marketing-rag.ts (4 모듈 Agentic RAG)
+- **topic-selector DPO 통합**: `_loadDpoHints` + `_applyDpoScore` — BLOG_DPO_ENABLED=true 시 후보 점수 재조정
+- **launchd**: ai.blog.dpo-learning.plist — 매주 월요일 03:00 KST (Kill Switch OFF)
+- **DB**: 020-dpo-self-rewarding.sql — dpo_preference_pairs + success_pattern_library + failure_taxonomy
+- **Phase 7 테스트**: E2E 22개 (5 시나리오) + 부하 8개 (3 시나리오) + DPO 37개 — 전체 264개
+- **운영 문서**: EVOLUTION_ARCHITECTURE.md + DPO_LEARNING_GUIDE.md + ROI_DASHBOARD_GUIDE.md
+- **커밋**: b0fe6714 | **태그**: pre-phase-7-blog-evolution
+- **CODEX_BLOG_EVOLUTION Phase 1~7 전체 완료**
+
 ## 2026-04-19: CODEX_LLM_ROUTING_V2 미구현 완료 — 코드점검 + 테스트/문서/SSoT (57차 세션)
 
 - **코드점검**: Phase 1~7 전체 구현 상태 확인, 누락 항목 4종 파악
