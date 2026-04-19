@@ -4,6 +4,14 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-04-19: CODEX_BLOG_EVOLUTION 코드점검 + 아카이빙 + gitignore/hook 수정 (59차 세션)
+
+- **코드점검 완료**: TS 모듈 23개, launchd plist 28개, 문서 3종 모두 존재 확인
+- **테스트 최종 확인**: 327개 0 failures (e2e 22개 + 부하 8개 포함)
+- **CODEX 아카이빙**: `CODEX_BLOG_EVOLUTION.md` → `docs/archive/codex-completed/`
+- **gitignore 긴급 수정**: `bots/investment/config.yaml`, `bots/reservation/context/HANDOFF.md` git 제외
+- **pre-commit hook 수정**: BLOCKED_FILES 삭제(D) 허용 — `git rm --cached` 커밋 차단 버그 수정
+
 ## 2026-04-19: CODEX_BLOG_EVOLUTION Phase 6+7 완료 — Marketing Self-Rewarding + Agentic RAG (58차 세션)
 
 - **Phase 6 — Self-Rewarding DPO**: marketing-dpo.ts (선호 쌍 + LLM-as-a-Judge), cross-platform-transfer.ts (인스타→블로그/페북), marketing-rag.ts (4 모듈 Agentic RAG)
