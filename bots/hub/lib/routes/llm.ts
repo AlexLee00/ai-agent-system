@@ -3,6 +3,7 @@ const { callClaudeCodeOAuth } = require('../llm/claude-code-oauth');
 const { callGroqFallback } = require('../llm/groq-fallback');
 const { callWithFallback } = require('../llm/unified-caller');
 const { loadGroqAccounts } = require('../llm/secrets-loader');
+const { getAllCircuitStatuses, resetCircuit } = require('../../../../packages/core/lib/local-circuit-breaker');
 
 const VALID_ABSTRACT_MODELS = new Set(['anthropic_haiku', 'anthropic_sonnet', 'anthropic_opus']);
 
@@ -168,6 +169,22 @@ export async function llmStatsRoute(req: any, res: any) {
       note: err.message.includes('does not exist') ? 'llm_routing_log 테이블 미생성 — 마이그레이션 필요' : undefined,
     });
   }
+}
+
+// GET /hub/llm/circuit — local Ollama circuit breaker 상태 조회 + 리셋
+export async function llmCircuitRoute(req: any, res: any) {
+  if (req.method === 'DELETE') {
+    const target = req.query?.target as string | undefined;
+    if (target) {
+      resetCircuit(decodeURIComponent(target));
+      return res.json({ ok: true, reset: target });
+    }
+    return res.status(400).json({ error: 'target query param required for reset' });
+  }
+
+  const statuses = getAllCircuitStatuses();
+  const hasOpen = Object.values(statuses).some((s: any) => s.state === 'OPEN' || s.state === 'HALF_OPEN');
+  return res.json({ ok: true, local_llm_circuits: statuses, any_open: hasOpen });
 }
 
 function computeProviderShare(rows: any[]): Record<string, number> {
