@@ -5,7 +5,9 @@
   "main": "src/index.js",
   "type": "commonjs",
   "scripts": {
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "test": "npx jest __tests__/ --no-coverage",
+    "health": "node scripts/health-check.js"
   },
   "dependencies": {
     "@ai-agent/core": "*"
