@@ -185,7 +185,7 @@ describe('부하 시나리오 3: Signal + RAG 병렬 처리', () => {
     const subqueries = [{ q: '테스트' }];
 
     for (let i = 0; i < 100; i++) {
-      const quality = rag.evaluateRetrievalQuality(results, subqueries[0]);
+      const quality = rag.evaluateRetrievalQuality(results, subqueries);
       expect(quality).toHaveProperty('needs_retry');
       expect(quality).toHaveProperty('quality_score');
     }
