@@ -24,8 +24,8 @@
 - `docs/blog/DPO_LEARNING_GUIDE.md`: DPO 학습 가이드
 - `docs/blog/ROI_DASHBOARD_GUIDE.md`: 스카팀 매출 연동 ROI 가이드
 
-**테스트 현황**: 264개 전체 (`bots/blog/__tests__/` 기준)
-**커밋**: `b0fe6714`
+**테스트 현황**: 327개 전체 (`bots/blog/__tests__/` 기준), 0 failures
+**최종 커밋**: `1fb4a75b` (topic-selector DPO 함수 복구 + stress 테스트 인수 수정)
 
 ## CODEX_BLOG_EVOLUTION 전체 완료 ✅
 
