@@ -397,17 +397,50 @@ export async function loadCapitalGuardBreakdown(pgPool, periodDays = 14) {
     .map((row) => row.symbol)
     .filter(Boolean);
   const actionHints = [];
+  const actionCandidates = [];
 
   if (topReason?.group === 'correlation_guard' && hotspotSymbols.length > 0) {
     actionHints.push(`normal lane correlation 압력 완화 우선 — ${hotspotSymbols.join(', ')}`);
+    actionCandidates.push({
+      kind: 'decongest_normal_lane',
+      priority: 'high',
+      label: 'normal lane 군집 완화',
+      summary: `상관관계 가드가 가장 많은 normal lane 심볼부터 분산 검토 — ${hotspotSymbols.join(', ')}`,
+      symbols: hotspotSymbols,
+    });
   }
 
   if (overlapSymbols.length > 0) {
     actionHints.push(`validation/LIVE overlap 심볼 점검 — ${overlapSymbols.join(', ')}`);
+    actionCandidates.push({
+      kind: 'separate_validation_overlap',
+      priority: 'high',
+      label: 'validation/LIVE overlap 분리',
+      summary: `LIVE 포지션과 겹치는 validation 심볼부터 분리 점검 — ${overlapSymbols.join(', ')}`,
+      symbols: overlapSymbols,
+    });
   }
 
   if (normalCount > validationCount && validationRatio <= 10) {
     actionHints.push('validation 완화보다 normal lane 포지션 군집도와 중복 진입 압력 해소를 먼저 보는 편이 좋다');
+    actionCandidates.push({
+      kind: 'hold_validation_policy',
+      priority: 'medium',
+      label: 'validation 완화 보류',
+      summary: '현재는 validation 완화보다 normal lane 포지션 군집도와 중복 진입 압력 해소를 먼저 보는 편이 좋다',
+      symbols: [],
+    });
+  }
+
+  const maxPositionCount = Number(reasonRows.find((row) => row.group === 'max_concurrent_positions')?.count || 0);
+  if (maxPositionCount > 0) {
+    actionCandidates.push({
+      kind: 'review_position_ceiling_pressure',
+      priority: 'medium',
+      label: 'max positions 압력 점검',
+      summary: `최근 ${maxPositionCount}건의 max positions 차단이 있어, 신규 진입보다 기존 포지션 점유 구조를 먼저 점검하는 편이 좋다`,
+      symbols: [],
+    });
   }
 
   return {
@@ -420,6 +453,7 @@ export async function loadCapitalGuardBreakdown(pgPool, periodDays = 14) {
     topHotspot,
     topOverlapHotspot,
     actionHints,
+    actionCandidates,
     laneSnapshot: {
       validationCount,
       normalCount,

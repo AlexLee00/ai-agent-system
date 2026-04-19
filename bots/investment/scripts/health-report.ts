@@ -562,6 +562,11 @@ function buildDecision(
         reason: `crypto gate action hint — ${capitalGuardBreakdown.actionHints?.[0] || 'n/a'}`,
       },
       {
+        active: Boolean(capitalGuardBreakdown.actionCandidates?.length),
+        level: 'low',
+        reason: `crypto gate next action — ${capitalGuardBreakdown.actionCandidates?.[0]?.summary || 'n/a'}`,
+      },
+      {
         active: cryptoValidationBudgetPolicyHealth?.decision === 'consider_policy_split',
         level: 'medium',
         reason: `crypto validation budget 정책 판단 — ${cryptoValidationBudgetPolicyHealth?.decisionLabel || '현 구조 유지'}`,
@@ -637,6 +642,12 @@ function formatText(report) {
               ? [
                   '  action hints:',
                   ...report.capitalGuardBreakdown.actionHints.map((hint) => `    ${hint}`),
+                ]
+              : []),
+            ...(report.capitalGuardBreakdown.actionCandidates?.length
+              ? [
+                  '  next actions:',
+                  ...report.capitalGuardBreakdown.actionCandidates.map((candidate) => `    [${candidate.priority}] ${candidate.label}: ${candidate.summary}`),
                 ]
               : []),
             ...report.capitalGuardBreakdown.byReasonGroup.map((row) => `  ${row.label}: ${row.count}건`),
