@@ -181,10 +181,11 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_name": "luna-ops",
       "claude_code_settings": "/Users/alexlee/.openclaw/.claude/luna-ops.settings.json",
       "primary_routes": [
-        "claude-code/sonnet"
+        GROQ_VERSATILE_ROUTE
       ],
       "fallback_routes": [
-        GROQ_VERSATILE_ROUTE
+        "claude-code/sonnet",
+        "openai-oauth/gpt-5.4-mini"
       ],
       "timeout_ms": 10_000,
       "critical": true
@@ -194,10 +195,11 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_name": "luna-ops",
       "claude_code_settings": "/Users/alexlee/.openclaw/.claude/luna-ops.settings.json",
       "primary_routes": [
-        "claude-code/sonnet"
+        GROQ_VERSATILE_ROUTE
       ],
       "fallback_routes": [
-        GROQ_VERSATILE_ROUTE
+        "claude-code/sonnet",
+        "openai-oauth/gpt-5.4-mini"
       ],
       "timeout_ms": 10_000,
       "critical": true
@@ -595,6 +597,22 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         "openai/gpt-4o-mini"
+      ]
+    }
+  },
+  "editor": {
+    "default": {
+      "openclaw_agent": "video-edi",
+      "claude_code_name": "video-edi",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/video-edi.settings.json",
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        GROQ_SCOUT_ROUTE,
+        "claude-code/sonnet"
+      ],
+      "fallback_routes": [
+        "openai-oauth/gpt-5.4",
+        LOCAL_FAST_ROUTE
       ]
     }
   },

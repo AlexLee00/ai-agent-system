@@ -92,7 +92,14 @@ function callHub(team, agent, prompt) {
   return http.post(
     `${HUB_URL}/hub/llm/call`,
     JSON.stringify({ callerTeam: team, agent, prompt, abstractModel: 'anthropic_sonnet', cacheEnabled: false }),
-    { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${HUB_TOKEN}` }, timeout: '35s' }
+    {
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${HUB_TOKEN}`,
+        'X-Hub-Load-Test': '1',
+      },
+      timeout: '35s',
+    }
   );
 }
 

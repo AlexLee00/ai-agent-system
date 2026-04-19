@@ -66,6 +66,7 @@ async function singleCall(index: number): Promise<CallResult> {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${HUB_AUTH_TOKEN}`,
+        'X-Hub-Load-Test': '1',
       },
       body: JSON.stringify({
         prompt: `부하 테스트 요청 #${index}: "안녕"을 한국어로 설명해주세요. 한 문장으로만.`,
