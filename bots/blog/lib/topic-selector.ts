@@ -14,6 +14,39 @@ const {
   mergeRecentTitles,
 } = require('./topic-title-guard.ts');
 
+// DPO 힌트 (lazy load — BLOG_DPO_ENABLED=true일 때만 활성)
+let _dpoCached = null;
+
+async function _loadDpoHints() {
+  if (process.env.BLOG_DPO_ENABLED !== 'true') return { patterns: [], failures: [] };
+  if (_dpoCached && Date.now() - _dpoCached.loadedAt < 3_600_000) {
+    return { patterns: _dpoCached.patterns, failures: _dpoCached.failures };
+  }
+  try {
+    const dpo = require('./self-rewarding/marketing-dpo.ts');
+    const [patterns, failures] = await Promise.all([
+      dpo.fetchSuccessPatterns(30),
+      dpo.fetchFailureTaxonomy(20),
+    ]);
+    _dpoCached = { patterns, failures, loadedAt: Date.now() };
+    return { patterns, failures };
+  } catch {
+    return { patterns: [], failures: [] };
+  }
+}
+
+function _applyDpoScore(candidates, patterns, failures) {
+  if (patterns.length === 0 && failures.length === 0) return candidates;
+  const dpo = require('./self-rewarding/marketing-dpo.ts');
+  return candidates.map((c) => ({
+    ...c,
+    score: (Number(c.score) || 0.5) + dpo.calculateDpoScore(
+      { topic: c.topic || c.title || '', category: c.category },
+      patterns,
+      failures,
+    ) / 200,
+  }));
+}
 
 const BLOG_OUTPUT_DIR = path.join(env.PROJECT_ROOT, 'bots/blog/output');
 const RECENT_POST_LIMIT = 10;
