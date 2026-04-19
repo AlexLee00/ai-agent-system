@@ -108,7 +108,7 @@ async function fetchTestStats() {
 async function main() {
   const enabled = process.env.CLAUDE_TELEGRAM_ENHANCED === 'true';
 
-  console.log(`[claude-daily-report] 시작 — ${kst.now().toLocaleString('ko-KR')}`);
+  console.log(`[claude-daily-report] 시작 — ${kst.toKST(new Date())}`);
   console.log(`[claude-daily-report] CLAUDE_TELEGRAM_ENHANCED: ${enabled ? 'ON' : 'OFF'}`);
 
   try {

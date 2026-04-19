@@ -16,22 +16,27 @@
  */
 
 const { publishToMainBot } = require('../lib/mainbot-client');
+const { loadTsSourceBridge } = require('../lib/ts-source-bridge');
 const kst = require('../../../packages/core/lib/kst');
 
 // ── 아이콘 ───────────────────────────────────────────────────────────
 const ICON = { ok: '✅', warn: '⚠️', error: '❌' };
 
+function loadCheckModule(name) {
+  return loadTsSourceBridge(require('path').join(__dirname, '..', 'lib', 'checks'), name);
+}
+
 // ── Check 모듈 (지연 require — 팀별 필요한 것만) ──────────────────────
 const RUNNERS = {
-  code:      () => require('../lib/checks/code').run(),
-  database:  () => require('../lib/checks/database').run(),
-  security:  () => require('../lib/checks/security').run(),
-  logs:      () => require('../lib/checks/logs').run(),
-  bots:      () => require('../lib/checks/bots').run(),
-  resources: () => require('../lib/checks/resources').run(),
-  network:   () => require('../lib/checks/network').run(),
-  ska:       () => require('../lib/checks/ska').run(),
-  deps:      () => require('../lib/checks/deps').run(false), // npm audit 생략 (빠른 체크)
+  code:      () => loadCheckModule('code').run(),
+  database:  () => loadCheckModule('database').run(),
+  security:  () => loadCheckModule('security').run(),
+  logs:      () => loadCheckModule('logs').run(),
+  bots:      () => loadCheckModule('bots').run(),
+  resources: () => loadCheckModule('resources').run(),
+  network:   () => loadCheckModule('network').run(),
+  ska:       () => loadCheckModule('ska').run(),
+  deps:      () => loadCheckModule('deps').run(false), // npm audit 생략 (빠른 체크)
 };
 
 // ── 팀 설정 ─────────────────────────────────────────────────────────

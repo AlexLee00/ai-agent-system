@@ -21,6 +21,10 @@ const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 const kst     = require('../../../packages/core/lib/kst');
 const pgPool  = require('../../../packages/core/lib/pg-pool');
 
+function nowKstString() {
+  return kst.toKST(new Date());
+}
+
 // ─── Kill Switch ──────────────────────────────────────────────────────
 
 function isEnhancedEnabled() {
@@ -63,7 +67,7 @@ async function onDexterCritical(checks) {
   const lines = [
     '🚨 덱스터 CRITICAL 감지',
     '',
-    `감지 시각: ${kst.now().toLocaleString('ko-KR')}`,
+    `감지 시각: ${nowKstString()}`,
     `에러 체크: ${failedChecks.length}건`,
     '',
   ];
@@ -85,7 +89,7 @@ async function onVerifyLoopFailed(taskType, attempts, detail) {
     `작업: ${taskType}`,
     `시도: ${attempts}회`,
     `상세: ${detail || '알 수 없음'}`,
-    `시각: ${kst.now().toLocaleString('ko-KR')}`,
+    `시각: ${nowKstString()}`,
     '',
     '수동 개입 필요',
   ].join('\n');
@@ -102,7 +106,7 @@ async function onPrincipleViolation(violationType, detail) {
     '',
     `유형: ${violationType}`,
     `상세: ${detail || '알 수 없음'}`,
-    `시각: ${kst.now().toLocaleString('ko-KR')}`,
+    `시각: ${nowKstString()}`,
     '',
     '즉시 확인 필요',
   ].join('\n');
@@ -120,7 +124,7 @@ async function onCodexFailed(codexName, phase, errorDetail) {
     `코덱스: ${codexName}`,
     `Phase: ${phase || '알 수 없음'}`,
     `오류: ${errorDetail || '상세 없음'}`,
-    `시각: ${kst.now().toLocaleString('ko-KR')}`,
+    `시각: ${nowKstString()}`,
   ].join('\n');
 
   await sendUrgent(msg);
@@ -137,7 +141,7 @@ async function onHourlySummary(stats) {
   const lines = [
     '⏰ 클로드팀 시간 요약',
     '',
-    `시각: ${kst.now().toLocaleString('ko-KR')}`,
+    `시각: ${nowKstString()}`,
   ];
 
   if (stats.dexter_status) {
@@ -162,7 +166,7 @@ async function onHourlySummary(stats) {
  * 일일 리포트 포맷
  */
 function formatDailyReport(stats) {
-  const now = kst.now().toLocaleString('ko-KR');
+  const now = nowKstString();
   const lines = [
     '📊 클로드팀 일일 리포트',
     `${now}`,
@@ -232,7 +236,7 @@ async function onDailyReport(stats = {}) {
  * 주간 리뷰 포맷
  */
 function formatWeeklyReport(stats) {
-  const now = kst.now().toLocaleString('ko-KR');
+  const now = nowKstString();
   const lines = [
     '📅 클로드팀 주간 리뷰',
     `${now}`,
@@ -299,7 +303,7 @@ async function onKillSwitchChanged(switchName, enabled, reason) {
     `스위치: ${switchName}`,
     `상태: ${icon}`,
     reason ? `이유: ${reason}` : '',
-    `시각: ${kst.now().toLocaleString('ko-KR')}`,
+    `시각: ${nowKstString()}`,
   ].filter(Boolean).join('\n');
 
   await sendGeneral(msg);
@@ -315,7 +319,7 @@ async function onNlpLearned(pattern, intent, confidence) {
     `패턴: "${pattern}"`,
     `→ 인텐트: ${intent}`,
     `신뢰도: ${confidence || 0}`,
-    `시각: ${kst.now().toLocaleString('ko-KR')}`,
+    `시각: ${nowKstString()}`,
   ].join('\n');
 
   await sendGeneral(msg);
@@ -330,7 +334,7 @@ async function onHandlerRegistered(handlerName, description) {
     '',
     `핸들러: ${handlerName}`,
     description ? `설명: ${description}` : '',
-    `시각: ${kst.now().toLocaleString('ko-KR')}`,
+    `시각: ${nowKstString()}`,
   ].filter(Boolean).join('\n');
 
   await sendGeneral(msg);

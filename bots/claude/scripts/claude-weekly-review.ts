@@ -120,7 +120,7 @@ async function fetchNlpStats() {
 }
 
 function formatWeeklyStats(summary, actions, agents, nlp) {
-  const lines = ['📅 클로드팀 주간 리뷰', kst.now().toLocaleString('ko-KR'), ''];
+  const lines = ['📅 클로드팀 주간 리뷰', kst.toKST(new Date()), ''];
 
   // 주간 요약
   if (summary) {
@@ -169,7 +169,7 @@ function formatWeeklyStats(summary, actions, agents, nlp) {
 async function main() {
   const enabled = process.env.CLAUDE_TELEGRAM_ENHANCED === 'true';
 
-  console.log(`[claude-weekly-review] 시작 — ${kst.now().toLocaleString('ko-KR')}`);
+  console.log(`[claude-weekly-review] 시작 — ${kst.toKST(new Date())}`);
   console.log(`[claude-weekly-review] CLAUDE_TELEGRAM_ENHANCED: ${enabled ? 'ON' : 'OFF'}`);
 
   try {
