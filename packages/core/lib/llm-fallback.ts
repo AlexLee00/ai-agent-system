@@ -66,6 +66,13 @@ type FallbackLogMeta = {
   [key: string]: any;
 };
 
+type AttemptTraceEntry = {
+  provider: string;
+  model: string;
+  status: 'success' | 'error' | 'skipped';
+  reason?: string | null;
+};
+
 type ProviderFailureState = {
   count: number;
   lastFailAt: number;
@@ -854,6 +861,7 @@ export async function callWithFallback({ chain, systemPrompt, userPrompt, logMet
   const traceRoute = logMeta.selectorKey || logMeta.requestType || null;
   const trace = traceCollector.startTrace(logMeta.agentName || logMeta.bot || null, logMeta.team || null, traceRoute);
   const skippedProviders: string[] = [];
+  const attemptTrace: AttemptTraceEntry[] = [];
 
   let lastError;
   for (let i = 0; i < chain.length; i++) {
@@ -864,12 +872,24 @@ export async function callWithFallback({ chain, systemPrompt, userPrompt, logMet
       if (localBaseUrl && typeof localCircuit.isCircuitOpen === 'function' && localCircuit.isCircuitOpen(localBaseUrl)) {
         console.warn(`[llm-fallback] local circuit OPEN → 체인에서 건너뜀 (${localBaseUrl})`);
         skippedProviders.push(`local:circuit_open`);
+        attemptTrace.push({
+          provider: cfg.provider,
+          model: cfg.model,
+          status: 'skipped',
+          reason: 'circuit_open',
+        });
         continue;
       }
     }
     if (_isProviderCoolingDown(cfg.provider)) {
       console.warn(`[llm-fallback] ${cfg.provider} 연속 ${MAX_CONSECUTIVE_FAILURES}회 실패 → 쿨다운 중, 건너뜀`);
       skippedProviders.push(`${cfg.provider}:provider_cooldown`);
+      attemptTrace.push({
+        provider: cfg.provider,
+        model: cfg.model,
+        status: 'skipped',
+        reason: 'provider_cooldown',
+      });
       continue;
     }
     const t0      = Date.now();
@@ -995,6 +1015,12 @@ export async function callWithFallback({ chain, systemPrompt, userPrompt, logMet
         fallbackUsed: i > 0,
         fallbackProvider: i > 0 ? cfg.provider : null,
       });
+      attemptTrace.push({
+        provider: cfg.provider,
+        model: cfg.model,
+        status: 'error',
+        reason: (e as Error).message?.slice(0, 160) || 'unknown_error',
+      });
 
       const isLast = i === chain.length - 1;
       console.warn(`  ⚠️ [폴백] ${cfg.provider}/${cfg.model} (시도 ${attempt}) 실패: ${(e as Error).message?.slice(0, 80)}${isLast ? ' — 모든 폴백 소진' : ' → 다음 시도...'}`);
@@ -1011,6 +1037,12 @@ export async function callWithFallback({ chain, systemPrompt, userPrompt, logMet
       `사용 가능한 LLM provider가 없어 체인을 건너뜀: [${coolingProviders.join(', ')}]. ` +
       `${FAILURE_COOLDOWN_MS / 1000}초 후 자동 재시도됩니다.`
     );
+  }
+  if (lastError && typeof lastError === 'object') {
+    lastError.llmTrace = attemptTrace;
+    lastError.selectorKey = logMeta.selectorKey || null;
+    lastError.agentName = logMeta.agentName || logMeta.bot || null;
+    lastError.team = logMeta.team || null;
   }
   throw lastError;
 }
