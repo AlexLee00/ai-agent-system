@@ -4,6 +4,14 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-04-19: JUSTIN_EVOLUTION Phase 8 — Hub API /hub/legal/* + hub-legal-client (68차 세션)
+
+- **bots/hub/lib/routes/legal.ts**: 7개 엔드포인트 신규 (사건 접수/목록/상세/상태/승인/피드백/감정서)
+- **bots/hub/src/hub.ts**: /hub/legal/* 라우트 등록
+- **bots/legal/lib/hub-legal-client.js**: Hub API 래퍼 클라이언트 (외부 도구용)
+- **hub-legal-client.test.js**: 12 unit tests (mock fetch, 환경변수 미설정 예외 포함)
+- **저스틴팀 테스트 총계**: 80 → **92 tests, 0 failures**
+
 ## 2026-04-19: JUSTIN_EVOLUTION Phase 7 — pdf-generator 모듈 분리 + 41 단위 테스트 (67차 세션)
 
 - **pdf-generator.js**: `scripts/generate-pdf.js`에서 순수 함수 분리 (parseArgs/escapeHtml/inlineMarkdown/markdownToHtml/buildHtml/getReportLabel)

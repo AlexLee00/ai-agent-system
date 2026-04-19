@@ -1,3 +1,40 @@
+# 세션 인수인계 — 2026-04-19 (CODEX_JUSTIN_EVOLUTION Phase 8 Hub API — 68차 세션)
+
+## 완료 요약 ✅ (68차 세션)
+
+### CODEX_JUSTIN_EVOLUTION Phase 8 — Hub API endpoint /hub/legal/* 구현
+
+**이번 세션 (68차)**:
+- `bots/hub/lib/routes/legal.ts`: 신규 — 7개 엔드포인트
+  - `POST /hub/legal/case` — 새 사건 접수 (case_type 유효성 검증 포함)
+  - `GET /hub/legal/cases` — 사건 목록 (status 필터, pagination)
+  - `GET /hub/legal/case/:id` — 사건 상세
+  - `GET /hub/legal/case/:id/status` — 진행 상태 요약 (분석/판례/감정서 수, Promise.allSettled)
+  - `POST /hub/legal/case/:id/approve` — 마스터 승인 (advance/status 두 모드)
+  - `POST /hub/legal/case/:id/feedback` — 판결 피드백 등록 (Phase 6 연결)
+  - `GET /hub/legal/case/:id/report` — 최신 감정서 조회
+- `bots/hub/src/hub.ts`: /hub/legal/* 9개 라우트 등록
+- `bots/legal/lib/hub-legal-client.js`: 신규 — Hub API 래퍼 (n8n/텔레그램 봇 등 외부 도구용)
+- `bots/legal/__tests__/hub-legal-client.test.js`: 신규 — 12 unit tests (mock fetch)
+
+**테스트**: 92 tests, 0 failures (80 → 92, +12 신규)
+**커밋**: `1466a189`
+
+**Phase 8 진행 상태**:
+- [x] registry.json: status="active"
+- [x] DB: OPS 마이그레이션 완료
+- [x] 배포: git push → 5분 cron 자동 pull
+- [x] Hub API: /hub/legal/* 7개 엔드포인트 구현
+- [ ] launchd plist (상시 감정팀 데몬) — 미구현
+- [ ] 텔레그램 알림 (새 사건 접수 시) — 미구현
+
+**다음 세션 우선순위**:
+1. E2E 전체 워크플로우 테스트 (`node scripts/test-e2e-workflow.js --full`)
+2. OPS Hub 재시작 후 /hub/legal/ API 실제 동작 확인
+3. Phase 5 — 외부 API 연동 (대법원 종합법률정보 API 검토)
+
+---
+
 # 세션 인수인계 — 2026-04-19 (CODEX_JUSTIN_EVOLUTION Phase 7 테스트 확대 — 67차 세션)
 
 ## 완료 요약 ✅ (67차 세션)
