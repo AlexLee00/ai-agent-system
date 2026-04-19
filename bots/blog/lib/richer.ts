@@ -17,7 +17,7 @@ const puppeteer = require('puppeteer');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const rag = require('../../../packages/core/lib/rag-safe');
 const env = require('../../../packages/core/lib/env');
-const { resolveNaverCredentials } = require('../../../packages/core/lib/news-credentials');
+const { resolveNaverCredentials } = require('../../../packages/core/lib/news-credentials.legacy.js');
 const { parseNaverBlogUrl } = require('../../../packages/core/lib/naver-blog-url');
 const { isExcludedReferencePost } = require('./reference-exclusions.ts');
 

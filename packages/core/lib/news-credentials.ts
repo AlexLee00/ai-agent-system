@@ -127,7 +127,7 @@ async function resolveKakaoApiKey(options: { timeoutMs?: number } = {}): Promise
   );
 }
 
-export = {
+module.exports = {
   loadSharedNewsConfig,
   loadLocalSecretsNewsConfig,
   resolveNaverCredentials,

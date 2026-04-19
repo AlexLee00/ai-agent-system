@@ -13,7 +13,7 @@ const {
   resolveGoogleBooksApiKey,
   resolveData4LibraryKey,
   resolveKakaoApiKey,
-} = require('../../news-credentials.ts');
+} = require('../../news-credentials.legacy.js');
 const { verifyBookSources } = require('./book-source-verify.ts');
 
 const COVER_DIR = path.join(env.PROJECT_ROOT, 'bots', 'blog', 'output', 'images', 'books');

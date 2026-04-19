@@ -10,7 +10,7 @@
 const https = require('https');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const env = require('../../../packages/core/lib/env');
-const { resolveNaverCredentials } = require('../../../packages/core/lib/news-credentials');
+const { resolveNaverCredentials } = require('../../../packages/core/lib/news-credentials.legacy.js');
 
 // 경쟁사 분석 대상 카테고리 → 네이버 검색 쿼리 매핑
 const CATEGORY_QUERIES: Record<string, string[]> = {

@@ -27,7 +27,7 @@ import { createRequire } from 'module';
 
 const _require = createRequire(import.meta.url);
 const kst = _require('../../../packages/core/lib/kst');
-const { resolveNaverCredentials } = _require('../../../packages/core/lib/news-credentials');
+const { resolveNaverCredentials } = _require('../../../packages/core/lib/news-credentials.legacy.js');
 
 const _domesticMetaCache = new Map();
 let _dartCorpCodeMapPromise = null;
