@@ -60,6 +60,7 @@ defmodule Jay.V2.AutonomyController do
 
   @impl true
   def init(_opts) do
+    ensure_kv_store!()
     state = load_phase_from_db()
     Process.send_after(self(), :daily_check, @check_interval_ms)
     Logger.info("[AutonomyController] 시작! Phase #{state.phase} (#{phase_label(state.phase)})")
@@ -184,7 +185,23 @@ defmodule Jay.V2.AutonomyController do
   # DB 영속화
   # ────────────────────────────────────────────────────────────────
 
+  defp ensure_kv_store! do
+    Jay.Core.HubClient.pg_query("""
+      CREATE SCHEMA IF NOT EXISTS agent;
+
+      CREATE TABLE IF NOT EXISTS agent.kv_store (
+        key TEXT PRIMARY KEY,
+        value INTEGER NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    """, "agent")
+  rescue
+    _ -> :ok
+  end
+
   defp load_phase_from_db do
+    ensure_kv_store!()
+
     case Jay.Core.HubClient.pg_query("""
       SELECT value FROM agent.kv_store
       WHERE key = '#{@phase_key}'
@@ -200,6 +217,8 @@ defmodule Jay.V2.AutonomyController do
   end
 
   defp save_phase_to_db(phase) do
+    ensure_kv_store!()
+
     Jay.Core.HubClient.pg_query("""
       INSERT INTO agent.kv_store (key, value, updated_at)
       VALUES ('#{@phase_key}', #{phase}, NOW())
