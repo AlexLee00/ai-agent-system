@@ -316,11 +316,12 @@ export function checkPoolHealth(threshold = 0.8): { stats: PoolStats[]; issues: 
   const issues: Array<{ schema: string; status: string; detail: string }> = [];
   const maxPool = PG_CONFIG.max;
   for (const stat of stats) {
-    if (stat.total >= maxPool * threshold) {
+    const activeThreshold = Math.max(1, Math.ceil(maxPool * threshold));
+    if (stat.active >= activeThreshold) {
       issues.push({
         schema: stat.schema,
         status: 'warning',
-        detail: `커넥션 ${stat.total}/${maxPool} (${stat.utilization} 사용)`,
+        detail: `활성 커넥션 ${stat.active}/${maxPool} (${stat.utilization} 사용)`,
       });
     }
     if (stat.waiting > 5) {
