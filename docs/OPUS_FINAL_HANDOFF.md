@@ -1,3 +1,48 @@
+# 세션 인수인계 — 2026-04-19 (CODEX_JUSTIN_EVOLUTION 저스틴팀 완전 구현 — 62차 세션 추가)
+
+## 완료 요약 ✅ (62차 세션 추가)
+
+### CODEX_JUSTIN_EVOLUTION — 저스틴팀(감정팀) 전체 구조 완전 구현
+
+**구현 완료**:
+- `bots/legal/CLAUDE.md` — 저스틴팀 Claude Code 컨텍스트
+- `bots/legal/config.json` — LLM 폴백 체인 + 에이전트별 모델 설정
+- `bots/legal/context/` — 3개 컨텍스트 파일 (JUDGE_PERSONA, APPRAISAL_GUIDELINES, LEGAL_TERMS)
+- `bots/legal/migrations/001-appraisal-schema.sql` — 6개 테이블 (cases/code_analyses/case_references/reports/interviews/sw_functions/feedback)
+- `bots/legal/lib/appraisal-store.js` — DB CRUD 전체 (cases/analyses/references/reports/interviews/sw_functions/feedback)
+- `bots/legal/lib/similarity-engine.js` — 코드 유사도 3중 분석 (라인/토큰/구조) + 파일/디렉토리 비교
+- `bots/legal/lib/llm-helper.js` — 저스틴팀 LLM 폴백 체인 공통 헬퍼
+- `bots/legal/lib/justin.js` — 팀장: 13단계 워크플로우 오케스트레이션
+- `bots/legal/lib/briefing.js` — 사건분석 + 감정착수계획서/질의서/현장실사계획서 작성
+- `bots/legal/lib/lens.js` — 소스코드 유사도/구조 분석 (similarity-engine 연동)
+- `bots/legal/lib/garam.js` — 국내 판례 서칭 (대법원/하급심, 5건 이내)
+- `bots/legal/lib/atlas.js` — 해외 판례 서칭 (US/EU/WIPO, 3건 이내)
+- `bots/legal/lib/claim.js` — 원고 자료 분석 (소스코드/주장/증거)
+- `bots/legal/lib/defense.js` — 피고 자료 분석 (독자개발/오픈소스 여부 검증)
+- `bots/legal/lib/quill.js` — 감정서 초안 작성 (법원 양식 준수)
+- `bots/legal/lib/balance.js` — 품질 검증 5항목 (논리/법률/증거/중립성/형식, 70점 이상)
+- `bots/legal/lib/contro.js` — 계약서 분석 (SLA/KPI/손해배상)
+- `bots/legal/templates/appraisal-report.md` — 감정서 템플릿
+- `bots/legal/templates/code-comparison-table.md` — 코드 비교표 템플릿
+- `bots/legal/scripts/start-appraisal.js` — 감정 시작 CLI
+- `bots/legal/scripts/generate-report.js` — 감정서 파일 생성 CLI
+- `.gitignore` — `bots/legal/cases/` 추가 (소송 소스코드 보안)
+- `bots/registry.json` — legal 봇 status "planned" → "active", 설명 업데이트
+
+**다음 세션 주의**:
+- DB 마이그레이션은 OPS 서버에서 마스터가 직접 실행 필요: `psql -U jay -d jay -f bots/legal/migrations/001-appraisal-schema.sql`
+- 실제 사건 접수 시: `bots/legal/cases/{사건번호}/source-plaintiff/`, `source-defendant/` 디렉토리에 소스코드 복사
+- 계약서 분석 시: `bots/legal/cases/{사건번호}/contract.txt` 에 계약서 원문 저장
+- 기존 5개 justin skill (`packages/core/lib/skills/justin/`)은 독립 함수로 유지 — 추후 에이전트와 통합 가능
+
+**커밋**: 이번 세션
+
+## 🏷️ 62차 세션 요약
+
+**62차 세션 — CODEX_JUSTIN_EVOLUTION: 저스틴팀(감정팀) 완전 구현. 10에이전트(justin/briefing/lens/garam/atlas/claim/defense/quill/balance/contro) + DB스키마 + similarity-engine + CLI 스크립트 전체 구축. bots/legal 상태 active.**
+
+---
+
 # 세션 인수인계 — 2026-04-19 (CODEX_LLM_ROUTING_HARDENING Phase 2-5 완료 — 61차 세션 추가)
 
 ## 완료 요약 ✅ (61차 세션 추가)
