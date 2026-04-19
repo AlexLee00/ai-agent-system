@@ -396,6 +396,30 @@ export async function loadCapitalGuardBreakdown(pgPool, periodDays = 14) {
     .slice(0, 3)
     .map((row) => row.symbol)
     .filter(Boolean);
+  const drilldownSymbols = [...new Set([...hotspotSymbols, ...overlapSymbols])];
+  const drilldownRows = drilldownSymbols.length > 0
+    ? await pgPool.query(
+      'investment',
+      `
+        SELECT
+          COALESCE(NULLIF(symbol, ''), 'unknown') AS symbol,
+          COUNT(*) FILTER (WHERE COALESCE(block_code, '') = 'capital_guard_rejected')::int AS capital_guard_cnt,
+          COUNT(*) FILTER (
+            WHERE COALESCE(block_reason, '') ILIKE '%동일 LIVE 포지션%'
+               OR COALESCE(block_code, '') = 'live_position_reentry_blocked'
+          )::int AS overlap_cnt,
+          MAX(created_at) AS last_seen_at
+        FROM investment.signals
+        WHERE exchange = 'binance'
+          AND created_at >= NOW() - INTERVAL '1 day' * $1
+          AND status IN ('failed', 'blocked', 'rejected')
+          AND COALESCE(NULLIF(symbol, ''), 'unknown') = ANY($2)
+        GROUP BY 1
+        ORDER BY capital_guard_cnt DESC, overlap_cnt DESC, symbol ASC
+      `,
+      [periodDays, drilldownSymbols],
+    ).catch(() => [])
+    : [];
   const actionHints = [];
   const actionCandidates = [];
 
@@ -443,6 +467,22 @@ export async function loadCapitalGuardBreakdown(pgPool, periodDays = 14) {
     });
   }
 
+  const actionCandidateDetails = drilldownRows.map((row) => {
+    const capitalGuardCount = Number(row.capital_guard_cnt || 0);
+    const overlapCount = Number(row.overlap_cnt || 0);
+    const recommendation = overlapCount > 0
+      ? 'validation/LIVE overlap 분리 우선'
+      : 'normal lane 군집 분산 우선';
+    return {
+      symbol: row.symbol,
+      capitalGuardCount,
+      overlapCount,
+      lastSeenAt: row.last_seen_at || null,
+      recommendation,
+      label: `${row.symbol} guard ${capitalGuardCount} / overlap ${overlapCount}`,
+    };
+  });
+
   return {
     periodDays,
     total,
@@ -454,6 +494,7 @@ export async function loadCapitalGuardBreakdown(pgPool, periodDays = 14) {
     topOverlapHotspot,
     actionHints,
     actionCandidates,
+    actionCandidateDetails,
     laneSnapshot: {
       validationCount,
       normalCount,
