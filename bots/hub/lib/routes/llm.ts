@@ -95,7 +95,7 @@ export async function llmStatsRoute(req: any, res: any) {
 
   try {
     const [summaryRes, byAgentRes, byHourRes] = await Promise.all([
-      pgPool.query(`
+      pgPool.query('public', `
         SELECT
           provider,
           caller_team,
@@ -111,7 +111,7 @@ export async function llmStatsRoute(req: any, res: any) {
         GROUP BY provider, caller_team
         ORDER BY total_calls DESC
       `, params),
-      pgPool.query(`
+      pgPool.query('public', `
         SELECT agent, provider,
           COUNT(*)                                               AS calls,
           ROUND(AVG(duration_ms))::integer                      AS avg_ms,
@@ -123,7 +123,7 @@ export async function llmStatsRoute(req: any, res: any) {
         ORDER BY calls DESC
         LIMIT 20
       `, params),
-      pgPool.query(`
+      pgPool.query('public', `
         SELECT
           date_trunc('hour', created_at)                        AS hour,
           provider,
@@ -136,7 +136,7 @@ export async function llmStatsRoute(req: any, res: any) {
       `, params),
     ]);
 
-    const summary = summaryRes.rows;
+    const summary = summaryRes;
     const totalCalls = summary.reduce((s: number, r: any) => s + Number(r.total_calls), 0);
     const totalCost = summary.reduce((s: number, r: any) => s + Number(r.total_cost_usd || 0), 0);
     const totalSuccess = summary.reduce((s: number, r: any) => s + Number(r.success_count), 0);
@@ -147,8 +147,8 @@ export async function llmStatsRoute(req: any, res: any) {
       team: team || 'all',
       groq_pool_size: loadGroqAccounts().length,
       summary,
-      by_agent: byAgentRes.rows,
-      by_hour: byHourRes.rows,
+      by_agent: byAgentRes,
+      by_hour: byHourRes,
       totals: {
         total_calls: totalCalls,
         total_cost_usd: totalCost,
@@ -198,7 +198,7 @@ function computeProviderShare(rows: any[]): Record<string, number> {
 }
 
 async function logRouting(resp: any, body: any): Promise<void> {
-  await pgPool.query(`
+  await pgPool.run('public', `
     INSERT INTO llm_routing_log (
       created_at, provider, agent, caller_team, abstract_model,
       success, duration_ms, cost_usd, fallback_count, error, session_id

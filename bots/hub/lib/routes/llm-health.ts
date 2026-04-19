@@ -37,8 +37,13 @@ export async function llmHealthRoute(_req: any, res: any) {
 
 async function checkCacheDb(): Promise<{ connected: boolean; total_entries: number; hit_rate_24h: number }> {
   try {
-    const r = await pgPool.query(`SELECT COUNT(*) AS n, COALESCE(SUM(hit_count), 0) AS hits FROM llm_cache WHERE inserted_at > NOW() - INTERVAL '24h'`);
-    return { connected: true, total_entries: Number(r.rows[0]?.n || 0), hit_rate_24h: Number(r.rows[0]?.hits || 0) };
+    const rows = await pgPool.query(
+      'public',
+      `SELECT COUNT(*) AS n, COALESCE(SUM(hit_count), 0) AS hits
+       FROM llm_cache
+       WHERE inserted_at > NOW() - INTERVAL '24h'`
+    );
+    return { connected: true, total_entries: Number(rows[0]?.n || 0), hit_rate_24h: Number(rows[0]?.hits || 0) };
   } catch {
     return { connected: false, total_entries: 0, hit_rate_24h: 0 };
   }
