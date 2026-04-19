@@ -624,6 +624,22 @@ function normalizePortfolioDecisionResult(parsed, symbols, exchange, symbolDecis
   return parsed;
 }
 
+function buildCompactExitAnalystSummary(analysesList) {
+  if (!Array.isArray(analysesList) || analysesList.length === 0) return '분석 데이터 없음';
+  return analysesList.slice(0, 3).map((item) => {
+    const label = item.analyst === ANALYST_TYPES.TA_MTF    ? 'TA'
+                : item.analyst === ANALYST_TYPES.ONCHAIN   ? '온체인'
+                : item.analyst === ANALYST_TYPES.SENTINEL  ? 'sentinel'
+                : item.analyst === ANALYST_TYPES.NEWS      ? '뉴스'
+                : item.analyst === ANALYST_TYPES.SENTIMENT ? '감성'
+                : '기타';
+    const signal = String(item.signal || 'HOLD').toUpperCase();
+    const conf = `${((item.confidence || 0) * 100).toFixed(0)}%`;
+    const reason = String(item.reasoning || '').replace(/\s+/g, ' ').slice(0, 48);
+    return `[${label}] ${signal} ${conf} ${reason}`.trim();
+  }).join(' / ');
+}
+
 function buildExitPrompt(openPositions, exchange = 'binance') {
   const label = getExchangeLabel(exchange);
   const lines = openPositions.map((pos) => {
@@ -638,9 +654,7 @@ function buildExitPrompt(openPositions, exchange = 'binance') {
     const sellLikeCount = analysesList.filter(item => String(item.signal || '').toUpperCase() === 'SELL').length;
     const holdCount = analysesList.filter(item => String(item.signal || '').toUpperCase() === 'HOLD').length;
     const buyCount = analysesList.filter(item => String(item.signal || '').toUpperCase() === 'BUY').length;
-    const analyses = analysesList.length > 0
-      ? buildAnalysisSummary(analysesList)
-      : '분석 데이터 없음';
+    const compactAnalyses = buildCompactExitAnalystSummary(analysesList);
     return [
       `- ${pos.symbol}`,
       `  수량: ${pos.amount}`,
@@ -650,8 +664,7 @@ function buildExitPrompt(openPositions, exchange = 'binance') {
       `  보유시간: ${heldHours}h`,
       `  trade_mode: ${pos.trade_mode || 'normal'}`,
       `  분석가 집계: BUY ${buyCount} / HOLD ${holdCount} / SELL ${sellLikeCount}`,
-      `  분석가:`,
-      analyses.split('\n').map(line => `    ${line}`).join('\n'),
+      `  요약: ${compactAnalyses}`,
     ].join('\n');
   }).join('\n\n');
 
@@ -961,7 +974,10 @@ export async function getExitDecisions(openPositions, exchange = 'binance') {
 
   let raw;
   try {
-    raw = await callLLMWithHub('luna', LUNA_EXIT_SYSTEM, userPrompt, callLLM, 1024);
+    raw = await callLLMWithHub('luna', LUNA_EXIT_SYSTEM, userPrompt, callLLM, 512, {
+      purpose: 'exit_phase',
+      market: exchange,
+    });
   } catch (err) {
     if (String(err?.message || '').includes('LLM 긴급 차단 중')) {
       console.warn(`[luna] exit decision LLM 긴급 차단 fallback 적용 (${exchange}): ${err.message}`);

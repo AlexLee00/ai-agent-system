@@ -60,7 +60,21 @@ function normalizeBaseUrl(value: unknown): string {
 }
 
 function getBaseUrl(options: { baseUrl?: string } = {}): string {
-  return normalizeBaseUrl(options.baseUrl || env.LOCAL_LLM_CHAT_BASE_URL || env.OLLAMA_BASE_URL || env.LOCAL_LLM_BASE_URL || '');
+  return getBaseUrlCandidates(options)[0] || '';
+}
+
+function getBaseUrlCandidates(options: { baseUrl?: string } = {}): string[] {
+  const candidates = [
+    options.baseUrl,
+    env.LOCAL_LLM_BASE_URL,
+    env.LOCAL_LLM_CHAT_BASE_URL,
+    env.OLLAMA_BASE_URL,
+    process.env.MLX_URL,
+    process.env.MLX_URL_ALT,
+  ]
+    .map(normalizeBaseUrl)
+    .filter(Boolean);
+  return [...new Set(candidates)];
 }
 
 function getEmbeddingsBaseUrl(options: { baseUrl?: string } = {}): string {
@@ -211,52 +225,58 @@ async function isLocalLLMAvailable(options: { baseUrl?: string } = {}): Promise<
 }
 
 async function callLocalLLM(model: string, messages: unknown[], options: RequestOptions = {}): Promise<string | null> {
-  const baseUrl = getBaseUrl(options);
   const cb = require('./local-circuit-breaker');
+  const baseUrls = getBaseUrlCandidates(options);
+  if (baseUrls.length === 0) return null;
 
-  // Circuit open → 즉시 null 반환 (대기 없음)
-  if (cb.isCircuitOpen(baseUrl)) {
-    console.warn(`[local-llm-client] circuit OPEN, skip (${baseUrl})`);
-    return null;
-  }
+  const promptSize = JSON.stringify(messages || []).length;
+  const baseTimeoutMs = Number(options.timeoutMs || ((model === LOCAL_MODEL_DEEP || /deepseek|32b|70b|reason/i.test(model)) ? 120000 : 30000));
+  const timeoutMs = Math.max(baseTimeoutMs, promptSize > 12000 ? 60000 : baseTimeoutMs);
 
-  // 빠른 헬스 체크 (3s timeout) — Ollama 다운 시 90s hang 방지
-  const available = await isLocalLLMAvailable({ baseUrl });
-  if (!available) {
-    cb.recordFailure(baseUrl);
-    return null;
-  }
-
-  const resolvedModel = await resolveRequestedModel(model, { baseUrl });
-  const timeoutMs = Number(options.timeoutMs || ((model === LOCAL_MODEL_DEEP || resolvedModel === LOCAL_MODEL_DEEP) ? 120000 : 30000));
-
-  await llmSemaphore.acquire();
-  try {
-    const json = await requestJson('/v1/chat/completions', {
-      baseUrl: options.baseUrl,
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: resolvedModel,
-        messages,
-        max_tokens: options.max_tokens || options.maxTokens || 512,
-        temperature: options.temperature ?? 0.2,
-      }),
-    }, timeoutMs) as ChatCompletionResponse | null;
-
-    const result = json?.choices?.[0]?.message?.content || null;
-    if (result) {
-      cb.recordSuccess(baseUrl);
-    } else {
-      cb.recordFailure(baseUrl);
+  for (const baseUrl of baseUrls) {
+    if (cb.isCircuitOpen(baseUrl)) {
+      console.warn(`[local-llm-client] circuit OPEN, skip (${baseUrl})`);
+      continue;
     }
-    return result;
-  } catch (err) {
-    cb.recordFailure(baseUrl);
-    throw err;
-  } finally {
-    llmSemaphore.release();
+
+    const available = await isLocalLLMAvailable({ baseUrl });
+    if (!available) {
+      cb.recordFailure(baseUrl);
+      continue;
+    }
+
+    const resolvedModel = await resolveRequestedModel(model, { baseUrl });
+
+    await llmSemaphore.acquire();
+    try {
+      const json = await requestJson('/v1/chat/completions', {
+        baseUrl,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: resolvedModel,
+          messages,
+          max_tokens: options.max_tokens || options.maxTokens || 512,
+          temperature: options.temperature ?? 0.2,
+        }),
+      }, timeoutMs) as ChatCompletionResponse | null;
+
+      const result = json?.choices?.[0]?.message?.content || null;
+      if (result) {
+        cb.recordSuccess(baseUrl);
+        return result;
+      }
+      cb.recordFailure(baseUrl);
+      console.warn(`[local-llm-client] empty response from ${baseUrl} → 다음 로컬 인스턴스 시도`);
+    } catch (err) {
+      cb.recordFailure(baseUrl);
+      console.warn(`[local-llm-client] local call failed on ${baseUrl}: ${String((err as any)?.message || err)}`);
+    } finally {
+      llmSemaphore.release();
+    }
   }
+
+  return null;
 }
 
 function cleanLocalLLMText(text: string): string {
@@ -394,10 +414,13 @@ export = {
   LOCAL_MODEL_DEEP,
   LOCAL_MODEL_EMBED,
   getBaseUrl,
+  getBaseUrlCandidates,
+  getEmbeddingsBaseUrl,
   getEmbeddingsUrl,
   getAvailableModels,
   isLocalLLMAvailable,
   checkLocalLLMHealth,
+  resolveRequestedModel,
   resolveEmbeddingModel,
   callLocalLLM,
   callLocalLLMJSON,

@@ -32,10 +32,18 @@ export function buildSlotCandidates(slots: string[]): SlotCandidate[] {
   const candidates: SlotCandidate[] = [];
   const seen = new Set<string>();
 
+  const addThirtyMinutes = (hhmm: string) => {
+    const [hour, minute] = hhmm.split(':').map(Number);
+    const total = hour * 60 + minute + 30;
+    const nextHour = Math.floor((total % (24 * 60)) / 60);
+    const nextMinute = total % 60;
+    return `${String(nextHour).padStart(2, '0')}:${String(nextMinute).padStart(2, '0')}`;
+  };
+
   const pushCandidate = (startIdx: number, endIdx: number, reason: string) => {
-    if (startIdx < 0 || endIdx >= slots.length || endIdx <= startIdx) return;
+    if (startIdx < 0 || endIdx >= slots.length || endIdx < startIdx) return;
     const start = slots[startIdx];
-    const end = slots[endIdx];
+    const end = addThirtyMinutes(slots[endIdx]);
     const slotCount = endIdx - startIdx + 1;
     const key = `${start}->${end}`;
     if (seen.has(key)) return;

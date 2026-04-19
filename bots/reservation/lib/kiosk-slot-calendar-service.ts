@@ -21,7 +21,7 @@ export function createKioskSlotCalendarService(deps: CreateKioskSlotCalendarServ
     const timeDisplay = `${ampm} ${hourMin}`;
     log(`  시간 표시: "${timeDisplay}"`);
 
-    const result = await page.evaluate(async (roomTypeArg: string, timeDisplayArg: string, ampmArg: string, hourMinArg: string, startTimeArg: string) => {
+    const result = await page.evaluate((roomTypeArg: string, timeDisplayArg: string, ampmArg: string, hourMinArg: string, startTimeArg: string) => {
       const isVisible = (el: any) => {
         if (!el || !el.getBoundingClientRect) return false;
         const rect = el.getBoundingClientRect();
@@ -95,9 +95,6 @@ export function createKioskSlotCalendarService(deps: CreateKioskSlotCalendarServ
         return normalize(`${ampmText} ${timeText}`) === targetLabel;
       });
       const scrollDebug = scrollCalendarToTarget(targetTimelineEl);
-      if (scrollDebug) {
-        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      }
 
       const timelineRows = allTimelineEls
         .filter((row: any) => isVisible(row))
@@ -285,7 +282,7 @@ export function createKioskSlotCalendarService(deps: CreateKioskSlotCalendarServ
     const timeDisplay = `${ampm} ${hourMin}`;
     log(`  시간 표시: "${timeDisplay}"`);
 
-    const result = await page.evaluate(async (roomTypeArg: string, timeDisplayArg: string, ampmArg: string, hourMinArg: string, startTimeArg: string) => {
+    const result = await page.evaluate((roomTypeArg: string, timeDisplayArg: string, ampmArg: string, hourMinArg: string, startTimeArg: string) => {
       const isVisible = (el: any) => {
         if (!el || !el.getBoundingClientRect) return false;
         const rect = el.getBoundingClientRect();
@@ -359,9 +356,6 @@ export function createKioskSlotCalendarService(deps: CreateKioskSlotCalendarServ
         return normalize(`${ampmText} ${timeText}`) === targetLabel;
       });
       const scrollDebug = scrollCalendarToTarget(targetTimelineEl);
-      if (scrollDebug) {
-        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      }
 
       const timelineRows = allTimelineEls
         .filter((row: any) => isVisible(row))

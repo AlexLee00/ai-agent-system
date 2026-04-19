@@ -55,6 +55,19 @@ export function createKioskSlotRunnerService(deps: CreateKioskSlotRunnerServiceD
     log,
   } = deps;
 
+  async function installBrowserEvalShim(page: any) {
+    try {
+      await page.evaluateOnNewDocument(() => {
+        (window as any).__name = (value: any) => value;
+      });
+      await page.evaluate(() => {
+        (window as any).__name = (value: any) => value;
+      }).catch(() => null);
+    } catch {
+      // ignore shim failures; callers will surface the real browser error
+    }
+  }
+
   async function runBlockSlotOnly({
     entry,
     wsEndpoint,
@@ -92,6 +105,7 @@ export function createKioskSlotRunnerService(deps: CreateKioskSlotRunnerServiceD
         const pg = await naverBrowser.newPage();
         pg.setDefaultTimeout(30000);
         await pg.setViewport({ width: 1920, height: 1080 });
+        await installBrowserEvalShim(pg);
         attachNaverScheduleTrace(pg, 'block-slot');
         return pg;
       };
@@ -254,6 +268,7 @@ export function createKioskSlotRunnerService(deps: CreateKioskSlotRunnerServiceD
         const pg = await naverBrowser.newPage();
         pg.setDefaultTimeout(30000);
         await pg.setViewport({ width: 1920, height: 1080 });
+        await installBrowserEvalShim(pg);
         attachNaverScheduleTrace(pg, 'unblock-slot');
         return pg;
       };

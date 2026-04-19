@@ -1,4 +1,5 @@
 import { spawn as nodeSpawn } from 'child_process';
+const NODE_BIN = process.execPath || '/opt/homebrew/bin/node';
 
 type Logger = (message: string) => void;
 
@@ -159,7 +160,7 @@ export function createNaverPickkoRunnerService(deps: CreateNaverPickkoRunnerServ
       };
 
       const spawnCancel = () => {
-        const child = spawnImpl('node', args, { cwd: scriptsDir, stdio: ['ignore', 'pipe', 'pipe'] });
+        const child = spawnImpl(NODE_BIN, args, { cwd: scriptsDir, stdio: ['ignore', 'pipe', 'pipe'] });
         child.stdout.on('data', (chunk) => safeWriteToStream(process.stdout, chunk.toString()));
         child.stderr.on('data', (chunk) => safeWriteToStream(process.stderr, chunk.toString()));
         return child;
@@ -275,7 +276,7 @@ export function createNaverPickkoRunnerService(deps: CreateNaverPickkoRunnerServ
       log(`   ⏰ 시간: ${normalized.start}~${normalized.end} (네이버 & 픽코 등록) → 픽코 표기: ${normalized.start}~??:?? (-10분)`);
       log(`   🏛️ 룸: ${normalized.room}`);
 
-      const child = spawnImpl('node', args, { cwd: scriptsDir, stdio: ['ignore', 'pipe', 'pipe'] });
+      const child = spawnImpl(NODE_BIN, args, { cwd: scriptsDir, stdio: ['ignore', 'pipe', 'pipe'] });
       let outputBuf = '';
       child.stdout.on('data', (chunk) => { const text = chunk.toString(); safeWriteToStream(process.stdout, text); outputBuf += text; });
       child.stderr.on('data', (chunk) => { const text = chunk.toString(); safeWriteToStream(process.stderr, text); outputBuf += text; });

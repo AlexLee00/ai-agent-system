@@ -11,6 +11,7 @@
  */
 
 const { spawn } = require('child_process');
+const NODE_BIN = process.execPath || '/opt/homebrew/bin/node';
 const path = require('path');
 const { releasePickkoLock } = require('../lib/state-bus');
 
@@ -47,7 +48,7 @@ const KIOSK_MONITOR  = path.join(__dirname, '../auto/monitors/pickko-kiosk-monit
 
 function runNode(scriptPath: string, args: string[]): Promise<number | null> {
   return new Promise((resolve, reject) => {
-    const child = spawn('node', [scriptPath, ...args], {
+    const child = spawn(NODE_BIN, [scriptPath, ...args], {
       cwd: path.dirname(scriptPath),
       stdio: 'inherit',
       env: { ...process.env, MODE: 'ops', HOLD_BROWSER_ON_ERROR: '0' },

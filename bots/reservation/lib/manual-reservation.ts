@@ -2,6 +2,7 @@
 
 const path = require('path');
 const { spawnSync } = require('child_process');
+const NODE_BIN = process.execPath || '/opt/homebrew/bin/node';
 const kst = require('../../../packages/core/lib/kst');
 const { IS_OPS } = require('../../../packages/core/lib/env');
 const { transformPhoneNumber, transformRoom, validateTimeRange } = require('./validation');
@@ -379,7 +380,7 @@ function runSingleReservationRegistration(
     childArgs.push('--skip-naver-block');
   }
 
-  const result = spawnSync('node', childArgs, {
+  const result = spawnSync(NODE_BIN, childArgs, {
     cwd: path.dirname(scriptPath),
     env: { ...process.env, MODE: IS_OPS ? 'ops' : 'dev' },
     encoding: 'utf8',
