@@ -341,7 +341,7 @@ async function checkLocalLLMHealth(options: HealthCheckOptions = {}): Promise<LL
   try {
     const models = await getAvailableModels({ baseUrl });
     if (!models.length) {
-      return { available: false, models: [], fastModelOk: false, embedModelOk: false, responseMs: Date.now() - start, error: 'Ollama 모델 없음' };
+      return { available: false, models: [], fastModelOk: false, embedModelOk: false, responseMs: Date.now() - start, error: 'local 모델 없음' };
     }
 
     const fastModelOk = models.some((m) => m === LOCAL_MODEL_FAST || /qwen/i.test(m) || /gemma/i.test(m));
