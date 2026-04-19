@@ -409,6 +409,7 @@ function calculateDpoScore(candidate, successPatterns, failureTaxonomy) {
 
 module.exports = {
   isEnabled,
+  fetchPostsWithMetrics,
   buildPreferencePairs,
   analyzePairWithLlm,
   saveDpoPairs,
