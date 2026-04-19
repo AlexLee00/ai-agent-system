@@ -14,6 +14,40 @@ const {
   mergeRecentTitles,
 } = require('./topic-title-guard.ts');
 
+// DPO 힌트 (lazy load — BLOG_DPO_ENABLED=true일 때만 활성)
+let _dpoCached: { patterns: any[]; failures: any[]; loadedAt: number } | null = null;
+
+async function _loadDpoHints(): Promise<{ patterns: any[]; failures: any[] }> {
+  if (process.env.BLOG_DPO_ENABLED !== 'true') return { patterns: [], failures: [] };
+  if (_dpoCached && Date.now() - _dpoCached.loadedAt < 3_600_000) {
+    return { patterns: _dpoCached.patterns, failures: _dpoCached.failures };
+  }
+  try {
+    const dpo = require('./self-rewarding/marketing-dpo.ts');
+    const [patterns, failures] = await Promise.all([
+      dpo.fetchSuccessPatterns(30),
+      dpo.fetchFailureTaxonomy(20),
+    ]);
+    _dpoCached = { patterns, failures, loadedAt: Date.now() };
+    return { patterns, failures };
+  } catch {
+    return { patterns: [], failures: [] };
+  }
+}
+
+function _applyDpoScore(candidates: any[], patterns: any[], failures: any[]): any[] {
+  if (patterns.length === 0 && failures.length === 0) return candidates;
+  const dpo = require('./self-rewarding/marketing-dpo.ts');
+  return candidates.map((c) => ({
+    ...c,
+    score: (Number(c.score) || 0.5) + dpo.calculateDpoScore(
+      { topic: c.topic || c.title || '', category: c.category },
+      patterns,
+      failures,
+    ) / 200, // DPO 최대 +0.5 보정
+  }));
+}
+
 const BLOG_OUTPUT_DIR = path.join(env.PROJECT_ROOT, 'bots/blog/output');
 const RECENT_POST_LIMIT = 10;
 const BANNED_PATTERNS = [
@@ -570,7 +604,14 @@ async function selectTopicWithCandidateFallback(category, targetDate, recentPost
   }
 
   // 2순위: topic_candidates (topic_curator.ex가 22:00 KST에 저장한 후보 목록)
-  const dbCandidates = await queryDailyCandidates(targetDate, category);
+  let dbCandidates = await queryDailyCandidates(targetDate, category);
+
+  // DPO 힌트 적용 (Kill Switch: BLOG_DPO_ENABLED=true)
+  if (dbCandidates && dbCandidates.length > 0) {
+    const { patterns, failures } = await _loadDpoHints();
+    dbCandidates = _applyDpoScore(dbCandidates, patterns, failures)
+      .sort((a, b) => b.score - a.score);
+  }
 
   if (dbCandidates && dbCandidates.length > 0) {
     // 중복 제목 필터링 후 최고 점수 선택
@@ -741,6 +782,46 @@ async function fetchRevenueAttributionWeights() {
   }
 }
 
+/**
+ * DPO 학습 기반 주제 선택 힌트 조회 (Phase 6)
+ * blog.dpo_preference_pairs + blog.success_pattern_library 기반
+ * Kill Switch: BLOG_DPO_ENABLED=true 일 때만 반환값 있음
+ *
+ * @returns { categoryBoosts: {카테고리: 가중치}, bestHookByCategory: {카테고리: hook_style} }
+ */
+async function fetchDpoHints() {
+  if (process.env.BLOG_DPO_ENABLED !== 'true') return { categoryBoosts: {}, bestHookByCategory: {} };
+  try {
+    const dpo = require('./self-rewarding/marketing-dpo');
+    const [successPatterns, failureTaxonomy] = await Promise.all([
+      dpo.fetchSuccessPatterns(20),
+      dpo.fetchFailureTaxonomy(10),
+    ]);
+
+    // 성공 패턴에서 카테고리별 가중치 추출
+    const categoryBoosts = {};
+    for (const pattern of successPatterns) {
+      if (pattern.pattern_type === 'hook' && pattern.avg_performance > 60) {
+        // 성과 높은 후킹 패턴이 많이 사용된 카테고리 부스팅 (추후 category 컬럼 추가 시 확장)
+      }
+    }
+
+    // 카테고리별 최고 후킹 스타일 조회
+    const bestHookByCategory = {};
+    const categories = ['홈페이지와App', '최신IT트렌드', '개발기획과컨설팅', '자기계발', 'IT정보와분석'];
+    await Promise.all(
+      categories.map(async (cat) => {
+        const hook = await dpo.getBestHookStyleByCategory(cat);
+        if (hook) bestHookByCategory[cat] = hook;
+      })
+    );
+
+    return { categoryBoosts, bestHookByCategory, successPatterns, failureTaxonomy };
+  } catch {
+    return { categoryBoosts: {}, bestHookByCategory: {} };
+  }
+}
+
 module.exports = {
   getRecentPosts,
   getCategorySelectionGuide,
@@ -754,4 +835,5 @@ module.exports = {
   synthesizeHybridTopic,
   getPendingLunaRequest,
   fetchRevenueAttributionWeights,
+  fetchDpoHints,
 };
