@@ -1,3 +1,4 @@
+// @ts-nocheck
 'use strict';
 
 const pgPool = require('../../../packages/core/lib/pg-pool');

@@ -18,6 +18,14 @@ defmodule Darwin.V2.Supervisor do
     Supervisor.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
+  @doc "ownership manifest와 대조할 Elixir-managed runtime labels"
+  def agent_labels do
+    [
+      "ai.research.scanner",
+      "ai.research.task-runner"
+    ]
+  end
+
   def init(_opts) do
     if Darwin.V2.Config.v2_enabled?() do
       kill_switch_on = Darwin.V2.Config.kill_switch?()

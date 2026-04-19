@@ -4,7 +4,7 @@ defmodule TeamJay.Teams.ClaudeSupervisor do
   @claude_agents [
     %{name: :dexter, script: "bots/claude/src/dexter.ts", runner: :tsx, schedule: {:interval, 300_000}},
     %{name: :dexter_daily, script: "bots/claude/src/dexter.ts --daily-report --telegram", runner: :tsx, schedule: nil},
-    %{name: :dexter_quick, script: "bots/claude/src/dexter-quickcheck.ts --telegram --fix", runner: :tsx, schedule: {:interval, 60_000}},
+    # launchd ai.claude.dexter.quick 가 canonical owner이므로 Elixir PortAgent에선 중복 실행하지 않는다.
     # launchd가 canonical owner인 상시/캘린더 서비스는 PortAgent 목록에서 제외한다.
     %{name: :speed_test, script: "bots/claude/scripts/speed-test.ts", runner: :tsx, schedule: {:interval, 86_400_000}},
   ]

@@ -11,7 +11,7 @@
 	<string>ai.worker.claude-monitor</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/opt/homebrew/bin/node</string>
+		<string>/Users/alexlee/projects/ai-agent-system/node_modules/.bin/tsx</string>
 		<string>scripts/claude-api-monitor.ts</string>
 		<string>--alert-only</string>
 	</array>

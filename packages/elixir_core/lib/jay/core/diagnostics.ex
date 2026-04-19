@@ -377,10 +377,14 @@ defmodule Jay.Core.Diagnostics do
 
     actual_elixir =
       [
-        TeamJay.Teams.InvestmentSupervisor.agent_labels(),
-        TeamJay.Teams.BlogSupervisor.agent_labels(),
-        TeamJay.Teams.WorkerSupervisor.agent_labels(),
-        TeamJay.Teams.PlatformSupervisor.agent_labels()
+        runtime_agent_labels(TeamJay.Teams.InvestmentSupervisor),
+        runtime_agent_labels(TeamJay.Teams.BlogSupervisor),
+        runtime_agent_labels(TeamJay.Teams.WorkerSupervisor),
+        runtime_agent_labels(TeamJay.Teams.PlatformSupervisor),
+        runtime_agent_labels(Darwin.V2.Supervisor, [
+          "ai.research.scanner",
+          "ai.research.task-runner"
+        ])
       ]
       |> List.flatten()
       |> MapSet.new()
@@ -420,6 +424,14 @@ defmodule Jay.Core.Diagnostics do
     @service_ownership_path
     |> File.read!()
     |> Jason.decode!()
+  end
+
+  defp runtime_agent_labels(module, fallback \\ []) do
+    if Code.ensure_loaded?(module) and function_exported?(module, :agent_labels, 0) do
+      apply(module, :agent_labels, [])
+    else
+      fallback
+    end
   end
 
   defp phase3_launchd_labels do

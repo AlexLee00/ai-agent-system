@@ -116,7 +116,9 @@ defmodule TeamJay.Claude.Dexter.TestRunner do
     end
   end
 
-  defp layer_agent(1), do: :dexter_quick   # 빠른 체크
+  # launchd ai.claude.dexter.quick 가 canonical owner이므로
+  # Elixir 오케스트레이터의 Layer 1은 5분 주기 dexter PortAgent를 사용한다.
+  defp layer_agent(1), do: :dexter
   defp layer_agent(2), do: :dexter         # 전체 체크
   defp layer_agent(3), do: :dexter_daily   # 일일 리포트
   defp layer_agent(_), do: :dexter
