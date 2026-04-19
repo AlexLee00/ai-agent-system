@@ -71,6 +71,17 @@ function generateDashboardHTML(): string {
       <div id="cache-stats" class="label">캐시 비활성화됨</div>
     </div>
   </div>
+  <div class="grid">
+    <div class="card">
+      <h2>최근 부하 테스트</h2>
+      <div id="load-test-stats" class="label">로딩 중...</div>
+    </div>
+    <div class="card">
+      <h2>운영 메모</h2>
+      <div class="label">quick-smoke는 rate-limit 친화 모드로 저장됩니다.</div>
+      <div class="label" style="margin-top:8px">상세 API: <code>/hub/llm/load-tests</code></div>
+    </div>
+  </div>
   <div class="card" style="margin-top:16px">
     <h2>Top 에이전트 (24h)</h2>
     <table id="table-agents">
@@ -88,6 +99,9 @@ async function fetchStats() {
 }
 async function fetchCacheStats() {
   try { const r = await fetch('/hub/llm/cache-stats'); return r.ok ? r.json() : null; } catch { return null; }
+}
+async function fetchLoadTests() {
+  try { const r = await fetch('/hub/llm/load-tests?limit=5'); return r.ok ? r.json() : null; } catch { return null; }
 }
 
 function renderTeamChart(stats) {
@@ -127,9 +141,32 @@ function renderTopAgents(stats) {
   }).join('');
 }
 
+function renderLoadTests(loadTests) {
+  const container = document.getElementById('load-test-stats');
+  if (!container) return;
+  if (!loadTests?.latest) {
+    container.innerHTML = '<div class="label">최근 부하 테스트 결과 없음</div>';
+    return;
+  }
+
+  const latest = loadTests.latest;
+  const notes = latest.notes || {};
+  const scenarioNote = notes.scenarioNote ? '<div class="label" style="margin-top:8px">' + notes.scenarioNote + '</div>' : '';
+  const providerCounts = notes.providerCounts
+    ? Object.entries(notes.providerCounts).map(([k, v]) => k + ': ' + v).join(', ')
+    : '-';
+
+  container.innerHTML =
+    '<div class="metric">' + (latest.scenario || '-') + '</div>' +
+    '<div class="label">실패율 ' + (Number(latest.fail_rate || 0) * 100).toFixed(1) + '% | 평균 ' + Math.round(Number(latest.avg_ms || 0)) + 'ms</div>' +
+    '<div class="label" style="margin-top:8px">총 ' + (latest.total_requests || 0) + '건 / 실패 ' + (latest.failed_requests || 0) + '건 / duration ' + Number(latest.duration_s || 0).toFixed(1) + 's</div>' +
+    '<div class="label" style="margin-top:8px">provider: ' + providerCounts + '</div>' +
+    scenarioNote;
+}
+
 async function refresh() {
   try {
-    const [stats, cacheStats] = await Promise.all([fetchStats(), fetchCacheStats()]);
+    const [stats, cacheStats, loadTests] = await Promise.all([fetchStats(), fetchCacheStats(), fetchLoadTests()]);
     document.getElementById('ts').textContent = new Date().toLocaleString('ko-KR');
     if (stats?.totals) {
       document.getElementById('total-calls').textContent = (stats.totals.total_calls || 0).toLocaleString();
@@ -139,6 +176,7 @@ async function refresh() {
     renderTeamChart(stats);
     renderProviderChart(stats);
     renderTopAgents(stats);
+    renderLoadTests(loadTests);
     if (cacheStats?.cache_enabled && cacheStats.stats?.length) {
       const totalHits = cacheStats.stats.reduce((s, r) => s + Number(r.total_hits || 0), 0);
       const saved = cacheStats.stats.reduce((s, r) => s + Number(r.cost_saved_usd || 0), 0);

@@ -171,6 +171,57 @@ export async function llmStatsRoute(req: any, res: any) {
   }
 }
 
+// GET /hub/llm/load-tests — 최근 부하 테스트 결과 조회
+export async function llmLoadTestsRoute(req: any, res: any) {
+  const limit = Math.min(Math.max(Number(req.query?.limit ?? 20), 1), 100);
+  const scenario = req.query?.scenario as string | undefined;
+  const whereClause = scenario ? 'WHERE scenario = $1' : '';
+  const params: any[] = scenario ? [scenario, limit] : [limit];
+
+  try {
+    const rows = await pgPool.query('public', `
+      SELECT
+        id,
+        run_at,
+        scenario,
+        total_requests,
+        failed_requests,
+        fail_rate,
+        p95_latency_ms AS p95_ms,
+        p99_latency_ms AS p99_ms,
+        avg_latency_ms AS avg_ms,
+        duration_s,
+        notes
+      FROM hub.load_test_results
+      ${whereClause}
+      ORDER BY run_at DESC
+      LIMIT $${params.length}
+    `, params);
+
+    const normalizedRows = rows.map((row: any) => ({
+      ...row,
+      notes: parseLoadTestNotes(row.notes),
+    }));
+    const latest = normalizedRows[0] ?? null;
+    return res.json({
+      ok: true,
+      count: normalizedRows.length,
+      scenario: scenario || 'all',
+      latest,
+      results: normalizedRows,
+    });
+  } catch (err: any) {
+    return res.json({
+      ok: true,
+      count: 0,
+      scenario: scenario || 'all',
+      latest: null,
+      results: [],
+      note: err.message.includes('does not exist') ? 'hub.load_test_results 테이블 미생성 — 마이그레이션 필요' : err.message,
+    });
+  }
+}
+
 // GET /hub/llm/circuit — local Ollama circuit breaker 상태 조회 + 리셋
 export async function llmCircuitRoute(req: any, res: any) {
   if (req.method === 'DELETE') {
@@ -195,6 +246,15 @@ function computeProviderShare(rows: any[]): Record<string, number> {
     share[r.provider] = (share[r.provider] || 0) + Number(r.total_calls) / total;
   }
   return share;
+}
+
+function parseLoadTestNotes(notes: any): any {
+  if (!notes || typeof notes !== 'string') return notes;
+  try {
+    return JSON.parse(notes);
+  } catch {
+    return notes;
+  }
 }
 
 async function logRouting(resp: any, body: any): Promise<void> {
