@@ -136,12 +136,6 @@ export function createKioskCalendarService(deps: CreateKioskCalendarServiceDeps)
     for (let attempt = 0; attempt < 12; attempt += 1) {
       const coords = await page.evaluate((headerTextArg: string, targetDayArg: number, isTodayArg: boolean) => {
         const dayStr = String(targetDayArg);
-        const matchDay = (txt: string) => {
-          if (isTodayArg && txt.startsWith('오늘')) return true;
-          if (!txt.startsWith(dayStr)) return false;
-          if (txt.length > dayStr.length && /\d/.test(txt[dayStr.length])) return false;
-          return true;
-        };
 
         let targetContainer: Element | null = null;
         for (const c of document.querySelectorAll('[class*="DatePeriodCalendar__monthly"]')) {
@@ -159,7 +153,12 @@ export function createKioskCalendarService(deps: CreateKioskCalendarServiceDeps)
 
         for (const btn of targetContainer.querySelectorAll('button[class*="btn-day"], button[class*="Calendar__btn"]')) {
           const txt = (btn.textContent || '').trim();
-          if (!matchDay(txt)) continue;
+          if (isTodayArg && txt.startsWith('오늘')) {
+            // pass
+          } else {
+            if (!txt.startsWith(dayStr)) continue;
+            if (txt.length > dayStr.length && /\d/.test(txt[dayStr.length])) continue;
+          }
           if (btn.getAttribute('aria-disabled') === 'true') continue;
           const r = (btn as HTMLElement).getBoundingClientRect();
           if (r.width <= 0) continue;
@@ -168,7 +167,12 @@ export function createKioskCalendarService(deps: CreateKioskCalendarServiceDeps)
 
         for (const cell of targetContainer.querySelectorAll('td, [role="gridcell"]')) {
           const txt = (cell.textContent || '').trim();
-          if (!matchDay(txt)) continue;
+          if (isTodayArg && txt.startsWith('오늘')) {
+            // pass
+          } else {
+            if (!txt.startsWith(dayStr)) continue;
+            if (txt.length > dayStr.length && /\d/.test(txt[dayStr.length])) continue;
+          }
           if (cell.getAttribute('aria-disabled') === 'true') continue;
           const cls = String((cell as HTMLElement).className || '').toLowerCase();
           if (cls.includes('disabled') || cls.includes('outside')) continue;
@@ -190,12 +194,6 @@ export function createKioskCalendarService(deps: CreateKioskCalendarServiceDeps)
       }
 
       const navCoords = await page.evaluate((targetMonthKeyArg: number, currentMonthKeyArg: number) => {
-        const monthKey = (text: string) => {
-          const m = String(text || '').trim().match(/^(\d{4})\.(\d{1,2})$/);
-          if (!m) return null;
-          return Number(m[1]) * 12 + Number(m[2]);
-        };
-
         const monthlyContainers = Array.from(document.querySelectorAll('[class*="DatePeriodCalendar__monthly"]'))
           .filter((el) => (el as HTMLElement).offsetParent !== null);
 
@@ -207,9 +205,11 @@ export function createKioskCalendarService(deps: CreateKioskCalendarServiceDeps)
           return r.width > 0 && r.width < 300 && r.height > 0 && r.height < 60;
         }).map((el) => {
           const rect = (el as HTMLElement).getBoundingClientRect();
+          const text = (el.textContent || '').trim();
+          const match = text.match(/^(\d{4})\.(\d{1,2})$/);
           return {
-            text: (el.textContent || '').trim(),
-            key: monthKey(el.textContent || ''),
+            text,
+            key: match ? Number(match[1]) * 12 + Number(match[2]) : null,
             left: rect.left,
           };
         }).filter((h) => Number.isFinite(h.key)).sort((a: any, b: any) => a.left - b.left);
@@ -325,24 +325,29 @@ export function createKioskCalendarService(deps: CreateKioskCalendarServiceDeps)
       return false;
     }
 
-    const result = await page.evaluate(async (roomTypeArg: string, requestedSlotsArg: string[]) => {
-      function addThirtyMinutes(time24: string) {
+    const serializedRoomType = JSON.stringify(roomType);
+    const serializedRequestedSlots = JSON.stringify(requestedSlots);
+    const result = await page.evaluate(`(async () => {
+      const roomTypeArg = ${serializedRoomType};
+      const requestedSlotsArg = ${serializedRequestedSlots};
+
+      function addThirtyMinutes(time24) {
         const [hh, mm] = String(time24 || '').split(':').map(Number);
         if (Number.isNaN(hh) || Number.isNaN(mm)) return null;
         const total = hh * 60 + mm + 30;
-        return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+        return \`\${String(Math.floor(total / 60)).padStart(2, '0')}:\${String(total % 60).padStart(2, '0')}\`;
       }
 
-      function isVisible(el: any) {
+      function isVisible(el) {
         if (!el || !el.getBoundingClientRect) return false;
         const rect = el.getBoundingClientRect();
         return rect.width > 0 && rect.height > 0 && rect.bottom >= 0 && rect.top <= window.innerHeight;
       }
 
-      function parseSlotState(btn: any) {
+      function parseSlotState(btn) {
         const cls = String(btn.className || '');
         const title = String(btn.getAttribute('title') || '').trim();
-        const txt = String(btn.textContent || '').trim().replace(/\s+/g, '');
+        const txt = String(btn.textContent || '').trim().replace(/\\s+/g, '');
         const isBlocked = cls.includes('suspended') || cls.includes('btn-danger') || title === '예약불가' || txt.includes('예약불가');
         const isAvailable = cls.includes('avail') || cls.includes('btn-info') || title === '예약가능' || txt.includes('예약가능');
         let state = 'unknown';
@@ -351,17 +356,17 @@ export function createKioskCalendarService(deps: CreateKioskCalendarServiceDeps)
         return { state, cls, title, txt };
       }
 
-      function toDisplayLabel(time24: string) {
+      function toDisplayLabel(time24) {
         const [hh, mm] = String(time24 || '').split(':').map(Number);
         if (Number.isNaN(hh) || Number.isNaN(mm)) return null;
         const isAM = hh < 12;
         const dispH = hh > 12 ? hh - 12 : (hh === 0 ? 12 : hh);
-        return `${isAM ? '오전' : '오후'} ${dispH}:${String(mm).padStart(2, '0')}`;
+        return \`\${isAM ? '오전' : '오후'} \${dispH}:\${String(mm).padStart(2, '0')}\`;
       }
 
-      function to24Hour(label: string) {
-        const text = String(label || '').replace(/\s+/g, ' ').trim();
-        const m = text.match(/(오전|오후|자정)\s*(\d{1,2}):(\d{2})/);
+      function to24Hour(label) {
+        const text = String(label || '').replace(/\\s+/g, ' ').trim();
+        const m = text.match(/(오전|오후|자정)\\s*(\\d{1,2}):(\\d{2})/);
         if (!m) return null;
         const [, meridiem, hourStr, minStr] = m;
         let hour = Number(hourStr);
@@ -370,13 +375,13 @@ export function createKioskCalendarService(deps: CreateKioskCalendarServiceDeps)
         if (meridiem === '자정') hour = 0;
         else if (meridiem === '오전') hour = hour === 12 ? 0 : hour;
         else if (meridiem === '오후') hour = hour === 12 ? 12 : hour + 12;
-        return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+        return \`\${String(hour).padStart(2, '0')}:\${String(minute).padStart(2, '0')}\`;
       }
 
-      const roomPattern = new RegExp(`^${roomTypeArg}(?:룸|\\b)`, 'i');
+      const roomPattern = new RegExp(\`^\${roomTypeArg}(?:룸|\\\\b)\`, 'i');
       const headerCells = Array.from(document.querySelectorAll('[class*="Calendar__inner-header"] [class*="Calendar__week-row"] [class*="Calendar__week-cell"]'));
       const roomHeaders = headerCells
-        .map((cell, idx) => ({ idx, text: String(cell.textContent || '').replace(/\s+/g, ' ').trim() }))
+        .map((cell, idx) => ({ idx, text: String(cell.textContent || '').replace(/\\s+/g, ' ').trim() }))
         .filter((row) => row.text.length > 0);
       const roomIndex = roomHeaders.findIndex((row) => roomPattern.test(row.text) || row.text === roomTypeArg);
       if (roomIndex < 0) {
@@ -385,51 +390,51 @@ export function createKioskCalendarService(deps: CreateKioskCalendarServiceDeps)
 
       const firstTargetLabel = toDisplayLabel(requestedSlotsArg[0]);
       const allTimelineEls = Array.from(document.querySelectorAll('[class*="Calendar__time-col-wrap"] [class*="Calendar__week-timeline"]'));
-      const targetTimelineEl = allTimelineEls.find((row: any) => {
+      const targetTimelineEl = allTimelineEls.find((row) => {
         const ampmText = String(row.querySelector('[class*="Calendar__time-ampm"]')?.textContent || '').trim();
         const timeText = String(row.querySelector('[class*="Calendar__time__"]')?.textContent || '').trim();
-        return `${ampmText} ${timeText}`.replace(/\s+/g, ' ').trim() === firstTargetLabel;
+        return \`\${ampmText} \${timeText}\`.replace(/\\s+/g, ' ').trim() === firstTargetLabel;
       });
       if (targetTimelineEl) {
         const rowWrap = document.querySelector('[class*="Calendar__row-wrap"]');
         const innerWrap = document.querySelector('[class*="Calendar__inner-wrap"]');
-        const scrollContainer = rowWrap || innerWrap || (targetTimelineEl as HTMLElement).parentElement;
+        const scrollContainer = rowWrap || innerWrap || targetTimelineEl.parentElement;
         if (scrollContainer) {
           const targetIndex = allTimelineEls.indexOf(targetTimelineEl);
           const rowHeight = (() => {
             for (let i = 1; i < allTimelineEls.length; i += 1) {
-              const prevRect = (allTimelineEls[i - 1] as HTMLElement).getBoundingClientRect();
-              const currRect = (allTimelineEls[i] as HTMLElement).getBoundingClientRect();
+              const prevRect = allTimelineEls[i - 1].getBoundingClientRect();
+              const currRect = allTimelineEls[i].getBoundingClientRect();
               const delta = Math.abs(currRect.top - prevRect.top);
               if (delta > 8) return delta;
             }
             return 96;
           })();
-          const viewportHeight = (scrollContainer as HTMLElement).clientHeight || window.innerHeight || 0;
-          const targetOffsetTop = (targetTimelineEl as HTMLElement).offsetTop || targetIndex * rowHeight;
+          const viewportHeight = scrollContainer.clientHeight || window.innerHeight || 0;
+          const targetOffsetTop = targetTimelineEl.offsetTop || targetIndex * rowHeight;
           const nextScrollTop = Math.max(0, targetOffsetTop - Math.max(0, viewportHeight / 2 - rowHeight));
-          (scrollContainer as HTMLElement).scrollTop = nextScrollTop;
-          if (rowWrap && rowWrap !== scrollContainer) (rowWrap as HTMLElement).scrollTop = nextScrollTop;
-          if (innerWrap && innerWrap !== scrollContainer) (innerWrap as HTMLElement).scrollTop = nextScrollTop;
+          scrollContainer.scrollTop = nextScrollTop;
+          if (rowWrap && rowWrap !== scrollContainer) rowWrap.scrollTop = nextScrollTop;
+          if (innerWrap && innerWrap !== scrollContainer) innerWrap.scrollTop = nextScrollTop;
         }
       }
 
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
       const timelineRows = allTimelineEls
-        .filter((row: any) => isVisible(row))
-        .map((row: any) => {
+        .filter((row) => isVisible(row))
+        .map((row) => {
           const ampmText = String(row.querySelector('[class*="Calendar__time-ampm"]')?.textContent || '').trim();
           const timeText = String(row.querySelector('[class*="Calendar__time__"]')?.textContent || '').trim();
-          const label = `${ampmText} ${timeText}`.replace(/\s+/g, ' ').trim();
+          const label = \`\${ampmText} \${timeText}\`.replace(/\\s+/g, ' ').trim();
           return { label, slot24: to24Hour(label) };
         });
 
       const gridRows = Array.from(document.querySelectorAll('[class*="Calendar__week-cell-daily-row"]'))
-        .map((dailyRow: any) => {
+        .map((dailyRow) => {
           const rect = dailyRow.getBoundingClientRect();
           if (rect.height <= 0 || rect.bottom < 0 || rect.top > window.innerHeight) return null;
-          const roomCells = Array.from(dailyRow.children).filter((cell: any) => {
+          const roomCells = Array.from(dailyRow.children).filter((cell) => {
             const cellRect = cell.getBoundingClientRect();
             return cellRect.width > 0 && cellRect.height > 0;
           });
@@ -438,15 +443,15 @@ export function createKioskCalendarService(deps: CreateKioskCalendarServiceDeps)
         })
         .filter(Boolean);
 
-      const matchedSlots: any[] = [];
-      const missingSlots: any[] = [];
+      const matchedSlots = [];
+      const missingSlots = [];
       for (const slot of requestedSlotsArg) {
         const rowIndex = timelineRows.findIndex((row) => row.slot24 === slot);
         if (rowIndex < 0) {
           missingSlots.push({ slot, reason: 'timeline_row_not_found' });
           continue;
         }
-        const gridRow: any = gridRows[rowIndex];
+        const gridRow = gridRows[rowIndex];
         if (!gridRow) {
           missingSlots.push({ slot, reason: 'grid_row_not_found' });
           continue;
@@ -466,10 +471,10 @@ export function createKioskCalendarService(deps: CreateKioskCalendarServiceDeps)
           missingSlots.push({ slot, reason: 'suspended_not_found' });
           continue;
         }
-        const r = (btn as HTMLElement).getBoundingClientRect();
+        const r = btn.getBoundingClientRect();
         matchedSlots.push({
           slot,
-          key: `${Math.round(r.left)}:${Math.round(r.top)}:${Math.round(r.width)}:${Math.round(r.height)}`,
+          key: \`\${Math.round(r.left)}:\${Math.round(r.top)}:\${Math.round(r.width)}:\${Math.round(r.height)}\`,
           cls: slotState.cls.slice(0, 80),
           title: slotState.title,
           x: Math.round(r.left),
@@ -479,7 +484,7 @@ export function createKioskCalendarService(deps: CreateKioskCalendarServiceDeps)
         });
       }
 
-      const reconciledMissingSlots: any[] = [];
+      const reconciledMissingSlots = [];
       for (const missing of missingSlots) {
         const missingIndex = requestedSlotsArg.indexOf(missing.slot);
         const prevSlot = requestedSlotsArg[missingIndex - 1];
@@ -493,7 +498,7 @@ export function createKioskCalendarService(deps: CreateKioskCalendarServiceDeps)
         if (isTrailingContinuation) {
           matchedSlots.push({
             slot: missing.slot,
-            key: `${prevMatched.key}:continued`,
+            key: \`\${prevMatched.key}:continued\`,
             cls: prevMatched.cls,
             title: prevMatched.title,
             x: prevMatched.x,
@@ -513,7 +518,7 @@ export function createKioskCalendarService(deps: CreateKioskCalendarServiceDeps)
         matchedSlots,
         missingSlots: reconciledMissingSlots,
       };
-    }, roomType, requestedSlots);
+    })()`);
 
     log(`  확인 결과: ${JSON.stringify(result)}`);
     return result.verified;
