@@ -182,11 +182,13 @@ function summarizeLocalLlmFlapping(history = []) {
 function summarizeLocalLlmRedundancy(circuits = []) {
   const primary = circuits.find((entry) => entry?.role === 'primary') || null;
   const secondary = circuits.find((entry) => entry?.role === 'secondary') || null;
+  const templatePath = '/Users/alexlee/projects/ai-agent-system/bots/investment/launchd/ai.mlx.server.secondary.plist';
 
   if (!secondary) {
     return {
       status: 'single_primary',
       summary: 'secondary endpoint 없음',
+      templatePath,
     };
   }
 
@@ -195,6 +197,7 @@ function summarizeLocalLlmRedundancy(circuits = []) {
     return {
       status: 'redundant',
       summary: 'primary + secondary 모두 생성 가능',
+      templatePath,
     };
   }
 
@@ -203,6 +206,7 @@ function summarizeLocalLlmRedundancy(circuits = []) {
     summary: secondary?.probe?.error ? `secondary 미가동 (${secondary.probe.error})` : 'secondary 생성 불가',
     primaryBaseUrl: primary?.baseUrl || null,
     secondaryBaseUrl: secondary?.baseUrl || null,
+    templatePath,
   };
 }
 
@@ -924,7 +928,9 @@ function formatText(report) {
         ? [
             `  status: ${report.localLlmHealth.redundancy.status}`,
             `  summary: ${report.localLlmHealth.redundancy.summary}`,
+            report.localLlmHealth.redundancy.templatePath ? `  template: ${report.localLlmHealth.redundancy.templatePath}` : '',
           ]
+            .filter(Boolean)
         : ['  redundancy 정보 없음'],
     },
     buildHealthCountSection('■ KIS 실행 capability', report.kisCapabilityHealth, { okLimit: 1, warnLimit: 2 }),
