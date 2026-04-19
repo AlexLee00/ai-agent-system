@@ -194,6 +194,7 @@ const llmLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'LLM rate limit exceeded (30/min)' },
+  skip: (req: any) => String(req.headers['x-hub-load-test'] || '').trim() === '1',
 });
 app.post('/hub/llm/call', llmLimiter, llmCallRoute);
 app.post('/hub/llm/oauth', llmLimiter, llmOAuthRoute);

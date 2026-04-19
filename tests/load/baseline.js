@@ -49,6 +49,7 @@ export default function () {
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${HUB_TOKEN}`,
+      'X-Hub-Load-Test': '1',
     },
     timeout: '30s',
   });

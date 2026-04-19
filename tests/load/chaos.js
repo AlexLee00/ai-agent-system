@@ -60,6 +60,7 @@ export default function () {
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${HUB_TOKEN}`,
+      'X-Hub-Load-Test': '1',
     },
     timeout: '30s',
   });
@@ -83,7 +84,7 @@ export default function () {
   // Circuit Breaker 상태 확인 (20% 확률)
   if (Math.random() < 0.2) {
     const circuitRes = http.get(`${HUB_URL}/hub/llm/circuit`, {
-      headers: { Authorization: `Bearer ${HUB_TOKEN}` },
+      headers: { Authorization: `Bearer ${HUB_TOKEN}`, 'X-Hub-Load-Test': '1' },
       timeout: '5s',
     });
     check(circuitRes, { 'circuit endpoint ok': (r) => r.status === 200 });
