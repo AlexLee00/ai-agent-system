@@ -48,6 +48,7 @@ const SCHEDULED_SERVICES = [
 const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;
 const NAVER_LOG = '/tmp/naver-ops-mode.log';
 const PICKKO_LOG = '/tmp/pickko-kiosk-monitor.log';
+const TODAY_AUDIT_LOG = '/tmp/today-audit.log';
 const LOG_STALE_MS = 15 * 60 * 1000;
 const N8N_HEALTH_URL = process.env.N8N_HEALTH_URL || 'http://127.0.0.1:5678/healthz';
 const DEFAULT_N8N_WEBHOOK_URL = process.env.SKA_N8N_WEBHOOK_URL || 'http://127.0.0.1:5678/webhook/ska-command';
@@ -245,6 +246,75 @@ function buildCombinedMonitorHealth() {
     naverMonitor,
     kioskMonitor,
   };
+}
+
+function buildTodayAuditHealth() {
+  if (!fs.existsSync(TODAY_AUDIT_LOG)) {
+    return {
+      ok: [],
+      warn: ['  today-audit 로그: 파일 없음'],
+      samples: [],
+      lastExitCode: null,
+      lastCompletedAt: null,
+      lastStartedAt: null,
+      recentSuccess: false,
+    };
+  }
+
+  try {
+    const text = fs.readFileSync(TODAY_AUDIT_LOG, 'utf8');
+    const lines = text.split('\n').map((line) => line.trimEnd()).filter(Boolean);
+    const recentLines = lines.slice(-200);
+    const startLines = recentLines.filter((line) => line.includes('▶ today-audit 시작'));
+    const completeLines = recentLines.filter((line) => line.includes('⏹ today-audit 완료'));
+    const lastStarted = startLines[startLines.length - 1] || null;
+    const lastCompleted = completeLines[completeLines.length - 1] || null;
+    const exitMatch = lastCompleted ? lastCompleted.match(/exit:\s*(\d+)/i) : null;
+    const lastExitCode = exitMatch ? Number(exitMatch[1]) : null;
+    const recentSuccess = lastExitCode === 0;
+    const completionIndex = lastCompleted ? recentLines.lastIndexOf(lastCompleted) : -1;
+    const samples = completionIndex >= 0
+      ? recentLines.slice(Math.max(0, completionIndex - 4), completionIndex + 1).map((line) => `  ${line}`)
+      : recentLines.slice(-5).map((line) => `  ${line}`);
+
+    if (recentSuccess) {
+      return {
+        ok: [
+          '  today-audit 로그: 최근 실행 성공',
+          ...(lastCompleted ? [`  latest completion: ${lastCompleted}`] : []),
+        ],
+        warn: [],
+        samples,
+        lastExitCode,
+        lastCompletedAt: lastCompleted,
+        lastStartedAt: lastStarted,
+        recentSuccess,
+      };
+    }
+
+    return {
+      ok: lastStarted ? [`  latest start: ${lastStarted}`] : [],
+      warn: [
+        `  today-audit 로그: 최근 실행 실패${lastExitCode != null ? ` (exit ${lastExitCode})` : ''}`,
+        ...(lastCompleted ? [`  latest completion: ${lastCompleted}`] : []),
+      ],
+      samples,
+      lastExitCode,
+      lastCompletedAt: lastCompleted,
+      lastStartedAt: lastStarted,
+      recentSuccess,
+    };
+  } catch (error) {
+    return {
+      ok: [],
+      warn: [`  today-audit 로그 분석 실패 (${error.message})`],
+      samples: [],
+      lastExitCode: null,
+      lastCompletedAt: null,
+      lastStartedAt: null,
+      recentSuccess: false,
+    };
+  }
 }
 
 async function buildN8nCommandHealth() {
@@ -507,7 +577,7 @@ async function buildDuplicateSlotHealth() {
   }
 }
 
-function buildDecision(coreServiceRows, monitorHealth, n8nCommandHealth, dailySummaryIntegrityHealth, cancelCounterDriftHealth, duplicateSlotHealth) {
+function buildDecision(coreServiceRows, monitorHealth, n8nCommandHealth, dailySummaryIntegrityHealth, cancelCounterDriftHealth, duplicateSlotHealth, todayAuditHealth) {
   return buildHealthDecision({
     warnings: [
       {
@@ -547,6 +617,11 @@ function buildDecision(coreServiceRows, monitorHealth, n8nCommandHealth, dailySu
         level: 'medium',
         reason: `같은 슬롯의 non-cancelled duplicate group ${duplicateSlotHealth.riskyCount}건이 있어 중복 예약 상태를 점검해야 합니다.`,
       },
+      {
+        active: todayAuditHealth.warn.length > 0,
+        level: 'medium',
+        reason: `today-audit 최근 실행이 비정상 상태라 당일 예약 검증 로그를 확인해야 합니다.${todayAuditHealth.lastExitCode != null ? ` (exit ${todayAuditHealth.lastExitCode})` : ''}`,
+      },
     ],
     okReason: '예약 운영 서비스와 booking monitor 로그 활동성이 현재는 안정 구간입니다.',
   });
@@ -559,6 +634,10 @@ function formatText(report) {
       buildHealthCountSection('■ 핵심 서비스 상태', report.coreServiceHealth),
       buildHealthSampleSection('■ 핵심 서비스 샘플', report.coreServiceHealth),
       buildHealthCountSection('■ 스케줄 작업 상태', report.scheduledServiceHealth),
+      buildHealthCountSection('■ today-audit 상태', report.todayAuditHealth, { okLimit: 2, warnLimit: 3 }),
+      buildHealthSampleSection('■ today-audit 최근 로그', {
+        ok: report.todayAuditHealth.samples || [],
+      }, 5),
       buildHealthCountSection('■ 모니터 상태', report.monitorHealth, { okLimit: 3 }),
       buildHealthCountSection('■ n8n 예약 명령 경로', report.n8nCommandHealth, { okLimit: 2 }),
       buildHealthCountSection('■ 취소 카운터 드리프트', report.cancelCounterDriftHealth, { okLimit: 2, warnLimit: 4 }),
@@ -609,7 +688,8 @@ async function buildReport() {
   const cancelCounterDriftHealth = await buildCancelCounterDriftHealth();
   const duplicateSlotHealth = await buildDuplicateSlotHealth();
   const dailySummaryIntegrityHealth = await buildDailySummaryIntegrityHealth();
-  const decision = buildDecision(coreServiceRows, monitorHealth, n8nCommandHealth, dailySummaryIntegrityHealth, cancelCounterDriftHealth, duplicateSlotHealth);
+  const todayAuditHealth = buildTodayAuditHealth();
+  const decision = buildDecision(coreServiceRows, monitorHealth, n8nCommandHealth, dailySummaryIntegrityHealth, cancelCounterDriftHealth, duplicateSlotHealth, todayAuditHealth);
 
   return {
     coreServiceHealth: {
@@ -630,6 +710,17 @@ async function buildReport() {
       ok: monitorHealth.ok,
       warn: monitorHealth.warn,
       minutesAgo: monitorHealth.minutesAgo,
+    },
+    todayAuditHealth: {
+      okCount: todayAuditHealth.ok.length,
+      warnCount: todayAuditHealth.warn.length,
+      ok: todayAuditHealth.ok,
+      warn: todayAuditHealth.warn,
+      samples: todayAuditHealth.samples || [],
+      lastExitCode: todayAuditHealth.lastExitCode,
+      lastCompletedAt: todayAuditHealth.lastCompletedAt,
+      lastStartedAt: todayAuditHealth.lastStartedAt,
+      recentSuccess: todayAuditHealth.recentSuccess,
     },
     n8nCommandHealth: {
       okCount: n8nCommandHealth.ok.length,
