@@ -34,7 +34,11 @@ STAGED_DELETIONS=$(git diff --cached --diff-filter=D --name-only 2>/dev/null)
 
 for pattern in "${BLOCKED_FILES[@]}"; do
   # 파일명이 패턴과 정확히 일치하는 경우 (경로 무관)
+  # 삭제(D)는 안전하므로 제외 — git rm --cached (추적 해제) 커밋은 허용
   if echo "$STAGED" | grep -qE "(^|/)${pattern}$"; then
+    if echo "$STAGED_DELETIONS" | grep -qE "(^|/)${pattern}$"; then
+      continue  # 삭제는 허용
+    fi
     echo -e "${RED}❌ 보안 차단: '${pattern}' 파일은 커밋할 수 없습니다.${NC}"
     echo -e "   → ${YELLOW}git restore --staged \$(git diff --cached --name-only | grep '${pattern}')${NC}"
     BLOCKED=1
