@@ -61,6 +61,7 @@ const ALL_SERVICES = [
 const NORMAL_EXIT_CODES = new Set([0, -9, -15]);
 const LOCAL_LLM_HEALTH_HISTORY_FILE = '/tmp/investment-local-llm-health-history.jsonl';
 const SECONDARY_LOCAL_PORT = Number(String(process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11435').match(/:(\d+)/)?.[1] || '11435');
+const SECONDARY_LOCAL_LABEL = 'ai.mlx.server.secondary';
 
 // ─── 알림 발송 ───────────────────────────────────────────────────
 
@@ -249,6 +250,27 @@ async function main() {
         msg: `⚠️ [루나 헬스] trade_review 점검 실패\n${e.message}`,
       });
     }
+  }
+
+  const secondaryLocal = status[SECONDARY_LOCAL_LABEL];
+  if (!secondaryLocal || !secondaryLocal.running) {
+    const key = 'local-llm-standby-missing';
+    if (hsm.canAlert(state, key)) {
+      const reason = !secondaryLocal
+        ? 'launchd에 secondary local LLM이 등록되지 않음'
+        : `secondary local LLM 미실행 (exit ${secondaryLocal.exitCode})`;
+      issues.push({
+        key,
+        level: 3,
+        msg: `⚠️ [루나 헬스] local LLM standby 없음\n${reason}\nstandby 없음 (127.0.0.1:${SECONDARY_LOCAL_PORT})`,
+      });
+    }
+  } else if (state['local-llm-standby-missing']) {
+    recovers.push({
+      key: 'local-llm-standby-missing',
+      msg: `✅ [루나 헬스] local LLM standby 회복\n${SECONDARY_LOCAL_LABEL} running(pid=${secondaryLocal.pid}) — 자동 감지`,
+    });
+    hsm.clearAlert(state, 'local-llm-standby-missing');
   }
 
   const localLlmTrend = loadRecentLocalProbeTrend();
