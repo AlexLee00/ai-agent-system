@@ -60,7 +60,6 @@ defmodule Jay.V2.AutonomyController do
 
   @impl true
   def init(_opts) do
-    ensure_kv_store!()
     state = load_phase_from_db()
     Process.send_after(self(), :daily_check, @check_interval_ms)
     Logger.info("[AutonomyController] 시작! Phase #{state.phase} (#{phase_label(state.phase)})")
@@ -185,45 +184,46 @@ defmodule Jay.V2.AutonomyController do
   # DB 영속화
   # ────────────────────────────────────────────────────────────────
 
-  defp ensure_kv_store! do
-    Jay.Core.HubClient.pg_query("CREATE SCHEMA IF NOT EXISTS agent", "agent")
-
-    Jay.Core.HubClient.pg_query("""
-      CREATE TABLE IF NOT EXISTS agent.kv_store (
-        key TEXT PRIMARY KEY,
-        value INTEGER NOT NULL,
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    """, "agent")
+  defp kv_store_available? do
+    case Jay.Core.HubClient.pg_query("""
+      SELECT to_regclass('agent.kv_store') AS table_name
+    """, "agent") do
+      {:ok, %{"rows" => [%{"table_name" => "agent.kv_store"}]}} -> true
+      _ -> false
+    end
   rescue
-    _ -> :ok
+    _ -> false
   end
 
   defp load_phase_from_db do
-    ensure_kv_store!()
-
-    case Jay.Core.HubClient.pg_query("""
-      SELECT value FROM agent.kv_store
-      WHERE key = '#{@phase_key}'
-      LIMIT 1
-    """, "agent") do
-      {:ok, %{"rows" => [%{"value" => v}]}} when is_integer(v) ->
-        %__MODULE__{phase: v, phase_since: Date.utc_today()}
-      _ ->
-        %__MODULE__{phase: 1, phase_since: Date.utc_today()}
+    if not kv_store_available?() do
+      %__MODULE__{phase: 1, phase_since: Date.utc_today()}
+    else
+      case Jay.Core.HubClient.pg_query("""
+        SELECT value FROM agent.kv_store
+        WHERE key = '#{@phase_key}'
+        LIMIT 1
+      """, "agent") do
+        {:ok, %{"rows" => [%{"value" => v}]}} when is_integer(v) ->
+          %__MODULE__{phase: v, phase_since: Date.utc_today()}
+        _ ->
+          %__MODULE__{phase: 1, phase_since: Date.utc_today()}
+      end
     end
   rescue
     _ -> %__MODULE__{phase: 1, phase_since: Date.utc_today()}
   end
 
   defp save_phase_to_db(phase) do
-    ensure_kv_store!()
-
-    Jay.Core.HubClient.pg_query("""
-      INSERT INTO agent.kv_store (key, value, updated_at)
-      VALUES ('#{@phase_key}', #{phase}, NOW())
-      ON CONFLICT (key) DO UPDATE SET value = #{phase}, updated_at = NOW()
-    """, "agent")
+    if not kv_store_available?() do
+      :ok
+    else
+      Jay.Core.HubClient.pg_query("""
+        INSERT INTO agent.kv_store (key, value, updated_at)
+        VALUES ('#{@phase_key}', #{phase}, NOW())
+        ON CONFLICT (key) DO UPDATE SET value = #{phase}, updated_at = NOW()
+      """, "agent")
+    end
   rescue
     _ -> :ok
   end
