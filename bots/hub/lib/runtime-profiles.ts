@@ -22,6 +22,7 @@ type RuntimeProfile = {
   direct_provider?: string;
   direct_model?: string;
   direct_endpoint?: string;
+  critical?: boolean;  // critical chain: 즉시 fallback, local 제외
   [key: string]: RuntimeProfileValue;
 };
 
@@ -173,6 +174,46 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "fallback_routes": [
         "groq/meta-llama/llama-4-scout-17b-16e-instruct"
       ]
+    },
+    // 🔴 CRITICAL — 실시간 매매 판단 경로, local 제외, 즉시 fallback
+    "exit_decision": {
+      "openclaw_agent": "luna-ops",
+      "claude_code_name": "luna-ops",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/luna-ops.settings.json",
+      "primary_routes": [
+        "claude-code/sonnet"
+      ],
+      "fallback_routes": [
+        GROQ_QWEN3_ROUTE
+      ],
+      "timeout_ms": 10_000,
+      "critical": true
+    },
+    "portfolio_decision": {
+      "openclaw_agent": "luna-ops",
+      "claude_code_name": "luna-ops",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/luna-ops.settings.json",
+      "primary_routes": [
+        "claude-code/sonnet"
+      ],
+      "fallback_routes": [
+        GROQ_QWEN3_ROUTE
+      ],
+      "timeout_ms": 10_000,
+      "critical": true
+    },
+    "decision_rationale": {
+      "openclaw_agent": "luna-ops",
+      "claude_code_name": "luna-ops",
+      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/luna-ops.settings.json",
+      "primary_routes": [
+        "claude-code/sonnet"
+      ],
+      "fallback_routes": [
+        GROQ_QWEN3_ROUTE,
+        LOCAL_FAST_ROUTE
+      ],
+      "critical": false
     }
   },
   "darwin": {

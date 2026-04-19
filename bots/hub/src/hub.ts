@@ -216,6 +216,10 @@ app.get('/hub/llm/health', generalLimiter, llmHealthRoute);
 app.post('/hub/budget/reserve', generalLimiter, reserveBudgetRoute);
 app.get('/hub/budget/usage', generalLimiter, budgetUsageRoute);
 
+const { metricsRoute, metricsJsonRoute } = require('../lib/metrics/prometheus-exporter');
+app.get('/hub/metrics', generalLimiter, metricsRoute);
+app.get('/hub/metrics/json', generalLimiter, metricsJsonRoute);
+
 app.use('/hub', (req: any, res: any) => {
   res.status(404).json({ error: `unknown endpoint: ${req.method} ${req.path}` });
 });
