@@ -7,9 +7,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 RESULTS_DIR="${PROJECT_ROOT}/results/load-$(date +%Y%m%d-%H%M)"
 HUB_URL="${HUB_URL:-http://localhost:7788}"
+SHORT_MODE="${SHORT_MODE:-false}"
 
 mkdir -p "${RESULTS_DIR}"
 echo "결과 저장 경로: ${RESULTS_DIR}"
+echo "SHORT_MODE=${SHORT_MODE}"
 
 check_k6() {
   if ! command -v k6 &>/dev/null; then
@@ -27,6 +29,7 @@ run_scenario() {
     --out json="${RESULTS_DIR}/${name}.json" \
     --env HUB_URL="${HUB_URL}" \
     --env HUB_AUTH_TOKEN="${HUB_AUTH_TOKEN:-}" \
+    --env SHORT_MODE="${SHORT_MODE}" \
     "${SCRIPT_DIR}/${script}"
 }
 

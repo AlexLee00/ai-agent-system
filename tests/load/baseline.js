@@ -9,13 +9,20 @@ const failRate = new Rate('fail_rate');
 
 const HUB_URL = __ENV.HUB_URL || 'http://localhost:7788';
 const HUB_TOKEN = __ENV.HUB_AUTH_TOKEN || '';
+const SHORT_MODE = __ENV.SHORT_MODE === 'true';
 
 export const options = {
-  stages: [
-    { duration: '2m', target: 5 },
-    { duration: '5m', target: 5 },
-    { duration: '2m', target: 0 },
-  ],
+  stages: SHORT_MODE
+    ? [
+        { duration: '20s', target: 2 },
+        { duration: '40s', target: 2 },
+        { duration: '20s', target: 0 },
+      ]
+    : [
+        { duration: '2m', target: 5 },
+        { duration: '5m', target: 5 },
+        { duration: '2m', target: 0 },
+      ],
   thresholds: {
     http_req_failed: ['rate<0.05'],
     'http_req_duration{status:200}': ['p(95)<5000'],

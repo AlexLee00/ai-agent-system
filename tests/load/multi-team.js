@@ -6,6 +6,7 @@ import { Rate } from 'k6/metrics';
 
 const HUB_URL = __ENV.HUB_URL || 'http://localhost:7788';
 const HUB_TOKEN = __ENV.HUB_AUTH_TOKEN || '';
+const SHORT_MODE = __ENV.SHORT_MODE === 'true';
 
 const lunaFailRate = new Rate('luna_fail_rate');
 const blogFailRate = new Rate('blog_fail_rate');
@@ -16,33 +17,33 @@ export const options = {
   scenarios: {
     luna_realtime: {
       executor: 'constant-arrival-rate',
-      rate: 6,
+      rate: SHORT_MODE ? 2 : 6,
       timeUnit: '1m',
-      duration: '10m',
+      duration: SHORT_MODE ? '90s' : '10m',
       preAllocatedVUs: 2,
       exec: 'callLunaExit',
     },
     blog_writer: {
       executor: 'constant-arrival-rate',
-      rate: 2,
+      rate: SHORT_MODE ? 1 : 2,
       timeUnit: '1m',
-      duration: '10m',
+      duration: SHORT_MODE ? '90s' : '10m',
       preAllocatedVUs: 1,
       exec: 'callBlogWriter',
     },
     darwin_research: {
       executor: 'constant-arrival-rate',
-      rate: 3,
+      rate: SHORT_MODE ? 1 : 3,
       timeUnit: '1m',
-      duration: '10m',
+      duration: SHORT_MODE ? '90s' : '10m',
       preAllocatedVUs: 1,
       exec: 'callDarwinResearch',
     },
     sigma_general: {
       executor: 'constant-arrival-rate',
-      rate: 2,
+      rate: SHORT_MODE ? 1 : 2,
       timeUnit: '1m',
-      duration: '10m',
+      duration: SHORT_MODE ? '90s' : '10m',
       preAllocatedVUs: 1,
       exec: 'callSigma',
     },
@@ -50,7 +51,7 @@ export const options = {
       executor: 'constant-arrival-rate',
       rate: 1,
       timeUnit: '1m',
-      duration: '10m',
+      duration: SHORT_MODE ? '90s' : '10m',
       preAllocatedVUs: 1,
       exec: 'callClaude',
     },
@@ -58,15 +59,15 @@ export const options = {
       executor: 'constant-arrival-rate',
       rate: 1,
       timeUnit: '1m',
-      duration: '10m',
+      duration: SHORT_MODE ? '90s' : '10m',
       preAllocatedVUs: 1,
       exec: 'callSka',
     },
     worker_general: {
       executor: 'constant-arrival-rate',
-      rate: 2,
+      rate: SHORT_MODE ? 1 : 2,
       timeUnit: '1m',
-      duration: '10m',
+      duration: SHORT_MODE ? '90s' : '10m',
       preAllocatedVUs: 1,
       exec: 'callWorker',
     },
@@ -74,7 +75,7 @@ export const options = {
       executor: 'constant-arrival-rate',
       rate: 1,
       timeUnit: '1m',
-      duration: '10m',
+      duration: SHORT_MODE ? '90s' : '10m',
       preAllocatedVUs: 1,
       exec: 'callEditor',
     },
