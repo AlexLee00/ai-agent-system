@@ -4,6 +4,7 @@ import { callLocalOllama } from './local-ollama';
 import { checkCache, saveCache } from './cache';
 import { selectRuntimeProfile } from '../runtime-profiles';
 import { getGroqFallback } from '../../../../packages/core/lib/llm-models';
+import { callWithFallback as callCoreWithFallback } from '../../../../packages/core/lib/llm-fallback';
 import type { LLMCallRequest, LLMCallResponse, AbstractModel } from './types';
 
 const sender = require('../../../../packages/core/lib/telegram-sender');
@@ -133,18 +134,81 @@ async function _callRoute(route: string, req: LLMCallRequest, timeoutMs: number)
     const model = route.slice('local/'.length);
     return callLocalOllama({ prompt: req.prompt, model, systemPrompt: req.systemPrompt, timeoutMs });
   }
+  if (route.startsWith('openai-oauth/') || route.startsWith('google-gemini-cli/') || route.startsWith('gemini/') || route.startsWith('openai/')) {
+    return _callViaCoreFallback(route, req, timeoutMs);
+  }
   return { ok: false, provider: 'failed', error: `unsupported_provider:${route}`, durationMs: 0 };
 }
 
 function _isProviderSupported(route: string): boolean {
-  return route.startsWith('claude-code/') || route.startsWith('groq/') || route.startsWith('local/');
+  return route.startsWith('claude-code/')
+    || route.startsWith('groq/')
+    || route.startsWith('local/')
+    || route.startsWith('openai-oauth/')
+    || route.startsWith('openai/')
+    || route.startsWith('google-gemini-cli/')
+    || route.startsWith('gemini/');
 }
 
 function _routeToProvider(route: string): string {
   if (route.startsWith('claude-code/')) return 'claude-code-oauth';
   if (route.startsWith('groq/')) return 'groq';
   if (route.startsWith('local/')) return route;
+  if (route.startsWith('openai-oauth/')) return 'openai-oauth';
+  if (route.startsWith('openai/')) return 'openai';
+  if (route.startsWith('google-gemini-cli/') || route.startsWith('gemini/')) return 'gemini';
   return route;
+}
+
+async function _callViaCoreFallback(route: string, req: LLMCallRequest, timeoutMs: number): Promise<LLMCallResponse> {
+  const started = Date.now();
+  const provider = _routeToProvider(route);
+  const normalizedModel =
+    route.startsWith('gemini/')
+      ? route.slice('gemini/'.length)
+      : route;
+
+  const chainEntry: any = {
+    provider,
+    model: normalizedModel,
+    maxTokens: 1024,
+    temperature: 0.3,
+    timeoutMs,
+  };
+
+  try {
+    const result = await callCoreWithFallback({
+      chain: [chainEntry],
+      systemPrompt: req.systemPrompt || '',
+      userPrompt: req.prompt,
+      timeoutMs,
+      logMeta: {
+        team: req.callerTeam || 'worker',
+        bot: req.agent || 'hub-unified',
+        requestType: req.taskType || 'hub_call',
+        selectorKey: req.agent || 'hub-unified',
+        purpose: req.taskType || 'default',
+      },
+      team: req.callerTeam || 'worker',
+      purpose: req.taskType || 'default',
+    });
+
+    return {
+      ok: true,
+      provider,
+      result: result.text,
+      durationMs: Date.now() - started,
+      apiDurationMs: Date.now() - started,
+      cacheHit: false,
+    };
+  } catch (e: any) {
+    return {
+      ok: false,
+      provider: 'failed',
+      durationMs: Date.now() - started,
+      error: e?.message || `provider_failed:${route}`,
+    };
+  }
 }
 
 async function _saveCache(req: LLMCallRequest, resp: LLMCallResponse): Promise<void> {

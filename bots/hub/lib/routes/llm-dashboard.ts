@@ -8,14 +8,14 @@ export async function llmDashboardRoute(_req: any, res: any) {
 
 export async function llmCacheStatsRoute(_req: any, res: any) {
   try {
-    const rows = await pgPool.query(`
+    const rows = await pgPool.query('public', `
       SELECT day, cache_type, abstract_model, total_entries, total_hits, cost_saved_usd, avg_tokens
       FROM llm_cache_stats
       ORDER BY day DESC, cost_saved_usd DESC
       LIMIT 100
     `);
     const cacheEnabled = process.env.HUB_LLM_CACHE_ENABLED === 'true';
-    res.json({ ok: true, cache_enabled: cacheEnabled, stats: rows.rows, count: rows.rowCount });
+    res.json({ ok: true, cache_enabled: cacheEnabled, stats: rows, count: rows.length });
   } catch (e: any) {
     // Cache table may not exist yet
     res.json({ ok: true, cache_enabled: false, stats: [], count: 0, note: e.message });
