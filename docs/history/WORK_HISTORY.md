@@ -4,6 +4,13 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-04-19: CODEX_LLM_ROUTING_HARDENING Phase 1 — local Ollama circuit breaker (60차 세션)
+
+- **local-circuit-breaker.ts 신규**: CLOSED/OPEN/HALF_OPEN 3-state, 3회 실패→30s OPEN
+- **local-llm-client.ts 수정**: callLocalLLM에 circuit check + 3s 헬스 프리체크 — Ollama hang 90s→3s 단축
+- **Hub /hub/llm/circuit**: GET(상태조회) + DELETE(수동리셋) 엔드포인트
+- **scripts/load-test-llm.ts 신규**: 동시 부하 테스트, P50/P95/P99 레이턴시, 프로바이더 분포
+
 ## 2026-04-19: CODEX_BLOG_EVOLUTION 코드점검 + 아카이빙 + gitignore/hook 수정 (59차 세션)
 
 - **코드점검 완료**: TS 모듈 23개, launchd plist 28개, 문서 3종 모두 존재 확인

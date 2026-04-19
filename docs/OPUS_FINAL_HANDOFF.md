@@ -1,3 +1,48 @@
+# 세션 인수인계 — 2026-04-19 (CODEX_LLM_ROUTING_HARDENING Phase 1 완료 — 60차 세션 추가)
+
+## 완료 요약 ✅ (60차 세션 추가)
+
+### CODEX_LLM_ROUTING_HARDENING — Phase 1: Circuit Breaker + 부하 테스트 스크립트
+
+**문제**: local/qwen2.5-7b Ollama 무응답 시 최대 90s hang (30s timeout × 3 retry) → 루나 실시간 매매 판단 지연
+
+**구현 완료**:
+- `packages/core/lib/local-circuit-breaker.ts` (신규)
+  - CLOSED→OPEN→HALF_OPEN 3-state machine
+  - 3회 연속 실패 시 OPEN (30s), 이후 HALF_OPEN에서 단일 probe
+  - `isCircuitOpen()` / `recordSuccess()` / `recordFailure()` / `getAllCircuitStatuses()`
+- `packages/core/lib/local-llm-client.ts` — `callLocalLLM` 수정
+  - circuit OPEN 시 즉시 null 반환 (0ms)
+  - 3s 헬스 프리체크(`isLocalLLMAvailable`) → Ollama 완전 다운 시 3s 내 skip
+  - 성공/실패 자동 circuit 기록
+- `bots/hub/lib/routes/llm.ts` — `llmCircuitRoute` 추가
+  - `GET /hub/llm/circuit` → 전체 circuit 상태 + any_open 플래그
+  - `DELETE /hub/llm/circuit?target=...` → 수동 리셋
+- `bots/hub/src/hub.ts` — circuit 라우트 GET/DELETE 등록
+- `scripts/load-test-llm.ts` (신규)
+  - 동시성/총요청/팀 파라미터화, P50/P95/P99 레이턴시, 프로바이더 분포 측정
+
+**장애 개선 효과**:
+| 상황 | 이전 | 이후 |
+|------|------|------|
+| Ollama 완전 다운 (ECONNREFUSED) | ~3s 프리체크 스킵 | 동일 (이미 빠름) |
+| Ollama hang (무응답) | 90s (30s×3 retry) | 첫 실패 3s, 이후 즉시 skip |
+| Circuit OPEN 이후 | 매번 90s 재시도 | 30s 동안 0ms skip |
+
+**다음 Phase**:
+- Phase 2: unified-caller.ts에 runtime-profiles 기반 multi-route dispatch
+- Phase 3: 실제 OPS에서 부하 테스트 실행 (load-test-llm.ts 활용)
+- Phase 4: fallback_exhaustion DB 기록 + 관측성 강화
+- Phase 5: Luna commander 경로 local 완전 제거, 팀별 보강
+
+**커밋**: `44f2401a`
+
+## 🏷️ 60차 세션 요약
+
+**60차 세션 — CODEX_LLM_ROUTING_HARDENING Phase 1: local Ollama circuit breaker 구현 (3s 헬스 프리체크 + 30s OPEN 보호 + Hub circuit 엔드포인트 + 부하 테스트 스크립트).**
+
+---
+
 # 세션 인수인계 — 2026-04-19 (CODEX_BLOG_EVOLUTION 코드점검 완료 + 아카이빙 — 59차 세션 추가)
 
 ## 완료 요약 ✅ (59차 세션 추가)
