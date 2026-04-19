@@ -7,7 +7,15 @@ export function createPickkoSavePrecheckService({
   log,
   buildStageError,
 }: SavePrecheckDeps) {
-  async function runSavePrecheck(page: any) {
+  async function runSavePrecheck(
+    page: any,
+    expected: {
+      startDate: string;
+      startTime: string;
+      endDate?: string | null;
+      endTime: string;
+    },
+  ) {
     const sanity = await page.evaluate(`
       (() => {
         const clean = (s) => String(s || '').replace(/\\s+/g, ' ').trim();
@@ -82,6 +90,29 @@ export function createPickkoSavePrecheckService({
     `);
 
     log(`🧪 저장 전 확인: ${JSON.stringify(sanity)}`);
+
+    const expectedStartDate = String(expected?.startDate || '').trim();
+    const expectedStartTime = String(expected?.startTime || '').trim();
+    const expectedEndDate = String(expected?.endDate || expectedStartDate || '').trim();
+    const expectedEndTime = String(expected?.endTime || '').trim();
+
+    const actualStartDate = String(sanity.startDate || '').trim();
+    const actualStartTime = String(sanity.startTime || '').trim();
+    const actualEndDate = String(sanity.endDate || actualStartDate || '').trim();
+    const actualEndTime = String(sanity.endTime || '').trim();
+
+    const mismatches: string[] = [];
+    if (expectedStartDate && actualStartDate !== expectedStartDate) mismatches.push(`start_date=${actualStartDate} (expected ${expectedStartDate})`);
+    if (expectedStartTime && actualStartTime !== expectedStartTime) mismatches.push(`start_time=${actualStartTime} (expected ${expectedStartTime})`);
+    if (expectedEndDate && actualEndDate !== expectedEndDate) mismatches.push(`end_date=${actualEndDate} (expected ${expectedEndDate})`);
+    if (expectedEndTime && actualEndTime !== expectedEndTime) mismatches.push(`end_time=${actualEndTime} (expected ${expectedEndTime})`);
+
+    if (mismatches.length > 0) {
+      throw buildStageError(
+        'SAVE_TIME_MISMATCH',
+        `저장 중단: 폼 시간이 요청값과 다름 (${mismatches.join(', ')})`,
+      );
+    }
 
     if (sanity.badTime) {
       throw buildStageError(
