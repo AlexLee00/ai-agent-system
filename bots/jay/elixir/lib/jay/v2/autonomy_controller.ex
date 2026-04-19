@@ -186,14 +186,14 @@ defmodule Jay.V2.AutonomyController do
   # ────────────────────────────────────────────────────────────────
 
   defp ensure_kv_store! do
-    Jay.Core.HubClient.pg_query("""
-      CREATE SCHEMA IF NOT EXISTS agent;
+    Jay.Core.HubClient.pg_query("CREATE SCHEMA IF NOT EXISTS agent", "agent")
 
+    Jay.Core.HubClient.pg_query("""
       CREATE TABLE IF NOT EXISTS agent.kv_store (
         key TEXT PRIMARY KEY,
         value INTEGER NOT NULL,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
+      )
     """, "agent")
   rescue
     _ -> :ok
