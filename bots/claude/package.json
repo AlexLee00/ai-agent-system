@@ -21,6 +21,14 @@
     "check:ska":         "node scripts/team-check.js --team=ska",
     "check:luna":        "node scripts/team-check.js --team=luna",
     "check:all":         "node scripts/team-check.js --team=all",
-    "health":            "node scripts/health-dashboard-server.js"
+    "health":            "node scripts/health-dashboard-server.js",
+    "typecheck":         "../../node_modules/.bin/tsc -p tsconfig.json --pretty false",
+    "test:reviewer":     "node __tests__/reviewer.test.ts",
+    "test:guardian":     "node __tests__/guardian.test.ts",
+    "test:builder":      "node __tests__/builder.test.ts",
+    "test:doctor":       "node __tests__/doctor-verify-loop.test.ts",
+    "test:commander":    "node __tests__/commander.test.ts",
+    "test:codex":        "node __tests__/codex-plan-notifier.test.ts",
+    "test:unit":         "node __tests__/reviewer.test.ts && node __tests__/guardian.test.ts && node __tests__/builder.test.ts && node __tests__/doctor-verify-loop.test.ts && node __tests__/commander.test.ts && node __tests__/codex-plan-notifier.test.ts"
   }
 }

@@ -20,7 +20,7 @@
 	<key>ProgramArguments</key>
 	<array>
 		<string>/opt/homebrew/bin/node</string>
-		<string>/Users/alexlee/projects/ai-agent-system/bots/claude/src/builder.ts</string>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/claude/src/builder.js</string>
 	</array>
 	<key>RunAtLoad</key>
 	<false/>

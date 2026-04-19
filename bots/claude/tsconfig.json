@@ -1,0 +1,46 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": false,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "maxNodeModuleJsDepth": 0,
+    "types": ["node"]
+  },
+  "files": [
+    "src/reviewer.ts",
+    "src/guardian.ts",
+    "src/builder.ts",
+    "src/claude-commander.ts",
+    "lib/doctor.ts",
+    "lib/codex-plan-notifier.ts",
+    "scripts/health-report.ts",
+    "scripts/health-check.ts",
+    "scripts/codex-notifier-runner.ts",
+    "__tests__/reviewer.test.ts",
+    "__tests__/guardian.test.ts",
+    "__tests__/builder.test.ts",
+    "__tests__/doctor-verify-loop.test.ts",
+    "__tests__/commander.test.ts",
+    "__tests__/codex-plan-notifier.test.ts",
+    "../../packages/core/lib/env.ts",
+    "../../packages/core/lib/env.js",
+    "../../packages/core/lib/openclaw-client.js",
+    "../../packages/core/lib/skills.js",
+    "../../packages/core/lib/skills/index.ts",
+    "../../packages/core/lib/skills/code-review.ts",
+    "../../packages/core/lib/skills/security-pipeline.ts",
+    "../../packages/core/lib/skills/verify-loop.ts",
+    "../../packages/core/lib/ts-source-bridge.js"
+  ],
+  "exclude": [
+    "**/node_modules/**"
+  ]
+}
