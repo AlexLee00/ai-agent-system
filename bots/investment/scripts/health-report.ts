@@ -557,6 +557,11 @@ function buildDecision(
         reason: `validation/live overlap hotspot — ${capitalGuardBreakdown.topOverlapHotspot?.label || 'n/a'} ${capitalGuardBreakdown.topOverlapHotspot?.count || 0}건`,
       },
       {
+        active: Boolean(capitalGuardBreakdown.actionHints?.length),
+        level: 'low',
+        reason: `crypto gate action hint — ${capitalGuardBreakdown.actionHints?.[0] || 'n/a'}`,
+      },
+      {
         active: cryptoValidationBudgetPolicyHealth?.decision === 'consider_policy_split',
         level: 'medium',
         reason: `crypto validation budget 정책 판단 — ${cryptoValidationBudgetPolicyHealth?.decisionLabel || '현 구조 유지'}`,
@@ -627,6 +632,12 @@ function formatText(report) {
               : []),
             ...(report.capitalGuardBreakdown.topOverlapHotspot
               ? [`  top overlap hotspot: ${report.capitalGuardBreakdown.topOverlapHotspot.label} ${report.capitalGuardBreakdown.topOverlapHotspot.count}건`]
+              : []),
+            ...(report.capitalGuardBreakdown.actionHints?.length
+              ? [
+                  '  action hints:',
+                  ...report.capitalGuardBreakdown.actionHints.map((hint) => `    ${hint}`),
+                ]
               : []),
             ...report.capitalGuardBreakdown.byReasonGroup.map((row) => `  ${row.label}: ${row.count}건`),
             ...report.capitalGuardBreakdown.byTradeMode.map((row) => `  mode ${row.tradeMode}: ${row.count}건`),

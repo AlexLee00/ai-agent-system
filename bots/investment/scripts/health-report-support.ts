@@ -388,6 +388,27 @@ export async function loadCapitalGuardBreakdown(pgPool, periodDays = 14) {
   }));
   const topHotspot = hotspots[0] || null;
   const topOverlapHotspot = overlapHotspots[0] || null;
+  const hotspotSymbols = hotspots
+    .slice(0, 3)
+    .map((row) => row.symbol)
+    .filter(Boolean);
+  const overlapSymbols = overlapHotspots
+    .slice(0, 3)
+    .map((row) => row.symbol)
+    .filter(Boolean);
+  const actionHints = [];
+
+  if (topReason?.group === 'correlation_guard' && hotspotSymbols.length > 0) {
+    actionHints.push(`normal lane correlation 압력 완화 우선 — ${hotspotSymbols.join(', ')}`);
+  }
+
+  if (overlapSymbols.length > 0) {
+    actionHints.push(`validation/LIVE overlap 심볼 점검 — ${overlapSymbols.join(', ')}`);
+  }
+
+  if (normalCount > validationCount && validationRatio <= 10) {
+    actionHints.push('validation 완화보다 normal lane 포지션 군집도와 중복 진입 압력 해소를 먼저 보는 편이 좋다');
+  }
 
   return {
     periodDays,
@@ -398,6 +419,7 @@ export async function loadCapitalGuardBreakdown(pgPool, periodDays = 14) {
     overlapHotspots,
     topHotspot,
     topOverlapHotspot,
+    actionHints,
     laneSnapshot: {
       validationCount,
       normalCount,
