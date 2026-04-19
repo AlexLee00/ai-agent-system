@@ -79,6 +79,14 @@ function getLocalStandbySummary() {
   }
 }
 
+function formatLocalStandbyLine() {
+  const standbySummary = getLocalStandbySummary();
+  const singlePrimaryRisk = standbySummary.includes('standby 없음')
+    ? ' / 단일 primary 리스크'
+    : '';
+  return `Local standby: ${standbySummary}${singlePrimaryRisk}`;
+}
+
 const publishLunaMessage = createEventReporter({
   fromBot: 'luna',
   team: 'investment',
@@ -225,7 +233,7 @@ export function notifyError(context, error) {
       .join(' -> ')}`
     : '';
   const localLine = /로컬 LLM 응답 없음|local llm/i.test(String(error?.message || error || '')) && localStatus
-    ? `\nLocal probe: ${localStatus.status} / ok ${localStatus.okCount} / fail ${localStatus.failCount}${localStatus.latest?.probeError ? ` / ${localStatus.latest.probeError}` : ''}\nLocal standby: ${getLocalStandbySummary()}`
+    ? `\nLocal probe: ${localStatus.status} / ok ${localStatus.okCount} / fail ${localStatus.failCount}${localStatus.latest?.probeError ? ` / ${localStatus.latest.probeError}` : ''}\n${formatLocalStandbyLine()}`
     : '';
   const msg = `❌ [오류] ${context}\n${error?.message || error}${traceLine}${localLine}`;
   return publishLunaMessage({
