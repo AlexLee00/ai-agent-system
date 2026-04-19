@@ -553,8 +553,8 @@ async function loadKisCapabilityHealth() {
 async function loadLocalLlmHealth(launchctlStatus = {}) {
   const runtimeProfile = await selectRuntime('luna', 'analyst').catch(() => null);
   const primaryBaseUrl = String(runtimeProfile?.local_llm_base_url || env.LOCAL_LLM_BASE_URL || 'http://127.0.0.1:11434').trim();
-  const fallbackBaseUrl = String(env.OLLAMA_BASE_URL || '').trim();
-  const urls = [...new Set([primaryBaseUrl, fallbackBaseUrl].filter(Boolean))];
+  const secondaryBaseUrl = String(env.OLLAMA_BASE_URL || '').trim();
+  const urls = [...new Set([primaryBaseUrl, secondaryBaseUrl].filter(Boolean))];
 
   const circuits = [];
   for (const baseUrl of urls) {

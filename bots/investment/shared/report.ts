@@ -15,7 +15,8 @@ const { createEventReporter } = require('../../../packages/core/lib/telegram/rep
 const DIVIDER = '──────────';
 const SMALL_DIVIDER = '──────────';
 const LOCAL_LLM_HEALTH_HISTORY_FILE = '/tmp/investment-local-llm-health-history.jsonl';
-const SECONDARY_LOCAL_PORT = Number(String(process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11435').match(/:(\d+)/)?.[1] || '11435');
+const SECONDARY_LOCAL_BASE_URL = String(process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11435');
+const SECONDARY_LOCAL_PORT = Number(SECONDARY_LOCAL_BASE_URL.match(/:(\d+)/)?.[1] || '11435');
 
 function compactReasoning(reasoning, maxLength = 90) {
   const text = String(reasoning || '').replace(/\s+/g, ' ').trim();
