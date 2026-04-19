@@ -33,6 +33,25 @@ log_err() {
   echo "$msg" >> "$LOG_FILE"
 }
 
+pid_matches_script() {
+  local pid="$1"
+  local needle="$2"
+  if [ -z "$pid" ] || [ -z "$needle" ]; then
+    return 1
+  fi
+
+  local cmd
+  cmd=$(ps -p "$pid" -o command= 2>/dev/null || true)
+  if [ -z "$cmd" ]; then
+    return 1
+  fi
+
+  case "$cmd" in
+    *"$needle"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 ensure_launchd_service() {
   local label="$1"
   local plist="$2"
@@ -58,7 +77,7 @@ log "━━━ [1중 체크] Shell 레벨 ━━━━━━━━━━━━�
 # 1-1. self-lock: 중복 실행 방지
 if [ -f "$SELF_LOCK" ]; then
   OLD_PID=$(cat "$SELF_LOCK" 2>/dev/null)
-  if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
+  if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null && pid_matches_script "$OLD_PID" "start-ops.sh"; then
     log_err "[1중] start-ops.sh 이미 실행 중 (PID: $OLD_PID) — 중복 차단"
     exit 1
   fi
@@ -130,7 +149,7 @@ cleanup_old() {
   # 락 파일에서 구 PID 확인
   if [ -f "$LOCK_FILE" ]; then
     OLD_PID=$(cat "$LOCK_FILE" 2>/dev/null)
-    if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
+    if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null && pid_matches_script "$OLD_PID" "naver-monitor"; then
       log "  🔍 구 프로세스 발견 (PID: $OLD_PID) → 종료"
       kill "$OLD_PID" 2>/dev/null
       sleep 2

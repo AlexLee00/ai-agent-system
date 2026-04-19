@@ -90,15 +90,40 @@ has_recent_dexter_report() {
   [[ "$tail_text" == *"📋 요약:"* || "$tail_text" == *"🎉 모든 체크 통과"* || "$tail_text" == *"이상 없음 — 텔레그램 발송 생략"* ]]
 }
 
+launchctl_field() {
+  local info="$1"
+  local pattern="$2"
+  echo "$info" | sed -n "s/^[[:space:]]*${pattern}[[:space:]]*=[[:space:]]*\\(.*\\)$/\\1/p" | head -n 1
+}
+
 check_svc() {
   local svc="$1"
   local label="$2"
-  local pid
+  local pid info state exit_raw exit_code runs
   pid=$(launchctl list 2>/dev/null | awk -v s="$svc" '$3==s {print $1}')
+  info=$(launchctl print "$LAUNCHCTL_DOMAIN/$svc" 2>/dev/null || true)
+  state=$(launchctl_field "$info" "state")
+  runs=$(launchctl_field "$info" "runs")
+  exit_raw=$(launchctl_field "$info" "last exit code")
+
+  if [[ "$exit_raw" =~ ^[0-9]+$ ]]; then
+    exit_code="$exit_raw"
+  else
+    exit_code=""
+  fi
+
   if [[ "$pid" =~ ^[0-9]+$ ]] && [ "$pid" != "0" ]; then
     log "   ✅ ${label} (PID: ${pid})"
     append_report "✅ ${label}"
     ((OK++)) || true
+  elif [ "$state" = "running" ]; then
+    log "   ✅ ${label} (running, pid 미노출)"
+    append_report "✅ ${label} (running)"
+    ((OK++)) || true
+  elif [ "$state" = "spawn scheduled" ] && [ "${exit_code:-}" = "0" ]; then
+    log "   ⏳ ${label} (launchd 대기 중, 최근 종료 정상)"
+    append_report "⏳ ${label} 대기중(최근 정상)"
+    ((WARN++)) || true
   else
     log "   ❌ ${label} 미실행"
     append_report "❌ ${label} 미실행"
@@ -110,7 +135,7 @@ check_periodic() {
   local svc="$1"
   local label="$2"
   local optional="${3:-0}"
-  local info runs exit_raw exit_code
+  local info state runs exit_raw exit_code
   info=$(launchctl print "$LAUNCHCTL_DOMAIN/$svc" 2>/dev/null || true)
   runs=$(echo "$info" | awk '/	runs =/ {print $3}')
   exit_raw=$(echo "$info" | sed -n 's/^[[:space:]]*last exit code = \(.*\)$/\1/p' | head -n 1)
@@ -121,7 +146,11 @@ check_periodic() {
     exit_code=""
   fi
 
-  if [ -z "$runs" ]; then
+  if [ "$state" = "running" ]; then
+    log "   ✅ ${label} (현재 실행 중)"
+    append_report "✅ ${label} (running)"
+    ((OK++)) || true
+  elif [ -z "$runs" ]; then
     if [ "$optional" = "1" ]; then
       log "   ℹ️  ${label} (선택적 서비스 미등록)"
       append_report "ℹ️ ${label} 미등록(선택)"
@@ -134,6 +163,10 @@ check_periodic() {
     log "   ✅ ${label} (${runs}회 실행, exit=0)"
     append_report "✅ ${label}"
     ((OK++)) || true
+  elif [ "$state" = "spawn scheduled" ] && [ "$runs" -ge 1 ] && [ "${exit_code:-}" = "0" ]; then
+    log "   ⏳ ${label} (launchd 대기 중, 최근 종료 정상)"
+    append_report "⏳ ${label} 대기중(최근 정상)"
+    ((WARN++)) || true
   elif [ "$runs" -eq 0 ] || [ -z "$exit_code" ] || [ "$exit_raw" = "(never)" ]; then
     log "   ⏳ ${label} (등록됨, 첫 트리거 대기 중)"
     append_report "⏳ ${label} 대기중"
