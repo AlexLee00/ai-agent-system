@@ -386,6 +386,8 @@ export async function loadCapitalGuardBreakdown(pgPool, periodDays = 14) {
     count: Number(row.cnt || 0),
     label: `${row.symbol} ${String(row.side || 'buy').toUpperCase()} / ${row.trade_mode}`,
   }));
+  const topHotspot = hotspots[0] || null;
+  const topOverlapHotspot = overlapHotspots[0] || null;
 
   return {
     periodDays,
@@ -394,6 +396,8 @@ export async function loadCapitalGuardBreakdown(pgPool, periodDays = 14) {
     byTradeMode: tradeModeRows,
     hotspots,
     overlapHotspots,
+    topHotspot,
+    topOverlapHotspot,
     laneSnapshot: {
       validationCount,
       normalCount,
