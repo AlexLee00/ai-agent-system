@@ -29,11 +29,29 @@
 2. Phase 2+: 실제 사건 접수 → 워크플로우 End-to-End 테스트
 3. 외부 API 연동 (대법원/USPTO/WIPO) — API 키 필요
 
-**커밋**: `1bc7da9c`
+**커밋**: `1bc7da9c`, `16064a80`, `84394d86`
+
+### OPS DB 마이그레이션 완료
+
+- `psql -U alexlee -d jay -f bots/legal/migrations/001-appraisal-schema.sql` 실행 완료
+- legal.cases/code_analyses/case_references/reports/interviews/sw_functions/feedback 7개 테이블 생성됨
+- pg-pool VALID_SCHEMAS에 'legal' 추가 (커밋 `16064a80`)
+
+### E2E 워크플로우 검증 완료
+
+- 테스트 사건 접수 → DB INSERT → briefing LLM(Groq fallback) → inception_plan 저장 (1136 bytes) 정상 동작
+- Groq Qwen3의 `<think>` 태그 자동 제거 구현 (llm-helper.js stripThinkTags)
+- caseData에 classification 필드 주입 (start-appraisal.js 수정)
+
+### 다음 세션 할 일
+
+1. Anthropic timeout 문제 조사 — 항상 Groq으로 폴백됨 (llm-keys 초기화 지연?)
+2. Phase 2.5~12 전체 워크플로우 연결 테스트 (실제 사건 접수 시)
+3. generate-report.js로 PDF/docx 생성 테스트
 
 ## 🏷️ 64차 세션 요약
 
-**64차 세션 — JAY_DARWIN_INDEPENDENCE 완료 아카이빙 (58 tests OK) + JUSTIN_EVOLUTION Phase 1 잔여 구현: case-router/테스트 26개/헬스체크/진입점.**
+**64차 세션 — JAY_DARWIN_INDEPENDENCE 완료 + JUSTIN Phase 1 완성: DB 마이그레이션 OPS 실행, E2E 검증 (inception_plan 생성 OK), think 태그 제거.**
 
 ---
 
