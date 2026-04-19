@@ -44,10 +44,10 @@
       "cost_per_1m_output_usd": 0.79
     },
     "anthropic_opus": {
-      "current": "qwen-qwq-32b",
+      "current": "llama-3.3-70b-versatile",
       "provider": "groq",
-      "cost_per_1m_input_usd": 0.29,
-      "cost_per_1m_output_usd": 0.39
+      "cost_per_1m_input_usd": 0.59,
+      "cost_per_1m_output_usd": 0.79
     }
   }
 }

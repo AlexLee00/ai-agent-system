@@ -90,8 +90,8 @@ function resolvePreferredProvider(preferredApi: string, groqModel: string, maxTo
 function buildRouteFromAgentModel(agentModel: string | null | undefined, {
   openaiPerfModel = 'gpt-5.4',
   openaiMiniModel = 'gpt-4o-mini',
-  groqScoutModel = 'meta-llama/llama-4-scout-17b-16e-instruct',
-  groqCompetitionModels = ['openai/gpt-oss-20b', 'meta-llama/llama-4-scout-17b-16e-instruct'],
+  groqScoutModel = 'llama-3.1-8b-instant',
+  groqCompetitionModels = ['openai/gpt-oss-20b', 'llama-3.3-70b-versatile'],
 }: {
   openaiPerfModel?: string;
   openaiMiniModel?: string;
@@ -140,28 +140,28 @@ const TEAM_SELECTOR_DEFAULTS: Record<string, any> = {
       primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 300, temperature: 0.1 },
       fallbacks: [
         { provider: 'local', model: 'qwen2.5-7b', maxTokens: 300, temperature: 0.1 },
-        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 300, temperature: 0.1 },
+        { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 300, temperature: 0.1 },
       ],
     },
     archer: {
       primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 4096, temperature: 0.2 },
       fallbacks: [
         { provider: 'local', model: 'qwen2.5-7b', maxTokens: 4096, temperature: 0.2 },
-        { provider: 'groq', model: 'llama-4-scout-17b-16e-instruct', maxTokens: 4096, temperature: 0.3 },
+        { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 4096, temperature: 0.3 },
       ],
     },
     lead: {
       primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 300, temperature: 0.1 },
       fallbacks: [
         { provider: 'local', model: 'qwen2.5-7b', maxTokens: 300, temperature: 0.1 },
-        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 300, temperature: 0.1 },
+        { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 300, temperature: 0.1 },
       ],
     },
     _fallback: {
       primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 1024, temperature: 0.1 },
       fallbacks: [
         { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.1 },
-        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1024, temperature: 0.1 },
+        { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 1024, temperature: 0.1 },
       ],
     },
   },
@@ -184,24 +184,24 @@ const TEAM_SELECTOR_DEFAULTS: Record<string, any> = {
     'social.summarize': {
       primary: { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 1024, temperature: 0.1 },
       fallbacks: [
-        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1024, temperature: 0.1 },
+        { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 1024, temperature: 0.1 },
         { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.1 },
       ],
     },
     'social.caption': {
       primary: { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 1024, temperature: 0.1 },
       fallbacks: [
-        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1024, temperature: 0.1 },
+        { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 1024, temperature: 0.1 },
       ],
     },
     'star.summarize': {
       primary: { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 1024, temperature: 0.1 },
       fallbacks: [
-        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1024, temperature: 0.1 },
+        { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 1024, temperature: 0.1 },
       ],
     },
     'star.caption': {
-      primary: { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1024, temperature: 0.1 },
+      primary: { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 1024, temperature: 0.1 },
       fallbacks: [
         { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 1024, temperature: 0.1 },
       ],
@@ -221,20 +221,20 @@ const TEAM_SELECTOR_DEFAULTS: Record<string, any> = {
     _fallback: {
       primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 1024, temperature: 0.1 },
       fallbacks: [
-        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1024, temperature: 0.1 },
+        { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 1024, temperature: 0.1 },
       ],
     },
   },
   worker: {
     'chat.task_intake': {
-      primary: { provider: 'groq', model: 'llama-4-scout-17b-16e-instruct', maxTokens: 250, temperature: 0.1 },
+      primary: { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 250, temperature: 0.1 },
       fallbacks: [
         { provider: 'local', model: 'qwen2.5-7b', maxTokens: 250, temperature: 0.1 },
         { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxTokens: 250, temperature: 0.1 },
       ],
     },
     _fallback: {
-      primary: { provider: 'groq', model: 'llama-4-scout-17b-16e-instruct', maxTokens: 1024, temperature: 0.1 },
+      primary: { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 1024, temperature: 0.1 },
       fallbacks: [
         { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.1 },
         { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxTokens: 1024, temperature: 0.1 },
@@ -265,7 +265,7 @@ const TEAM_SELECTOR_DEFAULTS: Record<string, any> = {
   },
   video: {
     'step-proposal': {
-      primary: { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 180, temperature: 0.1 },
+      primary: { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 180, temperature: 0.1 },
       fallbacks: [{ provider: 'local', model: 'qwen2.5-7b', maxTokens: 180, temperature: 0.1 }],
     },
     critic: {
@@ -311,7 +311,7 @@ const TEAM_SELECTOR_DEFAULTS: Record<string, any> = {
       ],
     },
     _fallback: {
-      primary: { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1024, temperature: 0.1 },
+      primary: { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 1024, temperature: 0.1 },
       fallbacks: [],
     },
   },
@@ -415,7 +415,7 @@ function buildSelectorRegistry(): Record<string, any> {
     },
 
     'worker.ai.fallback': ({
-      groqModel = 'llama-4-scout-17b-16e-instruct',
+      groqModel = 'llama-3.1-8b-instant',
       preferredApi = 'groq',
       configuredProviders = ['groq', 'local', 'claude-code', 'anthropic', 'gemini', 'openai'],
       maxTokens = 1024,
@@ -512,10 +512,10 @@ function buildSelectorRegistry(): Record<string, any> {
       };
       const configuredRoutes = isObject(policyOverride?.agentRoutes) ? { ...defaultRoutes, ...policyOverride.agentRoutes } : defaultRoutes;
       const openaiMiniModel = policyOverride?.openaiMiniModel || 'gpt-4o-mini';
-      const groqScoutModel = policyOverride?.groqScoutModel || 'meta-llama/llama-4-scout-17b-16e-instruct';
+      const groqScoutModel = policyOverride?.groqScoutModel || 'llama-3.1-8b-instant';
       const groqCompetitionModels = Array.isArray(policyOverride?.groqCompetitionModels) && policyOverride.groqCompetitionModels.length > 0
         ? clone(policyOverride.groqCompetitionModels)
-        : ['openai/gpt-oss-20b', 'meta-llama/llama-4-scout-17b-16e-instruct'];
+        : ['openai/gpt-oss-20b', 'llama-3.3-70b-versatile'];
       const anthropicModel = policyOverride?.anthropicModel || 'claude-haiku-4-5-20251001';
       const modelDerivedRoute = buildRouteFromAgentModel(agentModel, {
         openaiPerfModel,
