@@ -1,3 +1,35 @@
+# 세션 인수인계 — 2026-04-19 (CODEX_JUSTIN_EVOLUTION Phase 7 테스트 확대 — 67차 세션)
+
+## 완료 요약 ✅ (67차 세션)
+
+### CODEX_JUSTIN_EVOLUTION Phase 7 — pdf-generator 모듈 분리 + 41 단위 테스트
+
+**이번 세션 (67차)**:
+- `bots/legal/lib/pdf-generator.js`: 신규 — `scripts/generate-pdf.js`에서 순수 함수 6개 추출
+  - `parseArgs`, `escapeHtml`, `inlineMarkdown`, `markdownToHtml`, `buildHtml`, `getReportLabel`
+  - 빈 입력 버그 수정: `markdownToHtml('')` → `''` (기존엔 `'<br>'` 반환)
+- `bots/legal/scripts/generate-pdf.js`: 리팩토링 — pdf-generator 모듈 사용 (464 → 130줄)
+- `bots/legal/__tests__/pdf-generator.test.js`: 신규 — 41 단위 테스트 (7 describe 블록)
+  - parseArgs(6), escapeHtml(3), inlineMarkdown(6), markdownToHtml(12), buildHtml(7), getReportLabel(5), REPORT_TYPE_LABELS(2)
+
+**테스트**: 80 tests, 0 failures (39 → 80, +41 신규)
+
+### Anthropic timeout 원인 조사 결과
+
+**근본 원인**: DEV 환경에서 Hub(OPS) 연결 실패 시 `_config = loadConfigLocal()` → `config.yaml`에 Anthropic API 키 없음 + `ANTHROPIC_API_KEY` env var 미설정
+- `claude-code` 10s timeout → 실패 (예상 동작, 헤드리스 CLI 기동 시간 초과)
+- `anthropic` → `getAnthropicKey()` null 반환 → `'Anthropic API 키 없음'` 에러
+- `groq` → `process.env.GROQ_API_KEY` 환경변수로 성공 (Hub 불필요)
+
+**결론**: 예상 동작. Groq(Qwen3-32B)이 사실상 DEV 기본 폴백. 법적 문서 품질 충분.
+
+**다음 세션 우선순위**:
+1. E2E 전체 워크플로우 테스트 (`node scripts/test-e2e-workflow.js --full`)
+2. Phase 5 — 외부 API 연동 (대법원 종합법률정보 API 검토)
+3. Phase 8 — Hub API endpoint `/api/legal/case` 구현
+
+---
+
 # 세션 인수인계 — 2026-04-19 (CODEX_JUSTIN_EVOLUTION Phase 3+4 스크립트 — 66차 세션)
 
 ## 완료 요약 ✅ (66차 세션)

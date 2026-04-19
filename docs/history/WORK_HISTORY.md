@@ -4,6 +4,14 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-04-19: JUSTIN_EVOLUTION Phase 7 — pdf-generator 모듈 분리 + 41 단위 테스트 (67차 세션)
+
+- **pdf-generator.js**: `scripts/generate-pdf.js`에서 순수 함수 분리 (parseArgs/escapeHtml/inlineMarkdown/markdownToHtml/buildHtml/getReportLabel)
+- **pdf-generator.test.js**: 41 단위 테스트 신규 추가 (7 describe 블록)
+- **빈 입력 버그 수정**: `markdownToHtml('')` → `''` 반환
+- **Anthropic timeout 조사**: DEV 환경 Hub 미연결 시 API 키 없음 → 예상 동작, Groq 폴백 정상
+- **저스틴팀 테스트 총계**: 39 → **80 tests, 0 failures**
+
 ## 2026-04-19: JAY_DARWIN_INDEPENDENCE 완료 + JUSTIN_EVOLUTION Phase 1 완성 (64차 세션)
 
 - **JAY_DARWIN_INDEPENDENCE**: bots/jay/elixir/test — 58 tests, 0 failures 확인, CODEX 아카이빙
