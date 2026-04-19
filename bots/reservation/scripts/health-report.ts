@@ -56,6 +56,15 @@ const RESERVATION_COMMAND_WORKFLOW_NAME =
   process.env.RESERVATION_COMMAND_WORKFLOW_NAME || '스카팀 읽기 명령 intake';
 const CANCEL_COUNTER_DRIFT_TITLE = '🚨 네이버 취소 카운터 증가 이상';
 
+function getCurrentKstParts() {
+  const now = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  return {
+    isoDate: now.toISOString().slice(0, 10),
+    hour: now.getUTCHours(),
+    minute: now.getUTCMinutes(),
+  };
+}
+
 function reservationServiceLabel(label) {
   const mapped = {
     'ai.ska.commander': 'reservation-commander',
@@ -276,11 +285,15 @@ function buildTodayAuditHealth() {
     const exitMatch = lastCompleted ? lastCompleted.match(/exit:\s*(\d+)/i) : null;
     const lastExitCode = exitMatch ? Number(exitMatch[1]) : null;
     const recentSuccess = lastExitCode === 0;
+    const lastAuditDate = lastAuditStarted?.match(/(\d{4}-\d{2}-\d{2})/)?.[1] || null;
+    const kst = getCurrentKstParts();
+    const shouldHaveRunToday = kst.hour > 9 || (kst.hour === 9 && kst.minute >= 0);
+    const missingTodayRun = shouldHaveRunToday && lastAuditDate !== kst.isoDate;
     const samples = completionIndex >= 0
       ? recentLines.slice(Math.max(0, completionIndex - 4), completionIndex + 1).map((line) => `  ${line}`)
       : recentLines.slice(-5).map((line) => `  ${line}`);
 
-    if (recentSuccess) {
+    if (recentSuccess && !missingTodayRun) {
       return {
         ok: [
           '  today-audit 로그: 최근 실행 성공',
@@ -292,6 +305,8 @@ function buildTodayAuditHealth() {
         lastCompletedAt: lastCompleted,
         lastStartedAt: lastStarted,
         lastWrapperStartedAt: lastWrapperStarted,
+        lastAuditDate,
+        missingTodayRun,
         recentSuccess,
       };
     }
@@ -299,7 +314,9 @@ function buildTodayAuditHealth() {
     return {
       ok: lastStarted ? [`  latest start: ${lastStarted}`] : [],
       warn: [
-        `  today-audit 로그: 최근 실행 실패${lastExitCode != null ? ` (exit ${lastExitCode})` : ''}`,
+        missingTodayRun
+          ? `  today-audit 로그: 오늘(${kst.isoDate}) 성공 이력 없음`
+          : `  today-audit 로그: 최근 실행 실패${lastExitCode != null ? ` (exit ${lastExitCode})` : ''}`,
         ...(lastCompleted ? [`  latest completion: ${lastCompleted}`] : []),
       ],
       samples,
@@ -307,6 +324,8 @@ function buildTodayAuditHealth() {
       lastCompletedAt: lastCompleted,
       lastStartedAt: lastStarted,
       lastWrapperStartedAt: lastWrapperStarted,
+      lastAuditDate,
+      missingTodayRun,
       recentSuccess,
     };
   } catch (error) {
@@ -318,6 +337,8 @@ function buildTodayAuditHealth() {
       lastCompletedAt: null,
       lastStartedAt: null,
       lastWrapperStartedAt: null,
+      lastAuditDate: null,
+      missingTodayRun: false,
       recentSuccess: false,
     };
   }
@@ -626,7 +647,9 @@ function buildDecision(coreServiceRows, monitorHealth, n8nCommandHealth, dailySu
       {
         active: todayAuditHealth.warn.length > 0,
         level: 'medium',
-        reason: `today-audit 최근 실행이 비정상 상태라 당일 예약 검증 로그를 확인해야 합니다.${todayAuditHealth.lastExitCode != null ? ` (exit ${todayAuditHealth.lastExitCode})` : ''}`,
+        reason: todayAuditHealth.missingTodayRun
+          ? 'today-audit가 오늘 예정 실행 이후에도 성공 이력이 없어 당일 예약 검증 누락 여부를 확인해야 합니다.'
+          : `today-audit 최근 실행이 비정상 상태라 당일 예약 검증 로그를 확인해야 합니다.${todayAuditHealth.lastExitCode != null ? ` (exit ${todayAuditHealth.lastExitCode})` : ''}`,
       },
     ],
     okReason: '예약 운영 서비스와 booking monitor 로그 활동성이 현재는 안정 구간입니다.',
@@ -727,6 +750,8 @@ async function buildReport() {
       lastCompletedAt: todayAuditHealth.lastCompletedAt,
       lastStartedAt: todayAuditHealth.lastStartedAt,
       lastWrapperStartedAt: todayAuditHealth.lastWrapperStartedAt,
+      lastAuditDate: todayAuditHealth.lastAuditDate,
+      missingTodayRun: todayAuditHealth.missingTodayRun,
       recentSuccess: todayAuditHealth.recentSuccess,
     },
     n8nCommandHealth: {

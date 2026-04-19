@@ -56,6 +56,15 @@ const NAVER_LOG = '/tmp/naver-ops-mode.log';
 const TODAY_AUDIT_LOG = '/tmp/today-audit.log';
 const LOG_STALE_MS = 15 * 60 * 1000; // 15분 무활동 → 크래시루프 의심
 
+function getCurrentKstParts() {
+  const now = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  return {
+    isoDate: now.toISOString().slice(0, 10),
+    hour: now.getUTCHours(),
+    minute: now.getUTCMinutes(),
+  };
+}
+
 // ─── 상태 파일 (공통 모듈 위임) ─────────────────────────────────
 
 const loadState  = () => hsm.loadState();
@@ -83,14 +92,22 @@ function readTodayAuditStatus() {
     const text = fs.readFileSync(TODAY_AUDIT_LOG, 'utf8');
     const lines = text.split('\n').map((line) => line.trimEnd()).filter(Boolean);
     const completeLines = lines.filter((line) => line.includes('⏹ today-audit 완료'));
+    const auditStartLines = lines.filter((line) => line.includes('📋 [오늘 예약 검증]'));
     const lastCompletedLine = completeLines[completeLines.length - 1] || null;
+    const lastAuditStartLine = auditStartLines[auditStartLines.length - 1] || null;
     const match = lastCompletedLine ? lastCompletedLine.match(/exit:\s*(\d+)/i) : null;
     const lastExitCode = match ? Number(match[1]) : null;
+    const lastAuditDate = lastAuditStartLine ? (lastAuditStartLine.match(/(\d{4}-\d{2}-\d{2})/) || [])[1] || null : null;
+    const kst = getCurrentKstParts();
+    const shouldHaveRunToday = kst.hour > 9 || (kst.hour === 9 && kst.minute >= 0);
+    const missingTodayRun = shouldHaveRunToday && lastAuditDate !== kst.isoDate;
 
     return {
       exists: true,
       lastExitCode,
       lastCompletedLine,
+      lastAuditDate,
+      missingTodayRun,
       recentSuccess: lastExitCode === 0,
     };
   } catch (error) {
@@ -98,6 +115,8 @@ function readTodayAuditStatus() {
       exists: true,
       lastExitCode: null,
       lastCompletedLine: `read-failed:${error.message}`,
+      lastAuditDate: null,
+      missingTodayRun: false,
       recentSuccess: false,
     };
   }
@@ -219,7 +238,16 @@ async function main() {
 
   // 5. today-audit 최근 실행 결과 체크
   const todayAudit = readTodayAuditStatus();
-  if (todayAudit.exists && todayAudit.lastExitCode != null && todayAudit.lastExitCode !== 0) {
+  if (todayAudit.exists && todayAudit.missingTodayRun) {
+    const key = 'audit-missing:ai.ska.today-audit';
+    if (canAlert(state, key)) {
+      issues.push({
+        key,
+        level: 3,
+        msg: `⚠️ [스카 헬스] today-audit 오늘 실행 누락 의심\n오늘(${getCurrentKstParts().isoDate}) 성공 이력 없음`,
+      });
+    }
+  } else if (todayAudit.exists && todayAudit.lastExitCode != null && todayAudit.lastExitCode !== 0) {
     const key = `audit-failed:ai.ska.today-audit:${todayAudit.lastExitCode}`;
     if (canAlert(state, key)) {
       issues.push({
@@ -229,7 +257,8 @@ async function main() {
       });
     }
   } else if (todayAudit.exists && todayAudit.recentSuccess) {
-    const prevKeys = Object.keys(state).filter((k) => k.startsWith('audit-failed:ai.ska.today-audit:'));
+    const prevKeys = Object.keys(state).filter((k) =>
+      k.startsWith('audit-failed:ai.ska.today-audit:') || k === 'audit-missing:ai.ska.today-audit');
     if (prevKeys.length > 0) {
       console.log('[헬스체크] today-audit 최근 성공 확인');
       const recoveryMsg = `✅ [스카 헬스] today-audit 회복\n최근 실행 성공 — 자동 감지`;
