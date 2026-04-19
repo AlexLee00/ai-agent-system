@@ -547,6 +547,16 @@ function buildDecision(
         reason: `최근 ${capitalGuardBreakdown.periodDays}일 crypto capital guard ${capitalGuardBreakdown.total}건 — validation ${capitalGuardBreakdown.laneSnapshot?.validationCount || 0}건 (${capitalGuardBreakdown.laneSnapshot?.validationRatio || 0}%) / normal ${capitalGuardBreakdown.laneSnapshot?.normalCount || 0}건 / 최다 ${capitalGuardBreakdown.laneSnapshot?.topReason?.label || 'n/a'} ${capitalGuardBreakdown.laneSnapshot?.topReason?.count || 0}건`,
       },
       {
+        active: Boolean(capitalGuardBreakdown.topHotspot),
+        level: 'low',
+        reason: `crypto capital guard hotspot — ${capitalGuardBreakdown.topHotspot?.label || 'n/a'} ${capitalGuardBreakdown.topHotspot?.count || 0}건`,
+      },
+      {
+        active: Boolean(capitalGuardBreakdown.topOverlapHotspot),
+        level: 'low',
+        reason: `validation/live overlap hotspot — ${capitalGuardBreakdown.topOverlapHotspot?.label || 'n/a'} ${capitalGuardBreakdown.topOverlapHotspot?.count || 0}건`,
+      },
+      {
         active: cryptoValidationBudgetPolicyHealth?.decision === 'consider_policy_split',
         level: 'medium',
         reason: `crypto validation budget 정책 판단 — ${cryptoValidationBudgetPolicyHealth?.decisionLabel || '현 구조 유지'}`,
@@ -612,6 +622,12 @@ function formatText(report) {
             `  총 ${report.capitalGuardBreakdown.total}건`,
             `  validation ${report.capitalGuardBreakdown.laneSnapshot?.validationCount || 0}건 (${report.capitalGuardBreakdown.laneSnapshot?.validationRatio || 0}%) / normal ${report.capitalGuardBreakdown.laneSnapshot?.normalCount || 0}건`,
             `  dominant guard: ${report.capitalGuardBreakdown.laneSnapshot?.topReason?.label || 'n/a'} ${report.capitalGuardBreakdown.laneSnapshot?.topReason?.count || 0}건`,
+            ...(report.capitalGuardBreakdown.topHotspot
+              ? [`  top hotspot: ${report.capitalGuardBreakdown.topHotspot.label} ${report.capitalGuardBreakdown.topHotspot.count}건`]
+              : []),
+            ...(report.capitalGuardBreakdown.topOverlapHotspot
+              ? [`  top overlap hotspot: ${report.capitalGuardBreakdown.topOverlapHotspot.label} ${report.capitalGuardBreakdown.topOverlapHotspot.count}건`]
+              : []),
             ...report.capitalGuardBreakdown.byReasonGroup.map((row) => `  ${row.label}: ${row.count}건`),
             ...report.capitalGuardBreakdown.byTradeMode.map((row) => `  mode ${row.tradeMode}: ${row.count}건`),
             ...(report.capitalGuardBreakdown.hotspots?.length
