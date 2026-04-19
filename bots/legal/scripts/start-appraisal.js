@@ -126,7 +126,10 @@ async function main() {
     }
 
     const justin = require(path.join(env.PROJECT_ROOT, 'bots/legal/lib/justin'));
-    const caseData = { ...caseRecord };
+    const caseData = {
+      ...caseRecord,
+      classification: { case_type: caseRecord.case_type },
+    };
 
     switch (opts.phase) {
       case 'briefing':
