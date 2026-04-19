@@ -103,6 +103,8 @@ const ALL_SERVICES = [
   'ai.investment.reporter',
 ];
 
+const LOCAL_LLM_HEALTH_HISTORY_FILE = '/tmp/investment-local-llm-health-history.jsonl';
+
 const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;
 const SCHEDULED_SERVICE_DEPLOYMENTS = {
   'ai.investment.crypto': {
@@ -118,6 +120,64 @@ const SCHEDULED_SERVICE_DEPLOYMENTS = {
     errorLogPath: '/tmp/investment-overseas.err.log',
   },
 };
+
+function safeReadJsonLines(filePath, limit = 12) {
+  try {
+    if (!fs.existsSync(filePath)) return [];
+    const lines = String(fs.readFileSync(filePath, 'utf8') || '')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+    return lines
+      .slice(-limit)
+      .map((line) => {
+        try {
+          return JSON.parse(line);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function appendJsonLine(filePath, payload) {
+  try {
+    fs.appendFileSync(filePath, `${JSON.stringify(payload)}\n`, 'utf8');
+  } catch (error) {
+    console.warn(`[health-report] local LLM history append 실패: ${error?.message || error}`);
+  }
+}
+
+function summarizeLocalLlmFlapping(history = []) {
+  const recent = Array.isArray(history) ? history.slice(-6) : [];
+  if (recent.length < 2) {
+    return {
+      status: 'warming_up',
+      transitionCount: 0,
+      okCount: recent.filter((row) => row?.probeOk).length,
+      failCount: recent.filter((row) => row && !row.probeOk).length,
+      lastError: recent.slice().reverse().find((row) => row && !row.probeOk)?.probeError || null,
+    };
+  }
+
+  let transitionCount = 0;
+  for (let i = 1; i < recent.length; i += 1) {
+    if (Boolean(recent[i - 1]?.probeOk) !== Boolean(recent[i]?.probeOk)) transitionCount += 1;
+  }
+
+  const okCount = recent.filter((row) => row?.probeOk).length;
+  const failCount = recent.filter((row) => row && !row.probeOk).length;
+  const lastError = recent.slice().reverse().find((row) => row && !row.probeOk)?.probeError || null;
+
+  let status = 'stable';
+  if (failCount > 0 && transitionCount >= 2) status = 'flapping';
+  else if (failCount > 0) status = 'degraded';
+
+  return { status, transitionCount, okCount, failCount, lastError };
+}
 
 function sanitizeInsightLine(text = '') {
   return String(text || '')
@@ -496,6 +556,17 @@ async function loadLocalLlmHealth() {
   };
   const primaryProbeFailed = !primary?.probe?.available || !!primary?.probe?.error;
   const warnCount = primary.status.state === 'CLOSED' && !primaryProbeFailed ? 0 : 1;
+  const historyEntry = {
+    checkedAt: new Date().toISOString(),
+    baseUrl: primary.baseUrl,
+    probeOk: !primaryProbeFailed,
+    probeError: primary?.probe?.error || null,
+    responseMs: primary?.probe?.responseMs ?? null,
+    circuitState: primary?.status?.state || 'UNKNOWN',
+  };
+  appendJsonLine(LOCAL_LLM_HEALTH_HISTORY_FILE, historyEntry);
+  const probeHistory = safeReadJsonLines(LOCAL_LLM_HEALTH_HISTORY_FILE, 12);
+  const flapping = summarizeLocalLlmFlapping(probeHistory);
 
   return {
     okCount: warnCount === 0 ? 1 : 0,
@@ -505,6 +576,8 @@ async function loadLocalLlmHealth() {
     baseUrl: primary.baseUrl,
     status: primary.status,
     probe: primary.probe,
+    probeHistory,
+    flapping,
     circuits,
   };
 }
@@ -645,9 +718,9 @@ function buildDecision(
         reason: `암호화폐 LIVE 게이트 ${cryptoLiveGateHealth.review?.liveGate?.decision || 'blocked'} — ${cryptoLiveGateHealth.review?.liveGate?.reason || 'PAPER/LIVE 전환 데이터 부족'}`,
       },
       {
-        active: localLlmHealth.warnCount > 0,
+        active: localLlmHealth.warnCount > 0 || localLlmHealth.flapping?.status === 'flapping',
         level: 'medium',
-        reason: `local LLM ${localLlmHealth.probe?.error ? `probe 실패(${localLlmHealth.probe.error})` : `circuit ${localLlmHealth.status?.state || 'OPEN'}`} — ${localLlmHealth.baseUrl}${localLlmHealth.status?.state === 'OPEN' ? ` / ${Math.ceil(Number(localLlmHealth.status?.remainingMs || 0) / 1000)}초 후 재시도` : ''}`,
+        reason: `local LLM ${localLlmHealth.flapping?.status === 'flapping' ? `flapping(${localLlmHealth.flapping.transitionCount}회 전환)` : localLlmHealth.probe?.error ? `probe 실패(${localLlmHealth.probe.error})` : `circuit ${localLlmHealth.status?.state || 'OPEN'}`} — ${localLlmHealth.baseUrl}${localLlmHealth.status?.state === 'OPEN' ? ` / ${Math.ceil(Number(localLlmHealth.status?.remainingMs || 0) / 1000)}초 후 재시도` : ''}`,
       },
     ],
     okReason: '핵심 서비스와 trade_review 정합성이 현재는 안정 구간입니다.',
@@ -806,6 +879,16 @@ function formatText(report) {
     },
     buildHealthCountSection(`■ 암호화폐 LIVE 게이트(최근 ${report.cryptoLiveGateHealth?.periodDays || 7}일)`, report.cryptoLiveGateHealth, { okLimit: 1, warnLimit: 1 }),
     buildHealthCountSection('■ local LLM circuit', report.localLlmHealth, { okLimit: 1, warnLimit: 1 }),
+    {
+      title: '■ local LLM probe trend',
+      lines: report.localLlmHealth?.flapping
+        ? [
+            `  status: ${report.localLlmHealth.flapping.status}`,
+            `  recent ok ${report.localLlmHealth.flapping.okCount} / fail ${report.localLlmHealth.flapping.failCount} / transitions ${report.localLlmHealth.flapping.transitionCount}`,
+            ...(report.localLlmHealth.flapping.lastError ? [`  last error: ${report.localLlmHealth.flapping.lastError}`] : []),
+          ]
+        : ['  probe history 없음'],
+    },
     buildHealthCountSection('■ KIS 실행 capability', report.kisCapabilityHealth, { okLimit: 1, warnLimit: 2 }),
     buildHealthCountSection('■ rail별 신규 진입 한도(오늘)', report.tradeLaneHealth, { okLimit: 6, warnLimit: 6 }),
     {
