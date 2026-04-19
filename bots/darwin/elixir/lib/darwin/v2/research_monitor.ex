@@ -172,58 +172,152 @@ defmodule Darwin.V2.ResearchMonitor do
   end
 
   defp fetch_24h_stats do
-    sql = """
-    SELECT
-      COUNT(DISTINCT paper_url)::int                                       AS discovered,
-      COUNT(*) FILTER (WHERE stage = 'paper_evaluated')::int               AS evaluated,
-      COUNT(*) FILTER (WHERE stage = 'paper_evaluated' AND score >= 6)::int AS high_quality
-    FROM darwin_v2_pipeline_audit
-    WHERE inserted_at >= NOW() - INTERVAL '24 hours'
-    """
+    with {:ok, cols} <- pipeline_audit_columns() do
+      stage_col = stage_column(cols)
+      id_col = discover_column(cols)
+      score_expr = score_expression(cols)
 
-    case Jay.Core.Repo.query(sql, []) do
-      {:ok, %{rows: [[discovered, evaluated, high_quality]]}} ->
-        {:ok, %{
-          discovered:   discovered   || 0,
-          evaluated:    evaluated    || 0,
-          high_quality: high_quality || 0
-        }}
+      if is_nil(stage_col) do
+        {:ok, %{discovered: 0, evaluated: 0, high_quality: 0}}
+      else
+        sql = """
+        SELECT
+          #{discover_expr(id_col)}::int AS discovered,
+          COUNT(*) FILTER (WHERE #{stage_col} = 'paper_evaluated')::int AS evaluated,
+          #{high_quality_expr(stage_col, score_expr)}::int AS high_quality
+        FROM darwin_v2_pipeline_audit
+        WHERE inserted_at >= NOW() - INTERVAL '24 hours'
+        """
 
-      error ->
-        {:error, error}
+        case Jay.Core.Repo.query(sql, []) do
+          {:ok, %{rows: [[discovered, evaluated, high_quality]]}} ->
+            {:ok, %{
+              discovered: discovered || 0,
+              evaluated: evaluated || 0,
+              high_quality: high_quality || 0
+            }}
+
+          error ->
+            {:error, error}
+        end
+      end
     end
   rescue
     e -> {:error, Exception.message(e)}
   end
 
   defp fetch_7d_stats do
-    sql = """
-    SELECT
-      COUNT(*) FILTER (WHERE stage = 'implementation_ready')::int AS implemented,
-      COUNT(*) FILTER (WHERE stage = 'verification_passed')::int  AS verified,
-      COUNT(*) FILTER (WHERE stage = 'applied')::int              AS applied,
-      COALESCE(AVG(score) FILTER (WHERE score IS NOT NULL), 0)::numeric(4,1) AS avg_score,
-      0.0::float                                                  AS avg_cost
-    FROM darwin_v2_pipeline_audit
-    WHERE inserted_at >= NOW() - INTERVAL '7 days'
-    """
+    with {:ok, cols} <- pipeline_audit_columns() do
+      stage_col = stage_column(cols)
+      score_expr = score_expression(cols)
+      cost_expr = cost_expression(cols)
 
-    case Jay.Core.Repo.query(sql, []) do
-      {:ok, %{rows: [[implemented, verified, applied, avg_score, avg_cost]]}} ->
-        {:ok, %{
-          implemented: implemented || 0,
-          verified:    verified    || 0,
-          applied:     applied     || 0,
-          avg_score:   avg_score   || 0.0,
-          avg_cost:    avg_cost    || 0.0
-        }}
+      if is_nil(stage_col) do
+        {:ok, %{implemented: 0, verified: 0, applied: 0, avg_score: 0.0, avg_cost: 0.0}}
+      else
+        sql = """
+        SELECT
+          COUNT(*) FILTER (WHERE #{stage_col} = 'implementation_ready')::int AS implemented,
+          COUNT(*) FILTER (WHERE #{stage_col} = 'verification_passed')::int AS verified,
+          COUNT(*) FILTER (WHERE #{stage_col} = 'applied')::int AS applied,
+          #{avg_score_expr(score_expr)}::numeric(4,1) AS avg_score,
+          #{avg_cost_expr(cost_expr)}::float AS avg_cost
+        FROM darwin_v2_pipeline_audit
+        WHERE inserted_at >= NOW() - INTERVAL '7 days'
+        """
 
-      error ->
-        {:error, error}
+        case Jay.Core.Repo.query(sql, []) do
+          {:ok, %{rows: [[implemented, verified, applied, avg_score, avg_cost]]}} ->
+            {:ok, %{
+              implemented: implemented || 0,
+              verified: verified || 0,
+              applied: applied || 0,
+              avg_score: avg_score || 0.0,
+              avg_cost: avg_cost || 0.0
+            }}
+
+          error ->
+            {:error, error}
+        end
+      end
     end
   rescue
     e -> {:error, Exception.message(e)}
   end
+
+  defp pipeline_audit_columns do
+    case Jay.Core.Repo.query("SELECT to_regclass('public.darwin_v2_pipeline_audit')", []) do
+      {:ok, %{rows: [[nil]]}} ->
+        {:ok, []}
+
+      {:ok, %{rows: [[_rel]]}} ->
+        case Jay.Core.Repo.query(
+               """
+               SELECT column_name
+               FROM information_schema.columns
+               WHERE table_schema = 'public'
+                 AND table_name = 'darwin_v2_pipeline_audit'
+               """,
+               []
+             ) do
+          {:ok, %{rows: rows}} -> {:ok, Enum.map(rows, fn [name] -> to_string(name) end)}
+          error -> error
+        end
+
+      error ->
+        error
+    end
+  end
+
+  defp stage_column(cols) when is_list(cols) do
+    cond do
+      "stage" in cols -> "stage"
+      "pipeline_stage" in cols -> "pipeline_stage"
+      true -> nil
+    end
+  end
+
+  defp discover_column(cols) when is_list(cols) do
+    cond do
+      "paper_url" in cols -> "paper_url"
+      "paper_id" in cols -> "paper_id"
+      true -> nil
+    end
+  end
+
+  defp score_expression(cols) when is_list(cols) do
+    cond do
+      "score" in cols ->
+        "score"
+
+      "result" in cols ->
+        "NULLIF(result->>'score', '')::numeric"
+
+      true ->
+        nil
+    end
+  end
+
+  defp cost_expression(cols) when is_list(cols) do
+    cond do
+      "cost_usd" in cols -> "cost_usd"
+      true -> nil
+    end
+  end
+
+  defp discover_expr(nil), do: "0"
+  defp discover_expr(column), do: "COUNT(DISTINCT #{column})"
+
+  defp high_quality_expr(_stage_col, nil), do: "0"
+  defp high_quality_expr(stage_col, score_expr) do
+    "COUNT(*) FILTER (WHERE #{stage_col} = 'paper_evaluated' AND #{score_expr} >= 6)"
+  end
+
+  defp avg_score_expr(nil), do: "0"
+  defp avg_score_expr(score_expr), do: "COALESCE(AVG(#{score_expr}), 0)"
+
+  defp avg_cost_expr(nil), do: "0.0"
+  defp avg_cost_expr(cost_expr), do: "COALESCE(AVG(#{cost_expr}), 0.0)"
 
   defp fetch_daily_llm_cost do
     case Darwin.V2.LLM.CostTracker.check_budget() do

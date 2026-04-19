@@ -21,16 +21,30 @@ const env = require('../../../packages/core/lib/env');
 
 const args = process.argv.slice(2);
 
+// DB 스키마: status IN ('operational','partial','inoperative','unknown')
+// CLI 입력: working|partial|broken → DB 값으로 변환
+const STATUS_MAP = {
+  working:     'operational',
+  partial:     'partial',
+  broken:      'inoperative',
+  // DB 값 직접 입력도 허용
+  operational: 'operational',
+  inoperative: 'inoperative',
+  unknown:     'unknown',
+};
+
 const STATUS_KR = {
-  working: '가동',
-  partial: '부분가동',
-  broken:  '불가동',
+  operational: '가동',
+  partial:     '부분가동',
+  inoperative: '불가동',
+  unknown:     '미확인',
 };
 
 const STATUS_EMOJI = {
-  working: '✅',
-  partial: '⚠️',
-  broken:  '❌',
+  operational: '✅',
+  partial:     '⚠️',
+  inoperative: '❌',
+  unknown:     '❓',
 };
 
 function parseArgs(argv) {
@@ -38,7 +52,9 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--case-id') result.caseId = parseInt(argv[++i]);
     else if (argv[i] === '--case') result.caseNumber = argv[++i];
-    else if (argv[i] === '--feature') result.feature = argv[++i];
+    else if (argv[i] === '--feature') result.feature = argv[++i];   // → category1
+    else if (argv[i] === '--cat2') result.cat2 = argv[++i];         // → category2
+    else if (argv[i] === '--cat3') result.cat3 = argv[++i];         // → category3
     else if (argv[i] === '--status') result.status = argv[++i];
     else if (argv[i] === '--note') result.note = argv[++i];
     else if (argv[i] === '--list') result.action = 'list';
@@ -54,10 +70,11 @@ function printHelp() {
 현장실사 SW 기능 분류 CLI (저스틴팀)
 
 사용법:
-  # SW 기능 분류 등록
+  # SW 기능 분류 등록 (category1 = 대분류 기능명)
   node inspect-sw.js --case-id 1 --feature "로그인 기능" --status working
   node inspect-sw.js --case-id 1 --feature "결제 모듈" --status partial --note "로그 저장 불가"
   node inspect-sw.js --case-id 1 --feature "리포트 출력" --status broken
+  node inspect-sw.js --case-id 1 --feature "회원관리" --cat2 "가입" --cat3 "이메일 인증" --status working
 
   # 목록 조회
   node inspect-sw.js --case-id 1 --list
@@ -66,9 +83,9 @@ function printHelp() {
   node inspect-sw.js --case-id 1 --summary
 
 상태값:
-  working  — 가동   (정상 동작)
-  partial  — 부분가동 (일부 기능만 동작)
-  broken   — 불가동  (동작 불가)
+  working  (= operational)  — 가동   (정상 동작)
+  partial                   — 부분가동 (일부 기능만 동작)
+  broken   (= inoperative)  — 불가동  (동작 불가)
 `);
 }
 
@@ -117,7 +134,8 @@ async function main() {
       const status = STATUS_KR[item.status] || item.status;
       const emoji  = STATUS_EMOJI[item.status] || '?';
       const date   = new Date(item.created_at).toLocaleDateString('ko-KR');
-      console.log(`${emoji} [${item.id}] ${item.feature_name}`);
+      const label  = [item.category1, item.category2, item.category3].filter(Boolean).join(' > ');
+      console.log(`${emoji} [${item.id}] ${label}`);
       console.log(`    상태: ${status} | 등록일: ${date}`);
       if (item.notes) console.log(`    비고: ${item.notes}`);
       console.log('');
@@ -132,20 +150,23 @@ async function main() {
        FROM legal.sw_functions WHERE case_id = $1 GROUP BY status`,
       [caseId],
     );
-    const counts = { working: 0, partial: 0, broken: 0 };
+    const counts = { operational: 0, partial: 0, inoperative: 0, unknown: 0 };
     for (const row of (rows.rows || [])) {
-      counts[row.status] = parseInt(row.cnt) || 0;
+      if (row.status in counts) counts[row.status] = parseInt(row.cnt) || 0;
     }
-    const total = counts.working + counts.partial + counts.broken;
+    const total = counts.operational + counts.partial + counts.inoperative + counts.unknown;
 
     console.log(`\n=== SW 기능 현황 요약 — ${caseRecord.case_number} ===\n`);
     console.log(`총 기능 수: ${total}개`);
-    console.log(`  ✅ 가동:     ${counts.working}개 (${total ? ((counts.working / total) * 100).toFixed(1) : 0}%)`);
+    console.log(`  ✅ 가동:     ${counts.operational}개 (${total ? ((counts.operational / total) * 100).toFixed(1) : 0}%)`);
     console.log(`  ⚠️  부분가동:  ${counts.partial}개 (${total ? ((counts.partial / total) * 100).toFixed(1) : 0}%)`);
-    console.log(`  ❌ 불가동:   ${counts.broken}개 (${total ? ((counts.broken / total) * 100).toFixed(1) : 0}%)`);
+    console.log(`  ❌ 불가동:   ${counts.inoperative}개 (${total ? ((counts.inoperative / total) * 100).toFixed(1) : 0}%)`);
+    if (counts.unknown > 0) {
+      console.log(`  ❓ 미확인:   ${counts.unknown}개 (${total ? ((counts.unknown / total) * 100).toFixed(1) : 0}%)`);
+    }
 
     if (total > 0) {
-      const completionRate = ((counts.working + counts.partial * 0.5) / total * 100).toFixed(1);
+      const completionRate = ((counts.operational + counts.partial * 0.5) / total * 100).toFixed(1);
       console.log(`\n기능 이행률 (가동 + 부분가동×0.5): ${completionRate}%`);
     }
     console.log('');
@@ -159,43 +180,49 @@ async function main() {
     process.exit(1);
   }
 
-  const validStatuses = ['working', 'partial', 'broken'];
-  if (!opts.status || !validStatuses.includes(opts.status)) {
-    console.error(`오류: --status 옵션이 필요합니다. (${validStatuses.join('|')})`);
+  const validInputStatuses = Object.keys(STATUS_MAP);
+  if (!opts.status || !(opts.status in STATUS_MAP)) {
+    console.error(`오류: --status 옵션이 필요합니다. (${validInputStatuses.join('|')})`);
     process.exit(1);
   }
 
-  // 기존 항목이 있으면 UPDATE, 없으면 INSERT
+  const dbStatus = STATUS_MAP[opts.status];
+  const cat1 = opts.feature;
+  const cat2 = opts.cat2 || null;
+  const cat3 = opts.cat3 || null;
+
+  // 기존 항목이 있으면 UPDATE (category1 기준), 없으면 INSERT
   const existing = await pool.query(
-    'SELECT id FROM legal.sw_functions WHERE case_id = $1 AND feature_name = $2',
-    [caseId, opts.feature],
+    'SELECT id FROM legal.sw_functions WHERE case_id = $1 AND category1 = $2',
+    [caseId, cat1],
   );
 
   let resultId;
   if (existing.rows && existing.rows.length > 0) {
     const updated = await pool.query(
       `UPDATE legal.sw_functions
-       SET status = $1, notes = $2, created_at = NOW()
-       WHERE case_id = $3 AND feature_name = $4
+       SET status = $1, notes = $2, category2 = $3, category3 = $4, created_at = NOW()
+       WHERE case_id = $5 AND category1 = $6
        RETURNING id`,
-      [opts.status, opts.note || null, caseId, opts.feature],
+      [dbStatus, opts.note || null, cat2, cat3, caseId, cat1],
     );
     resultId = updated.rows[0]?.id;
     console.log(`\n✅ SW 기능 업데이트 완료 (id=${resultId})`);
   } else {
     const inserted = await pool.query(
-      `INSERT INTO legal.sw_functions (case_id, feature_name, status, notes)
-       VALUES ($1, $2, $3, $4) RETURNING id`,
-      [caseId, opts.feature, opts.status, opts.note || null],
+      `INSERT INTO legal.sw_functions (case_id, category1, category2, category3, status, notes)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+      [caseId, cat1, cat2, cat3, dbStatus, opts.note || null],
     );
     resultId = inserted.rows[0]?.id;
     console.log(`\n✅ SW 기능 등록 완료 (id=${resultId})`);
   }
 
-  const statusKr  = STATUS_KR[opts.status];
-  const statusEmoji = STATUS_EMOJI[opts.status];
+  const label = [cat1, cat2, cat3].filter(Boolean).join(' > ');
+  const statusKr    = STATUS_KR[dbStatus];
+  const statusEmoji = STATUS_EMOJI[dbStatus];
   console.log(`   사건번호: ${caseRecord.case_number}`);
-  console.log(`   기능명: ${opts.feature}`);
+  console.log(`   기능: ${label}`);
   console.log(`   상태: ${statusEmoji} ${statusKr}`);
   if (opts.note) console.log(`   비고: ${opts.note}`);
 

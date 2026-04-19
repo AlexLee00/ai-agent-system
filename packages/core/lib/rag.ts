@@ -31,7 +31,8 @@ type RagCollection =
   | 'rag_blog'
   | 'rag_video'
   | 'rag_research'
-  | 'rag_experience';
+  | 'rag_experience'
+  | 'rag_legal';
 
 type RagRow = {
   id: number;
@@ -113,6 +114,7 @@ const VALID_COLLECTIONS: RagCollection[] = [
   'rag_video',
   'rag_research',
   'rag_experience',
+  'rag_legal',
 ];
 
 function _validateCollection(name: string): RagCollection {
