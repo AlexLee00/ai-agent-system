@@ -27,18 +27,7 @@ defmodule Darwin.V2.TeamConnector do
       end
 
     if rag_research_available?() do
-      case Repo.query(
-             """
-             SELECT
-               COUNT(*)::int AS papers_7d,
-               COUNT(*) FILTER (WHERE score >= 6)::int AS high_quality_7d,
-               COALESCE(AVG(score), 0)::numeric(4,1) AS avg_score,
-               MAX(created_at) AS last_scan_at
-             FROM reservation.rag_research
-             WHERE created_at >= NOW() - INTERVAL '7 days'
-             """,
-             []
-           ) do
+      case Repo.query(kpi_query(), []) do
         {:ok, %{rows: [[papers, high, avg, last_at]]}} ->
           %{
             metric_type: :research_ops,
@@ -57,6 +46,30 @@ defmodule Darwin.V2.TeamConnector do
     end
   end
 
+  defp kpi_query do
+    if rag_research_has_score_column?() do
+      """
+      SELECT
+        COUNT(*)::int AS papers_7d,
+        COUNT(*) FILTER (WHERE score >= 6)::int AS high_quality_7d,
+        COALESCE(AVG(score), 0)::numeric(4,1) AS avg_score,
+        MAX(created_at) AS last_scan_at
+      FROM reservation.rag_research
+      WHERE created_at >= NOW() - INTERVAL '7 days'
+      """
+    else
+      """
+      SELECT
+        COUNT(*)::int AS papers_7d,
+        0::int AS high_quality_7d,
+        0::numeric(4,1) AS avg_score,
+        MAX(created_at) AS last_scan_at
+      FROM reservation.rag_research
+      WHERE created_at >= NOW() - INTERVAL '7 days'
+      """
+    end
+  end
+
   defp default_kpi(autonomy_level) do
     %{
       metric_type: :research_ops,
@@ -72,6 +85,24 @@ defmodule Darwin.V2.TeamConnector do
     case Repo.query("SELECT to_regclass('reservation.rag_research')", []) do
       {:ok, %{rows: [[nil]]}} -> false
       {:ok, %{rows: [[_rel]]}} -> true
+      _ -> false
+    end
+  end
+
+  defp rag_research_has_score_column? do
+    case Repo.query(
+           """
+           SELECT EXISTS (
+             SELECT 1
+             FROM information_schema.columns
+             WHERE table_schema = 'reservation'
+               AND table_name = 'rag_research'
+               AND column_name = 'score'
+           )
+           """,
+           []
+         ) do
+      {:ok, %{rows: [[true]]}} -> true
       _ -> false
     end
   end

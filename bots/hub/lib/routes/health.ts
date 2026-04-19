@@ -51,6 +51,23 @@ const { buildIssueHints, rememberHealthEvent } = createHealthMemoryHelper({
 let lastRecordedStatus: 'ok' | 'warn' | null = null;
 const DARWIN_AUTONOMY_PATH = path.join(env.PROJECT_ROOT, 'bots/darwin/sandbox/darwin-autonomy-level.json');
 
+async function hasReservationRagResearchScoreColumn(): Promise<boolean> {
+  try {
+    const rows = await pgPool.query('reservation', `
+      SELECT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'reservation'
+          AND table_name = 'rag_research'
+          AND column_name = 'score'
+      ) AS has_score
+    `);
+    return Boolean(rows?.[0]?.has_score);
+  } catch {
+    return false;
+  }
+}
+
 async function fetchJson(url: string, timeoutMs = 3000): Promise<any | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -229,15 +246,26 @@ export async function collectHealthSnapshot(): Promise<HealthSnapshot> {
   }
 
   try {
-    const kpiRows = await pgPool.query('reservation', `
-      SELECT
-        COUNT(*)::int AS papers_7d,
-        COUNT(*) FILTER (WHERE score >= 6)::int AS high_quality_7d,
-        COALESCE(AVG(score), 0)::numeric(4,1) AS avg_score,
-        MAX(created_at) AS last_scan_at
-      FROM reservation.rag_research
-      WHERE created_at >= NOW() - INTERVAL '7 days'
-    `);
+    const hasScore = await hasReservationRagResearchScoreColumn();
+    const kpiRows = hasScore
+      ? await pgPool.query('reservation', `
+          SELECT
+            COUNT(*)::int AS papers_7d,
+            COUNT(*) FILTER (WHERE score >= 6)::int AS high_quality_7d,
+            COALESCE(AVG(score), 0)::numeric(4,1) AS avg_score,
+            MAX(created_at) AS last_scan_at
+          FROM reservation.rag_research
+          WHERE created_at >= NOW() - INTERVAL '7 days'
+        `)
+      : await pgPool.query('reservation', `
+          SELECT
+            COUNT(*)::int AS papers_7d,
+            0::int AS high_quality_7d,
+            0::numeric(4,1) AS avg_score,
+            MAX(created_at) AS last_scan_at
+          FROM reservation.rag_research
+          WHERE created_at >= NOW() - INTERVAL '7 days'
+        `);
     const row = kpiRows?.[0] || {};
     let autonomyLevel = 'unknown';
 
@@ -251,7 +279,7 @@ export async function collectHealthSnapshot(): Promise<HealthSnapshot> {
 
     resources.darwin_kpi = {
       status: 'ok',
-      detail: `papers_7d ${Number(row.papers_7d || 0)}건 | high_quality ${Number(row.high_quality_7d || 0)}건 | avg_score ${Number(row.avg_score || 0)} | autonomy ${autonomyLevel}${row.last_scan_at ? ` | last ${String(row.last_scan_at)}` : ''}`,
+      detail: `papers_7d ${Number(row.papers_7d || 0)}건 | high_quality ${Number(row.high_quality_7d || 0)}건 | avg_score ${Number(row.avg_score || 0)} | autonomy ${autonomyLevel}${!hasScore ? ' | score column missing (fallback)' : ''}${row.last_scan_at ? ` | last ${String(row.last_scan_at)}` : ''}`,
     };
   } catch (error: any) {
     resources.darwin_kpi = {
