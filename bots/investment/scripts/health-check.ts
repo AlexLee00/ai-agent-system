@@ -253,22 +253,25 @@ async function main() {
 
   const localLlmTrend = loadRecentLocalProbeTrend();
   const standbySummary = getLocalStandbySummary();
+  const standbyMissing = standbySummary.includes('standby 없음');
   if (localLlmTrend.status === 'flapping') {
     const key = 'local-llm-flapping';
     if (hsm.canAlert(state, key)) {
+      const level = standbyMissing ? 4 : 3;
       issues.push({
         key,
-        level: 3,
-        msg: `⚠️ [루나 헬스] local LLM flapping\n최근 probe ok ${localLlmTrend.okCount} / fail ${localLlmTrend.failCount} / 전환 ${localLlmTrend.transitionCount}회\n${standbySummary}${localLlmTrend.lastError ? `\nlast error: ${localLlmTrend.lastError}` : ''}`,
+        level,
+        msg: `⚠️ [루나 헬스] local LLM flapping${standbyMissing ? ' (단일 primary)' : ''}\n최근 probe ok ${localLlmTrend.okCount} / fail ${localLlmTrend.failCount} / 전환 ${localLlmTrend.transitionCount}회\n${standbySummary}${localLlmTrend.lastError ? `\nlast error: ${localLlmTrend.lastError}` : ''}`,
       });
     }
   } else if (localLlmTrend.status === 'degraded') {
     const key = 'local-llm-degraded';
     if (hsm.canAlert(state, key)) {
+      const level = standbyMissing ? 3 : 2;
       issues.push({
         key,
-        level: 2,
-        msg: `⚠️ [루나 헬스] local LLM degraded\n최근 생성 probe 실패\n${standbySummary}${localLlmTrend.lastError ? `\n${localLlmTrend.lastError}` : ''}`,
+        level,
+        msg: `⚠️ [루나 헬스] local LLM degraded${standbyMissing ? ' (standby 없음)' : ''}\n최근 생성 probe 실패\n${standbySummary}${localLlmTrend.lastError ? `\n${localLlmTrend.lastError}` : ''}`,
       });
     }
   } else {
