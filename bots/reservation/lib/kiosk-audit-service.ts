@@ -1,7 +1,7 @@
 type Logger = (message: string) => void;
 
 type LaunchBrowserFn = (options: Record<string, any>) => Promise<any>;
-type ConnectBrowserFn = (options: { browserWSEndpoint: string }) => Promise<any>;
+type ConnectBrowserFn = (options: { browserWSEndpoint: string; protocolTimeout?: number }) => Promise<any>;
 type DelayFn = (ms: number) => Promise<void>;
 type PickkoLoginFn = (page: any, id: string, pw: string, delay: DelayFn) => Promise<void>;
 type FetchPickkoEntriesFn = (page: any, date: string, options?: Record<string, any>) => Promise<{ entries: any[] }>;
@@ -20,6 +20,7 @@ type MaskNameFn = (name: string) => string;
 type GetTodayKstFn = () => string;
 type NowKstFn = () => string;
 type GetPickkoLaunchOptionsFn = () => Record<string, any>;
+type IsProtocolTimeoutErrorFn = (error: unknown) => boolean;
 
 export type CreateKioskAuditServiceDeps = {
   launchBrowser: LaunchBrowserFn;
@@ -42,6 +43,8 @@ export type CreateKioskAuditServiceDeps = {
   getTodayKST: GetTodayKstFn;
   nowKST: NowKstFn;
   getPickkoLaunchOptions: GetPickkoLaunchOptionsFn;
+  browserProtocolTimeoutMs?: number;
+  isProtocolTimeoutError?: IsProtocolTimeoutErrorFn;
   pickkoId: string;
   pickkoPw: string;
   bookingUrl: string;
@@ -70,6 +73,15 @@ export function createKioskAuditService(deps: CreateKioskAuditServiceDeps) {
     getTodayKST,
     nowKST,
     getPickkoLaunchOptions,
+    browserProtocolTimeoutMs = 300000,
+    isProtocolTimeoutError = (error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      return message.includes('Runtime.callFunctionOn timed out')
+        || message.includes('ProtocolError')
+        || message.includes('Target closed')
+        || message.includes('Session closed')
+        || message.toLowerCase().includes('timed out');
+    },
     pickkoId,
     pickkoPw,
     bookingUrl,
@@ -126,20 +138,85 @@ export function createKioskAuditService(deps: CreateKioskAuditServiceDeps) {
     const failedList: any[] = [];
 
     try {
-      naverBrowser = await connectBrowser({ browserWSEndpoint: wsEndpoint });
+      naverBrowser = await connectBrowser({
+        browserWSEndpoint: wsEndpoint,
+        protocolTimeout: browserProtocolTimeoutMs,
+      });
       log('✅ CDP 연결 성공');
 
       const createPage = async () => {
         const pg = await naverBrowser.newPage();
-        pg.setDefaultTimeout(30000);
+        pg.setDefaultTimeout(60000);
+        pg.setDefaultNavigationTimeout(60000);
         await pg.setViewport({ width: 1920, height: 1080 });
         attachNaverScheduleTrace(pg, 'verify-slot');
         return pg;
       };
 
-      naverPg = await createPage();
-      const loggedIn = await naverBookingLogin(naverPg);
-      if (!loggedIn) {
+      const openAuditPage = async () => {
+        const pg = await createPage();
+        const loggedIn = await naverBookingLogin(pg);
+        if (!loggedIn) {
+          try { await pg.close(); } catch {}
+          return null;
+        }
+
+        await pg.goto(bookingUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await pg.waitForNetworkIdle({ idleTime: 800, timeout: 20000 }).catch(() => null);
+        await delay(2000);
+        return pg;
+      };
+
+      const selectAuditDateWithRecovery = async (pg: any, date: string) => {
+        try {
+          await selectBookingDate(pg, date);
+          await delay(1000);
+          return pg;
+        } catch (error) {
+          if (!isProtocolTimeoutError(error)) throw error;
+
+          const message = error instanceof Error ? error.message : String(error);
+          log(`⚠️ 날짜 선택 protocol timeout 감지 — 새 탭으로 1회 재시도 (${message})`);
+          try { await pg.close(); } catch {}
+
+          const recovered = await openAuditPage();
+          if (!recovered) {
+            throw new Error('날짜 선택 재시도 전 네이버 로그인 재확인 실패');
+          }
+
+          await selectBookingDate(recovered, date);
+          await delay(1000);
+          return recovered;
+        }
+      };
+
+      const reopenAuditPageForRecovery = async (date: string) => {
+        const recovered = await openAuditPage();
+        if (!recovered) {
+          throw new Error('복구용 감사 페이지 재오픈 실패');
+        }
+        return selectAuditDateWithRecovery(recovered, date);
+      };
+
+      const verifyBlockWithRecovery = async (pg: any, entry: any) => {
+        try {
+          const verified = await verifyBlockInGrid(pg, entry.room, entry.start, entry.end);
+          return { page: pg, verified };
+        } catch (error) {
+          if (!isProtocolTimeoutError(error)) throw error;
+
+          const message = error instanceof Error ? error.message : String(error);
+          log(`  ⚠️ 차단 검증 protocol timeout 감지 — 새 탭으로 1회 재시도 (${entry.room} ${entry.start}~${entry.end}) (${message})`);
+          try { await pg.close(); } catch {}
+
+          const recovered = await reopenAuditPageForRecovery(today);
+          const verified = await verifyBlockInGrid(recovered, entry.room, entry.start, entry.end);
+          return { page: recovered, verified };
+        }
+      };
+
+      naverPg = await openAuditPage();
+      if (!naverPg) {
         log('❌ 네이버 로그인 실패');
         await Promise.resolve(publishReservationAlert({
           from_bot: 'jimmy',
@@ -150,16 +227,14 @@ export function createKioskAuditService(deps: CreateKioskAuditServiceDeps) {
         return;
       }
 
-      await naverPg.goto(bookingUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-      await naverPg.waitForNetworkIdle({ idleTime: 800, timeout: 15000 }).catch(() => null);
-      await delay(2000);
-      await selectBookingDate(naverPg, today);
-      await delay(1000);
+      naverPg = await selectAuditDateWithRecovery(naverPg, today);
 
       log('\n[검증] 픽코 예약 → 네이버 차단 상태 확인');
       for (const entry of pickkoEntries) {
         try {
-          const isBlocked = await verifyBlockInGrid(naverPg, entry.room, entry.start, entry.end);
+          const verification = await verifyBlockWithRecovery(naverPg, entry);
+          naverPg = verification.page;
+          const isBlocked = verification.verified;
           if (isBlocked) {
             log(`  ✅ 차단확인: ${entry.room} ${entry.start}~${entry.end} (${maskName(entry.name)})`);
             okList.push(entry);
@@ -211,6 +286,7 @@ export function createKioskAuditService(deps: CreateKioskAuditServiceDeps) {
           }
         } catch (error: any) {
           log(`  ❌ 검증 오류 (${entry.room} ${entry.start}): ${error?.message || String(error)}`);
+          failedList.push(entry);
         }
       }
 

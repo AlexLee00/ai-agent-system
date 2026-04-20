@@ -16,9 +16,14 @@ const {
 const {
   getManualPendingReservations,
   getVerifiedReservationsForPayScan,
+  getReservationsBySlot,
+  hideDuplicateReservationsForSlot,
   updateReservation,
   markSeen,
 } = require('../../lib/db');
+const {
+  chooseCanonicalReservationIdForSlot,
+} = require('../../lib/naver-monitor-helpers');
 const payScanMemory = createAgentMemory({ agentId: 'reservation.pickko-pay-scan', team: 'reservation' });
 
 function log(message: string) {
@@ -86,6 +91,32 @@ function runPayPending(entry: any) {
   });
 }
 
+async function reconcileSlotDuplicatesAfterPayScan(entry: any) {
+  const slotRows = await getReservationsBySlot(
+    entry.phoneRaw || entry.phone,
+    entry.date,
+    entry.start,
+    entry.room,
+  ).catch(() => []);
+
+  if (!Array.isArray(slotRows) || slotRows.length <= 1) {
+    return { canonicalId: entry.id ? String(entry.id) : null, hiddenCount: 0 };
+  }
+
+  const canonicalId = chooseCanonicalReservationIdForSlot(slotRows, entry.id);
+  const hiddenCount = canonicalId
+    ? await hideDuplicateReservationsForSlot(
+        canonicalId,
+        entry.phoneRaw || entry.phone,
+        entry.date,
+        entry.start,
+        entry.room,
+      ).catch(() => 0)
+    : 0;
+
+  return { canonicalId, hiddenCount };
+}
+
 async function main() {
   const phoneFilters = parseCsvArg(process.argv, 'phones').map((phone: string) => String(phone).replace(/\D/g, ''));
   const dateFilters = parseCsvArg(process.argv, 'dates');
@@ -137,9 +168,13 @@ async function main() {
         pickkoCompleteTime: ts(),
       });
       await markSeen(entry.id);
+      const dedupe = await reconcileSlotDuplicatesAfterPayScan(entry).catch(() => null);
       successCount += 1;
       if (result.ok) log(`✅ 결제완료 처리 성공: ${label}`);
       else log(`✅ 결제버튼 없음 → 이미 결제완료로 간주: ${label}`);
+      if (dedupe?.hiddenCount > 0) {
+        log(`🧹 duplicate slot 정리: canonical=${dedupe.canonicalId} hidden=${dedupe.hiddenCount} (${label})`);
+      }
       continue;
     }
 

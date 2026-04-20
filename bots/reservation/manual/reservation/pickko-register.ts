@@ -35,6 +35,32 @@ const SKIP_NAME_SYNC = IS_MANUAL_RETRY || Boolean(ARGS['skip-name-sync'] || ARGS
 const SKIP_NAVER_BLOCK = IS_MANUAL_RETRY || Boolean(ARGS['skip-naver-block'] || ARGS.skipNaverBlock);
 const PICKKO_ACCURATE_TIMEOUT_MS = 180_000;
 
+function safeWrite(stream: NodeJS.WriteStream, text: string): void {
+  try {
+    stream.write(text);
+  } catch (error) {
+    const code = error && typeof error === 'object' ? (error as { code?: string }).code : undefined;
+    if (code === 'EPIPE') return;
+    throw error;
+  }
+}
+
+function parsePickkoOrderId(output: string): string | null {
+  const match = String(output || '').match(/\/order\/view\/(\d+)/);
+  return match ? match[1] : null;
+}
+
+function hasStrongCompletionEvidence(code: number | null, output: string): boolean {
+  if (code !== 0) return false;
+  const text = String(output || '');
+  return Boolean(
+    parsePickkoOrderId(text)
+    || text.includes('픽코 예약등록 + 결제 완료됨!')
+    || text.includes('결제완료 처리:')
+    || text.includes('이미 결제완료 상태')
+  );
+}
+
 const required = ['date', 'start', 'end', 'room', 'phone'];
 const missing = required.filter((k) => !ARGS[k]);
 if (missing.length > 0) {
@@ -96,7 +122,19 @@ const child = spawn('/opt/homebrew/bin/tsx', childArgs, {
     MANUAL_RETRY: IS_MANUAL_RETRY ? '1' : '0',
     SKIP_FINAL_PAYMENT: IS_PENDING_ONLY ? '1' : '0',
   },
-  stdio: ['ignore', process.stderr, process.stderr],
+  stdio: ['ignore', 'pipe', 'pipe'],
+});
+
+let outputBuf = '';
+child.stdout.on('data', (chunk: Buffer | string) => {
+  const text = chunk.toString();
+  outputBuf += text;
+  safeWrite(process.stdout, text);
+});
+child.stderr.on('data', (chunk: Buffer | string) => {
+  const text = chunk.toString();
+  outputBuf += text;
+  safeWrite(process.stderr, text);
 });
 
 let didTimeout = false;
@@ -192,6 +230,95 @@ child.on('close', async (code: number | null) => {
   }
 
   if (code === 0 || code === 2 || code === 3) {
+    const strongCompletionEvidence = hasStrongCompletionEvidence(code, outputBuf);
+    const pickkoOrderId = parsePickkoOrderId(outputBuf);
+    const ambiguousSuccess = code === 0 && !strongCompletionEvidence;
+    if (ambiguousSuccess) {
+      const message = `픽코 성공 검증 부족: ${normalized.phone} ${normalized.date} ${normalized.start}~${normalized.end} ${normalized.room}룸 — order/view 또는 결제완료 근거가 없어 자동 완료 처리 보류`;
+      try {
+        const existing = await getReservation(key);
+        if (existing) {
+          await updateReservation(key, {
+            status: 'failed',
+            errorReason: 'pickko_success_unverified',
+            pickkoStartTime: now,
+          });
+        }
+      } catch (e: unknown) {
+        const errorMessage = e instanceof Error ? e.message : String(e);
+        process.stderr.write(`[pickko-register] 예약 보류 상태 반영 실패 (${key}): ${errorMessage}\n`);
+      }
+      const memoryQuery = buildRegisterMemoryQuery('failure');
+      const episodicHint = await registerMemory.recallCountHint(memoryQuery, {
+        type: 'episodic',
+        limit: 2,
+        threshold: 0.33,
+        title: '최근 유사 등록',
+        separator: 'pipe',
+        metadataKey: 'kind',
+        labels: {
+          success: '성공',
+          timeout: '시간초과',
+          failure: '실패',
+        },
+        order: ['failure', 'timeout', 'success'],
+      }).catch(() => '');
+      const semanticHint = await registerMemory.recallHint(`${memoryQuery} consolidated register pattern`, {
+        type: 'semantic',
+        limit: 2,
+        threshold: 0.28,
+        title: '최근 통합 패턴',
+        separator: 'newline',
+      }).catch(() => '');
+      const aiSummary = await buildReservationCliInsight({
+        bot: 'pickko-register',
+        requestType: 'register-result',
+        title: '픽코 예약 등록 결과',
+        data: {
+          kind: 'failure',
+          room: normalized.room,
+          date: normalized.date,
+          start: normalized.start,
+          end: normalized.end,
+          reason: 'pickko_success_unverified',
+        },
+        fallback: '등록 성공 로그가 애매해 자동 완료로 닫지 않고, 관리자 화면에서 실제 반영 여부를 다시 확인하는 편이 안전합니다.',
+      });
+      process.stdout.write(`${JSON.stringify({
+        success: false,
+        message,
+        aiSummary,
+        memoryHints: {
+          episodicHint,
+          semanticHint,
+        },
+      })}\n`);
+      await registerMemory.remember([
+        '픽코 예약 등록 결과',
+        `phone: ${normalized.phone}`,
+        `date: ${normalized.date}`,
+        `time: ${normalized.start}~${normalized.end}`,
+        `room: ${normalized.room}`,
+        message,
+      ].join('\n'), 'episodic', {
+        importance: 0.85,
+        expiresIn: 1000 * 60 * 60 * 24 * 30,
+        metadata: {
+          kind: 'failure',
+          room: normalized.room,
+          date: normalized.date,
+          start: normalized.start,
+          end: normalized.end,
+          reason: 'pickko_success_unverified',
+        },
+      }).catch(() => {});
+      await registerMemory.consolidate({
+        olderThanDays: 14,
+        limit: 10,
+      }).catch(() => {});
+      process.exit(1);
+    }
+
     const pickkoStatus = code === 2
       ? 'time_elapsed'
       : code === 3
@@ -202,7 +329,13 @@ child.on('close', async (code: number | null) => {
     try {
       const existing = await getReservation(key);
       if (existing) {
-        await updateReservation(key, { status: 'completed', pickkoStatus, errorReason, pickkoStartTime: now });
+        await updateReservation(key, {
+          status: 'completed',
+          pickkoStatus,
+          pickkoOrderId,
+          errorReason,
+          pickkoStartTime: now,
+        });
       } else {
         await addReservation(key, {
           compositeKey: key,
@@ -216,6 +349,7 @@ child.on('close', async (code: number | null) => {
           detectedAt: now,
           status: 'completed',
           pickkoStatus,
+          pickkoOrderId,
           errorReason,
           retries: 0,
           pickkoStartTime: now,

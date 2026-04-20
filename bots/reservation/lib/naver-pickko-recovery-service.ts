@@ -50,6 +50,15 @@ export function createNaverPickkoRecoveryService(deps: CreateNaverPickkoRecovery
   } = deps;
 
   async function findTrackedReservationForCancelCandidate(booking: Record<string, any>) {
+    const matchesSameWindow = (row: Record<string, any> | null | undefined) => {
+      if (!row) return false;
+      const existingEnd = String(row.end || row.end_time || '');
+      const bookingEnd = String(booking.end || '');
+      const existingRoom = String(row.room || '').toUpperCase();
+      const bookingRoom = String(booking.room || '').toUpperCase();
+      return existingEnd === bookingEnd && existingRoom === bookingRoom;
+    };
+
     const phoneRaw = String(booking.phoneRaw || booking.phone || '').replace(/\D/g, '');
     const compositeKey = buildReservationCompositeKey(
       phoneRaw,
@@ -68,7 +77,7 @@ export function createNaverPickkoRecoveryService(deps: CreateNaverPickkoRecovery
     if (byComposite) return byComposite;
 
     const bySlot = await findReservationBySlot(phoneRaw, booking.date, booking.start, booking.room).catch(() => null);
-    if (bySlot) return bySlot;
+    if (bySlot && matchesSameWindow(bySlot)) return bySlot;
 
     return null;
   }

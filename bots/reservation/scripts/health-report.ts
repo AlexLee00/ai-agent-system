@@ -761,6 +761,16 @@ async function buildReport() {
   const duplicateSlotHealth = await buildDuplicateSlotHealth();
   const dailySummaryIntegrityHealth = await buildDailySummaryIntegrityHealth();
   const todayAuditHealth = buildTodayAuditHealth();
+
+  if (todayAuditHealth.recentSuccess) {
+    const staleTodayAuditWarns = scheduledServiceRows.warn.filter((line) => !line.includes('today-audit:'));
+    const hasTodayAuditOk = scheduledServiceRows.ok.some((line) => line.includes('today-audit:'));
+    scheduledServiceRows.warn = staleTodayAuditWarns;
+    if (!hasTodayAuditOk) {
+      scheduledServiceRows.ok.push('  today-audit: 최근 실행 성공');
+    }
+  }
+
   const decision = buildDecision(coreServiceRows, monitorHealth, n8nCommandHealth, dailySummaryIntegrityHealth, cancelCounterDriftHealth, duplicateSlotHealth, todayAuditHealth);
 
   return {

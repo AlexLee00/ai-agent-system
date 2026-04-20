@@ -80,6 +80,38 @@ export function createNaverCandidateService(deps: CreateNaverCandidateServiceDep
     naverUrl,
   } = deps;
 
+  function buildExactCancelDoneKey(booking: Record<string, any>) {
+    const phoneRaw = String(booking.phoneRaw || booking.phone || '').replace(/\D/g, '');
+    return `cancel_done|${phoneRaw}|${booking.date}|${booking.start}|${booking.end || ''}|${booking.room || ''}`;
+  }
+
+  function buildLegacyCancelDoneKey(booking: Record<string, any>) {
+    const phoneRaw = String(booking.phoneRaw || booking.phone || '').replace(/\D/g, '');
+    return `cancel_done|${phoneRaw}|${booking.date}|${booking.start}`;
+  }
+
+  function matchesSameWindow(existing: Record<string, any> | null | undefined, booking: Record<string, any>) {
+    if (!existing) return false;
+    const existingEnd = String(existing.end || existing.end_time || '');
+    const bookingEnd = String(booking.end || '');
+    const existingRoom = String(existing.room || '').toUpperCase();
+    const bookingRoom = String(booking.room || '').toUpperCase();
+    return existingEnd === bookingEnd && existingRoom === bookingRoom;
+  }
+
+  async function clearStaleCancelledKeys(booking: Record<string, any>, bookingId?: string | null) {
+    const keys = [
+      buildCancelKey(booking, booking.date),
+      buildExactCancelDoneKey(booking),
+      buildLegacyCancelDoneKey(booking),
+      bookingId ? `cancelid|${bookingId}` : null,
+    ].filter(Boolean) as string[];
+
+    for (const cancelKey of new Set(keys)) {
+      await removeCancelledKey(cancelKey).catch(() => {});
+    }
+  }
+
   async function processConfirmedCandidates({
     newest,
     page,
@@ -111,9 +143,18 @@ export function createNaverCandidateService(deps: CreateNaverCandidateServiceDep
       })) as NaverCandidateBooking[];
 
     const existingRows = await Promise.all(baseItems.map(async (booking) => {
-      return await getReservation(booking._key)
-        || await findReservationByCompositeKey(booking._slotKey)
-        || await findReservationBySlot(booking.phone, booking.date, booking.start, booking.room);
+      const byId = await getReservation(booking._key);
+      if (byId) return byId;
+
+      const byComposite = await findReservationByCompositeKey(booking._slotKey);
+      if (byComposite) return byComposite;
+
+      const bySlot = await findReservationBySlot(booking.phone, booking.date, booking.start, booking.room);
+      if (bySlot && matchesSameWindow(bySlot, booking)) return bySlot;
+      if (bySlot) {
+        log(`ℹ️ [윈도우분리] 같은 시작시간 기존 예약은 있으나 종료시간이 달라 신규 예약으로 처리: ${maskPhone(booking.phone)} ${booking.date} ${booking.start} ${booking.room} (existing=${bySlot.end || bySlot.end_time}, incoming=${booking.end})`);
+      }
+      return null;
     }));
 
     const entries = baseItems.map((booking, index) => ({
@@ -157,16 +198,7 @@ export function createNaverCandidateService(deps: CreateNaverCandidateServiceDep
       const booking = entry.booking;
       const existing = entry.existing;
       const bookingId = String(existing?.id || booking._trackingId || booking._key || buildReservationId(booking.phoneRaw, booking.date, booking.start));
-      const phoneRaw = String(booking.phoneRaw || booking.phone || '').replace(/\D/g, '');
-      const cancelKeys = [
-        buildCancelKey(booking, booking.date),
-        existing?.id ? `cancelid|${existing.id}` : null,
-        phoneRaw ? `cancel_done|${phoneRaw}|${booking.date}|${booking.start}` : null,
-      ].filter(Boolean) as string[];
-
-      for (const cancelKey of new Set(cancelKeys)) {
-        await removeCancelledKey(cancelKey).catch(() => {});
-      }
+      await clearStaleCancelledKeys(booking, existing?.id ? String(existing.id) : bookingId);
 
       await updateBookingState(bookingId, booking, 'pending');
       await sendAlert({
@@ -188,6 +220,7 @@ export function createNaverCandidateService(deps: CreateNaverCandidateServiceDep
 
     for (const booking of newCandidates) {
       const bookingId = booking._trackingId || booking._key || buildReservationId(booking.phoneRaw, booking.date, booking.start);
+      await clearStaleCancelledKeys(booking, bookingId);
       await updateBookingState(bookingId, booking, 'pending');
 
       const vipBadge = await formatVipBadge(booking.phone);

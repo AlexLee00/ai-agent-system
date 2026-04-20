@@ -4,6 +4,7 @@ const fs = require('fs');
 
 const { delay, log } = require('../../lib/utils');
 const { loadSecrets } = require('../../lib/secrets');
+const { getReservationBrowserConfig } = require('../../lib/runtime-config');
 const { getPickkoLaunchOptions, setupDialogHandler } = require('../../lib/browser');
 const { loginToPickko, fetchPickkoEntries } = require('../../lib/pickko');
 const { publishReservationAlert } = require('../../lib/alert-client');
@@ -54,6 +55,7 @@ const WORKSPACE = path.join(process.env.HOME, '.openclaw', 'workspace');
 const NAVER_WS_FILE = path.join(WORKSPACE, 'naver-monitor-ws.txt');
 const BOOKING_URL = 'https://partner.booking.naver.com/bizes/596871/booking-calendar-view';
 const KIOSK_MONITOR_RUNTIME = getReservationKioskMonitorConfig();
+const BROWSER_RUNTIME = getReservationBrowserConfig();
 const NAVER_SCHEDULE_TRACE_LOG = '/tmp/naver-schedule-trace.log';
 
 function getTodayKST() {
@@ -215,6 +217,10 @@ const kioskAuditService = createKioskAuditService({
   getTodayKST,
   nowKST,
   getPickkoLaunchOptions,
+  browserProtocolTimeoutMs: parseInt(
+    process.env.PICKKO_PROTOCOL_TIMEOUT_MS || String(BROWSER_RUNTIME.pickkoProtocolTimeoutMs),
+    10,
+  ),
   pickkoId: PICKKO_ID,
   pickkoPw: PICKKO_PW,
   bookingUrl: BOOKING_URL,

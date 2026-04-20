@@ -386,6 +386,13 @@ async function main() {
 
     setStage('SAVE_PRECHECK');
     log('\n[7단계] 저장');
+    await pickkoSavePrecheckService.alignExpectedTimes(page, {
+      startDate: DATE,
+      startTime: chosen.start,
+      endDate: DATE,
+      endTime: chosen.end,
+    });
+    await delay(300);
     await pickkoSavePrecheckService.runSavePrecheck(page, {
       startDate: DATE,
       startTime: chosen.start,
@@ -491,7 +498,7 @@ async function main() {
       try { await browser.close(); } catch (e) {}
       await releaseLock();
 
-      const payPendingResult = await new Promise<{ exitCode: number; success: boolean | null }>((resolve) => {
+      const payPendingResult = await new Promise<{ exitCode: number; success: boolean | null; message: string | null }>((resolve) => {
         const child = spawn('/opt/homebrew/bin/tsx', [
           path.join(__dirname, '../../../../bots/reservation/manual/reports/pickko-pay-pending.ts'),
           `--phone=${PHONE_NOHYPHEN}`,
@@ -523,23 +530,32 @@ async function main() {
             .reverse()
             .find((line) => line.startsWith('{') && line.endsWith('}'));
           let success: boolean | null = null;
+          let message: string | null = null;
           if (jsonLine) {
             try {
-              success = Boolean(JSON.parse(jsonLine)?.success);
+              const parsed = JSON.parse(jsonLine);
+              success = typeof parsed?.success === 'boolean' ? parsed.success : null;
+              message = typeof parsed?.message === 'string' ? parsed.message : null;
             } catch {
               success = null;
+              message = null;
             }
           }
-          resolve({ exitCode: Number(code || 0), success });
+          resolve({ exitCode: Number(code || 0), success, message });
         });
         child.on('error', (e) => {
           log(`⚠️ pickko-pay-pending 실행 오류: ${e.message}`);
-          resolve({ exitCode: 1, success: false });
+          resolve({ exitCode: 1, success: false, message: e.message });
         });
       });
 
       if (payPendingResult.exitCode === 0 && payPendingResult.success !== false) {
         process.exit(0);
+      }
+
+      if (/결제하기 버튼 미발견/.test(String(payPendingResult.message || ''))) {
+        log('⚠️ [manual_pending] 기존 픽코 엔트리는 있으나 결제 버튼이 없어 수동 마무리 필요');
+        process.exit(3);
       }
 
       process.exit(1);

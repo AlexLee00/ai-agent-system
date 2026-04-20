@@ -50,6 +50,16 @@ async function run() {
     const page = pages[0] || await browser.newPage();
     page.setDefaultTimeout(30000);
     setupDialogHandler(page, log);
+    try {
+      await page.evaluateOnNewDocument(() => {
+        (window as any).__name = (value: any) => value;
+      });
+      await page.evaluate(() => {
+        (window as any).__name = (value: any) => value;
+      }).catch(() => null);
+    } catch {
+      // downstream browser/evaluate errors will remain visible if shim install fails
+    }
 
     log('\n[1단계] 픽코 로그인');
     await loginToPickko(page, PICKKO_ID, PICKKO_PW, delay);

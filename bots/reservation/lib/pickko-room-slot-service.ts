@@ -29,7 +29,7 @@ export function createPickkoRoomSlotService({
       stNo: string;
       timeSlots: string[];
       effectiveTimeSlots: string[];
-      slotCandidates: Array<{ start: string; end: string; durationMin: number; reason: string }>;
+      slotCandidates: Array<{ start: string; end: string; endClick: string; durationMin: number; reason: string }>;
       customerName: string;
       phoneNoHyphen: string;
       mode: string;
@@ -83,7 +83,7 @@ export function createPickkoRoomSlotService({
     log(`   ⏰ 후보 구간 ${slotCandidates.length}개 생성: ${slotCandidates.map((c) => `${c.start}~${c.end}`).join(', ')}`);
 
     for (const candidate of slotCandidates) {
-      log(`   ⏰ 후보: ${candidate.start} / ${candidate.end} / 기간 ${candidate.durationMin}분 / reason=${candidate.reason}`);
+      log(`   ⏰ 후보: ${candidate.start} / ${candidate.end} (click:${candidate.endClick}) / 기간 ${candidate.durationMin}분 / reason=${candidate.reason}`);
 
       for (let attempt = 0; attempt < 3; attempt++) {
         if (attempt > 0) {
@@ -94,9 +94,9 @@ export function createPickkoRoomSlotService({
         log(`   ⏰ 시도 #${attemptCount}: ${candidate.start} -> ${candidate.end}`);
 
         const s = candidate.start;
-        const e = candidate.end;
+        const e = candidate.endClick;
         const durationMin = candidate.durationMin;
-        log(`      범위: ${s} ~ ${e}`);
+        log(`      범위: ${s} ~ ${candidate.end} (click ${e})`);
 
         const res = await page.evaluate((
           dateStr: string,
@@ -211,7 +211,8 @@ export function createPickkoRoomSlotService({
         if (res.startClicked && res.endClicked && res.okMid) {
           chosen = {
             start: s,
-            end: e,
+            end: candidate.end,
+            endClick: e,
             method: res.methodUsed,
             reason: candidate.reason,
             durationMin,

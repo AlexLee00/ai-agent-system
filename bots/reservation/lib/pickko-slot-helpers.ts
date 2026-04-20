@@ -1,6 +1,7 @@
 type SlotCandidate = {
   start: string;
   end: string;
+  endClick: string;
   slotCount: number;
   durationMin: number;
   reason: string;
@@ -51,6 +52,7 @@ export function buildSlotCandidates(slots: string[]): SlotCandidate[] {
     candidates.push({
       start,
       end,
+      endClick: slots[endIdx],
       slotCount,
       durationMin: slotCount * 30,
       reason,

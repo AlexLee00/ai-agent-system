@@ -75,6 +75,11 @@ export function createNaverPickkoRunnerService(deps: CreateNaverPickkoRunnerServ
     setTimeoutImpl = setTimeout,
   } = deps;
 
+  function buildCancelDoneKey(booking: Record<string, any>) {
+    const phoneRaw = String(booking.phoneRaw || booking.phone || '').replace(/\D/g, '');
+    return `cancel_done|${phoneRaw}|${booking.date}|${booking.start}|${booking.end || ''}|${booking.room || ''}`;
+  }
+
   function runPickkoCancel({
     booking,
     scriptsDir,
@@ -88,10 +93,10 @@ export function createNaverPickkoRunnerService(deps: CreateNaverPickkoRunnerServ
   }): Promise<number> {
     return new Promise(async (resolve) => {
       const phoneRawForKey = String(booking.phoneRaw || booking.phone || '').replace(/\D/g, '');
-      const doneKey = `cancel_done|${phoneRawForKey}|${booking.date}|${booking.start}`;
+      const doneKey = buildCancelDoneKey(booking);
 
       if (await isCancelledKey(doneKey)) {
-        log(`ℹ️ [취소 스킵] 이미 완료된 취소 — ${maskPhone(phoneRawForKey)} ${booking.date} ${booking.start} (doneKey 존재)`);
+        log(`ℹ️ [취소 스킵] 이미 완료된 취소 — ${maskPhone(phoneRawForKey)} ${booking.date} ${booking.start}~${booking.end} ${booking.room} (exact doneKey 존재)`);
         resolve(0);
         return;
       }
