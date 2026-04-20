@@ -16,6 +16,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { execFileSync } = require('child_process');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const rag = require('../../../packages/core/lib/rag-safe');
 const { safeWriteFile } = require('../../../packages/core/lib/file-guard');
@@ -83,11 +84,45 @@ function loadBotIdentity() {
 // ─── Self-lock ─────────────────────────────────────────────────────
 const LOCK_PATH = path.join(os.homedir(), '.openclaw', 'workspace', 'ska.lock');
 
+function isActiveSkaProcess(pid) {
+  if (!pid || Number.isNaN(pid)) return false;
+
+  try {
+    process.kill(pid, 0);
+  } catch {
+    return false;
+  }
+
+  try {
+    const command = execFileSync('ps', ['-p', String(pid), '-o', 'command='], {
+      encoding: 'utf8',
+      timeout: 3000,
+    }).trim();
+
+    if (!command) return false;
+
+    return command.includes('/bots/reservation/src/ska.ts')
+      || command.includes('/dist/ts-runtime/bots/reservation/src/ska.js')
+      || command.includes('ai.ska.commander');
+  } catch {
+    return false;
+  }
+}
+
 function acquireLock() {
   if (fs.existsSync(LOCK_PATH)) {
     const old = fs.readFileSync(LOCK_PATH, 'utf8').trim();
-    try { process.kill(Number(old), 0); console.error(`${BOT_NAME} 이미 실행 중 (PID: ${old})`); process.exit(1); }
-    catch { fs.unlinkSync(LOCK_PATH); }
+    const oldPid = Number(old);
+
+    if (isActiveSkaProcess(oldPid)) {
+      console.log(`${BOT_NAME} 이미 실행 중 (PID: ${old})`);
+      process.exit(0);
+    }
+
+    try {
+      fs.unlinkSync(LOCK_PATH);
+      console.log(`[스카] stale lock 정리 (PID: ${old || 'unknown'})`);
+    } catch {}
   }
   safeWriteFile(LOCK_PATH, String(process.pid), 'ska');
   process.on('exit', () => { try { fs.unlinkSync(LOCK_PATH); } catch {} });
