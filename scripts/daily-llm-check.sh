@@ -7,11 +7,17 @@ set -e
 
 NODE="/opt/homebrew/bin/node"
 ROOT="${PROJECT_ROOT:-$HOME/projects/ai-agent-system}"
+TSX="$ROOT/node_modules/.bin/tsx"
+
+if [ ! -x "$TSX" ]; then
+  echo "tsx not found at $TSX" >&2
+  exit 1
+fi
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] 속도 테스트 시작"
-$NODE "$ROOT/scripts/speed-test.js" --telegram --runs=2
+"$TSX" "$ROOT/scripts/speed-test.ts" --telegram --runs=2
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] 사용량 리포트 전송"
-$NODE "$ROOT/scripts/api-usage-report.js" --telegram
+"$TSX" "$ROOT/scripts/api-usage-report.ts" --telegram
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] 완료"

@@ -1,6 +1,6 @@
 // @ts-nocheck
 /**
- * speed-test.js - LLM API 속도 테스트 툴 (무료 모델)
+ * speed-test.ts - LLM API 속도 테스트 툴 (무료 모델)
  *
  * 지원 프로바이더:
  *   - Google Gemini (OAuth, 무료)  → cloudcode-pa.googleapis.com
@@ -31,10 +31,10 @@
  * 키 설정: ~/.openclaw/speed-test-keys.json
  *
  * 사용법:
- *   node scripts/speed-test.js              # 전체 테스트
- *   node scripts/speed-test.js --runs=3     # 반복 횟수 지정
- *   node scripts/speed-test.js --apply      # 결과를 openclaw.json에 자동 반영
- *   node scripts/speed-test.js --model=gemini-2.5-flash,llama-4-scout
+ *   npx tsx scripts/speed-test.ts              # 전체 테스트
+ *   npx tsx scripts/speed-test.ts --runs=3     # 반복 횟수 지정
+ *   npx tsx scripts/speed-test.ts --apply      # 결과를 openclaw.json에 자동 반영
+ *   npx tsx scripts/speed-test.ts --model=gemini-2.5-flash,llama-4-scout
  */
 
 const fs     = require('fs');
@@ -245,7 +245,7 @@ async function main() {
         log('\n⚠️  적용할 Gemini 모델 결과 없음');
       }
     } else {
-      log(dim(`\n  Gemini 기준 적용: node scripts/speed-test.js --apply`));
+      log(dim(`\n  Gemini 기준 적용: npx tsx scripts/speed-test.ts --apply`));
     }
   } else if (fastest) {
     log(`  ${green('✅ 현재 모델이 가장 빠릅니다')}`);
