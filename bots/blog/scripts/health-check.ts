@@ -293,6 +293,60 @@ async function checkFacebookPublishHealth() {
   }
 }
 
+async function checkInstagramPublishHealth() {
+  try {
+    const rows = await pgPool.query('blog', `
+      SELECT status, dry_run, error_msg, post_title, created_at
+      FROM blog.instagram_crosspost
+      ORDER BY created_at DESC
+      LIMIT 8
+    `);
+    const list = Array.isArray(rows) ? rows : [];
+    const row = list[0];
+    if (!row) {
+      return { ok: true, detail: 'instagram crosspost history 없음', latest: null };
+    }
+
+    const latestReal = list.find((item) => !item.dry_run) || null;
+    if (!latestReal) {
+      return { ok: true, detail: 'instagram real publish history 없음', latest: row };
+    }
+
+    const createdAt = new Date(latestReal.created_at);
+    const ageMs = Date.now() - createdAt.getTime();
+    const recentEnough = Number.isFinite(ageMs) && ageMs <= (48 * 60 * 60 * 1000);
+    const isTodayKst = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(createdAt) === new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+    const hasRecentSuccess = list.some((item) => !item.dry_run && String(item.status || '') === 'success');
+
+    if (String(latestReal.status || '') === 'failed' && (isTodayKst || (recentEnough && !hasRecentSuccess))) {
+      const previewBundle = buildPreviewBundleForTitle(String(latestReal.post_title || ''));
+      return {
+        ok: false,
+        detail: `Instagram 자동등록 실패 — ${String(latestReal.post_title || '').slice(0, 60)}\n${String(latestReal.error_msg || '').slice(0, 120)}${previewBundle ? `\npreview: ${previewBundle}` : ''}`,
+        latest: latestReal,
+      };
+    }
+
+    return {
+      ok: true,
+      detail: `instagram latest real ${String(latestReal.status || 'unknown')}`,
+      latest: latestReal,
+    };
+  } catch (e) {
+    return { ok: false, detail: `instagram publish 확인 실패: ${e.message.slice(0, 120)}`, latest: null };
+  }
+}
+
 function classifyEngagementFailure(meta = {}) {
   const errorText = String(meta?.error || meta?.uiError || meta?.previous_error || '').trim();
   if (!errorText) {
@@ -519,6 +573,23 @@ async function main() {
     await notify(recoveryMsg, 1);
     await rememberHealthEvent(bookCatalogKey, 'recovery', recoveryMsg, 1);
     hsm.clearAlert(state, bookCatalogKey);
+  }
+
+  const instagramPublish = await checkInstagramPublishHealth();
+  const instagramPublishKey = 'instagram-publish:recent-failure';
+  if (!instagramPublish.ok) {
+    if (hsm.canAlert(state, instagramPublishKey)) {
+      issues.push({
+        key: instagramPublishKey,
+        level: 2,
+        msg: `⚠️ [블로그 헬스] Instagram 자동등록 이슈\n${instagramPublish.detail}`,
+      });
+    }
+  } else if (state[instagramPublishKey]) {
+    const recoveryMsg = `✅ [블로그 헬스] Instagram 자동등록 회복\n${instagramPublish.detail}`;
+    await notify(recoveryMsg, 1);
+    await rememberHealthEvent(instagramPublishKey, 'recovery', recoveryMsg, 1);
+    hsm.clearAlert(state, instagramPublishKey);
   }
 
   const facebookPublish = await checkFacebookPublishHealth();
