@@ -8,7 +8,10 @@ const {
   resolveInstagramHostedMediaUrl,
   getInstagramHostedAssetLocalPath,
 } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-image-host.ts'));
-const { findLatestReelPath } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-files.ts'));
+const {
+  findLatestReelPath,
+  findLatestReelCoverPath,
+} = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-files.ts'));
 const { buildBlogCliInsight } = require('../lib/cli-insight.ts');
 
 function parseArgs(argv = []) {
@@ -30,6 +33,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const config = await getInstagramConfig();
   const reelPath = findLatestReelPath();
+  const coverPath = findLatestReelCoverPath();
   const missing = [];
   const hosted = reelPath ? resolveInstagramHostedMediaUrl(reelPath, { kind: 'reels' }) : null;
   const localTarget = reelPath ? getInstagramHostedAssetLocalPath(reelPath, { kind: 'reels' }) : null;
@@ -65,6 +69,12 @@ async function main() {
           stagedReady: staged,
         }
       : null,
+    cover: coverPath
+      ? {
+          path: coverPath,
+          sizeBytes: fs.statSync(coverPath).size,
+        }
+      : null,
   };
   const aiSummary = await buildBlogCliInsight({
     bot: 'check-instagram-readiness',
@@ -75,6 +85,7 @@ async function main() {
       missing: payload.missing,
       source: payload.source,
       reel: payload.reel,
+      cover: payload.cover,
     },
     fallback: buildInstagramReadinessFallback(payload),
   });
@@ -93,6 +104,7 @@ async function main() {
   console.log(`🔍 AI: ${typedPayload.aiSummary}`);
   console.log(`[인스타 readiness] token=${typedPayload.source.hasAccessToken ? 'yes' : 'no'} igUserId=${typedPayload.source.hasIgUserId ? 'yes' : 'no'}`);
   console.log(`[인스타 readiness] reel=${typedPayload.reel ? typedPayload.reel.path : 'missing'}`);
+  console.log(`[인스타 readiness] cover=${typedPayload.cover ? typedPayload.cover.path : 'missing'}`);
   if (missing.length) {
     console.log(`[인스타 readiness] missing=${missing.join(', ')}`);
   }

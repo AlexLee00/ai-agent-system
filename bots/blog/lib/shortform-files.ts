@@ -50,6 +50,12 @@ function findLatestReelPath() {
 }
 
 /** @returns {string | null} */
+function findLatestReelCoverPath() {
+  const files = listFilesSortedByMtime(SHORTFORM_DIR, (name) => name.endsWith('_reel_cover.jpg'));
+  return files[0] || null;
+}
+
+/** @returns {string | null} */
 function findReelPathForTitle(title = '') {
   const slug = slugify(title);
   if (!slug || !fs.existsSync(SHORTFORM_DIR)) return null;
@@ -58,6 +64,19 @@ function findReelPathForTitle(title = '') {
   const files = listFilesSortedByMtime(
     SHORTFORM_DIR,
     (name) => name.endsWith('_reel.mp4') && name.includes(slug)
+  );
+  return files[0] || null;
+}
+
+/** @returns {string | null} */
+function findReelCoverPathForTitle(title = '') {
+  const slug = slugify(title);
+  if (!slug || !fs.existsSync(SHORTFORM_DIR)) return null;
+  const exact = path.join(SHORTFORM_DIR, `${slug}_reel_cover.jpg`);
+  if (fs.existsSync(exact)) return exact;
+  const files = listFilesSortedByMtime(
+    SHORTFORM_DIR,
+    (name) => name.endsWith('_reel_cover.jpg') && name.includes(slug)
   );
   return files[0] || null;
 }
@@ -136,7 +155,9 @@ module.exports = {
   IMAGE_DIR,
   listFilesSortedByMtime,
   findLatestReelPath,
+  findLatestReelCoverPath,
   findReelPathForTitle,
+  findReelCoverPathForTitle,
   findLatestThumbPath,
   findThumbPathForTitle,
   selectThumbForTitle,

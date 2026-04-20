@@ -9,6 +9,7 @@ const {
 } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-image-host.ts'));
 const {
   findLatestReelPath,
+  findLatestReelCoverPath,
   findLatestThumbPath,
 } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-files.ts'));
 
@@ -17,8 +18,10 @@ function parseArgs(argv = []) {
     json: argv.includes('--json'),
     dryRun: argv.includes('--dry-run'),
     includeThumb: !argv.includes('--no-thumb'),
+    includeCover: !argv.includes('--no-cover'),
     video: readOption(argv, '--video'),
     thumb: readOption(argv, '--thumb'),
+    cover: readOption(argv, '--cover'),
   };
 }
 
@@ -70,6 +73,9 @@ function stageAsset(filePath = '', kind = 'asset', dryRun = false) {
 
 function printHuman(payload) {
   console.log(`[인스타 준비] reel=${payload.reel ? payload.reel.targetPath : 'missing'}`);
+  if (payload.cover) {
+    console.log(`[인스타 준비] cover=${payload.cover.targetPath}`);
+  }
   if (payload.thumb) {
     console.log(`[인스타 준비] thumb=${payload.thumb.targetPath}`);
   }
@@ -89,14 +95,19 @@ function main() {
   const thumbPath = args.includeThumb
     ? (args.thumb ? path.resolve(args.thumb) : findLatestThumbPath())
     : '';
+  const coverPath = args.includeCover
+    ? (args.cover ? path.resolve(args.cover) : findLatestReelCoverPath())
+    : '';
 
   const reel = stageAsset(reelPath, 'reels', args.dryRun);
+  const cover = coverPath ? stageAsset(coverPath, 'thumbs', args.dryRun) : null;
   const thumb = thumbPath ? stageAsset(thumbPath, 'thumbs', args.dryRun) : null;
   const payload = {
     dryRun: args.dryRun,
     publicReady: reel?.ready === true,
     noJekyllPath: ensureGithubPagesMarker(args.dryRun),
     reel,
+    cover,
     thumb,
   };
 
