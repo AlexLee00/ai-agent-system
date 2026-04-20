@@ -41,6 +41,9 @@ const DRAWTHINGS_HEALTH_URL = new URL('/sdapi/v1/options', IMAGE_BASE_URL.endsWi
 const NODE_SERVER_TIMEOUT_MS = Number(runtimeConfig.nodeServerTimeoutMs || 3000);
 const N8N_HEALTH_TIMEOUT_MS = Number(runtimeConfig.n8nHealthTimeoutMs || 2500);
 const IMAGE_HEALTH_TIMEOUT_MS = 2500;
+const COMMENTER_CONFIG = runtimeConfig.commenter || {};
+const COMMENTER_ACTIVE_START_HOUR = Number(COMMENTER_CONFIG.activeStartHour || 9);
+const COMMENTER_ACTIVE_END_HOUR = Number(COMMENTER_CONFIG.activeEndHour || 21);
 
 async function notify(msg, level = 3) {
   try {
@@ -267,6 +270,104 @@ async function checkFacebookPublishHealth() {
   }
 }
 
+function classifyEngagementFailure(meta = {}) {
+  const errorText = String(meta?.error || meta?.uiError || meta?.previous_error || '').trim();
+  if (!errorText) {
+    if (meta?.correction_reason === 'reply_verification_false_positive') return 'verification';
+    return 'unknown';
+  }
+
+  if (
+    errorText.includes('reply_button_not_found')
+    || errorText.includes('reply_submit_not_found')
+    || errorText.includes('comment_submit_not_confirmed')
+    || errorText.includes('reply_ui_unavailable')
+    || errorText.includes('reply_editor_not_found')
+  ) {
+    return 'ui';
+  }
+
+  if (
+    errorText.includes('ECONNREFUSED')
+    || errorText.includes('__name is not defined')
+    || errorText.includes('browser')
+    || errorText.includes('ws 연결 실패')
+  ) {
+    return 'browser';
+  }
+
+  if (
+    errorText.includes('fetch failed')
+    || errorText.includes('timeout')
+    || errorText.includes('429')
+    || errorText.includes('Claude Code')
+    || errorText.includes('Groq')
+  ) {
+    return 'llm';
+  }
+
+  return 'unknown';
+}
+
+function isCommenterActiveWindow() {
+  const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+  const hour = now.getHours() + (now.getMinutes() / 60);
+  return hour >= COMMENTER_ACTIVE_START_HOUR && hour <= COMMENTER_ACTIVE_END_HOUR;
+}
+
+async function checkEngagementAutomationHealth() {
+  try {
+    const activeWindow = isCommenterActiveWindow();
+    const rows = await pgPool.query('blog', `
+      SELECT action_type, meta
+      FROM blog.comment_actions
+      WHERE timezone('Asia/Seoul', executed_at)::date = timezone('Asia/Seoul', now())::date
+        AND success = false
+      ORDER BY executed_at DESC
+      LIMIT 50
+    `);
+
+    const failureByKind = { ui: 0, browser: 0, llm: 0, verification: 0, unknown: 0 };
+    const failureByAction = { reply: 0, neighbor_comment: 0, sympathy: 0 };
+    for (const row of rows || []) {
+      const kind = classifyEngagementFailure(row.meta || {});
+      failureByKind[kind] = Number(failureByKind[kind] || 0) + 1;
+      const actionType = String(row.action_type || '');
+      if (actionType === 'reply') failureByAction.reply += 1;
+      else if (actionType === 'neighbor_comment') failureByAction.neighbor_comment += 1;
+      else if (actionType.includes('sympathy')) failureByAction.sympathy += 1;
+    }
+
+    const totalFailures = (rows || []).length;
+    if (!activeWindow || totalFailures <= 0) {
+      return {
+        ok: true,
+        detail: activeWindow ? 'engagement failures 없음' : 'engagement 비활성 시간대',
+        failureByKind,
+        failureByAction,
+      };
+    }
+
+    if ((failureByKind.ui || 0) > 0 || (failureByKind.browser || 0) > 0) {
+      return {
+        ok: false,
+        detail: `engagement UI/browser failures — reply ${failureByAction.reply}, neighbor ${failureByAction.neighbor_comment}, sympathy ${failureByAction.sympathy}`,
+        failureByKind,
+        failureByAction,
+      };
+    }
+
+    return {
+      ok: true,
+      detail: `engagement failures present but non-UI (${totalFailures}건)`,
+      failureByKind,
+      failureByAction,
+    };
+  } catch (e) {
+    return { ok: false, detail: `engagement 확인 실패: ${e.message.slice(0, 120)}` };
+  }
+}
+
 async function main() {
   console.log(`[블로그 헬스체크] 시작 — ${new Date().toISOString()}`);
 
@@ -412,6 +513,23 @@ async function main() {
     await notify(recoveryMsg, 1);
     await rememberHealthEvent(facebookPublishKey, 'recovery', recoveryMsg, 1);
     hsm.clearAlert(state, facebookPublishKey);
+  }
+
+  const engagementAutomation = await checkEngagementAutomationHealth();
+  const engagementAutomationKey = 'engagement:ui';
+  if (!engagementAutomation.ok) {
+    if (hsm.canAlert(state, engagementAutomationKey)) {
+      issues.push({
+        key: engagementAutomationKey,
+        level: 2,
+        msg: `⚠️ [블로그 헬스] engagement 자동화 이슈\n${engagementAutomation.detail}`,
+      });
+    }
+  } else if (state[engagementAutomationKey]) {
+    const recoveryMsg = `✅ [블로그 헬스] engagement 자동화 회복\n${engagementAutomation.detail}`;
+    await notify(recoveryMsg, 1);
+    await rememberHealthEvent(engagementAutomationKey, 'recovery', recoveryMsg, 1);
+    hsm.clearAlert(state, engagementAutomationKey);
   }
 
   for (const { key, level, msg } of issues) {
