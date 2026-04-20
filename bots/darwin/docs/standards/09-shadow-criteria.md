@@ -1,26 +1,26 @@
 # Darwin V2 — Shadow Mode 기준 (Shadow Criteria)
 
-> 최종 업데이트: 2026-04-18
+> 최종 업데이트: 2026-04-20
 
 ---
 
 ## 개요
 
-Shadow Mode는 Darwin V2를 V1과 병행 실행하여 결과를 비교합니다. 7일 관찰 후 match_score ≥ 95% 달성 시 V2 단독 운영으로 전환.
+Shadow Mode는 Darwin V2를 V1과 병행 실행하여 결과를 비교하는 승격 전 단계입니다. 현재 live Darwin은 이미 `L5 완전자율`로 전환되었고, 이 문서는 **과거 shadow 승격 기준**을 보존하는 용도입니다.
 
 ---
 
 ## 활성화
 
 ```bash
-DARWIN_SHADOW_ENABLED=true
+DARWIN_SHADOW_MODE=true
 ```
 
 ---
 
 ## 실행 스케줄
 
-- **주기**: 일 1회 (V1 daily cycle과 동일 시간)
+- **주기**: 주 1회 one-shot 검증 또는 승격 전 관찰 기간에 맞춘 임시 운영
 - **트리거**: `Darwin.V2.ShadowRunner.run_once()`
 - **launchd**: `ai.darwin.daily.shadow.plist`
 
@@ -66,9 +66,9 @@ LIMIT 7;
 
 1. Shadow 7일 관찰 완료
 2. 메티 검토 → match_score 확인
-3. 마스터 명시 승인 (자동 승격 불가 — L5에서도 동일)
+3. 마스터 명시 승인
 4. `DARWIN_CYCLE_ENABLED=true` 설정
-5. `DARWIN_SHADOW_ENABLED=false` 설정 (V1 병행 중단)
+5. `DARWIN_SHADOW_MODE=false` 설정 (V1 병행 중단)
 
 ---
 
@@ -89,3 +89,14 @@ V2 정식 운영 전환 후에도 지속 모니터링합니다.
 
 - 보존 기간: 90일 (주간 배치 자동 삭제)
 - 예외: `match_score < 0.80`인 기록은 영구 보존 (실패 학습용)
+
+---
+
+## 현재 live 상태
+
+- 현재 Darwin live는 shadow 승격 단계를 이미 통과한 상태다.
+- live 운영값:
+  - `DARWIN_SHADOW_MODE=false`
+  - `DARWIN_AUTONOMY_LEVEL=5`
+  - `DARWIN_TIER2_AUTO_APPLY=true`
+  - `DARWIN_KILL_SWITCH=false`
