@@ -17,19 +17,38 @@ const DEFAULT_STATE = {
   last_error: null,
 };
 
+function normalizeLevel(level) {
+  if (typeof level === 'number') {
+    if (level >= 5) return 'L5';
+    if (level <= 3) return 'L3';
+    return 'L4';
+  }
+
+  const raw = String(level || '').trim().toUpperCase();
+  if (raw === '5' || raw === 'L5') return 'L5';
+  if (raw === '3' || raw === 'L3') return 'L3';
+  return 'L4';
+}
+
 function ensureStateDir() {
   fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true });
 }
 
 function loadState() {
   ensureStateDir();
+  const envLevel = process.env.DARWIN_AUTONOMY_LEVEL;
   try {
-    return {
+    const merged = {
       ...DEFAULT_STATE,
       ...JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')),
     };
+    merged.level = normalizeLevel(envLevel || merged.level);
+    return merged;
   } catch {
-    return { ...DEFAULT_STATE };
+    return {
+      ...DEFAULT_STATE,
+      level: normalizeLevel(envLevel || DEFAULT_STATE.level),
+    };
   }
 }
 
@@ -38,6 +57,7 @@ function saveState(state) {
   const nextState = {
     ...DEFAULT_STATE,
     ...state,
+    level: normalizeLevel(state?.level),
     updated_at: new Date().toISOString(),
   };
   fs.writeFileSync(STATE_FILE, JSON.stringify(nextState, null, 2), 'utf8');

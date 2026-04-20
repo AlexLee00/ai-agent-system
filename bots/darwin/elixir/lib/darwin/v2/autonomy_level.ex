@@ -205,7 +205,7 @@ defmodule Darwin.V2.AutonomyLevel do
       {:ok, content} ->
         data = Jason.decode!(content)
         %__MODULE__{
-          level: data["level"] || 3,
+          level: normalize_level(data["level"] || 3),
           consecutive_successes: data["consecutiveSuccesses"] || 0,
           applied_successes: data["appliedSuccesses"] || 0
         }
@@ -224,4 +224,13 @@ defmodule Darwin.V2.AutonomyLevel do
     })
     File.write(path, content)
   end
+
+  defp normalize_level(level) when is_integer(level) and level in 3..5, do: level
+  defp normalize_level("L3"), do: 3
+  defp normalize_level("L4"), do: 4
+  defp normalize_level("L5"), do: 5
+  defp normalize_level("3"), do: 3
+  defp normalize_level("4"), do: 4
+  defp normalize_level("5"), do: 5
+  defp normalize_level(_), do: 3
 end

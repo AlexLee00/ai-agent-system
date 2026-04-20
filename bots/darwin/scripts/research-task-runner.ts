@@ -2,8 +2,33 @@
 
 const tasks = require('../lib/research-tasks');
 const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const { execFileSync } = require('child_process');
+const path = require('path');
+const autonomyLevel = require('../lib/autonomy-level');
 
 const MAX_TASKS_PER_RUN = 3;
+const REPO_ROOT = path.join(__dirname, '../../..');
+
+function _runGit(args, opts = {}) {
+  return execFileSync('git', args, {
+    cwd: REPO_ROOT,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    ...opts,
+  }).trim();
+}
+
+function _autoMergeSkillBranch(branchName, taskId) {
+  if (!branchName) return { merged: false };
+  _runGit(['checkout', 'main']);
+  _runGit(['merge', '--no-ff', branchName, '-m', `merge(darwin-skill): ${taskId}`]);
+  try {
+    _runGit(['branch', '-D', branchName]);
+  } catch {
+    // ignore
+  }
+  return { merged: true, branch: branchName };
+}
 
 async function main() {
   await tasks.ensureTaskStatusSchema();
@@ -38,11 +63,18 @@ async function main() {
 
       if (task.type === 'skill_creation') {
         const result = await tasks.executeSkillCreation(task);
+        const requiresApproval = autonomyLevel.requiresApproval();
+        let autoMerge = null;
+
+        if (result.syntaxOk && result.branch && !requiresApproval) {
+          autoMerge = _autoMergeSkillBranch(result.branch, task.id);
+        }
+
         await postAlarm({
-          message: `🧠 스킬 자동 생성 ${result.syntaxOk ? '✅' : '❌'}!\n📋 ${task.title}\n📂 ${result.skillPath}\n📊 ${result.linesOfCode}줄\n✅ 문법: ${result.syntaxOk ? '통과' : '실패'}\n${result.branch ? `🌿 검증 브랜치: ${result.branch}` : ''}`,
+          message: `🧠 스킬 자동 생성 ${result.syntaxOk ? '✅' : '❌'}!\n📋 ${task.title}\n📂 ${result.skillPath}\n📊 ${result.linesOfCode}줄\n✅ 문법: ${result.syntaxOk ? '통과' : '실패'}\n${autoMerge?.merged ? '🚀 L5 자동 머지 완료' : (result.branch ? `🌿 검증 브랜치: ${result.branch}` : '')}`,
           team: 'darwin',
           fromBot: 'task-runner',
-          inlineKeyboard: result.syntaxOk ? [[
+          inlineKeyboard: result.syntaxOk && requiresApproval ? [[
             { text: '✅ 머지 승인', callback_data: `darwin_merge_skill:${task.id}` },
             { text: '📝 수동 검토', callback_data: `darwin_manual:${task.id}` },
           ]] : null,

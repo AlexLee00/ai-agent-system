@@ -161,6 +161,7 @@ async function apply(paper) {
   const codeMatch = String(prototype || '').match(/```(?:javascript|js)?\n([\s\S]*?)```/);
   const codeOnly = codeMatch ? codeMatch[1].trim() : String(prototype || '').trim();
   const verification = verifyPrototype(codeOnly);
+  const requiresApproval = autonomyLevel.requiresApproval();
 
   const statusIcon = verification.passed ? '✅' : '⚠️';
   const message = [
@@ -175,7 +176,9 @@ async function apply(paper) {
     '',
     `🔍 검증: ${verification.passed ? '통과' : `실패 — ${verification.checks.errors.join(', ')}`}`,
     '',
-    verification.passed ? '승인하려면 "적용 승인"이라고 답해주세요.' : '검증 실패 — 수동 검토 필요.',
+    verification.passed
+      ? (requiresApproval ? '승인하려면 "적용 승인"이라고 답해주세요.' : 'L5 완전자율 모드 — 자동 구현을 이어서 진행합니다.')
+      : '검증 실패 — 수동 검토 필요.',
   ].filter(Boolean).join('\n');
 
   const proposalData = {
@@ -188,7 +191,7 @@ async function apply(paper) {
     proposal,
     prototype: codeOnly,
     verification,
-    status: verification.passed ? 'pending_approval' : 'needs_review',
+    status: verification.passed ? (requiresApproval ? 'pending_approval' : 'approved') : 'needs_review',
     created_at: new Date().toISOString(),
   };
 
@@ -205,22 +208,25 @@ async function apply(paper) {
     botName: 'applicator',
     severity: verification.passed ? 'info' : 'warn',
     title: String(paper.title || '').slice(0, 140),
-    message: verification.passed ? '검증 통과 후 승인 대기' : '프로토타입 검증 실패',
+    message: verification.passed
+      ? (requiresApproval ? '검증 통과 후 승인 대기' : '검증 통과 후 자동 구현 진행')
+      : '프로토타입 검증 실패',
     tags: ['proposal', verification.passed ? 'passed' : 'failed'],
     metadata: {
       proposal_id: proposalId,
       arxiv_id: paper.arxiv_id || '',
       verification_passed: verification.passed,
+      autonomy_level: requiresApproval ? 'L4' : 'L5',
     },
   }).catch(() => null);
 
-  const primaryButtons = verification.passed ? [[
+  const primaryButtons = verification.passed && requiresApproval ? [[
     { text: '✅ 승인 — 구현 시작', callback_data: `darwin_approve:${proposalId}` },
     { text: '❌ 거절', callback_data: `darwin_reject:${proposalId}` },
-  ]] : [[
+  ]] : !verification.passed ? [[
     { text: '📝 수동 검토', callback_data: `darwin_manual:${proposalId}` },
     { text: '❌ 거절', callback_data: `darwin_reject:${proposalId}` },
-  ]];
+  ]] : [];
 
   const alarmResult = await postAlarm({
     message: message.slice(0, 4000),
@@ -233,6 +239,15 @@ async function apply(paper) {
     eventLake.addFeedback(proposalEventId, {
       feedback: alarmResult?.ok === true ? 'alarm_sent' : 'alarm_failed',
     }).catch(() => {});
+  }
+
+  if (verification.passed && !requiresApproval) {
+    const implementor = require('./implementor');
+    setImmediate(() => {
+      implementor.triggerImplementation(proposalId).catch((error) => {
+        console.warn(`[applicator] 자동 구현 전환 실패: ${error.message}`);
+      });
+    });
   }
 
   return {

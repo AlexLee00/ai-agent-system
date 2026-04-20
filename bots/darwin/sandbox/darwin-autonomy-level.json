@@ -1,7 +1,13 @@
 {
-  "level": "L4",
-  "reason": "path_error_fixed_prototypes_allowed",
-  "updated_at": "2026-04-17T12:00:00.000Z",
+  "level": 5,
+  "reason": "promoted_to_full_autonomy_by_master_request",
+  "updated_at": "2026-04-20T03:00:00.000Z",
   "error_count": 0,
-  "last_error": null
+  "last_error": null,
+  "consecutiveSuccesses": 10,
+  "appliedSuccesses": 3,
+  "daysAtCurrentLevel": 14,
+  "killSwitch": false,
+  "pipelineRuns": 10,
+  "lastUpgradeAt": "2026-04-20T03:00:00.000Z"
 }

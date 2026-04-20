@@ -21,10 +21,12 @@
     <key>MIX_ENV</key><string>prod</string>
     <key>MODE</key><string>ops</string>
     <key>DARWIN_V2_ENABLED</key><string>true</string>
-    <key>DARWIN_SHADOW_MODE</key><string>true</string>
+    <key>DARWIN_SHADOW_MODE</key><string>false</string>
+    <key>DARWIN_KILL_SWITCH</key><string>false</string>
+    <key>DARWIN_L5_ENABLED</key><string>true</string>
     <key>DARWIN_HTTP_PORT</key><string>4020</string>
     <key>DARWIN_LLM_DAILY_BUDGET_USD</key><string>10.00</string>
-    <key>DARWIN_TIER2_AUTO_APPLY</key><string>false</string>
+    <key>DARWIN_TIER2_AUTO_APPLY</key><string>true</string>
     <key>DARWIN_MCP_SERVER_ENABLED</key><string>false</string>
     <key>DARWIN_ESPL_ENABLED</key><string>false</string>
     <key>DARWIN_SELF_RAG_ENABLED</key><string>false</string>

@@ -136,6 +136,7 @@ ${verification.summary}`,
 
     const verificationText = String(verificationResult?.text || verificationResult || '').trim();
     const passed = _decideVerificationPass(verification, verificationText);
+    const requiresApproval = autonomyLevel.requiresApproval();
     logger.info(`검증 완료: ${proposalId} -> ${passed ? 'PASS' : 'FAIL'}`, { files: changedFiles.length });
 
     proposalStore.updateStatus(proposalId, passed ? 'verified' : 'verification_failed', {
@@ -182,20 +183,29 @@ ${verification.summary}`,
 
     await postAlarm({
       message: passed
-        ? `✅ proof-r 검증 통과\n📄 ${proposal.title || proposalId}\n🌿 ${branchName}\n📂 ${changedFiles.length}개 파일`
+        ? `✅ proof-r 검증 통과\n📄 ${proposal.title || proposalId}\n🌿 ${branchName}\n📂 ${changedFiles.length}개 파일${requiresApproval ? '' : '\n🚀 L5 완전자율 모드 — 자동 머지 진행'}`
         : `❌ proof-r 검증 실패\n📄 ${proposal.title || proposalId}\n🌿 ${branchName}\n사유: ${verificationText.slice(0, 500)}`,
       team: 'darwin',
       alertLevel: passed ? 2 : 3,
       fromBot: 'proof-r',
-      inlineKeyboard: passed
+      inlineKeyboard: passed && requiresApproval
         ? [[
             { text: '✅ 머지 승인', callback_data: `darwin_merge:${proposalId}` },
             { text: '📝 수동 검토', callback_data: `darwin_manual:${proposalId}` },
           ], ...buildDarwinFeedbackButtons(verificationEventId)]
-        : [[
+        : !passed ? [[
             { text: '📝 수동 검토', callback_data: `darwin_manual:${proposalId}` },
-          ], ...buildDarwinFeedbackButtons(verificationEventId)],
+          ], ...buildDarwinFeedbackButtons(verificationEventId)]
+        : buildDarwinFeedbackButtons(verificationEventId),
     });
+
+    if (passed && !requiresApproval) {
+      setImmediate(() => {
+        mergeVerifiedProposal(proposalId).catch((error) => {
+          logger.error(`자동 머지 실패: ${proposalId} -> ${error.message}`);
+        });
+      });
+    }
 
     return { ok: true, passed, changedFiles, verificationText };
   } catch (error) {
