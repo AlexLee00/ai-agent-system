@@ -11,6 +11,40 @@ const pgPool = require('../../../packages/core/lib/pg-pool');
 const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 
 const PLATFORM_LABELS = { naver: '네이버 블로그', instagram: '인스타그램', facebook: '페이스북' };
+let _publishLogEnsured = false;
+
+async function ensurePublishLogSchema() {
+  if (_publishLogEnsured) return;
+
+  await pgPool.run('blog', `
+    CREATE TABLE IF NOT EXISTS blog.publish_log (
+      id BIGSERIAL PRIMARY KEY,
+      platform TEXT NOT NULL,
+      status TEXT NOT NULL,
+      title TEXT NOT NULL,
+      url TEXT,
+      post_id TEXT,
+      error TEXT,
+      duration_ms INTEGER,
+      dry_run BOOLEAN DEFAULT false,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pgPool.run('blog', `
+    CREATE INDEX IF NOT EXISTS idx_blog_publish_log_platform
+    ON blog.publish_log(platform, created_at DESC)
+  `);
+  await pgPool.run('blog', `
+    CREATE INDEX IF NOT EXISTS idx_blog_publish_log_status
+    ON blog.publish_log(status, created_at DESC)
+  `);
+  await pgPool.run('blog', `
+    CREATE INDEX IF NOT EXISTS idx_blog_publish_log_date
+    ON blog.publish_log(created_at DESC)
+  `);
+
+  _publishLogEnsured = true;
+}
 
 /**
  * @typedef {{
@@ -33,6 +67,7 @@ const PLATFORM_LABELS = { naver: '네이버 블로그', instagram: '인스타그
 
 async function _saveToDb(platform, status, title, url, error, durationMs, postId) {
   try {
+    await ensurePublishLogSchema();
     await pgPool.query('blog', `
       INSERT INTO blog.publish_log (platform, status, title, url, error, duration_ms, post_id, dry_run)
       VALUES ($1, $2, $3, $4, $5, $6, $7, false)
@@ -110,6 +145,7 @@ async function reportPublishFailure(platform, title, error, opts = {}) {
 async function reportDailySummary(date = null) {
   const targetDate = date || new Date().toISOString().split('T')[0];
   try {
+    await ensurePublishLogSchema();
     const rows = await pgPool.query('blog', `
       SELECT platform, status, COUNT(*) AS cnt
       FROM blog.publish_log
@@ -146,6 +182,7 @@ async function reportDailySummary(date = null) {
 }
 
 module.exports = {
+  ensurePublishLogSchema,
   reportPublish,
   reportPublishSuccess,
   reportPublishFailure,

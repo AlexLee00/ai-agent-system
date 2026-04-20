@@ -16,19 +16,9 @@ const pgPool = require('../../../packages/core/lib/pg-pool');
 const { runIfOps } = require('../../../packages/core/lib/mode-guard');
 const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 const { publishFacebookPost } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/facebook-publisher.ts'));
-const { reportPublishSuccess, reportPublishFailure } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/publish-reporter.ts'));
+const { ensurePublishLogSchema, reportPublishSuccess, reportPublishFailure } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/publish-reporter.ts'));
 
 const DRY_RUN = process.argv.includes('--dry-run');
-
-/**
- * @typedef {{
- *   postId: string | number | null,
- *   postTitle: string | null,
- *   fbPostId?: string | null,
- *   status: string,
- *   errorMsg?: string | null
- * }} FacebookPublishRecord
- */
 
 async function getTodayLatestPost() {
   const rows = await pgPool.query('blog', `
@@ -47,30 +37,18 @@ async function getTodayLatestPost() {
 
 async function hasFacebookPublishToday() {
   try {
+    await ensurePublishLogSchema();
     const rows = await pgPool.query('blog', `
       SELECT COUNT(*)::int AS cnt
-      FROM blog.facebook_publish_log
-      WHERE publish_date = CURRENT_DATE
-        AND status = 'ok'
+      FROM blog.publish_log
+      WHERE platform = 'facebook'
+        AND status = 'success'
+        AND COALESCE(dry_run, false) = false
+        AND DATE(created_at AT TIME ZONE 'Asia/Seoul') = timezone('Asia/Seoul', now())::date
     `);
     return (rows?.[0]?.cnt || 0) > 0;
   } catch {
-    // 테이블 없으면 미발행으로 처리
     return false;
-  }
-}
-
-/** @param {FacebookPublishRecord} record */
-async function recordFacebookPublish({ postId, postTitle, fbPostId = null, status, errorMsg = null }) {
-  try {
-    await pgPool.query('blog', `
-      INSERT INTO blog.facebook_publish_log
-        (post_id, post_title, fb_post_id, status, error_msg, publish_date)
-      VALUES ($1, $2, $3, $4, $5, CURRENT_DATE)
-      ON CONFLICT DO NOTHING
-    `, [postId || null, postTitle || null, fbPostId || null, status, errorMsg || null]);
-  } catch {
-    // 테이블 미존재 시 무시 (migration 전)
   }
 }
 
@@ -116,14 +94,12 @@ async function main() {
       return;
     }
 
-    await recordFacebookPublish({ postId, postTitle: title, fbPostId: result.postId, status: 'ok' });
-    await reportPublishSuccess('facebook', title, naverUrl || '');
+    await reportPublishSuccess('facebook', title, naverUrl || '', { postId });
     console.log(`[facebook-auto] 발행 성공 fbPostId=${result.postId}`);
 
   } catch (err) {
     console.error('[facebook-auto] 발행 실패:', err.message);
-    await recordFacebookPublish({ postId, postTitle: title, status: 'failed', errorMsg: err.message });
-    await reportPublishFailure('facebook', title, err.message);
+    await reportPublishFailure('facebook', title, err.message, { postId });
   }
 }
 
