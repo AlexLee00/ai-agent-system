@@ -49,6 +49,7 @@ const DRAWTHINGS_HEALTH_URL = new URL('/sdapi/v1/options', IMAGE_BASE_URL.endsWi
 const DEFAULT_BLOG_WEBHOOK_URL = process.env.N8N_BLOG_WEBHOOK || runtimeConfig.blogWebhookUrl || 'http://127.0.0.1:5678/webhook/blog-pipeline';
 const TEAM_JAY_ROOT = path.join(env.PROJECT_ROOT, 'elixir', 'team_jay');
 const SOCIAL_ASSET_DUE_HOUR = Number(process.env.BLOG_SOCIAL_ASSET_DUE_HOUR || runtimeConfig.socialAssetDueHour || 7);
+const FACEBOOK_READINESS_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run check:facebook -- --json`;
 
 function nowKst() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
@@ -704,6 +705,7 @@ async function buildSocialAutomationHealth() {
         if (facebookPageId) {
           ok.push(`  facebook page id: ${facebookPageId}`);
         }
+        ok.push(`  facebook readiness command: ${FACEBOOK_READINESS_COMMAND}`);
       } else if (facebookReadiness?.error) {
         const summarizedReadinessError = summarizeFacebookPublishFailure(facebookReadiness.error || '');
         warn.push(`  facebook readiness: ${summarizedReadinessError}`);
@@ -713,6 +715,7 @@ async function buildSocialAutomationHealth() {
         if (facebookPermissionScopes.length > 0) {
           warn.push(`  facebook missing scopes: ${facebookPermissionScopes.join(', ')}`);
         }
+        warn.push(`  facebook readiness command: ${FACEBOOK_READINESS_COMMAND}`);
       }
       if (facebookRows.length > 0) {
         const latestFacebook = facebookRows[0];
@@ -731,6 +734,7 @@ async function buildSocialAutomationHealth() {
               warn.push(`  facebook missing scopes: ${facebookPermissionScopes.join(', ')}`);
             }
             warn.push('  facebook action: Meta 앱에 pages_manage_posts, pages_read_engagement 권한을 다시 연결하세요');
+            warn.push(`  facebook diagnose: ${FACEBOOK_READINESS_COMMAND}`);
           }
         }
       } else {
