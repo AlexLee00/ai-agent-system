@@ -155,6 +155,25 @@ function summarizeEngagementFailure(meta = {}) {
     .slice(0, 140);
 }
 
+function summarizeFacebookPublishFailure(text = '') {
+  const raw = String(text || '').trim();
+  if (!raw) return '';
+  if (raw.includes('Facebook 페이지 게시 권한 부족:')) {
+    return raw;
+  }
+  if (raw.includes('pages_manage_posts') || raw.includes('pages_read_engagement')) {
+    /** @type {string[]} */
+    const scopes = [];
+    for (const scope of ['pages_manage_posts', 'pages_read_engagement', 'pages_manage_metadata']) {
+      if (raw.includes(scope) && !scopes.includes(scope)) scopes.push(scope);
+    }
+    if (scopes.length > 0) {
+      return `Facebook 페이지 게시 권한 부족: ${scopes.join(', ')}`;
+    }
+  }
+  return raw.slice(0, 120);
+}
+
 function extractJsonObjectText(output = '') {
   const text = String(output || '').trim();
   if (!text) return '';
@@ -560,7 +579,11 @@ async function buildSocialAutomationHealth() {
         const latestFacebook = facebookRows[0];
         ok.push(`  facebook latest: ${String(latestFacebook.status || 'unknown')} / ${String(latestFacebook.title || '').slice(0, 50)}`);
         if (String(latestFacebook.status || '') === 'failed') {
-          warn.push(`  facebook latest failed: ${String(latestFacebook.error || '').slice(0, 120)}`);
+          const summarizedFacebookError = summarizeFacebookPublishFailure(latestFacebook.error || '');
+          warn.push(`  facebook latest failed: ${summarizedFacebookError}`);
+          if (summarizedFacebookError.includes('Facebook 페이지 게시 권한 부족:')) {
+            warn.push('  facebook action: Meta 앱에 pages_manage_posts, pages_read_engagement 권한을 다시 연결하세요');
+          }
         }
       } else {
         warn.push('  facebook publish history: 아직 없음');

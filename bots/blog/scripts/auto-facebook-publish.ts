@@ -98,7 +98,11 @@ async function main() {
     console.log(`[facebook-auto] 발행 성공 fbPostId=${result.postId}`);
 
   } catch (err) {
+    const rawMessage = String(err?.rawMessage || err?.message || '');
     console.error('[facebook-auto] 발행 실패:', err.message);
+    if (rawMessage && rawMessage !== err.message) {
+      console.error('[facebook-auto] raw failure:', rawMessage);
+    }
     await reportPublishFailure('facebook', title, err.message, { postId });
   }
 }

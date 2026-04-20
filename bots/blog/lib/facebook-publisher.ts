@@ -26,6 +26,54 @@ function ensureFacebookReady(config) {
 }
 
 /**
+ * @param {string} text
+ * @returns {string[]}
+ */
+function extractFacebookPermissionScopes(text) {
+  const raw = String(text || '');
+  /** @type {string[]} */
+  const scopes = [];
+  for (const scope of ['pages_manage_posts', 'pages_read_engagement', 'pages_manage_metadata']) {
+    if (raw.includes(scope) && !scopes.includes(scope)) scopes.push(scope);
+  }
+  return scopes;
+}
+
+/**
+ * @param {number} status
+ * @param {any} data
+ */
+function buildFacebookGraphError(status, data) {
+  const raw = `Facebook Graph API 실패: HTTP ${status} ${JSON.stringify(data || {})}`;
+  const message = String(data?.error?.message || '').trim();
+  const scopes = extractFacebookPermissionScopes(raw);
+  let normalized = raw;
+  let category = 'graph_api_error';
+
+  if (status === 403 && scopes.length > 0) {
+    category = 'permission_missing';
+    normalized = `Facebook 페이지 게시 권한 부족: ${scopes.join(', ')}`;
+  } else if (status === 403) {
+    category = 'permission_denied';
+    normalized = `Facebook 접근 권한이 부족합니다 (HTTP ${status})`;
+  } else if (status === 400 && message.includes('Unsupported post request')) {
+    category = 'page_or_token_mismatch';
+    normalized = 'Facebook 페이지 ID 또는 토큰 연결이 맞지 않습니다.';
+  }
+
+  const error = new Error(normalized);
+  // @ts-ignore JS runtime metadata attachment
+  error.rawMessage = raw;
+  // @ts-ignore JS runtime metadata attachment
+  error.category = category;
+  // @ts-ignore JS runtime metadata attachment
+  error.httpStatus = status;
+  // @ts-ignore JS runtime metadata attachment
+  error.permissionScopes = scopes;
+  return error;
+}
+
+/**
  * @param {FacebookPublishConfig} config
  * @param {{ redactAccessToken?: boolean }} [options]
  */
@@ -69,7 +117,7 @@ async function fetchJson(url, options = {}) {
   const response = await fetch(url, options);
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(`Facebook Graph API 실패: HTTP ${response.status} ${JSON.stringify(data)}`);
+    throw buildFacebookGraphError(response.status, data);
   }
   return data;
 }
@@ -120,5 +168,7 @@ module.exports = {
   getFacebookPublishConfig,
   buildFacebookPageTokenRequest,
   buildFacebookFeedRequest,
+  extractFacebookPermissionScopes,
+  buildFacebookGraphError,
   publishFacebookPost,
 };
