@@ -53,6 +53,7 @@ const FACEBOOK_READINESS_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, '
 const FACEBOOK_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:facebook -- --json`;
 const INSTAGRAM_READINESS_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run check:instagram -- --json`;
 const INSTAGRAM_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:instagram -- --json`;
+const SOCIAL_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:social -- --json`;
 
 function nowKst() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
@@ -651,6 +652,7 @@ async function buildSocialAutomationHealth() {
       ok.push(`  instagram today: success ${instaTodaySummary.success} / failed ${instaTodaySummary.failed} / skipped ${instaTodaySummary.skipped} (dry-run ${instaTodaySummary.dryRun})`);
       ok.push(`  instagram readiness command: ${INSTAGRAM_READINESS_COMMAND}`);
       ok.push(`  instagram doctor command: ${INSTAGRAM_DOCTOR_COMMAND}`);
+      ok.push(`  social doctor command: ${SOCIAL_DOCTOR_COMMAND}`);
       if (latestRealInstagram) {
         ok.push(`  instagram latest real: ${String(latestRealInstagram.status || 'unknown')} / ${String(latestRealInstagram.post_title || '').slice(0, 50)}`);
       }
@@ -712,10 +714,11 @@ async function buildSocialAutomationHealth() {
       if (facebookReadiness?.ready) {
         ok.push(`  facebook readiness: ready / page ${String(facebookReadiness.pageId || '').slice(0, 24)}`);
         if (facebookPageId) {
-          ok.push(`  facebook page id: ${facebookPageId}`);
+        ok.push(`  facebook page id: ${facebookPageId}`);
         }
         ok.push(`  facebook readiness command: ${FACEBOOK_READINESS_COMMAND}`);
         ok.push(`  facebook doctor command: ${FACEBOOK_DOCTOR_COMMAND}`);
+        ok.push(`  social doctor command: ${SOCIAL_DOCTOR_COMMAND}`);
       } else if (facebookReadiness?.error) {
         const summarizedReadinessError = summarizeFacebookPublishFailure(facebookReadiness.error || '');
         warn.push(`  facebook readiness: ${summarizedReadinessError}`);
@@ -727,6 +730,7 @@ async function buildSocialAutomationHealth() {
         }
         warn.push(`  facebook readiness command: ${FACEBOOK_READINESS_COMMAND}`);
         warn.push(`  facebook doctor command: ${FACEBOOK_DOCTOR_COMMAND}`);
+        warn.push(`  social doctor command: ${SOCIAL_DOCTOR_COMMAND}`);
       }
       if (facebookRows.length > 0) {
         const latestFacebook = facebookRows[0];
@@ -1477,7 +1481,7 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
     socialAutomationHealth.latestCoverUrl ? `cover=${socialAutomationHealth.latestCoverUrl}` : '',
     socialAutomationHealth.latestQaUrl ? `qa=${socialAutomationHealth.latestQaUrl}` : '',
   ].filter(Boolean).join(' / ');
-  const instagramDiagnoseHint = `diagnose=${INSTAGRAM_READINESS_COMMAND} / doctor=${INSTAGRAM_DOCTOR_COMMAND}`;
+  const instagramDiagnoseHint = `diagnose=${INSTAGRAM_READINESS_COMMAND} / doctor=${INSTAGRAM_DOCTOR_COMMAND} / social=${SOCIAL_DOCTOR_COMMAND}`;
   const engagementFailureHint = engagementHealth?.failureSamples?.[0]
     ? `${engagementHealth.failureSamples[0].kind}/${engagementHealth.failureSamples[0].actionType} ${engagementHealth.failureSamples[0].sample}`
     : '';

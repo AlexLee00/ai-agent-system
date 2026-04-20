@@ -23,6 +23,7 @@
     "doctor:facebook": "node scripts/doctor-facebook-publish.ts",
     "check:instagram": "node scripts/check-instagram-readiness.ts",
     "doctor:instagram": "node scripts/doctor-instagram-auth.ts",
+    "doctor:social": "node scripts/doctor-social-publish.ts",
     "check:instagram-token": "node scripts/check-instagram-token-health.ts",
     "refresh:instagram-token": "node scripts/refresh-instagram-token.ts",
     "check:instagram-media": "node scripts/check-instagram-public-media.ts",
