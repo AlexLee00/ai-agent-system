@@ -418,6 +418,15 @@ function classifyEngagementFailure(meta = {}) {
   return 'unknown';
 }
 
+function summarizeEngagementFailure(meta = {}) {
+  const raw = String(meta?.error || meta?.uiError || meta?.previous_error || meta?.message || '').trim();
+  if (!raw) return '';
+  return raw
+    .replace(/\s+/g, ' ')
+    .replace(/snapshotPrefix[^,}\]]*/gi, 'snapshotPrefix')
+    .slice(0, 140);
+}
+
 function isCommenterActiveWindow() {
   const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
   const hour = now.getHours() + (now.getMinutes() / 60);
@@ -478,9 +487,16 @@ async function checkEngagementAutomationHealth() {
 
     const failureByKind = { ui: 0, browser: 0, llm: 0, verification: 0, unknown: 0 };
     const failureByAction = { reply: 0, neighbor_comment: 0, sympathy: 0 };
+    let latestFailureSample = '';
     for (const row of rows || []) {
       const kind = classifyEngagementFailure(row.meta || {});
       failureByKind[kind] = Number(failureByKind[kind] || 0) + 1;
+      if (!latestFailureSample) {
+        const sample = summarizeEngagementFailure(row.meta || {});
+        if (sample) {
+          latestFailureSample = `${kind}/${String(row.action_type || 'unknown')} ${sample}`;
+        }
+      }
       const actionType = String(row.action_type || '');
       if (actionType === 'reply') failureByAction.reply += 1;
       else if (actionType === 'neighbor_comment') failureByAction.neighbor_comment += 1;
@@ -498,15 +514,20 @@ async function checkEngagementAutomationHealth() {
     }
 
     if ((failureByKind.ui || 0) > 0 || (failureByKind.browser || 0) > 0) {
+      const replayTargetHint = latestReplyReplayCandidate?.id
+        ? `\nreply target: comment ${latestReplyReplayCandidate.id} (${String(latestReplyReplayCandidate.commenter_name || 'unknown').slice(0, 30)})`
+        : '';
+      const sampleHint = latestFailureSample ? `\nrecent failure: ${latestFailureSample}` : '';
       const replayHint = latestReplyReplayCandidate?.id
         ? `\nreply replay: npm run replay:reply-ui -- --comment-id ${latestReplyReplayCandidate.id} --json`
         : '';
       return {
         ok: false,
-        detail: `engagement UI/browser failures — reply ${failureByAction.reply}, neighbor ${failureByAction.neighbor_comment}, sympathy ${failureByAction.sympathy}${replayHint}`,
+        detail: `engagement UI/browser failures — reply ${failureByAction.reply}, neighbor ${failureByAction.neighbor_comment}, sympathy ${failureByAction.sympathy}${sampleHint}${replayTargetHint}${replayHint}`,
         failureByKind,
         failureByAction,
         latestReplyReplayCandidate,
+        latestFailureSample,
       };
     }
 
@@ -516,6 +537,7 @@ async function checkEngagementAutomationHealth() {
       failureByKind,
       failureByAction,
       latestReplyReplayCandidate,
+      latestFailureSample,
     };
   } catch (e) {
     return { ok: false, detail: `engagement 확인 실패: ${e.message.slice(0, 120)}` };
