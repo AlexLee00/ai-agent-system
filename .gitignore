@@ -72,6 +72,7 @@ bots/claude/dexter-fixes.json
 *.wav
 *.srt
 dfd_*/
+!docs/blog-assets/instagram/reels/*.mp4
 
 # ─── Public 전환 추가 ───
 
