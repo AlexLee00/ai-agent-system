@@ -1837,3 +1837,23 @@
   - 결과: `forecast_results` 1건 저장, `training_feature_daily` 동기화 완료, `[python-report] ✅ reporting-hub 발행 완료` 확인
 - 2026-03-29: `node bots/claude/src/dexter.js --update-checksums` ✅
   - 결과: `체크섬 갱신 완료: 89개 파일`
+- 2026-04-20: `scripts/post-reboot.sh` ✅
+  - 결과: 재부팅 후 핵심 launchd 서비스와 follow-up 파일 생성 확인
+- 2026-04-20: `curl http://127.0.0.1:7788/hub/health` ✅
+  - 결과: `hub` 상태 `ok`, `postgresql / n8n / local_llm / rag / ownership_alignment` 정상
+- 2026-04-20: `curl http://127.0.0.1:5678/healthz` ✅
+  - 결과: `n8n status=ok`
+- 2026-04-20: `curl http://127.0.0.1:11434/v1/models` ✅
+  - 결과: `qwen2.5-7b`, `deepseek-r1-32b`, `qwen3-embed-0.6b`, `gemma4:latest` 확인
+- 2026-04-20: `tsx bots/investment/scripts/health-report.ts --json` / `tsx bots/investment/scripts/health-check.ts` ✅
+  - 결과: 루나팀 서비스 13개 정상, local은 `11434 embeddings-only / Groq 우선` 기준으로 안정 구간
+- 2026-04-20: `npm --prefix bots/blog run daily -- --verify --json` / `tsx bots/blog/scripts/health-report.ts --json` ✅
+  - 결과: 블로팀 오늘 스케줄 verify 정상, `node-server / n8n / drawthings / briefing` 정상
+- 2026-04-20: `/bin/bash bots/reservation/auto/monitors/run-today-audit.sh` ✅
+  - 결과: `/tmp/today-audit.log` 생성, `exit 0`, `확인 0 / 차단추가 1 / 해제 0 / 실패 0`
+- 2026-04-20: `tsx bots/reservation/scripts/health-report.ts --json` / `tsx bots/reservation/scripts/health-check.ts` ✅
+  - 결과: `todayAuditHealth` 정상 회복, duplicate slot은 `historical duplicate 3건 / 위험 group 0건`
+- 2026-04-20: `tsx bots/worker/scripts/health-report.ts --json` / `tsx bots/worker/scripts/health-check.ts` ✅
+  - 결과: `web / nextjs / lead / task-runner`, `worker web API`, `n8n intake webhook` 정상
+- 2026-04-20: `tsx bots/claude/scripts/health-report.ts --json` / `tsx bots/claude/scripts/health-check.ts` ✅
+  - 결과: `commander / dexter / archer / health-dashboard` 및 `n8n webhook` 정상

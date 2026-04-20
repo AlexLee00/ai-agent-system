@@ -5499,6 +5499,12 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 
 - 2026-04-18: CODEX_SIGMA_SHADOW_DEPLOY 실행 — Shadow Mode OPS 가동. mix sigma.daily.shadow task 생성, plist 업데이트(tsx→mix), Supervisor 수정(MCP OFF 시 HTTP 서버 가능), launchd 등록+수동 실행 검증(LastExitStatus=0, shadow_run_id=3). match_score=null (v1 baseline 미존재 — 정상). commit 46d9069c.
 
+- 2026-04-20: 포스트 리붓 점검을 다시 실행했다.
+  - `scripts/post-reboot.sh` 실행 후 핵심 인프라(`hub`, `n8n`, `mlx`, `rag`)가 모두 정상 가동하는 것을 확인했다.
+  - 팀별 점검 결과 `루나`, `블로`, `스카`, `워커`, `클로드` 모두 현재 운영 기준 정상으로 복구됐다.
+  - 스카 예약 축은 `today-audit`를 wrapper 경로로 재실행해 `exit 0 / 차단추가 1 / 실패 0`으로 회복시켰다.
+  - 예약 duplicate slot 경고는 `completed/completed`를 즉시 장애가 아닌 historical duplicate로 내리도록 기준을 정렬했다.
+
 ## 2026-04-18 (40차 세션)
 
 ### CODEX_DARWIN_REMODEL — Darwin V2 완전 자율 R&D 에이전트 리모델링

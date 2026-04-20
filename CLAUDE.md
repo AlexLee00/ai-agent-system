@@ -128,6 +128,11 @@ LLM 아키텍처:
 3. docs/history/WORK_HISTORY.md 업데이트 (오늘 한 일)
 4. 필요 시: CHANGELOG, KNOWN_ISSUES, RESEARCH_JOURNAL 업데이트
 
+### 포스트 리붓 운영 메모
+- 재부팅 직후에는 `scripts/post-reboot.sh`를 먼저 실행하고, follow-up 파일(`/tmp/post-reboot-services.txt`, `/tmp/post-reboot-followup.txt`)을 기준으로 복구 상태를 점검한다.
+- 운영 확인 우선순위는 `hub / n8n / mlx / rag` → `luna / blog / ska / worker / claude` 순서로 유지한다.
+- 예약팀 `today-audit`는 launchd 스케줄을 놓친 재부팅 케이스가 생길 수 있으므로, 필요 시 wrapper 경로 `bots/reservation/auto/monitors/run-today-audit.sh`로 수동 실행해 `/tmp/today-audit.log` 성공 이력을 복구한다.
+
 ### 커밋 규칙
 - 의미 있는 단위로 자주 커밋 (몰아서 ❌)
 - 접두사: `feat:`, `fix:`, `docs:`, `chore:` + 한국어

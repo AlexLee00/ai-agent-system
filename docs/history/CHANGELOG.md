@@ -2545,3 +2545,6 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - 2026-03-29 — `fix(ska)`: `bots/reservation/launchd/ai.ska.rebecca-weekly.plist`의 PATH에 `bots/ska/venv/bin`과 `/opt/homebrew/bin`을 포함시켜 weekly launchd도 동일 런타임을 사용하도록 맞췄다.
 - 2026-03-29 — `fix(ska)`: `bots/ska/scripts/run-forecast.sh`도 `/opt/homebrew/bin/node`를 사용하도록 정리해 forecast 리포트 발행 경로를 Homebrew 런타임과 일치시켰다.
 - 2026-03-29 — `chore(claude)`: `node bots/claude/src/dexter.js --update-checksums`로 checksum baseline을 다시 갱신했다.
+- 2026-04-20 — `ops(post-reboot)`: 포스트 리붓 점검 재실행 후 `hub`, `n8n`, `mlx`, `rag`와 `luna/blog/ska/worker/claude` 팀 상태를 재검증했다. 현재 핵심 서비스와 팀별 헬스체크는 모두 정상 구간이다.
+- 2026-04-20 — `ops(reservation)`: `today-audit`를 wrapper 경로로 재실행해 `/tmp/today-audit.log` 기준 `exit 0` 성공 이력을 다시 적재했다.
+- 2026-04-20 — `fix(reservation)`: duplicate slot audit가 `completed/completed` 중복을 위험군으로 보던 기준을 historical duplicate로 조정해 예약 헬스 리포트가 실제 운영 체감과 같도록 정렬했다.
