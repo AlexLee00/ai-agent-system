@@ -220,6 +220,43 @@ async function testDomesticCaseSearch(store, garam, caseRecord) {
   }
 }
 
+async function testForeignCaseSearch(store, atlas, caseRecord) {
+  section('Phase 3.5: 해외 판례 실조회 검증 (FULL 모드)');
+  try {
+    const enrichedCase = {
+      ...caseRecord,
+      classification: { case_type: caseRecord.case_type },
+      briefing: {
+        key_issues: ['software copyright infringement', 'source code copying'],
+        tech_domain: 'software',
+      },
+    };
+
+    const result = await atlas.searchForeignCases(caseRecord.id, enrichedCase);
+    if (!result || !result.raw) {
+      fail('아틀라스 해외 판례 응답 없음');
+      return;
+    }
+
+    pass(`아틀라스 판례 분석 생성 성공 (${String(result.raw).length}바이트)`);
+
+    const pool = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/pg-pool'));
+    const refs = await pool.query(
+      'legal',
+      'SELECT ref_case_number, court, relevance_score FROM case_references WHERE case_id = $1 AND jurisdiction = $2 ORDER BY id DESC LIMIT 5',
+      [caseRecord.id, 'foreign'],
+    );
+
+    if ((refs || []).length > 0) {
+      pass(`해외 판례 ${refs.length}건 저장 확인`);
+    } else {
+      fail('해외 판례 저장 실패 (foreign case_references 0건)');
+    }
+  } catch (err) {
+    fail(`아틀라스 해외 판례 실조회 실패: ${err.message}`);
+  }
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const fullMode = args.includes('--full');
@@ -291,6 +328,9 @@ async function main() {
 
     if (typeof garam.searchDomesticCases === 'function') {
       await testDomesticCaseSearch(store, garam, caseRecord);
+    }
+    if (typeof atlas.searchForeignCases === 'function') {
+      await testForeignCaseSearch(store, atlas, caseRecord);
     }
   }
 
