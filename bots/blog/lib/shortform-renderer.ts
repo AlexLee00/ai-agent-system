@@ -17,6 +17,8 @@ const SHORTFORM_PRESET = 'slow';
 const SHORTFORM_SAFE_WIDTH = 996;
 const SHORTFORM_SAFE_HEIGHT = 1400;
 const SHORTFORM_OVERLAY_DIR = path.join(os.tmpdir(), 'blog-shortform-overlays');
+const OVERLAY_FADE_IN_SEC = 0.24;
+const OVERLAY_FADE_OUT_SEC = 0.28;
 
 function escapeFilterPath(value = '') {
   return String(value).replace(/\\/g, '\\\\').replace(/:/g, '\\:').replace(/'/g, "\\'");
@@ -35,9 +37,17 @@ function buildShortformVideoFilter(overlaySpecs = []) {
   let current = 'basev';
   overlaySpecs.forEach((spec, index) => {
     const inputIndex = index + 1;
+    const prepared = `ovr${index + 1}`;
     const next = index === overlaySpecs.length - 1 ? 'vout' : `vtxt${index + 1}`;
+    const span = Math.max(0.4, Number(spec.endSec) - Number(spec.startSec));
+    const fadeIn = Math.min(OVERLAY_FADE_IN_SEC, Math.max(0.08, span / 3));
+    const fadeOut = Math.min(OVERLAY_FADE_OUT_SEC, Math.max(0.08, span / 3));
+    const fadeOutStart = Math.max(0, span - fadeOut);
     chain.push(
-      `[${current}][${inputIndex}:v]overlay=0:0:enable='between(t,${spec.startSec},${spec.endSec})'[${next}]`
+      `[${inputIndex}:v]format=rgba,fade=t=in:st=0:d=${fadeIn}:alpha=1,fade=t=out:st=${fadeOutStart}:d=${fadeOut}:alpha=1[${prepared}]`
+    );
+    chain.push(
+      `[${current}][${prepared}]overlay=0:0:enable='between(t,${spec.startSec},${spec.endSec})'[${next}]`
     );
     current = next;
   });
