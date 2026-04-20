@@ -27,6 +27,7 @@ const {
   appendIncidentLine,
 } = require('../lib/critical-alerts.js');
 const { resolveInstagramHostedMediaUrl } = require('../../../packages/core/lib/instagram-image-host.ts');
+const { checkFacebookPublishReadiness } = require('../lib/facebook-publisher.ts');
 
 const runtimeConfig = getBlogHealthRuntimeConfig();
 const { buildIssueHints, rememberHealthEvent } = createHealthMemoryHelper({
@@ -256,6 +257,7 @@ async function checkBookCatalogHealth() {
 
 async function checkFacebookPublishHealth() {
   try {
+    const readiness = await checkFacebookPublishReadiness().catch(() => null);
     const rows = await pgPool.query('blog', `
       SELECT status, title, error, created_at
       FROM blog.publish_log
@@ -285,6 +287,7 @@ async function checkFacebookPublishHealth() {
     }).format(new Date());
 
     const errorText = String(row.error || '');
+    const summarizedError = errorText.slice(0, 120);
     const permissionIssue =
       errorText.includes('pages_manage_posts')
       || errorText.includes('pages_read_engagement')
@@ -294,9 +297,14 @@ async function checkFacebookPublishHealth() {
 
     if (String(row.status || '') === 'failed' && permissionIssue && (isTodayKst || (recentEnough && !hasRecentSuccess))) {
       const previewBundle = buildPreviewBundleForTitle(String(row.title || ''));
+      const scopes = Array.isArray(readiness?.permissionScopes) && readiness.permissionScopes.length > 0
+        ? readiness.permissionScopes.join(', ')
+        : 'pages_manage_posts, pages_read_engagement';
+      const pageHint = readiness?.pageId ? `\npage: ${String(readiness.pageId).slice(0, 32)}` : '';
+      const actionHint = `\naction: Meta 앱 권한(${scopes}) 재연결 후 페이지 토큰을 다시 발급하세요`;
       return {
         ok: false,
-        detail: `Facebook 페이지 게시 권한 부족 — ${String(row.title || '').slice(0, 60)}${previewBundle ? `\npreview: ${previewBundle}` : ''}`,
+        detail: `Facebook 페이지 게시 권한 부족 — ${String(row.title || '').slice(0, 60)}\n${summarizedError}${pageHint}${actionHint}${previewBundle ? `\npreview: ${previewBundle}` : ''}`,
         latest: row,
       };
     }
