@@ -599,6 +599,22 @@ async function buildSocialAutomationHealth() {
     const latestRealInstagramIsToday = latestRealInstagram
       ? toKstDateString(latestRealInstagram.created_at) === todayPrefix
       : false;
+    const latestRealInstagramTitle = String(latestRealInstagram?.post_title || '');
+    const latestRealInstagramError = String(latestRealInstagram?.error_msg || '');
+    let latestRealHostedRecovery = false;
+    try {
+      const { findReelPathForTitle } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-files.ts'));
+      const latestRealReelPath = latestRealInstagramTitle ? findReelPathForTitle(latestRealInstagramTitle) : '';
+      const latestRealHosted = latestRealReelPath
+        ? resolveInstagramHostedMediaUrl(latestRealReelPath, { kind: 'reels' })
+        : null;
+      latestRealHostedRecovery = Boolean(
+        latestRealHosted?.ready === true
+        && latestRealInstagramError.includes('Instagram 공개 비디오 파일이 아직 준비되지 않았습니다')
+      );
+    } catch {
+      latestRealHostedRecovery = false;
+    }
     const latestQaSheet = fs.existsSync(SHORTFORM_DIR)
       ? fs.readdirSync(SHORTFORM_DIR)
         .filter((name) => name.endsWith('_qa.jpg'))
@@ -634,6 +650,8 @@ async function buildSocialAutomationHealth() {
       }
       if (String(latestInstagram.status || '') === 'failed' && !latestInstagram.dry_run) {
         warn.push(`  instagram latest failed: ${String(latestInstagram.error_msg || '').slice(0, 120)}`);
+      } else if (latestRealInstagram && String(latestRealInstagram.status || '') === 'failed' && latestRealInstagramIsToday && latestRealHostedRecovery) {
+        ok.push(`  instagram hosted recovery: ${String(latestRealInstagram.post_title || '').slice(0, 50)} / 공개 URL 현재 정상`);
       } else if (latestRealInstagram && String(latestRealInstagram.status || '') === 'failed' && latestRealInstagramIsToday) {
         warn.push(`  instagram today failed: ${String(latestRealInstagram.error_msg || '').slice(0, 120)}`);
       } else if (latestRealInstagram && String(latestRealInstagram.status || '') === 'failed') {
@@ -725,9 +743,10 @@ async function buildSocialAutomationHealth() {
       instagramToday: instaTodaySummary,
       latestRealInstagramStatus: latestRealInstagram ? String(latestRealInstagram.status || 'unknown') : null,
       latestRealInstagramIsToday,
+      latestRealHostedRecovery,
       instagramNeedsAttention: Boolean(
         (latestInstagram && String(latestInstagram.status || '') === 'failed' && !latestInstagram.dry_run)
-        || (latestRealInstagram && String(latestRealInstagram.status || '') === 'failed' && latestRealInstagramIsToday)
+        || (latestRealInstagram && String(latestRealInstagram.status || '') === 'failed' && latestRealInstagramIsToday && !latestRealHostedRecovery)
       ),
       facebookReadiness: facebookReadiness || null,
       socialAssetDue: socialAssetExpectation.due,
@@ -753,6 +772,7 @@ async function buildSocialAutomationHealth() {
       instagramToday: { success: 0, failed: 0, skipped: 0, dryRun: 0 },
       latestRealInstagramStatus: null,
       latestRealInstagramIsToday: false,
+      latestRealHostedRecovery: false,
       instagramNeedsAttention: false,
       facebookReadiness: null,
       socialAssetDue: getSocialAssetExpectation().due,
