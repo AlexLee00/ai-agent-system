@@ -113,16 +113,26 @@ function buildOverlayLines(title = '', category = '') {
 function buildStoryboard(title = '', category = '', durationSec = SHORTFORM_DEFAULT_DURATION_SEC) {
   const overlayLines = buildOverlayLines(title, category);
   const safeDurationSec = normalizeDurationSec(durationSec);
-  const beatDuration = Number((safeDurationSec / 3).toFixed(2));
-  return overlayLines.map((line, index) => ({
-    index: index + 1,
-    startSec: Number((index * beatDuration).toFixed(2)),
-    endSec: index === overlayLines.length - 1
+  const ratios = [0.28, 0.4, 0.32];
+  let cursor = 0;
+  return overlayLines.map((line, index) => {
+    const span = index === overlayLines.length - 1
+      ? Number((safeDurationSec - cursor).toFixed(2))
+      : Number((safeDurationSec * ratios[index]).toFixed(2));
+    const startSec = Number(cursor.toFixed(2));
+    const endSec = index === overlayLines.length - 1
       ? safeDurationSec
-      : Number(((index + 1) * beatDuration).toFixed(2)),
-    overlay: line,
-    motion: index === 0 ? 'slow_zoom_in' : index === 1 ? 'pan_right' : 'slow_zoom_out'
-  }));
+      : Number((cursor + span).toFixed(2));
+    cursor = endSec;
+    return {
+      index: index + 1,
+      startSec,
+      endSec,
+      overlay: line,
+      style: index === 0 ? 'hook' : index === 1 ? 'value' : 'cta',
+      motion: index === 0 ? 'slow_zoom_in' : index === 1 ? 'pan_right' : 'slow_zoom_out'
+    };
+  });
 }
 
 function buildFfmpegPreview({ thumbPath, outputPath, durationSec = SHORTFORM_DEFAULT_DURATION_SEC }) {

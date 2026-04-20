@@ -16,7 +16,6 @@ const SHORTFORM_CRF = 18;
 const SHORTFORM_PRESET = 'slow';
 const SHORTFORM_SAFE_WIDTH = 996;
 const SHORTFORM_SAFE_HEIGHT = 1400;
-const SHORTFORM_TEXT_Y = 220;
 const SHORTFORM_OVERLAY_DIR = path.join(os.tmpdir(), 'blog-shortform-overlays');
 
 function escapeFilterPath(value = '') {
@@ -82,17 +81,46 @@ function buildShortformRenderArgs({ thumbPath, outputPath, durationSec, overlayS
   return args;
 }
 
-function buildOverlaySvg(text = '') {
+function getOverlayStyle(style = 'value') {
+  if (style === 'hook') {
+    return {
+      fontSize: 74,
+      y: 176,
+      rectY: 120,
+      rectHeight: 210,
+      boxColor: 'rgba(10,10,10,0.46)',
+    };
+  }
+  if (style === 'cta') {
+    return {
+      fontSize: 56,
+      y: 1390,
+      rectY: 1338,
+      rectHeight: 168,
+      boxColor: 'rgba(14,14,14,0.34)',
+    };
+  }
+  return {
+    fontSize: 62,
+    y: 320,
+    rectY: 266,
+    rectHeight: 188,
+    boxColor: 'rgba(10,10,10,0.38)',
+  };
+}
+
+function buildOverlaySvg(text = '', style = 'value') {
   const escaped = String(text)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+  const visual = getOverlayStyle(style);
   return `
   <svg width="${SHORTFORM_WIDTH}" height="${SHORTFORM_HEIGHT}" viewBox="0 0 ${SHORTFORM_WIDTH} ${SHORTFORM_HEIGHT}" xmlns="http://www.w3.org/2000/svg">
     <style>
       .title {
         font-family: "Apple SD Gothic Neo", "Helvetica Neue", sans-serif;
-        font-size: 64px;
+        font-size: ${visual.fontSize}px;
         font-weight: 800;
         fill: #ffffff;
       }
@@ -100,9 +128,9 @@ function buildOverlaySvg(text = '') {
         fill: rgba(0,0,0,0.45);
       }
     </style>
-    <rect x="80" y="${SHORTFORM_TEXT_Y - 36}" rx="36" ry="36" width="920" height="180" fill="rgba(0,0,0,0.38)" />
-    <text class="shadow" x="540" y="${SHORTFORM_TEXT_Y + 64 + 6}" text-anchor="middle">${escaped}</text>
-    <text class="title" x="540" y="${SHORTFORM_TEXT_Y + 64}" text-anchor="middle">${escaped}</text>
+    <rect x="80" y="${visual.rectY}" rx="36" ry="36" width="920" height="${visual.rectHeight}" fill="${visual.boxColor}" />
+    <text class="shadow" x="540" y="${visual.y + 6}" text-anchor="middle">${escaped}</text>
+    <text class="title" x="540" y="${visual.y}" text-anchor="middle">${escaped}</text>
   </svg>`;
 }
 
@@ -117,7 +145,7 @@ async function prepareStoryboardOverlays(storyboard = [], outputPath = '') {
   for (let index = 0; index < steps.length; index += 1) {
     const step = steps[index];
     const overlayPath = path.join(SHORTFORM_OVERLAY_DIR, `${baseName}_overlay_${index + 1}.png`);
-    const svg = buildOverlaySvg(step.overlay || '');
+    const svg = buildOverlaySvg(step.overlay || '', step.style || 'value');
     await sharp(Buffer.from(svg)).png().toFile(overlayPath);
     overlaySpecs.push({
       overlayPath,
