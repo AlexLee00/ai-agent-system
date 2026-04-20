@@ -20,6 +20,7 @@ const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
 const { buildShortformPlan } = require('./shortform-planner.ts');
 const { renderShortformReel } = require('./shortform-renderer.ts');
 const { SHORTFORM_DEFAULT_DURATION_SEC } = require('./shortform-planner.ts');
+const { selectThumbForTitle } = require('./shortform-files.ts');
 const fs = require('fs');
 const path = require('path');
 
@@ -140,19 +141,10 @@ ${content.slice(0, 3000)}
   }
 }
 
-function resolveThumbPath(title = '', explicitThumbPath = null) {
+function resolveThumbPath(title = '', category = '', explicitThumbPath = null) {
   if (explicitThumbPath && fs.existsSync(explicitThumbPath)) return explicitThumbPath;
-  if (!fs.existsSync(IMAGE_DIR)) return null;
-
-  const safeTitle = String(title || '').replace(/[^\p{L}\p{N}]+/gu, '_');
-  const thumbs = fs
-    .readdirSync(IMAGE_DIR)
-    .filter((name) => name.endsWith('_thumb.png'))
-    .map((name) => path.join(IMAGE_DIR, name))
-    .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
-
-  const matching = thumbs.find((fullPath) => path.basename(fullPath).includes(safeTitle.slice(0, 12)));
-  return matching || thumbs[0] || null;
+  const selected = selectThumbForTitle(title, category);
+  return selected?.path || null;
 }
 
 async function createInstaContent(content, title, category, cardCount = 3, options = {}) {
@@ -169,7 +161,7 @@ async function createInstaContent(content, title, category, cardCount = 3, optio
   console.log(`  캡션 완료 (해시태그 ${hashtags.length}개)`);
 
   // @ts-ignore checkJs default-param inference is too narrow here
-  const thumbPath = resolveThumbPath(title, options.thumbPath || null);
+  const thumbPath = resolveThumbPath(title, category, options.thumbPath || null);
   let reel = null;
   let plan = null;
   if (thumbPath) {

@@ -8,7 +8,7 @@ const { SHORTFORM_DEFAULT_DURATION_SEC } = require(path.join(env.PROJECT_ROOT, '
 const { generateInstaCaption } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/social.ts'));
 const {
   findLatestThumbPath,
-  findThumbPathForTitle,
+  selectThumbForTitle,
 } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-files.ts'));
 
 const BLOG_ROOT = path.join(env.PROJECT_ROOT, 'bots/blog');
@@ -68,9 +68,12 @@ function slugify(text = '') {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  const thumbSelection = args.thumb
+    ? { path: path.resolve(args.thumb), score: 999, matchType: 'explicit' }
+    : (args.title ? selectThumbForTitle(args.title, args.category || '') : null);
   const resolvedThumb = args.thumb
     ? path.resolve(args.thumb)
-    : (args.title ? findThumbPathForTitle(args.title) : null) || findLatestThumbPath();
+    : thumbSelection?.path || (!args.title ? findLatestThumbPath() : null);
   const thumbPath = resolvedThumb;
   if (!thumbPath) throw new Error('숏폼 준비용 썸네일을 찾지 못했습니다.');
   const title = args.title || path.basename(thumbPath).replace(/_thumb\.png$/i, '').replace(/_/g, ' ');
@@ -106,7 +109,8 @@ async function main() {
       hashtags: captionData.hashtags,
       cta: plan.cta,
       fullText: `${captionData.caption}\n\n${plan.cta}\n\n${captionData.hashtags.join(' ')}`
-    }
+    },
+    thumbSelection,
   };
 
   if (!args.dryRun) {

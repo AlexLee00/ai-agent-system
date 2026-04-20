@@ -23,6 +23,11 @@ function tokenizeKoreanTitle(text = '') {
     .filter((part) => part.length >= 2);
 }
 
+function extractCategoryFromThumbName(fileName = '') {
+  const match = String(fileName).match(/general__([^_]+(?:와App|IT트렌드|정보와분석|개발기획과컨설팅|성장과성공|도서리뷰|자기계발)?)/);
+  return match ? match[1] : '';
+}
+
 /**
  * @param {string} dirPath
  * @param {((name: string) => boolean) | null} [predicate]
@@ -64,29 +69,59 @@ function findLatestThumbPath() {
 }
 
 /** @returns {string | null} */
-function findThumbPathForTitle(title = '') {
+function findThumbPathForTitle(title = '', category = '') {
+  return selectThumbForTitle(title, category)?.path || null;
+}
+
+/** @returns {{ path: string, score: number, matchType: string } | null} */
+function selectThumbForTitle(title = '', category = '') {
   const slug = slugify(title);
   if (!slug || !fs.existsSync(IMAGE_DIR)) return null;
   const exact = path.join(IMAGE_DIR, `${slug}_thumb.png`);
-  if (fs.existsSync(exact)) return exact;
+  if (fs.existsSync(exact)) {
+    return { path: exact, score: 999, matchType: 'exact' };
+  }
   const queryTokens = tokenizeKoreanTitle(title);
+  const categoryToken = String(category || '').trim();
   const files = listFilesSortedByMtime(IMAGE_DIR, (name) => name.endsWith('_thumb.png'));
   const scored = files
     .map((fullPath) => {
       const base = path.basename(fullPath).replace(/_thumb\.png$/i, '');
       const normalized = slugify(base);
       const baseTokens = tokenizeKoreanTitle(base);
+      const thumbCategory = extractCategoryFromThumbName(base);
       let score = 0;
-      if (normalized.includes(slug) || slug.includes(normalized)) score += 100;
-      for (const token of queryTokens) {
-        if (normalized.includes(token)) score += 10;
-        if (baseTokens.includes(token)) score += 4;
+      let matchType = 'token';
+      let tokenHits = 0;
+      if (normalized.includes(slug) || slug.includes(normalized)) {
+        score += 100;
+        matchType = 'slug';
       }
-      return { fullPath, score };
+      if (categoryToken && thumbCategory === categoryToken) {
+        score += 30;
+        matchType = matchType === 'slug' ? matchType : 'category';
+      } else if (categoryToken && thumbCategory && thumbCategory !== categoryToken) {
+        score -= 20;
+      }
+      for (const token of queryTokens) {
+        if (normalized.includes(token)) {
+          score += 10;
+          tokenHits += 1;
+        }
+        if (baseTokens.includes(token)) {
+          score += 4;
+          tokenHits += 1;
+        }
+      }
+      return { fullPath, score, matchType, thumbCategory, tokenHits };
     })
     .filter((entry) => entry.score > 0)
     .sort((a, b) => b.score - a.score || fs.statSync(b.fullPath).mtimeMs - fs.statSync(a.fullPath).mtimeMs);
-  return scored[0]?.fullPath || null;
+  const best = scored[0];
+  if (!best || best.score < 24) return null;
+  if (best.matchType !== 'slug' && best.tokenHits < 2) return null;
+  if (categoryToken && best.thumbCategory && best.thumbCategory !== categoryToken) return null;
+  return { path: best.fullPath, score: best.score, matchType: best.matchType };
 }
 
 module.exports = {
@@ -98,4 +133,5 @@ module.exports = {
   findReelPathForTitle,
   findLatestThumbPath,
   findThumbPathForTitle,
+  selectThumbForTitle,
 };
