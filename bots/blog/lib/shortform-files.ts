@@ -82,6 +82,25 @@ function findReelCoverPathForTitle(title = '') {
 }
 
 /** @returns {string | null} */
+function findLatestReelQaSheetPath() {
+  const files = listFilesSortedByMtime(SHORTFORM_DIR, (name) => name.endsWith('_qa.jpg'));
+  return files[0] || null;
+}
+
+/** @returns {string | null} */
+function findReelQaSheetPathForTitle(title = '') {
+  const slug = slugify(title);
+  if (!slug || !fs.existsSync(SHORTFORM_DIR)) return null;
+  const exact = path.join(SHORTFORM_DIR, `${slug}_qa.jpg`);
+  if (fs.existsSync(exact)) return exact;
+  const files = listFilesSortedByMtime(
+    SHORTFORM_DIR,
+    (name) => name.endsWith('_qa.jpg') && name.includes(slug)
+  );
+  return files[0] || null;
+}
+
+/** @returns {string | null} */
 function findLatestThumbPath() {
   const files = listFilesSortedByMtime(IMAGE_DIR, (name) => name.endsWith('_thumb.png'));
   return files[0] || null;
@@ -156,8 +175,10 @@ module.exports = {
   listFilesSortedByMtime,
   findLatestReelPath,
   findLatestReelCoverPath,
+  findLatestReelQaSheetPath,
   findReelPathForTitle,
   findReelCoverPathForTitle,
+  findReelQaSheetPathForTitle,
   findLatestThumbPath,
   findThumbPathForTitle,
   selectThumbForTitle,

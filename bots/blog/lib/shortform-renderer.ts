@@ -19,6 +19,8 @@ const SHORTFORM_SAFE_HEIGHT = 1400;
 const SHORTFORM_OVERLAY_DIR = path.join(os.tmpdir(), 'blog-shortform-overlays');
 const OVERLAY_FADE_IN_SEC = 0.24;
 const OVERLAY_FADE_OUT_SEC = 0.28;
+const QA_SHEET_WIDTH = 1440;
+const QA_SHEET_HEIGHT = 1920;
 
 function escapeFilterPath(value = '') {
   return String(value).replace(/\\/g, '\\\\').replace(/:/g, '\\:').replace(/'/g, "\\'");
@@ -249,6 +251,71 @@ function buildOverlaySvg(text = '', style = 'value') {
   </svg>`;
 }
 
+function escapeHtml(text = '') {
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function buildQaSheetSvg({ title = '', hook = '', cta = '', outputPath = '' } = {}) {
+  const safeTitle = escapeHtml(title);
+  const safeHook = escapeHtml(hook || '첫 훅 미리보기');
+  const safeCta = escapeHtml(cta || 'CTA 없음');
+  const safeFile = escapeHtml(path.basename(outputPath || 'reel.mp4'));
+  return `
+  <svg width="${QA_SHEET_WIDTH}" height="${QA_SHEET_HEIGHT}" viewBox="0 0 ${QA_SHEET_WIDTH} ${QA_SHEET_HEIGHT}" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="bgGradient" x1="0" x2="0" y1="0" y2="1">
+        <stop offset="0%" stop-color="#0b1020" />
+        <stop offset="100%" stop-color="#141a2f" />
+      </linearGradient>
+      <linearGradient id="cardGradient" x1="0" x2="0" y1="0" y2="1">
+        <stop offset="0%" stop-color="rgba(255,255,255,0.12)" />
+        <stop offset="100%" stop-color="rgba(255,255,255,0.04)" />
+      </linearGradient>
+    </defs>
+    <rect width="${QA_SHEET_WIDTH}" height="${QA_SHEET_HEIGHT}" fill="url(#bgGradient)" />
+    <rect x="48" y="48" width="${QA_SHEET_WIDTH - 96}" height="${QA_SHEET_HEIGHT - 96}" rx="42" ry="42" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.08)" stroke-width="2" />
+    <text x="84" y="118" fill="#ffd666" font-size="34" font-weight="700" font-family="Apple SD Gothic Neo, Helvetica Neue, sans-serif">Instagram Reel QA Sheet</text>
+    <text x="84" y="164" fill="rgba(255,255,255,0.82)" font-size="26" font-family="Apple SD Gothic Neo, Helvetica Neue, sans-serif">${safeFile}</text>
+
+    <rect x="84" y="214" width="600" height="1068" rx="28" ry="28" fill="url(#cardGradient)" stroke="rgba(255,255,255,0.1)" stroke-width="2" />
+    <text x="116" y="266" fill="#ffffff" font-size="28" font-weight="700" font-family="Apple SD Gothic Neo, Helvetica Neue, sans-serif">Reel Thumb</text>
+    <rect x="756" y="214" width="600" height="1068" rx="28" ry="28" fill="url(#cardGradient)" stroke="rgba(255,255,255,0.1)" stroke-width="2" />
+    <text x="788" y="266" fill="#ffffff" font-size="28" font-weight="700" font-family="Apple SD Gothic Neo, Helvetica Neue, sans-serif">Reel Cover</text>
+
+    <rect x="84" y="1328" width="${QA_SHEET_WIDTH - 168}" height="510" rx="32" ry="32" fill="rgba(9,12,20,0.72)" stroke="rgba(255,255,255,0.08)" stroke-width="2" />
+    <text x="124" y="1398" fill="#85dcff" font-size="24" font-weight="700" font-family="Apple SD Gothic Neo, Helvetica Neue, sans-serif">Title</text>
+    <text x="124" y="1450" fill="#ffffff" font-size="42" font-weight="800" font-family="Apple SD Gothic Neo, Helvetica Neue, sans-serif">${safeTitle}</text>
+    <text x="124" y="1546" fill="#ffd666" font-size="24" font-weight="700" font-family="Apple SD Gothic Neo, Helvetica Neue, sans-serif">Hook</text>
+    <text x="124" y="1598" fill="#ffffff" font-size="34" font-weight="700" font-family="Apple SD Gothic Neo, Helvetica Neue, sans-serif">${safeHook}</text>
+    <text x="124" y="1688" fill="#85dcff" font-size="24" font-weight="700" font-family="Apple SD Gothic Neo, Helvetica Neue, sans-serif">CTA</text>
+    <text x="124" y="1740" fill="rgba(255,255,255,0.9)" font-size="30" font-weight="600" font-family="Apple SD Gothic Neo, Helvetica Neue, sans-serif">${safeCta}</text>
+  </svg>`;
+}
+
+async function buildReelQaSheet({ thumbPath, coverPath, outputPath, title = '', hook = '', cta = '' }) {
+  const qaSheetPath = outputPath.replace(/\.mp4$/i, '_qa.jpg');
+  const svg = buildQaSheetSvg({ title, hook, cta, outputPath });
+  const base = sharp({
+    create: {
+      width: QA_SHEET_WIDTH,
+      height: QA_SHEET_HEIGHT,
+      channels: 4,
+      background: '#0b1020',
+    },
+  }).composite([
+    { input: Buffer.from(svg), left: 0, top: 0 },
+    { input: await sharp(thumbPath).resize(536, 952, { fit: 'cover' }).jpeg({ quality: 92 }).toBuffer(), left: 116, top: 300 },
+    { input: await sharp(coverPath).resize(536, 952, { fit: 'cover' }).jpeg({ quality: 92 }).toBuffer(), left: 788, top: 300 },
+  ]);
+  await base.jpeg({ quality: 92 }).toFile(qaSheetPath);
+  return qaSheetPath;
+}
+
 async function prepareStoryboardOverlays(storyboard = [], outputPath = '') {
   const steps = Array.isArray(storyboard) ? storyboard.filter((step) => step && step.overlay) : [];
   if (steps.length === 0) return [];
@@ -277,6 +344,9 @@ async function renderShortformReel({
   outputPath,
   durationSec = SHORTFORM_DEFAULT_DURATION_SEC,
   storyboard = [],
+  title = '',
+  hook = '',
+  cta = '',
 }) {
   if (!thumbPath || !fs.existsSync(thumbPath)) {
     throw new Error(`숏폼 렌더용 썸네일이 없습니다: ${thumbPath}`);
@@ -316,10 +386,25 @@ async function renderShortformReel({
     const message = error?.stderr || error?.stdout || error?.message || String(error);
     throw new Error(`릴스 커버 추출 실패: ${message}`);
   }
+  let qaSheetPath = '';
+  try {
+    qaSheetPath = await buildReelQaSheet({
+      thumbPath,
+      coverPath,
+      outputPath,
+      title,
+      hook,
+      cta,
+    });
+  } catch (error) {
+    const message = error?.message || String(error);
+    throw new Error(`릴스 QA 시트 생성 실패: ${message}`);
+  }
 
   return {
     outputPath,
     coverPath,
+    qaSheetPath,
     fileSize: stat.size,
     durationSec: safeDurationSec,
     width: SHORTFORM_WIDTH,

@@ -257,6 +257,7 @@ async function createInstaContent(content, title, category, cardCount = 3, optio
 <h2>🎬 릴스 결과</h2>
 ${reel ? `<div class="card-info">릴스 파일: ${escHtml(reel.outputPath)}</div>` : '<div class="card-info">릴스 미생성</div>'}
 ${reel?.coverPath ? `<div class="card-info">릴스 커버: ${escHtml(reel.coverPath)}</div>` : ''}
+${reel?.qaSheetPath ? `<div class="card-info">릴스 QA 시트: ${escHtml(reel.qaSheetPath)}</div>` : ''}
 ${(reel?.storyboard || []).map((step, i) => `<div class="card-info">구간 ${i + 1}: ${step.overlay || ''}</div>`).join('\n')}
 
 <footer>생성: ${new Date().toLocaleString('ko-KR')} | 팀 제이 스타 봇</footer>

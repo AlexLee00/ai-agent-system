@@ -10,6 +10,7 @@ const {
 const {
   findLatestReelPath,
   findLatestReelCoverPath,
+  findLatestReelQaSheetPath,
   findLatestThumbPath,
 } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-files.ts'));
 
@@ -19,9 +20,11 @@ function parseArgs(argv = []) {
     dryRun: argv.includes('--dry-run'),
     includeThumb: !argv.includes('--no-thumb'),
     includeCover: !argv.includes('--no-cover'),
+    includeQaSheet: !argv.includes('--no-qa'),
     video: readOption(argv, '--video'),
     thumb: readOption(argv, '--thumb'),
     cover: readOption(argv, '--cover'),
+    qaSheet: readOption(argv, '--qa'),
   };
 }
 
@@ -79,6 +82,9 @@ function printHuman(payload) {
   if (payload.thumb) {
     console.log(`[인스타 준비] thumb=${payload.thumb.targetPath}`);
   }
+  if (payload.qaSheet) {
+    console.log(`[인스타 준비] qa=${payload.qaSheet.sourcePath}`);
+  }
   console.log(`[인스타 준비] publicReady=${payload.publicReady ? 'yes' : 'no'}`);
   if (payload.reel?.publicUrl) {
     console.log(`[인스타 준비] reelUrl=${payload.reel.publicUrl}`);
@@ -98,10 +104,18 @@ function main() {
   const coverPath = args.includeCover
     ? (args.cover ? path.resolve(args.cover) : findLatestReelCoverPath())
     : '';
+  const qaSheetPath = args.includeQaSheet
+    ? (args.qaSheet ? path.resolve(args.qaSheet) : findLatestReelQaSheetPath())
+    : '';
 
   const reel = stageAsset(reelPath, 'reels', args.dryRun);
   const cover = coverPath ? stageAsset(coverPath, 'thumbs', args.dryRun) : null;
   const thumb = thumbPath ? stageAsset(thumbPath, 'thumbs', args.dryRun) : null;
+  const qaSheet = qaSheetPath ? {
+    kind: 'qa',
+    sourcePath: qaSheetPath,
+    sizeBytes: fs.statSync(qaSheetPath).size,
+  } : null;
   const payload = {
     dryRun: args.dryRun,
     publicReady: reel?.ready === true,
@@ -109,6 +123,7 @@ function main() {
     reel,
     cover,
     thumb,
+    qaSheet,
   };
 
   if (args.json) {

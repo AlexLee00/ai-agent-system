@@ -111,6 +111,9 @@ async function main() {
     outputPath: plan.outputPath,
     durationSec: plan.durationSec,
     storyboard: plan.storyboard,
+    title: plan.title,
+    hook: plan.hook,
+    cta: plan.cta,
   });
 
   const payload = {
