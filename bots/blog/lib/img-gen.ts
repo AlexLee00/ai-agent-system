@@ -9,20 +9,9 @@ const kst = require('../../../packages/core/lib/kst');
 
 const fs = require('fs');
 const path = require('path');
-const { pathToFileURL } = require('url');
 const env = require('../../../packages/core/lib/env');
-const { selectRuntime } = require('../../../packages/core/lib/runtime-selector');
-
-let _localImageClientPromise = null;
-async function _loadLocalImageClient() {
-  if (!_localImageClientPromise) {
-    const moduleUrl = pathToFileURL(
-      path.join(env.PROJECT_ROOT, 'packages/core/lib/local-image-client.ts')
-    ).href;
-    _localImageClientPromise = import(moduleUrl);
-  }
-  return _localImageClientPromise;
-}
+const { selectRuntime } = require('../../../packages/core/lib/runtime-selector.js');
+const localImageClient = require('../../../packages/core/lib/local-image-client.js');
 
 const OUTPUT_DIR = path.join(env.PROJECT_ROOT, 'bots/blog/output');
 const IMAGES_DIR = path.join(OUTPUT_DIR, 'images');
@@ -39,8 +28,7 @@ async function generateImage(prompt, opts = {}) {
   // @ts-ignore JS checkJs default-param inference is too narrow here
   delete genOpts.outputPath;
   const runtimeProfile = await selectRuntime('blog', 'image-local');
-  const { generateWithComfyUI } = await _loadLocalImageClient();
-  const result = await generateWithComfyUI(prompt, {
+  const result = await localImageClient.generateWithComfyUI(prompt, {
     provider: process.env.BLOG_IMAGE_PROVIDER || 'drawthings',
     baseUrl: process.env.BLOG_IMAGE_BASE_URL || 'http://127.0.0.1:7860',
     ...genOpts,

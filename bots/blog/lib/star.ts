@@ -20,6 +20,7 @@ const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
 const { buildShortformPlan } = require('./shortform-planner.ts');
 const { renderShortformReel } = require('./shortform-renderer.ts');
 const { SHORTFORM_DEFAULT_DURATION_SEC } = require('./shortform-planner.ts');
+const { generatePostImages } = require('./img-gen.ts');
 const { selectThumbForTitle } = require('./shortform-files.ts');
 const fs = require('fs');
 const path = require('path');
@@ -147,6 +148,20 @@ function resolveThumbPath(title = '', category = '', explicitThumbPath = null) {
   return selected?.path || null;
 }
 
+async function ensureThumbPath(title = '', category = '', explicitThumbPath = null) {
+  const existing = resolveThumbPath(title, category, explicitThumbPath);
+  if (existing) return existing;
+  const generated = await generatePostImages({
+    title,
+    postType: category === 'Node.js강의' ? 'lecture' : 'general',
+    category,
+  }).catch((error) => {
+    console.warn('[소셜] 릴스용 썸네일 생성 실패:', error?.message || error);
+    return null;
+  });
+  return generated?.thumb?.filepath || null;
+}
+
 async function createInstaContent(content, title, category, cardCount = 3, options = {}) {
   console.log(`[소셜] 인스타 콘텐츠 생성 시작 (릴스 중심)`);
 
@@ -161,7 +176,7 @@ async function createInstaContent(content, title, category, cardCount = 3, optio
   console.log(`  캡션 완료 (해시태그 ${hashtags.length}개)`);
 
   // @ts-ignore checkJs default-param inference is too narrow here
-  const thumbPath = resolveThumbPath(title, category, options.thumbPath || null);
+  const thumbPath = await ensureThumbPath(title, category, options.thumbPath || null);
   let reel = null;
   let plan = null;
   if (thumbPath) {

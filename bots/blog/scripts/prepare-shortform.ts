@@ -6,6 +6,7 @@ const env = require('../../../packages/core/lib/env');
 const { buildShortformPlan } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-planner.ts'));
 const { SHORTFORM_DEFAULT_DURATION_SEC } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-planner.ts'));
 const { generateInstaCaption } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/social.ts'));
+const { generatePostImages } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/img-gen.ts'));
 const {
   findLatestThumbPath,
   selectThumbForTitle,
@@ -66,18 +67,64 @@ function slugify(text = '') {
     .slice(0, 60);
 }
 
+function inferPostType(category = '') {
+  return String(category || '') === 'Node.js강의' ? 'lecture' : 'general';
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  const category = args.category || '최신IT트렌드';
   const thumbSelection = args.thumb
     ? { path: path.resolve(args.thumb), score: 999, matchType: 'explicit' }
-    : (args.title ? selectThumbForTitle(args.title, args.category || '') : null);
-  const resolvedThumb = args.thumb
+    : (args.title ? selectThumbForTitle(args.title, category) : null);
+  let resolvedThumb = args.thumb
     ? path.resolve(args.thumb)
     : thumbSelection?.path || (!args.title ? findLatestThumbPath() : null);
+  let effectiveThumbSelection = thumbSelection;
+
+  if (!resolvedThumb && args.title && !args.dryRun) {
+    console.log('[숏폼] 매칭 썸네일 없음 — 릴스용 썸네일을 새로 생성합니다');
+    const generated = await generatePostImages({
+      title: args.title,
+      postType: inferPostType(category),
+      category,
+    });
+    if (generated?.thumb?.filepath) {
+      resolvedThumb = generated.thumb.filepath;
+      effectiveThumbSelection = {
+        path: resolvedThumb,
+        score: 1000,
+        matchType: 'generated',
+      };
+    }
+  }
+
+  if (!resolvedThumb) {
+    if (args.dryRun) {
+      const payload = {
+        ok: false,
+        title: args.title || '',
+        category,
+        thumbSelection: {
+          path: null,
+          score: 0,
+          matchType: 'missing',
+        },
+        thumbFallback: 'generate_required',
+        reason: '숏폼 준비용 썸네일을 찾지 못했습니다.',
+      };
+      if (args.json) {
+        console.log(JSON.stringify(payload, null, 2));
+        return;
+      }
+      console.log('[숏폼] 매칭 썸네일이 없어 새 썸네일 생성이 필요합니다');
+      return;
+    }
+    throw new Error('숏폼 준비용 썸네일을 찾지 못했습니다.');
+  }
+
   const thumbPath = resolvedThumb;
-  if (!thumbPath) throw new Error('숏폼 준비용 썸네일을 찾지 못했습니다.');
   const title = args.title || path.basename(thumbPath).replace(/_thumb\.png$/i, '').replace(/_/g, ' ');
-  const category = args.category || '최신IT트렌드';
   const content = readContent(args.contentFile);
 
   const plan = buildShortformPlan({
@@ -110,7 +157,7 @@ async function main() {
       cta: plan.cta,
       fullText: `${captionData.caption}\n\n${plan.cta}\n\n${captionData.hashtags.join(' ')}`
     },
-    thumbSelection,
+    thumbSelection: effectiveThumbSelection,
   };
 
   if (!args.dryRun) {
