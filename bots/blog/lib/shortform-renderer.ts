@@ -116,6 +116,17 @@ function buildShortformRenderArgs({ thumbPath, outputPath, durationSec, overlayS
   return args;
 }
 
+function buildShortformCoverArgs({ inputPath, outputPath, captureSec = 1.2 }) {
+  return [
+    '-y',
+    '-ss', String(captureSec),
+    '-i', inputPath,
+    '-frames:v', '1',
+    '-q:v', '2',
+    outputPath,
+  ];
+}
+
 function getOverlayStyle(style = 'value') {
   if (style === 'hook') {
     return {
@@ -292,8 +303,23 @@ async function renderShortformReel({
   }
 
   const stat = fs.statSync(outputPath);
+  const coverPath = outputPath.replace(/\.mp4$/i, '_cover.jpg');
+  try {
+    await execFileAsync('ffmpeg', buildShortformCoverArgs({
+      inputPath: outputPath,
+      outputPath: coverPath,
+      captureSec: Math.min(1.2, Math.max(0.4, safeDurationSec / 6)),
+    }), {
+      maxBuffer: 8 * 1024 * 1024,
+    });
+  } catch (error) {
+    const message = error?.stderr || error?.stdout || error?.message || String(error);
+    throw new Error(`릴스 커버 추출 실패: ${message}`);
+  }
+
   return {
     outputPath,
+    coverPath,
     fileSize: stat.size,
     durationSec: safeDurationSec,
     width: SHORTFORM_WIDTH,
@@ -309,5 +335,6 @@ async function renderShortformReel({
 module.exports = {
   buildShortformVideoFilter,
   buildShortformRenderArgs,
+  buildShortformCoverArgs,
   renderShortformReel,
 };
