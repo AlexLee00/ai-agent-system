@@ -89,6 +89,7 @@ function getOverlayStyle(style = 'value') {
       rectY: 120,
       rectHeight: 210,
       boxColor: 'rgba(10,10,10,0.46)',
+      maxCharsPerLine: 14,
     };
   }
   if (style === 'cta') {
@@ -98,6 +99,7 @@ function getOverlayStyle(style = 'value') {
       rectY: 1338,
       rectHeight: 168,
       boxColor: 'rgba(14,14,14,0.34)',
+      maxCharsPerLine: 20,
     };
   }
   return {
@@ -106,15 +108,61 @@ function getOverlayStyle(style = 'value') {
     rectY: 266,
     rectHeight: 188,
     boxColor: 'rgba(10,10,10,0.38)',
+    maxCharsPerLine: 17,
   };
 }
 
+function wrapOverlayText(text = '', maxCharsPerLine = 16) {
+  const clean = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!clean) return [''];
+  if (clean.length <= maxCharsPerLine) return [clean];
+
+  const words = clean.split(' ');
+  const lines = [];
+  let current = '';
+
+  for (const word of words) {
+    const next = current ? `${current} ${word}` : word;
+    if (next.length <= maxCharsPerLine || !current) {
+      current = next;
+      continue;
+    }
+    lines.push(current);
+    current = word;
+  }
+  if (current) lines.push(current);
+
+  if (lines.length <= 2) return lines;
+
+  const merged = [lines[0], lines.slice(1).join(' ')];
+  if (merged[1].length > maxCharsPerLine + 6) {
+    merged[1] = `${merged[1].slice(0, maxCharsPerLine + 3).trim()}…`;
+  }
+  return merged;
+}
+
 function buildOverlaySvg(text = '', style = 'value') {
-  const escaped = String(text)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
   const visual = getOverlayStyle(style);
+  const lines = wrapOverlayText(text, visual.maxCharsPerLine);
+  const lineHeight = Math.round(visual.fontSize * 1.2);
+  const paddingY = 38;
+  const dynamicRectHeight = Math.max(visual.rectHeight, (paddingY * 2) + (lines.length * lineHeight));
+  const baselineOffset = visual.rectY + Math.round((dynamicRectHeight - ((lines.length - 1) * lineHeight)) / 2);
+  const tspanYValues = lines.map((_, index) => baselineOffset + (index * lineHeight));
+  const shadowSpans = lines.map((line, index) => {
+    const escaped = String(line)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+    return `<tspan x="540" y="${tspanYValues[index] + 6}">${escaped}</tspan>`;
+  }).join('');
+  const titleSpans = lines.map((line, index) => {
+    const escaped = String(line)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+    return `<tspan x="540" y="${tspanYValues[index]}">${escaped}</tspan>`;
+  }).join('');
   return `
   <svg width="${SHORTFORM_WIDTH}" height="${SHORTFORM_HEIGHT}" viewBox="0 0 ${SHORTFORM_WIDTH} ${SHORTFORM_HEIGHT}" xmlns="http://www.w3.org/2000/svg">
     <style>
@@ -128,9 +176,9 @@ function buildOverlaySvg(text = '', style = 'value') {
         fill: rgba(0,0,0,0.45);
       }
     </style>
-    <rect x="80" y="${visual.rectY}" rx="36" ry="36" width="920" height="${visual.rectHeight}" fill="${visual.boxColor}" />
-    <text class="shadow" x="540" y="${visual.y + 6}" text-anchor="middle">${escaped}</text>
-    <text class="title" x="540" y="${visual.y}" text-anchor="middle">${escaped}</text>
+    <rect x="80" y="${visual.rectY}" rx="36" ry="36" width="920" height="${dynamicRectHeight}" fill="${visual.boxColor}" />
+    <text class="shadow" x="540" y="${visual.y + 6}" text-anchor="middle">${shadowSpans}</text>
+    <text class="title" x="540" y="${visual.y}" text-anchor="middle">${titleSpans}</text>
   </svg>`;
 }
 
