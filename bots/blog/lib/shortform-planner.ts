@@ -49,23 +49,78 @@ function compactTitle(text = '', maxLength = 18) {
   return clean.length > maxLength ? `${clean.slice(0, maxLength).trim()}…` : clean;
 }
 
+function pickVariantIndex(seed = '', count = 1) {
+  const safeCount = Math.max(1, Number(count) || 1);
+  const text = String(seed || '');
+  let hash = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    hash = ((hash * 31) + text.charCodeAt(i)) >>> 0;
+  }
+  return hash % safeCount;
+}
+
+function chooseVariant(seed = '', variants = [], fallback = '') {
+  if (!Array.isArray(variants) || variants.length === 0) return fallback;
+  return variants[pickVariantIndex(seed, variants.length)] || fallback;
+}
+
 function buildHookLine(title = '', category = '') {
   const clean = normalizeTitleText(title);
   if (category === '홈페이지와App') {
-    if (/결제/.test(clean) && /이탈/.test(clean)) return '결제 직전, 여기서 이탈합니다';
-    if (/상태/.test(clean) || /설명|안내|UX/.test(clean)) return '신뢰는 화면 설명에서 갈립니다';
-    return '앱은 기능보다 흐름이 먼저입니다';
+    if (/결제/.test(clean) && /이탈/.test(clean)) {
+      return chooseVariant(clean, [
+        '결제 직전, 여기서 이탈합니다',
+        '결제는 버튼 앞에서 멈춥니다',
+        '결제 직전 이 한 장면이 갈립니다',
+      ], '결제 직전, 여기서 이탈합니다');
+    }
+    if (/상태/.test(clean) || /설명|안내|UX/.test(clean)) {
+      return chooseVariant(clean, [
+        '신뢰는 화면 설명에서 갈립니다',
+        '상태 안내가 신뢰를 만듭니다',
+        '고장보다 설명 부족이 더 치명적입니다',
+      ], '신뢰는 화면 설명에서 갈립니다');
+    }
+    return chooseVariant(clean, [
+      '앱은 기능보다 흐름이 먼저입니다',
+      '좋은 앱은 설명부터 다릅니다',
+      '사용자는 속도보다 확신을 먼저 봅니다',
+    ], '앱은 기능보다 흐름이 먼저입니다');
   }
   if (category === '개발기획과컨설팅') {
-    if (/요구사항/.test(clean)) return '요구사항 전에 틀어집니다';
-    if (/일정/.test(clean)) return '일정은 합의 전제에서 갈립니다';
-    return '기획은 기능보다 전제가 먼저입니다';
+    if (/요구사항/.test(clean)) {
+      return chooseVariant(clean, [
+        '요구사항 전에 틀어집니다',
+        '문서는 맞아도 전제가 틀릴 수 있습니다',
+        '개발은 시작 전에 이미 어긋납니다',
+      ], '요구사항 전에 틀어집니다');
+    }
+    if (/일정/.test(clean)) {
+      return chooseVariant(clean, [
+        '일정은 합의 전제에서 갈립니다',
+        '일정표보다 기대치가 먼저입니다',
+        '일정 흔들림은 시작 전에 보입니다',
+      ], '일정은 합의 전제에서 갈립니다');
+    }
+    return chooseVariant(clean, [
+      '기획은 기능보다 전제가 먼저입니다',
+      '좋은 제안보다 빠진 조건이 더 큽니다',
+      '기획은 아이디어보다 합의가 먼저입니다',
+    ], '기획은 기능보다 전제가 먼저입니다');
   }
   if (category === '최신IT트렌드') {
-    return '기술보다 흐름을 먼저 보세요';
+    return chooseVariant(clean, [
+      '기술보다 흐름을 먼저 보세요',
+      '트렌드는 기능보다 방향이 중요합니다',
+      '새 기술은 구조부터 봐야 덜 흔들립니다',
+    ], '기술보다 흐름을 먼저 보세요');
   }
   if (category === '성장과성공') {
-    return '성장은 의지보다 구조가 만듭니다';
+    return chooseVariant(clean, [
+      '성장은 의지보다 구조가 만듭니다',
+      '버티는 힘은 루틴에서 나옵니다',
+      '결과는 열정보다 설계가 만듭니다',
+    ], '성장은 의지보다 구조가 만듭니다');
   }
   return `${compactTitle(clean, 16)} 지금 놓치면 아쉽습니다`;
 }
@@ -73,15 +128,50 @@ function buildHookLine(title = '', category = '') {
 function buildValueLine(title = '', category = '') {
   const clean = normalizeTitleText(title);
   if (category === '홈페이지와App') {
-    if (/결제/.test(clean)) return '버튼보다 망설이는 순간을 보세요';
-    if (/상태/.test(clean) || /설명|안내|UX/.test(clean)) return '고장보다 불안한 순간을 줄여야 합니다';
+    if (/결제/.test(clean)) {
+      return chooseVariant(clean, [
+        '버튼보다 망설이는 순간을 보세요',
+        '기능보다 망설임 구간이 더 중요합니다',
+        '이탈은 클릭보다 직전에 쌓입니다',
+      ], '버튼보다 망설이는 순간을 보세요');
+    }
+    if (/상태/.test(clean) || /설명|안내|UX/.test(clean)) {
+      return chooseVariant(clean, [
+        '고장보다 불안한 순간을 줄여야 합니다',
+        '사용자는 오류보다 모호함에 더 흔들립니다',
+        '지금 무슨 일인지 알게 해줘야 남습니다',
+      ], '고장보다 불안한 순간을 줄여야 합니다');
+    }
   }
   if (category === '개발기획과컨설팅') {
-    if (/요구사항/.test(clean)) return '문서보다 빠진 전제를 먼저 잡으세요';
-    if (/일정/.test(clean)) return '일정표보다 기대치 정렬이 먼저입니다';
+    if (/요구사항/.test(clean)) {
+      return chooseVariant(clean, [
+        '문서보다 빠진 전제를 먼저 잡으세요',
+        '요구사항보다 해석 차이를 먼저 줄여야 합니다',
+        '정의보다 전제 정리가 먼저입니다',
+      ], '문서보다 빠진 전제를 먼저 잡으세요');
+    }
+    if (/일정/.test(clean)) {
+      return chooseVariant(clean, [
+        '일정표보다 기대치 정렬이 먼저입니다',
+        '계획보다 합의 기준을 먼저 맞춰야 합니다',
+        '일정은 숫자보다 기대치에서 흔들립니다',
+      ], '일정표보다 기대치 정렬이 먼저입니다');
+    }
   }
   if (category === '최신IT트렌드') {
-    return '기능보다 덜 흔들리는 구조가 핵심입니다';
+    return chooseVariant(clean, [
+      '기능보다 덜 흔들리는 구조가 핵심입니다',
+      '새로움보다 오래 버티는 설계가 중요합니다',
+      '트렌드는 화려함보다 지속성이 갈립니다',
+    ], '기능보다 덜 흔들리는 구조가 핵심입니다');
+  }
+  if (category === '성장과성공') {
+    return chooseVariant(clean, [
+      '성과는 몰입보다 반복 구조에서 나옵니다',
+      '압박이 클수록 우선순위 설계가 중요합니다',
+      '속도보다 계속 가는 리듬을 먼저 만드세요',
+    ], compactTitle(clean, 22));
   }
   return compactTitle(clean, 22);
 }
@@ -89,11 +179,31 @@ function buildValueLine(title = '', category = '') {
 function buildCtaLine(title = '', category = '') {
   const clean = normalizeTitleText(title);
   if (/체크리스트|\d+가지|포인트/.test(clean)) {
-    return '블로그에서 3가지를 바로 확인하세요';
+    return chooseVariant(clean, [
+      '블로그에서 3가지를 바로 확인하세요',
+      '본문에서 체크포인트를 바로 확인하세요',
+      '블로그에서 바로 적용할 포인트를 보세요',
+    ], '블로그에서 3가지를 바로 확인하세요');
   }
-  if (category === '홈페이지와App') return '블로그에서 실제 화면 기준으로 확인';
-  if (category === '개발기획과컨설팅') return '블로그에서 실무 예시까지 확인';
-  return '전체 내용은 블로그에서 확인';
+  if (category === '홈페이지와App') {
+    return chooseVariant(clean, [
+      '블로그에서 실제 화면 기준으로 확인',
+      '본문에서 실제 UX 포인트를 확인하세요',
+      '블로그에서 바로 적용할 화면 기준을 보세요',
+    ], '블로그에서 실제 화면 기준으로 확인');
+  }
+  if (category === '개발기획과컨설팅') {
+    return chooseVariant(clean, [
+      '블로그에서 실무 예시까지 확인',
+      '본문에서 실무 기준으로 바로 확인',
+      '블로그에서 합의 포인트를 더 확인하세요',
+    ], '블로그에서 실무 예시까지 확인');
+  }
+  return chooseVariant(clean, [
+    '전체 내용은 블로그에서 확인',
+    '본문에서 더 자세히 확인하세요',
+    '블로그에서 핵심 내용을 이어서 보세요',
+  ], '전체 내용은 블로그에서 확인');
 }
 
 function normalizeDurationSec(value) {
