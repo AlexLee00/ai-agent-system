@@ -6,6 +6,8 @@ const env = require('../../../packages/core/lib/env');
 const SHORTFORM_MIN_DURATION_SEC = 15;
 const SHORTFORM_MAX_DURATION_SEC = 20;
 const SHORTFORM_DEFAULT_DURATION_SEC = 18;
+const SHORTFORM_CANVAS = { width: 1080, height: 1920 };
+const SHORTFORM_SAFE_ZONE = { width: 996, height: 1400 };
 
 function slugify(text = '') {
   return String(text)
@@ -77,8 +79,8 @@ function buildFfmpegPreview({ thumbPath, outputPath, durationSec = SHORTFORM_DEF
     'ffmpeg -y',
     `-loop 1 -i ${safeInput}`,
     `-t ${safeDurationSec}`,
-    '-vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z=\'min(zoom+0.0008,1.18)\':d=250:x=\'iw/2-(iw/zoom/2)\':y=\'ih/2-(ih/zoom/2)\',fps=25"',
-    '-c:v libx264 -pix_fmt yuv420p',
+    '-filter_complex "[0:v]scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1920,zoompan=z=\'min(zoom+0.00035,1.06)\':d=1:x=\'iw/2-(iw/zoom/2)\':y=\'ih/2-(ih/zoom/2)\':s=1080x1920:fps=30,gblur=sigma=18,eq=brightness=-0.02:saturation=0.92,setsar=1[bg];[0:v]scale=996:1400:force_original_aspect_ratio=decrease:flags=lanczos,unsharp=5:5:0.8:5:5:0.0,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black@0,setsar=1[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2:format=auto,format=yuv420p,fps=30"',
+    '-c:v libx264 -preset slow -profile:v high -level:v 4.2 -crf 18 -movflags +faststart -g 60 -r 30 -maxrate 12M -bufsize 24M -pix_fmt yuv420p',
     safeOutput
   ].join(' ');
 }
@@ -120,6 +122,8 @@ function buildShortformPlan({
     outputPath,
     storyboard,
     cta,
+    canvas: SHORTFORM_CANVAS,
+    safeZone: SHORTFORM_SAFE_ZONE,
     ffmpegPreview: buildFfmpegPreview({ thumbPath, outputPath, durationSec: safeDurationSec }),
     contentSnippet: String(content || '').slice(0, 280),
     generatedAt: new Date().toISOString()
@@ -134,4 +138,6 @@ module.exports = {
   SHORTFORM_MIN_DURATION_SEC,
   SHORTFORM_MAX_DURATION_SEC,
   SHORTFORM_DEFAULT_DURATION_SEC,
+  SHORTFORM_CANVAS,
+  SHORTFORM_SAFE_ZONE,
 };
