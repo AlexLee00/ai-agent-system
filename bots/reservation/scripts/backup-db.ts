@@ -20,7 +20,7 @@ const { createAgentMemory } = require('../../../packages/core/lib/agent-memory')
 
 const BACKUP_DIR = path.join(process.env.HOME, '.openclaw', 'workspace', 'backups');
 const KEEP_DAYS = 7;
-const KEEP_RAW_DAYS = 3;
+const KEEP_RAW_DAYS = 2;
 const DB_NAME = 'jay';
 const SCHEMA = 'reservation';
 // launchd 환경에서 PATH에 PostgreSQL bin 없음 → 절대 경로
@@ -113,7 +113,7 @@ async function main() {
     const stat = fs.statSync(destPath);
     const sizeKB = Math.round(stat.size / 1024);
 
-    // 백업 보관 정책 적용 (최근 3일 원본 유지, 그 이전은 gzip 보관, 전체 7일 초과 삭제)
+    // 백업 보관 정책 적용 (최근 2일 원본 유지, 그 이전은 gzip 보관, 전체 7일 초과 삭제)
     enforceBackupRetention();
 
     const remaining = listBackupFiles().length;
