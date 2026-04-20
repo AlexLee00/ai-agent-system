@@ -69,12 +69,13 @@ function findLatestThumbPath() {
 }
 
 /** @returns {string | null} */
-function findThumbPathForTitle(title = '', category = '') {
-  return selectThumbForTitle(title, category)?.path || null;
+function findThumbPathForTitle(title = '', category = '', options = {}) {
+  return selectThumbForTitle(title, category, options)?.path || null;
 }
 
 /** @returns {{ path: string, score: number, matchType: string } | null} */
-function selectThumbForTitle(title = '', category = '') {
+function selectThumbForTitle(title = '', category = '', options = {}) {
+  const purpose = String(options.purpose || 'default');
   const slug = slugify(title);
   if (!slug || !fs.existsSync(IMAGE_DIR)) return null;
   const exact = path.join(IMAGE_DIR, `${slug}_thumb.png`);
@@ -121,6 +122,11 @@ function selectThumbForTitle(title = '', category = '') {
   if (!best || best.score < 24) return null;
   if (best.matchType !== 'slug' && best.tokenHits < 2) return null;
   if (categoryToken && best.thumbCategory && best.thumbCategory !== categoryToken) return null;
+  if (purpose === 'reel') {
+    if (best.matchType === 'category') return null;
+    if (best.matchType !== 'slug' && best.tokenHits < 4) return null;
+    if (best.score < 42) return null;
+  }
   return { path: best.fullPath, score: best.score, matchType: best.matchType };
 }
 

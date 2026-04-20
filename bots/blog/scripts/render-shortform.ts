@@ -57,7 +57,7 @@ async function main() {
   const category = args.category || '최신IT트렌드';
   const thumbSelection = args.thumb
     ? { path: path.resolve(args.thumb), score: 999, matchType: 'explicit' }
-    : (args.title ? selectThumbForTitle(args.title, category) : null);
+    : (args.title ? selectThumbForTitle(args.title, category, { purpose: 'reel' }) : null);
   let thumbPath = args.thumb
     ? path.resolve(args.thumb)
     : thumbSelection?.path || (!args.title ? findLatestThumbPath() : null);
@@ -69,6 +69,7 @@ async function main() {
       title: args.title,
       postType: inferPostType(category),
       category,
+      format: 'reel',
     });
     if (generated?.thumb?.filepath) {
       thumbPath = generated.thumb.filepath;

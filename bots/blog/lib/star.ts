@@ -144,7 +144,7 @@ ${content.slice(0, 3000)}
 
 function resolveThumbPath(title = '', category = '', explicitThumbPath = null) {
   if (explicitThumbPath && fs.existsSync(explicitThumbPath)) return explicitThumbPath;
-  const selected = selectThumbForTitle(title, category);
+  const selected = selectThumbForTitle(title, category, { purpose: 'reel' });
   return selected?.path || null;
 }
 
@@ -155,6 +155,7 @@ async function ensureThumbPath(title = '', category = '', explicitThumbPath = nu
     title,
     postType: category === 'Node.js강의' ? 'lecture' : 'general',
     category,
+    format: 'reel',
   }).catch((error) => {
     console.warn('[소셜] 릴스용 썸네일 생성 실패:', error?.message || error);
     return null;

@@ -50,6 +50,15 @@ const STYLE_BASE = [
   'Image should feel premium, distinctive, and curiosity-inducing.',
 ].join(' ');
 
+const REEL_STYLE_BASE = [
+  'Instagram Reel cover image, 9:16 portrait aspect ratio, ultra high quality.',
+  'Vertical-first composition with the main subject centered for mobile viewing.',
+  'Keep the most important subject and visual tension inside the center safe area.',
+  'No text overlay.',
+  'Absolutely no readable text, letters, words, numbers, UI labels, logos, signage, captions, checklist text, whiteboard text, or typography anywhere.',
+  'Image should feel premium, distinctive, curiosity-inducing, and strong enough to stop the scroll.',
+].join(' ');
+
 const CLICK_BAIT_STYLES = [
   'Dramatic cinematic lighting with strong contrast, mysterious mood, single bold focal point.',
   'Vibrant neon accents against a dark background, futuristic tech aesthetic, eye-catching glow.',
@@ -178,22 +187,26 @@ function _buildVisualVariant(title, postType, category) {
   };
 }
 
-function _buildThumbPrompt(title, postType, category) {
+function _buildThumbPrompt(title, postType, category, format = 'thumb') {
+  const isReel = format === 'reel';
+  const styleBase = isReel ? REEL_STYLE_BASE : STYLE_BASE;
   if (postType === 'lecture') {
     const topic = title.replace(/\[Node\.js \d+강\]\s*/, '').trim();
     const style = CLICK_BAIT_STYLES[_hashSeed(`${title}:${category}`) % CLICK_BAIT_STYLES.length];
     return [
-      STYLE_BASE,
+      styleBase,
       `Topic hint: "${topic}". Dark modern UI, code editor vibes, Node.js green accent color (#68a063).`,
       style,
-      'Strong focal subject, clean composition, premium tutorial cover feel.',
+      isReel
+        ? 'Strong focal subject, portrait-safe composition, premium tutorial reel cover feel.'
+        : 'Strong focal subject, clean composition, premium tutorial cover feel.',
     ].join(' ');
   }
   const visual = _buildVisualVariant(title, postType, category);
   const clickStyle = CLICK_BAIT_STYLES[_hashSeed(`${title}:${category}`) % CLICK_BAIT_STYLES.length];
   const topic = title.replace(/\[.*?\]\s*/, '').trim();
   return [
-    STYLE_BASE,
+    styleBase,
     `Topic hint: "${topic}".`,
     clickStyle,
     `Render type: ${visual.renderType}.`,
@@ -203,32 +216,38 @@ function _buildThumbPrompt(title, postType, category) {
     `Color mood: ${COLOR_HINTS[category] || 'modern tech color palette'}.`,
     'The image should make people want to click through curiosity, surprise, beauty, or tension.',
     'Avoid generic stock-photo feel. Be bold, distinctive, and emotionally legible at a glance.',
+    isReel
+      ? 'Design the scene for a vertical reel cover with a dominant center subject and layered portrait depth.'
+      : 'Design the scene for a wide blog thumbnail with strong click-through energy.',
     'No readable words on walls, screens, papers, boards, or devices.',
   ].join(' ');
 }
 
-async function generatePostImages({ title, postType, category }) {
+async function generatePostImages({ title, postType, category, format = 'thumb' }) {
   if (!fs.existsSync(IMAGES_DIR)) fs.mkdirSync(IMAGES_DIR, { recursive: true });
 
   const today = kst.today();
   const safeSlug = (title || '').replace(/[^가-힣a-zA-Z0-9]/g, '_').slice(0, 40);
   const slug = `${today}_${postType}_${safeSlug}`;
+  const isReel = format === 'reel';
 
-  console.log(`[이미지] 썸네일 생성 시작 (Draw Things/local runtime) — ${title}`);
+  console.log(`[이미지] ${isReel ? '릴스 커버' : '썸네일'} 생성 시작 (Draw Things/local runtime) — ${title}`);
 
-  const thumbPrompt = _buildThumbPrompt(title, postType, category);
-  const filename = `${slug}_thumb.png`;
+  const thumbPrompt = _buildThumbPrompt(title, postType, category, format);
+  const filename = `${slug}_${isReel ? 'reel_thumb' : 'thumb'}.png`;
   const filepath = path.join(IMAGES_DIR, filename);
 
   try {
-    const { buffer, source, fallback } = await generateImage(thumbPrompt, { aspectRatio: '16:9' });
+    const { buffer, source, fallback } = await generateImage(thumbPrompt, {
+      aspectRatio: isReel ? '9:16' : '16:9',
+    });
     fs.writeFileSync(filepath, buffer);
     try {
       if (!fs.existsSync(GDRIVE_DIR)) fs.mkdirSync(GDRIVE_DIR, { recursive: true });
       fs.writeFileSync(path.join(GDRIVE_DIR, filename), buffer);
     } catch (_) {}
 
-    console.log(`  [이미지] thumb: images/${filename} (${source}${fallback ? ', 폴백' : ''})`);
+    console.log(`  [이미지] ${isReel ? 'reel thumb' : 'thumb'}: images/${filename} (${source}${fallback ? ', 폴백' : ''})`);
     return { thumb: { filename, filepath } };
   } catch (e) {
     console.warn('[이미지] 썸네일 실패:', e.message);
