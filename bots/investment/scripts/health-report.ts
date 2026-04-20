@@ -105,7 +105,8 @@ const ALL_SERVICES = [
 
 const LOCAL_LLM_HEALTH_HISTORY_FILE = '/tmp/investment-local-llm-health-history.jsonl';
 const SECONDARY_LOCAL_LABEL = 'ai.mlx.server.secondary';
-const LOCAL_STANDBY_ENABLED = process.env.ENABLE_LOCAL_LLM_STANDBY === '1';
+const SECONDARY_LOCAL_BASE_URL = String(process.env.OLLAMA_BASE_URL || '').trim();
+const LOCAL_STANDBY_ENABLED = process.env.ENABLE_LOCAL_LLM_STANDBY === '1' && !!SECONDARY_LOCAL_BASE_URL;
 
 const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;
 const SCHEDULED_SERVICE_DEPLOYMENTS = {
@@ -185,14 +186,13 @@ function summarizeLocalLlmRedundancy(circuits = [], launchctlStatus = {}) {
   if (!LOCAL_STANDBY_ENABLED) {
     return {
       status: 'standby_disabled',
-      summary: 'secondary standby 비활성화됨 — Groq 우선',
-      templatePath: '/Users/alexlee/projects/ai-agent-system/bots/investment/launchd/ai.mlx.server.secondary.plist',
-      launchdSummary: `${SECONDARY_LOCAL_LABEL} 비활성화 정책`,
+      summary: 'secondary standby 비활성화됨 — Groq 우선 / 11434 embeddings 전용',
+      templatePath: null,
+      launchdSummary: `${SECONDARY_LOCAL_LABEL} 미사용 정책`,
     };
   }
   const primary = circuits.find((entry) => entry?.role === 'primary') || null;
   const secondary = circuits.find((entry) => entry?.role === 'secondary') || null;
-  const templatePath = '/Users/alexlee/projects/ai-agent-system/bots/investment/launchd/ai.mlx.server.secondary.plist';
   const secondaryLaunchd = launchctlStatus?.[SECONDARY_LOCAL_LABEL] || null;
   const launchdSummary = secondaryLaunchd
     ? `${SECONDARY_LOCAL_LABEL} ${secondaryLaunchd.running ? `running(pid=${secondaryLaunchd.pid})` : `stopped(exit=${secondaryLaunchd.exitCode})`}`
@@ -202,7 +202,7 @@ function summarizeLocalLlmRedundancy(circuits = [], launchctlStatus = {}) {
     return {
       status: 'single_primary',
       summary: 'secondary endpoint 없음',
-      templatePath,
+      templatePath: null,
       launchdSummary,
     };
   }
@@ -212,7 +212,7 @@ function summarizeLocalLlmRedundancy(circuits = [], launchctlStatus = {}) {
     return {
       status: 'redundant',
       summary: 'primary + secondary 모두 생성 가능',
-      templatePath,
+      templatePath: null,
       launchdSummary,
     };
   }
@@ -222,7 +222,7 @@ function summarizeLocalLlmRedundancy(circuits = [], launchctlStatus = {}) {
     summary: secondary?.probe?.error ? `secondary 미가동 (${secondary.probe.error})` : 'secondary 생성 불가',
     primaryBaseUrl: primary?.baseUrl || null,
     secondaryBaseUrl: secondary?.baseUrl || null,
-    templatePath,
+    templatePath: null,
     launchdSummary,
   };
 }
@@ -562,7 +562,7 @@ async function loadKisCapabilityHealth() {
 async function loadLocalLlmHealth(launchctlStatus = {}) {
   const runtimeProfile = await selectRuntime('luna', 'analyst').catch(() => null);
   const primaryBaseUrl = String(runtimeProfile?.local_llm_base_url || env.LOCAL_LLM_BASE_URL || 'http://127.0.0.1:11434').trim();
-  const secondaryBaseUrl = String(env.OLLAMA_BASE_URL || '').trim();
+  const secondaryBaseUrl = SECONDARY_LOCAL_BASE_URL;
   const urls = [...new Set([primaryBaseUrl, secondaryBaseUrl].filter(Boolean))];
 
   const circuits = [];

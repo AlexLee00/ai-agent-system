@@ -60,9 +60,11 @@ const ALL_SERVICES = [
 // 정상 종료 코드
 const NORMAL_EXIT_CODES = new Set([0, -9, -15]);
 const LOCAL_LLM_HEALTH_HISTORY_FILE = '/tmp/investment-local-llm-health-history.jsonl';
-const LOCAL_STANDBY_ENABLED = process.env.ENABLE_LOCAL_LLM_STANDBY === '1';
-const SECONDARY_LOCAL_BASE_URL = String(process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11435');
-const SECONDARY_LOCAL_PORT = Number(SECONDARY_LOCAL_BASE_URL.match(/:(\d+)/)?.[1] || '11435');
+const SECONDARY_LOCAL_BASE_URL = String(process.env.OLLAMA_BASE_URL || '').trim();
+const LOCAL_STANDBY_ENABLED = process.env.ENABLE_LOCAL_LLM_STANDBY === '1' && !!SECONDARY_LOCAL_BASE_URL;
+const SECONDARY_LOCAL_PORT = SECONDARY_LOCAL_BASE_URL
+  ? Number(SECONDARY_LOCAL_BASE_URL.match(/:(\d+)/)?.[1] || '0')
+  : 0;
 const SECONDARY_LOCAL_LABEL = 'ai.mlx.server.secondary';
 
 // ─── 알림 발송 ───────────────────────────────────────────────────

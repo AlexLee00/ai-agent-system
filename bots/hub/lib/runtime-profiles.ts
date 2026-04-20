@@ -29,8 +29,8 @@ type RuntimeProfile = {
 type TeamProfiles = Record<string, RuntimeProfile>;
 
 const LOCAL_LLM_BASE_URL = 'http://127.0.0.1:11434';
-const ENABLE_LOCAL_LLM_STANDBY = process.env.ENABLE_LOCAL_LLM_STANDBY === '1';
-const OLLAMA_BASE_URL = process.env.LOCAL_LLM_CHAT_BASE_URL || process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11435';
+const OLLAMA_BASE_URL = String(process.env.LOCAL_LLM_CHAT_BASE_URL || process.env.OLLAMA_BASE_URL || '').trim();
+const ENABLE_LOCAL_LLM_STANDBY = process.env.ENABLE_LOCAL_LLM_STANDBY === '1' && !!OLLAMA_BASE_URL;
 // Current deployed routes. These are intentionally separated from "latest official"
 // model families so runtime profiles reflect live ops first.
 const GROQ_SCOUT_ROUTE = 'groq/llama-3.1-8b-instant';
