@@ -125,6 +125,7 @@ function buildShortformPlan({
     cta,
     canvas: SHORTFORM_CANVAS,
     safeZone: SHORTFORM_SAFE_ZONE,
+    overlayCount: storyboard.length,
     ffmpegPreview: buildFfmpegPreview({ thumbPath, outputPath, durationSec: safeDurationSec }),
     contentSnippet: String(content || '').slice(0, 280),
     generatedAt: new Date().toISOString()

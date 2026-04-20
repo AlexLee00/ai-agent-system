@@ -187,6 +187,7 @@ async function createInstaContent(content, title, category, cardCount = 3, optio
       thumbPath: plan.thumbPath,
       outputPath: plan.outputPath,
       durationSec: plan.durationSec,
+      storyboard: plan.storyboard,
     });
     reel = {
       ...render,

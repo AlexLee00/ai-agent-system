@@ -80,6 +80,7 @@ async function main() {
     thumbPath: plan.thumbPath,
     outputPath: plan.outputPath,
     durationSec: plan.durationSec,
+    storyboard: plan.storyboard,
   });
 
   const payload = {
