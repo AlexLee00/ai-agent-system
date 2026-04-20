@@ -1656,6 +1656,47 @@ function buildRemodelProgress(instagramHealth, phase1Health, phase2BriefingHealt
   };
 }
 
+function buildOpsPriority(socialAutomationHealth, engagementHealth) {
+  const ok = [`  ops doctor command: ${BLOG_OPS_DOCTOR_COMMAND}`];
+  const warn = [];
+
+  let primaryArea = 'clear';
+  let primaryReason = '지금은 즉시 막히는 운영 병목보다 다음 운영 사이클 관찰이 우선입니다.';
+  let nextCommand = '';
+
+  if (socialAutomationHealth.facebookNeedsAttention) {
+    primaryArea = 'social.facebook';
+    primaryReason = 'Facebook publish 권한 이슈가 현재 최우선 병목입니다.';
+    nextCommand = SOCIAL_DOCTOR_COMMAND;
+  } else if (socialAutomationHealth.instagramNeedsAttention) {
+    primaryArea = 'social.instagram';
+    primaryReason = 'Instagram publish/readiness 이슈가 현재 최우선 병목입니다.';
+    nextCommand = SOCIAL_DOCTOR_COMMAND;
+  } else if ((engagementHealth?.warnCount || 0) > 0) {
+    primaryArea = 'engagement';
+    primaryReason = '답글/댓글/공감 자동화 이슈가 현재 최우선 병목입니다.';
+    nextCommand = ENGAGEMENT_DOCTOR_COMMAND;
+  }
+
+  ok.push(`  primary blocker: ${primaryArea} / ${primaryReason}`);
+  if (nextCommand) {
+    ok.push(`  next command: ${nextCommand}`);
+  }
+  if (primaryArea !== 'clear') {
+    warn.push(`  next action focus: ${primaryArea}`);
+  }
+
+  return {
+    okCount: ok.length,
+    warnCount: warn.length,
+    ok,
+    warn,
+    primaryArea,
+    primaryReason,
+    nextCommand,
+  };
+}
+
 function formatText(report) {
   return buildHealthReport({
     title: '📰 블로 운영 헬스 리포트',
@@ -1676,6 +1717,7 @@ function formatText(report) {
       buildHealthCountSection('■ Marketing 확장 상태', report.marketingExpansionHealth, { okLimit: 5, warnLimit: 4 }),
       buildHealthCountSection('■ 도서 카탈로그 상태', report.bookCatalogHealth, { okLimit: 4 }),
       buildHealthCountSection('■ 도서리뷰 큐 상태', report.bookReviewQueueHealth, { okLimit: 3 }),
+      buildHealthCountSection('■ Ops 우선순위', report.opsPriority, { okLimit: 4, warnLimit: 2 }),
       buildHealthCountSection('■ daily run 상태', report.dailyRunHealth, { warnLimit: 4, okLimit: 2 }),
       {
         title: null,
@@ -1716,6 +1758,7 @@ async function buildReport() {
   const bookReviewQueueHealth = await buildBookReviewQueueHealth();
   const decision = buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealth, instagramHealth, socialAutomationHealth, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth, marketingExpansionHealth, engagementHealth);
   const remodelProgress = buildRemodelProgress(instagramHealth, phase1Health, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth);
+  const opsPriority = buildOpsPriority(socialAutomationHealth, engagementHealth);
 
   return {
     serviceHealth: {
@@ -1760,6 +1803,7 @@ async function buildReport() {
     remodelProgress,
     bookCatalogHealth,
     bookReviewQueueHealth,
+    opsPriority,
     decision,
   };
 }
