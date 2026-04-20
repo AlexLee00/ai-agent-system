@@ -24,14 +24,39 @@ function escapeFilterPath(value = '') {
   return String(value).replace(/\\/g, '\\\\').replace(/:/g, '\\:').replace(/'/g, "\\'");
 }
 
-function buildShortformVideoFilter(overlaySpecs = []) {
+function buildMotionOverlayExpressions(storyboard = []) {
+  const steps = Array.isArray(storyboard) ? storyboard.filter((step) => step && Number.isFinite(Number(step.startSec)) && Number.isFinite(Number(step.endSec))) : [];
+  const xTerms = [];
+  const yTerms = [];
+
+  for (const step of steps) {
+    const start = Number(step.startSec);
+    const end = Number(step.endSec);
+    const span = Math.max(0.4, end - start);
+    const motion = String(step.motion || '');
+    if (motion === 'pan_right') {
+      xTerms.push(`if(between(t\\,${start}\\,${end})\\,((-18)+((t-${start})/${span})*36)\\,0)`);
+    } else if (motion === 'slow_zoom_out') {
+      yTerms.push(`if(between(t\\,${start}\\,${end})\\,(-10+((t-${start})/${span})*20)\\,0)`);
+    } else if (motion === 'slow_zoom_in') {
+      yTerms.push(`if(between(t\\,${start}\\,${end})\\,(8-((t-${start})/${span})*16)\\,0)`);
+    }
+  }
+
+  const xExpr = xTerms.length ? `(${xTerms.join('+')})` : '0';
+  const yExpr = yTerms.length ? `(${yTerms.join('+')})` : '0';
+  return { xExpr, yExpr };
+}
+
+function buildShortformVideoFilter(overlaySpecs = [], storyboard = []) {
   const bgScale = `scale=${SHORTFORM_WIDTH}:${SHORTFORM_HEIGHT}:force_original_aspect_ratio=increase:flags=lanczos`;
   const fgScale = `scale=${SHORTFORM_SAFE_WIDTH}:${SHORTFORM_SAFE_HEIGHT}:force_original_aspect_ratio=decrease:flags=lanczos`;
+  const motionExpr = buildMotionOverlayExpressions(storyboard);
   const chain = [
     `[0:v]${bgScale}[bgsrc]`,
     `[bgsrc]crop=${SHORTFORM_WIDTH}:${SHORTFORM_HEIGHT},zoompan=z='min(zoom+0.00035,1.06)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=30,gblur=sigma=18,eq=brightness=-0.02:saturation=0.92,setsar=1[bg]`,
     `[0:v]${fgScale},unsharp=5:5:0.8:5:5:0.0,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black@0,setsar=1[fg]`,
-    `[bg][fg]overlay=(W-w)/2:(H-h)/2:format=auto,format=yuv420p,fps=${SHORTFORM_FPS}[basev]`,
+    `[bg][fg]overlay=x='(W-w)/2+${motionExpr.xExpr}':y='(H-h)/2+${motionExpr.yExpr}':format=auto,format=yuv420p,fps=${SHORTFORM_FPS}[basev]`,
   ];
 
   let current = 'basev';
@@ -59,7 +84,7 @@ function buildShortformVideoFilter(overlaySpecs = []) {
   return chain.join(';');
 }
 
-function buildShortformRenderArgs({ thumbPath, outputPath, durationSec, overlaySpecs = [] }) {
+function buildShortformRenderArgs({ thumbPath, outputPath, durationSec, overlaySpecs = [], storyboard = [] }) {
   const args = [
     '-y',
     '-loop', '1',
@@ -72,7 +97,7 @@ function buildShortformRenderArgs({ thumbPath, outputPath, durationSec, overlayS
 
   args.push(
     '-t', String(durationSec),
-    '-filter_complex', buildShortformVideoFilter(overlaySpecs),
+    '-filter_complex', buildShortformVideoFilter(overlaySpecs, storyboard),
     '-map', '[vout]',
     '-c:v', 'libx264',
     '-preset', SHORTFORM_PRESET,
@@ -254,6 +279,7 @@ async function renderShortformReel({
     outputPath,
     durationSec: safeDurationSec,
     overlaySpecs,
+    storyboard,
   });
 
   try {
