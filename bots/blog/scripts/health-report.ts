@@ -687,6 +687,9 @@ async function buildSocialAutomationHealth() {
     }
 
     const publishLogExists = Boolean(publishLogMeta?.exists);
+    let latestFacebookStatus = null;
+    let latestFacebookErrorSummary = '';
+    let facebookNeedsAttention = false;
     if (!publishLogExists) {
       warn.push('  facebook publish telemetry: blog.publish_log 테이블 없음');
     } else {
@@ -700,9 +703,12 @@ async function buildSocialAutomationHealth() {
       }
       if (facebookRows.length > 0) {
         const latestFacebook = facebookRows[0];
+        latestFacebookStatus = String(latestFacebook.status || 'unknown');
         ok.push(`  facebook latest: ${String(latestFacebook.status || 'unknown')} / ${String(latestFacebook.title || '').slice(0, 50)}`);
         if (String(latestFacebook.status || '') === 'failed') {
           const summarizedFacebookError = summarizeFacebookPublishFailure(latestFacebook.error || '');
+          latestFacebookErrorSummary = summarizedFacebookError;
+          facebookNeedsAttention = true;
           warn.push(`  facebook latest failed: ${summarizedFacebookError}`);
           if (summarizedFacebookError.includes('Facebook 페이지 게시 권한 부족:')) {
             warn.push('  facebook action: Meta 앱에 pages_manage_posts, pages_read_engagement 권한을 다시 연결하세요');
@@ -749,6 +755,9 @@ async function buildSocialAutomationHealth() {
         || (latestRealInstagram && String(latestRealInstagram.status || '') === 'failed' && latestRealInstagramIsToday && !latestRealHostedRecovery)
       ),
       facebookReadiness: facebookReadiness || null,
+      latestFacebookStatus,
+      latestFacebookErrorSummary,
+      facebookNeedsAttention,
       socialAssetDue: socialAssetExpectation.due,
       socialAssetDueHour: socialAssetExpectation.dueHour,
       publishLogExists,
@@ -775,6 +784,9 @@ async function buildSocialAutomationHealth() {
       latestRealHostedRecovery: false,
       instagramNeedsAttention: false,
       facebookReadiness: null,
+      latestFacebookStatus: null,
+      latestFacebookErrorSummary: '',
+      facebookNeedsAttention: false,
       socialAssetDue: getSocialAssetExpectation().due,
       socialAssetDueHour: getSocialAssetExpectation().dueHour,
       publishLogExists: false,
@@ -1486,6 +1498,13 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
         reason: previewBundleHint
           ? `최근 인스타 자동등록 실패 이력이 있어 릴스/공개 URL/게시 경로 점검이 필요합니다. 최신 preview: ${previewBundleHint}`
           : '최근 인스타 자동등록 실패 이력이 있어 릴스/공개 URL/게시 경로 점검이 필요합니다.',
+      },
+      {
+        active: socialAutomationHealth.facebookNeedsAttention,
+        level: 'medium',
+        reason: previewBundleHint
+          ? `최근 페이스북 자동등록 실패 이력이 있어 권한/게시 경로 점검이 필요합니다. ${socialAutomationHealth.latestFacebookErrorSummary || ''} 최신 preview: ${previewBundleHint}`.trim()
+          : `최근 페이스북 자동등록 실패 이력이 있어 권한/게시 경로 점검이 필요합니다. ${socialAutomationHealth.latestFacebookErrorSummary || ''}`.trim(),
       },
       {
         active: socialAutomationHealth.publishLogExists === false,
