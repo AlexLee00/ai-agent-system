@@ -20,6 +20,7 @@ import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { store as storeRag } from '../shared/rag-client.ts';
 import { ANALYST_TYPES, ACTIONS } from '../shared/signal.ts';
 import { isKisMarketOpen, isKisOverseasMarketOpen, isKisHoliday, isNyseHoliday } from '../shared/secrets.ts';
+import { getAriaRuntimeConfig } from '../shared/runtime-config.ts';
 
 // ─── 장 시간 체크 ────────────────────────────────────────────────────
 
@@ -73,21 +74,22 @@ async function fetchOHLCV(symbol, timeframe, limit, retries = 2) {
 
 // ─── 시장별 파라미터 ────────────────────────────────────────────────
 
+const ARIA_RUNTIME = getAriaRuntimeConfig();
 const MARKET_PARAMS = {
   binance: {
     rsiOversold:    30, rsiOverbought:    70,
     stochOversold:  20, stochOverbought:  80,
-    signalThreshold: 1.15,
+    signalThreshold: Number(ARIA_RUNTIME.signalThresholds?.binance ?? 1.15),
   },
   kis_overseas: {
     rsiOversold:    35, rsiOverbought:    65,
     stochOversold:  20, stochOverbought:  80,
-    signalThreshold: 2.0,
+    signalThreshold: Number(ARIA_RUNTIME.signalThresholds?.kis_overseas ?? 2.0),
   },
   kis: {
     rsiOversold:    30, rsiOverbought:    70,
     stochOversold:  20, stochOverbought:  80,
-    signalThreshold: 1.5,
+    signalThreshold: Number(ARIA_RUNTIME.signalThresholds?.kis ?? 1.5),
   },
 };
 

@@ -111,8 +111,28 @@ export function getMinConfidence(exchange) {
   return MIN_CONFIDENCE[exchange] ?? 0.60;
 }
 
-export function getDebateLimit(exchange) {
-  if (!isPaperMode()) return MAX_DEBATE_SYMBOLS;
+export function getDebateLimit(exchange, symbolCount = 0) {
+  if (!isPaperMode()) {
+    if (exchange === 'binance') {
+      const count = Math.max(0, Number(symbolCount || 0));
+      const rules = Array.isArray(LUNA_RUNTIME.dynamicDebateLimits?.cryptoLive)
+        ? [...LUNA_RUNTIME.dynamicDebateLimits.cryptoLive]
+            .map((rule) => ({
+              minSymbols: Math.max(0, Number(rule?.minSymbols || 0)),
+              limit: Math.max(1, Number(rule?.limit || MAX_DEBATE_SYMBOLS)),
+            }))
+            .sort((a, b) => a.minSymbols - b.minSymbols)
+        : [];
+      let limit = MAX_DEBATE_SYMBOLS;
+      for (const rule of rules) {
+        if (count >= rule.minSymbols) {
+          limit = Math.max(limit, rule.limit);
+        }
+      }
+      return limit;
+    }
+    return MAX_DEBATE_SYMBOLS;
+  }
   if (exchange === 'kis' || exchange === 'kis_overseas') return 1;
   return MAX_DEBATE_SYMBOLS;
 }
@@ -1090,7 +1110,7 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
       console.log(`  📋 [루나] ${symbol}: ${analyses.length}개 분석 결과`);
 
       let debate = null;
-      const debateLimit = getDebateLimit(exchange);
+      const debateLimit = getDebateLimit(exchange, symbols.length);
       if (debateCount < debateLimit && shouldDebateForSymbol(analyses, exchange, analystWeights)) {
         try {
           const summary = buildAnalysisSummary(analyses);

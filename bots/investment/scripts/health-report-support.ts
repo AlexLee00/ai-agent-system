@@ -1,6 +1,11 @@
 // @ts-nocheck
 import { readFileSync, statSync } from 'fs';
 import yaml from 'js-yaml';
+import { getInvestmentHealthRuntimeConfig } from '../shared/runtime-config.ts';
+
+const HEALTH_RUNTIME = getInvestmentHealthRuntimeConfig();
+const TRADE_LANE_NEAR_LIMIT_RATIO = Number(HEALTH_RUNTIME.tradeLaneNearLimitRatio ?? 0.8);
+const CRYPTO_VALIDATION_NEAR_SOFT_CAP_RATIO = Number(HEALTH_RUNTIME.cryptoValidationNearSoftCapRatio ?? 0.8);
 
 export function formatGuardScope(scope = '') {
   const normalized = String(scope || '').trim().toLowerCase();
@@ -796,7 +801,7 @@ export async function loadTradeLaneHealth(pgPool, policy) {
       count,
       limit,
       ratio,
-      nearLimit: limit > 0 && ratio >= 0.8,
+      nearLimit: limit > 0 && ratio >= TRADE_LANE_NEAR_LIMIT_RATIO,
       atLimit: limit > 0 && count >= limit,
     };
   });
@@ -840,7 +845,7 @@ export async function loadCryptoValidationSoftBudgetHealth(pgPool, policy, softB
   const softCap = hardCap > 0 ? Math.max(1, hardCap - reserveSlots) : 0;
   const ratio = softCap > 0 ? count / softCap : 0;
   const atSoftCap = softCap > 0 && count >= softCap;
-  const nearSoftCap = softCap > 0 && !atSoftCap && ratio >= 0.8;
+  const nearSoftCap = softCap > 0 && !atSoftCap && ratio >= CRYPTO_VALIDATION_NEAR_SOFT_CAP_RATIO;
   const line =
     `  BINANCE / validation BUY ${count}/${softCap || 'n/a'} soft cap` +
     ` (hard ${hardCap || 'n/a'}, reserve ${reserveSlots})`;

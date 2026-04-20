@@ -10,7 +10,6 @@
  *   - Groq    (영구 무료 티어)      → GROQ_API_KEY
  *       llama-3.1-8b-instant / llama-3.3-70b-versatile
  *       meta-llama/llama-4-scout-17b-16e-instruct (750 T/s)
- *       moonshotai/kimi-k2-instruct-0905 (1T MoE, 256K ctx)
  *       qwen/qwen3-32b
  *       openai/gpt-oss-20b (OpenAI 오픈소스, Groq 경유)
  *   - Cerebras(영구 무료 티어)      → CEREBRAS_API_KEY
@@ -96,7 +95,7 @@ function sendTelegramNotify(results, { applied, recommended, current } = {}) {
   if (applied) {
     statusLine = `\n🔄 primary 자동 변경: ${applied}`;
   } else if (recommended && recommended !== current) {
-    statusLine = `\n\n📌 현재: ${current}\n💡 추천: ${recommended}\n⚠️ 적용: node scripts/speed-test.js --apply`;
+    statusLine = `\n\n📌 현재: ${current}\n💡 추천: ${recommended}\n⚠️ 적용: npx tsx scripts/speed-test.ts --apply`;
   } else {
     statusLine = `\n\n✅ 현재 모델(${current})이 가장 빠름`;
   }

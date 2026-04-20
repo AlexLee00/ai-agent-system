@@ -13,7 +13,7 @@
     <string>Darwin.V2.ShadowRunner.run_daily()</string>
   </array>
   <key>WorkingDirectory</key>
-  <string>/Users/alexlee/projects/ai-agent-system/bots/darwin/elixir</string>
+  <string>/Users/alexlee/projects/ai-agent-system/elixir/team_jay</string>
   <key>EnvironmentVariables</key>
   <dict>
     <key>HOME</key><string>/Users/alexlee</string>

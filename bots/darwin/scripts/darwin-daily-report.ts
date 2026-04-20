@@ -15,10 +15,10 @@ const PROJECT_ROOT = path.resolve(
   "../../.."
 );
 
-const { pool, query } = require(
+const { query } = require(
   path.join(PROJECT_ROOT, "packages/core/lib/pg-pool")
 );
-const hub = require(path.join(PROJECT_ROOT, "packages/core/lib/hub-client"));
+const { postAlarm } = require(path.join(PROJECT_ROOT, "packages/core/lib/openclaw-client"));
 
 async function collectStats() {
   const [cycleRows, registryRows, violationRows] = await Promise.allSettled([
@@ -98,10 +98,13 @@ async function main() {
 ⚠️ 원칙 위반: ${stats.violations}회
 `.trim();
 
-  await hub.postAlarm(msg, "darwin", "darwin");
+  await postAlarm({
+    message: msg,
+    team: "darwin",
+    fromBot: "darwin-daily-report",
+    alertLevel: 2,
+  });
   console.log("[darwin-daily-report] 발송 완료");
-
-  await pool.end();
 }
 
 main().catch((err) => {

@@ -20,9 +20,7 @@ const PROVIDER_ENV_KEYS = {
   deepinfra: 'DEEPINFRA_API_KEY',
 };
 
-const SUPPORTED_MODEL_ALIASES = {
-  'groq/moonshotai/kimi-k2-instruct': 'groq/moonshotai/kimi-k2-instruct-0905',
-};
+const SUPPORTED_MODEL_ALIASES = {};
 
 const SPEED_TEST_MODEL_CATALOG = {
   'google-gemini-cli': new Set([
@@ -40,7 +38,6 @@ const SPEED_TEST_MODEL_CATALOG = {
     'groq/llama-3.1-8b-instant',
     'groq/llama-3.3-70b-versatile',
     'groq/meta-llama/llama-4-scout-17b-16e-instruct',
-    'groq/moonshotai/kimi-k2-instruct-0905',
     'groq/qwen/qwen3-32b',
     'groq/openai/gpt-oss-20b',
   ]),

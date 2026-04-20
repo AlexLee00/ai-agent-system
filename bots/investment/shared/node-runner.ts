@@ -3,8 +3,10 @@ import { randomUUID } from 'crypto';
 import { search as searchRag, store as storeRag } from './rag-client.ts';
 import * as pipelineDb from './pipeline-db.ts';
 import { createRequire } from 'module';
+import { getInvestmentRagRuntimeConfig } from './runtime-config.ts';
 
 const PIPELINE_NAMESPACE = 'rag_operations';
+const RAG_RUNTIME = getInvestmentRagRuntimeConfig();
 const _require = createRequire(import.meta.url);
 const elixirBridge = _require('../../../packages/core/lib/elixir-bridge');
 
@@ -95,10 +97,12 @@ export async function storeNodeArtifact({
 }
 
 export async function fetchNodeArtifacts(sessionId, nodeId, { symbol = null, limit = 5 } = {}) {
+  const resolvedLimit = Math.max(1, Number(limit || RAG_RUNTIME.nodeArtifactSearch?.defaultLimit || 5));
+  const resolvedThreshold = Number(RAG_RUNTIME.nodeArtifactSearch?.threshold ?? 0.65);
   const hits = await searchRag(
     PIPELINE_NAMESPACE,
     `${sessionId} ${nodeId} ${symbol || ''}`.trim(),
-    { limit, threshold: 0.65 },
+    { limit: resolvedLimit, threshold: resolvedThreshold },
     { sourceBot: 'luna' },
   ).catch(() => []);
 

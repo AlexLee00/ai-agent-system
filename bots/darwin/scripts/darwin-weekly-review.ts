@@ -15,10 +15,10 @@ const PROJECT_ROOT = path.resolve(
   "../../.."
 );
 
-const { pool, query } = require(
+const { query } = require(
   path.join(PROJECT_ROOT, "packages/core/lib/pg-pool")
 );
-const hub = require(path.join(PROJECT_ROOT, "packages/core/lib/hub-client"));
+const { postAlarm } = require(path.join(PROJECT_ROOT, "packages/core/lib/openclaw-client"));
 
 function getWeekString() {
   const now = new Date();
@@ -114,10 +114,13 @@ async function main() {
 💰 주간 LLM 비용: $${stats.weekly_cost_usd}
 `.trim();
 
-  await hub.postAlarm(msg, "darwin", "darwin");
+  await postAlarm({
+    message: msg,
+    team: "darwin",
+    fromBot: "darwin-weekly-review",
+    alertLevel: 2,
+  });
   console.log("[darwin-weekly-review] 발송 완료");
-
-  await pool.end();
 }
 
 main().catch((err) => {

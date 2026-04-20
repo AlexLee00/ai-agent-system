@@ -1,5 +1,5 @@
 {
-  "lastRun": "2026-04-17",
+  "lastRun": "2026-04-20",
   "versions": {
     "@anthropic-ai/sdk": "0.90.0",
     "@modelcontextprotocol/sdk": "1.29.0",
@@ -9,10 +9,5 @@
     "ccxt": "4.5.49",
     "playwright": "1.59.1"
   },
-  "lastAnalysis": {
-    "summary": "이번 주 패치 검토 1순위는 @anthropic-ai/sdk입니다. 연구 관찰 1순위는 'Exploration and Exploitation Errors Are Measurable for Language Model Agents'입니다. 웹 하이라이트는 'My bets on open models, mid-2026'입니다. 本周重点关注OpenAI的GPT-Rosalind和安全更新。此外，多模态模型扩展和语言模型代理的探索与利用错误是值得关注的技术趋势。",
-    "patchCount": 7,
-    "securityCount": 2,
-    "llmApiCount": 1
-  }
+  "lastAnalysis": null
 }

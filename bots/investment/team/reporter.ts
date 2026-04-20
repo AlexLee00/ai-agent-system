@@ -26,6 +26,12 @@ import { buildAccuracyReport } from '../shared/analyst-accuracy.ts';
 import { buildScreeningHistoryReport } from '../scripts/screening-history-report.ts';
 import { buildPositionReevaluationSummary } from '../scripts/position-reevaluation-summary.ts';
 import { buildRuntimeMinOrderPressureReport } from '../scripts/runtime-min-order-pressure-report.ts';
+import { buildRuntimeKisOrderPressureReport } from '../scripts/runtime-kis-order-pressure-report.ts';
+import { buildRuntimeKisReentryPressureReport } from '../scripts/runtime-kis-reentry-pressure-report.ts';
+import { buildRuntimeBinanceFailurePressureReport } from '../scripts/runtime-binance-failure-pressure-report.ts';
+import { buildRuntimeBinanceCircuitBreakerReport } from '../scripts/runtime-binance-circuit-breaker-report.ts';
+import { buildRuntimeBinanceCapitalGuardReport } from '../scripts/runtime-binance-capital-guard-report.ts';
+import { buildRuntimeBinanceDustReport } from '../scripts/runtime-binance-dust-report.ts';
 
 const _require = createRequire(import.meta.url);
 const shadow   = _require('../../../packages/core/lib/shadow-mode.js');
@@ -336,9 +342,49 @@ function buildTradeBreakdownLines(tradeBreakdown = []) {
 function buildSignalStatsLines({ days, sigTotal, sigExec, sigApproved, sigFailed }) {
   return [
     `총 신호: ${sigTotal}개`,
-    `실행(모의): ${sigExec}개 | 승인대기: ${sigApproved}개 | 잔고부족실패: ${sigFailed}개`,
+    `실행(모의): ${sigExec}개 | 승인대기: ${sigApproved}개 | 실패: ${sigFailed}개`,
     ...(sigTotal > 0 ? [`실행률: ${((sigExec / sigTotal) * 100).toFixed(1)}%`] : []),
   ];
+}
+
+function summarizeFailedSignals(rows = []) {
+  const total = rows.reduce((sum, row) => sum + Number(row.count || 0), 0);
+  const top = rows[0] || null;
+  const byExchange = rows.reduce((acc, row) => {
+    const exchange = String(row.exchange || 'unknown');
+    acc[exchange] = (acc[exchange] || 0) + Number(row.count || 0);
+    return acc;
+  }, {});
+  return {
+    total,
+    top,
+    byExchange,
+    rows,
+  };
+}
+
+function buildFailedSignalLines(failedSummary) {
+  if (!failedSummary || failedSummary.total <= 0) return [];
+  const lines = [`실패 총계: ${failedSummary.total}건`];
+  const exchangeLines = Object.entries(failedSummary.byExchange || {})
+    .sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0))
+    .map(([exchange, count]) => `${String(exchange).toUpperCase()} ${count}건`);
+  if (exchangeLines.length > 0) {
+    lines.push(`시장별 실패: ${exchangeLines.join(' | ')}`);
+  }
+  if (failedSummary.top?.label) {
+    lines.push(`최다 실패: ${failedSummary.top.label} (${failedSummary.top.count}건)`);
+  }
+  const topByExchange = new Map();
+  for (const row of failedSummary.rows || []) {
+    const exchange = String(row.exchange || 'unknown');
+    if (!topByExchange.has(exchange)) topByExchange.set(exchange, row);
+  }
+  for (const [exchange, row] of topByExchange.entries()) {
+    if (!row?.label) continue;
+    lines.push(`${String(exchange).toUpperCase()} 대표 실패: ${row.label} (${row.count}건)`);
+  }
+  return lines;
 }
 
 async function loadScreeningSummary() {
@@ -376,6 +422,71 @@ async function loadMinOrderPressureSummary() {
   try {
     return await buildRuntimeMinOrderPressureReport({
       market: 'kis',
+      days: 14,
+      json: true,
+    });
+  } catch (error) {
+    return {
+      error: String(error?.message || error),
+    };
+  }
+}
+
+async function loadKisOrderPressureSummary() {
+  try {
+    return await buildRuntimeKisOrderPressureReport({
+      days: 14,
+      json: true,
+    });
+  } catch (error) {
+    return {
+      error: String(error?.message || error),
+    };
+  }
+}
+
+async function loadKisReentryPressureSummary() {
+  try {
+    return await buildRuntimeKisReentryPressureReport({
+      days: 14,
+      json: true,
+    });
+  } catch (error) {
+    return {
+      error: String(error?.message || error),
+    };
+  }
+}
+
+async function loadBinanceFailurePressureSummary() {
+  try {
+    return await buildRuntimeBinanceFailurePressureReport({
+      days: 14,
+      json: true,
+    });
+  } catch (error) {
+    return {
+      error: String(error?.message || error),
+    };
+  }
+}
+
+async function loadBinanceCircuitBreakerSummary() {
+  try {
+    return await buildRuntimeBinanceCircuitBreakerReport({
+      days: 14,
+      json: true,
+    });
+  } catch (error) {
+    return {
+      error: String(error?.message || error),
+    };
+  }
+}
+
+async function loadBinanceCapitalGuardSummary() {
+  try {
+    return await buildRuntimeBinanceCapitalGuardReport({
       days: 14,
       json: true,
     });
@@ -430,6 +541,78 @@ function buildMinOrderPressureLines(minOrderPressureSummary = null) {
   return lines;
 }
 
+function buildKisOrderPressureLines(kisOrderPressureSummary = null) {
+  if (!kisOrderPressureSummary) return ['조회 결과 없음'];
+  if (kisOrderPressureSummary.error) return ['조회 실패'];
+  if (!kisOrderPressureSummary.decision) return ['결과 없음'];
+  const decision = kisOrderPressureSummary.decision || {};
+  const lines = [`${decision.status}: ${decision.headline}`];
+  if (Array.isArray(decision.reasons)) {
+    lines.push(...decision.reasons.slice(0, 3));
+  }
+  return lines;
+}
+
+function buildKisReentryPressureLines(kisReentryPressureSummary = null) {
+  if (!kisReentryPressureSummary) return ['조회 결과 없음'];
+  if (kisReentryPressureSummary.error) return ['조회 실패'];
+  if (!kisReentryPressureSummary.decision) return ['결과 없음'];
+  const decision = kisReentryPressureSummary.decision || {};
+  const lines = [`${decision.status}: ${decision.headline}`];
+  if (Array.isArray(decision.reasons)) {
+    lines.push(...decision.reasons.slice(0, 3));
+  }
+  return lines;
+}
+
+function buildBinanceFailurePressureLines(binanceFailurePressureSummary = null) {
+  if (!binanceFailurePressureSummary) return ['조회 결과 없음'];
+  if (binanceFailurePressureSummary.error) return ['조회 실패'];
+  if (!binanceFailurePressureSummary.decision) return ['결과 없음'];
+  const decision = binanceFailurePressureSummary.decision || {};
+  const lines = [`${decision.status}: ${decision.headline}`];
+  if (Array.isArray(decision.reasons)) {
+    lines.push(...decision.reasons.slice(0, 3));
+  }
+  return lines;
+}
+
+function buildBinanceCircuitBreakerLines(binanceCircuitBreakerSummary = null) {
+  if (!binanceCircuitBreakerSummary) return ['조회 결과 없음'];
+  if (binanceCircuitBreakerSummary.error) return ['조회 실패'];
+  if (!binanceCircuitBreakerSummary.decision) return ['결과 없음'];
+  const decision = binanceCircuitBreakerSummary.decision || {};
+  const lines = [`${decision.status}: ${decision.headline}`];
+  if (Array.isArray(decision.reasons)) {
+    lines.push(...decision.reasons.slice(0, 3));
+  }
+  return lines;
+}
+
+function buildBinanceCapitalGuardLines(binanceCapitalGuardSummary = null) {
+  if (!binanceCapitalGuardSummary) return ['조회 결과 없음'];
+  if (binanceCapitalGuardSummary.error) return ['조회 실패'];
+  if (!binanceCapitalGuardSummary.decision) return ['결과 없음'];
+  const decision = binanceCapitalGuardSummary.decision || {};
+  const lines = [`${decision.status}: ${decision.headline}`];
+  if (Array.isArray(decision.reasons)) {
+    lines.push(...decision.reasons.slice(0, 3));
+  }
+  return lines;
+}
+
+function buildBinanceDustLines(binanceDustSummary = null) {
+  if (!binanceDustSummary) return ['조회 결과 없음'];
+  if (binanceDustSummary.error) return ['조회 실패'];
+  if (!binanceDustSummary.decision) return ['결과 없음'];
+  const decision = binanceDustSummary.decision || {};
+  const lines = [`${decision.status}: ${decision.headline}`];
+  if (Array.isArray(decision.reasons)) {
+    lines.push(...decision.reasons.slice(0, 3));
+  }
+  return lines;
+}
+
 // ─── 리포트 생성 ─────────────────────────────────────────────────────
 
 export async function generateReport({ days = 30, telegram = false } = {}) {
@@ -437,6 +620,12 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
   const screeningSummary = await loadScreeningSummary();
   const reevaluationSummary = await loadPositionReevaluationSummary();
   const minOrderPressureSummary = await loadMinOrderPressureSummary();
+  const kisOrderPressureSummary = await loadKisOrderPressureSummary();
+  const kisReentryPressureSummary = await loadKisReentryPressureSummary();
+  const binanceFailurePressureSummary = await loadBinanceFailurePressureSummary();
+  const binanceCircuitBreakerSummary = await loadBinanceCircuitBreakerSummary();
+  const binanceCapitalGuardSummary = await loadBinanceCapitalGuardSummary();
+  const binanceDustSummary = await loadBinanceDustSummary();
   let dbAvailable = true;
   try {
     await db.initSchema();
@@ -473,6 +662,24 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
       '',
       '━━━ 최소 주문 병목 ━━━',
       ...buildMinOrderPressureLines(minOrderPressureSummary).map((line) => `  ${line}`),
+      '',
+      '━━━ 국내 주문 초과 압력 ━━━',
+      ...buildKisOrderPressureLines(kisOrderPressureSummary).map((line) => `  ${line}`),
+      '',
+      '━━━ 국내 재진입 차단 압력 ━━━',
+      ...buildKisReentryPressureLines(kisReentryPressureSummary).map((line) => `  ${line}`),
+      '',
+      '━━━ 크립토 실행 실패 압력 ━━━',
+      ...buildBinanceFailurePressureLines(binanceFailurePressureSummary).map((line) => `  ${line}`),
+      '',
+      '━━━ 크립토 circuit breaker 압력 ━━━',
+      ...buildBinanceCircuitBreakerLines(binanceCircuitBreakerSummary).map((line) => `  ${line}`),
+      '',
+      '━━━ 크립토 capital guard 압력 ━━━',
+      ...buildBinanceCapitalGuardLines(binanceCapitalGuardSummary).map((line) => `  ${line}`),
+      '',
+      '━━━ 크립토 dust 상태 ━━━',
+      ...buildBinanceDustLines(binanceDustSummary).map((line) => `  ${line}`),
       '',
       '━━━ 상태 ━━━',
       '  DB 미연결로 신호/거래 통계는 생략',
@@ -516,6 +723,27 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
   const sigApproved = sigStats.find(r => r.status === 'approved')?.cnt  || 0;
   const sigFailed   = sigStats.find(r => r.status === 'failed')?.cnt    || 0;
   const sigHold     = sigStats.find(r => r.status === 'hold')?.cnt      || 0;
+  const failedReasonRows = await db.query(`
+    SELECT
+      exchange,
+      COALESCE(block_code, '') AS block_code,
+      LEFT(COALESCE(block_reason, ''), 160) AS block_reason,
+      COUNT(*)::INTEGER AS count
+    FROM signals
+    WHERE created_at > now() - INTERVAL '${days} days'
+      AND status = 'failed'
+    GROUP BY exchange, COALESCE(block_code, ''), LEFT(COALESCE(block_reason, ''), 160)
+    ORDER BY count DESC
+    LIMIT 12
+  `);
+  const failedSummary = summarizeFailedSignals(
+    failedReasonRows.map((row) => ({
+      ...row,
+      label: [String(row.exchange || '').toUpperCase(), row.block_code || row.block_reason || 'unknown']
+        .filter(Boolean)
+        .join(' / '),
+    })),
+  );
 
   // ── 2. 심볼별 신호 분포 ────────────────────────────────────────────
   const rawSymStats = await db.query(`
@@ -651,6 +879,30 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
   lines.push(...buildMinOrderPressureLines(minOrderPressureSummary).map((line) => `  ${line}`));
   lines.push(``);
 
+  lines.push(`━━━ 국내 주문 초과 압력 ━━━`);
+  lines.push(...buildKisOrderPressureLines(kisOrderPressureSummary).map((line) => `  ${line}`));
+  lines.push(``);
+
+  lines.push(`━━━ 국내 재진입 차단 압력 ━━━`);
+  lines.push(...buildKisReentryPressureLines(kisReentryPressureSummary).map((line) => `  ${line}`));
+  lines.push(``);
+
+  lines.push(`━━━ 크립토 실행 실패 압력 ━━━`);
+  lines.push(...buildBinanceFailurePressureLines(binanceFailurePressureSummary).map((line) => `  ${line}`));
+  lines.push(``);
+
+  lines.push(`━━━ 크립토 circuit breaker 압력 ━━━`);
+  lines.push(...buildBinanceCircuitBreakerLines(binanceCircuitBreakerSummary).map((line) => `  ${line}`));
+  lines.push(``);
+
+  lines.push(`━━━ 크립토 capital guard 압력 ━━━`);
+  lines.push(...buildBinanceCapitalGuardLines(binanceCapitalGuardSummary).map((line) => `  ${line}`));
+  lines.push(``);
+
+  lines.push(`━━━ 크립토 dust 상태 ━━━`);
+  lines.push(...buildBinanceDustLines(binanceDustSummary).map((line) => `  ${line}`));
+  lines.push(``);
+
   // 자산 추이 (스냅샷 2개 이상일 때)
   if (equityHistory.length >= 2) {
     lines.push(`━━━ 자산 추이 ━━━`);
@@ -689,10 +941,13 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
   // 신호 통계
   lines.push(`━━━ 신호 통계 (최근 ${days}일) ━━━`);
   lines.push(`  총 신호: ${sigTotal}개`);
-  lines.push(`  실행(모의): ${sigExec}개 | 승인대기: ${sigApproved}개 | 잔고부족실패: ${sigFailed}개`);
+  lines.push(`  실행(모의): ${sigExec}개 | 승인대기: ${sigApproved}개 | 실패: ${sigFailed}개`);
   if (sigTotal > 0) {
     const execRate = ((sigExec / sigTotal) * 100).toFixed(1);
     lines.push(`  실행률: ${execRate}%`);
+  }
+  for (const line of buildFailedSignalLines(failedSummary)) {
+    lines.push(`  ${line}`);
   }
 
   if (symStats.length > 0) {
@@ -898,7 +1153,16 @@ ${JSON.stringify({
         buildSection('스크리닝 동향', buildScreeningSummaryLines(screeningSummary)),
         buildSection('포지션 재평가', buildPositionReevaluationLines(reevaluationSummary)),
         buildSection('최소 주문 병목', buildMinOrderPressureLines(minOrderPressureSummary)),
-        buildSection(`신호 통계 (${days}일)`, buildSignalStatsLines({ days, sigTotal, sigExec, sigApproved, sigFailed })),
+        buildSection('국내 주문 초과 압력', buildKisOrderPressureLines(kisOrderPressureSummary)),
+        buildSection('국내 재진입 차단 압력', buildKisReentryPressureLines(kisReentryPressureSummary)),
+        buildSection('크립토 실행 실패 압력', buildBinanceFailurePressureLines(binanceFailurePressureSummary)),
+        buildSection('크립토 circuit breaker 압력', buildBinanceCircuitBreakerLines(binanceCircuitBreakerSummary)),
+        buildSection('크립토 capital guard 압력', buildBinanceCapitalGuardLines(binanceCapitalGuardSummary)),
+        buildSection('크립토 dust 상태', buildBinanceDustLines(binanceDustSummary)),
+        buildSection(`신호 통계 (${days}일)`, [
+          ...buildSignalStatsLines({ days, sigTotal, sigExec, sigApproved, sigFailed }),
+          ...buildFailedSignalLines(failedSummary),
+        ]),
         buildSection('AI 요약', [aiSummary]),
       ],
       footer: '상세: 콘솔 리포트 참고',
@@ -931,6 +1195,14 @@ ${JSON.stringify({
   console.log('\n' + week4Summary);
 
   return report;
+}
+
+async function loadBinanceDustSummary() {
+  try {
+    return await buildRuntimeBinanceDustReport({ json: true });
+  } catch (error) {
+    return { error: error.message };
+  }
 }
 
 // ─── 4주차 종합 안정화 지표 ──────────────────────────────────────────

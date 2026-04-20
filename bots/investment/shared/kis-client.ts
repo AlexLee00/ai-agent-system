@@ -44,6 +44,7 @@ const KIS_ORDER_MIN_INTERVAL_MS = 980;
 const KIS_RATE_LIMIT_RETRY_MS = 1100;
 const KIS_RATE_LIMIT_MAX_RETRIES = 2;
 const KIS_DEBUG_ENABLED = process.env.KIS_DEBUG === '1';
+const KIS_DOMESTIC_BUY_SLIPPAGE_BUFFER = 1.01;
 
 const _requestState = {
   paper: {
@@ -411,15 +412,16 @@ export async function marketBuy(symbol, amountKrw, dryRun = false) {
     }
   }
 
-  const qty = Math.floor(effectiveAmountKrw / currentPrice);
+  const bufferedUnitPrice = Math.ceil(currentPrice * KIS_DOMESTIC_BUY_SLIPPAGE_BUFFER);
+  const qty = Math.floor(effectiveAmountKrw / bufferedUnitPrice);
 
   if (qty < 1) {
     throw new Error(
-      `수량 부족: ${effectiveAmountKrw?.toLocaleString()}원으로 ${symbol} 1주(${currentPrice.toLocaleString()}원) 매수 불가`,
+      `수량 부족: ${effectiveAmountKrw?.toLocaleString()}원으로 ${symbol} 1주(${bufferedUnitPrice.toLocaleString()}원, 안전버퍼 포함) 매수 불가`,
     );
   }
 
-  console.log(`  📊 [KIS] ${symbol} 현재가 ${currentPrice.toLocaleString()}원 → 매수 ${qty}주 ${tag}`);
+  console.log(`  📊 [KIS] ${symbol} 현재가 ${currentPrice.toLocaleString()}원 → 매수 ${qty}주 ${tag} (안전단가 ${bufferedUnitPrice.toLocaleString()}원)`);
 
   if (dryRun) {
     console.log(`  🔍 [KIS] dryRun — 실제 주문 생략`);
@@ -428,22 +430,37 @@ export async function marketBuy(symbol, amountKrw, dryRun = false) {
 
   const { cano, prodCd } = parseAccount(paper);
   const trId = paper ? TR_ID.DOMESTIC_BUY_PAPER : TR_ID.DOMESTIC_BUY_LIVE;
-
-  const res = await kisRequest('POST', '/uapi/domestic-stock/v1/trading/order-cash', {
+  const submitBuyOrder = (orderQty) => kisRequest('POST', '/uapi/domestic-stock/v1/trading/order-cash', {
     trId, paper,
     body: {
       CANO:         cano,
       ACNT_PRDT_CD: prodCd,
       PDNO:         symbol,
       ORD_DVSN:     '01',      // 시장가
-      ORD_QTY:      String(qty),
+      ORD_QTY:      String(orderQty),
       ORD_UNPR:     '0',
     },
   });
 
+  let finalQty = qty;
+  let res;
+  try {
+    res = await submitBuyOrder(finalQty);
+  } catch (error) {
+    const message = String(error?.message || '');
+    const isOrderCapacityError = message.includes('APBK0400') || message.includes('APBK0952');
+    if (isOrderCapacityError && finalQty > 1) {
+      finalQty -= 1;
+      console.warn(`  ⚠️ [KIS] ${symbol} 주문 가능 수량/금액 경계 감지 — ${finalQty}주로 1회 재시도`);
+      res = await submitBuyOrder(finalQty);
+    } else {
+      throw error;
+    }
+  }
+
   const ordNo = res.output?.ODNO;
-  console.log(`  ✅ [KIS] ${tag} 매수 완료: ${symbol} ${qty}주 주문번호=${ordNo}`);
-  return { qty, price: currentPrice, totalKrw: qty * currentPrice, ordNo };
+  console.log(`  ✅ [KIS] ${tag} 매수 완료: ${symbol} ${finalQty}주 주문번호=${ordNo}`);
+  return { qty: finalQty, price: currentPrice, totalKrw: finalQty * currentPrice, ordNo };
 }
 
 /**

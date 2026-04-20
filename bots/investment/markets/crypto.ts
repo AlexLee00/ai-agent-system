@@ -30,6 +30,7 @@ import { tracker } from '../shared/cost-tracker.ts';
 import { getLunaParams } from '../shared/time-mode.ts';
 import { parseUniverseCliFlags } from '../shared/screening-runtime.ts';
 import { resolveSymbolsWithFallback, appendHeldSymbols, capDynamicUniverse } from '../shared/universe-fallback.ts';
+import { syncPositionsAtMarketOpen } from '../shared/position-sync.ts';
 import {
   getOpenClawStateFile,
   loadJsonState,
@@ -199,6 +200,31 @@ export async function runCryptoCycle(symbols, universeMeta = {}) {
       `   시간대: ${params.mode} | 최소신호점수: ${params.minSignalScore} | 최대포지션: ${params.maxOpenPositions}개`,
     ],
   });
+
+  const positionSync = await syncPositionsAtMarketOpen('crypto').catch((error) => ({
+    ok: false,
+    reason: error?.message || String(error),
+    mismatchCount: 0,
+    mismatches: [],
+  }));
+  if (positionSync.skipped) {
+    console.log(`  ℹ️ [포지션 동기화] ${positionSync.reason} — crypto ${positionSync.executionMode}/${positionSync.brokerAccountMode}`);
+  } else if (!positionSync.ok) {
+    console.warn(`  ⚠️ [포지션 동기화] 실패: ${positionSync.reason}`);
+  } else {
+    console.log(`  🔄 [포지션 동기화] 브로커 ${positionSync.brokerPositionCount}개 / DB 기존 ${positionSync.dbPositionCountBefore}개 / 불일치 ${positionSync.mismatchCount}건`);
+    for (const item of (positionSync.mismatches || []).slice(0, 4)) {
+      if (item.type === 'stale_db_position') {
+        console.log(`    - ${item.symbol}: DB stale ${item.dbQty} → 브로커 0`);
+      } else if (item.type === 'missing_db_position') {
+        console.log(`    - ${item.symbol}: 브로커 ${item.brokerQty} / DB 누락`);
+      } else if (item.type === 'quantity_mismatch') {
+        console.log(`    - ${item.symbol}: DB ${item.dbQty} / 브로커 ${item.brokerQty}`);
+      } else if (item.type === 'trade_mode_split') {
+        console.log(`    - ${item.symbol}: trade_mode 분할 ${item.rowCount}건 [${(item.tradeModes || []).join('+')}]`);
+      }
+    }
+  }
 
   try {
     // ── 단계 1: 노드 기반 수집 실행 ──

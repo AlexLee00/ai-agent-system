@@ -23,10 +23,12 @@ import { publishAlert } from '../shared/alert-publisher.ts';
 import * as db from '../shared/db.ts';
 import * as rag from '../shared/rag-client.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import { getInvestmentRagRuntimeConfig } from '../shared/runtime-config.ts';
 import { buildScreeningHistoryReport } from './screening-history-report.ts';
 import { buildPositionReevaluationSummary } from './position-reevaluation-summary.ts';
 import { buildRuntimeMinOrderPressureReport } from './runtime-min-order-pressure-report.ts';
 const require = createRequire(import.meta.url);
+const RAG_RUNTIME = getInvestmentRagRuntimeConfig();
 let dailyFeedbackMemory = {
   recallCountHint: async () => '',
   recallHint: async () => '',
@@ -303,7 +305,7 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
       const episodicHint = await dailyFeedbackMemory.recallCountHint(memoryQuery, {
         type: 'episodic',
         limit: 2,
-        threshold: 0.33,
+        threshold: Number(RAG_RUNTIME.dailyFeedbackMemory?.episodicThreshold ?? 0.33),
         title: '최근 유사 피드백',
         separator: 'pipe',
         metadataKey: 'kind',
@@ -315,7 +317,7 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
       const semanticHint = await dailyFeedbackMemory.recallHint(`${memoryQuery} consolidated trading pattern`, {
         type: 'semantic',
         limit: 2,
-        threshold: 0.28,
+        threshold: Number(RAG_RUNTIME.dailyFeedbackMemory?.semanticThreshold ?? 0.28),
         title: '최근 통합 패턴',
         separator: 'newline',
       }).catch(() => '');

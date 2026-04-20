@@ -119,8 +119,12 @@ function normalizeInsight(parsed, summary) {
     summary.criticalCount === 0 &&
     summary.errorCount <= 1 &&
     summary.warnCount <= 2;
+  const warnOnlyWindow =
+    summary.criticalCount === 0 &&
+    summary.errorCount === 0 &&
+    summary.warnCount <= 4;
 
-  if (lowSeverityWindow) {
+  if (lowSeverityWindow || warnOnlyWindow) {
     if (insight.trend === 'degrading') insight.trend = 'stable';
     if (typeof insight.prediction === 'string' && insight.prediction.trim()) insight.prediction = null;
     if (typeof insight.diagnosis === 'string') {
@@ -129,14 +133,21 @@ function normalizeInsight(parsed, summary) {
         .replace(/심각한|높은|고위험/g, '주의 필요');
       if (insight.diagnosis.length > 50) insight.diagnosis = '제한적 운영 경고 및 확인 필요';
     }
+    if (warnOnlyWindow && typeof insight.root_cause === 'string') {
+      insight.root_cause = insight.root_cause
+        .replace(/장기 미해소|반복 장애|메모리 상승이 겹친 것으로 보임/g, '경고 항목 재확인 필요');
+    }
+    if (warnOnlyWindow && typeof insight.action === 'string' && insight.action.trim()) {
+      insight.action = '현재 경고 항목 추세 확인 및 작업트리 정리 권장';
+    }
   }
 
   if (!['improving', 'stable', 'degrading'].includes(insight.trend)) {
-    insight.trend = lowSeverityWindow ? 'stable' : 'degrading';
+    insight.trend = (lowSeverityWindow || warnOnlyWindow) ? 'stable' : 'degrading';
   }
 
   if (typeof insight.confidence !== 'number' || Number.isNaN(insight.confidence)) {
-    insight.confidence = lowSeverityWindow ? 0.45 : 0.65;
+    insight.confidence = (lowSeverityWindow || warnOnlyWindow) ? 0.45 : 0.65;
   }
 
   return insight;
@@ -168,8 +179,8 @@ async function analyzeWithAI(results, elapsed, level) {
   if (issues.length === 0) return null;
 
   // 2. error-history 패턴·신규 오류
-  const patterns  = getPatterns(7, 3);
-  const newErrors = getNewErrors(8, 7);
+  const patterns  = await getPatterns(7, 3);
+  const newErrors = await getNewErrors(8, 7);
   const summary = {
     criticalCount: results.filter(r => r.status === 'critical').length,
     errorCount: results.filter(r => r.status === 'error').length,

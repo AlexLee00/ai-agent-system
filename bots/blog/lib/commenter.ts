@@ -835,6 +835,16 @@ async function disconnectBrowser(handle) {
 async function withBrowserPage(testMode, fn, { timeoutMs = 0, timeoutCode = 'browser_page_timeout' } = {}) {
   const handle = await connectBrowser(testMode);
   const page = await handle.browser.newPage();
+  await page.evaluateOnNewDocument(() => {
+    if (typeof globalThis.__name !== 'function') {
+      globalThis.__name = (value) => value;
+    }
+  }).catch(() => {});
+  await page.evaluate(() => {
+    if (typeof globalThis.__name !== 'function') {
+      globalThis.__name = (value) => value;
+    }
+  }).catch(() => {});
   page.setDefaultNavigationTimeout(testMode ? 15000 : NAVER_NAVIGATION_TIMEOUT_MS);
   page.setDefaultTimeout(testMode ? 10000 : 30000);
   let cleanedUp = false;
@@ -1652,6 +1662,26 @@ async function openReplyEditor(page, comment) {
         return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
       };
 
+      const resolveReplyArea = (commentNode) => {
+        if (!commentNode) return null;
+        const sibling = commentNode.nextElementSibling;
+        return (
+          commentNode.querySelector('.u_cbox_reply_area')
+          || commentNode.querySelector('[class*="reply_area"]')
+          || (sibling && sibling.matches && sibling.matches('.u_cbox_reply_area, [class*="reply_area"]') ? sibling : null)
+        );
+      };
+      const resolveCommentTarget = (node) => {
+        if (!node) return null;
+        return (
+          node.closest('li.u_cbox_comment')
+          || node.closest('li[class*="comment"]')
+          || node.closest('div.u_cbox_comment_box')
+          || node.closest('[class*="comment"]')
+          || null
+        );
+      };
+
       if (commentNo) {
         const targetedButton = Array.from(document.querySelectorAll('button, a')).find((node) => {
           if (!visible(node)) return false;
@@ -1664,12 +1694,13 @@ async function openReplyEditor(page, comment) {
             node.removeAttribute('data-blog-target-reply-button');
             node.removeAttribute('data-blog-target-reply-area');
           });
-          const fallbackTarget = targetedButton.closest('li.u_cbox_comment, li[class*="comment"], .u_cbox_comment_box, [class*="comment"]');
+          const fallbackTarget = resolveCommentTarget(targetedButton);
           if (fallbackTarget) {
             fallbackTarget.setAttribute('data-blog-target-comment', 'true');
+            if (commentNo) fallbackTarget.setAttribute('data-blog-target-comment-no', commentNo);
           }
           targetedButton.setAttribute('data-blog-target-reply-button', 'true');
-          const replyArea = (fallbackTarget && fallbackTarget.parentElement && fallbackTarget.parentElement.querySelector('.u_cbox_reply_area')) || (fallbackTarget && fallbackTarget.querySelector('.u_cbox_reply_area'));
+          const replyArea = resolveReplyArea(fallbackTarget);
           if (replyArea) {
             replyArea.setAttribute('data-blog-target-reply-area', 'true');
           }
@@ -1693,7 +1724,7 @@ async function openReplyEditor(page, comment) {
       }
       candidates.sort((a, b) => b.score - a.score);
       const matchedNode = candidates[0] && candidates[0].node;
-      const target = matchedNode && (matchedNode.closest('li.u_cbox_comment, li[class*="comment"]') || matchedNode);
+      const target = matchedNode && (resolveCommentTarget(matchedNode) || matchedNode);
       if (target) {
         document.querySelectorAll('[data-blog-target-comment],[data-blog-target-reply-button],[data-blog-target-reply-area]').forEach((node) => {
           node.removeAttribute('data-blog-target-comment');
@@ -1701,6 +1732,7 @@ async function openReplyEditor(page, comment) {
           node.removeAttribute('data-blog-target-reply-area');
         });
         target.setAttribute('data-blog-target-comment', 'true');
+        if (commentNo) target.setAttribute('data-blog-target-comment-no', commentNo);
         const buttons = Array.from(target.querySelectorAll('button, a')).filter(visible);
         const replyButton = buttons.find((btn) => {
           const text = textOf(btn);
@@ -1709,7 +1741,7 @@ async function openReplyEditor(page, comment) {
         });
         if (replyButton) {
           replyButton.setAttribute('data-blog-target-reply-button', 'true');
-          const replyArea = (target.parentElement && target.parentElement.querySelector('.u_cbox_reply_area')) || target.querySelector('.u_cbox_reply_area');
+          const replyArea = resolveReplyArea(target);
           if (replyArea) {
             replyArea.setAttribute('data-blog-target-reply-area', 'true');
           }
@@ -1726,7 +1758,7 @@ async function openReplyEditor(page, comment) {
         });
       if (globalReplyButtons.length === 1) {
         const replyButton = globalReplyButtons[0];
-        const fallbackTarget = replyButton.closest('li.u_cbox_comment, li[class*="comment"], .u_cbox_comment_box, [class*="comment"]');
+        const fallbackTarget = resolveCommentTarget(replyButton);
         document.querySelectorAll('[data-blog-target-comment],[data-blog-target-reply-button],[data-blog-target-reply-area]').forEach((node) => {
           node.removeAttribute('data-blog-target-comment');
           node.removeAttribute('data-blog-target-reply-button');
@@ -1734,9 +1766,10 @@ async function openReplyEditor(page, comment) {
         });
         if (fallbackTarget) {
           fallbackTarget.setAttribute('data-blog-target-comment', 'true');
+          if (commentNo) fallbackTarget.setAttribute('data-blog-target-comment-no', commentNo);
         }
         replyButton.setAttribute('data-blog-target-reply-button', 'true');
-        const replyArea = (fallbackTarget && fallbackTarget.parentElement && fallbackTarget.parentElement.querySelector('.u_cbox_reply_area')) || (fallbackTarget && fallbackTarget.querySelector('.u_cbox_reply_area'));
+        const replyArea = resolveReplyArea(fallbackTarget);
         if (replyArea) {
           replyArea.setAttribute('data-blog-target-reply-area', 'true');
         }
@@ -1785,14 +1818,33 @@ async function waitForReplyThread(page, comment, testMode = false) {
 }
 
 async function activateReplyMode(page) {
-  const replyButton = await page.$('[data-blog-target-reply-button="true"]');
-  if (!replyButton) return false;
-
-  await replyButton.click().catch(() => {});
-  await page.evaluate(`
+  const clicked = await page.evaluate(`
     (() => {
-      const node = document.querySelector('[data-blog-target-reply-button="true"]');
+      const visible = (el) => {
+        if (!el) return false;
+        const style = window.getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+      };
+      const textOf = (el) =>
+        String((el && (el.innerText || el.textContent)) || '').replace(/\\s+/g, ' ').trim();
+      const targetComment = document.querySelector('[data-blog-target-comment="true"]');
+      const targetCommentNo = String(targetComment?.getAttribute('data-blog-target-comment-no') || '');
+      const targetButton = targetComment
+        ? Array.from(targetComment.querySelectorAll('a,button')).find((node) => {
+            if (!visible(node)) return false;
+            const cls = String(node.className || '');
+            const dataAction = String(node.getAttribute('data-action') || '');
+            const dataParam = String(node.getAttribute('data-param') || '');
+            const text = textOf(node);
+            if (!(/reply#toggle/.test(dataAction) || /u_cbox_btn_reply|replyButton|btn_reply/i.test(cls) || /답글|답변/.test(text))) return false;
+            return !targetCommentNo || cls.includes('idx-commentNo-' + targetCommentNo) || dataParam === targetCommentNo;
+          })
+        : document.querySelector('[data-blog-target-reply-button="true"]');
+      const node = targetButton;
       if (!node) return false;
+      document.querySelectorAll('[data-blog-target-reply-button="true"]').forEach((item) => item.removeAttribute('data-blog-target-reply-button'));
+      node.setAttribute('data-blog-target-reply-button', 'true');
       node.scrollIntoView({ block: 'center', behavior: 'instant' });
       const rect = node.getBoundingClientRect();
       const eventInit = {
@@ -1813,6 +1865,8 @@ async function activateReplyMode(page) {
     })()
   `).catch(() => false);
 
+  if (!clicked) return false;
+
   return page.waitForFunction(`
     (() => {
       const visible = (el) => {
@@ -1827,15 +1881,17 @@ async function activateReplyMode(page) {
         const replyEditors = Array.from(replyArea.querySelectorAll('textarea, div[contenteditable=\"true\"], div[role=\"textbox\"]'));
         if (replyEditors.some(visible)) return true;
       }
-      const globalEditors = Array.from(document.querySelectorAll('textarea, div[contenteditable="true"], div[role="textbox"], div[id*="write_textarea"]'));
-      if (globalEditors.some(visible)) {
-        return true;
-      }
-      const stateOnButton = document.querySelector('[data-blog-target-reply-button=\"true\"].u_cbox_btn_reply_on');
+      const stateOnButton = document.querySelector('[data-blog-target-comment=\"true\"] .u_cbox_btn_reply_on[data-blog-target-reply-button=\"true\"], [data-blog-target-comment=\"true\"] .u_cbox_btn_reply_on');
       if (visible(stateOnButton)) {
         const targetComment = document.querySelector('[data-blog-target-comment=\"true\"]');
-        const scopedReplyArea = targetComment && targetComment.parentElement && targetComment.parentElement.querySelector('.u_cbox_reply_area');
-        return visible(scopedReplyArea);
+        const scopedReplyArea = targetComment && (
+          targetComment.querySelector('.u_cbox_reply_area')
+          || targetComment.querySelector('[class*="reply_area"]')
+        );
+        if (visible(scopedReplyArea)) {
+          const replyEditors = Array.from(scopedReplyArea.querySelectorAll('textarea, div[contenteditable="true"], div[role="textbox"]'));
+          return replyEditors.some(visible);
+        }
       }
       return false;
     })()
@@ -2251,8 +2307,13 @@ async function mountCommentPanel(page, logNo = '', testMode = false) {
 async function focusReplyEditor(page) {
   await page.waitForFunction(`
     (() => {
-      const scope = document.querySelector('[data-blog-target-reply-area="true"]');
-      const roots = scope ? [scope] : [document];
+      const targetComment = document.querySelector('[data-blog-target-comment="true"]');
+      const scope = document.querySelector('[data-blog-target-reply-area="true"]')
+        || targetComment?.querySelector('.u_cbox_reply_area')
+        || targetComment?.querySelector('[class*="reply_area"]')
+        || null;
+      if (!scope) return false;
+      const roots = [scope];
       const nodes = roots.flatMap((root) => Array.from(root.querySelectorAll('textarea, div[contenteditable="true"], div[role="textbox"]')));
       return nodes.some((node) => {
         const style = window.getComputedStyle(node);
@@ -2271,8 +2332,13 @@ async function focusReplyEditor(page) {
         return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
       };
 
-      const scope = document.querySelector('[data-blog-target-reply-area="true"]');
-      const roots = scope ? [scope] : [document];
+      const targetComment = document.querySelector('[data-blog-target-comment="true"]');
+      const scope = document.querySelector('[data-blog-target-reply-area="true"]')
+        || targetComment?.querySelector('.u_cbox_reply_area')
+        || targetComment?.querySelector('[class*="reply_area"]')
+        || null;
+      if (!scope) return null;
+      const roots = [scope];
       const nodes = roots
         .flatMap((root) => Array.from(root.querySelectorAll('textarea, div[contenteditable="true"], div[role="textbox"]')))
         .filter(visible);
@@ -2360,26 +2426,45 @@ async function submitReply(page, browserPage = null) {
         const rect = el.getBoundingClientRect();
         return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
       };
-      const submitSelector = 'button[data-ui-selector^="replyButton_"][data-action*="reply#"][data-action*="#write#request"], a[data-ui-selector^="replyButton_"][data-action*="reply#"][data-action*="#write#request"]';
+      const textOf = (el) =>
+        String((el && (el.innerText || el.textContent)) || '').replace(/\\s+/g, ' ').trim();
+      const isReplySubmit = (node) => {
+        if (!visible(node)) return false;
+        const tag = String(node.tagName || '').toLowerCase();
+        if (tag !== 'button' && tag !== 'a') return false;
+        const dataAction = String(node.getAttribute('data-action') || '');
+        const uiSelector = String(node.getAttribute('data-ui-selector') || '');
+        const cls = String(node.className || '');
+        const text = textOf(node);
+        const role = String(node.getAttribute('role') || '');
+        if (dataAction.includes('reply#') && dataAction.includes('#write#request')) return true;
+        if (/^replyButton_/i.test(uiSelector)) return true;
+        if (uiSelector === 'writeButton' && /등록|답글|답변/.test(text)) return true;
+        if (/u_cbox_btn_upload|btn_register|btn_write|replyButton/i.test(cls) && /등록|답글|답변/.test(text)) return true;
+        if ((role === 'button' || tag === 'button') && /등록|답글|답변/.test(text)) return true;
+        return false;
+      };
       const targetReplyArea = document.querySelector('[data-blog-target-reply-area="true"]');
       const targetComment = document.querySelector('[data-blog-target-comment="true"]');
       const targetEditor = document.querySelector('[data-blog-commenter-editor="true"]');
       const roots = [
         targetReplyArea,
+        targetReplyArea && targetReplyArea.parentElement,
         targetEditor && targetEditor.closest('.u_cbox_write_box, .u_cbox_reply_write, .u_cbox_reply_area, .u_cbox_comment_box'),
         targetComment && targetComment.parentElement,
         targetComment,
+        document.querySelector('[data-blog-target-reply-button="true"]')?.closest('li.u_cbox_comment, li[class*="comment"], .u_cbox_comment_box, [class*="comment"]'),
       ].filter(Boolean);
 
       let node = null;
       for (const root of roots) {
-        node = root.querySelector(submitSelector);
-        if (node && visible(node)) break;
+        node = Array.from(root.querySelectorAll('button, a')).find(isReplySubmit) || null;
+        if (node) break;
         node = null;
       }
       if (!node) {
-        const globalNode = document.querySelector(submitSelector);
-        if (globalNode && visible(globalNode)) {
+        const globalNode = Array.from(document.querySelectorAll('button, a')).find(isReplySubmit);
+        if (globalNode) {
           node = globalNode;
         }
       }
@@ -2670,17 +2755,6 @@ async function verifyReplyPosted(page, replyText, comment, testMode = false) {
 
       if (expected && candidates.some((node) => textOf(node).includes(expected))) {
         return true;
-      }
-
-      if (replyEditorId) {
-        const replyEditor = document.getElementById(replyEditorId);
-        if (!visible(replyEditor)) {
-          const targetReplyArea = document.querySelector('[data-blog-target-reply-area="true"]');
-          const activeReplyEditors = Array.from(document.querySelectorAll('textarea[id*="reply_textarea"], div[id*="reply_textarea"]')).filter(visible);
-          if (!visible(targetReplyArea) && activeReplyEditors.length === 0) {
-            return true;
-          }
-        }
       }
 
       return false;

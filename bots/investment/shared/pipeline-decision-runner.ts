@@ -411,7 +411,7 @@ export async function runDecisionExecutionPipeline({
   const symbolDecisions = [];
   const symbolAnalysesMap = new Map();
   let debateCount = 0;
-  const debateLimit = getDebateLimit(exchange);
+  const debateLimit = getDebateLimit(exchange, symbols.length);
   let riskRejected = 0;
   const riskRejectReasons = {};
   let weakSignalSkipped = 0;

@@ -118,6 +118,13 @@ const DEFAULT_RUNTIME_CONFIG = {
     },
     maxPosCount: getDefaultLunaMaxPosCount(),
     maxDebateSymbols: 2,
+    dynamicDebateLimits: {
+      cryptoLive: [
+        { minSymbols: 20, limit: 4 },
+        { minSymbols: 32, limit: 5 },
+        { minSymbols: 48, limit: 6 },
+      ],
+    },
     debateThresholds: {
       stocksPaper: { minAverageConfidence: 0.48, minAbsScore: 0.22 },
       stocksLive: { minAverageConfidence: 0.62, minAbsScore: 0.40 },
@@ -145,6 +152,38 @@ const DEFAULT_RUNTIME_CONFIG = {
         currency: KIS_OVERSEAS_ORDER_RULE?.currency ?? 'USD',
       },
     },
+  },
+  aria: {
+    signalThresholds: {
+      binance: 1.15,
+      kis: 1.5,
+      kis_overseas: 2.0,
+    },
+  },
+  tools: {
+    chartVision: {
+      maxDailyCalls: 5,
+    },
+  },
+  rag: {
+    nodeArtifactSearch: {
+      threshold: 0.65,
+      defaultLimit: 5,
+    },
+    dailyFeedbackMemory: {
+      episodicThreshold: 0.33,
+      semanticThreshold: 0.28,
+    },
+  },
+  alerts: {
+    marketAlertMemory: {
+      episodicThreshold: 0.33,
+      semanticThreshold: 0.28,
+    },
+  },
+  health: {
+    tradeLaneNearLimitRatio: 0.8,
+    cryptoValidationNearSoftCapRatio: 0.8,
   },
   nemesis: {
     crypto: {
@@ -321,4 +360,24 @@ export function getTimeModeRuntimeConfig() {
 
 export function getInvestmentLLMPolicyConfig() {
   return loadRuntimeConfig().llmPolicies || {};
+}
+
+export function getAriaRuntimeConfig() {
+  return loadRuntimeConfig().aria || {};
+}
+
+export function getChartVisionRuntimeConfig() {
+  return loadRuntimeConfig().tools?.chartVision || {};
+}
+
+export function getInvestmentRagRuntimeConfig() {
+  return loadRuntimeConfig().rag || {};
+}
+
+export function getInvestmentAlertRuntimeConfig() {
+  return loadRuntimeConfig().alerts || {};
+}
+
+export function getInvestmentHealthRuntimeConfig() {
+  return loadRuntimeConfig().health || {};
 }

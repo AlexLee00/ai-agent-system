@@ -12,7 +12,7 @@ import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const { createSchemaDbHelpers } = require('../../../packages/core/lib/db/helpers');
-import { getInvestmentTradeMode } from './secrets.ts';
+import { getInvestmentTradeMode, getExecutionMode, getBrokerAccountMode } from './secrets.ts';
 import { getSignalDedupeWindowMinutes } from './runtime-config.ts';
 
 const SCHEMA = 'investment';
@@ -100,6 +100,8 @@ export async function initSchema() {
       avg_price      DOUBLE PRECISION DEFAULT 0,
       unrealized_pnl DOUBLE PRECISION DEFAULT 0,
       paper          BOOLEAN DEFAULT false,
+      execution_mode TEXT DEFAULT 'live',
+      broker_account_mode TEXT,
       exchange       TEXT DEFAULT 'binance',
       trade_mode     TEXT DEFAULT 'normal',
       UNIQUE(symbol, exchange, paper, trade_mode),
@@ -217,7 +219,10 @@ export async function initSchema() {
   }
 
   try { await run(`ALTER TABLE positions ADD COLUMN IF NOT EXISTS paper BOOLEAN DEFAULT false`); } catch { /* 무시 */ }
+  try { await run(`ALTER TABLE positions ADD COLUMN IF NOT EXISTS execution_mode TEXT DEFAULT 'live'`); } catch { /* 무시 */ }
+  try { await run(`ALTER TABLE positions ADD COLUMN IF NOT EXISTS broker_account_mode TEXT`); } catch { /* 무시 */ }
   try { await run(`ALTER TABLE positions ADD COLUMN IF NOT EXISTS trade_mode TEXT DEFAULT 'normal'`); } catch { /* 무시 */ }
+  try { await run(`UPDATE positions SET execution_mode = CASE WHEN paper = true THEN 'paper' ELSE 'live' END WHERE execution_mode IS NULL OR execution_mode = ''`); } catch { /* 무시 */ }
   try { await run(`UPDATE positions SET trade_mode = 'normal' WHERE trade_mode IS NULL`); } catch { /* 무시 */ }
   try { await run(`ALTER TABLE positions DROP CONSTRAINT IF EXISTS positions_pkey`); } catch { /* 무시 */ }
   try { await run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_positions_scope_unique ON positions(symbol, exchange, paper, trade_mode)`); } catch { /* 무시 */ }
@@ -281,6 +286,7 @@ export async function initSchema() {
       [4, 'screening_history_dual_model_results'],
       [5, 'runtime_config_suggestion_log'],
       [6, 'positions_trade_mode_scope'],
+      [7, 'positions_mode_metadata'],
     ]) {
       await run(
         `INSERT INTO schema_migrations (version, name) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
@@ -632,19 +638,37 @@ export async function getSameDayTrade({
 
 export async function upsertPosition({ symbol, amount, avgPrice, unrealizedPnl, exchange = 'binance', paper = false, tradeMode = null }) {
   const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
+  const normalizedExchange = String(exchange || 'binance').trim().toLowerCase();
+  const marketType = normalizedExchange === 'kis' || normalizedExchange === 'kis_overseas' ? 'stocks' : 'crypto';
+  const executionMode = paper === true ? 'paper' : getExecutionMode();
+  const brokerAccountMode = getBrokerAccountMode(marketType);
   await run(
-    `INSERT INTO positions (symbol, amount, avg_price, unrealized_pnl, paper, exchange, trade_mode, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+    `INSERT INTO positions (symbol, amount, avg_price, unrealized_pnl, paper, execution_mode, broker_account_mode, exchange, trade_mode, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
      ON CONFLICT (symbol, exchange, paper, trade_mode) DO UPDATE SET
        amount         = EXCLUDED.amount,
        avg_price      = EXCLUDED.avg_price,
        unrealized_pnl = EXCLUDED.unrealized_pnl,
        paper          = EXCLUDED.paper,
+       execution_mode = EXCLUDED.execution_mode,
+       broker_account_mode = EXCLUDED.broker_account_mode,
        exchange       = EXCLUDED.exchange,
        trade_mode     = EXCLUDED.trade_mode,
        updated_at     = EXCLUDED.updated_at`,
-    [symbol, amount, avgPrice, unrealizedPnl ?? 0, paper === true, exchange, effectiveTradeMode],
+    [symbol, amount, avgPrice, unrealizedPnl ?? 0, paper === true, executionMode, brokerAccountMode, exchange, effectiveTradeMode],
   );
+}
+
+export async function deletePositionsForExchangeScope(exchange, { paper = false, symbol = null } = {}) {
+  const conditions = [`exchange = $1`, `paper = $2`];
+  const params = [exchange, paper === true];
+
+  if (symbol) {
+    params.push(symbol);
+    conditions.push(`symbol = $${params.length}`);
+  }
+
+  return run(`DELETE FROM positions WHERE ${conditions.join(' AND ')}`, params);
 }
 
 export async function getPosition(symbol, { exchange = null, paper = null, tradeMode = null } = {}) {

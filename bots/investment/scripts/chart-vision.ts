@@ -19,13 +19,15 @@ import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { loadSecrets } from '../shared/secrets.ts';
 import { parseJSON } from '../shared/llm-client.ts';
+import { getChartVisionRuntimeConfig } from '../shared/runtime-config.ts';
 
 const require = createRequire(import.meta.url);
 const puppeteer = require('puppeteer');
 
 // ─── 비용 제한 설정 ────────────────────────────────────────────────────
 
-const MAX_DAILY_CALLS = 5;
+const CHART_VISION_RUNTIME = getChartVisionRuntimeConfig();
+const MAX_DAILY_CALLS = Math.max(1, Number(CHART_VISION_RUNTIME.maxDailyCalls || 5));
 const USAGE_FILE = path.join(os.homedir(), '.jay', 'chart-vision-usage.json');
 
 function ensureUsageDir() {

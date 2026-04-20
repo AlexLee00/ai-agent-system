@@ -22,9 +22,17 @@ import * as db from '../shared/db.ts';
 import { publishAlert } from '../shared/alert-publisher.ts';
 import { loadPreScreened } from './pre-market-screen.ts';
 import { getInvestmentProfile } from './investment-profile.ts';
-import { getKisMarketStatus, getKisOverseasMarketStatus } from '../shared/secrets.ts';
+import { getKisMarketStatus, getKisOverseasMarketStatus, initHubSecrets } from '../shared/secrets.ts';
+import { getDomesticBalance, getOverseasBalance } from '../shared/kis-client.ts';
+import { syncPositionsAtMarketOpen } from '../shared/position-sync.ts';
+import { getInvestmentAlertRuntimeConfig } from '../shared/runtime-config.ts';
 import { createRequire } from 'module';
 const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
+const ALERT_RUNTIME = getInvestmentAlertRuntimeConfig();
+const MARKET_ALERT_MEMORY = {
+  episodicThreshold: Number(ALERT_RUNTIME.marketAlertMemory?.episodicThreshold ?? 0.33),
+  semanticThreshold: Number(ALERT_RUNTIME.marketAlertMemory?.semanticThreshold ?? 0.28),
+};
 let marketAlertMemory = null;
 try {
   const { createAgentMemory } = createRequire(import.meta.url)('../../../packages/core/lib/agent-memory.ts');
@@ -96,6 +104,38 @@ function aggregatePositionsBySymbol(rows = []) {
   }));
 }
 
+async function loadAlertPositions(market, exchange, profile) {
+  if (market === 'domestic' || market === 'overseas') {
+    try {
+      await initHubSecrets();
+      const useMock = profile?.brokerAccountMode === 'mock';
+      if (market === 'domestic') {
+        const balance = await getDomesticBalance(useMock);
+        return (balance?.holdings || []).map((holding) => ({
+          symbol: holding.symbol,
+          amount: Number(holding.qty || 0),
+          pnl_pct: Number.isFinite(Number(holding.pnl_pct)) ? Number(holding.pnl_pct) : null,
+          trade_modes: [],
+        }));
+      }
+
+      const balance = await getOverseasBalance(useMock);
+      return (balance?.holdings || []).map((holding) => ({
+        symbol: holding.symbol,
+        amount: Number(holding.qty || 0),
+        pnl_pct: Number.isFinite(Number(holding.pnl_pct)) ? Number(holding.pnl_pct) : null,
+        trade_modes: [],
+      }));
+    } catch (error) {
+      console.warn(`[market-alert] ${market} 브로커 잔고 조회 실패 → DB fallback: ${error?.message || error}`);
+    }
+  }
+
+  const allPositions = await db.getAllPositions();
+  const positions    = allPositions.filter((p) => p.exchange === exchange && p.amount > 0);
+  return aggregatePositionsBySymbol(positions);
+}
+
 async function getMarketAlertStatus(market) {
   if (market === 'domestic') return getKisMarketStatus();
   if (market === 'overseas') return getKisOverseasMarketStatus();
@@ -158,11 +198,21 @@ async function sendOpenAlert(market, label) {
   const exchange   = EXCHANGE_MAP[market];
   const prescreened = loadPreScreened(market);
   const symbols    = prescreened?.symbols || [];
+  const syncResult = (market === 'domestic' || market === 'overseas')
+    ? await syncPositionsAtMarketOpen(market).catch((error) => ({
+      ok: false,
+      mismatchCount: 0,
+      mismatches: [],
+      positions: [],
+      reason: error?.message || String(error),
+    }))
+    : null;
 
-  // 현재 보유 포지션 (해당 거래소)
-  const allPositions = await db.getAllPositions();
-  const positions    = allPositions.filter(p => p.exchange === exchange && p.amount > 0);
-  const aggregatedPositions = aggregatePositionsBySymbol(positions);
+  // 현재 보유 포지션
+  // 주식은 브로커 실잔고를 우선 사용해 stale DB 포지션 노출을 막는다.
+  const aggregatedPositions = Array.isArray(syncResult?.positions)
+    ? syncResult.positions
+    : await loadAlertPositions(market, exchange, profile);
 
   const lines = [
     `📈 ${label} 장 시작!`,
@@ -188,6 +238,27 @@ async function sendOpenAlert(market, label) {
     lines.push(`[장외 연구] ${updatedAt} 갱신 / ${prescreened.research.symbolCount || symbols.length}개 종목`);
   }
 
+  if (syncResult && market !== 'crypto') {
+    lines.push('');
+    if (syncResult.ok) {
+      lines.push(`[포지션 동기화] ${syncResult.executionMode.toUpperCase()} / ${syncResult.brokerAccountMode.toUpperCase()} 기준 동기화 완료`);
+      lines.push(`  브로커 ${syncResult.brokerPositionCount}개 / DB 기존 ${syncResult.dbPositionCountBefore}개 / 불일치 ${syncResult.mismatchCount}건`);
+      for (const item of (syncResult.mismatches || []).slice(0, 4)) {
+        if (item.type === 'stale_db_position') {
+          lines.push(`  - ${item.symbol}: DB stale ${item.dbQty} → 브로커 0 (정리)`);
+        } else if (item.type === 'missing_db_position') {
+          lines.push(`  - ${item.symbol}: 브로커 ${item.brokerQty} / DB 누락 (추가)`);
+        } else if (item.type === 'quantity_mismatch') {
+          lines.push(`  - ${item.symbol}: 수량 불일치 DB ${item.dbQty} / 브로커 ${item.brokerQty}`);
+        } else if (item.type === 'trade_mode_split') {
+          lines.push(`  - ${item.symbol}: trade_mode 분할 ${item.rowCount}건 [${(item.tradeModes || []).join('+')}]`);
+        }
+      }
+    } else {
+      lines.push(`[포지션 동기화] 실패 — ${syncResult.reason || '브로커 동기화 오류'}`);
+    }
+  }
+
   if (aggregatedPositions.length > 0) {
     lines.push('');
     lines.push(`[보유 포지션] ${aggregatedPositions.length}개 (심볼 합산)`);
@@ -204,7 +275,7 @@ async function sendOpenAlert(market, label) {
   const episodicHint = await safeMarketAlertMemory.recallCountHint(memoryQuery, {
     type: 'episodic',
     limit: 2,
-    threshold: 0.33,
+    threshold: MARKET_ALERT_MEMORY.episodicThreshold,
     title: '최근 유사 알림',
     separator: 'pipe',
     metadataKey: 'kind',
@@ -218,7 +289,7 @@ async function sendOpenAlert(market, label) {
   const semanticHint = await safeMarketAlertMemory.recallHint(`${memoryQuery} consolidated market pattern`, {
     type: 'semantic',
     limit: 2,
-    threshold: 0.28,
+    threshold: MARKET_ALERT_MEMORY.semanticThreshold,
     title: '최근 통합 패턴',
     separator: 'newline',
   }).catch(() => '');
@@ -345,7 +416,7 @@ async function sendCloseReport(market, label) {
   const episodicHint = await safeMarketAlertMemory.recallCountHint(memoryQuery, {
     type: 'episodic',
     limit: 2,
-    threshold: 0.33,
+    threshold: MARKET_ALERT_MEMORY.episodicThreshold,
     title: '최근 유사 알림',
     separator: 'pipe',
     metadataKey: 'kind',
@@ -359,7 +430,7 @@ async function sendCloseReport(market, label) {
   const semanticHint = await safeMarketAlertMemory.recallHint(`${memoryQuery} consolidated market pattern`, {
     type: 'semantic',
     limit: 2,
-    threshold: 0.28,
+    threshold: MARKET_ALERT_MEMORY.semanticThreshold,
     title: '최근 통합 패턴',
     separator: 'newline',
   }).catch(() => '');
@@ -450,7 +521,7 @@ async function sendCryptoDailyReport(label) {
   const episodicHint = await safeMarketAlertMemory.recallCountHint(memoryQuery, {
     type: 'episodic',
     limit: 2,
-    threshold: 0.33,
+    threshold: MARKET_ALERT_MEMORY.episodicThreshold,
     title: '최근 유사 알림',
     separator: 'pipe',
     metadataKey: 'kind',
@@ -464,7 +535,7 @@ async function sendCryptoDailyReport(label) {
   const semanticHint = await safeMarketAlertMemory.recallHint(`${memoryQuery} consolidated market pattern`, {
     type: 'semantic',
     limit: 2,
-    threshold: 0.28,
+    threshold: MARKET_ALERT_MEMORY.semanticThreshold,
     title: '최근 통합 패턴',
     separator: 'newline',
   }).catch(() => '');

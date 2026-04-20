@@ -89,6 +89,12 @@ defmodule Darwin.V2.ShadowRunner do
     do_run_comparison(sample_paper)
   end
 
+  @doc "launchd 일일 실행용 진입점."
+  @spec run_daily() :: map()
+  def run_daily do
+    run_once()
+  end
+
   @doc "승격 조건 충족 여부 (avg_match ≥ 95% AND total_runs ≥ 20 AND days ≥ 7)."
   @spec shadow_ready?() :: boolean()
   def shadow_ready? do
