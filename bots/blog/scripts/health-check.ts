@@ -117,6 +117,17 @@ async function notify(msg, level = 3) {
   }
 }
 
+function buildOpsPriorityHint(area, reason, nextCommand) {
+  const lines = [
+    `primary blocker: ${area} / ${reason}`,
+  ];
+  if (nextCommand) {
+    lines.push(`next command: ${nextCommand}`);
+  }
+  lines.push(`ops doctor: ${BLOG_OPS_DOCTOR_COMMAND}`);
+  return `\n${lines.join('\n')}`;
+}
+
 const CONTINUOUS = [];
 
 const ALL_SERVICES = [
@@ -311,7 +322,11 @@ async function checkFacebookPublishHealth() {
         : 'pages_manage_posts, pages_read_engagement';
       const pageHint = readiness?.pageId ? `\npage: ${String(readiness.pageId).slice(0, 32)}` : '';
       const actionHint = `\naction: Meta 앱 권한(${scopes}) 재연결 후 페이지 토큰을 다시 발급하세요`;
-      const diagnoseHint = `\ndiagnose: ${FACEBOOK_READINESS_COMMAND}\ndoctor: ${FACEBOOK_DOCTOR_COMMAND}\nsocial doctor: ${SOCIAL_DOCTOR_COMMAND}\nops doctor: ${BLOG_OPS_DOCTOR_COMMAND}`;
+      const diagnoseHint = `\ndiagnose: ${FACEBOOK_READINESS_COMMAND}\ndoctor: ${FACEBOOK_DOCTOR_COMMAND}\nsocial doctor: ${SOCIAL_DOCTOR_COMMAND}${buildOpsPriorityHint(
+        'social.facebook',
+        'Facebook publish 권한 이슈가 현재 최우선 병목입니다.',
+        SOCIAL_DOCTOR_COMMAND,
+      )}`;
       return {
         ok: false,
         detail: `Facebook 페이지 게시 권한 부족 — ${String(row.title || '').slice(0, 60)}\n${summarizedError}${pageHint}${actionHint}${diagnoseHint}${previewBundle ? `\npreview: ${previewBundle}` : ''}`,
@@ -382,7 +397,11 @@ async function checkInstagramPublishHealth() {
       const previewBundle = buildPreviewBundleForTitle(latestTitle);
       return {
         ok: false,
-        detail: `Instagram 자동등록 실패 — ${latestTitle.slice(0, 60)}\n${errorText.slice(0, 120)}\ndiagnose: ${INSTAGRAM_READINESS_COMMAND}\ndoctor: ${INSTAGRAM_DOCTOR_COMMAND}\nsocial doctor: ${SOCIAL_DOCTOR_COMMAND}\nops doctor: ${BLOG_OPS_DOCTOR_COMMAND}${previewBundle ? `\npreview: ${previewBundle}` : ''}`,
+        detail: `Instagram 자동등록 실패 — ${latestTitle.slice(0, 60)}\n${errorText.slice(0, 120)}\ndiagnose: ${INSTAGRAM_READINESS_COMMAND}\ndoctor: ${INSTAGRAM_DOCTOR_COMMAND}\nsocial doctor: ${SOCIAL_DOCTOR_COMMAND}${buildOpsPriorityHint(
+          'social.instagram',
+          'Instagram publish/readiness 이슈가 현재 최우선 병목입니다.',
+          SOCIAL_DOCTOR_COMMAND,
+        )}${previewBundle ? `\npreview: ${previewBundle}` : ''}`,
         latest: latestReal,
       };
     }
@@ -539,7 +558,11 @@ async function checkEngagementAutomationHealth() {
       const replayHint = latestReplyReplayCandidate?.id
         ? `\nreply replay: npm run replay:reply-ui -- --comment-id ${latestReplyReplayCandidate.id} --json`
         : '';
-      const doctorHint = `\ndoctor: ${ENGAGEMENT_DOCTOR_COMMAND}\nops doctor: ${BLOG_OPS_DOCTOR_COMMAND}`;
+      const doctorHint = `\ndoctor: ${ENGAGEMENT_DOCTOR_COMMAND}${buildOpsPriorityHint(
+        'engagement',
+        '답글/댓글/공감 자동화 이슈가 현재 최우선 병목입니다.',
+        ENGAGEMENT_DOCTOR_COMMAND,
+      )}`;
       return {
         ok: false,
         detail: `engagement UI/browser failures — reply ${failureByAction.reply}, neighbor ${failureByAction.neighbor_comment}, sympathy ${failureByAction.sympathy}${sampleHint}${replayTargetHint}${replayHint}${doctorHint}`,
