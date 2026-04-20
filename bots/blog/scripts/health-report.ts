@@ -207,6 +207,59 @@ function extractJsonObjectText(output = '') {
   return text;
 }
 
+function buildDoctorPriority(command = '', label = 'doctor') {
+  if (!command) {
+    return {
+      okCount: 0,
+      warnCount: 1,
+      ok: [],
+      warn: [`  ${label}: command 미설정`],
+      primaryArea: 'unknown',
+      primaryReason: 'doctor command가 설정되지 않았습니다.',
+      nextCommand: '',
+      actionFocus: '',
+    };
+  }
+
+  try {
+    const output = execFileSync('zsh', ['-lc', command], {
+      cwd: BLOG_ROOT,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+    const jsonText = extractJsonObjectText(output);
+    const payload = JSON.parse(jsonText || '{}');
+    const primary = payload?.primary || {};
+    const ok = [
+      `  ${label} primary: ${String(primary.area || 'unknown')} / ${String(primary.reason || '정보 없음')}`,
+    ];
+    if (primary.nextCommand) ok.push(`  ${label} next: ${String(primary.nextCommand)}`);
+    if (primary.actionFocus) ok.push(`  ${label} focus: ${String(primary.actionFocus)}`);
+    return {
+      okCount: ok.length,
+      warnCount: 0,
+      ok,
+      warn: [],
+      primaryArea: String(primary.area || 'unknown'),
+      primaryReason: String(primary.reason || '정보 없음'),
+      nextCommand: String(primary.nextCommand || ''),
+      actionFocus: String(primary.actionFocus || ''),
+    };
+  } catch (error) {
+    const reason = String(error?.message || error).slice(0, 160);
+    return {
+      okCount: 0,
+      warnCount: 1,
+      ok: [],
+      warn: [`  ${label}: 확인 실패 (${reason})`],
+      primaryArea: 'error',
+      primaryReason: `${label} priority 확인 실패`,
+      nextCommand: command,
+      actionFocus: '',
+    };
+  }
+}
+
 function countDatedFiles(dirPath = '', datePrefix = '') {
   try {
     if (!dirPath || !datePrefix || !fs.existsSync(dirPath)) return 0;
@@ -1656,34 +1709,51 @@ function buildRemodelProgress(instagramHealth, phase1Health, phase2BriefingHealt
   };
 }
 
-function buildOpsPriority(socialAutomationHealth, engagementHealth) {
+function buildOpsPriority(socialAutomationHealth, engagementHealth, socialDoctorPriority = null, engagementDoctorPriority = null) {
   const ok = [`  ops doctor command: ${BLOG_OPS_DOCTOR_COMMAND}`];
   const warn = [];
 
   let primaryArea = 'clear';
   let primaryReason = '지금은 즉시 막히는 운영 병목보다 다음 운영 사이클 관찰이 우선입니다.';
   let nextCommand = '';
+  let actionFocus = '';
 
-  if (socialAutomationHealth.facebookNeedsAttention) {
+  if (socialDoctorPriority?.primaryArea && socialDoctorPriority.primaryArea !== 'clear' && socialDoctorPriority.primaryArea !== 'unknown') {
+    primaryArea = socialDoctorPriority.primaryArea;
+    primaryReason = socialDoctorPriority.primaryReason || primaryReason;
+    nextCommand = socialDoctorPriority.nextCommand || SOCIAL_DOCTOR_COMMAND;
+    actionFocus = socialDoctorPriority.actionFocus || 'social';
+  } else if (engagementDoctorPriority?.primaryArea && engagementDoctorPriority.primaryArea !== 'clear' && engagementDoctorPriority.primaryArea !== 'unknown') {
+    primaryArea = engagementDoctorPriority.primaryArea;
+    primaryReason = engagementDoctorPriority.primaryReason || primaryReason;
+    nextCommand = engagementDoctorPriority.nextCommand || ENGAGEMENT_DOCTOR_COMMAND;
+    actionFocus = engagementDoctorPriority.actionFocus || 'engagement';
+  } else if (socialAutomationHealth.facebookNeedsAttention) {
     primaryArea = 'social.facebook';
     primaryReason = 'Facebook publish 권한 이슈가 현재 최우선 병목입니다.';
     nextCommand = SOCIAL_DOCTOR_COMMAND;
+    actionFocus = 'social.facebook';
   } else if (socialAutomationHealth.instagramNeedsAttention) {
     primaryArea = 'social.instagram';
     primaryReason = 'Instagram publish/readiness 이슈가 현재 최우선 병목입니다.';
     nextCommand = SOCIAL_DOCTOR_COMMAND;
+    actionFocus = 'social.instagram';
   } else if ((engagementHealth?.warnCount || 0) > 0) {
     primaryArea = 'engagement';
     primaryReason = '답글/댓글/공감 자동화 이슈가 현재 최우선 병목입니다.';
     nextCommand = ENGAGEMENT_DOCTOR_COMMAND;
+    actionFocus = 'engagement';
   }
 
   ok.push(`  primary blocker: ${primaryArea} / ${primaryReason}`);
   if (nextCommand) {
     ok.push(`  next command: ${nextCommand}`);
   }
+  if (actionFocus) {
+    ok.push(`  next action focus: ${actionFocus}`);
+  }
   if (primaryArea !== 'clear') {
-    warn.push(`  next action focus: ${primaryArea}`);
+    warn.push(`  next action focus: ${actionFocus || primaryArea}`);
   }
 
   return {
@@ -1694,6 +1764,7 @@ function buildOpsPriority(socialAutomationHealth, engagementHealth) {
     primaryArea,
     primaryReason,
     nextCommand,
+    actionFocus,
   };
 }
 
@@ -1717,6 +1788,7 @@ function formatText(report) {
       buildHealthCountSection('■ Marketing 확장 상태', report.marketingExpansionHealth, { okLimit: 5, warnLimit: 4 }),
       buildHealthCountSection('■ 도서 카탈로그 상태', report.bookCatalogHealth, { okLimit: 4 }),
       buildHealthCountSection('■ 도서리뷰 큐 상태', report.bookReviewQueueHealth, { okLimit: 3 }),
+      buildHealthCountSection('■ Doctor 우선순위', report.doctorPriority, { okLimit: 6, warnLimit: 2 }),
       buildHealthCountSection('■ Ops 우선순위', report.opsPriority, { okLimit: 4, warnLimit: 2 }),
       buildHealthCountSection('■ daily run 상태', report.dailyRunHealth, { warnLimit: 4, okLimit: 2 }),
       {
@@ -1756,9 +1828,25 @@ async function buildReport() {
   const marketingExpansionHealth = await buildMarketingExpansionHealth();
   const bookCatalogHealth = await buildBookCatalogHealth();
   const bookReviewQueueHealth = await buildBookReviewQueueHealth();
+  const socialDoctorPriority = buildDoctorPriority(SOCIAL_DOCTOR_COMMAND, 'social doctor');
+  const engagementDoctorPriority = buildDoctorPriority(ENGAGEMENT_DOCTOR_COMMAND, 'engagement doctor');
   const decision = buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealth, instagramHealth, socialAutomationHealth, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth, marketingExpansionHealth, engagementHealth);
   const remodelProgress = buildRemodelProgress(instagramHealth, phase1Health, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth);
-  const opsPriority = buildOpsPriority(socialAutomationHealth, engagementHealth);
+  const doctorPriority = {
+    okCount: socialDoctorPriority.okCount + engagementDoctorPriority.okCount,
+    warnCount: socialDoctorPriority.warnCount + engagementDoctorPriority.warnCount,
+    ok: [
+      ...socialDoctorPriority.ok,
+      ...engagementDoctorPriority.ok,
+    ],
+    warn: [
+      ...socialDoctorPriority.warn,
+      ...engagementDoctorPriority.warn,
+    ],
+    social: socialDoctorPriority,
+    engagement: engagementDoctorPriority,
+  };
+  const opsPriority = buildOpsPriority(socialAutomationHealth, engagementHealth, socialDoctorPriority, engagementDoctorPriority);
 
   return {
     serviceHealth: {
@@ -1803,6 +1891,7 @@ async function buildReport() {
     remodelProgress,
     bookCatalogHealth,
     bookReviewQueueHealth,
+    doctorPriority,
     opsPriority,
     decision,
   };
