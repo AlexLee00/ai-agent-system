@@ -690,6 +690,10 @@ async function buildSocialAutomationHealth() {
     let latestFacebookStatus = null;
     let latestFacebookErrorSummary = '';
     let facebookNeedsAttention = false;
+    let facebookPageId = String(facebookReadiness?.pageId || '');
+    let facebookPermissionScopes = Array.isArray(facebookReadiness?.permissionScopes)
+      ? facebookReadiness.permissionScopes
+      : [];
     if (!publishLogExists) {
       warn.push('  facebook publish telemetry: blog.publish_log 테이블 없음');
     } else {
@@ -697,9 +701,18 @@ async function buildSocialAutomationHealth() {
       const facebookRows = publishRows.filter((row) => String(row.platform || '') === 'facebook');
       if (facebookReadiness?.ready) {
         ok.push(`  facebook readiness: ready / page ${String(facebookReadiness.pageId || '').slice(0, 24)}`);
+        if (facebookPageId) {
+          ok.push(`  facebook page id: ${facebookPageId}`);
+        }
       } else if (facebookReadiness?.error) {
         const summarizedReadinessError = summarizeFacebookPublishFailure(facebookReadiness.error || '');
         warn.push(`  facebook readiness: ${summarizedReadinessError}`);
+        if (facebookPageId) {
+          warn.push(`  facebook page id: ${facebookPageId}`);
+        }
+        if (facebookPermissionScopes.length > 0) {
+          warn.push(`  facebook missing scopes: ${facebookPermissionScopes.join(', ')}`);
+        }
       }
       if (facebookRows.length > 0) {
         const latestFacebook = facebookRows[0];
@@ -709,8 +722,14 @@ async function buildSocialAutomationHealth() {
           const summarizedFacebookError = summarizeFacebookPublishFailure(latestFacebook.error || '');
           latestFacebookErrorSummary = summarizedFacebookError;
           facebookNeedsAttention = true;
+          if (summarizedFacebookError.includes('pages_manage_posts')) {
+            facebookPermissionScopes = ['pages_manage_posts', 'pages_read_engagement'];
+          }
           warn.push(`  facebook latest failed: ${summarizedFacebookError}`);
           if (summarizedFacebookError.includes('Facebook 페이지 게시 권한 부족:')) {
+            if (facebookPermissionScopes.length > 0) {
+              warn.push(`  facebook missing scopes: ${facebookPermissionScopes.join(', ')}`);
+            }
             warn.push('  facebook action: Meta 앱에 pages_manage_posts, pages_read_engagement 권한을 다시 연결하세요');
           }
         }
@@ -758,6 +777,8 @@ async function buildSocialAutomationHealth() {
       latestFacebookStatus,
       latestFacebookErrorSummary,
       facebookNeedsAttention,
+      facebookPageId,
+      facebookPermissionScopes,
       socialAssetDue: socialAssetExpectation.due,
       socialAssetDueHour: socialAssetExpectation.dueHour,
       publishLogExists,
@@ -787,6 +808,8 @@ async function buildSocialAutomationHealth() {
       latestFacebookStatus: null,
       latestFacebookErrorSummary: '',
       facebookNeedsAttention: false,
+      facebookPageId: '',
+      facebookPermissionScopes: [],
       socialAssetDue: getSocialAssetExpectation().due,
       socialAssetDueHour: getSocialAssetExpectation().dueHour,
       publishLogExists: false,
@@ -1503,8 +1526,8 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
         active: socialAutomationHealth.facebookNeedsAttention,
         level: 'medium',
         reason: previewBundleHint
-          ? `최근 페이스북 자동등록 실패 이력이 있어 권한/게시 경로 점검이 필요합니다. ${socialAutomationHealth.latestFacebookErrorSummary || ''} 최신 preview: ${previewBundleHint}`.trim()
-          : `최근 페이스북 자동등록 실패 이력이 있어 권한/게시 경로 점검이 필요합니다. ${socialAutomationHealth.latestFacebookErrorSummary || ''}`.trim(),
+          ? `최근 페이스북 자동등록 실패 이력이 있어 권한/게시 경로 점검이 필요합니다. ${socialAutomationHealth.latestFacebookErrorSummary || ''}${socialAutomationHealth.facebookPageId ? ` page=${socialAutomationHealth.facebookPageId}` : ''}${Array.isArray(socialAutomationHealth.facebookPermissionScopes) && socialAutomationHealth.facebookPermissionScopes.length > 0 ? ` scopes=${socialAutomationHealth.facebookPermissionScopes.join(',')}` : ''} 최신 preview: ${previewBundleHint}`.trim()
+          : `최근 페이스북 자동등록 실패 이력이 있어 권한/게시 경로 점검이 필요합니다. ${socialAutomationHealth.latestFacebookErrorSummary || ''}${socialAutomationHealth.facebookPageId ? ` page=${socialAutomationHealth.facebookPageId}` : ''}${Array.isArray(socialAutomationHealth.facebookPermissionScopes) && socialAutomationHealth.facebookPermissionScopes.length > 0 ? ` scopes=${socialAutomationHealth.facebookPermissionScopes.join(',')}` : ''}`.trim(),
       },
       {
         active: socialAutomationHealth.publishLogExists === false,
