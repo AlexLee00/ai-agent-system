@@ -27,6 +27,75 @@ function pickHook(title = '', category = '') {
   return `${clean.slice(0, 22)} 핵심만 15초 안에 정리합니다`;
 }
 
+function normalizeTitleText(text = '') {
+  return String(text)
+    .replace(/\s+/g, ' ')
+    .replace(/[!?]+/g, '')
+    .trim();
+}
+
+function compactTitle(text = '', maxLength = 18) {
+  const clean = normalizeTitleText(text)
+    .replace(/체크리스트\s*\d+가지/gi, '체크포인트')
+    .replace(/가장 먼저 확인할 포인트/gi, '먼저 볼 포인트')
+    .replace(/요구사항 정의 전에/gi, '요구사항 전에')
+    .replace(/서비스 신뢰를 만드는/gi, '신뢰를 만드는')
+    .replace(/상태 설명/gi, '상태 안내')
+    .replace(/결제 직전 이탈을 줄이는/gi, '결제 이탈 줄이는')
+    .replace(/왜 요즘 /gi, '')
+    .replace(/왜 /gi, '')
+    .replace(/핵심만 \d+초 안에 정리합니다/gi, '')
+    .trim();
+  return clean.length > maxLength ? `${clean.slice(0, maxLength).trim()}…` : clean;
+}
+
+function buildHookLine(title = '', category = '') {
+  const clean = normalizeTitleText(title);
+  if (category === '홈페이지와App') {
+    if (/결제/.test(clean) && /이탈/.test(clean)) return '결제 직전, 여기서 이탈합니다';
+    if (/상태/.test(clean) || /설명|안내|UX/.test(clean)) return '신뢰는 화면 설명에서 갈립니다';
+    return '앱은 기능보다 흐름이 먼저입니다';
+  }
+  if (category === '개발기획과컨설팅') {
+    if (/요구사항/.test(clean)) return '요구사항 전에 틀어집니다';
+    if (/일정/.test(clean)) return '일정은 합의 전제에서 갈립니다';
+    return '기획은 기능보다 전제가 먼저입니다';
+  }
+  if (category === '최신IT트렌드') {
+    return '기술보다 흐름을 먼저 보세요';
+  }
+  if (category === '성장과성공') {
+    return '성장은 의지보다 구조가 만듭니다';
+  }
+  return `${compactTitle(clean, 16)} 지금 놓치면 아쉽습니다`;
+}
+
+function buildValueLine(title = '', category = '') {
+  const clean = normalizeTitleText(title);
+  if (category === '홈페이지와App') {
+    if (/결제/.test(clean)) return '버튼보다 망설이는 순간을 보세요';
+    if (/상태/.test(clean) || /설명|안내|UX/.test(clean)) return '고장보다 불안한 순간을 줄여야 합니다';
+  }
+  if (category === '개발기획과컨설팅') {
+    if (/요구사항/.test(clean)) return '문서보다 빠진 전제를 먼저 잡으세요';
+    if (/일정/.test(clean)) return '일정표보다 기대치 정렬이 먼저입니다';
+  }
+  if (category === '최신IT트렌드') {
+    return '기능보다 덜 흔들리는 구조가 핵심입니다';
+  }
+  return compactTitle(clean, 22);
+}
+
+function buildCtaLine(title = '', category = '') {
+  const clean = normalizeTitleText(title);
+  if (/체크리스트|\d+가지|포인트/.test(clean)) {
+    return '블로그에서 3가지를 바로 확인하세요';
+  }
+  if (category === '홈페이지와App') return '블로그에서 실제 화면 기준으로 확인';
+  if (category === '개발기획과컨설팅') return '블로그에서 실무 예시까지 확인';
+  return '전체 내용은 블로그에서 확인';
+}
+
 function normalizeDurationSec(value) {
   const num = Number(value);
   if (!Number.isFinite(num) || num <= 0) return SHORTFORM_DEFAULT_DURATION_SEC;
@@ -34,25 +103,10 @@ function normalizeDurationSec(value) {
 }
 
 function buildOverlayLines(title = '', category = '') {
-  const short = String(title).trim();
-  if (category === '최신IT트렌드') {
-    return [
-      '지금 왜 이 얘기가 뜨는지',
-      short.slice(0, 24) || '핵심 포인트 요약',
-      '블로그 본문에서 바로 확인'
-    ];
-  }
-  if (category === '백엔드/개발자 커리어') {
-    return [
-      '실무에서 바로 체감되는 포인트',
-      short.slice(0, 24) || '개발자 관점 핵심 요약',
-      '블로그에서 예시까지 확인'
-    ];
-  }
   return [
-    '핵심만 빠르게 정리',
-    short.slice(0, 24) || '오늘의 인사이트',
-    '전체 내용은 블로그에서'
+    buildHookLine(title, category),
+    buildValueLine(title, category),
+    buildCtaLine(title, category),
   ];
 }
 
