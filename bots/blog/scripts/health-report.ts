@@ -1406,6 +1406,12 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
     socialAutomationHealth.latestCoverUrl ? `cover=${socialAutomationHealth.latestCoverUrl}` : '',
     socialAutomationHealth.latestQaUrl ? `qa=${socialAutomationHealth.latestQaUrl}` : '',
   ].filter(Boolean).join(' / ');
+  const engagementFailureHint = engagementHealth?.failureSamples?.[0]
+    ? `${engagementHealth.failureSamples[0].kind}/${engagementHealth.failureSamples[0].actionType} ${engagementHealth.failureSamples[0].sample}`
+    : '';
+  const engagementReplayHint = engagementHealth?.latestReplyReplayCandidate?.id
+    ? `npm run replay:reply-ui -- --comment-id ${engagementHealth.latestReplyReplayCandidate.id} --json`
+    : '';
   return buildHealthDecision({
     warnings: [
       {
@@ -1502,7 +1508,11 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
       {
         active: engagementHealth.warnCount > 0,
         level: 'low',
-        reason: '댓글/답글/공감 실적이 시간대 기대치보다 낮거나 실패 이력이 있어 engagement 루프 점검이 필요합니다.',
+        reason: [
+          '댓글/답글/공감 실적이 시간대 기대치보다 낮거나 실패 이력이 있어 engagement 루프 점검이 필요합니다.',
+          engagementFailureHint ? `최근 실패: ${engagementFailureHint}` : '',
+          engagementReplayHint ? `재현: ${engagementReplayHint}` : '',
+        ].filter(Boolean).join(' '),
       },
     ],
     okReason: '블로팀 실행기와 daily run 상태가 현재는 안정 구간입니다.',
