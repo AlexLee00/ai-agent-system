@@ -29,10 +29,18 @@ const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 
 const DRY_RUN = process.argv.includes('--dry-run');
 
-function ensureHostedInstagramMedia(reelPath) {
+function inferCoverPathFromReel(reelPath = '') {
+  if (!reelPath) return '';
+  const coverPath = String(reelPath).replace(/\.mp4$/i, '_cover.jpg');
+  return coverPath;
+}
+
+function ensureHostedInstagramMedia(reelPath, coverPath = '') {
   if (!reelPath) return null;
   const scriptPath = path.join(env.PROJECT_ROOT, 'bots/blog/scripts/prepare-instagram-media.ts');
   const args = [scriptPath, '--json', '--no-thumb', '--video', reelPath];
+  if (coverPath) args.push('--cover', coverPath);
+  else args.push('--no-cover');
   if (DRY_RUN) args.push('--dry-run');
 
   const output = execFileSync('node', args, {
@@ -116,13 +124,23 @@ async function main() {
 
   // 릴스 파일 찾기 (shortform-files.ts 활용)
   let reelPath = null;
+  let coverPath = null;
   try {
-    const { findLatestReelPath, findReelPathForTitle } = require(
+    const {
+      findLatestReelPath,
+      findReelPathForTitle,
+      findReelCoverPathForTitle,
+    } = require(
       path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-files.ts')
     );
     reelPath = findReelPathForTitle(postTitle) || findLatestReelPath();
+    coverPath = findReelCoverPathForTitle(postTitle) || '';
   } catch (e) {
     console.warn('[insta-auto] 릴스 파일 탐색 실패:', e.message);
+  }
+  const inferredCoverPath = inferCoverPathFromReel(reelPath);
+  if (inferredCoverPath && require('fs').existsSync(inferredCoverPath)) {
+    coverPath = inferredCoverPath;
   }
 
   if (!reelPath) {
@@ -141,9 +159,13 @@ async function main() {
   }
 
   try {
-    const staged = ensureHostedInstagramMedia(reelPath);
+    const staged = ensureHostedInstagramMedia(reelPath, coverPath);
     const hostedPath = staged?.reel?.targetPath || '';
+    const coverTarget = staged?.cover?.targetPath || '';
     console.log(`[insta-auto] 공개 미디어 준비: ${hostedPath || 'ok'}`);
+    if (coverTarget) {
+      console.log(`[insta-auto] 릴스 커버 준비: ${coverTarget}`);
+    }
   } catch (e) {
     console.warn('[insta-auto] 공개 미디어 준비 실패:', e.message);
     if (!DRY_RUN) {
@@ -154,11 +176,14 @@ async function main() {
 
   // 인스타 크로스포스트 실행
   const instaContent = {
-    reel: { outputPath: reelPath },
+    reel: { outputPath: reelPath, coverPath },
     caption: `📝 ${postTitle}\n\n#개발자일상 #IT블로그 #승호아빠 #cafe_library`,
   };
 
   console.log(`[insta-auto] 릴스 발행 시도: ${reelPath}`);
+  if (coverPath) {
+    console.log(`[insta-auto] 릴스 커버 인식: ${coverPath}`);
+  }
   const result = await crosspostToInstagram(instaContent, postTitle, postId, DRY_RUN);
 
   if (result.ok) {

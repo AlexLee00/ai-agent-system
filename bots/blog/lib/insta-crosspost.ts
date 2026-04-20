@@ -93,7 +93,7 @@ async function notifyTokenError(errMsg, diagnosis) {
 /**
  * 인스타 릴스 크로스포스팅
  *
- * @param {{ reel?: { outputPath?: string }, fullText?: string, caption?: string }} instaContent
+ * @param {{ reel?: { outputPath?: string, coverPath?: string }, fullText?: string, caption?: string }} instaContent
  * @param {string}  postTitle     - 블로그 포스트 제목
  * @param {number|null} postId    - blog.posts.id (선택)
  * @param {boolean} dryRun
@@ -101,6 +101,7 @@ async function notifyTokenError(errMsg, diagnosis) {
  */
 async function crosspostToInstagram(instaContent, postTitle, postId = null, dryRun = false) {
   const reelPath = instaContent?.reel?.outputPath;
+  const coverPath = instaContent?.reel?.coverPath;
 
   if (!reelPath) {
     console.log('[크로스포스트] 릴스 파일 없음 — 인스타 게시 생략');
@@ -110,6 +111,9 @@ async function crosspostToInstagram(instaContent, postTitle, postId = null, dryR
 
   if (dryRun) {
     console.log(`[크로스포스트][dry-run] 릴스 게시 생략: ${path.basename(reelPath)}`);
+    if (coverPath) {
+      console.log(`[크로스포스트][dry-run] 릴스 커버 인식: ${path.basename(coverPath)}`);
+    }
     await recordCrosspost({ postId, postTitle, videoPath: reelPath, status: 'skipped', errorMsg: 'dry_run', dryRun: true });
     return { ok: false, skipped: true, reason: 'dry_run' };
   }
@@ -129,6 +133,9 @@ async function crosspostToInstagram(instaContent, postTitle, postId = null, dryR
     });
 
     console.log(`[크로스포스트] 인스타 업로드 성공: publishId=${result.publishId}`);
+    if (coverPath) {
+      console.log(`[크로스포스트] 릴스 커버 참조: ${coverPath}`);
+    }
     await runIfOps(
       'blog-insta-publish-ok',
       () => postAlarm({
@@ -139,7 +146,7 @@ async function crosspostToInstagram(instaContent, postTitle, postId = null, dryR
       }),
       () => {}
     ).catch(() => {});
-    return { ok: true, publishId: result.publishId, creationId: result.creationId, status: 'ok' };
+    return { ok: true, publishId: result.publishId, creationId: result.creationId, status: 'ok', coverPath };
 
   } catch (err) {
     const diagnosis = parseInstagramAuthError(err);
