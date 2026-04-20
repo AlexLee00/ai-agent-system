@@ -55,6 +55,7 @@ const INSTAGRAM_READINESS_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 
 const INSTAGRAM_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:instagram -- --json`;
 const SOCIAL_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:social -- --json`;
 const ENGAGEMENT_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:engagement -- --json`;
+const BLOG_OPS_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:ops -- --json`;
 
 function nowKst() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
@@ -654,6 +655,7 @@ async function buildSocialAutomationHealth() {
       ok.push(`  instagram readiness command: ${INSTAGRAM_READINESS_COMMAND}`);
       ok.push(`  instagram doctor command: ${INSTAGRAM_DOCTOR_COMMAND}`);
       ok.push(`  social doctor command: ${SOCIAL_DOCTOR_COMMAND}`);
+      ok.push(`  ops doctor command: ${BLOG_OPS_DOCTOR_COMMAND}`);
       if (latestRealInstagram) {
         ok.push(`  instagram latest real: ${String(latestRealInstagram.status || 'unknown')} / ${String(latestRealInstagram.post_title || '').slice(0, 50)}`);
       }
@@ -720,6 +722,7 @@ async function buildSocialAutomationHealth() {
         ok.push(`  facebook readiness command: ${FACEBOOK_READINESS_COMMAND}`);
         ok.push(`  facebook doctor command: ${FACEBOOK_DOCTOR_COMMAND}`);
         ok.push(`  social doctor command: ${SOCIAL_DOCTOR_COMMAND}`);
+        ok.push(`  ops doctor command: ${BLOG_OPS_DOCTOR_COMMAND}`);
       } else if (facebookReadiness?.error) {
         const summarizedReadinessError = summarizeFacebookPublishFailure(facebookReadiness.error || '');
         warn.push(`  facebook readiness: ${summarizedReadinessError}`);
@@ -732,6 +735,7 @@ async function buildSocialAutomationHealth() {
         warn.push(`  facebook readiness command: ${FACEBOOK_READINESS_COMMAND}`);
         warn.push(`  facebook doctor command: ${FACEBOOK_DOCTOR_COMMAND}`);
         warn.push(`  social doctor command: ${SOCIAL_DOCTOR_COMMAND}`);
+        warn.push(`  ops doctor command: ${BLOG_OPS_DOCTOR_COMMAND}`);
       }
       if (facebookRows.length > 0) {
         const latestFacebook = facebookRows[0];
@@ -1002,6 +1006,7 @@ async function buildEngagementHealth() {
       );
       ok.push(`  reply replay command: npm run replay:reply-ui -- --comment-id ${latestReplyReplayCandidate.id} --json`);
       ok.push(`  engagement doctor command: ${ENGAGEMENT_DOCTOR_COMMAND}`);
+      ok.push(`  ops doctor command: ${BLOG_OPS_DOCTOR_COMMAND}`);
     }
     if ((failureByKind.ui || 0) > 0) {
       warn.push(`  engagement UI failures: ${failureByKind.ui || 0}건`);
@@ -1484,6 +1489,7 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
     socialAutomationHealth.latestQaUrl ? `qa=${socialAutomationHealth.latestQaUrl}` : '',
   ].filter(Boolean).join(' / ');
   const instagramDiagnoseHint = `diagnose=${INSTAGRAM_READINESS_COMMAND} / doctor=${INSTAGRAM_DOCTOR_COMMAND} / social=${SOCIAL_DOCTOR_COMMAND}`;
+  const opsDoctorHint = `ops=${BLOG_OPS_DOCTOR_COMMAND}`;
   const engagementFailureHint = engagementHealth?.failureSamples?.[0]
     ? `${engagementHealth.failureSamples[0].kind}/${engagementHealth.failureSamples[0].actionType} ${engagementHealth.failureSamples[0].sample}`
     : '';
@@ -1543,15 +1549,15 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
         active: socialAutomationHealth.instagramNeedsAttention,
         level: 'medium',
         reason: previewBundleHint
-          ? `최근 인스타 자동등록 실패 이력이 있어 릴스/공개 URL/게시 경로 점검이 필요합니다. ${instagramDiagnoseHint} 최신 preview: ${previewBundleHint}`
-          : `최근 인스타 자동등록 실패 이력이 있어 릴스/공개 URL/게시 경로 점검이 필요합니다. ${instagramDiagnoseHint}`,
+          ? `최근 인스타 자동등록 실패 이력이 있어 릴스/공개 URL/게시 경로 점검이 필요합니다. ${instagramDiagnoseHint} / ${opsDoctorHint} 최신 preview: ${previewBundleHint}`
+          : `최근 인스타 자동등록 실패 이력이 있어 릴스/공개 URL/게시 경로 점검이 필요합니다. ${instagramDiagnoseHint} / ${opsDoctorHint}`,
       },
       {
         active: socialAutomationHealth.facebookNeedsAttention,
         level: 'medium',
         reason: previewBundleHint
-          ? `최근 페이스북 자동등록 실패 이력이 있어 권한/게시 경로 점검이 필요합니다. ${socialAutomationHealth.latestFacebookErrorSummary || ''}${socialAutomationHealth.facebookPageId ? ` page=${socialAutomationHealth.facebookPageId}` : ''}${Array.isArray(socialAutomationHealth.facebookPermissionScopes) && socialAutomationHealth.facebookPermissionScopes.length > 0 ? ` scopes=${socialAutomationHealth.facebookPermissionScopes.join(',')}` : ''} diagnose=${FACEBOOK_READINESS_COMMAND} / doctor=${FACEBOOK_DOCTOR_COMMAND} / social=${SOCIAL_DOCTOR_COMMAND} 최신 preview: ${previewBundleHint}`.trim()
-          : `최근 페이스북 자동등록 실패 이력이 있어 권한/게시 경로 점검이 필요합니다. ${socialAutomationHealth.latestFacebookErrorSummary || ''}${socialAutomationHealth.facebookPageId ? ` page=${socialAutomationHealth.facebookPageId}` : ''}${Array.isArray(socialAutomationHealth.facebookPermissionScopes) && socialAutomationHealth.facebookPermissionScopes.length > 0 ? ` scopes=${socialAutomationHealth.facebookPermissionScopes.join(',')}` : ''} diagnose=${FACEBOOK_READINESS_COMMAND} / doctor=${FACEBOOK_DOCTOR_COMMAND} / social=${SOCIAL_DOCTOR_COMMAND}`.trim(),
+          ? `최근 페이스북 자동등록 실패 이력이 있어 권한/게시 경로 점검이 필요합니다. ${socialAutomationHealth.latestFacebookErrorSummary || ''}${socialAutomationHealth.facebookPageId ? ` page=${socialAutomationHealth.facebookPageId}` : ''}${Array.isArray(socialAutomationHealth.facebookPermissionScopes) && socialAutomationHealth.facebookPermissionScopes.length > 0 ? ` scopes=${socialAutomationHealth.facebookPermissionScopes.join(',')}` : ''} diagnose=${FACEBOOK_READINESS_COMMAND} / doctor=${FACEBOOK_DOCTOR_COMMAND} / social=${SOCIAL_DOCTOR_COMMAND} / ${opsDoctorHint} 최신 preview: ${previewBundleHint}`.trim()
+          : `최근 페이스북 자동등록 실패 이력이 있어 권한/게시 경로 점검이 필요합니다. ${socialAutomationHealth.latestFacebookErrorSummary || ''}${socialAutomationHealth.facebookPageId ? ` page=${socialAutomationHealth.facebookPageId}` : ''}${Array.isArray(socialAutomationHealth.facebookPermissionScopes) && socialAutomationHealth.facebookPermissionScopes.length > 0 ? ` scopes=${socialAutomationHealth.facebookPermissionScopes.join(',')}` : ''} diagnose=${FACEBOOK_READINESS_COMMAND} / doctor=${FACEBOOK_DOCTOR_COMMAND} / social=${SOCIAL_DOCTOR_COMMAND} / ${opsDoctorHint}`.trim(),
       },
       {
         active: socialAutomationHealth.publishLogExists === false,
@@ -1599,6 +1605,7 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
           engagementFailureHint ? `최근 실패: ${engagementFailureHint}` : '',
           engagementReplayHint ? `재현: ${engagementReplayHint}` : '',
           engagementDoctorHint,
+          opsDoctorHint,
         ].filter(Boolean).join(' '),
       },
     ],
