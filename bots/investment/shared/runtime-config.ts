@@ -164,6 +164,14 @@ const DEFAULT_RUNTIME_CONFIG = {
     chartVision: {
       maxDailyCalls: 5,
     },
+    argos: {
+      intelCache: {
+        ttlMs: 6 * 3600 * 1000,
+        maxEntries: 500,
+        externalWarnTtlMs: 6 * 3600 * 1000,
+        redditCooldownTtlMs: 10 * 60 * 1000,
+      },
+    },
   },
   rag: {
     nodeArtifactSearch: {
@@ -174,6 +182,18 @@ const DEFAULT_RUNTIME_CONFIG = {
       episodicThreshold: 0.33,
       semanticThreshold: 0.28,
     },
+    lunaTradeContext: {
+      threshold: 0.7,
+      limit: 3,
+    },
+    sweeperMemory: {
+      episodicThreshold: 0.33,
+      semanticThreshold: 0.28,
+    },
+    argosCandidateSearch: {
+      threshold: 0.72,
+      limit: 2,
+    },
   },
   alerts: {
     marketAlertMemory: {
@@ -181,9 +201,36 @@ const DEFAULT_RUNTIME_CONFIG = {
       semanticThreshold: 0.28,
     },
   },
+  reevaluation: {
+    tradingViewFrames: {
+      byExchange: {
+        binance: ['1h', '4h', '1d'],
+        kis: ['1h', '1d'],
+        kis_overseas: ['1h', '4h', '1d'],
+      },
+      weightsByExchange: {
+        binance: { '1h': 0.2, '4h': 0.35, '1d': 0.45 },
+        kis: { '1h': 0.35, '1d': 0.65 },
+        kis_overseas: { '1h': 0.2, '4h': 0.35, '1d': 0.45 },
+      },
+      thresholdsByExchange: {
+        binance: { buy: 0.25, sell: -0.25 },
+        kis: { buy: 0.2, sell: -0.2 },
+        kis_overseas: { buy: 0.25, sell: -0.25 },
+      },
+    },
+  },
   health: {
     tradeLaneNearLimitRatio: 0.8,
     cryptoValidationNearSoftCapRatio: 0.8,
+  },
+  sync: {
+    cryptoMinNotionalUsdt: 10,
+  },
+  execution: {
+    pendingQueue: {
+      stalePendingMinutes: 30,
+    },
   },
   nemesis: {
     crypto: {
@@ -370,6 +417,14 @@ export function getChartVisionRuntimeConfig() {
   return loadRuntimeConfig().tools?.chartVision || {};
 }
 
+export function getArgosRuntimeConfig() {
+  const runtimeConfig = loadRuntimeConfig();
+  return {
+    rag: runtimeConfig?.rag?.argosCandidateSearch || {},
+    intelCache: runtimeConfig?.tools?.argos?.intelCache || {},
+  };
+}
+
 export function getInvestmentRagRuntimeConfig() {
   return loadRuntimeConfig().rag || {};
 }
@@ -378,6 +433,18 @@ export function getInvestmentAlertRuntimeConfig() {
   return loadRuntimeConfig().alerts || {};
 }
 
+export function getPositionReevaluationRuntimeConfig() {
+  return loadRuntimeConfig().reevaluation || {};
+}
+
 export function getInvestmentHealthRuntimeConfig() {
   return loadRuntimeConfig().health || {};
+}
+
+export function getInvestmentSyncRuntimeConfig() {
+  return loadRuntimeConfig().sync || {};
+}
+
+export function getInvestmentExecutionRuntimeConfig() {
+  return loadRuntimeConfig().execution || {};
 }

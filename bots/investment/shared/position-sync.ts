@@ -4,13 +4,15 @@ import ccxt from 'ccxt';
 import * as db from './db.ts';
 import { initHubSecrets, getMarketExecutionModeInfo, loadSecrets } from './secrets.ts';
 import { getDomesticBalance, getOverseasBalance } from './kis-client.ts';
+import { getInvestmentSyncRuntimeConfig } from './runtime-config.ts';
 
 const MARKET_CONFIG = {
   domestic: { exchange: 'kis', marketType: 'stocks', label: '국내장' },
   overseas: { exchange: 'kis_overseas', marketType: 'stocks', label: '해외장' },
   crypto: { exchange: 'binance', marketType: 'crypto', label: '암호화폐' },
 };
-const CRYPTO_SYNC_MIN_NOTIONAL_USDT = 10;
+const SYNC_RUNTIME = getInvestmentSyncRuntimeConfig();
+const CRYPTO_SYNC_MIN_NOTIONAL_USDT = Number(SYNC_RUNTIME.cryptoMinNotionalUsdt ?? 10);
 
 let _binanceExchange = null;
 

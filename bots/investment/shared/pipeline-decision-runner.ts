@@ -10,6 +10,7 @@ import { evaluateSignal } from '../team/nemesis.ts';
 import { notifyError } from './report.ts';
 import { loadAnalysesForSession, loadLatestNodePayload } from '../nodes/helpers.ts';
 import { getInvestmentTradeMode } from './secrets.ts';
+import { getOpenPositions, getCapitalConfigWithOverrides } from './capital-manager.ts';
 import { buildPreScreenPlannerCompact } from './pre-screen-planner-report.ts';
 import { createRequire } from 'module';
 
@@ -98,6 +99,68 @@ function buildAnalystSignals(analyses) {
     `H:${getChar(analyses.find(a => a.analyst === ANALYST_TYPES.NEWS)?.signal || sentinelSignal)}`,
     `S:${getChar(analyses.find(a => a.analyst === ANALYST_TYPES.SENTIMENT)?.signal || sentinelSignal)}`,
   ].join('|');
+}
+
+async function applyRuntimeCryptoRepresentativePass({ portfolioDecision, exchange, investmentTradeMode }) {
+  if (exchange !== 'binance' || investmentTradeMode !== 'normal') {
+    return { decision: portfolioDecision, reduction: null };
+  }
+
+  const decisions = Array.isArray(portfolioDecision?.decisions) ? [...portfolioDecision.decisions] : [];
+  const buyDecisions = decisions.filter((item) => item?.action === ACTIONS.BUY);
+  if (buyDecisions.length <= 1) {
+    return { decision: portfolioDecision, reduction: null };
+  }
+
+  const [openPositions, capitalPolicy] = await Promise.all([
+    getOpenPositions(exchange, false, 'normal').catch(() => []),
+    getCapitalConfigWithOverrides(exchange, 'normal').catch(() => ({})),
+  ]);
+
+  const maxSameDirection = Number(capitalPolicy?.max_same_direction_positions || 3);
+  const currentLongCount = Array.isArray(openPositions) ? openPositions.length : 0;
+  const remainingLongSlots = Math.max(0, maxSameDirection - currentLongCount);
+
+  if (buyDecisions.length <= remainingLongSlots) {
+    return { decision: portfolioDecision, reduction: null };
+  }
+
+  const sortedBuys = [...buyDecisions].sort((a, b) => {
+    const confidenceGap = Number(b?.confidence || 0) - Number(a?.confidence || 0);
+    if (confidenceGap !== 0) return confidenceGap;
+    const amountGap = Number(b?.amount_usdt || 0) - Number(a?.amount_usdt || 0);
+    if (amountGap !== 0) return amountGap;
+    return String(a?.symbol || '').localeCompare(String(b?.symbol || ''));
+  });
+
+  const keepBuySet = new Set(sortedBuys.slice(0, remainingLongSlots).map((item) => item.symbol));
+  const kept = [];
+  const dropped = [];
+  const nextDecisions = decisions.filter((item) => {
+    if (item?.action !== ACTIONS.BUY) return true;
+    if (keepBuySet.has(item.symbol)) {
+      kept.push(item.symbol);
+      keepBuySet.delete(item.symbol);
+      return true;
+    }
+    dropped.push(item.symbol);
+    return false;
+  });
+
+  return {
+    decision: {
+      ...portfolioDecision,
+      decisions: nextDecisions,
+    },
+    reduction: {
+      currentLongCount,
+      maxSameDirection,
+      remainingLongSlots,
+      requestedBuyCount: buyDecisions.length,
+      kept,
+      dropped,
+    },
+  };
 }
 
 function buildExitEntryBridgeSummary(exitResults = []) {
@@ -426,6 +489,7 @@ export async function runDecisionExecutionPipeline({
   let exitBelowMinSkipped = 0;
   const exitResults = [];
   let exitEntrySummary = null;
+  let representativeReduction = null;
   const plannerCompact = await loadDecisionPlannerCompact(sessionId);
 
   function countDecisionActions() {
@@ -457,16 +521,20 @@ export async function runDecisionExecutionPipeline({
     exitPhaseSellSignals,
     exitPhaseExecuted,
     exitBelowMinSkipped,
-    savedExecutionWork: riskRejected * 5,
-    warnings: buildDecisionWarnings({
-      symbols,
-      debateCount,
-      debateLimit,
-      riskRejected,
-      weakSignalSkipped,
-      midGapPromoted,
-    }),
-    ...extra,
+      savedExecutionWork: riskRejected * 5,
+      warnings: buildDecisionWarnings({
+        symbols,
+        debateCount,
+        debateLimit,
+        riskRejected,
+        weakSignalSkipped,
+        midGapPromoted,
+        representativeBuyDropped: Number(representativeReduction?.dropped?.length || 0),
+      }),
+      representativeBuyRequested: Number(representativeReduction?.requestedBuyCount || 0),
+      representativeBuyKept: Number(representativeReduction?.kept?.length || 0),
+      representativeBuyDropped: Number(representativeReduction?.dropped?.length || 0),
+      ...extra,
   });
 
   function getTopRiskRejectReason() {
@@ -699,6 +767,15 @@ export async function runDecisionExecutionPipeline({
     exitSummary: exitEntrySummary,
   });
   portfolioDecision = portfolioDecisionResult.result?.portfolioDecision;
+  if (portfolioDecision) {
+    const representativePass = await applyRuntimeCryptoRepresentativePass({
+      portfolioDecision,
+      exchange,
+      investmentTradeMode,
+    });
+    portfolioDecision = representativePass.decision;
+    representativeReduction = representativePass.reduction;
+  }
   if (!portfolioDecision) {
     const metrics = buildMetrics({
       bridgeStatus: 'portfolio_decision_failed',
@@ -988,11 +1065,12 @@ export default {
   runDecisionExecutionPipeline,
 };
 
-function buildDecisionWarnings({ symbols, debateCount, debateLimit, riskRejected, weakSignalSkipped, midGapPromoted }) {
+function buildDecisionWarnings({ symbols, debateCount, debateLimit, riskRejected, weakSignalSkipped, midGapPromoted, representativeBuyDropped = 0 }) {
   const warnings = [];
   if (symbols.length >= 20 && debateCount >= Math.max(1, debateLimit - 1)) warnings.push('debate_capacity_hot');
   if (riskRejected >= 5) warnings.push('risk_reject_saved_work');
   if (weakSignalSkipped >= 10) warnings.push('weak_signal_pressure');
   if (midGapPromoted >= 3) warnings.push('mid_gap_validation_promoted');
+  if (representativeBuyDropped >= 1) warnings.push('representative_buy_pass_applied');
   return warnings;
 }

@@ -12,13 +12,11 @@ import { createRequire } from 'module';
 
 import { getMarketExecutionModeInfo } from '../shared/secrets.ts';
 import { getMinConfidence } from '../team/luna.ts';
-import { getLunaStockStrategyProfile } from '../shared/runtime-config.ts';
+import { getLunaStockStrategyProfile, getInvestmentRuntimeConfig, getNemesisRuntimeConfig } from '../shared/runtime-config.ts';
 
 const require   = createRequire(import.meta.url);
 const jsYaml    = require('js-yaml');
 const __dirname = dirname(fileURLToPath(import.meta.url));
-
-const FUND_MIN_CONF  = { binance: 0.60, kis: 0.40, kis_overseas: 0.40 };
 
 const EXCHANGE_MAP = {
   domestic: 'kis',
@@ -26,27 +24,38 @@ const EXCHANGE_MAP = {
   crypto:   'binance',
 };
 
-// nemesis.js RULES
-const RULES_STOCK  = { MAX_OPEN_POSITIONS: 5, STOP_LOSS_PCT: 0.05, MAX_ORDER_USDT: 2000, MAX_DAILY_LOSS_PCT: 0.10 };
-const RULES_CRYPTO = { MAX_OPEN_POSITIONS: 5, STOP_LOSS_PCT: 0.03, MAX_ORDER_USDT: 1000, MAX_DAILY_LOSS_PCT: 0.05 };
-
 /**
  * 현재 투자 성향 셋팅 조회
  * @param {'domestic'|'overseas'|'crypto'} market
  */
 export async function getInvestmentProfile(market) {
+  const exchange  = EXCHANGE_MAP[market] || 'binance';
+  const isCrypto  = market === 'crypto';
+  const stockProfile = getLunaStockStrategyProfile();
+  const runtimeConfig = getInvestmentRuntimeConfig();
+  const nemesisConfig = getNemesisRuntimeConfig();
   let cfg = {};
   try {
     cfg = jsYaml.load(readFileSync(join(__dirname, '..', 'config.yaml'), 'utf8')) || {};
   } catch { /* config 없으면 기본값 */ }
-
-  const exchange  = EXCHANGE_MAP[market] || 'binance';
-  const isCrypto  = market === 'crypto';
-  const stockProfile = getLunaStockStrategyProfile();
-  const rules     = isCrypto ? RULES_CRYPTO : RULES_STOCK;
   const capMgmt   = cfg.capital_management || {};
   const dualModel = process.env.LUNA_DUAL_MODEL !== 'false';
   const modeInfo  = getMarketExecutionModeInfo(isCrypto ? 'crypto' : 'stocks', market);
+  const rules = isCrypto
+    ? nemesisConfig.crypto
+    : exchange === 'kis'
+      ? nemesisConfig.stockDomestic
+      : nemesisConfig.stockOverseas;
+  const maxPositions = isCrypto
+    ? Number(runtimeConfig.luna?.maxPosCount || rules.maxOpenPositions || 0)
+    : Number(rules.maxOpenPositions || 0);
+  const maxOrderUsdt = isCrypto
+    ? Number(rules.maxOrderUsdt || 0)
+    : Number(runtimeConfig.luna?.stockOrderDefaults?.[exchange]?.max || rules.maxOrderUsdt || 0);
+  const riskLevel = isCrypto
+    ? (Number(getMinConfidence(exchange)) <= 0.2 ? 'aggressive' : 'moderate')
+    : (stockProfile.label || 'aggressive');
+  const fundMinConf = Number(runtimeConfig.luna?.fastPathThresholds?.[isCrypto ? 'minCryptoConfidence' : 'minStockConfidence'] || 0);
 
   return {
     market,
@@ -54,14 +63,14 @@ export async function getInvestmentProfile(market) {
     mode:             `${modeInfo.executionMode.toUpperCase()} / ${modeInfo.brokerAccountMode.toUpperCase()}`,
     executionMode:    modeInfo.executionMode,
     brokerAccountMode: modeInfo.brokerAccountMode,
-    riskLevel:        isCrypto ? 'moderate' : (stockProfile.label || 'aggressive'),
-    maxPositions:     rules.MAX_OPEN_POSITIONS,
+    riskLevel,
+    maxPositions,
     riskPerTrade:     (capMgmt.risk_per_trade || 0.02) * 100,   // % 표시
     minConfidence:    getMinConfidence(exchange),
-    fundMinConf:      FUND_MIN_CONF[exchange],
-    stopLossPct:      rules.STOP_LOSS_PCT * 100,
-    maxOrderUsdt:     rules.MAX_ORDER_USDT,
-    dailyLossLimit:   rules.MAX_DAILY_LOSS_PCT * 100,
+    fundMinConf,
+    stopLossPct:      Number(rules.stopLossPct || 0) * 100,
+    maxOrderUsdt,
+    dailyLossLimit:   Number(rules.maxDailyLossPct || 0) * 100,
     cashReserve:      (capMgmt.reserve_ratio || 0.10) * 100,
     dualModel,
     paperMode:        modeInfo.paper,

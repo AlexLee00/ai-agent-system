@@ -28,9 +28,9 @@ import { ACTIONS, ANALYST_TYPES, SIGNAL_STATUS, validateSignal } from '../shared
 import { notifySignal, notifyError } from '../shared/report.ts';
 import { publishAlert } from '../shared/alert-publisher.ts';
 import { isPaperMode, isValidationTradeMode } from '../shared/secrets.ts';
-import { getAvailableBalance, getAvailableUSDT } from '../shared/capital-manager.ts';
+import { getAvailableBalance, getAvailableUSDT, getOpenPositions, getCapitalConfigWithOverrides } from '../shared/capital-manager.ts';
 import { getDomesticBalance } from '../shared/kis-client.ts';
-import { getLunaRuntimeConfig, getLunaStockStrategyProfile } from '../shared/runtime-config.ts';
+import { getInvestmentRagRuntimeConfig, getLunaRuntimeConfig, getLunaStockStrategyProfile } from '../shared/runtime-config.ts';
 import * as journalDb from '../shared/trade-journal-db.ts';
 import { buildAccuracyReport, getEffectiveAnalystWeightProfiles, normalizeWeights } from '../shared/analyst-accuracy.ts';
 import { getMarketRegime, formatMarketRegime } from '../shared/market-regime.ts';
@@ -41,6 +41,7 @@ import { recommendStrategy } from './argos.ts';
 
 const LUNA_RUNTIME = getLunaRuntimeConfig();
 const LUNA_STOCK_PROFILE = getLunaStockStrategyProfile();
+const RAG_RUNTIME = getInvestmentRagRuntimeConfig();
 const MIN_CONFIDENCE = LUNA_RUNTIME.minConfidence.live;
 const PAPER_MIN_CONFIDENCE = LUNA_RUNTIME.minConfidence.paper;
 const MAX_POS_COUNT = LUNA_RUNTIME.maxPosCount;
@@ -135,6 +136,71 @@ export function getDebateLimit(exchange, symbolCount = 0) {
   }
   if (exchange === 'kis' || exchange === 'kis_overseas') return 1;
   return MAX_DEBATE_SYMBOLS;
+}
+
+async function applyCryptoRepresentativePass(portfolioDecision, exchange) {
+  if (exchange !== 'binance') {
+    return { decision: portfolioDecision, reduction: null };
+  }
+  if (isPaperMode() || isValidationTradeMode()) {
+    return { decision: portfolioDecision, reduction: null };
+  }
+
+  const decisions = Array.isArray(portfolioDecision?.decisions) ? [...portfolioDecision.decisions] : [];
+  const buyDecisions = decisions.filter((item) => item?.action === ACTIONS.BUY);
+  if (buyDecisions.length <= 1) {
+    return { decision: portfolioDecision, reduction: null };
+  }
+
+  const [openPositions, capitalPolicy] = await Promise.all([
+    getOpenPositions(exchange, false, 'normal').catch(() => []),
+    getCapitalConfigWithOverrides(exchange, 'normal').catch(() => ({})),
+  ]);
+
+  const maxSameDirection = Number(capitalPolicy?.max_same_direction_positions || 3);
+  const currentLongCount = Array.isArray(openPositions) ? openPositions.length : 0;
+  const remainingLongSlots = Math.max(0, maxSameDirection - currentLongCount);
+
+  if (buyDecisions.length <= remainingLongSlots) {
+    return { decision: portfolioDecision, reduction: null };
+  }
+
+  const sortedBuys = [...buyDecisions].sort((a, b) => {
+    const confidenceGap = Number(b?.confidence || 0) - Number(a?.confidence || 0);
+    if (confidenceGap !== 0) return confidenceGap;
+    const amountGap = Number(b?.amount_usdt || 0) - Number(a?.amount_usdt || 0);
+    if (amountGap !== 0) return amountGap;
+    return String(a?.symbol || '').localeCompare(String(b?.symbol || ''));
+  });
+
+  const keepBuySet = new Set(sortedBuys.slice(0, remainingLongSlots).map((item) => item.symbol));
+  const kept = [];
+  const dropped = [];
+  const nextDecisions = decisions.filter((item) => {
+    if (item?.action !== ACTIONS.BUY) return true;
+    if (keepBuySet.has(item.symbol)) {
+      kept.push(item.symbol);
+      keepBuySet.delete(item.symbol);
+      return true;
+    }
+    dropped.push(item.symbol);
+    return false;
+  });
+
+  return {
+    decision: {
+      ...portfolioDecision,
+      decisions: nextDecisions,
+    },
+    reduction: {
+      currentLongCount,
+      maxSameDirection,
+      remainingLongSlots,
+      requestedBuyCount: buyDecisions.length,
+      kept,
+      dropped,
+    },
+  };
 }
 
 export function shouldDebateForSymbol(analyses, exchange, analystWeights = ANALYST_WEIGHTS) {
@@ -523,7 +589,15 @@ async function buildStrategySection(symbol, exchange) {
 
 async function buildRagContext(symbol, summary) {
   try {
-    const hits = await searchRag('trades', `${symbol} ${summary.slice(0, 100)}`, { limit: 3, threshold: 0.7 }, { sourceBot: 'luna' });
+    const hits = await searchRag(
+      'trades',
+      `${symbol} ${summary.slice(0, 100)}`,
+      {
+        limit: Number(RAG_RUNTIME.lunaTradeContext?.limit ?? 3),
+        threshold: Number(RAG_RUNTIME.lunaTradeContext?.threshold ?? 0.7),
+      },
+      { sourceBot: 'luna' },
+    );
     if (hits.length === 0) return '';
     return '\n\n[과거 유사 신호]\n' + hits.map(h => {
       const m = h.metadata || {};
@@ -1161,6 +1235,16 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
     return [];
   }
 
+  const representativePass = await applyCryptoRepresentativePass(portfolio_decision, exchange);
+  portfolio_decision = representativePass.decision;
+  if (representativePass.reduction) {
+    const info = representativePass.reduction;
+    console.log(`  🧭 [루나] 대표 후보 패스 적용: BUY ${info.requestedBuyCount} → ${info.kept.length} (현재 long ${info.currentLongCount}/${info.maxSameDirection})`);
+    if (info.dropped.length > 0) {
+      console.log(`    - 제외: ${info.dropped.join(', ')}`);
+    }
+  }
+
   console.log(`  📌 시황: ${portfolio_decision.portfolio_view}`);
   console.log(`  📌 리스크: ${portfolio_decision.risk_level}`);
 
@@ -1169,6 +1253,9 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
     `${paperMode ? '[PAPER] ' : ''}🌙 루나 판단 (${label})`,
     `시황: ${portfolio_decision.portfolio_view}`,
     `리스크: ${portfolio_decision.risk_level}`,
+    representativePass.reduction
+      ? `대표 후보 패스: BUY ${representativePass.reduction.requestedBuyCount} → ${representativePass.reduction.kept.length} (long ${representativePass.reduction.currentLongCount}/${representativePass.reduction.maxSameDirection})`
+      : '',
     accuracyReport?.totalWeight ? `가중치합: ${accuracyReport.totalWeight}` : '',
     '',
     ...(portfolio_decision.decisions || []).map(d => {

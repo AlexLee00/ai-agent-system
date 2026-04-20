@@ -17,7 +17,7 @@ import * as db from '../shared/db.ts';
 import * as journalDb from '../shared/trade-journal-db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { loadSecrets, initHubSecrets, isPaperMode, getInvestmentTradeMode } from '../shared/secrets.ts';
-import { isSameDaySymbolReentryBlockEnabled } from '../shared/runtime-config.ts';
+import { isSameDaySymbolReentryBlockEnabled, getInvestmentExecutionRuntimeConfig } from '../shared/runtime-config.ts';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.ts';
 import { notifyTrade, notifyError, notifyJournalEntry, notifyTradeSkip, notifyCircuitBreaker, notifySettlement } from '../shared/report.ts';
 import { preTradeCheck, calculatePositionSize, getAvailableBalance, getAvailableUSDT, getOpenPositions, getDailyPnL, getDailyTradeCount, checkCircuitBreaker, getCapitalConfig, formatDailyTradeLimitReason, getDynamicMinOrderAmount } from '../shared/capital-manager.ts';
@@ -463,14 +463,74 @@ async function findAnyLivePosition(symbol, exchange = 'binance') {
 async function preparePendingSignalProcessing() {
   await initHubSecrets().catch(() => false);
   const tradeMode = getInvestmentTradeMode();
+  const tradeModes = Array.from(new Set([tradeMode, 'normal', 'validation'].filter(Boolean)));
+  const stalePending = [];
+  for (const mode of tradeModes) {
+    const rows = await cleanupStalePendingSignals({
+      exchange: 'binance',
+      tradeMode: mode,
+    }).catch((error) => {
+      console.warn(`[헤파이스토스] stale pending 정리 실패 (${mode}): ${error.message}`);
+      return [];
+    });
+    stalePending.push(...rows);
+  }
   const reconciled = await reconcileLivePositionsWithBrokerBalance().catch((error) => {
     console.warn(`[헤파이스토스] 실지갑 포지션 동기화 실패: ${error.message}`);
     return [];
   });
+  if (stalePending.length > 0) {
+    console.log(`[헤파이스토스] stale pending 정리 ${stalePending.length}건 (modes=${tradeModes.join(',')})`);
+  }
   if (reconciled.length > 0) {
     console.log(`[헤파이스토스] 실지갑 포지션 동기화 ${reconciled.length}건`);
   }
-  return { tradeMode, reconciled };
+  return { tradeMode, tradeModes, reconciled, stalePending };
+}
+
+async function cleanupStalePendingSignals({
+  exchange = 'binance',
+  tradeMode = 'normal',
+} = {}) {
+  const executionConfig = getInvestmentExecutionRuntimeConfig();
+  const stalePendingMinutes = Number(executionConfig?.pendingQueue?.stalePendingMinutes ?? 30);
+  const safeMinutes = Number.isFinite(stalePendingMinutes) && stalePendingMinutes > 0
+    ? Math.round(stalePendingMinutes)
+    : 30;
+
+  const staleRows = await db.query(
+    `SELECT id, symbol, action, created_at, confidence, amount_usdt
+       FROM signals
+      WHERE exchange = $1
+        AND status = 'pending'
+        AND COALESCE(trade_mode, 'normal') = $2
+        AND COALESCE(nemesis_verdict, '') = ''
+        AND created_at < now() - make_interval(mins => $3)
+      ORDER BY created_at ASC`,
+    [exchange, tradeMode, safeMinutes],
+  );
+
+  for (const row of staleRows) {
+    const ageMinutes = Math.max(0, Math.round((Date.now() - new Date(row.created_at).getTime()) / 60000));
+    await db.updateSignalBlock(row.id, {
+      status: SIGNAL_STATUS.FAILED,
+      reason: `nemesis verdict 없이 ${ageMinutes}분 경과 (stale pending)`,
+      code: 'stale_pending_signal',
+      meta: {
+        exchange,
+        symbol: row.symbol,
+        action: row.action,
+        tradeMode,
+        stalePendingMinutes: safeMinutes,
+        ageMinutes,
+        confidence: Number(row.confidence || 0),
+        amountUsdt: Number(row.amount_usdt || 0),
+        execution_blocked_by: 'approval_gate',
+      },
+    });
+  }
+
+  return staleRows;
 }
 
 async function runPendingSignalBatch(signals, { tradeMode, delayMs = 500 } = {}) {
@@ -530,7 +590,7 @@ async function runBuySafetyGuards({
   signalTradeMode,
   capitalPolicy,
 }) {
-  const circuit = await checkCircuitBreaker();
+  const circuit = await checkCircuitBreaker('binance', signalTradeMode);
   if (circuit.triggered) {
     console.log(`  ⛔ [서킷 브레이커] ${circuit.reason}`);
     return rejectExecution({
@@ -1831,9 +1891,14 @@ export async function executeSignal(signal) {
  * 대기 중인 바이낸스 신호 전체 처리
  */
 export async function processAllPendingSignals() {
-  const { tradeMode } = await preparePendingSignalProcessing();
-  const signals = await db.getApprovedSignals('binance', tradeMode);
-  return runPendingSignalBatch(signals, { tradeMode, delayMs: 500 });
+  const { tradeModes } = await preparePendingSignalProcessing();
+  const allResults = [];
+  for (const tradeMode of tradeModes) {
+    const signals = await db.getApprovedSignals('binance', tradeMode);
+    const results = await runPendingSignalBatch(signals, { tradeMode, delayMs: 500 });
+    allResults.push(...results);
+  }
+  return allResults;
 }
 
 // CLI 실행

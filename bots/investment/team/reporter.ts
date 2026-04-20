@@ -31,7 +31,10 @@ import { buildRuntimeKisReentryPressureReport } from '../scripts/runtime-kis-ree
 import { buildRuntimeBinanceFailurePressureReport } from '../scripts/runtime-binance-failure-pressure-report.ts';
 import { buildRuntimeBinanceCircuitBreakerReport } from '../scripts/runtime-binance-circuit-breaker-report.ts';
 import { buildRuntimeBinanceCapitalGuardReport } from '../scripts/runtime-binance-capital-guard-report.ts';
+import { buildRuntimeBinanceCorrelationGuardReport } from '../scripts/runtime-binance-correlation-guard-report.ts';
 import { buildRuntimeBinanceDustReport } from '../scripts/runtime-binance-dust-report.ts';
+import { buildRuntimeReevalTvMtfAutotuneReport } from '../scripts/runtime-reeval-tvmft-autotune-report.ts';
+import { buildRuntimeReevalTvMtfTrendReport } from '../scripts/runtime-reeval-tvmft-trend-report.ts';
 
 const _require = createRequire(import.meta.url);
 const shadow   = _require('../../../packages/core/lib/shadow-mode.js');
@@ -418,6 +421,36 @@ async function loadPositionReevaluationSummary() {
   }
 }
 
+async function loadReevalTvMtfAutotuneSummary() {
+  try {
+    return await buildRuntimeReevalTvMtfAutotuneReport({
+      exchange: 'binance',
+      tradeMode: 'normal',
+      paper: false,
+      json: true,
+    });
+  } catch (error) {
+    return {
+      error: String(error?.message || error),
+    };
+  }
+}
+
+async function loadReevalTvMtfTrendSummary() {
+  try {
+    return await buildRuntimeReevalTvMtfTrendReport({
+      exchange: 'binance',
+      tradeMode: 'normal',
+      paper: false,
+      json: true,
+    });
+  } catch (error) {
+    return {
+      error: String(error?.message || error),
+    };
+  }
+}
+
 async function loadMinOrderPressureSummary() {
   try {
     return await buildRuntimeMinOrderPressureReport({
@@ -497,6 +530,19 @@ async function loadBinanceCapitalGuardSummary() {
   }
 }
 
+async function loadBinanceCorrelationGuardSummary() {
+  try {
+    return await buildRuntimeBinanceCorrelationGuardReport({
+      days: 14,
+      json: true,
+    });
+  } catch (error) {
+    return {
+      error: String(error?.message || error),
+    };
+  }
+}
+
 function buildScreeningSummaryLines(screeningSummary = {}) {
   const lines = [];
   for (const market of ['crypto', 'domestic', 'overseas']) {
@@ -525,6 +571,38 @@ function buildPositionReevaluationLines(reevaluationSummary = null) {
   ];
   if (Array.isArray(reevaluationSummary.decision.reasons)) {
     lines.push(...reevaluationSummary.decision.reasons.slice(0, 2));
+  }
+  return lines;
+}
+
+function buildReevalTvMtfAutotuneLines(reevalTvMtfSummary = null) {
+  if (!reevalTvMtfSummary) return ['조회 결과 없음'];
+  if (reevalTvMtfSummary.error) return ['조회 실패'];
+  if (!reevalTvMtfSummary.decision) return ['결과 없음'];
+  const decision = reevalTvMtfSummary.decision || {};
+  const metrics = decision.metrics || {};
+  const lines = [
+    `${decision.status}: ${decision.headline}`,
+    `TV-MTF 표본 ${metrics.liveCoverage || 0}/${metrics.totalSymbols || 0} | divergence HOLD ${metrics.dailyDivergenceHoldCount || 0} | 후보 ${decision.candidates?.length || 0}`,
+  ];
+  if (Array.isArray(decision.reasons)) {
+    lines.push(...decision.reasons.slice(0, 2));
+  }
+  return lines;
+}
+
+function buildReevalTvMtfTrendLines(reevalTvMtfTrendSummary = null) {
+  if (!reevalTvMtfTrendSummary) return ['조회 결과 없음'];
+  if (reevalTvMtfTrendSummary.error) return ['조회 실패'];
+  if (!reevalTvMtfTrendSummary.decision) return ['결과 없음'];
+  const decision = reevalTvMtfTrendSummary.decision || {};
+  const metrics = decision.metrics || {};
+  const lines = [
+    `${decision.status}: ${decision.headline}`,
+    `최근 observe ${metrics.recentObserveCount || 0}회 | coverage_ready ${metrics.recentCoverageReadyCount || 0}회 | divergence ${metrics.recentDivergenceCount || 0}회`,
+  ];
+  if (Array.isArray(decision.reasons)) {
+    lines.push(...decision.reasons.slice(0, 2));
   }
   return lines;
 }
@@ -601,6 +679,18 @@ function buildBinanceCapitalGuardLines(binanceCapitalGuardSummary = null) {
   return lines;
 }
 
+function buildBinanceCorrelationGuardLines(binanceCorrelationGuardSummary = null) {
+  if (!binanceCorrelationGuardSummary) return ['조회 결과 없음'];
+  if (binanceCorrelationGuardSummary.error) return ['조회 실패'];
+  if (!binanceCorrelationGuardSummary.decision) return ['결과 없음'];
+  const decision = binanceCorrelationGuardSummary.decision || {};
+  const lines = [`${decision.status}: ${decision.headline}`];
+  if (Array.isArray(decision.reasons)) {
+    lines.push(...decision.reasons.slice(0, 3));
+  }
+  return lines;
+}
+
 function buildBinanceDustLines(binanceDustSummary = null) {
   if (!binanceDustSummary) return ['조회 결과 없음'];
   if (binanceDustSummary.error) return ['조회 실패'];
@@ -619,12 +709,15 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
   await initHubSecrets().catch(() => false);
   const screeningSummary = await loadScreeningSummary();
   const reevaluationSummary = await loadPositionReevaluationSummary();
+  const reevalTvMtfAutotuneSummary = await loadReevalTvMtfAutotuneSummary();
+  const reevalTvMtfTrendSummary = await loadReevalTvMtfTrendSummary();
   const minOrderPressureSummary = await loadMinOrderPressureSummary();
   const kisOrderPressureSummary = await loadKisOrderPressureSummary();
   const kisReentryPressureSummary = await loadKisReentryPressureSummary();
   const binanceFailurePressureSummary = await loadBinanceFailurePressureSummary();
   const binanceCircuitBreakerSummary = await loadBinanceCircuitBreakerSummary();
   const binanceCapitalGuardSummary = await loadBinanceCapitalGuardSummary();
+  const binanceCorrelationGuardSummary = await loadBinanceCorrelationGuardSummary();
   const binanceDustSummary = await loadBinanceDustSummary();
   let dbAvailable = true;
   try {
@@ -660,6 +753,12 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
       '━━━ 포지션 재평가 ━━━',
       ...buildPositionReevaluationLines(reevaluationSummary).map((line) => `  ${line}`),
       '',
+      '━━━ 포지션 TV-MTF autotune ━━━',
+      ...buildReevalTvMtfAutotuneLines(reevalTvMtfAutotuneSummary).map((line) => `  ${line}`),
+      '',
+      '━━━ 포지션 TV-MTF trend ━━━',
+      ...buildReevalTvMtfTrendLines(reevalTvMtfTrendSummary).map((line) => `  ${line}`),
+      '',
       '━━━ 최소 주문 병목 ━━━',
       ...buildMinOrderPressureLines(minOrderPressureSummary).map((line) => `  ${line}`),
       '',
@@ -677,6 +776,9 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
       '',
       '━━━ 크립토 capital guard 압력 ━━━',
       ...buildBinanceCapitalGuardLines(binanceCapitalGuardSummary).map((line) => `  ${line}`),
+      '',
+      '━━━ 크립토 correlation guard 압력 ━━━',
+      ...buildBinanceCorrelationGuardLines(binanceCorrelationGuardSummary).map((line) => `  ${line}`),
       '',
       '━━━ 크립토 dust 상태 ━━━',
       ...buildBinanceDustLines(binanceDustSummary).map((line) => `  ${line}`),
@@ -875,6 +977,14 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
   lines.push(...buildPositionReevaluationLines(reevaluationSummary).map((line) => `  ${line}`));
   lines.push(``);
 
+  lines.push(`━━━ 포지션 TV-MTF autotune ━━━`);
+  lines.push(...buildReevalTvMtfAutotuneLines(reevalTvMtfAutotuneSummary).map((line) => `  ${line}`));
+  lines.push(``);
+
+  lines.push(`━━━ 포지션 TV-MTF trend ━━━`);
+  lines.push(...buildReevalTvMtfTrendLines(reevalTvMtfTrendSummary).map((line) => `  ${line}`));
+  lines.push(``);
+
   lines.push(`━━━ 최소 주문 병목 ━━━`);
   lines.push(...buildMinOrderPressureLines(minOrderPressureSummary).map((line) => `  ${line}`));
   lines.push(``);
@@ -897,6 +1007,10 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
 
   lines.push(`━━━ 크립토 capital guard 압력 ━━━`);
   lines.push(...buildBinanceCapitalGuardLines(binanceCapitalGuardSummary).map((line) => `  ${line}`));
+  lines.push(``);
+
+  lines.push(`━━━ 크립토 correlation guard 압력 ━━━`);
+  lines.push(...buildBinanceCorrelationGuardLines(binanceCorrelationGuardSummary).map((line) => `  ${line}`));
   lines.push(``);
 
   lines.push(`━━━ 크립토 dust 상태 ━━━`);
@@ -1050,6 +1164,19 @@ ${JSON.stringify({
     adjusts: Number(reevaluationSummary.decision.metrics?.adjusts || 0),
     exits: Number(reevaluationSummary.decision.metrics?.exits || 0),
   } : null,
+  reevalTvMtfAutotune: reevalTvMtfAutotuneSummary?.decision ? {
+    status: reevalTvMtfAutotuneSummary.decision.status,
+    liveCoverage: Number(reevalTvMtfAutotuneSummary.decision.metrics?.liveCoverage || 0),
+    totalSymbols: Number(reevalTvMtfAutotuneSummary.decision.metrics?.totalSymbols || 0),
+    dailyDivergenceHoldCount: Number(reevalTvMtfAutotuneSummary.decision.metrics?.dailyDivergenceHoldCount || 0),
+    candidates: Number(reevalTvMtfAutotuneSummary.decision.candidates?.length || 0),
+  } : null,
+  reevalTvMtfTrend: reevalTvMtfTrendSummary?.decision ? {
+    status: reevalTvMtfTrendSummary.decision.status,
+    recentObserveCount: Number(reevalTvMtfTrendSummary.decision.metrics?.recentObserveCount || 0),
+    recentCoverageReadyCount: Number(reevalTvMtfTrendSummary.decision.metrics?.recentCoverageReadyCount || 0),
+    recentDivergenceCount: Number(reevalTvMtfTrendSummary.decision.metrics?.recentDivergenceCount || 0),
+  } : null,
   minOrderPressure: minOrderPressureSummary?.decision ? {
     status: minOrderPressureSummary.decision.status,
     headline: minOrderPressureSummary.decision.headline,
@@ -1152,12 +1279,15 @@ ${JSON.stringify({
         ]),
         buildSection('스크리닝 동향', buildScreeningSummaryLines(screeningSummary)),
         buildSection('포지션 재평가', buildPositionReevaluationLines(reevaluationSummary)),
+        buildSection('포지션 TV-MTF autotune', buildReevalTvMtfAutotuneLines(reevalTvMtfAutotuneSummary)),
+        buildSection('포지션 TV-MTF trend', buildReevalTvMtfTrendLines(reevalTvMtfTrendSummary)),
         buildSection('최소 주문 병목', buildMinOrderPressureLines(minOrderPressureSummary)),
         buildSection('국내 주문 초과 압력', buildKisOrderPressureLines(kisOrderPressureSummary)),
         buildSection('국내 재진입 차단 압력', buildKisReentryPressureLines(kisReentryPressureSummary)),
         buildSection('크립토 실행 실패 압력', buildBinanceFailurePressureLines(binanceFailurePressureSummary)),
         buildSection('크립토 circuit breaker 압력', buildBinanceCircuitBreakerLines(binanceCircuitBreakerSummary)),
         buildSection('크립토 capital guard 압력', buildBinanceCapitalGuardLines(binanceCapitalGuardSummary)),
+        buildSection('크립토 correlation guard 압력', buildBinanceCorrelationGuardLines(binanceCorrelationGuardSummary)),
         buildSection('크립토 dust 상태', buildBinanceDustLines(binanceDustSummary)),
         buildSection(`신호 통계 (${days}일)`, [
           ...buildSignalStatsLines({ days, sigTotal, sigExec, sigApproved, sigFailed }),
@@ -1180,6 +1310,12 @@ ${JSON.stringify({
           `실행 ${sigExec}개 / 승인대기 ${sigApproved}개 / 실패 ${sigFailed}개`,
           reevaluationSummary?.decision
             ? `재평가 ${reevaluationSummary.decision.status} / EXIT ${reevaluationSummary.decision.metrics?.exits || 0}`
+            : null,
+          reevalTvMtfAutotuneSummary?.decision
+            ? `TV-MTF ${reevalTvMtfAutotuneSummary.decision.status} / 후보 ${reevalTvMtfAutotuneSummary.decision.candidates?.length || 0}`
+            : null,
+          reevalTvMtfTrendSummary?.decision
+            ? `TV-MTF trend ${reevalTvMtfTrendSummary.decision.status} / divergence ${reevalTvMtfTrendSummary.decision.metrics?.recentDivergenceCount || 0}`
             : null,
           minOrderPressureSummary?.decision
             ? `최소주문 ${minOrderPressureSummary.decision.status}`

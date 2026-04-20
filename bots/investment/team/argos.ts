@@ -26,6 +26,7 @@ import { publishAlert } from '../shared/alert-publisher.ts';
 import { search as searchRag } from '../shared/rag-client.ts';
 import { getDomesticRanking, getVolumeRank } from '../shared/kis-client.ts';
 import { getKisOverseasSymbols, getKisSymbols, isPaperMode } from '../shared/secrets.ts';
+import { getArgosRuntimeConfig } from '../shared/runtime-config.ts';
 import { loadLatestScoutIntel, boostCandidatesWithScout } from '../shared/scout-intel.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -57,12 +58,13 @@ const SUBREDDITS = [
 
 const MIN_QUALITY_SCORE = 0.5;  // 이 이상만 DB 저장
 const RAG_RERANK_LIMIT = 4;
-const INTEL_CACHE_TTL = 6 * 3600 * 1000;
-const INTEL_CACHE_MAX = 500;
+const ARGOS_RUNTIME = getArgosRuntimeConfig();
+const INTEL_CACHE_TTL = Number(ARGOS_RUNTIME.intelCache?.ttlMs ?? (6 * 3600 * 1000));
+const INTEL_CACHE_MAX = Number(ARGOS_RUNTIME.intelCache?.maxEntries ?? 500);
 const _candidateIntelCache = new Map();
-const EXTERNAL_WARN_TTL = 6 * 3600 * 1000;
+const EXTERNAL_WARN_TTL = Number(ARGOS_RUNTIME.intelCache?.externalWarnTtlMs ?? (6 * 3600 * 1000));
 const _externalWarnCache = new Map();
-const REDDIT_COOLDOWN_TTL_MS = 10 * 60 * 1000;
+const REDDIT_COOLDOWN_TTL_MS = Number(ARGOS_RUNTIME.intelCache?.redditCooldownTtlMs ?? (10 * 60 * 1000));
 const _redditCooldownUntil = new Map();
 
 function _num(value, fallback = 0) {
@@ -172,7 +174,11 @@ async function _applyCandidateIntelligence(candidates, market, max) {
         const hits = await searchRag(
           'market_data',
           `${candidate.symbol} ${market} momentum news sentiment`,
-          { limit: 2, threshold: 0.72, filter: { symbol: candidate.symbol } },
+          {
+            limit: Number(ARGOS_RUNTIME.rag?.limit ?? 2),
+            threshold: Number(ARGOS_RUNTIME.rag?.threshold ?? 0.72),
+            filter: { symbol: candidate.symbol },
+          },
           { sourceBot: 'argos' },
         );
         candidate.ragScore = hits.reduce((sum, hit) => sum + Number(hit.similarity || 0), 0);

@@ -121,6 +121,8 @@ export async function getCapitalConfigWithOverrides(exchange = null, tradeMode =
     max_capital_usage:        [0.50, 0.95],
     max_concurrent_positions: [1,    8],
     max_same_direction_positions: [1, 6],
+    cooldown_after_loss_streak: [2, 5],
+    cooldown_minutes:         [30, 240],
     risk_per_trade:           [0.01, 0.05],
     'rr_fallback.tp_pct':     [0.02, 0.15],
     'rr_fallback.sl_pct':     [0.01, 0.08],
@@ -431,14 +433,23 @@ function normalizeTradeDirection(direction) {
 
 // ─── PnL / 거래 횟수 ─────────────────────────────────────────────────
 
-export async function getDailyPnL() {
+export async function getDailyPnL(exchange = null, tradeMode = null) {
   try {
+    const conditions = [`status = 'closed'`, `to_timestamp(exit_time / 1000.0)::date = CURRENT_DATE`];
+    const params = [];
+    if (exchange) {
+      params.push(exchange);
+      conditions.push(`exchange = $${params.length}`);
+    }
+    if (tradeMode) {
+      params.push(tradeMode);
+      conditions.push(`COALESCE(trade_mode, 'normal') = $${params.length}`);
+    }
     const rows = await pgPool.query(SCHEMA, `
       SELECT COALESCE(SUM(pnl_net), 0) AS pnl
       FROM trade_journal
-      WHERE status = 'closed'
-        AND to_timestamp(exit_time / 1000.0)::date = CURRENT_DATE
-    `, []);
+      WHERE ${conditions.join(' AND ')}
+    `, params);
     return parseFloat(rows[0]?.pnl || 0);
   } catch (e) {
     console.warn('[capital] 일간 PnL 조회 실패:', e.message);
@@ -446,14 +457,23 @@ export async function getDailyPnL() {
   }
 }
 
-export async function getWeeklyPnL() {
+export async function getWeeklyPnL(exchange = null, tradeMode = null) {
   try {
+    const conditions = [`status = 'closed'`, `to_timestamp(exit_time / 1000.0) >= date_trunc('week', CURRENT_TIMESTAMP)`];
+    const params = [];
+    if (exchange) {
+      params.push(exchange);
+      conditions.push(`exchange = $${params.length}`);
+    }
+    if (tradeMode) {
+      params.push(tradeMode);
+      conditions.push(`COALESCE(trade_mode, 'normal') = $${params.length}`);
+    }
     const rows = await pgPool.query(SCHEMA, `
       SELECT COALESCE(SUM(pnl_net), 0) AS pnl
       FROM trade_journal
-      WHERE status = 'closed'
-        AND to_timestamp(exit_time / 1000.0) >= date_trunc('week', CURRENT_TIMESTAMP)
-    `, []);
+      WHERE ${conditions.join(' AND ')}
+    `, params);
     return parseFloat(rows[0]?.pnl || 0);
   } catch (e) {
     console.warn('[capital] 주간 PnL 조회 실패:', e.message);
@@ -498,15 +518,26 @@ export async function getDailyTradeCount({ exchange = null, tradeMode = null, pa
   }
 }
 
-async function getRecentClosedTrades(n) {
+async function getRecentClosedTrades(n, exchange = null, tradeMode = null) {
   try {
+    const conditions = [`status = 'closed'`];
+    const params = [];
+    if (exchange) {
+      params.push(exchange);
+      conditions.push(`exchange = $${params.length}`);
+    }
+    if (tradeMode) {
+      params.push(tradeMode);
+      conditions.push(`COALESCE(trade_mode, 'normal') = $${params.length}`);
+    }
+    params.push(n);
     return pgPool.query(SCHEMA, `
       SELECT pnl_net, exit_time
       FROM trade_journal
-      WHERE status = 'closed'
+      WHERE ${conditions.join(' AND ')}
       ORDER BY exit_time DESC
-      LIMIT $1
-    `, [n]);
+      LIMIT $${params.length}
+    `, params);
   } catch (e) {
     console.warn('[capital] 최근 거래 조회 실패:', e.message);
     return [];
@@ -558,43 +589,44 @@ export function getVolatilityAdjustedRisk(baseRisk, fearGreedIndex, atrRatio = 1
 
 // ─── 서킷 브레이커 ──────────────────────────────────────────────────
 
-export async function checkCircuitBreaker() {
+export async function checkCircuitBreaker(exchange = null, tradeMode = null) {
   try {
-    const totalCapital = await getTotalCapital();
+    const policy = await getCapitalConfigWithOverrides(exchange, tradeMode);
+    const totalCapital = await getTotalCapital(exchange);
     if (totalCapital <= 0) return { triggered: false };
 
     // 1. 일간 손실 한도
-    const dailyPnL = await getDailyPnL();
-    if (dailyPnL < -(totalCapital * config.max_daily_loss_pct)) {
+    const dailyPnL = await getDailyPnL(exchange, tradeMode);
+    if (dailyPnL < -(totalCapital * policy.max_daily_loss_pct)) {
       return {
         triggered: true,
-        reason:    `일간 손실 한도 초과: ${dailyPnL.toFixed(2)} USDT (한도: -${(totalCapital * config.max_daily_loss_pct).toFixed(2)})`,
+        reason:    `일간 손실 한도 초과: ${dailyPnL.toFixed(2)} USDT (한도: -${(totalCapital * policy.max_daily_loss_pct).toFixed(2)})`,
         type:      'daily_loss',
       };
     }
 
     // 2. 주간 손실 한도
-    const weeklyPnL = await getWeeklyPnL();
-    if (weeklyPnL < -(totalCapital * config.max_weekly_loss_pct)) {
+    const weeklyPnL = await getWeeklyPnL(exchange, tradeMode);
+    if (weeklyPnL < -(totalCapital * policy.max_weekly_loss_pct)) {
       return {
         triggered: true,
-        reason:    `주간 손실 한도 초과: ${weeklyPnL.toFixed(2)} USDT (한도: -${(totalCapital * config.max_weekly_loss_pct).toFixed(2)})`,
+        reason:    `주간 손실 한도 초과: ${weeklyPnL.toFixed(2)} USDT (한도: -${(totalCapital * policy.max_weekly_loss_pct).toFixed(2)})`,
         type:      'weekly_loss',
       };
     }
 
     // 3. 연속 손실 쿨다운
-    const recentTrades = await getRecentClosedTrades(config.cooldown_after_loss_streak);
-    if (recentTrades.length >= config.cooldown_after_loss_streak) {
+    const recentTrades = await getRecentClosedTrades(policy.cooldown_after_loss_streak, exchange, tradeMode);
+    if (recentTrades.length >= policy.cooldown_after_loss_streak) {
       const allLosses = recentTrades.every(t => parseFloat(t.pnl_net || 0) < 0);
       if (allLosses) {
         const lastTime    = new Date(parseInt(recentTrades[0].exit_time, 10)).getTime();
-        const cooldownEnd = lastTime + (config.cooldown_minutes * 60 * 1000);
+        const cooldownEnd = lastTime + (policy.cooldown_minutes * 60 * 1000);
         if (Date.now() < cooldownEnd) {
           const remainMin = Math.ceil((cooldownEnd - Date.now()) / 60000);
           return {
             triggered: true,
-            reason:    `연속 ${config.cooldown_after_loss_streak}회 손실 → 쿨다운 ${remainMin}분 남음`,
+            reason:    `연속 ${policy.cooldown_after_loss_streak}회 손실 → 쿨다운 ${remainMin}분 남음`,
             type:      'loss_streak',
           };
         }
@@ -648,7 +680,7 @@ export async function preTradeCheck(symbol, direction, estimatedAmount = 0, exch
   }
 
   // 4. 서킷 브레이커 (BUY/SELL 공통)
-  const circuitCheck = await checkCircuitBreaker();
+  const circuitCheck = await checkCircuitBreaker(exchange, effectiveTradeMode);
   if (circuitCheck.triggered) {
     return { allowed: false, reason: `서킷 브레이커: ${circuitCheck.reason}`, circuit: true, circuitType: circuitCheck.type };
   }

@@ -17,6 +17,7 @@ import ccxt from 'ccxt';
 import * as db from '../shared/db.ts';
 import { publishAlert } from '../shared/alert-publisher.ts';
 import { initHubSecrets, loadSecrets } from '../shared/secrets.ts';
+import { getInvestmentRagRuntimeConfig } from '../shared/runtime-config.ts';
 import { createRequire } from 'module';
 
 const _require = createRequire(import.meta.url);
@@ -24,6 +25,7 @@ const { createAgentMemory } = _require('../../../packages/core/lib/agent-memory'
 
 const DUST_USDT = 3;
 const WATCH_USDT = 10;
+const RAG_RUNTIME = getInvestmentRagRuntimeConfig();
 const sweeperMemory = createAgentMemory({ agentId: 'investment.sweeper', team: 'investment' });
 
 function getExchange() {
@@ -162,7 +164,7 @@ export async function runSweeper({ telegram = false } = {}) {
     const episodicHint = await sweeperMemory.recallCountHint(memoryQuery, {
       type: 'episodic',
       limit: 2,
-      threshold: 0.33,
+      threshold: Number(RAG_RUNTIME.sweeperMemory?.episodicThreshold ?? 0.33),
       title: '최근 유사 정합성 점검',
       separator: 'pipe',
       metadataKey: 'kind',
@@ -174,7 +176,7 @@ export async function runSweeper({ telegram = false } = {}) {
     const semanticHint = await sweeperMemory.recallHint(`${memoryQuery} consolidated integrity pattern`, {
       type: 'semantic',
       limit: 2,
-      threshold: 0.28,
+      threshold: Number(RAG_RUNTIME.sweeperMemory?.semanticThreshold ?? 0.28),
       title: '최근 통합 패턴',
       separator: 'newline',
     }).catch(() => '');

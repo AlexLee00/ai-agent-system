@@ -22,15 +22,24 @@ function parseArgs(argv = process.argv.slice(2)) {
 
 function buildMarketRow(market, report) {
   const rows = report?.rows || [];
-  const attached = rows.filter((row) => row.plannerMode).length;
+  const eligibleRows = rows.filter((row) =>
+    row?.plannerMode
+    || row?.bridgeStatus === 'completed'
+    || Number(row?.decisionCount || 0) > 0
+    || Number(row?.debateCount || 0) > 0
+    || Number(row?.approvedSignals || 0) > 0
+    || Number(row?.executedSymbols || 0) > 0,
+  );
+  const attached = eligibleRows.filter((row) => row.plannerMode).length;
   const latest = rows[0] || null;
   return {
     market: market.key,
     label: market.label,
-    count: Number(report?.count || 0),
+    count: eligibleRows.length,
+    rawCount: Number(report?.count || 0),
     attached,
-    missing: Math.max(0, Number(report?.count || 0) - attached),
-    ratio: Number(report?.count || 0) > 0 ? Number((attached / Number(report.count || 0)).toFixed(4)) : 0,
+    missing: Math.max(0, eligibleRows.length - attached),
+    ratio: eligibleRows.length > 0 ? Number((attached / eligibleRows.length).toFixed(4)) : 0,
     latestStartedAt: latest?.startedAt || null,
     latestTradeMode: latest?.investmentTradeMode || null,
     latestPlannerMode: latest?.plannerMode || null,
@@ -100,7 +109,7 @@ function renderText(payload) {
     '',
     '시장별:',
     ...payload.rows.map((row) =>
-      `- ${row.label}(${row.market}) | attached=${row.attached}/${row.count} | ratio=${(row.ratio * 100).toFixed(0)}% | latestPlanner=${row.latestPlannerMode || 'none'} | tradeMode=${row.latestTradeMode || 'none'} | bridge=${row.latestBridgeStatus || 'none'}`
+      `- ${row.label}(${row.market}) | attached=${row.attached}/${row.count} eligible (raw ${row.rawCount}) | ratio=${(row.ratio * 100).toFixed(0)}% | latestPlanner=${row.latestPlannerMode || 'none'} | tradeMode=${row.latestTradeMode || 'none'} | bridge=${row.latestBridgeStatus || 'none'}`
     ),
     '',
     '권장 조치:',
