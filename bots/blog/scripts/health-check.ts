@@ -14,6 +14,7 @@
 
 const http = require('http');
 const path = require('path');
+const { execFileSync } = require('child_process');
 const env = require('../../../packages/core/lib/env');
 const hsm = require('../../../packages/core/lib/health-state-manager');
 const pgPool = require('../../../packages/core/lib/pg-pool.js');
@@ -55,6 +56,7 @@ const INSTAGRAM_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bo
 const SOCIAL_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:social -- --json`;
 const ENGAGEMENT_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:engagement -- --json`;
 const BLOG_OPS_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:ops -- --json`;
+const doctorPriorityCache = new Map();
 
 function buildPreviewBundleForTitle(title = '') {
   try {
@@ -117,14 +119,66 @@ async function notify(msg, level = 3) {
   }
 }
 
-function buildOpsPriorityHint(area, reason, nextCommand) {
-  const lines = [
-    `primary blocker: ${area} / ${reason}`,
-  ];
-  if (nextCommand) {
-    lines.push(`next command: ${nextCommand}`);
+function extractJsonObjectText(output = '') {
+  const text = String(output || '').trim();
+  if (!text) return '';
+  if (text.startsWith('{')) return text;
+  const jsonLine = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .reverse()
+    .find((line) => line.startsWith('{') && line.endsWith('}'));
+  if (jsonLine) return jsonLine;
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start >= 0 && end > start) return text.slice(start, end + 1);
+  return text;
+}
+
+function getDoctorPriority(command = '', fallback = {}) {
+  if (!command) {
+    return {
+      area: String(fallback.area || 'unknown'),
+      reason: String(fallback.reason || 'doctor command 미설정'),
+      nextCommand: String(fallback.nextCommand || ''),
+      actionFocus: String(fallback.actionFocus || ''),
+    };
   }
-  lines.push(`ops doctor: ${BLOG_OPS_DOCTOR_COMMAND}`);
+  if (doctorPriorityCache.has(command)) return doctorPriorityCache.get(command);
+  let priority = null;
+  try {
+    const output = execFileSync('zsh', ['-lc', command], {
+      cwd: path.join(env.PROJECT_ROOT, 'bots/blog'),
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+    const jsonText = extractJsonObjectText(output);
+    const payload = JSON.parse(jsonText || '{}');
+    const primary = payload?.primary || {};
+    priority = {
+      area: String(primary.area || fallback.area || 'unknown'),
+      reason: String(primary.reason || fallback.reason || '정보 없음'),
+      nextCommand: String(primary.nextCommand || fallback.nextCommand || ''),
+      actionFocus: String(primary.actionFocus || fallback.actionFocus || ''),
+    };
+  } catch {
+    priority = {
+      area: String(fallback.area || 'unknown'),
+      reason: String(fallback.reason || 'doctor priority 확인 실패'),
+      nextCommand: String(fallback.nextCommand || ''),
+      actionFocus: String(fallback.actionFocus || ''),
+    };
+  }
+  doctorPriorityCache.set(command, priority);
+  return priority;
+}
+
+function buildPriorityHint(label, priority, { includeActionFocus = false } = {}) {
+  if (!priority) return '';
+  const lines = [`${label}: ${priority.area} / ${priority.reason}`];
+  if (priority.nextCommand) lines.push(`${label.replace('primary', 'next')}: ${priority.nextCommand}`);
+  if (includeActionFocus && priority.actionFocus) lines.push(`${label.replace('primary', 'focus')}: ${priority.actionFocus}`);
   return `\n${lines.join('\n')}`;
 }
 
@@ -317,16 +371,24 @@ async function checkFacebookPublishHealth() {
 
     if (String(row.status || '') === 'failed' && permissionIssue && (isTodayKst || (recentEnough && !hasRecentSuccess))) {
       const previewBundle = buildPreviewBundleForTitle(String(row.title || ''));
+      const socialPriority = getDoctorPriority(SOCIAL_DOCTOR_COMMAND, {
+        area: 'social.facebook',
+        reason: 'Facebook publish 권한 이슈가 현재 소셜 채널 최우선 병목입니다.',
+        nextCommand: FACEBOOK_DOCTOR_COMMAND,
+        actionFocus: 'Meta 앱 권한 재연결과 페이지 토큰 재발급',
+      });
+      const opsPriority = getDoctorPriority(BLOG_OPS_DOCTOR_COMMAND, {
+        area: 'social.facebook',
+        reason: 'Facebook publish 권한 이슈가 현재 최우선 병목입니다.',
+        nextCommand: SOCIAL_DOCTOR_COMMAND,
+        actionFocus: 'Meta 앱 권한 재연결과 페이지 토큰 재발급',
+      });
       const scopes = Array.isArray(readiness?.permissionScopes) && readiness.permissionScopes.length > 0
         ? readiness.permissionScopes.join(', ')
         : 'pages_manage_posts, pages_read_engagement';
       const pageHint = readiness?.pageId ? `\npage: ${String(readiness.pageId).slice(0, 32)}` : '';
       const actionHint = `\naction: Meta 앱 권한(${scopes}) 재연결 후 페이지 토큰을 다시 발급하세요`;
-      const diagnoseHint = `\ndiagnose: ${FACEBOOK_READINESS_COMMAND}\ndoctor: ${FACEBOOK_DOCTOR_COMMAND}\nsocial doctor: ${SOCIAL_DOCTOR_COMMAND}${buildOpsPriorityHint(
-        'social.facebook',
-        'Facebook publish 권한 이슈가 현재 최우선 병목입니다.',
-        SOCIAL_DOCTOR_COMMAND,
-      )}`;
+      const diagnoseHint = `\ndiagnose: ${FACEBOOK_READINESS_COMMAND}\ndoctor: ${FACEBOOK_DOCTOR_COMMAND}\nsocial doctor: ${SOCIAL_DOCTOR_COMMAND}${buildPriorityHint('social primary', socialPriority, { includeActionFocus: true })}${buildPriorityHint('primary blocker', opsPriority, { includeActionFocus: true })}\nops doctor: ${BLOG_OPS_DOCTOR_COMMAND}`;
       return {
         ok: false,
         detail: `Facebook 페이지 게시 권한 부족 — ${String(row.title || '').slice(0, 60)}\n${summarizedError}${pageHint}${actionHint}${diagnoseHint}${previewBundle ? `\npreview: ${previewBundle}` : ''}`,
@@ -395,13 +457,21 @@ async function checkInstagramPublishHealth() {
 
     if (String(latestReal.status || '') === 'failed' && (isTodayKst || (recentEnough && !hasRecentSuccess))) {
       const previewBundle = buildPreviewBundleForTitle(latestTitle);
+      const socialPriority = getDoctorPriority(SOCIAL_DOCTOR_COMMAND, {
+        area: 'social.instagram',
+        reason: 'Instagram publish 실패가 현재 소셜 채널 최우선 병목입니다.',
+        nextCommand: INSTAGRAM_DOCTOR_COMMAND,
+        actionFocus: '공개 reel/cover/qa 자산과 최신 Instagram failure reason 재확인',
+      });
+      const opsPriority = getDoctorPriority(BLOG_OPS_DOCTOR_COMMAND, {
+        area: 'social.instagram',
+        reason: 'Instagram publish/readiness 이슈가 현재 최우선 병목입니다.',
+        nextCommand: SOCIAL_DOCTOR_COMMAND,
+        actionFocus: 'social.instagram',
+      });
       return {
         ok: false,
-        detail: `Instagram 자동등록 실패 — ${latestTitle.slice(0, 60)}\n${errorText.slice(0, 120)}\ndiagnose: ${INSTAGRAM_READINESS_COMMAND}\ndoctor: ${INSTAGRAM_DOCTOR_COMMAND}\nsocial doctor: ${SOCIAL_DOCTOR_COMMAND}${buildOpsPriorityHint(
-          'social.instagram',
-          'Instagram publish/readiness 이슈가 현재 최우선 병목입니다.',
-          SOCIAL_DOCTOR_COMMAND,
-        )}${previewBundle ? `\npreview: ${previewBundle}` : ''}`,
+        detail: `Instagram 자동등록 실패 — ${latestTitle.slice(0, 60)}\n${errorText.slice(0, 120)}\ndiagnose: ${INSTAGRAM_READINESS_COMMAND}\ndoctor: ${INSTAGRAM_DOCTOR_COMMAND}\nsocial doctor: ${SOCIAL_DOCTOR_COMMAND}${buildPriorityHint('social primary', socialPriority, { includeActionFocus: true })}${buildPriorityHint('primary blocker', opsPriority, { includeActionFocus: true })}\nops doctor: ${BLOG_OPS_DOCTOR_COMMAND}${previewBundle ? `\npreview: ${previewBundle}` : ''}`,
         latest: latestReal,
       };
     }
@@ -558,11 +628,21 @@ async function checkEngagementAutomationHealth() {
       const replayHint = latestReplyReplayCandidate?.id
         ? `\nreply replay: npm run replay:reply-ui -- --comment-id ${latestReplyReplayCandidate.id} --json`
         : '';
-      const doctorHint = `\ndoctor: ${ENGAGEMENT_DOCTOR_COMMAND}${buildOpsPriorityHint(
-        'engagement',
-        '답글/댓글/공감 자동화 이슈가 현재 최우선 병목입니다.',
-        ENGAGEMENT_DOCTOR_COMMAND,
-      )}`;
+      const engagementPriority = getDoctorPriority(ENGAGEMENT_DOCTOR_COMMAND, {
+        area: 'engagement.ui',
+        reason: 'reply UI 또는 browser 흐름 실패가 현재 engagement 최우선 병목입니다.',
+        nextCommand: latestReplyReplayCandidate?.id
+          ? `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run replay:reply-ui -- --comment-id ${latestReplyReplayCandidate.id} --json`
+          : ENGAGEMENT_DOCTOR_COMMAND,
+        actionFocus: '네이버 reply button / submit / editor mount 흐름 재현',
+      });
+      const opsPriority = getDoctorPriority(BLOG_OPS_DOCTOR_COMMAND, {
+        area: 'engagement',
+        reason: '답글/댓글/공감 자동화 이슈가 현재 최우선 병목입니다.',
+        nextCommand: ENGAGEMENT_DOCTOR_COMMAND,
+        actionFocus: 'engagement',
+      });
+      const doctorHint = `\ndoctor: ${ENGAGEMENT_DOCTOR_COMMAND}${buildPriorityHint('engagement primary', engagementPriority, { includeActionFocus: true })}${buildPriorityHint('primary blocker', opsPriority, { includeActionFocus: true })}\nops doctor: ${BLOG_OPS_DOCTOR_COMMAND}`;
       return {
         ok: false,
         detail: `engagement UI/browser failures — reply ${failureByAction.reply}, neighbor ${failureByAction.neighbor_comment}, sympathy ${failureByAction.sympathy}${sampleHint}${replayTargetHint}${replayHint}${doctorHint}`,
