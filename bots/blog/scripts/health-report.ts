@@ -94,6 +94,45 @@ function calcExpectedByWindow(target, startHour, endHour) {
   };
 }
 
+function classifyEngagementFailure(meta = {}) {
+  const errorText = String(meta?.error || meta?.uiError || meta?.previous_error || '').trim();
+  if (!errorText) {
+    if (meta?.correction_reason === 'reply_verification_false_positive') return 'verification';
+    return 'unknown';
+  }
+
+  if (
+    errorText.includes('reply_button_not_found')
+    || errorText.includes('reply_submit_not_found')
+    || errorText.includes('comment_submit_not_confirmed')
+    || errorText.includes('reply_ui_unavailable')
+    || errorText.includes('reply_editor_not_found')
+  ) {
+    return 'ui';
+  }
+
+  if (
+    errorText.includes('fetch failed')
+    || errorText.includes('timeout')
+    || errorText.includes('429')
+    || errorText.includes('Claude Code')
+    || errorText.includes('Groq')
+  ) {
+    return 'llm';
+  }
+
+  if (
+    errorText.includes('ECONNREFUSED')
+    || errorText.includes('__name is not defined')
+    || errorText.includes('browser')
+    || errorText.includes('ws 연결 실패')
+  ) {
+    return 'browser';
+  }
+
+  return 'unknown';
+}
+
 function extractJsonObjectText(output = '') {
   const text = String(output || '').trim();
   if (!text) return '';
@@ -402,12 +441,20 @@ async function buildEngagementHealth() {
     const replyConfig = runtimeConfig.commenter || {};
     const neighborConfig = runtimeConfig.neighborCommenter || {};
 
-    const [actionRows, commentRows, neighborRows] = await Promise.all([
+    const [actionAggRows, failureMetaRows, commentRows, neighborRows] = await Promise.all([
       pgPool.query('blog', `
         SELECT action_type, success, COUNT(*)::int AS cnt
         FROM blog.comment_actions
         WHERE timezone('Asia/Seoul', executed_at)::date = timezone('Asia/Seoul', now())::date
         GROUP BY 1, 2
+      `),
+      pgPool.query('blog', `
+        SELECT action_type, meta
+        FROM blog.comment_actions
+        WHERE timezone('Asia/Seoul', executed_at)::date = timezone('Asia/Seoul', now())::date
+          AND success = false
+        ORDER BY executed_at DESC
+        LIMIT 50
       `),
       pgPool.query('blog', `
         SELECT
@@ -427,8 +474,14 @@ async function buildEngagementHealth() {
     ]);
 
     const actionMap = new Map();
-    for (const row of actionRows || []) {
+    for (const row of actionAggRows || []) {
       actionMap.set(`${row.action_type}:${row.success ? 'ok' : 'fail'}`, Number(row.cnt || 0));
+    }
+
+    const failureByKind = { ui: 0, llm: 0, browser: 0, verification: 0, unknown: 0 };
+    for (const row of failureMetaRows || []) {
+      const kind = classifyEngagementFailure(row.meta || {});
+      failureByKind[kind] = Number(failureByKind[kind] || 0) + 1;
     }
 
     const replySuccess = Number(actionMap.get('reply:ok') || 0);
@@ -487,6 +540,20 @@ async function buildEngagementHealth() {
     if (replyFailure + neighborCommentFailure + sympathyFailure > 0) {
       warn.push(`  failed engagement actions today: ${replyFailure + neighborCommentFailure + sympathyFailure}건`);
     }
+    if ((failureByKind.ui || 0) > 0 || (failureByKind.browser || 0) > 0 || (failureByKind.llm || 0) > 0) {
+      ok.push(
+        `  failure mix: ui ${failureByKind.ui || 0} / browser ${failureByKind.browser || 0} / llm ${failureByKind.llm || 0} / verification ${failureByKind.verification || 0}`
+      );
+    }
+    if ((failureByKind.ui || 0) > 0) {
+      warn.push(`  engagement UI failures: ${failureByKind.ui || 0}건`);
+    }
+    if ((failureByKind.browser || 0) > 0) {
+      warn.push(`  engagement browser failures: ${failureByKind.browser || 0}건`);
+    }
+    if ((failureByKind.llm || 0) > 0) {
+      warn.push(`  engagement LLM failures: ${failureByKind.llm || 0}건`);
+    }
 
     return {
       okCount: ok.length,
@@ -522,6 +589,7 @@ async function buildEngagementHealth() {
         failed: Number(neighborStatusMap.get('failed') || 0),
         pending: Number(neighborStatusMap.get('pending') || 0),
       },
+      failureByKind,
     };
   } catch (error) {
     return {
@@ -534,6 +602,7 @@ async function buildEngagementHealth() {
       sympathies: { success: 0, failed: 0, target: 0, expectedNow: 0 },
       inboundComments: { total: 0, replied: 0, pending: 0, failed: 0 },
       neighborQueue: { posted: 0, failed: 0, pending: 0 },
+      failureByKind: { ui: 0, llm: 0, browser: 0, verification: 0, unknown: 0 },
     };
   }
 }
