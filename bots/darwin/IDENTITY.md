@@ -34,9 +34,21 @@ elixir/team_jay/lib/team_jay/darwin/  # TeamJay.Darwin.* (레거시)
 ## 자율 레벨
 
 ```
-L3 (현재 기본) — 에러 복구 상태. 구현 전 마스터 승인 필요.
-L4 (5회 성공 + 7일) — 구현 자동화. 적용 전 마스터 승인.
-L5 (10회 성공 + 적용 3회 + 14일) — 완전 자율. DARWIN_L5_ENABLED=true 필수.
+L3 — 에러 복구 상태. 구현 전 마스터 승인 필요.
+L4 — 구현 자동화. 적용 전 마스터 승인.
+L5 (현재 live) — 정상 경로 완전 자율. 예외/충돌만 수동 검토.
+
+현재 live 정책:
+- `DARWIN_AUTONOMY_LEVEL=5`
+- `DARWIN_L5_ENABLED=true`
+- `DARWIN_KILL_SWITCH=false`
+- `DARWIN_TIER2_AUTO_APPLY=true`
+- `DARWIN_SHADOW_MODE=false`
+
+현재 cadence:
+- 메인 Darwin 실행: 주 1회
+- 운영 리포트: 주 1회
+- 주간 리뷰: 주 1회
 ```
 
 ## 목표

@@ -1,18 +1,19 @@
 # TRACKER.md — 다윈팀 작업 추적
 
-> 최종 업데이트: 2026-04-18 (40차 세션)
+> 최종 업데이트: 2026-04-20 (live L5 주간 운영 반영)
 
 ## 현재 상태 요약
 
 ```
-자율 레벨: L4 (path_error_fixed_prototypes_allowed)
-연속 성공: 0 (리모델링 후 리셋)
-적용 성공: 0
-마지막 스캔: -
-마지막 구현: -
+자율 레벨: L5 (live autonomous)
+운영 모드: weekly cadence
+알림 경로: 정상 경로 공용 postAlarm
+승인 버튼: 예외/수동 검토 시에만 허용
+마지막 스캔: 주간 스케줄 기준
+마지막 구현: live autonomous path
 ```
 
-## 40차 세션 작업 내역
+## 최근 작업 내역
 
 ### 완료
 - [x] CODEX_DARWIN_REMODEL Phase 0-6 전체 구현
@@ -28,12 +29,15 @@
   - 20260418000005: darwin_v2_reflexion_memory
 - [x] rollback_scheduler.ex 컴파일 경고 2건 수정
 - [x] test/test_helper.exs integration/db/pending 태그 exclude 설정
+- [x] live Darwin을 `L5 완전자율`로 승격
+- [x] 정상 경로 승인 버튼 제거, 공용 `postAlarm` 경로 복귀
+- [x] Darwin 메인/운영 리포트 cadence를 주 1회 기준으로 정합화
+- [x] `ai.darwin.daily.shadow`, `ai.darwin.daily-report`, `ai.darwin.weekly-review` kickstart 확인
 
-### 다음 작업 (41차 세션)
-- [ ] Shadow Mode 7일 관찰 (avg_match ≥ 95% 달성 확인)
-- [ ] `DARWIN_V2_ENABLED=true` OPS 환경변수 설정 (마스터 승인 후)
-- [ ] DB 마이그레이션 OPS 적용 (`mix darwin.migrate`)
-- [ ] Tier 1 → Tier 2 자동 승급 조건 모니터링
+### 다음 작업
+- [ ] 문서 잔여 `L4/shadow/승인 필요` 표현 정리
+- [ ] Darwin JS/Elixir 예외 경로 승인 메시지 톤 통일
+- [ ] `darwin_v2_llm_routing_log` / LLM no_api_key 운영 노이즈 정리
 
 ## 파일 목록 (Darwin V2)
 

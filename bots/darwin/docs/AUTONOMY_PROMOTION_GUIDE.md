@@ -1,6 +1,7 @@
 # Darwin 자율 레벨 승격 가이드
 
 > 작성: 코덱스 / 2026-04-19
+> live 반영: 2026-04-20
 
 ## 레벨 체계
 
@@ -35,6 +36,18 @@
    - L5: `launchctl setenv DARWIN_AUTONOMY_LEVEL 5` + `launchctl setenv DARWIN_L5_ENABLED true`
 5. `darwin_autonomy_promotion_log` 테이블에 자동 기록
 
+## 현재 상태
+
+- live Darwin은 이미 `L5`로 승격 완료
+- live 환경:
+  - `DARWIN_AUTONOMY_LEVEL=5`
+  - `DARWIN_L5_ENABLED=true`
+  - `DARWIN_KILL_SWITCH=false`
+  - `DARWIN_TIER2_AUTO_APPLY=true`
+  - `DARWIN_SHADOW_MODE=false`
+- 정상 경로는 승인 버튼 없이 자동 구현/자동 적용/공용 알람을 사용
+- 승인 버튼은 실패/충돌/수동 검토 예외에만 허용
+
 ## 강등 조건 (자동)
 
 - 연속 실패 3회 → 현재 레벨 -1 강등
@@ -60,3 +73,9 @@ WHERE started_at > NOW() - INTERVAL '30 days';
 - L5 자동 flip은 **시스템 내에서 절대 불가** (코드 레벨 강제 차단)
 - L5 상태에서도 Sandbox 격리 유지 — 메인 코드 직접 수정 금지
 - Telegram 알림 후 48시간 내 마스터 미응답 시 후보 로그만 유지, 재알림 없음
+
+## 운영 cadence
+
+- Darwin 메인 실행: 주 1회
+- 운영 리포트: 주 1회
+- 주간 리뷰: 주 1회

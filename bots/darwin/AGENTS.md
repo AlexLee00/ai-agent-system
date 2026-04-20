@@ -25,7 +25,7 @@ Darwin.V2.Commander.status()
 | PLAN | Darwin.V2.Cycle.Plan | 구현 계획 수립 |
 | IMPLEMENT | Darwin.V2.Cycle.Implement | 에디슨 코드 생성 트리거 |
 | VERIFY | Darwin.V2.Cycle.Verify | Proof-R 검증 실행 |
-| APPLY | Darwin.V2.Cycle.Apply | L4+ 자동 통합 |
+| APPLY | Darwin.V2.Cycle.Apply | L5 정상 경로 자동 통합 |
 | LEARN | Darwin.V2.Cycle.Learn | RAG 적재 + ESPL 진화 |
 
 ## 스킬 (Darwin.V2.Skill.*)
@@ -53,3 +53,10 @@ Darwin.V2.Commander.status()
 | Darwin.V2.LLM.RoutingLog | 라우팅 기록 | record/1 |
 | Darwin.V2.Signal | CloudEvents 발행 | emit/3 |
 | Darwin.V2.MCP.Server | HTTP REST API | DARWIN_HTTP_PORT |
+
+## 현재 live 운영 메모
+
+- `Commander`와 JS 레거시 브리지는 현재 `L5` 정책 기준으로 동작한다.
+- 정상 성공 경로는 승인 버튼 없이 자동 구현/자동 적용으로 흐른다.
+- 수동 검토 버튼은 실패/충돌/예외 상황에만 남긴다.
+- Darwin launchd cadence는 일일이 아니라 주 1회다.

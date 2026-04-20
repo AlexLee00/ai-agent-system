@@ -1,12 +1,12 @@
 # Darwin V2 — Kill Switch 및 환경변수 제어
 
-> 최종 업데이트: 2026-04-18
+> 최종 업데이트: 2026-04-20
 
 ---
 
 ## 개요
 
-Darwin V2의 모든 기능은 환경변수로 제어됩니다. 기본값은 **안전 우선(conservative)**으로 설정되어 있으며, 기능 활성화는 명시적으로 이루어져야 합니다.
+Darwin V2의 모든 기능은 환경변수로 제어됩니다. 시스템 기본값은 **안전 우선(conservative)**이지만, 현재 live Darwin은 `L5 완전자율` 정책으로 운영 중입니다.
 
 ---
 
@@ -113,6 +113,32 @@ DARWIN_TIER2_AUTO_APPLY=true
 DARWIN_ESPL_ENABLED=true
 DARWIN_SELF_RAG_ENABLED=true
 ```
+
+---
+
+## 현재 live 운영값
+
+현재 Darwin live LaunchAgent는 아래 값을 사용한다.
+
+```bash
+DARWIN_V2_ENABLED=true
+DARWIN_KILL_SWITCH=false
+DARWIN_SHADOW_MODE=false
+DARWIN_TIER2_AUTO_APPLY=true
+DARWIN_L5_ENABLED=true
+DARWIN_AUTONOMY_LEVEL=5
+```
+
+정상 성공 경로:
+- 승인 버튼 없음
+- 공용 `postAlarm` 경로 사용
+
+예외 경로:
+- 실패
+- 충돌
+- 수동 검토 필요
+
+이 경우에만 수동 개입 버튼을 허용한다.
 
 ---
 

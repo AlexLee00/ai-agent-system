@@ -1,6 +1,6 @@
 # Darwin Team — Team Jay의 자율 R&D 에이전트
 
-다윈팀은 최신 AI 연구를 자율적으로 탐색·평가·구현·적용하는 R&D 자율화 시스템입니다.
+다윈팀은 최신 AI 연구를 자율적으로 탐색·평가·구현·적용하는 R&D 자율화 시스템입니다. 현재 live는 `L5 완전자율 + 주 1회 cadence` 기준으로 운영됩니다.
 
 ## 빠른 시작
 
@@ -9,7 +9,7 @@
 cd bots/darwin/elixir
 mix compile && mix test
 
-# V1 TypeScript (레거시)
+# JS/TS 레거시 브리지
 node bots/darwin/scripts/research-task-runner.ts
 ```
 
@@ -47,9 +47,20 @@ bots/darwin/
 
 | 레벨 | 조건 | 권한 |
 |------|------|------|
-| L3 | 기본 | 제안서만 |
-| L4 | 5회 성공 + 7일 | 자동 구현 |
-| L5 | 10회 성공 + 3회 적용 + 14일 + DARWIN_L5_ENABLED | 자동 통합 |
+| L3 | 기본 | 제안서/수동 승인 |
+| L4 | 5회 성공 + 7일 | 구현 자동, 적용 전 승인 |
+| L5 | 10회 성공 + 3회 적용 + 14일 + DARWIN_L5_ENABLED | 정상 경로 자동 통합 |
+
+## 현재 live 운영
+
+- 자율 레벨: `L5`
+- Kill Switch: `false`
+- Shadow Mode: `false`
+- 알림: 정상 경로는 공용 `postAlarm`, 예외만 수동 버튼
+- 스케줄:
+  - 메인 Darwin 실행: 일요일 05:00
+  - 운영 리포트: 일요일 06:30
+  - 주간 리뷰: 일요일 19:00
 
 ## 관련 문서
 
