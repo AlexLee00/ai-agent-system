@@ -133,6 +133,15 @@ function classifyEngagementFailure(meta = {}) {
   return 'unknown';
 }
 
+function summarizeEngagementFailure(meta = {}) {
+  const raw = String(meta?.error || meta?.uiError || meta?.previous_error || meta?.message || '').trim();
+  if (!raw) return '';
+  return raw
+    .replace(/\s+/g, ' ')
+    .replace(/snapshotPrefix[^,}\]]*/gi, 'snapshotPrefix')
+    .slice(0, 140);
+}
+
 function extractJsonObjectText(output = '') {
   const text = String(output || '').trim();
   if (!text) return '';
@@ -479,9 +488,18 @@ async function buildEngagementHealth() {
     }
 
     const failureByKind = { ui: 0, llm: 0, browser: 0, verification: 0, unknown: 0 };
+    const failureSamples = [];
     for (const row of failureMetaRows || []) {
       const kind = classifyEngagementFailure(row.meta || {});
       failureByKind[kind] = Number(failureByKind[kind] || 0) + 1;
+      const sample = summarizeEngagementFailure(row.meta || {});
+      if (sample && failureSamples.length < 3) {
+        failureSamples.push({
+          actionType: String(row.action_type || ''),
+          kind,
+          sample,
+        });
+      }
     }
 
     const replySuccess = Number(actionMap.get('reply:ok') || 0);
@@ -545,6 +563,9 @@ async function buildEngagementHealth() {
         `  failure mix: ui ${failureByKind.ui || 0} / browser ${failureByKind.browser || 0} / llm ${failureByKind.llm || 0} / verification ${failureByKind.verification || 0}`
       );
     }
+    for (const item of failureSamples) {
+      ok.push(`  recent failure: ${item.kind}/${item.actionType} ${item.sample}`);
+    }
     if ((failureByKind.ui || 0) > 0) {
       warn.push(`  engagement UI failures: ${failureByKind.ui || 0}건`);
     }
@@ -590,6 +611,7 @@ async function buildEngagementHealth() {
         pending: Number(neighborStatusMap.get('pending') || 0),
       },
       failureByKind,
+      failureSamples,
     };
   } catch (error) {
     return {
@@ -603,6 +625,7 @@ async function buildEngagementHealth() {
       inboundComments: { total: 0, replied: 0, pending: 0, failed: 0 },
       neighborQueue: { posted: 0, failed: 0, pending: 0 },
       failureByKind: { ui: 0, llm: 0, browser: 0, verification: 0, unknown: 0 },
+      failureSamples: [],
     };
   }
 }
