@@ -24,7 +24,10 @@ const {
 } = require('../../../packages/core/lib/health-provider');
 const { getBlogHealthRuntimeConfig } = require('../lib/runtime-config.ts');
 const { getInstagramConfig } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-graph.ts'));
-const { getInstagramImageHostConfig } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-image-host.ts'));
+const {
+  getInstagramImageHostConfig,
+  resolveInstagramHostedMediaUrl,
+} = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-image-host.ts'));
 const { checkFacebookPublishReadiness } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/facebook-publisher.ts'));
 const { buildMarketingDigest } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/marketing-digest.ts'));
 
@@ -602,6 +605,9 @@ async function buildSocialAutomationHealth() {
         .map((name) => path.join(SHORTFORM_DIR, name))
         .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0] || null
       : null;
+    const latestQaHosted = latestQaSheet
+      ? resolveInstagramHostedMediaUrl(latestQaSheet, { kind: 'thumbs' })
+      : null;
 
     if (instaList.length > 0) {
       ok.push(`  instagram recent: success ${instaSummary.success} / failed ${instaSummary.failed} / skipped ${instaSummary.skipped} (dry-run ${instaSummary.dryRun})`);
@@ -623,6 +629,9 @@ async function buildSocialAutomationHealth() {
 
     if (latestQaSheet) {
       ok.push(`  reel latest qa: ${path.basename(latestQaSheet)}`);
+      if (latestQaHosted?.publicUrl) {
+        ok.push(`  reel latest qa url: ${latestQaHosted.publicUrl}`);
+      }
     } else if (reelCountToday > 0) {
       warn.push('  reel qa sheet: 오늘 릴스 QA 시트가 없습니다');
     }
@@ -693,6 +702,7 @@ async function buildSocialAutomationHealth() {
       socialAssetDueHour: socialAssetExpectation.dueHour,
       publishLogExists,
       latestQaSheet,
+      latestQaUrl: latestQaHosted?.publicUrl || null,
     };
   } catch (error) {
     return {
@@ -713,6 +723,7 @@ async function buildSocialAutomationHealth() {
       socialAssetDueHour: getSocialAssetExpectation().dueHour,
       publishLogExists: false,
       latestQaSheet: null,
+      latestQaUrl: null,
     };
   }
 }
