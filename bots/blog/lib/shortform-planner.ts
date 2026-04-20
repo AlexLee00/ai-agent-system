@@ -17,14 +17,7 @@ function slugify(text = '') {
 }
 
 function pickHook(title = '', category = '') {
-  const clean = String(title).trim();
-  if (category === '백엔드/개발자 커리어' || /node|백엔드|개발/i.test(clean)) {
-    return `이거 모르고 ${clean.slice(0, 18)} 시작하면 손해봅니다`;
-  }
-  if (category === '최신IT트렌드') {
-    return `${clean.slice(0, 20)} 지금 놓치면 감각이 늦습니다`;
-  }
-  return `${clean.slice(0, 22)} 핵심만 15초 안에 정리합니다`;
+  return buildHookLine(title, category);
 }
 
 function normalizeTitleText(text = '') {
