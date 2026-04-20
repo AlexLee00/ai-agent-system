@@ -6,6 +6,10 @@ const env = require('../../../packages/core/lib/env');
 const { buildShortformPlan } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-planner.ts'));
 const { SHORTFORM_DEFAULT_DURATION_SEC } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-planner.ts'));
 const { generateInstaCaption } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/social.ts'));
+const {
+  findLatestThumbPath,
+  findThumbPathForTitle,
+} = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-files.ts'));
 
 const BLOG_ROOT = path.join(env.PROJECT_ROOT, 'bots/blog');
 const IMAGE_DIR = path.join(BLOG_ROOT, 'output/images');
@@ -50,16 +54,6 @@ function parseArgs(argv = []) {
   return args;
 }
 
-function latestThumbPath() {
-  if (!fs.existsSync(IMAGE_DIR)) return null;
-  const files = fs
-    .readdirSync(IMAGE_DIR)
-    .filter((name) => name.endsWith('_thumb.png'))
-    .map((name) => path.join(IMAGE_DIR, name))
-    .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
-  return files[0] || null;
-}
-
 function readContent(contentFile = '') {
   if (!contentFile) return '';
   return fs.readFileSync(path.resolve(contentFile), 'utf8');
@@ -74,7 +68,10 @@ function slugify(text = '') {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const thumbPath = args.thumb ? path.resolve(args.thumb) : latestThumbPath();
+  const resolvedThumb = args.thumb
+    ? path.resolve(args.thumb)
+    : (args.title ? findThumbPathForTitle(args.title) : null) || findLatestThumbPath();
+  const thumbPath = resolvedThumb;
   if (!thumbPath) throw new Error('숏폼 준비용 썸네일을 찾지 못했습니다.');
   const title = args.title || path.basename(thumbPath).replace(/_thumb\.png$/i, '').replace(/_/g, ' ');
   const category = args.category || '최신IT트렌드';

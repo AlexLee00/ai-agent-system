@@ -15,6 +15,14 @@ function slugify(text = '') {
     .slice(0, 60);
 }
 
+function tokenizeKoreanTitle(text = '') {
+  return String(text)
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/gu)
+    .map((part) => part.trim())
+    .filter((part) => part.length >= 2);
+}
+
 /**
  * @param {string} dirPath
  * @param {((name: string) => boolean) | null} [predicate]
@@ -55,6 +63,32 @@ function findLatestThumbPath() {
   return files[0] || null;
 }
 
+/** @returns {string | null} */
+function findThumbPathForTitle(title = '') {
+  const slug = slugify(title);
+  if (!slug || !fs.existsSync(IMAGE_DIR)) return null;
+  const exact = path.join(IMAGE_DIR, `${slug}_thumb.png`);
+  if (fs.existsSync(exact)) return exact;
+  const queryTokens = tokenizeKoreanTitle(title);
+  const files = listFilesSortedByMtime(IMAGE_DIR, (name) => name.endsWith('_thumb.png'));
+  const scored = files
+    .map((fullPath) => {
+      const base = path.basename(fullPath).replace(/_thumb\.png$/i, '');
+      const normalized = slugify(base);
+      const baseTokens = tokenizeKoreanTitle(base);
+      let score = 0;
+      if (normalized.includes(slug) || slug.includes(normalized)) score += 100;
+      for (const token of queryTokens) {
+        if (normalized.includes(token)) score += 10;
+        if (baseTokens.includes(token)) score += 4;
+      }
+      return { fullPath, score };
+    })
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score || fs.statSync(b.fullPath).mtimeMs - fs.statSync(a.fullPath).mtimeMs);
+  return scored[0]?.fullPath || null;
+}
+
 module.exports = {
   BLOG_ROOT,
   SHORTFORM_DIR,
@@ -63,4 +97,5 @@ module.exports = {
   findLatestReelPath,
   findReelPathForTitle,
   findLatestThumbPath,
+  findThumbPathForTitle,
 };

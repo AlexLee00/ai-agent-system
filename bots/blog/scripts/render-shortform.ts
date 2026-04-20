@@ -6,7 +6,10 @@ const env = require('../../../packages/core/lib/env');
 const { buildShortformPlan } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-planner.ts'));
 const { SHORTFORM_DEFAULT_DURATION_SEC } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-planner.ts'));
 const { renderShortformReel } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-renderer.ts'));
-const { findLatestThumbPath } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-files.ts'));
+const {
+  findLatestThumbPath,
+  findThumbPathForTitle,
+} = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-files.ts'));
 
 /**
  * @typedef {{
@@ -46,7 +49,9 @@ function parseArgs(argv = []) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const thumbPath = args.thumb ? path.resolve(args.thumb) : findLatestThumbPath();
+  const thumbPath = args.thumb
+    ? path.resolve(args.thumb)
+    : (args.title ? findThumbPathForTitle(args.title) : null) || findLatestThumbPath();
   if (!thumbPath) throw new Error('렌더할 썸네일을 찾지 못했습니다.');
 
   const title = args.title || path.basename(thumbPath).replace(/_thumb\.png$/i, '').replace(/_/g, ' ');

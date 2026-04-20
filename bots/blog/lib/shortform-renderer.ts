@@ -19,19 +19,10 @@ function buildShortformVideoFilter() {
   const bgScale = `scale=${SHORTFORM_WIDTH}:${SHORTFORM_HEIGHT}:force_original_aspect_ratio=increase:flags=lanczos`;
   const fgScale = `scale=${SHORTFORM_SAFE_WIDTH}:${SHORTFORM_SAFE_HEIGHT}:force_original_aspect_ratio=decrease:flags=lanczos`;
   return [
-    `[0:v]${bgScale}`,
-    `crop=${SHORTFORM_WIDTH}:${SHORTFORM_HEIGHT}`,
-    "zoompan=z='min(zoom+0.00035,1.06)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=30",
-    'gblur=sigma=18',
-    'eq=brightness=-0.02:saturation=0.92',
-    'setsar=1[bg]',
-    `[0:v]${fgScale}`,
-    'unsharp=5:5:0.8:5:5:0.0',
-    "pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black@0",
-    'setsar=1[fg]',
-    '[bg][fg]overlay=(W-w)/2:(H-h)/2:format=auto',
-    'format=yuv420p',
-    `fps=${SHORTFORM_FPS}`
+    `[0:v]${bgScale}[bgsrc]`,
+    `[bgsrc]crop=${SHORTFORM_WIDTH}:${SHORTFORM_HEIGHT},zoompan=z='min(zoom+0.00035,1.06)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=30,gblur=sigma=18,eq=brightness=-0.02:saturation=0.92,setsar=1[bg]`,
+    `[0:v]${fgScale},unsharp=5:5:0.8:5:5:0.0,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black@0,setsar=1[fg]`,
+    `[bg][fg]overlay=(W-w)/2:(H-h)/2:format=auto,format=yuv420p,fps=${SHORTFORM_FPS}[vout]`
   ].join(';');
 }
 
@@ -42,6 +33,7 @@ function buildShortformRenderArgs({ thumbPath, outputPath, durationSec }) {
     '-i', thumbPath,
     '-t', String(durationSec),
     '-filter_complex', buildShortformVideoFilter(),
+    '-map', '[vout]',
     '-c:v', 'libx264',
     '-preset', SHORTFORM_PRESET,
     '-profile:v', 'high',
