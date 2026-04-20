@@ -28,6 +28,8 @@
   <dict>
     <key>NODE_ENV</key>
     <string>production</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
   </dict>
 </dict>
 </plist>
