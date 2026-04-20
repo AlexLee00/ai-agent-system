@@ -103,6 +103,42 @@ function buildActions({ latestReplyReplayCandidate, failureByKind }) {
   return actions;
 }
 
+function buildPrimary({ failureByKind, latestReplyReplayCandidate }) {
+  const blogPrefix = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')}`;
+  if ((failureByKind.ui || 0) > 0 || (failureByKind.browser || 0) > 0) {
+    return {
+      area: 'engagement.ui',
+      reason: 'reply UI 또는 browser 흐름 실패가 현재 engagement 최우선 병목입니다.',
+      nextCommand: latestReplyReplayCandidate?.id
+        ? `${blogPrefix} run replay:reply-ui -- --comment-id ${latestReplyReplayCandidate.id} --json`
+        : `${blogPrefix} run doctor:engagement -- --json`,
+      actionFocus: '네이버 reply button / submit / editor mount 흐름 재현',
+    };
+  }
+  if ((failureByKind.llm || 0) > 0) {
+    return {
+      area: 'engagement.llm',
+      reason: 'reply 생성 LLM 실패가 현재 engagement 최우선 병목입니다.',
+      nextCommand: `${blogPrefix} run doctor:engagement -- --json`,
+      actionFocus: 'timeout, fetch failed, 429 등 생성 경로 로그 확인',
+    };
+  }
+  if ((failureByKind.verification || 0) > 0) {
+    return {
+      area: 'engagement.verification',
+      reason: 'reply verification false positive가 현재 engagement 최우선 병목입니다.',
+      nextCommand: `${blogPrefix} run doctor:engagement -- --json`,
+      actionFocus: 'verification 로직과 correction reason 확인',
+    };
+  }
+  return {
+    area: 'clear',
+    reason: '현재 engagement 자동화의 즉시 조치가 필요한 병목은 없습니다.',
+    nextCommand: `${blogPrefix} run doctor:engagement -- --json`,
+    actionFocus: '다음 운영 시간대 관찰',
+  };
+}
+
 function buildEngagementDoctorFallback(payload = {}) {
   if (payload.totalFailures > 0) {
     return 'engagement 자동화는 최근 실패 흔적이 있어 replay 대상과 UI/browser 실패 비중부터 확인하는 편이 좋습니다.';
@@ -162,6 +198,7 @@ async function main() {
       : null,
   };
   payload.actions = buildActions({ latestReplyReplayCandidate, failureByKind });
+  payload.primary = buildPrimary({ failureByKind, latestReplyReplayCandidate });
 
   const aiSummary = await buildBlogCliInsight({
     bot: 'doctor-engagement',
@@ -179,6 +216,8 @@ async function main() {
 
   console.log(`[engagement doctor] failures=${payload.totalFailures}`);
   console.log(`🔍 AI: ${payload.aiSummary}`);
+  console.log(`[engagement doctor] primary=${payload.primary.area} ${payload.primary.reason}`);
+  console.log(`[engagement doctor] next=${payload.primary.nextCommand}`);
   console.log(`[engagement doctor] mix=ui ${payload.failureByKind.ui} / browser ${payload.failureByKind.browser} / llm ${payload.failureByKind.llm} / verification ${payload.failureByKind.verification}`);
   if (payload.latestReplyReplayCandidate?.id) {
     console.log(`[engagement doctor] replay=comment ${payload.latestReplyReplayCandidate.id} (${String(payload.latestReplyReplayCandidate.commenterName || 'unknown').slice(0, 30)})`);

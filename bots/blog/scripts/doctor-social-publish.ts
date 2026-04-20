@@ -93,6 +93,36 @@ function buildActions({ facebookReadiness, instagramConfig, latestFacebook, late
   return Array.from(new Set(actions));
 }
 
+function buildPrimary({ latestFacebook, latestInstagram, facebookReadiness, instagramConfig }) {
+  const blogPrefix = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')}`;
+  if (String(latestFacebook?.status || '') === 'failed') {
+    return {
+      area: 'social.facebook',
+      reason: 'Facebook publish 권한 이슈가 현재 소셜 채널 최우선 병목입니다.',
+      nextCommand: `${blogPrefix} run doctor:facebook -- --json`,
+      actionFocus: Array.isArray(facebookReadiness?.permissionScopes) && facebookReadiness.permissionScopes.length > 0
+        ? `Meta 권한 재연결 (${facebookReadiness.permissionScopes.join(', ')})`
+        : 'Meta 앱 권한 재연결과 페이지 토큰 재발급',
+    };
+  }
+  if (String(latestInstagram?.status || '') === 'failed' && !latestInstagram?.dry_run) {
+    return {
+      area: 'social.instagram',
+      reason: 'Instagram publish 실패가 현재 소셜 채널 최우선 병목입니다.',
+      nextCommand: `${blogPrefix} run doctor:instagram -- --json`,
+      actionFocus: instagramConfig?.tokenHealth?.tokenExpiresAt
+        ? '공개 reel/cover/qa 자산과 최신 Instagram failure reason 재확인'
+        : 'Instagram token 만료일과 hosted media readiness 재확인',
+    };
+  }
+  return {
+    area: 'clear',
+    reason: '현재 소셜 채널의 즉시 조치가 필요한 병목은 없습니다.',
+    nextCommand: `${blogPrefix} run doctor:social -- --json`,
+    actionFocus: 'preview bundle과 readiness를 짧게 확인',
+  };
+}
+
 function buildSocialDoctorFallback(payload = {}) {
   if (payload.facebook?.needsAttention || payload.instagram?.needsAttention) {
     return '소셜 자동등록은 준비돼 있지만 최근 실패 흔적이 있어 채널별 doctor와 preview를 함께 보고 정리하는 편이 좋습니다.';
@@ -160,6 +190,12 @@ async function main() {
     latestInstagram,
     previewBundle,
   });
+  payload.primary = buildPrimary({
+    latestFacebook,
+    latestInstagram,
+    facebookReadiness,
+    instagramConfig,
+  });
 
   const aiSummary = await buildBlogCliInsight({
     bot: 'doctor-social-publish',
@@ -177,6 +213,8 @@ async function main() {
 
   console.log(`[social doctor] facebook=${payload.facebook.needsAttention ? 'attention' : 'ok'} instagram=${payload.instagram.needsAttention ? 'attention' : 'ok'}`);
   console.log(`🔍 AI: ${payload.aiSummary}`);
+  console.log(`[social doctor] primary=${payload.primary.area} ${payload.primary.reason}`);
+  console.log(`[social doctor] next=${payload.primary.nextCommand}`);
   if (payload.facebook.pageId) {
     console.log(`[social doctor] facebook page=${payload.facebook.pageId}`);
   }
