@@ -6,7 +6,12 @@ defmodule TeamJay.Repo.Migrations.SigmaDashboardViews do
     CREATE MATERIALIZED VIEW IF NOT EXISTS sigma_pod_performance_dashboard AS
     SELECT
       DATE_TRUNC('day', inserted_at) AS day,
-      pod_name,
+      CASE
+        WHEN analyst IN ('owl', 'forecaster') THEN 'trend'
+        WHEN analyst IN ('dove', 'librarian') THEN 'growth'
+        WHEN analyst IN ('hawk', 'optimizer') THEN 'risk'
+        ELSE 'unknown'
+      END AS pod_name,
       COUNT(*) AS total_cycles,
       AVG(score) AS avg_score,
       COUNT(*) FILTER (WHERE category = 'preferred') AS preferred_count,
@@ -20,7 +25,14 @@ defmodule TeamJay.Repo.Migrations.SigmaDashboardViews do
       ) AS avg_accuracy
     FROM sigma_dpo_preference_pairs
     WHERE inserted_at > NOW() - INTERVAL '30 days'
-    GROUP BY DATE_TRUNC('day', inserted_at), pod_name
+    GROUP BY
+      DATE_TRUNC('day', inserted_at),
+      CASE
+        WHEN analyst IN ('owl', 'forecaster') THEN 'trend'
+        WHEN analyst IN ('dove', 'librarian') THEN 'growth'
+        WHEN analyst IN ('hawk', 'optimizer') THEN 'risk'
+        ELSE 'unknown'
+      END
     ORDER BY day DESC, avg_score DESC
     """)
 

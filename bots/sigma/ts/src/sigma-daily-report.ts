@@ -12,7 +12,7 @@ const require = createRequire(import.meta.url);
 const path = require('path');
 const PROJECT_ROOT = path.resolve(
   path.dirname(new URL(import.meta.url).pathname),
-  '../../..'
+  '../../../..'
 );
 
 const { query } = require(path.join(PROJECT_ROOT, 'packages/core/lib/pg-pool'));
