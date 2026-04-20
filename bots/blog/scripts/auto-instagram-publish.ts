@@ -15,6 +15,7 @@
  */
 
 const path = require('path');
+const { execFileSync } = require('child_process');
 const env = require('../../../packages/core/lib/env');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const { crosspostToInstagram, getCrosspostStats } = require(
@@ -27,6 +28,25 @@ const { runIfOps } = require('../../../packages/core/lib/mode-guard');
 const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 
 const DRY_RUN = process.argv.includes('--dry-run');
+
+function ensureHostedInstagramMedia(reelPath) {
+  if (!reelPath) return null;
+  const scriptPath = path.join(env.PROJECT_ROOT, 'bots/blog/scripts/prepare-instagram-media.ts');
+  const args = [scriptPath, '--json', '--no-thumb', '--video', reelPath];
+  if (DRY_RUN) args.push('--dry-run');
+
+  const output = execFileSync('node', args, {
+    cwd: path.join(env.PROJECT_ROOT, 'bots/blog'),
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim();
+
+  try {
+    return JSON.parse(output || '{}');
+  } catch {
+    return { raw: output };
+  }
+}
 
 async function getTodayPendingCrosspost() {
   const rows = await pgPool.query('blog', `
@@ -118,6 +138,18 @@ async function main() {
       () => console.log('[DEV] 릴스 없음 — 생략')
     ).catch(() => {});
     return;
+  }
+
+  try {
+    const staged = ensureHostedInstagramMedia(reelPath);
+    const hostedPath = staged?.reel?.targetPath || '';
+    console.log(`[insta-auto] 공개 미디어 준비: ${hostedPath || 'ok'}`);
+  } catch (e) {
+    console.warn('[insta-auto] 공개 미디어 준비 실패:', e.message);
+    if (!DRY_RUN) {
+      await reportPublishFailure('instagram', postTitle, `prepare_instagram_media_failed: ${e.message}`);
+    }
+    throw e;
   }
 
   // 인스타 크로스포스트 실행
