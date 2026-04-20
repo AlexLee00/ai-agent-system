@@ -58,10 +58,24 @@ export function createKioskSlotRunnerService(deps: CreateKioskSlotRunnerServiceD
   async function installBrowserEvalShim(page: any) {
     try {
       await page.evaluateOnNewDocument(() => {
-        (window as any).__name = (value: any) => value;
+        const shim = (value: any) => value;
+        (globalThis as any).__name = shim;
+        (window as any).__name = shim;
+        try {
+          (0, eval)('var __name = globalThis.__name;');
+        } catch {
+          // ignore binding fallback
+        }
       });
       await page.evaluate(() => {
-        (window as any).__name = (value: any) => value;
+        const shim = (value: any) => value;
+        (globalThis as any).__name = shim;
+        (window as any).__name = shim;
+        try {
+          (0, eval)('var __name = globalThis.__name;');
+        } catch {
+          // ignore binding fallback
+        }
       }).catch(() => null);
     } catch {
       // ignore shim failures; callers will surface the real browser error

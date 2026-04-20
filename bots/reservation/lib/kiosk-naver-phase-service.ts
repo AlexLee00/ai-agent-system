@@ -57,6 +57,33 @@ export function createKioskNaverPhaseService(deps: CreateKioskNaverPhaseServiceD
     bookingUrl,
   } = deps;
 
+  async function installBrowserEvalShim(page: any) {
+    try {
+      await page.evaluateOnNewDocument(() => {
+        const shim = (value: any) => value;
+        (globalThis as any).__name = shim;
+        (window as any).__name = shim;
+        try {
+          (0, eval)('var __name = globalThis.__name;');
+        } catch {
+          // ignore binding fallback
+        }
+      });
+      await page.evaluate(() => {
+        const shim = (value: any) => value;
+        (globalThis as any).__name = shim;
+        (window as any).__name = shim;
+        try {
+          (0, eval)('var __name = globalThis.__name;');
+        } catch {
+          // ignore binding fallback
+        }
+      }).catch(() => null);
+    } catch {
+      // ignore shim failures; downstream browser actions will surface real errors
+    }
+  }
+
   async function deferEntriesForUnavailable({
     toBlockEntries,
     cancelledEntries,
@@ -144,6 +171,7 @@ export function createKioskNaverPhaseService(deps: CreateKioskNaverPhaseServiceD
         const page = await naverBrowser.newPage();
         page.setDefaultTimeout(30000);
         await page.setViewport({ width: 1920, height: 1080 });
+        await installBrowserEvalShim(page);
         attachNaverScheduleTrace(page, 'main-loop');
         return page;
       };

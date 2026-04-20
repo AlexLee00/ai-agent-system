@@ -388,64 +388,75 @@ export function createKioskCalendarService(deps: CreateKioskCalendarServiceDeps)
         return { verified: false, requestedSlots: requestedSlotsArg, matchedSlots: [], missingSlots: requestedSlotsArg.map((slot) => ({ slot, reason: 'room_header_not_found' })) };
       }
 
-      const firstTargetLabel = toDisplayLabel(requestedSlotsArg[0]);
       const allTimelineEls = Array.from(document.querySelectorAll('[class*="Calendar__time-col-wrap"] [class*="Calendar__week-timeline"]'));
-      const targetTimelineEl = allTimelineEls.find((row) => {
-        const ampmText = String(row.querySelector('[class*="Calendar__time-ampm"]')?.textContent || '').trim();
-        const timeText = String(row.querySelector('[class*="Calendar__time__"]')?.textContent || '').trim();
-        return \`\${ampmText} \${timeText}\`.replace(/\\s+/g, ' ').trim() === firstTargetLabel;
-      });
-      if (targetTimelineEl) {
+
+      function scrollToSlot(slot24) {
+        const targetLabel = toDisplayLabel(slot24);
+        if (!targetLabel) return false;
+        const targetTimelineEl = allTimelineEls.find((row) => {
+          const ampmText = String(row.querySelector('[class*="Calendar__time-ampm"]')?.textContent || '').trim();
+          const timeText = String(row.querySelector('[class*="Calendar__time__"]')?.textContent || '').trim();
+          return \`\${ampmText} \${timeText}\`.replace(/\\s+/g, ' ').trim() === targetLabel;
+        });
+        if (!targetTimelineEl) return false;
         const rowWrap = document.querySelector('[class*="Calendar__row-wrap"]');
         const innerWrap = document.querySelector('[class*="Calendar__inner-wrap"]');
         const scrollContainer = rowWrap || innerWrap || targetTimelineEl.parentElement;
-        if (scrollContainer) {
-          const targetIndex = allTimelineEls.indexOf(targetTimelineEl);
-          const rowHeight = (() => {
-            for (let i = 1; i < allTimelineEls.length; i += 1) {
-              const prevRect = allTimelineEls[i - 1].getBoundingClientRect();
-              const currRect = allTimelineEls[i].getBoundingClientRect();
-              const delta = Math.abs(currRect.top - prevRect.top);
-              if (delta > 8) return delta;
-            }
-            return 96;
-          })();
-          const viewportHeight = scrollContainer.clientHeight || window.innerHeight || 0;
-          const targetOffsetTop = targetTimelineEl.offsetTop || targetIndex * rowHeight;
-          const nextScrollTop = Math.max(0, targetOffsetTop - Math.max(0, viewportHeight / 2 - rowHeight));
-          scrollContainer.scrollTop = nextScrollTop;
-          if (rowWrap && rowWrap !== scrollContainer) rowWrap.scrollTop = nextScrollTop;
-          if (innerWrap && innerWrap !== scrollContainer) innerWrap.scrollTop = nextScrollTop;
-        }
+        if (!scrollContainer) return false;
+        const targetIndex = allTimelineEls.indexOf(targetTimelineEl);
+        const rowHeight = (() => {
+          for (let i = 1; i < allTimelineEls.length; i += 1) {
+            const prevRect = allTimelineEls[i - 1].getBoundingClientRect();
+            const currRect = allTimelineEls[i].getBoundingClientRect();
+            const delta = Math.abs(currRect.top - prevRect.top);
+            if (delta > 8) return delta;
+          }
+          return 96;
+        })();
+        const viewportHeight = scrollContainer.clientHeight || window.innerHeight || 0;
+        const targetOffsetTop = targetTimelineEl.offsetTop || targetIndex * rowHeight;
+        const nextScrollTop = Math.max(0, targetOffsetTop - Math.max(0, viewportHeight / 2 - rowHeight));
+        scrollContainer.scrollTop = nextScrollTop;
+        if (rowWrap && rowWrap !== scrollContainer) rowWrap.scrollTop = nextScrollTop;
+        if (innerWrap && innerWrap !== scrollContainer) innerWrap.scrollTop = nextScrollTop;
+        return true;
       }
 
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-
-      const timelineRows = allTimelineEls
-        .filter((row) => isVisible(row))
-        .map((row) => {
-          const ampmText = String(row.querySelector('[class*="Calendar__time-ampm"]')?.textContent || '').trim();
-          const timeText = String(row.querySelector('[class*="Calendar__time__"]')?.textContent || '').trim();
-          const label = \`\${ampmText} \${timeText}\`.replace(/\\s+/g, ' ').trim();
-          return { label, slot24: to24Hour(label) };
-        });
-
-      const gridRows = Array.from(document.querySelectorAll('[class*="Calendar__week-cell-daily-row"]'))
-        .map((dailyRow) => {
-          const rect = dailyRow.getBoundingClientRect();
-          if (rect.height <= 0 || rect.bottom < 0 || rect.top > window.innerHeight) return null;
-          const roomCells = Array.from(dailyRow.children).filter((cell) => {
-            const cellRect = cell.getBoundingClientRect();
-            return cellRect.width > 0 && cellRect.height > 0;
+      function collectVisibleRows() {
+        const timelineRows = allTimelineEls
+          .filter((row) => isVisible(row))
+          .map((row) => {
+            const ampmText = String(row.querySelector('[class*="Calendar__time-ampm"]')?.textContent || '').trim();
+            const timeText = String(row.querySelector('[class*="Calendar__time__"]')?.textContent || '').trim();
+            const label = \`\${ampmText} \${timeText}\`.replace(/\\s+/g, ' ').trim();
+            return { label, slot24: to24Hour(label) };
           });
-          if (roomCells.length === 0) return null;
-          return { roomCells };
-        })
-        .filter(Boolean);
+
+        const gridRows = Array.from(document.querySelectorAll('[class*="Calendar__week-cell-daily-row"]'))
+          .map((dailyRow) => {
+            const rect = dailyRow.getBoundingClientRect();
+            if (rect.height <= 0 || rect.bottom < 0 || rect.top > window.innerHeight) return null;
+            const roomCells = Array.from(dailyRow.children).filter((cell) => {
+              const cellRect = cell.getBoundingClientRect();
+              return cellRect.width > 0 && cellRect.height > 0;
+            });
+            if (roomCells.length === 0) return null;
+            return { roomCells };
+          })
+          .filter(Boolean);
+
+        return { timelineRows, gridRows };
+      }
+
+      scrollToSlot(requestedSlotsArg[0]);
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
       const matchedSlots = [];
       const missingSlots = [];
       for (const slot of requestedSlotsArg) {
+        scrollToSlot(slot);
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        const { timelineRows, gridRows } = collectVisibleRows();
         const rowIndex = timelineRows.findIndex((row) => row.slot24 === slot);
         if (rowIndex < 0) {
           missingSlots.push({ slot, reason: 'timeline_row_not_found' });
