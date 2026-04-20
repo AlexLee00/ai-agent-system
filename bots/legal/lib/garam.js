@@ -14,6 +14,7 @@ const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const store = require(path.join(env.PROJECT_ROOT, 'bots/legal/lib/appraisal-store'));
 const { callLegal } = require(path.join(env.PROJECT_ROOT, 'bots/legal/lib/llm-helper'));
+const koreaLawClient = require(path.join(env.PROJECT_ROOT, 'bots/legal/lib/korea-law-client'));
 
 const SYSTEM_PROMPT = `당신은 가람(Garam)입니다. 한국 법률의 흐름을 읽는 국내 판례 분석 전문 에이전트입니다.
 
@@ -46,6 +47,7 @@ async function searchDomesticCases(caseId, caseData) {
   const resolvedType = case_type || caseData.classification?.case_type || 'other';
 
   const relevantLaws = APPLICABLE_LAWS[resolvedType] || APPLICABLE_LAWS.copyright;
+  const externalContext = await collectKoreaLawContext(caseData, resolvedType);
 
   const result = await callLegal({
     agent: 'garam',
@@ -59,6 +61,9 @@ async function searchDomesticCases(caseId, caseData) {
 
 관련 법률 조항:
 ${relevantLaws.map(l => `- ${l}`).join('\n')}
+
+국가법령정보 공동활용 API 기반 참고 결과:
+${externalContext}
 
 다음 형식으로 국내 판례 최대 5건을 분석해 주세요:
 
@@ -106,6 +111,64 @@ ${relevantLaws.map(l => `- ${l}`).join('\n')}
   return { raw: result.text, references: savedRefs };
 }
 
+async function collectKoreaLawContext(caseData, resolvedType) {
+  const keywords = buildSearchKeywords(caseData, resolvedType);
+  const sections = [];
+
+  for (const keyword of keywords) {
+    try {
+      const precedents = await koreaLawClient.searchPrecedents(keyword, { display: 3, page: 1, timeoutMs: 12000 });
+      if (precedents.items.length) {
+        sections.push([
+          `[판례 검색어] ${keyword}`,
+          ...precedents.items.slice(0, 3).map((item) =>
+            `- ${item.caseNumber} | ${item.caseName} | ${item.court} | ${item.decisionDate} | 일련번호=${item.id}`),
+        ].join('\n'));
+      }
+    } catch (error) {
+      sections.push(`[판례 검색어] ${keyword}\n- 검색 실패: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  for (const lawName of APPLICABLE_LAWS[resolvedType] || []) {
+    const query = String(lawName).split(' 제')[0].trim();
+    if (!query) continue;
+    try {
+      const laws = await koreaLawClient.searchLaws(query, { display: 2, page: 1, timeoutMs: 12000 });
+      if (laws.items.length) {
+        sections.push([
+          `[법령 검색어] ${query}`,
+          ...laws.items.slice(0, 2).map((item) =>
+            `- ${item.nameKo} | ${item.kind} | ${item.ministry} | 시행일=${item.effectiveDate} | 법령ID=${item.id} MST=${item.mst}`),
+        ].join('\n'));
+      }
+    } catch (error) {
+      sections.push(`[법령 검색어] ${query}\n- 검색 실패: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  return sections.length ? sections.join('\n\n') : '참고 결과 없음';
+}
+
+function buildSearchKeywords(caseData, resolvedType) {
+  const fromIssues = Array.isArray(caseData?.briefing?.key_issues) ? caseData.briefing.key_issues : [];
+  const fromDomain = caseData?.briefing?.tech_domain ? [String(caseData.briefing.tech_domain)] : [];
+  const fallbackByType = {
+    copyright: ['저작권 침해', '프로그램 저작권'],
+    defect: ['소프트웨어 하자', '시스템 구축 하자'],
+    contract: ['소프트웨어 개발 계약', '용역 계약 해지'],
+    trade_secret: ['영업비밀 침해', '소스코드 유출'],
+    other: ['소프트웨어 분쟁'],
+  };
+
+  return Array.from(
+    new Set([...fromIssues, ...fromDomain, ...(fallbackByType[resolvedType] || fallbackByType.other)])
+  )
+    .map((item) => String(item || '').trim())
+    .filter(Boolean)
+    .slice(0, 3);
+}
+
 function typeLabel(type) {
   const labels = {
     copyright: '저작권 침해',
@@ -122,12 +185,16 @@ function parsePrecedents(text) {
   const sections = text.split(/### 판례 \d+/);
 
   for (const section of sections.slice(1)) {
-    const caseNumberMatch = section.match(/사건번호[:\s]+([^\n]+)/);
-    const courtMatch = section.match(/법원[:\s]+([^\n]+)/);
-    const dateMatch = section.match(/판결일[:\s]+([^\n]+)/);
-    const summaryMatch = section.match(/판결 요지[:\s]+([\s\S]*?)(?=\n- \*\*|$)/);
-    const lawMatch = section.match(/적용 법률[:\s]+([^\n]+)/);
-    const scoreMatch = section.match(/관련성 점수[:\s]+([0-9.]+)/);
+    const caseNumberMatch = section.match(/\*\*사건번호\*\*[:\s]+([^\n]+)/) || section.match(/사건번호[:\s]+([^\n]+)/);
+    const courtMatch = section.match(/\*\*법원\*\*[:\s]+([^\n]+)/) || section.match(/법원[:\s]+([^\n]+)/);
+    const dateMatch = section.match(/\*\*판결일\*\*[:\s]+([^\n]+)/) || section.match(/판결일[:\s]+([^\n]+)/);
+    const summaryMatch =
+      section.match(/\*\*판결 요지\*\*[:\s]*\n?([\s\S]*?)(?=\n-\s+\*\*(?:적용 법률|현재 사건 적용 시사점|관련성 점수)\*\*|$)/) ||
+      section.match(/판결 요지[:\s]+([\s\S]*?)(?=\n- \*\*|$)/);
+    const lawMatch = section.match(/\*\*적용 법률\*\*[:\s]+([^\n]+)/) || section.match(/적용 법률[:\s]+([^\n]+)/);
+    const scoreMatch =
+      section.match(/\*\*관련성 점수\*\*[:\s]*\**\s*([0-9.]+)/) ||
+      section.match(/관련성 점수[:\s]+([0-9.]+)/);
 
     if (caseNumberMatch) {
       precedents.push({

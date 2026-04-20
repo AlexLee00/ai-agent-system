@@ -9,6 +9,7 @@
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const store = require(path.join(env.PROJECT_ROOT, 'bots/legal/lib/appraisal-store'));
+const { resolveKoreaLawCredentials } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/legal-credentials'));
 
 async function main() {
   console.log('[Justin] 헬스 체크 시작...');
@@ -41,6 +42,19 @@ async function main() {
     const filePath = path.join(env.PROJECT_ROOT, `bots/legal/templates/${tpl}`);
     const exists = fs.existsSync(filePath);
     checks.push({ name: `template:${tpl}`, ok: exists });
+  }
+
+  // 4. 국가법령정보 공동활용 인증값 존재 여부
+  try {
+    const creds = await resolveKoreaLawCredentials();
+    const configured = Boolean(creds.userId && creds.userName && creds.oc);
+    checks.push({
+      name: 'korea-law-credentials',
+      ok: true,
+      detail: configured ? 'hub/local secrets configured' : 'not configured yet (optional until API client is enabled)',
+    });
+  } catch (err) {
+    checks.push({ name: 'korea-law-credentials', ok: true, detail: `lookup skipped: ${err.message}` });
   }
 
   // 결과 출력

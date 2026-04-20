@@ -234,6 +234,20 @@ const CATEGORY_HANDLERS: Record<string, CategoryHandler> = {
     };
   },
 
+  justin: () => {
+    const store = loadSecretsStore();
+    const d = store?.justin || {};
+    const koreaLaw = d.korea_law || d.korea_law_api || {};
+    return {
+      korea_law: {
+        user_id: koreaLaw.user_id || '',
+        user_name: koreaLaw.user_name || '',
+        oc: koreaLaw.oc || '',
+        base_url: koreaLaw.base_url || 'https://www.law.go.kr',
+      },
+    };
+  },
+
   instagram: () => {
     const store = loadSecretsStore();
     const d = store?.instagram || {};

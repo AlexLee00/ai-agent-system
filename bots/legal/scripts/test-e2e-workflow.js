@@ -25,6 +25,7 @@ async function cleanup(store) {
     const c = await store.getCaseByCaseNumber(TEST_CASE_NUMBER);
     if (c) {
       const pool = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/pg-pool'));
+      await pool.query('legal', 'DELETE FROM case_references WHERE case_id = $1', [c.id]).catch(() => {});
       await pool.query('legal', 'DELETE FROM cases WHERE id = $1', [c.id]);
       console.log(`  🗑️  테스트 사건 삭제 완료 (id=${c.id})`);
     }
@@ -182,6 +183,43 @@ async function testGenerateReport(store, caseRecord) {
   pass(`감정서 파일 생성: ${outputPath} (${stat.size}바이트)`);
 }
 
+async function testDomesticCaseSearch(store, garam, caseRecord) {
+  section('Phase 3: 국내 판례 실조회 검증 (FULL 모드)');
+  try {
+    const enrichedCase = {
+      ...caseRecord,
+      classification: { case_type: caseRecord.case_type },
+      briefing: {
+        key_issues: ['저작권 침해', '프로그램 복제'],
+        tech_domain: '소프트웨어',
+      },
+    };
+
+    const result = await garam.searchDomesticCases(caseRecord.id, enrichedCase);
+    if (!result || !result.raw) {
+      fail('가람 국내 판례 응답 없음');
+      return;
+    }
+
+    pass(`가람 판례 분석 생성 성공 (${String(result.raw).length}바이트)`);
+
+    const pool = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/pg-pool'));
+    const refs = await pool.query(
+      'legal',
+      'SELECT ref_case_number, court, relevance_score FROM case_references WHERE case_id = $1 ORDER BY id DESC LIMIT 5',
+      [caseRecord.id],
+    );
+
+    if ((refs || []).length > 0) {
+      pass(`국내 판례 ${refs.length}건 저장 확인`);
+    } else {
+      fail('국내 판례 저장 실패 (case_references 0건)');
+    }
+  } catch (err) {
+    fail(`가람 국내 판례 실조회 실패: ${err.message}`);
+  }
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const fullMode = args.includes('--full');
@@ -244,13 +282,16 @@ async function main() {
     if (typeof defense.analyzeDefendant === 'function') pass('defense.analyzeDefendant 함수 존재');
     else fail('defense.analyzeDefendant 미구현');
 
-    section('Phase 3: 판례 분석 API 구조 검증 (FULL 모드)');
     const garam = require(path.join(env.PROJECT_ROOT, 'bots/legal/lib/garam'));
     const atlas = require(path.join(env.PROJECT_ROOT, 'bots/legal/lib/atlas'));
     if (typeof garam.searchDomesticCases === 'function') pass('garam.searchDomesticCases 함수 존재');
     else fail('garam.searchDomesticCases 미구현');
     if (typeof atlas.searchForeignCases === 'function') pass('atlas.searchForeignCases 함수 존재');
     else fail('atlas.searchForeignCases 미구현');
+
+    if (typeof garam.searchDomesticCases === 'function') {
+      await testDomesticCaseSearch(store, garam, caseRecord);
+    }
   }
 
   // Cleanup
