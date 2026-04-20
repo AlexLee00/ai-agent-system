@@ -43,6 +43,57 @@ const DRAWTHINGS_HEALTH_URL = new URL('/sdapi/v1/options', IMAGE_BASE_URL.endsWi
 const DEFAULT_BLOG_WEBHOOK_URL = process.env.N8N_BLOG_WEBHOOK || runtimeConfig.blogWebhookUrl || 'http://127.0.0.1:5678/webhook/blog-pipeline';
 const TEAM_JAY_ROOT = path.join(env.PROJECT_ROOT, 'elixir', 'team_jay');
 
+function nowKst() {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function calcExpectedByWindow(target, startHour, endHour) {
+  const numericTarget = Math.max(0, Number(target || 0));
+  const start = Number(startHour || 0);
+  const end = Number(endHour || 23);
+  const now = nowKst();
+  const currentHour = now.getHours() + (now.getMinutes() / 60);
+
+  if (numericTarget <= 0 || end <= start) {
+    return {
+      target: numericTarget,
+      expectedNow: 0,
+      progressRatio: 0,
+      active: false,
+    };
+  }
+
+  if (currentHour <= start) {
+    return {
+      target: numericTarget,
+      expectedNow: 0,
+      progressRatio: 0,
+      active: false,
+    };
+  }
+
+  if (currentHour >= end) {
+    return {
+      target: numericTarget,
+      expectedNow: numericTarget,
+      progressRatio: 1,
+      active: false,
+    };
+  }
+
+  const progressRatio = clamp((currentHour - start) / (end - start), 0, 1);
+  return {
+    target: numericTarget,
+    expectedNow: Math.ceil(numericTarget * progressRatio),
+    progressRatio,
+    active: true,
+  };
+}
+
 function extractJsonObjectText(output = '') {
   const text = String(output || '').trim();
   if (!text) return '';
@@ -342,6 +393,147 @@ async function buildInstagramHealth() {
       needsRefresh: false,
       critical: false,
       hostReady: false,
+    };
+  }
+}
+
+async function buildEngagementHealth() {
+  try {
+    const replyConfig = runtimeConfig.commenter || {};
+    const neighborConfig = runtimeConfig.neighborCommenter || {};
+
+    const [actionRows, commentRows, neighborRows] = await Promise.all([
+      pgPool.query('blog', `
+        SELECT action_type, success, COUNT(*)::int AS cnt
+        FROM blog.comment_actions
+        WHERE timezone('Asia/Seoul', executed_at)::date = timezone('Asia/Seoul', now())::date
+        GROUP BY 1, 2
+      `),
+      pgPool.query('blog', `
+        SELECT
+          COUNT(*)::int AS total,
+          COALESCE(SUM(CASE WHEN reply_at IS NOT NULL THEN 1 ELSE 0 END), 0)::int AS replied,
+          COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0)::int AS pending,
+          COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0)::int AS failed
+        FROM blog.comments
+        WHERE timezone('Asia/Seoul', detected_at)::date = timezone('Asia/Seoul', now())::date
+      `),
+      pgPool.query('blog', `
+        SELECT status, COUNT(*)::int AS cnt
+        FROM blog.neighbor_comments
+        WHERE timezone('Asia/Seoul', created_at)::date = timezone('Asia/Seoul', now())::date
+        GROUP BY 1
+      `),
+    ]);
+
+    const actionMap = new Map();
+    for (const row of actionRows || []) {
+      actionMap.set(`${row.action_type}:${row.success ? 'ok' : 'fail'}`, Number(row.cnt || 0));
+    }
+
+    const replySuccess = Number(actionMap.get('reply:ok') || 0);
+    const replyFailure = Number(actionMap.get('reply:fail') || 0);
+    const neighborCommentSuccess = Number(actionMap.get('neighbor_comment:ok') || 0);
+    const neighborCommentFailure = Number(actionMap.get('neighbor_comment:fail') || 0);
+    const sympathySuccess =
+      Number(actionMap.get('neighbor_sympathy:ok') || 0) +
+      Number(actionMap.get('neighbor_comment_sympathy:ok') || 0) +
+      Number(actionMap.get('comment_post_sympathy:ok') || 0);
+    const sympathyFailure =
+      Number(actionMap.get('neighbor_sympathy:fail') || 0) +
+      Number(actionMap.get('neighbor_comment_sympathy:fail') || 0) +
+      Number(actionMap.get('comment_post_sympathy:fail') || 0);
+
+    const inbound = commentRows?.[0] || { total: 0, replied: 0, pending: 0, failed: 0 };
+    const neighborStatusMap = new Map((neighborRows || []).map((row) => [row.status, Number(row.cnt || 0)]));
+
+    const replyPlan = calcExpectedByWindow(
+      replyConfig.maxDaily || 20,
+      replyConfig.activeStartHour || 9,
+      replyConfig.activeEndHour || 21
+    );
+    const neighborPlan = calcExpectedByWindow(
+      neighborConfig.maxDaily || 20,
+      neighborConfig.activeStartHour || 9,
+      neighborConfig.activeEndHour || 21
+    );
+    const sympathyPlan = calcExpectedByWindow(
+      neighborConfig.maxDaily || 20,
+      neighborConfig.activeStartHour || 9,
+      neighborConfig.activeEndHour || 21
+    );
+
+    const ok = [
+      `  replies: ${replySuccess}/${replyPlan.target} (expected now ${replyPlan.expectedNow})`,
+      `  neighbor comments: ${neighborCommentSuccess}/${neighborPlan.target} (expected now ${neighborPlan.expectedNow})`,
+      `  sympathies: ${sympathySuccess}/${sympathyPlan.target} (expected now ${sympathyPlan.expectedNow})`,
+      `  inbound comments today: ${Number(inbound.total || 0)}건 / replied ${Number(inbound.replied || 0)} / pending ${Number(inbound.pending || 0)}`,
+      `  neighbor queue today: posted ${Number(neighborStatusMap.get('posted') || 0)} / failed ${Number(neighborStatusMap.get('failed') || 0)} / pending ${Number(neighborStatusMap.get('pending') || 0)}`,
+    ];
+
+    const warn = [];
+    if (replyPlan.active && replySuccess < replyPlan.expectedNow) {
+      warn.push(`  replies behind target: ${replySuccess}/${replyPlan.expectedNow} (today fail ${replyFailure})`);
+    }
+    if (neighborPlan.active && neighborCommentSuccess < neighborPlan.expectedNow) {
+      warn.push(`  neighbor comments behind target: ${neighborCommentSuccess}/${neighborPlan.expectedNow} (today fail ${neighborCommentFailure})`);
+    }
+    if (sympathyPlan.active && sympathySuccess < sympathyPlan.expectedNow) {
+      warn.push(`  sympathies behind target: ${sympathySuccess}/${sympathyPlan.expectedNow} (today fail ${sympathyFailure})`);
+    }
+    if (Number(inbound.pending || 0) > 0) {
+      warn.push(`  inbound pending comments: ${Number(inbound.pending || 0)}건`);
+    }
+    if (replyFailure + neighborCommentFailure + sympathyFailure > 0) {
+      warn.push(`  failed engagement actions today: ${replyFailure + neighborCommentFailure + sympathyFailure}건`);
+    }
+
+    return {
+      okCount: ok.length,
+      warnCount: warn.length,
+      ok,
+      warn,
+      replies: {
+        success: replySuccess,
+        failed: replyFailure,
+        target: replyPlan.target,
+        expectedNow: replyPlan.expectedNow,
+      },
+      neighborComments: {
+        success: neighborCommentSuccess,
+        failed: neighborCommentFailure,
+        target: neighborPlan.target,
+        expectedNow: neighborPlan.expectedNow,
+      },
+      sympathies: {
+        success: sympathySuccess,
+        failed: sympathyFailure,
+        target: sympathyPlan.target,
+        expectedNow: sympathyPlan.expectedNow,
+      },
+      inboundComments: {
+        total: Number(inbound.total || 0),
+        replied: Number(inbound.replied || 0),
+        pending: Number(inbound.pending || 0),
+        failed: Number(inbound.failed || 0),
+      },
+      neighborQueue: {
+        posted: Number(neighborStatusMap.get('posted') || 0),
+        failed: Number(neighborStatusMap.get('failed') || 0),
+        pending: Number(neighborStatusMap.get('pending') || 0),
+      },
+    };
+  } catch (error) {
+    return {
+      okCount: 0,
+      warnCount: 1,
+      ok: [],
+      warn: [`  engagement: 확인 실패 (${String(error.message || error).slice(0, 120)})`],
+      replies: { success: 0, failed: 0, target: 0, expectedNow: 0 },
+      neighborComments: { success: 0, failed: 0, target: 0, expectedNow: 0 },
+      sympathies: { success: 0, failed: 0, target: 0, expectedNow: 0 },
+      inboundComments: { total: 0, replied: 0, pending: 0, failed: 0 },
+      neighborQueue: { posted: 0, failed: 0, pending: 0 },
     };
   }
 }
@@ -754,7 +946,7 @@ async function buildMarketingExpansionHealth() {
   }
 }
 
-function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealth, instagramHealth, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth, marketingExpansionHealth) {
+function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealth, instagramHealth, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth, marketingExpansionHealth, engagementHealth) {
   return buildHealthDecision({
     warnings: [
       {
@@ -830,6 +1022,11 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
         level: 'low',
         reason: '마케팅 확장 신호에 변동이 있어 sense/correlation/diagnosis 흐름을 한 번 더 보는 편이 좋습니다.',
       },
+      {
+        active: engagementHealth.warnCount > 0,
+        level: 'low',
+        reason: '댓글/답글/공감 실적이 시간대 기대치보다 낮거나 실패 이력이 있어 engagement 루프 점검이 필요합니다.',
+      },
     ],
     okReason: '블로팀 실행기와 daily run 상태가 현재는 안정 구간입니다.',
   });
@@ -888,6 +1085,7 @@ function formatText(report) {
       buildHealthCountSection('■ 실행 백엔드 상태', report.nodeHealth, { okLimit: 3 }),
       buildHealthCountSection('■ n8n pipeline 경로', report.n8nPipelineHealth, { okLimit: 2 }),
       buildHealthCountSection('■ 인스타 업로드 상태', report.instagramHealth, { okLimit: 3 }),
+      buildHealthCountSection('■ 댓글·공감 운영 상태', report.engagementHealth, { okLimit: 5, warnLimit: 5 }),
       buildHealthCountSection('■ Elixir Phase 1 상태', report.phase1Health, { okLimit: 1, warnLimit: 2 }),
       buildHealthCountSection('■ Phase 2 Briefing 상태', report.phase2BriefingHealth, { okLimit: 3, warnLimit: 4 }),
       buildHealthCountSection('■ Phase 3 Feedback 상태', report.phase3FeedbackHealth, { okLimit: 4, warnLimit: 3 }),
@@ -924,6 +1122,7 @@ async function buildReport() {
   const dailyRunHealth = buildDailyRunHealth(status['ai.blog.daily']);
   const n8nPipelineHealth = await buildN8nPipelineHealth();
   const instagramHealth = await buildInstagramHealth();
+  const engagementHealth = await buildEngagementHealth();
   const phase1Health = await buildPhase1Health();
   const phase2BriefingHealth = await buildPhase2BriefingHealth();
   const phase3FeedbackHealth = await buildPhase3FeedbackHealth();
@@ -932,7 +1131,7 @@ async function buildReport() {
   const marketingExpansionHealth = await buildMarketingExpansionHealth();
   const bookCatalogHealth = await buildBookCatalogHealth();
   const bookReviewQueueHealth = await buildBookReviewQueueHealth();
-  const decision = buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealth, instagramHealth, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth, marketingExpansionHealth);
+  const decision = buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealth, instagramHealth, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth, marketingExpansionHealth, engagementHealth);
   const remodelProgress = buildRemodelProgress(instagramHealth, phase1Health, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth);
 
   return {
@@ -967,6 +1166,7 @@ async function buildReport() {
       resolvedWebhookUrl: n8nPipelineHealth.resolvedWebhookUrl,
     },
     instagramHealth,
+    engagementHealth,
     phase1Health,
     phase2BriefingHealth,
     phase3FeedbackHealth,
