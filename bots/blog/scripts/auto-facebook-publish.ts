@@ -23,6 +23,7 @@ const DRY_RUN = process.argv.includes('--dry-run');
 const FACEBOOK_READINESS_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run check:facebook -- --json`;
 const FACEBOOK_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:facebook -- --json`;
 const SOCIAL_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:social -- --json`;
+const BLOG_OPS_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:ops -- --json`;
 
 function buildPreviewBundleForTitle(title = '') {
   try {
@@ -63,6 +64,9 @@ async function buildFacebookFailureDetail(error) {
       `diagnose=${FACEBOOK_READINESS_COMMAND}`,
       `doctor=${FACEBOOK_DOCTOR_COMMAND}`,
       `social=${SOCIAL_DOCTOR_COMMAND}`,
+      `ops=${BLOG_OPS_DOCTOR_COMMAND}`,
+      'primary blocker=social.facebook',
+      `next=${SOCIAL_DOCTOR_COMMAND}`,
       actionHint,
     ].filter(Boolean).join(' / ');
     return extras ? `${baseMessage}\n${extras}` : baseMessage;
