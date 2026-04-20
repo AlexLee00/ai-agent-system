@@ -17,8 +17,30 @@ const { runIfOps } = require('../../../packages/core/lib/mode-guard');
 const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 const { publishFacebookPost } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/facebook-publisher.ts'));
 const { ensurePublishLogSchema, reportPublishSuccess, reportPublishFailure } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/publish-reporter.ts'));
+const { resolveInstagramHostedMediaUrl } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-image-host.ts'));
 
 const DRY_RUN = process.argv.includes('--dry-run');
+
+function buildPreviewBundleForTitle(title = '') {
+  try {
+    const {
+      findReelPathForTitle,
+      findReelCoverPathForTitle,
+      findReelQaSheetPathForTitle,
+    } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-files.ts'));
+    const reelPath = findReelPathForTitle(title) || '';
+    const coverPath = findReelCoverPathForTitle(title) || '';
+    const qaSheetPath = findReelQaSheetPathForTitle(title) || '';
+    const parts = [
+      reelPath ? `reel=${resolveInstagramHostedMediaUrl(reelPath, { kind: 'reels' }).publicUrl || reelPath}` : '',
+      coverPath ? `cover=${resolveInstagramHostedMediaUrl(coverPath, { kind: 'thumbs' }).publicUrl || coverPath}` : '',
+      qaSheetPath ? `qa=${resolveInstagramHostedMediaUrl(qaSheetPath, { kind: 'thumbs' }).publicUrl || qaSheetPath}` : '',
+    ].filter(Boolean);
+    return parts.join(' / ');
+  } catch {
+    return '';
+  }
+}
 
 async function getTodayLatestPost() {
   const rows = await pgPool.query('blog', `
@@ -68,6 +90,7 @@ async function main() {
   }
 
   const { id: postId, title, naver_url: naverUrl, category, status: postStatus } = post;
+  const previewBundle = buildPreviewBundleForTitle(title);
   const message = [
     `📝 새 포스팅이 올라왔습니다!`,
     ``,
@@ -77,6 +100,9 @@ async function main() {
   ].filter(line => line !== undefined).join('\n').trim();
 
   console.log(`[facebook-auto] 발행 대상: "${title}" status=${postStatus || 'unknown'} naverUrl=${naverUrl || 'none'}`);
+  if (previewBundle) {
+    console.log(`[facebook-auto] preview bundle: ${previewBundle}`);
+  }
   if (postStatus === 'ready' && !naverUrl) {
     console.log('[facebook-auto] published 미확정 포스트를 링크 없이 Facebook teaser로 발행합니다.');
   }
@@ -94,7 +120,7 @@ async function main() {
       return;
     }
 
-    await reportPublishSuccess('facebook', title, naverUrl || '', { postId });
+    await reportPublishSuccess('facebook', title, naverUrl || '', { postId, previewBundle });
     console.log(`[facebook-auto] 발행 성공 fbPostId=${result.postId}`);
 
   } catch (err) {
@@ -103,7 +129,7 @@ async function main() {
     if (rawMessage && rawMessage !== err.message) {
       console.error('[facebook-auto] raw failure:', rawMessage);
     }
-    await reportPublishFailure('facebook', title, err.message, { postId });
+    await reportPublishFailure('facebook', title, err.message, { postId, previewBundle });
   }
 }
 
