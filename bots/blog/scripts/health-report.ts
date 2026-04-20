@@ -44,6 +44,7 @@ const IMAGE_BASE_URL = String(process.env.BLOG_IMAGE_BASE_URL || 'http://127.0.0
 const DRAWTHINGS_HEALTH_URL = new URL('/sdapi/v1/options', IMAGE_BASE_URL.endsWith('/') ? IMAGE_BASE_URL : `${IMAGE_BASE_URL}/`).toString();
 const DEFAULT_BLOG_WEBHOOK_URL = process.env.N8N_BLOG_WEBHOOK || runtimeConfig.blogWebhookUrl || 'http://127.0.0.1:5678/webhook/blog-pipeline';
 const TEAM_JAY_ROOT = path.join(env.PROJECT_ROOT, 'elixir', 'team_jay');
+const SOCIAL_ASSET_DUE_HOUR = Number(process.env.BLOG_SOCIAL_ASSET_DUE_HOUR || runtimeConfig.socialAssetDueHour || 7);
 
 function nowKst() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
@@ -216,6 +217,16 @@ function countDatedFiles(dirPath = '', datePrefix = '') {
   } catch {
     return 0;
   }
+}
+
+function getSocialAssetExpectation(now = nowKst()) {
+  const dueHour = Number.isFinite(SOCIAL_ASSET_DUE_HOUR) ? SOCIAL_ASSET_DUE_HOUR : 7;
+  const currentHour = now.getHours() + (now.getMinutes() / 60);
+  return {
+    dueHour,
+    due: currentHour >= dueHour,
+    timeLabel: `${String(dueHour).padStart(2, '0')}:00 KST`,
+  };
 }
 
 async function buildNodeHealth() {
@@ -501,7 +512,9 @@ async function buildInstagramHealth() {
 }
 
 async function buildSocialAutomationHealth() {
-  const todayPrefix = toKstDateString(nowKst());
+  const now = nowKst();
+  const todayPrefix = toKstDateString(now);
+  const socialAssetExpectation = getSocialAssetExpectation(now);
   const reelCountToday = countDatedFiles(SHORTFORM_DIR, todayPrefix);
   const instaCardCountToday = countDatedFiles(INSTA_CARD_DIR, todayPrefix);
 
@@ -591,10 +604,18 @@ async function buildSocialAutomationHealth() {
     }
 
     if (reelCountToday <= 0) {
-      warn.push('  shortform reels today: 오늘 생성 산출물이 없습니다');
+      if (socialAssetExpectation.due) {
+        warn.push('  shortform reels today: 오늘 생성 산출물이 없습니다');
+      } else {
+        ok.push(`  shortform reels today: 아직 생성 대기 (${socialAssetExpectation.timeLabel} 이후 점검)`);
+      }
     }
     if (instaCardCountToday <= 0) {
-      warn.push('  instagram cards today: 오늘 생성 산출물이 없습니다');
+      if (socialAssetExpectation.due) {
+        warn.push('  instagram cards today: 오늘 생성 산출물이 없습니다');
+      } else {
+        ok.push(`  instagram cards today: 아직 생성 대기 (${socialAssetExpectation.timeLabel} 이후 점검)`);
+      }
     }
 
     return {
@@ -612,6 +633,8 @@ async function buildSocialAutomationHealth() {
         (latestInstagram && String(latestInstagram.status || '') === 'failed' && !latestInstagram.dry_run)
         || (latestRealInstagram && String(latestRealInstagram.status || '') === 'failed' && latestRealInstagramIsToday)
       ),
+      socialAssetDue: socialAssetExpectation.due,
+      socialAssetDueHour: socialAssetExpectation.dueHour,
       publishLogExists,
     };
   } catch (error) {
@@ -627,6 +650,8 @@ async function buildSocialAutomationHealth() {
       latestRealInstagramStatus: null,
       latestRealInstagramIsToday: false,
       instagramNeedsAttention: false,
+      socialAssetDue: getSocialAssetExpectation().due,
+      socialAssetDueHour: getSocialAssetExpectation().dueHour,
       publishLogExists: false,
     };
   }
@@ -1294,7 +1319,8 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
         reason: '인스타 공개 미디어 호스팅이 준비되지 않아 릴스 업로드를 진행할 수 없습니다.',
       },
       {
-        active: socialAutomationHealth.reelCountToday <= 0 || socialAutomationHealth.instaCardCountToday <= 0,
+        active: socialAutomationHealth.socialAssetDue
+          && (socialAutomationHealth.reelCountToday <= 0 || socialAutomationHealth.instaCardCountToday <= 0),
         level: 'medium',
         reason: '오늘 shortform 릴스나 인스타 카드 산출물이 없어 소셜 자동등록 흐름이 비어 있을 수 있습니다.',
       },
