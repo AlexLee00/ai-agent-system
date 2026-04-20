@@ -1733,11 +1733,12 @@ async function openReplyEditor(page, comment) {
         });
         target.setAttribute('data-blog-target-comment', 'true');
         if (commentNo) target.setAttribute('data-blog-target-comment-no', commentNo);
-        const buttons = Array.from(target.querySelectorAll('button, a')).filter(visible);
+        const buttons = Array.from(target.querySelectorAll('button, a, input[type="submit"], [role="button"]')).filter(visible);
         const replyButton = buttons.find((btn) => {
           const text = textOf(btn);
           const cls = String(btn.className || '');
-          return /답글|답변/.test(text) || /btn_reply|reply/i.test(cls);
+          const dataAction = String(btn.getAttribute('data-action') || '');
+          return /답글|답변/.test(text) || /btn_reply|reply/i.test(cls) || /reply#toggle/.test(dataAction);
         });
         if (replyButton) {
           replyButton.setAttribute('data-blog-target-reply-button', 'true');
@@ -1749,12 +1750,13 @@ async function openReplyEditor(page, comment) {
         }
       }
 
-      const globalReplyButtons = Array.from(document.querySelectorAll('button, a'))
+      const globalReplyButtons = Array.from(document.querySelectorAll('button, a, input[type="submit"], [role="button"]'))
         .filter(visible)
         .filter((btn) => {
           const text = textOf(btn);
           const cls = String(btn.className || '');
-          return (/답글|답변/.test(text) || /btn_reply|reply/i.test(cls)) && !/widget_recent_reply/i.test(cls);
+          const dataAction = String(btn.getAttribute('data-action') || '');
+          return (/답글|답변/.test(text) || /btn_reply|reply/i.test(cls) || /reply#toggle/.test(dataAction)) && !/widget_recent_reply/i.test(cls);
         });
       if (globalReplyButtons.length === 1) {
         const replyButton = globalReplyButtons[0];
@@ -1797,12 +1799,13 @@ async function waitForReplyThread(page, comment, testMode = false) {
         return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
       };
 
-      const replyButtons = Array.from(document.querySelectorAll('button, a'))
+      const replyButtons = Array.from(document.querySelectorAll('button, a, input[type="submit"], [role="button"]'))
         .filter(visible)
         .filter((btn) => {
           const text = textOf(btn);
           const cls = String(btn.className || '');
-          return (/답글|답변/.test(text) || /btn_reply|reply/i.test(cls)) && !/widget_recent_reply/i.test(cls);
+          const dataAction = String(btn.getAttribute('data-action') || '');
+          return (/답글|답변/.test(text) || /btn_reply|reply/i.test(cls) || /reply#toggle/.test(dataAction)) && !/widget_recent_reply/i.test(cls);
         });
       if (replyButtons.length > 0) return true;
 
@@ -2504,12 +2507,12 @@ async function submitReply(page, browserPage = null) {
 
       let node = null;
       for (const root of roots) {
-        node = Array.from(root.querySelectorAll('button, a')).find(isReplySubmit) || null;
+        node = Array.from(root.querySelectorAll('button, a, input[type="submit"], [role="button"]')).find(isReplySubmit) || null;
         if (node) break;
         node = null;
       }
       if (!node) {
-        const globalNode = Array.from(document.querySelectorAll('button, a')).find(isReplySubmit);
+        const globalNode = Array.from(document.querySelectorAll('button, a, input[type="submit"], [role="button"]')).find(isReplySubmit);
         if (globalNode) {
           node = globalNode;
         }
