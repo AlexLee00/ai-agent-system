@@ -33,7 +33,7 @@ describe('callLegal — 폴백 체인', () => {
     expect(chain[0].provider).toBe('claude-code');
     expect(chain[1].provider).toBe('anthropic');
     expect(chain[2].provider).toBe('groq');
-    expect(chain[3].provider).toBe('local');
+    expect(chain[3].provider).toBe('openai-oauth');
   });
 
   test('<think> 태그를 응답에서 제거한다', async () => {
