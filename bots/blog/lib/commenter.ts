@@ -1818,6 +1818,16 @@ async function waitForReplyThread(page, comment, testMode = false) {
 }
 
 async function activateReplyMode(page) {
+  const nativeTarget = await page.$('[data-blog-target-reply-button="true"]');
+  if (nativeTarget) {
+    await nativeTarget.evaluate((node) => {
+      if (node && node.scrollIntoView) {
+        node.scrollIntoView({ block: 'center', behavior: 'instant' });
+      }
+    }).catch(() => {});
+    await nativeTarget.click({ force: true }).catch(() => {});
+  }
+
   const clicked = await page.evaluate(`
     (() => {
       const visible = (el) => {
@@ -1875,11 +1885,21 @@ async function activateReplyMode(page) {
         const rect = el.getBoundingClientRect();
         return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
       };
+      const hasVisibleEditor = (root) => {
+        if (!root) return false;
+        const replyEditors = Array.from(root.querySelectorAll([
+          'textarea',
+          'div[contenteditable="true"]',
+          'div[role="textbox"]',
+          'div[id*="write_textarea"]',
+          '.u_cbox_text.u_cbox_text_mention',
+        ].join(', ')));
+        return replyEditors.some(visible);
+      };
 
       const replyArea = document.querySelector('[data-blog-target-reply-area="true"]');
-      if (visible(replyArea)) {
-        const replyEditors = Array.from(replyArea.querySelectorAll('textarea, div[contenteditable=\"true\"], div[role=\"textbox\"]'));
-        if (replyEditors.some(visible)) return true;
+      if (visible(replyArea) && hasVisibleEditor(replyArea)) {
+        return true;
       }
       const stateOnButton = document.querySelector('[data-blog-target-comment=\"true\"] .u_cbox_btn_reply_on[data-blog-target-reply-button=\"true\"], [data-blog-target-comment=\"true\"] .u_cbox_btn_reply_on');
       if (visible(stateOnButton)) {
@@ -1888,12 +1908,21 @@ async function activateReplyMode(page) {
           targetComment.querySelector('.u_cbox_reply_area')
           || targetComment.querySelector('[class*="reply_area"]')
         );
-        if (visible(scopedReplyArea)) {
-          const replyEditors = Array.from(scopedReplyArea.querySelectorAll('textarea, div[contenteditable="true"], div[role="textbox"]'));
-          return replyEditors.some(visible);
+        if (visible(scopedReplyArea) && hasVisibleEditor(scopedReplyArea)) {
+          return true;
         }
       }
-      return false;
+      const targetReplyButton = document.querySelector('[data-blog-target-reply-button="true"]');
+      const ariaExpanded = String(targetReplyButton?.getAttribute('aria-expanded') || '').trim().toLowerCase();
+      if (ariaExpanded === 'true' || visible(stateOnButton)) {
+        const globalWriteWrap = document.querySelector('.u_cbox_write_wrap')
+          || document.querySelector('.u_cbox_write')
+          || document.querySelector('.u_cbox_write_area');
+        if (visible(globalWriteWrap) && hasVisibleEditor(globalWriteWrap)) {
+          return true;
+        }
+      }
+      return ariaExpanded === 'true';
     })()
   `, { timeout: 8000 }).then(() => true).catch(() => false);
 }
@@ -2307,19 +2336,24 @@ async function mountCommentPanel(page, logNo = '', testMode = false) {
 async function focusReplyEditor(page) {
   await page.waitForFunction(`
     (() => {
+      const visible = (el) => {
+        if (!el) return false;
+        const style = window.getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+      };
       const targetComment = document.querySelector('[data-blog-target-comment="true"]');
       const scope = document.querySelector('[data-blog-target-reply-area="true"]')
         || targetComment?.querySelector('.u_cbox_reply_area')
         || targetComment?.querySelector('[class*="reply_area"]')
+        || document.querySelector('.u_cbox_write_wrap')
+        || document.querySelector('.u_cbox_write')
+        || document.querySelector('.u_cbox_write_area')
         || null;
       if (!scope) return false;
       const roots = [scope];
       const nodes = roots.flatMap((root) => Array.from(root.querySelectorAll('textarea, div[contenteditable="true"], div[role="textbox"]')));
-      return nodes.some((node) => {
-        const style = window.getComputedStyle(node);
-        const rect = node.getBoundingClientRect();
-        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-      });
+      return nodes.some((node) => visible(node));
     })()
   `, { timeout: 15000 });
 
@@ -2336,6 +2370,9 @@ async function focusReplyEditor(page) {
       const scope = document.querySelector('[data-blog-target-reply-area="true"]')
         || targetComment?.querySelector('.u_cbox_reply_area')
         || targetComment?.querySelector('[class*="reply_area"]')
+        || document.querySelector('.u_cbox_write_wrap')
+        || document.querySelector('.u_cbox_write')
+        || document.querySelector('.u_cbox_write_area')
         || null;
       if (!scope) return null;
       const roots = [scope];
@@ -2438,6 +2475,7 @@ async function submitReply(page, browserPage = null) {
         const text = textOf(node);
         const role = String(node.getAttribute('role') || '');
         if (dataAction.includes('reply#') && dataAction.includes('#write#request')) return true;
+        if (dataAction === 'write#request' && /등록|답글|답변/.test(text)) return true;
         if (/^replyButton_/i.test(uiSelector)) return true;
         if (uiSelector === 'writeButton' && /등록|답글|답변/.test(text)) return true;
         if (/u_cbox_btn_upload|btn_register|btn_write|replyButton/i.test(cls) && /등록|답글|답변/.test(text)) return true;
@@ -2451,9 +2489,13 @@ async function submitReply(page, browserPage = null) {
         targetReplyArea,
         targetReplyArea && targetReplyArea.parentElement,
         targetEditor && targetEditor.closest('.u_cbox_write_box, .u_cbox_reply_write, .u_cbox_reply_area, .u_cbox_comment_box'),
+        targetEditor && targetEditor.closest('.u_cbox_write_wrap, .u_cbox_write, .u_cbox_write_area'),
         targetComment && targetComment.parentElement,
         targetComment,
         document.querySelector('[data-blog-target-reply-button="true"]')?.closest('li.u_cbox_comment, li[class*="comment"], .u_cbox_comment_box, [class*="comment"]'),
+        document.querySelector('.u_cbox_write_wrap'),
+        document.querySelector('.u_cbox_write'),
+        document.querySelector('.u_cbox_write_area'),
       ].filter(Boolean);
 
       let node = null;
