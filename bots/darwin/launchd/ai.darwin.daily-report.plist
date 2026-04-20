@@ -14,6 +14,7 @@
   <string>/Users/alexlee/projects/ai-agent-system</string>
   <key>StartCalendarInterval</key>
   <dict>
+    <key>Weekday</key><integer>0</integer>
     <key>Hour</key><integer>6</integer>
     <key>Minute</key><integer>30</integer>
   </dict>

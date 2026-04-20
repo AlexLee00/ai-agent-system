@@ -29,14 +29,6 @@ const TEAM_BASE_DIRS = {
 };
 const logger = createLogger('implementor', { team: 'darwin' });
 
-function buildDarwinFeedbackButtons(eventId) {
-  if (!eventId) return [];
-  return [[
-    { text: '👍 유익함', callback_data: `darwin_feedback_up:${eventId}` },
-    { text: '👎 아쉬움', callback_data: `darwin_feedback_down:${eventId}` },
-  ]];
-}
-
 function _runGit(args, opts = {}) {
   return execFileSync('git', args, {
     cwd: REPO_ROOT,
@@ -347,7 +339,7 @@ ${JSON.stringify(proposal.verification || {})}`,
       team: 'darwin',
       alertLevel: syntaxPassed ? 2 : 3,
       fromBot: 'implementor',
-      inlineKeyboard: buildDarwinFeedbackButtons(eventId),
+      inlineKeyboard: null,
     });
 
     const verifier = require('./verifier');
@@ -379,7 +371,7 @@ ${JSON.stringify(proposal.verification || {})}`,
       team: 'darwin',
       alertLevel: 3,
       fromBot: 'implementor',
-      inlineKeyboard: buildDarwinFeedbackButtons(eventId),
+      inlineKeyboard: null,
     });
     throw error;
   } finally {

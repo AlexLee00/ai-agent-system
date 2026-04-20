@@ -19,14 +19,6 @@ const autonomyLevel = require('./autonomy-level');
 const REPO_ROOT = path.join(__dirname, '../../../..');
 const logger = createLogger('verifier', { team: 'darwin' });
 
-function buildDarwinFeedbackButtons(eventId) {
-  if (!eventId) return [];
-  return [[
-    { text: '👍 유익함', callback_data: `darwin_feedback_up:${eventId}` },
-    { text: '👎 아쉬움', callback_data: `darwin_feedback_down:${eventId}` },
-  ]];
-}
-
 function _runGit(args, opts = {}) {
   return execFileSync('git', args, {
     cwd: REPO_ROOT,
@@ -192,11 +184,11 @@ ${verification.summary}`,
         ? [[
             { text: '✅ 머지 승인', callback_data: `darwin_merge:${proposalId}` },
             { text: '📝 수동 검토', callback_data: `darwin_manual:${proposalId}` },
-          ], ...buildDarwinFeedbackButtons(verificationEventId)]
+          ]]
         : !passed ? [[
             { text: '📝 수동 검토', callback_data: `darwin_manual:${proposalId}` },
-          ], ...buildDarwinFeedbackButtons(verificationEventId)]
-        : buildDarwinFeedbackButtons(verificationEventId),
+          ]]
+        : null,
     });
 
     if (passed && !requiresApproval) {
@@ -234,7 +226,7 @@ ${verification.summary}`,
       team: 'darwin',
       alertLevel: 3,
       fromBot: 'proof-r',
-      inlineKeyboard: buildDarwinFeedbackButtons(eventId),
+      inlineKeyboard: null,
     });
     throw error;
   } finally {

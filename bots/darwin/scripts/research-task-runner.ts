@@ -53,7 +53,7 @@ async function main() {
           message: `📊 연구 과제 완료!\n📋 ${task.title}\n🔗 ${task.target.owner}/${task.target.repo}\n⭐ ${result.repoInfo.stars} | 📂 ${result.structure.totalFiles}파일\n📝 분석 문서 자동 생성!\n${spawnedSkillTask ? `🧠 후속 스킬 과제 생성: ${spawnedSkillTask.id}` : '🧠 후속 과제 없음 (조건 미충족)'}`,
           team: 'darwin',
           fromBot: 'task-runner',
-          inlineKeyboard: !spawnedSkillTask ? [[
+          inlineKeyboard: !spawnedSkillTask && autonomyLevel.requiresApproval() ? [[
             { text: '🧠 스킬 과제 생성', callback_data: `darwin_create_skill:${task.id}` },
             { text: '⏭ 건너뜀', callback_data: `darwin_skip_skill:${task.id}` },
           ]] : null,

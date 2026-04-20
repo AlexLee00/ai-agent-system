@@ -12,14 +12,6 @@ const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 const eventLake = require('../../../packages/core/lib/event-lake');
 const proposalStore = require('./proposal-store');
 
-function buildDarwinFeedbackButtons(eventId) {
-  if (!eventId) return [];
-  return [[
-    { text: '👍 유익함', callback_data: `darwin_feedback_up:${eventId}` },
-    { text: '👎 아쉬움', callback_data: `darwin_feedback_down:${eventId}` },
-  ]];
-}
-
 const TEAM_CONTEXT = `팀 제이 시스템 구조:
 - 10팀 113에이전트, Node.js 모노레포
 - 루나(자동매매 20에이전트): DAG 파이프라인, Bull/Bear 토론, ohlcv→분석→매매
@@ -233,7 +225,7 @@ async function apply(paper) {
     team: 'darwin',
     alertLevel: 2,
     fromBot: 'applicator',
-    inlineKeyboard: [...primaryButtons, ...buildDarwinFeedbackButtons(proposalEventId)],
+    inlineKeyboard: primaryButtons.length > 0 ? primaryButtons : null,
   });
   if (proposalEventId) {
     eventLake.addFeedback(proposalEventId, {
