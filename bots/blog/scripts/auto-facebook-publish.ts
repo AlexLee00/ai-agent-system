@@ -20,6 +20,9 @@ const { ensurePublishLogSchema, reportPublishSuccess, reportPublishFailure } = r
 const { resolveInstagramHostedMediaUrl } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-image-host.ts'));
 
 const DRY_RUN = process.argv.includes('--dry-run');
+const FACEBOOK_READINESS_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run check:facebook -- --json`;
+const FACEBOOK_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:facebook -- --json`;
+const SOCIAL_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:social -- --json`;
 
 function buildPreviewBundleForTitle(title = '') {
   try {
@@ -54,7 +57,14 @@ async function buildFacebookFailureDetail(error) {
     const pageHint = readiness?.pageId ? `page=${String(readiness.pageId).slice(0, 32)}` : '';
     const scopeHint = scopes ? `scopes=${scopes}` : '';
     const actionHint = scopes ? 'action=Meta 앱 권한 재연결 후 페이지 토큰 재발급' : '';
-    const extras = [pageHint, scopeHint, actionHint].filter(Boolean).join(' / ');
+    const extras = [
+      pageHint,
+      scopeHint,
+      `diagnose=${FACEBOOK_READINESS_COMMAND}`,
+      `doctor=${FACEBOOK_DOCTOR_COMMAND}`,
+      `social=${SOCIAL_DOCTOR_COMMAND}`,
+      actionHint,
+    ].filter(Boolean).join(' / ');
     return extras ? `${baseMessage}\n${extras}` : baseMessage;
   } catch {
     return baseMessage;

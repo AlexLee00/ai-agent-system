@@ -33,6 +33,7 @@ const { ensureReelQaSheet } = require(
 const DRY_RUN = process.argv.includes('--dry-run');
 const INSTAGRAM_READINESS_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run check:instagram -- --json`;
 const INSTAGRAM_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:instagram -- --json`;
+const SOCIAL_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:social -- --json`;
 
 function inferCoverPathFromReel(reelPath = '') {
   if (!reelPath) return '';
@@ -86,6 +87,7 @@ function buildInstagramFailureDetail(error, { reelPath = '', previewBundle = '' 
     reelHint,
     `diagnose=${INSTAGRAM_READINESS_COMMAND}`,
     `doctor=${INSTAGRAM_DOCTOR_COMMAND}`,
+    `social=${SOCIAL_DOCTOR_COMMAND}`,
     actionHint,
     previewBundle ? `preview=${previewBundle}` : '',
   ].filter(Boolean);
