@@ -3011,11 +3011,23 @@ async function postReply(comment, replyText, { testMode = false, dryRun = false,
     }
 
     await humanDelay(1, 2, testMode);
-    const editor = await focusReplyEditor(contentFrame);
+    let editor = null;
+    let usedCommentEditorFallback = false;
+    try {
+      editor = await focusReplyEditor(contentFrame);
+    } catch (error) {
+      traceCommenter('postReply:reply-editor-fallback', {
+        commentId: comment.id,
+        reason: String(error?.message || error),
+      });
+      editor = await focusCommentEditor(contentFrame, logNo, testMode ? 8000 : 15000).catch(() => null);
+      usedCommentEditorFallback = Boolean(editor?.selector);
+    }
     traceCommenter('postReply:editor-focused', {
       commentId: comment.id,
       hasEditor: Boolean(editor?.selector),
       selector: editor?.selector || '',
+      usedCommentEditorFallback,
     });
     if (!editor?.selector) {
       throw new Error('reply_editor_not_found');
