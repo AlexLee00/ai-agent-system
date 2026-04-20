@@ -220,6 +220,31 @@ function countDatedFiles(dirPath = '', datePrefix = '') {
   }
 }
 
+function countDatedFilesBySuffix(dirPath = '', datePrefix = '', suffix = '') {
+  try {
+    if (!suffix) return countDatedFiles(dirPath, datePrefix);
+    if (!dirPath || !datePrefix || !fs.existsSync(dirPath)) return 0;
+    const start = new Date(`${datePrefix}T00:00:00+09:00`);
+    const end = new Date(start.getTime() + (24 * 60 * 60 * 1000));
+    return fs.readdirSync(dirPath).filter((name) => {
+      if (!String(name).endsWith(suffix)) return false;
+      const fullPath = path.join(dirPath, name);
+      let stat = null;
+      try {
+        stat = fs.statSync(fullPath);
+      } catch {
+        return false;
+      }
+      if (!stat.isFile()) return false;
+      if (String(name).startsWith(datePrefix)) return true;
+      const modifiedAt = stat.mtime instanceof Date ? stat.mtime : new Date(stat.mtime);
+      return modifiedAt >= start && modifiedAt < end;
+    }).length;
+  } catch {
+    return 0;
+  }
+}
+
 function getSocialAssetExpectation(now = nowKst()) {
   const dueHour = Number.isFinite(SOCIAL_ASSET_DUE_HOUR) ? SOCIAL_ASSET_DUE_HOUR : 7;
   const currentHour = now.getHours() + (now.getMinutes() / 60);
@@ -517,6 +542,7 @@ async function buildSocialAutomationHealth() {
   const todayPrefix = toKstDateString(now);
   const socialAssetExpectation = getSocialAssetExpectation(now);
   const reelCountToday = countDatedFiles(SHORTFORM_DIR, todayPrefix);
+  const reelQaCountToday = countDatedFilesBySuffix(SHORTFORM_DIR, todayPrefix, '_qa.jpg');
   const instaCardCountToday = countDatedFiles(INSTA_CARD_DIR, todayPrefix);
 
   try {
@@ -543,6 +569,7 @@ async function buildSocialAutomationHealth() {
 
     const ok = [
       `  shortform reels today: ${reelCountToday}개`,
+      `  reel QA sheets today: ${reelQaCountToday}개`,
       `  instagram cards today: ${instaCardCountToday}개`,
     ];
     const warn = [];
@@ -569,6 +596,12 @@ async function buildSocialAutomationHealth() {
     const latestRealInstagramIsToday = latestRealInstagram
       ? toKstDateString(latestRealInstagram.created_at) === todayPrefix
       : false;
+    const latestQaSheet = fs.existsSync(SHORTFORM_DIR)
+      ? fs.readdirSync(SHORTFORM_DIR)
+        .filter((name) => name.endsWith('_qa.jpg'))
+        .map((name) => path.join(SHORTFORM_DIR, name))
+        .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0] || null
+      : null;
 
     if (instaList.length > 0) {
       ok.push(`  instagram recent: success ${instaSummary.success} / failed ${instaSummary.failed} / skipped ${instaSummary.skipped} (dry-run ${instaSummary.dryRun})`);
@@ -586,6 +619,12 @@ async function buildSocialAutomationHealth() {
       }
     } else {
       warn.push('  instagram crosspost history: 아직 없음');
+    }
+
+    if (latestQaSheet) {
+      ok.push(`  reel latest qa: ${path.basename(latestQaSheet)}`);
+    } else if (reelCountToday > 0) {
+      warn.push('  reel qa sheet: 오늘 릴스 QA 시트가 없습니다');
     }
 
     const publishLogExists = Boolean(publishLogMeta?.exists);
@@ -622,6 +661,9 @@ async function buildSocialAutomationHealth() {
         ok.push(`  shortform reels today: 아직 생성 대기 (${socialAssetExpectation.timeLabel} 이후 점검)`);
       }
     }
+    if (reelQaCountToday <= 0 && reelCountToday > 0) {
+      warn.push('  reel QA sheets today: 릴스는 있으나 QA 시트가 없습니다');
+    }
     if (instaCardCountToday <= 0) {
       if (socialAssetExpectation.due) {
         warn.push('  instagram cards today: 오늘 생성 산출물이 없습니다');
@@ -636,6 +678,7 @@ async function buildSocialAutomationHealth() {
       ok,
       warn,
       reelCountToday,
+      reelQaCountToday,
       instaCardCountToday,
       instagramRecent: instaSummary,
       instagramToday: instaTodaySummary,
@@ -649,6 +692,7 @@ async function buildSocialAutomationHealth() {
       socialAssetDue: socialAssetExpectation.due,
       socialAssetDueHour: socialAssetExpectation.dueHour,
       publishLogExists,
+      latestQaSheet,
     };
   } catch (error) {
     return {
@@ -657,6 +701,7 @@ async function buildSocialAutomationHealth() {
       ok: [],
       warn: [`  social automation: 확인 실패 (${String(error.message || error).slice(0, 120)})`],
       reelCountToday,
+      reelQaCountToday,
       instaCardCountToday,
       instagramRecent: { success: 0, failed: 0, skipped: 0, dryRun: 0 },
       instagramToday: { success: 0, failed: 0, skipped: 0, dryRun: 0 },
@@ -667,6 +712,7 @@ async function buildSocialAutomationHealth() {
       socialAssetDue: getSocialAssetExpectation().due,
       socialAssetDueHour: getSocialAssetExpectation().dueHour,
       publishLogExists: false,
+      latestQaSheet: null,
     };
   }
 }

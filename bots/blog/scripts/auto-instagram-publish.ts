@@ -35,6 +35,11 @@ function inferCoverPathFromReel(reelPath = '') {
   return coverPath;
 }
 
+function inferQaSheetPathFromReel(reelPath = '') {
+  if (!reelPath) return '';
+  return String(reelPath).replace(/\.mp4$/i, '_qa.jpg');
+}
+
 function ensureHostedInstagramMedia(reelPath, coverPath = '') {
   if (!reelPath) return null;
   const scriptPath = path.join(env.PROJECT_ROOT, 'bots/blog/scripts/prepare-instagram-media.ts');
@@ -125,22 +130,29 @@ async function main() {
   // 릴스 파일 찾기 (shortform-files.ts 활용)
   let reelPath = null;
   let coverPath = null;
+  let qaSheetPath = null;
   try {
     const {
       findLatestReelPath,
       findReelPathForTitle,
       findReelCoverPathForTitle,
+      findReelQaSheetPathForTitle,
     } = require(
       path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-files.ts')
     );
     reelPath = findReelPathForTitle(postTitle) || findLatestReelPath();
     coverPath = findReelCoverPathForTitle(postTitle) || '';
+    qaSheetPath = findReelQaSheetPathForTitle(postTitle) || '';
   } catch (e) {
     console.warn('[insta-auto] 릴스 파일 탐색 실패:', e.message);
   }
   const inferredCoverPath = inferCoverPathFromReel(reelPath);
   if (inferredCoverPath && require('fs').existsSync(inferredCoverPath)) {
     coverPath = inferredCoverPath;
+  }
+  const inferredQaSheetPath = inferQaSheetPathFromReel(reelPath);
+  if (inferredQaSheetPath && require('fs').existsSync(inferredQaSheetPath)) {
+    qaSheetPath = inferredQaSheetPath;
   }
 
   if (!reelPath) {
@@ -166,6 +178,9 @@ async function main() {
     if (coverTarget) {
       console.log(`[insta-auto] 릴스 커버 준비: ${coverTarget}`);
     }
+    if (qaSheetPath) {
+      console.log(`[insta-auto] 릴스 QA 시트 인식: ${qaSheetPath}`);
+    }
   } catch (e) {
     console.warn('[insta-auto] 공개 미디어 준비 실패:', e.message);
     if (!DRY_RUN) {
@@ -183,6 +198,9 @@ async function main() {
   console.log(`[insta-auto] 릴스 발행 시도: ${reelPath}`);
   if (coverPath) {
     console.log(`[insta-auto] 릴스 커버 인식: ${coverPath}`);
+  }
+  if (qaSheetPath) {
+    console.log(`[insta-auto] 릴스 QA 시트 인식: ${qaSheetPath}`);
   }
   const result = await crosspostToInstagram(instaContent, postTitle, postId, DRY_RUN);
 
