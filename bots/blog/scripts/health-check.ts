@@ -424,6 +424,45 @@ function isCommenterActiveWindow() {
   return hour >= COMMENTER_ACTIVE_START_HOUR && hour <= COMMENTER_ACTIVE_END_HOUR;
 }
 
+async function getLatestReplyReplayCandidate() {
+  try {
+    const row = await pgPool.get('blog', `
+      SELECT
+        c.id,
+        c.status,
+        c.commenter_name,
+        c.post_url,
+        LEFT(c.comment_text, 80) AS comment_text,
+        a.executed_at,
+        true AS from_failure
+      FROM blog.comment_actions a
+      JOIN blog.comments c
+        ON (a.meta->>'commentId')::int = c.id
+      WHERE a.action_type = 'reply'
+        AND a.success = false
+      ORDER BY a.executed_at DESC
+      LIMIT 1
+    `);
+    if (row?.id) return row;
+    return await pgPool.get('blog', `
+      SELECT
+        id,
+        status,
+        commenter_name,
+        post_url,
+        LEFT(comment_text, 80) AS comment_text,
+        detected_at AS executed_at,
+        false AS from_failure
+      FROM blog.comments
+      WHERE detected_at >= now() - interval '7 days'
+      ORDER BY detected_at DESC
+      LIMIT 1
+    `);
+  } catch {
+    return null;
+  }
+}
+
 async function checkEngagementAutomationHealth() {
   try {
     const activeWindow = isCommenterActiveWindow();
@@ -435,6 +474,7 @@ async function checkEngagementAutomationHealth() {
       ORDER BY executed_at DESC
       LIMIT 50
     `);
+    const latestReplyReplayCandidate = await getLatestReplyReplayCandidate();
 
     const failureByKind = { ui: 0, browser: 0, llm: 0, verification: 0, unknown: 0 };
     const failureByAction = { reply: 0, neighbor_comment: 0, sympathy: 0 };
@@ -458,11 +498,15 @@ async function checkEngagementAutomationHealth() {
     }
 
     if ((failureByKind.ui || 0) > 0 || (failureByKind.browser || 0) > 0) {
+      const replayHint = latestReplyReplayCandidate?.id
+        ? `\nreply replay: npm run replay:reply-ui -- --comment-id ${latestReplyReplayCandidate.id} --json`
+        : '';
       return {
         ok: false,
-        detail: `engagement UI/browser failures — reply ${failureByAction.reply}, neighbor ${failureByAction.neighbor_comment}, sympathy ${failureByAction.sympathy}`,
+        detail: `engagement UI/browser failures — reply ${failureByAction.reply}, neighbor ${failureByAction.neighbor_comment}, sympathy ${failureByAction.sympathy}${replayHint}`,
         failureByKind,
         failureByAction,
+        latestReplyReplayCandidate,
       };
     }
 
@@ -471,6 +515,7 @@ async function checkEngagementAutomationHealth() {
       detail: `engagement failures present but non-UI (${totalFailures}건)`,
       failureByKind,
       failureByAction,
+      latestReplyReplayCandidate,
     };
   } catch (e) {
     return { ok: false, detail: `engagement 확인 실패: ${e.message.slice(0, 120)}` };
