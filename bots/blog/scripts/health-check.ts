@@ -67,6 +67,24 @@ function buildPreviewBundleForTitle(title = '') {
   }
 }
 
+function getHostedReelStatusForTitle(title = '') {
+  try {
+    const {
+      findReelPathForTitle,
+    } = require('../lib/shortform-files.ts');
+    const reelPath = findReelPathForTitle(title) || '';
+    if (!reelPath) return { reelPath: '', hostedReady: false, hostedUrl: '' };
+    const hosted = resolveInstagramHostedMediaUrl(reelPath, { kind: 'reels' });
+    return {
+      reelPath,
+      hostedReady: hosted?.ready === true,
+      hostedUrl: hosted?.publicUrl || '',
+    };
+  } catch {
+    return { reelPath: '', hostedReady: false, hostedUrl: '' };
+  }
+}
+
 async function notify(msg, level = 3) {
   try {
     const incidentState = canonicalizeBlogCriticalAlert({
@@ -327,12 +345,26 @@ async function checkInstagramPublishHealth() {
       day: '2-digit',
     }).format(new Date());
     const hasRecentSuccess = list.some((item) => !item.dry_run && String(item.status || '') === 'success');
+    const latestTitle = String(latestReal.post_title || '');
+    const errorText = String(latestReal.error_msg || '');
+    const hostedStatus = getHostedReelStatusForTitle(latestTitle);
+    const hostedAssetRecovered =
+      hostedStatus.hostedReady
+      && errorText.includes('Instagram 공개 비디오 파일이 아직 준비되지 않았습니다');
+
+    if (hostedAssetRecovered) {
+      return {
+        ok: true,
+        detail: `instagram hosted media 회복 — ${latestTitle.slice(0, 60)}`,
+        latest: latestReal,
+      };
+    }
 
     if (String(latestReal.status || '') === 'failed' && (isTodayKst || (recentEnough && !hasRecentSuccess))) {
-      const previewBundle = buildPreviewBundleForTitle(String(latestReal.post_title || ''));
+      const previewBundle = buildPreviewBundleForTitle(latestTitle);
       return {
         ok: false,
-        detail: `Instagram 자동등록 실패 — ${String(latestReal.post_title || '').slice(0, 60)}\n${String(latestReal.error_msg || '').slice(0, 120)}${previewBundle ? `\npreview: ${previewBundle}` : ''}`,
+        detail: `Instagram 자동등록 실패 — ${latestTitle.slice(0, 60)}\n${errorText.slice(0, 120)}${previewBundle ? `\npreview: ${previewBundle}` : ''}`,
         latest: latestReal,
       };
     }

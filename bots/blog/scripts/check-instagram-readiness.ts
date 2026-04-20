@@ -48,7 +48,7 @@ async function main() {
   if (!config.igUserId) missing.push('instagram.ig_user_id');
   if (!reelPath) missing.push('latest_reel_mp4');
   if (reelPath && !hosted?.ready) missing.push('instagram.public_media_url');
-  if (reelPath && hosted?.mode === 'github_pages' && !staged) missing.push('instagram.staged_media');
+  if (reelPath && hosted?.mode === 'github_pages' && !staged && !hosted?.ready) missing.push('instagram.staged_media');
 
   /** @type {any} */
   const payload = {
