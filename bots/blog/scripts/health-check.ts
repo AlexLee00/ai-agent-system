@@ -26,6 +26,7 @@ const {
   canonicalizeBlogCriticalAlert,
   appendIncidentLine,
 } = require('../lib/critical-alerts.js');
+const { resolveInstagramHostedMediaUrl } = require('../../../packages/core/lib/instagram-image-host.ts');
 
 const runtimeConfig = getBlogHealthRuntimeConfig();
 const { buildIssueHints, rememberHealthEvent } = createHealthMemoryHelper({
@@ -44,6 +45,27 @@ const IMAGE_HEALTH_TIMEOUT_MS = 2500;
 const COMMENTER_CONFIG = runtimeConfig.commenter || {};
 const COMMENTER_ACTIVE_START_HOUR = Number(COMMENTER_CONFIG.activeStartHour || 9);
 const COMMENTER_ACTIVE_END_HOUR = Number(COMMENTER_CONFIG.activeEndHour || 21);
+
+function buildPreviewBundleForTitle(title = '') {
+  try {
+    const {
+      findReelPathForTitle,
+      findReelCoverPathForTitle,
+      findReelQaSheetPathForTitle,
+    } = require('../lib/shortform-files.ts');
+    const reelPath = findReelPathForTitle(title) || '';
+    const coverPath = findReelCoverPathForTitle(title) || '';
+    const qaSheetPath = findReelQaSheetPathForTitle(title) || '';
+    const parts = [
+      reelPath ? `reel=${resolveInstagramHostedMediaUrl(reelPath, { kind: 'reels' }).publicUrl || reelPath}` : '',
+      coverPath ? `cover=${resolveInstagramHostedMediaUrl(coverPath, { kind: 'thumbs' }).publicUrl || coverPath}` : '',
+      qaSheetPath ? `qa=${resolveInstagramHostedMediaUrl(qaSheetPath, { kind: 'thumbs' }).publicUrl || qaSheetPath}` : '',
+    ].filter(Boolean);
+    return parts.join(' / ');
+  } catch {
+    return '';
+  }
+}
 
 async function notify(msg, level = 3) {
   try {
@@ -253,9 +275,10 @@ async function checkFacebookPublishHealth() {
     const hasRecentSuccess = list.some((item) => String(item.status || '') === 'success');
 
     if (String(row.status || '') === 'failed' && permissionIssue && (isTodayKst || (recentEnough && !hasRecentSuccess))) {
+      const previewBundle = buildPreviewBundleForTitle(String(row.title || ''));
       return {
         ok: false,
-        detail: `Facebook 페이지 게시 권한 부족 — ${String(row.title || '').slice(0, 60)}`,
+        detail: `Facebook 페이지 게시 권한 부족 — ${String(row.title || '').slice(0, 60)}${previewBundle ? `\npreview: ${previewBundle}` : ''}`,
         latest: row,
       };
     }
