@@ -211,6 +211,62 @@ async function checkBookCatalogHealth() {
   }
 }
 
+async function checkFacebookPublishHealth() {
+  try {
+    const rows = await pgPool.query('blog', `
+      SELECT status, title, error, created_at
+      FROM blog.publish_log
+      WHERE platform = 'facebook'
+      ORDER BY created_at DESC
+      LIMIT 5
+    `);
+    const list = Array.isArray(rows) ? rows : [];
+    const row = list[0];
+    if (!row) {
+      return { ok: true, detail: 'facebook publish history 없음', latest: null };
+    }
+
+    const createdAt = new Date(row.created_at);
+    const ageMs = Date.now() - createdAt.getTime();
+    const recentEnough = Number.isFinite(ageMs) && ageMs <= (72 * 60 * 60 * 1000);
+    const isTodayKst = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(createdAt) === new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+
+    const errorText = String(row.error || '');
+    const permissionIssue =
+      errorText.includes('pages_manage_posts')
+      || errorText.includes('pages_read_engagement')
+      || errorText.includes('Facebook 페이지 게시 권한 부족');
+
+    const hasRecentSuccess = list.some((item) => String(item.status || '') === 'success');
+
+    if (String(row.status || '') === 'failed' && permissionIssue && (isTodayKst || (recentEnough && !hasRecentSuccess))) {
+      return {
+        ok: false,
+        detail: `Facebook 페이지 게시 권한 부족 — ${String(row.title || '').slice(0, 60)}`,
+        latest: row,
+      };
+    }
+
+    return {
+      ok: true,
+      detail: `facebook latest ${String(row.status || 'unknown')}`,
+      latest: row,
+    };
+  } catch (e) {
+    return { ok: false, detail: `facebook publish 확인 실패: ${e.message.slice(0, 120)}`, latest: null };
+  }
+}
+
 async function main() {
   console.log(`[블로그 헬스체크] 시작 — ${new Date().toISOString()}`);
 
@@ -339,6 +395,23 @@ async function main() {
     await notify(recoveryMsg, 1);
     await rememberHealthEvent(bookCatalogKey, 'recovery', recoveryMsg, 1);
     hsm.clearAlert(state, bookCatalogKey);
+  }
+
+  const facebookPublish = await checkFacebookPublishHealth();
+  const facebookPublishKey = 'facebook-publish:permission';
+  if (!facebookPublish.ok) {
+    if (hsm.canAlert(state, facebookPublishKey)) {
+      issues.push({
+        key: facebookPublishKey,
+        level: 3,
+        msg: `⚠️ [블로그 헬스] Facebook 자동등록 권한 이슈\n${facebookPublish.detail}`,
+      });
+    }
+  } else if (state[facebookPublishKey]) {
+    const recoveryMsg = `✅ [블로그 헬스] Facebook 자동등록 회복\n${facebookPublish.detail}`;
+    await notify(recoveryMsg, 1);
+    await rememberHealthEvent(facebookPublishKey, 'recovery', recoveryMsg, 1);
+    hsm.clearAlert(state, facebookPublishKey);
   }
 
   for (const { key, level, msg } of issues) {
