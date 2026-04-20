@@ -450,7 +450,7 @@ async function buildEngagementHealth() {
     const replyConfig = runtimeConfig.commenter || {};
     const neighborConfig = runtimeConfig.neighborCommenter || {};
 
-    const [actionAggRows, failureMetaRows, commentRows, neighborRows] = await Promise.all([
+    const [actionAggRows, failureMetaRows, commentRows, neighborRows, latestReplyReplayCandidate] = await Promise.all([
       pgPool.query('blog', `
         SELECT action_type, success, COUNT(*)::int AS cnt
         FROM blog.comment_actions
@@ -479,6 +479,23 @@ async function buildEngagementHealth() {
         FROM blog.neighbor_comments
         WHERE timezone('Asia/Seoul', created_at)::date = timezone('Asia/Seoul', now())::date
         GROUP BY 1
+      `),
+      pgPool.get('blog', `
+        SELECT
+          c.id,
+          c.status,
+          c.commenter_name,
+          c.post_url,
+          LEFT(c.comment_text, 80) AS comment_text,
+          a.executed_at
+        FROM blog.comment_actions a
+        JOIN blog.comments c
+          ON (a.meta->>'commentId')::int = c.id
+        WHERE a.action_type = 'reply'
+          AND a.success = false
+          AND timezone('Asia/Seoul', a.executed_at)::date = timezone('Asia/Seoul', now())::date
+        ORDER BY a.executed_at DESC
+        LIMIT 1
       `),
     ]);
 
@@ -566,6 +583,12 @@ async function buildEngagementHealth() {
     for (const item of failureSamples) {
       ok.push(`  recent failure: ${item.kind}/${item.actionType} ${item.sample}`);
     }
+    if (latestReplyReplayCandidate?.id) {
+      ok.push(
+        `  reply replay target: comment ${latestReplyReplayCandidate.id} (${String(latestReplyReplayCandidate.commenter_name || 'unknown').slice(0, 30)})`
+      );
+      ok.push(`  reply replay command: npm run replay:reply-ui -- --comment-id ${latestReplyReplayCandidate.id} --json`);
+    }
     if ((failureByKind.ui || 0) > 0) {
       warn.push(`  engagement UI failures: ${failureByKind.ui || 0}건`);
     }
@@ -612,6 +635,7 @@ async function buildEngagementHealth() {
       },
       failureByKind,
       failureSamples,
+      latestReplyReplayCandidate: latestReplyReplayCandidate || null,
     };
   } catch (error) {
     return {
@@ -626,6 +650,7 @@ async function buildEngagementHealth() {
       neighborQueue: { posted: 0, failed: 0, pending: 0 },
       failureByKind: { ui: 0, llm: 0, browser: 0, verification: 0, unknown: 0 },
       failureSamples: [],
+      latestReplyReplayCandidate: null,
     };
   }
 }
