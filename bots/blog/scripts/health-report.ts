@@ -605,6 +605,22 @@ async function buildSocialAutomationHealth() {
         .map((name) => path.join(SHORTFORM_DIR, name))
         .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0] || null
       : null;
+    const latestReel = fs.existsSync(SHORTFORM_DIR)
+      ? fs.readdirSync(SHORTFORM_DIR)
+        .filter((name) => name.endsWith('_reel.mp4'))
+        .map((name) => path.join(SHORTFORM_DIR, name))
+        .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0] || null
+      : null;
+    const latestCover = latestReel
+      ? latestReel.replace(/\.mp4$/i, '_cover.jpg')
+      : null;
+    const latestCoverExists = Boolean(latestCover && fs.existsSync(latestCover));
+    const latestReelHosted = latestReel
+      ? resolveInstagramHostedMediaUrl(latestReel, { kind: 'reels' })
+      : null;
+    const latestCoverHosted = latestCoverExists
+      ? resolveInstagramHostedMediaUrl(latestCover, { kind: 'thumbs' })
+      : null;
     const latestQaHosted = latestQaSheet
       ? resolveInstagramHostedMediaUrl(latestQaSheet, { kind: 'thumbs' })
       : null;
@@ -634,6 +650,22 @@ async function buildSocialAutomationHealth() {
       }
     } else if (reelCountToday > 0) {
       warn.push('  reel qa sheet: 오늘 릴스 QA 시트가 없습니다');
+    }
+    if (latestReel) {
+      const bundleParts = [
+        `reel=${path.basename(latestReel)}`,
+        `cover=${latestCoverExists ? path.basename(latestCover) : 'missing'}`,
+        `qa=${latestQaSheet ? path.basename(latestQaSheet) : 'missing'}`,
+      ];
+      ok.push(`  reel preview bundle: ${bundleParts.join(' / ')}`);
+      const bundleUrlParts = [
+        latestReelHosted?.publicUrl ? `reel=${latestReelHosted.publicUrl}` : '',
+        latestCoverHosted?.publicUrl ? `cover=${latestCoverHosted.publicUrl}` : '',
+        latestQaHosted?.publicUrl ? `qa=${latestQaHosted.publicUrl}` : '',
+      ].filter(Boolean);
+      if (bundleUrlParts.length > 0) {
+        ok.push(`  reel preview urls: ${bundleUrlParts.join(' / ')}`);
+      }
     }
 
     const publishLogExists = Boolean(publishLogMeta?.exists);
@@ -701,7 +733,11 @@ async function buildSocialAutomationHealth() {
       socialAssetDue: socialAssetExpectation.due,
       socialAssetDueHour: socialAssetExpectation.dueHour,
       publishLogExists,
+      latestReel: latestReel || null,
+      latestCover: latestCoverExists ? latestCover : null,
       latestQaSheet,
+      latestReelUrl: latestReelHosted?.publicUrl || null,
+      latestCoverUrl: latestCoverHosted?.publicUrl || null,
       latestQaUrl: latestQaHosted?.publicUrl || null,
     };
   } catch (error) {
@@ -722,7 +758,11 @@ async function buildSocialAutomationHealth() {
       socialAssetDue: getSocialAssetExpectation().due,
       socialAssetDueHour: getSocialAssetExpectation().dueHour,
       publishLogExists: false,
+      latestReel: null,
+      latestCover: null,
       latestQaSheet: null,
+      latestReelUrl: null,
+      latestCoverUrl: null,
       latestQaUrl: null,
     };
   }
