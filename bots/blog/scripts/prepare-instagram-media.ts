@@ -111,11 +111,7 @@ function main() {
   const reel = stageAsset(reelPath, 'reels', args.dryRun);
   const cover = coverPath ? stageAsset(coverPath, 'thumbs', args.dryRun) : null;
   const thumb = thumbPath ? stageAsset(thumbPath, 'thumbs', args.dryRun) : null;
-  const qaSheet = qaSheetPath ? {
-    kind: 'qa',
-    sourcePath: qaSheetPath,
-    sizeBytes: fs.statSync(qaSheetPath).size,
-  } : null;
+  const qaSheet = qaSheetPath ? stageAsset(qaSheetPath, 'thumbs', args.dryRun) : null;
   const payload = {
     dryRun: args.dryRun,
     publicReady: reel?.ready === true,

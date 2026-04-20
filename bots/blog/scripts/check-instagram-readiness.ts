@@ -40,6 +40,9 @@ async function main() {
   const hosted = reelPath ? resolveInstagramHostedMediaUrl(reelPath, { kind: 'reels' }) : null;
   const localTarget = reelPath ? getInstagramHostedAssetLocalPath(reelPath, { kind: 'reels' }) : null;
   const staged = localTarget ? fs.existsSync(localTarget.targetPath) : false;
+  const qaHosted = qaSheetPath ? resolveInstagramHostedMediaUrl(qaSheetPath, { kind: 'thumbs' }) : null;
+  const qaTarget = qaSheetPath ? getInstagramHostedAssetLocalPath(qaSheetPath, { kind: 'thumbs' }) : null;
+  const qaStaged = qaTarget ? fs.existsSync(qaTarget.targetPath) : false;
 
   if (!config.accessToken) missing.push('instagram.access_token');
   if (!config.igUserId) missing.push('instagram.ig_user_id');
@@ -81,6 +84,11 @@ async function main() {
       ? {
           path: qaSheetPath,
           sizeBytes: fs.statSync(qaSheetPath).size,
+          hostedUrl: qaHosted?.publicUrl || null,
+          hostedReady: qaHosted?.ready === true,
+          hostMode: qaHosted?.mode || null,
+          stagedPath: qaTarget?.targetPath || null,
+          stagedReady: qaStaged,
         }
       : null,
   };
