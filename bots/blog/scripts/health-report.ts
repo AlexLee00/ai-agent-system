@@ -25,6 +25,7 @@ const {
 const { getBlogHealthRuntimeConfig } = require('../lib/runtime-config.ts');
 const { getInstagramConfig } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-graph.ts'));
 const { getInstagramImageHostConfig } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-image-host.ts'));
+const { checkFacebookPublishReadiness } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/facebook-publisher.ts'));
 const { buildMarketingDigest } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/marketing-digest.ts'));
 
 const CONTINUOUS = ['ai.blog.node-server'];
@@ -519,7 +520,7 @@ async function buildSocialAutomationHealth() {
   const instaCardCountToday = countDatedFiles(INSTA_CARD_DIR, todayPrefix);
 
   try {
-    const [instagramRows, publishLogMeta, publishLogRows] = await Promise.all([
+    const [instagramRows, publishLogMeta, publishLogRows, facebookReadiness] = await Promise.all([
       pgPool.query('blog', `
         SELECT status, dry_run, error_msg, post_title, created_at
         FROM blog.instagram_crosspost
@@ -533,6 +534,11 @@ async function buildSocialAutomationHealth() {
         ORDER BY created_at DESC
         LIMIT 8
       `).catch(() => []),
+      checkFacebookPublishReadiness().catch((error) => ({
+        ready: false,
+        permissionScopes: [],
+        error: String(error?.message || error),
+      })),
     ]);
 
     const ok = [
@@ -588,6 +594,12 @@ async function buildSocialAutomationHealth() {
     } else {
       const publishRows = Array.isArray(publishLogRows) ? publishLogRows : [];
       const facebookRows = publishRows.filter((row) => String(row.platform || '') === 'facebook');
+      if (facebookReadiness?.ready) {
+        ok.push(`  facebook readiness: ready / page ${String(facebookReadiness.pageId || '').slice(0, 24)}`);
+      } else if (facebookReadiness?.error) {
+        const summarizedReadinessError = summarizeFacebookPublishFailure(facebookReadiness.error || '');
+        warn.push(`  facebook readiness: ${summarizedReadinessError}`);
+      }
       if (facebookRows.length > 0) {
         const latestFacebook = facebookRows[0];
         ok.push(`  facebook latest: ${String(latestFacebook.status || 'unknown')} / ${String(latestFacebook.title || '').slice(0, 50)}`);
@@ -633,6 +645,7 @@ async function buildSocialAutomationHealth() {
         (latestInstagram && String(latestInstagram.status || '') === 'failed' && !latestInstagram.dry_run)
         || (latestRealInstagram && String(latestRealInstagram.status || '') === 'failed' && latestRealInstagramIsToday)
       ),
+      facebookReadiness: facebookReadiness || null,
       socialAssetDue: socialAssetExpectation.due,
       socialAssetDueHour: socialAssetExpectation.dueHour,
       publishLogExists,
@@ -650,6 +663,7 @@ async function buildSocialAutomationHealth() {
       latestRealInstagramStatus: null,
       latestRealInstagramIsToday: false,
       instagramNeedsAttention: false,
+      facebookReadiness: null,
       socialAssetDue: getSocialAssetExpectation().due,
       socialAssetDueHour: getSocialAssetExpectation().dueHour,
       publishLogExists: false,

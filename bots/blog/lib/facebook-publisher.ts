@@ -164,11 +164,42 @@ async function publishFacebookPost({ message, link = '', dryRun = false }) {
   };
 }
 
+async function checkFacebookPublishReadiness() {
+  const config = await getFacebookPublishConfig();
+  ensureFacebookReady(config);
+
+  try {
+    const pageTokenRequest = buildFacebookPageTokenRequest(config);
+    const pageTokenResponse = await fetchJson(pageTokenRequest.url, { method: pageTokenRequest.method });
+    const pageAccessToken = String(pageTokenResponse?.access_token || '').trim();
+    return {
+      ready: Boolean(pageAccessToken),
+      credentialSource: config.credentialSource || 'unknown',
+      pageId: config.pageId || '',
+      permissionScopes: [],
+      error: pageAccessToken ? '' : 'Facebook 페이지 access_token을 가져오지 못했습니다.',
+    };
+  } catch (error) {
+    return {
+      ready: false,
+      credentialSource: config.credentialSource || 'unknown',
+      pageId: config.pageId || '',
+      // @ts-ignore runtime metadata
+      permissionScopes: Array.isArray(error?.permissionScopes) ? error.permissionScopes : [],
+      // @ts-ignore runtime metadata
+      error: String(error?.message || error),
+      // @ts-ignore runtime metadata
+      rawError: String(error?.rawMessage || error?.message || error),
+    };
+  }
+}
+
 module.exports = {
   getFacebookPublishConfig,
   buildFacebookPageTokenRequest,
   buildFacebookFeedRequest,
   extractFacebookPermissionScopes,
   buildFacebookGraphError,
+  checkFacebookPublishReadiness,
   publishFacebookPost,
 };
