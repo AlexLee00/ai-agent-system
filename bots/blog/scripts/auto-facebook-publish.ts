@@ -32,11 +32,14 @@ const DRY_RUN = process.argv.includes('--dry-run');
 
 async function getTodayLatestPost() {
   const rows = await pgPool.query('blog', `
-    SELECT id, title, naver_url, category, post_type
+    SELECT id, title, naver_url, category, post_type, status
     FROM blog.posts
     WHERE publish_date = CURRENT_DATE
-      AND status = 'published'
-    ORDER BY COALESCE(publish_date::timestamp, created_at) DESC, id DESC
+      AND status IN ('published', 'ready')
+    ORDER BY
+      CASE WHEN status = 'published' THEN 0 ELSE 1 END,
+      COALESCE(publish_date::timestamp, created_at) DESC,
+      id DESC
     LIMIT 1
   `);
   return rows?.[0] || null;
@@ -86,7 +89,7 @@ async function main() {
     return;
   }
 
-  const { id: postId, title, naver_url: naverUrl, category } = post;
+  const { id: postId, title, naver_url: naverUrl, category, status: postStatus } = post;
   const message = [
     `📝 새 포스팅이 올라왔습니다!`,
     ``,
@@ -95,7 +98,10 @@ async function main() {
     naverUrl ? `\n블로그 링크 ▼` : '',
   ].filter(line => line !== undefined).join('\n').trim();
 
-  console.log(`[facebook-auto] 발행 대상: "${title}" naverUrl=${naverUrl || 'none'}`);
+  console.log(`[facebook-auto] 발행 대상: "${title}" status=${postStatus || 'unknown'} naverUrl=${naverUrl || 'none'}`);
+  if (postStatus === 'ready' && !naverUrl) {
+    console.log('[facebook-auto] published 미확정 포스트를 링크 없이 Facebook teaser로 발행합니다.');
+  }
 
   try {
     const result = await publishFacebookPost({

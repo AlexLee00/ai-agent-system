@@ -33,6 +33,7 @@ async function getTodayPendingCrosspost() {
     SELECT
       p.id AS post_id,
       p.title AS post_title,
+      p.status AS post_status,
       p.naver_url,
       ic.status AS crosspost_status,
       ic.error_msg
@@ -40,8 +41,11 @@ async function getTodayPendingCrosspost() {
     LEFT JOIN blog.instagram_crosspost ic
       ON ic.post_id = p.id
     WHERE p.publish_date = CURRENT_DATE
-      AND p.status = 'published'
-    ORDER BY COALESCE(p.publish_date::timestamp, p.created_at) DESC, p.id DESC
+      AND p.status IN ('published', 'ready')
+    ORDER BY
+      CASE WHEN p.status = 'published' THEN 0 ELSE 1 END,
+      COALESCE(p.publish_date::timestamp, p.created_at) DESC,
+      p.id DESC
     LIMIT 1
   `);
   return rows?.[0] || null;
@@ -71,7 +75,12 @@ async function main() {
     return;
   }
 
-  const { post_id: postId, post_title: postTitle, crosspost_status: status } = post;
+  const {
+    post_id: postId,
+    post_title: postTitle,
+    post_status: postStatus,
+    crosspost_status: status,
+  } = post;
 
   // 이미 성공이면 상태만 보고 후 종료
   if (status === 'ok') {
@@ -81,13 +90,17 @@ async function main() {
     return;
   }
 
+  if (postStatus === 'ready') {
+    console.log('[insta-auto] published 전 ready 포스트를 릴스 우선 경로로 처리합니다.');
+  }
+
   // 릴스 파일 찾기 (shortform-files.ts 활용)
   let reelPath = null;
   try {
-    const { findLatestReelPath } = require(
+    const { findLatestReelPath, findReelPathForTitle } = require(
       path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-files.ts')
     );
-    reelPath = await findLatestReelPath();
+    reelPath = findReelPathForTitle(postTitle) || findLatestReelPath();
   } catch (e) {
     console.warn('[insta-auto] 릴스 파일 탐색 실패:', e.message);
   }
