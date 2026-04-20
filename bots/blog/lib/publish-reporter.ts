@@ -62,6 +62,7 @@ async function ensurePublishLogSchema() {
  * @typedef {{
  *   durationMs?: number,
  *   postId?: string | number | null
+ *   previewBundle?: string | null
  * }} PublishReportOptions
  */
 
@@ -82,12 +83,31 @@ async function _saveToDb(platform, status, title, url, error, durationMs, postId
  * @param {PublishReport} report
  */
 async function reportPublish(report) {
-  const { platform, status, title, url, error, duration_ms, post_id } = report;
+  const {
+    platform,
+    status,
+    title,
+    url,
+    error,
+    duration_ms,
+    post_id,
+    preview_bundle,
+  } = report;
   const label = PLATFORM_LABELS[platform] || platform;
 
   const msg = status === 'success'
-    ? [`✅ [블로팀] ${label} 발행 성공`, `제목: ${title}`, url ? `링크: ${url}` : ''].filter(Boolean).join('\n')
-    : `🔴 [블로팀] ${label} 발행 실패\n제목: ${title}\n원인: ${error}`;
+    ? [
+        `✅ [블로팀] ${label} 발행 성공`,
+        `제목: ${title}`,
+        url ? `링크: ${url}` : '',
+        preview_bundle ? `preview: ${preview_bundle}` : '',
+      ].filter(Boolean).join('\n')
+    : [
+        `🔴 [블로팀] ${label} 발행 실패`,
+        `제목: ${title}`,
+        `원인: ${error}`,
+        preview_bundle ? `preview: ${preview_bundle}` : '',
+      ].filter(Boolean).join('\n');
 
   await Promise.allSettled([
     _saveToDb(platform, status, title, url, error, duration_ms, post_id),
@@ -111,6 +131,8 @@ async function reportPublishSuccess(platform, title, url, opts = {}) {
     title,
     url,
     // @ts-ignore JS checkJs default-param inference is too narrow here
+    preview_bundle: opts.previewBundle || null,
+    // @ts-ignore JS checkJs default-param inference is too narrow here
     duration_ms: opts.durationMs,
     // @ts-ignore JS checkJs default-param inference is too narrow here
     post_id: opts.postId,
@@ -132,6 +154,8 @@ async function reportPublishFailure(platform, title, error, opts = {}) {
     status: 'failed',
     title,
     error,
+    // @ts-ignore JS checkJs default-param inference is too narrow here
+    preview_bundle: opts.previewBundle || null,
     // @ts-ignore JS checkJs default-param inference is too narrow here
     duration_ms: opts.durationMs,
     // @ts-ignore JS checkJs default-param inference is too narrow here

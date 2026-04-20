@@ -64,6 +64,15 @@ function ensureHostedInstagramMedia(reelPath, coverPath = '') {
   }
 }
 
+function buildPreviewBundle({ staged = null, reelPath = '', coverPath = '', qaSheetPath = '' } = {}) {
+  const parts = [
+    staged?.reel?.publicUrl ? `reel=${staged.reel.publicUrl}` : (reelPath ? `reel=${reelPath}` : ''),
+    staged?.cover?.publicUrl ? `cover=${staged.cover.publicUrl}` : (coverPath ? `cover=${coverPath}` : ''),
+    staged?.qaSheet?.publicUrl ? `qa=${staged.qaSheet.publicUrl}` : (qaSheetPath ? `qa=${qaSheetPath}` : ''),
+  ].filter(Boolean);
+  return parts.join(' / ');
+}
+
 async function getTodayPendingCrosspost() {
   const rows = await pgPool.query('blog', `
     SELECT
@@ -103,6 +112,7 @@ async function notifyDailyStatus(stats) {
 
 async function main() {
   console.log(`[insta-auto] 시작 dryRun=${DRY_RUN}`);
+  let previewBundle = '';
 
   const post = await getTodayPendingCrosspost();
 
@@ -194,6 +204,7 @@ async function main() {
 
   try {
     const staged = ensureHostedInstagramMedia(reelPath, coverPath);
+    previewBundle = buildPreviewBundle({ staged, reelPath, coverPath, qaSheetPath });
     const hostedPath = staged?.reel?.targetPath || '';
     const coverTarget = staged?.cover?.targetPath || '';
     console.log(`[insta-auto] 공개 미디어 준비: ${hostedPath || 'ok'}`);
@@ -203,10 +214,15 @@ async function main() {
     if (qaSheetPath) {
       console.log(`[insta-auto] 릴스 QA 시트 인식: ${qaSheetPath}`);
     }
+    if (previewBundle) {
+      console.log(`[insta-auto] preview bundle: ${previewBundle}`);
+    }
   } catch (e) {
     console.warn('[insta-auto] 공개 미디어 준비 실패:', e.message);
     if (!DRY_RUN) {
-      await reportPublishFailure('instagram', postTitle, `prepare_instagram_media_failed: ${e.message}`);
+      await reportPublishFailure('instagram', postTitle, `prepare_instagram_media_failed: ${e.message}`, {
+        previewBundle: buildPreviewBundle({ reelPath, coverPath, qaSheetPath }),
+      });
     }
     throw e;
   }
@@ -225,11 +241,14 @@ async function main() {
     console.log(`[insta-auto] 릴스 QA 시트 인식: ${qaSheetPath}`);
   }
   const result = await crosspostToInstagram(instaContent, postTitle, postId, DRY_RUN);
+  previewBundle = previewBundle || buildPreviewBundle({ reelPath, coverPath, qaSheetPath });
 
   if (result.ok) {
-    await reportPublishSuccess('instagram', postTitle);
+    await reportPublishSuccess('instagram', postTitle, undefined, { previewBundle });
   } else if (!result.skipped) {
-    await reportPublishFailure('instagram', postTitle, result.error || result.reason || '알 수 없는 오류');
+    await reportPublishFailure('instagram', postTitle, result.error || result.reason || '알 수 없는 오류', {
+      previewBundle,
+    });
   }
 
   const stats = await getCrosspostStats(1);
