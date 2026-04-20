@@ -49,6 +49,17 @@ function nowKst() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
 }
 
+function toKstDateString(value = null) {
+  const date = value instanceof Date ? value : new Date(value || Date.now());
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
+
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
@@ -471,7 +482,7 @@ async function buildInstagramHealth() {
 }
 
 async function buildSocialAutomationHealth() {
-  const todayPrefix = new Date().toISOString().split('T')[0];
+  const todayPrefix = toKstDateString(nowKst());
   const reelCountToday = countDatedFiles(SHORTFORM_DIR, todayPrefix);
   const instaCardCountToday = countDatedFiles(INSTA_CARD_DIR, todayPrefix);
 
@@ -500,19 +511,40 @@ async function buildSocialAutomationHealth() {
 
     const instaList = Array.isArray(instagramRows) ? instagramRows : [];
     const instaSummary = { success: 0, failed: 0, skipped: 0, dryRun: 0 };
+    const instaTodaySummary = { success: 0, failed: 0, skipped: 0, dryRun: 0 };
     for (const row of instaList) {
       const status = String(row.status || '');
+      const isTodayKst = toKstDateString(row.created_at) === todayPrefix;
       if (status === 'success') instaSummary.success += 1;
       else if (status === 'failed') instaSummary.failed += 1;
       else if (status === 'skipped') instaSummary.skipped += 1;
       if (row.dry_run) instaSummary.dryRun += 1;
+      if (isTodayKst) {
+        if (status === 'success') instaTodaySummary.success += 1;
+        else if (status === 'failed') instaTodaySummary.failed += 1;
+        else if (status === 'skipped') instaTodaySummary.skipped += 1;
+        if (row.dry_run) instaTodaySummary.dryRun += 1;
+      }
     }
+    const latestInstagram = instaList[0] || null;
+    const latestRealInstagram = instaList.find((row) => !row.dry_run) || null;
+    const latestRealInstagramIsToday = latestRealInstagram
+      ? toKstDateString(latestRealInstagram.created_at) === todayPrefix
+      : false;
+
     if (instaList.length > 0) {
       ok.push(`  instagram recent: success ${instaSummary.success} / failed ${instaSummary.failed} / skipped ${instaSummary.skipped} (dry-run ${instaSummary.dryRun})`);
-      const latestInstagram = instaList[0];
       ok.push(`  instagram latest: ${String(latestInstagram.status || 'unknown')} / ${String(latestInstagram.post_title || '').slice(0, 50)}`);
-      if (String(latestInstagram.status || '') === 'failed') {
+      ok.push(`  instagram today: success ${instaTodaySummary.success} / failed ${instaTodaySummary.failed} / skipped ${instaTodaySummary.skipped} (dry-run ${instaTodaySummary.dryRun})`);
+      if (latestRealInstagram) {
+        ok.push(`  instagram latest real: ${String(latestRealInstagram.status || 'unknown')} / ${String(latestRealInstagram.post_title || '').slice(0, 50)}`);
+      }
+      if (String(latestInstagram.status || '') === 'failed' && !latestInstagram.dry_run) {
         warn.push(`  instagram latest failed: ${String(latestInstagram.error_msg || '').slice(0, 120)}`);
+      } else if (latestRealInstagram && String(latestRealInstagram.status || '') === 'failed' && latestRealInstagramIsToday) {
+        warn.push(`  instagram today failed: ${String(latestRealInstagram.error_msg || '').slice(0, 120)}`);
+      } else if (latestRealInstagram && String(latestRealInstagram.status || '') === 'failed') {
+        ok.push(`  instagram stale failure: ${toKstDateString(latestRealInstagram.created_at)} / 현재는 dry-run skip 기준`);
       }
     } else {
       warn.push('  instagram crosspost history: 아직 없음');
@@ -550,6 +582,13 @@ async function buildSocialAutomationHealth() {
       reelCountToday,
       instaCardCountToday,
       instagramRecent: instaSummary,
+      instagramToday: instaTodaySummary,
+      latestRealInstagramStatus: latestRealInstagram ? String(latestRealInstagram.status || 'unknown') : null,
+      latestRealInstagramIsToday,
+      instagramNeedsAttention: Boolean(
+        (latestInstagram && String(latestInstagram.status || '') === 'failed' && !latestInstagram.dry_run)
+        || (latestRealInstagram && String(latestRealInstagram.status || '') === 'failed' && latestRealInstagramIsToday)
+      ),
       publishLogExists,
     };
   } catch (error) {
@@ -561,6 +600,10 @@ async function buildSocialAutomationHealth() {
       reelCountToday,
       instaCardCountToday,
       instagramRecent: { success: 0, failed: 0, skipped: 0, dryRun: 0 },
+      instagramToday: { success: 0, failed: 0, skipped: 0, dryRun: 0 },
+      latestRealInstagramStatus: null,
+      latestRealInstagramIsToday: false,
+      instagramNeedsAttention: false,
       publishLogExists: false,
     };
   }
@@ -1233,7 +1276,7 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
         reason: '오늘 shortform 릴스나 인스타 카드 산출물이 없어 소셜 자동등록 흐름이 비어 있을 수 있습니다.',
       },
       {
-        active: socialAutomationHealth.instagramRecent.failed > 0,
+        active: socialAutomationHealth.instagramNeedsAttention,
         level: 'medium',
         reason: '최근 인스타 자동등록 실패 이력이 있어 릴스/공개 URL/게시 경로 점검이 필요합니다.',
       },

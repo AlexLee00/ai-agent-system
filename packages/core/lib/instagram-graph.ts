@@ -16,6 +16,8 @@ const {
 const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
 const MIN_REQUEST_INTERVAL_MS = 20 * 1000;
 let _lastGraphRequestAt = 0;
+const DEFAULT_CONTAINER_POLL_MS = 10 * 1000;
+const DEFAULT_CONTAINER_MAX_ATTEMPTS = 6;
 
 function readStoreInstagramConfig() {
   try {
@@ -143,6 +145,62 @@ async function postJson(url, body, accessToken) {
   return data;
 }
 
+async function getJson(url, accessToken) {
+  const sinceLast = Date.now() - _lastGraphRequestAt;
+  if (_lastGraphRequestAt > 0 && sinceLast < MIN_REQUEST_INTERVAL_MS) {
+    await new Promise((resolve) => setTimeout(resolve, MIN_REQUEST_INTERVAL_MS - sinceLast));
+  }
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+  _lastGraphRequestAt = Date.now();
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(`Instagram Graph API 조회 실패: HTTP ${response.status} ${JSON.stringify(data)}`);
+  }
+  return data;
+}
+
+function buildContainerStatusRequest(config, creationId) {
+  return {
+    method: 'GET',
+    url: `${config.baseUrl}/${config.apiVersion}/${creationId}?fields=status_code,status`,
+  };
+}
+
+async function waitForContainerReady(config, creationId, { maxAttempts = DEFAULT_CONTAINER_MAX_ATTEMPTS, pollMs = DEFAULT_CONTAINER_POLL_MS } = {}) {
+  let lastPayload = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const statusRequest = buildContainerStatusRequest(config, creationId);
+    const payload = await getJson(statusRequest.url, config.accessToken);
+    lastPayload = payload;
+
+    const statusCode = String(payload?.status_code || payload?.status || '').trim().toUpperCase();
+    if (statusCode === 'FINISHED' || statusCode === 'PUBLISHED') {
+      return {
+        ready: true,
+        attempt,
+        payload,
+      };
+    }
+
+    if (statusCode === 'ERROR' || statusCode === 'EXPIRED') {
+      throw new Error(`Instagram media container 상태 오류: ${statusCode} ${JSON.stringify(payload)}`);
+    }
+
+    if (attempt < maxAttempts) {
+      await new Promise((resolve) => setTimeout(resolve, pollMs));
+    }
+  }
+
+  throw new Error(`Instagram media container 준비 대기 초과: ${JSON.stringify(lastPayload || {})}`);
+}
+
 async function verifyPublicMediaUrl(url) {
   const response = await fetch(url, {
     method: 'HEAD',
@@ -204,6 +262,8 @@ async function publishInstagramReel({
     throw new Error(`Instagram media 생성 응답에 id가 없습니다: ${JSON.stringify(creation)}`);
   }
 
+  await waitForContainerReady(config, creationId);
+
   const publishRequest = buildPublishRequest(config, creationId);
   const published = await postJson(publishRequest.url, publishRequest.body, config.accessToken);
 
@@ -241,8 +301,10 @@ module.exports = {
   getInstagramConfig,
   buildCreateContainerRequest,
   buildPublishRequest,
+  buildContainerStatusRequest,
   publishInstagramReel,
   buildFileVideoUrl,
   buildHostedVideoUrl,
   verifyPublicMediaUrl,
+  waitForContainerReady,
 };
