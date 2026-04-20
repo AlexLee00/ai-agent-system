@@ -12,6 +12,7 @@
     "test:daily-dry": "../../node_modules/.bin/tsx scripts/run-daily.ts --dry-run",
     "daily": "../../node_modules/.bin/tsx scripts/run-daily.ts",
     "replay:reply-ui": "../../node_modules/.bin/tsx scripts/replay-reply-ui.ts",
+    "doctor:engagement": "node scripts/doctor-engagement.ts",
     "weekly-evolution": "node scripts/weekly-evolution.ts",
     "prepare-shortform": "node scripts/prepare-shortform.ts",
     "prepare:instagram-media": "node scripts/prepare-instagram-media.ts",

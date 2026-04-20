@@ -54,6 +54,7 @@ const FACEBOOK_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bot
 const INSTAGRAM_READINESS_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run check:instagram -- --json`;
 const INSTAGRAM_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:instagram -- --json`;
 const SOCIAL_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:social -- --json`;
+const ENGAGEMENT_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:engagement -- --json`;
 
 function nowKst() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
@@ -1000,6 +1001,7 @@ async function buildEngagementHealth() {
         `  reply replay target: comment ${latestReplyReplayCandidate.id} (${String(latestReplyReplayCandidate.commenter_name || 'unknown').slice(0, 30)}) / ${replayAgeLabel}`
       );
       ok.push(`  reply replay command: npm run replay:reply-ui -- --comment-id ${latestReplyReplayCandidate.id} --json`);
+      ok.push(`  engagement doctor command: ${ENGAGEMENT_DOCTOR_COMMAND}`);
     }
     if ((failureByKind.ui || 0) > 0) {
       warn.push(`  engagement UI failures: ${failureByKind.ui || 0}건`);
@@ -1488,6 +1490,7 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
   const engagementReplayHint = engagementHealth?.latestReplyReplayCandidate?.id
     ? `npm run replay:reply-ui -- --comment-id ${engagementHealth.latestReplyReplayCandidate.id} --json`
     : '';
+  const engagementDoctorHint = `doctor=${ENGAGEMENT_DOCTOR_COMMAND}`;
   return buildHealthDecision({
     warnings: [
       {
@@ -1595,6 +1598,7 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
           '댓글/답글/공감 실적이 시간대 기대치보다 낮거나 실패 이력이 있어 engagement 루프 점검이 필요합니다.',
           engagementFailureHint ? `최근 실패: ${engagementFailureHint}` : '',
           engagementReplayHint ? `재현: ${engagementReplayHint}` : '',
+          engagementDoctorHint,
         ].filter(Boolean).join(' '),
       },
     ],
