@@ -6,7 +6,7 @@
   "type": "commonjs",
   "scripts": {
     "start": "node src/index.js",
-    "test": "npx jest __tests__/ --no-coverage",
+    "test": "node ../../node_modules/jest/bin/jest.js __tests__/ --no-coverage --runInBand --rootDir /Users/alexlee/projects/ai-agent-system/bots/legal",
     "health": "node scripts/health-check.js"
   },
   "dependencies": {

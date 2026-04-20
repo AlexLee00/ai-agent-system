@@ -25,7 +25,7 @@ async function cleanup(store) {
     const c = await store.getCaseByCaseNumber(TEST_CASE_NUMBER);
     if (c) {
       const pool = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/pg-pool'));
-      await pool.query('DELETE FROM legal.cases WHERE id = $1', [c.id]);
+      await pool.query('legal', 'DELETE FROM cases WHERE id = $1', [c.id]);
       console.log(`  🗑️  테스트 사건 삭제 완료 (id=${c.id})`);
     }
   } catch (err) {
@@ -53,7 +53,7 @@ async function testCaseIntake(store, justin, router) {
     const existing = await store.getCaseByCaseNumber(TEST_CASE_NUMBER);
     if (existing) {
       const pool = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/pg-pool'));
-      await pool.query('DELETE FROM legal.cases WHERE id = $1', [existing.id]);
+      await pool.query('legal', 'DELETE FROM cases WHERE id = $1', [existing.id]);
     }
 
     // 사건 유형 분류 (키워드 기반)
