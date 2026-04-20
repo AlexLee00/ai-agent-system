@@ -33,6 +33,8 @@ const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;
 const BLOG_ROOT = path.join(env.PROJECT_ROOT, 'bots', 'blog');
 const BLOG_STRATEGY_PATH = path.join(BLOG_ROOT, 'output', 'strategy', 'latest-strategy.json');
 const DAILY_LOG = path.join(BLOG_ROOT, 'blog-daily.log');
+const SHORTFORM_DIR = path.join(BLOG_ROOT, 'output', 'shortform');
+const INSTA_CARD_DIR = path.join(BLOG_ROOT, 'output', 'images', 'insta');
 const runtimeConfig = getBlogHealthRuntimeConfig();
 const DAILY_LOG_STALE_MS = Number(runtimeConfig.dailyLogStaleMs || (36 * 60 * 60 * 1000));
 const NODE_SERVER_HEALTH_URL = runtimeConfig.nodeServerHealthUrl || 'http://127.0.0.1:3100/health';
@@ -161,6 +163,29 @@ function extractJsonObjectText(output = '') {
     return text.slice(start, end + 1);
   }
   return text;
+}
+
+function countDatedFiles(dirPath = '', datePrefix = '') {
+  try {
+    if (!dirPath || !datePrefix || !fs.existsSync(dirPath)) return 0;
+    const start = new Date(`${datePrefix}T00:00:00+09:00`);
+    const end = new Date(start.getTime() + (24 * 60 * 60 * 1000));
+    return fs.readdirSync(dirPath).filter((name) => {
+      const fullPath = path.join(dirPath, name);
+      let stat = null;
+      try {
+        stat = fs.statSync(fullPath);
+      } catch {
+        return false;
+      }
+      if (!stat.isFile()) return false;
+      if (String(name).startsWith(datePrefix)) return true;
+      const modifiedAt = stat.mtime instanceof Date ? stat.mtime : new Date(stat.mtime);
+      return modifiedAt >= start && modifiedAt < end;
+    }).length;
+  } catch {
+    return 0;
+  }
 }
 
 async function buildNodeHealth() {
@@ -441,6 +466,102 @@ async function buildInstagramHealth() {
       needsRefresh: false,
       critical: false,
       hostReady: false,
+    };
+  }
+}
+
+async function buildSocialAutomationHealth() {
+  const todayPrefix = new Date().toISOString().split('T')[0];
+  const reelCountToday = countDatedFiles(SHORTFORM_DIR, todayPrefix);
+  const instaCardCountToday = countDatedFiles(INSTA_CARD_DIR, todayPrefix);
+
+  try {
+    const [instagramRows, publishLogMeta, publishLogRows] = await Promise.all([
+      pgPool.query('blog', `
+        SELECT status, dry_run, error_msg, post_title, created_at
+        FROM blog.instagram_crosspost
+        ORDER BY created_at DESC
+        LIMIT 8
+      `),
+      pgPool.get('blog', `SELECT to_regclass('blog.publish_log') IS NOT NULL AS exists`),
+      pgPool.query('blog', `
+        SELECT platform, status, title, error, dry_run, created_at
+        FROM blog.publish_log
+        ORDER BY created_at DESC
+        LIMIT 8
+      `).catch(() => []),
+    ]);
+
+    const ok = [
+      `  shortform reels today: ${reelCountToday}개`,
+      `  instagram cards today: ${instaCardCountToday}개`,
+    ];
+    const warn = [];
+
+    const instaList = Array.isArray(instagramRows) ? instagramRows : [];
+    const instaSummary = { success: 0, failed: 0, skipped: 0, dryRun: 0 };
+    for (const row of instaList) {
+      const status = String(row.status || '');
+      if (status === 'success') instaSummary.success += 1;
+      else if (status === 'failed') instaSummary.failed += 1;
+      else if (status === 'skipped') instaSummary.skipped += 1;
+      if (row.dry_run) instaSummary.dryRun += 1;
+    }
+    if (instaList.length > 0) {
+      ok.push(`  instagram recent: success ${instaSummary.success} / failed ${instaSummary.failed} / skipped ${instaSummary.skipped} (dry-run ${instaSummary.dryRun})`);
+      const latestInstagram = instaList[0];
+      ok.push(`  instagram latest: ${String(latestInstagram.status || 'unknown')} / ${String(latestInstagram.post_title || '').slice(0, 50)}`);
+      if (String(latestInstagram.status || '') === 'failed') {
+        warn.push(`  instagram latest failed: ${String(latestInstagram.error_msg || '').slice(0, 120)}`);
+      }
+    } else {
+      warn.push('  instagram crosspost history: 아직 없음');
+    }
+
+    const publishLogExists = Boolean(publishLogMeta?.exists);
+    if (!publishLogExists) {
+      warn.push('  facebook publish telemetry: blog.publish_log 테이블 없음');
+    } else {
+      const publishRows = Array.isArray(publishLogRows) ? publishLogRows : [];
+      const facebookRows = publishRows.filter((row) => String(row.platform || '') === 'facebook');
+      if (facebookRows.length > 0) {
+        const latestFacebook = facebookRows[0];
+        ok.push(`  facebook latest: ${String(latestFacebook.status || 'unknown')} / ${String(latestFacebook.title || '').slice(0, 50)}`);
+        if (String(latestFacebook.status || '') === 'failed') {
+          warn.push(`  facebook latest failed: ${String(latestFacebook.error || '').slice(0, 120)}`);
+        }
+      } else {
+        warn.push('  facebook publish history: 아직 없음');
+      }
+    }
+
+    if (reelCountToday <= 0) {
+      warn.push('  shortform reels today: 오늘 생성 산출물이 없습니다');
+    }
+    if (instaCardCountToday <= 0) {
+      warn.push('  instagram cards today: 오늘 생성 산출물이 없습니다');
+    }
+
+    return {
+      okCount: ok.length,
+      warnCount: warn.length,
+      ok,
+      warn,
+      reelCountToday,
+      instaCardCountToday,
+      instagramRecent: instaSummary,
+      publishLogExists,
+    };
+  } catch (error) {
+    return {
+      okCount: 0,
+      warnCount: 1,
+      ok: [],
+      warn: [`  social automation: 확인 실패 (${String(error.message || error).slice(0, 120)})`],
+      reelCountToday,
+      instaCardCountToday,
+      instagramRecent: { success: 0, failed: 0, skipped: 0, dryRun: 0 },
+      publishLogExists: false,
     };
   }
 }
@@ -1063,7 +1184,7 @@ async function buildMarketingExpansionHealth() {
   }
 }
 
-function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealth, instagramHealth, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth, marketingExpansionHealth, engagementHealth) {
+function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealth, instagramHealth, socialAutomationHealth, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth, marketingExpansionHealth, engagementHealth) {
   return buildHealthDecision({
     warnings: [
       {
@@ -1105,6 +1226,21 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
         active: !instagramHealth.hostReady,
         level: 'medium',
         reason: '인스타 공개 미디어 호스팅이 준비되지 않아 릴스 업로드를 진행할 수 없습니다.',
+      },
+      {
+        active: socialAutomationHealth.reelCountToday <= 0 || socialAutomationHealth.instaCardCountToday <= 0,
+        level: 'medium',
+        reason: '오늘 shortform 릴스나 인스타 카드 산출물이 없어 소셜 자동등록 흐름이 비어 있을 수 있습니다.',
+      },
+      {
+        active: socialAutomationHealth.instagramRecent.failed > 0,
+        level: 'medium',
+        reason: '최근 인스타 자동등록 실패 이력이 있어 릴스/공개 URL/게시 경로 점검이 필요합니다.',
+      },
+      {
+        active: socialAutomationHealth.publishLogExists === false,
+        level: 'low',
+        reason: '소셜 게시 telemetry 테이블이 없어 페이스북/외부 채널 자동등록 실적 추적이 충분하지 않습니다.',
       },
       {
         active: !phase2BriefingHealth.briefingPassed,
@@ -1202,6 +1338,7 @@ function formatText(report) {
       buildHealthCountSection('■ 실행 백엔드 상태', report.nodeHealth, { okLimit: 3 }),
       buildHealthCountSection('■ n8n pipeline 경로', report.n8nPipelineHealth, { okLimit: 2 }),
       buildHealthCountSection('■ 인스타 업로드 상태', report.instagramHealth, { okLimit: 3 }),
+      buildHealthCountSection('■ 소셜 자동등록 상태', report.socialAutomationHealth, { okLimit: 6, warnLimit: 5 }),
       buildHealthCountSection('■ 댓글·공감 운영 상태', report.engagementHealth, { okLimit: 5, warnLimit: 5 }),
       buildHealthCountSection('■ Elixir Phase 1 상태', report.phase1Health, { okLimit: 1, warnLimit: 2 }),
       buildHealthCountSection('■ Phase 2 Briefing 상태', report.phase2BriefingHealth, { okLimit: 3, warnLimit: 4 }),
@@ -1239,6 +1376,7 @@ async function buildReport() {
   const dailyRunHealth = buildDailyRunHealth(status['ai.blog.daily']);
   const n8nPipelineHealth = await buildN8nPipelineHealth();
   const instagramHealth = await buildInstagramHealth();
+  const socialAutomationHealth = await buildSocialAutomationHealth();
   const engagementHealth = await buildEngagementHealth();
   const phase1Health = await buildPhase1Health();
   const phase2BriefingHealth = await buildPhase2BriefingHealth();
@@ -1248,7 +1386,7 @@ async function buildReport() {
   const marketingExpansionHealth = await buildMarketingExpansionHealth();
   const bookCatalogHealth = await buildBookCatalogHealth();
   const bookReviewQueueHealth = await buildBookReviewQueueHealth();
-  const decision = buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealth, instagramHealth, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth, marketingExpansionHealth, engagementHealth);
+  const decision = buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealth, instagramHealth, socialAutomationHealth, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth, marketingExpansionHealth, engagementHealth);
   const remodelProgress = buildRemodelProgress(instagramHealth, phase1Health, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth);
 
   return {
@@ -1283,6 +1421,7 @@ async function buildReport() {
       resolvedWebhookUrl: n8nPipelineHealth.resolvedWebhookUrl,
     },
     instagramHealth,
+    socialAutomationHealth,
     engagementHealth,
     phase1Health,
     phase2BriefingHealth,
