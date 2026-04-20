@@ -39,17 +39,33 @@ async function loadLatestReplayCandidate() {
       ON (a.meta->>'commentId')::int = c.id
     WHERE a.action_type = 'reply'
       AND a.success = false
-      AND timezone('Asia/Seoul', a.executed_at)::date = timezone('Asia/Seoul', now())::date
     ORDER BY a.executed_at DESC
     LIMIT 1
   `);
   if (recentFailure) return recentFailure;
 
-  return pgPool.get('blog', `
+  const todayComment = await pgPool.get('blog', `
     SELECT *
     FROM blog.comments
     WHERE timezone('Asia/Seoul', detected_at)::date = timezone('Asia/Seoul', now())::date
     ORDER BY detected_at DESC
+    LIMIT 1
+  `);
+  if (todayComment) return todayComment;
+
+  const recentComment = await pgPool.get('blog', `
+    SELECT *
+    FROM blog.comments
+    WHERE detected_at >= now() - interval '7 days'
+    ORDER BY detected_at DESC
+    LIMIT 1
+  `);
+  if (recentComment) return recentComment;
+
+  return pgPool.get('blog', `
+    SELECT *
+    FROM blog.comments
+    ORDER BY detected_at DESC NULLS LAST, id DESC
     LIMIT 1
   `);
 }

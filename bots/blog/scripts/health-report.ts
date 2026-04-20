@@ -699,16 +699,29 @@ async function buildEngagementHealth() {
           c.commenter_name,
           c.post_url,
           LEFT(c.comment_text, 80) AS comment_text,
-          a.executed_at
+          a.executed_at,
+          true AS from_failure
         FROM blog.comment_actions a
         JOIN blog.comments c
           ON (a.meta->>'commentId')::int = c.id
         WHERE a.action_type = 'reply'
           AND a.success = false
-          AND timezone('Asia/Seoul', a.executed_at)::date = timezone('Asia/Seoul', now())::date
         ORDER BY a.executed_at DESC
         LIMIT 1
-      `),
+      `).then((row) => row || pgPool.get('blog', `
+        SELECT
+          id,
+          status,
+          commenter_name,
+          post_url,
+          LEFT(comment_text, 80) AS comment_text,
+          detected_at AS executed_at,
+          false AS from_failure
+        FROM blog.comments
+        WHERE detected_at >= now() - interval '7 days'
+        ORDER BY detected_at DESC
+        LIMIT 1
+      `)),
     ]);
 
     const actionMap = new Map();
@@ -796,8 +809,9 @@ async function buildEngagementHealth() {
       ok.push(`  recent failure: ${item.kind}/${item.actionType} ${item.sample}`);
     }
     if (latestReplyReplayCandidate?.id) {
+      const replayAgeLabel = latestReplyReplayCandidate.from_failure ? 'recent failure' : 'recent comment';
       ok.push(
-        `  reply replay target: comment ${latestReplyReplayCandidate.id} (${String(latestReplyReplayCandidate.commenter_name || 'unknown').slice(0, 30)})`
+        `  reply replay target: comment ${latestReplyReplayCandidate.id} (${String(latestReplyReplayCandidate.commenter_name || 'unknown').slice(0, 30)}) / ${replayAgeLabel}`
       );
       ok.push(`  reply replay command: npm run replay:reply-ui -- --comment-id ${latestReplyReplayCandidate.id} --json`);
     }
