@@ -15,7 +15,7 @@ const env = require('../../../packages/core/lib/env');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const { runIfOps } = require('../../../packages/core/lib/mode-guard');
 const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
-const { publishFacebookPost } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/facebook-publisher.ts'));
+const { publishFacebookPost, checkFacebookPublishReadiness } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/facebook-publisher.ts'));
 const { ensurePublishLogSchema, reportPublishSuccess, reportPublishFailure } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/publish-reporter.ts'));
 const { resolveInstagramHostedMediaUrl } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-image-host.ts'));
 
@@ -39,6 +39,25 @@ function buildPreviewBundleForTitle(title = '') {
     return parts.join(' / ');
   } catch {
     return '';
+  }
+}
+
+async function buildFacebookFailureDetail(error) {
+  const baseMessage = String(error?.message || error || '').trim();
+  try {
+    const readiness = await checkFacebookPublishReadiness().catch(() => null);
+    const scopes = Array.isArray(readiness?.permissionScopes) && readiness.permissionScopes.length > 0
+      ? readiness.permissionScopes.join(', ')
+      : (baseMessage.includes('pages_manage_posts') || baseMessage.includes('pages_read_engagement')
+        ? 'pages_manage_posts, pages_read_engagement'
+        : '');
+    const pageHint = readiness?.pageId ? `page=${String(readiness.pageId).slice(0, 32)}` : '';
+    const scopeHint = scopes ? `scopes=${scopes}` : '';
+    const actionHint = scopes ? 'action=Meta 앱 권한 재연결 후 페이지 토큰 재발급' : '';
+    const extras = [pageHint, scopeHint, actionHint].filter(Boolean).join(' / ');
+    return extras ? `${baseMessage}\n${extras}` : baseMessage;
+  } catch {
+    return baseMessage;
   }
 }
 
@@ -129,7 +148,8 @@ async function main() {
     if (rawMessage && rawMessage !== err.message) {
       console.error('[facebook-auto] raw failure:', rawMessage);
     }
-    await reportPublishFailure('facebook', title, err.message, { postId, previewBundle });
+    const detailedError = await buildFacebookFailureDetail(err);
+    await reportPublishFailure('facebook', title, detailedError, { postId, previewBundle });
   }
 }
 
