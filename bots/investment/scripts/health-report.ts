@@ -104,9 +104,6 @@ const ALL_SERVICES = [
 ];
 
 const LOCAL_LLM_HEALTH_HISTORY_FILE = '/tmp/investment-local-llm-health-history.jsonl';
-const SECONDARY_LOCAL_LABEL = 'ai.mlx.server.secondary';
-const SECONDARY_LOCAL_BASE_URL = String(process.env.OLLAMA_BASE_URL || '').trim();
-const LOCAL_STANDBY_ENABLED = process.env.ENABLE_LOCAL_LLM_STANDBY === '1' && !!SECONDARY_LOCAL_BASE_URL;
 
 const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;
 const SCHEDULED_SERVICE_DEPLOYMENTS = {
@@ -183,47 +180,13 @@ function summarizeLocalLlmFlapping(history = []) {
 }
 
 function summarizeLocalLlmRedundancy(circuits = [], launchctlStatus = {}) {
-  if (!LOCAL_STANDBY_ENABLED) {
-    return {
-      status: 'standby_disabled',
-      summary: 'secondary standby 비활성화됨 — Groq 우선 / 11434 embeddings 전용',
-      templatePath: null,
-      launchdSummary: `${SECONDARY_LOCAL_LABEL} 미사용 정책`,
-    };
-  }
   const primary = circuits.find((entry) => entry?.role === 'primary') || null;
-  const secondary = circuits.find((entry) => entry?.role === 'secondary') || null;
-  const secondaryLaunchd = launchctlStatus?.[SECONDARY_LOCAL_LABEL] || null;
-  const launchdSummary = secondaryLaunchd
-    ? `${SECONDARY_LOCAL_LABEL} ${secondaryLaunchd.running ? `running(pid=${secondaryLaunchd.pid})` : `stopped(exit=${secondaryLaunchd.exitCode})`}`
-    : `${SECONDARY_LOCAL_LABEL} 미로드`;
-
-  if (!secondary) {
-    return {
-      status: 'single_primary',
-      summary: 'secondary endpoint 없음',
-      templatePath: null,
-      launchdSummary,
-    };
-  }
-
-  const secondaryReady = secondary?.probe?.available && !secondary?.probe?.error;
-  if (secondaryReady) {
-    return {
-      status: 'redundant',
-      summary: 'primary + secondary 모두 생성 가능',
-      templatePath: null,
-      launchdSummary,
-    };
-  }
-
   return {
-    status: 'primary_only',
-    summary: secondary?.probe?.error ? `secondary 미가동 (${secondary.probe.error})` : 'secondary 생성 불가',
+    status: 'groq_primary',
+    summary: 'local chat 비활성화 — Groq 우선 / 11434 embeddings 전용',
     primaryBaseUrl: primary?.baseUrl || null,
-    secondaryBaseUrl: secondary?.baseUrl || null,
     templatePath: null,
-    launchdSummary,
+    launchdSummary: 'local chat standby 제거됨',
   };
 }
 
@@ -562,8 +525,7 @@ async function loadKisCapabilityHealth() {
 async function loadLocalLlmHealth(launchctlStatus = {}) {
   const runtimeProfile = await selectRuntime('luna', 'analyst').catch(() => null);
   const primaryBaseUrl = String(runtimeProfile?.local_llm_base_url || env.LOCAL_LLM_BASE_URL || 'http://127.0.0.1:11434').trim();
-  const secondaryBaseUrl = SECONDARY_LOCAL_BASE_URL;
-  const urls = [...new Set([primaryBaseUrl, secondaryBaseUrl].filter(Boolean))];
+  const urls = [...new Set([primaryBaseUrl].filter(Boolean))];
 
   const circuits = [];
   for (const baseUrl of urls) {

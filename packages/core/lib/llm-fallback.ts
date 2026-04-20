@@ -795,7 +795,7 @@ async function _callProvider(
       ], {
         maxTokens,
         temperature,
-        baseUrl: env.OLLAMA_BASE_URL,
+        baseUrl: null,
         timeoutMs: cfg.timeoutMs || 10000,
       });
       if (!result) throw new Error('Ollama LLM 응답 없음');
@@ -881,7 +881,17 @@ export async function callWithFallback({ chain, systemPrompt, userPrompt, logMet
       const localCircuit = _getLocalCircuitBreaker();
       const candidateBaseUrls = typeof localClient.getBaseUrlCandidates === 'function'
         ? localClient.getBaseUrlCandidates({ baseUrl: runtimeProfile?.local_llm_base_url || null })
-        : [String(runtimeProfile?.local_llm_base_url || env.OLLAMA_BASE_URL || '').trim()].filter(Boolean);
+        : [String(runtimeProfile?.local_llm_base_url || '').trim()].filter(Boolean);
+      if (candidateBaseUrls.length === 0) {
+        skippedProviders.push('local:no_runtime_base_url');
+        attemptTrace.push({
+          provider: cfg.provider,
+          model: cfg.model,
+          status: 'skipped',
+          reason: 'no_runtime_base_url',
+        });
+        continue;
+      }
       const allCircuitsOpen = candidateBaseUrls.length > 0
         && typeof localCircuit.isCircuitOpen === 'function'
         && candidateBaseUrls.every((baseUrl: string) => localCircuit.isCircuitOpen(baseUrl));

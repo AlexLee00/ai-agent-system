@@ -60,12 +60,6 @@ const ALL_SERVICES = [
 // 정상 종료 코드
 const NORMAL_EXIT_CODES = new Set([0, -9, -15]);
 const LOCAL_LLM_HEALTH_HISTORY_FILE = '/tmp/investment-local-llm-health-history.jsonl';
-const SECONDARY_LOCAL_BASE_URL = String(process.env.OLLAMA_BASE_URL || '').trim();
-const LOCAL_STANDBY_ENABLED = process.env.ENABLE_LOCAL_LLM_STANDBY === '1' && !!SECONDARY_LOCAL_BASE_URL;
-const SECONDARY_LOCAL_PORT = SECONDARY_LOCAL_BASE_URL
-  ? Number(SECONDARY_LOCAL_BASE_URL.match(/:(\d+)/)?.[1] || '0')
-  : 0;
-const SECONDARY_LOCAL_LABEL = 'ai.mlx.server.secondary';
 
 // ─── 알림 발송 ───────────────────────────────────────────────────
 
@@ -259,50 +253,25 @@ async function main() {
     }
   }
 
-  const secondaryLocal = status[SECONDARY_LOCAL_LABEL];
-  if (!LOCAL_STANDBY_ENABLED) {
-    hsm.clearAlert(state, 'local-llm-standby-missing');
-  } else if (!secondaryLocal || !secondaryLocal.running) {
-    const key = 'local-llm-standby-missing';
-    if (hsm.canAlert(state, key)) {
-      const reason = !secondaryLocal
-        ? 'launchd에 secondary local LLM이 등록되지 않음'
-        : `secondary local LLM 미실행 (exit ${secondaryLocal.exitCode})`;
-      issues.push({
-        key,
-        level: 3,
-        msg: `⚠️ [루나 헬스] local LLM standby 없음\n${reason}\nstandby 없음 (127.0.0.1:${SECONDARY_LOCAL_PORT})`,
-      });
-    }
-  } else if (state['local-llm-standby-missing']) {
-    recovers.push({
-      key: 'local-llm-standby-missing',
-      msg: `✅ [루나 헬스] local LLM standby 회복\n${SECONDARY_LOCAL_LABEL} running(pid=${secondaryLocal.pid}) — 자동 감지`,
-    });
-    hsm.clearAlert(state, 'local-llm-standby-missing');
-  }
+  hsm.clearAlert(state, 'local-llm-standby-missing');
 
   const localLlmTrend = loadRecentLocalProbeTrend();
-  const standbySummary = getLocalStandbySummary();
-  const standbyMissing = standbySummary.includes('standby 없음');
   if (localLlmTrend.status === 'flapping') {
     const key = 'local-llm-flapping';
     if (hsm.canAlert(state, key)) {
-      const level = standbyMissing ? 4 : 3;
       issues.push({
         key,
-        level,
-        msg: `⚠️ [루나 헬스] local LLM flapping${standbyMissing ? ' (단일 primary)' : ''}\n최근 probe ok ${localLlmTrend.okCount} / fail ${localLlmTrend.failCount} / 전환 ${localLlmTrend.transitionCount}회\n${standbySummary}${localLlmTrend.lastError ? `\nlast error: ${localLlmTrend.lastError}` : ''}`,
+        level: 3,
+        msg: `⚠️ [루나 헬스] local LLM flapping\n최근 probe ok ${localLlmTrend.okCount} / fail ${localLlmTrend.failCount} / 전환 ${localLlmTrend.transitionCount}회\n11434는 embeddings 전용이며, chat 경로는 Groq 우선${localLlmTrend.lastError ? `\nlast error: ${localLlmTrend.lastError}` : ''}`,
       });
     }
   } else if (localLlmTrend.status === 'degraded') {
     const key = 'local-llm-degraded';
     if (hsm.canAlert(state, key)) {
-      const level = standbyMissing ? 3 : 2;
       issues.push({
         key,
-        level,
-        msg: `⚠️ [루나 헬스] local LLM degraded${standbyMissing ? ' (standby 없음)' : ''}\n최근 생성 probe 실패\n${standbySummary}${localLlmTrend.lastError ? `\n${localLlmTrend.lastError}` : ''}`,
+        level: 2,
+        msg: `⚠️ [루나 헬스] local LLM degraded\n최근 embeddings probe 실패\n11434는 embeddings 전용이며, chat 경로는 Groq 우선${localLlmTrend.lastError ? `\n${localLlmTrend.lastError}` : ''}`,
       });
     }
   } else {

@@ -151,20 +151,7 @@ export const LOCAL_LLM_BASE_URL = process.env.LOCAL_LLM_BASE_URL || (
     : process.env.MLX_URL || 'http://localhost:11434'
 );
 
-const EXPLICIT_LOCAL_CHAT_BASE_URL = (
-  process.env.LOCAL_LLM_CHAT_BASE_URL ||
-  process.env.OLLAMA_BASE_URL ||
-  ''
-).trim();
-
-export const ENABLE_LOCAL_LLM_STANDBY = process.env.ENABLE_LOCAL_LLM_STANDBY === '1' && !!EXPLICIT_LOCAL_CHAT_BASE_URL;
 export const ENABLE_LOCAL_LLM_CHAT = _envOrLaunchctl('ENABLE_LOCAL_LLM_CHAT', IS_OPS ? 'false' : 'true') === 'true';
-
-export const LOCAL_LLM_CHAT_BASE_URL = ENABLE_LOCAL_LLM_STANDBY
-  ? EXPLICIT_LOCAL_CHAT_BASE_URL
-  : '';
-
-export const OLLAMA_BASE_URL = LOCAL_LLM_CHAT_BASE_URL;
 
 // ─── Resource API Hub ────────────────────────────────────────────────
 

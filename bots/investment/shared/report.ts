@@ -8,18 +8,12 @@
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 import fs from 'node:fs';
-import { execSync } from 'node:child_process';
 import { formatExecutionTag, getMarketExecutionModeInfo } from './secrets.ts';
 const { createEventReporter } = require('../../../packages/core/lib/telegram/reporter');
 
 const DIVIDER = '──────────';
 const SMALL_DIVIDER = '──────────';
 const LOCAL_LLM_HEALTH_HISTORY_FILE = '/tmp/investment-local-llm-health-history.jsonl';
-const SECONDARY_LOCAL_BASE_URL = String(process.env.OLLAMA_BASE_URL || '').trim();
-const LOCAL_STANDBY_ENABLED = process.env.ENABLE_LOCAL_LLM_STANDBY === '1' && !!SECONDARY_LOCAL_BASE_URL;
-const SECONDARY_LOCAL_PORT = SECONDARY_LOCAL_BASE_URL
-  ? Number(SECONDARY_LOCAL_BASE_URL.match(/:(\d+)/)?.[1] || '0')
-  : 0;
 
 function compactReasoning(reasoning, maxLength = 90) {
   const text = String(reasoning || '').replace(/\s+/g, ' ').trim();
@@ -71,27 +65,8 @@ function loadRecentLocalLlmStatus() {
   }
 }
 
-function getLocalStandbySummary() {
-  if (!LOCAL_STANDBY_ENABLED) {
-    return 'standby 비활성화됨 (Groq 우선 / local chat 미사용)';
-  }
-  try {
-    const output = execSync(`lsof -nP -iTCP:${SECONDARY_LOCAL_PORT} -sTCP:LISTEN`, {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
-    return output.trim() ? `standby 준비됨 (127.0.0.1:${SECONDARY_LOCAL_PORT})` : `standby 없음 (127.0.0.1:${SECONDARY_LOCAL_PORT})`;
-  } catch {
-    return `standby 없음 (127.0.0.1:${SECONDARY_LOCAL_PORT})`;
-  }
-}
-
 function formatLocalStandbyLine() {
-  const standbySummary = getLocalStandbySummary();
-  const singlePrimaryRisk = standbySummary.includes('standby 없음')
-    ? ' / 단일 primary 리스크'
-    : '';
-  return `Local standby: ${standbySummary}${singlePrimaryRisk}`;
+  return 'Local chat: Groq 우선 / local chat 비활성화';
 }
 
 const publishLunaMessage = createEventReporter({

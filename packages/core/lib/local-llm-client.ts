@@ -66,8 +66,6 @@ function getBaseUrl(options: { baseUrl?: string } = {}): string {
 function getBaseUrlCandidates(options: { baseUrl?: string } = {}): string[] {
   const candidates = [
     options.baseUrl,
-    env.ENABLE_LOCAL_LLM_STANDBY ? env.LOCAL_LLM_CHAT_BASE_URL : null,
-    env.ENABLE_LOCAL_LLM_STANDBY ? env.OLLAMA_BASE_URL : null,
   ]
     .map(normalizeBaseUrl)
     .filter(Boolean);
@@ -75,7 +73,7 @@ function getBaseUrlCandidates(options: { baseUrl?: string } = {}): string[] {
 }
 
 function getEmbeddingsBaseUrl(options: { baseUrl?: string } = {}): string {
-  const raw = normalizeBaseUrl(options.baseUrl || process.env.EMBED_URL || env.LOCAL_LLM_BASE_URL || env.LOCAL_LLM_CHAT_BASE_URL || '');
+  const raw = normalizeBaseUrl(options.baseUrl || process.env.EMBED_URL || env.LOCAL_LLM_BASE_URL || '');
   return raw.replace(/\/v1\/embeddings$/i, '');
 }
 
