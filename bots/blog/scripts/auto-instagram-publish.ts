@@ -31,6 +31,8 @@ const { ensureReelQaSheet } = require(
 );
 
 const DRY_RUN = process.argv.includes('--dry-run');
+const INSTAGRAM_READINESS_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run check:instagram -- --json`;
+const INSTAGRAM_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:instagram -- --json`;
 
 function inferCoverPathFromReel(reelPath = '') {
   if (!reelPath) return '';
@@ -71,6 +73,23 @@ function buildPreviewBundle({ staged = null, reelPath = '', coverPath = '', qaSh
     staged?.qaSheet?.publicUrl ? `qa=${staged.qaSheet.publicUrl}` : (qaSheetPath ? `qa=${qaSheetPath}` : ''),
   ].filter(Boolean);
   return parts.join(' / ');
+}
+
+function buildInstagramFailureDetail(error, { reelPath = '', previewBundle = '' } = {}) {
+  const baseMessage = String(error?.message || error || '').trim();
+  const reelHint = reelPath ? `reel=${reelPath}` : '';
+  const actionHint =
+    baseMessage.includes('공개 비디오 파일')
+      ? 'action=prepare:instagram-media 또는 GitHub Pages 공개 URL 200 확인 후 재시도'
+      : 'action=check:instagram / doctor:instagram 결과를 확인 후 재시도';
+  const extras = [
+    reelHint,
+    `diagnose=${INSTAGRAM_READINESS_COMMAND}`,
+    `doctor=${INSTAGRAM_DOCTOR_COMMAND}`,
+    actionHint,
+    previewBundle ? `preview=${previewBundle}` : '',
+  ].filter(Boolean);
+  return extras.length > 0 ? `${baseMessage}\n${extras.join('\n')}` : baseMessage;
 }
 
 async function getTodayPendingCrosspost() {
@@ -220,9 +239,18 @@ async function main() {
   } catch (e) {
     console.warn('[insta-auto] 공개 미디어 준비 실패:', e.message);
     if (!DRY_RUN) {
-      await reportPublishFailure('instagram', postTitle, `prepare_instagram_media_failed: ${e.message}`, {
-        previewBundle: buildPreviewBundle({ reelPath, coverPath, qaSheetPath }),
-      });
+      const preparePreviewBundle = buildPreviewBundle({ reelPath, coverPath, qaSheetPath });
+      await reportPublishFailure(
+        'instagram',
+        postTitle,
+        buildInstagramFailureDetail(`prepare_instagram_media_failed: ${e.message}`, {
+          reelPath,
+          previewBundle: preparePreviewBundle,
+        }),
+        {
+          previewBundle: preparePreviewBundle,
+        }
+      );
     }
     throw e;
   }
@@ -246,9 +274,17 @@ async function main() {
   if (result.ok) {
     await reportPublishSuccess('instagram', postTitle, undefined, { previewBundle });
   } else if (!result.skipped) {
-    await reportPublishFailure('instagram', postTitle, result.error || result.reason || '알 수 없는 오류', {
-      previewBundle,
-    });
+    await reportPublishFailure(
+      'instagram',
+      postTitle,
+      buildInstagramFailureDetail(result.error || result.reason || '알 수 없는 오류', {
+        reelPath,
+        previewBundle,
+      }),
+      {
+        previewBundle,
+      }
+    );
   }
 
   const stats = await getCrosspostStats(1);

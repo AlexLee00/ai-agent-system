@@ -13,6 +13,8 @@
  */
 
 const http = require('http');
+const path = require('path');
+const env = require('../../../packages/core/lib/env');
 const hsm = require('../../../packages/core/lib/health-state-manager');
 const pgPool = require('../../../packages/core/lib/pg-pool.js');
 const { getBlogHealthRuntimeConfig } = require('../lib/runtime-config.ts');
@@ -48,6 +50,8 @@ const COMMENTER_ACTIVE_START_HOUR = Number(COMMENTER_CONFIG.activeStartHour || 9
 const COMMENTER_ACTIVE_END_HOUR = Number(COMMENTER_CONFIG.activeEndHour || 21);
 const FACEBOOK_READINESS_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run check:facebook -- --json`;
 const FACEBOOK_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:facebook -- --json`;
+const INSTAGRAM_READINESS_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run check:instagram -- --json`;
+const INSTAGRAM_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:instagram -- --json`;
 
 function buildPreviewBundleForTitle(title = '') {
   try {
@@ -375,7 +379,7 @@ async function checkInstagramPublishHealth() {
       const previewBundle = buildPreviewBundleForTitle(latestTitle);
       return {
         ok: false,
-        detail: `Instagram 자동등록 실패 — ${latestTitle.slice(0, 60)}\n${errorText.slice(0, 120)}${previewBundle ? `\npreview: ${previewBundle}` : ''}`,
+        detail: `Instagram 자동등록 실패 — ${latestTitle.slice(0, 60)}\n${errorText.slice(0, 120)}\ndiagnose: ${INSTAGRAM_READINESS_COMMAND}\ndoctor: ${INSTAGRAM_DOCTOR_COMMAND}${previewBundle ? `\npreview: ${previewBundle}` : ''}`,
         latest: latestReal,
       };
     }

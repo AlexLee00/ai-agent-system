@@ -51,6 +51,8 @@ const TEAM_JAY_ROOT = path.join(env.PROJECT_ROOT, 'elixir', 'team_jay');
 const SOCIAL_ASSET_DUE_HOUR = Number(process.env.BLOG_SOCIAL_ASSET_DUE_HOUR || runtimeConfig.socialAssetDueHour || 7);
 const FACEBOOK_READINESS_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run check:facebook -- --json`;
 const FACEBOOK_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:facebook -- --json`;
+const INSTAGRAM_READINESS_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run check:instagram -- --json`;
+const INSTAGRAM_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:instagram -- --json`;
 
 function nowKst() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
@@ -647,15 +649,21 @@ async function buildSocialAutomationHealth() {
       ok.push(`  instagram recent: success ${instaSummary.success} / failed ${instaSummary.failed} / skipped ${instaSummary.skipped} (dry-run ${instaSummary.dryRun})`);
       ok.push(`  instagram latest: ${String(latestInstagram.status || 'unknown')} / ${String(latestInstagram.post_title || '').slice(0, 50)}`);
       ok.push(`  instagram today: success ${instaTodaySummary.success} / failed ${instaTodaySummary.failed} / skipped ${instaTodaySummary.skipped} (dry-run ${instaTodaySummary.dryRun})`);
+      ok.push(`  instagram readiness command: ${INSTAGRAM_READINESS_COMMAND}`);
+      ok.push(`  instagram doctor command: ${INSTAGRAM_DOCTOR_COMMAND}`);
       if (latestRealInstagram) {
         ok.push(`  instagram latest real: ${String(latestRealInstagram.status || 'unknown')} / ${String(latestRealInstagram.post_title || '').slice(0, 50)}`);
       }
       if (String(latestInstagram.status || '') === 'failed' && !latestInstagram.dry_run) {
         warn.push(`  instagram latest failed: ${String(latestInstagram.error_msg || '').slice(0, 120)}`);
+        warn.push(`  instagram diagnose: ${INSTAGRAM_READINESS_COMMAND}`);
+        warn.push(`  instagram doctor: ${INSTAGRAM_DOCTOR_COMMAND}`);
       } else if (latestRealInstagram && String(latestRealInstagram.status || '') === 'failed' && latestRealInstagramIsToday && latestRealHostedRecovery) {
         ok.push(`  instagram hosted recovery: ${String(latestRealInstagram.post_title || '').slice(0, 50)} / 공개 URL 현재 정상`);
       } else if (latestRealInstagram && String(latestRealInstagram.status || '') === 'failed' && latestRealInstagramIsToday) {
         warn.push(`  instagram today failed: ${String(latestRealInstagram.error_msg || '').slice(0, 120)}`);
+        warn.push(`  instagram diagnose: ${INSTAGRAM_READINESS_COMMAND}`);
+        warn.push(`  instagram doctor: ${INSTAGRAM_DOCTOR_COMMAND}`);
       } else if (latestRealInstagram && String(latestRealInstagram.status || '') === 'failed') {
         ok.push(`  instagram stale failure: ${toKstDateString(latestRealInstagram.created_at)} / 현재는 dry-run skip 기준`);
       }
@@ -1469,6 +1477,7 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
     socialAutomationHealth.latestCoverUrl ? `cover=${socialAutomationHealth.latestCoverUrl}` : '',
     socialAutomationHealth.latestQaUrl ? `qa=${socialAutomationHealth.latestQaUrl}` : '',
   ].filter(Boolean).join(' / ');
+  const instagramDiagnoseHint = `diagnose=${INSTAGRAM_READINESS_COMMAND} / doctor=${INSTAGRAM_DOCTOR_COMMAND}`;
   const engagementFailureHint = engagementHealth?.failureSamples?.[0]
     ? `${engagementHealth.failureSamples[0].kind}/${engagementHealth.failureSamples[0].actionType} ${engagementHealth.failureSamples[0].sample}`
     : '';
@@ -1527,8 +1536,8 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
         active: socialAutomationHealth.instagramNeedsAttention,
         level: 'medium',
         reason: previewBundleHint
-          ? `최근 인스타 자동등록 실패 이력이 있어 릴스/공개 URL/게시 경로 점검이 필요합니다. 최신 preview: ${previewBundleHint}`
-          : '최근 인스타 자동등록 실패 이력이 있어 릴스/공개 URL/게시 경로 점검이 필요합니다.',
+          ? `최근 인스타 자동등록 실패 이력이 있어 릴스/공개 URL/게시 경로 점검이 필요합니다. ${instagramDiagnoseHint} 최신 preview: ${previewBundleHint}`
+          : `최근 인스타 자동등록 실패 이력이 있어 릴스/공개 URL/게시 경로 점검이 필요합니다. ${instagramDiagnoseHint}`,
       },
       {
         active: socialAutomationHealth.facebookNeedsAttention,
