@@ -1401,6 +1401,11 @@ async function buildMarketingExpansionHealth() {
 }
 
 function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealth, instagramHealth, socialAutomationHealth, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth, marketingExpansionHealth, engagementHealth) {
+  const previewBundleHint = [
+    socialAutomationHealth.latestReelUrl ? `reel=${socialAutomationHealth.latestReelUrl}` : '',
+    socialAutomationHealth.latestCoverUrl ? `cover=${socialAutomationHealth.latestCoverUrl}` : '',
+    socialAutomationHealth.latestQaUrl ? `qa=${socialAutomationHealth.latestQaUrl}` : '',
+  ].filter(Boolean).join(' / ');
   return buildHealthDecision({
     warnings: [
       {
@@ -1452,7 +1457,9 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
       {
         active: socialAutomationHealth.instagramNeedsAttention,
         level: 'medium',
-        reason: '최근 인스타 자동등록 실패 이력이 있어 릴스/공개 URL/게시 경로 점검이 필요합니다.',
+        reason: previewBundleHint
+          ? `최근 인스타 자동등록 실패 이력이 있어 릴스/공개 URL/게시 경로 점검이 필요합니다. 최신 preview: ${previewBundleHint}`
+          : '최근 인스타 자동등록 실패 이력이 있어 릴스/공개 URL/게시 경로 점검이 필요합니다.',
       },
       {
         active: socialAutomationHealth.publishLogExists === false,
