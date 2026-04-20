@@ -98,7 +98,10 @@ function getOverlayStyle(style = 'value') {
       y: 176,
       rectY: 120,
       rectHeight: 210,
-      boxColor: 'rgba(10,10,10,0.46)',
+      boxStart: 'rgba(8,8,12,0.72)',
+      boxEnd: 'rgba(18,18,28,0.44)',
+      accent: 'rgba(255,214,102,0.95)',
+      glow: 'rgba(255,214,102,0.18)',
       maxCharsPerLine: 14,
     };
   }
@@ -108,7 +111,10 @@ function getOverlayStyle(style = 'value') {
       y: 1390,
       rectY: 1338,
       rectHeight: 168,
-      boxColor: 'rgba(14,14,14,0.34)',
+      boxStart: 'rgba(10,16,22,0.54)',
+      boxEnd: 'rgba(10,10,16,0.30)',
+      accent: 'rgba(133,220,255,0.9)',
+      glow: 'rgba(133,220,255,0.14)',
       maxCharsPerLine: 20,
     };
   }
@@ -117,7 +123,10 @@ function getOverlayStyle(style = 'value') {
     y: 320,
     rectY: 266,
     rectHeight: 188,
-    boxColor: 'rgba(10,10,10,0.38)',
+    boxStart: 'rgba(12,12,18,0.62)',
+    boxEnd: 'rgba(18,18,24,0.34)',
+    accent: 'rgba(255,255,255,0.75)',
+    glow: 'rgba(255,255,255,0.10)',
     maxCharsPerLine: 17,
   };
 }
@@ -175,6 +184,15 @@ function buildOverlaySvg(text = '', style = 'value') {
   }).join('');
   return `
   <svg width="${SHORTFORM_WIDTH}" height="${SHORTFORM_HEIGHT}" viewBox="0 0 ${SHORTFORM_WIDTH} ${SHORTFORM_HEIGHT}" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="boxGradient" x1="0" x2="0" y1="0" y2="1">
+        <stop offset="0%" stop-color="${visual.boxStart}" />
+        <stop offset="100%" stop-color="${visual.boxEnd}" />
+      </linearGradient>
+      <filter id="softGlow" x="-20%" y="-20%" width="140%" height="140%">
+        <feGaussianBlur stdDeviation="18" result="blurred" />
+      </filter>
+    </defs>
     <style>
       .title {
         font-family: "Apple SD Gothic Neo", "Helvetica Neue", sans-serif;
@@ -186,7 +204,10 @@ function buildOverlaySvg(text = '', style = 'value') {
         fill: rgba(0,0,0,0.45);
       }
     </style>
-    <rect x="80" y="${visual.rectY}" rx="36" ry="36" width="920" height="${dynamicRectHeight}" fill="${visual.boxColor}" />
+    <rect x="112" y="${visual.rectY + 18}" rx="42" ry="42" width="856" height="${dynamicRectHeight - 12}" fill="${visual.glow}" filter="url(#softGlow)" />
+    <rect x="80" y="${visual.rectY}" rx="36" ry="36" width="920" height="${dynamicRectHeight}" fill="url(#boxGradient)" />
+    <rect x="120" y="${visual.rectY + 18}" rx="6" ry="6" width="180" height="10" fill="${visual.accent}" opacity="0.95" />
+    <rect x="80" y="${visual.rectY}" rx="36" ry="36" width="920" height="${dynamicRectHeight}" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="2" />
     <text class="shadow" x="540" y="${visual.y + 6}" text-anchor="middle">${shadowSpans}</text>
     <text class="title" x="540" y="${visual.y}" text-anchor="middle">${titleSpans}</text>
   </svg>`;
