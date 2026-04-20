@@ -44,6 +44,42 @@ function buildActions({ social, engagement }) {
   return Array.from(new Set(actions));
 }
 
+function pickPrimary({ social, engagement, commands }) {
+  const facebookAttention = Boolean(social?.facebook?.needsAttention);
+  const instagramAttention = Boolean(social?.instagram?.needsAttention);
+  const engagementFailures = Number(engagement?.totalFailures || 0);
+
+  if (facebookAttention) {
+    return {
+      area: 'social.facebook',
+      reason: 'Facebook publish 권한 이슈가 현재 최우선 병목입니다.',
+      nextCommand: commands.social,
+    };
+  }
+
+  if (instagramAttention) {
+    return {
+      area: 'social.instagram',
+      reason: 'Instagram publish/readiness 이슈가 현재 최우선 병목입니다.',
+      nextCommand: commands.social,
+    };
+  }
+
+  if (engagementFailures > 0) {
+    return {
+      area: 'engagement',
+      reason: '답글/댓글/공감 자동화 실패가 현재 최우선 병목입니다.',
+      nextCommand: commands.engagement,
+    };
+  }
+
+  return {
+    area: 'clear',
+    reason: '지금은 즉시 막히는 운영 병목보다 다음 운영 사이클 관찰이 우선입니다.',
+    nextCommand: '',
+  };
+}
+
 function buildOpsDoctorFallback(payload = {}) {
   if (payload.social?.facebook?.needsAttention || payload.social?.instagram?.needsAttention) {
     return '블로팀 운영 이슈는 지금 소셜 publish 축을 먼저 정리하는 편이 좋습니다.';
@@ -71,6 +107,7 @@ async function main() {
     },
     actions: buildActions({ social, engagement }),
   };
+  payload.primary = pickPrimary(payload);
 
   const aiSummary = await buildBlogCliInsight({
     bot: 'doctor-blog-ops',
@@ -85,6 +122,7 @@ async function main() {
         totalFailures: Number(engagement?.totalFailures || 0),
         failureByKind: engagement?.failureByKind || {},
       },
+      primary: payload.primary,
       actions: payload.actions,
     },
     fallback: buildOpsDoctorFallback(payload),
@@ -98,6 +136,10 @@ async function main() {
 
   console.log('[blog ops doctor]');
   console.log(`🔍 AI: ${payload.aiSummary}`);
+  console.log(`primary: ${payload.primary.area} ${payload.primary.reason}`);
+  if (payload.primary.nextCommand) {
+    console.log(`next: ${payload.primary.nextCommand}`);
+  }
   console.log(`social: ${socialCommand}`);
   console.log(`engagement: ${engagementCommand}`);
   for (const action of payload.actions) {
