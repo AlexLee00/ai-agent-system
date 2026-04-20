@@ -54,8 +54,16 @@ function classifyGroup(group: DuplicateGroup): GroupClassification {
   const activeRows = group.rows.filter((row) => normalizeStatus(row.status) !== 'cancelled');
   const cancelledRows = group.rows.filter((row) => normalizeStatus(row.status) === 'cancelled');
   const activeCount = activeRows.length;
+  const allActiveCompleted = activeCount > 0 && activeRows.every((row) => normalizeStatus(row.status) === 'completed');
 
   if (activeCount > 1) {
+    if (allActiveCompleted) {
+      return {
+        severity: 'historical',
+        reason: `completed row ${activeCount}건의 중복 잔재`,
+        recommendedAction: '즉시 운영 조치보다는 canonical row 정리 여부만 검토',
+      };
+    }
     return {
       severity: 'risky',
       reason: `non-cancelled row ${activeCount}건`,

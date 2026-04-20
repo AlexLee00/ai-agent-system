@@ -602,8 +602,20 @@ async function buildDuplicateSlotHealth() {
       LIMIT 50
     `);
 
-    const risky = rows.filter((row) => Number(row.non_cancelled_count || 0) > 1);
-    const historical = rows.filter((row) => Number(row.non_cancelled_count || 0) <= 1);
+    const isCompletedOnlyDuplicate = (row) => {
+      const statuses = Array.isArray(row.statuses)
+        ? row.statuses.map((status) => String(status || '').trim())
+        : String(row.statuses || '')
+            .split(',')
+            .map((status) => String(status || '').trim())
+            .filter(Boolean);
+      return Number(row.non_cancelled_count || 0) > 1
+        && statuses.length > 0
+        && statuses.every((status) => status === 'completed');
+    };
+
+    const risky = rows.filter((row) => Number(row.non_cancelled_count || 0) > 1 && !isCompletedOnlyDuplicate(row));
+    const historical = rows.filter((row) => Number(row.non_cancelled_count || 0) <= 1 || isCompletedOnlyDuplicate(row));
 
     if (risky.length === 0) {
       const ok = ['  duplicate slot audit: 위험 group 없음'];
