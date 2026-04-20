@@ -2468,17 +2468,21 @@ async function submitReply(page, browserPage = null) {
       const isReplySubmit = (node) => {
         if (!visible(node)) return false;
         const tag = String(node.tagName || '').toLowerCase();
-        if (tag !== 'button' && tag !== 'a') return false;
+        if (tag !== 'button' && tag !== 'a' && tag !== 'input') return false;
         const dataAction = String(node.getAttribute('data-action') || '');
         const uiSelector = String(node.getAttribute('data-ui-selector') || '');
         const cls = String(node.className || '');
         const text = textOf(node);
         const role = String(node.getAttribute('role') || '');
+        const inputType = String(node.getAttribute('type') || '').toLowerCase();
         if (dataAction.includes('reply#') && dataAction.includes('#write#request')) return true;
         if (dataAction === 'write#request' && /등록|답글|답변/.test(text)) return true;
         if (/^replyButton_/i.test(uiSelector)) return true;
         if (uiSelector === 'writeButton' && /등록|답글|답변/.test(text)) return true;
         if (/u_cbox_btn_upload|btn_register|btn_write|replyButton/i.test(cls) && /등록|답글|답변/.test(text)) return true;
+        if (uiSelector === 'writeButton' && /u_cbox_btn_upload|btn_register|btn_write|replyButton/i.test(cls)) return true;
+        if (inputType === 'submit' && /u_cbox_btn_upload|btn_register|btn_write|replyButton/i.test(cls)) return true;
+        if (inputType === 'submit' && /등록|답글|답변/.test(text)) return true;
         if ((role === 'button' || tag === 'button') && /등록|답글|답변/.test(text)) return true;
         return false;
       };
@@ -2989,6 +2993,23 @@ async function postReply(comment, replyText, { testMode = false, dryRun = false,
     }
 
     if (!opened) {
+      traceCommenter('postReply:reply-open-retry-start', { commentId: comment.id, logNo });
+      await openCommentPanel(contentFrame, logNo, testMode).catch(() => false);
+      await humanDelay(1, 2, testMode);
+      const remounted = await mountCommentPanel(contentFrame, logNo, testMode);
+      traceCommenter('postReply:reply-open-remounted', { commentId: comment.id, remounted });
+      if (remounted) {
+        await waitForReplyThread(contentFrame, comment, testMode).catch(() => false);
+        opened = await openReplyEditor(contentFrame, comment);
+        traceCommenter('postReply:reply-button-retargeted-second', { commentId: comment.id, opened });
+        if (opened) {
+          opened = await activateReplyMode(contentFrame);
+          traceCommenter('postReply:reply-mode-reactivated-second', { commentId: comment.id, opened });
+        }
+      }
+    }
+
+    if (!opened) {
       const debug = await inspectReplyControlsLite(contentFrame).catch(() => null);
       let snapshotPrefix = '';
       if (shouldCaptureHeavyCommentDebug()) {
@@ -3048,8 +3069,23 @@ async function postReply(comment, replyText, { testMode = false, dryRun = false,
       replyLength: String(replyText || '').length,
     });
     await humanDelay(1, 2, testMode);
-    await submitReply(contentFrame, page);
-    traceCommenter('postReply:submitted', { commentId: comment.id });
+    let submitted = false;
+    try {
+      await submitReply(contentFrame, page);
+      submitted = true;
+    } catch (error) {
+      traceCommenter('postReply:submit-retry-start', {
+        commentId: comment.id,
+        reason: String(error?.message || error),
+      });
+      await openCommentPanel(contentFrame, logNo, testMode).catch(() => false);
+      await humanDelay(1, 2, testMode);
+      await activateReplyMode(contentFrame).catch(() => false);
+      await humanDelay(1, 2, testMode);
+      await submitReply(contentFrame, page);
+      submitted = true;
+    }
+    traceCommenter('postReply:submitted', { commentId: comment.id, submitted });
     const posted = await verifyReplyPosted(contentFrame, replyText, comment, testMode);
     traceCommenter('postReply:verified', { commentId: comment.id, posted });
     if (!posted) {
