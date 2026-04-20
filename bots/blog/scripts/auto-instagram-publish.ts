@@ -26,6 +26,9 @@ const { reportPublishSuccess, reportPublishFailure } = require(
 );
 const { runIfOps } = require('../../../packages/core/lib/mode-guard');
 const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const { ensureReelQaSheet } = require(
+  path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-renderer.ts')
+);
 
 const DRY_RUN = process.argv.includes('--dry-run');
 
@@ -131,18 +134,21 @@ async function main() {
   let reelPath = null;
   let coverPath = null;
   let qaSheetPath = null;
+  let thumbPath = null;
   try {
     const {
       findLatestReelPath,
       findReelPathForTitle,
       findReelCoverPathForTitle,
       findReelQaSheetPathForTitle,
+      findThumbPathForTitle,
     } = require(
       path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-files.ts')
     );
     reelPath = findReelPathForTitle(postTitle) || findLatestReelPath();
     coverPath = findReelCoverPathForTitle(postTitle) || '';
     qaSheetPath = findReelQaSheetPathForTitle(postTitle) || '';
+    thumbPath = findThumbPathForTitle(postTitle, '') || '';
   } catch (e) {
     console.warn('[insta-auto] 릴스 파일 탐색 실패:', e.message);
   }
@@ -153,6 +159,22 @@ async function main() {
   const inferredQaSheetPath = inferQaSheetPathFromReel(reelPath);
   if (inferredQaSheetPath && require('fs').existsSync(inferredQaSheetPath)) {
     qaSheetPath = inferredQaSheetPath;
+  }
+
+  if (reelPath && !qaSheetPath && thumbPath) {
+    try {
+      qaSheetPath = await ensureReelQaSheet({
+        outputPath: reelPath,
+        thumbPath,
+        coverPath,
+        title: postTitle,
+        hook: postTitle,
+        cta: '인스타 게시 전 QA 시트를 먼저 확인하세요',
+      });
+      console.log(`[insta-auto] 릴스 QA 시트 자동 보강: ${qaSheetPath}`);
+    } catch (e) {
+      console.warn('[insta-auto] 릴스 QA 시트 자동 보강 실패:', e.message);
+    }
   }
 
   if (!reelPath) {

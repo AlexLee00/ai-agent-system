@@ -316,6 +316,54 @@ async function buildReelQaSheet({ thumbPath, coverPath, outputPath, title = '', 
   return qaSheetPath;
 }
 
+async function ensureReelQaSheet({
+  outputPath,
+  thumbPath,
+  coverPath = '',
+  title = '',
+  hook = '',
+  cta = '',
+}) {
+  const qaSheetPath = String(outputPath || '').replace(/\.mp4$/i, '_qa.jpg');
+  if (!outputPath) {
+    throw new Error('QA 시트를 생성할 릴스 outputPath가 없습니다.');
+  }
+  if (qaSheetPath && fs.existsSync(qaSheetPath)) {
+    return qaSheetPath;
+  }
+  if (!thumbPath || !fs.existsSync(thumbPath)) {
+    throw new Error(`QA 시트용 썸네일이 없습니다: ${thumbPath}`);
+  }
+  let resolvedCoverPath = coverPath && fs.existsSync(coverPath)
+    ? coverPath
+    : outputPath.replace(/\.mp4$/i, '_cover.jpg');
+  if (resolvedCoverPath && !fs.existsSync(resolvedCoverPath)) {
+    try {
+      await execFileAsync('ffmpeg', buildShortformCoverArgs({
+        inputPath: outputPath,
+        outputPath: resolvedCoverPath,
+        captureSec: 1.2,
+      }), {
+        maxBuffer: 8 * 1024 * 1024,
+      });
+    } catch (error) {
+      const message = error?.stderr || error?.stdout || error?.message || String(error);
+      throw new Error(`QA 시트용 커버 추출 실패: ${message}`);
+    }
+  }
+  if (!resolvedCoverPath || !fs.existsSync(resolvedCoverPath)) {
+    throw new Error(`QA 시트용 커버가 없습니다: ${resolvedCoverPath}`);
+  }
+  return buildReelQaSheet({
+    thumbPath,
+    coverPath: resolvedCoverPath,
+    outputPath,
+    title,
+    hook,
+    cta,
+  });
+}
+
 async function prepareStoryboardOverlays(storyboard = [], outputPath = '') {
   const steps = Array.isArray(storyboard) ? storyboard.filter((step) => step && step.overlay) : [];
   if (steps.length === 0) return [];
@@ -388,10 +436,10 @@ async function renderShortformReel({
   }
   let qaSheetPath = '';
   try {
-    qaSheetPath = await buildReelQaSheet({
+    qaSheetPath = await ensureReelQaSheet({
+      outputPath,
       thumbPath,
       coverPath,
-      outputPath,
       title,
       hook,
       cta,
@@ -421,5 +469,6 @@ module.exports = {
   buildShortformVideoFilter,
   buildShortformRenderArgs,
   buildShortformCoverArgs,
+  ensureReelQaSheet,
   renderShortformReel,
 };
