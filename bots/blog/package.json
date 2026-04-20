@@ -20,6 +20,7 @@
     "publish-instagram-reel": "node scripts/publish-instagram-reel.ts",
     "publish:facebook": "node scripts/publish-facebook-post.ts",
     "check:facebook": "node scripts/check-facebook-readiness.ts",
+    "doctor:facebook": "node scripts/doctor-facebook-publish.ts",
     "check:instagram": "node scripts/check-instagram-readiness.ts",
     "doctor:instagram": "node scripts/doctor-instagram-auth.ts",
     "check:instagram-token": "node scripts/check-instagram-token-health.ts",

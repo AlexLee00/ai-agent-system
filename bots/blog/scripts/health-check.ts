@@ -47,6 +47,7 @@ const COMMENTER_CONFIG = runtimeConfig.commenter || {};
 const COMMENTER_ACTIVE_START_HOUR = Number(COMMENTER_CONFIG.activeStartHour || 9);
 const COMMENTER_ACTIVE_END_HOUR = Number(COMMENTER_CONFIG.activeEndHour || 21);
 const FACEBOOK_READINESS_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run check:facebook -- --json`;
+const FACEBOOK_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:facebook -- --json`;
 
 function buildPreviewBundleForTitle(title = '') {
   try {
@@ -303,7 +304,7 @@ async function checkFacebookPublishHealth() {
         : 'pages_manage_posts, pages_read_engagement';
       const pageHint = readiness?.pageId ? `\npage: ${String(readiness.pageId).slice(0, 32)}` : '';
       const actionHint = `\naction: Meta 앱 권한(${scopes}) 재연결 후 페이지 토큰을 다시 발급하세요`;
-      const diagnoseHint = `\ndiagnose: ${FACEBOOK_READINESS_COMMAND}`;
+      const diagnoseHint = `\ndiagnose: ${FACEBOOK_READINESS_COMMAND}\ndoctor: ${FACEBOOK_DOCTOR_COMMAND}`;
       return {
         ok: false,
         detail: `Facebook 페이지 게시 권한 부족 — ${String(row.title || '').slice(0, 60)}\n${summarizedError}${pageHint}${actionHint}${diagnoseHint}${previewBundle ? `\npreview: ${previewBundle}` : ''}`,
