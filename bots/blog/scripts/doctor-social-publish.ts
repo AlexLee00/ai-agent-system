@@ -85,7 +85,7 @@ async function getLatestInstagramPublish() {
   }
 }
 
-function buildActions({ facebookReadiness, instagramConfig, latestFacebook, latestInstagram, previewBundle }) {
+function buildActions({ facebookReadiness, instagramConfig, latestFacebook, latestInstagram, previewBundle, primary }) {
   const actions = [];
   const instagramHostedRecovery = getInstagramHostedRecovery(latestInstagram);
 
@@ -112,7 +112,15 @@ function buildActions({ facebookReadiness, instagramConfig, latestFacebook, late
     actions.push('최신 reel / cover / qa preview를 확인한 뒤 재시도');
   }
 
-  return Array.from(new Set(actions));
+  const prioritized = [];
+  if (primary?.actionFocus) {
+    prioritized.push(`focus blocker: ${primary.actionFocus}`);
+  }
+  if (primary?.nextCommand) {
+    prioritized.push(`우선 실행: ${primary.nextCommand}`);
+  }
+
+  return Array.from(new Set([...prioritized, ...actions]));
 }
 
 function buildPrimary({ latestFacebook, latestInstagram, facebookReadiness, instagramConfig }) {
@@ -208,18 +216,19 @@ async function main() {
     previewBundle,
   };
 
+  payload.primary = buildPrimary({
+    latestFacebook,
+    latestInstagram,
+    facebookReadiness,
+    instagramConfig,
+  });
   payload.actions = buildActions({
     facebookReadiness,
     instagramConfig,
     latestFacebook,
     latestInstagram,
     previewBundle,
-  });
-  payload.primary = buildPrimary({
-    latestFacebook,
-    latestInstagram,
-    facebookReadiness,
-    instagramConfig,
+    primary: payload.primary,
   });
 
   const aiSummary = await buildBlogCliInsight({
