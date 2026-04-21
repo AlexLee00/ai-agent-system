@@ -31,6 +31,7 @@ const {
 } = require('../lib/critical-alerts.js');
 const { resolveInstagramHostedMediaUrl } = require('../../../packages/core/lib/instagram-image-host.ts');
 const { checkFacebookPublishReadiness } = require('../lib/facebook-publisher.ts');
+const { readDevelopmentBaseline, buildSinceClause } = require('../lib/dev-baseline.ts');
 
 const runtimeConfig = getBlogHealthRuntimeConfig();
 const { buildIssueHints, rememberHealthEvent } = createHealthMemoryHelper({
@@ -580,7 +581,9 @@ function isCommenterActiveWindow() {
   return hour >= COMMENTER_ACTIVE_START_HOUR && hour <= COMMENTER_ACTIVE_END_HOUR;
 }
 
-async function getLatestReplyReplayCandidate() {
+async function getLatestReplyReplayCandidate(baseline = null) {
+  const actionSinceClause = buildSinceClause('a.executed_at', baseline);
+  const commentSinceClause = buildSinceClause('detected_at', baseline);
   try {
     const row = await pgPool.get('blog', `
       SELECT
@@ -596,6 +599,7 @@ async function getLatestReplyReplayCandidate() {
         ON (a.meta->>'commentId')::int = c.id
       WHERE a.action_type = 'reply'
         AND a.success = false
+        ${actionSinceClause}
       ORDER BY a.executed_at DESC
       LIMIT 1
     `);
@@ -611,6 +615,7 @@ async function getLatestReplyReplayCandidate() {
         false AS from_failure
       FROM blog.comments
       WHERE detected_at >= now() - interval '7 days'
+        ${commentSinceClause}
       ORDER BY detected_at DESC
       LIMIT 1
     `);
@@ -621,6 +626,8 @@ async function getLatestReplyReplayCandidate() {
 
 async function checkEngagementAutomationHealth() {
   try {
+    const developmentBaseline = readDevelopmentBaseline();
+    const actionSinceClause = buildSinceClause('executed_at', developmentBaseline);
     const activeWindow = isCommenterActiveWindow();
     const engagementPayload = getDoctorPayload(ENGAGEMENT_DOCTOR_COMMAND);
     const targetGaps = Array.isArray(engagementPayload?.targetGaps) ? engagementPayload.targetGaps : [];
@@ -629,10 +636,11 @@ async function checkEngagementAutomationHealth() {
       FROM blog.comment_actions
       WHERE timezone('Asia/Seoul', executed_at)::date = timezone('Asia/Seoul', now())::date
         AND success = false
+        ${actionSinceClause}
       ORDER BY executed_at DESC
       LIMIT 50
     `);
-    const latestReplyReplayCandidate = await getLatestReplyReplayCandidate();
+    const latestReplyReplayCandidate = await getLatestReplyReplayCandidate(developmentBaseline);
 
     const failureByKind = { ui: 0, browser: 0, llm: 0, verification: 0, unknown: 0 };
     const failureByAction = { reply: 0, neighbor_comment: 0, sympathy: 0 };

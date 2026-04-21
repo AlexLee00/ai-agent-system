@@ -7,6 +7,7 @@ const pgPool = require('../../../packages/core/lib/pg-pool.js');
 const { buildBlogCliInsight } = require('../lib/cli-insight.ts');
 const { getBlogHealthRuntimeConfig } = require('../lib/runtime-config.ts');
 const { assessInboundComment } = require('../lib/commenter.ts');
+const { readDevelopmentBaseline, buildSinceClause } = require('../lib/dev-baseline.ts');
 
 const runtimeConfig = getBlogHealthRuntimeConfig();
 const BLOG_ROOT = path.join(env.PROJECT_ROOT, 'bots/blog');
@@ -188,7 +189,9 @@ function buildRunPlan(targetGapDetails = []) {
   }));
 }
 
-async function getLatestReplyReplayCandidate() {
+async function getLatestReplyReplayCandidate(baseline = null) {
+  const actionSinceClause = buildSinceClause('a.executed_at', baseline);
+  const commentSinceClause = buildSinceClause('detected_at', baseline);
   try {
     const row = await pgPool.get('blog', `
       SELECT
@@ -204,6 +207,7 @@ async function getLatestReplyReplayCandidate() {
         ON (a.meta->>'commentId')::int = c.id
       WHERE a.action_type = 'reply'
         AND a.success = false
+        ${actionSinceClause}
       ORDER BY a.executed_at DESC
       LIMIT 1
     `);
@@ -219,6 +223,7 @@ async function getLatestReplyReplayCandidate() {
         false AS from_failure
       FROM blog.comments
       WHERE detected_at >= now() - interval '7 days'
+        ${commentSinceClause}
       ORDER BY detected_at DESC
       LIMIT 1
     `);
@@ -227,13 +232,15 @@ async function getLatestReplyReplayCandidate() {
   }
 }
 
-async function getReplyWorkloadStatus() {
+async function getReplyWorkloadStatus(baseline = null) {
+  const commentSinceClause = buildSinceClause('detected_at', baseline);
   try {
     const [statusRows, latestRow, skippedTodayRows, skipped14dRows, pendingBacklogRow] = await Promise.all([
       pgPool.query('blog', `
         SELECT status, COUNT(*)::int AS cnt
         FROM blog.comments
         WHERE timezone('Asia/Seoul', detected_at)::date = timezone('Asia/Seoul', now())::date
+          ${commentSinceClause}
         GROUP BY 1
       `),
       pgPool.get('blog', `
@@ -246,6 +253,7 @@ async function getReplyWorkloadStatus() {
           detected_at
         FROM blog.comments
         WHERE timezone('Asia/Seoul', detected_at)::date = timezone('Asia/Seoul', now())::date
+          ${commentSinceClause}
         ORDER BY detected_at DESC
         LIMIT 1
       `),
@@ -254,6 +262,7 @@ async function getReplyWorkloadStatus() {
         FROM blog.comments
         WHERE timezone('Asia/Seoul', detected_at)::date = timezone('Asia/Seoul', now())::date
           AND status = 'skipped'
+          ${commentSinceClause}
         GROUP BY 1
         ORDER BY cnt DESC, reason ASC
         LIMIT 5
@@ -263,6 +272,7 @@ async function getReplyWorkloadStatus() {
         FROM blog.comments
         WHERE detected_at >= now() - interval '14 days'
           AND status = 'skipped'
+          ${commentSinceClause}
         GROUP BY 1
         ORDER BY cnt DESC, reason ASC
         LIMIT 5
@@ -272,6 +282,7 @@ async function getReplyWorkloadStatus() {
         FROM blog.comments
         WHERE status = 'pending'
           AND reply_at IS NULL
+          ${commentSinceClause}
       `),
     ]);
 
@@ -321,7 +332,8 @@ async function getReplyWorkloadStatus() {
   }
 }
 
-async function getCourtesyReflectionRecheck() {
+async function getCourtesyReflectionRecheck(baseline = null) {
+  const commentSinceClause = buildSinceClause('detected_at', baseline);
   try {
     const rows = await pgPool.query('blog', `
       SELECT
@@ -332,6 +344,7 @@ async function getCourtesyReflectionRecheck() {
         detected_at
       FROM blog.comments
       WHERE detected_at >= now() - interval '14 days'
+        ${commentSinceClause}
         AND status = 'skipped'
         AND COALESCE(error_message, '') = 'generic_greeting_comment'
       ORDER BY detected_at DESC
@@ -517,18 +530,21 @@ function buildEngagementDoctorFallback(payload = {}) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  const developmentBaseline = readDevelopmentBaseline();
+  const actionSinceClause = buildSinceClause('executed_at', developmentBaseline);
   const [rows, latestReplyReplayCandidate, replyWorkload, courtesyReflectionRecheck] = await Promise.all([
     pgPool.query('blog', `
       SELECT action_type, meta
       FROM blog.comment_actions
       WHERE timezone('Asia/Seoul', executed_at)::date = timezone('Asia/Seoul', now())::date
         AND success = false
+        ${actionSinceClause}
       ORDER BY executed_at DESC
       LIMIT 50
     `),
-    getLatestReplyReplayCandidate(),
-    getReplyWorkloadStatus(),
-    getCourtesyReflectionRecheck(),
+    getLatestReplyReplayCandidate(developmentBaseline),
+    getReplyWorkloadStatus(developmentBaseline),
+    getCourtesyReflectionRecheck(developmentBaseline),
   ]);
 
   const replyConfig = runtimeConfig.commenter || {};
@@ -559,6 +575,7 @@ async function main() {
     SELECT action_type, success, COUNT(*)::int AS cnt
     FROM blog.comment_actions
     WHERE timezone('Asia/Seoul', executed_at)::date = timezone('Asia/Seoul', now())::date
+      ${actionSinceClause}
     GROUP BY 1, 2
   `);
   const aggregateMap = new Map();
@@ -624,6 +641,15 @@ async function main() {
   });
 
   const payload = {
+    developmentBaseline: developmentBaseline
+      ? {
+          active: true,
+          startedAt: developmentBaseline.startedAtIso,
+          source: developmentBaseline.source,
+          note: developmentBaseline.note,
+          path: developmentBaseline.path,
+        }
+      : null,
     totalFailures: Array.isArray(rows) ? rows.length : 0,
     failureByKind,
     failureByAction,
@@ -666,6 +692,9 @@ async function main() {
   }
 
   console.log(`[engagement doctor] failures=${payload.totalFailures}`);
+  if (payload.developmentBaseline?.startedAt) {
+    console.log(`[engagement doctor] baseline=${payload.developmentBaseline.startedAt}`);
+  }
   console.log(`🔍 AI: ${payload.aiSummary}`);
   console.log(`[engagement doctor] primary=${payload.primary.area} ${payload.primary.reason}`);
   console.log(`[engagement doctor] next=${payload.primary.nextCommand}`);

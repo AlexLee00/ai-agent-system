@@ -31,6 +31,7 @@ const {
 const { checkFacebookPublishReadiness } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/facebook-publisher.ts'));
 const { buildMarketingDigest } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/marketing-digest.ts'));
 const { assessInboundComment } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/commenter.ts'));
+const { readDevelopmentBaseline, buildSinceClause } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/dev-baseline.ts'));
 
 const CONTINUOUS = ['ai.blog.node-server'];
 const ALL_SERVICES = ['ai.blog.daily', 'ai.blog.node-server'];
@@ -1025,6 +1026,9 @@ async function buildSocialAutomationHealth() {
 
 async function buildEngagementHealth() {
   try {
+    const developmentBaseline = readDevelopmentBaseline();
+    const actionSinceClause = buildSinceClause('executed_at', developmentBaseline);
+    const commentSinceClause = buildSinceClause('detected_at', developmentBaseline);
     const replyConfig = runtimeConfig.commenter || {};
     const neighborConfig = runtimeConfig.neighborCommenter || {};
 
@@ -1033,6 +1037,7 @@ async function buildEngagementHealth() {
         SELECT action_type, success, COUNT(*)::int AS cnt
         FROM blog.comment_actions
         WHERE timezone('Asia/Seoul', executed_at)::date = timezone('Asia/Seoul', now())::date
+          ${actionSinceClause}
         GROUP BY 1, 2
       `),
       pgPool.query('blog', `
@@ -1040,6 +1045,7 @@ async function buildEngagementHealth() {
         FROM blog.comment_actions
         WHERE timezone('Asia/Seoul', executed_at)::date = timezone('Asia/Seoul', now())::date
           AND success = false
+          ${actionSinceClause}
         ORDER BY executed_at DESC
         LIMIT 50
       `),
@@ -1051,6 +1057,7 @@ async function buildEngagementHealth() {
           COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0)::int AS failed
         FROM blog.comments
         WHERE timezone('Asia/Seoul', detected_at)::date = timezone('Asia/Seoul', now())::date
+          ${commentSinceClause}
       `),
       pgPool.query('blog', `
         SELECT status, COUNT(*)::int AS cnt
@@ -1072,6 +1079,7 @@ async function buildEngagementHealth() {
           ON (a.meta->>'commentId')::int = c.id
         WHERE a.action_type = 'reply'
           AND a.success = false
+          ${buildSinceClause('a.executed_at', developmentBaseline)}
         ORDER BY a.executed_at DESC
         LIMIT 1
       `).then((row) => row || pgPool.get('blog', `
@@ -1085,6 +1093,7 @@ async function buildEngagementHealth() {
           false AS from_failure
         FROM blog.comments
         WHERE detected_at >= now() - interval '7 days'
+          ${commentSinceClause}
         ORDER BY detected_at DESC
         LIMIT 1
       `)),
@@ -1093,6 +1102,7 @@ async function buildEngagementHealth() {
         FROM blog.comments
         WHERE timezone('Asia/Seoul', detected_at)::date = timezone('Asia/Seoul', now())::date
           AND status = 'skipped'
+          ${commentSinceClause}
         GROUP BY 1
         ORDER BY cnt DESC, reason ASC
         LIMIT 5
@@ -1102,6 +1112,7 @@ async function buildEngagementHealth() {
         FROM blog.comments
         WHERE detected_at >= now() - interval '14 days'
           AND status = 'skipped'
+          ${commentSinceClause}
         GROUP BY 1
         ORDER BY cnt DESC, reason ASC
         LIMIT 5
@@ -1116,6 +1127,7 @@ async function buildEngagementHealth() {
           detected_at
         FROM blog.comments
         WHERE timezone('Asia/Seoul', detected_at)::date = timezone('Asia/Seoul', now())::date
+          ${commentSinceClause}
         ORDER BY detected_at DESC
         LIMIT 1
       `),
@@ -1125,6 +1137,7 @@ async function buildEngagementHealth() {
         FROM blog.comments
         WHERE status = 'pending'
           AND reply_at IS NULL
+          ${commentSinceClause}
       `),
     ]);
 
@@ -1208,6 +1221,9 @@ async function buildEngagementHealth() {
       `  neighbor queue today: posted ${Number(neighborStatusMap.get('posted') || 0)} / failed ${Number(neighborStatusMap.get('failed') || 0)} / pending ${Number(neighborStatusMap.get('pending') || 0)}`,
       `  adaptive comment cadence: ${adaptiveNeighborCadence.shouldBoost ? 'boosted' : 'baseline'} / combined comments ${adaptiveNeighborCadence.combinedCommentSuccess}/${adaptiveNeighborCadence.combinedCommentExpectedNow} / process ${adaptiveNeighborCadence.effectiveProcessLimit} / collect ${adaptiveNeighborCadence.effectiveCollectLimit}`,
     ];
+    if (developmentBaseline?.startedAtIso) {
+      ok.push(`  development baseline: ${developmentBaseline.startedAtIso}`);
+    }
     if (Number(pendingBacklogRow?.cnt || 0) > 0) {
       ok.push(`  reply pending backlog: ${Number(pendingBacklogRow.cnt || 0)}건`);
     }
@@ -1280,6 +1296,15 @@ async function buildEngagementHealth() {
       warnCount: warn.length,
       ok,
       warn,
+      developmentBaseline: developmentBaseline
+        ? {
+            active: true,
+            startedAt: developmentBaseline.startedAtIso,
+            source: developmentBaseline.source,
+            note: developmentBaseline.note,
+            path: developmentBaseline.path,
+          }
+        : null,
       replies: {
         success: replySuccess,
         failed: replyFailure,
@@ -1813,7 +1838,12 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
         }
       : null,
   ].filter(Boolean).sort((a, b) => b.deficit - a.deficit);
-  const engagementPrimaryGap = engagementGapEntries[0] || null;
+  const doctorGapLabel = String(engagementDoctorPriority?.primaryArea || '')
+    .match(/engagement\.target_gap\.([a-z_]+)/i)?.[1] || '';
+  const normalizedDoctorGapLabel = doctorGapLabel === 'neighbor' ? 'neighbor' : doctorGapLabel === 'sympathy' ? 'sympathy' : doctorGapLabel === 'replies' ? 'replies' : '';
+  const engagementPrimaryGap = engagementGapEntries.find((item) => item.label === normalizedDoctorGapLabel)
+    || engagementGapEntries[0]
+    || null;
   const engagementGapHint = [
     engagementHealth?.replies?.expectedNow > 0
       ? `replies ${Number(engagementHealth?.replies?.success || 0)}/${Number(engagementHealth?.replies?.expectedNow || 0)}`
