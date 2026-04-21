@@ -1,7 +1,7 @@
 // @ts-nocheck
 
 import { getCapitalConfig } from './capital-manager.ts';
-import { getInvestmentRuntimeConfig, getTimeProfiles } from './runtime-config.ts';
+import { getInvestmentExecutionRuntimeConfig, getInvestmentRuntimeConfig, getTimeProfiles } from './runtime-config.ts';
 
 const GOVERNANCE_SPECS = [
   { key: 'capital_management.max_capital_usage', tier: 'allow', min: 0.5, max: 0.95, label: '총 자본 사용률' },
@@ -12,11 +12,19 @@ const GOVERNANCE_SPECS = [
   { key: 'capital_management.max_same_direction_positions', tier: 'allow', min: 1, max: 6, label: '동일 방향 포지션 수' },
   { key: 'capital_management.cooldown_after_loss_streak', tier: 'allow', min: 2, max: 5, label: '연속 손실 쿨다운 횟수' },
   { key: 'capital_management.cooldown_minutes', tier: 'allow', min: 30, max: 360, label: '쿨다운 분' },
+  { key: 'runtime_config.execution.cryptoGuardSoftening.byExchange.binance.tradeModes.normal.circuitBreaker.reductionMultiplier', tier: 'allow', min: 0.4, max: 0.95, label: 'crypto 서킷 완화 감산 배율' },
+  { key: 'runtime_config.execution.cryptoGuardSoftening.byExchange.binance.tradeModes.normal.circuitBreaker.maxRemainingCooldownMinutes', tier: 'allow', min: 30, max: 360, label: 'crypto 서킷 완화 허용 잔여 쿨다운' },
+  { key: 'runtime_config.execution.cryptoGuardSoftening.byExchange.binance.tradeModes.normal.correlationGuard.allowOverflowSlots', tier: 'allow', min: 0, max: 2, label: 'crypto 상관관계 완화 overflow 슬롯' },
+  { key: 'runtime_config.execution.cryptoGuardSoftening.byExchange.binance.tradeModes.normal.correlationGuard.reductionMultiplier', tier: 'allow', min: 0.5, max: 0.95, label: 'crypto 상관관계 완화 감산 배율' },
   { key: 'runtime_config.luna.fastPathThresholds.minAverageConfidence', tier: 'allow', min: 0.2, max: 0.8, label: 'fast-path 평균 확신도' },
   { key: 'runtime_config.luna.fastPathThresholds.minAbsScore', tier: 'allow', min: 0.05, max: 0.5, label: 'fast-path 절대 점수' },
   { key: 'runtime_config.luna.fastPathThresholds.minStockConfidence', tier: 'allow', min: 0.15, max: 0.7, label: '주식 fast-path 확신도' },
   { key: 'runtime_config.luna.fastPathThresholds.minCryptoConfidence', tier: 'allow', min: 0.15, max: 0.8, label: '암호화폐 fast-path 확신도' },
+  { key: 'runtime_config.luna.minConfidence.live.kis', tier: 'allow', min: 0.1, max: 0.4, label: '국내장 live 최소 확신도' },
+  { key: 'runtime_config.luna.minConfidence.live.kis_overseas', tier: 'allow', min: 0.1, max: 0.4, label: '해외장 live 최소 확신도' },
   { key: 'runtime_config.luna.minConfidence.paper.kis_overseas', tier: 'allow', min: 0.1, max: 0.4, label: '해외장 paper 최소 확신도' },
+  { key: 'runtime_config.luna.stockOrderDefaults.kis.buyDefault', tier: 'allow', min: 200000, max: 1200000, label: '국내장 기본 주문금액' },
+  { key: 'runtime_config.luna.stockOrderDefaults.kis_overseas.min', tier: 'allow', min: 200, max: 400, label: '해외장 최소 주문 floor' },
   { key: 'runtime_config.luna.stockStrategyProfiles.aggressive.tradeModes.validation.minConfidence.live', tier: 'allow', min: 0.1, max: 0.4, label: '공격적 validation live 최소 확신도' },
   { key: 'runtime_config.nemesis.thresholds.stockStarterApproveDomestic', tier: 'allow', min: 200000, max: 1200000, label: '국내장 starter 자동승인 한도' },
   { key: 'capital_management.rr_fallback.tp_pct', tier: 'allow', min: 0.01, max: 0.12, label: '기본 TP 비율' },
@@ -46,6 +54,7 @@ function getSpecMap() {
 function resolveCurrentValue(key) {
   const capital = getCapitalConfig();
   const runtime = getInvestmentRuntimeConfig();
+  const execution = getInvestmentExecutionRuntimeConfig();
   const timeProfiles = getTimeProfiles();
 
   const lookup = {
@@ -57,6 +66,10 @@ function resolveCurrentValue(key) {
     'capital_management.max_same_direction_positions': capital.max_same_direction_positions,
     'capital_management.cooldown_after_loss_streak': capital.cooldown_after_loss_streak,
     'capital_management.cooldown_minutes': capital.cooldown_minutes,
+    'runtime_config.execution.cryptoGuardSoftening.byExchange.binance.tradeModes.normal.circuitBreaker.reductionMultiplier': execution?.cryptoGuardSoftening?.byExchange?.binance?.tradeModes?.normal?.circuitBreaker?.reductionMultiplier,
+    'runtime_config.execution.cryptoGuardSoftening.byExchange.binance.tradeModes.normal.circuitBreaker.maxRemainingCooldownMinutes': execution?.cryptoGuardSoftening?.byExchange?.binance?.tradeModes?.normal?.circuitBreaker?.maxRemainingCooldownMinutes,
+    'runtime_config.execution.cryptoGuardSoftening.byExchange.binance.tradeModes.normal.correlationGuard.allowOverflowSlots': execution?.cryptoGuardSoftening?.byExchange?.binance?.tradeModes?.normal?.correlationGuard?.allowOverflowSlots,
+    'runtime_config.execution.cryptoGuardSoftening.byExchange.binance.tradeModes.normal.correlationGuard.reductionMultiplier': execution?.cryptoGuardSoftening?.byExchange?.binance?.tradeModes?.normal?.correlationGuard?.reductionMultiplier,
     'capital_management.max_daily_loss_pct': capital.max_daily_loss_pct,
     'capital_management.max_weekly_loss_pct': capital.max_weekly_loss_pct,
     'capital_management.max_drawdown_pct': capital.max_drawdown_pct,
@@ -66,7 +79,11 @@ function resolveCurrentValue(key) {
     'runtime_config.luna.fastPathThresholds.minAbsScore': runtime.luna?.fastPathThresholds?.minAbsScore,
     'runtime_config.luna.fastPathThresholds.minStockConfidence': runtime.luna?.fastPathThresholds?.minStockConfidence,
     'runtime_config.luna.fastPathThresholds.minCryptoConfidence': runtime.luna?.fastPathThresholds?.minCryptoConfidence,
+    'runtime_config.luna.minConfidence.live.kis': runtime.luna?.minConfidence?.live?.kis,
+    'runtime_config.luna.minConfidence.live.kis_overseas': runtime.luna?.minConfidence?.live?.kis_overseas,
     'runtime_config.luna.minConfidence.paper.kis_overseas': runtime.luna?.minConfidence?.paper?.kis_overseas,
+    'runtime_config.luna.stockOrderDefaults.kis.buyDefault': runtime.luna?.stockOrderDefaults?.kis?.buyDefault,
+    'runtime_config.luna.stockOrderDefaults.kis_overseas.min': runtime.luna?.stockOrderDefaults?.kis_overseas?.min,
     'runtime_config.luna.stockStrategyProfiles.aggressive.tradeModes.validation.minConfidence.live': runtime.luna?.stockStrategyProfiles?.aggressive?.tradeModes?.validation?.minConfidence?.live,
     'runtime_config.nemesis.thresholds.stockStarterApproveDomestic': runtime.nemesis?.thresholds?.stockStarterApproveDomestic,
     'capital_management.time_profiles.active.max_position_pct': timeProfiles.ACTIVE?.maxPositionPct,

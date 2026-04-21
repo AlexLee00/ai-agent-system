@@ -12,6 +12,7 @@ import { getInvestmentRuntimeConfig, getValidationSoftBudgetConfig } from '../sh
 import { getCapitalConfig } from '../shared/capital-manager.ts';
 import { annotateRuntimeSuggestions, buildParameterGovernanceReport } from '../shared/runtime-parameter-governance.ts';
 import { loadCryptoLiveGateReview } from './crypto-live-gate-review.ts';
+import { buildRuntimeCryptoSoftGuardReport } from './runtime-crypto-soft-guard-report.ts';
 import { buildInvestmentCliInsight } from '../shared/cli-insight.ts';
 
 function parseArgs(argv = process.argv.slice(2)) {
@@ -453,14 +454,23 @@ function buildOverseasSuggestions(config, overseas) {
     });
   }
 
-  if (overseas.totalBuy >= 8 && overseas.executed > 0 && overseas.executionRate < 50) {
+  if (overseas.totalBuy >= 8 && overseas.executed > 0 && overseas.topBlocks[0]?.code === 'min_order_notional') {
     suggestions.push({
-      key: 'runtime_config.luna.minConfidence.paper.kis_overseas',
-      current: config.luna.minConfidence.paper.kis_overseas,
-      suggested: round(clamp(config.luna.minConfidence.paper.kis_overseas - 0.02, 0.18, 0.30), 2),
+      key: 'runtime_config.luna.stockOrderDefaults.kis_overseas.min',
+      current: config.luna.stockOrderDefaults.kis_overseas.min,
+      suggested: round(clamp(config.luna.stockOrderDefaults.kis_overseas.min + 25, 200, 400), 0),
+      action: 'adjust',
+      confidence: 'medium',
+      reason: `해외장 BUY 실패 상위가 최소 주문금액 미달 ${overseas.topBlocks[0]?.count || 0}건이라 주문 floor를 소폭 올려 실제 체결 전환을 비교할 수 있습니다.`,
+    });
+  } else if (overseas.totalBuy >= 8 && overseas.executed > 0 && overseas.executionRate < 50) {
+    suggestions.push({
+      key: 'runtime_config.luna.minConfidence.live.kis_overseas',
+      current: config.luna.minConfidence.live.kis_overseas,
+      suggested: round(clamp(config.luna.minConfidence.live.kis_overseas - 0.02, 0.12, 0.30), 2),
       action: 'adjust',
       confidence: 'low',
-      reason: `해외장 실행률이 ${overseas.executionRate}%로 아직 낮아 최소 confidence 기준을 소폭 완화해 비교할 수 있습니다.`,
+      reason: `해외장 LIVE 실행률이 ${overseas.executionRate}%로 아직 낮아 최소 confidence 기준을 소폭 완화해 비교할 수 있습니다.`,
     });
   }
   return suggestions;
@@ -562,6 +572,74 @@ function buildValidationBudgetSuggestions(
   return suggestions;
 }
 
+function buildCryptoSoftGuardSuggestions(config, softGuardSummary = null, summaries = {}) {
+  const suggestions = [];
+  const decision = softGuardSummary?.decision || {};
+  const metrics = decision.metrics || {};
+  const crypto = summaries.binance || {};
+  const currentCircuitReduction = Number(
+    config.execution?.cryptoGuardSoftening?.byExchange?.binance?.tradeModes?.normal?.circuitBreaker?.reductionMultiplier ?? 0.6,
+  );
+  const currentCorrelationReduction = Number(
+    config.execution?.cryptoGuardSoftening?.byExchange?.binance?.tradeModes?.normal?.correlationGuard?.reductionMultiplier ?? 0.7,
+  );
+  const currentOverflowSlots = Number(
+    config.execution?.cryptoGuardSoftening?.byExchange?.binance?.tradeModes?.normal?.correlationGuard?.allowOverflowSlots ?? 1,
+  );
+  const currentCooldownWindow = Number(
+    config.execution?.cryptoGuardSoftening?.byExchange?.binance?.tradeModes?.normal?.circuitBreaker?.maxRemainingCooldownMinutes ?? 180,
+  );
+  const topKind = String(metrics.topKind || '');
+  const topKindCount = Number(metrics.topKindCount || 0);
+  const total = Number(metrics.total || 0);
+
+  if ((crypto.failed || 0) >= 20 && Number(metrics.total || 0) === 0) {
+    suggestions.push({
+      key: 'runtime_config.execution.cryptoGuardSoftening.byExchange.binance.tradeModes.normal.circuitBreaker.maxRemainingCooldownMinutes',
+      current: currentCooldownWindow,
+      suggested: Math.min(240, currentCooldownWindow + 30),
+      action: 'promote_candidate',
+      confidence: 'medium',
+      reason: `최근 crypto 실패 ${crypto.failed}건인데 soft guard 실행 표본이 아직 0건이라 loss-streak 완화 허용 구간을 조금 더 넓혀 비교할 가치가 있습니다.`,
+    });
+    suggestions.push({
+      key: 'runtime_config.execution.cryptoGuardSoftening.byExchange.binance.tradeModes.normal.correlationGuard.allowOverflowSlots',
+      current: currentOverflowSlots,
+      suggested: Math.min(2, currentOverflowSlots + 1),
+      action: currentOverflowSlots < 2 ? 'promote_candidate' : 'observe',
+      confidence: 'medium',
+      reason: `correlation guard 압력은 높은데 soft guard 표본이 아직 없어 overflow slot을 한 단계 더 열어 representative pass 이후 실제 체결 전환을 비교할 수 있습니다.`,
+    });
+  } else if (total >= 5) {
+    suggestions.push({
+      key: 'runtime_config.execution.cryptoGuardSoftening.byExchange.binance.tradeModes.normal.circuitBreaker.reductionMultiplier',
+      current: currentCircuitReduction,
+      suggested: topKind === 'circuit_breaker_softened' && topKindCount >= 3
+        ? round(clamp(currentCircuitReduction + 0.1, 0.4, 0.9), 2)
+        : currentCircuitReduction,
+      action: topKind === 'circuit_breaker_softened' && topKindCount >= 3 ? 'promote_candidate' : 'observe',
+      confidence: 'medium',
+      reason: topKind === 'circuit_breaker_softened' && topKindCount >= 3
+        ? `soft guard 실행 ${total}건 중 circuit 완화가 ${topKindCount}건으로 우세해, 감산 x${currentCircuitReduction.toFixed(2)} -> x${round(clamp(currentCircuitReduction + 0.1, 0.4, 0.9), 2).toFixed(2)} 비교가 가능합니다.`
+        : `soft guard 실행이 ${total}건 누적돼 현재 서킷 감산 x${currentCircuitReduction.toFixed(2)} 유지 상태에서 체결 품질을 더 보는 편이 안전합니다.`,
+    });
+    suggestions.push({
+      key: 'runtime_config.execution.cryptoGuardSoftening.byExchange.binance.tradeModes.normal.correlationGuard.reductionMultiplier',
+      current: currentCorrelationReduction,
+      suggested: topKind === 'correlation_guard_softened' && topKindCount >= 3
+        ? round(clamp(currentCorrelationReduction + 0.1, 0.5, 0.95), 2)
+        : currentCorrelationReduction,
+      action: topKind === 'correlation_guard_softened' && topKindCount >= 3 ? 'promote_candidate' : 'observe',
+      confidence: 'medium',
+      reason: topKind === 'correlation_guard_softened' && topKindCount >= 3
+        ? `soft guard 실행 ${total}건 중 correlation 완화가 ${topKindCount}건으로 우세해, 감산 x${currentCorrelationReduction.toFixed(2)} -> x${round(clamp(currentCorrelationReduction + 0.1, 0.5, 0.95), 2).toFixed(2)} 비교가 가능합니다.`
+        : `현재 correlation soft guard 감산 x${currentCorrelationReduction.toFixed(2)}가 실제 실행으로 이어지고 있어 추가 완화보다 실행 품질 추세를 먼저 확인하는 것이 좋습니다.`,
+    });
+  }
+
+  return suggestions;
+}
+
 function buildSuggestions(
   config,
   summaries,
@@ -569,6 +647,7 @@ function buildSuggestions(
   validationBudgetSnapshots = {},
   capitalGuardBias = null,
   validationBudgetPolicy = null,
+  cryptoSoftGuardSummary = null,
 ) {
   void capitalGuardBias;
   return [
@@ -577,10 +656,11 @@ function buildSuggestions(
     ...buildOverseasSuggestions(config, summaries.kis_overseas),
     ...buildValidationPromotionSuggestions(config, validationSummaries),
     ...buildValidationBudgetSuggestions(validationBudgetSnapshots, validationBudgetPolicy),
+    ...buildCryptoSoftGuardSuggestions(config, cryptoSoftGuardSummary, summaries),
   ];
 }
 
-function buildReport(days, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, validationBudgetPolicyTrend, suggestions) {
+function buildReport(days, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, validationBudgetPolicyTrend, cryptoSoftGuardSummary, suggestions) {
   const governance = buildParameterGovernanceReport();
   return {
     periodDays: days,
@@ -590,6 +670,7 @@ function buildReport(days, summaries, validationSummaries, validationBudgetSnaps
     capitalGuardBias,
     validationBudgetPolicy,
     validationBudgetPolicyTrend,
+    cryptoSoftGuardSummary,
     suggestions,
     parameterGovernance: governance.summary,
     actionableSuggestions: suggestions.filter(item => item.action === 'adjust').length,
@@ -644,6 +725,12 @@ function printHuman(report) {
       lines.push(`  ${line}`);
     }
   }
+  if (report.cryptoSoftGuardSummary?.decision) {
+    lines.push('');
+    lines.push('crypto soft guard:');
+    lines.push(`- ${report.cryptoSoftGuardSummary.decision.status}`);
+    lines.push(`  ${report.cryptoSoftGuardSummary.decision.headline}`);
+  }
   lines.push('');
   lines.push('설정 제안:');
   for (const item of report.suggestions) {
@@ -662,6 +749,20 @@ function printHuman(report) {
 
 async function main() {
   const { days, json, write } = parseArgs();
+  const report = await buildRuntimeConfigSuggestionsReport({ days, write });
+  if (json) {
+    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+    return;
+  }
+  const human = printHuman(report);
+  if (!report.saved) {
+    process.stdout.write(`${human}\n`);
+    return;
+  }
+  process.stdout.write(`${human}\n\n저장:\n- suggestion_log_id: ${report.saved.id}\n- captured_at: ${report.saved.captured_at}\n`);
+}
+
+export async function buildRuntimeConfigSuggestionsReport({ days = 14, write = false } = {}) {
   await db.initSchema();
   const { fromDate, toDate } = buildDateRange(days);
   const [signalRows, blockRows, analysisRows] = await Promise.all([
@@ -701,12 +802,13 @@ async function main() {
     capitalGuardBias,
     cryptoLiveGateReview,
   );
+  const cryptoSoftGuardSummary = await buildRuntimeCryptoSoftGuardReport({ days, json: true }).catch(() => null);
   const validationBudgetPolicyTrend = buildValidationBudgetPolicyTrend(
     validationBudgetPolicy,
     previousPolicySnapshot,
   );
   const suggestions = annotateRuntimeSuggestions(
-    buildSuggestions(config, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy),
+    buildSuggestions(config, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, cryptoSoftGuardSummary),
   );
   const report = buildReport(
     days,
@@ -716,6 +818,7 @@ async function main() {
     capitalGuardBias,
     validationBudgetPolicy,
     validationBudgetPolicyTrend,
+    cryptoSoftGuardSummary,
     suggestions,
   );
   report.aiSummary = await buildInvestmentCliInsight({
@@ -729,6 +832,7 @@ async function main() {
       topSuggestions: report.suggestions.slice(0, 8),
       validationBudgetPolicy: report.validationBudgetPolicy,
       capitalGuardBias: report.capitalGuardBias,
+      cryptoSoftGuard: report.cryptoSoftGuardSummary?.decision || null,
     },
     fallback:
       report.actionableSuggestions > 0
@@ -747,21 +851,12 @@ async function main() {
         validationBudgetPolicy: report.validationBudgetPolicy,
         capitalGuardBias: report.capitalGuardBias,
         validationBudgetSnapshots: report.validationBudgetSnapshots,
+        cryptoSoftGuardSummary: report.cryptoSoftGuardSummary,
       },
     });
     report.saved = saved;
   }
-
-  if (json) {
-    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
-    return;
-  }
-  const human = printHuman(report);
-  if (!saved) {
-    process.stdout.write(`${human}\n`);
-    return;
-  }
-  process.stdout.write(`${human}\n\n저장:\n- suggestion_log_id: ${saved.id}\n- captured_at: ${saved.captured_at}\n`);
+  return report;
 }
 
 main().catch((error) => {

@@ -231,6 +231,29 @@ const DEFAULT_RUNTIME_CONFIG = {
     pendingQueue: {
       stalePendingMinutes: 30,
     },
+    cryptoGuardSoftening: {
+      enabled: true,
+      byExchange: {
+        binance: {
+          tradeModes: {
+            normal: {
+              enabled: true,
+              circuitBreaker: {
+                enabled: true,
+                allowedTypes: ['loss_streak'],
+                maxRemainingCooldownMinutes: 180,
+                reductionMultiplier: 0.60,
+              },
+              correlationGuard: {
+                enabled: true,
+                allowOverflowSlots: 1,
+                reductionMultiplier: 0.70,
+              },
+            },
+          },
+        },
+      },
+    },
   },
   nemesis: {
     crypto: {

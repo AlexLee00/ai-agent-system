@@ -936,9 +936,20 @@ async function recordExecutedTradeJournal({ trade, signalId, exitReason }) {
   }
 }
 
-async function finalizeExecutedTrade({ trade, signalId, signalTradeMode, capitalPolicy, exitReason }) {
+async function finalizeExecutedTrade({ trade, signalId, signalTradeMode, capitalPolicy, exitReason, executionMeta = null }) {
   await db.insertTrade(trade);
   await db.updateSignalStatus(signalId, SIGNAL_STATUS.EXECUTED);
+  if (executionMeta) {
+    await db.updateSignalBlock(signalId, {
+      meta: {
+        exchange: trade.exchange || 'binance',
+        symbol: trade.symbol,
+        side: trade.side,
+        tradeMode: signalTradeMode,
+        executionMeta,
+      },
+    }).catch(() => {});
+  }
   await notifyExecutedTrade({ trade, signalTradeMode, capitalPolicy });
 
   try {
@@ -1126,7 +1137,16 @@ async function resolveBuyExecutionMode({
 }) {
   const check = await preTradeCheck(symbol, 'BUY', amountUsdt, 'binance', signalTradeMode);
   if (check.allowed) {
-    return { effectivePaperMode: globalPaperMode };
+    if (check.softGuardApplied) {
+      const guardSummary = (check.softGuards || []).map((guard) => guard.kind).join(', ');
+      console.log(`  ⚖️ [가드 완화] ${symbol} ${guardSummary} → 감산 허용 x${Number(check.reducedAmountMultiplier || 1).toFixed(2)}`);
+    }
+    return {
+      effectivePaperMode: globalPaperMode,
+      softGuardApplied: Boolean(check.softGuardApplied),
+      softGuards: check.softGuards || [],
+      reducedAmountMultiplier: Number(check.reducedAmountMultiplier || 1),
+    };
   }
 
   if (!globalPaperMode && !check.circuit && isCapitalShortageReason(check.reason || '')) {
@@ -1172,10 +1192,13 @@ async function resolveBuyOrderAmount({
   amountUsdt,
   signal,
   effectivePaperMode,
+  reducedAmountMultiplier = 1,
+  softGuards = [],
 }) {
   const slPrice = signal.slPrice || 0;
   const currentPrice = await fetchTicker(symbol).catch(() => 0);
   const sizing = await calculatePositionSize(symbol, currentPrice, slPrice, 'binance');
+  const minOrderUsdt = await getDynamicMinOrderAmount('binance', signal?.trade_mode || getInvestmentTradeMode());
   if (sizing.skip && !effectivePaperMode) {
     console.log(`  ⛔ [자본관리] 포지션 크기 부족: ${sizing.reason}`);
     return rejectExecution({
@@ -1194,11 +1217,35 @@ async function resolveBuyOrderAmount({
     });
   }
 
-  const actualAmount = effectivePaperMode ? amountUsdt : sizing.size;
+  const softMultiplier = Number(reducedAmountMultiplier || 1);
+  const baseAmount = effectivePaperMode ? amountUsdt : sizing.size;
+  const actualAmount = softMultiplier > 0 && softMultiplier < 1
+    ? baseAmount * softMultiplier
+    : baseAmount;
+  if (!effectivePaperMode && actualAmount < minOrderUsdt) {
+    return rejectExecution({
+      persistFailure,
+      symbol,
+      action,
+      reason: `감산 후 주문금액 ${actualAmount.toFixed(2)} < 최소 ${minOrderUsdt}`,
+      code: 'position_sizing_rejected',
+      meta: {
+        currentPrice,
+        slPrice,
+        minOrderUsdt,
+        reducedAmountMultiplier: softMultiplier,
+        softGuards,
+      },
+      notify: 'skip',
+    });
+  }
   if (effectivePaperMode) {
     console.log(`  📄 [PAPER] 시그널 원본 금액으로 가상 포지션 추적: ${actualAmount.toFixed(2)} USDT`);
   } else {
     console.log(`  📐 [자본관리] 포지션 ${actualAmount.toFixed(2)} USDT (자본의 ${sizing.capitalPct}% | 리스크 ${sizing.riskPercent}%)`);
+    if (softMultiplier > 0 && softMultiplier < 1) {
+      console.log(`  🧪 [개발단계 완화] ${symbol} guard 감산 적용 x${softMultiplier.toFixed(2)} (${softGuards.map((guard) => guard.kind).join(', ')})`);
+    }
   }
 
   return { actualAmount };
@@ -1424,6 +1471,8 @@ export async function simulateBuyDecision({ symbol, amountUsdt = 100 }) {
   const check = await preTradeCheck(symbol, 'BUY', amountUsdt, 'binance');
   const sizing = await calculatePositionSize(symbol, currentPrice, slPrice, 'binance');
   const paperFallback = !isPaperMode() && !check.circuit && !check.allowed && isCapitalShortageReason(check.reason || '');
+  const reducedAmountMultiplier = Number(check.reducedAmountMultiplier || 1);
+  const suggestedLiveAmountUsdt = sizing.skip ? 0 : sizing.size * (reducedAmountMultiplier > 0 && reducedAmountMultiplier < 1 ? reducedAmountMultiplier : 1);
 
   return {
     symbol,
@@ -1433,7 +1482,10 @@ export async function simulateBuyDecision({ symbol, amountUsdt = 100 }) {
     liveReason: check.allowed ? 'LIVE 가능' : check.reason,
     paperFallback,
     finalMode: check.allowed ? 'live' : paperFallback ? 'paper' : 'blocked',
-    suggestedLiveAmountUsdt: sizing.skip ? 0 : sizing.size,
+    suggestedLiveAmountUsdt,
+    softGuardApplied: Boolean(check.softGuardApplied),
+    softGuards: check.softGuards || [],
+    reducedAmountMultiplier,
     capitalPolicy: {
       reserveRatio: capitalPolicy.reserve_ratio,
       minOrderUsdt,
@@ -1702,6 +1754,7 @@ export async function executeSignal(signal) {
   try {
     /** @type {any} */
     let trade;
+    let executionMeta = null;
 
     if (action === ACTIONS.BUY) {
       if (!globalPaperMode && signalTradeMode === 'normal') {
@@ -1800,9 +1853,18 @@ export async function executeSignal(signal) {
         amountUsdt,
         signal,
         effectivePaperMode,
+        reducedAmountMultiplier: Number(executionModeState.reducedAmountMultiplier || 1),
+        softGuards: executionModeState.softGuards || [],
       });
       if (orderAmountState?.success === false) return orderAmountState;
       const actualAmount = orderAmountState.actualAmount;
+      executionMeta = {
+        softGuardApplied: Boolean(executionModeState.softGuardApplied),
+        softGuards: executionModeState.softGuards || [],
+        reducedAmountMultiplier: Number(executionModeState.reducedAmountMultiplier || 1),
+        requestedAmountUsdt: Number(amountUsdt || 0),
+        actualAmountUsdt: Number(actualAmount || 0),
+      };
 
       const order = await marketBuy(symbol, actualAmount, effectivePaperMode);
       trade = {
@@ -1864,6 +1926,7 @@ export async function executeSignal(signal) {
       signalTradeMode,
       capitalPolicy,
       exitReason: exitReasonOverride,
+      executionMeta,
     });
 
     const doneTag = trade.paper ? '[PAPER]' : '[LIVE]';

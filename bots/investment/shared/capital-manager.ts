@@ -15,6 +15,7 @@ import ccxt from 'ccxt';
 import { getInvestmentTradeMode, loadSecrets, isKisPaper } from './secrets.ts';
 import { getMinOrderAmount, getMinOrderRatio } from './order-rules.ts';
 import { fetchFearGreedIndex } from '../team/argos.ts';
+import { getInvestmentExecutionRuntimeConfig } from './runtime-config.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const _require  = createRequire(import.meta.url);
@@ -558,6 +559,31 @@ export async function checkCorrelationGuard(symbol, direction, exchange = 'binan
     const policy = await getCapitalConfigWithOverrides(exchange, tradeMode);
     const maxSameDirection = Number(policy.max_same_direction_positions || 3);
     if (sameDirectionCount >= maxSameDirection) {
+      const softening = getCryptoGuardSofteningPolicy(exchange, tradeMode);
+      const overflowLimit = maxSameDirection + Number(softening?.correlationGuard?.allowOverflowSlots || 0);
+      const reductionMultiplier = Number(softening?.correlationGuard?.reductionMultiplier || 0);
+      if (
+        softening?.enabled === true
+        && softening?.correlationGuard?.enabled === true
+        && sameDirectionCount < overflowLimit
+        && reductionMultiplier > 0
+        && reductionMultiplier < 1
+      ) {
+        return {
+          ok: true,
+          softened: true,
+          reason: `상관관계 가드 완화: 같은 방향(${normalizedDirection}) 포지션 ${sameDirectionCount}개 (한도: ${maxSameDirection}, 개발단계 감산 허용)`,
+          softGuard: {
+            kind: 'correlation_guard_softened',
+            exchange,
+            tradeMode: tradeMode || getInvestmentTradeMode(),
+            reductionMultiplier,
+            sameDirectionCount,
+            maxSameDirection,
+            allowOverflowSlots: Number(softening?.correlationGuard?.allowOverflowSlots || 0),
+          },
+        };
+      }
       return {
         ok: false,
         reason: `상관관계 가드: 같은 방향(${normalizedDirection}) 포지션 ${sameDirectionCount}개 (한도: ${maxSameDirection})`,
@@ -624,6 +650,36 @@ export async function checkCircuitBreaker(exchange = null, tradeMode = null) {
         const cooldownEnd = lastTime + (policy.cooldown_minutes * 60 * 1000);
         if (Date.now() < cooldownEnd) {
           const remainMin = Math.ceil((cooldownEnd - Date.now()) / 60000);
+          const softening = getCryptoGuardSofteningPolicy(exchange, tradeMode);
+          const allowedTypes = Array.isArray(softening?.circuitBreaker?.allowedTypes)
+            ? softening.circuitBreaker.allowedTypes
+            : [];
+          const reductionMultiplier = Number(softening?.circuitBreaker?.reductionMultiplier || 0);
+          const maxRemainingCooldownMinutes = Number(softening?.circuitBreaker?.maxRemainingCooldownMinutes || 0);
+          if (
+            softening?.enabled === true
+            && softening?.circuitBreaker?.enabled === true
+            && allowedTypes.includes('loss_streak')
+            && reductionMultiplier > 0
+            && reductionMultiplier < 1
+            && remainMin <= maxRemainingCooldownMinutes
+          ) {
+            return {
+              triggered: false,
+              softened: true,
+              reason: `연속 ${policy.cooldown_after_loss_streak}회 손실이지만 개발단계 완화로 감산 허용 (${remainMin}분 잔여)`,
+              type: 'loss_streak',
+              softGuard: {
+                kind: 'circuit_breaker_softened',
+                exchange: exchange || 'binance',
+                tradeMode: tradeMode || getInvestmentTradeMode(),
+                reductionMultiplier,
+                remainMinutes: remainMin,
+                cooldownMinutes: Number(policy.cooldown_minutes || 0),
+                cooldownAfterLossStreak: Number(policy.cooldown_after_loss_streak || 0),
+              },
+            };
+          }
           return {
             triggered: true,
             reason:    `연속 ${policy.cooldown_after_loss_streak}회 손실 → 쿨다운 ${remainMin}분 남음`,
@@ -654,6 +710,8 @@ export async function preTradeCheck(symbol, direction, estimatedAmount = 0, exch
   const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
   const policy = await getCapitalConfigWithOverrides(exchange, effectiveTradeMode);
   const minOrderUsdt = await getDynamicMinOrderAmount(exchange || 'binance');
+  /** @type {Array<Record<string, any>>} */
+  const softGuards = [];
 
   // 1. 가용 잔고 (BUY만)
   if (isBuy) {
@@ -684,6 +742,9 @@ export async function preTradeCheck(symbol, direction, estimatedAmount = 0, exch
   if (circuitCheck.triggered) {
     return { allowed: false, reason: `서킷 브레이커: ${circuitCheck.reason}`, circuit: true, circuitType: circuitCheck.type };
   }
+  if (circuitCheck.softened && circuitCheck.softGuard) {
+    softGuards.push(circuitCheck.softGuard);
+  }
 
   const correlationGuard = await checkCorrelationGuard(symbol, direction, exchange || 'binance', effectiveTradeMode);
   if (!correlationGuard.ok) {
@@ -694,6 +755,9 @@ export async function preTradeCheck(symbol, direction, estimatedAmount = 0, exch
       type: 'correlation_guard',
     };
   }
+  if (correlationGuard.softened && correlationGuard.softGuard) {
+    softGuards.push(correlationGuard.softGuard);
+  }
 
   // 5. 일간 매매 횟수 (BUY만)
   if (isBuy) {
@@ -701,10 +765,39 @@ export async function preTradeCheck(symbol, direction, estimatedAmount = 0, exch
     if (dailyTrades >= policy.max_daily_trades) {
       return { allowed: false, reason: formatDailyTradeLimitReason(dailyTrades, policy.max_daily_trades) };
     }
-    return { allowed: true, dailyTrades };
+    return buildAllowedTradeDecision({ allowed: true, dailyTrades, softGuards });
   }
 
-  return { allowed: true };
+  return buildAllowedTradeDecision({ allowed: true, softGuards });
+}
+
+function getCryptoGuardSofteningPolicy(exchange = null, tradeMode = null) {
+  const execution = getInvestmentExecutionRuntimeConfig();
+  const root = execution?.cryptoGuardSoftening || {};
+  const exchangeKey = exchange || 'binance';
+  const tradeModeKey = tradeMode || getInvestmentTradeMode() || 'normal';
+  const exchangePolicy = root.byExchange?.[exchangeKey] || {};
+  const modePolicy = exchangePolicy.tradeModes?.[tradeModeKey] || {};
+  return {
+    enabled: root.enabled !== false && exchangePolicy.enabled !== false && modePolicy.enabled !== false,
+    circuitBreaker: modePolicy.circuitBreaker || exchangePolicy.circuitBreaker || root.circuitBreaker || {},
+    correlationGuard: modePolicy.correlationGuard || exchangePolicy.correlationGuard || root.correlationGuard || {},
+  };
+}
+
+function buildAllowedTradeDecision(base = {}) {
+  const softGuards = Array.isArray(base.softGuards) ? base.softGuards.filter(Boolean) : [];
+  if (softGuards.length === 0) return base;
+  const multipliers = softGuards
+    .map((guard) => Number(guard?.reductionMultiplier || 0))
+    .filter((value) => value > 0 && value < 1);
+  const reducedAmountMultiplier = multipliers.length > 0 ? Math.min(...multipliers) : 1;
+  return {
+    ...base,
+    softGuardApplied: softGuards.length > 0,
+    softGuards,
+    reducedAmountMultiplier,
+  };
 }
 
 // ─── 동적 포지션 사이징 ─────────────────────────────────────────────

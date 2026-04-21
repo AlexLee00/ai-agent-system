@@ -27,14 +27,17 @@ import { buildScreeningHistoryReport } from '../scripts/screening-history-report
 import { buildPositionReevaluationSummary } from '../scripts/position-reevaluation-summary.ts';
 import { buildRuntimeMinOrderPressureReport } from '../scripts/runtime-min-order-pressure-report.ts';
 import { buildRuntimeKisOrderPressureReport } from '../scripts/runtime-kis-order-pressure-report.ts';
+import { buildRuntimeKisDomesticAutotuneReport } from '../scripts/runtime-kis-domestic-autotune-report.ts';
 import { buildRuntimeKisReentryPressureReport } from '../scripts/runtime-kis-reentry-pressure-report.ts';
 import { buildRuntimeBinanceFailurePressureReport } from '../scripts/runtime-binance-failure-pressure-report.ts';
 import { buildRuntimeBinanceCircuitBreakerReport } from '../scripts/runtime-binance-circuit-breaker-report.ts';
 import { buildRuntimeBinanceCapitalGuardReport } from '../scripts/runtime-binance-capital-guard-report.ts';
 import { buildRuntimeBinanceCorrelationGuardReport } from '../scripts/runtime-binance-correlation-guard-report.ts';
+import { buildRuntimeCryptoSoftGuardReport } from '../scripts/runtime-crypto-soft-guard-report.ts';
 import { buildRuntimeBinanceDustReport } from '../scripts/runtime-binance-dust-report.ts';
 import { buildRuntimeReevalTvMtfAutotuneReport } from '../scripts/runtime-reeval-tvmft-autotune-report.ts';
 import { buildRuntimeReevalTvMtfTrendReport } from '../scripts/runtime-reeval-tvmft-trend-report.ts';
+import { buildRuntimeKisOverseasAutotuneReport } from '../scripts/runtime-kis-overseas-autotune-report.ts';
 
 const _require = createRequire(import.meta.url);
 const shadow   = _require('../../../packages/core/lib/shadow-mode.js');
@@ -478,6 +481,19 @@ async function loadKisOrderPressureSummary() {
   }
 }
 
+async function loadKisDomesticAutotuneSummary() {
+  try {
+    return await buildRuntimeKisDomesticAutotuneReport({
+      days: 14,
+      json: true,
+    });
+  } catch (error) {
+    return {
+      error: String(error?.message || error),
+    };
+  }
+}
+
 async function loadKisReentryPressureSummary() {
   try {
     return await buildRuntimeKisReentryPressureReport({
@@ -533,6 +549,32 @@ async function loadBinanceCapitalGuardSummary() {
 async function loadBinanceCorrelationGuardSummary() {
   try {
     return await buildRuntimeBinanceCorrelationGuardReport({
+      days: 14,
+      json: true,
+    });
+  } catch (error) {
+    return {
+      error: String(error?.message || error),
+    };
+  }
+}
+
+async function loadCryptoSoftGuardSummary() {
+  try {
+    return await buildRuntimeCryptoSoftGuardReport({
+      days: 14,
+      json: true,
+    });
+  } catch (error) {
+    return {
+      error: String(error?.message || error),
+    };
+  }
+}
+
+async function loadKisOverseasAutotuneSummary() {
+  try {
+    return await buildRuntimeKisOverseasAutotuneReport({
       days: 14,
       json: true,
     });
@@ -607,6 +649,38 @@ function buildReevalTvMtfTrendLines(reevalTvMtfTrendSummary = null) {
   return lines;
 }
 
+function buildCryptoSoftGuardLines(cryptoSoftGuardSummary = null) {
+  if (!cryptoSoftGuardSummary) return ['조회 결과 없음'];
+  if (cryptoSoftGuardSummary.error) return ['조회 실패'];
+  if (!cryptoSoftGuardSummary.decision) return ['결과 없음'];
+  const decision = cryptoSoftGuardSummary.decision || {};
+  const metrics = decision.metrics || {};
+  const lines = [
+    `${decision.status}: ${decision.headline}`,
+    `soft guard ${metrics.total || 0}건 | 평균 감산 x${Number(metrics.avgReductionMultiplier || 1).toFixed(2)} | 대표 ${metrics.topKind || '없음'}`,
+  ];
+  if (Array.isArray(decision.reasons)) {
+    lines.push(...decision.reasons.slice(0, 2));
+  }
+  return lines;
+}
+
+function buildKisOverseasAutotuneLines(kisOverseasAutotuneSummary = null) {
+  if (!kisOverseasAutotuneSummary) return ['조회 결과 없음'];
+  if (kisOverseasAutotuneSummary.error) return ['조회 실패'];
+  if (!kisOverseasAutotuneSummary.decision) return ['결과 없음'];
+  const decision = kisOverseasAutotuneSummary.decision || {};
+  const metrics = decision.metrics || {};
+  const lines = [
+    `${decision.status}: ${decision.headline}`,
+    `BUY ${metrics.totalBuy || 0}건 | 실행률 ${Number(metrics.executionRate || 0).toFixed(1)}% | 최소주문 ${metrics.minOrderNotional || 0}건 | 후보 ${kisOverseasAutotuneSummary.candidate?.key || '없음'}`,
+  ];
+  if (Array.isArray(decision.reasons)) {
+    lines.push(...decision.reasons.slice(0, 2));
+  }
+  return lines;
+}
+
 function buildMinOrderPressureLines(minOrderPressureSummary = null) {
   if (!minOrderPressureSummary) return ['조회 결과 없음'];
   if (minOrderPressureSummary.error) return ['조회 실패'];
@@ -627,6 +701,22 @@ function buildKisOrderPressureLines(kisOrderPressureSummary = null) {
   const lines = [`${decision.status}: ${decision.headline}`];
   if (Array.isArray(decision.reasons)) {
     lines.push(...decision.reasons.slice(0, 3));
+  }
+  return lines;
+}
+
+function buildKisDomesticAutotuneLines(kisDomesticAutotuneSummary = null) {
+  if (!kisDomesticAutotuneSummary) return ['조회 결과 없음'];
+  if (kisDomesticAutotuneSummary.error) return ['조회 실패'];
+  if (!kisDomesticAutotuneSummary.decision) return ['결과 없음'];
+  const decision = kisDomesticAutotuneSummary.decision || {};
+  const metrics = decision.metrics || {};
+  const lines = [
+    `${decision.status}: ${decision.headline}`,
+    `BUY ${metrics.totalBuy || 0}건 | 실행률 ${Number(metrics.executionRate || 0).toFixed(1)}% | 주문초과 ${metrics.orderPressureTotal || 0}건 | 후보 ${kisDomesticAutotuneSummary.candidate?.key || '없음'}`,
+  ];
+  if (Array.isArray(decision.reasons)) {
+    lines.push(...decision.reasons.slice(0, 2));
   }
   return lines;
 }
@@ -713,11 +803,14 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
   const reevalTvMtfTrendSummary = await loadReevalTvMtfTrendSummary();
   const minOrderPressureSummary = await loadMinOrderPressureSummary();
   const kisOrderPressureSummary = await loadKisOrderPressureSummary();
+  const kisDomesticAutotuneSummary = await loadKisDomesticAutotuneSummary();
   const kisReentryPressureSummary = await loadKisReentryPressureSummary();
   const binanceFailurePressureSummary = await loadBinanceFailurePressureSummary();
   const binanceCircuitBreakerSummary = await loadBinanceCircuitBreakerSummary();
   const binanceCapitalGuardSummary = await loadBinanceCapitalGuardSummary();
   const binanceCorrelationGuardSummary = await loadBinanceCorrelationGuardSummary();
+  const cryptoSoftGuardSummary = await loadCryptoSoftGuardSummary();
+  const kisOverseasAutotuneSummary = await loadKisOverseasAutotuneSummary();
   const binanceDustSummary = await loadBinanceDustSummary();
   let dbAvailable = true;
   try {
@@ -765,6 +858,9 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
       '━━━ 국내 주문 초과 압력 ━━━',
       ...buildKisOrderPressureLines(kisOrderPressureSummary).map((line) => `  ${line}`),
       '',
+      '━━━ 국내장 self-tune ━━━',
+      ...buildKisDomesticAutotuneLines(kisDomesticAutotuneSummary).map((line) => `  ${line}`),
+      '',
       '━━━ 국내 재진입 차단 압력 ━━━',
       ...buildKisReentryPressureLines(kisReentryPressureSummary).map((line) => `  ${line}`),
       '',
@@ -779,6 +875,12 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
       '',
       '━━━ 크립토 correlation guard 압력 ━━━',
       ...buildBinanceCorrelationGuardLines(binanceCorrelationGuardSummary).map((line) => `  ${line}`),
+      '',
+      '━━━ 크립토 soft guard ━━━',
+      ...buildCryptoSoftGuardLines(cryptoSoftGuardSummary).map((line) => `  ${line}`),
+      '',
+      '━━━ 국외장 self-tune ━━━',
+      ...buildKisOverseasAutotuneLines(kisOverseasAutotuneSummary).map((line) => `  ${line}`),
       '',
       '━━━ 크립토 dust 상태 ━━━',
       ...buildBinanceDustLines(binanceDustSummary).map((line) => `  ${line}`),
@@ -1011,6 +1113,10 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
 
   lines.push(`━━━ 크립토 correlation guard 압력 ━━━`);
   lines.push(...buildBinanceCorrelationGuardLines(binanceCorrelationGuardSummary).map((line) => `  ${line}`));
+  lines.push(``);
+
+  lines.push(`━━━ 크립토 soft guard ━━━`);
+  lines.push(...buildCryptoSoftGuardLines(cryptoSoftGuardSummary).map((line) => `  ${line}`));
   lines.push(``);
 
   lines.push(`━━━ 크립토 dust 상태 ━━━`);
@@ -1283,11 +1389,14 @@ ${JSON.stringify({
         buildSection('포지션 TV-MTF trend', buildReevalTvMtfTrendLines(reevalTvMtfTrendSummary)),
         buildSection('최소 주문 병목', buildMinOrderPressureLines(minOrderPressureSummary)),
         buildSection('국내 주문 초과 압력', buildKisOrderPressureLines(kisOrderPressureSummary)),
+        buildSection('국내장 self-tune', buildKisDomesticAutotuneLines(kisDomesticAutotuneSummary)),
         buildSection('국내 재진입 차단 압력', buildKisReentryPressureLines(kisReentryPressureSummary)),
         buildSection('크립토 실행 실패 압력', buildBinanceFailurePressureLines(binanceFailurePressureSummary)),
         buildSection('크립토 circuit breaker 압력', buildBinanceCircuitBreakerLines(binanceCircuitBreakerSummary)),
         buildSection('크립토 capital guard 압력', buildBinanceCapitalGuardLines(binanceCapitalGuardSummary)),
         buildSection('크립토 correlation guard 압력', buildBinanceCorrelationGuardLines(binanceCorrelationGuardSummary)),
+        buildSection('크립토 soft guard', buildCryptoSoftGuardLines(cryptoSoftGuardSummary)),
+        buildSection('국외장 self-tune', buildKisOverseasAutotuneLines(kisOverseasAutotuneSummary)),
         buildSection('크립토 dust 상태', buildBinanceDustLines(binanceDustSummary)),
         buildSection(`신호 통계 (${days}일)`, [
           ...buildSignalStatsLines({ days, sigTotal, sigExec, sigApproved, sigFailed }),
@@ -1317,8 +1426,17 @@ ${JSON.stringify({
           reevalTvMtfTrendSummary?.decision
             ? `TV-MTF trend ${reevalTvMtfTrendSummary.decision.status} / divergence ${reevalTvMtfTrendSummary.decision.metrics?.recentDivergenceCount || 0}`
             : null,
+          cryptoSoftGuardSummary?.decision
+            ? `crypto soft guard ${cryptoSoftGuardSummary.decision.status} / ${cryptoSoftGuardSummary.decision.metrics?.total || 0}건`
+            : null,
+          kisOverseasAutotuneSummary?.decision
+            ? `overseas self-tune ${kisOverseasAutotuneSummary.decision.status} / 최소주문 ${kisOverseasAutotuneSummary.decision.metrics?.minOrderNotional || 0}건`
+            : null,
           minOrderPressureSummary?.decision
             ? `최소주문 ${minOrderPressureSummary.decision.status}`
+            : null,
+          kisDomesticAutotuneSummary?.decision
+            ? `domestic self-tune ${kisDomesticAutotuneSummary.decision.status} / 주문초과 ${kisDomesticAutotuneSummary.decision.metrics?.orderPressureTotal || 0}건`
             : null,
         ].filter(Boolean),
       },
