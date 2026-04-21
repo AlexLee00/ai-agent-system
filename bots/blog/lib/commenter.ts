@@ -2163,6 +2163,43 @@ async function activateReplyMode(page) {
   `, { timeout: 8000 }).then(() => true).catch(() => false);
 }
 
+async function waitForReplySubmitReady(page, testMode = false) {
+  const timeoutMs = testMode ? 8000 : 15000;
+  return page.waitForFunction(`
+    (() => {
+      const visible = (el) => {
+        if (!el) return false;
+        const style = window.getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+      };
+      const textOf = (el) =>
+        String((el && (el.innerText || el.textContent)) || '').replace(/\\s+/g, ' ').trim();
+      const isReplySubmit = (node) => {
+        if (!visible(node)) return false;
+        const dataAction = String(node.getAttribute('data-action') || '');
+        const uiSelector = String(node.getAttribute('data-ui-selector') || '');
+        const cls = String(node.className || '');
+        const inputType = String(node.getAttribute('type') || '').toLowerCase();
+        const text = textOf(node).replace(/\\s+/g, '');
+        if (dataAction.includes('write#request')) return true;
+        if (uiSelector === 'writeButton' || /^writeButton_/i.test(uiSelector)) return true;
+        if (/u_cbox_btn_upload|btn_register|btn_write/i.test(cls)) return true;
+        if (inputType === 'submit') return true;
+        return /등록|완료|게시/.test(text);
+      };
+      const roots = [
+        document.querySelector('[data-blog-target-reply-area="true"]'),
+        document.querySelector('[data-blog-commenter-editor="true"]')?.closest('.u_cbox_write_box, .u_cbox_reply_write, .u_cbox_reply_area, .u_cbox_comment_box'),
+        document.querySelector('[data-blog-commenter-editor="true"]')?.closest('.u_cbox_write_wrap, .u_cbox_write, .u_cbox_write_area'),
+      ].filter(Boolean);
+      return roots.some((root) =>
+        Array.from(root.querySelectorAll('button, a, input[type="submit"], [role="button"]')).some(isReplySubmit),
+      );
+    })()
+  `, { timeout: timeoutMs }).then(() => true).catch(() => false);
+}
+
 async function expandReplyThreads(page) {
   return page.evaluate(`
     (() => {
@@ -2512,9 +2549,21 @@ async function saveCommentDebugSnapshot(page, comment, stage) {
           if (inputType === 'submit') return true;
           return /등록|완료|게시/.test(normalizedText);
         };
-        const submitButton = Array.from(
-          document.querySelectorAll('button, a, input[type="submit"], [role="button"]'),
-        ).find(isReplySubmitCandidate) || null;
+        const scopedRoots = [
+          targetReplyArea,
+          targetEditor && targetEditor.closest('.u_cbox_write_box, .u_cbox_reply_write, .u_cbox_reply_area, .u_cbox_comment_box'),
+          targetEditor && targetEditor.closest('.u_cbox_write_wrap, .u_cbox_write, .u_cbox_write_area'),
+        ].filter(Boolean);
+        let submitButton = null;
+        for (const root of scopedRoots) {
+          submitButton = Array.from(root.querySelectorAll('button, a, input[type="submit"], [role="button"]')).find(isReplySubmitCandidate) || null;
+          if (submitButton) break;
+        }
+        if (!submitButton) {
+          submitButton = Array.from(
+            document.querySelectorAll('button, a, input[type="submit"], [role="button"]'),
+          ).find(isReplySubmitCandidate) || null;
+        }
         const commentSelectors = ['.u_cbox_wrap', '.u_cbox_write_wrap', '.u_cbox_comment_box', '.u_cbox_btn_reply', 'textarea[id*="write_textarea"]'];
         const viewerSelectors = ['.cpv__root', '.cpv__error', '.cpv__content'];
         return {
@@ -3511,6 +3560,10 @@ async function postReply(comment, replyText, { testMode = false, dryRun = false,
       if (opened) {
         opened = await activateReplyMode(contentFrame);
         traceCommenter('postReply:reply-mode-activated', { commentId: comment.id, opened });
+        if (opened) {
+          const submitReady = await waitForReplySubmitReady(contentFrame, testMode);
+          traceCommenter('postReply:reply-submit-ready', { commentId: comment.id, submitReady });
+        }
       } else {
         const expanded = await expandReplyThreads(contentFrame);
         traceCommenter('postReply:reply-thread-expanded', { commentId: comment.id, expanded });
@@ -3522,6 +3575,10 @@ async function postReply(comment, replyText, { testMode = false, dryRun = false,
           if (opened) {
             opened = await activateReplyMode(contentFrame);
             traceCommenter('postReply:reply-mode-reactivated', { commentId: comment.id, opened });
+            if (opened) {
+              const submitReady = await waitForReplySubmitReady(contentFrame, testMode);
+              traceCommenter('postReply:reply-submit-ready-reactivated', { commentId: comment.id, submitReady });
+            }
           }
         }
       }
@@ -3540,6 +3597,10 @@ async function postReply(comment, replyText, { testMode = false, dryRun = false,
         if (opened) {
           opened = await activateReplyMode(contentFrame);
           traceCommenter('postReply:reply-mode-reactivated-second', { commentId: comment.id, opened });
+          if (opened) {
+            const submitReady = await waitForReplySubmitReady(contentFrame, testMode);
+            traceCommenter('postReply:reply-submit-ready-second', { commentId: comment.id, submitReady });
+          }
         }
       }
     }
@@ -3616,6 +3677,7 @@ async function postReply(comment, replyText, { testMode = false, dryRun = false,
       await openCommentPanel(contentFrame, logNo, testMode).catch(() => false);
       await humanDelay(1, 2, testMode);
       await activateReplyMode(contentFrame).catch(() => false);
+      await waitForReplySubmitReady(contentFrame, testMode).catch(() => false);
       await humanDelay(1, 2, testMode);
       await submitReply(contentFrame, page);
       submitted = true;
