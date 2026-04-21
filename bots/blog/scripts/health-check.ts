@@ -203,9 +203,10 @@ function buildPriorityHint(label, priority, { includeActionFocus = false } = {})
   return `\n${lines.join('\n')}`;
 }
 
-function buildActionHint(label, payload = {}, limit = 2) {
+function buildActionHint(label, payload = {}, limit = 2, areaPrefix = '') {
   const primaryArea = String(payload?.primary?.area || '');
   if (!primaryArea || primaryArea === 'clear' || primaryArea === 'unknown') return '';
+  if (areaPrefix && !primaryArea.startsWith(areaPrefix)) return '';
   const actions = Array.isArray(payload?.actions)
     ? payload.actions
         .map((item) => String(item || '').trim())
@@ -423,7 +424,7 @@ async function checkFacebookPublishHealth() {
       const opsPayload = getDoctorPayload(BLOG_OPS_DOCTOR_COMMAND);
       const pageHint = readiness?.pageId ? `\npage: ${String(readiness.pageId).slice(0, 32)}` : '';
       const actionHint = '\naction: 허브 instagram secret의 access_token을 새 장기 사용자 토큰으로 교체하세요';
-      const diagnoseHint = `\ndiagnose: ${FACEBOOK_READINESS_COMMAND}\ndoctor: ${FACEBOOK_DOCTOR_COMMAND}\nsocial doctor: ${SOCIAL_DOCTOR_COMMAND}${buildPriorityHint('social primary', socialPriority, { includeActionFocus: true })}${buildActionHint('social action', socialPayload)}${buildPriorityHint('primary blocker', opsPriority, { includeActionFocus: true })}${buildActionHint('ops action', opsPayload)}\nops doctor: ${BLOG_OPS_DOCTOR_COMMAND}`;
+      const diagnoseHint = `\ndiagnose: ${FACEBOOK_READINESS_COMMAND}\ndoctor: ${FACEBOOK_DOCTOR_COMMAND}\nsocial doctor: ${SOCIAL_DOCTOR_COMMAND}${buildPriorityHint('social primary', socialPriority, { includeActionFocus: true })}${buildActionHint('social action', socialPayload, 2, 'social')}${buildPriorityHint('primary blocker', opsPriority, { includeActionFocus: true })}${buildActionHint('ops action', opsPayload, 2, 'social')}\nops doctor: ${BLOG_OPS_DOCTOR_COMMAND}`;
       return {
         ok: false,
         detail: `Facebook readiness access token 만료 — ${String(row.title || '').slice(0, 60)}\n${readinessError}${pageHint}${actionHint}${diagnoseHint}${previewBundle ? `\npreview: ${previewBundle}` : ''}`,
@@ -453,7 +454,7 @@ async function checkFacebookPublishHealth() {
         : 'pages_manage_posts, pages_read_engagement';
       const pageHint = readiness?.pageId ? `\npage: ${String(readiness.pageId).slice(0, 32)}` : '';
       const actionHint = `\naction: Meta 앱 권한(${scopes}) 재연결 후 페이지 토큰을 다시 발급하세요`;
-      const diagnoseHint = `\ndiagnose: ${FACEBOOK_READINESS_COMMAND}\ndoctor: ${FACEBOOK_DOCTOR_COMMAND}\nsocial doctor: ${SOCIAL_DOCTOR_COMMAND}${buildPriorityHint('social primary', socialPriority, { includeActionFocus: true })}${buildActionHint('social action', socialPayload)}${buildPriorityHint('primary blocker', opsPriority, { includeActionFocus: true })}${buildActionHint('ops action', opsPayload)}\nops doctor: ${BLOG_OPS_DOCTOR_COMMAND}`;
+      const diagnoseHint = `\ndiagnose: ${FACEBOOK_READINESS_COMMAND}\ndoctor: ${FACEBOOK_DOCTOR_COMMAND}\nsocial doctor: ${SOCIAL_DOCTOR_COMMAND}${buildPriorityHint('social primary', socialPriority, { includeActionFocus: true })}${buildActionHint('social action', socialPayload, 2, 'social')}${buildPriorityHint('primary blocker', opsPriority, { includeActionFocus: true })}${buildActionHint('ops action', opsPayload, 2, 'social')}\nops doctor: ${BLOG_OPS_DOCTOR_COMMAND}`;
       return {
         ok: false,
         detail: `Facebook 페이지 게시 권한 부족 — ${String(row.title || '').slice(0, 60)}\n${summarizedError}${pageHint}${actionHint}${diagnoseHint}${previewBundle ? `\npreview: ${previewBundle}` : ''}`,
@@ -542,7 +543,7 @@ async function checkInstagramPublishHealth() {
       const opsPayload = getDoctorPayload(BLOG_OPS_DOCTOR_COMMAND);
       return {
         ok: false,
-        detail: `Instagram 자동등록 실패 — ${latestTitle.slice(0, 60)}\n${errorText.slice(0, 120)}\ndiagnose: ${INSTAGRAM_READINESS_COMMAND}\ndoctor: ${INSTAGRAM_DOCTOR_COMMAND}\nsocial doctor: ${SOCIAL_DOCTOR_COMMAND}${buildPriorityHint('social primary', socialPriority, { includeActionFocus: true })}${buildActionHint('social action', socialPayload)}${buildPriorityHint('primary blocker', opsPriority, { includeActionFocus: true })}${buildActionHint('ops action', opsPayload)}\nops doctor: ${BLOG_OPS_DOCTOR_COMMAND}${previewBundle ? `\npreview: ${previewBundle}` : ''}`,
+        detail: `Instagram 자동등록 실패 — ${latestTitle.slice(0, 60)}\n${errorText.slice(0, 120)}\ndiagnose: ${INSTAGRAM_READINESS_COMMAND}\ndoctor: ${INSTAGRAM_DOCTOR_COMMAND}\nsocial doctor: ${SOCIAL_DOCTOR_COMMAND}${buildPriorityHint('social primary', socialPriority, { includeActionFocus: true })}${buildActionHint('social action', socialPayload, 2, 'social')}${buildPriorityHint('primary blocker', opsPriority, { includeActionFocus: true })}${buildActionHint('ops action', opsPayload, 2, 'social')}\nops doctor: ${BLOG_OPS_DOCTOR_COMMAND}${previewBundle ? `\npreview: ${previewBundle}` : ''}`,
         latest: latestReal,
       };
     }
@@ -724,7 +725,7 @@ async function checkEngagementAutomationHealth() {
       });
       const engagementPayload = getDoctorPayload(ENGAGEMENT_DOCTOR_COMMAND);
       const opsPayload = getDoctorPayload(BLOG_OPS_DOCTOR_COMMAND);
-      const doctorHint = `\ndoctor: ${ENGAGEMENT_DOCTOR_COMMAND}${buildPriorityHint('engagement primary', engagementPriority, { includeActionFocus: true })}${buildActionHint('engagement action', engagementPayload)}${buildPriorityHint('primary blocker', opsPriority, { includeActionFocus: true })}${buildActionHint('ops action', opsPayload)}\nops doctor: ${BLOG_OPS_DOCTOR_COMMAND}`;
+      const doctorHint = `\ndoctor: ${ENGAGEMENT_DOCTOR_COMMAND}${buildPriorityHint('engagement primary', engagementPriority, { includeActionFocus: true })}${buildActionHint('engagement action', engagementPayload, 2, 'engagement')}${buildPriorityHint('primary blocker', opsPriority, { includeActionFocus: true })}${buildActionHint('ops action', opsPayload, 2, 'engagement')}\nops doctor: ${BLOG_OPS_DOCTOR_COMMAND}`;
       return {
         ok: false,
         detail: `engagement UI/browser failures — reply ${failureByAction.reply}, neighbor ${failureByAction.neighbor_comment}, sympathy ${failureByAction.sympathy}${sampleHint}${replayTargetHint}${replayHint}${doctorHint}`,
@@ -774,7 +775,7 @@ async function checkEngagementAutomationHealth() {
       const replayHint = latestReplyReplayCandidate?.id
         ? `\nreply replay: npm run replay:reply-ui -- --comment-id ${latestReplyReplayCandidate.id} --json`
         : '';
-      const doctorHint = `\ndoctor: ${ENGAGEMENT_DOCTOR_COMMAND}${buildPriorityHint('engagement primary', engagementPriority, { includeActionFocus: true })}${buildActionHint('engagement action', engagementPayload)}${buildPriorityHint('primary blocker', opsPriority, { includeActionFocus: true })}${buildActionHint('ops action', opsPayload)}\nops doctor: ${BLOG_OPS_DOCTOR_COMMAND}`;
+      const doctorHint = `\ndoctor: ${ENGAGEMENT_DOCTOR_COMMAND}${buildPriorityHint('engagement primary', engagementPriority, { includeActionFocus: true })}${buildActionHint('engagement action', engagementPayload, 2, 'engagement')}${buildPriorityHint('primary blocker', opsPriority, { includeActionFocus: true })}${buildActionHint('ops action', opsPayload, 2, 'engagement')}\nops doctor: ${BLOG_OPS_DOCTOR_COMMAND}`;
       return {
         ok: false,
         detail: `engagement target gap — ${targetLines || targetGaps.join(', ')}${primaryGapHint}${immediateRunHint}${runPlanHint}${adaptiveHint}${replayHint}${doctorHint}`,
