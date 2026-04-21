@@ -117,6 +117,20 @@ function buildTargetGapDetails(targets = {}) {
   });
 }
 
+function getGapActionCommand(label = '') {
+  const blogRoot = path.join(env.PROJECT_ROOT, 'bots/blog');
+  switch (String(label || '')) {
+    case 'replies':
+      return `node ${path.join(blogRoot, 'scripts/run-commenter.ts')}`;
+    case 'neighbor':
+      return `node ${path.join(blogRoot, 'scripts/run-neighbor-commenter.ts')}`;
+    case 'sympathy':
+      return `node ${path.join(blogRoot, 'scripts/run-neighbor-sympathy.ts')}`;
+    default:
+      return `npm --prefix ${blogRoot} run doctor:engagement -- --json`;
+  }
+}
+
 async function getLatestReplyReplayCandidate() {
   try {
     const row = await pgPool.get('blog', `
@@ -170,6 +184,9 @@ function buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, p
         ? `운영 시간대 기준 ${primaryGap.label} 목표치 격차를 먼저 점검`
         : '운영 시간대 기준 댓글/답글/공감 목표치와 현재 실적 차이를 점검'
     );
+    if (primaryGap?.label) {
+      actions.push(getGapActionCommand(primaryGap.label));
+    }
   }
   if (latestReplyReplayCandidate?.id) {
     actions.push(`npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run replay:reply-ui -- --comment-id ${latestReplyReplayCandidate.id} --json`);
@@ -214,7 +231,7 @@ function buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps, p
       reason: primaryGap?.label
         ? `운영 시간대 기준 ${primaryGap.label} 목표치가 가장 크게 뒤처졌습니다 (${primaryGap.success}/${primaryGap.expectedNow}, deficit ${primaryGap.deficit}).`
         : `운영 시간대 기준 engagement 목표치가 뒤처졌습니다 (${targetGaps.join(', ')}).`,
-      nextCommand: `${blogPrefix} run doctor:engagement -- --json`,
+      nextCommand: primaryGap?.label ? getGapActionCommand(primaryGap.label) : `${blogPrefix} run doctor:engagement -- --json`,
       actionFocus: primaryGap?.label
         ? `${primaryGap.label} 목표치와 현재 시간대 실적 차이 점검`
         : '답글/댓글/공감 목표치와 현재 시간대 실적 차이 점검',
