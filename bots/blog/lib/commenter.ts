@@ -3490,16 +3490,26 @@ async function runCommentReply({ testMode = false } = {}) {
       else if (result.skipped) skipped += 1;
     } catch (error) {
       const uiError = isDirectReplyUiError(error);
+      const rawErrorMessage = String(error?.message || 'reply_ui_unavailable');
+      const summarizedUiError = uiError
+        ? (
+            rawErrorMessage.startsWith('reply_submit_not_confirmed:')
+            || rawErrorMessage.startsWith('reply_button_not_found:')
+            || rawErrorMessage === 'reply_editor_not_found'
+          )
+            ? rawErrorMessage
+            : 'reply_ui_unavailable'
+        : rawErrorMessage;
       if (uiError) {
         skipped += 1;
         await updateCommentStatus(comment.id, 'skipped', {
-          errorMessage: 'reply_ui_unavailable',
-          meta: { phase: 'post', uiError: String(error?.message || '') },
+          errorMessage: summarizedUiError,
+          meta: { phase: 'post', uiError: rawErrorMessage },
         });
       } else {
         failed += 1;
         await updateCommentStatus(comment.id, 'failed', {
-          errorMessage: error.message,
+          errorMessage: rawErrorMessage,
           meta: { phase: 'post' },
         });
       }
@@ -3510,7 +3520,7 @@ async function runCommentReply({ testMode = false } = {}) {
         success: false,
         meta: {
           commentId: comment.id,
-          error: error.message,
+          error: rawErrorMessage,
           terminalStatus: uiError ? 'skipped' : 'failed',
         },
       }).catch(() => {});
