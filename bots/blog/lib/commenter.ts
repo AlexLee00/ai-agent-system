@@ -2498,23 +2498,23 @@ async function saveCommentDebugSnapshot(page, comment, stage) {
         const targetReplyArea = document.querySelector('[data-blog-target-reply-area="true"]');
         const targetReplyButton = document.querySelector('[data-blog-target-reply-button="true"]');
         const targetEditor = document.querySelector('[data-blog-commenter-editor="true"]');
-        const submitButton = Array.from(
-          document.querySelectorAll('button, a, input[type="submit"], [role="button"]'),
-        ).filter(visible).find((node) => {
+        const isReplySubmitCandidate = (node) => {
+          if (!visible(node)) return false;
           const text = textOf(node);
           const cls = String(node.className || '');
           const dataAction = String(node.getAttribute('data-action') || '');
           const uiSelector = String(node.getAttribute('data-ui-selector') || '');
           const inputType = String(node.getAttribute('type') || '').toLowerCase();
-          return (
-            (dataAction.includes('reply#') && dataAction.includes('#write#request'))
-            || (dataAction === 'write#request' && /등록|답글|답변/.test(text))
-            || /^replyButton_/i.test(uiSelector)
-            || (uiSelector === 'writeButton' && /등록|답글|답변/.test(text))
-            || (/u_cbox_btn_upload|btn_register|btn_write|replyButton/i.test(cls) && /등록|답글|답변/.test(text))
-            || (inputType === 'submit' && (/등록|답글|답변/.test(text) || /u_cbox_btn_upload|btn_register|btn_write|replyButton/i.test(cls)))
-          );
-        }) || null;
+          const normalizedText = text.replace(/\s+/g, '');
+          if (dataAction.includes('write#request')) return true;
+          if (uiSelector === 'writeButton' || /^writeButton_/i.test(uiSelector)) return true;
+          if (/u_cbox_btn_upload|btn_register|btn_write/i.test(cls)) return true;
+          if (inputType === 'submit') return true;
+          return /등록|완료|게시/.test(normalizedText);
+        };
+        const submitButton = Array.from(
+          document.querySelectorAll('button, a, input[type="submit"], [role="button"]'),
+        ).find(isReplySubmitCandidate) || null;
         const commentSelectors = ['.u_cbox_wrap', '.u_cbox_write_wrap', '.u_cbox_comment_box', '.u_cbox_btn_reply', 'textarea[id*="write_textarea"]'];
         const viewerSelectors = ['.cpv__root', '.cpv__error', '.cpv__content'];
         return {
@@ -2886,18 +2886,14 @@ async function submitReply(page, browserPage = null) {
         const dataAction = String(node.getAttribute('data-action') || '');
         const uiSelector = String(node.getAttribute('data-ui-selector') || '');
         const cls = String(node.className || '');
-        const text = textOf(node);
+        const text = textOf(node).replace(/\s+/g, '');
         const role = String(node.getAttribute('role') || '');
         const inputType = String(node.getAttribute('type') || '').toLowerCase();
-        if (dataAction.includes('reply#') && dataAction.includes('#write#request')) return true;
-        if (dataAction === 'write#request' && /등록|답글|답변/.test(text)) return true;
-        if (/^replyButton_/i.test(uiSelector)) return true;
-        if (uiSelector === 'writeButton' && /등록|답글|답변/.test(text)) return true;
-        if (/u_cbox_btn_upload|btn_register|btn_write|replyButton/i.test(cls) && /등록|답글|답변/.test(text)) return true;
-        if (uiSelector === 'writeButton' && /u_cbox_btn_upload|btn_register|btn_write|replyButton/i.test(cls)) return true;
-        if (inputType === 'submit' && /u_cbox_btn_upload|btn_register|btn_write|replyButton/i.test(cls)) return true;
-        if (inputType === 'submit' && /등록|답글|답변/.test(text)) return true;
-        if ((role === 'button' || tag === 'button') && /등록|답글|답변/.test(text)) return true;
+        if (dataAction.includes('write#request')) return true;
+        if (uiSelector === 'writeButton' || /^writeButton_/i.test(uiSelector)) return true;
+        if (/u_cbox_btn_upload|btn_register|btn_write/i.test(cls)) return true;
+        if (inputType === 'submit') return true;
+        if ((role === 'button' || tag === 'button') && /등록|완료|게시/.test(text)) return true;
         return false;
       };
       const targetReplyArea = document.querySelector('[data-blog-target-reply-area="true"]');
@@ -2926,9 +2922,10 @@ async function submitReply(page, browserPage = null) {
         if (targetEditor && targetEditor.closest('.u_cbox_write_box, .u_cbox_reply_write, .u_cbox_reply_area, .u_cbox_comment_box')?.contains(node)) score += 4;
         if (targetEditor && targetEditor.closest('.u_cbox_write_wrap, .u_cbox_write, .u_cbox_write_area')?.contains(node)) score += 3;
         if (targetComment && targetComment.contains(node)) score += 2;
-        if (/등록|답글|답변/.test(text)) score += 2;
-        if (dataAction.includes('reply#') || /^replyButton_/i.test(uiSelector)) score += 2;
-        if (/u_cbox_btn_upload|btn_register|btn_write|replyButton/i.test(cls)) score += 1;
+        if (/등록|완료|게시/.test(text)) score += 3;
+        if (dataAction.includes('write#request')) score += 3;
+        if (uiSelector === 'writeButton' || /^writeButton_/i.test(uiSelector)) score += 2;
+        if (/u_cbox_btn_upload|btn_register|btn_write/i.test(cls)) score += 2;
         return score;
       };
 
