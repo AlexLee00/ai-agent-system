@@ -35,7 +35,7 @@ function extractJsonObjectText(output = '') {
   return text;
 }
 
-function getDoctorActions(command = '', limit = 2) {
+function getDoctorActions(command = '', limit = 2, areaPrefix = '') {
   if (!command) return [];
   try {
     const { execFileSync } = require('child_process');
@@ -47,6 +47,9 @@ function getDoctorActions(command = '', limit = 2) {
     const payload = JSON.parse(extractJsonObjectText(output) || '{}');
     const primaryArea = String(payload?.primary?.area || '');
     if (!primaryArea || primaryArea === 'clear' || primaryArea === 'unknown') {
+      return [];
+    }
+    if (areaPrefix && !primaryArea.startsWith(areaPrefix)) {
       return [];
     }
     return Array.isArray(payload?.actions)
@@ -82,8 +85,8 @@ async function buildFacebookFailureDetail(error) {
   const baseMessage = String(error?.message || error || '').trim();
   try {
     const readiness = await checkFacebookPublishReadiness().catch(() => null);
-    const socialActions = getDoctorActions(SOCIAL_DOCTOR_COMMAND);
-    const opsActions = getDoctorActions(BLOG_OPS_DOCTOR_COMMAND);
+    const socialActions = getDoctorActions(SOCIAL_DOCTOR_COMMAND, 2, 'social');
+    const opsActions = getDoctorActions(BLOG_OPS_DOCTOR_COMMAND, 2, 'social');
     const scopes = Array.isArray(readiness?.permissionScopes) && readiness.permissionScopes.length > 0
       ? readiness.permissionScopes.join(', ')
       : (baseMessage.includes('pages_manage_posts') || baseMessage.includes('pages_read_engagement')

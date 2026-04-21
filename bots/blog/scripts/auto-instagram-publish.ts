@@ -46,7 +46,7 @@ function extractJsonObjectText(output = '') {
   return text;
 }
 
-function getDoctorActions(command = '', limit = 2) {
+function getDoctorActions(command = '', limit = 2, areaPrefix = '') {
   if (!command) return [];
   try {
     const output = execFileSync('zsh', ['-lc', command], {
@@ -57,6 +57,9 @@ function getDoctorActions(command = '', limit = 2) {
     const payload = JSON.parse(extractJsonObjectText(output) || '{}');
     const primaryArea = String(payload?.primary?.area || '');
     if (!primaryArea || primaryArea === 'clear' || primaryArea === 'unknown') {
+      return [];
+    }
+    if (areaPrefix && !primaryArea.startsWith(areaPrefix)) {
       return [];
     }
     return Array.isArray(payload?.actions)
@@ -111,8 +114,8 @@ function buildPreviewBundle({ staged = null, reelPath = '', coverPath = '', qaSh
 function buildInstagramFailureDetail(error, { reelPath = '', previewBundle = '' } = {}) {
   const baseMessage = String(error?.message || error || '').trim();
   const reelHint = reelPath ? `reel=${reelPath}` : '';
-  const socialActions = getDoctorActions(SOCIAL_DOCTOR_COMMAND);
-  const opsActions = getDoctorActions(BLOG_OPS_DOCTOR_COMMAND);
+  const socialActions = getDoctorActions(SOCIAL_DOCTOR_COMMAND, 2, 'social');
+  const opsActions = getDoctorActions(BLOG_OPS_DOCTOR_COMMAND, 2, 'social');
   const actionHint =
     baseMessage.includes('공개 비디오 파일')
       ? 'action=prepare:instagram-media 또는 GitHub Pages 공개 URL 200 확인 후 재시도'
