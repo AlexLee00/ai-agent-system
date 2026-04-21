@@ -3601,6 +3601,7 @@ async function verifyReplyPosted(page, replyText, comment, testMode = false, bro
     (() => {
       const expected = ${JSON.stringify(needle)};
       const replyEditorId = ${JSON.stringify(replyEditorId)};
+      const commentNo = ${JSON.stringify(commentRef.commentNo || '')};
       const textOf = (el) =>
         String((el && (el.innerText || el.textContent)) || '').replace(/\\s+/g, ' ').trim();
       const visible = (el) => {
@@ -3648,17 +3649,49 @@ async function verifyReplyPosted(page, replyText, comment, testMode = false, bro
       if (replyEditorId) {
         const replyEditor = document.getElementById(replyEditorId);
         const replyEditorVisible = visible(replyEditor);
+        const targetComment = document.querySelector('[data-blog-target-comment="true"]');
+        const targetReplyArea = document.querySelector('[data-blog-target-reply-area="true"]')
+          || targetComment?.querySelector('.u_cbox_reply_area')
+          || targetComment?.querySelector('[class*="reply_area"]')
+          || null;
+        const targetReplyButton = document.querySelector('[data-blog-target-reply-button="true"]')
+          || (targetComment && Array.from(targetComment.querySelectorAll('a,button,[role="button"]')).find((node) => {
+            const cls = String(node.className || '');
+            const dataParam = String(node.getAttribute('data-param') || '');
+            const text = textOf(node);
+            return (
+              (/u_cbox_btn_reply|replyButton|btn_reply/i.test(cls) || /답글|답변/.test(text))
+              && (!commentNo || cls.includes('idx-commentNo-' + commentNo) || dataParam === commentNo)
+            );
+          }))
+          || null;
+        const replyFormRoot =
+          (replyEditor && replyEditor.closest('form'))
+          || (replyEditor && replyEditor.closest('.u_cbox_write_box, .u_cbox_write_wrap, .u_cbox_reply_write, .u_cbox_reply_area'))
+          || (targetReplyArea && targetReplyArea.querySelector('form'))
+          || (targetReplyArea && targetReplyArea.querySelector('.u_cbox_write_box, .u_cbox_write_wrap, .u_cbox_reply_write, .u_cbox_reply_area'))
+          || null;
         const submitButton = Array.from(
-          document.querySelectorAll(
+          (replyFormRoot || targetReplyArea || document).querySelectorAll(
             [
-              'button.u_cbox_btn_upload',
-              'button[class*="upload"]',
-              'button[data-action="reply#submit"]',
-              'button[data-action="comment#submit"]',
+              'button',
+              'a',
+              '[role="button"]',
               'input[type="submit"]',
             ].join(', '),
           ),
-        ).find((node) => visible(node));
+        ).filter((node) => visible(node)).find((node) => {
+          const cls = String(node.className || '');
+          const dataAction = String(node.getAttribute('data-action') || '');
+          const uiSelector = String(node.getAttribute('data-ui-selector') || '');
+          const inputType = String(node.getAttribute('type') || '').toLowerCase();
+          const text = textOf(node).replace(/\\s+/g, '');
+          if (dataAction.includes('write#request')) return true;
+          if (uiSelector === 'writeButton' || /^replyButton_/i.test(uiSelector) || /^writeButton_/i.test(uiSelector)) return true;
+          if (/u_cbox_btn_upload|btn_register|btn_write/i.test(cls)) return true;
+          if (inputType === 'submit') return true;
+          return /등록|완료|게시/.test(text);
+        });
 
         const submitDisabled = Boolean(
           submitButton
@@ -3668,8 +3701,17 @@ async function verifyReplyPosted(page, replyText, comment, testMode = false, bro
             || /\bdisabled\b/i.test(String(submitButton.className || ''))
           )
         );
+        const replyAreaVisible = visible(targetReplyArea);
+        const replyButtonExpanded = String(targetReplyButton?.getAttribute('aria-expanded') || '').trim().toLowerCase();
+        const replyButtonOn = /u_cbox_btn_reply_on/.test(String(targetReplyButton?.className || ''));
+        const replyComposerClosed = !replyAreaVisible && !replyEditorVisible;
+        const replyToggleReset = !replyButtonOn && replyButtonExpanded !== 'true';
 
         if (!replyEditorVisible && (submitDisabled || !submitButton)) {
+          return true;
+        }
+
+        if (replyComposerClosed && (submitDisabled || !submitButton || replyToggleReset)) {
           return true;
         }
       }
