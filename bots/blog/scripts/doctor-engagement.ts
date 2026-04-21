@@ -18,6 +18,7 @@ const BLOG_ENGAGEMENT_GAP_RUN_PATH = path.join(BLOG_OPS_ROOT, 'engagement-gap-ru
 const RUN_ENGAGEMENT_GAP_COMMAND = `npm --prefix ${BLOG_ROOT} run run:engagement-gap`;
 const RUN_NEIGHBOR_COLLECT_ONLY_COMMAND = `node ${path.join(BLOG_ROOT, 'scripts/run-neighbor-commenter.ts')} --collect-only --json`;
 const BACKFILL_COURTESY_REPLIES_COMMAND = `npm --prefix ${BLOG_ROOT} run backfill:courtesy-replies`;
+const REPLAY_NEIGHBOR_UI_COMMAND = `npm --prefix ${BLOG_ROOT} run replay:neighbor-ui -- --json`;
 
 function parseArgs(argv = []) {
   return {
@@ -611,7 +612,7 @@ function buildPrimary({ failureByKind, failureByAction, latestReplyReplayCandida
   if ((failureByKind.ui || 0) > 0 || (failureByKind.browser || 0) > 0) {
     const uiFocus = buildUiFocus(failureByAction);
     const uiNextCommand = uiFocus.action === 'neighbor'
-      ? `node ${path.join(BLOG_ROOT, 'scripts/run-neighbor-commenter.ts')} --test-mode --json`
+      ? REPLAY_NEIGHBOR_UI_COMMAND
       : (
           latestReplyReplayCandidate?.id
             ? `${blogPrefix} run replay:reply-ui -- --comment-id ${latestReplyReplayCandidate.id} --json`
@@ -626,7 +627,7 @@ function buildPrimary({ failureByKind, failureByAction, latestReplyReplayCandida
   }
   if ((failureByKind.llm || 0) > 0) {
     const llmNextCommand = Number(failureByAction?.neighbor_comment || 0) > Number(failureByAction?.reply || 0)
-      ? `node ${path.join(BLOG_ROOT, 'scripts/run-neighbor-commenter.ts')} --test-mode --json`
+      ? REPLAY_NEIGHBOR_UI_COMMAND
       : `${blogPrefix} run doctor:engagement -- --json`;
     return {
       area: 'engagement.llm',

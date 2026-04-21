@@ -5302,6 +5302,7 @@ module.exports = {
   requeueRecoverableReplyFailures,
   requeueCourtesyReflectionCandidates,
   requeuePromotionalReplyCandidates,
+  processNeighborCommentWithTimeout,
   runNeighborCommenter,
   runNeighborSympathy,
   runCommentReply,
