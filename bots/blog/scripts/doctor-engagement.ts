@@ -5,6 +5,9 @@ const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const pgPool = require('../../../packages/core/lib/pg-pool.js');
 const { buildBlogCliInsight } = require('../lib/cli-insight.ts');
+const { getBlogHealthRuntimeConfig } = require('../lib/runtime-config.ts');
+
+const runtimeConfig = getBlogHealthRuntimeConfig();
 
 function parseArgs(argv = []) {
   return {
@@ -47,6 +50,40 @@ function summarizeEngagementFailure(meta = {}) {
   return raw.replace(/\s+/g, ' ').replace(/snapshotPrefix[^,}\]]*/gi, 'snapshotPrefix').slice(0, 140);
 }
 
+function nowKst() {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function calcExpectedByWindow(target, startHour, endHour) {
+  const numericTarget = Math.max(0, Number(target || 0));
+  const start = Number(startHour || 0);
+  const end = Number(endHour || 23);
+  const now = nowKst();
+  const currentHour = now.getHours() + (now.getMinutes() / 60);
+
+  if (numericTarget <= 0 || end <= start) {
+    return { target: numericTarget, expectedNow: 0, progressRatio: 0, active: false };
+  }
+  if (currentHour <= start) {
+    return { target: numericTarget, expectedNow: 0, progressRatio: 0, active: false };
+  }
+  if (currentHour >= end) {
+    return { target: numericTarget, expectedNow: numericTarget, progressRatio: 1, active: false };
+  }
+
+  const progressRatio = clamp((currentHour - start) / (end - start), 0, 1);
+  return {
+    target: numericTarget,
+    expectedNow: Math.ceil(numericTarget * progressRatio),
+    progressRatio,
+    active: true,
+  };
+}
+
 async function getLatestReplyReplayCandidate() {
   try {
     const row = await pgPool.get('blog', `
@@ -86,13 +123,16 @@ async function getLatestReplyReplayCandidate() {
   }
 }
 
-function buildActions({ latestReplyReplayCandidate, failureByKind }) {
+function buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps }) {
   const actions = [];
   if ((failureByKind.ui || 0) > 0 || (failureByKind.browser || 0) > 0) {
     actions.push('네이버 reply UI selector와 browser mount 흐름 점검');
   }
   if ((failureByKind.llm || 0) > 0) {
     actions.push('reply 생성 LLM timeout / fetch 실패 로그 확인');
+  }
+  if (Array.isArray(targetGaps) && targetGaps.length > 0) {
+    actions.push('운영 시간대 기준 댓글/답글/공감 목표치와 현재 실적 차이를 점검');
   }
   if (latestReplyReplayCandidate?.id) {
     actions.push(`npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run replay:reply-ui -- --comment-id ${latestReplyReplayCandidate.id} --json`);
@@ -103,7 +143,7 @@ function buildActions({ latestReplyReplayCandidate, failureByKind }) {
   return actions;
 }
 
-function buildPrimary({ failureByKind, latestReplyReplayCandidate }) {
+function buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps }) {
   const blogPrefix = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')}`;
   if ((failureByKind.ui || 0) > 0 || (failureByKind.browser || 0) > 0) {
     return {
@@ -131,6 +171,14 @@ function buildPrimary({ failureByKind, latestReplyReplayCandidate }) {
       actionFocus: 'verification 로직과 correction reason 확인',
     };
   }
+  if (Array.isArray(targetGaps) && targetGaps.length > 0) {
+    return {
+      area: 'engagement.target_gap',
+      reason: `운영 시간대 기준 engagement 목표치가 뒤처졌습니다 (${targetGaps.join(', ')}).`,
+      nextCommand: `${blogPrefix} run doctor:engagement -- --json`,
+      actionFocus: '답글/댓글/공감 목표치와 현재 시간대 실적 차이 점검',
+    };
+  }
   return {
     area: 'clear',
     reason: '현재 engagement 자동화의 즉시 조치가 필요한 병목은 없습니다.',
@@ -142,6 +190,9 @@ function buildPrimary({ failureByKind, latestReplyReplayCandidate }) {
 function buildEngagementDoctorFallback(payload = {}) {
   if (payload.totalFailures > 0) {
     return 'engagement 자동화는 최근 실패 흔적이 있어 replay 대상과 UI/browser 실패 비중부터 확인하는 편이 좋습니다.';
+  }
+  if (Array.isArray(payload.targetGaps) && payload.targetGaps.length > 0) {
+    return 'engagement 자동화는 운영 시간대 기준 목표치가 뒤처져 있어 실적 차이와 다음 실행 사이클을 먼저 보는 편이 좋습니다.';
   }
   return 'engagement 자동화는 지금 큰 실패가 없어 다음 운영 시간대에 다시 관찰하면 됩니다.';
 }
@@ -159,6 +210,9 @@ async function main() {
     `),
     getLatestReplyReplayCandidate(),
   ]);
+
+  const replyConfig = runtimeConfig.commenter || {};
+  const neighborConfig = runtimeConfig.neighborCommenter || {};
 
   const failureByKind = { ui: 0, browser: 0, llm: 0, verification: 0, unknown: 0 };
   const failureByAction = { reply: 0, neighbor_comment: 0, sympathy: 0 };
@@ -181,6 +235,51 @@ async function main() {
     else if (actionType.includes('sympathy')) failureByAction.sympathy += 1;
   }
 
+  const aggregateRows = await pgPool.query('blog', `
+    SELECT action_type, success, COUNT(*)::int AS cnt
+    FROM blog.comment_actions
+    WHERE timezone('Asia/Seoul', executed_at)::date = timezone('Asia/Seoul', now())::date
+    GROUP BY 1, 2
+  `);
+  const aggregateMap = new Map();
+  for (const row of aggregateRows || []) {
+    aggregateMap.set(`${row.action_type}:${row.success ? 'ok' : 'fail'}`, Number(row.cnt || 0));
+  }
+
+  const replyPlan = calcExpectedByWindow(
+    replyConfig.maxDaily || 20,
+    replyConfig.activeStartHour || 9,
+    replyConfig.activeEndHour || 21,
+  );
+  const neighborPlan = calcExpectedByWindow(
+    neighborConfig.maxDaily || 20,
+    neighborConfig.activeStartHour || 9,
+    neighborConfig.activeEndHour || 21,
+  );
+  const sympathyPlan = calcExpectedByWindow(
+    neighborConfig.maxDaily || 20,
+    neighborConfig.activeStartHour || 9,
+    neighborConfig.activeEndHour || 21,
+  );
+
+  const replySuccessCount = Number(aggregateMap.get('reply:ok') || 0);
+  const neighborCommentSuccessCount = Number(aggregateMap.get('neighbor_comment:ok') || 0);
+  const sympathySuccessCount =
+    Number(aggregateMap.get('neighbor_sympathy:ok') || 0) +
+    Number(aggregateMap.get('neighbor_comment_sympathy:ok') || 0) +
+    Number(aggregateMap.get('comment_post_sympathy:ok') || 0);
+
+  const targetGaps = [];
+  if (replyPlan.active && replySuccessCount < replyPlan.expectedNow) {
+    targetGaps.push(`replies ${replySuccessCount}/${replyPlan.expectedNow}`);
+  }
+  if (neighborPlan.active && neighborCommentSuccessCount < neighborPlan.expectedNow) {
+    targetGaps.push(`neighbor ${neighborCommentSuccessCount}/${neighborPlan.expectedNow}`);
+  }
+  if (sympathyPlan.active && sympathySuccessCount < sympathyPlan.expectedNow) {
+    targetGaps.push(`sympathy ${sympathySuccessCount}/${sympathyPlan.expectedNow}`);
+  }
+
   const payload = {
     totalFailures: Array.isArray(rows) ? rows.length : 0,
     failureByKind,
@@ -196,9 +295,16 @@ async function main() {
           fromFailure: Boolean(latestReplyReplayCandidate.from_failure),
         }
       : null,
+    targets: {
+      replies: { success: replySuccessCount, target: replyPlan.target, expectedNow: replyPlan.expectedNow, active: replyPlan.active },
+      neighborComments: { success: neighborCommentSuccessCount, target: neighborPlan.target, expectedNow: neighborPlan.expectedNow, active: neighborPlan.active },
+      sympathies: { success: sympathySuccessCount, target: sympathyPlan.target, expectedNow: sympathyPlan.expectedNow, active: sympathyPlan.active },
+    },
+    targetGaps,
   };
-  payload.actions = buildActions({ latestReplyReplayCandidate, failureByKind });
-  payload.primary = buildPrimary({ failureByKind, latestReplyReplayCandidate });
+  payload.needsAttention = payload.totalFailures > 0 || targetGaps.length > 0;
+  payload.actions = buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps });
+  payload.primary = buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps });
 
   const aiSummary = await buildBlogCliInsight({
     bot: 'doctor-engagement',
@@ -218,6 +324,9 @@ async function main() {
   console.log(`🔍 AI: ${payload.aiSummary}`);
   console.log(`[engagement doctor] primary=${payload.primary.area} ${payload.primary.reason}`);
   console.log(`[engagement doctor] next=${payload.primary.nextCommand}`);
+  if (payload.targetGaps.length > 0) {
+    console.log(`[engagement doctor] target_gap=${payload.targetGaps.join(' / ')}`);
+  }
   console.log(`[engagement doctor] mix=ui ${payload.failureByKind.ui} / browser ${payload.failureByKind.browser} / llm ${payload.failureByKind.llm} / verification ${payload.failureByKind.verification}`);
   if (payload.latestReplyReplayCandidate?.id) {
     console.log(`[engagement doctor] replay=comment ${payload.latestReplyReplayCandidate.id} (${String(payload.latestReplyReplayCandidate.commenterName || 'unknown').slice(0, 30)})`);

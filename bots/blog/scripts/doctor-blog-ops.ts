@@ -47,7 +47,8 @@ function buildActions({ social, engagement }) {
 function pickPrimary({ social, engagement, commands }) {
   const facebookAttention = Boolean(social?.facebook?.needsAttention);
   const instagramAttention = Boolean(social?.instagram?.needsAttention);
-  const engagementFailures = Number(engagement?.totalFailures || 0);
+  const engagementNeedsAttention = Boolean(engagement?.needsAttention);
+  const engagementPrimaryArea = String(engagement?.primary?.area || '');
 
   if (facebookAttention) {
     return {
@@ -65,11 +66,11 @@ function pickPrimary({ social, engagement, commands }) {
     };
   }
 
-  if (engagementFailures > 0) {
+  if (engagementNeedsAttention || (engagementPrimaryArea && engagementPrimaryArea !== 'clear' && engagementPrimaryArea !== 'unknown')) {
     return {
-      area: 'engagement',
-      reason: '답글/댓글/공감 자동화 실패가 현재 최우선 병목입니다.',
-      nextCommand: commands.engagement,
+      area: engagementPrimaryArea || 'engagement',
+      reason: engagement?.primary?.reason || '답글/댓글/공감 자동화 이슈가 현재 최우선 병목입니다.',
+      nextCommand: engagement?.primary?.nextCommand || commands.engagement,
     };
   }
 
@@ -84,7 +85,7 @@ function buildOpsDoctorFallback(payload = {}) {
   if (payload.social?.facebook?.needsAttention || payload.social?.instagram?.needsAttention) {
     return '블로팀 운영 이슈는 지금 소셜 publish 축을 먼저 정리하는 편이 좋습니다.';
   }
-  if ((payload.engagement?.totalFailures || 0) > 0) {
+  if (payload.engagement?.needsAttention || (payload.engagement?.primary?.area && payload.engagement.primary.area !== 'clear')) {
     return '블로팀 운영 이슈는 지금 engagement 자동화 축을 먼저 정리하는 편이 좋습니다.';
   }
   return '블로팀 운영 상태는 현재 비교적 안정적이라 다음 운영 시간대 관찰 중심으로 가도 됩니다.';
@@ -121,6 +122,8 @@ async function main() {
       engagement: {
         totalFailures: Number(engagement?.totalFailures || 0),
         failureByKind: engagement?.failureByKind || {},
+        needsAttention: Boolean(engagement?.needsAttention),
+        targetGaps: engagement?.targetGaps || [],
       },
       primary: payload.primary,
       actions: payload.actions,
