@@ -330,7 +330,7 @@ async function _alertHighRelevance(uniqueCount, evaluated, storedCount, startTim
   if (highRelevance.length === 0) return { highRelevanceCount: 0, alarmSent: false };
 
   const lines = [
-    `🔬 다윈팀 일일 리서치 (${kst.today()})`,
+    `🔬 다윈팀 주간 리서치 (${kst.today()})`,
     `수집: ${uniqueCount}건 | 평가: ${evaluated.length}건 | 저장: ${storedCount}건`,
     '',
     `⭐ 적합성 7점+ 논문 ${highRelevance.length}건:`,

@@ -4,11 +4,11 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>ai.darwin.daily-report</string>
+  <string>ai.darwin.weekly-ops-report</string>
   <key>ProgramArguments</key>
   <array>
     <string>/opt/homebrew/bin/tsx</string>
-    <string>/Users/alexlee/projects/ai-agent-system/bots/darwin/scripts/darwin-daily-report.ts</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/darwin/scripts/darwin-weekly-ops-report.ts</string>
   </array>
   <key>WorkingDirectory</key>
   <string>/Users/alexlee/projects/ai-agent-system</string>
@@ -19,9 +19,9 @@
     <key>Minute</key><integer>30</integer>
   </dict>
   <key>StandardOutPath</key>
-  <string>/tmp/darwin-daily-report.log</string>
+  <string>/tmp/darwin-weekly-ops-report.log</string>
   <key>StandardErrorPath</key>
-  <string>/tmp/darwin-daily-report.err.log</string>
+  <string>/tmp/darwin-weekly-ops-report.err.log</string>
   <key>RunAtLoad</key>
   <false/>
   <key>EnvironmentVariables</key>

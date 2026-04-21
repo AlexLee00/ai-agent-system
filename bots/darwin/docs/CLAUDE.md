@@ -80,7 +80,7 @@ DARWIN_LLM_DAILY_BUDGET_USD=10.0  # 일일 LLM 예산
 - 승인 버튼은 실패/충돌/수동 검토가 필요한 예외 상황에만 남긴다.
 - 메인 실행 cadence는 `주 1회`다.
   - `ai.darwin.weekly.autonomous`: 일요일 05:00
-  - `ai.darwin.daily-report`: 일요일 06:30
+  - `ai.darwin.weekly-ops-report`: 일요일 06:30
   - `ai.darwin.weekly-review`: 일요일 19:00
 
 ## Shadow Mode 운영 절차

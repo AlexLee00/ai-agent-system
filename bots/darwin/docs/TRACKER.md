@@ -32,7 +32,7 @@
 - [x] live Darwin을 `L5 완전자율`로 승격
 - [x] 정상 경로 승인 버튼 제거, 공용 `postAlarm` 경로 복귀
 - [x] Darwin 메인/운영 리포트 cadence를 주 1회 기준으로 정합화
-- [x] `ai.darwin.weekly.autonomous`, `ai.darwin.daily-report`, `ai.darwin.weekly-review` kickstart 확인
+- [x] `ai.darwin.weekly.autonomous`, `ai.darwin.weekly-ops-report`, `ai.darwin.weekly-review` kickstart 확인
 
 ### 다음 작업
 - [x] 메인 live label을 `weekly.autonomous` 기준으로 정리

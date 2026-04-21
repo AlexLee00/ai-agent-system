@@ -1,6 +1,6 @@
 /**
- * darwin-daily-report.ts
- * 매주 일요일 06:30 KST 실행 — ai.darwin.daily-report launchd plist
+ * darwin-weekly-ops-report.ts
+ * 매주 일요일 06:30 KST 실행 — ai.darwin.weekly-ops-report launchd plist
  *
  * 지난 7일 운영 스냅샷 + Research Registry 진행 상황을 수집해
  * 공용 postAlarm 경로로 Telegram 발송.
@@ -80,7 +80,7 @@ async function collectStats() {
 }
 
 async function main() {
-  console.log("[darwin-daily-report] 주간 운영 리포트 수집 시작");
+  console.log("[darwin-weekly-ops-report] 주간 운영 리포트 수집 시작");
   const stats = await collectStats();
 
   const msg = `
@@ -104,10 +104,10 @@ async function main() {
     fromBot: "darwin-weekly-ops",
     alertLevel: 2,
   });
-  console.log("[darwin-daily-report] 발송 완료");
+  console.log("[darwin-weekly-ops-report] 발송 완료");
 }
 
 main().catch((err) => {
-  console.error("[darwin-daily-report] 오류:", err);
+  console.error("[darwin-weekly-ops-report] 오류:", err);
   process.exit(1);
 });

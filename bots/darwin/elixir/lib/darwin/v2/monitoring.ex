@@ -8,7 +8,7 @@ defmodule Darwin.V2.Monitoring do
 
   require Logger
 
-  @doc "일일 통합 요약 — daily-report 스크립트 및 MapeKLoop 호출용."
+  @doc "24시간 통합 요약 — 주간 운영 리포트 보조 집계 및 MapeKLoop 호출용."
   @spec daily_summary() :: map()
   def daily_summary do
     %{

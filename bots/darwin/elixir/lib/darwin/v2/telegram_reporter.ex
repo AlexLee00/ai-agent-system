@@ -5,7 +5,7 @@ defmodule Darwin.V2.TelegramReporter do
   채널:
   1. urgent  — 원칙 위반, 사이클 실패, 자율 레벨 승격 후보
   2. hourly  — 진행 중 사이클 상태 (현재 미구현, Phase M에서 확장)
-  3. daily   — 일일 리포트 (06:30 KST, darwin-daily-report.ts에서 호출)
+  3. daily   — 주간 운영 리포트 (일요일 06:30 KST, darwin-weekly-ops-report.ts에서 호출)
   4. weekly  — 주간 리뷰 (일요일 19:00 KST, darwin-weekly-review.ts에서 호출)
   5. meta    — ESPL/Self-Rewarding 재조정 결과, Recommender 변화
 
@@ -52,11 +52,11 @@ defmodule Darwin.V2.TelegramReporter do
   # Daily 채널 (Kill Switch 제어)
   # ─────────────────────────────────────────────────
 
-  @doc "일일 리포트 발송 (darwin-daily-report.ts에서 호출)."
+  @doc "주간 운영 리포트 발송 (darwin-weekly-ops-report.ts에서 호출)."
   @spec on_daily_report(map()) :: :ok
   def on_daily_report(stats) do
     unless KillSwitch.enabled?(:telegram_enhanced) do
-      Logger.debug("[Darwin.V2.TelegramReporter] telegram_enhanced OFF — 일일 리포트 스킵")
+      Logger.debug("[Darwin.V2.TelegramReporter] telegram_enhanced OFF — 주간 운영 리포트 스킵")
       :ok
     else
       msg = format_daily(stats)
@@ -121,7 +121,7 @@ defmodule Darwin.V2.TelegramReporter do
 
   defp format_daily(stats) do
     """
-    📊 다윈 일일 리포트 (#{stats[:date] || "today"})
+    📊 다윈 주간 운영 리포트 (#{stats[:date] || "today"})
 
     🔬 사이클:
       총 #{stats[:total_cycles] || 0}회 | 성공: #{stats[:successes] || 0} (#{stats[:success_rate] || "N/A"}%) | 실패: #{stats[:failures] || 0}
