@@ -7,19 +7,18 @@
   <string>ai.darwin.daily.shadow</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/opt/homebrew/bin/mix</string>
-    <string>run</string>
-    <string>-e</string>
-    <string>Darwin.V2.ShadowRunner.run_daily()</string>
+    <string>/Users/alexlee/projects/ai-agent-system/node_modules/.bin/tsx</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/darwin/lib/research-scanner.ts</string>
   </array>
   <key>WorkingDirectory</key>
-  <string>/Users/alexlee/projects/ai-agent-system/elixir/team_jay</string>
+  <string>/Users/alexlee/projects/ai-agent-system</string>
   <key>EnvironmentVariables</key>
   <dict>
     <key>HOME</key><string>/Users/alexlee</string>
     <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     <key>MIX_ENV</key><string>prod</string>
     <key>MODE</key><string>ops</string>
+    <key>DARWIN_AUTONOMY_LEVEL</key><string>5</string>
     <key>DARWIN_V2_ENABLED</key><string>true</string>
     <key>DARWIN_SHADOW_MODE</key><string>false</string>
     <key>DARWIN_KILL_SWITCH</key><string>false</string>
@@ -31,8 +30,8 @@
     <key>DARWIN_ESPL_ENABLED</key><string>false</string>
     <key>DARWIN_SELF_RAG_ENABLED</key><string>false</string>
     <key>DARWIN_PRINCIPLE_SEMANTIC_CHECK_ENABLED</key><string>false</string>
-    <key>LLM_HUB_ROUTING_ENABLED</key><string>false</string>
-    <key>LLM_HUB_ROUTING_SHADOW</key><string>true</string>
+    <key>LLM_HUB_ROUTING_ENABLED</key><string>true</string>
+    <key>LLM_HUB_ROUTING_SHADOW</key><string>false</string>
     <key>HUB_BASE_URL</key><string>http://localhost:7788</string>
   </dict>
   <key>StartCalendarInterval</key>

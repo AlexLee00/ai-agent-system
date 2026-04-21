@@ -42,7 +42,8 @@ defmodule Darwin.V2.AutonomyLevel do
 
   @doc """
   승격 조건 점검 후 Telegram 알림 + DB 기록.
-  자동 flip 절대 금지 — 알림만 발송하고 마스터 승인 대기.
+  운영이 명시적으로 L5로 고정된 경우에는 승격 후보를 만들지 않는다.
+  그 외 모드에서는 자동 flip 없이 알림만 발송하고 마스터 승인 대기.
   MapeKLoop 주간 Knowledge 단계에서 호출.
   """
   @spec check_promotion_conditions() :: :ok
@@ -55,6 +56,9 @@ defmodule Darwin.V2.AutonomyLevel do
       days = days_since_struct(state.level_upgraded_at)
 
       cond do
+        forced_l5?() ->
+          Logger.debug("[darwin/autonomy] 운영 L5 고정 모드 — 승격 후보 체크 생략")
+
         current == 3 and successes >= 5 and days >= 7 ->
           log_candidate(current, 4, %{successes: successes, applications: applied, days: days, violations: 0})
 
@@ -201,16 +205,17 @@ defmodule Darwin.V2.AutonomyLevel do
 
   defp load_state do
     path = Path.join(System.get_env("PROJECT_ROOT", "/Users/alexlee/projects/ai-agent-system"), @autonomy_file)
+    env_level = System.get_env("DARWIN_AUTONOMY_LEVEL")
     case File.read(path) do
       {:ok, content} ->
         data = Jason.decode!(content)
         %__MODULE__{
-          level: normalize_level(data["level"] || 3),
+          level: normalize_level(env_level || data["level"] || 3),
           consecutive_successes: data["consecutiveSuccesses"] || 0,
           applied_successes: data["appliedSuccesses"] || 0
         }
       _ ->
-        %__MODULE__{}
+        %__MODULE__{level: normalize_level(env_level || 3)}
     end
   end
 
@@ -233,4 +238,9 @@ defmodule Darwin.V2.AutonomyLevel do
   defp normalize_level("4"), do: 4
   defp normalize_level("5"), do: 5
   defp normalize_level(_), do: 3
+
+  defp forced_l5? do
+    normalize_level(System.get_env("DARWIN_AUTONOMY_LEVEL")) == 5 and
+      System.get_env("DARWIN_KILL_SWITCH", "false") != "true"
+  end
 end
