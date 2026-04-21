@@ -8,6 +8,10 @@ const { checkFacebookPublishReadiness } = require(path.join(env.PROJECT_ROOT, 'b
 const { getInstagramConfig } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-graph.ts'));
 const { resolveInstagramHostedMediaUrl } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-image-host.ts'));
 const { buildBlogCliInsight } = require('../lib/cli-insight.ts');
+const {
+  readInstagramTokenAutoRefreshResult,
+  AUTO_REFRESH_SCHEDULE_TEXT,
+} = require('../lib/instagram-token-automation.ts');
 
 function parseArgs(argv = []) {
   return {
@@ -217,6 +221,7 @@ async function main() {
   );
   const previewBundle = buildPreviewBundleForTitle(previewTitle);
   const instagramHostedRecovery = getInstagramHostedRecovery(latestInstagram);
+  const instagramTokenAutomation = readInstagramTokenAutoRefreshResult();
 
   const payload = {
     facebook: {
@@ -252,6 +257,16 @@ async function main() {
           }
         : null,
       hostedRecovery: instagramHostedRecovery,
+      tokenAutomation: instagramTokenAutomation
+        ? {
+            checkedAt: instagramTokenAutomation.checkedAt || null,
+            mode: instagramTokenAutomation.mode || 'unknown',
+            ok: Boolean(instagramTokenAutomation.ok),
+            reason: String(instagramTokenAutomation.reason || ''),
+            tokenExpiresAt: instagramTokenAutomation.tokenExpiresAt || null,
+            schedule: instagramTokenAutomation.schedule || AUTO_REFRESH_SCHEDULE_TEXT,
+          }
+        : null,
       needsAttention: String(latestInstagram?.status || '') === 'failed' && !latestInstagram?.dry_run && !instagramHostedRecovery,
     },
     previewBundle,
@@ -290,6 +305,9 @@ async function main() {
   console.log(`🔍 AI: ${payload.aiSummary}`);
   console.log(`[social doctor] primary=${payload.primary.area} ${payload.primary.reason}`);
   console.log(`[social doctor] next=${payload.primary.nextCommand}`);
+  if (payload.instagram.tokenAutomation?.checkedAt) {
+    console.log(`[social doctor] instagram token auto=${payload.instagram.tokenAutomation.mode}/${payload.instagram.tokenAutomation.ok ? 'ok' : 'failed'} at ${payload.instagram.tokenAutomation.checkedAt}`);
+  }
   if (payload.facebook.pageId) {
     console.log(`[social doctor] facebook page=${payload.facebook.pageId}`);
   }

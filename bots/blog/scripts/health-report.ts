@@ -760,17 +760,29 @@ async function buildInstagramHealth() {
   try {
     const config = await getInstagramConfig();
     const host = getInstagramImageHostConfig();
+    const {
+      readInstagramTokenAutoRefreshResult,
+      AUTO_REFRESH_SCHEDULE_TEXT,
+    } = require('../lib/instagram-token-automation.ts');
     const hostReady = Boolean(host.publicBaseUrl || host.githubPagesBaseUrl || host.opsStaticBaseUrl);
     const health = config.tokenHealth || {};
+    const autoRefresh = readInstagramTokenAutoRefreshResult();
     const ok = [
       `  instagram token: ${health.hasAccessToken && health.hasIgUserId ? '준비됨' : '누락'}`,
       `  token expires: ${health.tokenExpiresAt || '미설정'}`,
+      `  token auto refresh: ${AUTO_REFRESH_SCHEDULE_TEXT}`,
       `  public host: ${hostReady ? `${host.mode || 'configured'} 준비됨` : '미설정'}`,
     ];
+    if (autoRefresh?.checkedAt) {
+      ok.push(`  auto refresh last run: ${autoRefresh.checkedAt} / ${autoRefresh.mode || 'unknown'} / ${autoRefresh.ok ? 'ok' : 'failed'}`);
+    }
     const warn = [];
     if (health.critical) warn.push(`  인스타 토큰 만료 임박: ${health.daysLeft}일 남음`);
     else if (health.needsRefresh) warn.push(`  인스타 토큰 갱신 권장: ${health.daysLeft}일 남음`);
     if (!hostReady) warn.push('  공개 미디어 호스팅 URL이 없어 릴스 업로드를 진행할 수 없습니다');
+    if (autoRefresh?.checkedAt && autoRefresh.ok === false) {
+      warn.push(`  최근 auto refresh 실패: ${String(autoRefresh.reason || 'unknown')}`);
+    }
     return {
       okCount: ok.length,
       warnCount: warn.length,
@@ -779,6 +791,21 @@ async function buildInstagramHealth() {
       needsRefresh: Boolean(health.needsRefresh),
       critical: Boolean(health.critical),
       hostReady,
+      autoRefresh: autoRefresh
+        ? {
+            checkedAt: autoRefresh.checkedAt || null,
+            mode: autoRefresh.mode || 'unknown',
+            ok: Boolean(autoRefresh.ok),
+            reason: String(autoRefresh.reason || ''),
+            schedule: autoRefresh.schedule || AUTO_REFRESH_SCHEDULE_TEXT,
+          }
+        : {
+            checkedAt: null,
+            mode: 'unknown',
+            ok: true,
+            reason: '',
+            schedule: AUTO_REFRESH_SCHEDULE_TEXT,
+          },
     };
   } catch (error) {
     return {
@@ -789,6 +816,13 @@ async function buildInstagramHealth() {
       needsRefresh: false,
       critical: false,
       hostReady: false,
+      autoRefresh: {
+        checkedAt: null,
+        mode: 'unknown',
+        ok: false,
+        reason: String(error.message || error),
+        schedule: '매일 05:40, 17:40 KST',
+      },
     };
   }
 }

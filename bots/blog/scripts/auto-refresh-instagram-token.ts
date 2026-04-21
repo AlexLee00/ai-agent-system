@@ -7,6 +7,10 @@ const env = require('../../../packages/core/lib/env');
 const { publishToWebhook } = require('../../../packages/core/lib/reporting-hub');
 const { buildBlogCliInsight } = require('../lib/cli-insight.ts');
 const {
+  writeInstagramTokenAutoRefreshResult,
+  AUTO_REFRESH_SCHEDULE_TEXT,
+} = require('../lib/instagram-token-automation.ts');
+const {
   getInstagramTokenConfig,
   getTokenHealth,
   refreshLongLivedToken,
@@ -91,6 +95,14 @@ function buildFallback(payload = {}) {
   return '인스타 장기 토큰 자동 갱신이 실패해 허브 access_token 상태를 먼저 다시 확인해야 합니다.';
 }
 
+function persistResult(payload = {}) {
+  writeInstagramTokenAutoRefreshResult({
+    ...payload,
+    checkedAt: new Date().toISOString(),
+    schedule: AUTO_REFRESH_SCHEDULE_TEXT,
+  });
+}
+
 async function maybeAlertFailure(payload, error) {
   const diagnosis = parseInstagramAuthError(error);
   await publishToWebhook({
@@ -135,6 +147,7 @@ async function main() {
       data: payload,
       fallback: buildFallback(payload),
     });
+    if (!args.dryRun) persistResult(payload);
     if (args.json) {
       console.log(JSON.stringify(payload, null, 2));
       return;
@@ -179,6 +192,7 @@ async function main() {
       data: failedPayload,
       fallback: buildFallback(failedPayload),
     });
+    if (!args.dryRun) persistResult(failedPayload);
     if (!args.dryRun) {
       await maybeAlertFailure(failedPayload, lastError);
     }
@@ -220,6 +234,7 @@ async function main() {
     data: payload,
     fallback: buildFallback(payload),
   });
+  if (!args.dryRun) persistResult(payload);
 
   if (args.json) {
     console.log(JSON.stringify(payload, null, 2));
