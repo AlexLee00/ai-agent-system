@@ -107,7 +107,7 @@ function buildExchangeTokenRequest(config = getInstagramTokenConfig()) {
   url.searchParams.set('grant_type', 'fb_exchange_token');
   url.searchParams.set('client_id', config.appId);
   url.searchParams.set('client_secret', config.appSecret);
-  url.searchParams.set('access_token', config.accessToken);
+  url.searchParams.set('fb_exchange_token', config.accessToken);
 
   return {
     method: 'GET',
