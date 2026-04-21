@@ -128,6 +128,22 @@ function buildRefreshLongLivedTokenRequest(config = getInstagramTokenConfig()) {
   };
 }
 
+function buildDebugTokenRequest(config = getInstagramTokenConfig(), inputToken = '') {
+  const token = String(inputToken || config.accessToken || '').trim();
+  if (!token) throw new Error('instagram.access_token 이 없습니다.');
+  if (!config.appId) throw new Error('instagram.app_id 이 없습니다.');
+  if (!config.appSecret) throw new Error('instagram.app_secret 이 없습니다.');
+
+  const url = new URL(`${config.baseUrl}/${config.apiVersion}/debug_token`);
+  url.searchParams.set('input_token', token);
+  url.searchParams.set('access_token', `${config.appId}|${config.appSecret}`);
+
+  return {
+    method: 'GET',
+    url: url.toString(),
+  };
+}
+
 async function exchangeToLongLivedToken(fetchImpl = fetch, config = getInstagramTokenConfig()) {
   const request = buildExchangeTokenRequest(config);
   const response = await fetchImpl(request.url, { method: request.method });
@@ -154,12 +170,27 @@ async function refreshLongLivedToken(fetchImpl = fetch, config = getInstagramTok
   };
 }
 
+async function debugToken(fetchImpl = fetch, config = getInstagramTokenConfig(), inputToken = '') {
+  const request = buildDebugTokenRequest(config, inputToken);
+  const response = await fetchImpl(request.url, { method: request.method });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(`Instagram 토큰 디버그 실패: HTTP ${response.status} ${JSON.stringify(data)}`);
+  }
+  return {
+    request,
+    response: data,
+  };
+}
+
 module.exports = {
   getInstagramTokenConfig,
   getTokenHealth,
   buildExchangeTokenRequest,
   buildRefreshLongLivedTokenRequest,
+  buildDebugTokenRequest,
   exchangeToLongLivedToken,
   refreshLongLivedToken,
+  debugToken,
   parseInstagramAuthError,
 };

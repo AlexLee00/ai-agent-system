@@ -32,6 +32,7 @@
     "doctor:social": "node scripts/doctor-social-publish.ts",
     "check:instagram-token": "node scripts/check-instagram-token-health.ts",
     "refresh:instagram-token": "node scripts/refresh-instagram-token.ts",
+    "auto:instagram-token": "node scripts/auto-refresh-instagram-token.ts",
     "check:instagram-media": "node scripts/check-instagram-public-media.ts",
     "monitor:instagram-token": "node scripts/monitor-instagram-token.ts",
     "check:book-sources": "node scripts/check-book-sources-readiness.ts",

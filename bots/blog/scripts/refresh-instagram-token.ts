@@ -9,6 +9,7 @@ const {
   getInstagramTokenConfig,
   refreshLongLivedToken,
   exchangeToLongLivedToken,
+  debugToken,
   parseInstagramAuthError,
 } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-token-manager.ts'));
 
@@ -44,6 +45,32 @@ function normalizeExpiry(expiresInSeconds) {
   const seconds = Number(expiresInSeconds || 0);
   if (!Number.isFinite(seconds) || seconds <= 0) return null;
   return new Date(Date.now() + (seconds * 1000)).toISOString();
+}
+
+function normalizeTimestamp(value) {
+  const numeric = Number(value || 0);
+  if (!Number.isFinite(numeric) || numeric <= 0) return null;
+  return new Date(numeric * 1000).toISOString();
+}
+
+async function resolveTokenExpiry(result, nextToken) {
+  const directExpiry = normalizeExpiry(result?.response?.expires_in);
+  if (directExpiry) return directExpiry;
+  if (!nextToken) return null;
+  try {
+    const debug = await debugToken(fetch, {
+      ...getInstagramTokenConfig(),
+      accessToken: nextToken,
+    }, nextToken);
+    const data = debug?.response?.data || {};
+    return (
+      normalizeTimestamp(data.expires_at)
+      || normalizeTimestamp(data.data_access_expires_at)
+      || null
+    );
+  } catch {
+    return null;
+  }
 }
 
 function buildInstagramTokenFallback(payload = {}) {
@@ -96,7 +123,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const result = await runRefresh(args.mode);
   const nextToken = String(result.response?.access_token || '').trim();
-  const nextExpiry = normalizeExpiry(result.response?.expires_in);
+  const nextExpiry = await resolveTokenExpiry(result, nextToken);
 
   const current = loadStore();
   const nextStore = {
