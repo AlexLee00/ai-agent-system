@@ -89,39 +89,41 @@ function buildActions({ facebookReadiness, instagramConfig, latestFacebook, late
   const actions = [];
   const instagramHostedRecovery = getInstagramHostedRecovery(latestInstagram);
   const facebookReadinessError = String(facebookReadiness?.error || '').trim();
+  const primaryArea = String(primary?.area || '');
+  const hasActivePrimary = primaryArea && primaryArea !== 'clear' && primaryArea !== 'unknown';
+  const prioritizeFacebook = primaryArea.startsWith('social.facebook');
+  const prioritizeInstagram = primaryArea.startsWith('social.instagram');
 
-  if (facebookReadinessError) {
+  if (facebookReadinessError && !prioritizeInstagram) {
     actions.push('Facebook readiness 토큰/세션 상태를 먼저 확인');
     actions.push(`npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run check:facebook -- --json`);
     actions.push(`npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:facebook -- --json`);
   }
 
-  if (Array.isArray(facebookReadiness?.permissionScopes) && facebookReadiness.permissionScopes.length > 0) {
+  if (!prioritizeInstagram && Array.isArray(facebookReadiness?.permissionScopes) && facebookReadiness.permissionScopes.length > 0) {
     actions.push(`Meta 앱 권한 재연결: ${facebookReadiness.permissionScopes.join(', ')}`);
     actions.push('페이지 권한 재연결 후 페이지 access token 다시 발급');
   }
 
-  if (!instagramConfig?.tokenHealth?.tokenExpiresAt) {
+  if (!prioritizeFacebook && !instagramConfig?.tokenHealth?.tokenExpiresAt) {
     actions.push('인스타 token_expires_at 저장 또는 refresh:instagram-token으로 만료일 확정');
   }
 
-  if (String(latestInstagram?.status || '') === 'failed' && !instagramHostedRecovery) {
+  if (!prioritizeFacebook && String(latestInstagram?.status || '') === 'failed' && !instagramHostedRecovery) {
     actions.push(`npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run check:instagram -- --json`);
     actions.push(`npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:instagram -- --json`);
   }
 
-  if (String(latestFacebook?.status || '') === 'failed') {
+  if (!prioritizeInstagram && String(latestFacebook?.status || '') === 'failed') {
     actions.push(`npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run check:facebook -- --json`);
     actions.push(`npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:facebook -- --json`);
   }
 
-  if (previewBundle.reel || previewBundle.cover || previewBundle.qa) {
+  if ((previewBundle.reel || previewBundle.cover || previewBundle.qa) && !prioritizeFacebook) {
     actions.push('최신 reel / cover / qa preview를 확인한 뒤 재시도');
   }
 
   const prioritized = [];
-  const primaryArea = String(primary?.area || '');
-  const hasActivePrimary = primaryArea && primaryArea !== 'clear' && primaryArea !== 'unknown';
   if (hasActivePrimary && primary?.actionFocus) {
     prioritized.push(`focus blocker: ${primary.actionFocus}`);
   }
