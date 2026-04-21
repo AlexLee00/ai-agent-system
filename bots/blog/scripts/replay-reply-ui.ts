@@ -256,7 +256,7 @@ async function runDiagnoseWorker(args) {
   }
 }
 
-async function runSubprocessJson(modeFlag, commentId, timeoutMs) {
+async function runSubprocessJson(modeFlag, commentId, timeoutMs, killBufferMs = 1000) {
   const childArgs = [
     __filename,
     modeFlag,
@@ -284,7 +284,7 @@ async function runSubprocessJson(modeFlag, commentId, timeoutMs) {
     const watchdog = setTimeout(() => {
       child.kill('SIGKILL');
       finish({ timedOut: true, code: 124, stdout, stderr });
-    }, timeoutMs + 1000);
+    }, timeoutMs + Math.max(1000, Number(killBufferMs || 1000)));
     child.once('error', (error) => {
       clearTimeout(watchdog);
       finish({ timedOut: false, code: 1, error, stdout, stderr });
@@ -327,10 +327,11 @@ async function runParent(args) {
   }
 
   const timeoutPayload = buildTimeoutPayload({ comment, replyText, timeoutMs: args.timeoutMs });
-  const outcome = await runSubprocessJson('--worker', comment.id, args.timeoutMs);
+  const outcome = await runSubprocessJson('--worker', comment.id, args.timeoutMs, 1500);
 
   if (outcome.timedOut) {
-    const diagnose = await runSubprocessJson('--diagnose-worker', comment.id, Math.min(10000, Math.max(8000, args.timeoutMs)));
+    const diagnoseTimeoutMs = Math.min(10000, Math.max(8000, args.timeoutMs));
+    const diagnose = await runSubprocessJson('--diagnose-worker', comment.id, diagnoseTimeoutMs, 6000);
     if (diagnose?.parsed) {
       timeoutPayload.liveDiagnose = diagnose.parsed.result || null;
       if (diagnose.parsed.error) {
@@ -342,7 +343,7 @@ async function runParent(args) {
     }
     if (!timeoutPayload.liveDiagnoseError && diagnose?.timedOut) {
       timeoutPayload.liveDiagnose = null;
-      timeoutPayload.liveDiagnoseError = `reply_replay_diagnose_timeout:${Math.min(10000, Math.max(8000, args.timeoutMs))}`;
+      timeoutPayload.liveDiagnoseError = `reply_replay_diagnose_timeout:${diagnoseTimeoutMs}`;
     }
     if (!timeoutPayload.liveDiagnoseError && diagnose?.stderr) {
       timeoutPayload.liveDiagnoseError = diagnose.stderr;
