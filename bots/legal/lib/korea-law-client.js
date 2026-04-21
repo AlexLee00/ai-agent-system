@@ -54,9 +54,9 @@ async function getAuth() {
   }
   return {
     oc: credentials.oc,
-    baseUrl: credentials.base_url || DEFAULT_BASE_URL,
-    userId: credentials.user_id || '',
-    userName: credentials.user_name || '',
+    baseUrl: credentials.baseUrl || DEFAULT_BASE_URL,
+    userId: credentials.userId || '',
+    userName: credentials.userName || '',
   };
 }
 

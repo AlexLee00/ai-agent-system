@@ -61,6 +61,7 @@ pickko-kiosk-seen.json
 RC_CONTEXT.md
 bots/blog/output/
 .llm-emergency-stop
+bots/reservation/.playwright-headed
 
 # 덱스터 운영 이력 파일
 bots/claude/dexter-fixes.json
