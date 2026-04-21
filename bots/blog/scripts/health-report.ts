@@ -1606,6 +1606,15 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
       : '',
   ].filter(Boolean).join(' / ');
   const engagementDoctorHint = `doctor=${ENGAGEMENT_DOCTOR_COMMAND}`;
+  const engagementImmediateAction = engagementPrimaryGap?.label
+    ? (
+      engagementPrimaryGap.label === 'replies'
+        ? `node ${path.join(BLOG_ROOT, 'scripts/run-commenter.ts')}`
+        : engagementPrimaryGap.label === 'neighbor'
+          ? `node ${path.join(BLOG_ROOT, 'scripts/run-neighbor-commenter.ts')}`
+          : `node ${path.join(BLOG_ROOT, 'scripts/run-neighbor-sympathy.ts')}`
+    )
+    : '';
   return buildHealthDecision({
     warnings: [
       {
@@ -1713,6 +1722,7 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
           '댓글/답글/공감 실적이 시간대 기대치보다 낮거나 실패 이력이 있어 engagement 루프 점검이 필요합니다.',
           engagementPrimaryGap ? `최우선 gap: ${engagementPrimaryGap.label} ${engagementPrimaryGap.success}/${engagementPrimaryGap.expectedNow}` : '',
           engagementGapHint ? `현재 gap: ${engagementGapHint}` : '',
+          engagementImmediateAction ? `즉시 실행: ${engagementImmediateAction}` : '',
           engagementFailureHint ? `최근 실패: ${engagementFailureHint}` : '',
           engagementReplayHint ? `재현: ${engagementReplayHint}` : '',
           engagementDoctorHint,

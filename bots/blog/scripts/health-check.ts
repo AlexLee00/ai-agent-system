@@ -689,18 +689,25 @@ async function checkEngagementAutomationHealth() {
         actionFocus: 'engagement',
       });
       const targets = engagementPayload?.targets || {};
+      const primaryGap = engagementPayload?.primaryGap || null;
       const targetLines = [
         targets?.replies?.active ? `replies ${targets.replies.success}/${targets.replies.expectedNow}` : '',
         targets?.neighborComments?.active ? `neighbor ${targets.neighborComments.success}/${targets.neighborComments.expectedNow}` : '',
         targets?.sympathies?.active ? `sympathy ${targets.sympathies.success}/${targets.sympathies.expectedNow}` : '',
       ].filter(Boolean).join(' / ');
+      const primaryGapHint = primaryGap?.label
+        ? `\nprimary gap: ${primaryGap.label} ${primaryGap.success}/${primaryGap.expectedNow}`
+        : '';
+      const immediateRunHint = engagementPriority?.nextCommand
+        ? `\nrun now: ${engagementPriority.nextCommand}`
+        : '';
       const replayHint = latestReplyReplayCandidate?.id
         ? `\nreply replay: npm run replay:reply-ui -- --comment-id ${latestReplyReplayCandidate.id} --json`
         : '';
       const doctorHint = `\ndoctor: ${ENGAGEMENT_DOCTOR_COMMAND}${buildPriorityHint('engagement primary', engagementPriority, { includeActionFocus: true })}${buildPriorityHint('primary blocker', opsPriority, { includeActionFocus: true })}\nops doctor: ${BLOG_OPS_DOCTOR_COMMAND}`;
       return {
         ok: false,
-        detail: `engagement target gap — ${targetLines || targetGaps.join(', ')}${replayHint}${doctorHint}`,
+        detail: `engagement target gap — ${targetLines || targetGaps.join(', ')}${primaryGapHint}${immediateRunHint}${replayHint}${doctorHint}`,
         failureByKind,
         failureByAction,
         latestReplyReplayCandidate,
