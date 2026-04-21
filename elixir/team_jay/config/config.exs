@@ -35,11 +35,8 @@ config :team_jay, Jay.Core.Scheduler,
     {"0 10 * * 1", {Jay.Core.Agents.PortAgent, :run, [:steward_weekly]}},
     {"0 8 * * *", {TeamJay.Teams.InvestmentScheduler, :run_prescreen_domestic, []}},
     {"0 21 * * *", {TeamJay.Teams.InvestmentScheduler, :run_prescreen_overseas, []}},
-    {"0 9 * * *", {TeamJay.Teams.InvestmentScheduler, :run_market_alert_crypto_daily, []}},
-    {"0 9 * * *", {TeamJay.Teams.InvestmentScheduler, :run_market_alert_domestic_open, []}},
-    {"30 15 * * *", {TeamJay.Teams.InvestmentScheduler, :run_market_alert_domestic_close, []}},
-    {"30 23 * * *", {TeamJay.Teams.InvestmentScheduler, :run_market_alert_overseas_open, []}},
-    {"0 6 * * *", {TeamJay.Teams.InvestmentScheduler, :run_market_alert_overseas_close, []}},
+    # market-alert-* 는 launchd가 KST 기준으로 이미 담당한다.
+    # Quantum cron은 UTC 기준이어서 중복/오발송 위험이 있어 제외한다.
     {"0 8 * * *", {TeamJay.Teams.InvestmentScheduler, :run_reporter, []}},
     {"0 21 * * *", {TeamJay.Teams.InvestmentScheduler, :run_daily_feedback, []}},
     # ─── CODEX_LUNA_OPS_TRANSITION 신규 (UTC 기준) ───────────────

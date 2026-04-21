@@ -52,6 +52,7 @@ const safeMarketAlertMemory = marketAlertMemory || {
 const args   = process.argv.slice(2);
 const market = args.find(a => a.startsWith('--market='))?.split('=')[1];
 const event  = args.find(a => a.startsWith('--event='))?.split('=')[1];
+const force  = args.includes('--force');
 
 const MARKET_LABEL = {
   domestic: '🇰🇷 국내장',
@@ -65,6 +66,17 @@ const EXCHANGE_MAP = {
   domestic: 'kis',
   overseas: 'kis_overseas',
   crypto:   'binance',
+};
+
+const ALERT_WINDOWS = {
+  domestic: {
+    open: { hour: 9, minute: 0 },
+    close: { hour: 15, minute: 30 },
+  },
+  overseas: {
+    open: { hour: 23, minute: 30 },
+    close: { hour: 6, minute: 0 },
+  },
 };
 
 function formatSignedPercent(value, digits = 2) {
@@ -160,6 +172,53 @@ function buildMarketAlertMemoryQuery(kind, market, extras = []) {
 // KST 기준 오늘 날짜
 const todayKST = () => kst.today();
 
+function getKstParts(date = new Date()) {
+  const formatter = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Seoul',
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  const parts = Object.fromEntries(
+    formatter.formatToParts(date)
+      .filter((part) => part.type !== 'literal')
+      .map((part) => [part.type, part.value]),
+  );
+  return {
+    year: Number(parts.year),
+    month: Number(parts.month),
+    day: Number(parts.day),
+    hour: Number(parts.hour),
+    minute: Number(parts.minute),
+  };
+}
+
+function shouldAllowScheduledAlert(market, event, date = new Date()) {
+  if (force || market === 'crypto' || !['open', 'close'].includes(event)) {
+    return { allowed: true, deltaMinutes: 0, expectedLabel: null };
+  }
+
+  const target = ALERT_WINDOWS[market]?.[event];
+  if (!target) {
+    return { allowed: true, deltaMinutes: 0, expectedLabel: null };
+  }
+
+  const parts = getKstParts(date);
+  const currentMinutes = (parts.hour * 60) + parts.minute;
+  const targetMinutes = (target.hour * 60) + target.minute;
+  const deltaMinutes = Math.abs(currentMinutes - targetMinutes);
+  const expectedLabel = `${String(target.hour).padStart(2, '0')}:${String(target.minute).padStart(2, '0')} KST`;
+
+  return {
+    allowed: deltaMinutes <= 5,
+    deltaMinutes,
+    expectedLabel,
+  };
+}
+
 // ── 메인 ──────────────────────────────────────────────────────────────
 
 async function main() {
@@ -167,6 +226,14 @@ async function main() {
   if (!label) {
     console.error('--market=domestic|overseas|crypto 필수');
     process.exit(1);
+  }
+
+  const timingGuard = shouldAllowScheduledAlert(market, event, new Date());
+  if (!timingGuard.allowed) {
+    console.warn(
+      `[market-alert] ${label} ${event} 알림 스킵 — 현재 시각이 기대 시각(${timingGuard.expectedLabel})과 ${timingGuard.deltaMinutes}분 차이`,
+    );
+    process.exit(0);
   }
 
   if (market !== 'crypto') {
