@@ -36,6 +36,11 @@ function buildActions({ social, engagement }) {
 
   actions.push(...socialActions.slice(0, 3));
   actions.push(...engagementActions.slice(0, 3));
+  if (engagement?.adaptiveNeighborCadence?.shouldBoost) {
+    actions.push(
+      `외부 댓글 cadence boost 적용 중: reply+neighbor ${engagement.adaptiveNeighborCadence.combinedCommentSuccess}/${engagement.adaptiveNeighborCadence.combinedCommentExpectedNow}, process ${engagement.adaptiveNeighborCadence.effectiveProcessLimit}, collect ${engagement.adaptiveNeighborCadence.effectiveCollectLimit}`,
+    );
+  }
 
   if (actions.length === 0) {
     actions.push('블로팀 운영 doctor 기준 현재 즉시 조치 항목은 없습니다.');
@@ -71,7 +76,12 @@ function pickPrimary({ social, engagement, commands }) {
   if (engagementNeedsAttention || (engagementPrimaryArea && engagementPrimaryArea !== 'clear' && engagementPrimaryArea !== 'unknown')) {
     return {
       area: engagementPrimaryArea || 'engagement',
-      reason: engagement?.primary?.reason || '답글/댓글/공감 자동화 이슈가 현재 최우선 병목입니다.',
+      reason: [
+        engagement?.primary?.reason || '답글/댓글/공감 자동화 이슈가 현재 최우선 병목입니다.',
+        engagement?.adaptiveNeighborCadence?.shouldBoost
+          ? `외부 댓글 cadence boost ${engagement.adaptiveNeighborCadence.combinedCommentSuccess}/${engagement.adaptiveNeighborCadence.combinedCommentExpectedNow}`
+          : '',
+      ].filter(Boolean).join(' / '),
       nextCommand: engagement?.primary?.nextCommand || commands.engagement,
       actionFocus: engagement?.primary?.actionFocus || 'engagement',
     };
@@ -128,6 +138,7 @@ async function main() {
         failureByKind: engagement?.failureByKind || {},
         needsAttention: Boolean(engagement?.needsAttention),
         targetGaps: engagement?.targetGaps || [],
+        adaptiveNeighborCadence: engagement?.adaptiveNeighborCadence || null,
       },
       primary: payload.primary,
       actions: payload.actions,

@@ -1798,6 +1798,11 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
   ].filter(Boolean).join(' / ');
   const engagementDoctorHint = `doctor=${ENGAGEMENT_DOCTOR_COMMAND}`;
   const engagementImmediateAction = String(engagementDoctorPriority?.nextCommand || '').trim();
+  const adaptiveCadenceHint = engagementHealth?.adaptiveNeighborCadence?.enabled
+    ? engagementHealth.adaptiveNeighborCadence.shouldBoost
+      ? `외부 댓글 cadence boost: reply+neighbor ${Number(engagementHealth.adaptiveNeighborCadence.combinedCommentSuccess || 0)}/${Number(engagementHealth.adaptiveNeighborCadence.combinedCommentExpectedNow || 0)} / process ${Number(engagementHealth.adaptiveNeighborCadence.effectiveProcessLimit || 0)} / collect ${Number(engagementHealth.adaptiveNeighborCadence.effectiveCollectLimit || 0)}`
+      : '외부 댓글 cadence: baseline'
+    : '';
   const engagementRunPlanHint = engagementHealth?.latestReplyReplayCandidate || engagementHealth?.replies
     ? [
         engagementHealth?.replies?.expectedNow > Number(engagementHealth?.replies?.success || 0)
@@ -1921,6 +1926,7 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
           engagementDoctorPriority?.primaryArea === 'engagement.target_gap.replies.no_workload'
             ? '현재 inbound는 reply 후보가 없어 gap이 유지되고 있습니다.'
             : '',
+          adaptiveCadenceHint,
           Number(engagementHealth?.courtesyReflectionRecheck?.reevaluableCount || 0) > 0
             ? `현재 inbound reply 정책으로 재평가 가능한 generic greeting 댓글: ${engagementHealth.courtesyReflectionRecheck.reevaluableCount}/${engagementHealth.courtesyReflectionRecheck.reviewedCount}`
             : '',
