@@ -34,6 +34,8 @@ const RECOVERY_BLACKLIST = new Set([
   'ai.ops.platform.frontend',
   'ai.orchestrator',
 ]);
+const RESTART_TIMEOUT_COOLDOWN_MINUTES = 15;
+const RESTART_TIMEOUT_COOLDOWN_FAILS = 3;
 
 function kickstartLaunchdService(uid, label, timeout = 15000) {
   return execFileSync(
@@ -41,6 +43,26 @@ function kickstartLaunchdService(uid, label, timeout = 15000) {
     ['kickstart', '-kp', `gui/${uid}/${label}`],
     { timeout, encoding: 'utf8' },
   );
+}
+
+async function isRestartCooldownActive(label) {
+  if (!label) return false;
+  try {
+    const rows = await pgPool.query(SCHEMA, `
+      SELECT COUNT(*)::int AS cnt
+      FROM doctor_log
+      WHERE task_type = 'restart_launchd_service'
+        AND success <> 1
+        AND error_msg ILIKE '%ETIMEDOUT%'
+        AND params::jsonb->>'label' = $1
+        AND executed_at::timestamp > now() - ($2::text || ' minutes')::INTERVAL
+    `, [label, String(RESTART_TIMEOUT_COOLDOWN_MINUTES)]);
+    const cnt = Number(rows?.[0]?.cnt || 0);
+    return cnt >= RESTART_TIMEOUT_COOLDOWN_FAILS;
+  } catch (e) {
+    console.warn('[doctor] restart cooldown 조회 실패 (무시):', e.message);
+    return false;
+  }
 }
 
 // ─── 블랙리스트 (절대 금지 명령/패턴) ─────────────────────────────────────
@@ -217,6 +239,12 @@ async function execute(taskType, params = {}, requestedBy = 'dexter') {
     return { success: false, message: `${msg}${memoryHints}`, requiresConfirmation: true };
   }
 
+  if (taskType === 'restart_launchd_service' && await isRestartCooldownActive(params?.label)) {
+    const msg = `최근 launchctl timeout이 반복되어 재시작을 잠시 보류합니다: ${params?.label}`;
+    await logRecovery(taskType, params, null, false, requestedBy, null, msg);
+    return { success: false, message: `${msg}${memoryHints}` };
+  }
+
   // 4. 실행
   try {
     const data = await task.action(params);
@@ -326,8 +354,8 @@ async function getRecoveryHistory(days = 7) {
   try {
     return await pgPool.query(SCHEMA, `
       SELECT * FROM doctor_log
-      WHERE executed_at > now() - ($1 || ' days')::INTERVAL
-      ORDER BY executed_at DESC
+      WHERE executed_at::timestamp > now() - ($1::text || ' days')::INTERVAL
+      ORDER BY executed_at::timestamp DESC
       LIMIT 50
     `, [String(days)]);
   } catch (e) { console.warn('[doctor] doctor_log 조회 실패:', e.message); return []; }
