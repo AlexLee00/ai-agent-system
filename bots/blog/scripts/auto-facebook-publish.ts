@@ -25,6 +25,34 @@ const FACEBOOK_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bot
 const SOCIAL_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:social -- --json`;
 const BLOG_OPS_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:ops -- --json`;
 
+function extractJsonObjectText(output = '') {
+  const text = String(output || '').trim();
+  if (!text) return '';
+  if (text.startsWith('{')) return text;
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start >= 0 && end > start) return text.slice(start, end + 1);
+  return text;
+}
+
+function getDoctorActions(command = '', limit = 2) {
+  if (!command) return [];
+  try {
+    const { execFileSync } = require('child_process');
+    const output = execFileSync('zsh', ['-lc', command], {
+      cwd: path.join(env.PROJECT_ROOT, 'bots/blog'),
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+    const payload = JSON.parse(extractJsonObjectText(output) || '{}');
+    return Array.isArray(payload?.actions)
+      ? payload.actions.map((item) => String(item || '').trim()).filter(Boolean).slice(0, limit)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 function buildPreviewBundleForTitle(title = '') {
   try {
     const {
@@ -50,6 +78,8 @@ async function buildFacebookFailureDetail(error) {
   const baseMessage = String(error?.message || error || '').trim();
   try {
     const readiness = await checkFacebookPublishReadiness().catch(() => null);
+    const socialActions = getDoctorActions(SOCIAL_DOCTOR_COMMAND);
+    const opsActions = getDoctorActions(BLOG_OPS_DOCTOR_COMMAND);
     const scopes = Array.isArray(readiness?.permissionScopes) && readiness.permissionScopes.length > 0
       ? readiness.permissionScopes.join(', ')
       : (baseMessage.includes('pages_manage_posts') || baseMessage.includes('pages_read_engagement')
@@ -67,6 +97,8 @@ async function buildFacebookFailureDetail(error) {
       `ops=${BLOG_OPS_DOCTOR_COMMAND}`,
       'primary blocker=social.facebook',
       `next=${SOCIAL_DOCTOR_COMMAND}`,
+      ...socialActions.map((item) => `social action=${item}`),
+      ...opsActions.map((item) => `ops action=${item}`),
       actionHint,
     ].filter(Boolean).join(' / ');
     return extras ? `${baseMessage}\n${extras}` : baseMessage;
