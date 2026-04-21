@@ -3197,6 +3197,25 @@ async function focusCommentEditor(page, logNo = '', timeoutMs = 15000) {
   `);
 }
 
+async function focusReplyEditorWithRetry(page, { logNo = '', testMode = false } = {}) {
+  try {
+    return await focusReplyEditor(page);
+  } catch (error) {
+    const replyModeState = await inspectActivateReplyModeLite(page).catch(() => null);
+    traceCommenter('postReply:reply-editor-focus-retry', {
+      logNo,
+      reason: String(error?.message || error),
+      replyAreaVisible: Boolean(replyModeState?.replyAreaVisible),
+      replyEditorCount: Number(replyModeState?.replyEditorCount || 0),
+    });
+    if (!isReplyModeStateReady(replyModeState)) {
+      throw error;
+    }
+    await sleep(testMode ? 120 : 250);
+    return focusReplyEditor(page);
+  }
+}
+
 async function submitReply(page, browserPage = null) {
   if (browserPage && process.env.BLOG_COMMENTER_KEYBOARD_SUBMIT === 'true') {
     traceCommenter('postReply:submit-keyboard-start');
@@ -3944,22 +3963,18 @@ async function postReply(comment, replyText, { testMode = false, dryRun = false,
 
     await humanDelay(1, 2, testMode);
     let editor = null;
-    let usedCommentEditorFallback = false;
     try {
-      editor = await focusReplyEditor(contentFrame);
+      editor = await focusReplyEditorWithRetry(contentFrame, { logNo, testMode });
     } catch (error) {
-      traceCommenter('postReply:reply-editor-fallback', {
+      traceCommenter('postReply:reply-editor-focus-failed', {
         commentId: comment.id,
         reason: String(error?.message || error),
       });
-      editor = await focusCommentEditor(contentFrame, logNo, testMode ? 8000 : 15000).catch(() => null);
-      usedCommentEditorFallback = Boolean(editor?.selector);
     }
     traceCommenter('postReply:editor-focused', {
       commentId: comment.id,
       hasEditor: Boolean(editor?.selector),
       selector: editor?.selector || '',
-      usedCommentEditorFallback,
     });
     if (!editor?.selector) {
       throw new Error('reply_editor_not_found');
