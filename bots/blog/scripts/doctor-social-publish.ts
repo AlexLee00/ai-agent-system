@@ -181,6 +181,20 @@ function buildPrimary({ latestFacebook, latestInstagram, facebookReadiness, inst
 }
 
 function buildSocialDoctorFallback(payload = {}) {
+  const primaryArea = String(payload?.primary?.area || '');
+  const facebookError = String(payload?.facebook?.error || '');
+  if (primaryArea === 'social.facebook.readiness') {
+    if (facebookError.includes('Facebook 사용자 access token 세션이 만료되었습니다.')) {
+      return '소셜 자동등록의 현재 최우선 병목은 Facebook 허브 사용자 토큰 만료라 access_token 교체와 readiness 재확인이 먼저입니다.';
+    }
+    return '소셜 자동등록의 현재 최우선 병목은 Facebook readiness 에러라 토큰/권한 상태를 먼저 확인하는 편이 좋습니다.';
+  }
+  if (primaryArea === 'social.facebook') {
+    return '소셜 자동등록의 현재 최우선 병목은 Facebook 게시 권한/페이지 연결이라 Meta 권한과 페이지 토큰을 먼저 점검하는 편이 좋습니다.';
+  }
+  if (primaryArea === 'social.instagram') {
+    return '소셜 자동등록의 현재 최우선 병목은 Instagram publish/readiness라 공개 자산과 게시 실패 이유를 먼저 점검하는 편이 좋습니다.';
+  }
   if (payload.facebook?.needsAttention || payload.instagram?.needsAttention) {
     return '소셜 자동등록은 준비돼 있지만 최근 실패 흔적이 있어 채널별 doctor와 preview를 함께 보고 정리하는 편이 좋습니다.';
   }
@@ -209,6 +223,7 @@ async function main() {
       ready: Boolean(facebookReadiness?.ready),
       pageId: String(facebookReadiness?.pageId || ''),
       permissionScopes: Array.isArray(facebookReadiness?.permissionScopes) ? facebookReadiness.permissionScopes : [],
+      error: String(facebookReadiness?.error || ''),
       latest: latestFacebook
         ? {
             status: String(latestFacebook.status || 'unknown'),
