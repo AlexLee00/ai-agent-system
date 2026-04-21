@@ -2842,14 +2842,30 @@ async function focusReplyEditor(page) {
       const nodes = roots
         .flatMap((root) => Array.from(root.querySelectorAll('textarea, div[contenteditable="true"], div[role="textbox"]')))
         .filter(visible);
-      const target = nodes[nodes.length - 1];
+      const scoreNode = (node) => {
+        let score = 0;
+        const id = String(node.id || '');
+        const dataAreaCode = String(node.getAttribute('data-area-code') || '');
+        const title = String(node.getAttribute('title') || '');
+        if (/__reply_textarea_/i.test(id)) score += 6;
+        if (dataAreaCode === 'RPC.replyinput') score += 5;
+        if (/답글|답변/.test(title)) score += 2;
+        if (scope.contains(node)) score += 1;
+        return score;
+      };
+      const target = nodes
+        .map((node) => ({ node, score: scoreNode(node) }))
+        .sort((a, b) => b.score - a.score)
+        .map((entry) => entry.node)[0];
       if (!target) return null;
+      document.querySelectorAll('[data-blog-commenter-editor="true"]').forEach((node) => node.removeAttribute('data-blog-commenter-editor'));
       target.setAttribute('data-blog-commenter-editor', 'true');
       target.focus();
       return {
         selector: '[data-blog-commenter-editor="true"]',
         tagName: String(target.tagName || '').toLowerCase(),
         contentEditable: target.getAttribute('contenteditable') === 'true',
+        id: String(target.id || ''),
       };
     })()
   `);
