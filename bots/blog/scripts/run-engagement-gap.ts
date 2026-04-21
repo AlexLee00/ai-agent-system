@@ -102,6 +102,7 @@ function main() {
     command: target.command,
     primary: payload?.primary || null,
     dryRun: args.dryRun,
+    attempted: [],
   };
 
   if (args.dryRun) {
@@ -117,11 +118,20 @@ function main() {
 
   let executedTarget = null;
   let nextEscalated = false;
+  let allIdle = true;
 
   for (const candidate of targetQueue) {
     const output = executeTargetCommand(candidate.command);
+    const idle = looksIdleOutput(output);
+    result.attempted.push({
+      label: candidate.label,
+      summary: candidate.summary,
+      command: candidate.command,
+      idle,
+    });
     executedTarget = candidate;
-    if (!looksIdleOutput(output)) {
+    if (!idle) {
+      allIdle = false;
       break;
     }
     if (candidate !== targetQueue[targetQueue.length - 1]) {
@@ -134,6 +144,10 @@ function main() {
   result.summary = executedTarget?.summary || result.summary;
   result.command = executedTarget?.command || result.command;
   result.escalated = nextEscalated;
+  result.allIdle = allIdle;
+  if (allIdle) {
+    result.idleReason = '모든 engagement gap target에 즉시 처리할 workload가 없습니다.';
+  }
 
   if (args.json) {
     console.log(JSON.stringify(result, null, 2));
@@ -144,6 +158,9 @@ function main() {
   console.log(`command: ${result.command}`);
   if (result.escalated) {
     console.log('note: earlier gap target had no immediate workload, so the runner escalated to the next gap.');
+  }
+  if (result.allIdle) {
+    console.log(`idle: ${result.idleReason}`);
   }
 }
 
