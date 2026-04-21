@@ -1991,9 +1991,17 @@ async function openReplyEditor(page, comment) {
           const dataAction = String(btn.getAttribute('data-action') || '');
           return (/답글|답변/.test(text) || /btn_reply|reply/i.test(cls) || /reply#toggle/.test(dataAction)) && !/widget_recent_reply/i.test(cls);
         });
-      if (globalReplyButtons.length === 1) {
+      if (!commentNo && globalReplyButtons.length === 1) {
         const replyButton = globalReplyButtons[0];
         const fallbackTarget = resolveCommentTarget(replyButton);
+        const fallbackText = textOf(fallbackTarget);
+        const looksRelated =
+          (commentText && fallbackText.includes(commentText.slice(0, Math.min(20, commentText.length))))
+          || (commenterName && fallbackText.includes(commenterName))
+          || (commenterId && fallbackText.includes(commenterId));
+        if (!looksRelated) {
+          return false;
+        }
         document.querySelectorAll('[data-blog-target-comment],[data-blog-target-reply-button],[data-blog-target-reply-area]').forEach((node) => {
           node.removeAttribute('data-blog-target-comment');
           node.removeAttribute('data-blog-target-reply-button');
@@ -2150,15 +2158,7 @@ async function activateReplyMode(page) {
       }
       const targetReplyButton = document.querySelector('[data-blog-target-reply-button="true"]');
       const ariaExpanded = String(targetReplyButton?.getAttribute('aria-expanded') || '').trim().toLowerCase();
-      if (ariaExpanded === 'true' || visible(stateOnButton)) {
-        const globalWriteWrap = document.querySelector('.u_cbox_write_wrap')
-          || document.querySelector('.u_cbox_write')
-          || document.querySelector('.u_cbox_write_area');
-        if (visible(globalWriteWrap) && hasVisibleEditor(globalWriteWrap)) {
-          return true;
-        }
-      }
-      return ariaExpanded === 'true';
+      return ariaExpanded === 'true' && visible(stateOnButton);
     })()
   `, { timeout: 8000 }).then(() => true).catch(() => false);
 }
