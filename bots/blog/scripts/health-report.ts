@@ -275,6 +275,8 @@ function buildDoctorPriority(command = '', label = 'doctor') {
     const jsonText = extractJsonObjectText(output);
     const payload = JSON.parse(jsonText || '{}');
     const primary = payload?.primary || {};
+    const primaryArea = String(primary.area || 'unknown');
+    const hasActivePrimary = primaryArea !== 'clear' && primaryArea !== 'unknown';
     const actions = Array.isArray(payload?.actions)
       ? payload.actions
           .map((item) => String(item || '').trim())
@@ -282,23 +284,25 @@ function buildDoctorPriority(command = '', label = 'doctor') {
           .slice(0, 2)
       : [];
     const ok = [
-      `  ${label} primary: ${String(primary.area || 'unknown')} / ${String(primary.reason || '정보 없음')}`,
+      `  ${label} primary: ${primaryArea} / ${String(primary.reason || '정보 없음')}`,
     ];
-    if (primary.nextCommand) ok.push(`  ${label} next: ${String(primary.nextCommand)}`);
-    if (primary.actionFocus) ok.push(`  ${label} focus: ${String(primary.actionFocus)}`);
-    for (const action of actions) {
-      ok.push(`  ${label} action: ${action}`);
+    if (hasActivePrimary && primary.nextCommand) ok.push(`  ${label} next: ${String(primary.nextCommand)}`);
+    if (hasActivePrimary && primary.actionFocus) ok.push(`  ${label} focus: ${String(primary.actionFocus)}`);
+    if (hasActivePrimary) {
+      for (const action of actions) {
+        ok.push(`  ${label} action: ${action}`);
+      }
     }
     return {
       okCount: ok.length,
       warnCount: 0,
       ok,
       warn: [],
-      primaryArea: String(primary.area || 'unknown'),
+      primaryArea,
       primaryReason: String(primary.reason || '정보 없음'),
-      nextCommand: String(primary.nextCommand || ''),
-      actionFocus: String(primary.actionFocus || ''),
-      actions,
+      nextCommand: hasActivePrimary ? String(primary.nextCommand || '') : '',
+      actionFocus: hasActivePrimary ? String(primary.actionFocus || '') : '',
+      actions: hasActivePrimary ? actions : [],
     };
   } catch (error) {
     const reason = String(error?.message || error).slice(0, 160);
@@ -2055,8 +2059,10 @@ function buildOpsPriority(socialAutomationHealth, engagementHealth, socialDoctor
   if (actionFocus) {
     ok.push(`  next action focus: ${actionFocus}`);
   }
-  for (const action of Array.isArray(opsDoctorPriority?.actions) ? opsDoctorPriority.actions.slice(0, 2) : []) {
-    ok.push(`  ops action: ${action}`);
+  if (primaryArea !== 'clear' && primaryArea !== 'unknown') {
+    for (const action of Array.isArray(opsDoctorPriority?.actions) ? opsDoctorPriority.actions.slice(0, 2) : []) {
+      ok.push(`  ops action: ${action}`);
+    }
   }
   if (primaryArea !== 'clear') {
     warn.push(`  next action focus: ${actionFocus || primaryArea}`);
