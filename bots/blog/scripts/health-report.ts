@@ -1755,7 +1755,7 @@ async function buildMarketingExpansionHealth() {
   }
 }
 
-function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealth, instagramHealth, socialAutomationHealth, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth, marketingExpansionHealth, engagementHealth, engagementDoctorPriority = null) {
+function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealth, instagramHealth, socialAutomationHealth, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth, marketingExpansionHealth, engagementHealth, engagementDoctorPriority = null, opsDoctorPriority = null) {
   const previewBundleHint = [
     socialAutomationHealth.latestReelUrl ? `reel=${socialAutomationHealth.latestReelUrl}` : '',
     socialAutomationHealth.latestCoverUrl ? `cover=${socialAutomationHealth.latestCoverUrl}` : '',
@@ -1763,6 +1763,13 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
   ].filter(Boolean).join(' / ');
   const instagramDiagnoseHint = `diagnose=${INSTAGRAM_READINESS_COMMAND} / doctor=${INSTAGRAM_DOCTOR_COMMAND} / social=${SOCIAL_DOCTOR_COMMAND}`;
   const opsDoctorHint = `ops=${BLOG_OPS_DOCTOR_COMMAND}`;
+  const opsActionHints = Array.isArray(opsDoctorPriority?.actions)
+    ? opsDoctorPriority.actions
+        .map((item) => String(item || '').trim())
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((item) => `ops action: ${item}`)
+    : [];
   const engagementFailureHint = engagementHealth?.failureSamples?.[0]
     ? `${engagementHealth.failureSamples[0].kind}/${engagementHealth.failureSamples[0].actionType} ${engagementHealth.failureSamples[0].sample}`
     : '';
@@ -1879,15 +1886,15 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
         active: socialAutomationHealth.instagramNeedsAttention,
         level: 'medium',
         reason: previewBundleHint
-          ? `최근 인스타 자동등록 실패 이력이 있어 릴스/공개 URL/게시 경로 점검이 필요합니다. ${instagramDiagnoseHint} / ${opsDoctorHint} 최신 preview: ${previewBundleHint}`
-          : `최근 인스타 자동등록 실패 이력이 있어 릴스/공개 URL/게시 경로 점검이 필요합니다. ${instagramDiagnoseHint} / ${opsDoctorHint}`,
+          ? `최근 인스타 자동등록 실패 이력이 있어 릴스/공개 URL/게시 경로 점검이 필요합니다. ${instagramDiagnoseHint} / ${opsDoctorHint}${opsActionHints.length ? ` / ${opsActionHints.join(' / ')}` : ''} 최신 preview: ${previewBundleHint}`
+          : `최근 인스타 자동등록 실패 이력이 있어 릴스/공개 URL/게시 경로 점검이 필요합니다. ${instagramDiagnoseHint} / ${opsDoctorHint}${opsActionHints.length ? ` / ${opsActionHints.join(' / ')}` : ''}`,
       },
       {
         active: socialAutomationHealth.facebookNeedsAttention,
         level: 'medium',
         reason: previewBundleHint
-          ? `최근 페이스북 자동등록 실패 이력이 있어 권한/게시 경로 점검이 필요합니다. ${socialAutomationHealth.latestFacebookErrorSummary || ''}${socialAutomationHealth.facebookPageId ? ` page=${socialAutomationHealth.facebookPageId}` : ''}${Array.isArray(socialAutomationHealth.facebookPermissionScopes) && socialAutomationHealth.facebookPermissionScopes.length > 0 ? ` scopes=${socialAutomationHealth.facebookPermissionScopes.join(',')}` : ''} diagnose=${FACEBOOK_READINESS_COMMAND} / doctor=${FACEBOOK_DOCTOR_COMMAND} / social=${SOCIAL_DOCTOR_COMMAND} / ${opsDoctorHint} 최신 preview: ${previewBundleHint}`.trim()
-          : `최근 페이스북 자동등록 실패 이력이 있어 권한/게시 경로 점검이 필요합니다. ${socialAutomationHealth.latestFacebookErrorSummary || ''}${socialAutomationHealth.facebookPageId ? ` page=${socialAutomationHealth.facebookPageId}` : ''}${Array.isArray(socialAutomationHealth.facebookPermissionScopes) && socialAutomationHealth.facebookPermissionScopes.length > 0 ? ` scopes=${socialAutomationHealth.facebookPermissionScopes.join(',')}` : ''} diagnose=${FACEBOOK_READINESS_COMMAND} / doctor=${FACEBOOK_DOCTOR_COMMAND} / social=${SOCIAL_DOCTOR_COMMAND} / ${opsDoctorHint}`.trim(),
+          ? `최근 페이스북 자동등록 실패 이력이 있어 권한/게시 경로 점검이 필요합니다. ${socialAutomationHealth.latestFacebookErrorSummary || ''}${socialAutomationHealth.facebookPageId ? ` page=${socialAutomationHealth.facebookPageId}` : ''}${Array.isArray(socialAutomationHealth.facebookPermissionScopes) && socialAutomationHealth.facebookPermissionScopes.length > 0 ? ` scopes=${socialAutomationHealth.facebookPermissionScopes.join(',')}` : ''} diagnose=${FACEBOOK_READINESS_COMMAND} / doctor=${FACEBOOK_DOCTOR_COMMAND} / social=${SOCIAL_DOCTOR_COMMAND} / ${opsDoctorHint}${opsActionHints.length ? ` / ${opsActionHints.join(' / ')}` : ''} 최신 preview: ${previewBundleHint}`.trim()
+          : `최근 페이스북 자동등록 실패 이력이 있어 권한/게시 경로 점검이 필요합니다. ${socialAutomationHealth.latestFacebookErrorSummary || ''}${socialAutomationHealth.facebookPageId ? ` page=${socialAutomationHealth.facebookPageId}` : ''}${Array.isArray(socialAutomationHealth.facebookPermissionScopes) && socialAutomationHealth.facebookPermissionScopes.length > 0 ? ` scopes=${socialAutomationHealth.facebookPermissionScopes.join(',')}` : ''} diagnose=${FACEBOOK_READINESS_COMMAND} / doctor=${FACEBOOK_DOCTOR_COMMAND} / social=${SOCIAL_DOCTOR_COMMAND} / ${opsDoctorHint}${opsActionHints.length ? ` / ${opsActionHints.join(' / ')}` : ''}`.trim(),
       },
       {
         active: socialAutomationHealth.publishLogExists === false,
@@ -1947,6 +1954,7 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
           engagementReplayHint ? `재현: ${engagementReplayHint}` : '',
           engagementDoctorHint,
           opsDoctorHint,
+          ...opsActionHints,
         ].filter(Boolean).join(' '),
       },
     ],
@@ -2122,7 +2130,7 @@ async function buildReport() {
   const socialDoctorPriority = buildDoctorPriority(SOCIAL_DOCTOR_COMMAND, 'social doctor');
   const engagementDoctorPriority = buildDoctorPriority(ENGAGEMENT_DOCTOR_COMMAND, 'engagement doctor');
   const opsDoctorPriority = buildDoctorPriority(BLOG_OPS_DOCTOR_COMMAND, 'ops doctor');
-  const decision = buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealth, instagramHealth, socialAutomationHealth, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth, marketingExpansionHealth, engagementHealth, engagementDoctorPriority);
+  const decision = buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealth, instagramHealth, socialAutomationHealth, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth, marketingExpansionHealth, engagementHealth, engagementDoctorPriority, opsDoctorPriority);
   const remodelProgress = buildRemodelProgress(instagramHealth, phase1Health, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth);
   const doctorPriority = {
     okCount: socialDoctorPriority.okCount + engagementDoctorPriority.okCount,
