@@ -4041,6 +4041,7 @@ async function verifyReplyPosted(page, replyText, comment, testMode = false, bro
       if (replyEditorId) {
         const replyEditor = document.getElementById(replyEditorId);
         const replyEditorVisible = visible(replyEditor);
+        const replyEditorText = textOf(replyEditor);
         const targetComment = document.querySelector('[data-blog-target-comment="true"]');
         const targetReplyArea = document.querySelector('[data-blog-target-reply-area="true"]')
           || targetComment?.querySelector('.u_cbox_reply_area')
@@ -4098,8 +4099,13 @@ async function verifyReplyPosted(page, replyText, comment, testMode = false, bro
         const replyButtonOn = /u_cbox_btn_reply_on/.test(String(targetReplyButton?.className || ''));
         const replyComposerClosed = !replyAreaVisible && !replyEditorVisible;
         const replyToggleReset = !replyButtonOn && replyButtonExpanded !== 'true';
+        const replyEditorCleared = replyEditorVisible && replyEditorText.length === 0;
 
         if (!replyEditorVisible && (submitDisabled || !submitButton)) {
+          return true;
+        }
+
+        if (replyEditorCleared && (submitDisabled || !submitButton || replyToggleReset)) {
           return true;
         }
 
