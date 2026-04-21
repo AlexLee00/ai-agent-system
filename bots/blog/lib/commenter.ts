@@ -2962,19 +2962,20 @@ async function submitReply(page, browserPage = null) {
         return false;
       };
       const targetReplyArea = document.querySelector('[data-blog-target-reply-area="true"]');
-      const targetComment = document.querySelector('[data-blog-target-comment="true"]');
       const targetEditor = document.querySelector('[data-blog-commenter-editor="true"]');
+      const replyFormRoot =
+        targetEditor && targetEditor.closest('form')
+        || targetEditor && targetEditor.closest('.u_cbox_write_box')
+        || targetEditor && targetEditor.closest('.u_cbox_write_wrap')
+        || targetReplyArea && targetReplyArea.querySelector('form')
+        || targetReplyArea && targetReplyArea.querySelector('.u_cbox_write_box')
+        || targetReplyArea && targetReplyArea.querySelector('.u_cbox_write_wrap')
+        || null;
       const roots = [
+        replyFormRoot,
         targetReplyArea,
-        targetReplyArea && targetReplyArea.parentElement,
-        targetEditor && targetEditor.closest('.u_cbox_write_box, .u_cbox_reply_write, .u_cbox_reply_area, .u_cbox_comment_box'),
+        targetEditor && targetEditor.closest('.u_cbox_write_box, .u_cbox_reply_write, .u_cbox_reply_area'),
         targetEditor && targetEditor.closest('.u_cbox_write_wrap, .u_cbox_write, .u_cbox_write_area'),
-        targetComment && targetComment.parentElement,
-        targetComment,
-        document.querySelector('[data-blog-target-reply-button="true"]')?.closest('li.u_cbox_comment, li[class*="comment"], .u_cbox_comment_box, [class*="comment"]'),
-        document.querySelector('.u_cbox_write_wrap'),
-        document.querySelector('.u_cbox_write'),
-        document.querySelector('.u_cbox_write_area'),
       ].filter(Boolean);
 
       const scoreNode = (node, root) => {
@@ -2983,10 +2984,10 @@ async function submitReply(page, browserPage = null) {
         const cls = String(node.className || '');
         const dataAction = String(node.getAttribute('data-action') || '');
         const uiSelector = String(node.getAttribute('data-ui-selector') || '');
+        if (replyFormRoot && replyFormRoot.contains(node)) score += 8;
         if (root === targetReplyArea) score += 6;
         if (targetEditor && targetEditor.closest('.u_cbox_write_box, .u_cbox_reply_write, .u_cbox_reply_area, .u_cbox_comment_box')?.contains(node)) score += 4;
         if (targetEditor && targetEditor.closest('.u_cbox_write_wrap, .u_cbox_write, .u_cbox_write_area')?.contains(node)) score += 3;
-        if (targetComment && targetComment.contains(node)) score += 2;
         if (/등록|완료|게시/.test(text)) score += 3;
         if (dataAction.includes('write#request')) score += 3;
         if (uiSelector === 'writeButton' || /^writeButton_/i.test(uiSelector)) score += 2;
@@ -3004,12 +3005,6 @@ async function submitReply(page, browserPage = null) {
             bestScore = score;
             node = candidate;
           }
-        }
-      }
-      if (!node) {
-        const globalNode = Array.from(document.querySelectorAll('button, a, input[type="submit"], [role="button"]')).find(isReplySubmit);
-        if (globalNode) {
-          node = globalNode;
         }
       }
       document.querySelectorAll('[data-blog-commenter-submit="true"]').forEach((item) => item.removeAttribute('data-blog-commenter-submit'));
