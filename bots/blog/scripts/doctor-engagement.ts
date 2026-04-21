@@ -183,7 +183,7 @@ async function getLatestReplyReplayCandidate() {
 
 async function getReplyWorkloadStatus() {
   try {
-    const [statusRows, latestRow] = await Promise.all([
+    const [statusRows, latestRow, skippedTodayRows, skipped14dRows] = await Promise.all([
       pgPool.query('blog', `
         SELECT status, COUNT(*)::int AS cnt
         FROM blog.comments
@@ -203,6 +203,24 @@ async function getReplyWorkloadStatus() {
         ORDER BY detected_at DESC
         LIMIT 1
       `),
+      pgPool.query('blog', `
+        SELECT COALESCE(error_message, '') AS reason, COUNT(*)::int AS cnt
+        FROM blog.comments
+        WHERE timezone('Asia/Seoul', detected_at)::date = timezone('Asia/Seoul', now())::date
+          AND status = 'skipped'
+        GROUP BY 1
+        ORDER BY cnt DESC, reason ASC
+        LIMIT 5
+      `),
+      pgPool.query('blog', `
+        SELECT COALESCE(error_message, '') AS reason, COUNT(*)::int AS cnt
+        FROM blog.comments
+        WHERE detected_at >= now() - interval '14 days'
+          AND status = 'skipped'
+        GROUP BY 1
+        ORDER BY cnt DESC, reason ASC
+        LIMIT 5
+      `),
     ]);
 
     const counts = new Map();
@@ -216,6 +234,14 @@ async function getReplyWorkloadStatus() {
       skippedCount: Number(counts.get('skipped') || 0),
       failedCount: Number(counts.get('failed') || 0),
       repliedCount: Number(counts.get('replied') || 0),
+      skippedReasonsToday: (skippedTodayRows || []).map((row) => ({
+        reason: String(row.reason || ''),
+        count: Number(row.cnt || 0),
+      })),
+      skippedReasons14d: (skipped14dRows || []).map((row) => ({
+        reason: String(row.reason || ''),
+        count: Number(row.cnt || 0),
+      })),
       latest: latestRow
         ? {
             id: latestRow.id,
@@ -234,6 +260,8 @@ async function getReplyWorkloadStatus() {
       skippedCount: 0,
       failedCount: 0,
       repliedCount: 0,
+      skippedReasonsToday: [],
+      skippedReasons14d: [],
       latest: null,
     };
   }
@@ -254,6 +282,10 @@ function buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, p
       && String(replyWorkload?.latest?.status || '') === 'skipped'
     ) {
       actions.push(`현재 reply 대상이 없습니다 — latest skipped: ${String(replyWorkload.latest.errorMessage || 'unknown')}`);
+      const dominantSkip = Array.isArray(replyWorkload?.skippedReasons14d) ? replyWorkload.skippedReasons14d[0] : null;
+      if (dominantSkip?.reason) {
+        actions.push(`최근 14일 주요 inbound 필터: ${dominantSkip.reason} ${dominantSkip.count}건`);
+      }
     }
     actions.push(
       primaryGap?.label
@@ -309,7 +341,7 @@ function buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps, p
     ) {
       return {
         area: 'engagement.target_gap.replies.no_workload',
-        reason: `replies 목표치는 비어 있지만 현재 reply 대상 댓글이 없습니다 (latest skipped: ${String(replyWorkload.latest.errorMessage || 'unknown')}).`,
+        reason: `replies 목표치는 비어 있지만 현재 reply 대상 댓글이 없습니다 (latest skipped: ${String(replyWorkload.latest.errorMessage || 'unknown')}${Array.isArray(replyWorkload?.skippedReasons14d) && replyWorkload.skippedReasons14d[0]?.reason ? ` / 14d top filter: ${replyWorkload.skippedReasons14d[0].reason} ${replyWorkload.skippedReasons14d[0].count}건` : ''}).`,
         nextCommand: `${RUN_ENGAGEMENT_GAP_COMMAND} -- --label=replies`,
         actionFocus: 'replyable inbound 유입과 필터링 기준 점검',
       };
@@ -338,7 +370,7 @@ function buildEngagementDoctorFallback(payload = {}) {
     return 'engagement 자동화는 최근 실패 흔적이 있어 replay 대상과 UI/browser 실패 비중부터 확인하는 편이 좋습니다.';
   }
   if (payload.replyWorkload?.pendingCount === 0 && payload.replyWorkload?.latest?.status === 'skipped' && payload.primaryGap?.label === 'replies') {
-    return 'engagement 자동화는 지금 실행 실패보다 replyable inbound 부족이 더 큰 이유라서, 최신 필터링 사유와 유입량을 먼저 보는 편이 좋습니다.';
+    return 'engagement 자동화는 지금 실행 실패보다 replyable inbound 부족이 더 큰 이유라서, 최신 필터링 사유와 최근 누적 skip 패턴을 먼저 보는 편이 좋습니다.';
   }
   if (Array.isArray(payload.targetGaps) && payload.targetGaps.length > 0) {
     return 'engagement 자동화는 운영 시간대 기준 목표치가 뒤처져 있어 실적 차이와 다음 실행 사이클을 먼저 보는 편이 좋습니다.';
@@ -488,6 +520,12 @@ async function main() {
   }
   if (payload.replyWorkload?.latest?.id) {
     console.log(`[engagement doctor] workload=pending ${payload.replyWorkload.pendingCount} / skipped ${payload.replyWorkload.skippedCount} / latest ${payload.replyWorkload.latest.status} (${String(payload.replyWorkload.latest.errorMessage || 'ok')})`);
+  }
+  if (Array.isArray(payload.replyWorkload?.skippedReasonsToday) && payload.replyWorkload.skippedReasonsToday.length > 0) {
+    console.log(`[engagement doctor] skipped_today=${payload.replyWorkload.skippedReasonsToday.map((item) => `${item.reason}:${item.count}`).join(', ')}`);
+  }
+  if (Array.isArray(payload.replyWorkload?.skippedReasons14d) && payload.replyWorkload.skippedReasons14d.length > 0) {
+    console.log(`[engagement doctor] skipped_14d=${payload.replyWorkload.skippedReasons14d.map((item) => `${item.reason}:${item.count}`).join(', ')}`);
   }
   if (Array.isArray(payload.runPlan) && payload.runPlan.length > 0) {
     console.log(`[engagement doctor] run_plan=${payload.runPlan.map((item) => `${item.step}.${item.label}`).join(' -> ')}`);

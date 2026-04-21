@@ -924,7 +924,7 @@ async function buildEngagementHealth() {
     const replyConfig = runtimeConfig.commenter || {};
     const neighborConfig = runtimeConfig.neighborCommenter || {};
 
-    const [actionAggRows, failureMetaRows, commentRows, neighborRows, latestReplyReplayCandidate, skippedReasonRows, latestCommentRow] = await Promise.all([
+    const [actionAggRows, failureMetaRows, commentRows, neighborRows, latestReplyReplayCandidate, skippedReasonRows, skippedReason14dRows, latestCommentRow] = await Promise.all([
       pgPool.query('blog', `
         SELECT action_type, success, COUNT(*)::int AS cnt
         FROM blog.comment_actions
@@ -993,6 +993,15 @@ async function buildEngagementHealth() {
         ORDER BY cnt DESC, reason ASC
         LIMIT 5
       `),
+      pgPool.query('blog', `
+        SELECT COALESCE(error_message, '') AS reason, COUNT(*)::int AS cnt
+        FROM blog.comments
+        WHERE detected_at >= now() - interval '14 days'
+          AND status = 'skipped'
+        GROUP BY 1
+        ORDER BY cnt DESC, reason ASC
+        LIMIT 5
+      `),
       pgPool.get('blog', `
         SELECT
           id,
@@ -1044,6 +1053,9 @@ async function buildEngagementHealth() {
     const inbound = commentRows?.[0] || { total: 0, replied: 0, pending: 0, failed: 0 };
     const neighborStatusMap = new Map((neighborRows || []).map((row) => [row.status, Number(row.cnt || 0)]));
     const skippedReasonSummary = (skippedReasonRows || [])
+      .map((row) => `${String(row.reason || 'unknown')} ${Number(row.cnt || 0)}건`)
+      .join(' / ');
+    const skippedReason14dSummary = (skippedReason14dRows || [])
       .map((row) => `${String(row.reason || 'unknown')} ${Number(row.cnt || 0)}건`)
       .join(' / ');
 
@@ -1110,6 +1122,9 @@ async function buildEngagementHealth() {
     if (skippedReasonSummary) {
       ok.push(`  skipped reasons today: ${skippedReasonSummary}`);
     }
+    if (skippedReason14dSummary) {
+      ok.push(`  skipped reasons 14d: ${skippedReason14dSummary}`);
+    }
     if (latestCommentRow?.id) {
       ok.push(
         `  latest inbound: comment ${latestCommentRow.id} / ${String(latestCommentRow.status || 'unknown')}${latestCommentRow.error_message ? ` / ${String(latestCommentRow.error_message)}` : ''}`
@@ -1163,6 +1178,7 @@ async function buildEngagementHealth() {
       failureSamples,
       latestReplyReplayCandidate: latestReplyReplayCandidate || null,
       skippedReasonSummary,
+      skippedReason14dSummary,
       latestInbound: latestCommentRow
         ? {
             id: latestCommentRow.id,
@@ -1189,6 +1205,7 @@ async function buildEngagementHealth() {
       failureSamples: [],
       latestReplyReplayCandidate: null,
       skippedReasonSummary: '',
+      skippedReason14dSummary: '',
       latestInbound: null,
     };
   }
