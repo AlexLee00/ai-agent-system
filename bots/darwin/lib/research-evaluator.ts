@@ -4,7 +4,40 @@
  * 다윈 논문 평가기 — 한국어 요약 + 적합성 점수
  */
 
-const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
+interface FallbackRequest {
+  chain: Array<{
+    provider: string;
+    model: string;
+    maxTokens: number;
+    temperature: number;
+  }>;
+  systemPrompt: string;
+  userPrompt: string;
+  logMeta: Record<string, unknown>;
+  timeoutMs: number;
+}
+
+interface FallbackResponse {
+  text?: string;
+}
+
+interface PaperCandidate {
+  title: string;
+  summary: string;
+  domain?: string;
+  source?: string;
+  arxiv_id?: string;
+}
+
+interface EvaluationResult {
+  korean_summary: string;
+  relevance_score: number;
+  reason: string;
+}
+
+const { callWithFallback }: {
+  callWithFallback: (request: FallbackRequest) => Promise<FallbackResponse>;
+} = require('../../../packages/core/lib/llm-fallback');
 
 const SYSTEM_PROMPT = `당신은 팀 제이의 연구 분석가입니다.
 팀 제이는 113개 AI 에이전트를 운영하는 멀티에이전트 자동화 플랫폼입니다.
@@ -24,7 +57,7 @@ const SYSTEM_PROMPT = `당신은 팀 제이의 연구 분석가입니다.
 적합성: (숫자)
 이유: (한국어 1줄)`;
 
-async function evaluatePaper(paper) {
+async function evaluatePaper(paper: PaperCandidate): Promise<EvaluationResult> {
   try {
     const result = await callWithFallback({
       chain: [
@@ -55,7 +88,11 @@ async function evaluatePaper(paper) {
       reason: reasonMatch?.[1]?.trim() || '',
     };
   } catch (err) {
-    console.warn(`[research-evaluator] 평가 실패 (${paper.arxiv_id || paper.title}): ${err.message}`);
+    const errorMessage =
+      typeof err === 'object' && err !== null && 'message' in err
+        ? String((err as { message?: unknown }).message || 'unknown error')
+        : String(err || 'unknown error');
+    console.warn(`[research-evaluator] 평가 실패 (${paper.arxiv_id || paper.title}): ${errorMessage}`);
     return {
       korean_summary: paper.title,
       relevance_score: 0,

@@ -4,8 +4,17 @@
  * 다윈 연구 제안서 저장소
  */
 
-const fs = require('fs');
-const path = require('path');
+const fs: typeof import('fs') = require('fs');
+const path: typeof import('path') = require('path');
+
+interface ProposalRecord {
+  id: string;
+  status?: string;
+  updated_at?: string;
+  arxiv_id?: string;
+  title?: string;
+  [key: string]: unknown;
+}
 
 const SANDBOX_DIR = path.join(__dirname, 'sandbox');
 const PROPOSALS_DIR = path.join(__dirname, '../../../../docs/research/proposals');
@@ -16,7 +25,7 @@ function ensureDirs() {
   return { sandboxDir: SANDBOX_DIR, proposalsDir: PROPOSALS_DIR };
 }
 
-function buildProposalId(paper) {
+function buildProposalId(paper: { arxiv_id?: string; title?: string }): string {
   const safeId = String(paper.arxiv_id || paper.title || 'proposal')
     .replace(/[/.:\s]+/g, '_')
     .replace(/_+/g, '_')
@@ -24,14 +33,14 @@ function buildProposalId(paper) {
   return `${safeId}_${Date.now()}`;
 }
 
-function saveProposal(proposalData) {
+function saveProposal(proposalData: ProposalRecord): string {
   ensureDirs();
   const proposalFile = path.join(PROPOSALS_DIR, `${proposalData.id}.json`);
   fs.writeFileSync(proposalFile, JSON.stringify(proposalData, null, 2), 'utf8');
   return proposalFile;
 }
 
-function _findProposalFile(proposalId) {
+function _findProposalFile(proposalId: string): string | null {
   ensureDirs();
   const exact = path.join(PROPOSALS_DIR, `${proposalId}.json`);
   if (fs.existsSync(exact)) return exact;
@@ -40,16 +49,20 @@ function _findProposalFile(proposalId) {
   return path.join(PROPOSALS_DIR, files[0]);
 }
 
-function loadProposal(proposalId) {
+function loadProposal(proposalId: string): ProposalRecord | null {
   const proposalFile = _findProposalFile(proposalId);
   if (!proposalFile) return null;
-  return JSON.parse(fs.readFileSync(proposalFile, 'utf8'));
+  return JSON.parse(fs.readFileSync(proposalFile, 'utf8')) as ProposalRecord;
 }
 
-function updateStatus(proposalId, status, extra = {}) {
+function updateStatus(
+  proposalId: string,
+  status: string,
+  extra: Record<string, unknown> = {}
+): ProposalRecord | null {
   const proposalFile = _findProposalFile(proposalId);
   if (!proposalFile) return null;
-  const proposal = JSON.parse(fs.readFileSync(proposalFile, 'utf8'));
+  const proposal = JSON.parse(fs.readFileSync(proposalFile, 'utf8')) as ProposalRecord;
   proposal.status = status;
   proposal.updated_at = new Date().toISOString();
   Object.assign(proposal, extra || {});

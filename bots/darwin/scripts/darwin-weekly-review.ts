@@ -6,28 +6,48 @@
  * Hub 경유 Telegram으로 발송.
  */
 
-import { createRequire } from "module";
-const require = createRequire(import.meta.url);
-
-const path = require("path");
-const PROJECT_ROOT = path.resolve(
-  path.dirname(new URL(import.meta.url).pathname),
-  "../../.."
-);
+const path: typeof import("path") = require("path");
+const PROJECT_ROOT = path.resolve(__dirname, "../../..");
 
 const { query } = require(
   path.join(PROJECT_ROOT, "packages/core/lib/pg-pool")
 );
 const { postAlarm } = require(path.join(PROJECT_ROOT, "packages/core/lib/openclaw-client"));
 
-function getWeekString() {
+interface QueryResultRow {
+  [key: string]: unknown;
+}
+
+interface QueryResult {
+  rows?: QueryResultRow[];
+}
+
+interface SettledQueryResult {
+  status: "fulfilled" | "rejected";
+  value?: QueryResult;
+}
+
+interface WeeklyReviewStats {
+  week: string;
+  total_cycles: number;
+  success_rate: string;
+  applied: number;
+  new_papers: number;
+  applied_papers: number;
+  preferred_pairs: number;
+  rejected_pairs: number;
+  shadow_match_rate: string;
+  weekly_cost_usd: number;
+}
+
+function getWeekString(): string {
   const now = new Date();
   const start = new Date(now);
   start.setDate(now.getDate() - 7);
   return `${start.toISOString().slice(0, 10)} ~ ${now.toISOString().slice(0, 10)}`;
 }
 
-async function collectWeeklyStats() {
+async function collectWeeklyStats(): Promise<WeeklyReviewStats> {
   const [cycleRows, registryRows, dpoRows, shadowRows, costRows] =
     await Promise.allSettled([
       query(`
@@ -64,11 +84,26 @@ async function collectWeeklyStats() {
       `),
     ]);
 
-  const cycle = cycleRows.status === "fulfilled" ? cycleRows.value?.rows?.[0] : {};
-  const registry = registryRows.status === "fulfilled" ? registryRows.value?.rows?.[0] : {};
-  const dpo = dpoRows.status === "fulfilled" ? dpoRows.value?.rows?.[0] : {};
-  const shadow = shadowRows.status === "fulfilled" ? shadowRows.value?.rows?.[0] : {};
-  const cost = costRows.status === "fulfilled" ? costRows.value?.rows?.[0] : {};
+  const cycle =
+    (cycleRows as SettledQueryResult).status === "fulfilled"
+      ? (cycleRows as SettledQueryResult).value?.rows?.[0] ?? {}
+      : {};
+  const registry =
+    (registryRows as SettledQueryResult).status === "fulfilled"
+      ? (registryRows as SettledQueryResult).value?.rows?.[0] ?? {}
+      : {};
+  const dpo =
+    (dpoRows as SettledQueryResult).status === "fulfilled"
+      ? (dpoRows as SettledQueryResult).value?.rows?.[0] ?? {}
+      : {};
+  const shadow =
+    (shadowRows as SettledQueryResult).status === "fulfilled"
+      ? (shadowRows as SettledQueryResult).value?.rows?.[0] ?? {}
+      : {};
+  const cost =
+    (costRows as SettledQueryResult).status === "fulfilled"
+      ? (costRows as SettledQueryResult).value?.rows?.[0] ?? {}
+      : {};
 
   const total = Number(cycle.total ?? 0);
   const successes = Number(cycle.successes ?? 0);
@@ -91,7 +126,7 @@ async function collectWeeklyStats() {
   };
 }
 
-async function main() {
+async function main(): Promise<void> {
   console.log("[darwin-weekly-review] 주간 리뷰 수집 시작");
   const stats = await collectWeeklyStats();
 
@@ -123,7 +158,11 @@ async function main() {
   console.log("[darwin-weekly-review] 발송 완료");
 }
 
-main().catch((err) => {
-  console.error("[darwin-weekly-review] 오류:", err);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error("[darwin-weekly-review] 오류:", err);
+    process.exit(1);
+  });
+}
+
+module.exports = { collectWeeklyStats, getWeekString, main };

@@ -6,9 +6,6 @@
  */
 
 import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
 
 export function describeSignalReceiverRuntime() {
   return {
@@ -28,7 +25,7 @@ export function describeSignalReceiverRuntime() {
 
 function isDirectExecution() {
   const entry = process.argv[1];
-  return Boolean(entry && path.resolve(entry) === __filename);
+  return Boolean(entry && path.resolve(entry) === path.resolve(__filename));
 }
 
 if (isDirectExecution()) {

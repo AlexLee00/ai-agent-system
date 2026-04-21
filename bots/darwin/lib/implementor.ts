@@ -29,7 +29,107 @@ const TEAM_BASE_DIRS = {
 };
 const logger = createLogger('implementor', { team: 'darwin' });
 
-function _runGit(args, opts = {}) {
+type ExecFileOptions = Omit<import('child_process').ExecFileSyncOptionsWithStringEncoding, 'encoding'>;
+
+interface FallbackResponse {
+  text?: string;
+}
+
+interface FallbackRequest {
+  systemPrompt: string;
+  userPrompt: string;
+  chain: Array<Record<string, unknown>>;
+  logMeta: Record<string, unknown>;
+  timeoutMs: number;
+}
+
+interface AlarmPayload {
+  message: string;
+  team: string;
+  alertLevel: number;
+  fromBot: string;
+  inlineKeyboard?: Array<Array<{ text: string; callback_data: string }>> | null;
+}
+
+interface EventLake {
+  record(payload: Record<string, unknown>): Promise<string | null>;
+}
+
+interface ProposalStore {
+  loadProposal(proposalId: string): ProposalRecord | null;
+  updateStatus(
+    proposalId: string,
+    status: string,
+    extra?: Record<string, unknown>
+  ): ProposalRecord | null;
+}
+
+interface AutonomyLevelModule {
+  recordError(error: unknown): void;
+}
+
+interface ProposalPaper {
+  title?: string;
+}
+
+interface ProposalTarget {
+  team?: string;
+}
+
+interface VerificationResult {
+  [key: string]: unknown;
+}
+
+interface ProposalRecord {
+  id?: string;
+  title?: string;
+  team?: string;
+  target?: ProposalTarget;
+  paper?: ProposalPaper;
+  proposal?: string;
+  prototype?: string;
+  branch?: string;
+  verification?: VerificationResult;
+  changed_files?: string[];
+  [key: string]: unknown;
+}
+
+interface ExtractedFile {
+  path: string;
+  content: string;
+}
+
+interface StashState {
+  created: boolean;
+  label: string | null;
+}
+
+interface SyntaxCheckResult {
+  path: string;
+  ok: boolean;
+  error?: string;
+}
+
+interface ApplyResult {
+  ok: boolean;
+  branchName: string;
+  changedFiles: string[];
+  syntaxChecks: SyntaxCheckResult[];
+}
+
+const eventLakeTyped: EventLake = eventLake;
+const proposalStoreTyped: ProposalStore = proposalStore;
+const autonomyLevelTyped: AutonomyLevelModule = autonomyLevel;
+
+function toErrorMessage(error: unknown): string {
+  if (typeof error === 'object' && error !== null) {
+    const maybe = error as { stderr?: unknown; stdout?: unknown; message?: unknown };
+    return String(maybe.stderr || maybe.stdout || maybe.message || 'unknown error');
+  }
+  return String(error || 'unknown error');
+}
+
+function _runGit(args: string[], opts: ExecFileOptions = {}): string {
   return execFileSync('git', args, {
     cwd: REPO_ROOT,
     encoding: 'utf8',
@@ -46,15 +146,15 @@ function _isCleanWorktree() {
   return _runGit(['status', '--porcelain']) === '';
 }
 
-function _sanitizeBranchName(proposalId) {
+function _sanitizeBranchName(proposalId: string): string {
   return `darwin/${String(proposalId).replace(/[^a-zA-Z0-9/_-]+/g, '-').slice(0, 96)}`;
 }
 
-function _createStashLabel(proposalId) {
+function _createStashLabel(proposalId: string | null | undefined): string {
   return `darwin-auto-${String(proposalId || 'unknown').replace(/[^a-zA-Z0-9._-]+/g, '-')}`;
 }
 
-function _extractTargetTeam(proposal = {}) {
+function _extractTargetTeam(proposal: ProposalRecord = {}): string {
   const direct = String(
     proposal.target?.team
     || proposal.team
@@ -75,13 +175,17 @@ function _extractTargetTeam(proposal = {}) {
   return rawTeam.toLowerCase();
 }
 
-function _resolveProposalBaseDir(proposalId, proposal = {}) {
+function _resolveProposalBaseDir(proposalId: string | null | undefined, proposal: ProposalRecord = {}): string {
   const team = _extractTargetTeam(proposal);
-  const teamBase = TEAM_BASE_DIRS[team] || 'docs/research/prototypes';
+  const teamBase = TEAM_BASE_DIRS[team as keyof typeof TEAM_BASE_DIRS] || 'docs/research/prototypes';
   return path.posix.join(teamBase, String(proposalId || 'unknown'));
 }
 
-function _normalizeRepoPath(filePath, proposalId = null, proposal = null) {
+function _normalizeRepoPath(
+  filePath: string,
+  proposalId: string | null = null,
+  proposal: ProposalRecord | null = null
+): string {
   const normalized = String(filePath || '').trim().replace(/\\/g, '/');
   if (!normalized || normalized.startsWith('/') || normalized.includes('\0')) {
     throw new Error(`invalid_output_path:${filePath}`);
@@ -102,26 +206,27 @@ function _normalizeRepoPath(filePath, proposalId = null, proposal = null) {
   return clean;
 }
 
-function _stashPushIfNeeded(proposalId) {
+function _stashPushIfNeeded(proposalId: string): StashState {
   if (_isCleanWorktree()) return { created: false, label: null };
   const label = _createStashLabel(proposalId);
   _runGit(['stash', 'push', '-u', '-m', label]);
   return { created: true, label };
 }
 
-function _stashPopIfNeeded(stashState) {
+function _stashPopIfNeeded(stashState: StashState | null): void {
   if (!stashState?.created || !stashState.label) return;
+  const stashLabel = stashState.label;
   const stashList = _runGit(['stash', 'list']);
   const line = String(stashList || '')
     .split('\n')
-    .find((entry) => entry.includes(stashState.label));
+    .find((entry) => entry.includes(stashLabel));
   if (!line) return;
   const stashRef = String(line.split(':')[0] || '').trim();
   if (!stashRef) return;
   _runGit(['stash', 'pop', stashRef]);
 }
 
-function _deleteBranchIfExists(branchName) {
+function _deleteBranchIfExists(branchName: string | null | undefined): void {
   if (!branchName) return;
   try {
     _runGit(['branch', '-D', branchName]);
@@ -139,11 +244,15 @@ function _hasStagedChanges() {
   }
 }
 
-function _extractFiles(rawText, proposalId = null, proposal = null) {
-  const text = String(rawText?.text || rawText || '');
-  const files = [];
+function _extractFiles(
+  rawText: string | FallbackResponse,
+  proposalId: string | null = null,
+  proposal: ProposalRecord | null = null
+): ExtractedFile[] {
+  const text = String((typeof rawText === 'string' ? rawText : rawText?.text) || '');
+  const files: ExtractedFile[] = [];
   const seen = new Set();
-  const pushFile = (filePath, content) => {
+  const pushFile = (filePath: string, content: string): void => {
     const normalizedPath = _normalizeRepoPath(String(filePath || '').trim(), proposalId, proposal);
     const normalizedContent = String(content || '').trim();
     if (!normalizedPath || !normalizedContent || seen.has(normalizedPath)) return;
@@ -180,8 +289,8 @@ function _extractFiles(rawText, proposalId = null, proposal = null) {
   return files;
 }
 
-function _writeFiles(files) {
-  const changed = [];
+function _writeFiles(files: ExtractedFile[]): string[] {
+  const changed: string[] = [];
   for (const file of files) {
     const fullPath = path.join(REPO_ROOT, file.path);
     fs.mkdirSync(path.dirname(fullPath), { recursive: true });
@@ -191,8 +300,8 @@ function _writeFiles(files) {
   return changed;
 }
 
-function _checkSyntax(paths) {
-  const results = [];
+function _checkSyntax(paths: string[]): SyntaxCheckResult[] {
+  const results: SyntaxCheckResult[] = [];
   for (const filePath of paths) {
     if (!filePath.endsWith('.js')) {
       results.push({ path: filePath, ok: true });
@@ -209,23 +318,23 @@ function _checkSyntax(paths) {
       results.push({
         path: filePath,
         ok: false,
-        error: String(error.stderr || error.stdout || error.message || '').slice(0, 300),
+        error: toErrorMessage(error).slice(0, 300),
       });
     }
   }
   return results;
 }
 
-async function triggerImplementation(proposalId) {
-  const proposal = proposalStore.loadProposal(proposalId);
+async function triggerImplementation(proposalId: string): Promise<ApplyResult> {
+  const proposal = proposalStoreTyped.loadProposal(proposalId);
   if (!proposal) throw new Error(`proposal not found: ${proposalId}`);
 
   const originalBranch = _getCurrentBranch();
   const branchName = proposal.branch || _sanitizeBranchName(proposalId);
-  let stashState = null;
+  let stashState: StashState | null = null;
   let branchCheckedOut = false;
   let committed = false;
-  proposalStore.updateStatus(proposalId, 'implementing', { branch: branchName, implementation_started_at: new Date().toISOString() });
+  proposalStoreTyped.updateStatus(proposalId, 'implementing', { branch: branchName, implementation_started_at: new Date().toISOString() });
   logger.info(`구현 시작: ${proposalId} -> ${branchName}`);
 
   try {
@@ -233,7 +342,7 @@ async function triggerImplementation(proposalId) {
     _runGit(['checkout', '-b', branchName]);
     branchCheckedOut = true;
   } catch (error) {
-    if (String(error.stderr || error.message || '').includes('already exists')) {
+    if (toErrorMessage(error).includes('already exists')) {
       _runGit(['checkout', branchName]);
       branchCheckedOut = true;
     } else {
@@ -272,7 +381,7 @@ ${JSON.stringify(proposal.verification || {})}`,
       ],
       logMeta: { team: 'darwin', bot: 'edison', requestType: 'auto_implementation' },
       timeoutMs: 45_000,
-    });
+    } as FallbackRequest) as FallbackResponse | string;
 
     const files = _extractFiles(implementationResult, proposalId, proposal);
     logger.info(`LLM 출력 파싱 완료: ${files.length}개 파일`);
@@ -280,7 +389,7 @@ ${JSON.stringify(proposal.verification || {})}`,
       _runGit(['checkout', originalBranch]);
       branchCheckedOut = false;
       _deleteBranchIfExists(branchName);
-      proposalStore.updateStatus(proposalId, 'implementation_failed', {
+      proposalStoreTyped.updateStatus(proposalId, 'implementation_failed', {
         error: 'no_files_extracted',
       });
       throw new Error('no files extracted from edison output');
@@ -296,7 +405,7 @@ ${JSON.stringify(proposal.verification || {})}`,
       _runGit(['checkout', originalBranch]);
       branchCheckedOut = false;
       _deleteBranchIfExists(branchName);
-      proposalStore.updateStatus(proposalId, 'implementation_failed', {
+      proposalStoreTyped.updateStatus(proposalId, 'implementation_failed', {
         error: 'no_effective_changes',
       });
       throw new Error('edison produced no effective file changes');
@@ -304,7 +413,7 @@ ${JSON.stringify(proposal.verification || {})}`,
     _runGit(['commit', '-m', `feat(darwin): auto-implement ${proposalId}`]);
     committed = true;
 
-    proposalStore.updateStatus(proposalId, 'implemented', {
+    proposalStoreTyped.updateStatus(proposalId, 'implemented', {
       branch: branchName,
       changed_files: changedFiles,
       syntax_checks: syntaxChecks,
@@ -312,7 +421,7 @@ ${JSON.stringify(proposal.verification || {})}`,
       implemented_at: new Date().toISOString(),
     });
 
-    const eventId = await eventLake.record({
+    await eventLakeTyped.record({
       eventType: 'implementation_completed',
       team: 'darwin',
       botName: 'implementor',
@@ -340,25 +449,26 @@ ${JSON.stringify(proposal.verification || {})}`,
       alertLevel: syntaxPassed ? 2 : 3,
       fromBot: 'implementor',
       inlineKeyboard: null,
-    });
+    } as AlarmPayload);
 
     const verifier = require('./verifier');
     setImmediate(() => verifier.triggerVerification(proposalId, branchName));
     return { ok: true, branchName, changedFiles, syntaxChecks };
   } catch (error) {
-    logger.error(`구현 실패: ${proposalId} -> ${error.message}`);
-    autonomyLevel.recordError(error);
-    proposalStore.updateStatus(proposalId, 'implementation_failed', {
+    const errorMessage = toErrorMessage(error);
+    logger.error(`구현 실패: ${proposalId} -> ${errorMessage}`);
+    autonomyLevelTyped.recordError(error);
+    proposalStoreTyped.updateStatus(proposalId, 'implementation_failed', {
       branch: branchName,
-      error: error.message,
+      error: errorMessage,
     });
-    const eventId = await eventLake.record({
+    await eventLakeTyped.record({
       eventType: 'implementation_failed',
       team: 'darwin',
       botName: 'implementor',
       severity: 'error',
       title: String(proposal.title || proposalId).slice(0, 140),
-      message: error.message,
+      message: errorMessage,
       tags: ['implementation', 'failed'],
       metadata: {
         proposal_id: proposalId,
@@ -367,12 +477,12 @@ ${JSON.stringify(proposal.verification || {})}`,
     }).catch(() => null);
 
     await postAlarm({
-      message: `❌ 다윈 자동 구현 실패\n📄 ${proposal.title || proposalId}\n사유: ${error.message}`,
+      message: `❌ 다윈 자동 구현 실패\n📄 ${proposal.title || proposalId}\n사유: ${errorMessage}`,
       team: 'darwin',
       alertLevel: 3,
       fromBot: 'implementor',
       inlineKeyboard: null,
-    });
+    } as AlarmPayload);
     throw error;
   } finally {
     try {

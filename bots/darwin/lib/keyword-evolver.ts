@@ -4,7 +4,15 @@
  * 키워드 자기진화 — 최근 고적합 논문 기반 추천
  */
 
-const pgPool = require('../../../packages/core/lib/pg-pool');
+interface KeywordRow {
+  content?: string;
+}
+
+interface PgPool {
+  query: (schema: string, sql: string, params?: unknown[]) => Promise<KeywordRow[]>;
+}
+
+const pgPool: PgPool = require('../../../packages/core/lib/pg-pool');
 
 const SCHEMA = 'reservation';
 const TABLE = 'rag_research';
@@ -14,7 +22,7 @@ const STOP_WORDS = new Set([
   'system', 'systems', 'paper', 'study', 'model', 'models',
 ]);
 
-function _tokenize(text) {
+function _tokenize(text: unknown): string[] {
   return String(text || '')
     .toLowerCase()
     .replace(/[^a-z0-9\s-]/g, ' ')
@@ -23,7 +31,11 @@ function _tokenize(text) {
     .filter((word) => word.length > 3 && !STOP_WORDS.has(word));
 }
 
-async function suggestKeywords(domain) {
+function _compareWordCounts(a: [string, number], b: [string, number]): number {
+  return b[1] - a[1] || a[0].localeCompare(b[0]);
+}
+
+async function suggestKeywords(domain: string): Promise<string[]> {
   const rows = await pgPool.query(SCHEMA, `
     SELECT content, metadata
     FROM ${SCHEMA}.${TABLE}
@@ -37,7 +49,7 @@ async function suggestKeywords(domain) {
 
   if (!rows || rows.length < 3) return [];
 
-  const wordCount = {};
+  const wordCount: Record<string, number> = {};
   for (const row of rows) {
     const title = String(row.content || '').split('\n')[0];
     for (const word of _tokenize(title)) {
@@ -46,7 +58,7 @@ async function suggestKeywords(domain) {
   }
 
   return Object.entries(wordCount)
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .sort(_compareWordCounts)
     .slice(0, 5)
     .map(([word]) => word);
 }

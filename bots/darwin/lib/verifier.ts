@@ -19,7 +19,86 @@ const autonomyLevel = require('./autonomy-level');
 const REPO_ROOT = path.join(__dirname, '../../../..');
 const logger = createLogger('verifier', { team: 'darwin' });
 
-function _runGit(args, opts = {}) {
+type ExecFileOptions = Omit<import('child_process').ExecFileSyncOptionsWithStringEncoding, 'encoding'>;
+
+interface FallbackResponse {
+  text?: string;
+}
+
+interface FallbackRequest {
+  systemPrompt: string;
+  userPrompt: string;
+  chain: Array<Record<string, unknown>>;
+  logMeta: Record<string, unknown>;
+  timeoutMs: number;
+}
+
+interface AlarmPayload {
+  message: string;
+  team: string;
+  alertLevel: number;
+  fromBot: string;
+  inlineKeyboard?: Array<Array<{ text: string; callback_data: string }>> | null;
+}
+
+interface EventLake {
+  record(payload: Record<string, unknown>): Promise<string | null>;
+}
+
+interface ProposalPaper {
+  title?: string;
+}
+
+interface ProposalRecord {
+  branch?: string;
+  title?: string;
+  paper?: ProposalPaper;
+  changed_files?: string[];
+  [key: string]: unknown;
+}
+
+interface ProposalStore {
+  loadProposal(proposalId: string): ProposalRecord | null;
+  updateStatus(
+    proposalId: string,
+    status: string,
+    extra?: Record<string, unknown>
+  ): ProposalRecord | null;
+}
+
+interface AutonomyLevelModule {
+  requiresApproval(): boolean;
+  recordError(error: unknown): void;
+}
+
+interface VerificationReport {
+  overall: boolean;
+  summary?: string;
+  report?: unknown;
+}
+
+interface FullVerificationRunner {
+  (input: {
+    files: string[];
+    cwd: string;
+    baseBranch: string;
+  }): VerificationReport;
+}
+
+const eventLakeTyped: EventLake = eventLake;
+const proposalStoreTyped: ProposalStore = proposalStore;
+const autonomyLevelTyped: AutonomyLevelModule = autonomyLevel;
+const runFullVerificationTyped: FullVerificationRunner = runFullVerification;
+
+function toErrorMessage(error: unknown): string {
+  if (typeof error === 'object' && error !== null) {
+    const maybe = error as { stderr?: unknown; stdout?: unknown; message?: unknown };
+    return String(maybe.stderr || maybe.stdout || maybe.message || 'unknown error');
+  }
+  return String(error || 'unknown error');
+}
+
+function _runGit(args: string[], opts: ExecFileOptions = {}): string {
   return execFileSync('git', args, {
     cwd: REPO_ROOT,
     encoding: 'utf8',
@@ -32,7 +111,7 @@ function _getCurrentBranch() {
   return _runGit(['rev-parse', '--abbrev-ref', 'HEAD']);
 }
 
-function _deleteBranchIfExists(branchName) {
+function _deleteBranchIfExists(branchName: string | null | undefined): void {
   if (!branchName) return;
   try {
     _runGit(['branch', '-D', branchName]);
@@ -43,17 +122,17 @@ function _deleteBranchIfExists(branchName) {
 
 function _listChangedFiles(baseBranch = 'main') {
   const output = _runGit(['diff', '--name-only', `${baseBranch}...HEAD`]);
-  return output ? output.split('\n').map((line) => line.trim()).filter(Boolean) : [];
+  return output ? output.split('\n').map((line: string) => line.trim()).filter(Boolean) : [];
 }
 
-function _loadContents(files) {
-  return files.map((file) => ({
+function _loadContents(files: string[]): Array<{ path: string; content: string }> {
+  return files.map((file: string) => ({
     path: file,
     content: fs.readFileSync(path.join(REPO_ROOT, file), 'utf8'),
   }));
 }
 
-function _decideVerificationPass(verification, verificationText) {
+function _decideVerificationPass(verification: VerificationReport, verificationText: string): boolean {
   const text = String(verificationText || '').trim();
   const explicitPass = /\b(?:종합 판정|overall(?: verdict)?|final verdict)\s*:\s*PASS\b/i.test(text);
   const explicitFail = /\b(?:종합 판정|overall(?: verdict)?|final verdict)\s*:\s*FAIL\b/i.test(text);
@@ -68,9 +147,9 @@ function _decideVerificationPass(verification, verificationText) {
   return verification.overall && /\bPASS\b/i.test(text) && !/\bFAIL\b/i.test(text);
 }
 
-function _resolveVerificationFiles(proposal) {
+function _resolveVerificationFiles(proposal: ProposalRecord | null): string[] {
   const preferred = Array.isArray(proposal?.changed_files) ? proposal.changed_files : [];
-  const existing = preferred.filter((file) => {
+  const existing = preferred.filter((file: string) => {
     if (typeof file !== 'string' || !file) return false;
     return fs.existsSync(path.join(REPO_ROOT, file));
   });
@@ -78,12 +157,12 @@ function _resolveVerificationFiles(proposal) {
   return _listChangedFiles('main');
 }
 
-async function triggerVerification(proposalId, branchName) {
-  const proposal = proposalStore.loadProposal(proposalId);
+async function triggerVerification(proposalId: string, branchName: string): Promise<{ ok: true; passed: boolean; changedFiles: string[]; verificationText: string }> {
+  const proposal = proposalStoreTyped.loadProposal(proposalId);
   if (!proposal) throw new Error(`proposal not found: ${proposalId}`);
 
   const originalBranch = _getCurrentBranch();
-  proposalStore.updateStatus(proposalId, 'verifying', {
+  proposalStoreTyped.updateStatus(proposalId, 'verifying', {
     verification_started_at: new Date().toISOString(),
     branch: branchName,
   });
@@ -92,7 +171,7 @@ async function triggerVerification(proposalId, branchName) {
   try {
     _runGit(['checkout', branchName]);
     const changedFiles = _resolveVerificationFiles(proposal);
-    const verification = runFullVerification({
+    const verification = runFullVerificationTyped({
       files: changedFiles,
       cwd: REPO_ROOT,
       baseBranch: 'main',
@@ -124,14 +203,16 @@ ${verification.summary}`,
       ],
       logMeta: { team: 'darwin', bot: 'proof-r', requestType: 'auto_verification' },
       timeoutMs: 30_000,
-    });
+    } as FallbackRequest) as FallbackResponse | string;
 
-    const verificationText = String(verificationResult?.text || verificationResult || '').trim();
+    const verificationText = String(
+      (typeof verificationResult === 'string' ? verificationResult : verificationResult?.text) || ''
+    ).trim();
     const passed = _decideVerificationPass(verification, verificationText);
-    const requiresApproval = autonomyLevel.requiresApproval();
+    const requiresApproval = autonomyLevelTyped.requiresApproval();
     logger.info(`검증 완료: ${proposalId} -> ${passed ? 'PASS' : 'FAIL'}`, { files: changedFiles.length });
 
-    proposalStore.updateStatus(proposalId, passed ? 'verified' : 'verification_failed', {
+    proposalStoreTyped.updateStatus(proposalId, passed ? 'verified' : 'verification_failed', {
       branch: branchName,
       files: changedFiles,
       error: null,
@@ -158,7 +239,7 @@ ${verification.summary}`,
       successOnly: false,
     });
 
-    const verificationEventId = await eventLake.record({
+    await eventLakeTyped.record({
       eventType: passed ? 'verification_passed' : 'verification_failed',
       team: 'darwin',
       botName: 'proof-r',
@@ -189,7 +270,7 @@ ${verification.summary}`,
             { text: '📝 수동 검토', callback_data: `darwin_manual:${proposalId}` },
           ]]
         : null,
-    });
+    } as AlarmPayload);
 
     if (passed && !requiresApproval) {
       setImmediate(() => {
@@ -201,19 +282,20 @@ ${verification.summary}`,
 
     return { ok: true, passed, changedFiles, verificationText };
   } catch (error) {
-    logger.error(`검증 실패: ${proposalId} -> ${error.message}`);
-    autonomyLevel.recordError(error);
-    proposalStore.updateStatus(proposalId, 'verification_failed', {
+    const errorMessage = toErrorMessage(error);
+    logger.error(`검증 실패: ${proposalId} -> ${errorMessage}`);
+    autonomyLevelTyped.recordError(error);
+    proposalStoreTyped.updateStatus(proposalId, 'verification_failed', {
       branch: branchName,
-      error: error.message,
+      error: errorMessage,
     });
-    const eventId = await eventLake.record({
+    await eventLakeTyped.record({
       eventType: 'verification_error',
       team: 'darwin',
       botName: 'proof-r',
       severity: 'error',
       title: String(proposal.title || proposalId).slice(0, 140),
-      message: error.message,
+      message: errorMessage,
       tags: ['verification', 'error'],
       metadata: {
         proposal_id: proposalId,
@@ -222,12 +304,12 @@ ${verification.summary}`,
     }).catch(() => null);
 
     await postAlarm({
-      message: `❌ proof-r 검증 중 오류\n📄 ${proposal.title || proposalId}\n🌿 ${branchName}\n사유: ${error.message}`,
+      message: `❌ proof-r 검증 중 오류\n📄 ${proposal.title || proposalId}\n🌿 ${branchName}\n사유: ${errorMessage}`,
       team: 'darwin',
       alertLevel: 3,
       fromBot: 'proof-r',
       inlineKeyboard: null,
-    });
+    } as AlarmPayload);
     throw error;
   } finally {
     try {
@@ -236,12 +318,12 @@ ${verification.summary}`,
   }
 }
 
-async function mergeVerifiedProposal(proposalId) {
-  const proposal = proposalStore.loadProposal(proposalId);
+async function mergeVerifiedProposal(proposalId: string): Promise<{ ok: true; branch: string }> {
+  const proposal = proposalStoreTyped.loadProposal(proposalId);
   if (!proposal?.branch) throw new Error(`branch missing for proposal: ${proposalId}`);
 
   const merged = await mergeBranch(proposal.branch, proposalId);
-  proposalStore.updateStatus(proposalId, 'merged', {
+  proposalStoreTyped.updateStatus(proposalId, 'merged', {
     merged_at: new Date().toISOString(),
     merged_branch: proposal.branch,
   });
@@ -250,11 +332,11 @@ async function mergeVerifiedProposal(proposalId) {
     team: 'darwin',
     alertLevel: 2,
     fromBot: 'proof-r',
-  });
+  } as AlarmPayload);
   return merged;
 }
 
-async function mergeBranch(branchName, label) {
+async function mergeBranch(branchName: string, label: string): Promise<{ ok: true; branch: string }> {
   const originalBranch = _getCurrentBranch();
   try {
     _runGit(['checkout', 'main']);
@@ -262,7 +344,7 @@ async function mergeBranch(branchName, label) {
     _deleteBranchIfExists(branchName);
     return { ok: true, branch: branchName };
   } catch (error) {
-    const stderr = String(error.stderr || error.stdout || error.message || '');
+    const stderr = toErrorMessage(error);
     if (/CONFLICT|Automatic merge failed|fix conflicts/i.test(stderr)) {
       try {
         _runGit(['merge', '--abort']);
@@ -273,11 +355,11 @@ async function mergeBranch(branchName, label) {
         alertLevel: 3,
         fromBot: 'proof-r',
         inlineKeyboard: [[
-          { text: '📝 수동 검토', callback_data: `darwin_manual:${label}` },
+            { text: '📝 수동 검토', callback_data: `darwin_manual:${label}` },
         ]],
-      });
+      } as AlarmPayload);
     }
-    autonomyLevel.recordError(error);
+    autonomyLevelTyped.recordError(error);
     throw error;
   } finally {
     try {

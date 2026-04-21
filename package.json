@@ -20,6 +20,7 @@
     "test:daily-dry": "npm --prefix bots/blog run test:daily-dry",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "typecheck:strict": "tsc -p tsconfig.strict.json --noEmit",
+    "typecheck:darwin": "bash bots/darwin/scripts/typecheck-darwin-ts.sh",
     "weekly-report": "node scripts/weekly-team-report.js",
     "weekly-report:30": "node scripts/weekly-team-report.js --days=30"
   },

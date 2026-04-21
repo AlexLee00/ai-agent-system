@@ -6,21 +6,43 @@
  * 공용 postAlarm 경로로 Telegram 발송.
  */
 
-import { createRequire } from "module";
-const require = createRequire(import.meta.url);
-
-const path = require("path");
-const PROJECT_ROOT = path.resolve(
-  path.dirname(new URL(import.meta.url).pathname),
-  "../../.."
-);
+const path: typeof import("path") = require("path");
+const PROJECT_ROOT = path.resolve(__dirname, "../../..");
 
 const { query } = require(
   path.join(PROJECT_ROOT, "packages/core/lib/pg-pool")
 );
 const { postAlarm } = require(path.join(PROJECT_ROOT, "packages/core/lib/openclaw-client"));
 
-async function collectStats() {
+interface QueryResultRow {
+  [key: string]: unknown;
+}
+
+interface QueryResult {
+  rows?: QueryResultRow[];
+}
+
+interface SettledQueryResult {
+  status: "fulfilled" | "rejected";
+  value?: QueryResult;
+}
+
+interface WeeklyOpsStats {
+  date: string;
+  total_cycles: number;
+  successes: number;
+  failures: number;
+  applied: number;
+  success_rate: string;
+  llm_cost_usd: number;
+  autonomy_level: number;
+  new_papers: number;
+  evaluated: number;
+  planned: number;
+  violations: number;
+}
+
+async function collectStats(): Promise<WeeklyOpsStats> {
   const [cycleRows, registryRows, violationRows] = await Promise.allSettled([
     query(`
       SELECT
@@ -46,12 +68,16 @@ async function collectStats() {
   ]);
 
   const cycle =
-    cycleRows.status === "fulfilled" ? cycleRows.value?.rows?.[0] : {};
+    (cycleRows as SettledQueryResult).status === "fulfilled"
+      ? (cycleRows as SettledQueryResult).value?.rows?.[0] ?? {}
+      : {};
   const registry =
-    registryRows.status === "fulfilled" ? registryRows.value?.rows ?? [] : [];
+    (registryRows as SettledQueryResult).status === "fulfilled"
+      ? (registryRows as SettledQueryResult).value?.rows ?? []
+      : [];
   const violations =
-    violationRows.status === "fulfilled"
-      ? violationRows.value?.rows?.[0]?.count ?? 0
+    (violationRows as SettledQueryResult).status === "fulfilled"
+      ? (violationRows as SettledQueryResult).value?.rows?.[0]?.count ?? 0
       : 0;
 
   const total = Number(cycle.total_cycles ?? 0);
@@ -60,7 +86,7 @@ async function collectStats() {
 
   const regMap: Record<string, number> = {};
   for (const r of registry) {
-    regMap[r.stage] = Number(r.count);
+    regMap[String(r.stage || "")] = Number(r.count);
   }
 
   return {
@@ -79,7 +105,7 @@ async function collectStats() {
   };
 }
 
-async function main() {
+async function main(): Promise<void> {
   console.log("[darwin-weekly-ops-report] 주간 운영 리포트 수집 시작");
   const stats = await collectStats();
 
@@ -107,7 +133,11 @@ async function main() {
   console.log("[darwin-weekly-ops-report] 발송 완료");
 }
 
-main().catch((err) => {
-  console.error("[darwin-weekly-ops-report] 오류:", err);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error("[darwin-weekly-ops-report] 오류:", err);
+    process.exit(1);
+  });
+}
+
+module.exports = { collectStats, main };

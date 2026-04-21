@@ -52,7 +52,10 @@ API 키, Tailscale IP, Hub 토큰은 절대 커밋 금지.
 - `mix compile --warnings-as-errors` 경고 0건 필수
 
 ### 4-2. TypeScript (bots/darwin/lib/, src/)
-- ESM import/export
+- 현재 live Darwin TS는 `tsx` + CommonJS 호환 runtime 기준
+- 새 변경은 Darwin 전용 typecheck 먼저 통과시킬 것
+- 검증 명령:
+  - `bash bots/darwin/scripts/typecheck-darwin-ts.sh`
 - packages/core/lib/ 공용 유틸 우선 사용
 
 ## 5. LLM 정책 (Darwin.V2.LLM.Selector)

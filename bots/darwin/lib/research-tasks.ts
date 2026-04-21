@@ -4,17 +4,107 @@
  * 다윈 연구 과제 관리
  */
 
-const fs = require('fs');
-const path = require('path');
-const { execFileSync } = require('child_process');
-const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
-const pgPool = require('../../../packages/core/lib/pg-pool');
-const githubClient = require('../../../packages/core/lib/github-client');
-const env = require('../../../packages/core/lib/env');
+const fs: typeof import('fs') = require('fs');
+const path: typeof import('path') = require('path');
+const { execFileSync }: typeof import('child_process') = require('child_process');
+
+interface FallbackResponse {
+  text?: string;
+}
+
+interface FallbackRequest {
+  systemPrompt: string;
+  userPrompt: string;
+  chain: Array<{
+    provider: string;
+    model: string;
+    maxTokens: number;
+    temperature: number;
+  }>;
+  logMeta: Record<string, unknown>;
+  timeoutMs: number;
+}
+
+interface PgPool {
+  run: (schema: string, sql: string, params?: unknown[]) => Promise<unknown>;
+  query: (schema: string, sql: string, params?: unknown[]) => Promise<any[]>;
+}
+
+interface GitHubRepoInfo {
+  default_branch: string;
+  name?: string;
+  stars?: number;
+  [key: string]: unknown;
+}
+
+interface GitHubTreeEntry {
+  path: string;
+  [key: string]: unknown;
+}
+
+interface GitHubFileContent {
+  path: string;
+  error?: unknown;
+  [key: string]: unknown;
+}
+
+interface GitHubClient {
+  getRepoInfo: (owner: string, repo: string) => Promise<GitHubRepoInfo>;
+  getTree: (owner: string, repo: string, branch: string) => Promise<GitHubTreeEntry[]>;
+  readFiles: (
+    owner: string,
+    repo: string,
+    paths: string[],
+    branch: string,
+    maxFiles?: number
+  ) => Promise<GitHubFileContent[]>;
+}
+
+interface EnvModule {
+  PROJECT_ROOT: string;
+}
+
+interface RepoStructure {
+  keyFiles?: Array<{ path: string }>;
+  keyDirs?: unknown[];
+  summary?: {
+    totalFiles?: number;
+    languages?: Record<string, number>;
+  };
+}
+
+interface CodePatternSummary {
+  path: string;
+  functions: unknown[];
+  classes: unknown[];
+  exports: unknown[];
+  imports: unknown[];
+  patterns: unknown;
+  lines?: number;
+}
+
+interface AnalysisSummaryResult {
+  summary: string;
+}
+
+const { callWithFallback }: {
+  callWithFallback: (request: FallbackRequest) => Promise<FallbackResponse | string>;
+} = require('../../../packages/core/lib/llm-fallback');
+const pgPool: PgPool = require('../../../packages/core/lib/pg-pool');
+const githubClient: GitHubClient = require('../../../packages/core/lib/github-client');
+const env: EnvModule = require('../../../packages/core/lib/env');
 const {
   analyzeRepoStructure,
   extractCodePatterns,
   generateAnalysisSummary,
+}: {
+  analyzeRepoStructure: (input: { tree: GitHubTreeEntry[] }) => RepoStructure;
+  extractCodePatterns: (file: GitHubFileContent) => CodePatternSummary;
+  generateAnalysisSummary: (input: {
+    repoInfo: GitHubRepoInfo;
+    structure: RepoStructure;
+    codePatterns: Array<Record<string, unknown>>;
+  }) => AnalysisSummaryResult;
 } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/skills/darwin/github-analysis.js'));
 
 const REPO_ROOT = env.PROJECT_ROOT;
@@ -29,33 +119,73 @@ const RUNTIME_STATUS_KEYS = new Set([
   'merge_error',
   'updated_at',
 ]);
-let _statusInitPromise = null;
+let _statusInitPromise: Promise<unknown> | null = null;
 
-/**
- * @typedef {Object} ResearchTask
- * @property {string} id
- * @property {string} title
- * @property {string} type
- * @property {string} [status]
- * @property {number} [priority]
- * @property {string} [description]
- * @property {string} [assignee]
- * @property {{ owner?: string, repo?: string }} [target]
- * @property {string} [created_at]
- * @property {string|null} [started_at]
- * @property {string|null} [completed_at]
- * @property {any} [result]
- * @property {any} [sourceAnalysis]
- * @property {string} [targetCategory]
- * @property {string} [skillName]
- */
+type ResearchTaskStatus = 'pending' | 'running' | 'completed' | 'failed';
 
-function ensureDir() {
+interface ResearchTask {
+  id: string;
+  title: string;
+  type: string;
+  status?: ResearchTaskStatus | string;
+  priority?: number;
+  description?: string;
+  assignee?: string;
+  target?: { owner?: string; repo?: string };
+  created_at?: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+  result?: unknown;
+  sourceAnalysis?: unknown;
+  targetCategory?: string;
+  skillName?: string;
+  runtime_updated_at?: string | null;
+  [key: string]: unknown;
+}
+
+interface TaskStatusRow {
+  task_id: string;
+  status?: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+  runtime?: Record<string, unknown>;
+  updated_at?: string | null;
+}
+
+interface GitHubAnalysisResult {
+  repoInfo: GitHubRepoInfo;
+  structure: {
+    totalFiles: number;
+    languages: Record<string, number>;
+    keyDirs: unknown[];
+    keyFiles: Array<{ path: string }>;
+  };
+  codePatterns: Array<{
+    path: string;
+    functions: number;
+    classes: number;
+    exports: number;
+    imports: number;
+    patterns: unknown;
+    lines?: number;
+  }>;
+  summary: string;
+  docPath: string;
+}
+
+interface SkillCreationResult {
+  skillPath: string;
+  syntaxOk: boolean;
+  branch: string | null;
+  linesOfCode: number;
+}
+
+function ensureDir(): void {
   fs.mkdirSync(TASKS_DIR, { recursive: true });
   fs.mkdirSync(DOCS_DIR, { recursive: true });
 }
 
-async function ensureTaskStatusSchema() {
+async function ensureTaskStatusSchema(): Promise<unknown> {
   if (_statusInitPromise) return _statusInitPromise;
   _statusInitPromise = (async () => {
     await pgPool.run('agent', `
@@ -80,19 +210,19 @@ async function ensureTaskStatusSchema() {
   return _statusInitPromise;
 }
 
-function _taskPath(taskId) {
+function _taskPath(taskId: string): string {
   return path.join(TASKS_DIR, `${taskId}.json`);
 }
 
-function _loadAllTasks() {
+function _loadAllTasks(): ResearchTask[] {
   ensureDir();
   return fs.readdirSync(TASKS_DIR)
     .filter((file) => file.endsWith('.json'))
-    .map((file) => JSON.parse(fs.readFileSync(path.join(TASKS_DIR, file), 'utf8')))
+    .map((file) => JSON.parse(fs.readFileSync(path.join(TASKS_DIR, file), 'utf8')) as ResearchTask)
     .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
 }
 
-async function _loadTaskStatusMap(taskIds = []) {
+async function _loadTaskStatusMap(taskIds: string[] = []): Promise<Map<string, TaskStatusRow>> {
   await ensureTaskStatusSchema();
   const ids = Array.from(new Set((taskIds || []).filter(Boolean)));
   if (ids.length === 0) return new Map();
@@ -103,14 +233,14 @@ async function _loadTaskStatusMap(taskIds = []) {
       WHERE task_id = ANY($1::text[])`,
     [ids],
   ).catch(() => []);
-  const map = new Map();
+  const map = new Map<string, TaskStatusRow>();
   for (const row of rows || []) {
-    map.set(row.task_id, row);
+    map.set(row.task_id, row as TaskStatusRow);
   }
   return map;
 }
 
-function _mergeTaskWithStatus(task, statusRow) {
+function _mergeTaskWithStatus(task: ResearchTask, statusRow?: TaskStatusRow): ResearchTask {
   if (!statusRow) return task;
   return {
     ...task,
@@ -122,7 +252,11 @@ function _mergeTaskWithStatus(task, statusRow) {
   };
 }
 
-async function _upsertTaskRuntimeStatus(taskId, taskType, updates = {}) {
+async function _upsertTaskRuntimeStatus(
+  taskId: string,
+  taskType?: string,
+  updates: Record<string, unknown> = {}
+): Promise<void> {
   await ensureTaskStatusSchema();
   const status = String(updates.status || 'pending').trim();
   const startedAt = updates.started_at || null;
@@ -156,7 +290,7 @@ async function _upsertTaskRuntimeStatus(taskId, taskType, updates = {}) {
   );
 }
 
-function _normalizeRepoPart(value) {
+function _normalizeRepoPart(value: unknown): string {
   return String(value || '').trim().toLowerCase().replace(/\.git$/i, '');
 }
 
@@ -164,17 +298,17 @@ function _normalizeRepoPart(value) {
  * @param {ResearchTask} task
  * @returns {ResearchTask}
  */
-function createTask(task) {
+function createTask(task: ResearchTask): ResearchTask {
   ensureDir();
   const taskId = String(task.id || '').trim();
   if (!taskId) throw new Error('task id required');
 
   const filePath = _taskPath(taskId);
   if (fs.existsSync(filePath)) {
-    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    return JSON.parse(fs.readFileSync(filePath, 'utf8')) as ResearchTask;
   }
 
-  const data = {
+  const data: ResearchTask = {
     ...task,
     status: 'pending',
     created_at: new Date().toISOString(),
@@ -190,10 +324,10 @@ function createTask(task) {
  * @param {string} taskId
  * @returns {Promise<ResearchTask|null>}
  */
-async function loadTask(taskId) {
+async function loadTask(taskId: string): Promise<ResearchTask | null> {
   const filePath = _taskPath(taskId);
   if (!fs.existsSync(filePath)) return null;
-  const task = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  const task = JSON.parse(fs.readFileSync(filePath, 'utf8')) as ResearchTask;
   const statusMap = await _loadTaskStatusMap([taskId]).catch(() => new Map());
   return _mergeTaskWithStatus(task, statusMap.get(taskId));
 }
@@ -201,7 +335,7 @@ async function loadTask(taskId) {
 /**
  * @returns {Promise<ResearchTask[]>}
  */
-async function getPendingTasks() {
+async function getPendingTasks(): Promise<ResearchTask[]> {
   const tasks = _loadAllTasks();
   const statusMap = await _loadTaskStatusMap(tasks.map((task) => task.id)).catch(() => new Map());
   return tasks
@@ -213,7 +347,7 @@ async function getPendingTasks() {
 /**
  * @returns {Promise<ResearchTask[]>}
  */
-async function getCompletedTasks() {
+async function getCompletedTasks(): Promise<ResearchTask[]> {
   const tasks = _loadAllTasks();
   const statusMap = await _loadTaskStatusMap(tasks.map((task) => task.id)).catch(() => new Map());
   return tasks
@@ -221,7 +355,7 @@ async function getCompletedTasks() {
     .filter((task) => task.status === 'completed');
 }
 
-function hasTaskForRepo(owner, repo, types) {
+function hasTaskForRepo(owner: string, repo: string, types?: string[]): boolean {
   const targetOwner = _normalizeRepoPart(owner);
   const targetRepo = _normalizeRepoPart(repo);
   const allowedTypes = Array.isArray(types) && types.length > 0
@@ -245,13 +379,13 @@ function hasTaskForRepo(owner, repo, types) {
  * @param {Partial<ResearchTask>} updates
  * @returns {Promise<ResearchTask|null>}
  */
-async function updateTask(taskId, updates) {
+async function updateTask(taskId: string, updates: Partial<ResearchTask>): Promise<ResearchTask | null> {
   const filePath = _taskPath(taskId);
   if (!fs.existsSync(filePath)) return null;
-  const task = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  const task = JSON.parse(fs.readFileSync(filePath, 'utf8')) as ResearchTask;
   const patch = updates || {};
-  const runtimeUpdates = {};
-  const fileUpdates = {};
+  const runtimeUpdates: Record<string, unknown> = {};
+  const fileUpdates: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(patch)) {
     if (RUNTIME_STATUS_KEYS.has(key)) runtimeUpdates[key] = value;
     else fileUpdates[key] = value;
@@ -271,7 +405,7 @@ async function updateTask(taskId, updates) {
  * @param {ResearchTask} task
  * @returns {Promise<any>}
  */
-async function executeGitHubAnalysis(task) {
+async function executeGitHubAnalysis(task: ResearchTask): Promise<GitHubAnalysisResult> {
   const owner = task?.target?.owner;
   const repo = task?.target?.repo;
   if (!owner || !repo) throw new Error('github target owner/repo required');
@@ -334,17 +468,22 @@ async function executeGitHubAnalysis(task) {
     });
 
     return result;
-  } catch (err) {
-    await updateTask(task.id, {
-      status: 'failed',
-      completed_at: new Date().toISOString(),
-      result: { error: err.message },
-    });
-    throw err;
-  }
+      } catch (err) {
+        await updateTask(task.id, {
+          status: 'failed',
+          completed_at: new Date().toISOString(),
+          result: {
+            error:
+              typeof err === 'object' && err !== null && 'message' in err
+                ? String((err as { message?: unknown }).message || 'unknown error')
+                : String(err || 'unknown error'),
+          },
+        });
+        throw err;
+      }
 }
 
-function _runGit(args) {
+function _runGit(args: string[]): string {
   return execFileSync('git', args, {
     cwd: REPO_ROOT,
     encoding: 'utf8',
@@ -352,7 +491,7 @@ function _runGit(args) {
   }).trim();
 }
 
-function _extractCodeBlock(text) {
+function _extractCodeBlock(text: unknown): string {
   const match = String(text || '').match(/```(?:javascript|js)?\n([\s\S]*?)```/);
   return match ? match[1].trim() : String(text || '').trim();
 }
@@ -361,7 +500,7 @@ function _extractCodeBlock(text) {
  * @param {ResearchTask} task
  * @returns {Promise<any>}
  */
-async function executeSkillCreation(task) {
+async function executeSkillCreation(task: ResearchTask): Promise<SkillCreationResult> {
   await updateTask(task.id, { status: 'running', started_at: new Date().toISOString() });
 
   try {
@@ -393,7 +532,8 @@ ${JSON.stringify(task.sourceAnalysis || {}, null, 2)}
       timeoutMs: 45_000,
     });
 
-    const code = _extractCodeBlock(generated?.text || generated);
+    const generatedText = typeof generated === 'string' ? generated : generated?.text || '';
+    const code = _extractCodeBlock(generatedText);
     fs.mkdirSync(path.dirname(skillPath), { recursive: true });
     fs.writeFileSync(skillPath, code, 'utf8');
 
@@ -416,7 +556,15 @@ ${JSON.stringify(task.sourceAnalysis || {}, null, 2)}
         try {
           _runGit(['checkout', '-b', branchName]);
         } catch (error) {
-          if (String(error.stderr || error.message || '').includes('already exists')) {
+          const stderr =
+            typeof error === 'object' && error !== null && 'stderr' in error
+              ? String((error as { stderr?: unknown }).stderr || '')
+              : '';
+          const message =
+            typeof error === 'object' && error !== null && 'message' in error
+              ? String((error as { message?: unknown }).message || '')
+              : String(error || '');
+          if (String(stderr || message || '').includes('already exists')) {
             _runGit(['checkout', branchName]);
           } else {
             throw error;
@@ -449,13 +597,24 @@ ${JSON.stringify(task.sourceAnalysis || {}, null, 2)}
     await updateTask(task.id, {
       status: 'failed',
       completed_at: new Date().toISOString(),
-      result: { error: err.message },
+      result: {
+        error:
+          typeof err === 'object' && err !== null && 'message' in err
+            ? String((err as { message?: unknown }).message || 'unknown error')
+            : String(err || 'unknown error'),
+      },
     });
     throw err;
   }
 }
 
-function autoCreateSkillTaskFromAnalysis(analysisResult, sourceTaskId) {
+function autoCreateSkillTaskFromAnalysis(
+  analysisResult: Partial<GitHubAnalysisResult> & {
+    structure?: Partial<GitHubAnalysisResult['structure']> & { summary?: { totalFiles?: number } };
+    codePatterns?: Array<{ functions?: number; classes?: number; lines?: number }>;
+  },
+  sourceTaskId: string
+): ResearchTask | null {
   const repoName = String(analysisResult?.repoInfo?.name || '');
   const codePatterns = Array.isArray(analysisResult?.codePatterns) ? analysisResult.codePatterns : [];
   if (!repoName) return null;

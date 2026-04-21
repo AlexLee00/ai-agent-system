@@ -4,13 +4,111 @@
  * 다윈팀 자율 적용 제안 파이프라인
  */
 
-const fs = require('fs');
-const path = require('path');
-const { execSync } = require('child_process');
-const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
-const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
-const eventLake = require('../../../packages/core/lib/event-lake');
-const proposalStore = require('./proposal-store');
+const fs: typeof import('fs') = require('fs');
+const path: typeof import('path') = require('path');
+const { execSync }: typeof import('child_process') = require('child_process');
+
+interface FallbackRequest {
+  chain: Array<{
+    provider: string;
+    model: string;
+    maxTokens: number;
+    temperature: number;
+  }>;
+  systemPrompt: string;
+  userPrompt: string;
+  logMeta: Record<string, unknown>;
+  timeoutMs: number;
+}
+
+interface FallbackResponse {
+  text?: string;
+}
+
+interface AlarmPayload {
+  message: string;
+  team: string;
+  alertLevel: number;
+  fromBot: string;
+  inlineKeyboard?: Array<Array<{ text: string; callback_data: string }>> | null;
+}
+
+interface EventLake {
+  record: (event: Record<string, unknown>) => Promise<string | null>;
+  addFeedback: (eventId: string, payload: Record<string, unknown>) => Promise<unknown>;
+}
+
+interface ProposalStore {
+  SANDBOX_DIR: string;
+  ensureDirs: () => void;
+  buildProposalId: (paper: Partial<ResearchPaper>) => string;
+  saveProposal: (proposal: ProposalRecord) => string;
+}
+
+interface AutonomyLevelModule {
+  requiresApproval: () => boolean;
+}
+
+interface ResearchPaper {
+  arxiv_id?: string;
+  title: string;
+  korean_summary?: string;
+  relevance_score?: number;
+  reason?: string;
+  domain?: string;
+  github?: {
+    owner: string;
+    repo: string;
+    stars: number;
+    language: string;
+    files: number;
+    summary: string;
+  };
+  [key: string]: unknown;
+}
+
+interface VerificationChecks {
+  syntax: boolean;
+  hasExports: boolean;
+  noSideEffects: boolean;
+  errors: string[];
+}
+
+interface VerificationResult {
+  passed: boolean;
+  checks: VerificationChecks;
+}
+
+interface ProposalRecord {
+  id: string;
+  arxiv_id?: string;
+  title?: string;
+  paper?: Partial<ResearchPaper>;
+  korean_summary?: string;
+  relevance_score?: number;
+  proposal?: string;
+  prototype?: string;
+  verification?: VerificationResult;
+  status?: string;
+  created_at?: string;
+  [key: string]: unknown;
+}
+
+interface ApplyResult {
+  proposal: string | null;
+  prototype: string | null;
+  verification: VerificationResult | null;
+  alarmSent: boolean;
+  proposalId: string | null;
+}
+
+const { callWithFallback }: {
+  callWithFallback: (request: FallbackRequest) => Promise<FallbackResponse>;
+} = require('../../../packages/core/lib/llm-fallback');
+const { postAlarm }: { postAlarm: (payload: AlarmPayload) => Promise<{ ok?: boolean } | null> } = require('../../../packages/core/lib/openclaw-client');
+const eventLake: EventLake = require('../../../packages/core/lib/event-lake');
+const proposalStore: ProposalStore = require('./proposal-store');
+const autonomyLevel: AutonomyLevelModule = require('./autonomy-level');
 
 const TEAM_CONTEXT = `팀 제이 시스템 구조:
 - 10팀 113에이전트, Node.js 모노레포
@@ -25,7 +123,13 @@ const TEAM_CONTEXT = `팀 제이 시스템 구조:
 - DB: PostgreSQL + pgvector (RAG)
 - 인프라: Mac Studio M4 Max (OPS) + MacBook Air M3 (DEV)`;
 
-async function generateProposal(paper) {
+function toErrorMessage(err: unknown): string {
+  return typeof err === 'object' && err !== null && 'message' in err
+    ? String((err as { message?: unknown }).message || 'unknown error')
+    : String(err || 'unknown error');
+}
+
+async function generateProposal(paper: Partial<ResearchPaper>): Promise<string> {
   const result = await callWithFallback({
     chain: [
       { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 800, temperature: 0.5 },
@@ -57,7 +161,7 @@ ${paper.github.summary}` : ''}`,
   return result.text || '';
 }
 
-async function generatePrototype(paper, proposal) {
+async function generatePrototype(paper: Partial<ResearchPaper>, proposal: string): Promise<string> {
   const result = await callWithFallback({
     chain: [
       { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1200, temperature: 0.3 },
@@ -78,9 +182,9 @@ Node.js (ES5, require) 스타일로 작성.
   return result.text || '';
 }
 
-function verifyPrototype(code) {
+function verifyPrototype(code: string): VerificationResult {
   proposalStore.ensureDirs();
-  const checks = { syntax: false, hasExports: false, noSideEffects: false, errors: [] };
+  const checks: VerificationChecks = { syntax: false, hasExports: false, noSideEffects: false, errors: [] };
   const tmpFile = path.join(proposalStore.SANDBOX_DIR, `proto_${Date.now()}.js`);
 
   try {
@@ -88,7 +192,11 @@ function verifyPrototype(code) {
     execSync(`node --check "${tmpFile}"`, { stdio: 'pipe', timeout: 5000 });
     checks.syntax = true;
   } catch (err) {
-    checks.errors.push(`문법 오류: ${err.stderr?.toString().slice(0, 200) || err.message}`);
+    const stderr =
+      typeof err === 'object' && err !== null && 'stderr' in err
+        ? String((err as { stderr?: { toString: () => string } }).stderr?.toString?.() || '')
+        : '';
+    checks.errors.push(`문법 오류: ${stderr.slice(0, 200) || toErrorMessage(err)}`);
   }
 
   checks.hasExports = /module\.exports/.test(code);
@@ -117,7 +225,7 @@ function verifyPrototype(code) {
   };
 }
 
-async function apply(paper) {
+async function apply(paper: Partial<ResearchPaper>): Promise<ApplyResult> {
   console.log(`[applicator] 시작: ${String(paper.title || '').slice(0, 60)}`);
   eventLake.record({
     eventType: 'proposal_generation_started',
@@ -138,7 +246,7 @@ async function apply(paper) {
   try {
     proposal = await generateProposal(paper);
   } catch (err) {
-    console.warn(`[applicator] graft 실패: ${err.message}`);
+    console.warn(`[applicator] graft 실패: ${toErrorMessage(err)}`);
     return { proposal: null, prototype: null, verification: null, alarmSent: false, proposalId: null };
   }
 
@@ -146,7 +254,7 @@ async function apply(paper) {
   try {
     prototype = await generatePrototype(paper, proposal);
   } catch (err) {
-    console.warn(`[applicator] edison 실패: ${err.message}`);
+    console.warn(`[applicator] edison 실패: ${toErrorMessage(err)}`);
     return { proposal, prototype: null, verification: null, alarmSent: false, proposalId: null };
   }
 
@@ -191,7 +299,7 @@ async function apply(paper) {
     const savedPath = proposalStore.saveProposal(proposalData);
     console.log(`[applicator] 제안서 저장: ${savedPath}`);
   } catch (err) {
-    console.warn(`[applicator] 제안서 저장 실패: ${err.message}`);
+    console.warn(`[applicator] 제안서 저장 실패: ${toErrorMessage(err)}`);
   }
 
   const proposalEventId = await eventLake.record({
@@ -234,10 +342,10 @@ async function apply(paper) {
   }
 
   if (verification.passed && !requiresApproval) {
-    const implementor = require('./implementor');
-    setImmediate(() => {
-      implementor.triggerImplementation(proposalId).catch((error) => {
-        console.warn(`[applicator] 자동 구현 전환 실패: ${error.message}`);
+      const implementor = require('./implementor');
+      setImmediate(() => {
+      implementor.triggerImplementation(proposalId).catch((error: unknown) => {
+        console.warn(`[applicator] 자동 구현 전환 실패: ${toErrorMessage(error)}`);
       });
     });
   }

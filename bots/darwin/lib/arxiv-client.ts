@@ -12,7 +12,29 @@ const DOMAIN_DELAY_MS = 5_000;
 const MAX_RETRIES = 2;
 const RETRY_BASE_DELAY_MS = 5_000;
 
-const DOMAIN_KEYWORDS = {
+type DarwinDomain =
+  | 'neuron'
+  | 'gold-r'
+  | 'ink'
+  | 'gavel'
+  | 'matrix-r'
+  | 'frame'
+  | 'gear'
+  | 'pulse'
+  | 'frontier';
+
+interface ArxivEntry {
+  arxiv_id: string;
+  title: string;
+  summary: string;
+  authors: string;
+  published: string;
+  domain?: DarwinDomain;
+  source?: 'arxiv';
+  keyword?: string;
+}
+
+const DOMAIN_KEYWORDS: Record<DarwinDomain, string[]> = {
   neuron: ['multi-agent system LLM', 'autonomous agent tool use', 'agent orchestration'],
   'gold-r': ['algorithmic trading agent', 'portfolio optimization LLM', 'financial agent'],
   ink: ['content generation SEO', 'blog automation LLM', 'text quality evaluation'],
@@ -24,23 +46,26 @@ const DOMAIN_KEYWORDS = {
   frontier: ['arXiv trending AI 2026', 'latest agent framework', 'MCP protocol agent'],
 };
 
-function _sleep(ms) {
+function _sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function _shouldRetry(err, status) {
+function _shouldRetry(err?: unknown, status?: number): boolean {
   if (status === 429) return true;
-  if ([500, 502, 503, 504].includes(status)) return true;
+  if (status !== undefined && [500, 502, 503, 504].includes(status)) return true;
   if (!err) return false;
-  const message = String(err.message || '').toLowerCase();
+  const message =
+    typeof err === 'object' && err !== null && 'message' in err
+      ? String((err as { message?: unknown }).message || '').toLowerCase()
+      : '';
   return message.includes('timed out')
     || message.includes('timeout')
     || message.includes('aborted')
-    || err.name === 'TimeoutError';
+    || (typeof err === 'object' && err !== null && 'name' in err && (err as { name?: unknown }).name === 'TimeoutError');
 }
 
-async function _fetchWithRetry(url, context) {
-  let lastError = null;
+async function _fetchWithRetry(url: string, context: string): Promise<Response> {
+  let lastError: unknown = null;
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
     try {
@@ -63,15 +88,19 @@ async function _fetchWithRetry(url, context) {
       }
 
       const delay = RETRY_BASE_DELAY_MS * (2 ** attempt);
-      console.warn(`[arxiv-client] ${context} 재시도 예정: ${err.message} (${attempt + 1}/${MAX_RETRIES})`);
-      await _sleep(delay);
+        const errorMessage =
+          typeof err === 'object' && err !== null && 'message' in err
+            ? String((err as { message?: unknown }).message || 'unknown error')
+            : String(err || 'unknown error');
+        console.warn(`[arxiv-client] ${context} 재시도 예정: ${errorMessage} (${attempt + 1}/${MAX_RETRIES})`);
+        await _sleep(delay);
+      }
     }
-  }
 
   throw lastError || new Error(`${context} arXiv fetch 실패`);
 }
 
-function _buildQuery(keyword) {
+function _buildQuery(keyword: string): string {
   return keyword
     .split(/\s+/)
     .filter(Boolean)
@@ -79,10 +108,10 @@ function _buildQuery(keyword) {
     .join('+AND+');
 }
 
-function _parseArxivXml(xml) {
-  const entries = [];
+function _parseArxivXml(xml: string): ArxivEntry[] {
+  const entries: ArxivEntry[] = [];
   const entryRegex = /<entry>([\s\S]*?)<\/entry>/g;
-  let match;
+  let match: RegExpExecArray | null;
 
   while ((match = entryRegex.exec(xml)) !== null) {
     const entry = match[1];
@@ -106,11 +135,11 @@ function _parseArxivXml(xml) {
   return entries;
 }
 
-async function searchByDomain(domain, maxResults = 20) {
+async function searchByDomain(domain: DarwinDomain, maxResults = 20): Promise<ArxivEntry[]> {
   const keywords = DOMAIN_KEYWORDS[domain];
   if (!Array.isArray(keywords) || keywords.length === 0) return [];
 
-  const results = [];
+  const results: ArxivEntry[] = [];
   const perKeyword = Math.max(1, Math.ceil(maxResults / keywords.length));
 
   for (const keyword of keywords) {
@@ -133,7 +162,11 @@ async function searchByDomain(domain, maxResults = 20) {
         results.push(...entries);
       }
     } catch (err) {
-      console.warn(`[arxiv-client] ${context} 실패: ${err.message}`);
+      const errorMessage =
+        typeof err === 'object' && err !== null && 'message' in err
+          ? String((err as { message?: unknown }).message || 'unknown error')
+          : String(err || 'unknown error');
+      console.warn(`[arxiv-client] ${context} 실패: ${errorMessage}`);
     }
 
     await _sleep(KEYWORD_DELAY_MS);

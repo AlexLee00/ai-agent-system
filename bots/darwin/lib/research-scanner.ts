@@ -39,11 +39,88 @@ const AUTO_TASK_MIN_FILES = 20;
 const MAX_WEEKLY_TASKS = 3;
 const logger = createLogger('scanner', { team: 'darwin' });
 
-function _sleep(ms) {
+type DomainStats = { total: number; high: number };
+
+interface GitHubRepoRef {
+  owner: string;
+  repo: string;
+}
+
+interface GitHubEnrichment {
+  owner: string;
+  repo: string;
+  stars: number;
+  language: string;
+  files: number;
+  summary: string;
+}
+
+interface ResearchPaper {
+  arxiv_id?: string;
+  title: string;
+  summary?: string;
+  korean_summary?: string;
+  reason?: string;
+  url?: string;
+  source_url?: string;
+  domain?: string;
+  source?: string;
+  keyword?: string;
+  upvotes?: number;
+  authors?: string;
+  published?: string;
+  relevance_score?: number;
+  github?: GitHubEnrichment;
+}
+
+interface SearcherSelection {
+  name: string;
+  domain: string;
+  score: number;
+  hired: boolean;
+  exact: boolean;
+}
+
+interface WeeklyResearchRow {
+  content?: string;
+  metadata?: Record<string, unknown>;
+  created_at?: string;
+}
+
+interface ScanResult {
+  totalRaw: number;
+  total: number;
+  evaluated: number;
+  stored: number;
+  experiencesStored: number;
+  highRelevance: number;
+  alarmSent: boolean;
+  evaluationFailures: number;
+  githubAnalyzed: number;
+  tasksRegistered: number;
+  durationSec: number;
+  keywordEvolutionCount: number;
+  proposals: number;
+  verified: number;
+  searchers: Array<{
+    name: string;
+    domain: string;
+    score: number;
+    hired: boolean;
+  }>;
+}
+
+function toErrorMessage(err: unknown): string {
+  return typeof err === 'object' && err !== null && 'message' in err
+    ? String((err as { message?: unknown }).message || 'unknown error')
+    : String(err || 'unknown error');
+}
+
+function _sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function _extractGitHubRepo(paper) {
+function _extractGitHubRepo(paper: Partial<ResearchPaper>): GitHubRepoRef | null {
   const text = [
     paper?.summary,
     paper?.korean_summary,
@@ -62,9 +139,9 @@ function _extractGitHubRepo(paper) {
   };
 }
 
-function _dedupePapers(papers) {
+function _dedupePapers(papers: ResearchPaper[]): ResearchPaper[] {
   const seen = new Set();
-  const unique = [];
+  const unique: ResearchPaper[] = [];
 
   for (const paper of papers) {
     const key = String(paper.arxiv_id || paper.title || '').trim().toLowerCase();
@@ -76,7 +153,7 @@ function _dedupePapers(papers) {
   return unique;
 }
 
-function _safeTaskId(prefix, paper, owner, repo) {
+function _safeTaskId(prefix: string, paper: Partial<ResearchPaper>, owner: string, repo: string): string {
   const paperPart = String(paper?.arxiv_id || paper?.title || Date.now())
     .trim()
     .replace(/[^a-z0-9_-]/gi, '-')
@@ -84,7 +161,11 @@ function _safeTaskId(prefix, paper, owner, repo) {
   return `${prefix}-${paperPart}-${String(owner || '').replace(/[^a-z0-9_-]/gi, '-')}-${String(repo || '').replace(/[^a-z0-9_-]/gi, '-')}`;
 }
 
-function _maybeCreateGitHubTask(paper, github, source) {
+function _maybeCreateGitHubTask(
+  paper: Partial<ResearchPaper>,
+  github: Partial<GitHubEnrichment>,
+  source: string
+) {
   const owner = String(github?.owner || '').trim();
   const repo = String(github?.repo || '').trim();
   const stars = Number(github?.stars || 0);
@@ -114,18 +195,18 @@ function _maybeCreateGitHubTask(paper, github, source) {
 
 async function _selectSearchers() {
   const domains = Object.keys(arxivClient.DOMAIN_KEYWORDS);
-  let teamAgents = [];
+  let teamAgents: Array<{ name?: string; score?: number }> = [];
 
   try {
     teamAgents = await registry.getAgentsByTeam('darwin');
   } catch (err) {
-    console.warn(`[research-scanner] 다윈 agent registry 조회 실패: ${err.message}`);
+    console.warn(`[research-scanner] 다윈 agent registry 조회 실패: ${toErrorMessage(err)}`);
   }
 
-  const selected = [];
+  const selected: SearcherSelection[] = [];
 
   for (const domain of domains) {
-    const exactMatch = teamAgents.find((agent) => {
+    const exactMatch = teamAgents.find((agent: { name?: string; score?: number }) => {
       const agentName = String(agent?.name || '').trim().toLowerCase();
       return agentName === String(domain).trim().toLowerCase()
         && !selected.some((item) => item.name === agent.name);
@@ -133,7 +214,7 @@ async function _selectSearchers() {
 
     if (exactMatch) {
       selected.push({
-        name: exactMatch.name,
+        name: String(exactMatch.name || domain),
         domain,
         score: Number(exactMatch.score || 0),
         hired: true,
@@ -143,7 +224,7 @@ async function _selectSearchers() {
     }
 
     try {
-      const best = await hiringContract.selectBestAgent('searcher', 'darwin', {
+      const best: { name: string; score?: number } | null = await hiringContract.selectBestAgent('searcher', 'darwin', {
         taskHint: domain,
         excludeNames: selected.map((item) => item.name),
         mode: 'balanced',
@@ -153,7 +234,7 @@ async function _selectSearchers() {
         continue;
       }
     } catch (err) {
-      console.warn(`[research-scanner] searcher 고용 실패 (${domain}): ${err.message}`);
+      console.warn(`[research-scanner] searcher 고용 실패 (${domain}): ${toErrorMessage(err)}`);
     }
     selected.push({ name: domain, domain, score: 0, hired: false, exact: false });
   }
@@ -162,8 +243,8 @@ async function _selectSearchers() {
   return selected;
 }
 
-async function _collectPapers(searchers) {
-  const arxivResults = [];
+async function _collectPapers(searchers: SearcherSelection[]): Promise<ResearchPaper[]> {
+  const arxivResults: ResearchPaper[] = [];
   for (const { name, domain } of searchers) {
     const papers = await arxivClient.searchByDomain(domain, ARXIV_RESULTS_PER_DOMAIN);
     arxivResults.push(...papers);
@@ -174,7 +255,7 @@ async function _collectPapers(searchers) {
   const trending = await hfClient.fetchTrending();
   logger.info(`HF 트렌딩: ${trending.length}건`);
 
-  const keywordPapers = [];
+  const keywordPapers: ResearchPaper[] = [];
   for (const keyword of hfClient.HF_KEYWORDS.slice(0, 3)) {
     const papers = await hfClient.searchByKeyword(keyword);
     keywordPapers.push(...papers);
@@ -184,7 +265,7 @@ async function _collectPapers(searchers) {
   return [...arxivResults, ...trending, ...keywordPapers];
 }
 
-async function _enrichWithGitHub(evaluated) {
+async function _enrichWithGitHub(evaluated: ResearchPaper[]): Promise<{ githubEnriched: number; tasksRegistered: number }> {
   let enriched = 0;
   let tasksRegistered = 0;
 
@@ -206,20 +287,20 @@ async function _enrichWithGitHub(evaluated) {
       const structure = analyzeRepoStructure({ tree });
 
       const topFiles = (structure.keyFiles || [])
-        .filter((file) => /\.(js|py|ts|go|rs)$/.test(file.path))
+        .filter((file: { path: string }) => /\.(js|py|ts|go|rs)$/.test(file.path))
         .slice(0, 3);
 
       const fileContents = await githubClient.readFiles(
         owner,
         repoName,
-        topFiles.map((file) => file.path),
+        topFiles.map((file: { path: string }) => file.path),
         repoInfo.default_branch,
         200
       );
 
       const codePatterns = fileContents
-        .filter((file) => !file.error)
-        .map((file) => extractCodePatterns(file));
+        .filter((file: { error?: unknown }) => !file.error)
+        .map((file: unknown) => extractCodePatterns(file));
 
       const { summary } = generateAnalysisSummary({ repoInfo, structure, codePatterns });
 
@@ -257,14 +338,14 @@ async function _enrichWithGitHub(evaluated) {
       console.log(`[research-scanner] GitHub 분석 완료: ${owner}/${repoName} (⭐${repoInfo.stars || 0})`);
       await _sleep(2_000);
     } catch (err) {
-      console.warn(`[research-scanner] GitHub 분석 실패 (${owner}/${repoName}): ${err.message}`);
+      console.warn(`[research-scanner] GitHub 분석 실패 (${owner}/${repoName}): ${toErrorMessage(err)}`);
     }
   }
 
   return { githubEnriched: enriched, tasksRegistered };
 }
 
-async function _storeExperienceIfNeeded(paper) {
+async function _storeExperienceIfNeeded(paper: ResearchPaper): Promise<boolean> {
   if ((paper.relevance_score || 0) < 7) return false;
   try {
     await rag.storeExperience({
@@ -283,12 +364,12 @@ async function _storeExperienceIfNeeded(paper) {
     });
     return true;
   } catch (err) {
-    console.warn(`[research-scanner] 경험 저장 실패 (${paper.arxiv_id}): ${err.message}`);
+    console.warn(`[research-scanner] 경험 저장 실패 (${paper.arxiv_id}): ${toErrorMessage(err)}`);
     return false;
   }
 }
 
-async function _storeEvaluatedPapers(evaluated) {
+async function _storeEvaluatedPapers(evaluated: ResearchPaper[]): Promise<{ storedCount: number; experienceCount: number }> {
   let storedCount = 0;
   let experienceCount = 0;
 
@@ -318,15 +399,20 @@ async function _storeEvaluatedPapers(evaluated) {
         experienceCount += 1;
       }
     } catch (err) {
-      console.warn(`[research-scanner] 저장 실패 (${paper.arxiv_id}): ${err.message}`);
+      console.warn(`[research-scanner] 저장 실패 (${paper.arxiv_id}): ${toErrorMessage(err)}`);
     }
   }
 
   return { storedCount, experienceCount };
 }
 
-async function _alertHighRelevance(uniqueCount, evaluated, storedCount, startTime) {
-  const highRelevance = evaluated.filter((paper) => paper.relevance_score >= 7);
+async function _alertHighRelevance(
+  uniqueCount: number,
+  evaluated: ResearchPaper[],
+  storedCount: number,
+  startTime: number
+): Promise<{ highRelevanceCount: number; alarmSent: boolean }> {
+  const highRelevance = evaluated.filter((paper) => Number(paper.relevance_score || 0) >= 7);
   if (highRelevance.length === 0) return { highRelevanceCount: 0, alarmSent: false };
 
   const lines = [
@@ -336,7 +422,7 @@ async function _alertHighRelevance(uniqueCount, evaluated, storedCount, startTim
     `⭐ 적합성 7점+ 논문 ${highRelevance.length}건:`,
   ];
 
-  highRelevance.forEach((paper, index) => {
+  highRelevance.forEach((paper: ResearchPaper, index: number) => {
     lines.push(`${index + 1}. [${paper.relevance_score}점] ${paper.korean_summary}`);
     lines.push(`   ${paper.title.slice(0, 80)}`);
     lines.push(`   https://arxiv.org/abs/${paper.arxiv_id}`);
@@ -358,7 +444,7 @@ async function _alertHighRelevance(uniqueCount, evaluated, storedCount, startTim
   return { highRelevanceCount: highRelevance.length, alarmSent };
 }
 
-async function _loadWeeklyResearchRows() {
+async function _loadWeeklyResearchRows(): Promise<WeeklyResearchRow[]> {
   return pgPool.query(SCHEMA, `
     SELECT content, metadata, created_at
     FROM ${SCHEMA}.${TABLE}
@@ -369,7 +455,7 @@ async function _loadWeeklyResearchRows() {
   `, []);
 }
 
-function _extractWeeklyRepo(row) {
+function _extractWeeklyRepo(row: WeeklyResearchRow): GitHubRepoRef | null {
   const repoValue = String(row?.metadata?.github_repo || '').trim();
   if (repoValue.includes('/')) {
     const [owner, repo] = repoValue.split('/');
@@ -380,17 +466,17 @@ function _extractWeeklyRepo(row) {
 
   const extracted = _extractGitHubRepo({
     summary: row?.content,
-    title: row?.metadata?.title,
-    reason: row?.metadata?.reason,
+    title: String(row?.metadata?.title || ''),
+    reason: String(row?.metadata?.reason || ''),
   });
   return extracted;
 }
 
-function _registerWeeklyResearchTasks(weekData) {
+function _registerWeeklyResearchTasks(weekData: WeeklyResearchRow[]): number {
   let tasksRegistered = 0;
   const candidates = weekData
-    .filter((row) => Number(row?.metadata?.relevance_score || 0) >= 8)
-    .sort((a, b) => Number(b?.metadata?.relevance_score || 0) - Number(a?.metadata?.relevance_score || 0));
+    .filter((row: WeeklyResearchRow) => Number(row?.metadata?.relevance_score || 0) >= 8)
+    .sort((a: WeeklyResearchRow, b: WeeklyResearchRow) => Number(b?.metadata?.relevance_score || 0) - Number(a?.metadata?.relevance_score || 0));
 
   for (const row of candidates) {
     if (tasksRegistered >= MAX_WEEKLY_TASKS) break;
@@ -423,7 +509,7 @@ function _registerWeeklyResearchTasks(weekData) {
   return tasksRegistered;
 }
 
-async function _generateWeeklyReport() {
+async function _generateWeeklyReport(): Promise<{ report: string; keywordEvolutionCount: number; tasksRegistered: number }> {
   const weekData = await _loadWeeklyResearchRows();
   if (!weekData || weekData.length === 0) return { report: '', keywordEvolutionCount: 0, tasksRegistered: 0 };
 
@@ -445,9 +531,9 @@ async function _generateWeeklyReport() {
     '## 도메인별 현황',
   ];
 
-  const byDomain = {};
+  const byDomain: Record<string, DomainStats> = {};
   for (const row of weekData) {
-    const domain = row.metadata?.domain || 'unknown';
+    const domain = String(row.metadata?.domain || 'unknown');
     if (!byDomain[domain]) byDomain[domain] = { total: 0, high: 0 };
     byDomain[domain].total += 1;
     if (Number(row.metadata?.relevance_score || 0) >= 7) byDomain[domain].high += 1;
@@ -458,10 +544,10 @@ async function _generateWeeklyReport() {
 
   lines.push('', '## TOP 10 논문');
   const topPapers = weekData
-    .filter((row) => Number(row.metadata?.relevance_score || 0) >= 5)
-    .sort((a, b) => Number(b.metadata?.relevance_score || 0) - Number(a.metadata?.relevance_score || 0))
+    .filter((row: WeeklyResearchRow) => Number(row.metadata?.relevance_score || 0) >= 5)
+    .sort((a: WeeklyResearchRow, b: WeeklyResearchRow) => Number(b.metadata?.relevance_score || 0) - Number(a.metadata?.relevance_score || 0))
     .slice(0, 10);
-  topPapers.forEach((paper, index) => {
+  topPapers.forEach((paper: WeeklyResearchRow, index: number) => {
     lines.push(`${index + 1}. [${paper.metadata?.relevance_score}점] ${String(paper.content || '').split('\n')[0]}`);
     if (paper.metadata?.arxiv_id) {
       lines.push(`   https://arxiv.org/abs/${paper.metadata.arxiv_id}`);
@@ -510,7 +596,7 @@ async function _generateWeeklyReport() {
   return { report, keywordEvolutionCount, tasksRegistered };
 }
 
-async function run() {
+async function run(): Promise<ScanResult> {
   const startTime = Date.now();
   console.log(`[research-scanner] 시작: ${kst.datetimeStr()}`);
   await rag.initSchema();
@@ -520,7 +606,7 @@ async function run() {
   const unique = _dedupePapers(allPapers);
   console.log(`[research-scanner] 중복 제거 후: ${unique.length}건 (전체 ${allPapers.length}건)`);
 
-  const evaluated = [];
+  const evaluated: ResearchPaper[] = [];
   let evaluationFailures = 0;
   for (const paper of unique.slice(0, MAX_EVALUATIONS_PER_RUN)) {
     const evaluation = await evaluator.evaluatePaper(paper);
@@ -534,9 +620,9 @@ async function run() {
   const enrichment = await _enrichWithGitHub(evaluated);
   const { storedCount, experienceCount } = await _storeEvaluatedPapers(evaluated);
   const { highRelevanceCount, alarmSent } = await _alertHighRelevance(unique.length, evaluated, storedCount, startTime);
-  const highRelevance = evaluated.filter((paper) => paper.relevance_score >= 7);
+  const highRelevance = evaluated.filter((paper) => Number(paper.relevance_score || 0) >= 7);
   const proposalCandidates = [...highRelevance]
-    .sort((a, b) => b.relevance_score - a.relevance_score)
+    .sort((a, b) => Number(b.relevance_score || 0) - Number(a.relevance_score || 0))
     .slice(0, MAX_DAILY_PROPOSALS);
   const proposalResults = [];
   for (const paper of proposalCandidates) {
@@ -545,11 +631,11 @@ async function run() {
       proposalResults.push({ arxiv_id: paper.arxiv_id, ...applied });
       await _sleep(3_000);
     } catch (err) {
-      console.warn(`[research-scanner] 적용 파이프라인 실패 (${paper.arxiv_id}): ${err.message}`);
+      console.warn(`[research-scanner] 적용 파이프라인 실패 (${paper.arxiv_id}): ${toErrorMessage(err)}`);
     }
   }
-  const proposalCount = proposalResults.filter((item) => item.proposal).length;
-  const verifiedCount = proposalResults.filter((item) => item.verification?.passed).length;
+  const proposalCount = proposalResults.filter((item: any) => item.proposal).length;
+  const verifiedCount = proposalResults.filter((item: any) => item.verification?.passed).length;
   let keywordEvolutionCount = 0;
   let weeklyTasksRegistered = 0;
 

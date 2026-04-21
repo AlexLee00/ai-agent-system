@@ -7,8 +7,34 @@
 
 const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 
+interface AlarmPayload {
+  message: string;
+  team: string;
+  alertLevel: number;
+  fromBot: string;
+}
+
+interface AlarmResult {
+  ok?: boolean;
+}
+
+interface ReminderEvent {
+  start: string;
+  end: string;
+  team: string;
+  daily?: boolean;
+  message: string;
+}
+
+function toErrorMessage(error: unknown): string {
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    return String((error as { message?: unknown }).message || 'unknown error');
+  }
+  return String(error || 'unknown error');
+}
+
 // 이벤트 정의
-const EVENTS = [
+const EVENTS: ReminderEvent[] = [
   // 다윈팀 모니터링 (04-07 ~ 04-13)
   { start: '2026-04-07', end: '2026-04-13', team: 'darwin', daily: true,
     message: '🔬 다윈팀 자율 연구 모니터링 D{day}/7\n06:00 스캔 결과 확인 + 메트릭 체크\nGREEN(수집80+/적합10~30%/저장95+) → Sprint 4' },
@@ -42,15 +68,15 @@ const EVENTS = [
     message: '🔍 Gemma 4 운영 점검\n허브 runtime/select가 local gemma4:latest(e2b)를 반환하는지 확인\nblog/orchestrator/ska 파일럿 응답 성공 여부 재확인' },
 ];
 
-function _getKSTDate() {
+function _getKSTDate(): Date {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
 }
 
-function _formatDate(d) {
+function _formatDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
-async function run() {
+async function run(): Promise<{ today: string; sent: number; total: number }> {
   const today = _formatDate(_getKSTDate());
   console.log(`[event-reminders] ${today} 이벤트 체크`);
 
@@ -64,8 +90,8 @@ async function run() {
     if (evt.daily) {
       const startDate = new Date(evt.start);
       const todayDate = new Date(today);
-      const day = Math.floor((todayDate - startDate) / 86400000) + 1;
-      message = message.replace('{day}', day);
+      const day = Math.floor((todayDate.getTime() - startDate.getTime()) / 86400000) + 1;
+      message = message.replace('{day}', String(day));
     }
 
     try {
@@ -74,11 +100,11 @@ async function run() {
         team: evt.team,
         alertLevel: 1,
         fromBot: 'event-reminders',
-      });
-      if (result.ok) sent++;
+      } as AlarmPayload) as AlarmResult;
+      if (result?.ok) sent++;
       console.log(`[event-reminders] ${evt.team}: ${result.ok ? '✅' : '❌'}`);
     } catch (err) {
-      console.warn(`[event-reminders] 전송 실패: ${err.message}`);
+      console.warn(`[event-reminders] 전송 실패: ${toErrorMessage(err)}`);
     }
   }
 
@@ -90,5 +116,5 @@ module.exports = { run, EVENTS };
 
 if (require.main === module) {
   run().then(r => { console.log(JSON.stringify(r)); process.exit(0); })
-    .catch(e => { console.error(e.message); process.exit(1); });
+    .catch(e => { console.error(toErrorMessage(e)); process.exit(1); });
 }

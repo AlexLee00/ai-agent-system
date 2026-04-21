@@ -5,9 +5,11 @@ const Module = require('module');
 
 const runnerPath = '/Users/alexlee/projects/ai-agent-system/bots/darwin/scripts/research-task-runner.ts';
 
+type ModuleLoad = (request: string, parent: NodeModule | null, isMain: boolean) => unknown;
+
 async function main() {
-  const originalLoad = Module._load;
-  const calls = [];
+  const originalLoad: ModuleLoad = Module._load as ModuleLoad;
+  const calls: string[] = [];
   const taskApi = {
     ensureTaskStatusSchema: async () => {
       calls.push('ensureTaskStatusSchema');
@@ -18,7 +20,7 @@ async function main() {
     },
   };
 
-  Module._load = function patchedLoad(request, parent, isMain) {
+  Module._load = function patchedLoad(request: string, parent: NodeModule | null, isMain: boolean) {
     if (request === '../lib/research-tasks') {
       return taskApi;
     }

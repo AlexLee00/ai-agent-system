@@ -30,13 +30,14 @@
 - **PostgreSQL + pgvector** (jay DB, schema: reservation)
 - 테이블: darwin_cycle_results, darwin_autonomy_level, darwin_llm_cost_tracking, darwin_llm_routing_log, darwin_v2_shadow_runs, darwin_analyst_prompts
 
-## 5. TypeScript V1 (레거시)
+## 5. TypeScript Bridge Layer
 
 - **callWithFallback** — packages/core/lib/llm-fallback.js
 - **arxiv-client.ts** — arXiv API
 - **hf-papers-client.ts** — HuggingFace Papers
 - **implementor.ts** — 파일 생성 + git (V2 Elixir에서 위임)
 - **verifier.ts** — verify-loop 위임
+- **typecheck-darwin-ts.sh** — Darwin 전용 TS safety rail
 
 ## 6. 외부 소스
 

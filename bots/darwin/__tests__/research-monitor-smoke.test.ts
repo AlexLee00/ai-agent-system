@@ -5,11 +5,17 @@ const Module = require('module');
 
 const monitorPath = '/Users/alexlee/projects/ai-agent-system/bots/darwin/lib/research-monitor.ts';
 
-async function main() {
-  const originalLoad = Module._load;
-  const alarmCalls = [];
+type ModuleLoad = (request: string, parent: NodeModule | null, isMain: boolean) => unknown;
 
-  Module._load = function patchedLoad(request, parent, isMain) {
+interface AlarmPayload {
+  [key: string]: unknown;
+}
+
+async function main() {
+  const originalLoad: ModuleLoad = Module._load as ModuleLoad;
+  const alarmCalls: AlarmPayload[] = [];
+
+  Module._load = function patchedLoad(request: string, parent: NodeModule | null, isMain: boolean) {
     if (request === '../../../packages/core/lib/rag') {
       return { store: async () => {} };
     }
@@ -24,7 +30,7 @@ async function main() {
     }
     if (request === '../../../packages/core/lib/openclaw-client') {
       return {
-        postAlarm: async (payload) => {
+        postAlarm: async (payload: AlarmPayload) => {
           alarmCalls.push(payload);
         },
       };

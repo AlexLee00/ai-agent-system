@@ -4,15 +4,71 @@
  * 다윈 연구 스캐너 모니터링
  */
 
-const rag = require('../../../packages/core/lib/rag');
-const pgPool = require('../../../packages/core/lib/pg-pool');
-const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
-const kst = require('../../../packages/core/lib/kst');
+interface RagStore {
+  store: (
+    category: string,
+    content: string,
+    metadata: Record<string, unknown>,
+    source?: string
+  ) => Promise<unknown>;
+}
+
+interface PgPool {
+  query: (schema: string, sql: string, params?: unknown[]) => Promise<Array<{ metadata?: Record<string, unknown> }>>;
+}
+
+interface AlarmPayload {
+  message: string;
+  team: string;
+  alertLevel: number;
+  fromBot: string;
+}
+
+interface KstClient {
+  today: () => string;
+}
+
+interface ScanResult {
+  total?: number;
+  totalRaw?: number;
+  evaluated?: number;
+  stored?: number;
+  highRelevance?: number;
+  alarmSent?: boolean;
+  evaluationFailures?: number;
+  keywordEvolutionCount?: number;
+  proposals?: number;
+  verified?: number;
+}
+
+interface ResearchMetrics {
+  date: string;
+  total_raw: number;
+  total_collected: number;
+  duplicate_rate: number;
+  evaluated: number;
+  stored: number;
+  high_relevance: number;
+  alarm_sent: boolean;
+  duration_sec: number;
+  evaluation_failures: number;
+  relevance_rate: number;
+  store_success_rate: number;
+  keyword_evolution_count: number;
+  proposals_generated: number;
+  proposals_verified: number;
+  proposal_pass_rate: number;
+}
+
+const rag: RagStore = require('../../../packages/core/lib/rag');
+const pgPool: PgPool = require('../../../packages/core/lib/pg-pool');
+const { postAlarm }: { postAlarm: (payload: AlarmPayload) => Promise<unknown> } = require('../../../packages/core/lib/openclaw-client');
+const kst: KstClient = require('../../../packages/core/lib/kst');
 
 const SCHEMA = 'reservation';
 const TABLE = 'rag_research';
 
-function collectMetrics(scanResult, durationMs) {
+function collectMetrics(scanResult: ScanResult, durationMs: number): ResearchMetrics {
   const totalCollected = Number(scanResult.total || 0);
   const totalRaw = Number(scanResult.totalRaw || totalCollected);
   const evaluated = Number(scanResult.evaluated || 0);
@@ -44,19 +100,23 @@ function collectMetrics(scanResult, durationMs) {
   };
 }
 
-async function storeMetrics(metrics) {
+async function storeMetrics(metrics: ResearchMetrics): Promise<void> {
   try {
     await rag.store('research', `스캔 메트릭 ${metrics.date}`, {
       type: 'daily_metrics',
       ...metrics,
     }, 'research-monitor');
   } catch (err) {
-    console.warn(`[research-monitor] 메트릭 저장 실패: ${err.message}`);
+    const errorMessage =
+      typeof err === 'object' && err !== null && 'message' in err
+        ? String((err as { message?: unknown }).message || 'unknown error')
+        : String(err || 'unknown error');
+    console.warn(`[research-monitor] 메트릭 저장 실패: ${errorMessage}`);
   }
 }
 
-async function checkAnomalies(metrics) {
-  const alerts = [];
+async function checkAnomalies(metrics: ResearchMetrics): Promise<string[]> {
+  const alerts: string[] = [];
 
   if (metrics.total_collected === 0) alerts.push('🚨 수집 0건! 네트워크 장애 또는 API 차단 가능');
   if (metrics.store_success_rate < 90) alerts.push(`⚠️ 저장 성공률 ${metrics.store_success_rate}% (목표 95%+)`);
@@ -80,7 +140,7 @@ async function checkAnomalies(metrics) {
   return alerts;
 }
 
-async function weeklyTrend() {
+async function weeklyTrend(): Promise<string> {
   const rows = await pgPool.query(SCHEMA, `
     SELECT metadata
     FROM ${SCHEMA}.${TABLE}

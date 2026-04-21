@@ -9,7 +9,10 @@
 cd bots/darwin/elixir
 mix compile && mix test
 
-# JS/TS 레거시 브리지
+# Darwin TS safety rail
+bash bots/darwin/scripts/typecheck-darwin-ts.sh
+
+# CommonJS-compatible TS bridge runtime
 node bots/darwin/scripts/research-task-runner.ts
 ```
 
@@ -37,7 +40,8 @@ bots/darwin/
 │  ├ shadow_runner.ex      ← 과거 V1/V2 병렬 비교 (참고용)
 │  ├ signal_receiver.ex    ← Sigma advisory 구독
 │  └ mcp/                  ← MCP Server
-├ lib/                     ← V1 TypeScript (레거시 유지)
+├ lib/                     ← CommonJS-compatible TypeScript bridge
+├ scripts/                 ← weekly ops + task runner + TS typecheck entry
 ├ migrations/              ← DB 마이그레이션 4개
 ├ config/                  ← darwin_principles.yaml
 └ sandbox/                 ← 실험 결과물 (gitignored)
