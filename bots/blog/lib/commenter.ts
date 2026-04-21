@@ -2899,9 +2899,11 @@ async function saveCommentDebugSnapshot(page, comment, stage) {
           const uiSelector = String(node.getAttribute('data-ui-selector') || '');
           const inputType = String(node.getAttribute('type') || '').toLowerCase();
           const normalizedText = text.replace(/\s+/g, '');
+          if (/beforeToggleSticker|beforeToggleEmoticon/i.test(dataAction)) return false;
+          if (/upload_sticker|sticker/i.test(cls)) return false;
           if (dataAction.includes('write#request')) return true;
           if (uiSelector === 'writeButton' || /^writeButton_/i.test(uiSelector)) return true;
-          if (/u_cbox_btn_upload|btn_register|btn_write/i.test(cls)) return true;
+          if (/btn_register|btn_write|u_cbox_btn_upload(?!_sticker)/i.test(cls)) return true;
           if (inputType === 'submit') return true;
           return /등록|완료|게시/.test(normalizedText);
         };
@@ -3503,8 +3505,8 @@ async function submitReply(page, browserPage = null) {
   throw new Error('reply_submit_not_found');
 }
 
-async function submitComment(page) {
-  const clicked = await page.evaluate(`
+async function submitComment(page, browserPage = null) {
+  const submitState = await page.evaluate(`
     (() => {
       const visible = (el) => {
         if (!el) return false;
@@ -3512,21 +3514,142 @@ async function submitComment(page) {
         const rect = el.getBoundingClientRect();
         return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
       };
-      const candidates = Array.from(document.querySelectorAll('button[type="button"], button, a'));
-      const submit = candidates.find((btn) => {
-        if (!visible(btn)) return false;
-        const dataAction = String(btn.getAttribute('data-action') || '');
-        const uiSelector = String(btn.getAttribute('data-ui-selector') || '');
-        return dataAction === 'write#request' && uiSelector === 'writeButton';
-      });
-      if (!submit) return false;
-      submit.scrollIntoView({ block: 'center', behavior: 'instant' });
-      submit.click();
-      return true;
+      const textOf = (el) =>
+        String((el && (el.innerText || el.textContent)) || '').replace(/\\s+/g, ' ').trim();
+      const isCommentSubmitCandidate = (node) => {
+        if (!visible(node)) return false;
+        const tag = String(node.tagName || '').toLowerCase();
+        if (tag !== 'button' && tag !== 'a' && tag !== 'input') return false;
+        const dataAction = String(node.getAttribute('data-action') || '');
+        const uiSelector = String(node.getAttribute('data-ui-selector') || '');
+        const cls = String(node.className || '');
+        const text = textOf(node).replace(/\\s+/g, '');
+        const role = String(node.getAttribute('role') || '');
+        const inputType = String(node.getAttribute('type') || '').toLowerCase();
+        if (/beforeToggleSticker|beforeToggleEmoticon/i.test(dataAction)) return false;
+        if (/upload_sticker|sticker/i.test(cls)) return false;
+        if (dataAction.includes('write#request')) return true;
+        if (uiSelector === 'writeButton' || /^writeButton_/i.test(uiSelector)) return true;
+        if (/btn_register|btn_write|u_cbox_btn_upload(?!_sticker)/i.test(cls)) return true;
+        if (inputType === 'submit') return true;
+        return (role === 'button' || tag === 'button' || tag === 'a') && /등록|완료|게시/.test(text);
+      };
+      const targetEditor = document.querySelector('[data-blog-commenter-editor="true"]');
+      const editorRoot =
+        targetEditor && targetEditor.closest('form')
+        || targetEditor && targetEditor.closest('.u_cbox_write_box')
+        || targetEditor && targetEditor.closest('.u_cbox_comment_box')
+        || targetEditor && targetEditor.closest('.u_cbox_write_wrap')
+        || targetEditor && targetEditor.closest('.u_cbox_write, .u_cbox_write_area')
+        || null;
+      const roots = [
+        editorRoot,
+        targetEditor && targetEditor.closest('.u_cbox_comment_box, .u_cbox_write_box, .u_cbox_write_wrap, form'),
+      ].filter(Boolean);
+      const scoreNode = (node, root) => {
+        let score = 0;
+        const text = textOf(node);
+        const cls = String(node.className || '');
+        const dataAction = String(node.getAttribute('data-action') || '');
+        const uiSelector = String(node.getAttribute('data-ui-selector') || '');
+        if (editorRoot && editorRoot.contains(node)) score += 8;
+        if (root === editorRoot) score += 5;
+        if (dataAction.includes('write#request')) score += 4;
+        if (uiSelector === 'writeButton' || /^writeButton_/i.test(uiSelector)) score += 3;
+        if (/등록|완료|게시/.test(text)) score += 3;
+        if (/btn_register|btn_write|u_cbox_btn_upload(?!_sticker)/i.test(cls)) score += 2;
+        return score;
+      };
+      let node = null;
+      let bestScore = -1;
+      for (const root of roots) {
+        for (const candidate of Array.from(root.querySelectorAll('button, a, input[type="submit"], [role="button"]'))) {
+          if (!isCommentSubmitCandidate(candidate)) continue;
+          const score = scoreNode(candidate, root);
+          if (score > bestScore) {
+            bestScore = score;
+            node = candidate;
+          }
+        }
+      }
+      if (!node) {
+        for (const candidate of Array.from(document.querySelectorAll('button, a, input[type="submit"], [role="button"]'))) {
+          if (!isCommentSubmitCandidate(candidate)) continue;
+          const score = scoreNode(candidate, document);
+          if (score > bestScore) {
+            bestScore = score;
+            node = candidate;
+          }
+        }
+      }
+      document.querySelectorAll('[data-blog-commenter-submit="true"]').forEach((item) => item.removeAttribute('data-blog-commenter-submit'));
+      if (!node) {
+        return {
+          clicked: false,
+          selectorAssigned: false,
+          text: '',
+          className: '',
+          dataAction: '',
+          uiSelector: '',
+        };
+      }
+      node.setAttribute('data-blog-commenter-submit', 'true');
+      node.scrollIntoView({ block: 'center', behavior: 'instant' });
+      try { node.focus(); } catch {}
+      try { node.click(); } catch {}
+      node.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true, view: window, button: 0, buttons: 1 }));
+      node.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window, button: 0, buttons: 1 }));
+      node.dispatchEvent(new MouseEvent('pointerup', { bubbles: true, cancelable: true, view: window, button: 0, buttons: 0 }));
+      node.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window, button: 0, buttons: 0 }));
+      node.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window, button: 0, buttons: 0 }));
+      node.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Enter', code: 'Enter' }));
+      node.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, cancelable: true, key: 'Enter', code: 'Enter' }));
+      return {
+        clicked: true,
+        selectorAssigned: true,
+        text: textOf(node).slice(0, 80),
+        className: String(node.className || '').slice(0, 160),
+        dataAction: String(node.getAttribute('data-action') || ''),
+        uiSelector: String(node.getAttribute('data-ui-selector') || ''),
+      };
     })()
-  `);
+  `).catch(() => ({
+    clicked: false,
+    selectorAssigned: false,
+    text: '',
+    className: '',
+    dataAction: '',
+    uiSelector: '',
+  }));
 
-  if (!clicked) {
+  if (submitState?.selectorAssigned) {
+    const nativeTarget = await page.$('[data-blog-commenter-submit="true"]').catch(() => null);
+    if (nativeTarget) {
+      await nativeTarget.evaluate((node) => {
+        if (node && node.scrollIntoView) {
+          node.scrollIntoView({ block: 'center', behavior: 'instant' });
+        }
+      }).catch(() => {});
+      await nativeTarget.click({ force: true }).catch(() => {});
+    }
+  }
+
+  if (submitState?.clicked) {
+    if (browserPage) {
+      await sleep(120);
+      await browserPage.keyboard.press('Enter').catch(() => {});
+    }
+    return;
+  }
+
+  if (browserPage) {
+    await browserPage.keyboard.press('Tab').catch(() => {});
+    await sleep(150);
+    await browserPage.keyboard.press('Enter').catch(() => {});
+    return;
+  }
+
+  if (!submitState?.clicked) {
     throw new Error('comment_submit_not_found');
   }
 }
@@ -4366,7 +4489,7 @@ async function _openCommentEditor(contentFrame, postUrl, logNo, testMode, editor
 async function _submitCommentWithVerification(contentFrame, page, editor, normalizedComment, config, testMode, postUrl) {
   await typeReply(contentFrame, page, editor.selector, normalizedComment, config, testMode);
   await humanDelay(1, 2, testMode);
-  await submitComment(contentFrame);
+  await submitComment(contentFrame, page);
 
   const posted = await verifyCommentPosted(contentFrame, normalizedComment, testMode);
   if (!posted) {
