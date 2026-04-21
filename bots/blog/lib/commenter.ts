@@ -1322,7 +1322,7 @@ function assessInboundComment(comment) {
   }
 
   if (hasUrl && !/blog\.naver\.com/i.test(lower)) {
-    return { ok: false, reason: 'external_url_comment' };
+    return { ok: true, reason: 'external_url_comment_reply_allowed' };
   }
 
   const courtesyPatterns = [
@@ -1395,7 +1395,7 @@ async function requeuePromotionalReplyCandidates(limit = 10, options = {}) {
     FROM ${TABLE}
     WHERE reply_at IS NULL
       AND status = 'skipped'
-      AND COALESCE(error_message, '') IN ('promotional_comment', 'promotional_comment_with_url')
+      AND COALESCE(error_message, '') IN ('promotional_comment', 'promotional_comment_with_url', 'external_url_comment')
       AND detected_at >= now() - interval '30 days'
     ORDER BY detected_at DESC
     LIMIT $1
@@ -1405,7 +1405,12 @@ async function requeuePromotionalReplyCandidates(limit = 10, options = {}) {
   for (const row of rows) {
     if (requeued.length >= numericLimit) break;
     const inboundAssessment = assessInboundComment(row);
-    if (!inboundAssessment.ok || !String(inboundAssessment.reason || '').startsWith('promotional_comment_reply_allowed')) continue;
+    if (!inboundAssessment.ok) continue;
+    if (![
+      'promotional_comment_reply_allowed',
+      'promotional_comment_reply_allowed_with_url',
+      'external_url_comment_reply_allowed',
+    ].includes(String(inboundAssessment.reason || ''))) continue;
 
     const candidate = {
       id: row.id,
