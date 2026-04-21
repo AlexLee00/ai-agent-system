@@ -670,7 +670,10 @@ async function buildSocialAutomationHealth() {
         : null;
       latestRealHostedRecovery = Boolean(
         latestRealHosted?.ready === true
-        && latestRealInstagramError.includes('Instagram 공개 비디오 파일이 아직 준비되지 않았습니다')
+        && (
+          latestRealInstagramError.includes('Instagram 공개 비디오 파일이 아직 준비되지 않았습니다')
+          || latestRealInstagramError.includes('Instagram 공개 비디오 URL이 아직 응답하지 않습니다')
+        )
       );
     } catch {
       latestRealHostedRecovery = false;
@@ -701,6 +704,7 @@ async function buildSocialAutomationHealth() {
       ? resolveInstagramHostedMediaUrl(latestQaSheet, { kind: 'thumbs' })
       : null;
 
+    let latestInstagramHostedRecovery = false;
     if (instaList.length > 0) {
       ok.push(`  instagram recent: success ${instaSummary.success} / failed ${instaSummary.failed} / skipped ${instaSummary.skipped} (dry-run ${instaSummary.dryRun})`);
       ok.push(`  instagram latest: ${String(latestInstagram.status || 'unknown')} / ${String(latestInstagram.post_title || '').slice(0, 50)}`);
@@ -712,7 +716,7 @@ async function buildSocialAutomationHealth() {
       if (latestRealInstagram) {
         ok.push(`  instagram latest real: ${String(latestRealInstagram.status || 'unknown')} / ${String(latestRealInstagram.post_title || '').slice(0, 50)}`);
       }
-      const latestInstagramHostedRecovery = latestInstagram && !latestInstagram.dry_run
+      latestInstagramHostedRecovery = latestInstagram && !latestInstagram.dry_run
         ? Boolean(
             latestRealHostedRecovery
             || (
