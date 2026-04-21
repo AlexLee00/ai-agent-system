@@ -507,6 +507,27 @@ function saveNotifierState(state) {
   } catch {}
 }
 
+function recordHistoricalSuppression(exec, signal) {
+  const state = loadNotifierState();
+  const promptFile = exec?.prompt_file || '';
+  if (!promptFile || !signal) return;
+
+  if (!Array.isArray(state.historical_suppressions)) {
+    state.historical_suppressions = [];
+  }
+
+  state.historical_suppressions.unshift({
+    promptFile,
+    pid: exec?.pid || null,
+    source: signal.source || 'unknown',
+    detail: signal.file || signal.line || '',
+    suppressedAt: new Date().toISOString(),
+  });
+
+  state.historical_suppressions = state.historical_suppressions.slice(0, 20);
+  saveNotifierState(state);
+}
+
 async function sendTelegram(msg) {
   const shadowMode = process.env.CLAUDE_NOTIFIER_SHADOW !== 'false';
   const msgHash = hashMessage(msg);
@@ -583,6 +604,7 @@ async function mainLoop() {
               console.log(
                 `[codex-notifier] 과거 완료 prompt start 알림 억제: ${exec.prompt_file} (${historicalCompletion.source})`
               );
+              recordHistoricalSuppression(exec, historicalCompletion);
               exec.last_alert_type = 'historical_start_suppressed';
             } else {
               await sendTelegram(formatPlanStartMessage(exec, firstPhase));
@@ -666,4 +688,5 @@ module.exports = {
   isProcessAlive,
   shouldSuppressHistoricalStart,
   getHistoricalCompletionSignal,
+  recordHistoricalSuppression,
 };
