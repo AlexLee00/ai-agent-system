@@ -1553,7 +1553,7 @@ async function buildMarketingExpansionHealth() {
   }
 }
 
-function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealth, instagramHealth, socialAutomationHealth, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth, marketingExpansionHealth, engagementHealth) {
+function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealth, instagramHealth, socialAutomationHealth, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth, marketingExpansionHealth, engagementHealth, engagementDoctorPriority = null) {
   const previewBundleHint = [
     socialAutomationHealth.latestReelUrl ? `reel=${socialAutomationHealth.latestReelUrl}` : '',
     socialAutomationHealth.latestCoverUrl ? `cover=${socialAutomationHealth.latestCoverUrl}` : '',
@@ -1606,15 +1606,7 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
       : '',
   ].filter(Boolean).join(' / ');
   const engagementDoctorHint = `doctor=${ENGAGEMENT_DOCTOR_COMMAND}`;
-  const engagementImmediateAction = engagementPrimaryGap?.label
-    ? (
-      engagementPrimaryGap.label === 'replies'
-        ? `node ${path.join(BLOG_ROOT, 'scripts/run-commenter.ts')}`
-        : engagementPrimaryGap.label === 'neighbor'
-          ? `node ${path.join(BLOG_ROOT, 'scripts/run-neighbor-commenter.ts')}`
-          : `node ${path.join(BLOG_ROOT, 'scripts/run-neighbor-sympathy.ts')}`
-    )
-    : '';
+  const engagementImmediateAction = String(engagementDoctorPriority?.nextCommand || '').trim();
   const engagementRunPlanHint = engagementHealth?.latestReplyReplayCandidate || engagementHealth?.replies
     ? [
         engagementHealth?.replies?.expectedNow > Number(engagementHealth?.replies?.success || 0)
@@ -1912,7 +1904,7 @@ async function buildReport() {
   const bookReviewQueueHealth = await buildBookReviewQueueHealth();
   const socialDoctorPriority = buildDoctorPriority(SOCIAL_DOCTOR_COMMAND, 'social doctor');
   const engagementDoctorPriority = buildDoctorPriority(ENGAGEMENT_DOCTOR_COMMAND, 'engagement doctor');
-  const decision = buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealth, instagramHealth, socialAutomationHealth, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth, marketingExpansionHealth, engagementHealth);
+  const decision = buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealth, instagramHealth, socialAutomationHealth, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth, marketingExpansionHealth, engagementHealth, engagementDoctorPriority);
   const remodelProgress = buildRemodelProgress(instagramHealth, phase1Health, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth);
   const doctorPriority = {
     okCount: socialDoctorPriority.okCount + engagementDoctorPriority.okCount,

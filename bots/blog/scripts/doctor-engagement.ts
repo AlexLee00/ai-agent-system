@@ -8,6 +8,8 @@ const { buildBlogCliInsight } = require('../lib/cli-insight.ts');
 const { getBlogHealthRuntimeConfig } = require('../lib/runtime-config.ts');
 
 const runtimeConfig = getBlogHealthRuntimeConfig();
+const BLOG_ROOT = path.join(env.PROJECT_ROOT, 'bots/blog');
+const RUN_ENGAGEMENT_GAP_COMMAND = `npm --prefix ${BLOG_ROOT} run run:engagement-gap`;
 
 function parseArgs(argv = []) {
   return {
@@ -118,16 +120,15 @@ function buildTargetGapDetails(targets = {}) {
 }
 
 function getGapActionCommand(label = '') {
-  const blogRoot = path.join(env.PROJECT_ROOT, 'bots/blog');
   switch (String(label || '')) {
     case 'replies':
-      return `node ${path.join(blogRoot, 'scripts/run-commenter.ts')}`;
+      return `node ${path.join(BLOG_ROOT, 'scripts/run-commenter.ts')}`;
     case 'neighbor':
-      return `node ${path.join(blogRoot, 'scripts/run-neighbor-commenter.ts')}`;
+      return `node ${path.join(BLOG_ROOT, 'scripts/run-neighbor-commenter.ts')}`;
     case 'sympathy':
-      return `node ${path.join(blogRoot, 'scripts/run-neighbor-sympathy.ts')}`;
+      return `node ${path.join(BLOG_ROOT, 'scripts/run-neighbor-sympathy.ts')}`;
     default:
-      return `npm --prefix ${blogRoot} run doctor:engagement -- --json`;
+      return `npm --prefix ${BLOG_ROOT} run doctor:engagement -- --json`;
   }
 }
 
@@ -208,7 +209,7 @@ function buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, p
 }
 
 function buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps, primaryGap }) {
-  const blogPrefix = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')}`;
+  const blogPrefix = `npm --prefix ${BLOG_ROOT}`;
   if ((failureByKind.ui || 0) > 0 || (failureByKind.browser || 0) > 0) {
     return {
       area: 'engagement.ui',
@@ -241,7 +242,7 @@ function buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps, p
       reason: primaryGap?.label
         ? `운영 시간대 기준 ${primaryGap.label} 목표치가 가장 크게 뒤처졌습니다 (${primaryGap.success}/${primaryGap.expectedNow}, deficit ${primaryGap.deficit}).`
         : `운영 시간대 기준 engagement 목표치가 뒤처졌습니다 (${targetGaps.join(', ')}).`,
-      nextCommand: primaryGap?.label ? getGapActionCommand(primaryGap.label) : `${blogPrefix} run doctor:engagement -- --json`,
+      nextCommand: primaryGap?.label ? `${RUN_ENGAGEMENT_GAP_COMMAND} -- --label=${primaryGap.label}` : `${blogPrefix} run doctor:engagement -- --json`,
       actionFocus: primaryGap?.label
         ? `${primaryGap.label} 목표치와 현재 시간대 실적 차이 점검`
         : '답글/댓글/공감 목표치와 현재 시간대 실적 차이 점검',
