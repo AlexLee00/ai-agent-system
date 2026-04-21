@@ -2800,7 +2800,7 @@ async function submitReply(page, browserPage = null) {
   }
 
   traceCommenter('postReply:submit-locate-start', { selectorCount: 1 });
-  const clicked = await page.evaluate(`
+  const submitState = await page.evaluate(`
     (() => {
       const visible = (el) => {
         if (!el) return false;
@@ -2847,11 +2847,33 @@ async function submitReply(page, browserPage = null) {
         document.querySelector('.u_cbox_write_area'),
       ].filter(Boolean);
 
+      const scoreNode = (node, root) => {
+        let score = 0;
+        const text = textOf(node);
+        const cls = String(node.className || '');
+        const dataAction = String(node.getAttribute('data-action') || '');
+        const uiSelector = String(node.getAttribute('data-ui-selector') || '');
+        if (root === targetReplyArea) score += 6;
+        if (targetEditor && targetEditor.closest('.u_cbox_write_box, .u_cbox_reply_write, .u_cbox_reply_area, .u_cbox_comment_box')?.contains(node)) score += 4;
+        if (targetEditor && targetEditor.closest('.u_cbox_write_wrap, .u_cbox_write, .u_cbox_write_area')?.contains(node)) score += 3;
+        if (targetComment && targetComment.contains(node)) score += 2;
+        if (/등록|답글|답변/.test(text)) score += 2;
+        if (dataAction.includes('reply#') || /^replyButton_/i.test(uiSelector)) score += 2;
+        if (/u_cbox_btn_upload|btn_register|btn_write|replyButton/i.test(cls)) score += 1;
+        return score;
+      };
+
       let node = null;
+      let bestScore = -1;
       for (const root of roots) {
-        node = Array.from(root.querySelectorAll('button, a, input[type="submit"], [role="button"]')).find(isReplySubmit) || null;
-        if (node) break;
-        node = null;
+        for (const candidate of Array.from(root.querySelectorAll('button, a, input[type="submit"], [role="button"]'))) {
+          if (!isReplySubmit(candidate)) continue;
+          const score = scoreNode(candidate, root);
+          if (score > bestScore) {
+            bestScore = score;
+            node = candidate;
+          }
+        }
       }
       if (!node) {
         const globalNode = Array.from(document.querySelectorAll('button, a, input[type="submit"], [role="button"]')).find(isReplySubmit);
@@ -2859,20 +2881,75 @@ async function submitReply(page, browserPage = null) {
           node = globalNode;
         }
       }
-      if (!node) return false;
+      document.querySelectorAll('[data-blog-commenter-submit="true"]').forEach((item) => item.removeAttribute('data-blog-commenter-submit'));
+      if (!node) {
+        return {
+          clicked: false,
+          selectorAssigned: false,
+          text: '',
+          className: '',
+          dataAction: '',
+          uiSelector: '',
+        };
+      }
 
+      node.setAttribute('data-blog-commenter-submit', 'true');
       node.scrollIntoView({ block: 'center', behavior: 'instant' });
+      try { node.focus(); } catch {}
+      try { node.click(); } catch {}
       node.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true, view: window, button: 0, buttons: 1 }));
       node.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window, button: 0, buttons: 1 }));
       node.dispatchEvent(new MouseEvent('pointerup', { bubbles: true, cancelable: true, view: window, button: 0, buttons: 0 }));
       node.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window, button: 0, buttons: 0 }));
       node.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window, button: 0, buttons: 0 }));
-      return true;
+      node.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Enter', code: 'Enter' }));
+      node.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, cancelable: true, key: 'Enter', code: 'Enter' }));
+      return {
+        clicked: true,
+        selectorAssigned: true,
+        text: textOf(node).slice(0, 80),
+        className: String(node.className || '').slice(0, 160),
+        dataAction: String(node.getAttribute('data-action') || ''),
+        uiSelector: String(node.getAttribute('data-ui-selector') || ''),
+      };
     })()
-  `).catch(() => false);
+  `).catch(() => ({
+    clicked: false,
+    selectorAssigned: false,
+    text: '',
+    className: '',
+    dataAction: '',
+    uiSelector: '',
+  }));
 
-  if (clicked) {
+  traceCommenter('postReply:submit-locate-done', submitState);
+
+  if (submitState?.selectorAssigned) {
+    const nativeTarget = await page.$('[data-blog-commenter-submit="true"]').catch(() => null);
+    if (nativeTarget) {
+      await nativeTarget.evaluate((node) => {
+        if (node && node.scrollIntoView) {
+          node.scrollIntoView({ block: 'center', behavior: 'instant' });
+        }
+      }).catch(() => {});
+      await nativeTarget.click({ force: true }).catch(() => {});
+    }
+  }
+
+  if (submitState?.clicked) {
     traceCommenter('postReply:submit-click-done', { scoped: true });
+    if (browserPage) {
+      await sleep(120);
+      await browserPage.keyboard.press('Enter').catch(() => {});
+    }
+    return;
+  }
+
+  if (browserPage) {
+    traceCommenter('postReply:submit-keyboard-fallback');
+    await browserPage.keyboard.press('Tab').catch(() => {});
+    await sleep(150);
+    await browserPage.keyboard.press('Enter').catch(() => {});
     return;
   }
 
