@@ -298,7 +298,7 @@ async function getCourtesyReflectionRecheck() {
     const reevaluable = [];
     for (const row of rows || []) {
       const reassessed = assessInboundComment({ comment_text: row.comment_text });
-      if (reassessed?.ok && reassessed?.reason === 'courtesy_reflection_allowed') {
+      if (reassessed?.ok && ['courtesy_reflection_allowed', 'generic_greeting_reply_allowed'].includes(String(reassessed?.reason || ''))) {
         reevaluable.push({
           id: row.id,
           commenterName: row.commenter_name,
@@ -346,7 +346,7 @@ function buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, p
         actions.push(`최근 14일 주요 inbound 필터: ${dominantSkip.reason} ${dominantSkip.count}건`);
       }
       if (Number(courtesyReflectionRecheck?.reevaluableCount || 0) > 0) {
-        actions.push(`최근 generic greeting skip 중 ${courtesyReflectionRecheck.reevaluableCount}건은 새 공감형 기준으로 reply 후보가 될 수 있습니다`);
+        actions.push(`최근 generic greeting skip 중 ${courtesyReflectionRecheck.reevaluableCount}건은 현재 inbound reply 정책으로 다시 reply 후보가 될 수 있습니다`);
         actions.push(`${BACKFILL_COURTESY_REPLIES_COMMAND} -- --dry-run`);
       }
     }
@@ -413,14 +413,14 @@ function buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps, p
       if (Number(courtesyReflectionRecheck?.reevaluableCount || 0) > 0) {
         return {
           area: 'engagement.target_gap.replies.backfillable',
-          reason: `replies 목표치는 비어 있지만 최근 generic greeting skip 중 ${courtesyReflectionRecheck.reevaluableCount}건은 새 공감형 기준으로 reply 후보로 되살릴 수 있습니다.`,
+          reason: `replies 목표치는 비어 있지만 최근 generic greeting skip 중 ${courtesyReflectionRecheck.reevaluableCount}건은 현재 inbound reply 정책으로 reply 후보로 되살릴 수 있습니다.`,
           nextCommand: `${BACKFILL_COURTESY_REPLIES_COMMAND}`,
           actionFocus: '재평가 가능한 courtesy 댓글을 pending으로 되살린 뒤 reply 실행',
         };
       }
       return {
         area: 'engagement.target_gap.replies.no_workload',
-        reason: `replies 목표치는 비어 있지만 현재 reply 대상 댓글이 없습니다 (latest skipped: ${String(replyWorkload.latest.errorMessage || 'unknown')}${Array.isArray(replyWorkload?.skippedReasons14d) && replyWorkload.skippedReasons14d[0]?.reason ? ` / 14d top filter: ${replyWorkload.skippedReasons14d[0].reason} ${replyWorkload.skippedReasons14d[0].count}건` : ''}${Number(courtesyReflectionRecheck?.reevaluableCount || 0) > 0 ? ` / reevaluable by new courtesy filter: ${courtesyReflectionRecheck.reevaluableCount}건` : ''}).`,
+        reason: `replies 목표치는 비어 있지만 현재 reply 대상 댓글이 없습니다 (latest skipped: ${String(replyWorkload.latest.errorMessage || 'unknown')}${Array.isArray(replyWorkload?.skippedReasons14d) && replyWorkload.skippedReasons14d[0]?.reason ? ` / 14d top filter: ${replyWorkload.skippedReasons14d[0].reason} ${replyWorkload.skippedReasons14d[0].count}건` : ''}${Number(courtesyReflectionRecheck?.reevaluableCount || 0) > 0 ? ` / reevaluable by current reply policy: ${courtesyReflectionRecheck.reevaluableCount}건` : ''}).`,
         nextCommand: `${RUN_ENGAGEMENT_GAP_COMMAND} -- --label=replies`,
         actionFocus: 'replyable inbound 유입과 필터링 기준 점검',
       };

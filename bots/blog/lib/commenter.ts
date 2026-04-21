@@ -3635,6 +3635,12 @@ async function runCommentReply({ testMode = false } = {}) {
   await ensureSchema();
 
   const requeued = await requeueRecoverableReplyFailures(testMode ? 1 : 5).catch(() => 0);
+  const courtesyBackfill = await requeueCourtesyReflectionCandidates(testMode ? 2 : 10, { dryRun: false }).catch(() => ({
+    dryRun: false,
+    reviewed: 0,
+    requeuedCount: 0,
+    candidates: [],
+  }));
   const promotionalBackfill = await requeuePromotionalReplyCandidates(testMode ? 2 : 10, { dryRun: false }).catch(() => ({
     dryRun: false,
     reviewed: 0,
@@ -3644,7 +3650,7 @@ async function runCommentReply({ testMode = false } = {}) {
 
   const todayCount = await getTodayReplyCount();
   if (todayCount >= config.maxDaily) {
-    return { skipped: true, reason: 'daily_limit', count: todayCount, requeued, promotionalBackfill };
+    return { skipped: true, reason: 'daily_limit', count: todayCount, requeued, courtesyBackfill, promotionalBackfill };
   }
 
   let newComments;
@@ -3742,6 +3748,7 @@ async function runCommentReply({ testMode = false } = {}) {
     skipped,
     total: todayCount + replied,
     requeued,
+    courtesyBackfill,
     promotionalBackfill,
     exhaustedReplyWorkload,
     unmetReplyTarget,

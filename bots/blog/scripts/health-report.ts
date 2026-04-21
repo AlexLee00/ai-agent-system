@@ -281,7 +281,7 @@ async function getCourtesyReflectionRecheck() {
     const reevaluable = [];
     for (const row of rows || []) {
       const reassessed = assessInboundComment({ comment_text: row.comment_text });
-      if (reassessed?.ok && reassessed?.reason === 'courtesy_reflection_allowed') {
+      if (reassessed?.ok && ['courtesy_reflection_allowed', 'generic_greeting_reply_allowed'].includes(String(reassessed?.reason || ''))) {
         reevaluable.push({
           id: row.id,
           commenterName: row.commenter_name,
@@ -1182,7 +1182,7 @@ async function buildEngagementHealth() {
       ok.push(`  skipped reasons 14d: ${skippedReason14dSummary}`);
     }
     if (Number(courtesyReflectionRecheck?.reevaluableCount || 0) > 0) {
-      ok.push(`  courtesy recheck 14d: ${courtesyReflectionRecheck.reevaluableCount}/${courtesyReflectionRecheck.reviewedCount} generic greeting skip이 새 공감형 기준으로 reply 후보가 될 수 있습니다`);
+      ok.push(`  courtesy recheck 14d: ${courtesyReflectionRecheck.reevaluableCount}/${courtesyReflectionRecheck.reviewedCount} generic greeting skip이 현재 inbound reply 정책으로 다시 reply 후보가 될 수 있습니다`);
     }
     if (latestCommentRow?.id) {
       ok.push(
@@ -1860,7 +1860,7 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
             ? '현재 inbound는 reply 후보가 없어 gap이 유지되고 있습니다.'
             : '',
           Number(engagementHealth?.courtesyReflectionRecheck?.reevaluableCount || 0) > 0
-            ? `새 공감형 기준으로 재평가 가능한 generic greeting 댓글: ${engagementHealth.courtesyReflectionRecheck.reevaluableCount}/${engagementHealth.courtesyReflectionRecheck.reviewedCount}`
+            ? `현재 inbound reply 정책으로 재평가 가능한 generic greeting 댓글: ${engagementHealth.courtesyReflectionRecheck.reevaluableCount}/${engagementHealth.courtesyReflectionRecheck.reviewedCount}`
             : '',
           engagementImmediateAction ? `즉시 실행: ${engagementImmediateAction}` : '',
           engagementRunPlanHint ? `실행 순서: ${engagementRunPlanHint}` : '',
