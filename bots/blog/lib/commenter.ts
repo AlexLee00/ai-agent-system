@@ -641,6 +641,52 @@ async function saveNeighborCandidate(candidate) {
       skippedExistingSuccess: true,
     };
   }
+  const existing = await pgPool.get('blog', `
+    SELECT id, status
+    FROM ${NEIGHBOR_TABLE}
+    WHERE dedupe_key = $1
+    LIMIT 1
+  `, [dedupeKey]);
+  if (existing?.id) {
+    if (String(existing.status || '') === 'failed') {
+      await pgPool.run('blog', `
+        UPDATE ${NEIGHBOR_TABLE}
+        SET status = 'pending',
+            target_blog_name = COALESCE($2, target_blog_name),
+            source_type = COALESCE($3, source_type),
+            source_ref = COALESCE($4, source_ref),
+            post_title = COALESCE($5, post_title),
+            error_message = NULL,
+            meta = COALESCE(meta, '{}'::jsonb) || $6::jsonb
+        WHERE id = $1
+      `, [
+        existing.id,
+        candidate.targetBlogName || null,
+        candidate.sourceType || null,
+        candidate.sourceRef || null,
+        candidate.postTitle || null,
+        JSON.stringify({
+          requeuedFromCollection: true,
+          requeuedAt: new Date().toISOString(),
+          ...(candidate.meta || {}),
+        }),
+      ]);
+      return {
+        inserted: false,
+        id: existing.id,
+        dedupeKey,
+        skippedExistingSuccess: false,
+        revivedExistingFailed: true,
+      };
+    }
+    return {
+      inserted: false,
+      id: existing.id,
+      dedupeKey,
+      skippedExistingSuccess: false,
+      reusedExistingPending: String(existing.status || '') === 'pending',
+    };
+  }
   const result = await pgPool.run('blog', `
     INSERT INTO ${NEIGHBOR_TABLE} (
       target_blog_id, target_blog_name, source_type, source_ref,
@@ -1755,6 +1801,8 @@ async function collectNeighborCandidates({ testMode = false, persist = true, col
     buddyFeedSeenUrlSkipCount: 0,
     rawCollectedCount: 0,
     insertedCount: 0,
+    revivedExistingFailedCount: 0,
+    reusedExistingPendingCount: 0,
     skippedExistingSuccessCount: 0,
     dedupedCount: 0,
     sourceTypeCounts: {
@@ -1896,7 +1944,11 @@ async function collectNeighborCandidates({ testMode = false, persist = true, col
   for (const candidate of collected) {
     const saved = await saveNeighborCandidate(candidate);
     if (saved.inserted) inserted.push({ ...candidate, id: saved.id });
-    if (saved.skippedExistingSuccess) {
+    if (saved.revivedExistingFailed) {
+      diagnostics.revivedExistingFailedCount += 1;
+    } else if (saved.reusedExistingPending) {
+      diagnostics.reusedExistingPendingCount += 1;
+    } else if (saved.skippedExistingSuccess) {
       diagnostics.skippedExistingSuccessCount += 1;
     } else if (!saved.inserted) {
       diagnostics.dedupedCount += 1;

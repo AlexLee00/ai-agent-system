@@ -1994,6 +1994,21 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
     const doctorPrimaryLabel = normalizedDoctorGapLabel;
     const entries = [...engagementGapEntries];
     if (!entries.length) return [];
+    const shouldPrioritizeNeighborQueue =
+      String(engagementDoctorPriority?.nextCommand || '').includes('run-neighbor-commenter.ts')
+      && Number(engagementHealth?.neighborQueue?.pending || 0) > 0;
+    if (shouldPrioritizeNeighborQueue) {
+      const neighborExisting = entries.find((item) => item.label === 'neighbor');
+      const neighborEntry = neighborExisting || {
+        label: 'neighbor',
+        success: Number(engagementHealth?.neighborComments?.success || 0),
+        expectedNow: Number(engagementHealth?.neighborComments?.expectedNow || 0),
+        deficit: Math.max(0, Number(engagementHealth?.neighborComments?.expectedNow || 0) - Number(engagementHealth?.neighborComments?.success || 0)),
+        summary: `neighbor ${Number(engagementHealth?.neighborComments?.success || 0)}/${Number(engagementHealth?.neighborComments?.expectedNow || 0)}`,
+      };
+      const rest = entries.filter((item) => item.label !== 'neighbor');
+      return [neighborEntry, ...rest];
+    }
     if (
       engagementDoctorPriority?.primaryArea === 'engagement.ui'
       && (
