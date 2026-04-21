@@ -1,11 +1,15 @@
 #!/usr/bin/env node
 'use strict';
 
+const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const env = require('../../../packages/core/lib/env');
+const { readDevelopmentBaseline } = require('../lib/dev-baseline.ts');
 
 const BLOG_ROOT = path.join(env.PROJECT_ROOT, 'bots/blog');
+const BLOG_OPS_ROOT = path.join(BLOG_ROOT, 'output', 'ops');
+const ENGAGEMENT_GAP_RUN_PATH = path.join(BLOG_OPS_ROOT, 'engagement-gap-run.json');
 const DOCTOR_COMMAND = `npm --prefix ${BLOG_ROOT} run doctor:engagement -- --json`;
 
 function parseArgs(argv = []) {
@@ -73,9 +77,19 @@ function executeTargetCommand(command = '') {
   return output;
 }
 
+function persistRunResult(result = {}) {
+  try {
+    fs.mkdirSync(BLOG_OPS_ROOT, { recursive: true });
+    fs.writeFileSync(ENGAGEMENT_GAP_RUN_PATH, `${JSON.stringify(result, null, 2)}\n`, 'utf8');
+  } catch (error) {
+    console.warn(`[blog engagement gap runner] failed to persist run result: ${String(error?.message || error)}`);
+  }
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
   const payload = runDoctor();
+  const developmentBaseline = readDevelopmentBaseline();
   const targetQueue = buildTargetQueue(payload, args.label);
   const target = targetQueue[0] || null;
 
@@ -103,6 +117,13 @@ function main() {
     primary: payload?.primary || null,
     dryRun: args.dryRun,
     attempted: [],
+    executedAt: new Date().toISOString(),
+    developmentBaseline: developmentBaseline
+      ? {
+          startedAt: developmentBaseline.startedAtIso,
+          source: developmentBaseline.source,
+        }
+      : null,
   };
 
   if (args.dryRun) {
@@ -148,6 +169,7 @@ function main() {
   if (allIdle) {
     result.idleReason = '모든 engagement gap target에 즉시 처리할 workload가 없습니다.';
   }
+  persistRunResult(result);
 
   if (args.json) {
     console.log(JSON.stringify(result, null, 2));

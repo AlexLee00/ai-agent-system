@@ -59,6 +59,7 @@ const SOCIAL_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/
 const ENGAGEMENT_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:engagement -- --json`;
 const BLOG_OPS_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:ops -- --json`;
 const BLOG_NEIGHBOR_COLLECT_DIAG_PATH = path.join(BLOG_ROOT, 'output', 'ops', 'neighbor-collect-diagnostics.json');
+const BLOG_ENGAGEMENT_GAP_RUN_PATH = path.join(BLOG_ROOT, 'output', 'ops', 'engagement-gap-run.json');
 
 function nowKst() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
@@ -84,6 +85,24 @@ function readNeighborCollectDiagnostics() {
     const raw = fs.readFileSync(BLOG_NEIGHBOR_COLLECT_DIAG_PATH, 'utf8');
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function readLastEngagementGapRun(baseline = null) {
+  try {
+    const raw = fs.readFileSync(BLOG_ENGAGEMENT_GAP_RUN_PATH, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (baseline?.startedAtIso) {
+      const executedAt = Date.parse(String(parsed.executedAt || ''));
+      const baselineAt = Date.parse(String(baseline.startedAtIso || ''));
+      if (Number.isFinite(executedAt) && Number.isFinite(baselineAt) && executedAt < baselineAt) {
+        return null;
+      }
+    }
+    return parsed;
   } catch {
     return null;
   }
@@ -1077,6 +1096,7 @@ async function buildSocialAutomationHealth() {
 async function buildEngagementHealth() {
   try {
     const developmentBaseline = readDevelopmentBaseline();
+    const lastGapRun = readLastEngagementGapRun(developmentBaseline);
     const actionSinceClause = buildSinceClause('executed_at', developmentBaseline);
     const commentSinceClause = buildSinceClause('detected_at', developmentBaseline);
     const replyConfig = runtimeConfig.commenter || {};
@@ -1314,6 +1334,15 @@ async function buildEngagementHealth() {
     ) {
       ok.push('  reply workload idle: baseline 이후 inbound 댓글과 pending backlog가 없어 replies gap이 유지되고 있습니다');
     }
+    if (lastGapRun?.executedAt) {
+      const attemptedSummary = Array.isArray(lastGapRun.attempted)
+        ? lastGapRun.attempted.map((item) => String(item?.label || '')).filter(Boolean).join(' -> ')
+        : '';
+      ok.push(`  last engagement gap run: ${String(lastGapRun.executedAt)} / ${lastGapRun.allIdle ? 'all idle' : 'workload handled'}${attemptedSummary ? ` / attempted ${attemptedSummary}` : ''}`);
+      if (lastGapRun.allIdle && lastGapRun.idleReason) {
+        ok.push(`  last gap run idle reason: ${String(lastGapRun.idleReason)}`);
+      }
+    }
     if (Number(inbound.total || 0) > 0 && Number(inbound.pending || 0) === 0 && Number(inbound.replied || 0) === 0 && Number(inbound.failed || 0) === 0) {
       warn.push('  reply workload empty: 오늘 inbound는 들어왔지만 reply 후보로 올라간 댓글이 없습니다');
     }
@@ -1448,6 +1477,7 @@ async function buildEngagementHealth() {
           }
         : null,
       courtesyReflectionRecheck,
+      lastGapRun,
     };
   } catch (error) {
     return {
@@ -1469,6 +1499,7 @@ async function buildEngagementHealth() {
       skippedReason14dSummary: '',
       latestInbound: null,
       courtesyReflectionRecheck: { reviewedCount: 0, reevaluableCount: 0, reevaluableSamples: [] },
+      lastGapRun: null,
     };
   }
 }
@@ -2085,6 +2116,9 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
           engagementGapHint ? `현재 gap: ${engagementGapHint}` : '',
           engagementDoctorPriority?.primaryArea === 'engagement.target_gap.replies.no_workload'
             ? '현재 inbound는 reply 후보가 없어 gap이 유지되고 있습니다.'
+            : '',
+          engagementHealth?.lastGapRun?.allIdle
+            ? `최근 fallback run도 idle: ${Array.isArray(engagementHealth.lastGapRun.attempted) ? engagementHealth.lastGapRun.attempted.map((item) => String(item?.label || '')).filter(Boolean).join(' -> ') : ''} / ${String(engagementHealth.lastGapRun.idleReason || '즉시 처리할 workload 없음')}`
             : '',
           engagementDoctorPriority?.primaryArea === 'engagement.target_gap.neighbor.no_workload'
             ? '현재 바로 처리할 neighbor comment queue가 없어 gap이 유지되고 있습니다.'

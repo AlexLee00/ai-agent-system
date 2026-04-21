@@ -14,6 +14,7 @@ const runtimeConfig = getBlogHealthRuntimeConfig();
 const BLOG_ROOT = path.join(env.PROJECT_ROOT, 'bots/blog');
 const BLOG_OPS_ROOT = path.join(BLOG_ROOT, 'output', 'ops');
 const BLOG_NEIGHBOR_COLLECT_DIAG_PATH = path.join(BLOG_OPS_ROOT, 'neighbor-collect-diagnostics.json');
+const BLOG_ENGAGEMENT_GAP_RUN_PATH = path.join(BLOG_OPS_ROOT, 'engagement-gap-run.json');
 const RUN_ENGAGEMENT_GAP_COMMAND = `npm --prefix ${BLOG_ROOT} run run:engagement-gap`;
 const BACKFILL_COURTESY_REPLIES_COMMAND = `npm --prefix ${BLOG_ROOT} run backfill:courtesy-replies`;
 
@@ -212,6 +213,24 @@ function readNeighborCollectDiagnostics() {
     const raw = fs.readFileSync(BLOG_NEIGHBOR_COLLECT_DIAG_PATH, 'utf8');
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function readLastEngagementGapRun(baseline = null) {
+  try {
+    const raw = fs.readFileSync(BLOG_ENGAGEMENT_GAP_RUN_PATH, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (baseline?.startedAtIso) {
+      const executedAt = Date.parse(String(parsed.executedAt || ''));
+      const baselineAt = Date.parse(String(baseline.startedAtIso || ''));
+      if (Number.isFinite(executedAt) && Number.isFinite(baselineAt) && executedAt < baselineAt) {
+        return null;
+      }
+    }
+    return parsed;
   } catch {
     return null;
   }
@@ -488,7 +507,7 @@ async function getCourtesyReflectionRecheck(baseline = null) {
   }
 }
 
-function buildActions({ latestReplyReplayCandidate, failureByKind, failureByAction, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, primary }) {
+function buildActions({ latestReplyReplayCandidate, failureByKind, failureByAction, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun, primary }) {
   const actions = [];
   if ((failureByKind.ui || 0) > 0 || (failureByKind.browser || 0) > 0) {
     const uiFocus = buildUiFocus(failureByAction);
@@ -549,6 +568,12 @@ function buildActions({ latestReplyReplayCandidate, failureByKind, failureByActi
         );
       }
     }
+    if (lastGapRun?.allIdle) {
+      const attemptedSummary = Array.isArray(lastGapRun.attempted)
+        ? lastGapRun.attempted.map((item) => String(item?.label || '')).filter(Boolean).join(' -> ')
+        : '';
+      actions.push(`최근 gap run도 idle: ${attemptedSummary || 'attempted 없음'} / ${String(lastGapRun.idleReason || '즉시 처리할 workload 없음')}`);
+    }
     actions.push(
       primaryGap?.label
         ? `운영 시간대 기준 ${primaryGap.label} 목표치 격차를 먼저 점검`
@@ -578,7 +603,7 @@ function buildActions({ latestReplyReplayCandidate, failureByKind, failureByActi
   return Array.from(new Set([...prioritized, ...actions]));
 }
 
-function buildPrimary({ failureByKind, failureByAction, latestReplyReplayCandidate, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics }) {
+function buildPrimary({ failureByKind, failureByAction, latestReplyReplayCandidate, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun }) {
   const blogPrefix = `npm --prefix ${BLOG_ROOT}`;
   if ((failureByKind.ui || 0) > 0 || (failureByKind.browser || 0) > 0) {
     const uiFocus = buildUiFocus(failureByAction);
@@ -651,7 +676,7 @@ function buildPrimary({ failureByKind, failureByAction, latestReplyReplayCandida
       }
       return {
         area: 'engagement.target_gap.replies.no_workload',
-        reason: `replies 목표치는 비어 있지만 현재 reply 대상 댓글이 없습니다 (${String(replyWorkload?.latest?.status || '') === 'skipped' ? `latest skipped: ${String(replyWorkload.latest.errorMessage || 'unknown')}` : 'baseline 이후 inbound 댓글 0건'}${Array.isArray(replyWorkload?.skippedReasons14d) && replyWorkload.skippedReasons14d[0]?.reason ? ` / 14d top filter: ${replyWorkload.skippedReasons14d[0].reason} ${replyWorkload.skippedReasons14d[0].count}건` : ''}${Number(courtesyReflectionRecheck?.reevaluableCount || 0) > 0 ? ` / reevaluable by current reply policy: ${courtesyReflectionRecheck.reevaluableCount}건` : ''}).`,
+        reason: `replies 목표치는 비어 있지만 현재 reply 대상 댓글이 없습니다 (${String(replyWorkload?.latest?.status || '') === 'skipped' ? `latest skipped: ${String(replyWorkload.latest.errorMessage || 'unknown')}` : 'baseline 이후 inbound 댓글 0건'}${Array.isArray(replyWorkload?.skippedReasons14d) && replyWorkload.skippedReasons14d[0]?.reason ? ` / 14d top filter: ${replyWorkload.skippedReasons14d[0].reason} ${replyWorkload.skippedReasons14d[0].count}건` : ''}${Number(courtesyReflectionRecheck?.reevaluableCount || 0) > 0 ? ` / reevaluable by current reply policy: ${courtesyReflectionRecheck.reevaluableCount}건` : ''}${lastGapRun?.allIdle ? ` / 최근 gap run도 idle` : ''}).`,
         nextCommand: `${RUN_ENGAGEMENT_GAP_COMMAND} -- --label=neighbor`,
         actionFocus: 'reply 대상이 없을 때 남은 목표를 이웃/외부 댓글로 보충하고 inbound 유입을 함께 점검',
       };
@@ -721,6 +746,7 @@ async function main() {
     getCourtesyReflectionRecheck(developmentBaseline),
   ]);
   const neighborRecovery = await getNeighborRecoveryStatus(developmentBaseline);
+  const lastGapRun = readLastEngagementGapRun(developmentBaseline);
 
   const replyConfig = runtimeConfig.commenter || {};
   const neighborConfig = runtimeConfig.neighborCommenter || {};
@@ -862,10 +888,11 @@ async function main() {
     neighborCollectDiagnostics,
     neighborRecovery,
     courtesyReflectionRecheck,
+    lastGapRun,
   };
   payload.needsAttention = payload.totalFailures > 0 || targetGaps.length > 0;
-  payload.primary = buildPrimary({ failureByKind, failureByAction, latestReplyReplayCandidate, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics });
-  payload.actions = buildActions({ latestReplyReplayCandidate, failureByKind, failureByAction, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, primary: payload.primary });
+  payload.primary = buildPrimary({ failureByKind, failureByAction, latestReplyReplayCandidate, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun });
+  payload.actions = buildActions({ latestReplyReplayCandidate, failureByKind, failureByAction, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun, primary: payload.primary });
 
   const aiSummary = await buildBlogCliInsight({
     bot: 'doctor-engagement',
@@ -909,6 +936,9 @@ async function main() {
   }
   if (payload.adaptiveNeighborCadence?.enabled) {
     console.log(`[engagement doctor] adaptive=${payload.adaptiveNeighborCadence.shouldBoost ? 'boosted' : 'baseline'} comments ${payload.adaptiveNeighborCadence.combinedCommentSuccess}/${payload.adaptiveNeighborCadence.combinedCommentExpectedNow} process ${payload.adaptiveNeighborCadence.effectiveProcessLimit} collect ${payload.adaptiveNeighborCadence.effectiveCollectLimit}`);
+  }
+  if (payload.lastGapRun?.executedAt) {
+    console.log(`[engagement doctor] last_gap_run=${payload.lastGapRun.executedAt} all_idle=${payload.lastGapRun.allIdle ? 'yes' : 'no'}`);
   }
   if (payload.neighborRecovery?.recovered) {
     console.log(`[engagement doctor] neighbor_recovery=success after failure (${payload.neighborRecovery.latestSuccessAt}) stale_failures=${payload.staleNeighborFailureCount}`);
