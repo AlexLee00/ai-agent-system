@@ -1969,6 +1969,9 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
         .slice(0, 2)
         .map((item) => `ops action: ${item}`)
     : [];
+  const opsPrimaryArea = String(opsDoctorPriority?.primaryArea || '');
+  const opsSocialActionHints = opsPrimaryArea.startsWith('social') ? opsActionHints : [];
+  const opsEngagementActionHints = opsPrimaryArea.startsWith('engagement') ? opsActionHints : [];
   const engagementFailureHint = engagementHealth?.failureSamples?.[0]
     ? `${engagementHealth.failureSamples[0].kind}/${engagementHealth.failureSamples[0].actionType} ${engagementHealth.failureSamples[0].sample}`
     : '';
@@ -2129,15 +2132,15 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
         active: socialAutomationHealth.instagramNeedsAttention,
         level: 'medium',
         reason: previewBundleHint
-          ? `최근 인스타 자동등록 실패 이력이 있어 릴스/공개 URL/게시 경로 점검이 필요합니다. ${instagramDiagnoseHint}${socialActionHints.length ? ` / ${socialActionHints.join(' / ')}` : ''} / ${opsDoctorHint}${opsActionHints.length ? ` / ${opsActionHints.join(' / ')}` : ''} 최신 preview: ${previewBundleHint}`
-          : `최근 인스타 자동등록 실패 이력이 있어 릴스/공개 URL/게시 경로 점검이 필요합니다. ${instagramDiagnoseHint}${socialActionHints.length ? ` / ${socialActionHints.join(' / ')}` : ''} / ${opsDoctorHint}${opsActionHints.length ? ` / ${opsActionHints.join(' / ')}` : ''}`,
+          ? `최근 인스타 자동등록 실패 이력이 있어 릴스/공개 URL/게시 경로 점검이 필요합니다. ${instagramDiagnoseHint}${socialActionHints.length ? ` / ${socialActionHints.join(' / ')}` : ''} / ${opsDoctorHint}${opsSocialActionHints.length ? ` / ${opsSocialActionHints.join(' / ')}` : ''} 최신 preview: ${previewBundleHint}`
+          : `최근 인스타 자동등록 실패 이력이 있어 릴스/공개 URL/게시 경로 점검이 필요합니다. ${instagramDiagnoseHint}${socialActionHints.length ? ` / ${socialActionHints.join(' / ')}` : ''} / ${opsDoctorHint}${opsSocialActionHints.length ? ` / ${opsSocialActionHints.join(' / ')}` : ''}`,
       },
       {
         active: socialAutomationHealth.facebookNeedsAttention,
         level: 'medium',
         reason: previewBundleHint
-          ? `${socialAutomationHealth.facebookReadiness?.error ? 'Facebook readiness 토큰/세션 이슈가 있어 다음 게시 전에 재발급 또는 재연결 확인이 필요합니다.' : '최근 페이스북 자동등록 실패 이력이 있어 권한/게시 경로 점검이 필요합니다.'} ${socialAutomationHealth.latestFacebookErrorSummary || ''}${socialAutomationHealth.facebookPageId ? ` page=${socialAutomationHealth.facebookPageId}` : ''}${Array.isArray(socialAutomationHealth.facebookPermissionScopes) && socialAutomationHealth.facebookPermissionScopes.length > 0 ? ` scopes=${socialAutomationHealth.facebookPermissionScopes.join(',')}` : ''} diagnose=${FACEBOOK_READINESS_COMMAND} / doctor=${FACEBOOK_DOCTOR_COMMAND} / social=${SOCIAL_DOCTOR_COMMAND}${socialActionHints.length ? ` / ${socialActionHints.join(' / ')}` : ''} / ${opsDoctorHint}${opsActionHints.length ? ` / ${opsActionHints.join(' / ')}` : ''} 최신 preview: ${previewBundleHint}`.trim()
-          : `${socialAutomationHealth.facebookReadiness?.error ? 'Facebook readiness 토큰/세션 이슈가 있어 다음 게시 전에 재발급 또는 재연결 확인이 필요합니다.' : '최근 페이스북 자동등록 실패 이력이 있어 권한/게시 경로 점검이 필요합니다.'} ${socialAutomationHealth.latestFacebookErrorSummary || ''}${socialAutomationHealth.facebookPageId ? ` page=${socialAutomationHealth.facebookPageId}` : ''}${Array.isArray(socialAutomationHealth.facebookPermissionScopes) && socialAutomationHealth.facebookPermissionScopes.length > 0 ? ` scopes=${socialAutomationHealth.facebookPermissionScopes.join(',')}` : ''} diagnose=${FACEBOOK_READINESS_COMMAND} / doctor=${FACEBOOK_DOCTOR_COMMAND} / social=${SOCIAL_DOCTOR_COMMAND}${socialActionHints.length ? ` / ${socialActionHints.join(' / ')}` : ''} / ${opsDoctorHint}${opsActionHints.length ? ` / ${opsActionHints.join(' / ')}` : ''}`.trim(),
+          ? `${socialAutomationHealth.facebookReadiness?.error ? 'Facebook readiness 토큰/세션 이슈가 있어 다음 게시 전에 재발급 또는 재연결 확인이 필요합니다.' : '최근 페이스북 자동등록 실패 이력이 있어 권한/게시 경로 점검이 필요합니다.'} ${socialAutomationHealth.latestFacebookErrorSummary || ''}${socialAutomationHealth.facebookPageId ? ` page=${socialAutomationHealth.facebookPageId}` : ''}${Array.isArray(socialAutomationHealth.facebookPermissionScopes) && socialAutomationHealth.facebookPermissionScopes.length > 0 ? ` scopes=${socialAutomationHealth.facebookPermissionScopes.join(',')}` : ''} diagnose=${FACEBOOK_READINESS_COMMAND} / doctor=${FACEBOOK_DOCTOR_COMMAND} / social=${SOCIAL_DOCTOR_COMMAND}${socialActionHints.length ? ` / ${socialActionHints.join(' / ')}` : ''} / ${opsDoctorHint}${opsSocialActionHints.length ? ` / ${opsSocialActionHints.join(' / ')}` : ''} 최신 preview: ${previewBundleHint}`.trim()
+          : `${socialAutomationHealth.facebookReadiness?.error ? 'Facebook readiness 토큰/세션 이슈가 있어 다음 게시 전에 재발급 또는 재연결 확인이 필요합니다.' : '최근 페이스북 자동등록 실패 이력이 있어 권한/게시 경로 점검이 필요합니다.'} ${socialAutomationHealth.latestFacebookErrorSummary || ''}${socialAutomationHealth.facebookPageId ? ` page=${socialAutomationHealth.facebookPageId}` : ''}${Array.isArray(socialAutomationHealth.facebookPermissionScopes) && socialAutomationHealth.facebookPermissionScopes.length > 0 ? ` scopes=${socialAutomationHealth.facebookPermissionScopes.join(',')}` : ''} diagnose=${FACEBOOK_READINESS_COMMAND} / doctor=${FACEBOOK_DOCTOR_COMMAND} / social=${SOCIAL_DOCTOR_COMMAND}${socialActionHints.length ? ` / ${socialActionHints.join(' / ')}` : ''} / ${opsDoctorHint}${opsSocialActionHints.length ? ` / ${opsSocialActionHints.join(' / ')}` : ''}`.trim(),
       },
       {
         active: socialAutomationHealth.publishLogExists === false,
@@ -2207,7 +2210,7 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
           engagementReplayHint ? `재현: ${engagementReplayHint}` : '',
           engagementDoctorHint,
           opsDoctorHint,
-          ...opsActionHints,
+          ...opsEngagementActionHints,
         ].filter(Boolean).join(' '),
       },
     ],
