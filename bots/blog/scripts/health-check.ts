@@ -32,6 +32,7 @@ const {
 const { resolveInstagramHostedMediaUrl } = require('../../../packages/core/lib/instagram-image-host.ts');
 const { checkFacebookPublishReadiness } = require('../lib/facebook-publisher.ts');
 const { readDevelopmentBaseline, buildSinceClause } = require('../lib/dev-baseline.ts');
+const { readMarketingDigestTelemetry } = require('../lib/marketing-digest-telemetry.ts');
 
 const runtimeConfig = getBlogHealthRuntimeConfig();
 const { buildIssueHints, rememberHealthEvent } = createHealthMemoryHelper({
@@ -216,6 +217,38 @@ function buildActionHint(label, payload = {}, limit = 2, areaPrefix = '') {
     : [];
   if (actions.length === 0) return '';
   return `\n${actions.map((action) => `${label}: ${action}`).join('\n')}`;
+}
+
+function buildMarketingDigestFallbackPayload(payload = {}, latestDigestRun = null) {
+  if (payload && Object.keys(payload).length > 0) return payload;
+  if (!latestDigestRun) return {};
+  return {
+    latestDigestRun,
+    primary: {
+      area: latestDigestRun.status === 'watch' || latestDigestRun.status === 'error' ? 'marketing.watch' : 'clear',
+      reason: latestDigestRun.topSignal
+        ? `마케팅 확장 신호가 watch 상태이며 최우선 확인 포인트는 "${latestDigestRun.topSignal}" 입니다.`
+        : String(latestDigestRun.reason || '최근 마케팅 digest 캐시 기준 추가 확인이 필요합니다.'),
+      nextCommand: `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run marketing:digest -- --json`,
+      actionFocus: '마케팅 top signal과 revenue correlation, 추천 액션 재확인',
+    },
+    senseSummary: {
+      topSignal: {
+        message: String(latestDigestRun.topSignal || ''),
+      },
+    },
+    nextGeneralPreview: {
+      title: String(latestDigestRun.nextPreviewTitle || ''),
+    },
+    recommendations: latestDigestRun.recommendation ? [String(latestDigestRun.recommendation)] : [],
+    actions: [
+      latestDigestRun.checkedAt
+        ? `latest digest run: ${String(latestDigestRun.checkedAt).slice(0, 19)} / ${String(latestDigestRun.status || 'unknown')}`
+        : '',
+      latestDigestRun.nextPreviewTitle ? `next preview: ${String(latestDigestRun.nextPreviewTitle)}` : '',
+      latestDigestRun.recommendation ? `reco: ${String(latestDigestRun.recommendation)}` : '',
+    ].filter(Boolean),
+  };
 }
 
 const CONTINUOUS = [];
@@ -803,6 +836,7 @@ async function checkEngagementAutomationHealth() {
 
 async function checkMarketingExpansionHealth() {
   try {
+    const latestDigestRun = readMarketingDigestTelemetry();
     const marketingPriority = getDoctorPriority(MARKETING_DOCTOR_COMMAND, {
       area: 'marketing.watch',
       reason: '마케팅 확장 신호가 watch 상태라 sense/correlation/diagnosis 재점검이 필요합니다.',
@@ -817,7 +851,7 @@ async function checkMarketingExpansionHealth() {
       };
     }
 
-    const marketingPayload = getDoctorPayload(MARKETING_DOCTOR_COMMAND);
+    const marketingPayload = buildMarketingDigestFallbackPayload(getDoctorPayload(MARKETING_DOCTOR_COMMAND), latestDigestRun);
     const opsPriority = getDoctorPriority(BLOG_OPS_DOCTOR_COMMAND, {
       area: 'marketing.watch',
       reason: '마케팅 확장 신호가 현재 최우선 병목입니다.',
@@ -831,15 +865,15 @@ async function checkMarketingExpansionHealth() {
     );
     const topSignal = String(marketingPayload?.senseSummary?.topSignal?.message || '');
     const watchHint = String(marketingPayload?.channelPerformance?.primaryWatchHint || '');
-    const latestDigestRun = marketingPayload?.latestDigestRun || null;
+    const latestDigestRunMeta = marketingPayload?.latestDigestRun || null;
     const nextPreviewTitle = String(marketingPayload?.nextGeneralPreview?.title || '');
     const recommendations = Array.isArray(marketingPayload?.recommendations)
       ? marketingPayload.recommendations.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 2)
       : [];
     const signalHint = topSignal ? `\ntop signal: ${topSignal}` : '';
     const watchHintLine = watchHint ? `\nwatch hint: ${watchHint}` : '';
-    const latestRunHint = latestDigestRun?.checkedAt
-      ? `\nlatest digest run: ${String(latestDigestRun.checkedAt).slice(0, 19)} / ${String(latestDigestRun.status || 'unknown')}`
+    const latestRunHint = latestDigestRunMeta?.checkedAt
+      ? `\nlatest digest run: ${String(latestDigestRunMeta.checkedAt).slice(0, 19)} / ${String(latestDigestRunMeta.status || 'unknown')}`
       : '';
     const nextPreviewHint = nextPreviewTitle ? `\nnext preview: ${nextPreviewTitle}` : '';
     const recommendationHint = recommendations.length
@@ -852,7 +886,11 @@ async function checkMarketingExpansionHealth() {
       primary: marketingPriority,
     };
   } catch (e) {
-    return { ok: false, detail: `marketing watch 확인 실패: ${e.message.slice(0, 120)}` };
+    const latestDigestRun = readMarketingDigestTelemetry();
+    const fallbackHint = latestDigestRun?.checkedAt
+      ? `\nlatest digest run: ${String(latestDigestRun.checkedAt).slice(0, 19)} / ${String(latestDigestRun.status || 'unknown')}${latestDigestRun.topSignal ? `\ntop signal (cached): ${String(latestDigestRun.topSignal)}` : ''}${latestDigestRun.nextPreviewTitle ? `\nnext preview (cached): ${String(latestDigestRun.nextPreviewTitle)}` : ''}${latestDigestRun.recommendation ? `\nrecommendation (cached): ${String(latestDigestRun.recommendation)}` : ''}`
+      : '';
+    return { ok: false, detail: `marketing watch 확인 실패: ${e.message.slice(0, 120)}${fallbackHint}` };
   }
 }
 
