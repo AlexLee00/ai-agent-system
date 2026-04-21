@@ -275,11 +275,20 @@ function buildDoctorPriority(command = '', label = 'doctor') {
     const jsonText = extractJsonObjectText(output);
     const payload = JSON.parse(jsonText || '{}');
     const primary = payload?.primary || {};
+    const actions = Array.isArray(payload?.actions)
+      ? payload.actions
+          .map((item) => String(item || '').trim())
+          .filter(Boolean)
+          .slice(0, 2)
+      : [];
     const ok = [
       `  ${label} primary: ${String(primary.area || 'unknown')} / ${String(primary.reason || '정보 없음')}`,
     ];
     if (primary.nextCommand) ok.push(`  ${label} next: ${String(primary.nextCommand)}`);
     if (primary.actionFocus) ok.push(`  ${label} focus: ${String(primary.actionFocus)}`);
+    for (const action of actions) {
+      ok.push(`  ${label} action: ${action}`);
+    }
     return {
       okCount: ok.length,
       warnCount: 0,
@@ -289,6 +298,7 @@ function buildDoctorPriority(command = '', label = 'doctor') {
       primaryReason: String(primary.reason || '정보 없음'),
       nextCommand: String(primary.nextCommand || ''),
       actionFocus: String(primary.actionFocus || ''),
+      actions,
     };
   } catch (error) {
     const reason = String(error?.message || error).slice(0, 160);
@@ -301,6 +311,7 @@ function buildDoctorPriority(command = '', label = 'doctor') {
       primaryReason: `${label} priority 확인 실패`,
       nextCommand: command,
       actionFocus: '',
+      actions: [],
     };
   }
 }
@@ -1986,7 +1997,7 @@ function buildRemodelProgress(instagramHealth, phase1Health, phase2BriefingHealt
   };
 }
 
-function buildOpsPriority(socialAutomationHealth, engagementHealth, socialDoctorPriority = null, engagementDoctorPriority = null) {
+function buildOpsPriority(socialAutomationHealth, engagementHealth, socialDoctorPriority = null, engagementDoctorPriority = null, opsDoctorPriority = null) {
   const ok = [`  ops doctor command: ${BLOG_OPS_DOCTOR_COMMAND}`];
   const warn = [];
 
@@ -2028,6 +2039,9 @@ function buildOpsPriority(socialAutomationHealth, engagementHealth, socialDoctor
   }
   if (actionFocus) {
     ok.push(`  next action focus: ${actionFocus}`);
+  }
+  for (const action of Array.isArray(opsDoctorPriority?.actions) ? opsDoctorPriority.actions.slice(0, 2) : []) {
+    ok.push(`  ops action: ${action}`);
   }
   if (primaryArea !== 'clear') {
     warn.push(`  next action focus: ${actionFocus || primaryArea}`);
@@ -2107,6 +2121,7 @@ async function buildReport() {
   const bookReviewQueueHealth = await buildBookReviewQueueHealth();
   const socialDoctorPriority = buildDoctorPriority(SOCIAL_DOCTOR_COMMAND, 'social doctor');
   const engagementDoctorPriority = buildDoctorPriority(ENGAGEMENT_DOCTOR_COMMAND, 'engagement doctor');
+  const opsDoctorPriority = buildDoctorPriority(BLOG_OPS_DOCTOR_COMMAND, 'ops doctor');
   const decision = buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealth, instagramHealth, socialAutomationHealth, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth, marketingExpansionHealth, engagementHealth, engagementDoctorPriority);
   const remodelProgress = buildRemodelProgress(instagramHealth, phase1Health, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth);
   const doctorPriority = {
@@ -2123,7 +2138,7 @@ async function buildReport() {
     social: socialDoctorPriority,
     engagement: engagementDoctorPriority,
   };
-  const opsPriority = buildOpsPriority(socialAutomationHealth, engagementHealth, socialDoctorPriority, engagementDoctorPriority);
+  const opsPriority = buildOpsPriority(socialAutomationHealth, engagementHealth, socialDoctorPriority, engagementDoctorPriority, opsDoctorPriority);
 
   return {
     serviceHealth: {
