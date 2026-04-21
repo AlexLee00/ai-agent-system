@@ -366,7 +366,7 @@ async function getCourtesyReflectionRecheck() {
   }
 }
 
-function buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, primaryGap, replyWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence }) {
+function buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, primaryGap, replyWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, primary }) {
   const actions = [];
   if ((failureByKind.ui || 0) > 0 || (failureByKind.browser || 0) > 0) {
     actions.push('네이버 reply UI selector와 browser mount 흐름 점검');
@@ -411,7 +411,16 @@ function buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, p
   if (actions.length === 0) {
     actions.push('engagement 실패 없음 — 다음 운영 사이클 관찰');
   }
-  return actions;
+
+  const prioritized = [];
+  if (primary?.actionFocus) {
+    prioritized.push(`focus blocker: ${primary.actionFocus}`);
+  }
+  if (primary?.nextCommand) {
+    prioritized.push(`우선 실행: ${primary.nextCommand}`);
+  }
+
+  return Array.from(new Set([...prioritized, ...actions]));
 }
 
 function buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps, primaryGap, replyWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence }) {
@@ -636,8 +645,8 @@ async function main() {
     courtesyReflectionRecheck,
   };
   payload.needsAttention = payload.totalFailures > 0 || targetGaps.length > 0;
-  payload.actions = buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, primaryGap, replyWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence });
   payload.primary = buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps, primaryGap, replyWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence });
+  payload.actions = buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, primaryGap, replyWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, primary: payload.primary });
 
   const aiSummary = await buildBlogCliInsight({
     bot: 'doctor-engagement',
