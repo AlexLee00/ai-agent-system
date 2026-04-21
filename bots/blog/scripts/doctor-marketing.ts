@@ -64,6 +64,29 @@ function buildPrimary(digest = {}) {
   };
 }
 
+function buildDigestFallbackView(digest = {}, latestDigestRun = null) {
+  if (digest && Object.keys(digest).length > 0) return digest;
+  if (!latestDigestRun) return {};
+  return {
+    health: {
+      status: String(latestDigestRun.status || 'unknown'),
+      reason: String(latestDigestRun.reason || ''),
+    },
+    senseSummary: {
+      topSignal: {
+        message: String(latestDigestRun.topSignal || ''),
+      },
+    },
+    channelPerformance: {
+      primaryWatchHint: String(latestDigestRun.channelWatchHint || ''),
+    },
+    nextGeneralPreview: {
+      title: String(latestDigestRun.nextPreviewTitle || ''),
+    },
+    recommendations: latestDigestRun.recommendation ? [String(latestDigestRun.recommendation)] : [],
+  };
+}
+
 function buildActions({ primary, digest = {} }) {
   const actions = [];
   const primaryArea = String(primary?.area || '');
@@ -110,11 +133,12 @@ function buildMarketingDoctorFallback(payload = {}) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const digestResult = runMarketingDigest();
-  const digest = digestResult.payload || {};
+  const latestDigestRun = readMarketingDigestTelemetry();
+  const digest = buildDigestFallbackView(digestResult.payload || {}, latestDigestRun);
   const payload = {
     digestCommand: digestResult.command,
     digestError: digestResult.error || '',
-    latestDigestRun: readMarketingDigestTelemetry(),
+    latestDigestRun,
     health: digest?.health || null,
     senseSummary: digest?.senseSummary || null,
     revenueCorrelation: digest?.revenueCorrelation || null,

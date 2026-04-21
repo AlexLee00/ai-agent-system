@@ -2049,16 +2049,27 @@ async function buildMarketingExpansionHealth() {
   } catch (error) {
     const latestDigestRun = readMarketingDigestTelemetry();
     const reason = String(error?.message || error).slice(0, 160);
+    const fallbackStatus = String(latestDigestRun?.status || 'error');
+    const fallbackReason = String(latestDigestRun?.reason || '');
+    const fallbackTopSignal = String(latestDigestRun?.topSignal || '');
+    const fallbackRecommendation = String(latestDigestRun?.recommendation || '');
+    const fallbackNextPreviewTitle = String(latestDigestRun?.nextPreviewTitle || '');
     const warn = [`  marketing digest: 확인 실패 (${reason})`];
     if (latestDigestRun?.checkedAt) {
       warn.push(`  latest digest run: ${String(latestDigestRun.checkedAt).slice(0, 19)} / ${String(latestDigestRun.status || 'unknown')}`);
+    }
+    if (fallbackTopSignal) {
+      warn.push(`  top signal (cached): ${fallbackTopSignal}`);
+    }
+    if (fallbackRecommendation) {
+      warn.push(`  reco (cached): ${fallbackRecommendation}`);
     }
     return {
       okCount: 0,
       warnCount: warn.length,
       ok: [],
       warn,
-      status: 'error',
+      status: fallbackStatus || 'error',
       signalCount: 0,
       revenueImpactPct: 0,
       snapshotCount: 0,
@@ -2074,9 +2085,10 @@ async function buildMarketingExpansionHealth() {
       categoryPatternHotspot: null,
       hotspotTrend: null,
       strategyAdoption: null,
-      nextGeneralPreview: null,
+      nextGeneralPreview: fallbackNextPreviewTitle ? { title: fallbackNextPreviewTitle } : null,
       latestDigestRun,
       recommendations: [],
+      cachedReason: fallbackReason,
     };
   }
 }
