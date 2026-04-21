@@ -2,9 +2,10 @@ defmodule TeamJay.Teams.WorkerSupervisor do
   use Supervisor
 
   @worker_agents [
-    %{name: :worker_health_check, script: "bots/worker/scripts/health-check.ts", runner: :tsx, schedule: {:interval, 600_000}},
+    # worker 주기 작업은 launchd가 canonical owner다.
+    %{name: :worker_health_check, script: "bots/worker/scripts/health-check.ts", runner: :tsx, schedule: nil},
     %{name: :worker_task_runner, script: "bots/worker/src/task-runner.ts", runner: :tsx, schedule: :once},
-    %{name: :worker_claude_monitor, script: "bots/worker/scripts/claude-api-monitor.ts --alert-only", runner: :tsx, schedule: {:interval, 60_000}},
+    %{name: :worker_claude_monitor, script: "bots/worker/scripts/claude-api-monitor.ts --alert-only", runner: :tsx, schedule: nil},
     %{name: :worker_lead, script: "bots/worker/src/worker-lead.ts", runner: :tsx, schedule: :once},
     %{
       name: :worker_web,

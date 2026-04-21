@@ -2,16 +2,18 @@ defmodule TeamJay.Teams.BlogSupervisor do
   use Supervisor
 
   @blog_agents [
-    %{name: :blog_commenter, script: "bots/blog/scripts/run-commenter.ts", schedule: {:interval, 2_160_000}},
-    %{name: :blog_daily, script: "bots/blog/scripts/run-daily.ts", schedule: {:daily_at, 6, 0}},
-    %{name: :blog_collect_performance, script: "bots/blog/scripts/collect-performance.ts", schedule: {:daily_at, 21, 0}},
-    %{name: :blog_collect_competition, script: "bots/blog/scripts/collect-competition-results.ts", schedule: {:weekly_at, [1, 3, 5], 22, 0}},
-    %{name: :blog_weekly_evolution, script: "bots/blog/scripts/weekly-evolution.ts", schedule: {:weekly_at, [1], 21, 30}},
-    %{name: :blog_sync_book_catalog, script: "bots/blog/scripts/sync-book-catalog.ts --json", schedule: {:daily_at, 5, 40}},
-    %{name: :blog_sync_book_review_queue, script: "bots/blog/scripts/build-book-review-queue.ts --json --limit 5", schedule: {:daily_at, 5, 50}},
-    %{name: :blog_collect_views, script: "bots/blog/scripts/collect-views.ts", schedule: {:daily_at, 23, 0}},
-    %{name: :blog_channel_insights, script: "bots/blog/scripts/channel-insights-collector.ts --json", schedule: {:daily_at, 22, 0}},
-    %{name: :blog_revenue_strategy, script: "bots/blog/scripts/revenue-strategy-updater.ts --json", schedule: {:weekly_at, [1], 7, 0}},
+    # blog 주기 작업은 launchd가 canonical owner다.
+    # PortAgent는 수동 실행/호환성 용도로만 남기고 schedule은 비운다.
+    %{name: :blog_commenter, script: "bots/blog/scripts/run-commenter.ts", schedule: nil},
+    %{name: :blog_daily, script: "bots/blog/scripts/run-daily.ts", schedule: nil},
+    %{name: :blog_collect_performance, script: "bots/blog/scripts/collect-performance.ts", schedule: nil},
+    %{name: :blog_collect_competition, script: "bots/blog/scripts/collect-competition-results.ts", schedule: nil},
+    %{name: :blog_weekly_evolution, script: "bots/blog/scripts/weekly-evolution.ts", schedule: nil},
+    %{name: :blog_sync_book_catalog, script: "bots/blog/scripts/sync-book-catalog.ts --json", schedule: nil},
+    %{name: :blog_sync_book_review_queue, script: "bots/blog/scripts/build-book-review-queue.ts --json --limit 5", schedule: nil},
+    %{name: :blog_collect_views, script: "bots/blog/scripts/collect-views.ts", schedule: nil},
+    %{name: :blog_channel_insights, script: "bots/blog/scripts/channel-insights-collector.ts --json", schedule: nil},
+    %{name: :blog_revenue_strategy, script: "bots/blog/scripts/revenue-strategy-updater.ts --json", schedule: nil},
     %{
       name: :blog_node_server,
       script: "bots/blog/api/node-server.ts",
@@ -19,18 +21,18 @@ defmodule TeamJay.Teams.BlogSupervisor do
       schedule: if(Mix.env() == :test, do: nil, else: :once),
       health_url: "http://127.0.0.1:3100/health"
     },
-    %{name: :blog_competitor_analysis, script: "bots/blog/scripts/run-competitor-analysis.ts --json", schedule: {:weekly_at, [1], 5, 0}},
+    %{name: :blog_competitor_analysis, script: "bots/blog/scripts/run-competitor-analysis.ts --json", schedule: nil},
     %{
       name: :blog_marketing_snapshot,
       script: "export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH && cd elixir/team_jay && mix blog.marketing.snapshot",
       runner: {:shell, "/bin/zsh"},
-      schedule: {:daily_at, 6, 30}
+      schedule: nil
     },
     %{
       name: :blog_marketing_report,
       script: "export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH && cd elixir/team_jay && mix blog.marketing.notify --brief --send",
       runner: {:shell, "/bin/zsh"},
-      schedule: {:daily_at, 6, 35}
+      schedule: nil
     }
   ]
 

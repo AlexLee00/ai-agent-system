@@ -28,11 +28,12 @@ import_config "#{Mix.env()}.exs"
 config :team_jay, Jay.Core.Scheduler,
   jobs: [
     # ─── 기존 스케줄 ────────────────────────────────────────
-    {"0 * * * *", {Jay.Core.Agents.PortAgent, :run, [:ska_etl]}},
     {"*/30 * * * *", {Jay.Core.Diagnostics, :publish_shadow_report, []}},
-    {"0 6 * * *", {Jay.Core.Agents.PortAgent, :run, [:forecast_daily]}},
-    {"0 9 * * *", {Jay.Core.Agents.PortAgent, :run, [:dexter_daily]}},
-    {"0 10 * * 1", {Jay.Core.Agents.PortAgent, :run, [:steward_weekly]}},
+    # launchd가 canonical owner인 wall-clock/periodic 작업은 Quantum에서 중복 실행하지 않는다.
+    # - ai.ska.etl
+    # - ai.ska.forecast-daily
+    # - ai.claude.dexter.daily
+    # - ai.steward.weekly
     # 투자팀 wall-clock 스케줄은 launchd가 KST 기준으로 전담한다.
     # Quantum에 같은 작업을 중복 등록하면 UTC/KST 혼선과 중복 실행이 생기므로 제외한다.
     # ─── 다윈팀 연구 스케줄 (UTC 기준) ─────────────────────────────
