@@ -675,6 +675,14 @@ function buildPrimary({ failureByKind, failureByAction, latestReplyReplayCandida
           actionFocus: '재평가 가능한 courtesy 댓글을 pending으로 되살린 뒤 reply 실행',
         };
       }
+      if (Number(neighborWorkload?.pendingCount || 0) > 0) {
+        return {
+          area: 'engagement.target_gap.replies.no_workload',
+          reason: `replies 목표치는 비어 있지만 현재 reply 대상 댓글이 없습니다 (baseline 이후 inbound 댓글 0건 / neighbor pending ${Number(neighborWorkload.pendingCount || 0)}건).`,
+          nextCommand: `node ${path.join(BLOG_ROOT, 'scripts/run-neighbor-commenter.ts')}`,
+          actionFocus: 'reply 대상이 없는 동안 쌓인 neighbor pending queue를 실제 댓글 처리로 전환',
+        };
+      }
       return {
         area: 'engagement.target_gap.replies.no_workload',
         reason: `replies 목표치는 비어 있지만 현재 reply 대상 댓글이 없습니다 (${String(replyWorkload?.latest?.status || '') === 'skipped' ? `latest skipped: ${String(replyWorkload.latest.errorMessage || 'unknown')}` : 'baseline 이후 inbound 댓글 0건'}${Array.isArray(replyWorkload?.skippedReasons14d) && replyWorkload.skippedReasons14d[0]?.reason ? ` / 14d top filter: ${replyWorkload.skippedReasons14d[0].reason} ${replyWorkload.skippedReasons14d[0].count}건` : ''}${Number(courtesyReflectionRecheck?.reevaluableCount || 0) > 0 ? ` / reevaluable by current reply policy: ${courtesyReflectionRecheck.reevaluableCount}건` : ''}${lastGapRun?.allIdle ? ` / 최근 gap run도 idle` : ''}).`,
