@@ -199,11 +199,13 @@ function buildUiFocus(failureByAction = {}) {
   const neighborFailures = Number(failureByAction?.neighbor_comment || 0);
   if (neighborFailures > replyFailures) {
     return {
+      action: 'neighbor',
       reason: '외부 댓글 submit 또는 browser 흐름 실패가 현재 engagement 최우선 병목입니다.',
       focus: '네이버 외부 댓글 submit / editor mount / confirm 흐름 재현',
     };
   }
   return {
+    action: 'reply',
     reason: 'reply UI 또는 browser 흐름 실패가 현재 engagement 최우선 병목입니다.',
     focus: '네이버 reply button / submit / editor mount 흐름 재현',
   };
@@ -608,20 +610,28 @@ function buildPrimary({ failureByKind, failureByAction, latestReplyReplayCandida
   const blogPrefix = `npm --prefix ${BLOG_ROOT}`;
   if ((failureByKind.ui || 0) > 0 || (failureByKind.browser || 0) > 0) {
     const uiFocus = buildUiFocus(failureByAction);
+    const uiNextCommand = uiFocus.action === 'neighbor'
+      ? `node ${path.join(BLOG_ROOT, 'scripts/run-neighbor-commenter.ts')} --test-mode --json`
+      : (
+          latestReplyReplayCandidate?.id
+            ? `${blogPrefix} run replay:reply-ui -- --comment-id ${latestReplyReplayCandidate.id} --json`
+            : `${blogPrefix} run doctor:engagement -- --json`
+        );
     return {
       area: 'engagement.ui',
       reason: uiFocus.reason,
-      nextCommand: latestReplyReplayCandidate?.id
-        ? `${blogPrefix} run replay:reply-ui -- --comment-id ${latestReplyReplayCandidate.id} --json`
-        : `${blogPrefix} run doctor:engagement -- --json`,
+      nextCommand: uiNextCommand,
       actionFocus: uiFocus.focus,
     };
   }
   if ((failureByKind.llm || 0) > 0) {
+    const llmNextCommand = Number(failureByAction?.neighbor_comment || 0) > Number(failureByAction?.reply || 0)
+      ? `node ${path.join(BLOG_ROOT, 'scripts/run-neighbor-commenter.ts')} --test-mode --json`
+      : `${blogPrefix} run doctor:engagement -- --json`;
     return {
       area: 'engagement.llm',
       reason: 'reply 생성 LLM 실패가 현재 engagement 최우선 병목입니다.',
-      nextCommand: `${blogPrefix} run doctor:engagement -- --json`,
+      nextCommand: llmNextCommand,
       actionFocus: 'timeout, fetch failed, 429 등 생성 경로 로그 확인',
     };
   }

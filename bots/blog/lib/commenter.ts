@@ -140,6 +140,7 @@ function getNeighborCommenterConfig() {
     maxCollectPerCycle: Number(runtime.maxCollectPerCycle || 20),
     maxProcessPerCycle: Number(runtime.maxProcessPerCycle || 20),
     recentWindowDays: Number(runtime.recentWindowDays || 14),
+    aggressiveRecentWindowDays: Number(runtime.aggressiveRecentWindowDays || 1),
     minCommentLen: Number(runtime.minCommentLen || 45),
     maxCommentLen: Number(runtime.maxCommentLen || 220),
     processTimeoutMs: Number(runtime.processTimeoutMs || 180000),
@@ -1741,6 +1742,8 @@ async function collectNeighborCandidates({ testMode = false, persist = true, col
     recentNeighborBlogCount: recentBlogIds.size,
     relaxedRetryUsed: false,
     relaxedRecentWindowDays: null,
+    aggressiveRetryUsed: false,
+    aggressiveRecentWindowDays: null,
     effectiveRecentWindowDays: Number(config.recentWindowDays || 14),
     commenterNetworkSourceCount: 0,
     commenterNetworkResolvedCount: 0,
@@ -1844,6 +1847,33 @@ async function collectNeighborCandidates({ testMode = false, persist = true, col
       diagnostics.commenterNetworkResolvedCount = 0;
       diagnostics.sourceTypeCounts = { buddy_feed: 0, commenter_network: 0 };
       await runCollectionPass({ activeRecentBlogIds: relaxedBlogIds, activeSeenUrls: relaxedSeenUrls, relaxed: true });
+
+      if (
+        collected.length <= 1
+        && Number(config.aggressiveRecentWindowDays || 1) >= 0
+        && relaxedRecentWindowDays > Number(config.aggressiveRecentWindowDays || 1)
+      ) {
+        const aggressiveRecentWindowDays = Math.max(0, Number(config.aggressiveRecentWindowDays || 1));
+        const [aggressiveUrls, aggressiveBlogIds] = await Promise.all([
+          getRecentlyTargetedPostUrls(aggressiveRecentWindowDays),
+          getRecentNeighborBlogIds(aggressiveRecentWindowDays),
+        ]);
+        diagnostics.aggressiveRetryUsed = true;
+        diagnostics.aggressiveRecentWindowDays = aggressiveRecentWindowDays;
+        diagnostics.effectiveRecentWindowDays = aggressiveRecentWindowDays;
+        diagnostics.recentTargetedPostCount = aggressiveUrls.size;
+        diagnostics.recentNeighborBlogCount = aggressiveBlogIds.size;
+        const aggressiveSeenUrls = new Set([
+          ...aggressiveUrls,
+          ...collected.map((item) => String(item.postUrl || '').trim()).filter(Boolean),
+        ]);
+        diagnostics.commenterNetworkResolvedCount = 0;
+        diagnostics.sourceTypeCounts = {
+          buddy_feed: collected.filter((item) => item.sourceType === 'buddy_feed').length,
+          commenter_network: collected.filter((item) => item.sourceType === 'commenter_network').length,
+        };
+        await runCollectionPass({ activeRecentBlogIds: aggressiveBlogIds, activeSeenUrls: aggressiveSeenUrls, relaxed: true });
+      }
     }
   });
   diagnostics.rawCollectedCount = collected.length;
