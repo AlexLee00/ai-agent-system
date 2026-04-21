@@ -969,7 +969,7 @@ async function buildEngagementHealth() {
     const replyConfig = runtimeConfig.commenter || {};
     const neighborConfig = runtimeConfig.neighborCommenter || {};
 
-    const [actionAggRows, failureMetaRows, commentRows, neighborRows, latestReplyReplayCandidate, skippedReasonRows, skippedReason14dRows, latestCommentRow, courtesyReflectionRecheck] = await Promise.all([
+    const [actionAggRows, failureMetaRows, commentRows, neighborRows, latestReplyReplayCandidate, skippedReasonRows, skippedReason14dRows, latestCommentRow, courtesyReflectionRecheck, pendingBacklogRow] = await Promise.all([
       pgPool.query('blog', `
         SELECT action_type, success, COUNT(*)::int AS cnt
         FROM blog.comment_actions
@@ -1061,6 +1061,12 @@ async function buildEngagementHealth() {
         LIMIT 1
       `),
       getCourtesyReflectionRecheck(),
+      pgPool.get('blog', `
+        SELECT COUNT(*)::int AS cnt
+        FROM blog.comments
+        WHERE status = 'pending'
+          AND reply_at IS NULL
+      `),
     ]);
 
     const actionMap = new Map();
@@ -1128,6 +1134,9 @@ async function buildEngagementHealth() {
       `  inbound comments today: ${Number(inbound.total || 0)}건 / replied ${Number(inbound.replied || 0)} / pending ${Number(inbound.pending || 0)}`,
       `  neighbor queue today: posted ${Number(neighborStatusMap.get('posted') || 0)} / failed ${Number(neighborStatusMap.get('failed') || 0)} / pending ${Number(neighborStatusMap.get('pending') || 0)}`,
     ];
+    if (Number(pendingBacklogRow?.cnt || 0) > 0) {
+      ok.push(`  reply pending backlog: ${Number(pendingBacklogRow.cnt || 0)}건`);
+    }
 
     const warn = [];
     if (replyPlan.active && replySuccess < replyPlan.expectedNow) {
@@ -1218,6 +1227,7 @@ async function buildEngagementHealth() {
         pending: Number(inbound.pending || 0),
         failed: Number(inbound.failed || 0),
       },
+      replyPendingBacklog: Number(pendingBacklogRow?.cnt || 0),
       neighborQueue: {
         posted: Number(neighborStatusMap.get('posted') || 0),
         failed: Number(neighborStatusMap.get('failed') || 0),
@@ -1250,6 +1260,7 @@ async function buildEngagementHealth() {
       neighborComments: { success: 0, failed: 0, target: 0, expectedNow: 0 },
       sympathies: { success: 0, failed: 0, target: 0, expectedNow: 0 },
       inboundComments: { total: 0, replied: 0, pending: 0, failed: 0 },
+      replyPendingBacklog: 0,
       neighborQueue: { posted: 0, failed: 0, pending: 0 },
       failureByKind: { ui: 0, llm: 0, browser: 0, verification: 0, unknown: 0 },
       failureSamples: [],

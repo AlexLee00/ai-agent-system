@@ -11,6 +11,7 @@ const { assessInboundComment } = require('../lib/commenter.ts');
 const runtimeConfig = getBlogHealthRuntimeConfig();
 const BLOG_ROOT = path.join(env.PROJECT_ROOT, 'bots/blog');
 const RUN_ENGAGEMENT_GAP_COMMAND = `npm --prefix ${BLOG_ROOT} run run:engagement-gap`;
+const BACKFILL_COURTESY_REPLIES_COMMAND = `npm --prefix ${BLOG_ROOT} run backfill:courtesy-replies`;
 
 function parseArgs(argv = []) {
   return {
@@ -184,7 +185,7 @@ async function getLatestReplyReplayCandidate() {
 
 async function getReplyWorkloadStatus() {
   try {
-    const [statusRows, latestRow, skippedTodayRows, skipped14dRows] = await Promise.all([
+    const [statusRows, latestRow, skippedTodayRows, skipped14dRows, pendingBacklogRow] = await Promise.all([
       pgPool.query('blog', `
         SELECT status, COUNT(*)::int AS cnt
         FROM blog.comments
@@ -222,6 +223,12 @@ async function getReplyWorkloadStatus() {
         ORDER BY cnt DESC, reason ASC
         LIMIT 5
       `),
+      pgPool.get('blog', `
+        SELECT COUNT(*)::int AS cnt
+        FROM blog.comments
+        WHERE status = 'pending'
+          AND reply_at IS NULL
+      `),
     ]);
 
     const counts = new Map();
@@ -232,6 +239,7 @@ async function getReplyWorkloadStatus() {
     return {
       totalToday: [...counts.values()].reduce((sum, value) => sum + Number(value || 0), 0),
       pendingCount: Number(counts.get('pending') || 0),
+      pendingBacklogCount: Number(pendingBacklogRow?.cnt || 0),
       skippedCount: Number(counts.get('skipped') || 0),
       failedCount: Number(counts.get('failed') || 0),
       repliedCount: Number(counts.get('replied') || 0),
@@ -258,6 +266,7 @@ async function getReplyWorkloadStatus() {
     return {
       totalToday: 0,
       pendingCount: 0,
+      pendingBacklogCount: 0,
       skippedCount: 0,
       failedCount: 0,
       repliedCount: 0,
@@ -322,6 +331,9 @@ function buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, p
     actions.push('reply 생성 LLM timeout / fetch 실패 로그 확인');
   }
   if (Array.isArray(targetGaps) && targetGaps.length > 0) {
+    if (primaryGap?.label === 'replies' && Number(replyWorkload?.pendingBacklogCount || 0) > 0) {
+      actions.push(`현재 처리 가능한 reply backlog가 ${replyWorkload.pendingBacklogCount}건 있습니다`);
+    }
     if (
       primaryGap?.label === 'replies'
       && Number(replyWorkload?.pendingCount || 0) === 0
@@ -334,6 +346,7 @@ function buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, p
       }
       if (Number(courtesyReflectionRecheck?.reevaluableCount || 0) > 0) {
         actions.push(`최근 generic greeting skip 중 ${courtesyReflectionRecheck.reevaluableCount}건은 새 공감형 기준으로 reply 후보가 될 수 있습니다`);
+        actions.push(`${BACKFILL_COURTESY_REPLIES_COMMAND} -- --dry-run`);
       }
     }
     actions.push(
@@ -383,11 +396,27 @@ function buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps, p
     };
   }
   if (Array.isArray(targetGaps) && targetGaps.length > 0) {
+    if (primaryGap?.label === 'replies' && Number(replyWorkload?.pendingBacklogCount || 0) > 0) {
+      return {
+        area: 'engagement.target_gap.replies.pending_backlog',
+        reason: `replies 목표치는 비어 있고 현재 처리 가능한 pending reply backlog가 ${replyWorkload.pendingBacklogCount}건 있습니다.`,
+        nextCommand: `${RUN_ENGAGEMENT_GAP_COMMAND} -- --label=replies`,
+        actionFocus: 'pending reply backlog를 실제 답글 처리로 전환',
+      };
+    }
     if (
       primaryGap?.label === 'replies'
       && Number(replyWorkload?.pendingCount || 0) === 0
       && String(replyWorkload?.latest?.status || '') === 'skipped'
     ) {
+      if (Number(courtesyReflectionRecheck?.reevaluableCount || 0) > 0) {
+        return {
+          area: 'engagement.target_gap.replies.backfillable',
+          reason: `replies 목표치는 비어 있지만 최근 generic greeting skip 중 ${courtesyReflectionRecheck.reevaluableCount}건은 새 공감형 기준으로 reply 후보로 되살릴 수 있습니다.`,
+          nextCommand: `${BACKFILL_COURTESY_REPLIES_COMMAND}`,
+          actionFocus: '재평가 가능한 courtesy 댓글을 pending으로 되살린 뒤 reply 실행',
+        };
+      }
       return {
         area: 'engagement.target_gap.replies.no_workload',
         reason: `replies 목표치는 비어 있지만 현재 reply 대상 댓글이 없습니다 (latest skipped: ${String(replyWorkload.latest.errorMessage || 'unknown')}${Array.isArray(replyWorkload?.skippedReasons14d) && replyWorkload.skippedReasons14d[0]?.reason ? ` / 14d top filter: ${replyWorkload.skippedReasons14d[0].reason} ${replyWorkload.skippedReasons14d[0].count}건` : ''}${Number(courtesyReflectionRecheck?.reevaluableCount || 0) > 0 ? ` / reevaluable by new courtesy filter: ${courtesyReflectionRecheck.reevaluableCount}건` : ''}).`,

@@ -428,6 +428,64 @@ async function requeueRecoverableReplyFailures(limit = 10) {
   return requeued;
 }
 
+async function requeueCourtesyReflectionCandidates(limit = 5, options = {}) {
+  const numericLimit = Math.max(1, Number(limit || 5));
+  const dryRun = Boolean(options?.dryRun);
+  const rows = await pgPool.query('blog', `
+    SELECT *
+    FROM ${TABLE}
+    WHERE reply_at IS NULL
+      AND status = 'skipped'
+      AND COALESCE(error_message, '') = 'generic_greeting_comment'
+      AND detected_at >= now() - interval '14 days'
+    ORDER BY detected_at DESC
+    LIMIT $1
+  `, [Math.max(numericLimit * 4, numericLimit)]);
+
+  const requeued = [];
+  for (const row of rows) {
+    if (requeued.length >= numericLimit) break;
+    const inboundAssessment = assessInboundComment(row);
+    if (!inboundAssessment.ok || inboundAssessment.reason !== 'courtesy_reflection_allowed') continue;
+
+    const candidate = {
+      id: row.id,
+      commenterName: row.commenter_name || '',
+      commentText: row.comment_text || '',
+      detectedAt: row.detected_at || null,
+      previousError: row.error_message || null,
+      reassessedReason: inboundAssessment.reason,
+    };
+
+    if (!dryRun) {
+      await pgPool.run('blog', `
+        UPDATE ${TABLE}
+        SET status = 'pending',
+            error_message = NULL,
+            meta = COALESCE(meta, '{}'::jsonb) || $2::jsonb
+        WHERE id = $1
+      `, [
+        row.id,
+        JSON.stringify({
+          phase: 'courtesy_reflection_backfill',
+          previous_error: row.error_message || null,
+          reassessed_reason: inboundAssessment.reason,
+          requeued_at: new Date().toISOString(),
+        }),
+      ]);
+    }
+
+    requeued.push(candidate);
+  }
+
+  return {
+    dryRun,
+    reviewed: Array.isArray(rows) ? rows.length : 0,
+    requeuedCount: requeued.length,
+    candidates: requeued,
+  };
+}
+
 async function updateCommentStatus(id, status, options = {}) {
   const fields = [
     'status = $2',
@@ -3753,6 +3811,7 @@ module.exports = {
   processComment,
   processCommentWithTimeout,
   requeueRecoverableReplyFailures,
+  requeueCourtesyReflectionCandidates,
   runNeighborCommenter,
   runNeighborSympathy,
   runCommentReply,

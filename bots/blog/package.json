@@ -13,6 +13,7 @@
     "daily": "../../node_modules/.bin/tsx scripts/run-daily.ts",
     "replay:reply-ui": "../../node_modules/.bin/tsx scripts/replay-reply-ui.ts",
     "doctor:engagement": "node scripts/doctor-engagement.ts",
+    "backfill:courtesy-replies": "node scripts/backfill-courtesy-replies.ts",
     "run:engagement-gap": "node scripts/run-engagement-gap.ts",
     "weekly-evolution": "node scripts/weekly-evolution.ts",
     "prepare-shortform": "node scripts/prepare-shortform.ts",
