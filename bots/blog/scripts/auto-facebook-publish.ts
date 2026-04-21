@@ -45,6 +45,10 @@ function getDoctorActions(command = '', limit = 2) {
       stdio: ['ignore', 'pipe', 'pipe'],
     }).trim();
     const payload = JSON.parse(extractJsonObjectText(output) || '{}');
+    const primaryArea = String(payload?.primary?.area || '');
+    if (!primaryArea || primaryArea === 'clear' || primaryArea === 'unknown') {
+      return [];
+    }
     return Array.isArray(payload?.actions)
       ? payload.actions.map((item) => String(item || '').trim()).filter(Boolean).slice(0, limit)
       : [];

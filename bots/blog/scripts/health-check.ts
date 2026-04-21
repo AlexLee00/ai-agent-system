@@ -203,6 +203,8 @@ function buildPriorityHint(label, priority, { includeActionFocus = false } = {})
 }
 
 function buildActionHint(label, payload = {}, limit = 2) {
+  const primaryArea = String(payload?.primary?.area || '');
+  if (!primaryArea || primaryArea === 'clear' || primaryArea === 'unknown') return '';
   const actions = Array.isArray(payload?.actions)
     ? payload.actions
         .map((item) => String(item || '').trim())
