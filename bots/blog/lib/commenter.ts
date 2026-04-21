@@ -2495,6 +2495,11 @@ function isReplyModeStateReady(state) {
   );
 }
 
+async function isReplyModeOpen(page) {
+  const state = await inspectActivateReplyModeLite(page).catch(() => null);
+  return isReplyModeStateReady(state);
+}
+
 async function inspectTargetReplyButtonLite(page) {
   return page.evaluate(`
     (() => {
