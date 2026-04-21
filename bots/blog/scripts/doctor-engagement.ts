@@ -652,8 +652,8 @@ function buildPrimary({ failureByKind, failureByAction, latestReplyReplayCandida
       return {
         area: 'engagement.target_gap.replies.no_workload',
         reason: `replies 목표치는 비어 있지만 현재 reply 대상 댓글이 없습니다 (${String(replyWorkload?.latest?.status || '') === 'skipped' ? `latest skipped: ${String(replyWorkload.latest.errorMessage || 'unknown')}` : 'baseline 이후 inbound 댓글 0건'}${Array.isArray(replyWorkload?.skippedReasons14d) && replyWorkload.skippedReasons14d[0]?.reason ? ` / 14d top filter: ${replyWorkload.skippedReasons14d[0].reason} ${replyWorkload.skippedReasons14d[0].count}건` : ''}${Number(courtesyReflectionRecheck?.reevaluableCount || 0) > 0 ? ` / reevaluable by current reply policy: ${courtesyReflectionRecheck.reevaluableCount}건` : ''}).`,
-        nextCommand: `${RUN_ENGAGEMENT_GAP_COMMAND} -- --label=replies`,
-        actionFocus: 'replyable inbound 유입과 필터링 기준 점검',
+        nextCommand: `${RUN_ENGAGEMENT_GAP_COMMAND} -- --label=neighbor`,
+        actionFocus: 'reply 대상이 없을 때 남은 목표를 이웃/외부 댓글로 보충하고 inbound 유입을 함께 점검',
       };
     }
     return {
