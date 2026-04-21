@@ -1136,7 +1136,7 @@ async function detectNewComments({ testMode = false } = {}) {
 
 async function getPostSummary(postUrl, { testMode = false } = {}) {
   return withBrowserPage(testMode, async (page) => {
-    await goto(page, postUrl);
+    await goto(page, resolveNavigablePostUrl(postUrl));
     let contentFrame = await waitForPostContentFrame(page, testMode);
     await humanDelay(1, 2, testMode);
     contentFrame = await waitForPostContentFrame(page, testMode);
@@ -1458,6 +1458,7 @@ function normalizePostUrl(rawUrl) {
       blogId: parsed.blogId,
       logNo: parsed.logNo,
       postUrl: `https://blog.naver.com/${parsed.blogId}/${parsed.logNo}`,
+      viewUrl: `https://blog.naver.com/PostView.naver?blogId=${parsed.blogId}&logNo=${parsed.logNo}&redirect=Dlog&widgetTypeCall=true&directAccess=false`,
     };
   }
 
@@ -1468,10 +1469,19 @@ function normalizePostUrl(rawUrl) {
       blogId: match[1],
       logNo: match[2],
       postUrl: `https://blog.naver.com/${match[1]}/${match[2]}`,
+      viewUrl: `https://blog.naver.com/PostView.naver?blogId=${match[1]}&logNo=${match[2]}&redirect=Dlog&widgetTypeCall=true&directAccess=false`,
     };
   }
 
-  return { ok: false, blogId: '', logNo: '', postUrl: '' };
+  return { ok: false, blogId: '', logNo: '', postUrl: '', viewUrl: '' };
+}
+
+function resolveNavigablePostUrl(rawUrl) {
+  const normalized = normalizePostUrl(rawUrl);
+  if (normalized?.ok && normalized.viewUrl) {
+    return normalized.viewUrl;
+  }
+  return String(rawUrl || '').trim();
 }
 
 function parseCommentRef(commentRef) {
@@ -2407,12 +2417,94 @@ async function saveCommentDebugSnapshot(page, comment, stage) {
     const prefix = path.join(BLOG_COMMENTER_DEBUG_DIR, `${stamp}-${stage}-${logNo || 'unknown'}`);
     const payload = await page.evaluate(`
       (() => {
+        const visible = (el) => {
+          if (!el) return false;
+          const style = window.getComputedStyle(el);
+          const rect = el.getBoundingClientRect();
+          return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+        };
         const textOf = (el) =>
           String((el && (el.innerText || el.textContent)) || '').replace(/\\s+/g, ' ').trim();
+        const targetComment = document.querySelector('[data-blog-target-comment="true"]');
+        const targetReplyArea = document.querySelector('[data-blog-target-reply-area="true"]');
+        const targetReplyButton = document.querySelector('[data-blog-target-reply-button="true"]');
+        const targetEditor = document.querySelector('[data-blog-commenter-editor="true"]');
+        const submitButton = Array.from(
+          document.querySelectorAll('button, a, input[type="submit"], [role="button"]'),
+        ).filter(visible).find((node) => {
+          const text = textOf(node);
+          const cls = String(node.className || '');
+          const dataAction = String(node.getAttribute('data-action') || '');
+          const uiSelector = String(node.getAttribute('data-ui-selector') || '');
+          const inputType = String(node.getAttribute('type') || '').toLowerCase();
+          return (
+            (dataAction.includes('reply#') && dataAction.includes('#write#request'))
+            || (dataAction === 'write#request' && /등록|답글|답변/.test(text))
+            || /^replyButton_/i.test(uiSelector)
+            || (uiSelector === 'writeButton' && /등록|답글|답변/.test(text))
+            || (/u_cbox_btn_upload|btn_register|btn_write|replyButton/i.test(cls) && /등록|답글|답변/.test(text))
+            || (inputType === 'submit' && (/등록|답글|답변/.test(text) || /u_cbox_btn_upload|btn_register|btn_write|replyButton/i.test(cls)))
+          );
+        }) || null;
+        const commentSelectors = ['.u_cbox_wrap', '.u_cbox_write_wrap', '.u_cbox_comment_box', '.u_cbox_btn_reply', 'textarea[id*="write_textarea"]'];
+        const viewerSelectors = ['.cpv__root', '.cpv__error', '.cpv__content'];
         return {
           url: location.href,
           title: document.title,
           bodySnippet: textOf(document.body).slice(0, 1200),
+          frameUrl: location.href,
+          replyButtonCount: Array.from(document.querySelectorAll('button, a, input[type="submit"], [role="button"]'))
+            .filter((node) => visible(node) && /답글|답변|reply/i.test(textOf(node) + ' ' + String(node.className || ''))).length,
+          editorCount: Array.from(document.querySelectorAll('textarea, div[contenteditable="true"], div[role="textbox"], div[id*="write_textarea"]'))
+            .filter(visible).length,
+          targetCommentFound: Boolean(targetComment),
+          targetReplyAreaFound: Boolean(targetReplyArea),
+          targetReplyAreaVisible: visible(targetReplyArea),
+          targetReplyButtonFound: Boolean(targetReplyButton),
+          targetReplyButtonText: textOf(targetReplyButton).slice(0, 80),
+          commentSurfaceState: {
+            hasVisibleCommentSurface: commentSelectors.some((selector) =>
+              Array.from(document.querySelectorAll(selector)).some(visible),
+            ),
+            hasVisibleViewerSurface: viewerSelectors.some((selector) =>
+              Array.from(document.querySelectorAll(selector)).some(visible),
+            ),
+          },
+          replyTextPreview: textOf(targetEditor).slice(0, 160),
+          submitButtonState: submitButton ? {
+            found: true,
+            text: textOf(submitButton).slice(0, 80),
+            className: String(submitButton.className || '').slice(0, 160),
+            disabled: Boolean(
+              submitButton.disabled
+              || submitButton.getAttribute('aria-disabled') === 'true'
+              || /\\bdisabled\\b/i.test(String(submitButton.className || ''))
+            ),
+            visible: visible(submitButton),
+          } : {
+            found: false,
+            text: '',
+            className: '',
+            disabled: false,
+            visible: false,
+          },
+          editorState: targetEditor ? {
+            found: true,
+            tagName: String(targetEditor.tagName || '').toLowerCase(),
+            contentEditable: targetEditor.getAttribute('contenteditable') === 'true',
+            visible: visible(targetEditor),
+            textLength: textOf(targetEditor).length,
+            id: String(targetEditor.id || ''),
+            className: String(targetEditor.className || '').slice(0, 160),
+          } : {
+            found: false,
+            tagName: '',
+            contentEditable: false,
+            visible: false,
+            textLength: 0,
+            id: '',
+            className: '',
+          },
           html: (document.documentElement && document.documentElement.outerHTML) || '',
         };
       })()
@@ -2990,11 +3082,12 @@ async function activateSympathyInFrame(contentFrame, { testMode = false, postUrl
 
 async function clickSympathy(postUrl, { testMode = false } = {}) {
   return withBrowserPage(testMode, async (page) => {
-    await goto(page, postUrl);
+    const targetPostUrl = resolveNavigablePostUrl(postUrl);
+    await goto(page, targetPostUrl);
     let contentFrame = await waitForPostContentFrame(page, testMode);
     await humanDelay(1, 2, testMode);
     contentFrame = await waitForPostContentFrame(page, testMode);
-    return activateSympathyInFrame(contentFrame, { testMode, postUrl });
+    return activateSympathyInFrame(contentFrame, { testMode, postUrl: targetPostUrl });
   });
 }
 
@@ -3245,16 +3338,18 @@ async function typeReply(frame, browserPage, selector, replyText, config, testMo
 
 async function postReply(comment, replyText, { testMode = false, dryRun = false, operationTimeoutMs = 0 } = {}) {
   const config = getCommenterConfig();
-  const logNo = extractLogNo(comment.post_url);
+  const targetPostUrl = resolveNavigablePostUrl(comment.post_url);
+  const logNo = extractLogNo(targetPostUrl || comment.post_url);
   return withBrowserPage(testMode, async (page) => {
     traceCommenter('postReply:start', {
       commentId: comment.id,
       logNo,
+      targetPostUrl,
       dryRun,
       testMode,
       operationTimeoutMs: Number(operationTimeoutMs || 0),
     });
-    await goto(page, comment.post_url);
+    await goto(page, targetPostUrl);
     let contentFrame = await waitForCommentCapableFrame(page, logNo, testMode);
     traceCommenter('postReply:frame-ready', { commentId: comment.id, logNo });
     await humanDelay(config.pageReadMinSec, config.pageReadMaxSec, testMode);
@@ -3500,7 +3595,8 @@ async function _recordDirectCommentActions(postUrl, normalizedComment, withSympa
 
 async function postComment(postUrl, commentText, { testMode = false, withSympathy = false, operationTimeoutMs = 0 } = {}) {
   const config = getCommenterConfig();
-  const logNo = extractLogNo(postUrl);
+  const targetPostUrl = resolveNavigablePostUrl(postUrl);
+  const logNo = extractLogNo(targetPostUrl || postUrl);
   const normalizedComment = normalizeText(commentText);
   if (!normalizedComment) {
     throw new Error('comment_text_required');
@@ -3508,39 +3604,39 @@ async function postComment(postUrl, commentText, { testMode = false, withSympath
 
   return withBrowserPage(testMode, async (page) => {
     traceCommenter('postComment:start', {
-      postUrl,
+      postUrl: targetPostUrl,
       withSympathy,
       textLength: normalizedComment.length,
     });
-    await goto(page, postUrl);
+    await goto(page, targetPostUrl);
     let contentFrame = await waitForCommentCapableFrame(page, logNo, testMode);
     await humanDelay(1, 2, testMode);
     contentFrame = await waitForCommentCapableFrame(page, logNo, testMode);
-    const opened = await _openCommentEditorWithRetry(page, postUrl, logNo, testMode);
+    const opened = await _openCommentEditorWithRetry(page, targetPostUrl, logNo, testMode);
     contentFrame = opened.contentFrame;
     const editor = opened.editor;
-    await _submitCommentWithVerification(contentFrame, page, editor, normalizedComment, config, testMode, postUrl);
-    traceCommenter('postComment:comment-posted', { postUrl, withSympathy });
+    await _submitCommentWithVerification(contentFrame, page, editor, normalizedComment, config, testMode, targetPostUrl);
+    traceCommenter('postComment:comment-posted', { postUrl: targetPostUrl, withSympathy });
 
     let sympathy = null;
     if (withSympathy) {
       await humanDelay(2, 3, testMode);
-      sympathy = await activateSympathyInFrame(contentFrame, { testMode, postUrl }).catch((error) => ({ ok: false, error: error.message, attempt: 1 }));
+      sympathy = await activateSympathyInFrame(contentFrame, { testMode, postUrl: targetPostUrl }).catch((error) => ({ ok: false, error: error.message, attempt: 1 }));
       if (!sympathy?.ok) {
         traceCommenter('postComment:sympathy-retry', sympathy);
         await humanDelay(2, 4, testMode);
-        sympathy = await activateSympathyInFrame(contentFrame, { testMode, postUrl }).catch((error) => ({ ok: false, error: error.message, attempt: 2 }));
+        sympathy = await activateSympathyInFrame(contentFrame, { testMode, postUrl: targetPostUrl }).catch((error) => ({ ok: false, error: error.message, attempt: 2 }));
       }
     }
 
-    await _recordDirectCommentActions(postUrl, normalizedComment, withSympathy, sympathy);
+    await _recordDirectCommentActions(targetPostUrl, normalizedComment, withSympathy, sympathy);
 
     traceCommenter('postComment:done', {
-      postUrl,
+      postUrl: targetPostUrl,
       withSympathy,
       sympathyOk: sympathy?.ok === true,
     });
-    return { ok: true, postUrl, commentText: normalizedComment, sympathy };
+    return { ok: true, postUrl: targetPostUrl, commentText: normalizedComment, sympathy };
   }, {
     timeoutMs: Number(operationTimeoutMs || 0),
     timeoutCode: 'comment_post_timeout',
