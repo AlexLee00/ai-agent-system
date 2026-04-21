@@ -18,12 +18,9 @@ defmodule Darwin.V2.Supervisor do
     Supervisor.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
-  @doc "ownership manifest와 대조할 Elixir-managed runtime labels"
+  @doc "Darwin live는 launchd(ai.darwin.weekly.*)가 canonical owner이므로 Elixir-managed runtime label은 없다."
   def agent_labels do
-    [
-      "ai.research.scanner",
-      "ai.research.task-runner"
-    ]
+    []
   end
 
   def init(_opts) do

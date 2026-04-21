@@ -254,8 +254,8 @@ bots/research/                       ← academic에서 리네임
 │   ├── 2026-04-03_confidence-scoring/
 │   └── ...
 ├── launchd/
-│   ├── ai.research.daily.plist      ← 매일 연구 사이클 (22:00)
-│   └── ai.research.weekly-report.plist ← 주간 리포트 (일요일)
+│   ├── ai.darwin.weekly.autonomous.plist   ← 주간 자율 연구 사이클 (일요일 05:00)
+│   └── ai.darwin.weekly-ops-report.plist   ← 주간 운영 리포트 (일요일 06:30)
 └── migrations/
     └── 001-research-schema.sql      ← DB 스키마
 ```

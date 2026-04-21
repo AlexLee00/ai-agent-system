@@ -2275,7 +2275,7 @@ Skills (packages/core/lib/skills/darwin)  532줄 /  6 파일
 - FeedbackLoop GenServer + JayBus 이벤트 기반
 - Sigma Signal Receiver (`sigma.advisory.darwin.*` 구독)
 - callWithFallback LLM 호출 기 사용
-- launchd: ai.research.scanner + ai.research.task-runner
+- launchd: ai.darwin.weekly.autonomous + ai.darwin.weekly-ops-report + ai.darwin.weekly-review
 
 ### 약점 (해소 대상)
 - 분산 구조 (bots/darwin + team_jay/lib/team_jay/darwin)

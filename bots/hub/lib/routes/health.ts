@@ -203,17 +203,37 @@ export async function collectHealthSnapshot(): Promise<HealthSnapshot> {
         created_at
       FROM agent.event_lake
       WHERE team = 'darwin'
-        AND bot_name IN ('darwin_monitor', 'darwin_scanner', 'darwin_task_runner')
-        AND event_type IN ('port_agent_completed', 'port_agent_failed')
+        AND bot_name IN (
+          'research-scanner',
+          'research-monitor',
+          'task-runner',
+          'applicator',
+          'implementor',
+          'proof-r',
+          'darwin-weekly-ops',
+          'darwin-weekly-review',
+          'darwin_monitor',
+          'darwin_scanner',
+          'darwin_task_runner'
+        )
       ORDER BY created_at DESC
-      LIMIT 12
+      LIMIT 24
     `);
 
-    const latestCompleted = (darwinRows || []).find((row: any) => row?.event_type === 'port_agent_completed');
-    const latestFailure = (darwinRows || []).find((row: any) => row?.event_type === 'port_agent_failed');
+    const isFailureEvent = (eventType: string | null | undefined) => {
+      const normalized = String(eventType || '').toLowerCase();
+      return normalized === 'port_agent_failed'
+        || normalized.endsWith('_failed')
+        || normalized.endsWith('_error')
+        || normalized.includes('failure')
+        || normalized.includes('error');
+    };
 
-    if (latestCompleted?.created_at) {
-      const completedAt = new Date(String(latestCompleted.created_at)).getTime();
+    const latestHealthy = (darwinRows || []).find((row: any) => !isFailureEvent(row?.event_type));
+    const latestFailure = (darwinRows || []).find((row: any) => isFailureEvent(row?.event_type));
+
+    if (latestHealthy?.created_at) {
+      const completedAt = new Date(String(latestHealthy.created_at)).getTime();
       const ageMinutes = Math.max(0, Math.round((Date.now() - completedAt) / 60000));
       const failureAt = latestFailure?.created_at ? new Date(String(latestFailure.created_at)).getTime() : 0;
       const completedAfterFailure = completedAt >= failureAt;
@@ -221,11 +241,11 @@ export async function collectHealthSnapshot(): Promise<HealthSnapshot> {
       resources.darwin_activity = completedAfterFailure
         ? {
             status: 'ok',
-            detail: `recent ${latestCompleted.bot_name} completion ${ageMinutes}분 전`,
+            detail: `recent ${latestHealthy.bot_name} ${latestHealthy.event_type} ${ageMinutes}분 전`,
           }
         : {
             status: 'warn',
-            detail: `latest failure after completion (${String(latestFailure?.bot_name || 'unknown')})`,
+            detail: `latest failure after healthy event (${String(latestFailure?.bot_name || 'unknown')})`,
           };
     } else if (latestFailure?.created_at) {
       resources.darwin_activity = {
