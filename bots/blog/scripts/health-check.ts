@@ -56,6 +56,7 @@ const INSTAGRAM_READINESS_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 
 const INSTAGRAM_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:instagram -- --json`;
 const SOCIAL_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:social -- --json`;
 const ENGAGEMENT_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:engagement -- --json`;
+const MARKETING_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:marketing -- --json`;
 const BLOG_OPS_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:ops -- --json`;
 const doctorPriorityCache = new Map();
 
@@ -569,6 +570,7 @@ function classifyEngagementFailure(meta = {}) {
     errorText.includes('reply_button_not_found')
     || errorText.includes('reply_submit_not_found')
     || errorText.includes('comment_submit_not_confirmed')
+    || errorText.includes('sympathy_button_not_found')
     || errorText.includes('reply_ui_unavailable')
     || errorText.includes('reply_editor_not_found')
   ) {
@@ -799,6 +801,55 @@ async function checkEngagementAutomationHealth() {
   }
 }
 
+async function checkMarketingExpansionHealth() {
+  try {
+    const marketingPriority = getDoctorPriority(MARKETING_DOCTOR_COMMAND, {
+      area: 'marketing.watch',
+      reason: '마케팅 확장 신호가 watch 상태라 sense/correlation/diagnosis 재점검이 필요합니다.',
+      nextCommand: `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run marketing:digest -- --json`,
+      actionFocus: '마케팅 top signal과 revenue correlation, 추천 액션 재확인',
+    });
+    const primaryArea = String(marketingPriority?.area || '');
+    if (!primaryArea || primaryArea === 'clear' || primaryArea === 'unknown') {
+      return {
+        ok: true,
+        detail: 'marketing watch 없음',
+      };
+    }
+
+    const marketingPayload = getDoctorPayload(MARKETING_DOCTOR_COMMAND);
+    const opsPriority = getDoctorPriority(BLOG_OPS_DOCTOR_COMMAND, {
+      area: 'marketing.watch',
+      reason: '마케팅 확장 신호가 현재 최우선 병목입니다.',
+      nextCommand: MARKETING_DOCTOR_COMMAND,
+      actionFocus: '마케팅 top signal과 revenue correlation, 추천 액션 재확인',
+    });
+    const opsPayload = getDoctorPayload(BLOG_OPS_DOCTOR_COMMAND);
+    const digestCommand = String(
+      marketingPayload?.digestCommand
+      || `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run marketing:digest -- --json`
+    );
+    const topSignal = String(marketingPayload?.senseSummary?.topSignal?.message || '');
+    const watchHint = String(marketingPayload?.channelPerformance?.primaryWatchHint || '');
+    const recommendations = Array.isArray(marketingPayload?.recommendations)
+      ? marketingPayload.recommendations.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 2)
+      : [];
+    const signalHint = topSignal ? `\ntop signal: ${topSignal}` : '';
+    const watchHintLine = watchHint ? `\nwatch hint: ${watchHint}` : '';
+    const recommendationHint = recommendations.length
+      ? `\nrecommendation: ${recommendations.join('\nrecommendation: ')}`
+      : '';
+    const doctorHint = `\ndoctor: ${MARKETING_DOCTOR_COMMAND}${buildPriorityHint('marketing primary', marketingPriority, { includeActionFocus: true })}${buildActionHint('marketing action', marketingPayload, 2, 'marketing')}${buildPriorityHint('primary blocker', opsPriority, { includeActionFocus: true })}${buildActionHint('ops action', opsPayload, 2, 'marketing')}\nops doctor: ${BLOG_OPS_DOCTOR_COMMAND}\ndiagnose: ${digestCommand}`;
+    return {
+      ok: false,
+      detail: `marketing watch — ${marketingPriority.reason}${signalHint}${watchHintLine}${recommendationHint}${doctorHint}`,
+      primary: marketingPriority,
+    };
+  } catch (e) {
+    return { ok: false, detail: `marketing watch 확인 실패: ${e.message.slice(0, 120)}` };
+  }
+}
+
 async function main() {
   console.log(`[블로그 헬스체크] 시작 — ${new Date().toISOString()}`);
 
@@ -981,6 +1032,23 @@ async function main() {
     await notify(recoveryMsg, 1);
     await rememberHealthEvent(engagementAutomationKey, 'recovery', recoveryMsg, 1);
     hsm.clearAlert(state, engagementAutomationKey);
+  }
+
+  const marketingExpansion = await checkMarketingExpansionHealth();
+  const marketingExpansionKey = 'marketing:watch';
+  if (!marketingExpansion.ok) {
+    if (hsm.canAlert(state, marketingExpansionKey)) {
+      issues.push({
+        key: marketingExpansionKey,
+        level: 2,
+        msg: `⚠️ [블로그 헬스] marketing watch\n${marketingExpansion.detail}`,
+      });
+    }
+  } else if (state[marketingExpansionKey]) {
+    const recoveryMsg = `✅ [블로그 헬스] marketing watch 회복\n${marketingExpansion.detail}`;
+    await notify(recoveryMsg, 1);
+    await rememberHealthEvent(marketingExpansionKey, 'recovery', recoveryMsg, 1);
+    hsm.clearAlert(state, marketingExpansionKey);
   }
 
   for (const { key, level, msg } of issues) {
