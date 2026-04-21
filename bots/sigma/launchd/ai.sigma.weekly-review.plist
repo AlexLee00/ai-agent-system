@@ -23,7 +23,7 @@
     <key>MODE</key>
     <string>ops</string>
     <key>SIGMA_TELEGRAM_ENHANCED</key>
-    <string>false</string>
+    <string>true</string>
     <key>SIGMA_HTTP_PORT</key>
     <string>4010</string>
     <key>HUB_BASE_URL</key>

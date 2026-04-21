@@ -34,7 +34,14 @@ defmodule Sigma.V2.HTTP.Router do
   post "/sigma/v2/run-daily" do
     test_mode = get_in(conn.body_params, ["test"]) || false
 
-    case Sigma.V2.ShadowRunner.run(%{test: test_mode}) do
+    result =
+      if System.get_env("SIGMA_MAPEK_ENABLED") == "true" and not test_mode do
+        Sigma.V2.MapeKLoop.run_cycle_sync()
+      else
+        Sigma.V2.ShadowRunner.run(%{test: test_mode})
+      end
+
+    case result do
       {:ok, result} ->
         conn
         |> put_resp_content_type("application/json")

@@ -71,13 +71,25 @@ defimpl Sigma.Directive.Executor, for: Sigma.Directive.ApplyFeedback do
   end
 
   def execute(%{tier: 3} = dir, _ctx) do
-    case Sigma.V2.Mailbox.enqueue(dir) do
-      {:ok, directive_id} ->
-        Sigma.V2.TelegramBridge.notify_pending(dir, directive_id)
-        {:ok, %{tier: 3, outcome: :queued, directive_id: directive_id}}
+    if System.get_env("SIGMA_TIER3_AUTO_APPLY") == "true" do
+      case Sigma.V2.Config.apply_patch(dir.team, dir.action[:patch] || dir.action) do
+        {:ok, %{snapshot_id: snapshot_id}} ->
+          Sigma.V2.Archivist.log_tier3_applied(dir, snapshot_id)
+          {:ok, %{tier: 3, outcome: :autonomous_applied, snapshot_id: snapshot_id}}
 
-      {:error, reason} ->
-        {:error, reason}
+        {:error, reason} ->
+          Sigma.V2.Archivist.log_failure(dir, reason)
+          {:error, reason}
+      end
+    else
+      case Sigma.V2.Mailbox.enqueue(dir) do
+        {:ok, directive_id} ->
+          Sigma.V2.TelegramBridge.notify_pending(dir, directive_id)
+          {:ok, %{tier: 3, outcome: :queued, directive_id: directive_id}}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
     end
   end
 

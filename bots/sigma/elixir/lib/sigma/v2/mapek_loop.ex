@@ -49,6 +49,11 @@ defmodule Sigma.V2.MapeKLoop do
     GenServer.cast(__MODULE__, :run_cycle_now)
   end
 
+  @doc "전체 MAPE-K 사이클 1회 동기 실행 (launchd/HTTP 진입점용)."
+  def run_cycle_sync(timeout \\ :timer.minutes(10)) do
+    GenServer.call(__MODULE__, :run_cycle_sync, timeout)
+  end
+
   # ─────────────────────────────────────────────────
   # GenServer callbacks
   # ─────────────────────────────────────────────────
@@ -115,6 +120,32 @@ defmodule Sigma.V2.MapeKLoop do
   end
 
   @impl GenServer
+  def handle_call(:run_cycle_sync, _from, state) do
+    result =
+      if mapek_enabled?() do
+        run_full_cycle()
+      else
+        {:error, :mapek_disabled}
+      end
+
+    new_state =
+      case result do
+        {:ok, cycle_result} ->
+          %{
+            state
+            | total_cycles: state.total_cycles + 1,
+              last_cycle_at: DateTime.utc_now(),
+              last_cycle_id: Map.get(cycle_result, :cycle_id)
+          }
+
+        _ ->
+          state
+      end
+
+    {:reply, result, new_state}
+  end
+
+  @impl GenServer
   def handle_call(:status, _from, state) do
     {:reply, state, state}
   end
@@ -178,6 +209,7 @@ defmodule Sigma.V2.MapeKLoop do
       handle_knowledge_phase(cycle_result)
       broadcast_cycle_complete(cycle_result)
       Logger.info("[Sigma.V2.MapeKLoop] MAPE-K 전체 사이클 완료 — 성공 #{success_count}, 실패 #{error_count}")
+      {:ok, cycle_result}
     rescue
       e ->
         Logger.error("[Sigma.V2.MapeKLoop] 사이클 실패: #{inspect(e)}")
@@ -187,6 +219,8 @@ defmodule Sigma.V2.MapeKLoop do
         rescue
           _ -> :ok
         end
+
+        {:error, e}
     end
   end
 
@@ -267,7 +301,7 @@ defmodule Sigma.V2.MapeKLoop do
   # ─────────────────────────────────────────────────
 
   defp build_directive(feedback, cycle_id) do
-    %{
+    %Sigma.Directive.ApplyFeedback{
       team: feedback[:target_team] || "unknown",
       analyst: feedback[:analyst_used] || "commander",
       action: %{

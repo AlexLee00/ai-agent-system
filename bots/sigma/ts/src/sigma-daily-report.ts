@@ -16,7 +16,7 @@ const PROJECT_ROOT = path.resolve(
 );
 
 const { query } = require(path.join(PROJECT_ROOT, 'packages/core/lib/pg-pool'));
-const hub = require(path.join(PROJECT_ROOT, 'packages/core/lib/hub-client'));
+const openclaw = require(path.join(PROJECT_ROOT, 'packages/core/lib/openclaw-client.js'));
 
 const SIGMA_HTTP_PORT = process.env.SIGMA_HTTP_PORT || '4010';
 const SIGMA_V2_ENDPOINT =
@@ -115,7 +115,12 @@ async function sendViaTelegramElixir(msg: string): Promise<void> {
     // Elixir HTTP 불가시 Hub fallback
   }
 
-  await hub.sendTelegram({ message: msg, channel: 'general' });
+  await openclaw.postAlarm({
+    message: msg,
+    team: 'sigma',
+    fromBot: 'sigma-daily-report',
+    alertLevel: 2,
+  });
 }
 
 async function main() {

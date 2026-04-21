@@ -5,16 +5,18 @@ defmodule Sigma.V2.Archivist do
   참조: bots/sigma/docs/PLAN.md §6 Phase 2
   """
 
+  require Logger
+
   @doc "Tier 0 관찰 기록."
   def log_observation(directive) do
     run_query(
       """
       INSERT INTO sigma_v2_directive_audit
-        (directive_id, tier, team, action, executed_at, outcome)
-      VALUES ($1, $2, $3, $4::jsonb, NOW(), 'observed')
+        (directive_id, tier, team, action, executed_at, outcome, inserted_at, updated_at)
+      VALUES ($1, $2, $3, $4::jsonb, NOW(), 'observed', NOW(), NOW())
       """,
       [
-        Ecto.UUID.generate(),
+        new_uuid(),
         directive.tier,
         directive.team,
         Jason.encode!(directive.action)
@@ -27,11 +29,11 @@ defmodule Sigma.V2.Archivist do
     run_query(
       """
       INSERT INTO sigma_v2_directive_audit
-        (directive_id, tier, team, action, executed_at, outcome, principle_check_result)
-      VALUES ($1, $2, $3, $4::jsonb, NOW(), 'signal_sent', $5::jsonb)
+        (directive_id, tier, team, action, executed_at, outcome, principle_check_result, inserted_at, updated_at)
+      VALUES ($1, $2, $3, $4::jsonb, NOW(), 'signal_sent', $5::jsonb, NOW(), NOW())
       """,
       [
-        Ecto.UUID.generate(),
+        new_uuid(),
         directive.tier,
         directive.team,
         Jason.encode!(directive.action),
@@ -45,11 +47,11 @@ defmodule Sigma.V2.Archivist do
     run_query(
       """
       INSERT INTO sigma_v2_directive_audit
-        (directive_id, tier, team, action, executed_at, outcome, principle_check_result)
-      VALUES ($1, $2, $3, $4::jsonb, NOW(), 'failure', $5::jsonb)
+        (directive_id, tier, team, action, executed_at, outcome, principle_check_result, inserted_at, updated_at)
+      VALUES ($1, $2, $3, $4::jsonb, NOW(), 'failure', $5::jsonb, NOW(), NOW())
       """,
       [
-        Ecto.UUID.generate(),
+        new_uuid(),
         directive.tier,
         directive.team,
         Jason.encode!(directive.action),
@@ -63,11 +65,11 @@ defmodule Sigma.V2.Archivist do
     run_query(
       """
       INSERT INTO sigma_v2_directive_audit
-        (directive_id, tier, team, action, executed_at, outcome, principle_check_result)
-      VALUES ($1, $2, $3, $4::jsonb, NOW(), 'blocked', $5::jsonb)
+        (directive_id, tier, team, action, executed_at, outcome, principle_check_result, inserted_at, updated_at)
+      VALUES ($1, $2, $3, $4::jsonb, NOW(), 'blocked', $5::jsonb, NOW(), NOW())
       """,
       [
-        Ecto.UUID.generate(),
+        new_uuid(),
         directive.tier,
         directive.team,
         Jason.encode!(directive.action),
@@ -81,11 +83,29 @@ defmodule Sigma.V2.Archivist do
     run_query(
       """
       INSERT INTO sigma_v2_directive_audit
-        (directive_id, tier, team, action, executed_at, outcome, principle_check_result)
-      VALUES ($1, $2, $3, $4::jsonb, NOW(), 'tier2_applied', $5::jsonb)
+        (directive_id, tier, team, action, executed_at, outcome, principle_check_result, inserted_at, updated_at)
+      VALUES ($1, $2, $3, $4::jsonb, NOW(), 'tier2_applied', $5::jsonb, NOW(), NOW())
       """,
       [
-        Ecto.UUID.generate(),
+        new_uuid(),
+        directive.tier,
+        directive.team,
+        Jason.encode!(directive.action),
+        Jason.encode!(%{snapshot_id: snapshot_id})
+      ]
+    )
+  end
+
+  @doc "Tier 3 자동 적용 기록."
+  def log_tier3_applied(directive, snapshot_id) do
+    run_query(
+      """
+      INSERT INTO sigma_v2_directive_audit
+        (directive_id, tier, team, action, executed_at, outcome, principle_check_result, inserted_at, updated_at)
+      VALUES ($1, $2, $3, $4::jsonb, NOW(), 'tier3_applied', $5::jsonb, NOW(), NOW())
+      """,
+      [
+        new_uuid(),
         directive.tier,
         directive.team,
         Jason.encode!(directive.action),
@@ -99,11 +119,11 @@ defmodule Sigma.V2.Archivist do
     run_query(
       """
       INSERT INTO sigma_v2_directive_audit
-        (directive_id, tier, team, action, executed_at, outcome, principle_check_result)
-      VALUES ($1, 2, $2, $3::jsonb, NOW(), 'rollback', $4::jsonb)
+        (directive_id, tier, team, action, executed_at, outcome, principle_check_result, inserted_at, updated_at)
+      VALUES ($1, 2, $2, $3::jsonb, NOW(), 'rollback', $4::jsonb, NOW(), NOW())
       """,
       [
-        Ecto.UUID.generate(),
+        new_uuid(),
         opts[:team] || "unknown",
         Jason.encode!(%{directive_id: opts[:directive_id]}),
         Jason.encode!(%{effectiveness: effectiveness, snapshot_id: opts[:snapshot_id]})
@@ -116,11 +136,11 @@ defmodule Sigma.V2.Archivist do
     run_query(
       """
       INSERT INTO sigma_v2_directive_audit
-        (directive_id, tier, team, action, executed_at, outcome, principle_check_result)
-      VALUES ($1, 0, $2, $3::jsonb, NOW(), 'reflexion', $4::jsonb)
+        (directive_id, tier, team, action, executed_at, outcome, principle_check_result, inserted_at, updated_at)
+      VALUES ($1, 0, $2, $3::jsonb, NOW(), 'reflexion', $4::jsonb, NOW(), NOW())
       """,
       [
-        Ecto.UUID.generate(),
+        new_uuid(),
         entry[:team] || "sigma",
         Jason.encode!(%{feedback_id: entry[:feedback_id]}),
         Jason.encode!(%{reflection: entry[:reflection], tags: entry[:tags]})
@@ -184,9 +204,18 @@ defmodule Sigma.V2.Archivist do
   defp run_query(sql, params) do
     case Jay.Core.Repo.query(sql, params) do
       {:ok, _} -> :ok
-      {:error, reason} -> {:error, reason}
+      {:error, reason} ->
+        Logger.warning("[Sigma.V2.Archivist] audit query 실패: #{inspect(reason)}")
+        {:error, reason}
     end
   rescue
-    e -> {:error, e}
+    e ->
+      Logger.warning("[Sigma.V2.Archivist] audit query 예외: #{inspect(e)}")
+      {:error, e}
+  end
+
+  defp new_uuid do
+    Ecto.UUID.generate()
+    |> Ecto.UUID.dump!()
   end
 end

@@ -215,7 +215,7 @@ defmodule Sigma.V2.SelfRewarding do
 
     Jay.Core.Repo.query(sql, [
       to_string(metrics.cycle_id),
-      metrics.date,
+      normalize_date(metrics.date),
       metrics.analyst,
       metrics.team,
       Jason.encode!(metrics),
@@ -281,6 +281,17 @@ defmodule Sigma.V2.SelfRewarding do
       |> Map.new(fn {k, v} -> {String.to_atom(k), v} end)
     end)
   end
+
+  defp normalize_date(%Date{} = date), do: date
+
+  defp normalize_date(date) when is_binary(date) do
+    case Date.from_iso8601(date) do
+      {:ok, parsed} -> parsed
+      _ -> Date.utc_today()
+    end
+  end
+
+  defp normalize_date(_), do: Date.utc_today()
 
   defp enabled?, do: System.get_env("SIGMA_SELF_REWARDING_ENABLED") == "true"
 

@@ -23,8 +23,8 @@ defmodule Sigma.V2.DirectiveTracker do
 
       sql = """
       INSERT INTO sigma_directive_tracking
-        (cycle_id, team, feedback_type, issued_status, issued_at)
-      VALUES ($1, $2, $3, $4, NOW())
+        (cycle_id, team, feedback_type, issued_status, issued_at, created_at)
+      VALUES ($1, $2, $3, $4, NOW(), NOW())
       """
 
       Jay.Core.Repo.query(sql, [cycle_id, team, feedback_type, status])

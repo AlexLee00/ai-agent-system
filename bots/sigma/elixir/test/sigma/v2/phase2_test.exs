@@ -59,6 +59,8 @@ defmodule Sigma.V2.Phase2Test do
 
   describe "Sigma.Directive.Executor Tier 3" do
     test "대기열 적재 시 directive_id를 결과에 포함" do
+      System.delete_env("SIGMA_TIER3_AUTO_APPLY")
+
       dir = %Sigma.Directive.ApplyFeedback{
         team: "blog",
         tier: 3,
@@ -69,6 +71,24 @@ defmodule Sigma.V2.Phase2Test do
       result = Sigma.Directive.Executor.execute(dir, %{})
       assert match?({:ok, %{tier: 3, outcome: :queued, directive_id: _}}, result) or
              match?({:error, _}, result)
+    end
+
+    test "SIGMA_TIER3_AUTO_APPLY=true 시 자동 적용 또는 오류 반환" do
+      System.put_env("SIGMA_TIER3_AUTO_APPLY", "true")
+
+      dir = %Sigma.Directive.ApplyFeedback{
+        team: "blog",
+        tier: 3,
+        action: %{patch: %{}},
+        rollback_spec: %{directive_id: "t3-auto"}
+      }
+
+      result = Sigma.Directive.Executor.execute(dir, %{})
+
+      assert match?({:ok, %{tier: 3, outcome: :autonomous_applied, snapshot_id: _}}, result) or
+               match?({:error, _}, result)
+
+      System.delete_env("SIGMA_TIER3_AUTO_APPLY")
     end
   end
 

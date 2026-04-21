@@ -75,8 +75,8 @@ defmodule Sigma.V2.Principle.Loader do
     tier3 = Enum.find(tiers, &((&1["tier"] || &1[:tier]) == 3)) || %{}
     prohibitions = tier3["prohibitions"] || tier3[:prohibitions] || []
 
-    action = directive[:action] || directive["action"] || ""
-    team = directive[:team] || directive["team"] || ""
+    action = directive_action_text(directive)
+    team = directive_team(directive)
 
     prohibitions
     |> Enum.filter(fn rule ->
@@ -101,8 +101,8 @@ defmodule Sigma.V2.Principle.Loader do
   # -------------------------------------------------------------------
 
   defp semantic_check(directive, principles) do
-    action = directive[:action] || directive["action"] || ""
-    team = directive[:team] || directive["team"] || ""
+    action = directive_action_text(directive)
+    team = directive_team(directive)
     tier3_rules = extract_tier3_rules(principles)
 
     prompt = """
@@ -155,4 +155,22 @@ defmodule Sigma.V2.Principle.Loader do
       _ -> "semantic: #{String.slice(text, 0, 80)}"
     end
   end
+
+  defp directive_action_text(directive) when is_map(directive) do
+    directive
+    |> Map.get(:action, Map.get(directive, "action", ""))
+    |> normalize_action_text()
+  end
+
+  defp directive_action_text(_directive), do: ""
+
+  defp directive_team(directive) when is_map(directive) do
+    to_string(Map.get(directive, :team, Map.get(directive, "team", "")))
+  end
+
+  defp directive_team(_directive), do: ""
+
+  defp normalize_action_text(action) when is_binary(action), do: action
+  defp normalize_action_text(action) when is_map(action), do: Jason.encode!(action)
+  defp normalize_action_text(action), do: inspect(action)
 end

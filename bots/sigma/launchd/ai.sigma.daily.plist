@@ -8,11 +8,11 @@
   <key>ProgramArguments</key>
   <array>
     <string>/opt/homebrew/bin/mix</string>
-    <string>shadow</string>
+    <string>sigma.daily.autonomous</string>
   </array>
 
   <key>WorkingDirectory</key>
-  <string>/Users/alexlee/projects/ai-agent-system/bots/sigma/elixir</string>
+  <string>/Users/alexlee/projects/ai-agent-system/elixir/team_jay</string>
 
   <key>EnvironmentVariables</key>
   <dict>
@@ -27,31 +27,35 @@
     <key>SIGMA_V2_ENABLED</key>
     <string>true</string>
     <key>SIGMA_TIER2_AUTO_APPLY</key>
-    <string>false</string>
+    <string>true</string>
+    <key>SIGMA_TIER3_AUTO_APPLY</key>
+    <string>true</string>
     <key>SIGMA_MCP_SERVER_ENABLED</key>
     <string>false</string>
     <key>SIGMA_GEPA_ENABLED</key>
-    <string>false</string>
+    <string>true</string>
     <key>SIGMA_SELF_RAG_ENABLED</key>
     <string>false</string>
     <key>SIGMA_MAPEK_ENABLED</key>
-    <string>false</string>
+    <string>true</string>
     <key>SIGMA_SELF_REWARDING_ENABLED</key>
-    <string>false</string>
+    <string>true</string>
     <key>SIGMA_AGENTIC_RAG_ENABLED</key>
-    <string>false</string>
+    <string>true</string>
+    <key>SIGMA_POD_DYNAMIC_V2_ENABLED</key>
+    <string>true</string>
     <key>SIGMA_UCB_ENABLED</key>
-    <string>false</string>
+    <string>true</string>
     <key>SIGMA_TELEGRAM_ENHANCED</key>
-    <string>false</string>
+    <string>true</string>
     <key>SIGMA_HTTP_PORT</key>
     <string>4010</string>
     <key>SIGMA_LLM_DAILY_BUDGET_USD</key>
     <string>10.00</string>
     <key>LLM_HUB_ROUTING_ENABLED</key>
-    <string>false</string>
-    <key>LLM_HUB_ROUTING_SHADOW</key>
     <string>true</string>
+    <key>LLM_HUB_ROUTING_SHADOW</key>
+    <string>false</string>
     <key>HUB_BASE_URL</key>
     <string>http://localhost:7788</string>
   </dict>
