@@ -34,22 +34,25 @@ export function createNaverBrowserSessionService(deps: CreateNaverBrowserSession
     modeSuffix,
     naverUrl,
     naverWsFile,
+    naverUserDataDir,
   }: {
     workspace: string;
     modeSuffix: string;
     naverUrl: string;
     naverWsFile: string;
+    naverUserDataDir?: string;
   }) {
-    const naverUserDataDir = pathJoin(workspace, `naver-profile${modeSuffix}`);
-    try { unlinkSync(pathJoin(naverUserDataDir, 'DevToolsActivePort')); } catch (_) {}
+    const resolvedNaverUserDataDir =
+      naverUserDataDir || pathJoin(workspace, `naver-profile${modeSuffix}`);
+    try { unlinkSync(pathJoin(resolvedNaverUserDataDir, 'DevToolsActivePort')); } catch (_) {}
 
     const browser = await launchPuppeteer(getNaverLaunchOptions({
       protocolTimeout: 30000,
-      userDataDir: naverUserDataDir,
+      userDataDir: resolvedNaverUserDataDir,
     }));
 
     const wsEndpoint =
-      (await waitForWsEndpointFromActivePort(naverUserDataDir, delay, 10000)) ||
+      (await waitForWsEndpointFromActivePort(resolvedNaverUserDataDir, delay, 10000)) ||
       browser.wsEndpoint();
     const devtoolsReady = await waitForDevtoolsEndpoint(wsEndpoint, delay, 3000);
     if (!devtoolsReady) {

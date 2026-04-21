@@ -26,6 +26,30 @@ export function createNaverSessionService(deps: CreateNaverSessionServiceDeps) {
     naverUrl,
   } = deps;
 
+  async function installNameShim(page: any): Promise<void> {
+    if (!page) return;
+    try {
+      await page.evaluateOnNewDocument(() => {
+        const shim = (value: any) => value;
+        (globalThis as any).__name = shim;
+        (window as any).__name = shim;
+        try {
+          (0, eval)('var __name = globalThis.__name;');
+        } catch {}
+      });
+      await page.evaluate(() => {
+        const shim = (value: any) => value;
+        (globalThis as any).__name = shim;
+        (window as any).__name = shim;
+        try {
+          (0, eval)('var __name = globalThis.__name;');
+        } catch {}
+      }).catch(() => null);
+    } catch {
+      // ignore shim failures; downstream browser actions will surface real errors
+    }
+  }
+
   async function closePopupsIfPresent(page: any): Promise<void> {
     try {
       if (!page || page.isClosed?.() === true) return;
@@ -97,6 +121,7 @@ export function createNaverSessionService(deps: CreateNaverSessionServiceDeps) {
     const MAX_RETRY = 3;
     for (let attempt = 1; attempt <= MAX_RETRY; attempt += 1) {
       try {
+        await installNameShim(page);
         if (attempt > 1) {
           log(`🔄 로그인 재시도 ${attempt}/${MAX_RETRY} (3초 대기)...`);
           await delay(3000);

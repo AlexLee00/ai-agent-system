@@ -369,13 +369,18 @@ defmodule Jay.Core.Diagnostics do
   end
 
   defp check_ownership_alignment do
-    manifest_elixir =
+    ownership_by_label =
       service_ownership()
-      |> Enum.filter(&(Map.get(&1, "owner") == "elixir"))
-      |> Enum.map(&Map.fetch!(&1, "label"))
+      |> Enum.map(&{Map.fetch!(&1, "label"), Map.get(&1, "owner")})
+      |> Map.new()
+
+    manifest_elixir =
+      ownership_by_label
+      |> Enum.filter(fn {_label, owner} -> owner == "elixir" end)
+      |> Enum.map(fn {label, _owner} -> label end)
       |> MapSet.new()
 
-    actual_elixir =
+    runtime_labels =
       [
         runtime_agent_labels(TeamJay.Teams.InvestmentSupervisor),
         runtime_agent_labels(TeamJay.Teams.BlogSupervisor),
@@ -383,6 +388,11 @@ defmodule Jay.Core.Diagnostics do
         runtime_agent_labels(TeamJay.Teams.PlatformSupervisor)
       ]
       |> List.flatten()
+      |> MapSet.new()
+
+    actual_elixir =
+      runtime_labels
+      |> Enum.filter(fn label -> Map.get(ownership_by_label, label) == "elixir" end)
       |> MapSet.new()
 
     missing_from_runtime =

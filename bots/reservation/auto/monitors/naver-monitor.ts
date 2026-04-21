@@ -74,6 +74,9 @@ const { storeReservationEvent } = require('../../../../packages/core/lib/reserva
 const { createSkaReporter } = require('../../lib/ska-failure-reporter');
 
 const WORKSPACE = path.join(process.env.HOME, '.openclaw', 'workspace');
+const SKA_RUNTIME_HOME = process.env.SKA_RUNTIME_HOME || path.join(process.env.HOME, '.ska');
+const NAVER_BROWSER_PROFILE_ROOT =
+  process.env.NAVER_BROWSER_PROFILE_ROOT || path.join(SKA_RUNTIME_HOME, 'browser-profiles');
 const HEADED_FLAG_PATH = path.join(__dirname, '..', '..', '.playwright-headed');
 const NAVER_WS_FILE = path.join(WORKSPACE, 'naver-monitor-ws.txt');
 const NAVER_URL = 'https://new.smartplace.naver.com/bizes/place/3990161';
@@ -83,6 +86,10 @@ const MONITOR_DURATION = 2 * 60 * 60 * 1000;
 const NAVER_MONITOR_RUNTIME = getReservationNaverMonitorConfig();
 const HEARTBEAT_INTERVAL_MS = 60 * 60 * 1000;
 const MAX_RETRIES = NAVER_MONITOR_RUNTIME.maxRetries;
+
+function resolveNaverUserDataDir(modeSuffix = '') {
+  return path.join(NAVER_BROWSER_PROFILE_ROOT, `naver-monitor${modeSuffix}`);
+}
 
 const bugReportCache = new Set<string>();
 
@@ -496,6 +503,7 @@ async function monitorBookings() {
       modeSuffix: getModeSuffix(),
       naverUrl: NAVER_URL,
       naverWsFile: NAVER_WS_FILE,
+      naverUserDataDir: resolveNaverUserDataDir(getModeSuffix()),
     });
     browser = browserSession.browser;
     page = browserSession.page;
@@ -526,6 +534,7 @@ async function monitorBookings() {
           monitorDuration: MONITOR_DURATION,
           naverUrl: NAVER_URL,
           workspace: WORKSPACE,
+          naverUserDataDir: resolveNaverUserDataDir(getModeSuffix()),
           headedFlagPath: HEADED_FLAG_PATH,
           previousConfirmedList,
           previousCancelledCount,

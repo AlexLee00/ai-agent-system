@@ -66,6 +66,7 @@ export function createNaverMonitorCycleService(deps: CreateNaverMonitorCycleServ
     monitorDuration,
     naverUrl,
     workspace,
+    naverUserDataDir,
     headedFlagPath,
     previousConfirmedList,
     previousCancelledCount,
@@ -82,6 +83,7 @@ export function createNaverMonitorCycleService(deps: CreateNaverMonitorCycleServ
     monitorDuration: number;
     naverUrl: string;
     workspace: string;
+    naverUserDataDir: string;
     headedFlagPath: string;
     previousConfirmedList: Record<string, any>[];
     previousCancelledCount: number | null;
@@ -121,7 +123,7 @@ export function createNaverMonitorCycleService(deps: CreateNaverMonitorCycleServ
             '2. 모니터 재시작: bash bots/reservation/scripts/reload-monitor.sh\n' +
             '3. 네이버 수동 로그인 완료 후 상태 확인\n' +
             '4. 운영 복귀: rm bots/reservation/.playwright-headed 후 재시작\n\n' +
-            `프로필: ${pathJoin(workspace, `naver-profile${getModeSuffix()}`)}\n` +
+            `프로필: ${naverUserDataDir}\n` +
             `플래그 파일: ${headedFlagPath}`,
         });
       }

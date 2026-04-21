@@ -6,12 +6,13 @@
 	<dict/>
 	<key>Label</key>
 	<string>ai.openclaw.model-sync</string>
-	<key>ProgramArguments</key>
-	<array>
-		<string>/opt/homebrew/bin/node</string>
-		<string>/Users/alexlee/projects/ai-agent-system/scripts/deploy-context.js</string>
-		<string>--all</string>
-	</array>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/node</string>
+    <string>/opt/homebrew/lib/node_modules/tsx/dist/cli.mjs</string>
+    <string>/Users/alexlee/projects/ai-agent-system/scripts/deploy-context.ts</string>
+    <string>--all</string>
+  </array>
 	<key>RunAtLoad</key>
 	<false/>
 	<key>StandardErrorPath</key>
