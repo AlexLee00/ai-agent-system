@@ -56,6 +56,9 @@ function buildFacebookGraphError(status, data) {
   } else if (status === 403) {
     category = 'permission_denied';
     normalized = `Facebook 접근 권한이 부족합니다 (HTTP ${status})`;
+  } else if (status === 400 && message.includes('Session has expired')) {
+    category = 'token_expired';
+    normalized = 'Facebook 사용자 access token 세션이 만료되었습니다.';
   } else if (status === 400 && message.includes('Unsupported post request')) {
     category = 'page_or_token_mismatch';
     normalized = 'Facebook 페이지 ID 또는 토큰 연결이 맞지 않습니다.';

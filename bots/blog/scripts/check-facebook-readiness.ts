@@ -14,7 +14,12 @@ function parseArgs(argv = []) {
 
 function buildActions(readiness = {}) {
   const actions = [];
+  const readinessError = String(readiness?.error || '');
   if (!readiness?.pageId) actions.push('허브 저장소에 facebook/instagram page_id 연결 상태 확인');
+  if (readinessError.includes('Facebook 사용자 access token 세션이 만료되었습니다.')) {
+    actions.push('허브 instagram secret의 access_token을 새 장기 사용자 토큰으로 교체');
+    actions.push('토큰 교체 후 check:facebook으로 readiness를 다시 확인');
+  }
   if (Array.isArray(readiness?.permissionScopes) && readiness.permissionScopes.length > 0) {
     actions.push(`Meta 앱 권한 재연결: ${readiness.permissionScopes.join(', ')}`);
     actions.push('페이지 권한 재연결 후 페이지 access token 다시 발급');
@@ -30,6 +35,9 @@ function buildActions(readiness = {}) {
 
 function buildFacebookReadinessFallback(payload = {}) {
   if (!payload.ready) {
+    if (String(payload.error || '').includes('Facebook 사용자 access token 세션이 만료되었습니다.')) {
+      return '페이스북 자동등록은 현재 허브 사용자 토큰 만료가 핵심이라 access_token 재발급과 허브 secret 갱신이 우선입니다.';
+    }
     return '페이스북 자동등록 준비가 아직 불완전해 page 연결과 권한 scope를 먼저 확인하는 편이 좋습니다.';
   }
   return '페이스북 자동등록 준비는 갖춰져 있어 dry-run 또는 실게시로 마지막 점검만 하면 됩니다.';

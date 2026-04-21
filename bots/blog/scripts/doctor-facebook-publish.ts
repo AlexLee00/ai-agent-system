@@ -51,6 +51,11 @@ async function getLatestFacebookPublish() {
 
 function buildActions({ readiness, latest, previewBundle }) {
   const actions = [];
+  const readinessError = String(readiness?.error || '');
+  if (readinessError.includes('Facebook 사용자 access token 세션이 만료되었습니다.')) {
+    actions.push('허브 instagram secret의 access_token을 새 장기 사용자 토큰으로 교체');
+    actions.push(`npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run check:facebook -- --json`);
+  }
   if (Array.isArray(readiness?.permissionScopes) && readiness.permissionScopes.length > 0) {
     actions.push(`Meta 앱 권한 재연결: ${readiness.permissionScopes.join(', ')}`);
     actions.push('페이지 권한 재연결 후 페이지 access token 다시 발급');
@@ -69,6 +74,9 @@ function buildActions({ readiness, latest, previewBundle }) {
 
 function buildFacebookDoctorFallback(payload = {}) {
   if (!payload.ready) {
+    if (String(payload.error || '').includes('Facebook 사용자 access token 세션이 만료되었습니다.')) {
+      return '페이스북 자동등록은 현재 허브 사용자 토큰 만료가 핵심이라 access_token 재발급과 readiness 재확인이 먼저입니다.';
+    }
     return '페이스북 자동등록은 아직 권한 또는 페이지 연결을 먼저 정리하는 편이 좋습니다.';
   }
   if (payload.latest?.status === 'failed') {
