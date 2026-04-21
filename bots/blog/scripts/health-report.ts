@@ -924,7 +924,7 @@ async function buildEngagementHealth() {
     const replyConfig = runtimeConfig.commenter || {};
     const neighborConfig = runtimeConfig.neighborCommenter || {};
 
-    const [actionAggRows, failureMetaRows, commentRows, neighborRows, latestReplyReplayCandidate] = await Promise.all([
+    const [actionAggRows, failureMetaRows, commentRows, neighborRows, latestReplyReplayCandidate, skippedReasonRows, latestCommentRow] = await Promise.all([
       pgPool.query('blog', `
         SELECT action_type, success, COUNT(*)::int AS cnt
         FROM blog.comment_actions
@@ -984,6 +984,28 @@ async function buildEngagementHealth() {
         ORDER BY detected_at DESC
         LIMIT 1
       `)),
+      pgPool.query('blog', `
+        SELECT COALESCE(error_message, '') AS reason, COUNT(*)::int AS cnt
+        FROM blog.comments
+        WHERE timezone('Asia/Seoul', detected_at)::date = timezone('Asia/Seoul', now())::date
+          AND status = 'skipped'
+        GROUP BY 1
+        ORDER BY cnt DESC, reason ASC
+        LIMIT 5
+      `),
+      pgPool.get('blog', `
+        SELECT
+          id,
+          status,
+          commenter_name,
+          LEFT(comment_text, 80) AS comment_text,
+          error_message,
+          detected_at
+        FROM blog.comments
+        WHERE timezone('Asia/Seoul', detected_at)::date = timezone('Asia/Seoul', now())::date
+        ORDER BY detected_at DESC
+        LIMIT 1
+      `),
     ]);
 
     const actionMap = new Map();
@@ -1021,6 +1043,9 @@ async function buildEngagementHealth() {
 
     const inbound = commentRows?.[0] || { total: 0, replied: 0, pending: 0, failed: 0 };
     const neighborStatusMap = new Map((neighborRows || []).map((row) => [row.status, Number(row.cnt || 0)]));
+    const skippedReasonSummary = (skippedReasonRows || [])
+      .map((row) => `${String(row.reason || 'unknown')} ${Number(row.cnt || 0)}건`)
+      .join(' / ');
 
     const replyPlan = calcExpectedByWindow(
       replyConfig.maxDaily || 20,
@@ -1059,6 +1084,9 @@ async function buildEngagementHealth() {
     if (Number(inbound.pending || 0) > 0) {
       warn.push(`  inbound pending comments: ${Number(inbound.pending || 0)}건`);
     }
+    if (Number(inbound.total || 0) > 0 && Number(inbound.pending || 0) === 0 && Number(inbound.replied || 0) === 0 && Number(inbound.failed || 0) === 0) {
+      warn.push('  reply workload empty: 오늘 inbound는 들어왔지만 reply 후보로 올라간 댓글이 없습니다');
+    }
     if (replyFailure + neighborCommentFailure + sympathyFailure > 0) {
       warn.push(`  failed engagement actions today: ${replyFailure + neighborCommentFailure + sympathyFailure}건`);
     }
@@ -1078,6 +1106,14 @@ async function buildEngagementHealth() {
       ok.push(`  reply replay command: npm run replay:reply-ui -- --comment-id ${latestReplyReplayCandidate.id} --json`);
       ok.push(`  engagement doctor command: ${ENGAGEMENT_DOCTOR_COMMAND}`);
       ok.push(`  ops doctor command: ${BLOG_OPS_DOCTOR_COMMAND}`);
+    }
+    if (skippedReasonSummary) {
+      ok.push(`  skipped reasons today: ${skippedReasonSummary}`);
+    }
+    if (latestCommentRow?.id) {
+      ok.push(
+        `  latest inbound: comment ${latestCommentRow.id} / ${String(latestCommentRow.status || 'unknown')}${latestCommentRow.error_message ? ` / ${String(latestCommentRow.error_message)}` : ''}`
+      );
     }
     if ((failureByKind.ui || 0) > 0) {
       warn.push(`  engagement UI failures: ${failureByKind.ui || 0}건`);
@@ -1126,6 +1162,17 @@ async function buildEngagementHealth() {
       failureByKind,
       failureSamples,
       latestReplyReplayCandidate: latestReplyReplayCandidate || null,
+      skippedReasonSummary,
+      latestInbound: latestCommentRow
+        ? {
+            id: latestCommentRow.id,
+            status: latestCommentRow.status,
+            commenterName: latestCommentRow.commenter_name,
+            commentText: latestCommentRow.comment_text,
+            errorMessage: latestCommentRow.error_message,
+            detectedAt: latestCommentRow.detected_at,
+          }
+        : null,
     };
   } catch (error) {
     return {
@@ -1141,6 +1188,8 @@ async function buildEngagementHealth() {
       failureByKind: { ui: 0, llm: 0, browser: 0, verification: 0, unknown: 0 },
       failureSamples: [],
       latestReplyReplayCandidate: null,
+      skippedReasonSummary: '',
+      latestInbound: null,
     };
   }
 }
