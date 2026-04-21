@@ -55,6 +55,7 @@ function pickPrimary({ social, engagement, commands }) {
       area: 'social.facebook',
       reason: 'Facebook publish 권한 이슈가 현재 최우선 병목입니다.',
       nextCommand: commands.social,
+      actionFocus: 'social.facebook',
     };
   }
 
@@ -63,6 +64,7 @@ function pickPrimary({ social, engagement, commands }) {
       area: 'social.instagram',
       reason: 'Instagram publish/readiness 이슈가 현재 최우선 병목입니다.',
       nextCommand: commands.social,
+      actionFocus: 'social.instagram',
     };
   }
 
@@ -71,6 +73,7 @@ function pickPrimary({ social, engagement, commands }) {
       area: engagementPrimaryArea || 'engagement',
       reason: engagement?.primary?.reason || '답글/댓글/공감 자동화 이슈가 현재 최우선 병목입니다.',
       nextCommand: engagement?.primary?.nextCommand || commands.engagement,
+      actionFocus: engagement?.primary?.actionFocus || 'engagement',
     };
   }
 
@@ -78,6 +81,7 @@ function pickPrimary({ social, engagement, commands }) {
     area: 'clear',
     reason: '지금은 즉시 막히는 운영 병목보다 다음 운영 사이클 관찰이 우선입니다.',
     nextCommand: '',
+    actionFocus: '다음 운영 시간대 관찰',
   };
 }
 

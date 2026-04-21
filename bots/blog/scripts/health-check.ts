@@ -174,6 +174,26 @@ function getDoctorPriority(command = '', fallback = {}) {
   return priority;
 }
 
+function getDoctorPayload(command = '') {
+  if (!command) return {};
+  const cacheKey = `payload:${command}`;
+  if (doctorPriorityCache.has(cacheKey)) return doctorPriorityCache.get(cacheKey);
+  let payload = {};
+  try {
+    const output = execFileSync('zsh', ['-lc', command], {
+      cwd: path.join(env.PROJECT_ROOT, 'bots/blog'),
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+    const jsonText = extractJsonObjectText(output);
+    payload = JSON.parse(jsonText || '{}');
+  } catch {
+    payload = {};
+  }
+  doctorPriorityCache.set(cacheKey, payload);
+  return payload;
+}
+
 function buildPriorityHint(label, priority, { includeActionFocus = false } = {}) {
   if (!priority) return '';
   const lines = [`${label}: ${priority.area} / ${priority.reason}`];
@@ -582,6 +602,8 @@ async function getLatestReplyReplayCandidate() {
 async function checkEngagementAutomationHealth() {
   try {
     const activeWindow = isCommenterActiveWindow();
+    const engagementPayload = getDoctorPayload(ENGAGEMENT_DOCTOR_COMMAND);
+    const targetGaps = Array.isArray(engagementPayload?.targetGaps) ? engagementPayload.targetGaps : [];
     const rows = await pgPool.query('blog', `
       SELECT action_type, meta
       FROM blog.comment_actions
@@ -611,10 +633,10 @@ async function checkEngagementAutomationHealth() {
     }
 
     const totalFailures = (rows || []).length;
-    if (!activeWindow || totalFailures <= 0) {
+    if (!activeWindow || (totalFailures <= 0 && targetGaps.length <= 0)) {
       return {
         ok: true,
-        detail: activeWindow ? 'engagement failures 없음' : 'engagement 비활성 시간대',
+        detail: activeWindow ? 'engagement failures/target gap 없음' : 'engagement 비활성 시간대',
         failureByKind,
         failureByAction,
       };
@@ -646,6 +668,39 @@ async function checkEngagementAutomationHealth() {
       return {
         ok: false,
         detail: `engagement UI/browser failures — reply ${failureByAction.reply}, neighbor ${failureByAction.neighbor_comment}, sympathy ${failureByAction.sympathy}${sampleHint}${replayTargetHint}${replayHint}${doctorHint}`,
+        failureByKind,
+        failureByAction,
+        latestReplyReplayCandidate,
+        latestFailureSample,
+      };
+    }
+
+    if (targetGaps.length > 0) {
+      const engagementPriority = getDoctorPriority(ENGAGEMENT_DOCTOR_COMMAND, {
+        area: 'engagement.target_gap',
+        reason: '운영 시간대 기준 engagement 목표치가 뒤처졌습니다.',
+        nextCommand: ENGAGEMENT_DOCTOR_COMMAND,
+        actionFocus: '답글/댓글/공감 목표치와 현재 시간대 실적 차이 점검',
+      });
+      const opsPriority = getDoctorPriority(BLOG_OPS_DOCTOR_COMMAND, {
+        area: 'engagement.target_gap',
+        reason: '운영 시간대 기준 engagement 목표치가 뒤처졌습니다.',
+        nextCommand: ENGAGEMENT_DOCTOR_COMMAND,
+        actionFocus: 'engagement',
+      });
+      const targets = engagementPayload?.targets || {};
+      const targetLines = [
+        targets?.replies?.active ? `replies ${targets.replies.success}/${targets.replies.expectedNow}` : '',
+        targets?.neighborComments?.active ? `neighbor ${targets.neighborComments.success}/${targets.neighborComments.expectedNow}` : '',
+        targets?.sympathies?.active ? `sympathy ${targets.sympathies.success}/${targets.sympathies.expectedNow}` : '',
+      ].filter(Boolean).join(' / ');
+      const replayHint = latestReplyReplayCandidate?.id
+        ? `\nreply replay: npm run replay:reply-ui -- --comment-id ${latestReplyReplayCandidate.id} --json`
+        : '';
+      const doctorHint = `\ndoctor: ${ENGAGEMENT_DOCTOR_COMMAND}${buildPriorityHint('engagement primary', engagementPriority, { includeActionFocus: true })}${buildPriorityHint('primary blocker', opsPriority, { includeActionFocus: true })}\nops doctor: ${BLOG_OPS_DOCTOR_COMMAND}`;
+      return {
+        ok: false,
+        detail: `engagement target gap — ${targetLines || targetGaps.join(', ')}${replayHint}${doctorHint}`,
         failureByKind,
         failureByAction,
         latestReplyReplayCandidate,
