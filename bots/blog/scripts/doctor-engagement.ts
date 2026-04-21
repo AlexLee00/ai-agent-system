@@ -15,6 +15,7 @@ const BLOG_ROOT = path.join(env.PROJECT_ROOT, 'bots/blog');
 const BLOG_OPS_ROOT = path.join(BLOG_ROOT, 'output', 'ops');
 const BLOG_NEIGHBOR_COLLECT_DIAG_PATH = path.join(BLOG_OPS_ROOT, 'neighbor-collect-diagnostics.json');
 const BLOG_ENGAGEMENT_GAP_RUN_PATH = path.join(BLOG_OPS_ROOT, 'engagement-gap-run.json');
+const BLOG_NEIGHBOR_REPLAY_PATH = path.join(BLOG_OPS_ROOT, 'neighbor-ui-replay.json');
 const RUN_ENGAGEMENT_GAP_COMMAND = `npm --prefix ${BLOG_ROOT} run run:engagement-gap`;
 const RUN_NEIGHBOR_COLLECT_ONLY_COMMAND = `node ${path.join(BLOG_ROOT, 'scripts/run-neighbor-commenter.ts')} --collect-only --json`;
 const BACKFILL_COURTESY_REPLIES_COMMAND = `npm --prefix ${BLOG_ROOT} run backfill:courtesy-replies`;
@@ -231,6 +232,24 @@ function readLastEngagementGapRun(baseline = null) {
       const executedAt = Date.parse(String(parsed.executedAt || ''));
       const baselineAt = Date.parse(String(baseline.startedAtIso || ''));
       if (Number.isFinite(executedAt) && Number.isFinite(baselineAt) && executedAt < baselineAt) {
+        return null;
+      }
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function readNeighborUiReplay(baseline = null) {
+  try {
+    const raw = fs.readFileSync(BLOG_NEIGHBOR_REPLAY_PATH, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (baseline?.startedAtIso) {
+      const replayedAt = Date.parse(String(parsed.replayedAt || ''));
+      const baselineAt = Date.parse(String(baseline.startedAtIso || ''));
+      if (Number.isFinite(replayedAt) && Number.isFinite(baselineAt) && replayedAt < baselineAt) {
         return null;
       }
     }
@@ -511,7 +530,7 @@ async function getCourtesyReflectionRecheck(baseline = null) {
   }
 }
 
-function buildActions({ latestReplyReplayCandidate, failureByKind, failureByAction, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun, primary }) {
+function buildActions({ latestReplyReplayCandidate, failureByKind, failureByAction, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun, neighborUiReplay = null, primary }) {
   const actions = [];
   if ((failureByKind.ui || 0) > 0 || (failureByKind.browser || 0) > 0) {
     const uiFocus = buildUiFocus(failureByAction);
@@ -645,6 +664,9 @@ function buildPrimary({ failureByKind, failureByAction, latestReplyReplayCandida
     };
   }
   if (Array.isArray(targetGaps) && targetGaps.length > 0) {
+    if (neighborUiReplay?.ok && neighborUiReplay?.result?.ok) {
+      actions.push(`최근 replay 성공: neighbor comment ${Number(neighborUiReplay?.candidate?.id || 0)} / ${String(neighborUiReplay?.candidate?.targetBlogId || '').trim() || 'unknown'}`);
+    }
     if (
       primaryGap?.label === 'neighbor'
       && Number(neighborWorkload?.pendingCount || 0) === 0
@@ -769,6 +791,7 @@ async function main() {
   ]);
   const neighborRecovery = await getNeighborRecoveryStatus(developmentBaseline);
   const lastGapRun = readLastEngagementGapRun(developmentBaseline);
+  const neighborUiReplay = readNeighborUiReplay(developmentBaseline);
 
   const replyConfig = runtimeConfig.commenter || {};
   const neighborConfig = runtimeConfig.neighborCommenter || {};
@@ -909,12 +932,20 @@ async function main() {
     neighborWorkload,
     neighborCollectDiagnostics,
     neighborRecovery,
+    neighborUiReplay: neighborUiReplay
+      ? {
+          ok: Boolean(neighborUiReplay.ok),
+          replayedAt: neighborUiReplay.replayedAt || null,
+          candidate: neighborUiReplay.candidate || null,
+          resultOk: Boolean(neighborUiReplay.result?.ok),
+        }
+      : null,
     courtesyReflectionRecheck,
     lastGapRun,
   };
   payload.needsAttention = payload.totalFailures > 0 || targetGaps.length > 0;
   payload.primary = buildPrimary({ failureByKind, failureByAction, latestReplyReplayCandidate, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun });
-  payload.actions = buildActions({ latestReplyReplayCandidate, failureByKind, failureByAction, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun, primary: payload.primary });
+  payload.actions = buildActions({ latestReplyReplayCandidate, failureByKind, failureByAction, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun, neighborUiReplay, primary: payload.primary });
 
   const aiSummary = await buildBlogCliInsight({
     bot: 'doctor-engagement',
@@ -961,6 +992,9 @@ async function main() {
   }
   if (payload.lastGapRun?.executedAt) {
     console.log(`[engagement doctor] last_gap_run=${payload.lastGapRun.executedAt} all_idle=${payload.lastGapRun.allIdle ? 'yes' : 'no'}`);
+  }
+  if (payload.neighborUiReplay?.ok && payload.neighborUiReplay?.resultOk) {
+    console.log(`[engagement doctor] neighbor_replay_ok=${payload.neighborUiReplay.replayedAt} candidate=${Number(payload.neighborUiReplay?.candidate?.id || 0)}`);
   }
   if (payload.neighborRecovery?.recovered) {
     console.log(`[engagement doctor] neighbor_recovery=success after failure (${payload.neighborRecovery.latestSuccessAt}) stale_failures=${payload.staleNeighborFailureCount}`);

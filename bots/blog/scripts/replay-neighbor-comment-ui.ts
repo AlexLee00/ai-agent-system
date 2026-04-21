@@ -1,11 +1,17 @@
 #!/usr/bin/env node
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const {
   ensureSchema,
   processNeighborCommentWithTimeout,
 } = require('../lib/commenter.ts');
+const env = require('../../../packages/core/lib/env');
+
+const BLOG_OPS_DIR = path.join(env.PROJECT_ROOT, 'bots', 'blog', 'output', 'ops');
+const NEIGHBOR_REPLAY_PATH = path.join(BLOG_OPS_DIR, 'neighbor-ui-replay.json');
 
 function parseArgs(argv = []) {
   const parsed = { json: false, id: 0 };
@@ -68,6 +74,7 @@ async function main() {
     const result = await processNeighborCommentWithTimeout(candidate, { testMode: true });
     const payload = {
       ok: true,
+      replayedAt: new Date().toISOString(),
       candidate: {
         id: candidate.id,
         status: candidate.status,
@@ -78,6 +85,8 @@ async function main() {
       },
       result,
     };
+    fs.mkdirSync(BLOG_OPS_DIR, { recursive: true });
+    fs.writeFileSync(NEIGHBOR_REPLAY_PATH, JSON.stringify(payload, null, 2));
     if (args.json) {
       console.log(JSON.stringify(payload, null, 2));
       return;
@@ -86,6 +95,7 @@ async function main() {
   } catch (error) {
     const payload = {
       ok: false,
+      replayedAt: new Date().toISOString(),
       reason: String(error?.message || error),
       candidate: {
         id: candidate.id,
@@ -94,6 +104,8 @@ async function main() {
         postUrl: candidate.post_url,
       },
     };
+    fs.mkdirSync(BLOG_OPS_DIR, { recursive: true });
+    fs.writeFileSync(NEIGHBOR_REPLAY_PATH, JSON.stringify(payload, null, 2));
     if (args.json) {
       console.log(JSON.stringify(payload, null, 2));
       process.exit(1);
