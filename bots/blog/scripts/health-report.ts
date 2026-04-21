@@ -1727,6 +1727,9 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
           '댓글/답글/공감 실적이 시간대 기대치보다 낮거나 실패 이력이 있어 engagement 루프 점검이 필요합니다.',
           engagementPrimaryGap ? `최우선 gap: ${engagementPrimaryGap.label} ${engagementPrimaryGap.success}/${engagementPrimaryGap.expectedNow}` : '',
           engagementGapHint ? `현재 gap: ${engagementGapHint}` : '',
+          engagementDoctorPriority?.primaryArea === 'engagement.target_gap.replies.no_workload'
+            ? '현재 inbound는 reply 후보가 없어 gap이 유지되고 있습니다.'
+            : '',
           engagementImmediateAction ? `즉시 실행: ${engagementImmediateAction}` : '',
           engagementRunPlanHint ? `실행 순서: ${engagementRunPlanHint}` : '',
           engagementFailureHint ? `최근 실패: ${engagementFailureHint}` : '',

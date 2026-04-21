@@ -181,7 +181,65 @@ async function getLatestReplyReplayCandidate() {
   }
 }
 
-function buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, primaryGap }) {
+async function getReplyWorkloadStatus() {
+  try {
+    const [statusRows, latestRow] = await Promise.all([
+      pgPool.query('blog', `
+        SELECT status, COUNT(*)::int AS cnt
+        FROM blog.comments
+        WHERE timezone('Asia/Seoul', detected_at)::date = timezone('Asia/Seoul', now())::date
+        GROUP BY 1
+      `),
+      pgPool.get('blog', `
+        SELECT
+          id,
+          status,
+          commenter_name,
+          LEFT(comment_text, 80) AS comment_text,
+          error_message,
+          detected_at
+        FROM blog.comments
+        WHERE timezone('Asia/Seoul', detected_at)::date = timezone('Asia/Seoul', now())::date
+        ORDER BY detected_at DESC
+        LIMIT 1
+      `),
+    ]);
+
+    const counts = new Map();
+    for (const row of statusRows || []) {
+      counts.set(String(row.status || ''), Number(row.cnt || 0));
+    }
+
+    return {
+      totalToday: [...counts.values()].reduce((sum, value) => sum + Number(value || 0), 0),
+      pendingCount: Number(counts.get('pending') || 0),
+      skippedCount: Number(counts.get('skipped') || 0),
+      failedCount: Number(counts.get('failed') || 0),
+      repliedCount: Number(counts.get('replied') || 0),
+      latest: latestRow
+        ? {
+            id: latestRow.id,
+            status: latestRow.status,
+            commenterName: latestRow.commenter_name,
+            commentText: latestRow.comment_text,
+            errorMessage: latestRow.error_message,
+            detectedAt: latestRow.detected_at,
+          }
+        : null,
+    };
+  } catch {
+    return {
+      totalToday: 0,
+      pendingCount: 0,
+      skippedCount: 0,
+      failedCount: 0,
+      repliedCount: 0,
+      latest: null,
+    };
+  }
+}
+
+function buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, primaryGap, replyWorkload }) {
   const actions = [];
   if ((failureByKind.ui || 0) > 0 || (failureByKind.browser || 0) > 0) {
     actions.push('네이버 reply UI selector와 browser mount 흐름 점검');
@@ -190,6 +248,13 @@ function buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, p
     actions.push('reply 생성 LLM timeout / fetch 실패 로그 확인');
   }
   if (Array.isArray(targetGaps) && targetGaps.length > 0) {
+    if (
+      primaryGap?.label === 'replies'
+      && Number(replyWorkload?.pendingCount || 0) === 0
+      && String(replyWorkload?.latest?.status || '') === 'skipped'
+    ) {
+      actions.push(`현재 reply 대상이 없습니다 — latest skipped: ${String(replyWorkload.latest.errorMessage || 'unknown')}`);
+    }
     actions.push(
       primaryGap?.label
         ? `운영 시간대 기준 ${primaryGap.label} 목표치 격차를 먼저 점검`
@@ -208,7 +273,7 @@ function buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, p
   return actions;
 }
 
-function buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps, primaryGap }) {
+function buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps, primaryGap, replyWorkload }) {
   const blogPrefix = `npm --prefix ${BLOG_ROOT}`;
   if ((failureByKind.ui || 0) > 0 || (failureByKind.browser || 0) > 0) {
     return {
@@ -237,6 +302,18 @@ function buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps, p
     };
   }
   if (Array.isArray(targetGaps) && targetGaps.length > 0) {
+    if (
+      primaryGap?.label === 'replies'
+      && Number(replyWorkload?.pendingCount || 0) === 0
+      && String(replyWorkload?.latest?.status || '') === 'skipped'
+    ) {
+      return {
+        area: 'engagement.target_gap.replies.no_workload',
+        reason: `replies 목표치는 비어 있지만 현재 reply 대상 댓글이 없습니다 (latest skipped: ${String(replyWorkload.latest.errorMessage || 'unknown')}).`,
+        nextCommand: `${RUN_ENGAGEMENT_GAP_COMMAND} -- --label=replies`,
+        actionFocus: 'replyable inbound 유입과 필터링 기준 점검',
+      };
+    }
     return {
       area: primaryGap?.label ? `engagement.target_gap.${primaryGap.label}` : 'engagement.target_gap',
       reason: primaryGap?.label
@@ -260,6 +337,9 @@ function buildEngagementDoctorFallback(payload = {}) {
   if (payload.totalFailures > 0) {
     return 'engagement 자동화는 최근 실패 흔적이 있어 replay 대상과 UI/browser 실패 비중부터 확인하는 편이 좋습니다.';
   }
+  if (payload.replyWorkload?.pendingCount === 0 && payload.replyWorkload?.latest?.status === 'skipped' && payload.primaryGap?.label === 'replies') {
+    return 'engagement 자동화는 지금 실행 실패보다 replyable inbound 부족이 더 큰 이유라서, 최신 필터링 사유와 유입량을 먼저 보는 편이 좋습니다.';
+  }
   if (Array.isArray(payload.targetGaps) && payload.targetGaps.length > 0) {
     return 'engagement 자동화는 운영 시간대 기준 목표치가 뒤처져 있어 실적 차이와 다음 실행 사이클을 먼저 보는 편이 좋습니다.';
   }
@@ -268,7 +348,7 @@ function buildEngagementDoctorFallback(payload = {}) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const [rows, latestReplyReplayCandidate] = await Promise.all([
+  const [rows, latestReplyReplayCandidate, replyWorkload] = await Promise.all([
     pgPool.query('blog', `
       SELECT action_type, meta
       FROM blog.comment_actions
@@ -278,6 +358,7 @@ async function main() {
       LIMIT 50
     `),
     getLatestReplyReplayCandidate(),
+    getReplyWorkloadStatus(),
   ]);
 
   const replyConfig = runtimeConfig.commenter || {};
@@ -378,10 +459,11 @@ async function main() {
     targetGapDetails,
     primaryGap,
     runPlan,
+    replyWorkload,
   };
   payload.needsAttention = payload.totalFailures > 0 || targetGaps.length > 0;
-  payload.actions = buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, primaryGap });
-  payload.primary = buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps, primaryGap });
+  payload.actions = buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, primaryGap, replyWorkload });
+  payload.primary = buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps, primaryGap, replyWorkload });
 
   const aiSummary = await buildBlogCliInsight({
     bot: 'doctor-engagement',
@@ -403,6 +485,9 @@ async function main() {
   console.log(`[engagement doctor] next=${payload.primary.nextCommand}`);
   if (payload.primaryGap?.label) {
     console.log(`[engagement doctor] deepest_gap=${payload.primaryGap.label} ${payload.primaryGap.success}/${payload.primaryGap.expectedNow}`);
+  }
+  if (payload.replyWorkload?.latest?.id) {
+    console.log(`[engagement doctor] workload=pending ${payload.replyWorkload.pendingCount} / skipped ${payload.replyWorkload.skippedCount} / latest ${payload.replyWorkload.latest.status} (${String(payload.replyWorkload.latest.errorMessage || 'ok')})`);
   }
   if (Array.isArray(payload.runPlan) && payload.runPlan.length > 0) {
     console.log(`[engagement doctor] run_plan=${payload.runPlan.map((item) => `${item.step}.${item.label}`).join(' -> ')}`);
