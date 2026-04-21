@@ -5,7 +5,7 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const pgPool = require('../../../packages/core/lib/pg-pool.js');
-const { postReply, generateReply, getPostSummary } = require('../lib/commenter.ts');
+const { postReply, diagnoseReplyUi, generateReply, getPostSummary } = require('../lib/commenter.ts');
 
 const BLOG_COMMENTER_DEBUG_DIR = '/Users/alexlee/projects/ai-agent-system/tmp/blog-commenter-debug';
 
@@ -16,6 +16,7 @@ function parseArgs(argv = []) {
     useLatest: argv.includes('--latest') || !argv.some((token) => token.startsWith('--comment-id')),
     timeoutMs: 20000,
     worker: argv.includes('--worker'),
+    diagnoseWorker: argv.includes('--diagnose-worker'),
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -194,7 +195,7 @@ async function runWorker(args) {
   console.log(JSON.stringify(payload));
 }
 
-async function runParent(args) {
+async function runDiagnoseWorker(args) {
   const comment = args.commentId
     ? await loadCommentById(args.commentId)
     : await loadLatestReplayCandidate();
@@ -203,19 +204,48 @@ async function runParent(args) {
     throw new Error('reply_replay_comment_not_found');
   }
 
-  const replyText = await resolveReplyText(comment);
-  if (!replyText) {
-    throw new Error('reply_replay_text_not_found');
-  }
+  try {
+    const result = await diagnoseReplyUi(comment, {
+      testMode: true,
+      operationTimeoutMs: args.timeoutMs,
+    });
 
-  const timeoutPayload = buildTimeoutPayload({ comment, replyText, timeoutMs: args.timeoutMs });
+    console.log(JSON.stringify({
+      ok: Boolean(result?.ok),
+      timeoutMs: args.timeoutMs,
+      comment: {
+        id: comment.id,
+        status: comment.status,
+        commenterName: comment.commenter_name,
+        postUrl: comment.post_url,
+      },
+      result,
+      error: '',
+    }));
+  } catch (error) {
+    console.log(JSON.stringify({
+      ok: false,
+      timeoutMs: args.timeoutMs,
+      comment: {
+        id: comment.id,
+        status: comment.status,
+        commenterName: comment.commenter_name,
+        postUrl: comment.post_url,
+      },
+      result: null,
+      error: String(error?.message || error || 'reply_replay_diagnose_failed'),
+    }));
+    process.exitCode = 1;
+  }
+}
+
+async function runSubprocessJson(modeFlag, commentId, timeoutMs) {
   const childArgs = [
     __filename,
-    '--worker',
-    '--comment-id', String(comment.id),
-    '--timeout-ms', String(args.timeoutMs),
+    modeFlag,
+    '--comment-id', String(commentId),
+    '--timeout-ms', String(timeoutMs),
   ];
-
   const child = spawn(process.execPath, childArgs, {
     cwd: process.cwd(),
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -234,24 +264,65 @@ async function runParent(args) {
       settled = true;
       resolve(value);
     };
-
     const watchdog = setTimeout(() => {
       child.kill('SIGKILL');
-      finish({ timedOut: true, code: 124 });
-    }, args.timeoutMs + 1500);
-
+      finish({ timedOut: true, code: 124, stdout, stderr });
+    }, timeoutMs + 1000);
     child.once('error', (error) => {
       clearTimeout(watchdog);
-      finish({ timedOut: false, code: 1, error });
+      finish({ timedOut: false, code: 1, error, stdout, stderr });
     });
-
     child.once('exit', (code) => {
       clearTimeout(watchdog);
-      finish({ timedOut: false, code: Number(code || 0) });
+      finish({ timedOut: false, code: Number(code || 0), stdout, stderr });
     });
   });
 
+  const trimmed = String(outcome.stdout || '').trim();
+  let parsed = null;
+  if (trimmed) {
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch {
+      parsed = null;
+    }
+  }
+
+  return {
+    ...outcome,
+    parsed,
+    stderr: String(outcome.stderr || '').trim(),
+  };
+}
+
+async function runParent(args) {
+  const comment = args.commentId
+    ? await loadCommentById(args.commentId)
+    : await loadLatestReplayCandidate();
+
+  if (!comment?.id) {
+    throw new Error('reply_replay_comment_not_found');
+  }
+
+  const replyText = await resolveReplyText(comment);
+  if (!replyText) {
+    throw new Error('reply_replay_text_not_found');
+  }
+
+  const timeoutPayload = buildTimeoutPayload({ comment, replyText, timeoutMs: args.timeoutMs });
+  const outcome = await runSubprocessJson('--worker', comment.id, args.timeoutMs);
+
   if (outcome.timedOut) {
+    const diagnose = await runSubprocessJson('--diagnose-worker', comment.id, Math.min(10000, Math.max(8000, args.timeoutMs)));
+    if (diagnose?.parsed) {
+      timeoutPayload.liveDiagnose = diagnose.parsed.result || null;
+      if (diagnose.parsed.error) {
+        timeoutPayload.liveDiagnoseError = diagnose.parsed.error;
+      }
+    }
+    if (!timeoutPayload.liveDiagnoseError && diagnose?.stderr) {
+      timeoutPayload.liveDiagnoseError = diagnose.stderr;
+    }
     if (args.json) {
       console.log(JSON.stringify(timeoutPayload, null, 2));
     } else {
@@ -262,7 +333,7 @@ async function runParent(args) {
     return;
   }
 
-  const trimmed = String(stdout || '').trim();
+  const trimmed = String(outcome.stdout || '').trim();
   if (trimmed) {
     if (args.json) {
       try {
@@ -276,12 +347,12 @@ async function runParent(args) {
     }
   }
 
-  if (!trimmed && stderr) {
+  if (!trimmed && outcome.stderr) {
     if (args.json) {
-      console.log(JSON.stringify({ ...timeoutPayload, error: stderr.trim() }, null, 2));
+      console.log(JSON.stringify({ ...timeoutPayload, error: outcome.stderr.trim() }, null, 2));
     } else {
       console.log(`ok=false commentId=${comment.id} status=${comment.status} stage=n/a replyLength=${replyText.length} timeoutMs=${args.timeoutMs}`);
-      console.log(`error=${stderr.trim()}`);
+      console.log(`error=${outcome.stderr.trim()}`);
     }
   }
 
@@ -294,6 +365,10 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.worker) {
     await runWorker(args);
+    return;
+  }
+  if (args.diagnoseWorker) {
+    await runDiagnoseWorker(args);
     return;
   }
   await runParent(args);

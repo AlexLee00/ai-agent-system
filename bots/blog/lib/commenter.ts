@@ -3794,6 +3794,73 @@ async function postReply(comment, replyText, { testMode = false, dryRun = false,
   });
 }
 
+async function diagnoseReplyUi(comment, { testMode = true, operationTimeoutMs = 10000 } = {}) {
+  const targetPostUrl = resolveNavigablePostUrl(comment?.post_url || '');
+  const logNo = extractLogNo(targetPostUrl || comment?.post_url || '');
+
+  return withBrowserPage(Boolean(testMode), async (page) => {
+    await goto(page, targetPostUrl);
+    let contentFrame = await waitForCommentCapableFrame(page, logNo, true);
+    const mounted = await mountCommentPanel(contentFrame, logNo, true).catch(() => false);
+
+    let replyThreadReady = false;
+    let replyButtonTargeted = false;
+    let replyModeOpened = false;
+    let usedCommentEditorFallback = false;
+    let editor = null;
+
+    if (mounted) {
+      await waitForCommentPanel(contentFrame, logNo).catch(() => false);
+      replyThreadReady = await waitForReplyThread(contentFrame, comment, true).catch(() => false);
+      replyButtonTargeted = await openReplyEditor(contentFrame, comment).catch(() => false);
+      if (replyButtonTargeted) {
+        replyModeOpened = await activateReplyMode(contentFrame).catch(() => false);
+      }
+      if (!replyModeOpened) {
+        const expanded = await expandReplyThreads(contentFrame).catch(() => 0);
+        if (expanded > 0) {
+          await waitForReplyThread(contentFrame, comment, true).catch(() => false);
+          replyButtonTargeted = await openReplyEditor(contentFrame, comment).catch(() => replyButtonTargeted);
+          if (replyButtonTargeted) {
+            replyModeOpened = await activateReplyMode(contentFrame).catch(() => false);
+          }
+        }
+      }
+      try {
+        editor = await focusReplyEditor(contentFrame);
+      } catch {
+        editor = await focusCommentEditor(contentFrame, logNo, 6000).catch(() => null);
+        usedCommentEditorFallback = Boolean(editor?.selector);
+      }
+    }
+
+    const submitReady = replyModeOpened
+      ? await waitForReplySubmitReady(contentFrame, true).catch(() => false)
+      : false;
+    const submitState = await inspectReplySubmitLite(contentFrame).catch(() => null);
+    const controls = await inspectReplyControlsLite(contentFrame).catch(() => null);
+
+    return {
+      ok: Boolean(mounted && replyModeOpened && editor?.selector),
+      mounted,
+      replyThreadReady,
+      replyButtonTargeted,
+      replyModeOpened,
+      usedCommentEditorFallback,
+      editorSelector: editor?.selector || '',
+      editorId: editor?.id || '',
+      submitReady,
+      submitState,
+      controls,
+      logNo,
+      frameUrl: String(contentFrame?.url?.() || ''),
+    };
+  }, {
+    timeoutMs: Number(operationTimeoutMs || 0),
+    timeoutCode: 'reply_diagnose_timeout',
+  });
+}
+
 async function _openCommentEditor(contentFrame, postUrl, logNo, testMode, editorTimeoutMs = null) {
   const mounted = await mountCommentPanel(contentFrame, logNo, testMode);
   if (!mounted) {
@@ -4476,6 +4543,7 @@ module.exports = {
   clickSympathy,
   postComment,
   postReply,
+  diagnoseReplyUi,
   processComment,
   processCommentWithTimeout,
   requeueRecoverableReplyFailures,
