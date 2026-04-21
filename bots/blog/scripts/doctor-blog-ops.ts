@@ -142,6 +142,23 @@ function pickPrimary({ social, engagement, commands }) {
 }
 
 function buildOpsDoctorFallback(payload = {}) {
+  const primaryArea = String(payload?.primary?.area || '');
+  const socialFacebookError = String(payload?.social?.facebook?.error || '');
+  if (primaryArea === 'social.facebook.readiness') {
+    if (socialFacebookError.includes('Facebook 사용자 access token 세션이 만료되었습니다.')) {
+      return '블로팀 운영의 현재 최우선 병목은 Facebook 허브 사용자 토큰 만료라 access_token 교체와 readiness 재확인이 먼저입니다.';
+    }
+    return '블로팀 운영의 현재 최우선 병목은 Facebook readiness 에러라 토큰과 권한 상태를 먼저 정리하는 편이 좋습니다.';
+  }
+  if (primaryArea === 'social.facebook') {
+    return '블로팀 운영의 현재 최우선 병목은 Facebook 게시 권한/페이지 연결이라 Meta 권한과 페이지 토큰을 먼저 정리하는 편이 좋습니다.';
+  }
+  if (primaryArea === 'social.instagram') {
+    return '블로팀 운영의 현재 최우선 병목은 Instagram publish/readiness라 공개 자산과 실패 이유를 먼저 정리하는 편이 좋습니다.';
+  }
+  if (primaryArea.startsWith('engagement')) {
+    return '블로팀 운영의 현재 최우선 병목은 engagement 축이라 댓글/답글/공감 자동화 흐름을 먼저 정리하는 편이 좋습니다.';
+  }
   if (payload.social?.facebook?.needsAttention || payload.social?.instagram?.needsAttention) {
     return '블로팀 운영 이슈는 지금 소셜 publish 축을 먼저 정리하는 편이 좋습니다.';
   }
