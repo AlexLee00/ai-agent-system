@@ -3211,10 +3211,7 @@ async function postReply(comment, replyText, { testMode = false, dryRun = false,
     const posted = await verifyReplyPosted(contentFrame, replyText, comment, testMode);
     traceCommenter('postReply:verified', { commentId: comment.id, posted });
     if (!posted) {
-      let snapshotPrefix = '';
-      if (shouldCaptureHeavyCommentDebug()) {
-        snapshotPrefix = await saveCommentDebugSnapshot(contentFrame, comment, 'reply-submit-not-confirmed');
-      }
+      const snapshotPrefix = await saveCommentDebugSnapshot(contentFrame, comment, 'reply-submit-not-confirmed');
       const debug = await inspectReplyControlsLite(contentFrame).catch(() => null);
       traceCommenter('postReply:submit-not-confirmed', {
         commentId: comment.id,
