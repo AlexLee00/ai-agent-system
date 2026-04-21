@@ -384,6 +384,7 @@ function buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, p
     if (
       primaryGap?.label === 'replies'
       && Number(replyWorkload?.pendingCount || 0) === 0
+      && Number(replyWorkload?.pendingBacklogCount || 0) === 0
       && String(replyWorkload?.latest?.status || '') === 'skipped'
     ) {
       actions.push(`현재 reply 대상이 없습니다 — latest skipped: ${String(replyWorkload.latest.errorMessage || 'unknown')}`);
