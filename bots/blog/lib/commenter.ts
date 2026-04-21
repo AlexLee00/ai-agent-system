@@ -2081,7 +2081,6 @@ async function activateReplyMode(page) {
     }).catch(() => {});
     await nativeTarget.click({ force: true }).catch(() => {});
   }
-
   const clicked = await page.evaluate(`
     (() => {
       const visible = (el) => {
@@ -2092,6 +2091,31 @@ async function activateReplyMode(page) {
       };
       const textOf = (el) =>
         String((el && (el.innerText || el.textContent)) || '').replace(/\\s+/g, ' ').trim();
+      const isReplyOpen = () => {
+        const targetComment = document.querySelector('[data-blog-target-comment="true"]');
+        const replyArea = document.querySelector('[data-blog-target-reply-area="true"]');
+        const hasVisibleEditor = (root) => {
+          if (!root) return false;
+          const replyEditors = Array.from(root.querySelectorAll([
+            'textarea',
+            'div[contenteditable="true"]',
+            'div[role="textbox"]',
+            'div[id*="write_textarea"]',
+            '.u_cbox_text.u_cbox_text_mention',
+          ].join(', ')));
+          return replyEditors.some(visible);
+        };
+        if (visible(replyArea) && hasVisibleEditor(replyArea)) return true;
+        const stateOnButton = document.querySelector('[data-blog-target-comment="true"] .u_cbox_btn_reply_on[data-blog-target-reply-button="true"], [data-blog-target-comment="true"] .u_cbox_btn_reply_on');
+        if (visible(stateOnButton)) {
+          const scopedReplyArea = targetComment && (
+            targetComment.querySelector('.u_cbox_reply_area')
+            || targetComment.querySelector('[class*="reply_area"]')
+          );
+          if (visible(scopedReplyArea) && hasVisibleEditor(scopedReplyArea)) return true;
+        }
+        return false;
+      };
       const targetComment = document.querySelector('[data-blog-target-comment="true"]');
       const targetCommentNo = String(targetComment?.getAttribute('data-blog-target-comment-no') || '');
       const targetButton = targetComment
@@ -2120,12 +2144,19 @@ async function activateReplyMode(page) {
         clientX: rect.left + rect.width / 2,
         clientY: rect.top + rect.height / 2,
       };
-      node.dispatchEvent(new MouseEvent('pointerdown', eventInit));
-      node.dispatchEvent(new MouseEvent('mousedown', eventInit));
-      node.dispatchEvent(new MouseEvent('pointerup', eventInit));
-      node.dispatchEvent(new MouseEvent('mouseup', eventInit));
-      node.dispatchEvent(new MouseEvent('click', eventInit));
-      return true;
+      const attemptClick = () => {
+        node.focus && node.focus();
+        node.dispatchEvent(new MouseEvent('pointerdown', eventInit));
+        node.dispatchEvent(new MouseEvent('mousedown', eventInit));
+        node.dispatchEvent(new MouseEvent('pointerup', eventInit));
+        node.dispatchEvent(new MouseEvent('mouseup', eventInit));
+        node.dispatchEvent(new MouseEvent('click', eventInit));
+        if (typeof node.click === 'function') {
+          try { node.click(); } catch {}
+        }
+      };
+      attemptClick();
+      return isReplyOpen() || String(node.getAttribute('aria-expanded') || '').trim().toLowerCase() === 'true';
     })()
   `).catch(() => false);
 
@@ -2236,12 +2267,17 @@ async function inspectTargetReplyButtonLite(page) {
       const node = document.querySelector('[data-blog-target-reply-button="true"]');
       if (!node) return null;
       return {
+        tagName: String(node.tagName || '').toLowerCase(),
         text: String((node.innerText || node.textContent) || '').replace(/\\s+/g, ' ').trim().slice(0, 40),
         id: String(node.id || ''),
+        role: String(node.getAttribute('role') || ''),
+        href: String(node.getAttribute('href') || ''),
         className: String(node.className || '').slice(0, 160),
         dataAction: String(node.getAttribute('data-action') || ''),
         dataParam: String(node.getAttribute('data-param') || ''),
+        disabled: Boolean(node.disabled || node.getAttribute('aria-disabled') === 'true'),
         ariaExpanded: String(node.getAttribute('aria-expanded') || '').trim().toLowerCase(),
+        parentClassName: String(node.parentElement?.className || '').slice(0, 160),
       };
     })()
   `).catch(() => null);
