@@ -2072,6 +2072,7 @@ async function waitForReplyThread(page, comment, testMode = false) {
 }
 
 async function activateReplyMode(page) {
+  const targetMeta = await inspectTargetReplyButtonLite(page).catch(() => null);
   const nativeTarget = await page.$('[data-blog-target-reply-button="true"]');
   if (nativeTarget) {
     await nativeTarget.evaluate((node) => {
@@ -2080,6 +2081,8 @@ async function activateReplyMode(page) {
       }
     }).catch(() => {});
     await nativeTarget.click({ force: true }).catch(() => {});
+    await sleep(120);
+    if (await isReplyModeOpen(page)) return true;
   }
   const clicked = await page.evaluate(`
     (() => {
@@ -2161,6 +2164,19 @@ async function activateReplyMode(page) {
   `).catch(() => false);
 
   if (!clicked) return false;
+
+  await sleep(120);
+  if (await isReplyModeOpen(page)) return true;
+
+  if (nativeTarget && (targetMeta?.tagName === 'a' || targetMeta?.role === 'button')) {
+    await nativeTarget.focus().catch(() => {});
+    await nativeTarget.press('Enter').catch(() => {});
+    await sleep(120);
+    if (await isReplyModeOpen(page)) return true;
+    await nativeTarget.press('Space').catch(() => {});
+    await sleep(120);
+    if (await isReplyModeOpen(page)) return true;
+  }
 
   return page.waitForFunction(`
     (() => {
@@ -2259,6 +2275,14 @@ async function inspectActivateReplyModeLite(page) {
     globalEditorCount: 0,
     globalEditorIds: [],
   }));
+}
+
+function isReplyModeStateReady(state) {
+  return Boolean(
+    state
+    && state.replyAreaVisible
+    && Number(state.replyEditorCount || 0) > 0
+  );
 }
 
 async function inspectTargetReplyButtonLite(page) {
@@ -3820,6 +3844,16 @@ async function postReply(comment, replyText, { testMode = false, dryRun = false,
       traceCommenter('postReply:reply-button-targeted', { commentId: comment.id, opened });
       if (opened) {
         opened = await activateReplyMode(contentFrame);
+        if (!opened) {
+          const replyModeState = await inspectActivateReplyModeLite(contentFrame).catch(() => null);
+          if (isReplyModeStateReady(replyModeState)) {
+            opened = true;
+            traceCommenter('postReply:reply-mode-promoted-from-state', {
+              commentId: comment.id,
+              replyEditorCount: replyModeState?.replyEditorCount || 0,
+            });
+          }
+        }
         traceCommenter('postReply:reply-mode-activated', { commentId: comment.id, opened });
         if (opened) {
           const submitReady = await waitForReplySubmitReady(contentFrame, testMode);
@@ -3835,6 +3869,16 @@ async function postReply(comment, replyText, { testMode = false, dryRun = false,
           traceCommenter('postReply:reply-button-retargeted', { commentId: comment.id, opened });
           if (opened) {
             opened = await activateReplyMode(contentFrame);
+            if (!opened) {
+              const replyModeState = await inspectActivateReplyModeLite(contentFrame).catch(() => null);
+              if (isReplyModeStateReady(replyModeState)) {
+                opened = true;
+                traceCommenter('postReply:reply-mode-promoted-from-state-reactivated', {
+                  commentId: comment.id,
+                  replyEditorCount: replyModeState?.replyEditorCount || 0,
+                });
+              }
+            }
             traceCommenter('postReply:reply-mode-reactivated', { commentId: comment.id, opened });
             if (opened) {
               const submitReady = await waitForReplySubmitReady(contentFrame, testMode);
@@ -3857,6 +3901,16 @@ async function postReply(comment, replyText, { testMode = false, dryRun = false,
         traceCommenter('postReply:reply-button-retargeted-second', { commentId: comment.id, opened });
         if (opened) {
           opened = await activateReplyMode(contentFrame);
+          if (!opened) {
+            const replyModeState = await inspectActivateReplyModeLite(contentFrame).catch(() => null);
+            if (isReplyModeStateReady(replyModeState)) {
+              opened = true;
+              traceCommenter('postReply:reply-mode-promoted-from-state-second', {
+                commentId: comment.id,
+                replyEditorCount: replyModeState?.replyEditorCount || 0,
+              });
+            }
+          }
           traceCommenter('postReply:reply-mode-reactivated-second', { commentId: comment.id, opened });
           if (opened) {
             const submitReady = await waitForReplySubmitReady(contentFrame, testMode);
@@ -4021,6 +4075,9 @@ async function diagnoseReplyUi(comment, { testMode = true, operationTimeoutMs = 
           stage = 'activate_reply_mode';
           replyModeOpened = await activateReplyMode(contentFrame).catch(() => false);
           replyModeState = await inspectActivateReplyModeLite(contentFrame).catch(() => null);
+          if (!replyModeOpened && isReplyModeStateReady(replyModeState)) {
+            replyModeOpened = true;
+          }
           partialState.replyModeOpened = replyModeOpened;
           partialState.replyModeState = replyModeState;
         }
@@ -4037,6 +4094,9 @@ async function diagnoseReplyUi(comment, { testMode = true, operationTimeoutMs = 
               stage = 'activate_reply_mode_retry';
               replyModeOpened = await activateReplyMode(contentFrame).catch(() => false);
               replyModeState = await inspectActivateReplyModeLite(contentFrame).catch(() => replyModeState);
+              if (!replyModeOpened && isReplyModeStateReady(replyModeState)) {
+                replyModeOpened = true;
+              }
               partialState.replyModeOpened = replyModeOpened;
               partialState.replyModeState = replyModeState;
             }
