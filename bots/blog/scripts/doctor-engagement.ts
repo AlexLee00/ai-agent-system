@@ -560,7 +560,7 @@ async function getCourtesyReflectionRecheck(baseline = null) {
   }
 }
 
-function buildActions({ latestReplyReplayCandidate, failureByKind, failureByAction, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun, neighborUiReplay = null, neighborSympathyReplay = null, primary }) {
+function buildActions({ latestReplyReplayCandidate, failureByKind, failureByAction, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun, neighborUiReplay = null, neighborSympathyReplay = null, staleSympathyFailureCount = 0, primary }) {
   const actions = [];
   if (neighborUiReplay?.ok) {
     if (neighborUiReplay?.result?.ok) {
@@ -581,6 +581,9 @@ function buildActions({ latestReplyReplayCandidate, failureByKind, failureByActi
     } else if (neighborSympathyReplay?.error) {
       actions.push(`최근 neighbor sympathy replay 실패: ${String(neighborSympathyReplay.error)}`);
     }
+  }
+  if (Number(staleSympathyFailureCount || 0) > 0) {
+    actions.push(`최근 neighbor sympathy replay 성공 이후 stale sympathy failures ${Number(staleSympathyFailureCount)}건은 현재 우선 병목에서 제외`);
   }
   if ((failureByKind.ui || 0) > 0 || (failureByKind.browser || 0) > 0) {
     const uiFocus = buildUiFocus(failureByAction);
@@ -851,6 +854,9 @@ async function main() {
   const neighborUiReplay = readNeighborUiReplay(developmentBaseline);
   const neighborSympathyReplay = readNeighborSympathyReplay(developmentBaseline);
   const commenterRun = readCommenterRunResult();
+  const latestSympathyReplayAt = neighborSympathyReplay?.result?.ok && neighborSympathyReplay?.replayedAt
+    ? new Date(neighborSympathyReplay.replayedAt)
+    : null;
 
   const replyConfig = runtimeConfig.commenter || {};
   const neighborConfig = runtimeConfig.neighborCommenter || {};
@@ -862,6 +868,11 @@ async function main() {
     if (!executedAt || Number.isNaN(executedAt.getTime())) return true;
     return executedAt.getTime() > new Date(neighborRecovery.latestSuccessAt).getTime();
   }).filter((row) => {
+    if (!String(row.action_type || '').includes('sympathy')) return true;
+    const executedAt = row?.executed_at ? new Date(row.executed_at) : null;
+    if (!latestSympathyReplayAt || Number.isNaN(latestSympathyReplayAt.getTime()) || !executedAt || Number.isNaN(executedAt.getTime())) return true;
+    return executedAt.getTime() > latestSympathyReplayAt.getTime();
+  }).filter((row) => {
     if (String(row.action_type || '') !== 'reply') return true;
     if (!commenterRun?.executedAt || Number(commenterRun?.failed || 0) > 0) return true;
     const executedAt = row?.executed_at ? new Date(row.executed_at) : null;
@@ -871,7 +882,20 @@ async function main() {
     if (!String(sample || '').includes('isReplyModeOpen is not defined')) return true;
     return executedAt.getTime() > runAt.getTime();
   });
-  const staleNeighborFailureCount = Math.max(0, Number((rows || []).length) - Number(effectiveRows.length));
+  const staleFailureCount = Math.max(0, Number((rows || []).length) - Number(effectiveRows.length));
+  const staleSympathyFailureCount = Array.isArray(rows)
+    ? rows.filter((row) => {
+        if (!String(row?.action_type || '').includes('sympathy')) return false;
+        const executedAt = row?.executed_at ? new Date(row.executed_at) : null;
+        return Boolean(
+          latestSympathyReplayAt
+          && !Number.isNaN(latestSympathyReplayAt.getTime())
+          && executedAt
+          && !Number.isNaN(executedAt.getTime())
+          && executedAt.getTime() <= latestSympathyReplayAt.getTime()
+        );
+      }).length
+    : 0;
 
   const failureByKind = { ui: 0, browser: 0, llm: 0, verification: 0, unknown: 0 };
   const failureByAction = { reply: 0, neighbor_comment: 0, sympathy: 0 };
@@ -976,7 +1000,8 @@ async function main() {
       : null,
     totalFailures: Array.isArray(effectiveRows) ? effectiveRows.length : 0,
     rawFailureCount: Array.isArray(rows) ? rows.length : 0,
-    staleNeighborFailureCount,
+    staleNeighborFailureCount: staleFailureCount,
+    staleSympathyFailureCount,
     failureByKind,
     failureByAction,
     failureSamples,
@@ -1033,7 +1058,7 @@ async function main() {
   };
   payload.needsAttention = payload.totalFailures > 0 || targetGaps.length > 0;
   payload.primary = buildPrimary({ failureByKind, failureByAction, latestReplyReplayCandidate, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun });
-  payload.actions = buildActions({ latestReplyReplayCandidate, failureByKind, failureByAction, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun, neighborUiReplay, neighborSympathyReplay, primary: payload.primary });
+  payload.actions = buildActions({ latestReplyReplayCandidate, failureByKind, failureByAction, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun, neighborUiReplay, neighborSympathyReplay, staleSympathyFailureCount, primary: payload.primary });
 
   const aiSummary = await buildBlogCliInsight({
     bot: 'doctor-engagement',
@@ -1089,6 +1114,9 @@ async function main() {
   }
   if (payload.neighborRecovery?.recovered) {
     console.log(`[engagement doctor] neighbor_recovery=success after failure (${payload.neighborRecovery.latestSuccessAt}) stale_failures=${payload.staleNeighborFailureCount}`);
+  }
+  if (Number(payload.staleSympathyFailureCount || 0) > 0) {
+    console.log(`[engagement doctor] sympathy_recovery=recent replay success stale_failures=${payload.staleSympathyFailureCount}`);
   }
   if (payload.targetGaps.length > 0) {
     console.log(`[engagement doctor] target_gap=${payload.targetGaps.join(' / ')}`);

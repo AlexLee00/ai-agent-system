@@ -1177,6 +1177,9 @@ async function buildEngagementHealth() {
     const lastGapRun = readLastEngagementGapRun(developmentBaseline);
     const neighborUiReplay = readNeighborUiReplay(developmentBaseline);
     const neighborSympathyReplay = readNeighborSympathyReplay(developmentBaseline);
+    const latestSympathyReplayAt = neighborSympathyReplay?.result?.ok && neighborSympathyReplay?.replayedAt
+      ? new Date(neighborSympathyReplay.replayedAt)
+      : null;
     const actionSinceClause = buildSinceClause('executed_at', developmentBaseline);
     const commentSinceClause = buildSinceClause('detected_at', developmentBaseline);
     const replyConfig = runtimeConfig.commenter || {};
@@ -1306,6 +1309,11 @@ async function buildEngagementHealth() {
       if (!executedAt || Number.isNaN(executedAt.getTime())) return true;
       return executedAt.getTime() > new Date(neighborRecovery.latestSuccessAt).getTime();
     }).filter((row) => {
+      if (!String(row.action_type || '').includes('sympathy')) return true;
+      const executedAt = row?.executed_at ? new Date(row.executed_at) : null;
+      if (!latestSympathyReplayAt || Number.isNaN(latestSympathyReplayAt.getTime()) || !executedAt || Number.isNaN(executedAt.getTime())) return true;
+      return executedAt.getTime() > latestSympathyReplayAt.getTime();
+    }).filter((row) => {
       if (String(row.action_type || '') !== 'reply') return true;
       if (!commenterRun?.executedAt || Number(commenterRun?.failed || 0) > 0) return true;
       const executedAt = row?.executed_at ? new Date(row.executed_at) : null;
@@ -1316,6 +1324,19 @@ async function buildEngagementHealth() {
       return executedAt.getTime() > runAt.getTime();
     });
     const staleNeighborFailureCount = Math.max(0, Number((failureMetaRows || []).length) - Number(effectiveFailureMetaRows.length));
+    const staleSympathyFailureCount = Array.isArray(failureMetaRows)
+      ? failureMetaRows.filter((row) => {
+          if (!String(row?.action_type || '').includes('sympathy')) return false;
+          const executedAt = row?.executed_at ? new Date(row.executed_at) : null;
+          return Boolean(
+            latestSympathyReplayAt
+            && !Number.isNaN(latestSympathyReplayAt.getTime())
+            && executedAt
+            && !Number.isNaN(executedAt.getTime())
+            && executedAt.getTime() <= latestSympathyReplayAt.getTime()
+          );
+        }).length
+      : 0;
 
     const failureByKind = { ui: 0, llm: 0, browser: 0, verification: 0, unknown: 0 };
     const failureSamples = [];
@@ -1451,6 +1472,9 @@ async function buildEngagementHealth() {
         warn.push(`  neighbor sympathy replay latest: failed / ${String(neighborSympathyReplay?.result?.error || neighborSympathyReplay?.error).slice(0, 120)}`);
       }
     }
+    if (staleSympathyFailureCount > 0) {
+      ok.push(`  stale sympathy failures: ${staleSympathyFailureCount}건은 최근 replay 성공 이후 우선 병목에서 제외`);
+    }
     if (Number(inbound.total || 0) > 0 && Number(inbound.pending || 0) === 0 && Number(inbound.replied || 0) === 0 && Number(inbound.failed || 0) === 0) {
       warn.push('  reply workload empty: 오늘 inbound는 들어왔지만 reply 후보로 올라간 댓글이 없습니다');
     }
@@ -1569,6 +1593,7 @@ async function buildEngagementHealth() {
       adaptiveNeighborCadence,
       neighborRecovery,
       staleNeighborFailureCount,
+      staleSympathyFailureCount,
       failureByKind,
       failureSamples,
       latestReplyReplayCandidate: latestReplyReplayCandidate || null,
@@ -1612,6 +1637,7 @@ async function buildEngagementHealth() {
       lastGapRun: null,
       neighborUiReplay: null,
       neighborSympathyReplay: null,
+      staleSympathyFailureCount: 0,
     };
   }
 }
