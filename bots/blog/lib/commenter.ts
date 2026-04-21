@@ -3894,12 +3894,15 @@ async function diagnoseReplyUi(comment, { testMode = true, operationTimeoutMs = 
       }
 
       stage = 'inspect_submit_state';
-      const submitReady = replyModeOpened
-        ? await waitForReplySubmitReady(contentFrame, true, 2200).catch(() => false)
-        : false;
       editorCandidates = await inspectReplyEditorCandidates(contentFrame).catch(() => null);
       const submitState = await inspectReplySubmitLite(contentFrame).catch(() => null);
       const controls = await inspectReplyControlsLite(contentFrame).catch(() => null);
+      const submitReady = Boolean(
+        replyModeOpened
+        && (submitState?.replyFormRootFound || submitState?.targetReplyAreaVisible)
+        && Array.isArray(submitState?.submitCandidates)
+        && submitState.submitCandidates.length > 0
+      );
 
       return {
         ok: Boolean(mounted && replyModeOpened && editor?.selector),
