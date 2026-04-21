@@ -36,9 +36,26 @@ function readMarketingDigestTelemetry() {
   }
 }
 
+function describeMarketingDigestAge(latestDigestRun = null, now = new Date()) {
+  const checkedAtMs = Date.parse(String(latestDigestRun?.checkedAt || ''));
+  const nowMs = now instanceof Date ? now.getTime() : Date.parse(String(now || ''));
+  if (!Number.isFinite(checkedAtMs) || !Number.isFinite(nowMs) || nowMs < checkedAtMs) {
+    return { minutes: null, text: '' };
+  }
+  const minutes = Math.floor((nowMs - checkedAtMs) / 60000);
+  if (minutes < 60) return { minutes, text: `${minutes}m ago` };
+  const hours = Math.floor(minutes / 60);
+  const remainMinutes = minutes % 60;
+  if (hours < 24) return { minutes, text: remainMinutes > 0 ? `${hours}h ${remainMinutes}m ago` : `${hours}h ago` };
+  const days = Math.floor(hours / 24);
+  const remainHours = hours % 24;
+  return { minutes, text: remainHours > 0 ? `${days}d ${remainHours}h ago` : `${days}d ago` };
+}
+
 module.exports = {
   MARKETING_DIGEST_TELEMETRY_PATH,
   buildMarketingDigestTelemetry,
   writeMarketingDigestTelemetry,
   readMarketingDigestTelemetry,
+  describeMarketingDigestAge,
 };

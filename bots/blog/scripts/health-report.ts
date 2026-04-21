@@ -33,7 +33,7 @@ const { buildMarketingDigest } = require(path.join(env.PROJECT_ROOT, 'bots/blog/
 const { assessInboundComment } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/commenter.ts'));
 const { readDevelopmentBaseline, buildSinceClause } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/dev-baseline.ts'));
 const { readCommenterRunResult } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/commenter-run-telemetry.ts'));
-const { readMarketingDigestTelemetry } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/marketing-digest-telemetry.ts'));
+const { readMarketingDigestTelemetry, describeMarketingDigestAge } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/marketing-digest-telemetry.ts'));
 
 const CONTINUOUS = ['ai.blog.node-server'];
 const ALL_SERVICES = ['ai.blog.daily', 'ai.blog.node-server'];
@@ -404,7 +404,8 @@ function buildDoctorPriority(command = '', label = 'doctor') {
     if (hasActivePrimary && primary.nextCommand) ok.push(`  ${label} next: ${String(primary.nextCommand)}`);
     if (hasActivePrimary && primary.actionFocus) ok.push(`  ${label} focus: ${String(primary.actionFocus)}`);
     if (hasActivePrimary && primaryArea.startsWith('marketing') && latestDigestRun?.checkedAt) {
-      ok.push(`  ${label} latest digest: ${String(latestDigestRun.checkedAt).slice(0, 19)} / ${String(latestDigestRun.status || 'unknown')}`);
+      const latestDigestAge = describeMarketingDigestAge(latestDigestRun);
+      ok.push(`  ${label} latest digest: ${String(latestDigestRun.checkedAt).slice(0, 19)} / ${String(latestDigestRun.status || 'unknown')}${latestDigestAge.text ? ` / ${latestDigestAge.text}` : ''}`);
     }
     if (hasActivePrimary && primaryArea.startsWith('marketing') && nextPreviewTitle) {
       ok.push(`  ${label} next preview: ${nextPreviewTitle}`);
@@ -2000,7 +2001,8 @@ async function buildMarketingExpansionHealth() {
       );
     }
     if (latestDigestRun?.checkedAt) {
-      ok.push(`  latest digest run: ${String(latestDigestRun.checkedAt).slice(0, 19)} / ${String(latestDigestRun.status || 'unknown')}`);
+      const latestDigestAge = describeMarketingDigestAge(latestDigestRun);
+      ok.push(`  latest digest run: ${String(latestDigestRun.checkedAt).slice(0, 19)} / ${String(latestDigestRun.status || 'unknown')}${latestDigestAge.text ? ` / ${latestDigestAge.text}` : ''}`);
     }
     const warn = [];
     if (digest?.senseSummary?.topSignal?.message) {
@@ -2044,6 +2046,7 @@ async function buildMarketingExpansionHealth() {
       strategyAdoption: digest?.strategyAdoption || null,
       nextGeneralPreview: digest?.nextGeneralPreview || null,
       latestDigestRun,
+      latestDigestAge: describeMarketingDigestAge(latestDigestRun),
       recommendations: Array.isArray(digest?.recommendations) ? digest.recommendations.slice(0, 2) : [],
     };
   } catch (error) {
@@ -2056,7 +2059,8 @@ async function buildMarketingExpansionHealth() {
     const fallbackNextPreviewTitle = String(latestDigestRun?.nextPreviewTitle || '');
     const warn = [`  marketing digest: 확인 실패 (${reason})`];
     if (latestDigestRun?.checkedAt) {
-      warn.push(`  latest digest run: ${String(latestDigestRun.checkedAt).slice(0, 19)} / ${String(latestDigestRun.status || 'unknown')}`);
+      const latestDigestAge = describeMarketingDigestAge(latestDigestRun);
+      warn.push(`  latest digest run: ${String(latestDigestRun.checkedAt).slice(0, 19)} / ${String(latestDigestRun.status || 'unknown')}${latestDigestAge.text ? ` / ${latestDigestAge.text}` : ''}`);
     }
     if (fallbackTopSignal) {
       warn.push(`  top signal (cached): ${fallbackTopSignal}`);
@@ -2087,6 +2091,7 @@ async function buildMarketingExpansionHealth() {
       strategyAdoption: null,
       nextGeneralPreview: fallbackNextPreviewTitle ? { title: fallbackNextPreviewTitle } : null,
       latestDigestRun,
+      latestDigestAge: describeMarketingDigestAge(latestDigestRun),
       recommendations: [],
       cachedReason: fallbackReason,
     };
@@ -2491,7 +2496,8 @@ function buildOpsPriority(socialAutomationHealth, engagementHealth, marketingExp
     }
   }
   if (primaryArea.startsWith('marketing') && marketingExpansionHealth?.latestDigestRun?.checkedAt) {
-    ok.push(`  latest digest run: ${String(marketingExpansionHealth.latestDigestRun.checkedAt).slice(0, 19)} / ${String(marketingExpansionHealth.latestDigestRun.status || 'unknown')}`);
+    const latestDigestAge = describeMarketingDigestAge(marketingExpansionHealth.latestDigestRun);
+    ok.push(`  latest digest run: ${String(marketingExpansionHealth.latestDigestRun.checkedAt).slice(0, 19)} / ${String(marketingExpansionHealth.latestDigestRun.status || 'unknown')}${latestDigestAge.text ? ` / ${latestDigestAge.text}` : ''}`);
   }
   if (primaryArea.startsWith('marketing') && marketingExpansionHealth?.nextGeneralPreview?.title) {
     ok.push(`  next preview: ${String(marketingExpansionHealth.nextGeneralPreview.title)}`);

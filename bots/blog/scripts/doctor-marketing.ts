@@ -5,7 +5,7 @@ const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const { execFileSync } = require('child_process');
 const { buildBlogCliInsight } = require('../lib/cli-insight.ts');
-const { readMarketingDigestTelemetry } = require('../lib/marketing-digest-telemetry.ts');
+const { readMarketingDigestTelemetry, describeMarketingDigestAge } = require('../lib/marketing-digest-telemetry.ts');
 
 function parseArgs(argv = []) {
   return {
@@ -92,6 +92,7 @@ function buildActions({ primary, digest = {} }) {
   const primaryArea = String(primary?.area || '');
   const hasActivePrimary = primaryArea && primaryArea !== 'clear' && primaryArea !== 'unknown';
   const latestDigestRun = digest?.latestDigestRun || null;
+  const latestDigestAge = describeMarketingDigestAge(latestDigestRun);
 
   if (hasActivePrimary && primary?.actionFocus) {
     actions.push(`focus blocker: ${primary.actionFocus}`);
@@ -103,7 +104,7 @@ function buildActions({ primary, digest = {} }) {
   const watchHint = String(digest?.channelPerformance?.primaryWatchHint || '');
   if (watchHint) actions.push(`channel watch: ${watchHint}`);
   if (latestDigestRun?.checkedAt) {
-    actions.push(`latest digest run: ${String(latestDigestRun.checkedAt).slice(0, 19)} / ${String(latestDigestRun.status || 'unknown')}`);
+    actions.push(`latest digest run: ${String(latestDigestRun.checkedAt).slice(0, 19)} / ${String(latestDigestRun.status || 'unknown')}${latestDigestAge.text ? ` / ${latestDigestAge.text}` : ''}`);
   }
 
   const nextPreview = digest?.nextGeneralPreview || null;
@@ -139,6 +140,7 @@ async function main() {
     digestCommand: digestResult.command,
     digestError: digestResult.error || '',
     latestDigestRun,
+    latestDigestAge: describeMarketingDigestAge(latestDigestRun),
     health: digest?.health || null,
     senseSummary: digest?.senseSummary || null,
     revenueCorrelation: digest?.revenueCorrelation || null,

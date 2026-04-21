@@ -32,7 +32,7 @@ const {
 const { resolveInstagramHostedMediaUrl } = require('../../../packages/core/lib/instagram-image-host.ts');
 const { checkFacebookPublishReadiness } = require('../lib/facebook-publisher.ts');
 const { readDevelopmentBaseline, buildSinceClause } = require('../lib/dev-baseline.ts');
-const { readMarketingDigestTelemetry } = require('../lib/marketing-digest-telemetry.ts');
+const { readMarketingDigestTelemetry, describeMarketingDigestAge } = require('../lib/marketing-digest-telemetry.ts');
 
 const runtimeConfig = getBlogHealthRuntimeConfig();
 const { buildIssueHints, rememberHealthEvent } = createHealthMemoryHelper({
@@ -872,8 +872,9 @@ async function checkMarketingExpansionHealth() {
       : [];
     const signalHint = topSignal ? `\ntop signal: ${topSignal}` : '';
     const watchHintLine = watchHint ? `\nwatch hint: ${watchHint}` : '';
+    const latestRunAge = describeMarketingDigestAge(latestDigestRunMeta);
     const latestRunHint = latestDigestRunMeta?.checkedAt
-      ? `\nlatest digest run: ${String(latestDigestRunMeta.checkedAt).slice(0, 19)} / ${String(latestDigestRunMeta.status || 'unknown')}`
+      ? `\nlatest digest run: ${String(latestDigestRunMeta.checkedAt).slice(0, 19)} / ${String(latestDigestRunMeta.status || 'unknown')}${latestRunAge.text ? ` / ${latestRunAge.text}` : ''}`
       : '';
     const nextPreviewHint = nextPreviewTitle ? `\nnext preview: ${nextPreviewTitle}` : '';
     const recommendationHint = recommendations.length
@@ -887,8 +888,9 @@ async function checkMarketingExpansionHealth() {
     };
   } catch (e) {
     const latestDigestRun = readMarketingDigestTelemetry();
+    const fallbackAge = describeMarketingDigestAge(latestDigestRun);
     const fallbackHint = latestDigestRun?.checkedAt
-      ? `\nlatest digest run: ${String(latestDigestRun.checkedAt).slice(0, 19)} / ${String(latestDigestRun.status || 'unknown')}${latestDigestRun.topSignal ? `\ntop signal (cached): ${String(latestDigestRun.topSignal)}` : ''}${latestDigestRun.nextPreviewTitle ? `\nnext preview (cached): ${String(latestDigestRun.nextPreviewTitle)}` : ''}${latestDigestRun.recommendation ? `\nrecommendation (cached): ${String(latestDigestRun.recommendation)}` : ''}`
+      ? `\nlatest digest run: ${String(latestDigestRun.checkedAt).slice(0, 19)} / ${String(latestDigestRun.status || 'unknown')}${fallbackAge.text ? ` / ${fallbackAge.text}` : ''}${latestDigestRun.topSignal ? `\ntop signal (cached): ${String(latestDigestRun.topSignal)}` : ''}${latestDigestRun.nextPreviewTitle ? `\nnext preview (cached): ${String(latestDigestRun.nextPreviewTitle)}` : ''}${latestDigestRun.recommendation ? `\nrecommendation (cached): ${String(latestDigestRun.recommendation)}` : ''}`
       : '';
     return { ok: false, detail: `marketing watch 확인 실패: ${e.message.slice(0, 120)}${fallbackHint}` };
   }
