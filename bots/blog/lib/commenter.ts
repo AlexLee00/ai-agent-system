@@ -2202,9 +2202,10 @@ async function waitForReplySubmitReady(page, testMode = false, customTimeoutMs =
   `, { timeout: timeoutMs }).then(() => true).catch(() => false);
 }
 
-async function inspectReplySubmitLite(page) {
+async function inspectReplySubmitLite(page, { fast = false } = {}) {
   return page.evaluate(`
     (() => {
+      const fastMode = ${JSON.stringify(Boolean(fast))};
       const visible = (el) => {
         if (!el) return false;
         const style = window.getComputedStyle(el);
@@ -2223,6 +2224,9 @@ async function inspectReplySubmitLite(page) {
         || targetReplyArea && targetReplyArea.querySelector('.u_cbox_write_box')
         || targetReplyArea && targetReplyArea.querySelector('.u_cbox_write_wrap')
         || null;
+      const localEditorRoot =
+        targetEditor && targetEditor.closest('.u_cbox_write_box, .u_cbox_reply_write, .u_cbox_reply_area, .u_cbox_comment_box')
+        || null;
 
       const isReplySubmit = (node) => {
         if (!visible(node)) return false;
@@ -2238,8 +2242,12 @@ async function inspectReplySubmitLite(page) {
         return /등록|완료|게시/.test(text);
       };
 
-      const submitCandidates = Array.from(
-        (replyFormRoot || targetReplyArea || document).querySelectorAll('button, a, input[type="submit"], [role="button"]'),
+      const roots = fastMode
+        ? [replyFormRoot, localEditorRoot, targetReplyArea].filter(Boolean)
+        : [replyFormRoot, localEditorRoot, targetReplyArea, document].filter(Boolean);
+      const uniqueRoots = roots.filter((root, index) => roots.indexOf(root) === index);
+      const submitCandidates = uniqueRoots.flatMap((root) =>
+        Array.from(root.querySelectorAll('button, a, input[type="submit"], [role="button"]'))
       )
         .filter(isReplySubmit)
         .slice(0, 5)
@@ -2252,8 +2260,10 @@ async function inspectReplySubmitLite(page) {
         }));
 
       return {
+        fastMode,
         targetReplyAreaVisible: visible(targetReplyArea),
         replyFormRootFound: Boolean(replyFormRoot),
+        localEditorRootFound: Boolean(localEditorRoot),
         editor: targetEditor ? {
           id: String(targetEditor.id || ''),
           className: String(targetEditor.className || '').slice(0, 120),
@@ -2265,8 +2275,10 @@ async function inspectReplySubmitLite(page) {
       };
     })()
   `).catch(() => ({
+    fastMode: Boolean(fast),
     targetReplyAreaVisible: false,
     replyFormRootFound: false,
+    localEditorRootFound: false,
     editor: null,
     submitCandidates: [],
   }));
@@ -3895,7 +3907,7 @@ async function diagnoseReplyUi(comment, { testMode = true, operationTimeoutMs = 
 
       stage = 'inspect_submit_state';
       editorCandidates = await inspectReplyEditorCandidates(contentFrame).catch(() => null);
-      const submitState = await inspectReplySubmitLite(contentFrame).catch(() => null);
+      const submitState = await inspectReplySubmitLite(contentFrame, { fast: true }).catch(() => null);
       const controls = await inspectReplyControlsLite(contentFrame).catch(() => null);
       const submitReady = Boolean(
         replyModeOpened
