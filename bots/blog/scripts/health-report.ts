@@ -30,6 +30,7 @@ const {
 } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-image-host.ts'));
 const { checkFacebookPublishReadiness } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/facebook-publisher.ts'));
 const { buildMarketingDigest } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/marketing-digest.ts'));
+const { assessInboundComment } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/commenter.ts'));
 
 const CONTINUOUS = ['ai.blog.node-server'];
 const ALL_SERVICES = ['ai.blog.daily', 'ai.blog.node-server'];
@@ -256,6 +257,50 @@ function buildDoctorPriority(command = '', label = 'doctor') {
       primaryReason: `${label} priority 확인 실패`,
       nextCommand: command,
       actionFocus: '',
+    };
+  }
+}
+
+async function getCourtesyReflectionRecheck() {
+  try {
+    const rows = await pgPool.query('blog', `
+      SELECT
+        id,
+        commenter_name,
+        LEFT(comment_text, 140) AS comment_text,
+        detected_at
+      FROM blog.comments
+      WHERE detected_at >= now() - interval '14 days'
+        AND status = 'skipped'
+        AND COALESCE(error_message, '') = 'generic_greeting_comment'
+      ORDER BY detected_at DESC
+      LIMIT 25
+    `);
+
+    const reevaluable = [];
+    for (const row of rows || []) {
+      const reassessed = assessInboundComment({ comment_text: row.comment_text });
+      if (reassessed?.ok && reassessed?.reason === 'courtesy_reflection_allowed') {
+        reevaluable.push({
+          id: row.id,
+          commenterName: row.commenter_name,
+          commentText: row.comment_text,
+          detectedAt: row.detected_at,
+          reassessedReason: reassessed.reason,
+        });
+      }
+    }
+
+    return {
+      reviewedCount: Array.isArray(rows) ? rows.length : 0,
+      reevaluableCount: reevaluable.length,
+      reevaluableSamples: reevaluable.slice(0, 3),
+    };
+  } catch {
+    return {
+      reviewedCount: 0,
+      reevaluableCount: 0,
+      reevaluableSamples: [],
     };
   }
 }
@@ -924,7 +969,7 @@ async function buildEngagementHealth() {
     const replyConfig = runtimeConfig.commenter || {};
     const neighborConfig = runtimeConfig.neighborCommenter || {};
 
-    const [actionAggRows, failureMetaRows, commentRows, neighborRows, latestReplyReplayCandidate, skippedReasonRows, skippedReason14dRows, latestCommentRow] = await Promise.all([
+    const [actionAggRows, failureMetaRows, commentRows, neighborRows, latestReplyReplayCandidate, skippedReasonRows, skippedReason14dRows, latestCommentRow, courtesyReflectionRecheck] = await Promise.all([
       pgPool.query('blog', `
         SELECT action_type, success, COUNT(*)::int AS cnt
         FROM blog.comment_actions
@@ -1015,6 +1060,7 @@ async function buildEngagementHealth() {
         ORDER BY detected_at DESC
         LIMIT 1
       `),
+      getCourtesyReflectionRecheck(),
     ]);
 
     const actionMap = new Map();
@@ -1125,6 +1171,9 @@ async function buildEngagementHealth() {
     if (skippedReason14dSummary) {
       ok.push(`  skipped reasons 14d: ${skippedReason14dSummary}`);
     }
+    if (Number(courtesyReflectionRecheck?.reevaluableCount || 0) > 0) {
+      ok.push(`  courtesy recheck 14d: ${courtesyReflectionRecheck.reevaluableCount}/${courtesyReflectionRecheck.reviewedCount} generic greeting skip이 새 공감형 기준으로 reply 후보가 될 수 있습니다`);
+    }
     if (latestCommentRow?.id) {
       ok.push(
         `  latest inbound: comment ${latestCommentRow.id} / ${String(latestCommentRow.status || 'unknown')}${latestCommentRow.error_message ? ` / ${String(latestCommentRow.error_message)}` : ''}`
@@ -1189,6 +1238,7 @@ async function buildEngagementHealth() {
             detectedAt: latestCommentRow.detected_at,
           }
         : null,
+      courtesyReflectionRecheck,
     };
   } catch (error) {
     return {
@@ -1207,6 +1257,7 @@ async function buildEngagementHealth() {
       skippedReasonSummary: '',
       skippedReason14dSummary: '',
       latestInbound: null,
+      courtesyReflectionRecheck: { reviewedCount: 0, reevaluableCount: 0, reevaluableSamples: [] },
     };
   }
 }
@@ -1795,6 +1846,9 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
           engagementGapHint ? `현재 gap: ${engagementGapHint}` : '',
           engagementDoctorPriority?.primaryArea === 'engagement.target_gap.replies.no_workload'
             ? '현재 inbound는 reply 후보가 없어 gap이 유지되고 있습니다.'
+            : '',
+          Number(engagementHealth?.courtesyReflectionRecheck?.reevaluableCount || 0) > 0
+            ? `새 공감형 기준으로 재평가 가능한 generic greeting 댓글: ${engagementHealth.courtesyReflectionRecheck.reevaluableCount}/${engagementHealth.courtesyReflectionRecheck.reviewedCount}`
             : '',
           engagementImmediateAction ? `즉시 실행: ${engagementImmediateAction}` : '',
           engagementRunPlanHint ? `실행 순서: ${engagementRunPlanHint}` : '',

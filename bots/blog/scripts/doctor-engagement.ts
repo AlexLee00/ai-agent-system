@@ -6,6 +6,7 @@ const env = require('../../../packages/core/lib/env');
 const pgPool = require('../../../packages/core/lib/pg-pool.js');
 const { buildBlogCliInsight } = require('../lib/cli-insight.ts');
 const { getBlogHealthRuntimeConfig } = require('../lib/runtime-config.ts');
+const { assessInboundComment } = require('../lib/commenter.ts');
 
 const runtimeConfig = getBlogHealthRuntimeConfig();
 const BLOG_ROOT = path.join(env.PROJECT_ROOT, 'bots/blog');
@@ -267,7 +268,52 @@ async function getReplyWorkloadStatus() {
   }
 }
 
-function buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, primaryGap, replyWorkload }) {
+async function getCourtesyReflectionRecheck() {
+  try {
+    const rows = await pgPool.query('blog', `
+      SELECT
+        id,
+        commenter_name,
+        LEFT(comment_text, 140) AS comment_text,
+        error_message,
+        detected_at
+      FROM blog.comments
+      WHERE detected_at >= now() - interval '14 days'
+        AND status = 'skipped'
+        AND COALESCE(error_message, '') = 'generic_greeting_comment'
+      ORDER BY detected_at DESC
+      LIMIT 25
+    `);
+
+    const reevaluable = [];
+    for (const row of rows || []) {
+      const reassessed = assessInboundComment({ comment_text: row.comment_text });
+      if (reassessed?.ok && reassessed?.reason === 'courtesy_reflection_allowed') {
+        reevaluable.push({
+          id: row.id,
+          commenterName: row.commenter_name,
+          commentText: row.comment_text,
+          detectedAt: row.detected_at,
+          reassessedReason: reassessed.reason,
+        });
+      }
+    }
+
+    return {
+      reviewedCount: Array.isArray(rows) ? rows.length : 0,
+      reevaluableCount: reevaluable.length,
+      reevaluableSamples: reevaluable.slice(0, 3),
+    };
+  } catch {
+    return {
+      reviewedCount: 0,
+      reevaluableCount: 0,
+      reevaluableSamples: [],
+    };
+  }
+}
+
+function buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, primaryGap, replyWorkload, courtesyReflectionRecheck }) {
   const actions = [];
   if ((failureByKind.ui || 0) > 0 || (failureByKind.browser || 0) > 0) {
     actions.push('네이버 reply UI selector와 browser mount 흐름 점검');
@@ -285,6 +331,9 @@ function buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, p
       const dominantSkip = Array.isArray(replyWorkload?.skippedReasons14d) ? replyWorkload.skippedReasons14d[0] : null;
       if (dominantSkip?.reason) {
         actions.push(`최근 14일 주요 inbound 필터: ${dominantSkip.reason} ${dominantSkip.count}건`);
+      }
+      if (Number(courtesyReflectionRecheck?.reevaluableCount || 0) > 0) {
+        actions.push(`최근 generic greeting skip 중 ${courtesyReflectionRecheck.reevaluableCount}건은 새 공감형 기준으로 reply 후보가 될 수 있습니다`);
       }
     }
     actions.push(
@@ -305,7 +354,7 @@ function buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, p
   return actions;
 }
 
-function buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps, primaryGap, replyWorkload }) {
+function buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps, primaryGap, replyWorkload, courtesyReflectionRecheck }) {
   const blogPrefix = `npm --prefix ${BLOG_ROOT}`;
   if ((failureByKind.ui || 0) > 0 || (failureByKind.browser || 0) > 0) {
     return {
@@ -341,7 +390,7 @@ function buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps, p
     ) {
       return {
         area: 'engagement.target_gap.replies.no_workload',
-        reason: `replies 목표치는 비어 있지만 현재 reply 대상 댓글이 없습니다 (latest skipped: ${String(replyWorkload.latest.errorMessage || 'unknown')}${Array.isArray(replyWorkload?.skippedReasons14d) && replyWorkload.skippedReasons14d[0]?.reason ? ` / 14d top filter: ${replyWorkload.skippedReasons14d[0].reason} ${replyWorkload.skippedReasons14d[0].count}건` : ''}).`,
+        reason: `replies 목표치는 비어 있지만 현재 reply 대상 댓글이 없습니다 (latest skipped: ${String(replyWorkload.latest.errorMessage || 'unknown')}${Array.isArray(replyWorkload?.skippedReasons14d) && replyWorkload.skippedReasons14d[0]?.reason ? ` / 14d top filter: ${replyWorkload.skippedReasons14d[0].reason} ${replyWorkload.skippedReasons14d[0].count}건` : ''}${Number(courtesyReflectionRecheck?.reevaluableCount || 0) > 0 ? ` / reevaluable by new courtesy filter: ${courtesyReflectionRecheck.reevaluableCount}건` : ''}).`,
         nextCommand: `${RUN_ENGAGEMENT_GAP_COMMAND} -- --label=replies`,
         actionFocus: 'replyable inbound 유입과 필터링 기준 점검',
       };
@@ -380,7 +429,7 @@ function buildEngagementDoctorFallback(payload = {}) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const [rows, latestReplyReplayCandidate, replyWorkload] = await Promise.all([
+  const [rows, latestReplyReplayCandidate, replyWorkload, courtesyReflectionRecheck] = await Promise.all([
     pgPool.query('blog', `
       SELECT action_type, meta
       FROM blog.comment_actions
@@ -391,6 +440,7 @@ async function main() {
     `),
     getLatestReplyReplayCandidate(),
     getReplyWorkloadStatus(),
+    getCourtesyReflectionRecheck(),
   ]);
 
   const replyConfig = runtimeConfig.commenter || {};
@@ -492,10 +542,11 @@ async function main() {
     primaryGap,
     runPlan,
     replyWorkload,
+    courtesyReflectionRecheck,
   };
   payload.needsAttention = payload.totalFailures > 0 || targetGaps.length > 0;
-  payload.actions = buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, primaryGap, replyWorkload });
-  payload.primary = buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps, primaryGap, replyWorkload });
+  payload.actions = buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, primaryGap, replyWorkload, courtesyReflectionRecheck });
+  payload.primary = buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps, primaryGap, replyWorkload, courtesyReflectionRecheck });
 
   const aiSummary = await buildBlogCliInsight({
     bot: 'doctor-engagement',
@@ -526,6 +577,9 @@ async function main() {
   }
   if (Array.isArray(payload.replyWorkload?.skippedReasons14d) && payload.replyWorkload.skippedReasons14d.length > 0) {
     console.log(`[engagement doctor] skipped_14d=${payload.replyWorkload.skippedReasons14d.map((item) => `${item.reason}:${item.count}`).join(', ')}`);
+  }
+  if (Number(payload.courtesyReflectionRecheck?.reevaluableCount || 0) > 0) {
+    console.log(`[engagement doctor] courtesy_recheck=${payload.courtesyReflectionRecheck.reevaluableCount}/${payload.courtesyReflectionRecheck.reviewedCount}`);
   }
   if (Array.isArray(payload.runPlan) && payload.runPlan.length > 0) {
     console.log(`[engagement doctor] run_plan=${payload.runPlan.map((item) => `${item.step}.${item.label}`).join(' -> ')}`);
