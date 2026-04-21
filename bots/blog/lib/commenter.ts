@@ -2896,6 +2896,35 @@ async function verifyReplyPosted(page, replyText, comment, testMode = false) {
         return true;
       }
 
+      if (replyEditorId) {
+        const replyEditor = document.getElementById(replyEditorId);
+        const replyEditorVisible = visible(replyEditor);
+        const submitButton = Array.from(
+          document.querySelectorAll(
+            [
+              'button.u_cbox_btn_upload',
+              'button[class*="upload"]',
+              'button[data-action="reply#submit"]',
+              'button[data-action="comment#submit"]',
+              'input[type="submit"]',
+            ].join(', '),
+          ),
+        ).find((node) => visible(node));
+
+        const submitDisabled = Boolean(
+          submitButton
+          && (
+            submitButton.disabled
+            || submitButton.getAttribute('aria-disabled') === 'true'
+            || /\bdisabled\b/i.test(String(submitButton.className || ''))
+          )
+        );
+
+        if (!replyEditorVisible && (submitDisabled || !submitButton)) {
+          return true;
+        }
+      }
+
       return false;
     })()
   `, { timeout: timeoutMs }).then(() => true).catch(() => false);
