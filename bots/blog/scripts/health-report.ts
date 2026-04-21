@@ -2308,6 +2308,12 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
         level: 'low',
         reason: [
           '마케팅 확장 신호에 변동이 있어 sense/correlation/diagnosis 흐름을 한 번 더 보는 편이 좋습니다.',
+          marketingExpansionHealth?.latestDigestRun?.checkedAt
+            ? `최근 digest run: ${String(marketingExpansionHealth.latestDigestRun.checkedAt).slice(0, 19)} / ${String(marketingExpansionHealth.latestDigestRun.status || 'unknown')}`
+            : '',
+          marketingExpansionHealth?.nextGeneralPreview?.title
+            ? `next preview: ${String(marketingExpansionHealth.nextGeneralPreview.title)}`
+            : '',
           marketingDoctorHint,
           opsDoctorHint,
           String(opsDoctorPriority?.primaryArea || '').startsWith('marketing') && String(opsDoctorPriority?.nextCommand || '').trim()

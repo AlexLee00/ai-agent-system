@@ -831,18 +831,24 @@ async function checkMarketingExpansionHealth() {
     );
     const topSignal = String(marketingPayload?.senseSummary?.topSignal?.message || '');
     const watchHint = String(marketingPayload?.channelPerformance?.primaryWatchHint || '');
+    const latestDigestRun = marketingPayload?.latestDigestRun || null;
+    const nextPreviewTitle = String(marketingPayload?.nextGeneralPreview?.title || '');
     const recommendations = Array.isArray(marketingPayload?.recommendations)
       ? marketingPayload.recommendations.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 2)
       : [];
     const signalHint = topSignal ? `\ntop signal: ${topSignal}` : '';
     const watchHintLine = watchHint ? `\nwatch hint: ${watchHint}` : '';
+    const latestRunHint = latestDigestRun?.checkedAt
+      ? `\nlatest digest run: ${String(latestDigestRun.checkedAt).slice(0, 19)} / ${String(latestDigestRun.status || 'unknown')}`
+      : '';
+    const nextPreviewHint = nextPreviewTitle ? `\nnext preview: ${nextPreviewTitle}` : '';
     const recommendationHint = recommendations.length
       ? `\nrecommendation: ${recommendations.join('\nrecommendation: ')}`
       : '';
     const doctorHint = `\ndoctor: ${MARKETING_DOCTOR_COMMAND}${buildPriorityHint('marketing primary', marketingPriority, { includeActionFocus: true })}${buildActionHint('marketing action', marketingPayload, 2, 'marketing')}${buildPriorityHint('primary blocker', opsPriority, { includeActionFocus: true })}${buildActionHint('ops action', opsPayload, 2, 'marketing')}\nops doctor: ${BLOG_OPS_DOCTOR_COMMAND}\ndiagnose: ${digestCommand}`;
     return {
       ok: false,
-      detail: `marketing watch — ${marketingPriority.reason}${signalHint}${watchHintLine}${recommendationHint}${doctorHint}`,
+      detail: `marketing watch — ${marketingPriority.reason}${signalHint}${watchHintLine}${latestRunHint}${nextPreviewHint}${recommendationHint}${doctorHint}`,
       primary: marketingPriority,
     };
   } catch (e) {
