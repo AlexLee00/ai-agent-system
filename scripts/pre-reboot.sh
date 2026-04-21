@@ -269,8 +269,10 @@ stop_service_if_registered "ai.claude.health-dashboard" "클로드 health-dashbo
 stop_service_if_registered "ai.claude.health-check" "클로드 health-check"
 stop_service_if_registered "ai.claude.speed-test" "클로드 speed-test"
 
-log "🔬 연구팀"
-stop_service_if_registered "ai.research.scanner" "리서치 스캐너"
+log "🔬 다윈팀"
+stop_service_if_registered "ai.darwin.weekly.autonomous" "다윈 weekly autonomous"
+stop_service_if_registered "ai.darwin.weekly-ops-report" "다윈 weekly ops report"
+stop_service_if_registered "ai.darwin.weekly-review" "다윈 weekly review"
 
 log "🏠 집사 (Steward)"
 stop_service_if_registered "ai.steward.hourly" "집사 hourly"

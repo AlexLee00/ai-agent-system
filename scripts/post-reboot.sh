@@ -254,7 +254,9 @@ check_periodic "ai.claude.archer"           "아처"
 check_periodic "ai.claude.health-check"     "클로드 health-check"
 check_periodic "ai.claude.speed-test"       "클로드 speed-test"
 
-check_periodic "ai.research.scanner"     "리서치 스캐너"
+check_periodic "ai.darwin.weekly.autonomous" "다윈 weekly autonomous"
+check_periodic "ai.darwin.weekly-ops-report" "다윈 weekly ops report"
+check_periodic "ai.darwin.weekly-review"     "다윈 weekly review"
 
 log "🏠 집사 (Steward)"
 check_periodic "ai.steward.hourly"       "집사 hourly"

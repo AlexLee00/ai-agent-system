@@ -380,11 +380,7 @@ defmodule Jay.Core.Diagnostics do
         runtime_agent_labels(TeamJay.Teams.InvestmentSupervisor),
         runtime_agent_labels(TeamJay.Teams.BlogSupervisor),
         runtime_agent_labels(TeamJay.Teams.WorkerSupervisor),
-        runtime_agent_labels(TeamJay.Teams.PlatformSupervisor),
-        runtime_agent_labels(Darwin.V2.Supervisor, [
-          "ai.research.scanner",
-          "ai.research.task-runner"
-        ])
+        runtime_agent_labels(TeamJay.Teams.PlatformSupervisor)
       ]
       |> List.flatten()
       |> MapSet.new()
