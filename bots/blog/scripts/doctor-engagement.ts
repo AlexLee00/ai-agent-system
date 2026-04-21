@@ -17,10 +17,12 @@ const BLOG_OPS_ROOT = path.join(BLOG_ROOT, 'output', 'ops');
 const BLOG_NEIGHBOR_COLLECT_DIAG_PATH = path.join(BLOG_OPS_ROOT, 'neighbor-collect-diagnostics.json');
 const BLOG_ENGAGEMENT_GAP_RUN_PATH = path.join(BLOG_OPS_ROOT, 'engagement-gap-run.json');
 const BLOG_NEIGHBOR_REPLAY_PATH = path.join(BLOG_OPS_ROOT, 'neighbor-ui-replay.json');
+const BLOG_NEIGHBOR_SYMPATHY_REPLAY_PATH = path.join(BLOG_OPS_ROOT, 'neighbor-sympathy-replay.json');
 const RUN_ENGAGEMENT_GAP_COMMAND = `npm --prefix ${BLOG_ROOT} run run:engagement-gap`;
 const RUN_NEIGHBOR_COLLECT_ONLY_COMMAND = `node ${path.join(BLOG_ROOT, 'scripts/run-neighbor-commenter.ts')} --collect-only --json`;
 const BACKFILL_COURTESY_REPLIES_COMMAND = `npm --prefix ${BLOG_ROOT} run backfill:courtesy-replies`;
 const REPLAY_NEIGHBOR_UI_COMMAND = `npm --prefix ${BLOG_ROOT} run replay:neighbor-ui -- --json`;
+const REPLAY_NEIGHBOR_SYMPATHY_COMMAND = `npm --prefix ${BLOG_ROOT} run replay:neighbor-sympathy -- --json`;
 
 function parseArgs(argv = []) {
   return {
@@ -39,6 +41,7 @@ function classifyEngagementFailure(meta = {}) {
     || errorText.includes('reply_submit_not_found')
     || errorText.includes('reply_submit_not_confirmed')
     || errorText.includes('comment_submit_not_confirmed')
+    || errorText.includes('sympathy_button_not_found')
     || errorText.includes('reply_ui_unavailable')
     || errorText.includes('reply_editor_not_found')
   ) return 'ui';
@@ -200,6 +203,14 @@ function buildRunPlan(targetGapDetails = []) {
 function buildUiFocus(failureByAction = {}) {
   const replyFailures = Number(failureByAction?.reply || 0);
   const neighborFailures = Number(failureByAction?.neighbor_comment || 0);
+  const sympathyFailures = Number(failureByAction?.sympathy || 0);
+  if (sympathyFailures >= Math.max(replyFailures, neighborFailures) && sympathyFailures > 0) {
+    return {
+      action: 'sympathy',
+      reason: '외부 공감 버튼 탐색 또는 confirm 흐름 실패가 현재 engagement 최우선 병목입니다.',
+      focus: '네이버 외부 공감 버튼 selector / toggle / confirm 흐름 재현',
+    };
+  }
   if (neighborFailures > replyFailures) {
     return {
       action: 'neighbor',
@@ -245,6 +256,24 @@ function readLastEngagementGapRun(baseline = null) {
 function readNeighborUiReplay(baseline = null) {
   try {
     const raw = fs.readFileSync(BLOG_NEIGHBOR_REPLAY_PATH, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (baseline?.startedAtIso) {
+      const replayedAt = Date.parse(String(parsed.replayedAt || ''));
+      const baselineAt = Date.parse(String(baseline.startedAtIso || ''));
+      if (Number.isFinite(replayedAt) && Number.isFinite(baselineAt) && replayedAt < baselineAt) {
+        return null;
+      }
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function readNeighborSympathyReplay(baseline = null) {
+  try {
+    const raw = fs.readFileSync(BLOG_NEIGHBOR_SYMPATHY_REPLAY_PATH, 'utf8');
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') return null;
     if (baseline?.startedAtIso) {
@@ -531,7 +560,7 @@ async function getCourtesyReflectionRecheck(baseline = null) {
   }
 }
 
-function buildActions({ latestReplyReplayCandidate, failureByKind, failureByAction, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun, neighborUiReplay = null, primary }) {
+function buildActions({ latestReplyReplayCandidate, failureByKind, failureByAction, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun, neighborUiReplay = null, neighborSympathyReplay = null, primary }) {
   const actions = [];
   if (neighborUiReplay?.ok) {
     if (neighborUiReplay?.result?.ok) {
@@ -542,9 +571,26 @@ function buildActions({ latestReplyReplayCandidate, failureByKind, failureByActi
       actions.push(`최근 neighbor replay 실패: ${String(neighborUiReplay.reason)}`);
     }
   }
+  if (neighborSympathyReplay?.ok) {
+    if (neighborSympathyReplay?.result?.ok) {
+      actions.push(`최근 neighbor sympathy replay 성공: ${Number(neighborSympathyReplay?.candidate?.id || 0)} / ${String(neighborSympathyReplay?.candidate?.targetBlogId || '').trim() || 'unknown'}`);
+    } else if (neighborSympathyReplay?.result?.skipped) {
+      actions.push(`최근 neighbor sympathy replay는 UI 재현 후 skip: ${String(neighborSympathyReplay?.result?.reason || 'unknown')}`);
+    } else if (neighborSympathyReplay?.result?.error) {
+      actions.push(`최근 neighbor sympathy replay 실패: ${String(neighborSympathyReplay.result.error)}`);
+    } else if (neighborSympathyReplay?.error) {
+      actions.push(`최근 neighbor sympathy replay 실패: ${String(neighborSympathyReplay.error)}`);
+    }
+  }
   if ((failureByKind.ui || 0) > 0 || (failureByKind.browser || 0) > 0) {
     const uiFocus = buildUiFocus(failureByAction);
-    actions.push(uiFocus.focus.includes('외부 댓글') ? '네이버 외부 댓글 submit selector와 confirm 흐름 점검' : '네이버 reply UI selector와 browser mount 흐름 점검');
+    actions.push(
+      uiFocus.action === 'sympathy'
+        ? '네이버 외부 공감 button selector와 confirm 흐름 점검'
+        : uiFocus.focus.includes('외부 댓글')
+          ? '네이버 외부 댓글 submit selector와 confirm 흐름 점검'
+          : '네이버 reply UI selector와 browser mount 흐름 점검'
+    );
   }
   if ((failureByKind.llm || 0) > 0) {
     actions.push('reply 생성 LLM timeout / fetch 실패 로그 확인');
@@ -640,9 +686,11 @@ function buildPrimary({ failureByKind, failureByAction, latestReplyReplayCandida
   const blogPrefix = `npm --prefix ${BLOG_ROOT}`;
   if ((failureByKind.ui || 0) > 0 || (failureByKind.browser || 0) > 0) {
     const uiFocus = buildUiFocus(failureByAction);
-    const uiNextCommand = uiFocus.action === 'neighbor'
-      ? REPLAY_NEIGHBOR_UI_COMMAND
-      : (
+    const uiNextCommand = uiFocus.action === 'sympathy'
+      ? REPLAY_NEIGHBOR_SYMPATHY_COMMAND
+      : uiFocus.action === 'neighbor'
+        ? REPLAY_NEIGHBOR_UI_COMMAND
+        : (
           latestReplyReplayCandidate?.id
             ? `${blogPrefix} run replay:reply-ui -- --comment-id ${latestReplyReplayCandidate.id} --json`
             : `${blogPrefix} run doctor:engagement -- --json`
@@ -655,9 +703,11 @@ function buildPrimary({ failureByKind, failureByAction, latestReplyReplayCandida
     };
   }
   if ((failureByKind.llm || 0) > 0) {
-    const llmNextCommand = Number(failureByAction?.neighbor_comment || 0) > Number(failureByAction?.reply || 0)
-      ? REPLAY_NEIGHBOR_UI_COMMAND
-      : `${blogPrefix} run doctor:engagement -- --json`;
+    const llmNextCommand = Number(failureByAction?.sympathy || 0) >= Math.max(Number(failureByAction?.reply || 0), Number(failureByAction?.neighbor_comment || 0))
+      ? REPLAY_NEIGHBOR_SYMPATHY_COMMAND
+      : Number(failureByAction?.neighbor_comment || 0) > Number(failureByAction?.reply || 0)
+        ? REPLAY_NEIGHBOR_UI_COMMAND
+        : `${blogPrefix} run doctor:engagement -- --json`;
     return {
       area: 'engagement.llm',
       reason: 'reply 생성 LLM 실패가 현재 engagement 최우선 병목입니다.',
@@ -799,6 +849,7 @@ async function main() {
   const neighborRecovery = await getNeighborRecoveryStatus(developmentBaseline);
   const lastGapRun = readLastEngagementGapRun(developmentBaseline);
   const neighborUiReplay = readNeighborUiReplay(developmentBaseline);
+  const neighborSympathyReplay = readNeighborSympathyReplay(developmentBaseline);
   const commenterRun = readCommenterRunResult();
 
   const replyConfig = runtimeConfig.commenter || {};
@@ -957,6 +1008,16 @@ async function main() {
           resultOk: Boolean(neighborUiReplay.result?.ok),
         }
       : null,
+    neighborSympathyReplay: neighborSympathyReplay
+      ? {
+          ok: Boolean(neighborSympathyReplay.ok),
+          replayedAt: neighborSympathyReplay.replayedAt || null,
+          candidate: neighborSympathyReplay.candidate || null,
+          resultOk: Boolean(neighborSympathyReplay.result?.ok),
+          resultSkipped: Boolean(neighborSympathyReplay.result?.skipped),
+          resultReason: neighborSympathyReplay.result?.reason || neighborSympathyReplay.result?.error || neighborSympathyReplay.error || '',
+        }
+      : null,
     commenterRun: commenterRun
       ? {
           executedAt: commenterRun.executedAt || null,
@@ -972,7 +1033,7 @@ async function main() {
   };
   payload.needsAttention = payload.totalFailures > 0 || targetGaps.length > 0;
   payload.primary = buildPrimary({ failureByKind, failureByAction, latestReplyReplayCandidate, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun });
-  payload.actions = buildActions({ latestReplyReplayCandidate, failureByKind, failureByAction, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun, neighborUiReplay, primary: payload.primary });
+  payload.actions = buildActions({ latestReplyReplayCandidate, failureByKind, failureByAction, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun, neighborUiReplay, neighborSympathyReplay, primary: payload.primary });
 
   const aiSummary = await buildBlogCliInsight({
     bot: 'doctor-engagement',
@@ -1022,6 +1083,9 @@ async function main() {
   }
   if (payload.neighborUiReplay?.ok && payload.neighborUiReplay?.resultOk) {
     console.log(`[engagement doctor] neighbor_replay_ok=${payload.neighborUiReplay.replayedAt} candidate=${Number(payload.neighborUiReplay?.candidate?.id || 0)}`);
+  }
+  if (payload.neighborSympathyReplay?.ok) {
+    console.log(`[engagement doctor] neighbor_sympathy_replay=${payload.neighborSympathyReplay.replayedAt} ${payload.neighborSympathyReplay.resultOk ? 'ok' : payload.neighborSympathyReplay.resultSkipped ? 'skipped' : 'failed'}${payload.neighborSympathyReplay.resultReason ? ` ${payload.neighborSympathyReplay.resultReason}` : ''}`);
   }
   if (payload.neighborRecovery?.recovered) {
     console.log(`[engagement doctor] neighbor_recovery=success after failure (${payload.neighborRecovery.latestSuccessAt}) stale_failures=${payload.staleNeighborFailureCount}`);

@@ -3819,9 +3819,10 @@ async function getSympathyState(page) {
     const findPrimarySympathyButton = () => {
       const scope = getReactionModule();
       const likeButton = scope.querySelector('a.u_likeit_list_button._button[data-type="like"][href*="#ratingbutton-like"]');
-      if (likeButton) return likeButton;
+      if (visible(likeButton)) return likeButton;
       const faceButton = scope.querySelector('a.u_likeit_button._face[role="button"]');
       if (visible(faceButton)) return faceButton;
+      if (likeButton) return likeButton;
       return null;
     };
 
@@ -3859,6 +3860,61 @@ async function getSympathyState(page) {
   });
 }
 
+async function inspectSympathyControls(page) {
+  return page.evaluate(() => {
+    const visible = (el) => {
+      if (!el) return false;
+      const style = window.getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+    };
+
+    const textOf = (node) =>
+      String(node?.innerText || node?.textContent || '').replace(/\s+/g, ' ').trim();
+
+    const getReactionModule = () =>
+      document.querySelector('.area_sympathy .my_reaction .u_likeit_list_module[data-markuserreaction="true"]')
+        || document.querySelector('.my_reaction .u_likeit_list_module[data-markuserreaction="true"]')
+        || document.querySelector('.area_sympathy .my_reaction .u_likeit_list_module')
+        || document.querySelector('.my_reaction .u_likeit_list_module')
+        || document.querySelector('.area_sympathy .my_reaction')
+        || document.querySelector('.my_reaction')
+        || null;
+
+    const module = getReactionModule();
+    const candidates = Array.from((module || document).querySelectorAll('a,button'))
+      .filter(visible)
+      .map((node) => ({
+        tagName: String(node.tagName || '').toLowerCase(),
+        text: textOf(node).slice(0, 40),
+        className: String(node.className || '').slice(0, 160),
+        href: String(node.getAttribute('href') || ''),
+        role: String(node.getAttribute('role') || ''),
+        ariaPressed: String(node.getAttribute('aria-pressed') || '').trim().toLowerCase(),
+        ariaSelected: String(node.getAttribute('aria-selected') || '').trim().toLowerCase(),
+        dataType: String(node.getAttribute('data-type') || ''),
+      }))
+      .filter((item) =>
+        /공감/.test(item.text)
+        || /u_likeit/.test(item.className)
+        || /ratingbutton-like/i.test(item.href)
+      )
+      .slice(0, 8);
+
+    return {
+      reactionModuleFound: Boolean(module),
+      reactionModuleClassName: String(module?.className || '').slice(0, 160),
+      candidateCount: candidates.length,
+      candidates,
+    };
+  }).catch(() => ({
+    reactionModuleFound: false,
+    reactionModuleClassName: '',
+    candidateCount: 0,
+    candidates: [],
+  }));
+}
+
 async function activateSympathyInFrame(contentFrame, { testMode = false, postUrl = null } = {}) {
   await contentFrame.waitForSelector('body', { timeout: testMode ? 5000 : 15000 }).catch(() => {});
   await humanDelay(1, 2, testMode);
@@ -3893,18 +3949,38 @@ async function activateSympathyInFrame(contentFrame, { testMode = false, postUrl
       if (visible(target)) {
         target.scrollIntoView({ block: 'center', behavior: 'instant' });
       }
-      target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
-      target.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
-      target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+      const rect = target.getBoundingClientRect();
+      const eventInit = {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        view: window,
+        button: 0,
+        buttons: 1,
+        clientX: rect.left + rect.width / 2,
+        clientY: rect.top + rect.height / 2,
+      };
+      try { target.focus && target.focus(); } catch {}
+      try { target.dispatchEvent(new MouseEvent('pointerdown', eventInit)); } catch {}
+      target.dispatchEvent(new MouseEvent('mousedown', eventInit));
+      try { target.dispatchEvent(new MouseEvent('pointerup', { ...eventInit, buttons: 0 })); } catch {}
+      target.dispatchEvent(new MouseEvent('mouseup', { ...eventInit, buttons: 0 }));
+      target.dispatchEvent(new MouseEvent('click', { ...eventInit, buttons: 0 }));
+      try { target.click && target.click(); } catch {}
+      try {
+        target.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Enter', code: 'Enter' }));
+        target.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, cancelable: true, key: 'Enter', code: 'Enter' }));
+      } catch {}
       return true;
     };
 
     const findPrimarySympathyButton = () => {
       const scope = getReactionModule();
       const likeButton = scope.querySelector('a.u_likeit_list_button._button[data-type="like"][href*="#ratingbutton-like"]');
-      if (likeButton) return likeButton;
+      if (visible(likeButton)) return likeButton;
       const faceButton = scope.querySelector('a.u_likeit_button._face[role="button"]');
       if (visible(faceButton)) return faceButton;
+      if (likeButton) return likeButton;
       return null;
     };
 
@@ -3976,6 +4052,37 @@ async function clickSympathy(postUrl, { testMode = false } = {}) {
     await humanDelay(1, 2, testMode);
     contentFrame = await waitForPostContentFrame(page, testMode);
     return activateSympathyInFrame(contentFrame, { testMode, postUrl: targetPostUrl });
+  });
+}
+
+async function diagnoseSympathyUi(postUrl, { testMode = true } = {}) {
+  return withBrowserPage(testMode, async (page) => {
+    const targetPostUrl = resolveNavigablePostUrl(postUrl);
+    await goto(page, targetPostUrl);
+    let contentFrame = await waitForPostContentFrame(page, testMode);
+    await humanDelay(1, 2, testMode);
+    contentFrame = await waitForPostContentFrame(page, testMode);
+    const before = await getSympathyState(contentFrame).catch(() => null);
+    const controls = await inspectSympathyControls(contentFrame).catch(() => null);
+    let clickResult = null;
+    let after = null;
+    let error = '';
+    try {
+      clickResult = await activateSympathyInFrame(contentFrame, { testMode, postUrl: targetPostUrl });
+      after = await getSympathyState(contentFrame).catch(() => null);
+    } catch (caught) {
+      error = String(caught?.message || caught || '');
+      after = await getSympathyState(contentFrame).catch(() => null);
+    }
+    return {
+      ok: Boolean(clickResult?.ok),
+      postUrl: targetPostUrl,
+      before,
+      after,
+      controls,
+      clickResult,
+      error,
+    };
   });
 }
 
@@ -5357,6 +5464,7 @@ module.exports = {
   validateNeighborCommentWithCandidate,
   getPostSummary,
   clickSympathy,
+  diagnoseSympathyUi,
   postComment,
   postReply,
   diagnoseReplyUi,

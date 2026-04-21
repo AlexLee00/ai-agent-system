@@ -62,6 +62,7 @@ const BLOG_OPS_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bot
 const BLOG_NEIGHBOR_COLLECT_DIAG_PATH = path.join(BLOG_ROOT, 'output', 'ops', 'neighbor-collect-diagnostics.json');
 const BLOG_ENGAGEMENT_GAP_RUN_PATH = path.join(BLOG_ROOT, 'output', 'ops', 'engagement-gap-run.json');
 const BLOG_NEIGHBOR_REPLAY_PATH = path.join(BLOG_ROOT, 'output', 'ops', 'neighbor-ui-replay.json');
+const BLOG_NEIGHBOR_SYMPATHY_REPLAY_PATH = path.join(BLOG_ROOT, 'output', 'ops', 'neighbor-sympathy-replay.json');
 
 function nowKst() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
@@ -113,6 +114,24 @@ function readLastEngagementGapRun(baseline = null) {
 function readNeighborUiReplay(baseline = null) {
   try {
     const raw = fs.readFileSync(BLOG_NEIGHBOR_REPLAY_PATH, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (baseline?.startedAtIso) {
+      const replayedAt = Date.parse(String(parsed.replayedAt || ''));
+      const baselineAt = Date.parse(String(baseline.startedAtIso || ''));
+      if (Number.isFinite(replayedAt) && Number.isFinite(baselineAt) && replayedAt < baselineAt) {
+        return null;
+      }
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function readNeighborSympathyReplay(baseline = null) {
+  try {
+    const raw = fs.readFileSync(BLOG_NEIGHBOR_SYMPATHY_REPLAY_PATH, 'utf8');
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') return null;
     if (baseline?.startedAtIso) {
@@ -226,6 +245,7 @@ function classifyEngagementFailure(meta = {}) {
     || errorText.includes('reply_submit_not_found')
     || errorText.includes('reply_submit_not_confirmed')
     || errorText.includes('comment_submit_not_confirmed')
+    || errorText.includes('sympathy_button_not_found')
     || errorText.includes('reply_ui_unavailable')
     || errorText.includes('reply_editor_not_found')
   ) {
@@ -1156,6 +1176,7 @@ async function buildEngagementHealth() {
     const developmentBaseline = readDevelopmentBaseline();
     const lastGapRun = readLastEngagementGapRun(developmentBaseline);
     const neighborUiReplay = readNeighborUiReplay(developmentBaseline);
+    const neighborSympathyReplay = readNeighborSympathyReplay(developmentBaseline);
     const actionSinceClause = buildSinceClause('executed_at', developmentBaseline);
     const commentSinceClause = buildSinceClause('detected_at', developmentBaseline);
     const replyConfig = runtimeConfig.commenter || {};
@@ -1421,6 +1442,15 @@ async function buildEngagementHealth() {
         warn.push(`  neighbor replay latest: failed / ${String(neighborUiReplay.reason).slice(0, 120)}`);
       }
     }
+    if (neighborSympathyReplay?.ok) {
+      if (neighborSympathyReplay?.result?.ok) {
+        ok.push(`  neighbor sympathy replay latest: success / comment ${Number(neighborSympathyReplay?.candidate?.id || 0)} / ${String(neighborSympathyReplay?.candidate?.targetBlogId || '').trim() || 'unknown'}`);
+      } else if (neighborSympathyReplay?.result?.skipped) {
+        ok.push(`  neighbor sympathy replay latest: skipped / ${String(neighborSympathyReplay?.result?.reason || 'unknown')}`);
+      } else if (neighborSympathyReplay?.result?.error || neighborSympathyReplay?.error) {
+        warn.push(`  neighbor sympathy replay latest: failed / ${String(neighborSympathyReplay?.result?.error || neighborSympathyReplay?.error).slice(0, 120)}`);
+      }
+    }
     if (Number(inbound.total || 0) > 0 && Number(inbound.pending || 0) === 0 && Number(inbound.replied || 0) === 0 && Number(inbound.failed || 0) === 0) {
       warn.push('  reply workload empty: 오늘 inbound는 들어왔지만 reply 후보로 올라간 댓글이 없습니다');
     }
@@ -1557,6 +1587,7 @@ async function buildEngagementHealth() {
       courtesyReflectionRecheck,
       lastGapRun,
       neighborUiReplay,
+      neighborSympathyReplay,
     };
   } catch (error) {
     return {
@@ -1580,6 +1611,7 @@ async function buildEngagementHealth() {
       courtesyReflectionRecheck: { reviewedCount: 0, reevaluableCount: 0, reevaluableSamples: [] },
       lastGapRun: null,
       neighborUiReplay: null,
+      neighborSympathyReplay: null,
     };
   }
 }
@@ -2030,6 +2062,15 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
           ? `최근 neighbor replay 실패: ${String(engagementHealth.neighborUiReplay.reason)}`
           : ''
     : '';
+  const neighborSympathyReplayHint = engagementHealth?.neighborSympathyReplay?.ok
+    ? engagementHealth.neighborSympathyReplay?.result?.ok
+      ? `최근 neighbor sympathy replay 성공: comment ${Number(engagementHealth?.neighborSympathyReplay?.candidate?.id || 0)} / ${String(engagementHealth?.neighborSympathyReplay?.candidate?.targetBlogId || '').trim() || 'unknown'}`
+      : engagementHealth.neighborSympathyReplay?.result?.skipped
+        ? `최근 neighbor sympathy replay는 UI 재현 후 skip: ${String(engagementHealth?.neighborSympathyReplay?.result?.reason || 'unknown')}`
+        : engagementHealth.neighborSympathyReplay?.result?.error || engagementHealth.neighborSympathyReplay?.error
+          ? `최근 neighbor sympathy replay 실패: ${String(engagementHealth?.neighborSympathyReplay?.result?.error || engagementHealth?.neighborSympathyReplay?.error)}`
+          : ''
+    : '';
   const engagementReplayHint = engagementHealth?.latestReplyReplayCandidate?.id
     ? `npm run replay:reply-ui -- --comment-id ${engagementHealth.latestReplyReplayCandidate.id} --json`
     : '';
@@ -2253,6 +2294,7 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
           engagementRunPlanHint ? `실행 순서: ${engagementRunPlanHint}` : '',
           engagementFailureHint ? `최근 실패: ${engagementFailureHint}` : '',
           neighborReplayHint ? neighborReplayHint : '',
+          neighborSympathyReplayHint ? neighborSympathyReplayHint : '',
           engagementReplayHint ? `재현: ${engagementReplayHint}` : '',
           engagementDoctorHint,
           opsDoctorHint,
