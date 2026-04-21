@@ -465,7 +465,10 @@ async function checkInstagramPublishHealth() {
     const hostedStatus = getHostedReelStatusForTitle(latestTitle);
     const hostedAssetRecovered =
       hostedStatus.hostedReady
-      && errorText.includes('Instagram 공개 비디오 파일이 아직 준비되지 않았습니다');
+      && (
+        errorText.includes('Instagram 공개 비디오 파일이 아직 준비되지 않았습니다')
+        || errorText.includes('Instagram 공개 비디오 URL이 아직 응답하지 않습니다')
+      );
 
     if (hostedAssetRecovered) {
       return {
@@ -690,6 +693,7 @@ async function checkEngagementAutomationHealth() {
       });
       const targets = engagementPayload?.targets || {};
       const primaryGap = engagementPayload?.primaryGap || null;
+      const runPlan = Array.isArray(engagementPayload?.runPlan) ? engagementPayload.runPlan : [];
       const targetLines = [
         targets?.replies?.active ? `replies ${targets.replies.success}/${targets.replies.expectedNow}` : '',
         targets?.neighborComments?.active ? `neighbor ${targets.neighborComments.success}/${targets.neighborComments.expectedNow}` : '',
@@ -701,13 +705,16 @@ async function checkEngagementAutomationHealth() {
       const immediateRunHint = engagementPriority?.nextCommand
         ? `\nrun now: ${engagementPriority.nextCommand}`
         : '';
+      const runPlanHint = runPlan.length > 0
+        ? `\nrun plan: ${runPlan.map((item) => `${item.step}.${item.label}`).join(' -> ')}`
+        : '';
       const replayHint = latestReplyReplayCandidate?.id
         ? `\nreply replay: npm run replay:reply-ui -- --comment-id ${latestReplyReplayCandidate.id} --json`
         : '';
       const doctorHint = `\ndoctor: ${ENGAGEMENT_DOCTOR_COMMAND}${buildPriorityHint('engagement primary', engagementPriority, { includeActionFocus: true })}${buildPriorityHint('primary blocker', opsPriority, { includeActionFocus: true })}\nops doctor: ${BLOG_OPS_DOCTOR_COMMAND}`;
       return {
         ok: false,
-        detail: `engagement target gap — ${targetLines || targetGaps.join(', ')}${primaryGapHint}${immediateRunHint}${replayHint}${doctorHint}`,
+        detail: `engagement target gap — ${targetLines || targetGaps.join(', ')}${primaryGapHint}${immediateRunHint}${runPlanHint}${replayHint}${doctorHint}`,
         failureByKind,
         failureByAction,
         latestReplyReplayCandidate,
