@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
+const fs = require('fs');
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const pgPool = require('../../../packages/core/lib/pg-pool.js');
@@ -11,6 +12,8 @@ const { readDevelopmentBaseline, buildSinceClause } = require('../lib/dev-baseli
 
 const runtimeConfig = getBlogHealthRuntimeConfig();
 const BLOG_ROOT = path.join(env.PROJECT_ROOT, 'bots/blog');
+const BLOG_OPS_ROOT = path.join(BLOG_ROOT, 'output', 'ops');
+const BLOG_NEIGHBOR_COLLECT_DIAG_PATH = path.join(BLOG_OPS_ROOT, 'neighbor-collect-diagnostics.json');
 const RUN_ENGAGEMENT_GAP_COMMAND = `npm --prefix ${BLOG_ROOT} run run:engagement-gap`;
 const BACKFILL_COURTESY_REPLIES_COMMAND = `npm --prefix ${BLOG_ROOT} run backfill:courtesy-replies`;
 
@@ -187,6 +190,16 @@ function buildRunPlan(targetGapDetails = []) {
     deficit: item.deficit,
     command: getGapActionCommand(item.label),
   }));
+}
+
+function readNeighborCollectDiagnostics() {
+  try {
+    const raw = fs.readFileSync(BLOG_NEIGHBOR_COLLECT_DIAG_PATH, 'utf8');
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 async function getLatestReplyReplayCandidate(baseline = null) {
@@ -407,7 +420,7 @@ async function getCourtesyReflectionRecheck(baseline = null) {
   }
 }
 
-function buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, primary }) {
+function buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, primary }) {
   const actions = [];
   if ((failureByKind.ui || 0) > 0 || (failureByKind.browser || 0) > 0) {
     actions.push('네이버 reply UI selector와 browser mount 흐름 점검');
@@ -448,6 +461,11 @@ function buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, p
       && Number(neighborWorkload?.failedCount || 0) === 0
     ) {
       actions.push('현재 바로 처리할 neighbor comment queue가 없습니다');
+      if (neighborCollectDiagnostics) {
+        actions.push(
+          `최근 수집 진단: buddy ${Number(neighborCollectDiagnostics.buddyFeedSourceCount || 0)} / network ${Number(neighborCollectDiagnostics.commenterNetworkSourceCount || 0)} / resolved ${Number(neighborCollectDiagnostics.commenterNetworkResolvedCount || 0)} / collected ${Number(neighborCollectDiagnostics.rawCollectedCount || 0)} / inserted ${Number(neighborCollectDiagnostics.insertedCount || 0)}`
+        );
+      }
     }
     actions.push(
       primaryGap?.label
@@ -478,7 +496,7 @@ function buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, p
   return Array.from(new Set([...prioritized, ...actions]));
 }
 
-function buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence }) {
+function buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics }) {
   const blogPrefix = `npm --prefix ${BLOG_ROOT}`;
   if ((failureByKind.ui || 0) > 0 || (failureByKind.browser || 0) > 0) {
     return {
@@ -513,9 +531,12 @@ function buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps, p
       && Number(neighborWorkload?.postedCount || 0) === 0
       && Number(neighborWorkload?.failedCount || 0) === 0
     ) {
+      const collectSummary = neighborCollectDiagnostics
+        ? ` 최근 수집: buddy ${Number(neighborCollectDiagnostics.buddyFeedSourceCount || 0)} / network ${Number(neighborCollectDiagnostics.commenterNetworkSourceCount || 0)} / resolved ${Number(neighborCollectDiagnostics.commenterNetworkResolvedCount || 0)} / collected ${Number(neighborCollectDiagnostics.rawCollectedCount || 0)} / inserted ${Number(neighborCollectDiagnostics.insertedCount || 0)}.`
+        : '';
       return {
         area: 'engagement.target_gap.neighbor.no_workload',
-        reason: `neighbor 목표치는 비어 있지만 현재 바로 처리할 neighbor queue가 없습니다 (posted ${Number(neighborWorkload?.postedCount || 0)} / pending ${Number(neighborWorkload?.pendingCount || 0)} / failed ${Number(neighborWorkload?.failedCount || 0)}).`,
+        reason: `neighbor 목표치는 비어 있지만 현재 바로 처리할 neighbor queue가 없습니다 (posted ${Number(neighborWorkload?.postedCount || 0)} / pending ${Number(neighborWorkload?.pendingCount || 0)} / failed ${Number(neighborWorkload?.failedCount || 0)}).${collectSummary}`,
         nextCommand: `${RUN_ENGAGEMENT_GAP_COMMAND} -- --label=neighbor`,
         actionFocus: '외부 댓글 수집/유입과 현재 시간대 queue 생성 여부 점검',
       };
@@ -695,6 +716,7 @@ async function main() {
     baseProcess: neighborConfig.maxProcessPerCycle || 20,
     baseCollect: neighborConfig.maxCollectPerCycle || 20,
   });
+  const neighborCollectDiagnostics = readNeighborCollectDiagnostics();
 
   const payload = {
     developmentBaseline: developmentBaseline
@@ -728,11 +750,12 @@ async function main() {
     adaptiveNeighborCadence,
     replyWorkload,
     neighborWorkload,
+    neighborCollectDiagnostics,
     courtesyReflectionRecheck,
   };
   payload.needsAttention = payload.totalFailures > 0 || targetGaps.length > 0;
-  payload.primary = buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence });
-  payload.actions = buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, primary: payload.primary });
+  payload.primary = buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics });
+  payload.actions = buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, primary: payload.primary });
 
   const aiSummary = await buildBlogCliInsight({
     bot: 'doctor-engagement',

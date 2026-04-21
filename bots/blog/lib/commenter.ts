@@ -23,6 +23,8 @@ const BROWSER_PROTOCOL_TIMEOUT_MS = 180000;
 const NAVER_NAVIGATION_TIMEOUT_MS = 45000;
 const NAVER_MONITOR_WS_FILE = path.join(env.OPENCLAW_WORKSPACE, 'naver-monitor-ws.txt');
 const BLOG_COMMENTER_DEBUG_DIR = path.join(env.PROJECT_ROOT, 'tmp', 'blog-commenter-debug');
+const BLOG_OPS_DIR = path.join(env.PROJECT_ROOT, 'bots', 'blog', 'output', 'ops');
+const BLOG_NEIGHBOR_COLLECT_DIAG_PATH = path.join(BLOG_OPS_DIR, 'neighbor-collect-diagnostics.json');
 
 function traceCommenter(...args) {
   if (process.env.BLOG_COMMENTER_TRACE !== 'true') return;
@@ -71,6 +73,27 @@ function readNaverMonitorWsEndpoint() {
   } catch {
     return '';
   }
+}
+
+function ensureDirSync(dirPath = '') {
+  if (!dirPath) return;
+  try {
+    fs.mkdirSync(dirPath, { recursive: true });
+  } catch {}
+}
+
+function writeNeighborCollectDiagnostics(payload = {}) {
+  try {
+    ensureDirSync(BLOG_OPS_DIR);
+    fs.writeFileSync(
+      BLOG_NEIGHBOR_COLLECT_DIAG_PATH,
+      JSON.stringify({
+        updatedAt: new Date().toISOString(),
+        ...payload,
+      }, null, 2),
+      'utf8',
+    );
+  } catch {}
 }
 
 function getCommenterConfig() {
@@ -1708,11 +1731,33 @@ async function collectNeighborCandidates({ testMode = false, persist = true, col
   const recentBlogIds = await getRecentNeighborBlogIds(config.recentWindowDays);
   const collected = [];
   const seenUrls = new Set(recentUrls);
+  const diagnostics = {
+    ownBlogId,
+    testMode: Boolean(testMode),
+    persist: Boolean(persist),
+    effectiveCollectLimit,
+    recentWindowDays: Number(config.recentWindowDays || 14),
+    recentTargetedPostCount: recentUrls.size,
+    recentNeighborBlogCount: recentBlogIds.size,
+    commenterNetworkSourceCount: 0,
+    commenterNetworkResolvedCount: 0,
+    buddyFeedSourceCount: 0,
+    rawCollectedCount: 0,
+    insertedCount: 0,
+    skippedExistingSuccessCount: 0,
+    dedupedCount: 0,
+    sourceTypeCounts: {
+      buddy_feed: 0,
+      commenter_network: 0,
+    },
+  };
 
   const commenterNetwork = await getCommenterNetworkCandidates(effectiveCollectLimit, ownBlogId);
+  diagnostics.commenterNetworkSourceCount = Array.isArray(commenterNetwork) ? commenterNetwork.length : 0;
 
   await withBrowserPage(testMode, async (page) => {
     const buddyFeed = await extractBuddyFeedPosts(page, ownBlogId, effectiveCollectLimit);
+    diagnostics.buddyFeedSourceCount = Array.isArray(buddyFeed) ? buddyFeed.length : 0;
     for (const item of buddyFeed) {
       if (seenUrls.has(item.postUrl) || recentBlogIds.has(item.targetBlogId)) continue;
       collected.push({
@@ -1724,6 +1769,7 @@ async function collectNeighborCandidates({ testMode = false, persist = true, col
         postTitle: item.postTitle,
         meta: item.meta,
       });
+      diagnostics.sourceTypeCounts.buddy_feed += 1;
       seenUrls.add(item.postUrl);
       if (collected.length >= effectiveCollectLimit) return;
     }
@@ -1733,6 +1779,7 @@ async function collectNeighborCandidates({ testMode = false, persist = true, col
       if (!targetBlogId || recentBlogIds.has(targetBlogId)) continue;
       const latest = await resolveLatestPostForBlog(page, targetBlogId, testMode).catch(() => null);
       if (!latest?.postUrl || seenUrls.has(latest.postUrl)) continue;
+      diagnostics.commenterNetworkResolvedCount += 1;
       collected.push({
         targetBlogId,
         targetBlogName: squeezeText(row.commenter_name || '', 80),
@@ -1742,12 +1789,24 @@ async function collectNeighborCandidates({ testMode = false, persist = true, col
         postTitle: latest.postTitle,
         meta: { lastSeenAt: row.last_seen_at || null },
       });
+      diagnostics.sourceTypeCounts.commenter_network += 1;
       seenUrls.add(latest.postUrl);
       if (collected.length >= effectiveCollectLimit) return;
     }
   });
+  diagnostics.rawCollectedCount = collected.length;
 
   if (!persist) {
+    writeNeighborCollectDiagnostics({
+      ...diagnostics,
+      collectOnly: true,
+      candidates: collected.slice(0, 5).map((candidate) => ({
+        targetBlogId: candidate.targetBlogId,
+        sourceType: candidate.sourceType,
+        postUrl: candidate.postUrl,
+        postTitle: candidate.postTitle,
+      })),
+    });
     return collected;
   }
 
@@ -1755,7 +1814,24 @@ async function collectNeighborCandidates({ testMode = false, persist = true, col
   for (const candidate of collected) {
     const saved = await saveNeighborCandidate(candidate);
     if (saved.inserted) inserted.push({ ...candidate, id: saved.id });
+    if (saved.skippedExistingSuccess) {
+      diagnostics.skippedExistingSuccessCount += 1;
+    } else if (!saved.inserted) {
+      diagnostics.dedupedCount += 1;
+    }
   }
+  diagnostics.insertedCount = inserted.length;
+  writeNeighborCollectDiagnostics({
+    ...diagnostics,
+    collectOnly: false,
+    candidates: inserted.slice(0, 5).map((candidate) => ({
+      id: candidate.id,
+      targetBlogId: candidate.targetBlogId,
+      sourceType: candidate.sourceType,
+      postUrl: candidate.postUrl,
+      postTitle: candidate.postTitle,
+    })),
+  });
   return inserted;
 }
 
@@ -4905,4 +4981,5 @@ module.exports = {
   runNeighborCommenter,
   runNeighborSympathy,
   runCommentReply,
+  writeNeighborCollectDiagnostics,
 };

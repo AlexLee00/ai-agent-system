@@ -58,6 +58,7 @@ const INSTAGRAM_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bo
 const SOCIAL_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:social -- --json`;
 const ENGAGEMENT_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:engagement -- --json`;
 const BLOG_OPS_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:ops -- --json`;
+const BLOG_NEIGHBOR_COLLECT_DIAG_PATH = path.join(BLOG_ROOT, 'output', 'ops', 'neighbor-collect-diagnostics.json');
 
 function nowKst() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
@@ -76,6 +77,16 @@ function toKstDateString(value = null) {
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
+}
+
+function readNeighborCollectDiagnostics() {
+  try {
+    const raw = fs.readFileSync(BLOG_NEIGHBOR_COLLECT_DIAG_PATH, 'utf8');
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 function calcExpectedByWindow(target, startHour, endHour) {
@@ -1213,6 +1224,7 @@ async function buildEngagementHealth() {
       baseProcess: neighborConfig.maxProcessPerCycle || 20,
       baseCollect: neighborConfig.maxCollectPerCycle || 20,
     });
+    const neighborCollectDiagnostics = readNeighborCollectDiagnostics();
 
     const ok = [
       `  replies: ${replySuccess}/${replyPlan.target} (expected now ${replyPlan.expectedNow})`,
@@ -1247,6 +1259,17 @@ async function buildEngagementHealth() {
     }
     if (Number(inbound.total || 0) > 0 && Number(inbound.pending || 0) === 0 && Number(inbound.replied || 0) === 0 && Number(inbound.failed || 0) === 0) {
       warn.push('  reply workload empty: 오늘 inbound는 들어왔지만 reply 후보로 올라간 댓글이 없습니다');
+    }
+    if (
+      neighborPlan.active
+      && neighborCommentSuccess < neighborPlan.expectedNow
+      && Number(neighborStatusMap.get('posted') || 0) === 0
+      && Number(neighborStatusMap.get('pending') || 0) === 0
+      && neighborCollectDiagnostics
+    ) {
+      ok.push(
+        `  neighbor collect diag: buddy ${Number(neighborCollectDiagnostics.buddyFeedSourceCount || 0)} / network ${Number(neighborCollectDiagnostics.commenterNetworkSourceCount || 0)} / resolved ${Number(neighborCollectDiagnostics.commenterNetworkResolvedCount || 0)} / collected ${Number(neighborCollectDiagnostics.rawCollectedCount || 0)} / inserted ${Number(neighborCollectDiagnostics.insertedCount || 0)}`
+      );
     }
     if (replyFailure + neighborCommentFailure + sympathyFailure > 0) {
       warn.push(`  failed engagement actions today: ${replyFailure + neighborCommentFailure + sympathyFailure}건`);
@@ -1336,6 +1359,7 @@ async function buildEngagementHealth() {
         failed: Number(neighborStatusMap.get('failed') || 0),
         pending: Number(neighborStatusMap.get('pending') || 0),
       },
+      neighborCollectDiagnostics,
       adaptiveNeighborCadence,
       failureByKind,
       failureSamples,
@@ -1366,6 +1390,7 @@ async function buildEngagementHealth() {
       inboundComments: { total: 0, replied: 0, pending: 0, failed: 0 },
       replyPendingBacklog: 0,
       neighborQueue: { posted: 0, failed: 0, pending: 0 },
+      neighborCollectDiagnostics: null,
       failureByKind: { ui: 0, llm: 0, browser: 0, verification: 0, unknown: 0 },
       failureSamples: [],
       latestReplyReplayCandidate: null,
@@ -1987,6 +2012,9 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
             : '',
           engagementDoctorPriority?.primaryArea === 'engagement.target_gap.neighbor.no_workload'
             ? '현재 바로 처리할 neighbor comment queue가 없어 gap이 유지되고 있습니다.'
+            : '',
+          engagementDoctorPriority?.primaryArea === 'engagement.target_gap.neighbor.no_workload' && engagementHealth?.neighborCollectDiagnostics
+            ? `최근 neighbor 수집 진단: buddy ${Number(engagementHealth.neighborCollectDiagnostics.buddyFeedSourceCount || 0)} / network ${Number(engagementHealth.neighborCollectDiagnostics.commenterNetworkSourceCount || 0)} / resolved ${Number(engagementHealth.neighborCollectDiagnostics.commenterNetworkResolvedCount || 0)} / collected ${Number(engagementHealth.neighborCollectDiagnostics.rawCollectedCount || 0)} / inserted ${Number(engagementHealth.neighborCollectDiagnostics.insertedCount || 0)}`
             : '',
           adaptiveCadenceHint,
           Number(engagementHealth?.courtesyReflectionRecheck?.reevaluableCount || 0) > 0
