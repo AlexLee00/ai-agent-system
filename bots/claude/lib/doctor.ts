@@ -40,7 +40,7 @@ const RESTART_TIMEOUT_COOLDOWN_FAILS = 3;
 function kickstartLaunchdService(uid, label, timeout = 15000) {
   return execFileSync(
     'launchctl',
-    ['kickstart', '-kp', `gui/${uid}/${label}`],
+    ['kickstart', '-k', `gui/${uid}/${label}`],
     { timeout, encoding: 'utf8' },
   );
 }
@@ -115,7 +115,7 @@ const WHITELIST = {
       if (!String(label).startsWith('ai.')) throw new Error(`ai.* 서비스만 허용: ${label}`);
       if (RECOVERY_BLACKLIST.has(label)) throw new Error(`블랙리스트 서비스: ${label}`);
       const uid = process.getuid ? process.getuid() : execSync('id -u', { encoding: 'utf8' }).trim();
-      // kickstart -k: 이미 실행 중이면 강제 종료 후 재시작, -p: 출력 보존
+      // kickstart -k: 이미 실행 중이면 강제 종료 후 재시작
       kickstartLaunchdService(uid, label, 15000);
       return { restarted: label };
     },
