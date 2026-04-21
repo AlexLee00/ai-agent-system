@@ -32,6 +32,7 @@ const { checkFacebookPublishReadiness } = require(path.join(env.PROJECT_ROOT, 'b
 const { buildMarketingDigest } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/marketing-digest.ts'));
 const { assessInboundComment } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/commenter.ts'));
 const { readDevelopmentBaseline, buildSinceClause } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/dev-baseline.ts'));
+const { readCommenterRunResult } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/commenter-run-telemetry.ts'));
 
 const CONTINUOUS = ['ai.blog.node-server'];
 const ALL_SERVICES = ['ai.blog.daily', 'ai.blog.node-server'];
@@ -1276,12 +1277,22 @@ async function buildEngagementHealth() {
       actionMap.set(`${row.action_type}:${row.success ? 'ok' : 'fail'}`, Number(row.cnt || 0));
     }
 
+    const commenterRun = readCommenterRunResult();
     const effectiveFailureMetaRows = (failureMetaRows || []).filter((row) => {
       if (!neighborRecovery?.recovered) return true;
       if (String(row.action_type || '') !== 'neighbor_comment') return true;
       const executedAt = row?.executed_at ? new Date(row.executed_at) : null;
       if (!executedAt || Number.isNaN(executedAt.getTime())) return true;
       return executedAt.getTime() > new Date(neighborRecovery.latestSuccessAt).getTime();
+    }).filter((row) => {
+      if (String(row.action_type || '') !== 'reply') return true;
+      if (!commenterRun?.executedAt || Number(commenterRun?.failed || 0) > 0) return true;
+      const executedAt = row?.executed_at ? new Date(row.executed_at) : null;
+      const runAt = commenterRun?.executedAt ? new Date(commenterRun.executedAt) : null;
+      if (!executedAt || Number.isNaN(executedAt.getTime()) || !runAt || Number.isNaN(runAt.getTime())) return true;
+      const sample = summarizeEngagementFailure(row.meta || {});
+      if (!String(sample || '').includes('isReplyModeOpen is not defined')) return true;
+      return executedAt.getTime() > runAt.getTime();
     });
     const staleNeighborFailureCount = Math.max(0, Number((failureMetaRows || []).length) - Number(effectiveFailureMetaRows.length));
 

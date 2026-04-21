@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const { runCommentReply } = require('../lib/commenter.ts');
+const { writeCommenterRunResult } = require('../lib/commenter-run-telemetry.ts');
 
 const LOCK_DIR = path.join(env.PROJECT_ROOT, 'tmp');
 const LOCK_FILE = path.join(LOCK_DIR, 'blog-commenter.lock');
@@ -56,7 +57,8 @@ function releaseLock() {
 }
 
 async function main() {
-  const testMode = process.env.BLOG_COMMENTER_TEST === 'true';
+  const argv = process.argv.slice(2);
+  const testMode = process.env.BLOG_COMMENTER_TEST === 'true' || argv.includes('--test-mode');
   const lockState = acquireLock();
   if (!lockState.acquired) {
     console.log(`[커멘터] 스킵: already_running pid=${lockState.lock?.pid || 'unknown'}`);
@@ -65,6 +67,18 @@ async function main() {
   env.printModeBanner('blog commenter');
   try {
     const result = await runCommentReply({ testMode });
+    writeCommenterRunResult({
+      executedAt: new Date().toISOString(),
+      testMode,
+      ok: Boolean(result?.ok),
+      skipped: Boolean(result?.skipped),
+      reason: String(result?.reason || ''),
+      detected: Number(result?.detected || 0),
+      pending: Number(result?.pending || 0),
+      replied: Number(result?.replied || 0),
+      failed: Number(result?.failed || 0),
+      skippedCount: Number(result?.skipped || 0),
+    });
     if (result?.ok !== true && result?.skipped === true) {
       console.log(`[커멘터] 스킵: ${result.reason}`);
       return;
@@ -79,6 +93,18 @@ async function main() {
 main()
   .then(() => process.exit(0))
   .catch((error) => {
+    writeCommenterRunResult({
+      executedAt: new Date().toISOString(),
+      testMode: process.env.BLOG_COMMENTER_TEST === 'true',
+      ok: false,
+      skipped: false,
+      reason: String(error?.message || error || ''),
+      detected: 0,
+      pending: 0,
+      replied: 0,
+      failed: 1,
+      skippedCount: 0,
+    });
     console.error('[커멘터] 실패:', error?.stack || error?.message || String(error));
     process.exit(1);
   });

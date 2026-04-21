@@ -9,6 +9,7 @@ const { buildBlogCliInsight } = require('../lib/cli-insight.ts');
 const { getBlogHealthRuntimeConfig } = require('../lib/runtime-config.ts');
 const { assessInboundComment } = require('../lib/commenter.ts');
 const { readDevelopmentBaseline, buildSinceClause } = require('../lib/dev-baseline.ts');
+const { readCommenterRunResult } = require('../lib/commenter-run-telemetry.ts');
 
 const runtimeConfig = getBlogHealthRuntimeConfig();
 const BLOG_ROOT = path.join(env.PROJECT_ROOT, 'bots/blog');
@@ -798,6 +799,7 @@ async function main() {
   const neighborRecovery = await getNeighborRecoveryStatus(developmentBaseline);
   const lastGapRun = readLastEngagementGapRun(developmentBaseline);
   const neighborUiReplay = readNeighborUiReplay(developmentBaseline);
+  const commenterRun = readCommenterRunResult();
 
   const replyConfig = runtimeConfig.commenter || {};
   const neighborConfig = runtimeConfig.neighborCommenter || {};
@@ -808,6 +810,15 @@ async function main() {
     const executedAt = row?.executed_at ? new Date(row.executed_at) : null;
     if (!executedAt || Number.isNaN(executedAt.getTime())) return true;
     return executedAt.getTime() > new Date(neighborRecovery.latestSuccessAt).getTime();
+  }).filter((row) => {
+    if (String(row.action_type || '') !== 'reply') return true;
+    if (!commenterRun?.executedAt || Number(commenterRun?.failed || 0) > 0) return true;
+    const executedAt = row?.executed_at ? new Date(row.executed_at) : null;
+    const runAt = commenterRun?.executedAt ? new Date(commenterRun.executedAt) : null;
+    if (!executedAt || Number.isNaN(executedAt.getTime()) || !runAt || Number.isNaN(runAt.getTime())) return true;
+    const sample = summarizeEngagementFailure(row.meta || {});
+    if (!String(sample || '').includes('isReplyModeOpen is not defined')) return true;
+    return executedAt.getTime() > runAt.getTime();
   });
   const staleNeighborFailureCount = Math.max(0, Number((rows || []).length) - Number(effectiveRows.length));
 
@@ -944,6 +955,16 @@ async function main() {
           replayedAt: neighborUiReplay.replayedAt || null,
           candidate: neighborUiReplay.candidate || null,
           resultOk: Boolean(neighborUiReplay.result?.ok),
+        }
+      : null,
+    commenterRun: commenterRun
+      ? {
+          executedAt: commenterRun.executedAt || null,
+          testMode: Boolean(commenterRun.testMode),
+          ok: Boolean(commenterRun.ok),
+          failed: Number(commenterRun.failed || 0),
+          replied: Number(commenterRun.replied || 0),
+          reason: String(commenterRun.reason || ''),
         }
       : null,
     courtesyReflectionRecheck,
