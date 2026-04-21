@@ -1,10 +1,14 @@
 defmodule TeamJay.Teams.InvestmentScheduler do
   @moduledoc """
-  투자팀 calendar 기반 작업을 Quantum에서 트리거하는 헬퍼.
+  투자팀 수동 트리거/호환용 헬퍼.
 
-  CODEX_LUNA_OPS_TRANSITION: launchd 전환 대상 스케줄 전체 커버.
-  주의: PortAgent가 등록된 경우에만 run()이 유효. InvestmentSupervisor 비활성 시 무시됨.
-  시장 휴장/주말 판단은 각 스크립트 내부 가드에서 처리.
+  launchd 전환 이후 투자팀의 wall-clock 스케줄은 launchd가 KST 기준으로 전담한다.
+  이 모듈은 수동 실행, 리허설, 제한적 내부 호출 호환성을 위해 남긴다.
+
+  주의:
+  - PortAgent가 등록된 경우에만 run()이 유효하다.
+  - InvestmentSupervisor 비활성 시 무시된다.
+  - 시장 휴장/주말 판단은 각 스크립트 내부 가드에서 처리한다.
   """
 
   alias Jay.Core.Agents.PortAgent

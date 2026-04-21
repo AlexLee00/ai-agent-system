@@ -33,26 +33,8 @@ config :team_jay, Jay.Core.Scheduler,
     {"0 6 * * *", {Jay.Core.Agents.PortAgent, :run, [:forecast_daily]}},
     {"0 9 * * *", {Jay.Core.Agents.PortAgent, :run, [:dexter_daily]}},
     {"0 10 * * 1", {Jay.Core.Agents.PortAgent, :run, [:steward_weekly]}},
-    {"0 8 * * *", {TeamJay.Teams.InvestmentScheduler, :run_prescreen_domestic, []}},
-    {"0 21 * * *", {TeamJay.Teams.InvestmentScheduler, :run_prescreen_overseas, []}},
-    # market-alert-* 는 launchd가 KST 기준으로 이미 담당한다.
-    # Quantum cron은 UTC 기준이어서 중복/오발송 위험이 있어 제외한다.
-    {"0 8 * * *", {TeamJay.Teams.InvestmentScheduler, :run_reporter, []}},
-    {"0 21 * * *", {TeamJay.Teams.InvestmentScheduler, :run_daily_feedback, []}},
-    # ─── CODEX_LUNA_OPS_TRANSITION 신규 (UTC 기준) ───────────────
-    # Scout: 06:30 KST = 21:30 UTC 전날, 18:30 KST = 09:30 UTC
-    {"30 21 * * *", {TeamJay.Teams.InvestmentScheduler, :run_scout, []}},
-    {"30 9 * * *", {TeamJay.Teams.InvestmentScheduler, :run_scout, []}},
-    # 국내장: 09:00~15:30 KST = 00:00~06:30 UTC
-    {"0,30 0-6 * * *", {TeamJay.Teams.InvestmentScheduler, :run_domestic, []}},
-    {"0,30 0-6 * * *", {TeamJay.Teams.InvestmentScheduler, :run_domestic_validation, []}},
-    # 해외장: 22:30 KST = 13:30 UTC, 05:00 KST = 20:00 UTC
-    {"30 13 * * *", {TeamJay.Teams.InvestmentScheduler, :run_overseas, []}},
-    {"0,30 14-19 * * *", {TeamJay.Teams.InvestmentScheduler, :run_overseas, []}},
-    {"0 20 * * *", {TeamJay.Teams.InvestmentScheduler, :run_overseas, []}},
-    {"30 13 * * *", {TeamJay.Teams.InvestmentScheduler, :run_overseas_validation, []}},
-    {"0,30 14-19 * * *", {TeamJay.Teams.InvestmentScheduler, :run_overseas_validation, []}},
-    {"0 20 * * *", {TeamJay.Teams.InvestmentScheduler, :run_overseas_validation, []}},
+    # 투자팀 wall-clock 스케줄은 launchd가 KST 기준으로 전담한다.
+    # Quantum에 같은 작업을 중복 등록하면 UTC/KST 혼선과 중복 실행이 생기므로 제외한다.
     # ─── 다윈팀 연구 스케줄 (UTC 기준) ─────────────────────────────
     # 논문 스캔: 06:00 KST = 21:00 UTC (전날)
     {"0 21 * * *", {Jay.Core.Agents.PortAgent, :run, [:darwin_scanner]}},
