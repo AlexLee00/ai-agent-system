@@ -43,11 +43,12 @@ function buildActions({ social, engagement, primary }) {
     actions.push(...group.slice(0, 3));
   }
 
-  if (primary?.nextCommand) {
+  const hasActivePrimary = primaryArea && primaryArea !== 'clear' && primaryArea !== 'unknown';
+  if (hasActivePrimary && primary?.nextCommand) {
     actions.unshift(`우선 실행: ${primary.nextCommand}`);
   }
 
-  if (primary?.actionFocus) {
+  if (hasActivePrimary && primary?.actionFocus) {
     actions.unshift(`focus blocker: ${primary.actionFocus}`);
   }
 

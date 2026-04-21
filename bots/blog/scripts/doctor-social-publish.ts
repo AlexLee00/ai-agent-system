@@ -113,10 +113,12 @@ function buildActions({ facebookReadiness, instagramConfig, latestFacebook, late
   }
 
   const prioritized = [];
-  if (primary?.actionFocus) {
+  const primaryArea = String(primary?.area || '');
+  const hasActivePrimary = primaryArea && primaryArea !== 'clear' && primaryArea !== 'unknown';
+  if (hasActivePrimary && primary?.actionFocus) {
     prioritized.push(`focus blocker: ${primary.actionFocus}`);
   }
-  if (primary?.nextCommand) {
+  if (hasActivePrimary && primary?.nextCommand) {
     prioritized.push(`우선 실행: ${primary.nextCommand}`);
   }
 
