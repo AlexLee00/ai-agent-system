@@ -2883,9 +2883,6 @@ async function focusReplyEditor(page) {
       const scope = document.querySelector('[data-blog-target-reply-area="true"]')
         || targetComment?.querySelector('.u_cbox_reply_area')
         || targetComment?.querySelector('[class*="reply_area"]')
-        || document.querySelector('.u_cbox_write_wrap')
-        || document.querySelector('.u_cbox_write')
-        || document.querySelector('.u_cbox_write_area')
         || null;
       if (!scope) return false;
       const roots = [scope];
@@ -2907,9 +2904,6 @@ async function focusReplyEditor(page) {
       const scope = document.querySelector('[data-blog-target-reply-area="true"]')
         || targetComment?.querySelector('.u_cbox_reply_area')
         || targetComment?.querySelector('[class*="reply_area"]')
-        || document.querySelector('.u_cbox_write_wrap')
-        || document.querySelector('.u_cbox_write')
-        || document.querySelector('.u_cbox_write_area')
         || null;
       if (!scope) return null;
       const roots = [scope];
@@ -2943,6 +2937,54 @@ async function focusReplyEditor(page) {
       };
     })()
   `);
+}
+
+async function inspectReplyEditorCandidates(page) {
+  return page.evaluate(`
+    (() => {
+      const visible = (el) => {
+        if (!el) return false;
+        const style = window.getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+      };
+      const targetComment = document.querySelector('[data-blog-target-comment="true"]');
+      const scope = document.querySelector('[data-blog-target-reply-area="true"]')
+        || targetComment?.querySelector('.u_cbox_reply_area')
+        || targetComment?.querySelector('[class*="reply_area"]')
+        || null;
+      const scoreNode = (node) => {
+        let score = 0;
+        const id = String(node.id || '');
+        const dataAreaCode = String(node.getAttribute('data-area-code') || '');
+        const title = String(node.getAttribute('title') || '');
+        if (/__reply_textarea_/i.test(id)) score += 6;
+        if (dataAreaCode === 'RPC.replyinput') score += 5;
+        if (/답글|답변/.test(title)) score += 2;
+        if (scope && scope.contains(node)) score += 1;
+        return score;
+      };
+      const nodes = Array.from(document.querySelectorAll('textarea, div[contenteditable="true"], div[role="textbox"]'))
+        .filter(visible)
+        .map((node) => ({
+          id: String(node.id || ''),
+          title: String(node.getAttribute('title') || ''),
+          dataAreaCode: String(node.getAttribute('data-area-code') || ''),
+          className: String(node.className || '').slice(0, 120),
+          inReplyArea: Boolean(scope && scope.contains(node)),
+          score: scoreNode(node),
+        }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 6);
+      return {
+        hasScope: Boolean(scope),
+        candidates: nodes,
+      };
+    })()
+  `).catch(() => ({
+    hasScope: false,
+    candidates: [],
+  }));
 }
 
 async function focusCommentEditor(page, logNo = '', timeoutMs = 15000) {
@@ -3854,6 +3896,7 @@ async function diagnoseReplyUi(comment, { testMode = true, operationTimeoutMs = 
       const submitReady = replyModeOpened
         ? await waitForReplySubmitReady(contentFrame, true).catch(() => false)
         : false;
+      const editorCandidates = await inspectReplyEditorCandidates(contentFrame).catch(() => null);
       const submitState = await inspectReplySubmitLite(contentFrame).catch(() => null);
       const controls = await inspectReplyControlsLite(contentFrame).catch(() => null);
 
@@ -3867,6 +3910,7 @@ async function diagnoseReplyUi(comment, { testMode = true, operationTimeoutMs = 
         usedCommentEditorFallback,
         editorSelector: editor?.selector || '',
         editorId: editor?.id || '',
+        editorCandidates,
         submitReady,
         submitState,
         controls,
