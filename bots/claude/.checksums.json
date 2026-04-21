@@ -1,7 +1,7 @@
 {
   "bots/reservation/lib/secrets.ts": "d0b15cb126430ca8656960fccb37fad1a11a3410bf906e81c352cf27ef4a7da2",
   "bots/reservation/lib/db.ts": "ca5f472ad7deddab499d4e8842d22066d42412a47a72f9caefdb3c87e1cd061f",
-  "bots/reservation/auto/monitors/start-ops.sh": "01b54f32912af854a9024a8df15081bbebba559a8658b3e1cda59a4d7199f03d",
+  "bots/reservation/auto/monitors/start-ops.sh": "6d39315f107ba4b75cd82c22f5c0cd0e76473a8ab46ab5480972f3e672fed4ba",
   "bots/investment/markets/crypto.ts": "06950306c70efe4b00cdc1c85fc0359976a696398f104e2481a9e81075c10061",
   "bots/investment/markets/domestic.ts": "4d1c9d7d51ec0b902c60e4f06006009b355d1a5c572f2863a1057b4ecad387ba",
   "bots/investment/markets/overseas.ts": "be932c86aaa1ddb4ce58ca98f38b1d047f16695ec6f81d6a7544db5efcd358d7",
@@ -25,7 +25,7 @@
   "bots/legal/lib/garam.js": "3409742988ba228a3d1c7ce878168449af50e5ca63917d48199c878d9c9f914c",
   "bots/legal/lib/hub-legal-client.js": "396427666ca891577bcf9a52f3b2dfa7a3c1582b2c502f89f862653b76ab9ea3",
   "bots/legal/lib/justin.js": "d480429cdbde694290590b19b8352ff2d631030b47d98983aee48c62453cba74",
-  "bots/legal/lib/korea-law-client.js": "b4088d659b6e063cb625236589c2087c35f0241d88f7a12dc632904b530eb4ec",
+  "bots/legal/lib/korea-law-client.js": "83b9db57f10041b985436bd1aaa3278993e9ffdf745da507d1c7925147f72113",
   "bots/legal/lib/lens.js": "1627263a4664a3d2ea9e4d088945ff034b2841c095897165299e7c4ebc3514bf",
   "bots/legal/lib/llm-helper.js": "f0edbbd53cdf611b12ae15f5dc82e54efbb616ad7d59dae71dddf0f6a0468802",
   "bots/legal/lib/pdf-generator.js": "17f3354fa1945451f2c641029e3de07633f028c9b27f451ed81d94e9e5d464a5",
