@@ -40,9 +40,9 @@ Step 4 (주 6+):   안정화 확인 후 Shadow 모드 해제 가능
 
 ## launchd 설정
 
-`bots/darwin/launchd/ai.darwin.daily.shadow.plist` 환경변수:
-- `LLM_HUB_ROUTING_ENABLED=false` (기본)
-- `LLM_HUB_ROUTING_SHADOW=true`
+`bots/darwin/launchd/ai.darwin.weekly.autonomous.plist` 환경변수:
+- `LLM_HUB_ROUTING_ENABLED=true`
+- `LLM_HUB_ROUTING_SHADOW=false`
 
 ## 모듈 구조
 

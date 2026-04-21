@@ -22,7 +22,7 @@ DARWIN_SHADOW_MODE=true
 
 - **주기**: 주 1회 one-shot 검증 또는 승격 전 관찰 기간에 맞춘 임시 운영
 - **트리거**: `Darwin.V2.ShadowRunner.run_once()`
-- **launchd**: `ai.darwin.daily.shadow.plist`
+- **과거 launchd**: `ai.darwin.daily.shadow.plist` (현재 live는 `ai.darwin.weekly.autonomous.plist`)
 
 ---
 

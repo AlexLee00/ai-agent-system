@@ -4,7 +4,7 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>ai.darwin.daily.shadow</string>
+  <string>ai.darwin.weekly.autonomous</string>
   <key>ProgramArguments</key>
   <array>
     <string>/Users/alexlee/projects/ai-agent-system/node_modules/.bin/tsx</string>
@@ -40,8 +40,8 @@
     <key>Hour</key><integer>5</integer>
     <key>Minute</key><integer>0</integer>
   </dict>
-  <key>StandardOutPath</key><string>/tmp/darwin-daily-shadow.log</string>
-  <key>StandardErrorPath</key><string>/tmp/darwin-daily-shadow.err.log</string>
+  <key>StandardOutPath</key><string>/tmp/darwin-weekly-autonomous.log</string>
+  <key>StandardErrorPath</key><string>/tmp/darwin-weekly-autonomous.err.log</string>
   <key>RunAtLoad</key><false/>
 </dict>
 </plist>

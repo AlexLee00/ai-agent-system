@@ -34,7 +34,7 @@ bots/darwin/
 │  ├ espl.ex               ← 프롬프트 진화
 │  ├ principle/            ← Constitutional 원칙
 │  ├ community_scanner.ex  ← HN/Reddit 시그널
-│  ├ shadow_runner.ex      ← V1/V2 병렬 비교
+│  ├ shadow_runner.ex      ← 과거 V1/V2 병렬 비교 (참고용)
 │  ├ signal_receiver.ex    ← Sigma advisory 구독
 │  └ mcp/                  ← MCP Server
 ├ lib/                     ← V1 TypeScript (레거시 유지)
@@ -58,7 +58,7 @@ bots/darwin/
 - Shadow Mode: `false`
 - 알림: 정상 경로는 공용 `postAlarm`, 예외만 수동 버튼
 - 스케줄:
-  - 메인 Darwin 실행: 일요일 05:00
+  - 메인 Darwin 실행 (`ai.darwin.weekly.autonomous`): 일요일 05:00
   - 운영 리포트: 일요일 06:30
   - 주간 리뷰: 일요일 19:00
 

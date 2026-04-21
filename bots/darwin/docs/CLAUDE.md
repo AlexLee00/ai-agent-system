@@ -62,7 +62,7 @@ DARWIN_LLM_DAILY_BUDGET_USD=10.0  # 일일 LLM 예산
 | 3 | ✅ 완료 | Reflexion + SelfRAG + ESPL + Principle Loader |
 | 4 | ✅ 완료 | Commander + Skill 9개 + Cycle 7개 |
 | 5 | ✅ 완료 | MCP Server + Signal + HTTP Router |
-| 6 | ✅ 완료 | ShadowRunner + ShadowCompare + TelegramBridge + RollbackScheduler(24h) |
+| 6 | ✅ 완료 | ShadowRunner + ShadowCompare + TelegramBridge + RollbackScheduler(24h) (참고용) |
 | 7 | ✅ 완료 | 커뮤니티 스캐너 완성 (ArxivRSS/HN/Reddit/OpenReview 센서 4종 + CommunityScanner) |
 | 8 | ✅ 완료 | 테스트 335개 (0 failures, 11 excluded) + DB 마이그레이션 5개 |
 
@@ -79,7 +79,7 @@ DARWIN_LLM_DAILY_BUDGET_USD=10.0  # 일일 LLM 예산
 - 정상 성공 경로 알림은 텔레그램 inline button이 없는 공용 `postAlarm` 경로를 사용한다.
 - 승인 버튼은 실패/충돌/수동 검토가 필요한 예외 상황에만 남긴다.
 - 메인 실행 cadence는 `주 1회`다.
-  - `ai.darwin.daily.shadow`: 일요일 05:00
+  - `ai.darwin.weekly.autonomous`: 일요일 05:00
   - `ai.darwin.daily-report`: 일요일 06:30
   - `ai.darwin.weekly-review`: 일요일 19:00
 
