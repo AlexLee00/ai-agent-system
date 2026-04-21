@@ -2663,6 +2663,8 @@ async function saveCommentDebugSnapshot(page, comment, stage) {
             found: true,
             text: textOf(submitButton).slice(0, 80),
             className: String(submitButton.className || '').slice(0, 160),
+            dataAction: String(submitButton.getAttribute('data-action') || ''),
+            uiSelector: String(submitButton.getAttribute('data-ui-selector') || ''),
             disabled: Boolean(
               submitButton.disabled
               || submitButton.getAttribute('aria-disabled') === 'true'
@@ -2673,6 +2675,8 @@ async function saveCommentDebugSnapshot(page, comment, stage) {
             found: false,
             text: '',
             className: '',
+            dataAction: '',
+            uiSelector: '',
             disabled: false,
             visible: false,
           },

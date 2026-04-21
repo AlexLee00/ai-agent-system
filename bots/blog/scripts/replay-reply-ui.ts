@@ -2,8 +2,12 @@
 'use strict';
 
 const { spawn } = require('child_process');
+const fs = require('fs');
+const path = require('path');
 const pgPool = require('../../../packages/core/lib/pg-pool.js');
 const { postReply, generateReply, getPostSummary } = require('../lib/commenter.ts');
+
+const BLOG_COMMENTER_DEBUG_DIR = '/Users/alexlee/projects/ai-agent-system/tmp/blog-commenter-debug';
 
 function parseArgs(argv = []) {
   const args = {
@@ -90,7 +94,47 @@ async function resolveReplyText(comment) {
   return String(generated?.reply || '').trim();
 }
 
+function extractLogNo(postUrl) {
+  const raw = String(postUrl || '');
+  const match = raw.match(/(?:logNo=|\/)(\d{6,})/);
+  return match ? String(match[1]) : '';
+}
+
+function loadLatestDebugSnapshot(logNo) {
+  try {
+    if (!logNo || !fs.existsSync(BLOG_COMMENTER_DEBUG_DIR)) return null;
+    const files = fs.readdirSync(BLOG_COMMENTER_DEBUG_DIR)
+      .filter((name) => name.endsWith(`-${logNo}.json`))
+      .map((name) => ({
+        name,
+        fullPath: path.join(BLOG_COMMENTER_DEBUG_DIR, name),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const latest = files[files.length - 1];
+    if (!latest) return null;
+    const data = JSON.parse(fs.readFileSync(latest.fullPath, 'utf8'));
+    return {
+      file: latest.name,
+      url: String(data?.url || ''),
+      targetReplyAreaVisible: Boolean(data?.targetReplyAreaVisible),
+      targetReplyButtonText: String(data?.targetReplyButtonText || ''),
+      editorId: String(data?.editorState?.id || ''),
+      editorClassName: String(data?.editorState?.className || ''),
+      editorVisible: Boolean(data?.editorState?.visible),
+      submitFound: Boolean(data?.submitButtonState?.found),
+      submitText: String(data?.submitButtonState?.text || ''),
+      submitDataAction: String(data?.submitButtonState?.dataAction || ''),
+      submitUiSelector: String(data?.submitButtonState?.uiSelector || ''),
+      submitClassName: String(data?.submitButtonState?.className || ''),
+      commentSurfaceState: data?.commentSurfaceState || null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function buildTimeoutPayload({ comment, replyText, timeoutMs }) {
+  const logNo = extractLogNo(comment?.post_url);
   return {
     ok: false,
     dryRun: true,
@@ -106,6 +150,7 @@ function buildTimeoutPayload({ comment, replyText, timeoutMs }) {
     replyLength: replyText.length,
     result: null,
     error: `reply_replay_timeout:${timeoutMs}`,
+    latestSnapshot: loadLatestDebugSnapshot(logNo),
   };
 }
 
