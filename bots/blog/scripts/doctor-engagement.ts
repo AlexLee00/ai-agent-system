@@ -388,6 +388,59 @@ async function getNeighborWorkloadStatus(baseline = null) {
   }
 }
 
+async function getNeighborRecoveryStatus(baseline = null) {
+  const actionSinceClause = buildSinceClause('executed_at', baseline);
+  try {
+    const [latestSuccess, latestFailure, successCountRow] = await Promise.all([
+      pgPool.get('blog', `
+        SELECT executed_at
+        FROM blog.comment_actions
+        WHERE action_type = 'neighbor_comment'
+          AND success = true
+          ${actionSinceClause}
+        ORDER BY executed_at DESC
+        LIMIT 1
+      `),
+      pgPool.get('blog', `
+        SELECT executed_at
+        FROM blog.comment_actions
+        WHERE action_type = 'neighbor_comment'
+          AND success = false
+          ${actionSinceClause}
+        ORDER BY executed_at DESC
+        LIMIT 1
+      `),
+      pgPool.get('blog', `
+        SELECT COUNT(*)::int AS cnt
+        FROM blog.comment_actions
+        WHERE action_type = 'neighbor_comment'
+          AND success = true
+          ${actionSinceClause}
+      `),
+    ]);
+    const latestSuccessAt = latestSuccess?.executed_at ? new Date(latestSuccess.executed_at) : null;
+    const latestFailureAt = latestFailure?.executed_at ? new Date(latestFailure.executed_at) : null;
+    const recovered = Boolean(
+      latestSuccessAt
+      && latestFailureAt
+      && latestSuccessAt.getTime() > latestFailureAt.getTime()
+    );
+    return {
+      latestSuccessAt: latestSuccessAt ? latestSuccessAt.toISOString() : '',
+      latestFailureAt: latestFailureAt ? latestFailureAt.toISOString() : '',
+      successCount: Number(successCountRow?.cnt || 0),
+      recovered,
+    };
+  } catch {
+    return {
+      latestSuccessAt: '',
+      latestFailureAt: '',
+      successCount: 0,
+      recovered: false,
+    };
+  }
+}
+
 async function getCourtesyReflectionRecheck(baseline = null) {
   const commentSinceClause = buildSinceClause('detected_at', baseline);
   try {
@@ -633,7 +686,7 @@ async function main() {
   const actionSinceClause = buildSinceClause('executed_at', developmentBaseline);
   const [rows, latestReplyReplayCandidate, replyWorkload, neighborWorkload, courtesyReflectionRecheck] = await Promise.all([
     pgPool.query('blog', `
-      SELECT action_type, meta
+      SELECT action_type, meta, executed_at
       FROM blog.comment_actions
       WHERE timezone('Asia/Seoul', executed_at)::date = timezone('Asia/Seoul', now())::date
         AND success = false
@@ -646,15 +699,25 @@ async function main() {
     getNeighborWorkloadStatus(developmentBaseline),
     getCourtesyReflectionRecheck(developmentBaseline),
   ]);
+  const neighborRecovery = await getNeighborRecoveryStatus(developmentBaseline);
 
   const replyConfig = runtimeConfig.commenter || {};
   const neighborConfig = runtimeConfig.neighborCommenter || {};
+
+  const effectiveRows = (rows || []).filter((row) => {
+    if (!neighborRecovery?.recovered) return true;
+    if (String(row.action_type || '') !== 'neighbor_comment') return true;
+    const executedAt = row?.executed_at ? new Date(row.executed_at) : null;
+    if (!executedAt || Number.isNaN(executedAt.getTime())) return true;
+    return executedAt.getTime() > new Date(neighborRecovery.latestSuccessAt).getTime();
+  });
+  const staleNeighborFailureCount = Math.max(0, Number((rows || []).length) - Number(effectiveRows.length));
 
   const failureByKind = { ui: 0, browser: 0, llm: 0, verification: 0, unknown: 0 };
   const failureByAction = { reply: 0, neighbor_comment: 0, sympathy: 0 };
   const failureSamples = [];
 
-  for (const row of rows || []) {
+  for (const row of effectiveRows || []) {
     const kind = classifyEngagementFailure(row.meta || {});
     failureByKind[kind] = Number(failureByKind[kind] || 0) + 1;
     const sample = summarizeEngagementFailure(row.meta || {});
@@ -751,7 +814,9 @@ async function main() {
           path: developmentBaseline.path,
         }
       : null,
-    totalFailures: Array.isArray(rows) ? rows.length : 0,
+    totalFailures: Array.isArray(effectiveRows) ? effectiveRows.length : 0,
+    rawFailureCount: Array.isArray(rows) ? rows.length : 0,
+    staleNeighborFailureCount,
     failureByKind,
     failureByAction,
     failureSamples,
@@ -774,6 +839,7 @@ async function main() {
     replyWorkload,
     neighborWorkload,
     neighborCollectDiagnostics,
+    neighborRecovery,
     courtesyReflectionRecheck,
   };
   payload.needsAttention = payload.totalFailures > 0 || targetGaps.length > 0;
@@ -822,6 +888,9 @@ async function main() {
   }
   if (payload.adaptiveNeighborCadence?.enabled) {
     console.log(`[engagement doctor] adaptive=${payload.adaptiveNeighborCadence.shouldBoost ? 'boosted' : 'baseline'} comments ${payload.adaptiveNeighborCadence.combinedCommentSuccess}/${payload.adaptiveNeighborCadence.combinedCommentExpectedNow} process ${payload.adaptiveNeighborCadence.effectiveProcessLimit} collect ${payload.adaptiveNeighborCadence.effectiveCollectLimit}`);
+  }
+  if (payload.neighborRecovery?.recovered) {
+    console.log(`[engagement doctor] neighbor_recovery=success after failure (${payload.neighborRecovery.latestSuccessAt}) stale_failures=${payload.staleNeighborFailureCount}`);
   }
   if (payload.targetGaps.length > 0) {
     console.log(`[engagement doctor] target_gap=${payload.targetGaps.join(' / ')}`);

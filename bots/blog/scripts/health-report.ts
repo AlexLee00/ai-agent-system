@@ -224,6 +224,45 @@ function summarizeEngagementFailure(meta = {}) {
     .slice(0, 140);
 }
 
+async function getNeighborRecoveryStatus(baseline = null) {
+  const actionSinceClause = buildSinceClause('executed_at', baseline);
+  try {
+    const [latestSuccess, latestFailure] = await Promise.all([
+      pgPool.get('blog', `
+        SELECT executed_at
+        FROM blog.comment_actions
+        WHERE action_type = 'neighbor_comment'
+          AND success = true
+          ${actionSinceClause}
+        ORDER BY executed_at DESC
+        LIMIT 1
+      `),
+      pgPool.get('blog', `
+        SELECT executed_at
+        FROM blog.comment_actions
+        WHERE action_type = 'neighbor_comment'
+          AND success = false
+          ${actionSinceClause}
+        ORDER BY executed_at DESC
+        LIMIT 1
+      `),
+    ]);
+    const latestSuccessAt = latestSuccess?.executed_at ? new Date(latestSuccess.executed_at) : null;
+    const latestFailureAt = latestFailure?.executed_at ? new Date(latestFailure.executed_at) : null;
+    return {
+      latestSuccessAt: latestSuccessAt ? latestSuccessAt.toISOString() : '',
+      latestFailureAt: latestFailureAt ? latestFailureAt.toISOString() : '',
+      recovered: Boolean(
+        latestSuccessAt
+        && latestFailureAt
+        && latestSuccessAt.getTime() > latestFailureAt.getTime()
+      ),
+    };
+  } catch {
+    return { latestSuccessAt: '', latestFailureAt: '', recovered: false };
+  }
+}
+
 function summarizeFacebookPublishFailure(text = '') {
   const raw = String(text || '').trim();
   if (!raw) return '';
@@ -1043,7 +1082,7 @@ async function buildEngagementHealth() {
     const replyConfig = runtimeConfig.commenter || {};
     const neighborConfig = runtimeConfig.neighborCommenter || {};
 
-    const [actionAggRows, failureMetaRows, commentRows, neighborRows, latestReplyReplayCandidate, skippedReasonRows, skippedReason14dRows, latestCommentRow, courtesyReflectionRecheck, pendingBacklogRow] = await Promise.all([
+    const [actionAggRows, failureMetaRows, commentRows, neighborRows, latestReplyReplayCandidate, skippedReasonRows, skippedReason14dRows, latestCommentRow, courtesyReflectionRecheck, pendingBacklogRow, neighborRecovery] = await Promise.all([
       pgPool.query('blog', `
         SELECT action_type, success, COUNT(*)::int AS cnt
         FROM blog.comment_actions
@@ -1052,7 +1091,7 @@ async function buildEngagementHealth() {
         GROUP BY 1, 2
       `),
       pgPool.query('blog', `
-        SELECT action_type, meta
+        SELECT action_type, meta, executed_at
         FROM blog.comment_actions
         WHERE timezone('Asia/Seoul', executed_at)::date = timezone('Asia/Seoul', now())::date
           AND success = false
@@ -1151,6 +1190,7 @@ async function buildEngagementHealth() {
           AND reply_at IS NULL
           ${commentSinceClause}
       `),
+      getNeighborRecoveryStatus(developmentBaseline),
     ]);
 
     const actionMap = new Map();
@@ -1158,9 +1198,18 @@ async function buildEngagementHealth() {
       actionMap.set(`${row.action_type}:${row.success ? 'ok' : 'fail'}`, Number(row.cnt || 0));
     }
 
+    const effectiveFailureMetaRows = (failureMetaRows || []).filter((row) => {
+      if (!neighborRecovery?.recovered) return true;
+      if (String(row.action_type || '') !== 'neighbor_comment') return true;
+      const executedAt = row?.executed_at ? new Date(row.executed_at) : null;
+      if (!executedAt || Number.isNaN(executedAt.getTime())) return true;
+      return executedAt.getTime() > new Date(neighborRecovery.latestSuccessAt).getTime();
+    });
+    const staleNeighborFailureCount = Math.max(0, Number((failureMetaRows || []).length) - Number(effectiveFailureMetaRows.length));
+
     const failureByKind = { ui: 0, llm: 0, browser: 0, verification: 0, unknown: 0 };
     const failureSamples = [];
-    for (const row of failureMetaRows || []) {
+    for (const row of effectiveFailureMetaRows || []) {
       const kind = classifyEngagementFailure(row.meta || {});
       failureByKind[kind] = Number(failureByKind[kind] || 0) + 1;
       const sample = summarizeEngagementFailure(row.meta || {});
@@ -1280,6 +1329,12 @@ async function buildEngagementHealth() {
     if (replyFailure + neighborCommentFailure + sympathyFailure > 0) {
       warn.push(`  failed engagement actions today: ${replyFailure + neighborCommentFailure + sympathyFailure}건`);
     }
+    if (neighborRecovery?.recovered) {
+      ok.push(`  neighbor hosted recovery: 최근 외부 댓글 성공이 최신 실패 이후 확인됨 (${String(neighborRecovery.latestSuccessAt || '').slice(0, 19)}Z)`);
+      if (staleNeighborFailureCount > 0) {
+        ok.push(`  stale neighbor failures: ${staleNeighborFailureCount}건은 현재 우선 병목에서 제외`);
+      }
+    }
     if ((failureByKind.ui || 0) > 0 || (failureByKind.browser || 0) > 0 || (failureByKind.llm || 0) > 0) {
       ok.push(
         `  failure mix: ui ${failureByKind.ui || 0} / browser ${failureByKind.browser || 0} / llm ${failureByKind.llm || 0} / verification ${failureByKind.verification || 0}`
@@ -1367,6 +1422,8 @@ async function buildEngagementHealth() {
       },
       neighborCollectDiagnostics,
       adaptiveNeighborCadence,
+      neighborRecovery,
+      staleNeighborFailureCount,
       failureByKind,
       failureSamples,
       latestReplyReplayCandidate: latestReplyReplayCandidate || null,
