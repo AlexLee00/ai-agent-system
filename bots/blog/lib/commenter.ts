@@ -1741,7 +1741,12 @@ async function collectNeighborCandidates({ testMode = false, persist = true, col
     recentNeighborBlogCount: recentBlogIds.size,
     commenterNetworkSourceCount: 0,
     commenterNetworkResolvedCount: 0,
+    commenterNetworkRecentBlogSkipCount: 0,
+    commenterNetworkResolveFailedCount: 0,
+    commenterNetworkSeenUrlSkipCount: 0,
     buddyFeedSourceCount: 0,
+    buddyFeedRecentBlogSkipCount: 0,
+    buddyFeedSeenUrlSkipCount: 0,
     rawCollectedCount: 0,
     insertedCount: 0,
     skippedExistingSuccessCount: 0,
@@ -1759,7 +1764,14 @@ async function collectNeighborCandidates({ testMode = false, persist = true, col
     const buddyFeed = await extractBuddyFeedPosts(page, ownBlogId, effectiveCollectLimit);
     diagnostics.buddyFeedSourceCount = Array.isArray(buddyFeed) ? buddyFeed.length : 0;
     for (const item of buddyFeed) {
-      if (seenUrls.has(item.postUrl) || recentBlogIds.has(item.targetBlogId)) continue;
+      if (recentBlogIds.has(item.targetBlogId)) {
+        diagnostics.buddyFeedRecentBlogSkipCount += 1;
+        continue;
+      }
+      if (seenUrls.has(item.postUrl)) {
+        diagnostics.buddyFeedSeenUrlSkipCount += 1;
+        continue;
+      }
       collected.push({
         targetBlogId: item.targetBlogId,
         targetBlogName: item.targetBlogName,
@@ -1776,9 +1788,20 @@ async function collectNeighborCandidates({ testMode = false, persist = true, col
 
     for (const row of commenterNetwork) {
       const targetBlogId = String(row.commenter_id || '').trim();
-      if (!targetBlogId || recentBlogIds.has(targetBlogId)) continue;
+      if (!targetBlogId) continue;
+      if (recentBlogIds.has(targetBlogId)) {
+        diagnostics.commenterNetworkRecentBlogSkipCount += 1;
+        continue;
+      }
       const latest = await resolveLatestPostForBlog(page, targetBlogId, testMode).catch(() => null);
-      if (!latest?.postUrl || seenUrls.has(latest.postUrl)) continue;
+      if (!latest?.postUrl) {
+        diagnostics.commenterNetworkResolveFailedCount += 1;
+        continue;
+      }
+      if (seenUrls.has(latest.postUrl)) {
+        diagnostics.commenterNetworkSeenUrlSkipCount += 1;
+        continue;
+      }
       diagnostics.commenterNetworkResolvedCount += 1;
       collected.push({
         targetBlogId,

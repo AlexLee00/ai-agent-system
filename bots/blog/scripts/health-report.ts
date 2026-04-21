@@ -1270,6 +1270,9 @@ async function buildEngagementHealth() {
       ok.push(
         `  neighbor collect diag: buddy ${Number(neighborCollectDiagnostics.buddyFeedSourceCount || 0)} / network ${Number(neighborCollectDiagnostics.commenterNetworkSourceCount || 0)} / resolved ${Number(neighborCollectDiagnostics.commenterNetworkResolvedCount || 0)} / collected ${Number(neighborCollectDiagnostics.rawCollectedCount || 0)} / inserted ${Number(neighborCollectDiagnostics.insertedCount || 0)}`
       );
+      ok.push(
+        `  neighbor collect bottleneck: buddy recent ${Number(neighborCollectDiagnostics.buddyFeedRecentBlogSkipCount || 0)} / buddy seen ${Number(neighborCollectDiagnostics.buddyFeedSeenUrlSkipCount || 0)} / network recent ${Number(neighborCollectDiagnostics.commenterNetworkRecentBlogSkipCount || 0)} / network resolve fail ${Number(neighborCollectDiagnostics.commenterNetworkResolveFailedCount || 0)} / network seen ${Number(neighborCollectDiagnostics.commenterNetworkSeenUrlSkipCount || 0)}`
+      );
     }
     if (replyFailure + neighborCommentFailure + sympathyFailure > 0) {
       warn.push(`  failed engagement actions today: ${replyFailure + neighborCommentFailure + sympathyFailure}건`);
@@ -2014,7 +2017,7 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
             ? '현재 바로 처리할 neighbor comment queue가 없어 gap이 유지되고 있습니다.'
             : '',
           engagementDoctorPriority?.primaryArea === 'engagement.target_gap.neighbor.no_workload' && engagementHealth?.neighborCollectDiagnostics
-            ? `최근 neighbor 수집 진단: buddy ${Number(engagementHealth.neighborCollectDiagnostics.buddyFeedSourceCount || 0)} / network ${Number(engagementHealth.neighborCollectDiagnostics.commenterNetworkSourceCount || 0)} / resolved ${Number(engagementHealth.neighborCollectDiagnostics.commenterNetworkResolvedCount || 0)} / collected ${Number(engagementHealth.neighborCollectDiagnostics.rawCollectedCount || 0)} / inserted ${Number(engagementHealth.neighborCollectDiagnostics.insertedCount || 0)}`
+            ? `최근 neighbor 수집 진단: buddy ${Number(engagementHealth.neighborCollectDiagnostics.buddyFeedSourceCount || 0)} / network ${Number(engagementHealth.neighborCollectDiagnostics.commenterNetworkSourceCount || 0)} / resolved ${Number(engagementHealth.neighborCollectDiagnostics.commenterNetworkResolvedCount || 0)} / collected ${Number(engagementHealth.neighborCollectDiagnostics.rawCollectedCount || 0)} / inserted ${Number(engagementHealth.neighborCollectDiagnostics.insertedCount || 0)} / resolve_fail ${Number(engagementHealth.neighborCollectDiagnostics.commenterNetworkResolveFailedCount || 0)}`
             : '',
           adaptiveCadenceHint,
           Number(engagementHealth?.courtesyReflectionRecheck?.reevaluableCount || 0) > 0
