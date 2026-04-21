@@ -58,6 +58,7 @@ const INSTAGRAM_READINESS_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 
 const INSTAGRAM_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:instagram -- --json`;
 const SOCIAL_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:social -- --json`;
 const ENGAGEMENT_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:engagement -- --json`;
+const MARKETING_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:marketing -- --json`;
 const BLOG_OPS_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:ops -- --json`;
 const BLOG_NEIGHBOR_COLLECT_DIAG_PATH = path.join(BLOG_ROOT, 'output', 'ops', 'neighbor-collect-diagnostics.json');
 const BLOG_ENGAGEMENT_GAP_RUN_PATH = path.join(BLOG_ROOT, 'output', 'ops', 'engagement-gap-run.json');
@@ -2059,6 +2060,7 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
   ].filter(Boolean).join(' / ');
   const instagramDiagnoseHint = `diagnose=${INSTAGRAM_READINESS_COMMAND} / doctor=${INSTAGRAM_DOCTOR_COMMAND} / social=${SOCIAL_DOCTOR_COMMAND}`;
   const opsDoctorHint = `ops=${BLOG_OPS_DOCTOR_COMMAND}`;
+  const marketingDoctorHint = `marketing=${MARKETING_DOCTOR_COMMAND}`;
   const socialActionHints = Array.isArray(socialDoctorPriority?.actions)
     ? socialDoctorPriority.actions
         .map((item) => String(item || '').trim())
@@ -2292,7 +2294,14 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
       {
         active: marketingExpansionHealth.status === 'watch' || marketingExpansionHealth.status === 'error',
         level: 'low',
-        reason: '마케팅 확장 신호에 변동이 있어 sense/correlation/diagnosis 흐름을 한 번 더 보는 편이 좋습니다.',
+        reason: [
+          '마케팅 확장 신호에 변동이 있어 sense/correlation/diagnosis 흐름을 한 번 더 보는 편이 좋습니다.',
+          marketingDoctorHint,
+          opsDoctorHint,
+          String(opsDoctorPriority?.primaryArea || '').startsWith('marketing') && String(opsDoctorPriority?.nextCommand || '').trim()
+            ? `즉시 실행: ${String(opsDoctorPriority.nextCommand).trim()}`
+            : '',
+        ].filter(Boolean).join(' '),
       },
       {
         active: engagementHealth.warnCount > 0 && !socialPrimaryActive,
@@ -2376,7 +2385,7 @@ function buildRemodelProgress(instagramHealth, phase1Health, phase2BriefingHealt
   };
 }
 
-function buildOpsPriority(socialAutomationHealth, engagementHealth, socialDoctorPriority = null, engagementDoctorPriority = null, opsDoctorPriority = null) {
+function buildOpsPriority(socialAutomationHealth, engagementHealth, marketingExpansionHealth, socialDoctorPriority = null, engagementDoctorPriority = null, marketingDoctorPriority = null, opsDoctorPriority = null) {
   const ok = [`  ops doctor command: ${BLOG_OPS_DOCTOR_COMMAND}`];
   const warn = [];
 
@@ -2395,6 +2404,11 @@ function buildOpsPriority(socialAutomationHealth, engagementHealth, socialDoctor
     primaryReason = engagementDoctorPriority.primaryReason || primaryReason;
     nextCommand = engagementDoctorPriority.nextCommand || ENGAGEMENT_DOCTOR_COMMAND;
     actionFocus = engagementDoctorPriority.actionFocus || 'engagement';
+  } else if (marketingDoctorPriority?.primaryArea && marketingDoctorPriority.primaryArea !== 'clear' && marketingDoctorPriority.primaryArea !== 'unknown') {
+    primaryArea = marketingDoctorPriority.primaryArea;
+    primaryReason = marketingDoctorPriority.primaryReason || primaryReason;
+    nextCommand = marketingDoctorPriority.nextCommand || MARKETING_DOCTOR_COMMAND;
+    actionFocus = marketingDoctorPriority.actionFocus || 'marketing';
   } else if (socialAutomationHealth.facebookNeedsAttention) {
     primaryArea = 'social.facebook';
     primaryReason = 'Facebook publish 권한 이슈가 현재 최우선 병목입니다.';
@@ -2410,6 +2424,11 @@ function buildOpsPriority(socialAutomationHealth, engagementHealth, socialDoctor
     primaryReason = '답글/댓글/공감 자동화 이슈가 현재 최우선 병목입니다.';
     nextCommand = ENGAGEMENT_DOCTOR_COMMAND;
     actionFocus = 'engagement';
+  } else if (String(marketingExpansionHealth?.status || '') === 'watch' || String(marketingExpansionHealth?.status || '') === 'error') {
+    primaryArea = 'marketing.watch';
+    primaryReason = '마케팅 확장 신호 watch 상태가 현재 최우선 병목입니다.';
+    nextCommand = MARKETING_DOCTOR_COMMAND;
+    actionFocus = 'marketing';
   }
 
   ok.push(`  primary blocker: ${primaryArea} / ${primaryReason}`);
@@ -2502,24 +2521,28 @@ async function buildReport() {
   const bookReviewQueueHealth = await buildBookReviewQueueHealth();
   const socialDoctorPriority = buildDoctorPriority(SOCIAL_DOCTOR_COMMAND, 'social doctor');
   const engagementDoctorPriority = buildDoctorPriority(ENGAGEMENT_DOCTOR_COMMAND, 'engagement doctor');
+  const marketingDoctorPriority = buildDoctorPriority(MARKETING_DOCTOR_COMMAND, 'marketing doctor');
   const opsDoctorPriority = buildDoctorPriority(BLOG_OPS_DOCTOR_COMMAND, 'ops doctor');
   const decision = buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealth, instagramHealth, socialAutomationHealth, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth, marketingExpansionHealth, engagementHealth, socialDoctorPriority, engagementDoctorPriority, opsDoctorPriority);
   const remodelProgress = buildRemodelProgress(instagramHealth, phase1Health, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth);
   const doctorPriority = {
-    okCount: socialDoctorPriority.okCount + engagementDoctorPriority.okCount,
-    warnCount: socialDoctorPriority.warnCount + engagementDoctorPriority.warnCount,
+    okCount: socialDoctorPriority.okCount + engagementDoctorPriority.okCount + marketingDoctorPriority.okCount,
+    warnCount: socialDoctorPriority.warnCount + engagementDoctorPriority.warnCount + marketingDoctorPriority.warnCount,
     ok: [
       ...socialDoctorPriority.ok,
       ...engagementDoctorPriority.ok,
+      ...marketingDoctorPriority.ok,
     ],
     warn: [
       ...socialDoctorPriority.warn,
       ...engagementDoctorPriority.warn,
+      ...marketingDoctorPriority.warn,
     ],
     social: socialDoctorPriority,
     engagement: engagementDoctorPriority,
+    marketing: marketingDoctorPriority,
   };
-  const opsPriority = buildOpsPriority(socialAutomationHealth, engagementHealth, socialDoctorPriority, engagementDoctorPriority, opsDoctorPriority);
+  const opsPriority = buildOpsPriority(socialAutomationHealth, engagementHealth, marketingExpansionHealth, socialDoctorPriority, engagementDoctorPriority, marketingDoctorPriority, opsDoctorPriority);
 
   return {
     serviceHealth: {

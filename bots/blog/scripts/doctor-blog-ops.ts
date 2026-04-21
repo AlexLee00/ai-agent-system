@@ -29,15 +29,19 @@ function runDoctor(command) {
   }
 }
 
-function buildActions({ social, engagement, primary }) {
+function buildActions({ social, engagement, marketing, primary }) {
   const actions = [];
   const socialPrimaryArea = String(social?.primary?.area || '');
   const engagementPrimaryArea = String(engagement?.primary?.area || '');
+  const marketingPrimaryArea = String(marketing?.primary?.area || '');
   const socialActions = (socialPrimaryArea && socialPrimaryArea !== 'clear' && socialPrimaryArea !== 'unknown' && Array.isArray(social?.actions))
     ? social.actions
     : [];
   const engagementActions = (engagementPrimaryArea && engagementPrimaryArea !== 'clear' && engagementPrimaryArea !== 'unknown' && Array.isArray(engagement?.actions))
     ? engagement.actions
+    : [];
+  const marketingActions = (marketingPrimaryArea && marketingPrimaryArea !== 'clear' && marketingPrimaryArea !== 'unknown' && Array.isArray(marketing?.actions))
+    ? marketing.actions
     : [];
   const primaryArea = String(primary?.area || '');
   const hasActivePrimary = primaryArea && primaryArea !== 'clear' && primaryArea !== 'unknown';
@@ -47,8 +51,10 @@ function buildActions({ social, engagement, primary }) {
     orderedActionGroups = [engagementActions];
   } else if (primaryArea.startsWith('social')) {
     orderedActionGroups = [socialActions];
+  } else if (primaryArea.startsWith('marketing')) {
+    orderedActionGroups = [marketingActions];
   } else {
-    orderedActionGroups = [socialActions, engagementActions];
+    orderedActionGroups = [socialActions, engagementActions, marketingActions];
   }
 
   for (const group of orderedActionGroups) {
@@ -75,13 +81,15 @@ function buildActions({ social, engagement, primary }) {
   return Array.from(new Set(actions));
 }
 
-function pickPrimary({ social, engagement, commands }) {
+function pickPrimary({ social, engagement, marketing, commands }) {
   const facebookAttention = Boolean(social?.facebook?.needsAttention);
   const instagramAttention = Boolean(social?.instagram?.needsAttention);
   const engagementNeedsAttention = Boolean(engagement?.needsAttention);
   const engagementPrimaryArea = String(engagement?.primary?.area || '');
   const socialPrimaryArea = String(social?.primary?.area || '');
   const socialPrimaryActive = socialPrimaryArea && socialPrimaryArea !== 'clear' && socialPrimaryArea !== 'unknown';
+  const marketingPrimaryArea = String(marketing?.primary?.area || '');
+  const marketingPrimaryActive = marketingPrimaryArea && marketingPrimaryArea !== 'clear' && marketingPrimaryArea !== 'unknown';
 
   if (facebookAttention && socialPrimaryActive) {
     return {
@@ -133,6 +141,15 @@ function pickPrimary({ social, engagement, commands }) {
     };
   }
 
+  if (marketingPrimaryActive) {
+    return {
+      area: marketingPrimaryArea,
+      reason: marketing?.primary?.reason || '마케팅 확장 신호 watch가 현재 최우선 병목입니다.',
+      nextCommand: marketing?.primary?.nextCommand || commands.marketing,
+      actionFocus: marketing?.primary?.actionFocus || 'marketing',
+    };
+  }
+
   return {
     area: 'clear',
     reason: '지금은 즉시 막히는 운영 병목보다 다음 운영 사이클 관찰이 우선입니다.',
@@ -159,11 +176,17 @@ function buildOpsDoctorFallback(payload = {}) {
   if (primaryArea.startsWith('engagement')) {
     return '블로팀 운영의 현재 최우선 병목은 engagement 축이라 댓글/답글/공감 자동화 흐름을 먼저 정리하는 편이 좋습니다.';
   }
+  if (primaryArea.startsWith('marketing')) {
+    return '블로팀 운영의 현재 최우선 병목은 marketing watch 축이라 상위 신호와 revenue correlation, 추천 액션을 먼저 확인하는 편이 좋습니다.';
+  }
   if (payload.social?.facebook?.needsAttention || payload.social?.instagram?.needsAttention) {
     return '블로팀 운영 이슈는 지금 소셜 publish 축을 먼저 정리하는 편이 좋습니다.';
   }
   if (payload.engagement?.needsAttention || (payload.engagement?.primary?.area && payload.engagement.primary.area !== 'clear')) {
     return '블로팀 운영 이슈는 지금 engagement 자동화 축을 먼저 정리하는 편이 좋습니다.';
+  }
+  if (payload.marketing?.primary?.area && payload.marketing.primary.area !== 'clear') {
+    return '블로팀 운영 이슈는 지금 marketing watch 축을 먼저 정리하는 편이 좋습니다.';
   }
   return '블로팀 운영 상태는 현재 비교적 안정적이라 다음 운영 시간대 관찰 중심으로 가도 됩니다.';
 }
@@ -172,20 +195,24 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const socialCommand = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:social -- --json`;
   const engagementCommand = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:engagement -- --json`;
+  const marketingCommand = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:marketing -- --json`;
 
   const social = runDoctor(socialCommand);
   const engagement = runDoctor(engagementCommand);
+  const marketing = runDoctor(marketingCommand);
 
   const payload = {
     social,
     engagement,
+    marketing,
     commands: {
       social: socialCommand,
       engagement: engagementCommand,
+      marketing: marketingCommand,
     },
   };
   payload.primary = pickPrimary(payload);
-  payload.actions = buildActions({ social, engagement, primary: payload.primary });
+  payload.actions = buildActions({ social, engagement, marketing, primary: payload.primary });
 
   const aiSummary = await buildBlogCliInsight({
     bot: 'doctor-blog-ops',
@@ -202,6 +229,12 @@ async function main() {
         needsAttention: Boolean(engagement?.needsAttention),
         targetGaps: engagement?.targetGaps || [],
         adaptiveNeighborCadence: engagement?.adaptiveNeighborCadence || null,
+      },
+      marketing: {
+        primary: marketing?.primary || {},
+        health: marketing?.health || null,
+        topSignal: marketing?.senseSummary?.topSignal || null,
+        recommendations: marketing?.recommendations || [],
       },
       primary: payload.primary,
       actions: payload.actions,
@@ -223,6 +256,7 @@ async function main() {
   }
   console.log(`social: ${socialCommand}`);
   console.log(`engagement: ${engagementCommand}`);
+  console.log(`marketing: ${marketingCommand}`);
   for (const action of payload.actions) {
     console.log(`- ${action}`);
   }
