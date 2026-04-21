@@ -89,6 +89,49 @@ function calcExpectedByWindow(target, startHour, endHour) {
   };
 }
 
+function buildAdaptiveNeighborCadence({
+  replySuccess = 0,
+  neighborSuccess = 0,
+  sympathySuccess = 0,
+  replyPlan,
+  neighborPlan,
+  adaptiveEnabled = true,
+  adaptiveMinGapToBoost = 2,
+  adaptiveBoostCap = 12,
+  adaptiveCollectBoostCap = 20,
+  adaptiveSympathyBoostCap = 8,
+  baseProcess = 20,
+  baseCollect = 20,
+} = {}) {
+  const neighborDeficit = Math.max(0, Number(neighborPlan?.expectedNow || 0) - Number(neighborSuccess || 0));
+  const sympathyDeficit = Math.max(0, Number(neighborPlan?.expectedNow || 0) - Number(sympathySuccess || 0));
+  const combinedCommentSuccess = Number(replySuccess || 0) + Number(neighborSuccess || 0);
+  const combinedCommentExpectedNow = Number(replyPlan?.expectedNow || 0) + Number(neighborPlan?.expectedNow || 0);
+  const combinedCommentDeficit = Math.max(0, combinedCommentExpectedNow - combinedCommentSuccess);
+  const drivingGap = Math.max(neighborDeficit, Math.min(Number(neighborPlan?.expectedNow || 0), combinedCommentDeficit));
+  const shouldBoost = Boolean(adaptiveEnabled) && Boolean(neighborPlan?.active) && drivingGap >= Math.max(1, Number(adaptiveMinGapToBoost || 2));
+  const processBoost = shouldBoost ? Math.min(Math.max(2, Number(adaptiveBoostCap || 12)), drivingGap) : 0;
+  const collectBoost = shouldBoost ? Math.min(Math.max(2, Number(adaptiveCollectBoostCap || 20)), Math.max(processBoost, drivingGap * 2)) : 0;
+  const sympathyBoost = Boolean(adaptiveEnabled) && Boolean(neighborPlan?.active) && sympathyDeficit >= Math.max(1, Number(adaptiveMinGapToBoost || 2))
+    ? Math.min(Math.max(2, Number(adaptiveSympathyBoostCap || 8)), sympathyDeficit)
+    : 0;
+  return {
+    enabled: Boolean(adaptiveEnabled),
+    shouldBoost,
+    combinedCommentSuccess,
+    combinedCommentExpectedNow,
+    combinedCommentDeficit,
+    neighborDeficit,
+    sympathyDeficit,
+    processBoost,
+    collectBoost,
+    sympathyBoost,
+    effectiveProcessLimit: Math.max(1, Number(baseProcess || 20)) + processBoost,
+    effectiveCollectLimit: Math.max(1, Number(baseCollect || 20)) + collectBoost,
+    effectiveSympathyLimit: Math.max(1, Number(baseProcess || 20)) + sympathyBoost,
+  };
+}
+
 function buildTargetGapDetails(targets = {}) {
   const entries = [
     ['replies', targets?.replies],
@@ -323,7 +366,7 @@ async function getCourtesyReflectionRecheck() {
   }
 }
 
-function buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, primaryGap, replyWorkload, courtesyReflectionRecheck }) {
+function buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, primaryGap, replyWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence }) {
   const actions = [];
   if ((failureByKind.ui || 0) > 0 || (failureByKind.browser || 0) > 0) {
     actions.push('네이버 reply UI selector와 browser mount 흐름 점검');
@@ -332,6 +375,9 @@ function buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, p
     actions.push('reply 생성 LLM timeout / fetch 실패 로그 확인');
   }
   if (Array.isArray(targetGaps) && targetGaps.length > 0) {
+    if (adaptiveNeighborCadence?.shouldBoost) {
+      actions.push(`외부 댓글 cadence boost 적용 중: reply+neighbor ${adaptiveNeighborCadence.combinedCommentSuccess}/${adaptiveNeighborCadence.combinedCommentExpectedNow}, process ${adaptiveNeighborCadence.effectiveProcessLimit}, collect ${adaptiveNeighborCadence.effectiveCollectLimit}`);
+    }
     if (primaryGap?.label === 'replies' && Number(replyWorkload?.pendingBacklogCount || 0) > 0) {
       actions.push(`현재 처리 가능한 reply backlog가 ${replyWorkload.pendingBacklogCount}건 있습니다`);
     }
@@ -368,7 +414,7 @@ function buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, p
   return actions;
 }
 
-function buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps, primaryGap, replyWorkload, courtesyReflectionRecheck }) {
+function buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps, primaryGap, replyWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence }) {
   const blogPrefix = `npm --prefix ${BLOG_ROOT}`;
   if ((failureByKind.ui || 0) > 0 || (failureByKind.browser || 0) > 0) {
     return {
@@ -550,6 +596,20 @@ async function main() {
   const targetGapDetails = buildTargetGapDetails(targets);
   const primaryGap = targetGapDetails[0] || null;
   const runPlan = buildRunPlan(targetGapDetails);
+  const adaptiveNeighborCadence = buildAdaptiveNeighborCadence({
+    replySuccess: replySuccessCount,
+    neighborSuccess: neighborCommentSuccessCount,
+    sympathySuccess: sympathySuccessCount,
+    replyPlan,
+    neighborPlan,
+    adaptiveEnabled: neighborConfig.adaptiveEnabled !== false,
+    adaptiveMinGapToBoost: neighborConfig.adaptiveMinGapToBoost || 2,
+    adaptiveBoostCap: neighborConfig.adaptiveBoostCap || 12,
+    adaptiveCollectBoostCap: neighborConfig.adaptiveCollectBoostCap || 20,
+    adaptiveSympathyBoostCap: neighborConfig.adaptiveSympathyBoostCap || 8,
+    baseProcess: neighborConfig.maxProcessPerCycle || 20,
+    baseCollect: neighborConfig.maxCollectPerCycle || 20,
+  });
 
   const payload = {
     totalFailures: Array.isArray(rows) ? rows.length : 0,
@@ -571,12 +631,13 @@ async function main() {
     targetGapDetails,
     primaryGap,
     runPlan,
+    adaptiveNeighborCadence,
     replyWorkload,
     courtesyReflectionRecheck,
   };
   payload.needsAttention = payload.totalFailures > 0 || targetGaps.length > 0;
-  payload.actions = buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, primaryGap, replyWorkload, courtesyReflectionRecheck });
-  payload.primary = buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps, primaryGap, replyWorkload, courtesyReflectionRecheck });
+  payload.actions = buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, primaryGap, replyWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence });
+  payload.primary = buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps, primaryGap, replyWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence });
 
   const aiSummary = await buildBlogCliInsight({
     bot: 'doctor-engagement',
@@ -613,6 +674,9 @@ async function main() {
   }
   if (Array.isArray(payload.runPlan) && payload.runPlan.length > 0) {
     console.log(`[engagement doctor] run_plan=${payload.runPlan.map((item) => `${item.step}.${item.label}`).join(' -> ')}`);
+  }
+  if (payload.adaptiveNeighborCadence?.enabled) {
+    console.log(`[engagement doctor] adaptive=${payload.adaptiveNeighborCadence.shouldBoost ? 'boosted' : 'baseline'} comments ${payload.adaptiveNeighborCadence.combinedCommentSuccess}/${payload.adaptiveNeighborCadence.combinedCommentExpectedNow} process ${payload.adaptiveNeighborCadence.effectiveProcessLimit} collect ${payload.adaptiveNeighborCadence.effectiveCollectLimit}`);
   }
   if (payload.targetGaps.length > 0) {
     console.log(`[engagement doctor] target_gap=${payload.targetGaps.join(' / ')}`);

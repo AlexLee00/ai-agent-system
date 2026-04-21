@@ -694,6 +694,7 @@ async function checkEngagementAutomationHealth() {
       const targets = engagementPayload?.targets || {};
       const primaryGap = engagementPayload?.primaryGap || null;
       const runPlan = Array.isArray(engagementPayload?.runPlan) ? engagementPayload.runPlan : [];
+      const adaptiveCadence = engagementPayload?.adaptiveNeighborCadence || null;
       const targetLines = [
         targets?.replies?.active ? `replies ${targets.replies.success}/${targets.replies.expectedNow}` : '',
         targets?.neighborComments?.active ? `neighbor ${targets.neighborComments.success}/${targets.neighborComments.expectedNow}` : '',
@@ -708,13 +709,16 @@ async function checkEngagementAutomationHealth() {
       const runPlanHint = runPlan.length > 0
         ? `\nrun plan: ${runPlan.map((item) => `${item.step}.${item.label}`).join(' -> ')}`
         : '';
+      const adaptiveHint = adaptiveCadence?.enabled
+        ? `\nadaptive cadence: ${adaptiveCadence.shouldBoost ? `boosted (${adaptiveCadence.combinedCommentSuccess}/${adaptiveCadence.combinedCommentExpectedNow}, process ${adaptiveCadence.effectiveProcessLimit}, collect ${adaptiveCadence.effectiveCollectLimit})` : 'baseline'}`
+        : '';
       const replayHint = latestReplyReplayCandidate?.id
         ? `\nreply replay: npm run replay:reply-ui -- --comment-id ${latestReplyReplayCandidate.id} --json`
         : '';
       const doctorHint = `\ndoctor: ${ENGAGEMENT_DOCTOR_COMMAND}${buildPriorityHint('engagement primary', engagementPriority, { includeActionFocus: true })}${buildPriorityHint('primary blocker', opsPriority, { includeActionFocus: true })}\nops doctor: ${BLOG_OPS_DOCTOR_COMMAND}`;
       return {
         ok: false,
-        detail: `engagement target gap — ${targetLines || targetGaps.join(', ')}${primaryGapHint}${immediateRunHint}${runPlanHint}${replayHint}${doctorHint}`,
+        detail: `engagement target gap — ${targetLines || targetGaps.join(', ')}${primaryGapHint}${immediateRunHint}${runPlanHint}${adaptiveHint}${replayHint}${doctorHint}`,
         failureByKind,
         failureByAction,
         latestReplyReplayCandidate,
