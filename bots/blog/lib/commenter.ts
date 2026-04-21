@@ -2891,7 +2891,7 @@ async function saveCommentDebugSnapshot(page, comment, stage) {
         const targetReplyArea = document.querySelector('[data-blog-target-reply-area="true"]');
         const targetReplyButton = document.querySelector('[data-blog-target-reply-button="true"]');
         const targetEditor = document.querySelector('[data-blog-commenter-editor="true"]');
-        const isReplySubmitCandidate = (node) => {
+        const isSubmitCandidate = (node) => {
           if (!visible(node)) return false;
           const text = textOf(node);
           const cls = String(node.className || '');
@@ -2907,21 +2907,46 @@ async function saveCommentDebugSnapshot(page, comment, stage) {
           if (inputType === 'submit') return true;
           return /등록|완료|게시/.test(normalizedText);
         };
+        const commentEditorRoot =
+          targetEditor && targetEditor.closest('fieldset')
+          || targetEditor && targetEditor.closest('form')
+          || targetEditor && targetEditor.closest('.u_cbox_wrap')
+          || targetEditor && targetEditor.closest('.u_cbox_write_box, .u_cbox_comment_box')
+          || targetEditor && targetEditor.closest('.u_cbox_write_wrap, .u_cbox_write, .u_cbox_write_area')
+          || null;
         const scopedRoots = [
           targetReplyArea,
+          commentEditorRoot,
+          commentEditorRoot && commentEditorRoot.parentElement,
+          targetEditor && targetEditor.closest('.u_cbox_wrap'),
           targetEditor && targetEditor.closest('.u_cbox_write_box, .u_cbox_reply_write, .u_cbox_reply_area, .u_cbox_comment_box'),
           targetEditor && targetEditor.closest('.u_cbox_write_wrap, .u_cbox_write, .u_cbox_write_area'),
         ].filter(Boolean);
         let submitButton = null;
         for (const root of scopedRoots) {
-          submitButton = Array.from(root.querySelectorAll('button, a, input[type="submit"], [role="button"]')).find(isReplySubmitCandidate) || null;
+          submitButton = Array.from(root.querySelectorAll('button, a, input[type="submit"], [role="button"]')).find(isSubmitCandidate) || null;
           if (submitButton) break;
         }
         if (!submitButton) {
           submitButton = Array.from(
             document.querySelectorAll('button, a, input[type="submit"], [role="button"]'),
-          ).find(isReplySubmitCandidate) || null;
+          ).find(isSubmitCandidate) || null;
         }
+        const submitCandidates = scopedRoots.flatMap((root) =>
+          Array.from(root.querySelectorAll('button, a, input[type="submit"], [role="button"]'))
+            .filter(isSubmitCandidate)
+            .map((node) => ({
+              text: textOf(node).slice(0, 80),
+              className: String(node.className || '').slice(0, 160),
+              dataAction: String(node.getAttribute('data-action') || ''),
+              uiSelector: String(node.getAttribute('data-ui-selector') || ''),
+              disabled: Boolean(
+                node.disabled
+                || node.getAttribute('aria-disabled') === 'true'
+                || /\\bdisabled\\b/i.test(String(node.className || ''))
+              ),
+            }))
+        );
         const commentSelectors = ['.u_cbox_wrap', '.u_cbox_write_wrap', '.u_cbox_comment_box', '.u_cbox_btn_reply', 'textarea[id*="write_textarea"]'];
         const viewerSelectors = ['.cpv__root', '.cpv__error', '.cpv__content'];
         return {
@@ -2947,6 +2972,7 @@ async function saveCommentDebugSnapshot(page, comment, stage) {
             ),
           },
           replyTextPreview: textOf(targetEditor).slice(0, 160),
+          submitCandidates,
           submitButtonState: submitButton ? {
             found: true,
             text: textOf(submitButton).slice(0, 80),
@@ -4022,6 +4048,24 @@ async function verifyCommentPosted(page, commentText, testMode = false) {
           ),
         );
       };
+      const isCommentSubmitCandidate = (node) => {
+        if (!visible(node)) return false;
+        const tag = String(node.tagName || '').toLowerCase();
+        if (tag !== 'button' && tag !== 'a' && tag !== 'input') return false;
+        const dataAction = String(node.getAttribute('data-action') || '');
+        const uiSelector = String(node.getAttribute('data-ui-selector') || '');
+        const cls = String(node.className || '');
+        const text = textOf(node).replace(/\\s+/g, '');
+        const role = String(node.getAttribute('role') || '');
+        const inputType = String(node.getAttribute('type') || '').toLowerCase();
+        if (/beforeToggleSticker|beforeToggleEmoticon/i.test(dataAction)) return false;
+        if (/upload_sticker|sticker/i.test(cls)) return false;
+        if (dataAction.includes('write#request')) return true;
+        if (uiSelector === 'writeButton' || /^writeButton_/i.test(uiSelector)) return true;
+        if (/btn_register|btn_write|u_cbox_btn_upload(?!_sticker)/i.test(cls)) return true;
+        if (inputType === 'submit') return true;
+        return (role === 'button' || tag === 'button' || tag === 'a') && /등록|완료|게시/.test(text);
+      };
 
       const candidates = Array.from(
         document.querySelectorAll(
@@ -4034,7 +4078,39 @@ async function verifyCommentPosted(page, commentText, testMode = false) {
         ),
       ).filter((node) => visible(node) && !isEditorArea(node));
 
-      return candidates.some((node) => textOf(node).includes(expected));
+      if (candidates.some((node) => textOf(node).includes(expected))) {
+        return true;
+      }
+
+      const activeEditor = Array.from(
+        document.querySelectorAll('textarea, div[contenteditable="true"], div[role="textbox"], div[id*="write_textarea"]'),
+      ).find((node) => visible(node) && !node.closest('.u_cbox_reply_area,[data-blog-target-reply-area="true"]'));
+
+      const editorText = textOf(activeEditor);
+      const editorRoots = [
+        activeEditor && activeEditor.closest('fieldset'),
+        activeEditor && activeEditor.closest('form'),
+        activeEditor && activeEditor.closest('.u_cbox_wrap'),
+        activeEditor && activeEditor.closest('.u_cbox_write_box, .u_cbox_comment_box'),
+        activeEditor && activeEditor.closest('.u_cbox_write_wrap, .u_cbox_write, .u_cbox_write_area'),
+      ].filter(Boolean);
+      const submitButton = editorRoots
+        .map((root) =>
+          Array.from(root.querySelectorAll('button, a, input[type="submit"], [role="button"]')).find(isCommentSubmitCandidate) || null
+        )
+        .find(Boolean) || null;
+      const submitDisabled = Boolean(
+        submitButton
+        && (
+          submitButton.disabled
+          || submitButton.getAttribute('aria-disabled') === 'true'
+          || /\\bdisabled\\b/i.test(String(submitButton.className || ''))
+        )
+      );
+      const composerCleared = Boolean(activeEditor) && editorText.length === 0;
+      const composerClosed = !activeEditor || !visible(activeEditor);
+
+      return (composerCleared || composerClosed) && (!submitButton || submitDisabled);
     })()
   `, { timeout: timeoutMs }).then(() => true).catch(() => false);
 }
