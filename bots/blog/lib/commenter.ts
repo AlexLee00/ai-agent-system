@@ -2200,6 +2200,76 @@ async function waitForReplySubmitReady(page, testMode = false) {
   `, { timeout: timeoutMs }).then(() => true).catch(() => false);
 }
 
+async function inspectReplySubmitLite(page) {
+  return page.evaluate(`
+    (() => {
+      const visible = (el) => {
+        if (!el) return false;
+        const style = window.getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+      };
+      const textOf = (el) =>
+        String((el && (el.innerText || el.textContent)) || '').replace(/\\s+/g, ' ').trim();
+      const targetReplyArea = document.querySelector('[data-blog-target-reply-area="true"]');
+      const targetEditor = document.querySelector('[data-blog-commenter-editor="true"]');
+      const replyFormRoot =
+        targetEditor && targetEditor.closest('form')
+        || targetEditor && targetEditor.closest('.u_cbox_write_box')
+        || targetEditor && targetEditor.closest('.u_cbox_write_wrap')
+        || targetReplyArea && targetReplyArea.querySelector('form')
+        || targetReplyArea && targetReplyArea.querySelector('.u_cbox_write_box')
+        || targetReplyArea && targetReplyArea.querySelector('.u_cbox_write_wrap')
+        || null;
+
+      const isReplySubmit = (node) => {
+        if (!visible(node)) return false;
+        const dataAction = String(node.getAttribute('data-action') || '');
+        const uiSelector = String(node.getAttribute('data-ui-selector') || '');
+        const cls = String(node.className || '');
+        const inputType = String(node.getAttribute('type') || '').toLowerCase();
+        const text = textOf(node).replace(/\\s+/g, '');
+        if (dataAction.includes('write#request')) return true;
+        if (uiSelector === 'writeButton' || /^writeButton_/i.test(uiSelector)) return true;
+        if (/u_cbox_btn_upload|btn_register|btn_write/i.test(cls)) return true;
+        if (inputType === 'submit') return true;
+        return /등록|완료|게시/.test(text);
+      };
+
+      const submitCandidates = Array.from(
+        (replyFormRoot || targetReplyArea || document).querySelectorAll('button, a, input[type="submit"], [role="button"]'),
+      )
+        .filter(isReplySubmit)
+        .slice(0, 5)
+        .map((node) => ({
+          text: textOf(node).slice(0, 40),
+          id: String(node.id || ''),
+          className: String(node.className || '').slice(0, 120),
+          dataAction: String(node.getAttribute('data-action') || ''),
+          uiSelector: String(node.getAttribute('data-ui-selector') || ''),
+        }));
+
+      return {
+        targetReplyAreaVisible: visible(targetReplyArea),
+        replyFormRootFound: Boolean(replyFormRoot),
+        editor: targetEditor ? {
+          id: String(targetEditor.id || ''),
+          className: String(targetEditor.className || '').slice(0, 120),
+          title: String(targetEditor.getAttribute('title') || ''),
+          dataAreaCode: String(targetEditor.getAttribute('data-area-code') || ''),
+          visible: visible(targetEditor),
+        } : null,
+        submitCandidates,
+      };
+    })()
+  `).catch(() => ({
+    targetReplyAreaVisible: false,
+    replyFormRootFound: false,
+    editor: null,
+    submitCandidates: [],
+  }));
+}
+
 async function expandReplyThreads(page) {
   return page.evaluate(`
     (() => {
@@ -3662,11 +3732,16 @@ async function postReply(comment, replyText, { testMode = false, dryRun = false,
     }
 
     if (testMode || dryRun) {
+      const submitReady = await waitForReplySubmitReady(contentFrame, testMode).catch(() => false);
+      const submitState = await inspectReplySubmitLite(contentFrame).catch(() => null);
       return {
         ok: true,
         dryRun: true,
         stage: 'reply_editor_ready',
         editorSelector: editor.selector,
+        editorId: editor.id || '',
+        submitReady,
+        submitState,
       };
     }
 
