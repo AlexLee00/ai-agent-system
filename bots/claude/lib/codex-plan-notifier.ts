@@ -156,6 +156,72 @@ function getLastCommitTime() {
   }
 }
 
+function getPromptStem(promptFile) {
+  if (!promptFile) return '';
+  return path.basename(promptFile, path.extname(promptFile));
+}
+
+function hasCompletionKeyword(text) {
+  return /(자동 실행 완료|자율 완료|완전 구현|완료됨|완료)/.test(text || '');
+}
+
+function findHistoricalCompletionInHandoffs(promptStem) {
+  const sessionsDir = path.join(ROOT, 'docs', 'sessions');
+  if (!promptStem || !fs.existsSync(sessionsDir)) return null;
+
+  try {
+    const files = fs.readdirSync(sessionsDir)
+      .filter(name => /^HANDOFF_\d+\.md$/i.test(name))
+      .sort()
+      .reverse()
+      .slice(0, 30);
+
+    for (const file of files) {
+      const fullPath = path.join(sessionsDir, file);
+      const content = fs.readFileSync(fullPath, 'utf8');
+      if (content.includes(promptStem) && hasCompletionKeyword(content)) {
+        return {
+          source: 'handoff',
+          file,
+        };
+      }
+    }
+  } catch {}
+
+  return null;
+}
+
+function findHistoricalCompletionInGit(promptStem) {
+  if (!promptStem) return null;
+
+  try {
+    const log = safeExec(`git log --oneline -n 80 --grep='${promptStem.replace(/'/g, "'\\''")}'`, { cwd: ROOT });
+    if (log && hasCompletionKeyword(log)) {
+      const firstLine = log.split('\n').find(Boolean) || '';
+      return {
+        source: 'git',
+        line: firstLine,
+      };
+    }
+  } catch {}
+
+  return null;
+}
+
+function getHistoricalCompletionSignal(promptFile) {
+  const promptStem = getPromptStem(promptFile);
+  if (!promptStem) return null;
+
+  return (
+    findHistoricalCompletionInHandoffs(promptStem) ||
+    findHistoricalCompletionInGit(promptStem)
+  );
+}
+
+function shouldSuppressHistoricalStart(exec) {
+  return Boolean(getHistoricalCompletionSignal(exec?.prompt_file));
+}
+
 // ─── Phase 파싱 ───────────────────────────────────────────────────────
 
 function extractExpectedFiles(content, phaseId) {
@@ -511,10 +577,18 @@ async function mainLoop() {
           // 새 코덱스 프로세스 발견
           const firstPhase = exec.total_phases?.[0];
           if (firstPhase) {
-            await sendTelegram(formatPlanStartMessage(exec, firstPhase));
             exec.current_phase    = firstPhase;
-            exec.last_alert_type  = 'plan_start';
-            exec.last_alert_at    = Date.now();
+            const historicalCompletion = getHistoricalCompletionSignal(exec.prompt_file);
+            if (historicalCompletion) {
+              console.log(
+                `[codex-notifier] 과거 완료 prompt start 알림 억제: ${exec.prompt_file} (${historicalCompletion.source})`
+              );
+              exec.last_alert_type = 'historical_start_suppressed';
+            } else {
+              await sendTelegram(formatPlanStartMessage(exec, firstPhase));
+              exec.last_alert_type = 'plan_start';
+              exec.last_alert_at   = Date.now();
+            }
           }
           currentState[exec.pid] = exec;
           continue;
@@ -590,4 +664,6 @@ module.exports = {
   runManualTest,
   loadCurrentState,
   isProcessAlive,
+  shouldSuppressHistoricalStart,
+  getHistoricalCompletionSignal,
 };

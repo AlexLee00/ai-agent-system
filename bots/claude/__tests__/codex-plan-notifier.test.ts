@@ -288,6 +288,40 @@ async function test_parsePhases_empty_content() {
   console.log('✅ codex-notifier: parsePhases returns empty array for empty content');
 }
 
+// ─── Test 13: 과거 완료 prompt는 start 알림 억제 ─────────────────────
+
+async function test_shouldSuppressHistoricalStart_completed_prompt() {
+  const tmpDir = path.join(os.tmpdir(), 'notifier-historical-' + Date.now());
+  const sessionsDir = path.join(tmpDir, 'docs', 'sessions');
+  fs.mkdirSync(sessionsDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(sessionsDir, 'HANDOFF_54.md'),
+    [
+      '# HANDOFF 54',
+      '',
+      '2026-04-19',
+      '- effab24c feat(codex): CODEX_JUSTIN_EVOLUTION 자동 실행 완료',
+      '- 263bbd41 feat(legal): 저스틴팀 완전 구현',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+
+  const mocks = makeNotifierMocks({
+    '../../../packages/core/lib/env': { PROJECT_ROOT: tmpDir },
+  });
+
+  await withMocks(mocks, async (notifier) => {
+    const suppress = notifier.shouldSuppressHistoricalStart({
+      prompt_file: 'docs/codex/CODEX_JUSTIN_EVOLUTION.md',
+    });
+    assert.strictEqual(suppress, true, '완료된 과거 prompt는 start 알림 억제');
+  });
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+  console.log('✅ codex-notifier: suppresses historical completed prompt starts');
+}
+
 // ─── 실행 ─────────────────────────────────────────────────────────────
 
 async function main() {
@@ -305,6 +339,7 @@ async function main() {
     test_detectCodexProcesses_returns_array,
     test_loadState_returns_empty_when_no_file,
     test_parsePhases_empty_content,
+    test_shouldSuppressHistoricalStart_completed_prompt,
   ];
 
   let passed = 0, failed = 0;
