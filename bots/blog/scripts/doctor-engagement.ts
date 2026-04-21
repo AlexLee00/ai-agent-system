@@ -84,6 +84,39 @@ function calcExpectedByWindow(target, startHour, endHour) {
   };
 }
 
+function buildTargetGapDetails(targets = {}) {
+  const entries = [
+    ['replies', targets?.replies],
+    ['neighbor', targets?.neighborComments],
+    ['sympathy', targets?.sympathies],
+  ];
+  const details = [];
+  for (const [label, item] of entries) {
+    const success = Number(item?.success || 0);
+    const expectedNow = Number(item?.expectedNow || 0);
+    const target = Number(item?.target || 0);
+    const active = Boolean(item?.active);
+    const deficit = Math.max(0, expectedNow - success);
+    const deficitRatio = expectedNow > 0 ? deficit / expectedNow : 0;
+    if (active && expectedNow > 0 && deficit > 0) {
+      details.push({
+        label,
+        success,
+        expectedNow,
+        target,
+        deficit,
+        deficitRatio,
+        summary: `${label} ${success}/${expectedNow}`,
+      });
+    }
+  }
+  return details.sort((a, b) => {
+    if (b.deficit !== a.deficit) return b.deficit - a.deficit;
+    if (b.deficitRatio !== a.deficitRatio) return b.deficitRatio - a.deficitRatio;
+    return a.label.localeCompare(b.label);
+  });
+}
+
 async function getLatestReplyReplayCandidate() {
   try {
     const row = await pgPool.get('blog', `
@@ -123,7 +156,7 @@ async function getLatestReplyReplayCandidate() {
   }
 }
 
-function buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps }) {
+function buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, primaryGap }) {
   const actions = [];
   if ((failureByKind.ui || 0) > 0 || (failureByKind.browser || 0) > 0) {
     actions.push('네이버 reply UI selector와 browser mount 흐름 점검');
@@ -132,7 +165,11 @@ function buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps })
     actions.push('reply 생성 LLM timeout / fetch 실패 로그 확인');
   }
   if (Array.isArray(targetGaps) && targetGaps.length > 0) {
-    actions.push('운영 시간대 기준 댓글/답글/공감 목표치와 현재 실적 차이를 점검');
+    actions.push(
+      primaryGap?.label
+        ? `운영 시간대 기준 ${primaryGap.label} 목표치 격차를 먼저 점검`
+        : '운영 시간대 기준 댓글/답글/공감 목표치와 현재 실적 차이를 점검'
+    );
   }
   if (latestReplyReplayCandidate?.id) {
     actions.push(`npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run replay:reply-ui -- --comment-id ${latestReplyReplayCandidate.id} --json`);
@@ -143,7 +180,7 @@ function buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps })
   return actions;
 }
 
-function buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps }) {
+function buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps, primaryGap }) {
   const blogPrefix = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')}`;
   if ((failureByKind.ui || 0) > 0 || (failureByKind.browser || 0) > 0) {
     return {
@@ -173,10 +210,14 @@ function buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps })
   }
   if (Array.isArray(targetGaps) && targetGaps.length > 0) {
     return {
-      area: 'engagement.target_gap',
-      reason: `운영 시간대 기준 engagement 목표치가 뒤처졌습니다 (${targetGaps.join(', ')}).`,
+      area: primaryGap?.label ? `engagement.target_gap.${primaryGap.label}` : 'engagement.target_gap',
+      reason: primaryGap?.label
+        ? `운영 시간대 기준 ${primaryGap.label} 목표치가 가장 크게 뒤처졌습니다 (${primaryGap.success}/${primaryGap.expectedNow}, deficit ${primaryGap.deficit}).`
+        : `운영 시간대 기준 engagement 목표치가 뒤처졌습니다 (${targetGaps.join(', ')}).`,
       nextCommand: `${blogPrefix} run doctor:engagement -- --json`,
-      actionFocus: '답글/댓글/공감 목표치와 현재 시간대 실적 차이 점검',
+      actionFocus: primaryGap?.label
+        ? `${primaryGap.label} 목표치와 현재 시간대 실적 차이 점검`
+        : '답글/댓글/공감 목표치와 현재 시간대 실적 차이 점검',
     };
   }
   return {
@@ -280,6 +321,14 @@ async function main() {
     targetGaps.push(`sympathy ${sympathySuccessCount}/${sympathyPlan.expectedNow}`);
   }
 
+  const targets = {
+    replies: { success: replySuccessCount, target: replyPlan.target, expectedNow: replyPlan.expectedNow, active: replyPlan.active },
+    neighborComments: { success: neighborCommentSuccessCount, target: neighborPlan.target, expectedNow: neighborPlan.expectedNow, active: neighborPlan.active },
+    sympathies: { success: sympathySuccessCount, target: sympathyPlan.target, expectedNow: sympathyPlan.expectedNow, active: sympathyPlan.active },
+  };
+  const targetGapDetails = buildTargetGapDetails(targets);
+  const primaryGap = targetGapDetails[0] || null;
+
   const payload = {
     totalFailures: Array.isArray(rows) ? rows.length : 0,
     failureByKind,
@@ -295,16 +344,14 @@ async function main() {
           fromFailure: Boolean(latestReplyReplayCandidate.from_failure),
         }
       : null,
-    targets: {
-      replies: { success: replySuccessCount, target: replyPlan.target, expectedNow: replyPlan.expectedNow, active: replyPlan.active },
-      neighborComments: { success: neighborCommentSuccessCount, target: neighborPlan.target, expectedNow: neighborPlan.expectedNow, active: neighborPlan.active },
-      sympathies: { success: sympathySuccessCount, target: sympathyPlan.target, expectedNow: sympathyPlan.expectedNow, active: sympathyPlan.active },
-    },
+    targets,
     targetGaps,
+    targetGapDetails,
+    primaryGap,
   };
   payload.needsAttention = payload.totalFailures > 0 || targetGaps.length > 0;
-  payload.actions = buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps });
-  payload.primary = buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps });
+  payload.actions = buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, primaryGap });
+  payload.primary = buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps, primaryGap });
 
   const aiSummary = await buildBlogCliInsight({
     bot: 'doctor-engagement',
@@ -324,6 +371,9 @@ async function main() {
   console.log(`🔍 AI: ${payload.aiSummary}`);
   console.log(`[engagement doctor] primary=${payload.primary.area} ${payload.primary.reason}`);
   console.log(`[engagement doctor] next=${payload.primary.nextCommand}`);
+  if (payload.primaryGap?.label) {
+    console.log(`[engagement doctor] deepest_gap=${payload.primaryGap.label} ${payload.primaryGap.success}/${payload.primaryGap.expectedNow}`);
+  }
   if (payload.targetGaps.length > 0) {
     console.log(`[engagement doctor] target_gap=${payload.targetGaps.join(' / ')}`);
   }
