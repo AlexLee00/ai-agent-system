@@ -1317,7 +1317,7 @@ function assessInboundComment(comment) {
     /홍보/i,
   ];
   if (promoPatterns.some((pattern) => pattern.test(text))) {
-    return { ok: false, reason: hasUrl ? 'promotional_comment_with_url' : 'promotional_comment' };
+    return { ok: true, reason: hasUrl ? 'promotional_comment_reply_allowed_with_url' : 'promotional_comment_reply_allowed' };
   }
 
   if (hasUrl && !/blog\.naver\.com/i.test(lower)) {
@@ -1384,6 +1384,64 @@ function assessInboundComment(comment) {
   }
 
   return { ok: true };
+}
+
+async function requeuePromotionalReplyCandidates(limit = 10, options = {}) {
+  const numericLimit = Math.max(1, Number(limit || 10));
+  const dryRun = Boolean(options?.dryRun);
+  const rows = await pgPool.query('blog', `
+    SELECT *
+    FROM ${TABLE}
+    WHERE reply_at IS NULL
+      AND status = 'skipped'
+      AND COALESCE(error_message, '') IN ('promotional_comment', 'promotional_comment_with_url')
+      AND detected_at >= now() - interval '30 days'
+    ORDER BY detected_at DESC
+    LIMIT $1
+  `, [Math.max(numericLimit * 4, numericLimit)]);
+
+  const requeued = [];
+  for (const row of rows) {
+    if (requeued.length >= numericLimit) break;
+    const inboundAssessment = assessInboundComment(row);
+    if (!inboundAssessment.ok || !String(inboundAssessment.reason || '').startsWith('promotional_comment_reply_allowed')) continue;
+
+    const candidate = {
+      id: row.id,
+      commenterName: row.commenter_name || '',
+      commentText: row.comment_text || '',
+      detectedAt: row.detected_at || null,
+      previousError: row.error_message || null,
+      reassessedReason: inboundAssessment.reason,
+    };
+
+    if (!dryRun) {
+      await pgPool.run('blog', `
+        UPDATE ${TABLE}
+        SET status = 'pending',
+            error_message = NULL,
+            meta = COALESCE(meta, '{}'::jsonb) || $2::jsonb
+        WHERE id = $1
+      `, [
+        row.id,
+        JSON.stringify({
+          phase: 'promotional_reply_backfill',
+          previous_error: row.error_message || null,
+          reassessed_reason: inboundAssessment.reason,
+          requeued_at: new Date().toISOString(),
+        }),
+      ]);
+    }
+
+    requeued.push(candidate);
+  }
+
+  return {
+    dryRun,
+    reviewed: Array.isArray(rows) ? rows.length : 0,
+    requeuedCount: requeued.length,
+    candidates: requeued,
+  };
 }
 
 function normalizePostUrl(rawUrl) {
@@ -3571,10 +3629,16 @@ async function runCommentReply({ testMode = false } = {}) {
   await ensureSchema();
 
   const requeued = await requeueRecoverableReplyFailures(testMode ? 1 : 5).catch(() => 0);
+  const promotionalBackfill = await requeuePromotionalReplyCandidates(testMode ? 2 : 10, { dryRun: false }).catch(() => ({
+    dryRun: false,
+    reviewed: 0,
+    requeuedCount: 0,
+    candidates: [],
+  }));
 
   const todayCount = await getTodayReplyCount();
   if (todayCount >= config.maxDaily) {
-    return { skipped: true, reason: 'daily_limit', count: todayCount, requeued };
+    return { skipped: true, reason: 'daily_limit', count: todayCount, requeued, promotionalBackfill };
   }
 
   let newComments;
@@ -3640,10 +3704,26 @@ async function runCommentReply({ testMode = false } = {}) {
 
   const totalProcessed = replied + failed + skipped;
   const failureRate = totalProcessed > 0 ? failed / totalProcessed : 0;
+  const exhaustedReplyWorkload = pending.length <= targets.length;
+  const unmetReplyTarget = Math.max(0, remaining - replied);
+  let externalFill = null;
+
+  if (exhaustedReplyWorkload && unmetReplyTarget > 0) {
+    externalFill = await runNeighborCommenter({
+      testMode,
+      limitOverride: testMode ? 1 : unmetReplyTarget,
+      trigger: 'reply_gap_fill',
+    }).catch((error) => ({
+      ok: false,
+      failed: true,
+      reason: String(error?.message || error),
+    }));
+  }
+
   await _postCommenterAlarm({
     fromBot: 'blog-commenter',
     alertLevel: failureRate >= 0.5 ? 3 : 2,
-    message: `답댓글 ${replied}건 완료, 실패 ${failed}건, 스킵 ${skipped}건 (오늘 총 ${todayCount + replied}/${config.maxDaily})`,
+    message: `답댓글 ${replied}건 완료, 실패 ${failed}건, 스킵 ${skipped}건 (오늘 총 ${todayCount + replied}/${config.maxDaily})${externalFill ? ` / 외부 댓글 보충 ${externalFill.posted || 0}건` : ''}`,
     shouldSend: replied > 0 || failed > 0,
   });
 
@@ -3656,6 +3736,10 @@ async function runCommentReply({ testMode = false } = {}) {
     skipped,
     total: todayCount + replied,
     requeued,
+    promotionalBackfill,
+    exhaustedReplyWorkload,
+    unmetReplyTarget,
+    externalFill,
     testMode,
   };
 }
@@ -3821,7 +3905,7 @@ async function runNeighborSympathy({ testMode = false } = {}) {
   };
 }
 
-async function runNeighborCommenter({ testMode = false } = {}) {
+async function runNeighborCommenter({ testMode = false, limitOverride = 0, trigger = '' } = {}) {
   const config = getNeighborCommenterConfig();
   const guardResult = _checkOpsAndWindow(config, {
     testMode,
@@ -3840,12 +3924,17 @@ async function runNeighborCommenter({ testMode = false } = {}) {
   const newCandidates = await collectNeighborCandidates({ testMode });
   const pending = await getPendingNeighborComments(Math.min(config.maxProcessPerCycle, testMode ? 1 : config.maxProcessPerCycle));
   const remaining = Math.max(0, config.maxDaily - todayCount);
-  const targets = pending.slice(0, testMode ? 1 : remaining);
+  const requestedLimit = Number(limitOverride || 0) > 0
+    ? Math.min(remaining, Number(limitOverride || 0))
+    : Math.min(config.maxProcessPerCycle, remaining);
+  const targets = pending.slice(0, testMode ? 1 : requestedLimit);
   traceCommenter('neighborComment:cycle', {
     detected: newCandidates.length,
     pending: pending.length,
     targets: targets.length,
     processTimeoutMs: config.processTimeoutMs,
+    trigger,
+    limitOverride: Number(limitOverride || 0),
     testMode,
   });
 
@@ -3936,6 +4025,8 @@ async function runNeighborCommenter({ testMode = false } = {}) {
     skipped,
     total: todayCount + posted,
     sympathyTotal: todaySympathyCount + sympathized,
+    trigger,
+    limitOverride: Number(limitOverride || 0),
     testMode,
   };
 }
@@ -3961,6 +4052,7 @@ module.exports = {
   processCommentWithTimeout,
   requeueRecoverableReplyFailures,
   requeueCourtesyReflectionCandidates,
+  requeuePromotionalReplyCandidates,
   runNeighborCommenter,
   runNeighborSympathy,
   runCommentReply,
