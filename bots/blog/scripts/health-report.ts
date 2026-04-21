@@ -1994,6 +1994,14 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
     const doctorPrimaryLabel = normalizedDoctorGapLabel;
     const entries = [...engagementGapEntries];
     if (!entries.length) return [];
+    if (
+      engagementDoctorPriority?.primaryArea === 'engagement.ui'
+      && String(engagementDoctorPriority?.nextCommand || '').includes('run-neighbor-commenter.ts')
+    ) {
+      const neighborFirst = entries.find((item) => item.label === 'neighbor');
+      const rest = entries.filter((item) => item.label !== 'neighbor');
+      return neighborFirst ? [neighborFirst, ...rest] : entries;
+    }
     if (engagementDoctorPriority?.primaryArea === 'engagement.target_gap.replies.no_workload') {
       const neighborFirst = entries.find((item) => item.label === 'neighbor');
       const rest = entries.filter((item) => item.label !== 'neighbor');
