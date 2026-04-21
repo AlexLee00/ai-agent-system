@@ -1270,6 +1270,9 @@ async function buildEngagementHealth() {
       ok.push(
         `  neighbor collect diag: buddy ${Number(neighborCollectDiagnostics.buddyFeedSourceCount || 0)} / network ${Number(neighborCollectDiagnostics.commenterNetworkSourceCount || 0)} / resolved ${Number(neighborCollectDiagnostics.commenterNetworkResolvedCount || 0)} / collected ${Number(neighborCollectDiagnostics.rawCollectedCount || 0)} / inserted ${Number(neighborCollectDiagnostics.insertedCount || 0)}`
       );
+      if (neighborCollectDiagnostics.relaxedRetryUsed) {
+        ok.push(`  neighbor collect retry: recent window ${Number(neighborCollectDiagnostics.relaxedRecentWindowDays || 0)}일로 완화 재시도`);
+      }
       ok.push(
         `  neighbor collect bottleneck: buddy recent ${Number(neighborCollectDiagnostics.buddyFeedRecentBlogSkipCount || 0)} / buddy seen ${Number(neighborCollectDiagnostics.buddyFeedSeenUrlSkipCount || 0)} / network recent ${Number(neighborCollectDiagnostics.commenterNetworkRecentBlogSkipCount || 0)} / network resolve fail ${Number(neighborCollectDiagnostics.commenterNetworkResolveFailedCount || 0)} / network seen ${Number(neighborCollectDiagnostics.commenterNetworkSeenUrlSkipCount || 0)}`
       );

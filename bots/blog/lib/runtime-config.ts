@@ -151,6 +151,8 @@ const DEFAULTS = {
     adaptiveBoostCap: 12,
     adaptiveCollectBoostCap: 20,
     adaptiveSympathyBoostCap: 8,
+    adaptiveRecentRelaxEnabled: true,
+    relaxedRecentWindowDays: 3,
     recentWindowDays: 14,
     minCommentLen: 45,
     maxCommentLen: 220,

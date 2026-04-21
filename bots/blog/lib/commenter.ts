@@ -1739,6 +1739,9 @@ async function collectNeighborCandidates({ testMode = false, persist = true, col
     recentWindowDays: Number(config.recentWindowDays || 14),
     recentTargetedPostCount: recentUrls.size,
     recentNeighborBlogCount: recentBlogIds.size,
+    relaxedRetryUsed: false,
+    relaxedRecentWindowDays: null,
+    effectiveRecentWindowDays: Number(config.recentWindowDays || 14),
     commenterNetworkSourceCount: 0,
     commenterNetworkResolvedCount: 0,
     commenterNetworkRecentBlogSkipCount: 0,
@@ -1763,58 +1766,84 @@ async function collectNeighborCandidates({ testMode = false, persist = true, col
   await withBrowserPage(testMode, async (page) => {
     const buddyFeed = await extractBuddyFeedPosts(page, ownBlogId, effectiveCollectLimit);
     diagnostics.buddyFeedSourceCount = Array.isArray(buddyFeed) ? buddyFeed.length : 0;
-    for (const item of buddyFeed) {
-      if (recentBlogIds.has(item.targetBlogId)) {
-        diagnostics.buddyFeedRecentBlogSkipCount += 1;
-        continue;
+    const runCollectionPass = async ({ activeRecentBlogIds, activeSeenUrls, relaxed = false }) => {
+      for (const item of buddyFeed) {
+        if (activeRecentBlogIds.has(item.targetBlogId)) {
+          if (!relaxed) diagnostics.buddyFeedRecentBlogSkipCount += 1;
+          continue;
+        }
+        if (activeSeenUrls.has(item.postUrl)) {
+          if (!relaxed) diagnostics.buddyFeedSeenUrlSkipCount += 1;
+          continue;
+        }
+        collected.push({
+          targetBlogId: item.targetBlogId,
+          targetBlogName: item.targetBlogName,
+          sourceType: 'buddy_feed',
+          sourceRef: 'ViewMoreBuddyPosts',
+          postUrl: item.postUrl,
+          postTitle: item.postTitle,
+          meta: item.meta,
+        });
+        diagnostics.sourceTypeCounts.buddy_feed += 1;
+        activeSeenUrls.add(item.postUrl);
+        if (collected.length >= effectiveCollectLimit) return;
       }
-      if (seenUrls.has(item.postUrl)) {
-        diagnostics.buddyFeedSeenUrlSkipCount += 1;
-        continue;
-      }
-      collected.push({
-        targetBlogId: item.targetBlogId,
-        targetBlogName: item.targetBlogName,
-        sourceType: 'buddy_feed',
-        sourceRef: 'ViewMoreBuddyPosts',
-        postUrl: item.postUrl,
-        postTitle: item.postTitle,
-        meta: item.meta,
-      });
-      diagnostics.sourceTypeCounts.buddy_feed += 1;
-      seenUrls.add(item.postUrl);
-      if (collected.length >= effectiveCollectLimit) return;
-    }
 
-    for (const row of commenterNetwork) {
-      const targetBlogId = String(row.commenter_id || '').trim();
-      if (!targetBlogId) continue;
-      if (recentBlogIds.has(targetBlogId)) {
-        diagnostics.commenterNetworkRecentBlogSkipCount += 1;
-        continue;
+      for (const row of commenterNetwork) {
+        const targetBlogId = String(row.commenter_id || '').trim();
+        if (!targetBlogId) continue;
+        if (activeRecentBlogIds.has(targetBlogId)) {
+          if (!relaxed) diagnostics.commenterNetworkRecentBlogSkipCount += 1;
+          continue;
+        }
+        const latest = await resolveLatestPostForBlog(page, targetBlogId, testMode).catch(() => null);
+        if (!latest?.postUrl) {
+          if (!relaxed) diagnostics.commenterNetworkResolveFailedCount += 1;
+          continue;
+        }
+        if (activeSeenUrls.has(latest.postUrl)) {
+          if (!relaxed) diagnostics.commenterNetworkSeenUrlSkipCount += 1;
+          continue;
+        }
+        diagnostics.commenterNetworkResolvedCount += 1;
+        collected.push({
+          targetBlogId,
+          targetBlogName: squeezeText(row.commenter_name || '', 80),
+          sourceType: 'commenter_network',
+          sourceRef: 'blog.comments',
+          postUrl: latest.postUrl,
+          postTitle: latest.postTitle,
+          meta: { lastSeenAt: row.last_seen_at || null },
+        });
+        diagnostics.sourceTypeCounts.commenter_network += 1;
+        activeSeenUrls.add(latest.postUrl);
+        if (collected.length >= effectiveCollectLimit) return;
       }
-      const latest = await resolveLatestPostForBlog(page, targetBlogId, testMode).catch(() => null);
-      if (!latest?.postUrl) {
-        diagnostics.commenterNetworkResolveFailedCount += 1;
-        continue;
-      }
-      if (seenUrls.has(latest.postUrl)) {
-        diagnostics.commenterNetworkSeenUrlSkipCount += 1;
-        continue;
-      }
-      diagnostics.commenterNetworkResolvedCount += 1;
-      collected.push({
-        targetBlogId,
-        targetBlogName: squeezeText(row.commenter_name || '', 80),
-        sourceType: 'commenter_network',
-        sourceRef: 'blog.comments',
-        postUrl: latest.postUrl,
-        postTitle: latest.postTitle,
-        meta: { lastSeenAt: row.last_seen_at || null },
-      });
-      diagnostics.sourceTypeCounts.commenter_network += 1;
-      seenUrls.add(latest.postUrl);
-      if (collected.length >= effectiveCollectLimit) return;
+    };
+
+    await runCollectionPass({ activeRecentBlogIds: recentBlogIds, activeSeenUrls: seenUrls, relaxed: false });
+
+    if (
+      collected.length === 0
+      && config.adaptiveEnabled !== false
+      && config.adaptiveRecentRelaxEnabled !== false
+      && Number(config.recentWindowDays || 14) > Number(config.relaxedRecentWindowDays || 3)
+    ) {
+      const relaxedRecentWindowDays = Math.max(1, Number(config.relaxedRecentWindowDays || 3));
+      const [relaxedUrls, relaxedBlogIds] = await Promise.all([
+        getRecentlyTargetedPostUrls(relaxedRecentWindowDays),
+        getRecentNeighborBlogIds(relaxedRecentWindowDays),
+      ]);
+      diagnostics.relaxedRetryUsed = true;
+      diagnostics.relaxedRecentWindowDays = relaxedRecentWindowDays;
+      diagnostics.effectiveRecentWindowDays = relaxedRecentWindowDays;
+      diagnostics.recentTargetedPostCount = relaxedUrls.size;
+      diagnostics.recentNeighborBlogCount = relaxedBlogIds.size;
+      const relaxedSeenUrls = new Set(relaxedUrls);
+      diagnostics.commenterNetworkResolvedCount = 0;
+      diagnostics.sourceTypeCounts = { buddy_feed: 0, commenter_network: 0 };
+      await runCollectionPass({ activeRecentBlogIds: relaxedBlogIds, activeSeenUrls: relaxedSeenUrls, relaxed: true });
     }
   });
   diagnostics.rawCollectedCount = collected.length;
