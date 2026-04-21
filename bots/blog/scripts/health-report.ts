@@ -1567,6 +1567,17 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
   const engagementReplayHint = engagementHealth?.latestReplyReplayCandidate?.id
     ? `npm run replay:reply-ui -- --comment-id ${engagementHealth.latestReplyReplayCandidate.id} --json`
     : '';
+  const engagementGapHint = [
+    engagementHealth?.replies?.expectedNow > 0
+      ? `replies ${Number(engagementHealth?.replies?.success || 0)}/${Number(engagementHealth?.replies?.expectedNow || 0)}`
+      : '',
+    engagementHealth?.neighborComments?.expectedNow > 0
+      ? `neighbor ${Number(engagementHealth?.neighborComments?.success || 0)}/${Number(engagementHealth?.neighborComments?.expectedNow || 0)}`
+      : '',
+    engagementHealth?.sympathies?.expectedNow > 0
+      ? `sympathy ${Number(engagementHealth?.sympathies?.success || 0)}/${Number(engagementHealth?.sympathies?.expectedNow || 0)}`
+      : '',
+  ].filter(Boolean).join(' / ');
   const engagementDoctorHint = `doctor=${ENGAGEMENT_DOCTOR_COMMAND}`;
   return buildHealthDecision({
     warnings: [
@@ -1673,6 +1684,7 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
         level: 'low',
         reason: [
           '댓글/답글/공감 실적이 시간대 기대치보다 낮거나 실패 이력이 있어 engagement 루프 점검이 필요합니다.',
+          engagementGapHint ? `현재 gap: ${engagementGapHint}` : '',
           engagementFailureHint ? `최근 실패: ${engagementFailureHint}` : '',
           engagementReplayHint ? `재현: ${engagementReplayHint}` : '',
           engagementDoctorHint,
