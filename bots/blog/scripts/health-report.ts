@@ -389,6 +389,8 @@ function buildDoctorPriority(command = '', label = 'doctor') {
     const primary = payload?.primary || {};
     const primaryArea = String(primary.area || 'unknown');
     const hasActivePrimary = primaryArea !== 'clear' && primaryArea !== 'unknown';
+    const latestDigestRun = payload?.latestDigestRun || null;
+    const nextPreviewTitle = String(payload?.nextGeneralPreview?.title || '');
     const actions = Array.isArray(payload?.actions)
       ? payload.actions
           .map((item) => String(item || '').trim())
@@ -400,6 +402,12 @@ function buildDoctorPriority(command = '', label = 'doctor') {
     ];
     if (hasActivePrimary && primary.nextCommand) ok.push(`  ${label} next: ${String(primary.nextCommand)}`);
     if (hasActivePrimary && primary.actionFocus) ok.push(`  ${label} focus: ${String(primary.actionFocus)}`);
+    if (hasActivePrimary && primaryArea.startsWith('marketing') && latestDigestRun?.checkedAt) {
+      ok.push(`  ${label} latest digest: ${String(latestDigestRun.checkedAt).slice(0, 19)} / ${String(latestDigestRun.status || 'unknown')}`);
+    }
+    if (hasActivePrimary && primaryArea.startsWith('marketing') && nextPreviewTitle) {
+      ok.push(`  ${label} next preview: ${nextPreviewTitle}`);
+    }
     if (hasActivePrimary) {
       for (const action of actions) {
         ok.push(`  ${label} action: ${action}`);
@@ -414,6 +422,8 @@ function buildDoctorPriority(command = '', label = 'doctor') {
       primaryReason: String(primary.reason || '정보 없음'),
       nextCommand: hasActivePrimary ? String(primary.nextCommand || '') : '',
       actionFocus: hasActivePrimary ? String(primary.actionFocus || '') : '',
+      latestDigestRun,
+      nextPreviewTitle,
       actions: hasActivePrimary ? actions : [],
     };
   } catch (error) {
@@ -2460,6 +2470,12 @@ function buildOpsPriority(socialAutomationHealth, engagementHealth, marketingExp
     for (const action of Array.isArray(opsDoctorPriority?.actions) ? opsDoctorPriority.actions.slice(0, 2) : []) {
       ok.push(`  ops action: ${action}`);
     }
+  }
+  if (primaryArea.startsWith('marketing') && marketingExpansionHealth?.latestDigestRun?.checkedAt) {
+    ok.push(`  latest digest run: ${String(marketingExpansionHealth.latestDigestRun.checkedAt).slice(0, 19)} / ${String(marketingExpansionHealth.latestDigestRun.status || 'unknown')}`);
+  }
+  if (primaryArea.startsWith('marketing') && marketingExpansionHealth?.nextGeneralPreview?.title) {
+    ok.push(`  next preview: ${String(marketingExpansionHealth.nextGeneralPreview.title)}`);
   }
   if (primaryArea !== 'clear') {
     warn.push(`  next action focus: ${actionFocus || primaryArea}`);
