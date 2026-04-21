@@ -40,16 +40,20 @@ function buildActions({ social, engagement, primary }) {
     ? engagement.actions
     : [];
   const primaryArea = String(primary?.area || '');
+  const hasActivePrimary = primaryArea && primaryArea !== 'clear' && primaryArea !== 'unknown';
 
-  const orderedActionGroups = primaryArea.startsWith('engagement')
-    ? [engagementActions, socialActions]
-    : [socialActions, engagementActions];
+  let orderedActionGroups = [];
+  if (primaryArea.startsWith('engagement')) {
+    orderedActionGroups = [engagementActions];
+  } else if (primaryArea.startsWith('social')) {
+    orderedActionGroups = [socialActions];
+  } else {
+    orderedActionGroups = [socialActions, engagementActions];
+  }
 
   for (const group of orderedActionGroups) {
     actions.push(...group.slice(0, 3));
   }
-
-  const hasActivePrimary = primaryArea && primaryArea !== 'clear' && primaryArea !== 'unknown';
   if (hasActivePrimary && primary?.nextCommand) {
     actions.unshift(`우선 실행: ${primary.nextCommand}`);
   }
@@ -58,7 +62,7 @@ function buildActions({ social, engagement, primary }) {
     actions.unshift(`focus blocker: ${primary.actionFocus}`);
   }
 
-  if (engagement?.adaptiveNeighborCadence?.shouldBoost) {
+  if (!primaryArea.startsWith('social') && engagement?.adaptiveNeighborCadence?.shouldBoost) {
     actions.push(
       `외부 댓글 cadence boost 적용 중: reply+neighbor ${engagement.adaptiveNeighborCadence.combinedCommentSuccess}/${engagement.adaptiveNeighborCadence.combinedCommentExpectedNow}, process ${engagement.adaptiveNeighborCadence.effectiveProcessLimit}, collect ${engagement.adaptiveNeighborCadence.effectiveCollectLimit}`,
     );
