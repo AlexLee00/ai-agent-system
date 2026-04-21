@@ -119,6 +119,7 @@ const DEFAULTS = {
     enabled: false,
     blogId: 'cafe_library',
     maxDaily: 20,
+    allowCourtesyReflectionMinLength: 55,
     activeStartHour: 9,
     activeEndHour: 21,
     browserHttpUrl: 'http://127.0.0.1:18791',

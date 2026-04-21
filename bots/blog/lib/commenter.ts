@@ -1278,9 +1278,39 @@ function assessInboundComment(comment) {
     /잘\s*보고\s*갑니다/i,
   ];
 
+  const commenterConfig = getCommenterConfig();
+  const courtesyReflectionMinLength = Math.max(
+    40,
+    Number(commenterConfig.allowCourtesyReflectionMinLength || 55),
+  );
+  const reflectionPatterns = [
+    /느끼/i,
+    /생각/i,
+    /와닿/i,
+    /공감/i,
+    /도움/i,
+    /배우/i,
+    /깨닫/i,
+    /습관/i,
+    /중요성/i,
+    /인상/i,
+    /좋더라/i,
+    /좋네요/i,
+  ];
+
   const hasQuestionIntent = /[?？]|궁금|어떻게|왜|어디|무엇|뭔가|알려|추천/i.test(text);
   const hasSpecificDiscussion = /차이|비교|방법|설명|후기|리뷰|추천|근거|전략|실행|운영|구조|포인트/i.test(text);
+  const hasReflectionSignal = reflectionPatterns.some((pattern) => pattern.test(text));
   const courtesyHits = courtesyPatterns.filter((pattern) => pattern.test(text)).length;
+
+  if (
+    !hasQuestionIntent
+    && !hasSpecificDiscussion
+    && hasReflectionSignal
+    && text.length >= courtesyReflectionMinLength
+  ) {
+    return { ok: true, reason: 'courtesy_reflection_allowed' };
+  }
 
   if (
     !hasQuestionIntent
