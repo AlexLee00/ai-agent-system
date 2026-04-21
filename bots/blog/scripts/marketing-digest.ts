@@ -6,6 +6,7 @@ const env = require('../../../packages/core/lib/env');
 const path = require('path');
 const { buildMarketingDigest } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/marketing-digest.ts'));
 const { buildBlogCliInsight } = require('../lib/cli-insight.ts');
+const { writeMarketingDigestTelemetry } = require('../lib/marketing-digest-telemetry.ts');
 
 const json = process.argv.includes('--json');
 
@@ -98,6 +99,7 @@ async function main() {
     },
     fallback: buildMarketingDigestFallback(digest),
   });
+  writeMarketingDigestTelemetry(digest);
   if (json) {
     console.log(JSON.stringify(digest, null, 2));
     return;

@@ -33,6 +33,7 @@ const { buildMarketingDigest } = require(path.join(env.PROJECT_ROOT, 'bots/blog/
 const { assessInboundComment } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/commenter.ts'));
 const { readDevelopmentBaseline, buildSinceClause } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/dev-baseline.ts'));
 const { readCommenterRunResult } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/commenter-run-telemetry.ts'));
+const { readMarketingDigestTelemetry } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/marketing-digest-telemetry.ts'));
 
 const CONTINUOUS = ['ai.blog.node-server'];
 const ALL_SERVICES = ['ai.blog.daily', 'ai.blog.node-server'];
@@ -1910,6 +1911,7 @@ async function buildPhase4CompetitionHealth() {
 async function buildMarketingExpansionHealth() {
   try {
     const digest = await buildMarketingDigest();
+    const latestDigestRun = readMarketingDigestTelemetry();
     let strategy = digest?.strategy || null;
     if (!strategy) {
       try {
@@ -1982,6 +1984,9 @@ async function buildMarketingExpansionHealth() {
         `  channels: ${digest?.channelPerformance?.totalChannels ?? 0}개 / watch ${digest?.channelPerformance?.watchChannels ?? 0}개`,
       );
     }
+    if (latestDigestRun?.checkedAt) {
+      ok.push(`  latest digest run: ${String(latestDigestRun.checkedAt).slice(0, 19)} / ${String(latestDigestRun.status || 'unknown')}`);
+    }
     const warn = [];
     if (digest?.senseSummary?.topSignal?.message) {
       warn.push(`  top signal: ${digest.senseSummary.topSignal.message}`);
@@ -2023,14 +2028,20 @@ async function buildMarketingExpansionHealth() {
       hotspotTrend: strategy?.hotspotTrend || null,
       strategyAdoption: digest?.strategyAdoption || null,
       nextGeneralPreview: digest?.nextGeneralPreview || null,
+      latestDigestRun,
     };
   } catch (error) {
+    const latestDigestRun = readMarketingDigestTelemetry();
     const reason = String(error?.message || error).slice(0, 160);
+    const warn = [`  marketing digest: 확인 실패 (${reason})`];
+    if (latestDigestRun?.checkedAt) {
+      warn.push(`  latest digest run: ${String(latestDigestRun.checkedAt).slice(0, 19)} / ${String(latestDigestRun.status || 'unknown')}`);
+    }
     return {
       okCount: 0,
-      warnCount: 1,
+      warnCount: warn.length,
       ok: [],
-      warn: [`  marketing digest: 확인 실패 (${reason})`],
+      warn,
       status: 'error',
       signalCount: 0,
       revenueImpactPct: 0,
@@ -2048,6 +2059,7 @@ async function buildMarketingExpansionHealth() {
       hotspotTrend: null,
       strategyAdoption: null,
       nextGeneralPreview: null,
+      latestDigestRun,
     };
   }
 }

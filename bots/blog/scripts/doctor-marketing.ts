@@ -5,6 +5,7 @@ const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const { execFileSync } = require('child_process');
 const { buildBlogCliInsight } = require('../lib/cli-insight.ts');
+const { readMarketingDigestTelemetry } = require('../lib/marketing-digest-telemetry.ts');
 
 function parseArgs(argv = []) {
   return {
@@ -67,6 +68,7 @@ function buildActions({ primary, digest = {} }) {
   const actions = [];
   const primaryArea = String(primary?.area || '');
   const hasActivePrimary = primaryArea && primaryArea !== 'clear' && primaryArea !== 'unknown';
+  const latestDigestRun = digest?.latestDigestRun || null;
 
   if (hasActivePrimary && primary?.actionFocus) {
     actions.push(`focus blocker: ${primary.actionFocus}`);
@@ -77,6 +79,9 @@ function buildActions({ primary, digest = {} }) {
 
   const watchHint = String(digest?.channelPerformance?.primaryWatchHint || '');
   if (watchHint) actions.push(`channel watch: ${watchHint}`);
+  if (latestDigestRun?.checkedAt) {
+    actions.push(`latest digest run: ${String(latestDigestRun.checkedAt).slice(0, 19)} / ${String(latestDigestRun.status || 'unknown')}`);
+  }
 
   const nextPreview = digest?.nextGeneralPreview || null;
   if (nextPreview?.title) {
@@ -109,6 +114,7 @@ async function main() {
   const payload = {
     digestCommand: digestResult.command,
     digestError: digestResult.error || '',
+    latestDigestRun: readMarketingDigestTelemetry(),
     health: digest?.health || null,
     senseSummary: digest?.senseSummary || null,
     revenueCorrelation: digest?.revenueCorrelation || null,
@@ -117,7 +123,7 @@ async function main() {
     recommendations: Array.isArray(digest?.recommendations) ? digest.recommendations : [],
   };
   payload.primary = buildPrimary(digest);
-  payload.actions = buildActions({ primary: payload.primary, digest });
+  payload.actions = buildActions({ primary: payload.primary, digest: payload });
   payload.aiSummary = await buildBlogCliInsight({
     bot: 'doctor-marketing',
     requestType: 'doctor-marketing',
