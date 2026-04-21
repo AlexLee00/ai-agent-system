@@ -88,6 +88,13 @@ async function getLatestInstagramPublish() {
 function buildActions({ facebookReadiness, instagramConfig, latestFacebook, latestInstagram, previewBundle, primary }) {
   const actions = [];
   const instagramHostedRecovery = getInstagramHostedRecovery(latestInstagram);
+  const facebookReadinessError = String(facebookReadiness?.error || '').trim();
+
+  if (facebookReadinessError) {
+    actions.push('Facebook readiness 토큰/세션 상태를 먼저 확인');
+    actions.push(`npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run check:facebook -- --json`);
+    actions.push(`npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:facebook -- --json`);
+  }
 
   if (Array.isArray(facebookReadiness?.permissionScopes) && facebookReadiness.permissionScopes.length > 0) {
     actions.push(`Meta 앱 권한 재연결: ${facebookReadiness.permissionScopes.join(', ')}`);
@@ -128,6 +135,19 @@ function buildActions({ facebookReadiness, instagramConfig, latestFacebook, late
 function buildPrimary({ latestFacebook, latestInstagram, facebookReadiness, instagramConfig }) {
   const blogPrefix = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')}`;
   const instagramHostedRecovery = getInstagramHostedRecovery(latestInstagram);
+  const facebookReadinessError = String(facebookReadiness?.error || '').trim();
+  if (facebookReadinessError) {
+    return {
+      area: 'social.facebook.readiness',
+      reason: facebookReadinessError.includes('Session has expired')
+        ? 'Facebook 토큰 세션이 만료돼 다음 게시 전에 재발급이 필요합니다.'
+        : 'Facebook readiness가 깨져 다음 게시 전에 토큰/권한 상태 확인이 필요합니다.',
+      nextCommand: `${blogPrefix} run doctor:facebook -- --json`,
+      actionFocus: facebookReadinessError.includes('Session has expired')
+        ? '허브 Facebook 토큰 재발급 및 readiness 재확인'
+        : 'Facebook readiness 에러 원인과 페이지 토큰 상태 재확인',
+    };
+  }
   if (String(latestFacebook?.status || '') === 'failed') {
     return {
       area: 'social.facebook',
@@ -193,7 +213,7 @@ async function main() {
             createdAt: latestFacebook.created_at || null,
           }
         : null,
-      needsAttention: String(latestFacebook?.status || '') === 'failed',
+      needsAttention: Boolean(String(facebookReadiness?.error || '').trim() || String(latestFacebook?.status || '') === 'failed'),
     },
     instagram: {
       ready: Boolean(

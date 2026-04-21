@@ -76,6 +76,17 @@ function pickPrimary({ social, engagement, commands }) {
   const instagramAttention = Boolean(social?.instagram?.needsAttention);
   const engagementNeedsAttention = Boolean(engagement?.needsAttention);
   const engagementPrimaryArea = String(engagement?.primary?.area || '');
+  const socialPrimaryArea = String(social?.primary?.area || '');
+  const socialPrimaryActive = socialPrimaryArea && socialPrimaryArea !== 'clear' && socialPrimaryArea !== 'unknown';
+
+  if (facebookAttention && socialPrimaryActive) {
+    return {
+      area: socialPrimaryArea,
+      reason: social?.primary?.reason || 'Facebook publish 권한 이슈가 현재 최우선 병목입니다.',
+      nextCommand: social?.primary?.nextCommand || commands.social,
+      actionFocus: social?.primary?.actionFocus || 'social.facebook',
+    };
+  }
 
   if (facebookAttention) {
     return {
@@ -83,6 +94,15 @@ function pickPrimary({ social, engagement, commands }) {
       reason: 'Facebook publish 권한 이슈가 현재 최우선 병목입니다.',
       nextCommand: commands.social,
       actionFocus: 'social.facebook',
+    };
+  }
+
+  if (instagramAttention && socialPrimaryActive) {
+    return {
+      area: socialPrimaryArea,
+      reason: social?.primary?.reason || 'Instagram publish/readiness 이슈가 현재 최우선 병목입니다.',
+      nextCommand: social?.primary?.nextCommand || commands.social,
+      actionFocus: social?.primary?.actionFocus || 'social.instagram',
     };
   }
 
