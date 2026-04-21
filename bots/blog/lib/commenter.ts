@@ -386,6 +386,8 @@ function isRecoverableReplyFailure(row) {
     errorMessage === '__name is not defined'
     || errorMessage === 'reply_button_not_found'
     || errorMessage.startsWith('reply_button_not_found:')
+    || errorMessage === 'reply_submit_not_confirmed'
+    || errorMessage.startsWith('reply_submit_not_confirmed:')
     || errorMessage === 'reply_ui_unavailable'
     || errorMessage === 'comment_panel_not_mounted'
     || errorMessage.startsWith('comment_panel_not_mounted:')

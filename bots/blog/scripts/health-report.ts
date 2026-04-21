@@ -130,6 +130,7 @@ function classifyEngagementFailure(meta = {}) {
   if (
     errorText.includes('reply_button_not_found')
     || errorText.includes('reply_submit_not_found')
+    || errorText.includes('reply_submit_not_confirmed')
     || errorText.includes('comment_submit_not_confirmed')
     || errorText.includes('reply_ui_unavailable')
     || errorText.includes('reply_editor_not_found')
