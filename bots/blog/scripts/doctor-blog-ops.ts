@@ -47,6 +47,7 @@ function buildActions({ social, engagement, marketing, primary }) {
   const hasActivePrimary = primaryArea && primaryArea !== 'clear' && primaryArea !== 'unknown';
 
   let orderedActionGroups = [];
+  const primaryActionLimit = primaryArea.startsWith('marketing') ? 4 : 3;
   if (primaryArea.startsWith('engagement')) {
     orderedActionGroups = [engagementActions];
   } else if (primaryArea.startsWith('social')) {
@@ -58,7 +59,7 @@ function buildActions({ social, engagement, marketing, primary }) {
   }
 
   for (const group of orderedActionGroups) {
-    actions.push(...group.slice(0, 3));
+    actions.push(...group.slice(0, primaryActionLimit));
   }
   if (hasActivePrimary && primary?.nextCommand) {
     actions.unshift(`우선 실행: ${primary.nextCommand}`);
