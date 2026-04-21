@@ -511,9 +511,16 @@ function buildActions({ latestReplyReplayCandidate, failureByKind, failureByActi
       primaryGap?.label === 'replies'
       && Number(replyWorkload?.pendingCount || 0) === 0
       && Number(replyWorkload?.pendingBacklogCount || 0) === 0
-      && String(replyWorkload?.latest?.status || '') === 'skipped'
+      && (
+        String(replyWorkload?.latest?.status || '') === 'skipped'
+        || Number(replyWorkload?.totalToday || 0) === 0
+      )
     ) {
-      actions.push(`현재 reply 대상이 없습니다 — latest skipped: ${String(replyWorkload.latest.errorMessage || 'unknown')}`);
+      if (String(replyWorkload?.latest?.status || '') === 'skipped') {
+        actions.push(`현재 reply 대상이 없습니다 — latest skipped: ${String(replyWorkload.latest.errorMessage || 'unknown')}`);
+      } else {
+        actions.push('현재 reply 대상이 없습니다 — baseline 이후 inbound 댓글이 없습니다');
+      }
       const dominantSkip = Array.isArray(replyWorkload?.skippedReasons14d) ? replyWorkload.skippedReasons14d[0] : null;
       if (dominantSkip?.reason) {
         actions.push(`최근 14일 주요 inbound 필터: ${dominantSkip.reason} ${dominantSkip.count}건`);
@@ -628,7 +635,11 @@ function buildPrimary({ failureByKind, failureByAction, latestReplyReplayCandida
     if (
       primaryGap?.label === 'replies'
       && Number(replyWorkload?.pendingCount || 0) === 0
-      && String(replyWorkload?.latest?.status || '') === 'skipped'
+      && Number(replyWorkload?.pendingBacklogCount || 0) === 0
+      && (
+        String(replyWorkload?.latest?.status || '') === 'skipped'
+        || Number(replyWorkload?.totalToday || 0) === 0
+      )
     ) {
       if (Number(courtesyReflectionRecheck?.reevaluableCount || 0) > 0) {
         return {
@@ -640,7 +651,7 @@ function buildPrimary({ failureByKind, failureByAction, latestReplyReplayCandida
       }
       return {
         area: 'engagement.target_gap.replies.no_workload',
-        reason: `replies 목표치는 비어 있지만 현재 reply 대상 댓글이 없습니다 (latest skipped: ${String(replyWorkload.latest.errorMessage || 'unknown')}${Array.isArray(replyWorkload?.skippedReasons14d) && replyWorkload.skippedReasons14d[0]?.reason ? ` / 14d top filter: ${replyWorkload.skippedReasons14d[0].reason} ${replyWorkload.skippedReasons14d[0].count}건` : ''}${Number(courtesyReflectionRecheck?.reevaluableCount || 0) > 0 ? ` / reevaluable by current reply policy: ${courtesyReflectionRecheck.reevaluableCount}건` : ''}).`,
+        reason: `replies 목표치는 비어 있지만 현재 reply 대상 댓글이 없습니다 (${String(replyWorkload?.latest?.status || '') === 'skipped' ? `latest skipped: ${String(replyWorkload.latest.errorMessage || 'unknown')}` : 'baseline 이후 inbound 댓글 0건'}${Array.isArray(replyWorkload?.skippedReasons14d) && replyWorkload.skippedReasons14d[0]?.reason ? ` / 14d top filter: ${replyWorkload.skippedReasons14d[0].reason} ${replyWorkload.skippedReasons14d[0].count}건` : ''}${Number(courtesyReflectionRecheck?.reevaluableCount || 0) > 0 ? ` / reevaluable by current reply policy: ${courtesyReflectionRecheck.reevaluableCount}건` : ''}).`,
         nextCommand: `${RUN_ENGAGEMENT_GAP_COMMAND} -- --label=replies`,
         actionFocus: 'replyable inbound 유입과 필터링 기준 점검',
       };
@@ -668,7 +679,17 @@ function buildEngagementDoctorFallback(payload = {}) {
   if (payload.totalFailures > 0) {
     return 'engagement 자동화는 최근 실패 흔적이 있어 replay 대상과 UI/browser 실패 비중부터 확인하는 편이 좋습니다.';
   }
-  if (payload.replyWorkload?.pendingCount === 0 && payload.replyWorkload?.latest?.status === 'skipped' && payload.primaryGap?.label === 'replies') {
+  if (
+    payload.primary?.area === 'engagement.target_gap.replies.no_workload'
+    || (
+      payload.replyWorkload?.pendingCount === 0
+      && payload.primaryGap?.label === 'replies'
+      && (
+        payload.replyWorkload?.latest?.status === 'skipped'
+        || Number(payload.replyWorkload?.totalToday || 0) === 0
+      )
+    )
+  ) {
     return 'engagement 자동화는 지금 실행 실패보다 replyable inbound 부족이 더 큰 이유라서, 최신 필터링 사유와 최근 누적 skip 패턴을 먼저 보는 편이 좋습니다.';
   }
   if (payload.primary?.area === 'engagement.target_gap.neighbor.no_workload') {

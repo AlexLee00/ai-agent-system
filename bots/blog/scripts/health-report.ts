@@ -1306,6 +1306,14 @@ async function buildEngagementHealth() {
     if (Number(inbound.pending || 0) > 0) {
       warn.push(`  inbound pending comments: ${Number(inbound.pending || 0)}건`);
     }
+    if (
+      replyPlan.active
+      && replySuccess < replyPlan.expectedNow
+      && Number(inbound.total || 0) === 0
+      && Number(pendingBacklogRow?.cnt || 0) === 0
+    ) {
+      ok.push('  reply workload idle: baseline 이후 inbound 댓글과 pending backlog가 없어 replies gap이 유지되고 있습니다');
+    }
     if (Number(inbound.total || 0) > 0 && Number(inbound.pending || 0) === 0 && Number(inbound.replied || 0) === 0 && Number(inbound.failed || 0) === 0) {
       warn.push('  reply workload empty: 오늘 inbound는 들어왔지만 reply 후보로 올라간 댓글이 없습니다');
     }
