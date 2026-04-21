@@ -2163,8 +2163,10 @@ async function activateReplyMode(page) {
   `, { timeout: 8000 }).then(() => true).catch(() => false);
 }
 
-async function waitForReplySubmitReady(page, testMode = false) {
-  const timeoutMs = testMode ? 8000 : 15000;
+async function waitForReplySubmitReady(page, testMode = false, customTimeoutMs = 0) {
+  const timeoutMs = Number(customTimeoutMs || 0) > 0
+    ? Number(customTimeoutMs)
+    : (testMode ? 8000 : 15000);
   return page.waitForFunction(`
     (() => {
       const visible = (el) => {
@@ -2191,7 +2193,7 @@ async function waitForReplySubmitReady(page, testMode = false) {
       const roots = [
         document.querySelector('[data-blog-target-reply-area="true"]'),
         document.querySelector('[data-blog-commenter-editor="true"]')?.closest('.u_cbox_write_box, .u_cbox_reply_write, .u_cbox_reply_area, .u_cbox_comment_box'),
-        document.querySelector('[data-blog-commenter-editor="true"]')?.closest('.u_cbox_write_wrap, .u_cbox_write, .u_cbox_write_area'),
+        document.querySelector('[data-blog-commenter-editor="true"]')?.closest('form'),
       ].filter(Boolean);
       return roots.some((root) =>
         Array.from(root.querySelectorAll('button, a, input[type="submit"], [role="button"]')).some(isReplySubmit),
@@ -3893,7 +3895,7 @@ async function diagnoseReplyUi(comment, { testMode = true, operationTimeoutMs = 
 
       stage = 'inspect_submit_state';
       const submitReady = replyModeOpened
-        ? await waitForReplySubmitReady(contentFrame, true).catch(() => false)
+        ? await waitForReplySubmitReady(contentFrame, true, 2200).catch(() => false)
         : false;
       editorCandidates = await inspectReplyEditorCandidates(contentFrame).catch(() => null);
       const submitState = await inspectReplySubmitLite(contentFrame).catch(() => null);
