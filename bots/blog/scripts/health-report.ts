@@ -1862,19 +1862,18 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
       ? `외부 댓글 cadence boost: reply+neighbor ${Number(engagementHealth.adaptiveNeighborCadence.combinedCommentSuccess || 0)}/${Number(engagementHealth.adaptiveNeighborCadence.combinedCommentExpectedNow || 0)} / process ${Number(engagementHealth.adaptiveNeighborCadence.effectiveProcessLimit || 0)} / collect ${Number(engagementHealth.adaptiveNeighborCadence.effectiveCollectLimit || 0)}`
       : '외부 댓글 cadence: baseline'
     : '';
-  const engagementRunPlanHint = engagementHealth?.latestReplyReplayCandidate || engagementHealth?.replies
-    ? [
-        engagementHealth?.replies?.expectedNow > Number(engagementHealth?.replies?.success || 0)
-          ? `1.replies`
-          : '',
-        engagementHealth?.neighborComments?.expectedNow > Number(engagementHealth?.neighborComments?.success || 0)
-          ? `2.neighbor`
-          : '',
-        engagementHealth?.sympathies?.expectedNow > Number(engagementHealth?.sympathies?.success || 0)
-          ? `3.sympathy`
-          : '',
-      ].filter(Boolean).join(' -> ')
-    : '';
+  const orderedEngagementSteps = (() => {
+    const doctorPrimaryLabel = normalizedDoctorGapLabel;
+    const entries = [...engagementGapEntries];
+    if (!entries.length) return [];
+    if (!doctorPrimaryLabel) return entries;
+    const primaryEntry = entries.find((item) => item.label === doctorPrimaryLabel);
+    const rest = entries.filter((item) => item.label !== doctorPrimaryLabel);
+    return primaryEntry ? [primaryEntry, ...rest] : entries;
+  })();
+  const engagementRunPlanHint = orderedEngagementSteps
+    .map((item, index) => `${index + 1}.${item.label}`)
+    .join(' -> ');
   return buildHealthDecision({
     warnings: [
       {
