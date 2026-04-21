@@ -332,6 +332,34 @@ async function getReplyWorkloadStatus(baseline = null) {
   }
 }
 
+async function getNeighborWorkloadStatus(baseline = null) {
+  const createdSinceClause = buildSinceClause('created_at', baseline);
+  try {
+    const rows = await pgPool.query('blog', `
+      SELECT status, COUNT(*)::int AS cnt
+      FROM blog.neighbor_comments
+      WHERE timezone('Asia/Seoul', created_at)::date = timezone('Asia/Seoul', now())::date
+        ${createdSinceClause}
+      GROUP BY 1
+    `);
+    const counts = new Map();
+    for (const row of rows || []) {
+      counts.set(String(row.status || ''), Number(row.cnt || 0));
+    }
+    return {
+      postedCount: Number(counts.get('posted') || 0),
+      pendingCount: Number(counts.get('pending') || 0),
+      failedCount: Number(counts.get('failed') || 0),
+    };
+  } catch {
+    return {
+      postedCount: 0,
+      pendingCount: 0,
+      failedCount: 0,
+    };
+  }
+}
+
 async function getCourtesyReflectionRecheck(baseline = null) {
   const commentSinceClause = buildSinceClause('detected_at', baseline);
   try {
@@ -379,7 +407,7 @@ async function getCourtesyReflectionRecheck(baseline = null) {
   }
 }
 
-function buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, primaryGap, replyWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, primary }) {
+function buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, primary }) {
   const actions = [];
   if ((failureByKind.ui || 0) > 0 || (failureByKind.browser || 0) > 0) {
     actions.push('네이버 reply UI selector와 browser mount 흐름 점검');
@@ -393,6 +421,9 @@ function buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, p
     }
     if (primaryGap?.label === 'replies' && Number(replyWorkload?.pendingBacklogCount || 0) > 0) {
       actions.push(`현재 처리 가능한 reply backlog가 ${replyWorkload.pendingBacklogCount}건 있습니다`);
+    }
+    if (primaryGap?.label === 'neighbor' && Number(neighborWorkload?.pendingCount || 0) > 0) {
+      actions.push(`현재 처리 가능한 neighbor queue가 ${neighborWorkload.pendingCount}건 있습니다`);
     }
     if (
       primaryGap?.label === 'replies'
@@ -409,6 +440,14 @@ function buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, p
         actions.push(`최근 generic greeting skip 중 ${courtesyReflectionRecheck.reevaluableCount}건은 현재 inbound reply 정책으로 다시 reply 후보가 될 수 있습니다`);
         actions.push(`${BACKFILL_COURTESY_REPLIES_COMMAND} -- --dry-run`);
       }
+    }
+    if (
+      primaryGap?.label === 'neighbor'
+      && Number(neighborWorkload?.pendingCount || 0) === 0
+      && Number(neighborWorkload?.postedCount || 0) === 0
+      && Number(neighborWorkload?.failedCount || 0) === 0
+    ) {
+      actions.push('현재 바로 처리할 neighbor comment queue가 없습니다');
     }
     actions.push(
       primaryGap?.label
@@ -439,7 +478,7 @@ function buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, p
   return Array.from(new Set([...prioritized, ...actions]));
 }
 
-function buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps, primaryGap, replyWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence }) {
+function buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence }) {
   const blogPrefix = `npm --prefix ${BLOG_ROOT}`;
   if ((failureByKind.ui || 0) > 0 || (failureByKind.browser || 0) > 0) {
     return {
@@ -468,6 +507,19 @@ function buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps, p
     };
   }
   if (Array.isArray(targetGaps) && targetGaps.length > 0) {
+    if (
+      primaryGap?.label === 'neighbor'
+      && Number(neighborWorkload?.pendingCount || 0) === 0
+      && Number(neighborWorkload?.postedCount || 0) === 0
+      && Number(neighborWorkload?.failedCount || 0) === 0
+    ) {
+      return {
+        area: 'engagement.target_gap.neighbor.no_workload',
+        reason: `neighbor 목표치는 비어 있지만 현재 바로 처리할 neighbor queue가 없습니다 (posted ${Number(neighborWorkload?.postedCount || 0)} / pending ${Number(neighborWorkload?.pendingCount || 0)} / failed ${Number(neighborWorkload?.failedCount || 0)}).`,
+        nextCommand: `${RUN_ENGAGEMENT_GAP_COMMAND} -- --label=neighbor`,
+        actionFocus: '외부 댓글 수집/유입과 현재 시간대 queue 생성 여부 점검',
+      };
+    }
     if (primaryGap?.label === 'replies' && Number(replyWorkload?.pendingBacklogCount || 0) > 0) {
       return {
         area: 'engagement.target_gap.replies.pending_backlog',
@@ -522,6 +574,9 @@ function buildEngagementDoctorFallback(payload = {}) {
   if (payload.replyWorkload?.pendingCount === 0 && payload.replyWorkload?.latest?.status === 'skipped' && payload.primaryGap?.label === 'replies') {
     return 'engagement 자동화는 지금 실행 실패보다 replyable inbound 부족이 더 큰 이유라서, 최신 필터링 사유와 최근 누적 skip 패턴을 먼저 보는 편이 좋습니다.';
   }
+  if (payload.primary?.area === 'engagement.target_gap.neighbor.no_workload') {
+    return 'engagement 자동화는 지금 외부 댓글 목표 gap은 크지만 바로 처리할 neighbor queue가 없어, 수집/유입 쪽을 먼저 보는 편이 좋습니다.';
+  }
   if (Array.isArray(payload.targetGaps) && payload.targetGaps.length > 0) {
     return 'engagement 자동화는 운영 시간대 기준 목표치가 뒤처져 있어 실적 차이와 다음 실행 사이클을 먼저 보는 편이 좋습니다.';
   }
@@ -532,7 +587,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const developmentBaseline = readDevelopmentBaseline();
   const actionSinceClause = buildSinceClause('executed_at', developmentBaseline);
-  const [rows, latestReplyReplayCandidate, replyWorkload, courtesyReflectionRecheck] = await Promise.all([
+  const [rows, latestReplyReplayCandidate, replyWorkload, neighborWorkload, courtesyReflectionRecheck] = await Promise.all([
     pgPool.query('blog', `
       SELECT action_type, meta
       FROM blog.comment_actions
@@ -544,6 +599,7 @@ async function main() {
     `),
     getLatestReplyReplayCandidate(developmentBaseline),
     getReplyWorkloadStatus(developmentBaseline),
+    getNeighborWorkloadStatus(developmentBaseline),
     getCourtesyReflectionRecheck(developmentBaseline),
   ]);
 
@@ -671,11 +727,12 @@ async function main() {
     runPlan,
     adaptiveNeighborCadence,
     replyWorkload,
+    neighborWorkload,
     courtesyReflectionRecheck,
   };
   payload.needsAttention = payload.totalFailures > 0 || targetGaps.length > 0;
-  payload.primary = buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps, primaryGap, replyWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence });
-  payload.actions = buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, primaryGap, replyWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, primary: payload.primary });
+  payload.primary = buildPrimary({ failureByKind, latestReplyReplayCandidate, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence });
+  payload.actions = buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, primary: payload.primary });
 
   const aiSummary = await buildBlogCliInsight({
     bot: 'doctor-engagement',
@@ -704,6 +761,7 @@ async function main() {
   if (payload.replyWorkload?.latest?.id) {
     console.log(`[engagement doctor] workload=pending ${payload.replyWorkload.pendingCount} / skipped ${payload.replyWorkload.skippedCount} / latest ${payload.replyWorkload.latest.status} (${String(payload.replyWorkload.latest.errorMessage || 'ok')})`);
   }
+  console.log(`[engagement doctor] neighbor_queue=posted ${payload.neighborWorkload.postedCount} / pending ${payload.neighborWorkload.pendingCount} / failed ${payload.neighborWorkload.failedCount}`);
   if (Array.isArray(payload.replyWorkload?.skippedReasonsToday) && payload.replyWorkload.skippedReasonsToday.length > 0) {
     console.log(`[engagement doctor] skipped_today=${payload.replyWorkload.skippedReasonsToday.map((item) => `${item.reason}:${item.count}`).join(', ')}`);
   }

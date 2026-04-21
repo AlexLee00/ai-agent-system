@@ -1063,6 +1063,7 @@ async function buildEngagementHealth() {
         SELECT status, COUNT(*)::int AS cnt
         FROM blog.neighbor_comments
         WHERE timezone('Asia/Seoul', created_at)::date = timezone('Asia/Seoul', now())::date
+          ${commentSinceClause.replace(/detected_at/g, 'created_at')}
         GROUP BY 1
       `),
       pgPool.get('blog', `
@@ -1983,6 +1984,9 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
           engagementGapHint ? `현재 gap: ${engagementGapHint}` : '',
           engagementDoctorPriority?.primaryArea === 'engagement.target_gap.replies.no_workload'
             ? '현재 inbound는 reply 후보가 없어 gap이 유지되고 있습니다.'
+            : '',
+          engagementDoctorPriority?.primaryArea === 'engagement.target_gap.neighbor.no_workload'
+            ? '현재 바로 처리할 neighbor comment queue가 없어 gap이 유지되고 있습니다.'
             : '',
           adaptiveCadenceHint,
           Number(engagementHealth?.courtesyReflectionRecheck?.reevaluableCount || 0) > 0
