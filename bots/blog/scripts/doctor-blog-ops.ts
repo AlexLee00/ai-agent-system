@@ -47,7 +47,7 @@ function buildActions({ social, engagement, marketing, primary }) {
   const hasActivePrimary = primaryArea && primaryArea !== 'clear' && primaryArea !== 'unknown';
 
   let orderedActionGroups = [];
-  const primaryActionLimit = primaryArea.startsWith('marketing') ? 4 : 3;
+  const primaryActionLimit = primaryArea.startsWith('marketing') ? 5 : 3;
   if (primaryArea.startsWith('engagement')) {
     orderedActionGroups = [engagementActions];
   } else if (primaryArea.startsWith('social')) {

@@ -391,6 +391,7 @@ function buildDoctorPriority(command = '', label = 'doctor') {
     const hasActivePrimary = primaryArea !== 'clear' && primaryArea !== 'unknown';
     const latestDigestRun = payload?.latestDigestRun || null;
     const nextPreviewTitle = String(payload?.nextGeneralPreview?.title || '');
+    const topRecommendation = Array.isArray(payload?.recommendations) ? String(payload.recommendations[0] || '') : '';
     const actions = Array.isArray(payload?.actions)
       ? payload.actions
           .map((item) => String(item || '').trim())
@@ -408,6 +409,9 @@ function buildDoctorPriority(command = '', label = 'doctor') {
     if (hasActivePrimary && primaryArea.startsWith('marketing') && nextPreviewTitle) {
       ok.push(`  ${label} next preview: ${nextPreviewTitle}`);
     }
+    if (hasActivePrimary && primaryArea.startsWith('marketing') && topRecommendation) {
+      ok.push(`  ${label} top reco: ${topRecommendation}`);
+    }
     if (hasActivePrimary) {
       for (const action of actions) {
         ok.push(`  ${label} action: ${action}`);
@@ -424,6 +428,7 @@ function buildDoctorPriority(command = '', label = 'doctor') {
       actionFocus: hasActivePrimary ? String(primary.actionFocus || '') : '',
       latestDigestRun,
       nextPreviewTitle,
+      topRecommendation,
       actions: hasActivePrimary ? actions : [],
     };
   } catch (error) {
@@ -2039,6 +2044,7 @@ async function buildMarketingExpansionHealth() {
       strategyAdoption: digest?.strategyAdoption || null,
       nextGeneralPreview: digest?.nextGeneralPreview || null,
       latestDigestRun,
+      recommendations: Array.isArray(digest?.recommendations) ? digest.recommendations.slice(0, 2) : [],
     };
   } catch (error) {
     const latestDigestRun = readMarketingDigestTelemetry();
@@ -2070,6 +2076,7 @@ async function buildMarketingExpansionHealth() {
       strategyAdoption: null,
       nextGeneralPreview: null,
       latestDigestRun,
+      recommendations: [],
     };
   }
 }
@@ -2476,6 +2483,9 @@ function buildOpsPriority(socialAutomationHealth, engagementHealth, marketingExp
   }
   if (primaryArea.startsWith('marketing') && marketingExpansionHealth?.nextGeneralPreview?.title) {
     ok.push(`  next preview: ${String(marketingExpansionHealth.nextGeneralPreview.title)}`);
+  }
+  if (primaryArea.startsWith('marketing') && Array.isArray(marketingExpansionHealth?.recommendations) && marketingExpansionHealth.recommendations[0]) {
+    ok.push(`  top recommendation: ${String(marketingExpansionHealth.recommendations[0])}`);
   }
   if (primaryArea !== 'clear') {
     warn.push(`  next action focus: ${actionFocus || primaryArea}`);
