@@ -60,6 +60,7 @@ const ENGAGEMENT_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'b
 const BLOG_OPS_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:ops -- --json`;
 const BLOG_NEIGHBOR_COLLECT_DIAG_PATH = path.join(BLOG_ROOT, 'output', 'ops', 'neighbor-collect-diagnostics.json');
 const BLOG_ENGAGEMENT_GAP_RUN_PATH = path.join(BLOG_ROOT, 'output', 'ops', 'engagement-gap-run.json');
+const BLOG_NEIGHBOR_REPLAY_PATH = path.join(BLOG_ROOT, 'output', 'ops', 'neighbor-ui-replay.json');
 
 function nowKst() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
@@ -99,6 +100,24 @@ function readLastEngagementGapRun(baseline = null) {
       const executedAt = Date.parse(String(parsed.executedAt || ''));
       const baselineAt = Date.parse(String(baseline.startedAtIso || ''));
       if (Number.isFinite(executedAt) && Number.isFinite(baselineAt) && executedAt < baselineAt) {
+        return null;
+      }
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function readNeighborUiReplay(baseline = null) {
+  try {
+    const raw = fs.readFileSync(BLOG_NEIGHBOR_REPLAY_PATH, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (baseline?.startedAtIso) {
+      const replayedAt = Date.parse(String(parsed.replayedAt || ''));
+      const baselineAt = Date.parse(String(baseline.startedAtIso || ''));
+      if (Number.isFinite(replayedAt) && Number.isFinite(baselineAt) && replayedAt < baselineAt) {
         return null;
       }
     }
@@ -1097,6 +1116,7 @@ async function buildEngagementHealth() {
   try {
     const developmentBaseline = readDevelopmentBaseline();
     const lastGapRun = readLastEngagementGapRun(developmentBaseline);
+    const neighborUiReplay = readNeighborUiReplay(developmentBaseline);
     const actionSinceClause = buildSinceClause('executed_at', developmentBaseline);
     const commentSinceClause = buildSinceClause('detected_at', developmentBaseline);
     const replyConfig = runtimeConfig.commenter || {};
@@ -1343,6 +1363,15 @@ async function buildEngagementHealth() {
         ok.push(`  last gap run idle reason: ${String(lastGapRun.idleReason)}`);
       }
     }
+    if (neighborUiReplay?.ok) {
+      if (neighborUiReplay?.result?.ok) {
+        ok.push(`  neighbor replay latest: success / comment ${Number(neighborUiReplay?.candidate?.id || 0)} / ${String(neighborUiReplay?.candidate?.targetBlogId || '').trim() || 'unknown'}`);
+      } else if (neighborUiReplay?.result?.skipped) {
+        ok.push(`  neighbor replay latest: skipped / ${String(neighborUiReplay?.result?.reason || 'unknown')}`);
+      } else if (neighborUiReplay?.reason) {
+        warn.push(`  neighbor replay latest: failed / ${String(neighborUiReplay.reason).slice(0, 120)}`);
+      }
+    }
     if (Number(inbound.total || 0) > 0 && Number(inbound.pending || 0) === 0 && Number(inbound.replied || 0) === 0 && Number(inbound.failed || 0) === 0) {
       warn.push('  reply workload empty: 오늘 inbound는 들어왔지만 reply 후보로 올라간 댓글이 없습니다');
     }
@@ -1478,6 +1507,7 @@ async function buildEngagementHealth() {
         : null,
       courtesyReflectionRecheck,
       lastGapRun,
+      neighborUiReplay,
     };
   } catch (error) {
     return {
@@ -1500,6 +1530,7 @@ async function buildEngagementHealth() {
       latestInbound: null,
       courtesyReflectionRecheck: { reviewedCount: 0, reevaluableCount: 0, reevaluableSamples: [] },
       lastGapRun: null,
+      neighborUiReplay: null,
     };
   }
 }
@@ -1937,6 +1968,15 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
   const engagementFailureHint = engagementHealth?.failureSamples?.[0]
     ? `${engagementHealth.failureSamples[0].kind}/${engagementHealth.failureSamples[0].actionType} ${engagementHealth.failureSamples[0].sample}`
     : '';
+  const neighborReplayHint = engagementHealth?.neighborUiReplay?.ok
+    ? engagementHealth.neighborUiReplay?.result?.ok
+      ? `최근 neighbor replay 성공: comment ${Number(engagementHealth?.neighborUiReplay?.candidate?.id || 0)} / ${String(engagementHealth?.neighborUiReplay?.candidate?.targetBlogId || '').trim() || 'unknown'}`
+      : engagementHealth.neighborUiReplay?.result?.skipped
+        ? `최근 neighbor replay는 UI 재현 후 skip: ${String(engagementHealth?.neighborUiReplay?.result?.reason || 'unknown')}`
+        : engagementHealth.neighborUiReplay?.reason
+          ? `최근 neighbor replay 실패: ${String(engagementHealth.neighborUiReplay.reason)}`
+          : ''
+    : '';
   const engagementReplayHint = engagementHealth?.latestReplyReplayCandidate?.id
     ? `npm run replay:reply-ui -- --comment-id ${engagementHealth.latestReplyReplayCandidate.id} --json`
     : '';
@@ -2159,6 +2199,7 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
           engagementImmediateAction ? `즉시 실행: ${engagementImmediateAction}` : '',
           engagementRunPlanHint ? `실행 순서: ${engagementRunPlanHint}` : '',
           engagementFailureHint ? `최근 실패: ${engagementFailureHint}` : '',
+          neighborReplayHint ? neighborReplayHint : '',
           engagementReplayHint ? `재현: ${engagementReplayHint}` : '',
           engagementDoctorHint,
           opsDoctorHint,

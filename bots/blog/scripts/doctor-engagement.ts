@@ -532,6 +532,15 @@ async function getCourtesyReflectionRecheck(baseline = null) {
 
 function buildActions({ latestReplyReplayCandidate, failureByKind, failureByAction, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun, neighborUiReplay = null, primary }) {
   const actions = [];
+  if (neighborUiReplay?.ok) {
+    if (neighborUiReplay?.result?.ok) {
+      actions.push(`최근 neighbor replay 성공: ${Number(neighborUiReplay?.candidate?.id || 0)} / ${String(neighborUiReplay?.candidate?.targetBlogId || '').trim() || 'unknown'}`);
+    } else if (neighborUiReplay?.result?.skipped) {
+      actions.push(`최근 neighbor replay는 UI 재현 후 skip: ${String(neighborUiReplay?.result?.reason || 'unknown')}`);
+    } else if (neighborUiReplay?.reason) {
+      actions.push(`최근 neighbor replay 실패: ${String(neighborUiReplay.reason)}`);
+    }
+  }
   if ((failureByKind.ui || 0) > 0 || (failureByKind.browser || 0) > 0) {
     const uiFocus = buildUiFocus(failureByAction);
     actions.push(uiFocus.focus.includes('외부 댓글') ? '네이버 외부 댓글 submit selector와 confirm 흐름 점검' : '네이버 reply UI selector와 browser mount 흐름 점검');
@@ -664,9 +673,6 @@ function buildPrimary({ failureByKind, failureByAction, latestReplyReplayCandida
     };
   }
   if (Array.isArray(targetGaps) && targetGaps.length > 0) {
-    if (neighborUiReplay?.ok && neighborUiReplay?.result?.ok) {
-      actions.push(`최근 replay 성공: neighbor comment ${Number(neighborUiReplay?.candidate?.id || 0)} / ${String(neighborUiReplay?.candidate?.targetBlogId || '').trim() || 'unknown'}`);
-    }
     if (
       primaryGap?.label === 'neighbor'
       && Number(neighborWorkload?.pendingCount || 0) === 0
