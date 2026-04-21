@@ -16,6 +16,7 @@ const BLOG_OPS_ROOT = path.join(BLOG_ROOT, 'output', 'ops');
 const BLOG_NEIGHBOR_COLLECT_DIAG_PATH = path.join(BLOG_OPS_ROOT, 'neighbor-collect-diagnostics.json');
 const BLOG_ENGAGEMENT_GAP_RUN_PATH = path.join(BLOG_OPS_ROOT, 'engagement-gap-run.json');
 const RUN_ENGAGEMENT_GAP_COMMAND = `npm --prefix ${BLOG_ROOT} run run:engagement-gap`;
+const RUN_NEIGHBOR_COLLECT_ONLY_COMMAND = `node ${path.join(BLOG_ROOT, 'scripts/run-neighbor-commenter.ts')} --collect-only --json`;
 const BACKFILL_COURTESY_REPLIES_COMMAND = `npm --prefix ${BLOG_ROOT} run backfill:courtesy-replies`;
 
 function parseArgs(argv = []) {
@@ -677,8 +678,10 @@ function buildPrimary({ failureByKind, failureByAction, latestReplyReplayCandida
       return {
         area: 'engagement.target_gap.replies.no_workload',
         reason: `replies 목표치는 비어 있지만 현재 reply 대상 댓글이 없습니다 (${String(replyWorkload?.latest?.status || '') === 'skipped' ? `latest skipped: ${String(replyWorkload.latest.errorMessage || 'unknown')}` : 'baseline 이후 inbound 댓글 0건'}${Array.isArray(replyWorkload?.skippedReasons14d) && replyWorkload.skippedReasons14d[0]?.reason ? ` / 14d top filter: ${replyWorkload.skippedReasons14d[0].reason} ${replyWorkload.skippedReasons14d[0].count}건` : ''}${Number(courtesyReflectionRecheck?.reevaluableCount || 0) > 0 ? ` / reevaluable by current reply policy: ${courtesyReflectionRecheck.reevaluableCount}건` : ''}${lastGapRun?.allIdle ? ` / 최근 gap run도 idle` : ''}).`,
-        nextCommand: `${RUN_ENGAGEMENT_GAP_COMMAND} -- --label=neighbor`,
-        actionFocus: 'reply 대상이 없을 때 남은 목표를 이웃/외부 댓글로 보충하고 inbound 유입을 함께 점검',
+        nextCommand: lastGapRun?.allIdle ? RUN_NEIGHBOR_COLLECT_ONLY_COMMAND : `${RUN_ENGAGEMENT_GAP_COMMAND} -- --label=neighbor`,
+        actionFocus: lastGapRun?.allIdle
+          ? '최근 gap run도 idle이라 이웃/외부 댓글 수집 후보 resolve/insert 병목을 먼저 점검'
+          : 'reply 대상이 없을 때 남은 목표를 이웃/외부 댓글로 보충하고 inbound 유입을 함께 점검',
       };
     }
     return {
