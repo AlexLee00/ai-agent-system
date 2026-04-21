@@ -1615,6 +1615,19 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
           : `node ${path.join(BLOG_ROOT, 'scripts/run-neighbor-sympathy.ts')}`
     )
     : '';
+  const engagementRunPlanHint = engagementHealth?.latestReplyReplayCandidate || engagementHealth?.replies
+    ? [
+        engagementHealth?.replies?.expectedNow > Number(engagementHealth?.replies?.success || 0)
+          ? `1.replies`
+          : '',
+        engagementHealth?.neighborComments?.expectedNow > Number(engagementHealth?.neighborComments?.success || 0)
+          ? `2.neighbor`
+          : '',
+        engagementHealth?.sympathies?.expectedNow > Number(engagementHealth?.sympathies?.success || 0)
+          ? `3.sympathy`
+          : '',
+      ].filter(Boolean).join(' -> ')
+    : '';
   return buildHealthDecision({
     warnings: [
       {
@@ -1723,6 +1736,7 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
           engagementPrimaryGap ? `최우선 gap: ${engagementPrimaryGap.label} ${engagementPrimaryGap.success}/${engagementPrimaryGap.expectedNow}` : '',
           engagementGapHint ? `현재 gap: ${engagementGapHint}` : '',
           engagementImmediateAction ? `즉시 실행: ${engagementImmediateAction}` : '',
+          engagementRunPlanHint ? `실행 순서: ${engagementRunPlanHint}` : '',
           engagementFailureHint ? `최근 실패: ${engagementFailureHint}` : '',
           engagementReplayHint ? `재현: ${engagementReplayHint}` : '',
           engagementDoctorHint,

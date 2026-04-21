@@ -131,6 +131,16 @@ function getGapActionCommand(label = '') {
   }
 }
 
+function buildRunPlan(targetGapDetails = []) {
+  return (Array.isArray(targetGapDetails) ? targetGapDetails : []).map((item, index) => ({
+    step: index + 1,
+    label: item.label,
+    summary: item.summary,
+    deficit: item.deficit,
+    command: getGapActionCommand(item.label),
+  }));
+}
+
 async function getLatestReplyReplayCandidate() {
   try {
     const row = await pgPool.get('blog', `
@@ -345,6 +355,7 @@ async function main() {
   };
   const targetGapDetails = buildTargetGapDetails(targets);
   const primaryGap = targetGapDetails[0] || null;
+  const runPlan = buildRunPlan(targetGapDetails);
 
   const payload = {
     totalFailures: Array.isArray(rows) ? rows.length : 0,
@@ -365,6 +376,7 @@ async function main() {
     targetGaps,
     targetGapDetails,
     primaryGap,
+    runPlan,
   };
   payload.needsAttention = payload.totalFailures > 0 || targetGaps.length > 0;
   payload.actions = buildActions({ latestReplyReplayCandidate, failureByKind, targetGaps, primaryGap });
@@ -390,6 +402,9 @@ async function main() {
   console.log(`[engagement doctor] next=${payload.primary.nextCommand}`);
   if (payload.primaryGap?.label) {
     console.log(`[engagement doctor] deepest_gap=${payload.primaryGap.label} ${payload.primaryGap.success}/${payload.primaryGap.expectedNow}`);
+  }
+  if (Array.isArray(payload.runPlan) && payload.runPlan.length > 0) {
+    console.log(`[engagement doctor] run_plan=${payload.runPlan.map((item) => `${item.step}.${item.label}`).join(' -> ')}`);
   }
   if (payload.targetGaps.length > 0) {
     console.log(`[engagement doctor] target_gap=${payload.targetGaps.join(' / ')}`);
