@@ -448,7 +448,8 @@ async function requeueCourtesyReflectionCandidates(limit = 5, options = {}) {
   for (const row of rows) {
     if (requeued.length >= numericLimit) break;
     const inboundAssessment = assessInboundComment(row);
-    if (!inboundAssessment.ok || inboundAssessment.reason !== 'courtesy_reflection_allowed') continue;
+    if (!inboundAssessment.ok) continue;
+    if (!['courtesy_reflection_allowed', 'generic_greeting_reply_allowed'].includes(String(inboundAssessment.reason || ''))) continue;
 
     const candidate = {
       id: row.id,
@@ -469,7 +470,7 @@ async function requeueCourtesyReflectionCandidates(limit = 5, options = {}) {
       `, [
         row.id,
         JSON.stringify({
-          phase: 'courtesy_reflection_backfill',
+          phase: 'courtesy_reply_backfill',
           previous_error: row.error_message || null,
           reassessed_reason: inboundAssessment.reason,
           requeued_at: new Date().toISOString(),
@@ -1380,7 +1381,7 @@ function assessInboundComment(comment) {
       || courtesyHits >= 2
     )
   ) {
-    return { ok: false, reason: 'generic_greeting_comment' };
+    return { ok: true, reason: 'generic_greeting_reply_allowed' };
   }
 
   return { ok: true };
