@@ -155,6 +155,21 @@ function buildTimeoutPayload({ comment, replyText, timeoutMs }) {
   };
 }
 
+function serializeError(error) {
+  const message = String(error?.message || error || '');
+  const stackLine = String(error?.stack || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)[1] || '';
+  return {
+    message,
+    code: String(error?.code || ''),
+    stage: String(error?.replyDiagnoseStage || ''),
+    frameUrl: String(error?.replyDiagnoseFrameUrl || ''),
+    stackLine,
+  };
+}
+
 async function runWorker(args) {
   const comment = args.commentId
     ? await loadCommentById(args.commentId)
@@ -223,6 +238,7 @@ async function runDiagnoseWorker(args) {
       error: '',
     }));
   } catch (error) {
+    const serialized = serializeError(error);
     console.log(JSON.stringify({
       ok: false,
       timeoutMs: args.timeoutMs,
@@ -233,7 +249,8 @@ async function runDiagnoseWorker(args) {
         postUrl: comment.post_url,
       },
       result: null,
-      error: String(error?.message || error || 'reply_replay_diagnose_failed'),
+      error: serialized.message || 'reply_replay_diagnose_failed',
+      errorMeta: serialized,
     }));
     process.exitCode = 1;
   }
@@ -319,6 +336,13 @@ async function runParent(args) {
       if (diagnose.parsed.error) {
         timeoutPayload.liveDiagnoseError = diagnose.parsed.error;
       }
+      if (diagnose.parsed.errorMeta) {
+        timeoutPayload.liveDiagnoseErrorMeta = diagnose.parsed.errorMeta;
+      }
+    }
+    if (!timeoutPayload.liveDiagnoseError && diagnose?.timedOut) {
+      timeoutPayload.liveDiagnose = null;
+      timeoutPayload.liveDiagnoseError = `reply_replay_diagnose_timeout:${Math.min(10000, Math.max(8000, args.timeoutMs))}`;
     }
     if (!timeoutPayload.liveDiagnoseError && diagnose?.stderr) {
       timeoutPayload.liveDiagnoseError = diagnose.stderr;

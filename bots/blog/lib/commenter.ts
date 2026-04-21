@@ -3797,68 +3797,91 @@ async function postReply(comment, replyText, { testMode = false, dryRun = false,
 async function diagnoseReplyUi(comment, { testMode = true, operationTimeoutMs = 10000 } = {}) {
   const targetPostUrl = resolveNavigablePostUrl(comment?.post_url || '');
   const logNo = extractLogNo(targetPostUrl || comment?.post_url || '');
+  let stage = 'connect_browser';
+  let frameUrl = '';
+  try {
+    return await withBrowserPage(Boolean(testMode), async (page) => {
+      stage = 'goto_post';
+      await goto(page, targetPostUrl);
+      stage = 'resolve_comment_frame';
+      let contentFrame = await waitForCommentCapableFrame(page, logNo, true);
+      frameUrl = String(contentFrame?.url?.() || '');
+      stage = 'mount_comment_panel';
+      const mounted = await mountCommentPanel(contentFrame, logNo, true).catch(() => false);
 
-  return withBrowserPage(Boolean(testMode), async (page) => {
-    await goto(page, targetPostUrl);
-    let contentFrame = await waitForCommentCapableFrame(page, logNo, true);
-    const mounted = await mountCommentPanel(contentFrame, logNo, true).catch(() => false);
+      let replyThreadReady = false;
+      let replyButtonTargeted = false;
+      let replyModeOpened = false;
+      let usedCommentEditorFallback = false;
+      let editor = null;
 
-    let replyThreadReady = false;
-    let replyButtonTargeted = false;
-    let replyModeOpened = false;
-    let usedCommentEditorFallback = false;
-    let editor = null;
-
-    if (mounted) {
-      await waitForCommentPanel(contentFrame, logNo).catch(() => false);
-      replyThreadReady = await waitForReplyThread(contentFrame, comment, true).catch(() => false);
-      replyButtonTargeted = await openReplyEditor(contentFrame, comment).catch(() => false);
-      if (replyButtonTargeted) {
-        replyModeOpened = await activateReplyMode(contentFrame).catch(() => false);
-      }
-      if (!replyModeOpened) {
-        const expanded = await expandReplyThreads(contentFrame).catch(() => 0);
-        if (expanded > 0) {
-          await waitForReplyThread(contentFrame, comment, true).catch(() => false);
-          replyButtonTargeted = await openReplyEditor(contentFrame, comment).catch(() => replyButtonTargeted);
-          if (replyButtonTargeted) {
-            replyModeOpened = await activateReplyMode(contentFrame).catch(() => false);
+      if (mounted) {
+        stage = 'wait_comment_panel';
+        await waitForCommentPanel(contentFrame, logNo).catch(() => false);
+        stage = 'wait_reply_thread';
+        replyThreadReady = await waitForReplyThread(contentFrame, comment, true).catch(() => false);
+        stage = 'open_reply_editor';
+        replyButtonTargeted = await openReplyEditor(contentFrame, comment).catch(() => false);
+        if (replyButtonTargeted) {
+          stage = 'activate_reply_mode';
+          replyModeOpened = await activateReplyMode(contentFrame).catch(() => false);
+        }
+        if (!replyModeOpened) {
+          stage = 'expand_reply_threads';
+          const expanded = await expandReplyThreads(contentFrame).catch(() => 0);
+          if (expanded > 0) {
+            stage = 'wait_reply_thread_retry';
+            await waitForReplyThread(contentFrame, comment, true).catch(() => false);
+            stage = 'open_reply_editor_retry';
+            replyButtonTargeted = await openReplyEditor(contentFrame, comment).catch(() => replyButtonTargeted);
+            if (replyButtonTargeted) {
+              stage = 'activate_reply_mode_retry';
+              replyModeOpened = await activateReplyMode(contentFrame).catch(() => false);
+            }
           }
         }
+        try {
+          stage = 'focus_reply_editor';
+          editor = await focusReplyEditor(contentFrame);
+        } catch {
+          stage = 'focus_comment_editor_fallback';
+          editor = await focusCommentEditor(contentFrame, logNo, 6000).catch(() => null);
+          usedCommentEditorFallback = Boolean(editor?.selector);
+        }
       }
-      try {
-        editor = await focusReplyEditor(contentFrame);
-      } catch {
-        editor = await focusCommentEditor(contentFrame, logNo, 6000).catch(() => null);
-        usedCommentEditorFallback = Boolean(editor?.selector);
-      }
-    }
 
-    const submitReady = replyModeOpened
-      ? await waitForReplySubmitReady(contentFrame, true).catch(() => false)
-      : false;
-    const submitState = await inspectReplySubmitLite(contentFrame).catch(() => null);
-    const controls = await inspectReplyControlsLite(contentFrame).catch(() => null);
+      stage = 'inspect_submit_state';
+      const submitReady = replyModeOpened
+        ? await waitForReplySubmitReady(contentFrame, true).catch(() => false)
+        : false;
+      const submitState = await inspectReplySubmitLite(contentFrame).catch(() => null);
+      const controls = await inspectReplyControlsLite(contentFrame).catch(() => null);
 
-    return {
-      ok: Boolean(mounted && replyModeOpened && editor?.selector),
-      mounted,
-      replyThreadReady,
-      replyButtonTargeted,
-      replyModeOpened,
-      usedCommentEditorFallback,
-      editorSelector: editor?.selector || '',
-      editorId: editor?.id || '',
-      submitReady,
-      submitState,
-      controls,
-      logNo,
-      frameUrl: String(contentFrame?.url?.() || ''),
-    };
-  }, {
-    timeoutMs: Number(operationTimeoutMs || 0),
-    timeoutCode: 'reply_diagnose_timeout',
-  });
+      return {
+        ok: Boolean(mounted && replyModeOpened && editor?.selector),
+        stage,
+        mounted,
+        replyThreadReady,
+        replyButtonTargeted,
+        replyModeOpened,
+        usedCommentEditorFallback,
+        editorSelector: editor?.selector || '',
+        editorId: editor?.id || '',
+        submitReady,
+        submitState,
+        controls,
+        logNo,
+        frameUrl: String(contentFrame?.url?.() || ''),
+      };
+    }, {
+      timeoutMs: Number(operationTimeoutMs || 0),
+      timeoutCode: 'reply_diagnose_timeout',
+    });
+  } catch (error) {
+    error.replyDiagnoseStage = stage;
+    error.replyDiagnoseFrameUrl = frameUrl;
+    throw error;
+  }
 }
 
 async function _openCommentEditor(contentFrame, postUrl, logNo, testMode, editorTimeoutMs = null) {
