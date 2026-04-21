@@ -107,7 +107,7 @@ OPS 모드는 테스트 완료 후 사장님과 협의하여 전환한다.
 
 ```bash
 # 시작 (자동 재시작 루프 포함)
-bash ~/projects/ai-agent-system/bots/reservation/src/start-ops.sh >> /tmp/naver-ops-mode.log 2>&1 &
+bash ~/projects/ai-agent-system/bots/reservation/auto/monitors/start-ops.sh >> /tmp/naver-ops-mode.log 2>&1 &
 
 # 상태 확인
 ps aux | grep -E "start-ops|naver-monitor" | grep -v grep

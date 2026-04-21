@@ -187,7 +187,7 @@ skastatus # → launchctl list | grep ai.ska
 | `src/naver-monitor.js` | 네이버 모니터링 + 픽코 트리거 | ✅ OPS |
 | `src/pickko-accurate.js` | 픽코 자동 예약 Stage [1-9] | ✅ |
 | `src/pickko-kiosk-monitor.js` | 키오스크 예약 감지 → 네이버 차단/해제 | ✅ |
-| `src/start-ops.sh` | OPS 자동 재시작 루프 | ✅ launchd |
+| `auto/monitors/start-ops.sh` | OPS 자동 재시작 루프 | ✅ launchd |
 | `lib/db.js` | SQLite 4테이블 (예약/매출/블록/알림) | ✅ |
 | `lib/pickko-stats.js` | 일별 매출 분리 (스터디카페/스터디룸) | ✅ |
 | `scripts/pickko-revenue-backfill.js` | 매출 이력 일괄 채우기 + CSV 생성 | ✅ |
