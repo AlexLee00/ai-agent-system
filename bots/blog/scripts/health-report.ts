@@ -1567,6 +1567,33 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
   const engagementReplayHint = engagementHealth?.latestReplyReplayCandidate?.id
     ? `npm run replay:reply-ui -- --comment-id ${engagementHealth.latestReplyReplayCandidate.id} --json`
     : '';
+  const engagementGapEntries = [
+    engagementHealth?.replies?.expectedNow > Number(engagementHealth?.replies?.success || 0)
+      ? {
+          label: 'replies',
+          success: Number(engagementHealth?.replies?.success || 0),
+          expectedNow: Number(engagementHealth?.replies?.expectedNow || 0),
+          deficit: Number(engagementHealth?.replies?.expectedNow || 0) - Number(engagementHealth?.replies?.success || 0),
+        }
+      : null,
+    engagementHealth?.neighborComments?.expectedNow > Number(engagementHealth?.neighborComments?.success || 0)
+      ? {
+          label: 'neighbor',
+          success: Number(engagementHealth?.neighborComments?.success || 0),
+          expectedNow: Number(engagementHealth?.neighborComments?.expectedNow || 0),
+          deficit: Number(engagementHealth?.neighborComments?.expectedNow || 0) - Number(engagementHealth?.neighborComments?.success || 0),
+        }
+      : null,
+    engagementHealth?.sympathies?.expectedNow > Number(engagementHealth?.sympathies?.success || 0)
+      ? {
+          label: 'sympathy',
+          success: Number(engagementHealth?.sympathies?.success || 0),
+          expectedNow: Number(engagementHealth?.sympathies?.expectedNow || 0),
+          deficit: Number(engagementHealth?.sympathies?.expectedNow || 0) - Number(engagementHealth?.sympathies?.success || 0),
+        }
+      : null,
+  ].filter(Boolean).sort((a, b) => b.deficit - a.deficit);
+  const engagementPrimaryGap = engagementGapEntries[0] || null;
   const engagementGapHint = [
     engagementHealth?.replies?.expectedNow > 0
       ? `replies ${Number(engagementHealth?.replies?.success || 0)}/${Number(engagementHealth?.replies?.expectedNow || 0)}`
@@ -1684,6 +1711,7 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
         level: 'low',
         reason: [
           '댓글/답글/공감 실적이 시간대 기대치보다 낮거나 실패 이력이 있어 engagement 루프 점검이 필요합니다.',
+          engagementPrimaryGap ? `최우선 gap: ${engagementPrimaryGap.label} ${engagementPrimaryGap.success}/${engagementPrimaryGap.expectedNow}` : '',
           engagementGapHint ? `현재 gap: ${engagementGapHint}` : '',
           engagementFailureHint ? `최근 실패: ${engagementFailureHint}` : '',
           engagementReplayHint ? `재현: ${engagementReplayHint}` : '',
