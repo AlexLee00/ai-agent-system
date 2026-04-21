@@ -166,6 +166,7 @@ function serializeError(error) {
     code: String(error?.code || ''),
     stage: String(error?.replyDiagnoseStage || ''),
     frameUrl: String(error?.replyDiagnoseFrameUrl || ''),
+    state: error?.replyDiagnoseState || null,
     stackLine,
   };
 }

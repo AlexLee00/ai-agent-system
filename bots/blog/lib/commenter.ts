@@ -2163,6 +2163,63 @@ async function activateReplyMode(page) {
   `, { timeout: 8000 }).then(() => true).catch(() => false);
 }
 
+async function inspectActivateReplyModeLite(page) {
+  return page.evaluate(`
+    (() => {
+      const visible = (el) => {
+        if (!el) return false;
+        const style = window.getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+      };
+      const targetComment = document.querySelector('[data-blog-target-comment="true"]');
+      const targetReplyButton = document.querySelector('[data-blog-target-reply-button="true"]');
+      const replyArea = document.querySelector('[data-blog-target-reply-area="true"]')
+        || targetComment?.querySelector('.u_cbox_reply_area')
+        || targetComment?.querySelector('[class*="reply_area"]')
+        || null;
+      const globalWriteWrap = document.querySelector('.u_cbox_write_wrap')
+        || document.querySelector('.u_cbox_write')
+        || document.querySelector('.u_cbox_write_area');
+      const replyEditors = Array.from((replyArea || document).querySelectorAll([
+        'textarea',
+        'div[contenteditable="true"]',
+        'div[role="textbox"]',
+        'div[id*="write_textarea"]',
+        '.u_cbox_text.u_cbox_text_mention',
+      ].join(', '))).filter(visible);
+      const globalEditors = Array.from((globalWriteWrap || document).querySelectorAll([
+        'textarea',
+        'div[contenteditable="true"]',
+        'div[role="textbox"]',
+        'div[id*="write_textarea"]',
+        '.u_cbox_text.u_cbox_text_mention',
+      ].join(', '))).filter(visible);
+      return {
+        targetReplyButtonFound: Boolean(targetReplyButton),
+        targetReplyButtonExpanded: String(targetReplyButton?.getAttribute('aria-expanded') || '').trim().toLowerCase(),
+        targetReplyButtonClassName: String(targetReplyButton?.className || '').slice(0, 120),
+        replyAreaVisible: visible(replyArea),
+        replyEditorCount: replyEditors.length,
+        replyEditorIds: replyEditors.slice(0, 4).map((node) => String(node.id || '')),
+        globalWriteVisible: visible(globalWriteWrap),
+        globalEditorCount: globalEditors.length,
+        globalEditorIds: globalEditors.slice(0, 4).map((node) => String(node.id || '')),
+      };
+    })()
+  `).catch(() => ({
+    targetReplyButtonFound: false,
+    targetReplyButtonExpanded: '',
+    targetReplyButtonClassName: '',
+    replyAreaVisible: false,
+    replyEditorCount: 0,
+    replyEditorIds: [],
+    globalWriteVisible: false,
+    globalEditorCount: 0,
+    globalEditorIds: [],
+  }));
+}
+
 async function waitForReplySubmitReady(page, testMode = false, customTimeoutMs = 0) {
   const timeoutMs = Number(customTimeoutMs || 0) > 0
     ? Number(customTimeoutMs)
@@ -3855,6 +3912,18 @@ async function diagnoseReplyUi(comment, { testMode = true, operationTimeoutMs = 
   const logNo = extractLogNo(targetPostUrl || comment?.post_url || '');
   let stage = 'connect_browser';
   let frameUrl = '';
+  const partialState = {
+    mounted: false,
+    replyThreadReady: false,
+    replyButtonTargeted: false,
+    replyModeOpened: false,
+    replyModeState: null,
+    replyEditorFound: false,
+    replyEditorError: '',
+    editorSelector: '',
+    editorId: '',
+    editorCandidates: null,
+  };
   try {
     return await withBrowserPage(Boolean(testMode), async (page) => {
       stage = 'goto_post';
@@ -3864,10 +3933,12 @@ async function diagnoseReplyUi(comment, { testMode = true, operationTimeoutMs = 
       frameUrl = String(contentFrame?.url?.() || '');
       stage = 'mount_comment_panel';
       const mounted = await mountCommentPanel(contentFrame, logNo, true).catch(() => false);
+      partialState.mounted = mounted;
 
       let replyThreadReady = false;
       let replyButtonTargeted = false;
       let replyModeOpened = false;
+      let replyModeState = null;
       let editor = null;
       let replyEditorError = '';
       let editorCandidates = null;
@@ -3877,11 +3948,16 @@ async function diagnoseReplyUi(comment, { testMode = true, operationTimeoutMs = 
         await waitForCommentPanel(contentFrame, logNo).catch(() => false);
         stage = 'wait_reply_thread';
         replyThreadReady = await waitForReplyThread(contentFrame, comment, true).catch(() => false);
+        partialState.replyThreadReady = replyThreadReady;
         stage = 'open_reply_editor';
         replyButtonTargeted = await openReplyEditor(contentFrame, comment).catch(() => false);
+        partialState.replyButtonTargeted = replyButtonTargeted;
         if (replyButtonTargeted) {
           stage = 'activate_reply_mode';
           replyModeOpened = await activateReplyMode(contentFrame).catch(() => false);
+          replyModeState = await inspectActivateReplyModeLite(contentFrame).catch(() => null);
+          partialState.replyModeOpened = replyModeOpened;
+          partialState.replyModeState = replyModeState;
         }
         if (!replyModeOpened) {
           stage = 'expand_reply_threads';
@@ -3891,22 +3967,31 @@ async function diagnoseReplyUi(comment, { testMode = true, operationTimeoutMs = 
             await waitForReplyThread(contentFrame, comment, true).catch(() => false);
             stage = 'open_reply_editor_retry';
             replyButtonTargeted = await openReplyEditor(contentFrame, comment).catch(() => replyButtonTargeted);
+            partialState.replyButtonTargeted = replyButtonTargeted;
             if (replyButtonTargeted) {
               stage = 'activate_reply_mode_retry';
               replyModeOpened = await activateReplyMode(contentFrame).catch(() => false);
+              replyModeState = await inspectActivateReplyModeLite(contentFrame).catch(() => replyModeState);
+              partialState.replyModeOpened = replyModeOpened;
+              partialState.replyModeState = replyModeState;
             }
           }
         }
         try {
           stage = 'focus_reply_editor';
           editor = await focusReplyEditor(contentFrame);
+          partialState.replyEditorFound = Boolean(editor?.selector);
+          partialState.editorSelector = editor?.selector || '';
+          partialState.editorId = editor?.id || '';
         } catch (error) {
           replyEditorError = String(error?.message || error || 'reply_editor_not_found');
+          partialState.replyEditorError = replyEditorError;
         }
       }
 
       stage = 'inspect_submit_state';
       editorCandidates = await inspectReplyEditorCandidates(contentFrame).catch(() => null);
+      partialState.editorCandidates = editorCandidates;
       const submitState = await inspectReplySubmitLite(contentFrame, { fast: true }).catch(() => null);
       const controls = await inspectReplyControlsLite(contentFrame).catch(() => null);
       const submitReady = Boolean(
@@ -3923,6 +4008,7 @@ async function diagnoseReplyUi(comment, { testMode = true, operationTimeoutMs = 
         replyThreadReady,
         replyButtonTargeted,
         replyModeOpened,
+        replyModeState,
         replyEditorFound: Boolean(editor?.selector),
         replyEditorError,
         editorSelector: editor?.selector || '',
@@ -3941,6 +4027,7 @@ async function diagnoseReplyUi(comment, { testMode = true, operationTimeoutMs = 
   } catch (error) {
     error.replyDiagnoseStage = stage;
     error.replyDiagnoseFrameUrl = frameUrl;
+    error.replyDiagnoseState = partialState;
     throw error;
   }
 }
