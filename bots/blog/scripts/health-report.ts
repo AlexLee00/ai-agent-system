@@ -1970,6 +1970,7 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
         .map((item) => `ops action: ${item}`)
     : [];
   const opsPrimaryArea = String(opsDoctorPriority?.primaryArea || '');
+  const socialPrimaryActive = opsPrimaryArea.startsWith('social');
   const opsSocialActionHints = opsPrimaryArea.startsWith('social') ? opsActionHints : [];
   const opsEngagementActionHints = opsPrimaryArea.startsWith('engagement') ? opsActionHints : [];
   const engagementFailureHint = engagementHealth?.failureSamples?.[0]
@@ -2181,7 +2182,7 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
         reason: '마케팅 확장 신호에 변동이 있어 sense/correlation/diagnosis 흐름을 한 번 더 보는 편이 좋습니다.',
       },
       {
-        active: engagementHealth.warnCount > 0,
+        active: engagementHealth.warnCount > 0 && !socialPrimaryActive,
         level: 'low',
         reason: [
           '댓글/답글/공감 실적이 시간대 기대치보다 낮거나 실패 이력이 있어 engagement 루프 점검이 필요합니다.',
