@@ -38,6 +38,10 @@ const ALL_SERVICES = [
   'ai.claude.dexter',
   'ai.claude.dexter.daily',
   'ai.claude.archer',
+  'ai.claude.reviewer',
+  'ai.claude.guardian',
+  'ai.claude.builder',
+  'ai.claude.codex-notifier',
   'ai.claude.health-dashboard',
 ];
 const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;
@@ -131,6 +135,8 @@ async function buildDashboardHealth() {
 
   if (mismatched <= 0) {
     ok.push('  shadow mismatch: 없음');
+  } else if (leadMode !== 'shadow') {
+    ok.push(`  shadow mismatch: ${mismatched}/${shadowTotal}건 (${mismatchRate.toFixed(1)}%, 참고용 이력)`);
   } else if (shadowTotal < 5) {
     ok.push(`  shadow mismatch: ${mismatched}건 (표본 ${shadowTotal}건, 관찰 유지)`);
   } else if (benignShadowMismatch) {

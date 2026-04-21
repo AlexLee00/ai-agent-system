@@ -11,7 +11,7 @@
 		<key>PATH</key>
 		<string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
 		<key>CLAUDE_REVIEWER_ENABLED</key>
-		<string>false</string>
+		<string>true</string>
 	</dict>
 	<key>KeepAlive</key>
 	<false/>

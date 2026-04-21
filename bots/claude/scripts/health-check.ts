@@ -33,6 +33,10 @@ const ALL_SERVICES = [
   'ai.claude.dexter',
   'ai.claude.dexter.daily',
   'ai.claude.archer',
+  'ai.claude.reviewer',
+  'ai.claude.guardian',
+  'ai.claude.builder',
+  'ai.claude.codex-notifier',
   'ai.claude.health-dashboard',
 ];
 

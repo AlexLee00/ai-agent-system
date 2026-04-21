@@ -11,9 +11,9 @@
 		<key>PATH</key>
 		<string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
 		<key>CLAUDE_CODEX_NOTIFIER_ENABLED</key>
-		<string>false</string>
-		<key>CLAUDE_NOTIFIER_SHADOW</key>
 		<string>true</string>
+		<key>CLAUDE_NOTIFIER_SHADOW</key>
+		<string>false</string>
 	</dict>
 	<key>KeepAlive</key>
 	<true/>
