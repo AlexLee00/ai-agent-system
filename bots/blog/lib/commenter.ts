@@ -175,6 +175,74 @@ function isWithinActiveWindow(config = getCommenterConfig()) {
   return hour >= config.activeStartHour && hour <= config.activeEndHour;
 }
 
+function calcExpectedByWindow(target = 20, activeStartHour = 9, activeEndHour = 21) {
+  const safeTarget = Math.max(0, Number(target || 0));
+  const startHour = Number(activeStartHour || 9);
+  const endHour = Number(activeEndHour || 21);
+  const totalSlots = Math.max(1, endHour - startHour + 1);
+  const currentHour = nowKstHour();
+  const active = currentHour >= startHour && currentHour <= endHour;
+  if (!active) {
+    return { target: safeTarget, expectedNow: 0, active, totalSlots, currentHour };
+  }
+  const elapsedSlots = Math.max(1, Math.min(totalSlots, currentHour - startHour + 1));
+  const expectedNow = Math.min(safeTarget, Math.ceil((safeTarget * elapsedSlots) / totalSlots));
+  return { target: safeTarget, expectedNow, active, totalSlots, currentHour };
+}
+
+function buildAdaptiveNeighborCadence(config, metrics = {}) {
+  const neighborPlan = calcExpectedByWindow(config.maxDaily || 20, config.activeStartHour || 9, config.activeEndHour || 21);
+  const replyPlan = calcExpectedByWindow(
+    Number(metrics.replyTarget || getCommenterConfig().maxDaily || 20),
+    Number(metrics.replyActiveStartHour || getCommenterConfig().activeStartHour || 9),
+    Number(metrics.replyActiveEndHour || getCommenterConfig().activeEndHour || 21),
+  );
+  const replySuccess = Math.max(0, Number(metrics.replySuccess || 0));
+  const neighborSuccess = Math.max(0, Number(metrics.neighborSuccess || 0));
+  const sympathySuccess = Math.max(0, Number(metrics.sympathySuccess || 0));
+  const baseProcess = Math.max(1, Number(config.maxProcessPerCycle || 20));
+  const baseCollect = Math.max(1, Number(config.maxCollectPerCycle || 20));
+  const adaptiveEnabled = config.adaptiveEnabled !== false;
+  const boostCap = Math.max(2, Number(config.adaptiveBoostCap || 12));
+  const collectBoostCap = Math.max(2, Number(config.adaptiveCollectBoostCap || 20));
+  const sympathyBoostCap = Math.max(2, Number(config.adaptiveSympathyBoostCap || 8));
+  const minGapToBoost = Math.max(1, Number(config.adaptiveMinGapToBoost || 2));
+
+  const neighborDeficit = Math.max(0, neighborPlan.expectedNow - neighborSuccess);
+  const sympathyDeficit = Math.max(0, neighborPlan.expectedNow - sympathySuccess);
+  const combinedCommentSuccess = replySuccess + neighborSuccess;
+  const combinedCommentExpectedNow = replyPlan.expectedNow + neighborPlan.expectedNow;
+  const combinedCommentDeficit = Math.max(0, combinedCommentExpectedNow - combinedCommentSuccess);
+  const drivingGap = Math.max(neighborDeficit, Math.min(neighborPlan.expectedNow, combinedCommentDeficit));
+  const shouldBoost = adaptiveEnabled && neighborPlan.active && drivingGap >= minGapToBoost;
+  const processBoost = shouldBoost ? Math.min(boostCap, drivingGap) : 0;
+  const collectBoost = shouldBoost ? Math.min(collectBoostCap, Math.max(processBoost, drivingGap * 2)) : 0;
+  const sympathyBoost = adaptiveEnabled && neighborPlan.active && sympathyDeficit >= minGapToBoost
+    ? Math.min(sympathyBoostCap, sympathyDeficit)
+    : 0;
+
+  return {
+    active: neighborPlan.active,
+    replySuccess,
+    neighborSuccess,
+    sympathySuccess,
+    replyExpectedNow: replyPlan.expectedNow,
+    neighborExpectedNow: neighborPlan.expectedNow,
+    combinedCommentSuccess,
+    combinedCommentExpectedNow,
+    combinedCommentDeficit,
+    neighborDeficit,
+    sympathyDeficit,
+    shouldBoost,
+    processBoost,
+    collectBoost,
+    sympathyBoost,
+    effectiveProcessLimit: baseProcess + processBoost,
+    effectiveCollectLimit: baseCollect + collectBoost,
+    effectiveSympathyLimit: baseProcess + sympathyBoost,
+  };
+}
+
 function calcDelayMs(minSec, maxSec, testMode = false) {
   const min = Number(minSec || 0);
   const max = Number(maxSec || min);
@@ -1628,22 +1696,23 @@ async function resolveLatestPostForBlog(page, blogId, testMode = false) {
   };
 }
 
-async function collectNeighborCandidates({ testMode = false, persist = true } = {}) {
+async function collectNeighborCandidates({ testMode = false, persist = true, collectLimit = 0 } = {}) {
   const ownBlogId = await resolveBlogId();
   if (!ownBlogId) {
     throw new Error('neighbor_commenter_blog_id_required');
   }
 
   const config = getNeighborCommenterConfig();
+  const effectiveCollectLimit = Math.max(1, Number(collectLimit || config.maxCollectPerCycle || 20));
   const recentUrls = await getRecentlyTargetedPostUrls(config.recentWindowDays);
   const recentBlogIds = await getRecentNeighborBlogIds(config.recentWindowDays);
   const collected = [];
   const seenUrls = new Set(recentUrls);
 
-  const commenterNetwork = await getCommenterNetworkCandidates(config.maxCollectPerCycle, ownBlogId);
+  const commenterNetwork = await getCommenterNetworkCandidates(effectiveCollectLimit, ownBlogId);
 
   await withBrowserPage(testMode, async (page) => {
-    const buddyFeed = await extractBuddyFeedPosts(page, ownBlogId, config.maxCollectPerCycle);
+    const buddyFeed = await extractBuddyFeedPosts(page, ownBlogId, effectiveCollectLimit);
     for (const item of buddyFeed) {
       if (seenUrls.has(item.postUrl) || recentBlogIds.has(item.targetBlogId)) continue;
       collected.push({
@@ -1656,7 +1725,7 @@ async function collectNeighborCandidates({ testMode = false, persist = true } = 
         meta: item.meta,
       });
       seenUrls.add(item.postUrl);
-      if (collected.length >= config.maxCollectPerCycle) return;
+      if (collected.length >= effectiveCollectLimit) return;
     }
 
     for (const row of commenterNetwork) {
@@ -1674,7 +1743,7 @@ async function collectNeighborCandidates({ testMode = false, persist = true } = 
         meta: { lastSeenAt: row.last_seen_at || null },
       });
       seenUrls.add(latest.postUrl);
-      if (collected.length >= config.maxCollectPerCycle) return;
+      if (collected.length >= effectiveCollectLimit) return;
     }
   });
 
@@ -4035,9 +4104,21 @@ async function runNeighborSympathy({ testMode = false } = {}) {
     return { skipped: true, reason: 'daily_limit', count: todayCount };
   }
 
-  const newCandidates = await collectNeighborCandidates({ testMode, persist: false });
+  const replySuccess = await getTodayReplyCount();
+  const todayNeighborCommentCount = await getTodayNeighborCommentCount();
+  const cadence = buildAdaptiveNeighborCadence(config, {
+    replySuccess,
+    neighborSuccess: todayNeighborCommentCount,
+    sympathySuccess: todayCount,
+  });
+  const newCandidates = await collectNeighborCandidates({
+    testMode,
+    persist: false,
+    collectLimit: testMode ? 1 : cadence.effectiveCollectLimit,
+  });
   const remaining = Math.max(0, config.maxDaily - todayCount);
-  const targets = newCandidates.slice(0, testMode ? 1 : Math.min(config.maxProcessPerCycle, remaining));
+  const effectiveLimit = testMode ? 1 : Math.min(cadence.effectiveSympathyLimit, remaining);
+  const targets = newCandidates.slice(0, effectiveLimit);
 
   let liked = 0;
   let failed = 0;
@@ -4087,6 +4168,7 @@ async function runNeighborSympathy({ testMode = false } = {}) {
     failed,
     skipped,
     total: todayCount + liked,
+    adaptiveCadence: cadence,
     testMode,
   };
 }
@@ -4103,16 +4185,25 @@ async function runNeighborCommenter({ testMode = false, limitOverride = 0, trigg
 
   const todayCount = await getTodayNeighborCommentCount();
   const todaySympathyCount = await getTodayActionCount('neighbor_comment_sympathy');
+  const replySuccess = await getTodayReplyCount();
   if (todayCount >= config.maxDaily) {
     return { skipped: true, reason: 'daily_limit', count: todayCount };
   }
 
-  const newCandidates = await collectNeighborCandidates({ testMode });
-  const pending = await getPendingNeighborComments(Math.min(config.maxProcessPerCycle, testMode ? 1 : config.maxProcessPerCycle));
+  const cadence = buildAdaptiveNeighborCadence(config, {
+    replySuccess,
+    neighborSuccess: todayCount,
+    sympathySuccess: todaySympathyCount,
+  });
+  const newCandidates = await collectNeighborCandidates({
+    testMode,
+    collectLimit: testMode ? 1 : cadence.effectiveCollectLimit,
+  });
+  const pending = await getPendingNeighborComments(Math.min(cadence.effectiveProcessLimit, testMode ? 1 : cadence.effectiveProcessLimit));
   const remaining = Math.max(0, config.maxDaily - todayCount);
   const requestedLimit = Number(limitOverride || 0) > 0
     ? Math.min(remaining, Number(limitOverride || 0))
-    : Math.min(config.maxProcessPerCycle, remaining);
+    : Math.min(cadence.effectiveProcessLimit, remaining);
   const targets = pending.slice(0, testMode ? 1 : requestedLimit);
   traceCommenter('neighborComment:cycle', {
     detected: newCandidates.length,
@@ -4121,6 +4212,7 @@ async function runNeighborCommenter({ testMode = false, limitOverride = 0, trigg
     processTimeoutMs: config.processTimeoutMs,
     trigger,
     limitOverride: Number(limitOverride || 0),
+    adaptiveCadence: cadence,
     testMode,
   });
 
@@ -4213,6 +4305,7 @@ async function runNeighborCommenter({ testMode = false, limitOverride = 0, trigg
     sympathyTotal: todaySympathyCount + sympathized,
     trigger,
     limitOverride: Number(limitOverride || 0),
+    adaptiveCadence: cadence,
     testMode,
   };
 }

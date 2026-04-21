@@ -120,6 +120,49 @@ function calcExpectedByWindow(target, startHour, endHour) {
   };
 }
 
+function buildAdaptiveNeighborCadenceView({
+  replySuccess = 0,
+  neighborSuccess = 0,
+  sympathySuccess = 0,
+  replyPlan,
+  neighborPlan,
+  adaptiveEnabled = true,
+  adaptiveMinGapToBoost = 2,
+  adaptiveBoostCap = 12,
+  adaptiveCollectBoostCap = 20,
+  adaptiveSympathyBoostCap = 8,
+  baseProcess = 20,
+  baseCollect = 20,
+} = {}) {
+  const neighborDeficit = Math.max(0, Number(neighborPlan?.expectedNow || 0) - Number(neighborSuccess || 0));
+  const sympathyDeficit = Math.max(0, Number(neighborPlan?.expectedNow || 0) - Number(sympathySuccess || 0));
+  const combinedCommentSuccess = Number(replySuccess || 0) + Number(neighborSuccess || 0);
+  const combinedCommentExpectedNow = Number(replyPlan?.expectedNow || 0) + Number(neighborPlan?.expectedNow || 0);
+  const combinedCommentDeficit = Math.max(0, combinedCommentExpectedNow - combinedCommentSuccess);
+  const drivingGap = Math.max(neighborDeficit, Math.min(Number(neighborPlan?.expectedNow || 0), combinedCommentDeficit));
+  const shouldBoost = Boolean(adaptiveEnabled) && Boolean(neighborPlan?.active) && drivingGap >= Math.max(1, Number(adaptiveMinGapToBoost || 2));
+  const processBoost = shouldBoost ? Math.min(Math.max(2, Number(adaptiveBoostCap || 12)), drivingGap) : 0;
+  const collectBoost = shouldBoost ? Math.min(Math.max(2, Number(adaptiveCollectBoostCap || 20)), Math.max(processBoost, drivingGap * 2)) : 0;
+  const sympathyBoost = Boolean(adaptiveEnabled) && Boolean(neighborPlan?.active) && sympathyDeficit >= Math.max(1, Number(adaptiveMinGapToBoost || 2))
+    ? Math.min(Math.max(2, Number(adaptiveSympathyBoostCap || 8)), sympathyDeficit)
+    : 0;
+  return {
+    enabled: Boolean(adaptiveEnabled),
+    shouldBoost,
+    combinedCommentSuccess,
+    combinedCommentExpectedNow,
+    combinedCommentDeficit,
+    neighborDeficit,
+    sympathyDeficit,
+    processBoost,
+    collectBoost,
+    sympathyBoost,
+    effectiveProcessLimit: Math.max(1, Number(baseProcess || 20)) + processBoost,
+    effectiveCollectLimit: Math.max(1, Number(baseCollect || 20)) + collectBoost,
+    effectiveSympathyLimit: Math.max(1, Number(baseProcess || 20)) + sympathyBoost,
+  };
+}
+
 function classifyEngagementFailure(meta = {}) {
   const errorText = String(meta?.error || meta?.uiError || meta?.previous_error || '').trim();
   if (!errorText) {
@@ -1127,6 +1170,20 @@ async function buildEngagementHealth() {
       neighborConfig.activeStartHour || 9,
       neighborConfig.activeEndHour || 21
     );
+    const adaptiveNeighborCadence = buildAdaptiveNeighborCadenceView({
+      replySuccess,
+      neighborSuccess: neighborCommentSuccess,
+      sympathySuccess,
+      replyPlan,
+      neighborPlan,
+      adaptiveEnabled: neighborConfig.adaptiveEnabled !== false,
+      adaptiveMinGapToBoost: neighborConfig.adaptiveMinGapToBoost || 2,
+      adaptiveBoostCap: neighborConfig.adaptiveBoostCap || 12,
+      adaptiveCollectBoostCap: neighborConfig.adaptiveCollectBoostCap || 20,
+      adaptiveSympathyBoostCap: neighborConfig.adaptiveSympathyBoostCap || 8,
+      baseProcess: neighborConfig.maxProcessPerCycle || 20,
+      baseCollect: neighborConfig.maxCollectPerCycle || 20,
+    });
 
     const ok = [
       `  replies: ${replySuccess}/${replyPlan.target} (expected now ${replyPlan.expectedNow})`,
@@ -1134,6 +1191,7 @@ async function buildEngagementHealth() {
       `  sympathies: ${sympathySuccess}/${sympathyPlan.target} (expected now ${sympathyPlan.expectedNow})`,
       `  inbound comments today: ${Number(inbound.total || 0)}건 / replied ${Number(inbound.replied || 0)} / pending ${Number(inbound.pending || 0)}`,
       `  neighbor queue today: posted ${Number(neighborStatusMap.get('posted') || 0)} / failed ${Number(neighborStatusMap.get('failed') || 0)} / pending ${Number(neighborStatusMap.get('pending') || 0)}`,
+      `  adaptive comment cadence: ${adaptiveNeighborCadence.shouldBoost ? 'boosted' : 'baseline'} / combined comments ${adaptiveNeighborCadence.combinedCommentSuccess}/${adaptiveNeighborCadence.combinedCommentExpectedNow} / process ${adaptiveNeighborCadence.effectiveProcessLimit} / collect ${adaptiveNeighborCadence.effectiveCollectLimit}`,
     ];
     if (Number(pendingBacklogRow?.cnt || 0) > 0) {
       ok.push(`  reply pending backlog: ${Number(pendingBacklogRow.cnt || 0)}건`);
@@ -1148,6 +1206,9 @@ async function buildEngagementHealth() {
     }
     if (sympathyPlan.active && sympathySuccess < sympathyPlan.expectedNow) {
       warn.push(`  sympathies behind target: ${sympathySuccess}/${sympathyPlan.expectedNow} (today fail ${sympathyFailure})`);
+    }
+    if (adaptiveNeighborCadence.shouldBoost) {
+      warn.push(`  adaptive cadence boosted: replies+neighbor ${adaptiveNeighborCadence.combinedCommentSuccess}/${adaptiveNeighborCadence.combinedCommentExpectedNow} / neighbor gap ${adaptiveNeighborCadence.neighborDeficit} / sympathy gap ${adaptiveNeighborCadence.sympathyDeficit}`);
     }
     if (Number(inbound.pending || 0) > 0) {
       warn.push(`  inbound pending comments: ${Number(inbound.pending || 0)}건`);
@@ -1234,6 +1295,7 @@ async function buildEngagementHealth() {
         failed: Number(neighborStatusMap.get('failed') || 0),
         pending: Number(neighborStatusMap.get('pending') || 0),
       },
+      adaptiveNeighborCadence,
       failureByKind,
       failureSamples,
       latestReplyReplayCandidate: latestReplyReplayCandidate || null,
