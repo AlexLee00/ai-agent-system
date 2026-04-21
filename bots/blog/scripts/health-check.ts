@@ -400,8 +400,37 @@ async function checkFacebookPublishHealth() {
       errorText.includes('pages_manage_posts')
       || errorText.includes('pages_read_engagement')
       || errorText.includes('Facebook 페이지 게시 권한 부족');
+    const readinessError = String(readiness?.error || '');
+    const tokenExpired = readinessError.includes('Facebook 사용자 access token 세션이 만료되었습니다.');
 
     const hasRecentSuccess = list.some((item) => String(item.status || '') === 'success');
+
+    if (tokenExpired) {
+      const previewBundle = buildPreviewBundleForTitle(String(row.title || ''));
+      const socialPriority = getDoctorPriority(SOCIAL_DOCTOR_COMMAND, {
+        area: 'social.facebook.readiness',
+        reason: 'Facebook 토큰 세션이 만료돼 다음 게시 전에 재발급이 필요합니다.',
+        nextCommand: FACEBOOK_DOCTOR_COMMAND,
+        actionFocus: '허브 Facebook 토큰 재발급 및 readiness 재확인',
+      });
+      const opsPriority = getDoctorPriority(BLOG_OPS_DOCTOR_COMMAND, {
+        area: 'social.facebook.readiness',
+        reason: 'Facebook 토큰 세션이 만료돼 다음 게시 전에 재발급이 필요합니다.',
+        nextCommand: FACEBOOK_DOCTOR_COMMAND,
+        actionFocus: '허브 Facebook 토큰 재발급 및 readiness 재확인',
+      });
+      const socialPayload = getDoctorPayload(SOCIAL_DOCTOR_COMMAND);
+      const opsPayload = getDoctorPayload(BLOG_OPS_DOCTOR_COMMAND);
+      const pageHint = readiness?.pageId ? `\npage: ${String(readiness.pageId).slice(0, 32)}` : '';
+      const actionHint = '\naction: 허브 instagram secret의 access_token을 새 장기 사용자 토큰으로 교체하세요';
+      const diagnoseHint = `\ndiagnose: ${FACEBOOK_READINESS_COMMAND}\ndoctor: ${FACEBOOK_DOCTOR_COMMAND}\nsocial doctor: ${SOCIAL_DOCTOR_COMMAND}${buildPriorityHint('social primary', socialPriority, { includeActionFocus: true })}${buildActionHint('social action', socialPayload)}${buildPriorityHint('primary blocker', opsPriority, { includeActionFocus: true })}${buildActionHint('ops action', opsPayload)}\nops doctor: ${BLOG_OPS_DOCTOR_COMMAND}`;
+      return {
+        ok: false,
+        detail: `Facebook readiness access token 만료 — ${String(row.title || '').slice(0, 60)}\n${readinessError}${pageHint}${actionHint}${diagnoseHint}${previewBundle ? `\npreview: ${previewBundle}` : ''}`,
+        latest: row,
+        category: 'token_expired',
+      };
+    }
 
     if (String(row.status || '') === 'failed' && permissionIssue && (isTodayKst || (recentEnough && !hasRecentSuccess))) {
       const previewBundle = buildPreviewBundleForTitle(String(row.title || ''));
@@ -429,6 +458,7 @@ async function checkFacebookPublishHealth() {
         ok: false,
         detail: `Facebook 페이지 게시 권한 부족 — ${String(row.title || '').slice(0, 60)}\n${summarizedError}${pageHint}${actionHint}${diagnoseHint}${previewBundle ? `\npreview: ${previewBundle}` : ''}`,
         latest: row,
+        category: 'permission',
       };
     }
 
@@ -438,7 +468,7 @@ async function checkFacebookPublishHealth() {
       latest: row,
     };
   } catch (e) {
-    return { ok: false, detail: `facebook publish 확인 실패: ${e.message.slice(0, 120)}`, latest: null };
+    return { ok: false, detail: `facebook publish 확인 실패: ${e.message.slice(0, 120)}`, latest: null, category: 'error' };
   }
 }
 
@@ -919,10 +949,13 @@ async function main() {
   const facebookPublishKey = 'facebook-publish:permission';
   if (!facebookPublish.ok) {
     if (hsm.canAlert(state, facebookPublishKey)) {
+      const alertTitle = facebookPublish.category === 'token_expired'
+        ? '⚠️ [블로그 헬스] Facebook readiness 토큰 만료'
+        : '⚠️ [블로그 헬스] Facebook 자동등록 권한 이슈';
       issues.push({
         key: facebookPublishKey,
         level: 3,
-        msg: `⚠️ [블로그 헬스] Facebook 자동등록 권한 이슈\n${facebookPublish.detail}`,
+        msg: `${alertTitle}\n${facebookPublish.detail}`,
       });
     }
   } else if (state[facebookPublishKey]) {

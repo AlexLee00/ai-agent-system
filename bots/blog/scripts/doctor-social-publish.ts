@@ -136,14 +136,16 @@ function buildPrimary({ latestFacebook, latestInstagram, facebookReadiness, inst
   const blogPrefix = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')}`;
   const instagramHostedRecovery = getInstagramHostedRecovery(latestInstagram);
   const facebookReadinessError = String(facebookReadiness?.error || '').trim();
+  const tokenExpired = facebookReadinessError.includes('Facebook 사용자 access token 세션이 만료되었습니다.')
+    || facebookReadinessError.includes('Session has expired');
   if (facebookReadinessError) {
     return {
       area: 'social.facebook.readiness',
-      reason: facebookReadinessError.includes('Session has expired')
+      reason: tokenExpired
         ? 'Facebook 토큰 세션이 만료돼 다음 게시 전에 재발급이 필요합니다.'
         : 'Facebook readiness가 깨져 다음 게시 전에 토큰/권한 상태 확인이 필요합니다.',
       nextCommand: `${blogPrefix} run doctor:facebook -- --json`,
-      actionFocus: facebookReadinessError.includes('Session has expired')
+      actionFocus: tokenExpired
         ? '허브 Facebook 토큰 재발급 및 readiness 재확인'
         : 'Facebook readiness 에러 원인과 페이지 토큰 상태 재확인',
     };
