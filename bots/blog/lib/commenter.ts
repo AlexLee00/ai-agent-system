@@ -2922,6 +2922,19 @@ async function saveCommentDebugSnapshot(page, comment, stage) {
           targetEditor && targetEditor.closest('.u_cbox_write_box, .u_cbox_reply_write, .u_cbox_reply_area, .u_cbox_comment_box'),
           targetEditor && targetEditor.closest('.u_cbox_write_wrap, .u_cbox_write, .u_cbox_write_area'),
         ].filter(Boolean);
+        const describeNode = (node) => node ? ({
+          tagName: String(node.tagName || '').toLowerCase(),
+          className: String(node.className || '').slice(0, 160),
+          dataAction: String(node.getAttribute('data-action') || ''),
+          uiSelector: String(node.getAttribute('data-ui-selector') || ''),
+          text: textOf(node).slice(0, 80),
+          visible: visible(node),
+        }) : null;
+        const submitProbeRoots = scopedRoots.map((root) => ({
+          root: describeNode(root),
+          buttonCount: Array.from(root.querySelectorAll('button, a, input[type="submit"], [role="button"]')).length,
+          submitCount: Array.from(root.querySelectorAll('button, a, input[type="submit"], [role="button"]')).filter(isSubmitCandidate).length,
+        }));
         let submitButton = null;
         for (const root of scopedRoots) {
           submitButton = Array.from(root.querySelectorAll('button, a, input[type="submit"], [role="button"]')).find(isSubmitCandidate) || null;
@@ -2947,6 +2960,18 @@ async function saveCommentDebugSnapshot(page, comment, stage) {
               ),
             }))
         );
+        const nearbyButtons = commentEditorRoot
+          ? Array.from(commentEditorRoot.querySelectorAll('button, a, input[type="submit"], [role="button"]'))
+            .slice(0, 12)
+            .map((node) => ({
+              text: textOf(node).slice(0, 80),
+              className: String(node.className || '').slice(0, 160),
+              dataAction: String(node.getAttribute('data-action') || ''),
+              uiSelector: String(node.getAttribute('data-ui-selector') || ''),
+              visible: visible(node),
+              submitCandidate: isSubmitCandidate(node),
+            }))
+          : [];
         const commentSelectors = ['.u_cbox_wrap', '.u_cbox_write_wrap', '.u_cbox_comment_box', '.u_cbox_btn_reply', 'textarea[id*="write_textarea"]'];
         const viewerSelectors = ['.cpv__root', '.cpv__error', '.cpv__content'];
         return {
@@ -2972,7 +2997,10 @@ async function saveCommentDebugSnapshot(page, comment, stage) {
             ),
           },
           replyTextPreview: textOf(targetEditor).slice(0, 160),
+          commentEditorRoot: describeNode(commentEditorRoot),
+          submitProbeRoots,
           submitCandidates,
+          nearbyButtons,
           submitButtonState: submitButton ? {
             found: true,
             text: textOf(submitButton).slice(0, 80),
