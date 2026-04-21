@@ -18,7 +18,7 @@ defmodule TeamJay.Teams.BlogSupervisor do
       name: :blog_node_server,
       script: "bots/blog/api/node-server.ts",
       runner: :tsx,
-      schedule: if(Mix.env() == :test, do: nil, else: :once),
+      schedule: nil,
       health_url: "http://127.0.0.1:3100/health"
     },
     %{name: :blog_competitor_analysis, script: "bots/blog/scripts/run-competitor-analysis.ts --json", schedule: nil},
@@ -58,8 +58,6 @@ defmodule TeamJay.Teams.BlogSupervisor do
 
   @doc "ownership manifest와 대조할 Elixir-managed launch labels"
   def agent_labels do
-    [
-      "ai.blog.node-server"
-    ]
+    []
   end
 end

@@ -6,7 +6,7 @@ defmodule TeamJay.Teams.PlatformSupervisor do
       name: :hub_resource_api,
       script: "bots/hub/src/hub.ts",
       runner: :tsx,
-      schedule: if(Mix.env() == :test, do: nil, else: :once),
+      schedule: nil,
       health_url: "http://127.0.0.1:7788/hub/health"
     }
   ]
@@ -33,8 +33,6 @@ defmodule TeamJay.Teams.PlatformSupervisor do
 
   @doc "ownership manifest와 대조할 Elixir-managed launch labels"
   def agent_labels do
-    [
-      "ai.hub.resource-api"
-    ]
+    []
   end
 end

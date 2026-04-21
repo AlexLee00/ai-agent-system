@@ -4,14 +4,14 @@ defmodule TeamJay.Teams.WorkerSupervisor do
   @worker_agents [
     # worker 주기 작업은 launchd가 canonical owner다.
     %{name: :worker_health_check, script: "bots/worker/scripts/health-check.ts", runner: :tsx, schedule: nil},
-    %{name: :worker_task_runner, script: "bots/worker/src/task-runner.ts", runner: :tsx, schedule: :once},
+    %{name: :worker_task_runner, script: "bots/worker/src/task-runner.ts", runner: :tsx, schedule: nil},
     %{name: :worker_claude_monitor, script: "bots/worker/scripts/claude-api-monitor.ts --alert-only", runner: :tsx, schedule: nil},
-    %{name: :worker_lead, script: "bots/worker/src/worker-lead.ts", runner: :tsx, schedule: :once},
+    %{name: :worker_lead, script: "bots/worker/src/worker-lead.ts", runner: :tsx, schedule: nil},
     %{
       name: :worker_web,
       script: "/Users/alexlee/projects/ai-agent-system/bots/worker/scripts/start-worker-web.sh",
       runner: {:shell, "/bin/bash"},
-      schedule: if(Mix.env() == :test, do: nil, else: :once),
+      schedule: nil,
       health_url: "http://127.0.0.1:4000/api/health"
     },
     %{
@@ -19,7 +19,7 @@ defmodule TeamJay.Teams.WorkerSupervisor do
       script:
         "export PATH=/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin && cd /Users/alexlee/projects/ai-agent-system/bots/worker/web && npm run start -- -H 0.0.0.0 -p 4001",
       runner: {:shell, "/bin/bash"},
-      schedule: if(Mix.env() == :test, do: nil, else: :once),
+      schedule: nil,
       health_url: "http://127.0.0.1:4001"
     }
   ]
@@ -46,11 +46,6 @@ defmodule TeamJay.Teams.WorkerSupervisor do
 
   @doc "ownership manifest와 대조할 Elixir-managed launch labels"
   def agent_labels do
-    [
-      "ai.worker.web",
-      "ai.worker.nextjs",
-      "ai.worker.lead",
-      "ai.worker.task-runner"
-    ]
+    []
   end
 end
