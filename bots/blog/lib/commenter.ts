@@ -3854,8 +3854,9 @@ async function diagnoseReplyUi(comment, { testMode = true, operationTimeoutMs = 
       let replyThreadReady = false;
       let replyButtonTargeted = false;
       let replyModeOpened = false;
-      let usedCommentEditorFallback = false;
       let editor = null;
+      let replyEditorError = '';
+      let editorCandidates = null;
 
       if (mounted) {
         stage = 'wait_comment_panel';
@@ -3885,10 +3886,8 @@ async function diagnoseReplyUi(comment, { testMode = true, operationTimeoutMs = 
         try {
           stage = 'focus_reply_editor';
           editor = await focusReplyEditor(contentFrame);
-        } catch {
-          stage = 'focus_comment_editor_fallback';
-          editor = await focusCommentEditor(contentFrame, logNo, 6000).catch(() => null);
-          usedCommentEditorFallback = Boolean(editor?.selector);
+        } catch (error) {
+          replyEditorError = String(error?.message || error || 'reply_editor_not_found');
         }
       }
 
@@ -3896,7 +3895,7 @@ async function diagnoseReplyUi(comment, { testMode = true, operationTimeoutMs = 
       const submitReady = replyModeOpened
         ? await waitForReplySubmitReady(contentFrame, true).catch(() => false)
         : false;
-      const editorCandidates = await inspectReplyEditorCandidates(contentFrame).catch(() => null);
+      editorCandidates = await inspectReplyEditorCandidates(contentFrame).catch(() => null);
       const submitState = await inspectReplySubmitLite(contentFrame).catch(() => null);
       const controls = await inspectReplyControlsLite(contentFrame).catch(() => null);
 
@@ -3907,7 +3906,8 @@ async function diagnoseReplyUi(comment, { testMode = true, operationTimeoutMs = 
         replyThreadReady,
         replyButtonTargeted,
         replyModeOpened,
-        usedCommentEditorFallback,
+        replyEditorFound: Boolean(editor?.selector),
+        replyEditorError,
         editorSelector: editor?.selector || '',
         editorId: editor?.id || '',
         editorCandidates,
