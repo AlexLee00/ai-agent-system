@@ -1,3 +1,39 @@
+# 세션 인수인계 — 2026-04-22 (Phase 5 클라이언트 버그 수정 + 테스트 — 73차 세션)
+
+## 완료 요약 ✅ (73차 세션)
+
+### Phase 5 외부 API 버그 수정 + legal-credentials 테스트 신규
+
+**이번 세션 (73차)**:
+- `packages/core/lib/legal-credentials.js`: `resolveKoreaLawCredentials`에 try-catch 추가 — Hub 실패 시 로컬 폴백이 동작하지 않던 버그 수정
+- `bots/legal/__tests__/legal-credentials.test.js`: 신규 — 14개 단위 테스트 (Hub/env/로컬 3단계 폴백, Hub+로컬 실패, JSON 파싱 오류, korea_law_api 폴백 키)
+- `docs/codex/CODEX_JUSTIN_EVOLUTION.md`: Phase 5 상태 "미구현" → "🟡 CourtListener ✅ / 법제처 API 키 대기"로 현행화
+
+**직전 세션 확인** (커밋 `279cec92`, `154cafdc`):
+- `korea-law-client.test.js`(14 tests), `atlas-client.test.js`(10 tests) — 이미 커밋됨
+- `getAuth()` camelCase 오타 — `c5e5dc2c`에서 이미 수정됨
+
+**테스트**: 221 → 235 tests (+14), 14 suites, 0 failures
+
+**저스틴팀 현재 완료 상태 (73차 기준)**:
+| Phase | 내용 | 상태 |
+|-------|------|------|
+| 1 | 디렉토리 + DB 스키마 + 팀장 저스틴 | ✅ |
+| 2 | 9 에이전트 전체 구현 | ✅ |
+| 3 | 감정서 PDF + Word(.docx) 생성 | ✅ |
+| 4 | 현장실사 CLI (inspect-sw) | ✅ |
+| 5 | 외부 API 연동 | 🟡 CourtListener ✅ / 법제처 API 키 대기 |
+| 6 | 피드백 루프 + RAG | ✅ |
+| 7 | 테스트 확대 (235 tests) | ✅ |
+| 8 | 프로덕션 배포 + 데몬 | ✅ (daemon OPS 등록 대기) |
+
+**다음 세션 우선순위** (73차 기준):
+1. OPS에서 `launchctl load .../ai.legal.daemon.plist` 수동 등록
+2. Phase 5 법제처 — `secrets-store.json`의 `justin.korea_law.oc` API 키 등록 (법제처 신청)
+3. OPS Hub 재시작 후 `/hub/legal/` API 실제 동작 + 텔레그램 알림 검증
+
+---
+
 # 세션 인수인계 — 2026-04-20 (CODEX_JUSTIN_EVOLUTION 전체 점검 + 현행화 — 72차 세션)
 
 ## 완료 요약 ✅ (72차 세션)

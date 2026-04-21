@@ -27,7 +27,12 @@ async function fetchHubJustinSecrets(timeoutMs = 3000) {
 
 async function resolveKoreaLawCredentials(options = {}) {
   const { timeoutMs = 3000 } = options;
-  const hubJustin = await fetchHubJustinSecrets(timeoutMs);
+  let hubJustin = null;
+  try {
+    hubJustin = await fetchHubJustinSecrets(timeoutMs);
+  } catch {
+    // Hub 실패 시 로컬 폴백
+  }
   const localJustin = loadLocalJustinSecrets();
   const hubLaw = hubJustin?.korea_law || {};
   const localLaw = localJustin?.korea_law || localJustin?.korea_law_api || {};

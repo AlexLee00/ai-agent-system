@@ -4,6 +4,13 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-04-22: Phase 5 legal-credentials 버그 수정 + 테스트 (73차 세션)
+
+- **버그 수정**: `legal-credentials.js` `resolveKoreaLawCredentials` — Hub 실패 시 try-catch 없이 에러 전파, 로컬 폴백 불동작 수정
+- **단위 테스트 신규** (+14 tests, 221 → 235): `legal-credentials.test.js` (Hub/env/로컬 3단계 폴백, Hub+로컬 실패, JSON 파싱 오류, korea_law_api 폴백 키)
+- **직전 세션 확인** (`279cec92`, `154cafdc`): `korea-law-client.test.js`(14) + `atlas-client.test.js`(10) + `getAuth()` camelCase 오타 이미 수정됨
+- **CODEX 현행화**: Phase 5 "미구현" → "🟡 CourtListener ✅ / 법제처 API 키 대기"
+
 ## 2026-04-20: CODEX_JUSTIN_EVOLUTION 점검 + 미구현 완전 구현 검증 (72차 세션)
 
 - **CODEX_JUSTIN_EVOLUTION.md 전체 점검**: 문서상 "미구현" vs 실제 구현 상태 전수 조사
