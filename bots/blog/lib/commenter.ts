@@ -4152,11 +4152,16 @@ async function verifyCommentPosted(page, commentText, testMode = false) {
         activeEditor && activeEditor.closest('.u_cbox_write_box, .u_cbox_comment_box'),
         activeEditor && activeEditor.closest('.u_cbox_write_wrap, .u_cbox_write, .u_cbox_write_area'),
       ].filter(Boolean);
+      const uniqueEditorRoots = editorRoots.filter((root, index) => editorRoots.indexOf(root) === index);
       const submitButton = editorRoots
         .map((root) =>
           Array.from(root.querySelectorAll('button, a, input[type="submit"], [role="button"]')).find(isCommentSubmitCandidate) || null
         )
         .find(Boolean) || null;
+      const hasVisibleSubmitRoot = uniqueEditorRoots.some((root) => visible(root));
+      const hasVisibleSubmitCandidate = uniqueEditorRoots.some((root) =>
+        Array.from(root.querySelectorAll('button, a, input[type="submit"], [role="button"]')).some(isCommentSubmitCandidate)
+      );
       const submitDisabled = Boolean(
         submitButton
         && (
@@ -4167,8 +4172,18 @@ async function verifyCommentPosted(page, commentText, testMode = false) {
       );
       const composerCleared = Boolean(activeEditor) && editorText.length === 0;
       const composerClosed = !activeEditor || !visible(activeEditor);
+      const composerRootCollapsed = uniqueEditorRoots.length > 0 && !hasVisibleSubmitRoot;
+      const submitControlsGone = !hasVisibleSubmitCandidate;
 
-      return (composerCleared || composerClosed) && (!submitButton || submitDisabled);
+      if (composerRootCollapsed && (composerClosed || composerCleared || submitControlsGone)) {
+        return true;
+      }
+
+      if ((composerCleared || composerClosed) && (!submitButton || submitDisabled)) {
+        return true;
+      }
+
+      return composerClosed && submitControlsGone;
     })()
   `, { timeout: timeoutMs }).then(() => true).catch(() => false);
 }
