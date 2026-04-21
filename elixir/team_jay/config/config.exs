@@ -9,7 +9,8 @@ config :team_jay, Jay.Core.Repo,
   password: System.get_env("TEAM_JAY_DB_PASS"),
   hostname: System.get_env("TEAM_JAY_DB_HOST", "localhost"),
   port: String.to_integer(System.get_env("TEAM_JAY_DB_PORT", "5432")),
-  pool_size: String.to_integer(System.get_env("TEAM_JAY_DB_POOL_SIZE", "5"))
+  pool_size: String.to_integer(System.get_env("TEAM_JAY_DB_POOL_SIZE", "5")),
+  types: Jay.Core.PostgresTypes
 
 config :team_jay,
   hub_url: System.get_env("TEAM_JAY_HUB_URL", "http://127.0.0.1:7788"),

@@ -30,12 +30,13 @@ defmodule Sigma.V2.Memory.L2 do
         result =
           Jay.Core.Repo.query(
             """
-            INSERT INTO agent_memory (team, content, embedding, memory_type, inserted_at, updated_at)
-            VALUES ($1, $2, $3::vector, 'semantic', NOW(), NOW())
+            INSERT INTO rag.agent_memory
+              (agent_id, team, content, embedding, memory_type, inserted_at, updated_at, created_at)
+            VALUES ($1, $2, $3, $4::vector, 'semantic', NOW(), NOW(), NOW())
             ON CONFLICT DO NOTHING
             RETURNING id
             """,
-            [team, content, embedding]
+            ["sigma_v2_memory", team, content, embedding]
           )
 
         case result do
@@ -57,7 +58,7 @@ defmodule Sigma.V2.Memory.L2 do
       {:ok, embedding} ->
         sql = """
         SELECT content, metadata, 1 - (embedding <=> $1::vector) AS similarity
-        FROM agent_memory
+        FROM rag.agent_memory
         WHERE 1 - (embedding <=> $1::vector) >= $2
         ORDER BY embedding <=> $1::vector ASC
         LIMIT $3
