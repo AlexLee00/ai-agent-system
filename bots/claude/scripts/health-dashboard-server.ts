@@ -24,6 +24,7 @@ const {
 } = require('../../../packages/core/lib/service-ownership.js');
 // getAllPoolStats는 module.exports에 포함됨
 const { LEAD_MODES, _getLeadMode } = require('../lib/claude-lead-brain');
+const cfg = require('../lib/config');
 
 const args    = process.argv.slice(2);
 const portArg = args.find(a => a.startsWith('--port='));
@@ -417,6 +418,7 @@ async function getHealthData() {
   return {
     generated_at:  new Date().toISOString(),
     lead_mode:     leadMode,
+    adaptive_lead: cfg.RUNTIME?.autonomy?.adaptiveLead || null,
     lead_modes:    LEAD_MODES,
     bot_statuses:  botStatuses,
     bot_summary:   { running: runningCount, total: totalBots },

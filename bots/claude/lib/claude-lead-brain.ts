@@ -56,6 +56,24 @@ function _getLeadMode() {
   return LEAD_MODES.includes(mode) ? mode : 'shadow';
 }
 
+function _getAdaptiveLeadConfig() {
+  const adaptive = cfg.RUNTIME?.autonomy?.adaptiveLead || {};
+  return {
+    enabled: adaptive.enabled !== false,
+    baseMode: LEAD_MODES.includes(String(adaptive.baseMode || '').toLowerCase())
+      ? String(adaptive.baseMode).toLowerCase()
+      : 'auto_all',
+    degradedMode: LEAD_MODES.includes(String(adaptive.degradedMode || '').toLowerCase())
+      ? String(adaptive.degradedMode).toLowerCase()
+      : 'auto_low',
+    restartTimeoutWindowMinutes: Number(adaptive.restartTimeoutWindowMinutes || 15),
+    restartTimeoutFailThreshold: Number(adaptive.restartTimeoutFailThreshold || 3),
+    degradeOnCritical: adaptive.degradeOnCritical !== false,
+    degradeOnOpenclawMemory: adaptive.degradeOnOpenclawMemory !== false,
+    degradeOnCodeIntegrity: adaptive.degradeOnCodeIntegrity !== false,
+  };
+}
+
 function isLowRiskCodeIntegrityIssue(issue) {
   const check = String(issue?.checkName || '').toLowerCase();
   const label = String(issue?.label || '').toLowerCase();
@@ -90,6 +108,86 @@ function _isLowRisk(issues) {
   const hasCritical = issues.some(i => i.status === 'critical');
   const hasError    = issues.some(i => i.status === 'error');
   return !hasCritical && !hasError;
+}
+
+async function _getRecentRestartTimeoutLabels(windowMinutes = 15, failThreshold = 3) {
+  try {
+    const rows = await pgPool.query(SCHEMA, `
+      SELECT params::jsonb->>'label' AS label, COUNT(*)::int AS cnt
+      FROM doctor_log
+      WHERE task_type = 'restart_launchd_service'
+        AND success <> 1
+        AND error_msg ILIKE '%ETIMEDOUT%'
+        AND executed_at::timestamp > now() - ($1::text || ' minutes')::INTERVAL
+      GROUP BY 1
+      HAVING COUNT(*) >= $2::int
+    `, [String(windowMinutes), Number(failThreshold)]);
+    return new Set(rows.map(r => String(r.label || '').trim()).filter(Boolean));
+  } catch (e) {
+    console.warn('[claude-lead-brain] restart timeout 집계 실패 (무시):', e.message);
+    return new Set();
+  }
+}
+
+function _isOpenClawMemoryIssue(issue) {
+  const text = `${issue?.checkName || ''} ${issue?.label || ''} ${issue?.detail || ''}`.toLowerCase();
+  return text.includes('openclaw') && (text.includes('메모리') || text.includes('memory'));
+}
+
+function _isCodeIntegrityIssue(issue) {
+  const text = `${issue?.checkName || ''} ${issue?.label || ''} ${issue?.detail || ''}`.toLowerCase();
+  return (
+    text.includes('코드 무결성') ||
+    text.includes('git 무결성') ||
+    text.includes('git 상태') ||
+    text.includes('git 변경사항') ||
+    text.includes('checksum') ||
+    text.includes('체크섬')
+  );
+}
+
+async function _resolveAdaptiveLeadMode(issues) {
+  const configuredMode = _getLeadMode();
+  const adaptive = _getAdaptiveLeadConfig();
+  const baseMode = configuredMode === 'auto_all' ? adaptive.baseMode : configuredMode;
+
+  if (!adaptive.enabled || configuredMode !== 'auto_all') {
+    return { configuredMode, effectiveMode: configuredMode, degraded: false, reasons: [] };
+  }
+
+  const reasons = [];
+  if (adaptive.degradeOnCritical && issues.some(i => i.status === 'critical')) {
+    reasons.push('critical_issue');
+  }
+  if (adaptive.degradeOnOpenclawMemory && issues.some(_isOpenClawMemoryIssue)) {
+    reasons.push('openclaw_memory');
+  }
+  if (adaptive.degradeOnCodeIntegrity && issues.some(_isCodeIntegrityIssue)) {
+    reasons.push('code_integrity');
+  }
+
+  const mappedTasks = _mapIssuesToDoctorTasks(issues)
+    .map(task => String(task?.params?.label || '').trim())
+    .filter(Boolean);
+  const timeoutLabels = await _getRecentRestartTimeoutLabels(
+    adaptive.restartTimeoutWindowMinutes,
+    adaptive.restartTimeoutFailThreshold,
+  );
+  const hotRestartLabels = mappedTasks.filter(label => timeoutLabels.has(label));
+  if (hotRestartLabels.length > 0) {
+    reasons.push(`restart_timeout:${hotRestartLabels.join(',')}`);
+  }
+
+  if (reasons.length === 0) {
+    return { configuredMode, effectiveMode: baseMode, degraded: false, reasons: [] };
+  }
+
+  return {
+    configuredMode,
+    effectiveMode: adaptive.degradedMode,
+    degraded: adaptive.degradedMode !== baseMode,
+    reasons,
+  };
 }
 
 // ── 규칙 엔진 (덱스터 현재 동작 기준) ────────────────────────────────
@@ -299,7 +397,8 @@ async function evaluateWithClaudeLead(results) {
     .join(' | ')
     .slice(0, 500);
 
-  const leadMode = _getLeadMode();
+  const leadModeInfo = await _resolveAdaptiveLeadMode(issues);
+  const leadMode = leadModeInfo.effectiveMode;
 
   try {
     await pgPool.run(SCHEMA, `
@@ -352,6 +451,9 @@ async function evaluateWithClaudeLead(results) {
     ? ` — 규칙:${ruleResult.decision} / Sonnet:${llmResult.decision}${match ? ' (일치)' : ' (불일치!)'}`
     : ` — Sonnet 실패: ${llmError}`;
   console.log(`  ${icon} [클로드 팀장] 이슈 ${issues.length}건 Shadow 판단${matchStr}`);
+  if (leadModeInfo.degraded) {
+    console.log(`  🧭 [클로드 팀장] 적응형 자율 운영 — ${leadModeInfo.configuredMode} → ${leadModeInfo.effectiveMode} (${leadModeInfo.reasons.join(', ')})`);
+  }
 
   // Phase 3: 모드에 따라 독터 복구 태스크 발행
   // shadow: 기록만 (실행 없음)
@@ -507,4 +609,12 @@ async function pollAgentEvents() {
   }
 }
 
-module.exports = { evaluateWithClaudeLead, getJudgmentQuality, processAgentEvent, pollAgentEvents, LEAD_MODES, _getLeadMode };
+module.exports = {
+  evaluateWithClaudeLead,
+  getJudgmentQuality,
+  processAgentEvent,
+  pollAgentEvents,
+  LEAD_MODES,
+  _getLeadMode,
+  _resolveAdaptiveLeadMode,
+};

@@ -179,6 +179,18 @@ module.exports = {
         maxRestarts: 3,
         diskCriticalPercent: 90,
       },
+      autonomy: {
+        adaptiveLead: {
+          enabled: true,
+          baseMode: 'auto_all',
+          degradedMode: 'auto_low',
+          restartTimeoutWindowMinutes: 15,
+          restartTimeoutFailThreshold: 3,
+          degradeOnCritical: true,
+          degradeOnOpenclawMemory: true,
+          degradeOnCodeIntegrity: true,
+        },
+      },
       llmSelectorOverrides: {
         'claude.archer.tech_analysis': {
           chain: [

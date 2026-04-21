@@ -109,13 +109,18 @@ function render(data) {
   const topReasons = (shadowStat.top_reasons || []).slice(0, 3).map(r =>
     `<div class="res-row"><span class="res-label">${r.reason}</span><span class="res-val">${r.count}건</span></div>`
   ).join('');
+  const adaptiveLead = data.adaptive_lead || {};
+  const adaptiveText = adaptiveLead.enabled
+    ? `적응형 자율 ON (${adaptiveLead.baseMode || 'auto_all'} → ${adaptiveLead.degradedMode || 'auto_low'})`
+    : '적응형 자율 OFF';
   const modeTags = (data.lead_modes || []).map(m =>
     `<span class="mode-tag ${m === data.lead_mode ? 'mode-tag-active' : 'mode-tag-inactive'}">${m}</span>`
   ).join('');
   const leadCard = `
     <div class="card">
-      <div class="card-title">🧠 클로드팀장 (Shadow Mode)</div>
+      <div class="card-title">🧠 클로드팀장</div>
       <div style="margin-bottom:10px">현재 모드: ${modeBadge(data.lead_mode)}</div>
+      <div class="res-row"><span class="res-label">적응형 자율</span><span class="res-val">${adaptiveText}</span></div>
       <div class="res-row"><span class="res-label">24h 분석 건수</span><span class="res-val">${shadowStat.total || 0}건</span></div>
       <div class="res-row"><span class="res-label">규칙-LLM 일치율</span><span class="res-val">${matchRate !== null ? matchRate + '%' : '—'}</span></div>
       <div class="res-row"><span class="res-label">평균 응답시간</span><span class="res-val">${shadowStat.avg_ms ? Math.round(shadowStat.avg_ms) + 'ms' : '—'}</span></div>
