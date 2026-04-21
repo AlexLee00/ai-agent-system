@@ -2195,20 +2195,50 @@ async function waitForCommentCapableFrame(page, logNo = '', testMode = false) {
   ].filter(Boolean);
 
   const fallbackFrame = await waitForPostContentFrame(page, testMode);
+  let bestCandidate = null;
 
   for (let attempt = 0; attempt < 12; attempt += 1) {
     const frames = page.frames();
     for (const frame of frames) {
       try {
         await frame.waitForSelector('body', { timeout: testMode ? 1500 : 3000 }).catch(() => {});
-        const hasCommentDom = await frame.evaluate(`
+        const surface = await frame.evaluate(`
           (() => {
             const selectors = ${JSON.stringify(selectorHints)};
-            return selectors.some((selector) => Boolean(document.querySelector(selector)));
+            const visible = (el) => {
+              if (!el) return false;
+              const style = window.getComputedStyle(el);
+              const rect = el.getBoundingClientRect();
+              return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+            };
+            const commentSurfaceSelectors = [
+              '.u_cbox_wrap',
+              '.u_cbox_write_wrap',
+              '.u_cbox_comment_box',
+              '.u_cbox_btn_reply',
+              'textarea[id*="write_textarea"]',
+            ];
+            const viewerSelectors = [
+              '.cpv__root',
+              '.cpv__error',
+              '.cpv__content',
+            ];
+            return {
+              hasCommentDom: selectors.some((selector) => Boolean(document.querySelector(selector))),
+              hasVisibleCommentSurface: commentSurfaceSelectors.some((selector) =>
+                Array.from(document.querySelectorAll(selector)).some(visible),
+              ),
+              hasVisibleViewerSurface: viewerSelectors.some((selector) =>
+                Array.from(document.querySelectorAll(selector)).some(visible),
+              ),
+            };
           })()
-        `).catch(() => false);
-        if (hasCommentDom) {
+        `).catch(() => null);
+        if (surface?.hasVisibleCommentSurface && !surface?.hasVisibleViewerSurface) {
           return frame;
+        }
+        if (!bestCandidate && surface?.hasCommentDom && !surface?.hasVisibleViewerSurface) {
+          bestCandidate = frame;
         }
       } catch {
         // ignore
@@ -2217,7 +2247,7 @@ async function waitForCommentCapableFrame(page, logNo = '', testMode = false) {
     await sleep(testMode ? 300 : 800);
   }
 
-  return fallbackFrame;
+  return bestCandidate || fallbackFrame;
 }
 
 function extractLogNo(postUrl) {
@@ -2331,6 +2361,72 @@ async function saveCommentDebugSnapshot(page, comment, stage) {
   } catch {
     return '';
   }
+}
+
+async function detectCommentSurfaceState(page) {
+  return page.evaluate(`
+    (() => {
+      const visible = (el) => {
+        if (!el) return false;
+        const style = window.getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+      };
+
+      const commentSelectors = [
+        '.u_cbox_wrap',
+        '.u_cbox_write_wrap',
+        '.u_cbox_comment_box',
+        '.u_cbox_btn_reply',
+        'textarea[id*="write_textarea"]',
+      ];
+      const viewerSelectors = [
+        '.cpv__root',
+        '.cpv__error',
+        '.cpv__content',
+      ];
+
+      const hasVisibleCommentSurface = commentSelectors.some((selector) =>
+        Array.from(document.querySelectorAll(selector)).some(visible),
+      );
+      const hasVisibleViewerSurface = viewerSelectors.some((selector) =>
+        Array.from(document.querySelectorAll(selector)).some(visible),
+      );
+
+      return {
+        url: location.href,
+        title: document.title,
+        hasVisibleCommentSurface,
+        hasVisibleViewerSurface,
+      };
+    })()
+  `).catch(() => ({
+    url: '',
+    title: '',
+    hasVisibleCommentSurface: false,
+    hasVisibleViewerSurface: false,
+  }));
+}
+
+async function resolveReplyVerificationFrame(currentFrame, browserPage, comment, testMode = false) {
+  if (!browserPage) {
+    return { frame: currentFrame, refreshed: false, surface: null };
+  }
+
+  const currentSurface = await detectCommentSurfaceState(currentFrame);
+  if (currentSurface.hasVisibleCommentSurface && !currentSurface.hasVisibleViewerSurface) {
+    return { frame: currentFrame, refreshed: false, surface: currentSurface };
+  }
+
+  const logNo = extractLogNo(comment?.post_url);
+  const refreshedFrame = await waitForCommentCapableFrame(browserPage, logNo, testMode);
+  const refreshedSurface = await detectCommentSurfaceState(refreshedFrame);
+
+  if (refreshedSurface.hasVisibleCommentSurface || !currentSurface.hasVisibleCommentSurface) {
+    return { frame: refreshedFrame, refreshed: refreshedFrame !== currentFrame, surface: refreshedSurface };
+  }
+
+  return { frame: currentFrame, refreshed: false, surface: currentSurface };
 }
 
 async function mountCommentPanel(page, logNo = '', testMode = false) {
@@ -2838,7 +2934,7 @@ async function clickSympathy(postUrl, { testMode = false } = {}) {
   });
 }
 
-async function verifyReplyPosted(page, replyText, comment, testMode = false) {
+async function verifyReplyPosted(page, replyText, comment, testMode = false, browserPage = null) {
   const needle = normalizeText(replyText).slice(0, 24);
   const commentRef = parseCommentRef(comment?.comment_ref);
   const normalizedPost = normalizePostUrl(comment?.post_url || '');
@@ -2848,7 +2944,7 @@ async function verifyReplyPosted(page, replyText, comment, testMode = false) {
   if (!needle && !replyEditorId) return false;
 
   const timeoutMs = testMode ? 4000 : 15000;
-  const matched = await page.waitForFunction(`
+  const waitForReplySignal = async (targetPage) => targetPage.waitForFunction(`
     (() => {
       const expected = ${JSON.stringify(needle)};
       const replyEditorId = ${JSON.stringify(replyEditorId)};
@@ -2928,6 +3024,21 @@ async function verifyReplyPosted(page, replyText, comment, testMode = false) {
       return false;
     })()
   `, { timeout: timeoutMs }).then(() => true).catch(() => false);
+
+  let matched = await waitForReplySignal(page);
+  if (matched) {
+    return true;
+  }
+
+  if (browserPage) {
+    const refreshed = await resolveReplyVerificationFrame(page, browserPage, comment, testMode);
+    if (refreshed.refreshed || refreshed.surface?.hasVisibleViewerSurface) {
+      matched = await waitForReplySignal(refreshed.frame);
+      if (matched) {
+        return true;
+      }
+    }
+  }
 
   return matched;
 }
@@ -3208,7 +3319,7 @@ async function postReply(comment, replyText, { testMode = false, dryRun = false,
       submitted = true;
     }
     traceCommenter('postReply:submitted', { commentId: comment.id, submitted });
-    const posted = await verifyReplyPosted(contentFrame, replyText, comment, testMode);
+    const posted = await verifyReplyPosted(contentFrame, replyText, comment, testMode, page);
     traceCommenter('postReply:verified', { commentId: comment.id, posted });
     if (!posted) {
       const snapshotPrefix = await saveCommentDebugSnapshot(contentFrame, comment, 'reply-submit-not-confirmed');
