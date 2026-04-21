@@ -712,11 +712,25 @@ async function buildSocialAutomationHealth() {
       if (latestRealInstagram) {
         ok.push(`  instagram latest real: ${String(latestRealInstagram.status || 'unknown')} / ${String(latestRealInstagram.post_title || '').slice(0, 50)}`);
       }
-      if (String(latestInstagram.status || '') === 'failed' && !latestInstagram.dry_run) {
+      const latestInstagramHostedRecovery = latestInstagram && !latestInstagram.dry_run
+        ? Boolean(
+            latestRealHostedRecovery
+            || (
+              String(latestInstagram.error_msg || '').includes('Instagram 공개 비디오 URL이 아직 응답하지 않습니다')
+              && latestRealInstagram
+              && String(latestRealInstagram.post_title || '') === String(latestInstagram.post_title || '')
+              && latestRealHostedRecovery
+            )
+          )
+        : false;
+      if (String(latestInstagram.status || '') === 'failed' && !latestInstagram.dry_run && !latestInstagramHostedRecovery) {
         warn.push(`  instagram latest failed: ${String(latestInstagram.error_msg || '').slice(0, 120)}`);
         warn.push(`  instagram diagnose: ${INSTAGRAM_READINESS_COMMAND}`);
         warn.push(`  instagram doctor: ${INSTAGRAM_DOCTOR_COMMAND}`);
-      } else if (latestRealInstagram && String(latestRealInstagram.status || '') === 'failed' && latestRealInstagramIsToday && latestRealHostedRecovery) {
+      } else if (
+        (latestInstagram && String(latestInstagram.status || '') === 'failed' && !latestInstagram.dry_run && latestInstagramHostedRecovery)
+        || (latestRealInstagram && String(latestRealInstagram.status || '') === 'failed' && latestRealInstagramIsToday && latestRealHostedRecovery)
+      ) {
         ok.push(`  instagram hosted recovery: ${String(latestRealInstagram.post_title || '').slice(0, 50)} / 공개 URL 현재 정상`);
       } else if (latestRealInstagram && String(latestRealInstagram.status || '') === 'failed' && latestRealInstagramIsToday) {
         warn.push(`  instagram today failed: ${String(latestRealInstagram.error_msg || '').slice(0, 120)}`);
@@ -848,7 +862,7 @@ async function buildSocialAutomationHealth() {
       latestRealInstagramIsToday,
       latestRealHostedRecovery,
       instagramNeedsAttention: Boolean(
-        (latestInstagram && String(latestInstagram.status || '') === 'failed' && !latestInstagram.dry_run)
+        (latestInstagram && String(latestInstagram.status || '') === 'failed' && !latestInstagram.dry_run && !latestInstagramHostedRecovery)
         || (latestRealInstagram && String(latestRealInstagram.status || '') === 'failed' && latestRealInstagramIsToday && !latestRealHostedRecovery)
       ),
       facebookReadiness: facebookReadiness || null,

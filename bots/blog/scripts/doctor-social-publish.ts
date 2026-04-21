@@ -35,6 +35,27 @@ function buildPreviewBundleForTitle(title = '') {
   }
 }
 
+function getInstagramHostedRecovery(latestInstagram = null) {
+  try {
+    const title = String(latestInstagram?.post_title || '');
+    const errorText = String(latestInstagram?.error_msg || '');
+    if (!title || !errorText) return false;
+    const { findReelPathForTitle } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-files.ts'));
+    const reelPath = findReelPathForTitle(title) || '';
+    if (!reelPath) return false;
+    const hosted = resolveInstagramHostedMediaUrl(reelPath, { kind: 'reels' });
+    return Boolean(
+      hosted?.ready === true
+      && (
+        errorText.includes('Instagram 공개 비디오 URL이 아직 응답하지 않습니다')
+        || errorText.includes('Instagram 공개 비디오 파일이 아직 준비되지 않았습니다')
+      )
+    );
+  } catch {
+    return false;
+  }
+}
+
 async function getLatestFacebookPublish() {
   try {
     const rows = await pgPool.query('blog', `
@@ -66,6 +87,7 @@ async function getLatestInstagramPublish() {
 
 function buildActions({ facebookReadiness, instagramConfig, latestFacebook, latestInstagram, previewBundle }) {
   const actions = [];
+  const instagramHostedRecovery = getInstagramHostedRecovery(latestInstagram);
 
   if (Array.isArray(facebookReadiness?.permissionScopes) && facebookReadiness.permissionScopes.length > 0) {
     actions.push(`Meta 앱 권한 재연결: ${facebookReadiness.permissionScopes.join(', ')}`);
@@ -76,7 +98,7 @@ function buildActions({ facebookReadiness, instagramConfig, latestFacebook, late
     actions.push('인스타 token_expires_at 저장 또는 refresh:instagram-token으로 만료일 확정');
   }
 
-  if (String(latestInstagram?.status || '') === 'failed') {
+  if (String(latestInstagram?.status || '') === 'failed' && !instagramHostedRecovery) {
     actions.push(`npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run check:instagram -- --json`);
     actions.push(`npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:instagram -- --json`);
   }
@@ -95,6 +117,7 @@ function buildActions({ facebookReadiness, instagramConfig, latestFacebook, late
 
 function buildPrimary({ latestFacebook, latestInstagram, facebookReadiness, instagramConfig }) {
   const blogPrefix = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')}`;
+  const instagramHostedRecovery = getInstagramHostedRecovery(latestInstagram);
   if (String(latestFacebook?.status || '') === 'failed') {
     return {
       area: 'social.facebook',
@@ -105,7 +128,7 @@ function buildPrimary({ latestFacebook, latestInstagram, facebookReadiness, inst
         : 'Meta 앱 권한 재연결과 페이지 토큰 재발급',
     };
   }
-  if (String(latestInstagram?.status || '') === 'failed' && !latestInstagram?.dry_run) {
+  if (String(latestInstagram?.status || '') === 'failed' && !latestInstagram?.dry_run && !instagramHostedRecovery) {
     return {
       area: 'social.instagram',
       reason: 'Instagram publish 실패가 현재 소셜 채널 최우선 병목입니다.',
@@ -145,6 +168,7 @@ async function main() {
     || ''
   );
   const previewBundle = buildPreviewBundleForTitle(previewTitle);
+  const instagramHostedRecovery = getInstagramHostedRecovery(latestInstagram);
 
   const payload = {
     facebook: {
@@ -178,7 +202,8 @@ async function main() {
             createdAt: latestInstagram.created_at || null,
           }
         : null,
-      needsAttention: String(latestInstagram?.status || '') === 'failed' && !latestInstagram?.dry_run,
+      hostedRecovery: instagramHostedRecovery,
+      needsAttention: String(latestInstagram?.status || '') === 'failed' && !latestInstagram?.dry_run && !instagramHostedRecovery,
     },
     previewBundle,
   };
