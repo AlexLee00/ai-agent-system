@@ -1495,8 +1495,9 @@ async function buildEngagementHealth() {
         `  neighbor collect bottleneck: buddy recent ${Number(neighborCollectDiagnostics.buddyFeedRecentBlogSkipCount || 0)} / buddy seen ${Number(neighborCollectDiagnostics.buddyFeedSeenUrlSkipCount || 0)} / network recent ${Number(neighborCollectDiagnostics.commenterNetworkRecentBlogSkipCount || 0)} / network resolve fail ${Number(neighborCollectDiagnostics.commenterNetworkResolveFailedCount || 0)} / network seen ${Number(neighborCollectDiagnostics.commenterNetworkSeenUrlSkipCount || 0)}`
       );
     }
-    if (replyFailure + neighborCommentFailure + sympathyFailure > 0) {
-      warn.push(`  failed engagement actions today: ${replyFailure + neighborCommentFailure + sympathyFailure}건`);
+    const activeFailureCount = Array.isArray(effectiveFailureMetaRows) ? effectiveFailureMetaRows.length : 0;
+    if (activeFailureCount > 0) {
+      warn.push(`  failed engagement actions today: ${activeFailureCount}건`);
     }
     if (neighborRecovery?.recovered) {
       ok.push(`  neighbor hosted recovery: 최근 외부 댓글 성공이 최신 실패 이후 확인됨 (${String(neighborRecovery.latestSuccessAt || '').slice(0, 19)}Z)`);
