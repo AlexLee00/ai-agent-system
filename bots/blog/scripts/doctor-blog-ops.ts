@@ -31,8 +31,14 @@ function runDoctor(command) {
 
 function buildActions({ social, engagement, primary }) {
   const actions = [];
-  const socialActions = Array.isArray(social?.actions) ? social.actions : [];
-  const engagementActions = Array.isArray(engagement?.actions) ? engagement.actions : [];
+  const socialPrimaryArea = String(social?.primary?.area || '');
+  const engagementPrimaryArea = String(engagement?.primary?.area || '');
+  const socialActions = (socialPrimaryArea && socialPrimaryArea !== 'clear' && socialPrimaryArea !== 'unknown' && Array.isArray(social?.actions))
+    ? social.actions
+    : [];
+  const engagementActions = (engagementPrimaryArea && engagementPrimaryArea !== 'clear' && engagementPrimaryArea !== 'unknown' && Array.isArray(engagement?.actions))
+    ? engagement.actions
+    : [];
   const primaryArea = String(primary?.area || '');
 
   const orderedActionGroups = primaryArea.startsWith('engagement')
