@@ -1919,7 +1919,17 @@ async function openReplyEditor(page, comment) {
         const targetedButton = Array.from(document.querySelectorAll('button, a')).find((node) => {
           if (!visible(node)) return false;
           const cls = String(node.className || '');
-          return cls.includes('idx-commentNo-' + commentNo);
+          const dataAction = String(node.getAttribute('data-action') || '');
+          const dataParam = String(node.getAttribute('data-param') || '');
+          const text = textOf(node);
+          const isReplyToggle =
+            /reply#toggle/.test(dataAction)
+            || /u_cbox_btn_reply|replyButton|btn_reply/i.test(cls)
+            || /답글|답변/.test(text);
+          const matchesCommentNo =
+            cls.includes('idx-commentNo-' + commentNo)
+            || dataParam === commentNo;
+          return isReplyToggle && matchesCommentNo;
         });
         if (targetedButton) {
           document.querySelectorAll('[data-blog-target-comment],[data-blog-target-reply-button],[data-blog-target-reply-area]').forEach((node) => {
@@ -2218,6 +2228,23 @@ async function inspectActivateReplyModeLite(page) {
     globalEditorCount: 0,
     globalEditorIds: [],
   }));
+}
+
+async function inspectTargetReplyButtonLite(page) {
+  return page.evaluate(`
+    (() => {
+      const node = document.querySelector('[data-blog-target-reply-button="true"]');
+      if (!node) return null;
+      return {
+        text: String((node.innerText || node.textContent) || '').replace(/\\s+/g, ' ').trim().slice(0, 40),
+        id: String(node.id || ''),
+        className: String(node.className || '').slice(0, 160),
+        dataAction: String(node.getAttribute('data-action') || ''),
+        dataParam: String(node.getAttribute('data-param') || ''),
+        ariaExpanded: String(node.getAttribute('aria-expanded') || '').trim().toLowerCase(),
+      };
+    })()
+  `).catch(() => null);
 }
 
 async function waitForReplySubmitReady(page, testMode = false, customTimeoutMs = 0) {
@@ -3916,6 +3943,7 @@ async function diagnoseReplyUi(comment, { testMode = true, operationTimeoutMs = 
     mounted: false,
     replyThreadReady: false,
     replyButtonTargeted: false,
+    targetReplyButton: null,
     replyModeOpened: false,
     replyModeState: null,
     replyEditorFound: false,
@@ -3952,6 +3980,7 @@ async function diagnoseReplyUi(comment, { testMode = true, operationTimeoutMs = 
         stage = 'open_reply_editor';
         replyButtonTargeted = await openReplyEditor(contentFrame, comment).catch(() => false);
         partialState.replyButtonTargeted = replyButtonTargeted;
+        partialState.targetReplyButton = await inspectTargetReplyButtonLite(contentFrame).catch(() => null);
         if (replyButtonTargeted) {
           stage = 'activate_reply_mode';
           replyModeOpened = await activateReplyMode(contentFrame).catch(() => false);
