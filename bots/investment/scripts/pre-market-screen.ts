@@ -17,6 +17,7 @@ import { join } from 'path';
 
 import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import { buildRuntimeLearningLoopReport } from './runtime-learning-loop-report.ts';
 import {
   getInvestmentTradeMode,
   getKisMarketStatus,
@@ -46,6 +47,33 @@ function shouldSkipPreScreen(status) {
   if (status.holiday?.isHoliday) return true;
   if (status.isWeekend) return true;
   return false;
+}
+
+async function loadLearningLoopSummary() {
+  return buildRuntimeLearningLoopReport({ days: 14, json: true }).catch((error) => ({
+    error: String(error?.message || error),
+  }));
+}
+
+function buildLearningLoopLine(learningLoopSummary) {
+  if (!learningLoopSummary || learningLoopSummary.error || learningLoopSummary.decision?.status !== 'regime_strategy_tuning_needed') {
+    return null;
+  }
+  const weakest = learningLoopSummary.sections?.regimeLaneSummary?.weakestRegime;
+  const weakestMode = weakest?.tradeMode || weakest?.worstMode?.tradeMode || weakest?.bestMode?.tradeMode || 'n/a';
+  const topSuggestion = learningLoopSummary.sections?.strategy?.runtimeSuggestionTop;
+  const suggestionValue = topSuggestion?.suggestedValue ?? topSuggestion?.suggested;
+  const parts = [
+    `weakest ${weakest?.regime || 'n/a'} / ${weakestMode}`,
+    topSuggestion?.key && suggestionValue != null ? `${topSuggestion.key} -> ${suggestionValue}` : null,
+  ].filter(Boolean);
+  return parts.length > 0 ? `🧭 learning loop: ${parts.join(' | ')}` : null;
+}
+
+function getLearningLoopNextCommand(learningLoopSummary) {
+  const nextActions = learningLoopSummary?.decision?.nextActions;
+  if (!Array.isArray(nextActions)) return null;
+  return nextActions.find((item) => typeof item === 'string' && item.startsWith('npm --prefix')) || null;
 }
 
 async function filterMockUntradablePrescreenSymbols(market, symbols, tradeMode = getInvestmentTradeMode()) {
@@ -182,6 +210,7 @@ async function main() {
   }
 
   await db.initSchema();
+  const learningLoopSummary = await loadLearningLoopSummary();
 
   const resolved = await resolveSymbolsWithFallback({
     market,
@@ -202,11 +231,20 @@ async function main() {
     ? symbols.join(', ')
     : `${symbols.slice(0, 6).join(', ')} 외 ${symbols.length - 6}개`;
 
-  savePreScreened(market, symbols, { label });
+  savePreScreened(market, symbols, { label, learningLoopSummary });
   console.log(`  💾 저장: ${PRESCREENED_FILE[market]}`);
 
-  const msg = `🔍 장전 스크리닝 완료 (${label})\n심볼: ${summarizedSymbols}\n저장: ${kst.timeStr()}`;
-  publishAlert({ from_bot: 'luna', event_type: 'report', alert_level: 1, message: msg });
+  const lines = [
+    `🔍 장전 스크리닝 완료 (${label})`,
+    `심볼: ${summarizedSymbols}`,
+    `저장: ${kst.timeStr()}`,
+  ];
+  const learningLoopLine = buildLearningLoopLine(learningLoopSummary);
+  if (learningLoopLine) lines.push(learningLoopLine);
+  const learningLoopNextCommand = getLearningLoopNextCommand(learningLoopSummary);
+  if (learningLoopNextCommand) lines.push(`🛠️ next command: ${learningLoopNextCommand}`);
+  const msg = lines.join('\n');
+  publishAlert({ from_bot: 'luna', event_type: 'report', alert_level: 1, message: msg, payload: { market, label, symbols, learningLoopSummary } });
 
   console.log(`\n✅ [장전 스크리닝] ${label} 완료 — ${symbols.length}개 종목`);
 }
