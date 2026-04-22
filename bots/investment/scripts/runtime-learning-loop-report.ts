@@ -76,21 +76,22 @@ async function loadLoopFreshness() {
 async function loadRegimeCoverage(days = 90) {
   await db.initSchema();
   const safeDays = Math.max(14, Number(days || 90));
+  const sinceEpochMs = Date.now() - safeDays * 24 * 60 * 60 * 1000;
   const [tradeRows, snapshotRows] = await Promise.all([
     db.query(`
       SELECT
         j.exchange,
-        COALESCE(r.strategy_config->>'market_regime', 'unknown') AS regime,
+        COALESCE(r.strategy_config->'market_regime'->>'regime', 'unknown') AS regime,
         COUNT(*) AS total,
         SUM(CASE WHEN COALESCE(j.trade_mode, 'normal') = 'validation' THEN 1 ELSE 0 END) AS validation_trades,
         SUM(CASE WHEN COALESCE(j.trade_mode, 'normal') = 'normal' THEN 1 ELSE 0 END) AS normal_trades,
         MAX(j.created_at) AS latest_trade_at
       FROM investment.trade_journal j
       LEFT JOIN investment.trade_rationale r ON r.trade_id = j.trade_id
-      WHERE j.created_at >= NOW() - ($1::int || ' days')::interval
+      WHERE j.created_at >= $1
       GROUP BY 1, 2
       ORDER BY total DESC, exchange ASC, regime ASC
-    `, [safeDays]).catch(() => []),
+    `, [sinceEpochMs]).catch(() => []),
     db.query(`
       SELECT
         market,
@@ -124,7 +125,7 @@ async function loadRegimeCoverage(days = 90) {
       total: (byRegime[regime]?.total || 0) + Number(row.total || 0),
       validationTrades: (byRegime[regime]?.validationTrades || 0) + Number(row.validation_trades || 0),
       normalTrades: (byRegime[regime]?.normalTrades || 0) + Number(row.normal_trades || 0),
-      latestTradeAt: byRegime[regime]?.latestTradeAt || row.latest_trade_at || null,
+      latestTradeAt: byRegime[regime]?.latestTradeAt || toIso(Number(row.latest_trade_at || 0)),
     };
     byExchange[exchange] = byExchange[exchange] || [];
     byExchange[exchange].push({
@@ -132,13 +133,17 @@ async function loadRegimeCoverage(days = 90) {
       total: Number(row.total || 0),
       validationTrades: Number(row.validation_trades || 0),
       normalTrades: Number(row.normal_trades || 0),
-      latestTradeAt: row.latest_trade_at || null,
+      latestTradeAt: toIso(Number(row.latest_trade_at || 0)),
     });
   }
 
   const distinctTradedRegimes = Object.values(byRegime)
     .filter((item) => Number(item.total || 0) > 0 && item.regime !== 'unknown')
     .length;
+  const unknownTrades = Number(byRegime.unknown?.total || 0);
+  const knownRegimeTrades = Object.values(byRegime)
+    .filter((item) => item.regime !== 'unknown')
+    .reduce((sum, item) => sum + Number(item.total || 0), 0);
 
   return {
     windowDays: safeDays,
@@ -153,6 +158,8 @@ async function loadRegimeCoverage(days = 90) {
     byRegime: Object.values(byRegime).sort((a, b) => Number(b.total || 0) - Number(a.total || 0)),
     byExchange,
     distinctTradedRegimes,
+    unknownTrades,
+    knownRegimeTrades,
   };
 }
 
@@ -190,6 +197,8 @@ function buildSectionStates({
     regimeCoverage: {
       windowDays: regimeCoverage.windowDays,
       distinctTradedRegimes: Number(regimeCoverage.distinctTradedRegimes || 0),
+      unknownTrades: Number(regimeCoverage.unknownTrades || 0),
+      knownRegimeTrades: Number(regimeCoverage.knownRegimeTrades || 0),
       topRegimes: regimeCoverage.byRegime.slice(0, 4),
       latestByMarket: regimeCoverage.latestByMarket,
     },
@@ -259,6 +268,13 @@ function buildDecision(sections = {}) {
     status = 'collect_bootstrap_needed';
     headline = '수집 루프가 비어 있어 먼저 runtime decision 세션을 쌓아야 합니다.';
     nextActions.push('crypto/domestic/overseas 런타임 세션을 다시 돌려 표본을 먼저 확보합니다.');
+  } else if (
+    Number(sections.collect.regimeCoverage?.knownRegimeTrades || 0) === 0 &&
+    Number(sections.collect.regimeCoverage?.unknownTrades || 0) > 0
+  ) {
+    status = 'regime_persistence_missing';
+    headline = '거래는 쌓였지만 레짐 정보가 unknown으로만 남아 장세별 학습이 끊기고 있습니다.';
+    nextActions.push('signal/trade/rationale 경로에 market_regime를 안정적으로 남겨 bull/bear/ranging/volatile 표본을 분리합니다.');
   } else if (Number(sections.collect.regimeCoverage?.distinctTradedRegimes || 0) < 2) {
     status = 'regime_sample_thin';
     headline = '거래 표본이 특정 장세에 치우쳐 있어 레짐별 전략 학습 데이터를 더 넓혀야 합니다.';
@@ -309,7 +325,8 @@ function renderText(payload) {
     '수집:',
     `- ${sections.collect.status} | latest=${sections.collect.latestAt || 'n/a'} (${formatAge(sections.collect.ageHours)})`,
     `- approved ${sections.collect.approvedSignals} / executed ${sections.collect.executedSymbols}`,
-    `- regime coverage ${sections.collect.regimeCoverage?.distinctTradedRegimes || 0}종 | top ${((sections.collect.regimeCoverage?.topRegimes || []).map((item) => `${item.regime}:${item.total}`).join(', ')) || 'none'}`,
+    `- regime coverage ${sections.collect.regimeCoverage?.distinctTradedRegimes || 0}종 | known ${sections.collect.regimeCoverage?.knownRegimeTrades || 0} / unknown ${sections.collect.regimeCoverage?.unknownTrades || 0}`,
+    `- top regimes ${((sections.collect.regimeCoverage?.topRegimes || []).map((item) => `${item.regime}:${item.total}`).join(', ')) || 'none'}`,
     `- ${sections.collect.headline}`,
     '',
     '분석:',
