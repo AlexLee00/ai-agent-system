@@ -7,6 +7,7 @@ import { buildInvestmentCliInsight } from '../shared/cli-insight.ts';
 import { buildRuntimeDecisionReport } from './runtime-decision-report.ts';
 import { buildRuntimeCryptoExecutionGateReport } from './runtime-crypto-execution-gate-report.ts';
 import { buildRuntimeCryptoGuardAutotuneReport } from './runtime-crypto-guard-autotune-report.ts';
+import { buildRuntimeConfigSuggestionsReport } from './runtime-config-suggestions.ts';
 import { buildVectorBtBacktestReport } from './vectorbt-backtest-report.ts';
 import { validateTradeReview } from './validate-trade-review.ts';
 
@@ -238,6 +239,7 @@ function buildSectionStates({
   runtimeDecision,
   executionGate,
   autotune,
+  runtimeSuggestions,
   backtest,
   validation,
   regimeCoverage,
@@ -327,9 +329,11 @@ function buildSectionStates({
     autotuneStatus: autotune.decision?.status || 'unknown',
     actionableSuggestions: Math.max(
       Number(autotune.decision?.metrics?.actionableCount || 0),
+      Number(runtimeSuggestions?.actionableSuggestions || 0),
       Number(freshness.latestSuggestionActionableCount || 0),
     ),
     reviewStatus: freshness.latestSuggestionReviewStatus || 'none',
+    runtimeSuggestionTop: (runtimeSuggestions?.suggestions || []).find((item) => item.action === 'adjust') || runtimeSuggestions?.suggestions?.[0] || null,
     headline: autotune.decision?.headline || '전략 수정 후보를 확인합니다.',
   };
 
@@ -363,9 +367,14 @@ function buildDecision(sections = {}) {
   } else if (Number(sections.collect.regimePerformance?.weakestRegime?.worstMode?.avgPnlPercent ?? 0) < -3) {
     const weakest = sections.collect.regimePerformance.weakestRegime;
     const strongest = sections.collect.regimePerformance?.strongestRegime;
+    const topSuggestion = sections.strategy?.runtimeSuggestionTop;
     status = 'regime_strategy_tuning_needed';
     headline = `${weakest.regime} 장세에서 ${weakest.worstMode.tradeMode} 레인의 성과가 약해 전략 수정이 필요합니다.`;
     nextActions.push(`${weakest.regime} 장세의 ${weakest.worstMode.tradeMode} 레인 진입 기준과 비중을 먼저 줄이거나 재학습합니다.`);
+    nextActions.push('npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-suggest -- --json');
+    if (topSuggestion?.key) {
+      nextActions.push(`우선 검토 제안: ${topSuggestion.key} -> ${topSuggestion.suggested} (${topSuggestion.action})`);
+    }
     if (strongest?.bestMode?.avgPnlPercent != null) {
       nextActions.push(`${strongest.regime} 장세의 ${strongest.bestMode.tradeMode} 레인은 유지하며 비교 표본으로 계속 누적합니다.`);
     }
@@ -445,6 +454,9 @@ function renderText(payload) {
     '전략 수정:',
     `- ${sections.strategy.status} | latest=${sections.strategy.latestAt || 'n/a'} (${formatAge(sections.strategy.ageHours)})`,
     `- autotune=${sections.strategy.autotuneStatus} | actionable=${sections.strategy.actionableSuggestions} | review=${sections.strategy.reviewStatus}`,
+    sections.strategy.runtimeSuggestionTop
+      ? `- top runtime suggestion ${sections.strategy.runtimeSuggestionTop.key} -> ${sections.strategy.runtimeSuggestionTop.suggested} (${sections.strategy.runtimeSuggestionTop.action})`
+      : null,
     `- ${sections.strategy.headline}`,
     '',
     '다음 액션:',
@@ -476,11 +488,12 @@ function buildFallback(payload = {}) {
 }
 
 export async function buildRuntimeLearningLoopReport({ days = 14, json = false } = {}) {
-  const [freshness, runtimeDecision, executionGate, autotune, backtest, validation, regimeCoverage, regimePerformance] = await Promise.all([
+  const [freshness, runtimeDecision, executionGate, autotune, runtimeSuggestions, backtest, validation, regimeCoverage, regimePerformance] = await Promise.all([
     loadLoopFreshness(),
     buildRuntimeDecisionReport({ market: 'all', limit: 5, json: true }).catch(() => ({ count: 0, summary: {}, rows: [] })),
     buildRuntimeCryptoExecutionGateReport({ days, json: true }).catch(() => ({ decision: {} })),
     buildRuntimeCryptoGuardAutotuneReport({ days, json: true }).catch(() => ({ decision: { metrics: {} } })),
+    buildRuntimeConfigSuggestionsReport({ days, write: false }).catch(() => ({ suggestions: [], actionableSuggestions: 0 })),
     buildVectorBtBacktestReport({ days: 30, limit: 20, json: true }).catch(() => ({ rows: [], decision: { metrics: {} } })),
     validateTradeReview({ days: 90, fix: false }).catch(() => ({ findings: 0, closedTrades: 0, items: [] })),
     loadRegimeCoverage(90).catch(() => ({ windowDays: 90, byRegime: [], latestByMarket: [], distinctTradedRegimes: 0 })),
@@ -492,6 +505,7 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
     runtimeDecision,
     executionGate,
     autotune,
+    runtimeSuggestions,
     backtest,
     validation,
     regimeCoverage,
@@ -506,6 +520,7 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
     sections,
     decision,
     runtimeDecision,
+    runtimeSuggestions,
     regimeCoverage,
     regimePerformance,
     executionGate,
