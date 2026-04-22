@@ -7,11 +7,14 @@ import { fileURLToPath } from 'url';
 import yaml from 'js-yaml';
 import * as db from '../shared/db.ts';
 import { buildRuntimeConfigSuggestionsReport } from './runtime-config-suggestions.ts';
+import { buildRuntimeCryptoGuardAutotuneReport } from './runtime-crypto-guard-autotune-report.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = join(__dirname, '..', 'config.yaml');
 const AUTO_KEYS = new Set([
+  'capital_management.max_same_direction_positions',
+  'capital_management.cooldown_minutes',
   'runtime_config.execution.cryptoGuardSoftening.byExchange.binance.tradeModes.normal.circuitBreaker.reductionMultiplier',
   'runtime_config.execution.cryptoGuardSoftening.byExchange.binance.tradeModes.normal.correlationGuard.reductionMultiplier',
   'runtime_config.execution.cryptoGuardSoftening.byExchange.binance.tradeModes.normal.validationFallback.reductionMultiplier',
@@ -28,6 +31,12 @@ function parseArgs(argv = process.argv.slice(2)) {
 }
 
 function toRuntimePath(key) {
+  if (key === 'capital_management.max_same_direction_positions') {
+    return ['capital_management', 'by_exchange', 'binance', 'trade_modes', 'normal', 'max_same_direction_positions'];
+  }
+  if (key === 'capital_management.cooldown_minutes') {
+    return ['capital_management', 'by_exchange', 'binance', 'trade_modes', 'normal', 'cooldown_minutes'];
+  }
   return String(key || '')
     .replace(/^runtime_config\./, '')
     .split('.')
@@ -50,19 +59,32 @@ function getByPath(target, path) {
   return path.reduce((cursor, key) => (cursor == null ? undefined : cursor[key]), target);
 }
 
-function selectAutoCandidates(report) {
-  return (report?.suggestions || [])
+function normalizeCandidate(item = {}) {
+  return {
+    key: item.key,
+    path: toRuntimePath(item.key),
+    rootSection: String(item.key || '').startsWith('capital_management.') ? 'root' : 'runtime_config',
+    current: item.current,
+    suggested: item.suggested,
+    confidence: item.confidence,
+    reason: item.reason,
+  };
+}
+
+function selectAutoCandidates(reports = []) {
+  const deduped = new Map();
+  for (const report of reports) {
+    for (const item of (report?.suggestions || [])) {
+      if (!item?.key || deduped.has(item.key)) continue;
+      deduped.set(item.key, item);
+    }
+  }
+
+  return Array.from(deduped.values())
     .filter((item) => AUTO_KEYS.has(item.key))
     .filter((item) => ['adjust', 'promote_candidate'].includes(item.action))
     .filter((item) => item.changeAllowed && !item.blockedByPolicy)
-    .map((item) => ({
-      key: item.key,
-      path: toRuntimePath(item.key),
-      current: item.current,
-      suggested: item.suggested,
-      confidence: item.confidence,
-      reason: item.reason,
-    }));
+    .map(normalizeCandidate);
 }
 
 function renderText(result) {
@@ -90,20 +112,23 @@ function renderText(result) {
 
 export async function buildRuntimeCryptoSelfTune({ days = 14, write = false, json = false } = {}) {
   await db.initSchema();
-  const report = await buildRuntimeConfigSuggestionsReport({ days, write });
-  const candidates = selectAutoCandidates(report);
+  const [runtimeSuggestReport, guardAutotuneReport] = await Promise.all([
+    buildRuntimeConfigSuggestionsReport({ days, write }),
+    buildRuntimeCryptoGuardAutotuneReport({ days, json: true }).catch(() => null),
+  ]);
+  const candidates = selectAutoCandidates([runtimeSuggestReport, guardAutotuneReport]);
 
   const result = {
     ok: true,
     status: 'crypto_self_tune_idle',
     headline: '자동 적용 가능한 crypto soft guard 후보가 아직 없습니다.',
     days,
-    savedId: report?.saved?.id || null,
+    savedId: runtimeSuggestReport?.saved?.id || null,
     candidates,
     applied: [],
     source: {
-      actionableSuggestions: report?.actionableSuggestions || 0,
-      totalSuggestions: report?.suggestions?.length || 0,
+      actionableSuggestions: Number(runtimeSuggestReport?.actionableSuggestions || 0) + Number(guardAutotuneReport?.decision?.metrics?.actionableCount || 0),
+      totalSuggestions: Number(runtimeSuggestReport?.suggestions?.length || 0) + Number(guardAutotuneReport?.suggestions?.length || 0),
     },
   };
 
@@ -119,8 +144,9 @@ export async function buildRuntimeCryptoSelfTune({ days = 14, write = false, jso
     if (!raw.runtime_config || typeof raw.runtime_config !== 'object') raw.runtime_config = {};
 
     for (const candidate of candidates) {
-      const before = getByPath(raw.runtime_config, candidate.path);
-      setByPath(raw.runtime_config, candidate.path, candidate.suggested);
+      const targetRoot = candidate.rootSection === 'root' ? raw : raw.runtime_config;
+      const before = getByPath(targetRoot, candidate.path);
+      setByPath(targetRoot, candidate.path, candidate.suggested);
       result.applied.push({
         key: candidate.key,
         before,
@@ -130,9 +156,9 @@ export async function buildRuntimeCryptoSelfTune({ days = 14, write = false, jso
 
     writeFileSync(CONFIG_PATH, yaml.dump(raw, { lineWidth: 120, noRefs: true }), 'utf8');
 
-    if (report?.saved?.id) {
+    if (runtimeSuggestReport?.saved?.id) {
       const autoKeys = candidates.map((item) => item.key).join(',');
-      await db.updateRuntimeConfigSuggestionLogReview(report.saved.id, {
+      await db.updateRuntimeConfigSuggestionLogReview(runtimeSuggestReport.saved.id, {
         reviewStatus: 'applied',
         reviewNote: `crypto_self_tune_auto_applied:${autoKeys}`,
       }).catch(() => {});
