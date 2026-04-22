@@ -156,6 +156,26 @@ async function loadCapitalGuardTradeModeRows(fromDate, toDate) {
   `);
 }
 
+async function loadRegimeLaneRows(days = 90) {
+  const safeDays = Math.max(14, Number(days || 90));
+  const sinceEpochMs = Date.now() - safeDays * 24 * 60 * 60 * 1000;
+  return db.query(`
+    SELECT
+      market_regime,
+      COALESCE(trade_mode, 'normal') AS trade_mode,
+      COUNT(*) AS total,
+      COUNT(*) FILTER (WHERE status = 'closed') AS closed,
+      COUNT(*) FILTER (WHERE pnl_percent > 0) AS wins,
+      ROUND(AVG(pnl_percent)::numeric, 4) AS avg_pnl_percent
+    FROM investment.trade_journal
+    WHERE created_at >= $1
+      AND market_regime IS NOT NULL
+      AND market_regime <> ''
+    GROUP BY 1, 2
+    ORDER BY market_regime, trade_mode
+  `, [sinceEpochMs]).catch(() => []);
+}
+
 function buildDateRange(days) {
   const to = new Date();
   const from = new Date(Date.now() - (days - 1) * 86400000);
@@ -572,6 +592,83 @@ function buildValidationBudgetSuggestions(
   return suggestions;
 }
 
+function summarizeRegimeLaneRows(rows = []) {
+  const byRegime = new Map();
+  for (const row of rows) {
+    const regime = String(row.market_regime || 'unknown');
+    const tradeMode = String(row.trade_mode || 'normal');
+    const total = Number(row.total || 0);
+    const closed = Number(row.closed || 0);
+    const wins = Number(row.wins || 0);
+    const avgPnlPercent = row.avg_pnl_percent != null ? Number(row.avg_pnl_percent) : null;
+    const winRate = closed > 0 ? round((wins / closed) * 100, 1) : null;
+    if (!byRegime.has(regime)) byRegime.set(regime, []);
+    byRegime.get(regime).push({ regime, tradeMode, total, closed, wins, winRate, avgPnlPercent });
+  }
+
+  const ranked = [...byRegime.entries()].map(([regime, modes]) => {
+    const bestMode = [...modes]
+      .filter(item => item.avgPnlPercent != null)
+      .sort((a, b) => Number(b.avgPnlPercent) - Number(a.avgPnlPercent))[0] || null;
+    const worstMode = [...modes]
+      .filter(item => item.avgPnlPercent != null)
+      .sort((a, b) => Number(a.avgPnlPercent) - Number(b.avgPnlPercent))[0] || null;
+    return {
+      regime,
+      modes,
+      bestMode,
+      worstMode,
+      total: modes.reduce((sum, item) => sum + Number(item.total || 0), 0),
+      closed: modes.reduce((sum, item) => sum + Number(item.closed || 0), 0),
+    };
+  });
+
+  return {
+    byRegime: ranked.sort((a, b) => Number(b.total || 0) - Number(a.total || 0)),
+    weakestRegime: [...ranked]
+      .filter(item => item.worstMode && item.worstMode.avgPnlPercent != null)
+      .sort((a, b) => Number(a.worstMode.avgPnlPercent) - Number(b.worstMode.avgPnlPercent))[0] || null,
+    strongestRegime: [...ranked]
+      .filter(item => item.bestMode && item.bestMode.avgPnlPercent != null)
+      .sort((a, b) => Number(b.bestMode.avgPnlPercent) - Number(a.bestMode.avgPnlPercent))[0] || null,
+  };
+}
+
+function buildRegimeLaneSuggestions(config, regimeLaneSummary = null) {
+  const suggestions = [];
+  const weakest = regimeLaneSummary?.weakestRegime || null;
+  const strongest = regimeLaneSummary?.strongestRegime || null;
+
+  if (weakest?.regime === 'trending_bear' && weakest?.worstMode?.tradeMode === 'validation') {
+    const currentReduction = Number(
+      config.execution?.cryptoGuardSoftening?.byExchange?.binance?.tradeModes?.normal?.validationFallback?.reductionMultiplier
+      || 0.35,
+    );
+    suggestions.push({
+      key: 'runtime_config.execution.cryptoGuardSoftening.byExchange.binance.tradeModes.normal.validationFallback.reductionMultiplier',
+      current: currentReduction,
+      suggested: round(clamp(currentReduction - 0.05, 0.15, 0.5), 2),
+      action: 'adjust',
+      confidence: 'medium',
+      reason: `${weakest.regime} 장세에서 validation fallback 비중을 현재 x${currentReduction.toFixed(2)}보다 더 작게 두고 손실 레인 노출을 줄이는 비교 실험 후보입니다.`,
+    });
+  }
+
+  if (strongest?.regime === 'trending_bull' && strongest?.bestMode?.tradeMode === 'normal') {
+    const currentMin = Number(config.luna?.fastPathThresholds?.minCryptoConfidence || 0);
+    suggestions.push({
+      key: 'runtime_config.luna.fastPathThresholds.minCryptoConfidence',
+      current: currentMin,
+      suggested: currentMin,
+      action: 'hold',
+      confidence: 'medium',
+      reason: `${strongest.regime} 장세의 ${strongest.bestMode.tradeMode} 레인은 평균 손익 ${round(strongest.bestMode.avgPnlPercent, 2)}%로 상대적으로 강합니다. 이 레인은 유지하며 비교 기준선 표본을 더 누적하는 편이 좋습니다.`,
+    });
+  }
+
+  return suggestions;
+}
+
 function buildCryptoSoftGuardSuggestions(config, softGuardSummary = null, summaries = {}) {
   const suggestions = [];
   const decision = softGuardSummary?.decision || {};
@@ -648,6 +745,7 @@ function buildSuggestions(
   capitalGuardBias = null,
   validationBudgetPolicy = null,
   cryptoSoftGuardSummary = null,
+  regimeLaneSummary = null,
 ) {
   void capitalGuardBias;
   return [
@@ -657,10 +755,11 @@ function buildSuggestions(
     ...buildValidationPromotionSuggestions(config, validationSummaries),
     ...buildValidationBudgetSuggestions(validationBudgetSnapshots, validationBudgetPolicy),
     ...buildCryptoSoftGuardSuggestions(config, cryptoSoftGuardSummary, summaries),
+    ...buildRegimeLaneSuggestions(config, regimeLaneSummary),
   ];
 }
 
-function buildReport(days, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, validationBudgetPolicyTrend, cryptoSoftGuardSummary, suggestions) {
+function buildReport(days, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, validationBudgetPolicyTrend, cryptoSoftGuardSummary, regimeLaneSummary, suggestions) {
   const governance = buildParameterGovernanceReport();
   return {
     periodDays: days,
@@ -671,6 +770,7 @@ function buildReport(days, summaries, validationSummaries, validationBudgetSnaps
     validationBudgetPolicy,
     validationBudgetPolicyTrend,
     cryptoSoftGuardSummary,
+    regimeLaneSummary,
     suggestions,
     parameterGovernance: governance.summary,
     actionableSuggestions: suggestions.filter(item => item.action === 'adjust').length,
@@ -731,6 +831,18 @@ function printHuman(report) {
     lines.push(`- ${report.cryptoSoftGuardSummary.decision.status}`);
     lines.push(`  ${report.cryptoSoftGuardSummary.decision.headline}`);
   }
+  if (report.regimeLaneSummary?.weakestRegime || report.regimeLaneSummary?.strongestRegime) {
+    lines.push('');
+    lines.push('regime lane 요약:');
+    if (report.regimeLaneSummary?.weakestRegime?.worstMode) {
+      const weakest = report.regimeLaneSummary.weakestRegime;
+      lines.push(`- weakest: ${weakest.regime} / ${weakest.worstMode.tradeMode} / avg pnl ${weakest.worstMode.avgPnlPercent}%`);
+    }
+    if (report.regimeLaneSummary?.strongestRegime?.bestMode) {
+      const strongest = report.regimeLaneSummary.strongestRegime;
+      lines.push(`- strongest: ${strongest.regime} / ${strongest.bestMode.tradeMode} / avg pnl ${strongest.bestMode.avgPnlPercent}%`);
+    }
+  }
   lines.push('');
   lines.push('설정 제안:');
   for (const item of report.suggestions) {
@@ -779,6 +891,7 @@ export async function buildRuntimeConfigSuggestionsReport({ days = 14, write = f
     loadTodayTradeModeTradeRows(),
     loadTodaySignalBlockRows(),
   ]);
+  const regimeLaneRows = await loadRegimeLaneRows(Math.max(days * 3, 90));
   const config = getInvestmentRuntimeConfig();
   const summaries = {
     binance: summarizeExchange(signalRows, blockRows, analysisRows, 'binance'),
@@ -803,12 +916,13 @@ export async function buildRuntimeConfigSuggestionsReport({ days = 14, write = f
     cryptoLiveGateReview,
   );
   const cryptoSoftGuardSummary = await buildRuntimeCryptoSoftGuardReport({ days, json: true }).catch(() => null);
+  const regimeLaneSummary = summarizeRegimeLaneRows(regimeLaneRows);
   const validationBudgetPolicyTrend = buildValidationBudgetPolicyTrend(
     validationBudgetPolicy,
     previousPolicySnapshot,
   );
   const suggestions = annotateRuntimeSuggestions(
-    buildSuggestions(config, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, cryptoSoftGuardSummary),
+    buildSuggestions(config, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, cryptoSoftGuardSummary, regimeLaneSummary),
   );
   const report = buildReport(
     days,
@@ -819,6 +933,7 @@ export async function buildRuntimeConfigSuggestionsReport({ days = 14, write = f
     validationBudgetPolicy,
     validationBudgetPolicyTrend,
     cryptoSoftGuardSummary,
+    regimeLaneSummary,
     suggestions,
   );
   report.aiSummary = await buildInvestmentCliInsight({
@@ -833,6 +948,7 @@ export async function buildRuntimeConfigSuggestionsReport({ days = 14, write = f
       validationBudgetPolicy: report.validationBudgetPolicy,
       capitalGuardBias: report.capitalGuardBias,
       cryptoSoftGuard: report.cryptoSoftGuardSummary?.decision || null,
+      regimeLaneSummary: report.regimeLaneSummary,
     },
     fallback:
       report.actionableSuggestions > 0
