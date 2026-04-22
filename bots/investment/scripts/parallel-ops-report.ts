@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // @ts-nocheck
 
+import fs from 'fs';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { publishAlert } from '../shared/alert-publisher.ts';
 import { buildScreeningHistoryReport } from './screening-history-report.ts';
@@ -11,6 +12,8 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const INVESTMENT_ROOT = path.resolve(__dirname, '..');
+const OPS_OUTPUT_DIR = path.resolve(INVESTMENT_ROOT, 'output', 'ops');
+const SNAPSHOT_FILE = path.resolve(OPS_OUTPUT_DIR, 'parallel-ops-snapshot.json');
 
 function runCommand(command, args) {
   return execFileSync(command, args, {
@@ -101,6 +104,23 @@ function loadHealthReport() {
   }
   const parsed = parseJsonFromMixedOutput(result.output);
   return { ...parsed, error: null };
+}
+
+function loadLatestOpsSnapshot() {
+  try {
+    if (!fs.existsSync(SNAPSHOT_FILE)) return null;
+    return JSON.parse(fs.readFileSync(SNAPSHOT_FILE, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function getWeakestRegimeSummary(runtimeLearningLoop) {
+  const weakest = runtimeLearningLoop?.sections?.regimeLaneSummary?.weakestRegime
+    || runtimeLearningLoop?.sections?.collect?.regimePerformance?.weakestRegime
+    || null;
+  const weakestMode = weakest?.tradeMode || weakest?.worstMode?.tradeMode || weakest?.bestMode?.tradeMode || 'n/a';
+  return { weakest, weakestMode };
 }
 
 async function loadScreeningSummary() {
@@ -210,7 +230,7 @@ function buildDecision(health) {
   };
 }
 
-function formatCompactMessage({ decision, health, screening, actionItems }) {
+function formatCompactMessage({ decision, health, screening, actionItems, latestSnapshot }) {
   const lines = [
     `🧭 병렬 운영: ${decision.status}`,
     `📌 ${decision.headline}`,
@@ -218,11 +238,14 @@ function formatCompactMessage({ decision, health, screening, actionItems }) {
   ];
 
   if (health.runtimeLearningLoop?.decision?.status === 'regime_strategy_tuning_needed') {
-    const weakest = health.runtimeLearningLoop?.sections?.collect?.regimePerformance?.weakestRegime;
-    const weakestMode = weakest?.tradeMode || weakest?.worstMode?.tradeMode || weakest?.bestMode?.tradeMode || 'n/a';
+    const { weakest, weakestMode } = getWeakestRegimeSummary(health.runtimeLearningLoop);
     const topSuggestion = health.runtimeLearningLoop?.sections?.strategy?.runtimeSuggestionTop;
     lines.push(`🧭 learning loop weakest ${weakest?.regime || 'n/a'} / ${weakestMode}`);
     lines.push(`🛠️ top suggestion ${topSuggestion?.key || 'n/a'} -> ${topSuggestion?.suggestedValue ?? topSuggestion?.suggested ?? 'n/a'}`);
+  }
+  if (latestSnapshot?.capturedAt) {
+    const { weakest, weakestMode } = getWeakestRegimeSummary(latestSnapshot?.health?.runtimeLearningLoop);
+    lines.push(`📸 latest snapshot ${latestSnapshot.capturedAt} | ${weakest?.regime || 'n/a'} / ${weakestMode}`);
   }
 
   const screeningLines = summarizeScreening(screening).slice(0, 3);
@@ -237,7 +260,7 @@ function formatCompactMessage({ decision, health, screening, actionItems }) {
   return lines.join('\n');
 }
 
-function formatTextReport({ capturedAt, decision, health, screening, actionItems }) {
+function formatTextReport({ capturedAt, decision, health, screening, actionItems, latestSnapshot }) {
   const lines = [
     `🧭 병렬 운영 요약 리포트`,
     `기준: ${new Date(capturedAt).toLocaleString('sv-SE', { timeZone: 'Asia/Seoul' })} KST`,
@@ -257,6 +280,14 @@ function formatTextReport({ capturedAt, decision, health, screening, actionItems
     lines.push(...health.cryptoLiveGateHealth.warn.map((line) => `- ${line}`));
   }
 
+  if (latestSnapshot?.capturedAt) {
+    const { weakest, weakestMode } = getWeakestRegimeSummary(latestSnapshot?.health?.runtimeLearningLoop);
+    lines.push('');
+    lines.push('latest ops snapshot:');
+    lines.push(`- capturedAt ${latestSnapshot.capturedAt}`);
+    lines.push(`- weakest ${weakest?.regime || 'n/a'} / ${weakestMode}`);
+  }
+
   lines.push('');
   lines.push('screening 동향:');
   lines.push(...summarizeScreening(screening).map((line) => `- ${line}`));
@@ -269,6 +300,7 @@ function formatTextReport({ capturedAt, decision, health, screening, actionItems
 
 export async function buildParallelOpsReport({ json = false } = {}) {
   const health = loadHealthReport();
+  const latestSnapshot = loadLatestOpsSnapshot();
   const screening = await loadScreeningSummary();
   const decision = buildDecision(health);
   const actionItems = buildActionItems(health, decision);
@@ -282,6 +314,7 @@ export async function buildParallelOpsReport({ json = false } = {}) {
       runtimeLearningLoop: health.runtimeLearningLoop,
       error: health.error,
     },
+    latestSnapshot,
     screening,
   };
 
