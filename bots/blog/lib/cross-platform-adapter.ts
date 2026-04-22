@@ -44,11 +44,16 @@ function blogToInstagramCaption(blogPost, maxChars = 2200, strategy = null) {
   const { title, content, hashtags = [] } = blogPost;
   const plan = strategy || loadStrategyBundle().plan;
   const directives = normalizeExecutionDirectives(plan);
+  const pointCount = directives.channelPriority.instagram === 'primary'
+    ? 4
+    : directives.channelPriority.instagram === 'secondary'
+      ? 3
+      : 2;
 
-  // 핵심 포인트 3개 추출
-  const keyPoints = extractKeyPoints(content || '', 3);
+  // 핵심 포인트 추출
+  const keyPoints = extractKeyPoints(content || '', pointCount);
   const pointsStr = keyPoints.length > 0
-    ? '\n\n' + keyPoints.slice(0, 3).map((p, i) => `${i + 1}. ${p}`).join('\n')
+    ? '\n\n' + keyPoints.slice(0, pointCount).map((p, i) => `${i + 1}. ${p}`).join('\n')
     : '';
 
   // 해시태그 (최대 30개)
@@ -94,11 +99,18 @@ function blogToFacebookPost(blogPost, maxChars = 200, strategy = null) {
     .split(/[.!?]/)[0]
     ?.trim() || '';
 
+  const messageLimit = directives.channelPriority.facebook === 'primary'
+    ? Math.min(320, maxChars + 80)
+    : directives.channelPriority.facebook === 'secondary'
+      ? Math.min(260, maxChars + 40)
+      : maxChars;
   const summary = firstSentence.length > 50
-    ? firstSentence.slice(0, maxChars)
+    ? firstSentence.slice(0, messageLimit)
     : title;
   const message = directives.creativePolicy.ctaStyle === 'conversion'
     ? `${summary}\n지금 적용 포인트와 예약 흐름까지 함께 점검해보세요.`
+    : directives.creativePolicy.ctaStyle === 'engagement'
+      ? `${summary}\n의견이 있다면 댓글로 남기고, 자세한 맥락은 블로그에서 이어서 확인해보세요.`
     : summary;
 
   return {
@@ -128,9 +140,17 @@ function blogToReelScript(blogPost, strategy = null) {
   const solution = keyPoints.slice(1, 3).join(' ') || '지금 바로 실천해보세요.';
   const cta = directives.creativePolicy.ctaStyle === 'conversion'
     ? '블로그에서 적용 포인트를 확인하고 바로 다음 행동까지 이어가세요!'
+    : directives.creativePolicy.ctaStyle === 'engagement'
+    ? '저장하고 공유한 다음, 블로그에서 전체 흐름을 이어서 확인해보세요!'
     : category === '도서리뷰'
     ? '이 책이 궁금하다면 블로그 링크를 확인해보세요!'
     : '스터디카페에서 집중 환경을 경험해보세요!';
+
+  const durationSec = directives.creativePolicy.hookStyle === 'scroll_stop'
+    ? 35
+    : directives.creativePolicy.hookStyle === 'problem_first'
+      ? 40
+      : 45;
 
   return {
     hook,
@@ -138,7 +158,7 @@ function blogToReelScript(blogPost, strategy = null) {
     solution,
     cta,
     full_script: [hook, problem, solution, cta].filter(Boolean).join(' '),
-    estimated_duration_sec: 45,
+    estimated_duration_sec: durationSec,
   };
 }
 

@@ -1,6 +1,7 @@
 'use strict';
 
 const { getBlogSectionRatioRuntimeConfig } = require('./runtime-config.ts');
+const { loadStrategyBundle, normalizeExecutionDirectives } = require('./strategy-loader.ts');
 
 type BonusInsight = {
   id: string;
@@ -69,6 +70,81 @@ const SECTION_LABELS = {
   insight_4: '[전문가의 실무 인사이트 ④]',
 };
 
+function clampChars(value, minimum = 120) {
+  return Math.max(minimum, Math.round(Number(value) || minimum));
+}
+
+function getPriorityMultiplier(priority = 'secondary') {
+  if (priority === 'primary') return 1.15;
+  if (priority === 'supporting') return 0.92;
+  return 1.0;
+}
+
+function applyMultiplier(baseChars = {}, keys = [], multiplier = 1) {
+  for (const key of keys) {
+    if (typeof baseChars[key] === 'number') {
+      baseChars[key] = clampChars(baseChars[key] * multiplier);
+    }
+  }
+}
+
+function applyStrategySectionOverrides(botType, baseChars = {}, bonusBase = 0) {
+  const plan = loadStrategyBundle().plan;
+  const directives = normalizeExecutionDirectives(plan);
+  const adjusted = { ...baseChars };
+  let nextBonusBase = bonusBase;
+
+  const tone = directives.titlePolicy.tone;
+  const ctaStyle = directives.creativePolicy.ctaStyle;
+  const imageAggro = directives.creativePolicy.imageAggro;
+  const reelAggro = directives.creativePolicy.reelAggro;
+
+  if (botType === 'pos') {
+    if (tone === 'conversion' || ctaStyle === 'conversion') {
+      applyMultiplier(adjusted, ['summary', 'faq', 'closing'], 1.18);
+      applyMultiplier(adjusted, ['theory', 'code'], 0.92);
+      nextBonusBase = clampChars(nextBonusBase * 1.08, 180);
+    } else if (tone === 'amplify') {
+      applyMultiplier(adjusted, ['greeting', 'tech_briefing', 'cafe'], 1.12);
+      applyMultiplier(adjusted, ['summary', 'closing'], 0.95);
+      nextBonusBase = clampChars(nextBonusBase * 1.1, 180);
+    }
+  }
+
+  if (botType === 'gems') {
+    if (tone === 'conversion' || ctaStyle === 'conversion') {
+      applyMultiplier(adjusted, ['summary', 'faq', 'closing'], 1.2);
+      applyMultiplier(adjusted, ['body_1', 'body_2'], 0.9);
+      nextBonusBase = clampChars(nextBonusBase * 1.05, 180);
+    } else if (tone === 'amplify') {
+      applyMultiplier(adjusted, ['trend', 'insight_1', 'insight_2', 'insight_3'], 1.14);
+      applyMultiplier(adjusted, ['faq'], 0.92);
+      nextBonusBase = clampChars(nextBonusBase * 1.12, 180);
+    }
+  }
+
+  if (botType === 'star') {
+    const instagramMultiplier = getPriorityMultiplier(directives.channelPriority.instagram);
+    applyMultiplier(adjusted, ['card_1', 'card_2', 'card_3', 'caption'], instagramMultiplier);
+    if (imageAggro === 'high') {
+      applyMultiplier(adjusted, ['card_1', 'card_2', 'card_3'], 1.12);
+    } else if (imageAggro === 'low') {
+      applyMultiplier(adjusted, ['card_1', 'card_2', 'card_3'], 0.9);
+    }
+
+    if (reelAggro === 'high' || tone === 'amplify') {
+      applyMultiplier(adjusted, ['insight_1', 'caption'], 1.18);
+      nextBonusBase = clampChars(nextBonusBase * 1.15, 120);
+    } else if (tone === 'conversion') {
+      applyMultiplier(adjusted, ['caption'], 1.2);
+      applyMultiplier(adjusted, ['insight_1'], 0.94);
+      nextBonusBase = clampChars(nextBonusBase * 1.05, 120);
+    }
+  }
+
+  return { baseChars: adjusted, bonusBase: nextBonusBase };
+}
+
 function getSectionRatioDefaults(botType) {
   if (botType === 'pos') {
     return {
@@ -100,13 +176,19 @@ function getSectionRatioConfig(botType) {
       ? (runtime.general || {})
       : (runtime.shortform || {});
 
-  return {
-    jitter: Number(scoped.jitter ?? defaults.jitter),
-    baseChars: {
+  const strategyAdjusted = applyStrategySectionOverrides(
+    botType,
+    {
       ...defaults.baseChars,
       ...(scoped.baseChars || {}),
     },
-    bonusBase: Number(scoped.bonusBase ?? defaults.bonusBase),
+    Number(scoped.bonusBase ?? defaults.bonusBase)
+  );
+
+  return {
+    jitter: Number(scoped.jitter ?? defaults.jitter),
+    baseChars: strategyAdjusted.baseChars,
+    bonusBase: strategyAdjusted.bonusBase,
   };
 }
 

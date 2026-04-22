@@ -69,6 +69,21 @@ ${content.slice(0, 6000)}
   }
 }
 
+function resolveInstagramCardCount(cardCount = 0, strategy = null) {
+  const directives = normalizeExecutionDirectives(strategy);
+  const instagramPriority = directives.channelPriority.instagram;
+  const imageAggro = directives.creativePolicy.imageAggro;
+  const reelAggro = directives.creativePolicy.reelAggro;
+  const explicit = Number(cardCount || 0);
+  if (explicit > 0) return Math.max(2, Math.min(6, explicit));
+
+  let derived = instagramPriority === 'primary' ? 5 : instagramPriority === 'secondary' ? 4 : 3;
+  if (imageAggro === 'high') derived += 1;
+  if (imageAggro === 'low') derived -= 1;
+  if (reelAggro === 'high' && instagramPriority !== 'supporting') derived += 0.5;
+  return Math.max(2, Math.min(6, Math.round(derived)));
+}
+
 const CAPTION_SYSTEM = `
 당신은 인스타그램 마케팅 전문가입니다.
 블로그 포스팅을 인스타그램 캡션과 해시태그로 변환합니다.
@@ -193,14 +208,15 @@ ${content.slice(0, 3000)}
 }
 
 async function createInstaContent(content, title, category, cardCount = 3) {
-  console.log(`[소셜] 인스타 콘텐츠 생성 시작 (카드 ${cardCount}장)`);
   const plan = loadStrategyBundle().plan;
+  const effectiveCardCount = resolveInstagramCardCount(cardCount, plan);
+  console.log(`[소셜] 인스타 콘텐츠 생성 시작 (카드 ${effectiveCardCount}장)`);
 
   const today = kst.today();
   const safeSlug = (title || '').replace(/[^가-힣a-zA-Z0-9]/g, '_').slice(0, 30);
   const slug = `${today}_${safeSlug}`;
 
-  const summaries = await summarizeForInsta(content, cardCount);
+  const summaries = await summarizeForInsta(content, effectiveCardCount);
   console.log(`  요약 ${summaries.length}개 생성`);
 
   if (!fs.existsSync(INSTA_DIR)) fs.mkdirSync(INSTA_DIR, { recursive: true });
@@ -236,6 +252,7 @@ async function createInstaContent(content, title, category, cardCount = 3) {
     title, category, slug, summaries, cards,
     caption, hashtags, cta, fullText,
     strategyExecution: normalizeExecutionDirectives(plan),
+    effectiveCardCount,
     createdAt: new Date().toISOString(),
   };
   const metaFilename = `${slug}_insta-meta.json`;
