@@ -251,6 +251,10 @@ function renderText(rows = [], args = {}) {
   const summary = buildSummary(rows);
   const signalOutcomes = args.signalOutcomes || {};
   const blockedReview = args.blockedReview || {};
+  const resolvedBlocked = Number(blockedReview.resolvedCount || 0);
+  const activeBlocked = Number(blockedReview.activeCount || 0);
+  const rawBlocked = Number(signalOutcomes.blocked || 0);
+  const effectiveBlocked = Math.max(0, rawBlocked - resolvedBlocked);
   const lines = [
     `Runtime decision sessions: ${rows.length}`,
     `market: ${args.market}`,
@@ -261,7 +265,7 @@ function renderText(rows = [], args = {}) {
     `executedSymbols: ${summary.executedSymbols}`,
     `riskRejected: ${summary.riskRejected}`,
     `warnings: ${summary.warnings.join(', ') || 'none'}`,
-    `signalOutcomes: executed=${signalOutcomes.executed || 0}, blocked=${signalOutcomes.blocked || 0}, failed=${signalOutcomes.failed || 0}${signalOutcomes.topBlockCode ? ` | topBlock=${signalOutcomes.topBlockCode}:${signalOutcomes.topBlockCount || 0}` : ''}`,
+    `signalOutcomes: executed=${signalOutcomes.executed || 0}, blocked=${rawBlocked}, activeBlocked=${activeBlocked || effectiveBlocked}, resolvedBlocked=${resolvedBlocked}, failed=${signalOutcomes.failed || 0}${signalOutcomes.topBlockCode ? ` | topBlock=${signalOutcomes.topBlockCode}:${signalOutcomes.topBlockCount || 0}` : ''}`,
     `blockedReview: active=${blockedReview.activeCount || 0}, resolved=${blockedReview.resolvedCount || 0}${blockedReview.topActiveReason ? ` | topActive=${blockedReview.topActiveReason}` : ''}`,
   ];
 
@@ -279,6 +283,9 @@ function buildRuntimeDecisionFallback(payload = {}) {
   const signalOutcomes = payload.signalOutcomes || {};
   const blockedReview = payload.blockedReview || {};
   const warnings = Array.isArray(summary.warnings) ? summary.warnings : [];
+  const resolvedBlocked = Number(blockedReview.resolvedCount || 0);
+  const rawBlocked = Number(signalOutcomes.blocked || 0);
+  const effectiveBlocked = Math.max(0, rawBlocked - resolvedBlocked);
   if ((payload.count || 0) === 0) {
     return '최근 runtime decision 세션 표본이 없어 먼저 세션 누적 상태를 확인하는 것이 좋습니다.';
   }
@@ -289,8 +296,8 @@ function buildRuntimeDecisionFallback(payload = {}) {
     if ((blockedReview.total || 0) > 0 && (blockedReview.activeCount || 0) === 0) {
       return `최근 runtime decision ${payload.count || 0}건에서 approved ${summary.approvedSignals || 0}건이 있었지만 executed는 0건이고, 최신 safety gate 차단 ${blockedReview.total || 0}건은 현재 코드로 다시 확인하면 모두 통과합니다. 즉 지금은 활성 safety gate보다 실행 후속 경로나 체결 집계 드리프트를 먼저 점검하는 편이 좋습니다.`;
     }
-    if ((signalOutcomes.blocked || 0) > 0 && signalOutcomes.topBlockCode) {
-      return `최근 runtime decision ${payload.count || 0}건에서 approved ${summary.approvedSignals || 0}건이 있었지만 executed는 0건이고, 최신 signals는 ${signalOutcomes.topBlockCode} 차단이 ${signalOutcomes.topBlockCount || 0}건으로 가장 많아 승인 이후 safety gate를 먼저 점검하는 편이 좋습니다.`;
+    if (effectiveBlocked > 0 && signalOutcomes.topBlockCode) {
+      return `최근 runtime decision ${payload.count || 0}건에서 approved ${summary.approvedSignals || 0}건이 있었지만 executed는 0건이고, 현재도 남아 있는 최신 signals 차단은 ${signalOutcomes.topBlockCode} 중심이라 승인 이후 활성 차단 축을 먼저 점검하는 편이 좋습니다.`;
     }
     return `최근 runtime decision ${payload.count || 0}건에서 approved ${summary.approvedSignals || 0}건이 있었지만 executed는 0건이라, 승인 이후 safety gate·브로커 실행·체결 집계 경로를 먼저 점검하는 편이 좋습니다.`;
   }
