@@ -775,6 +775,34 @@ async function checkBuyReentryGuards({
     });
   }
   if (!effectivePaperMode && livePosition) {
+    const validationLiveReentrySoftening = getValidationLiveReentrySofteningPolicy();
+    const reentryReductionMultiplier = Number(validationLiveReentrySoftening?.reductionMultiplier || 0);
+    if (
+      signalTradeMode === 'validation'
+      && validationLiveReentrySoftening?.enabled !== false
+      && reentryReductionMultiplier > 0
+      && reentryReductionMultiplier < 1
+    ) {
+      console.log(
+        `  ⚖️ [가드 완화] ${symbol} validation 기존 LIVE 포지션 존재 → 감산 허용 x${reentryReductionMultiplier.toFixed(2)}`
+      );
+      return {
+        livePosition,
+        fallbackLivePosition,
+        paperPosition,
+        softGuardApplied: true,
+        reducedAmountMultiplier: reentryReductionMultiplier,
+        softGuards: [
+          {
+            kind: 'validation_live_reentry_softened',
+            exchange: 'binance',
+            tradeMode: signalTradeMode,
+            reductionMultiplier: reentryReductionMultiplier,
+            originReason: '동일 LIVE 포지션 보유 중 — validation 추가매수 감산 허용',
+          },
+        ],
+      };
+    }
     const reason = '동일 LIVE 포지션 보유 중 — 추가매수 차단';
     console.log(`  ⛔ [자본관리] ${reason}`);
     return rejectExecution({
@@ -1221,6 +1249,11 @@ async function resolveBuyExecutionMode({
 function getNormalToValidationFallbackPolicy() {
   const execution = getInvestmentExecutionRuntimeConfig();
   return execution?.cryptoGuardSoftening?.byExchange?.binance?.tradeModes?.normal?.validationFallback || {};
+}
+
+function getValidationLiveReentrySofteningPolicy() {
+  const execution = getInvestmentExecutionRuntimeConfig();
+  return execution?.cryptoGuardSoftening?.byExchange?.binance?.tradeModes?.validation?.livePositionReentry || {};
 }
 
 function classifyValidationFallbackGuard(reason = '') {
@@ -1911,6 +1944,20 @@ export async function executeSignal(signal) {
         signal.trade_mode = signalTradeMode;
       }
 
+      const buyReentryMultiplier = Number(buyReentryState?.reducedAmountMultiplier || 1);
+      const executionModeMultiplier = Number(executionModeState.reducedAmountMultiplier || 1);
+      const combinedReducedAmountMultiplier = [buyReentryMultiplier, executionModeMultiplier]
+        .filter((value) => value > 0 && value < 1)
+        .reduce((acc, value) => acc * value, 1);
+      const combinedSoftGuards = [
+        ...(buyReentryState?.softGuards || []),
+        ...(executionModeState.softGuards || []),
+      ];
+      const combinedSoftGuardApplied = Boolean(
+        buyReentryState?.softGuardApplied
+        || executionModeState.softGuardApplied
+      );
+
       if (effectivePaperMode) {
         const paperPositionAfterFallback = await db.getPaperPosition(symbol, 'binance', signalTradeMode);
         if (paperPositionAfterFallback) {
@@ -1939,15 +1986,15 @@ export async function executeSignal(signal) {
         amountUsdt,
         signal,
         effectivePaperMode,
-        reducedAmountMultiplier: Number(executionModeState.reducedAmountMultiplier || 1),
-        softGuards: executionModeState.softGuards || [],
+        reducedAmountMultiplier: combinedReducedAmountMultiplier,
+        softGuards: combinedSoftGuards,
       });
       if (orderAmountState?.success === false) return orderAmountState;
       const actualAmount = orderAmountState.actualAmount;
       executionMeta = {
-        softGuardApplied: Boolean(executionModeState.softGuardApplied),
-        softGuards: executionModeState.softGuards || [],
-        reducedAmountMultiplier: Number(executionModeState.reducedAmountMultiplier || 1),
+        softGuardApplied: combinedSoftGuardApplied,
+        softGuards: combinedSoftGuards,
+        reducedAmountMultiplier: combinedReducedAmountMultiplier,
         requestedAmountUsdt: Number(amountUsdt || 0),
         actualAmountUsdt: Number(actualAmount || 0),
       };

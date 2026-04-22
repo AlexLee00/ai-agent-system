@@ -15,6 +15,7 @@ const AUTO_KEYS = new Set([
   'runtime_config.execution.cryptoGuardSoftening.byExchange.binance.tradeModes.normal.circuitBreaker.reductionMultiplier',
   'runtime_config.execution.cryptoGuardSoftening.byExchange.binance.tradeModes.normal.correlationGuard.reductionMultiplier',
   'runtime_config.execution.cryptoGuardSoftening.byExchange.binance.tradeModes.normal.validationFallback.reductionMultiplier',
+  'runtime_config.execution.cryptoGuardSoftening.byExchange.binance.tradeModes.validation.livePositionReentry.reductionMultiplier',
 ]);
 
 function parseArgs(argv = process.argv.slice(2)) {

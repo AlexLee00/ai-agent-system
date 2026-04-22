@@ -90,6 +90,12 @@ function isActuallyExecuted(resultItem) {
   return false;
 }
 
+function isExecutionStillApproved(resultItem) {
+  if (isActuallyExecuted(resultItem)) return true;
+  const signalStatus = resultItem?.signalStatus ?? resultItem?.execution?.signalStatus ?? null;
+  return signalStatus === 'approved';
+}
+
 function buildAnalystSignals(analyses) {
   const getChar = s => !s ? 'N' : s.toUpperCase() === 'BUY' ? 'B' : s.toUpperCase() === 'SELL' ? 'S' : 'N';
   const sentinelSignal = analyses.find(a => a.analyst === ANALYST_TYPES.SENTINEL)?.signal;
@@ -1022,6 +1028,9 @@ export async function runDecisionExecutionPipeline({
       reasoning: dec.reasoning,
       adjustedAmount: riskResult?.approved ? riskResult.adjustedAmount : null,
       signalId: saved.result?.signalId ?? null,
+      signalStatus: execute.result?.signalStatus ?? null,
+      blockCode: execute.result?.signalBlockCode ?? null,
+      blockReason: execute.result?.signalBlockReason ?? null,
       notify: notify.result,
       ragStore: ragStore.result,
       execution: execute.result,
@@ -1032,9 +1041,10 @@ export async function runDecisionExecutionPipeline({
 
   const completedMetrics = buildMetrics({
     bridgeStatus: 'completed',
-    approvedSignals: results.filter(item => !item.skipped).length,
+    approvedSignals: results.filter(isExecutionStillApproved).length,
     executedSymbols: results.filter(isActuallyExecuted).length,
     midGapExecuted: results.filter(item => item.midGapPromoted && isActuallyExecuted(item)).length,
+    postExecutionBlocked: results.filter(item => (item?.blockCode ?? item?.execution?.signalBlockCode) === 'safety_gate_blocked').length,
   });
   await finishPipelineRun(sessionId, {
     status: 'completed',
@@ -1060,6 +1070,7 @@ export async function runDecisionExecutionPipeline({
       mid_gap_promoted: completedMetrics.midGapPromoted,
       mid_gap_rejected_by_risk: completedMetrics.midGapRejectedByRisk,
       mid_gap_executed: completedMetrics.midGapExecuted,
+      post_execution_blocked: Number(completedMetrics.postExecutionBlocked || 0),
       invalid_signal_skipped: completedMetrics.invalidSignalSkipped,
       exit_phase_evaluated: completedMetrics.exitPhaseEvaluated,
       exit_phase_sell_signals: completedMetrics.exitPhaseSellSignals,

@@ -299,6 +299,13 @@ const DEFAULT_RUNTIME_CONFIG = {
                 allowedGuardKinds: ['max_positions', 'daily_trade_limit'],
               },
             },
+            validation: {
+              enabled: true,
+              livePositionReentry: {
+                enabled: true,
+                reductionMultiplier: 0.50,
+              },
+            },
           },
         },
       },

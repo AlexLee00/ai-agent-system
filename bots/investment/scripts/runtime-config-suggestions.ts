@@ -8,7 +8,7 @@
  */
 
 import * as db from '../shared/db.ts';
-import { getInvestmentRuntimeConfig, getValidationSoftBudgetConfig } from '../shared/runtime-config.ts';
+import { getInvestmentExecutionRuntimeConfig, getInvestmentRuntimeConfig, getValidationSoftBudgetConfig } from '../shared/runtime-config.ts';
 import { getCapitalConfig } from '../shared/capital-manager.ts';
 import { annotateRuntimeSuggestions, buildParameterGovernanceReport } from '../shared/runtime-parameter-governance.ts';
 import { loadCryptoLiveGateReview } from './crypto-live-gate-review.ts';
@@ -634,14 +634,14 @@ function summarizeRegimeLaneRows(rows = []) {
   };
 }
 
-function buildRegimeLaneSuggestions(config, regimeLaneSummary = null) {
+function buildRegimeLaneSuggestions(config, executionConfig, regimeLaneSummary = null) {
   const suggestions = [];
   const weakest = regimeLaneSummary?.weakestRegime || null;
   const strongest = regimeLaneSummary?.strongestRegime || null;
 
   if (weakest?.regime === 'trending_bear' && weakest?.worstMode?.tradeMode === 'validation') {
     const currentReduction = Number(
-      config.execution?.cryptoGuardSoftening?.byExchange?.binance?.tradeModes?.normal?.validationFallback?.reductionMultiplier
+      executionConfig?.cryptoGuardSoftening?.byExchange?.binance?.tradeModes?.normal?.validationFallback?.reductionMultiplier
       || 0.35,
     );
     suggestions.push({
@@ -669,22 +669,25 @@ function buildRegimeLaneSuggestions(config, regimeLaneSummary = null) {
   return suggestions;
 }
 
-function buildCryptoSoftGuardSuggestions(config, softGuardSummary = null, summaries = {}) {
+function buildCryptoSoftGuardSuggestions(config, executionConfig, softGuardSummary = null, summaries = {}) {
   const suggestions = [];
   const decision = softGuardSummary?.decision || {};
   const metrics = decision.metrics || {};
   const crypto = summaries.binance || {};
   const currentCircuitReduction = Number(
-    config.execution?.cryptoGuardSoftening?.byExchange?.binance?.tradeModes?.normal?.circuitBreaker?.reductionMultiplier ?? 0.6,
+    executionConfig?.cryptoGuardSoftening?.byExchange?.binance?.tradeModes?.normal?.circuitBreaker?.reductionMultiplier ?? 0.6,
   );
   const currentCorrelationReduction = Number(
-    config.execution?.cryptoGuardSoftening?.byExchange?.binance?.tradeModes?.normal?.correlationGuard?.reductionMultiplier ?? 0.7,
+    executionConfig?.cryptoGuardSoftening?.byExchange?.binance?.tradeModes?.normal?.correlationGuard?.reductionMultiplier ?? 0.7,
   );
   const currentOverflowSlots = Number(
-    config.execution?.cryptoGuardSoftening?.byExchange?.binance?.tradeModes?.normal?.correlationGuard?.allowOverflowSlots ?? 1,
+    executionConfig?.cryptoGuardSoftening?.byExchange?.binance?.tradeModes?.normal?.correlationGuard?.allowOverflowSlots ?? 1,
   );
   const currentCooldownWindow = Number(
-    config.execution?.cryptoGuardSoftening?.byExchange?.binance?.tradeModes?.normal?.circuitBreaker?.maxRemainingCooldownMinutes ?? 180,
+    executionConfig?.cryptoGuardSoftening?.byExchange?.binance?.tradeModes?.normal?.circuitBreaker?.maxRemainingCooldownMinutes ?? 180,
+  );
+  const currentValidationLiveReentryReduction = Number(
+    executionConfig?.cryptoGuardSoftening?.byExchange?.binance?.tradeModes?.validation?.livePositionReentry?.reductionMultiplier ?? 0.5,
   );
   const topKind = String(metrics.topKind || '');
   const topKindCount = Number(metrics.topKindCount || 0);
@@ -732,6 +735,18 @@ function buildCryptoSoftGuardSuggestions(config, softGuardSummary = null, summar
         ? `soft guard 실행 ${total}건 중 correlation 완화가 ${topKindCount}건으로 우세해, 감산 x${currentCorrelationReduction.toFixed(2)} -> x${round(clamp(currentCorrelationReduction + 0.1, 0.5, 0.95), 2).toFixed(2)} 비교가 가능합니다.`
         : `현재 correlation soft guard 감산 x${currentCorrelationReduction.toFixed(2)}가 실제 실행으로 이어지고 있어 추가 완화보다 실행 품질 추세를 먼저 확인하는 것이 좋습니다.`,
     });
+    suggestions.push({
+      key: 'runtime_config.execution.cryptoGuardSoftening.byExchange.binance.tradeModes.validation.livePositionReentry.reductionMultiplier',
+      current: currentValidationLiveReentryReduction,
+      suggested: topKind === 'validation_live_reentry_softened' && topKindCount >= 3
+        ? round(clamp(currentValidationLiveReentryReduction - 0.05, 0.2, 0.8), 2)
+        : currentValidationLiveReentryReduction,
+      action: topKind === 'validation_live_reentry_softened' && topKindCount >= 3 ? 'promote_candidate' : 'observe',
+      confidence: 'medium',
+      reason: topKind === 'validation_live_reentry_softened' && topKindCount >= 3
+        ? `validation live reentry 완화가 ${topKindCount}건 누적돼, 감산 x${currentValidationLiveReentryReduction.toFixed(2)} -> x${round(clamp(currentValidationLiveReentryReduction - 0.05, 0.2, 0.8), 2).toFixed(2)} 비교 후보를 만들 수 있습니다.`
+        : `validation live reentry 감산 x${currentValidationLiveReentryReduction.toFixed(2)}는 아직 표본을 더 쌓으면서 실행 품질을 보는 단계입니다.`,
+    });
   }
 
   return suggestions;
@@ -739,6 +754,7 @@ function buildCryptoSoftGuardSuggestions(config, softGuardSummary = null, summar
 
 function buildSuggestions(
   config,
+  executionConfig,
   summaries,
   validationSummaries,
   validationBudgetSnapshots = {},
@@ -754,8 +770,8 @@ function buildSuggestions(
     ...buildOverseasSuggestions(config, summaries.kis_overseas),
     ...buildValidationPromotionSuggestions(config, validationSummaries),
     ...buildValidationBudgetSuggestions(validationBudgetSnapshots, validationBudgetPolicy),
-    ...buildCryptoSoftGuardSuggestions(config, cryptoSoftGuardSummary, summaries),
-    ...buildRegimeLaneSuggestions(config, regimeLaneSummary),
+    ...buildCryptoSoftGuardSuggestions(config, executionConfig, cryptoSoftGuardSummary, summaries),
+    ...buildRegimeLaneSuggestions(config, executionConfig, regimeLaneSummary),
   ];
 }
 
@@ -893,6 +909,7 @@ export async function buildRuntimeConfigSuggestionsReport({ days = 14, write = f
   ]);
   const regimeLaneRows = await loadRegimeLaneRows(Math.max(days * 3, 90));
   const config = getInvestmentRuntimeConfig();
+  const executionConfig = getInvestmentExecutionRuntimeConfig();
   const summaries = {
     binance: summarizeExchange(signalRows, blockRows, analysisRows, 'binance'),
     kis: summarizeExchange(signalRows, blockRows, analysisRows, 'kis'),
@@ -922,7 +939,7 @@ export async function buildRuntimeConfigSuggestionsReport({ days = 14, write = f
     previousPolicySnapshot,
   );
   const suggestions = annotateRuntimeSuggestions(
-    buildSuggestions(config, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, cryptoSoftGuardSummary, regimeLaneSummary),
+    buildSuggestions(config, executionConfig, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, cryptoSoftGuardSummary, regimeLaneSummary),
   );
   const report = buildReport(
     days,
