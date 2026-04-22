@@ -10,8 +10,10 @@ const { getBlogHealthRuntimeConfig } = require('../lib/runtime-config.ts');
 const { assessInboundComment } = require('../lib/commenter.ts');
 const { readDevelopmentBaseline, buildSinceClause } = require('../lib/dev-baseline.ts');
 const { readCommenterRunResult } = require('../lib/commenter-run-telemetry.ts');
+const { loadStrategyBundle, resolveExecutionTarget } = require('../lib/strategy-loader.ts');
 
-const runtimeConfig = getBlogHealthRuntimeConfig();
+  const runtimeConfig = getBlogHealthRuntimeConfig();
+  const strategy = loadStrategyBundle().plan;
 const BLOG_ROOT = path.join(env.PROJECT_ROOT, 'bots/blog');
 const BLOG_OPS_ROOT = path.join(BLOG_ROOT, 'output', 'ops');
 const BLOG_NEIGHBOR_COLLECT_DIAG_PATH = path.join(BLOG_OPS_ROOT, 'neighbor-collect-diagnostics.json');
@@ -1036,17 +1038,17 @@ async function main() {
   }
 
   const replyPlan = calcExpectedByWindow(
-    replyConfig.maxDaily || 20,
+    resolveExecutionTarget('replyTargetPerCycle', strategy, replyConfig.maxDaily || 20),
     replyConfig.activeStartHour || 9,
     replyConfig.activeEndHour || 21,
   );
   const neighborPlan = calcExpectedByWindow(
-    neighborConfig.maxDaily || 20,
+    resolveExecutionTarget('neighborCommentTargetPerCycle', strategy, neighborConfig.maxDaily || 20),
     neighborConfig.activeStartHour || 9,
     neighborConfig.activeEndHour || 21,
   );
   const sympathyPlan = calcExpectedByWindow(
-    neighborConfig.maxDaily || 20,
+    resolveExecutionTarget('sympathyTargetPerCycle', strategy, neighborConfig.maxDaily || 20),
     neighborConfig.activeStartHour || 9,
     neighborConfig.activeEndHour || 21,
   );

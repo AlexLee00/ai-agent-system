@@ -56,6 +56,7 @@ const { agenticSearch }                             = require(path.join(env.PROJ
 const { getWriterPersona }                          = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/writer-personas.ts'));
 const { pickEditorPersona }                         = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/editor-personas.ts'));
 const { loadLatestStrategy }                        = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/strategy-loader.ts'));
+const { normalizeExecutionDirectives }             = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/strategy-loader.ts'));
 const { senseDailyState }                          = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/sense-engine.ts'));
 const { analyzeMarketingToRevenue }                = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/marketing-revenue-correlation.ts'));
 const { fetchRevenueAttributionWeights }           = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/topic-selector.ts'));
@@ -782,7 +783,11 @@ function _createLocalDraftRunner({
 
 async function _createInstaContentSafe(content, title, category, label, options = {}) {
   if (process.env.BLOG_INSTA_ENABLED === 'false') return null;
-  const instaContent = await createInstaContent(content, title, category, 3, options).catch(e => {
+  const strategy = options.strategy || loadLatestStrategy();
+  const directives = normalizeExecutionDirectives(strategy);
+  const instagramPriority = directives.channelPriority.instagram;
+  const dynamicCardCount = instagramPriority === 'primary' ? 5 : instagramPriority === 'secondary' ? 4 : 3;
+  const instaContent = await createInstaContent(content, title, category, dynamicCardCount, { ...options, strategy }).catch(e => {
     console.warn(`[소셜] ${label} 생성 실패 (무시):`, e.message);
     return null;
   });

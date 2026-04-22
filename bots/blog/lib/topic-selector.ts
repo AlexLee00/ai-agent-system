@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const { queryOpsDb } = require('../../../packages/core/lib/hub-client');
+const { normalizeExecutionDirectives } = require('./strategy-loader.ts');
 const { isExcludedReferenceFilename, isExcludedReferenceTitle } = require('./reference-exclusions.ts');
 const {
   normalizeTitle,
@@ -298,16 +299,21 @@ function withObjectParticle(value = '') {
 }
 
 function buildTitle(frame, candidate, index) {
+  const strategy = arguments[3] || null;
+  const directives = normalizeExecutionDirectives(strategy);
+  const titleTone = directives.titlePolicy.tone;
+  const countBase = titleTone === 'conversion' ? 3 : titleTone === 'amplify' ? 5 : 4;
   return frame
     .replace('{topic}', candidate.topic)
     .replace('{topicObject}', withObjectParticle(candidate.topic))
-    .replace('{count}', String((index % 5) + 3));
+    .replace('{count}', String((index % 3) + countBase));
 }
 
 function scoreCandidate(candidate, category = '', strategyPlan = null) {
   let score = 0;
   const guide = getCategorySelectionGuide(category);
   const preferredPatterns = CATEGORY_PATTERN_PREFERENCES[category] || [];
+  const directives = normalizeExecutionDirectives(strategyPlan);
   const candidateTokens = new Set([
     ...normalizeTokens(candidate.title),
     ...normalizeTokens(candidate.topic),
@@ -339,6 +345,14 @@ function scoreCandidate(candidate, category = '', strategyPlan = null) {
   }
   if (Array.isArray(strategyPlan.focus) && strategyPlan.focus.some((item) => String(item || '').includes('제목 패턴'))) {
     if (candidate.pattern !== strategyPlan.suppressedTitlePattern) score += 1;
+  }
+  const keywordBias = Array.isArray(directives.titlePolicy.keywordBias) ? directives.titlePolicy.keywordBias : [];
+  for (const keyword of keywordBias) {
+    const token = String(keyword || '').trim().toLowerCase();
+    if (!token) continue;
+    if (String(candidate.title || '').toLowerCase().includes(token)) score += 2;
+    if (String(candidate.topic || '').toLowerCase().includes(token)) score += 2;
+    if (String(candidate.question || '').toLowerCase().includes(token)) score += 1;
   }
   return score;
 }
@@ -408,7 +422,7 @@ function selectAndValidateTopic(category, recentPosts = [], strategyPlan = null,
   for (let i = 0; i < topicPool.length; i += 1) {
     for (let j = 0; j < TITLE_FRAMES.length; j += 1) {
       const frame = TITLE_FRAMES[j];
-      const title = buildTitle(frame.template, topicPool[i], j);
+      const title = buildTitle(frame.template, topicPool[i], j, strategyPlan);
       candidates.push({
         title,
         pattern: frame.pattern,

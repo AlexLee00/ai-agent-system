@@ -68,9 +68,21 @@ function loadStrategyBundle() {
   };
 }
 
+function resolveExecutionTarget(name = '', strategy = null, fallback = 0) {
+  const directives = normalizeExecutionDirectives(strategy);
+  return Number(directives.executionTargets?.[name] || fallback || 0);
+}
+
+function resolveCreativeValue(name = '', strategy = null, fallback = null) {
+  const directives = normalizeExecutionDirectives(strategy);
+  return directives.creativePolicy?.[name] ?? fallback;
+}
+
 module.exports = {
   STRATEGY_PATH,
   loadLatestStrategy,
   normalizeExecutionDirectives,
   loadStrategyBundle,
+  resolveExecutionTarget,
+  resolveCreativeValue,
 };

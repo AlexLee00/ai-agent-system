@@ -22,6 +22,7 @@ const { renderShortformReel } = require('./shortform-renderer.ts');
 const { SHORTFORM_DEFAULT_DURATION_SEC } = require('./shortform-planner.ts');
 const { generatePostImages } = require('./img-gen.ts');
 const { selectThumbForTitle } = require('./shortform-files.ts');
+const { loadStrategyBundle, normalizeExecutionDirectives } = require('./strategy-loader.ts');
 const fs = require('fs');
 const path = require('path');
 
@@ -96,13 +97,44 @@ const CAPTION_SYSTEM = `
 
 const REQUIRED_HASHTAGS = ['#개발자일상', '#IT블로그', '#승호아빠', '#cafe_library'];
 
-async function generateInstaCaption(content, title, category) {
+function buildFallbackHashtags(category = '', strategy = null) {
+  const directives = normalizeExecutionDirectives(strategy);
+  const modeTags = directives.hashtagPolicy.mode === 'aggressive'
+    ? ['#릴스', '#바이럴', '#콘텐츠마케팅']
+    : directives.hashtagPolicy.mode === 'conversion'
+      ? ['#예약문의', '#상담문의', '#전환콘텐츠']
+      : ['#개발공부', '#백엔드개발'];
+  return [...new Set([
+    ...REQUIRED_HASHTAGS,
+    ...modeTags,
+    ...directives.hashtagPolicy.focusTags,
+    ...directives.hashtagPolicy.platformTags,
+  ])];
+}
+
+function buildStrategyCta(strategy = null) {
+  const directives = normalizeExecutionDirectives(strategy);
+  if (directives.creativePolicy.ctaStyle === 'conversion') {
+    return '블로그에서 적용 포인트를 확인하고 바로 예약/문의 흐름까지 이어가세요 👉 프로필 링크';
+  }
+  if (directives.creativePolicy.ctaStyle === 'engagement') {
+    return '저장하고 공유한 뒤 블로그에서 전체 전략을 이어서 확인하세요 👉 프로필 링크';
+  }
+  return '블로그에서 더 자세히! 👉 프로필 링크';
+}
+
+async function generateInstaCaption(content, title, category, strategy = null) {
   const selectorOverrides = getBlogLLMSelectorOverrides();
+  const directives = normalizeExecutionDirectives(strategy);
   const userPrompt = `
 다음 블로그 포스팅의 인스타그램 캡션과 해시태그를 생성하세요.
 
 제목: ${title}
 카테고리: ${category}
+전략 톤: ${directives.titlePolicy.tone}
+해시태그 모드: ${directives.hashtagPolicy.mode}
+릴스 훅 스타일: ${directives.creativePolicy.hookStyle}
+CTA 스타일: ${directives.creativePolicy.ctaStyle}
 
 [포스팅 요약]
 ${content.slice(0, 3000)}
@@ -122,22 +154,25 @@ ${content.slice(0, 3000)}
     const parsed = match ? JSON.parse(match[0]) : null;
     if (!parsed) throw new Error('파싱 실패');
 
-    const hashtags = parsed.hashtags || [];
+    const hashtags = Array.isArray(parsed.hashtags) ? parsed.hashtags : [];
     for (const tag of REQUIRED_HASHTAGS) {
       if (!hashtags.includes(tag)) hashtags.push(tag);
     }
-    const cta = parsed.cta || '블로그에서 더 자세히! 👉 프로필 링크';
+    for (const tag of buildFallbackHashtags(category, strategy)) {
+      if (!hashtags.includes(tag)) hashtags.push(tag);
+    }
+    const cta = parsed.cta || buildStrategyCta(strategy);
     const fullText = `${parsed.caption}\n\n${cta}\n\n${hashtags.join(' ')}`;
 
     return { caption: parsed.caption, hashtags, cta, fullText };
   } catch {
     console.warn('[소셜] 캡션 파싱 실패 — 기본 템플릿 사용');
-    const hashtags = [...REQUIRED_HASHTAGS, '#nodejs', '#개발공부', '#백엔드개발'];
+    const hashtags = buildFallbackHashtags(category, strategy);
     return {
-      caption: `📝 ${title}\n오늘의 IT 인사이트를 정리했어요!`,
+      caption: `📝 ${title}\n${directives.titlePolicy.tone === 'conversion' ? '전환에 바로 쓰일 포인트만 짧게 정리했어요!' : '오늘의 IT 인사이트를 정리했어요!'}`,
       hashtags,
-      cta: '블로그에서 더 자세히! 👉 프로필 링크',
-      fullText: `📝 ${title}\n오늘의 IT 인사이트를 정리했어요!\n\n블로그에서 더 자세히! 👉 프로필 링크\n\n${hashtags.join(' ')}`,
+      cta: buildStrategyCta(strategy),
+      fullText: `📝 ${title}\n${directives.titlePolicy.tone === 'conversion' ? '전환에 바로 쓰일 포인트만 짧게 정리했어요!' : '오늘의 IT 인사이트를 정리했어요!'}\n\n${buildStrategyCta(strategy)}\n\n${hashtags.join(' ')}`,
     };
   }
 }
@@ -151,11 +186,13 @@ function resolveThumbPath(title = '', category = '', explicitThumbPath = null) {
 async function ensureThumbPath(title = '', category = '', explicitThumbPath = null) {
   const existing = resolveThumbPath(title, category, explicitThumbPath);
   if (existing) return existing;
+  const strategy = loadStrategyBundle().plan;
   const generated = await generatePostImages({
     title,
     postType: category === 'Node.js강의' ? 'lecture' : 'general',
     category,
     format: 'reel',
+    strategy,
   }).catch((error) => {
     console.warn('[소셜] 릴스용 썸네일 생성 실패:', error?.message || error);
     return null;
@@ -165,15 +202,25 @@ async function ensureThumbPath(title = '', category = '', explicitThumbPath = nu
 
 async function createInstaContent(content, title, category, cardCount = 3, options = {}) {
   console.log(`[소셜] 인스타 콘텐츠 생성 시작 (릴스 중심)`);
+  const strategy = options.strategy || loadStrategyBundle().plan;
+  const directives = normalizeExecutionDirectives(strategy);
+  const effectiveCardCount = Math.max(
+    2,
+    Math.min(
+      5,
+      Number(cardCount || 0)
+      || (directives.channelPriority.instagram === 'primary' ? 5 : directives.channelPriority.instagram === 'secondary' ? 4 : 3)
+    )
+  );
 
   const today = kst.today();
   const safeSlug = (title || '').replace(/[^가-힣a-zA-Z0-9]/g, '_').slice(0, 30);
   const slug = `${today}_${safeSlug}`;
 
-  const summaries = await summarizeForInsta(content, cardCount);
+  const summaries = await summarizeForInsta(content, effectiveCardCount);
   console.log(`  요약 ${summaries.length}개 생성`);
 
-  const { caption, hashtags, cta, fullText } = await generateInstaCaption(content, title, category);
+  const { caption, hashtags, cta, fullText } = await generateInstaCaption(content, title, category, strategy);
   console.log(`  캡션 완료 (해시태그 ${hashtags.length}개)`);
 
   // @ts-ignore checkJs default-param inference is too narrow here
@@ -190,6 +237,7 @@ async function createInstaContent(content, title, category, cardCount = 3, optio
       // @ts-ignore checkJs default-param inference is too narrow here
       durationSec: options.durationSec || SHORTFORM_DEFAULT_DURATION_SEC,
       content,
+      strategy,
     });
     const render = await renderShortformReel({
       thumbPath: plan.thumbPath,
@@ -212,6 +260,7 @@ async function createInstaContent(content, title, category, cardCount = 3, optio
   const meta = {
     title, category, slug, summaries, reel,
     caption, hashtags, cta, fullText,
+    strategyExecution: directives,
     createdAt: new Date().toISOString(),
   };
 

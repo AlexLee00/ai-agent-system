@@ -23,6 +23,7 @@ const {
   buildResolvedWebhookHealth,
 } = require('../../../packages/core/lib/health-provider');
 const { getBlogHealthRuntimeConfig } = require('../lib/runtime-config.ts');
+const { loadStrategyBundle, resolveExecutionTarget } = require('../lib/strategy-loader.ts');
 const { getInstagramConfig } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-graph.ts'));
 const {
   getInstagramImageHostConfig,
@@ -1393,18 +1394,19 @@ async function buildEngagementHealth() {
       .map((row) => `${String(row.reason || 'unknown')} ${Number(row.cnt || 0)}건`)
       .join(' / ');
 
+    const strategy = loadStrategyBundle().plan;
     const replyPlan = calcExpectedByWindow(
-      replyConfig.maxDaily || 20,
+      resolveExecutionTarget('replyTargetPerCycle', strategy, replyConfig.maxDaily || 20),
       replyConfig.activeStartHour || 9,
       replyConfig.activeEndHour || 21
     );
     const neighborPlan = calcExpectedByWindow(
-      neighborConfig.maxDaily || 20,
+      resolveExecutionTarget('neighborCommentTargetPerCycle', strategy, neighborConfig.maxDaily || 20),
       neighborConfig.activeStartHour || 9,
       neighborConfig.activeEndHour || 21
     );
     const sympathyPlan = calcExpectedByWindow(
-      neighborConfig.maxDaily || 20,
+      resolveExecutionTarget('sympathyTargetPerCycle', strategy, neighborConfig.maxDaily || 20),
       neighborConfig.activeStartHour || 9,
       neighborConfig.activeEndHour || 21
     );
