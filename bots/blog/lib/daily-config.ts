@@ -2,7 +2,6 @@
 
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const { ensureBlogCoreSchema } = require('./schema.ts');
-const { loadStrategyBundle } = require('./strategy-loader.ts');
 
 type DailyConfigKey = 'lecture_count' | 'general_count' | 'max_total' | 'active';
 
@@ -29,18 +28,8 @@ async function getConfig(): Promise<DailyConfig> {
       ORDER BY id DESC LIMIT 1
     `);
     const base = row || DEFAULT_CONFIG;
-    const { plan, executionDirectives } = loadStrategyBundle();
-    const naverPriority = executionDirectives?.channelPriority?.naverBlog || 'primary';
-    const blogRegistrationsPerCycle = Math.max(1, Number(executionDirectives?.executionTargets?.blogRegistrationsPerCycle || 1));
-    const titleTone = executionDirectives?.titlePolicy?.tone || 'balanced';
     const lectureCount = Math.max(0, Number(base.lecture_count ?? DEFAULT_CONFIG.lecture_count ?? 0));
-    const baseGeneralCount = Math.max(0, Number(base.general_count ?? DEFAULT_CONFIG.general_count ?? 0));
-    const strategyFloor = naverPriority === 'primary' ? blogRegistrationsPerCycle : Math.min(baseGeneralCount || 1, blogRegistrationsPerCycle);
-    const amplifyBonus = titleTone === 'amplify' ? 1 : 0;
-    const preferredCategoryBonus = plan?.preferredCategory && plan.preferredCategory !== '도서리뷰' ? 1 : 0;
-    const generalCount = baseGeneralCount === 0
-      ? 0
-      : Math.max(baseGeneralCount, strategyFloor + amplifyBonus + preferredCategoryBonus);
+    const generalCount = Math.max(0, Number(base.general_count ?? DEFAULT_CONFIG.general_count ?? 0));
     const maxTotal = Math.max(Number(base.max_total ?? DEFAULT_CONFIG.max_total ?? 0), lectureCount + generalCount);
     return {
       lecture_count: lectureCount,
