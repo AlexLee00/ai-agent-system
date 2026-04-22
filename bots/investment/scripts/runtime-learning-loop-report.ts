@@ -36,6 +36,16 @@ function formatAge(hours) {
   return `${(hours / 24).toFixed(1)}d`;
 }
 
+function buildRegimeActionHint(regimeSummary = null, direction = 'weak') {
+  if (!regimeSummary) return null;
+  const mode = direction === 'weak' ? regimeSummary?.worstMode : regimeSummary?.bestMode;
+  if (!mode) return null;
+  if (direction === 'weak') {
+    return `${regimeSummary.regime} 장세에서는 ${mode.tradeMode} 레인 비중을 줄이고 승인 기준을 더 보수적으로 조정합니다.`;
+  }
+  return `${regimeSummary.regime} 장세에서는 ${mode.tradeMode} 레인을 기준선으로 유지하며 표본을 더 누적합니다.`;
+}
+
 async function loadLoopFreshness() {
   await db.initSchema();
   const [runtimeRow, reviewRow, backtestRow, suggestionRows] = await Promise.all([
@@ -352,9 +362,13 @@ function buildDecision(sections = {}) {
     nextActions.push('validation lane을 유지하면서 bull/bear/ranging/volatile 레짐별 표본이 끊기지 않게 관리합니다.');
   } else if (Number(sections.collect.regimePerformance?.weakestRegime?.worstMode?.avgPnlPercent ?? 0) < -3) {
     const weakest = sections.collect.regimePerformance.weakestRegime;
+    const strongest = sections.collect.regimePerformance?.strongestRegime;
     status = 'regime_strategy_tuning_needed';
     headline = `${weakest.regime} 장세에서 ${weakest.worstMode.tradeMode} 레인의 성과가 약해 전략 수정이 필요합니다.`;
     nextActions.push(`${weakest.regime} 장세의 ${weakest.worstMode.tradeMode} 레인 진입 기준과 비중을 먼저 줄이거나 재학습합니다.`);
+    if (strongest?.bestMode?.avgPnlPercent != null) {
+      nextActions.push(`${strongest.regime} 장세의 ${strongest.bestMode.tradeMode} 레인은 유지하며 비교 표본으로 계속 누적합니다.`);
+    }
   } else if (sections.collect.status === 'thin') {
     status = 'learning_sample_thin';
     headline = '세션은 돌지만 승인/실행 표본이 얇아 validation 표본을 더 쌓아야 합니다.';
@@ -410,6 +424,12 @@ function renderText(payload) {
     sections.collect.regimePerformance?.strongestRegime
       ? `- strongest regime ${sections.collect.regimePerformance.strongestRegime.regime} / ${sections.collect.regimePerformance.strongestRegime.bestMode.tradeMode} avg ${sections.collect.regimePerformance.strongestRegime.bestMode.avgPnlPercent}%`
       : '- strongest regime none',
+    buildRegimeActionHint(sections.collect.regimePerformance?.weakestRegime, 'weak')
+      ? `- tuning hint ${buildRegimeActionHint(sections.collect.regimePerformance?.weakestRegime, 'weak')}`
+      : null,
+    buildRegimeActionHint(sections.collect.regimePerformance?.strongestRegime, 'strong')
+      ? `- keep hint ${buildRegimeActionHint(sections.collect.regimePerformance?.strongestRegime, 'strong')}`
+      : null,
     `- ${sections.collect.headline}`,
     '',
     '분석:',
