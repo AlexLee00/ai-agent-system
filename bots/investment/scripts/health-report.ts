@@ -42,6 +42,9 @@ import {
   loadTradeLaneHealth,
 } from './health-report-support.ts';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const { generateGemmaPilotText } = gemmaPilot as {
   generateGemmaPilotText: (payload: Record<string, any>) => Promise<{ ok?: boolean; content?: string }>;
 };
@@ -83,8 +86,24 @@ const localCircuitBreaker = {
   },
 };
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const LATEST_OPS_SNAPSHOT_FILE = path.resolve(__dirname, '..', 'output', 'ops', 'parallel-ops-snapshot.json');
+
+function loadLatestOpsSnapshot() {
+  try {
+    if (!fs.existsSync(LATEST_OPS_SNAPSHOT_FILE)) return null;
+    return JSON.parse(fs.readFileSync(LATEST_OPS_SNAPSHOT_FILE, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function getWeakestRegimeSummary(runtimeLearningLoop) {
+  const weakest = runtimeLearningLoop?.sections?.regimeLaneSummary?.weakestRegime
+    || runtimeLearningLoop?.sections?.collect?.regimePerformance?.weakestRegime
+    || null;
+  const weakestMode = weakest?.tradeMode || weakest?.worstMode?.tradeMode || weakest?.bestMode?.tradeMode || 'n/a';
+  return { weakest, weakestMode };
+}
 
 const CONTINUOUS = [
   'ai.investment.commander',
@@ -630,6 +649,7 @@ function buildDecision(
   cryptoValidationBudgetPolicyHealth,
   localLlmHealth,
   runtimeLearningLoop,
+  latestOpsSnapshot,
 ) {
   const topBlock = signalBlockHealth.top[0] || null;
   const topReasonGroup = signalBlockHealth.topReasonGroups?.[0] || null;
@@ -754,7 +774,7 @@ function buildDecision(
       {
         active: runtimeLearningLoop?.decision?.status === 'regime_strategy_tuning_needed',
         level: 'medium',
-        reason: `learning loop — ${runtimeLearningLoop?.decision?.headline || '레짐별 전략 튜닝 필요'} / top suggestion ${runtimeLearningLoop?.sections?.strategy?.runtimeSuggestionTop?.key || 'n/a'} -> ${runtimeLearningLoop?.sections?.strategy?.runtimeSuggestionTop?.suggested ?? 'n/a'} / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-suggest -- --json`,
+        reason: `learning loop — ${runtimeLearningLoop?.decision?.headline || '레짐별 전략 튜닝 필요'} / top suggestion ${runtimeLearningLoop?.sections?.strategy?.runtimeSuggestionTop?.key || 'n/a'} -> ${runtimeLearningLoop?.sections?.strategy?.runtimeSuggestionTop?.suggested ?? 'n/a'} / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-suggest -- --json${latestOpsSnapshot?.capturedAt ? ` / latest snapshot ${latestOpsSnapshot.capturedAt}` : ''}`,
       },
     ],
     okReason: '핵심 서비스와 trade_review 정합성이 현재는 안정 구간입니다.',
@@ -940,15 +960,19 @@ function formatText(report) {
     {
       title: '■ learning loop / regime tuning',
       lines: report.runtimeLearningLoop
-        ? [
+        ? (() => {
+          const { weakest: latestWeakest, weakestMode: latestWeakestMode } = getWeakestRegimeSummary(report.latestOpsSnapshot?.health?.runtimeLearningLoop);
+          return [
             `  status: ${report.runtimeLearningLoop.decision?.status || 'unknown'}`,
             `  headline: ${report.runtimeLearningLoop.decision?.headline || 'n/a'}`,
             `  weakest: ${report.runtimeLearningLoop.sections?.collect?.regimePerformance?.weakestRegime?.regime || 'n/a'} / ${report.runtimeLearningLoop.sections?.collect?.regimePerformance?.weakestRegime?.worstMode?.tradeMode || 'n/a'} / avg ${report.runtimeLearningLoop.sections?.collect?.regimePerformance?.weakestRegime?.worstMode?.avgPnlPercent ?? 'n/a'}%`,
             `  strongest: ${report.runtimeLearningLoop.sections?.collect?.regimePerformance?.strongestRegime?.regime || 'n/a'} / ${report.runtimeLearningLoop.sections?.collect?.regimePerformance?.strongestRegime?.bestMode?.tradeMode || 'n/a'} / avg ${report.runtimeLearningLoop.sections?.collect?.regimePerformance?.strongestRegime?.bestMode?.avgPnlPercent ?? 'n/a'}%`,
             `  top suggestion: ${report.runtimeLearningLoop.sections?.strategy?.runtimeSuggestionTop?.key || 'n/a'} -> ${report.runtimeLearningLoop.sections?.strategy?.runtimeSuggestionTop?.suggested ?? 'n/a'} (${report.runtimeLearningLoop.sections?.strategy?.runtimeSuggestionTop?.action || 'n/a'})`,
+            ...(report.latestOpsSnapshot?.capturedAt ? [`  latest snapshot: ${report.latestOpsSnapshot.capturedAt} / ${latestWeakest?.regime || 'n/a'} / ${latestWeakestMode}`] : []),
             `  next command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-suggest -- --json`,
             ...((report.runtimeLearningLoop.decision?.nextActions || []).slice(0, 3).map((item) => `  next: ${item}`)),
-          ]
+          ];
+        })()
         : ['  learning loop 정보 없음'],
     },
     {
@@ -1022,6 +1046,7 @@ async function buildReport() {
   );
   const localLlmHealth = await loadLocalLlmHealth(status);
   const runtimeLearningLoop = await buildRuntimeLearningLoopReport({ days: 14, json: true }).catch(() => null);
+  const latestOpsSnapshot = loadLatestOpsSnapshot();
   const cryptoGateActionPlan = buildCryptoGateActionPlan(capitalGuardBreakdown);
   const kisCapabilityHealth = await loadKisCapabilityHealth();
   const decision = buildDecision(
@@ -1044,6 +1069,7 @@ async function buildReport() {
     cryptoValidationBudgetPolicyHealth,
     localLlmHealth,
     runtimeLearningLoop,
+    latestOpsSnapshot,
   );
 
   const report = {
@@ -1069,6 +1095,7 @@ async function buildReport() {
     cryptoLiveGateHealth,
     localLlmHealth,
     runtimeLearningLoop,
+    latestOpsSnapshot,
     capitalGuardBreakdown,
     cryptoGateActionPlan,
     cryptoValidationBudgetPolicyHealth,

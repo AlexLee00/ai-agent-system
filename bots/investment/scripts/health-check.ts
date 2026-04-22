@@ -61,6 +61,24 @@ const ALL_SERVICES = [
 // 정상 종료 코드
 const NORMAL_EXIT_CODES = new Set([0, -9, -15]);
 const LOCAL_LLM_HEALTH_HISTORY_FILE = '/tmp/investment-local-llm-health-history.jsonl';
+const LATEST_OPS_SNAPSHOT_FILE = '/Users/alexlee/projects/ai-agent-system/bots/investment/output/ops/parallel-ops-snapshot.json';
+
+function loadLatestOpsSnapshot() {
+  try {
+    if (!fs.existsSync(LATEST_OPS_SNAPSHOT_FILE)) return null;
+    return JSON.parse(fs.readFileSync(LATEST_OPS_SNAPSHOT_FILE, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function getWeakestRegimeSummary(runtimeLearningLoop) {
+  const weakest = runtimeLearningLoop?.sections?.regimeLaneSummary?.weakestRegime
+    || runtimeLearningLoop?.sections?.collect?.regimePerformance?.weakestRegime
+    || null;
+  const weakestMode = weakest?.tradeMode || weakest?.worstMode?.tradeMode || weakest?.bestMode?.tradeMode || 'n/a';
+  return { weakest, weakestMode };
+}
 
 // ─── 알림 발송 ───────────────────────────────────────────────────
 
@@ -259,11 +277,15 @@ async function main() {
     if (learningLoop?.decision?.status === 'regime_strategy_tuning_needed') {
       const key = 'learning-loop-regime-tuning';
       const topSuggestion = learningLoop?.sections?.strategy?.runtimeSuggestionTop || null;
+      const latestOpsSnapshot = loadLatestOpsSnapshot();
+      const { weakest: latestWeakest, weakestMode: latestWeakestMode } = getWeakestRegimeSummary(
+        latestOpsSnapshot?.health?.runtimeLearningLoop,
+      );
       if (hsm.canAlert(state, key)) {
         issues.push({
           key,
           level: 2,
-          msg: `⚠️ [루나 헬스] regime strategy tuning\n${learningLoop.decision.headline}\nweakest: ${learningLoop?.sections?.collect?.regimePerformance?.weakestRegime?.regime || 'n/a'} / ${learningLoop?.sections?.collect?.regimePerformance?.weakestRegime?.worstMode?.tradeMode || 'n/a'}\ntop suggestion: ${topSuggestion?.key || 'n/a'} -> ${topSuggestion?.suggested ?? 'n/a'} (${topSuggestion?.action || 'n/a'})\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-suggest -- --json`,
+          msg: `⚠️ [루나 헬스] regime strategy tuning\n${learningLoop.decision.headline}\nweakest: ${learningLoop?.sections?.collect?.regimePerformance?.weakestRegime?.regime || 'n/a'} / ${learningLoop?.sections?.collect?.regimePerformance?.weakestRegime?.worstMode?.tradeMode || 'n/a'}\ntop suggestion: ${topSuggestion?.key || 'n/a'} -> ${topSuggestion?.suggested ?? 'n/a'} (${topSuggestion?.action || 'n/a'})${latestOpsSnapshot?.capturedAt ? `\nlatest snapshot: ${latestOpsSnapshot.capturedAt} / ${latestWeakest?.regime || 'n/a'} / ${latestWeakestMode}` : ''}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-suggest -- --json`,
         });
       }
     } else if (state['learning-loop-regime-tuning']) {
