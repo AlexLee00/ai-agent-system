@@ -80,6 +80,21 @@ function getWeakestRegimeSummary(runtimeLearningLoop) {
   return { weakest, weakestMode };
 }
 
+function toComparableSuggestionValue(value) {
+  if (value == null || value === '') return null;
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) return numeric;
+  return String(value);
+}
+
+function isAlreadyAppliedSuggestion(topSuggestion = null) {
+  if (!topSuggestion) return false;
+  const currentValue = toComparableSuggestionValue(topSuggestion?.current ?? topSuggestion?.governance?.current);
+  const suggestedValue = toComparableSuggestionValue(topSuggestion?.suggestedValue ?? topSuggestion?.suggested);
+  if (currentValue == null || suggestedValue == null) return false;
+  return currentValue === suggestedValue;
+}
+
 // ─── 알림 발송 ───────────────────────────────────────────────────
 
 async function notify(msg, level = 3) {
@@ -275,25 +290,40 @@ async function main() {
   try {
     const learningLoop = await buildRuntimeLearningLoopReport({ days: 14, json: true });
     if (learningLoop?.decision?.status === 'regime_strategy_tuning_needed') {
-      const key = 'learning-loop-regime-tuning';
       const topSuggestion = learningLoop?.sections?.strategy?.runtimeSuggestionTop || null;
+      const suggestionAlreadyApplied = isAlreadyAppliedSuggestion(topSuggestion);
+      const key = suggestionAlreadyApplied
+        ? 'learning-loop-regime-monitor'
+        : 'learning-loop-regime-tuning';
       const latestOpsSnapshot = loadLatestOpsSnapshot();
       const { weakest: latestWeakest, weakestMode: latestWeakestMode } = getWeakestRegimeSummary(
         latestOpsSnapshot?.health?.runtimeLearningLoop,
       );
+      if (suggestionAlreadyApplied) {
+        hsm.clearAlert(state, 'learning-loop-regime-tuning');
+      }
       if (hsm.canAlert(state, key)) {
         issues.push({
           key,
-          level: 2,
-          msg: `⚠️ [루나 헬스] regime strategy tuning\n${learningLoop.decision.headline}\nweakest: ${learningLoop?.sections?.collect?.regimePerformance?.weakestRegime?.regime || 'n/a'} / ${learningLoop?.sections?.collect?.regimePerformance?.weakestRegime?.worstMode?.tradeMode || 'n/a'}\ntop suggestion: ${topSuggestion?.key || 'n/a'} -> ${topSuggestion?.suggested ?? 'n/a'} (${topSuggestion?.action || 'n/a'})${latestOpsSnapshot?.capturedAt ? `\nlatest snapshot: ${latestOpsSnapshot.capturedAt} / ${latestWeakest?.regime || 'n/a'} / ${latestWeakestMode}` : ''}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-suggest -- --json`,
+          level: suggestionAlreadyApplied ? 1 : 2,
+          msg: `${suggestionAlreadyApplied ? 'ℹ️' : '⚠️'} [루나 헬스] regime strategy ${suggestionAlreadyApplied ? 'monitor' : 'tuning'}\n${learningLoop.decision.headline}\nweakest: ${learningLoop?.sections?.collect?.regimePerformance?.weakestRegime?.regime || 'n/a'} / ${learningLoop?.sections?.collect?.regimePerformance?.weakestRegime?.worstMode?.tradeMode || 'n/a'}\ntop suggestion: ${topSuggestion?.key || 'n/a'} -> ${topSuggestion?.suggestedValue ?? topSuggestion?.suggested ?? 'n/a'} (${topSuggestion?.action || 'n/a'})${suggestionAlreadyApplied ? `\ncurrent runtime: ${topSuggestion?.current ?? topSuggestion?.governance?.current ?? 'n/a'} (already applied)` : ''}${latestOpsSnapshot?.capturedAt ? `\nlatest snapshot: ${latestOpsSnapshot.capturedAt} / ${latestWeakest?.regime || 'n/a'} / ${latestWeakestMode}` : ''}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-suggest -- --json`,
         });
       }
-    } else if (state['learning-loop-regime-tuning']) {
-      recovers.push({
-        key: 'learning-loop-regime-tuning',
-        msg: '✅ [루나 헬스] regime strategy tuning 회복\n현재 learning loop 기준 레짐 튜닝 긴급 신호 없음 — 자동 감지',
-      });
-      hsm.clearAlert(state, 'learning-loop-regime-tuning');
+    } else if (state['learning-loop-regime-tuning'] || state['learning-loop-regime-monitor']) {
+      if (state['learning-loop-regime-tuning']) {
+        recovers.push({
+          key: 'learning-loop-regime-tuning',
+          msg: '✅ [루나 헬스] regime strategy tuning 회복\n현재 learning loop 기준 레짐 튜닝 긴급 신호 없음 — 자동 감지',
+        });
+        hsm.clearAlert(state, 'learning-loop-regime-tuning');
+      }
+      if (state['learning-loop-regime-monitor']) {
+        recovers.push({
+          key: 'learning-loop-regime-monitor',
+          msg: '✅ [루나 헬스] regime strategy monitor 회복\n현재 learning loop 기준 관찰 알림 신호 없음 — 자동 감지',
+        });
+        hsm.clearAlert(state, 'learning-loop-regime-monitor');
+      }
     }
   } catch (e) {
     const key = 'learning-loop-check-failed';
