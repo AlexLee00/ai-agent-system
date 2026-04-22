@@ -292,6 +292,24 @@ function readNeighborSympathyReplay(baseline = null) {
   }
 }
 
+function extractSympathyReplayTarget(replay = null) {
+  const candidate = replay && typeof replay === 'object' ? replay.candidate || {} : {};
+  return {
+    postUrl: String(candidate.postUrl || '').trim(),
+    targetBlogName: String(candidate.targetBlogName || '').trim(),
+  };
+}
+
+function matchesSympathyReplayTarget(row = {}, replayTarget = {}) {
+  const rowMeta = row && typeof row === 'object' ? row.meta || {} : {};
+  const replayMeta = rowMeta && typeof rowMeta.replay === 'object' ? rowMeta.replay : {};
+  const rowPostUrl = String(replayMeta.postUrl || rowMeta.postUrl || '').trim();
+  const rowTargetBlogName = String(replayMeta.targetBlogName || rowMeta.targetBlogName || '').trim();
+  if (replayTarget.postUrl && rowPostUrl && replayTarget.postUrl === rowPostUrl) return true;
+  if (replayTarget.targetBlogName && rowTargetBlogName && replayTarget.targetBlogName === rowTargetBlogName) return true;
+  return false;
+}
+
 async function getLatestReplyReplayCandidate(baseline = null) {
   const actionSinceClause = buildSinceClause('a.executed_at', baseline);
   const commentSinceClause = buildSinceClause('detected_at', baseline);
@@ -677,7 +695,7 @@ function buildActions({ latestReplyReplayCandidate, failureByKind, failureByActi
     actions.push(`최근 공감 모듈 미노출 skip: ${Number(neighborWorkload.sympathyModuleUnavailableSkips)}건`);
   }
   if (Number(staleSympathyFailureCount || 0) > 0) {
-    actions.push(`최근 neighbor sympathy replay 성공 이후 stale sympathy failures ${Number(staleSympathyFailureCount)}건은 현재 우선 병목에서 제외`);
+    actions.push(`최근 neighbor sympathy replay 확인 이후 stale sympathy failures ${Number(staleSympathyFailureCount)}건은 현재 우선 병목에서 제외`);
   }
   if ((failureByKind.ui || 0) > 0 || (failureByKind.browser || 0) > 0) {
     const uiFocus = buildUiFocus(failureByAction);
@@ -964,9 +982,17 @@ async function main() {
   const neighborUiReplay = readNeighborUiReplay(developmentBaseline);
   const neighborSympathyReplay = readNeighborSympathyReplay(developmentBaseline);
   const commenterRun = readCommenterRunResult();
-  const latestSympathyReplayAt = neighborSympathyReplay?.result?.ok && neighborSympathyReplay?.replayedAt
+  const sympathyReplayReason = String(
+    neighborSympathyReplay?.result?.reason
+    || neighborSympathyReplay?.result?.error
+    || neighborSympathyReplay?.error
+    || ''
+  ).trim();
+  const sympathyReplayConfirmsSkip = sympathyReplayReason === 'sympathy_module_unavailable';
+  const latestSympathyReplayAt = (neighborSympathyReplay?.result?.ok || sympathyReplayConfirmsSkip) && neighborSympathyReplay?.replayedAt
     ? new Date(neighborSympathyReplay.replayedAt)
     : null;
+  const sympathyReplayTarget = extractSympathyReplayTarget(neighborSympathyReplay);
 
   const replyConfig = runtimeConfig.commenter || {};
   const neighborConfig = runtimeConfig.neighborCommenter || {};
@@ -981,6 +1007,7 @@ async function main() {
     if (!String(row.action_type || '').includes('sympathy')) return true;
     const executedAt = row?.executed_at ? new Date(row.executed_at) : null;
     if (!latestSympathyReplayAt || Number.isNaN(latestSympathyReplayAt.getTime()) || !executedAt || Number.isNaN(executedAt.getTime())) return true;
+    if (sympathyReplayConfirmsSkip && !matchesSympathyReplayTarget(row, sympathyReplayTarget)) return true;
     return executedAt.getTime() > latestSympathyReplayAt.getTime();
   }).filter((row) => {
     if (String(row.action_type || '') !== 'reply') return true;
@@ -1003,6 +1030,7 @@ async function main() {
           && executedAt
           && !Number.isNaN(executedAt.getTime())
           && executedAt.getTime() <= latestSympathyReplayAt.getTime()
+          && (!sympathyReplayConfirmsSkip || matchesSympathyReplayTarget(row, sympathyReplayTarget))
         );
       }).length
     : 0;
@@ -1232,7 +1260,7 @@ async function main() {
     console.log(`[engagement doctor] neighbor_recovery=success after failure (${payload.neighborRecovery.latestSuccessAt}) stale_failures=${payload.staleNeighborFailureCount}`);
   }
   if (Number(payload.staleSympathyFailureCount || 0) > 0) {
-    console.log(`[engagement doctor] sympathy_recovery=recent replay success stale_failures=${payload.staleSympathyFailureCount}`);
+    console.log(`[engagement doctor] sympathy_recovery=recent replay confirmation stale_failures=${payload.staleSympathyFailureCount}`);
   }
   if (payload.targetGaps.length > 0) {
     console.log(`[engagement doctor] target_gap=${payload.targetGaps.join(' / ')}`);
