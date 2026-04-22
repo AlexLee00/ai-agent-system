@@ -259,9 +259,21 @@ async function ensureBlogCoreSchema() {
       post_id TEXT,
       error TEXT,
       duration_ms INTEGER,
+      source_mode TEXT DEFAULT 'naver_post',
+      metadata JSONB DEFAULT '{}'::jsonb,
       dry_run BOOLEAN DEFAULT false,
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
+  `);
+
+  await pgPool.run('blog', `
+    ALTER TABLE blog.publish_log
+    ADD COLUMN IF NOT EXISTS source_mode TEXT DEFAULT 'naver_post'
+  `);
+
+  await pgPool.run('blog', `
+    ALTER TABLE blog.publish_log
+    ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb
   `);
 
   await pgPool.run('blog', `
@@ -277,6 +289,11 @@ async function ensureBlogCoreSchema() {
   await pgPool.run('blog', `
     CREATE INDEX IF NOT EXISTS idx_blog_publish_log_date
     ON blog.publish_log(created_at DESC)
+  `);
+
+  await pgPool.run('blog', `
+    CREATE INDEX IF NOT EXISTS idx_blog_publish_log_source_mode
+    ON blog.publish_log(source_mode, created_at DESC)
   `);
 
   await pgPool.run('blog', `

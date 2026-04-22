@@ -26,9 +26,19 @@ async function ensurePublishLogSchema() {
       post_id TEXT,
       error TEXT,
       duration_ms INTEGER,
+      source_mode TEXT DEFAULT 'naver_post',
+      metadata JSONB DEFAULT '{}'::jsonb,
       dry_run BOOLEAN DEFAULT false,
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
+  `);
+  await pgPool.run('blog', `
+    ALTER TABLE blog.publish_log
+    ADD COLUMN IF NOT EXISTS source_mode TEXT DEFAULT 'naver_post'
+  `);
+  await pgPool.run('blog', `
+    ALTER TABLE blog.publish_log
+    ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb
   `);
   await pgPool.run('blog', `
     CREATE INDEX IF NOT EXISTS idx_blog_publish_log_platform
@@ -42,6 +52,10 @@ async function ensurePublishLogSchema() {
     CREATE INDEX IF NOT EXISTS idx_blog_publish_log_date
     ON blog.publish_log(created_at DESC)
   `);
+  await pgPool.run('blog', `
+    CREATE INDEX IF NOT EXISTS idx_blog_publish_log_source_mode
+    ON blog.publish_log(source_mode, created_at DESC)
+  `);
 
   _publishLogEnsured = true;
 }
@@ -54,7 +68,9 @@ async function ensurePublishLogSchema() {
  *   url?: string,
  *   error?: string,
  *   duration_ms?: number,
- *   post_id?: string | number | null
+ *   post_id?: string | number | null,
+ *   source_mode?: string | null,
+ *   metadata?: any
  * }} PublishReport
  */
 
@@ -63,16 +79,28 @@ async function ensurePublishLogSchema() {
  *   durationMs?: number,
  *   postId?: string | number | null
  *   previewBundle?: string | null
+ *   sourceMode?: string | null
+ *   metadata?: any
  * }} PublishReportOptions
  */
 
-async function _saveToDb(platform, status, title, url, error, durationMs, postId) {
+async function _saveToDb(platform, status, title, url, error, durationMs, postId, sourceMode, metadata) {
   try {
     await ensurePublishLogSchema();
     await pgPool.query('blog', `
-      INSERT INTO blog.publish_log (platform, status, title, url, error, duration_ms, post_id, dry_run)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, false)
-    `, [platform, status, title, url || null, error || null, durationMs || null, postId || null]);
+      INSERT INTO blog.publish_log (platform, status, title, url, error, duration_ms, post_id, source_mode, metadata, dry_run)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, false)
+    `, [
+      platform,
+      status,
+      title,
+      url || null,
+      error || null,
+      durationMs || null,
+      postId || null,
+      sourceMode || 'naver_post',
+      JSON.stringify(metadata || {}),
+    ]);
   } catch (e) {
     console.warn('[publish-reporter] DB 저장 실패 (무시):', e.message);
   }
@@ -92,6 +120,8 @@ async function reportPublish(report) {
     duration_ms,
     post_id,
     preview_bundle,
+    source_mode,
+    metadata,
   } = report;
   const label = PLATFORM_LABELS[platform] || platform;
 
@@ -100,17 +130,19 @@ async function reportPublish(report) {
         `✅ [블로팀] ${label} 발행 성공`,
         `제목: ${title}`,
         url ? `링크: ${url}` : '',
+        source_mode ? `source: ${source_mode}` : '',
         preview_bundle ? `preview: ${preview_bundle}` : '',
       ].filter(Boolean).join('\n')
     : [
         `🔴 [블로팀] ${label} 발행 실패`,
         `제목: ${title}`,
         `원인: ${error}`,
+        source_mode ? `source: ${source_mode}` : '',
         preview_bundle ? `preview: ${preview_bundle}` : '',
       ].filter(Boolean).join('\n');
 
   await Promise.allSettled([
-    _saveToDb(platform, status, title, url, error, duration_ms, post_id),
+    _saveToDb(platform, status, title, url, error, duration_ms, post_id, source_mode, metadata),
     postAlarm(msg, { team: 'blog', bot: 'publish-reporter', level: status === 'success' ? 'info' : 'critical' }).catch(() => {}),
   ]);
 }
@@ -136,6 +168,10 @@ async function reportPublishSuccess(platform, title, url, opts = {}) {
     duration_ms: opts.durationMs,
     // @ts-ignore JS checkJs default-param inference is too narrow here
     post_id: opts.postId,
+    // @ts-ignore JS checkJs default-param inference is too narrow here
+    source_mode: opts.sourceMode || 'naver_post',
+    // @ts-ignore JS checkJs default-param inference is too narrow here
+    metadata: opts.metadata || {},
   });
 }
 
@@ -160,6 +196,10 @@ async function reportPublishFailure(platform, title, error, opts = {}) {
     duration_ms: opts.durationMs,
     // @ts-ignore JS checkJs default-param inference is too narrow here
     post_id: opts.postId,
+    // @ts-ignore JS checkJs default-param inference is too narrow here
+    source_mode: opts.sourceMode || 'naver_post',
+    // @ts-ignore JS checkJs default-param inference is too narrow here
+    metadata: opts.metadata || {},
   });
 }
 

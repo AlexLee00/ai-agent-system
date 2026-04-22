@@ -180,6 +180,59 @@ async function getChannelPerformanceSummary(days = 7) {
   }
 }
 
+async function getSocialPublishSourceSummary(days = 7) {
+  try {
+    const { ensurePublishLogSchema } = require('./publish-reporter.ts');
+    await ensurePublishLogSchema();
+    const rows = await pgPool.query('blog', `
+      SELECT
+        platform,
+        COALESCE(source_mode, 'naver_post') AS source_mode,
+        COUNT(*)::int AS total_count,
+        COUNT(*) FILTER (WHERE status IN ('success', 'ok'))::int AS success_count,
+        COUNT(*) FILTER (WHERE status NOT IN ('success', 'ok'))::int AS failed_count,
+        MAX(created_at) AS latest_created_at
+      FROM blog.publish_log
+      WHERE platform IN ('instagram', 'facebook')
+        AND created_at >= NOW() - ($1::text || ' days')::interval
+      GROUP BY platform, COALESCE(source_mode, 'naver_post')
+      ORDER BY platform ASC, source_mode ASC
+    `, [days]);
+
+    const normalized = (rows || []).map((row) => ({
+      platform: String(row.platform || ''),
+      sourceMode: String(row.source_mode || 'naver_post'),
+      totalCount: Number(row.total_count || 0),
+      successCount: Number(row.success_count || 0),
+      failedCount: Number(row.failed_count || 0),
+      latestCreatedAt: row.latest_created_at || null,
+      successRate: Number(row.total_count || 0) > 0
+        ? Number((Number(row.success_count || 0) / Number(row.total_count || 0)).toFixed(2))
+        : null,
+    }));
+
+    const sourceModeCounts = normalized.reduce((acc, item) => {
+      acc[item.sourceMode] = Number(acc[item.sourceMode] || 0) + item.totalCount;
+      return acc;
+    }, {});
+
+    return {
+      rows: normalized,
+      sourceModeCounts,
+      strategyNativeCount: Number(sourceModeCounts.strategy_native || 0),
+      naverPostCount: Number(sourceModeCounts.naver_post || 0),
+    };
+  } catch (error) {
+    return {
+      rows: [],
+      sourceModeCounts: {},
+      strategyNativeCount: 0,
+      naverPostCount: 0,
+      error: error.message,
+    };
+  }
+}
+
 function readJsonSafe(filePath) {
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -848,13 +901,14 @@ async function buildMarketingDigest(options = {}) {
   const diagnosisWindow = Number(options.diagnosisWindow || 7);
   const autonomyWindow = Number(options.autonomyWindow || 14);
 
-  const [sense, revenueCorrelation, diagnosis, autonomySummary, snapshotTrend, channelPerformance] = await Promise.all([
+  const [sense, revenueCorrelation, diagnosis, autonomySummary, snapshotTrend, channelPerformance, socialPublishSources] = await Promise.all([
     senseDailyState().catch((error) => ({ error: error.message, signals: [] })),
     analyzeMarketingToRevenue(revenueWindow).catch((error) => ({ error: error.message })),
     diagnoseWeeklyPerformance(diagnosisWindow).catch((error) => ({ error: error.message })),
     getAutonomySummary(autonomyWindow),
     getMarketingSnapshotTrend(Number(options.snapshotWindow || 7)),
     getChannelPerformanceSummary(Number(options.channelWindow || 7)),
+    getSocialPublishSourceSummary(Number(options.channelWindow || 7)),
   ]);
 
   const senseSummary = summarizeSense(sense);
@@ -876,6 +930,7 @@ async function buildMarketingDigest(options = {}) {
     autonomySummary,
     snapshotTrend,
     channelPerformance,
+    socialPublishSources,
     strategy,
     strategyAdoption,
     nextGeneralPreview,
@@ -888,6 +943,7 @@ module.exports = {
   getAutonomySummary,
   getMarketingSnapshotTrend,
   getChannelPerformanceSummary,
+  getSocialPublishSourceSummary,
   loadRecentGeneralPosts,
   loadRecentMarketingSnapshots,
   inferTitleAlignmentFromSnapshots,

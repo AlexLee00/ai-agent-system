@@ -342,6 +342,11 @@ async function orchestrateDailyPublishing(dryRun = false) {
       await publishReporter.reportPublishSuccess('instagram', blogPost.title, blogPost.naver_url || blogPost.url || '', {
         previewBundle: blogPost.sourceMode || 'naver_post',
         postId: blogPost.id || null,
+        sourceMode: blogPost.sourceMode || 'naver_post',
+        metadata: {
+          synthetic: Boolean(blogPost.synthetic),
+          category: blogPost.category || null,
+        },
       }).catch(() => {});
     } else {
       const igErr = igResult.status === 'rejected'
@@ -350,6 +355,11 @@ async function orchestrateDailyPublishing(dryRun = false) {
       await publishReporter.reportPublishFailure('instagram', blogPost.title, igErr, {
         previewBundle: blogPost.sourceMode || 'naver_post',
         postId: blogPost.id || null,
+        sourceMode: blogPost.sourceMode || 'naver_post',
+        metadata: {
+          synthetic: Boolean(blogPost.synthetic),
+          category: blogPost.category || null,
+        },
       }).catch(() => {});
     }
 
@@ -357,6 +367,11 @@ async function orchestrateDailyPublishing(dryRun = false) {
       await publishReporter.reportPublishSuccess('facebook', blogPost.title, blogPost.naver_url || blogPost.url || '', {
         previewBundle: blogPost.sourceMode || 'naver_post',
         postId: blogPost.id || null,
+        sourceMode: blogPost.sourceMode || 'naver_post',
+        metadata: {
+          synthetic: Boolean(blogPost.synthetic),
+          category: blogPost.category || null,
+        },
       }).catch(() => {});
     } else {
       const fbErr = fbResult.status === 'rejected'
@@ -365,6 +380,11 @@ async function orchestrateDailyPublishing(dryRun = false) {
       await publishReporter.reportPublishFailure('facebook', blogPost.title, fbErr, {
         previewBundle: blogPost.sourceMode || 'naver_post',
         postId: blogPost.id || null,
+        sourceMode: blogPost.sourceMode || 'naver_post',
+        metadata: {
+          synthetic: Boolean(blogPost.synthetic),
+          category: blogPost.category || null,
+        },
       }).catch(() => {});
     }
   }
