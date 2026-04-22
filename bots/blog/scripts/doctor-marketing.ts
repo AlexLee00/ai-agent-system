@@ -7,6 +7,13 @@ const { execFileSync } = require('child_process');
 const { buildBlogCliInsight } = require('../lib/cli-insight.ts');
 const { readMarketingDigestTelemetry, describeMarketingDigestAge } = require('../lib/marketing-digest-telemetry.ts');
 
+const BLOG_ROOT = path.join(env.PROJECT_ROOT, 'bots/blog');
+const BLOG_PREFIX = `npm --prefix ${BLOG_ROOT}`;
+const MARKETING_DIGEST_COMMAND = `${BLOG_PREFIX} run marketing:digest -- --json`;
+const MARKETING_SNAPSHOT_COMMAND = `${BLOG_PREFIX} run marketing:snapshot -- --dry-run --json`;
+const CHANNEL_INSIGHTS_COMMAND = `${BLOG_PREFIX} run channel:insights -- --dry-run --json`;
+const REVENUE_STRATEGY_COMMAND = `${BLOG_PREFIX} run revenue:strategy -- --dry-run --json`;
+
 function parseArgs(argv = []) {
   return {
     json: argv.includes('--json'),
@@ -14,7 +21,7 @@ function parseArgs(argv = []) {
 }
 
 function runMarketingDigest() {
-  const command = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run marketing:digest -- --json`;
+  const command = MARKETING_DIGEST_COMMAND;
   try {
     const output = execFileSync('zsh', ['-lc', command], {
       cwd: path.join(env.PROJECT_ROOT, 'bots/blog'),
@@ -37,11 +44,13 @@ function runMarketingDigest() {
 }
 
 function buildPrimary(digest = {}) {
-  const blogPrefix = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')}`;
   const status = String(digest?.health?.status || 'unknown');
   const topSignal = String(digest?.senseSummary?.topSignal?.message || '');
   const watchHint = String(digest?.channelPerformance?.primaryWatchHint || '');
   const recommendations = Array.isArray(digest?.recommendations) ? digest.recommendations : [];
+  const snapshotWatchCount = Number(digest?.snapshotTrend?.watchCount || 0);
+  const adoptionStatus = String(digest?.strategyAdoption?.status || '');
+  const latestAlignmentHint = String(digest?.strategyAdoption?.latestAlignmentHint || '');
 
   if (status === 'watch' || status === 'error') {
     return {
@@ -49,8 +58,21 @@ function buildPrimary(digest = {}) {
       reason: topSignal
         ? `마케팅 확장 신호가 watch 상태이며 최우선 확인 포인트는 "${topSignal}" 입니다.`
         : '마케팅 확장 신호가 watch 상태라 sense/correlation/diagnosis 재점검이 필요합니다.',
-      nextCommand: `${blogPrefix} run marketing:digest -- --json`,
-      actionFocus: watchHint || '마케팅 top signal과 revenue correlation, 추천 액션 재확인',
+      nextCommand: REVENUE_STRATEGY_COMMAND,
+      actionFocus: watchHint || '수집·분석 결과를 바탕으로 노출 전략과 전환 전략을 다시 편성',
+      recommendation: recommendations[0] || '',
+    };
+  }
+
+  if (
+    snapshotWatchCount >= 5
+    || (adoptionStatus && adoptionStatus !== 'aligned' && latestAlignmentHint.startsWith('category_drift:'))
+  ) {
+    return {
+      area: 'marketing.strategy_refresh',
+      reason: `최근 마케팅 신호 누적과 전략 채택 드리프트가 보여 새로운 노출 전략과 전환 전략을 다시 편성할 시점입니다 (${snapshotWatchCount} recent watch snapshots${latestAlignmentHint ? ` / ${latestAlignmentHint}` : ''}).`,
+      nextCommand: REVENUE_STRATEGY_COMMAND,
+      actionFocus: '수집·스냅샷·전략 갱신을 다시 돌려 채널별 노출 전략을 재편성',
       recommendation: recommendations[0] || '',
     };
   }
@@ -101,6 +123,12 @@ function buildActions({ primary, digest = {} }) {
     actions.push(`우선 실행: ${primary.nextCommand}`);
   }
 
+  if (primaryArea === 'marketing.watch' || primaryArea === 'marketing.strategy_refresh') {
+    actions.push(`signal collect: ${CHANNEL_INSIGHTS_COMMAND}`);
+    actions.push(`signal snapshot: ${MARKETING_SNAPSHOT_COMMAND}`);
+    actions.push(`strategy evolve: ${REVENUE_STRATEGY_COMMAND}`);
+  }
+
   const watchHint = String(digest?.channelPerformance?.primaryWatchHint || '');
   if (watchHint) actions.push(`channel watch: ${watchHint}`);
   if (latestDigestRun?.checkedAt) {
@@ -115,6 +143,9 @@ function buildActions({ primary, digest = {} }) {
   const recommendations = Array.isArray(digest?.recommendations) ? digest.recommendations : [];
   if (recommendations[0]) actions.push(`reco: ${recommendations[0]}`);
   if (recommendations[1]) actions.push(`reco: ${recommendations[1]}`);
+  if (primaryArea === 'marketing.watch' || primaryArea === 'marketing.strategy_refresh') {
+    actions.push('execute loop: 채널 수집 -> 마케팅 스냅샷 -> 전략 갱신 -> 다음 daily/배포 사이클 반영');
+  }
 
   if (!actions.length) {
     actions.push('마케팅 확장 신호는 현재 안정적이라 다음 daily 사이클에서 다시 관찰하면 됩니다.');
@@ -126,7 +157,10 @@ function buildActions({ primary, digest = {} }) {
 function buildMarketingDoctorFallback(payload = {}) {
   const primaryArea = String(payload?.primary?.area || '');
   if (primaryArea === 'marketing.watch') {
-    return '마케팅 확장 신호가 watch 상태라 상위 signal, revenue correlation, 추천 액션을 먼저 보는 편이 좋습니다.';
+    return '마케팅 확장 신호가 watch 상태라 수집과 스냅샷을 다시 굴린 뒤 전략을 갱신하고 다음 실행 사이클에 반영하는 편이 좋습니다.';
+  }
+  if (primaryArea === 'marketing.strategy_refresh') {
+    return '마케팅 watch는 과열로 보지 않더라도 전략 채택 드리프트가 누적돼 있어, 수집과 스냅샷을 다시 돌리고 채널별 노출 전략을 재편성하는 편이 좋습니다.';
   }
   return '마케팅 확장 상태는 현재 비교적 안정적이라 다음 daily 사이클 관찰 중심으로 가면 됩니다.';
 }

@@ -23,6 +23,7 @@ const RUN_NEIGHBOR_COLLECT_ONLY_COMMAND = `node ${path.join(BLOG_ROOT, 'scripts/
 const BACKFILL_COURTESY_REPLIES_COMMAND = `npm --prefix ${BLOG_ROOT} run backfill:courtesy-replies`;
 const REPLAY_NEIGHBOR_UI_COMMAND = `npm --prefix ${BLOG_ROOT} run replay:neighbor-ui -- --json`;
 const REPLAY_NEIGHBOR_SYMPATHY_COMMAND = `npm --prefix ${BLOG_ROOT} run replay:neighbor-sympathy -- --json`;
+const RUN_REVENUE_STRATEGY_COMMAND = `npm --prefix ${BLOG_ROOT} run revenue:strategy -- --dry-run --json`;
 
 function parseArgs(argv = []) {
   return {
@@ -560,7 +561,95 @@ async function getCourtesyReflectionRecheck(baseline = null) {
   }
 }
 
-function buildActions({ latestReplyReplayCandidate, failureByKind, failureByAction, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun, neighborUiReplay = null, neighborSympathyReplay = null, staleSympathyFailureCount = 0, primary }) {
+async function getExposureSignal(baseline = null) {
+  const commentSinceClause = buildSinceClause('detected_at', baseline);
+  const neighborSinceClause = buildSinceClause('created_at', baseline);
+  try {
+    const rows = await pgPool.query('blog', `
+      WITH days AS (
+        SELECT generate_series(
+          (timezone('Asia/Seoul', now())::date - interval '4 days')::date,
+          timezone('Asia/Seoul', now())::date,
+          interval '1 day'
+        )::date AS day
+      ),
+      inbound AS (
+        SELECT
+          timezone('Asia/Seoul', detected_at)::date AS day,
+          COUNT(*)::int AS inbound_count,
+          COUNT(*) FILTER (WHERE status = 'replied')::int AS replied_count
+        FROM blog.comments
+        WHERE detected_at >= now() - interval '5 days'
+          ${commentSinceClause}
+        GROUP BY 1
+      ),
+      neighbor AS (
+        SELECT
+          timezone('Asia/Seoul', created_at)::date AS day,
+          COUNT(*) FILTER (WHERE status = 'posted')::int AS neighbor_posted
+        FROM blog.neighbor_comments
+        WHERE created_at >= now() - interval '5 days'
+          ${neighborSinceClause}
+        GROUP BY 1
+      )
+      SELECT
+        d.day::text AS day,
+        COALESCE(i.inbound_count, 0)::int AS inbound_count,
+        COALESCE(i.replied_count, 0)::int AS replied_count,
+        COALESCE(n.neighbor_posted, 0)::int AS neighbor_posted
+      FROM days d
+      LEFT JOIN inbound i USING (day)
+      LEFT JOIN neighbor n USING (day)
+      ORDER BY d.day DESC
+    `);
+
+    const normalized = Array.isArray(rows) ? rows.map((row) => ({
+      day: String(row.day || ''),
+      inboundCount: Number(row.inbound_count || 0),
+      repliedCount: Number(row.replied_count || 0),
+      neighborPosted: Number(row.neighbor_posted || 0),
+    })) : [];
+
+    let consecutiveNoInboundDays = 0;
+    for (const row of normalized) {
+      if (row.inboundCount > 0) break;
+      consecutiveNoInboundDays += 1;
+    }
+
+    const daysWithNoInbound = normalized.filter((row) => row.inboundCount === 0).length;
+    const totalInbound = normalized.reduce((sum, row) => sum + row.inboundCount, 0);
+    const totalNeighborPosted = normalized.reduce((sum, row) => sum + row.neighborPosted, 0);
+    const activeDays = normalized.filter((row) => row.inboundCount > 0 || row.neighborPosted > 0).length;
+    const needsStrategy =
+      consecutiveNoInboundDays >= 3
+      || (daysWithNoInbound >= 4 && totalInbound <= 1 && totalNeighborPosted <= 2)
+      || (daysWithNoInbound >= 3 && activeDays <= 1);
+
+    return {
+      windowDays: normalized.length,
+      rows: normalized,
+      consecutiveNoInboundDays,
+      daysWithNoInbound,
+      totalInbound,
+      totalNeighborPosted,
+      activeDays,
+      needsStrategy,
+    };
+  } catch {
+    return {
+      windowDays: 0,
+      rows: [],
+      consecutiveNoInboundDays: 0,
+      daysWithNoInbound: 0,
+      totalInbound: 0,
+      totalNeighborPosted: 0,
+      activeDays: 0,
+      needsStrategy: false,
+    };
+  }
+}
+
+function buildActions({ latestReplyReplayCandidate, failureByKind, failureByAction, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun, neighborUiReplay = null, neighborSympathyReplay = null, staleSympathyFailureCount = 0, exposureSignal = null, primary }) {
   const actions = [];
   if (neighborUiReplay?.ok) {
     if (neighborUiReplay?.result?.ok) {
@@ -665,6 +754,11 @@ function buildActions({ latestReplyReplayCandidate, failureByKind, failureByActi
       actions.push(getGapActionCommand(primaryGap.label));
     }
   }
+  if (exposureSignal?.needsStrategy) {
+    actions.push(`최근 ${Number(exposureSignal.windowDays || 0)}일 중 댓글 유입 없는 날 ${Number(exposureSignal.daysWithNoInbound || 0)}일 / 연속 무유입 ${Number(exposureSignal.consecutiveNoInboundDays || 0)}일`);
+    actions.push(`최근 ${Number(exposureSignal.windowDays || 0)}일 inbound ${Number(exposureSignal.totalInbound || 0)}건 / neighbor posted ${Number(exposureSignal.totalNeighborPosted || 0)}건`);
+    actions.push(RUN_REVENUE_STRATEGY_COMMAND);
+  }
   if (latestReplyReplayCandidate?.id) {
     actions.push(`npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run replay:reply-ui -- --comment-id ${latestReplyReplayCandidate.id} --json`);
   }
@@ -685,7 +779,7 @@ function buildActions({ latestReplyReplayCandidate, failureByKind, failureByActi
   return Array.from(new Set([...prioritized, ...actions]));
 }
 
-function buildPrimary({ failureByKind, failureByAction, latestReplyReplayCandidate, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun }) {
+function buildPrimary({ failureByKind, failureByAction, latestReplyReplayCandidate, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun, exposureSignal = null }) {
   const blogPrefix = `npm --prefix ${BLOG_ROOT}`;
   if ((failureByKind.ui || 0) > 0 || (failureByKind.browser || 0) > 0) {
     const uiFocus = buildUiFocus(failureByAction);
@@ -796,6 +890,14 @@ function buildPrimary({ failureByKind, failureByAction, latestReplyReplayCandida
         : '답글/댓글/공감 목표치와 현재 시간대 실적 차이 점검',
     };
   }
+  if (exposureSignal?.needsStrategy) {
+    return {
+      area: 'engagement.strategy.visibility',
+      reason: `최근 ${Number(exposureSignal.windowDays || 0)}일 동안 댓글 유입 부진 신호가 누적됐습니다 (무유입 ${Number(exposureSignal.daysWithNoInbound || 0)}일 / 연속 무유입 ${Number(exposureSignal.consecutiveNoInboundDays || 0)}일 / inbound ${Number(exposureSignal.totalInbound || 0)}건 / neighbor posted ${Number(exposureSignal.totalNeighborPosted || 0)}건). 노출·유입 전략 재수립이 필요합니다.`,
+      nextCommand: RUN_REVENUE_STRATEGY_COMMAND,
+      actionFocus: '댓글 유입 저하에 대응할 제목·주제·CTA 전략 재수립',
+    };
+  }
   return {
     area: 'clear',
     reason: '현재 engagement 자동화의 즉시 조치가 필요한 병목은 없습니다.',
@@ -823,6 +925,9 @@ function buildEngagementDoctorFallback(payload = {}) {
   }
   if (payload.primary?.area === 'engagement.target_gap.neighbor.no_workload') {
     return 'engagement 자동화는 지금 외부 댓글 목표 gap은 크지만 바로 처리할 neighbor queue가 없어, 수집/유입 쪽을 먼저 보는 편이 좋습니다.';
+  }
+  if (payload.primary?.area === 'engagement.strategy.visibility') {
+    return 'engagement 자동화 자체는 크게 막히지 않았지만 댓글 유입 저하가 누적돼 있어, 노출과 유입 전략을 다시 짜는 편이 좋습니다.';
   }
   if (Array.isArray(payload.targetGaps) && payload.targetGaps.length > 0) {
     return 'engagement 자동화는 운영 시간대 기준 목표치가 뒤처져 있어 실적 차이와 다음 실행 사이클을 먼저 보는 편이 좋습니다.';
@@ -987,6 +1092,7 @@ async function main() {
     baseCollect: neighborConfig.maxCollectPerCycle || 20,
   });
   const neighborCollectDiagnostics = readNeighborCollectDiagnostics();
+  const exposureSignal = await getExposureSignal(developmentBaseline);
 
   const payload = {
     developmentBaseline: developmentBaseline
@@ -1055,10 +1161,11 @@ async function main() {
       : null,
     courtesyReflectionRecheck,
     lastGapRun,
+    exposureSignal,
   };
-  payload.needsAttention = payload.totalFailures > 0 || targetGaps.length > 0;
-  payload.primary = buildPrimary({ failureByKind, failureByAction, latestReplyReplayCandidate, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun });
-  payload.actions = buildActions({ latestReplyReplayCandidate, failureByKind, failureByAction, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun, neighborUiReplay, neighborSympathyReplay, staleSympathyFailureCount, primary: payload.primary });
+  payload.needsAttention = payload.totalFailures > 0 || targetGaps.length > 0 || Boolean(exposureSignal?.needsStrategy);
+  payload.primary = buildPrimary({ failureByKind, failureByAction, latestReplyReplayCandidate, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun, exposureSignal });
+  payload.actions = buildActions({ latestReplyReplayCandidate, failureByKind, failureByAction, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun, neighborUiReplay, neighborSympathyReplay, staleSympathyFailureCount, exposureSignal, primary: payload.primary });
 
   const aiSummary = await buildBlogCliInsight({
     bot: 'doctor-engagement',

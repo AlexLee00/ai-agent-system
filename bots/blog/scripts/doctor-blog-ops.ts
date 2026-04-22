@@ -177,6 +177,9 @@ function buildOpsDoctorFallback(payload = {}) {
   if (primaryArea.startsWith('engagement')) {
     return '블로팀 운영의 현재 최우선 병목은 engagement 축이라 댓글/답글/공감 자동화 흐름을 먼저 정리하는 편이 좋습니다.';
   }
+  if (primaryArea === 'marketing.strategy_refresh') {
+    return '블로팀 운영의 현재 최우선 병목은 전략 채택 드리프트 누적이라 수집, 스냅샷, 전략 갱신을 다시 돌려 채널별 노출 전략을 재편성하는 편이 좋습니다.';
+  }
   if (primaryArea.startsWith('marketing')) {
     return '블로팀 운영의 현재 최우선 병목은 marketing watch 축이라 상위 신호와 revenue correlation, 추천 액션을 먼저 확인하는 편이 좋습니다.';
   }
