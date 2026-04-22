@@ -171,6 +171,13 @@ function buildPlatformSpecificTitle(baseTitle = '', platform = 'instagram', sele
   return String(baseTitle || topic || '').trim();
 }
 
+function buildPlatformVariantLabel(platform = 'instagram', selection = {}) {
+  const pattern = String(selection?.pattern || 'default').trim() || 'default';
+  if (platform === 'instagram') return `hook_${pattern}`;
+  if (platform === 'facebook') return `discussion_${pattern}`;
+  return `${platform}_${pattern}`;
+}
+
 function buildPlatformSpecificBody(platform = 'instagram', selection = {}, strategy = {}) {
   const focus = Array.isArray(strategy?.focus) ? strategy.focus.slice(0, 2) : [];
   const recommendations = Array.isArray(selection?.marketingRecommendations)
@@ -221,10 +228,12 @@ async function buildIndependentPlatformCampaign(options = {}) {
   const baseTitle = String(selection?.title || selection?.topic || `${category} 전략 포인트`);
   const instagramTitle = buildPlatformSpecificTitle(baseTitle, 'instagram', selection);
   const facebookTitle = buildPlatformSpecificTitle(baseTitle, 'facebook', selection);
+  const instagramVariantLabel = buildPlatformVariantLabel('instagram', selection);
+  const facebookVariantLabel = buildPlatformVariantLabel('facebook', selection);
   const instagramContentBody = buildPlatformSpecificBody('instagram', selection, plan || {});
   const facebookContentBody = buildPlatformSpecificBody('facebook', selection, plan || {});
-  const trackingInstagram = generateTrackingLink(`${syntheticPostId}_instagram`, 'instagram');
-  const trackingFacebook = generateTrackingLink(`${syntheticPostId}_facebook`, 'facebook');
+  const trackingInstagram = generateTrackingLink(`${syntheticPostId}_instagram`, 'instagram', '', instagramVariantLabel);
+  const trackingFacebook = generateTrackingLink(`${syntheticPostId}_facebook`, 'facebook', '', facebookVariantLabel);
   let instaContent = null;
   if (needInstagram) {
     const starSocial = require('./star.ts');
@@ -255,10 +264,12 @@ async function buildIndependentPlatformCampaign(options = {}) {
       instagram: {
         title: instagramTitle,
         content: instagramContentBody,
+        variantLabel: instagramVariantLabel,
       },
       facebook: {
         title: facebookTitle,
         content: facebookContentBody,
+        variantLabel: facebookVariantLabel,
       },
     },
     instaContent,
@@ -423,6 +434,7 @@ async function orchestrateDailyPublishing(dryRun = false) {
         metadata: {
           synthetic: Boolean(blogPost.synthetic),
           category: blogPost.category || null,
+          variantLabel: blogPost?.platformVariants?.instagram?.variantLabel || null,
         },
       }).catch(() => {});
     } else {
@@ -436,6 +448,7 @@ async function orchestrateDailyPublishing(dryRun = false) {
         metadata: {
           synthetic: Boolean(blogPost.synthetic),
           category: blogPost.category || null,
+          variantLabel: blogPost?.platformVariants?.instagram?.variantLabel || null,
         },
       }).catch(() => {});
     }
@@ -448,6 +461,7 @@ async function orchestrateDailyPublishing(dryRun = false) {
         metadata: {
           synthetic: Boolean(blogPost.synthetic),
           category: blogPost.category || null,
+          variantLabel: blogPost?.platformVariants?.facebook?.variantLabel || null,
         },
       }).catch(() => {});
     } else {
@@ -461,6 +475,7 @@ async function orchestrateDailyPublishing(dryRun = false) {
         metadata: {
           synthetic: Boolean(blogPost.synthetic),
           category: blogPost.category || null,
+          variantLabel: blogPost?.platformVariants?.facebook?.variantLabel || null,
         },
       }).catch(() => {});
     }
@@ -494,6 +509,7 @@ async function orchestrateDailyPublishing(dryRun = false) {
             synthetic: true,
             category: extraInstagram.campaign.category || null,
             followup: true,
+            variantLabel: extraInstagram.campaign?.platformVariants?.instagram?.variantLabel || null,
           },
         }).catch(() => {});
       } else {
@@ -505,6 +521,7 @@ async function orchestrateDailyPublishing(dryRun = false) {
             synthetic: true,
             category: extraInstagram.campaign.category || null,
             followup: true,
+            variantLabel: extraInstagram.campaign?.platformVariants?.instagram?.variantLabel || null,
           },
         }).catch(() => {});
       }
@@ -524,6 +541,7 @@ async function orchestrateDailyPublishing(dryRun = false) {
             synthetic: true,
             category: extraFacebook.campaign.category || null,
             followup: true,
+            variantLabel: extraFacebook.campaign?.platformVariants?.facebook?.variantLabel || null,
           },
         }).catch(() => {});
       } else {
@@ -535,6 +553,7 @@ async function orchestrateDailyPublishing(dryRun = false) {
             synthetic: true,
             category: extraFacebook.campaign.category || null,
             followup: true,
+            variantLabel: extraFacebook.campaign?.platformVariants?.facebook?.variantLabel || null,
           },
         }).catch(() => {});
       }

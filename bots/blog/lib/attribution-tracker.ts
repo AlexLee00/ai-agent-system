@@ -22,12 +22,17 @@ function getSkaBaseUrl() {
  * @param {string} postId
  * @param {'naver'|'instagram'|'facebook'} platform
  * @param {string} [postDate]
+ * @param {string} [variantLabel]
  */
-function generateTrackingLink(postId, platform, postDate = '') {
+function generateTrackingLink(postId, platform, postDate = '', variantLabel = '') {
   const utmSource = platform;
   const utmMedium = platform === 'naver' ? 'blog' : platform === 'instagram' ? 'reel' : 'post';
   const utmCampaign = `post_${String(postId).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 30)}`;
-  const utmContent = postDate ? `${utmMedium}_${postDate}` : utmMedium;
+  const safeVariant = String(variantLabel || '').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 30);
+  const utmContentParts = [utmMedium];
+  if (postDate) utmContentParts.push(postDate);
+  if (safeVariant) utmContentParts.push(safeVariant);
+  const utmContent = utmContentParts.join('_');
 
   const params = new URLSearchParams({
     utm_source: utmSource,
