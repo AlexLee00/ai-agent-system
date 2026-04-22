@@ -37,6 +37,8 @@
  * @property {string} [tp_sl_error]
  * @property {number} [confidence]
  * @property {string} [reasoning]
+ * @property {string} [market_regime]
+ * @property {number} [market_regime_confidence]
  * @property {any} [capitalInfo]
  */
 
@@ -294,6 +296,8 @@ export async function initJournalSchema() {
       tp_sl_set         BOOLEAN DEFAULT false,
       tp_sl_mode        VARCHAR,
       tp_sl_error       VARCHAR,
+      market_regime     VARCHAR,
+      market_regime_confidence DOUBLE PRECISION,
 
       created_at        BIGINT NOT NULL
     )
@@ -301,6 +305,8 @@ export async function initJournalSchema() {
   try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS trade_mode VARCHAR NOT NULL DEFAULT 'normal'`); } catch { /* 이미 있으면 무시 */ }
   try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS tp_sl_mode VARCHAR`); } catch { /* 이미 있으면 무시 */ }
   try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS tp_sl_error VARCHAR`); } catch { /* 이미 있으면 무시 */ }
+  try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS market_regime VARCHAR`); } catch { /* 이미 있으면 무시 */ }
+  try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS market_regime_confidence DOUBLE PRECISION`); } catch { /* 이미 있으면 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_journal_market ON trade_journal(market, created_at)`); } catch { /* 이미 있으면 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_journal_status ON trade_journal(status, created_at)`); } catch { /* 이미 있으면 무시 */ }
 
@@ -469,8 +475,9 @@ export async function insertJournalEntry(entry) {
         entry_time, entry_price, entry_size, entry_value, direction,
         signal_time, decision_time, execution_time, signal_to_exec_ms,
         tp_price, sl_price, tp_order_id, sl_order_id, tp_sl_set, tp_sl_mode, tp_sl_error,
+        market_regime, market_regime_confidence,
         status, created_at
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         entry.trade_id, entry.signal_id ?? null,
         entry.market, entry.exchange, entry.symbol, entry.is_paper ?? true, entry.trade_mode || getInvestmentTradeMode(),
@@ -483,6 +490,8 @@ export async function insertJournalEntry(entry) {
         entry.tp_sl_set ?? false,
         entry.tp_sl_mode ?? null,
         entry.tp_sl_error ?? null,
+        entry.market_regime ?? null,
+        entry.market_regime_confidence ?? null,
         'open', now,
       ],
     );
@@ -882,6 +891,29 @@ export async function linkRationaleToTrade(tradeId, signalId) {
     `UPDATE trade_rationale SET trade_id = ? WHERE signal_id = ? AND trade_id IS NULL`,
     [tradeId, signalId],
   );
+  try {
+    const rationale = await get(
+      `SELECT strategy_config
+       FROM trade_rationale
+       WHERE trade_id = ? OR signal_id = ?
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [tradeId, signalId],
+    );
+    const regime = rationale?.strategy_config?.market_regime?.regime || null;
+    const confidence = rationale?.strategy_config?.market_regime?.confidence ?? null;
+    if (regime) {
+      await run(
+        `UPDATE trade_journal
+         SET market_regime = COALESCE(market_regime, ?),
+             market_regime_confidence = COALESCE(market_regime_confidence, ?)
+         WHERE trade_id = ?`,
+        [regime, confidence, tradeId],
+      );
+    }
+  } catch (error) {
+    console.warn('[trade-journal] rationale regime 동기화 실패(무시):', error?.message || error);
+  }
 }
 
 // ─── trade_review ─────────────────────────────────────────────────────

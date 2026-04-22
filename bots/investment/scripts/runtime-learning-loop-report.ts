@@ -81,7 +81,7 @@ async function loadRegimeCoverage(days = 90) {
     db.query(`
       SELECT
         j.exchange,
-        COALESCE(r.strategy_config->'market_regime'->>'regime', 'unknown') AS regime,
+        COALESCE(NULLIF(j.market_regime, ''), r.strategy_config->'market_regime'->>'regime', 'unknown') AS regime,
         COUNT(*) AS total,
         SUM(CASE WHEN COALESCE(j.trade_mode, 'normal') = 'validation' THEN 1 ELSE 0 END) AS validation_trades,
         SUM(CASE WHEN COALESCE(j.trade_mode, 'normal') = 'normal' THEN 1 ELSE 0 END) AS normal_trades,
