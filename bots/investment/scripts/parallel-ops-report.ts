@@ -39,13 +39,51 @@ function parseJsonFromMixedOutput(output) {
   try {
     return JSON.parse(text);
   } catch {
-    // health-report.ts may print setup/status lines before the final JSON block.
-    const start = text.indexOf('{');
-    const end = text.lastIndexOf('}');
-    if (start === -1 || end === -1 || end <= start) {
+    // health-report.ts may print setup/status lines or multiple JSON blocks.
+    // Walk the text and keep the last balanced top-level object.
+    let inString = false;
+    let escaped = false;
+    let depth = 0;
+    let candidateStart = -1;
+    let lastBalanced = null;
+
+    for (let i = 0; i < text.length; i += 1) {
+      const ch = text[i];
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+        } else if (ch === '\\') {
+          escaped = true;
+        } else if (ch === '"') {
+          inString = false;
+        }
+        continue;
+      }
+
+      if (ch === '"') {
+        inString = true;
+        continue;
+      }
+
+      if (ch === '{') {
+        if (depth === 0) candidateStart = i;
+        depth += 1;
+        continue;
+      }
+
+      if (ch === '}') {
+        if (depth > 0) depth -= 1;
+        if (depth === 0 && candidateStart !== -1) {
+          lastBalanced = text.slice(candidateStart, i + 1);
+          candidateStart = -1;
+        }
+      }
+    }
+
+    if (!lastBalanced) {
       throw new Error('JSON payload not found');
     }
-    return JSON.parse(text.slice(start, end + 1));
+    return JSON.parse(lastBalanced);
   }
 }
 
@@ -114,6 +152,19 @@ function buildActionItems(health, decision) {
     ];
   }
 
+  if (decision.status === 'watch') {
+    const items = [];
+    const nextActions = health.runtimeLearningLoop?.decision?.nextActions || [];
+    const nextCommand = nextActions.find((item) => typeof item === 'string' && item.startsWith('npm --prefix'));
+    if (nextCommand) items.push(nextCommand);
+    const topSuggestion = health.runtimeLearningLoop?.sections?.strategy?.runtimeSuggestionTop;
+    if (topSuggestion?.key) {
+      items.push(`top suggestion ${topSuggestion.key} -> ${topSuggestion.suggestedValue ?? topSuggestion.suggested ?? 'n/a'}`);
+    }
+    items.push('약한 레짐/레인 기준으로 validation 노출과 비중을 먼저 재점검합니다.');
+    return items;
+  }
+
   const items = ['health-report/DB 접근 경로를 먼저 확인합니다.'];
   if (health.error) items.push('권한/네트워크 제약이 없는 환경에서 다시 실행합니다.');
   return items;
@@ -136,6 +187,20 @@ function buildDecision(health) {
     };
   }
 
+  if (health.runtimeLearningLoop?.decision?.status === 'regime_strategy_tuning_needed') {
+    const weakest = health.runtimeLearningLoop?.sections?.collect?.regimePerformance?.weakestRegime;
+    const weakestMode = weakest?.tradeMode || weakest?.worstMode?.tradeMode || weakest?.bestMode?.tradeMode || 'n/a';
+    const topSuggestion = health.runtimeLearningLoop?.sections?.strategy?.runtimeSuggestionTop;
+    return {
+      status: 'watch',
+      headline: health.runtimeLearningLoop?.decision?.headline || '레짐별 전략 튜닝이 필요합니다.',
+      reasons: [
+        `weakest regime ${weakest?.regime || 'n/a'} / ${weakestMode}`,
+        `top suggestion ${topSuggestion?.key || 'n/a'} -> ${topSuggestion?.suggestedValue ?? topSuggestion?.suggested ?? 'n/a'}`,
+      ],
+    };
+  }
+
   return {
     status: 'baseline_ok',
     headline: '1차 병렬 운영 기준선은 안정적입니다.',
@@ -151,6 +216,14 @@ function formatCompactMessage({ decision, health, screening, actionItems }) {
     `📌 ${decision.headline}`,
     `📊 serviceHealth ok ${health.serviceHealth.okCount} / warn ${health.serviceHealth.warnCount}`,
   ];
+
+  if (health.runtimeLearningLoop?.decision?.status === 'regime_strategy_tuning_needed') {
+    const weakest = health.runtimeLearningLoop?.sections?.collect?.regimePerformance?.weakestRegime;
+    const weakestMode = weakest?.tradeMode || weakest?.worstMode?.tradeMode || weakest?.bestMode?.tradeMode || 'n/a';
+    const topSuggestion = health.runtimeLearningLoop?.sections?.strategy?.runtimeSuggestionTop;
+    lines.push(`🧭 learning loop weakest ${weakest?.regime || 'n/a'} / ${weakestMode}`);
+    lines.push(`🛠️ top suggestion ${topSuggestion?.key || 'n/a'} -> ${topSuggestion?.suggestedValue ?? topSuggestion?.suggested ?? 'n/a'}`);
+  }
 
   const screeningLines = summarizeScreening(screening).slice(0, 3);
   if (screeningLines.length > 0) {
@@ -206,6 +279,7 @@ export async function buildParallelOpsReport({ json = false } = {}) {
     health: {
       serviceHealth: health.serviceHealth,
       cryptoLiveGateHealth: health.cryptoLiveGateHealth,
+      runtimeLearningLoop: health.runtimeLearningLoop,
       error: health.error,
     },
     screening,
