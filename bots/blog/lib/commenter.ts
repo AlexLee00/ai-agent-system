@@ -13,6 +13,7 @@ const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
 const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 const { parseNaverBlogUrl } = require('../../../packages/core/lib/naver-blog-url');
 const { getBlogCommenterConfig, getBlogNeighborCommenterConfig, getBlogLLMSelectorOverrides } = require('./runtime-config.ts');
+const { loadStrategyBundle, resolveExecutionTarget } = require('./strategy-loader.ts');
 
 const TABLE = 'blog.comments';
 const ACTION_TABLE = 'blog.comment_actions';
@@ -98,6 +99,11 @@ function writeNeighborCollectDiagnostics(payload = {}) {
 
 function getCommenterConfig() {
   const runtime = getBlogCommenterConfig();
+  const strategy = loadStrategyBundle().plan;
+  const replyTargetPerCycle = Math.max(1, resolveExecutionTarget('replyTargetPerCycle', strategy, 1));
+  const derivedMaxDaily = Math.max(Number(runtime.maxDaily || 20), replyTargetPerCycle * 4);
+  const derivedMaxProcessPerCycle = Math.max(Number(runtime.maxProcessPerCycle || 20), replyTargetPerCycle);
+  const derivedMaxDetectPerCycle = Math.max(Number(runtime.maxDetectPerCycle || 20), replyTargetPerCycle * 2);
   const browserToken = String(
     runtime.browserToken
     || process.env.OPENCLAW_BROWSER_TOKEN
@@ -108,7 +114,7 @@ function getCommenterConfig() {
   return {
     enabled: runtime.enabled === true,
     blogId: String(runtime.blogId || '').trim(),
-    maxDaily: Number(runtime.maxDaily || 20),
+    maxDaily: derivedMaxDaily,
     activeStartHour: Number(runtime.activeStartHour || 8),
     activeEndHour: Number(runtime.activeEndHour || 22),
     browserHttpUrl: String(runtime.browserHttpUrl || '').trim(),
@@ -123,27 +129,37 @@ function getCommenterConfig() {
     betweenCommentsMaxSec: Number(runtime.betweenCommentsMaxSec || 180),
     minReplyLen: Number(runtime.minReplyLen || 30),
     maxReplyLen: Number(runtime.maxReplyLen || 200),
-    maxDetectPerCycle: Number(runtime.maxDetectPerCycle || 20),
-    maxProcessPerCycle: Number(runtime.maxProcessPerCycle || 20),
+    maxDetectPerCycle: derivedMaxDetectPerCycle,
+    maxProcessPerCycle: derivedMaxProcessPerCycle,
     processTimeoutMs: Number(runtime.processTimeoutMs || 240000),
+    strategyReplyTargetPerCycle: replyTargetPerCycle,
   };
 }
 
 function getNeighborCommenterConfig() {
   const runtime = getBlogNeighborCommenterConfig();
+  const strategy = loadStrategyBundle().plan;
+  const neighborTargetPerCycle = Math.max(1, resolveExecutionTarget('neighborCommentTargetPerCycle', strategy, 1));
+  const sympathyTargetPerCycle = Math.max(1, resolveExecutionTarget('sympathyTargetPerCycle', strategy, 1));
+  const dominantSocialTarget = Math.max(neighborTargetPerCycle, sympathyTargetPerCycle);
+  const derivedMaxDaily = Math.max(Number(runtime.maxDaily || 20), dominantSocialTarget * 4);
+  const derivedMaxCollectPerCycle = Math.max(Number(runtime.maxCollectPerCycle || 20), dominantSocialTarget * 2);
+  const derivedMaxProcessPerCycle = Math.max(Number(runtime.maxProcessPerCycle || 20), dominantSocialTarget);
   return {
     enabled: runtime.enabled === true,
     blogId: String(runtime.blogId || '').trim(),
-    maxDaily: Number(runtime.maxDaily || 20),
+    maxDaily: derivedMaxDaily,
     activeStartHour: Number(runtime.activeStartHour || 9),
     activeEndHour: Number(runtime.activeEndHour || 21),
-    maxCollectPerCycle: Number(runtime.maxCollectPerCycle || 20),
-    maxProcessPerCycle: Number(runtime.maxProcessPerCycle || 20),
+    maxCollectPerCycle: derivedMaxCollectPerCycle,
+    maxProcessPerCycle: derivedMaxProcessPerCycle,
     recentWindowDays: Number(runtime.recentWindowDays || 14),
     aggressiveRecentWindowDays: Number(runtime.aggressiveRecentWindowDays || 1),
     minCommentLen: Number(runtime.minCommentLen || 45),
     maxCommentLen: Number(runtime.maxCommentLen || 220),
     processTimeoutMs: Number(runtime.processTimeoutMs || 180000),
+    strategyNeighborTargetPerCycle: neighborTargetPerCycle,
+    strategySympathyTargetPerCycle: sympathyTargetPerCycle,
   };
 }
 
@@ -5015,14 +5031,17 @@ async function runCommentReply({ testMode = false } = {}) {
 
   await ensureSchema();
 
-  const requeued = await requeueRecoverableReplyFailures(testMode ? 1 : 5).catch(() => 0);
-  const courtesyBackfill = await requeueCourtesyReflectionCandidates(testMode ? 2 : 10, { dryRun: false }).catch(() => ({
+  const requeueLimit = testMode ? 1 : Math.max(5, Number(config.strategyReplyTargetPerCycle || 1) * 2);
+  const courtesyLimit = testMode ? 2 : Math.max(10, Number(config.strategyReplyTargetPerCycle || 1) * 3);
+  const promotionalLimit = testMode ? 2 : Math.max(10, Number(config.strategyReplyTargetPerCycle || 1) * 3);
+  const requeued = await requeueRecoverableReplyFailures(requeueLimit).catch(() => 0);
+  const courtesyBackfill = await requeueCourtesyReflectionCandidates(courtesyLimit, { dryRun: false }).catch(() => ({
     dryRun: false,
     reviewed: 0,
     requeuedCount: 0,
     candidates: [],
   }));
-  const promotionalBackfill = await requeuePromotionalReplyCandidates(testMode ? 2 : 10, { dryRun: false }).catch(() => ({
+  const promotionalBackfill = await requeuePromotionalReplyCandidates(promotionalLimit, { dryRun: false }).catch(() => ({
     dryRun: false,
     reviewed: 0,
     requeuedCount: 0,
@@ -5043,9 +5062,11 @@ async function runCommentReply({ testMode = false } = {}) {
     }
     throw error;
   }
-  const pending = await getPendingComments(Math.min(config.maxProcessPerCycle, testMode ? 1 : config.maxProcessPerCycle));
-  const remaining = Math.max(0, config.maxDaily - todayCount);
-  const targets = pending.slice(0, testMode ? 1 : remaining);
+  const cycleReplyTarget = testMode ? 1 : Math.max(1, Number(config.strategyReplyTargetPerCycle || config.maxProcessPerCycle || 1));
+  const pending = await getPendingComments(Math.min(config.maxProcessPerCycle, cycleReplyTarget));
+  const remainingDaily = Math.max(0, config.maxDaily - todayCount);
+  const remainingCycle = Math.min(remainingDaily, cycleReplyTarget);
+  const targets = pending.slice(0, testMode ? 1 : remainingCycle);
 
   let replied = 0;
   let failed = 0;
@@ -5098,7 +5119,7 @@ async function runCommentReply({ testMode = false } = {}) {
   const totalProcessed = replied + failed + skipped;
   const failureRate = totalProcessed > 0 ? failed / totalProcessed : 0;
   const exhaustedReplyWorkload = pending.length <= targets.length;
-  const unmetReplyTarget = Math.max(0, remaining - replied);
+  const unmetReplyTarget = Math.max(0, remainingCycle - replied);
   let externalFill = null;
 
   if (exhaustedReplyWorkload && unmetReplyTarget > 0) {
@@ -5128,6 +5149,7 @@ async function runCommentReply({ testMode = false } = {}) {
     failed,
     skipped,
     total: todayCount + replied,
+    cycleTarget: cycleReplyTarget,
     requeued,
     courtesyBackfill,
     promotionalBackfill,
@@ -5256,7 +5278,8 @@ async function runNeighborSympathy({ testMode = false } = {}) {
     collectLimit: testMode ? 1 : cadence.effectiveCollectLimit,
   });
   const remaining = Math.max(0, config.maxDaily - todayCount);
-  const effectiveLimit = testMode ? 1 : Math.min(cadence.effectiveSympathyLimit, remaining);
+  const cycleSympathyTarget = testMode ? 1 : Math.max(1, Number(config.strategySympathyTargetPerCycle || cadence.effectiveSympathyLimit || 1));
+  const effectiveLimit = testMode ? 1 : Math.min(cadence.effectiveSympathyLimit, remaining, cycleSympathyTarget);
   const targets = newCandidates.slice(0, effectiveLimit);
 
   let liked = 0;
@@ -5307,6 +5330,7 @@ async function runNeighborSympathy({ testMode = false } = {}) {
     failed,
     skipped,
     total: todayCount + liked,
+    cycleTarget: cycleSympathyTarget,
     adaptiveCadence: cadence,
     testMode,
   };
@@ -5340,9 +5364,10 @@ async function runNeighborCommenter({ testMode = false, limitOverride = 0, trigg
   });
   const pending = await getPendingNeighborComments(Math.min(cadence.effectiveProcessLimit, testMode ? 1 : cadence.effectiveProcessLimit));
   const remaining = Math.max(0, config.maxDaily - todayCount);
+  const cycleNeighborTarget = testMode ? 1 : Math.max(1, Number(config.strategyNeighborTargetPerCycle || cadence.effectiveProcessLimit || 1));
   const requestedLimit = Number(limitOverride || 0) > 0
     ? Math.min(remaining, Number(limitOverride || 0))
-    : Math.min(cadence.effectiveProcessLimit, remaining);
+    : Math.min(cadence.effectiveProcessLimit, remaining, cycleNeighborTarget);
   const targets = pending.slice(0, testMode ? 1 : requestedLimit);
   traceCommenter('neighborComment:cycle', {
     detected: newCandidates.length,
@@ -5442,6 +5467,7 @@ async function runNeighborCommenter({ testMode = false, limitOverride = 0, trigg
     skipped,
     total: todayCount + posted,
     sympathyTotal: todaySympathyCount + sympathized,
+    cycleTarget: cycleNeighborTarget,
     trigger,
     limitOverride: Number(limitOverride || 0),
     adaptiveCadence: cadence,

@@ -400,7 +400,17 @@ async function _markBookReviewQueueStatus(book, status, extra = {}) {
 
 async function _refillBookReviewQueue(targetSize = 5) {
   try {
-    const result = await blogSkills.bookReviewBook.buildBookReviewQueue({ limit: targetSize });
+    const strategyPlan = loadLatestStrategy();
+    const directives = normalizeExecutionDirectives(strategyPlan);
+    const dynamicTargetSize = Math.max(
+      3,
+      Math.min(
+        12,
+        Number(targetSize || 0)
+        || (Number(directives.executionTargets.blogRegistrationsPerCycle || 1) * 3)
+      )
+    );
+    const result = await blogSkills.bookReviewBook.buildBookReviewQueue({ limit: dynamicTargetSize });
     if (Number(result?.inserted || 0) > 0) {
       console.log(`[블로] 도서리뷰 큐 자동 보충: ${result.inserted}건 추가`);
     }
