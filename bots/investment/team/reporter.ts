@@ -22,7 +22,7 @@ import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { loadSecrets, initHubSecrets, getMarketExecutionModeInfo } from '../shared/secrets.ts';
 import { getDomesticPrice, getOverseasPrice } from '../shared/kis-client.ts';
 import { tracker }      from '../shared/cost-tracker.ts';
-import { buildAccuracyReport } from '../shared/analyst-accuracy.ts';
+import { adjustAnalystWeights } from '../shared/analyst-accuracy.ts';
 import { buildScreeningHistoryReport } from '../scripts/screening-history-report.ts';
 import { buildPositionReevaluationSummary } from '../scripts/position-reevaluation-summary.ts';
 import { buildRuntimeMinOrderPressureReport } from '../scripts/runtime-min-order-pressure-report.ts';
@@ -1044,8 +1044,15 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
 
   // ── 7. 분석팀 정확도 ────────────────────────────────────────────────
   let accuracyReport = null;
+  let accuracyWeightChanges = [];
+  let accuracyAlerts = [];
+  let accuracyAutoApplied = false;
   try {
-    accuracyReport = await buildAccuracyReport();
+    const accuracyResult = await adjustAnalystWeights({ persist: true });
+    accuracyReport = accuracyResult.report;
+    accuracyWeightChanges = accuracyResult.adjustments || [];
+    accuracyAlerts = accuracyResult.alerts || [];
+    accuracyAutoApplied = Boolean(accuracyResult.persisted);
   } catch (e) {
     console.warn(`  ⚠️ 분석팀 정확도 조회 실패: ${e.message}`);
   }
@@ -1323,18 +1330,17 @@ ${JSON.stringify({
 
   // 가중치 조정 알림 (텔레그램, 조정 제안 있을 시)
   if (telegram && accuracyReport) {
-    const needsAlert = accuracyReport.adjustments.some(
-      a => (a.action !== 'maintain' && a.action !== 'insufficient_data') || a.needsReview
-    );
+    const needsAlert = accuracyWeightChanges.length > 0 || accuracyAlerts.length > 0;
     if (needsAlert) {
       const detailLines = [];
-      for (const adj of accuracyReport.adjustments) {
-        if (adj.action !== 'maintain' && adj.action !== 'insufficient_data') {
-          detailLines.push(`${adj.botName}: ${adj.currentWeight} → ${adj.suggestedWeight} (${adj.reason})`);
-        }
-        if (adj.needsReview) {
-          detailLines.push(`검토 필요: ${adj.botName} 3주 연속 50% 미만`);
-        }
+      for (const adj of accuracyWeightChanges) {
+        const accuracyPct = Number.isFinite(Number(adj.accuracy))
+          ? `${(Number(adj.accuracy) * 100).toFixed(1)}%`
+          : '데이터 부족';
+        detailLines.push(`${adj.name}: ${adj.from} → ${adj.to} (${accuracyPct}, ${adj.reason})`);
+      }
+      for (const alert of accuracyAlerts) {
+        detailLines.push(alert.message);
       }
       const alertNotice = buildNoticeEvent({
         from_bot: 'luna',
@@ -1342,9 +1348,13 @@ ${JSON.stringify({
         event_type: 'accuracy_alert',
         alert_level: 2,
         title: '분석팀 가중치 조정 제안',
-        summary: '최근 정확도 기준으로 검토가 필요한 변경안이 있습니다',
+        summary: accuracyAutoApplied
+          ? '최근 정확도 기준 변경안을 자동 적용했고, 반영 효과 관찰이 필요합니다'
+          : '최근 정확도 기준으로 검토가 필요한 변경안이 있습니다',
         details: detailLines,
-        action: '자동 변경 없이 마스터 승인 후 반영',
+        action: accuracyAutoApplied
+          ? '자동 적용 완료 — 다음 리포트에서 반영 효과 관찰'
+          : '자동 변경 없이 마스터 승인 후 반영',
       });
       await publishAlert({
         from_bot: 'reporter',

@@ -34,6 +34,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = join(__dirname, '..', 'config.yaml');
 const OVERRIDE_DIR = join(__dirname, '..', 'data');
 const OVERRIDE_PATH = join(OVERRIDE_DIR, 'analyst-weight-overrides.json');
+const ADJUSTMENT_STATE_PATH = join(OVERRIDE_DIR, 'analyst-weight-adjustment-state.json');
 
 // ── 분석팀 봇 정의 ─────────────────────────────────────────────────────
 const ANALYSTS = [
@@ -75,6 +76,13 @@ const ANALYST_PROFILE_MAP = {
   hermes: 'news',
 };
 const ALERT_ELIGIBLE_ANALYSTS = new Set(Object.keys(ANALYST_PROFILE_MAP));
+const CORE_ANALYST_NAMES = Object.keys(ANALYST_PROFILE_MAP);
+const DEFAULT_PROFILE_TEMPLATE = {
+  taMtf: ANALYSTS.find((a) => a.name === 'aria')?.defaultWeight ?? 0.30,
+  onchain: ANALYSTS.find((a) => a.name === 'oracle')?.defaultWeight ?? 0.30,
+  sentiment: ANALYSTS.find((a) => a.name === 'sophia')?.defaultWeight ?? 0.25,
+  news: ANALYSTS.find((a) => a.name === 'hermes')?.defaultWeight ?? 0.15,
+};
 
 function _jsonbAnalystKey(botName) {
   if (botName === 'sophia' || botName === 'hermes') return 'sentinel';
@@ -146,12 +154,33 @@ function _writeOverrideWeights(data) {
   writeFileSync(OVERRIDE_PATH, JSON.stringify(data, null, 2));
 }
 
+function _readAdjustmentState() {
+  try {
+    if (!existsSync(ADJUSTMENT_STATE_PATH)) return {};
+    return JSON.parse(readFileSync(ADJUSTMENT_STATE_PATH, 'utf8')) || {};
+  } catch {
+    return {};
+  }
+}
+
+function _writeAdjustmentState(data) {
+  mkdirSync(OVERRIDE_DIR, { recursive: true });
+  writeFileSync(ADJUSTMENT_STATE_PATH, JSON.stringify(data, null, 2));
+}
+
+function _buildEvidenceKey({ accuracy, sampleCount }) {
+  const accuracyKey = Number.isFinite(Number(accuracy)) ? Number(accuracy).toFixed(4) : 'na';
+  const sampleKey = Number.isFinite(Number(sampleCount)) ? String(Number(sampleCount)) : 'na';
+  return `${accuracyKey}:${sampleKey}`;
+}
+
 function _getEffectiveProfileWeights() {
   const configWeights = _readConfigWeights();
   const overrideWeights = _readOverrideWeights();
   const result = {};
   for (const profileKey of PROFILE_KEYS) {
     result[profileKey] = {
+      ...DEFAULT_PROFILE_TEMPLATE,
       ...(configWeights?.[profileKey] || {}),
       ...(overrideWeights?.[profileKey] || {}),
     };
@@ -376,8 +405,27 @@ async function calculateWeightAdjustment(botName, currentWeight) {
  * @param {Record<string, number>} [currentWeights]
  * @returns {Promise<AccuracyReport>}
  */
-async function buildAccuracyReport(currentWeights = {}) {
-  const analysts = await getActiveAnalysts();
+async function buildAccuracyReport({
+  currentWeights = {},
+  analystNames = CORE_ANALYST_NAMES,
+} = {}) {
+  const adjustmentState = _readAdjustmentState();
+  const activeAnalysts = await getActiveAnalysts();
+  const analystNameSet = new Set((analystNames || CORE_ANALYST_NAMES).filter(Boolean));
+  const fallbackMap = new Map(ANALYSTS.map((analyst) => [analyst.name, analyst]));
+  const analysts = (activeAnalysts || [])
+    .filter((analyst) => analystNameSet.has(analyst.name))
+    .map((analyst) => ({
+      ...fallbackMap.get(analyst.name),
+      ...analyst,
+    }));
+
+  for (const analystName of analystNameSet) {
+    if (analysts.some((analyst) => analyst.name === analystName)) continue;
+    const fallback = fallbackMap.get(analystName);
+    if (fallback) analysts.push({ ...fallback });
+  }
+
   const adjustments = [];
   const lines = [
     '📊 분석팀 주간 성적표',
@@ -387,6 +435,27 @@ async function buildAccuracyReport(currentWeights = {}) {
   for (const analyst of analysts) {
     const w    = currentWeights[analyst.name] ?? analyst.defaultWeight;
     const adj  = await calculateWeightAdjustment(analyst.name, w);
+    const evidenceKey = _buildEvidenceKey(adj);
+    const priorState = adjustmentState?.[analyst.name];
+    const alreadyOffsetFromBaseline =
+      !priorState
+      && (
+        (adj.action === 'increase' && Number(adj.currentWeight) > Number(analyst.defaultWeight))
+        || (adj.action === 'decrease' && Number(adj.currentWeight) < Number(analyst.defaultWeight))
+      );
+    if (
+      adj.suggestedWeight !== adj.currentWeight
+      && (
+        (priorState?.evidenceKey === evidenceKey
+          && Number(priorState?.appliedTo) === Number(adj.currentWeight))
+        || alreadyOffsetFromBaseline
+      )
+    ) {
+      adj.suggestedWeight = adj.currentWeight;
+      adj.action = 'observe';
+      adj.alreadyApplied = true;
+      adj.reason = `동일 근거(${adj.accuracyPct || '데이터 부족'}, n=${adj.sampleCount ?? 0})로 이미 반영됨`;
+    }
     adjustments.push(adj);
 
     const icon = adj.action === 'increase' ? '▲' : adj.action === 'decrease' ? '▼' : '━';
@@ -399,6 +468,9 @@ async function buildAccuracyReport(currentWeights = {}) {
       line += ` → ${adj.suggestedWeight} 제안`;
     } else {
       line += ' 유지';
+    }
+    if (adj.alreadyApplied) {
+      line += ' (이미 반영)';
     }
     if (adj.needsReview) {
       line += ' ⚠️';
@@ -461,12 +533,16 @@ async function adjustAnalystWeights({
   persist = true,
 } = {}) {
   const currentProfiles = _getEffectiveProfileWeights();
+  const currentAdjustmentState = _readAdjustmentState();
   const currentDefault = currentProfiles.default || {};
   const report = await buildAccuracyReport({
-    aria: currentDefault.taMtf,
-    oracle: currentDefault.onchain,
-    sophia: currentDefault.sentiment,
-    hermes: currentDefault.news,
+    currentWeights: {
+      aria: currentDefault.taMtf,
+      oracle: currentDefault.onchain,
+      sophia: currentDefault.sentiment,
+      hermes: currentDefault.news,
+    },
+    analystNames: CORE_ANALYST_NAMES,
   });
 
   const adjustments = [];
@@ -505,10 +581,36 @@ async function adjustAnalystWeights({
   const nextProfiles = _applyAdjustmentToProfiles(currentProfiles, adjustmentByAnalyst);
   if (persist && adjustments.length > 0) {
     _writeOverrideWeights(nextProfiles);
+    const nextAdjustmentState = { ...currentAdjustmentState };
+    for (const item of adjustments) {
+      nextAdjustmentState[item.name] = {
+        evidenceKey: _buildEvidenceKey(item),
+        accuracy: item.accuracy,
+        sampleCount: item.sampleCount,
+        appliedFrom: item.from,
+        appliedTo: item.to,
+        appliedAt: new Date().toISOString(),
+      };
+    }
+    _writeAdjustmentState(nextAdjustmentState);
   }
 
+  const effectiveDefault = persist && adjustments.length > 0
+    ? nextProfiles.default || {}
+    : currentDefault;
+  const effectiveReport = await buildAccuracyReport({
+    currentWeights: {
+      aria: effectiveDefault.taMtf,
+      oracle: effectiveDefault.onchain,
+      sophia: effectiveDefault.sentiment,
+      hermes: effectiveDefault.news,
+    },
+    analystNames: CORE_ANALYST_NAMES,
+  });
+
   return {
-    report,
+    report: effectiveReport,
+    preApplyReport: report,
     adjustments,
     alerts,
     currentProfiles,
