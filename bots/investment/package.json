@@ -15,6 +15,7 @@
     "sophia": "node team/sophia.ts --symbol=BTC/USDT",
     "scout": "node team/scout.ts --dry-run --json",
     "nemesis": "node team/nemesis.ts",
+    "regime:capture": "node scripts/capture-market-regimes.ts",
     "chronos": "node team/chronos.ts --symbol=BTC/USDT --from=2026-03-01 --to=2026-04-01 --layer=3",
     "chronos:quality": "node team/chronos.ts --symbol=BTC/USDT --from=2026-03-01 --to=2026-04-01 --layer=3 --measure-quality",
     "check": "node --check markets/crypto.ts && node --check team/luna.ts && node --check shared/llm-client.ts",
