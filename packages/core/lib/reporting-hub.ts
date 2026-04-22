@@ -303,7 +303,7 @@ export function summarizePayloadWarnings(entries: Array<Record<string, unknown>>
 }
 
 function compactLine(line: string, maxLength = MOBILE_LINE_MAX): string {
-  const text = String(line || '')
+  const text = normalizeDisplayText(line)
     .replace(/\s+/g, ' ')
     .replace(/[━═─-]{8,}/g, MOBILE_DIVIDER)
     .trim();
@@ -312,12 +312,21 @@ function compactLine(line: string, maxLength = MOBILE_LINE_MAX): string {
   return `${text.slice(0, maxLength - 1).trimEnd()}…`;
 }
 
+function normalizeDisplayText(value: unknown): string {
+  if (value == null) return '';
+  const text = String(value).trim();
+  if (!text) return '';
+  const lowered = text.toLowerCase();
+  if (['undefined', 'null', 'nan', '[object object]'].includes(lowered)) return '';
+  return text;
+}
+
 function compactSectionTitle(title: string): string {
-  return compactLine(String(title || '').replace(/[━═─]/g, ' ').replace(/\s+/g, ' ').trim(), 40);
+  return compactLine(normalizeDisplayText(title).replace(/[━═─]/g, ' ').replace(/\s+/g, ' ').trim(), 40);
 }
 
 function compactNoticeTitle(title: string): string {
-  const normalized = String(title || '')
+  const normalized = normalizeDisplayText(title)
     .replace(/^[^\w가-힣]+\s*/, '')
     .replace(/^루나 메트릭 경고\s*[—-]\s*/u, '루나 경고 · ')
     .replace(/^오늘 예약 현황\s*[—-]\s*/u, '오늘 예약 · ')
@@ -360,7 +369,7 @@ export function validatePayloadSchema(payload: unknown = null): { payload: Norma
   for (const key of ['title', 'summary', 'action', 'detail']) {
     if (normalized[key] != null) {
       if (typeof normalized[key] !== 'string') warnings.push(`${key}_coerced_to_string`);
-      normalized[key] = String(normalized[key]).trim();
+      normalized[key] = normalizeDisplayText(normalized[key]);
     }
   }
 
@@ -370,7 +379,7 @@ export function validatePayloadSchema(payload: unknown = null): { payload: Norma
       normalized.details = [normalized.details];
     }
     normalized.details = (normalized.details as unknown[])
-      .map((line: unknown) => String(line || '').trim())
+      .map((line: unknown) => normalizeDisplayText(line))
       .filter(Boolean);
   }
 
@@ -384,7 +393,7 @@ export function validatePayloadSchema(payload: unknown = null): { payload: Norma
         if (!link) return null;
         if (typeof link === 'string') {
           warnings.push('link_string_coerced_to_object');
-          return { label: link.trim(), href: '' };
+          return { label: normalizeDisplayText(link), href: '' };
         }
         if (typeof link !== 'object') {
           warnings.push('link_invalid_dropped');
@@ -392,8 +401,8 @@ export function validatePayloadSchema(payload: unknown = null): { payload: Norma
         }
         const linkRecord = link as Record<string, unknown>;
         return {
-          label: String(linkRecord.label || '').trim(),
-          href: String(linkRecord.href || '').trim(),
+          label: normalizeDisplayText(linkRecord.label),
+          href: normalizeDisplayText(linkRecord.href),
         };
       })
       .filter((link): link is PayloadLink => Boolean(link && link.label));
@@ -1002,12 +1011,12 @@ export function buildNoticeEvent({
   });
   return {
     ...normalized,
-    title: String(title || '').trim(),
-    summary: String(summary || '').trim(),
-    details: (details || []).map((line: unknown) => String(line || '').trim()).filter(Boolean),
-    action: String(action || '').trim(),
-    actionLabel: String(actionLabel || '조치').trim(),
-    footer: String(footer || '').trim(),
+    title: normalizeDisplayText(title),
+    summary: normalizeDisplayText(summary),
+    details: (details || []).map((line: unknown) => normalizeDisplayText(line)).filter(Boolean),
+    action: normalizeDisplayText(action),
+    actionLabel: normalizeDisplayText(actionLabel || '조치'),
+    footer: normalizeDisplayText(footer),
   };
 }
 
@@ -1065,13 +1074,13 @@ export function buildReportEvent({
   });
   return {
     ...normalized,
-    title: String(title || '').trim(),
-    summary: String(summary || '').trim(),
+    title: normalizeDisplayText(title),
+    summary: normalizeDisplayText(summary),
     sections: (sections || []).map((section): ReportSection => ({
-      title: String(section?.title || '').trim(),
-      lines: (section?.lines || []).map((line: unknown) => String(line || '').trim()).filter(Boolean),
+      title: normalizeDisplayText(section?.title),
+      lines: (section?.lines || []).map((line: unknown) => normalizeDisplayText(line)).filter(Boolean),
     })).filter((section) => section.title || section.lines.length > 0),
-    footer: String(footer || '').trim(),
+    footer: normalizeDisplayText(footer),
   };
 }
 
@@ -1112,26 +1121,28 @@ export function getEventHeadline(event: { payload?: unknown; message?: string | 
     payload?.title,
     payload?.summary,
     payload?.detail,
-  ].find((value) => typeof value === 'string' && value.trim());
-  if (fromPayload) return String(fromPayload).trim();
+  ].map((value) => normalizeDisplayText(value)).find(Boolean);
+  if (fromPayload) return fromPayload;
 
-  const message = String(event?.message || '').trim();
-  if (!message) return '';
-  return message.split('\n').map((line) => line.trim()).find(Boolean) || '';
+  const messageLines = String(event?.message || '')
+    .split('\n')
+    .map((line) => normalizeDisplayText(line))
+    .filter(Boolean);
+  return messageLines[0] || '';
 }
 
 export function getEventDetailLines(event: { payload?: unknown; message?: string | null } | null | undefined): string[] {
   const payload = parseEventPayload(event?.payload);
   const payloadDetails = [];
   if (Array.isArray(payload?.details)) {
-    payloadDetails.push(...payload.details.map((line) => String(line || '').trim()).filter(Boolean));
+    payloadDetails.push(...payload.details.map((line) => normalizeDisplayText(line)).filter(Boolean));
   }
   if (payloadDetails.length > 0) {
     return compactLines(payloadDetails, MOBILE_DETAIL_LIMIT);
   }
   const messageLines = String(event?.message || '')
     .split('\n')
-    .map((line) => line.trim())
+    .map((line) => normalizeDisplayText(line))
     .filter(Boolean);
   const headline = getEventHeadline(event);
   const filteredMessageLines = messageLines.filter((line, index) => !(index === 0 && line === headline));
@@ -1140,10 +1151,7 @@ export function getEventDetailLines(event: { payload?: unknown; message?: string
 
 export function getEventAction(event: { payload?: unknown } | null | undefined): string {
   const payload = parseEventPayload(event?.payload);
-  if (typeof payload?.action === 'string' && payload.action.trim()) {
-    return payload.action.trim();
-  }
-  return '';
+  return normalizeDisplayText(payload?.action);
 }
 
 export function getEventLinkLines(event: { payload?: unknown } | null | undefined): string[] {
@@ -1151,8 +1159,8 @@ export function getEventLinkLines(event: { payload?: unknown } | null | undefine
   if (!Array.isArray(payload?.links)) return [];
   return payload.links
     .map((link: PayloadLink) => {
-      const label = String(link?.label || '').trim();
-      const href = String(link?.href || '').trim();
+      const label = normalizeDisplayText(link?.label);
+      const href = normalizeDisplayText(link?.href);
       if (!label) return '';
       return href ? `${label}: ${href}` : label;
     })

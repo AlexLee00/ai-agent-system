@@ -1,12 +1,12 @@
 {
-  "lastRun": "2026-04-20",
+  "lastRun": "2026-04-22",
   "versions": {
     "@anthropic-ai/sdk": "0.90.0",
     "@modelcontextprotocol/sdk": "1.29.0",
     "groq-sdk": "1.1.2",
     "duckdb": "1.4.4",
     "better-sqlite3": "12.9.0",
-    "ccxt": "4.5.49",
+    "ccxt": "4.5.50",
     "playwright": "1.59.1"
   },
   "lastAnalysis": null
