@@ -18,6 +18,7 @@
  */
 
 import { createRequire } from 'module';
+import fs from 'node:fs';
 import { callLLM, parseJSON } from '../shared/llm-client.ts';
 import { publishAlert } from '../shared/alert-publisher.ts';
 import * as db from '../shared/db.ts';
@@ -29,6 +30,7 @@ import { buildPositionReevaluationSummary } from './position-reevaluation-summar
 import { buildRuntimeMinOrderPressureReport } from './runtime-min-order-pressure-report.ts';
 import { buildRuntimeLearningLoopReport } from './runtime-learning-loop-report.ts';
 const require = createRequire(import.meta.url);
+const LATEST_OPS_SNAPSHOT_FILE = '/Users/alexlee/projects/ai-agent-system/bots/investment/output/ops/parallel-ops-snapshot.json';
 const RAG_RUNTIME = getInvestmentRagRuntimeConfig();
 let dailyFeedbackMemory = {
   recallCountHint: async () => '',
@@ -45,6 +47,23 @@ try {
 
 function parseArg(name, fallback = null) {
   return process.argv.slice(2).find((arg) => arg.startsWith(`--${name}=`))?.split('=')[1] || fallback;
+}
+
+function loadLatestOpsSnapshot() {
+  try {
+    if (!fs.existsSync(LATEST_OPS_SNAPSHOT_FILE)) return null;
+    return JSON.parse(fs.readFileSync(LATEST_OPS_SNAPSHOT_FILE, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function getWeakestRegimeSummary(runtimeLearningLoop) {
+  const weakest = runtimeLearningLoop?.sections?.regimeLaneSummary?.weakestRegime
+    || runtimeLearningLoop?.sections?.collect?.regimePerformance?.weakestRegime
+    || null;
+  const weakestMode = weakest?.tradeMode || weakest?.worstMode?.tradeMode || weakest?.bestMode?.tradeMode || 'n/a';
+  return { weakest, weakestMode };
 }
 
 const DAILY_REVIEW_SYSTEM = `
@@ -238,6 +257,10 @@ function buildLearningLoopLine(learningLoopSummary) {
   const decision = learningLoopSummary.decision || {};
   const weakest = learningLoopSummary.sections?.regimeLaneSummary?.weakestRegime;
   const topSuggestion = learningLoopSummary.sections?.strategy?.runtimeSuggestionTop;
+  const latestOpsSnapshot = loadLatestOpsSnapshot();
+  const { weakest: latestWeakest, weakestMode: latestSnapshotWeakestMode } = getWeakestRegimeSummary(
+    latestOpsSnapshot?.health?.runtimeLearningLoop,
+  );
   const weakestMode = weakest?.tradeMode || weakest?.worstMode?.tradeMode || weakest?.bestMode?.tradeMode;
   const weakestLabel = weakest?.regime && weakestMode
     ? `${weakest.regime}/${weakestMode}`
@@ -250,6 +273,7 @@ function buildLearningLoopLine(learningLoopSummary) {
     decision.status,
     weakestLabel ? `weakest ${weakestLabel}` : null,
     suggestionLabel ? `top suggestion ${suggestionLabel}` : null,
+    latestOpsSnapshot?.capturedAt ? `snapshot ${latestOpsSnapshot.capturedAt} ${latestWeakest?.regime || 'n/a'}/${latestSnapshotWeakestMode}` : null,
   ].filter(Boolean);
   return parts.length > 0 ? `🧭 learning loop: ${parts.join(' | ')}` : null;
 }

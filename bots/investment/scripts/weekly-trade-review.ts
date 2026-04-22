@@ -18,6 +18,7 @@
  */
 
 import { callLLM, parseJSON } from '../shared/llm-client.ts';
+import fs from 'node:fs';
 import { publishAlert } from '../shared/alert-publisher.ts';
 import * as db from '../shared/db.ts';
 import * as rag from '../shared/rag-client.ts';
@@ -28,6 +29,24 @@ import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
 const pgPool = require('../../../packages/core/lib/pg-pool');
+const LATEST_OPS_SNAPSHOT_FILE = '/Users/alexlee/projects/ai-agent-system/bots/investment/output/ops/parallel-ops-snapshot.json';
+
+function loadLatestOpsSnapshot() {
+  try {
+    if (!fs.existsSync(LATEST_OPS_SNAPSHOT_FILE)) return null;
+    return JSON.parse(fs.readFileSync(LATEST_OPS_SNAPSHOT_FILE, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function getWeakestRegimeSummary(runtimeLearningLoop) {
+  const weakest = runtimeLearningLoop?.sections?.regimeLaneSummary?.weakestRegime
+    || runtimeLearningLoop?.sections?.collect?.regimePerformance?.weakestRegime
+    || null;
+  const weakestMode = weakest?.tradeMode || weakest?.worstMode?.tradeMode || weakest?.bestMode?.tradeMode || 'n/a';
+  return { weakest, weakestMode };
+}
 
 function getMarketBucket(exchange) {
   if (exchange === 'kis') return 'domestic';
@@ -408,12 +427,17 @@ function buildWeeklyLearningLoopLine(learningLoopSummary) {
   if (!learningLoopSummary || learningLoopSummary.error || !learningLoopSummary.decision) return null;
   const weakest = learningLoopSummary.sections?.regimeLaneSummary?.weakestRegime;
   const topSuggestion = learningLoopSummary.sections?.strategy?.runtimeSuggestionTop;
+  const latestOpsSnapshot = loadLatestOpsSnapshot();
+  const { weakest: latestWeakest, weakestMode: latestSnapshotWeakestMode } = getWeakestRegimeSummary(
+    latestOpsSnapshot?.health?.runtimeLearningLoop,
+  );
   const weakestMode = weakest?.tradeMode || weakest?.worstMode?.tradeMode || weakest?.bestMode?.tradeMode;
   const suggestionValue = topSuggestion?.suggestedValue ?? topSuggestion?.suggested;
   const parts = [
     learningLoopSummary.decision.status,
     weakest?.regime && weakestMode ? `weakest ${weakest.regime}/${weakestMode}` : null,
     topSuggestion?.key && suggestionValue != null ? `top suggestion ${topSuggestion.key} -> ${suggestionValue}` : null,
+    latestOpsSnapshot?.capturedAt ? `snapshot ${latestOpsSnapshot.capturedAt} ${latestWeakest?.regime || 'n/a'}/${latestSnapshotWeakestMode}` : null,
   ].filter(Boolean);
   return parts.length > 0 ? `🧭 learning loop: ${parts.join(' | ')}` : null;
 }
