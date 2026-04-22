@@ -16,6 +16,7 @@
 const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 const { runIfOps } = require('../../../packages/core/lib/mode-guard');
 const pgPool = require('../../../packages/core/lib/pg-pool');
+const { loadStrategyBundle } = require('./strategy-loader.ts');
 
 const publishReporter = require('./publish-reporter');
 
@@ -49,6 +50,45 @@ const PLATFORM_STRATEGY = {
     share_blog_url: true,
   },
 };
+
+function getEffectivePlatformStrategy() {
+  const { executionDirectives } = loadStrategyBundle();
+  const channelPriority = executionDirectives.channelPriority || {};
+  const targets = executionDirectives.executionTargets || {};
+
+  return {
+    naver_blog: {
+      ...PLATFORM_STRATEGY.naver_blog,
+      daily_posts: Math.max(1, Number(targets.blogRegistrationsPerCycle || PLATFORM_STRATEGY.naver_blog.daily_posts || 1)),
+      priority: channelPriority.naverBlog || 'primary',
+    },
+    instagram: {
+      ...PLATFORM_STRATEGY.instagram,
+      daily_reels: Math.max(0, Number(targets.instagramRegistrationsPerCycle || PLATFORM_STRATEGY.instagram.daily_reels || 1)),
+      priority: channelPriority.instagram || 'secondary',
+    },
+    facebook: {
+      ...PLATFORM_STRATEGY.facebook,
+      daily_posts: Math.max(0, Number(targets.facebookRegistrationsPerCycle || PLATFORM_STRATEGY.facebook.daily_posts || 1)),
+      priority: channelPriority.facebook || 'supporting',
+    },
+  };
+}
+
+async function hasRemainingPublishQuota(platform = 'instagram') {
+  const status = await getTodayPublishStatus();
+  const strategy = getEffectivePlatformStrategy();
+  if (platform === 'instagram') {
+    return Number(status.instagram || 0) < Number(strategy.instagram.daily_reels || 0);
+  }
+  if (platform === 'facebook') {
+    return Number(status.facebook || 0) < Number(strategy.facebook.daily_posts || 0);
+  }
+  if (platform === 'naver') {
+    return Number(status.naver || 0) < Number(strategy.naver_blog.daily_posts || 0);
+  }
+  return true;
+}
 
 /**
  * 오늘의 3 플랫폼 발행 상태 조회
@@ -142,14 +182,16 @@ async function crosspostToFacebook(blogPost, dryRun = false) {
  * 3 플랫폼 통합 발행 상태 보고 (일일 오케스트레이션 완료 시)
  */
 async function sendDailyOrchestrationReport(status) {
-  const naverStatus = status.naver > 0 ? `✅ ${status.naver}편` : '❌ 없음';
-  const igStatus = status.instagram > 0 ? `✅ ${status.instagram}건` : '⏳ 대기';
-  const fbStatus = status.facebook > 0 ? `✅ ${status.facebook}건` : '⏳ 대기';
+  const strategy = getEffectivePlatformStrategy();
+  const naverStatus = status.naver > 0 ? `✅ ${status.naver}/${strategy.naver_blog.daily_posts}편` : `❌ 0/${strategy.naver_blog.daily_posts}`;
+  const igStatus = status.instagram > 0 ? `✅ ${status.instagram}/${strategy.instagram.daily_reels}건` : `⏳ 0/${strategy.instagram.daily_reels}`;
+  const fbStatus = status.facebook > 0 ? `✅ ${status.facebook}/${strategy.facebook.daily_posts}건` : `⏳ 0/${strategy.facebook.daily_posts}`;
 
   const msg = `📢 [블로팀] 3 플랫폼 발행 현황\n`
     + `📝 네이버: ${naverStatus}\n`
     + `📷 인스타: ${igStatus}\n`
-    + `👥 페북: ${fbStatus}`;
+    + `👥 페북: ${fbStatus}\n`
+    + `🎯 priority: 네이버=${strategy.naver_blog.priority} / 인스타=${strategy.instagram.priority} / 페북=${strategy.facebook.priority}`;
 
   await runIfOps(
     'blog-orchestration-report',
@@ -177,9 +219,13 @@ async function orchestrateDailyPublishing(dryRun = false) {
 
   console.log(`[platform-orchestrator] 오케스트레이션 시작 — "${blogPost.title}"`);
 
+  const [igQuota, fbQuota] = await Promise.all([
+    hasRemainingPublishQuota('instagram'),
+    hasRemainingPublishQuota('facebook'),
+  ]);
   const [igResult, fbResult] = await Promise.allSettled([
-    crosspostToInstagram(blogPost, dryRun),
-    crosspostToFacebook(blogPost, dryRun),
+    igQuota ? crosspostToInstagram(blogPost, dryRun) : Promise.resolve({ ok: false, skipped: true, reason: 'strategy_quota_reached' }),
+    fbQuota ? crosspostToFacebook(blogPost, dryRun) : Promise.resolve({ ok: false, skipped: true, reason: 'strategy_quota_reached' }),
   ]);
 
   const igSuccess = igResult.status === 'fulfilled' && igResult.value?.ok !== false;
@@ -226,4 +272,6 @@ module.exports = {
   getLatestTodayPost,
   sendDailyOrchestrationReport,
   PLATFORM_STRATEGY,
+  getEffectivePlatformStrategy,
+  hasRemainingPublishQuota,
 };

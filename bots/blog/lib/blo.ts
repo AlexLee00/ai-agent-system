@@ -77,6 +77,7 @@ const { ensureBlogCoreSchema }                      = require(path.join(env.PROJ
 const { checkQualityEnhanced }                      = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/quality-checker.ts'));
 const { publishToFile, recordPerformance }          = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/publ.ts'));
 const { crosspostToInstagram }                      = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/insta-crosspost.ts'));
+const { hasRemainingPublishQuota }                  = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/platform-orchestrator.ts'));
 const {
   diagnoseImageGeneration,
   reportImageGenFailure,
@@ -1120,12 +1121,13 @@ async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx
       { thumbPath: null }
     );
 
-  const instaCrosspost = instaContent?.reel?.outputPath
+  const instagramQuotaAvailable = options.dryRun ? true : await hasRemainingPublishQuota('instagram').catch(() => true);
+  const instaCrosspost = instaContent?.reel?.outputPath && instagramQuotaAvailable
     ? await crosspostToInstagram(instaContent, postTitle, published.postId, !!options.dryRun).catch(e => {
       console.warn('[크로스포스트] 강의 처리 중 예외:', e.message);
       return { ok: false, error: e.message };
     })
-    : null;
+    : (instaContent?.reel?.outputPath ? { ok: false, skipped: true, reason: 'instagram_strategy_quota_reached' } : null);
 
   return {
     type:           'lecture',
@@ -1268,12 +1270,13 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
     advance: advanceGeneralCategory,
   });
 
-  const instaCrosspost = instaContent?.reel?.outputPath
+  const instagramQuotaAvailable = options.dryRun ? true : await hasRemainingPublishQuota('instagram').catch(() => true);
+  const instaCrosspost = instaContent?.reel?.outputPath && instagramQuotaAvailable
     ? await crosspostToInstagram(instaContent, genTitle, published.postId, !!options.dryRun).catch(e => {
       console.warn('[크로스포스트] 일반 처리 중 예외:', e.message);
       return { ok: false, error: e.message };
     })
-    : null;
+    : (instaContent?.reel?.outputPath ? { ok: false, skipped: true, reason: 'instagram_strategy_quota_reached' } : null);
 
   return {
     type:           'general',
