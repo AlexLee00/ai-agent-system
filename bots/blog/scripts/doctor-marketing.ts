@@ -6,6 +6,7 @@ const env = require('../../../packages/core/lib/env');
 const { execFileSync } = require('child_process');
 const { buildBlogCliInsight } = require('../lib/cli-insight.ts');
 const { readMarketingDigestTelemetry, describeMarketingDigestAge } = require('../lib/marketing-digest-telemetry.ts');
+const { loadStrategyBundle } = require('../lib/strategy-loader.ts');
 
 const BLOG_ROOT = path.join(env.PROJECT_ROOT, 'bots/blog');
 const BLOG_PREFIX = `npm --prefix ${BLOG_ROOT}`;
@@ -13,6 +14,31 @@ const MARKETING_DIGEST_COMMAND = `${BLOG_PREFIX} run marketing:digest -- --json`
 const MARKETING_SNAPSHOT_COMMAND = `${BLOG_PREFIX} run marketing:snapshot -- --dry-run --json`;
 const CHANNEL_INSIGHTS_COMMAND = `${BLOG_PREFIX} run channel:insights -- --dry-run --json`;
 const REVENUE_STRATEGY_COMMAND = `${BLOG_PREFIX} run revenue:strategy -- --dry-run --json`;
+
+function parseIsoDate(value = null) {
+  if (!value) return null;
+  const timestamp = Date.parse(String(value));
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function describeStrategyFreshness(plan = null) {
+  const evolvedAt = String(plan?.evolvedAt || '').trim();
+  const evolvedAtMs = parseIsoDate(evolvedAt);
+  if (!evolvedAtMs) {
+    return {
+      evolvedAt: evolvedAt || null,
+      ageMinutes: null,
+      recentlyApplied: false,
+    };
+  }
+
+  const ageMinutes = Math.max(0, Math.round((Date.now() - evolvedAtMs) / 60000));
+  return {
+    evolvedAt,
+    ageMinutes,
+    recentlyApplied: ageMinutes <= 180,
+  };
+}
 
 function parseArgs(argv = []) {
   return {
@@ -51,6 +77,9 @@ function buildPrimary(digest = {}) {
   const snapshotWatchCount = Number(digest?.snapshotTrend?.watchCount || 0);
   const adoptionStatus = String(digest?.strategyAdoption?.status || '');
   const latestAlignmentHint = String(digest?.strategyAdoption?.latestAlignmentHint || '');
+  const strategyFreshness = digest?.strategyFreshness || {};
+  const strategyAppliedRecently = Boolean(strategyFreshness?.recentlyApplied);
+  const strategyAgeMinutes = Number(strategyFreshness?.ageMinutes);
 
   if (status === 'watch' || status === 'error') {
     return {
@@ -68,6 +97,15 @@ function buildPrimary(digest = {}) {
     snapshotWatchCount >= 5
     || (adoptionStatus && adoptionStatus !== 'aligned' && latestAlignmentHint.startsWith('category_drift:'))
   ) {
+    if (strategyAppliedRecently) {
+      return {
+        area: 'marketing.strategy_monitor',
+        reason: `전략 드리프트 신호는 남아 있지만 최신 전략이 최근 ${strategyAgeMinutes}분 전에 다시 적용돼, 지금은 추가 재편성보다 반영 효과를 관찰하는 편이 좋습니다 (${snapshotWatchCount} recent watch snapshots${latestAlignmentHint ? ` / ${latestAlignmentHint}` : ''}).`,
+        nextCommand: CHANNEL_INSIGHTS_COMMAND,
+        actionFocus: '게시 후 조회·공감·채널 반응을 더 수집해 새 전략 반영 효과를 확인',
+        recommendation: recommendations[0] || '',
+      };
+    }
     return {
       area: 'marketing.strategy_refresh',
       reason: `최근 마케팅 신호 누적과 전략 채택 드리프트가 보여 새로운 노출 전략과 전환 전략을 다시 편성할 시점입니다 (${snapshotWatchCount} recent watch snapshots${latestAlignmentHint ? ` / ${latestAlignmentHint}` : ''}).`,
@@ -128,6 +166,11 @@ function buildActions({ primary, digest = {} }) {
     actions.push(`signal snapshot: ${MARKETING_SNAPSHOT_COMMAND}`);
     actions.push(`strategy evolve: ${REVENUE_STRATEGY_COMMAND}`);
   }
+  if (primaryArea === 'marketing.strategy_monitor') {
+    actions.push(`signal collect: ${CHANNEL_INSIGHTS_COMMAND}`);
+    actions.push(`signal snapshot: ${MARKETING_SNAPSHOT_COMMAND}`);
+    actions.push('observe loop: 최신 전략 반영 후 채널별 조회·공감·전환 반응을 더 수집');
+  }
 
   const watchHint = String(digest?.channelPerformance?.primaryWatchHint || '');
   if (watchHint) actions.push(`channel watch: ${watchHint}`);
@@ -146,6 +189,9 @@ function buildActions({ primary, digest = {} }) {
   if (primaryArea === 'marketing.watch' || primaryArea === 'marketing.strategy_refresh') {
     actions.push('execute loop: 채널 수집 -> 마케팅 스냅샷 -> 전략 갱신 -> 다음 daily/배포 사이클 반영');
   }
+  if (primaryArea === 'marketing.strategy_monitor') {
+    actions.push('execute loop: 채널 수집 -> 마케팅 스냅샷 -> 반영 효과 확인 -> 다음 daily/배포 사이클 반영');
+  }
 
   if (!actions.length) {
     actions.push('마케팅 확장 신호는 현재 안정적이라 다음 daily 사이클에서 다시 관찰하면 됩니다.');
@@ -162,6 +208,9 @@ function buildMarketingDoctorFallback(payload = {}) {
   if (primaryArea === 'marketing.strategy_refresh') {
     return '마케팅 watch는 과열로 보지 않더라도 전략 채택 드리프트가 누적돼 있어, 수집과 스냅샷을 다시 돌리고 채널별 노출 전략을 재편성하는 편이 좋습니다.';
   }
+  if (primaryArea === 'marketing.strategy_monitor') {
+    return '전략은 최근 다시 적용됐고 지금은 채널 반응을 더 모아 반영 효과를 확인하는 편이 좋습니다.';
+  }
   return '마케팅 확장 상태는 현재 비교적 안정적이라 다음 daily 사이클 관찰 중심으로 가면 됩니다.';
 }
 
@@ -170,6 +219,17 @@ async function main() {
   const digestResult = runMarketingDigest();
   const latestDigestRun = readMarketingDigestTelemetry();
   const digest = buildDigestFallbackView(digestResult.payload || {}, latestDigestRun);
+  const strategyBundle = loadStrategyBundle();
+  const strategyFreshness = describeStrategyFreshness(strategyBundle?.plan || null);
+  const strategyRuntime = strategyBundle?.plan
+    ? {
+        preferredCategory: strategyBundle.plan.preferredCategory || null,
+        preferredTitlePattern: strategyBundle.plan.preferredTitlePattern || null,
+        evolvedAt: strategyBundle.plan.evolvedAt || null,
+      }
+    : null;
+  digest.strategyFreshness = strategyFreshness;
+  digest.strategyRuntime = strategyRuntime;
   const payload = {
     digestCommand: digestResult.command,
     digestError: digestResult.error || '',
@@ -181,6 +241,8 @@ async function main() {
     channelPerformance: digest?.channelPerformance || null,
     nextGeneralPreview: digest?.nextGeneralPreview || null,
     recommendations: Array.isArray(digest?.recommendations) ? digest.recommendations : [],
+    strategyFreshness,
+    strategyRuntime,
   };
   payload.primary = buildPrimary(digest);
   payload.actions = buildActions({ primary: payload.primary, digest: payload });
