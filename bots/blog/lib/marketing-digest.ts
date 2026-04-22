@@ -756,14 +756,17 @@ function summarizeSense(sense = {}) {
 
 function buildRecommendations({ senseSummary, revenueCorrelation, diagnosis, autonomySummary, channelPerformance }) {
   const recommendations = [];
+  const activeDayCount = Number(revenueCorrelation?.activeDay?.dayCount || 0);
+  const inactiveDayCount = Number(revenueCorrelation?.inactiveDay?.dayCount || 0);
+  const hasReliableRevenueCorrelation = activeDayCount >= 5 && inactiveDayCount >= 5;
 
   if (senseSummary.anomaly) {
     recommendations.push('매출 이상 신호가 있어 오늘은 예약/전환형 콘텐츠 비중을 높이는 편이 좋습니다.');
   }
 
-  if ((revenueCorrelation?.revenueImpactPct || 0) > 0.05) {
+  if (hasReliableRevenueCorrelation && (revenueCorrelation?.revenueImpactPct || 0) > 0.05) {
     recommendations.push('마케팅 집행일 매출 우세가 보여, 발행 후 채널 확산을 더 적극적으로 이어가면 좋습니다.');
-  } else if ((revenueCorrelation?.revenueImpactPct || 0) < -0.05) {
+  } else if (hasReliableRevenueCorrelation && (revenueCorrelation?.revenueImpactPct || 0) < -0.05) {
     recommendations.push('최근 마케팅 집행일 매출 우세가 약해, 제목과 CTA를 다시 점검하는 편이 좋습니다.');
   }
 
@@ -797,6 +800,15 @@ function buildRecommendations({ senseSummary, revenueCorrelation, diagnosis, aut
 }
 
 function buildHealth({ senseSummary, revenueCorrelation, diagnosis, autonomySummary, channelPerformance }) {
+  const revenueRatio = Number(senseSummary?.revenueRatio || 0);
+  const revenueDelta = revenueRatio > 0 ? Math.abs(revenueRatio - 1) : 0;
+  const severeRevenueSwing = Boolean(senseSummary?.anomaly) && revenueDelta >= 0.3;
+  const channelWatchCount = Number(channelPerformance?.watchChannels || 0);
+  const activeDayCount = Number(revenueCorrelation?.activeDay?.dayCount || 0);
+  const inactiveDayCount = Number(revenueCorrelation?.inactiveDay?.dayCount || 0);
+  const hasReliableRevenueCorrelation = activeDayCount >= 5 && inactiveDayCount >= 5;
+  const negativeRevenueCorrelation = hasReliableRevenueCorrelation && (revenueCorrelation?.revenueImpactPct || 0) < -0.1;
+
   if (senseSummary.signalCount === 0 && diagnosis?.postCount === 0 && autonomySummary.totalCount === 0) {
     return {
       status: 'warming_up',
@@ -804,17 +816,24 @@ function buildHealth({ senseSummary, revenueCorrelation, diagnosis, autonomySumm
     };
   }
 
-  if (senseSummary.anomaly || (revenueCorrelation?.revenueImpactPct || 0) < -0.1) {
+  if (severeRevenueSwing || negativeRevenueCorrelation) {
     return {
       status: 'watch',
       reason: '매출/마케팅 신호 변동이 커서 오늘은 실험보다 안정 운영 쪽이 좋습니다.',
     };
   }
 
-  if (Number(channelPerformance?.watchChannels || 0) > 0) {
+  if (channelWatchCount > 0) {
     return {
       status: 'watch',
       reason: '채널 실행 신호에 watch 상태가 있어 발행 품질보다 채널 안정화 점검이 먼저입니다.',
+    };
+  }
+
+  if (senseSummary.anomaly) {
+    return {
+      status: 'ok',
+      reason: '매출 변동 신호는 있으나 아직 과민 대응보다 관찰 중심으로 보는 편이 좋습니다.',
     };
   }
 
