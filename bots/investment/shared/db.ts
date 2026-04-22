@@ -1023,8 +1023,30 @@ export async function getLatestEquity() {
   return row?.equity ?? null;
 }
 
-export async function getEquityHistory(limit = 200) {
-  return query(`SELECT equity, snapped_at FROM asset_snapshot ORDER BY snapped_at ASC LIMIT $1`, [limit]);
+export async function getEquityHistory(limit = 200, options = {}) {
+  const normalizedLimit = Math.max(1, Number.parseInt(String(limit), 10) || 200);
+  const positiveOnly = options?.positiveOnly !== false;
+  const since = options?.since ? new Date(options.since) : null;
+  const params = [];
+  const clauses = [];
+
+  if (positiveOnly) {
+    params.push(0);
+    clauses.push(`equity > $${params.length}`);
+  }
+
+  if (since && !Number.isNaN(since.getTime())) {
+    params.push(since.toISOString());
+    clauses.push(`snapped_at >= $${params.length}`);
+  }
+
+  params.push(normalizedLimit);
+  const whereClause = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+
+  return query(
+    `SELECT equity, snapped_at FROM asset_snapshot ${whereClause} ORDER BY snapped_at ASC LIMIT $${params.length}`,
+    params,
+  );
 }
 
 // ─── market_regime_snapshots ────────────────────────────────────────

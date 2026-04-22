@@ -12,6 +12,7 @@ import * as db from './db.ts';
 import { isPaperMode } from './secrets.ts';
 import { publishAlert } from './alert-publisher.ts';
 import { getCapitalConfig } from './capital-manager.ts';
+import { getExchangeEvidenceBaseline } from './runtime-config.ts';
 
 export const ACTIONS = Object.freeze({
   BUY:  'BUY',
@@ -111,8 +112,12 @@ async function getTotalAsset() {
   return equity ?? SAFETY.INITIAL_EQUITY;
 }
 
-async function getMaxDrawdown() {
-  const rows = await db.getEquityHistory(200);
+async function getMaxDrawdown(exchange = null) {
+  const baseline = exchange ? getExchangeEvidenceBaseline(exchange) : null;
+  const rows = await db.getEquityHistory(200, {
+    since: baseline,
+    positiveOnly: true,
+  });
   if (rows.length < 2) return 0;
   let peak = rows[0].equity;
   let maxDD = 0;
@@ -197,7 +202,7 @@ export async function checkSafetyGates(signal) {
   }
 
   // 원칙 6 — 최대 드로우다운 ≤ 15%
-  const maxDD = await getMaxDrawdown();
+  const maxDD = await getMaxDrawdown(signal.exchange || null);
   if (maxDD > limits.MAX_DRAWDOWN) {
     return {
       passed: false,
