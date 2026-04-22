@@ -469,6 +469,7 @@ export async function insertJournalEntry(entry) {
   await ensureInit();
   const now = Date.now();
   try {
+    const effectiveEntryTime = entry.entry_time ?? now;
     await run(
       `INSERT INTO trade_journal (
         trade_id, signal_id, market, exchange, symbol, is_paper, trade_mode,
@@ -481,7 +482,7 @@ export async function insertJournalEntry(entry) {
       [
         entry.trade_id, entry.signal_id ?? null,
         entry.market, entry.exchange, entry.symbol, entry.is_paper ?? true, entry.trade_mode || getInvestmentTradeMode(),
-        entry.entry_time ?? now, entry.entry_price, entry.entry_size, entry.entry_value,
+        effectiveEntryTime, entry.entry_price, entry.entry_size, entry.entry_value,
         entry.direction ?? 'long',
         entry.signal_time ?? null, entry.decision_time ?? null,
         entry.execution_time ?? now, entry.signal_to_exec_ms ?? null,
@@ -495,6 +496,14 @@ export async function insertJournalEntry(entry) {
         'open', now,
       ],
     );
+    if (!entry.market_regime) {
+      await syncJournalMarketRegime({
+        tradeId: entry.trade_id,
+        signalId: entry.signal_id ?? null,
+        market: entry.market ?? null,
+        entryTime: effectiveEntryTime,
+      }).catch(() => {});
+    }
   } catch (e) {
     console.warn('[trade-journal] trade_journal INSERT 실패 (메인 로직에 영향 없음):', e.message);
   }
