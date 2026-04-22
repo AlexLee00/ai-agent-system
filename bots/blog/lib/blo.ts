@@ -135,6 +135,43 @@ function _getNextFallbackGeneralCategory(currentCategory) {
   return categories.find((category) => category !== '도서리뷰') || '자기계발';
 }
 
+function _sleep(ms = 0) {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms || 0))));
+}
+
+function _isRetryableBlogStageError(error) {
+  const message = String(error?.message || error || '').trim();
+  if (!message) return false;
+  return (
+    message.includes('GoogleGenerativeAI Error')
+    || message.includes('Error fetching from https://')
+    || message.includes('503 Service Unavailable')
+    || message.includes('429 Too Many Requests')
+    || message.includes('fetch failed')
+    || message.includes('ECONNRESET')
+    || message.includes('ETIMEDOUT')
+    || message.includes('socket hang up')
+  );
+}
+
+async function _runWithStageRetry(label, runner, options = {}) {
+  const maxAttempts = Math.max(1, Number(options.maxAttempts || 2));
+  const retryDelayMs = Math.max(0, Number(options.retryDelayMs || 5000));
+  let lastError = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await runner(attempt);
+    } catch (error) {
+      lastError = error;
+      const retryable = _isRetryableBlogStageError(error);
+      if (!retryable || attempt >= maxAttempts) throw error;
+      console.warn(`[블로] ${label} 일시 오류 — ${attempt}/${maxAttempts} 재시도 대기:`, error.message);
+      await _sleep(retryDelayMs);
+    }
+  }
+  throw lastError || new Error(`${label} 실행 실패`);
+}
+
 function _extractTopicKeywords(researchData = {}) {
   const keywordSet = new Set();
 
@@ -1693,20 +1730,25 @@ async function _runLectureStage(daily, traceCtx, options = {}) {
   }
 
   try {
-    if (await isSeriesComplete()) {
-      return { type: 'lecture', skipped: true, reason: '시리즈 완료' };
-    }
+    return await _runWithStageRetry('강의 포스팅', async () => {
+      if (await isSeriesComplete()) {
+        return { type: 'lecture', skipped: true, reason: '시리즈 완료' };
+      }
 
-    const { number, seriesName, lectureTitle } = lectureCtx;
-    const ragContext = await agenticSearch(lectureTitle, 'lecture', 3, number);
-    _applyRagContext(researchData, ragContext);
+      const { number, seriesName, lectureTitle } = lectureCtx;
+      const ragContext = await agenticSearch(lectureTitle, 'lecture', 3, number);
+      _applyRagContext(researchData, ragContext);
 
-    if (lectureSchedule?.id && !options.dryRun) await updateScheduleStatus(lectureSchedule.id, 'writing');
-    if (!options.dryRun) await prepareCompetition(lectureTitle, 'lecture');
+      if (lectureSchedule?.id && !options.dryRun) await updateScheduleStatus(lectureSchedule.id, 'writing');
+      if (!options.dryRun) await prepareCompetition(lectureTitle, 'lecture');
 
-    return await runLecturePost(researchData, traceCtx, {
-      number, seriesName, lectureTitle,
-    }, lectureSchedule?.id, options, daily);
+      return await runLecturePost(researchData, traceCtx, {
+        number, seriesName, lectureTitle,
+      }, lectureSchedule?.id, options, daily);
+    }, {
+      maxAttempts: options?.dryRun ? 1 : 2,
+      retryDelayMs: 5000,
+    });
   } catch (e) {
     console.error('[블로] 강의 포스팅 실패:', e.message);
     if (lectureSchedule?.id && !options.dryRun) {
