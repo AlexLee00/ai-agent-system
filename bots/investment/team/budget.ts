@@ -60,7 +60,14 @@ export async function calculate(signal, context, deps) {
           reason: `주식 공격적 모드 소규모 자동 승인 (${amountUsdt} <= ${autoApproveLimit})`,
         }).catch(() => {});
       }
-      autoApproval = { approved: true, adjustedAmount: amountUsdt, traceId, autoApproved: true };
+      autoApproval = {
+        approved: true,
+        adjustedAmount: amountUsdt,
+        traceId,
+        autoApproved: true,
+        nemesis_verdict: 'approved',
+        approved_at: new Date().toISOString(),
+      };
     } else {
       const starterApproveLimit = signal.exchange === 'kis'
         ? stockThresholds.stockStarterApproveDomestic
@@ -76,7 +83,15 @@ export async function calculate(signal, context, deps) {
             reason: `주식 validation starter 승인 (${amountUsdt} <= ${starterApproveLimit}, confidence ${(signal.confidence ?? 0).toFixed(2)})`,
           }).catch(() => {});
         }
-        autoApproval = { approved: true, adjustedAmount: amountUsdt, traceId, autoApproved: true, starterApproved: true };
+        autoApproval = {
+          approved: true,
+          adjustedAmount: amountUsdt,
+          traceId,
+          autoApproved: true,
+          starterApproved: true,
+          nemesis_verdict: 'approved',
+          approved_at: new Date().toISOString(),
+        };
       }
     }
   }
@@ -132,4 +147,3 @@ export async function calculate(signal, context, deps) {
 
   return { amountUsdt, autoApproval, volFactor, corrFactor, timeFactor, rrData, reviewAdjustment, dynamicTPSL };
 }
-
