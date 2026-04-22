@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { execFileSync } from 'child_process';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { buildScreeningHistoryReport } from './screening-history-report.ts';
@@ -14,6 +15,9 @@ const __dirname = path.dirname(__filename);
 const INVESTMENT_ROOT = path.resolve(__dirname, '..');
 const REPO_ROOT = path.resolve(INVESTMENT_ROOT, '..', '..');
 const ELIXIR_ROOT = path.resolve(REPO_ROOT, 'elixir', 'team_jay');
+const OPS_OUTPUT_DIR = path.resolve(INVESTMENT_ROOT, 'output', 'ops');
+const SNAPSHOT_FILE = path.resolve(OPS_OUTPUT_DIR, 'parallel-ops-snapshot.json');
+const SNAPSHOT_HISTORY_FILE = path.resolve(OPS_OUTPUT_DIR, 'parallel-ops-snapshot-history.jsonl');
 
 const INVESTMENT_LABEL_PATTERN = /ai\.investment\.[^\s"]+/g;
 const PORT_AGENT_NAMES = [
@@ -339,6 +343,12 @@ async function buildSnapshot() {
   };
 }
 
+function persistSnapshot(snapshot) {
+  fs.mkdirSync(OPS_OUTPUT_DIR, { recursive: true });
+  fs.writeFileSync(SNAPSHOT_FILE, JSON.stringify(snapshot, null, 2));
+  fs.appendFileSync(SNAPSHOT_HISTORY_FILE, `${JSON.stringify(snapshot)}\n`, 'utf8');
+}
+
 async function printText(snapshot) {
   console.log(`\n📸 병렬 운영 스냅샷 — ${snapshot.capturedAt}`);
   console.log('');
@@ -415,6 +425,7 @@ async function printText(snapshot) {
 async function main() {
   const json = process.argv.includes('--json');
   const snapshot = await buildSnapshot();
+  persistSnapshot(snapshot);
   if (json) {
     console.log(JSON.stringify(snapshot, null, 2));
     return;
