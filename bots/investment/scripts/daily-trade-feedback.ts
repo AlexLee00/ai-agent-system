@@ -27,6 +27,7 @@ import { getInvestmentRagRuntimeConfig } from '../shared/runtime-config.ts';
 import { buildScreeningHistoryReport } from './screening-history-report.ts';
 import { buildPositionReevaluationSummary } from './position-reevaluation-summary.ts';
 import { buildRuntimeMinOrderPressureReport } from './runtime-min-order-pressure-report.ts';
+import { buildRuntimeLearningLoopReport } from './runtime-learning-loop-report.ts';
 const require = createRequire(import.meta.url);
 const RAG_RUNTIME = getInvestmentRagRuntimeConfig();
 let dailyFeedbackMemory = {
@@ -232,6 +233,34 @@ function buildMinOrderPressureLine(minOrderPressureSummary) {
   return `💵 min-order: ${decision.status}${gapLine ? ` | ${gapLine.replace(/^runtime gap /, '')}` : ''}`;
 }
 
+function buildLearningLoopLine(learningLoopSummary) {
+  if (!learningLoopSummary || learningLoopSummary.error || !learningLoopSummary.decision) return null;
+  const decision = learningLoopSummary.decision || {};
+  const weakest = learningLoopSummary.sections?.regimeLaneSummary?.weakestRegime;
+  const topSuggestion = learningLoopSummary.sections?.strategy?.runtimeSuggestionTop;
+  const weakestMode = weakest?.tradeMode || weakest?.worstMode?.tradeMode || weakest?.bestMode?.tradeMode;
+  const weakestLabel = weakest?.regime && weakestMode
+    ? `${weakest.regime}/${weakestMode}`
+    : null;
+  const suggestionValue = topSuggestion?.suggestedValue ?? topSuggestion?.suggested;
+  const suggestionLabel = topSuggestion?.key && suggestionValue != null
+    ? `${topSuggestion.key} -> ${suggestionValue}`
+    : null;
+  const parts = [
+    decision.status,
+    weakestLabel ? `weakest ${weakestLabel}` : null,
+    suggestionLabel ? `top suggestion ${suggestionLabel}` : null,
+  ].filter(Boolean);
+  return parts.length > 0 ? `🧭 learning loop: ${parts.join(' | ')}` : null;
+}
+
+function getLearningLoopNextCommand(learningLoopSummary) {
+  const nextActions = learningLoopSummary?.decision?.nextActions;
+  if (!Array.isArray(nextActions)) return null;
+  return nextActions.find((item) => typeof item === 'string' && item.startsWith('npm --prefix'))
+    || null;
+}
+
 function buildDailyFeedbackMemoryQuery(dateKst, feedback, screeningSummary, reevaluationSummary, minOrderPressureSummary) {
   return [
     'investment daily trade feedback',
@@ -243,7 +272,7 @@ function buildDailyFeedbackMemoryQuery(dateKst, feedback, screeningSummary, reev
   ].filter(Boolean).join(' ');
 }
 
-function buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary) {
+function buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary) {
   const lines = [
     `🌓 루나 일일 피드백 (${dateKst})`,
     `📌 ${feedback.summary}`,
@@ -256,19 +285,26 @@ function buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSumma
   if (reevaluationLine) lines.push(reevaluationLine);
   const minOrderPressureLine = buildMinOrderPressureLine(minOrderPressureSummary);
   if (minOrderPressureLine) lines.push(minOrderPressureLine);
+  const learningLoopLine = buildLearningLoopLine(learningLoopSummary);
+  if (learningLoopLine) lines.push(learningLoopLine);
   if (Array.isArray(feedback.nextActions) && feedback.nextActions.length > 0) {
     lines.push(`➡️ 다음 액션: ${feedback.nextActions.join(' / ')}`);
+  }
+  const learningLoopNextCommand = getLearningLoopNextCommand(learningLoopSummary);
+  if (learningLoopNextCommand) {
+    lines.push(`🛠️ next command: ${learningLoopNextCommand}`);
   }
   return lines.join('\n');
 }
 
-async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary) {
+async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary) {
   const content = [
     `[일일 피드백 ${dateKst}] ${feedback.summary}`,
     `거래 ${feedback.stats.total}건 / 승률 ${(feedback.stats.winRate * 100).toFixed(1)}% / 손익 $${feedback.stats.totalPnl.toFixed(2)}`,
     buildScreeningLine(screeningSummary),
     buildPositionReevaluationLine(reevaluationSummary),
     buildMinOrderPressureLine(minOrderPressureSummary),
+    buildLearningLoopLine(learningLoopSummary),
     `다음 액션: ${(feedback.nextActions || []).join(' / ') || '없음'}`,
   ].filter(Boolean).join('\n');
   await rag.store('trades', content, {
@@ -281,6 +317,7 @@ async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeni
     screening_summary: screeningSummary || {},
     reevaluation_summary: reevaluationSummary?.decision || {},
     min_order_pressure_summary: minOrderPressureSummary?.decision || {},
+    learning_loop_summary: learningLoopSummary?.decision || {},
   }, 'luna');
 }
 
@@ -290,11 +327,14 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
   const screeningSummary = await fetchScreeningSummary();
   const reevaluationSummary = await fetchPositionReevaluationSummary();
   const minOrderPressureSummary = await fetchMinOrderPressureSummary();
+  const learningLoopSummary = await buildRuntimeLearningLoopReport({ days: 14, json: true }).catch((error) => ({
+    error: String(error?.message || error),
+  }));
   const feedback = await buildDailyFeedback(dateKst, trades, analystAccuracy);
-  const message = buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary);
+  const message = buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary);
 
   try {
-    await storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary);
+    await storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary);
   } catch (error) {
     console.warn(`  ⚠️ [daily-feedback] RAG 저장 실패(무시): ${error?.message || error}`);
   }
@@ -327,7 +367,7 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
         event_type: 'daily_feedback',
         alert_level: 1,
         message: finalMessage,
-        payload: { dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary },
+        payload: { dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary },
       });
       await dailyFeedbackMemory.remember(finalMessage, 'episodic', {
         importance: 0.7,
@@ -358,6 +398,7 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
     screeningSummary,
     reevaluationSummary,
     minOrderPressureSummary,
+    learningLoopSummary,
     feedback,
     message,
   };
