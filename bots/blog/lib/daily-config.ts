@@ -33,13 +33,15 @@ async function getConfig(): Promise<DailyConfig> {
     const naverPriority = executionDirectives?.channelPriority?.naverBlog || 'primary';
     const blogRegistrationsPerCycle = Math.max(1, Number(executionDirectives?.executionTargets?.blogRegistrationsPerCycle || 1));
     const titleTone = executionDirectives?.titlePolicy?.tone || 'balanced';
-    const lectureCount = Math.max(0, Number(base.lecture_count || DEFAULT_CONFIG.lecture_count || 0));
-    const baseGeneralCount = Math.max(0, Number(base.general_count || DEFAULT_CONFIG.general_count || 0));
+    const lectureCount = Math.max(0, Number(base.lecture_count ?? DEFAULT_CONFIG.lecture_count ?? 0));
+    const baseGeneralCount = Math.max(0, Number(base.general_count ?? DEFAULT_CONFIG.general_count ?? 0));
     const strategyFloor = naverPriority === 'primary' ? blogRegistrationsPerCycle : Math.min(baseGeneralCount || 1, blogRegistrationsPerCycle);
     const amplifyBonus = titleTone === 'amplify' ? 1 : 0;
     const preferredCategoryBonus = plan?.preferredCategory && plan.preferredCategory !== '도서리뷰' ? 1 : 0;
-    const generalCount = Math.max(baseGeneralCount, strategyFloor + amplifyBonus + preferredCategoryBonus);
-    const maxTotal = Math.max(Number(base.max_total || DEFAULT_CONFIG.max_total || 0), lectureCount + generalCount);
+    const generalCount = baseGeneralCount === 0
+      ? 0
+      : Math.max(baseGeneralCount, strategyFloor + amplifyBonus + preferredCategoryBonus);
+    const maxTotal = Math.max(Number(base.max_total ?? DEFAULT_CONFIG.max_total ?? 0), lectureCount + generalCount);
     return {
       lecture_count: lectureCount,
       general_count: generalCount,
