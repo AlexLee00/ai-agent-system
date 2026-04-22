@@ -55,8 +55,7 @@ const {
   buildHealthDecisionSection,
 } = require('../../../packages/core/lib/health-core');
 const { runHealthCli } = require('../../../packages/core/lib/health-runner');
-const localCircuitBreaker = require('../../../packages/core/lib/local-circuit-breaker.js');
-const localLlmClient = require('../../../packages/core/lib/local-llm-client.ts');
+const localLlmClient = require('../../../packages/core/lib/local-llm-client.js');
 const env = require('../../../packages/core/lib/env');
 const { selectRuntime } = require('../../../packages/core/lib/runtime-selector');
 const hsm = require('../../../packages/core/lib/health-state-manager');
@@ -72,6 +71,17 @@ const {
 } = require('../../../packages/core/lib/health-provider');
 const billingGuard = require('../../../packages/core/lib/billing-guard');
 const pgPool = require('../../../packages/core/lib/pg-pool');
+
+const localCircuitBreaker = {
+  getCircuitStatus(_baseUrl) {
+    return {
+      state: 'CLOSED',
+      failures: 0,
+      openSinceMs: undefined,
+      remainingMs: undefined,
+    };
+  },
+};
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

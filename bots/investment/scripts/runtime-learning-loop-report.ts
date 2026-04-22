@@ -47,6 +47,24 @@ function buildRegimeActionHint(regimeSummary = null, direction = 'weak') {
   return `${regimeSummary.regime} 장세에서는 ${mode.tradeMode} 레인을 기준선으로 유지하며 표본을 더 누적합니다.`;
 }
 
+function selectPriorityRuntimeSuggestion(runtimeSuggestions = null, regimePerformance = null) {
+  const suggestions = Array.isArray(runtimeSuggestions?.suggestions) ? runtimeSuggestions.suggestions : [];
+  if (!suggestions.length) return null;
+
+  const weakest = regimePerformance?.weakestRegime || null;
+  if (weakest?.regime && weakest?.worstMode?.tradeMode) {
+    const regimeKey = String(weakest.regime);
+    const tradeModeKey = String(weakest.worstMode.tradeMode);
+    const regimeMatched = suggestions.find((item) => {
+      const text = `${item?.key || ''} ${item?.reason || ''}`.toLowerCase();
+      return text.includes(regimeKey.toLowerCase()) && text.includes(tradeModeKey.toLowerCase());
+    });
+    if (regimeMatched) return regimeMatched;
+  }
+
+  return suggestions.find((item) => item.action === 'adjust') || suggestions[0] || null;
+}
+
 async function loadLoopFreshness() {
   await db.initSchema();
   const [runtimeRow, reviewRow, backtestRow, suggestionRows] = await Promise.all([
@@ -333,7 +351,7 @@ function buildSectionStates({
       Number(freshness.latestSuggestionActionableCount || 0),
     ),
     reviewStatus: freshness.latestSuggestionReviewStatus || 'none',
-    runtimeSuggestionTop: (runtimeSuggestions?.suggestions || []).find((item) => item.action === 'adjust') || runtimeSuggestions?.suggestions?.[0] || null,
+    runtimeSuggestionTop: selectPriorityRuntimeSuggestion(runtimeSuggestions, regimePerformance),
     headline: autotune.decision?.headline || '전략 수정 후보를 확인합니다.',
   };
 
