@@ -1384,6 +1384,7 @@ async function buildEngagementHealth() {
       Number(actionMap.get('neighbor_sympathy:fail') || 0) +
       Number(actionMap.get('neighbor_comment_sympathy:fail') || 0) +
       Number(actionMap.get('comment_post_sympathy:fail') || 0);
+    const sympathyModuleUnavailableSkips = Number(actionMap.get('neighbor_sympathy_skip:ok') || 0);
 
     const inbound = commentRows?.[0] || { total: 0, replied: 0, pending: 0, failed: 0 };
     const neighborStatusMap = new Map((neighborRows || []).map((row) => [row.status, Number(row.cnt || 0)]));
@@ -1492,6 +1493,9 @@ async function buildEngagementHealth() {
         warn.push(`  neighbor sympathy replay latest: failed / ${String(neighborSympathyReplay?.result?.error || neighborSympathyReplay?.error).slice(0, 120)}`);
       }
     }
+    if (sympathyModuleUnavailableSkips > 0) {
+      ok.push(`  neighbor sympathy skipped: module unavailable ${sympathyModuleUnavailableSkips}건`);
+    }
     if (staleSympathyFailureCount > 0) {
       ok.push(`  stale sympathy failures: ${staleSympathyFailureCount}건은 최근 replay 성공 이후 우선 병목에서 제외`);
     }
@@ -1597,6 +1601,7 @@ async function buildEngagementHealth() {
         failed: sympathyFailure,
         target: sympathyPlan.target,
         expectedNow: sympathyPlan.expectedNow,
+        skippedModuleUnavailable: sympathyModuleUnavailableSkips,
       },
       inboundComments: {
         total: Number(inbound.total || 0),

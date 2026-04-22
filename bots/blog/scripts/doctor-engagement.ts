@@ -673,6 +673,9 @@ function buildActions({ latestReplyReplayCandidate, failureByKind, failureByActi
       actions.push(`최근 neighbor sympathy replay 실패: ${String(neighborSympathyReplay.error)}`);
     }
   }
+  if (Number(neighborWorkload?.sympathyModuleUnavailableSkips || 0) > 0) {
+    actions.push(`최근 공감 모듈 미노출 skip: ${Number(neighborWorkload.sympathyModuleUnavailableSkips)}건`);
+  }
   if (Number(staleSympathyFailureCount || 0) > 0) {
     actions.push(`최근 neighbor sympathy replay 성공 이후 stale sympathy failures ${Number(staleSympathyFailureCount)}건은 현재 우선 병목에서 제외`);
   }
@@ -1059,6 +1062,7 @@ async function main() {
     Number(aggregateMap.get('neighbor_sympathy:ok') || 0) +
     Number(aggregateMap.get('neighbor_comment_sympathy:ok') || 0) +
     Number(aggregateMap.get('comment_post_sympathy:ok') || 0);
+  const sympathyModuleUnavailableSkips = Number(aggregateMap.get('neighbor_sympathy_skip:ok') || 0);
 
   const targetGaps = [];
   if (replyPlan.active && replySuccessCount < replyPlan.expectedNow) {
@@ -1130,7 +1134,10 @@ async function main() {
     runPlan,
     adaptiveNeighborCadence,
     replyWorkload,
-    neighborWorkload,
+    neighborWorkload: {
+      ...neighborWorkload,
+      sympathyModuleUnavailableSkips,
+    },
     neighborCollectDiagnostics,
     neighborRecovery,
     neighborUiReplay: neighborUiReplay
