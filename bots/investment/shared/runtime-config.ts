@@ -24,6 +24,19 @@ function loadCapitalManagementConfig() {
   }
 }
 
+function loadRuntimeOverlayConfig() {
+  try {
+    const raw = yaml.load(readFileSync(join(__dirname, '..', 'config.yaml'), 'utf8')) || {};
+    return deepMerge(
+      {},
+      raw?.capital_management?.runtime_config || {},
+      raw?.runtime_config || {},
+    );
+  } catch {
+    return {};
+  }
+}
+
 function getDefaultLunaMaxPosCount() {
   const capitalManagement = loadCapitalManagementConfig();
   const binanceMax = Number(capitalManagement.by_exchange?.binance?.max_concurrent_positions);
@@ -258,7 +271,7 @@ const DEFAULT_RUNTIME_CONFIG = {
               },
               validationFallback: {
                 enabled: true,
-                reductionMultiplier: 0.35,
+                reductionMultiplier: 0.30,
                 allowedGuardKinds: ['max_positions', 'daily_trade_limit'],
               },
             },
@@ -368,7 +381,7 @@ const runtimeConfigLoader =
 const { loadRuntimeConfig } = runtimeConfigLoader;
 
 export function getInvestmentRuntimeConfig() {
-  const runtimeConfig = loadRuntimeConfig();
+  const runtimeConfig = deepMerge({}, loadRuntimeConfig(), loadRuntimeOverlayConfig());
   const lunaMaxPosCount = Number(runtimeConfig?.luna?.maxPosCount);
   if (Number.isFinite(lunaMaxPosCount) && lunaMaxPosCount > 0) return runtimeConfig;
   return deepMerge(runtimeConfig, {
@@ -379,11 +392,11 @@ export function getInvestmentRuntimeConfig() {
 }
 
 export function isDynamicTpSlEnabled() {
-  return loadRuntimeConfig().dynamicTpSlEnabled === true;
+  return getInvestmentRuntimeConfig().dynamicTpSlEnabled === true;
 }
 
 export function getLunaRuntimeConfig() {
-  return loadRuntimeConfig().luna;
+  return getInvestmentRuntimeConfig().luna;
 }
 
 export function getSignalDedupeWindowMinutes() {
@@ -438,27 +451,27 @@ export function getLunaStockStrategyProfile() {
 }
 
 export function getNemesisRuntimeConfig() {
-  return loadRuntimeConfig().nemesis;
+  return getInvestmentRuntimeConfig().nemesis;
 }
 
 export function getTimeModeRuntimeConfig() {
-  return loadRuntimeConfig().timeMode;
+  return getInvestmentRuntimeConfig().timeMode;
 }
 
 export function getInvestmentLLMPolicyConfig() {
-  return loadRuntimeConfig().llmPolicies || {};
+  return getInvestmentRuntimeConfig().llmPolicies || {};
 }
 
 export function getAriaRuntimeConfig() {
-  return loadRuntimeConfig().aria || {};
+  return getInvestmentRuntimeConfig().aria || {};
 }
 
 export function getChartVisionRuntimeConfig() {
-  return loadRuntimeConfig().tools?.chartVision || {};
+  return getInvestmentRuntimeConfig().tools?.chartVision || {};
 }
 
 export function getArgosRuntimeConfig() {
-  const runtimeConfig = loadRuntimeConfig();
+  const runtimeConfig = getInvestmentRuntimeConfig();
   return {
     rag: runtimeConfig?.rag?.argosCandidateSearch || {},
     intelCache: runtimeConfig?.tools?.argos?.intelCache || {},
@@ -466,15 +479,15 @@ export function getArgosRuntimeConfig() {
 }
 
 export function getInvestmentRagRuntimeConfig() {
-  return loadRuntimeConfig().rag || {};
+  return getInvestmentRuntimeConfig().rag || {};
 }
 
 export function getInvestmentAlertRuntimeConfig() {
-  return loadRuntimeConfig().alerts || {};
+  return getInvestmentRuntimeConfig().alerts || {};
 }
 
 export function getExchangeEvidenceBaseline(exchange = '') {
-  const raw = loadRuntimeConfig()?.liveEvidenceBaseline?.byExchange?.[exchange];
+  const raw = getInvestmentRuntimeConfig()?.liveEvidenceBaseline?.byExchange?.[exchange];
   if (!raw) return null;
   const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) return null;
@@ -482,17 +495,17 @@ export function getExchangeEvidenceBaseline(exchange = '') {
 }
 
 export function getPositionReevaluationRuntimeConfig() {
-  return loadRuntimeConfig().reevaluation || {};
+  return getInvestmentRuntimeConfig().reevaluation || {};
 }
 
 export function getInvestmentHealthRuntimeConfig() {
-  return loadRuntimeConfig().health || {};
+  return getInvestmentRuntimeConfig().health || {};
 }
 
 export function getInvestmentSyncRuntimeConfig() {
-  return loadRuntimeConfig().sync || {};
+  return getInvestmentRuntimeConfig().sync || {};
 }
 
 export function getInvestmentExecutionRuntimeConfig() {
-  return loadRuntimeConfig().execution || {};
+  return getInvestmentRuntimeConfig().execution || {};
 }

@@ -224,14 +224,20 @@ export async function checkSafetyGates(signal) {
 
   // 원칙 5 — 연속 손실 쿨다운
   const recent = await db.query(
-    `SELECT total_usdt, side, executed_at FROM trades ORDER BY executed_at DESC LIMIT $1`,
-    [cooldownAfterLossStreak],
+    `SELECT pnl_net, exit_time
+     FROM investment.trade_journal
+     WHERE status = 'closed'
+       AND ($1::text IS NULL OR exchange = $1)
+       AND ($2::text IS NULL OR COALESCE(trade_mode, 'normal') = $2)
+     ORDER BY exit_time DESC
+     LIMIT $3`,
+    [signal.exchange || null, signal.trade_mode || null, cooldownAfterLossStreak],
   );
   if (recent.length >= cooldownAfterLossStreak) {
-    const allLoss = recent.every(r => (r.side === 'sell' ? r.total_usdt : -r.total_usdt) < 0);
+    const allLoss = recent.every(r => Number(r.pnl_net || 0) < 0);
     if (allLoss) {
-      const lastExecutedAt = Number(new Date(recent[0].executed_at).getTime());
-      const cooldownEnd = lastExecutedAt + (cooldownMinutes * 60 * 1000);
+      const lastExitAt = Number(recent[0].exit_time || 0);
+      const cooldownEnd = lastExitAt + (cooldownMinutes * 60 * 1000);
       if (Date.now() < cooldownEnd) {
         const remainMin = Math.ceil((cooldownEnd - Date.now()) / 60000);
         return { passed: false, reason: `원칙5 위반: 연속 ${cooldownAfterLossStreak}회 손실 → 쿨다운 ${remainMin}분 남음` };
