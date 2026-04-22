@@ -754,7 +754,7 @@ function buildDecision(
       {
         active: runtimeLearningLoop?.decision?.status === 'regime_strategy_tuning_needed',
         level: 'medium',
-        reason: `learning loop — ${runtimeLearningLoop?.decision?.headline || '레짐별 전략 튜닝 필요'} / top suggestion ${runtimeLearningLoop?.sections?.strategy?.runtimeSuggestionTop?.key || 'n/a'} -> ${runtimeLearningLoop?.sections?.strategy?.runtimeSuggestionTop?.suggested ?? 'n/a'}`,
+        reason: `learning loop — ${runtimeLearningLoop?.decision?.headline || '레짐별 전략 튜닝 필요'} / top suggestion ${runtimeLearningLoop?.sections?.strategy?.runtimeSuggestionTop?.key || 'n/a'} -> ${runtimeLearningLoop?.sections?.strategy?.runtimeSuggestionTop?.suggested ?? 'n/a'} / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-suggest -- --json`,
       },
     ],
     okReason: '핵심 서비스와 trade_review 정합성이 현재는 안정 구간입니다.',
@@ -946,6 +946,7 @@ function formatText(report) {
             `  weakest: ${report.runtimeLearningLoop.sections?.collect?.regimePerformance?.weakestRegime?.regime || 'n/a'} / ${report.runtimeLearningLoop.sections?.collect?.regimePerformance?.weakestRegime?.worstMode?.tradeMode || 'n/a'} / avg ${report.runtimeLearningLoop.sections?.collect?.regimePerformance?.weakestRegime?.worstMode?.avgPnlPercent ?? 'n/a'}%`,
             `  strongest: ${report.runtimeLearningLoop.sections?.collect?.regimePerformance?.strongestRegime?.regime || 'n/a'} / ${report.runtimeLearningLoop.sections?.collect?.regimePerformance?.strongestRegime?.bestMode?.tradeMode || 'n/a'} / avg ${report.runtimeLearningLoop.sections?.collect?.regimePerformance?.strongestRegime?.bestMode?.avgPnlPercent ?? 'n/a'}%`,
             `  top suggestion: ${report.runtimeLearningLoop.sections?.strategy?.runtimeSuggestionTop?.key || 'n/a'} -> ${report.runtimeLearningLoop.sections?.strategy?.runtimeSuggestionTop?.suggested ?? 'n/a'} (${report.runtimeLearningLoop.sections?.strategy?.runtimeSuggestionTop?.action || 'n/a'})`,
+            `  next command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-suggest -- --json`,
             ...((report.runtimeLearningLoop.decision?.nextActions || []).slice(0, 3).map((item) => `  next: ${item}`)),
           ]
         : ['  learning loop 정보 없음'],
