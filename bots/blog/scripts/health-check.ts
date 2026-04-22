@@ -772,6 +772,33 @@ async function checkEngagementAutomationHealth() {
     }
 
     if (targetGaps.length > 0) {
+      const primaryArea = String(engagementPayload?.primary?.area || '');
+      if (totalFailures <= 0 && primaryArea.endsWith('.no_workload')) {
+        const targets = engagementPayload?.targets || {};
+        const targetLines = [
+          targets?.replies?.active ? `replies ${targets.replies.success}/${targets.replies.expectedNow}` : '',
+          targets?.neighborComments?.active ? `neighbor ${targets.neighborComments.success}/${targets.neighborComments.expectedNow}` : '',
+          targets?.sympathies?.active ? `sympathy ${targets.sympathies.success}/${targets.sympathies.expectedNow}` : '',
+        ].filter(Boolean).join(' / ');
+        const primaryReason = String(engagementPayload?.primary?.reason || '').trim();
+        const runPlan = Array.isArray(engagementPayload?.runPlan) ? engagementPayload.runPlan : [];
+        const adaptiveCadence = engagementPayload?.adaptiveNeighborCadence || null;
+        const runPlanHint = runPlan.length > 0
+          ? ` / run plan: ${runPlan.map((item) => `${item.step}.${item.label}`).join(' -> ')}`
+          : '';
+        const adaptiveHint = adaptiveCadence?.enabled
+          ? ` / cadence: ${adaptiveCadence.shouldBoost ? 'boosted' : 'baseline'}`
+          : '';
+        return {
+          ok: true,
+          detail: `engagement workload 대기 상태 — ${targetLines || targetGaps.join(', ')}${primaryReason ? ` / ${primaryReason}` : ''}${runPlanHint}${adaptiveHint}`,
+          failureByKind,
+          failureByAction,
+          latestReplyReplayCandidate,
+          latestFailureSample,
+        };
+      }
+
       const engagementPriority = getDoctorPriority(ENGAGEMENT_DOCTOR_COMMAND, {
         area: 'engagement.target_gap',
         reason: '운영 시간대 기준 engagement 목표치가 뒤처졌습니다.',
