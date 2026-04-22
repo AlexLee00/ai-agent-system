@@ -103,6 +103,10 @@ function parsePayScanFollowupLine(line: string): string | null {
   ].join('|');
 }
 
+function hasPayScanFollowupEntries(lines: string[] = []): boolean {
+  return lines.some((line) => parsePayScanFollowupLine(line) !== null);
+}
+
 export function writePayScanChecklistFile(baseDir: string, failures: PayScanFailure[]): string | null {
   if (!failures.length) return null;
   const stamp = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Seoul' }).replace(/[-: ]/g, '').slice(0, 13);
@@ -160,14 +164,66 @@ export function resolvePayScanFollowupFiles(baseDir: string, resolvedEntries: Re
       return true;
     });
 
-    if (!changed) continue;
-
-    const hasRemainingEntries = nextLines.some((line) => /^-\s+\d{4}-\d{2}-\d{2}\s+/u.test(line));
+    const hasRemainingEntries = hasPayScanFollowupEntries(nextLines);
     if (!hasRemainingEntries) {
       fs.unlinkSync(filePath);
       removedFiles += 1;
       continue;
     }
+
+    if (!changed) continue;
+
+    fs.writeFileSync(filePath, nextLines.join('\n'), 'utf8');
+    updatedFiles += 1;
+  }
+
+  return {
+    scannedFiles: files.length,
+    updatedFiles,
+    removedFiles,
+    removedEntries,
+  };
+}
+
+export function reconcilePayScanFollowupFiles(baseDir: string, activeEntries: ReservationLike[] = []): PayScanResolveResult {
+  const activeKeys = new Set(
+    (activeEntries || [])
+      .map((entry) => buildPayScanFollowupKey(entry))
+      .filter(Boolean),
+  );
+
+  const files = fs.existsSync(baseDir)
+    ? fs.readdirSync(baseDir)
+        .filter((name) => /^pickko-pay-scan-followup-.*\.md$/u.test(name))
+        .map((name) => path.join(baseDir, name))
+    : [];
+
+  let updatedFiles = 0;
+  let removedFiles = 0;
+  let removedEntries = 0;
+
+  for (const filePath of files) {
+    const original = fs.readFileSync(filePath, 'utf8');
+    const lines = original.split('\n');
+    let changed = false;
+    const nextLines = lines.filter((line) => {
+      const key = parsePayScanFollowupLine(line);
+      if (key && !activeKeys.has(key)) {
+        changed = true;
+        removedEntries += 1;
+        return false;
+      }
+      return true;
+    });
+
+    const hasRemainingEntries = hasPayScanFollowupEntries(nextLines);
+    if (!hasRemainingEntries) {
+      fs.unlinkSync(filePath);
+      removedFiles += 1;
+      continue;
+    }
+
+    if (!changed) continue;
 
     fs.writeFileSync(filePath, nextLines.join('\n'), 'utf8');
     updatedFiles += 1;

@@ -10,6 +10,7 @@ const {
   ts,
   writePayScanChecklistFile,
   resolvePayScanFollowupFiles,
+  reconcilePayScanFollowupFiles,
   isAlreadyPaidWithoutButton,
   isExpectedManualFollowup,
   buildPayScanAlertMessage,
@@ -134,7 +135,8 @@ async function main() {
     if (!entry?.id) continue;
     if (!deduped.has(entry.id)) deduped.set(entry.id, entry);
   }
-  let targets = Array.from(deduped.values());
+  const activeEntries = Array.from(deduped.values());
+  let targets = [...activeEntries];
 
   if (phoneFilters.length > 0) {
     targets = targets.filter((entry) => phoneFilters.includes(String(entry.phone || '').replace(/\D/g, '')));
@@ -144,6 +146,15 @@ async function main() {
   }
 
   if (targets.length === 0) {
+    const followupReconcile = reconcilePayScanFollowupFiles(
+      path.join(__dirname, '../../manual/reports'),
+      activeEntries,
+    );
+    if (followupReconcile.removedEntries > 0) {
+      log(
+        `🧹 stale pay-scan follow-up 정리: 항목 ${followupReconcile.removedEntries}건 / 파일 수정 ${followupReconcile.updatedFiles}건 / 파일 삭제 ${followupReconcile.removedFiles}건`,
+      );
+    }
     log('✅ pay-scan 대상 없음');
     return;
   }
@@ -202,6 +213,18 @@ async function main() {
   if (followupResolution.removedEntries > 0) {
     log(
       `🧹 기존 pay-scan follow-up 정리: 항목 ${followupResolution.removedEntries}건 / 파일 수정 ${followupResolution.updatedFiles}건 / 파일 삭제 ${followupResolution.removedFiles}건`,
+    );
+  }
+
+  const resolvedIdSet = new Set(resolvedEntries.map((entry: any) => String(entry?.id || '')));
+  const remainingActiveEntries = activeEntries.filter((entry) => !resolvedIdSet.has(String(entry?.id || '')));
+  const followupReconcile = reconcilePayScanFollowupFiles(
+    path.join(__dirname, '../../manual/reports'),
+    remainingActiveEntries,
+  );
+  if (followupReconcile.removedEntries > 0) {
+    log(
+      `🧹 stale pay-scan follow-up 정리: 항목 ${followupReconcile.removedEntries}건 / 파일 수정 ${followupReconcile.updatedFiles}건 / 파일 삭제 ${followupReconcile.removedFiles}건`,
     );
   }
 
