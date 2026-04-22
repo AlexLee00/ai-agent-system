@@ -29,6 +29,7 @@ import {
   getNemesisRuntimeConfig,
   getValidationSoftBudgetConfig,
   isDynamicTpSlEnabled,
+  getInvestmentExecutionRuntimeConfig,
 } from '../shared/runtime-config.ts';
 import { check as checkHardRule } from './hard-rule.ts';
 import { calculate as calculateBudget, calcKellyPosition } from './budget.ts';
@@ -672,6 +673,7 @@ export async function evaluateSignal(signal, opts = {}) {
     getValidationSoftBudgetConfig,
     getCapitalConfig,
     getDailyTradeCount,
+    getInvestmentExecutionRuntimeConfig,
   });
   if (hardRuleResult?.approved === false) {
     try {

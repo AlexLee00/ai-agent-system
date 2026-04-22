@@ -41,6 +41,7 @@ export async function check(signal, context, deps) {
     getValidationSoftBudgetConfig,
     getCapitalConfig,
     getDailyTradeCount,
+    getInvestmentExecutionRuntimeConfig,
   } = deps;
 
   const { symbol, action } = signal;
@@ -101,16 +102,21 @@ export async function check(signal, context, deps) {
   if (action === ACTIONS.BUY && isCryptoExchange && signalTradeMode === 'validation') {
     const livePosition = await db.getLivePosition(symbol, signal.exchange).catch(() => null);
     if (livePosition && livePosition.paper === false) {
-      return reject({
-        persist,
-        signal,
-        symbol,
-        action,
-        reason: '동일 LIVE 포지션 보유 중 — validation BUY 사전 차단',
-        db,
-        notifyRiskRejection,
-        traceId,
-      });
+      const executionRuntime = getInvestmentExecutionRuntimeConfig?.() || {};
+      const liveReentryPolicy = executionRuntime?.cryptoGuardSoftening?.byExchange?.binance?.tradeModes?.validation?.livePositionReentry || {};
+      const reductionMultiplier = Number(liveReentryPolicy?.reductionMultiplier || 0);
+      if (!(liveReentryPolicy?.enabled !== false && reductionMultiplier > 0 && reductionMultiplier < 1)) {
+        return reject({
+          persist,
+          signal,
+          symbol,
+          action,
+          reason: '동일 LIVE 포지션 보유 중 — validation BUY 사전 차단',
+          db,
+          notifyRiskRejection,
+          traceId,
+        });
+      }
     }
   }
 
@@ -152,4 +158,3 @@ export async function check(signal, context, deps) {
 
   return { amountUsdt, positionCount, todayPnl };
 }
-
