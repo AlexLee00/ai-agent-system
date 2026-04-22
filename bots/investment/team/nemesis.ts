@@ -87,6 +87,14 @@ function applyRegimeGuideToTPSL(dynamicTPSL, guide, entryEstimate = null) {
   };
 }
 
+function normalizeRegimeMarket(exchange = '') {
+  const value = String(exchange || '').toLowerCase();
+  if (value === 'binance' || value === 'crypto') return 'crypto';
+  if (value === 'kis' || value === 'domestic') return 'domestic';
+  if (value === 'kis_overseas' || value === 'overseas') return 'overseas';
+  return value || 'unknown';
+}
+
 // ─── 시스템 프롬프트 (마켓별 분기) ──────────────────────────────────
 
 function getNemesisStockSystem() {
@@ -720,6 +728,18 @@ export async function evaluateSignal(signal, opts = {}) {
           symbol,
           market: signal.exchange,
           confidence: marketRegime.confidence,
+          reason: marketRegime.reason,
+          bias: marketRegime.bias,
+          guide: marketRegime.guide || null,
+        },
+      }).catch(() => {});
+      await db.insertMarketRegimeSnapshot({
+        market: normalizeRegimeMarket(signal.exchange),
+        regime: marketRegime.regime,
+        confidence: marketRegime.confidence,
+        indicators: {
+          exchange: signal.exchange,
+          symbol,
           reason: marketRegime.reason,
           bias: marketRegime.bias,
           guide: marketRegime.guide || null,

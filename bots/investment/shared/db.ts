@@ -152,6 +152,18 @@ export async function initSchema() {
   `);
 
   await run(`
+    CREATE TABLE IF NOT EXISTS market_regime_snapshots (
+      id          TEXT DEFAULT gen_random_uuid()::text,
+      market      TEXT NOT NULL,
+      regime      TEXT NOT NULL,
+      confidence  DOUBLE PRECISION DEFAULT 0.5,
+      indicators  JSONB DEFAULT '{}'::jsonb,
+      captured_at TIMESTAMP DEFAULT now()
+    )
+  `);
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_market_regime_market_captured ON market_regime_snapshots(market, captured_at DESC)`); } catch { /* 무시 */ }
+
+  await run(`
     CREATE TABLE IF NOT EXISTS runtime_config_suggestion_log (
       id                TEXT DEFAULT gen_random_uuid()::text PRIMARY KEY,
       period_days       INTEGER NOT NULL,
@@ -1015,6 +1027,32 @@ export async function getEquityHistory(limit = 200) {
   return query(`SELECT equity, snapped_at FROM asset_snapshot ORDER BY snapped_at ASC LIMIT $1`, [limit]);
 }
 
+// ─── market_regime_snapshots ────────────────────────────────────────
+
+export async function insertMarketRegimeSnapshot({
+  market,
+  regime,
+  confidence = 0.5,
+  indicators = {},
+} = {}) {
+  if (!market || !regime) return null;
+  return get(
+    `INSERT INTO market_regime_snapshots (
+       market,
+       regime,
+       confidence,
+       indicators
+     ) VALUES ($1, $2, $3, $4)
+     RETURNING id, market, regime, confidence, indicators, captured_at`,
+    [
+      String(market),
+      String(regime),
+      Number(confidence || 0.5),
+      JSON.stringify(indicators || {}),
+    ],
+  );
+}
+
 // ─── runtime_config_suggestion_log ───────────────────────────────────
 
 export async function insertRuntimeConfigSuggestionLog({
@@ -1113,6 +1151,7 @@ export default {
   upsertStrategy, getActiveStrategies, recordStrategyResult,
   insertRiskLog,
   insertAssetSnapshot, getLatestEquity, getEquityHistory,
+  insertMarketRegimeSnapshot,
   insertRuntimeConfigSuggestionLog, getRecentRuntimeConfigSuggestionLogs,
   getRuntimeConfigSuggestionLogById, updateRuntimeConfigSuggestionLogReview,
   close,
