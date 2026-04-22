@@ -18,6 +18,7 @@ function summarize(plan = {}, digest = {}) {
     preferredTitlePattern: plan?.preferredTitlePattern || null,
     focus: Array.isArray(plan?.focus) ? plan.focus : [],
     recommendations: Array.isArray(plan?.recommendations) ? plan.recommendations : [],
+    executionDirectives: plan?.executionDirectives || {},
   };
 }
 

@@ -16,6 +16,7 @@ const { getBlogLLMSelectorOverrides } = require('./runtime-config.ts');
 
 const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
 const { generateInstaCard } = require('./img-gen.ts');
+const { loadStrategyBundle, normalizeExecutionDirectives } = require('./strategy-loader.ts');
 const env = require('../../../packages/core/lib/env');
 const fs = require('fs');
 const path = require('path');
@@ -89,13 +90,66 @@ const CAPTION_SYSTEM = `
 
 const REQUIRED_HASHTAGS = ['#개발자일상', '#IT블로그', '#승호아빠', '#cafe_library'];
 
-async function generateInstaCaption(content, title, category) {
+function buildStrategyCaptionHint(strategy = null) {
+  const directives = normalizeExecutionDirectives(strategy);
+  return [
+    `채널 우선순위: 네이버=${directives.channelPriority.naverBlog}, 인스타=${directives.channelPriority.instagram}, 페이스북=${directives.channelPriority.facebook}`,
+    `실행 목표: 블로그 ${directives.executionTargets.blogRegistrationsPerCycle} / 인스타 ${directives.executionTargets.instagramRegistrationsPerCycle} / 페이스북 ${directives.executionTargets.facebookRegistrationsPerCycle}`,
+    `반응 목표: 답글 ${directives.executionTargets.replyTargetPerCycle} / 이웃댓글 ${directives.executionTargets.neighborCommentTargetPerCycle} / 공감 ${directives.executionTargets.sympathyTargetPerCycle}`,
+    `제목 톤: ${directives.titlePolicy.tone}`,
+    `해시태그 모드: ${directives.hashtagPolicy.mode}`,
+    `이미지 어그로: ${directives.creativePolicy.imageAggro}, 릴스 훅: ${directives.creativePolicy.hookStyle}, CTA: ${directives.creativePolicy.ctaStyle}`,
+  ].join('\n');
+}
+
+function buildFallbackHashtags(category = '', strategy = null) {
+  const directives = normalizeExecutionDirectives(strategy);
+  const categoryTags = {
+    '최신IT트렌드': ['#IT트렌드', '#AI트렌드', '#기술분석'],
+    'IT정보와분석': ['#IT분석', '#실무인사이트', '#디지털전략'],
+    '홈페이지와App': ['#UX개선', '#전환율', '#앱기획'],
+    '개발기획과컨설팅': ['#기획실무', '#개발협업', '#PM인사이트'],
+    '성장과성공': ['#성장전략', '#성과관리', '#실행력'],
+  };
+  const modeTags = directives.hashtagPolicy.mode === 'aggressive'
+    ? ['#릴스', '#바이럴', '#콘텐츠마케팅']
+    : directives.hashtagPolicy.mode === 'conversion'
+      ? ['#예약문의', '#상담문의', '#전환콘텐츠']
+      : ['#브랜딩', '#블로그운영', '#콘텐츠전략'];
+
+  return [
+    ...REQUIRED_HASHTAGS,
+    ...(categoryTags[category] || ['#개발공부', '#실무팁']),
+    ...modeTags,
+    ...directives.hashtagPolicy.focusTags,
+    ...directives.hashtagPolicy.platformTags,
+  ].filter(Boolean);
+}
+
+function buildStrategyCta(title = '', strategy = null) {
+  const directives = normalizeExecutionDirectives(strategy);
+  if (directives.creativePolicy.ctaStyle === 'conversion') {
+    return '블로그에서 체크포인트를 확인하고 바로 예약/문의 흐름까지 이어가세요 👉 프로필 링크';
+  }
+  if (directives.creativePolicy.ctaStyle === 'engagement') {
+    return '이 포인트가 도움 됐다면 저장하고, 블로그에서 전체 전략을 이어서 확인하세요 👉 프로필 링크';
+  }
+  return title && /체크|포인트|방법|전략/.test(title)
+    ? '블로그에서 더 자세한 실행 포인트를 확인하세요 👉 프로필 링크'
+    : '블로그에서 더 자세히! 👉 프로필 링크';
+}
+
+async function generateInstaCaption(content, title, category, strategy = null) {
   const selectorOverrides = getBlogLLMSelectorOverrides();
+  const plan = strategy || loadStrategyBundle().plan;
   const userPrompt = `
 다음 블로그 포스팅의 인스타그램 캡션과 해시태그를 생성하세요.
 
 제목: ${title}
 카테고리: ${category}
+
+[현재 전략]
+${buildStrategyCaptionHint(plan)}
 
 [포스팅 요약]
 ${content.slice(0, 3000)}
@@ -115,28 +169,32 @@ ${content.slice(0, 3000)}
     const parsed = match ? JSON.parse(match[0]) : null;
     if (!parsed) throw new Error('파싱 실패');
 
-    const hashtags = parsed.hashtags || [];
+    const hashtags = Array.isArray(parsed.hashtags) ? parsed.hashtags : [];
     for (const tag of REQUIRED_HASHTAGS) {
       if (!hashtags.includes(tag)) hashtags.push(tag);
     }
-    const cta = parsed.cta || '블로그에서 더 자세히! 👉 프로필 링크';
+    for (const tag of buildFallbackHashtags(category, plan)) {
+      if (!hashtags.includes(tag)) hashtags.push(tag);
+    }
+    const cta = parsed.cta || buildStrategyCta(title, plan);
     const fullText = `${parsed.caption}\n\n${cta}\n\n${hashtags.join(' ')}`;
 
     return { caption: parsed.caption, hashtags, cta, fullText };
   } catch {
     console.warn('[소셜] 캡션 파싱 실패 — 기본 템플릿 사용');
-    const hashtags = [...REQUIRED_HASHTAGS, '#nodejs', '#개발공부', '#백엔드개발'];
+    const hashtags = [...new Set(buildFallbackHashtags(category, plan))];
     return {
-      caption: `📝 ${title}\n오늘의 IT 인사이트를 정리했어요!`,
+      caption: `📝 ${title}\n${normalizeExecutionDirectives(plan).titlePolicy.tone === 'conversion' ? '바로 적용할 포인트만 짧게 정리했어요!' : '오늘의 IT 인사이트를 짧게 정리했어요!'}`,
       hashtags,
-      cta: '블로그에서 더 자세히! 👉 프로필 링크',
-      fullText: `📝 ${title}\n오늘의 IT 인사이트를 정리했어요!\n\n블로그에서 더 자세히! 👉 프로필 링크\n\n${hashtags.join(' ')}`,
+      cta: buildStrategyCta(title, plan),
+      fullText: `📝 ${title}\n${normalizeExecutionDirectives(plan).titlePolicy.tone === 'conversion' ? '바로 적용할 포인트만 짧게 정리했어요!' : '오늘의 IT 인사이트를 짧게 정리했어요!'}\n\n${buildStrategyCta(title, plan)}\n\n${hashtags.join(' ')}`,
     };
   }
 }
 
 async function createInstaContent(content, title, category, cardCount = 3) {
   console.log(`[소셜] 인스타 콘텐츠 생성 시작 (카드 ${cardCount}장)`);
+  const plan = loadStrategyBundle().plan;
 
   const today = kst.today();
   const safeSlug = (title || '').replace(/[^가-힣a-zA-Z0-9]/g, '_').slice(0, 30);
@@ -171,12 +229,13 @@ async function createInstaContent(content, title, category, cardCount = 3) {
     .filter((c) => c.imagePath);
   console.log(`  카드 ${cards.length}/${summaries.length} 생성 성공`);
 
-  const { caption, hashtags, cta, fullText } = await generateInstaCaption(content, title, category);
+  const { caption, hashtags, cta, fullText } = await generateInstaCaption(content, title, category, plan);
   console.log(`  캡션 완료 (해시태그 ${hashtags.length}개)`);
 
   const meta = {
     title, category, slug, summaries, cards,
     caption, hashtags, cta, fullText,
+    strategyExecution: normalizeExecutionDirectives(plan),
     createdAt: new Date().toISOString(),
   };
   const metaFilename = `${slug}_insta-meta.json`;

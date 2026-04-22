@@ -49,6 +49,22 @@ describe('cross-platform-adapter', () => {
     expect(caption.length).toBeLessThanOrEqual(2200);
   });
 
+  test('blogToInstagramCaption — 전략에 따라 전환형 태그를 강화', () => {
+    const post = {
+      title: '예약 전환을 높이는 CTA 설계',
+      content: '1. CTA를 눈에 띄게 배치하세요\n2. 망설이는 구간을 줄이세요',
+      hashtags: [],
+    };
+    const caption = adapter.blogToInstagramCaption(post, 2200, {
+      executionDirectives: {
+        hashtagPolicy: { mode: 'conversion', focusTags: ['#전환설계'] },
+        creativePolicy: { ctaStyle: 'conversion' },
+      },
+    });
+    expect(caption).toContain('#예약문의');
+    expect(caption).toContain('#전환설계');
+  });
+
   test('blogToFacebookPost — 기본 포스트 생성', () => {
     const post = {
       title: '자기계발 독서법',
@@ -73,6 +89,21 @@ describe('cross-platform-adapter', () => {
     expect(script).toHaveProperty('cta');
     expect(script).toHaveProperty('full_script');
     expect(script).toHaveProperty('estimated_duration_sec');
+  });
+
+  test('blogToReelScript — 전략에 따라 problem-first hook 사용', () => {
+    const post = {
+      title: '이탈을 줄이는 UX 포인트',
+      content: '1. 설명을 먼저 보이게 하세요\n2. 상태를 명확히 안내하세요',
+      category: '홈페이지와App',
+    };
+    const script = adapter.blogToReelScript(post, {
+      executionDirectives: {
+        creativePolicy: { hookStyle: 'problem_first', ctaStyle: 'conversion' },
+      },
+    });
+    expect(script.hook).toContain('놓칩니다');
+    expect(script.cta).toContain('적용 포인트');
   });
 });
 

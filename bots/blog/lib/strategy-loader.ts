@@ -17,7 +17,60 @@ function loadLatestStrategy() {
   }
 }
 
+function normalizeExecutionDirectives(strategy = null) {
+  const directives = strategy?.executionDirectives || {};
+  const channelPriority = directives.channelPriority || {};
+  const executionTargets = directives.executionTargets || {};
+  const titlePolicy = directives.titlePolicy || {};
+  const hashtagPolicy = directives.hashtagPolicy || {};
+  const creativePolicy = directives.creativePolicy || {};
+
+  return {
+    channelPriority: {
+      naverBlog: channelPriority.naverBlog || 'primary',
+      instagram: channelPriority.instagram || 'secondary',
+      facebook: channelPriority.facebook || 'supporting',
+    },
+    executionTargets: {
+      blogRegistrationsPerCycle: Number(executionTargets.blogRegistrationsPerCycle || 1),
+      instagramRegistrationsPerCycle: Number(executionTargets.instagramRegistrationsPerCycle || 1),
+      facebookRegistrationsPerCycle: Number(executionTargets.facebookRegistrationsPerCycle || 1),
+      replyTargetPerCycle: Number(executionTargets.replyTargetPerCycle || 1),
+      neighborCommentTargetPerCycle: Number(executionTargets.neighborCommentTargetPerCycle || 1),
+      sympathyTargetPerCycle: Number(executionTargets.sympathyTargetPerCycle || 1),
+    },
+    titlePolicy: {
+      preferredPattern: titlePolicy.preferredPattern || strategy?.preferredTitlePattern || null,
+      suppressedPattern: titlePolicy.suppressedPattern || strategy?.suppressedTitlePattern || null,
+      tone: titlePolicy.tone || 'balanced',
+      keywordBias: Array.isArray(titlePolicy.keywordBias) ? titlePolicy.keywordBias : [],
+    },
+    hashtagPolicy: {
+      mode: hashtagPolicy.mode || 'balanced',
+      focusTags: Array.isArray(hashtagPolicy.focusTags) ? hashtagPolicy.focusTags : [],
+      platformTags: Array.isArray(hashtagPolicy.platformTags) ? hashtagPolicy.platformTags : [],
+    },
+    creativePolicy: {
+      imageAggro: creativePolicy.imageAggro || 'medium',
+      reelAggro: creativePolicy.reelAggro || 'medium',
+      hookStyle: creativePolicy.hookStyle || 'balanced',
+      ctaStyle: creativePolicy.ctaStyle || 'balanced',
+      imageDirection: creativePolicy.imageDirection || 'premium curiosity',
+    },
+  };
+}
+
+function loadStrategyBundle() {
+  const plan = loadLatestStrategy();
+  return {
+    plan,
+    executionDirectives: normalizeExecutionDirectives(plan),
+  };
+}
+
 module.exports = {
   STRATEGY_PATH,
   loadLatestStrategy,
+  normalizeExecutionDirectives,
+  loadStrategyBundle,
 };

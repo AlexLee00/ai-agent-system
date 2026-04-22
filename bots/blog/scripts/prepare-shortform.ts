@@ -7,6 +7,7 @@ const { buildShortformPlan } = require(path.join(env.PROJECT_ROOT, 'bots/blog/li
 const { SHORTFORM_DEFAULT_DURATION_SEC } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-planner.ts'));
 const { generateInstaCaption } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/social.ts'));
 const { generatePostImages } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/img-gen.ts'));
+const { loadStrategyBundle } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/strategy-loader.ts'));
 const {
   findLatestThumbPath,
   selectThumbForTitle,
@@ -74,6 +75,7 @@ function inferPostType(category = '') {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const category = args.category || '최신IT트렌드';
+  const strategyBundle = loadStrategyBundle();
   const thumbSelection = args.thumb
     ? { path: path.resolve(args.thumb), score: 999, matchType: 'explicit' }
     : (args.title ? selectThumbForTitle(args.title, category, { purpose: 'reel' }) : null);
@@ -89,6 +91,7 @@ async function main() {
       postType: inferPostType(category),
       category,
       format: 'reel',
+      strategy: strategyBundle.plan,
     });
     if (generated?.thumb?.filepath) {
       resolvedThumb = generated.thumb.filepath;
@@ -134,12 +137,13 @@ async function main() {
     thumbPath,
     blogUrl: args.blogUrl || '',
     durationSec: args.durationSec || SHORTFORM_DEFAULT_DURATION_SEC,
-    content
+    content,
+    strategy: strategyBundle.plan,
   });
 
   let captionData;
   try {
-    captionData = await generateInstaCaption(content || title, title, category);
+    captionData = await generateInstaCaption(content || title, title, category, strategyBundle.plan);
   } catch (error) {
     console.warn('[숏폼] 캡션 생성 실패 — 기본 템플릿 사용:', error?.message || error);
     const hashtags = ['#개발자일상', '#IT블로그', '#승호아빠', '#cafe_library', '#shorts', '#reels'];
@@ -158,6 +162,7 @@ async function main() {
       cta: plan.cta,
       fullText: `${captionData.caption}\n\n${plan.cta}\n\n${captionData.hashtags.join(' ')}`
     },
+    strategyExecution: strategyBundle.executionDirectives,
     thumbSelection: effectiveThumbSelection,
   };
 

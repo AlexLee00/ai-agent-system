@@ -140,6 +140,74 @@ function applyMarketingFeedbackToPlan(plan = {}, marketingDigest = null) {
   return next;
 }
 
+function buildExecutionDirectives(plan = {}, diagnosis = {}, marketingDigest = null) {
+  const revenueImpactPct = Number(marketingDigest?.revenueCorrelation?.revenueImpactPct || 0);
+  const topSignalType = String(marketingDigest?.senseSummary?.topSignal?.type || '');
+  const preferredCategory = String(plan.preferredCategory || '').trim();
+
+  const isConversionPush = revenueImpactPct < -0.05 || topSignalType === 'exam_period';
+  const isAmplifyPush = revenueImpactPct > 0.05;
+
+  const hashtagFocusTags = [];
+  if (preferredCategory) hashtagFocusTags.push(`#${preferredCategory.replace(/\s+/g, '')}`);
+  if (topSignalType === 'exam_period') {
+    hashtagFocusTags.push('#시험기간', '#집중력', '#스터디루틴');
+  } else if (topSignalType === 'holiday') {
+    hashtagFocusTags.push('#연휴루틴', '#가벼운실천');
+  }
+
+  const neighborBase = isConversionPush ? 3 : 2;
+  const sympathyBase = isAmplifyPush ? 5 : 3;
+
+  return {
+    channelPriority: {
+      naverBlog: 'primary',
+      instagram: isAmplifyPush ? 'primary' : 'secondary',
+      facebook: isConversionPush ? 'secondary' : 'supporting',
+    },
+    executionTargets: {
+      blogRegistrationsPerCycle: 1,
+      instagramRegistrationsPerCycle: isAmplifyPush ? 2 : 1,
+      facebookRegistrationsPerCycle: isConversionPush ? 2 : 1,
+      replyTargetPerCycle: 1,
+      neighborCommentTargetPerCycle: neighborBase,
+      sympathyTargetPerCycle: sympathyBase,
+    },
+    titlePolicy: {
+      preferredPattern: plan.preferredTitlePattern || null,
+      suppressedPattern: plan.suppressedTitlePattern || null,
+      tone: isConversionPush ? 'conversion' : isAmplifyPush ? 'amplify' : 'balanced',
+      keywordBias: [
+        preferredCategory,
+        isConversionPush ? '예약' : null,
+        isConversionPush ? '전환' : null,
+        isAmplifyPush ? '성과' : null,
+        isAmplifyPush ? '증가' : null,
+      ].filter(Boolean),
+    },
+    hashtagPolicy: {
+      mode: isAmplifyPush ? 'aggressive' : isConversionPush ? 'conversion' : 'balanced',
+      focusTags: [...new Set(hashtagFocusTags)],
+      platformTags: isAmplifyPush
+        ? ['#릴스', '#reels', '#인스타마케팅', '#바이럴']
+        : isConversionPush
+          ? ['#예약문의', '#상담문의', '#전환콘텐츠']
+          : ['#블로그마케팅', '#콘텐츠전략'],
+    },
+    creativePolicy: {
+      imageAggro: isAmplifyPush ? 'high' : isConversionPush ? 'medium' : 'medium',
+      reelAggro: isAmplifyPush ? 'high' : isConversionPush ? 'high' : 'balanced',
+      hookStyle: isAmplifyPush ? 'scroll_stop' : isConversionPush ? 'problem_first' : 'balanced',
+      ctaStyle: isConversionPush ? 'conversion' : isAmplifyPush ? 'engagement' : 'balanced',
+      imageDirection: isAmplifyPush
+        ? 'strong color contrast, tension, immediate scroll-stopping curiosity'
+        : isConversionPush
+          ? 'trust-building, concrete value, reservation-oriented payoff'
+          : 'premium curiosity with clear business relevance',
+    },
+  };
+}
+
 function createStrategyPlan(diagnosis = {}, options = {}) {
   const topCategory = diagnosis.byCategory?.[0]?.key || null;
   const topPattern = diagnosis.byTitlePattern?.[0]?.key || null;
@@ -213,6 +281,7 @@ function createStrategyPlan(diagnosis = {}, options = {}) {
     previousPlan?.categoryPatternHotspot || null,
     previousPlan?.weekOf || null,
   );
+  plan.executionDirectives = buildExecutionDirectives(plan, diagnosis, options.marketingDigest || null);
 
   return applyMarketingFeedbackToPlan(plan, options.marketingDigest);
 }
@@ -251,4 +320,5 @@ module.exports = {
   evolveStrategy,
   createStrategyPlan,
   applyMarketingFeedbackToPlan,
+  buildExecutionDirectives,
 };

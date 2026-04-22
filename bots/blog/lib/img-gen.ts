@@ -12,6 +12,7 @@ const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const { selectRuntime } = require('../../../packages/core/lib/runtime-selector.js');
 const localImageClient = require('../../../packages/core/lib/local-image-client.js');
+const { loadStrategyBundle, normalizeExecutionDirectives } = require('./strategy-loader.ts');
 
 const OUTPUT_DIR = path.join(env.PROJECT_ROOT, 'bots/blog/output');
 const IMAGES_DIR = path.join(OUTPUT_DIR, 'images');
@@ -187,9 +188,21 @@ function _buildVisualVariant(title, postType, category) {
   };
 }
 
-function _buildThumbPrompt(title, postType, category, format = 'thumb') {
+function _buildThumbPrompt(title, postType, category, format = 'thumb', strategy = null) {
   const isReel = format === 'reel';
   const styleBase = isReel ? REEL_STYLE_BASE : STYLE_BASE;
+  const directives = normalizeExecutionDirectives(strategy);
+  const aggressionLine = directives.creativePolicy.imageAggro === 'high'
+    ? 'Push stronger contrast, stronger tension, and a more scroll-stopping first impression.'
+    : directives.creativePolicy.imageAggro === 'low'
+      ? 'Keep the scene calmer and cleaner, prioritizing trust and clarity over shock.'
+      : 'Balance curiosity with clarity so the thumbnail feels premium and clickable.';
+  const reelAggroLine = directives.creativePolicy.reelAggro === 'high'
+    ? 'For reel cover, favor stop-scroll tension, bold contrast, and a highly legible center subject.'
+    : 'For reel cover, keep the center subject strong without over-noising the frame.';
+  const directionLine = directives.creativePolicy.imageDirection
+    ? `Creative direction: ${directives.creativePolicy.imageDirection}.`
+    : '';
   if (postType === 'lecture') {
     const topic = title.replace(/\[Node\.js \d+강\]\s*/, '').trim();
     const style = CLICK_BAIT_STYLES[_hashSeed(`${title}:${category}`) % CLICK_BAIT_STYLES.length];
@@ -197,8 +210,10 @@ function _buildThumbPrompt(title, postType, category, format = 'thumb') {
       styleBase,
       `Topic hint: "${topic}". Dark modern UI, code editor vibes, Node.js green accent color (#68a063).`,
       style,
+      aggressionLine,
+      directionLine,
       isReel
-        ? 'Strong focal subject, portrait-safe composition, premium tutorial reel cover feel.'
+        ? `Strong focal subject, portrait-safe composition, premium tutorial reel cover feel. ${reelAggroLine}`
         : 'Strong focal subject, clean composition, premium tutorial cover feel.',
     ].join(' ');
   }
@@ -214,17 +229,20 @@ function _buildThumbPrompt(title, postType, category, format = 'thumb') {
     `Mood and attitude: ${visual.attitude}.`,
     `Composition: ${visual.shot}, ${visual.propStyle}.`,
     `Color mood: ${COLOR_HINTS[category] || 'modern tech color palette'}.`,
+    aggressionLine,
+    directionLine,
     'The image should make people want to click through curiosity, surprise, beauty, or tension.',
     'Avoid generic stock-photo feel. Be bold, distinctive, and emotionally legible at a glance.',
     isReel
-      ? 'Design the scene for a vertical reel cover with a dominant center subject and layered portrait depth.'
+      ? `Design the scene for a vertical reel cover with a dominant center subject and layered portrait depth. ${reelAggroLine}`
       : 'Design the scene for a wide blog thumbnail with strong click-through energy.',
     'No readable words on walls, screens, papers, boards, or devices.',
   ].join(' ');
 }
 
-async function generatePostImages({ title, postType, category, format = 'thumb' }) {
+async function generatePostImages({ title, postType, category, format = 'thumb', strategy = null }) {
   if (!fs.existsSync(IMAGES_DIR)) fs.mkdirSync(IMAGES_DIR, { recursive: true });
+  const plan = strategy || loadStrategyBundle().plan;
 
   const today = kst.today();
   const safeSlug = (title || '').replace(/[^가-힣a-zA-Z0-9]/g, '_').slice(0, 40);
@@ -233,7 +251,7 @@ async function generatePostImages({ title, postType, category, format = 'thumb' 
 
   console.log(`[이미지] ${isReel ? '릴스 커버' : '썸네일'} 생성 시작 (Draw Things/local runtime) — ${title}`);
 
-  const thumbPrompt = _buildThumbPrompt(title, postType, category, format);
+  const thumbPrompt = _buildThumbPrompt(title, postType, category, format, plan);
   const filename = `${slug}_${isReel ? 'reel_thumb' : 'thumb'}.png`;
   const filepath = path.join(IMAGES_DIR, filename);
 

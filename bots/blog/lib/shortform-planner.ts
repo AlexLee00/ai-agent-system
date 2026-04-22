@@ -2,6 +2,7 @@
 
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
+const { loadStrategyBundle, normalizeExecutionDirectives } = require('./strategy-loader.ts');
 
 const SHORTFORM_MIN_DURATION_SEC = 15;
 const SHORTFORM_MAX_DURATION_SEC = 20;
@@ -16,8 +17,8 @@ function slugify(text = '') {
     .slice(0, 60);
 }
 
-function pickHook(title = '', category = '') {
-  return buildHookLine(title, category);
+function pickHook(title = '', category = '', strategy = null) {
+  return buildHookLine(title, category, strategy);
 }
 
 function normalizeTitleText(text = '') {
@@ -57,8 +58,23 @@ function chooseVariant(seed = '', variants = [], fallback = '') {
   return variants[pickVariantIndex(seed, variants.length)] || fallback;
 }
 
-function buildHookLine(title = '', category = '') {
+function buildHookLine(title = '', category = '', strategy = null) {
   const clean = normalizeTitleText(title);
+  const directives = normalizeExecutionDirectives(strategy);
+  if (directives.creativePolicy.hookStyle === 'scroll_stop') {
+    return chooseVariant(clean, [
+      `${compactTitle(clean, 15)} 이 한 장면이 갈립니다`,
+      `${compactTitle(clean, 15)} 여기서 결과가 나뉩니다`,
+      `${compactTitle(clean, 15)} 지금 안 보면 손해입니다`,
+    ], `${compactTitle(clean, 15)} 이 한 장면이 갈립니다`);
+  }
+  if (directives.creativePolicy.hookStyle === 'problem_first') {
+    return chooseVariant(clean, [
+      `${compactTitle(clean, 15)} 여기서 먼저 막힙니다`,
+      `${compactTitle(clean, 15)} 이 지점에서 흔들립니다`,
+      `${compactTitle(clean, 15)} 보통 여기서 놓칩니다`,
+    ], `${compactTitle(clean, 15)} 여기서 먼저 막힙니다`);
+  }
   if (category === '홈페이지와App') {
     if (/결제/.test(clean) && /이탈/.test(clean)) {
       return chooseVariant(clean, [
@@ -118,8 +134,16 @@ function buildHookLine(title = '', category = '') {
   return `${compactTitle(clean, 16)} 지금 놓치면 아쉽습니다`;
 }
 
-function buildValueLine(title = '', category = '') {
+function buildValueLine(title = '', category = '', strategy = null) {
   const clean = normalizeTitleText(title);
+  const directives = normalizeExecutionDirectives(strategy);
+  if (directives.titlePolicy.tone === 'conversion') {
+    return chooseVariant(clean, [
+      '지금 적용하면 전환 손실을 줄일 수 있습니다',
+      '이 포인트를 바꾸면 문의 흐름이 달라집니다',
+      '망설임 구간을 줄이면 반응이 달라집니다',
+    ], '지금 적용하면 전환 손실을 줄일 수 있습니다');
+  }
   if (category === '홈페이지와App') {
     if (/결제/.test(clean)) {
       return chooseVariant(clean, [
@@ -169,8 +193,23 @@ function buildValueLine(title = '', category = '') {
   return compactTitle(clean, 22);
 }
 
-function buildCtaLine(title = '', category = '') {
+function buildCtaLine(title = '', category = '', strategy = null) {
   const clean = normalizeTitleText(title);
+  const directives = normalizeExecutionDirectives(strategy);
+  if (directives.creativePolicy.ctaStyle === 'conversion') {
+    return chooseVariant(clean, [
+      '블로그에서 체크하고 바로 예약 흐름까지 보세요',
+      '본문에서 적용 포인트와 문의 흐름을 확인하세요',
+      '블로그에서 전환 포인트를 바로 확인하세요',
+    ], '블로그에서 체크하고 바로 예약 흐름까지 보세요');
+  }
+  if (directives.creativePolicy.ctaStyle === 'engagement') {
+    return chooseVariant(clean, [
+      '저장해두고 블로그에서 전체 맥락을 보세요',
+      '공유해두고 블로그에서 실전 포인트를 보세요',
+      '블로그에서 전체 전략을 이어서 확인하세요',
+    ], '저장해두고 블로그에서 전체 맥락을 보세요');
+  }
   if (/체크리스트|\d+가지|포인트/.test(clean)) {
     return chooseVariant(clean, [
       '블로그에서 3가지를 바로 확인하세요',
@@ -205,16 +244,16 @@ function normalizeDurationSec(value) {
   return Math.min(SHORTFORM_MAX_DURATION_SEC, Math.max(SHORTFORM_MIN_DURATION_SEC, Math.round(num)));
 }
 
-function buildOverlayLines(title = '', category = '') {
+function buildOverlayLines(title = '', category = '', strategy = null) {
   return [
-    buildHookLine(title, category),
-    buildValueLine(title, category),
-    buildCtaLine(title, category),
+    buildHookLine(title, category, strategy),
+    buildValueLine(title, category, strategy),
+    buildCtaLine(title, category, strategy),
   ];
 }
 
-function buildStoryboard(title = '', category = '', durationSec = SHORTFORM_DEFAULT_DURATION_SEC) {
-  const overlayLines = buildOverlayLines(title, category);
+function buildStoryboard(title = '', category = '', durationSec = SHORTFORM_DEFAULT_DURATION_SEC, strategy = null) {
+  const overlayLines = buildOverlayLines(title, category, strategy);
   const safeDurationSec = normalizeDurationSec(durationSec);
   const ratios = [0.28, 0.4, 0.32];
   let cursor = 0;
@@ -259,7 +298,13 @@ function buildShortformOutputPath(title = '') {
   return path.join(outputDir, `${slug}_reel.mp4`);
 }
 
-function buildShortformCta(blogUrl = '') {
+function buildShortformCta(blogUrl = '', strategy = null) {
+  const directives = normalizeExecutionDirectives(strategy);
+  if (directives.creativePolicy.ctaStyle === 'conversion') {
+    return blogUrl
+      ? `자세한 적용 포인트와 예약 전환 흐름은 블로그에서 확인하세요 👉 ${blogUrl}`
+      : '자세한 적용 포인트와 예약 전환 흐름은 블로그에서 확인하세요 👉 프로필 링크';
+  }
   return blogUrl
     ? `자세한 내용은 블로그에서 확인하세요 👉 ${blogUrl}`
     : '자세한 내용은 블로그에서 확인하세요 👉 프로필 링크';
@@ -271,15 +316,17 @@ function buildShortformPlan({
   thumbPath,
   blogUrl = '',
   durationSec = SHORTFORM_DEFAULT_DURATION_SEC,
-  content = ''
+  content = '',
+  strategy = null,
 }) {
+  const plan = strategy || loadStrategyBundle().plan;
   const safeTitle = String(title || '').trim();
   const safeCategory = String(category || '일반');
   const safeDurationSec = normalizeDurationSec(durationSec);
-  const hook = pickHook(safeTitle, safeCategory);
-  const storyboard = buildStoryboard(safeTitle, safeCategory, safeDurationSec);
+  const hook = pickHook(safeTitle, safeCategory, plan);
+  const storyboard = buildStoryboard(safeTitle, safeCategory, safeDurationSec, plan);
   const outputPath = buildShortformOutputPath(safeTitle);
-  const cta = buildShortformCta(blogUrl);
+  const cta = buildShortformCta(blogUrl, plan);
 
   return {
     title: safeTitle,
@@ -295,6 +342,7 @@ function buildShortformPlan({
     overlayCount: storyboard.length,
     ffmpegPreview: buildFfmpegPreview({ thumbPath, outputPath, durationSec: safeDurationSec }),
     contentSnippet: String(content || '').slice(0, 280),
+    strategyExecution: normalizeExecutionDirectives(plan),
     generatedAt: new Date().toISOString()
   };
 }
