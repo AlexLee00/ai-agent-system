@@ -14,6 +14,7 @@ const HISTORY_PATH = '/tmp/investment-runtime-kis-domestic-autotune-history.json
 const AUTO_KEYS = new Set([
   'runtime_config.luna.stockOrderDefaults.kis.buyDefault',
   'runtime_config.luna.minConfidence.live.kis',
+  'capital_management.by_exchange.kis.trade_modes.validation.max_position_pct',
 ]);
 
 function parseArgs(argv = process.argv.slice(2)) {
@@ -26,7 +27,10 @@ function parseArgs(argv = process.argv.slice(2)) {
 }
 
 function toRuntimePath(key) {
-  return String(key || '').replace(/^runtime_config\./, '').split('.').filter(Boolean);
+  const normalized = String(key || '');
+  if (normalized.startsWith('runtime_config.')) return { root: 'runtime_config', path: normalized.replace(/^runtime_config\./, '').split('.').filter(Boolean) };
+  if (normalized.startsWith('capital_management.')) return { root: 'capital_management', path: normalized.replace(/^capital_management\./, '').split('.').filter(Boolean) };
+  return { root: 'runtime_config', path: normalized.split('.').filter(Boolean) };
 }
 
 function setByPath(target, path, value) {
@@ -60,7 +64,7 @@ function buildCandidate(report) {
   if (!candidate.governance || candidate.governance.tier !== 'allow') return null;
   return {
     key: candidate.key,
-    path: toRuntimePath(candidate.key),
+    target: toRuntimePath(candidate.key),
     current: candidate.current,
     suggested: candidate.suggested,
     confidence: candidate.confidence,
@@ -74,8 +78,10 @@ function isSameEvidence(report, snapshot) {
     && Number(report?.decision?.metrics?.totalBuy || 0) === Number(snapshot.totalBuy || 0)
     && Number(report?.decision?.metrics?.executedSignals || 0) === Number(snapshot.executedSignals || 0)
     && Number(report?.decision?.metrics?.failedSignals || 0) === Number(snapshot.failedSignals || 0)
+    && Number(report?.decision?.metrics?.validationRule1Blocks || 0) === Number(snapshot.validationRule1Blocks || 0)
     && Number(report?.decision?.metrics?.orderPressureTotal || 0) === Number(snapshot.orderPressureTotal || 0)
-    && Number(report.candidate.current ?? NaN) === Number(snapshot.candidateSuggested ?? NaN);
+    && Number(report.candidate.current ?? NaN) === Number(snapshot.candidateCurrent ?? NaN)
+    && Number(report.candidate.suggested ?? NaN) === Number(snapshot.candidateSuggested ?? NaN);
 }
 
 function renderText(result) {
@@ -112,8 +118,10 @@ export async function buildRuntimeKisDomesticSelfTune({ days = 14, write = false
   if (write && candidate) {
     const raw = yaml.load(readFileSync(CONFIG_PATH, 'utf8')) || {};
     if (!raw.runtime_config || typeof raw.runtime_config !== 'object') raw.runtime_config = {};
-    const before = getByPath(raw.runtime_config, candidate.path);
-    setByPath(raw.runtime_config, candidate.path, candidate.suggested);
+    if (!raw.capital_management || typeof raw.capital_management !== 'object') raw.capital_management = {};
+    const rootNode = candidate.target.root === 'capital_management' ? raw.capital_management : raw.runtime_config;
+    const before = getByPath(rootNode, candidate.target.path);
+    setByPath(rootNode, candidate.target.path, candidate.suggested);
     writeFileSync(CONFIG_PATH, yaml.dump(raw, { lineWidth: 120, noRefs: true }), 'utf8');
     result.applied = { key: candidate.key, before, after: candidate.suggested };
   }

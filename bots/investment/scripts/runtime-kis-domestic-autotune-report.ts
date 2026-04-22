@@ -5,6 +5,7 @@ import * as db from '../shared/db.ts';
 import { getInvestmentRuntimeConfig } from '../shared/runtime-config.ts';
 import { getExchangeEvidenceBaseline } from '../shared/runtime-config.ts';
 import { getParameterGovernance } from '../shared/runtime-parameter-governance.ts';
+import { getCapitalConfig } from '../shared/capital-manager.ts';
 import { buildRuntimeKisOrderPressureReport } from './runtime-kis-order-pressure-report.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { buildInvestmentCliInsight } from '../shared/cli-insight.ts';
@@ -26,14 +27,15 @@ async function loadSignalRows(days = 14) {
   return db.query(
     `SELECT
        status,
+       COALESCE(trade_mode, 'normal') AS trade_mode,
        COALESCE(NULLIF(block_code, ''), 'none') AS block_code,
-       COUNT(*)::int AS cnt
+       COALESCE(block_reason, '') AS block_reason,
+       COALESCE(amount_usdt, 0)::numeric AS amount_usdt
      FROM investment.signals
      WHERE exchange = 'kis'
        AND action = 'BUY'
        AND created_at > ${lowerBound}
-     GROUP BY 1, 2
-     ORDER BY cnt DESC, status ASC`
+     ORDER BY created_at DESC`
   );
 }
 
@@ -57,24 +59,48 @@ async function loadTradeRows(days = 14) {
 }
 
 function summarizeSignals(rows = []) {
-  const totalBuy = rows.reduce((sum, row) => sum + Number(row?.cnt || 0), 0);
+  const totalBuy = rows.length;
   const executedSignals = rows
     .filter((row) => String(row?.status || '') === 'executed')
-    .reduce((sum, row) => sum + Number(row?.cnt || 0), 0);
+    .length;
   const failedSignals = rows
-    .filter((row) => String(row?.status || '') === 'failed')
-    .reduce((sum, row) => sum + Number(row?.cnt || 0), 0);
-  const topBlocks = rows
-    .filter((row) => String(row?.status || '') === 'failed')
-    .map((row) => ({ code: row.block_code, count: Number(row.cnt || 0) }))
+    .filter((row) => ['failed', 'blocked'].includes(String(row?.status || '')))
+    .length;
+  const groupedBlocks = new Map();
+  for (const row of rows) {
+    const status = String(row?.status || '');
+    if (!['failed', 'blocked'].includes(status)) continue;
+    const key = `${status}:${String(row?.block_code || 'none')}`;
+    groupedBlocks.set(key, {
+      code: String(row?.block_code || 'none'),
+      status,
+      count: Number(groupedBlocks.get(key)?.count || 0) + 1,
+    });
+  }
+  const topBlocks = [...groupedBlocks.values()]
     .sort((a, b) => b.count - a.count || String(a.code).localeCompare(String(b.code)));
+  const validationRule1Blocks = rows.filter((row) =>
+    String(row?.trade_mode || '') === 'validation' &&
+    String(row?.status || '') === 'blocked' &&
+    String(row?.block_code || '') === 'safety_gate_blocked' &&
+    String(row?.block_reason || '').includes('원칙1 위반: 단일 포지션 한도 초과'));
   return {
     totalBuy,
     executedSignals,
     failedSignals,
     executionRate: totalBuy > 0 ? Number(((executedSignals / totalBuy) * 100).toFixed(1)) : 0,
     topBlocks,
+    validationRule1Blocks,
   };
+}
+
+function extractRule1Limit(reason = '') {
+  const match = String(reason).match(/\(([\d,]+)원?\s*>\s*([\d,]+)원?\)/);
+  if (!match) return null;
+  const amount = Number(String(match[1]).replace(/,/g, ''));
+  const limit = Number(String(match[2]).replace(/,/g, ''));
+  if (!(amount > 0) || !(limit > 0)) return null;
+  return { amount, limit };
 }
 
 function summarizeTrades(rows = []) {
@@ -91,6 +117,27 @@ function summarizeTrades(rows = []) {
 function buildCandidate(config, signalSummary, orderPressureSummary) {
   const orderMetrics = orderPressureSummary?.decision?.metrics || {};
   const totalOrderPressure = Number(orderMetrics.total || 0);
+  const validationRule1Blocks = signalSummary.validationRule1Blocks || [];
+  if (validationRule1Blocks.length > 0 && totalOrderPressure === 0) {
+    const key = 'capital_management.by_exchange.kis.trade_modes.validation.max_position_pct';
+    const current = Number(getCapitalConfig('kis', 'validation')?.max_position_pct || 0.1);
+    const requiredPcts = validationRule1Blocks
+      .map((item) => extractRule1Limit(item.block_reason))
+      .filter(Boolean)
+      .map((item) => (item.amount / item.limit) * current);
+    const requiredPct = requiredPcts.length > 0 ? Math.max(...requiredPcts) : current + 0.02;
+    const suggested = Number(Math.min(0.2, Math.max(0.08, current + 0.02, requiredPct)).toFixed(2));
+    if (suggested === current) return null;
+    return {
+      key,
+      current,
+      suggested,
+      action: 'adjust',
+      confidence: 'medium',
+      reason: `국내장 validation에서 원칙1 단일 포지션 한도 차단 ${validationRule1Blocks.length}건이 있어, validation 전용 포지션 비율을 ${current.toFixed(2)} → ${suggested.toFixed(2)}로 비교할 수 있습니다.`,
+      governance: getParameterGovernance(key),
+    };
+  }
   if (totalOrderPressure >= 5) {
     const key = 'runtime_config.luna.stockOrderDefaults.kis.buyDefault';
     const current = Number(config.luna?.stockOrderDefaults?.kis?.buyDefault || 500000);
@@ -135,6 +182,7 @@ function buildDecision(signalSummary, tradeSummary, orderPressureSummary, candid
     `BUY 표본 ${signalSummary.totalBuy}건 / 실행 ${signalSummary.executedSignals}건 / 실패 ${signalSummary.failedSignals}건`,
     `실행률 ${signalSummary.executionRate}% / 실거래 BUY ${tradeSummary.realBuyTrades}건`,
     `주문 초과 압력 ${orderStatus}`,
+    signalSummary.validationRule1Blocks?.length > 0 ? `validation 원칙1 차단 ${signalSummary.validationRule1Blocks.length}건` : null,
   ].filter(Boolean);
   const actionItems = [];
   if (candidate) {
@@ -162,6 +210,7 @@ function buildDecision(signalSummary, tradeSummary, orderPressureSummary, candid
       paperBuyTrades: tradeSummary.paperBuyTrades,
       orderPressureStatus: orderStatus,
       orderPressureTotal: Number(orderPressureSummary?.decision?.metrics?.total || 0),
+      validationRule1Blocks: Number(signalSummary.validationRule1Blocks?.length || 0),
     },
   };
 }

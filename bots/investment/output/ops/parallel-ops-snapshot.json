@@ -1,0 +1,3599 @@
+{
+  "capturedAt": "2026-04-22T02:50:55.571Z",
+  "launchd": {
+    "investmentLabels": [
+      "ai.investment.argos",
+      "ai.investment.commander",
+      "ai.investment.crypto",
+      "ai.investment.crypto.validation",
+      "ai.investment.daily-feedback",
+      "ai.investment.domestic",
+      "ai.investment.domestic.validation",
+      "ai.investment.health-check",
+      "ai.investment.market-alert-crypto-daily",
+      "ai.investment.market-alert-domestic-close",
+      "ai.investment.market-alert-domestic-open",
+      "ai.investment.market-alert-overseas-close",
+      "ai.investment.market-alert-overseas-open",
+      "ai.investment.market-regime-capture",
+      "ai.investment.overseas",
+      "ai.investment.overseas.validation",
+      "ai.investment.prescreen-domestic",
+      "ai.investment.prescreen-overseas",
+      "ai.investment.reporter",
+      "ai.investment.unrealized-pnl"
+    ],
+    "count": 20,
+    "error": null
+  },
+  "overlap": {
+    "overlap_count": null,
+    "investment_overlaps": [],
+    "recommended_actions": [],
+    "error": "** (UndefinedFunctionError) function TeamJay.Diagnostics.shadow_report/0 is undefined (module TeamJay.Diagnostics is not available)\n    TeamJay.Diagnostics.shadow_report()\n    nofile:1: (file)\n    (stdlib 7.3) erl_eval.erl:924: :erl_eval.do_apply/7\n    (stdlib 7.3) erl_eval.erl:668: :erl_eval.expr/6\n    (stdlib 7.3) erl_eval.erl:276: :erl_eval.exprs/6"
+  },
+  "portAgents": [],
+  "portAgentError": "** (UndefinedFunctionError) function TeamJay.Agents.PortAgent.get_status/1 is undefined (module TeamJay.Agents.PortAgent is not available)\n    TeamJay.Agents.PortAgent.get_status(:luna_commander)\n    nofile:1: (file)\n    nofile:1: (file)\n    (stdlib 7.3) erl_eval.erl:924: :erl_eval.do_apply/7\n    (stdlib 7.3) erl_eval.erl:668: :erl_eval.expr/6\n    (stdlib 7.3) erl_eval.erl:276: :erl_eval.exprs/6\n    (elixir 1.19.5) lib/enum.ex:1688: Enum.\"-map/2-lists^map/1-1-\"/2",
+  "health": {
+    "serviceHealth": {
+      "okCount": 13,
+      "warnCount": 0,
+      "ok": [
+        "  commander: 정상 (PID 1199)",
+        "  crypto: 점검 완료 (exit 0)",
+        "  domestic: 점검 완료 (exit 0)",
+        "  overseas: 점검 완료 (exit 0)",
+        "  argos: 점검 완료 (exit 0)",
+        "  market-alert-crypto-daily: 점검 완료 (exit 0)",
+        "  market-alert-domestic-open: 점검 완료 (exit 0)",
+        "  market-alert-domestic-close: 점검 완료 (exit 0)",
+        "  market-alert-overseas-open: 점검 완료 (exit 0)",
+        "  market-alert-overseas-close: 점검 완료 (exit 0)",
+        "  prescreen-domestic: 점검 완료 (exit 0)",
+        "  prescreen-overseas: 점검 완료 (exit 0)",
+        "  reporter: 점검 완료 (exit 0)"
+      ],
+      "warn": []
+    },
+    "decision": {
+      "recommended": true,
+      "level": "medium",
+      "reasons": [
+        "최근 14일 crypto capital guard 21건 — validation 2건 (9.5%) / normal 19건 / 최다 correlation guard 19건",
+        "crypto capital guard hotspot — ENJ/USDT BUY / normal 4건",
+        "validation/live overlap hotspot — BARD/USDT BUY / normal 3건",
+        "crypto gate action hint — normal lane correlation 압력 완화 우선 — ENJ/USDT, GIGGLE/USDT, DUSK/USDT",
+        "crypto gate next action — 상관관계 가드가 가장 많은 normal lane 심볼부터 분산 검토 — ENJ/USDT, GIGGLE/USDT, DUSK/USDT",
+        "암호화폐 LIVE 게이트 blocked — PAPER 검증 표본이 아직 없고, 최근 실행 병목은 max positions 733건 / validation LIVE overlap 217건이다",
+        "learning loop — trending_bear 장세에서 validation 레인의 성과가 약해 전략 수정이 필요합니다. / top suggestion runtime_config.execution.cryptoGuardSoftening.byExchange.binance.tradeModes.normal.validationFallback.reductionMultiplier -> 0.3 / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-suggest -- --json"
+      ]
+    },
+    "cryptoLiveGateHealth": {
+      "okCount": 0,
+      "warnCount": 1,
+      "ok": [],
+      "warn": [
+        "  게이트: blocked",
+        "  사유: PAPER 검증 표본이 아직 없고, 최근 실행 병목은 max positions 733건 / validation LIVE overlap 217건이다",
+        "  체결: 1건 (LIVE 1 / PAPER 0)",
+        "  mode 체결: NORMAL 0건 (LIVE 0 / PAPER 0), VALIDATION 1건 (LIVE 1 / PAPER 0)",
+        "  퍼널: decision 5343 / BUY 1022 / approved 236 / executed 0",
+        "  weak: 25 (top confidence_near_threshold)",
+        "  risk reject: max positions 733 / validation LIVE overlap 217",
+        "  reentry: PAPER 0 / LIVE 0 / same-day 0",
+        "  종료 리뷰: 0건"
+      ],
+      "review": {
+        "periodDays": 7,
+        "facts": [
+          "최근 7일 암호화폐 decision 5343건, BUY 1022건, approved 236건, executed 0건",
+          "최근 7일 암호화폐 체결 1건 (LIVE 1 / PAPER 0)",
+          "trade_mode별 체결: NORMAL 0건 (LIVE 0 / PAPER 0), VALIDATION 1건 (LIVE 1 / PAPER 0)",
+          "weakSignalSkipped 25건, 최다 사유 confidence_near_threshold",
+          "재진입 차단: PAPER 0건 / LIVE 0건 / same-day 0건",
+          "최근 7일 종료된 암호화폐 거래 리뷰 0건"
+        ],
+        "inferred": [
+          "신호 품질이 완전히 낮다기보다 confidence 임계값 바로 아래에서 많이 잘리고 있을 가능성이 큼",
+          "현재 재진입 차단이 주요 병목으로 두드러지지는 않는다",
+          "현재 암호화폐 validation은 PAPER 검증이 아니라 LIVE 소액 검증 레일로 운영되고 있다",
+          "최근 실행 병목에는 포지션 한도 초과가 포함되어 있다 (max positions 733건)",
+          "validation 레일은 LIVE 포지션 중복 차단도 받고 있다 (217건)"
+        ],
+        "recommendations": [
+          "crypto confidence threshold는 즉시 크게 내리지 말고, near-threshold 비율이 1~2일 더 유지되는지 먼저 관찰",
+          "LIVE gate 문구와 health 리포트에서 validation LIVE와 PAPER 부족을 분리해 해석해야 한다",
+          "청산 품질 데이터가 없으므로 executed 수보다 closed review 확보를 우선"
+        ],
+        "liveGate": {
+          "decision": "blocked",
+          "reason": "PAPER 검증 표본이 아직 없고, 최근 실행 병목은 max positions 733건 / validation LIVE overlap 217건이다"
+        },
+        "metrics": {
+          "pipeline": {
+            "decision": 5343,
+            "buy": 1022,
+            "sell": 28,
+            "hold": 42,
+            "approved": 236,
+            "executed": 0,
+            "weak": 25,
+            "risk": 964,
+            "modeCounts": {
+              "NORMAL": 513,
+              "VALIDATION": 228
+            },
+            "weakReasons": {
+              "confidence_far_below_threshold": 7,
+              "confidence_near_threshold": 17,
+              "confidence_mid_gap": 1
+            },
+            "riskRejectReasons": {
+              "validation_live_overlap": 217,
+              "max_positions": 733,
+              "확신도가 0.34 미만이라 REJECT": 3,
+              "확신도가 0.30으로 기준치에 미달함": 1,
+              "확신도가 0.50 미만이라 REJECT": 3,
+              "확신도가 0.50 미만이며, 조정 계수 적용시 시간 가중치가 낮아 추가 리스크가 존재함": 1,
+              "확신도가 0.50 미만이며, 조정 계수 적용시 리스크가 과도하게 증가할 우려 있음": 1,
+              "확신도가 0.50 미만이며, 조정 계수 적용시 리스크 관리에 보수적일 필요가 있음": 1,
+              "확신도가 0.50 미만이며, 조정 계수 적용에도 불구, 여전히 리스크가 크다고 판단됨": 1,
+              "확신도가 0.50 미만이며, 과거 유사 신호의 신뢰도가 우수하나 현재의 낮은 확신도로 인해 전면 검토 필요": 1,
+              "확신도가 0.50 미만이기 때문에": 1,
+              "확신도가 0.50 미만이며, 신규 BUY 신호로 포지션 한도 6개에 1개만 보유중이지만 확신도가 매우 낮아 전면 REJECT": 1
+            },
+            "weakTop": "confidence_near_threshold"
+          },
+          "trades": {
+            "total": 1,
+            "live": 1,
+            "paper": 0,
+            "byMode": {
+              "VALIDATION": {
+                "total": 1,
+                "live": 1,
+                "paper": 0
+              }
+            }
+          },
+          "blocks": {
+            "raw": {
+              "stale_pending_signal": 1
+            },
+            "top": [
+              "stale_pending_signal",
+              1
+            ],
+            "paperReentry": 0,
+            "liveReentry": 0,
+            "sameDayReentry": 0,
+            "persistedCapitalGuard": {
+              "total": 0,
+              "byTradeMode": [],
+              "byReason": [],
+              "topReason": null
+            }
+          },
+          "closedReviews": 0
+        }
+      },
+      "periodDays": 7
+    },
+    "runtimeLearningLoop": {
+      "ok": true,
+      "days": 14,
+      "freshness": {
+        "latestRuntimeSessionAt": "2026-04-22T02:31:58.835Z",
+        "latestTradeReviewAt": "2026-04-13T20:52:26.615Z",
+        "latestBacktestAt": "2026-04-15T08:53:14.230Z",
+        "latestSuggestionAt": "2026-04-21T13:36:56.604Z",
+        "latestSuggestionReviewStatus": "applied",
+        "latestSuggestionActionableCount": 1
+      },
+      "sections": {
+        "collect": {
+          "status": "thin",
+          "latestAt": "2026-04-22T02:31:58.835Z",
+          "ageHours": 0.3,
+          "approvedSignals": 0,
+          "executedSymbols": 0,
+          "warnings": [],
+          "headline": "세션은 돌고 있지만 승인/실행 표본이 비어 있어 학습 루프 밀도가 낮습니다.",
+          "regimeCoverage": {
+            "windowDays": 90,
+            "distinctTradedRegimes": 3,
+            "unknownTrades": 0,
+            "knownRegimeTrades": 316,
+            "snapshotCount": 9,
+            "topRegimes": [
+              {
+                "regime": "trending_bull",
+                "total": 272,
+                "validationTrades": 71,
+                "normalTrades": 201,
+                "latestTradeAt": "2026-04-15T17:02:02.385Z"
+              },
+              {
+                "regime": "trending_bear",
+                "total": 34,
+                "validationTrades": 17,
+                "normalTrades": 17,
+                "latestTradeAt": "2026-04-08T04:00:50.858Z"
+              },
+              {
+                "regime": "ranging",
+                "total": 10,
+                "validationTrades": 1,
+                "normalTrades": 9,
+                "latestTradeAt": "2026-04-10T14:55:45.826Z"
+              }
+            ],
+            "latestByMarket": [
+              {
+                "market": "crypto",
+                "regime": "trending_bull",
+                "confidence": 0.69,
+                "capturedAt": "2026-04-22T02:42:12.208Z"
+              },
+              {
+                "market": "domestic",
+                "regime": "trending_bear",
+                "confidence": 0.5700000000000001,
+                "capturedAt": "2026-04-22T02:42:12.773Z"
+              },
+              {
+                "market": "overseas",
+                "regime": "ranging",
+                "confidence": 0.45,
+                "capturedAt": "2026-04-22T02:42:13.168Z"
+              }
+            ]
+          },
+          "regimePerformance": {
+            "weakestRegime": {
+              "regime": "trending_bear",
+              "modes": [
+                {
+                  "tradeMode": "normal",
+                  "total": 17,
+                  "closed": 15,
+                  "wins": 1,
+                  "winRate": 6.7,
+                  "avgPnlPercent": -6.2349
+                },
+                {
+                  "tradeMode": "validation",
+                  "total": 17,
+                  "closed": 12,
+                  "wins": 1,
+                  "winRate": 8.3,
+                  "avgPnlPercent": -7.6849
+                }
+              ],
+              "total": 34,
+              "closed": 27,
+              "bestMode": {
+                "tradeMode": "normal",
+                "total": 17,
+                "closed": 15,
+                "wins": 1,
+                "winRate": 6.7,
+                "avgPnlPercent": -6.2349
+              },
+              "worstMode": {
+                "tradeMode": "validation",
+                "total": 17,
+                "closed": 12,
+                "wins": 1,
+                "winRate": 8.3,
+                "avgPnlPercent": -7.6849
+              }
+            },
+            "strongestRegime": {
+              "regime": "trending_bull",
+              "modes": [
+                {
+                  "tradeMode": "normal",
+                  "total": 201,
+                  "closed": 67,
+                  "wins": 15,
+                  "winRate": 22.4,
+                  "avgPnlPercent": 0.4722
+                },
+                {
+                  "tradeMode": "validation",
+                  "total": 71,
+                  "closed": 10,
+                  "wins": 2,
+                  "winRate": 20,
+                  "avgPnlPercent": -6.323
+                }
+              ],
+              "total": 272,
+              "closed": 77,
+              "bestMode": {
+                "tradeMode": "normal",
+                "total": 201,
+                "closed": 67,
+                "wins": 15,
+                "winRate": 22.4,
+                "avgPnlPercent": 0.4722
+              },
+              "worstMode": {
+                "tradeMode": "validation",
+                "total": 71,
+                "closed": 10,
+                "wins": 2,
+                "winRate": 20,
+                "avgPnlPercent": -6.323
+              }
+            },
+            "byRegime": [
+              {
+                "regime": "trending_bull",
+                "modes": [
+                  {
+                    "tradeMode": "normal",
+                    "total": 201,
+                    "closed": 67,
+                    "wins": 15,
+                    "winRate": 22.4,
+                    "avgPnlPercent": 0.4722
+                  },
+                  {
+                    "tradeMode": "validation",
+                    "total": 71,
+                    "closed": 10,
+                    "wins": 2,
+                    "winRate": 20,
+                    "avgPnlPercent": -6.323
+                  }
+                ],
+                "total": 272,
+                "closed": 77,
+                "bestMode": {
+                  "tradeMode": "normal",
+                  "total": 201,
+                  "closed": 67,
+                  "wins": 15,
+                  "winRate": 22.4,
+                  "avgPnlPercent": 0.4722
+                },
+                "worstMode": {
+                  "tradeMode": "validation",
+                  "total": 71,
+                  "closed": 10,
+                  "wins": 2,
+                  "winRate": 20,
+                  "avgPnlPercent": -6.323
+                }
+              },
+              {
+                "regime": "trending_bear",
+                "modes": [
+                  {
+                    "tradeMode": "normal",
+                    "total": 17,
+                    "closed": 15,
+                    "wins": 1,
+                    "winRate": 6.7,
+                    "avgPnlPercent": -6.2349
+                  },
+                  {
+                    "tradeMode": "validation",
+                    "total": 17,
+                    "closed": 12,
+                    "wins": 1,
+                    "winRate": 8.3,
+                    "avgPnlPercent": -7.6849
+                  }
+                ],
+                "total": 34,
+                "closed": 27,
+                "bestMode": {
+                  "tradeMode": "normal",
+                  "total": 17,
+                  "closed": 15,
+                  "wins": 1,
+                  "winRate": 6.7,
+                  "avgPnlPercent": -6.2349
+                },
+                "worstMode": {
+                  "tradeMode": "validation",
+                  "total": 17,
+                  "closed": 12,
+                  "wins": 1,
+                  "winRate": 8.3,
+                  "avgPnlPercent": -7.6849
+                }
+              },
+              {
+                "regime": "ranging",
+                "modes": [
+                  {
+                    "tradeMode": "normal",
+                    "total": 9,
+                    "closed": 3,
+                    "wins": 0,
+                    "winRate": 0,
+                    "avgPnlPercent": null
+                  },
+                  {
+                    "tradeMode": "validation",
+                    "total": 1,
+                    "closed": 0,
+                    "wins": 0,
+                    "winRate": null,
+                    "avgPnlPercent": null
+                  }
+                ],
+                "total": 10,
+                "closed": 3,
+                "bestMode": {
+                  "tradeMode": "normal",
+                  "total": 9,
+                  "closed": 3,
+                  "wins": 0,
+                  "winRate": 0,
+                  "avgPnlPercent": null
+                },
+                "worstMode": {
+                  "tradeMode": "normal",
+                  "total": 9,
+                  "closed": 3,
+                  "wins": 0,
+                  "winRate": 0,
+                  "avgPnlPercent": null
+                }
+              }
+            ]
+          }
+        },
+        "analyze": {
+          "status": "watch",
+          "latestAt": "2026-04-15T08:53:14.230Z",
+          "ageHours": 162,
+          "backtestStatus": "backtest_ok",
+          "topSharpe": {
+            "symbol": "BTC/USDT",
+            "label": "TP 2.0% / SL 0.7%  (R/R 2.86:1)",
+            "sharpe": -9.953907338295487
+          },
+          "executionGateStatus": "crypto_execution_gate_ok",
+          "headline": "최근 VectorBT 결과가 정상적으로 쌓이고 있습니다."
+        },
+        "feedback": {
+          "status": "watch",
+          "latestAt": "2026-04-13T20:52:26.615Z",
+          "ageHours": 198,
+          "validationFindings": 0,
+          "closedTrades": 107,
+          "headline": "trade review / 피드백 루프는 비교적 안정적입니다."
+        },
+        "strategy": {
+          "status": "ready",
+          "latestAt": "2026-04-21T13:36:56.604Z",
+          "ageHours": 13.2,
+          "autotuneStatus": "crypto_guard_autotune_ready",
+          "actionableSuggestions": 2,
+          "reviewStatus": "applied",
+          "runtimeSuggestionTop": {
+            "key": "runtime_config.execution.cryptoGuardSoftening.byExchange.binance.tradeModes.normal.validationFallback.reductionMultiplier",
+            "current": 0.35,
+            "suggested": 0.3,
+            "action": "adjust",
+            "confidence": "medium",
+            "reason": "trending_bear 장세에서 validation fallback 비중을 현재 x0.35보다 더 작게 두고 손실 레인 노출을 줄이는 비교 실험 후보입니다.",
+            "governance": {
+              "key": "runtime_config.execution.cryptoGuardSoftening.byExchange.binance.tradeModes.normal.validationFallback.reductionMultiplier",
+              "tier": "allow",
+              "min": 0.15,
+              "max": 0.5,
+              "label": "crypto validation fallback 감산 배율",
+              "current": 0.35
+            },
+            "changeAllowed": true,
+            "requiresApproval": false,
+            "blockedByPolicy": false
+          },
+          "headline": "crypto guard 병목을 줄일 후보가 준비됐습니다."
+        }
+      },
+      "decision": {
+        "status": "regime_strategy_tuning_needed",
+        "headline": "trending_bear 장세에서 validation 레인의 성과가 약해 전략 수정이 필요합니다.",
+        "nextActions": [
+          "trending_bear 장세의 validation 레인 진입 기준과 비중을 먼저 줄이거나 재학습합니다.",
+          "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-suggest -- --json",
+          "우선 검토 제안: runtime_config.execution.cryptoGuardSoftening.byExchange.binance.tradeModes.normal.validationFallback.reductionMultiplier -> 0.3 (adjust)",
+          "trending_bull 장세의 normal 레인은 유지하며 비교 표본으로 계속 누적합니다."
+        ],
+        "reasons": [
+          "collect=thin (0.3h)",
+          "analyze=watch (6.8d)",
+          "feedback=watch (8.3d)",
+          "strategy=ready (13.2h)"
+        ]
+      },
+      "runtimeDecision": {
+        "ok": true,
+        "market": "all",
+        "limit": 5,
+        "includeSmoke": false,
+        "count": 5,
+        "summary": {
+          "byMarket": {
+            "binance": 5
+          },
+          "approvedSignals": 0,
+          "executedSymbols": 0,
+          "riskRejected": 1,
+          "warnings": []
+        },
+        "rows": [
+          {
+            "sessionId": "3a26c6c1-35e3-44ad-8792-07348b5df84c",
+            "market": "binance",
+            "status": "completed",
+            "startedAt": 1776825118835,
+            "finishedAt": 1776825256590,
+            "durationMs": 137755,
+            "bridgeStatus": "completed",
+            "investmentTradeMode": "validation",
+            "plannerMode": "analyze",
+            "plannerTimeMode": "ACTIVE",
+            "plannerTradeMode": "normal",
+            "approvedSignals": 0,
+            "executedSymbols": 0,
+            "decisionCount": 0,
+            "debateCount": 2,
+            "debateLimit": 2,
+            "riskRejected": 0,
+            "riskRejectReasonTop": null,
+            "weakSignalSkipped": 0,
+            "warnings": []
+          },
+          {
+            "sessionId": "588563dd-bd48-4264-b3ba-0a5d9f9a3285",
+            "market": "binance",
+            "status": "completed",
+            "startedAt": 1776824330430,
+            "finishedAt": 1776824474867,
+            "durationMs": 144437,
+            "bridgeStatus": "completed",
+            "investmentTradeMode": "normal",
+            "plannerMode": "analyze",
+            "plannerTimeMode": "ACTIVE",
+            "plannerTradeMode": "normal",
+            "approvedSignals": 0,
+            "executedSymbols": 0,
+            "decisionCount": 0,
+            "debateCount": 2,
+            "debateLimit": 2,
+            "riskRejected": 0,
+            "riskRejectReasonTop": null,
+            "weakSignalSkipped": 0,
+            "warnings": []
+          },
+          {
+            "sessionId": "8beeb8c0-4986-4dc3-86cb-7f6c4af341a4",
+            "market": "binance",
+            "status": "completed",
+            "startedAt": 1776824286768,
+            "finishedAt": 1776824495607,
+            "durationMs": 208839,
+            "bridgeStatus": "completed",
+            "investmentTradeMode": "normal",
+            "plannerMode": "analyze",
+            "plannerTimeMode": "ACTIVE",
+            "plannerTradeMode": "normal",
+            "approvedSignals": 0,
+            "executedSymbols": 0,
+            "decisionCount": 0,
+            "debateCount": 2,
+            "debateLimit": 2,
+            "riskRejected": 0,
+            "riskRejectReasonTop": null,
+            "weakSignalSkipped": 0,
+            "warnings": []
+          },
+          {
+            "sessionId": "4145c12c-7593-44c0-8684-433c76c67572",
+            "market": "binance",
+            "status": "completed",
+            "startedAt": 1776823168646,
+            "finishedAt": 1776823304867,
+            "durationMs": 136221,
+            "bridgeStatus": "completed",
+            "investmentTradeMode": "validation",
+            "plannerMode": "analyze",
+            "plannerTimeMode": "ACTIVE",
+            "plannerTradeMode": "normal",
+            "approvedSignals": 0,
+            "executedSymbols": 0,
+            "decisionCount": 0,
+            "debateCount": 2,
+            "debateLimit": 2,
+            "riskRejected": 0,
+            "riskRejectReasonTop": null,
+            "weakSignalSkipped": 0,
+            "warnings": []
+          },
+          {
+            "sessionId": "a7b8c503-3c87-4143-9cca-4cd2b7a81453",
+            "market": "binance",
+            "status": "completed",
+            "startedAt": 1776823087714,
+            "finishedAt": 1776823233342,
+            "durationMs": 145628,
+            "bridgeStatus": "completed",
+            "investmentTradeMode": "validation",
+            "plannerMode": "analyze",
+            "plannerTimeMode": "ACTIVE",
+            "plannerTradeMode": "normal",
+            "approvedSignals": 0,
+            "executedSymbols": 0,
+            "decisionCount": 1,
+            "debateCount": 2,
+            "debateLimit": 2,
+            "riskRejected": 1,
+            "riskRejectReasonTop": "확신도가 0.50 미만이며, 신규 BUY 신호로 포지션 한도 6개에 1개만 보유중이지만 확신도가 매우 낮아 전면 REJECT",
+            "weakSignalSkipped": 0,
+            "warnings": []
+          }
+        ],
+        "aiSummary": "최근 runtime decision 5건 중 risk reject가 1건 보여, 상위 reject 사유를 먼저 점검하는 편이 좋습니다."
+      },
+      "runtimeSuggestions": {
+        "periodDays": 14,
+        "marketSummary": {
+          "binance": {
+            "exchange": "binance",
+            "totalBuy": 79,
+            "executed": 38,
+            "failed": 61,
+            "executionRate": 48.1,
+            "failureRate": 77.2,
+            "topBlocks": [
+              {
+                "code": "capital_circuit_breaker",
+                "count": 28
+              },
+              {
+                "code": "capital_guard_rejected",
+                "count": 21
+              },
+              {
+                "code": "broker_execution_error",
+                "count": 7
+              },
+              {
+                "code": "live_position_reentry_blocked",
+                "count": 3
+              },
+              {
+                "code": "sell_amount_below_minimum",
+                "count": 1
+              },
+              {
+                "code": "stale_pending_signal",
+                "count": 1
+              }
+            ],
+            "taHoldRate": 93.6,
+            "sentimentHoldRate": 81.1
+          },
+          "kis": {
+            "exchange": "kis",
+            "totalBuy": 0,
+            "executed": 2,
+            "failed": 0,
+            "executionRate": 0,
+            "failureRate": 0,
+            "topBlocks": [],
+            "taHoldRate": 96.3,
+            "sentimentHoldRate": 93.8
+          },
+          "kis_overseas": {
+            "exchange": "kis_overseas",
+            "totalBuy": 14,
+            "executed": 3,
+            "failed": 19,
+            "executionRate": 21.4,
+            "failureRate": 135.7,
+            "topBlocks": [
+              {
+                "code": "min_order_notional",
+                "count": 10
+              },
+              {
+                "code": "mock_operation_unsupported",
+                "count": 8
+              },
+              {
+                "code": "overseas_order_rejected",
+                "count": 1
+              }
+            ],
+            "taHoldRate": 99.5,
+            "sentimentHoldRate": 98.3
+          }
+        },
+        "validationSummary": {
+          "crypto": {
+            "decision": 0,
+            "buy": 0,
+            "hold": 0,
+            "approved": 23,
+            "executed": 23,
+            "weak": 0,
+            "risk": 0,
+            "weakReasons": {},
+            "tradeTotal": 23,
+            "liveTrades": 22,
+            "paperTrades": 1,
+            "weakTopReason": null
+          },
+          "domestic": {
+            "decision": 0,
+            "buy": 0,
+            "hold": 0,
+            "approved": 1,
+            "executed": 1,
+            "weak": 0,
+            "risk": 0,
+            "weakReasons": {},
+            "tradeTotal": 1,
+            "liveTrades": 1,
+            "paperTrades": 0,
+            "weakTopReason": null
+          },
+          "overseas": {
+            "decision": 0,
+            "buy": 0,
+            "hold": 0,
+            "approved": 0,
+            "executed": 0,
+            "weak": 0,
+            "risk": 0,
+            "weakReasons": {},
+            "tradeTotal": 0,
+            "liveTrades": 0,
+            "paperTrades": 0,
+            "weakTopReason": null
+          }
+        },
+        "validationBudgetSnapshots": {
+          "cryptoValidation": {
+            "exchange": "binance",
+            "tradeMode": "validation",
+            "enabled": true,
+            "count": 0,
+            "normalCount": 0,
+            "hardCap": 24,
+            "reserveSlots": 2,
+            "softCap": 22,
+            "ratio": 0,
+            "softCapBlocks": 0,
+            "capitalGuardBlocks": 0,
+            "atSoftCap": false,
+            "nearSoftCap": false
+          }
+        },
+        "capitalGuardBias": {
+          "total": 21,
+          "validationCount": 2,
+          "normalCount": 19,
+          "validationRatio": 9.5,
+          "topReason": {
+            "reason": "상관관계 가드: 같은 방향(long) 포지션 3개 (한도: 3)",
+            "count": 19
+          }
+        },
+        "validationBudgetPolicy": {
+          "decision": "hold_current_structure",
+          "decisionLabel": "현 구조 유지",
+          "softCapBlocks": 0,
+          "validationRatio": 9.5,
+          "gateDecision": "blocked",
+          "closedReviews": 0,
+          "weak": 25,
+          "reasons": [
+            "현재 값 유지 및 추가 관찰",
+            "soft cap 차단 0건",
+            "validation capital guard 9.5%",
+            "LIVE gate blocked",
+            "closed review 0건 / weak 25건"
+          ]
+        },
+        "validationBudgetPolicyTrend": {
+          "status": "stable",
+          "label": "직전 대비 판단 유지",
+          "lines": [
+            "이전 판단: 현 구조 유지",
+            "현재 판단: 현 구조 유지",
+            "validation capital guard 비중 변화: 9.5% → 9.5% (+0%p)"
+          ]
+        },
+        "cryptoSoftGuardSummary": {
+          "ok": true,
+          "days": 14,
+          "count": 0,
+          "rows": [],
+          "summary": {
+            "total": 0,
+            "byKind": [],
+            "bySymbol": [],
+            "avgReductionMultiplier": 1,
+            "strongestReductionMultiplier": 1
+          },
+          "decision": {
+            "status": "crypto_soft_guard_idle",
+            "headline": "최근 soft guard 실행 표본이 없습니다.",
+            "reasons": [
+              "soft guard 실행 0건",
+              "가드 분포: 없음",
+              "평균 감산 배율: x1.00"
+            ],
+            "actionItems": [
+              "soft guard가 실제 실행으로 이어지는지 계속 누적 관찰합니다."
+            ],
+            "metrics": {
+              "total": 0,
+              "avgReductionMultiplier": 1,
+              "strongestReductionMultiplier": 1,
+              "topKind": null,
+              "topKindCount": 0,
+              "topSymbol": null,
+              "topSymbolCount": 0
+            }
+          },
+          "aiSummary": "최근 soft guard 실행 표본이 없어 아직 관찰 중심으로 보면 됩니다."
+        },
+        "regimeLaneSummary": {
+          "byRegime": [
+            {
+              "regime": "trending_bull",
+              "modes": [
+                {
+                  "regime": "trending_bull",
+                  "tradeMode": "normal",
+                  "total": 201,
+                  "closed": 67,
+                  "wins": 15,
+                  "winRate": 22.4,
+                  "avgPnlPercent": 0.4722
+                },
+                {
+                  "regime": "trending_bull",
+                  "tradeMode": "validation",
+                  "total": 71,
+                  "closed": 10,
+                  "wins": 2,
+                  "winRate": 20,
+                  "avgPnlPercent": -6.323
+                }
+              ],
+              "bestMode": {
+                "regime": "trending_bull",
+                "tradeMode": "normal",
+                "total": 201,
+                "closed": 67,
+                "wins": 15,
+                "winRate": 22.4,
+                "avgPnlPercent": 0.4722
+              },
+              "worstMode": {
+                "regime": "trending_bull",
+                "tradeMode": "validation",
+                "total": 71,
+                "closed": 10,
+                "wins": 2,
+                "winRate": 20,
+                "avgPnlPercent": -6.323
+              },
+              "total": 272,
+              "closed": 77
+            },
+            {
+              "regime": "trending_bear",
+              "modes": [
+                {
+                  "regime": "trending_bear",
+                  "tradeMode": "normal",
+                  "total": 17,
+                  "closed": 15,
+                  "wins": 1,
+                  "winRate": 6.7,
+                  "avgPnlPercent": -6.2349
+                },
+                {
+                  "regime": "trending_bear",
+                  "tradeMode": "validation",
+                  "total": 17,
+                  "closed": 12,
+                  "wins": 1,
+                  "winRate": 8.3,
+                  "avgPnlPercent": -7.6849
+                }
+              ],
+              "bestMode": {
+                "regime": "trending_bear",
+                "tradeMode": "normal",
+                "total": 17,
+                "closed": 15,
+                "wins": 1,
+                "winRate": 6.7,
+                "avgPnlPercent": -6.2349
+              },
+              "worstMode": {
+                "regime": "trending_bear",
+                "tradeMode": "validation",
+                "total": 17,
+                "closed": 12,
+                "wins": 1,
+                "winRate": 8.3,
+                "avgPnlPercent": -7.6849
+              },
+              "total": 34,
+              "closed": 27
+            },
+            {
+              "regime": "ranging",
+              "modes": [
+                {
+                  "regime": "ranging",
+                  "tradeMode": "normal",
+                  "total": 9,
+                  "closed": 3,
+                  "wins": 0,
+                  "winRate": 0,
+                  "avgPnlPercent": null
+                },
+                {
+                  "regime": "ranging",
+                  "tradeMode": "validation",
+                  "total": 1,
+                  "closed": 0,
+                  "wins": 0,
+                  "winRate": null,
+                  "avgPnlPercent": null
+                }
+              ],
+              "bestMode": null,
+              "worstMode": null,
+              "total": 10,
+              "closed": 3
+            }
+          ],
+          "weakestRegime": {
+            "regime": "trending_bear",
+            "modes": [
+              {
+                "regime": "trending_bear",
+                "tradeMode": "normal",
+                "total": 17,
+                "closed": 15,
+                "wins": 1,
+                "winRate": 6.7,
+                "avgPnlPercent": -6.2349
+              },
+              {
+                "regime": "trending_bear",
+                "tradeMode": "validation",
+                "total": 17,
+                "closed": 12,
+                "wins": 1,
+                "winRate": 8.3,
+                "avgPnlPercent": -7.6849
+              }
+            ],
+            "bestMode": {
+              "regime": "trending_bear",
+              "tradeMode": "normal",
+              "total": 17,
+              "closed": 15,
+              "wins": 1,
+              "winRate": 6.7,
+              "avgPnlPercent": -6.2349
+            },
+            "worstMode": {
+              "regime": "trending_bear",
+              "tradeMode": "validation",
+              "total": 17,
+              "closed": 12,
+              "wins": 1,
+              "winRate": 8.3,
+              "avgPnlPercent": -7.6849
+            },
+            "total": 34,
+            "closed": 27
+          },
+          "strongestRegime": {
+            "regime": "trending_bull",
+            "modes": [
+              {
+                "regime": "trending_bull",
+                "tradeMode": "normal",
+                "total": 201,
+                "closed": 67,
+                "wins": 15,
+                "winRate": 22.4,
+                "avgPnlPercent": 0.4722
+              },
+              {
+                "regime": "trending_bull",
+                "tradeMode": "validation",
+                "total": 71,
+                "closed": 10,
+                "wins": 2,
+                "winRate": 20,
+                "avgPnlPercent": -6.323
+              }
+            ],
+            "bestMode": {
+              "regime": "trending_bull",
+              "tradeMode": "normal",
+              "total": 201,
+              "closed": 67,
+              "wins": 15,
+              "winRate": 22.4,
+              "avgPnlPercent": 0.4722
+            },
+            "worstMode": {
+              "regime": "trending_bull",
+              "tradeMode": "validation",
+              "total": 71,
+              "closed": 10,
+              "wins": 2,
+              "winRate": 20,
+              "avgPnlPercent": -6.323
+            },
+            "total": 272,
+            "closed": 77
+          }
+        },
+        "suggestions": [
+          {
+            "key": "runtime_config.luna.fastPathThresholds.minCryptoConfidence",
+            "current": 0.48,
+            "suggested": 0.48,
+            "action": "hold",
+            "confidence": "medium",
+            "reason": "암호화폐 실행/실패 표본이 설정 조정까지 판단하기엔 아직 충분하지 않습니다.",
+            "governance": {
+              "key": "runtime_config.luna.fastPathThresholds.minCryptoConfidence",
+              "tier": "allow",
+              "min": 0.15,
+              "max": 0.8,
+              "label": "암호화폐 fast-path 확신도",
+              "current": 0.48
+            },
+            "changeAllowed": true,
+            "requiresApproval": false,
+            "blockedByPolicy": false
+          },
+          {
+            "key": "runtime_config.luna.stockOrderDefaults.kis_overseas.min",
+            "current": 225,
+            "suggested": 250,
+            "action": "adjust",
+            "confidence": "medium",
+            "reason": "해외장 BUY 실패 상위가 최소 주문금액 미달 10건이라 주문 floor를 소폭 올려 실제 체결 전환을 비교할 수 있습니다.",
+            "governance": {
+              "key": "runtime_config.luna.stockOrderDefaults.kis_overseas.min",
+              "tier": "allow",
+              "min": 200,
+              "max": 400,
+              "label": "해외장 최소 주문 floor",
+              "current": 225
+            },
+            "changeAllowed": true,
+            "requiresApproval": false,
+            "blockedByPolicy": false
+          },
+          {
+            "key": "runtime_config.nemesis.thresholds.stockStarterApproveDomestic",
+            "suggested": null,
+            "action": "promote_candidate",
+            "confidence": "medium",
+            "reason": "국내장 validation에서 executed 1건 / LIVE 1건이 확인돼 starter 승인 한도 일부를 normal 후보로 승격 검토할 가치가 있습니다.",
+            "governance": {
+              "key": "runtime_config.nemesis.thresholds.stockStarterApproveDomestic",
+              "tier": "allow",
+              "min": 200000,
+              "max": 1200000,
+              "label": "국내장 starter 자동승인 한도"
+            },
+            "changeAllowed": true,
+            "requiresApproval": false,
+            "blockedByPolicy": false
+          },
+          {
+            "key": "runtime_config.luna.stockStrategyProfiles.aggressive.tradeModes.validation.minConfidence.live",
+            "current": 0.28,
+            "suggested": 0.28,
+            "action": "promote_candidate",
+            "confidence": "low",
+            "reason": "국내장 validation에서 실제 LIVE 체결이 발생해 공격적 검증 모드의 live minConfidence 일부 승격을 비교할 수 있습니다.",
+            "governance": {
+              "key": "runtime_config.luna.stockStrategyProfiles.aggressive.tradeModes.validation.minConfidence.live",
+              "tier": "allow",
+              "min": 0.1,
+              "max": 0.4,
+              "label": "공격적 validation live 최소 확신도"
+            },
+            "changeAllowed": true,
+            "requiresApproval": false,
+            "blockedByPolicy": false
+          },
+          {
+            "key": "runtime_config.execution.cryptoGuardSoftening.byExchange.binance.tradeModes.normal.circuitBreaker.maxRemainingCooldownMinutes",
+            "current": 210,
+            "suggested": 240,
+            "action": "promote_candidate",
+            "confidence": "medium",
+            "reason": "최근 crypto 실패 61건인데 soft guard 실행 표본이 아직 0건이라 loss-streak 완화 허용 구간을 조금 더 넓혀 비교할 가치가 있습니다.",
+            "governance": {
+              "key": "runtime_config.execution.cryptoGuardSoftening.byExchange.binance.tradeModes.normal.circuitBreaker.maxRemainingCooldownMinutes",
+              "tier": "allow",
+              "min": 30,
+              "max": 360,
+              "label": "crypto 서킷 완화 허용 잔여 쿨다운",
+              "current": 210
+            },
+            "changeAllowed": true,
+            "requiresApproval": false,
+            "blockedByPolicy": false
+          },
+          {
+            "key": "runtime_config.execution.cryptoGuardSoftening.byExchange.binance.tradeModes.normal.correlationGuard.allowOverflowSlots",
+            "current": 2,
+            "suggested": 2,
+            "action": "observe",
+            "confidence": "medium",
+            "reason": "correlation guard 압력은 높은데 soft guard 표본이 아직 없어 overflow slot을 한 단계 더 열어 representative pass 이후 실제 체결 전환을 비교할 수 있습니다.",
+            "governance": {
+              "key": "runtime_config.execution.cryptoGuardSoftening.byExchange.binance.tradeModes.normal.correlationGuard.allowOverflowSlots",
+              "tier": "allow",
+              "min": 0,
+              "max": 2,
+              "label": "crypto 상관관계 완화 overflow 슬롯",
+              "current": 2
+            },
+            "changeAllowed": true,
+            "requiresApproval": false,
+            "blockedByPolicy": false
+          },
+          {
+            "key": "runtime_config.execution.cryptoGuardSoftening.byExchange.binance.tradeModes.normal.validationFallback.reductionMultiplier",
+            "current": 0.35,
+            "suggested": 0.3,
+            "action": "adjust",
+            "confidence": "medium",
+            "reason": "trending_bear 장세에서 validation fallback 비중을 현재 x0.35보다 더 작게 두고 손실 레인 노출을 줄이는 비교 실험 후보입니다.",
+            "governance": {
+              "key": "runtime_config.execution.cryptoGuardSoftening.byExchange.binance.tradeModes.normal.validationFallback.reductionMultiplier",
+              "tier": "allow",
+              "min": 0.15,
+              "max": 0.5,
+              "label": "crypto validation fallback 감산 배율",
+              "current": 0.35
+            },
+            "changeAllowed": true,
+            "requiresApproval": false,
+            "blockedByPolicy": false
+          },
+          {
+            "key": "runtime_config.luna.fastPathThresholds.minCryptoConfidence",
+            "current": 0.48,
+            "suggested": 0.48,
+            "action": "hold",
+            "confidence": "medium",
+            "reason": "trending_bull 장세의 normal 레인은 평균 손익 0.47%로 상대적으로 강합니다. 이 레인은 유지하며 비교 기준선 표본을 더 누적하는 편이 좋습니다.",
+            "governance": {
+              "key": "runtime_config.luna.fastPathThresholds.minCryptoConfidence",
+              "tier": "allow",
+              "min": 0.15,
+              "max": 0.8,
+              "label": "암호화폐 fast-path 확신도",
+              "current": 0.48
+            },
+            "changeAllowed": true,
+            "requiresApproval": false,
+            "blockedByPolicy": false
+          }
+        ],
+        "parameterGovernance": {
+          "allow": 35,
+          "escalate": 5,
+          "block": 2,
+          "total": 42
+        },
+        "actionableSuggestions": 2,
+        "aiSummary": "runtime config 제안 8건 중 조정 후보 2건이 있어 governance tier를 먼저 확인하는 편이 좋습니다."
+      },
+      "regimeCoverage": {
+        "windowDays": 90,
+        "tradeRows": [
+          {
+            "exchange": "binance",
+            "regime": "trending_bull",
+            "total": "272",
+            "validation_trades": "71",
+            "normal_trades": "201",
+            "latest_trade_at": "1776272522385"
+          },
+          {
+            "exchange": "kis",
+            "regime": "trending_bear",
+            "total": "34",
+            "validation_trades": "17",
+            "normal_trades": "17",
+            "latest_trade_at": "1775620850858"
+          },
+          {
+            "exchange": "kis_overseas",
+            "regime": "ranging",
+            "total": "10",
+            "validation_trades": "1",
+            "normal_trades": "9",
+            "latest_trade_at": "1775832945826"
+          }
+        ],
+        "snapshotRows": [
+          {
+            "market": "crypto",
+            "regime": "trending_bull",
+            "snapshots": "3",
+            "latest_captured_at": "2026-04-22T02:42:12.208Z"
+          },
+          {
+            "market": "domestic",
+            "regime": "trending_bear",
+            "snapshots": "3",
+            "latest_captured_at": "2026-04-22T02:42:12.773Z"
+          },
+          {
+            "market": "overseas",
+            "regime": "ranging",
+            "snapshots": "3",
+            "latest_captured_at": "2026-04-22T02:42:13.168Z"
+          }
+        ],
+        "snapshotCount": 9,
+        "latestByMarket": [
+          {
+            "market": "crypto",
+            "regime": "trending_bull",
+            "confidence": 0.69,
+            "capturedAt": "2026-04-22T02:42:12.208Z"
+          },
+          {
+            "market": "domestic",
+            "regime": "trending_bear",
+            "confidence": 0.5700000000000001,
+            "capturedAt": "2026-04-22T02:42:12.773Z"
+          },
+          {
+            "market": "overseas",
+            "regime": "ranging",
+            "confidence": 0.45,
+            "capturedAt": "2026-04-22T02:42:13.168Z"
+          }
+        ],
+        "byRegime": [
+          {
+            "regime": "trending_bull",
+            "total": 272,
+            "validationTrades": 71,
+            "normalTrades": 201,
+            "latestTradeAt": "2026-04-15T17:02:02.385Z"
+          },
+          {
+            "regime": "trending_bear",
+            "total": 34,
+            "validationTrades": 17,
+            "normalTrades": 17,
+            "latestTradeAt": "2026-04-08T04:00:50.858Z"
+          },
+          {
+            "regime": "ranging",
+            "total": 10,
+            "validationTrades": 1,
+            "normalTrades": 9,
+            "latestTradeAt": "2026-04-10T14:55:45.826Z"
+          }
+        ],
+        "byExchange": {
+          "binance": [
+            {
+              "regime": "trending_bull",
+              "total": 272,
+              "validationTrades": 71,
+              "normalTrades": 201,
+              "latestTradeAt": "2026-04-15T17:02:02.385Z"
+            }
+          ],
+          "kis": [
+            {
+              "regime": "trending_bear",
+              "total": 34,
+              "validationTrades": 17,
+              "normalTrades": 17,
+              "latestTradeAt": "2026-04-08T04:00:50.858Z"
+            }
+          ],
+          "kis_overseas": [
+            {
+              "regime": "ranging",
+              "total": 10,
+              "validationTrades": 1,
+              "normalTrades": 9,
+              "latestTradeAt": "2026-04-10T14:55:45.826Z"
+            }
+          ]
+        },
+        "distinctTradedRegimes": 3,
+        "unknownTrades": 0,
+        "knownRegimeTrades": 316
+      },
+      "regimePerformance": {
+        "windowDays": 90,
+        "byRegime": [
+          {
+            "regime": "trending_bull",
+            "modes": [
+              {
+                "tradeMode": "normal",
+                "total": 201,
+                "closed": 67,
+                "wins": 15,
+                "winRate": 22.4,
+                "avgPnlPercent": 0.4722
+              },
+              {
+                "tradeMode": "validation",
+                "total": 71,
+                "closed": 10,
+                "wins": 2,
+                "winRate": 20,
+                "avgPnlPercent": -6.323
+              }
+            ],
+            "total": 272,
+            "closed": 77,
+            "bestMode": {
+              "tradeMode": "normal",
+              "total": 201,
+              "closed": 67,
+              "wins": 15,
+              "winRate": 22.4,
+              "avgPnlPercent": 0.4722
+            },
+            "worstMode": {
+              "tradeMode": "validation",
+              "total": 71,
+              "closed": 10,
+              "wins": 2,
+              "winRate": 20,
+              "avgPnlPercent": -6.323
+            }
+          },
+          {
+            "regime": "trending_bear",
+            "modes": [
+              {
+                "tradeMode": "normal",
+                "total": 17,
+                "closed": 15,
+                "wins": 1,
+                "winRate": 6.7,
+                "avgPnlPercent": -6.2349
+              },
+              {
+                "tradeMode": "validation",
+                "total": 17,
+                "closed": 12,
+                "wins": 1,
+                "winRate": 8.3,
+                "avgPnlPercent": -7.6849
+              }
+            ],
+            "total": 34,
+            "closed": 27,
+            "bestMode": {
+              "tradeMode": "normal",
+              "total": 17,
+              "closed": 15,
+              "wins": 1,
+              "winRate": 6.7,
+              "avgPnlPercent": -6.2349
+            },
+            "worstMode": {
+              "tradeMode": "validation",
+              "total": 17,
+              "closed": 12,
+              "wins": 1,
+              "winRate": 8.3,
+              "avgPnlPercent": -7.6849
+            }
+          },
+          {
+            "regime": "ranging",
+            "modes": [
+              {
+                "tradeMode": "normal",
+                "total": 9,
+                "closed": 3,
+                "wins": 0,
+                "winRate": 0,
+                "avgPnlPercent": null
+              },
+              {
+                "tradeMode": "validation",
+                "total": 1,
+                "closed": 0,
+                "wins": 0,
+                "winRate": null,
+                "avgPnlPercent": null
+              }
+            ],
+            "total": 10,
+            "closed": 3,
+            "bestMode": {
+              "tradeMode": "normal",
+              "total": 9,
+              "closed": 3,
+              "wins": 0,
+              "winRate": 0,
+              "avgPnlPercent": null
+            },
+            "worstMode": {
+              "tradeMode": "normal",
+              "total": 9,
+              "closed": 3,
+              "wins": 0,
+              "winRate": 0,
+              "avgPnlPercent": null
+            }
+          }
+        ],
+        "weakestRegime": {
+          "regime": "trending_bear",
+          "modes": [
+            {
+              "tradeMode": "normal",
+              "total": 17,
+              "closed": 15,
+              "wins": 1,
+              "winRate": 6.7,
+              "avgPnlPercent": -6.2349
+            },
+            {
+              "tradeMode": "validation",
+              "total": 17,
+              "closed": 12,
+              "wins": 1,
+              "winRate": 8.3,
+              "avgPnlPercent": -7.6849
+            }
+          ],
+          "total": 34,
+          "closed": 27,
+          "bestMode": {
+            "tradeMode": "normal",
+            "total": 17,
+            "closed": 15,
+            "wins": 1,
+            "winRate": 6.7,
+            "avgPnlPercent": -6.2349
+          },
+          "worstMode": {
+            "tradeMode": "validation",
+            "total": 17,
+            "closed": 12,
+            "wins": 1,
+            "winRate": 8.3,
+            "avgPnlPercent": -7.6849
+          }
+        },
+        "strongestRegime": {
+          "regime": "trending_bull",
+          "modes": [
+            {
+              "tradeMode": "normal",
+              "total": 201,
+              "closed": 67,
+              "wins": 15,
+              "winRate": 22.4,
+              "avgPnlPercent": 0.4722
+            },
+            {
+              "tradeMode": "validation",
+              "total": 71,
+              "closed": 10,
+              "wins": 2,
+              "winRate": 20,
+              "avgPnlPercent": -6.323
+            }
+          ],
+          "total": 272,
+          "closed": 77,
+          "bestMode": {
+            "tradeMode": "normal",
+            "total": 201,
+            "closed": 67,
+            "wins": 15,
+            "winRate": 22.4,
+            "avgPnlPercent": 0.4722
+          },
+          "worstMode": {
+            "tradeMode": "validation",
+            "total": 71,
+            "closed": 10,
+            "wins": 2,
+            "winRate": 20,
+            "avgPnlPercent": -6.323
+          }
+        }
+      },
+      "executionGate": {
+        "ok": true,
+        "days": 14,
+        "runtime": {
+          "ok": true,
+          "market": "crypto",
+          "limit": 5,
+          "runtime": {
+            "ok": true,
+            "market": "binance",
+            "limit": 5,
+            "includeSmoke": false,
+            "count": 5,
+            "summary": {
+              "byMarket": {
+                "binance": 5
+              },
+              "approvedSignals": 0,
+              "executedSymbols": 0,
+              "riskRejected": 1,
+              "warnings": []
+            },
+            "rows": [
+              {
+                "sessionId": "3a26c6c1-35e3-44ad-8792-07348b5df84c",
+                "market": "binance",
+                "status": "completed",
+                "startedAt": 1776825118835,
+                "finishedAt": 1776825256590,
+                "durationMs": 137755,
+                "bridgeStatus": "completed",
+                "investmentTradeMode": "validation",
+                "plannerMode": "analyze",
+                "plannerTimeMode": "ACTIVE",
+                "plannerTradeMode": "normal",
+                "approvedSignals": 0,
+                "executedSymbols": 0,
+                "decisionCount": 0,
+                "debateCount": 2,
+                "debateLimit": 2,
+                "riskRejected": 0,
+                "riskRejectReasonTop": null,
+                "weakSignalSkipped": 0,
+                "warnings": []
+              },
+              {
+                "sessionId": "588563dd-bd48-4264-b3ba-0a5d9f9a3285",
+                "market": "binance",
+                "status": "completed",
+                "startedAt": 1776824330430,
+                "finishedAt": 1776824474867,
+                "durationMs": 144437,
+                "bridgeStatus": "completed",
+                "investmentTradeMode": "normal",
+                "plannerMode": "analyze",
+                "plannerTimeMode": "ACTIVE",
+                "plannerTradeMode": "normal",
+                "approvedSignals": 0,
+                "executedSymbols": 0,
+                "decisionCount": 0,
+                "debateCount": 2,
+                "debateLimit": 2,
+                "riskRejected": 0,
+                "riskRejectReasonTop": null,
+                "weakSignalSkipped": 0,
+                "warnings": []
+              },
+              {
+                "sessionId": "8beeb8c0-4986-4dc3-86cb-7f6c4af341a4",
+                "market": "binance",
+                "status": "completed",
+                "startedAt": 1776824286768,
+                "finishedAt": 1776824495607,
+                "durationMs": 208839,
+                "bridgeStatus": "completed",
+                "investmentTradeMode": "normal",
+                "plannerMode": "analyze",
+                "plannerTimeMode": "ACTIVE",
+                "plannerTradeMode": "normal",
+                "approvedSignals": 0,
+                "executedSymbols": 0,
+                "decisionCount": 0,
+                "debateCount": 2,
+                "debateLimit": 2,
+                "riskRejected": 0,
+                "riskRejectReasonTop": null,
+                "weakSignalSkipped": 0,
+                "warnings": []
+              },
+              {
+                "sessionId": "4145c12c-7593-44c0-8684-433c76c67572",
+                "market": "binance",
+                "status": "completed",
+                "startedAt": 1776823168646,
+                "finishedAt": 1776823304867,
+                "durationMs": 136221,
+                "bridgeStatus": "completed",
+                "investmentTradeMode": "validation",
+                "plannerMode": "analyze",
+                "plannerTimeMode": "ACTIVE",
+                "plannerTradeMode": "normal",
+                "approvedSignals": 0,
+                "executedSymbols": 0,
+                "decisionCount": 0,
+                "debateCount": 2,
+                "debateLimit": 2,
+                "riskRejected": 0,
+                "riskRejectReasonTop": null,
+                "weakSignalSkipped": 0,
+                "warnings": []
+              },
+              {
+                "sessionId": "a7b8c503-3c87-4143-9cca-4cd2b7a81453",
+                "market": "binance",
+                "status": "completed",
+                "startedAt": 1776823087714,
+                "finishedAt": 1776823233342,
+                "durationMs": 145628,
+                "bridgeStatus": "completed",
+                "investmentTradeMode": "validation",
+                "plannerMode": "analyze",
+                "plannerTimeMode": "ACTIVE",
+                "plannerTradeMode": "normal",
+                "approvedSignals": 0,
+                "executedSymbols": 0,
+                "decisionCount": 1,
+                "debateCount": 2,
+                "debateLimit": 2,
+                "riskRejected": 1,
+                "riskRejectReasonTop": "확신도가 0.50 미만이며, 신규 BUY 신호로 포지션 한도 6개에 1개만 보유중이지만 확신도가 매우 낮아 전면 REJECT",
+                "weakSignalSkipped": 0,
+                "warnings": []
+              }
+            ],
+            "aiSummary": "최근 runtime decision 5건 중 risk reject가 1건 보여, 상위 reject 사유를 먼저 점검하는 편이 좋습니다."
+          },
+          "decision": {
+            "status": "runtime_risk_heavy",
+            "headline": "리스크 가드가 의사결정 후반을 강하게 막고 있습니다.",
+            "reasons": [
+              "최근 세션 5건 관찰",
+              "approved 0, executed 0, riskRejected 1",
+              "최다 risk reject: 확신도가 0.50 미만이며, 신규 BUY 신호로 포지션 한도 6개에 1개만 보유중이지만 확신도가 매우 낮아 전면 REJECT (1건)",
+              "최다 planner mode: analyze (5건)"
+            ],
+            "actionItems": [
+              "debate limit에 자주 닿는 세션이 있는지 계속 관찰합니다.",
+              "현재 최상위 거절 사유 '확신도가 0.50 미만이며, 신규 BUY 신호로 포지션 한도 6개에 1개만 보유중이지만 확신도가 매우 낮아 전면 REJECT'를 기준으로 포지션/한도 상태를 확인합니다."
+            ],
+            "metrics": {
+              "count": 5,
+              "approvedSignals": 0,
+              "executedSymbols": 0,
+              "executionRatio": 0,
+              "riskRejected": 1,
+              "plannerAttached": 5,
+              "debatePressed": 5,
+              "topRiskReject": {
+                "key": "확신도가 0.50 미만이며, 신규 BUY 신호로 포지션 한도 6개에 1개만 보유중이지만 확신도가 매우 낮아 전면 REJECT",
+                "count": 1
+              },
+              "topPlannerMode": {
+                "key": "analyze",
+                "count": 5
+              }
+            }
+          },
+          "aiSummary": "리스크 가드가 의사결정 후반을 강하게 막고 있어, 최상위 거절 사유부터 정리하는 편이 좋습니다."
+        },
+        "failure": {
+          "ok": true,
+          "days": 14,
+          "count": 60,
+          "rows": [
+            {
+              "code": "capital_guard_rejected",
+              "reason": "상관관계 가드: 같은 방향(long) 포지션 3개 (한도: 3)",
+              "count": 19
+            },
+            {
+              "code": "broker_execution_error",
+              "reason": "binance Account has insufficient balance for requested action.",
+              "count": 7
+            },
+            {
+              "code": "capital_circuit_breaker",
+              "reason": "연속 3회 손실 → 쿨다운 118분 남음",
+              "count": 4
+            },
+            {
+              "code": "capital_circuit_breaker",
+              "reason": "연속 3회 손실 → 쿨다운 60분 남음",
+              "count": 4
+            },
+            {
+              "code": "capital_circuit_breaker",
+              "reason": "연속 3회 손실 → 쿨다운 119분 남음",
+              "count": 4
+            },
+            {
+              "code": "capital_circuit_breaker",
+              "reason": "연속 3회 손실 → 쿨다운 99분 남음",
+              "count": 3
+            },
+            {
+              "code": "live_position_reentry_blocked",
+              "reason": "동일 LIVE 포지션 보유 중 — 추가매수 차단",
+              "count": 3
+            },
+            {
+              "code": "capital_circuit_breaker",
+              "reason": "연속 3회 손실 → 쿨다운 120분 남음",
+              "count": 2
+            },
+            {
+              "code": "capital_circuit_breaker",
+              "reason": "연속 3회 손실 → 쿨다운 86분 남음",
+              "count": 2
+            },
+            {
+              "code": "capital_guard_rejected",
+              "reason": "최대 포지션 도달: 3/3",
+              "count": 2
+            },
+            {
+              "code": "capital_circuit_breaker",
+              "reason": "연속 3회 손실 → 쿨다운 15분 남음",
+              "count": 1
+            },
+            {
+              "code": "capital_circuit_breaker",
+              "reason": "연속 3회 손실 → 쿨다운 117분 남음",
+              "count": 1
+            },
+            {
+              "code": "capital_circuit_breaker",
+              "reason": "연속 3회 손실 → 쿨다운 54분 남음",
+              "count": 1
+            },
+            {
+              "code": "capital_circuit_breaker",
+              "reason": "연속 3회 손실 → 쿨다운 13분 남음",
+              "count": 1
+            },
+            {
+              "code": "capital_circuit_breaker",
+              "reason": "연속 3회 손실 → 쿨다운 22분 남음",
+              "count": 1
+            },
+            {
+              "code": "capital_circuit_breaker",
+              "reason": "연속 3회 손실 → 쿨다운 55분 남음",
+              "count": 1
+            },
+            {
+              "code": "capital_circuit_breaker",
+              "reason": "연속 3회 손실 → 쿨다운 68분 남음",
+              "count": 1
+            },
+            {
+              "code": "capital_circuit_breaker",
+              "reason": "연속 3회 손실 → 쿨다운 37분 남음",
+              "count": 1
+            },
+            {
+              "code": "stale_pending_signal",
+              "reason": "nemesis verdict 없이 355분 경과 (stale pending)",
+              "count": 1
+            },
+            {
+              "code": "sell_amount_below_minimum",
+              "reason": "최소 매도 수량 미달 (0.0384 < 0.1)",
+              "count": 1
+            }
+          ],
+          "decision": {
+            "status": "binance_failure_pressure",
+            "headline": "크립토 실행 실패 압력이 반복적으로 관찰됩니다.",
+            "reasons": [
+              "최근 바이낸스 failed 신호 60건",
+              "주요 축: circuit breaker 27건 | correlation guard 19건 | insufficient balance 7건 | reentry 3건"
+            ],
+            "actionItems": [
+              "circuit breaker, capital guard, reentry, precision 중 어느 축이 계속 우세한지 추세 비교를 우선합니다.",
+              "실패 총량보다 상위 실패 축이 바뀌는지 먼저 확인합니다."
+            ],
+            "metrics": {
+              "total": 60,
+              "circuitBreaker": 27,
+              "capitalGuard": 21,
+              "reentry": 3,
+              "precision": 0,
+              "insufficientBalance": 7
+            }
+          },
+          "aiSummary": "크립토 실패가 반복돼, circuit breaker와 capital guard 중심으로 실패 축 이동을 먼저 보는 것이 좋습니다."
+        },
+        "circuit": {
+          "ok": true,
+          "days": 14,
+          "count": 28,
+          "rows": [
+            {
+              "symbol": "FF/USDT",
+              "tradeMode": "normal",
+              "reason": "연속 3회 손실 → 쿨다운 118분 남음",
+              "count": 2
+            },
+            {
+              "symbol": "BARD/USDT",
+              "tradeMode": "normal",
+              "reason": "연속 3회 손실 → 쿨다운 120분 남음",
+              "count": 2
+            },
+            {
+              "symbol": "DOT/USDT",
+              "tradeMode": "validation",
+              "reason": "연속 3회 손실 → 쿨다운 68분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "DUSK/USDT",
+              "tradeMode": "normal",
+              "reason": "연속 3회 손실 → 쿨다운 86분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "ENJ/USDT",
+              "tradeMode": "normal",
+              "reason": "연속 3회 손실 → 쿨다운 119분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "ENJ/USDT",
+              "tradeMode": "normal",
+              "reason": "연속 3회 손실 → 쿨다운 14분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "ENJ/USDT",
+              "tradeMode": "validation",
+              "reason": "연속 3회 손실 → 쿨다운 15분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "ENJ/USDT",
+              "tradeMode": "validation",
+              "reason": "연속 3회 손실 → 쿨다운 99분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "FF/USDT",
+              "tradeMode": "validation",
+              "reason": "연속 3회 손실 → 쿨다운 60분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "GIGGLE/USDT",
+              "tradeMode": "normal",
+              "reason": "연속 3회 손실 → 쿨다운 13분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "NOM/USDT",
+              "tradeMode": "normal",
+              "reason": "연속 3회 손실 → 쿨다운 118분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "NOM/USDT",
+              "tradeMode": "normal",
+              "reason": "연속 3회 손실 → 쿨다운 54분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "NOM/USDT",
+              "tradeMode": "validation",
+              "reason": "연속 3회 손실 → 쿨다운 60분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "NOM/USDT",
+              "tradeMode": "validation",
+              "reason": "연속 3회 손실 → 쿨다운 99분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "ONT/USDT",
+              "tradeMode": "normal",
+              "reason": "연속 3회 손실 → 쿨다운 117분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "ONT/USDT",
+              "tradeMode": "normal",
+              "reason": "연속 3회 손실 → 쿨다운 119분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "PENGU/USDT",
+              "tradeMode": "normal",
+              "reason": "연속 3회 손실 → 쿨다운 55분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "PENGU/USDT",
+              "tradeMode": "validation",
+              "reason": "연속 3회 손실 → 쿨다운 60분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "TON/USDT",
+              "tradeMode": "normal",
+              "reason": "연속 3회 손실 → 쿨다운 118분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "TON/USDT",
+              "tradeMode": "normal",
+              "reason": "연속 3회 손실 → 쿨다운 119분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "TON/USDT",
+              "tradeMode": "validation",
+              "reason": "연속 3회 손실 → 쿨다운 60분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "TON/USDT",
+              "tradeMode": "validation",
+              "reason": "연속 3회 손실 → 쿨다운 99분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "TRU/USDT",
+              "tradeMode": "normal",
+              "reason": "연속 3회 손실 → 쿨다운 22분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "TRU/USDT",
+              "tradeMode": "validation",
+              "reason": "연속 3회 손실 → 쿨다운 37분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "WLD/USDT",
+              "tradeMode": "normal",
+              "reason": "연속 3회 손실 → 쿨다운 119분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "DOT/USDT",
+              "tradeMode": "normal",
+              "reason": "연속 3회 손실 → 쿨다운 86분 남음",
+              "count": 1
+            }
+          ],
+          "decision": {
+            "status": "binance_circuit_pressure",
+            "headline": "크립토 연속 손실 쿨다운이 반복적으로 실행을 막고 있습니다.",
+            "reasons": [
+              "최근 크립토 circuit breaker 28건",
+              "레인별: normal 18건 | validation 10건",
+              "집중 심볼: ENJ/USDT 4건 | NOM/USDT 4건 | TON/USDT 4건 | FF/USDT 3건 | BARD/USDT 2건"
+            ],
+            "actionItems": [
+              "loss streak가 normal/validation 어느 레인에 더 몰리는지 우선 비교합니다.",
+              "집중 심볼 진입 품질과 쿨다운 설정을 함께 복기합니다."
+            ],
+            "metrics": {
+              "total": 28,
+              "normal": 18,
+              "validation": 10,
+              "topSymbol": "ENJ/USDT",
+              "topSymbolCount": 4
+            }
+          },
+          "aiSummary": "크립토 연속 손실 쿨다운이 반복돼, 레인별 손실 집중과 심볼 쏠림을 먼저 보는 것이 좋습니다."
+        },
+        "capital": {
+          "ok": true,
+          "days": 14,
+          "count": 21,
+          "rows": [
+            {
+              "reason": "상관관계 가드: 같은 방향(long) 포지션 3개 (한도: 3)",
+              "count": 19
+            },
+            {
+              "reason": "최대 포지션 도달: 3/3",
+              "count": 2
+            }
+          ],
+          "decision": {
+            "status": "binance_capital_guard_pressure",
+            "headline": "크립토 capital guard가 반복적으로 실행을 막고 있습니다.",
+            "reasons": [
+              "최근 크립토 capital guard 21건",
+              "주요 축: correlation guard 19건 | max positions 2건"
+            ],
+            "actionItems": [
+              "daily trade limit와 correlation guard 중 어느 축이 우세한지 추세 비교를 우선합니다.",
+              "집중 축에 맞춰 포지션 보유 수 또는 일간 매매 한도를 먼저 복기합니다."
+            ],
+            "metrics": {
+              "total": 21,
+              "correlationGuard": 19,
+              "dailyTradeLimit": 0,
+              "maxPositions": 2
+            }
+          },
+          "aiSummary": "크립토 capital guard가 반복돼, daily trade limit와 correlation guard 중 어느 축이 주범인지 먼저 비교하는 것이 좋습니다."
+        },
+        "queueRows": [],
+        "decision": {
+          "status": "crypto_execution_gate_ok",
+          "headline": "암호화폐 실행 게이트는 비교적 안정적으로 보입니다.",
+          "reasons": [
+            "runtime: runtime_risk_heavy",
+            "approved 0 / executed 0",
+            "queue pending 0 / approved 0",
+            "stale pending 0 / nemesis missing 0",
+            "failure pressure total 60",
+            "circuit 28 / capital_guard 21"
+          ],
+          "actionItems": [
+            "circuit breaker 완화보다 최근 집중 심볼과 손실 연속 구간을 먼저 복기합니다."
+          ],
+          "metrics": {
+            "approvedSignals": 0,
+            "executedSymbols": 0,
+            "pendingSignals": 0,
+            "approvedQueue": 0,
+            "stalePending": 0,
+            "pendingWithoutNemesis": 0,
+            "failureTotal": 60,
+            "circuitBreaker": 28,
+            "capitalGuard": 21
+          },
+          "queue": {
+            "total": 0,
+            "pending": 0,
+            "approved": 0,
+            "stalePending": 0,
+            "pendingWithoutNemesis": 0,
+            "top": null
+          }
+        },
+        "aiSummary": "암호화폐 실행 게이트는 비교적 안정적이며 approved 대비 executed 추세를 계속 누적하면 됩니다."
+      },
+      "autotune": {
+        "ok": true,
+        "days": 14,
+        "capitalPolicy": {
+          "max_capital_usage": 0.7,
+          "reserve_ratio": 0.1,
+          "risk_per_trade": 0.02,
+          "max_position_pct": 0.12,
+          "max_drawdown_pct": 0.15,
+          "min_order_usdt": 10,
+          "max_concurrent_positions": 6,
+          "max_same_direction_positions": 5,
+          "max_daily_trades": 25,
+          "max_daily_loss_pct": 0.05,
+          "max_weekly_loss_pct": 0.12,
+          "cooldown_after_loss_streak": 3,
+          "cooldown_minutes": 60,
+          "dynamic_min_order": {
+            "enabled": true,
+            "ratio_of_available_funds": 0.05,
+            "log_decisions": true,
+            "by_exchange": {
+              "binance": {
+                "fallback_min_order": 10
+              },
+              "kis": {
+                "fallback_min_order": 200000
+              },
+              "kis_overseas": {
+                "fallback_min_order": 200
+              }
+            }
+          },
+          "time_profiles": {
+            "active": {
+              "max_position_pct": 0.12,
+              "max_open_positions": 4,
+              "min_signal_score": 0.54
+            },
+            "slowdown": {
+              "max_position_pct": 0.1,
+              "max_open_positions": 3,
+              "min_signal_score": 0.66
+            },
+            "night": {
+              "max_position_pct": 0.06,
+              "max_open_positions": 1,
+              "min_signal_score": 0.74
+            }
+          },
+          "rr_fallback": {
+            "tp_pct": 0.06,
+            "sl_pct": 0.03
+          },
+          "by_exchange": {
+            "binance": {
+              "reserve_ratio": 0.1,
+              "min_order_usdt": 10,
+              "max_position_pct": 0.12,
+              "max_concurrent_positions": 6,
+              "max_daily_trades": 25,
+              "trade_modes": {
+                "normal": {
+                  "max_same_direction_positions": 5,
+                  "cooldown_after_loss_streak": 3,
+                  "cooldown_minutes": 60
+                },
+                "validation": {
+                  "reserve_ratio": 0.05,
+                  "risk_per_trade": 0.01,
+                  "max_position_pct": 0.08,
+                  "max_concurrent_positions": 6,
+                  "max_daily_trades": 24
+                }
+              }
+            },
+            "kis": {
+              "reserve_ratio": 0.1,
+              "min_order_usdt": 200000,
+              "max_position_pct": 0.12,
+              "max_concurrent_positions": 6,
+              "max_daily_trades": 25,
+              "trade_modes": {
+                "validation": {
+                  "reserve_ratio": 0.05,
+                  "risk_per_trade": 0.012,
+                  "max_position_pct": 0.1,
+                  "max_concurrent_positions": 6,
+                  "max_daily_trades": 30
+                }
+              }
+            },
+            "kis_overseas": {
+              "reserve_ratio": 0.1,
+              "min_order_usdt": 200,
+              "max_position_pct": 0.12,
+              "max_concurrent_positions": 6,
+              "max_daily_trades": 25,
+              "trade_modes": {
+                "validation": {
+                  "reserve_ratio": 0.05,
+                  "risk_per_trade": 0.012,
+                  "min_order_usdt": 200,
+                  "max_position_pct": 0.1,
+                  "max_concurrent_positions": 6,
+                  "max_daily_trades": 30
+                }
+              }
+            }
+          },
+          "trade_modes": {
+            "normal": {
+              "max_same_direction_positions": 5,
+              "cooldown_after_loss_streak": 3,
+              "cooldown_minutes": 60
+            },
+            "validation": {
+              "reserve_ratio": 0.05,
+              "risk_per_trade": 0.01,
+              "max_position_pct": 0.08,
+              "max_concurrent_positions": 6,
+              "max_daily_trades": 24
+            }
+          }
+        },
+        "correlation": {
+          "ok": true,
+          "days": 14,
+          "count": 19,
+          "rows": [
+            {
+              "symbol": "ENJ/USDT",
+              "action": "BUY",
+              "trade_mode": "normal",
+              "block_reason": "상관관계 가드: 같은 방향(long) 포지션 3개 (한도: 3)",
+              "block_meta": {
+                "action": "BUY",
+                "amount": 41.55,
+                "symbol": "ENJ/USDT",
+                "circuit": false,
+                "exchange": "binance",
+                "circuitType": null,
+                "maxPositions": 6,
+                "openPositions": 3
+              },
+              "created_at": "2026-04-15T11:18:56.741Z"
+            },
+            {
+              "symbol": "NEIRO/USDT",
+              "action": "BUY",
+              "trade_mode": "normal",
+              "block_reason": "상관관계 가드: 같은 방향(long) 포지션 3개 (한도: 3)",
+              "block_meta": {
+                "action": "BUY",
+                "amount": 24.38,
+                "symbol": "NEIRO/USDT",
+                "circuit": false,
+                "exchange": "binance",
+                "circuitType": null,
+                "maxPositions": 6,
+                "openPositions": 3
+              },
+              "created_at": "2026-04-14T05:51:47.294Z"
+            },
+            {
+              "symbol": "HOLO/USDT",
+              "action": "BUY",
+              "trade_mode": "normal",
+              "block_reason": "상관관계 가드: 같은 방향(long) 포지션 3개 (한도: 3)",
+              "block_meta": {
+                "action": "BUY",
+                "amount": 29.47,
+                "symbol": "HOLO/USDT",
+                "circuit": false,
+                "exchange": "binance",
+                "circuitType": null,
+                "maxPositions": 6,
+                "openPositions": 3
+              },
+              "created_at": "2026-04-14T03:38:27.827Z"
+            },
+            {
+              "symbol": "GIGGLE/USDT",
+              "action": "BUY",
+              "trade_mode": "normal",
+              "block_reason": "상관관계 가드: 같은 방향(long) 포지션 3개 (한도: 3)",
+              "block_meta": {
+                "action": "BUY",
+                "amount": 29.47,
+                "symbol": "GIGGLE/USDT",
+                "circuit": false,
+                "exchange": "binance",
+                "circuitType": null,
+                "maxPositions": 6,
+                "openPositions": 3
+              },
+              "created_at": "2026-04-14T03:37:51.462Z"
+            },
+            {
+              "symbol": "XPL/USDT",
+              "action": "BUY",
+              "trade_mode": "normal",
+              "block_reason": "상관관계 가드: 같은 방향(long) 포지션 3개 (한도: 3)",
+              "block_meta": {
+                "action": "BUY",
+                "amount": 29.47,
+                "symbol": "XPL/USDT",
+                "circuit": false,
+                "exchange": "binance",
+                "circuitType": null,
+                "maxPositions": 6,
+                "openPositions": 3
+              },
+              "created_at": "2026-04-14T03:37:13.563Z"
+            },
+            {
+              "symbol": "AAVE/USDT",
+              "action": "BUY",
+              "trade_mode": "normal",
+              "block_reason": "상관관계 가드: 같은 방향(long) 포지션 3개 (한도: 3)",
+              "block_meta": {
+                "action": "BUY",
+                "amount": 25.83,
+                "symbol": "AAVE/USDT",
+                "circuit": false,
+                "exchange": "binance",
+                "circuitType": null,
+                "maxPositions": 6,
+                "openPositions": 3
+              },
+              "created_at": "2026-04-14T01:22:40.757Z"
+            },
+            {
+              "symbol": "ENJ/USDT",
+              "action": "BUY",
+              "trade_mode": "normal",
+              "block_reason": "상관관계 가드: 같은 방향(long) 포지션 3개 (한도: 3)",
+              "block_meta": {
+                "action": "BUY",
+                "amount": 28.43,
+                "symbol": "ENJ/USDT",
+                "circuit": false,
+                "exchange": "binance",
+                "circuitType": null,
+                "maxPositions": 6,
+                "openPositions": 3
+              },
+              "created_at": "2026-04-14T01:22:02.819Z"
+            },
+            {
+              "symbol": "ETH/USDT",
+              "action": "BUY",
+              "trade_mode": "normal",
+              "block_reason": "상관관계 가드: 같은 방향(long) 포지션 3개 (한도: 3)",
+              "block_meta": {
+                "action": "BUY",
+                "amount": 26.88,
+                "symbol": "ETH/USDT",
+                "circuit": false,
+                "exchange": "binance",
+                "circuitType": null,
+                "maxPositions": 6,
+                "openPositions": 3
+              },
+              "created_at": "2026-04-13T23:40:59.264Z"
+            },
+            {
+              "symbol": "HOLO/USDT",
+              "action": "BUY",
+              "trade_mode": "normal",
+              "block_reason": "상관관계 가드: 같은 방향(long) 포지션 3개 (한도: 3)",
+              "block_meta": {
+                "action": "BUY",
+                "amount": 26.88,
+                "symbol": "HOLO/USDT",
+                "circuit": false,
+                "exchange": "binance",
+                "circuitType": null,
+                "maxPositions": 6,
+                "openPositions": 3
+              },
+              "created_at": "2026-04-13T23:40:20.813Z"
+            },
+            {
+              "symbol": "ENJ/USDT",
+              "action": "BUY",
+              "trade_mode": "normal",
+              "block_reason": "상관관계 가드: 같은 방향(long) 포지션 3개 (한도: 3)",
+              "block_meta": {
+                "action": "BUY",
+                "amount": 35.78,
+                "symbol": "ENJ/USDT",
+                "circuit": false,
+                "exchange": "binance",
+                "circuitType": null,
+                "maxPositions": 6,
+                "openPositions": 3
+              },
+              "created_at": "2026-04-13T19:50:33.797Z"
+            },
+            {
+              "symbol": "GIGGLE/USDT",
+              "action": "BUY",
+              "trade_mode": "normal",
+              "block_reason": "상관관계 가드: 같은 방향(long) 포지션 3개 (한도: 3)",
+              "block_meta": {
+                "action": "BUY",
+                "amount": 39.73,
+                "symbol": "GIGGLE/USDT",
+                "circuit": false,
+                "exchange": "binance",
+                "circuitType": null,
+                "maxPositions": 6,
+                "openPositions": 3
+              },
+              "created_at": "2026-04-13T16:43:33.215Z"
+            },
+            {
+              "symbol": "DUSK/USDT",
+              "action": "BUY",
+              "trade_mode": "normal",
+              "block_reason": "상관관계 가드: 같은 방향(long) 포지션 3개 (한도: 3)",
+              "block_meta": {
+                "action": "BUY",
+                "amount": 33.13,
+                "symbol": "DUSK/USDT",
+                "circuit": false,
+                "exchange": "binance",
+                "circuitType": null,
+                "maxPositions": 6,
+                "openPositions": 3
+              },
+              "created_at": "2026-04-12T14:48:11.280Z"
+            },
+            {
+              "symbol": "ENJ/USDT",
+              "action": "BUY",
+              "trade_mode": "normal",
+              "block_reason": "상관관계 가드: 같은 방향(long) 포지션 3개 (한도: 3)",
+              "block_meta": {
+                "action": "BUY",
+                "amount": 35.34,
+                "symbol": "ENJ/USDT",
+                "circuit": false,
+                "exchange": "binance",
+                "circuitType": null,
+                "maxPositions": 6,
+                "openPositions": 3
+              },
+              "created_at": "2026-04-12T13:45:42.963Z"
+            },
+            {
+              "symbol": "GIGGLE/USDT",
+              "action": "BUY",
+              "trade_mode": "normal",
+              "block_reason": "상관관계 가드: 같은 방향(long) 포지션 3개 (한도: 3)",
+              "block_meta": {
+                "action": "BUY",
+                "amount": 39.02,
+                "symbol": "GIGGLE/USDT",
+                "circuit": false,
+                "exchange": "binance",
+                "circuitType": null,
+                "maxPositions": 6,
+                "openPositions": 3
+              },
+              "created_at": "2026-04-12T07:01:12.838Z"
+            },
+            {
+              "symbol": "TON/USDT",
+              "action": "BUY",
+              "trade_mode": "normal",
+              "block_reason": "상관관계 가드: 같은 방향(long) 포지션 3개 (한도: 3)",
+              "block_meta": {
+                "action": "BUY",
+                "amount": 38.85,
+                "symbol": "TON/USDT",
+                "circuit": false,
+                "exchange": "binance",
+                "circuitType": null,
+                "maxPositions": 6,
+                "openPositions": 3
+              },
+              "created_at": "2026-04-11T23:09:34.271Z"
+            },
+            {
+              "symbol": "ONT/USDT",
+              "action": "BUY",
+              "trade_mode": "normal",
+              "block_reason": "상관관계 가드: 같은 방향(long) 포지션 3개 (한도: 3)",
+              "block_meta": {
+                "action": "BUY",
+                "amount": 38.85,
+                "symbol": "ONT/USDT",
+                "circuit": false,
+                "exchange": "binance",
+                "circuitType": null,
+                "maxPositions": 6,
+                "openPositions": 3
+              },
+              "created_at": "2026-04-11T23:08:54.552Z"
+            },
+            {
+              "symbol": "FF/USDT",
+              "action": "BUY",
+              "trade_mode": "normal",
+              "block_reason": "상관관계 가드: 같은 방향(long) 포지션 3개 (한도: 3)",
+              "block_meta": {
+                "action": "BUY",
+                "amount": 38.85,
+                "symbol": "FF/USDT",
+                "circuit": false,
+                "exchange": "binance",
+                "circuitType": null,
+                "maxPositions": 6,
+                "openPositions": 3
+              },
+              "created_at": "2026-04-11T23:08:16.084Z"
+            },
+            {
+              "symbol": "NOM/USDT",
+              "action": "BUY",
+              "trade_mode": "normal",
+              "block_reason": "상관관계 가드: 같은 방향(long) 포지션 3개 (한도: 3)",
+              "block_meta": {
+                "action": "BUY",
+                "amount": 38.85,
+                "symbol": "NOM/USDT",
+                "circuit": false,
+                "exchange": "binance",
+                "circuitType": null,
+                "maxPositions": 6,
+                "openPositions": 3
+              },
+              "created_at": "2026-04-11T22:36:29.732Z"
+            },
+            {
+              "symbol": "DUSK/USDT",
+              "action": "BUY",
+              "trade_mode": "normal",
+              "block_reason": "상관관계 가드: 같은 방향(long) 포지션 3개 (한도: 3)",
+              "block_meta": {
+                "action": "BUY",
+                "amount": 38.85,
+                "symbol": "DUSK/USDT",
+                "circuit": false,
+                "exchange": "binance",
+                "circuitType": null,
+                "maxPositions": 6,
+                "openPositions": 3
+              },
+              "created_at": "2026-04-11T22:04:21.254Z"
+            }
+          ],
+          "summary": {
+            "total": 19,
+            "byTradeMode": [
+              {
+                "key": "normal",
+                "count": 19
+              }
+            ],
+            "bySymbol": [
+              {
+                "key": "ENJ/USDT",
+                "count": 4
+              },
+              {
+                "key": "GIGGLE/USDT",
+                "count": 3
+              },
+              {
+                "key": "DUSK/USDT",
+                "count": 2
+              },
+              {
+                "key": "HOLO/USDT",
+                "count": 2
+              },
+              {
+                "key": "AAVE/USDT",
+                "count": 1
+              },
+              {
+                "key": "ETH/USDT",
+                "count": 1
+              },
+              {
+                "key": "FF/USDT",
+                "count": 1
+              },
+              {
+                "key": "NEIRO/USDT",
+                "count": 1
+              }
+            ],
+            "byOpenPositions": [
+              {
+                "key": "3",
+                "count": 19
+              }
+            ],
+            "topBursts": [
+              {
+                "bucket": "2026-04-14T03:00:00.000Z",
+                "count": 3,
+                "symbols": [
+                  "GIGGLE/USDT",
+                  "HOLO/USDT",
+                  "XPL/USDT"
+                ],
+                "tradeModes": [
+                  "normal"
+                ]
+              },
+              {
+                "bucket": "2026-04-11T23:00:00.000Z",
+                "count": 3,
+                "symbols": [
+                  "FF/USDT",
+                  "ONT/USDT",
+                  "TON/USDT"
+                ],
+                "tradeModes": [
+                  "normal"
+                ]
+              },
+              {
+                "bucket": "2026-04-14T01:00:00.000Z",
+                "count": 2,
+                "symbols": [
+                  "AAVE/USDT",
+                  "ENJ/USDT"
+                ],
+                "tradeModes": [
+                  "normal"
+                ]
+              },
+              {
+                "bucket": "2026-04-13T23:00:00.000Z",
+                "count": 2,
+                "symbols": [
+                  "ETH/USDT",
+                  "HOLO/USDT"
+                ],
+                "tradeModes": [
+                  "normal"
+                ]
+              },
+              {
+                "bucket": "2026-04-11T22:00:00.000Z",
+                "count": 2,
+                "symbols": [
+                  "DUSK/USDT",
+                  "NOM/USDT"
+                ],
+                "tradeModes": [
+                  "normal"
+                ]
+              }
+            ]
+          },
+          "decision": {
+            "status": "binance_correlation_guard_pressure",
+            "headline": "크립토 correlation guard가 한쪽 방향 포지션 집중으로 반복되고 있습니다.",
+            "reasons": [
+              "최근 correlation guard 19건",
+              "레인 분포: normal 19",
+              "집중 심볼: ENJ/USDT 4 | GIGGLE/USDT 3 | DUSK/USDT 2 | HOLO/USDT 2"
+            ],
+            "actionItems": [
+              "normal 레인에서 포지션 방향 쏠림이 큰지 먼저 확인합니다.",
+              "ENJ/USDT 주변 심볼군 진입이 반복되는지 함께 복기합니다.",
+              "집중 시간대 2026-04-14T03:00:00.000Z의 동시 진입 후보(GIGGLE/USDT, HOLO/USDT, XPL/USDT)를 확인합니다."
+            ],
+            "metrics": {
+              "total": 19,
+              "topTradeMode": "normal",
+              "topTradeModeCount": 19,
+              "topSymbol": "ENJ/USDT",
+              "topSymbolCount": 4,
+              "topBurstCount": 3
+            }
+          },
+          "aiSummary": "크립토 correlation guard가 반복돼, 레인별 포지션 방향 쏠림과 집중 심볼군을 먼저 보는 것이 좋습니다."
+        },
+        "circuit": {
+          "ok": true,
+          "days": 14,
+          "count": 28,
+          "rows": [
+            {
+              "symbol": "FF/USDT",
+              "tradeMode": "normal",
+              "reason": "연속 3회 손실 → 쿨다운 118분 남음",
+              "count": 2
+            },
+            {
+              "symbol": "BARD/USDT",
+              "tradeMode": "normal",
+              "reason": "연속 3회 손실 → 쿨다운 120분 남음",
+              "count": 2
+            },
+            {
+              "symbol": "DOT/USDT",
+              "tradeMode": "validation",
+              "reason": "연속 3회 손실 → 쿨다운 68분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "DUSK/USDT",
+              "tradeMode": "normal",
+              "reason": "연속 3회 손실 → 쿨다운 86분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "ENJ/USDT",
+              "tradeMode": "normal",
+              "reason": "연속 3회 손실 → 쿨다운 119분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "ENJ/USDT",
+              "tradeMode": "normal",
+              "reason": "연속 3회 손실 → 쿨다운 14분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "ENJ/USDT",
+              "tradeMode": "validation",
+              "reason": "연속 3회 손실 → 쿨다운 15분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "ENJ/USDT",
+              "tradeMode": "validation",
+              "reason": "연속 3회 손실 → 쿨다운 99분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "FF/USDT",
+              "tradeMode": "validation",
+              "reason": "연속 3회 손실 → 쿨다운 60분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "GIGGLE/USDT",
+              "tradeMode": "normal",
+              "reason": "연속 3회 손실 → 쿨다운 13분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "NOM/USDT",
+              "tradeMode": "normal",
+              "reason": "연속 3회 손실 → 쿨다운 118분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "NOM/USDT",
+              "tradeMode": "normal",
+              "reason": "연속 3회 손실 → 쿨다운 54분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "NOM/USDT",
+              "tradeMode": "validation",
+              "reason": "연속 3회 손실 → 쿨다운 60분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "NOM/USDT",
+              "tradeMode": "validation",
+              "reason": "연속 3회 손실 → 쿨다운 99분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "ONT/USDT",
+              "tradeMode": "normal",
+              "reason": "연속 3회 손실 → 쿨다운 117분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "ONT/USDT",
+              "tradeMode": "normal",
+              "reason": "연속 3회 손실 → 쿨다운 119분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "PENGU/USDT",
+              "tradeMode": "normal",
+              "reason": "연속 3회 손실 → 쿨다운 55분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "PENGU/USDT",
+              "tradeMode": "validation",
+              "reason": "연속 3회 손실 → 쿨다운 60분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "TON/USDT",
+              "tradeMode": "normal",
+              "reason": "연속 3회 손실 → 쿨다운 118분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "TON/USDT",
+              "tradeMode": "normal",
+              "reason": "연속 3회 손실 → 쿨다운 119분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "TON/USDT",
+              "tradeMode": "validation",
+              "reason": "연속 3회 손실 → 쿨다운 60분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "TON/USDT",
+              "tradeMode": "validation",
+              "reason": "연속 3회 손실 → 쿨다운 99분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "TRU/USDT",
+              "tradeMode": "normal",
+              "reason": "연속 3회 손실 → 쿨다운 22분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "TRU/USDT",
+              "tradeMode": "validation",
+              "reason": "연속 3회 손실 → 쿨다운 37분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "WLD/USDT",
+              "tradeMode": "normal",
+              "reason": "연속 3회 손실 → 쿨다운 119분 남음",
+              "count": 1
+            },
+            {
+              "symbol": "DOT/USDT",
+              "tradeMode": "normal",
+              "reason": "연속 3회 손실 → 쿨다운 86분 남음",
+              "count": 1
+            }
+          ],
+          "decision": {
+            "status": "binance_circuit_pressure",
+            "headline": "크립토 연속 손실 쿨다운이 반복적으로 실행을 막고 있습니다.",
+            "reasons": [
+              "최근 크립토 circuit breaker 28건",
+              "레인별: normal 18건 | validation 10건",
+              "집중 심볼: ENJ/USDT 4건 | NOM/USDT 4건 | TON/USDT 4건 | FF/USDT 3건 | BARD/USDT 2건"
+            ],
+            "actionItems": [
+              "loss streak가 normal/validation 어느 레인에 더 몰리는지 우선 비교합니다.",
+              "집중 심볼 진입 품질과 쿨다운 설정을 함께 복기합니다."
+            ],
+            "metrics": {
+              "total": 28,
+              "normal": 18,
+              "validation": 10,
+              "topSymbol": "ENJ/USDT",
+              "topSymbolCount": 4
+            }
+          },
+          "aiSummary": "크립토 연속 손실 쿨다운이 반복돼, 레인별 손실 집중과 심볼 쏠림을 먼저 보는 것이 좋습니다."
+        },
+        "capitalGuard": {
+          "ok": true,
+          "days": 14,
+          "count": 21,
+          "rows": [
+            {
+              "reason": "상관관계 가드: 같은 방향(long) 포지션 3개 (한도: 3)",
+              "count": 19
+            },
+            {
+              "reason": "최대 포지션 도달: 3/3",
+              "count": 2
+            }
+          ],
+          "decision": {
+            "status": "binance_capital_guard_pressure",
+            "headline": "크립토 capital guard가 반복적으로 실행을 막고 있습니다.",
+            "reasons": [
+              "최근 크립토 capital guard 21건",
+              "주요 축: correlation guard 19건 | max positions 2건"
+            ],
+            "actionItems": [
+              "daily trade limit와 correlation guard 중 어느 축이 우세한지 추세 비교를 우선합니다.",
+              "집중 축에 맞춰 포지션 보유 수 또는 일간 매매 한도를 먼저 복기합니다."
+            ],
+            "metrics": {
+              "total": 21,
+              "correlationGuard": 19,
+              "dailyTradeLimit": 0,
+              "maxPositions": 2
+            }
+          },
+          "aiSummary": "크립토 capital guard가 반복돼, daily trade limit와 correlation guard 중 어느 축이 주범인지 먼저 비교하는 것이 좋습니다."
+        },
+        "suggestions": [
+          {
+            "key": "capital_management.max_same_direction_positions",
+            "current": 5,
+            "suggested": 6,
+            "action": "adjust",
+            "confidence": "medium",
+            "reason": "최근 correlation guard 19건이 capital guard의 90.5%를 차지합니다. same-direction long 슬롯을 1칸 더 열어 대표 후보 패스와 함께 비교할 가치가 있습니다.",
+            "governance": {
+              "key": "capital_management.max_same_direction_positions",
+              "tier": "allow",
+              "min": 1,
+              "max": 6,
+              "label": "동일 방향 포지션 수",
+              "current": 5
+            },
+            "changeAllowed": true,
+            "requiresApproval": false,
+            "blockedByPolicy": false
+          },
+          {
+            "key": "capital_management.cooldown_minutes",
+            "current": 60,
+            "suggested": 45,
+            "action": "adjust",
+            "confidence": "medium",
+            "reason": "최근 circuit breaker 28건이 반복돼 연속 손실 쿨다운 시간이 길게 작동하고 있습니다. 60분 쿨다운을 소폭 줄여 dry-run 비교 후보로 볼 수 있습니다.",
+            "governance": {
+              "key": "capital_management.cooldown_minutes",
+              "tier": "allow",
+              "min": 30,
+              "max": 360,
+              "label": "쿨다운 분",
+              "current": 60
+            },
+            "changeAllowed": true,
+            "requiresApproval": false,
+            "blockedByPolicy": false
+          },
+          {
+            "key": "capital_management.cooldown_after_loss_streak",
+            "current": 3,
+            "suggested": 4,
+            "action": "observe",
+            "confidence": "low",
+            "reason": "연속 손실 기준 3회가 현재 pressure 구간에서 다소 민감할 수 있습니다. 다만 손실 리스크가 커서 즉시 상향보다 관찰 후보로만 유지합니다.",
+            "governance": {
+              "key": "capital_management.cooldown_after_loss_streak",
+              "tier": "allow",
+              "min": 2,
+              "max": 5,
+              "label": "연속 손실 쿨다운 횟수",
+              "current": 3
+            },
+            "changeAllowed": true,
+            "requiresApproval": false,
+            "blockedByPolicy": false
+          }
+        ],
+        "decision": {
+          "status": "crypto_guard_autotune_ready",
+          "headline": "crypto guard 병목을 줄일 후보가 준비됐습니다.",
+          "reasons": [
+            "correlation guard: binance_correlation_guard_pressure",
+            "capital guard: binance_capital_guard_pressure",
+            "circuit breaker: binance_circuit_pressure",
+            "current normal lane: same-direction 5 / cooldown 60분 / loss streak 3회"
+          ],
+          "actionItems": [
+            "rank 1 조정 후보를 dry-run override로 먼저 비교합니다.",
+            "대표 후보 패스 적용 후 correlation/circuit 감소 추세를 같이 봅니다."
+          ],
+          "metrics": {
+            "actionableCount": 2,
+            "observeCount": 1,
+            "correlationTotal": 19,
+            "circuitTotal": 28,
+            "capitalGuardTotal": 21
+          }
+        },
+        "aiSummary": "correlation 19건 / circuit 28건 기준으로 crypto guard 조정 후보를 dry-run으로 검토할 수 있습니다."
+      },
+      "backtest": {
+        "ok": true,
+        "args": {
+          "days": 30,
+          "limit": 20,
+          "json": true
+        },
+        "rows": [
+          {
+            "symbol": "BTC/USDT",
+            "days": 30,
+            "tp_pct": 1,
+            "sl_pct": 1,
+            "label": "TP 1.0% / SL 1.0%  (R/R 1:1)",
+            "status": "ok",
+            "sharpe": -10.084494902331311,
+            "total_return": -4.882555889748565,
+            "max_drawdown": 5.27353871057805,
+            "win_rate": 21.73913043478261,
+            "total_trades": 23,
+            "metadata": {
+              "error": null,
+              "install": null,
+              "missing": null,
+              "rawStatus": null
+            },
+            "created_at": "2026-04-15T08:53:14.230Z"
+          },
+          {
+            "symbol": "BTC/USDT",
+            "days": 30,
+            "tp_pct": 2,
+            "sl_pct": 0.7,
+            "label": "TP 2.0% / SL 0.7%  (R/R 2.86:1)",
+            "status": "ok",
+            "sharpe": -9.953907338295487,
+            "total_return": -4.584733972097511,
+            "max_drawdown": 4.976940997956481,
+            "win_rate": 21.73913043478261,
+            "total_trades": 23,
+            "metadata": {
+              "error": null,
+              "install": null,
+              "missing": null,
+              "rawStatus": null
+            },
+            "created_at": "2026-04-15T08:53:14.229Z"
+          },
+          {
+            "symbol": "BTC/USDT",
+            "days": 30,
+            "tp_pct": 1.5,
+            "sl_pct": 1,
+            "label": "TP 1.5% / SL 1.0%  (R/R 1.5:1)",
+            "status": "ok",
+            "sharpe": -10.084494902331311,
+            "total_return": -4.882555889748565,
+            "max_drawdown": 5.27353871057805,
+            "win_rate": 21.73913043478261,
+            "total_trades": 23,
+            "metadata": {
+              "error": null,
+              "install": null,
+              "missing": null,
+              "rawStatus": null
+            },
+            "created_at": "2026-04-15T08:53:14.229Z"
+          },
+          {
+            "symbol": "BTC/USDT",
+            "days": 30,
+            "tp_pct": 6,
+            "sl_pct": 3,
+            "label": "TP 6.0% / SL 3.0%  (현재 고정 R/R 2:1)",
+            "status": "ok",
+            "sharpe": -10.084494902331311,
+            "total_return": -4.882555889748565,
+            "max_drawdown": 5.27353871057805,
+            "win_rate": 21.73913043478261,
+            "total_trades": 23,
+            "metadata": {
+              "error": null,
+              "install": null,
+              "missing": null,
+              "rawStatus": null
+            },
+            "created_at": "2026-04-15T08:53:14.229Z"
+          },
+          {
+            "symbol": "BTC/USDT",
+            "days": 30,
+            "tp_pct": 3,
+            "sl_pct": 1,
+            "label": "TP 3.0% / SL 1.0%  (R/R 3:1)",
+            "status": "ok",
+            "sharpe": -10.084494902331311,
+            "total_return": -4.882555889748565,
+            "max_drawdown": 5.27353871057805,
+            "win_rate": 21.73913043478261,
+            "total_trades": 23,
+            "metadata": {
+              "error": null,
+              "install": null,
+              "missing": null,
+              "rawStatus": null
+            },
+            "created_at": "2026-04-15T08:53:14.229Z"
+          },
+          {
+            "symbol": "BTC/USDT",
+            "days": 30,
+            "tp_pct": 2,
+            "sl_pct": 1,
+            "label": "TP 2.0% / SL 1.0%  (R/R 2:1)",
+            "status": "ok",
+            "sharpe": -10.084494902331311,
+            "total_return": -4.882555889748565,
+            "max_drawdown": 5.27353871057805,
+            "win_rate": 21.73913043478261,
+            "total_trades": 23,
+            "metadata": {
+              "error": null,
+              "install": null,
+              "missing": null,
+              "rawStatus": null
+            },
+            "created_at": "2026-04-15T08:53:14.229Z"
+          },
+          {
+            "symbol": "BTC/USDT",
+            "days": 30,
+            "tp_pct": 1.5,
+            "sl_pct": 0.75,
+            "label": "TP 1.5% / SL 0.75% (R/R 2:1)",
+            "status": "ok",
+            "sharpe": -9.953907338295487,
+            "total_return": -4.584733972097511,
+            "max_drawdown": 4.976940997956481,
+            "win_rate": 21.73913043478261,
+            "total_trades": 23,
+            "metadata": {
+              "error": null,
+              "install": null,
+              "missing": null,
+              "rawStatus": null
+            },
+            "created_at": "2026-04-15T08:53:14.228Z"
+          },
+          {
+            "symbol": "BTC/USDT",
+            "days": 30,
+            "tp_pct": 1,
+            "sl_pct": 0.5,
+            "label": "TP 1.0% / SL 0.5%  (R/R 2:1)",
+            "status": "ok",
+            "sharpe": -10.363196146761583,
+            "total_return": -4.678548623394127,
+            "max_drawdown": 5.070370021597191,
+            "win_rate": 20.833333333333336,
+            "total_trades": 24,
+            "metadata": {
+              "error": null,
+              "install": null,
+              "missing": null,
+              "rawStatus": null
+            },
+            "created_at": "2026-04-15T08:53:14.227Z"
+          }
+        ],
+        "decision": {
+          "status": "backtest_ok",
+          "headline": "최근 VectorBT 결과가 정상적으로 쌓이고 있습니다.",
+          "reasons": [
+            "최근 결과 8건 (ok 8 / issue 0)",
+            "최고 샤프: BTC/USDT TP 2.0% / SL 0.7%  (R/R 2.86:1) (-9.95)",
+            "최고 수익률: BTC/USDT TP 2.0% / SL 0.7%  (R/R 2.86:1) (-4.58%)"
+          ],
+          "actionItems": [
+            "최고 샤프 조합을 runtime parameter allow 후보와 비교합니다."
+          ],
+          "metrics": {
+            "total": 8,
+            "ok": 8,
+            "issue": 0,
+            "bestSharpe": {
+              "symbol": "BTC/USDT",
+              "label": "TP 2.0% / SL 0.7%  (R/R 2.86:1)",
+              "sharpe": -9.953907338295487
+            },
+            "bestReturn": {
+              "symbol": "BTC/USDT",
+              "label": "TP 2.0% / SL 0.7%  (R/R 2.86:1)",
+              "totalReturn": -4.584733972097511
+            }
+          }
+        }
+      },
+      "validation": {
+        "days": 90,
+        "closedTrades": 107,
+        "findings": 0,
+        "fixed": 0,
+        "items": []
+      },
+      "aiSummary": "장세별 표본은 생겼고, 이제 약한 레짐/레인을 바로 전략 수정 대상으로 삼아야 합니다."
+    },
+    "error": null
+  },
+  "screening": {
+    "crypto": {
+      "summary": {
+        "market": "crypto",
+        "totalRows": 3,
+        "uniqueDynamicSymbols": 8,
+        "topSymbols": [
+          {
+            "symbol": "CHIP/USDT",
+            "count": 3
+          },
+          {
+            "symbol": "EDU/USDT",
+            "count": 3
+          },
+          {
+            "symbol": "GIGGLE/USDT",
+            "count": 3
+          },
+          {
+            "symbol": "GUN/USDT",
+            "count": 3
+          },
+          {
+            "symbol": "MET/USDT",
+            "count": 3
+          },
+          {
+            "symbol": "PORTAL/USDT",
+            "count": 3
+          },
+          {
+            "symbol": "RUNE/USDT",
+            "count": 3
+          },
+          {
+            "symbol": "UTK/USDT",
+            "count": 3
+          }
+        ],
+        "trend": {
+          "latestDynamicCount": 8,
+          "previousDynamicCount": 8,
+          "deltaDynamicCount": 0,
+          "addedSymbols": [],
+          "removedSymbols": []
+        }
+      },
+      "rows": [
+        {
+          "market": "crypto",
+          "createdAt": "2026-04-22T02:49:22.304Z",
+          "dynamic": [
+            "CHIP/USDT",
+            "MET/USDT",
+            "UTK/USDT",
+            "EDU/USDT",
+            "GUN/USDT",
+            "PORTAL/USDT",
+            "RUNE/USDT",
+            "GIGGLE/USDT"
+          ],
+          "dynamicCount": 8,
+          "topSymbols": [
+            "CHIP/USDT",
+            "MET/USDT",
+            "UTK/USDT",
+            "EDU/USDT",
+            "GUN/USDT"
+          ]
+        },
+        {
+          "market": "crypto",
+          "createdAt": "2026-04-22T02:48:41.148Z",
+          "dynamic": [
+            "CHIP/USDT",
+            "MET/USDT",
+            "UTK/USDT",
+            "EDU/USDT",
+            "GUN/USDT",
+            "PORTAL/USDT",
+            "RUNE/USDT",
+            "GIGGLE/USDT"
+          ],
+          "dynamicCount": 8,
+          "topSymbols": [
+            "CHIP/USDT",
+            "MET/USDT",
+            "UTK/USDT",
+            "EDU/USDT",
+            "GUN/USDT"
+          ]
+        },
+        {
+          "market": "crypto",
+          "createdAt": "2026-04-22T02:48:05.589Z",
+          "dynamic": [
+            "CHIP/USDT",
+            "MET/USDT",
+            "UTK/USDT",
+            "GUN/USDT",
+            "EDU/USDT",
+            "PORTAL/USDT",
+            "RUNE/USDT",
+            "GIGGLE/USDT"
+          ],
+          "dynamicCount": 8,
+          "topSymbols": [
+            "CHIP/USDT",
+            "MET/USDT",
+            "UTK/USDT",
+            "GUN/USDT",
+            "EDU/USDT"
+          ]
+        }
+      ]
+    },
+    "domestic": {
+      "summary": {
+        "market": "domestic",
+        "totalRows": 3,
+        "uniqueDynamicSymbols": 16,
+        "topSymbols": [
+          {
+            "symbol": "006400",
+            "count": 2
+          },
+          {
+            "symbol": "009415",
+            "count": 2
+          },
+          {
+            "symbol": "047040",
+            "count": 2
+          },
+          {
+            "symbol": "336370",
+            "count": 2
+          },
+          {
+            "symbol": "412570",
+            "count": 2
+          },
+          {
+            "symbol": "530138",
+            "count": 2
+          },
+          {
+            "symbol": "580070",
+            "count": 2
+          },
+          {
+            "symbol": "760011",
+            "count": 2
+          },
+          {
+            "symbol": "000500",
+            "count": 1
+          },
+          {
+            "symbol": "005090",
+            "count": 1
+          }
+        ],
+        "trend": {
+          "latestDynamicCount": 8,
+          "previousDynamicCount": 8,
+          "deltaDynamicCount": 0,
+          "addedSymbols": [
+            "092220",
+            "161000",
+            "006110",
+            "006200",
+            "012320",
+            "005090",
+            "000500",
+            "005870"
+          ],
+          "removedSymbols": [
+            "009415",
+            "336370",
+            "412570",
+            "580070",
+            "530138",
+            "047040",
+            "760011",
+            "006400"
+          ]
+        }
+      },
+      "rows": [
+        {
+          "market": "domestic",
+          "createdAt": "2026-04-22T02:45:01.002Z",
+          "dynamic": [
+            "092220",
+            "161000",
+            "006110",
+            "006200",
+            "012320",
+            "005090",
+            "000500",
+            "005870"
+          ],
+          "dynamicCount": 8,
+          "topSymbols": [
+            "092220",
+            "161000",
+            "006110",
+            "006200",
+            "012320"
+          ]
+        },
+        {
+          "market": "domestic",
+          "createdAt": "2026-04-21T23:00:09.753Z",
+          "dynamic": [
+            "009415",
+            "336370",
+            "412570",
+            "580070",
+            "530138",
+            "047040",
+            "760011",
+            "006400"
+          ],
+          "dynamicCount": 8,
+          "topSymbols": [
+            "009415",
+            "336370",
+            "412570",
+            "580070",
+            "530138"
+          ]
+        },
+        {
+          "market": "domestic",
+          "createdAt": "2026-04-21T08:00:05.734Z",
+          "dynamic": [
+            "009415",
+            "336370",
+            "412570",
+            "580070",
+            "530138",
+            "047040",
+            "760011",
+            "006400"
+          ],
+          "dynamicCount": 8,
+          "topSymbols": [
+            "009415",
+            "336370",
+            "412570",
+            "580070",
+            "530138"
+          ]
+        }
+      ]
+    },
+    "overseas": {
+      "summary": {
+        "market": "overseas",
+        "totalRows": 3,
+        "uniqueDynamicSymbols": 17,
+        "topSymbols": [
+          {
+            "symbol": "AAPL",
+            "count": 3
+          },
+          {
+            "symbol": "AMZN",
+            "count": 3
+          },
+          {
+            "symbol": "ASTS",
+            "count": 3
+          },
+          {
+            "symbol": "CAR",
+            "count": 3
+          },
+          {
+            "symbol": "DTE",
+            "count": 3
+          },
+          {
+            "symbol": "GE",
+            "count": 3
+          },
+          {
+            "symbol": "MSFT",
+            "count": 3
+          },
+          {
+            "symbol": "NVTS",
+            "count": 3
+          },
+          {
+            "symbol": "OPEN",
+            "count": 3
+          },
+          {
+            "symbol": "QQQ",
+            "count": 3
+          }
+        ],
+        "trend": {
+          "latestDynamicCount": 15,
+          "previousDynamicCount": 15,
+          "deltaDynamicCount": 0,
+          "addedSymbols": [
+            "AMD",
+            "POET"
+          ],
+          "removedSymbols": [
+            "NVDA",
+            "NFLX"
+          ]
+        }
+      },
+      "rows": [
+        {
+          "market": "overseas",
+          "createdAt": "2026-04-21T21:00:07.951Z",
+          "dynamic": [
+            "UNH",
+            "CAR",
+            "SPY",
+            "AAPL",
+            "MSFT",
+            "ASTS",
+            "DTE",
+            "TSLA",
+            "AMZN",
+            "QQQ",
+            "OPEN",
+            "GE",
+            "NVTS",
+            "AMD",
+            "POET"
+          ],
+          "dynamicCount": 15,
+          "topSymbols": [
+            "UNH",
+            "CAR",
+            "SPY",
+            "AAPL",
+            "MSFT"
+          ]
+        },
+        {
+          "market": "overseas",
+          "createdAt": "2026-04-21T16:30:25.529Z",
+          "dynamic": [
+            "SPY",
+            "ASTS",
+            "MSFT",
+            "TSLA",
+            "QQQ",
+            "DTE",
+            "NVDA",
+            "NFLX",
+            "CAR",
+            "UNH",
+            "AMZN",
+            "AAPL",
+            "OPEN",
+            "GE",
+            "NVTS"
+          ],
+          "dynamicCount": 15,
+          "topSymbols": [
+            "SPY",
+            "ASTS",
+            "MSFT",
+            "TSLA",
+            "QQQ"
+          ]
+        },
+        {
+          "market": "overseas",
+          "createdAt": "2026-04-21T16:30:19.540Z",
+          "dynamic": [
+            "SPY",
+            "ASTS",
+            "MSFT",
+            "TSLA",
+            "QQQ",
+            "DTE",
+            "NVDA",
+            "NFLX",
+            "CAR",
+            "UNH",
+            "AMZN",
+            "AAPL",
+            "OPEN",
+            "GE",
+            "NVTS"
+          ],
+          "dynamicCount": 15,
+          "topSymbols": [
+            "SPY",
+            "ASTS",
+            "MSFT",
+            "TSLA",
+            "QQQ"
+          ]
+        }
+      ]
+    },
+    "error": null
+  }
+}

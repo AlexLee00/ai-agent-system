@@ -29,6 +29,7 @@ export async function buildRuntimeKisDomesticAutotuneHistory({ days = 14, json =
     realBuyTrades: Number(report?.decision?.metrics?.realBuyTrades || 0),
     orderPressureStatus: report?.decision?.metrics?.orderPressureStatus || null,
     orderPressureTotal: Number(report?.decision?.metrics?.orderPressureTotal || 0),
+    validationRule1Blocks: Number(report?.decision?.metrics?.validationRule1Blocks || 0),
     candidateKey: report?.candidate?.key || null,
     candidateCurrent: report?.candidate?.current ?? null,
     candidateSuggested: report?.candidate?.suggested ?? null,
