@@ -16,6 +16,7 @@ const cmf = require('./content-market-fit');
 const aarrr = require('./aarrr-metrics');
 const skaRevenueBridge = require('./ska-revenue-bridge');
 const feedbackLearner = require('./feedback-learner');
+const { loadStrategyBundle } = require('./strategy-loader.ts');
 
 function isEnabled() {
   return process.env.BLOG_EVOLUTION_CYCLE_ENABLED === 'true';
@@ -168,6 +169,18 @@ async function applyFeedbackLearning(analyzeStats) {
 // ─── Phase 5: 전략 (Strategy) ────────────────────────────────────────────────
 
 async function evolveStrategyFromCycle(analyzeStats, feedbackStats) {
+  const { executionDirectives } = loadStrategyBundle();
+  const priorityWeights = { primary: 3, secondary: 2, supporting: 1 };
+  const channelPriority = executionDirectives?.channelPriority || {};
+  const naverWeight = priorityWeights[channelPriority.naverBlog || 'primary'] || 3;
+  const instagramWeight = priorityWeights[channelPriority.instagram || 'secondary'] || 2;
+  const facebookWeight = priorityWeights[channelPriority.facebook || 'supporting'] || 1;
+  const totalWeight = Math.max(1, naverWeight + instagramWeight + facebookWeight);
+  const platformAllocation = {
+    naver: Number((naverWeight / totalWeight).toFixed(2)),
+    instagram: Number((instagramWeight / totalWeight).toFixed(2)),
+    facebook: Number((facebookWeight / totalWeight).toFixed(2)),
+  };
   try {
     const { evolveStrategy } = require('./strategy-evolver');
     const diagnosis = {
@@ -180,14 +193,14 @@ async function evolveStrategyFromCycle(analyzeStats, feedbackStats) {
     return {
       topic_pool_updates: evolved?.topicsAdded || 0,
       persona_weight_changes: evolved?.personaWeightDelta || {},
-      platform_allocation: { naver: 0.7, instagram: 0.2, facebook: 0.1 },
+      platform_allocation: platformAllocation,
       next_cycle_hints: evolved?.nextCycleHints || [],
     };
   } catch {
     return {
       topic_pool_updates: 0,
       persona_weight_changes: {},
-      platform_allocation: { naver: 0.7, instagram: 0.2, facebook: 0.1 },
+      platform_allocation: platformAllocation,
       next_cycle_hints: [],
     };
   }
