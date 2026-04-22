@@ -852,16 +852,26 @@ export async function deletePosition(symbol, { exchange = null, paper = null, tr
 
 // ─── 집계 ───────────────────────────────────────────────────────────
 
-export async function getTodayPnl() {
+export async function getTodayPnl(exchange = null) {
+  const conditions = [
+    `status = 'closed'`,
+    `exit_time IS NOT NULL`,
+    `to_timestamp(exit_time / 1000.0)::date = current_date`,
+  ];
+  const params = [];
+
+  if (exchange) {
+    params.push(exchange);
+    conditions.push(`exchange = $${params.length}`);
+  }
+
   const rows = await query(`
     SELECT
       COALESCE(SUM(pnl_net), 0) AS pnl,
       COUNT(*) AS trade_count
     FROM trade_journal
-    WHERE status = 'closed'
-      AND exit_time IS NOT NULL
-      AND to_timestamp(exit_time / 1000.0)::date = current_date
-  `);
+    WHERE ${conditions.join(' AND ')}
+  `, params);
   return rows[0] || { pnl: 0, trade_count: 0 };
 }
 

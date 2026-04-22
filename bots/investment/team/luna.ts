@@ -1324,7 +1324,7 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
     }
 
     console.log(`  ✅ [루나] 신호 저장: ${signalId} (${dec.symbol} ${dec.action})`);
-    await notifySignal({ ...signalData, paper: paperMode });
+    await notifySignal({ ...signalData, paper: paperMode, exchange, tradeMode: signalData.tradeMode || null });
 
     // RAG 저장: 투자 신호 이력을 rag_trades에 학습 데이터로 기록
     try {

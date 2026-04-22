@@ -2,6 +2,7 @@
 import * as db from '../shared/db.ts';
 import { notifySignal, notifyTradeSkip } from '../shared/report.ts';
 import { loadLatestNodePayload } from './helpers.ts';
+import { isPaperMode } from '../shared/secrets.ts';
 
 const NODE_ID = 'L32';
 
@@ -55,7 +56,9 @@ async function run({ sessionId, market, symbol, saved: savedOverride = null }) {
     amountUsdt: signal.amount_usdt,
     confidence: signal.confidence,
     reasoning: signal.reasoning,
-    paper: true,
+    paper: isPaperMode(),
+    exchange: signal.exchange || market,
+    tradeMode: signal.trade_mode || null,
   }).catch(() => {});
 
   return {

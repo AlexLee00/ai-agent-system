@@ -263,7 +263,7 @@ async function recordHanulEntryJournal({
 async function finalizeHanulTrade({ trade, signalId, currency, tag }) {
   await db.insertTrade(trade);
   await db.updateSignalStatus(signalId, SIGNAL_STATUS.EXECUTED);
-  await notifyTrade({ ...trade, currency });
+  await notifyTrade({ ...trade, currency, tradeMode: trade.tradeMode || trade.trade_mode || getInvestmentTradeMode() });
   const priceLabel = currency === 'KRW'
     ? `${trade.price?.toLocaleString()}원`
     : `$${trade.price}`;
@@ -725,7 +725,7 @@ export async function executeSignal(signal) {
 
     // 신호 알람 (BUY/SELL만, HOLD 제외)
     if (action !== ACTIONS.HOLD) {
-      notifyKisSignal({ symbol, action, amountKrw, confidence: signal.confidence, reasoning: signal.reasoning, paper: paperMode || kisPaper });
+      notifyKisSignal({ symbol, action, amountKrw, confidence: signal.confidence, reasoning: signal.reasoning, paper: paperMode || kisPaper, tradeMode: signalTradeMode });
     }
 
     const kis = await getKis();
@@ -880,7 +880,7 @@ export async function executeOverseasSignal(signal) {
 
     // 신호 알람 (BUY/SELL만, HOLD 제외)
     if (action !== ACTIONS.HOLD) {
-      notifyKisOverseasSignal({ symbol, action, amountUsdt: amountUsd, confidence: signal.confidence, reasoning: signal.reasoning, paper: paperMode || kisPaper });
+      notifyKisOverseasSignal({ symbol, action, amountUsdt: amountUsd, confidence: signal.confidence, reasoning: signal.reasoning, paper: paperMode || kisPaper, tradeMode: signalTradeMode });
     }
 
     const kis = await getKis();

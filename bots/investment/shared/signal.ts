@@ -11,7 +11,7 @@
 import * as db from './db.ts';
 import { isPaperMode } from './secrets.ts';
 import { publishAlert } from './alert-publisher.ts';
-import { getCapitalConfig } from './capital-manager.ts';
+import { getCapitalConfig, getMarketAvailableFunds } from './capital-manager.ts';
 import { getExchangeEvidenceBaseline } from './runtime-config.ts';
 
 export const ACTIONS = Object.freeze({
@@ -112,6 +112,40 @@ async function getTotalAsset() {
   return equity ?? SAFETY.INITIAL_EQUITY;
 }
 
+function isStockExchange(exchange = null) {
+  return exchange === 'kis' || exchange === 'kis_overseas';
+}
+
+function formatSafetyAmount(exchange, amount) {
+  const value = Number(amount || 0);
+  if (exchange === 'kis') return `${Math.round(value).toLocaleString('ko-KR')}원`;
+  return `$${value.toFixed(0)}`;
+}
+
+async function getScopedTotalAsset(signal) {
+  const exchange = signal.exchange || null;
+  const tradeMode = signal.trade_mode || null;
+
+  if (!isStockExchange(exchange)) {
+    return getTotalAsset();
+  }
+
+  const [availableFunds, positions] = await Promise.all([
+    getMarketAvailableFunds(exchange).catch(() => 0),
+    db.getAllPositions(exchange, false, tradeMode).catch(() => []),
+  ]);
+
+  const positionValue = positions.reduce((sum, position) => {
+    const amount = Number(position.amount || 0);
+    const avgPrice = Number(position.avg_price || 0);
+    return sum + (amount * avgPrice);
+  }, 0);
+
+  const totalAsset = Number(availableFunds || 0) + positionValue;
+  if (totalAsset > 0) return totalAsset;
+  return null;
+}
+
 async function getMaxDrawdown(exchange = null) {
   const baseline = exchange ? getExchangeEvidenceBaseline(exchange) : null;
   const rows = await db.getEquityHistory(200, {
@@ -136,7 +170,9 @@ async function getMaxDrawdown(exchange = null) {
 export async function checkSafetyGates(signal) {
   const { action, amount_usdt: orderValue, symbol } = signal;
   const isBuy = action === ACTIONS.BUY;
-  const totalAsset = await getTotalAsset();
+  const totalAsset = await getScopedTotalAsset(signal);
+  const hasAssetBase = Number(totalAsset || 0) > 0;
+  const useGenericAssetRules = !isStockExchange(signal.exchange) || hasAssetBase;
   const limits = getSignalLimits(signal.exchange, signal.trade_mode || null);
   const maxSinglePct = limits.MAX_SINGLE_PCT;
   const maxCapitalUsage = limits.MAX_CAPITAL_USAGE;
@@ -146,10 +182,10 @@ export async function checkSafetyGates(signal) {
   const cooldownMinutes = limits.COOLDOWN_MINUTES;
 
   // 원칙 1 — 단일 포지션 ≤ config.max_position_pct
-  if (isBuy && orderValue > totalAsset * maxSinglePct) {
+  if (isBuy && useGenericAssetRules && orderValue > totalAsset * maxSinglePct) {
     return {
       passed: false,
-      reason: `원칙1 위반: 단일 포지션 한도 초과 ($${orderValue?.toFixed(0)} > $${(totalAsset * maxSinglePct).toFixed(0)})`,
+      reason: `원칙1 위반: 단일 포지션 한도 초과 (${formatSafetyAmount(signal.exchange, orderValue)} > ${formatSafetyAmount(signal.exchange, totalAsset * maxSinglePct)})`,
     };
   }
 
@@ -161,12 +197,14 @@ export async function checkSafetyGates(signal) {
       const avgPrice = Number(position.avg_price || 0);
       return sum + (amount * avgPrice);
     }, 0);
-    const projectedExposure = currentExposure + Number(orderValue || 0);
-    if (projectedExposure > totalAsset * maxCapitalUsage) {
-      return {
-        passed: false,
-        reason: `원칙2 위반: 총 자본 사용률 초과 ($${projectedExposure.toFixed(0)} > $${(totalAsset * maxCapitalUsage).toFixed(0)})`,
-      };
+    if (useGenericAssetRules) {
+      const projectedExposure = currentExposure + Number(orderValue || 0);
+      if (projectedExposure > totalAsset * maxCapitalUsage) {
+        return {
+          passed: false,
+          reason: `원칙2 위반: 총 자본 사용률 초과 (${formatSafetyAmount(signal.exchange, projectedExposure)} > ${formatSafetyAmount(signal.exchange, totalAsset * maxCapitalUsage)})`,
+        };
+      }
     }
 
     // 원칙 3 — 동시 포지션 ≤ config.max_concurrent_positions
@@ -176,11 +214,11 @@ export async function checkSafetyGates(signal) {
   }
 
   // 원칙 4 — 일일 손실 ≤ config.max_daily_loss_pct
-  const { pnl } = await db.getTodayPnl();
-  if ((pnl ?? 0) < -(totalAsset * maxDailyLoss)) {
+  const { pnl } = await db.getTodayPnl(signal.exchange || null);
+  if (useGenericAssetRules && (pnl ?? 0) < -(totalAsset * maxDailyLoss)) {
     return {
       passed: false,
-      reason: `원칙4 위반: 일일 손실 한도 초과 ($${Math.abs(pnl).toFixed(2)} > $${(totalAsset * maxDailyLoss).toFixed(2)})`,
+      reason: `원칙4 위반: 일일 손실 한도 초과 (${formatSafetyAmount(signal.exchange, Math.abs(pnl))} > ${formatSafetyAmount(signal.exchange, totalAsset * maxDailyLoss)})`,
     };
   }
 
@@ -202,8 +240,8 @@ export async function checkSafetyGates(signal) {
   }
 
   // 원칙 6 — 최대 드로우다운 ≤ 15%
-  const maxDD = await getMaxDrawdown(signal.exchange || null);
-  if (maxDD > limits.MAX_DRAWDOWN) {
+  const maxDD = useGenericAssetRules ? await getMaxDrawdown(signal.exchange || null) : 0;
+  if (useGenericAssetRules && maxDD > limits.MAX_DRAWDOWN) {
     return {
       passed: false,
       reason: `원칙6 위반: 최대 드로우다운 초과 (${(maxDD * 100).toFixed(1)}% > ${(limits.MAX_DRAWDOWN * 100).toFixed(1)}%) → 사용자 승인 필요`,

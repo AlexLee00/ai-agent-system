@@ -296,8 +296,24 @@ export function isPaperMode() {
   return getTradingMode() === 'paper';
 }
 
-export function formatExecutionTag(paper) {
-  return paper ? '[PAPER] ' : '';
+export function formatExecutionTag(input = null) {
+  if (typeof input === 'boolean') {
+    return input ? '[PAPER] ' : '[LIVE] ';
+  }
+
+  const exchange = String(input?.exchange || 'binance').trim().toLowerCase();
+  const marketType = exchange === 'kis' || exchange === 'kis_overseas' ? 'stocks' : 'crypto';
+  const modeInfo = getMarketExecutionModeInfo(marketType, exchange);
+  const executionMode = input?.paper === true
+    ? 'paper'
+    : input?.paper === false
+      ? 'live'
+      : modeInfo.executionMode;
+  const brokerAccountMode = modeInfo.brokerAccountMode;
+  const tradeMode = String(input?.tradeMode || modeInfo.investmentTradeMode || getInvestmentTradeMode()).trim().toLowerCase();
+  const normalizedTradeMode = tradeMode === 'validation' ? 'validation' : 'normal';
+
+  return `[${executionMode.toUpperCase()}/${brokerAccountMode.toUpperCase()}][${normalizedTradeMode}] `;
 }
 
 export function getExecutionMode() {

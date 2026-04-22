@@ -875,6 +875,7 @@ async function notifyExecutedTrade({ trade, signalTradeMode, capitalPolicy }) {
 
   await notifyTrade({
     ...trade,
+    tradeMode: signalTradeMode,
     capitalInfo: {
       balance: curBalance,
       openPositions: curPositions.length,
@@ -1495,6 +1496,7 @@ async function maybePromotePaperPositions({ reserveSlots = 0 } = {}) {
 
     await notifyTrade({
       ...trade,
+      tradeMode: 'normal',
       memo: `기존 PAPER 포지션 실투자 승격 (${paperPos.amount?.toFixed(6)} → ${trade.amount?.toFixed(6)})`,
     }).catch(() => {});
 
@@ -1680,6 +1682,7 @@ async function _tryBuyWithBtcPair(symbol, base, signalId, signal, paperMode) {
 
   await notifyTrade({
     ...trade,
+    tradeMode: getInvestmentTradeMode(),
     memo: `BTC 직접 매수 (${btcPair}) — 미추적 BTC ${untrackedBtc.toFixed(6)} 활용${paperMode ? ' [PAPER]' : ''}`,
   }).catch(() => {});
 
@@ -1733,6 +1736,7 @@ async function _liquidateUntrackedForCapital(excludeBase, paperMode) {
       totalUsdt: totalUsd,
       paper:     paperMode,
       exchange:  'binance',
+      tradeMode: getInvestmentTradeMode(),
       memo:      `미추적 코인 청산 → 신규 매수 자본 확보${paperMode ? ' [PAPER]' : ''}`,
     }).catch(() => {});
   }

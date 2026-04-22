@@ -95,8 +95,8 @@ export function sendTelegram(message) {
 
 // ─── 신호 포매터 ─────────────────────────────────────────────────────
 
-export function notifySignal({ symbol, action, amountUsdt, confidence, reasoning, paper }) {
-  const tag   = formatExecutionTag(paper);
+export function notifySignal({ symbol, action, amountUsdt, confidence, reasoning, paper, exchange = 'binance', tradeMode = null }) {
+  const tag   = formatExecutionTag({ paper, exchange, tradeMode });
   const emoji = action === 'BUY' ? '🟢' : action === 'SELL' ? '🔴' : '🟡';
   const msg   = [
     `${tag}${emoji} ${action} 신호 — ${symbol}`,
@@ -108,8 +108,8 @@ export function notifySignal({ symbol, action, amountUsdt, confidence, reasoning
 }
 
 /** @param {any} input */
-export function notifyTrade({ symbol, side, amount, price, totalUsdt, paper, tpPrice, slPrice, tpslSource, capitalInfo, memo }) {
-  const tag   = formatExecutionTag(paper);
+export function notifyTrade({ symbol, side, amount, price, totalUsdt, paper, exchange = 'binance', tradeMode = null, tpPrice, slPrice, tpslSource, capitalInfo, memo }) {
+  const tag   = formatExecutionTag({ paper, exchange, tradeMode });
   const emoji = side === 'buy'       ? '✅ 매수'
               : side === 'sell'      ? '✅ 매도'
               : side === 'absorb'    ? '🔄 BTC 흡수'
@@ -137,8 +137,8 @@ export function notifyTrade({ symbol, side, amount, price, totalUsdt, paper, tpP
   return publishLunaMessage({ message: lines.join('\n'), eventType: 'trade', alertLevel: 1 });
 }
 
-export function notifyKisSignal({ symbol, action, amountKrw, confidence, reasoning, paper }) {
-  const tag   = formatExecutionTag(paper);
+export function notifyKisSignal({ symbol, action, amountKrw, confidence, reasoning, paper, tradeMode = null }) {
+  const tag   = formatExecutionTag({ paper, exchange: 'kis', tradeMode });
   const emoji = action === 'BUY' ? '🟢' : action === 'SELL' ? '🔴' : '🟡';
   const msg   = [
     `${tag}${emoji} [국내주식] ${action} 신호 — ${symbol}`,
@@ -149,8 +149,8 @@ export function notifyKisSignal({ symbol, action, amountKrw, confidence, reasoni
   return publishLunaMessage({ message: msg, eventType: 'signal', alertLevel: 1 });
 }
 
-export function notifyKisOverseasSignal({ symbol, action, amountUsdt, confidence, reasoning, paper }) {
-  const tag   = formatExecutionTag(paper);
+export function notifyKisOverseasSignal({ symbol, action, amountUsdt, confidence, reasoning, paper, tradeMode = null }) {
+  const tag   = formatExecutionTag({ paper, exchange: 'kis_overseas', tradeMode });
   const emoji = action === 'BUY' ? '🟢' : action === 'SELL' ? '🔴' : '🟡';
   const msg   = [
     `${tag}${emoji} [미국주식] ${action} 신호 — ${symbol}`,
@@ -235,13 +235,16 @@ export function notifyError(context, error) {
 /** @param {any} input */
 export function notifyJournalEntry({
   tradeId, symbol, direction = 'long', market = 'crypto',
+  exchange = null, tradeMode = null,
   entryPrice, entryValue, isPaper,
   confidence, reasoning,
   tpPrice, slPrice, tpSlSet, tpslSource,
   signalToExecMs,
   capitalInfo,  // { balance, openPositions, maxPositions, dailyPnL, totalCapital }
 }) {
-  const tag      = formatExecutionTag(isPaper);
+  const inferredExchange = exchange
+    || (market === 'domestic' ? 'kis' : market === 'overseas' ? 'kis_overseas' : 'binance');
+  const tag      = formatExecutionTag({ paper: isPaper, exchange: inferredExchange, tradeMode });
   const dir      = direction === 'long' ? 'LONG' : 'SHORT';
   const currency = market === 'domestic' ? '₩' : '$';
   const fmtPrice = (v) => v != null ? `${currency}${Number(v).toLocaleString()}` : '-';
@@ -443,8 +446,8 @@ export function notifyWeeklyReflection({ weekStart, weekEnd, trades, wins, losse
   return publishLunaMessage({ message: lines.join('\n'), eventType: 'report', alertLevel: 1 });
 }
 
-export function notifyCycleSummary({ cycle, symbols, results, paperMode, durationMs }) {
-  const tag   = formatExecutionTag(paperMode);
+export function notifyCycleSummary({ cycle, symbols, results, paperMode, durationMs, exchange = 'binance', tradeMode = null }) {
+  const tag   = formatExecutionTag({ paper: paperMode, exchange, tradeMode });
   const lines = [
     `${tag}🔄 ${cycle} 사이클 완료`,
     `심볼: ${symbols.join(', ')}`,
