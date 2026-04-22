@@ -793,6 +793,22 @@ function buildReport(days, summaries, validationSummaries, validationBudgetSnaps
   };
 }
 
+function normalizeAnnotatedSuggestions(items = []) {
+  return items.map((item) => {
+    if (item.current !== item.suggested) return item;
+    if (item.action === 'hold' || item.action === 'observe') return item;
+    const alreadyApplied = item.changeAllowed && !item.blockedByPolicy;
+    return {
+      ...item,
+      action: alreadyApplied ? 'observe' : 'hold',
+      reason: alreadyApplied
+        ? `${item.reason} 현재 런타임 값과 제안값이 같아 추가 조정보다 반영 효과 관찰이 우선입니다.`
+        : `${item.reason} 현재 값과 제안값이 같아 새 조정 작업은 필요하지 않습니다.`,
+      alreadyApplied,
+    };
+  });
+}
+
 function printHuman(report) {
   const lines = [];
   lines.push(`🔧 투자 runtime_config 변경 제안 (${report.periodDays}일)`);
@@ -938,8 +954,10 @@ export async function buildRuntimeConfigSuggestionsReport({ days = 14, write = f
     validationBudgetPolicy,
     previousPolicySnapshot,
   );
-  const suggestions = annotateRuntimeSuggestions(
-    buildSuggestions(config, executionConfig, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, cryptoSoftGuardSummary, regimeLaneSummary),
+  const suggestions = normalizeAnnotatedSuggestions(
+    annotateRuntimeSuggestions(
+      buildSuggestions(config, executionConfig, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, cryptoSoftGuardSummary, regimeLaneSummary),
+    ),
   );
   const report = buildReport(
     days,
