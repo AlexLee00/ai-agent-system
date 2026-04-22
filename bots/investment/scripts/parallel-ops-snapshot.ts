@@ -51,15 +51,31 @@ function sanitizeInsightLine(text = '') {
     ) || '';
 }
 
+function getWeakestRegimeSummary(runtimeLearningLoop) {
+  const weakest = runtimeLearningLoop?.sections?.regimeLaneSummary?.weakestRegime
+    || runtimeLearningLoop?.sections?.collect?.regimePerformance?.weakestRegime
+    || null;
+  const weakestMode = weakest?.tradeMode || weakest?.worstMode?.tradeMode || weakest?.bestMode?.tradeMode || null;
+  return {
+    weakest,
+    weakestMode,
+  };
+}
+
 function buildSnapshotFallbackInsight(snapshot) {
   const warnCount = Number(snapshot?.health?.serviceHealth?.warnCount || 0);
   const overlapCount = Number(snapshot?.overlap?.investment_overlaps?.length || 0);
   const failingAgents = (snapshot?.portAgents || []).filter((row) => Number(row?.consecutive_failures || 0) > 0);
+  const learningLoopStatus = snapshot?.health?.runtimeLearningLoop?.decision?.status;
+  const { weakest: weakestRegime, weakestMode } = getWeakestRegimeSummary(snapshot?.health?.runtimeLearningLoop);
   const activeMarkets = ['crypto', 'domestic', 'overseas'].filter((market) => {
     const latest = Number(snapshot?.screening?.[market]?.summary?.trend?.latestDynamicCount || 0);
     return latest > 0;
   });
 
+  if (learningLoopStatus === 'regime_strategy_tuning_needed') {
+    return `현재 최우선 운영 포인트는 ${weakestRegime?.regime || 'n/a'} / ${weakestMode || 'n/a'} 레짐 레인 튜닝이며 runtime-suggest로 조정안을 먼저 확인하는 편이 좋습니다.`;
+  }
   if (warnCount > 0) {
     return `현재 운영 경고 ${warnCount}건이 있어 서비스 헬스와 게이트 상태를 먼저 점검하는 편이 좋습니다.`;
   }
@@ -156,6 +172,59 @@ function extractJsonMarker(output) {
   return JSON.parse(line.slice('__JSON__'.length));
 }
 
+function parseJsonFromMixedOutput(output) {
+  const text = String(output || '').trim();
+  if (!text) throw new Error('empty output');
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    let inString = false;
+    let escaped = false;
+    let depth = 0;
+    let candidateStart = -1;
+    let lastBalanced = null;
+
+    for (let i = 0; i < text.length; i += 1) {
+      const ch = text[i];
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+        } else if (ch === '\\') {
+          escaped = true;
+        } else if (ch === '"') {
+          inString = false;
+        }
+        continue;
+      }
+
+      if (ch === '"') {
+        inString = true;
+        continue;
+      }
+
+      if (ch === '{') {
+        if (depth === 0) candidateStart = i;
+        depth += 1;
+        continue;
+      }
+
+      if (ch === '}') {
+        if (depth > 0) depth -= 1;
+        if (depth === 0 && candidateStart !== -1) {
+          lastBalanced = text.slice(candidateStart, i + 1);
+          candidateStart = -1;
+        }
+      }
+    }
+
+    if (!lastBalanced) {
+      throw new Error('JSON payload not found');
+    }
+    return JSON.parse(lastBalanced);
+  }
+}
+
 function loadHealthReport() {
   const result = tryRunCommand('node', [
     path.resolve(INVESTMENT_ROOT, 'scripts', 'health-report.ts'),
@@ -169,7 +238,7 @@ function loadHealthReport() {
       error: String(result.error || 'health-report failed').trim(),
     };
   }
-  return { ...JSON.parse(result.output), error: null };
+  return { ...parseJsonFromMixedOutput(result.output), error: null };
 }
 
 async function loadScreeningHistory() {
@@ -263,6 +332,7 @@ async function buildSnapshot() {
       serviceHealth: health.serviceHealth,
       decision: health.decision,
       cryptoLiveGateHealth: health.cryptoLiveGateHealth,
+      runtimeLearningLoop: health.runtimeLearningLoop,
       error: health.error,
     },
     screening,
@@ -290,6 +360,14 @@ async function printText(snapshot) {
   }
   snapshot.health.serviceHealth.ok.forEach((line) => console.log(line));
   snapshot.health.serviceHealth.warn.forEach((line) => console.log(line));
+  if (snapshot.health.runtimeLearningLoop?.decision?.status === 'regime_strategy_tuning_needed') {
+    const { weakest, weakestMode } = getWeakestRegimeSummary(snapshot.health.runtimeLearningLoop);
+    const topSuggestion = snapshot.health.runtimeLearningLoop?.sections?.strategy?.runtimeSuggestionTop;
+    console.log('');
+    console.log('learning loop:');
+    console.log(`  - weakest: ${weakest?.regime || 'n/a'} / ${weakestMode}`);
+    console.log(`  - top suggestion: ${topSuggestion?.key || 'n/a'} -> ${topSuggestion?.suggestedValue ?? topSuggestion?.suggested ?? 'n/a'}`);
+  }
   console.log('');
   console.log('PortAgent 상태:');
   if (snapshot.portAgentError) {
