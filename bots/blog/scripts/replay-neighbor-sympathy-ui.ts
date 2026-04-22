@@ -42,9 +42,38 @@ async function getLatestCandidate() {
   `);
 }
 
+async function getLatestFailedSympathyAction() {
+  const row = await pgPool.get('blog', `
+    SELECT
+      executed_at,
+      meta
+    FROM blog.comment_actions
+    WHERE action_type = 'neighbor_sympathy'
+      AND success = false
+    ORDER BY executed_at DESC
+    LIMIT 1
+  `);
+  const meta = row?.meta && typeof row.meta === 'object' ? row.meta : null;
+  const replay = meta?.replay && typeof meta.replay === 'object' ? meta.replay : null;
+  const postUrl = String(replay?.postUrl || meta?.postUrl || '').trim();
+  if (!postUrl) return null;
+  return {
+    id: null,
+    post_url: postUrl,
+    target_blog_id: '',
+    target_blog_name: String(meta?.targetBlogName || '').trim(),
+    post_title: '',
+    status: 'failed',
+    source: 'comment_action_failure',
+    executed_at: row?.executed_at || null,
+  };
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const candidate = (await getCandidateById(args.candidateId)) || (await getLatestCandidate());
+  const candidate = (await getCandidateById(args.candidateId))
+    || (await getLatestFailedSympathyAction())
+    || (await getLatestCandidate());
   if (!candidate?.post_url) {
     const payload = { ok: false, error: 'neighbor_candidate_not_found' };
     fs.mkdirSync(BLOG_OPS_DIR, { recursive: true });
@@ -68,6 +97,8 @@ async function main() {
       targetBlogName: candidate.target_blog_name,
       postTitle: candidate.post_title,
       status: candidate.status,
+      source: candidate.source || 'neighbor_comments',
+      failedAt: candidate.executed_at || null,
     },
     result,
   };
