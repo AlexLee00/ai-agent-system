@@ -22,6 +22,7 @@ import {
 } from '../shared/secrets.ts';
 import { getValidationSoftBudgetConfig } from '../shared/runtime-config.ts';
 import { loadCandidates as loadForceExitCandidates } from './force-exit-candidate-report.ts';
+import { buildRuntimeLearningLoopReport } from './runtime-learning-loop-report.ts';
 import {
   buildGuardHealth,
   buildScheduledDeploymentState,
@@ -618,6 +619,7 @@ function buildDecision(
   capitalGuardBreakdown,
   cryptoValidationBudgetPolicyHealth,
   localLlmHealth,
+  runtimeLearningLoop,
 ) {
   const topBlock = signalBlockHealth.top[0] || null;
   const topReasonGroup = signalBlockHealth.topReasonGroups?.[0] || null;
@@ -738,6 +740,11 @@ function buildDecision(
         active: localLlmHealth.warnCount > 0 || localLlmHealth.flapping?.status === 'flapping' || localLlmHealth.redundancy?.status === 'primary_only',
         level: 'medium',
         reason: `local LLM ${localLlmHealth.flapping?.status === 'flapping' ? `flapping(${localLlmHealth.flapping.transitionCount}회 전환)` : localLlmHealth.probe?.error ? `probe 실패(${localLlmHealth.probe.error})` : `circuit ${localLlmHealth.status?.state || 'OPEN'}`} — ${localLlmHealth.baseUrl}${localLlmHealth.status?.state === 'OPEN' ? ` / ${Math.ceil(Number(localLlmHealth.status?.remainingMs || 0) / 1000)}초 후 재시도` : ''}${localLlmHealth.redundancy?.status === 'primary_only' ? ` / standby 없음(${localLlmHealth.redundancy.summary})` : ''}`,
+      },
+      {
+        active: runtimeLearningLoop?.decision?.status === 'regime_strategy_tuning_needed',
+        level: 'medium',
+        reason: `learning loop — ${runtimeLearningLoop?.decision?.headline || '레짐별 전략 튜닝 필요'} / top suggestion ${runtimeLearningLoop?.sections?.strategy?.runtimeSuggestionTop?.key || 'n/a'} -> ${runtimeLearningLoop?.sections?.strategy?.runtimeSuggestionTop?.suggested ?? 'n/a'}`,
       },
     ],
     okReason: '핵심 서비스와 trade_review 정합성이 현재는 안정 구간입니다.',
@@ -921,6 +928,19 @@ function formatText(report) {
     buildHealthCountSection('■ KIS 실행 capability', report.kisCapabilityHealth, { okLimit: 1, warnLimit: 2 }),
     buildHealthCountSection('■ rail별 신규 진입 한도(오늘)', report.tradeLaneHealth, { okLimit: 6, warnLimit: 6 }),
     {
+      title: '■ learning loop / regime tuning',
+      lines: report.runtimeLearningLoop
+        ? [
+            `  status: ${report.runtimeLearningLoop.decision?.status || 'unknown'}`,
+            `  headline: ${report.runtimeLearningLoop.decision?.headline || 'n/a'}`,
+            `  weakest: ${report.runtimeLearningLoop.sections?.collect?.regimePerformance?.weakestRegime?.regime || 'n/a'} / ${report.runtimeLearningLoop.sections?.collect?.regimePerformance?.weakestRegime?.worstMode?.tradeMode || 'n/a'} / avg ${report.runtimeLearningLoop.sections?.collect?.regimePerformance?.weakestRegime?.worstMode?.avgPnlPercent ?? 'n/a'}%`,
+            `  strongest: ${report.runtimeLearningLoop.sections?.collect?.regimePerformance?.strongestRegime?.regime || 'n/a'} / ${report.runtimeLearningLoop.sections?.collect?.regimePerformance?.strongestRegime?.bestMode?.tradeMode || 'n/a'} / avg ${report.runtimeLearningLoop.sections?.collect?.regimePerformance?.strongestRegime?.bestMode?.avgPnlPercent ?? 'n/a'}%`,
+            `  top suggestion: ${report.runtimeLearningLoop.sections?.strategy?.runtimeSuggestionTop?.key || 'n/a'} -> ${report.runtimeLearningLoop.sections?.strategy?.runtimeSuggestionTop?.suggested ?? 'n/a'} (${report.runtimeLearningLoop.sections?.strategy?.runtimeSuggestionTop?.action || 'n/a'})`,
+            ...((report.runtimeLearningLoop.decision?.nextActions || []).slice(0, 3).map((item) => `  next: ${item}`)),
+          ]
+        : ['  learning loop 정보 없음'],
+    },
+    {
       title: null,
       lines: buildHealthDecisionSection({
         title: '■ 운영 판단',
@@ -990,6 +1010,7 @@ async function buildReport() {
     capitalGuardBreakdown,
   );
   const localLlmHealth = await loadLocalLlmHealth(status);
+  const runtimeLearningLoop = await buildRuntimeLearningLoopReport({ days: 14, json: true }).catch(() => null);
   const cryptoGateActionPlan = buildCryptoGateActionPlan(capitalGuardBreakdown);
   const kisCapabilityHealth = await loadKisCapabilityHealth();
   const decision = buildDecision(
@@ -1011,6 +1032,7 @@ async function buildReport() {
     capitalGuardBreakdown,
     cryptoValidationBudgetPolicyHealth,
     localLlmHealth,
+    runtimeLearningLoop,
   );
 
   const report = {
@@ -1035,6 +1057,7 @@ async function buildReport() {
     stalePositionHealth,
     cryptoLiveGateHealth,
     localLlmHealth,
+    runtimeLearningLoop,
     capitalGuardBreakdown,
     cryptoGateActionPlan,
     cryptoValidationBudgetPolicyHealth,
