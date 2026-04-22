@@ -216,6 +216,7 @@ export async function initSchema() {
     ['trade_mode',      `TEXT DEFAULT 'normal'`],
     ['nemesis_verdict', 'TEXT'],        // SEC-004: approved | modified | rejected | null(미경유)
     ['approved_at',     'TIMESTAMPTZ'], // SEC-004: stale signal 감지용
+    ['partial_exit_ratio', 'DOUBLE PRECISION'],
   ]) {
     try { await run(`ALTER TABLE signals ADD COLUMN IF NOT EXISTS ${col} ${type}`); } catch { /* 무시 */ }
   }
@@ -350,13 +351,37 @@ export async function getRecentAnalysis(symbol, minutesBack = 30, exchange = nul
 
 // ─── signals ────────────────────────────────────────────────────────
 
-export async function insertSignal({ symbol, action, amountUsdt, confidence, reasoning, exchange = 'binance', analystSignals = null, tradeMode = null, nemesisVerdict = null, approvedAt = null }) {
+export async function insertSignal({
+  symbol,
+  action,
+  amountUsdt,
+  confidence,
+  reasoning,
+  exchange = 'binance',
+  analystSignals = null,
+  tradeMode = null,
+  nemesisVerdict = null,
+  approvedAt = null,
+  partialExitRatio = null,
+}) {
   const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
   const rows = await query(
-    `INSERT INTO signals (symbol, action, amount_usdt, confidence, reasoning, status, exchange, analyst_signals, trade_mode, nemesis_verdict, approved_at)
-     VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8, $9, $10)
+    `INSERT INTO signals (symbol, action, amount_usdt, confidence, reasoning, status, exchange, analyst_signals, trade_mode, nemesis_verdict, approved_at, partial_exit_ratio)
+     VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8, $9, $10, $11)
      RETURNING id`,
-    [symbol, action, amountUsdt ?? null, confidence ?? null, reasoning ?? null, exchange, analystSignals ?? null, effectiveTradeMode, nemesisVerdict ?? null, approvedAt ?? null],
+    [
+      symbol,
+      action,
+      amountUsdt ?? null,
+      confidence ?? null,
+      reasoning ?? null,
+      exchange,
+      analystSignals ?? null,
+      effectiveTradeMode,
+      nemesisVerdict ?? null,
+      approvedAt ?? null,
+      partialExitRatio ?? null,
+    ],
   );
   return rows[0]?.id;
 }

@@ -398,6 +398,13 @@ function isStopLossOnlyMode(mode = null) {
     || mode === 'exchange_stop_loss_only';
 }
 
+function normalizePartialExitRatio(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 1;
+  if (parsed >= 1) return 1;
+  return Number(parsed.toFixed(4));
+}
+
 async function closeOpenJournalForSymbol(symbol, isPaper, exitPrice, exitValue, exitReason, tradeMode = null) {
   const openEntries = await journalDb.getOpenJournalEntries('crypto');
   const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
@@ -454,6 +461,105 @@ async function closeOpenJournalForSymbol(symbol, isPaper, exitPrice, exitValue, 
     signalAccuracy: review?.signal_accuracy ?? null,
     executionSpeed: review?.execution_speed ?? null,
   }).catch(() => {});
+}
+
+async function settleOpenJournalForSell(
+  symbol,
+  isPaper,
+  exitPrice,
+  exitValue,
+  exitReason,
+  tradeMode = null,
+  {
+    partialExitRatio = null,
+    soldAmount = null,
+    signalId = null,
+  } = {},
+) {
+  const openEntries = await journalDb.getOpenJournalEntries('crypto');
+  const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
+  const entry = openEntries.find((e) =>
+    e.symbol === symbol
+      && Boolean(e.is_paper) === Boolean(isPaper)
+      && (e.trade_mode || 'normal') === effectiveTradeMode
+  );
+  if (!entry) return { partial: false, updated: false };
+
+  const normalizedRatio = normalizePartialExitRatio(partialExitRatio);
+  const entrySize = Number(entry.entry_size || 0);
+  const entryValue = Number(entry.entry_value || 0);
+  const realizedSize = Math.min(entrySize, Math.max(0, Number(soldAmount || 0)));
+  const isPartial = normalizedRatio < 1 && realizedSize > 0 && realizedSize < entrySize;
+
+  if (!isPartial) {
+    await closeOpenJournalForSymbol(symbol, isPaper, exitPrice, exitValue, exitReason, effectiveTradeMode);
+    return { partial: false, updated: true };
+  }
+
+  const realizedEntryValue = entrySize > 0
+    ? entryValue * (realizedSize / entrySize)
+    : 0;
+  const pnlAmount = (exitValue || 0) - realizedEntryValue;
+  const pnlPercent = realizedEntryValue > 0
+    ? journalDb.ratioToPercent(pnlAmount / realizedEntryValue)
+    : null;
+  const remainingSize = Math.max(0, entrySize - realizedSize);
+  const remainingEntryValue = Math.max(0, entryValue - realizedEntryValue);
+  const partialTradeId = await journalDb.generateTradeId();
+
+  await journalDb.insertJournalEntry({
+    trade_id: partialTradeId,
+    signal_id: signalId ?? entry.signal_id ?? null,
+    market: entry.market,
+    exchange: entry.exchange,
+    symbol: entry.symbol,
+    is_paper: entry.is_paper,
+    trade_mode: entry.trade_mode,
+    entry_time: entry.entry_time,
+    entry_price: entry.entry_price,
+    entry_size: realizedSize,
+    entry_value: realizedEntryValue,
+    direction: entry.direction || 'long',
+    signal_time: entry.signal_time ?? null,
+    decision_time: entry.decision_time ?? null,
+    execution_time: Date.now(),
+    signal_to_exec_ms: entry.signal_to_exec_ms ?? null,
+    tp_price: entry.tp_price ?? null,
+    sl_price: entry.sl_price ?? null,
+    tp_order_id: entry.tp_order_id ?? null,
+    sl_order_id: entry.sl_order_id ?? null,
+    tp_sl_set: entry.tp_sl_set ?? false,
+    tp_sl_mode: entry.tp_sl_mode ?? null,
+    tp_sl_error: entry.tp_sl_error ?? null,
+    market_regime: entry.market_regime ?? null,
+    market_regime_confidence: entry.market_regime_confidence ?? null,
+  });
+
+  await journalDb.closeJournalEntry(partialTradeId, {
+    exitPrice,
+    exitValue,
+    exitReason,
+    pnlAmount,
+    pnlPercent,
+    pnlNet: pnlAmount,
+  });
+
+  await db.run(
+    `UPDATE trade_journal
+     SET entry_size = $1,
+         entry_value = $2
+     WHERE trade_id = $3`,
+    [remainingSize, remainingEntryValue, entry.trade_id],
+  );
+
+  await journalDb.ensureAutoReview(partialTradeId).catch(() => {});
+  return {
+    partial: true,
+    updated: true,
+    realizedTradeId: partialTradeId,
+    remainingSize,
+    remainingEntryValue,
+  };
 }
 
 async function findAnyLivePosition(symbol, exchange = 'binance') {
@@ -954,13 +1060,18 @@ async function recordExecutedTradeJournal({ trade, signalId, exitReason }) {
   }
 
   if (trade.side === 'sell') {
-    await closeOpenJournalForSymbol(
+    await settleOpenJournalForSell(
       trade.symbol,
       trade.paper,
       trade.price,
       trade.totalUsdt,
       exitReason || 'signal_reverse',
       trade.tradeMode,
+      {
+        partialExitRatio: trade.partialExitRatio,
+        soldAmount: trade.amount,
+        signalId,
+      },
     );
   }
 }
@@ -1051,8 +1162,10 @@ async function resolveSellAmount({
   position,
   freeBalance,
   totalBalance,
+  partialExitRatio = null,
 }) {
   let amount = position?.amount;
+  const normalizedPartialExitRatio = normalizePartialExitRatio(partialExitRatio);
 
   if (!amount || amount <= 0) {
     amount = sellPaperMode
@@ -1102,25 +1215,33 @@ async function resolveSellAmount({
     }).catch(() => {});
   }
 
+  const sourcePositionAmount = Number(amount || 0);
+  if (normalizedPartialExitRatio < 1) {
+    amount = sourcePositionAmount * normalizedPartialExitRatio;
+  }
+
   if (!sellPaperMode) {
     const minSellAmount = await getMinSellAmount(symbol).catch(() => 0);
     const roundedAmount = roundSellAmount(symbol, amount);
     if (roundedAmount <= 0 || (minSellAmount > 0 && roundedAmount < minSellAmount)) {
       const reason = `최소 매도 수량 미달 (${roundedAmount || amount} < ${minSellAmount || 'exchange_min'})`;
       console.warn(`  ⚠️ ${symbol} ${reason} — SELL 스킵`);
-      await cleanupDustLivePosition(symbol, livePosition, signalTradeMode, {
-        signalId,
-        freeBalance,
-        roundedAmount: roundedAmount || amount,
-        minSellAmount,
-      });
+      if (normalizedPartialExitRatio >= 1) {
+        await cleanupDustLivePosition(symbol, livePosition, signalTradeMode, {
+          signalId,
+          freeBalance,
+          roundedAmount: roundedAmount || amount,
+          minSellAmount,
+        });
+      }
       await persistFailure(reason, {
-        code: 'sell_amount_below_minimum',
+        code: normalizedPartialExitRatio < 1 ? 'partial_sell_below_minimum' : 'sell_amount_below_minimum',
         meta: {
           requestedAmount: amount,
           roundedAmount,
           minSellAmount,
           sellPaperMode,
+          partialExitRatio: normalizedPartialExitRatio < 1 ? normalizedPartialExitRatio : null,
         },
       });
       return { success: false, reason };
@@ -1128,11 +1249,30 @@ async function resolveSellAmount({
     amount = roundedAmount;
   }
 
-  return { success: true, amount };
+  return {
+    success: true,
+    amount,
+    sourcePositionAmount,
+    partialExitRatio: normalizedPartialExitRatio,
+  };
 }
 
-async function executeSellTrade({ signalId, symbol, amount, sellPaperMode, effectivePositionTradeMode }) {
+async function executeSellTrade({
+  signalId,
+  symbol,
+  amount,
+  sellPaperMode,
+  effectivePositionTradeMode,
+  position,
+  sourcePositionAmount,
+  partialExitRatio = null,
+}) {
   const order = await marketSell(symbol, amount, sellPaperMode);
+  const soldAmount = Number(order.amount || amount || 0);
+  const effectiveRatio = normalizePartialExitRatio(partialExitRatio);
+  const baselineAmount = Number(sourcePositionAmount || position?.amount || 0);
+  const remainingAmount = Math.max(0, baselineAmount - soldAmount);
+  const isPartialExit = effectiveRatio < 1 && remainingAmount > 0.00000001;
   const trade = {
     signalId,
     symbol,
@@ -1143,13 +1283,31 @@ async function executeSellTrade({ signalId, symbol, amount, sellPaperMode, effec
     paper: sellPaperMode,
     exchange: 'binance',
     tradeMode: effectivePositionTradeMode,
+    partialExitRatio: isPartialExit ? effectiveRatio : null,
+    partialExit: isPartialExit,
+    remainingAmount: isPartialExit ? remainingAmount : 0,
   };
 
-  await db.deletePosition(symbol, {
-    exchange: 'binance',
-    paper: sellPaperMode,
-    tradeMode: effectivePositionTradeMode,
-  });
+  if (isPartialExit) {
+    const remainingUnrealizedPnl = baselineAmount > 0
+      ? Number(position?.unrealized_pnl || 0) * (remainingAmount / baselineAmount)
+      : 0;
+    await db.upsertPosition({
+      symbol,
+      amount: remainingAmount,
+      avgPrice: Number(position?.avg_price || 0),
+      unrealizedPnl: remainingUnrealizedPnl,
+      paper: sellPaperMode,
+      exchange: 'binance',
+      tradeMode: effectivePositionTradeMode,
+    });
+  } else {
+    await db.deletePosition(symbol, {
+      exchange: 'binance',
+      paper: sellPaperMode,
+      tradeMode: effectivePositionTradeMode,
+    });
+  }
 
   return trade;
 }
@@ -1829,6 +1987,7 @@ export async function executeSignal(signal) {
   const capitalPolicy = getCapitalConfig('binance', signalTradeMode);
   const minOrderUsdt = await getDynamicMinOrderAmount('binance', signalTradeMode);
   const exitReasonOverride = signal.exit_reason_override || null;
+  const partialExitRatio = normalizePartialExitRatio(signal.partial_exit_ratio || signal.partialExitRatio);
   const base = symbol.split('/')[0];
   let effectivePaperMode = globalPaperMode;
   const persistFailure = async (reason, {
@@ -2036,6 +2195,8 @@ export async function executeSignal(signal) {
         paperPosition: sellContext.paperPosition,
         position: sellContext.position,
         freeBalance: sellContext.freeBalance,
+        totalBalance: sellContext.totalBalance,
+        partialExitRatio,
       });
       if (sellAmountState?.success === false) return sellAmountState;
 
@@ -2045,6 +2206,9 @@ export async function executeSignal(signal) {
         amount: sellAmountState.amount,
         sellPaperMode: sellContext.sellPaperMode,
         effectivePositionTradeMode: sellContext.effectivePositionTradeMode,
+        position: sellContext.position,
+        sourcePositionAmount: sellAmountState.sourcePositionAmount,
+        partialExitRatio: sellAmountState.partialExitRatio,
       });
 
     } else {

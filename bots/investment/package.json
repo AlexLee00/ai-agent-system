@@ -108,6 +108,7 @@
     "runtime:position-reeval-summary": "node scripts/position-reevaluation-summary.ts",
     "runtime:position-reeval-history": "node scripts/position-reevaluation-history.ts",
     "runtime:position-reeval-loop": "node scripts/position-reevaluation-loop.ts --iterations=1",
+    "runtime:partial-adjust": "node scripts/partial-adjust-runner.ts",
     "runtime:reeval-tvmft-autotune": "node scripts/runtime-reeval-tvmft-autotune-report.ts",
     "runtime:reeval-tvmft-autotune-history": "node scripts/runtime-reeval-tvmft-autotune-history.ts",
     "runtime:reeval-tvmft-coverage": "node scripts/runtime-reeval-tvmft-coverage-report.ts",
