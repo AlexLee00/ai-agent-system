@@ -16,6 +16,7 @@ import fs from 'node:fs';
 import { createRequire } from 'module';
 import { publishAlert } from '../shared/alert-publisher.ts';
 import { validateTradeReview } from './validate-trade-review.ts';
+import { buildRuntimeLearningLoopReport } from './runtime-learning-loop-report.ts';
 
 const require = createRequire(import.meta.url);
 const hsm     = require('../../../packages/core/lib/health-state-manager');
@@ -249,6 +250,36 @@ async function main() {
         key,
         level: 2,
         msg: `⚠️ [루나 헬스] trade_review 점검 실패\n${e.message}`,
+      });
+    }
+  }
+
+  try {
+    const learningLoop = await buildRuntimeLearningLoopReport({ days: 14, json: true });
+    if (learningLoop?.decision?.status === 'regime_strategy_tuning_needed') {
+      const key = 'learning-loop-regime-tuning';
+      const topSuggestion = learningLoop?.sections?.strategy?.runtimeSuggestionTop || null;
+      if (hsm.canAlert(state, key)) {
+        issues.push({
+          key,
+          level: 2,
+          msg: `⚠️ [루나 헬스] regime strategy tuning\n${learningLoop.decision.headline}\nweakest: ${learningLoop?.sections?.collect?.regimePerformance?.weakestRegime?.regime || 'n/a'} / ${learningLoop?.sections?.collect?.regimePerformance?.weakestRegime?.worstMode?.tradeMode || 'n/a'}\ntop suggestion: ${topSuggestion?.key || 'n/a'} -> ${topSuggestion?.suggested ?? 'n/a'} (${topSuggestion?.action || 'n/a'})\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-suggest -- --json`,
+        });
+      }
+    } else if (state['learning-loop-regime-tuning']) {
+      recovers.push({
+        key: 'learning-loop-regime-tuning',
+        msg: '✅ [루나 헬스] regime strategy tuning 회복\n현재 learning loop 기준 레짐 튜닝 긴급 신호 없음 — 자동 감지',
+      });
+      hsm.clearAlert(state, 'learning-loop-regime-tuning');
+    }
+  } catch (e) {
+    const key = 'learning-loop-check-failed';
+    if (hsm.canAlert(state, key)) {
+      issues.push({
+        key,
+        level: 2,
+        msg: `⚠️ [루나 헬스] learning loop 점검 실패\n${e.message}`,
       });
     }
   }
