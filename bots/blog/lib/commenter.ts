@@ -618,12 +618,18 @@ async function updateCommentStatus(id, status, options = {}) {
   ]);
 }
 
+function canonicalizeNeighborPostUrl(postUrl) {
+  const normalized = normalizePostUrl(postUrl);
+  if (normalized?.ok && normalized.postUrl) return normalized.postUrl;
+  return String(postUrl || '').trim();
+}
+
 function buildNeighborDedupeKey(targetBlogId, postUrl) {
-  return crypto.createHash('sha1').update([String(targetBlogId || '').trim(), String(postUrl || '').trim()].join('|')).digest('hex');
+  return crypto.createHash('sha1').update([String(targetBlogId || '').trim(), canonicalizeNeighborPostUrl(postUrl)].join('|')).digest('hex');
 }
 
 async function hasSuccessfulNeighborCommentForPost(postUrl) {
-  const normalized = String(postUrl || '').trim();
+  const normalized = canonicalizeNeighborPostUrl(postUrl);
   if (!normalized) return false;
 
   const existing = await pgPool.get('blog', `
@@ -647,8 +653,9 @@ async function hasSuccessfulNeighborCommentForPost(postUrl) {
 }
 
 async function saveNeighborCandidate(candidate) {
-  const dedupeKey = buildNeighborDedupeKey(candidate.targetBlogId, candidate.postUrl);
-  const alreadyCommented = await hasSuccessfulNeighborCommentForPost(candidate.postUrl);
+  const canonicalPostUrl = canonicalizeNeighborPostUrl(candidate.postUrl);
+  const dedupeKey = buildNeighborDedupeKey(candidate.targetBlogId, canonicalPostUrl);
+  const alreadyCommented = await hasSuccessfulNeighborCommentForPost(canonicalPostUrl);
   if (alreadyCommented) {
     return {
       inserted: false,
@@ -661,8 +668,9 @@ async function saveNeighborCandidate(candidate) {
     SELECT id, status
     FROM ${NEIGHBOR_TABLE}
     WHERE dedupe_key = $1
+       OR (target_blog_id = $2 AND post_url = $3)
     LIMIT 1
-  `, [dedupeKey]);
+  `, [dedupeKey, candidate.targetBlogId, canonicalPostUrl]);
   if (existing?.id) {
     if (String(existing.status || '') === 'failed') {
       await pgPool.run('blog', `
@@ -716,7 +724,7 @@ async function saveNeighborCandidate(candidate) {
     candidate.targetBlogName || null,
     candidate.sourceType,
     candidate.sourceRef || null,
-    candidate.postUrl,
+    canonicalPostUrl,
     candidate.postTitle || null,
     dedupeKey,
     JSON.stringify(candidate.meta || {}),
@@ -1427,11 +1435,39 @@ async function generateReply(postTitle, postSummary, commentText) {
   };
 }
 
-function validateReply(reply, commentText, config = getCommenterConfig()) {
+function buildSimpleAcknowledgementReply(commentText, assessmentReason = '') {
+  const text = normalizeText(commentText);
+  const reason = String(assessmentReason || '').trim();
+  const mentionsQuestion = /[?？]|궁금|문의|질문|알려/i.test(text);
+  if (mentionsQuestion) return '';
+  if (reason === 'generic_greeting_reply_allowed') {
+    return text.length >= 18
+      ? '들러주셔서 감사합니다. 편하게 보고 가셔도 좋습니다.'
+      : '방문해 주셔서 감사합니다. 편하게 둘러봐 주세요.';
+  }
+  if (
+    reason === 'promotional_comment_reply_allowed'
+    || reason === 'promotional_comment_reply_allowed_with_url'
+    || reason === 'external_url_comment_reply_allowed'
+  ) {
+    return '댓글 남겨주셔서 감사합니다. 인사만 가볍게 받고 갈게요.';
+  }
+  return '';
+}
+
+function validateReply(reply, commentText, config = getCommenterConfig(), options = {}) {
   const normalizedReply = normalizeText(reply);
   const normalizedComment = normalizeText(commentText);
+  const assessmentReason = String(options.assessmentReason || '').trim();
+  const simpleAcknowledgement = assessmentReason === 'generic_greeting_reply_allowed'
+    || assessmentReason === 'promotional_comment_reply_allowed'
+    || assessmentReason === 'promotional_comment_reply_allowed_with_url'
+    || assessmentReason === 'external_url_comment_reply_allowed';
+  const minReplyLen = simpleAcknowledgement
+    ? Math.max(12, Math.min(Number(config.minReplyLen || 30), 18))
+    : Number(config.minReplyLen || 30);
 
-  if (!normalizedReply || normalizedReply.length < config.minReplyLen) {
+  if (!normalizedReply || normalizedReply.length < minReplyLen) {
     return { ok: false, reason: 'too_short' };
   }
   if (normalizedReply.length > config.maxReplyLen) {
@@ -4991,13 +5027,16 @@ async function processComment(comment, options = {}) {
     return { ok: false, skipped: true, reason: inboundAssessment.reason };
   }
 
-  const postInfo = await getPostSummary(comment.post_url, options);
-  let generated = await generateReply(postInfo.title || comment.post_title, postInfo.summary, comment.comment_text);
-  let validation = validateReply(generated.reply, comment.comment_text);
+  const simpleReply = buildSimpleAcknowledgementReply(comment.comment_text, inboundAssessment.reason);
+  const postInfo = simpleReply ? { title: '', summary: '' } : await getPostSummary(comment.post_url, options);
+  let generated = simpleReply
+    ? { reply: simpleReply, tone: 'acknowledgement' }
+    : await generateReply(postInfo.title || comment.post_title, postInfo.summary, comment.comment_text);
+  let validation = validateReply(generated.reply, comment.comment_text, undefined, { assessmentReason: inboundAssessment.reason });
 
-  if (!validation.ok) {
+  if (!validation.ok && !simpleReply) {
     generated = await generateReply(postInfo.title || comment.post_title, postInfo.summary, comment.comment_text);
-    validation = validateReply(generated.reply, comment.comment_text);
+    validation = validateReply(generated.reply, comment.comment_text, undefined, { assessmentReason: inboundAssessment.reason });
   }
 
   if (!validation.ok) {
@@ -5554,6 +5593,7 @@ module.exports = {
   detectNewComments,
   collectNeighborCandidates,
   generateReply,
+  buildSimpleAcknowledgementReply,
   generateNeighborComment,
   validateReply,
   assessInboundComment,
