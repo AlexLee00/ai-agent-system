@@ -17,7 +17,7 @@ async function main() {
   }
 
   if (result.skipped) {
-    console.log(`SKIPPED: ${result.reason}`);
+    console.log(`SKIPPED: ${result.reason || 'no_workload'}`);
     return;
   }
 
