@@ -9,10 +9,16 @@
  */
 
 import * as db from './db.ts';
+import { readFileSync } from 'fs';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
+import yaml from 'js-yaml';
 import { isPaperMode } from './secrets.ts';
 import { publishAlert } from './alert-publisher.ts';
 import { getCapitalConfig, getMarketAvailableFunds } from './capital-manager.ts';
-import { getExchangeEvidenceBaseline } from './runtime-config.ts';
+import { getExchangeEvidenceBaseline, getInvestmentExecutionRuntimeConfig } from './runtime-config.ts';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export const ACTIONS = Object.freeze({
   BUY:  'BUY',
@@ -122,6 +128,44 @@ function formatSafetyAmount(exchange, amount) {
   return `$${value.toFixed(0)}`;
 }
 
+function roundAdjustedOrderAmount(exchange, amount) {
+  const numeric = Number(amount || 0);
+  if (!(numeric > 0)) return 0;
+  if (exchange === 'kis') return Math.max(1, Math.round(numeric));
+  if (exchange === 'kis_overseas') return Math.round(numeric * 100) / 100;
+  return Math.round(numeric * 100) / 100;
+}
+
+function getSignalSafetySoftening(signal) {
+  const executionConfig = getInvestmentExecutionRuntimeConfig();
+  const exchange = signal.exchange || 'binance';
+  const tradeMode = signal.trade_mode || 'normal';
+  let base = executionConfig?.signalSafetySoftening || {};
+  if (!base || (base.enabled !== true && Object.keys(base.byExchange || {}).length === 0)) {
+    try {
+      const raw = yaml.load(readFileSync(join(__dirname, '..', 'config.yaml'), 'utf8')) || {};
+      base =
+        raw?.runtime_config?.execution?.signalSafetySoftening
+        || raw?.execution?.signalSafetySoftening
+        || base;
+    } catch {
+      // 무시 — 런타임 getter fallback 유지
+    }
+  }
+  const byExchange = base?.byExchange?.[exchange] || {};
+  const byTradeMode = byExchange?.tradeModes?.[tradeMode] || {};
+  return {
+    enabled: byTradeMode?.enabled === true,
+    softenedRules: Array.isArray(byTradeMode?.softenedRules) ? byTradeMode.softenedRules : [],
+    amountCapMultiplier: Number(byTradeMode?.amountCapMultiplier || 0.99),
+  };
+}
+
+function canSoftenSafetyRule(signal, ruleCode) {
+  const softening = getSignalSafetySoftening(signal);
+  return softening.enabled === true && softening.softenedRules.includes(ruleCode);
+}
+
 async function getScopedTotalAsset(signal) {
   const exchange = signal.exchange || null;
   const tradeMode = signal.trade_mode || null;
@@ -183,6 +227,28 @@ export async function checkSafetyGates(signal) {
 
   // 원칙 1 — 단일 포지션 ≤ config.max_position_pct
   if (isBuy && useGenericAssetRules && orderValue > totalAsset * maxSinglePct) {
+    if (canSoftenSafetyRule(signal, 'rule1')) {
+      const softening = getSignalSafetySoftening(signal);
+      const cappedAmount = roundAdjustedOrderAmount(
+        signal.exchange,
+        totalAsset * maxSinglePct * softening.amountCapMultiplier,
+      );
+      if (cappedAmount > 0 && cappedAmount < Number(orderValue || 0)) {
+        return {
+          passed: true,
+          softened: true,
+          advisoryReason: `원칙1 soft guard: 단일 포지션 한도 초과를 감산 허용 (${formatSafetyAmount(signal.exchange, orderValue)} -> ${formatSafetyAmount(signal.exchange, cappedAmount)})`,
+          softGuard: {
+            kind: 'signal_rule1_softened',
+            exchange: signal.exchange || 'binance',
+            tradeMode: signal.trade_mode || 'normal',
+            originalAmount: Number(orderValue || 0),
+            reducedAmount: cappedAmount,
+            reductionMultiplier: Number(softening.amountCapMultiplier || 0.99),
+          },
+        };
+      }
+    }
     return {
       passed: false,
       reason: `원칙1 위반: 단일 포지션 한도 초과 (${formatSafetyAmount(signal.exchange, orderValue)} > ${formatSafetyAmount(signal.exchange, totalAsset * maxSinglePct)})`,
@@ -240,6 +306,21 @@ export async function checkSafetyGates(signal) {
       const cooldownEnd = lastExitAt + (cooldownMinutes * 60 * 1000);
       if (Date.now() < cooldownEnd) {
         const remainMin = Math.ceil((cooldownEnd - Date.now()) / 60000);
+        if (canSoftenSafetyRule(signal, 'rule5')) {
+          return {
+            passed: true,
+            softened: true,
+            advisoryReason: `원칙5 soft guard: 연속 손실 쿨다운을 validation 관찰 레일로 완화 (${remainMin}분 잔여)`,
+            softGuard: {
+              kind: 'signal_rule5_softened',
+              exchange: signal.exchange || 'binance',
+              tradeMode: signal.trade_mode || 'normal',
+              remainMinutes: remainMin,
+              cooldownMinutes,
+              cooldownAfterLossStreak,
+            },
+          };
+        }
         return { passed: false, reason: `원칙5 위반: 연속 ${cooldownAfterLossStreak}회 손실 → 쿨다운 ${remainMin}분 남음` };
       }
     }
@@ -248,6 +329,20 @@ export async function checkSafetyGates(signal) {
   // 원칙 6 — 최대 드로우다운 ≤ 15%
   const maxDD = useGenericAssetRules ? await getMaxDrawdown(signal.exchange || null) : 0;
   if (useGenericAssetRules && maxDD > limits.MAX_DRAWDOWN) {
+    if (canSoftenSafetyRule(signal, 'rule6')) {
+      return {
+        passed: true,
+        softened: true,
+        advisoryReason: `원칙6 soft guard: 최대 드로우다운 경고를 validation 관찰 레일로 완화 (${(maxDD * 100).toFixed(1)}%)`,
+        softGuard: {
+          kind: 'signal_rule6_softened',
+          exchange: signal.exchange || 'binance',
+          tradeMode: signal.trade_mode || 'normal',
+          currentDrawdown: Number(maxDD || 0),
+          limitDrawdown: Number(limits.MAX_DRAWDOWN || 0),
+        },
+      };
+    }
     return {
       passed: false,
       reason: `원칙6 위반: 최대 드로우다운 초과 (${(maxDD * 100).toFixed(1)}% > ${(limits.MAX_DRAWDOWN * 100).toFixed(1)}%) → 사용자 승인 필요`,
@@ -287,6 +382,33 @@ export async function executeSignal(signal) {
 
   // ── 2단계: 자산 보호 5원칙 검사 ─────────────────────────────────
   const guard = await checkSafetyGates(signal);
+  if (guard.passed && guard.softened) {
+    const reducedAmount = Number(guard?.softGuard?.reducedAmount || 0);
+    if (reducedAmount > 0 && reducedAmount < Number(signal.amount_usdt || 0)) {
+      signal.amount_usdt = reducedAmount;
+      signal.amountUsdt = reducedAmount;
+      await db.updateSignalAmount(signal.id ?? '', reducedAmount).catch(() => {});
+    }
+    await db.updateSignalBlock(signal.id ?? '', {
+      code: 'safety_gate_softened',
+      meta: {
+        traceId,
+        exchange: signal.exchange,
+        symbol: signal.symbol,
+        action: signal.action,
+        tradeMode: signal.trade_mode || 'normal',
+        advisoryReason: guard.advisoryReason,
+        softGuard: guard.softGuard || null,
+      },
+    }).catch(() => {});
+    publishAlert({
+      from_bot: 'luna',
+      event_type: 'alert',
+      alert_level: 2,
+      message: `🛡️ 안전장치 완화 적용\n사유: ${guard.advisoryReason}\n신호: ${signal.symbol} ${signal.action}`,
+      payload: { reason: guard.advisoryReason, signal, softGuard: guard.softGuard || null },
+    });
+  }
   if (!guard.passed) {
     console.warn(`[GUARD:${traceId}] 차단 — ${guard.reason}`);
     const guardMsg = `🛡️ 안전장치 발동\n사유: ${guard.reason}\n신호: ${signal.symbol} ${signal.action}`;

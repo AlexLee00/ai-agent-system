@@ -37,6 +37,26 @@ function loadRuntimeOverlayConfig() {
   }
 }
 
+function mergeRuntimeOverrideObjects(...sources) {
+  const isPlainObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
+  const result = {};
+  for (const source of sources) {
+    if (!isPlainObject(source)) continue;
+    for (const [key, value] of Object.entries(source)) {
+      if (isPlainObject(value) && isPlainObject(result[key])) {
+        result[key] = mergeRuntimeOverrideObjects(result[key], value);
+      } else if (isPlainObject(value)) {
+        result[key] = mergeRuntimeOverrideObjects({}, value);
+      } else if (Array.isArray(value)) {
+        result[key] = value.slice();
+      } else {
+        result[key] = value;
+      }
+    }
+  }
+  return result;
+}
+
 function getDefaultLunaMaxPosCount() {
   const capitalManagement = loadCapitalManagementConfig();
   const binanceMax = Number(capitalManagement.by_exchange?.binance?.max_concurrent_positions);
@@ -250,6 +270,10 @@ const DEFAULT_RUNTIME_CONFIG = {
   execution: {
     pendingQueue: {
       stalePendingMinutes: 30,
+    },
+    signalSafetySoftening: {
+      enabled: false,
+      byExchange: {},
     },
     cryptoGuardSoftening: {
       enabled: true,
@@ -507,5 +531,14 @@ export function getInvestmentSyncRuntimeConfig() {
 }
 
 export function getInvestmentExecutionRuntimeConfig() {
-  return getInvestmentRuntimeConfig().execution || {};
+  const runtimeExecution = getInvestmentRuntimeConfig().execution || {};
+  const overlayExecution = loadRuntimeOverlayConfig()?.execution || {};
+  let rawExecution = {};
+  try {
+    const raw = yaml.load(readFileSync(join(__dirname, '..', 'config.yaml'), 'utf8')) || {};
+    rawExecution = raw?.runtime_config?.execution || {};
+  } catch {
+    rawExecution = {};
+  }
+  return mergeRuntimeOverrideObjects(runtimeExecution, overlayExecution, rawExecution);
 }
