@@ -35,6 +35,7 @@ function buildGuardSuggestions({ capitalPolicy, correlation, circuit, capitalGua
     ? round((Number(capitalGuard?.decision?.metrics?.correlationGuard || 0) / capitalGuardTotal) * 100, 1)
     : 0;
   const currentMaxSameDirection = Number(capitalPolicy?.max_same_direction_positions || 3);
+  const currentMaxConcurrentPositions = Number(capitalPolicy?.max_concurrent_positions || 3);
   const currentCooldownMinutes = Number(capitalPolicy?.cooldown_minutes || 60);
   const currentCooldownLossStreak = Number(capitalPolicy?.cooldown_after_loss_streak || 3);
 
@@ -46,6 +47,18 @@ function buildGuardSuggestions({ capitalPolicy, correlation, circuit, capitalGua
       action: currentMaxSameDirection < 6 ? 'adjust' : 'observe',
       confidence: currentMaxSameDirection < 6 ? 'medium' : 'low',
       reason: `최근 correlation guard ${correlationTotal}건이 capital guard의 ${correlationShare}%를 차지합니다. same-direction long 슬롯을 1칸 더 열어 대표 후보 패스와 함께 비교할 가치가 있습니다.`,
+    });
+  }
+
+  const maxPositionsTotal = Number(capitalGuard?.decision?.metrics?.maxPositions || 0);
+  if (maxPositionsTotal >= 2) {
+    suggestions.push({
+      key: 'capital_management.max_concurrent_positions',
+      current: currentMaxConcurrentPositions,
+      suggested: clamp(currentMaxConcurrentPositions + 1, 1, 8),
+      action: currentMaxConcurrentPositions < 8 ? 'adjust' : 'observe',
+      confidence: currentMaxConcurrentPositions < 8 ? 'medium' : 'low',
+      reason: `최근 max positions 차단 ${maxPositionsTotal}건이 확인돼 동시 포지션 수를 1칸 더 열어 실제 executed 전환이 늘어나는지 비교할 가치가 있습니다.`,
     });
   }
 

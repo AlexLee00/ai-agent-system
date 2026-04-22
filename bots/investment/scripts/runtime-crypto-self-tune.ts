@@ -13,6 +13,7 @@ import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = join(__dirname, '..', 'config.yaml');
 const AUTO_KEYS = new Set([
+  'capital_management.max_concurrent_positions',
   'capital_management.max_same_direction_positions',
   'capital_management.cooldown_minutes',
   'runtime_config.execution.cryptoGuardSoftening.byExchange.binance.tradeModes.normal.circuitBreaker.reductionMultiplier',
@@ -31,6 +32,9 @@ function parseArgs(argv = process.argv.slice(2)) {
 }
 
 function toRuntimePath(key) {
+  if (key === 'capital_management.max_concurrent_positions') {
+    return ['capital_management', 'by_exchange', 'binance', 'max_concurrent_positions'];
+  }
   if (key === 'capital_management.max_same_direction_positions') {
     return ['capital_management', 'by_exchange', 'binance', 'trade_modes', 'normal', 'max_same_direction_positions'];
   }
