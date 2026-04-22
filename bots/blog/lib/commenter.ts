@@ -3830,10 +3830,10 @@ async function getSympathyState(page) {
         || document.querySelector('.my_reaction .u_likeit_list_module')
         || document.querySelector('.area_sympathy .my_reaction')
         || document.querySelector('.my_reaction')
-        || document;
+        || null;
 
     const findPrimarySympathyButton = () => {
-      const scope = getReactionModule();
+      const scope = getReactionModule() || document;
       const likeButton = scope.querySelector('a.u_likeit_list_button._button[data-type="like"][href*="#ratingbutton-like"]');
       if (visible(likeButton)) return likeButton;
       const faceButton = scope.querySelector('a.u_likeit_button._face[role="button"]');
@@ -3850,6 +3850,7 @@ async function getSympathyState(page) {
       return /공감/.test(text) && /u_likeit_list_button/.test(cls) && /ratingbutton-like/i.test(href);
     };
 
+    const module = getReactionModule();
     const candidates = Array.from(document.querySelectorAll('a,button')).filter(visible);
     const target = findPrimarySympathyButton()
       || candidates.find(isPrimarySympathyButton)
@@ -3958,7 +3959,7 @@ async function activateSympathyInFrame(contentFrame, { testMode = false, postUrl
         || document.querySelector('.my_reaction .u_likeit_list_module')
         || document.querySelector('.area_sympathy .my_reaction')
         || document.querySelector('.my_reaction')
-        || document;
+        || null;
 
     const clickNode = (target) => {
       if (!target) return false;
@@ -3991,7 +3992,7 @@ async function activateSympathyInFrame(contentFrame, { testMode = false, postUrl
     };
 
     const findPrimarySympathyButton = () => {
-      const scope = getReactionModule();
+      const scope = getReactionModule() || document;
       const likeButton = scope.querySelector('a.u_likeit_list_button._button[data-type="like"][href*="#ratingbutton-like"]');
       if (visible(likeButton)) return likeButton;
       const faceButton = scope.querySelector('a.u_likeit_button._face[role="button"]');
@@ -4011,6 +4012,7 @@ async function activateSympathyInFrame(contentFrame, { testMode = false, postUrl
       return /공감/.test(text) && /u_likeit_list_button/.test(cls) && /ratingbutton-like/i.test(href);
     };
 
+    const reactionModule = getReactionModule();
     const candidates = Array.from(document.querySelectorAll('a,button')).filter(visible);
     const target = findPrimarySympathyButton()
       || candidates.find(isPrimarySympathyButton)
@@ -4023,14 +4025,24 @@ async function activateSympathyInFrame(contentFrame, { testMode = false, postUrl
         return /공감/.test(text) && (/u_likeit_button/.test(cls) || node.id?.startsWith?.('Sympathy'));
       });
 
-    if (!target) return { ok: false, mode: null };
+    if (!target) {
+      return {
+        ok: false,
+        mode: null,
+        reason: reactionModule ? 'button_not_found' : 'module_unavailable',
+      };
+    }
     return {
       ok: clickNode(target),
       mode: target.matches?.('a.u_likeit_list_button._button[data-type="like"][href*="#ratingbutton-like"]') ? 'like' : 'face',
+      reason: '',
     };
   });
 
   if (!clicked?.ok) {
+    if (clicked?.reason === 'module_unavailable') {
+      throw new Error('sympathy_module_unavailable');
+    }
     throw new Error('sympathy_button_not_found');
   }
 
@@ -5319,6 +5331,21 @@ async function runNeighborSympathy({ testMode = false } = {}) {
       liked += 1;
     } catch (error) {
       const errorMessage = String(error?.message || error || '');
+      if (/sympathy_module_unavailable/i.test(errorMessage)) {
+        skipped += 1;
+        await recordCommentAction('neighbor_sympathy_skip', {
+          targetBlog: candidate.targetBlogId,
+          targetPostUrl: candidate.postUrl,
+          success: true,
+          meta: {
+            sourceType: candidate.sourceType || null,
+            targetBlogName: candidate.targetBlogName || null,
+            reason: 'sympathy_module_unavailable',
+            error: errorMessage,
+          },
+        }).catch(() => {});
+        continue;
+      }
       const shouldReplay =
         /sympathy_button_not_found|sympathy_not_confirmed/i.test(errorMessage);
       let recovered = null;
