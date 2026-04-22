@@ -2,6 +2,7 @@
 // @ts-nocheck
 
 import * as db from '../shared/db.ts';
+import { getExchangeEvidenceBaseline } from '../shared/runtime-config.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { buildInvestmentCliInsight } from '../shared/cli-insight.ts';
 
@@ -15,6 +16,10 @@ function parseArgs(argv = process.argv.slice(2)) {
 
 async function loadRows(days = 14) {
   const safeDays = Math.max(1, Number(days || 14));
+  const baseline = getExchangeEvidenceBaseline('binance');
+  const lowerBound = baseline
+    ? `GREATEST(now() - INTERVAL '${safeDays} days', TIMESTAMP '${baseline}')`
+    : `now() - INTERVAL '${safeDays} days'`;
   return db.query(
     `SELECT
        id,
@@ -26,7 +31,7 @@ async function loadRows(days = 14) {
      FROM investment.signals
      WHERE exchange = 'binance'
        AND status = 'executed'
-       AND created_at > now() - INTERVAL '${safeDays} days'
+       AND created_at > ${lowerBound}
        AND block_meta IS NOT NULL
        AND (block_meta->'executionMeta'->>'softGuardApplied')::boolean = true
      ORDER BY created_at DESC`
@@ -79,6 +84,7 @@ function summarize(rows = []) {
 }
 
 function buildDecision(summary) {
+  const baseline = getExchangeEvidenceBaseline('binance');
   const total = Number(summary.total || 0);
   const topKind = summary.byKind[0] || null;
   const topSymbol = summary.bySymbol[0] || null;
@@ -87,10 +93,11 @@ function buildDecision(summary) {
   let status = 'crypto_soft_guard_idle';
   let headline = '최근 soft guard 실행 표본이 없습니다.';
   const reasons = [
+    baseline ? `새 시스템 기준선: ${baseline}` : null,
     `soft guard 실행 ${total}건`,
     `가드 분포: ${(summary.byKind || []).map((item) => `${item.key} ${item.count}`).join(' | ') || '없음'}`,
     `평균 감산 배율: x${avgReductionMultiplier.toFixed(2)}`,
-  ];
+  ].filter(Boolean);
   const actionItems = [];
 
   if (total >= 5) {

@@ -201,6 +201,13 @@ const DEFAULT_RUNTIME_CONFIG = {
       semanticThreshold: 0.28,
     },
   },
+  liveEvidenceBaseline: {
+    byExchange: {
+      binance: '2026-04-17T06:08:43+09:00',
+      kis: '2026-04-17T09:09:09+09:00',
+      kis_overseas: '2026-04-17T09:09:09+09:00',
+    },
+  },
   reevaluation: {
     tradingViewFrames: {
       byExchange: {
@@ -349,7 +356,12 @@ const runtimeConfigLoader =
           llmPolicies: config.capital_management.llmPolicies,
         }
       : {};
-    return config.runtime_config || config.capital_management?.runtime_config || legacyCapitalRuntime || {};
+    return deepMerge(
+      {},
+      legacyCapitalRuntime || {},
+      config.capital_management?.runtime_config || {},
+      config.runtime_config || {},
+    );
   },
 }));
 
@@ -459,6 +471,14 @@ export function getInvestmentRagRuntimeConfig() {
 
 export function getInvestmentAlertRuntimeConfig() {
   return loadRuntimeConfig().alerts || {};
+}
+
+export function getExchangeEvidenceBaseline(exchange = '') {
+  const raw = loadRuntimeConfig()?.liveEvidenceBaseline?.byExchange?.[exchange];
+  if (!raw) return null;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString();
 }
 
 export function getPositionReevaluationRuntimeConfig() {

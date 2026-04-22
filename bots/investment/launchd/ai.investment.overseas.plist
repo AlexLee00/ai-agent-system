@@ -12,6 +12,8 @@
 		<string>true</string>
 		<key>INVESTMENT_LLM_HUB_ENABLED</key>
 		<string>false</string>
+		<key>LUNA_LIVE_OVERSEAS</key>
+		<string>true</string>
 		<key>PAPER_MODE</key>
 		<string>false</string>
 		<key>PATH</key>

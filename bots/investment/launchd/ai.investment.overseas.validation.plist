@@ -8,6 +8,8 @@
 		<string>/Users/alexlee</string>
 		<key>INVESTMENT_TRADE_MODE</key>
 		<string>validation</string>
+		<key>LUNA_LIVE_OVERSEAS</key>
+		<string>true</string>
 		<key>NODE_ENV</key>
 		<string>production</string>
 		<key>PAPER_MODE</key>

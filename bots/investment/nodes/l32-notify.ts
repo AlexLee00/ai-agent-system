@@ -5,12 +5,12 @@ import { loadLatestNodePayload } from './helpers.ts';
 
 const NODE_ID = 'L32';
 
-async function run({ sessionId, market, symbol }) {
+async function run({ sessionId, market, symbol, saved: savedOverride = null }) {
   if (!sessionId) throw new Error('sessionId 필요');
   if (!symbol) throw new Error('symbol 필요');
 
-  const savedHit = await loadLatestNodePayload(sessionId, 'L30', symbol);
-  const saved = savedHit?.payload || null;
+  const savedHit = savedOverride ? null : await loadLatestNodePayload(sessionId, 'L30', symbol);
+  const saved = savedOverride || savedHit?.payload || null;
   if (!saved?.signalId) {
     return { symbol, market, skipped: true, reason: 'L30 저장 결과 없음' };
   }

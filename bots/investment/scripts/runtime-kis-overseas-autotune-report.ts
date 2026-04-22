@@ -3,6 +3,7 @@
 
 import * as db from '../shared/db.ts';
 import { getInvestmentRuntimeConfig } from '../shared/runtime-config.ts';
+import { getExchangeEvidenceBaseline } from '../shared/runtime-config.ts';
 import { getParameterGovernance } from '../shared/runtime-parameter-governance.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { buildInvestmentCliInsight } from '../shared/cli-insight.ts';
@@ -17,6 +18,10 @@ function parseArgs(argv = process.argv.slice(2)) {
 
 async function loadSignalRows(days = 14) {
   const safeDays = Math.max(1, Number(days || 14));
+  const baseline = getExchangeEvidenceBaseline('kis_overseas');
+  const lowerBound = baseline
+    ? `GREATEST(now() - INTERVAL '${safeDays} days', TIMESTAMP '${baseline}')`
+    : `now() - INTERVAL '${safeDays} days'`;
   return db.query(
     `SELECT
        status,
@@ -25,7 +30,7 @@ async function loadSignalRows(days = 14) {
      FROM investment.signals
      WHERE exchange = 'kis_overseas'
        AND action = 'BUY'
-       AND created_at > now() - INTERVAL '${safeDays} days'
+       AND created_at > ${lowerBound}
      GROUP BY 1, 2
      ORDER BY cnt DESC, status ASC`
   );
@@ -33,6 +38,10 @@ async function loadSignalRows(days = 14) {
 
 async function loadTradeRows(days = 14) {
   const safeDays = Math.max(1, Number(days || 14));
+  const baseline = getExchangeEvidenceBaseline('kis_overseas');
+  const lowerBound = baseline
+    ? `GREATEST(now() - INTERVAL '${safeDays} days', TIMESTAMP '${baseline}')`
+    : `now() - INTERVAL '${safeDays} days'`;
   return db.query(
     `SELECT
        paper,
@@ -40,7 +49,7 @@ async function loadTradeRows(days = 14) {
        COUNT(*)::int AS cnt
      FROM investment.trades
      WHERE exchange = 'kis_overseas'
-       AND executed_at > now() - INTERVAL '${safeDays} days'
+       AND executed_at > ${lowerBound}
      GROUP BY 1, 2
      ORDER BY 1 ASC, 2 ASC`
   );
@@ -130,13 +139,15 @@ function buildCandidate(config, signalSummary) {
 }
 
 function buildDecision(signalSummary, tradeSummary, candidate = null) {
+  const baseline = getExchangeEvidenceBaseline('kis_overseas');
   let status = 'kis_overseas_autotune_idle';
-  let headline = '최근 해외장 self-tune 후보가 아직 없습니다.';
+  let headline = '실계좌 전환 이후 해외장 self-tune 후보가 아직 없습니다.';
   const reasons = [
+    baseline ? `실계좌 기준선: ${baseline}` : null,
     `BUY 표본 ${signalSummary.totalBuy}건 / 실행 ${signalSummary.executedSignals}건 / 실패 ${signalSummary.failedSignals}건`,
     `실효 실패 ${signalSummary.effectiveFailedSignals}건 / mock 노이즈 ${signalSummary.mockUnsupported}건`,
     `실행률 ${signalSummary.executionRate}% / 실거래 BUY ${tradeSummary.realBuyTrades}건`,
-  ];
+  ].filter(Boolean);
   const actionItems = [];
 
   if (candidate) {

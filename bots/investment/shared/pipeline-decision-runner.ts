@@ -331,6 +331,12 @@ async function executeApprovedDecision({
     sessionId,
     market: exchange,
     symbol: decision.symbol,
+    decision: {
+      ...decision,
+      trade_mode: decision?.trade_mode || null,
+      amount_usdt: amountUsdt,
+    },
+    risk: riskResult,
     meta: await buildDecisionBridgeMeta({
       sessionId,
       market: exchange,
@@ -344,6 +350,7 @@ async function executeApprovedDecision({
     sessionId,
     market: exchange,
     symbol: decision.symbol,
+    saved: saved.result,
     meta: await buildDecisionBridgeMeta({
       sessionId,
       market: exchange,
@@ -357,6 +364,7 @@ async function executeApprovedDecision({
     sessionId,
     market: exchange,
     symbol: decision.symbol,
+    saved: saved.result,
     meta: await buildDecisionBridgeMeta({
       sessionId,
       market: exchange,
@@ -371,6 +379,7 @@ async function executeApprovedDecision({
     sessionId,
     market: exchange,
     symbol: decision.symbol,
+    saved: saved.result,
     meta: await buildDecisionBridgeMeta({
       sessionId,
       market: exchange,
@@ -939,6 +948,7 @@ export async function runDecisionExecutionPipeline({
         trade_mode: midGapPromotedCandidate ? 'validation' : investmentTradeMode,
         amount_usdt: amountUsdt,
       },
+      risk: riskResult,
       meta: await buildDecisionBridgeMeta({
         sessionId,
         market: exchange,
@@ -952,6 +962,7 @@ export async function runDecisionExecutionPipeline({
       sessionId,
       market: exchange,
       symbol: dec.symbol,
+      saved: saved.result,
       meta: await buildDecisionBridgeMeta({
         sessionId,
         market: exchange,
@@ -965,6 +976,7 @@ export async function runDecisionExecutionPipeline({
       sessionId,
       market: exchange,
       symbol: dec.symbol,
+      saved: saved.result,
       meta: await buildDecisionBridgeMeta({
         sessionId,
         market: exchange,
@@ -979,6 +991,7 @@ export async function runDecisionExecutionPipeline({
       sessionId,
       market: exchange,
       symbol: dec.symbol,
+      saved: saved.result,
       meta: await buildDecisionBridgeMeta({
         sessionId,
         market: exchange,

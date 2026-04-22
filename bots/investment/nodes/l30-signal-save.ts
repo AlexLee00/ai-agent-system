@@ -5,14 +5,14 @@ import { loadAnalysesForSession, loadLatestNodePayload, buildAnalystSignals } fr
 
 const NODE_ID = 'L30';
 
-async function run({ sessionId, market, symbol, decision: decisionOverride = null }) {
+async function run({ sessionId, market, symbol, decision: decisionOverride = null, risk: riskOverride = null }) {
   if (!sessionId) throw new Error('sessionId 필요');
   if (!symbol) throw new Error('symbol 필요');
 
   const decisionHit = await loadLatestNodePayload(sessionId, 'L13', symbol);
   const riskHit = await loadLatestNodePayload(sessionId, 'L21', symbol);
   const decision = decisionOverride || decisionHit?.payload?.decision || null;
-  const risk = riskHit?.payload?.risk || null;
+  const risk = riskOverride || riskHit?.payload?.risk || null;
 
   if (!decision?.action || decision.action === 'HOLD') {
     return {
