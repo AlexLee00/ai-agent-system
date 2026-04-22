@@ -164,6 +164,65 @@ async function loadRegimeCoverage(days = 90) {
   };
 }
 
+async function loadRegimePerformance(days = 90) {
+  await db.initSchema();
+  const safeDays = Math.max(14, Number(days || 90));
+  const sinceEpochMs = Date.now() - safeDays * 24 * 60 * 60 * 1000;
+  const rows = await db.query(`
+    SELECT
+      market_regime,
+      COALESCE(trade_mode, 'normal') AS trade_mode,
+      COUNT(*) AS total,
+      COUNT(*) FILTER (WHERE status = 'closed') AS closed,
+      COUNT(*) FILTER (WHERE pnl_percent > 0) AS wins,
+      ROUND(AVG(pnl_percent)::numeric, 4) AS avg_pnl_percent
+    FROM investment.trade_journal
+    WHERE created_at >= $1
+      AND market_regime IS NOT NULL
+      AND market_regime <> ''
+    GROUP BY 1, 2
+    ORDER BY market_regime, trade_mode
+  `, [sinceEpochMs]).catch(() => []);
+
+  const byRegime = {};
+  for (const row of rows) {
+    const regime = String(row.market_regime || 'unknown');
+    const tradeMode = String(row.trade_mode || 'normal');
+    const total = Number(row.total || 0);
+    const closed = Number(row.closed || 0);
+    const wins = Number(row.wins || 0);
+    const avgPnlPercent = row.avg_pnl_percent != null ? Number(row.avg_pnl_percent) : null;
+    const winRate = closed > 0 ? Number(((wins / closed) * 100).toFixed(1)) : null;
+    byRegime[regime] = byRegime[regime] || { regime, modes: [], total: 0, closed: 0 };
+    byRegime[regime].modes.push({ tradeMode, total, closed, wins, winRate, avgPnlPercent });
+    byRegime[regime].total += total;
+    byRegime[regime].closed += closed;
+  }
+
+  const ranked = Object.values(byRegime)
+    .map((item) => {
+      const bestMode = [...item.modes].sort((a, b) => (Number(b.avgPnlPercent ?? -999) - Number(a.avgPnlPercent ?? -999)))[0] || null;
+      const worstMode = [...item.modes].sort((a, b) => (Number(a.avgPnlPercent ?? 999) - Number(b.avgPnlPercent ?? 999)))[0] || null;
+      return {
+        ...item,
+        bestMode,
+        worstMode,
+      };
+    })
+    .sort((a, b) => Number(b.total || 0) - Number(a.total || 0));
+
+  return {
+    windowDays: safeDays,
+    byRegime: ranked,
+    weakestRegime: [...ranked]
+      .filter((item) => item.worstMode && item.worstMode.avgPnlPercent != null)
+      .sort((a, b) => Number(a.worstMode.avgPnlPercent) - Number(b.worstMode.avgPnlPercent))[0] || null,
+    strongestRegime: [...ranked]
+      .filter((item) => item.bestMode && item.bestMode.avgPnlPercent != null)
+      .sort((a, b) => Number(b.bestMode.avgPnlPercent) - Number(a.bestMode.avgPnlPercent))[0] || null,
+  };
+}
+
 function buildSectionStates({
   freshness,
   runtimeDecision,
@@ -172,6 +231,7 @@ function buildSectionStates({
   backtest,
   validation,
   regimeCoverage,
+  regimePerformance,
 }) {
   const runtimeAge = ageHours(freshness.latestRuntimeSessionAt);
   const reviewAge = ageHours(freshness.latestTradeReviewAt);
@@ -203,6 +263,11 @@ function buildSectionStates({
       snapshotCount: Number(regimeCoverage.snapshotCount || 0),
       topRegimes: regimeCoverage.byRegime.slice(0, 4),
       latestByMarket: regimeCoverage.latestByMarket,
+    },
+    regimePerformance: {
+      weakestRegime: regimePerformance.weakestRegime,
+      strongestRegime: regimePerformance.strongestRegime,
+      byRegime: regimePerformance.byRegime.slice(0, 4),
     },
   };
 
@@ -285,6 +350,11 @@ function buildDecision(sections = {}) {
     status = 'regime_sample_thin';
     headline = '거래 표본이 특정 장세에 치우쳐 있어 레짐별 전략 학습 데이터를 더 넓혀야 합니다.';
     nextActions.push('validation lane을 유지하면서 bull/bear/ranging/volatile 레짐별 표본이 끊기지 않게 관리합니다.');
+  } else if (Number(sections.collect.regimePerformance?.weakestRegime?.worstMode?.avgPnlPercent ?? 0) < -3) {
+    const weakest = sections.collect.regimePerformance.weakestRegime;
+    status = 'regime_strategy_tuning_needed';
+    headline = `${weakest.regime} 장세에서 ${weakest.worstMode.tradeMode} 레인의 성과가 약해 전략 수정이 필요합니다.`;
+    nextActions.push(`${weakest.regime} 장세의 ${weakest.worstMode.tradeMode} 레인 진입 기준과 비중을 먼저 줄이거나 재학습합니다.`);
   } else if (sections.collect.status === 'thin') {
     status = 'learning_sample_thin';
     headline = '세션은 돌지만 승인/실행 표본이 얇아 validation 표본을 더 쌓아야 합니다.';
@@ -334,6 +404,12 @@ function renderText(payload) {
     `- regime coverage ${sections.collect.regimeCoverage?.distinctTradedRegimes || 0}종 | known ${sections.collect.regimeCoverage?.knownRegimeTrades || 0} / unknown ${sections.collect.regimeCoverage?.unknownTrades || 0}`,
     `- regime snapshots ${sections.collect.regimeCoverage?.snapshotCount || 0}건`,
     `- top regimes ${((sections.collect.regimeCoverage?.topRegimes || []).map((item) => `${item.regime}:${item.total}`).join(', ')) || 'none'}`,
+    sections.collect.regimePerformance?.weakestRegime
+      ? `- weakest regime ${sections.collect.regimePerformance.weakestRegime.regime} / ${sections.collect.regimePerformance.weakestRegime.worstMode.tradeMode} avg ${sections.collect.regimePerformance.weakestRegime.worstMode.avgPnlPercent}%`
+      : '- weakest regime none',
+    sections.collect.regimePerformance?.strongestRegime
+      ? `- strongest regime ${sections.collect.regimePerformance.strongestRegime.regime} / ${sections.collect.regimePerformance.strongestRegime.bestMode.tradeMode} avg ${sections.collect.regimePerformance.strongestRegime.bestMode.avgPnlPercent}%`
+      : '- strongest regime none',
     `- ${sections.collect.headline}`,
     '',
     '분석:',
@@ -373,11 +449,14 @@ function buildFallback(payload = {}) {
   if (decision.status === 'regime_snapshot_bootstrap_needed') {
     return '장세 스냅샷이 아직 없어 먼저 nemesis 기반 regime snapshot을 누적해야 합니다.';
   }
+  if (decision.status === 'regime_strategy_tuning_needed') {
+    return '장세별 표본은 생겼고, 이제 약한 레짐/레인을 바로 전략 수정 대상으로 삼아야 합니다.';
+  }
   return '수집-분석-피드백-전략 수정 루프를 계속 굴리며 validation 표본을 누적하는 상태입니다.';
 }
 
 export async function buildRuntimeLearningLoopReport({ days = 14, json = false } = {}) {
-  const [freshness, runtimeDecision, executionGate, autotune, backtest, validation, regimeCoverage] = await Promise.all([
+  const [freshness, runtimeDecision, executionGate, autotune, backtest, validation, regimeCoverage, regimePerformance] = await Promise.all([
     loadLoopFreshness(),
     buildRuntimeDecisionReport({ market: 'all', limit: 5, json: true }).catch(() => ({ count: 0, summary: {}, rows: [] })),
     buildRuntimeCryptoExecutionGateReport({ days, json: true }).catch(() => ({ decision: {} })),
@@ -385,6 +464,7 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
     buildVectorBtBacktestReport({ days: 30, limit: 20, json: true }).catch(() => ({ rows: [], decision: { metrics: {} } })),
     validateTradeReview({ days: 90, fix: false }).catch(() => ({ findings: 0, closedTrades: 0, items: [] })),
     loadRegimeCoverage(90).catch(() => ({ windowDays: 90, byRegime: [], latestByMarket: [], distinctTradedRegimes: 0 })),
+    loadRegimePerformance(90).catch(() => ({ byRegime: [], weakestRegime: null, strongestRegime: null })),
   ]);
 
   const sections = buildSectionStates({
@@ -395,6 +475,7 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
     backtest,
     validation,
     regimeCoverage,
+    regimePerformance,
   });
   const decision = buildDecision(sections);
 
@@ -406,6 +487,7 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
     decision,
     runtimeDecision,
     regimeCoverage,
+    regimePerformance,
     executionGate,
     autotune,
     backtest,
@@ -422,6 +504,7 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
       decision,
       runtimeDecision: runtimeDecision.summary,
       regimeCoverage,
+      regimePerformance,
       executionGate: executionGate.decision,
       autotune: autotune.decision,
       backtest: backtest.decision,
