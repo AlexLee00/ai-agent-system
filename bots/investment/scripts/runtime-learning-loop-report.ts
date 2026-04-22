@@ -73,6 +73,89 @@ async function loadLoopFreshness() {
   };
 }
 
+async function loadRegimeCoverage(days = 90) {
+  await db.initSchema();
+  const safeDays = Math.max(14, Number(days || 90));
+  const [tradeRows, snapshotRows] = await Promise.all([
+    db.query(`
+      SELECT
+        j.exchange,
+        COALESCE(r.strategy_config->>'market_regime', 'unknown') AS regime,
+        COUNT(*) AS total,
+        SUM(CASE WHEN COALESCE(j.trade_mode, 'normal') = 'validation' THEN 1 ELSE 0 END) AS validation_trades,
+        SUM(CASE WHEN COALESCE(j.trade_mode, 'normal') = 'normal' THEN 1 ELSE 0 END) AS normal_trades,
+        MAX(j.created_at) AS latest_trade_at
+      FROM investment.trade_journal j
+      LEFT JOIN investment.trade_rationale r ON r.trade_id = j.trade_id
+      WHERE j.created_at >= NOW() - ($1::int || ' days')::interval
+      GROUP BY 1, 2
+      ORDER BY total DESC, exchange ASC, regime ASC
+    `, [safeDays]).catch(() => []),
+    db.query(`
+      SELECT
+        market,
+        regime,
+        COUNT(*) AS snapshots,
+        MAX(captured_at) AS latest_captured_at
+      FROM investment.market_regime_snapshots
+      WHERE captured_at >= NOW() - ($1::int || ' days')::interval
+      GROUP BY 1, 2
+      ORDER BY snapshots DESC, market ASC, regime ASC
+    `, [safeDays]).catch(() => []),
+  ]);
+
+  const latestByMarketRows = await db.query(`
+    SELECT DISTINCT ON (market)
+      market,
+      regime,
+      confidence,
+      captured_at
+    FROM investment.market_regime_snapshots
+    ORDER BY market, captured_at DESC
+  `).catch(() => []);
+
+  const byRegime = {};
+  const byExchange = {};
+  for (const row of tradeRows) {
+    const regime = String(row.regime || 'unknown');
+    const exchange = String(row.exchange || 'unknown');
+    byRegime[regime] = {
+      regime,
+      total: (byRegime[regime]?.total || 0) + Number(row.total || 0),
+      validationTrades: (byRegime[regime]?.validationTrades || 0) + Number(row.validation_trades || 0),
+      normalTrades: (byRegime[regime]?.normalTrades || 0) + Number(row.normal_trades || 0),
+      latestTradeAt: byRegime[regime]?.latestTradeAt || row.latest_trade_at || null,
+    };
+    byExchange[exchange] = byExchange[exchange] || [];
+    byExchange[exchange].push({
+      regime,
+      total: Number(row.total || 0),
+      validationTrades: Number(row.validation_trades || 0),
+      normalTrades: Number(row.normal_trades || 0),
+      latestTradeAt: row.latest_trade_at || null,
+    });
+  }
+
+  const distinctTradedRegimes = Object.values(byRegime)
+    .filter((item) => Number(item.total || 0) > 0 && item.regime !== 'unknown')
+    .length;
+
+  return {
+    windowDays: safeDays,
+    tradeRows,
+    snapshotRows,
+    latestByMarket: latestByMarketRows.map((row) => ({
+      market: row.market,
+      regime: row.regime,
+      confidence: Number(row.confidence || 0),
+      capturedAt: row.captured_at || null,
+    })),
+    byRegime: Object.values(byRegime).sort((a, b) => Number(b.total || 0) - Number(a.total || 0)),
+    byExchange,
+    distinctTradedRegimes,
+  };
+}
+
 function buildSectionStates({
   freshness,
   runtimeDecision,
@@ -80,6 +163,7 @@ function buildSectionStates({
   autotune,
   backtest,
   validation,
+  regimeCoverage,
 }) {
   const runtimeAge = ageHours(freshness.latestRuntimeSessionAt);
   const reviewAge = ageHours(freshness.latestTradeReviewAt);
@@ -103,6 +187,12 @@ function buildSectionStates({
       Number(runtimeDecision.summary?.approvedSignals || 0) === 0 && Number(runtimeDecision.summary?.executedSymbols || 0) === 0
         ? '세션은 돌고 있지만 승인/실행 표본이 비어 있어 학습 루프 밀도가 낮습니다.'
         : runtimeDecision.aiSummary || runtimeDecision.summary?.warnings?.[0] || 'runtime decision 수집 상태를 확인합니다.',
+    regimeCoverage: {
+      windowDays: regimeCoverage.windowDays,
+      distinctTradedRegimes: Number(regimeCoverage.distinctTradedRegimes || 0),
+      topRegimes: regimeCoverage.byRegime.slice(0, 4),
+      latestByMarket: regimeCoverage.latestByMarket,
+    },
   };
 
   const analyze = {
@@ -169,6 +259,10 @@ function buildDecision(sections = {}) {
     status = 'collect_bootstrap_needed';
     headline = '수집 루프가 비어 있어 먼저 runtime decision 세션을 쌓아야 합니다.';
     nextActions.push('crypto/domestic/overseas 런타임 세션을 다시 돌려 표본을 먼저 확보합니다.');
+  } else if (Number(sections.collect.regimeCoverage?.distinctTradedRegimes || 0) < 2) {
+    status = 'regime_sample_thin';
+    headline = '거래 표본이 특정 장세에 치우쳐 있어 레짐별 전략 학습 데이터를 더 넓혀야 합니다.';
+    nextActions.push('validation lane을 유지하면서 bull/bear/ranging/volatile 레짐별 표본이 끊기지 않게 관리합니다.');
   } else if (sections.collect.status === 'thin') {
     status = 'learning_sample_thin';
     headline = '세션은 돌지만 승인/실행 표본이 얇아 validation 표본을 더 쌓아야 합니다.';
@@ -215,6 +309,7 @@ function renderText(payload) {
     '수집:',
     `- ${sections.collect.status} | latest=${sections.collect.latestAt || 'n/a'} (${formatAge(sections.collect.ageHours)})`,
     `- approved ${sections.collect.approvedSignals} / executed ${sections.collect.executedSymbols}`,
+    `- regime coverage ${sections.collect.regimeCoverage?.distinctTradedRegimes || 0}종 | top ${((sections.collect.regimeCoverage?.topRegimes || []).map((item) => `${item.regime}:${item.total}`).join(', ')) || 'none'}`,
     `- ${sections.collect.headline}`,
     '',
     '분석:',
@@ -255,13 +350,14 @@ function buildFallback(payload = {}) {
 }
 
 export async function buildRuntimeLearningLoopReport({ days = 14, json = false } = {}) {
-  const [freshness, runtimeDecision, executionGate, autotune, backtest, validation] = await Promise.all([
+  const [freshness, runtimeDecision, executionGate, autotune, backtest, validation, regimeCoverage] = await Promise.all([
     loadLoopFreshness(),
     buildRuntimeDecisionReport({ market: 'all', limit: 5, json: true }).catch(() => ({ count: 0, summary: {}, rows: [] })),
     buildRuntimeCryptoExecutionGateReport({ days, json: true }).catch(() => ({ decision: {} })),
     buildRuntimeCryptoGuardAutotuneReport({ days, json: true }).catch(() => ({ decision: { metrics: {} } })),
     buildVectorBtBacktestReport({ days: 30, limit: 20, json: true }).catch(() => ({ rows: [], decision: { metrics: {} } })),
     validateTradeReview({ days: 90, fix: false }).catch(() => ({ findings: 0, closedTrades: 0, items: [] })),
+    loadRegimeCoverage(90).catch(() => ({ windowDays: 90, byRegime: [], latestByMarket: [], distinctTradedRegimes: 0 })),
   ]);
 
   const sections = buildSectionStates({
@@ -271,6 +367,7 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
     autotune,
     backtest,
     validation,
+    regimeCoverage,
   });
   const decision = buildDecision(sections);
 
@@ -281,6 +378,7 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
     sections,
     decision,
     runtimeDecision,
+    regimeCoverage,
     executionGate,
     autotune,
     backtest,
@@ -296,6 +394,7 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
       sections,
       decision,
       runtimeDecision: runtimeDecision.summary,
+      regimeCoverage,
       executionGate: executionGate.decision,
       autotune: autotune.decision,
       backtest: backtest.decision,
