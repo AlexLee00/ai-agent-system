@@ -149,6 +149,7 @@ async function loadRegimeCoverage(days = 90) {
     windowDays: safeDays,
     tradeRows,
     snapshotRows,
+    snapshotCount: snapshotRows.reduce((sum, row) => sum + Number(row.snapshots || 0), 0),
     latestByMarket: latestByMarketRows.map((row) => ({
       market: row.market,
       regime: row.regime,
@@ -199,6 +200,7 @@ function buildSectionStates({
       distinctTradedRegimes: Number(regimeCoverage.distinctTradedRegimes || 0),
       unknownTrades: Number(regimeCoverage.unknownTrades || 0),
       knownRegimeTrades: Number(regimeCoverage.knownRegimeTrades || 0),
+      snapshotCount: Number(regimeCoverage.snapshotCount || 0),
       topRegimes: regimeCoverage.byRegime.slice(0, 4),
       latestByMarket: regimeCoverage.latestByMarket,
     },
@@ -268,6 +270,10 @@ function buildDecision(sections = {}) {
     status = 'collect_bootstrap_needed';
     headline = '수집 루프가 비어 있어 먼저 runtime decision 세션을 쌓아야 합니다.';
     nextActions.push('crypto/domestic/overseas 런타임 세션을 다시 돌려 표본을 먼저 확보합니다.');
+  } else if (Number(sections.collect.regimeCoverage?.snapshotCount || 0) === 0) {
+    status = 'regime_snapshot_bootstrap_needed';
+    headline = '거래 저널에 붙일 장세 스냅샷이 아직 없어 bull/bear/ranging/volatile 표본 분리가 시작되지 못하고 있습니다.';
+    nextActions.push('nemesis 장세 감지 스냅샷을 먼저 누적하고, 그 뒤 journal regime backfill로 기존 체결 표본을 다시 연결합니다.');
   } else if (
     Number(sections.collect.regimeCoverage?.knownRegimeTrades || 0) === 0 &&
     Number(sections.collect.regimeCoverage?.unknownTrades || 0) > 0
@@ -326,6 +332,7 @@ function renderText(payload) {
     `- ${sections.collect.status} | latest=${sections.collect.latestAt || 'n/a'} (${formatAge(sections.collect.ageHours)})`,
     `- approved ${sections.collect.approvedSignals} / executed ${sections.collect.executedSymbols}`,
     `- regime coverage ${sections.collect.regimeCoverage?.distinctTradedRegimes || 0}종 | known ${sections.collect.regimeCoverage?.knownRegimeTrades || 0} / unknown ${sections.collect.regimeCoverage?.unknownTrades || 0}`,
+    `- regime snapshots ${sections.collect.regimeCoverage?.snapshotCount || 0}건`,
     `- top regimes ${((sections.collect.regimeCoverage?.topRegimes || []).map((item) => `${item.regime}:${item.total}`).join(', ')) || 'none'}`,
     `- ${sections.collect.headline}`,
     '',
@@ -362,6 +369,9 @@ function buildFallback(payload = {}) {
   }
   if (decision.status === 'collect_bootstrap_needed') {
     return '수집 표본이 부족해 런타임 세션을 더 쌓는 것이 먼저입니다.';
+  }
+  if (decision.status === 'regime_snapshot_bootstrap_needed') {
+    return '장세 스냅샷이 아직 없어 먼저 nemesis 기반 regime snapshot을 누적해야 합니다.';
   }
   return '수집-분석-피드백-전략 수정 루프를 계속 굴리며 validation 표본을 누적하는 상태입니다.';
 }

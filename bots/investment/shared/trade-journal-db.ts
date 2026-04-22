@@ -549,6 +549,90 @@ export async function getLatestJournalEntryBySignalId(signalId) {
   return rows[0] || null;
 }
 
+async function resolveJournalRegime({ tradeId, signalId = null, market = null, entryTime = null }) {
+  await ensureInit();
+
+  const rationale = await get(
+    `SELECT strategy_config
+     FROM trade_rationale
+     WHERE trade_id = ? OR signal_id = ?
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [tradeId, signalId],
+  ).catch(() => null);
+
+  const rationaleRegime = rationale?.strategy_config?.market_regime?.regime || null;
+  const rationaleConfidence = rationale?.strategy_config?.market_regime?.confidence ?? null;
+  if (rationaleRegime) {
+    return {
+      source: 'rationale',
+      regime: rationaleRegime,
+      confidence: rationaleConfidence,
+    };
+  }
+
+  if (!market) return null;
+
+  const snapshot = entryTime
+    ? await get(
+        `SELECT regime, confidence, captured_at
+         FROM market_regime_snapshots
+         WHERE market = ?
+         ORDER BY ABS(EXTRACT(EPOCH FROM (captured_at - to_timestamp(? / 1000.0)))) ASC
+         LIMIT 1`,
+        [market, entryTime],
+      ).catch(() => null)
+    : await get(
+        `SELECT regime, confidence, captured_at
+         FROM market_regime_snapshots
+         WHERE market = ?
+         ORDER BY captured_at DESC
+         LIMIT 1`,
+        [market],
+      ).catch(() => null);
+
+  if (!snapshot?.regime) return null;
+  return {
+    source: 'snapshot',
+    regime: snapshot.regime,
+    confidence: snapshot.confidence ?? null,
+    capturedAt: snapshot.captured_at ?? null,
+  };
+}
+
+export async function syncJournalMarketRegime(
+  { tradeId, signalId = null, market = null, entryTime = null },
+  { dryRun = false } = {},
+) {
+  await ensureInit();
+  const resolved = await resolveJournalRegime({ tradeId, signalId, market, entryTime });
+  if (!resolved?.regime) {
+    return {
+      updated: false,
+      source: null,
+      regime: null,
+      confidence: null,
+    };
+  }
+
+  if (!dryRun) {
+    await run(
+      `UPDATE trade_journal
+       SET market_regime = COALESCE(market_regime, ?),
+           market_regime_confidence = COALESCE(market_regime_confidence, ?)
+       WHERE trade_id = ?`,
+      [resolved.regime, resolved.confidence, tradeId],
+    );
+  }
+
+  return {
+    updated: true,
+    source: resolved.source,
+    regime: resolved.regime,
+    confidence: resolved.confidence,
+  };
+}
+
 export async function getReviewByTradeId(tradeId) {
   await ensureInit();
   const rows = await query(`SELECT * FROM trade_review WHERE trade_id = ? LIMIT 1`, [tradeId]);
@@ -892,25 +976,19 @@ export async function linkRationaleToTrade(tradeId, signalId) {
     [tradeId, signalId],
   );
   try {
-    const rationale = await get(
-      `SELECT strategy_config
-       FROM trade_rationale
-       WHERE trade_id = ? OR signal_id = ?
-       ORDER BY created_at DESC
+    const journal = await get(
+      `SELECT trade_id, signal_id, market, entry_time
+       FROM trade_journal
+       WHERE trade_id = ?
        LIMIT 1`,
-      [tradeId, signalId],
+      [tradeId],
     );
-    const regime = rationale?.strategy_config?.market_regime?.regime || null;
-    const confidence = rationale?.strategy_config?.market_regime?.confidence ?? null;
-    if (regime) {
-      await run(
-        `UPDATE trade_journal
-         SET market_regime = COALESCE(market_regime, ?),
-             market_regime_confidence = COALESCE(market_regime_confidence, ?)
-         WHERE trade_id = ?`,
-        [regime, confidence, tradeId],
-      );
-    }
+    await syncJournalMarketRegime({
+      tradeId,
+      signalId: journal?.signal_id ?? signalId,
+      market: journal?.market ?? null,
+      entryTime: journal?.entry_time ?? null,
+    });
   } catch (error) {
     console.warn('[trade-journal] rationale regime 동기화 실패(무시):', error?.message || error);
   }

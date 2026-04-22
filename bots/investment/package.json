@@ -21,6 +21,7 @@
     "report": "node team/reporter.ts",
     "report:tg": "node team/reporter.ts --telegram",
     "journal": "node scripts/trading-journal.ts",
+    "journal:backfill-regimes": "node scripts/backfill-trade-regimes.ts",
     "journal:week": "node scripts/trading-journal.ts --days=7",
     "journal:all": "node scripts/trading-journal.ts --all",
     "journal:tg": "node scripts/trading-journal.ts --telegram",
