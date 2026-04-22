@@ -399,14 +399,55 @@ function getCurrentInvestmentMarket() {
  * 429는 Groq 키 라운드로빈에서 처리 — 여기서는 서버 장애만 대상
  */
 async function callWithRetry(fn, agentName, maxRetries = 3) {
+  const extractRetryMeta = (error) => {
+    const message = String(
+      error?.message
+      || error?.error?.message
+      || error?.response?.data?.error?.message
+      || ''
+    );
+    const status = error?.status || error?.statusCode || error?.response?.status || null;
+    const type = String(
+      error?.type
+      || error?.error?.type
+      || error?.response?.data?.error?.type
+      || ''
+    ).toLowerCase();
+    const code = String(
+      error?.code
+      || error?.error?.code
+      || error?.response?.data?.error?.code
+      || ''
+    ).toLowerCase();
+    const requestIdMatch =
+      message.match(/request id[:\\s]+([a-z0-9-]+)/i)
+      || message.match(/request[_-]?id[\"'=:\\s]+([a-z0-9-]+)/i);
+    const requestId = requestIdMatch?.[1] || null;
+    const transientByStatus = [500, 502, 503, 504].includes(Number(status));
+    const transientByText =
+      type === 'server_error'
+      || code === 'server_error'
+      || /\\bserver_error\\b/i.test(message)
+      || /timed out/i.test(message)
+      || /temporar/i.test(message)
+      || /internal server error/i.test(message);
+    return {
+      status,
+      message,
+      requestId,
+      retryable: transientByStatus || transientByText,
+    };
+  };
   for (let i = 0; i < maxRetries; i++) {
     try {
       return await fn();
     } catch (e) {
-      const status = e.status || e.statusCode || e.response?.status;
-      if ([500, 502, 503].includes(status) && i < maxRetries - 1) {
+      const meta = extractRetryMeta(e);
+      if (meta.retryable && i < maxRetries - 1) {
         const delay = Math.pow(2, i) * 1000;  // 1s → 2s → 4s
-        console.warn(`  ⚠️ [${agentName}] HTTP ${status} 재시도 ${i + 1}/${maxRetries - 1} (${delay}ms 대기)`);
+        const statusLabel = meta.status ? `HTTP ${meta.status}` : 'server_error';
+        const requestIdLabel = meta.requestId ? ` / request_id=${meta.requestId}` : '';
+        console.warn(`  ⚠️ [${agentName}] ${statusLabel} 재시도 ${i + 1}/${maxRetries - 1} (${delay}ms 대기)${requestIdLabel}`);
         await new Promise(r => setTimeout(r, delay));
         continue;
       }
