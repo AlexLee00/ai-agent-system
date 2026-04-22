@@ -4102,6 +4102,23 @@ async function diagnoseSympathyUi(postUrl, { testMode = true } = {}) {
   });
 }
 
+async function tryRecoverNeighborSympathy(postUrl, { testMode = false } = {}) {
+  try {
+    const replay = await diagnoseSympathyUi(postUrl, { testMode: true });
+    return {
+      ok: Boolean(replay?.ok),
+      replay,
+      reason: replay?.ok ? 'ui_replay_recovered' : String(replay?.error || 'ui_replay_failed'),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      replay: null,
+      reason: String(error?.message || error || 'ui_replay_failed'),
+    };
+  }
+}
+
 async function verifyReplyPosted(page, replyText, comment, testMode = false, browserPage = null) {
   const needle = normalizeText(replyText).slice(0, 24);
   const commentRef = parseCommentRef(comment?.comment_ref);
@@ -5301,6 +5318,30 @@ async function runNeighborSympathy({ testMode = false } = {}) {
       });
       liked += 1;
     } catch (error) {
+      const errorMessage = String(error?.message || error || '');
+      const shouldReplay =
+        /sympathy_button_not_found|sympathy_not_confirmed/i.test(errorMessage);
+      let recovered = null;
+      if (shouldReplay) {
+        recovered = await tryRecoverNeighborSympathy(candidate.postUrl, { testMode });
+      }
+      if (recovered?.ok) {
+        await recordCommentAction('neighbor_sympathy', {
+          targetBlog: candidate.targetBlogId,
+          targetPostUrl: candidate.postUrl,
+          success: true,
+          meta: {
+            sourceType: candidate.sourceType || null,
+            targetBlogName: candidate.targetBlogName || null,
+            recoveredByReplay: true,
+            initialError: errorMessage,
+            replayReason: recovered.reason,
+            replay: recovered.replay,
+          },
+        });
+        liked += 1;
+        continue;
+      }
       failed += 1;
       await recordCommentAction('neighbor_sympathy', {
         targetBlog: candidate.targetBlogId,
@@ -5309,7 +5350,10 @@ async function runNeighborSympathy({ testMode = false } = {}) {
         meta: {
           sourceType: candidate.sourceType || null,
           targetBlogName: candidate.targetBlogName || null,
-          error: error.message,
+          error: errorMessage,
+          replayAttempted: shouldReplay,
+          replayReason: recovered?.reason || null,
+          replay: recovered?.replay || null,
         },
       }).catch(() => {});
     }
