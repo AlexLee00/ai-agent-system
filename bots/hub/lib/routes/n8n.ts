@@ -4,6 +4,8 @@ const env = require('../../../../packages/core/lib/env');
 const { fetchJson, postJson } = require('../../../../packages/core/lib/health-provider');
 const pgPool = require('../../../../packages/core/lib/pg-pool');
 
+const WEBHOOK_WARNING_LOG = process.env.WEBHOOK_WARNING_LOG || '/tmp/hub-webhook-warnings.jsonl';
+
 // n8n.webhook_entity에서 실제 웹훅 경로를 조회 (short name → full path)
 // 예: "rag-ingest" → "D1HhD70CSezffE02/webhook/rag-ingest"
 //     "critical"   → "critical"
@@ -43,6 +45,49 @@ async function buildWebhookUrl(pathValue: unknown): Promise<string> {
   const safePath = String(pathValue || '').replace(/^\/+/, '');
   const resolvedPath = await resolveWebhookPath(safePath);
   return `${env.N8N_BASE_URL}/webhook/${resolvedPath}`;
+}
+
+function sanitizeWebhookText(value: unknown): string {
+  if (value == null) return '';
+  const text = String(value).trim();
+  if (!text) return '';
+  const lowered = text.toLowerCase();
+  if (['undefined', 'null', 'nan', '[object object]'].includes(lowered)) return '';
+  return text;
+}
+
+function summarizeWebhookPayload(body: unknown): {
+  malformed: boolean;
+  keys: string[];
+  headline: string;
+} {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { malformed: true, keys: [], headline: '' };
+  }
+  const record = body as Record<string, unknown>;
+  const keys = Object.keys(record).slice(0, 12);
+  const headline = [
+    record.title,
+    record.summary,
+    record.message,
+    record.content,
+    record.text,
+    record.action,
+  ].map((value) => sanitizeWebhookText(value)).find(Boolean) || '';
+
+  const details = Array.isArray(record.details)
+    ? record.details.map((value) => sanitizeWebhookText(value)).filter(Boolean)
+    : [];
+  const malformed = !headline && details.length === 0;
+  return { malformed, keys, headline };
+}
+
+function appendWebhookWarning(entry: Record<string, unknown>): void {
+  try {
+    fs.appendFileSync(WEBHOOK_WARNING_LOG, `${JSON.stringify(entry)}\n`, 'utf8');
+  } catch (error: any) {
+    console.warn(`[hub/n8n] webhook warning log failed: ${error?.message || 'unknown_error'}`);
+  }
 }
 
 function getN8nApiKey(): string {
@@ -109,6 +154,19 @@ export async function n8nTriggerWorkflowRoute(req: any, res: any) {
 export async function n8nWebhookRoute(req: any, res: any) {
   if (!env.N8N_ENABLED) {
     return res.status(503).json({ error: 'n8n_disabled' });
+  }
+
+  const payloadSummary = summarizeWebhookPayload(req.body || {});
+  if (payloadSummary.malformed) {
+    appendWebhookWarning({
+      ts: new Date().toISOString(),
+      route: String(req.params.path || ''),
+      method: String(req.method || 'POST'),
+      keys: payloadSummary.keys,
+      headline: payloadSummary.headline,
+      source: sanitizeWebhookText(req.headers['x-forwarded-for'] || req.ip || ''),
+      user_agent: sanitizeWebhookText(req.headers['user-agent'] || ''),
+    });
   }
 
   const webhookUrl = await buildWebhookUrl(req.params.path);
