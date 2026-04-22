@@ -281,6 +281,23 @@ async function crosspostToFacebook(blogPost, dryRun = false) {
   }
 }
 
+async function runStrategyNativeFollowup(platform, dryRun = false) {
+  const campaign = await buildIndependentPlatformCampaign({
+    needInstagram: platform === 'instagram',
+    needFacebook: platform === 'facebook',
+  });
+
+  if (platform === 'instagram') {
+    const result = await Promise.resolve(crosspostToInstagram(campaign, dryRun))
+      .catch((error) => ({ ok: false, status: 'failed', error: error?.message || String(error) }));
+    return { campaign, result };
+  }
+
+  const result = await Promise.resolve(crosspostToFacebook(campaign, dryRun))
+    .catch((error) => ({ ok: false, status: 'failed', error: error?.message || String(error) }));
+  return { campaign, result };
+}
+
 /**
  * 3 플랫폼 통합 발행 상태 보고 (일일 오케스트레이션 완료 시)
  */
@@ -389,6 +406,81 @@ async function orchestrateDailyPublishing(dryRun = false) {
     }
   }
 
+  const strategy = getEffectivePlatformStrategy();
+  const shouldRunExtraInstagram = Boolean(
+    latestBlogPost
+    && igQuota
+    && Number(strategy.instagram.daily_reels || 0) > 1
+  );
+  const shouldRunExtraFacebook = Boolean(
+    latestBlogPost
+    && fbQuota
+    && Number(strategy.facebook.daily_posts || 0) > 1
+  );
+
+  /** @type {{ instagram?: any, facebook?: any }} */
+  const strategyNativeFollowups = {};
+
+  if (shouldRunExtraInstagram) {
+    const extraInstagram = await runStrategyNativeFollowup('instagram', dryRun);
+    strategyNativeFollowups.instagram = extraInstagram;
+    if (!dryRun) {
+      if (extraInstagram.result?.ok) {
+        await publishReporter.reportPublishSuccess('instagram', extraInstagram.campaign.title, extraInstagram.campaign.naver_url || extraInstagram.campaign.url || '', {
+          previewBundle: 'strategy_native_followup',
+          postId: extraInstagram.campaign.id || null,
+          sourceMode: 'strategy_native',
+          metadata: {
+            synthetic: true,
+            category: extraInstagram.campaign.category || null,
+            followup: true,
+          },
+        }).catch(() => {});
+      } else {
+        await publishReporter.reportPublishFailure('instagram', extraInstagram.campaign.title, extraInstagram.result?.error || '알 수 없는 오류', {
+          previewBundle: 'strategy_native_followup',
+          postId: extraInstagram.campaign.id || null,
+          sourceMode: 'strategy_native',
+          metadata: {
+            synthetic: true,
+            category: extraInstagram.campaign.category || null,
+            followup: true,
+          },
+        }).catch(() => {});
+      }
+    }
+  }
+
+  if (shouldRunExtraFacebook) {
+    const extraFacebook = await runStrategyNativeFollowup('facebook', dryRun);
+    strategyNativeFollowups.facebook = extraFacebook;
+    if (!dryRun) {
+      if (extraFacebook.result?.postId || extraFacebook.result?.ok) {
+        await publishReporter.reportPublishSuccess('facebook', extraFacebook.campaign.title, extraFacebook.campaign.naver_url || extraFacebook.campaign.url || '', {
+          previewBundle: 'strategy_native_followup',
+          postId: extraFacebook.campaign.id || null,
+          sourceMode: 'strategy_native',
+          metadata: {
+            synthetic: true,
+            category: extraFacebook.campaign.category || null,
+            followup: true,
+          },
+        }).catch(() => {});
+      } else {
+        await publishReporter.reportPublishFailure('facebook', extraFacebook.campaign.title, extraFacebook.result?.error || '알 수 없는 오류', {
+          previewBundle: 'strategy_native_followup',
+          postId: extraFacebook.campaign.id || null,
+          sourceMode: 'strategy_native',
+          metadata: {
+            synthetic: true,
+            category: extraFacebook.campaign.category || null,
+            followup: true,
+          },
+        }).catch(() => {});
+      }
+    }
+  }
+
   const status = await getTodayPublishStatus();
   await sendDailyOrchestrationReport(status);
 
@@ -396,6 +488,7 @@ async function orchestrateDailyPublishing(dryRun = false) {
     blogPost,
     instagram: { success: igSuccess },
     facebook: { success: fbSuccess },
+    strategyNativeFollowups,
     status,
   };
 }

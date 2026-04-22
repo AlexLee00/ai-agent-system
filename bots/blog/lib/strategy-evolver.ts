@@ -144,9 +144,18 @@ function buildExecutionDirectives(plan = {}, diagnosis = {}, marketingDigest = n
   const revenueImpactPct = Number(marketingDigest?.revenueCorrelation?.revenueImpactPct || 0);
   const topSignalType = String(marketingDigest?.senseSummary?.topSignal?.type || '');
   const preferredCategory = String(plan.preferredCategory || '').trim();
+  const socialRows = Array.isArray(marketingDigest?.socialPublishSources?.rows)
+    ? marketingDigest.socialPublishSources.rows
+    : [];
 
   const isConversionPush = revenueImpactPct < -0.05 || topSignalType === 'exam_period';
   const isAmplifyPush = revenueImpactPct > 0.05;
+
+  const strategyNativeInstagram = socialRows.find((item) => item.platform === 'instagram' && item.sourceMode === 'strategy_native');
+  const strategyNativeFacebook = socialRows.find((item) => item.platform === 'facebook' && item.sourceMode === 'strategy_native');
+  const naverInstagram = socialRows.find((item) => item.platform === 'instagram' && item.sourceMode === 'naver_post');
+  const naverFacebook = socialRows.find((item) => item.platform === 'facebook' && item.sourceMode === 'naver_post');
+  const missingStrategyNativeSignals = Number(marketingDigest?.socialPublishSources?.strategyNativeCount || 0) === 0;
 
   const hashtagFocusTags = [];
   if (preferredCategory) hashtagFocusTags.push(`#${preferredCategory.replace(/\s+/g, '')}`);
@@ -158,17 +167,31 @@ function buildExecutionDirectives(plan = {}, diagnosis = {}, marketingDigest = n
 
   const neighborBase = isConversionPush ? 3 : 2;
   const sympathyBase = isAmplifyPush ? 5 : 3;
+  const instagramTarget = (
+    strategyNativeInstagram?.successRate != null
+    && naverInstagram?.successRate != null
+    && Number(strategyNativeInstagram.successRate) >= Number(naverInstagram.successRate)
+  )
+    ? 2
+    : (isAmplifyPush ? 2 : missingStrategyNativeSignals ? 2 : 1);
+  const facebookTarget = (
+    strategyNativeFacebook?.successRate != null
+    && naverFacebook?.successRate != null
+    && Number(strategyNativeFacebook.successRate) >= Number(naverFacebook.successRate)
+  )
+    ? 2
+    : (isConversionPush ? 2 : missingStrategyNativeSignals ? 2 : 1);
 
   return {
     channelPriority: {
       naverBlog: 'primary',
-      instagram: isAmplifyPush ? 'primary' : 'secondary',
-      facebook: isConversionPush ? 'secondary' : 'supporting',
+      instagram: isAmplifyPush || instagramTarget > 1 ? 'primary' : 'secondary',
+      facebook: isConversionPush || facebookTarget > 1 ? 'secondary' : 'supporting',
     },
     executionTargets: {
       blogRegistrationsPerCycle: 1,
-      instagramRegistrationsPerCycle: isAmplifyPush ? 2 : 1,
-      facebookRegistrationsPerCycle: isConversionPush ? 2 : 1,
+      instagramRegistrationsPerCycle: instagramTarget,
+      facebookRegistrationsPerCycle: facebookTarget,
       replyTargetPerCycle: 1,
       neighborCommentTargetPerCycle: neighborBase,
       sympathyTargetPerCycle: sympathyBase,

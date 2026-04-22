@@ -807,7 +807,7 @@ function summarizeSense(sense = {}) {
   };
 }
 
-function buildRecommendations({ senseSummary, revenueCorrelation, diagnosis, autonomySummary, channelPerformance }) {
+function buildRecommendations({ senseSummary, revenueCorrelation, diagnosis, autonomySummary, channelPerformance, socialPublishSources }) {
   const recommendations = [];
   const activeDayCount = Number(revenueCorrelation?.activeDay?.dayCount || 0);
   const inactiveDayCount = Number(revenueCorrelation?.inactiveDay?.dayCount || 0);
@@ -843,6 +843,15 @@ function buildRecommendations({ senseSummary, revenueCorrelation, diagnosis, aut
     : null;
   if (naverBlog && Number(naverBlog.publishedCount || 0) === 0) {
     recommendations.push('네이버 블로그 채널 성과가 아직 warming-up 상태라 게시 후 조회/공감 수집 루프를 더 쌓는 편이 좋습니다.');
+  }
+
+  const strategyNativeCount = Number(socialPublishSources?.strategyNativeCount || 0);
+  const naverPostSocialCount = Number(socialPublishSources?.naverPostCount || 0);
+  if (naverPostSocialCount > 0 && strategyNativeCount === 0) {
+    recommendations.push('현재 소셜은 아직 네이버 파생 발행 중심이라, 전략 원본 인스타/페이스북 실험을 추가해 채널 독립 성과를 따로 쌓는 편이 좋습니다.');
+  }
+  if (strategyNativeCount > 0) {
+    recommendations.push(`전략 원본 소셜 발행이 최근 ${strategyNativeCount}건 집계되어, 네이버 파생과 성과를 분리 비교하는 실험을 계속 이어가면 좋습니다.`);
   }
 
   if (!recommendations.length) {
@@ -913,7 +922,7 @@ async function buildMarketingDigest(options = {}) {
 
   const senseSummary = summarizeSense(sense);
   const health = buildHealth({ senseSummary, revenueCorrelation, diagnosis, autonomySummary, channelPerformance });
-  const recommendations = buildRecommendations({ senseSummary, revenueCorrelation, diagnosis, autonomySummary, channelPerformance });
+  const recommendations = buildRecommendations({ senseSummary, revenueCorrelation, diagnosis, autonomySummary, channelPerformance, socialPublishSources });
   const strategy = getStrategySummary();
   const nextGeneralPreview = await buildNextGeneralPreview(strategy, sense, revenueCorrelation);
   const strategyAdoption = await getRecentGeneralStrategyAdoption(strategy, nextGeneralPreview, Number(options.adoptionWindow || 5));
