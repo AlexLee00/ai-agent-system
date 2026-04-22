@@ -10,6 +10,14 @@ const { log } = require('./utils');
 const ROOT = path.resolve(__dirname, '..', '..');
 const REGISTRY_FILE = path.join(ROOT, 'bots', 'registry.json');
 
+function formatModelLabel(value) {
+  const text = String(value || '').trim();
+  if (!text) return '-';
+  const lowered = text.toLowerCase();
+  if (lowered === 'undefined' || lowered === 'null' || lowered === 'nan') return '-';
+  return text;
+}
+
 function loadRegistry() {
   return JSON.parse(fs.readFileSync(REGISTRY_FILE, 'utf-8'));
 }
@@ -29,7 +37,7 @@ function listBots(registry) {
     const targets = bot.deployTargets.map(t => t.type).join(', ') || '없음';
     console.log(`  ${emoji} ${id.padEnd(14)} ${bot.name.padEnd(20)} [${bot.status}] → ${targets}`);
     console.log(`     ${bot.description}`);
-    console.log(`     모델: ${bot.model?.primary}`);
+    console.log(`     모델: ${formatModelLabel(bot.model?.primary)}`);
     console.log('');
   }
 }

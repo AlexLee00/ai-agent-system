@@ -51,6 +51,14 @@ function readOpenClawPrimaryModel() {
   }
 }
 
+function formatModelLabel(value) {
+  const text = String(value || '').trim();
+  if (!text) return '-';
+  const lowered = text.toLowerCase();
+  if (lowered === 'undefined' || lowered === 'null' || lowered === 'nan') return '-';
+  return text;
+}
+
 // ─── openclaw 배포 ────────────────────────────────────────────────────────
 function deployOpenclaw(bot, botId, target, contextDir) {
   const workspace = expandHome(target.workspace);
@@ -117,7 +125,7 @@ ${readList}
 |------|------|
 | 이름 | ${bot.name} |
 | 역할 | ${bot.description} |
-| 모델 | ${readOpenClawPrimaryModel() || bot.model?.primary} |
+| 모델 | ${formatModelLabel(readOpenClawPrimaryModel() || bot.model?.primary)} |
 | 상태 | ${bot.status} |
 
 ## ⚠️ BOOT 중 텔레그램 절대 규칙
@@ -233,7 +241,7 @@ function updateSystemStatus(deployedBotId, registry) {
     const deployTargets = Array.isArray(b.deployTargets) ? b.deployTargets : [];
     const oc = deployTargets.find(t => t.type === 'openclaw');
     const loginType = oc ? `${oc.type}/${oc.loginType}` : (deployTargets[0]?.type || '-');
-    return `| ${emoji[b.status] || '❓'} | \`${id}\` | ${b.name} | ${b.model?.primary || '-'} | ${loginType} |`;
+    return `| ${emoji[b.status] || '❓'} | \`${id}\` | ${b.name} | ${formatModelLabel(b.model?.primary)} | ${loginType} |`;
   }).join('\n');
 
   const content = `# 시스템 현황 — 클로드 부팅 참조
@@ -295,7 +303,7 @@ function deployBot(botId, registry, targetTypeFilter = null) {
     return false;
   }
 
-  log(`\n🤖 봇: ${bot.name} (${botId}) | 상태: ${bot.status} | 모델: ${bot.model?.primary}`);
+  log(`\n🤖 봇: ${bot.name} (${botId}) | 상태: ${bot.status} | 모델: ${formatModelLabel(bot.model?.primary)}`);
 
   for (const target of deployTargets) {
     if (targetTypeFilter && target.type !== targetTypeFilter) continue;
