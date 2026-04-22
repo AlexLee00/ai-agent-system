@@ -858,6 +858,7 @@ export async function runDecisionExecutionPipeline({
       action: dec.action,
       amountUsdt,
       confidence: dec.confidence,
+      trade_mode: midGapPromotedCandidate ? 'validation' : investmentTradeMode,
       reasoning: midGapPromotedCandidate
         ? `[루나] mid-gap validation 승격 | ${dec.reasoning}`
         : `[루나] ${dec.reasoning}`,
@@ -933,6 +934,11 @@ export async function runDecisionExecutionPipeline({
       sessionId,
       market: exchange,
       symbol: dec.symbol,
+      decision: {
+        ...dec,
+        trade_mode: midGapPromotedCandidate ? 'validation' : investmentTradeMode,
+        amount_usdt: amountUsdt,
+      },
       meta: await buildDecisionBridgeMeta({
         sessionId,
         market: exchange,
