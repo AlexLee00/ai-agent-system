@@ -9,6 +9,7 @@ const {
   parseCsvArg,
   ts,
   writePayScanChecklistFile,
+  resolvePayScanFollowupFiles,
   isAlreadyPaidWithoutButton,
   isExpectedManualFollowup,
   buildPayScanAlertMessage,
@@ -155,6 +156,7 @@ async function main() {
   let failureCount = 0;
   let unexpectedFailureCount = 0;
   const failures: any[] = [];
+  const resolvedEntries: any[] = [];
 
   for (const entry of targets) {
     const label = `${entry.date} ${entry.start}~${entry.end} ${entry.room} ${entry.phone}`;
@@ -175,6 +177,7 @@ async function main() {
       if (dedupe?.hiddenCount > 0) {
         log(`🧹 duplicate slot 정리: canonical=${dedupe.canonicalId} hidden=${dedupe.hiddenCount} (${label})`);
       }
+      resolvedEntries.push(entry);
       continue;
     }
 
@@ -191,6 +194,16 @@ async function main() {
   }
 
   log(`📊 완료: 성공 ${successCount}건 / 실패 ${failureCount}건`);
+
+  const followupResolution = resolvePayScanFollowupFiles(
+    path.join(__dirname, '../../manual/reports'),
+    resolvedEntries,
+  );
+  if (followupResolution.removedEntries > 0) {
+    log(
+      `🧹 기존 pay-scan follow-up 정리: 항목 ${followupResolution.removedEntries}건 / 파일 수정 ${followupResolution.updatedFiles}건 / 파일 삭제 ${followupResolution.removedFiles}건`,
+    );
+  }
 
   const checklistPath = writePayScanChecklistFile(path.join(__dirname, '../../manual/reports'), failures);
   const memoryQuery = buildPayScanMemoryQuery(successCount, failureCount, unexpectedFailureCount);

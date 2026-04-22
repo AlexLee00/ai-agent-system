@@ -3,6 +3,12 @@ import path from 'path';
 
 type ReservationLike = Record<string, any>;
 type PayScanFailure = { entry: ReservationLike; result: Record<string, any> };
+type PayScanResolveResult = {
+  scannedFiles: number;
+  updatedFiles: number;
+  removedFiles: number;
+  removedEntries: number;
+};
 
 export function formatAmount(amount: unknown): string {
   return `${Number(amount || 0).toLocaleString('ko-KR')}원`;
@@ -69,6 +75,34 @@ export function buildFailureLine(entry: ReservationLike, result: Record<string, 
   return `- ${entry.date} ${entry.start}~${entry.end} ${entry.room}룸 / ${entry.phone} / ${result.message}`;
 }
 
+function normalizePhone(raw: unknown): string {
+  return String(raw || '').replace(/\D+/g, '');
+}
+
+function buildPayScanFollowupKey(entry: ReservationLike): string {
+  return [
+    String(entry?.date || '').trim(),
+    String(entry?.start || '').trim(),
+    String(entry?.end || '').trim(),
+    String(entry?.room || '').replace(/룸$/u, '').trim().toUpperCase(),
+    normalizePhone(entry?.phone),
+  ].join('|');
+}
+
+function parsePayScanFollowupLine(line: string): string | null {
+  const match = String(line || '').match(
+    /^-\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})~(\d{2}:\d{2})\s+([A-Za-z0-9가-힣]+)룸\s+\/\s+([0-9-]+)\s+\//u,
+  );
+  if (!match) return null;
+  return [
+    match[1],
+    match[2],
+    match[3],
+    String(match[4] || '').replace(/룸$/u, '').trim().toUpperCase(),
+    normalizePhone(match[5]),
+  ].join('|');
+}
+
 export function writePayScanChecklistFile(baseDir: string, failures: PayScanFailure[]): string | null {
   if (!failures.length) return null;
   const stamp = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Seoul' }).replace(/[-: ]/g, '').slice(0, 13);
@@ -85,6 +119,66 @@ export function writePayScanChecklistFile(baseDir: string, failures: PayScanFail
   ];
   fs.writeFileSync(filePath, lines.join('\n'), 'utf8');
   return filePath;
+}
+
+export function resolvePayScanFollowupFiles(baseDir: string, resolvedEntries: ReservationLike[] = []): PayScanResolveResult {
+  const resolvedKeys = new Set(
+    (resolvedEntries || [])
+      .map((entry) => buildPayScanFollowupKey(entry))
+      .filter(Boolean),
+  );
+  if (resolvedKeys.size === 0) {
+    return {
+      scannedFiles: 0,
+      updatedFiles: 0,
+      removedFiles: 0,
+      removedEntries: 0,
+    };
+  }
+
+  const files = fs.existsSync(baseDir)
+    ? fs.readdirSync(baseDir)
+        .filter((name) => /^pickko-pay-scan-followup-.*\.md$/u.test(name))
+        .map((name) => path.join(baseDir, name))
+    : [];
+
+  let updatedFiles = 0;
+  let removedFiles = 0;
+  let removedEntries = 0;
+
+  for (const filePath of files) {
+    const original = fs.readFileSync(filePath, 'utf8');
+    const lines = original.split('\n');
+    let changed = false;
+    const nextLines = lines.filter((line) => {
+      const key = parsePayScanFollowupLine(line);
+      if (key && resolvedKeys.has(key)) {
+        changed = true;
+        removedEntries += 1;
+        return false;
+      }
+      return true;
+    });
+
+    if (!changed) continue;
+
+    const hasRemainingEntries = nextLines.some((line) => /^-\s+\d{4}-\d{2}-\d{2}\s+/u.test(line));
+    if (!hasRemainingEntries) {
+      fs.unlinkSync(filePath);
+      removedFiles += 1;
+      continue;
+    }
+
+    fs.writeFileSync(filePath, nextLines.join('\n'), 'utf8');
+    updatedFiles += 1;
+  }
+
+  return {
+    scannedFiles: files.length,
+    updatedFiles,
+    removedFiles,
+    removedEntries,
+  };
 }
 
 export function isAlreadyPaidWithoutButton(entry: ReservationLike, result: Record<string, any>): boolean {
