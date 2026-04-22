@@ -22,6 +22,7 @@ import * as db from '../shared/db.ts';
 import { publishAlert } from '../shared/alert-publisher.ts';
 import { loadPreScreened } from './pre-market-screen.ts';
 import { getInvestmentProfile } from './investment-profile.ts';
+import { buildRuntimeLearningLoopReport } from './runtime-learning-loop-report.ts';
 import { getKisMarketStatus, getKisOverseasMarketStatus, initHubSecrets } from '../shared/secrets.ts';
 import { getDomesticBalance, getOverseasBalance } from '../shared/kis-client.ts';
 import { syncPositionsAtMarketOpen } from '../shared/position-sync.ts';
@@ -169,6 +170,33 @@ function buildMarketAlertMemoryQuery(kind, market, extras = []) {
   ].filter(Boolean).join(' ');
 }
 
+async function loadLearningLoopSummary() {
+  return buildRuntimeLearningLoopReport({ days: 14, json: true }).catch((error) => ({
+    error: String(error?.message || error),
+  }));
+}
+
+function buildLearningLoopAlertLine(learningLoopSummary) {
+  if (!learningLoopSummary || learningLoopSummary.error || learningLoopSummary.decision?.status !== 'regime_strategy_tuning_needed') {
+    return null;
+  }
+  const weakest = learningLoopSummary.sections?.regimeLaneSummary?.weakestRegime;
+  const weakestMode = weakest?.tradeMode || weakest?.worstMode?.tradeMode || weakest?.bestMode?.tradeMode || 'n/a';
+  const topSuggestion = learningLoopSummary.sections?.strategy?.runtimeSuggestionTop;
+  const suggestionValue = topSuggestion?.suggestedValue ?? topSuggestion?.suggested;
+  const parts = [
+    `weakest ${weakest?.regime || 'n/a'} / ${weakestMode}`,
+    topSuggestion?.key && suggestionValue != null ? `${topSuggestion.key} -> ${suggestionValue}` : null,
+  ].filter(Boolean);
+  return parts.length > 0 ? `🧭 learning loop: ${parts.join(' | ')}` : null;
+}
+
+function getLearningLoopNextCommand(learningLoopSummary) {
+  const nextActions = learningLoopSummary?.decision?.nextActions;
+  if (!Array.isArray(nextActions)) return null;
+  return nextActions.find((item) => typeof item === 'string' && item.startsWith('npm --prefix')) || null;
+}
+
 // KST 기준 오늘 날짜
 const todayKST = () => kst.today();
 
@@ -262,6 +290,7 @@ async function main() {
 
 async function sendOpenAlert(market, label) {
   const profile    = await getInvestmentProfile(market);
+  const learningLoopSummary = await loadLearningLoopSummary();
   const exchange   = EXCHANGE_MAP[market];
   const prescreened = loadPreScreened(market);
   const symbols    = prescreened?.symbols || [];
@@ -360,6 +389,10 @@ async function sendOpenAlert(market, label) {
     title: '최근 통합 패턴',
     separator: 'newline',
   }).catch(() => '');
+  const learningLoopLine = buildLearningLoopAlertLine(learningLoopSummary);
+  if (learningLoopLine) lines.push(learningLoopLine);
+  const learningLoopNextCommand = getLearningLoopNextCommand(learningLoopSummary);
+  if (learningLoopNextCommand) lines.push(`🛠️ next command: ${learningLoopNextCommand}`);
   const message = `${lines.join('\n')}${episodicHint}${semanticHint}`;
 
   await publishAlert({
@@ -367,7 +400,7 @@ async function sendOpenAlert(market, label) {
     event_type:  'market_open',
     alert_level: 1,
     message,
-    payload:     { market, exchange, symbols, positionCount: aggregatedPositions.length },
+    payload:     { market, exchange, symbols, positionCount: aggregatedPositions.length, learningLoopSummary },
   });
   await safeMarketAlertMemory.remember(message, 'episodic', {
     importance: 0.64,
@@ -391,6 +424,7 @@ async function sendOpenAlert(market, label) {
 
 async function sendCloseReport(market, label) {
   const profile  = await getInvestmentProfile(market);
+  const learningLoopSummary = await loadLearningLoopSummary();
   const exchange = EXCHANGE_MAP[market];
   const today    = todayKST();
 
@@ -501,6 +535,10 @@ async function sendCloseReport(market, label) {
     title: '최근 통합 패턴',
     separator: 'newline',
   }).catch(() => '');
+  const learningLoopLine = buildLearningLoopAlertLine(learningLoopSummary);
+  if (learningLoopLine) lines.push(learningLoopLine);
+  const learningLoopNextCommand = getLearningLoopNextCommand(learningLoopSummary);
+  if (learningLoopNextCommand) lines.push(`🛠️ next command: ${learningLoopNextCommand}`);
   const message = `${lines.join('\n')}${episodicHint}${semanticHint}`;
 
   await publishAlert({
@@ -508,7 +546,7 @@ async function sendCloseReport(market, label) {
     event_type:  'market_close_report',
     alert_level: trades.length > 0 ? 2 : 1,
     message,
-    payload:     { market, exchange, tradeCount: trades.length, positionCount: aggregatedPositions.length, date: today },
+    payload:     { market, exchange, tradeCount: trades.length, positionCount: aggregatedPositions.length, date: today, learningLoopSummary },
   });
   await safeMarketAlertMemory.remember(message, 'episodic', {
     importance: trades.length > 0 ? 0.72 : 0.62,
@@ -533,6 +571,7 @@ async function sendCloseReport(market, label) {
 
 async function sendCryptoDailyReport(label) {
   const profile = await getInvestmentProfile('crypto');
+  const learningLoopSummary = await loadLearningLoopSummary();
   const today   = todayKST();
 
   const trades = await db.query(`
@@ -606,6 +645,10 @@ async function sendCryptoDailyReport(label) {
     title: '최근 통합 패턴',
     separator: 'newline',
   }).catch(() => '');
+  const learningLoopLine = buildLearningLoopAlertLine(learningLoopSummary);
+  if (learningLoopLine) lines.push(learningLoopLine);
+  const learningLoopNextCommand = getLearningLoopNextCommand(learningLoopSummary);
+  if (learningLoopNextCommand) lines.push(`🛠️ next command: ${learningLoopNextCommand}`);
   const message = `${lines.join('\n')}${episodicHint}${semanticHint}`;
 
   await publishAlert({
@@ -613,7 +656,7 @@ async function sendCryptoDailyReport(label) {
     event_type:  'crypto_daily_report',
     alert_level: 1,
     message,
-    payload:     { market: 'crypto', tradeCount: trades.length, positionCount: aggregatedPositions.length, date: today },
+    payload:     { market: 'crypto', tradeCount: trades.length, positionCount: aggregatedPositions.length, date: today, learningLoopSummary },
   });
   await safeMarketAlertMemory.remember(message, 'episodic', {
     importance: 0.66,
