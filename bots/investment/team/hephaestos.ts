@@ -1165,6 +1165,38 @@ async function resolveBuyExecutionMode({
     return { effectivePaperMode: true };
   }
 
+  if (!globalPaperMode && signalTradeMode === 'normal') {
+    const fallback = await maybeFallbackToValidationLane({
+      symbol,
+      action,
+      amountUsdt,
+      reason: check.reason || '',
+      signalTradeMode,
+    });
+    if (fallback) {
+      console.log(
+        `  ⚖️ [validation fallback] ${symbol} normal 차단 → validation guarded live 전환 x${fallback.reducedAmountMultiplier.toFixed(2)}`
+      );
+      return {
+        effectivePaperMode: false,
+        effectiveTradeMode: 'validation',
+        softGuardApplied: true,
+        softGuards: [
+          {
+            kind: 'normal_to_validation_fallback',
+            exchange: 'binance',
+            tradeMode: 'validation',
+            originTradeMode: signalTradeMode,
+            reductionMultiplier: fallback.reducedAmountMultiplier,
+            originReason: check.reason || '',
+          },
+          ...(fallback.validationCheck?.softGuards || []),
+        ],
+        reducedAmountMultiplier: fallback.reducedAmountMultiplier,
+      };
+    }
+  }
+
   console.log(`  ⛔ [자본관리] 매매 스킵: ${check.reason}`);
   return rejectExecution({
     persistFailure,
@@ -1183,6 +1215,52 @@ async function resolveBuyExecutionMode({
     }),
     notify: check.circuit ? 'circuit' : 'skip',
   });
+}
+
+function getNormalToValidationFallbackPolicy() {
+  const execution = getInvestmentExecutionRuntimeConfig();
+  return execution?.cryptoGuardSoftening?.byExchange?.binance?.tradeModes?.normal?.validationFallback || {};
+}
+
+function classifyValidationFallbackGuard(reason = '') {
+  const text = String(reason || '');
+  if (text.includes('최대 포지션 도달')) return 'max_positions';
+  if (text.includes('일간 매매 한도')) return 'daily_trade_limit';
+  return null;
+}
+
+async function maybeFallbackToValidationLane({
+  symbol,
+  action,
+  amountUsdt,
+  reason,
+  signalTradeMode,
+}) {
+  const policy = getNormalToValidationFallbackPolicy();
+  if (policy?.enabled === false) return null;
+
+  const guardKind = classifyValidationFallbackGuard(reason);
+  const allowedGuardKinds = Array.isArray(policy?.allowedGuardKinds) ? policy.allowedGuardKinds : [];
+  if (!guardKind || !allowedGuardKinds.includes(guardKind)) return null;
+
+  const existingLive = await findAnyLivePosition(symbol, 'binance').catch(() => null);
+  if (existingLive) return null;
+
+  const reductionMultiplier = Number(policy?.reductionMultiplier || 0);
+  if (!(reductionMultiplier > 0 && reductionMultiplier < 1)) return null;
+
+  const reducedAmount = Number(amountUsdt || 0) * reductionMultiplier;
+  const validationCheck = await preTradeCheck(symbol, 'BUY', reducedAmount, 'binance', 'validation');
+  if (!validationCheck.allowed) return null;
+
+  return {
+    effectiveTradeMode: 'validation',
+    reducedAmountMultiplier: reductionMultiplier,
+    validationCheck,
+    originTradeMode: signalTradeMode,
+    guardKind,
+    action,
+  };
 }
 
 async function resolveBuyOrderAmount({
@@ -1710,7 +1788,7 @@ export async function executeSignal(signal) {
   }
 
   const amountUsdt = signal.amountUsdt || signal.amount_usdt || 100;
-  const signalTradeMode = signal.trade_mode || getInvestmentTradeMode();
+  let signalTradeMode = signal.trade_mode || getInvestmentTradeMode();
   const capitalPolicy = getCapitalConfig('binance', signalTradeMode);
   const minOrderUsdt = await getDynamicMinOrderAmount('binance', signalTradeMode);
   const exitReasonOverride = signal.exit_reason_override || null;
@@ -1824,6 +1902,10 @@ export async function executeSignal(signal) {
       });
       if (executionModeState?.success === false) return executionModeState;
       effectivePaperMode = executionModeState.effectivePaperMode;
+      if (executionModeState.effectiveTradeMode && executionModeState.effectiveTradeMode !== signalTradeMode) {
+        signalTradeMode = executionModeState.effectiveTradeMode;
+        signal.trade_mode = signalTradeMode;
+      }
 
       if (effectivePaperMode) {
         const paperPositionAfterFallback = await db.getPaperPosition(symbol, 'binance', signalTradeMode);

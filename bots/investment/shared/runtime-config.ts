@@ -249,6 +249,11 @@ const DEFAULT_RUNTIME_CONFIG = {
                 allowOverflowSlots: 1,
                 reductionMultiplier: 0.70,
               },
+              validationFallback: {
+                enabled: true,
+                reductionMultiplier: 0.35,
+                allowedGuardKinds: ['max_positions', 'daily_trade_limit'],
+              },
             },
           },
         },
