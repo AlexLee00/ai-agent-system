@@ -392,11 +392,86 @@ function enrichTopicSelection(candidate, category, recentTitles = []) {
   };
 }
 
-function pickTopicPool(category) {
-  return CATEGORY_TOPIC_POOL[category] || [
+function buildStrategyTopicPool(category, strategyPlan = null, marketingHints = null) {
+  if (!strategyPlan) return [];
+  const directives = normalizeExecutionDirectives(strategyPlan);
+  const keywordBias = Array.isArray(directives.titlePolicy.keywordBias) ? directives.titlePolicy.keywordBias : [];
+  const focusTags = Array.isArray(directives.hashtagPolicy.focusTags) ? directives.hashtagPolicy.focusTags : [];
+  const channelPriority = directives.channelPriority || {};
+  const strategySeeds = [];
+
+  for (const keyword of keywordBias.slice(0, 4)) {
+    const text = String(keyword || '').replace(/^#/, '').trim();
+    if (!text) continue;
+    strategySeeds.push({
+      topic: `${withObjectParticle(text)} ${category} 실행 기준으로 다시 정리`,
+      question: `${text} 흐름을 ${category} 독자는 무엇부터 실행해야 할까`,
+      diff: '전략 신호에서 바로 실행 항목으로 연결',
+    });
+  }
+
+  if (directives.creativePolicy.ctaStyle === 'conversion') {
+    strategySeeds.push({
+      topic: `${category}에서 예약과 문의로 이어지는 콘텐츠 설계`,
+      question: `${category} 독자가 읽고 바로 행동하게 하려면 무엇이 먼저 보여야 할까`,
+      diff: '조회보다 전환 중심 콘텐츠 설계',
+    });
+  }
+
+  if (channelPriority.instagram === 'primary') {
+    strategySeeds.push({
+      topic: `${category} 핵심만 짧게 전달되는 숏폼형 정보 설계`,
+      question: `${category} 주제를 짧고 강하게 전달하려면 무엇을 먼저 줄여야 할까`,
+      diff: '블로그 원문보다 숏폼 확산성을 먼저 고려',
+    });
+  }
+
+  if (channelPriority.facebook === 'primary' || channelPriority.facebook === 'secondary') {
+    strategySeeds.push({
+      topic: `${category}에서 공유와 저장을 부르는 한 줄 기준`,
+      question: `${category} 글이 공유되려면 독자가 어떤 한 줄을 바로 기억해야 할까`,
+      diff: '검색보다 공유와 전파 관점',
+    });
+  }
+
+  for (const tag of focusTags.slice(0, 3)) {
+    const text = String(tag || '').replace(/^#/, '').trim();
+    if (!text) continue;
+    strategySeeds.push({
+      topic: `${text} 맥락에서 ${category}를 다시 읽는 법`,
+      question: `${text} 흐름이 강할 때 ${category} 독자는 무엇을 먼저 봐야 할까`,
+      diff: '플랫폼 신호와 카테고리 문제의식 결합',
+    });
+  }
+
+  if (marketingHints?.signalSummary && marketingHints.signalSummary !== '특이 마케팅 신호 없음') {
+    strategySeeds.push({
+      topic: `${category}에서 지금 바로 반응이 오는 신호 읽기`,
+      question: `${category} 글에서 지금 독자 반응을 끌어내는 핵심 신호는 무엇일까`,
+      diff: '일반론보다 현재 마케팅 신호와 연결',
+    });
+  }
+
+  const deduped = [];
+  const seen = new Set();
+  for (const seed of strategySeeds) {
+    const key = `${seed.topic}::${seed.question}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(seed);
+  }
+  return deduped;
+}
+
+function pickTopicPool(category, strategyPlan = null, marketingHints = null) {
+  const basePool = CATEGORY_TOPIC_POOL[category] || [
     { topic: `${category}에서 먼저 점검해야 할 기준`, question: `${category} 독자가 가장 먼저 부딪히는 문제는 무엇일까`, diff: '카테고리 독자 관점의 실전 문제 정의' },
     { topic: `${category} 실무 적용 체크리스트`, question: `${category}를 바로 실행으로 옮기려면 무엇부터 확인해야 할까`, diff: '추상적 개념보다 실전 체크리스트 중심' },
     { topic: `${category} 우선순위 재정렬`, question: `${category}에서 지금 가장 늦기 전에 바꿔야 할 것은 무엇일까`, diff: '정보 나열보다 판단 기준 정리' },
+  ];
+  return [
+    ...buildStrategyTopicPool(category, strategyPlan, marketingHints),
+    ...basePool,
   ];
 }
 
@@ -415,8 +490,8 @@ function selectAndValidateTopic(category, recentPosts = [], strategyPlan = null,
   const recentTitles = Array.isArray(recentTitleCorpus) && recentTitleCorpus.length
     ? recentTitleCorpus
     : recentPosts.map((post) => post.title).filter(Boolean);
-  const topicPool = pickTopicPool(category);
   const marketingHints = buildMarketingHints(category, senseState, revenueCorrelation);
+  const topicPool = pickTopicPool(category, strategyPlan, marketingHints);
 
   const candidates = [];
   for (let i = 0; i < topicPool.length; i += 1) {
