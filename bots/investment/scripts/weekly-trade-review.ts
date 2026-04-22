@@ -23,6 +23,7 @@ import * as db from '../shared/db.ts';
 import * as rag from '../shared/rag-client.ts';
 import { adjustAnalystWeights } from '../shared/analyst-accuracy.ts';
 import { validateTradeReview } from './validate-trade-review.ts';
+import { buildRuntimeLearningLoopReport } from './runtime-learning-loop-report.ts';
 import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
@@ -383,6 +384,7 @@ function buildValidationPromotionSection(rows, trades) {
 }
 
 function buildNoTradeTelegramMessage(days, positions, tokenUsage) {
+  const learningLoopSummary = globalThis.__weeklyLearningLoopSummary;
   const lines = [
     `📘 루나 주간 리뷰 (${days}일)`,
     `📊 종료 거래 없음 | 미결 ${positions.length}개 | 비용 $${tokenUsage.totalCost.toFixed(4)}`,
@@ -395,7 +397,31 @@ function buildNoTradeTelegramMessage(days, positions, tokenUsage) {
   if (tokenUsage.totalCost >= 1) {
     lines.push(`⚠️ 거래 없음 대비 분석 비용 $${tokenUsage.totalCost.toFixed(4)} 발생`);
   }
+  const learningLoopLine = buildWeeklyLearningLoopLine(learningLoopSummary);
+  if (learningLoopLine) lines.push(learningLoopLine);
+  const learningLoopNextCommand = getWeeklyLearningLoopNextCommand(learningLoopSummary);
+  if (learningLoopNextCommand) lines.push(`🛠️ next command: ${learningLoopNextCommand}`);
   return lines.join('\n');
+}
+
+function buildWeeklyLearningLoopLine(learningLoopSummary) {
+  if (!learningLoopSummary || learningLoopSummary.error || !learningLoopSummary.decision) return null;
+  const weakest = learningLoopSummary.sections?.regimeLaneSummary?.weakestRegime;
+  const topSuggestion = learningLoopSummary.sections?.strategy?.runtimeSuggestionTop;
+  const weakestMode = weakest?.tradeMode || weakest?.worstMode?.tradeMode || weakest?.bestMode?.tradeMode;
+  const suggestionValue = topSuggestion?.suggestedValue ?? topSuggestion?.suggested;
+  const parts = [
+    learningLoopSummary.decision.status,
+    weakest?.regime && weakestMode ? `weakest ${weakest.regime}/${weakestMode}` : null,
+    topSuggestion?.key && suggestionValue != null ? `top suggestion ${topSuggestion.key} -> ${suggestionValue}` : null,
+  ].filter(Boolean);
+  return parts.length > 0 ? `🧭 learning loop: ${parts.join(' | ')}` : null;
+}
+
+function getWeeklyLearningLoopNextCommand(learningLoopSummary) {
+  const nextActions = learningLoopSummary?.decision?.nextActions;
+  if (!Array.isArray(nextActions)) return null;
+  return nextActions.find((item) => typeof item === 'string' && item.startsWith('npm --prefix')) || null;
 }
 
 // ─── 분석 요약 생성 ───────────────────────────────────────────────────
@@ -635,6 +661,7 @@ async function storeReviewToRAG(summary, review, trades, rrSection = null) {
 // ─── 텔레그램 포맷 ───────────────────────────────────────────────────
 
 function buildTelegramMessage(trades, review, rrSection = null) {
+  const learningLoopSummary = globalThis.__weeklyLearningLoopSummary;
   const gradeEmoji = { A: '🏆', B: '✅', C: '⚠️', D: '❌' }[review.overall_grade] || '📊';
   const pnl = trades.reduce((s, t) => s + (t.pnl_net ?? 0), 0);
   const wins = trades.filter(t => (t.pnl_net ?? 0) > 0).length;
@@ -668,6 +695,10 @@ function buildTelegramMessage(trades, review, rrSection = null) {
   if (review.risk_alert) {
     lines.push(`⚠️ 리스크 주의: ${review.risk_alert}`);
   }
+  const learningLoopLine = buildWeeklyLearningLoopLine(learningLoopSummary);
+  if (learningLoopLine) lines.push(learningLoopLine);
+  const learningLoopNextCommand = getWeeklyLearningLoopNextCommand(learningLoopSummary);
+  if (learningLoopNextCommand) lines.push(`🛠️ next command: ${learningLoopNextCommand}`);
 
   return lines.join('\n');
 }
@@ -735,6 +766,10 @@ async function runWeeklyAnalystWeightAdjustment({ dryRun = false } = {}) {
 
 async function main() {
   console.log(`\n📋 [주간 리뷰] 최근 ${DAYS}일 매매 분석 시작...`);
+
+  globalThis.__weeklyLearningLoopSummary = await buildRuntimeLearningLoopReport({ days: 14, json: true }).catch((error) => ({
+    error: String(error?.message || error),
+  }));
 
   await db.initSchema();
   let validation = { findings: 0, fixed: 0 };
