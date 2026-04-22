@@ -158,6 +158,51 @@ function buildIndependentContentBody(selection = {}, strategy = {}) {
   ].filter(Boolean).join('\n\n');
 }
 
+function buildPlatformSpecificTitle(baseTitle = '', platform = 'instagram', selection = {}) {
+  const topic = String(selection?.topic || baseTitle || '').trim();
+  if (platform === 'instagram') {
+    return String(baseTitle || '').includes('체크')
+      ? `${baseTitle}`
+      : `${topic} 저장 포인트 3가지`;
+  }
+  if (platform === 'facebook') {
+    return `${topic} 이야기할 때 먼저 갈리는 기준`;
+  }
+  return String(baseTitle || topic || '').trim();
+}
+
+function buildPlatformSpecificBody(platform = 'instagram', selection = {}, strategy = {}) {
+  const focus = Array.isArray(strategy?.focus) ? strategy.focus.slice(0, 2) : [];
+  const recommendations = Array.isArray(selection?.marketingRecommendations)
+    ? selection.marketingRecommendations.slice(0, 2)
+    : [];
+  const keyQuestions = Array.isArray(selection?.keyQuestions)
+    ? selection.keyQuestions.slice(0, 2)
+    : [];
+
+  if (platform === 'instagram') {
+    return [
+      `오늘 저장해둘 포인트는 ${selection.topic || selection.title || '핵심 실행 포인트'}입니다.`,
+      keyQuestions.length ? keyQuestions.map((item, index) => `${index + 1}. ${item}`).join('\n') : '',
+      recommendations.length ? `짧은 실행 포인트:\n${recommendations.map((item) => `- ${item}`).join('\n')}` : '',
+      focus.length ? `이번 릴스 포커스:\n${focus.map((item) => `- ${item}`).join('\n')}` : '',
+      '핵심만 짧고 강하게 전달하고, 저장/공유 후 바로 적용할 수 있게 정리합니다.',
+    ].filter(Boolean).join('\n\n');
+  }
+
+  if (platform === 'facebook') {
+    return [
+      `${selection.readerProblem || '지금 독자 문제를 먼저 정리합니다.'}`,
+      selection.openingAngle ? `이 주제는 ${selection.openingAngle}에서 생각해볼 필요가 있습니다.` : '',
+      keyQuestions.length ? `토론 포인트:\n${keyQuestions.map((item, index) => `${index + 1}. ${item}`).join('\n')}` : '',
+      recommendations.length ? `운영 힌트:\n${recommendations.map((item) => `- ${item}`).join('\n')}` : '',
+      '의견이 갈릴 수 있는 지점을 일부러 남겨 댓글과 공유를 유도합니다.',
+    ].filter(Boolean).join('\n\n');
+  }
+
+  return buildIndependentContentBody(selection, strategy);
+}
+
 async function buildIndependentPlatformCampaign(options = {}) {
   const needInstagram = options.needInstagram !== false;
   const needFacebook = options.needFacebook !== false;
@@ -173,14 +218,17 @@ async function buildIndependentPlatformCampaign(options = {}) {
     recentPosts.map((post) => post.title).filter(Boolean)
   );
   const syntheticPostId = `social_${Date.now()}`;
-  const content = buildIndependentContentBody(selection, plan || {});
-  const title = String(selection?.title || selection?.topic || `${category} 전략 포인트`);
+  const baseTitle = String(selection?.title || selection?.topic || `${category} 전략 포인트`);
+  const instagramTitle = buildPlatformSpecificTitle(baseTitle, 'instagram', selection);
+  const facebookTitle = buildPlatformSpecificTitle(baseTitle, 'facebook', selection);
+  const instagramContentBody = buildPlatformSpecificBody('instagram', selection, plan || {});
+  const facebookContentBody = buildPlatformSpecificBody('facebook', selection, plan || {});
   const trackingInstagram = generateTrackingLink(`${syntheticPostId}_instagram`, 'instagram');
   const trackingFacebook = generateTrackingLink(`${syntheticPostId}_facebook`, 'facebook');
   let instaContent = null;
   if (needInstagram) {
     const starSocial = require('./star.ts');
-    instaContent = await starSocial.createInstaContent(content, title, category, 0, {
+    instaContent = await starSocial.createInstaContent(instagramContentBody, instagramTitle, category, 0, {
       strategy: plan,
       blogUrl: trackingInstagram.url,
     });
@@ -188,8 +236,8 @@ async function buildIndependentPlatformCampaign(options = {}) {
 
   const facebookContent = needFacebook
     ? blogToFacebookPost({
-        title,
-        content,
+        title: facebookTitle,
+        content: facebookContentBody,
         category,
         url: trackingFacebook.url,
       }, 200, plan)
@@ -197,12 +245,22 @@ async function buildIndependentPlatformCampaign(options = {}) {
 
   return {
     id: syntheticPostId,
-    title,
+    title: baseTitle,
     category,
     url: trackingFacebook.url,
     naver_url: trackingFacebook.url,
     synthetic: true,
     sourceMode: 'strategy_native',
+    platformVariants: {
+      instagram: {
+        title: instagramTitle,
+        content: instagramContentBody,
+      },
+      facebook: {
+        title: facebookTitle,
+        content: facebookContentBody,
+      },
+    },
     instaContent,
     facebookContent,
     tracking: {
@@ -224,16 +282,17 @@ async function crosspostToInstagram(blogPost, dryRun = false) {
     const payload = blogPost?.sourceMode === 'strategy_native'
       ? blogPost?.instaContent
       : { caption: `${blogPost.title}\n\n#스터디카페 #집중력 #공부 #개발`, thumbnailUrl: blogPost.thumbnail_url };
+    const publishTitle = blogPost?.platformVariants?.instagram?.title || blogPost.title;
     const result = await crossposter.crosspostToInstagram(
       payload,
-      blogPost.title,
+      publishTitle,
       String(blogPost.id || ''),
       dryRun,
     );
     if (result?.ok && blogPost?.sourceMode === 'strategy_native') {
       await recordPublishAttribution(
         String(blogPost.id || ''),
-        blogPost.title,
+        publishTitle,
         blogPost?.tracking?.instagram?.url || blogPost.naver_url || blogPost.url || '',
         new Date(),
         'instagram'
@@ -260,6 +319,7 @@ async function crosspostToFacebook(blogPost, dryRun = false) {
           message: `${blogPost.title} - 스터디카페 공부법과 자기계발 이야기를 나눕니다.`,
           link: blogPost.naver_url || blogPost.url || '',
         };
+    const publishTitle = blogPost?.platformVariants?.facebook?.title || blogPost.title;
     const result = await fbPublisher.publishFacebookPost({
       message: prepared.message,
       link: prepared.link || blogPost.naver_url || blogPost.url || '',
@@ -268,7 +328,7 @@ async function crosspostToFacebook(blogPost, dryRun = false) {
     if (result?.postId && blogPost?.sourceMode === 'strategy_native') {
       await recordPublishAttribution(
         String(blogPost.id || ''),
-        blogPost.title,
+        publishTitle,
         prepared.link || blogPost.naver_url || blogPost.url || '',
         new Date(),
         'facebook'
