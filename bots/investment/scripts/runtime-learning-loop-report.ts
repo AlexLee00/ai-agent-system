@@ -221,6 +221,19 @@ function buildTradeReviewRepairAction(feedback = {}) {
   return `trade review 정합성 복구(${scopeText}): ${issueText}${symbolText}. ${repairCommand}`;
 }
 
+export function summarizeValidationExecution(...sources) {
+  const validationSummary = sources
+    .map((source) => source?.validationSummary || source?.summary?.validationSummary || null)
+    .find((summary) => summary && typeof summary === 'object') || {};
+  const rows = Object.values(validationSummary);
+  return rows.reduce((summary, row) => {
+    summary.decisions += Number(row?.decision || 0);
+    summary.approved += Number(row?.approved || 0);
+    summary.executed += Number(row?.executed || 0);
+    return summary;
+  }, { decisions: 0, approved: 0, executed: 0 });
+}
+
 export function buildLearningLoopFeedbackState({ validation = {}, freshness = {} } = {}) {
   const reviewAge = ageHours(freshness.latestTradeReviewAt);
   const validationSummary = validation.summary || {};
@@ -555,23 +568,35 @@ function buildSectionStates({
   const reviewAge = ageHours(freshness.latestTradeReviewAt);
   const backtestAge = ageHours(freshness.latestBacktestAt);
   const suggestionAge = ageHours(freshness.latestSuggestionAt);
+  const latestApprovedSignals = Number(runtimeDecision.summary?.approvedSignals || 0);
+  const latestExecutedSymbols = Number(runtimeDecision.summary?.executedSymbols || 0);
+  const validationExecution = summarizeValidationExecution(runtimeDecision, runtimeSuggestions);
+  const hasRecentExecutionBaseline =
+    validationExecution.approved > 0
+    || validationExecution.executed > 0
+    || Number(regimeCoverage.knownRegimeTrades || 0) > 0;
 
   const collect = {
     status: runtimeDecision.count === 0
       ? 'idle'
-      : Number(runtimeDecision.summary?.approvedSignals || 0) === 0 && Number(runtimeDecision.summary?.executedSymbols || 0) === 0
-        ? 'thin'
+      : latestApprovedSignals === 0 && latestExecutedSymbols === 0
+        ? hasRecentExecutionBaseline
+          ? 'observing'
+          : 'thin'
         : runtimeAge != null && runtimeAge <= 12
           ? 'active'
           : 'watch',
     latestAt: toIso(freshness.latestRuntimeSessionAt),
     ageHours: runtimeAge,
-    approvedSignals: Number(runtimeDecision.summary?.approvedSignals || 0),
-    executedSymbols: Number(runtimeDecision.summary?.executedSymbols || 0),
+    approvedSignals: latestApprovedSignals,
+    executedSymbols: latestExecutedSymbols,
+    validationExecution,
     warnings: Array.isArray(runtimeDecision.summary?.warnings) ? runtimeDecision.summary.warnings : [],
     headline:
-      Number(runtimeDecision.summary?.approvedSignals || 0) === 0 && Number(runtimeDecision.summary?.executedSymbols || 0) === 0
-        ? '세션은 돌고 있지만 승인/실행 표본이 비어 있어 학습 루프 밀도가 낮습니다.'
+      latestApprovedSignals === 0 && latestExecutedSymbols === 0
+        ? hasRecentExecutionBaseline
+          ? `최신 세션은 관찰/분석 중심이지만 최근 실행 표본은 누적되어 있습니다 (validation approved ${validationExecution.approved}, executed ${validationExecution.executed}).`
+          : '세션은 돌고 있지만 승인/실행 표본이 비어 있어 학습 루프 밀도가 낮습니다.'
         : runtimeDecision.aiSummary || runtimeDecision.summary?.warnings?.[0] || 'runtime decision 수집 상태를 확인합니다.',
     regimeCoverage: {
       windowDays: regimeCoverage.windowDays,
@@ -796,6 +821,8 @@ function buildDecision(sections = {}) {
     status = 'learning_sample_thin';
     headline = '세션은 돌지만 승인/실행 표본이 얇아 validation 표본을 더 쌓아야 합니다.';
     nextActions.push('validation lane과 runtime-suggest dry-run을 함께 돌려 승인/실행 표본을 늘립니다.');
+  } else if (sections.collect.status === 'observing') {
+    nextActions.push('최신 세션은 신규 실행 없이 관찰 중심이므로, validation/live 누적 표본을 기준으로 다음 진입 품질을 계속 비교합니다.');
   } else if (sections.collect.collectionAudit?.markets?.some((item) => item.quality === 'insufficient')) {
     status = 'collection_quality_attention';
     const target = sections.collect.collectionAudit.markets.find((item) => item.quality === 'insufficient');
@@ -858,6 +885,9 @@ function renderText(payload) {
     '수집:',
     `- ${sections.collect.status} | latest=${sections.collect.latestAt || 'n/a'} (${formatAge(sections.collect.ageHours)})`,
     `- approved ${sections.collect.approvedSignals} / executed ${sections.collect.executedSymbols}`,
+    sections.collect.validationExecution
+      ? `- validation baseline approved ${sections.collect.validationExecution.approved} / executed ${sections.collect.validationExecution.executed}`
+      : null,
     `- regime coverage ${sections.collect.regimeCoverage?.distinctTradedRegimes || 0}종 | known ${sections.collect.regimeCoverage?.knownRegimeTrades || 0} / unknown ${sections.collect.regimeCoverage?.unknownTrades || 0}`,
     `- regime snapshots ${sections.collect.regimeCoverage?.snapshotCount || 0}건`,
     sections.collect.collectionAudit

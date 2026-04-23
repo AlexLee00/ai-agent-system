@@ -3,7 +3,10 @@
 
 import assert from 'assert/strict';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
-import { buildLearningLoopFeedbackState } from './runtime-learning-loop-report.ts';
+import {
+  buildLearningLoopFeedbackState,
+  summarizeValidationExecution,
+} from './runtime-learning-loop-report.ts';
 
 function validation({ findings = 0, paperOnly = false, liveFindings = 0, paperFindings = 0 } = {}) {
   return {
@@ -54,6 +57,19 @@ export function runRuntimeLearningLoopFeedbackSmoke() {
   });
   assert.equal(idle.status, 'idle');
 
+  const validationExecution = summarizeValidationExecution({
+    summary: {},
+  }, {
+    validationSummary: {
+      crypto: { decision: 0, approved: 25, executed: 25 },
+      domestic: { decision: 0, approved: 1, executed: 1 },
+      overseas: { decision: 0, approved: 0, executed: 0 },
+    },
+  });
+  assert.equal(validationExecution.decisions, 0);
+  assert.equal(validationExecution.approved, 26);
+  assert.equal(validationExecution.executed, 26);
+
   return {
     ok: true,
     statuses: {
@@ -62,6 +78,7 @@ export function runRuntimeLearningLoopFeedbackSmoke() {
       active: active.status,
       idle: idle.status,
     },
+    validationExecution,
   };
 }
 
