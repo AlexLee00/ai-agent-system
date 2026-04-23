@@ -316,7 +316,7 @@ function buildPositionStrategyRemediationLine(positionStrategyRemediationSummary
   if (!positionStrategyRemediationSummary || positionStrategyRemediationSummary.error || !positionStrategyRemediationSummary.ok) return null;
   const remediationSummary = positionStrategyRemediationSummary.remediationSummary || null;
   const decision = positionStrategyRemediationSummary.decision || {};
-  return `🧯 remediation: ${remediationSummary?.status || decision.status || 'unknown'} | ${remediationSummary?.headline || decision.headline || 'n/a'}`;
+  return `🧯 remediation: ${positionStrategyRemediationSummary.remediationStatus || remediationSummary?.status || decision.status || 'unknown'} | ${positionStrategyRemediationSummary.remediationHeadline || remediationSummary?.headline || decision.headline || 'n/a'}`;
 }
 
 function buildPositionStrategyRemediationCommandLine(positionStrategyRemediationSummary) {
@@ -325,7 +325,7 @@ function buildPositionStrategyRemediationCommandLine(positionStrategyRemediation
   const remediationSummary = positionStrategyRemediationSummary.remediationSummary || null;
   const remediationActions = remediationSummary?.actions || positionStrategyRemediationSummary.remediationActions || null;
   if (!remediationPlan || remediationPlan.status !== 'position_strategy_hygiene_attention') return null;
-  return `🛠️ remediation report: ${remediationSummary?.commands?.report || remediationActions?.reportCommand || remediationPlan.remediationReportCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation -- --json'}`;
+  return `🛠️ remediation report: ${positionStrategyRemediationSummary.remediationActionReportCommand || remediationSummary?.commands?.report || remediationActions?.reportCommand || remediationPlan.remediationReportCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation -- --json'}`;
 }
 
 function buildPositionStrategyRemediationRefreshCommandLine(positionStrategyRemediationSummary) {
@@ -333,7 +333,8 @@ function buildPositionStrategyRemediationRefreshCommandLine(positionStrategyReme
   const remediationPlan = positionStrategyRemediationSummary.remediationPlan || null;
   const remediationSummary = positionStrategyRemediationSummary.remediationSummary || null;
   const remediationActions = remediationSummary?.actions || positionStrategyRemediationSummary.remediationActions || null;
-  const refreshCommand = remediationSummary?.commands?.refresh
+  const refreshCommand = positionStrategyRemediationSummary.remediationActionRefreshCommand
+    || remediationSummary?.commands?.refresh
     || remediationActions?.refreshCommand
     || remediationSummary?.refreshState?.command
     || positionStrategyRemediationSummary?.remediationRefreshState?.command
@@ -346,7 +347,7 @@ function buildPositionStrategyRemediationRefreshCommandLine(positionStrategyReme
 function buildPositionStrategyRemediationNextCommandLine(positionStrategyRemediationSummary) {
   if (!positionStrategyRemediationSummary || positionStrategyRemediationSummary.error || !positionStrategyRemediationSummary.ok) return null;
   const remediationSummary = positionStrategyRemediationSummary.remediationSummary || null;
-  const nextCommand = remediationSummary?.nextCommand || positionStrategyRemediationSummary?.remediationActions?.nextCommand || null;
+  const nextCommand = positionStrategyRemediationSummary.remediationNextCommand || remediationSummary?.nextCommand || positionStrategyRemediationSummary?.remediationActions?.nextCommand || null;
   if (!nextCommand) return null;
   return `🧭 remediation next: ${nextCommand}`;
 }
@@ -354,30 +355,57 @@ function buildPositionStrategyRemediationNextCommandLine(positionStrategyRemedia
 function buildPositionStrategyRemediationRefreshLine(positionStrategyRemediationSummary) {
   if (!positionStrategyRemediationSummary || positionStrategyRemediationSummary.error || !positionStrategyRemediationSummary.ok) return null;
   const remediationSummary = positionStrategyRemediationSummary.remediationSummary || null;
-  const refreshState = remediationSummary?.refreshState
+  const refreshState = {
+    needed: positionStrategyRemediationSummary?.remediationRefreshNeeded,
+    stale: positionStrategyRemediationSummary?.remediationRefreshStale,
+    reason: positionStrategyRemediationSummary?.remediationRefreshReason,
+    command: positionStrategyRemediationSummary?.remediationRefreshCommand,
+  };
+  const resolvedRefreshState = refreshState.reason !== undefined || refreshState.command !== undefined
+    ? refreshState
+    : remediationSummary?.refreshState
     || positionStrategyRemediationSummary?.remediationRefreshState
     || buildPositionStrategyRemediationRefreshState(
       positionStrategyRemediationSummary?.remediationPlan || null,
       positionStrategyRemediationSummary?.remediationHistory || null,
     );
-  return refreshState?.reason ? `♻️ ${refreshState.reason}` : null;
+  return resolvedRefreshState?.reason ? `♻️ ${resolvedRefreshState.reason}` : null;
 }
 
 function buildPositionStrategyRemediationRefreshStateLine(positionStrategyRemediationSummary) {
   if (!positionStrategyRemediationSummary || positionStrategyRemediationSummary.error || !positionStrategyRemediationSummary.ok) return null;
   const remediationSummary = positionStrategyRemediationSummary.remediationSummary || null;
-  const refreshState = remediationSummary?.refreshState
+  const refreshState = {
+    needed: positionStrategyRemediationSummary?.remediationRefreshNeeded,
+    stale: positionStrategyRemediationSummary?.remediationRefreshStale,
+    reason: positionStrategyRemediationSummary?.remediationRefreshReason,
+    command: positionStrategyRemediationSummary?.remediationRefreshCommand,
+  };
+  const resolvedRefreshState = refreshState.command !== undefined || refreshState.reason !== undefined
+    ? refreshState
+    : remediationSummary?.refreshState
     || positionStrategyRemediationSummary?.remediationRefreshState
     || buildPositionStrategyRemediationRefreshState(
       positionStrategyRemediationSummary?.remediationPlan || null,
       positionStrategyRemediationSummary?.remediationHistory || null,
     );
-  return `♻️ refresh state: needed ${refreshState?.needed ? 'yes' : 'no'} | stale ${refreshState?.stale ? 'yes' : 'no'} | command ${refreshState?.command || 'n/a'}`;
+  return `♻️ refresh state: needed ${resolvedRefreshState?.needed ? 'yes' : 'no'} | stale ${resolvedRefreshState?.stale ? 'yes' : 'no'} | command ${resolvedRefreshState?.command || 'n/a'}`;
 }
 
 function buildPositionStrategyRemediationHistoryLine(positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary) {
   const remediationSummary = positionStrategyRemediationSummary?.remediationSummary || null;
-  const trend = remediationSummary?.trend || null;
+  const trend = positionStrategyRemediationSummary?.remediationTrendHistoryCount !== undefined
+    ? {
+      historyCount: positionStrategyRemediationSummary?.remediationTrendHistoryCount,
+      statusChanged: positionStrategyRemediationSummary?.remediationTrendChanged,
+      nextCommandChanged: positionStrategyRemediationSummary?.remediationTrendNextChanged,
+      nextCommandTransition: positionStrategyRemediationSummary?.remediationNextCommandTransition || remediationSummary?.nextCommandTransition || null,
+      ageMinutes: positionStrategyRemediationSummary?.remediationTrendAgeMinutes,
+      stale: positionStrategyRemediationSummary?.remediationTrendStale,
+      duplicateDelta: positionStrategyRemediationSummary?.remediationTrendDuplicateDelta,
+      orphanDelta: positionStrategyRemediationSummary?.remediationTrendOrphanDelta,
+    }
+    : remediationSummary?.trend || null;
   if (trend) {
     return `🗂️ remediation history: count ${trend.historyCount || 0} | changed ${trend.statusChanged ? 'yes' : 'no'} | next changed ${trend.nextCommandChanged ? 'yes' : 'no'}${trend.nextCommandChanged ? ` (${trend.nextCommandTransition?.previous || 'none'} -> ${trend.nextCommandTransition?.current || 'none'})` : ''} | age ${trend.ageMinutes ?? 'n/a'}m | stale ${trend.stale ? 'yes' : 'no'} | duplicate ${trend.duplicateDelta >= 0 ? '+' : ''}${trend.duplicateDelta || 0} | orphan ${trend.orphanDelta >= 0 ? '+' : ''}${trend.orphanDelta || 0}`;
   }
