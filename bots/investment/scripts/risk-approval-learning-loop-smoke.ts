@@ -4,6 +4,7 @@
 import assert from 'assert/strict';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import {
+  buildPriorityRuntimeSuggestionAction,
   explainPriorityRuntimeSuggestion,
   selectPriorityRuntimeSuggestion,
 } from './runtime-learning-loop-report.ts';
@@ -53,6 +54,7 @@ export function runRiskApprovalLearningLoopSmoke() {
   assert.equal(outcomeAdjustPriority.selected, riskOutcomeAdjust);
   assert.equal(outcomeAdjustPriority.category, 'risk_approval_outcome_adjust');
   assert.match(outcomeAdjustPriority.reason, /사후 성과/);
+  assert.match(buildPriorityRuntimeSuggestionAction(outcomeAdjustPriority), /assist 감액 한도/);
 
   const outcomeReviewWins = selectPriorityRuntimeSuggestion({
     suggestions: [regimeMatched, riskOutcomeModelReview],
@@ -62,6 +64,7 @@ export function runRiskApprovalLearningLoopSmoke() {
     suggestions: [regimeMatched, riskOutcomeModelReview],
   }, regimePerformance());
   assert.equal(outcomeReviewPriority.category, 'risk_approval_model_outcome_review');
+  assert.match(buildPriorityRuntimeSuggestionAction(outcomeReviewPriority), /모델별 outcome review/);
 
   const regimeMatchWins = selectPriorityRuntimeSuggestion({
     suggestions: [genericAdjust, regimeMatched],
@@ -71,6 +74,7 @@ export function runRiskApprovalLearningLoopSmoke() {
     suggestions: [genericAdjust, regimeMatched],
   }, regimePerformance());
   assert.equal(regimeMatchPriority.category, 'weakest_regime_match');
+  assert.match(buildPriorityRuntimeSuggestionAction(regimeMatchPriority), /약한 레짐\/레인/);
 
   const fallbackAdjustWins = selectPriorityRuntimeSuggestion({
     suggestions: [suggestion('runtime_config.foo.watch', 'watch'), genericAdjust],
@@ -80,11 +84,13 @@ export function runRiskApprovalLearningLoopSmoke() {
     suggestions: [suggestion('runtime_config.foo.watch', 'watch'), genericAdjust],
   }, regimePerformance('sideways', 'normal'));
   assert.equal(fallbackAdjustPriority.category, 'generic_adjust');
+  assert.match(buildPriorityRuntimeSuggestionAction(fallbackAdjustPriority), /dry-run/);
 
   const empty = selectPriorityRuntimeSuggestion({ suggestions: [] }, regimePerformance());
   assert.equal(empty, null);
   const emptyPriority = explainPriorityRuntimeSuggestion({ suggestions: [] }, regimePerformance());
   assert.equal(emptyPriority.category, 'empty');
+  assert.equal(buildPriorityRuntimeSuggestionAction(emptyPriority), null);
 
   return {
     ok: true,

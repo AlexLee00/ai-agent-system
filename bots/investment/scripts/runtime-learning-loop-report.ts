@@ -71,6 +71,10 @@ function getSuggestionTargetValue(suggestion = null) {
   return suggestion?.suggestedValue ?? suggestion?.suggested ?? 'n/a';
 }
 
+function getSuggestionCurrentValue(suggestion = null) {
+  return suggestion?.current ?? suggestion?.governance?.current ?? 'n/a';
+}
+
 export function selectPriorityRuntimeSuggestion(runtimeSuggestions = null, regimePerformance = null) {
   const suggestions = Array.isArray(runtimeSuggestions?.suggestions) ? runtimeSuggestions.suggestions : [];
   if (!suggestions.length) return null;
@@ -172,6 +176,36 @@ export function explainPriorityRuntimeSuggestion(runtimeSuggestions = null, regi
     category: 'first_available',
     reason: '조정 후보가 없어 첫 번째 관찰 후보를 우선 표시합니다.',
   };
+}
+
+export function buildPriorityRuntimeSuggestionAction(priority = null) {
+  const selected = priority?.selected || null;
+  if (!selected?.key) return null;
+
+  const current = getSuggestionCurrentValue(selected);
+  const target = getSuggestionTargetValue(selected);
+  const action = String(selected.action || 'unknown');
+  const category = String(priority?.category || 'unknown');
+  const alreadyApplied = isSuggestionAlreadyApplied(selected) || ['observe', 'hold'].includes(action);
+  const valueText = alreadyApplied ? `현재 ${current} (${action})` : `${current} -> ${target} (${action})`;
+
+  if (category === 'risk_approval_outcome_adjust') {
+    return `리스크 승인 사후 성과를 기준으로 assist 감액 한도를 검토합니다: ${selected.key} ${valueText}`;
+  }
+  if (category === 'risk_approval_model_outcome_review') {
+    return `리스크 승인 모델별 outcome review를 우선 검토합니다: ${selected.key} (${action})`;
+  }
+  if (category === 'weakest_regime_match') {
+    return `약한 레짐/레인에 직접 연결된 제안을 우선 관찰합니다: ${selected.key} ${valueText}`;
+  }
+  if (category === 'generic_adjust') {
+    return `일반 조정 후보를 dry-run으로 비교합니다: ${selected.key} ${valueText}`;
+  }
+  if (category === 'first_available') {
+    return `조정 후보가 없어 첫 번째 제안을 관찰 후보로 남깁니다: ${selected.key} (${action})`;
+  }
+
+  return null;
 }
 
 async function loadLoopFreshness() {
@@ -687,10 +721,11 @@ function buildDecision(sections = {}) {
     const weakest = sections.collect.regimePerformance.weakestRegime;
     const strongest = sections.collect.regimePerformance?.strongestRegime;
     const topSuggestion = sections.strategy?.runtimeSuggestionTop;
+    const priorityAction = buildPriorityRuntimeSuggestionAction(sections.strategy?.runtimeSuggestionPriority);
     const suggestionAlreadyApplied = isSuggestionAlreadyApplied(topSuggestion);
     const suggestionAction = String(topSuggestion?.action || '');
-    const suggestionCurrent = topSuggestion?.current ?? topSuggestion?.governance?.current ?? 'n/a';
-    const suggestionTarget = topSuggestion?.suggestedValue ?? topSuggestion?.suggested ?? 'n/a';
+    const suggestionCurrent = getSuggestionCurrentValue(topSuggestion);
+    const suggestionTarget = getSuggestionTargetValue(topSuggestion);
 
     if (suggestionAlreadyApplied || suggestionAction === 'observe' || suggestionAction === 'hold') {
       status = 'regime_strategy_monitor';
@@ -698,15 +733,14 @@ function buildDecision(sections = {}) {
       if (topSuggestion?.key) {
         nextActions.push(`현재 적용값을 유지하며 관찰합니다: ${topSuggestion.key} = ${suggestionCurrent}`);
       }
+      if (priorityAction) nextActions.push(priorityAction);
       nextActions.push('runtime-suggest 결과와 최신 장세 스냅샷을 함께 보며 추가 완화가 필요한지 추세를 더 누적합니다.');
     } else {
       status = 'regime_strategy_tuning_needed';
       headline = `${weakest.regime} 장세에서 ${weakest.worstMode.tradeMode} 레인의 성과가 약해, 대응 전략 조정을 우선 검토합니다.`;
       nextActions.push(`${weakest.regime} 장세의 ${weakest.worstMode.tradeMode} 레인 진입 기준과 비중을 먼저 줄이거나 재학습합니다.`);
       nextActions.push('npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-suggest -- --json');
-      if (topSuggestion?.key) {
-        nextActions.push(`우선 검토 제안: ${topSuggestion.key} ${suggestionCurrent} -> ${suggestionTarget} (${topSuggestion.action})`);
-      }
+      nextActions.push(priorityAction || `우선 검토 제안: ${topSuggestion?.key || 'n/a'} ${suggestionCurrent} -> ${suggestionTarget} (${topSuggestion?.action || 'n/a'})`);
     }
     if (strongest?.bestMode?.avgPnlPercent != null) {
       nextActions.push(`${strongest.regime} 장세의 ${strongest.bestMode.tradeMode} 레인은 유지하며 비교 표본으로 계속 누적합니다.`);
@@ -747,6 +781,8 @@ function buildDecision(sections = {}) {
   } else if (sections.strategy.status === 'ready') {
     status = 'strategy_update_ready';
     headline = '운영 압력을 줄일 전략 수정 후보가 준비돼 있어 빠르게 검토할 가치가 있습니다.';
+    const priorityAction = buildPriorityRuntimeSuggestionAction(sections.strategy?.runtimeSuggestionPriority);
+    if (priorityAction) nextActions.push(priorityAction);
     nextActions.push('runtime-suggest 또는 guard autotune 후보를 dry-run으로 비교합니다.');
   } else if (sections.analyze.status === 'idle' || sections.analyze.status === 'watch') {
     status = 'analysis_refresh_needed';
