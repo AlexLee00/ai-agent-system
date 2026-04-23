@@ -186,6 +186,14 @@ function buildHealthCheckRemediationView(remediation, hygiene, remediationHistor
     remediationRefreshReason,
     remediationRefreshCommand,
     remediationTrend,
+    remediationTrendHistoryCount: remediation?.remediationTrendHistoryCount ?? remediationFlat?.trendHistoryCount ?? remediationTrend?.historyCount ?? null,
+    remediationTrendChanged: remediation?.remediationTrendChanged ?? remediationFlat?.trendChanged ?? remediationTrend?.statusChanged ?? null,
+    remediationTrendNextChanged: remediation?.remediationTrendNextChanged ?? remediationFlat?.trendNextChanged ?? remediationTrend?.nextCommandChanged ?? null,
+    remediationTrendAgeMinutes: remediation?.remediationTrendAgeMinutes ?? remediationFlat?.trendAgeMinutes ?? remediationTrend?.ageMinutes ?? null,
+    remediationTrendStale: remediation?.remediationTrendStale ?? remediationFlat?.trendStale ?? remediationTrend?.stale ?? null,
+    remediationTrendDuplicateDelta: remediation?.remediationTrendDuplicateDelta ?? remediationFlat?.trendDuplicateDelta ?? remediationTrend?.duplicateDelta ?? null,
+    remediationTrendOrphanDelta: remediation?.remediationTrendOrphanDelta ?? remediationFlat?.trendOrphanDelta ?? remediationTrend?.orphanDelta ?? null,
+    remediationTrendUnmatchedDelta: remediation?.remediationTrendUnmatchedDelta ?? remediationFlat?.trendUnmatchedDelta ?? remediationTrend?.unmatchedDelta ?? null,
     remediationNextCommand,
     remediationNextCommandTransition,
     remediationNextCommandChanged,
@@ -201,6 +209,12 @@ function buildHealthCheckRemediationView(remediation, hygiene, remediationHistor
     remediationActionNormalizeApplyCommand,
     remediationActionRetireDryRunCommand,
     remediationActionRetireApplyCommand,
+    remediationReportCommand: remediationCommands.report || remediationActionReportCommand || null,
+    remediationHistoryCommand: remediationCommands.history || remediationActionHistoryCommand || null,
+    remediationNormalizeDryRunCommand: remediationCommands.normalizeDryRun || remediationActionNormalizeDryRunCommand || null,
+    remediationNormalizeApplyCommand: remediationCommands.normalizeApply || remediationActionNormalizeApplyCommand || null,
+    remediationRetireDryRunCommand: remediationCommands.retireDryRun || remediationActionRetireDryRunCommand || null,
+    remediationRetireApplyCommand: remediationCommands.retireApply || remediationActionRetireApplyCommand || null,
   };
 }
 
@@ -709,25 +723,25 @@ async function main() {
         const recommendedExchange = remediationView.recommendedExchange;
         let remediationHistoryLine = null;
         if (remediationTrend) {
-          const historyCount = remediation?.remediationTrendHistoryCount ?? remediationFlat?.trendHistoryCount ?? remediationTrend.historyCount ?? 0;
-          const changed = remediation?.remediationTrendChanged ?? remediationFlat?.trendChanged ?? remediationTrend.statusChanged;
-          const nextChanged = remediation?.remediationTrendNextChanged ?? remediationFlat?.trendNextChanged ?? remediationNextCommandChanged ?? remediationTrend.nextCommandChanged;
+          const historyCount = remediationView.remediationTrendHistoryCount ?? 0;
+          const changed = remediationView.remediationTrendChanged;
+          const nextChanged = remediationView.remediationTrendNextChanged ?? remediationNextCommandChanged;
           const nextPrevious = remediationNextCommandPrevious || 'none';
           const nextCurrent = remediationNextCommandCurrent || 'none';
-          const ageMinutes = remediation?.remediationTrendAgeMinutes ?? remediationFlat?.trendAgeMinutes ?? remediationTrend.ageMinutes ?? 'n/a';
-          const stale = remediation?.remediationTrendStale ?? remediationFlat?.trendStale ?? remediationTrend.stale;
-          const duplicateDelta = remediation?.remediationTrendDuplicateDelta ?? remediationFlat?.trendDuplicateDelta ?? remediationTrend.duplicateDelta ?? 0;
-          const orphanDelta = remediation?.remediationTrendOrphanDelta ?? remediationFlat?.trendOrphanDelta ?? remediationTrend.orphanDelta ?? 0;
+          const ageMinutes = remediationView.remediationTrendAgeMinutes ?? 'n/a';
+          const stale = remediationView.remediationTrendStale;
+          const duplicateDelta = remediationView.remediationTrendDuplicateDelta ?? 0;
+          const orphanDelta = remediationView.remediationTrendOrphanDelta ?? 0;
           remediationHistoryLine = `remediation history: count ${historyCount} / changed ${changed ? 'yes' : 'no'} / next changed ${nextChanged ? 'yes' : 'no'}${nextChanged ? ` (${nextPrevious} -> ${nextCurrent})` : ''} / age ${ageMinutes}m / stale ${stale ? 'yes' : 'no'} / duplicate delta ${duplicateDelta >= 0 ? '+' : ''}${duplicateDelta} / orphan delta ${orphanDelta >= 0 ? '+' : ''}${orphanDelta}`;
         } else if (remediationHistory) {
           remediationHistoryLine = `remediation history: count ${remediationHistory.historyCount || 0} / changed ${remediationHistory.statusChanged ? 'yes' : 'no'} / next changed ${remediationHistory.nextCommandChanged ? 'yes' : 'no'}${remediationHistory.nextCommandChanged ? ` (${remediationHistory.nextCommandTransition?.previous || 'none'} -> ${remediationHistory.nextCommandTransition?.current || 'none'})` : ''} / age ${remediationHistory.ageMinutes ?? 'n/a'}m / stale ${remediationHistory.stale ? 'yes' : 'no'} / duplicate delta ${remediationHistory.delta?.duplicateManaged >= 0 ? '+' : ''}${remediationHistory.delta?.duplicateManaged || 0} / orphan delta ${remediationHistory.delta?.orphanProfiles >= 0 ? '+' : ''}${remediationHistory.delta?.orphanProfiles || 0}`;
         }
         const remediationCommandLines = [
-          remediation?.remediationActionReportCommand || remediationFlat?.actionReportCommand || remediationCommands?.report || remediationPlan?.remediationReportCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation -- --json',
-          remediation?.remediationActionHistoryCommand || remediationFlat?.actionHistoryCommand || remediationCommands?.history || remediationPlan?.remediationHistoryCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation-history -- --json',
-          remediation?.remediationActionRefreshCommand || remediationFlat?.actionRefreshCommand || remediationRefreshCommand || remediationPlan?.remediationRefreshCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation-refresh -- --if-stale --json',
-          remediation?.remediationActionNormalizeDryRunCommand || remediationFlat?.actionNormalizeDryRunCommand || remediationCommands?.normalizeDryRun || remediationPlan?.normalizeDryRunCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --json',
-          remediation?.remediationActionRetireDryRunCommand || remediationFlat?.actionRetireDryRunCommand || remediationCommands?.retireDryRun || remediationPlan?.retireDryRunCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles -- --json',
+          remediationView.remediationReportCommand || remediationPlan?.remediationReportCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation -- --json',
+          remediationView.remediationHistoryCommand || remediationPlan?.remediationHistoryCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation-history -- --json',
+          remediationView.remediationActionRefreshCommand || remediationRefreshCommand || remediationPlan?.remediationRefreshCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation-refresh -- --if-stale --json',
+          remediationView.remediationNormalizeDryRunCommand || remediationPlan?.normalizeDryRunCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --json',
+          remediationView.remediationRetireDryRunCommand || remediationPlan?.retireDryRunCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles -- --json',
         ];
         const remediationAlertLevel = remediationRefreshStale
           ? 2
@@ -751,35 +765,35 @@ async function main() {
             remediationRefreshCommand,
             remediationHistory: remediationHistory || null,
             remediationTrend,
-            remediationTrendHistoryCount: remediation?.remediationTrendHistoryCount ?? remediationFlat?.trendHistoryCount ?? remediationTrend?.historyCount ?? null,
-            remediationTrendChanged: remediation?.remediationTrendChanged ?? remediationFlat?.trendChanged ?? remediationTrend?.statusChanged ?? null,
-            remediationTrendNextChanged: remediation?.remediationTrendNextChanged ?? remediationFlat?.trendNextChanged ?? remediationTrend?.nextCommandChanged ?? null,
-            remediationTrendAgeMinutes: remediation?.remediationTrendAgeMinutes ?? remediationFlat?.trendAgeMinutes ?? remediationTrend?.ageMinutes ?? null,
-            remediationTrendStale: remediation?.remediationTrendStale ?? remediationFlat?.trendStale ?? remediationTrend?.stale ?? null,
-            remediationTrendDuplicateDelta: remediation?.remediationTrendDuplicateDelta ?? remediationFlat?.trendDuplicateDelta ?? remediationTrend?.duplicateDelta ?? null,
-            remediationTrendOrphanDelta: remediation?.remediationTrendOrphanDelta ?? remediationFlat?.trendOrphanDelta ?? remediationTrend?.orphanDelta ?? null,
-            remediationTrendUnmatchedDelta: remediation?.remediationTrendUnmatchedDelta ?? remediationFlat?.trendUnmatchedDelta ?? remediationTrend?.unmatchedDelta ?? null,
+            remediationTrendHistoryCount: remediationView.remediationTrendHistoryCount,
+            remediationTrendChanged: remediationView.remediationTrendChanged,
+            remediationTrendNextChanged: remediationView.remediationTrendNextChanged,
+            remediationTrendAgeMinutes: remediationView.remediationTrendAgeMinutes,
+            remediationTrendStale: remediationView.remediationTrendStale,
+            remediationTrendDuplicateDelta: remediationView.remediationTrendDuplicateDelta,
+            remediationTrendOrphanDelta: remediationView.remediationTrendOrphanDelta,
+            remediationTrendUnmatchedDelta: remediationView.remediationTrendUnmatchedDelta,
             remediationNextCommand,
             remediationNextCommandTransition,
             remediationNextCommandChanged,
             remediationNextCommandPrevious,
             remediationNextCommandCurrent,
             remediationCommands,
-            remediationActionReportCommand: remediation?.remediationActionReportCommand || remediationFlat?.actionReportCommand || remediationCommands?.report || null,
-            remediationActionHistoryCommand: remediation?.remediationActionHistoryCommand || remediationFlat?.actionHistoryCommand || remediationCommands?.history || null,
-            remediationActionRefreshCommand: remediation?.remediationActionRefreshCommand || remediationFlat?.actionRefreshCommand || remediationRefreshCommand || null,
-            remediationActionHygieneCommand: remediation?.remediationActionHygieneCommand || remediationFlat?.actionHygieneCommand || remediationCommands?.hygiene || null,
-            remediationActionNormalizeDryRunCommand: remediation?.remediationActionNormalizeDryRunCommand || remediationFlat?.actionNormalizeDryRunCommand || remediationCommands?.normalizeDryRun || null,
-            remediationActionNormalizeApplyCommand: remediation?.remediationActionNormalizeApplyCommand || remediationFlat?.actionNormalizeApplyCommand || remediationCommands?.normalizeApply || null,
-            remediationActionRetireDryRunCommand: remediation?.remediationActionRetireDryRunCommand || remediationFlat?.actionRetireDryRunCommand || remediationCommands?.retireDryRun || null,
-            remediationActionRetireApplyCommand: remediation?.remediationActionRetireApplyCommand || remediationFlat?.actionRetireApplyCommand || remediationCommands?.retireApply || null,
-            remediationReportCommand: remediationCommands?.report || null,
-            remediationHistoryCommand: remediationCommands?.history || null,
+            remediationActionReportCommand: remediationView.remediationActionReportCommand,
+            remediationActionHistoryCommand: remediationView.remediationActionHistoryCommand,
+            remediationActionRefreshCommand: remediationView.remediationActionRefreshCommand,
+            remediationActionHygieneCommand: remediationView.remediationActionHygieneCommand,
+            remediationActionNormalizeDryRunCommand: remediationView.remediationActionNormalizeDryRunCommand,
+            remediationActionNormalizeApplyCommand: remediationView.remediationActionNormalizeApplyCommand,
+            remediationActionRetireDryRunCommand: remediationView.remediationActionRetireDryRunCommand,
+            remediationActionRetireApplyCommand: remediationView.remediationActionRetireApplyCommand,
+            remediationReportCommand: remediationView.remediationReportCommand,
+            remediationHistoryCommand: remediationView.remediationHistoryCommand,
             remediationRefreshCommand,
-            remediationNormalizeDryRunCommand: remediationCommands?.normalizeDryRun || null,
-            remediationNormalizeApplyCommand: remediationCommands?.normalizeApply || null,
-            remediationRetireDryRunCommand: remediationCommands?.retireDryRun || null,
-            remediationRetireApplyCommand: remediationCommands?.retireApply || null,
+            remediationNormalizeDryRunCommand: remediationView.remediationNormalizeDryRunCommand,
+            remediationNormalizeApplyCommand: remediationView.remediationNormalizeApplyCommand,
+            remediationRetireDryRunCommand: remediationView.remediationRetireDryRunCommand,
+            remediationRetireApplyCommand: remediationView.remediationRetireApplyCommand,
             remediationRecommendedExchange: remediation?.remediationRecommendedExchange || recommendedExchange,
             recommendedExchange,
             remediationPlan,
