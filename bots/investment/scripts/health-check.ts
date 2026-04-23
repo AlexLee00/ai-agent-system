@@ -583,6 +583,8 @@ async function main() {
         const remediationSummary = remediation?.remediationSummary || null;
         const remediationActions = remediationSummary?.actions || remediation?.remediationActions || null;
         const remediationRefreshHint = remediationSummary?.refreshState?.reason || remediation?.remediationRefreshState?.reason || null;
+        const remediationTrend = remediationSummary?.trend || remediation?.remediationTrend || null;
+        const remediationNextCommandTransition = remediationSummary?.nextCommandTransition || remediation?.remediationNextCommandTransition || null;
         const recommendedExchange = remediationSummary?.recommendedExchange || remediationPlan?.recommendedExchange || null;
         const remediationAlertLevel = remediationSummary?.refreshState?.stale
           || remediation?.remediationRefreshState?.stale
@@ -593,10 +595,10 @@ async function main() {
           level: remediationAlertLevel,
           meta: {
             remediationSummary,
-            remediationRefreshState: remediation?.remediationRefreshState || null,
+            remediationRefreshState: remediationSummary?.refreshState || remediation?.remediationRefreshState || null,
             remediationHistory: remediationHistory || null,
-            remediationTrend: remediation?.remediationTrend || null,
-            remediationNextCommandTransition: remediation?.remediationNextCommandTransition || null,
+            remediationTrend,
+            remediationNextCommandTransition,
             recommendedExchange,
             remediationPlan,
             remediationActions,

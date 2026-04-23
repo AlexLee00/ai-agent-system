@@ -558,7 +558,7 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
         event_type: 'daily_feedback',
         alert_level: 1,
         message: finalMessage,
-        payload: { dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary, positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary, remediationSummary, remediationTrend: remediationSummary?.trend || positionStrategyRemediationSummary?.remediationTrend || null, remediationRefreshState, remediationActions: remediationSummary?.actions || positionStrategyRemediationSummary?.remediationActions || null, remediationNextCommandTransition: remediationSummary?.nextCommandTransition || positionStrategyRemediationSummary?.remediationNextCommandTransition || null, hygieneRemediationPlan },
+        payload: { dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary, positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary, remediationSummary, remediationTrend: remediationSummary?.trend || positionStrategyRemediationSummary?.remediationTrend || null, remediationRefreshState: remediationSummary?.refreshState || remediationRefreshState, remediationActions: remediationSummary?.actions || positionStrategyRemediationSummary?.remediationActions || null, remediationNextCommandTransition: remediationSummary?.nextCommandTransition || positionStrategyRemediationSummary?.remediationNextCommandTransition || null, hygieneRemediationPlan },
       });
       await dailyFeedbackMemory.remember(finalMessage, 'episodic', {
         importance: 0.7,
@@ -610,7 +610,7 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
     positionStrategyRemediationHistorySummary,
     remediationSummary,
     remediationTrend: remediationSummary?.trend || positionStrategyRemediationSummary?.remediationTrend || null,
-    remediationRefreshState,
+    remediationRefreshState: remediationSummary?.refreshState || remediationRefreshState,
     remediationNextCommandTransition: remediationSummary?.nextCommandTransition || positionStrategyRemediationSummary?.remediationNextCommandTransition || null,
     hygieneRemediationPlan,
     feedback,

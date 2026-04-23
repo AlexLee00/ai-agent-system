@@ -1197,12 +1197,12 @@ function formatText(report) {
               : []),
             ...(report.positionStrategyRemediation
               ? [
-                `  remediation status: ${report.positionStrategyRemediation.decision?.status || 'unknown'}`,
-                `  remediation headline: ${report.positionStrategyRemediation.decision?.headline || 'n/a'}`,
-                `  remediation next: ${report.positionStrategyRemediationActions?.nextCommand || 'n/a'}`,
-                `  remediation refresh state: needed ${report.positionStrategyRemediationRefresh?.needed ? 'yes' : 'no'} / stale ${report.positionStrategyRemediationRefresh?.stale ? 'yes' : 'no'} / command ${report.positionStrategyRemediationRefresh?.command || 'n/a'}`,
-                ...(report.positionStrategyRemediationRefresh?.reason
-                  ? [`  remediation refresh: ${report.positionStrategyRemediationRefresh.reason}`]
+                `  remediation status: ${report.positionStrategyRemediationSummary?.status || report.positionStrategyRemediation.decision?.status || 'unknown'}`,
+                `  remediation headline: ${report.positionStrategyRemediationSummary?.headline || report.positionStrategyRemediation.decision?.headline || 'n/a'}`,
+                `  remediation next: ${report.positionStrategyRemediationSummary?.nextCommand || report.positionStrategyRemediationActions?.nextCommand || 'n/a'}`,
+                `  remediation refresh state: needed ${report.positionStrategyRemediationSummary?.refreshState?.needed ? 'yes' : 'no'} / stale ${report.positionStrategyRemediationSummary?.refreshState?.stale ? 'yes' : 'no'} / command ${report.positionStrategyRemediationSummary?.refreshState?.command || report.positionStrategyRemediationRefresh?.command || 'n/a'}`,
+                ...(report.positionStrategyRemediationSummary?.refreshState?.reason || report.positionStrategyRemediationRefresh?.reason
+                  ? [`  remediation refresh: ${report.positionStrategyRemediationSummary?.refreshState?.reason || report.positionStrategyRemediationRefresh?.reason}`]
                   : []),
               ]
               : []),
