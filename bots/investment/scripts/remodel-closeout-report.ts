@@ -80,7 +80,7 @@ export function buildDecision({ health, plannerCoverage, autotune, relief, escal
 
   const healthOk = Boolean(health?.serviceHealth?.okCount >= 10 && Number(health?.serviceHealth?.warnCount || 0) === 0);
   const plannerReady = plannerCoverage?.decision?.status === 'planner_coverage_ready';
-  const autotuneBlocked = autotune?.decision?.status === 'autotune_blocked';
+  const autotuneBlocked = ['autotune_blocked', 'autotune_waiting_sizing_floor'].includes(String(autotune?.decision?.status || ''));
   const reliefBlocked = relief?.decision?.status === 'relief_blocked_by_order_cap';
   const escalateBlocked = escalate?.decision?.status === 'escalate_blocked';
   const backtestOk = backtest?.decision?.status === 'backtest_ok';
@@ -126,6 +126,9 @@ export function buildDecision({ health, plannerCoverage, autotune, relief, escal
 
   if (reliefBlocked) {
     actionItems.push('국내장 주문 상한(maxOrder) 이슈는 allow 조정이 아니라 정책 결정 항목으로 다룹니다.');
+  }
+  if (autotune?.decision?.status === 'autotune_waiting_sizing_floor') {
+    actionItems.push('국내장 최소 주문 미만으로 잘리는 후보는 autotune이 아니라 최종 sizing floor 정책으로 먼저 정리합니다.');
   }
   if (!plannerReady) {
     actionItems.push('실세션 planner attach ratio를 더 누적합니다.');

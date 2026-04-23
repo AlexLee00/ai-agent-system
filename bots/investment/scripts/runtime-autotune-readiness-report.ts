@@ -5,6 +5,7 @@ import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { buildInvestmentCliInsight } from '../shared/cli-insight.ts';
 import { buildRuntimeAllowCandidatesValidation } from './runtime-allow-candidates-validation.ts';
 import { buildRuntimePlannerCoverageReport } from './runtime-planner-coverage-report.ts';
+import { buildRuntimeMinOrderReliefReport } from './runtime-min-order-relief-report.ts';
 import { buildRuntimeMinOrderPressureReport } from './runtime-min-order-pressure-report.ts';
 import { buildVectorBtBacktestReport } from './vectorbt-backtest-report.ts';
 
@@ -18,10 +19,11 @@ function parseArgs(argv = process.argv.slice(2)) {
   };
 }
 
-function buildDecision({ allowValidation, plannerCoverage, minOrderPressure, backtest }) {
+export function buildDecision({ allowValidation, plannerCoverage, minOrderPressure, minOrderRelief, backtest }) {
   const allowDecision = allowValidation?.decision || {};
   const plannerDecision = plannerCoverage?.decision || {};
   const pressureDecision = minOrderPressure?.decision || {};
+  const reliefDecision = minOrderRelief?.decision || {};
   const backtestDecision = backtest?.decision || {};
 
   let status = 'autotune_waiting';
@@ -38,6 +40,9 @@ function buildDecision({ allowValidation, plannerCoverage, minOrderPressure, bac
   if (pressureDecision.status) {
     reasons.push(`min-order: ${pressureDecision.status}`);
   }
+  if (reliefDecision.status) {
+    reasons.push(`min-order relief: ${reliefDecision.status}`);
+  }
   if (backtestDecision.status) {
     reasons.push(`vectorbt: ${backtestDecision.status}`);
   }
@@ -45,13 +50,20 @@ function buildDecision({ allowValidation, plannerCoverage, minOrderPressure, bac
   const readyCandidates = Number(allowDecision.metrics?.ready || 0);
   const plannerReady = plannerDecision.status === 'planner_coverage_ready';
   const minOrderBlocked = String(pressureDecision.status || '').includes('pressure');
+  const minOrderReliefStatus = String(reliefDecision.status || '');
+  const minOrderNeedsSizingFloor = minOrderReliefStatus === 'relief_sizing_floor_needed';
+  const minOrderHardBlocked = minOrderReliefStatus === 'relief_blocked_by_order_cap';
   const backtestOk = backtestDecision.status === 'backtest_ok';
 
-  if (readyCandidates > 0 && plannerReady && !minOrderBlocked && backtestOk) {
+  if (readyCandidates > 0 && plannerReady && !minOrderBlocked && !minOrderHardBlocked && !minOrderNeedsSizingFloor && backtestOk) {
     status = 'autotune_ready';
     headline = '자동 튜닝 비교 실험을 시작할 준비가 됐습니다.';
     actionItems.push('ready allow 후보부터 synthetic 비교 실험 큐로 올립니다.');
-  } else if (plannerReady && minOrderBlocked) {
+  } else if (plannerReady && minOrderNeedsSizingFloor) {
+    status = 'autotune_waiting_sizing_floor';
+    headline = 'planner/validation 레일은 준비됐지만 국내장 sizing floor 정책 정리가 먼저 필요합니다.';
+    actionItems.push('최소 주문금액 미만으로 잘리는 후보는 autotune이 아니라 sizing floor 정책에서 먼저 정리합니다.');
+  } else if (plannerReady && (minOrderBlocked || minOrderHardBlocked)) {
     status = 'autotune_blocked';
     headline = 'planner/validation 레일은 준비됐지만 최소 주문 병목이 자동 튜닝을 막고 있습니다.';
     actionItems.push('국내장 최소 주문 병목을 완화하거나 별도 예외 시장으로 분리합니다.');
@@ -79,6 +91,9 @@ function buildDecision({ allowValidation, plannerCoverage, minOrderPressure, bac
       readyCandidates,
       plannerReady,
       minOrderBlocked,
+      minOrderReliefStatus,
+      minOrderNeedsSizingFloor,
+      minOrderHardBlocked,
       backtestOk,
     },
   };
@@ -98,6 +113,7 @@ function renderText(payload) {
     `- readyCandidates: ${payload.decision.metrics.readyCandidates}`,
     `- plannerReady: ${payload.decision.metrics.plannerReady ? 'yes' : 'no'}`,
     `- minOrderBlocked: ${payload.decision.metrics.minOrderBlocked ? 'yes' : 'no'}`,
+    `- minOrderReliefStatus: ${payload.decision.metrics.minOrderReliefStatus || 'n/a'}`,
     `- backtestOk: ${payload.decision.metrics.backtestOk ? 'yes' : 'no'}`,
     '',
     '권장 조치:',
@@ -115,6 +131,9 @@ function buildRuntimeAutotuneFallback(payload = {}) {
   if (decision.status === 'autotune_blocked') {
     return 'planner와 validation 레일은 준비됐지만 최소 주문 병목이 자동 튜닝을 막고 있어 주문 규칙부터 정리하는 편이 좋습니다.';
   }
+  if (decision.status === 'autotune_waiting_sizing_floor') {
+    return 'planner와 validation 레일은 준비됐지만, 국내장 후보가 최소 주문금액 아래로 잘리는 sizing floor 정책을 먼저 정리하는 편이 좋습니다.';
+  }
   if (decision.status === 'autotune_observe') {
     return 'planner 레일은 준비됐고, 이제 ready allow 후보나 backtest 품질을 더 누적해서 자동 튜닝 시점을 보는 편이 좋습니다.';
   }
@@ -122,10 +141,11 @@ function buildRuntimeAutotuneFallback(payload = {}) {
 }
 
 export async function buildRuntimeAutotuneReadinessReport({ days = 14, limit = 20, json = false } = {}) {
-  const [allowValidation, plannerCoverage, minOrderPressure, backtest] = await Promise.all([
+  const [allowValidation, plannerCoverage, minOrderPressure, minOrderRelief, backtest] = await Promise.all([
     buildRuntimeAllowCandidatesValidation({ days, limit, json: true }).catch(() => null),
     buildRuntimePlannerCoverageReport({ limit: 5, json: true }).catch(() => null),
     buildRuntimeMinOrderPressureReport({ market: 'kis', days, json: true }).catch(() => null),
+    buildRuntimeMinOrderReliefReport({ days, json: true }).catch(() => null),
     buildVectorBtBacktestReport({ days: 30, limit: 20, json: true }).catch(() => null),
   ]);
 
@@ -133,6 +153,7 @@ export async function buildRuntimeAutotuneReadinessReport({ days = 14, limit = 2
     allowValidation,
     plannerCoverage,
     minOrderPressure,
+    minOrderRelief,
     backtest,
   });
 
@@ -143,6 +164,7 @@ export async function buildRuntimeAutotuneReadinessReport({ days = 14, limit = 2
     allowValidation,
     plannerCoverage,
     minOrderPressure,
+    minOrderRelief,
     backtest,
     decision,
   };
@@ -158,6 +180,7 @@ export async function buildRuntimeAutotuneReadinessReport({ days = 14, limit = 2
       allowValidation: allowValidation?.decision,
       plannerCoverage: plannerCoverage?.decision,
       minOrderPressure: minOrderPressure?.decision,
+      minOrderRelief: minOrderRelief?.decision,
       backtest: backtest?.decision,
     },
     fallback: buildRuntimeAutotuneFallback(payload),

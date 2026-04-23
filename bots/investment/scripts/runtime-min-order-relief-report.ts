@@ -30,9 +30,10 @@ function formatKrw(value) {
   return `${Math.round(n).toLocaleString()} KRW`;
 }
 
-function buildDecision({ pressure, runtimeConfig }) {
+export function buildDecision({ pressure, runtimeConfig }) {
   const reasons = [...(pressure?.decision?.reasons || [])];
   const runtimeGap = parseKrw(reasons.find((item) => String(item).startsWith('runtime gap ')) || '');
+  const pressureMetrics = pressure?.decision?.metrics || {};
 
   const defaults = runtimeConfig?.luna?.stockOrderDefaults?.kis || {};
   const thresholds = runtimeConfig?.nemesis?.thresholds || {};
@@ -40,8 +41,15 @@ function buildDecision({ pressure, runtimeConfig }) {
   const minOrder = Number(defaults.min || 0);
   const maxOrder = Number(defaults.max || 0);
   const starterApprove = Number(thresholds.stockStarterApproveDomestic || 0);
-  const required = Number(runtimeGap.required || 0);
+  const attempted = Number(runtimeGap.attempted || pressureMetrics.maxGapAttempted || 0);
+  const required = Number(runtimeGap.required || pressureMetrics.maxGapRequired || 0);
+  const gap = Number(runtimeGap.gap || pressureMetrics.maxGap || 0);
   const blockedByOrderCap = required > 0 && maxOrder > 0 && required > maxOrder;
+  const sizingFloorNeeded = required > 0
+    && attempted > 0
+    && attempted < required
+    && required <= (buyDefault || required)
+    && required <= (maxOrder || required);
   const candidateBuyDefault = required > 0 ? Math.min(required, maxOrder || required) : null;
   const candidateStarterApprove = required > 0 ? Math.min(required, maxOrder || required) : null;
 
@@ -54,6 +62,11 @@ function buildDecision({ pressure, runtimeConfig }) {
       status = 'relief_blocked_by_order_cap';
       headline = 'required notional이 국내장 주문 상한을 넘어 allow 파라미터만으로는 해소되지 않습니다.';
       actionItems.push('국내장 주문 상한 자체를 바꿀지, 아니면 해당 조건을 예외 전략으로 분리할지 판단합니다.');
+    } else if (sizingFloorNeeded) {
+      status = 'relief_sizing_floor_needed';
+      headline = '최소 주문금액은 주문 상한 안에 있으나 실제 sizing이 그 아래로 잘리고 있습니다.';
+      actionItems.push('승인된 국내장 매수 후보는 최종 수량 산정 단계에서 minOrder 이상으로 올리거나, 올릴 수 없으면 후보를 제외합니다.');
+      actionItems.push('position cap/잔여 예산이 minOrder 미만으로 자르는 경우는 autotune 후보가 아니라 sizing floor 정책으로 분리합니다.');
     } else if (candidateStarterApprove && candidateStarterApprove > starterApprove) {
       status = 'relief_candidate_ready';
       headline = 'starter approve와 기본 주문값 조정으로 완화 후보를 만들 수 있습니다.';
@@ -78,8 +91,8 @@ function buildDecision({ pressure, runtimeConfig }) {
     reasons,
     actionItems,
     metrics: {
-      gap: runtimeGap.gap,
-      attempted: runtimeGap.attempted,
+      gap,
+      attempted,
       required,
       buyDefault,
       minOrder,
@@ -88,6 +101,7 @@ function buildDecision({ pressure, runtimeConfig }) {
       candidateBuyDefault,
       candidateStarterApprove,
       blockedByOrderCap,
+      sizingFloorNeeded,
     },
   };
 }
@@ -115,6 +129,7 @@ function renderText(payload) {
     `- candidateBuyDefault: ${formatKrw(m.candidateBuyDefault)}`,
     `- candidateStarterApprove: ${formatKrw(m.candidateStarterApprove)}`,
     `- blockedByOrderCap: ${m.blockedByOrderCap ? 'yes' : 'no'}`,
+    `- sizingFloorNeeded: ${m.sizingFloorNeeded ? 'yes' : 'no'}`,
     '',
     '권장 조치:',
     ...payload.decision.actionItems.map((item) => `- ${item}`),
@@ -129,6 +144,9 @@ function buildRuntimeMinOrderReliefFallback(payload = {}) {
   }
   if (decision.status === 'relief_candidate_ready') {
     return 'starter approve와 기본 주문값을 함께 조정하면 min-order relief 후보를 만들 수 있는 상태입니다.';
+  }
+  if (decision.status === 'relief_sizing_floor_needed') {
+    return '최소 주문금액 자체는 주문 상한 안에 있어, allow 조정보다 최종 sizing floor 정책을 먼저 맞추는 편이 좋습니다.';
   }
   if (decision.status === 'relief_observe') {
     return '병목은 보이지만 즉시 relief 후보를 만들 정도는 아니어서 required notional 분포를 더 누적하는 편이 좋습니다.';

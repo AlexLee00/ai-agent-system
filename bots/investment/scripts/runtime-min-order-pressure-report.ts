@@ -25,9 +25,12 @@ function normalizeMarket(market = 'kis') {
   return value;
 }
 
-function extractGap(reason = '') {
+export function extractGap(reason = '') {
   const text = String(reason || '');
-  const numeric = [...text.matchAll(/-?\d+(?:\.\d+)?/g)].map((match) => Number(match[0]));
+  const comparison = text.match(/([\d,]+(?:\.\d+)?)\s*(?:원|KRW|USD|USDT)?\s*<\s*([\d,]+(?:\.\d+)?)\s*(?:원|KRW|USD|USDT)?/i);
+  const numeric = comparison
+    ? [comparison[1], comparison[2]].map((value) => Number(String(value).replace(/,/g, '')))
+    : [...text.matchAll(/-?\d[\d,]*(?:\.\d+)?/g)].map((match) => Number(String(match[0]).replace(/,/g, '')));
   if (numeric.length < 2) return { attempted: null, required: null, gap: null };
   const attempted = Number(numeric[0]);
   const required = Number(numeric[1]);
@@ -127,6 +130,8 @@ function buildDecision({ market, rows = [], runtime = null, orderDefaults = null
       withGap: withGap.length,
       avgGap,
       maxGap: maxGapRow ? Number(maxGapRow.gap || 0) : 0,
+      maxGapAttempted: maxGapRow ? Number(maxGapRow.attempted || 0) : 0,
+      maxGapRequired: maxGapRow ? Number(maxGapRow.required || 0) : 0,
     },
   };
 }
