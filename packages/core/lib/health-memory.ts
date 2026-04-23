@@ -13,8 +13,13 @@ function createHealthMemoryHelper(opts = {}) {
   const healthMemory = createAgentMemory({ agentId, team });
 
   function buildMemoryQuery(key, msg) {
-    const headline = String(msg || '').split('\n')[0] || '';
-    return [String(key || ''), headline, domain].filter(Boolean).join(' ');
+    const lines = String(msg || '')
+      .split('\n')
+      .map((line) => String(line || '').trim())
+      .filter(Boolean);
+    const headline = lines[0] || '';
+    const detail = lines[1] || '';
+    return [String(key || ''), headline, detail, domain].filter(Boolean).join(' ');
   }
 
   async function rememberHealthEvent(key, kind, msg, level = 1) {
