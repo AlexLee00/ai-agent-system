@@ -38,6 +38,7 @@ defmodule Luna.V2.PositionWatch do
     interval_ms = KillSwitch.position_watch_interval_ms()
     Logger.info("[루나V2/PositionWatch] 시작 (#{interval_ms}ms 간격)")
     schedule(interval_ms)
+
     {:ok,
      %{
        last_snapshot: nil,
@@ -72,7 +73,10 @@ defmodule Luna.V2.PositionWatch do
 
   def handle_cast({:set_dynamic_interval, interval_ms, source, ttl_ms}, state) do
     until_at = DateTime.add(DateTime.utc_now(), ttl_ms, :millisecond)
-    Logger.info("[루나V2/PositionWatch] 동적 감시 간격 적용 #{interval_ms}ms source=#{source} ttl_ms=#{ttl_ms}")
+
+    Logger.info(
+      "[루나V2/PositionWatch] 동적 감시 간격 적용 #{interval_ms}ms source=#{source} ttl_ms=#{ttl_ms}"
+    )
 
     {:noreply,
      %{
@@ -132,12 +136,16 @@ defmodule Luna.V2.PositionWatch do
             |> Map.new(fn {value, key} -> {String.to_atom(key), value} end)
           end)
 
-        tv_snapshot = fetch_tradingview_snapshot(positions, tv_enabled?, tv_timeframes, tv_stale_ms)
+        tv_snapshot =
+          fetch_tradingview_snapshot(positions, tv_enabled?, tv_timeframes, tv_stale_ms)
+
         positions_with_tv = attach_tv_snapshot(positions, tv_snapshot)
 
         attention =
           positions_with_tv
-          |> Enum.map(&classify_position(&1, stop_loss_pct, adjust_gain_pct, stale_minutes, tv_stale_ms))
+          |> Enum.map(
+            &classify_position(&1, stop_loss_pct, adjust_gain_pct, stale_minutes, tv_stale_ms)
+          )
           |> Enum.reject(&is_nil/1)
 
         %{
@@ -188,7 +196,10 @@ defmodule Luna.V2.PositionWatch do
         Map.merge(position, %{attention_type: :stop_loss_attention, reason: "loss threshold hit"})
 
       pnl_ratio >= abs(adjust_gain_pct) ->
-        Map.merge(position, %{attention_type: :partial_adjust_attention, reason: "gain threshold hit"})
+        Map.merge(position, %{
+          attention_type: :partial_adjust_attention,
+          reason: "gain threshold hit"
+        })
 
       true ->
         nil
@@ -209,7 +220,8 @@ defmodule Luna.V2.PositionWatch do
 
   defp build_watch_context(positions, tv_snapshot) do
     counts =
-      Enum.reduce(positions, %{crypto: 0, domestic: 0, overseas: 0, unknown: 0}, fn position, acc ->
+      Enum.reduce(positions, %{crypto: 0, domestic: 0, overseas: 0, unknown: 0}, fn position,
+                                                                                    acc ->
         market = market_from_exchange(position[:exchange])
         Map.update(acc, market, 1, &(&1 + 1))
       end)
@@ -238,10 +250,17 @@ defmodule Luna.V2.PositionWatch do
 
     recommended_mode =
       cond do
-        counts.crypto > 0 -> :crypto_realtime
-        (counts.domestic > 0 and domestic_open?) or (counts.overseas > 0 and overseas_open?) -> :stocks_realtime
-        counts.domestic > 0 or counts.overseas > 0 -> :stocks_offhours
-        true -> :idle
+        counts.crypto > 0 ->
+          :crypto_realtime
+
+        (counts.domestic > 0 and domestic_open?) or (counts.overseas > 0 and overseas_open?) ->
+          :stocks_realtime
+
+        counts.domestic > 0 or counts.overseas > 0 ->
+          :stocks_offhours
+
+        true ->
+          :idle
       end
 
     %{
@@ -267,10 +286,11 @@ defmodule Luna.V2.PositionWatch do
 
     Enum.each(symbols, fn symbol ->
       Enum.each(timeframes, fn timeframe ->
-        _ = Req.get("#{KillSwitch.position_watch_tv_base_url()}/subscribe",
-          params: [symbol: symbol, timeframe: timeframe],
-          retry: false
-        )
+        _ =
+          Req.get("#{KillSwitch.position_watch_tv_base_url()}/subscribe",
+            params: [symbol: symbol, timeframe: timeframe],
+            retry: false
+          )
       end)
     end)
 
@@ -366,6 +386,7 @@ defmodule Luna.V2.PositionWatch do
     cond do
       stale_frame ->
         {timeframe, frame} = stale_frame
+
         %{
           attention_type: :tv_bar_stale,
           reason: "TradingView #{timeframe} bar stale",
@@ -375,6 +396,7 @@ defmodule Luna.V2.PositionWatch do
 
       bearish_frame ->
         {timeframe, frame} = bearish_frame
+
         %{
           attention_type: :tv_live_bearish,
           reason: "TradingView #{timeframe} live candle bearish",
@@ -400,7 +422,8 @@ defmodule Luna.V2.PositionWatch do
 
     dynamic_active? =
       is_integer(state.dynamic_interval_ms) and state.dynamic_interval_ms > 0 and
-        match?(%DateTime{}, state.dynamic_interval_until) and DateTime.compare(state.dynamic_interval_until, now) == :gt
+        match?(%DateTime{}, state.dynamic_interval_until) and
+        DateTime.compare(state.dynamic_interval_until, now) == :gt
 
     if dynamic_active? do
       state.dynamic_interval_ms
@@ -431,8 +454,37 @@ defmodule Luna.V2.PositionWatch do
       exchange == "kis" and Regex.match?(~r/^\d{6}$/, symbol) ->
         "KRX:" <> symbol
 
+      exchange == "kis_overseas" and Regex.match?(~r/^[A-Z]{1,10}$/, symbol) ->
+        to_us_tv_symbol(symbol)
+
       true ->
         nil
+    end
+  end
+
+  # 미국장은 현재 포지션 symbol에 거래소 메타가 항상 함께 오지 않아서,
+  # 자주 쓰는 종목/ETF는 명시 매핑하고 나머지는 NASDAQ 우선으로 본다.
+  # 필요시 NYSE/AMEX 매핑 테이블을 계속 확장하면 된다.
+  defp to_us_tv_symbol(symbol) do
+    case symbol do
+      "AAPL" -> "NASDAQ:AAPL"
+      "AMD" -> "NASDAQ:AMD"
+      "AMZN" -> "NASDAQ:AMZN"
+      "ASTS" -> "NASDAQ:ASTS"
+      "MSFT" -> "NASDAQ:MSFT"
+      "NFLX" -> "NASDAQ:NFLX"
+      "NVDA" -> "NASDAQ:NVDA"
+      "NVTS" -> "NASDAQ:NVTS"
+      "OPEN" -> "NASDAQ:OPEN"
+      "POET" -> "NASDAQ:POET"
+      "QQQ" -> "NASDAQ:QQQ"
+      "TSLA" -> "NASDAQ:TSLA"
+      "CAR" -> "NYSE:CAR"
+      "DTE" -> "NYSE:DTE"
+      "GE" -> "NYSE:GE"
+      "UNH" -> "NYSE:UNH"
+      "SPY" -> "AMEX:SPY"
+      _ -> "NASDAQ:" <> symbol
     end
   end
 
@@ -440,7 +492,8 @@ defmodule Luna.V2.PositionWatch do
     previous_attention = Map.get(previous_snapshot || %{}, :attention_count, 0)
     current_attention = Map.get(snapshot, :attention_count, 0)
 
-    if current_attention > 0 and (previous_attention != current_attention or previous_attention == 0) do
+    if current_attention > 0 and
+         (previous_attention != current_attention or previous_attention == 0) do
       Logger.warning("[루나V2/PositionWatch] attention #{current_attention}건 감지")
 
       Phoenix.PubSub.broadcast(
