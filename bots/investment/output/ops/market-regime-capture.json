@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "checkedAt": "2026-04-22T18:12:59.295Z",
+  "checkedAt": "2026-04-23T00:13:16.328Z",
   "dryRun": false,
   "markets": [
     "binance",
@@ -17,7 +17,7 @@
       "bias": "bullish",
       "tradingStyle": "aggressive",
       "timeframe": "swing",
-      "capturedAt": "2026-04-22T18:12:58.416Z"
+      "capturedAt": "2026-04-23T00:13:15.503Z"
     },
     {
       "market": "kis",
@@ -28,7 +28,7 @@
       "bias": "bullish",
       "tradingStyle": "aggressive",
       "timeframe": "swing",
-      "capturedAt": "2026-04-22T18:12:58.922Z"
+      "capturedAt": "2026-04-23T00:13:16.014Z"
     },
     {
       "market": "kis_overseas",
@@ -39,7 +39,7 @@
       "bias": "bullish",
       "tradingStyle": "aggressive",
       "timeframe": "swing",
-      "capturedAt": "2026-04-22T18:12:59.293Z"
+      "capturedAt": "2026-04-23T00:13:16.327Z"
     }
   ]
 }
