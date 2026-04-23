@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import {
   buildScopeMap,
   entryAgeHours,
+  reconcileOpenJournals,
   scopeKey,
   summarizeReconcileResults,
   tolerance,
@@ -38,5 +39,10 @@ assert.equal(summary.affectedTradeCount, 3);
 assert.equal(summary.noPositionScopes, 1);
 assert.equal(summary.duplicateScopes, 1);
 assert.equal(summary.observeScopes, 1);
+
+const blocked = await reconcileOpenJournals({ dryRun: false, confirmLive: false });
+assert.equal(blocked.ok, false);
+assert.equal(blocked.blocked, true);
+assert.equal(blocked.reason, 'confirm_live_required');
 
 console.log('reconcile open journals smoke ok');

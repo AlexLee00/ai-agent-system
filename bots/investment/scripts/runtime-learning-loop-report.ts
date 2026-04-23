@@ -718,7 +718,7 @@ function buildSectionStates({
       topActions: openJournalReconcile.summary?.byAction || {},
       sampleResults: (openJournalReconcile.results || []).slice(0, 5),
       command: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:reconcile-open-journals',
-      writeCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:reconcile-open-journals -- --write',
+      writeCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:reconcile-open-journals -- --write --confirm-live',
     } : null,
   };
 

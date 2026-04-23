@@ -109,7 +109,28 @@ export function summarizeReconcileResults(results = []) {
   };
 }
 
-export async function reconcileOpenJournals({ dryRun = true, market = 'crypto', noPositionMinAgeHours = 6, symbols = [] } = {}) {
+export async function reconcileOpenJournals({
+  dryRun = true,
+  market = 'crypto',
+  noPositionMinAgeHours = 6,
+  symbols = [],
+  confirmLive = false,
+} = {}) {
+  if (dryRun === false && confirmLive !== true) {
+    return {
+      ok: false,
+      dryRun: false,
+      market,
+      blocked: true,
+      reason: 'confirm_live_required',
+      message: '라이브 open journal을 닫으려면 --write --confirm-live를 함께 지정해야 합니다.',
+      totalScopes: 0,
+      candidates: 0,
+      summary: summarizeReconcileResults([]),
+      results: [],
+    };
+  }
+
   await db.initSchema();
   await journalDb.initJournalSchema();
 
@@ -200,6 +221,7 @@ export async function reconcileOpenJournals({ dryRun = true, market = 'crypto', 
     ok: true,
     dryRun,
     market,
+    confirmLive,
     totalScopes: grouped.size,
     candidates: results.length,
     summary: summarizeReconcileResults(results),
@@ -210,14 +232,16 @@ export async function reconcileOpenJournals({ dryRun = true, market = 'crypto', 
 async function main() {
   const args = process.argv.slice(2);
   const dryRun = !args.includes('--write');
+  const confirmLive = args.includes('--confirm-live');
   const minAgeArg = args.find((arg) => arg.startsWith('--no-position-min-age-hours='))?.split('=')[1];
   const symbolsArg = args.find((arg) => arg.startsWith('--symbols='))?.split('=')[1];
   const symbols = symbolsArg
     ? symbolsArg.split(',').map((value) => value.trim()).filter(Boolean)
     : [];
   const noPositionMinAgeHours = Number.isFinite(Number(minAgeArg)) ? Number(minAgeArg) : 6;
-  const result = await reconcileOpenJournals({ dryRun, market: 'crypto', noPositionMinAgeHours, symbols });
+  const result = await reconcileOpenJournals({ dryRun, market: 'crypto', noPositionMinAgeHours, symbols, confirmLive });
   console.log(JSON.stringify(result, null, 2));
+  if (result?.blocked) process.exitCode = 2;
 }
 
 if (isDirectExecution(import.meta.url)) {
