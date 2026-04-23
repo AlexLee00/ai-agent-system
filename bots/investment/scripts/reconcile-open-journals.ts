@@ -47,6 +47,10 @@ async function closeEntryAtBreakeven(entry, exitReason, dryRun) {
     pnlAmount: 0,
     pnlPercent: 0,
     pnlNet: 0,
+    execution_origin: 'cleanup',
+    quality_flag: 'exclude_from_learning',
+    exclude_from_learning: true,
+    incident_link: 'journal_reconcile',
   });
   await journalDb.ensureAutoReview(entry.trade_id).catch(() => {});
 }

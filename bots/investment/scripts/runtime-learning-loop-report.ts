@@ -118,6 +118,7 @@ async function loadRegimeCoverage(days = 90) {
       FROM investment.trade_journal j
       LEFT JOIN investment.trade_rationale r ON r.trade_id = j.trade_id
       WHERE j.created_at >= $1
+        AND COALESCE(j.exclude_from_learning, false) = false
       GROUP BY 1, 2
       ORDER BY total DESC, exchange ASC, regime ASC
     `, [sinceEpochMs]).catch(() => []),
@@ -207,6 +208,7 @@ async function loadRegimePerformance(days = 90) {
       ROUND(AVG(pnl_percent)::numeric, 4) AS avg_pnl_percent
     FROM investment.trade_journal
     WHERE created_at >= $1
+      AND COALESCE(exclude_from_learning, false) = false
       AND market_regime IS NOT NULL
       AND market_regime <> ''
     GROUP BY 1, 2

@@ -217,6 +217,10 @@ export async function initSchema() {
     ['nemesis_verdict', 'TEXT'],        // SEC-004: approved | modified | rejected | null(미경유)
     ['approved_at',     'TIMESTAMPTZ'], // SEC-004: stale signal 감지용
     ['partial_exit_ratio', 'DOUBLE PRECISION'],
+    ['execution_origin', `TEXT DEFAULT 'strategy'`],
+    ['quality_flag', `TEXT DEFAULT 'trusted'`],
+    ['exclude_from_learning', 'BOOLEAN DEFAULT false'],
+    ['incident_link', 'TEXT'],
   ]) {
     try { await run(`ALTER TABLE signals ADD COLUMN IF NOT EXISTS ${col} ${type}`); } catch { /* 무시 */ }
   }
@@ -227,6 +231,10 @@ export async function initSchema() {
     ['tp_order_id', 'TEXT'], ['sl_order_id', 'TEXT'],
     ['tp_sl_set', 'BOOLEAN DEFAULT false'],
     ['trade_mode', `TEXT DEFAULT 'normal'`],
+    ['execution_origin', `TEXT DEFAULT 'strategy'`],
+    ['quality_flag', `TEXT DEFAULT 'trusted'`],
+    ['exclude_from_learning', 'BOOLEAN DEFAULT false'],
+    ['incident_link', 'TEXT'],
   ]) {
     try { await run(`ALTER TABLE trades ADD COLUMN IF NOT EXISTS ${col} ${type}`); } catch { /* 무시 */ }
   }
@@ -363,11 +371,15 @@ export async function insertSignal({
   nemesisVerdict = null,
   approvedAt = null,
   partialExitRatio = null,
+  executionOrigin = 'strategy',
+  qualityFlag = 'trusted',
+  excludeFromLearning = false,
+  incidentLink = null,
 }) {
   const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
   const rows = await query(
-    `INSERT INTO signals (symbol, action, amount_usdt, confidence, reasoning, status, exchange, analyst_signals, trade_mode, nemesis_verdict, approved_at, partial_exit_ratio)
-     VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8, $9, $10, $11)
+    `INSERT INTO signals (symbol, action, amount_usdt, confidence, reasoning, status, exchange, analyst_signals, trade_mode, nemesis_verdict, approved_at, partial_exit_ratio, execution_origin, quality_flag, exclude_from_learning, incident_link)
+     VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
      RETURNING id`,
     [
       symbol,
@@ -381,6 +393,10 @@ export async function insertSignal({
       nemesisVerdict ?? null,
       approvedAt ?? null,
       partialExitRatio ?? null,
+      executionOrigin || 'strategy',
+      qualityFlag || 'trusted',
+      excludeFromLearning === true,
+      incidentLink ?? null,
     ],
   );
   return rows[0]?.id;
@@ -489,6 +505,10 @@ export async function insertSignalIfFresh({
   dedupeWindowMinutes = null,
   nemesisVerdict = null,
   approvedAt = null,
+  executionOrigin = 'strategy',
+  qualityFlag = 'trusted',
+  excludeFromLearning = false,
+  incidentLink = null,
 } = {}) {
   const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
   const effectiveWindow = Number.isFinite(Number(dedupeWindowMinutes)) && Number(dedupeWindowMinutes) > 0
@@ -522,6 +542,10 @@ export async function insertSignalIfFresh({
     tradeMode: effectiveTradeMode,
     nemesisVerdict,
     approvedAt,
+    executionOrigin,
+    qualityFlag,
+    excludeFromLearning,
+    incidentLink,
   });
 
   return {
@@ -617,13 +641,14 @@ export async function getApprovedSignals(exchange, tradeMode = null) {
 
 // ─── trades ─────────────────────────────────────────────────────────
 
-export async function insertTrade({ signalId, symbol, side, amount, price, totalUsdt, paper, exchange = 'binance', tpPrice = null, slPrice = null, tpOrderId = null, slOrderId = null, tpSlSet = false, tradeMode = null }) {
+export async function insertTrade({ signalId, symbol, side, amount, price, totalUsdt, paper, exchange = 'binance', tpPrice = null, slPrice = null, tpOrderId = null, slOrderId = null, tpSlSet = false, tradeMode = null, executionOrigin = 'strategy', qualityFlag = 'trusted', excludeFromLearning = false, incidentLink = null }) {
   const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
   await run(
-    `INSERT INTO trades (signal_id, symbol, side, amount, price, total_usdt, paper, exchange, tp_price, sl_price, tp_order_id, sl_order_id, tp_sl_set, trade_mode)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+    `INSERT INTO trades (signal_id, symbol, side, amount, price, total_usdt, paper, exchange, tp_price, sl_price, tp_order_id, sl_order_id, tp_sl_set, trade_mode, execution_origin, quality_flag, exclude_from_learning, incident_link)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
     [signalId ?? null, symbol, side, amount, price, totalUsdt ?? null, paper !== false, exchange,
-     tpPrice, slPrice, tpOrderId, slOrderId, tpSlSet ?? false, effectiveTradeMode],
+     tpPrice, slPrice, tpOrderId, slOrderId, tpSlSet ?? false, effectiveTradeMode,
+     executionOrigin || 'strategy', qualityFlag || 'trusted', excludeFromLearning === true, incidentLink ?? null],
   );
 }
 

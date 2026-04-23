@@ -16,4 +16,12 @@ defmodule Luna.V2.KillSwitchTest do
     assert Luna.V2.KillSwitch.v2_enabled?()
     Application.put_env(:luna, :v2_enabled, false)
   end
+
+  test "position watch defaults are readable" do
+    Application.put_env(:luna, :position_watch_enabled, true)
+    Application.put_env(:luna, :position_watch_interval_ms, 60_000)
+
+    assert Luna.V2.KillSwitch.position_watch_enabled?()
+    assert Luna.V2.KillSwitch.position_watch_interval_ms() == 60_000
+  end
 end

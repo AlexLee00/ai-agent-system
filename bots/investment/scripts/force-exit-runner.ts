@@ -138,6 +138,10 @@ async function createForceExitSignal(candidate, reason) {
     tradeMode: candidate.tradeMode || 'normal',
     nemesisVerdict: 'approved', // SEC-004: force-exit은 관리자 승인 SELL — 가드 예외
     approvedAt: new Date().toISOString(),
+    executionOrigin: 'recovery',
+    qualityFlag: 'exclude_from_learning',
+    excludeFromLearning: true,
+    incidentLink: 'force_exit_runner',
   });
 
   const signal = await db.getSignalById(signalId);

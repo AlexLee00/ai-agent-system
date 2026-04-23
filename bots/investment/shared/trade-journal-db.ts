@@ -298,6 +298,10 @@ export async function initJournalSchema() {
       tp_sl_error       VARCHAR,
       market_regime     VARCHAR,
       market_regime_confidence DOUBLE PRECISION,
+      execution_origin  VARCHAR DEFAULT 'strategy',
+      quality_flag      VARCHAR DEFAULT 'trusted',
+      exclude_from_learning BOOLEAN DEFAULT false,
+      incident_link     VARCHAR,
 
       created_at        BIGINT NOT NULL
     )
@@ -307,6 +311,10 @@ export async function initJournalSchema() {
   try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS tp_sl_error VARCHAR`); } catch { /* 이미 있으면 무시 */ }
   try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS market_regime VARCHAR`); } catch { /* 이미 있으면 무시 */ }
   try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS market_regime_confidence DOUBLE PRECISION`); } catch { /* 이미 있으면 무시 */ }
+  try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS execution_origin VARCHAR DEFAULT 'strategy'`); } catch { /* 이미 있으면 무시 */ }
+  try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS quality_flag VARCHAR DEFAULT 'trusted'`); } catch { /* 이미 있으면 무시 */ }
+  try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS exclude_from_learning BOOLEAN DEFAULT false`); } catch { /* 이미 있으면 무시 */ }
+  try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS incident_link VARCHAR`); } catch { /* 이미 있으면 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_journal_market ON trade_journal(market, created_at)`); } catch { /* 이미 있으면 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_journal_status ON trade_journal(status, created_at)`); } catch { /* 이미 있으면 무시 */ }
 
@@ -477,8 +485,9 @@ export async function insertJournalEntry(entry) {
         signal_time, decision_time, execution_time, signal_to_exec_ms,
         tp_price, sl_price, tp_order_id, sl_order_id, tp_sl_set, tp_sl_mode, tp_sl_error,
         market_regime, market_regime_confidence,
+        execution_origin, quality_flag, exclude_from_learning, incident_link,
         status, created_at
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         entry.trade_id, entry.signal_id ?? null,
         entry.market, entry.exchange, entry.symbol, entry.is_paper ?? true, entry.trade_mode || getInvestmentTradeMode(),
@@ -493,6 +502,10 @@ export async function insertJournalEntry(entry) {
         entry.tp_sl_error ?? null,
         entry.market_regime ?? null,
         entry.market_regime_confidence ?? null,
+        entry.execution_origin || 'strategy',
+        entry.quality_flag || 'trusted',
+        entry.exclude_from_learning === true,
+        entry.incident_link ?? null,
         'open', now,
       ],
     );
@@ -517,7 +530,7 @@ export async function insertJournalEntry(entry) {
  * @param {JournalCloseInput} [input]
  * @returns {Promise<void>}
  */
-export async function closeJournalEntry(tradeId, { exitTime, exitPrice, exitValue, exitReason, pnlAmount, pnlPercent, feeTotal, pnlNet } = {}) {
+export async function closeJournalEntry(tradeId, { exitTime, exitPrice, exitValue, exitReason, pnlAmount, pnlPercent, feeTotal, pnlNet, execution_origin = null, quality_flag = null, exclude_from_learning = null, incident_link = null } = {}) {
   await ensureInit();
   const now = Date.now();
   await run(
@@ -530,6 +543,10 @@ export async function closeJournalEntry(tradeId, { exitTime, exitPrice, exitValu
          pnl_percent   = ?,
          fee_total     = ?,
          pnl_net       = ?,
+         execution_origin = COALESCE(?, execution_origin),
+         quality_flag     = COALESCE(?, quality_flag),
+         exclude_from_learning = COALESCE(?, exclude_from_learning),
+         incident_link    = COALESCE(?, incident_link),
          status        = 'closed',
          hold_duration = ? - entry_time
      WHERE trade_id = ?`,
@@ -537,6 +554,7 @@ export async function closeJournalEntry(tradeId, { exitTime, exitPrice, exitValu
       exitTime ?? now, exitPrice ?? null, exitValue ?? null,
       exitReason ?? 'manual',
       pnlAmount ?? null, pnlPercent ?? null, feeTotal ?? null, pnlNet ?? null,
+      execution_origin ?? null, quality_flag ?? null, exclude_from_learning, incident_link ?? null,
       exitTime ?? now,
       tradeId,
     ],

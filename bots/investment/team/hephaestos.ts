@@ -406,6 +406,15 @@ function normalizePartialExitRatio(value) {
   return Number(parsed.toFixed(4));
 }
 
+function buildSignalQualityContext(signal = null) {
+  return {
+    executionOrigin: signal?.execution_origin || signal?.executionOrigin || 'strategy',
+    qualityFlag: signal?.quality_flag || signal?.qualityFlag || 'trusted',
+    excludeFromLearning: Boolean(signal?.exclude_from_learning ?? signal?.excludeFromLearning ?? false),
+    incidentLink: signal?.incident_link || signal?.incidentLink || null,
+  };
+}
+
 async function reconcileOpenJournalToTrackedAmount(symbol, isPaper, trackedAmount, tradeMode = null) {
   const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
   const openEntries = await journalDb.getOpenJournalEntries('crypto');
@@ -442,7 +451,20 @@ async function reconcileOpenJournalToTrackedAmount(symbol, isPaper, trackedAmoun
   };
 }
 
-async function closeOpenJournalForSymbol(symbol, isPaper, exitPrice, exitValue, exitReason, tradeMode = null) {
+async function closeOpenJournalForSymbol(
+  symbol,
+  isPaper,
+  exitPrice,
+  exitValue,
+  exitReason,
+  tradeMode = null,
+  {
+    executionOrigin = null,
+    qualityFlag = null,
+    excludeFromLearning = null,
+    incidentLink = null,
+  } = {},
+) {
   const openEntries = await journalDb.getOpenJournalEntries('crypto');
   const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
   const entry = openEntries.find(e =>
@@ -463,6 +485,10 @@ async function closeOpenJournalForSymbol(symbol, isPaper, exitPrice, exitValue, 
     pnlAmount,
     pnlPercent,
     pnlNet: pnlAmount,
+    execution_origin: executionOrigin,
+    quality_flag: qualityFlag,
+    exclude_from_learning: excludeFromLearning,
+    incident_link: incidentLink,
   });
   await journalDb.ensureAutoReview(entry.trade_id).catch(() => {});
   const review = await journalDb.getReviewByTradeId(entry.trade_id).catch(() => null);
@@ -511,6 +537,10 @@ async function settleOpenJournalForSell(
     partialExitRatio = null,
     soldAmount = null,
     signalId = null,
+    executionOrigin = null,
+    qualityFlag = null,
+    excludeFromLearning = null,
+    incidentLink = null,
   } = {},
 ) {
   const openEntries = await journalDb.getOpenJournalEntries('crypto');
@@ -529,7 +559,12 @@ async function settleOpenJournalForSell(
   const isPartial = normalizedRatio < 1 && realizedSize > 0 && realizedSize < entrySize;
 
   if (!isPartial) {
-    await closeOpenJournalForSymbol(symbol, isPaper, exitPrice, exitValue, exitReason, effectiveTradeMode);
+    await closeOpenJournalForSymbol(symbol, isPaper, exitPrice, exitValue, exitReason, effectiveTradeMode, {
+      executionOrigin,
+      qualityFlag,
+      excludeFromLearning,
+      incidentLink,
+    });
     return { partial: false, updated: true };
   }
 
@@ -570,6 +605,10 @@ async function settleOpenJournalForSell(
     tp_sl_error: entry.tp_sl_error ?? null,
     market_regime: entry.market_regime ?? null,
     market_regime_confidence: entry.market_regime_confidence ?? null,
+    execution_origin: executionOrigin || entry.execution_origin || 'strategy',
+    quality_flag: qualityFlag || entry.quality_flag || 'trusted',
+    exclude_from_learning: Boolean(excludeFromLearning ?? entry.exclude_from_learning ?? false),
+    incident_link: incidentLink || entry.incident_link || null,
   });
 
   await journalDb.closeJournalEntry(partialTradeId, {
@@ -579,6 +618,10 @@ async function settleOpenJournalForSell(
     pnlAmount,
     pnlPercent,
     pnlNet: pnlAmount,
+    execution_origin: executionOrigin,
+    quality_flag: qualityFlag,
+    exclude_from_learning: excludeFromLearning,
+    incident_link: incidentLink,
   });
 
   await db.run(
@@ -1091,6 +1134,10 @@ async function recordExecutedTradeJournal({ trade, signalId, exitReason }) {
       tp_sl_set: trade.tpSlSet ?? false,
       tp_sl_mode: trade.tpSlMode ?? null,
       tp_sl_error: trade.tpSlError ?? null,
+      execution_origin: trade.executionOrigin || 'strategy',
+      quality_flag: trade.qualityFlag || 'trusted',
+      exclude_from_learning: Boolean(trade.excludeFromLearning ?? false),
+      incident_link: trade.incidentLink || null,
     });
     await journalDb.linkRationaleToTrade(tradeId, signalId);
     notifyJournalEntry({
@@ -1120,6 +1167,10 @@ async function recordExecutedTradeJournal({ trade, signalId, exitReason }) {
         partialExitRatio: trade.partialExitRatio,
         soldAmount: trade.amount,
         signalId,
+        executionOrigin: trade.executionOrigin || 'strategy',
+        qualityFlag: trade.qualityFlag || 'trusted',
+        excludeFromLearning: Boolean(trade.excludeFromLearning ?? false),
+        incidentLink: trade.incidentLink || null,
       },
     );
   }
@@ -1321,6 +1372,7 @@ async function executeSellTrade({
   position,
   sourcePositionAmount,
   partialExitRatio = null,
+  qualityContext = null,
 }) {
   const order = await marketSell(symbol, amount, sellPaperMode);
   const soldAmount = Number(order.amount || amount || 0);
@@ -1341,6 +1393,7 @@ async function executeSellTrade({
     partialExitRatio: isPartialExit ? effectiveRatio : null,
     partialExit: isPartialExit,
     remainingAmount: isPartialExit ? remainingAmount : 0,
+    ...(qualityContext || {}),
   };
 
   if (isPartialExit) {
@@ -1662,6 +1715,12 @@ async function reconcileLivePositionsWithBrokerBalance() {
         exitValue || null,
         'broker_wallet_zero_reconciled',
         tradeMode,
+        {
+          executionOrigin: 'cleanup',
+          qualityFlag: 'exclude_from_learning',
+          excludeFromLearning: true,
+          incidentLink: 'broker_wallet_zero_reconcile',
+        },
       ).catch(() => {});
       console.warn(`  ⚠️ [헤파이스토스] ${symbol} 실지갑 0 → 포지션 자동 정리 (${tradeMode})`);
       results.push({ symbol, tradeMode, action: 'deleted', trackedAmount, walletAmount, drift });
@@ -1722,6 +1781,10 @@ async function maybePromotePaperPositions({ reserveSlots = 0 } = {}) {
       totalUsdt:  desiredUsdt,
       paper:      false,
       exchange:   'binance',
+      executionOrigin: 'promotion',
+      qualityFlag: 'exclude_from_learning',
+      excludeFromLearning: true,
+      incidentLink: 'paper_to_live_promotion',
     };
 
     await closeOpenJournalForSymbol(
@@ -1731,6 +1794,12 @@ async function maybePromotePaperPositions({ reserveSlots = 0 } = {}) {
       (paperPos.amount || 0) * (order.price || 0),
       'promoted_to_live',
       paperPos.trade_mode || 'normal',
+      {
+        executionOrigin: 'promotion',
+        qualityFlag: 'exclude_from_learning',
+        excludeFromLearning: true,
+        incidentLink: 'paper_to_live_promotion',
+      },
     ).catch(() => {});
 
     await db.upsertPosition({
@@ -1758,6 +1827,10 @@ async function maybePromotePaperPositions({ reserveSlots = 0 } = {}) {
         entry_size:    trade.amount || 0,
         entry_value:   trade.totalUsdt || 0,
         direction:     'long',
+        execution_origin: 'promotion',
+        quality_flag: 'exclude_from_learning',
+        exclude_from_learning: true,
+        incident_link: 'paper_to_live_promotion',
       });
       notifyJournalEntry({
         tradeId,
@@ -1954,6 +2027,7 @@ async function _tryBuyWithBtcPair(symbol, base, signalId, signal, paperMode) {
     tpPrice, slPrice,
     ...protectionSnapshot,
     tpslSource: 'fixed',
+    ...buildSignalQualityContext(signal),
   };
   await db.insertTrade(trade);
   await db.updateSignalStatus(signalId, SIGNAL_STATUS.EXECUTED);
@@ -2031,6 +2105,10 @@ async function _liquidateUntrackedForCapital(excludeBasesInput, paperMode) {
       paper: paperMode,
       exchange: 'binance',
       tradeMode: getInvestmentTradeMode(),
+      executionOrigin: 'cleanup',
+      qualityFlag: 'exclude_from_learning',
+      excludeFromLearning: true,
+      incidentLink: 'untracked_liquidation',
     }).catch((err) => {
       console.warn(`  ⚠️ 미추적 청산 체결 기록 실패 (${sym}): ${err.message}`);
     });
@@ -2111,6 +2189,7 @@ export async function executeSignal(signal) {
   const minOrderUsdt = await getDynamicMinOrderAmount('binance', signalTradeMode);
   const exitReasonOverride = signal.exit_reason_override || null;
   const partialExitRatio = normalizePartialExitRatio(signal.partial_exit_ratio || signal.partialExitRatio);
+  const qualityContext = buildSignalQualityContext(signal);
   const base = symbol.split('/')[0];
   let effectivePaperMode = globalPaperMode;
   const persistFailure = async (reason, {
@@ -2297,6 +2376,7 @@ export async function executeSignal(signal) {
         paper:     effectivePaperMode,
         exchange:  'binance',
         tradeMode: signalTradeMode,
+        ...qualityContext,
       };
 
       await persistBuyPosition({ symbol, order, effectivePaperMode, signalTradeMode });
@@ -2337,6 +2417,7 @@ export async function executeSignal(signal) {
         position: sellContext.position,
         sourcePositionAmount: sellAmountState.sourcePositionAmount,
         partialExitRatio: sellAmountState.partialExitRatio,
+        qualityContext,
       });
 
     } else {

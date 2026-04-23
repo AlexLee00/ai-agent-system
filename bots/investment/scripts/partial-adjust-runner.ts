@@ -122,6 +122,10 @@ async function createPartialAdjustSignal(candidate) {
     nemesisVerdict: 'approved',
     approvedAt: new Date().toISOString(),
     partialExitRatio: candidate.partialExitRatio,
+    executionOrigin: 'strategy',
+    qualityFlag: 'trusted',
+    excludeFromLearning: false,
+    incidentLink: `partial_adjust:${candidate.reasonCode}`,
   });
 
   const signal = await db.getSignalById(signalId);

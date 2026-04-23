@@ -18,7 +18,12 @@ config :luna,
   # Phase 4 구성요소 Kill Switch
   validation_enabled: System.get_env("LUNA_VALIDATION_ENABLED", "false") == "true",
   prediction_enabled: System.get_env("LUNA_PREDICTION_ENABLED", "false") == "true",
-  rag_enabled:        System.get_env("LUNA_RAG_ENABLED", "false") == "true"
+  rag_enabled:        System.get_env("LUNA_RAG_ENABLED", "false") == "true",
+  position_watch_enabled: System.get_env("LUNA_POSITION_WATCH_ENABLED", "true") == "true",
+  position_watch_interval_ms: String.to_integer(System.get_env("LUNA_POSITION_WATCH_INTERVAL_MS", "60000")),
+  position_watch_stop_loss_pct: String.to_float(System.get_env("LUNA_POSITION_WATCH_STOP_LOSS_PCT", "0.05")),
+  position_watch_adjust_gain_pct: String.to_float(System.get_env("LUNA_POSITION_WATCH_ADJUST_GAIN_PCT", "0.10")),
+  position_watch_stale_minutes: String.to_integer(System.get_env("LUNA_POSITION_WATCH_STALE_MINUTES", "120"))
 
 config :luna, Jay.Core.Repo,
   database:  System.get_env("PG_DATABASE", "jay"),

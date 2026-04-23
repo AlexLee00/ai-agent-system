@@ -51,4 +51,9 @@ defmodule Luna.V2.KillSwitch do
   # Phase 5a
   def scheduler_enabled?,  do: Application.get_env(:luna, :scheduler_enabled, false)
   def telegram_enabled?,   do: Application.get_env(:luna, :telegram_enabled, false)
+  def position_watch_enabled?, do: Application.get_env(:luna, :position_watch_enabled, true)
+  def position_watch_interval_ms, do: Application.get_env(:luna, :position_watch_interval_ms, 60_000)
+  def position_watch_stop_loss_pct, do: Application.get_env(:luna, :position_watch_stop_loss_pct, 0.05)
+  def position_watch_adjust_gain_pct, do: Application.get_env(:luna, :position_watch_adjust_gain_pct, 0.10)
+  def position_watch_stale_minutes, do: Application.get_env(:luna, :position_watch_stale_minutes, 120)
 end

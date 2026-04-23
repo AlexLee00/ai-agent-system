@@ -229,8 +229,10 @@ async function getWeeklyAccuracy(botName, weeks = 1) {
     SELECT
       COUNT(*) FILTER (WHERE (analyst_accuracy->>$1) IS NOT NULL) AS total,
       COUNT(*) FILTER (WHERE (analyst_accuracy->>$1)::boolean = true) AS accurate
-    FROM trade_review
-    WHERE reviewed_at > $2
+    FROM trade_review r
+    JOIN trade_journal j ON j.trade_id = r.trade_id
+    WHERE r.reviewed_at > $2
+      AND COALESCE(j.exclude_from_learning, false) = false
       AND analyst_accuracy != '{}'::jsonb
   `, [jsonbKey, cutoff]);
 
@@ -254,8 +256,10 @@ async function getWeeklyAccuracy(botName, weeks = 1) {
     SELECT
       COUNT(*)                                    AS total,
       SUM(CASE WHEN ${col} = true THEN 1 ELSE 0 END) AS accurate
-    FROM trade_review
-    WHERE reviewed_at > $1
+    FROM trade_review r
+    JOIN trade_journal j ON j.trade_id = r.trade_id
+    WHERE r.reviewed_at > $1
+      AND COALESCE(j.exclude_from_learning, false) = false
       AND ${col} IS NOT NULL
   `, [cutoff]);
 
@@ -284,14 +288,15 @@ async function getWeeklyAccuracyHistory(botName, nWeeks = 4) {
     const to   = _weekCutoff(w - 2);
 
     const jsonbWhereClause = w === 1
-      ? `WHERE reviewed_at > $1 AND (analyst_accuracy->>$2) IS NOT NULL`
-      : `WHERE reviewed_at > $1 AND reviewed_at <= $2 AND (analyst_accuracy->>$3) IS NOT NULL`;
+      ? `WHERE r.reviewed_at > $1 AND COALESCE(j.exclude_from_learning, false) = false AND (r.analyst_accuracy->>$2) IS NOT NULL`
+      : `WHERE r.reviewed_at > $1 AND r.reviewed_at <= $2 AND COALESCE(j.exclude_from_learning, false) = false AND (r.analyst_accuracy->>$3) IS NOT NULL`;
     const jsonbParams = w === 1 ? [from, jsonbKey] : [from, to, jsonbKey];
     const jsonbRow = await pgPool.get(SCHEMA, `
       SELECT
         COUNT(*) AS total,
-        COUNT(*) FILTER (WHERE (${w === 1 ? "analyst_accuracy->>$2" : "analyst_accuracy->>$3"})::boolean = true) AS accurate
-      FROM trade_review
+        COUNT(*) FILTER (WHERE (${w === 1 ? "r.analyst_accuracy->>$2" : "r.analyst_accuracy->>$3"})::boolean = true) AS accurate
+      FROM trade_review r
+      JOIN trade_journal j ON j.trade_id = r.trade_id
       ${jsonbWhereClause}
     `, jsonbParams);
 
@@ -315,10 +320,10 @@ async function getWeeklyAccuracyHistory(botName, nWeeks = 4) {
     let whereClause;
     let params;
     if (w === 1) {
-      whereClause = `WHERE reviewed_at > $1 AND ${col} IS NOT NULL`;
+      whereClause = `WHERE r.reviewed_at > $1 AND COALESCE(j.exclude_from_learning, false) = false AND ${col} IS NOT NULL`;
       params      = [from];
     } else {
-      whereClause = `WHERE reviewed_at > $1 AND reviewed_at <= $2 AND ${col} IS NOT NULL`;
+      whereClause = `WHERE r.reviewed_at > $1 AND r.reviewed_at <= $2 AND COALESCE(j.exclude_from_learning, false) = false AND ${col} IS NOT NULL`;
       params      = [from, to];
     }
 
@@ -326,7 +331,8 @@ async function getWeeklyAccuracyHistory(botName, nWeeks = 4) {
       SELECT
         COUNT(*)                                        AS total,
         SUM(CASE WHEN ${col} = true THEN 1 ELSE 0 END) AS accurate
-      FROM trade_review
+      FROM trade_review r
+      JOIN trade_journal j ON j.trade_id = r.trade_id
       ${whereClause}
     `, params);
 
