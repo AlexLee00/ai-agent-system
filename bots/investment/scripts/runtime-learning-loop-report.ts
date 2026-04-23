@@ -264,6 +264,84 @@ async function loadRegimePerformance(days = 90) {
   };
 }
 
+async function loadStrategyFamilyPerformance(days = 90) {
+  await db.initSchema();
+  const safeDays = Math.max(14, Number(days || 90));
+  const sinceEpochMs = Date.now() - safeDays * 24 * 60 * 60 * 1000;
+  const rows = await db.query(`
+    SELECT
+      COALESCE(NULLIF(strategy_family, ''), 'unknown') AS strategy_family,
+      COALESCE(strategy_quality, 'unknown') AS strategy_quality,
+      COUNT(*) AS total,
+      COUNT(*) FILTER (WHERE status = 'closed') AS closed,
+      COUNT(*) FILTER (WHERE pnl_net > 0) AS wins,
+      ROUND(AVG(pnl_percent)::numeric, 4) AS avg_pnl_percent,
+      ROUND(AVG(strategy_readiness)::numeric, 4) AS avg_readiness,
+      ROUND(SUM(COALESCE(pnl_net, 0))::numeric, 4) AS pnl_net
+    FROM investment.trade_journal
+    WHERE created_at >= $1
+      AND COALESCE(exclude_from_learning, false) = false
+      AND COALESCE(NULLIF(strategy_family, ''), 'unknown') <> 'unknown'
+    GROUP BY 1, 2
+    ORDER BY total DESC, strategy_family ASC, strategy_quality ASC
+  `, [sinceEpochMs]).catch(() => []);
+
+  const byFamily = {};
+  for (const row of rows) {
+    const family = String(row.strategy_family || 'unknown');
+    const quality = String(row.strategy_quality || 'unknown');
+    const total = Number(row.total || 0);
+    const closed = Number(row.closed || 0);
+    const wins = Number(row.wins || 0);
+    const avgPnlPercent = row.avg_pnl_percent == null ? null : Number(row.avg_pnl_percent);
+    const avgReadiness = row.avg_readiness == null ? null : Number(row.avg_readiness);
+    const pnlNet = row.pnl_net == null ? 0 : Number(row.pnl_net);
+    const winRate = closed > 0 ? Number(((wins / closed) * 100).toFixed(1)) : null;
+    byFamily[family] = byFamily[family] || { family, total: 0, closed: 0, pnlNet: 0, qualities: [] };
+    byFamily[family].total += total;
+    byFamily[family].closed += closed;
+    byFamily[family].pnlNet += pnlNet;
+    byFamily[family].qualities.push({
+      quality,
+      total,
+      closed,
+      wins,
+      winRate,
+      avgPnlPercent,
+      avgReadiness,
+      pnlNet,
+    });
+  }
+
+  const ranked = Object.values(byFamily)
+    .map((item) => {
+      const bestQuality = [...item.qualities]
+        .filter((row) => row.avgPnlPercent != null)
+        .sort((a, b) => Number(b.avgPnlPercent) - Number(a.avgPnlPercent))[0] || null;
+      const worstQuality = [...item.qualities]
+        .filter((row) => row.avgPnlPercent != null)
+        .sort((a, b) => Number(a.avgPnlPercent) - Number(b.avgPnlPercent))[0] || null;
+      return {
+        ...item,
+        pnlNet: Number(item.pnlNet.toFixed(4)),
+        bestQuality,
+        worstQuality,
+      };
+    })
+    .sort((a, b) => Number(b.total || 0) - Number(a.total || 0));
+
+  return {
+    windowDays: safeDays,
+    byFamily: ranked,
+    weakestFamily: [...ranked]
+      .filter((item) => item.worstQuality?.avgPnlPercent != null)
+      .sort((a, b) => Number(a.worstQuality.avgPnlPercent) - Number(b.worstQuality.avgPnlPercent))[0] || null,
+    strongestFamily: [...ranked]
+      .filter((item) => item.bestQuality?.avgPnlPercent != null)
+      .sort((a, b) => Number(b.bestQuality.avgPnlPercent) - Number(a.bestQuality.avgPnlPercent))[0] || null,
+  };
+}
+
 function buildSectionStates({
   freshness,
   runtimeDecision,
@@ -274,6 +352,7 @@ function buildSectionStates({
   validation,
   regimeCoverage,
   regimePerformance,
+  strategyFamilyPerformance,
   collectionAudit,
 }) {
   const runtimeAge = ageHours(freshness.latestRuntimeSessionAt);
@@ -311,6 +390,11 @@ function buildSectionStates({
       weakestRegime: regimePerformance.weakestRegime,
       strongestRegime: regimePerformance.strongestRegime,
       byRegime: regimePerformance.byRegime.slice(0, 4),
+    },
+    strategyFamilyPerformance: {
+      weakestFamily: strategyFamilyPerformance.weakestFamily,
+      strongestFamily: strategyFamilyPerformance.strongestFamily,
+      byFamily: strategyFamilyPerformance.byFamily.slice(0, 5),
     },
     collectionAudit: collectionAudit
       ? {
@@ -438,6 +522,15 @@ function buildDecision(sections = {}) {
     if (strongest?.bestMode?.avgPnlPercent != null) {
       nextActions.push(`${strongest.regime} 장세의 ${strongest.bestMode.tradeMode} 레인은 유지하며 비교 표본으로 계속 누적합니다.`);
     }
+  } else if (Number(sections.collect.strategyFamilyPerformance?.weakestFamily?.worstQuality?.avgPnlPercent ?? 0) < -2) {
+    const weakestFamily = sections.collect.strategyFamilyPerformance.weakestFamily;
+    const strongestFamily = sections.collect.strategyFamilyPerformance?.strongestFamily;
+    status = 'strategy_family_tuning_needed';
+    headline = `${weakestFamily.family} 전략 패밀리의 ${weakestFamily.worstQuality?.quality || 'unknown'} 품질 구간 성과가 약해, 패밀리 가중치와 적용 조건을 재조정해야 합니다.`;
+    nextActions.push(`${weakestFamily.family} 패밀리의 ${weakestFamily.worstQuality?.quality || 'unknown'} 구간 진입 조건과 비중을 먼저 낮추거나 입력 품질을 보강합니다.`);
+    if (strongestFamily?.bestQuality) {
+      nextActions.push(`${strongestFamily.family} 패밀리의 ${strongestFamily.bestQuality.quality} 구간은 기준선으로 유지하며 비교 표본을 더 누적합니다.`);
+    }
   } else if (sections.collect.status === 'thin') {
     status = 'learning_sample_thin';
     headline = '세션은 돌지만 승인/실행 표본이 얇아 validation 표본을 더 쌓아야 합니다.';
@@ -507,6 +600,13 @@ function renderText(payload) {
     sections.collect.regimePerformance?.strongestRegime
       ? `- strongest regime ${sections.collect.regimePerformance.strongestRegime.regime} / ${sections.collect.regimePerformance.strongestRegime.bestMode.tradeMode} avg ${sections.collect.regimePerformance.strongestRegime.bestMode.avgPnlPercent}%`
       : '- strongest regime none',
+    sections.collect.strategyFamilyPerformance?.weakestFamily
+      ? `- weakest strategy family ${sections.collect.strategyFamilyPerformance.weakestFamily.family} / ${sections.collect.strategyFamilyPerformance.weakestFamily.worstQuality?.quality || 'unknown'} avg ${sections.collect.strategyFamilyPerformance.weakestFamily.worstQuality?.avgPnlPercent}%`
+      : '- weakest strategy family none',
+    sections.collect.strategyFamilyPerformance?.strongestFamily
+      ? `- strongest strategy family ${sections.collect.strategyFamilyPerformance.strongestFamily.family} / ${sections.collect.strategyFamilyPerformance.strongestFamily.bestQuality?.quality || 'unknown'} avg ${sections.collect.strategyFamilyPerformance.strongestFamily.bestQuality?.avgPnlPercent}%`
+      : '- strongest strategy family none',
+    `- top strategy families ${((sections.collect.strategyFamilyPerformance?.byFamily || []).map((item) => `${item.family}:${item.total}`).join(', ')) || 'none'}`,
     buildRegimeActionHint(sections.collect.regimePerformance?.weakestRegime, 'weak')
       ? `- tuning hint ${buildRegimeActionHint(sections.collect.regimePerformance?.weakestRegime, 'weak')}`
       : null,
@@ -558,11 +658,14 @@ function buildFallback(payload = {}) {
   if (decision.status === 'regime_strategy_tuning_needed') {
     return '장세별 표본은 생겼고, 이제 약한 레짐/레인을 바로 전략 수정 대상으로 삼아야 합니다.';
   }
+  if (decision.status === 'strategy_family_tuning_needed') {
+    return '전략 패밀리별 손익 편차가 드러나, 약한 패밀리의 가중치와 적용 조건을 재조정할 시점입니다.';
+  }
   return '수집-분석-피드백-전략 수정 루프를 계속 굴리며 validation 표본을 누적하는 상태입니다.';
 }
 
 export async function buildRuntimeLearningLoopReport({ days = 14, json = false } = {}) {
-  const [freshness, runtimeDecision, executionGate, autotune, runtimeSuggestions, backtest, validation, regimeCoverage, regimePerformance, collectionAudit] = await Promise.all([
+  const [freshness, runtimeDecision, executionGate, autotune, runtimeSuggestions, backtest, validation, regimeCoverage, regimePerformance, strategyFamilyPerformance, collectionAudit] = await Promise.all([
     loadLoopFreshness(),
     buildRuntimeDecisionReport({ market: 'all', limit: 5, json: true }).catch(() => ({ count: 0, summary: {}, rows: [] })),
     buildRuntimeCryptoExecutionGateReport({ days, json: true }).catch(() => ({ decision: {} })),
@@ -572,6 +675,7 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
     validateTradeReview({ days: 90, fix: false }).catch(() => ({ findings: 0, closedTrades: 0, items: [] })),
     loadRegimeCoverage(90).catch(() => ({ windowDays: 90, byRegime: [], latestByMarket: [], distinctTradedRegimes: 0 })),
     loadRegimePerformance(90).catch(() => ({ byRegime: [], weakestRegime: null, strongestRegime: null })),
+    loadStrategyFamilyPerformance(90).catch(() => ({ byFamily: [], weakestFamily: null, strongestFamily: null })),
     runCollectionAudit({ markets: ['binance', 'kis', 'kis_overseas'], hours: 24 }).catch(() => null),
   ]);
 
@@ -585,6 +689,7 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
     validation,
     regimeCoverage,
     regimePerformance,
+    strategyFamilyPerformance,
     collectionAudit,
   });
   const decision = buildDecision(sections);
@@ -599,6 +704,7 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
     runtimeSuggestions,
     regimeCoverage,
     regimePerformance,
+    strategyFamilyPerformance,
     executionGate,
     autotune,
     backtest,
@@ -617,6 +723,7 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
       runtimeDecision: runtimeDecision.summary,
       regimeCoverage,
       regimePerformance,
+      strategyFamilyPerformance,
       executionGate: executionGate.decision,
       autotune: autotune.decision,
       backtest: backtest.decision,
