@@ -335,6 +335,16 @@ function buildPositionStrategyRemediationRefreshLine(positionStrategyRemediation
   return refreshState?.reason ? `♻️ ${refreshState.reason}` : null;
 }
 
+function buildPositionStrategyRemediationRefreshStateLine(positionStrategyRemediationSummary) {
+  if (!positionStrategyRemediationSummary || positionStrategyRemediationSummary.error || !positionStrategyRemediationSummary.ok) return null;
+  const refreshState = positionStrategyRemediationSummary?.remediationRefreshState
+    || buildPositionStrategyRemediationRefreshState(
+      positionStrategyRemediationSummary?.remediationPlan || null,
+      positionStrategyRemediationSummary?.remediationHistory || null,
+    );
+  return `♻️ refresh state: needed ${refreshState?.needed ? 'yes' : 'no'} | stale ${refreshState?.stale ? 'yes' : 'no'} | command ${refreshState?.command || 'n/a'}`;
+}
+
 function buildPositionStrategyRemediationHistoryLine(positionStrategyRemediationHistorySummary) {
   if (!positionStrategyRemediationHistorySummary || positionStrategyRemediationHistorySummary.error || !positionStrategyRemediationHistorySummary.ok) return null;
   return `🗂️ remediation history: count ${positionStrategyRemediationHistorySummary.historyCount || 0} | changed ${positionStrategyRemediationHistorySummary.statusChanged ? 'yes' : 'no'} | age ${positionStrategyRemediationHistorySummary.ageMinutes ?? 'n/a'}m | stale ${positionStrategyRemediationHistorySummary.stale ? 'yes' : 'no'} | duplicate ${positionStrategyRemediationHistorySummary.delta?.duplicateManaged >= 0 ? '+' : ''}${positionStrategyRemediationHistorySummary.delta?.duplicateManaged || 0} | orphan ${positionStrategyRemediationHistorySummary.delta?.orphanProfiles >= 0 ? '+' : ''}${positionStrategyRemediationHistorySummary.delta?.orphanProfiles || 0}`;
@@ -381,6 +391,8 @@ function buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSumma
   if (positionStrategyRemediationLine) lines.push(positionStrategyRemediationLine);
   const positionStrategyRemediationHistoryLine = buildPositionStrategyRemediationHistoryLine(positionStrategyRemediationHistorySummary);
   if (positionStrategyRemediationHistoryLine) lines.push(positionStrategyRemediationHistoryLine);
+  const positionStrategyRemediationRefreshStateLine = buildPositionStrategyRemediationRefreshStateLine(positionStrategyRemediationSummary);
+  if (positionStrategyRemediationRefreshStateLine) lines.push(positionStrategyRemediationRefreshStateLine);
   const positionStrategyRemediationRefreshLine = buildPositionStrategyRemediationRefreshLine(positionStrategyRemediationSummary);
   if (positionStrategyRemediationRefreshLine) lines.push(positionStrategyRemediationRefreshLine);
   const positionStrategyRemediationCommandLine = buildPositionStrategyRemediationCommandLine(positionStrategyRemediationSummary);
@@ -415,6 +427,7 @@ async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeni
     buildPositionStrategyHygieneLine(positionStrategyHygieneSummary),
     buildPositionStrategyRemediationLine(positionStrategyRemediationSummary),
     buildPositionStrategyRemediationHistoryLine(positionStrategyRemediationHistorySummary),
+    buildPositionStrategyRemediationRefreshStateLine(positionStrategyRemediationSummary),
     buildPositionStrategyRemediationRefreshLine(positionStrategyRemediationSummary),
     buildPositionStrategyRemediationCommandLine(positionStrategyRemediationSummary),
     buildPositionStrategyHygieneCommandLine(positionStrategyHygieneSummary),
