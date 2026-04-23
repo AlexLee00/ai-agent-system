@@ -1092,7 +1092,19 @@ defmodule Luna.V2.PositionWatch do
     symbol = to_string(candidate[:symbol] || "")
     exchange = to_string(candidate[:exchange] || "")
     attention = to_string(candidate[:attention_type] || "")
+    strategy_name = to_string(candidate[:strategy_name] || "")
+    risk_mission = responsibility_value(candidate[:responsibility_plan], "riskMission")
+    owner_mode = responsibility_value(candidate[:responsibility_plan], "ownerMode")
     watch_mission = responsibility_value(candidate[:responsibility_plan], "watchMission")
+    urgency =
+      cond do
+        watch_mission == "backtest_drift_watcher" -> "high"
+        risk_mission == "strict_risk_gate" -> "high"
+        attention in ["stop_loss_attention", "backtest_drift_attention"] -> "high"
+        attention == "partial_adjust_attention" -> "normal"
+        true -> "low"
+      end
+
     days =
       case watch_mission do
         "backtest_drift_watcher" -> KillSwitch.position_watch_active_backtest_days() + 7
@@ -1119,6 +1131,11 @@ defmodule Luna.V2.PositionWatch do
                "--attention=#{attention}",
                "--source=position_watch",
                "--days=#{days}",
+               "--urgency=#{urgency}",
+               "--watch-mission=#{watch_mission}",
+               "--risk-mission=#{risk_mission}",
+               "--owner-mode=#{owner_mode}",
+               "--strategy-name=#{strategy_name}",
                "--json"
              ],
              stderr_to_stdout: true,
@@ -1142,6 +1159,9 @@ defmodule Luna.V2.PositionWatch do
       "latestAttentionType" => attention,
       "latestAttentionReason" => to_string(candidate[:reason] || ""),
       "latestWatchMission" => watch_mission,
+      "latestRiskMission" => risk_mission,
+      "latestOwnerMode" => owner_mode,
+      "latestBacktestUrgency" => urgency,
       "activeBacktestTriggeredAt" => DateTime.utc_now() |> DateTime.to_iso8601(),
       "updatedBy" => "position_watch_active_backtest"
     })

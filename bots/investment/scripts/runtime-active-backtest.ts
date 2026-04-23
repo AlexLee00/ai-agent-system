@@ -13,6 +13,11 @@ function parseArgs(argv = []) {
     attention: 'manual',
     source: 'position_watch',
     days: 30,
+    urgency: 'normal',
+    watchMission: null,
+    riskMission: null,
+    ownerMode: null,
+    strategyName: null,
     json: false,
     noAlert: false,
   };
@@ -25,6 +30,11 @@ function parseArgs(argv = []) {
     else if (raw.startsWith('--attention=')) args.attention = raw.split('=').slice(1).join('=') || args.attention;
     else if (raw.startsWith('--source=')) args.source = raw.split('=').slice(1).join('=') || args.source;
     else if (raw.startsWith('--days=')) args.days = Math.max(1, Number(raw.split('=').slice(1).join('=') || 30));
+    else if (raw.startsWith('--urgency=')) args.urgency = raw.split('=').slice(1).join('=') || args.urgency;
+    else if (raw.startsWith('--watch-mission=')) args.watchMission = raw.split('=').slice(1).join('=') || null;
+    else if (raw.startsWith('--risk-mission=')) args.riskMission = raw.split('=').slice(1).join('=') || null;
+    else if (raw.startsWith('--owner-mode=')) args.ownerMode = raw.split('=').slice(1).join('=') || null;
+    else if (raw.startsWith('--strategy-name=')) args.strategyName = raw.split('=').slice(1).join('=') || null;
   }
 
   return args;
@@ -35,9 +45,28 @@ function safeNumber(value, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function normalizeDays(market, days) {
-  if (market === 'binance') return Math.max(14, days);
-  return Math.max(90, days);
+function normalizeDays(market, days, {
+  urgency = 'normal',
+  watchMission = null,
+  riskMission = null,
+} = {}) {
+  let base = market === 'binance' ? Math.max(14, days) : Math.max(90, days);
+
+  if (urgency === 'high') {
+    base = market === 'binance' ? Math.max(21, base) : Math.max(120, base);
+  } else if (urgency === 'low') {
+    base = market === 'binance' ? Math.max(14, Math.min(base, 21)) : Math.max(90, Math.min(base, 120));
+  }
+
+  if (String(watchMission || '').trim().toLowerCase() === 'backtest_drift_watcher') {
+    base += market === 'binance' ? 7 : 14;
+  }
+
+  if (String(riskMission || '').trim().toLowerCase() === 'strict_risk_gate') {
+    base += market === 'binance' ? 3 : 10;
+  }
+
+  return base;
 }
 
 async function ensureSchema() {
@@ -62,40 +91,50 @@ async function ensureSchema() {
   `);
 }
 
-function scoreRow(row = {}, attention = 'manual') {
+function scoreRow(row = {}, attention = 'manual', context = {}) {
   const sharpe = safeNumber(row.sharpe_ratio);
   const totalReturn = safeNumber(row.total_return);
   const maxDrawdown = Math.abs(safeNumber(row.max_drawdown));
   const winRate = safeNumber(row.win_rate);
+  const watchMission = String(context.watchMission || '').trim().toLowerCase();
+  const riskMission = String(context.riskMission || '').trim().toLowerCase();
+  const ownerMode = String(context.ownerMode || '').trim().toLowerCase();
 
   if (attention === 'stop_loss_attention' || attention === 'tv_live_bearish') {
-    return (sharpe * 1.5) + (winRate * 0.02) + (totalReturn * 0.2) - (maxDrawdown * 0.6);
+    let score = (sharpe * 1.5) + (winRate * 0.02) + (totalReturn * 0.2) - (maxDrawdown * 0.6);
+    if (riskMission === 'strict_risk_gate') score -= maxDrawdown * 0.15;
+    return score;
   }
 
   if (attention === 'partial_adjust_attention') {
-    return (totalReturn * 0.5) + (sharpe * 1.0) + (winRate * 0.03) - (maxDrawdown * 0.3);
+    let score = (totalReturn * 0.5) + (sharpe * 1.0) + (winRate * 0.03) - (maxDrawdown * 0.3);
+    if (watchMission === 'backtest_drift_watcher') score += sharpe * 0.2;
+    return score;
   }
 
-  return (sharpe * 1.2) + (totalReturn * 0.3) + (winRate * 0.02) - (maxDrawdown * 0.4);
+  let score = (sharpe * 1.2) + (totalReturn * 0.3) + (winRate * 0.02) - (maxDrawdown * 0.4);
+  if (ownerMode === 'capital_preservation') score -= maxDrawdown * 0.1;
+  if (watchMission === 'backtest_drift_watcher') score += sharpe * 0.1;
+  return score;
 }
 
 function hasUsableTrades(row = {}) {
   return safeNumber(row?.total_trades) > 0;
 }
 
-function selectTopResult(rows = [], attention = 'manual') {
+function selectTopResult(rows = [], attention = 'manual', context = {}) {
   return [...rows]
     .filter((row) => (!row?.status || row.status === 'ok') && hasUsableTrades(row))
-    .sort((a, b) => scoreRow(b, attention) - scoreRow(a, attention))[0] || null;
+    .sort((a, b) => scoreRow(b, attention, context) - scoreRow(a, attention, context))[0] || null;
 }
 
-function selectFallbackResult(rows = [], attention = 'manual') {
+function selectFallbackResult(rows = [], attention = 'manual', context = {}) {
   return [...rows]
     .filter((row) => !row?.status || row.status === 'ok')
-    .sort((a, b) => scoreRow(b, attention) - scoreRow(a, attention))[0] || null;
+    .sort((a, b) => scoreRow(b, attention, context) - scoreRow(a, attention, context))[0] || null;
 }
 
-async function persistRows(symbol, market, days, attention, source, rows = []) {
+async function persistRows(symbol, market, days, attention, source, rows = [], context = {}) {
   if (!Array.isArray(rows) || rows.length === 0) return 0;
   await ensureSchema();
 
@@ -122,6 +161,11 @@ async function persistRows(symbol, market, days, attention, source, rows = []) {
         market,
         attention,
         source,
+        urgency: context.urgency || null,
+        watchMission: context.watchMission || null,
+        riskMission: context.riskMission || null,
+        ownerMode: context.ownerMode || null,
+        strategyName: context.strategyName || null,
         install: row.install || null,
         missing: row.missing || null,
         error: row.error || null,
@@ -132,7 +176,7 @@ async function persistRows(symbol, market, days, attention, source, rows = []) {
   return rows.length;
 }
 
-function classifyBacktestQuality({ market, usableRows = [], topResult = null }) {
+function classifyBacktestQuality({ market, usableRows = [], topResult = null, context = {} }) {
   if (usableRows.length === 0) {
     return {
       status: 'active_backtest_thin',
@@ -141,9 +185,12 @@ function classifyBacktestQuality({ market, usableRows = [], topResult = null }) 
     };
   }
 
+  const driftWatcher = String(context.watchMission || '').trim().toLowerCase() === 'backtest_drift_watcher';
   return {
-    status: 'active_backtest_ready',
-    headline: `${market} 액티브 백테스트 결과를 바로 전략 비교 후보로 볼 수 있습니다.`,
+    status: driftWatcher ? 'active_backtest_priority' : 'active_backtest_ready',
+    headline: driftWatcher
+      ? `${market} 액티브 백테스트 결과를 전략 drift 재판단의 우선 비교 후보로 봅니다.`
+      : `${market} 액티브 백테스트 결과를 바로 전략 비교 후보로 볼 수 있습니다.`,
     actionable: true,
   };
 }
@@ -176,10 +223,22 @@ export async function runActiveBacktest({
   attention = 'manual',
   source = 'position_watch',
   days = 30,
+  urgency = 'normal',
+  watchMission = null,
+  riskMission = null,
+  ownerMode = null,
+  strategyName = null,
   json = false,
   noAlert = false,
 } = {}) {
-  const effectiveDays = normalizeDays(market, days);
+  const context = {
+    urgency,
+    watchMission,
+    riskMission,
+    ownerMode,
+    strategyName,
+  };
+  const effectiveDays = normalizeDays(market, days, context);
   const raw = runVectorBtGrid(symbol, effectiveDays);
 
   if (!Array.isArray(raw)) {
@@ -190,15 +249,16 @@ export async function runActiveBacktest({
       market,
       attention,
       days: effectiveDays,
+      context,
       details: raw,
     };
     return json ? payload : JSON.stringify(payload, null, 2);
   }
 
   const usableRows = raw.filter((row) => (!row?.status || row.status === 'ok') && hasUsableTrades(row));
-  const topResult = selectTopResult(raw, attention) || selectFallbackResult(raw, attention);
-  const quality = classifyBacktestQuality({ market, usableRows, topResult });
-  const persisted = await persistRows(symbol, market, effectiveDays, attention, source, raw);
+  const topResult = selectTopResult(raw, attention, context) || selectFallbackResult(raw, attention, context);
+  const quality = classifyBacktestQuality({ market, usableRows, topResult, context });
+  const persisted = await persistRows(symbol, market, effectiveDays, attention, source, raw, context);
 
   if (!noAlert && topResult) {
     await publishAlert({
@@ -211,6 +271,7 @@ export async function runActiveBacktest({
         market,
         attention,
         days: effectiveDays,
+        context,
         quality,
         usableResultCount: usableRows.length,
         topResult,
@@ -226,6 +287,7 @@ export async function runActiveBacktest({
     market,
     attention,
     days: effectiveDays,
+    context,
     persisted,
     quality,
     topResult,
