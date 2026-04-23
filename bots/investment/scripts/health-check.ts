@@ -270,10 +270,17 @@ async function main() {
     if (validation.findings > 0) {
       const key = 'trade-review-integrity';
       if (hsm.canAlert(state, key)) {
+        const summary = validation.summary || {};
+        const scope = summary.paperOnly
+          ? `paper-only (live ${summary.liveFindings || 0} / paper ${summary.paperFindings || 0})`
+          : `live ${summary.liveFindings || 0} / paper ${summary.paperFindings || 0}`;
+        const repairCommand = summary.repairCommand
+          ? `\nrepair: ${summary.repairCommand}`
+          : '';
         issues.push({
           key,
           level: 2,
-          msg: `⚠️ [루나 헬스] trade_review 정합성 이상\n종료 거래 ${validation.closedTrades}건 중 ${validation.findings}건 점검 필요`,
+          msg: `⚠️ [루나 헬스] trade_review 정합성 이상\n종료 거래 ${validation.closedTrades}건 중 ${validation.findings}건 점검 필요\nscope: ${scope}\nissue: ${summary.topIssue?.key || 'unknown'}${repairCommand}`,
         });
       }
     } else if (state['trade-review-integrity']) {
