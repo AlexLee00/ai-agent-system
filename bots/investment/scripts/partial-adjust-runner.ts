@@ -53,28 +53,68 @@ function getExitPlanRatio(exitPlan = null, reasonCode = null) {
   return normalizeRatio(value);
 }
 
+function getResponsibilityPlan(strategyProfile = null) {
+  const plan =
+    strategyProfile?.strategy_context?.responsibilityPlan
+    || strategyProfile?.strategyContext?.responsibilityPlan
+    || strategyProfile?.responsibilityPlan;
+  return plan && typeof plan === 'object' ? plan : {};
+}
+
+function tuneRatioByResponsibilityPlan(ratio, reasonCode, responsibilityPlan = {}) {
+  let adjusted = Number(ratio);
+  if (!Number.isFinite(adjusted) || adjusted <= 0) return ratio;
+
+  const executionMission = String(responsibilityPlan?.executionMission || '').trim().toLowerCase();
+  const riskMission = String(responsibilityPlan?.riskMission || '').trim().toLowerCase();
+  const watchMission = String(responsibilityPlan?.watchMission || '').trim().toLowerCase();
+
+  if (executionMission === 'partial_adjust_executor') adjusted += 0.05;
+  if (executionMission === 'precision_execution') adjusted -= 0.03;
+
+  if (riskMission === 'strict_risk_gate') adjusted += 0.05;
+  if (riskMission === 'soft_sizing_preference') adjusted += 0.02;
+
+  if (watchMission === 'backtest_drift_watcher' && String(reasonCode || '').startsWith('backtest_drift')) {
+    adjusted += 0.05;
+  }
+  if (watchMission === 'risk_sentinel' && String(reasonCode || '').includes('trend')) {
+    adjusted += 0.03;
+  }
+
+  return normalizeRatio(adjusted) ?? ratio;
+}
+
 function getStrategyAwarePartialExitRatio(reasonCode, strategyProfile = null) {
   const exitPlanRatio = getExitPlanRatio(strategyProfile?.exit_plan || strategyProfile?.exitPlan, reasonCode);
-  if (exitPlanRatio != null) return exitPlanRatio;
+  const responsibilityPlan = getResponsibilityPlan(strategyProfile);
+  if (exitPlanRatio != null) return tuneRatioByResponsibilityPlan(exitPlanRatio, reasonCode, responsibilityPlan);
   const base = getDefaultPartialExitRatio(reasonCode);
   const setupType = normalizeSetupType(strategyProfile?.setup_type);
+  let ratio = base;
 
   switch (setupType) {
     case 'mean_reversion':
-      if (reasonCode === 'profit_lock_candidate') return 0.65;
-      if (reasonCode === 'mean_reversion_profit_take') return 0.6;
-      return Math.max(base, 0.5);
+      if (reasonCode === 'profit_lock_candidate') ratio = 0.65;
+      else if (reasonCode === 'mean_reversion_profit_take') ratio = 0.6;
+      else ratio = Math.max(base, 0.5);
+      break;
     case 'breakout':
-      if (reasonCode === 'profit_lock_candidate') return 0.4;
-      return Math.min(base, 0.35);
+      if (reasonCode === 'profit_lock_candidate') ratio = 0.4;
+      else ratio = Math.min(base, 0.35);
+      break;
     case 'trend_following':
     case 'momentum_rotation':
-      if (reasonCode === 'trend_following_trail') return 0.25;
-      if (reasonCode === 'profit_lock_candidate') return 0.33;
-      return Math.min(base, 0.3);
+      if (reasonCode === 'trend_following_trail') ratio = 0.25;
+      else if (reasonCode === 'profit_lock_candidate') ratio = 0.33;
+      else ratio = Math.min(base, 0.3);
+      break;
     default:
-      return base;
+      ratio = base;
+      break;
   }
+
+  return tuneRatioByResponsibilityPlan(ratio, reasonCode, responsibilityPlan);
 }
 
 function normalizeRatio(value) {

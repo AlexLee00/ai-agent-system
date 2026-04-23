@@ -129,6 +129,7 @@ defmodule Luna.V2.PositionWatch do
       psp.monitoring_plan,
       psp.exit_plan,
       psp.backtest_plan,
+      psp.strategy_context,
       bt.created_at AS backtest_created_at,
       bt.label AS backtest_label,
       bt.sharpe AS backtest_sharpe,
@@ -244,11 +245,20 @@ defmodule Luna.V2.PositionWatch do
     setup_type = normalize_setup_type(position[:setup_type])
     monitoring_plan = normalize_json_map(position[:monitoring_plan])
     backtest_plan = normalize_json_map(position[:backtest_plan])
+    responsibility_plan = responsibility_plan(position[:strategy_context])
     adjusted_gain_pct = strategy_adjust_gain_pct(adjust_gain_pct, setup_type)
     adjusted_stop_loss_pct = strategy_stop_loss_pct(stop_loss_pct, setup_type)
     strategy_tv_attention =
-      classify_strategy_tv_attention(position, setup_type, monitoring_plan, adjusted_gain_pct)
-    backtest_attention = classify_backtest_drift_attention(position, backtest_plan)
+      classify_strategy_tv_attention(
+        position,
+        setup_type,
+        monitoring_plan,
+        adjusted_gain_pct,
+        responsibility_plan
+      )
+
+    backtest_attention =
+      classify_backtest_drift_attention(position, backtest_plan, responsibility_plan)
 
     base_attention =
       cond do
@@ -278,7 +288,7 @@ defmodule Luna.V2.PositionWatch do
       end
 
     if is_map(base_attention) do
-      enrich_attention_scope(base_attention, aggregate)
+      enrich_attention_scope(base_attention, aggregate, responsibility_plan)
     else
       nil
     end
@@ -575,7 +585,13 @@ defmodule Luna.V2.PositionWatch do
   defp strategy_stop_loss_pct(base, "mean_reversion"), do: base * 1.1
   defp strategy_stop_loss_pct(base, _), do: base
 
-  defp classify_strategy_tv_attention(position, setup_type, monitoring_plan, adjust_gain_pct) do
+  defp classify_strategy_tv_attention(
+         position,
+         setup_type,
+         monitoring_plan,
+         adjust_gain_pct,
+         responsibility_plan
+       ) do
     triggers =
       monitoring_plan
       |> Map.get("triggers", monitoring_plan[:triggers] || [])
@@ -587,10 +603,13 @@ defmodule Luna.V2.PositionWatch do
     tv4h = Map.get(frames, "4h") || Map.get(frames, :"4h")
     tv1d = Map.get(frames, "1d") || Map.get(frames, :"1d")
     pnl_ratio = to_float(position[:pnl_ratio])
+    watch_mission = responsibility_value(responsibility_plan, "watchMission")
+    risk_sentinel? = watch_mission == "risk_sentinel"
+    drift_watcher? = watch_mission == "backtest_drift_watcher"
 
     cond do
       "tv_live_bearish" in triggers and setup_type == "mean_reversion" and
-          pnl_ratio >= adjust_gain_pct * 0.8 and bearish_frame?(tv4h) ->
+          pnl_ratio >= adjust_gain_pct * (if(risk_sentinel?, do: 0.6, else: 0.8)) and bearish_frame?(tv4h) ->
         %{
           attention_type: :partial_adjust_attention,
           reason: "strategy mean_reversion profit lock on live bearish",
@@ -599,16 +618,18 @@ defmodule Luna.V2.PositionWatch do
         }
 
       "tv_live_bearish" in triggers and setup_type in ["trend_following", "momentum_rotation"] and
-          pnl_ratio >= adjust_gain_pct and bearish_frame?(tv4h) and bearish_frame?(tv1d) ->
+          pnl_ratio >= adjust_gain_pct * (if(drift_watcher?, do: 0.75, else: 1.0)) and
+            bearish_frame?(tv4h) and
+            (bearish_frame?(tv1d) or drift_watcher?) ->
         %{
           attention_type: :partial_adjust_attention,
           reason: "strategy trend follow weakening on multi-timeframe bearish",
           strategy_attention: "trend_following_trail",
-          tv_timeframe: "4h+1d"
+          tv_timeframe: if(bearish_frame?(tv1d), do: "4h+1d", else: "4h")
         }
 
       "stop_loss_attention" in triggers and setup_type == "breakout" and
-          pnl_ratio <= -0.02 and bearish_frame?(tv4h) and bearish_frame?(tv1d) ->
+          pnl_ratio <= (if(risk_sentinel?, do: -0.015, else: -0.02)) and bearish_frame?(tv4h) and bearish_frame?(tv1d) ->
         %{
           attention_type: :stop_loss_attention,
           reason: "strategy breakout failed with multi-timeframe bearish follow-through",
@@ -624,11 +645,11 @@ defmodule Luna.V2.PositionWatch do
   defp bearish_frame?(%{direction: :bearish}), do: true
   defp bearish_frame?(_), do: false
 
-  defp classify_backtest_drift_attention(_position, %{}) do
+  defp classify_backtest_drift_attention(_position, %{}, _responsibility_plan) do
     nil
   end
 
-  defp classify_backtest_drift_attention(position, backtest_plan) do
+  defp classify_backtest_drift_attention(position, backtest_plan, responsibility_plan) do
     if not KillSwitch.position_watch_backtest_drift_enabled?() do
       nil
     else
@@ -636,6 +657,14 @@ defmodule Luna.V2.PositionWatch do
       baseline_created_at = parse_ts(Map.get(baseline, "createdAt", baseline[:createdAt]))
       latest_created_at = parse_ts(position[:backtest_created_at])
       latest_trades = trunc(to_float(position[:backtest_total_trades]))
+      watch_mission = responsibility_value(responsibility_plan, "watchMission")
+      drift_watcher? = watch_mission == "backtest_drift_watcher"
+      min_trades =
+        if drift_watcher? do
+          max(5, trunc(KillSwitch.position_watch_backtest_drift_min_trades() * 0.7))
+        else
+          KillSwitch.position_watch_backtest_drift_min_trades()
+        end
 
       cond do
         map_size(baseline) == 0 ->
@@ -647,7 +676,7 @@ defmodule Luna.V2.PositionWatch do
         DateTime.compare(latest_created_at, baseline_created_at) != :gt ->
           nil
 
-        latest_trades < KillSwitch.position_watch_backtest_drift_min_trades() ->
+        latest_trades < min_trades ->
           nil
 
         true ->
@@ -660,15 +689,24 @@ defmodule Luna.V2.PositionWatch do
           pnl_ratio = to_float(position[:pnl_ratio])
 
           severe? =
-            (finite?(sharpe_drop) and sharpe_drop >= KillSwitch.position_watch_backtest_drift_exit_sharpe_drop()) or
+            (finite?(sharpe_drop) and
+               sharpe_drop >=
+                 KillSwitch.position_watch_backtest_drift_exit_sharpe_drop() *
+                   if(drift_watcher?, do: 0.85, else: 1.0)) or
               (finite?(return_drop) and
-                 return_drop >= KillSwitch.position_watch_backtest_drift_exit_return_drop_pct())
+                 return_drop >=
+                   KillSwitch.position_watch_backtest_drift_exit_return_drop_pct() *
+                     if(drift_watcher?, do: 0.85, else: 1.0))
 
           moderate? =
             (finite?(sharpe_drop) and
-               sharpe_drop >= KillSwitch.position_watch_backtest_drift_adjust_sharpe_drop()) or
+               sharpe_drop >=
+                 KillSwitch.position_watch_backtest_drift_adjust_sharpe_drop() *
+                   if(drift_watcher?, do: 0.85, else: 1.0)) or
               (finite?(return_drop) and
-                 return_drop >= KillSwitch.position_watch_backtest_drift_adjust_return_drop_pct())
+                 return_drop >=
+                   KillSwitch.position_watch_backtest_drift_adjust_return_drop_pct() *
+                     if(drift_watcher?, do: 0.85, else: 1.0))
 
           cond do
             severe? and pnl_ratio < 0 ->
@@ -785,7 +823,7 @@ defmodule Luna.V2.PositionWatch do
     end)
   end
 
-  defp enrich_attention_scope(attention, aggregate) do
+  defp enrich_attention_scope(attention, aggregate, responsibility_plan) do
     basis_note =
       case Map.get(aggregate, :leg_count, 0) do
         count when count > 1 -> "동일 심볼 실계좌 합산과 별도로 live leg 기준"
@@ -798,7 +836,11 @@ defmodule Luna.V2.PositionWatch do
       symbol_aggregate_leg_count: Map.get(aggregate, :leg_count, 1),
       symbol_aggregate_entry_value: Map.get(aggregate, :total_entry_value, 0.0),
       symbol_aggregate_unrealized_pnl: Map.get(aggregate, :total_unrealized_pnl, 0.0),
-      symbol_aggregate_pnl_ratio: Map.get(aggregate, :aggregate_pnl_ratio)
+      symbol_aggregate_pnl_ratio: Map.get(aggregate, :aggregate_pnl_ratio),
+      responsibility_plan: responsibility_plan,
+      watch_mission: responsibility_value(responsibility_plan, "watchMission"),
+      risk_mission: responsibility_value(responsibility_plan, "riskMission"),
+      execution_mission: responsibility_value(responsibility_plan, "executionMission")
     })
   end
 
@@ -914,7 +956,7 @@ defmodule Luna.V2.PositionWatch do
             {acc, count}
           else
             trigger_active_backtest(candidate)
-            {Map.put(acc, key, cooldown_expiry(now)), count + 1}
+            {Map.put(acc, key, backtest_cooldown_expiry(now, candidate)), count + 1}
           end
         end)
 
@@ -951,13 +993,7 @@ defmodule Luna.V2.PositionWatch do
             {acc, count}
           else
             trigger_strategy_exit_preview(candidate)
-            expiry =
-              DateTime.add(
-                now,
-                KillSwitch.position_watch_strategy_exit_cooldown_minutes() * 60,
-                :second
-              )
-
+            expiry = strategy_exit_cooldown_expiry(now, candidate)
             {Map.put(acc, key, expiry), count + 1}
           end
         end)
@@ -973,17 +1009,27 @@ defmodule Luna.V2.PositionWatch do
   defp active_backtest_candidate?(candidate) do
     exchange = to_string(candidate[:exchange] || "")
     attention = candidate[:attention_type]
+    watch_mission = responsibility_value(candidate[:responsibility_plan], "watchMission")
 
     exchange in ["binance", "kis", "kis_overseas"] and
-      attention in [:stop_loss_attention, :partial_adjust_attention, :tv_live_bearish, :backtest_drift_attention]
+      (
+        attention in [:stop_loss_attention, :partial_adjust_attention, :tv_live_bearish, :backtest_drift_attention] or
+          (watch_mission == "backtest_drift_watcher" and attention == :tv_bar_stale)
+      )
   end
 
   defp strategy_exit_candidate?(candidate) do
     exchange = to_string(candidate[:exchange] || "")
     attention = candidate[:attention_type]
+    risk_mission = responsibility_value(candidate[:responsibility_plan], "riskMission")
+    watch_mission = responsibility_value(candidate[:responsibility_plan], "watchMission")
 
     exchange in ["binance", "kis", "kis_overseas"] and
-      attention in [:stop_loss_attention, :backtest_drift_attention]
+      (
+        attention in [:stop_loss_attention, :backtest_drift_attention] or
+          (risk_mission == "strict_risk_gate" and attention == :tv_live_bearish) or
+          (watch_mission == "risk_sentinel" and attention == :tv_live_bearish)
+      )
   end
 
   defp backtest_key(candidate) do
@@ -1000,8 +1046,36 @@ defmodule Luna.V2.PositionWatch do
     "#{exchange}:#{symbol}:#{trade_mode}"
   end
 
-  defp cooldown_expiry(now) do
-    DateTime.add(now, KillSwitch.position_watch_active_backtest_cooldown_minutes() * 60, :second)
+  defp backtest_cooldown_expiry(now, candidate) do
+    watch_mission = responsibility_value(candidate[:responsibility_plan], "watchMission")
+    minutes =
+      case watch_mission do
+        "backtest_drift_watcher" ->
+          max(5, div(KillSwitch.position_watch_active_backtest_cooldown_minutes(), 2))
+
+        "risk_sentinel" ->
+          max(5, KillSwitch.position_watch_active_backtest_cooldown_minutes() - 5)
+
+        _ ->
+          KillSwitch.position_watch_active_backtest_cooldown_minutes()
+      end
+
+    DateTime.add(now, minutes * 60, :second)
+  end
+
+  defp strategy_exit_cooldown_expiry(now, candidate) do
+    risk_mission = responsibility_value(candidate[:responsibility_plan], "riskMission")
+    watch_mission = responsibility_value(candidate[:responsibility_plan], "watchMission")
+    base = KillSwitch.position_watch_strategy_exit_cooldown_minutes()
+
+    minutes =
+      cond do
+        risk_mission == "strict_risk_gate" -> max(5, div(base, 2))
+        watch_mission == "risk_sentinel" -> max(5, base - 5)
+        true -> base
+      end
+
+    DateTime.add(now, minutes * 60, :second)
   end
 
   defp prune_backtest_cooldowns(cooldowns, now) do
@@ -1018,7 +1092,13 @@ defmodule Luna.V2.PositionWatch do
     symbol = to_string(candidate[:symbol] || "")
     exchange = to_string(candidate[:exchange] || "")
     attention = to_string(candidate[:attention_type] || "")
-    days = Integer.to_string(KillSwitch.position_watch_active_backtest_days())
+    watch_mission = responsibility_value(candidate[:responsibility_plan], "watchMission")
+    days =
+      case watch_mission do
+        "backtest_drift_watcher" -> KillSwitch.position_watch_active_backtest_days() + 7
+        _ -> KillSwitch.position_watch_active_backtest_days()
+      end
+      |> Integer.to_string()
 
     repo_root = "/Users/alexlee/projects/ai-agent-system"
     investment_dir = Path.join(repo_root, "bots/investment")
@@ -1103,6 +1183,21 @@ defmodule Luna.V2.PositionWatch do
   defp to_float(%Decimal{} = value), do: Decimal.to_float(value)
   defp to_float(value) when is_number(value), do: value * 1.0
   defp to_float(_), do: 0.0
+
+  defp responsibility_plan(nil), do: %{}
+
+  defp responsibility_plan(value) do
+    context = normalize_json_map(value)
+    normalize_json_map(Map.get(context, "responsibilityPlan", context[:responsibilityPlan]))
+  end
+
+  defp responsibility_value(plan, key) when is_map(plan) do
+    Map.get(plan, key, Map.get(plan, String.to_atom(key), nil))
+  rescue
+    _ -> nil
+  end
+
+  defp responsibility_value(_, _), do: nil
 
   defp schedule(interval_ms) do
     Process.send_after(self(), :tick, max(5_000, interval_ms))

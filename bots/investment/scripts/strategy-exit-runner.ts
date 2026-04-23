@@ -66,6 +66,10 @@ function normalizeExitPlan(exitPlan = null) {
   return exitPlan && typeof exitPlan === 'object' ? exitPlan : {};
 }
 
+function normalizeResponsibilityPlan(plan = null) {
+  return plan && typeof plan === 'object' ? plan : {};
+}
+
 function buildExitReason(candidate) {
   const exitPlan = normalizeExitPlan(candidate?.strategyProfile?.exitPlan);
   const primary = String(exitPlan.primaryExit || '').trim();
@@ -75,13 +79,33 @@ function buildExitReason(candidate) {
 
 function applyExitPlanGuard(candidate) {
   const exitPlan = normalizeExitPlan(candidate?.strategyProfile?.exitPlan);
+  const responsibilityPlan = normalizeResponsibilityPlan(candidate?.strategyProfile?.responsibilityPlan);
   if (!exitPlan || Object.keys(exitPlan).length === 0) {
     return { allowed: true, level: 'fallback', reason: null };
   }
 
-  const minHoldHours = safeNumber(exitPlan.minHoldHours, 0);
-  const mildLossGracePct = safeNumber(exitPlan.mildLossGracePct, null);
+  let minHoldHours = safeNumber(exitPlan.minHoldHours, 0);
+  let mildLossGracePct = safeNumber(exitPlan.mildLossGracePct, null);
   const hardReason = isHardExitReason(candidate.reasonCode);
+  const riskMission = String(responsibilityPlan?.riskMission || '').trim().toLowerCase();
+  const watchMission = String(responsibilityPlan?.watchMission || '').trim().toLowerCase();
+
+  if (!hardReason) {
+    if (riskMission === 'strict_risk_gate') {
+      minHoldHours *= 0.75;
+      if (Number.isFinite(mildLossGracePct)) mildLossGracePct *= 0.7;
+    } else if (riskMission === 'execution_safeguard') {
+      minHoldHours *= 1.2;
+      if (Number.isFinite(mildLossGracePct)) mildLossGracePct *= 1.15;
+    }
+
+    if (watchMission === 'backtest_drift_watcher' && String(candidate.reasonCode || '').startsWith('backtest_drift')) {
+      minHoldHours *= 0.5;
+    }
+    if (watchMission === 'risk_sentinel' && String(candidate.reasonCode || '').includes('bearish')) {
+      minHoldHours *= 0.8;
+    }
+  }
 
   if (!hardReason && minHoldHours > 0 && candidate.heldHours < minHoldHours) {
     return {
