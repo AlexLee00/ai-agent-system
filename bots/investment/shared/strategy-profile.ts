@@ -3,6 +3,44 @@
 import * as db from './db.ts';
 import { recommendStrategy } from '../team/argos.ts';
 
+function parseAnalystSignals(raw = '') {
+  const result = {};
+  for (const part of String(raw || '').split('|')) {
+    const [name, signal] = part.split(':');
+    if (!name || !signal) continue;
+    result[String(name).trim()] = String(signal).trim().toUpperCase();
+  }
+  return result;
+}
+
+function buildFallbackStrategy(seedSignal = null, exchange = 'binance', decision = null) {
+  const reasoning = String(seedSignal?.reasoning || decision?.reasoning || '').toLowerCase();
+  const analystSignals = parseAnalystSignals(seedSignal?.analyst_signals || '');
+  const dominantOracle = analystSignals?.O || null;
+  const setupType =
+    reasoning.includes('fast-path') || dominantOracle === 'B'
+      ? (exchange === 'binance' ? 'momentum_rotation' : 'equity_swing')
+      : reasoning.includes('반등') || reasoning.includes('mean reversion')
+        ? 'mean_reversion'
+        : reasoning.includes('돌파') || reasoning.includes('breakout')
+          ? 'breakout'
+          : exchange === 'binance'
+            ? 'momentum_rotation'
+            : 'equity_swing';
+
+  return {
+    source: 'historical_signal_backfill',
+    strategy_name: `Backfilled ${setupType}`,
+    quality_score: Math.max(0.35, Number(seedSignal?.confidence ?? decision?.confidence ?? 0.4)),
+    summary: seedSignal?.reasoning || decision?.reasoning || 'historical buy signal backfill',
+    entry_condition: seedSignal?.reasoning || decision?.reasoning || 'historical buy signal context',
+    exit_condition: 'strategy_break_or_risk_exit',
+    risk_management: 'historical signal backfill guard',
+    applicable_timeframe: exchange === 'binance' ? '4h' : '1d',
+    setup_type: setupType,
+  };
+}
+
 function buildSetupType(exchange = 'binance', strategy = null, decision = null) {
   const source = [
     String(strategy?.strategy_name || ''),
@@ -131,28 +169,41 @@ export async function createOrUpdatePositionStrategyProfile({
   exchange = 'binance',
   tradeMode = 'normal',
   decision = null,
+  seedSignal = null,
 } = {}) {
-  if (!signalId || !symbol || !exchange || !decision || String(decision?.action || '').toUpperCase() !== 'BUY') {
+  if (!symbol || !exchange || !decision || String(decision?.action || '').toUpperCase() !== 'BUY') {
     return null;
   }
 
-  const [strategy, latestBacktest, marketRegime] = await Promise.all([
+  let [strategy, latestBacktest, marketRegime] = await Promise.all([
     recommendStrategy(symbol, exchange).catch(() => null),
     db.getLatestVectorbtBacktestForSymbol(symbol, exchange === 'binance' ? 45 : 180).catch(() => null),
     db.getLatestMarketRegimeSnapshot(exchange).catch(() => null),
   ]);
 
-  const setupType = buildSetupType(exchange, strategy, decision);
+  const decisionReasoning = String(decision?.reasoning || '');
+  const strategyLooksGeneric = String(strategy?.strategy_name || '').toLowerCase().includes('daily btc leverage');
+  const shouldPreferFallback =
+    !strategy
+    || strategyLooksGeneric
+    || decisionReasoning.includes('open_position_backfill');
+
+  if (shouldPreferFallback) {
+    strategy = buildFallbackStrategy(seedSignal, exchange, decision);
+  }
+
+  const setupType = strategy?.setup_type || buildSetupType(exchange, strategy, decision);
   const thesis = [
     decision?.reasoning ? `decision=${decision.reasoning}` : null,
     strategy?.summary ? `strategy=${strategy.summary}` : null,
     strategy?.entry_condition ? `entry=${strategy.entry_condition}` : null,
+    seedSignal?.id ? `seedSignal=${seedSignal.id}` : null,
   ].filter(Boolean).join(' | ');
 
   return db.upsertPositionStrategyProfile({
     symbol,
     exchange,
-    signalId,
+    signalId: signalId || seedSignal?.id || null,
     tradeMode,
     strategyName: strategy?.strategy_name || `${exchange}:${setupType}`,
     strategyQualityScore: Number(strategy?.quality_score ?? decision?.confidence ?? 0),

@@ -32,6 +32,29 @@ async function inferDecisionFromPosition(position) {
   };
 }
 
+async function findBestSeedSignal(position) {
+  const rows = await db.query(
+    `SELECT *
+       FROM signals
+      WHERE symbol = $1
+        AND exchange = $2
+        AND action = 'BUY'
+        AND COALESCE(trade_mode, 'normal') = $3
+      ORDER BY
+        CASE
+          WHEN status = 'executed' THEN 0
+          WHEN approved_at IS NOT NULL THEN 1
+          WHEN status = 'approved' THEN 2
+          ELSE 3
+        END,
+        created_at DESC
+      LIMIT 10`,
+    [position.symbol, position.exchange, position.trade_mode || 'normal'],
+  ).catch(() => []);
+
+  return rows[0] || null;
+}
+
 function needsRefresh(existing = null) {
   if (!existing) return true;
   const ratios = existing?.exit_plan?.partialExitRatios || existing?.exitPlan?.partialExitRatios;
@@ -59,13 +82,7 @@ export async function runBackfill({ exchange = null, tradeMode = null, json = fa
       continue;
     }
 
-    const latestSignal = await db.getRecentSignalDuplicate({
-      symbol: position.symbol,
-      action: 'BUY',
-      exchange: position.exchange,
-      tradeMode: position.trade_mode || 'normal',
-      minutesBack: 60 * 24 * 30,
-    }).catch(() => null);
+    const latestSignal = await findBestSeedSignal(position);
 
     const profile = await createOrUpdatePositionStrategyProfile({
       signalId: existing?.signal_id || latestSignal?.id || null,
@@ -73,6 +90,7 @@ export async function runBackfill({ exchange = null, tradeMode = null, json = fa
       exchange: position.exchange,
       tradeMode: position.trade_mode || 'normal',
       decision: await inferDecisionFromPosition(position),
+      seedSignal: latestSignal,
     });
 
     processed.push({
