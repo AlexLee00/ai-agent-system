@@ -702,6 +702,7 @@ function buildDecision(
   const positionStrategyHygieneStatus = positionStrategyHygiene?.decision?.status || 'unknown';
   const duplicateNormalizationSummary = duplicateStrategyNormalization?.summary || {};
   const orphanRetirementSummary = orphanStrategyRetirement?.summary || {};
+  const remediationView = buildFlatRemediationSnapshot(positionStrategyRemediation);
   return buildHealthDecision({
     warnings: [
       {
@@ -919,6 +920,7 @@ function buildFlatRemediationSnapshot(positionStrategyRemediation) {
   const flat = positionStrategyRemediation?.remediationFlat || null;
   const summary = positionStrategyRemediation?.remediationSummary || null;
   const counts = positionStrategyRemediation?.remediationCounts || flat?.counts || summary?.counts || null;
+  const commandsBase = positionStrategyRemediation?.remediationCommands || flat?.commands || summary?.commands || null;
   const trend = positionStrategyRemediation?.remediationTrend
     || (flat?.trendHistoryCount !== undefined
       ? {
@@ -937,7 +939,35 @@ function buildFlatRemediationSnapshot(positionStrategyRemediation) {
     || summary?.trend
     || null;
   const refreshState = positionStrategyRemediation?.remediationRefreshState || flat?.refresh || summary?.refreshState || null;
-  const commands = positionStrategyRemediation?.remediationCommands || flat?.commands || summary?.commands || null;
+  const actionReportCommand = positionStrategyRemediation?.remediationActionReportCommand || flat?.actionReportCommand || commandsBase?.report || null;
+  const actionHistoryCommand = positionStrategyRemediation?.remediationActionHistoryCommand || flat?.actionHistoryCommand || commandsBase?.history || null;
+  const refreshCommand = positionStrategyRemediation?.remediationRefreshCommand || flat?.refreshCommand || commandsBase?.refresh || refreshState?.command || null;
+  const actionRefreshCommand = positionStrategyRemediation?.remediationActionRefreshCommand || flat?.actionRefreshCommand || flat?.refreshCommand || commandsBase?.refresh || null;
+  const actionHygieneCommand = positionStrategyRemediation?.remediationActionHygieneCommand || flat?.actionHygieneCommand || commandsBase?.hygiene || null;
+  const actionNormalizeDryRunCommand = positionStrategyRemediation?.remediationActionNormalizeDryRunCommand || flat?.actionNormalizeDryRunCommand || commandsBase?.normalizeDryRun || null;
+  const actionNormalizeApplyCommand = positionStrategyRemediation?.remediationActionNormalizeApplyCommand || flat?.actionNormalizeApplyCommand || commandsBase?.normalizeApply || null;
+  const actionRetireDryRunCommand = positionStrategyRemediation?.remediationActionRetireDryRunCommand || flat?.actionRetireDryRunCommand || commandsBase?.retireDryRun || null;
+  const actionRetireApplyCommand = positionStrategyRemediation?.remediationActionRetireApplyCommand || flat?.actionRetireApplyCommand || commandsBase?.retireApply || null;
+  const commands = {
+    report: actionReportCommand || null,
+    history: actionHistoryCommand || null,
+    refresh: refreshCommand || actionRefreshCommand || null,
+    hygiene: actionHygieneCommand || null,
+    normalizeDryRun: actionNormalizeDryRunCommand || null,
+    normalizeApply: actionNormalizeApplyCommand || null,
+    retireDryRun: actionRetireDryRunCommand || null,
+    retireApply: actionRetireApplyCommand || null,
+  };
+  const actions = {
+    reportCommand: actionReportCommand || null,
+    historyCommand: actionHistoryCommand || null,
+    refreshCommand: actionRefreshCommand || refreshCommand || null,
+    hygieneCommand: actionHygieneCommand || null,
+    normalizeDryRunCommand: actionNormalizeDryRunCommand || null,
+    normalizeApplyCommand: actionNormalizeApplyCommand || null,
+    retireDryRunCommand: actionRetireDryRunCommand || null,
+    retireApplyCommand: actionRetireApplyCommand || null,
+  };
   return {
     flat,
     summary,
@@ -945,6 +975,7 @@ function buildFlatRemediationSnapshot(positionStrategyRemediation) {
     trend,
     refreshState,
     commands,
+    actions,
     status: positionStrategyRemediation?.remediationStatus || flat?.status || summary?.status || null,
     headline: positionStrategyRemediation?.remediationHeadline || flat?.headline || summary?.headline || null,
     recommendedExchange: positionStrategyRemediation?.remediationRecommendedExchange || flat?.recommendedExchange || summary?.recommendedExchange || null,
@@ -963,20 +994,20 @@ function buildFlatRemediationSnapshot(positionStrategyRemediation) {
     refreshNeeded: positionStrategyRemediation?.remediationRefreshNeeded ?? flat?.refreshNeeded ?? refreshState?.needed ?? null,
     refreshStale: positionStrategyRemediation?.remediationRefreshStale ?? flat?.refreshStale ?? refreshState?.stale ?? null,
     refreshReason: positionStrategyRemediation?.remediationRefreshReason || flat?.refreshReason || refreshState?.reason || null,
-    refreshCommand: positionStrategyRemediation?.remediationRefreshCommand || flat?.refreshCommand || commands?.refresh || refreshState?.command || null,
+    refreshCommand,
     nextCommand: positionStrategyRemediation?.remediationNextCommand || flat?.nextCommand || null,
     nextCommandTransition: positionStrategyRemediation?.remediationNextCommandTransition || flat?.nextCommandTransition || summary?.nextCommandTransition || trend?.nextCommandTransition || null,
     nextCommandChanged: positionStrategyRemediation?.remediationNextCommandChanged ?? flat?.nextCommandChanged ?? trend?.nextCommandChanged ?? null,
     nextCommandPrevious: positionStrategyRemediation?.remediationNextCommandPrevious || flat?.nextCommandPrevious || summary?.nextCommandTransition?.previous || trend?.nextCommandTransition?.previous || null,
     nextCommandCurrent: positionStrategyRemediation?.remediationNextCommandCurrent || flat?.nextCommandCurrent || summary?.nextCommandTransition?.current || trend?.nextCommandTransition?.current || null,
-    actionReportCommand: positionStrategyRemediation?.remediationActionReportCommand || flat?.actionReportCommand || commands?.report || null,
-    actionHistoryCommand: positionStrategyRemediation?.remediationActionHistoryCommand || flat?.actionHistoryCommand || commands?.history || null,
-    actionRefreshCommand: positionStrategyRemediation?.remediationActionRefreshCommand || flat?.actionRefreshCommand || flat?.refreshCommand || commands?.refresh || null,
-    actionHygieneCommand: positionStrategyRemediation?.remediationActionHygieneCommand || flat?.actionHygieneCommand || commands?.hygiene || null,
-    actionNormalizeDryRunCommand: positionStrategyRemediation?.remediationActionNormalizeDryRunCommand || flat?.actionNormalizeDryRunCommand || commands?.normalizeDryRun || null,
-    actionNormalizeApplyCommand: positionStrategyRemediation?.remediationActionNormalizeApplyCommand || flat?.actionNormalizeApplyCommand || commands?.normalizeApply || null,
-    actionRetireDryRunCommand: positionStrategyRemediation?.remediationActionRetireDryRunCommand || flat?.actionRetireDryRunCommand || commands?.retireDryRun || null,
-    actionRetireApplyCommand: positionStrategyRemediation?.remediationActionRetireApplyCommand || flat?.actionRetireApplyCommand || commands?.retireApply || null,
+    actionReportCommand,
+    actionHistoryCommand,
+    actionRefreshCommand,
+    actionHygieneCommand,
+    actionNormalizeDryRunCommand,
+    actionNormalizeApplyCommand,
+    actionRetireDryRunCommand,
+    actionRetireApplyCommand,
   };
 }
 
@@ -1503,7 +1534,7 @@ async function buildReport() {
     positionStrategyRemediationRetireDryRunCommand: remediationView.commands?.retireDryRun || remediationView.actionRetireDryRunCommand,
     positionStrategyRemediationRetireApplyCommand: remediationView.commands?.retireApply || remediationView.actionRetireApplyCommand,
     positionStrategyRemediationNextCommand: remediationView.nextCommand,
-    positionStrategyRemediationActions: positionStrategyRemediation?.remediationActions || null,
+    positionStrategyRemediationActions: remediationView.actions,
     positionStrategyRemediationNextCommandTransition: remediationView.nextCommandTransition,
     positionStrategyRemediationNextCommandChanged: remediationView.nextCommandChanged,
     positionStrategyRemediationNextCommandPrevious: remediationView.nextCommandPrevious,
