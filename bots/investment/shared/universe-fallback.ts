@@ -81,3 +81,86 @@ export async function appendHeldSymbols(symbols, exchange, heldSymbolsOverride =
   } catch { /* 무시 */ }
   return symbols;
 }
+
+export async function resolveManagedPositionUniverse(exchange, {
+  tradeMode = null,
+  cryptoDustThresholdUsdt = 10,
+} = {}) {
+  await db.initSchema();
+
+  const [positions, profiles] = await Promise.all([
+    db.getAllPositions(exchange, false, tradeMode).catch(() => []),
+    db.getActivePositionStrategyProfiles({ exchange, status: 'active', limit: 1000 }).catch(() => []),
+  ]);
+
+  const profileBySymbol = new Map();
+  for (const profile of Array.isArray(profiles) ? profiles : []) {
+    const symbol = String(profile?.symbol || '').trim();
+    if (!symbol || profileBySymbol.has(symbol)) continue;
+    profileBySymbol.set(symbol, profile);
+  }
+
+  const lifecycleWeights = {
+    exit_candidate: 300,
+    exit_preview_requested: 290,
+    adjust_candidate: 220,
+    adjust_preview: 210,
+    holding: 120,
+    position_open: 100,
+  };
+
+  const entries = [];
+  const dustSymbols = [];
+
+  for (const position of Array.isArray(positions) ? positions : []) {
+    const symbol = String(position?.symbol || '').trim();
+    if (!symbol) continue;
+
+    const profile = profileBySymbol.get(symbol) || null;
+    const strategyState = profile?.strategy_state && typeof profile.strategy_state === 'object'
+      ? profile.strategy_state
+      : {};
+    const lifecycleStatus = String(strategyState?.lifecycleStatus || 'holding').trim() || 'holding';
+    const watchMission = String(profile?.strategy_context?.responsibilityPlan?.watchMission || '').trim() || null;
+    const notionalValue = Number(position?.amount || 0) * Number(position?.avg_price || 0);
+    const isCrypto = String(exchange || '').trim().toLowerCase() === 'binance';
+    const isDust = isCrypto && notionalValue > 0 && notionalValue < Number(cryptoDustThresholdUsdt || 10);
+    const managed = Boolean(profile?.id) || !isDust;
+
+    const entry = {
+      symbol,
+      exchange: String(position?.exchange || exchange || '').trim(),
+      tradeMode: String(position?.trade_mode || tradeMode || 'normal').trim(),
+      lifecycleStatus,
+      watchMission,
+      notionalValue,
+      isDust,
+      managed,
+      hasActiveProfile: Boolean(profile?.id),
+      priority: Number(lifecycleWeights[lifecycleStatus] || 80) + (watchMission === 'risk_sentinel' ? 20 : 0),
+    };
+
+    if (!managed) {
+      dustSymbols.push(symbol);
+      continue;
+    }
+
+    entries.push(entry);
+  }
+
+  entries.sort((a, b) => b.priority - a.priority || a.symbol.localeCompare(b.symbol));
+
+  const lifecycleCounts = entries.reduce((acc, item) => {
+    acc[item.lifecycleStatus] = (acc[item.lifecycleStatus] || 0) + 1;
+    return acc;
+  }, {});
+
+  return {
+    symbols: entries.map((item) => item.symbol),
+    entries,
+    dustSymbols,
+    lifecycleCounts,
+    profiledCount: entries.filter((item) => item.hasActiveProfile).length,
+    managedCount: entries.length,
+  };
+}

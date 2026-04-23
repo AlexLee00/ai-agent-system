@@ -1216,6 +1216,34 @@ export async function getPositionStrategyProfile(symbol, {
   );
 }
 
+export async function getActivePositionStrategyProfiles({
+  exchange = null,
+  status = 'active',
+  limit = 500,
+} = {}) {
+  const conditions = [];
+  const params = [];
+
+  if (exchange) {
+    params.push(exchange);
+    conditions.push(`exchange = $${params.length}`);
+  }
+  if (status) {
+    params.push(status);
+    conditions.push(`status = $${params.length}`);
+  }
+  params.push(Math.max(1, Number(limit || 500)));
+
+  return query(
+    `SELECT *
+     FROM position_strategy_profiles
+     ${conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''}
+     ORDER BY updated_at DESC, created_at DESC
+     LIMIT $${params.length}`,
+    params,
+  );
+}
+
 export async function upsertPositionStrategyProfile({
   symbol,
   exchange,
@@ -1702,7 +1730,7 @@ export default {
   getRecentScreeningSymbols,
   upsertStrategy, getActiveStrategies, recordStrategyResult,
   getLatestVectorbtBacktestForSymbol, getLatestMarketRegimeSnapshot,
-  getPositionStrategyProfile, upsertPositionStrategyProfile, updatePositionStrategyProfileState, closePositionStrategyProfile,
+  getPositionStrategyProfile, getActivePositionStrategyProfiles, upsertPositionStrategyProfile, updatePositionStrategyProfileState, closePositionStrategyProfile,
   upsertAgentRoleProfile, upsertAgentRoleState, getActiveAgentRoleStates, getAgentRoleState,
   insertRiskLog,
   insertAssetSnapshot, getLatestEquity, getEquityHistory,

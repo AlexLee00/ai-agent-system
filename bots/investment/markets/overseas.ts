@@ -23,7 +23,7 @@ import { initHubSecrets, getKisOverseasSymbols, getKisOverseasMarketStatus, getK
 import { publishAlert } from '../shared/alert-publisher.ts';
 import { tracker } from '../shared/cost-tracker.ts';
 import { parseUniverseCliFlags } from '../shared/screening-runtime.ts';
-import { resolveSymbolsWithFallback, appendHeldSymbols, capDynamicUniverse } from '../shared/universe-fallback.ts';
+import { resolveSymbolsWithFallback, resolveManagedPositionUniverse, appendHeldSymbols, capDynamicUniverse } from '../shared/universe-fallback.ts';
 import {
   getOpenClawStateFile,
   loadJsonState,
@@ -82,7 +82,7 @@ tracker.once('BUDGET_EXCEEDED', async ({ type }) => {
  * 미국주식 사이클 전체 실행
  * @param {string[]} symbols  ex) ['AAPL', 'TSLA', 'NVDA']
  */
-export async function runOverseasCycle(symbols) {
+export async function runOverseasCycle(symbols, universeMeta = {}) {
   // Phase 5c Kill Switch — LUNA_LIVE_OVERSEAS=true 이어야 실행
   if (process.env.LUNA_LIVE_OVERSEAS !== 'true') {
     console.log('[overseas] LIVE OFF — 사이클 스킵 (LUNA_LIVE_OVERSEAS 미설정)');
@@ -109,7 +109,8 @@ export async function runOverseasCycle(symbols) {
       market: 'kis_overseas',
       symbols,
       triggerType: 'cycle',
-      meta: { market_script: 'overseas' },
+      meta: { market_script: 'overseas', collect_mode: 'screening_with_maintenance' },
+      universeMeta,
     });
     sessionId = collect.sessionId;
     console.log(`  🧩 [노드] session=${collect.sessionId}`);
@@ -175,7 +176,7 @@ export async function runOverseasCycle(symbols) {
   }
 }
 
-export async function runOverseasResearchCycle(symbols) {
+export async function runOverseasResearchCycle(symbols, universeMeta = {}) {
   await initHubSecrets();
   const startTime = Date.now();
   let sessionId = null;
@@ -192,7 +193,8 @@ export async function runOverseasResearchCycle(symbols) {
       market: 'kis_overseas',
       symbols,
       triggerType: 'research',
-      meta: { market_script: 'overseas', research_only: true },
+      meta: { market_script: 'overseas', research_only: true, collect_mode: 'screening' },
+      universeMeta,
     });
     sessionId = collect.sessionId;
     console.log(`  🧩 [노드] session=${collect.sessionId}`);
@@ -261,15 +263,27 @@ if (isDirectExecution(import.meta.url)) {
       const { symbols: cliSymbols, force, noDynamic, researchOnly } = parseUniverseCliFlags(args);
 
       let symbols;
+      const universeMeta = {
+        screeningSymbolCount: 0,
+        heldSymbolCount: 0,
+        heldAddedCount: 0,
+        maintenanceSymbolCount: 0,
+        maintenanceProfiledCount: 0,
+        maintenanceDustSkippedCount: 0,
+        maintenanceLifecycleCounts: {},
+      };
       if (Array.isArray(cliSymbols) && cliSymbols.length > 0) {
         symbols = cliSymbols;
+        universeMeta.screeningSymbolCount = symbols.length;
       } else if (noDynamic) {
         symbols = getKisOverseasSymbols();
+        universeMeta.screeningSymbolCount = symbols.length;
       } else {
         const overseasMaxDynamic = getOverseasScreeningMaxDynamic();
         const preScreened = loadPreScreened('overseas');
         if (preScreened?.symbols?.length > 0) {
           symbols = capDynamicUniverse(preScreened.symbols, overseasMaxDynamic, 'overseas-prescreened');
+          universeMeta.screeningSymbolCount = symbols.length;
           const ageMin = Math.floor((Date.now() - preScreened.savedAt) / 60000);
           console.log(`📋 [장전 스크리닝] 종목 로드 (${ageMin}분 전): ${symbols.join(', ')}`);
         } else {
@@ -285,6 +299,7 @@ if (isDirectExecution(import.meta.url)) {
             cacheLabel: 'RAG 폴백',
           });
           symbols = capDynamicUniverse(resolved.symbols, overseasMaxDynamic, `overseas-${resolved.source || 'dynamic'}`);
+          universeMeta.screeningSymbolCount = symbols.length;
           if (resolved.source === 'screening') {
             savePreScreened('overseas', symbols);
             const { recordScreeningSuccess } = await import('../scripts/screening-monitor.ts');
@@ -299,7 +314,15 @@ if (isDirectExecution(import.meta.url)) {
         }
       }
 
-      symbols = await appendHeldSymbols(symbols, 'kis_overseas');
+      const maintenanceUniverse = await resolveManagedPositionUniverse('kis_overseas').catch(() => ({ symbols: [], managedCount: 0, profiledCount: 0, dustSymbols: [], lifecycleCounts: {} }));
+      const heldSymbols = maintenanceUniverse.symbols || [];
+      universeMeta.heldSymbolCount = heldSymbols.length;
+      universeMeta.heldAddedCount = heldSymbols.filter((symbol) => !symbols.includes(symbol)).length;
+      universeMeta.maintenanceSymbolCount = Number(maintenanceUniverse.managedCount || heldSymbols.length || 0);
+      universeMeta.maintenanceProfiledCount = Number(maintenanceUniverse.profiledCount || 0);
+      universeMeta.maintenanceDustSkippedCount = Array.isArray(maintenanceUniverse.dustSymbols) ? maintenanceUniverse.dustSymbols.length : 0;
+      universeMeta.maintenanceLifecycleCounts = maintenanceUniverse.lifecycleCounts || {};
+      symbols = await appendHeldSymbols(symbols, 'kis_overseas', heldSymbols);
       console.log(getKisExecutionModeInfo('해외주식').logLine);
 
       const marketStatus = force
@@ -323,17 +346,17 @@ if (isDirectExecution(import.meta.url)) {
 
       if (researchOnly) {
         console.log('🧪 강제 연구 모드 실행');
-        await runOverseasResearchCycle(symbols);
+        await runOverseasResearchCycle(symbols, universeMeta);
         return [];
       }
 
       if (!force && !marketOpen) {
         console.log(`📚 ${marketStatus.reason} — 연구 모드 전환`);
-        await runOverseasResearchCycle(symbols);
+        await runOverseasResearchCycle(symbols, universeMeta);
         return [];
       }
 
-      return runOverseasCycle(symbols);
+      return runOverseasCycle(symbols, universeMeta);
     },
     onSuccess: async (results) => {
       console.log(`\n최종 결과: ${results.length}개 신호 승인`);

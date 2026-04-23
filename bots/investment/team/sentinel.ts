@@ -2,13 +2,27 @@
 /**
  * team/sentinel.js — 센티널 (외부 정보 감시관)
  *
- * 역할: 커뮤니티 감성 + 뉴스 분석 통합
- * 이전: sophia.js (커뮤니티) + hermes.js (뉴스) 통합
+ * 역할:
+ *   - 최신 뉴스/감성 수집기의 통합 오케스트레이터
+ *   - source tier / source breakdown / quality 상태를 함께 반환
+ *   - 의사결정단이 "무엇이 본류 정보이고 무엇이 보조 정보인지" 해석할 수 있게 함
  */
 
-import { analyzeNews } from './_deprecated/hermes.ts';
-import { analyzeSentiment, combineSentiment } from './_deprecated/sophia.ts';
+import { analyzeNews } from './hermes.ts';
+import { analyzeSentiment, combineSentiment } from './sophia.ts';
 import { ACTIONS, ANALYST_TYPES } from '../shared/signal.ts';
+
+const SOURCE_TIERS = Object.freeze({
+  news: 'tier2',
+  community: 'tier3',
+  fearGreed: 'tier2',
+});
+
+const TIER_WEIGHTS = Object.freeze({
+  tier1: 0.0,
+  tier2: 0.65,
+  tier3: 0.35,
+});
 
 function scoreFromSignal(signal, confidence = 0) {
   if (signal === ACTIONS.BUY) return confidence;
@@ -38,17 +52,55 @@ export function combineSentinelResult(community = {}, news = {}) {
     sentiment: label,
     combinedScore: combined,
     metadata: {
+      sourceTierWeights: TIER_WEIGHTS,
       community: {
         signal: community.signal ?? ACTIONS.HOLD,
         confidence: community.confidence ?? 0,
         sentiment: community.sentiment ?? null,
+        tier: SOURCE_TIERS.community,
       },
       news: {
         signal: news.signal ?? ACTIONS.HOLD,
         confidence: news.confidence ?? 0,
         sentiment: news.sentiment ?? null,
+        tier: SOURCE_TIERS.news,
       },
       fearGreedNormalized: fgNorm,
+      sourceBreakdown: {
+        community: {
+          available: Boolean(community?.signal),
+          confidence: community.confidence ?? 0,
+          signal: community.signal ?? ACTIONS.HOLD,
+          tier: SOURCE_TIERS.community,
+        },
+        news: {
+          available: Boolean(news?.signal),
+          confidence: news.confidence ?? 0,
+          signal: news.signal ?? ACTIONS.HOLD,
+          tier: SOURCE_TIERS.news,
+        },
+        fearGreed: {
+          available: fearGreed != null,
+          normalized: fgNorm,
+          tier: SOURCE_TIERS.fearGreed,
+        },
+      },
+    },
+  };
+}
+
+function buildSentinelQuality({ community = null, news = null, errors = [] } = {}) {
+  const successCount = Number(Boolean(community)) + Number(Boolean(news));
+  const status = successCount >= 2 ? 'ready' : successCount === 1 ? 'degraded' : 'insufficient';
+
+  return {
+    status,
+    successCount,
+    failedCount: Array.isArray(errors) ? errors.length : 0,
+    partialFallback: successCount === 1,
+    sources: {
+      news: Boolean(news),
+      community: Boolean(community),
     },
   };
 }
@@ -87,11 +139,36 @@ export async function analyze(symbol = 'BTC/USDT', exchange = 'binance') {
   }
 
   const combined = combineSentinelResult(community || {}, news || {});
+  const quality = buildSentinelQuality({ community, news, errors });
+  const sourceBreakdown = {
+    news: {
+      ok: Boolean(news),
+      analyst: 'hermes',
+      signal: news?.signal ?? ACTIONS.HOLD,
+      confidence: Number(news?.confidence || 0),
+      tier: SOURCE_TIERS.news,
+    },
+    community: {
+      ok: Boolean(community),
+      analyst: 'sophia',
+      signal: community?.signal ?? ACTIONS.HOLD,
+      confidence: Number(community?.confidence || 0),
+      tier: SOURCE_TIERS.community,
+    },
+  };
   return {
     symbol,
     analyst: ANALYST_TYPES.SENTINEL,
     partialFallback: errors.length > 0,
     errors,
+    quality,
     ...combined,
+    reasoning: `${combined.reasoning}${quality.status === 'degraded' ? ' | 부분 수집 폴백 반영' : ''}`,
+    metadata: {
+      ...(combined.metadata || {}),
+      quality,
+      sourceBreakdown,
+      sourceTierWeights: TIER_WEIGHTS,
+    },
   };
 }

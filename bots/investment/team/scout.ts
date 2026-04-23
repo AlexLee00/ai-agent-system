@@ -21,7 +21,7 @@ import { initSchema as initRagSchema, store as storeRag } from '../shared/rag-cl
 import { publishAlert } from '../shared/alert-publisher.ts';
 import { initHubSecrets, isKisPaper } from '../shared/secrets.ts';
 import { getDomesticPrice } from '../shared/kis-client.ts';
-import { collectScoutData } from './scout-scraper.ts';
+import { collectTossMarketIntel } from './toss-market-intel.ts';
 
 const require = createRequire(import.meta.url);
 const { createLogger } = require('../../../packages/core/lib/central-logger');
@@ -260,7 +260,7 @@ export async function runScout({ dryRun = false, json = false, limit = 10 } = {}
     await eventLake.initSchema();
   }
 
-  const payload = await collectScoutData({ dryRun, limit });
+  const payload = await collectTossMarketIntel({ dryRun, limit });
   const argosByMarket = await loadRecentArgosSymbols({ dryRun });
   const overlaps = summarizeOverlap(payload.signals || [], argosByMarket);
   const summary = dryRun

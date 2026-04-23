@@ -29,7 +29,7 @@ import { publishAlert } from '../shared/alert-publisher.ts';
 import { tracker } from '../shared/cost-tracker.ts';
 import { getLunaParams } from '../shared/time-mode.ts';
 import { parseUniverseCliFlags } from '../shared/screening-runtime.ts';
-import { resolveSymbolsWithFallback, appendHeldSymbols, capDynamicUniverse } from '../shared/universe-fallback.ts';
+import { resolveSymbolsWithFallback, resolveManagedPositionUniverse, appendHeldSymbols, capDynamicUniverse } from '../shared/universe-fallback.ts';
 import { syncPositionsAtMarketOpen } from '../shared/position-sync.ts';
 import {
   getOpenClawStateFile,
@@ -81,30 +81,10 @@ function getHeldMergeStats(baseSymbols = [], heldSymbols = []) {
 async function getManagedHeldSymbols() {
   const syncRuntime = getInvestmentSyncRuntimeConfig();
   const dustThreshold = Number(syncRuntime?.cryptoMinNotionalUsdt || 10);
-  const rows = await db.query(
-    `
-      SELECT
-        p.symbol,
-        (COALESCE(p.amount, 0) * COALESCE(p.avg_price, 0)) AS notional_usdt,
-        EXISTS (
-          SELECT 1
-          FROM investment.position_strategy_profiles psp
-          WHERE psp.symbol = p.symbol
-            AND psp.exchange = p.exchange
-            AND psp.status = 'active'
-        ) AS has_active_profile
-      FROM investment.positions p
-      WHERE p.exchange = 'binance'
-        AND p.paper = false
-        AND p.amount > 0
-      ORDER BY p.symbol
-    `,
-    [],
-  ).catch(() => []);
-
-  return rows
-    .filter((row) => Number(row.notional_usdt || 0) >= dustThreshold || row.has_active_profile === true)
-    .map((row) => row.symbol);
+  const resolved = await resolveManagedPositionUniverse('binance', {
+    cryptoDustThresholdUsdt: dustThreshold,
+  }).catch(() => ({ symbols: [] }));
+  return resolved.symbols || [];
 }
 
 function fetchBtcPrice() {
@@ -263,11 +243,15 @@ export async function runCryptoCycle(symbols, universeMeta = {}) {
       market: 'binance',
       symbols,
       triggerType: 'cycle',
-      meta: { market_script: 'crypto' },
+      meta: { market_script: 'crypto', collect_mode: 'screening_with_maintenance' },
       universeMeta: {
         screeningSymbolCount: Number(universeMeta.screeningSymbolCount || 0),
         heldSymbolCount: Number(universeMeta.heldSymbolCount || 0),
         heldAddedCount: Number(universeMeta.heldAddedCount || 0),
+        maintenanceSymbolCount: Number(universeMeta.maintenanceSymbolCount || 0),
+        maintenanceProfiledCount: Number(universeMeta.maintenanceProfiledCount || 0),
+        maintenanceDustSkippedCount: Number(universeMeta.maintenanceDustSkippedCount || 0),
+        maintenanceLifecycleCounts: universeMeta.maintenanceLifecycleCounts || {},
       },
     });
     sessionId = collect.sessionId;
@@ -393,9 +377,16 @@ if (isDirectExecution(import.meta.url)) {
         }
       }
 
-      const heldSymbols = await getManagedHeldSymbols();
+      const maintenanceUniverse = await resolveManagedPositionUniverse('binance', {
+        cryptoDustThresholdUsdt: Number(getInvestmentSyncRuntimeConfig()?.cryptoMinNotionalUsdt || 10),
+      }).catch(() => ({ symbols: [], managedCount: 0, profiledCount: 0, dustSymbols: [], lifecycleCounts: {} }));
+      const heldSymbols = maintenanceUniverse.symbols || [];
       universeMeta.heldSymbolCount = heldSymbols.length;
       universeMeta.heldAddedCount = getHeldMergeStats(symbols, heldSymbols).heldAddedCount;
+      universeMeta.maintenanceSymbolCount = Number(maintenanceUniverse.managedCount || heldSymbols.length || 0);
+      universeMeta.maintenanceProfiledCount = Number(maintenanceUniverse.profiledCount || 0);
+      universeMeta.maintenanceDustSkippedCount = Array.isArray(maintenanceUniverse.dustSymbols) ? maintenanceUniverse.dustSymbols.length : 0;
+      universeMeta.maintenanceLifecycleCounts = maintenanceUniverse.lifecycleCounts || {};
       symbols = await appendHeldSymbols(symbols, 'binance', heldSymbols);
 
       console.log(getMarketExecutionModeInfo('crypto', '암호화폐').logLine);

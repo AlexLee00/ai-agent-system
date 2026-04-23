@@ -429,7 +429,7 @@ export async function analyzeSentiment(symbol = 'BTC/USDT', exchange = 'binance'
   if (posts.length < 3) {
     await db.insertAnalysis({ symbol, analyst: ANALYST_TYPES.SENTIMENT, signal: ACTIONS.HOLD,
       confidence: 0.1, reasoning: '[감성] 게시물 부족 → HOLD', metadata: { filteredCount: posts.length, exchange }, exchange });
-    return { symbol, signal: ACTIONS.HOLD, confidence: 0.1, reasoning: '게시물 부족' };
+    return { symbol, signal: ACTIONS.HOLD, confidence: 0.1, reasoning: '게시물 부족', fearGreed };
   }
 
   const postList = posts.slice(0, 15).map((p, i) => `${i + 1}. [${p.source}] ${p.title}`).join('\n');
@@ -481,7 +481,20 @@ export async function analyzeSentiment(symbol = 'BTC/USDT', exchange = 'binance'
   });
   console.log(`  ✅ [소피아] DB 저장 완료`);
 
-  const result = { symbol, signal, confidence, reasoning, sentiment, combinedScore };
+  const result = {
+    symbol,
+    signal,
+    confidence,
+    reasoning,
+    sentiment,
+    combinedScore,
+    fearGreed,
+    metadata: {
+      exchange,
+      sourceTier: 'tier3',
+      postCount: posts.length,
+    },
+  };
   _sentCache.set(cacheKey, { data: result, ts: now });
   return result;
 }

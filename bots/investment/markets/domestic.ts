@@ -26,7 +26,7 @@ import { initHubSecrets, getKisSymbols, getKisMarketStatus, getKisExecutionModeI
 import { publishAlert } from '../shared/alert-publisher.ts';
 import { tracker } from '../shared/cost-tracker.ts';
 import { parseUniverseCliFlags } from '../shared/screening-runtime.ts';
-import { resolveSymbolsWithFallback, appendHeldSymbols, capDynamicUniverse } from '../shared/universe-fallback.ts';
+import { resolveSymbolsWithFallback, resolveManagedPositionUniverse, appendHeldSymbols, capDynamicUniverse } from '../shared/universe-fallback.ts';
 import {
   getOpenClawStateFile,
   loadJsonState,
@@ -117,7 +117,7 @@ async function filterMockUntradableDomesticCandidates(symbols, tradeMode = getIn
  * 국내주식 사이클 전체 실행
  * @param {string[]} symbols  ex) ['005930', '000660']
  */
-export async function runDomesticCycle(symbols) {
+export async function runDomesticCycle(symbols, universeMeta = {}) {
   // Phase 5c Kill Switch — LUNA_LIVE_DOMESTIC=true 이어야 실행
   if (process.env.LUNA_LIVE_DOMESTIC !== 'true') {
     console.log('[domestic] LIVE OFF — 사이클 스킵 (LUNA_LIVE_DOMESTIC 미설정)');
@@ -144,7 +144,8 @@ export async function runDomesticCycle(symbols) {
       market: 'kis',
       symbols,
       triggerType: 'cycle',
-      meta: { market_script: 'domestic' },
+      meta: { market_script: 'domestic', collect_mode: 'screening_with_maintenance' },
+      universeMeta,
     });
     sessionId = collect.sessionId;
     console.log(`  🧩 [노드] session=${collect.sessionId}`);
@@ -210,7 +211,7 @@ export async function runDomesticCycle(symbols) {
   }
 }
 
-export async function runDomesticResearchCycle(symbols) {
+export async function runDomesticResearchCycle(symbols, universeMeta = {}) {
   await initHubSecrets();
   const startTime = Date.now();
   let sessionId = null;
@@ -227,7 +228,8 @@ export async function runDomesticResearchCycle(symbols) {
       market: 'kis',
       symbols,
       triggerType: 'research',
-      meta: { market_script: 'domestic', research_only: true },
+      meta: { market_script: 'domestic', research_only: true, collect_mode: 'screening' },
+      universeMeta,
     });
     sessionId = collect.sessionId;
     console.log(`  🧩 [노드] session=${collect.sessionId}`);
@@ -311,15 +313,27 @@ if (isDirectExecution(import.meta.url)) {
       }
 
       let symbols;
+      const universeMeta = {
+        screeningSymbolCount: 0,
+        heldSymbolCount: 0,
+        heldAddedCount: 0,
+        maintenanceSymbolCount: 0,
+        maintenanceProfiledCount: 0,
+        maintenanceDustSkippedCount: 0,
+        maintenanceLifecycleCounts: {},
+      };
       if (Array.isArray(cliSymbols) && cliSymbols.length > 0) {
         symbols = cliSymbols;
+        universeMeta.screeningSymbolCount = symbols.length;
       } else if (noDynamic) {
         symbols = getKisSymbols();
+        universeMeta.screeningSymbolCount = symbols.length;
       } else {
         const domesticMaxDynamic = getDomesticScreeningMaxDynamic();
         const preScreened = loadPreScreened('domestic');
         if (preScreened?.symbols?.length > 0) {
           symbols = capDynamicUniverse(preScreened.symbols, domesticMaxDynamic, 'domestic-prescreened');
+          universeMeta.screeningSymbolCount = symbols.length;
           symbols = await filterMockUntradableDomesticCandidates(symbols);
           const ageMin = Math.floor((Date.now() - preScreened.savedAt) / 60000);
           console.log(`📋 [장전 스크리닝] 종목 로드 (${ageMin}분 전): ${symbols.join(', ')}`);
@@ -336,6 +350,7 @@ if (isDirectExecution(import.meta.url)) {
             cacheLabel: 'RAG 폴백',
           });
           symbols = capDynamicUniverse(resolved.symbols, domesticMaxDynamic, `domestic-${resolved.source || 'dynamic'}`);
+          universeMeta.screeningSymbolCount = symbols.length;
           symbols = await filterMockUntradableDomesticCandidates(symbols);
           if (resolved.source === 'screening') {
             savePreScreened('domestic', symbols);
@@ -351,7 +366,15 @@ if (isDirectExecution(import.meta.url)) {
         }
       }
 
-      symbols = await appendHeldSymbols(symbols, 'kis');
+      const maintenanceUniverse = await resolveManagedPositionUniverse('kis').catch(() => ({ symbols: [], managedCount: 0, profiledCount: 0, dustSymbols: [], lifecycleCounts: {} }));
+      const heldSymbols = maintenanceUniverse.symbols || [];
+      universeMeta.heldSymbolCount = heldSymbols.length;
+      universeMeta.heldAddedCount = heldSymbols.filter((symbol) => !symbols.includes(symbol)).length;
+      universeMeta.maintenanceSymbolCount = Number(maintenanceUniverse.managedCount || heldSymbols.length || 0);
+      universeMeta.maintenanceProfiledCount = Number(maintenanceUniverse.profiledCount || 0);
+      universeMeta.maintenanceDustSkippedCount = Array.isArray(maintenanceUniverse.dustSymbols) ? maintenanceUniverse.dustSymbols.length : 0;
+      universeMeta.maintenanceLifecycleCounts = maintenanceUniverse.lifecycleCounts || {};
+      symbols = await appendHeldSymbols(symbols, 'kis', heldSymbols);
       console.log(getKisExecutionModeInfo('국내주식').logLine);
       const marketOpen = marketStatus.isOpen;
 
@@ -364,17 +387,17 @@ if (isDirectExecution(import.meta.url)) {
 
       if (researchOnly) {
         console.log('🧪 강제 연구 모드 실행');
-        await runDomesticResearchCycle(symbols);
+        await runDomesticResearchCycle(symbols, universeMeta);
         return [];
       }
 
       if (!force && !marketOpen) {
         console.log(`📚 ${marketStatus.reason} — 연구 모드 전환`);
-        await runDomesticResearchCycle(symbols);
+        await runDomesticResearchCycle(symbols, universeMeta);
         return [];
       }
 
-      return runDomesticCycle(symbols);
+      return runDomesticCycle(symbols, universeMeta);
     },
     onSuccess: async (results) => {
       console.log(`\n최종 결과: ${results.length}개 신호 승인`);

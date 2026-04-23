@@ -29,6 +29,59 @@ const COLLECT_WARNING_THRESHOLDS = {
   wideUniverseSymbols: 20,
 };
 
+function buildCollectQualityGate({
+  collectMode = 'screening',
+  totalCoreTasks = 0,
+  failedCoreTasks = 0,
+  failedHardCoreTasks = 0,
+  totalEnrichmentTasks = 0,
+  failedEnrichmentTasks = 0,
+  partialFallbackTasks = 0,
+  llmGuardFailedTasks = 0,
+} = {}) {
+  const coreFailureRate = totalCoreTasks > 0 ? failedCoreTasks / totalCoreTasks : 0;
+  const enrichmentFailureRate = totalEnrichmentTasks > 0 ? failedEnrichmentTasks / totalEnrichmentTasks : 0;
+
+  let status = 'ready';
+  const reasons = [];
+
+  if (failedHardCoreTasks > 0 || (collectMode === 'screening' && totalCoreTasks > 0 && coreFailureRate >= 0.5)) {
+    status = 'insufficient';
+    if (failedHardCoreTasks > 0) reasons.push(`core_hard_fail ${failedHardCoreTasks}`);
+    if (collectMode === 'screening' && coreFailureRate >= 0.5) reasons.push(`core_failure_rate ${(coreFailureRate * 100).toFixed(0)}%`);
+  } else if (failedCoreTasks > 0 || failedEnrichmentTasks > 0 || partialFallbackTasks > 0 || llmGuardFailedTasks > 0) {
+    status = 'degraded';
+    if (failedCoreTasks > 0) reasons.push(`core_fail ${failedCoreTasks}`);
+    if (failedEnrichmentTasks > 0) reasons.push(`enrichment_fail ${failedEnrichmentTasks}`);
+    if (partialFallbackTasks > 0) reasons.push(`partial_fallback ${partialFallbackTasks}`);
+    if (llmGuardFailedTasks > 0) reasons.push(`llm_guard ${llmGuardFailedTasks}`);
+  }
+
+  const readinessScore = Math.max(
+    0,
+    Math.min(
+      1,
+      Number(
+        (
+          1
+          - Math.min(coreFailureRate * 0.7, 0.7)
+          - Math.min(enrichmentFailureRate * 0.2, 0.2)
+          - Math.min(partialFallbackTasks * 0.03, 0.1)
+        ).toFixed(2),
+      ),
+    ),
+  );
+
+  return {
+    status,
+    collectMode,
+    readinessScore,
+    coreFailureRate,
+    enrichmentFailureRate,
+    reasons,
+  };
+}
+
 function buildCollectOverloadProfile(metrics = {}) {
   const screeningCount = Number(metrics.screeningSymbolCount || 0);
   const heldCount = Number(metrics.heldAddedCount || metrics.heldSymbolCount || 0);
@@ -182,6 +235,11 @@ export async function runMarketCollectPipeline({
       screeningSymbolCount: Number(universeMeta.screeningSymbolCount || 0),
       heldSymbolCount: Number(universeMeta.heldSymbolCount || 0),
       heldAddedCount: Number(universeMeta.heldAddedCount || 0),
+      maintenanceSymbolCount: Number(universeMeta.maintenanceSymbolCount || 0),
+      maintenanceProfiledCount: Number(universeMeta.maintenanceProfiledCount || 0),
+      maintenanceDustSkippedCount: Number(universeMeta.maintenanceDustSkippedCount || 0),
+      maintenanceLifecycleCounts: universeMeta.maintenanceLifecycleCounts || {},
+      collectMode: String(meta?.collect_mode || 'screening'),
       perSymbolNodeCount: perSymbolNodes.length,
       totalTasks,
       failedTasks,
@@ -220,9 +278,22 @@ export async function runMarketCollectPipeline({
         failedCoreTasks,
         totalEnrichmentTasks,
         failedEnrichmentTasks,
+        dataSparsityFailures,
         llmGuardFailedTasks,
       }),
     };
+    metrics.collectQuality = buildCollectQualityGate({
+      collectMode: metrics.collectMode,
+      totalCoreTasks,
+      failedCoreTasks,
+      failedHardCoreTasks,
+      totalEnrichmentTasks,
+      failedEnrichmentTasks,
+      partialFallbackTasks: metrics.partialFallbackTasks,
+      llmGuardFailedTasks,
+    });
+    if (metrics.collectQuality.status === 'degraded') metrics.warnings.push('collect_quality_degraded');
+    if (metrics.collectQuality.status === 'insufficient') metrics.warnings.push('collect_quality_insufficient');
 
     return { sessionId, market, symbols, summaries, metrics };
   } catch (err) {
@@ -326,6 +397,13 @@ export function summarizeCollectWarnings(warnings = [], metrics = {}) {
     }
   }
 
+  const qualityStatus = String(metrics.collectQuality?.status || '').trim();
+  if (qualityStatus === 'degraded') {
+    lines.push(`수집 품질은 degraded 상태입니다 (readiness=${Number(metrics.collectQuality?.readinessScore || 0).toFixed(2)}).`);
+  } else if (qualityStatus === 'insufficient') {
+    lines.push(`수집 품질이 insufficient 상태라 신규 진입용 판단 신뢰가 낮습니다.`);
+  }
+
   if (warnings.includes('concurrency_guard_active')) {
     lines.push(`동시성 guard가 활성화된 상태입니다 (limit=${metrics.concurrencyLimit || 0}).`);
   }
@@ -360,6 +438,8 @@ export async function logMarketPipelineMetrics(label, metrics = {}) {
     metrics.symbolCount != null ? `symbols=${metrics.symbolCount}` : null,
     metrics.screeningSymbolCount != null && metrics.screeningSymbolCount > 0 ? `screening=${metrics.screeningSymbolCount}` : null,
     metrics.heldAddedCount != null && metrics.heldAddedCount > 0 ? `heldAdded=${metrics.heldAddedCount}` : null,
+    metrics.maintenanceSymbolCount != null && metrics.maintenanceSymbolCount > 0 ? `maintenance=${metrics.maintenanceSymbolCount}` : null,
+    metrics.maintenanceDustSkippedCount != null && metrics.maintenanceDustSkippedCount > 0 ? `dustSkipped=${metrics.maintenanceDustSkippedCount}` : null,
     metrics.totalTasks != null ? `tasks=${metrics.totalTasks}` : null,
     metrics.concurrencyLimit != null ? `concurrency=${metrics.concurrencyLimit}` : null,
     metrics.failedTasks != null ? `failed=${metrics.failedTasks}` : null,
@@ -370,6 +450,7 @@ export async function logMarketPipelineMetrics(label, metrics = {}) {
     metrics.failedNodeCounts?.L05 ? `L05=${metrics.failedNodeCounts.L05}` : null,
     metrics.partialFallbackNodeCounts?.L03 ? `L03_partial=${metrics.partialFallbackNodeCounts.L03}` : null,
     metrics.partialFallbackNodeCounts?.L05 ? `L05_partial=${metrics.partialFallbackNodeCounts.L05}` : null,
+    metrics.collectQuality?.status ? `quality=${metrics.collectQuality.status}` : null,
     metrics.debateCount != null ? `debate=${metrics.debateCount}/${metrics.debateLimit}` : null,
     metrics.weakSignalSkipped != null ? `weakSkipped=${metrics.weakSignalSkipped}` : null,
     metrics.riskRejected != null ? `riskRejected=${metrics.riskRejected}` : null,
