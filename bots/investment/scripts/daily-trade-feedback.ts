@@ -178,6 +178,80 @@ function buildDailyFeedbackRemediationView(positionStrategyRemediationSummary, p
   };
 }
 
+function buildDailyFeedbackRemediationPayload(remediationView, positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary) {
+  return {
+    positionStrategyRemediationSummary,
+    positionStrategyRemediationHistorySummary,
+    remediationFlat: remediationView.remediationFlat,
+    remediationSummary: remediationView.remediationSummary,
+    remediationStatus: remediationView.remediationStatus,
+    remediationHeadline: remediationView.remediationHeadline,
+    remediationCounts: remediationView.remediationCounts,
+    remediationRecommendedExchange: remediationView.remediationRecommendedExchange,
+    remediationDuplicateManaged: remediationView.remediationDuplicateManaged,
+    remediationOrphanProfiles: remediationView.remediationOrphanProfiles,
+    remediationUnmatchedManaged: remediationView.remediationUnmatchedManaged,
+    remediationTrend: remediationView.remediationTrend,
+    remediationTrendHistoryCount: remediationView.remediationTrendHistoryCount,
+    remediationTrendChanged: remediationView.remediationTrendChanged,
+    remediationTrendNextChanged: remediationView.remediationTrendNextChanged,
+    remediationTrendAgeMinutes: remediationView.remediationTrendAgeMinutes,
+    remediationTrendStale: remediationView.remediationTrendStale,
+    remediationTrendDuplicateDelta: remediationView.remediationTrendDuplicateDelta,
+    remediationTrendOrphanDelta: remediationView.remediationTrendOrphanDelta,
+    remediationTrendUnmatchedDelta: remediationView.remediationTrendUnmatchedDelta,
+    remediationRefreshState: remediationView.remediationRefreshState,
+    remediationRefreshNeeded: remediationView.remediationRefreshNeeded,
+    remediationRefreshStale: remediationView.remediationRefreshStale,
+    remediationRefreshReason: remediationView.remediationRefreshReason,
+    remediationRefreshCommand: remediationView.remediationRefreshCommand,
+    remediationActions: remediationView.remediationActions,
+    remediationCommands: remediationView.remediationCommands,
+    remediationActionReportCommand: remediationView.remediationActionReportCommand,
+    remediationActionHistoryCommand: remediationView.remediationActionHistoryCommand,
+    remediationActionRefreshCommand: remediationView.remediationActionRefreshCommand,
+    remediationActionHygieneCommand: remediationView.remediationActionHygieneCommand,
+    remediationActionNormalizeDryRunCommand: remediationView.remediationActionNormalizeDryRunCommand,
+    remediationActionNormalizeApplyCommand: remediationView.remediationActionNormalizeApplyCommand,
+    remediationActionRetireDryRunCommand: remediationView.remediationActionRetireDryRunCommand,
+    remediationActionRetireApplyCommand: remediationView.remediationActionRetireApplyCommand,
+    remediationReportCommand: remediationView.remediationReportCommand,
+    remediationHistoryCommand: remediationView.remediationHistoryCommand,
+    remediationNormalizeDryRunCommand: remediationView.remediationNormalizeDryRunCommand,
+    remediationNormalizeApplyCommand: remediationView.remediationNormalizeApplyCommand,
+    remediationRetireDryRunCommand: remediationView.remediationRetireDryRunCommand,
+    remediationRetireApplyCommand: remediationView.remediationRetireApplyCommand,
+    remediationNextCommand: remediationView.remediationNextCommand,
+    remediationNextCommandTransition: remediationView.remediationNextCommandTransition,
+    remediationNextCommandChanged: remediationView.remediationNextCommandChanged,
+    remediationNextCommandPrevious: remediationView.remediationNextCommandPrevious,
+    remediationNextCommandCurrent: remediationView.remediationNextCommandCurrent,
+  };
+}
+
+function buildDailyFeedbackRemediationMemoryMetadata(remediationView, resolvedRemediationRefreshState, hygieneRemediationPlan) {
+  return {
+    remediationRefreshNeeded: resolvedRemediationRefreshState.needed,
+    remediationRefreshStale: resolvedRemediationRefreshState.stale,
+    remediationRefreshCommand: resolvedRemediationRefreshState.command,
+    remediationSummaryStatus: remediationView.remediationStatus,
+    remediationSummaryHeadline: remediationView.remediationHeadline,
+    remediationReportCommand: remediationView.remediationActionReportCommand || hygieneRemediationPlan?.remediationReportCommand || null,
+    remediationHistoryCommand: remediationView.remediationActionHistoryCommand,
+    remediationRefreshPlanCommand: remediationView.remediationActionRefreshCommand,
+    remediationNormalizeDryRunCommand: remediationView.remediationActionNormalizeDryRunCommand,
+    remediationNormalizeApplyCommand: remediationView.remediationActionNormalizeApplyCommand,
+    remediationRetireDryRunCommand: remediationView.remediationActionRetireDryRunCommand,
+    remediationRetireApplyCommand: remediationView.remediationActionRetireApplyCommand,
+    remediationTrendHistoryCount: remediationView.remediationTrendHistoryCount,
+    remediationTrendChanged: remediationView.remediationTrendChanged,
+    remediationTrendNextChanged: remediationView.remediationTrendNextChanged,
+    remediationNextCommand: remediationView.remediationNextCommand,
+    remediationNextCommandPrevious: remediationView.remediationNextCommandPrevious,
+    remediationNextCommandCurrent: remediationView.remediationNextCommandCurrent,
+  };
+}
+
 const DAILY_REVIEW_SYSTEM = `
 당신은 루나팀 일일 매매 피드백 분석가다.
 반드시 JSON 하나만 반환한다.
@@ -623,6 +697,11 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
   const remediationView = buildDailyFeedbackRemediationView(positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary);
   const remediationFlat = remediationView.remediationFlat;
   const remediationSummary = remediationView.remediationSummary;
+  const remediationPayload = buildDailyFeedbackRemediationPayload(
+    remediationView,
+    positionStrategyRemediationSummary,
+    positionStrategyRemediationHistorySummary,
+  );
   const feedback = await buildDailyFeedback(dateKst, trades, analystAccuracy);
   const hygieneRemediationPlan = positionStrategyHygieneSummary?.remediationPlan
     || buildPositionStrategyHygieneRemediationPlan(positionStrategyHygieneSummary);
@@ -663,7 +742,7 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
         event_type: 'daily_feedback',
         alert_level: 1,
         message: finalMessage,
-        payload: { dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary, positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary, remediationFlat, remediationSummary, remediationStatus: remediationView.remediationStatus, remediationHeadline: remediationView.remediationHeadline, remediationCounts: remediationView.remediationCounts, remediationRecommendedExchange: remediationView.remediationRecommendedExchange, remediationDuplicateManaged: remediationView.remediationDuplicateManaged, remediationOrphanProfiles: remediationView.remediationOrphanProfiles, remediationUnmatchedManaged: remediationView.remediationUnmatchedManaged, remediationTrend: remediationView.remediationTrend, remediationRefreshState: remediationView.remediationRefreshState, remediationActions: remediationView.remediationActions, remediationCommands: remediationView.remediationCommands, remediationActionReportCommand: remediationView.remediationActionReportCommand, remediationActionHistoryCommand: remediationView.remediationActionHistoryCommand, remediationActionRefreshCommand: remediationView.remediationActionRefreshCommand, remediationActionHygieneCommand: remediationView.remediationActionHygieneCommand, remediationActionNormalizeDryRunCommand: remediationView.remediationActionNormalizeDryRunCommand, remediationActionNormalizeApplyCommand: remediationView.remediationActionNormalizeApplyCommand, remediationActionRetireDryRunCommand: remediationView.remediationActionRetireDryRunCommand, remediationActionRetireApplyCommand: remediationView.remediationActionRetireApplyCommand, remediationReportCommand: remediationView.remediationReportCommand, remediationHistoryCommand: remediationView.remediationHistoryCommand, remediationRefreshCommand: remediationView.remediationRefreshCommand, remediationNormalizeDryRunCommand: remediationView.remediationNormalizeDryRunCommand, remediationNormalizeApplyCommand: remediationView.remediationNormalizeApplyCommand, remediationRetireDryRunCommand: remediationView.remediationRetireDryRunCommand, remediationRetireApplyCommand: remediationView.remediationRetireApplyCommand, remediationNextCommand: remediationView.remediationNextCommand, remediationNextCommandTransition: remediationView.remediationNextCommandTransition, remediationNextCommandChanged: remediationView.remediationNextCommandChanged, remediationNextCommandPrevious: remediationView.remediationNextCommandPrevious, remediationNextCommandCurrent: remediationView.remediationNextCommandCurrent, hygieneRemediationPlan },
+        payload: { dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary, remediationFlat, remediationSummary, hygieneRemediationPlan, ...remediationPayload },
       });
       await dailyFeedbackMemory.remember(finalMessage, 'episodic', {
         importance: 0.7,
@@ -676,24 +755,11 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
           winRate: feedback.stats.winRate,
           hygieneStatus: hygieneRemediationPlan?.status || null,
           hygieneExchange: hygieneRemediationPlan?.recommendedExchange || null,
-          remediationRefreshNeeded: resolvedRemediationRefreshState.needed,
-          remediationRefreshStale: resolvedRemediationRefreshState.stale,
-          remediationRefreshCommand: resolvedRemediationRefreshState.command,
-          remediationSummaryStatus: remediationView.remediationStatus,
-          remediationSummaryHeadline: remediationView.remediationHeadline,
-          remediationReportCommand: remediationView.remediationActionReportCommand || hygieneRemediationPlan?.remediationReportCommand || null,
-          remediationHistoryCommand: remediationView.remediationActionHistoryCommand,
-          remediationRefreshPlanCommand: remediationView.remediationActionRefreshCommand,
-          remediationNormalizeDryRunCommand: remediationView.remediationActionNormalizeDryRunCommand,
-          remediationNormalizeApplyCommand: remediationView.remediationActionNormalizeApplyCommand,
-          remediationRetireDryRunCommand: remediationView.remediationActionRetireDryRunCommand,
-          remediationRetireApplyCommand: remediationView.remediationActionRetireApplyCommand,
-          remediationTrendHistoryCount: remediationView.remediationTrendHistoryCount,
-          remediationTrendChanged: remediationView.remediationTrendChanged,
-          remediationTrendNextChanged: remediationView.remediationTrendNextChanged,
-          remediationNextCommand: remediationView.remediationNextCommand,
-          remediationNextCommandPrevious: remediationView.remediationNextCommandPrevious,
-          remediationNextCommandCurrent: remediationView.remediationNextCommandCurrent,
+          ...buildDailyFeedbackRemediationMemoryMetadata(
+            remediationView,
+            resolvedRemediationRefreshState,
+            hygieneRemediationPlan,
+          ),
         },
       }).catch(() => {});
       await dailyFeedbackMemory.consolidate({
