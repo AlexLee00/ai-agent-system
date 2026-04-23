@@ -499,6 +499,46 @@ function buildSignalQualityContext(signal = null) {
   };
 }
 
+async function syncCryptoStrategyExecutionState({
+  symbol,
+  tradeMode = 'normal',
+  lifecycleStatus,
+  recommendation = null,
+  reasonCode = null,
+  reason = null,
+  trade = null,
+  partialExitRatio = null,
+  executionMission = null,
+  riskMission = null,
+  watchMission = null,
+  updatedBy = 'hephaestos_execute',
+} = {}) {
+  if (!symbol || !lifecycleStatus) return null;
+  const timestamp = new Date().toISOString();
+  return db.updatePositionStrategyProfileState(symbol, {
+    exchange: 'binance',
+    tradeMode,
+    strategyState: {
+      lifecycleStatus,
+      latestRecommendation: recommendation,
+      latestReasonCode: reasonCode,
+      latestReason: reason,
+      latestExecutedAction: trade?.side || null,
+      latestExecutionPrice: Number(trade?.price || 0) || null,
+      latestExecutionValue: Number(trade?.totalUsdt || 0) || null,
+      latestExecutionAmount: Number(trade?.amount || 0) || null,
+      latestPartialExitRatio: partialExitRatio,
+      latestExecutionMission: executionMission || null,
+      latestRiskMission: riskMission || null,
+      latestWatchMission: watchMission || null,
+      updatedBy,
+      updatedAt: timestamp,
+    },
+    lastEvaluationAt: timestamp,
+    lastAttentionAt: timestamp,
+  }).catch(() => null);
+}
+
 async function reconcileOpenJournalToTrackedAmount(symbol, isPaper, trackedAmount, tradeMode = null) {
   const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
   const openEntries = await journalDb.getOpenJournalEntries('crypto');
@@ -1614,6 +1654,17 @@ async function executeSellTrade({
       exchange: 'binance',
       tradeMode: effectivePositionTradeMode,
     });
+    await syncCryptoStrategyExecutionState({
+      symbol,
+      tradeMode: effectivePositionTradeMode,
+      lifecycleStatus: 'partial_exit_executed',
+      recommendation: 'ADJUST',
+      reasonCode: 'partial_exit_executed',
+      reason: '부분청산 체결 완료',
+      trade,
+      partialExitRatio: trade.partialExitRatio,
+      updatedBy: 'hephaestos_partial_sell',
+    });
   } else {
     await db.deletePosition(symbol, {
       exchange: 'binance',
@@ -2610,6 +2661,17 @@ export async function executeSignal(signal) {
       };
 
       await persistBuyPosition({ symbol, order, effectivePaperMode, signalTradeMode });
+      await syncCryptoStrategyExecutionState({
+        symbol,
+        tradeMode: signalTradeMode,
+        lifecycleStatus: 'position_open',
+        recommendation: 'HOLD',
+        reasonCode: 'buy_executed',
+        reason: 'BUY 체결 완료',
+        trade,
+        executionMission: executionMeta?.agentRole?.mission || null,
+        updatedBy: 'hephaestos_buy_execute',
+      });
       await applyBuyProtectiveExit({ trade, signal, order, effectivePaperMode, symbol });
 
     } else if (action === ACTIONS.SELL) {

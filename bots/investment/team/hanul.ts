@@ -271,6 +271,39 @@ async function finalizeHanulTrade({ trade, signalId, currency, tag }) {
   return { success: true, trade };
 }
 
+async function syncHanulStrategyExecutionState({
+  symbol,
+  exchange,
+  tradeMode = 'normal',
+  lifecycleStatus,
+  recommendation = null,
+  reasonCode = null,
+  reason = null,
+  trade = null,
+  updatedBy = 'hanul_execute',
+} = {}) {
+  if (!symbol || !exchange || !lifecycleStatus) return null;
+  const timestamp = new Date().toISOString();
+  return db.updatePositionStrategyProfileState(symbol, {
+    exchange,
+    tradeMode,
+    strategyState: {
+      lifecycleStatus,
+      latestRecommendation: recommendation,
+      latestReasonCode: reasonCode,
+      latestReason: reason,
+      latestExecutedAction: trade?.side || null,
+      latestExecutionPrice: Number(trade?.price || 0) || null,
+      latestExecutionValue: Number(trade?.totalUsdt || 0) || null,
+      latestExecutionAmount: Number(trade?.amount || 0) || null,
+      updatedBy,
+      updatedAt: timestamp,
+    },
+    lastEvaluationAt: timestamp,
+    lastAttentionAt: timestamp,
+  }).catch(() => null);
+}
+
 async function processPendingHanulSignals({ exchange, label, execute, delayMs = 1100 }) {
   const startedAt = Date.now();
   const tradeMode = getInvestmentTradeMode();
@@ -765,6 +798,17 @@ export async function executeSignal(signal) {
         paper: paperMode,
         tradeMode: signalTradeMode,
       });
+      await syncHanulStrategyExecutionState({
+        symbol,
+        exchange: 'kis',
+        tradeMode: signalTradeMode,
+        lifecycleStatus: 'position_open',
+        recommendation: 'HOLD',
+        reasonCode: 'buy_executed',
+        reason: 'BUY 체결 완료',
+        trade,
+        updatedBy: 'hanul_buy_execute',
+      });
 
       await recordHanulEntryJournal({
         market: 'domestic',
@@ -918,6 +962,17 @@ export async function executeOverseasSignal(signal) {
         exchange: 'kis_overseas',
         paper: paperMode,
         tradeMode: signalTradeMode,
+      });
+      await syncHanulStrategyExecutionState({
+        symbol,
+        exchange: 'kis_overseas',
+        tradeMode: signalTradeMode,
+        lifecycleStatus: 'position_open',
+        recommendation: 'HOLD',
+        reasonCode: 'buy_executed',
+        reason: 'BUY 체결 완료',
+        trade,
+        updatedBy: 'hanul_buy_execute',
       });
 
       await recordHanulEntryJournal({

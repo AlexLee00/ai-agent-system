@@ -1359,14 +1359,23 @@ export async function closePositionStrategyProfile(symbol, {
     params,
   );
   if (!row?.id) return null;
+  const closedState = {
+    lifecycleStatus: 'closed',
+    latestRecommendation: 'CLOSED',
+    latestReasonCode: 'position_closed',
+    latestReason: 'position scope closed',
+    closedAt: new Date().toISOString(),
+    updatedBy: 'close_position_strategy_profile',
+  };
   return get(
     `UPDATE position_strategy_profiles
      SET status = 'closed',
+         strategy_state = COALESCE(strategy_state, '{}'::jsonb) || $2::jsonb,
          closed_at = now(),
          updated_at = now()
      WHERE id = $1
      RETURNING *`,
-    [row.id],
+    [row.id, JSON.stringify(closedState)],
   );
 }
 
