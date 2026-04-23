@@ -296,7 +296,7 @@ export async function runPositionStrategyRemediation({ json = false, historyFile
     remediationDuplicateManaged: remediationFlat.duplicateManaged,
     remediationOrphanProfiles: remediationFlat.orphanProfiles,
     remediationUnmatchedManaged: remediationFlat.unmatchedManaged,
-    remediationNextCommandTransition: remediationHistory?.nextCommandTransition || null,
+    remediationNextCommandTransition: remediationFlat.nextCommandTransition,
     remediationNextCommandChanged: remediationFlat.nextCommandChanged,
     remediationNextCommandPrevious: remediationFlat.nextCommandPrevious,
     remediationNextCommandCurrent: remediationFlat.nextCommandCurrent,
