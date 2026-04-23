@@ -2,6 +2,7 @@
 // @ts-nocheck
 
 import { getInvestmentRuntimeConfig } from '../shared/runtime-config.ts';
+import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { buildRuntimeRiskApprovalReport } from './runtime-risk-approval-report.ts';
 import { buildRuntimeRiskApprovalHistory } from './runtime-risk-approval-history.ts';
@@ -87,7 +88,44 @@ export function buildRiskApprovalModeDryRun(riskApproval = {}, modeConfig = {}) 
   };
 }
 
-export function buildRiskApprovalReadinessDecision({ riskApproval, executionGuard, modeConfig }) {
+export async function loadRiskApprovalSampleContext({ days = 30 } = {}) {
+  await db.initSchema();
+  const sinceMs = Date.now() - Math.max(1, Number(days || 30)) * 24 * 60 * 60 * 1000;
+  const rationaleRows = await db.query(`
+    SELECT
+      COUNT(*)::int AS total,
+      COUNT(*) FILTER (WHERE strategy_config->'risk_approval_preview' IS NOT NULL)::int AS with_preview,
+      COUNT(*) FILTER (WHERE strategy_config->'risk_approval_preview' IS NULL)::int AS without_preview
+    FROM investment.trade_rationale
+    WHERE created_at >= $1
+  `, [sinceMs]).catch(() => [{ total: 0, with_preview: 0, without_preview: 0 }]);
+  const signalRows = await db.query(`
+    SELECT
+      COUNT(*)::int AS total,
+      COUNT(*) FILTER (WHERE action = 'BUY')::int AS buy_total,
+      COUNT(*) FILTER (WHERE action = 'BUY' AND status = 'executed')::int AS executed_buy,
+      COUNT(*) FILTER (WHERE action = 'BUY' AND status = 'blocked')::int AS blocked_buy,
+      COUNT(*) FILTER (WHERE action = 'BUY' AND status = 'failed')::int AS failed_buy
+    FROM investment.signals
+    WHERE created_at >= now() - ($1::int * interval '1 day')
+  `, [Math.max(1, Number(days || 30))]).catch(() => [{ total: 0, buy_total: 0, executed_buy: 0, blocked_buy: 0, failed_buy: 0 }]);
+
+  const rationale = rationaleRows[0] || {};
+  const signals = signalRows[0] || {};
+  return {
+    days: Number(days),
+    rationaleTotal: safeNumber(rationale.total),
+    rationaleWithPreview: safeNumber(rationale.with_preview),
+    rationaleWithoutPreview: safeNumber(rationale.without_preview),
+    signalTotal: safeNumber(signals.total),
+    buySignals: safeNumber(signals.buy_total),
+    executedBuySignals: safeNumber(signals.executed_buy),
+    blockedBuySignals: safeNumber(signals.blocked_buy),
+    failedBuySignals: safeNumber(signals.failed_buy),
+  };
+}
+
+export function buildRiskApprovalReadinessDecision({ riskApproval, executionGuard, modeConfig, sampleContext = null }) {
   const summary = riskApproval.summary || {};
   const amount = summary.amount || {};
   const outcome = summary.outcome?.total || {};
@@ -122,6 +160,9 @@ export function buildRiskApprovalReadinessDecision({ riskApproval, executionGuar
     `amount reduction candidates ${safeNumber(amount.previewAmountReductions)} (${pct(reductionRate)})`,
     `outcome closed ${outcomeClosed}, pnl ${outcomePnlNet}, avg ${outcomeAvgPnlPercent ?? 'n/a'}%`,
   ];
+  if (sampleContext) {
+    reasons.push(`sample context rationale ${sampleContext.rationaleTotal || 0} / preview ${sampleContext.rationaleWithPreview || 0} / executed BUY signals ${sampleContext.executedBuySignals || 0}`);
+  }
   const blockers = [];
   const actionItems = [];
   let status = 'risk_approval_readiness_collect_samples';
@@ -135,7 +176,20 @@ export function buildRiskApprovalReadinessDecision({ riskApproval, executionGuar
   if (rejectionRate > 0.3) blockers.push('preview reject 비율 30% 초과');
   if (outcomeWeak) blockers.push('리스크 승인 사후 성과 음수');
 
-  if (blockers.length > 0) {
+  const telemetryGap =
+    total === 0
+    && sampleContext
+    && safeNumber(sampleContext.executedBuySignals) > 0
+    && safeNumber(sampleContext.rationaleWithPreview) === 0;
+
+  if (telemetryGap) {
+    status = 'risk_approval_readiness_telemetry_gap';
+    headline = 'executed BUY 신호는 있지만 risk approval preview 텔레메트리가 trade_rationale에 쌓이지 않습니다.';
+    blockers.length = 0;
+    blockers.push('risk approval preview telemetry gap');
+    actionItems.push('네메시스 승인 경로의 persist 플래그와 trade_rationale insert 경로가 live 실행에서 호출되는지 점검합니다.');
+    actionItems.push('신규 BUY 승인 1건부터 risk_approval_preview가 strategy_config에 저장되는지 확인합니다.');
+  } else if (blockers.length > 0) {
     status = divergence > 0 || stale > 0 || bypass > 0 || outcomeWeak
       ? 'risk_approval_readiness_blocked'
       : 'risk_approval_readiness_collect_samples';
@@ -194,6 +248,7 @@ export function buildRiskApprovalReadinessDecision({ riskApproval, executionGuar
         pnlNet: safeNumber(outcomeMode.pnlNet),
         avgPnlPercent: outcomeModeAvgPnlPercent,
       } : null,
+      sampleContext,
     },
   };
 }
@@ -224,15 +279,16 @@ function renderText(payload) {
 }
 
 export async function buildRuntimeRiskApprovalReadiness({ days = 30, json = false } = {}) {
-  const [riskApproval, riskApprovalTrend, executionGuard, executionGuardTrend] = await Promise.all([
+  const [riskApproval, riskApprovalTrend, executionGuard, executionGuardTrend, sampleContext] = await Promise.all([
     buildRuntimeRiskApprovalReport({ days, json: true }),
     buildRuntimeRiskApprovalHistory({ days, json: true, write: false }),
     buildRuntimeExecutionRiskGuardReport({ days, json: true }),
     buildRuntimeExecutionRiskGuardHistory({ days, json: true, write: false }),
+    loadRiskApprovalSampleContext({ days }),
   ]);
   const modeConfig = getCurrentModeConfig();
   const modeDryRun = buildRiskApprovalModeDryRun(riskApproval, modeConfig);
-  const decision = buildRiskApprovalReadinessDecision({ riskApproval, executionGuard, modeConfig });
+  const decision = buildRiskApprovalReadinessDecision({ riskApproval, executionGuard, modeConfig, sampleContext });
   const payload = {
     ok: true,
     days: Number(days),
@@ -245,6 +301,7 @@ export async function buildRuntimeRiskApprovalReadiness({ days = 30, json = fals
       summary: riskApproval.summary || {},
       trend: riskApprovalTrend.delta || {},
     },
+    sampleContext,
     executionGuard: {
       status: executionGuard.decision?.status || 'unknown',
       summary: executionGuard.summary || {},

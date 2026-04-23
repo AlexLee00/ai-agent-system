@@ -66,11 +66,12 @@ function modeConfig(mode = 'shadow') {
   };
 }
 
-function decide({ approval = riskApproval(), guard = executionGuard(), mode = 'shadow' } = {}) {
+function decide({ approval = riskApproval(), guard = executionGuard(), mode = 'shadow', sampleContext = null } = {}) {
   return buildRiskApprovalReadinessDecision({
     riskApproval: approval,
     executionGuard: guard,
     modeConfig: modeConfig(mode),
+    sampleContext,
   });
 }
 
@@ -78,6 +79,18 @@ export function runRiskApprovalReadinessSmoke() {
   const collectSamples = decide({ approval: riskApproval({ total: 0 }) });
   assert.equal(collectSamples.status, 'risk_approval_readiness_collect_samples');
   assert.equal(collectSamples.blockers[0], 'preview 표본 20건 미만');
+
+  const telemetryGap = decide({
+    approval: riskApproval({ total: 0 }),
+    sampleContext: {
+      rationaleTotal: 0,
+      rationaleWithPreview: 0,
+      executedBuySignals: 3,
+    },
+  });
+  assert.equal(telemetryGap.status, 'risk_approval_readiness_telemetry_gap');
+  assert.match(telemetryGap.headline, /텔레메트리/);
+  assert.equal(telemetryGap.metrics.sampleContext.executedBuySignals, 3);
 
   const divergenceBlocked = decide({ approval: riskApproval({ total: 25, divergence: 1 }) });
   assert.equal(divergenceBlocked.status, 'risk_approval_readiness_blocked');

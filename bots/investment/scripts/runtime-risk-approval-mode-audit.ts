@@ -64,7 +64,12 @@ export function buildRiskApprovalModeAuditDecision({ riskApproval, readiness }) 
   let status = 'risk_approval_mode_audit_ok';
   let headline = '리스크 승인 mode 적용과 readiness 상태가 충돌하지 않습니다.';
 
-  if (currentMode === 'shadow' && nonShadowApplications > 0) {
+  if (readinessDecision.status === 'risk_approval_readiness_telemetry_gap') {
+    status = 'risk_approval_mode_audit_telemetry_gap';
+    headline = '리스크 승인 mode 전환 판단에 필요한 preview 텔레메트리가 누락되고 있습니다.';
+    actionItems.push('네메시스 승인 경로의 risk_approval_preview 저장 여부를 먼저 복구합니다.');
+    actionItems.push('mode 전환 판단은 preview 텔레메트리 누적이 확인된 뒤 다시 수행합니다.');
+  } else if (currentMode === 'shadow' && nonShadowApplications > 0) {
     status = 'risk_approval_mode_audit_attention';
     headline = '현재 mode는 shadow인데 assist/enforce 적용 기록이 관찰됩니다.';
     actionItems.push('runtime_config overlay, stale process, 네메시스 배포 상태를 확인합니다.');

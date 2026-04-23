@@ -111,6 +111,17 @@ export function runRiskApprovalModeAuditSmoke() {
   assert.equal(previewWatch.status, 'risk_approval_mode_audit_preview_watch');
   assert.equal(previewWatch.metrics.unavailablePreviewCount, 2);
 
+  const telemetryGap = decide({
+    riskApproval: riskApproval(),
+    readiness: readiness({
+      mode: 'shadow',
+      status: 'risk_approval_readiness_telemetry_gap',
+      blockers: ['risk approval preview telemetry gap'],
+    }),
+  });
+  assert.equal(telemetryGap.status, 'risk_approval_mode_audit_telemetry_gap');
+  assert.match(telemetryGap.headline, /텔레메트리/);
+
   const ok = decide({
     riskApproval: riskApproval(),
     readiness: readiness({ mode: 'shadow' }),
