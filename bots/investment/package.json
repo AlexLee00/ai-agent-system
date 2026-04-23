@@ -157,6 +157,8 @@
     "tradingview-mcp:test": "python3 scripts/tradingview-mcp-server.py --test --json",
     "tradingview-mcp:indicators": "python3 scripts/tradingview-mcp-server.py --indicators --json",
     "tradingview-mcp:ohlcv": "python3 scripts/tradingview-mcp-server.py --ohlcv --symbol BTC-USD --from-date 2026-04-01 --json",
+    "toss-mcp:test": "python3 scripts/toss-market-mcp-server.py --test --json",
+    "toss-mcp:intel": "python3 scripts/toss-market-mcp-server.py --intel --dry-run --json",
     "hybrid-score": "node scripts/hybrid-scorer.ts --symbols=BTC/USDT,ETH/USDT,SOL/USDT,BNB/USDT",
     "hybrid-score:news": "node scripts/hybrid-scorer.ts --symbols=BTC/USDT,ETH/USDT,SOL/USDT,BNB/USDT --news",
     "chart-vision": "node scripts/chart-vision.ts --symbol=BTC/USDT --dry-run",
