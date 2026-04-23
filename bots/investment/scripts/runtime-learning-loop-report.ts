@@ -67,6 +67,10 @@ function isSuggestionAlreadyApplied(suggestion = null) {
   return String(current) === String(suggested);
 }
 
+function getSuggestionTargetValue(suggestion = null) {
+  return suggestion?.suggestedValue ?? suggestion?.suggested ?? 'n/a';
+}
+
 export function selectPriorityRuntimeSuggestion(runtimeSuggestions = null, regimePerformance = null) {
   const suggestions = Array.isArray(runtimeSuggestions?.suggestions) ? runtimeSuggestions.suggestions : [];
   if (!suggestions.length) return null;
@@ -100,6 +104,74 @@ export function selectPriorityRuntimeSuggestion(runtimeSuggestions = null, regim
   }
 
   return suggestions.find((item) => item.action === 'adjust') || suggestions[0] || null;
+}
+
+export function explainPriorityRuntimeSuggestion(runtimeSuggestions = null, regimePerformance = null) {
+  const selected = selectPriorityRuntimeSuggestion(runtimeSuggestions, regimePerformance);
+  if (!selected) {
+    return {
+      selected: null,
+      category: 'empty',
+      reason: 'runtime suggestion 후보가 없어 우선 검토 대상을 정하지 않았습니다.',
+    };
+  }
+
+  const key = String(selected?.key || '');
+  const action = String(selected?.action || '');
+  const reasonText = `${key} ${selected?.reason || ''}`.toLowerCase();
+  if (
+    action === 'adjust' &&
+    key === 'runtime_config.nemesis.riskApprovalChain.assist.maxReductionPct' &&
+    reasonText.includes('사후 성과')
+  ) {
+    return {
+      selected,
+      category: 'risk_approval_outcome_adjust',
+      reason: '리스크 승인 사후 성과가 약해 assist 감액 한도 조정 후보를 최우선으로 봅니다.',
+    };
+  }
+
+  if (
+    key.startsWith('runtime_config.nemesis.riskApprovalChain.model.') &&
+    key.endsWith('.outcomeReview') &&
+    ['promote_candidate', 'adjust'].includes(action)
+  ) {
+    return {
+      selected,
+      category: 'risk_approval_model_outcome_review',
+      reason: '리스크 승인 모델별 사후 성과 검토가 필요해 모델 outcome review 후보를 먼저 봅니다.',
+    };
+  }
+
+  const weakest = regimePerformance?.weakestRegime || null;
+  const regimeKey = String(weakest?.regime || '');
+  const tradeModeKey = String(weakest?.worstMode?.tradeMode || '');
+  if (
+    regimeKey &&
+    tradeModeKey &&
+    reasonText.includes(regimeKey.toLowerCase()) &&
+    reasonText.includes(tradeModeKey.toLowerCase())
+  ) {
+    return {
+      selected,
+      category: 'weakest_regime_match',
+      reason: `${regimeKey} 장세의 ${tradeModeKey} 레인 약점과 직접 연결된 제안을 우선합니다.`,
+    };
+  }
+
+  if (action === 'adjust') {
+    return {
+      selected,
+      category: 'generic_adjust',
+      reason: '명시적 리스크/레짐 매칭 후보가 없어 일반 조정 후보를 우선합니다.',
+    };
+  }
+
+  return {
+    selected,
+    category: 'first_available',
+    reason: '조정 후보가 없어 첫 번째 관찰 후보를 우선 표시합니다.',
+  };
 }
 
 async function loadLoopFreshness() {
@@ -579,9 +651,10 @@ function buildSectionStates({
       Number(freshness.latestSuggestionActionableCount || 0),
     ),
     reviewStatus: freshness.latestSuggestionReviewStatus || 'none',
-    runtimeSuggestionTop: selectPriorityRuntimeSuggestion(runtimeSuggestions, regimePerformance),
+    runtimeSuggestionPriority: explainPriorityRuntimeSuggestion(runtimeSuggestions, regimePerformance),
     headline: autotune.decision?.headline || '전략 수정 후보를 확인합니다.',
   };
+  strategy.runtimeSuggestionTop = strategy.runtimeSuggestionPriority.selected;
 
   return { collect, analyze, feedback, strategy };
 }
@@ -797,7 +870,10 @@ function renderText(payload) {
     `- ${sections.strategy.status} | latest=${sections.strategy.latestAt || 'n/a'} (${formatAge(sections.strategy.ageHours)})`,
     `- autotune=${sections.strategy.autotuneStatus} | actionable=${sections.strategy.actionableSuggestions} | review=${sections.strategy.reviewStatus}`,
     sections.strategy.runtimeSuggestionTop
-      ? `- top runtime suggestion ${sections.strategy.runtimeSuggestionTop.key} -> ${sections.strategy.runtimeSuggestionTop.suggested} (${sections.strategy.runtimeSuggestionTop.action})`
+      ? `- top runtime suggestion ${sections.strategy.runtimeSuggestionTop.key} -> ${getSuggestionTargetValue(sections.strategy.runtimeSuggestionTop)} (${sections.strategy.runtimeSuggestionTop.action})`
+      : null,
+    sections.strategy.runtimeSuggestionPriority?.reason
+      ? `- priority reason ${sections.strategy.runtimeSuggestionPriority.category}: ${sections.strategy.runtimeSuggestionPriority.reason}`
       : null,
     `- ${sections.strategy.headline}`,
     '',
