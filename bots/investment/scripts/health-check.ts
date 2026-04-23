@@ -19,6 +19,7 @@ import { validateTradeReview } from './validate-trade-review.ts';
 import { buildRuntimeLearningLoopReport } from './runtime-learning-loop-report.ts';
 import { runCollectionAudit } from './runtime-collection-audit.ts';
 import { backfillTradeIncidentLinks } from './backfill-trade-incident-links.ts';
+import { normalizeDuplicateStrategyProfiles } from './normalize-duplicate-strategy-profiles.ts';
 import { loadExecutionRiskApprovalGuardHealth } from './health-report-support.ts';
 
 const require = createRequire(import.meta.url);
@@ -562,6 +563,36 @@ async function main() {
         key,
         level: 1,
         msg: `ℹ️ [루나 헬스] collection audit 점검 실패\n${e.message}`,
+      });
+    }
+  }
+
+  try {
+    const duplicateProfiles = await normalizeDuplicateStrategyProfiles({ apply: false });
+    const key = 'position-strategy-duplicate-scopes';
+    if (Number(duplicateProfiles?.summary?.duplicateScopes || 0) > 0) {
+      if (hsm.canAlert(state, key)) {
+        const sample = duplicateProfiles.rows?.[0] || null;
+        issues.push({
+          key,
+          level: Number(duplicateProfiles?.summary?.duplicateScopes || 0) >= 3 ? 2 : 1,
+          msg: `⚠️ [루나 헬스] position strategy duplicate scopes\n${duplicateProfiles.decision?.headline || '동일 종목 active strategy profile 중복 감지'}\nmanaged scopes ${duplicateProfiles.summary?.managedScopes || 0} / duplicate scopes ${duplicateProfiles.summary?.duplicateScopes || 0} / duplicate profiles ${duplicateProfiles.summary?.duplicateProfiles || 0}${sample ? `\nsample: ${sample.exchange}/${sample.symbol} keeper=${sample.keeperProfileId} retirements=${sample.retirements?.length || 0}` : ''}\nnext commands:\n- npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-audit\n- npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --json`,
+        });
+      }
+    } else if (state[key]) {
+      recovers.push({
+        key,
+        msg: '✅ [루나 헬스] position strategy duplicate scopes 회복\n관리 중인 포지션 기준 중복 active strategy profile 없음 — 자동 감지',
+      });
+      hsm.clearAlert(state, key);
+    }
+  } catch (e) {
+    const key = 'position-strategy-duplicate-scopes-check-failed';
+    if (hsm.canAlert(state, key)) {
+      issues.push({
+        key,
+        level: 1,
+        msg: `ℹ️ [루나 헬스] position strategy duplicate scopes 점검 실패\n${e.message}`,
       });
     }
   }
