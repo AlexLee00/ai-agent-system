@@ -5,6 +5,7 @@ import ccxt from 'ccxt';
 import * as db from '../shared/db.ts';
 import { initHubSecrets, loadSecrets } from '../shared/secrets.ts';
 import { syncPositionsAtMarketOpen } from '../shared/position-sync.ts';
+import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 function parseArgs(argv = []) {
   return {
@@ -107,7 +108,9 @@ async function fetchTickerMap(exchange, symbols = []) {
   return exchange.fetchTickers(symbols).catch(() => ({}));
 }
 
-function buildParityRows({ walletMap, dbMap, journalMap, tickerMap }) {
+const DUST_THRESHOLD_USDT = 10;
+
+export function buildParityRows({ walletMap, dbMap, journalMap, tickerMap, dustThresholdUsdt = DUST_THRESHOLD_USDT }) {
   const symbols = [...new Set([
     ...walletMap.keys(),
     ...dbMap.keys(),
@@ -129,8 +132,15 @@ function buildParityRows({ walletMap, dbMap, journalMap, tickerMap }) {
       ? (currentPrice - dbAvgPrice) * dbQty
       : 0;
     const walletValue = currentPrice > 0 ? walletQty * currentPrice : 0;
+    const isWalletJournalDust = wallet
+      && !dbRow
+      && journal
+      && Number(journal.openSize || 0) > 0
+      && walletValue < dustThresholdUsdt;
     const className = !wallet && dbRow
       ? 'db_only'
+      : isWalletJournalDust
+        ? 'wallet_journal_dust'
       : wallet && !dbRow && journal && journal.openSize > 0
         ? 'wallet_journal_only'
         : wallet && !dbRow
@@ -163,7 +173,7 @@ function buildParityRows({ walletMap, dbMap, journalMap, tickerMap }) {
   });
 }
 
-function summarize(rows = []) {
+export function summarize(rows = []) {
   const byClass = rows.reduce((acc, row) => {
     acc[row.class] = (acc[row.class] || 0) + 1;
     return acc;
@@ -175,6 +185,7 @@ function summarize(rows = []) {
     pnlMismatch: byClass.pnl_mismatch || 0,
     walletOnly: byClass.wallet_only || 0,
     walletJournalOnly: byClass.wallet_journal_only || 0,
+    walletJournalDust: byClass.wallet_journal_dust || 0,
     dbOnly: byClass.db_only || 0,
   };
 }
@@ -211,7 +222,7 @@ async function main() {
   const rows = buildParityRows({ walletMap, dbMap, journalMap, tickerMap });
   const summary = summarize(rows);
   const topRows = rows
-    .filter((row) => row.class !== 'ok')
+    .filter((row) => !['ok', 'wallet_journal_dust'].includes(row.class))
     .sort((a, b) => Math.abs(b.walletValue || 0) - Math.abs(a.walletValue || 0))
     .slice(0, args.limit);
 
@@ -232,7 +243,7 @@ async function main() {
   if (syncResult) {
     console.log(`sync: ${syncResult.ok === false ? 'failed' : 'ok'}${syncResult?.mismatchCount !== undefined ? ` (mismatches=${syncResult.mismatchCount})` : ''}`);
   }
-  console.log(`symbols=${summary.totalSymbols} ok=${summary.ok} qty_mismatch=${summary.quantityMismatch} pnl_mismatch=${summary.pnlMismatch} wallet_journal_only=${summary.walletJournalOnly} wallet_only=${summary.walletOnly} db_only=${summary.dbOnly}`);
+  console.log(`symbols=${summary.totalSymbols} ok=${summary.ok} qty_mismatch=${summary.quantityMismatch} pnl_mismatch=${summary.pnlMismatch} wallet_journal_only=${summary.walletJournalOnly} wallet_journal_dust=${summary.walletJournalDust} wallet_only=${summary.walletOnly} db_only=${summary.dbOnly}`);
   console.log(`paper_positions=${payload.paperPositionCount}`);
   if (topRows.length === 0) {
     console.log('live wallet와 DB 포지션이 현재 기준으로 잘 맞습니다.');
@@ -255,7 +266,9 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+if (isDirectExecution(import.meta.url)) {
+  await runCliMain({
+    run: main,
+    errorPrefix: '❌ runtime-position-parity-report 오류:',
+  });
+}

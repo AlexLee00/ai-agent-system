@@ -32,6 +32,19 @@ function roundQty(value, digits = 6) {
   return Math.round(Number(value || 0) * factor) / factor;
 }
 
+export function estimatePositionNotionalUsdt(row = {}) {
+  const amount = Math.abs(Number(row.amount ?? row.qty ?? 0));
+  const avgPrice = Math.abs(Number(row.avg_price ?? row.avgPrice ?? 0));
+  const explicitNotional = Math.abs(Number(row.notional ?? row.notionalUsdt ?? 0));
+  if (explicitNotional > 0) return explicitNotional;
+  if (amount > 0 && avgPrice > 0) return amount * avgPrice;
+  return 0;
+}
+
+export function isMeaningfulTrackedPosition(row = {}, minNotionalUsdt = CRYPTO_SYNC_MIN_NOTIONAL_USDT) {
+  return estimatePositionNotionalUsdt(row) >= Number(minNotionalUsdt || 0);
+}
+
 function normalizeHolding(market, holding = {}) {
   if (market === 'domestic') {
     return {
@@ -220,23 +233,6 @@ async function fetchOpenJournalAverage(exchange, symbol, tradeMode = 'normal', i
   return openValue / openSize;
 }
 
-async function fetchOpenJournalSymbols(exchange, isPaper = false) {
-  const rows = await db.query(
-    `SELECT DISTINCT symbol
-       FROM trade_journal
-      WHERE exchange = $1
-        AND status = 'open'
-        AND is_paper = $2`,
-    [exchange, Boolean(isPaper)],
-  ).catch(() => []);
-
-  return new Set(
-    rows
-      .map((row) => String(row.symbol || '').trim())
-      .filter(Boolean),
-  );
-}
-
 export async function syncPositionsAtMarketOpen(market) {
   const config = MARKET_CONFIG[market];
   if (!config) {
@@ -282,16 +278,10 @@ export async function syncPositionsAtMarketOpen(market) {
   const dbRows = await db.getAllPositions(config.exchange, paperFlag).catch(() => []);
   const meaningfulTrackedSymbols = new Set(
     dbRows
-      .filter((row) =>
-        Math.abs(Number(row.avg_price || 0)) > 0.0000001
-        || Math.abs(Number(row.unrealized_pnl || 0)) > 0.0000001,
-      )
+      .filter((row) => isMeaningfulTrackedPosition(row, CRYPTO_SYNC_MIN_NOTIONAL_USDT))
       .map((row) => String(row.symbol || '').trim())
       .filter(Boolean),
   );
-  const meaningfulJournalSymbols = market === 'crypto'
-    ? await fetchOpenJournalSymbols(config.exchange, paperFlag)
-    : new Set();
 
   const balance = market === 'domestic'
     ? await getDomesticBalance(useMockAccount)
@@ -330,7 +320,6 @@ export async function syncPositionsAtMarketOpen(market) {
         })
         .filter((holding) =>
           meaningfulTrackedSymbols.has(holding.symbol)
-          || meaningfulJournalSymbols.has(holding.symbol)
           || Number(holding.notional || 0) >= CRYPTO_SYNC_MIN_NOTIONAL_USDT,
         );
     })()
