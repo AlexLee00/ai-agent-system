@@ -1,6 +1,7 @@
 // @ts-nocheck
 
 import * as db from './db.ts';
+import * as journalDb from './trade-journal-db.ts';
 import { recommendStrategy } from '../team/argos.ts';
 import { buildRoutedStrategyFallback } from './strategy-router.ts';
 
@@ -195,6 +196,7 @@ function buildExecutionPlan({
   setupType = null,
   responsibilityPlan = null,
   regime = null,
+  familyPerformanceFeedback = null,
 } = {}) {
   const normalizedSetupType = String(setupType || '').trim().toLowerCase() || 'unknown';
   const normalizedRegime = String(regime || '').trim().toLowerCase();
@@ -247,12 +249,62 @@ function buildExecutionPlan({
     backtestUrgency = 'watchful';
   }
 
+  const performanceBias = String(familyPerformanceFeedback?.bias || '').trim();
+  if (performanceBias === 'downweight_by_pnl' || performanceBias === 'downweight_by_win_rate') {
+    entrySizingMultiplier *= performanceBias === 'downweight_by_pnl' ? 0.9 : 0.94;
+    partialAdjustBias *= performanceBias === 'downweight_by_pnl' ? 1.12 : 1.06;
+    if (exitUrgency === 'normal') exitUrgency = 'watchful';
+  } else if (performanceBias === 'upweight_candidate') {
+    entrySizingMultiplier *= 1.03;
+  }
+
   return {
     entrySizingMultiplier: Number(entrySizingMultiplier.toFixed(4)),
     partialAdjustBias: Number(partialAdjustBias.toFixed(4)),
     backtestUrgency,
     exitUrgency,
   };
+}
+
+async function buildFamilyPerformanceFeedback(exchange = 'binance', setupType = null) {
+  const normalizedSetupType = String(setupType || '').trim();
+  if (!normalizedSetupType) return null;
+  try {
+    const insight = await journalDb.getStrategyFamilyPerformanceInsight(exchange, 90);
+    const family = insight?.byFamily?.[normalizedSetupType] || null;
+    if (!family || Number(family.closed || 0) < 5) {
+      return {
+        family: normalizedSetupType,
+        exchange,
+        bias: 'insufficient_sample',
+        closed: Number(family?.closed || 0),
+        winRate: family?.winRate ?? null,
+        winRatePct: Number.isFinite(Number(family?.winRate)) ? Number((Number(family.winRate) * 100).toFixed(1)) : null,
+        avgPnlPercent: family?.avgPnlPercent ?? null,
+        pnlNet: family?.pnlNet ?? 0,
+        observedDays: insight?.days || 90,
+      };
+    }
+    const winRate = Number(family.winRate);
+    const avgPnl = Number(family.avgPnlPercent);
+    let bias = 'neutral';
+    if (Number.isFinite(avgPnl) && avgPnl < -2) bias = 'downweight_by_pnl';
+    else if (Number.isFinite(winRate) && winRate < 0.34) bias = 'downweight_by_win_rate';
+    else if (Number.isFinite(avgPnl) && avgPnl > 1 && Number.isFinite(winRate) && winRate >= 0.42) bias = 'upweight_candidate';
+    return {
+      family: normalizedSetupType,
+      exchange,
+      bias,
+      closed: Number(family.closed || 0),
+      winRate: family.winRate,
+      winRatePct: Number.isFinite(Number(family.winRate)) ? Number((Number(family.winRate) * 100).toFixed(1)) : null,
+      avgPnlPercent: family.avgPnlPercent,
+      pnlNet: family.pnlNet,
+      observedDays: insight?.days || 90,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function buildExitPlan(strategy = null, latestBacktest = null, setupType = null) {
@@ -324,6 +376,7 @@ export async function createOrUpdatePositionStrategyProfile({
   }
 
   const setupType = strategyRoute?.setupType || strategy?.setup_type || buildSetupType(exchange, strategy, decision);
+  const familyPerformanceFeedback = await buildFamilyPerformanceFeedback(exchange, setupType);
   const responsibilityPlan = buildResponsibilityPlan({
     exchange,
     setupType,
@@ -334,6 +387,7 @@ export async function createOrUpdatePositionStrategyProfile({
     setupType,
     responsibilityPlan,
     regime: marketRegime?.regime || null,
+    familyPerformanceFeedback,
   });
   const thesis = [
     decision?.reasoning ? `decision=${decision.reasoning}` : null,
@@ -366,6 +420,7 @@ export async function createOrUpdatePositionStrategyProfile({
       decisionConfidence: decision?.confidence ?? null,
       amountUsdt: decision?.amount_usdt ?? null,
       strategyRoute,
+      familyPerformanceFeedback,
       responsibilityPlan,
       executionPlan,
     },

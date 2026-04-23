@@ -90,6 +90,10 @@ export async function buildRuntimePositionStrategyAudit({ json = false } = {}) {
     managedProfiles,
     (row) => String(row?.strategy_context?.responsibilityPlan?.executionMission || 'unknown'),
   );
+  const familyPerformanceBiasDistribution = countBy(
+    managedProfiles,
+    (row) => String(row?.strategy_context?.familyPerformanceFeedback?.bias || 'unknown'),
+  );
 
   const responsibilityCoverage = {
     owner: managedProfiles.filter((row) => row?.strategy_context?.responsibilityPlan?.ownerAgent).length,
@@ -125,6 +129,7 @@ export async function buildRuntimePositionStrategyAudit({ json = false } = {}) {
     riskDistribution,
     watchDistribution,
     executionDistribution,
+    familyPerformanceBiasDistribution,
     unmatchedSymbols: positionsWithoutProfiles.map((row) => ({
       symbol: row.symbol,
       exchange: row.exchange,

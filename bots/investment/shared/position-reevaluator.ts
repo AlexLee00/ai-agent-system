@@ -307,6 +307,13 @@ function getResponsibilityPlan(strategyProfile = null) {
   return typeof plan === 'object' && plan ? plan : {};
 }
 
+function getFamilyPerformanceFeedback(strategyProfile = null) {
+  const feedback = strategyProfile?.strategy_context?.familyPerformanceFeedback
+    || strategyProfile?.strategyContext?.familyPerformanceFeedback
+    || {};
+  return typeof feedback === 'object' && feedback ? feedback : {};
+}
+
 function buildStrategyStateUpdate({
   position = null,
   recommendation = null,
@@ -451,6 +458,9 @@ function applyStrategyAwareDecision(baseDecision, {
 } = {}) {
   const setupType = getStrategySetupType(strategyProfile);
   if (!setupType) return baseDecision;
+  const familyFeedback = getFamilyPerformanceFeedback(strategyProfile);
+  const familyBias = String(familyFeedback?.bias || '').trim();
+  const weakFamilyBias = familyBias === 'downweight_by_pnl' || familyBias === 'downweight_by_win_rate';
 
   if (setupType === 'breakout') {
     if (
@@ -486,6 +496,18 @@ function applyStrategyAwareDecision(baseDecision, {
 
   if (setupType === 'trend_following' || setupType === 'momentum_rotation') {
     if (
+      weakFamilyBias
+      && baseDecision.recommendation === 'HOLD'
+      && pnlPct >= 2.5
+      && (tv4hSignal === 'SELL' || tvComposite === 'SELL' || sell > buy)
+    ) {
+      return {
+        recommendation: 'ADJUST',
+        reasonCode: 'family_performance_protective_adjust',
+        reason: `${setupType} 패밀리 최근 성과 피드백(${familyBias}, winRate ${familyFeedback?.winRatePct ?? 'n/a'}%)이 약해 수익 ${pnlPct.toFixed(2)}% 구간 보호 조정을 우선`,
+      };
+    }
+    if (
       baseDecision.recommendation === 'HOLD'
       && pnlPct >= 6
       && (tvComposite === 'SELL' || tv4hSignal === 'SELL')
@@ -501,6 +523,7 @@ function applyStrategyAwareDecision(baseDecision, {
       && pnlPct > -0.75
       && buy >= sell
       && tv1dSignal !== 'SELL'
+      && !weakFamilyBias
     ) {
       return {
         recommendation: 'HOLD',
@@ -787,6 +810,7 @@ export async function reevaluateOpenPositions({
           setupType: strategyProfile.setup_type || null,
           thesis: strategyProfile.thesis || null,
           strategyState: strategyProfile.strategy_state || {},
+          familyPerformanceFeedback: getFamilyPerformanceFeedback(strategyProfile),
           responsibilityPlan: getResponsibilityPlan(strategyProfile),
         } : null,
       },
@@ -807,6 +831,7 @@ export async function reevaluateOpenPositions({
           monitoringPlan: strategyProfile.monitoring_plan || {},
           exitPlan: strategyProfile.exit_plan || {},
           strategyState: strategyProfile.strategy_state || {},
+          familyPerformanceFeedback: getFamilyPerformanceFeedback(strategyProfile),
           responsibilityPlan: getResponsibilityPlan(strategyProfile),
         } : null,
       },
