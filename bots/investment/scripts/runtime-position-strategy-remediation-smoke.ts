@@ -12,16 +12,21 @@ export function runPositionStrategyRemediationSmoke() {
     duplicateManagedScopes: 3,
     orphanProfiles: 10,
     unmatchedManaged: 0,
+    remediationReportCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation -- --json',
+    remediationHistoryCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation-history -- --json',
     hygieneReportCommand: 'npm --prefix /tmp run runtime:position-strategy-hygiene -- --json',
     normalizeDryRunCommand: 'npm --prefix /tmp run runtime:normalize-duplicate-strategy-profiles -- --json --exchange=kis_overseas',
     retireDryRunCommand: 'npm --prefix /tmp run runtime:retire-orphan-strategy-profiles -- --json --exchange=kis_overseas',
   });
   assert.equal(ready.status, 'position_strategy_remediation_ready');
   assert.match(ready.headline, /focus kis_overseas/);
+  assert.match(ready.actionItems.join('\n'), /remediation history/);
   assert.match(ready.actionItems.join('\n'), /normalize dry-run/);
 
   const clear = buildPositionStrategyRemediationDecision({
     status: 'position_strategy_hygiene_ok',
+    remediationReportCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation -- --json',
+    remediationHistoryCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation-history -- --json',
     hygieneReportCommand: 'npm --prefix /tmp run runtime:position-strategy-hygiene -- --json',
   });
   assert.equal(clear.status, 'position_strategy_remediation_clear');

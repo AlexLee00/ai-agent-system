@@ -30,6 +30,8 @@ export function buildPositionStrategyRemediationDecision(remediationPlan = null)
       headline: `포지션 전략 remediation plan이 준비되었습니다.${remediationPlan.recommendedExchange ? ` / focus ${remediationPlan.recommendedExchange}` : ''}`,
       actionItems: [
         `duplicate managed ${remediationPlan.duplicateManagedScopes || 0} / orphan ${remediationPlan.orphanProfiles || 0} / unmatched managed ${remediationPlan.unmatchedManaged || 0}`,
+        `remediation report: ${remediationPlan.remediationReportCommand}`,
+        `remediation history: ${remediationPlan.remediationHistoryCommand}`,
         `hygiene report: ${remediationPlan.hygieneReportCommand}`,
         `normalize dry-run: ${remediationPlan.normalizeDryRunCommand}`,
         `retire dry-run: ${remediationPlan.retireDryRunCommand}`,
@@ -37,13 +39,15 @@ export function buildPositionStrategyRemediationDecision(remediationPlan = null)
     };
   }
 
-  return {
-    status: 'position_strategy_remediation_clear',
-    headline: '현재 추가 remediation 없이 포지션 전략 위생 상태가 안정적입니다.',
-    actionItems: [
-      `hygiene report: ${remediationPlan.hygieneReportCommand}`,
-    ],
-  };
+    return {
+      status: 'position_strategy_remediation_clear',
+      headline: '현재 추가 remediation 없이 포지션 전략 위생 상태가 안정적입니다.',
+      actionItems: [
+        `remediation report: ${remediationPlan.remediationReportCommand}`,
+        `remediation history: ${remediationPlan.remediationHistoryCommand}`,
+        `hygiene report: ${remediationPlan.hygieneReportCommand}`,
+      ],
+    };
 }
 
 export async function runPositionStrategyRemediation({ json = false } = {}) {

@@ -45,6 +45,8 @@ export function buildPositionStrategyHygieneRemediationPlan({
     duplicateManagedScopes: Number(audit?.duplicateManagedProfileScopes || 0),
     orphanProfiles: Number(audit?.orphanProfiles || 0),
     unmatchedManaged: Number(audit?.unmatchedManagedPositions || 0),
+    remediationReportCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation -- --json',
+    remediationHistoryCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation-history -- --json',
     hygieneReportCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-hygiene -- --json',
     normalizeDryRunCommand: `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --json${exchangeSuffix}`,
     normalizeApplyCommand: `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --apply --json${exchangeSuffix}`,
