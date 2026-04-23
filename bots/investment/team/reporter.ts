@@ -40,6 +40,7 @@ import { buildRuntimeBinanceDustReport } from '../scripts/runtime-binance-dust-r
 import { buildRuntimeReevalTvMtfAutotuneReport } from '../scripts/runtime-reeval-tvmft-autotune-report.ts';
 import { buildRuntimeReevalTvMtfTrendReport } from '../scripts/runtime-reeval-tvmft-trend-report.ts';
 import { buildRuntimeKisOverseasAutotuneReport } from '../scripts/runtime-kis-overseas-autotune-report.ts';
+import { buildRuntimePositionStrategyAudit } from '../scripts/runtime-position-strategy-audit.ts';
 
 const _require = createRequire(import.meta.url);
 const shadow   = _require('../../../packages/core/lib/shadow-mode.js');
@@ -613,6 +614,16 @@ async function loadKisOverseasAutotuneSummary() {
   }
 }
 
+async function loadPositionStrategyAuditSummary() {
+  try {
+    return await buildRuntimePositionStrategyAudit({ json: true });
+  } catch (error) {
+    return {
+      error: String(error?.message || error),
+    };
+  }
+}
+
 function buildScreeningSummaryLines(screeningSummary = {}) {
   const lines = [];
   for (const market of ['crypto', 'domestic', 'overseas']) {
@@ -720,6 +731,29 @@ function buildAgentRoleLines(agentRoleSummary = null) {
   for (const row of rows.slice(0, 5)) {
     lines.push(`${row.agent_id} | ${row.mission} | ${row.role_mode} | priority ${row.priority}`);
     if (row.reason) lines.push(`  ${row.reason}`);
+  }
+  return lines;
+}
+
+function buildPositionStrategyAuditLines(auditSummary = null) {
+  if (!auditSummary) return ['조회 결과 없음'];
+  if (auditSummary.error) return ['조회 실패'];
+  const lines = [
+    `strategy coverage: managed ${auditSummary.managedPositions || 0} / profiles ${auditSummary.managedProfiles || 0} / dust ${auditSummary.dustPositions || 0}`,
+    `coverage: owner ${Number(auditSummary?.responsibilityCoveragePct?.owner || 0).toFixed(0)}% | risk ${Number(auditSummary?.responsibilityCoveragePct?.risk || 0).toFixed(0)}% | watch ${Number(auditSummary?.responsibilityCoveragePct?.watch || 0).toFixed(0)}% | execution ${Number(auditSummary?.responsibilityCoveragePct?.execution || 0).toFixed(0)}%`,
+  ];
+  const lifecycle = auditSummary.lifecycleDistribution || {};
+  const lifecycleLine = Object.entries(lifecycle)
+    .map(([key, value]) => `${key} ${value}`)
+    .join(' / ');
+  if (lifecycleLine) lines.push(`lifecycle: ${lifecycleLine}`);
+  if (Array.isArray(auditSummary.unmatchedSymbols) && auditSummary.unmatchedSymbols.length > 0) {
+    const topDust = auditSummary.unmatchedSymbols
+      .filter((row) => row?.isDust)
+      .slice(0, 3)
+      .map((row) => `${row.symbol}(${Number(row.notionalUsdt || 0).toFixed(4)})`)
+      .join(', ');
+    if (topDust) lines.push(`dust top: ${topDust}`);
   }
   return lines;
 }
@@ -908,6 +942,7 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
   const reevaluationSummary = await loadPositionReevaluationSummary();
   const strategyExitSummary = await loadStrategyExitSummary();
   const agentRoleSummary = await loadAgentRoleSummary();
+  const positionStrategyAuditSummary = await loadPositionStrategyAuditSummary();
   const reevalTvMtfAutotuneSummary = await loadReevalTvMtfAutotuneSummary();
   const reevalTvMtfTrendSummary = await loadReevalTvMtfTrendSummary();
   const minOrderPressureSummary = await loadMinOrderPressureSummary();
@@ -957,6 +992,9 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
       '',
       '━━━ 에이전트 역할 상태 ━━━',
       ...buildAgentRoleLines(agentRoleSummary).map((line) => `  ${line}`),
+      '',
+      '━━━ 포지션 전략 커버리지 ━━━',
+      ...buildPositionStrategyAuditLines(positionStrategyAuditSummary).map((line) => `  ${line}`),
       '',
       '━━━ 전략 청산 preview ━━━',
       ...buildStrategyExitLines(strategyExitSummary).map((line) => `  ${line}`),
@@ -1205,6 +1243,10 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
   lines.push(...buildAgentRoleLines(agentRoleSummary).map((line) => `  ${line}`));
   lines.push(``);
 
+  lines.push(`━━━ 포지션 전략 커버리지 ━━━`);
+  lines.push(...buildPositionStrategyAuditLines(positionStrategyAuditSummary).map((line) => `  ${line}`));
+  lines.push(``);
+
   lines.push(`━━━ 전략 청산 preview ━━━`);
   lines.push(...buildStrategyExitLines(strategyExitSummary).map((line) => `  ${line}`));
   lines.push(``);
@@ -1405,6 +1447,12 @@ ${JSON.stringify({
     count: Number(agentRoleSummary.decision.metrics?.count || 0),
     topPriority: agentRoleSummary.decision.metrics?.topPriority || null,
   } : null,
+  positionStrategyCoverage: positionStrategyAuditSummary?.ok ? {
+    managedPositions: Number(positionStrategyAuditSummary.managedPositions || 0),
+    managedProfiles: Number(positionStrategyAuditSummary.managedProfiles || 0),
+    dustPositions: Number(positionStrategyAuditSummary.dustPositions || 0),
+    lifecycleDistribution: positionStrategyAuditSummary.lifecycleDistribution || {},
+  } : null,
   strategyExit: strategyExitSummary?.status ? {
     status: strategyExitSummary.status,
     ready: Number(strategyExitSummary.metrics?.ready || 0),
@@ -1530,6 +1578,7 @@ ${JSON.stringify({
         buildSection('스크리닝 동향', buildScreeningSummaryLines(screeningSummary)),
         buildSection('포지션 재평가', buildPositionReevaluationLines(reevaluationSummary)),
         buildSection('에이전트 역할 상태', buildAgentRoleLines(agentRoleSummary)),
+        buildSection('포지션 전략 커버리지', buildPositionStrategyAuditLines(positionStrategyAuditSummary)),
         buildSection('전략 청산 preview', buildStrategyExitLines(strategyExitSummary)),
         buildSection('포지션 TV-MTF autotune', buildReevalTvMtfAutotuneLines(reevalTvMtfAutotuneSummary)),
         buildSection('포지션 TV-MTF trend', buildReevalTvMtfTrendLines(reevalTvMtfTrendSummary)),
@@ -1568,6 +1617,9 @@ ${JSON.stringify({
             : null,
           agentRoleSummary?.decision?.metrics?.topPriority
             ? `agent-role ${agentRoleSummary.decision.metrics.topPriority.agentId} / ${agentRoleSummary.decision.metrics.topPriority.mission}`
+            : null,
+          positionStrategyAuditSummary?.ok
+            ? `strategy managed ${positionStrategyAuditSummary.managedPositions || 0} / dust ${positionStrategyAuditSummary.dustPositions || 0}`
             : null,
           strategyExitSummary?.status
             ? `strategy-exit ${strategyExitSummary.status} / ready ${strategyExitSummary.metrics?.ready || 0}`

@@ -2,6 +2,7 @@
 
 import * as db from '../shared/db.ts';
 import { getInvestmentSyncRuntimeConfig } from '../shared/runtime-config.ts';
+import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 function safeNumber(value, fallback = 0) {
   const n = Number(value);
@@ -22,7 +23,7 @@ function getDustThresholdUsdt() {
   return Number.isFinite(threshold) && threshold > 0 ? threshold : 10;
 }
 
-async function main() {
+export async function buildRuntimePositionStrategyAudit({ json = false } = {}) {
   await db.initSchema();
 
   const livePositions = await db.getAllPositions(null, false);
@@ -147,13 +148,17 @@ async function main() {
     })),
   };
 
-  console.log(JSON.stringify(result, null, 2));
+  if (json) return result;
+  return JSON.stringify(result, null, 2);
 }
 
-main().catch((error) => {
-  console.error(JSON.stringify({
-    ok: false,
-    error: error?.message || String(error),
-  }, null, 2));
-  process.exit(1);
-});
+if (isDirectExecution(import.meta.url)) {
+  await runCliMain({
+    before: () => db.initSchema(),
+    run: async () => buildRuntimePositionStrategyAudit({ json: true }),
+    onSuccess: async (result) => {
+      console.log(JSON.stringify(result, null, 2));
+    },
+    errorPrefix: '❌ runtime-position-strategy-audit 오류:',
+  });
+}
