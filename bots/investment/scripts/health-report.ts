@@ -887,14 +887,9 @@ function buildDecision(
         reason: `execution attach backfill blocked — open position 조건으로 ${executionAttachBackfillSummary.openPositionBlocked || 0}건 제외 / 실제 포지션 동기화 확인 필요`,
       },
       {
-        active: positionStrategyDuplicateScopes > 0,
-        level: positionStrategyAudit?.duplicateManagedProfileScopes > 0 ? 'medium' : 'low',
-        reason: `position strategy duplicate scopes — ${duplicateStrategyNormalization?.decision?.headline || `동일 종목 active profile ${positionStrategyDuplicateScopes}개 scope`} / managed ${positionStrategyAudit?.duplicateManagedProfileScopes || 0} / duplicate profiles ${duplicateNormalizationSummary.duplicateProfiles || 0} / safeToApply ${duplicateStrategyNormalization?.decision?.safeToApply === true ? 'yes' : 'no'} / next commands npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-audit && npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --json`,
-      },
-      {
-        active: positionStrategyOrphans > 0,
-        level: 'low',
-        reason: `position strategy orphan profiles — ${orphanStrategyRetirement?.decision?.headline || `live 포지션 없는 active profile ${positionStrategyOrphans}개`} / orphan symbols ${orphanRetirementSummary.orphanSymbols || 0} / safeToApply ${orphanStrategyRetirement?.decision?.safeToApply === true ? 'yes' : 'no'} / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles`,
+        active: positionStrategyHygieneStatus === 'position_strategy_hygiene_attention',
+        level: Number(positionStrategyAudit?.duplicateManagedProfileScopes || 0) > 0 || Number(positionStrategyAudit?.unmatchedManagedPositions || 0) > 0 ? 'medium' : 'low',
+        reason: `position strategy hygiene — ${positionStrategyHygiene?.decision?.headline || '포지션 전략 위생 점검 필요'} / duplicate managed ${positionStrategyAudit?.duplicateManagedProfileScopes || 0} / orphan ${positionStrategyOrphans || 0} / unmatched managed ${positionStrategyAudit?.unmatchedManagedPositions || 0} / duplicate apply ${duplicateStrategyNormalization?.decision?.safeToApply === true ? 'yes' : 'no'} / orphan apply ${orphanStrategyRetirement?.decision?.safeToApply === true ? 'yes' : 'no'} / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-hygiene -- --json`,
       },
     ],
     okReason: '핵심 서비스와 trade_review 정합성이 현재는 안정 구간입니다.',
