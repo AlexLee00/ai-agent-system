@@ -3,8 +3,9 @@
 
 import * as db from '../shared/db.ts';
 import * as journalDb from '../shared/trade-journal-db.ts';
+import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
-function scopeKey(entry) {
+export function scopeKey(entry) {
   return [
     entry.exchange || 'binance',
     entry.symbol,
@@ -13,18 +14,18 @@ function scopeKey(entry) {
   ].join(':');
 }
 
-function tolerance(value) {
+export function tolerance(value) {
   const numeric = Math.abs(Number(value || 0));
   return Math.max(0.000001, numeric * 0.01);
 }
 
-function entryAgeHours(entry) {
+export function entryAgeHours(entry) {
   const entryTime = Number(entry?.entry_time || 0);
   if (!(entryTime > 0)) return Number.POSITIVE_INFINITY;
   return Math.max(0, (Date.now() - entryTime) / 3600000);
 }
 
-function buildScopeMap(entries = []) {
+export function buildScopeMap(entries = []) {
   const map = new Map();
   for (const entry of entries) {
     const key = scopeKey(entry);
@@ -82,7 +83,33 @@ async function trimLatestEntry(latestEntry, targetQty, dryRun) {
   };
 }
 
-async function reconcileOpenJournals({ dryRun = true, market = 'crypto', noPositionMinAgeHours = 6, symbols = [] } = {}) {
+export function summarizeReconcileResults(results = []) {
+  const byAction = results.reduce((acc, row) => {
+    const action = String(row?.action || 'unknown');
+    acc[action] = (acc[action] || 0) + 1;
+    return acc;
+  }, {});
+  const affectedTradeIds = new Set();
+  for (const row of results) {
+    for (const tradeId of [
+      ...(row.closedTradeIds || []),
+      ...(row.staleTradeIds || []),
+    ]) {
+      if (tradeId) affectedTradeIds.add(tradeId);
+    }
+  }
+  return {
+    byAction,
+    affectedTradeCount: affectedTradeIds.size,
+    noPositionScopes: byAction.close_all_no_position || 0,
+    duplicateScopes: byAction.close_stale_duplicates || 0,
+    observeScopes: Object.entries(byAction)
+      .filter(([action]) => action.startsWith('observe_'))
+      .reduce((sum, [, count]) => sum + Number(count || 0), 0),
+  };
+}
+
+export async function reconcileOpenJournals({ dryRun = true, market = 'crypto', noPositionMinAgeHours = 6, symbols = [] } = {}) {
   await db.initSchema();
   await journalDb.initJournalSchema();
 
@@ -175,6 +202,7 @@ async function reconcileOpenJournals({ dryRun = true, market = 'crypto', noPosit
     market,
     totalScopes: grouped.size,
     candidates: results.length,
+    summary: summarizeReconcileResults(results),
     results,
   };
 }
@@ -192,7 +220,9 @@ async function main() {
   console.log(JSON.stringify(result, null, 2));
 }
 
-main().catch((error) => {
-  console.error('❌ open journal reconcile 실패:', error?.message || String(error));
-  process.exit(1);
-});
+if (isDirectExecution(import.meta.url)) {
+  await runCliMain({
+    run: main,
+    errorPrefix: '❌ open journal reconcile 실패:',
+  });
+}
