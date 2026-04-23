@@ -374,7 +374,12 @@ function buildPositionStrategyRemediationRefreshStateLine(positionStrategyRemedi
   return `♻️ refresh state: needed ${refreshState?.needed ? 'yes' : 'no'} | stale ${refreshState?.stale ? 'yes' : 'no'} | command ${refreshState?.command || 'n/a'}`;
 }
 
-function buildPositionStrategyRemediationHistoryLine(positionStrategyRemediationHistorySummary) {
+function buildPositionStrategyRemediationHistoryLine(positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary) {
+  const remediationSummary = positionStrategyRemediationSummary?.remediationSummary || null;
+  const trend = remediationSummary?.trend || null;
+  if (trend) {
+    return `🗂️ remediation history: count ${trend.historyCount || 0} | changed ${trend.statusChanged ? 'yes' : 'no'} | next changed ${trend.nextCommandChanged ? 'yes' : 'no'}${trend.nextCommandChanged ? ` (${trend.nextCommandTransition?.previous || 'none'} -> ${trend.nextCommandTransition?.current || 'none'})` : ''} | age ${trend.ageMinutes ?? 'n/a'}m | stale ${trend.stale ? 'yes' : 'no'} | duplicate ${trend.duplicateDelta >= 0 ? '+' : ''}${trend.duplicateDelta || 0} | orphan ${trend.orphanDelta >= 0 ? '+' : ''}${trend.orphanDelta || 0}`;
+  }
   if (!positionStrategyRemediationHistorySummary || positionStrategyRemediationHistorySummary.error || !positionStrategyRemediationHistorySummary.ok) return null;
   return `🗂️ remediation history: count ${positionStrategyRemediationHistorySummary.historyCount || 0} | changed ${positionStrategyRemediationHistorySummary.statusChanged ? 'yes' : 'no'} | next changed ${positionStrategyRemediationHistorySummary.nextCommandChanged ? 'yes' : 'no'}${positionStrategyRemediationHistorySummary.nextCommandChanged ? ` (${positionStrategyRemediationHistorySummary.nextCommandTransition?.previous || 'none'} -> ${positionStrategyRemediationHistorySummary.nextCommandTransition?.current || 'none'})` : ''} | age ${positionStrategyRemediationHistorySummary.ageMinutes ?? 'n/a'}m | stale ${positionStrategyRemediationHistorySummary.stale ? 'yes' : 'no'} | duplicate ${positionStrategyRemediationHistorySummary.delta?.duplicateManaged >= 0 ? '+' : ''}${positionStrategyRemediationHistorySummary.delta?.duplicateManaged || 0} | orphan ${positionStrategyRemediationHistorySummary.delta?.orphanProfiles >= 0 ? '+' : ''}${positionStrategyRemediationHistorySummary.delta?.orphanProfiles || 0}`;
 }
@@ -418,7 +423,7 @@ function buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSumma
   if (positionStrategyHygieneLine) lines.push(positionStrategyHygieneLine);
   const positionStrategyRemediationLine = buildPositionStrategyRemediationLine(positionStrategyRemediationSummary);
   if (positionStrategyRemediationLine) lines.push(positionStrategyRemediationLine);
-  const positionStrategyRemediationHistoryLine = buildPositionStrategyRemediationHistoryLine(positionStrategyRemediationHistorySummary);
+  const positionStrategyRemediationHistoryLine = buildPositionStrategyRemediationHistoryLine(positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary);
   if (positionStrategyRemediationHistoryLine) lines.push(positionStrategyRemediationHistoryLine);
   const positionStrategyRemediationRefreshStateLine = buildPositionStrategyRemediationRefreshStateLine(positionStrategyRemediationSummary);
   if (positionStrategyRemediationRefreshStateLine) lines.push(positionStrategyRemediationRefreshStateLine);
