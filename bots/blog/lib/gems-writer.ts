@@ -1261,6 +1261,8 @@ async function writeGeneralPost(category, researchData, sectionVariation = {}) {
   const topicTitleCandidate = String(researchData.topic_title_candidate || '').trim();
   const strategyFocus = (researchData.strategy_focus || []).filter(Boolean).join(' / ');
   const strategyRecommendations = (researchData.strategy_recommendations || []).filter(Boolean).join(' / ');
+  const experimentWinnerSummary = String(researchData.strategy_experiment_winner || '').trim();
+  const experimentWeakLaneSummary = String(researchData.strategy_experiment_weak_lane || '').trim();
   const marketingSignalSummary = String(researchData.topic_marketing_signal_summary || '').trim();
   const marketingRecommendations = (researchData.topic_marketing_recommendations || []).filter(Boolean).join(' / ');
   const marketingCtaHint = String(researchData.topic_marketing_cta_hint || '').trim();
@@ -1336,6 +1338,8 @@ ${topicDiff ? `[최근 글과의 차별화 포인트]\n${topicDiff}\n` : ''}
 ${topicTitleCandidate ? `[제목 후보 예시]\n${topicTitleCandidate}\n` : ''}
 ${strategyFocus ? `[이번 주 전략 포커스]\n${strategyFocus}\n` : ''}
 ${strategyRecommendations ? `[전략 권고]\n${strategyRecommendations}\n` : ''}
+${experimentWinnerSummary ? `[최근 실험 승자]\n${experimentWinnerSummary}\n` : ''}
+${experimentWeakLaneSummary ? `[최근 실험 약세 레인]\n${experimentWeakLaneSummary}\n` : ''}
 ${marketingSignalSummary ? `[매출/시즌 신호]\n${marketingSignalSummary}\n` : ''}
 ${marketingRecommendations ? `[마케팅 반영 지시]\n${marketingRecommendations}\n` : ''}
 ${marketingCtaHint ? `[전환 CTA 힌트]\n${marketingCtaHint}\n` : ''}
@@ -1348,6 +1352,8 @@ ${topicHint
 단, 최근 발행 일반 글과 같은 상위 서사를 반복하면 안 된다.
 제목은 최근 발행 제목과 질문 구조, 어미, 핵심 표현이 겹치면 안 된다.
 특히 "왜 ...일까/무너질까/신뢰를 잃을까", "성공적인 ...전략" 같은 제목 템플릿을 최근 글과 비슷하게 반복하지 말라.
+실험 승자 신호가 있으면 그 방향은 살리되, 문장은 더 자연스럽고 덜 인위적으로 정리하라.
+실험 약세 레인이 있으면 그 카테고리/제목 패턴 냄새가 그대로 나지 않게 피하라.
 이번 글은 최근 글과 가장 멀리 떨어진 새 문제 정의를 먼저 고르고, 그에 맞는 제목을 작성하라.
 글 첫 번째 줄에 제목을 [${category}] 형식으로 시작하라.
 
@@ -1660,6 +1666,8 @@ async function writeGeneralPostChunked(category, researchData, sectionVariation 
   const topicTitleCandidate = String(researchData.topic_title_candidate || '').trim();
   const strategyFocus = (researchData.strategy_focus || []).filter(Boolean).join(' / ');
   const strategyRecommendations = (researchData.strategy_recommendations || []).filter(Boolean).join(' / ');
+  const experimentWinnerSummary = String(researchData.strategy_experiment_winner || '').trim();
+  const experimentWeakLaneSummary = String(researchData.strategy_experiment_weak_lane || '').trim();
   const selectedTopicDirection = _buildSelectedTopicDirection(researchData);
 
   const weatherContext = weatherToContext(weather, { detailed: false });
@@ -1713,7 +1721,9 @@ ${topicQuestion ? `\n[이번 글이 답해야 할 질문]\n${topicQuestion}` : '
 ${topicDiff ? `\n[최근 글과의 차별화 포인트]\n${topicDiff}` : ''}
 ${topicTitleCandidate ? `\n[제목 후보 예시]\n${topicTitleCandidate}` : ''}
 ${strategyFocus ? `\n[이번 주 전략 포커스]\n${strategyFocus}` : ''}
-${strategyRecommendations ? `\n[전략 권고]\n${strategyRecommendations}` : ''}`.trim();
+${strategyRecommendations ? `\n[전략 권고]\n${strategyRecommendations}` : ''}
+${experimentWinnerSummary ? `\n[최근 실험 승자]\n${experimentWinnerSummary}` : ''}
+${experimentWeakLaneSummary ? `\n[최근 실험 약세 레인]\n${experimentWeakLaneSummary}` : ''}`.trim();
 
   const chunks = [
     {

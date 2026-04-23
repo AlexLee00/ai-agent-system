@@ -387,6 +387,25 @@ function _applyGeneralTopicStrategy(preparedResearch, category, strategyPlan, da
     dailyState?.revenueCorrelation || null
   );
   const marketingContext = _buildMarketingResearchContext(category, dailyState);
+  const experimentPlaybook = readExperimentPlaybook() || null;
+  const experimentDimensionKey = experimentPlaybook?.topWinner?.dimension === 'title_pattern'
+    ? 'titlePattern'
+    : experimentPlaybook?.topWinner?.dimension === 'autonomy_lane'
+      ? 'autonomyLane'
+      : 'category';
+  const experimentLoser = experimentPlaybook?.dimensions?.[experimentDimensionKey]?.loser || null;
+  const experimentWinnerSummary = strategyPlan?.experimentLearning?.topWinnerSummary
+    || (
+      experimentPlaybook?.topWinner?.variant
+        ? `최근 실험 승자는 ${experimentPlaybook.topWinner.dimension}:${experimentPlaybook.topWinner.variant} (${Math.round(Number(experimentPlaybook.topWinner.liftPct || 0) * 100)}% lift, n=${experimentPlaybook.topWinner.sampleCount}) 입니다.`
+        : ''
+    );
+  const experimentWeakLaneSummary = strategyPlan?.experimentLearning?.weakestVariantSummary
+    || (
+      experimentLoser?.variant
+        ? `최근 약한 레인은 ${experimentLoser.dimension}:${experimentLoser.variant} (${Math.round(Number(experimentLoser.liftPct || 0) * 100)}% lift, n=${experimentLoser.sampleCount}) 입니다.`
+        : ''
+    );
 
   return {
     ...preparedResearch,
@@ -409,6 +428,8 @@ function _applyGeneralTopicStrategy(preparedResearch, category, strategyPlan, da
     ],
     strategy_preferred_pattern: strategyPlan?.preferredTitlePattern || null,
     strategy_suppressed_pattern: strategyPlan?.suppressedTitlePattern || null,
+    strategy_experiment_winner: experimentWinnerSummary,
+    strategy_experiment_weak_lane: experimentWeakLaneSummary,
     _selectedTopic: selectedTopic,
   };
 }
