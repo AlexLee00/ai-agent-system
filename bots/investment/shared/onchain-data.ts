@@ -12,6 +12,7 @@
 import https from 'https';
 
 const FAPI_HOST = 'fapi.binance.com';
+const SAPI_HOST = 'api.binance.com';
 
 function httpsGet(hostname, path) {
   return new Promise((resolve, reject) => {
@@ -27,6 +28,46 @@ function httpsGet(hostname, path) {
     req.setTimeout(10000, () => { req.destroy(); reject(new Error('타임아웃')); });
     req.end();
   });
+}
+
+export async function getSpotTicker24h(symbol) {
+  try {
+    const data = await httpsGet(SAPI_HOST, `/api/v3/ticker/24hr?symbol=${symbol}`);
+    if (!data?.symbol) return null;
+    return {
+      symbol: data.symbol,
+      priceChangePercent: parseFloat(data.priceChangePercent || '0'),
+      quoteVolume: parseFloat(data.quoteVolume || '0'),
+      volume: parseFloat(data.volume || '0'),
+      lastPrice: parseFloat(data.lastPrice || '0'),
+      highPrice: parseFloat(data.highPrice || '0'),
+      lowPrice: parseFloat(data.lowPrice || '0'),
+      count: parseInt(data.count || '0', 10),
+    };
+  } catch (e) {
+    console.warn(`[onchain] spot ticker 24h 조회 실패 (${symbol}):`, e.message);
+    return null;
+  }
+}
+
+export async function getSpotDepthImbalance(symbol, limit = 20) {
+  try {
+    const data = await httpsGet(SAPI_HOST, `/api/v3/depth?symbol=${symbol}&limit=${limit}`);
+    const bids = Array.isArray(data?.bids) ? data.bids : [];
+    const asks = Array.isArray(data?.asks) ? data.asks : [];
+    const bidNotional = bids.reduce((sum, [price, qty]) => sum + (parseFloat(price || '0') * parseFloat(qty || '0')), 0);
+    const askNotional = asks.reduce((sum, [price, qty]) => sum + (parseFloat(price || '0') * parseFloat(qty || '0')), 0);
+    const total = bidNotional + askNotional;
+    const imbalance = total > 0 ? (bidNotional - askNotional) / total : 0;
+    return {
+      bidNotional,
+      askNotional,
+      imbalance: Number(imbalance.toFixed(4)),
+    };
+  } catch (e) {
+    console.warn(`[onchain] depth imbalance 조회 실패 (${symbol}):`, e.message);
+    return null;
+  }
 }
 
 /**
@@ -108,10 +149,12 @@ export async function getLongShortRatio(symbol, period = '1h', limit = 1) {
  * @returns {{ symbol, funding, openInterest, longShortRatio, timestamp }}
  */
 export async function getOnchainSummary(symbol) {
-  const [funding, oi, ls] = await Promise.all([
+  const [funding, oi, ls, spotTicker, depth] = await Promise.all([
     getFundingRate(symbol),
     getOpenInterest(symbol),
     getLongShortRatio(symbol, '1h', 1),
+    getSpotTicker24h(symbol),
+    getSpotDepthImbalance(symbol),
   ]);
 
   // 펀딩레이트 시그널: >0.05% = 롱 과열, <-0.01% = 숏 과열
@@ -137,6 +180,18 @@ export async function getOnchainSummary(symbol) {
       nextTime: funding.nextFundingTime,
     } : null,
     openInterest: oi ? { value: oi.openInterest } : null,
+    spotFlow: spotTicker ? {
+      quoteVolume: spotTicker.quoteVolume,
+      priceChangePercent: spotTicker.priceChangePercent,
+      tradeCount: spotTicker.count,
+      lastPrice: spotTicker.lastPrice,
+      depthImbalance: depth?.imbalance ?? null,
+      signal:
+        spotTicker.priceChangePercent >= 4 && (depth?.imbalance ?? 0) > 0.08 ? 'spot_momentum_bid' :
+        spotTicker.priceChangePercent <= -4 && (depth?.imbalance ?? 0) < -0.08 ? 'spot_pressure_ask' :
+        spotTicker.quoteVolume >= 100_000_000 ? 'high_flow' :
+        'neutral',
+    } : null,
     longShortRatio: ls ? {
       ratio:    ls.longShortRatio,
       longPct:  (ls.longAccount * 100).toFixed(1),

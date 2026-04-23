@@ -16,7 +16,7 @@ import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { callLLM, parseJSON } from '../shared/llm-client.ts';
 import { callLLMWithHub } from '../shared/hub-llm-client.ts';
 import { ANALYST_TYPES, ACTIONS } from '../shared/signal.ts';
-import { getFundingRate, getOpenInterest, getLongShortRatio } from '../shared/onchain-data.ts';
+import { getFundingRate, getOpenInterest, getLongShortRatio, getSpotTicker24h, getSpotDepthImbalance } from '../shared/onchain-data.ts';
 
 const _req = createRequire(import.meta.url);
 const { AgentMemory } = _req('../../../packages/core/lib/agent-memory.legacy.js');
@@ -56,7 +56,7 @@ export { getFundingRate as fetchFundingRate, getLongShortRatio as fetchLongShort
 
 // ─── 규칙 기반 판단 (LLM fallback) ─────────────────────────────────
 
-function ruleBasedSignal(fearGreed, funding, lsRatio) {
+function ruleBasedSignal(fearGreed, funding, lsRatio, spotTicker = null, depth = null) {
   let score = 0;
   const factors = [];
 
@@ -81,7 +81,35 @@ function ruleBasedSignal(fearGreed, funding, lsRatio) {
     else                                    { factors.push(`L/S 균형 (${lsRatio.longShortRatio.toFixed(2)})`); }
   }
 
-  const maxScore   = 3.0;
+  if (spotTicker) {
+    if (spotTicker.quoteVolume >= 100_000_000) {
+      score += 0.3;
+      factors.push(`현물 거래대금 강함 (${Math.round(spotTicker.quoteVolume).toLocaleString()})`);
+    } else if (spotTicker.quoteVolume <= 10_000_000) {
+      score -= 0.2;
+      factors.push(`현물 거래대금 약함 (${Math.round(spotTicker.quoteVolume).toLocaleString()})`);
+    }
+
+    if (spotTicker.priceChangePercent >= 4) {
+      score += 0.35;
+      factors.push(`24h 현물 상승 ${spotTicker.priceChangePercent.toFixed(2)}%`);
+    } else if (spotTicker.priceChangePercent <= -4) {
+      score -= 0.35;
+      factors.push(`24h 현물 하락 ${spotTicker.priceChangePercent.toFixed(2)}%`);
+    }
+  }
+
+  if (depth) {
+    if (depth.imbalance >= 0.08) {
+      score += 0.25;
+      factors.push(`호가 bid 우위 ${depth.imbalance.toFixed(2)}`);
+    } else if (depth.imbalance <= -0.08) {
+      score -= 0.25;
+      factors.push(`호가 ask 우위 ${depth.imbalance.toFixed(2)}`);
+    }
+  }
+
+  const maxScore   = 4.0;
   const confidence = Math.min(Math.abs(score) / maxScore, 1);
   const signal     = score >= 1.0 ? ACTIONS.BUY : score <= -1.0 ? ACTIONS.SELL : ACTIONS.HOLD;
   return { signal, confidence, reasoning: factors.join(' | '), score };
@@ -102,17 +130,19 @@ const SYSTEM_PROMPT = `당신은 암호화폐 온체인·파생상품 시장 분
 - 복합 신호 불일치 시 HOLD
 - confidence 0.5 미만이면 반드시 HOLD`;
 
-function buildOracleUserMessage(symbol, futureSymbol, fearGreed, funding, lsRatio, openInterest) {
+function buildOracleUserMessage(symbol, futureSymbol, fearGreed, funding, lsRatio, openInterest, spotTicker, depth) {
   return [
     `심볼: ${symbol}`,
     fearGreed ? `공포탐욕지수: ${fearGreed.value} (${fearGreed.classification})` : '',
     funding ? `펀딩비: ${(funding.fundingRate * 100).toFixed(4)}%` : '',
     lsRatio ? `Long/Short 비율: ${lsRatio.longShortRatio.toFixed(2)} (롱 ${(lsRatio.longAccount * 100).toFixed(1)}%)` : '',
     openInterest ? `미결제약정: ${parseFloat(openInterest.openInterest).toLocaleString()} ${futureSymbol.replace('USDT', '')}` : '',
+    spotTicker ? `현물 24h 변화: ${spotTicker.priceChangePercent.toFixed(2)}% / 거래대금 ${Math.round(spotTicker.quoteVolume).toLocaleString()} USDT` : '',
+    depth ? `호가 불균형: ${depth.imbalance.toFixed(2)} (bid ${Math.round(depth.bidNotional).toLocaleString()} / ask ${Math.round(depth.askNotional).toLocaleString()})` : '',
   ].filter(Boolean).join('\n');
 }
 
-async function resolveOracleDecision(symbol, userMsg, fearGreed, funding, lsRatio) {
+async function resolveOracleDecision(symbol, userMsg, fearGreed, funding, lsRatio, spotTicker, depth) {
   const responseText = await callLLMWithHub('oracle', SYSTEM_PROMPT, userMsg, callLLM, 200, { symbol });
   const parsed = parseJSON(responseText);
   if (parsed?.action) {
@@ -122,16 +152,19 @@ async function resolveOracleDecision(symbol, userMsg, fearGreed, funding, lsRati
       reasoning: parsed.reasoning,
     };
   }
-  return ruleBasedSignal(fearGreed, funding, lsRatio);
+  return ruleBasedSignal(fearGreed, funding, lsRatio, spotTicker, depth);
 }
 
-function buildOracleAnalysisMetadata(fearGreed, funding, lsRatio, openInterest) {
+function buildOracleAnalysisMetadata(fearGreed, funding, lsRatio, openInterest, spotTicker, depth) {
   return {
     fearGreed: fearGreed?.value,
     fgClass: fearGreed?.classification,
     fundingRate: funding?.fundingRate,
     longShortRatio: lsRatio?.longShortRatio,
     openInterest: openInterest?.openInterest,
+    spotQuoteVolume: spotTicker?.quoteVolume ?? null,
+    spotPriceChangePercent: spotTicker?.priceChangePercent ?? null,
+    spotDepthImbalance: depth?.imbalance ?? null,
   };
 }
 
@@ -141,20 +174,24 @@ export async function analyzeOnchain(symbol = 'BTC/USDT') {
   const futureSymbol = symbol.replace('/', '');
   console.log(`\n🔗 [오라클] ${symbol} 온체인 데이터 수집 중...`);
 
-  const [fearGreed, funding, lsRatio, openInterest] = await Promise.all([
+  const [fearGreed, funding, lsRatio, openInterest, spotTicker, depth] = await Promise.all([
     fetchFearGreed(),
     getFundingRate(futureSymbol),
     getLongShortRatio(futureSymbol),
     getOpenInterest(futureSymbol),
+    getSpotTicker24h(futureSymbol),
+    getSpotDepthImbalance(futureSymbol),
   ]);
 
   console.log(`  공포탐욕지수: ${fearGreed ? `${fearGreed.value} (${fearGreed.classification})` : 'N/A'}`);
   console.log(`  펀딩비: ${funding ? `${(funding.fundingRate * 100).toFixed(4)}%` : 'N/A'}`);
   console.log(`  Long/Short: ${lsRatio ? `${lsRatio.longShortRatio.toFixed(2)}` : 'N/A'}`);
   console.log(`  미결제약정: ${openInterest ? `${parseFloat(openInterest.openInterest).toLocaleString()}` : 'N/A'}`);
+  console.log(`  현물 24h 거래대금: ${spotTicker ? `${Math.round(spotTicker.quoteVolume).toLocaleString()} USDT` : 'N/A'}`);
+  console.log(`  호가 불균형: ${depth ? depth.imbalance.toFixed(2) : 'N/A'}`);
 
-  const userMsg = buildOracleUserMessage(symbol, futureSymbol, fearGreed, funding, lsRatio, openInterest);
-  const { signal, confidence, reasoning } = await resolveOracleDecision(symbol, userMsg, fearGreed, funding, lsRatio);
+  const userMsg = buildOracleUserMessage(symbol, futureSymbol, fearGreed, funding, lsRatio, openInterest, spotTicker, depth);
+  const { signal, confidence, reasoning } = await resolveOracleDecision(symbol, userMsg, fearGreed, funding, lsRatio, spotTicker, depth);
 
   console.log(`  → [오라클] ${signal} (${(confidence * 100).toFixed(0)}%) | ${reasoning}`);
 
@@ -165,7 +202,7 @@ export async function analyzeOnchain(symbol = 'BTC/USDT') {
     confidence,
     reasoning: `[온체인] ${reasoning}`,
     exchange:  'binance',
-    metadata:  buildOracleAnalysisMetadata(fearGreed, funding, lsRatio, openInterest),
+    metadata:  buildOracleAnalysisMetadata(fearGreed, funding, lsRatio, openInterest, spotTicker, depth),
   });
   console.log(`  ✅ [오라클] DB 저장 완료`);
 
@@ -185,7 +222,7 @@ export async function analyzeOnchain(symbol = 'BTC/USDT') {
     // 메모리 저장 실패 무시
   }
 
-  return { symbol, signal, confidence, reasoning, fearGreed, funding, lsRatio };
+  return { symbol, signal, confidence, reasoning, fearGreed, funding, lsRatio, openInterest, spotTicker, depth };
 }
 
 // CLI 실행
