@@ -5,6 +5,12 @@ import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { reevaluateOpenPositions } from '../shared/position-reevaluator.ts';
 import { executeSignal as executeCryptoSignal } from '../team/hephaestos.ts';
+import { executeSignal as executeDomesticSignal, executeOverseasSignal } from '../team/hanul.ts';
+import {
+  getKisExecutionModeInfo,
+  getKisMarketStatus,
+  getKisOverseasMarketStatus,
+} from '../shared/secrets.ts';
 
 function parseArgs(argv = process.argv.slice(2)) {
   const values = {};
@@ -18,6 +24,7 @@ function parseArgs(argv = process.argv.slice(2)) {
     json: Boolean(values.json),
     execute: Boolean(values.execute),
     symbol: values.symbol ? String(values.symbol).toUpperCase() : null,
+    exchange: values.exchange ? String(values.exchange) : null,
     tradeMode: values['trade-mode'] ? String(values['trade-mode']) : null,
     confirm: values.confirm ? String(values.confirm) : null,
     ratio: values.ratio != null ? Number(values.ratio) : null,
@@ -206,7 +213,7 @@ function renderPreview(candidates) {
 
 async function loadCandidates({ tradeMode = null, minutesBack = 180, ratio = null } = {}) {
   const report = await reevaluateOpenPositions({
-    exchange: 'binance',
+    exchange: null,
     paper: false,
     tradeMode,
     minutesBack,
@@ -214,7 +221,7 @@ async function loadCandidates({ tradeMode = null, minutesBack = 180, ratio = nul
   });
 
   const rows = (report.rows || [])
-    .filter((row) => row.exchange === 'binance' && row.recommendation === 'ADJUST');
+    .filter((row) => ['binance', 'kis', 'kis_overseas'].includes(row.exchange) && row.recommendation === 'ADJUST');
 
   const mapped = await Promise.all(rows.map(async (row) => {
     const strategyProfile = await db.getPositionStrategyProfile(row.symbol, {
@@ -234,7 +241,7 @@ async function createPartialAdjustSignal(candidate) {
     amountUsdt: candidate.estimatedNotional,
     confidence: 1,
     reasoning: `승인형 partial-adjust 실행 (${candidate.reasonCode})`,
-    exchange: 'binance',
+    exchange: candidate.exchange,
     tradeMode: candidate.tradeMode,
     nemesisVerdict: 'approved',
     approvedAt: new Date().toISOString(),
@@ -248,11 +255,55 @@ async function createPartialAdjustSignal(candidate) {
   const signal = await db.getSignalById(signalId);
   return {
     ...signal,
-    exchange: 'binance',
+    exchange: candidate.exchange,
     trade_mode: candidate.tradeMode,
     exit_reason_override: `partial_adjust:${candidate.reasonCode}`,
     partial_exit_ratio: candidate.partialExitRatio,
   };
+}
+
+async function executePartialAdjustSignal(signal) {
+  if (signal.exchange === 'binance') return executeCryptoSignal(signal);
+  if (signal.exchange === 'kis') return executeDomesticSignal(signal);
+  if (signal.exchange === 'kis_overseas') return executeOverseasSignal(signal);
+  throw new Error(`지원하지 않는 exchange: ${signal.exchange}`);
+}
+
+async function getExecutionPreflight(candidate) {
+  if (!candidate) return { ok: false, lines: ['- partial-adjust 후보가 없습니다.'] };
+  if (candidate.exchange === 'binance') {
+    return {
+      ok: true,
+      lines: ['- 암호화폐 partial-adjust는 현재 실행 가능'],
+    };
+  }
+
+  const modeInfo = getKisExecutionModeInfo(candidate.exchange === 'kis' ? '국내주식' : '해외주식');
+  const marketStatus = candidate.exchange === 'kis'
+    ? await getKisMarketStatus()
+    : getKisOverseasMarketStatus();
+
+  const lines = [
+    `- accountMode: ${modeInfo.brokerAccountMode}`,
+    `- executionMode: ${modeInfo.executionMode}`,
+    `- marketStatus: ${marketStatus.reason}`,
+  ];
+
+  if (!marketStatus.isOpen) {
+    return {
+      ok: false,
+      lines: [...lines, '- 현재 장외/휴장 상태라 partial-adjust 실행을 보류합니다.'],
+    };
+  }
+
+  if (candidate.exchange === 'kis_overseas' && modeInfo.brokerAccountMode === 'mock') {
+    return {
+      ok: false,
+      lines: [...lines, '- 해외장 mock 계좌는 SELL 미지원으로 partial-adjust를 차단합니다.'],
+    };
+  }
+
+  return { ok: true, lines };
 }
 
 async function main() {
@@ -271,7 +322,7 @@ async function main() {
       candidates,
       usage: [
         'node bots/investment/scripts/partial-adjust-runner.ts --symbol=RUNE/USDT',
-        'env PAPER_MODE=false node bots/investment/scripts/partial-adjust-runner.ts --symbol=RUNE/USDT --execute --confirm=partial-adjust',
+        'env PAPER_MODE=false node bots/investment/scripts/partial-adjust-runner.ts --symbol=RUNE/USDT --exchange=binance --execute --confirm=partial-adjust',
       ],
     };
     if (args.json) {
@@ -282,17 +333,23 @@ async function main() {
     return;
   }
 
-  const candidate = pickCandidate(candidates, args.symbol, args.tradeMode);
+  const candidate = candidates.find((item) => (
+    item.symbol === args.symbol
+      && (!args.exchange || item.exchange === args.exchange)
+      && (!args.tradeMode || item.tradeMode === args.tradeMode)
+  )) || null;
   if (!candidate) {
-    throw new Error(`partial-adjust 후보를 찾지 못했습니다: symbol=${args.symbol}${args.tradeMode ? ` tradeMode=${args.tradeMode}` : ''}`);
+    throw new Error(`partial-adjust 후보를 찾지 못했습니다: symbol=${args.symbol}${args.exchange ? ` exchange=${args.exchange}` : ''}${args.tradeMode ? ` tradeMode=${args.tradeMode}` : ''}`);
   }
 
   if (!args.execute) {
     await syncPartialAdjustCandidateStates([candidate], 'preview');
+    const preflight = await getExecutionPreflight(candidate);
     const payload = {
       mode: 'preview',
       candidate,
-      executeCommand: `env PAPER_MODE=false node bots/investment/scripts/partial-adjust-runner.ts --symbol=${candidate.symbol} --trade-mode=${candidate.tradeMode} --execute --confirm=partial-adjust`,
+      preflight,
+      executeCommand: `env PAPER_MODE=false node bots/investment/scripts/partial-adjust-runner.ts --symbol=${candidate.symbol} --exchange=${candidate.exchange} --trade-mode=${candidate.tradeMode} --execute --confirm=partial-adjust`,
     };
     if (args.json) {
       console.log(JSON.stringify(payload, null, 2));
@@ -307,13 +364,18 @@ async function main() {
   if (args.confirm !== 'partial-adjust') {
     throw new Error('실행하려면 --confirm=partial-adjust 가 필요합니다.');
   }
+  const preflight = await getExecutionPreflight(candidate);
+  if (!preflight.ok) {
+    throw new Error(`partial-adjust preflight blocked: ${preflight.lines.join(' | ')}`);
+  }
 
   await syncPartialAdjustCandidateStates([candidate], 'execute');
   const signal = await createPartialAdjustSignal(candidate);
-  const result = await executeCryptoSignal(signal);
+  const result = await executePartialAdjustSignal(signal);
   const payload = {
     mode: 'execute',
     candidate,
+    preflight,
     signalId: signal.id,
     result,
   };

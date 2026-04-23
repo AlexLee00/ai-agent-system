@@ -304,6 +304,22 @@ async function syncHanulStrategyExecutionState({
   }).catch(() => null);
 }
 
+function normalizePartialExitRatio(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 1;
+  if (parsed >= 1) return 1;
+  return Number(parsed.toFixed(4));
+}
+
+function isEffectivePartialExit({ entrySize = 0, soldAmount = 0, partialExitRatio = 1 } = {}) {
+  const normalizedRatio = normalizePartialExitRatio(partialExitRatio);
+  const baseline = Number(entrySize || 0);
+  const sold = Number(soldAmount || 0);
+  if (!(baseline > 0) || !(sold > 0)) return false;
+  if (normalizedRatio < 1) return sold < baseline;
+  return sold < baseline;
+}
+
 async function processPendingHanulSignals({ exchange, label, execute, delayMs = 1100 }) {
   const startedAt = Date.now();
   const tradeMode = getInvestmentTradeMode();
@@ -402,6 +418,7 @@ async function prepareHanulSellExecution({
   exchange,
   market,
   missingReason,
+  partialExitRatio = null,
 }) {
   const livePosition = await db.getLivePosition(symbol, exchange, signalTradeMode);
   const paperPosition = await db.getPaperPosition(symbol, exchange, signalTradeMode);
@@ -419,8 +436,8 @@ async function prepareHanulSellExecution({
 
   const position = paperPosition || livePosition;
   const sellPaperMode = paperMode || (!livePosition && !!paperPosition);
-  const qty = position?.amount;
-  if (!qty || qty < 1) {
+  const baseQty = Number(position?.amount || 0);
+  if (!baseQty || baseQty < 1) {
     return failHanulSignal(signalId, {
       reason: missingReason,
       market,
@@ -430,6 +447,22 @@ async function prepareHanulSellExecution({
     });
   }
 
+  const normalizedPartialExitRatio = normalizePartialExitRatio(partialExitRatio);
+  let qty = baseQty;
+  if (normalizedPartialExitRatio < 1) {
+    qty = Math.floor(baseQty * normalizedPartialExitRatio);
+    if (qty < 1) {
+      return failHanulSignal(signalId, {
+        reason: `부분청산 수량 미달 (${baseQty}주 x ${normalizedPartialExitRatio} < 1주)`,
+        code: 'partial_sell_below_minimum',
+        market,
+        symbol,
+        action,
+        amount,
+      });
+    }
+  }
+
   return {
     success: true,
     livePosition,
@@ -437,6 +470,8 @@ async function prepareHanulSellExecution({
     position,
     sellPaperMode,
     qty,
+    baseQty,
+    partialExitRatio: normalizedPartialExitRatio,
     effectiveTradeMode: getPositionTradeMode(position, signalTradeMode),
   };
 }
@@ -465,7 +500,20 @@ async function getKisExecutionPreflight({ market = 'domestic', action = ACTIONS.
   return { ok: true };
 }
 
-async function closeOpenJournalForSymbol(symbol, market, isPaper, exitPrice, exitValue, exitReason, tradeMode = null) {
+async function closeOpenJournalForSymbol(
+  symbol,
+  market,
+  isPaper,
+  exitPrice,
+  exitValue,
+  exitReason,
+  tradeMode = null,
+  {
+    partialExitRatio = null,
+    soldAmount = null,
+    signalId = null,
+  } = {},
+) {
   const openEntries = await journalDb.getOpenJournalEntries(market);
   const scopedEntries = openEntries.filter((e) =>
     e.symbol === symbol
@@ -482,6 +530,69 @@ async function closeOpenJournalForSymbol(symbol, market, isPaper, exitPrice, exi
     console.warn(`[한울] ${market} ${symbol} journal close 스킵 - trade_mode 불명확 (${tradeModes.join(',')})`);
   }
   if (!entry) return;
+
+  const normalizedRatio = normalizePartialExitRatio(partialExitRatio);
+  const entrySize = Number(entry.entry_size || 0);
+  const entryValue = Number(entry.entry_value || 0);
+  const realizedSize = Math.min(entrySize, Math.max(0, Number(soldAmount || 0)));
+  const isPartial = isEffectivePartialExit({
+    entrySize,
+    soldAmount: realizedSize,
+    partialExitRatio: normalizedRatio,
+  });
+
+  if (isPartial) {
+    const realizedEntryValue = entrySize > 0
+      ? entryValue * (realizedSize / entrySize)
+      : 0;
+    const pnlAmount = (exitValue || 0) - realizedEntryValue;
+    const pnlPercent = realizedEntryValue > 0
+      ? journalDb.ratioToPercent(pnlAmount / realizedEntryValue)
+      : null;
+    const remainingSize = Math.max(0, entrySize - realizedSize);
+    const remainingEntryValue = Math.max(0, entryValue - realizedEntryValue);
+    const partialTradeId = await journalDb.generateTradeId();
+
+    await journalDb.insertJournalEntry({
+      trade_id: partialTradeId,
+      signal_id: signalId ?? entry.signal_id ?? null,
+      market: entry.market,
+      exchange: entry.exchange,
+      symbol: entry.symbol,
+      is_paper: entry.is_paper,
+      trade_mode: entry.trade_mode,
+      entry_time: entry.entry_time,
+      entry_price: entry.entry_price,
+      entry_size: realizedSize,
+      entry_value: realizedEntryValue,
+      direction: entry.direction || 'long',
+      signal_time: entry.signal_time ?? null,
+      decision_time: entry.decision_time ?? null,
+      execution_time: Date.now(),
+      signal_to_exec_ms: entry.signal_to_exec_ms ?? null,
+      tp_price: entry.tp_price ?? null,
+      sl_price: entry.sl_price ?? null,
+    });
+
+    await journalDb.closeJournalEntry(partialTradeId, {
+      exitPrice,
+      exitValue,
+      exitReason,
+      pnlAmount,
+      pnlPercent,
+      pnlNet: pnlAmount,
+    });
+
+    await journalDb.ensureAutoReview(partialTradeId).catch(() => {});
+    await db.run(
+      `UPDATE trade_journal
+       SET entry_size = $1,
+           entry_value = $2
+       WHERE trade_id = $3`,
+      [remainingSize, remainingEntryValue, entry.trade_id],
+    );
+    return;
+  }
 
   const pnlAmount = (exitValue || 0) - (entry.entry_value || 0);
   const pnlPercent = entry.entry_value > 0
@@ -722,6 +833,7 @@ export async function executeSignal(signal) {
   const { id: signalId, symbol, action, amount_usdt: amountKrw } = signal;
   const signalTradeMode = signal.trade_mode || getInvestmentTradeMode();
   const exitReasonOverride = signal.exit_reason_override || null;
+  const partialExitRatio = normalizePartialExitRatio(signal.partial_exit_ratio || signal.partialExitRatio);
 
   const tag = paperMode ? '[PAPER]' : kisPaper ? '[LIVE/MOCK]' : '[LIVE/REAL]';
   console.log(`\n⚡ [한울] ${symbol} ${action} ${amountKrw?.toLocaleString()}원 ${tag}`);
@@ -832,6 +944,7 @@ export async function executeSignal(signal) {
         exchange: 'kis',
         market: 'domestic',
         missingReason: '포지션 없음',
+        partialExitRatio,
       });
       if (sellState?.success === false) return sellState;
 
@@ -844,14 +957,53 @@ export async function executeSignal(signal) {
         paper:     sellState.sellPaperMode,
         exchange:  'kis',
         tradeMode: sellState.effectiveTradeMode,
+        partialExitRatio: sellState.partialExitRatio < 1 ? sellState.partialExitRatio : null,
+        partialExit: sellState.partialExitRatio < 1,
+        remainingAmount: sellState.partialExitRatio < 1 ? Math.max(0, sellState.baseQty - Number(order.qty || 0)) : 0,
       };
-
-      await db.deletePosition(symbol, {
-        exchange: 'kis',
-        paper: sellState.sellPaperMode,
-        tradeMode: sellState.effectiveTradeMode,
-      });
-      await closeOpenJournalForSymbol(symbol, 'domestic', sellState.sellPaperMode, trade.price, trade.totalUsdt, exitReasonOverride || 'sell', trade.tradeMode).catch(() => {});
+      if (trade.partialExit) {
+        const remainingAmount = Math.max(0, sellState.baseQty - Number(order.qty || 0));
+        await db.upsertPosition({
+          symbol,
+          amount: remainingAmount,
+          avgPrice: Number(sellState.position?.avg_price || sellState.position?.avgPrice || 0),
+          unrealizedPnl: Number(sellState.position?.unrealized_pnl || sellState.position?.unrealizedPnl || 0),
+          exchange: 'kis',
+          paper: sellState.sellPaperMode,
+          tradeMode: sellState.effectiveTradeMode,
+        });
+        await syncHanulStrategyExecutionState({
+          symbol,
+          exchange: 'kis',
+          tradeMode: sellState.effectiveTradeMode,
+          lifecycleStatus: 'partial_exit_executed',
+          recommendation: 'ADJUST',
+          reasonCode: 'partial_exit_executed',
+          reason: '부분청산 체결 완료',
+          trade,
+          updatedBy: 'hanul_partial_sell',
+        });
+      } else {
+        await db.deletePosition(symbol, {
+          exchange: 'kis',
+          paper: sellState.sellPaperMode,
+          tradeMode: sellState.effectiveTradeMode,
+        });
+      }
+      await closeOpenJournalForSymbol(
+        symbol,
+        'domestic',
+        sellState.sellPaperMode,
+        trade.price,
+        trade.totalUsdt,
+        exitReasonOverride || 'sell',
+        trade.tradeMode,
+        {
+          partialExitRatio: trade.partialExitRatio,
+          soldAmount: Number(order.qty || 0),
+          signalId,
+        },
+      ).catch(() => {});
 
     } else {
       console.log(`  ⏸️ HOLD — 실행 없음`);
@@ -888,6 +1040,7 @@ export async function executeOverseasSignal(signal) {
   const { id: signalId, symbol, action, amount_usdt: amountUsd } = signal;
   const signalTradeMode = signal.trade_mode || getInvestmentTradeMode();
   const exitReasonOverride = signal.exit_reason_override || null;
+  const partialExitRatio = normalizePartialExitRatio(signal.partial_exit_ratio || signal.partialExitRatio);
 
   const tag = paperMode ? '[PAPER]' : kisPaper ? '[LIVE/MOCK]' : '[LIVE/REAL]';
   console.log(`\n⚡ [한울] 해외 ${symbol} ${action} $${amountUsd} ${tag}`);
@@ -997,6 +1150,7 @@ export async function executeOverseasSignal(signal) {
         exchange: 'kis_overseas',
         market: 'overseas',
         missingReason: '해외 포지션 없음',
+        partialExitRatio,
       });
       if (sellState?.success === false) return sellState;
 
@@ -1009,14 +1163,53 @@ export async function executeOverseasSignal(signal) {
         paper:     sellState.sellPaperMode,
         exchange:  'kis_overseas',
         tradeMode: sellState.effectiveTradeMode,
+        partialExitRatio: sellState.partialExitRatio < 1 ? sellState.partialExitRatio : null,
+        partialExit: sellState.partialExitRatio < 1,
+        remainingAmount: sellState.partialExitRatio < 1 ? Math.max(0, sellState.baseQty - Number(order.qty || 0)) : 0,
       };
-
-      await db.deletePosition(symbol, {
-        exchange: 'kis_overseas',
-        paper: sellState.sellPaperMode,
-        tradeMode: sellState.effectiveTradeMode,
-      });
-      await closeOpenJournalForSymbol(symbol, 'overseas', sellState.sellPaperMode, trade.price, trade.totalUsdt, exitReasonOverride || 'sell', trade.tradeMode).catch(() => {});
+      if (trade.partialExit) {
+        const remainingAmount = Math.max(0, sellState.baseQty - Number(order.qty || 0));
+        await db.upsertPosition({
+          symbol,
+          amount: remainingAmount,
+          avgPrice: Number(sellState.position?.avg_price || sellState.position?.avgPrice || 0),
+          unrealizedPnl: Number(sellState.position?.unrealized_pnl || sellState.position?.unrealizedPnl || 0),
+          exchange: 'kis_overseas',
+          paper: sellState.sellPaperMode,
+          tradeMode: sellState.effectiveTradeMode,
+        });
+        await syncHanulStrategyExecutionState({
+          symbol,
+          exchange: 'kis_overseas',
+          tradeMode: sellState.effectiveTradeMode,
+          lifecycleStatus: 'partial_exit_executed',
+          recommendation: 'ADJUST',
+          reasonCode: 'partial_exit_executed',
+          reason: '부분청산 체결 완료',
+          trade,
+          updatedBy: 'hanul_partial_sell',
+        });
+      } else {
+        await db.deletePosition(symbol, {
+          exchange: 'kis_overseas',
+          paper: sellState.sellPaperMode,
+          tradeMode: sellState.effectiveTradeMode,
+        });
+      }
+      await closeOpenJournalForSymbol(
+        symbol,
+        'overseas',
+        sellState.sellPaperMode,
+        trade.price,
+        trade.totalUsdt,
+        exitReasonOverride || 'sell',
+        trade.tradeMode,
+        {
+          partialExitRatio: trade.partialExitRatio,
+          soldAmount: Number(order.qty || 0),
+          signalId,
+        },
+      ).catch(() => {});
 
     } else {
       console.log(`  ⏸️ HOLD — 실행 없음`);
