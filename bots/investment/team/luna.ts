@@ -435,6 +435,76 @@ const ANALYST_WEIGHTS = {
 };
 const DIRECTION_MAP = { BUY: 1, SELL: -1, HOLD: 0 };
 
+function getSentinelFusionProfile(analysis = {}) {
+  const metadata = analysis?.metadata && typeof analysis.metadata === 'object' ? analysis.metadata : {};
+  const quality = metadata?.quality && typeof metadata.quality === 'object' ? metadata.quality : {};
+  const sourceBreakdown = metadata?.sourceBreakdown && typeof metadata.sourceBreakdown === 'object'
+    ? metadata.sourceBreakdown
+    : {};
+  const tierWeights = metadata?.sourceTierWeights && typeof metadata.sourceTierWeights === 'object'
+    ? metadata.sourceTierWeights
+    : { tier2: 0.65, tier3: 0.35 };
+
+  const newsConfidence = Number(sourceBreakdown?.news?.confidence || metadata?.news?.confidence || 0);
+  const communityConfidence = Number(sourceBreakdown?.community?.confidence || metadata?.community?.confidence || 0);
+  const newsSignal = String(sourceBreakdown?.news?.signal || metadata?.news?.signal || '').trim().toUpperCase();
+  const communitySignal = String(sourceBreakdown?.community?.signal || metadata?.community?.signal || '').trim().toUpperCase();
+  const weightedConfidenceBase =
+    (newsConfidence * Number(tierWeights?.tier2 || 0.65))
+    + (communityConfidence * Number(tierWeights?.tier3 || 0.35));
+
+  let confidenceMultiplier = 1;
+  let weightMultiplier = 1;
+
+  if (quality?.status === 'degraded') {
+    confidenceMultiplier *= 0.82;
+    weightMultiplier *= 0.9;
+  } else if (quality?.status === 'insufficient') {
+    confidenceMultiplier *= 0.6;
+    weightMultiplier *= 0.7;
+  }
+
+  if (
+    newsSignal
+    && communitySignal
+    && newsSignal !== ACTIONS.HOLD
+    && communitySignal !== ACTIONS.HOLD
+    && newsSignal !== communitySignal
+  ) {
+    confidenceMultiplier *= 0.88;
+    weightMultiplier *= 0.92;
+  }
+
+  const effectiveConfidence = Math.max(
+    0,
+    Math.min(
+      1,
+      Number(((weightedConfidenceBase || Number(analysis?.confidence || 0.5)) * confidenceMultiplier).toFixed(4)),
+    ),
+  );
+
+  return {
+    effectiveConfidence,
+    weightMultiplier: Number(weightMultiplier.toFixed(4)),
+    qualityStatus: quality?.status || 'unknown',
+  };
+}
+
+function getFusionInput(type, analysis, weights) {
+  const baseWeight = Number(weights[type] ?? 0.05);
+  const direction = DIRECTION_MAP[analysis.signal] ?? 0;
+  let confidence = Math.max(0, Math.min(1, analysis.confidence || 0.5));
+  let weight = baseWeight;
+
+  if (type === ANALYST_TYPES.SENTINEL) {
+    const sentinelProfile = getSentinelFusionProfile(analysis);
+    confidence = sentinelProfile.effectiveConfidence;
+    weight = Number((baseWeight * sentinelProfile.weightMultiplier).toFixed(4));
+  }
+
+  return { weight, direction, confidence };
+}
+
 /**
  * 분석가별 신호를 가중 평균으로 융합
  * @param {Array} analyses  DB에서 읽은 분석 결과 배열
@@ -450,9 +520,7 @@ export function fuseSignals(analyses, weights = ANALYST_WEIGHTS) {
   let weightedScore = 0, totalWeight = 0;
   const directions = [];
   for (const [type, analysis] of byType) {
-    const weight    = weights[type] ?? 0.05;
-    const direction = DIRECTION_MAP[analysis.signal] ?? 0;
-    const conf      = Math.max(0, Math.min(1, analysis.confidence || 0.5));
+    const { weight, direction, confidence: conf } = getFusionInput(type, analysis, weights);
     weightedScore  += direction * conf * weight;
     totalWeight    += weight;
     if (direction !== 0) directions.push(direction);
@@ -460,7 +528,7 @@ export function fuseSignals(analyses, weights = ANALYST_WEIGHTS) {
 
   const fusedScore        = totalWeight > 0 ? weightedScore / totalWeight : 0;
   const averageConfidence = byType.size > 0
-    ? [...byType.values()].reduce((s, a) => s + (a.confidence || 0.5), 0) / byType.size
+    ? [...byType.entries()].reduce((s, [type, analysis]) => s + getFusionInput(type, analysis, weights).confidence, 0) / byType.size
     : 0.5;
   const hasConflict    = directions.some(d => d > 0) && directions.some(d => d < 0);
   const recommendation =

@@ -109,6 +109,7 @@
     "runtime:position-reeval-history": "node scripts/position-reevaluation-history.ts",
     "runtime:position-reeval-loop": "node scripts/position-reevaluation-loop.ts --iterations=1",
     "runtime:position-watch": "node scripts/position-watch.ts",
+    "runtime:maintenance-collect": "node scripts/runtime-maintenance-collect.ts --json",
     "runtime:agent-roles": "node scripts/runtime-agent-role-report.ts --json",
     "runtime:position-parity": "node scripts/runtime-position-parity-report.ts --sync",
     "runtime:position-strategy-audit": "node scripts/runtime-position-strategy-audit.ts",

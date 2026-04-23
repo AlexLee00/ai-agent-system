@@ -13,7 +13,6 @@
  *   node team/scout.js --dry-run --json
  */
 
-import { createRequire } from 'module';
 import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { callLLM, parseJSON } from '../shared/llm-client.ts';
@@ -23,11 +22,29 @@ import { initHubSecrets, isKisPaper } from '../shared/secrets.ts';
 import { getDomesticPrice } from '../shared/kis-client.ts';
 import { collectTossMarketIntel } from './toss-market-intel.ts';
 
-const require = createRequire(import.meta.url);
-const { createLogger } = require('../../../packages/core/lib/central-logger');
-const eventLake = require('../../../packages/core/lib/event-lake');
+const logger = {
+  info(message, data = null) {
+    if (data && Object.keys(data).length > 0) console.log(`[scout][INFO] ${message}`, data);
+    else console.log(`[scout][INFO] ${message}`);
+  },
+  warn(message, data = null) {
+    if (data && Object.keys(data).length > 0) console.warn(`[scout][WARN] ${message}`, data);
+    else console.warn(`[scout][WARN] ${message}`);
+  },
+  error(message, data = null) {
+    if (data && Object.keys(data).length > 0) console.error(`[scout][ERROR] ${message}`, data);
+    else console.error(`[scout][ERROR] ${message}`);
+  },
+};
 
-const logger = createLogger('scout', { team: 'luna' });
+let eventLakeModulePromise = null;
+
+async function getEventLake() {
+  if (!eventLakeModulePromise) {
+    eventLakeModulePromise = import('../../../packages/core/lib/event-lake.legacy.js');
+  }
+  return eventLakeModulePromise;
+}
 
 /**
  * @typedef {Object} ScoutSignal
@@ -257,6 +274,7 @@ export async function runScout({ dryRun = false, json = false, limit = 10 } = {}
   if (!dryRun) {
     await db.initSchema();
     await initRagSchema();
+    const eventLake = await getEventLake();
     await eventLake.initSchema();
   }
 
@@ -319,21 +337,25 @@ if (isDirectExecution(import.meta.url)) {
   await runCliMain({
     run: () => runScout({ dryRun, json, limit }),
     onError: async (error) => {
-      eventLake.record({
-        eventType: 'scout_error',
-        team: 'luna',
-        botName: 'scout',
-        severity: 'error',
-        title: '스카우트 실행 실패',
-        message: error?.message || String(error || 'unknown'),
-        tags: ['scout', 'luna', 'source:tossinvest', 'trigger:manual', 'errors:1'],
-        metadata: {
-          dryRun,
-          json,
-          limit,
-          stack: error?.stack || '',
-        },
-      }).catch(() => {});
+      if (!dryRun) {
+        getEventLake()
+          .then((eventLake) => eventLake.record({
+            eventType: 'scout_error',
+            team: 'luna',
+            botName: 'scout',
+            severity: 'error',
+            title: '스카우트 실행 실패',
+            message: error?.message || String(error || 'unknown'),
+            tags: ['scout', 'luna', 'source:tossinvest', 'trigger:manual', 'errors:1'],
+            metadata: {
+              dryRun,
+              json,
+              limit,
+              stack: error?.stack || '',
+            },
+          }))
+          .catch(() => {});
+      }
       logger.error('스카우트 실행 실패', {
         error: error?.message || String(error || 'unknown'),
         stack: error?.stack ? String(error.stack).split('\n').slice(0, 3).join(' | ') : '',
