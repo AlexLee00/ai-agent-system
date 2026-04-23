@@ -27,6 +27,7 @@ import { runCollectionAudit } from './runtime-collection-audit.ts';
 import { runExecutionAttachAudit } from './runtime-execution-attach-audit.ts';
 import { runExecutionAttachBackfill } from './runtime-execution-attach-backfill.ts';
 import { buildRuntimePositionStrategyAudit } from './runtime-position-strategy-audit.ts';
+import { runPositionStrategyHygiene } from './runtime-position-strategy-hygiene.ts';
 import { normalizeDuplicateStrategyProfiles } from './normalize-duplicate-strategy-profiles.ts';
 import { retireOrphanStrategyProfiles } from './retire-orphan-strategy-profiles.ts';
 import { backfillTradeIncidentLinks } from './backfill-trade-incident-links.ts';
@@ -667,6 +668,7 @@ function buildDecision(
   executionAttachAudit,
   executionAttachBackfill,
   positionStrategyAudit,
+  positionStrategyHygiene,
   duplicateStrategyNormalization,
   orphanStrategyRetirement,
   executionRiskApprovalGuardHealth,
@@ -694,6 +696,7 @@ function buildDecision(
   const executionAttachNeedsRepair = ['execution_attach_error', 'execution_attach_weak', 'execution_attach_partial'].includes(executionAttachAudit?.decision?.status);
   const positionStrategyDuplicateScopes = Number(positionStrategyAudit?.duplicateManagedProfileScopes || positionStrategyAudit?.duplicateActiveProfileScopes || 0);
   const positionStrategyOrphans = Number(positionStrategyAudit?.orphanProfiles || 0);
+  const positionStrategyHygieneStatus = positionStrategyHygiene?.decision?.status || 'unknown';
   const duplicateNormalizationSummary = duplicateStrategyNormalization?.summary || {};
   const orphanRetirementSummary = orphanStrategyRetirement?.summary || {};
   return buildHealthDecision({
@@ -1185,6 +1188,12 @@ function formatText(report) {
         ? [
             `  managed: ${report.positionStrategyAudit.managedPositions || 0} / profiles ${report.positionStrategyAudit.managedProfiles || 0} / dust ${report.positionStrategyAudit.dustPositions || 0}`,
             `  unmatched managed: ${report.positionStrategyAudit.unmatchedManagedPositions || 0} / orphan ${report.positionStrategyAudit.orphanProfiles || 0} / duplicate active scopes ${report.positionStrategyAudit.duplicateActiveProfileScopes || 0} / duplicate managed scopes ${report.positionStrategyAudit.duplicateManagedProfileScopes || 0}`,
+            ...(report.positionStrategyHygiene
+              ? [
+                `  hygiene status: ${report.positionStrategyHygiene.decision?.status || 'unknown'}`,
+                `  hygiene headline: ${report.positionStrategyHygiene.decision?.headline || 'n/a'}`,
+              ]
+              : []),
             ...(report.duplicateStrategyNormalization
               ? [
                 `  normalize status: ${report.duplicateStrategyNormalization.decision?.status || 'unknown'} / safeToApply ${report.duplicateStrategyNormalization.decision?.safeToApply === true ? 'yes' : 'no'}`,
@@ -1201,6 +1210,7 @@ function formatText(report) {
               : []),
             ...(report.positionStrategyAudit.duplicateProfileScopes || []).slice(0, 3).map((scope) => `  duplicate: ${scope.exchange}/${scope.symbol} count ${scope.count} keeper ${scope.keeperProfileId}`),
             `  next command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-audit`,
+            `  hygiene report: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-hygiene -- --json`,
             `  normalize dry-run: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --json`,
             `  normalize apply: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --apply --json`,
             `  retire orphan dry-run: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles`,
@@ -1284,6 +1294,7 @@ async function buildReport() {
   const executionAttachAudit = await runExecutionAttachAudit({ days: 14, limit: 50 }).catch(() => null);
   const executionAttachBackfill = await runExecutionAttachBackfill({ days: 14, limit: 50, dryRun: true }).catch(() => null);
   const positionStrategyAudit = await buildRuntimePositionStrategyAudit({ json: true }).catch(() => null);
+  const positionStrategyHygiene = await runPositionStrategyHygiene({ json: true }).catch(() => null);
   const duplicateStrategyNormalization = await normalizeDuplicateStrategyProfiles({ apply: false }).catch(() => null);
   const orphanStrategyRetirement = await retireOrphanStrategyProfiles({ apply: false }).catch(() => null);
   const incidentLinkAudit = await backfillTradeIncidentLinks({
@@ -1321,6 +1332,7 @@ async function buildReport() {
     executionAttachAudit,
     executionAttachBackfill,
     positionStrategyAudit,
+    positionStrategyHygiene,
     duplicateStrategyNormalization,
     orphanStrategyRetirement,
     executionRiskApprovalGuardHealth,
@@ -1355,6 +1367,7 @@ async function buildReport() {
     executionAttachAudit,
     executionAttachBackfill,
     positionStrategyAudit,
+    positionStrategyHygiene,
     duplicateStrategyNormalization,
     orphanStrategyRetirement,
     latestOpsSnapshot,
