@@ -51,6 +51,7 @@
     "risk:approval-execution-guard-smoke": "node scripts/risk-approval-execution-guard-smoke.ts",
     "runtime:risk-approval": "node scripts/runtime-risk-approval-report.ts",
     "runtime:risk-approval-history": "node scripts/runtime-risk-approval-history.ts",
+    "runtime:risk-approval-readiness": "node scripts/runtime-risk-approval-readiness.ts",
     "runtime:execution-risk-guard": "node scripts/runtime-execution-risk-guard-report.ts",
     "runtime:execution-risk-guard-history": "node scripts/runtime-execution-risk-guard-history.ts",
     "runtime:decision-report": "node scripts/runtime-decision-report.ts --limit=5",

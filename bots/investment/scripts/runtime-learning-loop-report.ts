@@ -15,6 +15,7 @@ import { buildStrategyFeedbackOutcomes } from './runtime-strategy-feedback-outco
 import { buildStrategyFeedbackOutcomesHistory } from './runtime-strategy-feedback-outcomes-history.ts';
 import { buildRuntimeRiskApprovalReport } from './runtime-risk-approval-report.ts';
 import { buildRuntimeRiskApprovalHistory } from './runtime-risk-approval-history.ts';
+import { buildRuntimeRiskApprovalReadiness } from './runtime-risk-approval-readiness.ts';
 import { buildRuntimeExecutionRiskGuardReport } from './runtime-execution-risk-guard-report.ts';
 import { buildRuntimeExecutionRiskGuardHistory } from './runtime-execution-risk-guard-history.ts';
 
@@ -370,6 +371,7 @@ function buildSectionStates({
   strategyFeedbackOutcomeTrend,
   riskApproval,
   riskApprovalTrend,
+  riskApprovalReadiness,
   executionRiskGuard,
   executionRiskGuardTrend,
 }) {
@@ -461,6 +463,14 @@ function buildSectionStates({
         delta: riskApprovalTrend.delta || {},
         previousTopModel: riskApprovalTrend.previous?.topModel || null,
       } : null,
+    } : null,
+    riskApprovalReadiness: riskApprovalReadiness ? {
+      status: riskApprovalReadiness.decision?.status || 'unknown',
+      headline: riskApprovalReadiness.decision?.headline || null,
+      currentMode: riskApprovalReadiness.decision?.currentMode || riskApprovalReadiness.modeConfig?.mode || null,
+      targetMode: riskApprovalReadiness.decision?.targetMode || null,
+      blockers: riskApprovalReadiness.decision?.blockers || [],
+      dryRun: riskApprovalReadiness.modeDryRun || null,
     } : null,
     executionRiskGuard: executionRiskGuard ? {
       status: executionRiskGuard.decision?.status || 'unknown',
@@ -692,6 +702,12 @@ function renderText(payload) {
     sections.collect.riskApproval?.trend
       ? `- risk approval trend history ${sections.collect.riskApproval.trend.historyCount} | preview delta ${sections.collect.riskApproval.trend.delta?.total ?? 0} / reject delta ${sections.collect.riskApproval.trend.delta?.previewRejects ?? 0} / divergence delta ${sections.collect.riskApproval.trend.delta?.legacyApprovedPreviewRejected ?? 0} / amount delta change ${sections.collect.riskApproval.trend.delta?.previewVsApprovedDelta ?? 0}`
       : null,
+    sections.collect.riskApprovalReadiness
+      ? `- risk approval readiness ${sections.collect.riskApprovalReadiness.status} | ${sections.collect.riskApprovalReadiness.currentMode || 'n/a'} -> ${sections.collect.riskApprovalReadiness.targetMode || 'n/a'} | blockers ${(sections.collect.riskApprovalReadiness.blockers || []).length}`
+      : null,
+    sections.collect.riskApprovalReadiness?.dryRun
+      ? `- risk approval dry-run assist applied ${sections.collect.riskApprovalReadiness.dryRun.assist?.applied ?? 0} / enforce rejected ${sections.collect.riskApprovalReadiness.dryRun.enforce?.rejected ?? 0}`
+      : null,
     sections.collect.executionRiskGuard
       ? `- execution risk guard ${sections.collect.executionRiskGuard.status} | total ${sections.collect.executionRiskGuard.total} / stale ${sections.collect.executionRiskGuard.staleCount} / bypass ${sections.collect.executionRiskGuard.bypassCount}`
       : '- execution risk guard none',
@@ -756,7 +772,7 @@ function buildFallback(payload = {}) {
 }
 
 export async function buildRuntimeLearningLoopReport({ days = 14, json = false } = {}) {
-  const [freshness, runtimeDecision, executionGate, autotune, runtimeSuggestions, backtest, validation, regimeCoverage, regimePerformance, strategyFamilyPerformance, strategyFeedbackOutcomes, strategyFeedbackOutcomeTrend, riskApproval, riskApprovalTrend, executionRiskGuard, executionRiskGuardTrend, collectionAudit] = await Promise.all([
+  const [freshness, runtimeDecision, executionGate, autotune, runtimeSuggestions, backtest, validation, regimeCoverage, regimePerformance, strategyFamilyPerformance, strategyFeedbackOutcomes, strategyFeedbackOutcomeTrend, riskApproval, riskApprovalTrend, riskApprovalReadiness, executionRiskGuard, executionRiskGuardTrend, collectionAudit] = await Promise.all([
     loadLoopFreshness(),
     buildRuntimeDecisionReport({ market: 'all', limit: 5, json: true }).catch(() => ({ count: 0, summary: {}, rows: [] })),
     buildRuntimeCryptoExecutionGateReport({ days, json: true }).catch(() => ({ decision: {} })),
@@ -771,6 +787,7 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
     buildStrategyFeedbackOutcomesHistory({ days: 90, json: true, write: false }).catch(() => null),
     buildRuntimeRiskApprovalReport({ days: 30, json: true }).catch(() => null),
     buildRuntimeRiskApprovalHistory({ days: 30, json: true, write: false }).catch(() => null),
+    buildRuntimeRiskApprovalReadiness({ days: 30, json: true }).catch(() => null),
     buildRuntimeExecutionRiskGuardReport({ days: 14, json: true }).catch(() => null),
     buildRuntimeExecutionRiskGuardHistory({ days: 14, json: true, write: false }).catch(() => null),
     runCollectionAudit({ markets: ['binance', 'kis', 'kis_overseas'], hours: 24 }).catch(() => null),
@@ -791,6 +808,7 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
     strategyFeedbackOutcomeTrend,
     riskApproval,
     riskApprovalTrend,
+    riskApprovalReadiness,
     executionRiskGuard,
     executionRiskGuardTrend,
     collectionAudit,
@@ -812,6 +830,7 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
     strategyFeedbackOutcomeTrend,
     riskApproval,
     riskApprovalTrend,
+    riskApprovalReadiness,
     executionRiskGuard,
     executionRiskGuardTrend,
     executionGate,
@@ -837,6 +856,7 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
       strategyFeedbackOutcomeTrend,
       riskApproval,
       riskApprovalTrend,
+      riskApprovalReadiness,
       executionRiskGuard,
       executionRiskGuardTrend,
       executionGate: executionGate.decision,

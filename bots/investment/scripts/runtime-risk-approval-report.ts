@@ -55,6 +55,8 @@ function summarize(rows = []) {
   let totalOriginal = 0;
   let totalApproved = 0;
   let totalPreviewFinal = 0;
+  let previewAmountReductions = 0;
+  let previewAmountIncreases = 0;
 
   for (const row of rows) {
     if (!row.preview) continue;
@@ -96,6 +98,11 @@ function summarize(rows = []) {
     if (row.positionSizeOriginal != null) totalOriginal += Number(row.positionSizeOriginal || 0);
     if (row.positionSizeApproved != null) totalApproved += Number(row.positionSizeApproved || 0);
     if (row.preview.finalAmount != null) totalPreviewFinal += Number(row.preview.finalAmount || 0);
+    if (row.positionSizeApproved != null && row.preview.finalAmount != null) {
+      const amountDelta = Number(row.preview.finalAmount || 0) - Number(row.positionSizeApproved || 0);
+      if (amountDelta < -0.0001) previewAmountReductions += 1;
+      if (amountDelta > 0.0001) previewAmountIncreases += 1;
+    }
 
     for (const step of row.preview.steps || []) {
       const model = step.model || 'unknown';
@@ -147,6 +154,8 @@ function summarize(rows = []) {
       approved: Number(totalApproved.toFixed(4)),
       previewFinal: Number(totalPreviewFinal.toFixed(4)),
       previewVsApprovedDelta: Number((totalPreviewFinal - totalApproved).toFixed(4)),
+      previewAmountReductions,
+      previewAmountIncreases,
     },
     application: {
       applied: applicationApplied,

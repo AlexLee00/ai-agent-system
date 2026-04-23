@@ -1,0 +1,242 @@
+#!/usr/bin/env node
+// @ts-nocheck
+
+import { getInvestmentRuntimeConfig } from '../shared/runtime-config.ts';
+import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import { buildRuntimeRiskApprovalReport } from './runtime-risk-approval-report.ts';
+import { buildRuntimeRiskApprovalHistory } from './runtime-risk-approval-history.ts';
+import { buildRuntimeExecutionRiskGuardReport } from './runtime-execution-risk-guard-report.ts';
+import { buildRuntimeExecutionRiskGuardHistory } from './runtime-execution-risk-guard-history.ts';
+
+function parseArgs(argv = process.argv.slice(2)) {
+  const daysArg = argv.find((arg) => arg.startsWith('--days='));
+  return {
+    days: Math.max(1, Number(daysArg?.split('=').slice(1).join('=') || 30)),
+    json: argv.includes('--json'),
+  };
+}
+
+function safeNumber(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function rate(part, total) {
+  const p = safeNumber(part);
+  const t = safeNumber(total);
+  if (t <= 0) return 0;
+  return p / t;
+}
+
+function pct(value, digits = 1) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 'n/a';
+  return `${(n * 100).toFixed(digits)}%`;
+}
+
+function getCurrentModeConfig() {
+  const riskApprovalChain = getInvestmentRuntimeConfig()?.nemesis?.riskApprovalChain || {};
+  return {
+    mode: String(riskApprovalChain.mode || 'shadow'),
+    assist: {
+      applyAmountReduction: riskApprovalChain.assist?.applyAmountReduction !== false,
+      maxReductionPct: safeNumber(riskApprovalChain.assist?.maxReductionPct, 0.35),
+    },
+    enforce: {
+      rejectOnPreviewReject: riskApprovalChain.enforce?.rejectOnPreviewReject !== false,
+      applyAmountReduction: riskApprovalChain.enforce?.applyAmountReduction !== false,
+    },
+  };
+}
+
+function buildModeDryRun(riskApproval = {}, modeConfig = {}) {
+  const summary = riskApproval.summary || {};
+  const amount = summary.amount || {};
+  const total = safeNumber(summary.total);
+  const previewRejects = safeNumber(summary.previewRejects);
+  const reductions = safeNumber(amount.previewAmountReductions);
+  const previewDelta = safeNumber(amount.previewVsApprovedDelta);
+  return {
+    shadow: {
+      applied: 0,
+      rejected: 0,
+      amountDelta: 0,
+      note: 'preview만 기록하고 기존 네메시스 승인 결과는 바꾸지 않습니다.',
+    },
+    assist: {
+      applied: modeConfig.assist?.applyAmountReduction ? reductions : 0,
+      rejected: 0,
+      amountDelta: modeConfig.assist?.applyAmountReduction ? previewDelta : 0,
+      maxReductionPct: modeConfig.assist?.maxReductionPct,
+      note: 'preview 거절은 차단하지 않고, 승인 금액 감산만 제한적으로 반영합니다.',
+    },
+    enforce: {
+      applied: modeConfig.enforce?.applyAmountReduction ? reductions : 0,
+      rejected: modeConfig.enforce?.rejectOnPreviewReject ? previewRejects : 0,
+      amountDelta: modeConfig.enforce?.applyAmountReduction ? previewDelta : 0,
+      note: 'preview 거절과 금액 감산을 실제 네메시스 승인 결과에 반영합니다.',
+    },
+    sample: {
+      total,
+      reductions,
+      previewRejects,
+      approvedAmount: safeNumber(amount.approved),
+      previewFinalAmount: safeNumber(amount.previewFinal),
+      previewVsApprovedDelta: previewDelta,
+    },
+  };
+}
+
+function buildDecision({ riskApproval, executionGuard, modeConfig }) {
+  const summary = riskApproval.summary || {};
+  const amount = summary.amount || {};
+  const guardSummary = executionGuard.summary || {};
+  const total = safeNumber(summary.total);
+  const previewRejects = safeNumber(summary.previewRejects);
+  const divergence = safeNumber(summary.legacyApprovedPreviewRejected);
+  const stale = safeNumber(guardSummary.staleCount);
+  const bypass = safeNumber(guardSummary.bypassCount);
+  const rejectionRate = rate(previewRejects, total);
+  const divergenceRate = rate(divergence, total);
+  const reductionRate = rate(amount.previewAmountReductions, total);
+  const reasons = [
+    `mode ${modeConfig.mode}`,
+    `preview ${total}`,
+    `preview reject ${previewRejects} (${pct(rejectionRate)})`,
+    `divergence ${divergence} (${pct(divergenceRate)})`,
+    `execution stale ${stale}`,
+    `execution bypass ${bypass}`,
+    `amount reduction candidates ${safeNumber(amount.previewAmountReductions)} (${pct(reductionRate)})`,
+  ];
+  const blockers = [];
+  const actionItems = [];
+  let status = 'risk_approval_readiness_collect_samples';
+  let targetMode = modeConfig.mode;
+  let headline = '리스크 승인 체인 전환을 판단하기에는 preview 표본이 아직 부족합니다.';
+
+  if (total < 20) blockers.push('preview 표본 20건 미만');
+  if (divergence > 0) blockers.push('기존 승인/preview 거절 divergence 존재');
+  if (stale > 0) blockers.push('실행 직전 stale approval 차단 존재');
+  if (bypass > 0) blockers.push('실행 직전 네메시스 승인 누락 차단 존재');
+  if (rejectionRate > 0.3) blockers.push('preview reject 비율 30% 초과');
+
+  if (blockers.length > 0) {
+    status = divergence > 0 || stale > 0 || bypass > 0
+      ? 'risk_approval_readiness_blocked'
+      : 'risk_approval_readiness_collect_samples';
+    headline = blockers.join(' / ');
+    actionItems.push('shadow mode에서 표본을 계속 누적하고 blocker가 사라지는지 먼저 확인합니다.');
+    if (divergence > 0) actionItems.push('divergence sample의 regime/consensus/feedback 임계값을 검토합니다.');
+    if (stale > 0 || bypass > 0) actionItems.push('승인→실행 큐 연결과 승인 메타 전파 경로를 우선 점검합니다.');
+  } else if (modeConfig.mode === 'shadow') {
+    status = 'risk_approval_readiness_assist_ready';
+    targetMode = 'assist';
+    headline = 'shadow preview가 큰 충돌 없이 누적되어 assist 전환 후보입니다.';
+    actionItems.push('마스터 승인 후 mode=assist로 전환하면 preview 감산을 제한적으로 실제 승인 금액에 반영할 수 있습니다.');
+    actionItems.push('enforce 전환은 assist 적용 표본을 별도로 확인한 뒤 판단합니다.');
+  } else if (modeConfig.mode === 'assist') {
+    if (total >= 50) {
+      status = 'risk_approval_readiness_enforce_candidate';
+      targetMode = 'enforce';
+      headline = 'assist 운용 표본이 충분하면 enforce 후보로 검토할 수 있습니다.';
+      actionItems.push('preview reject가 실제로 차단되어도 되는 케이스인지 샘플 리뷰 후 enforce 전환을 승인합니다.');
+    } else {
+      status = 'risk_approval_readiness_assist_observe';
+      headline = 'assist 운용 중이며 enforce 전환 전 표본 누적이 더 필요합니다.';
+      actionItems.push('assist 적용 표본 50건 이상에서 divergence와 실행 가드 차단이 없는지 확인합니다.');
+    }
+  } else if (modeConfig.mode === 'enforce') {
+    status = 'risk_approval_readiness_enforced';
+    headline = '리스크 승인 체인이 enforce 모드로 실행 결과에 직접 반영 중입니다.';
+    actionItems.push('preview reject/amount reduction이 성과와 체결률을 해치지 않는지 지속 점검합니다.');
+  }
+
+  return {
+    status,
+    headline,
+    currentMode: modeConfig.mode,
+    targetMode,
+    blockers,
+    reasons,
+    actionItems,
+    metrics: {
+      total,
+      previewRejects,
+      rejectionRate,
+      divergence,
+      divergenceRate,
+      executionStale: stale,
+      executionBypass: bypass,
+      amountReductionCandidates: safeNumber(amount.previewAmountReductions),
+      reductionRate,
+    },
+  };
+}
+
+function renderText(payload) {
+  return [
+    '🛡️ Risk Approval Mode Readiness',
+    `days: ${payload.days}`,
+    `status: ${payload.decision.status}`,
+    `headline: ${payload.decision.headline}`,
+    `current mode: ${payload.decision.currentMode}`,
+    `target mode: ${payload.decision.targetMode}`,
+    '',
+    '근거:',
+    ...payload.decision.reasons.map((reason) => `- ${reason}`),
+    '',
+    'mode dry-run:',
+    `- shadow: applied ${payload.modeDryRun.shadow.applied}, rejected ${payload.modeDryRun.shadow.rejected}, amount delta ${payload.modeDryRun.shadow.amountDelta}`,
+    `- assist: applied ${payload.modeDryRun.assist.applied}, rejected ${payload.modeDryRun.assist.rejected}, amount delta ${payload.modeDryRun.assist.amountDelta}`,
+    `- enforce: applied ${payload.modeDryRun.enforce.applied}, rejected ${payload.modeDryRun.enforce.rejected}, amount delta ${payload.modeDryRun.enforce.amountDelta}`,
+    '',
+    '권장 조치:',
+    ...payload.decision.actionItems.map((item) => `- ${item}`),
+  ].join('\n');
+}
+
+export async function buildRuntimeRiskApprovalReadiness({ days = 30, json = false } = {}) {
+  const [riskApproval, riskApprovalTrend, executionGuard, executionGuardTrend] = await Promise.all([
+    buildRuntimeRiskApprovalReport({ days, json: true }),
+    buildRuntimeRiskApprovalHistory({ days, json: true, write: false }),
+    buildRuntimeExecutionRiskGuardReport({ days, json: true }),
+    buildRuntimeExecutionRiskGuardHistory({ days, json: true, write: false }),
+  ]);
+  const modeConfig = getCurrentModeConfig();
+  const modeDryRun = buildModeDryRun(riskApproval, modeConfig);
+  const decision = buildDecision({ riskApproval, executionGuard, modeConfig });
+  const payload = {
+    ok: true,
+    days: Number(days),
+    generatedAt: new Date().toISOString(),
+    modeConfig,
+    decision,
+    modeDryRun,
+    riskApproval: {
+      status: riskApproval.decision?.status || 'unknown',
+      summary: riskApproval.summary || {},
+      trend: riskApprovalTrend.delta || {},
+    },
+    executionGuard: {
+      status: executionGuard.decision?.status || 'unknown',
+      summary: executionGuard.summary || {},
+      trend: executionGuardTrend.delta || {},
+    },
+  };
+  if (json) return payload;
+  return renderText(payload);
+}
+
+async function main() {
+  const args = parseArgs();
+  const result = await buildRuntimeRiskApprovalReadiness(args);
+  if (args.json) console.log(JSON.stringify(result, null, 2));
+  else console.log(result);
+}
+
+if (isDirectExecution(import.meta.url)) {
+  await runCliMain({
+    run: main,
+    errorPrefix: '❌ runtime-risk-approval-readiness 오류:',
+  });
+}
