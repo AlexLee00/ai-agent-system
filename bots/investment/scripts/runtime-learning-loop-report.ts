@@ -15,6 +15,8 @@ import { buildStrategyFeedbackOutcomes } from './runtime-strategy-feedback-outco
 import { buildStrategyFeedbackOutcomesHistory } from './runtime-strategy-feedback-outcomes-history.ts';
 import { buildRuntimeRiskApprovalReport } from './runtime-risk-approval-report.ts';
 import { buildRuntimeRiskApprovalHistory } from './runtime-risk-approval-history.ts';
+import { buildRuntimeExecutionRiskGuardReport } from './runtime-execution-risk-guard-report.ts';
+import { buildRuntimeExecutionRiskGuardHistory } from './runtime-execution-risk-guard-history.ts';
 
 function parseArgs(argv = process.argv.slice(2)) {
   const daysArg = argv.find((arg) => arg.startsWith('--days='));
@@ -368,6 +370,8 @@ function buildSectionStates({
   strategyFeedbackOutcomeTrend,
   riskApproval,
   riskApprovalTrend,
+  executionRiskGuard,
+  executionRiskGuardTrend,
 }) {
   const runtimeAge = ageHours(freshness.latestRuntimeSessionAt);
   const reviewAge = ageHours(freshness.latestTradeReviewAt);
@@ -456,6 +460,19 @@ function buildSectionStates({
         previousStatus: riskApprovalTrend.previous?.status || null,
         delta: riskApprovalTrend.delta || {},
         previousTopModel: riskApprovalTrend.previous?.topModel || null,
+      } : null,
+    } : null,
+    executionRiskGuard: executionRiskGuard ? {
+      status: executionRiskGuard.decision?.status || 'unknown',
+      headline: executionRiskGuard.decision?.headline || null,
+      total: Number(executionRiskGuard.summary?.total || 0),
+      staleCount: Number(executionRiskGuard.summary?.staleCount || 0),
+      bypassCount: Number(executionRiskGuard.summary?.bypassCount || 0),
+      topCode: executionRiskGuard.summary?.byCode?.[0] || null,
+      trend: executionRiskGuardTrend ? {
+        historyCount: Number(executionRiskGuardTrend.historyCount || 0),
+        previousStatus: executionRiskGuardTrend.previous?.status || null,
+        delta: executionRiskGuardTrend.delta || {},
       } : null,
     } : null,
   };
@@ -675,6 +692,12 @@ function renderText(payload) {
     sections.collect.riskApproval?.trend
       ? `- risk approval trend history ${sections.collect.riskApproval.trend.historyCount} | preview delta ${sections.collect.riskApproval.trend.delta?.total ?? 0} / reject delta ${sections.collect.riskApproval.trend.delta?.previewRejects ?? 0} / divergence delta ${sections.collect.riskApproval.trend.delta?.legacyApprovedPreviewRejected ?? 0} / amount delta change ${sections.collect.riskApproval.trend.delta?.previewVsApprovedDelta ?? 0}`
       : null,
+    sections.collect.executionRiskGuard
+      ? `- execution risk guard ${sections.collect.executionRiskGuard.status} | total ${sections.collect.executionRiskGuard.total} / stale ${sections.collect.executionRiskGuard.staleCount} / bypass ${sections.collect.executionRiskGuard.bypassCount}`
+      : '- execution risk guard none',
+    sections.collect.executionRiskGuard?.trend
+      ? `- execution risk guard trend history ${sections.collect.executionRiskGuard.trend.historyCount} | total delta ${sections.collect.executionRiskGuard.trend.delta?.total ?? 0} / stale delta ${sections.collect.executionRiskGuard.trend.delta?.staleCount ?? 0} / bypass delta ${sections.collect.executionRiskGuard.trend.delta?.bypassCount ?? 0}`
+      : null,
     buildRegimeActionHint(sections.collect.regimePerformance?.weakestRegime, 'weak')
       ? `- tuning hint ${buildRegimeActionHint(sections.collect.regimePerformance?.weakestRegime, 'weak')}`
       : null,
@@ -733,7 +756,7 @@ function buildFallback(payload = {}) {
 }
 
 export async function buildRuntimeLearningLoopReport({ days = 14, json = false } = {}) {
-  const [freshness, runtimeDecision, executionGate, autotune, runtimeSuggestions, backtest, validation, regimeCoverage, regimePerformance, strategyFamilyPerformance, strategyFeedbackOutcomes, strategyFeedbackOutcomeTrend, riskApproval, riskApprovalTrend, collectionAudit] = await Promise.all([
+  const [freshness, runtimeDecision, executionGate, autotune, runtimeSuggestions, backtest, validation, regimeCoverage, regimePerformance, strategyFamilyPerformance, strategyFeedbackOutcomes, strategyFeedbackOutcomeTrend, riskApproval, riskApprovalTrend, executionRiskGuard, executionRiskGuardTrend, collectionAudit] = await Promise.all([
     loadLoopFreshness(),
     buildRuntimeDecisionReport({ market: 'all', limit: 5, json: true }).catch(() => ({ count: 0, summary: {}, rows: [] })),
     buildRuntimeCryptoExecutionGateReport({ days, json: true }).catch(() => ({ decision: {} })),
@@ -748,6 +771,8 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
     buildStrategyFeedbackOutcomesHistory({ days: 90, json: true, write: false }).catch(() => null),
     buildRuntimeRiskApprovalReport({ days: 30, json: true }).catch(() => null),
     buildRuntimeRiskApprovalHistory({ days: 30, json: true, write: false }).catch(() => null),
+    buildRuntimeExecutionRiskGuardReport({ days: 14, json: true }).catch(() => null),
+    buildRuntimeExecutionRiskGuardHistory({ days: 14, json: true, write: false }).catch(() => null),
     runCollectionAudit({ markets: ['binance', 'kis', 'kis_overseas'], hours: 24 }).catch(() => null),
   ]);
 
@@ -766,6 +791,8 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
     strategyFeedbackOutcomeTrend,
     riskApproval,
     riskApprovalTrend,
+    executionRiskGuard,
+    executionRiskGuardTrend,
     collectionAudit,
   });
   const decision = buildDecision(sections);
@@ -785,6 +812,8 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
     strategyFeedbackOutcomeTrend,
     riskApproval,
     riskApprovalTrend,
+    executionRiskGuard,
+    executionRiskGuardTrend,
     executionGate,
     autotune,
     backtest,
@@ -808,6 +837,8 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
       strategyFeedbackOutcomeTrend,
       riskApproval,
       riskApprovalTrend,
+      executionRiskGuard,
+      executionRiskGuardTrend,
       executionGate: executionGate.decision,
       autotune: autotune.decision,
       backtest: backtest.decision,
