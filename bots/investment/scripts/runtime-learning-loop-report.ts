@@ -71,6 +71,23 @@ function selectPriorityRuntimeSuggestion(runtimeSuggestions = null, regimePerfor
   const suggestions = Array.isArray(runtimeSuggestions?.suggestions) ? runtimeSuggestions.suggestions : [];
   if (!suggestions.length) return null;
 
+  const riskOutcomeAdjust = suggestions.find((item) => {
+    const key = String(item?.key || '');
+    const text = `${key} ${item?.reason || ''}`.toLowerCase();
+    return item?.action === 'adjust' &&
+      key === 'runtime_config.nemesis.riskApprovalChain.assist.maxReductionPct' &&
+      text.includes('사후 성과');
+  });
+  if (riskOutcomeAdjust) return riskOutcomeAdjust;
+
+  const riskOutcomeReview = suggestions.find((item) => {
+    const key = String(item?.key || '');
+    return key.startsWith('runtime_config.nemesis.riskApprovalChain.model.') &&
+      key.endsWith('.outcomeReview') &&
+      ['promote_candidate', 'adjust'].includes(String(item?.action || ''));
+  });
+  if (riskOutcomeReview) return riskOutcomeReview;
+
   const weakest = regimePerformance?.weakestRegime || null;
   if (weakest?.regime && weakest?.worstMode?.tradeMode) {
     const regimeKey = String(weakest.regime);
