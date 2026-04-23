@@ -208,6 +208,16 @@ export function buildPriorityRuntimeSuggestionAction(priority = null) {
   return null;
 }
 
+function buildTradeReviewRepairAction(feedback = {}) {
+  if (Number(feedback.validationFindings || 0) <= 0) return null;
+  const topIssue = feedback.validationSummary?.topIssue || null;
+  const topSymbol = feedback.validationSummary?.topSymbol || null;
+  const repairCommand = feedback.validationSummary?.repairCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run validate-review:fix';
+  const issueText = topIssue ? `${topIssue.key} ${topIssue.count}건` : `${feedback.validationFindings}건`;
+  const symbolText = topSymbol ? `, 최다 종목 ${topSymbol.key} ${topSymbol.count}건` : '';
+  return `trade review 정합성 복구: ${issueText}${symbolText}. ${repairCommand}`;
+}
+
 async function loadLoopFreshness() {
   await db.initSchema();
   const [runtimeRow, reviewRow, backtestRow, suggestionRows] = await Promise.all([
@@ -663,8 +673,10 @@ function buildSectionStates({
     ageHours: reviewAge,
     validationFindings: Number(validation.findings || 0),
     closedTrades: Number(validation.closedTrades || 0),
+    validationSummary: validation.summary || {},
+    validationSamples: Array.isArray(validation.items) ? validation.items.slice(0, 3) : [],
     headline: Number(validation.findings || 0) > 0
-      ? `trade review 정합성 이슈 ${validation.findings}건이 남아 있습니다.`
+      ? `trade review 정합성 이슈 ${validation.findings}건이 남아 있습니다${validation.summary?.topIssue ? ` (${validation.summary.topIssue.key} ${validation.summary.topIssue.count}건 최다)` : ''}.`
       : 'trade review / 피드백 루프는 비교적 안정적입니다.',
   };
 
@@ -777,7 +789,7 @@ function buildDecision(sections = {}) {
   } else if (sections.feedback.status === 'repair') {
     status = 'feedback_repair_needed';
     headline = '피드백 루프 정합성 이슈가 남아 있어 review 데이터를 먼저 복구해야 합니다.';
-    nextActions.push('validate-review로 trade_review 누락/불일치를 먼저 정리합니다.');
+    nextActions.push(buildTradeReviewRepairAction(sections.feedback) || 'validate-review로 trade_review 누락/불일치를 먼저 정리합니다.');
   } else if (sections.strategy.status === 'ready') {
     status = 'strategy_update_ready';
     headline = '운영 압력을 줄일 전략 수정 후보가 준비돼 있어 빠르게 검토할 가치가 있습니다.';
@@ -792,6 +804,10 @@ function buildDecision(sections = {}) {
 
   if (nextActions.length === 0) {
     nextActions.push('지금처럼 validation lane과 feedback/review 데이터를 계속 누적합니다.');
+  }
+  const feedbackRepairAction = buildTradeReviewRepairAction(sections.feedback);
+  if (feedbackRepairAction && !nextActions.includes(feedbackRepairAction)) {
+    nextActions.push(feedbackRepairAction);
   }
 
   return {
@@ -900,6 +916,15 @@ function renderText(payload) {
     '피드백:',
     `- ${sections.feedback.status} | latest=${sections.feedback.latestAt || 'n/a'} (${formatAge(sections.feedback.ageHours)})`,
     `- closedTrades ${sections.feedback.closedTrades} / findings ${sections.feedback.validationFindings}`,
+    sections.feedback.validationSummary?.topIssue
+      ? `- top review issue ${sections.feedback.validationSummary.topIssue.key}:${sections.feedback.validationSummary.topIssue.count} | top symbol ${sections.feedback.validationSummary.topSymbol?.key || 'n/a'}:${sections.feedback.validationSummary.topSymbol?.count || 0}`
+      : null,
+    sections.feedback.validationSummary?.repairHint
+      ? `- repair hint ${sections.feedback.validationSummary.repairHint}`
+      : null,
+    sections.feedback.validationSummary?.repairCommand
+      ? `- repair command ${sections.feedback.validationSummary.repairCommand}`
+      : null,
     `- ${sections.feedback.headline}`,
     '',
     '전략 수정:',

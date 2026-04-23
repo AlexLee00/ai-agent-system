@@ -20,6 +20,48 @@ function isRatioScaledPercent(storedPercent, expectedPercent) {
   return Math.abs(stored - ratioCandidate) <= 0.0005;
 }
 
+export function summarizeTradeReviewFindings(items = []) {
+  const issueCounts = {};
+  const byExchange = {};
+  const bySymbol = {};
+  for (const item of Array.isArray(items) ? items : []) {
+    for (const issue of item.issues || []) {
+      issueCounts[issue] = (issueCounts[issue] || 0) + 1;
+    }
+    const exchange = String(item.exchange || 'unknown');
+    const symbol = String(item.symbol || 'unknown');
+    byExchange[exchange] = (byExchange[exchange] || 0) + 1;
+    bySymbol[symbol] = (bySymbol[symbol] || 0) + 1;
+  }
+
+  const rank = (map) => Object.entries(map)
+    .map(([key, count]) => ({ key, count: Number(count || 0) }))
+    .sort((a, b) => Number(b.count || 0) - Number(a.count || 0) || a.key.localeCompare(b.key));
+
+  const topIssue = rank(issueCounts)[0] || null;
+  const topExchange = rank(byExchange)[0] || null;
+  const topSymbol = rank(bySymbol)[0] || null;
+  const repairCommand = 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run validate-review:fix';
+
+  let repairHint = 'trade_review 누락/불일치 항목을 재생성하고 pnl_percent를 entry_value 기준으로 재계산합니다.';
+  if (topIssue?.key === 'missing_review') {
+    repairHint = '누락된 trade_review를 우선 재생성해야 합니다.';
+  } else if (topIssue?.key === 'pnl_percent_mismatch' || topIssue?.key === 'pnl_percent_ratio_scale') {
+    repairHint = '저널 pnl_percent 계산 스케일을 우선 보정해야 합니다.';
+  } else if (topIssue?.key === 'missing_max_favorable' || topIssue?.key === 'missing_max_adverse') {
+    repairHint = 'MFE/MAE가 비어 있는 review를 재생성해야 합니다.';
+  }
+
+  return {
+    issueCounts,
+    topIssue,
+    topExchange,
+    topSymbol,
+    repairCommand,
+    repairHint,
+  };
+}
+
 export async function validateTradeReview({ days = 30, fix = false } = {}) {
   await db.initSchema();
   await journalDb.initJournalSchema();
@@ -114,11 +156,14 @@ export async function validateTradeReview({ days = 30, fix = false } = {}) {
     });
   }
 
+  const summary = summarizeTradeReviewFindings(findings);
+
   return {
     days,
     closedTrades: rows.length,
     findings: findings.length,
     fixed,
+    summary,
     items: findings,
   };
 }
