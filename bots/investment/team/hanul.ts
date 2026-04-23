@@ -37,7 +37,7 @@ import { notifyTrade, notifyError, notifyJournalEntry, notifyKisSignal, notifyKi
 import { getDynamicMinOrderAmount } from '../shared/capital-manager.ts';
 import { getMarketOrderRule } from '../shared/order-rules.ts';
 import { buildExecutionRiskApprovalGuard } from '../shared/risk-approval-execution-guard.ts';
-import { attachExecutionToPositionStrategy } from '../shared/execution-attach.ts';
+import { attachExecutionToPositionStrategyTracked } from '../shared/execution-attach.ts';
 import pgPool from '../../../packages/core/lib/pg-pool.js';
 
 // ─── 심볼 유효성 ────────────────────────────────────────────────────
@@ -1081,7 +1081,7 @@ export async function executeSignal(signal) {
         tradeMode: signalTradeMode,
       });
       if (!paperMode) {
-        await attachExecutionToPositionStrategy({
+        await attachExecutionToPositionStrategyTracked({
           trade,
           signal,
           dryRun: false,
@@ -1354,7 +1354,7 @@ export async function executeOverseasSignal(signal) {
         tradeMode: signalTradeMode,
       });
       if (!paperMode) {
-        await attachExecutionToPositionStrategy({
+        await attachExecutionToPositionStrategyTracked({
           trade,
           signal,
           dryRun: false,

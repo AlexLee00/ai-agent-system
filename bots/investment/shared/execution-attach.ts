@@ -108,3 +108,47 @@ export async function attachExecutionToPositionStrategy({
     signalId: signal?.id || trade.signal_id || null,
   };
 }
+
+function buildAttachMeta(result = {}, error = null) {
+  return {
+    executionAttach: {
+      checkedAt: new Date().toISOString(),
+      ok: !error,
+      status: error ? 'error' : (result?.status || 'unknown'),
+      attached: Boolean(result?.attached),
+      profileId: result?.profileId || null,
+      symbol: result?.symbol || null,
+      exchange: result?.exchange || null,
+      tradeMode: result?.tradeMode || null,
+      error: error ? String(error?.message || error).slice(0, 240) : null,
+    },
+  };
+}
+
+export async function attachExecutionToPositionStrategyTracked({
+  trade = null,
+  signal = null,
+  dryRun = false,
+  forceRefresh = false,
+  requireOpenPosition = true,
+} = {}) {
+  const signalId = signal?.id || trade?.signal_id || trade?.signalId || null;
+  try {
+    const result = await attachExecutionToPositionStrategy({
+      trade,
+      signal,
+      dryRun,
+      forceRefresh,
+      requireOpenPosition,
+    });
+    if (signalId) {
+      await db.mergeSignalBlockMeta(signalId, buildAttachMeta(result)).catch(() => {});
+    }
+    return result;
+  } catch (error) {
+    if (signalId) {
+      await db.mergeSignalBlockMeta(signalId, buildAttachMeta({}, error)).catch(() => {});
+    }
+    throw error;
+  }
+}

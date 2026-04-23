@@ -710,6 +710,16 @@ export async function updateSignalBlock(id, {
   await run(`UPDATE signals SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
 }
 
+export async function mergeSignalBlockMeta(id, meta = {}) {
+  if (!id || !meta || typeof meta !== 'object') return;
+  await run(
+    `UPDATE signals
+        SET block_meta = COALESCE(block_meta, '{}'::jsonb) || $1::jsonb
+      WHERE id = $2`,
+    [JSON.stringify(meta), id],
+  );
+}
+
 export async function getSignalById(id) {
   return get(`SELECT * FROM signals WHERE id = $1`, [id]);
 }
