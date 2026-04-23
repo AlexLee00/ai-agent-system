@@ -330,6 +330,34 @@ function buildPositionStrategyRemediationRefreshLine(positionStrategyRemediation
   return refreshItem ? `♻️ ${refreshItem}` : null;
 }
 
+function buildPositionStrategyRemediationRefreshState(positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary) {
+  if (!positionStrategyRemediationSummary || positionStrategyRemediationSummary.error || !positionStrategyRemediationSummary.ok) {
+    return {
+      needed: false,
+      reason: null,
+      stale: Boolean(positionStrategyRemediationHistorySummary?.stale),
+      command: null,
+    };
+  }
+  const actionItems = positionStrategyRemediationSummary?.decision?.actionItems;
+  if (!Array.isArray(actionItems)) {
+    return {
+      needed: false,
+      reason: null,
+      stale: Boolean(positionStrategyRemediationHistorySummary?.stale),
+      command: null,
+    };
+  }
+  const refreshItem = actionItems.find((item) => typeof item === 'string' && item.startsWith('history refresh')) || null;
+  const command = refreshItem?.split(':').slice(1).join(':').trim() || null;
+  return {
+    needed: Boolean(refreshItem),
+    reason: refreshItem,
+    stale: Boolean(positionStrategyRemediationHistorySummary?.stale),
+    command,
+  };
+}
+
 function buildPositionStrategyRemediationHistoryLine(positionStrategyRemediationHistorySummary) {
   if (!positionStrategyRemediationHistorySummary || positionStrategyRemediationHistorySummary.error || !positionStrategyRemediationHistorySummary.ok) return null;
   return `🗂️ remediation history: count ${positionStrategyRemediationHistorySummary.historyCount || 0} | changed ${positionStrategyRemediationHistorySummary.statusChanged ? 'yes' : 'no'} | age ${positionStrategyRemediationHistorySummary.ageMinutes ?? 'n/a'}m | stale ${positionStrategyRemediationHistorySummary.stale ? 'yes' : 'no'} | duplicate ${positionStrategyRemediationHistorySummary.delta?.duplicateManaged >= 0 ? '+' : ''}${positionStrategyRemediationHistorySummary.delta?.duplicateManaged || 0} | orphan ${positionStrategyRemediationHistorySummary.delta?.orphanProfiles >= 0 ? '+' : ''}${positionStrategyRemediationHistorySummary.delta?.orphanProfiles || 0}`;
@@ -395,6 +423,10 @@ function buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSumma
 async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary, positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary) {
   const hygieneRemediationPlan = positionStrategyHygieneSummary?.remediationPlan
     || buildPositionStrategyHygieneRemediationPlan(positionStrategyHygieneSummary);
+  const remediationRefreshState = buildPositionStrategyRemediationRefreshState(
+    positionStrategyRemediationSummary,
+    positionStrategyRemediationHistorySummary,
+  );
   const content = [
     `[일일 피드백 ${dateKst}] ${feedback.summary}`,
     `거래 ${feedback.stats.total}건 / 승률 ${(feedback.stats.winRate * 100).toFixed(1)}% / 손익 $${feedback.stats.totalPnl.toFixed(2)}`,
@@ -426,6 +458,7 @@ async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeni
     position_strategy_hygiene: positionStrategyHygieneSummary || {},
     position_strategy_remediation: positionStrategyRemediationSummary || {},
     position_strategy_remediation_history: positionStrategyRemediationHistorySummary || {},
+    position_strategy_remediation_refresh: remediationRefreshState,
     position_strategy_hygiene_remediation: hygieneRemediationPlan || {},
     position_strategy_hygiene_recommended_exchange: positionStrategyHygieneSummary?.recommendedExchange?.exchange || null,
     position_strategy_hygiene_recommended_count: Number(positionStrategyHygieneSummary?.recommendedExchange?.count || 0),
@@ -454,6 +487,10 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
   const feedback = await buildDailyFeedback(dateKst, trades, analystAccuracy);
   const hygieneRemediationPlan = positionStrategyHygieneSummary?.remediationPlan
     || buildPositionStrategyHygieneRemediationPlan(positionStrategyHygieneSummary);
+  const remediationRefreshState = buildPositionStrategyRemediationRefreshState(
+    positionStrategyRemediationSummary,
+    positionStrategyRemediationHistorySummary,
+  );
   const message = buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary, positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary);
 
   try {
@@ -490,7 +527,7 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
         event_type: 'daily_feedback',
         alert_level: 1,
         message: finalMessage,
-        payload: { dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary, positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary },
+        payload: { dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary, positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary, remediationRefreshState },
       });
       await dailyFeedbackMemory.remember(finalMessage, 'episodic', {
         importance: 0.7,
@@ -503,6 +540,9 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
           winRate: feedback.stats.winRate,
           hygieneStatus: hygieneRemediationPlan?.status || null,
           hygieneExchange: hygieneRemediationPlan?.recommendedExchange || null,
+          remediationRefreshNeeded: remediationRefreshState.needed,
+          remediationRefreshStale: remediationRefreshState.stale,
+          remediationRefreshCommand: remediationRefreshState.command,
         },
       }).catch(() => {});
       await dailyFeedbackMemory.consolidate({
@@ -528,6 +568,7 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
     positionStrategyHygieneSummary,
     positionStrategyRemediationSummary,
     positionStrategyRemediationHistorySummary,
+    remediationRefreshState,
     hygieneRemediationPlan,
     feedback,
     message,
