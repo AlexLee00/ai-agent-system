@@ -30,6 +30,54 @@ export function buildOrphanStrategyProfileCandidates({ activeProfiles = [], live
     }));
 }
 
+export function summarizeOrphanStrategyProfiles(candidates = [], {
+  apply = false,
+  activeProfiles = 0,
+  livePositions = 0,
+} = {}) {
+  return {
+    activeProfiles: Number(activeProfiles || 0),
+    livePositions: Number(livePositions || 0),
+    orphanProfiles: candidates.length,
+    orphanExchanges: [...new Set(candidates.map((row) => row.exchange).filter(Boolean))].length,
+    orphanSymbols: [...new Set(candidates.map((row) => `${row.exchange}:${row.symbol}`).filter(Boolean))].length,
+    retirements: apply ? candidates.length : 0,
+  };
+}
+
+export function buildOrphanStrategyProfileDecision(summary = {}, { apply = false } = {}) {
+  if (!apply && summary.orphanProfiles > 0) {
+    return {
+      status: 'orphan_strategy_profiles_candidates',
+      headline: `live 포지션이 없는 active strategy profile ${summary.orphanProfiles}건이 있습니다.`,
+      safeToApply: summary.orphanProfiles > 0,
+      actionItems: [
+        `activeProfiles ${summary.activeProfiles || 0} / livePositions ${summary.livePositions || 0} / orphanSymbols ${summary.orphanSymbols || 0}`,
+        'dry-run rows를 확인한 뒤 --apply로 orphan active profile을 정리합니다.',
+        '적용 후 runtime:position-strategy-audit와 health-report에서 orphan profile 감소를 재확인합니다.',
+      ],
+    };
+  }
+  if (apply && summary.retirements > 0) {
+    return {
+      status: 'orphan_strategy_profiles_retired',
+      headline: `orphan strategy profile ${summary.retirements}건을 정리했습니다.`,
+      safeToApply: false,
+      actionItems: [
+        '적용 후 runtime:position-strategy-audit로 orphan profile이 줄었는지 확인합니다.',
+      ],
+    };
+  }
+  return {
+    status: 'orphan_strategy_profiles_clear',
+    headline: '현재 orphan active strategy profile이 없습니다.',
+    safeToApply: false,
+    actionItems: [
+      '추가 조치 없이 health/feedback 관찰을 유지합니다.',
+    ],
+  };
+}
+
 export async function retireOrphanStrategyProfiles({ apply = false } = {}) {
   await db.initSchema();
   const [livePositions, activeProfiles] = await Promise.all([
@@ -49,6 +97,12 @@ export async function retireOrphanStrategyProfiles({ apply = false } = {}) {
     }
   }
 
+  const summary = summarizeOrphanStrategyProfiles(candidates, {
+    apply,
+    activeProfiles: activeProfiles.length,
+    livePositions: livePositions.length,
+  });
+
   return {
     ok: true,
     apply,
@@ -56,6 +110,14 @@ export async function retireOrphanStrategyProfiles({ apply = false } = {}) {
     livePositions: livePositions.length,
     candidates: candidates.length,
     retired: retired.length,
+    summary: {
+      ...summary,
+      retirements: apply ? retired.length : 0,
+    },
+    decision: buildOrphanStrategyProfileDecision({
+      ...summary,
+      retirements: apply ? retired.length : 0,
+    }, { apply }),
     rows: apply ? retired : candidates,
   };
 }

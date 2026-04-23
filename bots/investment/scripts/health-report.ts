@@ -28,6 +28,7 @@ import { runExecutionAttachAudit } from './runtime-execution-attach-audit.ts';
 import { runExecutionAttachBackfill } from './runtime-execution-attach-backfill.ts';
 import { buildRuntimePositionStrategyAudit } from './runtime-position-strategy-audit.ts';
 import { normalizeDuplicateStrategyProfiles } from './normalize-duplicate-strategy-profiles.ts';
+import { retireOrphanStrategyProfiles } from './retire-orphan-strategy-profiles.ts';
 import { backfillTradeIncidentLinks } from './backfill-trade-incident-links.ts';
 import {
   buildGuardHealth,
@@ -667,6 +668,7 @@ function buildDecision(
   executionAttachBackfill,
   positionStrategyAudit,
   duplicateStrategyNormalization,
+  orphanStrategyRetirement,
   executionRiskApprovalGuardHealth,
 ) {
   const topBlock = signalBlockHealth.top[0] || null;
@@ -693,6 +695,7 @@ function buildDecision(
   const positionStrategyDuplicateScopes = Number(positionStrategyAudit?.duplicateManagedProfileScopes || positionStrategyAudit?.duplicateActiveProfileScopes || 0);
   const positionStrategyOrphans = Number(positionStrategyAudit?.orphanProfiles || 0);
   const duplicateNormalizationSummary = duplicateStrategyNormalization?.summary || {};
+  const orphanRetirementSummary = orphanStrategyRetirement?.summary || {};
   return buildHealthDecision({
     warnings: [
       {
@@ -888,7 +891,7 @@ function buildDecision(
       {
         active: positionStrategyOrphans > 0,
         level: 'low',
-        reason: `position strategy orphan profiles — live 포지션 없는 active profile ${positionStrategyOrphans}개 / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles`,
+        reason: `position strategy orphan profiles — ${orphanStrategyRetirement?.decision?.headline || `live 포지션 없는 active profile ${positionStrategyOrphans}개`} / orphan symbols ${orphanRetirementSummary.orphanSymbols || 0} / safeToApply ${orphanStrategyRetirement?.decision?.safeToApply === true ? 'yes' : 'no'} / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles`,
       },
     ],
     okReason: '핵심 서비스와 trade_review 정합성이 현재는 안정 구간입니다.',
@@ -1189,10 +1192,19 @@ function formatText(report) {
                 `  normalize headline: ${report.duplicateStrategyNormalization.decision?.headline || 'n/a'}`,
               ]
               : []),
+            ...(report.orphanStrategyRetirement
+              ? [
+                `  orphan retire status: ${report.orphanStrategyRetirement.decision?.status || 'unknown'} / safeToApply ${report.orphanStrategyRetirement.decision?.safeToApply === true ? 'yes' : 'no'}`,
+                `  orphan retire summary: orphanProfiles ${report.orphanStrategyRetirement.summary?.orphanProfiles || 0} / orphanSymbols ${report.orphanStrategyRetirement.summary?.orphanSymbols || 0}`,
+                `  orphan retire headline: ${report.orphanStrategyRetirement.decision?.headline || 'n/a'}`,
+              ]
+              : []),
             ...(report.positionStrategyAudit.duplicateProfileScopes || []).slice(0, 3).map((scope) => `  duplicate: ${scope.exchange}/${scope.symbol} count ${scope.count} keeper ${scope.keeperProfileId}`),
             `  next command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-audit`,
             `  normalize dry-run: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --json`,
             `  normalize apply: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --apply --json`,
+            `  retire orphan dry-run: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles`,
+            `  retire orphan apply: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles -- --apply`,
           ]
         : ['  position strategy audit 정보 없음'],
     },
@@ -1273,6 +1285,7 @@ async function buildReport() {
   const executionAttachBackfill = await runExecutionAttachBackfill({ days: 14, limit: 50, dryRun: true }).catch(() => null);
   const positionStrategyAudit = await buildRuntimePositionStrategyAudit({ json: true }).catch(() => null);
   const duplicateStrategyNormalization = await normalizeDuplicateStrategyProfiles({ apply: false }).catch(() => null);
+  const orphanStrategyRetirement = await retireOrphanStrategyProfiles({ apply: false }).catch(() => null);
   const incidentLinkAudit = await backfillTradeIncidentLinks({
     dryRun: true,
     json: true,
@@ -1309,6 +1322,7 @@ async function buildReport() {
     executionAttachBackfill,
     positionStrategyAudit,
     duplicateStrategyNormalization,
+    orphanStrategyRetirement,
     executionRiskApprovalGuardHealth,
   );
 
@@ -1342,6 +1356,7 @@ async function buildReport() {
     executionAttachBackfill,
     positionStrategyAudit,
     duplicateStrategyNormalization,
+    orphanStrategyRetirement,
     latestOpsSnapshot,
     capitalGuardBreakdown,
     cryptoGateActionPlan,
