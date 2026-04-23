@@ -1149,27 +1149,20 @@ async function persistBuyPosition({ symbol, order, effectivePaperMode, signalTra
       ]);
 
       const walletTotal = Number(walletBalances?.totalBalance || 0);
-      const sameModeTracked = liveLegRows
-        .filter((row) => String(row.trade_mode || 'normal') === String(signalTradeMode || 'normal'))
-        .reduce((sum, row) => sum + Number(row.amount || 0), 0);
-      const sameModeTrackedValue = liveLegRows
-        .filter((row) => String(row.trade_mode || 'normal') === String(signalTradeMode || 'normal'))
-        .reduce((sum, row) => sum + (Number(row.amount || 0) * Number(row.avg_price || 0)), 0);
-      const otherModesAmount = liveLegRows
-        .filter((row) => String(row.trade_mode || 'normal') !== String(signalTradeMode || 'normal'))
-        .reduce((sum, row) => sum + Number(row.amount || 0), 0);
+      const trackedAmount = liveLegRows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+      const trackedValue = liveLegRows.reduce((sum, row) => sum + (Number(row.amount || 0) * Number(row.avg_price || 0)), 0);
 
-      const baselineManagedAmount = sameModeTracked + Number(order.filled || 0);
-      const residualDustAmount = Math.max(0, walletTotal - otherModesAmount - baselineManagedAmount);
-      managedAmount = Math.max(baselineManagedAmount, walletTotal - otherModesAmount, Number(order.filled || 0));
+      const baselineManagedAmount = trackedAmount + Number(order.filled || 0);
+      const residualDustAmount = Math.max(0, walletTotal - baselineManagedAmount);
+      managedAmount = Math.max(baselineManagedAmount, walletTotal, Number(order.filled || 0));
 
       if (managedAmount > 0) {
-        const weightedValue = sameModeTrackedValue + (Number(order.filled || 0) * Number(order.price || 0)) + (residualDustAmount * Number(order.price || 0));
+        const weightedValue = trackedValue + (Number(order.filled || 0) * Number(order.price || 0)) + (residualDustAmount * Number(order.price || 0));
         managedAvgPrice = weightedValue > 0 ? (weightedValue / managedAmount) : Number(order.price || 0);
       }
 
       if (residualDustAmount > 0.0000001) {
-        console.log(`  🧹 ${symbol} 신규 관리 포지션에 dust ${residualDustAmount.toFixed(8)} 추가 흡수 (${signalTradeMode})`);
+        console.log(`  🧹 ${symbol} 신규 관리 포지션에 dust ${residualDustAmount.toFixed(8)} 추가 흡수`);
       }
     } catch (error) {
       console.warn(`  ⚠️ ${symbol} dust 흡수형 포지션 저장 보정 실패: ${error.message}`);

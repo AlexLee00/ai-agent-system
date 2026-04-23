@@ -734,8 +734,17 @@ export async function getSameDayTrade({
 
 // ─── positions ──────────────────────────────────────────────────────
 
+function isUnifiedLiveSymbolScope(exchange = null, paper = null) {
+  return String(exchange || '').trim().toLowerCase() === 'binance' && paper !== true;
+}
+
+function canonicalizePositionTradeMode(exchange = null, paper = null, tradeMode = null) {
+  if (isUnifiedLiveSymbolScope(exchange, paper)) return 'normal';
+  return tradeMode || getInvestmentTradeMode();
+}
+
 export async function upsertPosition({ symbol, amount, avgPrice, unrealizedPnl, exchange = 'binance', paper = false, tradeMode = null }) {
-  const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
+  const effectiveTradeMode = canonicalizePositionTradeMode(exchange, paper, tradeMode);
   const normalizedExchange = String(exchange || 'binance').trim().toLowerCase();
   const marketType = normalizedExchange === 'kis' || normalizedExchange === 'kis_overseas' ? 'stocks' : 'crypto';
   const executionMode = paper === true ? 'paper' : getExecutionMode();
@@ -781,8 +790,9 @@ export async function getPosition(symbol, { exchange = null, paper = null, trade
     params.push(paper === true);
     conditions.push(`paper = $${params.length}`);
   }
-  if (tradeMode) {
-    params.push(tradeMode);
+  const effectiveTradeMode = canonicalizePositionTradeMode(exchange, paper, tradeMode);
+  if (effectiveTradeMode && !isUnifiedLiveSymbolScope(exchange, paper)) {
+    params.push(effectiveTradeMode);
     conditions.push(`COALESCE(trade_mode, 'normal') = $${params.length}`);
   }
 
@@ -802,16 +812,23 @@ export async function getPaperPosition(symbol, exchange = null, tradeMode = null
 }
 
 export async function getAllPositions(exchange = null, paper = null, tradeMode = null) {
+  const effectiveTradeMode = canonicalizePositionTradeMode(exchange, paper, tradeMode);
   if (exchange && paper === true && tradeMode) {
     return query(
       `SELECT * FROM positions WHERE amount > 0 AND exchange = $1 AND paper = true AND COALESCE(trade_mode, 'normal') = $2 ORDER BY symbol`,
-      [exchange, tradeMode],
+      [exchange, effectiveTradeMode],
     );
   }
   if (paper === true && tradeMode) {
     return query(
       `SELECT * FROM positions WHERE amount > 0 AND paper = true AND COALESCE(trade_mode, 'normal') = $1 ORDER BY symbol`,
-      [tradeMode],
+      [effectiveTradeMode],
+    );
+  }
+  if (exchange && paper === false && tradeMode && isUnifiedLiveSymbolScope(exchange, paper)) {
+    return query(
+      `SELECT * FROM positions WHERE amount > 0 AND exchange = $1 AND paper = false ORDER BY symbol`,
+      [exchange],
     );
   }
   if (exchange && paper !== null) {
@@ -846,7 +863,8 @@ export async function getPaperPositions(exchange = null, tradeMode = null) {
 }
 
 export async function getOpenPositions(exchange = null, paper = false, tradeMode = null) {
-  if (exchange && tradeMode) {
+  const effectiveTradeMode = canonicalizePositionTradeMode(exchange, paper, tradeMode);
+  if (exchange && tradeMode && !isUnifiedLiveSymbolScope(exchange, paper)) {
     return query(
       `SELECT p.symbol, p.amount, p.avg_price, p.unrealized_pnl, p.exchange, p.paper,
               COALESCE(p.trade_mode, 'normal') AS trade_mode,
@@ -866,7 +884,7 @@ export async function getOpenPositions(exchange = null, paper = false, tradeMode
        FROM positions p
        WHERE p.amount > 0 AND p.exchange = $1 AND p.paper = $2 AND COALESCE(p.trade_mode, 'normal') = $3
        ORDER BY entry_time ASC`,
-      [exchange, paper === true, tradeMode],
+      [exchange, paper === true, effectiveTradeMode],
     );
   }
   if (exchange) {
@@ -927,8 +945,8 @@ export async function deletePosition(symbol, { exchange = null, paper = null, tr
     params.push(paper === true);
     conditions.push(`paper = $${params.length}`);
   }
-  if (tradeMode || paper !== null) {
-    const effectiveMode = tradeMode || getInvestmentTradeMode();
+  if ((tradeMode || paper !== null) && !isUnifiedLiveSymbolScope(exchange, paper)) {
+    const effectiveMode = canonicalizePositionTradeMode(exchange, paper, tradeMode);
     params.push(effectiveMode);
     conditions.push(`COALESCE(trade_mode, 'normal') = $${params.length}`);
   }
@@ -1137,8 +1155,9 @@ export async function getPositionStrategyProfile(symbol, {
     params.push(exchange);
     conditions.push(`exchange = $${params.length}`);
   }
-  if (tradeMode) {
-    params.push(tradeMode);
+  const effectiveTradeMode = canonicalizePositionTradeMode(exchange, false, tradeMode);
+  if (effectiveTradeMode) {
+    params.push(effectiveTradeMode);
     conditions.push(`COALESCE(trade_mode, 'normal') = $${params.length}`);
   }
   if (status) {
@@ -1172,7 +1191,7 @@ export async function upsertPositionStrategyProfile({
   strategyContext = {},
 } = {}) {
   if (!symbol || !exchange) return null;
-  const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
+  const effectiveTradeMode = canonicalizePositionTradeMode(exchange, false, tradeMode);
   const updated = await get(
     `UPDATE position_strategy_profiles
      SET signal_id = $1,
@@ -1247,8 +1266,9 @@ export async function closePositionStrategyProfile(symbol, {
     params.push(exchange);
     conditions.push(`exchange = $${params.length}`);
   }
-  if (tradeMode) {
-    params.push(tradeMode);
+  const effectiveTradeMode = canonicalizePositionTradeMode(exchange, false, tradeMode);
+  if (effectiveTradeMode) {
+    params.push(effectiveTradeMode);
     conditions.push(`COALESCE(trade_mode, 'normal') = $${params.length}`);
   }
   if (signalId) {

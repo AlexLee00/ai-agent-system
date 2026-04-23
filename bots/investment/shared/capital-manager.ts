@@ -405,12 +405,13 @@ export async function getOpenPositions(exchange = null, paper = false, tradeMode
   try {
     const conditions = ['amount > 0', `paper = $1`];
     const params = [paper === true];
+    const unifyLiveBinance = String(exchange || '').trim().toLowerCase() === 'binance' && paper !== true;
 
     if (exchange) {
       params.push(exchange);
       conditions.push(`exchange = $${params.length}`);
     }
-    if (tradeMode) {
+    if (tradeMode && !unifyLiveBinance) {
       params.push(tradeMode);
       conditions.push(`COALESCE(trade_mode, 'normal') = $${params.length}`);
     }
