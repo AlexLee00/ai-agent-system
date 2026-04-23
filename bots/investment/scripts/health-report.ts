@@ -665,6 +665,7 @@ function buildDecision(
   const pressureLane = recentLaneBlockPressure.topLane || null;
   const collectionInsufficient = collectionAudit?.markets?.find((item) => item?.collectQuality?.status === 'insufficient') || null;
   const collectionDegraded = collectionAudit?.markets?.find((item) => item?.collectQuality?.status === 'degraded') || null;
+  const strategyFeedbackOutcomes = runtimeLearningLoop?.sections?.collect?.strategyFeedbackOutcomes || null;
   return buildHealthDecision({
     warnings: [
       {
@@ -783,6 +784,11 @@ function buildDecision(
         active: ['regime_strategy_tuning_needed', 'regime_strategy_monitor'].includes(runtimeLearningLoop?.decision?.status),
         level: runtimeLearningLoop?.decision?.status === 'regime_strategy_monitor' ? 'low' : 'medium',
         reason: `learning loop — ${runtimeLearningLoop?.decision?.headline || '레짐별 전략 튜닝 필요'} / top suggestion ${runtimeLearningLoop?.sections?.strategy?.runtimeSuggestionTop?.key || 'n/a'} ${runtimeLearningLoop?.decision?.status === 'regime_strategy_monitor' ? `current ${runtimeLearningLoop?.sections?.strategy?.runtimeSuggestionTop?.current ?? runtimeLearningLoop?.sections?.strategy?.runtimeSuggestionTop?.governance?.current ?? 'n/a'} (already applied)` : `-> ${runtimeLearningLoop?.sections?.strategy?.runtimeSuggestionTop?.suggested ?? 'n/a'}`} / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-suggest -- --json${latestOpsSnapshot?.capturedAt ? ` / latest snapshot ${latestOpsSnapshot.capturedAt}` : ''}`,
+      },
+      {
+        active: strategyFeedbackOutcomes?.status === 'strategy_feedback_outcome_attention',
+        level: 'medium',
+        reason: `strategy feedback outcomes — ${strategyFeedbackOutcomes?.headline || '전략 피드백 적용 결과 점검 필요'} / tagged ${strategyFeedbackOutcomes?.totalTagged || 0} / closed ${strategyFeedbackOutcomes?.closedTagged || 0} / pnl ${strategyFeedbackOutcomes?.pnlNet ?? 0} / weakest ${strategyFeedbackOutcomes?.weakest?.familyBias || 'n/a'} ${strategyFeedbackOutcomes?.weakest?.family || 'n/a'} avg ${strategyFeedbackOutcomes?.weakest?.avgPnlPercent ?? 'n/a'}%`,
       },
       {
         active: Boolean(collectionInsufficient || collectionDegraded),
@@ -977,12 +983,15 @@ function formatText(report) {
       lines: report.runtimeLearningLoop
         ? (() => {
           const { weakest: latestWeakest, weakestMode: latestWeakestMode } = getWeakestRegimeSummary(report.latestOpsSnapshot?.health?.runtimeLearningLoop);
+          const strategyFeedbackOutcomes = report.runtimeLearningLoop.sections?.collect?.strategyFeedbackOutcomes || null;
           return [
             `  status: ${report.runtimeLearningLoop.decision?.status || 'unknown'}`,
             `  headline: ${report.runtimeLearningLoop.decision?.headline || 'n/a'}`,
             `  weakest: ${report.runtimeLearningLoop.sections?.collect?.regimePerformance?.weakestRegime?.regime || 'n/a'} / ${report.runtimeLearningLoop.sections?.collect?.regimePerformance?.weakestRegime?.worstMode?.tradeMode || 'n/a'} / avg ${report.runtimeLearningLoop.sections?.collect?.regimePerformance?.weakestRegime?.worstMode?.avgPnlPercent ?? 'n/a'}%`,
             `  strongest: ${report.runtimeLearningLoop.sections?.collect?.regimePerformance?.strongestRegime?.regime || 'n/a'} / ${report.runtimeLearningLoop.sections?.collect?.regimePerformance?.strongestRegime?.bestMode?.tradeMode || 'n/a'} / avg ${report.runtimeLearningLoop.sections?.collect?.regimePerformance?.strongestRegime?.bestMode?.avgPnlPercent ?? 'n/a'}%`,
             `  top suggestion: ${report.runtimeLearningLoop.sections?.strategy?.runtimeSuggestionTop?.key || 'n/a'} -> ${report.runtimeLearningLoop.sections?.strategy?.runtimeSuggestionTop?.suggested ?? 'n/a'} (${report.runtimeLearningLoop.sections?.strategy?.runtimeSuggestionTop?.action || 'n/a'})`,
+            `  strategy feedback outcomes: ${strategyFeedbackOutcomes?.status || 'unknown'} / tagged ${strategyFeedbackOutcomes?.totalTagged || 0} / closed ${strategyFeedbackOutcomes?.closedTagged || 0} / pnl ${strategyFeedbackOutcomes?.pnlNet ?? 0}`,
+            ...(strategyFeedbackOutcomes?.weakest ? [`  feedback weakest: ${strategyFeedbackOutcomes.weakest.familyBias || 'n/a'} / ${strategyFeedbackOutcomes.weakest.family || 'n/a'} / ${strategyFeedbackOutcomes.weakest.executionKind || 'n/a'} / avg ${strategyFeedbackOutcomes.weakest.avgPnlPercent ?? 'n/a'}%`] : []),
             ...(report.latestOpsSnapshot?.capturedAt ? [`  latest snapshot: ${report.latestOpsSnapshot.capturedAt} / ${latestWeakest?.regime || 'n/a'} / ${latestWeakestMode}`] : []),
             `  next command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-suggest -- --json`,
             ...((report.runtimeLearningLoop.decision?.nextActions || []).slice(0, 3).map((item) => `  next: ${item}`)),

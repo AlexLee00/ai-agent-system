@@ -333,6 +333,25 @@ async function main() {
         hsm.clearAlert(state, 'learning-loop-regime-monitor');
       }
     }
+
+    const strategyFeedbackOutcomes = learningLoop?.sections?.collect?.strategyFeedbackOutcomes || null;
+    const strategyFeedbackKey = 'learning-loop-strategy-feedback-outcomes';
+    if (strategyFeedbackOutcomes?.status === 'strategy_feedback_outcome_attention') {
+      if (hsm.canAlert(state, strategyFeedbackKey)) {
+        const weakest = strategyFeedbackOutcomes?.weakest || null;
+        issues.push({
+          key: strategyFeedbackKey,
+          level: 2,
+          msg: `⚠️ [루나 헬스] strategy feedback outcomes attention\n${strategyFeedbackOutcomes.headline || '전략 피드백 적용 결과 점검 필요'}\ntagged ${strategyFeedbackOutcomes.totalTagged || 0} / closed ${strategyFeedbackOutcomes.closedTagged || 0} / pnl ${strategyFeedbackOutcomes.pnlNet ?? 0}${weakest ? `\nweakest: ${weakest.familyBias || 'n/a'} / ${weakest.family || 'n/a'} / ${weakest.executionKind || 'n/a'} avg ${weakest.avgPnlPercent ?? 'n/a'}%` : ''}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:strategy-feedback-outcomes -- --json`,
+        });
+      }
+    } else if (state[strategyFeedbackKey]) {
+      recovers.push({
+        key: strategyFeedbackKey,
+        msg: '✅ [루나 헬스] strategy feedback outcomes 회복\n전략 피드백 적용 결과 기준 주의 신호 없음 — 자동 감지',
+      });
+      hsm.clearAlert(state, strategyFeedbackKey);
+    }
   } catch (e) {
     const key = 'learning-loop-check-failed';
     if (hsm.canAlert(state, key)) {
