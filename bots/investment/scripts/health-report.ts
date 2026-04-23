@@ -1130,6 +1130,8 @@ function formatText(report) {
             `  summary: score ${report.executionAttachAudit.summary?.avgAttachScore ?? 'n/a'} / complete ${report.executionAttachAudit.summary?.completeCount || 0} / recovered ${report.executionAttachAudit.summary?.recoveredPartialCount || 0} / actionable ${Number(report.executionAttachAudit.summary?.actionableWeakCount || 0) + Number(report.executionAttachAudit.summary?.actionablePartialCount || 0)} / tracked ${report.executionAttachAudit.summary?.attachTrackedCount || 0} / errors ${report.executionAttachAudit.summary?.attachErrorCount || 0}`,
             `  headline: ${report.executionAttachAudit.decision?.headline || 'n/a'}`,
             ...((report.executionAttachAudit.decision?.actionItems || []).slice(0, 3).map((item) => `  next: ${item}`)),
+            ...(report.executionAttachAudit.decision?.backfillDryRunCommand ? [`  repair dry-run: ${report.executionAttachAudit.decision.backfillDryRunCommand}`] : []),
+            ...(report.executionAttachAudit.decision?.backfillWriteCommand ? [`  repair write: ${report.executionAttachAudit.decision.backfillWriteCommand}`] : []),
             `  next command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:execution-attach-audit -- --json`,
           ]
         : ['  execution attach audit 정보 없음'],

@@ -266,8 +266,21 @@ export function summarizeExecutionAttachRows(rows = []) {
   };
 }
 
-export function buildExecutionAttachDecision(summary = {}) {
+function buildExecutionAttachBackfillCommand({ days = 14, limit = 100, exchange = null, write = false } = {}) {
+  const args = [
+    `--days=${Math.max(1, Number(days || 14))}`,
+    `--limit=${Math.max(1, Number(limit || 100))}`,
+  ];
+  if (exchange) args.push(`--exchange=${exchange}`);
+  if (write) args.push('--write');
+  args.push('--json');
+  return `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:execution-attach-backfill -- ${args.join(' ')}`;
+}
+
+export function buildExecutionAttachDecision(summary = {}, context = {}) {
   const actionableItems = summary.actionableMissing?.slice?.(0, 3) || [];
+  const backfillDryRunCommand = buildExecutionAttachBackfillCommand(context);
+  const backfillWriteCommand = buildExecutionAttachBackfillCommand({ ...context, write: true });
   return {
     status: summary.attachErrorCount > 0
       ? 'execution_attach_error'
@@ -293,13 +306,20 @@ export function buildExecutionAttachDecision(summary = {}) {
       ? [
         `execution attach 실패 ${summary.attachErrorCount}건의 signals.block_meta.executionAttach.error를 확인합니다.`,
         '실패가 반복되면 live BUY 체결 직후 profile 생성 경로와 open position 조회 조건을 점검합니다.',
+        `복구 후보 확인: ${backfillDryRunCommand}`,
       ]
       : actionableItems.length > 0
-      ? actionableItems.map((item) => `${item.key} 누락 ${item.count}건을 체결 envelope attach 경로에서 보강합니다.`)
+      ? [
+        ...actionableItems.map((item) => `${item.key} 누락 ${item.count}건을 체결 envelope attach 경로에서 보강합니다.`),
+        `복구 후보 확인: ${backfillDryRunCommand}`,
+        `확인 후 적용: ${backfillWriteCommand}`,
+      ]
       : [
         `${summary.recoveredPartialCount || 0}건은 profile/signal 원본이 부족하지만 envelope fallback으로 감사 추적 중입니다.`,
         '신규 주문에는 사용하지 않고 reconciliation/position truth guard 대상으로 유지합니다.',
       ],
+    backfillDryRunCommand,
+    backfillWriteCommand,
   };
 }
 
@@ -337,7 +357,7 @@ export async function runExecutionAttachAudit({ days = 14, limit = 100, exchange
     };
   });
   const summary = summarizeExecutionAttachRows(rows);
-  const decision = buildExecutionAttachDecision(summary);
+  const decision = buildExecutionAttachDecision(summary, { days, limit, exchange });
 
   return {
     ok: true,
