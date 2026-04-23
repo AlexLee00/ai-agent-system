@@ -103,13 +103,14 @@ function isAlreadyAppliedSuggestion(topSuggestion = null) {
 
 // ─── 알림 발송 ───────────────────────────────────────────────────
 
-async function notify(msg, level = 3) {
+async function notify(msg, level = 3, payload = null) {
   try {
     await publishAlert({
       from_bot: 'luna-health-check',
       event_type: 'health_check',
       alert_level: level,
       message: msg,
+      payload: payload && typeof payload === 'object' ? payload : undefined,
     });
   } catch { /* 무시 */ }
 }
@@ -679,14 +680,17 @@ async function main() {
   for (const { key, level, msg, meta } of issues) {
     console.warn(`[루나 헬스체크] 이슈: ${msg}`);
     const memoryHints = await buildIssueHints(key, msg);
-    await notify(`${msg}${memoryHints}`, level);
+    await notify(`${msg}${memoryHints}`, level, {
+      issueKey: key,
+      ...(meta && typeof meta === 'object' ? meta : {}),
+    });
     await rememberHealthEvent(key, 'issue', msg, level, meta);
     hsm.recordAlert(state, key);
   }
 
   // 회복 알림 발송
   for (const { key, msg } of recovers) {
-    await notify(msg, 1);
+    await notify(msg, 1, { issueKey: key, recovery: true });
     await rememberHealthEvent(key, 'recovery', msg, 1);
   }
 
