@@ -76,6 +76,7 @@ function buildDailyFeedbackRemediationView(positionStrategyRemediationSummary, p
   const remediationFlat = positionStrategyRemediationSummary?.remediationFlat || null;
   const remediationSummary = positionStrategyRemediationSummary?.remediationSummary || null;
   const remediationCounts = positionStrategyRemediationSummary?.remediationCounts || remediationFlat?.counts || remediationSummary?.counts || {};
+  const remediationCommandsBase = positionStrategyRemediationSummary?.remediationCommands || remediationFlat?.commands || remediationSummary?.commands || null;
   const remediationRefreshStateBase = {
     needed: positionStrategyRemediationSummary?.remediationRefreshNeeded,
     stale: positionStrategyRemediationSummary?.remediationRefreshStale,
@@ -94,12 +95,41 @@ function buildDailyFeedbackRemediationView(positionStrategyRemediationSummary, p
     || remediationFlat?.trend
     || remediationSummary?.trend
     || null;
+  const remediationActionReportCommand = positionStrategyRemediationSummary?.remediationActionReportCommand || remediationFlat?.actionReportCommand || remediationCommandsBase?.report || remediationSummary?.actions?.reportCommand || null;
+  const remediationActionHistoryCommand = positionStrategyRemediationSummary?.remediationActionHistoryCommand || remediationFlat?.actionHistoryCommand || remediationCommandsBase?.history || remediationSummary?.actions?.historyCommand || null;
+  const remediationActionRefreshCommand = positionStrategyRemediationSummary?.remediationActionRefreshCommand || remediationFlat?.actionRefreshCommand || remediationFlat?.refreshCommand || remediationCommandsBase?.refresh || remediationSummary?.actions?.refreshCommand || null;
+  const remediationActionHygieneCommand = positionStrategyRemediationSummary?.remediationActionHygieneCommand || remediationFlat?.actionHygieneCommand || remediationCommandsBase?.hygiene || remediationSummary?.actions?.hygieneCommand || null;
+  const remediationActionNormalizeDryRunCommand = positionStrategyRemediationSummary?.remediationActionNormalizeDryRunCommand || remediationFlat?.actionNormalizeDryRunCommand || remediationCommandsBase?.normalizeDryRun || remediationSummary?.actions?.normalizeDryRunCommand || null;
+  const remediationActionNormalizeApplyCommand = positionStrategyRemediationSummary?.remediationActionNormalizeApplyCommand || remediationFlat?.actionNormalizeApplyCommand || remediationCommandsBase?.normalizeApply || remediationSummary?.actions?.normalizeApplyCommand || null;
+  const remediationActionRetireDryRunCommand = positionStrategyRemediationSummary?.remediationActionRetireDryRunCommand || remediationFlat?.actionRetireDryRunCommand || remediationCommandsBase?.retireDryRun || remediationSummary?.actions?.retireDryRunCommand || null;
+  const remediationActionRetireApplyCommand = positionStrategyRemediationSummary?.remediationActionRetireApplyCommand || remediationFlat?.actionRetireApplyCommand || remediationCommandsBase?.retireApply || remediationSummary?.actions?.retireApplyCommand || null;
   const remediationNextCommandTransition = positionStrategyRemediationSummary?.remediationNextCommandTransition
     || remediationFlat?.nextCommandTransition
     || remediationSummary?.nextCommandTransition
     || remediationTrend?.nextCommandTransition
     || positionStrategyRemediationHistorySummary?.nextCommandTransition
     || {};
+  const remediationRefreshCommand = positionStrategyRemediationSummary?.remediationRefreshCommand || remediationFlat?.refreshCommand || remediationCommandsBase?.refresh || remediationRefreshState?.command || null;
+  const remediationCommands = {
+    report: remediationActionReportCommand || null,
+    history: remediationActionHistoryCommand || null,
+    refresh: remediationRefreshCommand || remediationActionRefreshCommand || null,
+    hygiene: remediationActionHygieneCommand || null,
+    normalizeDryRun: remediationActionNormalizeDryRunCommand || null,
+    normalizeApply: remediationActionNormalizeApplyCommand || null,
+    retireDryRun: remediationActionRetireDryRunCommand || null,
+    retireApply: remediationActionRetireApplyCommand || null,
+  };
+  const remediationActions = {
+    reportCommand: remediationActionReportCommand || null,
+    historyCommand: remediationActionHistoryCommand || null,
+    refreshCommand: remediationActionRefreshCommand || remediationRefreshCommand || null,
+    hygieneCommand: remediationActionHygieneCommand || null,
+    normalizeDryRunCommand: remediationActionNormalizeDryRunCommand || null,
+    normalizeApplyCommand: remediationActionNormalizeApplyCommand || null,
+    retireDryRunCommand: remediationActionRetireDryRunCommand || null,
+    retireApplyCommand: remediationActionRetireApplyCommand || null,
+  };
   return {
     remediationFlat,
     remediationSummary,
@@ -128,23 +158,23 @@ function buildDailyFeedbackRemediationView(positionStrategyRemediationSummary, p
     remediationRefreshNeeded: positionStrategyRemediationSummary?.remediationRefreshNeeded ?? remediationFlat?.refreshNeeded ?? remediationRefreshState?.needed ?? null,
     remediationRefreshStale: positionStrategyRemediationSummary?.remediationRefreshStale ?? remediationFlat?.refreshStale ?? remediationRefreshState?.stale ?? null,
     remediationRefreshReason: positionStrategyRemediationSummary?.remediationRefreshReason || remediationFlat?.refreshReason || remediationRefreshState?.reason || null,
-    remediationRefreshCommand: positionStrategyRemediationSummary?.remediationRefreshCommand || remediationFlat?.refreshCommand || remediationFlat?.commands?.refresh || remediationSummary?.commands?.refresh || remediationRefreshState?.command || null,
-    remediationCommands: positionStrategyRemediationSummary?.remediationCommands || remediationFlat?.commands || remediationSummary?.commands || null,
-    remediationActions: positionStrategyRemediationSummary?.remediationActions || remediationFlat?.actions || remediationSummary?.actions || null,
-    remediationActionReportCommand: positionStrategyRemediationSummary?.remediationActionReportCommand || remediationFlat?.actionReportCommand || remediationFlat?.commands?.report || remediationSummary?.actions?.reportCommand || null,
-    remediationActionHistoryCommand: positionStrategyRemediationSummary?.remediationActionHistoryCommand || remediationFlat?.actionHistoryCommand || remediationFlat?.commands?.history || remediationSummary?.actions?.historyCommand || null,
-    remediationActionRefreshCommand: positionStrategyRemediationSummary?.remediationActionRefreshCommand || remediationFlat?.actionRefreshCommand || remediationFlat?.refreshCommand || remediationFlat?.commands?.refresh || remediationSummary?.actions?.refreshCommand || null,
-    remediationActionHygieneCommand: positionStrategyRemediationSummary?.remediationActionHygieneCommand || remediationFlat?.actionHygieneCommand || remediationFlat?.commands?.hygiene || remediationSummary?.actions?.hygieneCommand || null,
-    remediationActionNormalizeDryRunCommand: positionStrategyRemediationSummary?.remediationActionNormalizeDryRunCommand || remediationFlat?.actionNormalizeDryRunCommand || remediationFlat?.commands?.normalizeDryRun || remediationSummary?.actions?.normalizeDryRunCommand || null,
-    remediationActionNormalizeApplyCommand: positionStrategyRemediationSummary?.remediationActionNormalizeApplyCommand || remediationFlat?.actionNormalizeApplyCommand || remediationFlat?.commands?.normalizeApply || remediationSummary?.actions?.normalizeApplyCommand || null,
-    remediationActionRetireDryRunCommand: positionStrategyRemediationSummary?.remediationActionRetireDryRunCommand || remediationFlat?.actionRetireDryRunCommand || remediationFlat?.commands?.retireDryRun || remediationSummary?.actions?.retireDryRunCommand || null,
-    remediationActionRetireApplyCommand: positionStrategyRemediationSummary?.remediationActionRetireApplyCommand || remediationFlat?.actionRetireApplyCommand || remediationFlat?.commands?.retireApply || remediationSummary?.actions?.retireApplyCommand || null,
-    remediationReportCommand: remediationFlat?.commands?.report || remediationSummary?.commands?.report || null,
-    remediationHistoryCommand: remediationFlat?.commands?.history || remediationSummary?.commands?.history || null,
-    remediationNormalizeDryRunCommand: remediationFlat?.commands?.normalizeDryRun || remediationSummary?.commands?.normalizeDryRun || null,
-    remediationNormalizeApplyCommand: remediationFlat?.commands?.normalizeApply || remediationSummary?.commands?.normalizeApply || null,
-    remediationRetireDryRunCommand: remediationFlat?.commands?.retireDryRun || remediationSummary?.commands?.retireDryRun || null,
-    remediationRetireApplyCommand: remediationFlat?.commands?.retireApply || remediationSummary?.commands?.retireApply || null,
+    remediationRefreshCommand,
+    remediationCommands,
+    remediationActions,
+    remediationActionReportCommand,
+    remediationActionHistoryCommand,
+    remediationActionRefreshCommand,
+    remediationActionHygieneCommand,
+    remediationActionNormalizeDryRunCommand,
+    remediationActionNormalizeApplyCommand,
+    remediationActionRetireDryRunCommand,
+    remediationActionRetireApplyCommand,
+    remediationReportCommand: remediationCommands.report,
+    remediationHistoryCommand: remediationCommands.history,
+    remediationNormalizeDryRunCommand: remediationCommands.normalizeDryRun,
+    remediationNormalizeApplyCommand: remediationCommands.normalizeApply,
+    remediationRetireDryRunCommand: remediationCommands.retireDryRun,
+    remediationRetireApplyCommand: remediationCommands.retireApply,
   };
 }
 

@@ -111,13 +111,12 @@ function buildHealthCheckRemediationView(remediation, hygiene, remediationHistor
   const remediationDuplicateManaged = remediation?.remediationDuplicateManaged ?? remediationFlat?.duplicateManaged ?? remediationCounts?.duplicateManaged ?? hygiene?.audit?.duplicateManagedProfileScopes ?? 0;
   const remediationOrphanProfiles = remediation?.remediationOrphanProfiles ?? remediationFlat?.orphanProfiles ?? remediationCounts?.orphanProfiles ?? hygiene?.audit?.orphanProfiles ?? 0;
   const remediationUnmatchedManaged = remediation?.remediationUnmatchedManaged ?? remediationFlat?.unmatchedManaged ?? remediationCounts?.unmatchedManaged ?? hygiene?.audit?.unmatchedManagedPositions ?? 0;
-  const remediationCommands = remediation?.remediationCommands || remediationFlat?.commands || remediationSummary?.commands || null;
-  const remediationActions = remediation?.remediationActions || remediationFlat?.actions || remediationSummary?.actions || null;
+  const remediationCommandsBase = remediation?.remediationCommands || remediationFlat?.commands || remediationSummary?.commands || null;
   const remediationRefreshState = remediation?.remediationRefreshState || remediationFlat?.refresh || remediationSummary?.refreshState || null;
   const remediationRefreshNeeded = remediation?.remediationRefreshNeeded ?? remediationFlat?.refreshNeeded ?? remediationRefreshState?.needed ?? null;
   const remediationRefreshStale = remediation?.remediationRefreshStale ?? remediationFlat?.refreshStale ?? remediationRefreshState?.stale ?? null;
   const remediationRefreshReason = remediation?.remediationRefreshReason || remediationFlat?.refreshReason || remediationRefreshState?.reason || null;
-  const remediationRefreshCommand = remediation?.remediationRefreshCommand || remediationFlat?.refreshCommand || remediationCommands?.refresh || remediationRefreshState?.command || null;
+  const remediationRefreshCommand = remediation?.remediationRefreshCommand || remediationFlat?.refreshCommand || remediationCommandsBase?.refresh || remediationRefreshState?.command || null;
   const remediationTrend = remediation?.remediationTrend
     || (remediationFlat?.trendHistoryCount !== undefined
       ? {
@@ -141,6 +140,34 @@ function buildHealthCheckRemediationView(remediation, hygiene, remediationHistor
   const remediationNextCommandPrevious = remediation?.remediationNextCommandPrevious || remediationFlat?.nextCommandPrevious || remediationNextCommandTransition?.previous || null;
   const remediationNextCommandCurrent = remediation?.remediationNextCommandCurrent || remediationFlat?.nextCommandCurrent || remediationNextCommandTransition?.current || null;
   const recommendedExchange = remediation?.remediationRecommendedExchange || remediationFlat?.recommendedExchange || remediationSummary?.recommendedExchange || remediationPlan?.recommendedExchange || null;
+  const remediationActionReportCommand = remediation?.remediationActionReportCommand || remediationFlat?.actionReportCommand || remediationCommandsBase?.report || remediationSummary?.actions?.reportCommand || null;
+  const remediationActionHistoryCommand = remediation?.remediationActionHistoryCommand || remediationFlat?.actionHistoryCommand || remediationCommandsBase?.history || remediationSummary?.actions?.historyCommand || null;
+  const remediationActionRefreshCommand = remediation?.remediationActionRefreshCommand || remediationFlat?.actionRefreshCommand || remediationRefreshCommand || remediationSummary?.actions?.refreshCommand || null;
+  const remediationActionHygieneCommand = remediation?.remediationActionHygieneCommand || remediationFlat?.actionHygieneCommand || remediationCommandsBase?.hygiene || remediationSummary?.actions?.hygieneCommand || null;
+  const remediationActionNormalizeDryRunCommand = remediation?.remediationActionNormalizeDryRunCommand || remediationFlat?.actionNormalizeDryRunCommand || remediationCommandsBase?.normalizeDryRun || remediationSummary?.actions?.normalizeDryRunCommand || null;
+  const remediationActionNormalizeApplyCommand = remediation?.remediationActionNormalizeApplyCommand || remediationFlat?.actionNormalizeApplyCommand || remediationCommandsBase?.normalizeApply || remediationSummary?.actions?.normalizeApplyCommand || null;
+  const remediationActionRetireDryRunCommand = remediation?.remediationActionRetireDryRunCommand || remediationFlat?.actionRetireDryRunCommand || remediationCommandsBase?.retireDryRun || remediationSummary?.actions?.retireDryRunCommand || null;
+  const remediationActionRetireApplyCommand = remediation?.remediationActionRetireApplyCommand || remediationFlat?.actionRetireApplyCommand || remediationCommandsBase?.retireApply || remediationSummary?.actions?.retireApplyCommand || null;
+  const remediationCommands = {
+    report: remediationActionReportCommand || null,
+    history: remediationActionHistoryCommand || null,
+    refresh: remediationRefreshCommand || remediationActionRefreshCommand || null,
+    hygiene: remediationActionHygieneCommand || null,
+    normalizeDryRun: remediationActionNormalizeDryRunCommand || null,
+    normalizeApply: remediationActionNormalizeApplyCommand || null,
+    retireDryRun: remediationActionRetireDryRunCommand || null,
+    retireApply: remediationActionRetireApplyCommand || null,
+  };
+  const remediationActions = {
+    reportCommand: remediationActionReportCommand || null,
+    historyCommand: remediationActionHistoryCommand || null,
+    refreshCommand: remediationActionRefreshCommand || remediationRefreshCommand || null,
+    hygieneCommand: remediationActionHygieneCommand || null,
+    normalizeDryRunCommand: remediationActionNormalizeDryRunCommand || null,
+    normalizeApplyCommand: remediationActionNormalizeApplyCommand || null,
+    retireDryRunCommand: remediationActionRetireDryRunCommand || null,
+    retireApplyCommand: remediationActionRetireApplyCommand || null,
+  };
   return {
     remediationPlan,
     remediationFlat,
@@ -166,6 +193,14 @@ function buildHealthCheckRemediationView(remediation, hygiene, remediationHistor
     remediationNextCommandCurrent,
     recommendedExchange,
     remediationHistory: remediationHistory || null,
+    remediationActionReportCommand,
+    remediationActionHistoryCommand,
+    remediationActionRefreshCommand,
+    remediationActionHygieneCommand,
+    remediationActionNormalizeDryRunCommand,
+    remediationActionNormalizeApplyCommand,
+    remediationActionRetireDryRunCommand,
+    remediationActionRetireApplyCommand,
   };
 }
 
