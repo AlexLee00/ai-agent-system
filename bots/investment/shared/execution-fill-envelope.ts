@@ -21,6 +21,92 @@ function safeJson(value, fallback = null) {
   }
 }
 
+function firstObject(...values) {
+  for (const value of values) {
+    const parsed = safeJson(value, null);
+    if (parsed && typeof parsed === 'object') return parsed;
+  }
+  return null;
+}
+
+function deriveStrategyRoute({ signal = null, journal = null, strategyContext = {}, strategyProfile = null } = {}) {
+  const route = firstObject(signal?.strategy_route, journal?.strategy_route, strategyContext?.strategyRoute);
+  if (route) return route;
+
+  const setupType = strategyProfile?.setup_type || strategyContext?.setupType || null;
+  const family = signal?.strategy_family || journal?.strategy_family || strategyContext?.family || setupType || null;
+  if (!setupType && !family) return null;
+
+  return {
+    source: 'execution_envelope_profile_fallback',
+    setupType: setupType || family,
+    selectedFamily: family || setupType,
+  };
+}
+
+function buildFallbackResponsibilityPlan({ exchange = 'binance', setupType = null, regime = null } = {}) {
+  if (!setupType) return null;
+  const normalizedSetupType = String(setupType || '').trim().toLowerCase();
+  const bearishRegime = String(regime || '').toLowerCase().includes('bear');
+  const equityMarket = exchange !== 'binance';
+  let ownerMode = bearishRegime ? 'capital_preservation' : 'balanced_rotation';
+  let riskMission = bearishRegime ? 'strict_risk_gate' : 'execution_safeguard';
+  let watchMission = bearishRegime ? 'risk_sentinel' : 'strategy_invalidation_watcher';
+  let executionMission = 'precision_execution';
+
+  if (equityMarket) {
+    ownerMode = 'equity_rotation';
+  } else if (normalizedSetupType === 'mean_reversion') {
+    ownerMode = bearishRegime ? 'capital_preservation' : 'opportunity_capture';
+    riskMission = 'soft_sizing_preference';
+    executionMission = 'partial_adjust_executor';
+  } else if (normalizedSetupType === 'momentum_rotation' || normalizedSetupType === 'trend_following') {
+    watchMission = bearishRegime ? 'risk_sentinel' : 'backtest_drift_watcher';
+    riskMission = bearishRegime ? 'strict_risk_gate' : 'soft_sizing_preference';
+    executionMission = 'partial_adjust_executor';
+  }
+
+  return {
+    source: 'execution_envelope_route_fallback',
+    ownerAgent: 'luna',
+    ownerMode,
+    strategyScoutAgent: 'argos',
+    riskAgent: 'nemesis',
+    riskMission,
+    executionAgent: 'hephaestos',
+    executionMission,
+    watchAgent: 'position_watch',
+    watchMission,
+  };
+}
+
+function buildFallbackExecutionPlan({ exchange = 'binance', setupType = null, responsibilityPlan = null, regime = null } = {}) {
+  if (!setupType || !responsibilityPlan) return null;
+  const normalizedSetupType = String(setupType || '').trim().toLowerCase();
+  const bearishRegime = String(regime || '').toLowerCase().includes('bear');
+  const riskMission = String(responsibilityPlan?.riskMission || '').trim();
+  const watchMission = String(responsibilityPlan?.watchMission || '').trim();
+  let entrySizingMultiplier = exchange === 'binance' ? 0.98 : 0.96;
+  let partialAdjustBias = 1.0;
+  let exitUrgency = bearishRegime ? 'high' : 'normal';
+  let backtestUrgency = exchange === 'binance' ? 'normal' : 'watchful';
+
+  if (riskMission === 'strict_risk_gate') entrySizingMultiplier *= 0.92;
+  if (riskMission === 'soft_sizing_preference') entrySizingMultiplier *= 0.97;
+  if (watchMission === 'backtest_drift_watcher') backtestUrgency = 'high';
+  if (normalizedSetupType === 'mean_reversion') partialAdjustBias *= 1.12;
+  if (normalizedSetupType === 'momentum_rotation' || normalizedSetupType === 'trend_following') partialAdjustBias *= 1.04;
+  if (normalizedSetupType === 'breakout' && bearishRegime) exitUrgency = 'high';
+
+  return {
+    source: 'execution_envelope_route_fallback',
+    entrySizingMultiplier: Number(entrySizingMultiplier.toFixed(4)),
+    partialAdjustBias: Number(partialAdjustBias.toFixed(4)),
+    backtestUrgency,
+    exitUrgency,
+  };
+}
+
 export function buildExecutionFillEnvelope({
   trade = null,
   signal = null,
@@ -37,7 +123,14 @@ export function buildExecutionFillEnvelope({
   const notional = Number(trade?.total_usdt ?? trade?.totalUsdt ?? journal?.entry_value ?? 0);
   const strategyContext = safeJson(strategyProfile?.strategy_context, {});
   const strategyState = safeJson(strategyProfile?.strategy_state, {});
-  const strategyRoute = safeJson(signal?.strategy_route || journal?.strategy_route, null);
+  const marketContext = safeJson(strategyProfile?.market_context, {});
+  const strategyRoute = deriveStrategyRoute({ signal, journal, strategyContext, strategyProfile });
+  const setupType = strategyProfile?.setup_type || strategyRoute?.setupType || strategyRoute?.selectedFamily || null;
+  const regime = journal?.market_regime || marketRegime?.regime || marketContext?.regime || strategyRoute?.regime || null;
+  const responsibilityPlan = strategyContext?.responsibilityPlan
+    || buildFallbackResponsibilityPlan({ exchange, setupType, regime });
+  const executionPlan = strategyContext?.executionPlan
+    || buildFallbackExecutionPlan({ exchange, setupType, responsibilityPlan, regime });
 
   return {
     schemaVersion: 1,
@@ -64,14 +157,14 @@ export function buildExecutionFillEnvelope({
       family: signal?.strategy_family || journal?.strategy_family || strategyRoute?.family || null,
       quality: signal?.strategy_quality || journal?.strategy_quality || null,
       readiness: signal?.strategy_readiness ?? journal?.strategy_readiness ?? null,
-      setupType: strategyProfile?.setup_type || strategyRoute?.setupType || null,
+      setupType,
       route: strategyRoute,
-      executionPlan: strategyContext?.executionPlan || null,
-      responsibilityPlan: strategyContext?.responsibilityPlan || null,
+      executionPlan,
+      responsibilityPlan,
     },
     regime: {
-      regime: journal?.market_regime || marketRegime?.regime || strategyProfile?.market_context?.regime || null,
-      confidence: journal?.market_regime_confidence ?? marketRegime?.confidence ?? strategyProfile?.market_context?.confidence ?? null,
+      regime,
+      confidence: journal?.market_regime_confidence ?? marketRegime?.confidence ?? marketContext?.confidence ?? strategyRoute?.confidence ?? null,
     },
     agentConsensus: {
       analystSignals: signal?.analyst_signals || null,
@@ -85,9 +178,9 @@ export function buildExecutionFillEnvelope({
       hasJournal: Boolean(journal),
       hasStrategyProfile: Boolean(strategyProfile),
       hasStrategyRoute: Boolean(strategyRoute),
-      hasExecutionPlan: Boolean(strategyContext?.executionPlan),
-      hasResponsibilityPlan: Boolean(strategyContext?.responsibilityPlan),
-      hasRegime: Boolean(journal?.market_regime || marketRegime?.regime || strategyProfile?.market_context?.regime),
+      hasExecutionPlan: Boolean(executionPlan),
+      hasResponsibilityPlan: Boolean(responsibilityPlan),
+      hasRegime: Boolean(regime),
       hasAgentConsensus: Boolean(signal?.analyst_signals || signal?.nemesis_verdict),
     },
   };

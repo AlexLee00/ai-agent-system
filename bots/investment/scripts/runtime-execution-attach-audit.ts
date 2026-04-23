@@ -43,21 +43,84 @@ async function loadRecentTrades({ days = 14, limit = 100, exchange = null } = {}
   );
 }
 
-async function loadJournalBySignalIds(signalIds = []) {
-  const ids = [...new Set(signalIds.filter(Boolean))];
-  if (!ids.length) return new Map();
+function toMillis(value = null) {
+  if (value == null) return null;
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric > 0) return numeric;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeTradeMode(value = null) {
+  return String(value || 'normal').trim() || 'normal';
+}
+
+async function loadJournalContext(trades = [], days = 14) {
+  const ids = [...new Set(trades.map((trade) => trade.signal_id).filter(Boolean))];
+  const symbols = [...new Set(trades.map((trade) => trade.symbol).filter(Boolean))];
+  if (!ids.length && !symbols.length) return { bySignalId: new Map(), candidates: [] };
+  const cutoffMs = Date.now() - (Math.max(1, Number(days || 14)) * 24 * 60 * 60 * 1000);
+  const conditions = [];
+  const params = [];
+
+  if (ids.length) {
+    params.push(ids);
+    conditions.push(`signal_id = ANY($${params.length})`);
+  }
+  if (symbols.length) {
+    params.push(symbols);
+    conditions.push(`(
+      symbol = ANY($${params.length})
+      AND (
+        entry_time >= $${params.length + 1}
+        OR exit_time >= $${params.length + 1}
+        OR created_at >= $${params.length + 1}
+      )
+    )`);
+    params.push(cutoffMs);
+  }
+
   const rows = await db.query(
     `SELECT *
        FROM investment.trade_journal
-      WHERE signal_id = ANY($1)
+      WHERE ${conditions.join(' OR ')}
       ORDER BY created_at DESC`,
-    [ids],
+    params,
   ).catch(() => []);
-  const map = new Map();
+  const bySignalId = new Map();
   for (const row of rows) {
-    if (!map.has(row.signal_id)) map.set(row.signal_id, row);
+    if (row.signal_id && !bySignalId.has(row.signal_id)) bySignalId.set(row.signal_id, row);
   }
-  return map;
+  return { bySignalId, candidates: rows };
+}
+
+function findNearestJournalForTrade(trade = {}, journals = []) {
+  const tradeMs = toMillis(trade.executed_at);
+  if (!tradeMs) return null;
+  const side = String(trade.side || '').trim().toLowerCase();
+  const exchange = String(trade.exchange || '').trim();
+  const symbol = String(trade.symbol || '').trim();
+  const tradeMode = normalizeTradeMode(trade.trade_mode || trade.tradeMode);
+  const maxDistanceMs = 6 * 60 * 60 * 1000;
+  let best = null;
+
+  for (const journal of journals) {
+    if (String(journal.exchange || '').trim() !== exchange) continue;
+    if (String(journal.symbol || '').trim() !== symbol) continue;
+    if (normalizeTradeMode(journal.trade_mode) !== tradeMode) continue;
+
+    const anchor = side === 'sell'
+      ? toMillis(journal.exit_time)
+      : toMillis(journal.entry_time);
+    if (!anchor) continue;
+    const distanceMs = Math.abs(tradeMs - anchor);
+    if (distanceMs > maxDistanceMs) continue;
+    if (!best || distanceMs < best.distanceMs) {
+      best = { row: journal, distanceMs };
+    }
+  }
+
+  return best?.row || null;
 }
 
 async function loadSignalsByIds(signalIds = []) {
@@ -71,7 +134,19 @@ async function loadSignalsByIds(signalIds = []) {
 }
 
 async function loadProfilesForTrades(trades = []) {
-  const rows = await db.getActivePositionStrategyProfiles({ limit: 1000 }).catch(() => []);
+  const symbols = [...new Set(trades.map((trade) => trade.symbol).filter(Boolean))];
+  if (!symbols.length) return new Map();
+  const rows = await db.query(
+    `SELECT *
+       FROM investment.position_strategy_profiles
+      WHERE symbol = ANY($1)
+      ORDER BY
+        CASE WHEN status = 'active' THEN 0 ELSE 1 END,
+        updated_at DESC,
+        created_at DESC
+      LIMIT 1000`,
+    [symbols],
+  ).catch(() => []);
   const map = new Map();
   for (const profile of rows) {
     const key = [
@@ -122,15 +197,17 @@ export async function runExecutionAttachAudit({ days = 14, limit = 100, exchange
 
   const trades = await loadRecentTrades({ days, limit, exchange });
   const signalIds = trades.map((trade) => trade.signal_id).filter(Boolean);
-  const [signals, journals, profiles] = await Promise.all([
+  const [signals, journalContext, profiles] = await Promise.all([
     loadSignalsByIds(signalIds),
-    loadJournalBySignalIds(signalIds),
+    loadJournalContext(trades, days),
     loadProfilesForTrades(trades),
   ]);
 
   const rows = trades.map((trade) => {
     const signal = signals.get(trade.signal_id) || null;
-    const journal = journals.get(trade.signal_id) || null;
+    const journal = journalContext.bySignalId.get(trade.signal_id)
+      || findNearestJournalForTrade(trade, journalContext.candidates)
+      || null;
     const strategyProfile = profiles.get(profileKeyForTrade(trade)) || null;
     const envelope = buildExecutionFillEnvelope({ trade, signal, journal, strategyProfile });
     return {
