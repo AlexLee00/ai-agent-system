@@ -671,6 +671,8 @@ function buildDecision(
   const collectionDegraded = collectionAudit?.markets?.find((item) => item?.collectQuality?.status === 'degraded') || null;
   const strategyFeedbackOutcomes = runtimeLearningLoop?.sections?.collect?.strategyFeedbackOutcomes || null;
   const riskApproval = runtimeLearningLoop?.sections?.collect?.riskApproval || null;
+  const riskApprovalOutcome = riskApproval?.outcome || null;
+  const riskApprovalOutcomeMode = riskApproval?.outcomeByMode?.[0] || null;
   const riskApprovalReadiness = runtimeLearningLoop?.sections?.collect?.riskApprovalReadiness || null;
   const riskApprovalReadinessDelta = riskApprovalReadiness?.trend?.delta || {};
   const riskApprovalModeAudit = runtimeLearningLoop?.sections?.collect?.riskApprovalModeAudit || null;
@@ -804,6 +806,15 @@ function buildDecision(
         active: strategyFeedbackOutcomes?.status === 'strategy_feedback_outcome_attention',
         level: 'medium',
         reason: `strategy feedback outcomes — ${strategyFeedbackOutcomes?.headline || '전략 피드백 적용 결과 점검 필요'} / tagged ${strategyFeedbackOutcomes?.total || strategyFeedbackOutcomes?.totalTagged || 0} / closed ${strategyFeedbackOutcomes?.closed || strategyFeedbackOutcomes?.closedTagged || 0} / pnl ${strategyFeedbackOutcomes?.pnlNet ?? 0} / trend tagged Δ${strategyFeedbackOutcomes?.trend?.delta?.total ?? 0} closed Δ${strategyFeedbackOutcomes?.trend?.delta?.closed ?? 0} / weakest ${(strategyFeedbackOutcomes?.weak || strategyFeedbackOutcomes?.weakest)?.familyBias || 'n/a'} ${(strategyFeedbackOutcomes?.weak || strategyFeedbackOutcomes?.weakest)?.family || 'n/a'} avg ${(strategyFeedbackOutcomes?.weak || strategyFeedbackOutcomes?.weakest)?.avgPnlPercent ?? 'n/a'}%`,
+      },
+      {
+        active: Number(riskApprovalOutcome?.closed || 0) >= 3 && (
+          Number(riskApprovalOutcome?.avgPnlPercent ?? 0) < 0 ||
+          Number(riskApprovalOutcome?.pnlNet ?? 0) < 0 ||
+          Number(riskApprovalOutcomeMode?.avgPnlPercent ?? 0) < 0
+        ),
+        level: 'medium',
+        reason: `risk approval outcome — closed ${riskApprovalOutcome?.closed || 0}/${riskApprovalOutcome?.total || 0} / win ${riskApprovalOutcome?.winRate ?? 'n/a'}% / avg ${riskApprovalOutcome?.avgPnlPercent ?? 'n/a'}% / pnl ${riskApprovalOutcome?.pnlNet ?? 0} / mode ${riskApprovalOutcomeMode?.mode || 'n/a'} avg ${riskApprovalOutcomeMode?.avgPnlPercent ?? 'n/a'}% / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-suggest -- --json`,
       },
       {
         active: riskApproval?.status === 'risk_approval_preview_divergence',

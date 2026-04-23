@@ -395,10 +395,37 @@ async function main() {
     }
 
     const riskApproval = learningLoop?.sections?.collect?.riskApproval || null;
+    const riskApprovalOutcome = riskApproval?.outcome || null;
+    const riskApprovalOutcomeMode = riskApproval?.outcomeByMode?.[0] || null;
+    const riskApprovalOutcomeModel = riskApproval?.outcomeByModel?.[0] || null;
     const riskApprovalReadiness = learningLoop?.sections?.collect?.riskApprovalReadiness || null;
     const riskApprovalReadinessDelta = riskApprovalReadiness?.trend?.delta || {};
     const riskApprovalModeAudit = learningLoop?.sections?.collect?.riskApprovalModeAudit || null;
     const riskApprovalModeAuditDelta = riskApprovalModeAudit?.trend?.delta || {};
+    const riskApprovalOutcomeAttention =
+      Number(riskApprovalOutcome?.closed || 0) >= 3 &&
+      (
+        Number(riskApprovalOutcome?.avgPnlPercent ?? 0) < 0 ||
+        Number(riskApprovalOutcome?.pnlNet ?? 0) < 0 ||
+        Number(riskApprovalOutcomeMode?.avgPnlPercent ?? 0) < 0
+      );
+    const riskApprovalOutcomeKey = 'learning-loop-risk-approval-outcome-attention';
+    if (riskApprovalOutcomeAttention) {
+      if (hsm.canAlert(state, riskApprovalOutcomeKey)) {
+        issues.push({
+          key: riskApprovalOutcomeKey,
+          level: 2,
+          msg: `⚠️ [루나 헬스] risk approval outcome attention\n리스크 승인 체인의 사후 성과가 약해 outcome 기반 튜닝 후보를 확인해야 합니다.\nclosed ${riskApprovalOutcome.closed || 0}/${riskApprovalOutcome.total || 0} / win ${riskApprovalOutcome.winRate ?? 'n/a'}% / avg ${riskApprovalOutcome.avgPnlPercent ?? 'n/a'}% / pnl ${riskApprovalOutcome.pnlNet ?? 0}${riskApprovalOutcomeMode ? `\nmode: ${riskApprovalOutcomeMode.mode || 'n/a'} / closed ${riskApprovalOutcomeMode.closed || 0}/${riskApprovalOutcomeMode.total || 0} / avg ${riskApprovalOutcomeMode.avgPnlPercent ?? 'n/a'}% / pnl ${riskApprovalOutcomeMode.pnlNet ?? 0}` : ''}${riskApprovalOutcomeModel ? `\nmodel: ${riskApprovalOutcomeModel.model || 'n/a'} / closed ${riskApprovalOutcomeModel.closed || 0}/${riskApprovalOutcomeModel.total || 0} / avg ${riskApprovalOutcomeModel.avgPnlPercent ?? 'n/a'}% / pnl ${riskApprovalOutcomeModel.pnlNet ?? 0}` : ''}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-suggest -- --json`,
+        });
+      }
+    } else if (state[riskApprovalOutcomeKey]) {
+      recovers.push({
+        key: riskApprovalOutcomeKey,
+        msg: '✅ [루나 헬스] risk approval outcome 회복\n리스크 승인 사후 성과 기준 주의 신호 없음 — 자동 감지',
+      });
+      hsm.clearAlert(state, riskApprovalOutcomeKey);
+    }
+
     const riskApprovalKey = 'learning-loop-risk-approval-divergence';
     if (riskApproval?.status === 'risk_approval_preview_divergence') {
       if (hsm.canAlert(state, riskApprovalKey)) {
