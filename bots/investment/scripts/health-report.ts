@@ -853,9 +853,9 @@ function buildDecision(
         reason: `trade incident link audit — journal 누락 후보 ${incidentLinkAudit?.updated || 0}건 / scanned ${incidentLinkAudit?.scanned || 0} / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run journal:backfill-incident-links -- --dry-run --json`,
       },
       {
-        active: ['execution_attach_weak', 'execution_attach_partial'].includes(executionAttachAudit?.decision?.status),
-        level: executionAttachAudit?.decision?.status === 'execution_attach_weak' ? 'medium' : 'low',
-        reason: `execution attach audit — ${executionAttachAudit?.decision?.headline || '체결 envelope 연결 점검'} / score ${executionAttachSummary.avgAttachScore ?? 'n/a'} / complete ${executionAttachSummary.completeCount || 0} / recovered ${executionAttachSummary.recoveredPartialCount || 0} / actionable ${Number(executionAttachSummary.actionableWeakCount || 0) + Number(executionAttachSummary.actionablePartialCount || 0)} / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:execution-attach-audit -- --json`,
+        active: ['execution_attach_error', 'execution_attach_weak', 'execution_attach_partial'].includes(executionAttachAudit?.decision?.status),
+        level: ['execution_attach_error', 'execution_attach_weak'].includes(executionAttachAudit?.decision?.status) ? 'medium' : 'low',
+        reason: `execution attach audit — ${executionAttachAudit?.decision?.headline || '체결 envelope 연결 점검'} / score ${executionAttachSummary.avgAttachScore ?? 'n/a'} / complete ${executionAttachSummary.completeCount || 0} / recovered ${executionAttachSummary.recoveredPartialCount || 0} / actionable ${Number(executionAttachSummary.actionableWeakCount || 0) + Number(executionAttachSummary.actionablePartialCount || 0)} / tracked ${executionAttachSummary.attachTrackedCount || 0} / errors ${executionAttachSummary.attachErrorCount || 0} / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:execution-attach-audit -- --json`,
       },
     ],
     okReason: '핵심 서비스와 trade_review 정합성이 현재는 안정 구간입니다.',
@@ -1127,7 +1127,7 @@ function formatText(report) {
       lines: report.executionAttachAudit
         ? [
             `  status: ${report.executionAttachAudit.decision?.status || 'unknown'}`,
-            `  summary: score ${report.executionAttachAudit.summary?.avgAttachScore ?? 'n/a'} / complete ${report.executionAttachAudit.summary?.completeCount || 0} / recovered ${report.executionAttachAudit.summary?.recoveredPartialCount || 0} / actionable ${Number(report.executionAttachAudit.summary?.actionableWeakCount || 0) + Number(report.executionAttachAudit.summary?.actionablePartialCount || 0)}`,
+            `  summary: score ${report.executionAttachAudit.summary?.avgAttachScore ?? 'n/a'} / complete ${report.executionAttachAudit.summary?.completeCount || 0} / recovered ${report.executionAttachAudit.summary?.recoveredPartialCount || 0} / actionable ${Number(report.executionAttachAudit.summary?.actionableWeakCount || 0) + Number(report.executionAttachAudit.summary?.actionablePartialCount || 0)} / tracked ${report.executionAttachAudit.summary?.attachTrackedCount || 0} / errors ${report.executionAttachAudit.summary?.attachErrorCount || 0}`,
             `  headline: ${report.executionAttachAudit.decision?.headline || 'n/a'}`,
             ...((report.executionAttachAudit.decision?.actionItems || []).slice(0, 3).map((item) => `  next: ${item}`)),
             `  next command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:execution-attach-audit -- --json`,

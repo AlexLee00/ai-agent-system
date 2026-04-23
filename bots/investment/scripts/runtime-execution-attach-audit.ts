@@ -55,6 +55,16 @@ function normalizeTradeMode(value = null) {
   return String(value || 'normal').trim() || 'normal';
 }
 
+function safeJson(value, fallback = null) {
+  if (value == null) return fallback;
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
 async function loadJournalContext(trades = [], days = 14) {
   const ids = [...new Set(trades.map((trade) => trade.signal_id).filter(Boolean))];
   const symbols = [...new Set(trades.map((trade) => trade.symbol).filter(Boolean))];
@@ -195,16 +205,33 @@ function classifyEnvelopeRow(row = {}) {
   return 'actionable_partial';
 }
 
+function getExecutionAttachMeta(signal = null) {
+  const blockMeta = safeJson(signal?.block_meta, {});
+  const attach = blockMeta?.executionAttach || null;
+  return attach && typeof attach === 'object' ? attach : null;
+}
+
 function summarize(rows = []) {
   const byStatus = {};
   const byRecoveryStatus = {};
+  const byAttachStatus = {};
   const missingCounts = {};
   const actionableMissingCounts = {};
   let scoreSum = 0;
+  let attachTrackedCount = 0;
+  let attachOkCount = 0;
+  let attachErrorCount = 0;
   for (const row of rows) {
     byStatus[row.score.status] = (byStatus[row.score.status] || 0) + 1;
     const recoveryStatus = classifyEnvelopeRow(row);
     byRecoveryStatus[recoveryStatus] = (byRecoveryStatus[recoveryStatus] || 0) + 1;
+    if (row.executionAttach) {
+      attachTrackedCount += 1;
+      if (row.executionAttach.ok === true) attachOkCount += 1;
+      if (row.executionAttach.ok === false || row.executionAttach.status === 'error') attachErrorCount += 1;
+      const attachStatus = String(row.executionAttach.status || 'unknown');
+      byAttachStatus[attachStatus] = (byAttachStatus[attachStatus] || 0) + 1;
+    }
     scoreSum += Number(row.score.score || 0);
     for (const key of row.score.missing || []) {
       missingCounts[key] = (missingCounts[key] || 0) + 1;
@@ -224,8 +251,12 @@ function summarize(rows = []) {
     avgAttachScore: rows.length ? Math.round((scoreSum / rows.length) * 10) / 10 : null,
     byStatus,
     byRecoveryStatus,
+    byAttachStatus,
     topMissing,
     actionableMissing,
+    attachTrackedCount,
+    attachOkCount,
+    attachErrorCount,
     weakCount: byStatus.weak || 0,
     partialCount: byStatus.partial || 0,
     completeCount: byStatus.complete || 0,
@@ -254,6 +285,7 @@ export async function runExecutionAttachAudit({ days = 14, limit = 100, exchange
       || null;
     const strategyProfile = profiles.get(profileKeyForTrade(trade)) || null;
     const envelope = buildExecutionFillEnvelope({ trade, signal, journal, strategyProfile });
+    const executionAttach = getExecutionAttachMeta(signal);
     return {
       tradeId: trade.id || null,
       signalId: trade.signal_id || null,
@@ -262,6 +294,7 @@ export async function runExecutionAttachAudit({ days = 14, limit = 100, exchange
       side: trade.side,
       tradeMode: trade.trade_mode || 'normal',
       executedAt: trade.executed_at,
+      executionAttach,
       envelope,
       score: scoreExecutionFillEnvelope(envelope),
     };
@@ -269,7 +302,9 @@ export async function runExecutionAttachAudit({ days = 14, limit = 100, exchange
   const summary = summarize(rows);
   const actionableItems = summary.actionableMissing.slice(0, 3);
   const decision = {
-    status: summary.actionableWeakCount > 0
+    status: summary.attachErrorCount > 0
+      ? 'execution_attach_error'
+      : summary.actionableWeakCount > 0
       ? 'execution_attach_weak'
       : summary.actionablePartialCount > 0
         ? 'execution_attach_partial'
@@ -278,14 +313,21 @@ export async function runExecutionAttachAudit({ days = 14, limit = 100, exchange
           : summary.partialCount > 0
             ? 'execution_attach_partial'
             : 'execution_attach_ok',
-    headline: summary.actionableWeakCount > 0
+    headline: summary.attachErrorCount > 0
+      ? '최근 체결의 전략 attach 시도 중 실패가 있어 실행 메타 확인이 필요합니다.'
+      : summary.actionableWeakCount > 0
       ? '체결 후 포지션/전략 연결이 약한 거래가 있어 envelope 통합이 필요합니다.'
       : summary.actionablePartialCount > 0
         ? '체결 후 연결은 대부분 있으나 일부 실행 메타 보강이 필요합니다.'
         : summary.recoveredPartialCount > 0
           ? '최근 체결은 감사 가능한 수준으로 복구되었고, 일부 과거/조정 체결만 추적 상태입니다.'
           : '최근 체결의 포지션/전략 연결이 정상입니다.',
-    actionItems: actionableItems.length > 0
+    actionItems: summary.attachErrorCount > 0
+      ? [
+        `execution attach 실패 ${summary.attachErrorCount}건의 signals.block_meta.executionAttach.error를 확인합니다.`,
+        '실패가 반복되면 live BUY 체결 직후 profile 생성 경로와 open position 조회 조건을 점검합니다.',
+      ]
+      : actionableItems.length > 0
       ? actionableItems.map((item) => `${item.key} 누락 ${item.count}건을 체결 envelope attach 경로에서 보강합니다.`)
       : [
         `${summary.recoveredPartialCount}건은 profile/signal 원본이 부족하지만 envelope fallback으로 감사 추적 중입니다.`,
