@@ -11,6 +11,7 @@ import { buildRuntimeConfigSuggestionsReport } from './runtime-config-suggestion
 import { buildVectorBtBacktestReport } from './vectorbt-backtest-report.ts';
 import { validateTradeReview } from './validate-trade-review.ts';
 import { runCollectionAudit } from './runtime-collection-audit.ts';
+import { buildStrategyFeedbackOutcomes } from './runtime-strategy-feedback-outcomes.ts';
 
 function parseArgs(argv = process.argv.slice(2)) {
   const daysArg = argv.find((arg) => arg.startsWith('--days='));
@@ -360,6 +361,7 @@ function buildSectionStates({
   regimePerformance,
   strategyFamilyPerformance,
   collectionAudit,
+  strategyFeedbackOutcomes,
 }) {
   const runtimeAge = ageHours(freshness.latestRuntimeSessionAt);
   const reviewAge = ageHours(freshness.latestTradeReviewAt);
@@ -403,6 +405,17 @@ function buildSectionStates({
       strongestFamily: strategyFamilyPerformance.strongestFamily,
       byFamily: strategyFamilyPerformance.byFamily.slice(0, 5),
     },
+    strategyFeedbackOutcomes: strategyFeedbackOutcomes ? {
+      status: strategyFeedbackOutcomes.decision?.status || 'unknown',
+      headline: strategyFeedbackOutcomes.decision?.headline || null,
+      count: Number(strategyFeedbackOutcomes.count || 0),
+      total: Number(strategyFeedbackOutcomes.decision?.metrics?.total || 0),
+      closed: Number(strategyFeedbackOutcomes.decision?.metrics?.closed || 0),
+      pnlNet: Number(strategyFeedbackOutcomes.decision?.metrics?.pnlNet || 0),
+      weak: strategyFeedbackOutcomes.decision?.metrics?.weak || null,
+      strong: strategyFeedbackOutcomes.decision?.metrics?.strong || null,
+      rows: (strategyFeedbackOutcomes.rows || []).slice(0, 5),
+    } : null,
     collectionAudit: collectionAudit
       ? {
           summary: collectionAudit.summary || {},
@@ -623,6 +636,9 @@ function renderText(payload) {
       ? `- strongest strategy family ${sections.collect.strategyFamilyPerformance.strongestFamily.family} / ${sections.collect.strategyFamilyPerformance.strongestFamily.bestQuality?.quality || 'unknown'} avg ${sections.collect.strategyFamilyPerformance.strongestFamily.bestQuality?.avgPnlPercent}%`
       : '- strongest strategy family none',
     `- top strategy families ${((sections.collect.strategyFamilyPerformance?.byFamily || []).map((item) => `${item.family}:${item.total}`).join(', ')) || 'none'}`,
+    sections.collect.strategyFeedbackOutcomes
+      ? `- strategy feedback outcomes ${sections.collect.strategyFeedbackOutcomes.status} | tagged ${sections.collect.strategyFeedbackOutcomes.total} / closed ${sections.collect.strategyFeedbackOutcomes.closed} / pnl ${sections.collect.strategyFeedbackOutcomes.pnlNet}`
+      : '- strategy feedback outcomes none',
     buildRegimeActionHint(sections.collect.regimePerformance?.weakestRegime, 'weak')
       ? `- tuning hint ${buildRegimeActionHint(sections.collect.regimePerformance?.weakestRegime, 'weak')}`
       : null,
@@ -681,7 +697,7 @@ function buildFallback(payload = {}) {
 }
 
 export async function buildRuntimeLearningLoopReport({ days = 14, json = false } = {}) {
-  const [freshness, runtimeDecision, executionGate, autotune, runtimeSuggestions, backtest, validation, regimeCoverage, regimePerformance, strategyFamilyPerformance, collectionAudit] = await Promise.all([
+  const [freshness, runtimeDecision, executionGate, autotune, runtimeSuggestions, backtest, validation, regimeCoverage, regimePerformance, strategyFamilyPerformance, strategyFeedbackOutcomes, collectionAudit] = await Promise.all([
     loadLoopFreshness(),
     buildRuntimeDecisionReport({ market: 'all', limit: 5, json: true }).catch(() => ({ count: 0, summary: {}, rows: [] })),
     buildRuntimeCryptoExecutionGateReport({ days, json: true }).catch(() => ({ decision: {} })),
@@ -692,6 +708,7 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
     loadRegimeCoverage(90).catch(() => ({ windowDays: 90, byRegime: [], latestByMarket: [], distinctTradedRegimes: 0 })),
     loadRegimePerformance(90).catch(() => ({ byRegime: [], weakestRegime: null, strongestRegime: null })),
     loadStrategyFamilyPerformance(90).catch(() => ({ byFamily: [], weakestFamily: null, strongestFamily: null })),
+    buildStrategyFeedbackOutcomes({ days: 90, json: true }).catch(() => null),
     runCollectionAudit({ markets: ['binance', 'kis', 'kis_overseas'], hours: 24 }).catch(() => null),
   ]);
 
@@ -706,6 +723,7 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
     regimeCoverage,
     regimePerformance,
     strategyFamilyPerformance,
+    strategyFeedbackOutcomes,
     collectionAudit,
   });
   const decision = buildDecision(sections);
@@ -721,6 +739,7 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
     regimeCoverage,
     regimePerformance,
     strategyFamilyPerformance,
+    strategyFeedbackOutcomes,
     executionGate,
     autotune,
     backtest,
@@ -740,6 +759,7 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
       regimeCoverage,
       regimePerformance,
       strategyFamilyPerformance,
+      strategyFeedbackOutcomes,
       executionGate: executionGate.decision,
       autotune: autotune.decision,
       backtest: backtest.decision,
