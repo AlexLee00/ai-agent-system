@@ -164,6 +164,35 @@ async function buildFeedbackBias(symbol, exchange) {
   return { bias, notes };
 }
 
+async function buildStrategyFamilyPerformanceBias(exchange) {
+  const notes = [];
+  const bias = {};
+  try {
+    const insight = await journalDb.getStrategyFamilyPerformanceInsight(exchange, 90);
+    for (const item of insight?.families || []) {
+      const family = String(item.strategyFamily || '').trim();
+      if (!family) continue;
+      const closed = Number(item.closed || 0);
+      if (closed < 5) continue;
+      const winRate = Number(item.winRate);
+      const avgPnl = Number(item.avgPnlPercent);
+      if (Number.isFinite(avgPnl) && avgPnl < -2) {
+        bias[family] = (bias[family] || 0) - 0.14;
+        notes.push(`${family} weak avgPnl ${avgPnl.toFixed(2)}%`);
+      } else if (Number.isFinite(winRate) && winRate < 0.34) {
+        bias[family] = (bias[family] || 0) - 0.08;
+        notes.push(`${family} weak winRate ${(winRate * 100).toFixed(0)}%`);
+      } else if (Number.isFinite(avgPnl) && avgPnl > 1 && Number.isFinite(winRate) && winRate >= 0.42) {
+        bias[family] = (bias[family] || 0) + 0.08;
+        notes.push(`${family} strong avgPnl ${avgPnl.toFixed(2)}%`);
+      }
+    }
+  } catch {
+    // Family-level feedback is optional and should not block route selection.
+  }
+  return { bias, notes };
+}
+
 export async function buildStrategyRoute({
   symbol,
   exchange = 'binance',
@@ -211,6 +240,11 @@ export async function buildStrategyRoute({
     if (scores[family] != null) add(scores, family, value, 'feedback loop bias', reasons);
   }
 
+  const familyFeedback = await buildStrategyFamilyPerformanceBias(exchange);
+  for (const [family, value] of Object.entries(familyFeedback.bias)) {
+    if (scores[family] != null) add(scores, family, value, 'strategy family performance bias', reasons);
+  }
+
   const ranked = Object.entries(scores)
     .map(([family, score]) => ({ family, score: Number(score.toFixed(4)) }))
     .sort((a, b) => b.score - a.score);
@@ -241,7 +275,7 @@ export async function buildStrategyRoute({
       qualityScore: argosStrategy.quality_score ?? null,
       source: argosStrategy.source || null,
     } : null,
-    feedbackNotes: feedback.notes,
+    feedbackNotes: [...feedback.notes, ...familyFeedback.notes].slice(0, 6),
     reasons: reasons.slice(0, 8),
   };
 }

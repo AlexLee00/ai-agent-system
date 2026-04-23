@@ -724,6 +724,56 @@ export async function getTradeReviewInsight(symbol, exchange, days = 60) {
   };
 }
 
+export async function getStrategyFamilyPerformanceInsight(exchange = null, days = 90) {
+  await ensureInit();
+  const since = Date.now() - Math.max(14, Number(days || 90)) * 24 * 60 * 60 * 1000;
+  const params = [since];
+  let exchangeSql = '';
+  if (exchange) {
+    exchangeSql = `AND exchange = ?`;
+    params.push(exchange);
+  }
+
+  const rows = await query(`
+    SELECT
+      COALESCE(NULLIF(strategy_family, ''), 'unknown') AS strategy_family,
+      COUNT(*) AS total,
+      COUNT(*) FILTER (WHERE status = 'closed' OR exit_time IS NOT NULL) AS closed,
+      COUNT(*) FILTER (WHERE (status = 'closed' OR exit_time IS NOT NULL) AND COALESCE(pnl_net, pnl_amount, 0) > 0) AS wins,
+      ROUND(AVG(CASE WHEN status = 'closed' OR exit_time IS NOT NULL THEN pnl_percent ELSE NULL END)::numeric, 4) AS avg_pnl_percent,
+      ROUND(SUM(CASE WHEN status = 'closed' OR exit_time IS NOT NULL THEN COALESCE(pnl_net, pnl_amount, 0) ELSE 0 END)::numeric, 4) AS pnl_net
+    FROM trade_journal
+    WHERE created_at >= ?
+      ${exchangeSql}
+      AND COALESCE(exclude_from_learning, false) = false
+      AND COALESCE(NULLIF(strategy_family, ''), 'unknown') <> 'unknown'
+    GROUP BY 1
+    ORDER BY closed DESC, total DESC, strategy_family ASC
+  `, params);
+
+  const families = rows.map((row) => {
+    const total = Number(row.total || 0);
+    const closed = Number(row.closed || 0);
+    const wins = Number(row.wins || 0);
+    return {
+      strategyFamily: String(row.strategy_family || 'unknown'),
+      total,
+      closed,
+      wins,
+      winRate: closed > 0 ? wins / closed : null,
+      avgPnlPercent: row.avg_pnl_percent != null ? Number(row.avg_pnl_percent) : null,
+      pnlNet: row.pnl_net != null ? Number(row.pnl_net) : 0,
+    };
+  });
+
+  return {
+    exchange: exchange || 'all',
+    days: Math.max(14, Number(days || 90)),
+    families,
+    byFamily: Object.fromEntries(families.map((row) => [row.strategyFamily, row])),
+  };
+}
+
 function _deriveExecutionSpeed(signalToExecMs) {
   if (signalToExecMs == null) return null;
   if (signalToExecMs <= 30_000) return 'fast';
