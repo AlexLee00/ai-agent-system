@@ -53,7 +53,7 @@ async function loadRows(days = 14) {
   `, [safeDays, EXECUTION_GUARD_CODES]).catch(() => []);
 }
 
-function summarize(rows = []) {
+export function summarizeRuntimeExecutionRiskGuardRows(rows = []) {
   const byCode = {};
   const byExchange = {};
   const byKind = {};
@@ -92,7 +92,7 @@ function summarize(rows = []) {
   };
 }
 
-function buildDecision(summary = {}) {
+export function buildRuntimeExecutionRiskGuardDecision(summary = {}) {
   let status = 'execution_risk_guard_ok';
   let headline = '실행 직전 리스크 승인 가드 차단이 관찰되지 않습니다.';
   const reasons = [
@@ -146,8 +146,8 @@ function renderText(payload) {
 export async function buildRuntimeExecutionRiskGuardReport({ days = 14, json = false } = {}) {
   await db.initSchema();
   const rows = await loadRows(days);
-  const summary = summarize(rows);
-  const decision = buildDecision(summary);
+  const summary = summarizeRuntimeExecutionRiskGuardRows(rows);
+  const decision = buildRuntimeExecutionRiskGuardDecision(summary);
   const payload = {
     ok: true,
     days: Number(days),

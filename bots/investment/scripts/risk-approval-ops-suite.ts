@@ -4,6 +4,7 @@
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { runRiskApprovalChainSmoke } from './risk-approval-chain-smoke.ts';
 import { runRiskApprovalExecutionGuardSmoke } from './risk-approval-execution-guard-smoke.ts';
+import { runRiskApprovalExecutionGuardReportSmoke } from './risk-approval-execution-guard-report-smoke.ts';
 import { runRiskApprovalModeSmoke } from './risk-approval-mode-smoke.ts';
 import { runRiskApprovalReadinessSmoke } from './risk-approval-readiness-smoke.ts';
 import { runRiskApprovalModeAuditSmoke } from './risk-approval-mode-audit-smoke.ts';
@@ -85,6 +86,7 @@ export async function runRiskApprovalOpsSuite({ days = 30, smokeOnly = false } =
   const smokes = {
     chain: runRiskApprovalChainSmoke(),
     executionGuard: runRiskApprovalExecutionGuardSmoke(),
+    executionGuardReport: runRiskApprovalExecutionGuardReportSmoke(),
     mode: runRiskApprovalModeSmoke(),
     readiness: runRiskApprovalReadinessSmoke(),
     modeAudit: runRiskApprovalModeAuditSmoke(),
@@ -97,6 +99,7 @@ export async function runRiskApprovalOpsSuite({ days = 30, smokeOnly = false } =
     smokes: {
       chain: Boolean(smokes.chain.ok),
       executionGuard: Boolean(smokes.executionGuard.ok),
+      executionGuardReport: Boolean(smokes.executionGuardReport.ok),
       mode: Boolean(smokes.mode.ok),
       readiness: Boolean(smokes.readiness.ok),
       modeAudit: Boolean(smokes.modeAudit.ok),
@@ -110,7 +113,7 @@ function renderText(payload) {
     '🧪 Risk Approval Ops Suite',
     `smokeOnly: ${payload.smokeOnly}`,
     `days: ${payload.days}`,
-    `smokes: chain=${payload.smokes.chain} executionGuard=${payload.smokes.executionGuard} mode=${payload.smokes.mode}`,
+    `smokes: chain=${payload.smokes.chain} executionGuard=${payload.smokes.executionGuard} executionGuardReport=${payload.smokes.executionGuardReport} mode=${payload.smokes.mode}`,
     `decision smokes: readiness=${payload.smokes.readiness} modeAudit=${payload.smokes.modeAudit}`,
   ];
   if (payload.reports) {
