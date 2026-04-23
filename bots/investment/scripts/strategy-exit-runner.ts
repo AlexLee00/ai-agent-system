@@ -45,6 +45,18 @@ function safeNumber(value, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function formatHours(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 'n/a';
+  return n.toFixed(1);
+}
+
+function formatPct(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 'n/a';
+  return n.toFixed(2);
+}
+
 function heldHoursFromEntry(entryTime) {
   if (!entryTime) return 0;
   const ts = new Date(entryTime).getTime();
@@ -70,6 +82,14 @@ function normalizeResponsibilityPlan(plan = null) {
   return plan && typeof plan === 'object' ? plan : {};
 }
 
+function normalizeExecutionPlan(plan = null) {
+  return plan && typeof plan === 'object' ? plan : {};
+}
+
+function normalizeFamilyPerformanceFeedback(feedback = null) {
+  return feedback && typeof feedback === 'object' ? feedback : {};
+}
+
 function buildExitReason(candidate) {
   const exitPlan = normalizeExitPlan(candidate?.strategyProfile?.exitPlan);
   const primary = String(exitPlan.primaryExit || '').trim();
@@ -80,6 +100,8 @@ function buildExitReason(candidate) {
 function applyExitPlanGuard(candidate) {
   const exitPlan = normalizeExitPlan(candidate?.strategyProfile?.exitPlan);
   const responsibilityPlan = normalizeResponsibilityPlan(candidate?.strategyProfile?.responsibilityPlan);
+  const executionPlan = normalizeExecutionPlan(candidate?.strategyProfile?.executionPlan);
+  const familyFeedback = normalizeFamilyPerformanceFeedback(candidate?.strategyProfile?.familyPerformanceFeedback);
   if (!exitPlan || Object.keys(exitPlan).length === 0) {
     return { allowed: true, level: 'fallback', reason: null };
   }
@@ -89,8 +111,29 @@ function applyExitPlanGuard(candidate) {
   const hardReason = isHardExitReason(candidate.reasonCode);
   const riskMission = String(responsibilityPlan?.riskMission || '').trim().toLowerCase();
   const watchMission = String(responsibilityPlan?.watchMission || '').trim().toLowerCase();
+  const exitUrgency = String(executionPlan?.exitUrgency || '').trim().toLowerCase();
+  const familyBias = String(familyFeedback?.bias || '').trim();
 
   if (!hardReason) {
+    if (exitUrgency === 'high') {
+      minHoldHours *= 0.65;
+      if (Number.isFinite(mildLossGracePct)) mildLossGracePct *= 0.65;
+    } else if (exitUrgency === 'watchful') {
+      minHoldHours *= 0.85;
+      if (Number.isFinite(mildLossGracePct)) mildLossGracePct *= 0.85;
+    }
+
+    if (familyBias === 'downweight_by_pnl') {
+      minHoldHours *= 0.75;
+      if (Number.isFinite(mildLossGracePct)) mildLossGracePct *= 0.7;
+    } else if (familyBias === 'downweight_by_win_rate') {
+      minHoldHours *= 0.88;
+      if (Number.isFinite(mildLossGracePct)) mildLossGracePct *= 0.85;
+    } else if (familyBias === 'upweight_candidate') {
+      minHoldHours *= 1.1;
+      if (Number.isFinite(mildLossGracePct)) mildLossGracePct *= 1.1;
+    }
+
     if (riskMission === 'strict_risk_gate') {
       minHoldHours *= 0.75;
       if (Number.isFinite(mildLossGracePct)) mildLossGracePct *= 0.7;
@@ -111,7 +154,7 @@ function applyExitPlanGuard(candidate) {
     return {
       allowed: false,
       level: 'guarded',
-      reason: `전략 최소 보유시간 ${minHoldHours}h 미만 (${candidate.heldHours.toFixed(1)}h)`,
+      reason: `전략 최소 보유시간 ${formatHours(minHoldHours)}h 미만 (${formatHours(candidate.heldHours)}h)`,
     };
   }
 
@@ -124,7 +167,7 @@ function applyExitPlanGuard(candidate) {
     return {
       allowed: false,
       level: 'guarded',
-      reason: `전략 손실 유예 ${mildLossGracePct}% 범위 내 (${candidate.pnlPct.toFixed(2)}%)`,
+      reason: `전략 손실 유예 ${formatPct(mildLossGracePct)}% 범위 내 (${formatPct(candidate.pnlPct)}%)`,
     };
   }
 
@@ -148,10 +191,19 @@ function mapCandidate(row, strategyProfile = null) {
       setupType: strategyProfile.setup_type || null,
       exitPlan: strategyProfile.exit_plan || {},
       strategyState: strategyProfile.strategy_state || {},
+      executionPlan: strategyProfile.strategy_context?.executionPlan || {},
+      familyPerformanceFeedback: strategyProfile.strategy_context?.familyPerformanceFeedback || {},
       responsibilityPlan: strategyProfile.strategy_context?.responsibilityPlan || {},
     } : null,
   };
   const guard = applyExitPlanGuard(candidate);
+  if (candidate.strategyProfile) {
+    candidate.strategyProfile.strategyState = {
+      ...(candidate.strategyProfile.strategyState || {}),
+      latestExitGuardReason: guard.reason || null,
+      latestFamilyPerformanceBias: candidate.strategyProfile.familyPerformanceFeedback?.bias || null,
+    };
+  }
   return {
     ...candidate,
     exitReasonOverride: buildExitReason(candidate),
@@ -178,6 +230,8 @@ async function syncStrategyExitCandidateStates(candidates = [], phase = 'preview
         latestReasonCode: candidate.reasonCode || null,
         latestReason: candidate.reason || null,
         latestExitGuardReason: candidate?.executionGuard?.reason || null,
+        latestExecutionPlan: candidate?.strategyProfile?.executionPlan || null,
+        latestFamilyPerformanceBias: candidate?.strategyProfile?.familyPerformanceFeedback?.bias || null,
         latestExecutionMission: candidate?.strategyProfile?.responsibilityPlan?.executionMission || null,
         latestRiskMission: candidate?.strategyProfile?.responsibilityPlan?.riskMission || null,
         latestWatchMission: candidate?.strategyProfile?.responsibilityPlan?.watchMission || null,

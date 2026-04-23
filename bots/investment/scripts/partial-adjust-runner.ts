@@ -68,7 +68,26 @@ function getResponsibilityPlan(strategyProfile = null) {
   return plan && typeof plan === 'object' ? plan : {};
 }
 
-function tuneRatioByResponsibilityPlan(ratio, reasonCode, responsibilityPlan = {}) {
+function getExecutionPlan(strategyProfile = null) {
+  const plan =
+    strategyProfile?.strategy_context?.executionPlan
+    || strategyProfile?.strategyContext?.executionPlan
+    || strategyProfile?.executionPlan;
+  return plan && typeof plan === 'object' ? plan : {};
+}
+
+function getFamilyPerformanceFeedback(strategyProfile = null) {
+  const feedback =
+    strategyProfile?.strategy_context?.familyPerformanceFeedback
+    || strategyProfile?.strategyContext?.familyPerformanceFeedback
+    || strategyProfile?.familyPerformanceFeedback;
+  return feedback && typeof feedback === 'object' ? feedback : {};
+}
+
+function tuneRatioByStrategyContext(ratio, reasonCode, strategyProfile = null) {
+  const responsibilityPlan = getResponsibilityPlan(strategyProfile);
+  const executionPlan = getExecutionPlan(strategyProfile);
+  const familyFeedback = getFamilyPerformanceFeedback(strategyProfile);
   let adjusted = Number(ratio);
   if (!Number.isFinite(adjusted) || adjusted <= 0) return ratio;
 
@@ -89,13 +108,22 @@ function tuneRatioByResponsibilityPlan(ratio, reasonCode, responsibilityPlan = {
     adjusted += 0.03;
   }
 
+  const partialAdjustBias = Number(executionPlan?.partialAdjustBias);
+  if (Number.isFinite(partialAdjustBias) && partialAdjustBias > 0) {
+    adjusted *= partialAdjustBias;
+  }
+
+  const familyBias = String(familyFeedback?.bias || '').trim();
+  if (familyBias === 'downweight_by_pnl') adjusted += 0.08;
+  else if (familyBias === 'downweight_by_win_rate') adjusted += 0.04;
+  else if (familyBias === 'upweight_candidate') adjusted -= 0.03;
+
   return normalizeRatio(adjusted) ?? ratio;
 }
 
 function getStrategyAwarePartialExitRatio(reasonCode, strategyProfile = null) {
   const exitPlanRatio = getExitPlanRatio(strategyProfile?.exit_plan || strategyProfile?.exitPlan, reasonCode);
-  const responsibilityPlan = getResponsibilityPlan(strategyProfile);
-  if (exitPlanRatio != null) return tuneRatioByResponsibilityPlan(exitPlanRatio, reasonCode, responsibilityPlan);
+  if (exitPlanRatio != null) return tuneRatioByStrategyContext(exitPlanRatio, reasonCode, strategyProfile);
   const base = getDefaultPartialExitRatio(reasonCode);
   const setupType = normalizeSetupType(strategyProfile?.setup_type);
   let ratio = base;
@@ -121,7 +149,7 @@ function getStrategyAwarePartialExitRatio(reasonCode, strategyProfile = null) {
       break;
   }
 
-  return tuneRatioByResponsibilityPlan(ratio, reasonCode, responsibilityPlan);
+  return tuneRatioByStrategyContext(ratio, reasonCode, strategyProfile);
 }
 
 function normalizeRatio(value) {
@@ -154,6 +182,8 @@ function mapCandidate(row, strategyProfile = null, overrideRatio = null) {
       setupType: strategyProfile.setup_type || null,
       exitPlan: strategyProfile.exit_plan || strategyProfile.exitPlan || null,
       strategyState: strategyProfile.strategy_state || {},
+      executionPlan: getExecutionPlan(strategyProfile),
+      familyPerformanceFeedback: getFamilyPerformanceFeedback(strategyProfile),
       responsibilityPlan: strategyProfile.strategy_context?.responsibilityPlan || {},
     } : null,
   };
@@ -173,6 +203,8 @@ async function syncPartialAdjustCandidateStates(candidates = [], phase = 'previe
         latestReasonCode: candidate.reasonCode || null,
         latestReason: candidate.reason || null,
         latestPartialExitRatio: candidate.partialExitRatio,
+        latestExecutionPlan: candidate?.strategyProfile?.executionPlan || null,
+        latestFamilyPerformanceBias: candidate?.strategyProfile?.familyPerformanceFeedback?.bias || null,
         latestExecutionMission: candidate?.strategyProfile?.responsibilityPlan?.executionMission || null,
         latestRiskMission: candidate?.strategyProfile?.responsibilityPlan?.riskMission || null,
         latestWatchMission: candidate?.strategyProfile?.responsibilityPlan?.watchMission || null,
