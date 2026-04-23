@@ -242,6 +242,11 @@ const DEFAULT_RUNTIME_CONFIG = {
     },
   },
   reevaluation: {
+    exitGuards: {
+      mildLossHoldThresholdPct: -1.0,
+      shortHoldHours: 6,
+      overwhelmingSellVotes: 3,
+    },
     tradingViewFrames: {
       byExchange: {
         binance: ['1h', '4h', '1d'],

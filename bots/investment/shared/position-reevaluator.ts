@@ -190,6 +190,30 @@ function calcPnlPct(position) {
   return (unrealizedPnl / basis) * 100;
 }
 
+function getExitGuardConfig() {
+  const runtime = getPositionReevaluationRuntimeConfig();
+  const guards = runtime?.exitGuards || {};
+  return {
+    mildLossHoldThresholdPct: safeNumber(guards?.mildLossHoldThresholdPct, -1.0),
+    shortHoldHours: safeNumber(guards?.shortHoldHours, 6),
+    overwhelmingSellVotes: Math.max(1, Math.round(safeNumber(guards?.overwhelmingSellVotes, 3))),
+  };
+}
+
+function deriveHeldHours(position = {}) {
+  const entryTime = position?.entry_time || position?.created_at || position?.updated_at || null;
+  if (!entryTime) return 0;
+  const ts = new Date(entryTime).getTime();
+  if (!Number.isFinite(ts) || ts <= 0) return 0;
+  return Math.max(0, (Date.now() - ts) / 3600000);
+}
+
+function isStrongBearishExitSignal({ sell = 0, buy = 0, tvComposite = 'HOLD', tv4hSignal = 'HOLD', tv1dSignal = 'HOLD', overwhelmingSellVotes = 3 } = {}) {
+  const stackedTvBearish = tv4hSignal === 'SELL' && (tv1dSignal === 'SELL' || tvComposite === 'SELL');
+  const overwhelmingDbSell = sell >= Math.max(overwhelmingSellVotes, buy + 2);
+  return stackedTvBearish || overwhelmingDbSell;
+}
+
 function summarizeAnalyses(rows = []) {
   const summary = {
     total: rows.length,
@@ -235,6 +259,7 @@ function getIndicatorFrame(summary = {}, interval = '4h') {
 
 function decideReevaluation(position, analysisSummary) {
   const pnlPct = calcPnlPct(position);
+  const heldHours = deriveHeldHours(position);
   const buy = Number(analysisSummary.buy || 0);
   const hold = Number(analysisSummary.hold || 0);
   const sell = Number(analysisSummary.sell || 0);
@@ -246,12 +271,33 @@ function decideReevaluation(position, analysisSummary) {
   const tv4hRsi = safeNumber(tv4h?.rsi, null);
   const tv1dSignal = String(tv1d?.signal || 'HOLD').toUpperCase();
   const tv1dRsi = safeNumber(tv1d?.rsi, null);
+  const exitGuards = getExitGuardConfig();
+  const strongBearishExit = isStrongBearishExitSignal({
+    sell,
+    buy,
+    tvComposite,
+    tv4hSignal,
+    tv1dSignal,
+    overwhelmingSellVotes: exitGuards.overwhelmingSellVotes,
+  });
+  const mildLossShortHoldGuard = pnlPct < 0
+    && pnlPct > exitGuards.mildLossHoldThresholdPct
+    && heldHours < exitGuards.shortHoldHours
+    && !strongBearishExit;
 
   if (pnlPct <= -5) {
     return {
       recommendation: 'EXIT',
       reasonCode: 'stop_loss_threshold',
       reason: `미실현손익 ${pnlPct.toFixed(2)}%로 -5% 손절 기준 이하`,
+    };
+  }
+
+  if (mildLossShortHoldGuard) {
+    return {
+      recommendation: 'HOLD',
+      reasonCode: 'mild_loss_hold_guard',
+      reason: `작은 손실 ${pnlPct.toFixed(2)}% / 짧은 보유 ${heldHours.toFixed(1)}h 구간이라 즉시 청산보다 관찰 유지`,
     };
   }
 

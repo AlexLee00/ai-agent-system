@@ -30,7 +30,7 @@ import { publishAlert } from '../shared/alert-publisher.ts';
 import { isPaperMode, isValidationTradeMode } from '../shared/secrets.ts';
 import { getAvailableBalance, getAvailableUSDT, getOpenPositions, getCapitalConfigWithOverrides } from '../shared/capital-manager.ts';
 import { getDomesticBalance } from '../shared/kis-client.ts';
-import { getInvestmentRagRuntimeConfig, getLunaRuntimeConfig, getLunaStockStrategyProfile } from '../shared/runtime-config.ts';
+import { getInvestmentRagRuntimeConfig, getLunaRuntimeConfig, getLunaStockStrategyProfile, getPositionReevaluationRuntimeConfig } from '../shared/runtime-config.ts';
 import * as journalDb from '../shared/trade-journal-db.ts';
 import { buildAccuracyReport, getEffectiveAnalystWeightProfiles, normalizeWeights } from '../shared/analyst-accuracy.ts';
 import { getMarketRegime, formatMarketRegime } from '../shared/market-regime.ts';
@@ -779,6 +779,7 @@ function buildExitPrompt(openPositions, exchange = 'binance') {
     '- 미실현손익이 음수이고 분석가 다수가 SELL/HOLD면 SELL을 우선 검토',
     '- 미실현손익 -5% 이하 손실은 특별한 반전 근거가 없으면 SELL',
     '- 72시간 이상 장기 보유는 명확한 상승 근거가 없으면 SELL',
+    '- 단, 작은 손실(-1% 이내)이고 보유 시간이 짧으면 즉시 SELL보다 HOLD를 우선 검토',
     '',
     '각 포지션에 대해 SELL 또는 HOLD를 반드시 지정하세요.',
     '',
@@ -795,6 +796,69 @@ function normalizeExitDecision(rawDecision, fallbackPosition) {
     confidence: Math.max(0, Math.min(1, Number(rawDecision?.confidence ?? 0.5))),
     reasoning: String(rawDecision?.reasoning || '').trim().slice(0, 180) || 'EXIT 판단 근거 없음',
     exit_type: 'normal_exit',
+  };
+}
+
+function getExitGuardConfig() {
+  const guards = getPositionReevaluationRuntimeConfig()?.exitGuards || {};
+  return {
+    mildLossHoldThresholdPct: Number.isFinite(Number(guards?.mildLossHoldThresholdPct))
+      ? Number(guards.mildLossHoldThresholdPct)
+      : -1.0,
+    shortHoldHours: Number.isFinite(Number(guards?.shortHoldHours))
+      ? Number(guards.shortHoldHours)
+      : 6,
+    overwhelmingSellVotes: Math.max(
+      1,
+      Number.isFinite(Number(guards?.overwhelmingSellVotes))
+        ? Math.round(Number(guards.overwhelmingSellVotes))
+        : 3,
+    ),
+  };
+}
+
+function getPositionPnlPct(position) {
+  const avgPrice = Number(position?.avg_price || 0);
+  const currentPrice = Number(position?.current_price || avgPrice || 0);
+  if (!(avgPrice > 0)) return 0;
+  return ((currentPrice - avgPrice) / avgPrice) * 100;
+}
+
+function countExitVotes(position) {
+  const analyses = Array.isArray(position?.analyses) ? position.analyses : [];
+  let buy = 0;
+  let sellLike = 0;
+  for (const item of analyses) {
+    const signal = String(item?.signal || '').toUpperCase();
+    if (signal === 'BUY') buy += 1;
+    if (signal === 'SELL' || signal === 'HOLD') sellLike += 1;
+  }
+  return { buy, sellLike };
+}
+
+function shouldDowngradeEarlyExit(position, decision) {
+  if (String(decision?.action || '').toUpperCase() !== ACTIONS.SELL) return false;
+  const guards = getExitGuardConfig();
+  const heldHours = Number(position?.held_hours || 0);
+  const pnlPct = getPositionPnlPct(position);
+  if (!(pnlPct < 0 && pnlPct > guards.mildLossHoldThresholdPct && heldHours < guards.shortHoldHours)) {
+    return false;
+  }
+  const { buy, sellLike } = countExitVotes(position);
+  const overwhelmingSell = sellLike >= Math.max(guards.overwhelmingSellVotes, buy + 2);
+  return !overwhelmingSell;
+}
+
+function applyExitGuard(position, decision) {
+  if (!position || !decision) return decision;
+  if (!shouldDowngradeEarlyExit(position, decision)) return decision;
+  const heldHours = Number(position?.held_hours || 0);
+  const pnlPct = getPositionPnlPct(position);
+  return {
+    ...decision,
+    action: ACTIONS.HOLD,
+    confidence: Math.min(Number(decision?.confidence ?? 0.5), 0.58),
+    reasoning: `EXIT 가드 — 작은 손실 ${pnlPct.toFixed(2)}% / 짧은 보유 ${heldHours.toFixed(1)}h 구간이라 관찰 유지`,
   };
 }
 
@@ -885,7 +949,10 @@ function normalizeExitDecisionResult(parsed, enrichedPositions) {
 
   const bySymbol = new Map(enrichedPositions.map(pos => [pos.symbol, pos]));
   const decisions = parsed.decisions
-    .map(item => normalizeExitDecision(item, bySymbol.get(item?.symbol)))
+    .map(item => {
+      const position = bySymbol.get(item?.symbol);
+      return applyExitGuard(position, normalizeExitDecision(item, position));
+    })
     .filter(item => item.symbol && bySymbol.has(item.symbol));
 
   for (const position of enrichedPositions) {
