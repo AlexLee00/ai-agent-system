@@ -31,9 +31,20 @@ function buildHistoryRefreshActionItem(remediationPlan = null, remediationHistor
   return null;
 }
 
+export function buildPositionStrategyRemediationRefreshState(remediationPlan = null, remediationHistory = null) {
+  const reason = buildHistoryRefreshActionItem(remediationPlan, remediationHistory);
+  return {
+    needed: Boolean(reason),
+    stale: Boolean(remediationHistory?.stale),
+    reason,
+    command: reason?.split(':').slice(1).join(':').trim() || null,
+  };
+}
+
 export function buildPositionStrategyRemediationDecision(remediationPlan = null, remediationHistory = null) {
   const historyActionItem = buildHistoryActionItem(remediationHistory);
-  const historyRefreshActionItem = buildHistoryRefreshActionItem(remediationPlan, remediationHistory);
+  const refreshState = buildPositionStrategyRemediationRefreshState(remediationPlan, remediationHistory);
+  const historyRefreshActionItem = refreshState.reason;
   if (!remediationPlan) {
     return {
       status: 'position_strategy_remediation_unavailable',
@@ -79,12 +90,14 @@ export async function runPositionStrategyRemediation({ json = false, historyFile
   const remediationPlan = hygiene?.remediationPlan
     || buildPositionStrategyHygieneRemediationPlan(hygiene);
   const remediationHistory = readPositionStrategyRemediationHistory(historyFile);
+  const remediationRefreshState = buildPositionStrategyRemediationRefreshState(remediationPlan, remediationHistory);
   const result = {
     ok: true,
     hygieneStatus: hygiene?.decision?.status || 'unknown',
     recommendedExchange: remediationPlan?.recommendedExchange || null,
     remediationPlan,
     remediationHistory,
+    remediationRefreshState,
     decision: buildPositionStrategyRemediationDecision(remediationPlan, remediationHistory),
   };
   if (json) return result;

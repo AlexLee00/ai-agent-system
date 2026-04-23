@@ -1396,6 +1396,7 @@ async function buildReport() {
     positionStrategyHygiene,
     positionStrategyRemediation,
     positionStrategyRemediationHistory,
+    positionStrategyRemediationRefresh: positionStrategyRemediation?.remediationRefreshState || null,
     duplicateStrategyNormalization,
     orphanStrategyRetirement,
     latestOpsSnapshot,
