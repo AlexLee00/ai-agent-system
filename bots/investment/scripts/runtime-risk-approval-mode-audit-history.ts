@@ -54,6 +54,10 @@ function buildSnapshot(report = {}, days = 30) {
     rejected: safeNumber(metrics.rejected),
     nonShadowApplications: safeNumber(metrics.nonShadowApplications),
     unavailablePreviewCount: safeNumber(metrics.unavailablePreviewCount),
+    outcomeClosed: safeNumber(metrics.outcomeClosed),
+    outcomePnlNet: safeNumber(metrics.outcomePnlNet),
+    outcomeAvgPnlPercent: metrics.outcomeAvgPnlPercent == null ? null : Number(metrics.outcomeAvgPnlPercent),
+    outcomeMode: metrics.outcomeMode || null,
     actionItems: decision.actionItems || [],
   };
 }
@@ -66,6 +70,9 @@ export function buildRuntimeRiskApprovalModeAuditHistoryDelta(current, previous)
       rejected: 0,
       nonShadowApplications: 0,
       unavailablePreviewCount: 0,
+      outcomeClosed: 0,
+      outcomePnlNet: 0,
+      outcomeAvgPnlPercent: 0,
     };
   }
   return {
@@ -74,6 +81,11 @@ export function buildRuntimeRiskApprovalModeAuditHistoryDelta(current, previous)
     rejected: current.rejected - safeNumber(previous.rejected),
     nonShadowApplications: current.nonShadowApplications - safeNumber(previous.nonShadowApplications),
     unavailablePreviewCount: current.unavailablePreviewCount - safeNumber(previous.unavailablePreviewCount),
+    outcomeClosed: current.outcomeClosed - safeNumber(previous.outcomeClosed),
+    outcomePnlNet: current.outcomePnlNet - safeNumber(previous.outcomePnlNet),
+    outcomeAvgPnlPercent: current.outcomeAvgPnlPercent == null || previous.outcomeAvgPnlPercent == null
+      ? 0
+      : Number((current.outcomeAvgPnlPercent - Number(previous.outcomeAvgPnlPercent || 0)).toFixed(4)),
   };
 }
 
@@ -93,12 +105,16 @@ function renderText(payload) {
     `blocker delta: ${signed(payload.delta.blockerCount)}`,
     `non-shadow delta: ${signed(payload.delta.nonShadowApplications)}`,
     `unavailable delta: ${signed(payload.delta.unavailablePreviewCount)}`,
+    `outcome delta: closed ${signed(payload.delta.outcomeClosed)} / pnl ${signed(payload.delta.outcomePnlNet)} / avg ${signed(payload.delta.outcomeAvgPnlPercent)}%`,
+    payload.current.outcomeMode
+      ? `outcome mode: ${payload.current.outcomeMode.mode || 'n/a'} / closed ${payload.current.outcomeMode.closed || 0} / pnl ${payload.current.outcomeMode.pnlNet ?? 0} / avg ${payload.current.outcomeMode.avgPnlPercent ?? 'n/a'}%`
+      : null,
     '',
     `headline: ${payload.current.headline}`,
     '',
     '권장 조치:',
     ...payload.current.actionItems.map((item) => `- ${item}`),
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 }
 
 export async function buildRuntimeRiskApprovalModeAuditHistory({ days = 30, file = DEFAULT_FILE, json = false, write = true } = {}) {

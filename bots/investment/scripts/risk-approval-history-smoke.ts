@@ -81,17 +81,26 @@ export function runRiskApprovalHistorySmoke() {
     rejected: 1,
     nonShadowApplications: 4,
     unavailablePreviewCount: 2,
+    outcomeClosed: 5,
+    outcomePnlNet: -8,
+    outcomeAvgPnlPercent: -0.4,
   }, {
     blockerCount: 2,
     applied: 1,
     rejected: 1,
     nonShadowApplications: 2,
     unavailablePreviewCount: 0,
+    outcomeClosed: 3,
+    outcomePnlNet: -3,
+    outcomeAvgPnlPercent: -0.1,
   });
   assert.equal(modeAudit.blockerCount, -1);
   assert.equal(modeAudit.applied, 2);
   assert.equal(modeAudit.nonShadowApplications, 2);
   assert.equal(modeAudit.unavailablePreviewCount, 2);
+  assert.equal(modeAudit.outcomeClosed, 2);
+  assert.equal(modeAudit.outcomePnlNet, -5);
+  assert.equal(modeAudit.outcomeAvgPnlPercent, -0.3);
 
   const executionGuard = buildRuntimeExecutionRiskGuardHistoryDelta({
     total: 5,
