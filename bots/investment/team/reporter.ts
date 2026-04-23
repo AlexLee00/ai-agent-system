@@ -41,6 +41,7 @@ import { buildRuntimeReevalTvMtfAutotuneReport } from '../scripts/runtime-reeval
 import { buildRuntimeReevalTvMtfTrendReport } from '../scripts/runtime-reeval-tvmft-trend-report.ts';
 import { buildRuntimeKisOverseasAutotuneReport } from '../scripts/runtime-kis-overseas-autotune-report.ts';
 import { buildRuntimePositionStrategyAudit } from '../scripts/runtime-position-strategy-audit.ts';
+import { runCollectionAudit } from '../scripts/runtime-collection-audit.ts';
 
 const _require = createRequire(import.meta.url);
 const shadow   = _require('../../../packages/core/lib/shadow-mode.js');
@@ -769,6 +770,22 @@ function buildPositionStrategyAuditLines(auditSummary = null) {
   return lines;
 }
 
+function buildCollectionAuditLines(collectionAudit = null) {
+  if (!collectionAudit) return ['조회 결과 없음'];
+  if (collectionAudit.error) return ['조회 실패'];
+  const summary = collectionAudit.summary || {};
+  const rows = Array.isArray(collectionAudit.markets) ? collectionAudit.markets : [];
+  const lines = [
+    `recent runs ${summary.recentRuns || 0} | ready ${summary.ready || 0} / degraded ${summary.degraded || 0} / insufficient ${summary.insufficient || 0}`,
+  ];
+  for (const row of rows) {
+    lines.push(
+      `${row.market} | quality ${row.collectQuality?.status || 'unknown'} | screening ${row.screeningUniverseCount || 0} / maintenance ${row.maintenanceUniverseCount || 0} / profiled ${row.profiledCount || 0} / dust ${row.dustSkippedCount || 0}`,
+    );
+  }
+  return lines;
+}
+
 function buildReevalTvMtfAutotuneLines(reevalTvMtfSummary = null) {
   if (!reevalTvMtfSummary) return ['조회 결과 없음'];
   if (reevalTvMtfSummary.error) return ['조회 실패'];
@@ -950,6 +967,7 @@ function buildBinanceDustLines(binanceDustSummary = null) {
 export async function generateReport({ days = 30, telegram = false } = {}) {
   await initHubSecrets().catch(() => false);
   const screeningSummary = await loadScreeningSummary();
+  const collectionAuditSummary = await runCollectionAudit({ markets: ['binance', 'kis', 'kis_overseas'], hours: 24 }).catch((error) => ({ error: error.message }));
   const reevaluationSummary = await loadPositionReevaluationSummary();
   const strategyExitSummary = await loadStrategyExitSummary();
   const agentRoleSummary = await loadAgentRoleSummary();
@@ -997,6 +1015,9 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
       '',
       '━━━ 스크리닝 동향 ━━━',
       ...buildScreeningSummaryLines(screeningSummary).map((line) => `  ${line}`),
+      '',
+      '━━━ 수집 감사 ━━━',
+      ...buildCollectionAuditLines(collectionAuditSummary).map((line) => `  ${line}`),
       '',
       '━━━ 포지션 재평가 ━━━',
       ...buildPositionReevaluationLines(reevaluationSummary).map((line) => `  ${line}`),
@@ -1246,6 +1267,10 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
   lines.push(...buildScreeningSummaryLines(screeningSummary).map((line) => `  ${line}`));
   lines.push(``);
 
+  lines.push(`━━━ 수집 감사 ━━━`);
+  lines.push(...buildCollectionAuditLines(collectionAuditSummary).map((line) => `  ${line}`));
+  lines.push(``);
+
   lines.push(`━━━ 포지션 재평가 ━━━`);
   lines.push(...buildPositionReevaluationLines(reevaluationSummary).map((line) => `  ${line}`));
   lines.push(``);
@@ -1447,6 +1472,20 @@ ${JSON.stringify({
           topSymbols: (summary?.topSymbols || []).slice(0, 3).map((item: any) => item.symbol),
     },
   ])),
+  collectionAudit: collectionAuditSummary?.summary ? {
+    recentRuns: Number(collectionAuditSummary.summary?.recentRuns || 0),
+    ready: Number(collectionAuditSummary.summary?.ready || 0),
+    degraded: Number(collectionAuditSummary.summary?.degraded || 0),
+    insufficient: Number(collectionAuditSummary.summary?.insufficient || 0),
+    markets: (collectionAuditSummary.markets || []).map((row: any) => ({
+      market: row.market,
+      quality: row.collectQuality?.status || 'unknown',
+      screening: Number(row.screeningUniverseCount || 0),
+      maintenance: Number(row.maintenanceUniverseCount || 0),
+      profiled: Number(row.profiledCount || 0),
+      dustSkipped: Number(row.dustSkippedCount || 0),
+    })),
+  } : null,
   reevaluation: reevaluationSummary?.decision ? {
     status: reevaluationSummary.decision.status,
     holds: Number(reevaluationSummary.decision.metrics?.holds || 0),
@@ -1587,6 +1626,7 @@ ${JSON.stringify({
           `자산 집계 소스: ${balanceSource === 'binance_live' ? '바이낸스 실잔고' : '최신 스냅샷 fallback'}`,
         ]),
         buildSection('스크리닝 동향', buildScreeningSummaryLines(screeningSummary)),
+        buildSection('수집 감사', buildCollectionAuditLines(collectionAuditSummary)),
         buildSection('포지션 재평가', buildPositionReevaluationLines(reevaluationSummary)),
         buildSection('에이전트 역할 상태', buildAgentRoleLines(agentRoleSummary)),
         buildSection('포지션 전략 커버리지', buildPositionStrategyAuditLines(positionStrategyAuditSummary)),
@@ -1623,6 +1663,9 @@ ${JSON.stringify({
         details: [
           `신호 ${sigTotal}개`,
           `실행 ${sigExec}개 / 승인대기 ${sigApproved}개 / 실패 ${sigFailed}개`,
+          collectionAuditSummary?.summary
+            ? `collection ready ${collectionAuditSummary.summary.ready || 0} / degraded ${collectionAuditSummary.summary.degraded || 0} / insufficient ${collectionAuditSummary.summary.insufficient || 0}`
+            : null,
           reevaluationSummary?.decision
             ? `재평가 ${reevaluationSummary.decision.status} / EXIT ${reevaluationSummary.decision.metrics?.exits || 0}`
             : null,

@@ -10,6 +10,7 @@ import { buildRuntimeCryptoGuardAutotuneReport } from './runtime-crypto-guard-au
 import { buildRuntimeConfigSuggestionsReport } from './runtime-config-suggestions.ts';
 import { buildVectorBtBacktestReport } from './vectorbt-backtest-report.ts';
 import { validateTradeReview } from './validate-trade-review.ts';
+import { runCollectionAudit } from './runtime-collection-audit.ts';
 
 function parseArgs(argv = process.argv.slice(2)) {
   const daysArg = argv.find((arg) => arg.startsWith('--days='));
@@ -273,6 +274,7 @@ function buildSectionStates({
   validation,
   regimeCoverage,
   regimePerformance,
+  collectionAudit,
 }) {
   const runtimeAge = ageHours(freshness.latestRuntimeSessionAt);
   const reviewAge = ageHours(freshness.latestTradeReviewAt);
@@ -310,6 +312,21 @@ function buildSectionStates({
       strongestRegime: regimePerformance.strongestRegime,
       byRegime: regimePerformance.byRegime.slice(0, 4),
     },
+    collectionAudit: collectionAudit
+      ? {
+          summary: collectionAudit.summary || {},
+          markets: Array.isArray(collectionAudit.markets)
+            ? collectionAudit.markets.map((item) => ({
+                market: item.market,
+                quality: item.collectQuality?.status || 'unknown',
+                screening: Number(item.screeningUniverseCount || 0),
+                maintenance: Number(item.maintenanceUniverseCount || 0),
+                profiled: Number(item.maintenanceProfiledCount || 0),
+                dustSkipped: Number(item.dustSkippedCount || 0),
+              }))
+            : [],
+        }
+      : null,
   };
 
   const analyze = {
@@ -425,6 +442,16 @@ function buildDecision(sections = {}) {
     status = 'learning_sample_thin';
     headline = '세션은 돌지만 승인/실행 표본이 얇아 validation 표본을 더 쌓아야 합니다.';
     nextActions.push('validation lane과 runtime-suggest dry-run을 함께 돌려 승인/실행 표본을 늘립니다.');
+  } else if (sections.collect.collectionAudit?.markets?.some((item) => item.quality === 'insufficient')) {
+    status = 'collection_quality_attention';
+    const target = sections.collect.collectionAudit.markets.find((item) => item.quality === 'insufficient');
+    headline = `${target?.market || '일부 시장'} 수집 품질이 insufficient라 신규 판단보다 수집 품질 복구가 우선입니다.`;
+    nextActions.push(`runtime:collection-audit로 ${target?.market || '대상 시장'} screening/maintenance 상태를 먼저 복구합니다.`);
+  } else if (sections.collect.collectionAudit?.markets?.some((item) => item.quality === 'degraded')) {
+    status = 'collection_quality_monitor';
+    const target = sections.collect.collectionAudit.markets.find((item) => item.quality === 'degraded');
+    headline = `${target?.market || '일부 시장'} 수집 품질이 degraded 상태라 유지감시와 screening 범위를 함께 관찰합니다.`;
+    nextActions.push(`collection audit와 maintenance collect를 함께 보며 ${target?.market || '대상 시장'} 수집 품질 추세를 더 누적합니다.`);
   } else if (sections.feedback.status === 'repair') {
     status = 'feedback_repair_needed';
     headline = '피드백 루프 정합성 이슈가 남아 있어 review 데이터를 먼저 복구해야 합니다.';
@@ -469,6 +496,10 @@ function renderText(payload) {
     `- approved ${sections.collect.approvedSignals} / executed ${sections.collect.executedSymbols}`,
     `- regime coverage ${sections.collect.regimeCoverage?.distinctTradedRegimes || 0}종 | known ${sections.collect.regimeCoverage?.knownRegimeTrades || 0} / unknown ${sections.collect.regimeCoverage?.unknownTrades || 0}`,
     `- regime snapshots ${sections.collect.regimeCoverage?.snapshotCount || 0}건`,
+    sections.collect.collectionAudit
+      ? `- collection audit recent ${sections.collect.collectionAudit.summary?.withRecentRuns || 0}/${sections.collect.collectionAudit.summary?.markets || 0} | ready ${sections.collect.collectionAudit.summary?.qualityReady || 0} / degraded ${sections.collect.collectionAudit.summary?.qualityDegraded || 0} / insufficient ${sections.collect.collectionAudit.summary?.qualityInsufficient || 0}`
+      : null,
+    ...(sections.collect.collectionAudit?.markets || []).map((item) => `- ${item.market} quality ${item.quality} | screening ${item.screening} / maintenance ${item.maintenance} / profiled ${item.profiled} / dust ${item.dustSkipped}`),
     `- top regimes ${((sections.collect.regimeCoverage?.topRegimes || []).map((item) => `${item.regime}:${item.total}`).join(', ')) || 'none'}`,
     sections.collect.regimePerformance?.weakestRegime
       ? `- weakest regime ${sections.collect.regimePerformance.weakestRegime.regime} / ${sections.collect.regimePerformance.weakestRegime.worstMode.tradeMode} avg ${sections.collect.regimePerformance.weakestRegime.worstMode.avgPnlPercent}%`
@@ -531,7 +562,7 @@ function buildFallback(payload = {}) {
 }
 
 export async function buildRuntimeLearningLoopReport({ days = 14, json = false } = {}) {
-  const [freshness, runtimeDecision, executionGate, autotune, runtimeSuggestions, backtest, validation, regimeCoverage, regimePerformance] = await Promise.all([
+  const [freshness, runtimeDecision, executionGate, autotune, runtimeSuggestions, backtest, validation, regimeCoverage, regimePerformance, collectionAudit] = await Promise.all([
     loadLoopFreshness(),
     buildRuntimeDecisionReport({ market: 'all', limit: 5, json: true }).catch(() => ({ count: 0, summary: {}, rows: [] })),
     buildRuntimeCryptoExecutionGateReport({ days, json: true }).catch(() => ({ decision: {} })),
@@ -541,6 +572,7 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
     validateTradeReview({ days: 90, fix: false }).catch(() => ({ findings: 0, closedTrades: 0, items: [] })),
     loadRegimeCoverage(90).catch(() => ({ windowDays: 90, byRegime: [], latestByMarket: [], distinctTradedRegimes: 0 })),
     loadRegimePerformance(90).catch(() => ({ byRegime: [], weakestRegime: null, strongestRegime: null })),
+    runCollectionAudit({ markets: ['binance', 'kis', 'kis_overseas'], hours: 24 }).catch(() => null),
   ]);
 
   const sections = buildSectionStates({
@@ -553,6 +585,7 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
     validation,
     regimeCoverage,
     regimePerformance,
+    collectionAudit,
   });
   const decision = buildDecision(sections);
 
@@ -570,6 +603,7 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
     autotune,
     backtest,
     validation,
+    collectionAudit,
   };
 
   payload.aiSummary = await buildInvestmentCliInsight({
@@ -587,6 +621,7 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
       autotune: autotune.decision,
       backtest: backtest.decision,
       validation,
+      collectionAudit,
     },
     fallback: buildFallback(payload),
   });
