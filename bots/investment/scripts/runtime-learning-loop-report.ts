@@ -749,7 +749,7 @@ function renderText(payload) {
       ? `- risk approval mode audit ${sections.collect.riskApprovalModeAudit.status} | mode ${sections.collect.riskApprovalModeAudit.metrics?.currentMode || 'n/a'} / non-shadow ${sections.collect.riskApprovalModeAudit.metrics?.nonShadowApplications || 0} / unavailable ${sections.collect.riskApprovalModeAudit.metrics?.unavailablePreviewCount || 0}`
       : null,
     sections.collect.riskApprovalModeAudit?.trend
-      ? `- risk approval mode audit trend history ${sections.collect.riskApprovalModeAudit.trend.historyCount} | non-shadow delta ${sections.collect.riskApprovalModeAudit.trend.delta?.nonShadowApplications ?? 0} / unavailable delta ${sections.collect.riskApprovalModeAudit.trend.delta?.unavailablePreviewCount ?? 0}`
+      ? `- risk approval mode audit trend history ${sections.collect.riskApprovalModeAudit.trend.historyCount} | non-shadow delta ${sections.collect.riskApprovalModeAudit.trend.delta?.nonShadowApplications ?? 0} / unavailable delta ${sections.collect.riskApprovalModeAudit.trend.delta?.unavailablePreviewCount ?? 0} / outcome pnl delta ${sections.collect.riskApprovalModeAudit.trend.delta?.outcomePnlNet ?? 0}`
       : null,
     '- risk approval ops suite npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run risk:approval-ops-suite -- --json',
     sections.collect.executionRiskGuard
