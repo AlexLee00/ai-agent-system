@@ -25,6 +25,7 @@ import { loadCandidates as loadForceExitCandidates } from './force-exit-candidat
 import { buildRuntimeLearningLoopReport } from './runtime-learning-loop-report.ts';
 import { runCollectionAudit } from './runtime-collection-audit.ts';
 import { runExecutionAttachAudit } from './runtime-execution-attach-audit.ts';
+import { runExecutionAttachBackfill } from './runtime-execution-attach-backfill.ts';
 import { backfillTradeIncidentLinks } from './backfill-trade-incident-links.ts';
 import {
   buildGuardHealth,
@@ -660,8 +661,9 @@ function buildDecision(
   latestOpsSnapshot,
   collectionAudit,
   incidentLinkAudit,
-  executionRiskApprovalGuardHealth,
   executionAttachAudit,
+  executionAttachBackfill,
+  executionRiskApprovalGuardHealth,
 ) {
   const topBlock = signalBlockHealth.top[0] || null;
   const topReasonGroup = signalBlockHealth.topReasonGroups?.[0] || null;
@@ -682,6 +684,8 @@ function buildDecision(
   const riskApprovalModeAuditDelta = riskApprovalModeAudit?.trend?.delta || {};
   const executionRiskApprovalTop = executionRiskApprovalGuardHealth?.rows?.[0] || null;
   const executionAttachSummary = executionAttachAudit?.summary || {};
+  const executionAttachBackfillSummary = executionAttachBackfill?.summary || {};
+  const executionAttachNeedsRepair = ['execution_attach_error', 'execution_attach_weak', 'execution_attach_partial'].includes(executionAttachAudit?.decision?.status);
   return buildHealthDecision({
     warnings: [
       {
@@ -856,6 +860,18 @@ function buildDecision(
         active: ['execution_attach_error', 'execution_attach_weak', 'execution_attach_partial'].includes(executionAttachAudit?.decision?.status),
         level: ['execution_attach_error', 'execution_attach_weak'].includes(executionAttachAudit?.decision?.status) ? 'medium' : 'low',
         reason: `execution attach audit — ${executionAttachAudit?.decision?.headline || '체결 envelope 연결 점검'} / score ${executionAttachSummary.avgAttachScore ?? 'n/a'} / complete ${executionAttachSummary.completeCount || 0} / recovered ${executionAttachSummary.recoveredPartialCount || 0} / actionable ${Number(executionAttachSummary.actionableWeakCount || 0) + Number(executionAttachSummary.actionablePartialCount || 0)} / tracked ${executionAttachSummary.attachTrackedCount || 0} / errors ${executionAttachSummary.attachErrorCount || 0} / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:execution-attach-audit -- --json`,
+      },
+      {
+        active: Number(executionAttachBackfillSummary.attachCandidates || 0) > 0,
+        level: 'low',
+        reason: `execution attach backfill candidates — ${executionAttachBackfill?.decision?.headline || '백필 후보 확인'} / candidates ${executionAttachBackfillSummary.attachCandidates || 0} / writeEligible ${executionAttachBackfillSummary.writeEligible || 0} / missingSignalId ${executionAttachBackfillSummary.missingSignalId || 0} / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:execution-attach-backfill -- --days=14 --limit=50 --json`,
+      },
+      {
+        active: executionAttachNeedsRepair
+          && Number(executionAttachBackfillSummary.openPositionBlocked || 0) > 0
+          && Number(executionAttachBackfillSummary.attachCandidates || 0) === 0,
+        level: 'low',
+        reason: `execution attach backfill blocked — open position 조건으로 ${executionAttachBackfillSummary.openPositionBlocked || 0}건 제외 / 실제 포지션 동기화 확인 필요`,
       },
     ],
     okReason: '핵심 서비스와 trade_review 정합성이 현재는 안정 구간입니다.',
@@ -1129,6 +1145,13 @@ function formatText(report) {
             `  status: ${report.executionAttachAudit.decision?.status || 'unknown'}`,
             `  summary: score ${report.executionAttachAudit.summary?.avgAttachScore ?? 'n/a'} / complete ${report.executionAttachAudit.summary?.completeCount || 0} / recovered ${report.executionAttachAudit.summary?.recoveredPartialCount || 0} / actionable ${Number(report.executionAttachAudit.summary?.actionableWeakCount || 0) + Number(report.executionAttachAudit.summary?.actionablePartialCount || 0)} / tracked ${report.executionAttachAudit.summary?.attachTrackedCount || 0} / errors ${report.executionAttachAudit.summary?.attachErrorCount || 0}`,
             `  headline: ${report.executionAttachAudit.decision?.headline || 'n/a'}`,
+            ...(report.executionAttachBackfill
+              ? [
+                `  backfill status: ${report.executionAttachBackfill.decision?.status || 'unknown'}`,
+                `  backfill summary: candidates ${report.executionAttachBackfill.summary?.attachCandidates || 0} / writeEligible ${report.executionAttachBackfill.summary?.writeEligible || 0} / missingSignalId ${report.executionAttachBackfill.summary?.missingSignalId || 0} / openBlocked ${report.executionAttachBackfill.summary?.openPositionBlocked || 0}`,
+                `  backfill headline: ${report.executionAttachBackfill.decision?.headline || 'n/a'}`,
+              ]
+              : []),
             ...((report.executionAttachAudit.decision?.actionItems || []).slice(0, 3).map((item) => `  next: ${item}`)),
             ...(report.executionAttachAudit.decision?.backfillDryRunCommand ? [`  repair dry-run: ${report.executionAttachAudit.decision.backfillDryRunCommand}`] : []),
             ...(report.executionAttachAudit.decision?.backfillWriteCommand ? [`  repair write: ${report.executionAttachAudit.decision.backfillWriteCommand}`] : []),
@@ -1210,6 +1233,7 @@ async function buildReport() {
   const runtimeLearningLoop = await buildRuntimeLearningLoopReport({ days: 14, json: true }).catch(() => null);
   const collectionAudit = await runCollectionAudit({ markets: ['binance', 'kis', 'kis_overseas'], hours: 24 }).catch(() => null);
   const executionAttachAudit = await runExecutionAttachAudit({ days: 14, limit: 50 }).catch(() => null);
+  const executionAttachBackfill = await runExecutionAttachBackfill({ days: 14, limit: 50, dryRun: true }).catch(() => null);
   const incidentLinkAudit = await backfillTradeIncidentLinks({
     dryRun: true,
     json: true,
@@ -1243,6 +1267,7 @@ async function buildReport() {
     collectionAudit,
     incidentLinkAudit,
     executionAttachAudit,
+    executionAttachBackfill,
     executionRiskApprovalGuardHealth,
   );
 
@@ -1273,6 +1298,7 @@ async function buildReport() {
     collectionAudit,
     incidentLinkAudit,
     executionAttachAudit,
+    executionAttachBackfill,
     latestOpsSnapshot,
     capitalGuardBreakdown,
     cryptoGateActionPlan,
