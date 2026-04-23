@@ -13,6 +13,7 @@ import { validateTradeReview } from './validate-trade-review.ts';
 import { runCollectionAudit } from './runtime-collection-audit.ts';
 import { buildStrategyFeedbackOutcomes } from './runtime-strategy-feedback-outcomes.ts';
 import { buildStrategyFeedbackOutcomesHistory } from './runtime-strategy-feedback-outcomes-history.ts';
+import { buildRuntimeRiskApprovalReport } from './runtime-risk-approval-report.ts';
 
 function parseArgs(argv = process.argv.slice(2)) {
   const daysArg = argv.find((arg) => arg.startsWith('--days='));
@@ -364,6 +365,7 @@ function buildSectionStates({
   collectionAudit,
   strategyFeedbackOutcomes,
   strategyFeedbackOutcomeTrend,
+  riskApproval,
 }) {
   const runtimeAge = ageHours(freshness.latestRuntimeSessionAt);
   const reviewAge = ageHours(freshness.latestTradeReviewAt);
@@ -439,6 +441,15 @@ function buildSectionStates({
             : [],
         }
       : null,
+    riskApproval: riskApproval ? {
+      status: riskApproval.decision?.status || 'unknown',
+      headline: riskApproval.decision?.headline || null,
+      total: Number(riskApproval.summary?.total || 0),
+      previewRejects: Number(riskApproval.summary?.previewRejects || 0),
+      divergence: Number(riskApproval.summary?.legacyApprovedPreviewRejected || 0),
+      previewVsApprovedDelta: Number(riskApproval.summary?.amount?.previewVsApprovedDelta || 0),
+      topModels: (riskApproval.summary?.modelRows || []).slice(0, 5),
+    } : null,
   };
 
   const analyze = {
@@ -650,6 +661,9 @@ function renderText(payload) {
     sections.collect.strategyFeedbackOutcomes?.trend
       ? `- strategy feedback trend history ${sections.collect.strategyFeedbackOutcomes.trend.historyCount} | tagged delta ${sections.collect.strategyFeedbackOutcomes.trend.delta?.total ?? 0} / closed delta ${sections.collect.strategyFeedbackOutcomes.trend.delta?.closed ?? 0} / pnl delta ${sections.collect.strategyFeedbackOutcomes.trend.delta?.pnlNet ?? 0}`
       : null,
+    sections.collect.riskApproval
+      ? `- risk approval ${sections.collect.riskApproval.status} | preview ${sections.collect.riskApproval.total} / rejects ${sections.collect.riskApproval.previewRejects} / divergence ${sections.collect.riskApproval.divergence} / amount delta ${sections.collect.riskApproval.previewVsApprovedDelta}`
+      : '- risk approval none',
     buildRegimeActionHint(sections.collect.regimePerformance?.weakestRegime, 'weak')
       ? `- tuning hint ${buildRegimeActionHint(sections.collect.regimePerformance?.weakestRegime, 'weak')}`
       : null,
@@ -708,7 +722,7 @@ function buildFallback(payload = {}) {
 }
 
 export async function buildRuntimeLearningLoopReport({ days = 14, json = false } = {}) {
-  const [freshness, runtimeDecision, executionGate, autotune, runtimeSuggestions, backtest, validation, regimeCoverage, regimePerformance, strategyFamilyPerformance, strategyFeedbackOutcomes, strategyFeedbackOutcomeTrend, collectionAudit] = await Promise.all([
+  const [freshness, runtimeDecision, executionGate, autotune, runtimeSuggestions, backtest, validation, regimeCoverage, regimePerformance, strategyFamilyPerformance, strategyFeedbackOutcomes, strategyFeedbackOutcomeTrend, riskApproval, collectionAudit] = await Promise.all([
     loadLoopFreshness(),
     buildRuntimeDecisionReport({ market: 'all', limit: 5, json: true }).catch(() => ({ count: 0, summary: {}, rows: [] })),
     buildRuntimeCryptoExecutionGateReport({ days, json: true }).catch(() => ({ decision: {} })),
@@ -721,6 +735,7 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
     loadStrategyFamilyPerformance(90).catch(() => ({ byFamily: [], weakestFamily: null, strongestFamily: null })),
     buildStrategyFeedbackOutcomes({ days: 90, json: true }).catch(() => null),
     buildStrategyFeedbackOutcomesHistory({ days: 90, json: true, write: false }).catch(() => null),
+    buildRuntimeRiskApprovalReport({ days: 30, json: true }).catch(() => null),
     runCollectionAudit({ markets: ['binance', 'kis', 'kis_overseas'], hours: 24 }).catch(() => null),
   ]);
 
@@ -737,6 +752,7 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
     strategyFamilyPerformance,
     strategyFeedbackOutcomes,
     strategyFeedbackOutcomeTrend,
+    riskApproval,
     collectionAudit,
   });
   const decision = buildDecision(sections);
@@ -754,6 +770,7 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
     strategyFamilyPerformance,
     strategyFeedbackOutcomes,
     strategyFeedbackOutcomeTrend,
+    riskApproval,
     executionGate,
     autotune,
     backtest,
@@ -775,6 +792,7 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
       strategyFamilyPerformance,
       strategyFeedbackOutcomes,
       strategyFeedbackOutcomeTrend,
+      riskApproval,
       executionGate: executionGate.decision,
       autotune: autotune.decision,
       backtest: backtest.decision,

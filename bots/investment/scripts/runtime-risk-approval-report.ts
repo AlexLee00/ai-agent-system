@@ -1,0 +1,240 @@
+#!/usr/bin/env node
+// @ts-nocheck
+
+import * as db from '../shared/db.ts';
+import { initJournalSchema } from '../shared/trade-journal-db.ts';
+import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+
+function parseArgs(argv = process.argv.slice(2)) {
+  const daysArg = argv.find((arg) => arg.startsWith('--days='));
+  return {
+    days: Math.max(1, Number(daysArg?.split('=').slice(1).join('=') || 30)),
+    json: argv.includes('--json'),
+  };
+}
+
+function safeNumber(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function pct(value, digits = 1) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 'n/a';
+  return `${n.toFixed(digits)}%`;
+}
+
+function normalizePreview(row = {}) {
+  const preview = row.strategy_config?.risk_approval_preview || null;
+  return {
+    tradeId: row.trade_id || null,
+    signalId: row.signal_id || null,
+    symbol: row.symbol || null,
+    exchange: row.exchange || null,
+    createdAt: row.created_at != null ? Number(row.created_at) : null,
+    nemesisVerdict: row.nemesis_verdict || null,
+    positionSizeOriginal: row.position_size_original != null ? Number(row.position_size_original) : null,
+    positionSizeApproved: row.position_size_approved != null ? Number(row.position_size_approved) : null,
+    preview,
+  };
+}
+
+function summarize(rows = []) {
+  const byModel = {};
+  const byDecision = {};
+  const divergences = [];
+  let total = 0;
+  let previewRejects = 0;
+  let legacyApprovedPreviewRejected = 0;
+  let totalOriginal = 0;
+  let totalApproved = 0;
+  let totalPreviewFinal = 0;
+
+  for (const row of rows) {
+    if (!row.preview) continue;
+    total += 1;
+    const previewDecision = row.preview.decision || 'unknown';
+    byDecision[previewDecision] = (byDecision[previewDecision] || 0) + 1;
+    if (row.preview.approved === false || previewDecision === 'REJECT') previewRejects += 1;
+
+    const legacyApproved = ['approved', 'modified'].includes(String(row.nemesisVerdict || '').toLowerCase());
+    if (legacyApproved && (row.preview.approved === false || previewDecision === 'REJECT')) {
+      legacyApprovedPreviewRejected += 1;
+      if (divergences.length < 12) {
+        divergences.push({
+          symbol: row.symbol,
+          exchange: row.exchange,
+          nemesisVerdict: row.nemesisVerdict,
+          previewDecision,
+          rejectReason: row.preview.rejectReason || null,
+          finalAmount: row.preview.finalAmount ?? null,
+        });
+      }
+    }
+
+    if (row.positionSizeOriginal != null) totalOriginal += Number(row.positionSizeOriginal || 0);
+    if (row.positionSizeApproved != null) totalApproved += Number(row.positionSizeApproved || 0);
+    if (row.preview.finalAmount != null) totalPreviewFinal += Number(row.preview.finalAmount || 0);
+
+    for (const step of row.preview.steps || []) {
+      const model = step.model || 'unknown';
+      if (!byModel[model]) {
+        byModel[model] = {
+          model,
+          total: 0,
+          pass: 0,
+          adjust: 0,
+          reject: 0,
+          amountDelta: 0,
+          reasons: {},
+        };
+      }
+      const bucket = byModel[model];
+      const decision = String(step.decision || 'PASS').toUpperCase();
+      bucket.total += 1;
+      if (decision === 'REJECT') bucket.reject += 1;
+      else if (decision === 'ADJUST') bucket.adjust += 1;
+      else bucket.pass += 1;
+      bucket.amountDelta += safeNumber(step.amountAfter) - safeNumber(step.amountBefore);
+      const reason = String(step.reason || 'unknown').slice(0, 120);
+      bucket.reasons[reason] = (bucket.reasons[reason] || 0) + 1;
+    }
+  }
+
+  const modelRows = Object.values(byModel).map((item) => {
+    const topReason = Object.entries(item.reasons).sort((a, b) => Number(b[1]) - Number(a[1]))[0] || null;
+    return {
+      model: item.model,
+      total: item.total,
+      pass: item.pass,
+      adjust: item.adjust,
+      reject: item.reject,
+      adjustRate: item.total > 0 ? item.adjust / item.total : 0,
+      rejectRate: item.total > 0 ? item.reject / item.total : 0,
+      amountDelta: Number(item.amountDelta.toFixed(4)),
+      topReason: topReason ? { reason: topReason[0], count: Number(topReason[1]) } : null,
+    };
+  }).sort((a, b) => b.adjust + b.reject - (a.adjust + a.reject));
+
+  return {
+    total,
+    previewRejects,
+    legacyApprovedPreviewRejected,
+    byDecision,
+    amount: {
+      original: Number(totalOriginal.toFixed(4)),
+      approved: Number(totalApproved.toFixed(4)),
+      previewFinal: Number(totalPreviewFinal.toFixed(4)),
+      previewVsApprovedDelta: Number((totalPreviewFinal - totalApproved).toFixed(4)),
+    },
+    modelRows,
+    divergences,
+  };
+}
+
+function buildDecision(summary) {
+  let status = 'risk_approval_preview_empty';
+  let headline = 'risk approval preview가 아직 충분히 쌓이지 않았습니다.';
+  const reasons = [`preview ${summary.total}건`, `preview rejects ${summary.previewRejects}건`, `legacy-approved/preview-rejected ${summary.legacyApprovedPreviewRejected}건`];
+  const actionItems = ['네메시스 rationale에 risk_approval_preview 표본을 더 누적합니다.'];
+
+  if (summary.total > 0) {
+    status = summary.legacyApprovedPreviewRejected > 0
+      ? 'risk_approval_preview_divergence'
+      : summary.previewRejects > 0
+        ? 'risk_approval_preview_watch'
+        : 'risk_approval_preview_ok';
+    headline = summary.legacyApprovedPreviewRejected > 0
+      ? '기존 네메시스 승인과 새 리스크 체인 preview가 엇갈리는 표본이 있습니다.'
+      : summary.previewRejects > 0
+        ? '새 리스크 체인 preview가 일부 신호를 거절 후보로 보고 있습니다.'
+        : '새 리스크 체인 preview와 기존 승인 흐름이 큰 충돌 없이 누적되고 있습니다.';
+    actionItems.length = 0;
+    if (summary.legacyApprovedPreviewRejected > 0) actionItems.push('divergence sample을 검토해 consensus/regime/feedback 모델 임계값을 보정합니다.');
+    actionItems.push('preview 안정성이 확인되면 네메시스 승인 금액 조정에 단계적으로 반영합니다.');
+  }
+
+  return { status, headline, reasons, actionItems };
+}
+
+function renderText(payload) {
+  const lines = [
+    '🛡️ Runtime Risk Approval Report',
+    `period: ${payload.days}d`,
+    `status: ${payload.decision.status}`,
+    `headline: ${payload.decision.headline}`,
+    '',
+    '근거:',
+    ...payload.decision.reasons.map((reason) => `- ${reason}`),
+    '',
+    '모델별:',
+  ];
+  if (payload.summary.modelRows.length === 0) lines.push('- 데이터 없음');
+  for (const row of payload.summary.modelRows) {
+    lines.push(`- ${row.model}: total ${row.total}, adjust ${row.adjust} (${pct(row.adjustRate * 100)}), reject ${row.reject} (${pct(row.rejectRate * 100)}), delta ${row.amountDelta}, top ${row.topReason?.reason || 'n/a'}`);
+  }
+  lines.push('');
+  lines.push(`금액: approved ${payload.summary.amount.approved} / preview ${payload.summary.amount.previewFinal} / delta ${payload.summary.amount.previewVsApprovedDelta}`);
+  if (payload.summary.divergences.length) {
+    lines.push('');
+    lines.push('divergence samples:');
+    for (const item of payload.summary.divergences) {
+      lines.push(`- ${item.exchange}/${item.symbol}: nemesis ${item.nemesisVerdict} vs preview ${item.previewDecision} (${item.rejectReason || 'n/a'})`);
+    }
+  }
+  lines.push('');
+  lines.push('권장 조치:');
+  lines.push(...payload.decision.actionItems.map((item) => `- ${item}`));
+  return lines.join('\n');
+}
+
+export async function buildRuntimeRiskApprovalReport({ days = 30, json = false } = {}) {
+  await db.initSchema();
+  await initJournalSchema();
+  const since = Date.now() - Math.max(1, Number(days || 30)) * 24 * 60 * 60 * 1000;
+  const rawRows = await db.query(`
+    SELECT
+      r.trade_id,
+      r.signal_id,
+      j.symbol,
+      j.exchange,
+      r.created_at,
+      r.nemesis_verdict,
+      r.position_size_original,
+      r.position_size_approved,
+      r.strategy_config
+    FROM investment.trade_rationale r
+    LEFT JOIN investment.trade_journal j ON j.trade_id = r.trade_id OR j.signal_id = r.signal_id
+    WHERE r.created_at >= $1
+      AND r.strategy_config ? 'risk_approval_preview'
+    ORDER BY r.created_at DESC
+  `, [since]).catch(() => []);
+  const rows = rawRows.map(normalizePreview);
+  const summary = summarize(rows);
+  const decision = buildDecision(summary);
+  const payload = {
+    ok: true,
+    days: Number(days),
+    generatedAt: new Date().toISOString(),
+    count: rows.length,
+    summary,
+    decision,
+    rows: rows.slice(0, 25),
+  };
+  if (json) return payload;
+  return renderText(payload);
+}
+
+async function main() {
+  const args = parseArgs();
+  const result = await buildRuntimeRiskApprovalReport(args);
+  if (args.json) console.log(JSON.stringify(result, null, 2));
+  else console.log(result);
+}
+
+if (isDirectExecution(import.meta.url)) {
+  await runCliMain({
+    run: main,
+    errorPrefix: '❌ runtime-risk-approval-report 오류:',
+  });
+}
