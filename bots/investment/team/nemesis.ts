@@ -1109,6 +1109,8 @@ export async function evaluateSignal(signal, opts = {}) {
     traceId,
     nemesis_verdict: finalVerdict,
     approved_at: new Date().toISOString(),
+    risk_approval_preview: riskApprovalPreview,
+    risk_approval_application: riskApprovalPreview.application,
     agent_role_state: nemesisRoleState
       ? {
           mission: nemesisRoleState.mission || null,

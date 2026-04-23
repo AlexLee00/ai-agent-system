@@ -4,6 +4,7 @@ import { getNodeRuns, getPipelineRun } from './pipeline-db.ts';
 import { getInvestmentNode } from '../nodes/index.ts';
 import { recordNodeResult, runNode } from './node-runner.ts';
 import * as db from './db.ts';
+import * as journalDb from './trade-journal-db.ts';
 import { ACTIONS, ANALYST_TYPES, validateSignal } from './signal.ts';
 import { getDebateLimit, getExitDecisions, getMinConfidence, getPortfolioDecision, inspectPortfolioContext, shouldDebateForSymbol } from '../team/luna.ts';
 import { evaluateSignal } from '../team/nemesis.ts';
@@ -16,6 +17,41 @@ import { createRequire } from 'module';
 
 const _require = createRequire(import.meta.url);
 const elixirBridge = _require('../../../packages/core/lib/elixir-bridge');
+
+export function buildRiskApprovalRationalePayload({ signalId = null, signal = {}, riskResult = {} } = {}) {
+  if (!signalId || signal?.action !== ACTIONS.BUY || !riskResult?.risk_approval_preview) return null;
+  return {
+    signal_id: signalId,
+    luna_decision: 'enter',
+    luna_reasoning: signal.reasoning || '',
+    luna_confidence: signal.confidence ?? null,
+    nemesis_verdict: riskResult.nemesis_verdict || 'approved',
+    nemesis_notes: riskResult.risk_approval_preview?.application?.reason || null,
+    position_size_original: signal.amount_usdt ?? signal.amountUsdt ?? null,
+    position_size_approved: riskResult.adjustedAmount ?? signal.amount_usdt ?? signal.amountUsdt ?? null,
+    strategy_config: {
+      risk_approval_preview: riskResult.risk_approval_preview,
+      risk_approval_application: riskResult.risk_approval_application || riskResult.risk_approval_preview?.application || null,
+    },
+  };
+}
+
+async function persistRiskApprovalRationale({ signalId = null, signal = {}, riskResult = {} } = {}) {
+  if (!signalId || signal?.action !== ACTIONS.BUY || !riskResult?.risk_approval_preview) return null;
+  const existing = await db.query(`
+    SELECT id
+      FROM investment.trade_rationale
+     WHERE signal_id = $1
+       AND strategy_config->'risk_approval_preview' IS NOT NULL
+     LIMIT 1
+  `, [signalId]).catch(() => []);
+  if (existing.length > 0) return { skipped: true, reason: 'already_recorded' };
+
+  const payload = buildRiskApprovalRationalePayload({ signalId, signal, riskResult });
+  if (!payload) return null;
+  await journalDb.insertRationale(payload);
+  return { recorded: true };
+}
 
 export async function buildDecisionBridgeMeta({ sessionId, market, symbol = null, stage, regime = null, planner = null }) {
   const meta = { bridge: 'luna_orchestrate', stage };
@@ -423,6 +459,19 @@ async function executeApprovedDecision({
       stage,
       planner: plannerCompact,
     }),
+  });
+  await persistRiskApprovalRationale({
+    signalId: saved.result?.signalId ?? null,
+    signal: {
+      ...signalData,
+      symbol: decision.symbol,
+      action: decision.action,
+      confidence: decision.confidence,
+      amount_usdt: signalData.amountUsdt,
+    },
+    riskResult,
+  }).catch((error) => {
+    console.warn(`  ⚠️ risk approval rationale 기록 실패: ${error.message}`);
   });
 
   const ragStore = await runNode(l33Node, {
@@ -1080,6 +1129,19 @@ export async function runDecisionExecutionPipeline({
         stage: 'execute',
         planner: plannerCompact,
       }),
+    });
+    await persistRiskApprovalRationale({
+      signalId: saved.result?.signalId ?? null,
+      signal: {
+        ...signalData,
+        symbol: dec.symbol,
+        action: dec.action,
+        confidence: dec.confidence,
+        amount_usdt: signalData.amountUsdt,
+      },
+      riskResult,
+    }).catch((error) => {
+      console.warn(`  ⚠️ risk approval rationale 기록 실패: ${error.message}`);
     });
 
     const ragStore = await runNode(l33Node, {
