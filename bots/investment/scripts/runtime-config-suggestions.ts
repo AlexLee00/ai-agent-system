@@ -48,6 +48,29 @@ function toCount(rows, predicate) {
   return rows.filter(predicate).reduce((sum, row) => sum + Number(row.cnt || 0), 0);
 }
 
+function topBlockCode(summary = {}) {
+  return String(summary?.topBlocks?.[0]?.code || '');
+}
+
+function hasOperationalBlocker(summary = {}) {
+  return (summary.topBlocks || []).some((item) => new Set([
+    'sec015_overseas_nemesis_bypass_guard',
+    'mock_operation_unsupported',
+    'overseas_order_rejected',
+    'legacy_order_rejected',
+    'broker_execution_error',
+  ]).has(String(item?.code || '')));
+}
+
+function hasThresholdBlocker(summary = {}) {
+  return (summary.topBlocks || []).some((item) => new Set([
+    'min_confidence',
+    'confidence_below_minimum',
+    'luna_confidence_rejected',
+    'min_order_notional',
+  ]).has(String(item?.code || '')));
+}
+
 async function loadSignalRows(fromDate, toDate) {
   return db.query(`
     SELECT
@@ -225,13 +248,14 @@ function buildDateRange(days) {
   return { fromDate, toDate };
 }
 
-function summarizeExchange(signalRows, blockRows, analysisRows, exchange) {
+export function summarizeExchange(signalRows, blockRows, analysisRows, exchange) {
   const exchangeSignals = signalRows.filter(row => row.exchange === exchange);
   const exchangeBlocks = blockRows.filter(row => row.exchange === exchange);
   const exchangeAnalysis = analysisRows.filter(row => row.exchange === exchange);
   const totalBuy = toCount(exchangeSignals, row => row.action === 'BUY');
-  const executed = toCount(exchangeSignals, row => row.status === 'executed');
-  const failed = toCount(exchangeSignals, row => ['failed', 'rejected', 'expired'].includes(row.status));
+  const executed = toCount(exchangeSignals, row => row.action === 'BUY' && row.status === 'executed');
+  const failed = toCount(exchangeSignals, row => row.action === 'BUY' && ['failed', 'rejected', 'expired'].includes(row.status));
+  const buyOutcomes = executed + failed;
   const topBlocks = exchangeBlocks
     .map(row => ({ code: row.block_code, count: Number(row.cnt || 0) }))
     .sort((a, b) => b.count - a.count);
@@ -245,8 +269,9 @@ function summarizeExchange(signalRows, blockRows, analysisRows, exchange) {
     totalBuy,
     executed,
     failed,
-    executionRate: totalBuy > 0 ? round((executed / totalBuy) * 100, 1) : 0,
-    failureRate: totalBuy > 0 ? round((failed / totalBuy) * 100, 1) : 0,
+    buyOutcomes,
+    executionRate: buyOutcomes > 0 ? round((executed / buyOutcomes) * 100, 1) : 0,
+    failureRate: buyOutcomes > 0 ? round((failed / buyOutcomes) * 100, 1) : 0,
     topBlocks,
     taHoldRate: taTotal > 0 ? round((taHold / taTotal) * 100, 1) : null,
     sentimentHoldRate: sentimentTotal > 0 ? round((sentimentHold / sentimentTotal) * 100, 1) : null,
@@ -540,9 +565,9 @@ function buildDomesticSuggestions(config, domestic) {
   return suggestions;
 }
 
-function buildOverseasSuggestions(config, overseas) {
+export function buildOverseasSuggestions(config, overseas) {
   const suggestions = [];
-  if (overseas.totalBuy >= 1 && overseas.topBlocks[0]?.code === 'sizing_floor_unavailable') {
+  if (overseas.totalBuy >= 1 && topBlockCode(overseas) === 'sizing_floor_unavailable') {
     suggestions.push({
       key: 'runtime_config.luna.stockOrderDefaults.kis_overseas.min',
       current: config.luna.stockOrderDefaults.kis_overseas.min,
@@ -552,7 +577,7 @@ function buildOverseasSuggestions(config, overseas) {
       reason: `해외장 실패 상위가 sizing_floor_unavailable ${overseas.topBlocks[0]?.count || 0}건이라 주문 floor 상향보다 최종 sizing floor/position cap 정책 정리가 우선입니다.`,
     });
   }
-  if (overseas.totalBuy >= 8 && overseas.executed >= 3 && overseas.topBlocks[0]?.code === 'legacy_order_rejected') {
+  if (overseas.totalBuy >= 8 && overseas.executed >= 3 && topBlockCode(overseas) === 'legacy_order_rejected') {
     suggestions.push({
       key: 'runtime_config.luna.stockOrderDefaults.kis_overseas.max',
       current: config.luna.stockOrderDefaults.kis_overseas.max,
@@ -563,7 +588,7 @@ function buildOverseasSuggestions(config, overseas) {
     });
   }
 
-  if (overseas.totalBuy >= 8 && overseas.executed > 0 && overseas.topBlocks[0]?.code === 'min_order_notional') {
+  if (overseas.totalBuy >= 8 && overseas.executed > 0 && topBlockCode(overseas) === 'min_order_notional') {
     suggestions.push({
       key: 'runtime_config.luna.stockOrderDefaults.kis_overseas.min',
       current: config.luna.stockOrderDefaults.kis_overseas.min,
@@ -572,7 +597,13 @@ function buildOverseasSuggestions(config, overseas) {
       confidence: 'medium',
       reason: `해외장 BUY 실패 상위가 최소 주문금액 미달 ${overseas.topBlocks[0]?.count || 0}건이라 주문 floor를 소폭 올려 실제 체결 전환을 비교할 수 있습니다.`,
     });
-  } else if (overseas.totalBuy >= 8 && overseas.executed > 0 && overseas.executionRate < 50) {
+  } else if (
+    overseas.totalBuy >= 8
+    && overseas.executed > 0
+    && overseas.executionRate < 50
+    && hasThresholdBlocker(overseas)
+    && !hasOperationalBlocker(overseas)
+  ) {
     suggestions.push({
       key: 'runtime_config.luna.minConfidence.live.kis_overseas',
       current: config.luna.minConfidence.live.kis_overseas,
@@ -580,6 +611,15 @@ function buildOverseasSuggestions(config, overseas) {
       action: 'adjust',
       confidence: 'low',
       reason: `해외장 LIVE 실행률이 ${overseas.executionRate}%로 아직 낮아 최소 confidence 기준을 소폭 완화해 비교할 수 있습니다.`,
+    });
+  } else if (overseas.totalBuy >= 8 && overseas.executed > 0 && overseas.executionRate < 50 && hasOperationalBlocker(overseas)) {
+    suggestions.push({
+      key: 'runtime_config.luna.minConfidence.live.kis_overseas',
+      current: config.luna.minConfidence.live.kis_overseas,
+      suggested: config.luna.minConfidence.live.kis_overseas,
+      action: 'hold',
+      confidence: 'high',
+      reason: `해외장 LIVE 실행률은 ${overseas.executionRate}%로 낮지만 주요 실패가 ${topBlockCode(overseas) || 'operational_blocker'} 계열이라 confidence 완화보다 실행 권한/브로커 모드/네메시스 승인 전파 점검이 우선입니다.`,
     });
   }
   return suggestions;

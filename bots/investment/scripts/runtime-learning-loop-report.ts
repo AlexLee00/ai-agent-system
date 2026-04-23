@@ -739,8 +739,8 @@ function buildSectionStates({
     actionableSuggestions: Math.max(
       Number(autotune.decision?.metrics?.actionableCount || 0),
       Number(runtimeSuggestions?.actionableSuggestions || 0),
-      Number(freshness.latestSuggestionActionableCount || 0),
     ),
+    persistedActionableSuggestions: Number(freshness.latestSuggestionActionableCount || 0),
     reviewStatus: freshness.latestSuggestionReviewStatus || 'none',
     runtimeSuggestionPriority: explainPriorityRuntimeSuggestion(runtimeSuggestions, regimePerformance),
     headline: autotune.decision?.headline || '전략 수정 후보를 확인합니다.',
@@ -990,6 +990,9 @@ function renderText(payload) {
     '전략 수정:',
     `- ${sections.strategy.status} | latest=${sections.strategy.latestAt || 'n/a'} (${formatAge(sections.strategy.ageHours)})`,
     `- autotune=${sections.strategy.autotuneStatus} | actionable=${sections.strategy.actionableSuggestions} | review=${sections.strategy.reviewStatus}`,
+    sections.strategy.persistedActionableSuggestions != null
+      ? `- persisted actionable snapshot ${sections.strategy.persistedActionableSuggestions}`
+      : null,
     sections.strategy.runtimeSuggestionTop
       ? `- top runtime suggestion ${sections.strategy.runtimeSuggestionTop.key} -> ${getSuggestionTargetValue(sections.strategy.runtimeSuggestionTop)} (${sections.strategy.runtimeSuggestionTop.action})`
       : null,
