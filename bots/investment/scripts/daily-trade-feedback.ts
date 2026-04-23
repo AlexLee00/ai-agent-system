@@ -322,6 +322,14 @@ function buildPositionStrategyRemediationCommandLine(positionStrategyRemediation
   return `🛠️ remediation report: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation -- --json`;
 }
 
+function buildPositionStrategyRemediationRefreshLine(positionStrategyRemediationSummary) {
+  if (!positionStrategyRemediationSummary || positionStrategyRemediationSummary.error || !positionStrategyRemediationSummary.ok) return null;
+  const actionItems = positionStrategyRemediationSummary?.decision?.actionItems;
+  if (!Array.isArray(actionItems)) return null;
+  const refreshItem = actionItems.find((item) => typeof item === 'string' && item.startsWith('history refresh'));
+  return refreshItem ? `♻️ ${refreshItem}` : null;
+}
+
 function buildPositionStrategyRemediationHistoryLine(positionStrategyRemediationHistorySummary) {
   if (!positionStrategyRemediationHistorySummary || positionStrategyRemediationHistorySummary.error || !positionStrategyRemediationHistorySummary.ok) return null;
   return `🗂️ remediation history: count ${positionStrategyRemediationHistorySummary.historyCount || 0} | changed ${positionStrategyRemediationHistorySummary.statusChanged ? 'yes' : 'no'} | age ${positionStrategyRemediationHistorySummary.ageMinutes ?? 'n/a'}m | stale ${positionStrategyRemediationHistorySummary.stale ? 'yes' : 'no'} | duplicate ${positionStrategyRemediationHistorySummary.delta?.duplicateManaged >= 0 ? '+' : ''}${positionStrategyRemediationHistorySummary.delta?.duplicateManaged || 0} | orphan ${positionStrategyRemediationHistorySummary.delta?.orphanProfiles >= 0 ? '+' : ''}${positionStrategyRemediationHistorySummary.delta?.orphanProfiles || 0}`;
@@ -368,6 +376,8 @@ function buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSumma
   if (positionStrategyRemediationLine) lines.push(positionStrategyRemediationLine);
   const positionStrategyRemediationHistoryLine = buildPositionStrategyRemediationHistoryLine(positionStrategyRemediationHistorySummary);
   if (positionStrategyRemediationHistoryLine) lines.push(positionStrategyRemediationHistoryLine);
+  const positionStrategyRemediationRefreshLine = buildPositionStrategyRemediationRefreshLine(positionStrategyRemediationSummary);
+  if (positionStrategyRemediationRefreshLine) lines.push(positionStrategyRemediationRefreshLine);
   const positionStrategyRemediationCommandLine = buildPositionStrategyRemediationCommandLine(positionStrategyRemediationSummary);
   if (positionStrategyRemediationCommandLine) lines.push(positionStrategyRemediationCommandLine);
   const positionStrategyHygieneCommandLine = buildPositionStrategyHygieneCommandLine(positionStrategyHygieneSummary);
@@ -396,6 +406,7 @@ async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeni
     buildPositionStrategyHygieneLine(positionStrategyHygieneSummary),
     buildPositionStrategyRemediationLine(positionStrategyRemediationSummary),
     buildPositionStrategyRemediationHistoryLine(positionStrategyRemediationHistorySummary),
+    buildPositionStrategyRemediationRefreshLine(positionStrategyRemediationSummary),
     buildPositionStrategyRemediationCommandLine(positionStrategyRemediationSummary),
     buildPositionStrategyHygieneCommandLine(positionStrategyHygieneSummary),
     `다음 액션: ${(feedback.nextActions || []).join(' / ') || '없음'}`,
