@@ -24,10 +24,14 @@ export function summarizeTradeReviewFindings(items = []) {
   const issueCounts = {};
   const byExchange = {};
   const bySymbol = {};
+  let liveFindings = 0;
+  let paperFindings = 0;
   for (const item of Array.isArray(items) ? items : []) {
     for (const issue of item.issues || []) {
       issueCounts[issue] = (issueCounts[issue] || 0) + 1;
     }
+    if (item.isPaper) paperFindings += 1;
+    else liveFindings += 1;
     const exchange = String(item.exchange || 'unknown');
     const symbol = String(item.symbol || 'unknown');
     byExchange[exchange] = (byExchange[exchange] || 0) + 1;
@@ -57,6 +61,9 @@ export function summarizeTradeReviewFindings(items = []) {
     topIssue,
     topExchange,
     topSymbol,
+    liveFindings,
+    paperFindings,
+    paperOnly: paperFindings > 0 && liveFindings === 0,
     repairCommand,
     repairHint,
   };

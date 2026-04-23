@@ -215,7 +215,10 @@ function buildTradeReviewRepairAction(feedback = {}) {
   const repairCommand = feedback.validationSummary?.repairCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run validate-review:fix';
   const issueText = topIssue ? `${topIssue.key} ${topIssue.count}건` : `${feedback.validationFindings}건`;
   const symbolText = topSymbol ? `, 최다 종목 ${topSymbol.key} ${topSymbol.count}건` : '';
-  return `trade review 정합성 복구: ${issueText}${symbolText}. ${repairCommand}`;
+  const scopeText = feedback.validationSummary?.paperOnly
+    ? 'paper-only'
+    : `live ${feedback.validationSummary?.liveFindings ?? 0}건 / paper ${feedback.validationSummary?.paperFindings ?? 0}건`;
+  return `trade review 정합성 복구(${scopeText}): ${issueText}${symbolText}. ${repairCommand}`;
 }
 
 async function loadLoopFreshness() {
@@ -661,22 +664,27 @@ function buildSectionStates({
     headline: backtest.decision?.headline || '백테스트/실행 게이트 분석 상태를 확인합니다.',
   };
 
+  const validationSummary = validation.summary || {};
+  const feedbackStatus = Number(validation.findings || 0) > 0
+    ? validationSummary.paperOnly
+      ? 'paper_repair'
+      : 'repair'
+    : reviewAge != null && reviewAge <= 36
+      ? 'active'
+      : freshness.latestTradeReviewAt
+        ? 'watch'
+        : 'idle';
+
   const feedback = {
-    status: Number(validation.findings || 0) > 0
-      ? 'repair'
-      : reviewAge != null && reviewAge <= 36
-        ? 'active'
-        : freshness.latestTradeReviewAt
-          ? 'watch'
-          : 'idle',
+    status: feedbackStatus,
     latestAt: toIso(freshness.latestTradeReviewAt),
     ageHours: reviewAge,
     validationFindings: Number(validation.findings || 0),
     closedTrades: Number(validation.closedTrades || 0),
-    validationSummary: validation.summary || {},
+    validationSummary,
     validationSamples: Array.isArray(validation.items) ? validation.items.slice(0, 3) : [],
     headline: Number(validation.findings || 0) > 0
-      ? `trade review 정합성 이슈 ${validation.findings}건이 남아 있습니다${validation.summary?.topIssue ? ` (${validation.summary.topIssue.key} ${validation.summary.topIssue.count}건 최다)` : ''}.`
+      ? `trade review 정합성 이슈 ${validation.findings}건이 남아 있습니다${validationSummary.topIssue ? ` (${validationSummary.topIssue.key} ${validationSummary.topIssue.count}건 최다, live ${validationSummary.liveFindings || 0} / paper ${validationSummary.paperFindings || 0})` : ''}.`
       : 'trade review / 피드백 루프는 비교적 안정적입니다.',
   };
 
@@ -790,6 +798,8 @@ function buildDecision(sections = {}) {
     status = 'feedback_repair_needed';
     headline = '피드백 루프 정합성 이슈가 남아 있어 review 데이터를 먼저 복구해야 합니다.';
     nextActions.push(buildTradeReviewRepairAction(sections.feedback) || 'validate-review로 trade_review 누락/불일치를 먼저 정리합니다.');
+  } else if (sections.feedback.status === 'paper_repair') {
+    nextActions.push(buildTradeReviewRepairAction(sections.feedback) || 'paper trade_review 누락/불일치를 별도 정리합니다.');
   } else if (sections.strategy.status === 'ready') {
     status = 'strategy_update_ready';
     headline = '운영 압력을 줄일 전략 수정 후보가 준비돼 있어 빠르게 검토할 가치가 있습니다.';

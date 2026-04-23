@@ -7,9 +7,9 @@ import { summarizeTradeReviewFindings } from './validate-trade-review.ts';
 
 export function runValidateTradeReviewSmoke() {
   const summary = summarizeTradeReviewFindings([
-    { tradeId: 'a', symbol: 'PHA/USDT', exchange: 'binance', issues: ['pnl_percent_mismatch'] },
-    { tradeId: 'b', symbol: 'PHA/USDT', exchange: 'binance', issues: ['missing_review', 'missing_max_favorable'] },
-    { tradeId: 'c', symbol: 'TAO/USDT', exchange: 'binance', issues: ['pnl_percent_mismatch'] },
+    { tradeId: 'a', symbol: 'PHA/USDT', exchange: 'binance', isPaper: false, issues: ['pnl_percent_mismatch'] },
+    { tradeId: 'b', symbol: 'PHA/USDT', exchange: 'binance', isPaper: true, issues: ['missing_review', 'missing_max_favorable'] },
+    { tradeId: 'c', symbol: 'TAO/USDT', exchange: 'binance', isPaper: false, issues: ['pnl_percent_mismatch'] },
   ]);
 
   assert.equal(summary.issueCounts.pnl_percent_mismatch, 2);
@@ -17,14 +17,24 @@ export function runValidateTradeReviewSmoke() {
   assert.equal(summary.topIssue.key, 'pnl_percent_mismatch');
   assert.equal(summary.topExchange.key, 'binance');
   assert.equal(summary.topSymbol.key, 'PHA/USDT');
+  assert.equal(summary.liveFindings, 2);
+  assert.equal(summary.paperFindings, 1);
+  assert.equal(summary.paperOnly, false);
   assert.match(summary.repairCommand, /validate-review:fix/);
   assert.match(summary.repairHint, /pnl_percent/);
+
+  const paperOnly = summarizeTradeReviewFindings([
+    { tradeId: 'p1', symbol: 'ANKR/USDT', exchange: 'binance', isPaper: true, issues: ['missing_review'] },
+  ]);
+  assert.equal(paperOnly.liveFindings, 0);
+  assert.equal(paperOnly.paperFindings, 1);
+  assert.equal(paperOnly.paperOnly, true);
 
   const empty = summarizeTradeReviewFindings([]);
   assert.deepEqual(empty.issueCounts, {});
   assert.equal(empty.topIssue, null);
 
-  return { ok: true, summary, empty };
+  return { ok: true, summary, paperOnly, empty };
 }
 
 async function main() {
