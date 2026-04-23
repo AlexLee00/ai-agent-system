@@ -6,6 +6,7 @@ const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const kst = require('../../../packages/core/lib/kst');
 const { aggregateOperationalPatterns } = require('./feedback-learner.ts');
+const { readExperimentPlaybook } = require('./experiment-os.ts');
 
 const STRATEGY_DIR = path.join(env.PROJECT_ROOT, 'bots/blog/output/strategy');
 
@@ -390,9 +391,83 @@ async function applyOperationalFeedbackToPlan(plan = {}) {
   return next;
 }
 
+function summarizeExperimentLearning(playbook = null) {
+  const winner = playbook?.topWinner || null;
+  if (!winner?.dimension || !winner?.variant) {
+    return {
+      generatedAt: playbook?.generatedAt || null,
+      topWinnerSummary: '',
+      weakestVariantSummary: '',
+    };
+  }
+
+  const loser = playbook?.dimensions?.[winner.dimension === 'title_pattern' ? 'titlePattern' : winner.dimension === 'autonomy_lane' ? 'autonomyLane' : 'category']?.loser || null;
+  return {
+    generatedAt: playbook.generatedAt || null,
+    topWinnerSummary: `최근 실험 승자는 ${winner.dimension}:${winner.variant} (${Math.round(Number(winner.liftPct || 0) * 100)}% lift, n=${winner.sampleCount}) 입니다.`,
+    weakestVariantSummary: loser?.variant
+      ? `최근 약한 레인은 ${loser.dimension}:${loser.variant} (${Math.round(Number(loser.liftPct || 0) * 100)}% lift, n=${loser.sampleCount}) 입니다.`
+      : '',
+  };
+}
+
+async function applyExperimentFeedbackToPlan(plan = {}) {
+  const playbook = readExperimentPlaybook();
+  if (!playbook || typeof playbook !== 'object') return plan;
+
+  const next = {
+    ...plan,
+    experimentLearning: summarizeExperimentLearning(playbook),
+  };
+
+  const focus = Array.isArray(next.focus) ? [...next.focus] : [];
+  const recommendations = Array.isArray(next.recommendations) ? [...next.recommendations] : [];
+  const topWinner = playbook.topWinner || null;
+  const titleDimension = playbook?.dimensions?.titlePattern || null;
+  const categoryDimension = playbook?.dimensions?.category || null;
+
+  if (topWinner?.dimension === 'title_pattern' && topWinner.variant) {
+    next.preferredTitlePattern = topWinner.variant;
+    focus.unshift(`${topWinner.variant} 제목 패턴을 최근 실험 승자 기준으로 우선 유지`);
+    recommendations.unshift(`최근 실험에서 ${topWinner.variant} 제목 패턴이 가장 강해 다음 발행 기본선으로 승격합니다.`);
+  }
+
+  if (topWinner?.dimension === 'category' && topWinner.variant) {
+    next.preferredCategory = topWinner.variant;
+    next.preferredCategoryWeightBoost = Math.max(Number(next.preferredCategoryWeightBoost || 0), 6);
+    focus.unshift(`${topWinner.variant} 카테고리를 최근 실험 승자 기준으로 더 자주 노출`);
+    recommendations.unshift(`최근 실험에서 ${topWinner.variant} 카테고리 성과가 가장 좋아 우선 노출 비중을 높입니다.`);
+  }
+
+  if (titleDimension?.loser?.variant && titleDimension.loser.liftPct < -0.05) {
+    next.suppressedTitlePattern = titleDimension.loser.variant;
+    recommendations.push(`최근 실험 약세인 ${titleDimension.loser.variant} 제목 패턴은 당분간 억제하고 승자 패턴 검증에 더 집중합니다.`);
+  }
+
+  if (categoryDimension?.loser?.variant && categoryDimension.loser.liftPct < -0.08) {
+    next.suppressedCategory = categoryDimension.loser.variant;
+  }
+
+  next.focus = [...new Set(focus.filter(Boolean))];
+  next.recommendations = [...new Set(recommendations.filter(Boolean))];
+  if (next.executionDirectives && typeof next.executionDirectives === 'object') {
+    next.executionDirectives = {
+      ...next.executionDirectives,
+      titlePolicy: {
+        ...(next.executionDirectives.titlePolicy || {}),
+        preferredPattern: next.preferredTitlePattern || next.executionDirectives?.titlePolicy?.preferredPattern || null,
+        suppressedPattern: next.suppressedTitlePattern || next.executionDirectives?.titlePolicy?.suppressedPattern || null,
+      },
+    };
+  }
+
+  return next;
+}
+
 async function evolveStrategy(diagnosis = {}, options = {}) {
   const basePlan = createStrategyPlan(diagnosis, options);
-  const plan = await applyOperationalFeedbackToPlan(basePlan);
+  const operationalPlan = await applyOperationalFeedbackToPlan(basePlan);
+  const plan = await applyExperimentFeedbackToPlan(operationalPlan);
   if (options.dryRun) {
     return {
       saved: false,

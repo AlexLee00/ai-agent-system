@@ -50,6 +50,7 @@
     "collect:competition": "node scripts/collect-competition-results.ts",
     "repair:competition": "node scripts/collect-competition-results.ts --repair-timeouts",
     "marketing:digest": "node scripts/marketing-digest.ts",
+    "experiments:refresh": "node scripts/refresh-marketing-experiments.ts",
     "marketing:snapshot": "node scripts/marketing-snapshot.ts",
     "channel:insights": "node scripts/channel-insights-collector.ts",
     "revenue:strategy": "node scripts/revenue-strategy-updater.ts",

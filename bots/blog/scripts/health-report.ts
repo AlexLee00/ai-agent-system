@@ -1978,10 +1978,16 @@ async function buildMarketingExpansionHealth() {
       autonomyLaneSummary: findSummary('ops_autonomy_lane'),
     };
   };
+  const summarizeExperimentLearning = (experimentLearning = null) => ({
+    generatedAt: String(experimentLearning?.generatedAt || '') || null,
+    topWinnerSummary: String(experimentLearning?.topWinnerSummary || ''),
+    weakestVariantSummary: String(experimentLearning?.weakestVariantSummary || ''),
+  });
   try {
     const digest = await buildMarketingDigest();
     const latestDigestRun = readMarketingDigestTelemetry();
-    let strategy = digest?.strategy || null;
+    const strategyBundle = loadStrategyBundle();
+    let strategy = strategyBundle?.plan || digest?.strategy || null;
     if (!strategy) {
       try {
         if (fs.existsSync(BLOG_STRATEGY_PATH)) {
@@ -2010,6 +2016,7 @@ async function buildMarketingExpansionHealth() {
       ok.push(`  strategy recovery boost: +${Number(strategy.preferredCategoryWeightBoost || 0)}`);
     }
     const operationalLearning = summarizeOperationalLearning(strategy?.operationalLearning || null);
+    const experimentLearning = summarizeExperimentLearning(strategy?.experimentLearning || null);
     if (operationalLearning.titlePatternSummary) {
       ok.push(`  ops learning: ${operationalLearning.titlePatternSummary}`);
     }
@@ -2018,6 +2025,12 @@ async function buildMarketingExpansionHealth() {
     }
     if (operationalLearning.autonomyLaneSummary) {
       ok.push(`  ops lane: ${operationalLearning.autonomyLaneSummary}`);
+    }
+    if (experimentLearning.topWinnerSummary) {
+      ok.push(`  experiment winner: ${experimentLearning.topWinnerSummary}`);
+    }
+    if (experimentLearning.weakestVariantSummary) {
+      ok.push(`  experiment weak lane: ${experimentLearning.weakestVariantSummary}`);
     }
     const adoption = digest?.strategyAdoption || null;
     if (adoption?.status) {
@@ -2105,6 +2118,7 @@ async function buildMarketingExpansionHealth() {
       preferredTitlePattern: strategy?.preferredTitlePattern || null,
       suppressedTitlePattern: strategy?.suppressedTitlePattern || null,
       operationalLearning: summarizeOperationalLearning(strategy?.operationalLearning || null),
+      experimentLearning,
       categoryPatternHotspot: strategy?.categoryPatternHotspot || null,
       hotspotTrend: strategy?.hotspotTrend || null,
       strategyAdoption: digest?.strategyAdoption || null,
@@ -2150,6 +2164,7 @@ async function buildMarketingExpansionHealth() {
       preferredCategoryWeightBoost: 0,
       preferredTitlePattern: null,
       suppressedTitlePattern: null,
+      experimentLearning: summarizeExperimentLearning(null),
       categoryPatternHotspot: null,
       hotspotTrend: null,
       strategyAdoption: null,
@@ -2412,6 +2427,12 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
           marketingExpansionHealth?.nextGeneralPreview?.title
             ? `next preview: ${String(marketingExpansionHealth.nextGeneralPreview.title)}`
             : '',
+          marketingExpansionHealth?.experimentLearning?.topWinnerSummary
+            ? `experiment winner: ${String(marketingExpansionHealth.experimentLearning.topWinnerSummary)}`
+            : '',
+          marketingExpansionHealth?.experimentLearning?.weakestVariantSummary
+            ? `experiment weak lane: ${String(marketingExpansionHealth.experimentLearning.weakestVariantSummary)}`
+            : '',
           marketingDoctorHint,
           opsDoctorHint,
           String(opsDoctorPriority?.primaryArea || '').startsWith('marketing') && String(opsDoctorPriority?.nextCommand || '').trim()
@@ -2568,6 +2589,12 @@ function buildOpsPriority(socialAutomationHealth, engagementHealth, marketingExp
   }
   if (primaryArea.startsWith('marketing') && Array.isArray(marketingExpansionHealth?.recommendations) && marketingExpansionHealth.recommendations[0]) {
     ok.push(`  top recommendation: ${String(marketingExpansionHealth.recommendations[0])}`);
+  }
+  if (primaryArea.startsWith('marketing') && marketingExpansionHealth?.experimentLearning?.topWinnerSummary) {
+    ok.push(`  experiment winner: ${String(marketingExpansionHealth.experimentLearning.topWinnerSummary)}`);
+  }
+  if (primaryArea.startsWith('marketing') && marketingExpansionHealth?.experimentLearning?.weakestVariantSummary) {
+    ok.push(`  experiment weak lane: ${String(marketingExpansionHealth.experimentLearning.weakestVariantSummary)}`);
   }
   if (primaryArea !== 'clear') {
     warn.push(`  next action focus: ${actionFocus || primaryArea}`);

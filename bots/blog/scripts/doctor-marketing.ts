@@ -70,6 +70,17 @@ function summarizeOperationalLearning(plan = null) {
   };
 }
 
+function summarizeExperimentLearning(plan = null) {
+  const learning = plan?.experimentLearning && typeof plan.experimentLearning === 'object'
+    ? plan.experimentLearning
+    : null;
+  return {
+    generatedAt: String(learning?.generatedAt || '') || null,
+    topWinnerSummary: String(learning?.topWinnerSummary || ''),
+    weakestVariantSummary: String(learning?.weakestVariantSummary || ''),
+  };
+}
+
 function parseArgs(argv = []) {
   return {
     json: argv.includes('--json'),
@@ -226,6 +237,12 @@ function buildActions({ primary, digest = {} }) {
   if (digest?.strategyOperationalLearning?.autonomyLaneSummary) {
     actions.push(`ops learning: ${digest.strategyOperationalLearning.autonomyLaneSummary}`);
   }
+  if (digest?.strategyExperimentLearning?.topWinnerSummary) {
+    actions.push(`experiment winner: ${digest.strategyExperimentLearning.topWinnerSummary}`);
+  }
+  if (digest?.strategyExperimentLearning?.weakestVariantSummary) {
+    actions.push(`experiment weak lane: ${digest.strategyExperimentLearning.weakestVariantSummary}`);
+  }
 
   const recommendations = Array.isArray(digest?.recommendations) ? digest.recommendations : [];
   if (recommendations[0]) actions.push(`reco: ${recommendations[0]}`);
@@ -267,6 +284,7 @@ async function main() {
   const strategyBundle = loadStrategyBundle();
   const strategyFreshness = describeStrategyFreshness(strategyBundle?.plan || null);
   const strategyOperationalLearning = summarizeOperationalLearning(strategyBundle?.plan || null);
+  const strategyExperimentLearning = summarizeExperimentLearning(strategyBundle?.plan || null);
   const strategyRuntime = strategyBundle?.plan
     ? {
         preferredCategory: strategyBundle.plan.preferredCategory || null,
@@ -276,6 +294,7 @@ async function main() {
     : null;
   digest.strategyFreshness = strategyFreshness;
   digest.strategyOperationalLearning = strategyOperationalLearning;
+  digest.strategyExperimentLearning = strategyExperimentLearning;
   digest.strategyRuntime = strategyRuntime;
   const payload = {
     digestCommand: digestResult.command,
@@ -291,6 +310,7 @@ async function main() {
     recommendations: Array.isArray(digest?.recommendations) ? digest.recommendations : [],
     strategyFreshness,
     strategyOperationalLearning,
+    strategyExperimentLearning,
     strategyRuntime,
   };
   payload.primary = buildPrimary(digest);

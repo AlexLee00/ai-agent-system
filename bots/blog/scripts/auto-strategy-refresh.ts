@@ -59,6 +59,10 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const steps = [
     {
+      label: 'marketing_experiments',
+      command: `node ${path.join(BLOG_ROOT, 'scripts/refresh-marketing-experiments.ts')} --json${args.dryRun ? ' --dry-run' : ''}`,
+    },
+    {
       label: 'channel_insights',
       command: `node ${path.join(BLOG_ROOT, 'scripts/channel-insights-collector.ts')} --json${args.dryRun ? ' --dry-run' : ''}`,
     },
@@ -82,6 +86,7 @@ async function main() {
     ok: !failedStep,
     failedStep: failedStep?.label || null,
     strategyPath: path.join(BLOG_ROOT, 'output', 'strategy', 'latest-strategy.json'),
+    experimentPlaybookPath: path.join(BLOG_ROOT, 'output', 'ops', 'marketing-experiment-playbook.json'),
     steps: results.map((item) => ({
       label: item.label,
       command: item.command,

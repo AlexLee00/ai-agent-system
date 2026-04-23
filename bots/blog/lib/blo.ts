@@ -59,6 +59,7 @@ const { loadLatestStrategy }                        = require(path.join(env.PROJ
 const { normalizeExecutionDirectives }             = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/strategy-loader.ts'));
 const { senseDailyState }                          = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/sense-engine.ts'));
 const { analyzeMarketingToRevenue }                = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/marketing-revenue-correlation.ts'));
+const { recordPublishedExperimentRun }             = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/experiment-os.ts'));
 const { fetchRevenueAttributionWeights }           = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/topic-selector.ts'));
 const { detectTitlePattern }                       = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/performance-diagnostician.ts'));
 const { decideAutonomy }                           = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/autonomy-gate.ts'));
@@ -886,6 +887,26 @@ async function _accumulatePublishedPost(postData, quality, traceCtx, options = {
   await accumulatePostExperience(postData, quality, _buildAccumulationOptions(traceCtx, options, published));
 }
 
+async function _recordPublishedExperiment(postData = {}, published = null) {
+  if (!published?.postId || published?.reused) return;
+
+  try {
+    await recordPublishedExperimentRun({
+      id: published.postId,
+      post_type: postData.postType || 'general',
+      category: postData.category || null,
+      title: postData.title || '',
+      metadata: postData.metadata || {},
+      views: 0,
+      comments: 0,
+      likes: 0,
+      published_at: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.warn('[블로] experiment run 기록 실패 (무시):', error.message);
+  }
+}
+
 async function _advanceContentTracker({
   dryRun = false,
   published = null,
@@ -1116,6 +1137,12 @@ async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx
     title: context.lectureTitle,
     charCount: post.charCount,
   }, options);
+  await _recordPublishedExperiment({
+    postType: 'lecture',
+    category: 'Node.js강의',
+    title: postTitle,
+    metadata: autonomy ? { autonomy } : {},
+  }, published);
 
   await _accumulatePublishedPost({
     title: postTitle,
@@ -1259,6 +1286,12 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
     title: post.title,
     charCount: post.charCount,
   }, options);
+  await _recordPublishedExperiment({
+    postType: 'general',
+    category: context.category,
+    title: genTitle,
+    metadata,
+  }, published);
 
   await _accumulatePublishedPost({
     title: genTitle,
