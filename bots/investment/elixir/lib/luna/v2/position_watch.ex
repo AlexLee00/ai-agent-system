@@ -313,8 +313,11 @@ defmodule Luna.V2.PositionWatch do
     domestic_open? = MarketHoursGate.open?(:domestic)
     overseas_open? = MarketHoursGate.open?(:overseas)
     tv_status = Map.get(tv_snapshot, :status, :disabled)
+    role_state = fetch_position_watch_role_state(counts)
+    role_mission = role_state[:mission]
+    role_mode = role_state[:role_mode]
 
-    recommended_interval_ms =
+    base_interval_ms =
       cond do
         counts.crypto > 0 and tv_status in [:http_error, :transport_error, :disconnected] ->
           KillSwitch.position_watch_fallback_ms()
@@ -330,6 +333,21 @@ defmodule Luna.V2.PositionWatch do
 
         true ->
           KillSwitch.position_watch_idle_ms()
+      end
+
+    recommended_interval_ms =
+      cond do
+        counts.crypto > 0 and role_mission == "backtest_drift_watcher" ->
+          min(base_interval_ms, 8_000)
+
+        counts.crypto > 0 and role_mission == "risk_sentinel" ->
+          min(base_interval_ms, 10_000)
+
+        counts.crypto > 0 and role_mode == "risk_sensitive" ->
+          min(base_interval_ms, 12_000)
+
+        true ->
+          base_interval_ms
       end
 
     recommended_mode =
@@ -352,9 +370,44 @@ defmodule Luna.V2.PositionWatch do
       domestic_open?: domestic_open?,
       overseas_open?: overseas_open?,
       tv_status: tv_status,
+      role_state: role_state,
       recommended_mode: recommended_mode,
       recommended_interval_ms: recommended_interval_ms
     }
+  end
+
+  defp fetch_position_watch_role_state(counts) do
+    scope_key =
+      cond do
+        counts.crypto > 0 -> "crypto:live"
+        counts.domestic > 0 -> "domestic:live"
+        counts.overseas > 0 -> "overseas:live"
+        true -> nil
+      end
+
+    if is_nil(scope_key) do
+      %{}
+    else
+      query = """
+      SELECT mission, role_mode, priority
+      FROM investment.agent_role_state
+      WHERE status = 'active'
+        AND team = 'investment'
+        AND agent_id = 'position_watch'
+        AND scope_type = 'market'
+        AND scope_key = $1
+      ORDER BY priority DESC, updated_at DESC
+      LIMIT 1
+      """
+
+      case Jay.Core.Repo.query(query, [scope_key]) do
+        {:ok, %{rows: [[mission, role_mode, priority]]}} ->
+          %{mission: mission, role_mode: role_mode, priority: priority, scope_key: scope_key}
+
+        _ ->
+          %{}
+      end
+    end
   end
 
   defp fetch_tradingview_snapshot(_positions, false, _timeframes, _tv_stale_ms) do

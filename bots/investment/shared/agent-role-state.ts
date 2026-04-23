@@ -251,3 +251,13 @@ export async function buildInvestmentAgentRoleSummary({
     rows,
   };
 }
+
+export async function getInvestmentAgentRoleState(agentId, exchange = 'binance') {
+  const market = toMarketKey(exchange);
+  return db.getAgentRoleState({
+    agentId,
+    team: 'investment',
+    scopeType: 'market',
+    scopeKey: `${market}:live`,
+  });
+}

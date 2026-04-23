@@ -14,6 +14,7 @@ import { getInvestmentTradeMode, isKisPaper } from '../shared/secrets.ts';
 import { getCapitalConfig, getDailyTradeCount, getDynamicMinOrderAmount } from '../shared/capital-manager.ts';
 import { getMarketRegime } from '../shared/market-regime.ts';
 import { loadLatestScoutIntel, getScoutSignalForSymbol } from '../shared/scout-intel.ts';
+import { getInvestmentAgentRoleState } from '../shared/agent-role-state.ts';
 
 const _require = createRequire(import.meta.url);
 const kst = _require('../../../packages/core/lib/kst');
@@ -657,6 +658,7 @@ export async function evaluateSignal(signal, opts = {}) {
   const isStockExchange = signal.exchange === 'kis' || signal.exchange === 'kis_overseas';
   const isCryptoExchange = signal.exchange === 'binance';
   const signalTradeMode = signal.trade_mode || getInvestmentTradeMode();
+  const nemesisRoleState = await getInvestmentAgentRoleState('nemesis', signal.exchange).catch(() => null);
   const rules      = {
     ...getRules(signal.exchange),
     MIN_ORDER_USDT: await getDynamicMinOrderAmount(signal.exchange, signalTradeMode),
@@ -820,6 +822,28 @@ export async function evaluateSignal(signal, opts = {}) {
     }
     amountUsdt = adaptiveResult.adjustedAmount;
 
+    if (isCryptoExchange && action === ACTIONS.BUY && nemesisRoleState?.mission === 'strict_risk_gate') {
+      const tightenedAmount = Math.max(rules.MIN_ORDER_USDT, Math.floor(Number(amountUsdt || 0) * 0.9));
+      if (tightenedAmount < amountUsdt) {
+        amountUsdt = tightenedAmount;
+        adaptiveResult.llm = {
+          ...(adaptiveResult.llm || {}),
+          decision: 'ADJUST',
+          reasoning: `${adaptiveResult.llm?.reasoning || '리스크 승인'} | agent-role strict_risk_gate로 추가 10% 감산`,
+        };
+      }
+    } else if (isCryptoExchange && action === ACTIONS.BUY && nemesisRoleState?.mission === 'soft_sizing_preference') {
+      const softenedAmount = Math.max(rules.MIN_ORDER_USDT, Math.floor(Number(amountUsdt || 0) * 0.92));
+      if (softenedAmount < amountUsdt) {
+        amountUsdt = softenedAmount;
+        adaptiveResult.llm = {
+          ...(adaptiveResult.llm || {}),
+          decision: 'ADJUST',
+          reasoning: `${adaptiveResult.llm?.reasoning || '리스크 승인'} | agent-role soft_sizing_preference로 감산 우선`,
+        };
+      }
+    }
+
     if (persist && signal.id) {
       try {
         const shadowHiring = await journalDb.hireAnalystForSignal(signal.exchange, symbol, {
@@ -884,5 +908,19 @@ export async function evaluateSignal(signal, opts = {}) {
 
   // SEC-004: LLM이 ADJUST(금액 조정)한 경우 'modified', 그 외 'approved'
   const finalVerdict = adaptiveResult?.llm?.decision === 'ADJUST' ? 'modified' : 'approved';
-  return { approved: true, adjustedAmount: amountUsdt, traceId, nemesis_verdict: finalVerdict, approved_at: new Date().toISOString(), ...tpslResult };
+  return {
+    approved: true,
+    adjustedAmount: amountUsdt,
+    traceId,
+    nemesis_verdict: finalVerdict,
+    approved_at: new Date().toISOString(),
+    agent_role_state: nemesisRoleState
+      ? {
+          mission: nemesisRoleState.mission || null,
+          role_mode: nemesisRoleState.role_mode || null,
+          priority: Number(nemesisRoleState.priority || 0),
+        }
+      : null,
+    ...tpslResult,
+  };
 }

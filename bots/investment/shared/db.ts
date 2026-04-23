@@ -1497,6 +1497,32 @@ export async function getActiveAgentRoleStates({
   );
 }
 
+export async function getAgentRoleState({
+  agentId,
+  team = 'investment',
+  scopeType = 'market',
+  scopeKey,
+} = {}) {
+  if (!agentId || !scopeKey) return null;
+  return get(
+    `SELECT *
+     FROM agent_role_state
+     WHERE status = 'active'
+       AND team = $1
+       AND agent_id = $2
+       AND scope_type = $3
+       AND scope_key = $4
+     ORDER BY priority DESC, updated_at DESC
+     LIMIT 1`,
+    [
+      String(team || 'investment'),
+      String(agentId),
+      String(scopeType || 'market'),
+      String(scopeKey),
+    ],
+  );
+}
+
 // ─── risk_log ────────────────────────────────────────────────────────
 
 export async function insertRiskLog({ traceId, symbol, exchange, decision, riskScore, reason }) {
@@ -1668,7 +1694,7 @@ export default {
   upsertStrategy, getActiveStrategies, recordStrategyResult,
   getLatestVectorbtBacktestForSymbol, getLatestMarketRegimeSnapshot,
   getPositionStrategyProfile, upsertPositionStrategyProfile, updatePositionStrategyProfileState, closePositionStrategyProfile,
-  upsertAgentRoleProfile, upsertAgentRoleState, getActiveAgentRoleStates,
+  upsertAgentRoleProfile, upsertAgentRoleState, getActiveAgentRoleStates, getAgentRoleState,
   insertRiskLog,
   insertAssetSnapshot, getLatestEquity, getEquityHistory,
   insertMarketRegimeSnapshot,

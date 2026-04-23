@@ -18,6 +18,7 @@ import * as journalDb from '../shared/trade-journal-db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { loadSecrets, initHubSecrets, isPaperMode, getInvestmentTradeMode } from '../shared/secrets.ts';
 import { isSameDaySymbolReentryBlockEnabled, getInvestmentExecutionRuntimeConfig } from '../shared/runtime-config.ts';
+import { getInvestmentAgentRoleState } from '../shared/agent-role-state.ts';
 import { syncPositionsAtMarketOpen } from '../shared/position-sync.ts';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.ts';
 import { notifyTrade, notifyError, notifyJournalEntry, notifyTradeSkip, notifyCircuitBreaker, notifySettlement } from '../shared/report.ts';
@@ -1319,7 +1320,15 @@ async function recordExecutedTradeJournal({ trade, signalId, exitReason }) {
   }
 }
 
-async function finalizeExecutedTrade({ trade, signalId, signalTradeMode, capitalPolicy, exitReason, executionMeta = null }) {
+async function finalizeExecutedTrade({
+  trade,
+  signalId,
+  signalTradeMode,
+  capitalPolicy,
+  exitReason,
+  executionMeta = null,
+  hephaestosRoleState = null,
+}) {
   await db.insertTrade(trade);
   await db.updateSignalStatus(signalId, SIGNAL_STATUS.EXECUTED);
   if (executionMeta) {
@@ -1339,6 +1348,16 @@ async function finalizeExecutedTrade({ trade, signalId, signalTradeMode, capital
     await recordExecutedTradeJournal({ trade, signalId, exitReason });
   } catch (journalErr) {
     console.warn(`  ⚠️ 매매일지 기록 실패: ${journalErr.message}`);
+  }
+
+  if (
+    hephaestosRoleState?.mission === 'full_exit_cleanup'
+    && trade?.exchange === 'binance'
+    && trade?.paper !== true
+    && trade?.side === 'sell'
+    && !trade?.partialExit
+  ) {
+    await syncPositionsAtMarketOpen('crypto').catch(() => null);
   }
 }
 
@@ -2392,6 +2411,7 @@ export async function executeSignal(signal) {
   const exitReasonOverride = signal.exit_reason_override || null;
   const partialExitRatio = normalizePartialExitRatio(signal.partial_exit_ratio || signal.partialExitRatio);
   const qualityContext = buildSignalQualityContext(signal);
+  const hephaestosRoleState = await getInvestmentAgentRoleState('hephaestos', 'binance').catch(() => null);
   const base = symbol.split('/')[0];
   let effectivePaperMode = globalPaperMode;
   const persistFailure = async (reason, {
@@ -2566,6 +2586,13 @@ export async function executeSignal(signal) {
         reducedAmountMultiplier: combinedReducedAmountMultiplier,
         requestedAmountUsdt: Number(amountUsdt || 0),
         actualAmountUsdt: Number(actualAmount || 0),
+        agentRole: hephaestosRoleState
+          ? {
+              mission: hephaestosRoleState.mission || null,
+              roleMode: hephaestosRoleState.role_mode || null,
+              priority: Number(hephaestosRoleState.priority || 0),
+            }
+          : null,
       };
 
       const order = await marketBuy(symbol, actualAmount, effectivePaperMode);
@@ -2636,6 +2663,7 @@ export async function executeSignal(signal) {
       capitalPolicy,
       exitReason: exitReasonOverride,
       executionMeta,
+      hephaestosRoleState,
     });
 
     const doneTag = trade.paper ? '[PAPER]' : '[LIVE]';
