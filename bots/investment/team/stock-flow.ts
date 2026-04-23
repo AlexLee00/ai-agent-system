@@ -226,6 +226,21 @@ function deriveFlowDecision({
       score -= 0.12;
       reasons.push(`최근 하향 ${overseasEvent.recentDowngrades}건`);
     }
+
+    const secFilings = overseasEvent.secFilings;
+    if (secFilings && !secFilings.error) {
+      if (Number(secFilings.recent30Count || 0) >= 4) {
+        score -= 0.06;
+        reasons.push(`SEC 공시 증가 ${secFilings.recent30Count}건/30일`);
+      }
+      const latestMaterial = secFilings.latestMaterialForm;
+      if (latestMaterial?.form) {
+        reasons.push(`최근 SEC ${latestMaterial.form}`);
+        if (/^(8-K|6-K)$/i.test(String(latestMaterial.form || ''))) {
+          score -= 0.04;
+        }
+      }
+    }
   }
 
   const signal =
