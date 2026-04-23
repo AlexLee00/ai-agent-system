@@ -1554,6 +1554,10 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
       reasoning:       `[루나] ${dec.reasoning}`,
       exchange:        dec.exchange || exchange,
       analystSignals,
+      strategyFamily:  dec.strategy_route?.selectedFamily || dec.strategyRoute?.selectedFamily || null,
+      strategyQuality: dec.strategy_route?.quality || dec.strategyRoute?.quality || null,
+      strategyReadiness: dec.strategy_route?.readinessScore || dec.strategyRoute?.readinessScore || null,
+      strategyRoute:   dec.strategy_route || dec.strategyRoute || null,
     };
     if (exchange === 'kis' || exchange === 'kis_overseas') {
       signalData.amountUsdt = normalizeDecisionAmount(exchange, dec.action, signalData.amountUsdt);

@@ -39,6 +39,10 @@
  * @property {string} [reasoning]
  * @property {string} [market_regime]
  * @property {number} [market_regime_confidence]
+ * @property {string} [strategy_family]
+ * @property {string} [strategy_quality]
+ * @property {number} [strategy_readiness]
+ * @property {any} [strategy_route]
  * @property {any} [capitalInfo]
  */
 
@@ -298,6 +302,10 @@ export async function initJournalSchema() {
       tp_sl_error       VARCHAR,
       market_regime     VARCHAR,
       market_regime_confidence DOUBLE PRECISION,
+      strategy_family   VARCHAR,
+      strategy_quality  VARCHAR,
+      strategy_readiness DOUBLE PRECISION,
+      strategy_route    JSONB,
       execution_origin  VARCHAR DEFAULT 'strategy',
       quality_flag      VARCHAR DEFAULT 'trusted',
       exclude_from_learning BOOLEAN DEFAULT false,
@@ -311,6 +319,10 @@ export async function initJournalSchema() {
   try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS tp_sl_error VARCHAR`); } catch { /* 이미 있으면 무시 */ }
   try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS market_regime VARCHAR`); } catch { /* 이미 있으면 무시 */ }
   try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS market_regime_confidence DOUBLE PRECISION`); } catch { /* 이미 있으면 무시 */ }
+  try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS strategy_family VARCHAR`); } catch { /* 이미 있으면 무시 */ }
+  try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS strategy_quality VARCHAR`); } catch { /* 이미 있으면 무시 */ }
+  try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS strategy_readiness DOUBLE PRECISION`); } catch { /* 이미 있으면 무시 */ }
+  try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS strategy_route JSONB`); } catch { /* 이미 있으면 무시 */ }
   try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS execution_origin VARCHAR DEFAULT 'strategy'`); } catch { /* 이미 있으면 무시 */ }
   try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS quality_flag VARCHAR DEFAULT 'trusted'`); } catch { /* 이미 있으면 무시 */ }
   try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS exclude_from_learning BOOLEAN DEFAULT false`); } catch { /* 이미 있으면 무시 */ }
@@ -485,9 +497,10 @@ export async function insertJournalEntry(entry) {
         signal_time, decision_time, execution_time, signal_to_exec_ms,
         tp_price, sl_price, tp_order_id, sl_order_id, tp_sl_set, tp_sl_mode, tp_sl_error,
         market_regime, market_regime_confidence,
+        strategy_family, strategy_quality, strategy_readiness, strategy_route,
         execution_origin, quality_flag, exclude_from_learning, incident_link,
         status, created_at
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         entry.trade_id, entry.signal_id ?? null,
         entry.market, entry.exchange, entry.symbol, entry.is_paper ?? true, entry.trade_mode || getInvestmentTradeMode(),
@@ -502,6 +515,10 @@ export async function insertJournalEntry(entry) {
         entry.tp_sl_error ?? null,
         entry.market_regime ?? null,
         entry.market_regime_confidence ?? null,
+        entry.strategy_family ?? null,
+        entry.strategy_quality ?? null,
+        entry.strategy_readiness ?? null,
+        entry.strategy_route ? JSON.stringify(entry.strategy_route) : null,
         entry.execution_origin || 'strategy',
         entry.quality_flag || 'trusted',
         entry.exclude_from_learning === true,

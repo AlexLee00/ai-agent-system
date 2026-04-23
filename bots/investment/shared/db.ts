@@ -253,6 +253,10 @@ export async function initSchema() {
     ['nemesis_verdict', 'TEXT'],        // SEC-004: approved | modified | rejected | null(미경유)
     ['approved_at',     'TIMESTAMPTZ'], // SEC-004: stale signal 감지용
     ['partial_exit_ratio', 'DOUBLE PRECISION'],
+    ['strategy_family', 'TEXT'],
+    ['strategy_quality', 'TEXT'],
+    ['strategy_readiness', 'DOUBLE PRECISION'],
+    ['strategy_route', 'JSONB'],
     ['execution_origin', `TEXT DEFAULT 'strategy'`],
     ['quality_flag', `TEXT DEFAULT 'trusted'`],
     ['exclude_from_learning', 'BOOLEAN DEFAULT false'],
@@ -448,6 +452,10 @@ export async function insertSignal({
   nemesisVerdict = null,
   approvedAt = null,
   partialExitRatio = null,
+  strategyFamily = null,
+  strategyQuality = null,
+  strategyReadiness = null,
+  strategyRoute = null,
   executionOrigin = 'strategy',
   qualityFlag = 'trusted',
   excludeFromLearning = false,
@@ -455,8 +463,8 @@ export async function insertSignal({
 }) {
   const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
   const rows = await query(
-    `INSERT INTO signals (symbol, action, amount_usdt, confidence, reasoning, status, exchange, analyst_signals, trade_mode, nemesis_verdict, approved_at, partial_exit_ratio, execution_origin, quality_flag, exclude_from_learning, incident_link)
-     VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+    `INSERT INTO signals (symbol, action, amount_usdt, confidence, reasoning, status, exchange, analyst_signals, trade_mode, nemesis_verdict, approved_at, partial_exit_ratio, strategy_family, strategy_quality, strategy_readiness, strategy_route, execution_origin, quality_flag, exclude_from_learning, incident_link)
+     VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
      RETURNING id`,
     [
       symbol,
@@ -470,6 +478,10 @@ export async function insertSignal({
       nemesisVerdict ?? null,
       approvedAt ?? null,
       partialExitRatio ?? null,
+      strategyFamily ?? null,
+      strategyQuality ?? null,
+      strategyReadiness ?? null,
+      strategyRoute ? JSON.stringify(strategyRoute) : null,
       executionOrigin || 'strategy',
       qualityFlag || 'trusted',
       excludeFromLearning === true,
@@ -582,6 +594,10 @@ export async function insertSignalIfFresh({
   dedupeWindowMinutes = null,
   nemesisVerdict = null,
   approvedAt = null,
+  strategyFamily = null,
+  strategyQuality = null,
+  strategyReadiness = null,
+  strategyRoute = null,
   executionOrigin = 'strategy',
   qualityFlag = 'trusted',
   excludeFromLearning = false,
@@ -619,6 +635,10 @@ export async function insertSignalIfFresh({
     tradeMode: effectiveTradeMode,
     nemesisVerdict,
     approvedAt,
+    strategyFamily,
+    strategyQuality,
+    strategyReadiness,
+    strategyRoute,
     executionOrigin,
     qualityFlag,
     excludeFromLearning,

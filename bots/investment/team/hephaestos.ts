@@ -735,6 +735,10 @@ async function settleOpenJournalForSell(
     tp_sl_error: entry.tp_sl_error ?? null,
     market_regime: entry.market_regime ?? null,
     market_regime_confidence: entry.market_regime_confidence ?? null,
+    strategy_family: entry.strategy_family ?? null,
+    strategy_quality: entry.strategy_quality ?? null,
+    strategy_readiness: entry.strategy_readiness ?? null,
+    strategy_route: entry.strategy_route ?? null,
     execution_origin: executionOrigin || entry.execution_origin || 'strategy',
     quality_flag: qualityFlag || entry.quality_flag || 'trusted',
     exclude_from_learning: Boolean(excludeFromLearning ?? entry.exclude_from_learning ?? false),
@@ -1299,6 +1303,7 @@ async function recordExecutedTradeJournal({ trade, signalId, exitReason }) {
   if (trade.side === 'buy') {
     const execTime = Date.now();
     const tradeId = await journalDb.generateTradeId();
+    const signal = signalId ? await db.getSignalById(signalId).catch(() => null) : null;
     await journalDb.insertJournalEntry({
       trade_id: tradeId,
       signal_id: signalId,
@@ -1318,6 +1323,10 @@ async function recordExecutedTradeJournal({ trade, signalId, exitReason }) {
       tp_sl_set: trade.tpSlSet ?? false,
       tp_sl_mode: trade.tpSlMode ?? null,
       tp_sl_error: trade.tpSlError ?? null,
+      strategy_family: signal?.strategy_family || null,
+      strategy_quality: signal?.strategy_quality || null,
+      strategy_readiness: signal?.strategy_readiness ?? null,
+      strategy_route: signal?.strategy_route || null,
       execution_origin: trade.executionOrigin || 'strategy',
       quality_flag: trade.qualityFlag || 'trusted',
       exclude_from_learning: Boolean(trade.excludeFromLearning ?? false),

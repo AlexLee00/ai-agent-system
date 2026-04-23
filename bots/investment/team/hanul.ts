@@ -229,6 +229,7 @@ async function recordHanulEntryJournal({
   try {
     const execTime = Date.now();
     const tradeId = await journalDb.generateTradeId();
+    const signal = signalId ? await db.getSignalById(signalId).catch(() => null) : null;
     await journalDb.insertJournalEntry({
       trade_id: tradeId,
       signal_id: signalId,
@@ -241,6 +242,10 @@ async function recordHanulEntryJournal({
       entry_size: trade.amount || 0,
       entry_value: trade.totalUsdt || 0,
       direction: 'long',
+      strategy_family: signal?.strategy_family || null,
+      strategy_quality: signal?.strategy_quality || null,
+      strategy_readiness: signal?.strategy_readiness ?? null,
+      strategy_route: signal?.strategy_route || null,
     });
     await journalDb.linkRationaleToTrade(tradeId, signalId).catch(() => {});
     notifyJournalEntry({
@@ -643,6 +648,10 @@ async function closeOpenJournalForSymbol(
       signal_to_exec_ms: entry.signal_to_exec_ms ?? null,
       tp_price: entry.tp_price ?? null,
       sl_price: entry.sl_price ?? null,
+      strategy_family: entry.strategy_family ?? null,
+      strategy_quality: entry.strategy_quality ?? null,
+      strategy_readiness: entry.strategy_readiness ?? null,
+      strategy_route: entry.strategy_route ?? null,
     });
 
     await journalDb.closeJournalEntry(partialTradeId, {
