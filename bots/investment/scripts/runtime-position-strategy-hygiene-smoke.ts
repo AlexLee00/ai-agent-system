@@ -52,6 +52,7 @@ const remediation = buildPositionStrategyHygieneRemediationPlan({
 assert.equal(remediation.recommendedExchange, 'kis_overseas');
 assert.match(remediation.remediationReportCommand, /runtime:position-strategy-remediation/);
 assert.match(remediation.remediationHistoryCommand, /runtime:position-strategy-remediation-history/);
+assert.match(remediation.remediationRefreshCommand, /runtime:position-strategy-remediation-refresh/);
 assert.match(remediation.normalizeDryRunCommand, /--exchange=kis_overseas/);
 assert.match(remediation.retireApplyCommand, /--apply --json --exchange=kis_overseas/);
 

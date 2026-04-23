@@ -26,8 +26,9 @@ function buildHistoryActionItem(remediationHistory = null) {
 
 function buildHistoryRefreshActionItem(remediationPlan = null, remediationHistory = null) {
   if (!remediationPlan?.remediationHistoryCommand) return null;
-  if (!remediationHistory?.current) return `history refresh required: ${remediationPlan.remediationHistoryCommand}`;
-  if (remediationHistory.stale) return `history refresh recommended: ${remediationPlan.remediationHistoryCommand}`;
+  const refreshCommand = remediationPlan?.remediationRefreshCommand || remediationPlan.remediationHistoryCommand;
+  if (!remediationHistory?.current) return `history refresh required: ${refreshCommand}`;
+  if (remediationHistory.stale) return `history refresh recommended: ${refreshCommand}`;
   return null;
 }
 
