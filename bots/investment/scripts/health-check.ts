@@ -338,11 +338,13 @@ async function main() {
     const strategyFeedbackKey = 'learning-loop-strategy-feedback-outcomes';
     if (strategyFeedbackOutcomes?.status === 'strategy_feedback_outcome_attention') {
       if (hsm.canAlert(state, strategyFeedbackKey)) {
-        const weakest = strategyFeedbackOutcomes?.weakest || null;
+        const weakest = strategyFeedbackOutcomes?.weak || strategyFeedbackOutcomes?.weakest || null;
+        const trend = strategyFeedbackOutcomes?.trend || null;
+        const delta = trend?.delta || {};
         issues.push({
           key: strategyFeedbackKey,
           level: 2,
-          msg: `⚠️ [루나 헬스] strategy feedback outcomes attention\n${strategyFeedbackOutcomes.headline || '전략 피드백 적용 결과 점검 필요'}\ntagged ${strategyFeedbackOutcomes.totalTagged || 0} / closed ${strategyFeedbackOutcomes.closedTagged || 0} / pnl ${strategyFeedbackOutcomes.pnlNet ?? 0}${weakest ? `\nweakest: ${weakest.familyBias || 'n/a'} / ${weakest.family || 'n/a'} / ${weakest.executionKind || 'n/a'} avg ${weakest.avgPnlPercent ?? 'n/a'}%` : ''}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:strategy-feedback-outcomes -- --json`,
+          msg: `⚠️ [루나 헬스] strategy feedback outcomes attention\n${strategyFeedbackOutcomes.headline || '전략 피드백 적용 결과 점검 필요'}\ntagged ${strategyFeedbackOutcomes.total || strategyFeedbackOutcomes.totalTagged || 0} / closed ${strategyFeedbackOutcomes.closed || strategyFeedbackOutcomes.closedTagged || 0} / pnl ${strategyFeedbackOutcomes.pnlNet ?? 0}${trend ? `\ntrend: history ${trend.historyCount || 0} / tagged Δ${delta.total ?? 0} / closed Δ${delta.closed ?? 0} / pnl Δ${delta.pnlNet ?? 0}` : ''}${weakest ? `\nweakest: ${weakest.familyBias || 'n/a'} / ${weakest.family || 'n/a'} / ${weakest.executionKind || 'n/a'} avg ${weakest.avgPnlPercent ?? 'n/a'}%` : ''}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:strategy-feedback-outcomes -- --json`,
         });
       }
     } else if (state[strategyFeedbackKey]) {
