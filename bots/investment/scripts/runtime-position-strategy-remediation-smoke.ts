@@ -172,9 +172,17 @@ export async function runPositionStrategyRemediationContractSmoke() {
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationTrendOrphanDelta'));
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationTrendUnmatchedDelta'));
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationSummary'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationStatus'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationHeadline'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationCounts'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationRecommendedExchange'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationDuplicateManaged'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationOrphanProfiles'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationUnmatchedManaged'));
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationNextCommandChanged'));
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationNextCommandPrevious'));
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationNextCommandCurrent'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationNextCommand'));
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationRefreshNeeded'));
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationRefreshStale'));
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationRefreshReason'));
@@ -201,6 +209,15 @@ export async function runPositionStrategyRemediationContractSmoke() {
       && Object.prototype.hasOwnProperty.call(result, 'remediationTrendDuplicateDelta')
       && Object.prototype.hasOwnProperty.call(result, 'remediationTrendOrphanDelta')
       && Object.prototype.hasOwnProperty.call(result, 'remediationTrendUnmatchedDelta'),
+    hasStatusAliasFields:
+      Object.prototype.hasOwnProperty.call(result, 'remediationStatus')
+      && Object.prototype.hasOwnProperty.call(result, 'remediationHeadline')
+      && Object.prototype.hasOwnProperty.call(result, 'remediationCounts')
+      && Object.prototype.hasOwnProperty.call(result, 'remediationRecommendedExchange')
+      && Object.prototype.hasOwnProperty.call(result, 'remediationDuplicateManaged')
+      && Object.prototype.hasOwnProperty.call(result, 'remediationOrphanProfiles')
+      && Object.prototype.hasOwnProperty.call(result, 'remediationUnmatchedManaged')
+      && Object.prototype.hasOwnProperty.call(result, 'remediationNextCommand'),
     hasTransitionAliasFields:
       Object.prototype.hasOwnProperty.call(result, 'remediationNextCommandChanged')
       && Object.prototype.hasOwnProperty.call(result, 'remediationNextCommandPrevious')
