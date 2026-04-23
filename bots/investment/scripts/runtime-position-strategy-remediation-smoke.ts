@@ -47,7 +47,21 @@ export function runPositionStrategyRemediationSmoke() {
   });
   assert.equal(clear.status, 'position_strategy_remediation_clear');
   assert.match(clear.actionItems.join('\n'), /history count 2/);
+  assert.match(clear.actionItems.join('\n'), /history refresh recommended/);
+  assert.match(clear.headline, /history stale/);
   assert.match(clear.actionItems.join('\n'), /stale yes/);
+
+  const missingHistory = buildPositionStrategyRemediationDecision({
+    status: 'position_strategy_hygiene_attention',
+    remediationReportCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation -- --json',
+    remediationHistoryCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation-history -- --json',
+    hygieneReportCommand: 'npm --prefix /tmp run runtime:position-strategy-hygiene -- --json',
+    normalizeDryRunCommand: 'npm --prefix /tmp run runtime:normalize-duplicate-strategy-profiles -- --json',
+    retireDryRunCommand: 'npm --prefix /tmp run runtime:retire-orphan-strategy-profiles -- --json',
+  }, null);
+  assert.match(missingHistory.headline, /history unavailable/);
+  assert.match(missingHistory.actionItems.join('\n'), /history unavailable \/ refresh required/);
+  assert.match(missingHistory.actionItems.join('\n'), /history refresh required/);
 
   const unavailable = buildPositionStrategyRemediationDecision(null);
   assert.equal(unavailable.status, 'position_strategy_remediation_unavailable');
@@ -56,6 +70,7 @@ export function runPositionStrategyRemediationSmoke() {
     ok: true,
     readyStatus: ready.status,
     clearStatus: clear.status,
+    missingHistoryStatus: missingHistory.status,
     unavailableStatus: unavailable.status,
   };
 }

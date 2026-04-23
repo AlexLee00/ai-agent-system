@@ -20,12 +20,20 @@ function parseArgs(argv = process.argv.slice(2)) {
 }
 
 function buildHistoryActionItem(remediationHistory = null) {
-  if (!remediationHistory?.current) return null;
+  if (!remediationHistory?.current) return 'history unavailable / refresh required';
   return `history count ${remediationHistory.historyCount || 0} / changed ${remediationHistory.statusChanged ? 'yes' : 'no'} / age ${remediationHistory.ageMinutes ?? 'n/a'}m / stale ${remediationHistory.stale ? 'yes' : 'no'} / duplicate delta ${remediationHistory.delta?.duplicateManaged >= 0 ? '+' : ''}${remediationHistory.delta?.duplicateManaged || 0} / orphan delta ${remediationHistory.delta?.orphanProfiles >= 0 ? '+' : ''}${remediationHistory.delta?.orphanProfiles || 0} / unmatched delta ${remediationHistory.delta?.unmatchedManaged >= 0 ? '+' : ''}${remediationHistory.delta?.unmatchedManaged || 0}`;
+}
+
+function buildHistoryRefreshActionItem(remediationPlan = null, remediationHistory = null) {
+  if (!remediationPlan?.remediationHistoryCommand) return null;
+  if (!remediationHistory?.current) return `history refresh required: ${remediationPlan.remediationHistoryCommand}`;
+  if (remediationHistory.stale) return `history refresh recommended: ${remediationPlan.remediationHistoryCommand}`;
+  return null;
 }
 
 export function buildPositionStrategyRemediationDecision(remediationPlan = null, remediationHistory = null) {
   const historyActionItem = buildHistoryActionItem(remediationHistory);
+  const historyRefreshActionItem = buildHistoryRefreshActionItem(remediationPlan, remediationHistory);
   if (!remediationPlan) {
     return {
       status: 'position_strategy_remediation_unavailable',
@@ -39,10 +47,11 @@ export function buildPositionStrategyRemediationDecision(remediationPlan = null,
   if (remediationPlan.status === 'position_strategy_hygiene_attention') {
     return {
       status: 'position_strategy_remediation_ready',
-      headline: `포지션 전략 remediation plan이 준비되었습니다.${remediationPlan.recommendedExchange ? ` / focus ${remediationPlan.recommendedExchange}` : ''}`,
+      headline: `포지션 전략 remediation plan이 준비되었습니다.${remediationPlan.recommendedExchange ? ` / focus ${remediationPlan.recommendedExchange}` : ''}${remediationHistory?.stale ? ' / history stale' : ''}${!remediationHistory?.current ? ' / history unavailable' : ''}`,
       actionItems: [
         `duplicate managed ${remediationPlan.duplicateManagedScopes || 0} / orphan ${remediationPlan.orphanProfiles || 0} / unmatched managed ${remediationPlan.unmatchedManaged || 0}`,
         ...(historyActionItem ? [historyActionItem] : []),
+        ...(historyRefreshActionItem ? [historyRefreshActionItem] : []),
         `remediation report: ${remediationPlan.remediationReportCommand}`,
         `remediation history: ${remediationPlan.remediationHistoryCommand}`,
         `hygiene report: ${remediationPlan.hygieneReportCommand}`,
@@ -54,9 +63,10 @@ export function buildPositionStrategyRemediationDecision(remediationPlan = null,
 
     return {
       status: 'position_strategy_remediation_clear',
-      headline: '현재 추가 remediation 없이 포지션 전략 위생 상태가 안정적입니다.',
+      headline: `현재 추가 remediation 없이 포지션 전략 위생 상태가 안정적입니다.${remediationHistory?.stale ? ' / history stale' : ''}${!remediationHistory?.current ? ' / history unavailable' : ''}`,
       actionItems: [
         ...(historyActionItem ? [historyActionItem] : []),
+        ...(historyRefreshActionItem ? [historyRefreshActionItem] : []),
         `remediation report: ${remediationPlan.remediationReportCommand}`,
         `remediation history: ${remediationPlan.remediationHistoryCommand}`,
         `hygiene report: ${remediationPlan.hygieneReportCommand}`,
