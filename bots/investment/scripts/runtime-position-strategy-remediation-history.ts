@@ -41,24 +41,28 @@ function renderText(payload) {
   ].join('\n');
 }
 
-export async function buildPositionStrategyRemediationHistory({ file = DEFAULT_POSITION_STRATEGY_REMEDIATION_HISTORY_FILE, json = false } = {}) {
-  const report = await runPositionStrategyRemediation({ json: true });
+function buildCurrentRemediationSnapshot(report) {
   const plan = report.remediationPlan || {};
   const flat = report.remediationFlat || null;
-  const current = {
+  return {
     recordedAt: new Date().toISOString(),
     status: report.remediationStatus || flat?.status || report.decision?.status || 'unknown',
     headline: report.remediationHeadline || flat?.headline || report.decision?.headline || 'n/a',
     recommendedExchange: report.remediationRecommendedExchange || flat?.recommendedExchange || plan.recommendedExchange || null,
     nextCommand: report.remediationNextCommand || flat?.nextCommand || null,
     refreshCommand: report.remediationActionRefreshCommand || flat?.actionRefreshCommand || report.remediationRefreshCommand || flat?.refreshCommand || null,
-    reportCommand: report.remediationActionReportCommand || flat?.actionReportCommand || flat?.commands?.report || null,
-    duplicateManaged: Number(report.remediationDuplicateManaged ?? plan.duplicateManagedScopes ?? 0),
-    orphanProfiles: Number(report.remediationOrphanProfiles ?? plan.orphanProfiles ?? 0),
-    unmatchedManaged: Number(report.remediationUnmatchedManaged ?? plan.unmatchedManaged ?? 0),
+    reportCommand: report.remediationActionReportCommand || flat?.actionReportCommand || report.remediationReportCommand || flat?.commands?.report || null,
+    duplicateManaged: Number(report.remediationDuplicateManaged ?? flat?.duplicateManaged ?? plan.duplicateManagedScopes ?? 0),
+    orphanProfiles: Number(report.remediationOrphanProfiles ?? flat?.orphanProfiles ?? plan.orphanProfiles ?? 0),
+    unmatchedManaged: Number(report.remediationUnmatchedManaged ?? flat?.unmatchedManaged ?? plan.unmatchedManaged ?? 0),
     actionItems: report.decision?.actionItems || [],
     flat,
   };
+}
+
+export async function buildPositionStrategyRemediationHistory({ file = DEFAULT_POSITION_STRATEGY_REMEDIATION_HISTORY_FILE, json = false } = {}) {
+  const report = await runPositionStrategyRemediation({ json: true });
+  const current = buildCurrentRemediationSnapshot(report);
   const previousSnapshot = readPositionStrategyRemediationHistory(file);
   appendPositionStrategyRemediationHistory(file, current);
 
