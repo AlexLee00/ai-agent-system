@@ -17,9 +17,15 @@ export function runPositionStrategyRemediationSmoke() {
     hygieneReportCommand: 'npm --prefix /tmp run runtime:position-strategy-hygiene -- --json',
     normalizeDryRunCommand: 'npm --prefix /tmp run runtime:normalize-duplicate-strategy-profiles -- --json --exchange=kis_overseas',
     retireDryRunCommand: 'npm --prefix /tmp run runtime:retire-orphan-strategy-profiles -- --json --exchange=kis_overseas',
+  }, {
+    historyCount: 4,
+    current: { status: 'position_strategy_remediation_ready' },
+    statusChanged: false,
+    delta: { duplicateManaged: 0, orphanProfiles: -1, unmatchedManaged: 0 },
   });
   assert.equal(ready.status, 'position_strategy_remediation_ready');
   assert.match(ready.headline, /focus kis_overseas/);
+  assert.match(ready.actionItems.join('\n'), /history count 4/);
   assert.match(ready.actionItems.join('\n'), /remediation history/);
   assert.match(ready.actionItems.join('\n'), /normalize dry-run/);
 
@@ -28,8 +34,14 @@ export function runPositionStrategyRemediationSmoke() {
     remediationReportCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation -- --json',
     remediationHistoryCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation-history -- --json',
     hygieneReportCommand: 'npm --prefix /tmp run runtime:position-strategy-hygiene -- --json',
+  }, {
+    historyCount: 2,
+    current: { status: 'position_strategy_remediation_clear' },
+    statusChanged: false,
+    delta: { duplicateManaged: 0, orphanProfiles: 0, unmatchedManaged: 0 },
   });
   assert.equal(clear.status, 'position_strategy_remediation_clear');
+  assert.match(clear.actionItems.join('\n'), /history count 2/);
 
   const unavailable = buildPositionStrategyRemediationDecision(null);
   assert.equal(unavailable.status, 'position_strategy_remediation_unavailable');

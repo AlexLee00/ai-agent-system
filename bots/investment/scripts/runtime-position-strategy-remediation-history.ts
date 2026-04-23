@@ -1,34 +1,20 @@
 #!/usr/bin/env node
 // @ts-nocheck
 
-import fs from 'fs';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { runPositionStrategyRemediation } from './runtime-position-strategy-remediation.ts';
-
-const DEFAULT_FILE = '/tmp/investment-runtime-position-strategy-remediation-history.jsonl';
+import {
+  appendPositionStrategyRemediationHistory,
+  DEFAULT_POSITION_STRATEGY_REMEDIATION_HISTORY_FILE,
+  readPositionStrategyRemediationHistory,
+} from './runtime-position-strategy-remediation-history-store.ts';
 
 function parseArgs(argv = process.argv.slice(2)) {
   const fileArg = argv.find((arg) => arg.startsWith('--file='));
   return {
-    file: fileArg?.split('=').slice(1).join('=') || DEFAULT_FILE,
+    file: fileArg?.split('=').slice(1).join('=') || DEFAULT_POSITION_STRATEGY_REMEDIATION_HISTORY_FILE,
     json: argv.includes('--json'),
   };
-}
-
-function readHistory(file) {
-  if (!fs.existsSync(file)) return [];
-  return fs.readFileSync(file, 'utf8')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      try { return JSON.parse(line); } catch { return null; }
-    })
-    .filter(Boolean);
-}
-
-function appendHistory(file, snapshot) {
-  fs.appendFileSync(file, `${JSON.stringify(snapshot)}\n`, 'utf8');
 }
 
 function renderText(payload) {
@@ -52,7 +38,7 @@ function renderText(payload) {
   ].join('\n');
 }
 
-export async function buildPositionStrategyRemediationHistory({ file = DEFAULT_FILE, json = false } = {}) {
+export async function buildPositionStrategyRemediationHistory({ file = DEFAULT_POSITION_STRATEGY_REMEDIATION_HISTORY_FILE, json = false } = {}) {
   const report = await runPositionStrategyRemediation({ json: true });
   const plan = report.remediationPlan || {};
   const current = {
@@ -65,21 +51,20 @@ export async function buildPositionStrategyRemediationHistory({ file = DEFAULT_F
     unmatchedManaged: Number(plan.unmatchedManaged || 0),
     actionItems: report.decision?.actionItems || [],
   };
-  const history = readHistory(file);
-  const previous = history[history.length - 1] || null;
-  appendHistory(file, current);
+  const previousSnapshot = readPositionStrategyRemediationHistory(file);
+  appendPositionStrategyRemediationHistory(file, current);
 
   const payload = {
     ok: true,
     file,
-    historyCount: history.length + 1,
+    historyCount: previousSnapshot.historyCount + 1,
     current,
-    previous,
-    statusChanged: previous ? previous.status !== current.status : false,
+    previous: previousSnapshot.current,
+    statusChanged: previousSnapshot.current ? previousSnapshot.current.status !== current.status : false,
     delta: {
-      duplicateManaged: previous ? current.duplicateManaged - Number(previous.duplicateManaged || 0) : 0,
-      orphanProfiles: previous ? current.orphanProfiles - Number(previous.orphanProfiles || 0) : 0,
-      unmatchedManaged: previous ? current.unmatchedManaged - Number(previous.unmatchedManaged || 0) : 0,
+      duplicateManaged: previousSnapshot.current ? current.duplicateManaged - Number(previousSnapshot.current.duplicateManaged || 0) : 0,
+      orphanProfiles: previousSnapshot.current ? current.orphanProfiles - Number(previousSnapshot.current.orphanProfiles || 0) : 0,
+      unmatchedManaged: previousSnapshot.current ? current.unmatchedManaged - Number(previousSnapshot.current.unmatchedManaged || 0) : 0,
     },
   };
 
