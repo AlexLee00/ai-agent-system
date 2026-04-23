@@ -205,13 +205,13 @@ function classifyEnvelopeRow(row = {}) {
   return 'actionable_partial';
 }
 
-function getExecutionAttachMeta(signal = null) {
+export function getExecutionAttachMeta(signal = null) {
   const blockMeta = safeJson(signal?.block_meta, {});
   const attach = blockMeta?.executionAttach || null;
   return attach && typeof attach === 'object' ? attach : null;
 }
 
-function summarize(rows = []) {
+export function summarizeExecutionAttachRows(rows = []) {
   const byStatus = {};
   const byRecoveryStatus = {};
   const byAttachStatus = {};
@@ -266,6 +266,43 @@ function summarize(rows = []) {
   };
 }
 
+export function buildExecutionAttachDecision(summary = {}) {
+  const actionableItems = summary.actionableMissing?.slice?.(0, 3) || [];
+  return {
+    status: summary.attachErrorCount > 0
+      ? 'execution_attach_error'
+      : summary.actionableWeakCount > 0
+      ? 'execution_attach_weak'
+      : summary.actionablePartialCount > 0
+        ? 'execution_attach_partial'
+        : summary.recoveredPartialCount > 0
+          ? 'execution_attach_recovered_partial'
+          : summary.partialCount > 0
+            ? 'execution_attach_partial'
+            : 'execution_attach_ok',
+    headline: summary.attachErrorCount > 0
+      ? '최근 체결의 전략 attach 시도 중 실패가 있어 실행 메타 확인이 필요합니다.'
+      : summary.actionableWeakCount > 0
+      ? '체결 후 포지션/전략 연결이 약한 거래가 있어 envelope 통합이 필요합니다.'
+      : summary.actionablePartialCount > 0
+        ? '체결 후 연결은 대부분 있으나 일부 실행 메타 보강이 필요합니다.'
+        : summary.recoveredPartialCount > 0
+          ? '최근 체결은 감사 가능한 수준으로 복구되었고, 일부 과거/조정 체결만 추적 상태입니다.'
+          : '최근 체결의 포지션/전략 연결이 정상입니다.',
+    actionItems: summary.attachErrorCount > 0
+      ? [
+        `execution attach 실패 ${summary.attachErrorCount}건의 signals.block_meta.executionAttach.error를 확인합니다.`,
+        '실패가 반복되면 live BUY 체결 직후 profile 생성 경로와 open position 조회 조건을 점검합니다.',
+      ]
+      : actionableItems.length > 0
+      ? actionableItems.map((item) => `${item.key} 누락 ${item.count}건을 체결 envelope attach 경로에서 보강합니다.`)
+      : [
+        `${summary.recoveredPartialCount || 0}건은 profile/signal 원본이 부족하지만 envelope fallback으로 감사 추적 중입니다.`,
+        '신규 주문에는 사용하지 않고 reconciliation/position truth guard 대상으로 유지합니다.',
+      ],
+  };
+}
+
 export async function runExecutionAttachAudit({ days = 14, limit = 100, exchange = null } = {}) {
   await db.initSchema();
   await journalDb.initJournalSchema();
@@ -299,41 +336,8 @@ export async function runExecutionAttachAudit({ days = 14, limit = 100, exchange
       score: scoreExecutionFillEnvelope(envelope),
     };
   });
-  const summary = summarize(rows);
-  const actionableItems = summary.actionableMissing.slice(0, 3);
-  const decision = {
-    status: summary.attachErrorCount > 0
-      ? 'execution_attach_error'
-      : summary.actionableWeakCount > 0
-      ? 'execution_attach_weak'
-      : summary.actionablePartialCount > 0
-        ? 'execution_attach_partial'
-        : summary.recoveredPartialCount > 0
-          ? 'execution_attach_recovered_partial'
-          : summary.partialCount > 0
-            ? 'execution_attach_partial'
-            : 'execution_attach_ok',
-    headline: summary.attachErrorCount > 0
-      ? '최근 체결의 전략 attach 시도 중 실패가 있어 실행 메타 확인이 필요합니다.'
-      : summary.actionableWeakCount > 0
-      ? '체결 후 포지션/전략 연결이 약한 거래가 있어 envelope 통합이 필요합니다.'
-      : summary.actionablePartialCount > 0
-        ? '체결 후 연결은 대부분 있으나 일부 실행 메타 보강이 필요합니다.'
-        : summary.recoveredPartialCount > 0
-          ? '최근 체결은 감사 가능한 수준으로 복구되었고, 일부 과거/조정 체결만 추적 상태입니다.'
-          : '최근 체결의 포지션/전략 연결이 정상입니다.',
-    actionItems: summary.attachErrorCount > 0
-      ? [
-        `execution attach 실패 ${summary.attachErrorCount}건의 signals.block_meta.executionAttach.error를 확인합니다.`,
-        '실패가 반복되면 live BUY 체결 직후 profile 생성 경로와 open position 조회 조건을 점검합니다.',
-      ]
-      : actionableItems.length > 0
-      ? actionableItems.map((item) => `${item.key} 누락 ${item.count}건을 체결 envelope attach 경로에서 보강합니다.`)
-      : [
-        `${summary.recoveredPartialCount}건은 profile/signal 원본이 부족하지만 envelope fallback으로 감사 추적 중입니다.`,
-        '신규 주문에는 사용하지 않고 reconciliation/position truth guard 대상으로 유지합니다.',
-      ],
-  };
+  const summary = summarizeExecutionAttachRows(rows);
+  const decision = buildExecutionAttachDecision(summary);
 
   return {
     ok: true,
