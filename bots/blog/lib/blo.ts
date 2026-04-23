@@ -1501,12 +1501,22 @@ function _summarizeDailyMarketing(daily = {}) {
   const senseState = daily?.senseState || {};
   const revenueCorrelation = daily?.revenueCorrelation || {};
   const strategyPlan = loadLatestStrategy() || {};
+  const operationalPatterns = Array.isArray(strategyPlan?.operationalLearning?.patterns)
+    ? strategyPlan.operationalLearning.patterns
+    : [];
+  const findOperationalSummary = (type) => {
+    const item = operationalPatterns.find((pattern) => String(pattern?.type || '') === type);
+    return item?.summary ? String(item.summary) : '';
+  };
   const signal = senseState?.signals?.[0] || null;
   const signalLabel = signal?.message || (Array.isArray(senseState?.signals) && senseState.signals.length ? `${senseState.signals.length}개 신호 감지` : '특이 신호 없음');
   const revenueImpact = Number(revenueCorrelation?.revenueImpactPct || 0);
   const preferredCategory = strategyPlan?.preferredCategory || 'none';
   const preferredPattern = strategyPlan?.preferredTitlePattern || 'none';
   const suppressedPattern = strategyPlan?.suppressedTitlePattern || 'none';
+  const opsTitlePatternSummary = findOperationalSummary('ops_high_performance_title_pattern');
+  const opsAlignmentSummary = findOperationalSummary('ops_alignment_signal');
+  const opsAutonomyLaneSummary = findOperationalSummary('ops_autonomy_lane');
   const nextGeneralCategory = daily?.generalCtx?.category || 'none';
   const selectedGeneralTopic = nextGeneralCategory !== 'none'
     ? selectAndValidateTopic(
@@ -1541,6 +1551,9 @@ function _summarizeDailyMarketing(daily = {}) {
     nextGeneralTitle,
     nextGeneralPattern,
     predictedAdoption,
+    opsTitlePatternSummary,
+    opsAlignmentSummary,
+    opsAutonomyLaneSummary,
     briefLine: `📈 마케팅 전략: signal=${signalLabel} | impact=${(revenueImpact * 100).toFixed(1)}% | plan=${preferredCategory}/${preferredPattern} | next=${nextGeneralCategory}/${nextGeneralPattern} | predicted=${predictedAdoption} | title=${_compactPreviewTitle(nextGeneralTitle)} | suppress=${suppressedPattern}`,
   };
 }
@@ -1551,6 +1564,8 @@ function _buildDailyReportLines(results, traceCtx, daily = {}) {
     '📝 [블로그팀] 일간 작업 완료',
     `🔖 trace: ${traceCtx.trace_id.slice(0, 8)}`,
     marketing.briefLine,
+    marketing.opsTitlePatternSummary ? `🧠 운영 학습: ${marketing.opsTitlePatternSummary}` : '',
+    marketing.opsAlignmentSummary ? `🧠 운영 정렬: ${marketing.opsAlignmentSummary}` : '',
     '',
     ...results.map(_formatDailyResultLine),
     '',
@@ -1558,7 +1573,7 @@ function _buildDailyReportLines(results, traceCtx, daily = {}) {
     '',
     '📁 파일 위치: bots/blog/output/',
     '📅 예약 발행: 내일 오전 07:00',
-  ];
+  ].filter(Boolean);
 }
 
 async function _safeEvaluateContract(contractId, payload) {
@@ -1643,6 +1658,9 @@ async function _sendDailyReport(results, traceCtx, options = {}) {
           `next title: ${marketing.nextGeneralTitle}`,
           `predicted: ${marketing.predictedAdoption}`,
           `suppress: ${marketing.suppressedPattern}`,
+          ...(marketing.opsTitlePatternSummary ? [`ops learning: ${marketing.opsTitlePatternSummary}`] : []),
+          ...(marketing.opsAlignmentSummary ? [`ops alignment: ${marketing.opsAlignmentSummary}`] : []),
+          ...(marketing.opsAutonomyLaneSummary ? [`ops lane: ${marketing.opsAutonomyLaneSummary}`] : []),
         ],
       },
     ],
