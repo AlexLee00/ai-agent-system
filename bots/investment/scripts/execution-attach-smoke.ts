@@ -36,4 +36,19 @@ const trackedSkipped = await attachExecutionToPositionStrategyTracked({
 });
 assert.equal(trackedSkipped.status, 'skipped_no_open_position');
 
+const trackedDryRunNoPersist = await attachExecutionToPositionStrategyTracked({
+  dryRun: true,
+  persistMeta: false,
+  trade: {
+    symbol: 'SOL/USDT',
+    exchange: 'binance',
+    side: 'buy',
+    trade_mode: 'normal',
+    signal_id: 'signal-dry-run',
+  },
+  signal: { id: 'signal-dry-run' },
+  requireOpenPosition: true,
+});
+assert.equal(trackedDryRunNoPersist.status, 'skipped_no_open_position');
+
 console.log('execution attach smoke ok');

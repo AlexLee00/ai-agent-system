@@ -3,7 +3,10 @@
 
 import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
-import { attachExecutionToPositionStrategy } from '../shared/execution-attach.ts';
+import {
+  attachExecutionToPositionStrategy,
+  attachExecutionToPositionStrategyTracked,
+} from '../shared/execution-attach.ts';
 
 function parseArgs(argv = []) {
   return {
@@ -74,12 +77,16 @@ export async function runExecutionAttachBackfill({
 
   for (const trade of trades) {
     const signal = trade.signal_id ? signalById.get(trade.signal_id) || null : null;
-    const result = await attachExecutionToPositionStrategy({
+    const attachFn = dryRun
+      ? attachExecutionToPositionStrategy
+      : attachExecutionToPositionStrategyTracked;
+    const result = await attachFn({
       trade,
       signal,
       dryRun,
       forceRefresh,
       requireOpenPosition,
+      persistMeta: !dryRun,
     });
     rows.push({
       tradeId: trade.id || null,
@@ -88,6 +95,7 @@ export async function runExecutionAttachBackfill({
       exchange: trade.exchange,
       tradeMode: trade.trade_mode || 'normal',
       executedAt: trade.executed_at,
+      metaPersisted: !dryRun && Boolean(trade.signal_id),
       ...result,
     });
   }
@@ -99,6 +107,7 @@ export async function runExecutionAttachBackfill({
     limit,
     exchange,
     requireOpenPosition,
+    metaPersistence: dryRun ? 'disabled_dry_run' : 'signals.block_meta.executionAttach',
     summary: summarize(rows),
     rows: rows.slice(0, 50),
   };

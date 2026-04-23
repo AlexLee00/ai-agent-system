@@ -131,6 +131,7 @@ export async function attachExecutionToPositionStrategyTracked({
   dryRun = false,
   forceRefresh = false,
   requireOpenPosition = true,
+  persistMeta = !dryRun,
 } = {}) {
   const signalId = signal?.id || trade?.signal_id || trade?.signalId || null;
   try {
@@ -141,12 +142,12 @@ export async function attachExecutionToPositionStrategyTracked({
       forceRefresh,
       requireOpenPosition,
     });
-    if (signalId) {
+    if (signalId && persistMeta) {
       await db.mergeSignalBlockMeta(signalId, buildAttachMeta(result)).catch(() => {});
     }
     return result;
   } catch (error) {
-    if (signalId) {
+    if (signalId && persistMeta) {
       await db.mergeSignalBlockMeta(signalId, buildAttachMeta({}, error)).catch(() => {});
     }
     throw error;
