@@ -405,6 +405,18 @@ function buildPositionStrategyRemediationRefreshStateLine(positionStrategyRemedi
 function buildPositionStrategyRemediationHistoryLine(positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary) {
   const remediationFlat = positionStrategyRemediationSummary?.remediationFlat || null;
   const remediationSummary = positionStrategyRemediationSummary?.remediationSummary || null;
+  const flatTrend = remediationFlat?.trendHistoryCount !== undefined
+    ? {
+      historyCount: remediationFlat?.trendHistoryCount,
+      statusChanged: remediationFlat?.trendChanged,
+      nextCommandChanged: remediationFlat?.trendNextChanged,
+      nextCommandTransition: remediationFlat?.nextCommandTransition || remediationSummary?.nextCommandTransition || null,
+      ageMinutes: remediationFlat?.trendAgeMinutes,
+      stale: remediationFlat?.trendStale,
+      duplicateDelta: remediationFlat?.trendDuplicateDelta,
+      orphanDelta: remediationFlat?.trendOrphanDelta,
+    }
+    : null;
   const trend = positionStrategyRemediationSummary?.remediationTrendHistoryCount !== undefined
     ? {
       historyCount: positionStrategyRemediationSummary?.remediationTrendHistoryCount,
@@ -416,7 +428,7 @@ function buildPositionStrategyRemediationHistoryLine(positionStrategyRemediation
       duplicateDelta: positionStrategyRemediationSummary?.remediationTrendDuplicateDelta,
       orphanDelta: positionStrategyRemediationSummary?.remediationTrendOrphanDelta,
     }
-    : remediationFlat?.trend || remediationSummary?.trend || null;
+    : flatTrend || remediationFlat?.trend || remediationSummary?.trend || null;
   if (trend) {
     return `🗂️ remediation history: count ${trend.historyCount || 0} | changed ${trend.statusChanged ? 'yes' : 'no'} | next changed ${trend.nextCommandChanged ? 'yes' : 'no'}${trend.nextCommandChanged ? ` (${trend.nextCommandTransition?.previous || 'none'} -> ${trend.nextCommandTransition?.current || 'none'})` : ''} | age ${trend.ageMinutes ?? 'n/a'}m | stale ${trend.stale ? 'yes' : 'no'} | duplicate ${trend.duplicateDelta >= 0 ? '+' : ''}${trend.duplicateDelta || 0} | orphan ${trend.orphanDelta >= 0 ? '+' : ''}${trend.orphanDelta || 0}`;
   }
@@ -548,7 +560,7 @@ async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeni
     position_strategy_remediation_counts: positionStrategyRemediationSummary?.remediationCounts || remediationFlat?.counts || remediationSummary?.counts || {},
     position_strategy_remediation_recommended_exchange: positionStrategyRemediationSummary?.remediationRecommendedExchange || remediationFlat?.recommendedExchange || remediationSummary?.recommendedExchange || null,
     position_strategy_remediation_next_command: positionStrategyRemediationSummary?.remediationNextCommand || remediationFlat?.nextCommand || remediationSummary?.nextCommand || null,
-    position_strategy_remediation_next_command_transition: positionStrategyRemediationSummary?.remediationNextCommandTransition || remediationFlat?.trend?.nextCommandTransition || remediationSummary?.nextCommandTransition || positionStrategyRemediationHistorySummary?.nextCommandTransition || {},
+    position_strategy_remediation_next_command_transition: positionStrategyRemediationSummary?.remediationNextCommandTransition || remediationFlat?.nextCommandTransition || remediationSummary?.nextCommandTransition || positionStrategyRemediationHistorySummary?.nextCommandTransition || {},
     position_strategy_remediation_action_report_command: positionStrategyRemediationSummary?.remediationActionReportCommand || remediationFlat?.actions?.reportCommand || remediationFlat?.commands?.report || remediationSummary?.actions?.reportCommand || null,
     position_strategy_remediation_action_history_command: positionStrategyRemediationSummary?.remediationActionHistoryCommand || remediationFlat?.actions?.historyCommand || remediationFlat?.commands?.history || remediationSummary?.actions?.historyCommand || null,
     position_strategy_remediation_action_refresh_command: positionStrategyRemediationSummary?.remediationActionRefreshCommand || remediationFlat?.actions?.refreshCommand || remediationFlat?.refreshCommand || remediationFlat?.commands?.refresh || remediationSummary?.actions?.refreshCommand || null,
@@ -662,9 +674,9 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
           remediationNormalizeApplyCommand: positionStrategyRemediationSummary?.remediationActionNormalizeApplyCommand || remediationFlat?.actions?.normalizeApplyCommand || remediationFlat?.commands?.normalizeApply || remediationSummary?.commands?.normalizeApply || null,
           remediationRetireDryRunCommand: positionStrategyRemediationSummary?.remediationActionRetireDryRunCommand || remediationFlat?.actions?.retireDryRunCommand || remediationFlat?.commands?.retireDryRun || remediationSummary?.commands?.retireDryRun || null,
           remediationRetireApplyCommand: positionStrategyRemediationSummary?.remediationActionRetireApplyCommand || remediationFlat?.actions?.retireApplyCommand || remediationFlat?.commands?.retireApply || remediationSummary?.commands?.retireApply || null,
-          remediationTrendHistoryCount: positionStrategyRemediationSummary?.remediationTrendHistoryCount ?? remediationFlat?.trend?.historyCount ?? remediationSummary?.trend?.historyCount ?? null,
-          remediationTrendChanged: positionStrategyRemediationSummary?.remediationTrendChanged ?? remediationFlat?.trend?.statusChanged ?? remediationSummary?.trend?.statusChanged ?? null,
-          remediationTrendNextChanged: positionStrategyRemediationSummary?.remediationTrendNextChanged ?? remediationFlat?.nextCommandChanged ?? remediationSummary?.trend?.nextCommandChanged ?? null,
+          remediationTrendHistoryCount: positionStrategyRemediationSummary?.remediationTrendHistoryCount ?? remediationFlat?.trendHistoryCount ?? remediationFlat?.trend?.historyCount ?? remediationSummary?.trend?.historyCount ?? null,
+          remediationTrendChanged: positionStrategyRemediationSummary?.remediationTrendChanged ?? remediationFlat?.trendChanged ?? remediationFlat?.trend?.statusChanged ?? remediationSummary?.trend?.statusChanged ?? null,
+          remediationTrendNextChanged: positionStrategyRemediationSummary?.remediationTrendNextChanged ?? remediationFlat?.trendNextChanged ?? remediationFlat?.nextCommandChanged ?? remediationSummary?.trend?.nextCommandChanged ?? null,
           remediationNextCommand: positionStrategyRemediationSummary?.remediationNextCommand || remediationFlat?.nextCommand || remediationSummary?.nextCommand || positionStrategyRemediationSummary?.remediationActions?.nextCommand || null,
           remediationNextCommandPrevious: positionStrategyRemediationSummary?.remediationNextCommandPrevious || remediationFlat?.nextCommandPrevious || remediationSummary?.nextCommandTransition?.previous || positionStrategyRemediationSummary?.remediationTrend?.nextCommandTransition?.previous || null,
           remediationNextCommandCurrent: positionStrategyRemediationSummary?.remediationNextCommandCurrent || remediationFlat?.nextCommandCurrent || remediationSummary?.nextCommandTransition?.current || positionStrategyRemediationSummary?.remediationTrend?.nextCommandTransition?.current || null,
@@ -703,14 +715,14 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
     remediationOrphanProfiles: positionStrategyRemediationSummary?.remediationOrphanProfiles ?? remediationFlat?.orphanProfiles ?? remediationSummary?.counts?.orphanProfiles ?? null,
     remediationUnmatchedManaged: positionStrategyRemediationSummary?.remediationUnmatchedManaged ?? remediationFlat?.unmatchedManaged ?? remediationSummary?.counts?.unmatchedManaged ?? null,
     remediationTrend: remediationFlat?.trend || remediationSummary?.trend || positionStrategyRemediationSummary?.remediationTrend || null,
-    remediationTrendHistoryCount: positionStrategyRemediationSummary?.remediationTrendHistoryCount ?? remediationSummary?.trend?.historyCount ?? null,
-    remediationTrendChanged: positionStrategyRemediationSummary?.remediationTrendChanged ?? remediationSummary?.trend?.statusChanged ?? null,
-    remediationTrendNextChanged: positionStrategyRemediationSummary?.remediationTrendNextChanged ?? remediationSummary?.trend?.nextCommandChanged ?? null,
-    remediationTrendAgeMinutes: positionStrategyRemediationSummary?.remediationTrendAgeMinutes ?? remediationSummary?.trend?.ageMinutes ?? null,
-    remediationTrendStale: positionStrategyRemediationSummary?.remediationTrendStale ?? remediationSummary?.trend?.stale ?? null,
-    remediationTrendDuplicateDelta: positionStrategyRemediationSummary?.remediationTrendDuplicateDelta ?? remediationSummary?.trend?.duplicateDelta ?? null,
-    remediationTrendOrphanDelta: positionStrategyRemediationSummary?.remediationTrendOrphanDelta ?? remediationSummary?.trend?.orphanDelta ?? null,
-    remediationTrendUnmatchedDelta: positionStrategyRemediationSummary?.remediationTrendUnmatchedDelta ?? remediationSummary?.trend?.unmatchedDelta ?? null,
+    remediationTrendHistoryCount: positionStrategyRemediationSummary?.remediationTrendHistoryCount ?? remediationFlat?.trendHistoryCount ?? remediationSummary?.trend?.historyCount ?? null,
+    remediationTrendChanged: positionStrategyRemediationSummary?.remediationTrendChanged ?? remediationFlat?.trendChanged ?? remediationSummary?.trend?.statusChanged ?? null,
+    remediationTrendNextChanged: positionStrategyRemediationSummary?.remediationTrendNextChanged ?? remediationFlat?.trendNextChanged ?? remediationSummary?.trend?.nextCommandChanged ?? null,
+    remediationTrendAgeMinutes: positionStrategyRemediationSummary?.remediationTrendAgeMinutes ?? remediationFlat?.trendAgeMinutes ?? remediationSummary?.trend?.ageMinutes ?? null,
+    remediationTrendStale: positionStrategyRemediationSummary?.remediationTrendStale ?? remediationFlat?.trendStale ?? remediationSummary?.trend?.stale ?? null,
+    remediationTrendDuplicateDelta: positionStrategyRemediationSummary?.remediationTrendDuplicateDelta ?? remediationFlat?.trendDuplicateDelta ?? remediationSummary?.trend?.duplicateDelta ?? null,
+    remediationTrendOrphanDelta: positionStrategyRemediationSummary?.remediationTrendOrphanDelta ?? remediationFlat?.trendOrphanDelta ?? remediationSummary?.trend?.orphanDelta ?? null,
+    remediationTrendUnmatchedDelta: positionStrategyRemediationSummary?.remediationTrendUnmatchedDelta ?? remediationFlat?.trendUnmatchedDelta ?? remediationSummary?.trend?.unmatchedDelta ?? null,
     remediationRefreshState: remediationFlat?.refresh || remediationSummary?.refreshState || remediationRefreshState,
     remediationRefreshNeeded: positionStrategyRemediationSummary?.remediationRefreshNeeded ?? remediationFlat?.refresh?.needed ?? remediationSummary?.refreshState?.needed ?? null,
     remediationRefreshStale: positionStrategyRemediationSummary?.remediationRefreshStale ?? remediationFlat?.refresh?.stale ?? remediationSummary?.refreshState?.stale ?? null,
@@ -732,7 +744,7 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
     remediationRetireDryRunCommand: remediationFlat?.commands?.retireDryRun || remediationSummary?.commands?.retireDryRun || null,
     remediationRetireApplyCommand: remediationFlat?.commands?.retireApply || remediationSummary?.commands?.retireApply || null,
     remediationNextCommand: positionStrategyRemediationSummary?.remediationNextCommand || remediationFlat?.nextCommand || remediationSummary?.nextCommand || null,
-    remediationNextCommandTransition: positionStrategyRemediationSummary?.remediationNextCommandTransition || remediationFlat?.nextCommandTransition || remediationFlat?.trend?.nextCommandTransition || remediationSummary?.nextCommandTransition || null,
+    remediationNextCommandTransition: positionStrategyRemediationSummary?.remediationNextCommandTransition || remediationFlat?.nextCommandTransition || remediationSummary?.nextCommandTransition || null,
     remediationNextCommandChanged: positionStrategyRemediationSummary?.remediationNextCommandChanged ?? remediationFlat?.nextCommandChanged ?? remediationSummary?.trend?.nextCommandChanged ?? null,
     remediationNextCommandPrevious: positionStrategyRemediationSummary?.remediationNextCommandPrevious || remediationFlat?.nextCommandPrevious || remediationSummary?.nextCommandTransition?.previous || null,
     remediationNextCommandCurrent: positionStrategyRemediationSummary?.remediationNextCommandCurrent || remediationFlat?.nextCommandCurrent || remediationSummary?.nextCommandTransition?.current || null,
