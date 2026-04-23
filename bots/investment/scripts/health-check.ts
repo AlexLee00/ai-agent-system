@@ -579,9 +579,9 @@ async function main() {
         const duplicateSample = hygiene?.duplicateNormalization?.rows?.[0] || null;
         const orphanSample = hygiene?.orphanRetirement?.rows?.[0] || null;
         const remediationPlan = remediation?.remediationPlan || hygiene?.remediationPlan || buildPositionStrategyHygieneRemediationPlan(hygiene);
-        const remediationRefreshHint = remediation?.decision?.actionItems?.find((item) => typeof item === 'string' && item.startsWith('history refresh')) || null;
+        const remediationRefreshHint = remediation?.remediationRefreshState?.reason || null;
         const recommendedExchange = remediationPlan?.recommendedExchange || null;
-        const remediationAlertLevel = remediationHistory?.stale
+        const remediationAlertLevel = remediation?.remediationRefreshState?.stale
           ? 2
           : (Number(hygiene?.audit?.duplicateManagedProfileScopes || 0) > 0 || Number(hygiene?.audit?.unmatchedManagedPositions || 0) > 0 ? 2 : 1);
         issues.push({

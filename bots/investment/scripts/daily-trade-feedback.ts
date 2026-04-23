@@ -31,7 +31,10 @@ import { buildRuntimeMinOrderPressureReport } from './runtime-min-order-pressure
 import { buildRuntimeLearningLoopReport } from './runtime-learning-loop-report.ts';
 import { buildRuntimePositionStrategyAudit } from './runtime-position-strategy-audit.ts';
 import { buildPositionStrategyHygieneRemediationPlan, runPositionStrategyHygiene } from './runtime-position-strategy-hygiene.ts';
-import { runPositionStrategyRemediation } from './runtime-position-strategy-remediation.ts';
+import {
+  buildPositionStrategyRemediationRefreshState,
+  runPositionStrategyRemediation,
+} from './runtime-position-strategy-remediation.ts';
 const require = createRequire(import.meta.url);
 const LATEST_OPS_SNAPSHOT_FILE = '/Users/alexlee/projects/ai-agent-system/bots/investment/output/ops/parallel-ops-snapshot.json';
 const RAG_RUNTIME = getInvestmentRagRuntimeConfig();
@@ -324,38 +327,12 @@ function buildPositionStrategyRemediationCommandLine(positionStrategyRemediation
 
 function buildPositionStrategyRemediationRefreshLine(positionStrategyRemediationSummary) {
   if (!positionStrategyRemediationSummary || positionStrategyRemediationSummary.error || !positionStrategyRemediationSummary.ok) return null;
-  const actionItems = positionStrategyRemediationSummary?.decision?.actionItems;
-  if (!Array.isArray(actionItems)) return null;
-  const refreshItem = actionItems.find((item) => typeof item === 'string' && item.startsWith('history refresh'));
-  return refreshItem ? `♻️ ${refreshItem}` : null;
-}
-
-function buildPositionStrategyRemediationRefreshState(positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary) {
-  if (!positionStrategyRemediationSummary || positionStrategyRemediationSummary.error || !positionStrategyRemediationSummary.ok) {
-    return {
-      needed: false,
-      reason: null,
-      stale: Boolean(positionStrategyRemediationHistorySummary?.stale),
-      command: null,
-    };
-  }
-  const actionItems = positionStrategyRemediationSummary?.decision?.actionItems;
-  if (!Array.isArray(actionItems)) {
-    return {
-      needed: false,
-      reason: null,
-      stale: Boolean(positionStrategyRemediationHistorySummary?.stale),
-      command: null,
-    };
-  }
-  const refreshItem = actionItems.find((item) => typeof item === 'string' && item.startsWith('history refresh')) || null;
-  const command = refreshItem?.split(':').slice(1).join(':').trim() || null;
-  return {
-    needed: Boolean(refreshItem),
-    reason: refreshItem,
-    stale: Boolean(positionStrategyRemediationHistorySummary?.stale),
-    command,
-  };
+  const refreshState = positionStrategyRemediationSummary?.remediationRefreshState
+    || buildPositionStrategyRemediationRefreshState(
+      positionStrategyRemediationSummary?.remediationPlan || null,
+      positionStrategyRemediationSummary?.remediationHistory || null,
+    );
+  return refreshState?.reason ? `♻️ ${refreshState.reason}` : null;
 }
 
 function buildPositionStrategyRemediationHistoryLine(positionStrategyRemediationHistorySummary) {
@@ -424,7 +401,7 @@ async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeni
   const hygieneRemediationPlan = positionStrategyHygieneSummary?.remediationPlan
     || buildPositionStrategyHygieneRemediationPlan(positionStrategyHygieneSummary);
   const remediationRefreshState = buildPositionStrategyRemediationRefreshState(
-    positionStrategyRemediationSummary,
+    positionStrategyRemediationSummary?.remediationPlan || null,
     positionStrategyRemediationHistorySummary,
   );
   const content = [
@@ -488,7 +465,7 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
   const hygieneRemediationPlan = positionStrategyHygieneSummary?.remediationPlan
     || buildPositionStrategyHygieneRemediationPlan(positionStrategyHygieneSummary);
   const remediationRefreshState = buildPositionStrategyRemediationRefreshState(
-    positionStrategyRemediationSummary,
+    positionStrategyRemediationSummary?.remediationPlan || null,
     positionStrategyRemediationHistorySummary,
   );
   const message = buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary, positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary);
