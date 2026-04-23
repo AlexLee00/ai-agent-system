@@ -69,6 +69,7 @@ export async function buildPositionStrategyRemediationHistory({ file = DEFAULT_P
     ageMinutes: 0,
     stale: false,
     statusChanged: previousSnapshot.current ? previousSnapshot.current.status !== current.status : false,
+    nextCommandChanged: previousSnapshot.current ? String(previousSnapshot.current.nextCommand || '') !== String(current.nextCommand || '') : false,
     delta: {
       duplicateManaged: previousSnapshot.current ? current.duplicateManaged - Number(previousSnapshot.current.duplicateManaged || 0) : 0,
       orphanProfiles: previousSnapshot.current ? current.orphanProfiles - Number(previousSnapshot.current.orphanProfiles || 0) : 0,

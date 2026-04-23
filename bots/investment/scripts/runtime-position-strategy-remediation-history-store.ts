@@ -40,6 +40,7 @@ export function readPositionStrategyRemediationHistory(file = DEFAULT_POSITION_S
     ageMinutes,
     stale: ageMinutes === null ? true : ageMinutes >= 60,
     statusChanged: previous && current ? previous.status !== current.status : false,
+    nextCommandChanged: previous && current ? String(previous.nextCommand || '') !== String(current.nextCommand || '') : false,
     delta: {
       duplicateManaged: previous && current ? Number(current.duplicateManaged || 0) - Number(previous.duplicateManaged || 0) : 0,
       orphanProfiles: previous && current ? Number(current.orphanProfiles || 0) - Number(previous.orphanProfiles || 0) : 0,
