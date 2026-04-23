@@ -275,6 +275,8 @@ async function writeLecturePost(lectureNumber, lectureTitle, researchData, secti
   const marketingNotes = Array.isArray(sectionVariation?.marketingContext?.notes)
     ? sectionVariation.marketingContext.notes.join(' / ')
     : '';
+  const experimentWinnerSummary = String(researchData.strategy_experiment_winner || '').trim();
+  const experimentWeakLaneSummary = String(researchData.strategy_experiment_weak_lane || '').trim();
 
   const weatherContext = weatherToContext(weather);
 
@@ -343,6 +345,8 @@ ${nodejsUpdates.length > 0
 ${itNews.slice(0, 3).map(n => `- ${n.title}`).join('\n') || '- 최신 IT 트렌드를 자체 지식으로 언급하라'}
 ${experienceBlock}${linkingBlock}${popularPatternBlock}
 ${marketingNotes ? `[마케팅/운영 신호]\n${marketingNotes}\n` : ''}
+${experimentWinnerSummary ? `[최근 실험 승자]\n${experimentWinnerSummary}\n` : ''}
+${experimentWeakLaneSummary ? `[최근 실험 약세 레인]\n${experimentWeakLaneSummary}\n` : ''}
 ${charInstruction}
 이전 강의 (${lectureNumber - 1}강) 내용을 자연스럽게 연결하고,
 다음 강의 (${lectureNumber + 1}강) 내용을 마무리에서 예고하라.
@@ -370,6 +374,8 @@ ${_buildVariationBlock(sectionVariation)}
 - 코드 블록마다 최소 5줄 이상의 상세한 주석을 포함하라.
 - 코드 블록에서 require/import하는 패키지는 실제 npm 또는 Node.js 표준 라이브러리만 사용하라.
 - 가상의 API나 메서드는 만들지 말고, 확실하지 않으면 표준 라이브러리로 해결하라.
+- 최근 실험 승자 신호가 있으면 강의 제목·요약·실무 포인트를 더 자연스럽고 신뢰감 있게 정리하라.
+- 최근 실험 약세 레인이 있으면 유행성/과장형 표현은 피하고 실전형 설명을 우선하라.
 - 반드시 모든 섹션을 작성하고 _THE_END_ 로 마무리하라.
   `.trim();
 
@@ -571,6 +577,8 @@ async function writeLecturePostChunked(lectureNumber, lectureTitle, researchData
   const realExperiences = researchData.realExperiences || [];
   const relatedPosts    = researchData.relatedPosts   || [];
   const popularPatterns = researchData.lecturePopularPatterns || researchData.popularPatterns || [];
+  const experimentWinnerSummary = String(researchData.strategy_experiment_winner || '').trim();
+  const experimentWeakLaneSummary = String(researchData.strategy_experiment_weak_lane || '').trim();
 
   const weatherContext  = weatherToContext(weather);
   const model           = process.env.BLOG_LLM_MODEL || POS_LLM_CHAIN;
@@ -606,6 +614,8 @@ ${popularPatternBlock}
 ${LECTURE_AI_BRIEFING_ORDER}
 ${LECTURE_AI_BRIEFING_CHECKLIST}
 ${lectureDirection}
+${experimentWinnerSummary ? `\n[최근 실험 승자]\n${experimentWinnerSummary}` : ''}
+${experimentWeakLaneSummary ? `\n[최근 실험 약세 레인]\n${experimentWeakLaneSummary}` : ''}
 
 작성할 섹션 (이것만 작성하라):
   [핵심 요약 3줄] — 150자 내외 AI 스니펫용
@@ -634,6 +644,8 @@ ${POS_PERSONA_GUIDE ? `[참조 페르소나]\n${POS_PERSONA_GUIDE}\n` : ''}
 ${experienceBlock ? `[실전 에피소드]\n${experienceBlock}\n→ "제가 운영하는 ai-agent-system에서 겪은 경험"으로 녹여라` : ''}
 ${popularPatternBlock}
 ${lectureDirection}
+${experimentWinnerSummary ? `\n[최근 실험 승자]\n${experimentWinnerSummary}` : ''}
+${experimentWeakLaneSummary ? `\n[최근 실험 약세 레인]\n${experimentWeakLaneSummary}` : ''}
 
 작성할 섹션 (이것만 작성하라):
   ━━━━━━━━━━━━━━━━━━━━━
@@ -657,6 +669,8 @@ ${POS_PERSONA_GUIDE ? `[참조 페르소나]\n${POS_PERSONA_GUIDE}\n` : ''}
   이 그룹에서는 인사말/저자소개 없이 본론으로 바로 시작하라.
 - 이전 섹션 '[강의 - 이론]'과 '[전문가의 실무 인사이트 ②]'에 이어서 작성하라.
 ${lectureDirection}
+${experimentWinnerSummary ? `\n[최근 실험 승자]\n${experimentWinnerSummary}` : ''}
+${experimentWeakLaneSummary ? `\n[최근 실험 약세 레인]\n${experimentWeakLaneSummary}` : ''}
 
 작성할 섹션 (이것만 작성하라):
   ━━━━━━━━━━━━━━━━━━━━━
@@ -682,6 +696,8 @@ ${POS_PERSONA_GUIDE ? `[참조 페르소나]\n${POS_PERSONA_GUIDE}\n` : ''}
 - [마무리 인사]에서만 "승호아빠"를 한 번 언급하라.
 ${lectureDirection}
 ${linkingBlock ? `[관련 과거 포스팅]\n${linkingBlock}` : ''}
+${experimentWinnerSummary ? `\n[최근 실험 승자]\n${experimentWinnerSummary}` : ''}
+${experimentWeakLaneSummary ? `\n[최근 실험 약세 레인]\n${experimentWeakLaneSummary}` : ''}
 
 작성할 섹션 (이것만 작성하라):
   ━━━━━━━━━━━━━━━━━━━━━

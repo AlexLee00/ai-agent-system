@@ -1025,6 +1025,26 @@ async function _prepareLectureContext(researchData, traceCtx, preloaded = {}) {
   if (researchData.lecturePopularPatterns?.length) {
     preparedResearch.popularPatterns = researchData.lecturePopularPatterns;
   }
+  const strategyPlan = loadLatestStrategy() || {};
+  const experimentPlaybook = readExperimentPlaybook() || null;
+  const experimentDimensionKey = experimentPlaybook?.topWinner?.dimension === 'title_pattern'
+    ? 'titlePattern'
+    : experimentPlaybook?.topWinner?.dimension === 'autonomy_lane'
+      ? 'autonomyLane'
+      : 'category';
+  const experimentLoser = experimentPlaybook?.dimensions?.[experimentDimensionKey]?.loser || null;
+  preparedResearch.strategy_experiment_winner = strategyPlan?.experimentLearning?.topWinnerSummary
+    || (
+      experimentPlaybook?.topWinner?.variant
+        ? `최근 실험 승자는 ${experimentPlaybook.topWinner.dimension}:${experimentPlaybook.topWinner.variant} (${Math.round(Number(experimentPlaybook.topWinner.liftPct || 0) * 100)}% lift, n=${experimentPlaybook.topWinner.sampleCount}) 입니다.`
+        : ''
+    );
+  preparedResearch.strategy_experiment_weak_lane = strategyPlan?.experimentLearning?.weakestVariantSummary
+    || (
+      experimentLoser?.variant
+        ? `최근 약한 레인은 ${experimentLoser.dimension}:${experimentLoser.variant} (${Math.round(Number(experimentLoser.liftPct || 0) * 100)}% lift, n=${experimentLoser.sampleCount}) 입니다.`
+        : ''
+    );
   const pastPosts = await searchPastPosts(lectureTitle);
   if (pastPosts.length > 0) {
     console.log(`[블로] 유사 과거 포스팅 ${pastPosts.length}건 발견 — 차별화 데이터 포함`);
