@@ -103,6 +103,31 @@ export function buildPositionStrategyRemediationActions(remediationPlan = null, 
   };
 }
 
+export function buildPositionStrategyRemediationSummary({
+  remediationPlan = null,
+  remediationTrend = null,
+  remediationRefreshState = null,
+  remediationActions = null,
+  decision = null,
+} = {}) {
+  if (!remediationPlan && !decision) return null;
+  return {
+    status: decision?.status || null,
+    headline: decision?.headline || null,
+    recommendedExchange: remediationPlan?.recommendedExchange || null,
+    counts: remediationPlan ? {
+      duplicateManaged: remediationPlan.duplicateManagedScopes || 0,
+      orphanProfiles: remediationPlan.orphanProfiles || 0,
+      unmatchedManaged: remediationPlan.unmatchedManaged || 0,
+    } : null,
+    trend: remediationTrend || null,
+    refreshState: remediationRefreshState || null,
+    actions: remediationActions || null,
+    nextCommand: remediationActions?.nextCommand || null,
+    nextCommandTransition: remediationTrend?.nextCommandTransition || null,
+  };
+}
+
 export function buildPositionStrategyRemediationDecision(remediationPlan = null, remediationHistory = null) {
   const historyActionItem = buildHistoryActionItem(remediationHistory);
   const refreshState = buildPositionStrategyRemediationRefreshState(remediationPlan, remediationHistory);
@@ -155,6 +180,14 @@ export async function runPositionStrategyRemediation({ json = false, historyFile
   const remediationTrend = buildPositionStrategyRemediationTrend(remediationHistory);
   const remediationRefreshState = buildPositionStrategyRemediationRefreshState(remediationPlan, remediationHistory);
   const remediationActions = buildPositionStrategyRemediationActions(remediationPlan, remediationRefreshState);
+  const decision = buildPositionStrategyRemediationDecision(remediationPlan, remediationHistory);
+  const remediationSummary = buildPositionStrategyRemediationSummary({
+    remediationPlan,
+    remediationTrend,
+    remediationRefreshState,
+    remediationActions,
+    decision,
+  });
   const result = {
     ok: true,
     hygieneStatus: hygiene?.decision?.status || 'unknown',
@@ -162,10 +195,11 @@ export async function runPositionStrategyRemediation({ json = false, historyFile
     remediationPlan,
     remediationHistory,
     remediationTrend,
+    remediationSummary,
     remediationNextCommandTransition: remediationHistory?.nextCommandTransition || null,
     remediationRefreshState,
     remediationActions,
-    decision: buildPositionStrategyRemediationDecision(remediationPlan, remediationHistory),
+    decision,
   };
   if (json) return result;
   return JSON.stringify(result, null, 2);

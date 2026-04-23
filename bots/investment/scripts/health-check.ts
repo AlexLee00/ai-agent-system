@@ -590,6 +590,7 @@ async function main() {
           key,
           level: remediationAlertLevel,
           meta: {
+            remediationSummary: remediation?.remediationSummary || null,
             remediationRefreshState: remediation?.remediationRefreshState || null,
             remediationHistory: remediationHistory || null,
             remediationTrend: remediation?.remediationTrend || null,
