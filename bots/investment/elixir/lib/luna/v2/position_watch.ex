@@ -121,12 +121,26 @@ defmodule Luna.V2.PositionWatch do
       COALESCE(unrealized_pnl, 0) AS unrealized_pnl,
       COALESCE(size, 0) * COALESCE(entry_price, 0) AS notional_value,
       updated_at,
+      psp.strategy_name,
+      psp.setup_type,
+      psp.monitoring_plan,
+      psp.exit_plan,
       CASE
         WHEN COALESCE(size, 0) * COALESCE(entry_price, 0) > 0
         THEN COALESCE(unrealized_pnl, 0) / (COALESCE(size, 0) * COALESCE(entry_price, 0))
         ELSE NULL
       END AS pnl_ratio
     FROM investment.live_positions
+    LEFT JOIN LATERAL (
+      SELECT strategy_name, setup_type, monitoring_plan, exit_plan
+      FROM investment.position_strategy_profiles psp
+      WHERE psp.symbol = investment.live_positions.symbol
+        AND psp.exchange = investment.live_positions.exchange
+        AND COALESCE(psp.trade_mode, 'normal') = COALESCE(investment.live_positions.trade_mode, 'normal')
+        AND psp.status = 'active'
+      ORDER BY psp.updated_at DESC
+      LIMIT 1
+    ) psp ON TRUE
     WHERE status = 'open'
     ORDER BY updated_at DESC NULLS LAST
     LIMIT 200
@@ -193,18 +207,27 @@ defmodule Luna.V2.PositionWatch do
     pnl_ratio = to_float(position[:pnl_ratio])
     stale? = stale_position?(position[:updated_at], stale_minutes)
     tv_attention = classify_tv_attention(position[:tv], tv_stale_ms)
+    setup_type = normalize_setup_type(position[:setup_type])
+    monitoring_plan = normalize_json_map(position[:monitoring_plan])
+    adjusted_gain_pct = strategy_adjust_gain_pct(adjust_gain_pct, setup_type)
+    adjusted_stop_loss_pct = strategy_stop_loss_pct(stop_loss_pct, setup_type)
+    strategy_tv_attention =
+      classify_strategy_tv_attention(position, setup_type, monitoring_plan, adjusted_gain_pct)
 
     cond do
+      not is_nil(strategy_tv_attention) ->
+        Map.merge(position, strategy_tv_attention)
+
       not is_nil(tv_attention) ->
         Map.merge(position, tv_attention)
 
       stale? ->
         Map.merge(position, %{attention_type: :stale_position, reason: "updated_at stale"})
 
-      pnl_ratio <= -abs(stop_loss_pct) ->
+      pnl_ratio <= -abs(adjusted_stop_loss_pct) ->
         Map.merge(position, %{attention_type: :stop_loss_attention, reason: "loss threshold hit"})
 
-      pnl_ratio >= abs(adjust_gain_pct) ->
+      pnl_ratio >= abs(adjusted_gain_pct) ->
         Map.merge(position, %{
           attention_type: :partial_adjust_attention,
           reason: "gain threshold hit"
@@ -427,6 +450,80 @@ defmodule Luna.V2.PositionWatch do
   end
 
   defp classify_tv_attention(_, _tv_stale_ms), do: nil
+
+  defp normalize_setup_type(nil), do: nil
+
+  defp normalize_setup_type(value) do
+    value
+    |> to_string()
+    |> String.trim()
+    |> String.downcase()
+    |> case do
+      "" -> nil
+      other -> other
+    end
+  end
+
+  defp normalize_json_map(value) when is_map(value), do: value
+  defp normalize_json_map(_), do: %{}
+
+  defp strategy_adjust_gain_pct(base, "mean_reversion"), do: base * 0.6
+  defp strategy_adjust_gain_pct(base, "trend_following"), do: base * 1.1
+  defp strategy_adjust_gain_pct(base, "momentum_rotation"), do: base * 1.05
+  defp strategy_adjust_gain_pct(base, _), do: base
+
+  defp strategy_stop_loss_pct(base, "breakout"), do: base * 0.8
+  defp strategy_stop_loss_pct(base, "mean_reversion"), do: base * 1.1
+  defp strategy_stop_loss_pct(base, _), do: base
+
+  defp classify_strategy_tv_attention(position, setup_type, monitoring_plan, adjust_gain_pct) do
+    triggers =
+      monitoring_plan
+      |> Map.get("triggers", monitoring_plan[:triggers] || [])
+      |> List.wrap()
+      |> Enum.map(&to_string/1)
+
+    tv = position[:tv] || %{}
+    frames = Map.get(tv, :frames, %{})
+    tv4h = Map.get(frames, "4h") || Map.get(frames, :"4h")
+    tv1d = Map.get(frames, "1d") || Map.get(frames, :"1d")
+    pnl_ratio = to_float(position[:pnl_ratio])
+
+    cond do
+      "tv_live_bearish" in triggers and setup_type == "mean_reversion" and
+          pnl_ratio >= adjust_gain_pct * 0.8 and bearish_frame?(tv4h) ->
+        %{
+          attention_type: :partial_adjust_attention,
+          reason: "strategy mean_reversion profit lock on live bearish",
+          strategy_attention: "mean_reversion_profit_lock",
+          tv_timeframe: "4h"
+        }
+
+      "tv_live_bearish" in triggers and setup_type in ["trend_following", "momentum_rotation"] and
+          pnl_ratio >= adjust_gain_pct and bearish_frame?(tv4h) and bearish_frame?(tv1d) ->
+        %{
+          attention_type: :partial_adjust_attention,
+          reason: "strategy trend follow weakening on multi-timeframe bearish",
+          strategy_attention: "trend_following_trail",
+          tv_timeframe: "4h+1d"
+        }
+
+      "stop_loss_attention" in triggers and setup_type == "breakout" and
+          pnl_ratio <= -0.02 and bearish_frame?(tv4h) and bearish_frame?(tv1d) ->
+        %{
+          attention_type: :stop_loss_attention,
+          reason: "strategy breakout failed with multi-timeframe bearish follow-through",
+          strategy_attention: "breakout_failed",
+          tv_timeframe: "4h+1d"
+        }
+
+      true ->
+        nil
+    end
+  end
+
+  defp bearish_frame?(%{direction: :bearish}), do: true
+  defp bearish_frame?(_), do: false
 
   defp normalize_tv_status("connected"), do: :connected
   defp normalize_tv_status("disconnected"), do: :disconnected
