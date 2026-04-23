@@ -397,10 +397,12 @@ async function main() {
     if (riskApproval?.status === 'risk_approval_preview_divergence') {
       if (hsm.canAlert(state, riskApprovalKey)) {
         const topModel = riskApproval?.topModels?.[0] || null;
+        const trend = riskApproval?.trend || null;
+        const delta = trend?.delta || {};
         issues.push({
           key: riskApprovalKey,
           level: 2,
-          msg: `⚠️ [루나 헬스] risk approval preview divergence\n${riskApproval.headline || '리스크 승인 preview와 기존 승인 결과 차이 점검 필요'}\npreview ${riskApproval.total || 0} / rejects ${riskApproval.previewRejects || 0} / divergence ${riskApproval.divergence || 0}\namount delta ${riskApproval.previewVsApprovedDelta ?? 0}${topModel ? `\ntop model: ${topModel.model || 'n/a'} / adjust ${topModel.adjust || 0} / reject ${topModel.reject || 0} / pass ${topModel.pass || 0}` : ''}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:risk-approval -- --json`,
+          msg: `⚠️ [루나 헬스] risk approval preview divergence\n${riskApproval.headline || '리스크 승인 preview와 기존 승인 결과 차이 점검 필요'}\npreview ${riskApproval.total || 0} / rejects ${riskApproval.previewRejects || 0} / divergence ${riskApproval.divergence || 0}\namount delta ${riskApproval.previewVsApprovedDelta ?? 0}${trend ? `\ntrend: history ${trend.historyCount || 0} / preview Δ${delta.total ?? 0} / reject Δ${delta.previewRejects ?? 0} / divergence Δ${delta.legacyApprovedPreviewRejected ?? 0} / amount Δ${delta.previewVsApprovedDelta ?? 0}` : ''}${topModel ? `\ntop model: ${topModel.model || 'n/a'} / adjust ${topModel.adjust || 0} / reject ${topModel.reject || 0} / pass ${topModel.pass || 0}` : ''}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:risk-approval -- --json`,
         });
       }
     } else if (state[riskApprovalKey]) {

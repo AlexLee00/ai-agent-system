@@ -49,6 +49,7 @@
     "planner:decision-e2e-report": "node scripts/decision-e2e-report.ts",
     "risk:approval-chain-smoke": "node scripts/risk-approval-chain-smoke.ts",
     "runtime:risk-approval": "node scripts/runtime-risk-approval-report.ts",
+    "runtime:risk-approval-history": "node scripts/runtime-risk-approval-history.ts",
     "runtime:decision-report": "node scripts/runtime-decision-report.ts --limit=5",
     "runtime:decision-summary": "node scripts/runtime-decision-summary.ts --limit=5",
     "runtime:decision-history": "node scripts/runtime-decision-history.ts --limit=5",
