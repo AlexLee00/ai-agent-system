@@ -53,6 +53,23 @@ function describeStrategyFreshness(plan = null) {
   };
 }
 
+function summarizeOperationalLearning(plan = null) {
+  const patterns = Array.isArray(plan?.operationalLearning?.patterns)
+    ? plan.operationalLearning.patterns
+    : [];
+  const findSummary = (type) => {
+    const item = patterns.find((pattern) => String(pattern?.type || '') === type);
+    return item?.summary ? String(item.summary) : '';
+  };
+  return {
+    generatedAt: String(plan?.operationalLearning?.generatedAt || '') || null,
+    titlePatternSummary: findSummary('ops_high_performance_title_pattern'),
+    categorySummary: findSummary('ops_high_performance_category'),
+    alignmentSummary: findSummary('ops_alignment_signal'),
+    autonomyLaneSummary: findSummary('ops_autonomy_lane'),
+  };
+}
+
 function parseArgs(argv = []) {
   return {
     json: argv.includes('--json'),
@@ -200,6 +217,15 @@ function buildActions({ primary, digest = {} }) {
   if (nextPreview?.title) {
     actions.push(`next preview: ${nextPreview.title}`);
   }
+  if (digest?.strategyOperationalLearning?.titlePatternSummary) {
+    actions.push(`ops learning: ${digest.strategyOperationalLearning.titlePatternSummary}`);
+  }
+  if (digest?.strategyOperationalLearning?.alignmentSummary) {
+    actions.push(`ops learning: ${digest.strategyOperationalLearning.alignmentSummary}`);
+  }
+  if (digest?.strategyOperationalLearning?.autonomyLaneSummary) {
+    actions.push(`ops learning: ${digest.strategyOperationalLearning.autonomyLaneSummary}`);
+  }
 
   const recommendations = Array.isArray(digest?.recommendations) ? digest.recommendations : [];
   if (recommendations[0]) actions.push(`reco: ${recommendations[0]}`);
@@ -240,6 +266,7 @@ async function main() {
   const digest = buildDigestFallbackView(digestResult.payload || {}, latestDigestRun);
   const strategyBundle = loadStrategyBundle();
   const strategyFreshness = describeStrategyFreshness(strategyBundle?.plan || null);
+  const strategyOperationalLearning = summarizeOperationalLearning(strategyBundle?.plan || null);
   const strategyRuntime = strategyBundle?.plan
     ? {
         preferredCategory: strategyBundle.plan.preferredCategory || null,
@@ -248,6 +275,7 @@ async function main() {
       }
     : null;
   digest.strategyFreshness = strategyFreshness;
+  digest.strategyOperationalLearning = strategyOperationalLearning;
   digest.strategyRuntime = strategyRuntime;
   const payload = {
     digestCommand: digestResult.command,
@@ -262,6 +290,7 @@ async function main() {
     nextGeneralPreview: digest?.nextGeneralPreview || null,
     recommendations: Array.isArray(digest?.recommendations) ? digest.recommendations : [],
     strategyFreshness,
+    strategyOperationalLearning,
     strategyRuntime,
   };
   payload.primary = buildPrimary(digest);

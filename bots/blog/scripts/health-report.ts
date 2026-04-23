@@ -1965,6 +1965,19 @@ async function buildPhase4CompetitionHealth() {
 }
 
 async function buildMarketingExpansionHealth() {
+  const summarizeOperationalLearning = (operationalLearning = null) => {
+    const patterns = Array.isArray(operationalLearning?.patterns) ? operationalLearning.patterns : [];
+    const findSummary = (type) => {
+      const item = patterns.find((pattern) => String(pattern?.type || '') === type);
+      return item?.summary ? String(item.summary) : '';
+    };
+    return {
+      titlePatternSummary: findSummary('ops_high_performance_title_pattern'),
+      categorySummary: findSummary('ops_high_performance_category'),
+      alignmentSummary: findSummary('ops_alignment_signal'),
+      autonomyLaneSummary: findSummary('ops_autonomy_lane'),
+    };
+  };
   try {
     const digest = await buildMarketingDigest();
     const latestDigestRun = readMarketingDigestTelemetry();
@@ -1995,6 +2008,16 @@ async function buildMarketingExpansionHealth() {
     }
     if (Number(strategy?.preferredCategoryWeightBoost || 0) > 0) {
       ok.push(`  strategy recovery boost: +${Number(strategy.preferredCategoryWeightBoost || 0)}`);
+    }
+    const operationalLearning = summarizeOperationalLearning(strategy?.operationalLearning || null);
+    if (operationalLearning.titlePatternSummary) {
+      ok.push(`  ops learning: ${operationalLearning.titlePatternSummary}`);
+    }
+    if (operationalLearning.alignmentSummary) {
+      ok.push(`  ops alignment: ${operationalLearning.alignmentSummary}`);
+    }
+    if (operationalLearning.autonomyLaneSummary) {
+      ok.push(`  ops lane: ${operationalLearning.autonomyLaneSummary}`);
     }
     const adoption = digest?.strategyAdoption || null;
     if (adoption?.status) {
@@ -2081,6 +2104,7 @@ async function buildMarketingExpansionHealth() {
       preferredCategoryWeightBoost: Number(strategy?.preferredCategoryWeightBoost || 0),
       preferredTitlePattern: strategy?.preferredTitlePattern || null,
       suppressedTitlePattern: strategy?.suppressedTitlePattern || null,
+      operationalLearning: summarizeOperationalLearning(strategy?.operationalLearning || null),
       categoryPatternHotspot: strategy?.categoryPatternHotspot || null,
       hotspotTrend: strategy?.hotspotTrend || null,
       strategyAdoption: digest?.strategyAdoption || null,
