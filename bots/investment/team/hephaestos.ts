@@ -406,6 +406,23 @@ function normalizePartialExitRatio(value) {
   return Number(parsed.toFixed(4));
 }
 
+function isEffectivePartialExit({
+  entrySize = 0,
+  soldAmount = 0,
+  partialExitRatio = null,
+}) {
+  const normalizedEntrySize = Number(entrySize || 0);
+  const normalizedSoldAmount = Math.max(0, Number(soldAmount || 0));
+  const normalizedRatio = normalizePartialExitRatio(partialExitRatio);
+  const remainingSize = Math.max(0, normalizedEntrySize - normalizedSoldAmount);
+  return normalizedEntrySize > 0
+    && remainingSize > 0.00000001
+    && (
+      normalizedRatio < 1
+      || normalizedSoldAmount < (normalizedEntrySize - 0.00000001)
+    );
+}
+
 function buildSignalQualityContext(signal = null) {
   return {
     executionOrigin: signal?.execution_origin || signal?.executionOrigin || 'strategy',
@@ -556,7 +573,11 @@ async function settleOpenJournalForSell(
   const entrySize = Number(entry.entry_size || 0);
   const entryValue = Number(entry.entry_value || 0);
   const realizedSize = Math.min(entrySize, Math.max(0, Number(soldAmount || 0)));
-  const isPartial = normalizedRatio < 1 && realizedSize > 0 && realizedSize < entrySize;
+  const isPartial = isEffectivePartialExit({
+    entrySize,
+    soldAmount: realizedSize,
+    partialExitRatio: normalizedRatio,
+  });
 
   if (!isPartial) {
     await closeOpenJournalForSymbol(symbol, isPaper, exitPrice, exitValue, exitReason, effectiveTradeMode, {
@@ -1379,7 +1400,11 @@ async function executeSellTrade({
   const effectiveRatio = normalizePartialExitRatio(partialExitRatio);
   const baselineAmount = Number(sourcePositionAmount || position?.amount || 0);
   const remainingAmount = Math.max(0, baselineAmount - soldAmount);
-  const isPartialExit = effectiveRatio < 1 && remainingAmount > 0.00000001;
+  const isPartialExit = isEffectivePartialExit({
+    entrySize: baselineAmount,
+    soldAmount,
+    partialExitRatio: effectiveRatio,
+  });
   const trade = {
     signalId,
     symbol,
@@ -1390,7 +1415,11 @@ async function executeSellTrade({
     paper: sellPaperMode,
     exchange: 'binance',
     tradeMode: effectivePositionTradeMode,
-    partialExitRatio: isPartialExit ? effectiveRatio : null,
+    partialExitRatio: isPartialExit
+      ? (effectiveRatio < 1
+          ? effectiveRatio
+          : normalizePartialExitRatio(baselineAmount > 0 ? soldAmount / baselineAmount : 1))
+      : null,
     partialExit: isPartialExit,
     remainingAmount: isPartialExit ? remainingAmount : 0,
     ...(qualityContext || {}),
