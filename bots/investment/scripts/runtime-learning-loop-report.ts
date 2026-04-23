@@ -221,6 +221,38 @@ function buildTradeReviewRepairAction(feedback = {}) {
   return `trade review 정합성 복구(${scopeText}): ${issueText}${symbolText}. ${repairCommand}`;
 }
 
+export function buildLearningLoopFeedbackState({ validation = {}, freshness = {} } = {}) {
+  const reviewAge = ageHours(freshness.latestTradeReviewAt);
+  const validationSummary = validation.summary || {};
+  const feedbackStatus = Number(validation.findings || 0) > 0
+    ? validationSummary.paperOnly
+      ? 'paper_repair'
+      : 'repair'
+    : reviewAge != null && reviewAge <= 36
+      ? 'active'
+      : freshness.latestTradeReviewAt
+        ? 'watch'
+        : 'idle';
+
+  return {
+    status: feedbackStatus,
+    latestAt: toIso(freshness.latestTradeReviewAt),
+    ageHours: reviewAge,
+    validationFindings: Number(validation.findings || 0),
+    closedTrades: Number(validation.closedTrades || 0),
+    validationSummary,
+    validationSamples: Array.isArray(validation.items) ? validation.items.slice(0, 3) : [],
+    validationRepairCloseout: buildTradeReviewRepairCloseout({
+      before: validation,
+      after: validation,
+      fix: false,
+    }),
+    headline: Number(validation.findings || 0) > 0
+      ? `trade review 정합성 이슈 ${validation.findings}건이 남아 있습니다${validationSummary.topIssue ? ` (${validationSummary.topIssue.key} ${validationSummary.topIssue.count}건 최다, live ${validationSummary.liveFindings || 0} / paper ${validationSummary.paperFindings || 0})` : ''}.`
+      : 'trade review / 피드백 루프는 비교적 안정적입니다.',
+  };
+}
+
 async function loadLoopFreshness() {
   await db.initSchema();
   const [runtimeRow, reviewRow, backtestRow, suggestionRows] = await Promise.all([
@@ -664,34 +696,7 @@ function buildSectionStates({
     headline: backtest.decision?.headline || '백테스트/실행 게이트 분석 상태를 확인합니다.',
   };
 
-  const validationSummary = validation.summary || {};
-  const feedbackStatus = Number(validation.findings || 0) > 0
-    ? validationSummary.paperOnly
-      ? 'paper_repair'
-      : 'repair'
-    : reviewAge != null && reviewAge <= 36
-      ? 'active'
-      : freshness.latestTradeReviewAt
-        ? 'watch'
-        : 'idle';
-
-  const feedback = {
-    status: feedbackStatus,
-    latestAt: toIso(freshness.latestTradeReviewAt),
-    ageHours: reviewAge,
-    validationFindings: Number(validation.findings || 0),
-    closedTrades: Number(validation.closedTrades || 0),
-    validationSummary,
-    validationSamples: Array.isArray(validation.items) ? validation.items.slice(0, 3) : [],
-    validationRepairCloseout: buildTradeReviewRepairCloseout({
-      before: validation,
-      after: validation,
-      fix: false,
-    }),
-    headline: Number(validation.findings || 0) > 0
-      ? `trade review 정합성 이슈 ${validation.findings}건이 남아 있습니다${validationSummary.topIssue ? ` (${validationSummary.topIssue.key} ${validationSummary.topIssue.count}건 최다, live ${validationSummary.liveFindings || 0} / paper ${validationSummary.paperFindings || 0})` : ''}.`
-      : 'trade review / 피드백 루프는 비교적 안정적입니다.',
-  };
+  const feedback = buildLearningLoopFeedbackState({ validation, freshness });
 
   const strategy = {
     status: autotune.decision?.status === 'crypto_guard_autotune_ready'
