@@ -659,6 +659,19 @@ export async function evaluateSignal(signal, opts = {}) {
   const isCryptoExchange = signal.exchange === 'binance';
   const signalTradeMode = signal.trade_mode || getInvestmentTradeMode();
   const nemesisRoleState = await getInvestmentAgentRoleState('nemesis', signal.exchange).catch(() => null);
+  const existingStrategyProfile =
+    signal.existingStrategyProfile
+    || await db.getPositionStrategyProfile(symbol, {
+      exchange: signal.exchange,
+      tradeMode: signalTradeMode,
+      status: 'active',
+    }).catch(() => null);
+  const existingResponsibilityPlan =
+    signal.existingResponsibilityPlan
+    || existingStrategyProfile?.strategy_context?.responsibilityPlan
+    || existingStrategyProfile?.strategyContext?.responsibilityPlan
+    || existingStrategyProfile?.responsibilityPlan
+    || null;
   const rules      = {
     ...getRules(signal.exchange),
     MIN_ORDER_USDT: await getDynamicMinOrderAmount(signal.exchange, signalTradeMode),
@@ -840,6 +853,54 @@ export async function evaluateSignal(signal, opts = {}) {
           ...(adaptiveResult.llm || {}),
           decision: 'ADJUST',
           reasoning: `${adaptiveResult.llm?.reasoning || '리스크 승인'} | agent-role soft_sizing_preference로 감산 우선`,
+        };
+      }
+    }
+
+    if (action === ACTIONS.BUY && existingResponsibilityPlan) {
+      const ownerMode = String(existingResponsibilityPlan?.ownerMode || '').trim().toLowerCase();
+      const riskMission = String(existingResponsibilityPlan?.riskMission || '').trim().toLowerCase();
+      const executionMission = String(existingResponsibilityPlan?.executionMission || '').trim().toLowerCase();
+      const watchMission = String(existingResponsibilityPlan?.watchMission || '').trim().toLowerCase();
+      const originalAmount = Number(amountUsdt || 0);
+      let adjustedAmount = originalAmount;
+      let profileReason = null;
+
+      if (ownerMode === 'capital_preservation') {
+        adjustedAmount = Math.max(rules.MIN_ORDER_USDT, Math.floor(adjustedAmount * 0.9));
+        profileReason = 'existing ownerMode capital_preservation';
+      } else if (ownerMode === 'balanced_rotation') {
+        adjustedAmount = Math.max(rules.MIN_ORDER_USDT, Math.floor(adjustedAmount * 0.96));
+        profileReason = 'existing ownerMode balanced_rotation';
+      } else if (ownerMode === 'opportunity_capture' && Number(signal.confidence || 0) >= 0.74) {
+        adjustedAmount = Math.max(rules.MIN_ORDER_USDT, Math.floor(adjustedAmount * 1.05));
+        profileReason = 'existing ownerMode opportunity_capture';
+      }
+
+      if (riskMission === 'strict_risk_gate') {
+        adjustedAmount = Math.max(rules.MIN_ORDER_USDT, Math.floor(adjustedAmount * 0.92));
+        profileReason = profileReason ? `${profileReason} + strict_risk_gate` : 'existing riskMission strict_risk_gate';
+      } else if (riskMission === 'soft_sizing_preference') {
+        adjustedAmount = Math.max(rules.MIN_ORDER_USDT, Math.floor(adjustedAmount * 0.96));
+        profileReason = profileReason ? `${profileReason} + soft_sizing_preference` : 'existing riskMission soft_sizing_preference';
+      }
+
+      if (executionMission === 'execution_safeguard') {
+        adjustedAmount = Math.max(rules.MIN_ORDER_USDT, Math.floor(adjustedAmount * 0.97));
+        profileReason = profileReason ? `${profileReason} + execution_safeguard` : 'existing executionMission execution_safeguard';
+      }
+
+      if (watchMission === 'risk_sentinel' && /bearish|stop_loss|invalidation/i.test(String(signal.reasoning || ''))) {
+        adjustedAmount = Math.max(rules.MIN_ORDER_USDT, Math.floor(adjustedAmount * 0.95));
+        profileReason = profileReason ? `${profileReason} + risk_sentinel` : 'existing watchMission risk_sentinel';
+      }
+
+      if (adjustedAmount !== originalAmount) {
+        amountUsdt = adjustedAmount;
+        adaptiveResult.llm = {
+          ...(adaptiveResult.llm || {}),
+          decision: 'ADJUST',
+          reasoning: `${adaptiveResult.llm?.reasoning || '리스크 승인'} | 기존 포지션 전략 책임계획(${profileReason}) 반영`,
         };
       }
     }

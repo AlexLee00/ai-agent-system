@@ -49,6 +49,70 @@ const MAX_DEBATE_SYMBOLS = LUNA_RUNTIME.maxDebateSymbols;
 const STOCK_ORDER_DEFAULTS = LUNA_RUNTIME.stockOrderDefaults;
 const ANALYST_WEIGHT_CONFIG = LUNA_RUNTIME.analystWeights || {};
 
+function normalizeResponsibilityPlan(strategyProfile = null) {
+  return strategyProfile?.strategy_context?.responsibilityPlan
+    || strategyProfile?.strategyContext?.responsibilityPlan
+    || strategyProfile?.responsibilityPlan
+    || null;
+}
+
+function applyExistingPositionStrategyBias(signalData, existingStrategyProfile = null) {
+  if (!existingStrategyProfile || signalData?.action !== ACTIONS.BUY) {
+    return {
+      signalData,
+      applied: false,
+      note: null,
+      existingStrategyProfile,
+    };
+  }
+
+  const responsibilityPlan = normalizeResponsibilityPlan(existingStrategyProfile) || {};
+  const ownerMode = String(responsibilityPlan?.ownerMode || '').trim().toLowerCase();
+  const setupType = String(existingStrategyProfile?.setup_type || '').trim() || 'unknown';
+  const lifecycleStatus = String(existingStrategyProfile?.strategy_state?.lifecycleStatus || '').trim() || 'holding';
+  const originalAmount = Number(signalData.amountUsdt || 0);
+  const originalConfidence = Number(signalData.confidence || 0);
+  let adjustedAmount = originalAmount;
+  let adjustedConfidence = originalConfidence;
+  let note = null;
+
+  if (ownerMode === 'capital_preservation') {
+    adjustedAmount = Math.max(0, Math.floor(originalAmount * 0.88));
+    adjustedConfidence = Math.max(0, Math.min(1, originalConfidence * 0.97));
+    note = `기존 전략 ${setupType}/${lifecycleStatus}가 capital_preservation이라 추가진입 크기를 더 보수적으로 조절`;
+  } else if (ownerMode === 'balanced_rotation') {
+    adjustedAmount = Math.max(0, Math.floor(originalAmount * 0.95));
+    adjustedConfidence = Math.max(0, Math.min(1, originalConfidence * 0.99));
+    note = `기존 전략 ${setupType}/${lifecycleStatus}가 balanced_rotation이라 추가진입을 소폭 완화`;
+  } else if (ownerMode === 'equity_rotation') {
+    adjustedAmount = Math.max(0, Math.floor(originalAmount * 0.96));
+    note = `기존 전략 ${setupType}/${lifecycleStatus}가 equity_rotation이라 추가진입 크기를 소폭 완화`;
+  } else if (ownerMode === 'opportunity_capture' && originalConfidence >= 0.74) {
+    adjustedAmount = Math.max(0, Math.floor(originalAmount * 1.08));
+    adjustedConfidence = Math.max(0, Math.min(1, originalConfidence * 1.01));
+    note = `기존 전략 ${setupType}/${lifecycleStatus}가 opportunity_capture라 강한 추가진입 후보로 간주`;
+  }
+
+  const nextSignalData = {
+    ...signalData,
+    amountUsdt: adjustedAmount || signalData.amountUsdt,
+    confidence: adjustedConfidence || signalData.confidence,
+    existingStrategyProfileId: existingStrategyProfile?.id || null,
+    existingStrategyState: existingStrategyProfile?.strategy_state || null,
+    existingResponsibilityPlan: responsibilityPlan,
+  };
+  if (note) {
+    nextSignalData.reasoning = `${signalData.reasoning} | ${note}`.slice(0, 500);
+  }
+
+  return {
+    signalData: nextSignalData,
+    applied: adjustedAmount !== originalAmount || adjustedConfidence !== originalConfidence,
+    note,
+    existingStrategyProfile,
+  };
+}
+
 /**
  * @typedef {Object} TradeSignal
  * @property {string} symbol
@@ -1362,7 +1426,7 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
       else if (fPct < -0.01) console.log(`  ⚠️ [루나] 펀딩레이트 음수 (${fPct.toFixed(4)}%) — 숏 스퀴즈 주의`);
     }
 
-    const signalData = {
+    let signalData = {
       symbol:          dec.symbol,
       action:          dec.action,
       amountUsdt:      dec.amount_usdt || (exchange === 'kis' || exchange === 'kis_overseas'
@@ -1375,6 +1439,22 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
     };
     if (exchange === 'kis' || exchange === 'kis_overseas') {
       signalData.amountUsdt = normalizeDecisionAmount(exchange, dec.action, signalData.amountUsdt);
+    }
+
+    let existingStrategyProfile = null;
+    if (signalData.action === ACTIONS.BUY) {
+      existingStrategyProfile = await db.getPositionStrategyProfile(dec.symbol, {
+        exchange: signalData.exchange,
+        status: 'active',
+      }).catch(() => null);
+      const strategyBias = applyExistingPositionStrategyBias(signalData, existingStrategyProfile);
+      signalData = strategyBias.signalData;
+      if (strategyBias.applied && strategyBias.note) {
+        console.log(`  🧩 [루나] ${dec.symbol}: 기존 전략 객체 반영 → ${strategyBias.note}`);
+      }
+      if (exchange === 'kis' || exchange === 'kis_overseas') {
+        signalData.amountUsdt = normalizeDecisionAmount(exchange, dec.action, signalData.amountUsdt);
+      }
     }
 
     const { valid, errors } = validateSignal(signalData);

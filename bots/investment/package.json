@@ -111,6 +111,8 @@
     "runtime:position-watch": "node scripts/position-watch.ts",
     "runtime:agent-roles": "node scripts/runtime-agent-role-report.ts --json",
     "runtime:position-parity": "node scripts/runtime-position-parity-report.ts --sync",
+    "runtime:position-strategy-audit": "node scripts/runtime-position-strategy-audit.ts",
+    "runtime:normalize-strategy-lifecycle": "node scripts/normalize-strategy-lifecycle.ts",
     "runtime:symbol-legs": "node scripts/runtime-symbol-leg-review.ts --json",
     "runtime:active-backtest": "node scripts/runtime-active-backtest.ts",
     "runtime:partial-adjust": "node scripts/partial-adjust-runner.ts",
