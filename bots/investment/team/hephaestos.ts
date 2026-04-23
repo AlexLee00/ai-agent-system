@@ -876,6 +876,7 @@ async function runBuySafetyGuards({
   action,
   signalTradeMode,
   capitalPolicy,
+  signalConfidence = null,
 }) {
   const circuit = await checkCircuitBreaker('binance', signalTradeMode);
   if (circuit.triggered) {
@@ -893,6 +894,20 @@ async function runBuySafetyGuards({
 
   const openPositionsSafe = await getOpenPositions('binance', false, signalTradeMode).catch(() => []);
   if (openPositionsSafe.length >= capitalPolicy.max_concurrent_positions) {
+    const overflowPolicy = getMaxPositionsOverflowPolicy(signalTradeMode);
+    const overflowSlots = Math.max(0, Math.round(Number(overflowPolicy?.allowOverflowSlots || 0)));
+    const minConfidence = Number(overflowPolicy?.minConfidence || 0);
+    const signalConfidenceNum = Number(signalConfidence || 0);
+    const overflowLimit = capitalPolicy.max_concurrent_positions + overflowSlots;
+    if (
+      overflowPolicy?.enabled === true
+      && overflowSlots > 0
+      && openPositionsSafe.length < overflowLimit
+      && signalConfidenceNum >= minConfidence
+    ) {
+      console.log(`  ⚖️ [자본관리] 강한 BUY 신호로 max positions overflow 허용: ${openPositionsSafe.length}/${capitalPolicy.max_concurrent_positions} → ${overflowLimit} (confidence=${signalConfidenceNum.toFixed(2)})`);
+      return null;
+    }
     const reason = `최대 포지션 도달: ${openPositionsSafe.length}/${capitalPolicy.max_concurrent_positions}`;
     console.log(`  ⛔ [자본관리] ${reason}`);
     return rejectExecution({
@@ -1699,6 +1714,11 @@ function getNormalToValidationFallbackPolicy() {
   return execution?.cryptoGuardSoftening?.byExchange?.binance?.tradeModes?.normal?.validationFallback || {};
 }
 
+function getMaxPositionsOverflowPolicy(signalTradeMode = 'normal') {
+  const execution = getInvestmentExecutionRuntimeConfig();
+  return execution?.cryptoGuardSoftening?.byExchange?.binance?.tradeModes?.[signalTradeMode || 'normal']?.maxPositions || {};
+}
+
 function getValidationLiveReentrySofteningPolicy() {
   const execution = getInvestmentExecutionRuntimeConfig();
   return execution?.cryptoGuardSoftening?.byExchange?.binance?.tradeModes?.validation?.livePositionReentry || {};
@@ -2432,6 +2452,7 @@ export async function executeSignal(signal) {
         action,
         signalTradeMode,
         capitalPolicy,
+        signalConfidence: Number(signal?.confidence || 0),
       });
       if (safetyRejected) return safetyRejected;
 

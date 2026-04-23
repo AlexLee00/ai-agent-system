@@ -15,7 +15,7 @@ import ccxt from 'ccxt';
 import { getInvestmentTradeMode, loadSecrets, isKisPaper } from './secrets.ts';
 import { getMinOrderAmount, getMinOrderRatio } from './order-rules.ts';
 import { fetchFearGreedIndex } from '../team/argos.ts';
-import { getInvestmentExecutionRuntimeConfig } from './runtime-config.ts';
+import { getInvestmentExecutionRuntimeConfig, getInvestmentSyncRuntimeConfig } from './runtime-config.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const _require  = createRequire(import.meta.url);
@@ -414,6 +414,18 @@ export async function getOpenPositions(exchange = null, paper = false, tradeMode
     if (tradeMode && !unifyLiveBinance) {
       params.push(tradeMode);
       conditions.push(`COALESCE(trade_mode, 'normal') = $${params.length}`);
+    }
+    if (unifyLiveBinance) {
+      const syncRuntime = getInvestmentSyncRuntimeConfig();
+      const dustThreshold = Number(syncRuntime?.cryptoMinNotionalUsdt || 10);
+      params.push(dustThreshold);
+      conditions.push(`((amount * avg_price) >= $${params.length} OR EXISTS (
+        SELECT 1
+        FROM investment.position_strategy_profiles psp
+        WHERE psp.symbol = positions.symbol
+          AND psp.exchange = positions.exchange
+          AND psp.status = 'active'
+      ))`);
     }
     return pgPool.query(
       SCHEMA,

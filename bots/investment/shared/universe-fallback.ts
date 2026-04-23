@@ -67,13 +67,13 @@ export async function resolveSymbolsWithFallback({
 /**
  * 현재 보유 live 포지션 심볼을 후보군에 병합
  */
-export async function appendHeldSymbols(symbols, exchange) {
+export async function appendHeldSymbols(symbols, exchange, heldSymbolsOverride = null) {
   try {
     await db.initSchema();
-    const positions = await db.getAllPositions(exchange, false);
-    const heldSymbols = positions
-      .map(p => p.symbol)
-      .filter(s => !symbols.includes(s));
+    const heldSymbolsSource = Array.isArray(heldSymbolsOverride)
+      ? heldSymbolsOverride
+      : (await db.getAllPositions(exchange, false)).map((p) => p.symbol);
+    const heldSymbols = heldSymbolsSource.filter((s) => !symbols.includes(s));
     if (heldSymbols.length > 0) {
       console.log(`  📌 보유 포지션 추가: ${heldSymbols.join(', ')}`);
       return [...symbols, ...heldSymbols];

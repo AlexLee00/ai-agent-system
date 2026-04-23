@@ -43,6 +43,7 @@ import { runDecisionExecutionPipeline } from '../shared/pipeline-decision-runner
 import { finishPipelineRun } from '../shared/pipeline-db.ts';
 
 import { processAllPendingSignals, fetchUsdtBalance } from '../team/hephaestos.ts';
+import { getInvestmentSyncRuntimeConfig } from '../shared/runtime-config.ts';
 
 process.env.INVESTMENT_MARKET = 'crypto';
 
@@ -75,6 +76,35 @@ function getHeldMergeStats(baseSymbols = [], heldSymbols = []) {
     heldAddedCount += 1;
   }
   return { heldAddedCount };
+}
+
+async function getManagedHeldSymbols() {
+  const syncRuntime = getInvestmentSyncRuntimeConfig();
+  const dustThreshold = Number(syncRuntime?.cryptoMinNotionalUsdt || 10);
+  const rows = await db.query(
+    `
+      SELECT
+        p.symbol,
+        (COALESCE(p.amount, 0) * COALESCE(p.avg_price, 0)) AS notional_usdt,
+        EXISTS (
+          SELECT 1
+          FROM investment.position_strategy_profiles psp
+          WHERE psp.symbol = p.symbol
+            AND psp.exchange = p.exchange
+            AND psp.status = 'active'
+        ) AS has_active_profile
+      FROM investment.positions p
+      WHERE p.exchange = 'binance'
+        AND p.paper = false
+        AND p.amount > 0
+      ORDER BY p.symbol
+    `,
+    [],
+  ).catch(() => []);
+
+  return rows
+    .filter((row) => Number(row.notional_usdt || 0) >= dustThreshold || row.has_active_profile === true)
+    .map((row) => row.symbol);
 }
 
 function fetchBtcPrice() {
@@ -363,10 +393,10 @@ if (isDirectExecution(import.meta.url)) {
         }
       }
 
-      const heldSymbols = (await db.getAllPositions('binance', false)).map((row) => row.symbol);
+      const heldSymbols = await getManagedHeldSymbols();
       universeMeta.heldSymbolCount = heldSymbols.length;
       universeMeta.heldAddedCount = getHeldMergeStats(symbols, heldSymbols).heldAddedCount;
-      symbols = await appendHeldSymbols(symbols, 'binance');
+      symbols = await appendHeldSymbols(symbols, 'binance', heldSymbols);
 
       console.log(getMarketExecutionModeInfo('crypto', '암호화폐').logLine);
 

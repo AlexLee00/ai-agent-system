@@ -339,6 +339,11 @@ const DEFAULT_RUNTIME_CONFIG = {
                 allowOverflowSlots: 1,
                 reductionMultiplier: 0.70,
               },
+              maxPositions: {
+                enabled: true,
+                allowOverflowSlots: 1,
+                minConfidence: 0.72,
+              },
               validationFallback: {
                 enabled: true,
                 reductionMultiplier: 0.30,
