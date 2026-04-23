@@ -130,6 +130,42 @@ export async function initSchema() {
   `);
 
   await run(`
+    CREATE TABLE IF NOT EXISTS position_strategy_profiles (
+      id                   TEXT DEFAULT gen_random_uuid()::text PRIMARY KEY,
+      symbol               TEXT NOT NULL,
+      exchange             TEXT NOT NULL,
+      signal_id            TEXT,
+      trade_mode           TEXT DEFAULT 'normal',
+      status               TEXT DEFAULT 'active',
+      strategy_name        TEXT,
+      strategy_quality_score DOUBLE PRECISION,
+      setup_type           TEXT,
+      thesis               TEXT,
+      monitoring_plan      JSONB DEFAULT '{}'::jsonb,
+      exit_plan            JSONB DEFAULT '{}'::jsonb,
+      backtest_plan        JSONB DEFAULT '{}'::jsonb,
+      market_context       JSONB DEFAULT '{}'::jsonb,
+      strategy_context     JSONB DEFAULT '{}'::jsonb,
+      created_at           TIMESTAMPTZ DEFAULT now(),
+      updated_at           TIMESTAMPTZ DEFAULT now(),
+      closed_at            TIMESTAMPTZ
+    )
+  `);
+  try {
+    await run(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_position_strategy_profiles_active_scope
+      ON position_strategy_profiles(symbol, exchange, trade_mode)
+      WHERE status = 'active'
+    `);
+  } catch { /* 무시 */ }
+  try {
+    await run(`
+      CREATE INDEX IF NOT EXISTS idx_position_strategy_profiles_signal_id
+      ON position_strategy_profiles(signal_id, created_at DESC)
+    `);
+  } catch { /* 무시 */ }
+
+  await run(`
     CREATE TABLE IF NOT EXISTS risk_log (
       id           TEXT DEFAULT gen_random_uuid()::text,
       trace_id     TEXT UNIQUE NOT NULL,
@@ -898,6 +934,7 @@ export async function deletePosition(symbol, { exchange = null, paper = null, tr
   }
 
   await run(`DELETE FROM positions WHERE ${conditions.join(' AND ')}`, params);
+  await closePositionStrategyProfile(symbol, { exchange, tradeMode }).catch(() => {});
 }
 
 // ─── 집계 ───────────────────────────────────────────────────────────
@@ -1060,6 +1097,185 @@ export async function recordStrategyResult(strategyName, won) {
         win_rate = (COALESCE(win_rate, 0.5) * applied_count + $1) / (applied_count + 1)
     WHERE strategy_name = $2
   `, [won ? 1 : 0, strategyName]);
+}
+
+export async function getLatestVectorbtBacktestForSymbol(symbol, days = 120) {
+  if (!symbol) return null;
+  return get(
+    `SELECT symbol, days, tp_pct, sl_pct, label, status, sharpe, total_return, max_drawdown, win_rate, total_trades, metadata, created_at
+     FROM vectorbt_backtest_runs
+     WHERE symbol = $1
+       AND created_at > now() - ($2::int || ' days')::interval
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [symbol, days],
+  );
+}
+
+export async function getLatestMarketRegimeSnapshot(market) {
+  if (!market) return null;
+  return get(
+    `SELECT id, market, regime, confidence, indicators, captured_at
+     FROM market_regime_snapshots
+     WHERE market = $1
+     ORDER BY captured_at DESC
+     LIMIT 1`,
+    [market],
+  );
+}
+
+export async function getPositionStrategyProfile(symbol, {
+  exchange = null,
+  tradeMode = null,
+  status = 'active',
+} = {}) {
+  if (!symbol) return null;
+  const conditions = [`symbol = $1`];
+  const params = [symbol];
+
+  if (exchange) {
+    params.push(exchange);
+    conditions.push(`exchange = $${params.length}`);
+  }
+  if (tradeMode) {
+    params.push(tradeMode);
+    conditions.push(`COALESCE(trade_mode, 'normal') = $${params.length}`);
+  }
+  if (status) {
+    params.push(status);
+    conditions.push(`status = $${params.length}`);
+  }
+
+  return get(
+    `SELECT *
+     FROM position_strategy_profiles
+     WHERE ${conditions.join(' AND ')}
+     ORDER BY updated_at DESC, created_at DESC
+     LIMIT 1`,
+    params,
+  );
+}
+
+export async function upsertPositionStrategyProfile({
+  symbol,
+  exchange,
+  signalId = null,
+  tradeMode = null,
+  strategyName = null,
+  strategyQualityScore = null,
+  setupType = null,
+  thesis = null,
+  monitoringPlan = {},
+  exitPlan = {},
+  backtestPlan = {},
+  marketContext = {},
+  strategyContext = {},
+} = {}) {
+  if (!symbol || !exchange) return null;
+  const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
+  const updated = await get(
+    `UPDATE position_strategy_profiles
+     SET signal_id = $1,
+         strategy_name = $2,
+         strategy_quality_score = $3,
+         setup_type = $4,
+         thesis = $5,
+         monitoring_plan = $6,
+         exit_plan = $7,
+         backtest_plan = $8,
+         market_context = $9,
+         strategy_context = $10,
+         updated_at = now()
+     WHERE symbol = $11
+       AND exchange = $12
+       AND COALESCE(trade_mode, 'normal') = $13
+       AND status = 'active'
+     RETURNING *`,
+    [
+      signalId,
+      strategyName,
+      strategyQualityScore,
+      setupType,
+      thesis,
+      JSON.stringify(monitoringPlan || {}),
+      JSON.stringify(exitPlan || {}),
+      JSON.stringify(backtestPlan || {}),
+      JSON.stringify(marketContext || {}),
+      JSON.stringify(strategyContext || {}),
+      symbol,
+      exchange,
+      effectiveTradeMode,
+    ],
+  );
+  if (updated) return updated;
+
+  return get(
+    `INSERT INTO position_strategy_profiles (
+       symbol, exchange, signal_id, trade_mode, status,
+       strategy_name, strategy_quality_score, setup_type, thesis,
+       monitoring_plan, exit_plan, backtest_plan, market_context, strategy_context
+     ) VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, $8, $9, $10, $11, $12, $13)
+     RETURNING *`,
+    [
+      symbol,
+      exchange,
+      signalId,
+      effectiveTradeMode,
+      strategyName,
+      strategyQualityScore,
+      setupType,
+      thesis,
+      JSON.stringify(monitoringPlan || {}),
+      JSON.stringify(exitPlan || {}),
+      JSON.stringify(backtestPlan || {}),
+      JSON.stringify(marketContext || {}),
+      JSON.stringify(strategyContext || {}),
+    ],
+  );
+}
+
+export async function closePositionStrategyProfile(symbol, {
+  exchange = null,
+  tradeMode = null,
+  signalId = null,
+} = {}) {
+  if (!symbol) return null;
+  const conditions = [`symbol = $1`];
+  const params = [symbol];
+
+  if (exchange) {
+    params.push(exchange);
+    conditions.push(`exchange = $${params.length}`);
+  }
+  if (tradeMode) {
+    params.push(tradeMode);
+    conditions.push(`COALESCE(trade_mode, 'normal') = $${params.length}`);
+  }
+  if (signalId) {
+    params.push(signalId);
+    conditions.push(`signal_id = $${params.length}`);
+  }
+
+  params.push('active');
+  conditions.push(`status = $${params.length}`);
+
+  const row = await get(
+    `SELECT * FROM position_strategy_profiles
+     WHERE ${conditions.join(' AND ')}
+     ORDER BY updated_at DESC
+     LIMIT 1`,
+    params,
+  );
+  if (!row?.id) return null;
+  return get(
+    `UPDATE position_strategy_profiles
+     SET status = 'closed',
+         closed_at = now(),
+         updated_at = now()
+     WHERE id = $1
+     RETURNING *`,
+    [row.id],
+  );
 }
 
 // ─── risk_log ────────────────────────────────────────────────────────
@@ -1231,6 +1447,8 @@ export default {
   insertScreeningHistory,
   getRecentScreeningSymbols,
   upsertStrategy, getActiveStrategies, recordStrategyResult,
+  getLatestVectorbtBacktestForSymbol, getLatestMarketRegimeSnapshot,
+  getPositionStrategyProfile, upsertPositionStrategyProfile, closePositionStrategyProfile,
   insertRiskLog,
   insertAssetSnapshot, getLatestEquity, getEquityHistory,
   insertMarketRegimeSnapshot,

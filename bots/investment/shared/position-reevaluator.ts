@@ -493,7 +493,13 @@ export async function reevaluateOpenPositions({
       continue;
     }
 
-    const analyses = await db.getRecentAnalysis(position.symbol, minutesBack, position.exchange).catch(() => []);
+    const [analyses, strategyProfile] = await Promise.all([
+      db.getRecentAnalysis(position.symbol, minutesBack, position.exchange).catch(() => []),
+      db.getPositionStrategyProfile(position.symbol, {
+        exchange: position.exchange,
+        tradeMode: position.trade_mode || 'normal',
+      }).catch(() => null),
+    ]);
     let indicatorAnalyses = [];
     let indicatorAnalysis = null;
     if (liveIndicators) {
@@ -527,8 +533,21 @@ export async function reevaluateOpenPositions({
         avgPrice: safeNumber(position.avg_price),
         unrealizedPnl: safeNumber(position.unrealized_pnl),
         entryTime: position.entry_time || null,
+        strategyProfile: strategyProfile ? {
+          strategyName: strategyProfile.strategy_name || null,
+          setupType: strategyProfile.setup_type || null,
+          thesis: strategyProfile.thesis || null,
+        } : null,
       },
-      analysisSnapshot: analysisSummary,
+      analysisSnapshot: {
+        ...analysisSummary,
+        strategyProfile: strategyProfile ? {
+          strategyName: strategyProfile.strategy_name || null,
+          setupType: strategyProfile.setup_type || null,
+          monitoringPlan: strategyProfile.monitoring_plan || {},
+          exitPlan: strategyProfile.exit_plan || {},
+        } : null,
+      },
     });
   }
 

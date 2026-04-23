@@ -1,5 +1,6 @@
 // @ts-nocheck
 import * as db from '../shared/db.ts';
+import { createOrUpdatePositionStrategyProfile } from '../shared/strategy-profile.ts';
 import { SIGNAL_STATUS } from '../shared/signal.ts';
 import { loadAnalysesForSession, loadLatestNodePayload, buildAnalystSignals } from './helpers.ts';
 
@@ -66,6 +67,13 @@ async function run({ sessionId, market, symbol, decision: decisionOverride = nul
       if (risk.adjustedAmount != null) {
         await db.updateSignalAmount(signalId, risk.adjustedAmount);
       }
+      await createOrUpdatePositionStrategyProfile({
+        signalId,
+        symbol,
+        exchange: market,
+        tradeMode: decision?.trade_mode || null,
+        decision,
+      }).catch(() => null);
     } else {
       status = SIGNAL_STATUS.REJECTED;
       await db.updateSignalBlock(signalId, {
