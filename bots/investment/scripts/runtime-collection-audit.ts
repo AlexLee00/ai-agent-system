@@ -76,6 +76,39 @@ function stageStatus(value, details = null) {
   return { implemented: Boolean(value), details };
 }
 
+export function inferObservedCollectQuality({ explicitQuality = null, nodeCoverage = {}, market = 'unknown' } = {}) {
+  if (explicitQuality && explicitQuality.status) {
+    return {
+      quality: explicitQuality,
+      source: 'explicit_meta',
+    };
+  }
+
+  const nodeIds = new Set(Array.isArray(nodeCoverage?.nodeIds) ? nodeCoverage.nodeIds : []);
+  const hasGateway = nodeIds.has('L06');
+  const hasCore = nodeIds.has('L02') && nodeIds.has('L03');
+  const hasMarketEnrichment = market === 'binance' ? nodeIds.has('L05') : nodeIds.has('L04');
+  const hasMeaningfulCoverage = Number(nodeCoverage?.total || 0) > 0 && hasGateway && hasCore;
+
+  if (hasMeaningfulCoverage) {
+    return {
+      quality: {
+        status: 'ready',
+        reasons: ['observed_node_coverage_without_quality_meta'],
+        collectMode: hasMarketEnrichment ? 'observed_screening' : 'observed_core',
+        readinessScore: hasMarketEnrichment ? 0.95 : 0.85,
+        observed: true,
+      },
+      source: 'observed_node_coverage',
+    };
+  }
+
+  return {
+    quality: { status: 'unknown', readinessScore: 0 },
+    source: 'missing_meta',
+  };
+}
+
 async function auditMarket(market, hours = 24) {
   const [latestRun, latestScreeningRun, latestMaintenanceRun, maintenanceUniverse] = await Promise.all([
     loadLatestRun(market, hours),
@@ -99,13 +132,19 @@ async function auditMarket(market, hours = 24) {
   const collectWarnings = Array.isArray(meta.collect_warnings) ? meta.collect_warnings : [];
   const screeningMetrics = latestScreeningRun?.meta?.collect_metrics || {};
   const maintenanceMetrics = latestMaintenanceRun?.meta?.collect_metrics || {};
-  const effectiveQuality =
+  const explicitQuality =
     collectQuality
     || latestMaintenanceRun?.meta?.collect_quality
     || latestMaintenanceRun?.meta?.collect_metrics?.collectQuality
     || latestScreeningRun?.meta?.collect_quality
     || latestScreeningRun?.meta?.collect_metrics?.collectQuality
     || null;
+  const qualityInference = inferObservedCollectQuality({
+    explicitQuality,
+    nodeCoverage,
+    market,
+  });
+  const effectiveQuality = qualityInference.quality;
 
   const audit = {
     market,
@@ -135,7 +174,8 @@ async function auditMarket(market, hours = 24) {
       || (maintenanceUniverse.dustSymbols || []).length
       || 0,
     ),
-    collectQuality: effectiveQuality || { status: 'unknown', readinessScore: 0 },
+    collectQuality: effectiveQuality,
+    collectQualitySource: qualityInference.source,
     collectWarnings,
     nodeCoverage,
     screeningSessionId: latestScreeningRun?.session_id || null,
@@ -180,6 +220,8 @@ async function auditMarket(market, hours = 24) {
       ),
       decisionHandoff: stageStatus(
         Boolean(
+          qualityInference.source === 'observed_node_coverage'
+          ||
           latestScreeningRun?.meta?.collect_quality
           || latestScreeningRun?.meta?.collect_metrics?.collectQuality
           || latestMaintenanceRun?.meta?.collect_quality
@@ -188,13 +230,15 @@ async function auditMarket(market, hours = 24) {
           || latestRun?.meta?.collect_metrics?.collectQuality,
         ),
         (
+          qualityInference.source === 'observed_node_coverage'
+          ||
           latestScreeningRun?.meta?.collect_quality
           || latestScreeningRun?.meta?.collect_metrics?.collectQuality
           || latestMaintenanceRun?.meta?.collect_quality
           || latestMaintenanceRun?.meta?.collect_metrics?.collectQuality
           || latestRun?.meta?.collect_quality
           || latestRun?.meta?.collect_metrics?.collectQuality
-        ) ? 'pipeline meta persisted' : 'collect meta 없음',
+        ) ? (qualityInference.source === 'observed_node_coverage' ? 'observed node coverage fallback' : 'pipeline meta persisted') : 'collect meta 없음',
       ),
     },
   };
