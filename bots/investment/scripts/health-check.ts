@@ -21,7 +21,6 @@ import { runCollectionAudit } from './runtime-collection-audit.ts';
 import { backfillTradeIncidentLinks } from './backfill-trade-incident-links.ts';
 import { buildPositionStrategyHygieneRemediationPlan, runPositionStrategyHygiene } from './runtime-position-strategy-hygiene.ts';
 import { runPositionStrategyRemediation } from './runtime-position-strategy-remediation.ts';
-import { buildPositionStrategyRemediationHistory } from './runtime-position-strategy-remediation-history.ts';
 import { loadExecutionRiskApprovalGuardHealth } from './health-report-support.ts';
 
 const require = createRequire(import.meta.url);
@@ -572,7 +571,7 @@ async function main() {
   try {
     const hygiene = await runPositionStrategyHygiene({ json: true });
     const remediation = await runPositionStrategyRemediation({ json: true }).catch(() => null);
-    const remediationHistory = await buildPositionStrategyRemediationHistory({ json: true }).catch(() => null);
+    const remediationHistory = remediation?.remediationHistory || null;
     const key = 'position-strategy-remediation';
     const legacyKey = 'position-strategy-hygiene';
     if (hygiene?.decision?.status === 'position_strategy_hygiene_attention') {

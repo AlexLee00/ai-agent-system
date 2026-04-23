@@ -29,7 +29,6 @@ import { runExecutionAttachBackfill } from './runtime-execution-attach-backfill.
 import { buildRuntimePositionStrategyAudit } from './runtime-position-strategy-audit.ts';
 import { buildPositionStrategyHygieneRemediationPlan, runPositionStrategyHygiene } from './runtime-position-strategy-hygiene.ts';
 import { runPositionStrategyRemediation } from './runtime-position-strategy-remediation.ts';
-import { buildPositionStrategyRemediationHistory } from './runtime-position-strategy-remediation-history.ts';
 import { normalizeDuplicateStrategyProfiles } from './normalize-duplicate-strategy-profiles.ts';
 import { retireOrphanStrategyProfiles } from './retire-orphan-strategy-profiles.ts';
 import { backfillTradeIncidentLinks } from './backfill-trade-incident-links.ts';
@@ -1310,7 +1309,7 @@ async function buildReport() {
   const positionStrategyAudit = await buildRuntimePositionStrategyAudit({ json: true }).catch(() => null);
   const positionStrategyHygiene = await runPositionStrategyHygiene({ json: true }).catch(() => null);
   const positionStrategyRemediation = await runPositionStrategyRemediation({ json: true }).catch(() => null);
-  const positionStrategyRemediationHistory = await buildPositionStrategyRemediationHistory({ json: true }).catch(() => null);
+  const positionStrategyRemediationHistory = positionStrategyRemediation?.remediationHistory || null;
   const hygieneRecommendedExchange = positionStrategyHygiene?.recommendedExchange?.exchange || null;
   const duplicateStrategyNormalization = await normalizeDuplicateStrategyProfiles({ apply: false, exchange: hygieneRecommendedExchange }).catch(() => null);
   const orphanStrategyRetirement = await retireOrphanStrategyProfiles({ apply: false, exchange: hygieneRecommendedExchange }).catch(() => null);

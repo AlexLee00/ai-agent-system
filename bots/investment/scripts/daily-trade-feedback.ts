@@ -32,7 +32,6 @@ import { buildRuntimeLearningLoopReport } from './runtime-learning-loop-report.t
 import { buildRuntimePositionStrategyAudit } from './runtime-position-strategy-audit.ts';
 import { buildPositionStrategyHygieneRemediationPlan, runPositionStrategyHygiene } from './runtime-position-strategy-hygiene.ts';
 import { runPositionStrategyRemediation } from './runtime-position-strategy-remediation.ts';
-import { buildPositionStrategyRemediationHistory } from './runtime-position-strategy-remediation-history.ts';
 const require = createRequire(import.meta.url);
 const LATEST_OPS_SNAPSHOT_FILE = '/Users/alexlee/projects/ai-agent-system/bots/investment/output/ops/parallel-ops-snapshot.json';
 const RAG_RUNTIME = getInvestmentRagRuntimeConfig();
@@ -440,9 +439,7 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
   const positionStrategyRemediationSummary = await runPositionStrategyRemediation({ json: true }).catch((error) => ({
     error: String(error?.message || error),
   }));
-  const positionStrategyRemediationHistorySummary = await buildPositionStrategyRemediationHistory({ json: true }).catch((error) => ({
-    error: String(error?.message || error),
-  }));
+  const positionStrategyRemediationHistorySummary = positionStrategyRemediationSummary?.remediationHistory || null;
   const feedback = await buildDailyFeedback(dateKst, trades, analystAccuracy);
   const hygieneRemediationPlan = positionStrategyHygieneSummary?.remediationPlan
     || buildPositionStrategyHygieneRemediationPlan(positionStrategyHygieneSummary);
