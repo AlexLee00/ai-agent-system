@@ -38,6 +38,7 @@ export const ANALYST_TYPES = Object.freeze({
   TA:          'ta',          // 기술분석 (아리아 — 단일 타임프레임)
   TA_MTF:      'ta_mtf',      // 기술분석 멀티타임프레임 (아리아)
   ONCHAIN:     'onchain',     // 온체인·파생상품 (오라클)
+  MARKET_FLOW: 'market_flow', // 주식 flow/event 유지감시 (장중 수급·이벤트)
   MACRO:       'macro',       // 거시경제 (오라클)
   NEWS:        'news',        // 뉴스 (헤르메스)
   SENTIMENT:   'sentiment',   // 커뮤니티 감성 (소피아)

@@ -169,6 +169,8 @@ function buildAnalystWeights(exchange = 'binance') {
   return normalizeWeights({
     [ANALYST_TYPES.TA_MTF]: profile?.taMtf ?? fallback.taMtf ?? ANALYST_WEIGHTS[ANALYST_TYPES.TA_MTF],
     [ANALYST_TYPES.ONCHAIN]: profile?.onchain ?? fallback.onchain ?? ANALYST_WEIGHTS[ANALYST_TYPES.ONCHAIN],
+    [ANALYST_TYPES.MARKET_FLOW]:
+      (isStock ? (profile?.marketFlow ?? fallback.marketFlow ?? ANALYST_WEIGHTS[ANALYST_TYPES.MARKET_FLOW]) : 0),
     [ANALYST_TYPES.SENTINEL]: sentinelBase,
     [ANALYST_TYPES.SENTIMENT]: profile?.sentiment ?? fallback.sentiment ?? ANALYST_WEIGHTS[ANALYST_TYPES.SENTIMENT],
     [ANALYST_TYPES.NEWS]: profile?.news ?? fallback.news ?? ANALYST_WEIGHTS[ANALYST_TYPES.NEWS],
@@ -429,6 +431,7 @@ function buildPortfolioPrompt(symbols, exchange = 'binance', exitSummary = null)
 const ANALYST_WEIGHTS = {
   [ANALYST_TYPES.TA_MTF]:    0.35,
   [ANALYST_TYPES.ONCHAIN]:   0.25,
+  [ANALYST_TYPES.MARKET_FLOW]: 0.18,
   [ANALYST_TYPES.SENTINEL]:  0.35,
   [ANALYST_TYPES.SENTIMENT]: 0.20,
   [ANALYST_TYPES.NEWS]:      0.15,

@@ -2,6 +2,7 @@
 import l01PreScreen from './l01-pre-screen.ts';
 import l02TaAnalysis from './l02-ta-analysis.ts';
 import l03Sentinel from './l03-sentinel.ts';
+import l04MarketFlow from './l04-market-flow.ts';
 import l05Onchain from './l05-onchain.ts';
 import l06PortfolioContext from './l06-portfolio-context.ts';
 import l10SignalFusion from './l10-signal-fusion.ts';
@@ -20,6 +21,7 @@ export const INVESTMENT_NODES = [
   l01PreScreen,
   l02TaAnalysis,
   l03Sentinel,
+  l04MarketFlow,
   l05Onchain,
   l06PortfolioContext,
   l10SignalFusion,

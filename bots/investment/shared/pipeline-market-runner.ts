@@ -7,19 +7,20 @@ import { buildPreScreenPlannerContext } from './pre-screen-planner-bridge.ts';
 
 const COLLECT_NODE_SETS = {
   binance: ['L06', 'L02', 'L03', 'L05'],
-  kis: ['L06', 'L02', 'L03'],
-  kis_overseas: ['L06', 'L02', 'L03'],
+  kis: ['L06', 'L02', 'L03', 'L04'],
+  kis_overseas: ['L06', 'L02', 'L03', 'L04'],
 };
 
 const COLLECT_CONCURRENCY_LIMIT = {
   binance: 6,
-  kis: 4,
-  kis_overseas: 4,
+  kis: 5,
+  kis_overseas: 5,
 };
 
-const ENRICHMENT_NODE_IDS = new Set(['L03', 'L05']);
+const ENRICHMENT_NODE_IDS = new Set(['L03', 'L04', 'L05']);
 const ENRICHMENT_NODE_LABELS = {
   L03: '센티널(뉴스·감성)',
+  L04: '주식 flow/event',
   L05: '온체인',
 };
 

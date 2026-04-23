@@ -270,6 +270,11 @@ async function kisRequest(method, endpoint, { trId, params, body, paper } = {}, 
 
 /** 국내주식 현재가 (원) */
 export async function getDomesticPrice(symbol, paper) {
+  const snapshot = await getDomesticQuoteSnapshot(symbol, paper);
+  return snapshot.price;
+}
+
+export async function getDomesticQuoteSnapshot(symbol, paper) {
   const data  = await kisRequest('GET', '/uapi/domestic-stock/v1/quotations/inquire-price', {
     trId:   TR_ID.DOMESTIC_PRICE,
     params: { FID_COND_MRKT_DIV_CODE: 'J', FID_INPUT_ISCD: symbol },
@@ -277,11 +282,11 @@ export async function getDomesticPrice(symbol, paper) {
   });
   const output = data.output || {};
   const price = parseInt(output.stck_prpr || '0', 10);
+  const volume = parseInt(output.acml_vol || '0', 10);
   if (!price) {
     const marketName = output.rprs_mrkt_kor_name || '시장정보없음';
     const statusCode = output.iscd_stat_cls_code || 'unknown';
     const tempStop = output.temp_stop_yn === 'Y' ? '매매정지' : '정지표시없음';
-    const volume = parseInt(output.acml_vol || '0', 10);
     const hasZeroSnapshot = [
       output.stck_prpr,
       output.stck_oprc,
@@ -300,7 +305,17 @@ export async function getDomesticPrice(symbol, paper) {
       + `(응답: ${JSON.stringify(output)})`,
     );
   }
-  return price;
+  return {
+    symbol,
+    price,
+    volume,
+    marketName: output.rprs_mrkt_kor_name || '시장정보없음',
+    statusCode: output.iscd_stat_cls_code || 'unknown',
+    tempStop: output.temp_stop_yn === 'Y',
+    open: parseInt(output.stck_oprc || '0', 10),
+    high: parseInt(output.stck_hgpr || '0', 10),
+    low: parseInt(output.stck_lwpr || '0', 10),
+  };
 }
 
 /** 해외주식 현재가 (USD)
@@ -308,6 +323,11 @@ export async function getDomesticPrice(symbol, paper) {
  *  - 주문 EXCD: NASD/NYSE (order API 요구)
  */
 export async function getOverseasPrice(symbol) {
+  const snapshot = await getOverseasQuoteSnapshot(symbol);
+  return { price: snapshot.price, excd: snapshot.excd };
+}
+
+export async function getOverseasQuoteSnapshot(symbol) {
   // 가격조회용 (shorter code)
   const PRICE_EXCD = {
     AAPL: 'NAS', MSFT: 'NAS', AMZN: 'NAS', GOOGL: 'NAS', META: 'NAS',
@@ -351,7 +371,16 @@ export async function getOverseasPrice(symbol) {
     const data  = await tryFetch(priceExcd);
     const price = parseFloat(data.output?.last || '0');
     if (!price) throw new Error(`${symbol} 해외 현재가 조회 실패 (응답: ${JSON.stringify(data.output)})`);
-    return { price, excd: ORDER_EXCD[symbol] };
+    return {
+      symbol,
+      price,
+      excd: ORDER_EXCD[symbol],
+      priceExcd,
+      open: parseFloat(data.output?.open || '0'),
+      high: parseFloat(data.output?.high || '0'),
+      low: parseFloat(data.output?.low || '0'),
+      changePct: parseFloat(data.output?.rate || data.output?.prdy_vrss_rt || '0'),
+    };
   }
 
   // ② 맵에 없으면 NAS → NYS → AMX 순으로 자동 탐색
@@ -361,7 +390,16 @@ export async function getOverseasPrice(symbol) {
       const price = parseFloat(data.output?.last || '0');
       if (price > 0) {
         console.log(`  ℹ️ [KIS] ${symbol} 거래소 자동 탐지: ${priceCode} → PRICE_EXCD 맵에 추가 권장`);
-        return { price, excd: orderCode };
+        return {
+          symbol,
+          price,
+          excd: orderCode,
+          priceExcd: priceCode,
+          open: parseFloat(data.output?.open || '0'),
+          high: parseFloat(data.output?.high || '0'),
+          low: parseFloat(data.output?.low || '0'),
+          changePct: parseFloat(data.output?.rate || data.output?.prdy_vrss_rt || '0'),
+        };
       }
     } catch { /* 다음 거래소 시도 */ }
   }
