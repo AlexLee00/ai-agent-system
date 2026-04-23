@@ -179,6 +179,8 @@ export async function runPositionStrategyRemediationContractSmoke() {
   assert.ok(Object.prototype.hasOwnProperty.call(result.remediationFlat || {}, 'refreshCommand'));
   assert.ok(Object.prototype.hasOwnProperty.call(result.remediationFlat || {}, 'actionReportCommand'));
   assert.ok(Object.prototype.hasOwnProperty.call(result.remediationFlat || {}, 'actionRefreshCommand'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result.remediationFlat || {}, 'trendHistoryCount'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result.remediationFlat || {}, 'trendDuplicateDelta'));
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationStatus'));
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationHeadline'));
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationCounts'));
@@ -232,7 +234,9 @@ export async function runPositionStrategyRemediationContractSmoke() {
       && Object.prototype.hasOwnProperty.call(result.remediationFlat || {}, 'refreshNeeded')
       && Object.prototype.hasOwnProperty.call(result.remediationFlat || {}, 'refreshCommand')
       && Object.prototype.hasOwnProperty.call(result.remediationFlat || {}, 'actionReportCommand')
-      && Object.prototype.hasOwnProperty.call(result.remediationFlat || {}, 'actionRefreshCommand'),
+      && Object.prototype.hasOwnProperty.call(result.remediationFlat || {}, 'actionRefreshCommand')
+      && Object.prototype.hasOwnProperty.call(result.remediationFlat || {}, 'trendHistoryCount')
+      && Object.prototype.hasOwnProperty.call(result.remediationFlat || {}, 'trendDuplicateDelta'),
     hasTransitionAliasFields:
       Object.prototype.hasOwnProperty.call(result, 'remediationNextCommandChanged')
       && Object.prototype.hasOwnProperty.call(result, 'remediationNextCommandPrevious')
