@@ -5,7 +5,15 @@ import assert from 'assert/strict';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { buildRiskApprovalModeAuditDecision } from './runtime-risk-approval-mode-audit.ts';
 
-function riskApproval({ byMode = [], byPreviewStatus = {}, applied = 0, rejected = 0 } = {}) {
+function riskApproval({
+  byMode = [],
+  byPreviewStatus = {},
+  applied = 0,
+  rejected = 0,
+  outcomeClosed = 0,
+  outcomePnlNet = 0,
+  outcomeAvgPnlPercent = null,
+} = {}) {
   return {
     summary: {
       application: {
@@ -15,6 +23,19 @@ function riskApproval({ byMode = [], byPreviewStatus = {}, applied = 0, rejected
       },
       amount: {
         byPreviewStatus,
+      },
+      outcome: {
+        total: {
+          closed: outcomeClosed,
+          pnlNet: outcomePnlNet,
+          avgPnlPercent: outcomeAvgPnlPercent,
+        },
+        byMode: outcomeClosed > 0 ? [{
+          mode: 'assist',
+          closed: outcomeClosed,
+          pnlNet: outcomePnlNet,
+          avgPnlPercent: outcomeAvgPnlPercent,
+        }] : [],
       },
     },
   };
@@ -61,6 +82,22 @@ export function runRiskApprovalModeAuditSmoke() {
   });
   assert.equal(modeWatch.status, 'risk_approval_mode_audit_mode_watch');
 
+  const outcomeAttention = decide({
+    riskApproval: riskApproval({
+      outcomeClosed: 3,
+      outcomePnlNet: -5,
+      outcomeAvgPnlPercent: -0.3,
+    }),
+    readiness: readiness({
+      mode: 'assist',
+      status: 'risk_approval_readiness_blocked',
+      blockers: ['리스크 승인 사후 성과 음수'],
+    }),
+  });
+  assert.equal(outcomeAttention.status, 'risk_approval_mode_audit_attention');
+  assert.match(outcomeAttention.headline, /사후 성과/);
+  assert.equal(outcomeAttention.metrics.outcomeClosed, 3);
+
   const sampling = decide({
     riskApproval: riskApproval(),
     readiness: readiness({ mode: 'assist', status: 'risk_approval_readiness_assist_observe' }),
@@ -85,6 +122,7 @@ export function runRiskApprovalModeAuditSmoke() {
     shadowDrift,
     blockedApplied,
     modeWatch,
+    outcomeAttention,
     sampling,
     previewWatch,
   };

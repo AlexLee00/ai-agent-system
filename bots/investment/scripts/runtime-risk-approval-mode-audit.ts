@@ -26,8 +26,11 @@ export function buildRiskApprovalModeAuditDecision({ riskApproval, readiness }) 
   const summary = riskApproval.summary || {};
   const readinessDecision = readiness.decision || {};
   const currentMode = readinessDecision.currentMode || readiness.modeConfig?.mode || 'shadow';
-  const blockerCount = Array.isArray(readinessDecision.blockers) ? readinessDecision.blockers.length : 0;
+  const blockers = Array.isArray(readinessDecision.blockers) ? readinessDecision.blockers : [];
+  const blockerCount = blockers.length;
   const application = summary.application || {};
+  const outcome = summary.outcome?.total || {};
+  const outcomeMode = summary.outcome?.byMode?.[0] || null;
   const applied = safeNumber(application.applied);
   const rejected = safeNumber(application.rejected);
   const assistMode = findMode(summary, 'assist');
@@ -35,6 +38,18 @@ export function buildRiskApprovalModeAuditDecision({ riskApproval, readiness }) 
   const shadowMode = findMode(summary, 'shadow');
   const nonShadowApplications = safeNumber(assistMode?.applied) + safeNumber(enforceMode?.applied) + safeNumber(enforceMode?.rejected);
   const unavailablePreviewCount = safeNumber(summary.amount?.byPreviewStatus?.unavailable);
+  const outcomeClosed = safeNumber(outcome.closed);
+  const outcomePnlNet = safeNumber(outcome.pnlNet);
+  const outcomeAvgPnlPercent = outcome.avgPnlPercent == null ? null : Number(outcome.avgPnlPercent);
+  const outcomeModeAvgPnlPercent = outcomeMode?.avgPnlPercent == null ? null : Number(outcomeMode.avgPnlPercent);
+  const outcomeWeak =
+    outcomeClosed >= 3 &&
+    (
+      outcomePnlNet < 0 ||
+      Number(outcomeAvgPnlPercent ?? 0) < 0 ||
+      Number(outcomeModeAvgPnlPercent ?? 0) < 0 ||
+      blockers.includes('리스크 승인 사후 성과 음수')
+    );
   const reasons = [
     `current mode ${currentMode}`,
     `readiness ${readinessDecision.status || 'unknown'}`,
@@ -43,6 +58,7 @@ export function buildRiskApprovalModeAuditDecision({ riskApproval, readiness }) 
     `application rejected ${rejected}`,
     `non-shadow applications ${nonShadowApplications}`,
     `preview unavailable ${unavailablePreviewCount}`,
+    `outcome closed ${outcomeClosed}, pnl ${outcomePnlNet}, avg ${outcomeAvgPnlPercent ?? 'n/a'}%`,
   ];
   const actionItems = [];
   let status = 'risk_approval_mode_audit_ok';
@@ -52,6 +68,10 @@ export function buildRiskApprovalModeAuditDecision({ riskApproval, readiness }) 
     status = 'risk_approval_mode_audit_attention';
     headline = '현재 mode는 shadow인데 assist/enforce 적용 기록이 관찰됩니다.';
     actionItems.push('runtime_config overlay, stale process, 네메시스 배포 상태를 확인합니다.');
+  } else if (currentMode !== 'shadow' && outcomeWeak) {
+    status = 'risk_approval_mode_audit_attention';
+    headline = 'non-shadow mode에서 리스크 승인 사후 성과 약화가 관찰됩니다.';
+    actionItems.push('mode를 shadow로 낮추거나 assist 감산율/모델 임계값을 runtime-suggest 기준으로 재검토합니다.');
   } else if (currentMode !== 'shadow' && blockerCount > 0 && nonShadowApplications > 0) {
     status = 'risk_approval_mode_audit_attention';
     headline = 'readiness blocker가 남아 있는데 리스크 승인 mode 적용이 발생했습니다.';
@@ -85,6 +105,15 @@ export function buildRiskApprovalModeAuditDecision({ riskApproval, readiness }) 
       rejected,
       nonShadowApplications,
       unavailablePreviewCount,
+      outcomeClosed,
+      outcomePnlNet,
+      outcomeAvgPnlPercent,
+      outcomeMode: outcomeMode ? {
+        mode: outcomeMode.mode || null,
+        closed: safeNumber(outcomeMode.closed),
+        pnlNet: safeNumber(outcomeMode.pnlNet),
+        avgPnlPercent: outcomeModeAvgPnlPercent,
+      } : null,
       byMode: {
         shadow: shadowMode || null,
         assist: assistMode || null,
@@ -103,10 +132,13 @@ function renderText(payload) {
     '',
     '근거:',
     ...payload.decision.reasons.map((reason) => `- ${reason}`),
+    payload.decision.metrics?.outcomeMode
+      ? `- outcome mode ${payload.decision.metrics.outcomeMode.mode || 'n/a'}: closed ${payload.decision.metrics.outcomeMode.closed}, pnl ${payload.decision.metrics.outcomeMode.pnlNet}, avg ${payload.decision.metrics.outcomeMode.avgPnlPercent ?? 'n/a'}%`
+      : null,
     '',
     '권장 조치:',
     ...payload.decision.actionItems.map((item) => `- ${item}`),
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 }
 
 export async function buildRuntimeRiskApprovalModeAudit({ days = 30, json = false } = {}) {
