@@ -37,7 +37,7 @@ function money(value) {
   return `${n >= 0 ? '+' : '-'}$${Math.abs(n).toFixed(2)}`;
 }
 
-function normalizeRow(row = {}) {
+export function normalizeStrategyFeedbackOutcomeRow(row = {}) {
   const incident = String(row.incident_link || '');
   const familyBias = extractTag(incident, 'family_bias') || 'unknown';
   const family = extractTag(incident, 'family') || row.strategy_family || 'unknown';
@@ -57,7 +57,7 @@ function normalizeRow(row = {}) {
   };
 }
 
-function aggregateRows(rows = []) {
+export function aggregateStrategyFeedbackOutcomeRows(rows = []) {
   const groups = new Map();
   for (const row of rows) {
     const key = `${row.familyBias}::${row.family}::${row.executionKind}`;
@@ -194,7 +194,7 @@ export async function buildStrategyFeedbackOutcomes({ days = 90, json = false } 
     ORDER BY total DESC, closed DESC, latest_created_at DESC
   `, [since]).catch(() => []);
 
-  const rows = aggregateRows(rawRows.map(normalizeRow));
+  const rows = aggregateStrategyFeedbackOutcomeRows(rawRows.map(normalizeStrategyFeedbackOutcomeRow));
   const decision = buildDecision(rows);
   const payload = {
     ok: true,
