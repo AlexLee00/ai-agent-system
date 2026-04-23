@@ -53,6 +53,7 @@
     "marketing:snapshot": "node scripts/marketing-snapshot.ts",
     "channel:insights": "node scripts/channel-insights-collector.ts",
     "revenue:strategy": "node scripts/revenue-strategy-updater.ts",
+    "auto:strategy-refresh": "node scripts/auto-strategy-refresh.ts",
     "set:instagram": "node scripts/set-instagram-secrets.ts",
     "mark-published": "node scripts/mark-published-url.ts",
     "setup:n8n": "node n8n/setup-blog-workflows.ts",

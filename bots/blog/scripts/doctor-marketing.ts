@@ -2,6 +2,7 @@
 'use strict';
 
 const path = require('path');
+const fs = require('fs');
 const env = require('../../../packages/core/lib/env');
 const { execFileSync } = require('child_process');
 const { buildBlogCliInsight } = require('../lib/cli-insight.ts');
@@ -10,15 +11,27 @@ const { loadStrategyBundle } = require('../lib/strategy-loader.ts');
 
 const BLOG_ROOT = path.join(env.PROJECT_ROOT, 'bots/blog');
 const BLOG_PREFIX = `npm --prefix ${BLOG_ROOT}`;
+const AUTO_STRATEGY_REFRESH_RESULT_PATH = path.join(BLOG_ROOT, 'output', 'ops', 'marketing-strategy-refresh.json');
 const MARKETING_DIGEST_COMMAND = `${BLOG_PREFIX} run marketing:digest -- --json`;
 const MARKETING_SNAPSHOT_COMMAND = `${BLOG_PREFIX} run marketing:snapshot -- --dry-run --json`;
 const CHANNEL_INSIGHTS_COMMAND = `${BLOG_PREFIX} run channel:insights -- --dry-run --json`;
 const REVENUE_STRATEGY_COMMAND = `${BLOG_PREFIX} run revenue:strategy -- --dry-run --json`;
+const AUTO_STRATEGY_REFRESH_COMMAND = `${BLOG_PREFIX} run auto:strategy-refresh -- --json`;
 
 function parseIsoDate(value = null) {
   if (!value) return null;
   const timestamp = Date.parse(String(value));
   return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function readAutoStrategyRefreshResult() {
+  try {
+    const raw = fs.readFileSync(AUTO_STRATEGY_REFRESH_RESULT_PATH, 'utf8');
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 function describeStrategyFreshness(plan = null) {
@@ -87,7 +100,7 @@ function buildPrimary(digest = {}) {
       reason: topSignal
         ? `마케팅 확장 신호가 watch 상태이며 최우선 확인 포인트는 "${topSignal}" 입니다.`
         : '마케팅 확장 신호가 watch 상태라 sense/correlation/diagnosis 재점검이 필요합니다.',
-      nextCommand: REVENUE_STRATEGY_COMMAND,
+      nextCommand: AUTO_STRATEGY_REFRESH_COMMAND,
       actionFocus: watchHint || '수집·분석 결과를 바탕으로 노출 전략과 전환 전략을 다시 편성',
       recommendation: recommendations[0] || '',
     };
@@ -109,7 +122,7 @@ function buildPrimary(digest = {}) {
     return {
       area: 'marketing.strategy_refresh',
       reason: `최근 마케팅 신호 누적과 전략 채택 드리프트가 보여 새로운 노출 전략과 전환 전략을 다시 편성할 시점입니다 (${snapshotWatchCount} recent watch snapshots${latestAlignmentHint ? ` / ${latestAlignmentHint}` : ''}).`,
-      nextCommand: REVENUE_STRATEGY_COMMAND,
+      nextCommand: AUTO_STRATEGY_REFRESH_COMMAND,
       actionFocus: '수집·스냅샷·전략 갱신을 다시 돌려 채널별 노출 전략을 재편성',
       recommendation: recommendations[0] || '',
     };
@@ -153,6 +166,7 @@ function buildActions({ primary, digest = {} }) {
   const hasActivePrimary = primaryArea && primaryArea !== 'clear' && primaryArea !== 'unknown';
   const latestDigestRun = digest?.latestDigestRun || null;
   const latestDigestAge = describeMarketingDigestAge(latestDigestRun);
+  const latestAutoStrategyRefresh = digest?.latestAutoStrategyRefresh || null;
 
   if (hasActivePrimary && primary?.actionFocus) {
     actions.push(`focus blocker: ${primary.actionFocus}`);
@@ -165,6 +179,7 @@ function buildActions({ primary, digest = {} }) {
     actions.push(`signal collect: ${CHANNEL_INSIGHTS_COMMAND}`);
     actions.push(`signal snapshot: ${MARKETING_SNAPSHOT_COMMAND}`);
     actions.push(`strategy evolve: ${REVENUE_STRATEGY_COMMAND}`);
+    actions.push(`strategy auto loop: ${AUTO_STRATEGY_REFRESH_COMMAND}`);
   }
   if (primaryArea === 'marketing.strategy_monitor') {
     actions.push(`signal collect: ${CHANNEL_INSIGHTS_COMMAND}`);
@@ -176,6 +191,9 @@ function buildActions({ primary, digest = {} }) {
   if (watchHint) actions.push(`channel watch: ${watchHint}`);
   if (latestDigestRun?.checkedAt) {
     actions.push(`latest digest run: ${String(latestDigestRun.checkedAt).slice(0, 19)} / ${String(latestDigestRun.status || 'unknown')}${latestDigestAge.text ? ` / ${latestDigestAge.text}` : ''}`);
+  }
+  if (latestAutoStrategyRefresh?.startedAt) {
+    actions.push(`latest strategy auto run: ${String(latestAutoStrategyRefresh.startedAt).slice(0, 19)} / ${latestAutoStrategyRefresh.ok ? 'ok' : `failed:${String(latestAutoStrategyRefresh.failedStep || 'unknown')}`}`);
   }
 
   const nextPreview = digest?.nextGeneralPreview || null;
@@ -218,6 +236,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const digestResult = runMarketingDigest();
   const latestDigestRun = readMarketingDigestTelemetry();
+  const latestAutoStrategyRefresh = readAutoStrategyRefreshResult();
   const digest = buildDigestFallbackView(digestResult.payload || {}, latestDigestRun);
   const strategyBundle = loadStrategyBundle();
   const strategyFreshness = describeStrategyFreshness(strategyBundle?.plan || null);
@@ -234,6 +253,7 @@ async function main() {
     digestCommand: digestResult.command,
     digestError: digestResult.error || '',
     latestDigestRun,
+    latestAutoStrategyRefresh,
     latestDigestAge: describeMarketingDigestAge(latestDigestRun),
     health: digest?.health || null,
     senseSummary: digest?.senseSummary || null,

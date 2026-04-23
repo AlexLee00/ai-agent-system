@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/Users/alexlee</string>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+	</dict>
+	<key>KeepAlive</key>
+	<false/>
+	<key>Label</key>
+	<string>ai.blog.auto-strategy-refresh</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/opt/homebrew/bin/node</string>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/blog/scripts/auto-strategy-refresh.ts</string>
+		<string>--json</string>
+	</array>
+	<key>RunAtLoad</key>
+	<false/>
+	<key>StandardErrorPath</key>
+	<string>/Users/alexlee/projects/ai-agent-system/bots/blog/auto-strategy-refresh.err.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/alexlee/projects/ai-agent-system/bots/blog/auto-strategy-refresh.log</string>
+	<key>StartCalendarInterval</key>
+	<array>
+		<dict>
+			<key>Hour</key>
+			<integer>7</integer>
+			<key>Minute</key>
+			<integer>10</integer>
+		</dict>
+		<dict>
+			<key>Hour</key>
+			<integer>19</integer>
+			<key>Minute</key>
+			<integer>10</integer>
+		</dict>
+	</array>
+	<key>WorkingDirectory</key>
+	<string>/Users/alexlee/projects/ai-agent-system/bots/blog</string>
+</dict>
+</plist>
