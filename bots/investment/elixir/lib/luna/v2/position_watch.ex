@@ -548,7 +548,7 @@ defmodule Luna.V2.PositionWatch do
     exchange = to_string(candidate[:exchange] || "")
     attention = candidate[:attention_type]
 
-    exchange == "binance" and
+    exchange in ["binance", "kis", "kis_overseas"] and
       attention in [:stop_loss_attention, :partial_adjust_attention, :tv_live_bearish]
   end
 

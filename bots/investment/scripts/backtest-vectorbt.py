@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from datetime import datetime, timedelta, timezone
 
@@ -37,6 +38,11 @@ def load_optional_deps():
         missing.append("ccxt")
 
     try:
+        import yfinance as yf  # type: ignore
+    except Exception:
+        yf = None
+
+    try:
         import talib  # type: ignore
     except Exception:
         talib = None
@@ -45,6 +51,7 @@ def load_optional_deps():
         "pd": pd,
         "vbt": vbt,
         "ccxt": ccxt,
+        "yf": yf,
         "talib": talib,
         "missing": missing,
     }
@@ -53,33 +60,76 @@ def load_optional_deps():
 def fetch_ohlcv(symbol: str, days: int, deps: dict):
     pd = deps["pd"]
     ccxt = deps["ccxt"]
-    if pd is None or ccxt is None:
-        raise RuntimeError("pandas 또는 ccxt가 설치되지 않았습니다.")
+    yf = deps["yf"]
+    if pd is None:
+        raise RuntimeError("pandas가 설치되지 않았습니다.")
 
     end = datetime.now(timezone.utc).replace(tzinfo=None)
     start = end - timedelta(days=days)
-    exchange = ccxt.binance()
-    since = int(start.timestamp() * 1000)
 
-    all_rows = []
-    cursor = since
-    limit = 1000
-    while True:
-        rows = exchange.fetch_ohlcv(symbol, "5m", since=cursor, limit=limit)
-        if not rows:
+    if "/" in symbol:
+        if ccxt is None:
+            raise RuntimeError("ccxt가 설치되지 않았습니다.")
+
+        exchange = ccxt.binance()
+        since = int(start.timestamp() * 1000)
+
+        all_rows = []
+        cursor = since
+        limit = 1000
+        while True:
+            rows = exchange.fetch_ohlcv(symbol, "5m", since=cursor, limit=limit)
+            if not rows:
+                break
+            all_rows.extend(rows)
+            if len(rows) < limit:
+                break
+            cursor = rows[-1][0] + 1
+
+        if not all_rows:
+            raise RuntimeError("OHLCV 데이터가 없습니다.")
+
+        df = pd.DataFrame(all_rows, columns=["timestamp", "open", "high", "low", "close", "volume"])
+        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+        df = df.drop_duplicates(subset=["timestamp"]).set_index("timestamp").sort_index()
+        return df
+
+    if yf is None:
+        raise RuntimeError("yfinance가 설치되지 않았습니다.")
+
+    ticker_symbol = map_stock_symbol(symbol)
+    history = None
+
+    for candidate in ticker_symbol:
+        ticker = yf.Ticker(candidate)
+        trial = ticker.history(start=start.strftime("%Y-%m-%d"), end=end.strftime("%Y-%m-%d"), interval="1h")
+        if trial is not None and not trial.empty:
+            history = trial
             break
-        all_rows.extend(rows)
-        if len(rows) < limit:
-            break
-        cursor = rows[-1][0] + 1
 
-    if not all_rows:
-        raise RuntimeError("OHLCV 데이터가 없습니다.")
+    if history is None or history.empty:
+        raise RuntimeError("주식 OHLCV 데이터가 없습니다.")
 
-    df = pd.DataFrame(all_rows, columns=["timestamp", "open", "high", "low", "close", "volume"])
-    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+    history = history.reset_index()
+    timestamp_col = "Datetime" if "Datetime" in history.columns else history.columns[0]
+    history["timestamp"] = pd.to_datetime(history[timestamp_col])
+    df = history.rename(
+        columns={
+            "Open": "open",
+            "High": "high",
+            "Low": "low",
+            "Close": "close",
+            "Volume": "volume",
+        }
+    )[["timestamp", "open", "high", "low", "close", "volume"]]
     df = df.drop_duplicates(subset=["timestamp"]).set_index("timestamp").sort_index()
     return df
+
+
+def map_stock_symbol(symbol: str):
+    if symbol.isdigit() and len(symbol) == 6:
+        return [f"{symbol}.KS", f"{symbol}.KQ"]
+    return [symbol]
 
 
 def run_backtest(df, params: dict, deps: dict):
@@ -185,6 +235,16 @@ def grid_search(df, deps: dict):
     return results
 
 
+def sanitize_json_value(value):
+    if isinstance(value, dict):
+        return {key: sanitize_json_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [sanitize_json_value(item) for item in value]
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    return value
+
+
 def emit_missing_dependency_error(missing: list[str], as_json: bool):
     payload = {
         "status": "dependency_missing",
@@ -229,7 +289,7 @@ def main():
         return 1
 
     if args.json:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print(json.dumps(sanitize_json_value(result), ensure_ascii=False, indent=2))
         return 0
 
     if args.grid:

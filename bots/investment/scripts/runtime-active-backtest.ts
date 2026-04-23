@@ -143,21 +143,6 @@ export async function runActiveBacktest({
   json = false,
   noAlert = false,
 } = {}) {
-  if (market !== 'binance') {
-    const payload = {
-      ok: true,
-      status: 'observe_only',
-      reason: `active vectorbt backtest is currently crypto-first (market=${market})`,
-      symbol,
-      market,
-      attention,
-      days,
-      persisted: 0,
-      topResult: null,
-    };
-    return json ? payload : JSON.stringify(payload, null, 2);
-  }
-
   const raw = runVectorBtGrid(symbol, days);
 
   if (!Array.isArray(raw)) {
