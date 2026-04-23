@@ -261,6 +261,70 @@ function _computePullbackScore(changePct, market) {
   return 0;
 }
 
+function _describeLiquidityThreshold(market) {
+  if (market === 'crypto') {
+    return `${_num(_screenCfg('crypto', 'min_volume_usdt', 1_000_000)).toLocaleString()} USDT`;
+  }
+  if (market === 'domestic') {
+    return `${_num(_screenCfg('domestic', 'min_volume_shares', 100000)).toLocaleString()}주 / ${_num(_screenCfg('domestic', 'min_turnover_krw', 1_000_000_000)).toLocaleString()}원`;
+  }
+  if (market === 'overseas') {
+    return `${_num(_screenCfg('overseas', 'min_volume_shares', 300000)).toLocaleString()}주 / $${_num(_screenCfg('overseas', 'min_turnover_usd', 5_000_000)).toLocaleString()}`;
+  }
+  return '-';
+}
+
+function _passesLiquidityFloor(candidate, market) {
+  if (!candidate) return false;
+
+  if (market === 'crypto') {
+    const minVolumeUsdt = _num(_screenCfg('crypto', 'min_volume_usdt', 1_000_000));
+    return _num(candidate.volume24h ?? candidate.dollarVolume, 0) >= minVolumeUsdt;
+  }
+
+  if (market === 'domestic') {
+    const minShares = _num(_screenCfg('domestic', 'min_volume_shares', 100000));
+    const minTurnover = _num(_screenCfg('domestic', 'min_turnover_krw', 1_000_000_000));
+    const volume = _num(candidate.volume, 0);
+    const turnover = _num(candidate.price, 0) * volume;
+    return volume >= minShares && turnover >= minTurnover;
+  }
+
+  if (market === 'overseas') {
+    const minShares = _num(_screenCfg('overseas', 'min_volume_shares', 300000));
+    const minTurnover = _num(_screenCfg('overseas', 'min_turnover_usd', 5_000_000));
+    const volume = _num(candidate.volume, 0);
+    const turnover = _num(candidate.dollarVolume, 0);
+    return volume >= minShares && turnover >= minTurnover;
+  }
+
+  return true;
+}
+
+function _filterCandidatesByLiquidity(candidates, market) {
+  const kept = [];
+  const dropped = [];
+  for (const candidate of Array.isArray(candidates) ? candidates : []) {
+    if (_passesLiquidityFloor(candidate, market)) kept.push(candidate);
+    else dropped.push(candidate);
+  }
+
+  if (dropped.length > 0) {
+    console.log(`[아르고스] ${_screeningLabel(market)} 유동성 필터 제외 ${dropped.length}건 (기준: ${_describeLiquidityThreshold(market)})`);
+    dropped.slice(0, 8).forEach((candidate) => {
+      const turnover = market === 'overseas'
+        ? _num(candidate.dollarVolume, 0)
+        : _num(candidate.price, 0) * _num(candidate.volume, 0);
+      console.log(
+        `  제외 ${candidate.symbol}: volume=${_num(candidate.volume24h ?? candidate.volume, 0).toLocaleString()}`
+        + ` | turnover=${turnover.toLocaleString()}`
+      );
+    });
+  }
+
+  return kept;
+}
+
 // ─── Fear & Greed Index ─────────────────────────────────────────────
 
 /**
@@ -669,7 +733,8 @@ export async function screenCryptoSymbols(maxDynamic, fng = 50) {
       .sort((a, b) => b.volume24h - a.volume24h)
       .slice(0, 50);  // 30 → 50으로 후보 풀 확대
 
-    const scored = candidates.map(t => {
+    const liquidCandidates = _filterCandidatesByLiquidity(candidates, 'crypto');
+    const scored = liquidCandidates.map(t => {
       const absChange = Math.abs(t.changePercent);
       const volScore  = Math.log10(Math.max(t.volume24h, 1));
       const dirWeight = t.changePercent >= 0 ? 1.2 : 0.8;
@@ -932,8 +997,19 @@ function _mergeDomesticSourceCandidates(sourceResults) {
 function _finalizeDomesticResult(candidates, max) {
 
   if (!candidates.length) return null;
+  const liquidCandidates = _filterCandidatesByLiquidity(candidates, 'domestic');
+  if (!liquidCandidates.length) {
+    console.warn('[아르고스] 국내주식 유동성 필터 통과 후보 없음');
+    return {
+      core: CORE_KIS,
+      dynamic: [],
+      all: [],
+      screening: [],
+      error: 'liquidity_filtered_all',
+    };
+  }
 
-  return _applyCandidateIntelligence(candidates, 'domestic', max).then((ranked) => {
+  return _applyCandidateIntelligence(liquidCandidates, 'domestic', max).then((ranked) => {
     const dynamicSymbols = ranked.map(c => c.symbol);
     console.log(`[아르고스] 국내주식 스크리닝: 동적 ${dynamicSymbols.join(', ')}`);
     ranked.forEach(c =>
@@ -1045,8 +1121,9 @@ export async function screenOverseasSymbols(maxDynamic, fng = 50) {
     ? await _fetchYahooQuoteMap(quoteUniverse)
     : new Map();
   const candidates = _mergeOverseasSourceCandidates(yahooTickers, apeTickers, quoteMap);
+  const liquidCandidates = _filterCandidatesByLiquidity(candidates, 'overseas');
 
-  const ranked = await _applyCandidateIntelligence(candidates, 'overseas', max);
+  const ranked = await _applyCandidateIntelligence(liquidCandidates, 'overseas', max);
   const dynamicSymbols = ranked.map(c => c.symbol);
   console.log(`[아르고스] 해외주식 스크리닝: 동적 ${dynamicSymbols.join(', ') || '없음'}`);
   ranked.forEach(c =>
