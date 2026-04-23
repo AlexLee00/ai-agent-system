@@ -166,28 +166,72 @@ function profileKeyForTrade(trade = {}) {
   return [exchange, symbol, tradeMode].join(':');
 }
 
+function isRecoveredProfilelessEnvelope(envelope = {}, missing = []) {
+  const linkage = envelope.linkage || {};
+  const setupType = String(envelope?.strategy?.setupType || '').trim();
+  const missingSet = new Set(missing || []);
+  let expectedMissing = setupType === 'unattributed_execution_tracking'
+    ? new Set(['strategyProfile', 'signal', 'agentConsensus'])
+    : new Set(['strategyProfile']);
+  if (linkage.hasStrategyProfile) {
+    expectedMissing = new Set(['signal', 'agentConsensus']);
+  }
+  const onlyExpectedMissing = [...missingSet].every((key) => expectedMissing.has(key));
+
+  return onlyExpectedMissing
+    && linkage.hasTrade
+    && linkage.hasJournal
+    && linkage.hasStrategyRoute
+    && linkage.hasExecutionPlan
+    && linkage.hasResponsibilityPlan
+    && linkage.hasRegime;
+}
+
+function classifyEnvelopeRow(row = {}) {
+  const missing = row.score?.missing || [];
+  if (row.score?.status === 'complete') return 'complete';
+  if (row.score?.status === 'weak') return 'actionable_weak';
+  if (isRecoveredProfilelessEnvelope(row.envelope, missing)) return 'recovered_partial';
+  return 'actionable_partial';
+}
+
 function summarize(rows = []) {
   const byStatus = {};
+  const byRecoveryStatus = {};
   const missingCounts = {};
+  const actionableMissingCounts = {};
   let scoreSum = 0;
   for (const row of rows) {
     byStatus[row.score.status] = (byStatus[row.score.status] || 0) + 1;
+    const recoveryStatus = classifyEnvelopeRow(row);
+    byRecoveryStatus[recoveryStatus] = (byRecoveryStatus[recoveryStatus] || 0) + 1;
     scoreSum += Number(row.score.score || 0);
     for (const key of row.score.missing || []) {
       missingCounts[key] = (missingCounts[key] || 0) + 1;
+      if (recoveryStatus !== 'recovered_partial') {
+        actionableMissingCounts[key] = (actionableMissingCounts[key] || 0) + 1;
+      }
     }
   }
   const topMissing = Object.entries(missingCounts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([key, count]) => ({ key, count }));
+  const actionableMissing = Object.entries(actionableMissingCounts)
     .sort((a, b) => b[1] - a[1])
     .map(([key, count]) => ({ key, count }));
   return {
     total: rows.length,
     avgAttachScore: rows.length ? Math.round((scoreSum / rows.length) * 10) / 10 : null,
     byStatus,
+    byRecoveryStatus,
     topMissing,
+    actionableMissing,
     weakCount: byStatus.weak || 0,
     partialCount: byStatus.partial || 0,
     completeCount: byStatus.complete || 0,
+    recoveredPartialCount: byRecoveryStatus.recovered_partial || 0,
+    actionablePartialCount: byRecoveryStatus.actionable_partial || 0,
+    actionableWeakCount: byRecoveryStatus.actionable_weak || 0,
   };
 }
 
@@ -223,18 +267,30 @@ export async function runExecutionAttachAudit({ days = 14, limit = 100, exchange
     };
   });
   const summary = summarize(rows);
+  const actionableItems = summary.actionableMissing.slice(0, 3);
   const decision = {
-    status: summary.weakCount > 0
+    status: summary.actionableWeakCount > 0
       ? 'execution_attach_weak'
-      : summary.partialCount > 0
+      : summary.actionablePartialCount > 0
         ? 'execution_attach_partial'
-        : 'execution_attach_ok',
-    headline: summary.weakCount > 0
+        : summary.recoveredPartialCount > 0
+          ? 'execution_attach_recovered_partial'
+          : summary.partialCount > 0
+            ? 'execution_attach_partial'
+            : 'execution_attach_ok',
+    headline: summary.actionableWeakCount > 0
       ? '체결 후 포지션/전략 연결이 약한 거래가 있어 envelope 통합이 필요합니다.'
-      : summary.partialCount > 0
-        ? '체결 후 연결은 대부분 있으나 일부 전략/합의 메타가 누락됩니다.'
-        : '최근 체결의 포지션/전략 연결이 정상입니다.',
-    actionItems: summary.topMissing.slice(0, 3).map((item) => `${item.key} 누락 ${item.count}건을 체결 envelope attach 경로에서 보강합니다.`),
+      : summary.actionablePartialCount > 0
+        ? '체결 후 연결은 대부분 있으나 일부 실행 메타 보강이 필요합니다.'
+        : summary.recoveredPartialCount > 0
+          ? '최근 체결은 감사 가능한 수준으로 복구되었고, 일부 과거/조정 체결만 추적 상태입니다.'
+          : '최근 체결의 포지션/전략 연결이 정상입니다.',
+    actionItems: actionableItems.length > 0
+      ? actionableItems.map((item) => `${item.key} 누락 ${item.count}건을 체결 envelope attach 경로에서 보강합니다.`)
+      : [
+        `${summary.recoveredPartialCount}건은 profile/signal 원본이 부족하지만 envelope fallback으로 감사 추적 중입니다.`,
+        '신규 주문에는 사용하지 않고 reconciliation/position truth guard 대상으로 유지합니다.',
+      ],
   };
 
   return {
