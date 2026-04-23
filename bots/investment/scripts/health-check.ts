@@ -571,7 +571,8 @@ async function main() {
   try {
     const hygiene = await runPositionStrategyHygiene({ json: true });
     const remediation = await runPositionStrategyRemediation({ json: true }).catch(() => null);
-    const key = 'position-strategy-hygiene';
+    const key = 'position-strategy-remediation';
+    const legacyKey = 'position-strategy-hygiene';
     if (hygiene?.decision?.status === 'position_strategy_hygiene_attention') {
       if (hsm.canAlert(state, key)) {
         const duplicateSample = hygiene?.duplicateNormalization?.rows?.[0] || null;
@@ -581,23 +582,24 @@ async function main() {
         issues.push({
           key,
           level: Number(hygiene?.audit?.duplicateManagedProfileScopes || 0) > 0 || Number(hygiene?.audit?.unmatchedManagedPositions || 0) > 0 ? 2 : 1,
-          msg: `⚠️ [루나 헬스] position strategy hygiene\n${remediation?.decision?.headline || hygiene.decision?.headline || '포지션 전략 위생 정리 후보 감지'}\nduplicate managed scopes ${hygiene.audit?.duplicateManagedProfileScopes || 0} / orphan profiles ${hygiene.audit?.orphanProfiles || 0} / unmatched managed ${hygiene.audit?.unmatchedManagedPositions || 0}${recommendedExchange ? `\nrecommended exchange: ${recommendedExchange}` : ''}${duplicateSample ? `\nduplicate sample: ${duplicateSample.exchange}/${duplicateSample.symbol} keeper=${duplicateSample.keeperProfileId} retirements=${duplicateSample.retirements?.length || 0}` : ''}${orphanSample ? `\norphan sample: ${orphanSample.exchange}/${orphanSample.symbol} ${orphanSample.tradeMode} ${orphanSample.lifecycleStatus}` : ''}\nnext commands:\n- npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation -- --json\n- ${remediationPlan?.normalizeDryRunCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --json'}\n- ${remediationPlan?.retireDryRunCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles -- --json'}`,
+          msg: `⚠️ [루나 헬스] position strategy remediation\n${remediation?.decision?.headline || hygiene.decision?.headline || '포지션 전략 remediation 후보 감지'}\nduplicate managed scopes ${hygiene.audit?.duplicateManagedProfileScopes || 0} / orphan profiles ${hygiene.audit?.orphanProfiles || 0} / unmatched managed ${hygiene.audit?.unmatchedManagedPositions || 0}${recommendedExchange ? `\nrecommended exchange: ${recommendedExchange}` : ''}${duplicateSample ? `\nduplicate sample: ${duplicateSample.exchange}/${duplicateSample.symbol} keeper=${duplicateSample.keeperProfileId} retirements=${duplicateSample.retirements?.length || 0}` : ''}${orphanSample ? `\norphan sample: ${orphanSample.exchange}/${orphanSample.symbol} ${orphanSample.tradeMode} ${orphanSample.lifecycleStatus}` : ''}\nnext commands:\n- npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation -- --json\n- ${remediationPlan?.normalizeDryRunCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --json'}\n- ${remediationPlan?.retireDryRunCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles -- --json'}`,
         });
       }
-    } else if (state[key]) {
+    } else if (state[key] || state[legacyKey]) {
       recovers.push({
         key,
-        msg: '✅ [루나 헬스] position strategy hygiene 회복\nmanaged 포지션 기준 duplicate/orphan/unmatched 이슈 없음 — 자동 감지',
+        msg: '✅ [루나 헬스] position strategy remediation 회복\nmanaged 포지션 기준 duplicate/orphan/unmatched 이슈 없음 — 자동 감지',
       });
       hsm.clearAlert(state, key);
+      hsm.clearAlert(state, legacyKey);
     }
   } catch (e) {
-    const key = 'position-strategy-hygiene-check-failed';
+    const key = 'position-strategy-remediation-check-failed';
     if (hsm.canAlert(state, key)) {
       issues.push({
         key,
         level: 1,
-        msg: `ℹ️ [루나 헬스] position strategy hygiene 점검 실패\n${e.message}`,
+        msg: `ℹ️ [루나 헬스] position strategy remediation 점검 실패\n${e.message}`,
       });
     }
   }
