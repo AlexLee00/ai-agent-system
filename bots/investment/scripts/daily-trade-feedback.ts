@@ -297,7 +297,17 @@ function buildPositionStrategyCoverageLine(positionStrategyAuditSummary) {
 function buildPositionStrategyHygieneLine(positionStrategyHygieneSummary) {
   if (!positionStrategyHygieneSummary || positionStrategyHygieneSummary.error || !positionStrategyHygieneSummary.ok) return null;
   const decision = positionStrategyHygieneSummary.decision || {};
-  return `🧼 strategy hygiene: ${decision.status || 'unknown'} | ${decision.headline || 'n/a'}`;
+  const recommendedExchange = positionStrategyHygieneSummary.recommendedExchange?.exchange || null;
+  return `🧼 strategy hygiene: ${decision.status || 'unknown'} | ${decision.headline || 'n/a'}${recommendedExchange ? ` | focus ${recommendedExchange}` : ''}`;
+}
+
+function buildPositionStrategyHygieneCommandLine(positionStrategyHygieneSummary) {
+  if (!positionStrategyHygieneSummary || positionStrategyHygieneSummary.error || !positionStrategyHygieneSummary.ok) return null;
+  const decision = positionStrategyHygieneSummary.decision || {};
+  if (decision.status !== 'position_strategy_hygiene_attention') return null;
+  const recommendedExchange = positionStrategyHygieneSummary.recommendedExchange?.exchange || null;
+  const exchangeSuffix = recommendedExchange ? ` --exchange=${recommendedExchange}` : '';
+  return `🛠️ hygiene follow-up: normalize/retire ${recommendedExchange || 'all'} | npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --json${exchangeSuffix}`;
 }
 
 function getLearningLoopNextCommand(learningLoopSummary) {
@@ -337,6 +347,8 @@ function buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSumma
   if (positionStrategyCoverageLine) lines.push(positionStrategyCoverageLine);
   const positionStrategyHygieneLine = buildPositionStrategyHygieneLine(positionStrategyHygieneSummary);
   if (positionStrategyHygieneLine) lines.push(positionStrategyHygieneLine);
+  const positionStrategyHygieneCommandLine = buildPositionStrategyHygieneCommandLine(positionStrategyHygieneSummary);
+  if (positionStrategyHygieneCommandLine) lines.push(positionStrategyHygieneCommandLine);
   if (Array.isArray(feedback.nextActions) && feedback.nextActions.length > 0) {
     lines.push(`➡️ 다음 액션: ${feedback.nextActions.join(' / ')}`);
   }
@@ -357,6 +369,7 @@ async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeni
     buildLearningLoopLine(learningLoopSummary),
     buildPositionStrategyCoverageLine(positionStrategyAuditSummary),
     buildPositionStrategyHygieneLine(positionStrategyHygieneSummary),
+    buildPositionStrategyHygieneCommandLine(positionStrategyHygieneSummary),
     `다음 액션: ${(feedback.nextActions || []).join(' / ') || '없음'}`,
   ].filter(Boolean).join('\n');
   await rag.store('trades', content, {
@@ -372,6 +385,8 @@ async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeni
     learning_loop_summary: learningLoopSummary?.decision || {},
     position_strategy_audit: positionStrategyAuditSummary || {},
     position_strategy_hygiene: positionStrategyHygieneSummary || {},
+    position_strategy_hygiene_recommended_exchange: positionStrategyHygieneSummary?.recommendedExchange?.exchange || null,
+    position_strategy_hygiene_recommended_count: Number(positionStrategyHygieneSummary?.recommendedExchange?.count || 0),
   }, 'luna');
 }
 
