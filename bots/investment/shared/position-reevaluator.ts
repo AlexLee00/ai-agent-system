@@ -282,7 +282,87 @@ function getIndicatorFrame(summary = {}, interval = '4h') {
   return frames.find((item) => String(item?.interval || '') === interval) || null;
 }
 
-function decideReevaluation(position, analysisSummary) {
+function getStrategySetupType(strategyProfile = null) {
+  return String(strategyProfile?.setup_type || '').trim().toLowerCase() || null;
+}
+
+function applyStrategyAwareDecision(baseDecision, {
+  strategyProfile = null,
+  pnlPct = 0,
+  heldHours = 0,
+  tvComposite = 'HOLD',
+  tv4hSignal = 'HOLD',
+  tv1dSignal = 'HOLD',
+  tv4hRsi = null,
+  sell = 0,
+  buy = 0,
+} = {}) {
+  const setupType = getStrategySetupType(strategyProfile);
+  if (!setupType) return baseDecision;
+
+  if (setupType === 'breakout') {
+    if (
+      baseDecision.recommendation === 'EXIT'
+      && pnlPct > -1.5
+      && heldHours < 12
+      && tvComposite !== 'SELL'
+      && tv1dSignal !== 'SELL'
+    ) {
+      return {
+        recommendation: 'HOLD',
+        reasonCode: 'breakout_hold_guard',
+        reason: `breakout 전략은 초기 되돌림 ${pnlPct.toFixed(2)}% / ${heldHours.toFixed(1)}h 구간에서 즉시 청산보다 추세 확인을 우선`,
+      };
+    }
+    return baseDecision;
+  }
+
+  if (setupType === 'mean_reversion') {
+    if (
+      baseDecision.recommendation === 'HOLD'
+      && pnlPct >= 4
+      && (tv4hSignal === 'SELL' || tv4hRsi != null && tv4hRsi < 48)
+    ) {
+      return {
+        recommendation: 'ADJUST',
+        reasonCode: 'mean_reversion_profit_take',
+        reason: `mean reversion 전략은 반등 수익 ${pnlPct.toFixed(2)}% 구간에서 4h 약세 조짐이 보이면 부분익절을 우선`,
+      };
+    }
+    return baseDecision;
+  }
+
+  if (setupType === 'trend_following' || setupType === 'momentum_rotation') {
+    if (
+      baseDecision.recommendation === 'HOLD'
+      && pnlPct >= 6
+      && (tvComposite === 'SELL' || tv4hSignal === 'SELL')
+    ) {
+      return {
+        recommendation: 'ADJUST',
+        reasonCode: 'trend_following_trail',
+        reason: `trend 전략은 수익 ${pnlPct.toFixed(2)}% 구간에서 추세 약화(${tv4hSignal}/${tvComposite})가 보이면 보호 조정`,
+      };
+    }
+    if (
+      baseDecision.recommendation === 'EXIT'
+      && pnlPct > -0.75
+      && buy >= sell
+      && tv1dSignal !== 'SELL'
+    ) {
+      return {
+        recommendation: 'HOLD',
+        reasonCode: 'trend_following_pullback_hold',
+        reason: `trend 전략은 미세 손실 ${pnlPct.toFixed(2)}% 구간의 단기 조정보다 상위 추세 확인을 우선`,
+      };
+    }
+    return baseDecision;
+  }
+
+  return baseDecision;
+}
+
+function decideReevaluation(position, analysisSummary, strategyProfile = null) {
   const pnlPct = calcPnlPct(position);
   const heldHours = deriveHeldHours(position);
   const buy = Number(analysisSummary.buy || 0);
@@ -310,99 +390,93 @@ function decideReevaluation(position, analysisSummary) {
     && heldHours < exitGuards.shortHoldHours
     && !strongBearishExit;
 
+  let baseDecision = null;
+
   if (pnlPct <= -5) {
-    return {
+    baseDecision = {
       recommendation: 'EXIT',
       reasonCode: 'stop_loss_threshold',
       reason: `미실현손익 ${pnlPct.toFixed(2)}%로 -5% 손절 기준 이하`,
     };
-  }
-
-  if (mildLossShortHoldGuard) {
-    return {
+  } else if (mildLossShortHoldGuard) {
+    baseDecision = {
       recommendation: 'HOLD',
       reasonCode: 'mild_loss_hold_guard',
       reason: `작은 손실 ${pnlPct.toFixed(2)}% / 짧은 보유 ${heldHours.toFixed(1)}h 구간이라 즉시 청산보다 관찰 유지`,
     };
-  }
-
-  if (sell >= buy && pnlPct < 0 && sell > 0) {
-    return {
+  } else if (sell >= buy && pnlPct < 0 && sell > 0) {
+    baseDecision = {
       recommendation: 'EXIT',
       reasonCode: 'bearish_loss_consensus',
       reason: `SELL 우세(${sell} > ${buy})이며 손실 구간 ${pnlPct.toFixed(2)}%`,
     };
-  }
-
-  if (pnlPct < 0 && sell >= buy && sell > 0 && (tv4hSignal === 'SELL' || tv1dSignal === 'SELL' || tvComposite === 'SELL')) {
-    return {
+  } else if (pnlPct < 0 && sell >= buy && sell > 0 && (tv4hSignal === 'SELL' || tv1dSignal === 'SELL' || tvComposite === 'SELL')) {
+    baseDecision = {
       recommendation: 'EXIT',
       reasonCode: 'mtf_bearish_consensus_exit',
       reason: `DB 약세 우세(BUY ${buy} / SELL ${sell})와 TV 약세(${tv4hSignal}/${tv1dSignal}/${tvComposite})가 겹친 손실 구간 ${pnlPct.toFixed(2)}%`,
     };
-  }
-
-  if (pnlPct < 0 && tv4hSignal === 'SELL') {
-    return {
+  } else if (pnlPct < 0 && tv4hSignal === 'SELL') {
+    baseDecision = {
       recommendation: 'EXIT',
       reasonCode: 'tv_4h_bearish_reversal',
       reason: `4h TradingView 약세 전환(SELL)이며 손실 구간 ${pnlPct.toFixed(2)}%`,
     };
-  }
-
-  if (pnlPct >= 10) {
-    return {
+  } else if (pnlPct >= 10) {
+    baseDecision = {
       recommendation: 'ADJUST',
       reasonCode: 'profit_lock_candidate',
       reason: `미실현수익 ${pnlPct.toFixed(2)}%로 부분익절/TP 조정 후보`,
     };
-  }
-
-  if (pnlPct >= 5 && (tv4hSignal === 'SELL' || tvComposite === 'SELL')) {
-    return {
+  } else if (pnlPct >= 5 && (tv4hSignal === 'SELL' || tvComposite === 'SELL')) {
+    baseDecision = {
       recommendation: 'ADJUST',
       reasonCode: 'tv_trend_weakening',
       reason: `TradingView MTF 약세(${tv4hSignal}/${tvComposite})가 보여 수익 구간 ${pnlPct.toFixed(2)}% 보호 조정 후보`,
     };
-  }
-
-  if (pnlPct >= 8 && tv1dSignal === 'SELL') {
-    return {
+  } else if (pnlPct >= 8 && tv1dSignal === 'SELL') {
+    baseDecision = {
       recommendation: 'ADJUST',
       reasonCode: 'tv_1d_bearish_reversal',
       reason: `1d TradingView 약세 전환(SELL)으로 수익 구간 ${pnlPct.toFixed(2)}% 보호 조정 후보`,
     };
-  }
-
-  if (pnlPct >= 3 && tv4hSignal === 'HOLD' && tv4hRsi != null && tv4hRsi < 45) {
-    return {
+  } else if (pnlPct >= 3 && tv4hSignal === 'HOLD' && tv4hRsi != null && tv4hRsi < 45) {
+    baseDecision = {
       recommendation: 'ADJUST',
       reasonCode: 'tv_4h_momentum_cooling',
       reason: `4h RSI ${tv4hRsi.toFixed(2)}로 모멘텀 둔화가 보여 수익 구간 ${pnlPct.toFixed(2)}% 조정 후보`,
     };
-  }
-
-  if (pnlPct >= 5 && tv1dSignal === 'HOLD' && tv1dRsi != null && tv1dRsi < 48) {
-    return {
+  } else if (pnlPct >= 5 && tv1dSignal === 'HOLD' && tv1dRsi != null && tv1dRsi < 48) {
+    baseDecision = {
       recommendation: 'ADJUST',
       reasonCode: 'tv_1d_momentum_cooling',
       reason: `1d RSI ${tv1dRsi.toFixed(2)}로 상위 추세 모멘텀 둔화가 보여 수익 구간 ${pnlPct.toFixed(2)}% 조정 후보`,
     };
-  }
-
-  if (buy === 0 && hold > 0 && avgConfidence < 0.35) {
-    return {
+  } else if (buy === 0 && hold > 0 && avgConfidence < 0.35) {
+    baseDecision = {
       recommendation: 'ADJUST',
       reasonCode: 'weak_support',
       reason: `BUY 지지 없이 HOLD 중심(${hold})이며 평균 확신도 ${avgConfidence.toFixed(2)}`,
     };
+  } else {
+    baseDecision = {
+      recommendation: 'HOLD',
+      reasonCode: 'hold_bias',
+      reason: `보유 유지 조건 충족 (BUY ${buy} / HOLD ${hold} / SELL ${sell}, PnL ${pnlPct.toFixed(2)}%)`,
+    };
   }
 
-  return {
-    recommendation: 'HOLD',
-    reasonCode: 'hold_bias',
-    reason: `보유 유지 조건 충족 (BUY ${buy} / HOLD ${hold} / SELL ${sell}, PnL ${pnlPct.toFixed(2)}%)`,
-  };
+  return applyStrategyAwareDecision(baseDecision, {
+    strategyProfile,
+    pnlPct,
+    heldHours,
+    tvComposite,
+    tv4hSignal,
+    tv1dSignal,
+    tv4hRsi,
+    sell,
+    buy,
+  });
 }
 
 async function ensurePositionReevaluationSchema() {
@@ -518,7 +592,7 @@ export async function reevaluateOpenPositions({
       ...(indicatorAnalysis ? [indicatorAnalysis] : []),
     ];
     const analysisSummary = summarizeAnalyses(mergedAnalyses);
-    const decision = decideReevaluation(position, analysisSummary);
+    const decision = decideReevaluation(position, analysisSummary, strategyProfile);
     results.push({
       exchange: position.exchange,
       symbol: position.symbol,
