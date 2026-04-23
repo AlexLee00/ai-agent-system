@@ -6,6 +6,23 @@ import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { resolveManagedPositionUniverse } from '../shared/universe-fallback.ts';
 
 const MARKETS = ['binance', 'kis', 'kis_overseas'];
+const MARKET_COMMANDS = {
+  binance: {
+    run: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run crypto -- --force',
+    research: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run crypto -- --force --research-only',
+    maintenance: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:maintenance-collect -- --markets=binance --json',
+  },
+  kis: {
+    run: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run domestic -- --force',
+    research: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run domestic -- --force --research-only',
+    maintenance: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:maintenance-collect -- --markets=kis --json',
+  },
+  kis_overseas: {
+    run: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run overseas -- --force',
+    research: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run overseas -- --force --research-only',
+    maintenance: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:maintenance-collect -- --markets=kis_overseas --json',
+  },
+};
 
 function parseArgs(argv = []) {
   const args = {
@@ -141,6 +158,61 @@ export function applyCollectionUniverseCompletenessGate({
       screeningUniverseCount: Number(screeningUniverseCount || 0),
       maintenanceUniverseCount: Number(maintenanceUniverseCount || 0),
       maintenanceProfiledCount: Number(maintenanceProfiledCount || 0),
+    },
+  };
+}
+
+export function buildCollectionAuditRemediation({
+  market = 'unknown',
+  quality = null,
+  screeningUniverseCount = 0,
+  maintenanceUniverseCount = 0,
+  maintenanceProfiledCount = 0,
+  collectQualitySource = 'unknown',
+} = {}) {
+  const status = String(quality?.status || 'unknown');
+  const reasons = Array.isArray(quality?.reasons) ? quality.reasons : [];
+  const commands = MARKET_COMMANDS[market] || {};
+  const missingUniverse =
+    reasons.includes('missing_collection_universe_meta')
+    || (
+      status === 'degraded'
+      && Number(screeningUniverseCount || 0) === 0
+      && Number(maintenanceUniverseCount || 0) === 0
+      && Number(maintenanceProfiledCount || 0) === 0
+    );
+
+  if (status === 'ready') {
+    return {
+      status: 'none',
+      reason: 'collection_ready',
+      commands: {
+        audit: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:collection-audit -- --json',
+      },
+    };
+  }
+
+  if (missingUniverse) {
+    return {
+      status: 'needs_universe_refresh',
+      reason: collectQualitySource === 'observed_node_coverage'
+        ? 'node coverage exists but screening/maintenance universe meta is empty'
+        : 'screening/maintenance universe meta is empty',
+      commands: {
+        research: commands.research || null,
+        run: commands.run || null,
+        maintenance: commands.maintenance || null,
+        audit: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:collection-audit -- --json',
+      },
+    };
+  }
+
+  return {
+    status: status === 'insufficient' ? 'needs_collect_repair' : 'needs_monitoring',
+    reason: reasons.join(', ') || `collection quality ${status}`,
+    commands: {
+      maintenance: commands.maintenance || null,
+      audit: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:collection-audit -- --json',
     },
   };
 }
@@ -288,6 +360,14 @@ async function auditMarket(market, hours = 24) {
       ),
     },
   };
+  audit.remediation = buildCollectionAuditRemediation({
+    market,
+    quality: effectiveQuality,
+    screeningUniverseCount: audit.screeningUniverseCount,
+    maintenanceUniverseCount: audit.maintenanceUniverseCount,
+    maintenanceProfiledCount: audit.maintenanceProfiledCount,
+    collectQualitySource: audit.collectQualitySource,
+  });
 
   return audit;
 }

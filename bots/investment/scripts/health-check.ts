@@ -520,10 +520,16 @@ async function main() {
       const level = insufficient ? 2 : 1;
       if (insufficient) hsm.clearAlert(state, 'collection-audit-degraded');
       if (hsm.canAlert(state, key)) {
+        const remediation = target.remediation || {};
+        const commandLines = [
+          remediation.commands?.research ? `research: ${remediation.commands.research}` : null,
+          remediation.commands?.maintenance ? `maintenance: ${remediation.commands.maintenance}` : null,
+          remediation.commands?.audit ? `audit: ${remediation.commands.audit}` : null,
+        ].filter(Boolean).join('\n');
         issues.push({
           key,
           level,
-          msg: `${insufficient ? '⚠️' : 'ℹ️'} [루나 헬스] collection audit ${insufficient ? 'attention' : 'monitor'}\nmarket: ${target.market}\ncollect quality: ${target.collectQuality?.status || 'unknown'}\nscreening: ${target.screeningUniverseCount} / maintenance: ${target.maintenanceUniverseCount} / profiled: ${target.maintenanceProfiledCount} / dust skipped: ${target.dustSkippedCount}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:collection-audit`,
+          msg: `${insufficient ? '⚠️' : 'ℹ️'} [루나 헬스] collection audit ${insufficient ? 'attention' : 'monitor'}\nmarket: ${target.market}\ncollect quality: ${target.collectQuality?.status || 'unknown'}\nreason: ${remediation.reason || (target.collectQuality?.reasons || []).join(', ') || 'n/a'}\nscreening: ${target.screeningUniverseCount} / maintenance: ${target.maintenanceUniverseCount} / profiled: ${target.maintenanceProfiledCount} / dust skipped: ${target.dustSkippedCount}${commandLines ? `\nnext commands:\n${commandLines}` : '\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:collection-audit'}`,
         });
       }
     } else if (state['collection-audit-insufficient'] || state['collection-audit-degraded']) {

@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import {
   applyCollectionUniverseCompletenessGate,
+  buildCollectionAuditRemediation,
   inferObservedCollectQuality,
 } from './runtime-collection-audit.ts';
 
@@ -34,6 +35,18 @@ const domesticObservedWithoutUniverse = applyCollectionUniverseCompletenessGate(
 assert.equal(domesticObservedWithoutUniverse.status, 'degraded');
 assert.equal(domesticObservedWithoutUniverse.reasons.includes('missing_collection_universe_meta'), true);
 
+const domesticRemediation = buildCollectionAuditRemediation({
+  market: 'kis',
+  quality: domesticObservedWithoutUniverse,
+  screeningUniverseCount: 0,
+  maintenanceUniverseCount: 0,
+  maintenanceProfiledCount: 0,
+  collectQualitySource: 'observed_node_coverage',
+});
+assert.equal(domesticRemediation.status, 'needs_universe_refresh');
+assert.equal(domesticRemediation.commands.research.includes('run domestic'), true);
+assert.equal(domesticRemediation.commands.maintenance.includes('--markets=kis'), true);
+
 const domesticObservedWithUniverse = applyCollectionUniverseCompletenessGate({
   quality: domesticObserved.quality,
   source: domesticObserved.source,
@@ -43,6 +56,7 @@ const domesticObservedWithUniverse = applyCollectionUniverseCompletenessGate({
   maintenanceProfiledCount: 0,
 });
 assert.equal(domesticObservedWithUniverse.status, 'ready');
+assert.equal(buildCollectionAuditRemediation({ market: 'kis', quality: domesticObservedWithUniverse }).status, 'none');
 
 const overseasObserved = inferObservedCollectQuality({
   nodeCoverage: { nodeIds: ['L02', 'L03', 'L04', 'L06'], total: 31 },

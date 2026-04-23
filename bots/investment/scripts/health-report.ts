@@ -1094,7 +1094,10 @@ function formatText(report) {
             `  summary: recent runs ${report.collectionAudit.summary?.withRecentRuns || 0}/${report.collectionAudit.summary?.markets || 0} / ready ${report.collectionAudit.summary?.qualityReady || 0} / degraded ${report.collectionAudit.summary?.qualityDegraded || 0} / insufficient ${report.collectionAudit.summary?.qualityInsufficient || 0}`,
             ...((report.collectionAudit.markets || []).map((item) => {
               const maintenanceStage = item?.stages?.maintenanceCollect;
-              return `  ${item.market}: quality ${item.collectQuality?.status || 'unknown'} / screening ${item.screeningUniverseCount} / maintenance ${item.maintenanceUniverseCount} / profiled ${item.maintenanceProfiledCount} / dust ${item.dustSkippedCount} / maintenance stage ${maintenanceStage?.implemented ? 'on' : 'off'}`;
+              const remediation = item?.remediation?.status && item.remediation.status !== 'none'
+                ? ` / remediation ${item.remediation.status}`
+                : '';
+              return `  ${item.market}: quality ${item.collectQuality?.status || 'unknown'} / screening ${item.screeningUniverseCount} / maintenance ${item.maintenanceUniverseCount} / profiled ${item.maintenanceProfiledCount} / dust ${item.dustSkippedCount} / maintenance stage ${maintenanceStage?.implemented ? 'on' : 'off'}${remediation}`;
             })),
           ]
         : ['  collection audit 정보 없음'],

@@ -782,6 +782,9 @@ function buildCollectionAuditLines(collectionAudit = null) {
     lines.push(
       `${row.market} | quality ${row.collectQuality?.status || 'unknown'} | screening ${row.screeningUniverseCount || 0} / maintenance ${row.maintenanceUniverseCount || 0} / profiled ${row.profiledCount || 0} / dust ${row.dustSkippedCount || 0}`,
     );
+    if (row.remediation?.status && row.remediation.status !== 'none') {
+      lines.push(`  ↳ ${row.remediation.status}: ${row.remediation.reason || 'remediation required'}`);
+    }
   }
   return lines;
 }

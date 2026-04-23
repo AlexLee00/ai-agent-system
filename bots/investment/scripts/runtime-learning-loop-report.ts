@@ -648,6 +648,7 @@ function buildSectionStates({
                 maintenance: Number(item.maintenanceUniverseCount || 0),
                 profiled: Number(item.maintenanceProfiledCount || 0),
                 dustSkipped: Number(item.dustSkippedCount || 0),
+                remediation: item.remediation || null,
               }))
             : [],
         }
@@ -842,12 +843,14 @@ function buildDecision(sections = {}) {
     status = 'collection_quality_attention';
     const target = sections.collect.collectionAudit.markets.find((item) => item.quality === 'insufficient');
     headline = `${target?.market || '일부 시장'} 수집 품질이 insufficient라 신규 판단보다 수집 품질 복구가 우선입니다.`;
-    nextActions.push(`runtime:collection-audit로 ${target?.market || '대상 시장'} screening/maintenance 상태를 먼저 복구합니다.`);
+    nextActions.push(target?.remediation?.commands?.maintenance || `runtime:collection-audit로 ${target?.market || '대상 시장'} screening/maintenance 상태를 먼저 복구합니다.`);
+    if (target?.remediation?.commands?.research) nextActions.push(target.remediation.commands.research);
   } else if (sections.collect.collectionAudit?.markets?.some((item) => item.quality === 'degraded')) {
     status = 'collection_quality_monitor';
     const target = sections.collect.collectionAudit.markets.find((item) => item.quality === 'degraded');
     headline = `${target?.market || '일부 시장'} 수집 품질이 degraded 상태라 유지감시와 screening 범위를 함께 관찰합니다.`;
-    nextActions.push(`collection audit와 maintenance collect를 함께 보며 ${target?.market || '대상 시장'} 수집 품질 추세를 더 누적합니다.`);
+    nextActions.push(target?.remediation?.commands?.research || `collection audit와 maintenance collect를 함께 보며 ${target?.market || '대상 시장'} 수집 품질 추세를 더 누적합니다.`);
+    if (target?.remediation?.commands?.maintenance) nextActions.push(target.remediation.commands.maintenance);
   } else if (sections.feedback.status === 'repair') {
     status = 'feedback_repair_needed';
     headline = '피드백 루프 정합성 이슈가 남아 있어 review 데이터를 먼저 복구해야 합니다.';
