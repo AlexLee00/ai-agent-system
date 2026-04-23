@@ -61,7 +61,16 @@ function countByStatus(rows = [], status = '') {
     .reduce((sum, row) => sum + Number(row?.cnt || 0), 0);
 }
 
-function summarizeSignals(rows = []) {
+function isOperationalBlock(code = '') {
+  return new Set([
+    'sec015_overseas_nemesis_bypass_guard',
+    'mock_operation_unsupported',
+    'overseas_order_rejected',
+    'legacy_order_rejected',
+  ]).has(String(code || ''));
+}
+
+export function summarizeSignals(rows = []) {
   const totalBuy = rows.reduce((sum, row) => sum + Number(row?.cnt || 0), 0);
   const executedSignals = countByStatus(rows, 'executed');
   const failedSignals = countByStatus(rows, 'failed');
@@ -73,6 +82,9 @@ function summarizeSignals(rows = []) {
   const effectiveTopBlocks = topBlocks.filter((row) => row.code !== 'mock_operation_unsupported');
   const effectiveFailedSignals = effectiveTopBlocks.reduce((sum, row) => sum + Number(row.count || 0), 0);
   const minOrderNotional = topBlocks.find((row) => row.code === 'min_order_notional')?.count || 0;
+  const operationalBlocks = topBlocks.filter((row) => isOperationalBlock(row.code));
+  const operationalBlockCount = operationalBlocks.reduce((sum, row) => sum + Number(row.count || 0), 0);
+  const topOperationalBlock = operationalBlocks[0] || null;
 
   return {
     totalBuy,
@@ -84,10 +96,12 @@ function summarizeSignals(rows = []) {
     effectiveTopBlocks,
     mockUnsupported,
     minOrderNotional,
+    operationalBlockCount,
+    topOperationalBlock,
   };
 }
 
-function summarizeTrades(rows = []) {
+export function summarizeTrades(rows = []) {
   const realBuyTrades = rows
     .filter((row) => row.paper === false && String(row.side || '').toLowerCase() === 'buy')
     .reduce((sum, row) => sum + Number(row?.cnt || 0), 0);
@@ -100,8 +114,9 @@ function summarizeTrades(rows = []) {
   };
 }
 
-function buildCandidate(config, signalSummary) {
+export function buildCandidate(config, signalSummary) {
   if (signalSummary.totalBuy < 8 || signalSummary.executedSignals <= 0) return null;
+  if (Number(signalSummary.operationalBlockCount || 0) > 0) return null;
 
   if (signalSummary.minOrderNotional >= 5) {
     const key = 'runtime_config.luna.stockOrderDefaults.kis_overseas.min';
@@ -138,7 +153,7 @@ function buildCandidate(config, signalSummary) {
   return null;
 }
 
-function buildDecision(signalSummary, tradeSummary, candidate = null) {
+export function buildDecision(signalSummary, tradeSummary, candidate = null) {
   const baseline = getExchangeEvidenceBaseline('kis_overseas');
   let status = 'kis_overseas_autotune_idle';
   let headline = '실계좌 전환 이후 해외장 self-tune 후보가 아직 없습니다.';
@@ -154,6 +169,18 @@ function buildDecision(signalSummary, tradeSummary, candidate = null) {
     status = 'kis_overseas_autotune_ready';
     headline = '해외장 제한적 self-tune 후보를 적용할 수 있습니다.';
     actionItems.push(`${candidate.key}를 ${candidate.current} → ${candidate.suggested}로 비교합니다.`);
+  } else if (Number(signalSummary.operationalBlockCount || 0) > 0) {
+    status = 'kis_overseas_operational_blocker_attention';
+    const topOperational = signalSummary.topOperationalBlock;
+    headline = '해외장 실패 원인이 파라미터보다 실행 권한/승인 전파 계열에 집중되어 있습니다.';
+    if (topOperational?.code === 'sec015_overseas_nemesis_bypass_guard') {
+      actionItems.push('해외장 BUY 신호의 nemesis_verdict/approved_at이 실행 큐까지 보존되는지 점검합니다.');
+      actionItems.push('SEC015 overseas 실행 경로에서 승인 메타를 생성/전달하지 않는 레거시 분기가 남아 있는지 확인합니다.');
+    } else if (topOperational?.code === 'mock_operation_unsupported') {
+      actionItems.push('KIS 해외장 계좌가 mock 모드인지 확인하고, mock 미지원 주문은 live 전환 전 차단/분리합니다.');
+    } else {
+      actionItems.push(`${topOperational?.code || 'operational_block'} 원인을 주문 전 preflight에서 더 구체화합니다.`);
+    }
   } else if (signalSummary.totalBuy > 0) {
     status = 'kis_overseas_autotune_observe';
     headline = '해외장 표본은 있지만 지금은 관찰 유지가 더 안전합니다.';
@@ -178,12 +205,15 @@ function buildDecision(signalSummary, tradeSummary, candidate = null) {
       failedSignals: signalSummary.failedSignals,
       effectiveFailedSignals: signalSummary.effectiveFailedSignals,
       mockUnsupported: signalSummary.mockUnsupported,
+      operationalBlockCount: signalSummary.operationalBlockCount,
       executionRate: signalSummary.executionRate,
       minOrderNotional: signalSummary.minOrderNotional,
       realBuyTrades: tradeSummary.realBuyTrades,
       paperBuyTrades: tradeSummary.paperBuyTrades,
       topBlock: topBlock?.code || null,
       topBlockCount: Number(topBlock?.count || 0),
+      topOperationalBlock: signalSummary.topOperationalBlock?.code || null,
+      topOperationalBlockCount: Number(signalSummary.topOperationalBlock?.count || 0),
     },
   };
 }
@@ -216,6 +246,9 @@ function buildFallback(payload = {}) {
   const decision = payload.decision || {};
   if (decision.status === 'kis_overseas_autotune_ready') {
     return '해외장 실행 병목이 반복돼 제한적 self-tune 후보를 비교할 수 있는 상태입니다.';
+  }
+  if (decision.status === 'kis_overseas_operational_blocker_attention') {
+    return '해외장 실패는 설정값보다 실행 권한 또는 승인 메타 전파 경로 점검이 우선입니다.';
   }
   if (decision.status === 'kis_overseas_autotune_observe') {
     return '해외장 표본은 있지만 아직은 즉시 조정보다 관찰 유지가 더 안전합니다.';
