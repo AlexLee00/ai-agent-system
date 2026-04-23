@@ -58,7 +58,7 @@ function buildSnapshot(report = {}, days = 30) {
   };
 }
 
-function buildDelta(current, previous) {
+export function buildRuntimeRiskApprovalModeAuditHistoryDelta(current, previous) {
   if (!previous) {
     return {
       blockerCount: 0,
@@ -114,7 +114,7 @@ export async function buildRuntimeRiskApprovalModeAuditHistory({ days = 30, file
     historyCount: history.length + (write ? 1 : 0),
     current,
     previous,
-    delta: buildDelta(current, previous),
+    delta: buildRuntimeRiskApprovalModeAuditHistoryDelta(current, previous),
   };
   if (json) return payload;
   return renderText(payload);

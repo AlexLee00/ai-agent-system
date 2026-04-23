@@ -4,6 +4,7 @@
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { runRiskApprovalChainSmoke } from './risk-approval-chain-smoke.ts';
 import { runRiskApprovalReportSmoke } from './risk-approval-report-smoke.ts';
+import { runRiskApprovalHistorySmoke } from './risk-approval-history-smoke.ts';
 import { runRiskApprovalExecutionGuardSmoke } from './risk-approval-execution-guard-smoke.ts';
 import { runRiskApprovalExecutionGuardReportSmoke } from './risk-approval-execution-guard-report-smoke.ts';
 import { runRiskApprovalModeSmoke } from './risk-approval-mode-smoke.ts';
@@ -87,6 +88,7 @@ export async function runRiskApprovalOpsSuite({ days = 30, smokeOnly = false } =
   const smokes = {
     chain: runRiskApprovalChainSmoke(),
     report: runRiskApprovalReportSmoke(),
+    history: runRiskApprovalHistorySmoke(),
     executionGuard: runRiskApprovalExecutionGuardSmoke(),
     executionGuardReport: runRiskApprovalExecutionGuardReportSmoke(),
     mode: runRiskApprovalModeSmoke(),
@@ -101,6 +103,7 @@ export async function runRiskApprovalOpsSuite({ days = 30, smokeOnly = false } =
     smokes: {
       chain: Boolean(smokes.chain.ok),
       report: Boolean(smokes.report.ok),
+      history: Boolean(smokes.history.ok),
       executionGuard: Boolean(smokes.executionGuard.ok),
       executionGuardReport: Boolean(smokes.executionGuardReport.ok),
       mode: Boolean(smokes.mode.ok),
@@ -116,7 +119,7 @@ function renderText(payload) {
     '🧪 Risk Approval Ops Suite',
     `smokeOnly: ${payload.smokeOnly}`,
     `days: ${payload.days}`,
-    `smokes: chain=${payload.smokes.chain} report=${payload.smokes.report} executionGuard=${payload.smokes.executionGuard} executionGuardReport=${payload.smokes.executionGuardReport} mode=${payload.smokes.mode}`,
+    `smokes: chain=${payload.smokes.chain} report=${payload.smokes.report} history=${payload.smokes.history} executionGuard=${payload.smokes.executionGuard} executionGuardReport=${payload.smokes.executionGuardReport} mode=${payload.smokes.mode}`,
     `decision smokes: readiness=${payload.smokes.readiness} modeAudit=${payload.smokes.modeAudit}`,
   ];
   if (payload.reports) {

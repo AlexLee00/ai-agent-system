@@ -49,7 +49,7 @@ function buildSnapshot(report) {
   };
 }
 
-function buildDelta(current, previous) {
+export function buildRuntimeExecutionRiskGuardHistoryDelta(current, previous) {
   if (!previous) {
     return { total: 0, staleCount: 0, bypassCount: 0 };
   }
@@ -91,7 +91,7 @@ export async function buildRuntimeExecutionRiskGuardHistory({ days = 14, file = 
     historyCount: history.length + (write ? 1 : 0),
     current,
     previous,
-    delta: buildDelta(current, previous),
+    delta: buildRuntimeExecutionRiskGuardHistoryDelta(current, previous),
   };
   if (json) return payload;
   return renderText(payload);

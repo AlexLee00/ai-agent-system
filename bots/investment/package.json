@@ -49,6 +49,7 @@
     "planner:decision-e2e-report": "node scripts/decision-e2e-report.ts",
     "risk:approval-chain-smoke": "node scripts/risk-approval-chain-smoke.ts",
     "risk:approval-report-smoke": "node scripts/risk-approval-report-smoke.ts",
+    "risk:approval-history-smoke": "node scripts/risk-approval-history-smoke.ts",
     "risk:approval-execution-guard-smoke": "node scripts/risk-approval-execution-guard-smoke.ts",
     "risk:approval-execution-guard-report-smoke": "node scripts/risk-approval-execution-guard-report-smoke.ts",
     "risk:approval-mode-smoke": "node scripts/risk-approval-mode-smoke.ts",

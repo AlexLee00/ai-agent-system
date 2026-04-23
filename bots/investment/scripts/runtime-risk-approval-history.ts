@@ -70,7 +70,7 @@ function buildSnapshot(report, days) {
   };
 }
 
-function buildDelta(current, previous) {
+export function buildRuntimeRiskApprovalHistoryDelta(current, previous) {
   if (!previous) {
     return {
       total: 0,
@@ -130,7 +130,7 @@ export async function buildRuntimeRiskApprovalHistory({ days = 30, file = DEFAUL
     historyCount: history.length + (write ? 1 : 0),
     current,
     previous,
-    delta: buildDelta(current, previous),
+    delta: buildRuntimeRiskApprovalHistoryDelta(current, previous),
   };
   if (json) return payload;
   return renderText(payload);
