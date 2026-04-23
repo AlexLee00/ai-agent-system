@@ -116,6 +116,7 @@
     "runtime:strategy-exit": "node scripts/strategy-exit-runner.ts",
     "runtime:backfill-strategy-profiles": "node scripts/backfill-position-strategy-profiles.ts",
     "runtime:reconcile-open-journals": "node scripts/reconcile-open-journals.ts",
+    "runtime:retire-paper": "node scripts/retire-paper-positions.ts --json",
     "runtime:reeval-tvmft-autotune": "node scripts/runtime-reeval-tvmft-autotune-report.ts",
     "runtime:reeval-tvmft-autotune-history": "node scripts/runtime-reeval-tvmft-autotune-history.ts",
     "runtime:reeval-tvmft-coverage": "node scripts/runtime-reeval-tvmft-coverage-report.ts",
