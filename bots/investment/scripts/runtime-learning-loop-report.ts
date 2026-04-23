@@ -9,7 +9,7 @@ import { buildRuntimeCryptoExecutionGateReport } from './runtime-crypto-executio
 import { buildRuntimeCryptoGuardAutotuneReport } from './runtime-crypto-guard-autotune-report.ts';
 import { buildRuntimeConfigSuggestionsReport } from './runtime-config-suggestions.ts';
 import { buildVectorBtBacktestReport } from './vectorbt-backtest-report.ts';
-import { validateTradeReview } from './validate-trade-review.ts';
+import { buildTradeReviewRepairCloseout, validateTradeReview } from './validate-trade-review.ts';
 import { runCollectionAudit } from './runtime-collection-audit.ts';
 import { buildStrategyFeedbackOutcomes } from './runtime-strategy-feedback-outcomes.ts';
 import { buildStrategyFeedbackOutcomesHistory } from './runtime-strategy-feedback-outcomes-history.ts';
@@ -683,6 +683,11 @@ function buildSectionStates({
     closedTrades: Number(validation.closedTrades || 0),
     validationSummary,
     validationSamples: Array.isArray(validation.items) ? validation.items.slice(0, 3) : [],
+    validationRepairCloseout: buildTradeReviewRepairCloseout({
+      before: validation,
+      after: validation,
+      fix: false,
+    }),
     headline: Number(validation.findings || 0) > 0
       ? `trade review 정합성 이슈 ${validation.findings}건이 남아 있습니다${validationSummary.topIssue ? ` (${validationSummary.topIssue.key} ${validationSummary.topIssue.count}건 최다, live ${validationSummary.liveFindings || 0} / paper ${validationSummary.paperFindings || 0})` : ''}.`
       : 'trade review / 피드백 루프는 비교적 안정적입니다.',
@@ -937,6 +942,9 @@ function renderText(payload) {
       : null,
     sections.feedback.validationSummary?.recheckCommand
       ? `- recheck command ${sections.feedback.validationSummary.recheckCommand}`
+      : null,
+    sections.feedback.validationRepairCloseout?.status
+      ? `- repair closeout ${sections.feedback.validationRepairCloseout.status} | before ${sections.feedback.validationRepairCloseout.beforeFindings} / after ${sections.feedback.validationRepairCloseout.afterFindings} / dryRun ${sections.feedback.validationRepairCloseout.dryRun}`
       : null,
     `- ${sections.feedback.headline}`,
     '',
