@@ -405,6 +405,42 @@ function normalizePartialExitRatio(value) {
   return Number(parsed.toFixed(4));
 }
 
+async function reconcileOpenJournalToTrackedAmount(symbol, isPaper, trackedAmount, tradeMode = null) {
+  const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
+  const openEntries = await journalDb.getOpenJournalEntries('crypto');
+  const entry = openEntries.find((e) =>
+    e.symbol === symbol
+      && Boolean(e.is_paper) === Boolean(isPaper)
+      && (e.trade_mode || 'normal') === effectiveTradeMode
+  );
+  if (!entry) return null;
+
+  const entrySize = Number(entry.entry_size || 0);
+  const nextSize = Math.max(0, Number(trackedAmount || 0));
+  if (!(entrySize > 0) || !(nextSize > 0) || nextSize >= entrySize) return null;
+
+  const entryValue = Number(entry.entry_value || 0);
+  const nextEntryValue = entrySize > 0
+    ? entryValue * (nextSize / entrySize)
+    : entryValue;
+
+  await db.run(
+    `UPDATE trade_journal
+     SET entry_size = $1,
+         entry_value = $2
+     WHERE trade_id = $3`,
+    [nextSize, nextEntryValue, entry.trade_id],
+  );
+
+  return {
+    tradeId: entry.trade_id,
+    fromSize: entrySize,
+    toSize: nextSize,
+    fromEntryValue: entryValue,
+    toEntryValue: nextEntryValue,
+  };
+}
+
 async function closeOpenJournalForSymbol(symbol, isPaper, exitPrice, exitValue, exitReason, tradeMode = null) {
   const openEntries = await journalDb.getOpenJournalEntries('crypto');
   const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
@@ -1200,6 +1236,12 @@ async function resolveSellAmount({
   } else if (!sellPaperMode && freeBalance < amount) {
     const drift = amount - freeBalance;
     console.warn(`  ⚠️ ${symbol} DB 포지션(${amount})과 가용잔고(free=${freeBalance}, total=${totalBalance || freeBalance})가 어긋남 — free 기준으로 SELL 진행`);
+    await reconcileOpenJournalToTrackedAmount(
+      symbol,
+      sellPaperMode,
+      freeBalance,
+      position?.trade_mode || fallbackLivePosition?.trade_mode || signalTradeMode,
+    ).catch(() => null);
     amount = freeBalance;
     await db.updateSignalBlock(signalId, {
       reason: `position_reconciled_to_balance:${drift.toFixed(8)}`,
