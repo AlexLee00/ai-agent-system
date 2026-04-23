@@ -80,7 +80,7 @@ function buildDecision({ market, rows = [], runtime = null, orderDefaults = null
   if (total === 0) {
     reasons.push('최근 min_order_notional 블록이 없습니다.');
   } else {
-    reasons.push(`최근 ${total}건 min_order_notional 블록`);
+    reasons.push(`최근 ${total}건 min-order/sizing-floor 블록`);
     if (withGap.length > 0) {
       reasons.push(`평균 gap ${formatAmount(avgGap, market)}`);
     }
@@ -151,7 +151,7 @@ function renderText(payload) {
     '상위 블록:',
     ...(payload.rows.length > 0
       ? payload.rows.slice(0, 5).map((row) =>
-          `- ${row.symbol} | mode=${row.tradeMode} | attempted=${formatAmount(row.attempted, payload.market)} | required=${formatAmount(row.required, payload.market)} | gap=${formatAmount(row.gap, payload.market)}`
+          `- ${row.symbol} | code=${row.blockCode || 'n/a'} | mode=${row.tradeMode} | attempted=${formatAmount(row.attempted, payload.market)} | required=${formatAmount(row.required, payload.market)} | gap=${formatAmount(row.gap, payload.market)}`
         )
       : ['- 없음']),
     '',
@@ -180,12 +180,13 @@ async function loadMinOrderRows({ market = 'kis', days = 14 } = {}) {
     SELECT
       symbol,
       exchange,
+      COALESCE(block_code, '') AS block_code,
       COALESCE(trade_mode, 'normal') AS trade_mode,
       created_at,
       block_reason
     FROM investment.signals
     WHERE exchange = '${safeMarket}'
-      AND COALESCE(block_code, '') = 'min_order_notional'
+      AND COALESCE(block_code, '') IN ('min_order_notional', 'sizing_floor_unavailable')
       AND status IN ('failed', 'blocked', 'rejected')
       AND created_at > now() - INTERVAL '${safeDays} days'
     ORDER BY created_at DESC
@@ -197,6 +198,7 @@ async function loadMinOrderRows({ market = 'kis', days = 14 } = {}) {
     return {
       symbol: row.symbol,
       exchange: row.exchange,
+      blockCode: row.block_code,
       tradeMode: row.trade_mode,
       createdAt: row.created_at,
       blockReason: row.block_reason,

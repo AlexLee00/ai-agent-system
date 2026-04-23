@@ -21,11 +21,17 @@ export function runRuntimeMinOrderPressureSmoke() {
   assert.equal(usdtText.required, 10);
   assert.equal(usdtText.gap, 0.75);
 
+  const sizingFloor = extractGap('sizing floor 적용 불가 (118,801 KRW < floor 200,000 KRW, cap 150,000 KRW)');
+  assert.equal(sizingFloor.attempted, 118801);
+  assert.equal(sizingFloor.required, 200000);
+  assert.equal(sizingFloor.gap, 81199);
+
   return {
     ok: true,
     krwWon,
     krwText,
     usdtText,
+    sizingFloor,
   };
 }
 

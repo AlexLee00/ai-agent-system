@@ -508,6 +508,16 @@ function buildCryptoSuggestions(config, crypto) {
 
 function buildDomesticSuggestions(config, domestic) {
   const suggestions = [];
+  if (domestic.totalBuy > 0 && domestic.executed === 0 && domestic.topBlocks[0]?.code === 'sizing_floor_unavailable') {
+    suggestions.push({
+      key: 'runtime_config.luna.stockOrderDefaults.kis.min',
+      current: config.luna.stockOrderDefaults.kis.min,
+      suggested: config.luna.stockOrderDefaults.kis.min,
+      action: 'hold',
+      confidence: 'high',
+      reason: `국내장 실패 상위가 sizing_floor_unavailable ${domestic.topBlocks[0]?.count || 0}건이라 min 파라미터 조정보다 최종 주문 sizing floor/position cap 정책 정리가 우선입니다.`,
+    });
+  }
   if (domestic.totalBuy > 0 && domestic.executed === 0 && domestic.topBlocks[0]?.code === 'min_order_notional') {
     suggestions.push({
       key: 'runtime_config.luna.stockOrderDefaults.kis.min',
@@ -523,6 +533,16 @@ function buildDomesticSuggestions(config, domestic) {
 
 function buildOverseasSuggestions(config, overseas) {
   const suggestions = [];
+  if (overseas.totalBuy >= 1 && overseas.topBlocks[0]?.code === 'sizing_floor_unavailable') {
+    suggestions.push({
+      key: 'runtime_config.luna.stockOrderDefaults.kis_overseas.min',
+      current: config.luna.stockOrderDefaults.kis_overseas.min,
+      suggested: config.luna.stockOrderDefaults.kis_overseas.min,
+      action: 'hold',
+      confidence: 'high',
+      reason: `해외장 실패 상위가 sizing_floor_unavailable ${overseas.topBlocks[0]?.count || 0}건이라 주문 floor 상향보다 최종 sizing floor/position cap 정책 정리가 우선입니다.`,
+    });
+  }
   if (overseas.totalBuy >= 8 && overseas.executed >= 3 && overseas.topBlocks[0]?.code === 'legacy_order_rejected') {
     suggestions.push({
       key: 'runtime_config.luna.stockOrderDefaults.kis_overseas.max',

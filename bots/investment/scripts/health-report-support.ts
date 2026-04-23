@@ -834,6 +834,7 @@ export async function loadDomesticRejectBreakdown(pgPool, windowMinutes = 1440) 
           'market_closed',
           'quote_lookup_failed',
           'min_order_notional',
+          'sizing_floor_unavailable',
           'max_order_notional'
         )
       GROUP BY 1
@@ -851,6 +852,7 @@ export async function loadDomesticRejectBreakdown(pgPool, windowMinutes = 1440) 
     market_closed: '장종료/시장종료',
     quote_lookup_failed: '현재가 조회 실패',
     min_order_notional: '최소 주문금액 미달',
+    sizing_floor_unavailable: 'sizing floor 적용 불가',
     max_order_notional: '최대 주문금액 초과',
   };
 
