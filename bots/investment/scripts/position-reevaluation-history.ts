@@ -29,6 +29,8 @@ async function appendHistory(filePath, payload) {
 }
 
 function buildComparison(current, previous = null) {
+  const currentAffected = Number(current?.decision?.metrics?.familyFeedback?.affectedCount || 0);
+  const previousAffected = previous ? Number(previous?.decision?.metrics?.familyFeedback?.affectedCount || 0) : null;
   return {
     currentStatus: current?.decision?.status || 'unknown',
     previousStatus: previous ? previous?.decision?.status || 'unknown' : null,
@@ -36,6 +38,9 @@ function buildComparison(current, previous = null) {
     exitDelta: previous ? Number(current?.decision?.metrics?.exits || 0) - Number(previous?.decision?.metrics?.exits || 0) : null,
     adjustDelta: previous ? Number(current?.decision?.metrics?.adjusts || 0) - Number(previous?.decision?.metrics?.adjusts || 0) : null,
     holdDelta: previous ? Number(current?.decision?.metrics?.holds || 0) - Number(previous?.decision?.metrics?.holds || 0) : null,
+    familyFeedbackAffected: currentAffected,
+    familyFeedbackAffectedDelta: previous ? currentAffected - previousAffected : null,
+    familyFeedbackBias: current?.decision?.metrics?.familyFeedback?.distribution || {},
   };
 }
 
@@ -57,6 +62,8 @@ function renderText(payload) {
   lines.push(`EXIT 변화: ${comparison.exitDelta == null ? 'n/a' : `${comparison.exitDelta >= 0 ? '+' : ''}${comparison.exitDelta}`}`);
   lines.push(`ADJUST 변화: ${comparison.adjustDelta == null ? 'n/a' : `${comparison.adjustDelta >= 0 ? '+' : ''}${comparison.adjustDelta}`}`);
   lines.push(`HOLD 변화: ${comparison.holdDelta == null ? 'n/a' : `${comparison.holdDelta >= 0 ? '+' : ''}${comparison.holdDelta}`}`);
+  lines.push(`패밀리 피드백 영향: ${comparison.familyFeedbackAffected}건${comparison.familyFeedbackAffectedDelta == null ? '' : ` (${comparison.familyFeedbackAffectedDelta >= 0 ? '+' : ''}${comparison.familyFeedbackAffectedDelta})`}`);
+  lines.push(`패밀리 피드백 분포: ${Object.entries(comparison.familyFeedbackBias || {}).map(([key, value]) => `${key}:${value}`).join(', ') || 'none'}`);
   lines.push('');
   lines.push(`요약: ${current.decision.headline}`);
   lines.push('');

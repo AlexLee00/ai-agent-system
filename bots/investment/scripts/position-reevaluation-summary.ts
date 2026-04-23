@@ -34,6 +34,41 @@ function topReason(rows = [], recommendation) {
   return top ? { code: top[0], count: Number(top[1]) } : null;
 }
 
+function getFamilyPerformanceFeedback(row = null) {
+  return row?.positionSnapshot?.strategyProfile?.familyPerformanceFeedback
+    || row?.analysisSnapshot?.strategyProfile?.familyPerformanceFeedback
+    || {};
+}
+
+function buildFamilyFeedbackMetrics(rows = []) {
+  const distribution = {};
+  const affectedRows = [];
+  for (const row of rows.filter((item) => item.ignored !== true)) {
+    const feedback = getFamilyPerformanceFeedback(row);
+    const bias = String(feedback?.bias || 'unknown');
+    distribution[bias] = (distribution[bias] || 0) + 1;
+    if (bias !== 'unknown' && bias !== 'neutral' && bias !== 'insufficient_sample') {
+      affectedRows.push({
+        symbol: row.symbol,
+        exchange: row.exchange,
+        tradeMode: row.tradeMode || 'normal',
+        recommendation: row.recommendation,
+        reasonCode: row.reasonCode || null,
+        pnlPct: row.pnlPct,
+        family: feedback?.family || null,
+        bias,
+        winRatePct: feedback?.winRatePct ?? null,
+        avgPnlPercent: feedback?.avgPnlPercent ?? null,
+      });
+    }
+  }
+  return {
+    distribution,
+    affectedCount: affectedRows.length,
+    affectedRows,
+  };
+}
+
 function buildDecision(report) {
   const rows = report.rows || [];
   const exits = Number(report.summary?.exit || 0);
@@ -43,6 +78,7 @@ function buildDecision(report) {
   const count = Number(report.activeCount || report.count || 0);
   const topExit = topReason(rows, 'EXIT');
   const topAdjust = topReason(rows, 'ADJUST');
+  const familyFeedback = buildFamilyFeedbackMetrics(rows);
 
   let status = 'reeval_ok';
   let headline = '보유 포지션 재평가 레일이 안정적으로 기록되고 있습니다.';
@@ -51,6 +87,12 @@ function buildDecision(report) {
 
   if (topExit) reasons.push(`최다 EXIT 사유: ${topExit.code} (${topExit.count}건)`);
   if (topAdjust) reasons.push(`최다 ADJUST 사유: ${topAdjust.code} (${topAdjust.count}건)`);
+  if (familyFeedback.affectedCount > 0) {
+    const topBias = Object.entries(familyFeedback.distribution)
+      .filter(([key]) => !['unknown', 'neutral', 'insufficient_sample'].includes(key))
+      .sort((a, b) => Number(b[1]) - Number(a[1]))[0];
+    if (topBias) reasons.push(`전략 패밀리 피드백 영향: ${topBias[0]} (${topBias[1]}건)`);
+  }
 
   if (count === 0) {
     status = 'reeval_idle';
@@ -69,6 +111,9 @@ function buildDecision(report) {
   } else {
     if (exits > 0) actionItems.push('EXIT 후보 종목의 손절/추세전환 조건을 우선 점검합니다.');
     if (adjusts > 0) actionItems.push('ADJUST 후보 종목의 부분익절/TP 조정 규칙을 비교합니다.');
+    if (familyFeedback.affectedCount > 0) {
+      actionItems.push('전략 패밀리 피드백이 개입한 후보는 실제 exit/partial-adjust 결과와 다음 리뷰에서 비교합니다.');
+    }
     if (rows.some((row) => Number(row.analysisSnapshot?.total || 0) === 0)) {
       actionItems.push('분석 데이터가 비어 있는 포지션은 시장 데이터/분석 주기와 함께 재확인합니다.');
     }
@@ -90,6 +135,7 @@ function buildDecision(report) {
       exits,
       topExit,
       topAdjust,
+      familyFeedback,
     },
   };
 }
@@ -122,6 +168,10 @@ function renderText(payload) {
   }
   if (decision.metrics.topAdjust?.code) {
     lines.push(`- topAdjust: ${decision.metrics.topAdjust.code} (${decision.metrics.topAdjust.count})`);
+  }
+  if (decision.metrics.familyFeedback?.affectedCount > 0) {
+    lines.push(`- familyFeedbackAffected: ${decision.metrics.familyFeedback.affectedCount}`);
+    lines.push(`- familyFeedbackBias: ${Object.entries(decision.metrics.familyFeedback.distribution).map(([key, value]) => `${key}:${value}`).join(', ')}`);
   }
 
   lines.push('');
