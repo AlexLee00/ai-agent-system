@@ -738,6 +738,7 @@ function renderText(payload) {
     sections.collect.riskApprovalModeAudit?.trend
       ? `- risk approval mode audit trend history ${sections.collect.riskApprovalModeAudit.trend.historyCount} | non-shadow delta ${sections.collect.riskApprovalModeAudit.trend.delta?.nonShadowApplications ?? 0} / unavailable delta ${sections.collect.riskApprovalModeAudit.trend.delta?.unavailablePreviewCount ?? 0}`
       : null,
+    '- risk approval ops suite npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run risk:approval-ops-suite -- --json',
     sections.collect.executionRiskGuard
       ? `- execution risk guard ${sections.collect.executionRiskGuard.status} | total ${sections.collect.executionRiskGuard.total} / stale ${sections.collect.executionRiskGuard.staleCount} / bypass ${sections.collect.executionRiskGuard.bypassCount}`
       : '- execution risk guard none',
