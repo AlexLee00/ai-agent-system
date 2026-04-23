@@ -9,6 +9,18 @@ export type CreateKioskSlotCalendarServiceDeps = {
 export function createKioskSlotCalendarService(deps: CreateKioskSlotCalendarServiceDeps) {
   const { log, delay, isSettingsPanelVisible } = deps;
 
+  async function installEvalNameShim(page: any) {
+    await page.evaluate(`
+      (() => {
+        const shim = (value) => value;
+        globalThis.__name = shim;
+        if (typeof window !== 'undefined') window.__name = shim;
+        try { (0, eval)('var __name = globalThis.__name;'); } catch (_) {}
+        return true;
+      })()
+    `).catch(() => null);
+  }
+
   async function clickRoomAvailableSlot(page: any, roomRaw: string, startTime: string) {
     const roomType = (roomRaw || '').replace(/스터디룸?\s*/g, '').replace(/룸\s*$/, '').trim() || roomRaw;
     log(`  🏠 룸 슬롯 클릭: roomRaw="${roomRaw}" → roomType="${roomType}" time="${startTime}"`);
@@ -21,7 +33,8 @@ export function createKioskSlotCalendarService(deps: CreateKioskSlotCalendarServ
     const timeDisplay = `${ampm} ${hourMin}`;
     log(`  시간 표시: "${timeDisplay}"`);
 
-    const result = await page.evaluate((roomTypeArg: string, timeDisplayArg: string, ampmArg: string, hourMinArg: string, startTimeArg: string) => {
+    await installEvalNameShim(page);
+    const result = await page.evaluate(async (roomTypeArg: string, timeDisplayArg: string, ampmArg: string, hourMinArg: string, startTimeArg: string) => {
       const isVisible = (el: any) => {
         if (!el || !el.getBoundingClientRect) return false;
         const rect = el.getBoundingClientRect();
@@ -46,12 +59,22 @@ export function createKioskSlotCalendarService(deps: CreateKioskSlotCalendarServ
 
       const headerCells = Array.from(document.querySelectorAll('[class*="Calendar__inner-header"] [class*="Calendar__week-row"] [class*="Calendar__week-cell"]'));
       const roomHeaders = headerCells
-        .map((cell, idx) => ({ idx, text: normalize((cell as HTMLElement).textContent || '') }))
+        .map((cell, idx) => {
+          const rect = (cell as HTMLElement).getBoundingClientRect();
+          return {
+            idx,
+            text: normalize((cell as HTMLElement).textContent || ''),
+            left: rect.left,
+            right: rect.right,
+            cx: rect.left + rect.width / 2,
+          };
+        })
         .filter((row) => row.text.length > 0);
       const roomIndex = roomHeaders.findIndex((row) => roomPattern.test(row.text) || row.text === roomTypeArg);
       if (roomIndex < 0) {
         return { found: false, reason: 'room_header_not_found', roomHeaders: roomHeaders.map((row) => row.text) };
       }
+      const roomHeader = roomHeaders[roomIndex];
 
       const scrollCalendarToTarget = (targetEl: any) => {
         if (!targetEl) return null;
@@ -95,6 +118,7 @@ export function createKioskSlotCalendarService(deps: CreateKioskSlotCalendarServ
         return normalize(`${ampmText} ${timeText}`) === targetLabel;
       });
       const scrollDebug = scrollCalendarToTarget(targetTimelineEl);
+      await new Promise((resolve) => setTimeout(resolve, 450));
 
       const timelineRows = allTimelineEls
         .filter((row: any) => isVisible(row))
@@ -131,7 +155,66 @@ export function createKioskSlotCalendarService(deps: CreateKioskSlotCalendarServ
         .filter(Boolean);
 
       if (gridRows.length === 0) {
-        return { found: false, reason: 'no_visible_grid_rows' };
+        const targetRect = targetTimelineEl ? (targetTimelineEl as HTMLElement).getBoundingClientRect() : null;
+        const targetY = targetRect ? targetRect.top + targetRect.height / 2 : null;
+        const buttons = Array.from(document.querySelectorAll('button.calendar-btn, button[class*="calendar-btn"]'))
+          .filter((button: any) => isVisible(button))
+          .map((button: any) => {
+            const rect = button.getBoundingClientRect();
+            const cls = String((button as HTMLElement).className || '');
+            const text = normalize((button as HTMLElement).textContent || '');
+            return {
+              button,
+              cls,
+              text,
+              cx: rect.left + rect.width / 2,
+              cy: rect.top + rect.height / 2,
+            };
+          })
+          .filter((item: any) => {
+            const inRoom = item.cx >= roomHeader.left - 24 && item.cx <= roomHeader.right + 24;
+            const nearTime = targetY == null ? false : Math.abs(item.cy - targetY) <= 70;
+            return inRoom && nearTime;
+          });
+        for (const item of buttons) {
+          const isSoldout = item.cls.includes('soldout') || item.cls.includes('disabled');
+          const isBlocked = item.cls.includes('suspended') || item.cls.includes('btn-danger') || item.text.includes('예약불가');
+          const isAvailable = item.cls.includes('avail') || item.cls.includes('btn-info') || item.text.includes('예약가능');
+          if (isSoldout || isBlocked || !isAvailable) continue;
+          (item.button as HTMLElement).scrollIntoView({ block: 'center', inline: 'center' });
+          (item.button as HTMLElement).click();
+          return {
+            found: true,
+            clicked: true,
+            btnText: item.text,
+            btnClass: item.cls.slice(0, 80),
+            pos: { cx: Math.round(item.cx), cy: Math.round(item.cy) },
+            targetLabel,
+            targetSlot24: startTimeArg,
+            fallbackFromSlot24: null,
+            fallbackUsed: true,
+            fallbackMode: 'position_grid_fallback',
+            scrollDebug,
+            fallbackCandidates: buttons.map((candidate: any) => ({
+              btnText: candidate.text,
+              btnClass: candidate.cls.slice(0, 80),
+              cx: Math.round(candidate.cx),
+              cy: Math.round(candidate.cy),
+            })).slice(0, 8),
+          };
+        }
+        return {
+          found: false,
+          reason: 'no_visible_grid_rows',
+          targetLabel,
+          scrollDebug,
+          positionFallbackCandidates: buttons.map((candidate: any) => ({
+            btnText: candidate.text,
+            btnClass: candidate.cls.slice(0, 80),
+            cx: Math.round(candidate.cx),
+            cy: Math.round(candidate.cy),
+          })).slice(0, 8),
+        };
       }
 
       const rows = timelineRows
@@ -282,7 +365,8 @@ export function createKioskSlotCalendarService(deps: CreateKioskSlotCalendarServ
     const timeDisplay = `${ampm} ${hourMin}`;
     log(`  시간 표시: "${timeDisplay}"`);
 
-    const result = await page.evaluate((roomTypeArg: string, timeDisplayArg: string, ampmArg: string, hourMinArg: string, startTimeArg: string) => {
+    await installEvalNameShim(page);
+    const result = await page.evaluate(async (roomTypeArg: string, timeDisplayArg: string, ampmArg: string, hourMinArg: string, startTimeArg: string) => {
       const isVisible = (el: any) => {
         if (!el || !el.getBoundingClientRect) return false;
         const rect = el.getBoundingClientRect();
@@ -356,6 +440,7 @@ export function createKioskSlotCalendarService(deps: CreateKioskSlotCalendarServ
         return normalize(`${ampmText} ${timeText}`) === targetLabel;
       });
       const scrollDebug = scrollCalendarToTarget(targetTimelineEl);
+      await new Promise((resolve) => setTimeout(resolve, 450));
 
       const timelineRows = allTimelineEls
         .filter((row: any) => isVisible(row))
