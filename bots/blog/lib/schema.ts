@@ -203,7 +203,7 @@ async function ensureBlogCoreSchema() {
       title TEXT NOT NULL,
       post_id INTEGER,
       autonomy_phase INTEGER DEFAULT 1,
-      decision TEXT NOT NULL DEFAULT 'master_review',
+      decision TEXT NOT NULL DEFAULT 'auto_publish_guarded',
       score NUMERIC DEFAULT 0,
       threshold NUMERIC DEFAULT 0,
       reasons JSONB DEFAULT '[]',
@@ -212,6 +212,11 @@ async function ensureBlogCoreSchema() {
       metadata JSONB DEFAULT '{}',
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
+  `);
+
+  await pgPool.run('blog', `
+    ALTER TABLE blog.autonomy_decisions
+    ALTER COLUMN decision SET DEFAULT 'auto_publish_guarded'
   `);
 
   await pgPool.run('blog', `

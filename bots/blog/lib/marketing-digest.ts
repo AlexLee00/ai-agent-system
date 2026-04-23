@@ -22,7 +22,8 @@ async function getAutonomySummary(days = 14) {
       SELECT
         COALESCE(count(*), 0)::int AS total_count,
         COALESCE(count(*) FILTER (WHERE decision = 'auto_publish'), 0)::int AS auto_publish_count,
-        COALESCE(count(*) FILTER (WHERE decision = 'master_review'), 0)::int AS master_review_count
+        COALESCE(count(*) FILTER (WHERE decision IN ('auto_publish_guarded', 'master_review')), 0)::int AS guarded_publish_count,
+        COALESCE(count(*) FILTER (WHERE decision = 'quality_hold'), 0)::int AS hold_count
       FROM blog.autonomy_decisions
       WHERE created_at >= NOW() - ($1::text || ' days')::interval
         AND COALESCE(metadata->>'smoke_test', 'false') <> 'true'
@@ -42,14 +43,16 @@ async function getAutonomySummary(days = 14) {
     return {
       totalCount: Number(row.total_count || 0),
       autoPublishCount: Number(row.auto_publish_count || 0),
-      masterReviewCount: Number(row.master_review_count || 0),
+      guardedPublishCount: Number(row.guarded_publish_count || 0),
+      holdCount: Number(row.hold_count || 0),
       latestDecision: latest || null,
     };
   } catch (error) {
     return {
       totalCount: 0,
       autoPublishCount: 0,
-      masterReviewCount: 0,
+      guardedPublishCount: 0,
+      holdCount: 0,
       latestDecision: null,
       error: error.message,
     };
@@ -827,8 +830,12 @@ function buildRecommendations({ senseSummary, revenueCorrelation, diagnosis, aut
     recommendations.push(`콘텐츠 측면에선 "${diagnosis.primaryWeakness.message}" 보정이 우선입니다.`);
   }
 
-  if (autonomySummary.totalCount > 0 && autonomySummary.autoPublishCount === 0) {
-    recommendations.push('자율 판단은 아직 master_review 중심이어서, 자동 게시 확대 전 품질 기준을 더 다듬는 편이 안전합니다.');
+  if (autonomySummary.totalCount > 0 && autonomySummary.autoPublishCount === 0 && autonomySummary.guardedPublishCount > 0) {
+    recommendations.push('자율 발행은 아직 guarded lane 중심이어서, 품질 기준과 성과 데이터를 더 쌓아 normal auto publish 비중을 점진적으로 늘리는 편이 좋습니다.');
+  }
+
+  if (Number(autonomySummary.holdCount || 0) > 0) {
+    recommendations.push('일부 포스트는 quality hold로 멈췄으니, 제목·본문 최소 품질 기준을 먼저 보강해 hard hold 비중을 줄이는 편이 좋습니다.');
   }
 
   const instagram = Array.isArray(channelPerformance?.rows)
@@ -905,6 +912,47 @@ function buildHealth({ senseSummary, revenueCorrelation, diagnosis, autonomySumm
   };
 }
 
+function buildRuntimeNarrative({ health, senseSummary, revenueCorrelation, autonomySummary, nextGeneralPreview, recommendations }) {
+  const status = String(health?.status || 'unknown');
+  const topSignal = String(senseSummary?.topSignal?.message || '').trim();
+  const impactPct = Number(revenueCorrelation?.revenueImpactPct || 0);
+  const guardedCount = Number(autonomySummary?.guardedPublishCount || 0);
+  const holdCount = Number(autonomySummary?.holdCount || 0);
+  const previewTitle = String(nextGeneralPreview?.title || '').trim();
+  const firstRecommendation = String(Array.isArray(recommendations) ? recommendations[0] || '' : '').trim();
+
+  const lines = [];
+  if (status === 'watch') {
+    lines.push(`현재 마케팅 상태는 watch이며 최우선 신호는 "${topSignal || '운영 변동'}" 입니다.`);
+  } else {
+    lines.push(`현재 마케팅 상태는 ${status}이며 급한 병목보다는 전략 미세 조정과 누적 검증이 더 중요합니다.`);
+  }
+
+  if (impactPct >= 0.05) {
+    lines.push(`최근 매출 반응이 ${(impactPct * 100).toFixed(1)}% 우세라 전환형 콘텐츠를 조금 더 공격적으로 유지해도 됩니다.`);
+  } else if (impactPct <= -0.05) {
+    lines.push(`최근 매출 반응이 ${(impactPct * 100).toFixed(1)}% 약해 제목과 CTA를 보수적으로 다듬는 편이 좋습니다.`);
+  }
+
+  if (holdCount > 0) {
+    lines.push(`quality hold ${holdCount}건이 남아 있어 최소 제목·본문 품질 기준을 먼저 복구해야 합니다.`);
+  } else if (guardedCount > 0) {
+    lines.push(`자율 발행은 아직 guarded lane ${guardedCount}건 중심이라, 표본을 더 쌓으며 normal auto publish 비중을 늘리는 단계입니다.`);
+  } else if (Number(autonomySummary?.autoPublishCount || 0) > 0) {
+    lines.push(`최근 자동 발행 ${Number(autonomySummary.autoPublishCount || 0)}건이 쌓여 자율 운영 표본은 계속 살아 있습니다.`);
+  }
+
+  if (previewTitle) {
+    lines.push(`다음 일반 포스팅 후보는 "${previewTitle}" 쪽으로 정렬돼 있습니다.`);
+  }
+
+  if (firstRecommendation) {
+    lines.push(`지금은 ${firstRecommendation}`);
+  }
+
+  return lines.filter(Boolean).join(' ');
+}
+
 async function buildMarketingDigest(options = {}) {
   const revenueWindow = Number(options.revenueWindow || 14);
   const diagnosisWindow = Number(options.diagnosisWindow || 7);
@@ -944,6 +992,14 @@ async function buildMarketingDigest(options = {}) {
     strategyAdoption,
     nextGeneralPreview,
     recommendations,
+    runtimeNarrative: buildRuntimeNarrative({
+      health,
+      senseSummary,
+      revenueCorrelation,
+      autonomySummary,
+      nextGeneralPreview,
+      recommendations,
+    }),
   };
 }
 

@@ -747,7 +747,8 @@ async function buildAutonomyHealth() {
       SELECT
         COALESCE(count(*), 0)::int AS total_count,
         COALESCE(count(*) FILTER (WHERE decision = 'auto_publish'), 0)::int AS auto_publish_count,
-        COALESCE(count(*) FILTER (WHERE decision = 'master_review'), 0)::int AS master_review_count,
+        COALESCE(count(*) FILTER (WHERE decision IN ('auto_publish_guarded', 'master_review')), 0)::int AS guarded_publish_count,
+        COALESCE(count(*) FILTER (WHERE decision = 'quality_hold'), 0)::int AS hold_count,
         COALESCE(max(autonomy_phase), 1)::int AS max_phase
       FROM blog.autonomy_decisions
       WHERE created_at >= NOW() - INTERVAL '14 days'
@@ -766,14 +767,16 @@ async function buildAutonomyHealth() {
     const row = rows?.[0] || {
       total_count: 0,
       auto_publish_count: 0,
-      master_review_count: 0,
+      guarded_publish_count: 0,
+      hold_count: 0,
       max_phase: 1,
     };
 
     const ok = [
       `  recent decisions: ${row.total_count}건`,
       `  auto publish: ${row.auto_publish_count}건`,
-      `  master review: ${row.master_review_count}건`,
+      `  guarded publish: ${row.guarded_publish_count}건`,
+      `  quality hold: ${row.hold_count}건`,
       `  max phase: ${row.max_phase}`,
     ];
 
@@ -795,7 +798,8 @@ async function buildAutonomyHealth() {
       warn,
       totalCount: Number(row.total_count || 0),
       autoPublishCount: Number(row.auto_publish_count || 0),
-      masterReviewCount: Number(row.master_review_count || 0),
+      guardedPublishCount: Number(row.guarded_publish_count || 0),
+      holdCount: Number(row.hold_count || 0),
       maxPhase: Number(row.max_phase || 1),
       latestDecision: latest || null,
     };
@@ -807,7 +811,8 @@ async function buildAutonomyHealth() {
       warn: [`  autonomy: 확인 실패 (${error.message.slice(0, 120)})`],
       totalCount: 0,
       autoPublishCount: 0,
-      masterReviewCount: 0,
+      guardedPublishCount: 0,
+      holdCount: 0,
       maxPhase: 1,
       latestDecision: null,
     };

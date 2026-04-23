@@ -3,7 +3,7 @@
 /**
  * bots/blog/lib/autonomy-gate.ts — 자율 판단 게이트
  *
- * 피드백 루프 ACT 단계: 자동 게시 vs 마스터 검토 판단
+ * 피드백 루프 ACT 단계: 자동 게시 vs 가드 게시 판단
  * - 초안 품질 자체 평가 (0~1 점수)
  * - Phase별 임계값으로 자동/검토 분기
  * - 마스터 피드백 패턴 반영
@@ -16,6 +16,8 @@ const PHASE_THRESHOLDS = {
   2: 0.80,  // Phase 2: 80% 이상이면 자동 게시
   3: 0.60,  // Phase 3: 기본 품질만 통과하면 자동 게시
 };
+
+const HARD_HOLD_MIN_CONTENT = 2500;
 
 /**
  * 현재 자율 Phase 조회
@@ -136,10 +138,31 @@ async function decideAutonomy(post, qualityExtra = {}) {
   else if (criticScore < 50)   { compositeScore -= 0.05; compositeReasons.push(`크리틱 점수 낮음 (${criticScore})`); }
 
   compositeScore = Math.max(0, Math.min(1, compositeScore));
-  const decision = compositeScore >= threshold ? 'auto_publish' : 'master_review';
+  const hardHoldReasons = [];
+  const title = String(post?.title || '').trim();
+  const content = String(post?.content || '').trim();
+  if (!title || title.length < 6) {
+    hardHoldReasons.push('제목 품질이 너무 낮아 자동 발행을 보류합니다.');
+  }
+  if (!content || content.length < HARD_HOLD_MIN_CONTENT) {
+    hardHoldReasons.push(`본문이 ${HARD_HOLD_MIN_CONTENT}자 미만이라 품질 보강 전 자동 발행을 보류합니다.`);
+  }
+
+  let decision = 'auto_publish';
+  let executionLane = 'normal';
+  if (hardHoldReasons.length > 0) {
+    decision = 'quality_hold';
+    executionLane = 'hold';
+    compositeReasons.push(...hardHoldReasons);
+  } else if (compositeScore < threshold) {
+    decision = 'auto_publish_guarded';
+    executionLane = 'guarded';
+    compositeReasons.push('점수가 임계값보다 낮아도 가드 레인으로 축소 자동 발행합니다.');
+  }
 
   return {
     decision,
+    executionLane,
     phase,
     score: compositeScore,
     baseScore: evaluation.score,

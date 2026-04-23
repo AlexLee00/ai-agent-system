@@ -779,7 +779,7 @@ async function _recordAutonomyDecision(postData, autonomy = null, extra = {}) {
       postData.title || '',
       postData.postId || null,
       Number(autonomy.phase || 1),
-      autonomy.decision || 'master_review',
+      autonomy.decision || 'auto_publish_guarded',
       Number(autonomy.score || 0),
       Number(autonomy.threshold || 0),
       JSON.stringify(Array.isArray(autonomy.reasons) ? autonomy.reasons : []),

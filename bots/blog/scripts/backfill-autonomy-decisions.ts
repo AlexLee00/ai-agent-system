@@ -109,7 +109,7 @@ async function insertDecision(row, autonomy, metadata, dryRun = false) {
     row.title || '',
     row.id,
     Number(autonomy.phase || 1),
-    autonomy.decision || 'master_review',
+    autonomy.decision || 'auto_publish_guarded',
     Number(autonomy.score || 0),
     Number(autonomy.threshold || 0),
     JSON.stringify(Array.isArray(autonomy.reasons) ? autonomy.reasons : []),
@@ -134,7 +134,8 @@ async function main() {
   const processed = [];
   let inserted = 0;
   let autoPublishCount = 0;
-  let masterReviewCount = 0;
+  let guardedPublishCount = 0;
+  let holdCount = 0;
 
   for (const row of rows) {
     const { input, metadata, autonomyFromMetadata } = buildPostInput(row);
@@ -154,7 +155,8 @@ async function main() {
 
     inserted += 1;
     if (autonomy.decision === 'auto_publish') autoPublishCount += 1;
-    if (autonomy.decision === 'master_review') masterReviewCount += 1;
+    if (autonomy.decision === 'auto_publish_guarded' || autonomy.decision === 'master_review') guardedPublishCount += 1;
+    if (autonomy.decision === 'quality_hold') holdCount += 1;
   }
 
   const payload = {
@@ -162,7 +164,8 @@ async function main() {
     scanned: rows.length,
     inserted,
     autoPublishCount,
-    masterReviewCount,
+    guardedPublishCount,
+    holdCount,
     items: processed,
   };
 
@@ -171,7 +174,7 @@ async function main() {
     return;
   }
 
-  console.log(`[autonomy backfill] scanned=${payload.scanned} inserted=${payload.inserted} auto=${payload.autoPublishCount} review=${payload.masterReviewCount} dryRun=${payload.dryRun}`);
+  console.log(`[autonomy backfill] scanned=${payload.scanned} inserted=${payload.inserted} auto=${payload.autoPublishCount} guarded=${payload.guardedPublishCount} hold=${payload.holdCount} dryRun=${payload.dryRun}`);
   processed.slice(0, 10).forEach((item) => {
     console.log(`- #${item.postId} [${item.postType}] ${item.decision} (${item.score}/${item.threshold}) ${item.title}`);
   });
