@@ -13,6 +13,7 @@ import { ANALYST_TYPES, ACTIONS } from '../shared/signal.ts';
 import { getDomesticQuoteSnapshot, getOverseasQuoteSnapshot, getVolumeRank } from '../shared/kis-client.ts';
 import { loadLatestScoutIntel, getScoutSignalForSymbol } from '../shared/scout-intel.ts';
 import { getYahooStockEventIntel } from '../shared/stock-event-intel.ts';
+import { getRecentHubMarketPulse } from '../shared/hub-market-pulse.ts';
 
 const FLOW_THRESHOLDS = {
   buy: 0.55,
@@ -139,6 +140,7 @@ function deriveFlowDecision({
   domesticScoutContext,
   domesticRank,
   overseasEvent,
+  hubPulse,
 } = {}) {
   let score = 0;
   const reasons = [];
@@ -243,6 +245,35 @@ function deriveFlowDecision({
     }
   }
 
+  if ((exchange === 'kis' || exchange === 'kis_overseas') && hubPulse) {
+    if (hubPulse.status === 'ready' || hubPulse.status === 'degraded') {
+      if (hubPulse.hasRecentPulse && Number(hubPulse.tickCount || 0) >= 3) {
+        if (Number(hubPulse.tickDeltaPct || 0) >= 0.18) {
+          score += 0.16;
+          reasons.push(`장중 펄스 +${Number(hubPulse.tickDeltaPct).toFixed(2)}%`);
+        } else if (Number(hubPulse.tickDeltaPct || 0) <= -0.18) {
+          score -= 0.16;
+          reasons.push(`장중 펄스 ${Number(hubPulse.tickDeltaPct).toFixed(2)}%`);
+        }
+      }
+
+      if (hubPulse.hasRecentPulse && Number(hubPulse.quoteCount || 0) > 0 && Number.isFinite(Number(hubPulse.spreadPct))) {
+        if (Number(hubPulse.spreadPct || 0) <= 0.12) {
+          score += 0.05;
+          reasons.push(`호가 스프레드 ${Number(hubPulse.spreadPct).toFixed(2)}%`);
+        } else if (Number(hubPulse.spreadPct || 0) >= 0.6) {
+          score -= 0.08;
+          reasons.push(`호가 스프레드 확대 ${Number(hubPulse.spreadPct).toFixed(2)}%`);
+        }
+      }
+
+      if (!hubPulse.hasRecentPulse && Number.isFinite(Number(hubPulse.freshnessSeconds)) && Number(hubPulse.freshnessSeconds) >= 600) {
+        score -= 0.04;
+        reasons.push(`장중 펄스 stale ${hubPulse.freshnessSeconds}s`);
+      }
+    }
+  }
+
   const signal =
     score >= FLOW_THRESHOLDS.buy ? ACTIONS.BUY
       : score <= FLOW_THRESHOLDS.sell ? ACTIONS.SELL
@@ -268,16 +299,21 @@ export async function analyzeStockFlow(symbol, exchange = 'kis') {
     loadLatestScoutIntel({ minutes: 24 * 60 }).catch(() => null),
   ]);
 
-  const [quote, domesticRank, overseasEvent] = await Promise.all([
+  const [quote, domesticRank, overseasEvent, hubPulse] = await Promise.all([
     exchange === 'kis'
-      ? getDomesticQuoteSnapshot(symbol, false)
-      : getOverseasQuoteSnapshot(symbol),
+      ? getDomesticQuoteSnapshot(symbol, false).catch((error) => ({
+          error: error?.message || 'domestic_quote_failed',
+        }))
+      : getOverseasQuoteSnapshot(symbol).catch((error) => ({
+          error: error?.message || 'overseas_quote_failed',
+        })),
     exchange === 'kis'
       ? loadDomesticVolumeRank(symbol)
       : Promise.resolve(null),
     exchange === 'kis_overseas'
       ? getYahooStockEventIntel(symbol).catch(() => null)
       : Promise.resolve(null),
+    getRecentHubMarketPulse(symbol, exchange, { minutes: 120, limit: 24 }).catch(() => null),
   ]);
 
   const scoutSignal = getScoutSignalForSymbol(scoutIntel, symbol);
@@ -299,13 +335,16 @@ export async function analyzeStockFlow(symbol, exchange = 'kis') {
     domesticScoutContext,
     domesticRank,
     overseasEvent,
+    hubPulse,
   });
 
   const metadata = {
     exchange,
-    quote,
+    quote: quote && !quote.error ? quote : null,
+    quoteError: quote?.error || null,
     domesticRank,
     overseasEvent: overseasEvent && !overseasEvent.error ? overseasEvent : null,
+    hubPulse,
     scoutSignal: scoutSignal ? {
       source: scoutSignal.source,
       score: scoutSignal.score,
