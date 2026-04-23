@@ -3,6 +3,7 @@
 
 import {
   aggregateStrategyFeedbackOutcomeRows,
+  buildDecision,
   normalizeStrategyFeedbackOutcomeRow,
 } from './runtime-strategy-feedback-outcomes.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
@@ -74,9 +75,35 @@ export function runStrategyFeedbackOutcomeSmoke() {
   assert(momentum.latestCreatedAt === 200, `expected latestCreatedAt 200, got ${momentum.latestCreatedAt}`);
   assert(breakout?.avgPnlPercent === -5, `expected breakout avg -5, got ${breakout?.avgPnlPercent}`);
 
+  const waiting = buildDecision([], {
+    feedbackSignals: 0,
+    taggedFeedbackSignals: 0,
+    taggedTrades: 0,
+    taggedJournals: 0,
+    activeFeedbackCandidates: 2,
+  });
+  const telemetryGap = buildDecision([], {
+    feedbackSignals: 1,
+    taggedFeedbackSignals: 1,
+    taggedTrades: 1,
+    taggedJournals: 0,
+    activeFeedbackCandidates: 0,
+  });
+
+  assert(
+    waiting.status === 'strategy_feedback_outcome_waiting_execution',
+    `expected waiting execution status, got ${waiting.status}`,
+  );
+  assert(
+    telemetryGap.status === 'strategy_feedback_outcome_telemetry_gap',
+    `expected telemetry gap status, got ${telemetryGap.status}`,
+  );
+
   return {
     ok: true,
     buckets: rows.length,
+    waitingStatus: waiting.status,
+    telemetryGapStatus: telemetryGap.status,
     rows,
   };
 }

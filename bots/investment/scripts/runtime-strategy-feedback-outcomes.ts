@@ -37,6 +37,21 @@ function money(value) {
   return `${n >= 0 ? '+' : '-'}$${Math.abs(n).toFixed(2)}`;
 }
 
+function summarizeContext(context = {}) {
+  const feedbackSignals = safeNumber(context.feedbackSignals);
+  const taggedFeedbackSignals = safeNumber(context.taggedFeedbackSignals);
+  const taggedTrades = safeNumber(context.taggedTrades);
+  const taggedJournals = safeNumber(context.taggedJournals);
+  const activeFeedbackCandidates = safeNumber(context.activeFeedbackCandidates);
+  return [
+    `signals ${feedbackSignals}`,
+    `taggedSignals ${taggedFeedbackSignals}`,
+    `taggedTrades ${taggedTrades}`,
+    `taggedJournals ${taggedJournals}`,
+    `activeCandidates ${activeFeedbackCandidates}`,
+  ].join(', ');
+}
+
 export function normalizeStrategyFeedbackOutcomeRow(row = {}) {
   const incident = String(row.incident_link || '');
   const familyBias = extractTag(incident, 'family_bias') || 'unknown';
@@ -107,7 +122,7 @@ export function aggregateStrategyFeedbackOutcomeRows(rows = []) {
     );
 }
 
-function buildDecision(rows = []) {
+export function buildDecision(rows = [], sampleContext = {}) {
   const total = rows.reduce((sum, row) => sum + row.total, 0);
   const closed = rows.reduce((sum, row) => sum + row.closed, 0);
   const pnlNet = rows.reduce((sum, row) => sum + row.pnlNet, 0);
@@ -121,7 +136,10 @@ function buildDecision(rows = []) {
   let status = 'strategy_feedback_outcome_empty';
   let headline = '아직 전략 패밀리 피드백 태그가 붙은 체결 결과가 없습니다.';
   const actionItems = ['새 partial-adjust/strategy-exit 실행 이후 다시 확인합니다.'];
-  const reasons = [`tagged buckets ${rows.length}, trades ${total}, closed ${closed}, pnl ${money(pnlNet)}`];
+  const reasons = [
+    `tagged buckets ${rows.length}, trades ${total}, closed ${closed}, pnl ${money(pnlNet)}`,
+    `sample context: ${summarizeContext(sampleContext)}`,
+  ];
 
   if (total > 0) {
     status = weak && Number(weak.avgPnlPercent) < -2 ? 'strategy_feedback_outcome_attention' : 'strategy_feedback_outcome_watch';
@@ -132,6 +150,26 @@ function buildDecision(rows = []) {
     actionItems.push('피드백 태그별 partial-adjust/strategy-exit 결과를 다음 리뷰에서 비교합니다.');
     if (strong) actionItems.push(`${strong.familyBias}/${strong.family} 결과는 기준선 후보로 계속 누적합니다.`);
     if (weak) actionItems.push(`${weak.familyBias}/${weak.family} 결과는 손익과 승률을 함께 관찰합니다.`);
+  } else if (
+    safeNumber(sampleContext.feedbackSignals) > 0
+    || safeNumber(sampleContext.taggedFeedbackSignals) > 0
+    || safeNumber(sampleContext.taggedTrades) > 0
+  ) {
+    status = 'strategy_feedback_outcome_telemetry_gap';
+    headline = '전략 피드백 실행 흔적은 있지만 trade_journal 결과 태그가 누적되지 않습니다.';
+    actionItems.length = 0;
+    actionItems.push('journal:backfill-incident-links -- --family-bias-only 결과와 SELL 실행 저장 경로를 점검합니다.');
+    actionItems.push('partial-adjust/strategy-exit 체결 이후 signal/trade incident_link가 trade_journal로 이어지는지 확인합니다.');
+  } else {
+    status = safeNumber(sampleContext.activeFeedbackCandidates) > 0
+      ? 'strategy_feedback_outcome_waiting_execution'
+      : 'strategy_feedback_outcome_waiting_signal';
+    headline = safeNumber(sampleContext.activeFeedbackCandidates) > 0
+      ? '전략 피드백 후보는 있지만 아직 실행 표본이 없어 결과 누적을 기다리는 상태입니다.'
+      : '아직 partial-adjust/strategy-exit 피드백 실행 표본이 없어 결과 누적을 기다리는 상태입니다.';
+    actionItems.length = 0;
+    actionItems.push('후보 preview가 뜬 뒤 승인형 partial-adjust/strategy-exit 실행 결과가 생기면 자동으로 outcome 버킷에 반영됩니다.');
+    actionItems.push('현재는 전역 상수 변경보다 실행 표본 생성과 저널 연결 확인이 우선입니다.');
   }
 
   return {
@@ -139,7 +177,7 @@ function buildDecision(rows = []) {
     headline,
     reasons,
     actionItems,
-    metrics: { total, closed, pnlNet, weak, strong },
+    metrics: { total, closed, pnlNet, weak, strong, sampleContext },
   };
 }
 
@@ -166,6 +204,82 @@ function renderText(payload) {
   lines.push('권장 조치:');
   lines.push(...decision.actionItems.map((item) => `- ${item}`));
   return lines.join('\n');
+}
+
+async function loadStrategyFeedbackSampleContext(days = 90, sinceMs = null) {
+  const safeDays = Math.max(1, Number(days || 90));
+  const since = sinceMs ?? Date.now() - safeDays * 24 * 60 * 60 * 1000;
+  const rows = await db.query(`
+    WITH signal_scope AS (
+      SELECT *
+      FROM investment.signals
+      WHERE created_at >= NOW() - ($1::int * INTERVAL '1 day')
+    ),
+    trade_scope AS (
+      SELECT *
+      FROM investment.trades
+      WHERE executed_at >= NOW() - ($1::int * INTERVAL '1 day')
+    ),
+    journal_scope AS (
+      SELECT *
+      FROM investment.trade_journal
+      WHERE created_at >= $2
+    ),
+    profile_scope AS (
+      SELECT *
+      FROM investment.position_strategy_profiles
+      WHERE status = 'active'
+    )
+    SELECT
+      COUNT(*) FILTER (
+        WHERE s.incident_link LIKE 'partial_adjust:%'
+           OR s.incident_link LIKE 'strategy_exit:%'
+      ) AS feedback_signals,
+      COUNT(*) FILTER (
+        WHERE (
+          s.incident_link LIKE 'partial_adjust:%'
+          OR s.incident_link LIKE 'strategy_exit:%'
+        )
+        AND s.incident_link LIKE '%family_bias=%'
+      ) AS tagged_feedback_signals,
+      COUNT(*) FILTER (
+        WHERE s.action = 'SELL'
+          AND COALESCE(s.execution_origin, '') = 'strategy'
+      ) AS strategy_sell_signals,
+      COUNT(*) FILTER (
+        WHERE s.incident_link LIKE '%family_bias=%'
+          AND s.status IN ('executed', 'closed', 'completed', 'filled')
+      ) AS tagged_executed_signals,
+      (SELECT COUNT(*) FROM trade_scope t WHERE t.incident_link LIKE '%family_bias=%') AS tagged_trades,
+      (SELECT COUNT(*) FROM journal_scope j WHERE j.incident_link LIKE '%family_bias=%') AS tagged_journals,
+      (SELECT COUNT(*) FROM journal_scope j WHERE j.incident_link LIKE 'partial_adjust:%') AS journal_partial_adjusts,
+      (SELECT COUNT(*) FROM journal_scope j WHERE j.incident_link LIKE 'strategy_exit:%') AS journal_strategy_exits,
+      (
+        SELECT COUNT(*)
+        FROM profile_scope p
+        WHERE p.strategy_state->>'latestRecommendation' IN ('ADJUST', 'EXIT')
+      ) AS active_feedback_candidates,
+      (
+        SELECT COUNT(*)
+        FROM profile_scope p
+        WHERE COALESCE(p.strategy_state->>'latestFamilyPerformanceBias', '') NOT IN ('', 'unknown')
+      ) AS active_family_bias_profiles
+    FROM signal_scope s
+  `, [safeDays, since]).catch(() => []);
+  const row = rows[0] || {};
+  return {
+    days: safeDays,
+    feedbackSignals: safeNumber(row.feedback_signals),
+    taggedFeedbackSignals: safeNumber(row.tagged_feedback_signals),
+    strategySellSignals: safeNumber(row.strategy_sell_signals),
+    taggedExecutedSignals: safeNumber(row.tagged_executed_signals),
+    taggedTrades: safeNumber(row.tagged_trades),
+    taggedJournals: safeNumber(row.tagged_journals),
+    journalPartialAdjusts: safeNumber(row.journal_partial_adjusts),
+    journalStrategyExits: safeNumber(row.journal_strategy_exits),
+    activeFeedbackCandidates: safeNumber(row.active_feedback_candidates),
+    activeFamilyBiasProfiles: safeNumber(row.active_family_bias_profiles),
+  };
 }
 
 export async function buildStrategyFeedbackOutcomes({ days = 90, json = false } = {}) {
@@ -195,13 +309,15 @@ export async function buildStrategyFeedbackOutcomes({ days = 90, json = false } 
   `, [since]).catch(() => []);
 
   const rows = aggregateStrategyFeedbackOutcomeRows(rawRows.map(normalizeStrategyFeedbackOutcomeRow));
-  const decision = buildDecision(rows);
+  const sampleContext = await loadStrategyFeedbackSampleContext(days, since);
+  const decision = buildDecision(rows, sampleContext);
   const payload = {
     ok: true,
     days: Number(days),
     generatedAt: new Date().toISOString(),
     count: rows.length,
     rows,
+    sampleContext,
     decision,
   };
   if (json) return payload;
