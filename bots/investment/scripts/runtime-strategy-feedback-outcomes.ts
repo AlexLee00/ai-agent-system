@@ -57,6 +57,56 @@ function normalizeRow(row = {}) {
   };
 }
 
+function aggregateRows(rows = []) {
+  const groups = new Map();
+  for (const row of rows) {
+    const key = `${row.familyBias}::${row.family}::${row.executionKind}`;
+    const bucket = groups.get(key) || {
+      familyBias: row.familyBias,
+      family: row.family,
+      executionKind: row.executionKind,
+      total: 0,
+      closed: 0,
+      wins: 0,
+      pnlNet: 0,
+      pnlPercentWeightedSum: 0,
+      latestCreatedAt: null,
+    };
+    bucket.total += safeNumber(row.total);
+    bucket.closed += safeNumber(row.closed);
+    bucket.wins += safeNumber(row.wins);
+    bucket.pnlNet += safeNumber(row.pnlNet);
+    if (row.avgPnlPercent != null && row.closed > 0) {
+      bucket.pnlPercentWeightedSum += Number(row.avgPnlPercent) * Number(row.closed);
+    }
+    if (row.latestCreatedAt != null) {
+      bucket.latestCreatedAt = bucket.latestCreatedAt == null
+        ? row.latestCreatedAt
+        : Math.max(Number(bucket.latestCreatedAt), Number(row.latestCreatedAt));
+    }
+    groups.set(key, bucket);
+  }
+
+  return [...groups.values()]
+    .map((bucket) => ({
+      familyBias: bucket.familyBias,
+      family: bucket.family,
+      executionKind: bucket.executionKind,
+      total: bucket.total,
+      closed: bucket.closed,
+      wins: bucket.wins,
+      winRate: bucket.closed > 0 ? bucket.wins / bucket.closed : null,
+      avgPnlPercent: bucket.closed > 0 ? Number((bucket.pnlPercentWeightedSum / bucket.closed).toFixed(4)) : null,
+      pnlNet: Number(bucket.pnlNet.toFixed(4)),
+      latestCreatedAt: bucket.latestCreatedAt,
+    }))
+    .sort((a, b) =>
+      Number(b.total || 0) - Number(a.total || 0)
+      || Number(b.closed || 0) - Number(a.closed || 0)
+      || Number(b.latestCreatedAt || 0) - Number(a.latestCreatedAt || 0),
+    );
+}
+
 function buildDecision(rows = []) {
   const total = rows.reduce((sum, row) => sum + row.total, 0);
   const closed = rows.reduce((sum, row) => sum + row.closed, 0);
@@ -144,7 +194,7 @@ export async function buildStrategyFeedbackOutcomes({ days = 90, json = false } 
     ORDER BY total DESC, closed DESC, latest_created_at DESC
   `, [since]).catch(() => []);
 
-  const rows = rawRows.map(normalizeRow);
+  const rows = aggregateRows(rawRows.map(normalizeRow));
   const decision = buildDecision(rows);
   const payload = {
     ok: true,
