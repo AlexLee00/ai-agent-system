@@ -15,6 +15,7 @@ import { getCapitalConfig, getDailyTradeCount, getDynamicMinOrderAmount } from '
 import { getMarketRegime } from '../shared/market-regime.ts';
 import { loadLatestScoutIntel, getScoutSignalForSymbol } from '../shared/scout-intel.ts';
 import { getInvestmentAgentRoleState } from '../shared/agent-role-state.ts';
+import { buildRiskApprovalTarget, runRiskApprovalChain } from '../shared/risk-approval-chain.ts';
 
 const _require = createRequire(import.meta.url);
 const kst = _require('../../../packages/core/lib/kst');
@@ -215,6 +216,61 @@ function getRules(exchange) {
   if (exchange === 'kis') return RULES_STOCK_DOMESTIC;
   if (exchange === 'kis_overseas') return RULES_STOCK_OVERSEAS;
   return RULES_CRYPTO;
+}
+
+function buildRiskApprovalPreview({
+  signal,
+  amountUsdt,
+  totalUsdt,
+  positionCount,
+  todayPnl,
+  marketRegime,
+  existingStrategyProfile,
+  rules,
+} = {}) {
+  try {
+    const target = buildRiskApprovalTarget({
+      signal: {
+        ...signal,
+        amount_usdt: amountUsdt,
+      },
+      portfolio: {
+        totalAsset: totalUsdt,
+        positionCount,
+        todayPnl: todayPnl?.pnl ?? todayPnl ?? 0,
+      },
+      marketRegime,
+      strategyProfile: existingStrategyProfile,
+      feedback: existingStrategyProfile?.strategy_context?.familyPerformanceFeedback
+        || existingStrategyProfile?.strategyContext?.familyPerformanceFeedback
+        || null,
+      rules,
+      context: {
+        tradeMode: signal?.trade_mode || getInvestmentTradeMode(),
+      },
+    });
+    const result = runRiskApprovalChain(target);
+    return {
+      approved: result.approved,
+      decision: result.decision,
+      finalAmount: result.finalAmount,
+      rejectReason: result.rejectReason,
+      steps: (result.steps || []).map((step) => ({
+        model: step.model,
+        decision: step.decision,
+        reason: step.reason,
+        amountBefore: step.amountBefore,
+        amountAfter: step.amountAfter,
+        metrics: step.metrics || null,
+      })),
+    };
+  } catch (error) {
+    return {
+      approved: null,
+      decision: 'preview_failed',
+      error: error?.message || String(error),
+    };
+  }
 }
 
 // ─── v2: 변동성 조정 ────────────────────────────────────────────────
@@ -905,6 +961,17 @@ export async function evaluateSignal(signal, opts = {}) {
       }
     }
 
+    const riskApprovalPreview = buildRiskApprovalPreview({
+      signal,
+      amountUsdt,
+      totalUsdt,
+      positionCount,
+      todayPnl,
+      marketRegime,
+      existingStrategyProfile,
+      rules,
+    });
+
     if (persist && signal.id) {
       try {
         const shadowHiring = await journalDb.hireAnalystForSignal(signal.exchange, symbol, {
@@ -921,6 +988,7 @@ export async function evaluateSignal(signal, opts = {}) {
           position_size_approved: amountUsdt,
           strategy_config: {
             ...(shadowHiring ? { shadow_hiring: shadowHiring } : {}),
+            risk_approval_preview: riskApprovalPreview,
             ...(marketRegime ? {
               market_regime: {
                 regime: marketRegime.regime,
