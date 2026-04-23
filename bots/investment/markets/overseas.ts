@@ -203,6 +203,11 @@ export async function runOverseasResearchCycle(symbols, universeMeta = {}) {
       universeMeta,
     });
     sessionId = collect.sessionId;
+    await updatePipelineRunMeta(collect.sessionId, {
+      collect_metrics: collect.metrics,
+      collect_quality: collect.metrics?.collectQuality || null,
+      collect_warnings: collect.metrics?.warnings || [],
+    }).catch(() => {});
     console.log(`  🧩 [노드] session=${collect.sessionId}`);
     console.log(`  🧩 [노드] ${summarizeNodeStatuses(collect.summaries)}`);
     await logMarketPipelineMetrics('미국주식 연구수집', collect.metrics);
