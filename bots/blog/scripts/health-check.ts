@@ -695,8 +695,8 @@ async function checkEngagementAutomationHealth() {
     const developmentBaseline = readDevelopmentBaseline();
     const actionSinceClause = buildSinceClause('executed_at', developmentBaseline);
     const activeWindow = isCommenterActiveWindow();
-    const engagementPayload = getDoctorPayload(ENGAGEMENT_DOCTOR_COMMAND);
-    const targetGaps = Array.isArray(engagementPayload?.targetGaps) ? engagementPayload.targetGaps : [];
+    const engagementDoctorPayload = getDoctorPayload(ENGAGEMENT_DOCTOR_COMMAND);
+    const targetGaps = Array.isArray(engagementDoctorPayload?.targetGaps) ? engagementDoctorPayload.targetGaps : [];
     const rows = await pgPool.query('blog', `
       SELECT action_type, meta
       FROM blog.comment_actions
@@ -758,9 +758,8 @@ async function checkEngagementAutomationHealth() {
         nextCommand: ENGAGEMENT_DOCTOR_COMMAND,
         actionFocus: 'engagement',
       });
-      const engagementPayload = getDoctorPayload(ENGAGEMENT_DOCTOR_COMMAND);
       const opsPayload = getDoctorPayload(BLOG_OPS_DOCTOR_COMMAND);
-      const doctorHint = `\ndoctor: ${ENGAGEMENT_DOCTOR_COMMAND}${buildPriorityHint('engagement primary', engagementPriority, { includeActionFocus: true })}${buildActionHint('engagement action', engagementPayload, 2, 'engagement')}${buildPriorityHint('primary blocker', opsPriority, { includeActionFocus: true })}${buildActionHint('ops action', opsPayload, 2, 'engagement')}\nops doctor: ${BLOG_OPS_DOCTOR_COMMAND}`;
+      const doctorHint = `\ndoctor: ${ENGAGEMENT_DOCTOR_COMMAND}${buildPriorityHint('engagement primary', engagementPriority, { includeActionFocus: true })}${buildActionHint('engagement action', engagementDoctorPayload, 2, 'engagement')}${buildPriorityHint('primary blocker', opsPriority, { includeActionFocus: true })}${buildActionHint('ops action', opsPayload, 2, 'engagement')}\nops doctor: ${BLOG_OPS_DOCTOR_COMMAND}`;
       return {
         ok: false,
         detail: `engagement UI/browser failures — reply ${failureByAction.reply}, neighbor ${failureByAction.neighbor_comment}, sympathy ${failureByAction.sympathy}${sampleHint}${replayTargetHint}${replayHint}${doctorHint}`,
@@ -772,17 +771,17 @@ async function checkEngagementAutomationHealth() {
     }
 
     if (targetGaps.length > 0) {
-      const primaryArea = String(engagementPayload?.primary?.area || '');
+      const primaryArea = String(engagementDoctorPayload?.primary?.area || '');
       if (totalFailures <= 0 && primaryArea.endsWith('.no_workload')) {
-        const targets = engagementPayload?.targets || {};
+        const targets = engagementDoctorPayload?.targets || {};
         const targetLines = [
           targets?.replies?.active ? `replies ${targets.replies.success}/${targets.replies.expectedNow}` : '',
           targets?.neighborComments?.active ? `neighbor ${targets.neighborComments.success}/${targets.neighborComments.expectedNow}` : '',
           targets?.sympathies?.active ? `sympathy ${targets.sympathies.success}/${targets.sympathies.expectedNow}` : '',
         ].filter(Boolean).join(' / ');
-        const primaryReason = String(engagementPayload?.primary?.reason || '').trim();
-        const runPlan = Array.isArray(engagementPayload?.runPlan) ? engagementPayload.runPlan : [];
-        const adaptiveCadence = engagementPayload?.adaptiveNeighborCadence || null;
+        const primaryReason = String(engagementDoctorPayload?.primary?.reason || '').trim();
+        const runPlan = Array.isArray(engagementDoctorPayload?.runPlan) ? engagementDoctorPayload.runPlan : [];
+        const adaptiveCadence = engagementDoctorPayload?.adaptiveNeighborCadence || null;
         const runPlanHint = runPlan.length > 0
           ? ` / run plan: ${runPlan.map((item) => `${item.step}.${item.label}`).join(' -> ')}`
           : '';
@@ -811,12 +810,11 @@ async function checkEngagementAutomationHealth() {
         nextCommand: ENGAGEMENT_DOCTOR_COMMAND,
         actionFocus: 'engagement',
       });
-      const engagementPayload = getDoctorPayload(ENGAGEMENT_DOCTOR_COMMAND);
       const opsPayload = getDoctorPayload(BLOG_OPS_DOCTOR_COMMAND);
-      const targets = engagementPayload?.targets || {};
-      const primaryGap = engagementPayload?.primaryGap || null;
-      const runPlan = Array.isArray(engagementPayload?.runPlan) ? engagementPayload.runPlan : [];
-      const adaptiveCadence = engagementPayload?.adaptiveNeighborCadence || null;
+      const targets = engagementDoctorPayload?.targets || {};
+      const primaryGap = engagementDoctorPayload?.primaryGap || null;
+      const runPlan = Array.isArray(engagementDoctorPayload?.runPlan) ? engagementDoctorPayload.runPlan : [];
+      const adaptiveCadence = engagementDoctorPayload?.adaptiveNeighborCadence || null;
       const targetLines = [
         targets?.replies?.active ? `replies ${targets.replies.success}/${targets.replies.expectedNow}` : '',
         targets?.neighborComments?.active ? `neighbor ${targets.neighborComments.success}/${targets.neighborComments.expectedNow}` : '',
@@ -837,7 +835,7 @@ async function checkEngagementAutomationHealth() {
       const replayHint = latestReplyReplayCandidate?.id
         ? `\nreply replay: npm run replay:reply-ui -- --comment-id ${latestReplyReplayCandidate.id} --json`
         : '';
-      const doctorHint = `\ndoctor: ${ENGAGEMENT_DOCTOR_COMMAND}${buildPriorityHint('engagement primary', engagementPriority, { includeActionFocus: true })}${buildActionHint('engagement action', engagementPayload, 2, 'engagement')}${buildPriorityHint('primary blocker', opsPriority, { includeActionFocus: true })}${buildActionHint('ops action', opsPayload, 2, 'engagement')}\nops doctor: ${BLOG_OPS_DOCTOR_COMMAND}`;
+      const doctorHint = `\ndoctor: ${ENGAGEMENT_DOCTOR_COMMAND}${buildPriorityHint('engagement primary', engagementPriority, { includeActionFocus: true })}${buildActionHint('engagement action', engagementDoctorPayload, 2, 'engagement')}${buildPriorityHint('primary blocker', opsPriority, { includeActionFocus: true })}${buildActionHint('ops action', opsPayload, 2, 'engagement')}\nops doctor: ${BLOG_OPS_DOCTOR_COMMAND}`;
       return {
         ok: false,
         detail: `engagement target gap — ${targetLines || targetGaps.join(', ')}${primaryGapHint}${immediateRunHint}${runPlanHint}${adaptiveHint}${replayHint}${doctorHint}`,
