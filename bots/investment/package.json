@@ -24,6 +24,7 @@
     "journal": "node scripts/trading-journal.ts",
     "journal:backfill-regimes": "node scripts/backfill-trade-regimes.ts",
     "journal:backfill-strategy-routes": "node scripts/backfill-trade-strategy-routes.ts",
+    "signals:backfill-strategy-routes": "node scripts/backfill-signal-strategy-routes.ts",
     "journal:week": "node scripts/trading-journal.ts --days=7",
     "journal:all": "node scripts/trading-journal.ts --all",
     "journal:tg": "node scripts/trading-journal.ts --telegram",
