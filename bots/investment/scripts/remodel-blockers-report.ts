@@ -67,7 +67,7 @@ function buildPlannerCoverageBlockers(plannerCoverage) {
     }));
 }
 
-function buildBlockers(closeout) {
+export function buildBlockers(closeout) {
   const blockers = [];
   const decision = closeout?.decision || {};
   const metrics = decision.metrics || {};
@@ -151,10 +151,35 @@ function buildBlockers(closeout) {
     });
   }
 
+  if (metrics.tradeReviewLiveOk === false) {
+    blockers.push({
+      category: 'trade_review',
+      status: 'blocked',
+      summary: 'live trade_review 정합성 이슈가 남아 있어 운영 전환 전에 복구가 필요합니다.',
+      details: [
+        {
+          label: 'live_findings',
+          status: 'blocked',
+          detail: String(Number(metrics.tradeReviewLiveFindings || 0)),
+        },
+        {
+          label: 'paper_findings',
+          status: metrics.tradeReviewPaperRepair ? 'observe' : 'ok',
+          detail: String(Number(metrics.tradeReviewPaperFindings || 0)),
+        },
+        {
+          label: 'repair',
+          status: 'blocked',
+          detail: closeout?.tradeReview?.summary?.repairCommand || 'validate-review:repair',
+        },
+      ],
+    });
+  }
+
   return blockers;
 }
 
-function buildDecision(blockers = []) {
+export function buildDecision(blockers = []) {
   if (blockers.length === 0) {
     return {
       status: 'no_blockers',
@@ -166,15 +191,19 @@ function buildDecision(blockers = []) {
   const healthBlocked = blockers.some((blocker) => blocker.category === 'health');
   const escalateBlocked = blockers.some((blocker) => blocker.category === 'escalate');
   const reliefBlocked = blockers.some((blocker) => blocker.category === 'min_order_relief');
+  const tradeReviewBlocked = blockers.some((blocker) => blocker.category === 'trade_review');
 
   const status = healthBlocked
     ? 'health_blockers_present'
+    : tradeReviewBlocked
+      ? 'data_integrity_blockers_present'
     : escalateBlocked || reliefBlocked
       ? 'policy_blockers_present'
       : 'coverage_observe';
 
   const actionItems = [];
   if (healthBlocked) actionItems.push('health warn 서비스를 먼저 정리해 closeout 기준선을 회복합니다.');
+  if (tradeReviewBlocked) actionItems.push('live trade_review 정합성 이슈는 운영 전환 전 validate-review 복구 루프로 닫습니다.');
   if (reliefBlocked) actionItems.push('국내장 최소 주문 병목은 order cap 재설계 또는 예외 전략 분리가 필요합니다.');
   if (escalateBlocked) actionItems.push('승인 필요 항목을 운영 정책 검토 안건으로 승격합니다.');
 

@@ -8,6 +8,7 @@ import { buildRuntimeAutotuneReadinessReport } from './runtime-autotune-readines
 import { buildRuntimeMinOrderReliefReport } from './runtime-min-order-relief-report.ts';
 import { buildRuntimeEscalateCandidatesReport } from './runtime-escalate-candidates-report.ts';
 import { buildVectorBtBacktestReport } from './vectorbt-backtest-report.ts';
+import { buildTradeReviewRepairCloseout, validateTradeReview } from './validate-trade-review.ts';
 import { buildInvestmentCliInsight } from '../shared/cli-insight.ts';
 
 const require = createRequire(import.meta.url);
@@ -73,7 +74,7 @@ function parseArgs(argv = process.argv.slice(2)) {
   };
 }
 
-function buildDecision({ health, plannerCoverage, autotune, relief, escalate, backtest }) {
+export function buildDecision({ health, plannerCoverage, autotune, relief, escalate, backtest, tradeReview, reviewRepairCloseout }) {
   const reasons = [];
   const actionItems = [];
 
@@ -83,6 +84,11 @@ function buildDecision({ health, plannerCoverage, autotune, relief, escalate, ba
   const reliefBlocked = relief?.decision?.status === 'relief_blocked_by_order_cap';
   const escalateBlocked = escalate?.decision?.status === 'escalate_blocked';
   const backtestOk = backtest?.decision?.status === 'backtest_ok';
+  const tradeReviewLiveFindings = Number(tradeReview?.summary?.liveFindings || 0);
+  const tradeReviewPaperFindings = Number(tradeReview?.summary?.paperFindings || 0);
+  const tradeReviewPaperOnly = Boolean(tradeReview?.summary?.paperOnly && tradeReviewPaperFindings > 0);
+  const tradeReviewLiveOk = tradeReviewLiveFindings === 0;
+  const tradeReviewPaperRepair = tradeReviewPaperOnly;
 
   if (health?.serviceHealth) {
     reasons.push(`health: ok ${health.serviceHealth.okCount} / warn ${health.serviceHealth.warnCount}`);
@@ -92,14 +98,24 @@ function buildDecision({ health, plannerCoverage, autotune, relief, escalate, ba
   if (relief?.decision?.status) reasons.push(`min-order relief: ${relief.decision.status}`);
   if (escalate?.decision?.status) reasons.push(`escalate: ${escalate.decision.status}`);
   if (backtest?.decision?.status) reasons.push(`vectorbt: ${backtest.decision.status}`);
+  if (tradeReview?.summary) {
+    reasons.push(`trade review: live ${tradeReviewLiveFindings} / paper ${tradeReviewPaperFindings}`);
+  }
+  if (reviewRepairCloseout?.status) {
+    reasons.push(`trade review closeout: ${reviewRepairCloseout.status} / liveSafe ${reviewRepairCloseout.liveSafe ? 'yes' : 'no'}`);
+  }
 
   let status = 'remodel_in_progress';
   let headline = '리모델링이 거의 닫혔지만, 아직 운영 승인/정책 결정이 남아 있습니다.';
 
-  if (healthOk && plannerReady && backtestOk && !autotuneBlocked && !reliefBlocked && !escalateBlocked) {
+  if (healthOk && plannerReady && backtestOk && tradeReviewLiveOk && !autotuneBlocked && !reliefBlocked && !escalateBlocked) {
     status = 'remodel_ready_to_close';
     headline = '리모델링 닫힘 기준에 도달했습니다.';
     actionItems.push('잔여 승인 항목이 없으면 closeout 문서와 최종 운영 전환만 정리합니다.');
+  } else if (healthOk && plannerReady && backtestOk && !tradeReviewLiveOk) {
+    status = 'remodel_data_integrity_needed';
+    headline = 'live trade_review 정합성 이슈가 남아 있어 운영 전환 전에 복구가 필요합니다.';
+    actionItems.push(tradeReview?.summary?.repairCommand || 'live trade_review 정합성 이슈를 먼저 복구합니다.');
   } else if (healthOk && plannerReady && backtestOk && escalateBlocked) {
     status = 'remodel_waiting_approval';
     headline = '코드/관찰 레일은 충분하지만 운영 승인 또는 정책 결정이 남아 있습니다.';
@@ -117,6 +133,9 @@ function buildDecision({ health, plannerCoverage, autotune, relief, escalate, ba
   if (!backtestOk) {
     actionItems.push('VectorBT 결과 품질을 먼저 회복합니다.');
   }
+  if (tradeReviewPaperRepair) {
+    actionItems.push(`paper-only trade_review 복구는 live 전환 병목이 아니며 별도 closeout으로 정리합니다: ${tradeReview?.summary?.repairCommand || 'validate-review:repair:paper'}`);
+  }
 
   return {
     status,
@@ -130,6 +149,10 @@ function buildDecision({ health, plannerCoverage, autotune, relief, escalate, ba
       reliefBlocked,
       escalateBlocked,
       backtestOk,
+      tradeReviewLiveOk,
+      tradeReviewPaperRepair,
+      tradeReviewLiveFindings,
+      tradeReviewPaperFindings,
     },
   };
 }
@@ -152,6 +175,8 @@ function renderText(payload) {
     `- reliefBlocked: ${m.reliefBlocked ? 'yes' : 'no'}`,
     `- escalateBlocked: ${m.escalateBlocked ? 'yes' : 'no'}`,
     `- backtestOk: ${m.backtestOk ? 'yes' : 'no'}`,
+    `- tradeReviewLiveOk: ${m.tradeReviewLiveOk ? 'yes' : 'no'}`,
+    `- tradeReviewPaperRepair: ${m.tradeReviewPaperRepair ? 'yes' : 'no'}`,
     '',
     '권장 조치:',
     ...payload.decision.actionItems.map((item) => `- ${item}`),
@@ -167,18 +192,25 @@ function buildCloseoutFallback(payload) {
   if (decision.status === 'remodel_waiting_approval') {
     return '코드와 관찰 레일은 충분하지만, policy-blocked 또는 approval-needed 항목이 남아 운영 판단이 필요합니다.';
   }
+  if (decision.status === 'remodel_data_integrity_needed') {
+    return `live trade_review 정합성 이슈 ${Number(metrics.tradeReviewLiveFindings || 0)}건이 남아, 운영 전환 전 복구가 필요합니다.`;
+  }
   return `리모델링은 아직 진행 중이며, health=${metrics.healthOk ? 'ok' : 'watch'}, planner=${metrics.plannerReady ? 'ready' : 'watch'}, backtest=${metrics.backtestOk ? 'ok' : 'watch'} 축을 계속 누적해야 합니다.`;
 }
 
 export async function buildRemodelCloseoutReport({ days = 14, json = false } = {}) {
-  const [plannerCoverage, autotune, relief, escalate, backtest, health] = await Promise.all([
+  const [plannerCoverage, autotune, relief, escalate, backtest, health, tradeReview] = await Promise.all([
     buildRuntimePlannerCoverageReport({ limit: 5, json: true }).catch(() => null),
     buildRuntimeAutotuneReadinessReport({ days, limit: 20, json: true }).catch(() => null),
     buildRuntimeMinOrderReliefReport({ days, json: true }).catch(() => null),
     buildRuntimeEscalateCandidatesReport({ days, json: true }).catch(() => null),
     buildVectorBtBacktestReport({ days: 30, limit: 20, json: true }).catch(() => null),
     Promise.resolve().then(() => buildLightHealthReport()).catch(() => null),
+    validateTradeReview({ days: 90, fix: false }).catch(() => null),
   ]);
+  const reviewRepairCloseout = tradeReview
+    ? buildTradeReviewRepairCloseout({ before: tradeReview, after: tradeReview, fix: false })
+    : null;
 
   const decision = buildDecision({
     health,
@@ -187,6 +219,8 @@ export async function buildRemodelCloseoutReport({ days = 14, json = false } = {
     relief,
     escalate,
     backtest,
+    tradeReview,
+    reviewRepairCloseout,
   });
 
   const payload = {
@@ -198,6 +232,8 @@ export async function buildRemodelCloseoutReport({ days = 14, json = false } = {
     escalate,
     backtest,
     health,
+    tradeReview,
+    reviewRepairCloseout,
     decision,
   };
   payload.aiSummary = await buildInvestmentCliInsight({
@@ -213,6 +249,10 @@ export async function buildRemodelCloseoutReport({ days = 14, json = false } = {
       escalateStatus: escalate?.decision?.status,
       backtestStatus: backtest?.decision?.status,
       healthWarnCount: health?.serviceHealth?.warnCount,
+      tradeReviewLiveFindings: decision.metrics.tradeReviewLiveFindings,
+      tradeReviewPaperFindings: decision.metrics.tradeReviewPaperFindings,
+      reviewRepairStatus: reviewRepairCloseout?.status,
+      reviewRepairLiveSafe: reviewRepairCloseout?.liveSafe,
     },
     fallback: buildCloseoutFallback(payload),
   });
