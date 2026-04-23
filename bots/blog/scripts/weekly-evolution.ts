@@ -67,9 +67,10 @@ function buildWeeklyLines(diagnosis = {}, evolution = {}, marketingDigest = null
   }
 
   if (Array.isArray(feedbackPatterns) && feedbackPatterns.length) {
-    lines.push('', '마스터 피드백 요약:');
+    lines.push('', '학습 패턴 요약:');
     feedbackPatterns.slice(0, 3).forEach((item) => {
-      lines.push(`- ${item.type}: ${item.count}회 / ${item.recentSummaries?.[0] || '요약 없음'}`);
+      const sourceLabel = item.source === 'operational_feedback' ? '운영' : '피드백';
+      lines.push(`- ${sourceLabel}/${item.type}: ${item.count}회 / ${item.recentSummaries?.[0] || '요약 없음'}`);
     });
   }
 

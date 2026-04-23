@@ -85,10 +85,7 @@ async function recordFeedback(postId, originalTitle, modifiedTitle, originalCont
   }
 }
 
-/**
- * 최근 N일 피드백 패턴 집계
- */
-async function aggregatePatterns(days = 30) {
+async function aggregateMasterFeedbackPatterns(days = 30) {
   try {
     const rows = await pgPool.query('blog', `
       SELECT feedback_type, COUNT(*) as count, 
@@ -103,10 +100,151 @@ async function aggregatePatterns(days = 30) {
       type: r.feedback_type,
       count: Number(r.count),
       recentSummaries: (r.summaries || []).slice(0, 3),
+      source: 'master_feedback',
     }));
   } catch {
     return [];
   }
+}
+
+function detectTitlePatternLocal(title = '') {
+  const text = String(title || '').trim();
+  if (!text) return 'unknown';
+  if (/\d+가지|\d+개|체크리스트/.test(text)) return 'checklist';
+  if (/왜|이유/.test(text)) return 'why';
+  if (/방법|전략|가이드/.test(text)) return 'guide';
+  if (/후기|경험|회고/.test(text)) return 'experience';
+  return 'default';
+}
+
+function normalizeOperationalAutonomyLane(rawLane = null) {
+  const lane = String(rawLane || '').trim();
+  if (!lane) return null;
+  if (lane === 'master_review') return 'auto_publish_guarded';
+  return lane;
+}
+
+async function aggregateOperationalPatterns(days = 30) {
+  try {
+    const rows = await pgPool.query('blog', `
+      SELECT
+        title,
+        category,
+        status,
+        post_type,
+        publish_date,
+        created_at,
+        metadata
+      FROM blog.posts
+      WHERE status IN ('ready', 'published')
+        AND post_type = 'general'
+        AND COALESCE(category, '') <> ''
+        AND COALESCE(publish_date, created_at, NOW()) >= NOW() - ($1::text || ' days')::interval
+      ORDER BY COALESCE(publish_date, created_at) DESC
+      LIMIT 20
+    `, [days]);
+
+    if (!Array.isArray(rows) || rows.length === 0) return [];
+
+    const categoryCounts = new Map();
+    const patternCounts = new Map();
+    const alignmentHints = new Map();
+    const autonomyLaneCounts = new Map();
+    const summaries = [];
+
+    for (const row of rows) {
+      const category = String(row.category || '').trim();
+      const pattern = detectTitlePatternLocal(row.title || '');
+      const metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+      const titleAlignment = metadata.title_alignment && typeof metadata.title_alignment === 'object'
+        ? metadata.title_alignment
+        : null;
+      const autonomy = metadata.autonomy && typeof metadata.autonomy === 'object'
+        ? metadata.autonomy
+        : null;
+      const publishMoment = row.publish_date || row.created_at || null;
+      const alignmentHint = titleAlignment?.category_aligned === false
+        ? `category_drift:${titleAlignment.preview_category || category || 'unknown'}`
+        : titleAlignment?.pattern_aligned === true
+          ? `pattern_ok:${titleAlignment.preview_pattern || pattern}`
+          : null;
+      const autonomyLane = normalizeOperationalAutonomyLane(autonomy?.executionLane || autonomy?.decision || null);
+      if (category) categoryCounts.set(category, Number(categoryCounts.get(category) || 0) + 1);
+      patternCounts.set(pattern, Number(patternCounts.get(pattern) || 0) + 1);
+      if (alignmentHint) alignmentHints.set(alignmentHint, Number(alignmentHints.get(alignmentHint) || 0) + 1);
+      if (autonomyLane) autonomyLaneCounts.set(String(autonomyLane), Number(autonomyLaneCounts.get(String(autonomyLane)) || 0) + 1);
+      if (summaries.length < 3) {
+        const parts = [
+          category,
+          pattern,
+          row.status || 'unknown',
+          publishMoment ? new Date(publishMoment).toISOString().slice(0, 10) : null,
+          autonomyLane ? `lane ${autonomyLane}` : null,
+          alignmentHint,
+        ].filter(Boolean);
+        summaries.push(parts.join(' / '));
+      }
+    }
+
+    const topCategory = [...categoryCounts.entries()].sort((a, b) => b[1] - a[1])[0];
+    const topPattern = [...patternCounts.entries()].sort((a, b) => b[1] - a[1])[0];
+    const topAlignmentHint = [...alignmentHints.entries()].sort((a, b) => b[1] - a[1])[0];
+    const topAutonomyLane = [...autonomyLaneCounts.entries()].sort((a, b) => b[1] - a[1])[0];
+    const patterns = [];
+
+    if (topCategory) {
+      patterns.push({
+        type: 'ops_high_performance_category',
+        count: Number(topCategory[1] || 0),
+        recentSummaries: [`최근 운영 포스트에서 ${topCategory[0]} 카테고리 비중이 높습니다.`, ...summaries.slice(0, 2)],
+        source: 'operational_feedback',
+      });
+    }
+
+    if (topPattern) {
+      patterns.push({
+        type: 'ops_high_performance_title_pattern',
+        count: Number(topPattern[1] || 0),
+        recentSummaries: [`최근 운영 포스트에서 ${topPattern[0]} 제목 패턴 비중이 높습니다.`, ...summaries.slice(0, 2)],
+        source: 'operational_feedback',
+      });
+    }
+
+    if (topAlignmentHint) {
+      patterns.push({
+        type: 'ops_alignment_signal',
+        count: Number(topAlignmentHint[1] || 0),
+        recentSummaries: [`최근 운영 포스트 정렬 신호는 ${topAlignmentHint[0]} 쪽에 모여 있습니다.`, ...summaries.slice(0, 2)],
+        source: 'operational_feedback',
+      });
+    }
+
+    if (topAutonomyLane) {
+      patterns.push({
+        type: 'ops_autonomy_lane',
+        count: Number(topAutonomyLane[1] || 0),
+        recentSummaries: [`최근 운영 포스트는 ${topAutonomyLane[0]} 레인 비중이 높습니다.`, ...summaries.slice(0, 2)],
+        source: 'operational_feedback',
+      });
+    }
+
+    return patterns;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 최근 N일 피드백 패턴 집계
+ */
+async function aggregatePatterns(days = 30) {
+  const [masterPatterns, operationalPatterns] = await Promise.all([
+    aggregateMasterFeedbackPatterns(days),
+    aggregateOperationalPatterns(days),
+  ]);
+
+  return [...masterPatterns, ...operationalPatterns]
+    .sort((a, b) => Number(b.count || 0) - Number(a.count || 0));
 }
 
 /**
@@ -116,9 +254,10 @@ async function buildFeedbackPromptInsert() {
   const patterns = await aggregatePatterns(30);
   if (!patterns.length) return '';
 
-  const lines = ['[마스터 선호 스타일 — 최근 피드백 학습 결과]'];
+  const lines = ['[블로팀 최근 학습 패턴 — 운영 데이터 + 피드백 반영 결과]'];
   for (const p of patterns.slice(0, 5)) {
-    lines.push(`- ${p.type} (${p.count}회): ${p.recentSummaries[0] || ''}`);
+    const sourceLabel = p.source === 'operational_feedback' ? '운영' : '피드백';
+    lines.push(`- ${sourceLabel}/${p.type} (${p.count}회): ${p.recentSummaries[0] || ''}`);
   }
   return lines.join('\n');
 }
@@ -282,6 +421,8 @@ async function learnHighPerformancePatterns() {
 module.exports = {
   recordFeedback,
   aggregatePatterns,
+  aggregateMasterFeedbackPatterns,
+  aggregateOperationalPatterns,
   buildFeedbackPromptInsert,
   calculateAccuracy,
   loadCategoryPerformanceWeights,
