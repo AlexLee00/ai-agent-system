@@ -103,6 +103,7 @@ async function fetchClosedTradeReviews(fromDate, toDate) {
       j.exchange,
       j.is_paper,
       COALESCE(j.trade_mode, 'normal') AS trade_mode,
+      COALESCE(NULLIF(j.strategy_family, ''), 'unknown') AS strategy_family,
       j.pnl_net,
       j.pnl_percent,
       r.max_favorable,
@@ -410,6 +411,25 @@ function formatPnl(pnlMap, positions) {
   lines.push(`  💰 실현: ${totalRealized >= 0 ? '+' : ''}$${totalRealized.toFixed(4)} | 미실현: ${totalUnrealized >= 0 ? '+' : ''}$${totalUnrealized.toFixed(4)} | 합계: ${totalStr}`);
 
   return lines.join('\n');
+}
+
+function formatStrategyFamilyPerformance(reviewRows = []) {
+  const rows = reviewRows.filter((row) => String(row.strategy_family || 'unknown') !== 'unknown');
+  if (rows.length === 0) return '  전략 패밀리 기록 없음';
+
+  const byFamily = {};
+  for (const row of rows) {
+    const family = String(row.strategy_family || 'unknown');
+    if (!byFamily[family]) byFamily[family] = { pnl: 0, cnt: 0, wins: 0 };
+    byFamily[family].pnl += Number(row.pnl_net || 0);
+    byFamily[family].cnt += 1;
+    if (Number(row.pnl_net || 0) > 0) byFamily[family].wins += 1;
+  }
+
+  return Object.entries(byFamily)
+    .sort((a, b) => b[1].pnl - a[1].pnl)
+    .map(([family, value]) => `  ${family}: $${value.pnl.toFixed(2)} (${value.cnt}건, 승률 ${((value.wins / value.cnt) * 100).toFixed(0)}%)`)
+    .join('\n');
 }
 
 function formatTradeReviewStats(reviewRows) {
@@ -805,6 +825,9 @@ function buildJournalReportLines({ label, trades, pnlMap, positions, reviewRows,
     ``,
     `━━ 손익 요약 ━━`,
     formatPnl(pnlMap, positions),
+    ``,
+    `━━ 전략 패밀리 성과 ━━`,
+    formatStrategyFamilyPerformance(reviewRows),
     ``,
     `━━ 청산 리뷰 요약 ━━`,
     formatTradeReviewStats(reviewRows),

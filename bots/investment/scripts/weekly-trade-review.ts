@@ -76,6 +76,7 @@ async function fetchRecentTrades(days) {
   return db.query(`
     SELECT
       symbol, exchange, direction, is_paper, COALESCE(trade_mode, 'normal') AS trade_mode,
+      COALESCE(NULLIF(strategy_family, ''), 'unknown') AS strategy_family,
       entry_time, entry_price, entry_size, entry_value,
       exit_time, exit_price, exit_value, exit_reason,
       pnl_amount, pnl_percent, pnl_net, fee_total,
@@ -513,6 +514,16 @@ function buildTradeSummary(trades, signalStats, rrSection = null) {
     byReason[r] = (byReason[r] || 0) + 1;
   }
 
+  const byStrategyFamily = {};
+  for (const t of trades) {
+    const family = String(t.strategy_family || 'unknown');
+    if (family === 'unknown') continue;
+    if (!byStrategyFamily[family]) byStrategyFamily[family] = { pnl: 0, cnt: 0, wins: 0 };
+    byStrategyFamily[family].pnl += t.pnl_net ?? 0;
+    byStrategyFamily[family].cnt += 1;
+    if ((t.pnl_net ?? 0) > 0) byStrategyFamily[family].wins += 1;
+  }
+
   const lines = [
     `=== 최근 ${DAYS}일 매매 요약 ===`,
     `총 거래: ${trades.length}건 (LIVE ${live.length}건 / PAPER ${paper.length}건)`,
@@ -529,6 +540,15 @@ function buildTradeSummary(trades, signalStats, rrSection = null) {
     `종료 사유:`,
     ...Object.entries(byReason).map(([r, n]) => `  ${r}: ${n}건`),
   ];
+
+  if (Object.keys(byStrategyFamily).length > 0) {
+    lines.push('', '전략 패밀리별 성과:');
+    lines.push(
+      ...Object.entries(byStrategyFamily)
+        .sort((a, b) => b[1].pnl - a[1].pnl)
+        .map(([family, v]) => `  ${family}: $${v.pnl.toFixed(2)} (${v.cnt}건, 승률 ${((v.wins / v.cnt) * 100).toFixed(0)}%)`),
+    );
+  }
 
   const marketBuckets = ['crypto', 'domestic', 'overseas'];
   const byMarket = Object.fromEntries(marketBuckets.map(bucket => [bucket, trades.filter(t => getMarketBucket(t.exchange) === bucket)]));
