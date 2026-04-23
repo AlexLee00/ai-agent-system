@@ -15,6 +15,7 @@ const AUTO_KEYS = new Set([
   'runtime_config.luna.stockOrderDefaults.kis.buyDefault',
   'runtime_config.luna.minConfidence.live.kis',
   'capital_management.by_exchange.kis.trade_modes.validation.max_position_pct',
+  'runtime_config.execution.signalSafetySoftening.byExchange.kis.tradeModes.normal.amountCapMultiplier',
 ]);
 
 function parseArgs(argv = process.argv.slice(2)) {
@@ -78,6 +79,7 @@ function isSameEvidence(report, snapshot) {
     && Number(report?.decision?.metrics?.totalBuy || 0) === Number(snapshot.totalBuy || 0)
     && Number(report?.decision?.metrics?.executedSignals || 0) === Number(snapshot.executedSignals || 0)
     && Number(report?.decision?.metrics?.failedSignals || 0) === Number(snapshot.failedSignals || 0)
+    && Number(report?.decision?.metrics?.normalRule1Blocks || 0) === Number(snapshot.normalRule1Blocks || 0)
     && Number(report?.decision?.metrics?.validationRule1Blocks || 0) === Number(snapshot.validationRule1Blocks || 0)
     && Number(report?.decision?.metrics?.orderPressureTotal || 0) === Number(snapshot.orderPressureTotal || 0)
     && Number(report.candidate.current ?? NaN) === Number(snapshot.candidateCurrent ?? NaN)

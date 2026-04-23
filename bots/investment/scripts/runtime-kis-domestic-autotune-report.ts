@@ -2,7 +2,7 @@
 // @ts-nocheck
 
 import * as db from '../shared/db.ts';
-import { getInvestmentRuntimeConfig } from '../shared/runtime-config.ts';
+import { getInvestmentExecutionRuntimeConfig, getInvestmentRuntimeConfig } from '../shared/runtime-config.ts';
 import { getExchangeEvidenceBaseline } from '../shared/runtime-config.ts';
 import { getParameterGovernance } from '../shared/runtime-parameter-governance.ts';
 import { getCapitalConfig } from '../shared/capital-manager.ts';
@@ -84,6 +84,11 @@ function summarizeSignals(rows = []) {
     String(row?.status || '') === 'blocked' &&
     String(row?.block_code || '') === 'safety_gate_blocked' &&
     String(row?.block_reason || '').includes('원칙1 위반: 단일 포지션 한도 초과'));
+  const normalRule1Blocks = rows.filter((row) =>
+    String(row?.trade_mode || '') === 'normal' &&
+    String(row?.status || '') === 'blocked' &&
+    String(row?.block_code || '') === 'safety_gate_blocked' &&
+    String(row?.block_reason || '').includes('원칙1 위반: 단일 포지션 한도 초과'));
   return {
     totalBuy,
     executedSignals,
@@ -91,6 +96,7 @@ function summarizeSignals(rows = []) {
     executionRate: totalBuy > 0 ? Number(((executedSignals / totalBuy) * 100).toFixed(1)) : 0,
     topBlocks,
     validationRule1Blocks,
+    normalRule1Blocks,
   };
 }
 
@@ -115,9 +121,26 @@ function summarizeTrades(rows = []) {
 }
 
 function buildCandidate(config, signalSummary, orderPressureSummary) {
+  const execution = getInvestmentExecutionRuntimeConfig();
   const orderMetrics = orderPressureSummary?.decision?.metrics || {};
   const totalOrderPressure = Number(orderMetrics.total || 0);
   const validationRule1Blocks = signalSummary.validationRule1Blocks || [];
+  const normalRule1Blocks = signalSummary.normalRule1Blocks || [];
+  if (normalRule1Blocks.length > 0 && totalOrderPressure === 0) {
+    const key = 'runtime_config.execution.signalSafetySoftening.byExchange.kis.tradeModes.normal.amountCapMultiplier';
+    const current = Number(execution?.signalSafetySoftening?.byExchange?.kis?.tradeModes?.normal?.amountCapMultiplier || 0.99);
+    const suggested = Number(Math.min(1, Math.max(current, 1)).toFixed(2));
+    if (suggested === current) return null;
+    return {
+      key,
+      current,
+      suggested,
+      action: 'adjust',
+      confidence: 'medium',
+      reason: `국내장 normal에서 원칙1 단일 포지션 한도 차단 ${normalRule1Blocks.length}건이 있어, 감산 배율을 ${current.toFixed(2)} → ${suggested.toFixed(2)}로 비교할 수 있습니다.`,
+      governance: getParameterGovernance(key),
+    };
+  }
   if (validationRule1Blocks.length > 0 && totalOrderPressure === 0) {
     const key = 'capital_management.by_exchange.kis.trade_modes.validation.max_position_pct';
     const current = Number(getCapitalConfig('kis', 'validation')?.max_position_pct || 0.1);
@@ -182,6 +205,7 @@ function buildDecision(signalSummary, tradeSummary, orderPressureSummary, candid
     `BUY 표본 ${signalSummary.totalBuy}건 / 실행 ${signalSummary.executedSignals}건 / 실패 ${signalSummary.failedSignals}건`,
     `실행률 ${signalSummary.executionRate}% / 실거래 BUY ${tradeSummary.realBuyTrades}건`,
     `주문 초과 압력 ${orderStatus}`,
+    signalSummary.normalRule1Blocks?.length > 0 ? `normal 원칙1 차단 ${signalSummary.normalRule1Blocks.length}건` : null,
     signalSummary.validationRule1Blocks?.length > 0 ? `validation 원칙1 차단 ${signalSummary.validationRule1Blocks.length}건` : null,
   ].filter(Boolean);
   const actionItems = [];
@@ -210,6 +234,7 @@ function buildDecision(signalSummary, tradeSummary, orderPressureSummary, candid
       paperBuyTrades: tradeSummary.paperBuyTrades,
       orderPressureStatus: orderStatus,
       orderPressureTotal: Number(orderPressureSummary?.decision?.metrics?.total || 0),
+      normalRule1Blocks: Number(signalSummary.normalRule1Blocks?.length || 0),
       validationRule1Blocks: Number(signalSummary.validationRule1Blocks?.length || 0),
     },
   };

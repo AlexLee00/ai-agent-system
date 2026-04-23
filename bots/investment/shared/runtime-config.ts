@@ -272,8 +272,41 @@ const DEFAULT_RUNTIME_CONFIG = {
       stalePendingMinutes: 30,
     },
     signalSafetySoftening: {
-      enabled: false,
-      byExchange: {},
+      enabled: true,
+      byExchange: {
+        binance: {
+          tradeModes: {
+            validation: {
+              enabled: true,
+              softenedRules: ['rule1', 'rule5', 'rule6'],
+              amountCapMultiplier: 0.99,
+            },
+          },
+        },
+        kis: {
+          tradeModes: {
+            normal: {
+              enabled: true,
+              softenedRules: ['rule1'],
+              amountCapMultiplier: 0.99,
+            },
+            validation: {
+              enabled: true,
+              softenedRules: ['rule1', 'rule5', 'rule6'],
+              amountCapMultiplier: 0.99,
+            },
+          },
+        },
+        kis_overseas: {
+          tradeModes: {
+            validation: {
+              enabled: true,
+              softenedRules: ['rule1', 'rule5', 'rule6'],
+              amountCapMultiplier: 0.99,
+            },
+          },
+        },
+      },
     },
     cryptoGuardSoftening: {
       enabled: true,
