@@ -891,7 +891,9 @@ function buildDecision(
       },
       {
         active: positionStrategyHygieneStatus === 'position_strategy_hygiene_attention',
-        level: Number(positionStrategyAudit?.duplicateManagedProfileScopes || 0) > 0 || Number(positionStrategyAudit?.unmatchedManagedPositions || 0) > 0 ? 'medium' : 'low',
+        level: positionStrategyRemediationHistory?.stale
+          ? 'medium'
+          : (Number(positionStrategyAudit?.duplicateManagedProfileScopes || 0) > 0 || Number(positionStrategyAudit?.unmatchedManagedPositions || 0) > 0 ? 'medium' : 'low'),
         reason: `position strategy remediation — ${positionStrategyRemediation?.decision?.headline || positionStrategyHygiene?.decision?.headline || '포지션 전략 위생 점검 필요'} / duplicate managed ${positionStrategyAudit?.duplicateManagedProfileScopes || 0} / orphan ${positionStrategyOrphans || 0} / unmatched managed ${positionStrategyAudit?.unmatchedManagedPositions || 0}${positionStrategyRemediationHistory ? ` / history changed ${positionStrategyRemediationHistory.statusChanged ? 'yes' : 'no'} / history age ${positionStrategyRemediationHistory.ageMinutes ?? 'n/a'}m / history stale ${positionStrategyRemediationHistory.stale ? 'yes' : 'no'} / duplicate delta ${positionStrategyRemediationHistory.delta?.duplicateManaged >= 0 ? '+' : ''}${positionStrategyRemediationHistory.delta?.duplicateManaged || 0} / orphan delta ${positionStrategyRemediationHistory.delta?.orphanProfiles >= 0 ? '+' : ''}${positionStrategyRemediationHistory.delta?.orphanProfiles || 0}` : ''}${(() => {
           const refreshItem = (positionStrategyRemediation?.decision?.actionItems || []).find((item) => typeof item === 'string' && item.startsWith('history refresh'));
           return refreshItem ? ` / ${refreshItem}` : '';
