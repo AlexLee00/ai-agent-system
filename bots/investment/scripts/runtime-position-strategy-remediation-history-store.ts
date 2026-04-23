@@ -25,6 +25,8 @@ export function readPositionStrategyRemediationHistory(file = DEFAULT_POSITION_S
   const history = readPositionStrategyRemediationHistoryLines(file);
   const current = history[history.length - 1] || null;
   const previous = history[history.length - 2] || null;
+  const previousNextCommand = previous?.nextCommand || null;
+  const currentNextCommand = current?.nextCommand || null;
   const recordedAt = current?.recordedAt ? new Date(current.recordedAt) : null;
   const ageMs = recordedAt && !Number.isNaN(recordedAt.getTime())
     ? Math.max(0, Date.now() - recordedAt.getTime())
@@ -40,7 +42,11 @@ export function readPositionStrategyRemediationHistory(file = DEFAULT_POSITION_S
     ageMinutes,
     stale: ageMinutes === null ? true : ageMinutes >= 60,
     statusChanged: previous && current ? previous.status !== current.status : false,
-    nextCommandChanged: previous && current ? String(previous.nextCommand || '') !== String(current.nextCommand || '') : false,
+    nextCommandChanged: previous && current ? String(previousNextCommand || '') !== String(currentNextCommand || '') : false,
+    nextCommandTransition: {
+      previous: previousNextCommand,
+      current: currentNextCommand,
+    },
     delta: {
       duplicateManaged: previous && current ? Number(current.duplicateManaged || 0) - Number(previous.duplicateManaged || 0) : 0,
       orphanProfiles: previous && current ? Number(current.orphanProfiles || 0) - Number(previous.orphanProfiles || 0) : 0,

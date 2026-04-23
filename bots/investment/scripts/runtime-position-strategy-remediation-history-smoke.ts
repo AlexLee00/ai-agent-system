@@ -24,6 +24,7 @@ export async function runPositionStrategyRemediationHistorySmoke() {
     assert.equal(second.historyCount, 2);
     assert.ok(typeof second.statusChanged === 'boolean');
     assert.ok(typeof second.nextCommandChanged === 'boolean');
+    assert.ok(Object.prototype.hasOwnProperty.call(second, 'nextCommandTransition'));
     assert.ok(Object.prototype.hasOwnProperty.call(second.delta, 'orphanProfiles'));
     assert.equal(typeof second.ageMinutes, 'number');
     assert.equal(typeof second.current.refreshCommand, 'string');
@@ -34,6 +35,7 @@ export async function runPositionStrategyRemediationHistorySmoke() {
       secondCount: second.historyCount,
       statusChanged: second.statusChanged,
       nextCommand: second.current.nextCommand,
+      nextCommandTransition: second.nextCommandTransition,
     };
   } finally {
     if (fs.existsSync(file)) fs.unlinkSync(file);

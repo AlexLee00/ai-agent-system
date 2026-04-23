@@ -28,6 +28,7 @@ function renderText(payload) {
     `상태 변화: ${payload.statusChanged ? `${payload.previous?.status || 'none'} -> ${payload.current.status}` : '유지'}`,
     `focus 변화: ${payload.previous?.recommendedExchange || 'none'} -> ${payload.current.recommendedExchange || 'none'}`,
     `next command: ${payload.current.nextCommand || 'n/a'}`,
+    `next command 변화: ${payload.nextCommandChanged ? `${payload.nextCommandTransition?.previous || 'none'} -> ${payload.nextCommandTransition?.current || 'none'}` : '유지'}`,
     `duplicate 변화: ${payload.delta.duplicateManaged >= 0 ? '+' : ''}${payload.delta.duplicateManaged}`,
     `orphan 변화: ${payload.delta.orphanProfiles >= 0 ? '+' : ''}${payload.delta.orphanProfiles}`,
     `unmatched 변화: ${payload.delta.unmatchedManaged >= 0 ? '+' : ''}${payload.delta.unmatchedManaged}`,
@@ -70,6 +71,10 @@ export async function buildPositionStrategyRemediationHistory({ file = DEFAULT_P
     stale: false,
     statusChanged: previousSnapshot.current ? previousSnapshot.current.status !== current.status : false,
     nextCommandChanged: previousSnapshot.current ? String(previousSnapshot.current.nextCommand || '') !== String(current.nextCommand || '') : false,
+    nextCommandTransition: {
+      previous: previousSnapshot.current?.nextCommand || null,
+      current: current.nextCommand || null,
+    },
     delta: {
       duplicateManaged: previousSnapshot.current ? current.duplicateManaged - Number(previousSnapshot.current.duplicateManaged || 0) : 0,
       orphanProfiles: previousSnapshot.current ? current.orphanProfiles - Number(previousSnapshot.current.orphanProfiles || 0) : 0,
