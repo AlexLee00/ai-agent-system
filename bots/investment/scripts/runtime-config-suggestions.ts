@@ -14,6 +14,7 @@ import { annotateRuntimeSuggestions, buildParameterGovernanceReport } from '../s
 import { loadCryptoLiveGateReview } from './crypto-live-gate-review.ts';
 import { buildRuntimeCryptoSoftGuardReport } from './runtime-crypto-soft-guard-report.ts';
 import { buildInvestmentCliInsight } from '../shared/cli-insight.ts';
+import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 function parseArgs(argv = process.argv.slice(2)) {
   const daysArg = argv.find(arg => arg.startsWith('--days='));
@@ -1051,7 +1052,9 @@ export async function buildRuntimeConfigSuggestionsReport({ days = 14, write = f
   return report;
 }
 
-main().catch((error) => {
-  process.stderr.write(`❌ ${error?.stack || error?.message || String(error)}\n`);
-  process.exit(1);
-});
+if (isDirectExecution(import.meta.url)) {
+  await runCliMain({
+    run: main,
+    errorPrefix: '❌ runtime-config-suggestions 오류:',
+  });
+}
