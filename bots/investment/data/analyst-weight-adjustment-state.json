@@ -1,10 +1,10 @@
 {
   "oracle": {
-    "evidenceKey": "0.8000:5",
-    "accuracy": 0.8,
-    "sampleCount": 5,
-    "appliedFrom": 0.3,
-    "appliedTo": 0.35,
-    "appliedAt": "2026-04-22T23:57:10.570Z"
+    "evidenceKey": "0.8571:7",
+    "accuracy": 0.8571428571428571,
+    "sampleCount": 7,
+    "appliedFrom": 0.35,
+    "appliedTo": 0.4,
+    "appliedAt": "2026-04-23T03:39:20.568Z"
   }
 }

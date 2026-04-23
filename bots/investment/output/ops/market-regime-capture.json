@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "checkedAt": "2026-04-23T00:13:16.328Z",
+  "checkedAt": "2026-04-23T06:13:34.895Z",
   "dryRun": false,
   "markets": [
     "binance",
@@ -11,24 +11,24 @@
     {
       "market": "binance",
       "normalizedMarket": "crypto",
-      "regime": "trending_bull",
-      "confidence": 0.69,
-      "reason": "상승 우위 (2:0)",
-      "bias": "bullish",
-      "tradingStyle": "aggressive",
-      "timeframe": "swing",
-      "capturedAt": "2026-04-23T00:13:15.503Z"
+      "regime": "trending_bear",
+      "confidence": 0.5700000000000001,
+      "reason": "하락 우위 (1:0)",
+      "bias": "bearish",
+      "tradingStyle": "defensive",
+      "timeframe": "short",
+      "capturedAt": "2026-04-23T06:13:33.900Z"
     },
     {
       "market": "kis",
       "normalizedMarket": "domestic",
-      "regime": "trending_bull",
-      "confidence": 0.5700000000000001,
-      "reason": "상승 우위 (1:0)",
-      "bias": "bullish",
-      "tradingStyle": "aggressive",
-      "timeframe": "swing",
-      "capturedAt": "2026-04-23T00:13:16.014Z"
+      "regime": "ranging",
+      "confidence": 0.45,
+      "reason": "뚜렷한 추세 부재",
+      "bias": "neutral",
+      "tradingStyle": "neutral",
+      "timeframe": "short",
+      "capturedAt": "2026-04-23T06:13:34.514Z"
     },
     {
       "market": "kis_overseas",
@@ -39,7 +39,7 @@
       "bias": "bullish",
       "tradingStyle": "aggressive",
       "timeframe": "swing",
-      "capturedAt": "2026-04-23T00:13:16.327Z"
+      "capturedAt": "2026-04-23T06:13:34.892Z"
     }
   ]
 }
