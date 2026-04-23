@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { readFileSync, statSync } from 'fs';
 import yaml from 'js-yaml';
-import { getInvestmentHealthRuntimeConfig } from '../shared/runtime-config.ts';
+import { getExchangeEvidenceBaseline, getInvestmentHealthRuntimeConfig, getStockSizingFloorBaseline } from '../shared/runtime-config.ts';
 
 const HEALTH_RUNTIME = getInvestmentHealthRuntimeConfig();
 const TRADE_LANE_NEAR_LIMIT_RATIO = Number(HEALTH_RUNTIME.tradeLaneNearLimitRatio ?? 0.8);
@@ -815,6 +815,14 @@ export async function loadDomesticCollectPressure(deployments, logLines = 200) {
 }
 
 export async function loadDomesticRejectBreakdown(pgPool, windowMinutes = 1440) {
+  const evidenceBaseline = getExchangeEvidenceBaseline('kis');
+  const sizingBaseline = getStockSizingFloorBaseline('kis');
+  const baselines = [evidenceBaseline, sizingBaseline]
+    .filter(Boolean)
+    .map((value) => new Date(value))
+    .filter((value) => !Number.isNaN(value.getTime()))
+    .sort((a, b) => b.getTime() - a.getTime());
+  const baseline = baselines[0]?.toISOString() || null;
   const rows = await pgPool.query(
     'investment',
     `
@@ -824,6 +832,7 @@ export async function loadDomesticRejectBreakdown(pgPool, windowMinutes = 1440) 
       FROM investment.signals
       WHERE exchange = 'kis'
         AND created_at > now() - INTERVAL '1 minute' * $1
+        ${baseline ? `AND created_at > TIMESTAMPTZ '${baseline}'` : ''}
         AND status IN ('failed', 'blocked', 'rejected')
         AND COALESCE(block_code, '') IN (
           'domestic_order_rejected',
@@ -872,6 +881,7 @@ export async function loadDomesticRejectBreakdown(pgPool, windowMinutes = 1440) 
       ...row,
       label: labels[row.block_code] || row.block_code,
     })),
+    baseline,
   };
 }
 

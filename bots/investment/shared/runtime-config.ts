@@ -281,6 +281,12 @@ const DEFAULT_RUNTIME_CONFIG = {
     cryptoMinNotionalUsdt: 10,
   },
   execution: {
+    stockSizingFloorBaseline: {
+      byExchange: {
+        kis: '2026-04-23T12:00:00.000Z',
+        kis_overseas: '2026-04-23T12:00:00.000Z',
+      },
+    },
     pendingQueue: {
       stalePendingMinutes: 30,
     },
@@ -581,6 +587,14 @@ export function getInvestmentAlertRuntimeConfig() {
 
 export function getExchangeEvidenceBaseline(exchange = '') {
   const raw = getInvestmentRuntimeConfig()?.liveEvidenceBaseline?.byExchange?.[exchange];
+  if (!raw) return null;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString();
+}
+
+export function getStockSizingFloorBaseline(exchange = '') {
+  const raw = getInvestmentRuntimeConfig()?.execution?.stockSizingFloorBaseline?.byExchange?.[exchange];
   if (!raw) return null;
   const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) return null;

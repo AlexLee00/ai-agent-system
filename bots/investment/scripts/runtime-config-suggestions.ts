@@ -8,7 +8,7 @@
  */
 
 import * as db from '../shared/db.ts';
-import { getInvestmentExecutionRuntimeConfig, getInvestmentRuntimeConfig, getValidationSoftBudgetConfig } from '../shared/runtime-config.ts';
+import { getInvestmentExecutionRuntimeConfig, getInvestmentRuntimeConfig, getStockSizingFloorBaseline, getValidationSoftBudgetConfig } from '../shared/runtime-config.ts';
 import { getCapitalConfig } from '../shared/capital-manager.ts';
 import { annotateRuntimeSuggestions, buildParameterGovernanceReport } from '../shared/runtime-parameter-governance.ts';
 import { loadCryptoLiveGateReview } from './crypto-live-gate-review.ts';
@@ -63,6 +63,14 @@ async function loadSignalRows(fromDate, toDate) {
 }
 
 async function loadBlockCodeRows(fromDate, toDate) {
+  const stockSizingBaselines = ['kis', 'kis_overseas']
+    .map((exchange) => ({ exchange, baseline: getStockSizingFloorBaseline(exchange) }))
+    .filter((item) => item.baseline);
+  const stockSizingBaselineFilter = stockSizingBaselines.length > 0
+    ? `AND NOT (${stockSizingBaselines.map((item) =>
+        `(exchange = '${item.exchange}' AND COALESCE(block_code, '') IN ('min_order_notional', 'sizing_floor_unavailable') AND created_at <= TIMESTAMPTZ '${item.baseline}')`
+      ).join(' OR ')})`
+    : '';
   return db.query(`
     SELECT
       exchange,
@@ -71,6 +79,7 @@ async function loadBlockCodeRows(fromDate, toDate) {
     FROM signals
     WHERE CAST(created_at AT TIME ZONE 'Asia/Seoul' AS DATE) BETWEEN '${fromDate}' AND '${toDate}'
       AND status IN ('failed', 'rejected', 'expired')
+      ${stockSizingBaselineFilter}
     GROUP BY exchange, 2
     ORDER BY exchange, cnt DESC
   `);

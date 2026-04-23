@@ -3,7 +3,7 @@
 
 import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
-import { getInvestmentRuntimeConfig } from '../shared/runtime-config.ts';
+import { getExchangeEvidenceBaseline, getInvestmentRuntimeConfig, getStockSizingFloorBaseline } from '../shared/runtime-config.ts';
 import { buildRuntimeDecisionSummary } from './runtime-decision-summary.ts';
 import { buildInvestmentCliInsight } from '../shared/cli-insight.ts';
 
@@ -62,7 +62,7 @@ function formatAmount(value, market = 'kis') {
   return `${numeric.toFixed(2)} USD`;
 }
 
-function buildDecision({ market, rows = [], runtime = null, orderDefaults = null }) {
+function buildDecision({ market, rows = [], runtime = null, orderDefaults = null, baseline = null }) {
   const total = rows.length;
   const withGap = rows.filter((row) => Number(row.gap) > 0);
   const avgGap = withGap.length > 0
@@ -78,7 +78,7 @@ function buildDecision({ market, rows = [], runtime = null, orderDefaults = null
   const actionItems = [];
 
   if (total === 0) {
-    reasons.push('최근 min_order_notional 블록이 없습니다.');
+    reasons.push('최근 min-order/sizing-floor 블록이 없습니다.');
   } else {
     reasons.push(`최근 ${total}건 min-order/sizing-floor 블록`);
     if (withGap.length > 0) {
@@ -110,6 +110,9 @@ function buildDecision({ market, rows = [], runtime = null, orderDefaults = null
   if (orderDefaults) {
     reasons.push(`현재 기본 주문값 buyDefault=${formatAmount(orderDefaults.buyDefault, market)} / min=${formatAmount(orderDefaults.min, market)}`);
   }
+  if (baseline) {
+    reasons.push(`sizing floor 기준선 이후만 집계: ${baseline}`);
+  }
 
   if (status === 'min_order_pressure' || status === 'min_order_runtime_pressure') {
     actionItems.push('주문 기본값과 현재 최소 주문 가드 gap이 실제 운영 데이터 기준으로 얼마나 벌어지는지 계속 누적합니다.');
@@ -132,6 +135,7 @@ function buildDecision({ market, rows = [], runtime = null, orderDefaults = null
       maxGap: maxGapRow ? Number(maxGapRow.gap || 0) : 0,
       maxGapAttempted: maxGapRow ? Number(maxGapRow.attempted || 0) : 0,
       maxGapRequired: maxGapRow ? Number(maxGapRow.required || 0) : 0,
+      baseline,
     },
   };
 }
@@ -176,6 +180,17 @@ function buildMinOrderFallback(payload) {
 async function loadMinOrderRows({ market = 'kis', days = 14 } = {}) {
   const safeMarket = String(market).replace(/'/g, "''");
   const safeDays = Math.max(1, Number(days || 14));
+  const evidenceBaseline = getExchangeEvidenceBaseline(safeMarket);
+  const sizingBaseline = getStockSizingFloorBaseline(safeMarket);
+  const baselines = [evidenceBaseline, sizingBaseline]
+    .filter(Boolean)
+    .map((value) => new Date(value))
+    .filter((value) => !Number.isNaN(value.getTime()))
+    .sort((a, b) => b.getTime() - a.getTime());
+  const baseline = baselines[0]?.toISOString() || null;
+  const lowerBound = baseline
+    ? `GREATEST(now() - INTERVAL '${safeDays} days', TIMESTAMPTZ '${baseline}')`
+    : `now() - INTERVAL '${safeDays} days'`;
   const rows = await db.query(`
     SELECT
       symbol,
@@ -188,12 +203,12 @@ async function loadMinOrderRows({ market = 'kis', days = 14 } = {}) {
     WHERE exchange = '${safeMarket}'
       AND COALESCE(block_code, '') IN ('min_order_notional', 'sizing_floor_unavailable')
       AND status IN ('failed', 'blocked', 'rejected')
-      AND created_at > now() - INTERVAL '${safeDays} days'
+      AND created_at > ${lowerBound}
     ORDER BY created_at DESC
     LIMIT 100
   `);
 
-  return rows.map((row) => {
+  const items = rows.map((row) => {
     const gap = extractGap(row.block_reason);
     return {
       symbol: row.symbol,
@@ -207,11 +222,14 @@ async function loadMinOrderRows({ market = 'kis', days = 14 } = {}) {
       gap: gap.gap,
     };
   });
+  items.baseline = baseline;
+  return items;
 }
 
 export async function buildRuntimeMinOrderPressureReport({ market = 'kis', days = 14, json = false } = {}) {
   const normalizedMarket = normalizeMarket(market);
   const rows = await loadMinOrderRows({ market: normalizedMarket, days });
+  const baseline = rows.baseline || null;
   const runtimeMarket =
     normalizedMarket === 'kis' ? 'domestic' :
     normalizedMarket === 'kis_overseas' ? 'overseas' : 'crypto';
@@ -226,6 +244,7 @@ export async function buildRuntimeMinOrderPressureReport({ market = 'kis', days 
     rows,
     runtime,
     orderDefaults,
+    baseline,
   });
   const payload = {
     ok: true,
@@ -233,6 +252,7 @@ export async function buildRuntimeMinOrderPressureReport({ market = 'kis', days 
     days,
     count: rows.length,
     orderDefaults,
+    baseline,
     runtime,
     rows,
     decision,
