@@ -279,6 +279,9 @@ export async function initSchema() {
   try { await run(`ALTER TABLE positions ADD COLUMN IF NOT EXISTS execution_mode TEXT DEFAULT 'live'`); } catch { /* 무시 */ }
   try { await run(`ALTER TABLE positions ADD COLUMN IF NOT EXISTS broker_account_mode TEXT`); } catch { /* 무시 */ }
   try { await run(`ALTER TABLE positions ADD COLUMN IF NOT EXISTS trade_mode TEXT DEFAULT 'normal'`); } catch { /* 무시 */ }
+  try { await run(`ALTER TABLE position_strategy_profiles ADD COLUMN IF NOT EXISTS strategy_state JSONB DEFAULT '{}'::jsonb`); } catch { /* 무시 */ }
+  try { await run(`ALTER TABLE position_strategy_profiles ADD COLUMN IF NOT EXISTS last_evaluation_at TIMESTAMPTZ`); } catch { /* 무시 */ }
+  try { await run(`ALTER TABLE position_strategy_profiles ADD COLUMN IF NOT EXISTS last_attention_at TIMESTAMPTZ`); } catch { /* 무시 */ }
   try { await run(`UPDATE positions SET execution_mode = CASE WHEN paper = true THEN 'paper' ELSE 'live' END WHERE execution_mode IS NULL OR execution_mode = ''`); } catch { /* 무시 */ }
   try { await run(`UPDATE positions SET trade_mode = 'normal' WHERE trade_mode IS NULL`); } catch { /* 무시 */ }
   try { await run(`ALTER TABLE positions DROP CONSTRAINT IF EXISTS positions_pkey`); } catch { /* 무시 */ }
@@ -1253,6 +1256,37 @@ export async function upsertPositionStrategyProfile({
   );
 }
 
+export async function updatePositionStrategyProfileState(symbol, {
+  exchange = null,
+  tradeMode = null,
+  strategyState = {},
+  lastEvaluationAt = null,
+  lastAttentionAt = null,
+} = {}) {
+  if (!symbol || !exchange) return null;
+  const effectiveTradeMode = canonicalizePositionTradeMode(exchange, false, tradeMode);
+  return get(
+    `UPDATE position_strategy_profiles
+     SET strategy_state = COALESCE(strategy_state, '{}'::jsonb) || $1::jsonb,
+         last_evaluation_at = COALESCE($2::timestamptz, now()),
+         last_attention_at = CASE WHEN $3::timestamptz IS NULL THEN last_attention_at ELSE $3::timestamptz END,
+         updated_at = now()
+     WHERE symbol = $4
+       AND exchange = $5
+       AND COALESCE(trade_mode, 'normal') = $6
+       AND status = 'active'
+     RETURNING *`,
+    [
+      JSON.stringify(strategyState || {}),
+      lastEvaluationAt,
+      lastAttentionAt,
+      symbol,
+      exchange,
+      effectiveTradeMode,
+    ],
+  );
+}
+
 export async function closePositionStrategyProfile(symbol, {
   exchange = null,
   tradeMode = null,
@@ -1468,7 +1502,7 @@ export default {
   getRecentScreeningSymbols,
   upsertStrategy, getActiveStrategies, recordStrategyResult,
   getLatestVectorbtBacktestForSymbol, getLatestMarketRegimeSnapshot,
-  getPositionStrategyProfile, upsertPositionStrategyProfile, closePositionStrategyProfile,
+  getPositionStrategyProfile, upsertPositionStrategyProfile, updatePositionStrategyProfileState, closePositionStrategyProfile,
   insertRiskLog,
   insertAssetSnapshot, getLatestEquity, getEquityHistory,
   insertMarketRegimeSnapshot,

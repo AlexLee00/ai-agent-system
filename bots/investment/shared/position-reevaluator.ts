@@ -299,6 +299,36 @@ function getStrategySetupType(strategyProfile = null) {
   return String(strategyProfile?.setup_type || '').trim().toLowerCase() || null;
 }
 
+function buildStrategyStateUpdate({
+  position = null,
+  recommendation = null,
+  reasonCode = null,
+  reason = null,
+  analysisSummary = null,
+  driftContext = null,
+} = {}) {
+  return {
+    lifecycleStatus: recommendation === 'EXIT'
+      ? 'exit_candidate'
+      : recommendation === 'ADJUST'
+        ? 'adjust_candidate'
+        : 'holding',
+    latestRecommendation: recommendation || null,
+    latestReasonCode: reasonCode || null,
+    latestReason: reason || null,
+    latestPnlPct: calcPnlPct(position),
+    latestAnalysis: {
+      buy: Number(analysisSummary?.buy || 0),
+      hold: Number(analysisSummary?.hold || 0),
+      sell: Number(analysisSummary?.sell || 0),
+      avgConfidence: safeNumber(analysisSummary?.avgConfidence),
+    },
+    backtestDrift: driftContext || null,
+    updatedBy: 'position_reevaluator',
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 function buildBacktestDriftContext(strategyProfile = null, latestBacktest = null) {
   const baseline = strategyProfile?.backtest_plan?.latestBaseline || null;
   if (!baseline || !latestBacktest) return null;
@@ -713,6 +743,23 @@ export async function reevaluateOpenPositions({
     ];
     const analysisSummary = summarizeAnalyses(mergedAnalyses);
     const decision = decideReevaluation(position, analysisSummary, strategyProfile, latestBacktest);
+    if (strategyProfile?.id) {
+      const attentionAt = decision.decision.recommendation === 'HOLD' ? null : new Date().toISOString();
+      await db.updatePositionStrategyProfileState(position.symbol, {
+        exchange: position.exchange,
+        tradeMode: position.trade_mode || 'normal',
+        strategyState: buildStrategyStateUpdate({
+          position,
+          recommendation: decision.decision.recommendation,
+          reasonCode: decision.decision.reasonCode,
+          reason: decision.decision.reason,
+          analysisSummary,
+          driftContext: decision.driftContext,
+        }),
+        lastEvaluationAt: new Date().toISOString(),
+        lastAttentionAt: attentionAt,
+      }).catch(() => null);
+    }
     results.push({
       exchange: position.exchange,
       symbol: position.symbol,
