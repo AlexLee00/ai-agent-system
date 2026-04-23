@@ -19,6 +19,8 @@ export function runPositionStrategyRemediationSmoke() {
     retireDryRunCommand: 'npm --prefix /tmp run runtime:retire-orphan-strategy-profiles -- --json --exchange=kis_overseas',
   }, {
     historyCount: 4,
+    ageMinutes: 12,
+    stale: false,
     current: { status: 'position_strategy_remediation_ready' },
     statusChanged: false,
     delta: { duplicateManaged: 0, orphanProfiles: -1, unmatchedManaged: 0 },
@@ -26,6 +28,7 @@ export function runPositionStrategyRemediationSmoke() {
   assert.equal(ready.status, 'position_strategy_remediation_ready');
   assert.match(ready.headline, /focus kis_overseas/);
   assert.match(ready.actionItems.join('\n'), /history count 4/);
+  assert.match(ready.actionItems.join('\n'), /age 12m \/ stale no/);
   assert.match(ready.actionItems.join('\n'), /remediation history/);
   assert.match(ready.actionItems.join('\n'), /normalize dry-run/);
 
@@ -36,12 +39,15 @@ export function runPositionStrategyRemediationSmoke() {
     hygieneReportCommand: 'npm --prefix /tmp run runtime:position-strategy-hygiene -- --json',
   }, {
     historyCount: 2,
+    ageMinutes: 85,
+    stale: true,
     current: { status: 'position_strategy_remediation_clear' },
     statusChanged: false,
     delta: { duplicateManaged: 0, orphanProfiles: 0, unmatchedManaged: 0 },
   });
   assert.equal(clear.status, 'position_strategy_remediation_clear');
   assert.match(clear.actionItems.join('\n'), /history count 2/);
+  assert.match(clear.actionItems.join('\n'), /stale yes/);
 
   const unavailable = buildPositionStrategyRemediationDecision(null);
   assert.equal(unavailable.status, 'position_strategy_remediation_unavailable');

@@ -60,6 +60,9 @@ export async function buildPositionStrategyRemediationHistory({ file = DEFAULT_P
     historyCount: previousSnapshot.historyCount + 1,
     current,
     previous: previousSnapshot.current,
+    lastRecordedAt: current.recordedAt,
+    ageMinutes: 0,
+    stale: false,
     statusChanged: previousSnapshot.current ? previousSnapshot.current.status !== current.status : false,
     delta: {
       duplicateManaged: previousSnapshot.current ? current.duplicateManaged - Number(previousSnapshot.current.duplicateManaged || 0) : 0,

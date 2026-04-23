@@ -25,12 +25,20 @@ export function readPositionStrategyRemediationHistory(file = DEFAULT_POSITION_S
   const history = readPositionStrategyRemediationHistoryLines(file);
   const current = history[history.length - 1] || null;
   const previous = history[history.length - 2] || null;
+  const recordedAt = current?.recordedAt ? new Date(current.recordedAt) : null;
+  const ageMs = recordedAt && !Number.isNaN(recordedAt.getTime())
+    ? Math.max(0, Date.now() - recordedAt.getTime())
+    : null;
+  const ageMinutes = ageMs === null ? null : Math.floor(ageMs / (1000 * 60));
   return {
     ok: true,
     file,
     historyCount: history.length,
     current,
     previous,
+    lastRecordedAt: current?.recordedAt || null,
+    ageMinutes,
+    stale: ageMinutes === null ? true : ageMinutes >= 60,
     statusChanged: previous && current ? previous.status !== current.status : false,
     delta: {
       duplicateManaged: previous && current ? Number(current.duplicateManaged || 0) - Number(previous.duplicateManaged || 0) : 0,

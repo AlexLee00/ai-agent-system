@@ -1201,7 +1201,7 @@ function formatText(report) {
               : []),
             ...(report.positionStrategyRemediationHistory
               ? [
-                `  remediation history: count ${report.positionStrategyRemediationHistory.historyCount || 0} / changed ${report.positionStrategyRemediationHistory.statusChanged ? 'yes' : 'no'}`,
+                `  remediation history: count ${report.positionStrategyRemediationHistory.historyCount || 0} / changed ${report.positionStrategyRemediationHistory.statusChanged ? 'yes' : 'no'} / age ${report.positionStrategyRemediationHistory.ageMinutes ?? 'n/a'}m / stale ${report.positionStrategyRemediationHistory.stale ? 'yes' : 'no'}`,
                 `  remediation delta: duplicate ${report.positionStrategyRemediationHistory.delta?.duplicateManaged >= 0 ? '+' : ''}${report.positionStrategyRemediationHistory.delta?.duplicateManaged || 0} / orphan ${report.positionStrategyRemediationHistory.delta?.orphanProfiles >= 0 ? '+' : ''}${report.positionStrategyRemediationHistory.delta?.orphanProfiles || 0} / unmatched ${report.positionStrategyRemediationHistory.delta?.unmatchedManaged >= 0 ? '+' : ''}${report.positionStrategyRemediationHistory.delta?.unmatchedManaged || 0}`,
               ]
               : []),

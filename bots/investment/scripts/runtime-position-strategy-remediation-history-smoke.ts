@@ -15,12 +15,15 @@ export async function runPositionStrategyRemediationHistorySmoke() {
     assert.equal(first.ok, true);
     assert.equal(first.historyCount, 1);
     assert.equal(first.delta.duplicateManaged, 0);
+    assert.equal(first.lastRecordedAt, first.current.recordedAt);
+    assert.equal(typeof first.stale, 'boolean');
 
     const second = await buildPositionStrategyRemediationHistory({ file, json: true });
     assert.equal(second.ok, true);
     assert.equal(second.historyCount, 2);
     assert.ok(typeof second.statusChanged === 'boolean');
     assert.ok(Object.prototype.hasOwnProperty.call(second.delta, 'orphanProfiles'));
+    assert.equal(typeof second.ageMinutes, 'number');
 
     return {
       ok: true,
