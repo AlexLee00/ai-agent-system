@@ -29,6 +29,30 @@ function buildRecommendedExchange({ duplicateNormalization = null, orphanRetirem
     .map(([exchange, count]) => ({ exchange, count }))[0] || null;
 }
 
+export function buildPositionStrategyHygieneRemediationPlan({
+  audit = null,
+  duplicateNormalization = null,
+  orphanRetirement = null,
+  recommendedExchange = null,
+  decision = null,
+} = {}) {
+  const exchange = recommendedExchange?.exchange || null;
+  const exchangeSuffix = exchange ? ` --exchange=${exchange}` : '';
+  return {
+    status: decision?.status || 'unknown',
+    recommendedExchange: exchange,
+    recommendedExchangeCount: Number(recommendedExchange?.count || 0),
+    duplicateManagedScopes: Number(audit?.duplicateManagedProfileScopes || 0),
+    orphanProfiles: Number(audit?.orphanProfiles || 0),
+    unmatchedManaged: Number(audit?.unmatchedManagedPositions || 0),
+    hygieneReportCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-hygiene -- --json',
+    normalizeDryRunCommand: `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --json${exchangeSuffix}`,
+    normalizeApplyCommand: `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --apply --json${exchangeSuffix}`,
+    retireDryRunCommand: `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles -- --json${exchangeSuffix}`,
+    retireApplyCommand: `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles -- --apply --json${exchangeSuffix}`,
+  };
+}
+
 export function buildPositionStrategyHygieneDecision({
   audit = null,
   duplicateNormalization = null,
@@ -84,6 +108,13 @@ export async function runPositionStrategyHygiene({ json = false } = {}) {
       orphanRetirement,
     }),
   };
+  result.remediationPlan = buildPositionStrategyHygieneRemediationPlan({
+    audit,
+    duplicateNormalization,
+    orphanRetirement,
+    recommendedExchange,
+    decision: result.decision,
+  });
 
   if (json) return result;
   return JSON.stringify(result, null, 2);

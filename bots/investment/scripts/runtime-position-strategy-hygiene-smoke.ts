@@ -2,7 +2,10 @@
 // @ts-nocheck
 
 import assert from 'node:assert/strict';
-import { buildPositionStrategyHygieneDecision } from './runtime-position-strategy-hygiene.ts';
+import {
+  buildPositionStrategyHygieneDecision,
+  buildPositionStrategyHygieneRemediationPlan,
+} from './runtime-position-strategy-hygiene.ts';
 
 const attention = buildPositionStrategyHygieneDecision({
   audit: {
@@ -33,6 +36,22 @@ const attention = buildPositionStrategyHygieneDecision({
 assert.equal(attention.status, 'position_strategy_hygiene_attention');
 assert.match(attention.actionItems.join('\n'), /duplicate scopes 2/);
 assert.match(attention.headline, /focus kis_overseas/);
+
+const remediation = buildPositionStrategyHygieneRemediationPlan({
+  audit: {
+    duplicateManagedProfileScopes: 2,
+    orphanProfiles: 3,
+    unmatchedManagedPositions: 1,
+  },
+  recommendedExchange: {
+    exchange: 'kis_overseas',
+    count: 5,
+  },
+  decision: attention,
+});
+assert.equal(remediation.recommendedExchange, 'kis_overseas');
+assert.match(remediation.normalizeDryRunCommand, /--exchange=kis_overseas/);
+assert.match(remediation.retireApplyCommand, /--apply --json --exchange=kis_overseas/);
 
 const ok = buildPositionStrategyHygieneDecision({
   audit: {

@@ -19,7 +19,7 @@ import { validateTradeReview } from './validate-trade-review.ts';
 import { buildRuntimeLearningLoopReport } from './runtime-learning-loop-report.ts';
 import { runCollectionAudit } from './runtime-collection-audit.ts';
 import { backfillTradeIncidentLinks } from './backfill-trade-incident-links.ts';
-import { runPositionStrategyHygiene } from './runtime-position-strategy-hygiene.ts';
+import { buildPositionStrategyHygieneRemediationPlan, runPositionStrategyHygiene } from './runtime-position-strategy-hygiene.ts';
 import { loadExecutionRiskApprovalGuardHealth } from './health-report-support.ts';
 
 const require = createRequire(import.meta.url);
@@ -574,12 +574,12 @@ async function main() {
       if (hsm.canAlert(state, key)) {
         const duplicateSample = hygiene?.duplicateNormalization?.rows?.[0] || null;
         const orphanSample = hygiene?.orphanRetirement?.rows?.[0] || null;
-        const recommendedExchange = hygiene?.recommendedExchange?.exchange || null;
-        const exchangeSuffix = recommendedExchange ? ` --exchange=${recommendedExchange}` : '';
+        const remediationPlan = hygiene?.remediationPlan || buildPositionStrategyHygieneRemediationPlan(hygiene);
+        const recommendedExchange = remediationPlan?.recommendedExchange || null;
         issues.push({
           key,
           level: Number(hygiene?.audit?.duplicateManagedProfileScopes || 0) > 0 || Number(hygiene?.audit?.unmatchedManagedPositions || 0) > 0 ? 2 : 1,
-          msg: `⚠️ [루나 헬스] position strategy hygiene\n${hygiene.decision?.headline || '포지션 전략 위생 정리 후보 감지'}\nduplicate managed scopes ${hygiene.audit?.duplicateManagedProfileScopes || 0} / orphan profiles ${hygiene.audit?.orphanProfiles || 0} / unmatched managed ${hygiene.audit?.unmatchedManagedPositions || 0}${recommendedExchange ? `\nrecommended exchange: ${recommendedExchange}` : ''}${duplicateSample ? `\nduplicate sample: ${duplicateSample.exchange}/${duplicateSample.symbol} keeper=${duplicateSample.keeperProfileId} retirements=${duplicateSample.retirements?.length || 0}` : ''}${orphanSample ? `\norphan sample: ${orphanSample.exchange}/${orphanSample.symbol} ${orphanSample.tradeMode} ${orphanSample.lifecycleStatus}` : ''}\nnext commands:\n- npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-hygiene -- --json\n- npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --json${exchangeSuffix}\n- npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles -- --json${exchangeSuffix}`,
+          msg: `⚠️ [루나 헬스] position strategy hygiene\n${hygiene.decision?.headline || '포지션 전략 위생 정리 후보 감지'}\nduplicate managed scopes ${hygiene.audit?.duplicateManagedProfileScopes || 0} / orphan profiles ${hygiene.audit?.orphanProfiles || 0} / unmatched managed ${hygiene.audit?.unmatchedManagedPositions || 0}${recommendedExchange ? `\nrecommended exchange: ${recommendedExchange}` : ''}${duplicateSample ? `\nduplicate sample: ${duplicateSample.exchange}/${duplicateSample.symbol} keeper=${duplicateSample.keeperProfileId} retirements=${duplicateSample.retirements?.length || 0}` : ''}${orphanSample ? `\norphan sample: ${orphanSample.exchange}/${orphanSample.symbol} ${orphanSample.tradeMode} ${orphanSample.lifecycleStatus}` : ''}\nnext commands:\n- ${remediationPlan?.hygieneReportCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-hygiene -- --json'}\n- ${remediationPlan?.normalizeDryRunCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --json'}\n- ${remediationPlan?.retireDryRunCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles -- --json'}`,
         });
       }
     } else if (state[key]) {

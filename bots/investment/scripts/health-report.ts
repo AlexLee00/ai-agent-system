@@ -27,7 +27,7 @@ import { runCollectionAudit } from './runtime-collection-audit.ts';
 import { runExecutionAttachAudit } from './runtime-execution-attach-audit.ts';
 import { runExecutionAttachBackfill } from './runtime-execution-attach-backfill.ts';
 import { buildRuntimePositionStrategyAudit } from './runtime-position-strategy-audit.ts';
-import { runPositionStrategyHygiene } from './runtime-position-strategy-hygiene.ts';
+import { buildPositionStrategyHygieneRemediationPlan, runPositionStrategyHygiene } from './runtime-position-strategy-hygiene.ts';
 import { normalizeDuplicateStrategyProfiles } from './normalize-duplicate-strategy-profiles.ts';
 import { retireOrphanStrategyProfiles } from './retire-orphan-strategy-profiles.ts';
 import { backfillTradeIncidentLinks } from './backfill-trade-incident-links.ts';
@@ -1206,11 +1206,11 @@ function formatText(report) {
               : []),
             ...(report.positionStrategyAudit.duplicateProfileScopes || []).slice(0, 3).map((scope) => `  duplicate: ${scope.exchange}/${scope.symbol} count ${scope.count} keeper ${scope.keeperProfileId}`),
             `  next command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-audit`,
-            `  hygiene report: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-hygiene -- --json`,
-            `  normalize dry-run: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --json${report.positionStrategyHygiene?.recommendedExchange?.exchange ? ` --exchange=${report.positionStrategyHygiene.recommendedExchange.exchange}` : ''}`,
-            `  normalize apply: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --apply --json${report.positionStrategyHygiene?.recommendedExchange?.exchange ? ` --exchange=${report.positionStrategyHygiene.recommendedExchange.exchange}` : ''}`,
-            `  retire orphan dry-run: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles -- --json${report.positionStrategyHygiene?.recommendedExchange?.exchange ? ` --exchange=${report.positionStrategyHygiene.recommendedExchange.exchange}` : ''}`,
-            `  retire orphan apply: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles -- --apply --json${report.positionStrategyHygiene?.recommendedExchange?.exchange ? ` --exchange=${report.positionStrategyHygiene.recommendedExchange.exchange}` : ''}`,
+            `  hygiene report: ${report.positionStrategyHygiene?.remediationPlan?.hygieneReportCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-hygiene -- --json'}`,
+            `  normalize dry-run: ${report.positionStrategyHygiene?.remediationPlan?.normalizeDryRunCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --json'}`,
+            `  normalize apply: ${report.positionStrategyHygiene?.remediationPlan?.normalizeApplyCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --apply --json'}`,
+            `  retire orphan dry-run: ${report.positionStrategyHygiene?.remediationPlan?.retireDryRunCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles -- --json'}`,
+            `  retire orphan apply: ${report.positionStrategyHygiene?.remediationPlan?.retireApplyCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles -- --apply --json'}`,
           ]
         : ['  position strategy audit 정보 없음'],
     },
