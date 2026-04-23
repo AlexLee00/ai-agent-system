@@ -85,12 +85,27 @@ export function runRiskApprovalReadinessSmoke() {
     sampleContext: {
       rationaleTotal: 0,
       rationaleWithPreview: 0,
+      rationaleWithPreviewAfterCutover: 0,
       executedBuySignals: 3,
+      executedBuySignalsAfterCutover: 3,
     },
   });
   assert.equal(telemetryGap.status, 'risk_approval_readiness_telemetry_gap');
   assert.match(telemetryGap.headline, /텔레메트리/);
   assert.equal(telemetryGap.metrics.sampleContext.executedBuySignals, 3);
+
+  const waitingPostCutoverSample = decide({
+    approval: riskApproval({ total: 0 }),
+    sampleContext: {
+      rationaleTotal: 0,
+      rationaleWithPreview: 0,
+      rationaleWithPreviewAfterCutover: 0,
+      executedBuySignals: 3,
+      executedBuySignalsAfterCutover: 0,
+    },
+  });
+  assert.equal(waitingPostCutoverSample.status, 'risk_approval_readiness_waiting_post_cutover_sample');
+  assert.match(waitingPostCutoverSample.headline, /신규 executed BUY 표본/);
 
   const divergenceBlocked = decide({ approval: riskApproval({ total: 25, divergence: 1 }) });
   assert.equal(divergenceBlocked.status, 'risk_approval_readiness_blocked');

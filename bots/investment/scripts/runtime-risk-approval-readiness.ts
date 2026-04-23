@@ -9,6 +9,10 @@ import { buildRuntimeRiskApprovalHistory } from './runtime-risk-approval-history
 import { buildRuntimeExecutionRiskGuardReport } from './runtime-execution-risk-guard-report.ts';
 import { buildRuntimeExecutionRiskGuardHistory } from './runtime-execution-risk-guard-history.ts';
 
+// Risk approval preview persistence was added after historical BUY executions had already accumulated.
+// Treat older executions as pre-cutover baseline so the monitor only flags fresh telemetry gaps.
+export const RISK_APPROVAL_PREVIEW_PERSISTENCE_CUTOVER_AT = '2026-04-23T12:35:00.000Z';
+
 function parseArgs(argv = process.argv.slice(2)) {
   const daysArg = argv.find((arg) => arg.startsWith('--days='));
   return {
@@ -91,37 +95,72 @@ export function buildRiskApprovalModeDryRun(riskApproval = {}, modeConfig = {}) 
 export async function loadRiskApprovalSampleContext({ days = 30 } = {}) {
   await db.initSchema();
   const sinceMs = Date.now() - Math.max(1, Number(days || 30)) * 24 * 60 * 60 * 1000;
+  const cutoverAt = RISK_APPROVAL_PREVIEW_PERSISTENCE_CUTOVER_AT;
   const rationaleRows = await db.query(`
     SELECT
       COUNT(*)::int AS total,
       COUNT(*) FILTER (WHERE strategy_config->'risk_approval_preview' IS NOT NULL)::int AS with_preview,
-      COUNT(*) FILTER (WHERE strategy_config->'risk_approval_preview' IS NULL)::int AS without_preview
+      COUNT(*) FILTER (WHERE strategy_config->'risk_approval_preview' IS NULL)::int AS without_preview,
+      COUNT(*) FILTER (
+        WHERE created_at >= EXTRACT(EPOCH FROM $2::timestamptz) * 1000
+          AND strategy_config->'risk_approval_preview' IS NOT NULL
+      )::int AS with_preview_after_cutover
     FROM investment.trade_rationale
     WHERE created_at >= $1
-  `, [sinceMs]).catch(() => [{ total: 0, with_preview: 0, without_preview: 0 }]);
+  `, [sinceMs, cutoverAt]).catch(() => [{
+    total: 0,
+    with_preview: 0,
+    without_preview: 0,
+    with_preview_after_cutover: 0,
+  }]);
   const signalRows = await db.query(`
     SELECT
       COUNT(*)::int AS total,
       COUNT(*) FILTER (WHERE action = 'BUY')::int AS buy_total,
       COUNT(*) FILTER (WHERE action = 'BUY' AND status = 'executed')::int AS executed_buy,
+      COUNT(*) FILTER (
+        WHERE action = 'BUY'
+          AND status = 'executed'
+          AND created_at >= $2::timestamptz
+      )::int AS executed_buy_after_cutover,
       COUNT(*) FILTER (WHERE action = 'BUY' AND status = 'blocked')::int AS blocked_buy,
-      COUNT(*) FILTER (WHERE action = 'BUY' AND status = 'failed')::int AS failed_buy
+      COUNT(*) FILTER (WHERE action = 'BUY' AND status = 'failed')::int AS failed_buy,
+      MAX(created_at) FILTER (WHERE action = 'BUY' AND status = 'executed') AS latest_executed_buy_at,
+      MAX(created_at) FILTER (
+        WHERE action = 'BUY'
+          AND status = 'executed'
+          AND created_at >= $2::timestamptz
+      ) AS latest_executed_buy_after_cutover_at
     FROM investment.signals
     WHERE created_at >= now() - ($1::int * interval '1 day')
-  `, [Math.max(1, Number(days || 30))]).catch(() => [{ total: 0, buy_total: 0, executed_buy: 0, blocked_buy: 0, failed_buy: 0 }]);
+  `, [Math.max(1, Number(days || 30)), cutoverAt]).catch(() => [{
+    total: 0,
+    buy_total: 0,
+    executed_buy: 0,
+    executed_buy_after_cutover: 0,
+    blocked_buy: 0,
+    failed_buy: 0,
+    latest_executed_buy_at: null,
+    latest_executed_buy_after_cutover_at: null,
+  }]);
 
   const rationale = rationaleRows[0] || {};
   const signals = signalRows[0] || {};
   return {
     days: Number(days),
+    previewPersistenceCutoverAt: cutoverAt,
     rationaleTotal: safeNumber(rationale.total),
     rationaleWithPreview: safeNumber(rationale.with_preview),
+    rationaleWithPreviewAfterCutover: safeNumber(rationale.with_preview_after_cutover),
     rationaleWithoutPreview: safeNumber(rationale.without_preview),
     signalTotal: safeNumber(signals.total),
     buySignals: safeNumber(signals.buy_total),
     executedBuySignals: safeNumber(signals.executed_buy),
+    executedBuySignalsAfterCutover: safeNumber(signals.executed_buy_after_cutover),
     blockedBuySignals: safeNumber(signals.blocked_buy),
     failedBuySignals: safeNumber(signals.failed_buy),
+    latestExecutedBuyAt: signals.latest_executed_buy_at || null,
+    latestExecutedBuyAfterCutoverAt: signals.latest_executed_buy_after_cutover_at || null,
   };
 }
 
@@ -162,6 +201,7 @@ export function buildRiskApprovalReadinessDecision({ riskApproval, executionGuar
   ];
   if (sampleContext) {
     reasons.push(`sample context rationale ${sampleContext.rationaleTotal || 0} / preview ${sampleContext.rationaleWithPreview || 0} / executed BUY signals ${sampleContext.executedBuySignals || 0}`);
+    reasons.push(`preview cutover ${sampleContext.previewPersistenceCutoverAt || RISK_APPROVAL_PREVIEW_PERSISTENCE_CUTOVER_AT} / executed BUY after cutover ${sampleContext.executedBuySignalsAfterCutover || 0} / preview after cutover ${sampleContext.rationaleWithPreviewAfterCutover || 0}`);
   }
   const blockers = [];
   const actionItems = [];
@@ -179,16 +219,29 @@ export function buildRiskApprovalReadinessDecision({ riskApproval, executionGuar
   const telemetryGap =
     total === 0
     && sampleContext
+    && safeNumber(sampleContext.executedBuySignalsAfterCutover) > 0
+    && safeNumber(sampleContext.rationaleWithPreviewAfterCutover) === 0;
+
+  const waitingPostCutoverSample =
+    total === 0
+    && sampleContext
     && safeNumber(sampleContext.executedBuySignals) > 0
+    && safeNumber(sampleContext.executedBuySignalsAfterCutover) === 0
     && safeNumber(sampleContext.rationaleWithPreview) === 0;
 
   if (telemetryGap) {
     status = 'risk_approval_readiness_telemetry_gap';
-    headline = 'executed BUY 신호는 있지만 risk approval preview 텔레메트리가 trade_rationale에 쌓이지 않습니다.';
+    headline = 'cutover 이후 executed BUY 신호는 있지만 risk approval preview 텔레메트리가 trade_rationale에 쌓이지 않습니다.';
     blockers.length = 0;
     blockers.push('risk approval preview telemetry gap');
     actionItems.push('네메시스 승인 경로의 persist 플래그와 trade_rationale insert 경로가 live 실행에서 호출되는지 점검합니다.');
     actionItems.push('신규 BUY 승인 1건부터 risk_approval_preview가 strategy_config에 저장되는지 확인합니다.');
+  } else if (waitingPostCutoverSample) {
+    status = 'risk_approval_readiness_waiting_post_cutover_sample';
+    headline = 'risk approval preview 저장 패치 이후 신규 executed BUY 표본을 기다리는 상태입니다.';
+    blockers.length = 0;
+    actionItems.push('다음 신규 BUY 승인/실행 1건에서 trade_rationale.strategy_config.risk_approval_preview 저장 여부를 확인합니다.');
+    actionItems.push('cutover 이전 실행 113건은 과거 표본으로 분리하고, 신규 표본부터 readiness를 판단합니다.');
   } else if (blockers.length > 0) {
     status = divergence > 0 || stale > 0 || bypass > 0 || outcomeWeak
       ? 'risk_approval_readiness_blocked'
