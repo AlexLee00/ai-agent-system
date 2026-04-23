@@ -173,6 +173,10 @@ export async function runPositionStrategyRemediationContractSmoke() {
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationTrendUnmatchedDelta'));
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationSummary'));
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationFlat'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result.remediationFlat || {}, 'commands'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result.remediationFlat || {}, 'nextCommandTransition'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result.remediationFlat || {}, 'refreshNeeded'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result.remediationFlat || {}, 'refreshCommand'));
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationStatus'));
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationHeadline'));
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationCounts'));
@@ -220,6 +224,11 @@ export async function runPositionStrategyRemediationContractSmoke() {
       && Object.prototype.hasOwnProperty.call(result, 'remediationUnmatchedManaged')
       && Object.prototype.hasOwnProperty.call(result, 'remediationNextCommand'),
     hasFlatField: Object.prototype.hasOwnProperty.call(result, 'remediationFlat'),
+    hasFlatCommandFields:
+      Object.prototype.hasOwnProperty.call(result.remediationFlat || {}, 'commands')
+      && Object.prototype.hasOwnProperty.call(result.remediationFlat || {}, 'nextCommandTransition')
+      && Object.prototype.hasOwnProperty.call(result.remediationFlat || {}, 'refreshNeeded')
+      && Object.prototype.hasOwnProperty.call(result.remediationFlat || {}, 'refreshCommand'),
     hasTransitionAliasFields:
       Object.prototype.hasOwnProperty.call(result, 'remediationNextCommandChanged')
       && Object.prototype.hasOwnProperty.call(result, 'remediationNextCommandPrevious')

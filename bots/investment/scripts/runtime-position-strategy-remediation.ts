@@ -157,8 +157,13 @@ export function buildPositionStrategyRemediationFlat({
     nextCommandChanged: remediationTrend?.nextCommandChanged ?? null,
     nextCommandPrevious: remediationTrend?.nextCommandTransition?.previous || null,
     nextCommandCurrent: remediationTrend?.nextCommandTransition?.current || null,
+    nextCommandTransition: remediationTrend?.nextCommandTransition || null,
     trend: remediationTrend || null,
     refresh: remediationRefreshState || null,
+    refreshNeeded: remediationRefreshState?.needed ?? null,
+    refreshStale: remediationRefreshState?.stale ?? null,
+    refreshReason: remediationRefreshState?.reason || null,
+    refreshCommand: remediationRefreshState?.command || null,
     actions: remediationActions ? {
       reportCommand: remediationActions.reportCommand || null,
       historyCommand: remediationActions.historyCommand || null,
@@ -168,6 +173,16 @@ export function buildPositionStrategyRemediationFlat({
       normalizeApplyCommand: remediationActions.normalizeApplyCommand || null,
       retireDryRunCommand: remediationActions.retireDryRunCommand || null,
       retireApplyCommand: remediationActions.retireApplyCommand || null,
+    } : null,
+    commands: remediationActions ? {
+      report: remediationActions.reportCommand || null,
+      history: remediationActions.historyCommand || null,
+      refresh: remediationActions.refreshCommand || null,
+      hygiene: remediationActions.hygieneCommand || null,
+      normalizeDryRun: remediationActions.normalizeDryRunCommand || null,
+      normalizeApply: remediationActions.normalizeApplyCommand || null,
+      retireDryRun: remediationActions.retireDryRunCommand || null,
+      retireApply: remediationActions.retireApplyCommand || null,
     } : null,
   };
 }

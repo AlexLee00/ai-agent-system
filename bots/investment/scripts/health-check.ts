@@ -583,7 +583,7 @@ async function main() {
         const remediationFlat = remediation?.remediationFlat || null;
         const remediationSummary = remediation?.remediationSummary || null;
         const remediationActions = remediationFlat?.actions || remediation?.remediationActions || remediationSummary?.actions || null;
-        const remediationCommands = remediationSummary?.commands || null;
+        const remediationCommands = remediationFlat?.commands || remediationSummary?.commands || null;
         const remediationRefreshState = remediationFlat?.refresh || remediation?.remediationRefreshState || remediationSummary?.refreshState || null;
         const remediationRefreshHint = remediation?.remediationRefreshReason || remediationRefreshState?.reason || null;
         const remediationTrend = remediationFlat?.trend || remediation?.remediationTrend || remediationSummary?.trend || null;
@@ -609,7 +609,7 @@ async function main() {
             remediationRefreshNeeded: remediation?.remediationRefreshNeeded ?? remediationRefreshState?.needed ?? null,
             remediationRefreshStale: remediation?.remediationRefreshStale ?? remediationRefreshState?.stale ?? null,
             remediationRefreshReason: remediation?.remediationRefreshReason || remediationRefreshState?.reason || null,
-            remediationRefreshCommand: remediation?.remediationRefreshCommand || remediationCommands?.refresh || null,
+            remediationRefreshCommand: remediation?.remediationRefreshCommand || remediationFlat?.refreshCommand || remediationCommands?.refresh || null,
             remediationHistory: remediationHistory || null,
             remediationTrend,
             remediationTrendHistoryCount: remediation?.remediationTrendHistoryCount ?? remediationTrend?.historyCount ?? null,
@@ -636,7 +636,7 @@ async function main() {
             remediationActionRetireApplyCommand: remediation?.remediationActionRetireApplyCommand || remediationActions?.retireApplyCommand || null,
             remediationReportCommand: remediationCommands?.report || null,
             remediationHistoryCommand: remediationCommands?.history || null,
-            remediationRefreshCommand: remediationCommands?.refresh || null,
+            remediationRefreshCommand: remediationFlat?.refreshCommand || remediationCommands?.refresh || null,
             remediationNormalizeDryRunCommand: remediationCommands?.normalizeDryRun || null,
             remediationNormalizeApplyCommand: remediationCommands?.normalizeApply || null,
             remediationRetireDryRunCommand: remediationCommands?.retireDryRun || null,
