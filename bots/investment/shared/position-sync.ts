@@ -89,12 +89,51 @@ function allocateDomesticQuantities(totalQty, rows = []) {
   return provisional.map((item) => item.qty);
 }
 
+function weightedExistingAvgPrice(rows = []) {
+  const weighted = rows.reduce((acc, row) => {
+    const amount = Math.max(0, Number(row.amount || 0));
+    const avgPrice = Math.max(0, Number(row.avg_price || 0));
+    if (!(amount > 0) || !(avgPrice > 0)) return acc;
+    return {
+      amount: acc.amount + amount,
+      value: acc.value + (amount * avgPrice),
+    };
+  }, { amount: 0, value: 0 });
+
+  if (weighted.amount <= 0) return 0;
+  return weighted.value / weighted.amount;
+}
+
+function resolveSyncedAvgPrice(market, brokerHolding, existingRows = []) {
+  const brokerAvgPrice = Number(brokerHolding?.avgPrice || 0);
+  if (brokerAvgPrice > 0) return brokerAvgPrice;
+
+  if (existingRows.length === 1) {
+    const existingAvg = Number(existingRows[0]?.avg_price || 0);
+    if (existingAvg > 0) return existingAvg;
+  }
+
+  const weightedExisting = weightedExistingAvgPrice(existingRows);
+  if (weightedExisting > 0) return weightedExisting;
+
+  if (market === 'crypto') {
+    const inferredLastPrice = Number(brokerHolding?.notional || 0) > 0 && Number(brokerHolding?.qty || 0) > 0
+      ? Number(brokerHolding.notional) / Number(brokerHolding.qty)
+      : 0;
+    if (inferredLastPrice > 0) return inferredLastPrice;
+  }
+
+  return 0;
+}
+
 function buildRowsForBrokerHolding(market, brokerHolding, existingRows = []) {
+  const syncedAvgPrice = resolveSyncedAvgPrice(market, brokerHolding, existingRows);
+
   if (!existingRows.length) {
     return [{
       symbol: brokerHolding.symbol,
       amount: brokerHolding.qty,
-      avgPrice: brokerHolding.avgPrice,
+      avgPrice: syncedAvgPrice,
       unrealizedPnl: brokerHolding.unrealizedPnl,
       tradeMode: 'normal',
     }];
@@ -104,7 +143,7 @@ function buildRowsForBrokerHolding(market, brokerHolding, existingRows = []) {
     return [{
       symbol: brokerHolding.symbol,
       amount: brokerHolding.qty,
-      avgPrice: brokerHolding.avgPrice,
+      avgPrice: syncedAvgPrice,
       unrealizedPnl: brokerHolding.unrealizedPnl,
       tradeMode: existingRows[0].trade_mode || 'normal',
     }];
@@ -116,7 +155,7 @@ function buildRowsForBrokerHolding(market, brokerHolding, existingRows = []) {
       .map((row, index) => ({
         symbol: brokerHolding.symbol,
         amount: allocations[index],
-        avgPrice: brokerHolding.avgPrice,
+        avgPrice: Number(row.avg_price || 0) > 0 ? Number(row.avg_price || 0) : syncedAvgPrice,
         unrealizedPnl: brokerHolding.qty > 0
           ? brokerHolding.unrealizedPnl * (allocations[index] / brokerHolding.qty)
           : 0,
@@ -143,7 +182,7 @@ function buildRowsForBrokerHolding(market, brokerHolding, existingRows = []) {
       return {
         symbol: brokerHolding.symbol,
         amount,
-        avgPrice: brokerHolding.avgPrice,
+        avgPrice: Number(row.avg_price || 0) > 0 ? Number(row.avg_price || 0) : syncedAvgPrice,
         unrealizedPnl: brokerHolding.unrealizedPnl * weight,
         tradeMode: row.trade_mode || 'normal',
       };
@@ -157,6 +196,26 @@ function summarizeMismatch(symbol, type, payload = {}) {
     type,
     ...payload,
   };
+}
+
+async function fetchOpenJournalAverage(exchange, symbol, tradeMode = 'normal', isPaper = false) {
+  const row = await db.get(
+    `SELECT
+        SUM(entry_size) AS open_size,
+        SUM(entry_value) AS open_value
+       FROM trade_journal
+      WHERE exchange = $1
+        AND symbol = $2
+        AND status = 'open'
+        AND COALESCE(trade_mode, 'normal') = $3
+        AND is_paper = $4`,
+    [exchange, symbol, tradeMode || 'normal', Boolean(isPaper)],
+  ).catch(() => null);
+
+  const openSize = Number(row?.open_size || 0);
+  const openValue = Number(row?.open_value || 0);
+  if (!(openSize > 0) || !(openValue > 0)) return 0;
+  return openValue / openSize;
 }
 
 export async function syncPositionsAtMarketOpen(market) {
@@ -300,10 +359,19 @@ export async function syncPositionsAtMarketOpen(market) {
     await db.deletePositionsForExchangeScope(config.exchange, { paper: paperFlag, symbol });
     const scopedRows = buildRowsForBrokerHolding(market, brokerHolding, dbRowsForSymbol);
     for (const row of scopedRows) {
+      let avgPrice = Number(row.avgPrice || 0);
+      if (market === 'crypto' && !(avgPrice > 0)) {
+        avgPrice = await fetchOpenJournalAverage(
+          config.exchange,
+          row.symbol,
+          row.tradeMode || 'normal',
+          paperFlag,
+        );
+      }
       await db.upsertPosition({
         symbol: row.symbol,
         amount: row.amount,
-        avgPrice: row.avgPrice,
+        avgPrice,
         unrealizedPnl: row.unrealizedPnl,
         exchange: config.exchange,
         paper: paperFlag,
