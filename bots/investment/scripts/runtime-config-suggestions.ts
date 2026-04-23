@@ -13,6 +13,7 @@ import { getCapitalConfig } from '../shared/capital-manager.ts';
 import { annotateRuntimeSuggestions, buildParameterGovernanceReport } from '../shared/runtime-parameter-governance.ts';
 import { loadCryptoLiveGateReview } from './crypto-live-gate-review.ts';
 import { buildRuntimeCryptoSoftGuardReport } from './runtime-crypto-soft-guard-report.ts';
+import { buildStrategyFeedbackOutcomes } from './runtime-strategy-feedback-outcomes.ts';
 import { buildInvestmentCliInsight } from '../shared/cli-insight.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
@@ -848,6 +849,51 @@ function buildStrategyFamilySuggestions(strategyFamilySummary = null) {
   return suggestions;
 }
 
+function buildStrategyFeedbackOutcomeSuggestions(strategyFeedbackOutcomes = null) {
+  const suggestions = [];
+  const decision = strategyFeedbackOutcomes?.decision || {};
+  const metrics = decision.metrics || {};
+  const weak = metrics.weak || null;
+  const strong = metrics.strong || null;
+  const total = Number(metrics.total || 0);
+  const closed = Number(metrics.closed || 0);
+
+  if (decision.status === 'strategy_feedback_outcome_attention' && weak) {
+    const weakByPnl = Number(weak.avgPnlPercent) < -2;
+    const weakByWinRate = Number(weak.winRate) < 0.34;
+    suggestions.push({
+      key: `runtime_config.luna.strategyRouter.familyPerformanceFeedback.${weak.family || 'unknown'}.outcome.${weak.familyBias || 'unknown'}.${weak.executionKind || 'unknown'}`,
+      current: 'auto_observed',
+      suggested: weakByPnl ? 'tighten_feedback_execution' : 'reduce_feedback_confidence',
+      action: 'observe',
+      confidence: weak.closed >= 10 ? 'medium' : 'low',
+      reason: `${weak.familyBias || 'unknown'}/${weak.family || 'unknown'}/${weak.executionKind || 'unknown'} 피드백 실행 결과가 종료 ${weak.closed || 0}건 기준 평균 손익 ${weak.avgPnlPercent ?? 'n/a'}% / 승률 ${weak.winRate == null ? 'n/a' : round(Number(weak.winRate) * 100, 1)}%입니다. 즉시 전역 상수 변경보다 해당 피드백 경로의 청산 비율·exit urgency·라우터 감점 효과를 다음 표본에서 강화 관찰하는 후보입니다.`,
+    });
+  } else if (total > 0) {
+    suggestions.push({
+      key: 'runtime_config.luna.strategyRouter.familyPerformanceFeedback.outcomeMonitor',
+      current: 'auto_observed',
+      suggested: 'continue_sampling',
+      action: 'observe',
+      confidence: closed >= 10 ? 'medium' : 'low',
+      reason: `전략 패밀리 피드백 태그 실행 결과가 total ${total}건 / closed ${closed}건 누적됐습니다. 아직 attention 기준은 아니므로 신규 감점보다 partial-adjust와 strategy-exit 결과 비교 표본을 계속 누적합니다.`,
+    });
+  }
+
+  if (strong && Number(strong.avgPnlPercent) > 1 && Number(strong.winRate || 0) >= 0.42) {
+    suggestions.push({
+      key: `runtime_config.luna.strategyRouter.familyPerformanceFeedback.${strong.family || 'unknown'}.outcome.${strong.familyBias || 'unknown'}.${strong.executionKind || 'unknown'}`,
+      current: 'auto_observed',
+      suggested: 'promote_feedback_baseline',
+      action: 'promote_candidate',
+      confidence: strong.closed >= 10 ? 'medium' : 'low',
+      reason: `${strong.familyBias || 'unknown'}/${strong.family || 'unknown'}/${strong.executionKind || 'unknown'} 피드백 실행 결과는 종료 ${strong.closed || 0}건 기준 평균 손익 ${strong.avgPnlPercent ?? 'n/a'}% / 승률 ${strong.winRate == null ? 'n/a' : round(Number(strong.winRate) * 100, 1)}%입니다. 같은 family/regime에서 기준선 후보로 승격할지 관찰할 수 있습니다.`,
+    });
+  }
+
+  return suggestions;
+}
+
 function buildCryptoSoftGuardSuggestions(config, executionConfig, softGuardSummary = null, summaries = {}) {
   const suggestions = [];
   const decision = softGuardSummary?.decision || {};
@@ -942,6 +988,7 @@ function buildSuggestions(
   cryptoSoftGuardSummary = null,
   regimeLaneSummary = null,
   strategyFamilySummary = null,
+  strategyFeedbackOutcomes = null,
 ) {
   void capitalGuardBias;
   return [
@@ -953,10 +1000,11 @@ function buildSuggestions(
     ...buildCryptoSoftGuardSuggestions(config, executionConfig, cryptoSoftGuardSummary, summaries),
     ...buildRegimeLaneSuggestions(config, executionConfig, regimeLaneSummary),
     ...buildStrategyFamilySuggestions(strategyFamilySummary),
+    ...buildStrategyFeedbackOutcomeSuggestions(strategyFeedbackOutcomes),
   ];
 }
 
-function buildReport(days, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, validationBudgetPolicyTrend, cryptoSoftGuardSummary, regimeLaneSummary, strategyFamilySummary, suggestions) {
+function buildReport(days, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, validationBudgetPolicyTrend, cryptoSoftGuardSummary, regimeLaneSummary, strategyFamilySummary, strategyFeedbackOutcomes, suggestions) {
   const governance = buildParameterGovernanceReport();
   return {
     periodDays: days,
@@ -969,6 +1017,7 @@ function buildReport(days, summaries, validationSummaries, validationBudgetSnaps
     cryptoSoftGuardSummary,
     regimeLaneSummary,
     strategyFamilySummary,
+    strategyFeedbackOutcomes,
     suggestions,
     parameterGovernance: governance.summary,
     actionableSuggestions: suggestions.filter(item => item.action === 'adjust').length,
@@ -1069,6 +1118,17 @@ function printHuman(report) {
       lines.push(`- strongest: ${strongest.exchange}/${strongest.family} / closed ${strongest.closed} / win ${strongest.winRate}% / avg pnl ${strongest.avgPnlPercent}%`);
     }
   }
+  if (report.strategyFeedbackOutcomes?.decision) {
+    const decision = report.strategyFeedbackOutcomes.decision;
+    lines.push('');
+    lines.push('strategy feedback outcome 요약:');
+    lines.push(`- ${decision.status}: ${decision.headline}`);
+    lines.push(`  tagged ${decision.metrics?.total || 0} / closed ${decision.metrics?.closed || 0} / pnl ${decision.metrics?.pnlNet ?? 0}`);
+    if (decision.metrics?.weak) {
+      const weak = decision.metrics.weak;
+      lines.push(`  weakest: ${weak.familyBias || 'n/a'}/${weak.family || 'n/a'}/${weak.executionKind || 'n/a'} / avg ${weak.avgPnlPercent ?? 'n/a'}%`);
+    }
+  }
   lines.push('');
   lines.push('설정 제안:');
   for (const item of report.suggestions) {
@@ -1146,6 +1206,7 @@ export async function buildRuntimeConfigSuggestionsReport({ days = 14, write = f
     cryptoLiveGateReview,
   );
   const cryptoSoftGuardSummary = await buildRuntimeCryptoSoftGuardReport({ days, json: true }).catch(() => null);
+  const strategyFeedbackOutcomes = await buildStrategyFeedbackOutcomes({ days: Math.max(days * 3, 90), json: true }).catch(() => null);
   const regimeLaneSummary = summarizeRegimeLaneRows(regimeLaneRows);
   const strategyFamilySummary = summarizeStrategyFamilyRows(strategyFamilyRows);
   const validationBudgetPolicyTrend = buildValidationBudgetPolicyTrend(
@@ -1154,7 +1215,7 @@ export async function buildRuntimeConfigSuggestionsReport({ days = 14, write = f
   );
   const suggestions = normalizeAnnotatedSuggestions(
     annotateRuntimeSuggestions(
-      buildSuggestions(config, executionConfig, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, cryptoSoftGuardSummary, regimeLaneSummary, strategyFamilySummary),
+      buildSuggestions(config, executionConfig, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, cryptoSoftGuardSummary, regimeLaneSummary, strategyFamilySummary, strategyFeedbackOutcomes),
     ),
   );
   const report = buildReport(
@@ -1168,6 +1229,7 @@ export async function buildRuntimeConfigSuggestionsReport({ days = 14, write = f
     cryptoSoftGuardSummary,
     regimeLaneSummary,
     strategyFamilySummary,
+    strategyFeedbackOutcomes,
     suggestions,
   );
   report.aiSummary = await buildInvestmentCliInsight({
@@ -1188,6 +1250,7 @@ export async function buildRuntimeConfigSuggestionsReport({ days = 14, write = f
         strongestFamily: report.strategyFamilySummary?.strongestFamily || null,
         byFamily: (report.strategyFamilySummary?.byFamily || []).slice(0, 5),
       },
+      strategyFeedbackOutcomes: report.strategyFeedbackOutcomes?.decision || null,
     },
     fallback:
       report.actionableSuggestions > 0
