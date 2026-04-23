@@ -2,6 +2,7 @@
 
 import * as db from './db.ts';
 import { recommendStrategy } from '../team/argos.ts';
+import { buildRoutedStrategyFallback } from './strategy-router.ts';
 
 function parseAnalystSignals(raw = '') {
   const result = {};
@@ -309,6 +310,7 @@ export async function createOrUpdatePositionStrategyProfile({
   ]);
 
   const decisionReasoning = String(decision?.reasoning || '');
+  const strategyRoute = decision?.strategy_route || decision?.strategyRoute || null;
   const strategyLooksGeneric = String(strategy?.strategy_name || '').toLowerCase().includes('daily btc leverage');
   const shouldPreferFallback =
     !strategy
@@ -316,10 +318,12 @@ export async function createOrUpdatePositionStrategyProfile({
     || decisionReasoning.includes('open_position_backfill');
 
   if (shouldPreferFallback) {
-    strategy = buildFallbackStrategy(seedSignal, exchange, decision);
+    strategy = strategyRoute
+      ? buildRoutedStrategyFallback({ route: strategyRoute, exchange, decision, seedSignal })
+      : buildFallbackStrategy(seedSignal, exchange, decision);
   }
 
-  const setupType = strategy?.setup_type || buildSetupType(exchange, strategy, decision);
+  const setupType = strategyRoute?.setupType || strategy?.setup_type || buildSetupType(exchange, strategy, decision);
   const responsibilityPlan = buildResponsibilityPlan({
     exchange,
     setupType,
@@ -361,6 +365,7 @@ export async function createOrUpdatePositionStrategyProfile({
       applicableTimeframe: strategy?.applicable_timeframe || null,
       decisionConfidence: decision?.confidence ?? null,
       amountUsdt: decision?.amount_usdt ?? null,
+      strategyRoute,
       responsibilityPlan,
       executionPlan,
     },

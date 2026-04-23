@@ -188,6 +188,9 @@ bots/reservation/src/.test-counter
 bots/claude/reports/archer-*.md
 bots/claude/reports/patches/*.json
 
+# 투자팀 런타임 스냅샷
+bots/investment/output/ops/market-regime-capture.json
+
 # ── 내부 문서 (공개 불필요!) ──
 docs/codex/*
 bots/sigma/docs/codex/*

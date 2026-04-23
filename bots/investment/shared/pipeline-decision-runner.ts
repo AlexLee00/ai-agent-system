@@ -586,6 +586,10 @@ export async function runDecisionExecutionPipeline({
   );
   let collectQualityReducedBuyCount = 0;
   let collectQualityBlockedBuyCount = 0;
+  const strategyRouteCounts = {};
+  const strategyRouteQualityCounts = {};
+  let strategyRouteReadinessSum = 0;
+  let strategyRouteReadinessCount = 0;
 
   function countDecisionActions() {
     const counts = { buy: 0, sell: 0, hold: 0 };
@@ -609,6 +613,11 @@ export async function runDecisionExecutionPipeline({
     riskRejectReasons: { ...riskRejectReasons },
     weakSignalSkipped,
     weakSignalReasons: { ...weakSignalReasons },
+    strategyRouteCounts: { ...strategyRouteCounts },
+    strategyRouteQualityCounts: { ...strategyRouteQualityCounts },
+    strategyRouteAvgReadiness: strategyRouteReadinessCount > 0
+      ? Number((strategyRouteReadinessSum / strategyRouteReadinessCount).toFixed(4))
+      : null,
     midGapPromoted,
     midGapRejectedByRisk,
     invalidSignalSkipped,
@@ -802,6 +811,17 @@ export async function runDecisionExecutionPipeline({
       });
       const decision = decisionResult.result?.decision;
       if (!decision?.action) continue;
+      const strategyRoute = decision?.strategy_route || decision?.strategyRoute || null;
+      if (strategyRoute?.selectedFamily) {
+        strategyRouteCounts[strategyRoute.selectedFamily] = (strategyRouteCounts[strategyRoute.selectedFamily] || 0) + 1;
+      }
+      if (strategyRoute?.quality) {
+        strategyRouteQualityCounts[strategyRoute.quality] = (strategyRouteQualityCounts[strategyRoute.quality] || 0) + 1;
+      }
+      if (Number.isFinite(Number(strategyRoute?.readinessScore))) {
+        strategyRouteReadinessSum += Number(strategyRoute.readinessScore);
+        strategyRouteReadinessCount++;
+      }
       symbolDecisions.push({ symbol, exchange, ...decision });
     } catch (err) {
       console.error(`  ❌ [노드 브리지] ${symbol} 판단 실패: ${err.message}`);
@@ -834,6 +854,9 @@ export async function runDecisionExecutionPipeline({
         weak_signal_skipped: metrics.weakSignalSkipped,
         weak_signal_reason_top: null,
         weak_signal_reasons: {},
+        strategy_route_counts: metrics.strategyRouteCounts,
+        strategy_route_quality_counts: metrics.strategyRouteQualityCounts,
+        strategy_route_avg_readiness: metrics.strategyRouteAvgReadiness,
         mid_gap_promoted: metrics.midGapPromoted,
         mid_gap_rejected_by_risk: metrics.midGapRejectedByRisk,
         mid_gap_executed: 0,
@@ -906,6 +929,9 @@ export async function runDecisionExecutionPipeline({
         weak_signal_skipped: metrics.weakSignalSkipped,
         weak_signal_reason_top: null,
         weak_signal_reasons: {},
+        strategy_route_counts: metrics.strategyRouteCounts,
+        strategy_route_quality_counts: metrics.strategyRouteQualityCounts,
+        strategy_route_avg_readiness: metrics.strategyRouteAvgReadiness,
         mid_gap_promoted: metrics.midGapPromoted,
         mid_gap_rejected_by_risk: metrics.midGapRejectedByRisk,
         mid_gap_executed: 0,
@@ -1159,6 +1185,9 @@ export async function runDecisionExecutionPipeline({
       weak_signal_skipped: completedMetrics.weakSignalSkipped,
       weak_signal_reason_top: getTopWeakSignalReason(),
       weak_signal_reasons: completedMetrics.weakSignalReasons,
+      strategy_route_counts: completedMetrics.strategyRouteCounts,
+      strategy_route_quality_counts: completedMetrics.strategyRouteQualityCounts,
+      strategy_route_avg_readiness: completedMetrics.strategyRouteAvgReadiness,
       mid_gap_promoted: completedMetrics.midGapPromoted,
       mid_gap_rejected_by_risk: completedMetrics.midGapRejectedByRisk,
       mid_gap_executed: completedMetrics.midGapExecuted,

@@ -38,6 +38,7 @@ import { runBullResearcher } from './zeus.ts';
 import { runBearResearcher } from './athena.ts';
 import { evaluateSignal } from './nemesis.ts';
 import { recommendStrategy } from './argos.ts';
+import { buildStrategyRoute, buildStrategyRouteSection } from '../shared/strategy-router.ts';
 
 const LUNA_RUNTIME = getLunaRuntimeConfig();
 const LUNA_STOCK_PROFILE = getLunaStockStrategyProfile();
@@ -721,11 +722,10 @@ function buildDebateSection(debate) {
   return `\n\n[강세 리서처] ${bullText}\n[약세 리서처] ${bearText}`;
 }
 
-async function buildStrategySection(symbol, exchange) {
+async function buildStrategySection(strategy) {
   try {
-    const strat = await recommendStrategy(symbol, exchange);
-    if (!strat) return '';
-    return `\n\n[참고 전략 — 아르고스]\n${strat.strategy_name}: ${strat.entry_condition || '진입 조건 없음'} (품질점수 ${strat.quality_score?.toFixed(2)})`;
+    if (!strategy) return '';
+    return `\n\n[참고 전략 — 아르고스]\n${strategy.strategy_name}: ${strategy.entry_condition || '진입 조건 없음'} (품질점수 ${strategy.quality_score?.toFixed(2)})`;
   } catch {
     return '';
   }
@@ -766,18 +766,29 @@ async function buildSymbolDecisionPromptParts({ symbol, analyses, exchange, deba
   const label = getExchangeLabel(exchange);
   const fused = fuseSignals(analyses, analystWeights);
   const reviewHint = await loadReviewConfidenceHint(symbol, exchange);
-  const [strategySection, ragContext, regimeSection] = await Promise.all([
-    buildStrategySection(symbol, exchange),
+  const [argosStrategy, ragContext, marketRegime] = await Promise.all([
+    recommendStrategy(symbol, exchange).catch(() => null),
     buildRagContext(symbol, summary),
-    buildRegimeSection(exchange),
+    getMarketRegime(exchange).catch(() => null),
   ]);
-  const userMsg = `심볼: ${symbol} (${label})\n\n분석 결과:\n${summary}${buildFusedSection(fused)}${buildReviewSection(reviewHint)}${buildDebateSection(debate)}${strategySection}${ragContext}${regimeSection}\n\n최종 매매 신호:`;
+  const strategyRoute = await buildStrategyRoute({
+    symbol,
+    exchange,
+    analyses,
+    fused,
+    marketRegime,
+    argosStrategy,
+  });
+  const strategySection = await buildStrategySection(argosStrategy);
+  const regimeSection = marketRegime ? `\n\n${formatMarketRegime(marketRegime)}` : '';
+  const userMsg = `심볼: ${symbol} (${label})\n\n분석 결과:\n${summary}${buildFusedSection(fused)}${buildReviewSection(reviewHint)}${buildDebateSection(debate)}${strategySection}${buildStrategyRouteSection(strategyRoute)}${ragContext}${regimeSection}\n\n최종 매매 신호:`;
 
   return {
     summary,
     label,
     fused,
     reviewHint,
+    strategyRoute,
     userMsg,
   };
 }
@@ -785,7 +796,13 @@ async function buildSymbolDecisionPromptParts({ symbol, analyses, exchange, deba
 async function buildPortfolioDecisionPromptParts(symbolDecisions, portfolio, exchange = 'binance', exitSummary = null) {
   const symbols = [...new Set(symbolDecisions.map(s => s.symbol))];
   const signalLines = symbolDecisions
-    .map(s => `${s.symbol}: ${s.action} | 확신도 ${((s.confidence || 0) * 100).toFixed(0)}% | ${s.reasoning}`)
+    .map(s => {
+      const route = s.strategy_route || s.strategyRoute || null;
+      const routeText = route?.selectedFamily
+        ? ` | 전략 ${route.selectedFamily}/${route.quality || 'unknown'}(${Number(route.readinessScore || 0).toFixed(2)})`
+        : '';
+      return `${s.symbol}: ${s.action} | 확신도 ${((s.confidence || 0) * 100).toFixed(0)}%${routeText} | ${s.reasoning}`;
+    })
     .join('\n');
 
   let regimeSection = '';
@@ -845,7 +862,20 @@ function normalizePortfolioDecisionResult(parsed, symbols, exchange, symbolDecis
 
   if (parsed.decisions) {
     const allowed = new Set(symbols);
+    const routeBySymbol = new Map(symbolDecisions.map((item) => [
+      item.symbol,
+      item.strategy_route || item.strategyRoute || null,
+    ]));
+    const setupTypeBySymbol = new Map(symbolDecisions.map((item) => [
+      item.symbol,
+      item.setup_type || item.setupType || item.strategy_route?.setupType || item.strategyRoute?.setupType || null,
+    ]));
     parsed.decisions = parsed.decisions.filter(d => allowed.has(d.symbol));
+    parsed.decisions = parsed.decisions.map(d => ({
+      ...d,
+      strategy_route: d.strategy_route || d.strategyRoute || routeBySymbol.get(d.symbol) || null,
+      setup_type: d.setup_type || setupTypeBySymbol.get(d.symbol) || null,
+    }));
     if (exchange === 'kis' || exchange === 'kis_overseas') {
       parsed.decisions = parsed.decisions.map(d => ({
         ...d,
@@ -1169,7 +1199,7 @@ function buildEmergencySymbolFallbackDecision(analyses, exchange, fused) {
 // ─── 개별 심볼 LLM 판단 ────────────────────────────────────────────
 
 export async function getSymbolDecision(symbol, analyses, exchange = 'binance', debate = null, analystWeights = ANALYST_WEIGHTS) {
-  const { fused, reviewHint, userMsg } = await buildSymbolDecisionPromptParts({
+  const { fused, reviewHint, strategyRoute, userMsg } = await buildSymbolDecisionPromptParts({
     symbol,
     analyses,
     exchange,
@@ -1187,6 +1217,7 @@ export async function getSymbolDecision(symbol, analyses, exchange = 'binance', 
       amount_usdt: exchange === 'kis' || exchange === 'kis_overseas' ? 500 : 100,
       confidence: Math.max(0.2, fused.averageConfidence),
       reasoning: '약한 신호 구간 — 저비용 HOLD',
+      strategy_route: strategyRoute,
     };
   }
 
@@ -1199,6 +1230,8 @@ export async function getSymbolDecision(symbol, analyses, exchange = 'binance', 
       reasoning: reviewHint.notes.length > 0
         ? `${fastPath.reasoning} | 리뷰:${reviewHint.notes.join(', ')}`.slice(0, 180)
         : fastPath.reasoning,
+      strategy_route: strategyRoute,
+      setup_type: strategyRoute?.setupType || null,
     };
   }
 
@@ -1238,6 +1271,11 @@ export async function getSymbolDecision(symbol, analyses, exchange = 'binance', 
   adjusted.confidence = Math.max(0, Math.min(1, baseConfidence + reviewHint.delta));
   if (reviewHint.notes.length > 0) {
     adjusted.reasoning = `${adjusted.reasoning || ''} | 리뷰:${reviewHint.notes.join(', ')}`.slice(0, 180);
+  }
+  adjusted.strategy_route = strategyRoute;
+  adjusted.setup_type = strategyRoute?.setupType || adjusted.setup_type || null;
+  if (strategyRoute?.selectedFamily && adjusted.reasoning) {
+    adjusted.reasoning = `${adjusted.reasoning} | 전략:${strategyRoute.selectedFamily}`.slice(0, 180);
   }
   return adjusted;  // ruleResult (기존 Groq 판단) 반환, shadow는 shadow_log에만 기록
 }
