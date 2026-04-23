@@ -277,6 +277,16 @@ function buildExecutionAttachBackfillCommand({ days = 14, limit = 100, exchange 
   return `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:execution-attach-backfill -- ${args.join(' ')}`;
 }
 
+function buildExecutionAttachAuditCommand({ days = 14, limit = 100, exchange = null } = {}) {
+  const args = [
+    `--days=${Math.max(1, Number(days || 14))}`,
+    `--limit=${Math.max(1, Number(limit || 100))}`,
+  ];
+  if (exchange) args.push(`--exchange=${exchange}`);
+  args.push('--json');
+  return `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:execution-attach-audit -- ${args.join(' ')}`;
+}
+
 export function buildExecutionAttachDecision(summary = {}, context = {}) {
   const actionableItems = summary.actionableMissing?.slice?.(0, 3) || [];
   const backfillDryRunCommand = buildExecutionAttachBackfillCommand(context);
@@ -323,6 +333,46 @@ export function buildExecutionAttachDecision(summary = {}, context = {}) {
   };
 }
 
+export function buildExecutionAttachView(audit = {}, backfill = null) {
+  const summary = audit?.summary || {};
+  const decision = audit?.decision || {};
+  const backfillSummary = backfill?.summary || {};
+  const backfillDecision = backfill?.decision || {};
+  const actionableCount = Number(summary.actionableWeakCount || 0) + Number(summary.actionablePartialCount || 0);
+  const auditCommand = buildExecutionAttachAuditCommand(audit);
+  const repairDryRunCommand = decision.backfillDryRunCommand || buildExecutionAttachBackfillCommand(audit);
+  const repairWriteCommand = decision.backfillWriteCommand || buildExecutionAttachBackfillCommand({ ...audit, write: true });
+
+  return {
+    status: decision.status || 'unknown',
+    headline: decision.headline || null,
+    avgAttachScore: summary.avgAttachScore ?? null,
+    completeCount: Number(summary.completeCount || 0),
+    recoveredPartialCount: Number(summary.recoveredPartialCount || 0),
+    actionableWeakCount: Number(summary.actionableWeakCount || 0),
+    actionablePartialCount: Number(summary.actionablePartialCount || 0),
+    actionableCount,
+    attachTrackedCount: Number(summary.attachTrackedCount || 0),
+    attachOkCount: Number(summary.attachOkCount || 0),
+    attachErrorCount: Number(summary.attachErrorCount || 0),
+    weakCount: Number(summary.weakCount || 0),
+    partialCount: Number(summary.partialCount || 0),
+    topMissing: summary.topMissing || [],
+    actionableMissing: summary.actionableMissing || [],
+    actionItems: decision.actionItems || [],
+    auditCommand,
+    repairDryRunCommand,
+    repairWriteCommand,
+    backfillStatus: backfillDecision.status || null,
+    backfillHeadline: backfillDecision.headline || null,
+    backfillCandidates: Number(backfillSummary.attachCandidates || 0),
+    backfillWriteEligible: Number(backfillSummary.writeEligible || 0),
+    backfillMissingSignalId: Number(backfillSummary.missingSignalId || 0),
+    backfillOpenPositionBlocked: Number(backfillSummary.openPositionBlocked || 0),
+    needsRepair: ['execution_attach_error', 'execution_attach_weak', 'execution_attach_partial'].includes(decision.status),
+  };
+}
+
 export async function runExecutionAttachAudit({ days = 14, limit = 100, exchange = null } = {}) {
   await db.initSchema();
   await journalDb.initJournalSchema();
@@ -358,6 +408,7 @@ export async function runExecutionAttachAudit({ days = 14, limit = 100, exchange
   });
   const summary = summarizeExecutionAttachRows(rows);
   const decision = buildExecutionAttachDecision(summary, { days, limit, exchange });
+  const view = buildExecutionAttachView({ days, limit, exchange, summary, decision });
 
   return {
     ok: true,
@@ -366,6 +417,18 @@ export async function runExecutionAttachAudit({ days = 14, limit = 100, exchange
     exchange,
     summary,
     decision,
+    view,
+    executionAttachStatus: view.status,
+    executionAttachHeadline: view.headline,
+    executionAttachAvgAttachScore: view.avgAttachScore,
+    executionAttachCompleteCount: view.completeCount,
+    executionAttachRecoveredPartialCount: view.recoveredPartialCount,
+    executionAttachActionableCount: view.actionableCount,
+    executionAttachTrackedCount: view.attachTrackedCount,
+    executionAttachErrorCount: view.attachErrorCount,
+    executionAttachAuditCommand: view.auditCommand,
+    executionAttachRepairDryRunCommand: view.repairDryRunCommand,
+    executionAttachRepairWriteCommand: view.repairWriteCommand,
     rows: rows.slice(0, Math.min(rows.length, 20)),
   };
 }

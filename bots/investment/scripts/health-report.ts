@@ -694,9 +694,7 @@ function buildDecision(
   const riskApprovalModeAudit = runtimeLearningLoop?.sections?.collect?.riskApprovalModeAudit || null;
   const riskApprovalModeAuditDelta = riskApprovalModeAudit?.trend?.delta || {};
   const executionRiskApprovalTop = executionRiskApprovalGuardHealth?.rows?.[0] || null;
-  const executionAttachSummary = executionAttachAudit?.summary || {};
-  const executionAttachBackfillSummary = executionAttachBackfill?.summary || {};
-  const executionAttachNeedsRepair = ['execution_attach_error', 'execution_attach_weak', 'execution_attach_partial'].includes(executionAttachAudit?.decision?.status);
+  const executionAttachView = buildExecutionAttachSnapshot(executionAttachAudit, executionAttachBackfill);
   const positionStrategyDuplicateScopes = Number(positionStrategyAudit?.duplicateManagedProfileScopes || positionStrategyAudit?.duplicateActiveProfileScopes || 0);
   const positionStrategyOrphans = Number(positionStrategyAudit?.orphanProfiles || 0);
   const positionStrategyHygieneStatus = positionStrategyHygiene?.decision?.status || 'unknown';
@@ -874,21 +872,21 @@ function buildDecision(
         reason: `trade incident link audit — journal 누락 후보 ${incidentLinkAudit?.updated || 0}건 / scanned ${incidentLinkAudit?.scanned || 0} / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run journal:backfill-incident-links -- --dry-run --json`,
       },
       {
-        active: ['execution_attach_error', 'execution_attach_weak', 'execution_attach_partial'].includes(executionAttachAudit?.decision?.status),
-        level: ['execution_attach_error', 'execution_attach_weak'].includes(executionAttachAudit?.decision?.status) ? 'medium' : 'low',
-        reason: `execution attach audit — ${executionAttachAudit?.decision?.headline || '체결 envelope 연결 점검'} / score ${executionAttachSummary.avgAttachScore ?? 'n/a'} / complete ${executionAttachSummary.completeCount || 0} / recovered ${executionAttachSummary.recoveredPartialCount || 0} / actionable ${Number(executionAttachSummary.actionableWeakCount || 0) + Number(executionAttachSummary.actionablePartialCount || 0)} / tracked ${executionAttachSummary.attachTrackedCount || 0} / errors ${executionAttachSummary.attachErrorCount || 0} / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:execution-attach-audit -- --json`,
+        active: executionAttachView.needsRepair,
+        level: ['execution_attach_error', 'execution_attach_weak'].includes(executionAttachView.status) ? 'medium' : 'low',
+        reason: buildExecutionAttachDecisionReason(executionAttachAudit, executionAttachBackfill),
       },
       {
-        active: Number(executionAttachBackfillSummary.attachCandidates || 0) > 0,
+        active: Number(executionAttachView.backfillCandidates || 0) > 0,
         level: 'low',
-        reason: `execution attach backfill candidates — ${executionAttachBackfill?.decision?.headline || '백필 후보 확인'} / candidates ${executionAttachBackfillSummary.attachCandidates || 0} / writeEligible ${executionAttachBackfillSummary.writeEligible || 0} / missingSignalId ${executionAttachBackfillSummary.missingSignalId || 0} / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:execution-attach-backfill -- --days=14 --limit=50 --json`,
+        reason: `execution attach backfill candidates — ${executionAttachView.backfillHeadline || '백필 후보 확인'} / candidates ${executionAttachView.backfillCandidates || 0} / writeEligible ${executionAttachView.backfillWriteEligible || 0} / missingSignalId ${executionAttachView.backfillMissingSignalId || 0} / next command ${executionAttachView.repairDryRunCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:execution-attach-backfill -- --days=14 --limit=50 --json'}`,
       },
       {
-        active: executionAttachNeedsRepair
-          && Number(executionAttachBackfillSummary.openPositionBlocked || 0) > 0
-          && Number(executionAttachBackfillSummary.attachCandidates || 0) === 0,
+        active: executionAttachView.needsRepair
+          && Number(executionAttachView.backfillOpenPositionBlocked || 0) > 0
+          && Number(executionAttachView.backfillCandidates || 0) === 0,
         level: 'low',
-        reason: `execution attach backfill blocked — open position 조건으로 ${executionAttachBackfillSummary.openPositionBlocked || 0}건 제외 / 실제 포지션 동기화 확인 필요`,
+        reason: `execution attach backfill blocked — open position 조건으로 ${executionAttachView.backfillOpenPositionBlocked || 0}건 제외 / 실제 포지션 동기화 확인 필요`,
       },
       {
         active: positionStrategyHygieneStatus === 'position_strategy_hygiene_attention',
@@ -1024,6 +1022,60 @@ function buildFlatRemediationSnapshot(positionStrategyRemediation) {
     actionRetireDryRunCommand,
     actionRetireApplyCommand,
   };
+}
+
+function buildExecutionAttachSnapshot(executionAttachAudit, executionAttachBackfill) {
+  const view = executionAttachAudit?.view || null;
+  const summary = executionAttachAudit?.summary || {};
+  const decision = executionAttachAudit?.decision || {};
+  const backfillSummary = executionAttachBackfill?.summary || {};
+  const backfillDecision = executionAttachBackfill?.decision || {};
+  return {
+    status: view?.status || decision.status || 'unknown',
+    headline: view?.headline || decision.headline || null,
+    avgAttachScore: view?.avgAttachScore ?? summary.avgAttachScore ?? null,
+    completeCount: view?.completeCount ?? Number(summary.completeCount || 0),
+    recoveredPartialCount: view?.recoveredPartialCount ?? Number(summary.recoveredPartialCount || 0),
+    actionableCount: view?.actionableCount ?? (Number(summary.actionableWeakCount || 0) + Number(summary.actionablePartialCount || 0)),
+    attachTrackedCount: view?.attachTrackedCount ?? Number(summary.attachTrackedCount || 0),
+    attachErrorCount: view?.attachErrorCount ?? Number(summary.attachErrorCount || 0),
+    actionItems: view?.actionItems || decision.actionItems || [],
+    auditCommand: view?.auditCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:execution-attach-audit -- --json',
+    repairDryRunCommand: view?.repairDryRunCommand || decision.backfillDryRunCommand || null,
+    repairWriteCommand: view?.repairWriteCommand || decision.backfillWriteCommand || null,
+    backfillStatus: view?.backfillStatus || backfillDecision.status || null,
+    backfillHeadline: view?.backfillHeadline || backfillDecision.headline || null,
+    backfillCandidates: view?.backfillCandidates ?? Number(backfillSummary.attachCandidates || 0),
+    backfillWriteEligible: view?.backfillWriteEligible ?? Number(backfillSummary.writeEligible || 0),
+    backfillMissingSignalId: view?.backfillMissingSignalId ?? Number(backfillSummary.missingSignalId || 0),
+    backfillOpenPositionBlocked: view?.backfillOpenPositionBlocked ?? Number(backfillSummary.openPositionBlocked || 0),
+    needsRepair: view?.needsRepair ?? ['execution_attach_error', 'execution_attach_weak', 'execution_attach_partial'].includes(decision.status),
+  };
+}
+
+function buildExecutionAttachAuditLines(report) {
+  const executionAttachView = buildExecutionAttachSnapshot(report.executionAttachAudit, report.executionAttachBackfill);
+  return [
+    `  status: ${executionAttachView.status || 'unknown'}`,
+    `  summary: score ${executionAttachView.avgAttachScore ?? 'n/a'} / complete ${executionAttachView.completeCount || 0} / recovered ${executionAttachView.recoveredPartialCount || 0} / actionable ${executionAttachView.actionableCount || 0} / tracked ${executionAttachView.attachTrackedCount || 0} / errors ${executionAttachView.attachErrorCount || 0}`,
+    `  headline: ${executionAttachView.headline || 'n/a'}`,
+    ...(report.executionAttachBackfill
+      ? [
+        `  backfill status: ${executionAttachView.backfillStatus || 'unknown'}`,
+        `  backfill summary: candidates ${executionAttachView.backfillCandidates || 0} / writeEligible ${executionAttachView.backfillWriteEligible || 0} / missingSignalId ${executionAttachView.backfillMissingSignalId || 0} / openBlocked ${executionAttachView.backfillOpenPositionBlocked || 0}`,
+        `  backfill headline: ${executionAttachView.backfillHeadline || 'n/a'}`,
+      ]
+      : []),
+    ...((executionAttachView.actionItems || []).slice(0, 3).map((item) => `  next: ${item}`)),
+    ...(executionAttachView.repairDryRunCommand ? [`  repair dry-run: ${executionAttachView.repairDryRunCommand}`] : []),
+    ...(executionAttachView.repairWriteCommand ? [`  repair write: ${executionAttachView.repairWriteCommand}`] : []),
+    `  next command: ${executionAttachView.auditCommand}`,
+  ];
+}
+
+function buildExecutionAttachDecisionReason(executionAttachAudit, executionAttachBackfill) {
+  const executionAttachView = buildExecutionAttachSnapshot(executionAttachAudit, executionAttachBackfill);
+  return `execution attach audit — ${executionAttachView.headline || '체결 envelope 연결 점검'} / score ${executionAttachView.avgAttachScore ?? 'n/a'} / complete ${executionAttachView.completeCount || 0} / recovered ${executionAttachView.recoveredPartialCount || 0} / actionable ${executionAttachView.actionableCount || 0} / tracked ${executionAttachView.attachTrackedCount || 0} / errors ${executionAttachView.attachErrorCount || 0} / next command ${executionAttachView.auditCommand}`;
 }
 
 function buildPositionStrategyAuditRemediationLines(report) {
@@ -1318,22 +1370,7 @@ function formatText(report) {
     {
       title: '■ execution attach audit',
       lines: report.executionAttachAudit
-        ? [
-            `  status: ${report.executionAttachAudit.decision?.status || 'unknown'}`,
-            `  summary: score ${report.executionAttachAudit.summary?.avgAttachScore ?? 'n/a'} / complete ${report.executionAttachAudit.summary?.completeCount || 0} / recovered ${report.executionAttachAudit.summary?.recoveredPartialCount || 0} / actionable ${Number(report.executionAttachAudit.summary?.actionableWeakCount || 0) + Number(report.executionAttachAudit.summary?.actionablePartialCount || 0)} / tracked ${report.executionAttachAudit.summary?.attachTrackedCount || 0} / errors ${report.executionAttachAudit.summary?.attachErrorCount || 0}`,
-            `  headline: ${report.executionAttachAudit.decision?.headline || 'n/a'}`,
-            ...(report.executionAttachBackfill
-              ? [
-                `  backfill status: ${report.executionAttachBackfill.decision?.status || 'unknown'}`,
-                `  backfill summary: candidates ${report.executionAttachBackfill.summary?.attachCandidates || 0} / writeEligible ${report.executionAttachBackfill.summary?.writeEligible || 0} / missingSignalId ${report.executionAttachBackfill.summary?.missingSignalId || 0} / openBlocked ${report.executionAttachBackfill.summary?.openPositionBlocked || 0}`,
-                `  backfill headline: ${report.executionAttachBackfill.decision?.headline || 'n/a'}`,
-              ]
-              : []),
-            ...((report.executionAttachAudit.decision?.actionItems || []).slice(0, 3).map((item) => `  next: ${item}`)),
-            ...(report.executionAttachAudit.decision?.backfillDryRunCommand ? [`  repair dry-run: ${report.executionAttachAudit.decision.backfillDryRunCommand}`] : []),
-            ...(report.executionAttachAudit.decision?.backfillWriteCommand ? [`  repair write: ${report.executionAttachAudit.decision.backfillWriteCommand}`] : []),
-            `  next command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:execution-attach-audit -- --json`,
-          ]
+        ? buildExecutionAttachAuditLines(report)
         : ['  execution attach audit 정보 없음'],
     },
     {
@@ -1459,6 +1496,7 @@ async function buildReport() {
   }).catch(() => null);
   const latestOpsSnapshot = loadLatestOpsSnapshot();
   const cryptoGateActionPlan = buildCryptoGateActionPlan(capitalGuardBreakdown);
+  const executionAttachView = buildExecutionAttachSnapshot(executionAttachAudit, executionAttachBackfill);
   const remediationView = buildFlatRemediationSnapshot(positionStrategyRemediation);
   const kisCapabilityHealth = await loadKisCapabilityHealth();
   const decision = buildDecision(
@@ -1523,6 +1561,24 @@ async function buildReport() {
     incidentLinkAudit,
     executionAttachAudit,
     executionAttachBackfill,
+    executionAttachView,
+    executionAttachStatus: executionAttachView.status,
+    executionAttachHeadline: executionAttachView.headline,
+    executionAttachAvgAttachScore: executionAttachView.avgAttachScore,
+    executionAttachCompleteCount: executionAttachView.completeCount,
+    executionAttachRecoveredPartialCount: executionAttachView.recoveredPartialCount,
+    executionAttachActionableCount: executionAttachView.actionableCount,
+    executionAttachTrackedCount: executionAttachView.attachTrackedCount,
+    executionAttachErrorCount: executionAttachView.attachErrorCount,
+    executionAttachAuditCommand: executionAttachView.auditCommand,
+    executionAttachRepairDryRunCommand: executionAttachView.repairDryRunCommand,
+    executionAttachRepairWriteCommand: executionAttachView.repairWriteCommand,
+    executionAttachBackfillStatus: executionAttachView.backfillStatus,
+    executionAttachBackfillHeadline: executionAttachView.backfillHeadline,
+    executionAttachBackfillCandidates: executionAttachView.backfillCandidates,
+    executionAttachBackfillWriteEligible: executionAttachView.backfillWriteEligible,
+    executionAttachBackfillMissingSignalId: executionAttachView.backfillMissingSignalId,
+    executionAttachBackfillOpenPositionBlocked: executionAttachView.backfillOpenPositionBlocked,
     positionStrategyAudit,
     positionStrategyHygiene,
     positionStrategyRemediation,
