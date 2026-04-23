@@ -122,4 +122,13 @@ defmodule Luna.V2.KillSwitch do
 
   def position_watch_backtest_drift_exit_return_drop_pct,
     do: Application.get_env(:luna, :position_watch_backtest_drift_exit_return_drop_pct, 10.0)
+
+  def position_watch_strategy_exit_enabled?,
+    do: Application.get_env(:luna, :position_watch_strategy_exit_enabled, true)
+
+  def position_watch_strategy_exit_cooldown_minutes,
+    do: Application.get_env(:luna, :position_watch_strategy_exit_cooldown_minutes, 30)
+
+  def position_watch_strategy_exit_max_per_tick,
+    do: Application.get_env(:luna, :position_watch_strategy_exit_max_per_tick, 2)
 end

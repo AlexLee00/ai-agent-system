@@ -47,7 +47,8 @@ defmodule Luna.V2.PositionWatch do
        dynamic_interval_ms: nil,
        dynamic_interval_until: nil,
        dynamic_interval_source: nil,
-       active_backtest_cooldowns: %{}
+       active_backtest_cooldowns: %{},
+       strategy_exit_cooldowns: %{}
      }}
   end
 
@@ -55,6 +56,7 @@ defmodule Luna.V2.PositionWatch do
     snapshot = build_snapshot()
     maybe_broadcast(snapshot, state.last_snapshot)
     state = maybe_trigger_active_backtests(snapshot, state)
+    state = maybe_trigger_strategy_exit_previews(snapshot, state)
     next_interval_ms = effective_interval_ms(snapshot, state)
     schedule(next_interval_ms)
 
@@ -71,6 +73,7 @@ defmodule Luna.V2.PositionWatch do
     snapshot = build_snapshot()
     maybe_broadcast(snapshot, state.last_snapshot)
     state = maybe_trigger_active_backtests(snapshot, state)
+    state = maybe_trigger_strategy_exit_previews(snapshot, state)
     {:reply, {:ok, snapshot}, %{state | last_snapshot: snapshot, last_run: DateTime.utc_now()}}
   end
 
@@ -785,6 +788,50 @@ defmodule Luna.V2.PositionWatch do
     end
   end
 
+  defp maybe_trigger_strategy_exit_previews(snapshot, state) do
+    if not KillSwitch.position_watch_strategy_exit_enabled?() do
+      state
+    else
+      now = DateTime.utc_now()
+      cooldowns = prune_backtest_cooldowns(state.strategy_exit_cooldowns, now)
+
+      candidates =
+        snapshot
+        |> Map.get(:attention, [])
+        |> Enum.filter(&strategy_exit_candidate?/1)
+        |> Enum.uniq_by(fn item ->
+          {to_string(item[:exchange] || ""), to_string(item[:symbol] || ""),
+           to_string(item[:trade_mode] || item[:tradeMode] || "normal")}
+        end)
+        |> Enum.take(KillSwitch.position_watch_strategy_exit_max_per_tick())
+
+      {updated_cooldowns, triggered_count} =
+        Enum.reduce(candidates, {cooldowns, 0}, fn candidate, {acc, count} ->
+          key = strategy_exit_key(candidate)
+
+          if Map.has_key?(acc, key) do
+            {acc, count}
+          else
+            trigger_strategy_exit_preview(candidate)
+            expiry =
+              DateTime.add(
+                now,
+                KillSwitch.position_watch_strategy_exit_cooldown_minutes() * 60,
+                :second
+              )
+
+            {Map.put(acc, key, expiry), count + 1}
+          end
+        end)
+
+      if triggered_count > 0 do
+        Logger.info("[루나V2/PositionWatch] strategy-exit preview #{triggered_count}건 트리거")
+      end
+
+      %{state | strategy_exit_cooldowns: updated_cooldowns}
+    end
+  end
+
   defp active_backtest_candidate?(candidate) do
     exchange = to_string(candidate[:exchange] || "")
     attention = candidate[:attention_type]
@@ -793,11 +840,26 @@ defmodule Luna.V2.PositionWatch do
       attention in [:stop_loss_attention, :partial_adjust_attention, :tv_live_bearish, :backtest_drift_attention]
   end
 
+  defp strategy_exit_candidate?(candidate) do
+    exchange = to_string(candidate[:exchange] || "")
+    attention = candidate[:attention_type]
+
+    exchange in ["binance", "kis", "kis_overseas"] and
+      attention in [:stop_loss_attention, :backtest_drift_attention]
+  end
+
   defp backtest_key(candidate) do
     exchange = to_string(candidate[:exchange] || "")
     symbol = to_string(candidate[:symbol] || "")
     attention = to_string(candidate[:attention_type] || "")
     "#{exchange}:#{symbol}:#{attention}"
+  end
+
+  defp strategy_exit_key(candidate) do
+    exchange = to_string(candidate[:exchange] || "")
+    symbol = to_string(candidate[:symbol] || "")
+    trade_mode = to_string(candidate[:trade_mode] || candidate[:tradeMode] || "normal")
+    "#{exchange}:#{symbol}:#{trade_mode}"
   end
 
   defp cooldown_expiry(now) do
@@ -853,6 +915,47 @@ defmodule Luna.V2.PositionWatch do
         {output, code} ->
           Logger.warning(
             "[루나V2/PositionWatch] 액티브 백테스트 실패 #{symbol} #{attention} exit=#{code} #{String.trim(output)}"
+          )
+      end
+    end)
+  end
+
+  defp trigger_strategy_exit_preview(candidate) do
+    symbol = to_string(candidate[:symbol] || "")
+    exchange = to_string(candidate[:exchange] || "")
+    trade_mode = to_string(candidate[:trade_mode] || candidate[:tradeMode] || "normal")
+
+    repo_root = "/Users/alexlee/projects/ai-agent-system"
+    investment_dir = Path.join(repo_root, "bots/investment")
+
+    Task.start(fn ->
+      Logger.info("[루나V2/PositionWatch] strategy-exit preview 시작 #{symbol} #{exchange}/#{trade_mode}")
+
+      case System.cmd(
+             "npm",
+             [
+               "--prefix",
+               investment_dir,
+               "run",
+               "runtime:strategy-exit",
+               "--",
+               "--symbol=#{symbol}",
+               "--exchange=#{exchange}",
+               "--trade-mode=#{trade_mode}",
+               "--json"
+             ],
+             stderr_to_stdout: true,
+             cd: investment_dir,
+             env: [{"PAPER_MODE", "false"}]
+           ) do
+        {output, 0} ->
+          Logger.info(
+            "[루나V2/PositionWatch] strategy-exit preview 완료 #{symbol} #{exchange}/#{trade_mode} #{String.trim(output)}"
+          )
+
+        {output, code} ->
+          Logger.warning(
+            "[루나V2/PositionWatch] strategy-exit preview 실패 #{symbol} #{exchange}/#{trade_mode} exit=#{code} #{String.trim(output)}"
           )
       end
     end)
