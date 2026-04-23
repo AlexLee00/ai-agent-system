@@ -668,6 +668,7 @@ function buildDecision(
   const collectionInsufficient = collectionAudit?.markets?.find((item) => item?.collectQuality?.status === 'insufficient') || null;
   const collectionDegraded = collectionAudit?.markets?.find((item) => item?.collectQuality?.status === 'degraded') || null;
   const strategyFeedbackOutcomes = runtimeLearningLoop?.sections?.collect?.strategyFeedbackOutcomes || null;
+  const riskApproval = runtimeLearningLoop?.sections?.collect?.riskApproval || null;
   return buildHealthDecision({
     warnings: [
       {
@@ -791,6 +792,11 @@ function buildDecision(
         active: strategyFeedbackOutcomes?.status === 'strategy_feedback_outcome_attention',
         level: 'medium',
         reason: `strategy feedback outcomes — ${strategyFeedbackOutcomes?.headline || '전략 피드백 적용 결과 점검 필요'} / tagged ${strategyFeedbackOutcomes?.total || strategyFeedbackOutcomes?.totalTagged || 0} / closed ${strategyFeedbackOutcomes?.closed || strategyFeedbackOutcomes?.closedTagged || 0} / pnl ${strategyFeedbackOutcomes?.pnlNet ?? 0} / trend tagged Δ${strategyFeedbackOutcomes?.trend?.delta?.total ?? 0} closed Δ${strategyFeedbackOutcomes?.trend?.delta?.closed ?? 0} / weakest ${(strategyFeedbackOutcomes?.weak || strategyFeedbackOutcomes?.weakest)?.familyBias || 'n/a'} ${(strategyFeedbackOutcomes?.weak || strategyFeedbackOutcomes?.weakest)?.family || 'n/a'} avg ${(strategyFeedbackOutcomes?.weak || strategyFeedbackOutcomes?.weakest)?.avgPnlPercent ?? 'n/a'}%`,
+      },
+      {
+        active: riskApproval?.status === 'risk_approval_preview_divergence',
+        level: 'medium',
+        reason: `risk approval preview divergence — ${riskApproval?.headline || '리스크 승인 preview와 기존 승인 결과 차이 점검 필요'} / preview ${riskApproval?.total || 0} / rejects ${riskApproval?.previewRejects || 0} / divergence ${riskApproval?.divergence || 0} / amount delta ${riskApproval?.previewVsApprovedDelta ?? 0} / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:risk-approval -- --json`,
       },
       {
         active: Boolean(collectionInsufficient || collectionDegraded),
@@ -993,6 +999,8 @@ function formatText(report) {
           const strategyFeedbackOutcomes = report.runtimeLearningLoop.sections?.collect?.strategyFeedbackOutcomes || null;
           const strategyFeedbackWeak = strategyFeedbackOutcomes?.weak || strategyFeedbackOutcomes?.weakest || null;
           const strategyFeedbackTrend = strategyFeedbackOutcomes?.trend || null;
+          const riskApproval = report.runtimeLearningLoop.sections?.collect?.riskApproval || null;
+          const riskApprovalTopModel = riskApproval?.topModels?.[0] || null;
           return [
             `  status: ${report.runtimeLearningLoop.decision?.status || 'unknown'}`,
             `  headline: ${report.runtimeLearningLoop.decision?.headline || 'n/a'}`,
@@ -1000,8 +1008,10 @@ function formatText(report) {
             `  strongest: ${report.runtimeLearningLoop.sections?.collect?.regimePerformance?.strongestRegime?.regime || 'n/a'} / ${report.runtimeLearningLoop.sections?.collect?.regimePerformance?.strongestRegime?.bestMode?.tradeMode || 'n/a'} / avg ${report.runtimeLearningLoop.sections?.collect?.regimePerformance?.strongestRegime?.bestMode?.avgPnlPercent ?? 'n/a'}%`,
             `  top suggestion: ${report.runtimeLearningLoop.sections?.strategy?.runtimeSuggestionTop?.key || 'n/a'} -> ${report.runtimeLearningLoop.sections?.strategy?.runtimeSuggestionTop?.suggested ?? 'n/a'} (${report.runtimeLearningLoop.sections?.strategy?.runtimeSuggestionTop?.action || 'n/a'})`,
             `  strategy feedback outcomes: ${strategyFeedbackOutcomes?.status || 'unknown'} / tagged ${strategyFeedbackOutcomes?.total || strategyFeedbackOutcomes?.totalTagged || 0} / closed ${strategyFeedbackOutcomes?.closed || strategyFeedbackOutcomes?.closedTagged || 0} / pnl ${strategyFeedbackOutcomes?.pnlNet ?? 0}`,
+            `  risk approval: ${riskApproval?.status || 'unknown'} / preview ${riskApproval?.total || 0} / rejects ${riskApproval?.previewRejects || 0} / divergence ${riskApproval?.divergence || 0} / amount delta ${riskApproval?.previewVsApprovedDelta ?? 0}`,
             ...(strategyFeedbackTrend ? [`  feedback trend: history ${strategyFeedbackTrend.historyCount || 0} / tagged Δ${strategyFeedbackTrend.delta?.total ?? 0} / closed Δ${strategyFeedbackTrend.delta?.closed ?? 0} / pnl Δ${strategyFeedbackTrend.delta?.pnlNet ?? 0}`] : []),
             ...(strategyFeedbackWeak ? [`  feedback weakest: ${strategyFeedbackWeak.familyBias || 'n/a'} / ${strategyFeedbackWeak.family || 'n/a'} / ${strategyFeedbackWeak.executionKind || 'n/a'} / avg ${strategyFeedbackWeak.avgPnlPercent ?? 'n/a'}%`] : []),
+            ...(riskApprovalTopModel ? [`  risk top model: ${riskApprovalTopModel.model || 'n/a'} / adjust ${riskApprovalTopModel.adjust || 0} / reject ${riskApprovalTopModel.reject || 0} / pass ${riskApprovalTopModel.pass || 0}`] : []),
             ...(report.latestOpsSnapshot?.capturedAt ? [`  latest snapshot: ${report.latestOpsSnapshot.capturedAt} / ${latestWeakest?.regime || 'n/a'} / ${latestWeakestMode}`] : []),
             `  next command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-suggest -- --json`,
             ...((report.runtimeLearningLoop.decision?.nextActions || []).slice(0, 3).map((item) => `  next: ${item}`)),

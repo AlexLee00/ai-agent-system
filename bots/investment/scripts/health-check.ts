@@ -391,6 +391,25 @@ async function main() {
       });
       hsm.clearAlert(state, strategyFeedbackKey);
     }
+
+    const riskApproval = learningLoop?.sections?.collect?.riskApproval || null;
+    const riskApprovalKey = 'learning-loop-risk-approval-divergence';
+    if (riskApproval?.status === 'risk_approval_preview_divergence') {
+      if (hsm.canAlert(state, riskApprovalKey)) {
+        const topModel = riskApproval?.topModels?.[0] || null;
+        issues.push({
+          key: riskApprovalKey,
+          level: 2,
+          msg: `⚠️ [루나 헬스] risk approval preview divergence\n${riskApproval.headline || '리스크 승인 preview와 기존 승인 결과 차이 점검 필요'}\npreview ${riskApproval.total || 0} / rejects ${riskApproval.previewRejects || 0} / divergence ${riskApproval.divergence || 0}\namount delta ${riskApproval.previewVsApprovedDelta ?? 0}${topModel ? `\ntop model: ${topModel.model || 'n/a'} / adjust ${topModel.adjust || 0} / reject ${topModel.reject || 0} / pass ${topModel.pass || 0}` : ''}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:risk-approval -- --json`,
+        });
+      }
+    } else if (state[riskApprovalKey]) {
+      recovers.push({
+        key: riskApprovalKey,
+        msg: '✅ [루나 헬스] risk approval preview 회복\n리스크 승인 preview와 기존 승인 간 divergence 없음 — 자동 감지',
+      });
+      hsm.clearAlert(state, riskApprovalKey);
+    }
   } catch (e) {
     const key = 'learning-loop-check-failed';
     if (hsm.canAlert(state, key)) {
