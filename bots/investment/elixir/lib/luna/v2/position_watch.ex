@@ -181,10 +181,19 @@ defmodule Luna.V2.PositionWatch do
         {dust_positions, active_positions} =
           Enum.split_with(positions_with_tv, &dust_position?(&1, crypto_dust_usdt))
 
+        symbol_aggregates = build_symbol_aggregates(active_positions)
+
         attention =
           active_positions
           |> Enum.map(
-            &classify_position(&1, stop_loss_pct, adjust_gain_pct, stale_minutes, tv_stale_ms)
+            &classify_position(
+              &1,
+              stop_loss_pct,
+              adjust_gain_pct,
+              stale_minutes,
+              tv_stale_ms,
+              Map.get(symbol_aggregates, aggregate_key(&1), %{})
+            )
           )
           |> Enum.reject(&is_nil/1)
 
@@ -221,7 +230,14 @@ defmodule Luna.V2.PositionWatch do
     end
   end
 
-  defp classify_position(position, stop_loss_pct, adjust_gain_pct, stale_minutes, tv_stale_ms) do
+  defp classify_position(
+         position,
+         stop_loss_pct,
+         adjust_gain_pct,
+         stale_minutes,
+         tv_stale_ms,
+         aggregate
+       ) do
     pnl_ratio = to_float(position[:pnl_ratio])
     stale? = stale_position?(position[:updated_at], stale_minutes)
     tv_attention = classify_tv_attention(position[:tv], tv_stale_ms)
@@ -234,30 +250,37 @@ defmodule Luna.V2.PositionWatch do
       classify_strategy_tv_attention(position, setup_type, monitoring_plan, adjusted_gain_pct)
     backtest_attention = classify_backtest_drift_attention(position, backtest_plan)
 
-    cond do
-      not is_nil(strategy_tv_attention) ->
-        Map.merge(position, strategy_tv_attention)
+    base_attention =
+      cond do
+        not is_nil(strategy_tv_attention) ->
+          Map.merge(position, strategy_tv_attention)
 
-      not is_nil(backtest_attention) ->
-        Map.merge(position, backtest_attention)
+        not is_nil(backtest_attention) ->
+          Map.merge(position, backtest_attention)
 
-      not is_nil(tv_attention) ->
-        Map.merge(position, tv_attention)
+        not is_nil(tv_attention) ->
+          Map.merge(position, tv_attention)
 
-      stale? ->
-        Map.merge(position, %{attention_type: :stale_position, reason: "updated_at stale"})
+        stale? ->
+          Map.merge(position, %{attention_type: :stale_position, reason: "updated_at stale"})
 
-      pnl_ratio <= -abs(adjusted_stop_loss_pct) ->
-        Map.merge(position, %{attention_type: :stop_loss_attention, reason: "loss threshold hit"})
+        pnl_ratio <= -abs(adjusted_stop_loss_pct) ->
+          Map.merge(position, %{attention_type: :stop_loss_attention, reason: "loss threshold hit"})
 
-      pnl_ratio >= abs(adjusted_gain_pct) ->
-        Map.merge(position, %{
-          attention_type: :partial_adjust_attention,
-          reason: "gain threshold hit"
-        })
+        pnl_ratio >= abs(adjusted_gain_pct) ->
+          Map.merge(position, %{
+            attention_type: :partial_adjust_attention,
+            reason: "gain threshold hit"
+          })
 
-      true ->
-        nil
+        true ->
+          nil
+      end
+
+    if is_map(base_attention) do
+      enrich_attention_scope(base_attention, aggregate)
+    else
+      nil
     end
   end
 
@@ -663,6 +686,68 @@ defmodule Luna.V2.PositionWatch do
   defp normalize_tv_status("connected"), do: :connected
   defp normalize_tv_status("disconnected"), do: :disconnected
   defp normalize_tv_status(_), do: :unknown
+
+  defp aggregate_key(position) do
+    {
+      to_string(position[:exchange] || ""),
+      to_string(position[:symbol] || ""),
+      to_string(position[:trade_mode] || "normal")
+    }
+  end
+
+  defp build_symbol_aggregates(positions) do
+    Enum.reduce(positions, %{}, fn position, acc ->
+      key = aggregate_key(position)
+      size = to_float(position[:size])
+      entry_price = to_float(position[:entry_price])
+      unrealized_pnl = to_float(position[:unrealized_pnl])
+      entry_value = size * entry_price
+
+      current =
+        Map.get(acc, key, %{
+          leg_count: 0,
+          total_size: 0.0,
+          total_entry_value: 0.0,
+          total_unrealized_pnl: 0.0
+        })
+
+      updated = %{
+        leg_count: current.leg_count + 1,
+        total_size: current.total_size + size,
+        total_entry_value: current.total_entry_value + entry_value,
+        total_unrealized_pnl: current.total_unrealized_pnl + unrealized_pnl
+      }
+
+      Map.put(acc, key, updated)
+    end)
+    |> Enum.into(%{}, fn {key, aggregate} ->
+      pnl_ratio =
+        if aggregate.total_entry_value > 0 do
+          aggregate.total_unrealized_pnl / aggregate.total_entry_value
+        else
+          nil
+        end
+
+      {key, Map.put(aggregate, :aggregate_pnl_ratio, pnl_ratio)}
+    end)
+  end
+
+  defp enrich_attention_scope(attention, aggregate) do
+    basis_note =
+      case Map.get(aggregate, :leg_count, 0) do
+        count when count > 1 -> "동일 심볼 실계좌 합산과 별도로 live leg 기준"
+        _ -> "live normal/validation leg 기준"
+      end
+
+    Map.merge(attention, %{
+      basis_scope: "live_leg",
+      basis_note: basis_note,
+      symbol_aggregate_leg_count: Map.get(aggregate, :leg_count, 1),
+      symbol_aggregate_entry_value: Map.get(aggregate, :total_entry_value, 0.0),
+      symbol_aggregate_unrealized_pnl: Map.get(aggregate, :total_unrealized_pnl, 0.0),
+      symbol_aggregate_pnl_ratio: Map.get(aggregate, :aggregate_pnl_ratio)
+    })
+  end
 
   defp effective_interval_ms(snapshot, state) do
     now = DateTime.utc_now()
