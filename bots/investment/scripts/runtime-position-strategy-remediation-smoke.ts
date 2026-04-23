@@ -164,11 +164,13 @@ export async function runPositionStrategyRemediationContractSmoke() {
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationNextCommandTransition'));
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationTrend'));
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationSummary'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result.remediationSummary || {}, 'commands'));
   return {
     ok: true,
     hasTransitionField: Object.prototype.hasOwnProperty.call(result, 'remediationNextCommandTransition'),
     hasTrendField: Object.prototype.hasOwnProperty.call(result, 'remediationTrend'),
     hasSummaryField: Object.prototype.hasOwnProperty.call(result, 'remediationSummary'),
+    hasSummaryCommandsField: Object.prototype.hasOwnProperty.call(result.remediationSummary || {}, 'commands'),
   };
 }
 

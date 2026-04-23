@@ -325,7 +325,7 @@ function buildPositionStrategyRemediationCommandLine(positionStrategyRemediation
   const remediationSummary = positionStrategyRemediationSummary.remediationSummary || null;
   const remediationActions = remediationSummary?.actions || positionStrategyRemediationSummary.remediationActions || null;
   if (!remediationPlan || remediationPlan.status !== 'position_strategy_hygiene_attention') return null;
-  return `🛠️ remediation report: ${remediationActions?.reportCommand || remediationPlan.remediationReportCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation -- --json'}`;
+  return `🛠️ remediation report: ${remediationSummary?.commands?.report || remediationActions?.reportCommand || remediationPlan.remediationReportCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation -- --json'}`;
 }
 
 function buildPositionStrategyRemediationRefreshCommandLine(positionStrategyRemediationSummary) {
@@ -333,7 +333,8 @@ function buildPositionStrategyRemediationRefreshCommandLine(positionStrategyReme
   const remediationPlan = positionStrategyRemediationSummary.remediationPlan || null;
   const remediationSummary = positionStrategyRemediationSummary.remediationSummary || null;
   const remediationActions = remediationSummary?.actions || positionStrategyRemediationSummary.remediationActions || null;
-  const refreshCommand = remediationActions?.refreshCommand
+  const refreshCommand = remediationSummary?.commands?.refresh
+    || remediationActions?.refreshCommand
     || remediationSummary?.refreshState?.command
     || positionStrategyRemediationSummary?.remediationRefreshState?.command
     || remediationPlan?.remediationRefreshCommand
@@ -563,7 +564,7 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
         event_type: 'daily_feedback',
         alert_level: 1,
         message: finalMessage,
-        payload: { dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary, positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary, remediationSummary, remediationTrend: remediationSummary?.trend || positionStrategyRemediationSummary?.remediationTrend || null, remediationRefreshState: remediationSummary?.refreshState || remediationRefreshState, remediationActions: remediationSummary?.actions || positionStrategyRemediationSummary?.remediationActions || null, remediationNextCommandTransition: remediationSummary?.nextCommandTransition || positionStrategyRemediationSummary?.remediationNextCommandTransition || null, hygieneRemediationPlan },
+        payload: { dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary, positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary, remediationSummary, remediationTrend: remediationSummary?.trend || positionStrategyRemediationSummary?.remediationTrend || null, remediationRefreshState: remediationSummary?.refreshState || remediationRefreshState, remediationActions: remediationSummary?.actions || positionStrategyRemediationSummary?.remediationActions || null, remediationCommands: remediationSummary?.commands || null, remediationNextCommandTransition: remediationSummary?.nextCommandTransition || positionStrategyRemediationSummary?.remediationNextCommandTransition || null, hygieneRemediationPlan },
       });
       await dailyFeedbackMemory.remember(finalMessage, 'episodic', {
         importance: 0.7,
@@ -581,10 +582,13 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
           remediationRefreshCommand: remediationRefreshState.command,
           remediationSummaryStatus: remediationSummary?.status || null,
           remediationSummaryHeadline: remediationSummary?.headline || null,
+          remediationReportCommand: remediationSummary?.commands?.report || hygieneRemediationPlan?.remediationReportCommand || null,
+          remediationHistoryCommand: remediationSummary?.commands?.history || null,
+          remediationNormalizeDryRunCommand: remediationSummary?.commands?.normalizeDryRun || null,
+          remediationRetireDryRunCommand: remediationSummary?.commands?.retireDryRun || null,
           remediationTrendHistoryCount: remediationSummary?.trend?.historyCount ?? positionStrategyRemediationSummary?.remediationTrend?.historyCount ?? null,
           remediationTrendChanged: remediationSummary?.trend?.statusChanged ?? positionStrategyRemediationSummary?.remediationTrend?.statusChanged ?? null,
           remediationTrendNextChanged: remediationSummary?.trend?.nextCommandChanged ?? positionStrategyRemediationSummary?.remediationTrend?.nextCommandChanged ?? null,
-          remediationReportCommand: hygieneRemediationPlan?.remediationReportCommand || null,
           remediationNextCommand: remediationSummary?.nextCommand || positionStrategyRemediationSummary?.remediationActions?.nextCommand || null,
           remediationNextCommandPrevious: remediationSummary?.nextCommandTransition?.previous || positionStrategyRemediationSummary?.remediationTrend?.nextCommandTransition?.previous || null,
           remediationNextCommandCurrent: remediationSummary?.nextCommandTransition?.current || positionStrategyRemediationSummary?.remediationTrend?.nextCommandTransition?.current || null,
