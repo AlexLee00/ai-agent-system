@@ -1017,6 +1017,36 @@ function buildFlatRemediationSnapshot(positionStrategyRemediation) {
   };
 }
 
+function buildPositionStrategyAuditRemediationLines(report) {
+  return [
+    ...(report.positionStrategyRemediation
+      ? [
+        `  remediation status: ${report.positionStrategyRemediationStatus || report.positionStrategyRemediation.decision?.status || 'unknown'}`,
+        `  remediation headline: ${report.positionStrategyRemediationHeadline || report.positionStrategyRemediation.decision?.headline || 'n/a'}`,
+        `  remediation next: ${report.positionStrategyRemediationNextCommand || 'n/a'}`,
+        `  remediation refresh state: needed ${report.positionStrategyRemediationRefreshNeeded ? 'yes' : 'no'} / stale ${report.positionStrategyRemediationRefreshStale ? 'yes' : 'no'} / command ${report.positionStrategyRemediationRefreshCommand || report.positionStrategyRemediationRefresh?.command || 'n/a'}`,
+        ...(report.positionStrategyRemediationRefreshReason || report.positionStrategyRemediationRefresh?.reason
+          ? [`  remediation refresh: ${report.positionStrategyRemediationRefreshReason || report.positionStrategyRemediationRefresh?.reason}`]
+          : []),
+      ]
+      : []),
+    ...(report.positionStrategyRemediationHistory
+      ? [
+        `  remediation history: count ${(report.positionStrategyRemediationTrendHistoryCount ?? report.positionStrategyRemediationHistory.historyCount ?? 0)} / changed ${report.positionStrategyRemediationTrendChanged ? 'yes' : 'no'} / next changed ${report.positionStrategyRemediationTrendNextChanged ? 'yes' : 'no'}${report.positionStrategyRemediationTrendNextChanged ? ` (${report.positionStrategyRemediationNextCommandPrevious || 'none'} -> ${report.positionStrategyRemediationNextCommandCurrent || 'none'})` : ''} / age ${(report.positionStrategyRemediationTrendAgeMinutes ?? report.positionStrategyRemediationHistory.ageMinutes ?? 'n/a')}m / stale ${report.positionStrategyRemediationTrendStale ? 'yes' : 'no'}`,
+        `  remediation delta: duplicate ${((report.positionStrategyRemediationTrendDuplicateDelta ?? report.positionStrategyRemediationHistory.delta?.duplicateManaged ?? 0) >= 0) ? '+' : ''}${(report.positionStrategyRemediationTrendDuplicateDelta ?? report.positionStrategyRemediationHistory.delta?.duplicateManaged ?? 0)} / orphan ${((report.positionStrategyRemediationTrendOrphanDelta ?? report.positionStrategyRemediationHistory.delta?.orphanProfiles ?? 0) >= 0) ? '+' : ''}${(report.positionStrategyRemediationTrendOrphanDelta ?? report.positionStrategyRemediationHistory.delta?.orphanProfiles ?? 0)} / unmatched ${((report.positionStrategyRemediationTrendUnmatchedDelta ?? report.positionStrategyRemediationHistory.delta?.unmatchedManaged ?? 0) >= 0) ? '+' : ''}${(report.positionStrategyRemediationTrendUnmatchedDelta ?? report.positionStrategyRemediationHistory.delta?.unmatchedManaged ?? 0)}`,
+      ]
+      : []),
+    `  remediation report: ${report.positionStrategyRemediationActionReportCommand || report.positionStrategyRemediationReportCommand || report.positionStrategyHygiene?.remediationPlan?.remediationReportCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation -- --json'}`,
+    `  remediation history: ${report.positionStrategyRemediationActionHistoryCommand || report.positionStrategyRemediationHistoryCommand || report.positionStrategyHygiene?.remediationPlan?.remediationHistoryCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation-history -- --json'}`,
+    `  remediation refresh: ${report.positionStrategyRemediationActionRefreshCommand || report.positionStrategyRemediationRefreshCommand || report.positionStrategyHygiene?.remediationPlan?.remediationRefreshCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation-refresh -- --if-stale --json'}`,
+    `  hygiene report: ${report.positionStrategyRemediationActionHygieneCommand || report.positionStrategyHygiene?.remediationPlan?.hygieneReportCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-hygiene -- --json'}`,
+    `  normalize dry-run: ${report.positionStrategyRemediationActionNormalizeDryRunCommand || report.positionStrategyRemediationNormalizeDryRunCommand || report.positionStrategyHygiene?.remediationPlan?.normalizeDryRunCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --json'}`,
+    `  normalize apply: ${report.positionStrategyRemediationActionNormalizeApplyCommand || report.positionStrategyRemediationNormalizeApplyCommand || report.positionStrategyHygiene?.remediationPlan?.normalizeApplyCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --apply --json'}`,
+    `  retire orphan dry-run: ${report.positionStrategyRemediationActionRetireDryRunCommand || report.positionStrategyRemediationRetireDryRunCommand || report.positionStrategyHygiene?.remediationPlan?.retireDryRunCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles -- --json'}`,
+    `  retire orphan apply: ${report.positionStrategyRemediationActionRetireApplyCommand || report.positionStrategyRemediationRetireApplyCommand || report.positionStrategyHygiene?.remediationPlan?.retireApplyCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles -- --apply --json'}`,
+  ];
+}
+
 function formatText(report) {
   const sections = [
     {
@@ -1297,23 +1327,7 @@ function formatText(report) {
                 `  hygiene focus: ${report.positionStrategyHygiene.recommendedExchange?.exchange || 'all'}${report.positionStrategyHygiene.recommendedExchange?.count ? ` (${report.positionStrategyHygiene.recommendedExchange.count})` : ''}`,
               ]
               : []),
-            ...(report.positionStrategyRemediation
-              ? [
-                `  remediation status: ${report.positionStrategyRemediationStatus || report.positionStrategyRemediation.decision?.status || 'unknown'}`,
-                `  remediation headline: ${report.positionStrategyRemediationHeadline || report.positionStrategyRemediation.decision?.headline || 'n/a'}`,
-                `  remediation next: ${report.positionStrategyRemediationNextCommand || 'n/a'}`,
-                `  remediation refresh state: needed ${report.positionStrategyRemediationRefreshNeeded ? 'yes' : 'no'} / stale ${report.positionStrategyRemediationRefreshStale ? 'yes' : 'no'} / command ${report.positionStrategyRemediationRefreshCommand || report.positionStrategyRemediationRefresh?.command || 'n/a'}`,
-                ...(report.positionStrategyRemediationRefreshReason || report.positionStrategyRemediationRefresh?.reason
-                  ? [`  remediation refresh: ${report.positionStrategyRemediationRefreshReason || report.positionStrategyRemediationRefresh?.reason}`]
-                  : []),
-              ]
-              : []),
-            ...(report.positionStrategyRemediationHistory
-              ? [
-                `  remediation history: count ${(report.positionStrategyRemediationTrendHistoryCount ?? report.positionStrategyRemediationHistory.historyCount ?? 0)} / changed ${report.positionStrategyRemediationTrendChanged ? 'yes' : 'no'} / next changed ${report.positionStrategyRemediationTrendNextChanged ? 'yes' : 'no'}${report.positionStrategyRemediationTrendNextChanged ? ` (${report.positionStrategyRemediationNextCommandPrevious || 'none'} -> ${report.positionStrategyRemediationNextCommandCurrent || 'none'})` : ''} / age ${(report.positionStrategyRemediationTrendAgeMinutes ?? report.positionStrategyRemediationHistory.ageMinutes ?? 'n/a')}m / stale ${report.positionStrategyRemediationTrendStale ? 'yes' : 'no'}`,
-                `  remediation delta: duplicate ${((report.positionStrategyRemediationTrendDuplicateDelta ?? report.positionStrategyRemediationHistory.delta?.duplicateManaged ?? 0) >= 0) ? '+' : ''}${(report.positionStrategyRemediationTrendDuplicateDelta ?? report.positionStrategyRemediationHistory.delta?.duplicateManaged ?? 0)} / orphan ${((report.positionStrategyRemediationTrendOrphanDelta ?? report.positionStrategyRemediationHistory.delta?.orphanProfiles ?? 0) >= 0) ? '+' : ''}${(report.positionStrategyRemediationTrendOrphanDelta ?? report.positionStrategyRemediationHistory.delta?.orphanProfiles ?? 0)} / unmatched ${((report.positionStrategyRemediationTrendUnmatchedDelta ?? report.positionStrategyRemediationHistory.delta?.unmatchedManaged ?? 0) >= 0) ? '+' : ''}${(report.positionStrategyRemediationTrendUnmatchedDelta ?? report.positionStrategyRemediationHistory.delta?.unmatchedManaged ?? 0)}`,
-              ]
-              : []),
+            ...buildPositionStrategyAuditRemediationLines(report),
             ...(report.duplicateStrategyNormalization
               ? [
                 `  normalize status: ${report.duplicateStrategyNormalization.decision?.status || 'unknown'} / safeToApply ${report.duplicateStrategyNormalization.decision?.safeToApply === true ? 'yes' : 'no'}`,
@@ -1330,14 +1344,6 @@ function formatText(report) {
               : []),
             ...(report.positionStrategyAudit.duplicateProfileScopes || []).slice(0, 3).map((scope) => `  duplicate: ${scope.exchange}/${scope.symbol} count ${scope.count} keeper ${scope.keeperProfileId}`),
             `  next command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-audit`,
-            `  remediation report: ${report.positionStrategyRemediationActionReportCommand || report.positionStrategyRemediationReportCommand || report.positionStrategyHygiene?.remediationPlan?.remediationReportCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation -- --json'}`,
-            `  remediation history: ${report.positionStrategyRemediationActionHistoryCommand || report.positionStrategyRemediationHistoryCommand || report.positionStrategyHygiene?.remediationPlan?.remediationHistoryCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation-history -- --json'}`,
-            `  remediation refresh: ${report.positionStrategyRemediationActionRefreshCommand || report.positionStrategyRemediationRefreshCommand || report.positionStrategyHygiene?.remediationPlan?.remediationRefreshCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation-refresh -- --if-stale --json'}`,
-            `  hygiene report: ${report.positionStrategyRemediationActionHygieneCommand || report.positionStrategyHygiene?.remediationPlan?.hygieneReportCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-hygiene -- --json'}`,
-            `  normalize dry-run: ${report.positionStrategyRemediationActionNormalizeDryRunCommand || report.positionStrategyRemediationNormalizeDryRunCommand || report.positionStrategyHygiene?.remediationPlan?.normalizeDryRunCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --json'}`,
-            `  normalize apply: ${report.positionStrategyRemediationActionNormalizeApplyCommand || report.positionStrategyRemediationNormalizeApplyCommand || report.positionStrategyHygiene?.remediationPlan?.normalizeApplyCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --apply --json'}`,
-            `  retire orphan dry-run: ${report.positionStrategyRemediationActionRetireDryRunCommand || report.positionStrategyRemediationRetireDryRunCommand || report.positionStrategyHygiene?.remediationPlan?.retireDryRunCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles -- --json'}`,
-            `  retire orphan apply: ${report.positionStrategyRemediationActionRetireApplyCommand || report.positionStrategyRemediationRetireApplyCommand || report.positionStrategyHygiene?.remediationPlan?.retireApplyCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles -- --apply --json'}`,
           ]
         : ['  position strategy audit 정보 없음'],
     },
