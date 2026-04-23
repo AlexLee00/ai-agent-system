@@ -5,6 +5,7 @@ import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { buildInvestmentCliInsight } from '../shared/cli-insight.ts';
 import { checkSafetyGates } from '../shared/signal.ts';
+import { getStockSizingFloorBaseline } from '../shared/runtime-config.ts';
 
 function parseArgs(argv = []) {
   const args = { market: 'all', limit: 5, json: false, includeSmoke: false };
@@ -111,6 +112,7 @@ async function loadRecentSignalOutcomeSummary({ market = 'all', hours = 6, since
     const safeMarket = String(normalizedMarket).replace(/'/g, "''");
     where += ` AND exchange = '${safeMarket}'`;
   }
+  where += buildStockSizingFloorBaselineFilter({ market: normalizedMarket });
 
   const rows = await db.query(`
     SELECT
@@ -153,6 +155,21 @@ async function loadRecentSignalOutcomeSummary({ market = 'all', hours = 6, since
   }
 
   return summary;
+}
+
+export function buildStockSizingFloorBaselineFilter({ market = 'all' } = {}) {
+  const normalizedMarket = normalizeMarket(market);
+  const exchanges = ['kis', 'kis_overseas'].filter((exchange) => normalizedMarket === 'all' || normalizedMarket === exchange);
+  const clauses = exchanges
+    .map((exchange) => ({ exchange, baseline: getStockSizingFloorBaseline(exchange) }))
+    .filter((item) => item.baseline && !Number.isNaN(new Date(item.baseline).getTime()))
+    .map((item) => {
+      const safeExchange = String(item.exchange).replace(/'/g, "''");
+      const safeBaseline = String(item.baseline).replace(/'/g, "''");
+      return `(exchange = '${safeExchange}' AND COALESCE(block_code, '') IN ('min_order_notional', 'sizing_floor_unavailable') AND created_at <= TIMESTAMPTZ '${safeBaseline}')`;
+    });
+  if (clauses.length === 0) return '';
+  return ` AND NOT (${clauses.join(' OR ')})`;
 }
 
 async function loadRecentBlockedSignalReview({ market = 'all', since = null, limit = 12 } = {}) {

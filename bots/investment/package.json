@@ -18,7 +18,7 @@
     "regime:capture": "node scripts/capture-market-regimes.ts",
     "chronos": "node team/chronos.ts --symbol=BTC/USDT --from=2026-03-01 --to=2026-04-01 --layer=3",
     "chronos:quality": "node team/chronos.ts --symbol=BTC/USDT --from=2026-03-01 --to=2026-04-01 --layer=3 --measure-quality",
-    "check": "node --check markets/crypto.ts && node --check team/luna.ts && node --check shared/llm-client.ts && node scripts/risk-approval-ops-suite.ts --smoke-only && node scripts/validate-trade-review-smoke.ts && node scripts/runtime-learning-loop-feedback-smoke.ts && node scripts/remodel-closeout-review-smoke.ts && node scripts/runtime-min-order-pressure-smoke.ts && node scripts/runtime-min-order-relief-smoke.ts && node scripts/hanul-sizing-floor-smoke.ts",
+    "check": "node --check markets/crypto.ts && node --check team/luna.ts && node --check shared/llm-client.ts && node scripts/risk-approval-ops-suite.ts --smoke-only && node scripts/validate-trade-review-smoke.ts && node scripts/runtime-learning-loop-feedback-smoke.ts && node scripts/remodel-closeout-review-smoke.ts && node scripts/runtime-min-order-pressure-smoke.ts && node scripts/runtime-min-order-relief-smoke.ts && node scripts/runtime-decision-baseline-smoke.ts && node scripts/hanul-sizing-floor-smoke.ts",
     "report": "node team/reporter.ts",
     "report:tg": "node team/reporter.ts --telegram",
     "journal": "node scripts/trading-journal.ts",
