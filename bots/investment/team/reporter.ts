@@ -667,6 +667,10 @@ function buildPositionReevaluationLines(reevaluationSummary = null) {
       row?.analysisSnapshot?.strategyProfile?.responsibilityPlan
       || row?.positionSnapshot?.strategyProfile?.responsibilityPlan
       || {};
+    const executionPlan =
+      row?.analysisSnapshot?.strategyProfile?.executionPlan
+      || row?.positionSnapshot?.strategyProfile?.executionPlan
+      || {};
     const owner = responsibilityPlan.ownerAgent ? `${responsibilityPlan.ownerAgent}/${responsibilityPlan.ownerMode || 'default'}` : null;
     const risk = responsibilityPlan.riskAgent ? `${responsibilityPlan.riskAgent}/${responsibilityPlan.riskMission || 'default'}` : null;
     const watch = responsibilityPlan.watchAgent ? `${responsibilityPlan.watchAgent}/${responsibilityPlan.watchMission || 'default'}` : null;
@@ -676,6 +680,9 @@ function buildPositionReevaluationLines(reevaluationSummary = null) {
       lines.push(`  lifecycle: ${strategyState.lifecycleStatus || 'n/a'} | attention: ${strategyState.latestAttentionType || 'n/a'}`);
     }
     if (roleTrail) lines.push(`  owner/risk/watch: ${roleTrail}`);
+    if (executionPlan.entrySizingMultiplier || executionPlan.backtestUrgency || executionPlan.exitUrgency) {
+      lines.push(`  execution plan: entry x${executionPlan.entrySizingMultiplier || 1} · backtest ${executionPlan.backtestUrgency || 'normal'} · exit ${executionPlan.exitUrgency || 'normal'}`);
+    }
   }
   const driftRows = rows
     .filter((row) => row?.analysisSnapshot?.backtestDrift && row.analysisSnapshot.backtestDrift.ignored !== 'thin_backtest')
@@ -705,6 +712,7 @@ function buildStrategyExitLines(strategyExitSummary = null) {
     const strategyName = candidate?.strategyProfile?.strategyName || '전략 미지정';
     const setupType = candidate?.strategyProfile?.setupType || 'unknown';
     const responsibilityPlan = candidate?.strategyProfile?.responsibilityPlan || {};
+    const executionPlan = candidate?.strategyProfile?.executionPlan || {};
     const strategyState = candidate?.strategyProfile?.strategyState || {};
     const guardText = candidate?.executionGuard?.allowed
       ? 'ready'
@@ -715,6 +723,9 @@ function buildStrategyExitLines(strategyExitSummary = null) {
     }
     if (responsibilityPlan.executionAgent || responsibilityPlan.riskAgent) {
       lines.push(`  execution/risk: ${responsibilityPlan.executionAgent || 'n/a'}/${responsibilityPlan.executionMission || 'default'} · ${responsibilityPlan.riskAgent || 'n/a'}/${responsibilityPlan.riskMission || 'default'}`);
+    }
+    if (executionPlan.entrySizingMultiplier || executionPlan.backtestUrgency || executionPlan.exitUrgency) {
+      lines.push(`  execution plan: entry x${executionPlan.entrySizingMultiplier || 1} · backtest ${executionPlan.backtestUrgency || 'normal'} · exit ${executionPlan.exitUrgency || 'normal'}`);
     }
   }
   return lines;

@@ -56,6 +56,13 @@ function normalizeResponsibilityPlan(strategyProfile = null) {
     || null;
 }
 
+function normalizeExecutionPlan(strategyProfile = null) {
+  return strategyProfile?.strategy_context?.executionPlan
+    || strategyProfile?.strategyContext?.executionPlan
+    || strategyProfile?.executionPlan
+    || null;
+}
+
 function applyExistingPositionStrategyBias(signalData, existingStrategyProfile = null) {
   if (!existingStrategyProfile || signalData?.action !== ACTIONS.BUY) {
     return {
@@ -67,6 +74,7 @@ function applyExistingPositionStrategyBias(signalData, existingStrategyProfile =
   }
 
   const responsibilityPlan = normalizeResponsibilityPlan(existingStrategyProfile) || {};
+  const executionPlan = normalizeExecutionPlan(existingStrategyProfile) || {};
   const ownerMode = String(responsibilityPlan?.ownerMode || '').trim().toLowerCase();
   const setupType = String(existingStrategyProfile?.setup_type || '').trim() || 'unknown';
   const lifecycleStatus = String(existingStrategyProfile?.strategy_state?.lifecycleStatus || '').trim() || 'holding';
@@ -100,6 +108,7 @@ function applyExistingPositionStrategyBias(signalData, existingStrategyProfile =
     existingStrategyProfileId: existingStrategyProfile?.id || null,
     existingStrategyState: existingStrategyProfile?.strategy_state || null,
     existingResponsibilityPlan: responsibilityPlan,
+    existingExecutionPlan: executionPlan,
   };
   if (note) {
     nextSignalData.reasoning = `${signalData.reasoning} | ${note}`.slice(0, 500);

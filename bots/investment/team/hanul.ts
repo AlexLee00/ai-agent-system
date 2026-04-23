@@ -315,10 +315,15 @@ function normalizeResponsibilityPlan(plan = null) {
   return plan && typeof plan === 'object' ? plan : {};
 }
 
+function normalizeExecutionPlan(plan = null) {
+  return plan && typeof plan === 'object' ? plan : {};
+}
+
 function applyHanulResponsibilityExecutionSizing(amount, {
   action = ACTIONS.BUY,
   confidence = 0,
   responsibilityPlan = null,
+  executionPlan = null,
 } = {}) {
   const numericAmount = Number(amount || 0);
   if (!(numericAmount > 0) || action !== ACTIONS.BUY) {
@@ -326,6 +331,7 @@ function applyHanulResponsibilityExecutionSizing(amount, {
   }
 
   const plan = normalizeResponsibilityPlan(responsibilityPlan);
+  const execPlan = normalizeExecutionPlan(executionPlan);
   const ownerMode = String(plan.ownerMode || '').trim().toLowerCase();
   const riskMission = String(plan.riskMission || '').trim().toLowerCase();
   const executionMission = String(plan.executionMission || '').trim().toLowerCase();
@@ -360,6 +366,12 @@ function applyHanulResponsibilityExecutionSizing(amount, {
   if (watchMission === 'risk_sentinel') {
     multiplier *= 0.98;
     reasons.push('watch risk_sentinel');
+  }
+
+  const entrySizingMultiplier = Number(execPlan.entrySizingMultiplier || 1);
+  if (entrySizingMultiplier > 0 && entrySizingMultiplier !== 1) {
+    multiplier *= entrySizingMultiplier;
+    reasons.push(`executionPlan entry x${entrySizingMultiplier}`);
   }
 
   const normalizedMultiplier = Number(multiplier.toFixed(4));
@@ -897,6 +909,7 @@ export async function executeSignal(signal) {
     action,
     confidence: signal.confidence,
     responsibilityPlan: signal.existingResponsibilityPlan || null,
+    executionPlan: signal.existingExecutionPlan || null,
   });
   const effectiveBuyAmountKrw = action === ACTIONS.BUY ? domesticBuySizing.amount : amountKrw;
 
@@ -1114,6 +1127,7 @@ export async function executeOverseasSignal(signal) {
     action,
     confidence: signal.confidence,
     responsibilityPlan: signal.existingResponsibilityPlan || null,
+    executionPlan: signal.existingExecutionPlan || null,
   });
   const effectiveBuyAmountUsd = action === ACTIONS.BUY ? overseasBuySizing.amount : amountUsd;
 

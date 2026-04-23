@@ -246,6 +246,7 @@ defmodule Luna.V2.PositionWatch do
     monitoring_plan = normalize_json_map(position[:monitoring_plan])
     backtest_plan = normalize_json_map(position[:backtest_plan])
     responsibility_plan = responsibility_plan(position[:strategy_context])
+    execution_plan = execution_plan(position[:strategy_context])
     adjusted_gain_pct = strategy_adjust_gain_pct(adjust_gain_pct, setup_type)
     adjusted_stop_loss_pct = strategy_stop_loss_pct(stop_loss_pct, setup_type)
     strategy_tv_attention =
@@ -288,7 +289,7 @@ defmodule Luna.V2.PositionWatch do
       end
 
     if is_map(base_attention) do
-      enrich_attention_scope(base_attention, aggregate, responsibility_plan)
+      enrich_attention_scope(base_attention, aggregate, responsibility_plan, execution_plan)
     else
       nil
     end
@@ -823,7 +824,7 @@ defmodule Luna.V2.PositionWatch do
     end)
   end
 
-  defp enrich_attention_scope(attention, aggregate, responsibility_plan) do
+  defp enrich_attention_scope(attention, aggregate, responsibility_plan, execution_plan) do
     basis_note =
       case Map.get(aggregate, :leg_count, 0) do
         count when count > 1 -> "동일 심볼 실계좌 합산과 별도로 live leg 기준"
@@ -838,6 +839,7 @@ defmodule Luna.V2.PositionWatch do
       symbol_aggregate_unrealized_pnl: Map.get(aggregate, :total_unrealized_pnl, 0.0),
       symbol_aggregate_pnl_ratio: Map.get(aggregate, :aggregate_pnl_ratio),
       responsibility_plan: responsibility_plan,
+      execution_plan: execution_plan,
       watch_mission: responsibility_value(responsibility_plan, "watchMission"),
       risk_mission: responsibility_value(responsibility_plan, "riskMission"),
       execution_mission: responsibility_value(responsibility_plan, "executionMission")
@@ -1010,11 +1012,13 @@ defmodule Luna.V2.PositionWatch do
     exchange = to_string(candidate[:exchange] || "")
     attention = candidate[:attention_type]
     watch_mission = responsibility_value(candidate[:responsibility_plan], "watchMission")
+    backtest_urgency = execution_value(candidate[:execution_plan], "backtestUrgency")
 
     exchange in ["binance", "kis", "kis_overseas"] and
       (
         attention in [:stop_loss_attention, :partial_adjust_attention, :tv_live_bearish, :backtest_drift_attention] or
-          (watch_mission == "backtest_drift_watcher" and attention == :tv_bar_stale)
+          (watch_mission == "backtest_drift_watcher" and attention == :tv_bar_stale) or
+          (backtest_urgency == "high" and attention == :tv_bar_stale)
       )
   end
 
@@ -1096,8 +1100,11 @@ defmodule Luna.V2.PositionWatch do
     risk_mission = responsibility_value(candidate[:responsibility_plan], "riskMission")
     owner_mode = responsibility_value(candidate[:responsibility_plan], "ownerMode")
     watch_mission = responsibility_value(candidate[:responsibility_plan], "watchMission")
+    backtest_urgency = execution_value(candidate[:execution_plan], "backtestUrgency")
     urgency =
       cond do
+        backtest_urgency in ["high", :high] -> "high"
+        backtest_urgency in ["watchful", :watchful] -> "normal"
         watch_mission == "backtest_drift_watcher" -> "high"
         risk_mission == "strict_risk_gate" -> "high"
         attention in ["stop_loss_attention", "backtest_drift_attention"] -> "high"
@@ -1131,7 +1138,7 @@ defmodule Luna.V2.PositionWatch do
                "--attention=#{attention}",
                "--source=position_watch",
                "--days=#{days}",
-               "--urgency=#{urgency}",
+                "--urgency=#{urgency}",
                "--watch-mission=#{watch_mission}",
                "--risk-mission=#{risk_mission}",
                "--owner-mode=#{owner_mode}",
@@ -1230,6 +1237,13 @@ defmodule Luna.V2.PositionWatch do
     normalize_json_map(Map.get(context, "responsibilityPlan", context[:responsibilityPlan]))
   end
 
+  defp execution_plan(nil), do: %{}
+
+  defp execution_plan(value) do
+    context = normalize_json_map(value)
+    normalize_json_map(Map.get(context, "executionPlan", context[:executionPlan]))
+  end
+
   defp responsibility_value(plan, key) when is_map(plan) do
     Map.get(plan, key, Map.get(plan, String.to_atom(key), nil))
   rescue
@@ -1237,6 +1251,14 @@ defmodule Luna.V2.PositionWatch do
   end
 
   defp responsibility_value(_, _), do: nil
+
+  defp execution_value(plan, key) when is_map(plan) do
+    Map.get(plan, key, Map.get(plan, String.to_atom(key), nil))
+  rescue
+    _ -> nil
+  end
+
+  defp execution_value(_, _), do: nil
 
   defp update_strategy_profile_attention(candidate, strategy_state) do
     symbol = to_string(candidate[:symbol] || "")
