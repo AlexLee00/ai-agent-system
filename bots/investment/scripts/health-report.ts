@@ -37,6 +37,7 @@ import {
   loadCryptoValidationSoftBudgetHealth,
   loadDomesticCollectPressure,
   loadDomesticRejectBreakdown,
+  loadExecutionRiskApprovalGuardHealth,
   loadMockUntradableSymbolHealth,
   loadRecentLaneBlockPressure,
   loadRecentSignalBlockHealth,
@@ -658,6 +659,7 @@ function buildDecision(
   latestOpsSnapshot,
   collectionAudit,
   incidentLinkAudit,
+  executionRiskApprovalGuardHealth,
 ) {
   const topBlock = signalBlockHealth.top[0] || null;
   const topReasonGroup = signalBlockHealth.topReasonGroups?.[0] || null;
@@ -669,6 +671,7 @@ function buildDecision(
   const collectionDegraded = collectionAudit?.markets?.find((item) => item?.collectQuality?.status === 'degraded') || null;
   const strategyFeedbackOutcomes = runtimeLearningLoop?.sections?.collect?.strategyFeedbackOutcomes || null;
   const riskApproval = runtimeLearningLoop?.sections?.collect?.riskApproval || null;
+  const executionRiskApprovalTop = executionRiskApprovalGuardHealth?.rows?.[0] || null;
   return buildHealthDecision({
     warnings: [
       {
@@ -695,6 +698,11 @@ function buildDecision(
         active: recentSignalBlockHealth.total >= 1,
         level: recentTopReasonGroup?.group === 'daily_trade_limit' ? 'medium' : 'low',
         reason: `최근 ${recentSignalBlockHealth.windowMinutes}분 차단/거부 ${recentSignalBlockHealth.total}건 — 최다 세부 그룹 ${recentTopReasonGroup?.group || 'n/a'} ${recentTopReasonGroup?.count || 0}건`,
+      },
+      {
+        active: Number(executionRiskApprovalGuardHealth?.total || 0) > 0,
+        level: Number(executionRiskApprovalGuardHealth?.staleCount || 0) > 0 ? 'medium' : 'low',
+        reason: `execution risk approval guard — 최근 ${executionRiskApprovalGuardHealth?.periodHours || 24}시간 ${executionRiskApprovalGuardHealth?.total || 0}건 차단 / stale ${executionRiskApprovalGuardHealth?.staleCount || 0} / bypass ${executionRiskApprovalGuardHealth?.bypassCount || 0} / top ${executionRiskApprovalTop?.exchange || 'n/a'} ${executionRiskApprovalTop?.blockCode || 'n/a'} ${executionRiskApprovalTop?.count || 0}건`,
       },
       {
         active: recentLaneBlockPressure.total >= 1,
@@ -867,6 +875,16 @@ function formatText(report) {
             ...report.recentSignalBlockHealth.topReasonGroups.map((row) => `  ${row.group}: ${row.count}건`),
           ]
         : ['  최근 차단/거부 신호 없음'],
+    },
+    {
+      title: `■ 실행 직전 리스크 승인 가드(최근 ${report.executionRiskApprovalGuardHealth?.periodHours || 24}시간)`,
+      lines: report.executionRiskApprovalGuardHealth?.total > 0
+        ? [
+            `  총 ${report.executionRiskApprovalGuardHealth.total}건 / stale ${report.executionRiskApprovalGuardHealth.staleCount} / bypass ${report.executionRiskApprovalGuardHealth.bypassCount}`,
+            ...((report.executionRiskApprovalGuardHealth.rows || []).slice(0, 5).map((row) => `  ${row.exchange} ${row.blockCode}: ${row.count}건 (${row.blockedBy})`)),
+            ...((report.executionRiskApprovalGuardHealth.samples || []).slice(0, 3).map((row) => `  sample ${row.exchange}/${row.symbol}: ${row.blockCode} / ${String(row.blockReason || '').slice(0, 80)}`)),
+          ]
+        : ['  실행 직전 리스크 승인 차단 없음'],
     },
     {
       title: `■ crypto capital guard 분해(최근 ${report.capitalGuardBreakdown.periodDays}일)`,
@@ -1095,6 +1113,7 @@ async function buildReport() {
   const guardHealth = buildGuardHealth(billingGuard);
   const signalBlockHealth = await loadSignalBlockHealth(pgPool);
   const recentSignalBlockHealth = await loadRecentSignalBlockHealth(pgPool);
+  const executionRiskApprovalGuardHealth = await loadExecutionRiskApprovalGuardHealth(pgPool);
   const recentLaneBlockPressure = await loadRecentLaneBlockPressure(pgPool);
   const mockUntradableSymbolHealth = await loadMockUntradableSymbolHealth(pgPool);
   const domesticCollectPressure = await loadDomesticCollectPressure(SCHEDULED_SERVICE_DEPLOYMENTS);
@@ -1150,6 +1169,7 @@ async function buildReport() {
     latestOpsSnapshot,
     collectionAudit,
     incidentLinkAudit,
+    executionRiskApprovalGuardHealth,
   );
 
   const report = {
@@ -1163,6 +1183,7 @@ async function buildReport() {
     guardHealth,
     signalBlockHealth,
     recentSignalBlockHealth,
+    executionRiskApprovalGuardHealth,
     recentLaneBlockPressure,
     mockUntradableSymbolHealth,
     domesticCollectPressure,

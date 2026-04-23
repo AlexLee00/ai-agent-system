@@ -295,6 +295,114 @@ export async function loadRecentSignalBlockHealth(pgPool, windowMinutes = 60) {
   };
 }
 
+export async function loadExecutionRiskApprovalGuardHealth(pgPool, periodHours = 24) {
+  const rows = await pgPool.query(
+    'investment',
+    `
+      SELECT
+        COALESCE(NULLIF(exchange, ''), 'unknown') AS exchange,
+        COALESCE(NULLIF(block_code, ''), 'legacy_unclassified') AS block_code,
+        COALESCE(NULLIF(block_meta->>'execution_blocked_by', ''), 'unknown') AS blocked_by,
+        COUNT(*)::int AS cnt,
+        MAX(created_at) AS latest_at
+      FROM investment.signals
+      WHERE created_at >= NOW() - INTERVAL '1 hour' * $1
+        AND status IN ('failed', 'blocked', 'rejected')
+        AND (
+          COALESCE(block_code, '') IN (
+            'sec004_nemesis_bypass_guard',
+            'sec004_stale_approval',
+            'sec015_nemesis_bypass_guard',
+            'sec015_stale_approval',
+            'sec015_overseas_nemesis_bypass_guard',
+            'sec015_overseas_stale_approval'
+          )
+          OR block_meta ? 'risk_approval_execution'
+        )
+      GROUP BY 1, 2, 3
+      ORDER BY cnt DESC, latest_at DESC
+    `,
+    [Math.max(1, Number(periodHours || 24))],
+  ).catch(() => []);
+
+  const samples = await pgPool.query(
+    'investment',
+    `
+      SELECT
+        id,
+        symbol,
+        exchange,
+        action,
+        amount_usdt,
+        confidence,
+        block_code,
+        block_reason,
+        block_meta,
+        created_at
+      FROM investment.signals
+      WHERE created_at >= NOW() - INTERVAL '1 hour' * $1
+        AND status IN ('failed', 'blocked', 'rejected')
+        AND (
+          COALESCE(block_code, '') IN (
+            'sec004_nemesis_bypass_guard',
+            'sec004_stale_approval',
+            'sec015_nemesis_bypass_guard',
+            'sec015_stale_approval',
+            'sec015_overseas_nemesis_bypass_guard',
+            'sec015_overseas_stale_approval'
+          )
+          OR block_meta ? 'risk_approval_execution'
+        )
+      ORDER BY created_at DESC
+      LIMIT 8
+    `,
+    [Math.max(1, Number(periodHours || 24))],
+  ).catch(() => []);
+
+  const total = rows.reduce((sum, row) => sum + Number(row.cnt || 0), 0);
+  const staleCount = rows
+    .filter((row) => String(row.block_code || '').includes('stale_approval'))
+    .reduce((sum, row) => sum + Number(row.cnt || 0), 0);
+  const bypassCount = rows
+    .filter((row) => String(row.block_code || '').includes('nemesis_bypass_guard'))
+    .reduce((sum, row) => sum + Number(row.cnt || 0), 0);
+  const byExchange = {};
+  for (const row of rows) {
+    const exchange = String(row.exchange || 'unknown');
+    byExchange[exchange] = (byExchange[exchange] || 0) + Number(row.cnt || 0);
+  }
+
+  return {
+    periodHours: Math.max(1, Number(periodHours || 24)),
+    total,
+    staleCount,
+    bypassCount,
+    byExchange: Object.entries(byExchange)
+      .map(([exchange, count]) => ({ exchange, count }))
+      .sort((a, b) => Number(b.count || 0) - Number(a.count || 0)),
+    rows: rows.map((row) => ({
+      exchange: row.exchange,
+      blockCode: row.block_code,
+      blockedBy: row.blocked_by,
+      count: Number(row.cnt || 0),
+      latestAt: row.latest_at,
+    })),
+    samples: samples.map((row) => ({
+      id: row.id,
+      symbol: row.symbol,
+      exchange: row.exchange,
+      action: row.action,
+      amountUsdt: Number(row.amount_usdt || 0),
+      confidence: row.confidence == null ? null : Number(row.confidence),
+      blockCode: row.block_code,
+      blockReason: row.block_reason,
+      blockedBy: row.block_meta?.execution_blocked_by || null,
+      riskApprovalExecution: row.block_meta?.risk_approval_execution || null,
+      createdAt: row.created_at,
+    })),
+  };
+}
+
 export async function loadCapitalGuardBreakdown(pgPool, periodDays = 14) {
   const rows = await pgPool.query(
     'investment',

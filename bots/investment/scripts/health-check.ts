@@ -19,9 +19,11 @@ import { validateTradeReview } from './validate-trade-review.ts';
 import { buildRuntimeLearningLoopReport } from './runtime-learning-loop-report.ts';
 import { runCollectionAudit } from './runtime-collection-audit.ts';
 import { backfillTradeIncidentLinks } from './backfill-trade-incident-links.ts';
+import { loadExecutionRiskApprovalGuardHealth } from './health-report-support.ts';
 
 const require = createRequire(import.meta.url);
 const hsm     = require('../../../packages/core/lib/health-state-manager');
+const pgPool  = require('../../../packages/core/lib/pg-pool');
 const {
   getServiceOwnership,
   isElixirOwnedService,
@@ -463,6 +465,37 @@ async function main() {
         key,
         level: 1,
         msg: `ℹ️ [루나 헬스] collection audit 점검 실패\n${e.message}`,
+      });
+    }
+  }
+
+  try {
+    const executionGuard = await loadExecutionRiskApprovalGuardHealth(pgPool, 24);
+    const key = 'execution-risk-approval-guard';
+    if (Number(executionGuard?.total || 0) > 0) {
+      if (hsm.canAlert(state, key)) {
+        const top = executionGuard.rows?.[0] || null;
+        const sample = executionGuard.samples?.[0] || null;
+        issues.push({
+          key,
+          level: Number(executionGuard.staleCount || 0) > 0 ? 2 : 1,
+          msg: `⚠️ [루나 헬스] execution risk approval guard\n최근 ${executionGuard.periodHours}시간 실행 직전 차단 ${executionGuard.total}건\nstale ${executionGuard.staleCount} / bypass ${executionGuard.bypassCount}${top ? `\ntop: ${top.exchange} ${top.blockCode} ${top.count}건 (${top.blockedBy})` : ''}${sample ? `\nsample: ${sample.exchange}/${sample.symbol} ${sample.blockCode}` : ''}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run report`,
+        });
+      }
+    } else if (state[key]) {
+      recovers.push({
+        key,
+        msg: '✅ [루나 헬스] execution risk approval guard 회복\n최근 24시간 실행 직전 리스크 승인 차단 없음 — 자동 감지',
+      });
+      hsm.clearAlert(state, key);
+    }
+  } catch (e) {
+    const key = 'execution-risk-approval-guard-check-failed';
+    if (hsm.canAlert(state, key)) {
+      issues.push({
+        key,
+        level: 1,
+        msg: `ℹ️ [루나 헬스] execution risk approval guard 점검 실패\n${e.message}`,
       });
     }
   }
