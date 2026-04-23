@@ -138,6 +138,40 @@ export function buildPositionStrategyRemediationSummary({
   };
 }
 
+export function buildPositionStrategyRemediationFlat({
+  remediationSummary = null,
+  remediationTrend = null,
+  remediationRefreshState = null,
+  remediationActions = null,
+  decision = null,
+} = {}) {
+  return {
+    status: remediationSummary?.status || decision?.status || null,
+    headline: remediationSummary?.headline || decision?.headline || null,
+    counts: remediationSummary?.counts || null,
+    recommendedExchange: remediationSummary?.recommendedExchange || null,
+    duplicateManaged: remediationSummary?.counts?.duplicateManaged ?? null,
+    orphanProfiles: remediationSummary?.counts?.orphanProfiles ?? null,
+    unmatchedManaged: remediationSummary?.counts?.unmatchedManaged ?? null,
+    nextCommand: remediationSummary?.nextCommand || remediationActions?.nextCommand || null,
+    nextCommandChanged: remediationTrend?.nextCommandChanged ?? null,
+    nextCommandPrevious: remediationTrend?.nextCommandTransition?.previous || null,
+    nextCommandCurrent: remediationTrend?.nextCommandTransition?.current || null,
+    trend: remediationTrend || null,
+    refresh: remediationRefreshState || null,
+    actions: remediationActions ? {
+      reportCommand: remediationActions.reportCommand || null,
+      historyCommand: remediationActions.historyCommand || null,
+      refreshCommand: remediationActions.refreshCommand || null,
+      hygieneCommand: remediationActions.hygieneCommand || null,
+      normalizeDryRunCommand: remediationActions.normalizeDryRunCommand || null,
+      normalizeApplyCommand: remediationActions.normalizeApplyCommand || null,
+      retireDryRunCommand: remediationActions.retireDryRunCommand || null,
+      retireApplyCommand: remediationActions.retireApplyCommand || null,
+    } : null,
+  };
+}
+
 export function buildPositionStrategyRemediationDecision(remediationPlan = null, remediationHistory = null) {
   const historyActionItem = buildHistoryActionItem(remediationHistory);
   const refreshState = buildPositionStrategyRemediationRefreshState(remediationPlan, remediationHistory);
@@ -198,6 +232,13 @@ export async function runPositionStrategyRemediation({ json = false, historyFile
     remediationActions,
     decision,
   });
+  const remediationFlat = buildPositionStrategyRemediationFlat({
+    remediationSummary,
+    remediationTrend,
+    remediationRefreshState,
+    remediationActions,
+    decision,
+  });
   const result = {
     ok: true,
     hygieneStatus: hygiene?.decision?.status || 'unknown',
@@ -215,18 +256,19 @@ export async function runPositionStrategyRemediation({ json = false, historyFile
     remediationTrendOrphanDelta: remediationTrend?.orphanDelta ?? null,
     remediationTrendUnmatchedDelta: remediationTrend?.unmatchedDelta ?? null,
     remediationSummary,
-    remediationStatus: remediationSummary?.status || decision?.status || null,
-    remediationHeadline: remediationSummary?.headline || decision?.headline || null,
-    remediationCounts: remediationSummary?.counts || null,
-    remediationRecommendedExchange: remediationSummary?.recommendedExchange || remediationPlan?.recommendedExchange || null,
-    remediationDuplicateManaged: remediationSummary?.counts?.duplicateManaged ?? null,
-    remediationOrphanProfiles: remediationSummary?.counts?.orphanProfiles ?? null,
-    remediationUnmatchedManaged: remediationSummary?.counts?.unmatchedManaged ?? null,
+    remediationFlat,
+    remediationStatus: remediationFlat.status,
+    remediationHeadline: remediationFlat.headline,
+    remediationCounts: remediationFlat.counts,
+    remediationRecommendedExchange: remediationFlat.recommendedExchange || remediationPlan?.recommendedExchange || null,
+    remediationDuplicateManaged: remediationFlat.duplicateManaged,
+    remediationOrphanProfiles: remediationFlat.orphanProfiles,
+    remediationUnmatchedManaged: remediationFlat.unmatchedManaged,
     remediationNextCommandTransition: remediationHistory?.nextCommandTransition || null,
-    remediationNextCommandChanged: remediationTrend?.nextCommandChanged ?? null,
-    remediationNextCommandPrevious: remediationHistory?.nextCommandTransition?.previous || null,
-    remediationNextCommandCurrent: remediationHistory?.nextCommandTransition?.current || null,
-    remediationNextCommand: remediationSummary?.nextCommand || remediationActions?.nextCommand || null,
+    remediationNextCommandChanged: remediationFlat.nextCommandChanged,
+    remediationNextCommandPrevious: remediationFlat.nextCommandPrevious,
+    remediationNextCommandCurrent: remediationFlat.nextCommandCurrent,
+    remediationNextCommand: remediationFlat.nextCommand,
     remediationRefreshState,
     remediationRefreshNeeded: remediationRefreshState?.needed ?? null,
     remediationRefreshStale: remediationRefreshState?.stale ?? null,
