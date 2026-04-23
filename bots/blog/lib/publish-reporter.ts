@@ -9,6 +9,7 @@
 
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const { writeBlogEvalCase } = require('./eval-case-telemetry.ts');
 
 const PLATFORM_LABELS = { naver: '네이버 블로그', instagram: '인스타그램', facebook: '페이스북' };
 let _publishLogEnsured = false;
@@ -143,6 +144,26 @@ async function reportPublish(report) {
 
   await Promise.allSettled([
     _saveToDb(platform, status, title, url, error, duration_ms, post_id, source_mode, metadata),
+    status === 'failed'
+      ? Promise.resolve().then(() => writeBlogEvalCase({
+          area: 'publish',
+          subtype: String(platform || 'unknown'),
+          code: String(error || 'publish_failed'),
+          title,
+          summary: `${label} 발행 실패: ${String(error || 'unknown')}`.slice(0, 240),
+          status: 'failed',
+          source: 'publish-reporter',
+          meta: {
+            platform,
+            url: url || '',
+            postId: post_id || null,
+            sourceMode: source_mode || 'naver_post',
+            previewBundle: preview_bundle || null,
+            durationMs: duration_ms || null,
+            metadata: metadata || {},
+          },
+        }))
+      : Promise.resolve(null),
     postAlarm(msg, { team: 'blog', bot: 'publish-reporter', level: status === 'success' ? 'info' : 'critical' }).catch(() => {}),
   ]);
 }

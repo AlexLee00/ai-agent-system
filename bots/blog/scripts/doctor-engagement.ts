@@ -11,6 +11,7 @@ const { assessInboundComment } = require('../lib/commenter.ts');
 const { readDevelopmentBaseline, buildSinceClause } = require('../lib/dev-baseline.ts');
 const { readCommenterRunResult } = require('../lib/commenter-run-telemetry.ts');
 const { loadStrategyBundle, resolveExecutionTarget } = require('../lib/strategy-loader.ts');
+const { readLatestBlogEvalCase } = require('../lib/eval-case-telemetry.ts');
 
   const runtimeConfig = getBlogHealthRuntimeConfig();
   const strategy = loadStrategyBundle().plan;
@@ -671,6 +672,10 @@ async function getExposureSignal(baseline = null) {
 
 function buildActions({ latestReplyReplayCandidate, failureByKind, failureByAction, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun, neighborUiReplay = null, neighborSympathyReplay = null, staleSympathyFailureCount = 0, exposureSignal = null, primary }) {
   const actions = [];
+  const latestEvalCase = primary?.latestEvalCase || null;
+  if (latestEvalCase?.capturedAt) {
+    actions.push(`latest eval case: ${String(latestEvalCase.capturedAt).slice(0, 19)} / ${String(latestEvalCase.subtype || 'unknown')} / ${String(latestEvalCase.code || 'unknown')}`);
+  }
   if (neighborUiReplay?.ok) {
     if (neighborUiReplay?.result?.ok) {
       actions.push(`최근 neighbor replay 성공: ${Number(neighborUiReplay?.candidate?.id || 0)} / ${String(neighborUiReplay?.candidate?.targetBlogId || '').trim() || 'unknown'}`);
@@ -1127,6 +1132,8 @@ async function main() {
   });
   const neighborCollectDiagnostics = readNeighborCollectDiagnostics();
   const exposureSignal = await getExposureSignal(developmentBaseline);
+  const rawLatestEvalCase = readLatestBlogEvalCase('engagement');
+  const latestEvalCase = rawLatestEvalCase && typeof rawLatestEvalCase === 'object' ? rawLatestEvalCase : null;
 
   const payload = {
     developmentBaseline: developmentBaseline
@@ -1199,9 +1206,11 @@ async function main() {
     courtesyReflectionRecheck,
     lastGapRun,
     exposureSignal,
+    latestEvalCase,
   };
   payload.needsAttention = payload.totalFailures > 0 || targetGaps.length > 0 || Boolean(exposureSignal?.needsStrategy);
   payload.primary = buildPrimary({ failureByKind, failureByAction, latestReplyReplayCandidate, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun, exposureSignal });
+  payload.primary.latestEvalCase = latestEvalCase;
   payload.actions = buildActions({ latestReplyReplayCandidate, failureByKind, failureByAction, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun, neighborUiReplay, neighborSympathyReplay, staleSympathyFailureCount, exposureSignal, primary: payload.primary });
 
   const aiSummary = await buildBlogCliInsight({

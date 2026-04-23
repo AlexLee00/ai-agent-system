@@ -35,6 +35,7 @@ const { assessInboundComment } = require(path.join(env.PROJECT_ROOT, 'bots/blog/
 const { readDevelopmentBaseline, buildSinceClause } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/dev-baseline.ts'));
 const { readCommenterRunResult } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/commenter-run-telemetry.ts'));
 const { readMarketingDigestTelemetry, describeMarketingDigestAge } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/marketing-digest-telemetry.ts'));
+const { readLatestBlogEvalCase } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/eval-case-telemetry.ts'));
 
 const CONTINUOUS = ['ai.blog.node-server'];
 const ALL_SERVICES = ['ai.blog.daily', 'ai.blog.node-server'];
@@ -729,6 +730,7 @@ async function buildBookReviewQueueHealth() {
       todayCount: Number(row.today_count || 0),
     };
   } catch (error) {
+    const latestEvalCase = readLatestBlogEvalCase('engagement');
     return {
       okCount: 0,
       warnCount: 1,
@@ -1215,6 +1217,7 @@ async function buildSocialAutomationHealth() {
 
 async function buildEngagementHealth() {
   try {
+    const latestEvalCase = readLatestBlogEvalCase('engagement');
     const developmentBaseline = readDevelopmentBaseline();
     const lastGapRun = readLastEngagementGapRun(developmentBaseline);
     const neighborUiReplay = readNeighborUiReplay(developmentBaseline);
@@ -1474,6 +1477,9 @@ async function buildEngagementHealth() {
     if (Number(pendingBacklogRow?.cnt || 0) > 0) {
       ok.push(`  reply pending backlog: ${Number(pendingBacklogRow.cnt || 0)}건`);
     }
+    if (latestEvalCase?.capturedAt) {
+      ok.push(`  latest eval case: ${String(latestEvalCase.capturedAt).slice(0, 19)} / ${String(latestEvalCase.subtype || 'unknown')} / ${String(latestEvalCase.code || 'unknown')}`);
+    }
 
     const warn = [];
     if (replyPlan.active && replySuccess < replyPlan.expectedNow) {
@@ -1672,6 +1678,7 @@ async function buildEngagementHealth() {
       lastGapRun,
       neighborUiReplay,
       neighborSympathyReplay,
+      latestEvalCase,
     };
   } catch (error) {
     return {
@@ -1697,6 +1704,7 @@ async function buildEngagementHealth() {
       neighborUiReplay: null,
       neighborSympathyReplay: null,
       staleSympathyFailureCount: 0,
+      latestEvalCase,
     };
   }
 }
@@ -1984,6 +1992,10 @@ async function buildMarketingExpansionHealth() {
     weakestVariantSummary: String(experimentLearning?.weakestVariantSummary || ''),
   });
   try {
+    const rawLatestEvalCase = readLatestBlogEvalCase();
+    const latestEvalCase = ['marketing', 'publish'].includes(String(rawLatestEvalCase?.area || ''))
+      ? rawLatestEvalCase
+      : null;
     const digest = await buildMarketingDigest();
     const latestDigestRun = readMarketingDigestTelemetry();
     const strategyBundle = loadStrategyBundle();
@@ -2080,6 +2092,9 @@ async function buildMarketingExpansionHealth() {
       const latestDigestAge = describeMarketingDigestAge(latestDigestRun);
       ok.push(`  latest digest run: ${String(latestDigestRun.checkedAt).slice(0, 19)} / ${String(latestDigestRun.status || 'unknown')}${latestDigestAge.text ? ` / ${latestDigestAge.text}` : ''}`);
     }
+    if (latestEvalCase?.capturedAt) {
+      ok.push(`  latest eval case: ${String(latestEvalCase.capturedAt).slice(0, 19)} / ${String(latestEvalCase.area || 'unknown')}:${String(latestEvalCase.subtype || 'unknown')} / ${String(latestEvalCase.code || 'unknown')}`);
+    }
     const warn = [];
     if (digest?.senseSummary?.topSignal?.message) {
       warn.push(`  top signal: ${digest.senseSummary.topSignal.message}`);
@@ -2124,11 +2139,16 @@ async function buildMarketingExpansionHealth() {
       strategyAdoption: digest?.strategyAdoption || null,
       nextGeneralPreview: digest?.nextGeneralPreview || null,
       latestDigestRun,
+      latestEvalCase,
       latestDigestAge: describeMarketingDigestAge(latestDigestRun),
       recommendations: Array.isArray(digest?.recommendations) ? digest.recommendations.slice(0, 2) : [],
     };
   } catch (error) {
     const latestDigestRun = readMarketingDigestTelemetry();
+    const rawLatestEvalCase = readLatestBlogEvalCase();
+    const latestEvalCase = ['marketing', 'publish'].includes(String(rawLatestEvalCase?.area || ''))
+      ? rawLatestEvalCase
+      : null;
     const reason = String(error?.message || error).slice(0, 160);
     const fallbackStatus = String(latestDigestRun?.status || 'error');
     const fallbackReason = String(latestDigestRun?.reason || '');
@@ -2145,6 +2165,9 @@ async function buildMarketingExpansionHealth() {
     }
     if (fallbackRecommendation) {
       warn.push(`  reco (cached): ${fallbackRecommendation}`);
+    }
+    if (latestEvalCase?.capturedAt) {
+      warn.push(`  latest eval case: ${String(latestEvalCase.capturedAt).slice(0, 19)} / ${String(latestEvalCase.area || 'unknown')}:${String(latestEvalCase.subtype || 'unknown')} / ${String(latestEvalCase.code || 'unknown')}`);
     }
     return {
       okCount: 0,
@@ -2170,6 +2193,7 @@ async function buildMarketingExpansionHealth() {
       strategyAdoption: null,
       nextGeneralPreview: fallbackNextPreviewTitle ? { title: fallbackNextPreviewTitle } : null,
       latestDigestRun,
+      latestEvalCase,
       latestDigestAge: describeMarketingDigestAge(latestDigestRun),
       recommendations: [],
       cachedReason: fallbackReason,
@@ -2224,6 +2248,12 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
         : engagementHealth.neighborSympathyReplay?.result?.error || engagementHealth.neighborSympathyReplay?.error
           ? `최근 neighbor sympathy replay 실패: ${String(engagementHealth?.neighborSympathyReplay?.result?.error || engagementHealth?.neighborSympathyReplay?.error)}`
           : ''
+    : '';
+  const engagementEvalCaseHint = engagementHealth?.latestEvalCase?.capturedAt
+    ? `최근 eval case: ${String(engagementHealth.latestEvalCase.capturedAt).slice(0, 19)} / ${String(engagementHealth.latestEvalCase.subtype || 'unknown')} / ${String(engagementHealth.latestEvalCase.code || 'unknown')}`
+    : '';
+  const marketingEvalCaseHint = marketingExpansionHealth?.latestEvalCase?.capturedAt
+    ? `최근 eval case: ${String(marketingExpansionHealth.latestEvalCase.capturedAt).slice(0, 19)} / ${String(marketingExpansionHealth.latestEvalCase.area || 'unknown')}:${String(marketingExpansionHealth.latestEvalCase.subtype || 'unknown')} / ${String(marketingExpansionHealth.latestEvalCase.code || 'unknown')}`
     : '';
   const engagementReplayHint = engagementHealth?.latestReplyReplayCandidate?.id
     ? `npm run replay:reply-ui -- --comment-id ${engagementHealth.latestReplyReplayCandidate.id} --json`
@@ -2433,6 +2463,7 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
           marketingExpansionHealth?.experimentLearning?.weakestVariantSummary
             ? `experiment weak lane: ${String(marketingExpansionHealth.experimentLearning.weakestVariantSummary)}`
             : '',
+          marketingEvalCaseHint,
           marketingDoctorHint,
           opsDoctorHint,
           String(opsDoctorPriority?.primaryArea || '').startsWith('marketing') && String(opsDoctorPriority?.nextCommand || '').trim()
@@ -2466,6 +2497,7 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
           engagementImmediateAction ? `즉시 실행: ${engagementImmediateAction}` : '',
           engagementRunPlanHint ? `실행 순서: ${engagementRunPlanHint}` : '',
           engagementFailureHint ? `최근 실패: ${engagementFailureHint}` : '',
+          engagementEvalCaseHint,
           neighborReplayHint ? neighborReplayHint : '',
           neighborSympathyReplayHint ? neighborSympathyReplayHint : '',
           engagementReplayHint ? `재현: ${engagementReplayHint}` : '',

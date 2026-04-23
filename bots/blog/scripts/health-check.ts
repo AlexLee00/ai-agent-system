@@ -33,6 +33,7 @@ const { resolveInstagramHostedMediaUrl } = require('../../../packages/core/lib/i
 const { checkFacebookPublishReadiness } = require('../lib/facebook-publisher.ts');
 const { readDevelopmentBaseline, buildSinceClause } = require('../lib/dev-baseline.ts');
 const { readMarketingDigestTelemetry, describeMarketingDigestAge } = require('../lib/marketing-digest-telemetry.ts');
+const { readLatestBlogEvalCase } = require('../lib/eval-case-telemetry.ts');
 
 const runtimeConfig = getBlogHealthRuntimeConfig();
 const { buildIssueHints, rememberHealthEvent } = createHealthMemoryHelper({
@@ -760,9 +761,13 @@ async function checkEngagementAutomationHealth() {
       });
       const opsPayload = getDoctorPayload(BLOG_OPS_DOCTOR_COMMAND);
       const doctorHint = `\ndoctor: ${ENGAGEMENT_DOCTOR_COMMAND}${buildPriorityHint('engagement primary', engagementPriority, { includeActionFocus: true })}${buildActionHint('engagement action', engagementDoctorPayload, 2, 'engagement')}${buildPriorityHint('primary blocker', opsPriority, { includeActionFocus: true })}${buildActionHint('ops action', opsPayload, 2, 'engagement')}\nops doctor: ${BLOG_OPS_DOCTOR_COMMAND}`;
+      const latestEvalCase = readLatestBlogEvalCase('engagement');
+      const evalHint = latestEvalCase?.capturedAt
+        ? `\nlatest eval case: ${String(latestEvalCase.capturedAt).slice(0, 19)} / ${String(latestEvalCase.subtype || 'unknown')} / ${String(latestEvalCase.code || 'unknown')}`
+        : '';
       return {
         ok: false,
-        detail: `engagement UI/browser failures — reply ${failureByAction.reply}, neighbor ${failureByAction.neighbor_comment}, sympathy ${failureByAction.sympathy}${sampleHint}${replayTargetHint}${replayHint}${doctorHint}`,
+        detail: `engagement UI/browser failures — reply ${failureByAction.reply}, neighbor ${failureByAction.neighbor_comment}, sympathy ${failureByAction.sympathy}${sampleHint}${evalHint}${replayTargetHint}${replayHint}${doctorHint}`,
         failureByKind,
         failureByAction,
         latestReplyReplayCandidate,
@@ -836,9 +841,13 @@ async function checkEngagementAutomationHealth() {
         ? `\nreply replay: npm run replay:reply-ui -- --comment-id ${latestReplyReplayCandidate.id} --json`
         : '';
       const doctorHint = `\ndoctor: ${ENGAGEMENT_DOCTOR_COMMAND}${buildPriorityHint('engagement primary', engagementPriority, { includeActionFocus: true })}${buildActionHint('engagement action', engagementDoctorPayload, 2, 'engagement')}${buildPriorityHint('primary blocker', opsPriority, { includeActionFocus: true })}${buildActionHint('ops action', opsPayload, 2, 'engagement')}\nops doctor: ${BLOG_OPS_DOCTOR_COMMAND}`;
+      const latestEvalCase = readLatestBlogEvalCase('engagement');
+      const evalHint = latestEvalCase?.capturedAt
+        ? `\nlatest eval case: ${String(latestEvalCase.capturedAt).slice(0, 19)} / ${String(latestEvalCase.subtype || 'unknown')} / ${String(latestEvalCase.code || 'unknown')}`
+        : '';
       return {
         ok: false,
-        detail: `engagement target gap — ${targetLines || targetGaps.join(', ')}${primaryGapHint}${immediateRunHint}${runPlanHint}${adaptiveHint}${replayHint}${doctorHint}`,
+        detail: `engagement target gap — ${targetLines || targetGaps.join(', ')}${primaryGapHint}${immediateRunHint}${runPlanHint}${adaptiveHint}${evalHint}${replayHint}${doctorHint}`,
         failureByKind,
         failureByAction,
         latestReplyReplayCandidate,
@@ -905,10 +914,17 @@ async function checkMarketingExpansionHealth() {
     const recommendationHint = recommendations.length
       ? `\nrecommendation: ${recommendations.join('\nrecommendation: ')}`
       : '';
+    const rawLatestEvalCase = readLatestBlogEvalCase();
+    const latestEvalCase = ['marketing', 'publish'].includes(String(rawLatestEvalCase?.area || ''))
+      ? rawLatestEvalCase
+      : null;
+    const evalHint = latestEvalCase?.capturedAt
+      ? `\nlatest eval case: ${String(latestEvalCase.capturedAt).slice(0, 19)} / ${String(latestEvalCase.area || 'unknown')}:${String(latestEvalCase.subtype || 'unknown')} / ${String(latestEvalCase.code || 'unknown')}`
+      : '';
     const doctorHint = `\ndoctor: ${MARKETING_DOCTOR_COMMAND}${buildPriorityHint('marketing primary', marketingPriority, { includeActionFocus: true })}${buildActionHint('marketing action', marketingPayload, 2, 'marketing')}${buildPriorityHint('primary blocker', opsPriority, { includeActionFocus: true })}${buildActionHint('ops action', opsPayload, 2, 'marketing')}\nops doctor: ${BLOG_OPS_DOCTOR_COMMAND}\ndiagnose: ${digestCommand}`;
     return {
       ok: false,
-      detail: `marketing watch — ${marketingPriority.reason}${signalHint}${watchHintLine}${latestRunHint}${nextPreviewHint}${recommendationHint}${doctorHint}`,
+      detail: `marketing watch — ${marketingPriority.reason}${signalHint}${watchHintLine}${latestRunHint}${nextPreviewHint}${recommendationHint}${evalHint}${doctorHint}`,
       primary: marketingPriority,
     };
   } catch (e) {

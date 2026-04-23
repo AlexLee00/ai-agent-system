@@ -14,6 +14,7 @@ const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 const { parseNaverBlogUrl } = require('../../../packages/core/lib/naver-blog-url');
 const { getBlogCommenterConfig, getBlogNeighborCommenterConfig, getBlogLLMSelectorOverrides } = require('./runtime-config.ts');
 const { loadStrategyBundle, resolveExecutionTarget } = require('./strategy-loader.ts');
+const { writeBlogEvalCase } = require('./eval-case-telemetry.ts');
 
 const TABLE = 'blog.comments';
 const ACTION_TABLE = 'blog.comment_actions';
@@ -441,6 +442,26 @@ async function recordCommentAction(actionType, payload = {}) {
     payload.success !== false,
     JSON.stringify(payload.meta || {}),
   ]);
+  if (payload.success === false) {
+    const errorCode = String(payload?.meta?.error || 'comment_action_failed').trim() || 'comment_action_failed';
+    const subtype = String(actionType || 'unknown').trim() || 'unknown';
+    writeBlogEvalCase({
+      area: 'engagement',
+      subtype,
+      code: errorCode,
+      title: `블로팀 engagement 실패: ${subtype}`,
+      summary: `engagement 액션 ${subtype}가 ${errorCode}로 실패했습니다.`.slice(0, 240),
+      status: 'failed',
+      source: 'commenter',
+      meta: {
+        actionType: subtype,
+        targetBlog: payload.targetBlog || null,
+        targetPostUrl,
+        commentText: payload.commentText || '',
+        ...((payload.meta && typeof payload.meta === 'object') ? payload.meta : {}),
+      },
+    });
+  }
   return { ok: true, skippedDuplicate: false };
 }
 

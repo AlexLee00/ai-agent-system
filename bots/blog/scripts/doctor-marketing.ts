@@ -8,6 +8,7 @@ const { execFileSync } = require('child_process');
 const { buildBlogCliInsight } = require('../lib/cli-insight.ts');
 const { readMarketingDigestTelemetry, describeMarketingDigestAge } = require('../lib/marketing-digest-telemetry.ts');
 const { loadStrategyBundle } = require('../lib/strategy-loader.ts');
+const { readLatestBlogEvalCase } = require('../lib/eval-case-telemetry.ts');
 
 const BLOG_ROOT = path.join(env.PROJECT_ROOT, 'bots/blog');
 const BLOG_PREFIX = `npm --prefix ${BLOG_ROOT}`;
@@ -195,6 +196,7 @@ function buildActions({ primary, digest = {} }) {
   const latestDigestRun = digest?.latestDigestRun || null;
   const latestDigestAge = describeMarketingDigestAge(latestDigestRun);
   const latestAutoStrategyRefresh = digest?.latestAutoStrategyRefresh || null;
+  const latestEvalCase = digest?.latestEvalCase || null;
 
   if (hasActivePrimary && primary?.actionFocus) {
     actions.push(`focus blocker: ${primary.actionFocus}`);
@@ -222,6 +224,9 @@ function buildActions({ primary, digest = {} }) {
   }
   if (latestAutoStrategyRefresh?.startedAt) {
     actions.push(`latest strategy auto run: ${String(latestAutoStrategyRefresh.startedAt).slice(0, 19)} / ${latestAutoStrategyRefresh.ok ? 'ok' : `failed:${String(latestAutoStrategyRefresh.failedStep || 'unknown')}`}`);
+  }
+  if (latestEvalCase?.capturedAt) {
+    actions.push(`latest eval case: ${String(latestEvalCase.capturedAt).slice(0, 19)} / ${String(latestEvalCase.area || 'unknown')}:${String(latestEvalCase.subtype || 'unknown')} / ${String(latestEvalCase.code || 'unknown')}`);
   }
 
   const nextPreview = digest?.nextGeneralPreview || null;
@@ -280,6 +285,10 @@ async function main() {
   const digestResult = runMarketingDigest();
   const latestDigestRun = readMarketingDigestTelemetry();
   const latestAutoStrategyRefresh = readAutoStrategyRefreshResult();
+  const rawLatestEvalCase = readLatestBlogEvalCase();
+  const latestEvalCase = ['marketing', 'publish'].includes(String(rawLatestEvalCase?.area || ''))
+    ? rawLatestEvalCase
+    : null;
   const digest = buildDigestFallbackView(digestResult.payload || {}, latestDigestRun);
   const strategyBundle = loadStrategyBundle();
   const strategyFreshness = describeStrategyFreshness(strategyBundle?.plan || null);
@@ -301,6 +310,7 @@ async function main() {
     digestError: digestResult.error || '',
     latestDigestRun,
     latestAutoStrategyRefresh,
+    latestEvalCase,
     latestDigestAge: describeMarketingDigestAge(latestDigestRun),
     health: digest?.health || null,
     senseSummary: digest?.senseSummary || null,

@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const env = require('../../../packages/core/lib/env');
+const { writeBlogEvalCase } = require('../lib/eval-case-telemetry.ts');
 
 const BLOG_ROOT = path.join(env.PROJECT_ROOT, 'bots', 'blog');
 const OPS_DIR = path.join(BLOG_ROOT, 'output', 'ops');
@@ -55,6 +56,19 @@ function persistResult(payload) {
   fs.writeFileSync(RESULT_PATH, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
 }
 
+function recordStrategyRefreshEvalCase(payload = {}) {
+  return writeBlogEvalCase({
+    area: 'marketing',
+    subtype: 'strategy_refresh',
+    code: String(payload.failedStep || payload.code || 'strategy_refresh_failed'),
+    title: '블로팀 전략 자동 갱신 실패',
+    summary: `전략 자동 갱신 루프가 ${String(payload.failedStep || payload.code || 'unknown')} 단계에서 실패했습니다.`.slice(0, 240),
+    status: 'failed',
+    source: 'auto-strategy-refresh',
+    meta: payload,
+  });
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const steps = [
@@ -99,6 +113,7 @@ async function main() {
 
   if (!args.dryRun) {
     persistResult(payload);
+    if (!payload.ok) recordStrategyRefreshEvalCase(payload);
   }
 
   if (args.json) {
@@ -122,6 +137,7 @@ main().catch((error) => {
     error: String(error?.message || error),
   };
   if (!payload.dryRun) persistResult(payload);
+  if (!payload.dryRun) recordStrategyRefreshEvalCase(payload);
   console.error('[blog auto-strategy-refresh] 실패:', payload.error);
   process.exit(1);
 });
