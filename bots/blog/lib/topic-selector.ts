@@ -5,6 +5,7 @@ const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const { queryOpsDb } = require('../../../packages/core/lib/hub-client');
 const { normalizeExecutionDirectives } = require('./strategy-loader.ts');
+const { readExperimentPlaybook } = require('./experiment-os.ts');
 const { isExcludedReferenceFilename, isExcludedReferenceTitle } = require('./reference-exclusions.ts');
 const {
   normalizeTitle,
@@ -17,6 +18,7 @@ const {
 
 // DPO 힌트 (lazy load — BLOG_DPO_ENABLED=true일 때만 활성)
 let _dpoCached = null;
+let _experimentPlaybookCached = null;
 
 async function _loadDpoHints() {
   if (process.env.BLOG_DPO_ENABLED !== 'true') return { patterns: [], failures: [] };
@@ -309,11 +311,58 @@ function buildTitle(frame, candidate, index) {
     .replace('{count}', String((index % 3) + countBase));
 }
 
+function _loadExperimentPlaybook() {
+  if (_experimentPlaybookCached && Date.now() - _experimentPlaybookCached.loadedAt < 300_000) {
+    return _experimentPlaybookCached.payload;
+  }
+  try {
+    const payload = readExperimentPlaybook();
+    _experimentPlaybookCached = {
+      payload,
+      loadedAt: Date.now(),
+    };
+    return payload;
+  } catch {
+    _experimentPlaybookCached = {
+      payload: null,
+      loadedAt: Date.now(),
+    };
+    return null;
+  }
+}
+
+function _resolveExperimentSelectionHints(strategyPlan = null) {
+  const playbook = _loadExperimentPlaybook();
+  const topWinner = playbook?.topWinner || null;
+  const titlePatternDimension = playbook?.dimensions?.titlePattern || null;
+  const categoryDimension = playbook?.dimensions?.category || null;
+
+  return {
+    topWinner,
+    winnerCategory:
+      topWinner?.dimension === 'category'
+        ? String(topWinner.variant || '').trim()
+        : String(strategyPlan?.preferredCategory || '').trim(),
+    winnerPattern:
+      topWinner?.dimension === 'title_pattern'
+        ? String(topWinner.variant || '').trim()
+        : String(strategyPlan?.preferredTitlePattern || '').trim(),
+    loserCategory:
+      String(categoryDimension?.loser?.variant || strategyPlan?.suppressedCategory || '').trim(),
+    loserPattern:
+      String(titlePatternDimension?.loser?.variant || strategyPlan?.suppressedTitlePattern || '').trim(),
+    winnerLiftPct: Number(topWinner?.liftPct || 0),
+    loserCategoryLiftPct: Number(categoryDimension?.loser?.liftPct || 0),
+    loserPatternLiftPct: Number(titlePatternDimension?.loser?.liftPct || 0),
+  };
+}
+
 function scoreCandidate(candidate, category = '', strategyPlan = null) {
   let score = 0;
   const guide = getCategorySelectionGuide(category);
   const preferredPatterns = CATEGORY_PATTERN_PREFERENCES[category] || [];
   const directives = normalizeExecutionDirectives(strategyPlan);
+  const experimentHints = _resolveExperimentSelectionHints(strategyPlan);
   const candidateTokens = new Set([
     ...normalizeTokens(candidate.title),
     ...normalizeTokens(candidate.topic),
@@ -342,6 +391,18 @@ function scoreCandidate(candidate, category = '', strategyPlan = null) {
   if (strategyPlan.preferredTitlePattern && candidate.pattern === strategyPlan.preferredTitlePattern) score += 4;
   if (strategyPlan.suppressedTitlePattern && candidate.pattern === strategyPlan.suppressedTitlePattern) {
     score -= strategyPlan.hardSuppressTitlePattern ? 7 : 3;
+  }
+  if (experimentHints.winnerCategory && category === experimentHints.winnerCategory) {
+    score += experimentHints.winnerLiftPct >= 0.15 ? 5 : 3;
+  }
+  if (experimentHints.loserCategory && category === experimentHints.loserCategory && experimentHints.loserCategoryLiftPct <= -0.05) {
+    score -= experimentHints.loserCategoryLiftPct <= -0.15 ? 5 : 3;
+  }
+  if (experimentHints.winnerPattern && candidate.pattern === experimentHints.winnerPattern) {
+    score += experimentHints.winnerLiftPct >= 0.15 ? 4 : 2;
+  }
+  if (experimentHints.loserPattern && candidate.pattern === experimentHints.loserPattern && experimentHints.loserPatternLiftPct <= -0.05) {
+    score -= experimentHints.loserPatternLiftPct <= -0.15 ? 5 : 3;
   }
   if (Array.isArray(strategyPlan.focus) && strategyPlan.focus.some((item) => String(item || '').includes('제목 패턴'))) {
     if (candidate.pattern !== strategyPlan.suppressedTitlePattern) score += 1;

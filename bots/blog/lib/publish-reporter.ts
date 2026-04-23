@@ -4,7 +4,7 @@
  * bots/blog/lib/publish-reporter.ts — 플랫폼별 발행 결과 Telegram + DB 보고
  *
  * 네이버 블로그 / 인스타그램 / 페이스북 발행 성공/실패를 통합 보고.
- * 모든 플랫폼 발행 결과는 반드시 마스터에게 보고 + DB 기록.
+ * 모든 플랫폼 발행 결과는 운영 telemetry + DB 기록으로 남긴다.
  */
 
 const pgPool = require('../../../packages/core/lib/pg-pool');

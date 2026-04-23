@@ -60,6 +60,7 @@ const { normalizeExecutionDirectives }             = require(path.join(env.PROJE
 const { senseDailyState }                          = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/sense-engine.ts'));
 const { analyzeMarketingToRevenue }                = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/marketing-revenue-correlation.ts'));
 const { recordPublishedExperimentRun }             = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/experiment-os.ts'));
+const { readExperimentPlaybook }                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/experiment-os.ts'));
 const { fetchRevenueAttributionWeights }           = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/topic-selector.ts'));
 const { detectTitlePattern }                       = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/performance-diagnostician.ts'));
 const { decideAutonomy }                           = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/autonomy-gate.ts'));
@@ -1534,6 +1535,7 @@ function _summarizeDailyMarketing(daily = {}) {
   const senseState = daily?.senseState || {};
   const revenueCorrelation = daily?.revenueCorrelation || {};
   const strategyPlan = loadLatestStrategy() || {};
+  const experimentPlaybook = readExperimentPlaybook() || null;
   const operationalPatterns = Array.isArray(strategyPlan?.operationalLearning?.patterns)
     ? strategyPlan.operationalLearning.patterns
     : [];
@@ -1550,6 +1552,24 @@ function _summarizeDailyMarketing(daily = {}) {
   const opsTitlePatternSummary = findOperationalSummary('ops_high_performance_title_pattern');
   const opsAlignmentSummary = findOperationalSummary('ops_alignment_signal');
   const opsAutonomyLaneSummary = findOperationalSummary('ops_autonomy_lane');
+  const experimentDimensionKey = experimentPlaybook?.topWinner?.dimension === 'title_pattern'
+    ? 'titlePattern'
+    : experimentPlaybook?.topWinner?.dimension === 'autonomy_lane'
+      ? 'autonomyLane'
+      : 'category';
+  const experimentLoser = experimentPlaybook?.dimensions?.[experimentDimensionKey]?.loser || null;
+  const experimentWinnerSummary = strategyPlan?.experimentLearning?.topWinnerSummary
+    || (
+      experimentPlaybook?.topWinner?.variant
+        ? `최근 실험 승자는 ${experimentPlaybook.topWinner.dimension}:${experimentPlaybook.topWinner.variant} (${Math.round(Number(experimentPlaybook.topWinner.liftPct || 0) * 100)}% lift, n=${experimentPlaybook.topWinner.sampleCount}) 입니다.`
+        : ''
+    );
+  const experimentWeakLaneSummary = strategyPlan?.experimentLearning?.weakestVariantSummary
+    || (
+      experimentLoser?.variant
+        ? `최근 약한 레인은 ${experimentLoser.dimension}:${experimentLoser.variant} (${Math.round(Number(experimentLoser.liftPct || 0) * 100)}% lift, n=${experimentLoser.sampleCount}) 입니다.`
+        : ''
+    );
   const nextGeneralCategory = daily?.generalCtx?.category || 'none';
   const selectedGeneralTopic = nextGeneralCategory !== 'none'
     ? selectAndValidateTopic(
@@ -1587,6 +1607,8 @@ function _summarizeDailyMarketing(daily = {}) {
     opsTitlePatternSummary,
     opsAlignmentSummary,
     opsAutonomyLaneSummary,
+    experimentWinnerSummary,
+    experimentWeakLaneSummary,
     briefLine: `📈 마케팅 전략: signal=${signalLabel} | impact=${(revenueImpact * 100).toFixed(1)}% | plan=${preferredCategory}/${preferredPattern} | next=${nextGeneralCategory}/${nextGeneralPattern} | predicted=${predictedAdoption} | title=${_compactPreviewTitle(nextGeneralTitle)} | suppress=${suppressedPattern}`,
   };
 }
@@ -1599,6 +1621,8 @@ function _buildDailyReportLines(results, traceCtx, daily = {}) {
     marketing.briefLine,
     marketing.opsTitlePatternSummary ? `🧠 운영 학습: ${marketing.opsTitlePatternSummary}` : '',
     marketing.opsAlignmentSummary ? `🧠 운영 정렬: ${marketing.opsAlignmentSummary}` : '',
+    marketing.experimentWinnerSummary ? `🧪 실험 승자: ${marketing.experimentWinnerSummary}` : '',
+    marketing.experimentWeakLaneSummary ? `🧪 실험 약세: ${marketing.experimentWeakLaneSummary}` : '',
     '',
     ...results.map(_formatDailyResultLine),
     '',
@@ -1694,6 +1718,8 @@ async function _sendDailyReport(results, traceCtx, options = {}) {
           ...(marketing.opsTitlePatternSummary ? [`ops learning: ${marketing.opsTitlePatternSummary}`] : []),
           ...(marketing.opsAlignmentSummary ? [`ops alignment: ${marketing.opsAlignmentSummary}`] : []),
           ...(marketing.opsAutonomyLaneSummary ? [`ops lane: ${marketing.opsAutonomyLaneSummary}`] : []),
+          ...(marketing.experimentWinnerSummary ? [`experiment winner: ${marketing.experimentWinnerSummary}`] : []),
+          ...(marketing.experimentWeakLaneSummary ? [`experiment weak lane: ${marketing.experimentWeakLaneSummary}`] : []),
         ],
       },
     ],
