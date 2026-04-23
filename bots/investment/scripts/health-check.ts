@@ -17,6 +17,7 @@ import { createRequire } from 'module';
 import { publishAlert } from '../shared/alert-publisher.ts';
 import { validateTradeReview } from './validate-trade-review.ts';
 import { buildRuntimeLearningLoopReport } from './runtime-learning-loop-report.ts';
+import { runCollectionAudit } from './runtime-collection-audit.ts';
 
 const require = createRequire(import.meta.url);
 const hsm     = require('../../../packages/core/lib/health-state-manager');
@@ -339,6 +340,50 @@ async function main() {
         key,
         level: 2,
         msg: `⚠️ [루나 헬스] learning loop 점검 실패\n${e.message}`,
+      });
+    }
+  }
+
+  try {
+    const collectionAudit = await runCollectionAudit({ markets: ['binance', 'kis', 'kis_overseas'], hours: 24 });
+    const insufficient = collectionAudit?.markets?.find((item) => item?.collectQuality?.status === 'insufficient') || null;
+    const degraded = collectionAudit?.markets?.find((item) => item?.collectQuality?.status === 'degraded') || null;
+
+    if (insufficient || degraded) {
+      const target = insufficient || degraded;
+      const key = insufficient ? 'collection-audit-insufficient' : 'collection-audit-degraded';
+      const level = insufficient ? 2 : 1;
+      if (insufficient) hsm.clearAlert(state, 'collection-audit-degraded');
+      if (hsm.canAlert(state, key)) {
+        issues.push({
+          key,
+          level,
+          msg: `${insufficient ? '⚠️' : 'ℹ️'} [루나 헬스] collection audit ${insufficient ? 'attention' : 'monitor'}\nmarket: ${target.market}\ncollect quality: ${target.collectQuality?.status || 'unknown'}\nscreening: ${target.screeningUniverseCount} / maintenance: ${target.maintenanceUniverseCount} / profiled: ${target.maintenanceProfiledCount} / dust skipped: ${target.dustSkippedCount}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:collection-audit`,
+        });
+      }
+    } else if (state['collection-audit-insufficient'] || state['collection-audit-degraded']) {
+      if (state['collection-audit-insufficient']) {
+        recovers.push({
+          key: 'collection-audit-insufficient',
+          msg: '✅ [루나 헬스] collection audit 회복\ncollect quality insufficient market 없음 — 자동 감지',
+        });
+        hsm.clearAlert(state, 'collection-audit-insufficient');
+      }
+      if (state['collection-audit-degraded']) {
+        recovers.push({
+          key: 'collection-audit-degraded',
+          msg: '✅ [루나 헬스] collection audit 안정화\ncollect quality degraded market 없음 — 자동 감지',
+        });
+        hsm.clearAlert(state, 'collection-audit-degraded');
+      }
+    }
+  } catch (e) {
+    const key = 'collection-audit-check-failed';
+    if (hsm.canAlert(state, key)) {
+      issues.push({
+        key,
+        level: 1,
+        msg: `ℹ️ [루나 헬스] collection audit 점검 실패\n${e.message}`,
       });
     }
   }

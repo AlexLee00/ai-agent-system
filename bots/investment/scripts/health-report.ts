@@ -23,6 +23,7 @@ import {
 import { getValidationSoftBudgetConfig } from '../shared/runtime-config.ts';
 import { loadCandidates as loadForceExitCandidates } from './force-exit-candidate-report.ts';
 import { buildRuntimeLearningLoopReport } from './runtime-learning-loop-report.ts';
+import { runCollectionAudit } from './runtime-collection-audit.ts';
 import {
   buildGuardHealth,
   buildScheduledDeploymentState,
@@ -650,6 +651,7 @@ function buildDecision(
   localLlmHealth,
   runtimeLearningLoop,
   latestOpsSnapshot,
+  collectionAudit,
 ) {
   const topBlock = signalBlockHealth.top[0] || null;
   const topReasonGroup = signalBlockHealth.topReasonGroups?.[0] || null;
@@ -657,6 +659,8 @@ function buildDecision(
   const saturatedLane = tradeLaneHealth.lanes.find((lane) => lane.atLimit);
   const nearLimitLane = tradeLaneHealth.lanes.find((lane) => lane.nearLimit);
   const pressureLane = recentLaneBlockPressure.topLane || null;
+  const collectionInsufficient = collectionAudit?.markets?.find((item) => item?.collectQuality?.status === 'insufficient') || null;
+  const collectionDegraded = collectionAudit?.markets?.find((item) => item?.collectQuality?.status === 'degraded') || null;
   return buildHealthDecision({
     warnings: [
       {
@@ -775,6 +779,13 @@ function buildDecision(
         active: ['regime_strategy_tuning_needed', 'regime_strategy_monitor'].includes(runtimeLearningLoop?.decision?.status),
         level: runtimeLearningLoop?.decision?.status === 'regime_strategy_monitor' ? 'low' : 'medium',
         reason: `learning loop — ${runtimeLearningLoop?.decision?.headline || '레짐별 전략 튜닝 필요'} / top suggestion ${runtimeLearningLoop?.sections?.strategy?.runtimeSuggestionTop?.key || 'n/a'} ${runtimeLearningLoop?.decision?.status === 'regime_strategy_monitor' ? `current ${runtimeLearningLoop?.sections?.strategy?.runtimeSuggestionTop?.current ?? runtimeLearningLoop?.sections?.strategy?.runtimeSuggestionTop?.governance?.current ?? 'n/a'} (already applied)` : `-> ${runtimeLearningLoop?.sections?.strategy?.runtimeSuggestionTop?.suggested ?? 'n/a'}`} / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-suggest -- --json${latestOpsSnapshot?.capturedAt ? ` / latest snapshot ${latestOpsSnapshot.capturedAt}` : ''}`,
+      },
+      {
+        active: Boolean(collectionInsufficient || collectionDegraded),
+        level: collectionInsufficient ? 'medium' : 'low',
+        reason: collectionInsufficient
+          ? `collection audit — ${collectionInsufficient.market} collect quality insufficient / screening ${collectionInsufficient.screeningUniverseCount} / maintenance ${collectionInsufficient.maintenanceUniverseCount}`
+          : `collection audit — ${collectionDegraded?.market || 'n/a'} collect quality degraded / screening ${collectionDegraded?.screeningUniverseCount || 0} / maintenance ${collectionDegraded?.maintenanceUniverseCount || 0}`,
       },
     ],
     okReason: '핵심 서비스와 trade_review 정합성이 현재는 안정 구간입니다.',
@@ -976,6 +987,19 @@ function formatText(report) {
         : ['  learning loop 정보 없음'],
     },
     {
+      title: '■ collection audit',
+      lines: report.collectionAudit
+        ? [
+            `  status: ${report.collectionAudit.status || 'unknown'}`,
+            `  summary: recent runs ${report.collectionAudit.summary?.withRecentRuns || 0}/${report.collectionAudit.summary?.markets || 0} / ready ${report.collectionAudit.summary?.qualityReady || 0} / degraded ${report.collectionAudit.summary?.qualityDegraded || 0} / insufficient ${report.collectionAudit.summary?.qualityInsufficient || 0}`,
+            ...((report.collectionAudit.markets || []).map((item) => {
+              const maintenanceStage = item?.stages?.maintenanceCollect;
+              return `  ${item.market}: quality ${item.collectQuality?.status || 'unknown'} / screening ${item.screeningUniverseCount} / maintenance ${item.maintenanceUniverseCount} / profiled ${item.maintenanceProfiledCount} / dust ${item.dustSkippedCount} / maintenance stage ${maintenanceStage?.implemented ? 'on' : 'off'}`;
+            })),
+          ]
+        : ['  collection audit 정보 없음'],
+    },
+    {
       title: null,
       lines: buildHealthDecisionSection({
         title: '■ 운영 판단',
@@ -1046,6 +1070,7 @@ async function buildReport() {
   );
   const localLlmHealth = await loadLocalLlmHealth(status);
   const runtimeLearningLoop = await buildRuntimeLearningLoopReport({ days: 14, json: true }).catch(() => null);
+  const collectionAudit = await runCollectionAudit({ markets: ['binance', 'kis', 'kis_overseas'], hours: 24 }).catch(() => null);
   const latestOpsSnapshot = loadLatestOpsSnapshot();
   const cryptoGateActionPlan = buildCryptoGateActionPlan(capitalGuardBreakdown);
   const kisCapabilityHealth = await loadKisCapabilityHealth();
@@ -1070,6 +1095,7 @@ async function buildReport() {
     localLlmHealth,
     runtimeLearningLoop,
     latestOpsSnapshot,
+    collectionAudit,
   );
 
   const report = {
@@ -1095,6 +1121,7 @@ async function buildReport() {
     cryptoLiveGateHealth,
     localLlmHealth,
     runtimeLearningLoop,
+    collectionAudit,
     latestOpsSnapshot,
     capitalGuardBreakdown,
     cryptoGateActionPlan,
