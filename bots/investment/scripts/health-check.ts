@@ -289,9 +289,14 @@ async function main() {
 
   try {
     const learningLoop = await buildRuntimeLearningLoopReport({ days: 14, json: true });
-    if (learningLoop?.decision?.status === 'regime_strategy_tuning_needed') {
+    if (
+      learningLoop?.decision?.status === 'regime_strategy_tuning_needed' ||
+      learningLoop?.decision?.status === 'regime_strategy_monitor'
+    ) {
       const topSuggestion = learningLoop?.sections?.strategy?.runtimeSuggestionTop || null;
-      const suggestionAlreadyApplied = isAlreadyAppliedSuggestion(topSuggestion);
+      const suggestionAlreadyApplied =
+        learningLoop?.decision?.status === 'regime_strategy_monitor' ||
+        isAlreadyAppliedSuggestion(topSuggestion);
       const key = suggestionAlreadyApplied
         ? 'learning-loop-regime-monitor'
         : 'learning-loop-regime-tuning';
@@ -303,10 +308,12 @@ async function main() {
         hsm.clearAlert(state, 'learning-loop-regime-tuning');
       }
       if (hsm.canAlert(state, key)) {
+        const topSuggestionCurrent = topSuggestion?.current ?? topSuggestion?.governance?.current ?? 'n/a';
+        const topSuggestionSuggested = topSuggestion?.suggestedValue ?? topSuggestion?.suggested ?? 'n/a';
         issues.push({
           key,
           level: suggestionAlreadyApplied ? 1 : 2,
-          msg: `${suggestionAlreadyApplied ? 'ℹ️' : '⚠️'} [루나 헬스] regime strategy ${suggestionAlreadyApplied ? 'monitor' : 'tuning'}\n${learningLoop.decision.headline}\nweakest: ${learningLoop?.sections?.collect?.regimePerformance?.weakestRegime?.regime || 'n/a'} / ${learningLoop?.sections?.collect?.regimePerformance?.weakestRegime?.worstMode?.tradeMode || 'n/a'}\ntop suggestion: ${topSuggestion?.key || 'n/a'} -> ${topSuggestion?.suggestedValue ?? topSuggestion?.suggested ?? 'n/a'} (${topSuggestion?.action || 'n/a'})${suggestionAlreadyApplied ? `\ncurrent runtime: ${topSuggestion?.current ?? topSuggestion?.governance?.current ?? 'n/a'} (already applied)` : ''}${latestOpsSnapshot?.capturedAt ? `\nlatest snapshot: ${latestOpsSnapshot.capturedAt} / ${latestWeakest?.regime || 'n/a'} / ${latestWeakestMode}` : ''}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-suggest -- --json`,
+          msg: `${suggestionAlreadyApplied ? 'ℹ️' : '⚠️'} [루나 헬스] regime strategy ${suggestionAlreadyApplied ? 'monitor' : 'tuning'}\n${learningLoop.decision.headline}\nweakest: ${learningLoop?.sections?.collect?.regimePerformance?.weakestRegime?.regime || 'n/a'} / ${learningLoop?.sections?.collect?.regimePerformance?.weakestRegime?.worstMode?.tradeMode || 'n/a'}\ntop suggestion: ${topSuggestion?.key || 'n/a'} ${suggestionAlreadyApplied ? `${topSuggestionCurrent} (already applied)` : `${topSuggestionCurrent} -> ${topSuggestionSuggested}`} (${topSuggestion?.action || 'n/a'})${latestOpsSnapshot?.capturedAt ? `\nlatest snapshot: ${latestOpsSnapshot.capturedAt} / ${latestWeakest?.regime || 'n/a'} / ${latestWeakestMode}` : ''}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-suggest -- --json`,
         });
       }
     } else if (state['learning-loop-regime-tuning'] || state['learning-loop-regime-monitor']) {
