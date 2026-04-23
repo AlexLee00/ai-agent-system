@@ -14,6 +14,7 @@ function parseArgs(argv = process.argv.slice(2)) {
     days: Math.max(1, Number(daysArg?.split('=')[1] || 90)),
     file: fileArg?.split('=').slice(1).join('=') || DEFAULT_FILE,
     json: argv.includes('--json'),
+    write: !argv.includes('--no-write'),
   };
 }
 
@@ -101,16 +102,17 @@ function renderText(payload) {
   ].join('\n');
 }
 
-export async function buildStrategyFeedbackOutcomesHistory({ days = 90, file = DEFAULT_FILE, json = false } = {}) {
+export async function buildStrategyFeedbackOutcomesHistory({ days = 90, file = DEFAULT_FILE, json = false, write = true } = {}) {
   const report = await buildStrategyFeedbackOutcomes({ days, json: true });
   const current = buildSnapshot(report, days);
   const history = readHistory(file);
   const previous = history[history.length - 1] || null;
-  appendHistory(file, current);
+  if (write) appendHistory(file, current);
   const payload = {
     ok: true,
     file,
-    historyCount: history.length + 1,
+    write,
+    historyCount: history.length + (write ? 1 : 0),
     current,
     previous,
     delta: buildDelta(current, previous),
