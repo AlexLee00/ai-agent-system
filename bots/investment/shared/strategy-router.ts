@@ -276,3 +276,41 @@ export function buildRoutedStrategyFallback({ route = null, exchange = 'binance'
     setup_type: setupType,
   };
 }
+
+export function applyStrategyRouteDecisionBias(decision = null, route = null, exchange = 'binance') {
+  if (!decision || !route) return decision;
+  const adjusted = { ...decision };
+  const action = String(adjusted.action || '').toUpperCase();
+  const isEntry = action === ACTIONS.BUY;
+  const isExit = action === ACTIONS.SELL;
+  const quality = String(route.quality || '').toLowerCase();
+  const family = String(route.selectedFamily || '').toLowerCase();
+
+  if (Number.isFinite(Number(adjusted.confidence))) {
+    let confidence = Number(adjusted.confidence);
+    if (quality === 'ready') confidence += 0.03;
+    else if (quality === 'thin') confidence -= 0.06;
+    if (isEntry && family === 'defensive_rotation') confidence -= 0.03;
+    if (isExit && family === 'defensive_rotation') confidence += 0.03;
+    adjusted.confidence = clamp(confidence, 0, 1);
+  }
+
+  if (isEntry && Number.isFinite(Number(adjusted.amount_usdt))) {
+    let amount = Number(adjusted.amount_usdt);
+    if (quality === 'ready') amount *= 1.1;
+    else if (quality === 'thin') amount *= 0.72;
+    else if (quality === 'watch') amount *= 0.9;
+    if (family === 'defensive_rotation') amount *= 0.82;
+    if ((exchange === 'kis' || exchange === 'kis_overseas') && amount > 0) {
+      amount = Math.round(amount / 1000) * 1000;
+    }
+    adjusted.amount_usdt = Math.max(0, Number(amount.toFixed(2)));
+  }
+
+  const routeNote = `전략품질:${quality || 'unknown'}/${family || 'unknown'}`;
+  adjusted.reasoning = String(adjusted.reasoning || routeNote).includes(routeNote)
+    ? String(adjusted.reasoning || routeNote).slice(0, 180)
+    : `${String(adjusted.reasoning || '').trim()} | ${routeNote}`.slice(0, 180);
+
+  return adjusted;
+}

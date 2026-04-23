@@ -38,7 +38,7 @@ import { runBullResearcher } from './zeus.ts';
 import { runBearResearcher } from './athena.ts';
 import { evaluateSignal } from './nemesis.ts';
 import { recommendStrategy } from './argos.ts';
-import { buildStrategyRoute, buildStrategyRouteSection } from '../shared/strategy-router.ts';
+import { applyStrategyRouteDecisionBias, buildStrategyRoute, buildStrategyRouteSection } from '../shared/strategy-router.ts';
 
 const LUNA_RUNTIME = getLunaRuntimeConfig();
 const LUNA_STOCK_PROFILE = getLunaStockStrategyProfile();
@@ -875,7 +875,7 @@ function normalizePortfolioDecisionResult(parsed, symbols, exchange, symbolDecis
       ...d,
       strategy_route: d.strategy_route || d.strategyRoute || routeBySymbol.get(d.symbol) || null,
       setup_type: d.setup_type || setupTypeBySymbol.get(d.symbol) || null,
-    }));
+    })).map((d) => applyStrategyRouteDecisionBias(d, d.strategy_route || d.strategyRoute || null, exchange));
     if (exchange === 'kis' || exchange === 'kis_overseas') {
       parsed.decisions = parsed.decisions.map(d => ({
         ...d,
@@ -1224,7 +1224,7 @@ export async function getSymbolDecision(symbol, analyses, exchange = 'binance', 
   const fastPath = buildFastPathDecision(fused, exchange);
   if (fastPath) {
     const boostedConfidence = Math.max(0, Math.min(1, (fastPath.confidence || fused.averageConfidence) + reviewHint.delta));
-    return {
+    return applyStrategyRouteDecisionBias({
       ...fastPath,
       confidence: boostedConfidence,
       reasoning: reviewHint.notes.length > 0
@@ -1232,7 +1232,7 @@ export async function getSymbolDecision(symbol, analyses, exchange = 'binance', 
         : fastPath.reasoning,
       strategy_route: strategyRoute,
       setup_type: strategyRoute?.setupType || null,
-    };
+    }, strategyRoute, exchange);
   }
 
   // Shadow Mode 래핑 (mode: 'shadow' 고정 — TEAM_MODE.luna='off' 무시)
@@ -1277,7 +1277,7 @@ export async function getSymbolDecision(symbol, analyses, exchange = 'binance', 
   if (strategyRoute?.selectedFamily && adjusted.reasoning) {
     adjusted.reasoning = `${adjusted.reasoning} | 전략:${strategyRoute.selectedFamily}`.slice(0, 180);
   }
-  return adjusted;  // ruleResult (기존 Groq 판단) 반환, shadow는 shadow_log에만 기록
+  return applyStrategyRouteDecisionBias(adjusted, strategyRoute, exchange);  // ruleResult (기존 Groq 판단) 반환, shadow는 shadow_log에만 기록
 }
 
 // ─── 포트폴리오 판단 ───────────────────────────────────────────────
