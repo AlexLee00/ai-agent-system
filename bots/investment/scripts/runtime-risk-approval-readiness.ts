@@ -90,10 +90,23 @@ export function buildRiskApprovalModeDryRun(riskApproval = {}, modeConfig = {}) 
 export function buildRiskApprovalReadinessDecision({ riskApproval, executionGuard, modeConfig }) {
   const summary = riskApproval.summary || {};
   const amount = summary.amount || {};
+  const outcome = summary.outcome?.total || {};
+  const outcomeMode = summary.outcome?.byMode?.[0] || null;
   const guardSummary = executionGuard.summary || {};
   const total = safeNumber(summary.total);
   const previewRejects = safeNumber(summary.previewRejects);
   const divergence = safeNumber(summary.legacyApprovedPreviewRejected);
+  const outcomeClosed = safeNumber(outcome.closed);
+  const outcomePnlNet = safeNumber(outcome.pnlNet);
+  const outcomeAvgPnlPercent = outcome.avgPnlPercent == null ? null : Number(outcome.avgPnlPercent);
+  const outcomeModeAvgPnlPercent = outcomeMode?.avgPnlPercent == null ? null : Number(outcomeMode.avgPnlPercent);
+  const outcomeWeak =
+    outcomeClosed >= 3 &&
+    (
+      outcomePnlNet < 0 ||
+      Number(outcomeAvgPnlPercent ?? 0) < 0 ||
+      Number(outcomeModeAvgPnlPercent ?? 0) < 0
+    );
   const stale = safeNumber(guardSummary.staleCount);
   const bypass = safeNumber(guardSummary.bypassCount);
   const rejectionRate = rate(previewRejects, total);
@@ -107,6 +120,7 @@ export function buildRiskApprovalReadinessDecision({ riskApproval, executionGuar
     `execution stale ${stale}`,
     `execution bypass ${bypass}`,
     `amount reduction candidates ${safeNumber(amount.previewAmountReductions)} (${pct(reductionRate)})`,
+    `outcome closed ${outcomeClosed}, pnl ${outcomePnlNet}, avg ${outcomeAvgPnlPercent ?? 'n/a'}%`,
   ];
   const blockers = [];
   const actionItems = [];
@@ -119,15 +133,17 @@ export function buildRiskApprovalReadinessDecision({ riskApproval, executionGuar
   if (stale > 0) blockers.push('실행 직전 stale approval 차단 존재');
   if (bypass > 0) blockers.push('실행 직전 네메시스 승인 누락 차단 존재');
   if (rejectionRate > 0.3) blockers.push('preview reject 비율 30% 초과');
+  if (outcomeWeak) blockers.push('리스크 승인 사후 성과 음수');
 
   if (blockers.length > 0) {
-    status = divergence > 0 || stale > 0 || bypass > 0
+    status = divergence > 0 || stale > 0 || bypass > 0 || outcomeWeak
       ? 'risk_approval_readiness_blocked'
       : 'risk_approval_readiness_collect_samples';
     headline = blockers.join(' / ');
     actionItems.push('shadow mode에서 표본을 계속 누적하고 blocker가 사라지는지 먼저 확인합니다.');
     if (divergence > 0) actionItems.push('divergence sample의 regime/consensus/feedback 임계값을 검토합니다.');
     if (stale > 0 || bypass > 0) actionItems.push('승인→실행 큐 연결과 승인 메타 전파 경로를 우선 점검합니다.');
+    if (outcomeWeak) actionItems.push('runtime-suggest의 risk approval outcome 제안을 확인해 assist 감산율과 모델별 임계값을 재검토합니다.');
   } else if (modeConfig.mode === 'shadow') {
     status = 'risk_approval_readiness_assist_ready';
     targetMode = 'assist';
@@ -169,6 +185,15 @@ export function buildRiskApprovalReadinessDecision({ riskApproval, executionGuar
       executionBypass: bypass,
       amountReductionCandidates: safeNumber(amount.previewAmountReductions),
       reductionRate,
+      outcomeClosed,
+      outcomePnlNet,
+      outcomeAvgPnlPercent,
+      outcomeMode: outcomeMode ? {
+        mode: outcomeMode.mode || null,
+        closed: safeNumber(outcomeMode.closed),
+        pnlNet: safeNumber(outcomeMode.pnlNet),
+        avgPnlPercent: outcomeModeAvgPnlPercent,
+      } : null,
     },
   };
 }
@@ -184,6 +209,9 @@ function renderText(payload) {
     '',
     '근거:',
     ...payload.decision.reasons.map((reason) => `- ${reason}`),
+    payload.decision.metrics?.outcomeMode
+      ? `- outcome mode ${payload.decision.metrics.outcomeMode.mode || 'n/a'}: closed ${payload.decision.metrics.outcomeMode.closed}, pnl ${payload.decision.metrics.outcomeMode.pnlNet}, avg ${payload.decision.metrics.outcomeMode.avgPnlPercent ?? 'n/a'}%`
+      : null,
     '',
     'mode dry-run:',
     `- shadow: applied ${payload.modeDryRun.shadow.applied}, rejected ${payload.modeDryRun.shadow.rejected}, amount delta ${payload.modeDryRun.shadow.amountDelta}`,
@@ -192,7 +220,7 @@ function renderText(payload) {
     '',
     '권장 조치:',
     ...payload.decision.actionItems.map((item) => `- ${item}`),
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 }
 
 export async function buildRuntimeRiskApprovalReadiness({ days = 30, json = false } = {}) {

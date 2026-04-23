@@ -14,6 +14,10 @@ function riskApproval({
   divergence = 0,
   reductions = 0,
   previewDelta = 0,
+  outcomeClosed = 0,
+  outcomePnlNet = 0,
+  outcomeAvgPnlPercent = null,
+  outcomeModeAvgPnlPercent = null,
 } = {}) {
   return {
     summary: {
@@ -25,6 +29,21 @@ function riskApproval({
         previewVsApprovedDelta: previewDelta,
         approved: 1000,
         previewFinal: 1000 + previewDelta,
+      },
+      outcome: {
+        total: {
+          total,
+          closed: outcomeClosed,
+          pnlNet: outcomePnlNet,
+          avgPnlPercent: outcomeAvgPnlPercent,
+        },
+        byMode: outcomeClosed > 0 ? [{
+          mode: 'assist',
+          total,
+          closed: outcomeClosed,
+          pnlNet: outcomePnlNet,
+          avgPnlPercent: outcomeModeAvgPnlPercent ?? outcomeAvgPnlPercent,
+        }] : [],
       },
     },
   };
@@ -71,6 +90,18 @@ export function runRiskApprovalReadinessSmoke() {
   assert.equal(rejectRateBlocked.status, 'risk_approval_readiness_collect_samples');
   assert.match(rejectRateBlocked.headline, /preview reject/);
 
+  const outcomeBlocked = decide({
+    approval: riskApproval({
+      total: 25,
+      outcomeClosed: 3,
+      outcomePnlNet: -4,
+      outcomeAvgPnlPercent: -0.2,
+    }),
+  });
+  assert.equal(outcomeBlocked.status, 'risk_approval_readiness_blocked');
+  assert.match(outcomeBlocked.headline, /사후 성과/);
+  assert.equal(outcomeBlocked.metrics.outcomeClosed, 3);
+
   const assistReady = decide({ approval: riskApproval({ total: 25 }), mode: 'shadow' });
   assert.equal(assistReady.status, 'risk_approval_readiness_assist_ready');
   assert.equal(assistReady.targetMode, 'assist');
@@ -100,6 +131,7 @@ export function runRiskApprovalReadinessSmoke() {
     divergenceBlocked,
     staleBlocked,
     rejectRateBlocked,
+    outcomeBlocked,
     assistReady,
     enforceCandidate,
     enforced,
