@@ -25,6 +25,21 @@ function normalizeMarket(market = 'all') {
   return value;
 }
 
+function mergeCountMap(target = {}, source = {}) {
+  for (const [key, value] of Object.entries(source || {})) {
+    target[key] = (target[key] || 0) + Number(value || 0);
+  }
+  return target;
+}
+
+function topEntry(map = {}) {
+  return Object.entries(map || {}).sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0))[0] || null;
+}
+
+function countMapTotal(map = {}) {
+  return Object.values(map || {}).reduce((sum, value) => sum + Number(value || 0), 0);
+}
+
 async function loadRuntimeDecisions({ market = 'all', limit = 5, includeSmoke = false } = {}) {
   const normalizedMarket = normalizeMarket(market);
   let where = `pipeline = 'luna_pipeline' AND meta->>'bridge_status' IS NOT NULL`;
@@ -73,6 +88,11 @@ async function loadRuntimeDecisions({ market = 'all', limit = 5, includeSmoke = 
     riskRejected: Number(row.meta?.risk_rejected || 0),
     riskRejectReasonTop: row.meta?.risk_reject_reason_top || null,
     weakSignalSkipped: Number(row.meta?.weak_signal_skipped || 0),
+    strategyRouteCounts: row.meta?.strategy_route_counts || {},
+    strategyRouteQualityCounts: row.meta?.strategy_route_quality_counts || {},
+    strategyRouteAvgReadiness: row.meta?.strategy_route_avg_readiness == null
+      ? null
+      : Number(row.meta.strategy_route_avg_readiness),
     warnings: Array.isArray(row.meta?.warnings) ? row.meta.warnings : [],
   }));
 }
@@ -222,6 +242,10 @@ function buildSummary(rows = []) {
   let approvedSignals = 0;
   let executedSymbols = 0;
   let riskRejected = 0;
+  let routeReadinessSum = 0;
+  let routeReadinessCount = 0;
+  const strategyRouteCounts = {};
+  const strategyRouteQualityCounts = {};
   const warningSet = new Set();
 
   for (const row of rows) {
@@ -229,6 +253,12 @@ function buildSummary(rows = []) {
     approvedSignals += row.approvedSignals;
     executedSymbols += row.executedSymbols;
     riskRejected += row.riskRejected;
+    mergeCountMap(strategyRouteCounts, row.strategyRouteCounts);
+    mergeCountMap(strategyRouteQualityCounts, row.strategyRouteQualityCounts);
+    if (countMapTotal(row.strategyRouteCounts) > 0 && Number.isFinite(Number(row.strategyRouteAvgReadiness))) {
+      routeReadinessSum += Number(row.strategyRouteAvgReadiness);
+      routeReadinessCount++;
+    }
     for (const warning of row.warnings || []) warningSet.add(warning);
   }
 
@@ -237,6 +267,13 @@ function buildSummary(rows = []) {
     approvedSignals,
     executedSymbols,
     riskRejected,
+    strategyRouteCounts,
+    strategyRouteQualityCounts,
+    strategyRouteTop: topEntry(strategyRouteCounts)?.[0] || null,
+    strategyRouteQualityTop: topEntry(strategyRouteQualityCounts)?.[0] || null,
+    strategyRouteAvgReadiness: routeReadinessCount > 0
+      ? Number((routeReadinessSum / routeReadinessCount).toFixed(4))
+      : null,
     warnings: [...warningSet],
   };
 }
@@ -264,14 +301,20 @@ function renderText(rows = [], args = {}) {
     `approvedSignals: ${summary.approvedSignals}`,
     `executedSymbols: ${summary.executedSymbols}`,
     `riskRejected: ${summary.riskRejected}`,
+    `strategyRoutes: ${formatMap(summary.strategyRouteCounts)}${summary.strategyRouteAvgReadiness == null ? '' : ` | avgReadiness=${summary.strategyRouteAvgReadiness}`}`,
+    `strategyRouteQuality: ${formatMap(summary.strategyRouteQualityCounts)}`,
     `warnings: ${summary.warnings.join(', ') || 'none'}`,
     `signalOutcomes: executed=${signalOutcomes.executed || 0}, blocked=${rawBlocked}, activeBlocked=${activeBlocked || effectiveBlocked}, resolvedBlocked=${resolvedBlocked}, failed=${signalOutcomes.failed || 0}${signalOutcomes.topBlockCode ? ` | topBlock=${signalOutcomes.topBlockCode}:${signalOutcomes.topBlockCount || 0}` : ''}`,
     `blockedReview: active=${blockedReview.activeCount || 0}, resolved=${blockedReview.resolvedCount || 0}${blockedReview.topActiveReason ? ` | topActive=${blockedReview.topActiveReason}` : ''}`,
   ];
 
   for (const row of rows) {
+    const topRoute = topEntry(row.strategyRouteCounts);
+    const routeText = topRoute
+      ? ` | route=${topRoute[0]}:${topRoute[1]}${row.strategyRouteAvgReadiness == null ? '' : `/${row.strategyRouteAvgReadiness}`}`
+      : '';
     lines.push(
-      `${row.market} | ${row.bridgeStatus} | trade=${row.investmentTradeMode} | approved=${row.approvedSignals} | executed=${row.executedSymbols} | decisions=${row.decisionCount} | debate=${row.debateCount}/${row.debateLimit} | riskRejected=${row.riskRejected}${row.riskRejectReasonTop ? ` | topRisk=${row.riskRejectReasonTop}` : ''}${row.plannerMode ? ` | planner=${row.plannerMode}` : ''}${row.plannerTimeMode ? ` | time=${row.plannerTimeMode}` : ''}`,
+      `${row.market} | ${row.bridgeStatus} | trade=${row.investmentTradeMode} | approved=${row.approvedSignals} | executed=${row.executedSymbols} | decisions=${row.decisionCount} | debate=${row.debateCount}/${row.debateLimit} | riskRejected=${row.riskRejected}${row.riskRejectReasonTop ? ` | topRisk=${row.riskRejectReasonTop}` : ''}${routeText}${row.plannerMode ? ` | planner=${row.plannerMode}` : ''}${row.plannerTimeMode ? ` | time=${row.plannerTimeMode}` : ''}`,
     );
   }
 
@@ -303,6 +346,9 @@ function buildRuntimeDecisionFallback(payload = {}) {
   }
   if ((summary.riskRejected || 0) > 0) {
     return `최근 runtime decision ${payload.count || 0}건 중 risk reject가 ${summary.riskRejected || 0}건 보여, 상위 reject 사유를 먼저 점검하는 편이 좋습니다.`;
+  }
+  if ((summary.strategyRouteQualityTop || '') === 'thin') {
+    return `최근 runtime decision ${payload.count || 0}건은 전략 라우터 품질이 thin 쪽으로 기울어, 매수/매도 임계값보다 전략 패밀리 선택 근거와 데이터 품질을 먼저 점검하는 편이 좋습니다.`;
   }
   if (warnings.length > 0) {
     return `최근 runtime decision ${payload.count || 0}건은 실행됐지만 경고 ${warnings.length}종이 있어 bridge 상태를 함께 보는 것이 좋습니다.`;

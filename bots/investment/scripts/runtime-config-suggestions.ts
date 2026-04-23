@@ -220,7 +220,20 @@ function getMarketBucket(exchange) {
 
 function summarizeValidationSignals(pipelineRows, tradeRows, market) {
   const row = pipelineRows.find(item => item.market === market);
-  const summary = { decision: 0, buy: 0, hold: 0, approved: 0, executed: 0, weak: 0, risk: 0, weakReasons: {} };
+  const summary = {
+    decision: 0,
+    buy: 0,
+    hold: 0,
+    approved: 0,
+    executed: 0,
+    weak: 0,
+    risk: 0,
+    weakReasons: {},
+    strategyRouteCounts: {},
+    strategyRouteQualityCounts: {},
+    strategyRouteReadinessSum: 0,
+    strategyRouteReadinessCount: 0,
+  };
   for (const meta of (row?.meta_rows || [])) {
     const mode = String(meta?.investment_trade_mode || 'normal').toUpperCase();
     if (mode !== 'VALIDATION') continue;
@@ -234,6 +247,16 @@ function summarizeValidationSignals(pipelineRows, tradeRows, market) {
     const weakReasons = meta?.weak_signal_reasons || {};
     for (const [reason, count] of Object.entries(weakReasons)) {
       summary.weakReasons[reason] = (summary.weakReasons[reason] || 0) + Number(count || 0);
+    }
+    for (const [family, count] of Object.entries(meta?.strategy_route_counts || {})) {
+      summary.strategyRouteCounts[family] = (summary.strategyRouteCounts[family] || 0) + Number(count || 0);
+    }
+    for (const [quality, count] of Object.entries(meta?.strategy_route_quality_counts || {})) {
+      summary.strategyRouteQualityCounts[quality] = (summary.strategyRouteQualityCounts[quality] || 0) + Number(count || 0);
+    }
+    if (Number.isFinite(Number(meta?.strategy_route_avg_readiness))) {
+      summary.strategyRouteReadinessSum += Number(meta.strategy_route_avg_readiness);
+      summary.strategyRouteReadinessCount++;
     }
   }
 
@@ -255,6 +278,11 @@ function summarizeValidationSignals(pipelineRows, tradeRows, market) {
     liveTrades,
     paperTrades,
     weakTopReason: Object.entries(summary.weakReasons).sort((a, b) => b[1] - a[1])[0]?.[0] || null,
+    strategyRouteTop: Object.entries(summary.strategyRouteCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || null,
+    strategyRouteQualityTop: Object.entries(summary.strategyRouteQualityCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || null,
+    strategyRouteAvgReadiness: summary.strategyRouteReadinessCount > 0
+      ? Number((summary.strategyRouteReadinessSum / summary.strategyRouteReadinessCount).toFixed(4))
+      : null,
   };
 }
 

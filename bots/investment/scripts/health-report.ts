@@ -481,6 +481,9 @@ async function loadCryptoLiveGateHealth() {
     const decision = String(review?.liveGate?.decision || 'unknown');
     const maxPositions = Number(review?.metrics?.pipeline?.riskRejectReasons?.max_positions || 0);
     const validationLiveOverlap = Number(review?.metrics?.pipeline?.riskRejectReasons?.validation_live_overlap || 0);
+    const routeTop = review?.metrics?.pipeline?.strategyRouteTop || 'none';
+    const routeQualityTop = review?.metrics?.pipeline?.strategyRouteQualityTop || 'none';
+    const routeReadiness = review?.metrics?.pipeline?.strategyRouteAvgReadiness;
     const lines = [
       `  게이트: ${decision}`,
       `  사유: ${String(review?.liveGate?.reason || 'n/a')}`,
@@ -488,6 +491,7 @@ async function loadCryptoLiveGateHealth() {
       `  mode 체결: NORMAL ${Number(review?.metrics?.trades?.byMode?.NORMAL?.total || 0)}건 (LIVE ${Number(review?.metrics?.trades?.byMode?.NORMAL?.live || 0)} / PAPER ${Number(review?.metrics?.trades?.byMode?.NORMAL?.paper || 0)}), VALIDATION ${Number(review?.metrics?.trades?.byMode?.VALIDATION?.total || 0)}건 (LIVE ${Number(review?.metrics?.trades?.byMode?.VALIDATION?.live || 0)} / PAPER ${Number(review?.metrics?.trades?.byMode?.VALIDATION?.paper || 0)})`,
       `  퍼널: decision ${Number(review?.metrics?.pipeline?.decision || 0)} / BUY ${Number(review?.metrics?.pipeline?.buy || 0)} / approved ${Number(review?.metrics?.pipeline?.approved || 0)} / executed ${Number(review?.metrics?.pipeline?.executed || 0)}`,
       `  weak: ${Number(review?.metrics?.pipeline?.weak || 0)}${review?.metrics?.pipeline?.weakTop ? ` (top ${review.metrics.pipeline.weakTop})` : ''}`,
+      `  전략 라우팅: top ${routeTop} / quality ${routeQualityTop}${routeReadiness == null ? '' : ` / readiness ${routeReadiness}`}`,
       `  risk reject: max positions ${maxPositions} / validation LIVE overlap ${validationLiveOverlap}`,
       `  reentry: PAPER ${Number(review?.metrics?.blocks?.paperReentry || 0)} / LIVE ${Number(review?.metrics?.blocks?.liveReentry || 0)} / same-day ${Number(review?.metrics?.blocks?.sameDayReentry || 0)}`,
       `  종료 리뷰: ${Number(review?.metrics?.closedReviews || 0)}건`,

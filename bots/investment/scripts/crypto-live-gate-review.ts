@@ -99,6 +99,10 @@ function aggregatePipeline(pipelineRows) {
     modeCounts: {},
     weakReasons: {},
     riskRejectReasons: {},
+    strategyRouteCounts: {},
+    strategyRouteQualityCounts: {},
+    strategyRouteReadinessSum: 0,
+    strategyRouteReadinessCount: 0,
   };
 
   for (const row of pipelineRows) {
@@ -125,10 +129,25 @@ function aggregatePipeline(pipelineRows) {
         else if (text.includes('동일 LIVE 포지션')) key = 'validation_live_overlap';
         summary.riskRejectReasons[key] = (summary.riskRejectReasons[key] || 0) + Number(count || 0);
       }
+      for (const [family, count] of Object.entries(meta?.strategy_route_counts || {})) {
+        summary.strategyRouteCounts[family] = (summary.strategyRouteCounts[family] || 0) + Number(count || 0);
+      }
+      for (const [quality, count] of Object.entries(meta?.strategy_route_quality_counts || {})) {
+        summary.strategyRouteQualityCounts[quality] = (summary.strategyRouteQualityCounts[quality] || 0) + Number(count || 0);
+      }
+      if (Number.isFinite(Number(meta?.strategy_route_avg_readiness))) {
+        summary.strategyRouteReadinessSum += Number(meta.strategy_route_avg_readiness);
+        summary.strategyRouteReadinessCount++;
+      }
     }
   }
 
   summary.weakTop = Object.entries(summary.weakReasons).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+  summary.strategyRouteTop = Object.entries(summary.strategyRouteCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+  summary.strategyRouteQualityTop = Object.entries(summary.strategyRouteQualityCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+  summary.strategyRouteAvgReadiness = summary.strategyRouteReadinessCount > 0
+    ? Number((summary.strategyRouteReadinessSum / summary.strategyRouteReadinessCount).toFixed(4))
+    : null;
   return summary;
 }
 
@@ -256,6 +275,7 @@ function buildReview({ days, pipeline, trades, blocks, closedReviews }) {
   facts.push(`최근 ${days}일 암호화폐 체결 ${trades.total}건 (LIVE ${trades.live} / PAPER ${trades.paper})`);
   facts.push(`trade_mode별 체결: NORMAL ${normalTrades.total}건 (LIVE ${normalTrades.live} / PAPER ${normalTrades.paper}), VALIDATION ${validationTrades.total}건 (LIVE ${validationTrades.live} / PAPER ${validationTrades.paper})`);
   facts.push(`weakSignalSkipped ${pipeline.weak}건${pipeline.weakTop ? `, 최다 사유 ${pipeline.weakTop}` : ''}`);
+  facts.push(`전략 라우팅: top ${pipeline.strategyRouteTop || 'none'} / quality ${pipeline.strategyRouteQualityTop || 'none'}${pipeline.strategyRouteAvgReadiness == null ? '' : ` / readiness ${pipeline.strategyRouteAvgReadiness}`}`);
   facts.push(`재진입 차단: PAPER ${blocks.paperReentry}건 / LIVE ${blocks.liveReentry}건 / same-day ${blocks.sameDayReentry}건`);
   facts.push(`최근 ${days}일 종료된 암호화폐 거래 리뷰 ${closedReviews}건`);
   if (blocks.persistedCapitalGuard.total > 0) {
@@ -283,6 +303,13 @@ function buildReview({ days, pipeline, trades, blocks, closedReviews }) {
   } else {
     inferred.push('새 weak reason 계측이 아직 충분히 누적되지 않았거나 최근 약한 신호 스킵이 크지 않음');
     recommendations.push('다음 1~2회 파이프라인 실행 후 weakTop 분포를 재확인');
+  }
+
+  if (pipeline.strategyRouteQualityTop === 'thin') {
+    inferred.push('최근 전략 라우터가 충분히 강한 전략 패밀리를 고르지 못한 thin 상태가 관찰된다');
+    recommendations.push('threshold 조정보다 TA/온체인/거래량 입력 품질과 장세별 전략 패밀리 가중치를 먼저 점검');
+  } else if (pipeline.strategyRouteQualityTop === 'ready') {
+    inferred.push(`최근 전략 라우터는 ${pipeline.strategyRouteTop || '상위 전략'} 중심으로 ready 신호를 만들고 있다`);
   }
 
   if (blocks.paperReentry > 0 && blocks.liveReentry === 0) {
