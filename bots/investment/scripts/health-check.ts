@@ -587,7 +587,7 @@ async function main() {
         const remediationRefreshState = remediationFlat?.refresh || remediation?.remediationRefreshState || remediationSummary?.refreshState || null;
         const remediationRefreshHint = remediation?.remediationRefreshReason || remediationRefreshState?.reason || null;
         const remediationTrend = remediationFlat?.trend || remediation?.remediationTrend || remediationSummary?.trend || null;
-        const remediationNextCommandTransition = remediation?.remediationNextCommandTransition || remediationTrend?.nextCommandTransition || remediationSummary?.nextCommandTransition || null;
+        const remediationNextCommandTransition = remediation?.remediationNextCommandTransition || remediationFlat?.nextCommandTransition || remediationTrend?.nextCommandTransition || remediationSummary?.nextCommandTransition || null;
         const recommendedExchange = remediationFlat?.recommendedExchange || remediation?.remediationRecommendedExchange || remediationSummary?.recommendedExchange || remediationPlan?.recommendedExchange || null;
         const remediationAlertLevel = remediation?.remediationRefreshStale
           || remediationRefreshState?.stale
@@ -626,14 +626,14 @@ async function main() {
             remediationNextCommandPrevious: remediation?.remediationNextCommandPrevious || remediationNextCommandTransition?.previous || null,
             remediationNextCommandCurrent: remediation?.remediationNextCommandCurrent || remediationNextCommandTransition?.current || null,
             remediationCommands,
-            remediationActionReportCommand: remediation?.remediationActionReportCommand || remediationActions?.reportCommand || null,
-            remediationActionHistoryCommand: remediation?.remediationActionHistoryCommand || remediationActions?.historyCommand || null,
-            remediationActionRefreshCommand: remediation?.remediationActionRefreshCommand || remediationActions?.refreshCommand || null,
-            remediationActionHygieneCommand: remediation?.remediationActionHygieneCommand || remediationActions?.hygieneCommand || null,
-            remediationActionNormalizeDryRunCommand: remediation?.remediationActionNormalizeDryRunCommand || remediationActions?.normalizeDryRunCommand || null,
-            remediationActionNormalizeApplyCommand: remediation?.remediationActionNormalizeApplyCommand || remediationActions?.normalizeApplyCommand || null,
-            remediationActionRetireDryRunCommand: remediation?.remediationActionRetireDryRunCommand || remediationActions?.retireDryRunCommand || null,
-            remediationActionRetireApplyCommand: remediation?.remediationActionRetireApplyCommand || remediationActions?.retireApplyCommand || null,
+            remediationActionReportCommand: remediation?.remediationActionReportCommand || remediationActions?.reportCommand || remediationCommands?.report || null,
+            remediationActionHistoryCommand: remediation?.remediationActionHistoryCommand || remediationActions?.historyCommand || remediationCommands?.history || null,
+            remediationActionRefreshCommand: remediation?.remediationActionRefreshCommand || remediationActions?.refreshCommand || remediationFlat?.refreshCommand || remediationCommands?.refresh || null,
+            remediationActionHygieneCommand: remediation?.remediationActionHygieneCommand || remediationActions?.hygieneCommand || remediationCommands?.hygiene || null,
+            remediationActionNormalizeDryRunCommand: remediation?.remediationActionNormalizeDryRunCommand || remediationActions?.normalizeDryRunCommand || remediationCommands?.normalizeDryRun || null,
+            remediationActionNormalizeApplyCommand: remediation?.remediationActionNormalizeApplyCommand || remediationActions?.normalizeApplyCommand || remediationCommands?.normalizeApply || null,
+            remediationActionRetireDryRunCommand: remediation?.remediationActionRetireDryRunCommand || remediationActions?.retireDryRunCommand || remediationCommands?.retireDryRun || null,
+            remediationActionRetireApplyCommand: remediation?.remediationActionRetireApplyCommand || remediationActions?.retireApplyCommand || remediationCommands?.retireApply || null,
             remediationReportCommand: remediationCommands?.report || null,
             remediationHistoryCommand: remediationCommands?.history || null,
             remediationRefreshCommand: remediationFlat?.refreshCommand || remediationCommands?.refresh || null,
