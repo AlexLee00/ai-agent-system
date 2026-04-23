@@ -895,7 +895,16 @@ function buildDecision(
         level: remediationView.trendStale
           ? 'medium'
           : (Number(positionStrategyAudit?.duplicateManagedProfileScopes || 0) > 0 || Number(positionStrategyAudit?.unmatchedManagedPositions || 0) > 0 ? 'medium' : 'low'),
-        reason: `position strategy remediation — ${remediationView.headline || positionStrategyRemediation?.decision?.headline || positionStrategyHygiene?.decision?.headline || '포지션 전략 위생 점검 필요'} / duplicate managed ${remediationView.duplicateManaged ?? positionStrategyAudit?.duplicateManagedProfileScopes ?? 0} / orphan ${remediationView.orphanProfiles ?? positionStrategyOrphans ?? 0} / unmatched managed ${remediationView.unmatchedManaged ?? positionStrategyAudit?.unmatchedManagedPositions ?? 0}${(remediationView.trendHistoryCount !== undefined || positionStrategyRemediationHistory) ? ` / history changed ${remediationView.trendChanged ? 'yes' : 'no'} / next changed ${remediationView.trendNextChanged ? 'yes' : 'no'}${remediationView.trendNextChanged ? ` (${remediationView.nextCommandPrevious || positionStrategyRemediationHistory?.nextCommandTransition?.previous || 'none'} -> ${remediationView.nextCommandCurrent || positionStrategyRemediationHistory?.nextCommandTransition?.current || 'none'})` : ''} / history age ${remediationView.trendAgeMinutes ?? positionStrategyRemediationHistory?.ageMinutes ?? 'n/a'}m / history stale ${remediationView.trendStale ? 'yes' : 'no'} / duplicate delta ${((remediationView.trendDuplicateDelta ?? positionStrategyRemediationHistory?.delta?.duplicateManaged ?? 0) >= 0) ? '+' : ''}${(remediationView.trendDuplicateDelta ?? positionStrategyRemediationHistory?.delta?.duplicateManaged) || 0} / orphan delta ${((remediationView.trendOrphanDelta ?? positionStrategyRemediationHistory?.delta?.orphanProfiles ?? 0) >= 0) ? '+' : ''}${(remediationView.trendOrphanDelta ?? positionStrategyRemediationHistory?.delta?.orphanProfiles) || 0}` : ''}${remediationView.refreshReason ? ` / ${remediationView.refreshReason}` : ''} / duplicate apply ${duplicateStrategyNormalization?.decision?.safeToApply === true ? 'yes' : 'no'} / orphan apply ${orphanStrategyRetirement?.decision?.safeToApply === true ? 'yes' : 'no'} / next command ${remediationView.nextCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation -- --json'}`,
+        reason: buildPositionStrategyRemediationDecisionReason({
+          remediationView,
+          positionStrategyRemediation,
+          positionStrategyHygiene,
+          positionStrategyAudit,
+          positionStrategyRemediationHistory,
+          duplicateStrategyNormalization,
+          orphanStrategyRetirement,
+          positionStrategyOrphans,
+        }),
       },
     ],
     okReason: '핵심 서비스와 trade_review 정합성이 현재는 안정 구간입니다.',
@@ -1045,6 +1054,19 @@ function buildPositionStrategyAuditRemediationLines(report) {
     `  retire orphan dry-run: ${report.positionStrategyRemediationActionRetireDryRunCommand || report.positionStrategyRemediationRetireDryRunCommand || report.positionStrategyHygiene?.remediationPlan?.retireDryRunCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles -- --json'}`,
     `  retire orphan apply: ${report.positionStrategyRemediationActionRetireApplyCommand || report.positionStrategyRemediationRetireApplyCommand || report.positionStrategyHygiene?.remediationPlan?.retireApplyCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles -- --apply --json'}`,
   ];
+}
+
+function buildPositionStrategyRemediationDecisionReason({
+  remediationView,
+  positionStrategyRemediation,
+  positionStrategyHygiene,
+  positionStrategyAudit,
+  positionStrategyRemediationHistory,
+  duplicateStrategyNormalization,
+  orphanStrategyRetirement,
+  positionStrategyOrphans,
+}) {
+  return `position strategy remediation — ${remediationView.headline || positionStrategyRemediation?.decision?.headline || positionStrategyHygiene?.decision?.headline || '포지션 전략 위생 점검 필요'} / duplicate managed ${remediationView.duplicateManaged ?? positionStrategyAudit?.duplicateManagedProfileScopes ?? 0} / orphan ${remediationView.orphanProfiles ?? positionStrategyOrphans ?? 0} / unmatched managed ${remediationView.unmatchedManaged ?? positionStrategyAudit?.unmatchedManagedPositions ?? 0}${(remediationView.trendHistoryCount !== undefined || positionStrategyRemediationHistory) ? ` / history changed ${remediationView.trendChanged ? 'yes' : 'no'} / next changed ${remediationView.trendNextChanged ? 'yes' : 'no'}${remediationView.trendNextChanged ? ` (${remediationView.nextCommandPrevious || positionStrategyRemediationHistory?.nextCommandTransition?.previous || 'none'} -> ${remediationView.nextCommandCurrent || positionStrategyRemediationHistory?.nextCommandTransition?.current || 'none'})` : ''} / history age ${remediationView.trendAgeMinutes ?? positionStrategyRemediationHistory?.ageMinutes ?? 'n/a'}m / history stale ${remediationView.trendStale ? 'yes' : 'no'} / duplicate delta ${((remediationView.trendDuplicateDelta ?? positionStrategyRemediationHistory?.delta?.duplicateManaged ?? 0) >= 0) ? '+' : ''}${(remediationView.trendDuplicateDelta ?? positionStrategyRemediationHistory?.delta?.duplicateManaged) || 0} / orphan delta ${((remediationView.trendOrphanDelta ?? positionStrategyRemediationHistory?.delta?.orphanProfiles ?? 0) >= 0) ? '+' : ''}${(remediationView.trendOrphanDelta ?? positionStrategyRemediationHistory?.delta?.orphanProfiles) || 0}` : ''}${remediationView.refreshReason ? ` / ${remediationView.refreshReason}` : ''} / duplicate apply ${duplicateStrategyNormalization?.decision?.safeToApply === true ? 'yes' : 'no'} / orphan apply ${orphanStrategyRetirement?.decision?.safeToApply === true ? 'yes' : 'no'} / next command ${remediationView.nextCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation -- --json'}`;
 }
 
 function formatText(report) {
