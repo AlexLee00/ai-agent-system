@@ -33,6 +33,11 @@ const GOVERNANCE_SPECS = [
   { key: 'runtime_config.luna.stockOrderDefaults.kis_overseas.min', tier: 'allow', min: 200, max: 400, label: '해외장 최소 주문 floor' },
   { key: 'runtime_config.luna.stockStrategyProfiles.aggressive.tradeModes.validation.minConfidence.live', tier: 'allow', min: 0.1, max: 0.4, label: '공격적 validation live 최소 확신도' },
   { key: 'runtime_config.nemesis.thresholds.stockStarterApproveDomestic', tier: 'allow', min: 200000, max: 1200000, label: '국내장 starter 자동승인 한도' },
+  { key: 'runtime_config.nemesis.riskApprovalChain.mode', tier: 'escalate', label: '리스크 승인 체인 적용 모드' },
+  { key: 'runtime_config.nemesis.riskApprovalChain.assist.maxReductionPct', tier: 'allow', min: 0.1, max: 0.5, label: '리스크 승인 assist 최대 감산율' },
+  { key: 'runtime_config.nemesis.riskApprovalChain.assist.applyAmountReduction', tier: 'escalate', label: '리스크 승인 assist 금액 감산 적용' },
+  { key: 'runtime_config.nemesis.riskApprovalChain.enforce.rejectOnPreviewReject', tier: 'escalate', label: '리스크 승인 enforce preview 거절 반영' },
+  { key: 'runtime_config.nemesis.riskApprovalChain.enforce.applyAmountReduction', tier: 'escalate', label: '리스크 승인 enforce 금액 감산 적용' },
   { key: 'capital_management.rr_fallback.tp_pct', tier: 'allow', min: 0.01, max: 0.12, label: '기본 TP 비율' },
   { key: 'capital_management.rr_fallback.sl_pct', tier: 'allow', min: 0.005, max: 0.08, label: '기본 SL 비율' },
   { key: 'capital_management.time_profiles.active.max_position_pct', tier: 'allow', min: 0.05, max: 0.5, label: 'ACTIVE 포지션 비율' },
@@ -98,6 +103,11 @@ function resolveCurrentValue(key) {
     'runtime_config.luna.stockOrderDefaults.kis_overseas.min': runtime.luna?.stockOrderDefaults?.kis_overseas?.min,
     'runtime_config.luna.stockStrategyProfiles.aggressive.tradeModes.validation.minConfidence.live': runtime.luna?.stockStrategyProfiles?.aggressive?.tradeModes?.validation?.minConfidence?.live,
     'runtime_config.nemesis.thresholds.stockStarterApproveDomestic': runtime.nemesis?.thresholds?.stockStarterApproveDomestic,
+    'runtime_config.nemesis.riskApprovalChain.mode': runtime.nemesis?.riskApprovalChain?.mode,
+    'runtime_config.nemesis.riskApprovalChain.assist.maxReductionPct': runtime.nemesis?.riskApprovalChain?.assist?.maxReductionPct,
+    'runtime_config.nemesis.riskApprovalChain.assist.applyAmountReduction': runtime.nemesis?.riskApprovalChain?.assist?.applyAmountReduction,
+    'runtime_config.nemesis.riskApprovalChain.enforce.rejectOnPreviewReject': runtime.nemesis?.riskApprovalChain?.enforce?.rejectOnPreviewReject,
+    'runtime_config.nemesis.riskApprovalChain.enforce.applyAmountReduction': runtime.nemesis?.riskApprovalChain?.enforce?.applyAmountReduction,
     'capital_management.time_profiles.active.max_position_pct': timeProfiles.ACTIVE?.maxPositionPct,
     'capital_management.time_profiles.active.max_open_positions': timeProfiles.ACTIVE?.maxOpenPositions,
     'capital_management.time_profiles.active.min_signal_score': timeProfiles.ACTIVE?.minSignalScore,
@@ -123,6 +133,26 @@ export function getParameterGovernance(key) {
       tier: 'observe',
       label: '전략 패밀리 성과 피드백',
       current: 'auto_observed',
+    };
+  }
+  if (String(key || '').startsWith('runtime_config.nemesis.riskApprovalChain.model.')) {
+    return {
+      key,
+      tier: 'observe',
+      label: '리스크 승인 모델별 divergence 검토',
+      current: 'shadow_preview',
+    };
+  }
+  if ([
+    'runtime_config.nemesis.riskApprovalChain.shadowMonitor',
+    'runtime_config.nemesis.riskApprovalChain.executionBypassReview',
+    'runtime_config.nemesis.riskApprovalChain.executionGuardMonitor',
+  ].includes(String(key || ''))) {
+    return {
+      key,
+      tier: 'observe',
+      label: '리스크 승인 체인 관찰 신호',
+      current: 'execution_guard_active',
     };
   }
   const spec = getSpecMap().get(key);
