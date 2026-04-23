@@ -27,6 +27,7 @@ function renderText(payload) {
     `이전 상태: ${payload.previous?.status || '없음'}`,
     `상태 변화: ${payload.statusChanged ? `${payload.previous?.status || 'none'} -> ${payload.current.status}` : '유지'}`,
     `focus 변화: ${payload.previous?.recommendedExchange || 'none'} -> ${payload.current.recommendedExchange || 'none'}`,
+    `next command: ${payload.current.nextCommand || 'n/a'}`,
     `duplicate 변화: ${payload.delta.duplicateManaged >= 0 ? '+' : ''}${payload.delta.duplicateManaged}`,
     `orphan 변화: ${payload.delta.orphanProfiles >= 0 ? '+' : ''}${payload.delta.orphanProfiles}`,
     `unmatched 변화: ${payload.delta.unmatchedManaged >= 0 ? '+' : ''}${payload.delta.unmatchedManaged}`,
@@ -41,11 +42,15 @@ function renderText(payload) {
 export async function buildPositionStrategyRemediationHistory({ file = DEFAULT_POSITION_STRATEGY_REMEDIATION_HISTORY_FILE, json = false } = {}) {
   const report = await runPositionStrategyRemediation({ json: true });
   const plan = report.remediationPlan || {};
+  const actions = report.remediationActions || {};
   const current = {
     recordedAt: new Date().toISOString(),
     status: report.decision?.status || 'unknown',
     headline: report.decision?.headline || 'n/a',
     recommendedExchange: plan.recommendedExchange || null,
+    nextCommand: actions.nextCommand || null,
+    refreshCommand: actions.refreshCommand || null,
+    reportCommand: actions.reportCommand || null,
     duplicateManaged: Number(plan.duplicateManagedScopes || 0),
     orphanProfiles: Number(plan.orphanProfiles || 0),
     unmatchedManaged: Number(plan.unmatchedManaged || 0),
