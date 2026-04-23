@@ -26,13 +26,14 @@ function validation({ findings = 0, paperOnly = false, liveFindings = 0, paperFi
 export function runRuntimeLearningLoopFeedbackSmoke() {
   const now = new Date();
 
-  const paperRepair = buildLearningLoopFeedbackState({
+  const paperArchive = buildLearningLoopFeedbackState({
     validation: validation({ findings: 54, paperOnly: true, liveFindings: 0, paperFindings: 54 }),
     freshness: { latestTradeReviewAt: now },
   });
-  assert.equal(paperRepair.status, 'paper_repair');
-  assert.equal(paperRepair.validationRepairCloseout.status, 'trade_review_repair_dry_run');
-  assert.match(paperRepair.headline, /live 0 \/ paper 54/);
+  assert.equal(paperArchive.status, 'paper_archive');
+  assert.equal(paperArchive.validationRepairCloseout.status, 'trade_review_repair_dry_run');
+  assert.match(paperArchive.headline, /live 피드백 루프를 막지 않는/);
+  assert.match(paperArchive.headline, /live 0 \/ paper 54/);
 
   const liveRepair = buildLearningLoopFeedbackState({
     validation: validation({ findings: 2, paperOnly: false, liveFindings: 1, paperFindings: 1 }),
@@ -56,7 +57,7 @@ export function runRuntimeLearningLoopFeedbackSmoke() {
   return {
     ok: true,
     statuses: {
-      paperRepair: paperRepair.status,
+      paperArchive: paperArchive.status,
       liveRepair: liveRepair.status,
       active: active.status,
       idle: idle.status,

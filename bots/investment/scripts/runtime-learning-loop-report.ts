@@ -226,7 +226,7 @@ export function buildLearningLoopFeedbackState({ validation = {}, freshness = {}
   const validationSummary = validation.summary || {};
   const feedbackStatus = Number(validation.findings || 0) > 0
     ? validationSummary.paperOnly
-      ? 'paper_repair'
+      ? 'paper_archive'
       : 'repair'
     : reviewAge != null && reviewAge <= 36
       ? 'active'
@@ -248,7 +248,9 @@ export function buildLearningLoopFeedbackState({ validation = {}, freshness = {}
       fix: false,
     }),
     headline: Number(validation.findings || 0) > 0
-      ? `trade review 정합성 이슈 ${validation.findings}건이 남아 있습니다${validationSummary.topIssue ? ` (${validationSummary.topIssue.key} ${validationSummary.topIssue.count}건 최다, live ${validationSummary.liveFindings || 0} / paper ${validationSummary.paperFindings || 0})` : ''}.`
+      ? validationSummary.paperOnly
+        ? `paper-only trade review 정합성 이슈 ${validation.findings}건은 live 피드백 루프를 막지 않는 보관/정리 대상입니다${validationSummary.topIssue ? ` (${validationSummary.topIssue.key} ${validationSummary.topIssue.count}건 최다, live ${validationSummary.liveFindings || 0} / paper ${validationSummary.paperFindings || 0})` : ''}.`
+        : `trade review 정합성 이슈 ${validation.findings}건이 남아 있습니다${validationSummary.topIssue ? ` (${validationSummary.topIssue.key} ${validationSummary.topIssue.count}건 최다, live ${validationSummary.liveFindings || 0} / paper ${validationSummary.paperFindings || 0})` : ''}.`
       : 'trade review / 피드백 루프는 비교적 안정적입니다.',
   };
 }
@@ -808,8 +810,8 @@ function buildDecision(sections = {}) {
     status = 'feedback_repair_needed';
     headline = '피드백 루프 정합성 이슈가 남아 있어 review 데이터를 먼저 복구해야 합니다.';
     nextActions.push(buildTradeReviewRepairAction(sections.feedback) || 'validate-review로 trade_review 누락/불일치를 먼저 정리합니다.');
-  } else if (sections.feedback.status === 'paper_repair') {
-    nextActions.push(buildTradeReviewRepairAction(sections.feedback) || 'paper trade_review 누락/불일치를 별도 정리합니다.');
+  } else if (sections.feedback.status === 'paper_archive') {
+    nextActions.push('paper-only review 정합성 후보는 live 운영 병목에서 제외하고, 별도 보관 정리 대상으로 둡니다.');
   } else if (sections.strategy.status === 'ready') {
     status = 'strategy_update_ready';
     headline = '운영 압력을 줄일 전략 수정 후보가 준비돼 있어 빠르게 검토할 가치가 있습니다.';
@@ -825,7 +827,9 @@ function buildDecision(sections = {}) {
   if (nextActions.length === 0) {
     nextActions.push('지금처럼 validation lane과 feedback/review 데이터를 계속 누적합니다.');
   }
-  const feedbackRepairAction = buildTradeReviewRepairAction(sections.feedback);
+  const feedbackRepairAction = sections.feedback.status === 'paper_archive'
+    ? null
+    : buildTradeReviewRepairAction(sections.feedback);
   if (feedbackRepairAction && !nextActions.includes(feedbackRepairAction)) {
     nextActions.push(feedbackRepairAction);
   }
