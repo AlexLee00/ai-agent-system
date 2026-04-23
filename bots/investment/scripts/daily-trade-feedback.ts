@@ -32,6 +32,7 @@ import { buildRuntimeLearningLoopReport } from './runtime-learning-loop-report.t
 import { buildRuntimePositionStrategyAudit } from './runtime-position-strategy-audit.ts';
 import { buildPositionStrategyHygieneRemediationPlan, runPositionStrategyHygiene } from './runtime-position-strategy-hygiene.ts';
 import { runPositionStrategyRemediation } from './runtime-position-strategy-remediation.ts';
+import { buildPositionStrategyRemediationHistory } from './runtime-position-strategy-remediation-history.ts';
 const require = createRequire(import.meta.url);
 const LATEST_OPS_SNAPSHOT_FILE = '/Users/alexlee/projects/ai-agent-system/bots/investment/output/ops/parallel-ops-snapshot.json';
 const RAG_RUNTIME = getInvestmentRagRuntimeConfig();
@@ -322,6 +323,11 @@ function buildPositionStrategyRemediationCommandLine(positionStrategyRemediation
   return `🛠️ remediation report: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation -- --json`;
 }
 
+function buildPositionStrategyRemediationHistoryLine(positionStrategyRemediationHistorySummary) {
+  if (!positionStrategyRemediationHistorySummary || positionStrategyRemediationHistorySummary.error || !positionStrategyRemediationHistorySummary.ok) return null;
+  return `🗂️ remediation history: count ${positionStrategyRemediationHistorySummary.historyCount || 0} | changed ${positionStrategyRemediationHistorySummary.statusChanged ? 'yes' : 'no'} | duplicate ${positionStrategyRemediationHistorySummary.delta?.duplicateManaged >= 0 ? '+' : ''}${positionStrategyRemediationHistorySummary.delta?.duplicateManaged || 0} | orphan ${positionStrategyRemediationHistorySummary.delta?.orphanProfiles >= 0 ? '+' : ''}${positionStrategyRemediationHistorySummary.delta?.orphanProfiles || 0}`;
+}
+
 function getLearningLoopNextCommand(learningLoopSummary) {
   const nextActions = learningLoopSummary?.decision?.nextActions;
   if (!Array.isArray(nextActions)) return null;
@@ -340,7 +346,7 @@ function buildDailyFeedbackMemoryQuery(dateKst, feedback, screeningSummary, reev
   ].filter(Boolean).join(' ');
 }
 
-function buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary, positionStrategyRemediationSummary) {
+function buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary, positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary) {
   const lines = [
     `🌓 루나 일일 피드백 (${dateKst})`,
     `📌 ${feedback.summary}`,
@@ -361,6 +367,8 @@ function buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSumma
   if (positionStrategyHygieneLine) lines.push(positionStrategyHygieneLine);
   const positionStrategyRemediationLine = buildPositionStrategyRemediationLine(positionStrategyRemediationSummary);
   if (positionStrategyRemediationLine) lines.push(positionStrategyRemediationLine);
+  const positionStrategyRemediationHistoryLine = buildPositionStrategyRemediationHistoryLine(positionStrategyRemediationHistorySummary);
+  if (positionStrategyRemediationHistoryLine) lines.push(positionStrategyRemediationHistoryLine);
   const positionStrategyRemediationCommandLine = buildPositionStrategyRemediationCommandLine(positionStrategyRemediationSummary);
   if (positionStrategyRemediationCommandLine) lines.push(positionStrategyRemediationCommandLine);
   const positionStrategyHygieneCommandLine = buildPositionStrategyHygieneCommandLine(positionStrategyHygieneSummary);
@@ -375,7 +383,7 @@ function buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSumma
   return lines.join('\n');
 }
 
-async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary, positionStrategyRemediationSummary) {
+async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary, positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary) {
   const hygieneRemediationPlan = positionStrategyHygieneSummary?.remediationPlan
     || buildPositionStrategyHygieneRemediationPlan(positionStrategyHygieneSummary);
   const content = [
@@ -388,6 +396,7 @@ async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeni
     buildPositionStrategyCoverageLine(positionStrategyAuditSummary),
     buildPositionStrategyHygieneLine(positionStrategyHygieneSummary),
     buildPositionStrategyRemediationLine(positionStrategyRemediationSummary),
+    buildPositionStrategyRemediationHistoryLine(positionStrategyRemediationHistorySummary),
     buildPositionStrategyRemediationCommandLine(positionStrategyRemediationSummary),
     buildPositionStrategyHygieneCommandLine(positionStrategyHygieneSummary),
     `다음 액션: ${(feedback.nextActions || []).join(' / ') || '없음'}`,
@@ -406,6 +415,7 @@ async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeni
     position_strategy_audit: positionStrategyAuditSummary || {},
     position_strategy_hygiene: positionStrategyHygieneSummary || {},
     position_strategy_remediation: positionStrategyRemediationSummary || {},
+    position_strategy_remediation_history: positionStrategyRemediationHistorySummary || {},
     position_strategy_hygiene_remediation: hygieneRemediationPlan || {},
     position_strategy_hygiene_recommended_exchange: positionStrategyHygieneSummary?.recommendedExchange?.exchange || null,
     position_strategy_hygiene_recommended_count: Number(positionStrategyHygieneSummary?.recommendedExchange?.count || 0),
@@ -430,13 +440,16 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
   const positionStrategyRemediationSummary = await runPositionStrategyRemediation({ json: true }).catch((error) => ({
     error: String(error?.message || error),
   }));
+  const positionStrategyRemediationHistorySummary = await buildPositionStrategyRemediationHistory({ json: true }).catch((error) => ({
+    error: String(error?.message || error),
+  }));
   const feedback = await buildDailyFeedback(dateKst, trades, analystAccuracy);
   const hygieneRemediationPlan = positionStrategyHygieneSummary?.remediationPlan
     || buildPositionStrategyHygieneRemediationPlan(positionStrategyHygieneSummary);
-  const message = buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary, positionStrategyRemediationSummary);
+  const message = buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary, positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary);
 
   try {
-    await storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary, positionStrategyRemediationSummary);
+    await storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary, positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary);
   } catch (error) {
     console.warn(`  ⚠️ [daily-feedback] RAG 저장 실패(무시): ${error?.message || error}`);
   }
@@ -469,7 +482,7 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
         event_type: 'daily_feedback',
         alert_level: 1,
         message: finalMessage,
-        payload: { dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary, positionStrategyRemediationSummary },
+        payload: { dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary, positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary },
       });
       await dailyFeedbackMemory.remember(finalMessage, 'episodic', {
         importance: 0.7,
@@ -506,6 +519,7 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
     positionStrategyAuditSummary,
     positionStrategyHygieneSummary,
     positionStrategyRemediationSummary,
+    positionStrategyRemediationHistorySummary,
     hygieneRemediationPlan,
     feedback,
     message,
