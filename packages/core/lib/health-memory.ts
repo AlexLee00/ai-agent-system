@@ -22,7 +22,7 @@ function createHealthMemoryHelper(opts = {}) {
     return [String(key || ''), headline, detail, domain].filter(Boolean).join(' ');
   }
 
-  async function rememberHealthEvent(key, kind, msg, level = 1) {
+  async function rememberHealthEvent(key, kind, msg, level = 1, metadata = null) {
     try {
       await healthMemory.remember(String(msg || ''), 'episodic', {
         importance: kind === 'issue' ? 0.76 : 0.62,
@@ -31,6 +31,7 @@ function createHealthMemoryHelper(opts = {}) {
           kind,
           issueKey: key,
           level,
+          ...(metadata && typeof metadata === 'object' ? metadata : {}),
         },
       });
       await healthMemory.consolidate({

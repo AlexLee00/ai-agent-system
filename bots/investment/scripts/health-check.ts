@@ -587,6 +587,11 @@ async function main() {
         issues.push({
           key,
           level: remediationAlertLevel,
+          meta: {
+            remediationRefreshState: remediation?.remediationRefreshState || null,
+            remediationHistory: remediationHistory || null,
+            recommendedExchange,
+          },
           msg: `⚠️ [루나 헬스] position strategy remediation\n${remediation?.decision?.headline || hygiene.decision?.headline || '포지션 전략 remediation 후보 감지'}\nduplicate managed scopes ${hygiene.audit?.duplicateManagedProfileScopes || 0} / orphan profiles ${hygiene.audit?.orphanProfiles || 0} / unmatched managed ${hygiene.audit?.unmatchedManagedPositions || 0}${remediationHistory ? `\nremediation history: count ${remediationHistory.historyCount || 0} / changed ${remediationHistory.statusChanged ? 'yes' : 'no'} / age ${remediationHistory.ageMinutes ?? 'n/a'}m / stale ${remediationHistory.stale ? 'yes' : 'no'} / duplicate delta ${remediationHistory.delta?.duplicateManaged >= 0 ? '+' : ''}${remediationHistory.delta?.duplicateManaged || 0} / orphan delta ${remediationHistory.delta?.orphanProfiles >= 0 ? '+' : ''}${remediationHistory.delta?.orphanProfiles || 0}` : ''}${remediationRefreshHint ? `\n${remediationRefreshHint}` : ''}${recommendedExchange ? `\nrecommended exchange: ${recommendedExchange}` : ''}${duplicateSample ? `\nduplicate sample: ${duplicateSample.exchange}/${duplicateSample.symbol} keeper=${duplicateSample.keeperProfileId} retirements=${duplicateSample.retirements?.length || 0}` : ''}${orphanSample ? `\norphan sample: ${orphanSample.exchange}/${orphanSample.symbol} ${orphanSample.tradeMode} ${orphanSample.lifecycleStatus}` : ''}\nnext commands:\n- ${remediationPlan?.remediationReportCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation -- --json'}\n- ${remediationPlan?.remediationHistoryCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation-history -- --json'}\n- ${remediationPlan?.normalizeDryRunCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --json'}\n- ${remediationPlan?.retireDryRunCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles -- --json'}`,
         });
       }
@@ -671,11 +676,11 @@ async function main() {
   }
 
   // 이슈 알림 발송
-  for (const { key, level, msg } of issues) {
+  for (const { key, level, msg, meta } of issues) {
     console.warn(`[루나 헬스체크] 이슈: ${msg}`);
     const memoryHints = await buildIssueHints(key, msg);
     await notify(`${msg}${memoryHints}`, level);
-    await rememberHealthEvent(key, 'issue', msg, level);
+    await rememberHealthEvent(key, 'issue', msg, level, meta);
     hsm.recordAlert(state, key);
   }
 
