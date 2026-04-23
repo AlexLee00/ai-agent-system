@@ -23,6 +23,7 @@ NAVER_MONITOR_SCRIPT="/Users/alexlee/projects/ai-agent-system/bots/reservation/a
 KIOSK_PLIST="$HOME/Library/LaunchAgents/ai.ska.kiosk-monitor.plist"
 NODE_BIN="/opt/homebrew/bin/tsx"
 [ ! -x "$NODE_BIN" ] && NODE_BIN=$(which tsx)
+: "${NAVER_MONITOR_DURATION_MS:=3600000}"
 
 log() {
   local msg="[$(date '+%Y-%m-%d %H:%M:%S')] $1"
@@ -192,6 +193,7 @@ cleanup_old() {
 # ■ OPS 루프 시작
 # ================================================================
 log "🚀 ━━━ OPS 모드 자동 재시작 루프 시작 ━━━━━━━━━━━━━━━━━━━━"
+log "  ⏱️  NAVER_MONITOR_DURATION_MS=${NAVER_MONITOR_DURATION_MS} (브라우저 세션 주기)"
 mkdir -p "$NAVER_BROWSER_PROFILE_ROOT"
 
 # 픽코 키오스크 모니터는 launchd 스케줄에 맡긴다.
@@ -218,6 +220,7 @@ while true; do
 
   MODE=ops PICKKO_ENABLE=1 STRICT_TIME=1 \
   PLAYWRIGHT_HEADLESS="$PLAYWRIGHT_HEADLESS_VALUE" NAVER_HEADLESS="$NAVER_HEADLESS_VALUE" \
+  NAVER_MONITOR_DURATION_MS="$NAVER_MONITOR_DURATION_MS" \
   SKA_RUNTIME_HOME="$SKA_RUNTIME_HOME" NAVER_BROWSER_PROFILE_ROOT="$NAVER_BROWSER_PROFILE_ROOT" \
   TELEGRAM_ENABLED=1 NAVER_INTERVAL_MS=300000 \
   OBSERVE_ONLY=${OBSERVE_ONLY:-0} \

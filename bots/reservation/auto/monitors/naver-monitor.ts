@@ -82,7 +82,14 @@ const NAVER_WS_FILE = path.join(WORKSPACE, 'naver-monitor-ws.txt');
 const NAVER_URL = 'https://new.smartplace.naver.com/bizes/place/3990161';
 const MODE = IS_OPS ? 'ops' : 'dev';
 const MONITOR_INTERVAL = parseInt(process.env.NAVER_INTERVAL_MS || (MODE === 'ops' ? '300000' : '120000'), 10);
-const MONITOR_DURATION = 2 * 60 * 60 * 1000;
+const DEFAULT_MONITOR_DURATION_MS = 2 * 60 * 60 * 1000;
+const OPS_MONITOR_DURATION_MS = 60 * 60 * 1000;
+const MONITOR_DURATION = parseInt(
+  process.env.NAVER_MONITOR_DURATION_MS || (MODE === 'ops'
+    ? String(OPS_MONITOR_DURATION_MS)
+    : String(DEFAULT_MONITOR_DURATION_MS)),
+  10,
+);
 const NAVER_MONITOR_RUNTIME = getReservationNaverMonitorConfig();
 const HEARTBEAT_INTERVAL_MS = 60 * 60 * 1000;
 const MAX_RETRIES = NAVER_MONITOR_RUNTIME.maxRetries;
@@ -493,7 +500,7 @@ async function monitorBookings() {
   try {
     printModeBanner('naver-monitor');
     recordHeartbeat({ status: 'starting' });
-    log('🚀 네이버 예약 모니터링 시작 (2시간)');
+    log(`🚀 네이버 예약 모니터링 시작 (${Math.round(MONITOR_DURATION / 60000)}분)`);
 
     runStartupPickkoVerification();
     await reportUnresolvedAlerts();
@@ -572,7 +579,7 @@ async function monitorBookings() {
       }
     }
 
-    log('\n✅ 모니터링 완료 (2시간 경과)');
+    log(`\n✅ 모니터링 완료 (${Math.round(MONITOR_DURATION / 60000)}분 경과)`);
     log(`📊 총 ${checkCount}회 확인 수행`);
   } catch (err: any) {
     log(`❌ 치명적 오류: ${err.message}`);
