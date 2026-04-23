@@ -21,6 +21,7 @@ import { runCollectionAudit } from './runtime-collection-audit.ts';
 import { backfillTradeIncidentLinks } from './backfill-trade-incident-links.ts';
 import { buildPositionStrategyHygieneRemediationPlan, runPositionStrategyHygiene } from './runtime-position-strategy-hygiene.ts';
 import { runPositionStrategyRemediation } from './runtime-position-strategy-remediation.ts';
+import { buildPositionStrategyRemediationHistory } from './runtime-position-strategy-remediation-history.ts';
 import { loadExecutionRiskApprovalGuardHealth } from './health-report-support.ts';
 
 const require = createRequire(import.meta.url);
@@ -571,6 +572,7 @@ async function main() {
   try {
     const hygiene = await runPositionStrategyHygiene({ json: true });
     const remediation = await runPositionStrategyRemediation({ json: true }).catch(() => null);
+    const remediationHistory = await buildPositionStrategyRemediationHistory({ json: true }).catch(() => null);
     const key = 'position-strategy-remediation';
     const legacyKey = 'position-strategy-hygiene';
     if (hygiene?.decision?.status === 'position_strategy_hygiene_attention') {
@@ -582,7 +584,7 @@ async function main() {
         issues.push({
           key,
           level: Number(hygiene?.audit?.duplicateManagedProfileScopes || 0) > 0 || Number(hygiene?.audit?.unmatchedManagedPositions || 0) > 0 ? 2 : 1,
-          msg: `⚠️ [루나 헬스] position strategy remediation\n${remediation?.decision?.headline || hygiene.decision?.headline || '포지션 전략 remediation 후보 감지'}\nduplicate managed scopes ${hygiene.audit?.duplicateManagedProfileScopes || 0} / orphan profiles ${hygiene.audit?.orphanProfiles || 0} / unmatched managed ${hygiene.audit?.unmatchedManagedPositions || 0}${recommendedExchange ? `\nrecommended exchange: ${recommendedExchange}` : ''}${duplicateSample ? `\nduplicate sample: ${duplicateSample.exchange}/${duplicateSample.symbol} keeper=${duplicateSample.keeperProfileId} retirements=${duplicateSample.retirements?.length || 0}` : ''}${orphanSample ? `\norphan sample: ${orphanSample.exchange}/${orphanSample.symbol} ${orphanSample.tradeMode} ${orphanSample.lifecycleStatus}` : ''}\nnext commands:\n- npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation -- --json\n- ${remediationPlan?.normalizeDryRunCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --json'}\n- ${remediationPlan?.retireDryRunCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles -- --json'}`,
+          msg: `⚠️ [루나 헬스] position strategy remediation\n${remediation?.decision?.headline || hygiene.decision?.headline || '포지션 전략 remediation 후보 감지'}\nduplicate managed scopes ${hygiene.audit?.duplicateManagedProfileScopes || 0} / orphan profiles ${hygiene.audit?.orphanProfiles || 0} / unmatched managed ${hygiene.audit?.unmatchedManagedPositions || 0}${remediationHistory ? `\nremediation history: count ${remediationHistory.historyCount || 0} / changed ${remediationHistory.statusChanged ? 'yes' : 'no'} / duplicate delta ${remediationHistory.delta?.duplicateManaged >= 0 ? '+' : ''}${remediationHistory.delta?.duplicateManaged || 0} / orphan delta ${remediationHistory.delta?.orphanProfiles >= 0 ? '+' : ''}${remediationHistory.delta?.orphanProfiles || 0}` : ''}${recommendedExchange ? `\nrecommended exchange: ${recommendedExchange}` : ''}${duplicateSample ? `\nduplicate sample: ${duplicateSample.exchange}/${duplicateSample.symbol} keeper=${duplicateSample.keeperProfileId} retirements=${duplicateSample.retirements?.length || 0}` : ''}${orphanSample ? `\norphan sample: ${orphanSample.exchange}/${orphanSample.symbol} ${orphanSample.tradeMode} ${orphanSample.lifecycleStatus}` : ''}\nnext commands:\n- npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation -- --json\n- npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation-history -- --json\n- ${remediationPlan?.normalizeDryRunCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --json'}\n- ${remediationPlan?.retireDryRunCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles -- --json'}`,
         });
       }
     } else if (state[key] || state[legacyKey]) {
