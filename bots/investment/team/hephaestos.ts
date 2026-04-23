@@ -243,6 +243,64 @@ async function fetchFreeAssetBalance(symbol) {
   return Number(balance.free?.[base] || 0);
 }
 
+async function fetchAssetBalances(symbol) {
+  const ex = getExchange();
+  const base = String(symbol || '').split('/')[0];
+  const balance = await ex.fetchBalance();
+  return {
+    freeBalance: Number(balance?.free?.[base] || 0),
+    totalBalance: Number(balance?.total?.[base] || balance?.free?.[base] || 0),
+  };
+}
+
+async function cancelOpenSellOrdersForSymbol(symbol) {
+  const ex = getExchange();
+  if (typeof ex.fetchOpenOrders !== 'function') return { cancelledCount: 0 };
+
+  const openOrders = await ex.fetchOpenOrders(symbol).catch(() => []);
+  const sellOrders = (openOrders || []).filter((order) => String(order?.side || '').toLowerCase() === 'sell');
+  let cancelledCount = 0;
+
+  for (const order of sellOrders) {
+    const orderId = extractOrderId(order);
+    if (!orderId) continue;
+    try {
+      await ex.cancelOrder(orderId, symbol);
+      cancelledCount += 1;
+    } catch {
+      // 이미 체결/취소된 주문은 무시
+    }
+  }
+
+  return { cancelledCount };
+}
+
+function formatConvertAmount(amount, decimals = 12) {
+  return Number(amount || 0).toFixed(decimals).replace(/0+$/u, '').replace(/\.$/u, '');
+}
+
+async function tryConvertResidualDustToUsdt(symbol, amount) {
+  const ex = getExchange();
+  const base = String(symbol || '').split('/')[0];
+  const normalizedAmount = Number(amount || 0);
+  if (!(normalizedAmount > 0.00000001)) return null;
+  if (typeof ex.fetchConvertQuote !== 'function' || typeof ex.createConvertTrade !== 'function') return null;
+
+  const convertAmount = formatConvertAmount(normalizedAmount);
+  if (!convertAmount) return null;
+
+  const quote = await ex.fetchConvertQuote(base, 'USDT', convertAmount);
+  const quoteId = quote?.id || quote?.info?.quoteId;
+  if (!quoteId) return null;
+
+  const execution = await ex.createConvertTrade(quoteId, base, 'USDT', convertAmount);
+  return {
+    amount: normalizedAmount,
+    toAmount: Number(execution?.toAmount || execution?.info?.toAmount || quote?.toAmount || 0),
+    orderId: execution?.id || execution?.order || execution?.info?.orderId || quoteId,
+  };
+}
+
 async function placeBinanceProtectiveExit(symbol, amount, fillPrice, tpPrice, slPrice) {
   const ex = getExchange();
   const marketId = symbol.replace('/', '');
@@ -1285,13 +1343,26 @@ async function resolveSellAmount({
   totalBalance,
   partialExitRatio = null,
 }) {
+  let freeBalanceNow = Number(freeBalance || 0);
+  let totalBalanceNow = Number(totalBalance || freeBalance || 0);
   let amount = position?.amount;
   const normalizedPartialExitRatio = normalizePartialExitRatio(partialExitRatio);
+
+  if (!sellPaperMode && normalizedPartialExitRatio >= 1) {
+    const { cancelledCount } = await cancelOpenSellOrdersForSymbol(symbol).catch(() => ({ cancelledCount: 0 }));
+    if (cancelledCount > 0) {
+      const refreshed = await fetchAssetBalances(symbol).catch(() => null);
+      if (refreshed) {
+        freeBalanceNow = refreshed.freeBalance;
+        totalBalanceNow = refreshed.totalBalance;
+      }
+    }
+  }
 
   if (!amount || amount <= 0) {
     amount = sellPaperMode
       ? Number(livePosition?.amount || fallbackLivePosition?.amount || paperPosition?.amount || 0)
-      : freeBalance;
+      : totalBalanceNow;
     if (amount <= 0) {
       console.warn(`  ⚠️ ${symbol} 보유량 없음 (DB+바이낸스 모두 0) — SELL 스킵`);
       await persistFailure('보유량 없음', {
@@ -1303,8 +1374,8 @@ async function resolveSellAmount({
     console.log(`  ℹ️ DB 포지션 없음 → 바이낸스 실잔고 사용: ${amount} ${symbol.split('/')[0]}`);
   } else if (!livePosition && fallbackLivePosition && fallbackLivePosition.trade_mode !== signalTradeMode) {
     console.warn(`  ⚠️ ${symbol} SELL 신호(${signalTradeMode})에 대응되는 live 포지션 없음 → ${fallbackLivePosition.trade_mode} 포지션 기준으로 청산`);
-  } else if (!sellPaperMode && freeBalance <= 0 && amount > 0) {
-    const reason = `가용 잔고 없음 (free=${freeBalance}, total=${totalBalance || 0})`;
+  } else if (!sellPaperMode && freeBalanceNow <= 0 && amount > 0 && totalBalanceNow <= 0) {
+    const reason = `가용 잔고 없음 (free=${freeBalanceNow}, total=${totalBalanceNow || 0})`;
     console.warn(`  ⚠️ ${symbol} ${reason} — SELL 스킵`);
     await persistFailure(reason, {
       code: 'no_free_balance_for_sell',
@@ -1312,22 +1383,27 @@ async function resolveSellAmount({
         exchange: 'binance',
         symbol,
         dbAmount: position?.amount || 0,
-        freeBalance,
-        totalBalance,
+        freeBalance: freeBalanceNow,
+        totalBalance: totalBalanceNow,
         sellPaperMode,
       },
     });
     return { success: false, reason };
-  } else if (!sellPaperMode && freeBalance < amount) {
-    const drift = amount - freeBalance;
-    console.warn(`  ⚠️ ${symbol} DB 포지션(${amount})과 가용잔고(free=${freeBalance}, total=${totalBalance || freeBalance})가 어긋남 — free 기준으로 SELL 진행`);
+  } else if (!sellPaperMode && normalizedPartialExitRatio >= 1 && totalBalanceNow > 0) {
+    if (Math.abs(amount - totalBalanceNow) > Math.max(0.000001, totalBalanceNow * 0.001)) {
+      console.warn(`  ⚠️ ${symbol} 전량 청산 모드 — 전체 잔고 기준으로 SELL 수량 조정 ${amount} → ${totalBalanceNow}`);
+    }
+    amount = totalBalanceNow;
+  } else if (!sellPaperMode && freeBalanceNow < amount) {
+    const drift = amount - freeBalanceNow;
+    console.warn(`  ⚠️ ${symbol} DB 포지션(${amount})과 가용잔고(free=${freeBalanceNow}, total=${totalBalanceNow || freeBalanceNow})가 어긋남 — free 기준으로 SELL 진행`);
     await reconcileOpenJournalToTrackedAmount(
       symbol,
       sellPaperMode,
-      freeBalance,
+      freeBalanceNow,
       position?.trade_mode || fallbackLivePosition?.trade_mode || signalTradeMode,
     ).catch(() => null);
-    amount = freeBalance;
+    amount = freeBalanceNow;
     await db.updateSignalBlock(signalId, {
       reason: `position_reconciled_to_balance:${drift.toFixed(8)}`,
       code: 'position_balance_reconciled',
@@ -1335,8 +1411,8 @@ async function resolveSellAmount({
         exchange: 'binance',
         symbol,
         dbAmount: position?.amount || 0,
-        freeBalance,
-        totalBalance,
+        freeBalance: freeBalanceNow,
+        totalBalance: totalBalanceNow,
         drift,
       },
     }).catch(() => {});
@@ -1356,7 +1432,7 @@ async function resolveSellAmount({
       if (normalizedPartialExitRatio >= 1) {
         await cleanupDustLivePosition(symbol, livePosition, signalTradeMode, {
           signalId,
-          freeBalance,
+          freeBalance: freeBalanceNow,
           roundedAmount: roundedAmount || amount,
           minSellAmount,
         });
@@ -1368,6 +1444,8 @@ async function resolveSellAmount({
           roundedAmount,
           minSellAmount,
           sellPaperMode,
+          freeBalance: freeBalanceNow,
+          totalBalance: totalBalanceNow,
           partialExitRatio: normalizedPartialExitRatio < 1 ? normalizedPartialExitRatio : null,
         },
       });
@@ -1381,6 +1459,8 @@ async function resolveSellAmount({
     amount,
     sourcePositionAmount,
     partialExitRatio: normalizedPartialExitRatio,
+    freeBalance: freeBalanceNow,
+    totalBalance: totalBalanceNow,
   };
 }
 
@@ -1444,6 +1524,17 @@ async function executeSellTrade({
       paper: sellPaperMode,
       tradeMode: effectivePositionTradeMode,
     });
+
+    if (!sellPaperMode) {
+      const residual = await fetchAssetBalances(symbol).catch(() => null);
+      const residualAmount = Number(residual?.totalBalance || 0);
+      if (residualAmount > 0.00000001) {
+        const converted = await tryConvertResidualDustToUsdt(symbol, residualAmount).catch(() => null);
+        if (converted) {
+          console.log(`  🧹 ${symbol} 전량 청산 후 잔여 ${residualAmount.toFixed(8)} 자동 convert → USDT`);
+        }
+      }
+    }
   }
 
   return trade;
