@@ -70,6 +70,52 @@ export async function getSpotDepthImbalance(symbol, limit = 20) {
   }
 }
 
+export async function getRecentAggTradePressure(symbol, limit = 500) {
+  try {
+    const data = await httpsGet(SAPI_HOST, `/api/v3/aggTrades?symbol=${symbol}&limit=${limit}`);
+    const rows = Array.isArray(data) ? data : [];
+    let takerBuyNotional = 0;
+    let takerSellNotional = 0;
+    let totalNotional = 0;
+    let tradeCount = 0;
+
+    for (const row of rows) {
+      const price = parseFloat(row?.p || '0');
+      const qty = parseFloat(row?.q || '0');
+      if (!(price > 0) || !(qty > 0)) continue;
+      const notional = price * qty;
+      totalNotional += notional;
+      tradeCount += 1;
+      // Binance aggTrade `m=true` means buyer was maker => seller taker => taker sell pressure
+      if (row?.m) takerSellNotional += notional;
+      else takerBuyNotional += notional;
+    }
+
+    const imbalance = totalNotional > 0
+      ? (takerBuyNotional - takerSellNotional) / totalNotional
+      : 0;
+    const takerBuyRatio = totalNotional > 0 ? takerBuyNotional / totalNotional : 0;
+    const takerSellRatio = totalNotional > 0 ? takerSellNotional / totalNotional : 0;
+
+    return {
+      tradeCount,
+      totalNotional,
+      takerBuyNotional,
+      takerSellNotional,
+      takerBuyRatio: Number(takerBuyRatio.toFixed(4)),
+      takerSellRatio: Number(takerSellRatio.toFixed(4)),
+      imbalance: Number(imbalance.toFixed(4)),
+      signal:
+        imbalance >= 0.12 ? 'taker_buy_pressure'
+        : imbalance <= -0.12 ? 'taker_sell_pressure'
+        : 'neutral',
+    };
+  } catch (e) {
+    console.warn(`[onchain] agg trade pressure 조회 실패 (${symbol}):`, e.message);
+    return null;
+  }
+}
+
 /**
  * 현재 펀딩레이트 (premiumIndex 엔드포인트 — nextFundingTime 포함)
  * @param {string} symbol - 예: 'BTCUSDT'
@@ -149,12 +195,13 @@ export async function getLongShortRatio(symbol, period = '1h', limit = 1) {
  * @returns {{ symbol, funding, openInterest, longShortRatio, timestamp }}
  */
 export async function getOnchainSummary(symbol) {
-  const [funding, oi, ls, spotTicker, depth] = await Promise.all([
+  const [funding, oi, ls, spotTicker, depth, tradePressure] = await Promise.all([
     getFundingRate(symbol),
     getOpenInterest(symbol),
     getLongShortRatio(symbol, '1h', 1),
     getSpotTicker24h(symbol),
     getSpotDepthImbalance(symbol),
+    getRecentAggTradePressure(symbol),
   ]);
 
   // 펀딩레이트 시그널: >0.05% = 롱 과열, <-0.01% = 숏 과열
@@ -186,9 +233,14 @@ export async function getOnchainSummary(symbol) {
       tradeCount: spotTicker.count,
       lastPrice: spotTicker.lastPrice,
       depthImbalance: depth?.imbalance ?? null,
+      tradePressureImbalance: tradePressure?.imbalance ?? null,
+      takerBuyRatio: tradePressure?.takerBuyRatio ?? null,
+      takerSellRatio: tradePressure?.takerSellRatio ?? null,
       signal:
-        spotTicker.priceChangePercent >= 4 && (depth?.imbalance ?? 0) > 0.08 ? 'spot_momentum_bid' :
-        spotTicker.priceChangePercent <= -4 && (depth?.imbalance ?? 0) < -0.08 ? 'spot_pressure_ask' :
+        spotTicker.priceChangePercent >= 4 && (depth?.imbalance ?? 0) > 0.08 && (tradePressure?.imbalance ?? 0) > 0.08 ? 'spot_momentum_bid' :
+        spotTicker.priceChangePercent <= -4 && (depth?.imbalance ?? 0) < -0.08 && (tradePressure?.imbalance ?? 0) < -0.08 ? 'spot_pressure_ask' :
+        (tradePressure?.imbalance ?? 0) >= 0.12 ? 'taker_buy_pressure' :
+        (tradePressure?.imbalance ?? 0) <= -0.12 ? 'taker_sell_pressure' :
         spotTicker.quoteVolume >= 100_000_000 ? 'high_flow' :
         'neutral',
     } : null,
