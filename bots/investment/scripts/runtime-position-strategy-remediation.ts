@@ -225,6 +225,14 @@ export async function runPositionStrategyRemediation({ json = false, historyFile
     remediationRefreshReason: remediationRefreshState?.reason || null,
     remediationRefreshCommand: remediationRefreshState?.command || null,
     remediationActions,
+    remediationActionReportCommand: remediationActions?.reportCommand || null,
+    remediationActionHistoryCommand: remediationActions?.historyCommand || null,
+    remediationActionRefreshCommand: remediationActions?.refreshCommand || null,
+    remediationActionHygieneCommand: remediationActions?.hygieneCommand || null,
+    remediationActionNormalizeDryRunCommand: remediationActions?.normalizeDryRunCommand || null,
+    remediationActionNormalizeApplyCommand: remediationActions?.normalizeApplyCommand || null,
+    remediationActionRetireDryRunCommand: remediationActions?.retireDryRunCommand || null,
+    remediationActionRetireApplyCommand: remediationActions?.retireApplyCommand || null,
     decision,
   };
   if (json) return result;

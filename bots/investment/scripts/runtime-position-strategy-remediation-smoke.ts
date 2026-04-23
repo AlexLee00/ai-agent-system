@@ -179,6 +179,14 @@ export async function runPositionStrategyRemediationContractSmoke() {
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationRefreshStale'));
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationRefreshReason'));
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationRefreshCommand'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationActionReportCommand'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationActionHistoryCommand'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationActionRefreshCommand'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationActionHygieneCommand'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationActionNormalizeDryRunCommand'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationActionNormalizeApplyCommand'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationActionRetireDryRunCommand'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationActionRetireApplyCommand'));
   assert.ok(Object.prototype.hasOwnProperty.call(result.remediationSummary || {}, 'commands'));
   return {
     ok: true,
@@ -202,6 +210,15 @@ export async function runPositionStrategyRemediationContractSmoke() {
       && Object.prototype.hasOwnProperty.call(result, 'remediationRefreshStale')
       && Object.prototype.hasOwnProperty.call(result, 'remediationRefreshReason')
       && Object.prototype.hasOwnProperty.call(result, 'remediationRefreshCommand'),
+    hasActionAliasFields:
+      Object.prototype.hasOwnProperty.call(result, 'remediationActionReportCommand')
+      && Object.prototype.hasOwnProperty.call(result, 'remediationActionHistoryCommand')
+      && Object.prototype.hasOwnProperty.call(result, 'remediationActionRefreshCommand')
+      && Object.prototype.hasOwnProperty.call(result, 'remediationActionHygieneCommand')
+      && Object.prototype.hasOwnProperty.call(result, 'remediationActionNormalizeDryRunCommand')
+      && Object.prototype.hasOwnProperty.call(result, 'remediationActionNormalizeApplyCommand')
+      && Object.prototype.hasOwnProperty.call(result, 'remediationActionRetireDryRunCommand')
+      && Object.prototype.hasOwnProperty.call(result, 'remediationActionRetireApplyCommand'),
     hasSummaryField: Object.prototype.hasOwnProperty.call(result, 'remediationSummary'),
     hasSummaryCommandsField: Object.prototype.hasOwnProperty.call(result.remediationSummary || {}, 'commands'),
   };
