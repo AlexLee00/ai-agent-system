@@ -935,6 +935,9 @@ function renderText(payload) {
     sections.feedback.validationSummary?.repairCommand
       ? `- repair command ${sections.feedback.validationSummary.repairCommand}`
       : null,
+    sections.feedback.validationSummary?.recheckCommand
+      ? `- recheck command ${sections.feedback.validationSummary.recheckCommand}`
+      : null,
     `- ${sections.feedback.headline}`,
     '',
     '전략 수정:',

@@ -29,10 +29,13 @@ export function runValidateTradeReviewSmoke() {
   assert.equal(paperOnly.liveFindings, 0);
   assert.equal(paperOnly.paperFindings, 1);
   assert.equal(paperOnly.paperOnly, true);
+  assert.match(paperOnly.repairCommand, /fix:paper/);
+  assert.match(paperOnly.recheckCommand, /validate-review/);
 
   const empty = summarizeTradeReviewFindings([]);
   assert.deepEqual(empty.issueCounts, {});
   assert.equal(empty.topIssue, null);
+  assert.doesNotMatch(empty.repairCommand, /--paper-only/);
 
   return { ok: true, summary, paperOnly, empty };
 }

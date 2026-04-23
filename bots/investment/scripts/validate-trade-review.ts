@@ -9,6 +9,14 @@ const args = process.argv.slice(2);
 const daysArg = args.find(arg => arg.startsWith('--days='));
 const DAYS = daysArg ? parseInt(daysArg.split('=')[1], 10) : 30;
 const FIX = args.includes('--fix');
+const scopeArg = args.find(arg => arg.startsWith('--scope='));
+const SCOPE = args.includes('--paper-only')
+  ? 'paper'
+  : args.includes('--live-only')
+    ? 'live'
+    : ['paper', 'live', 'all'].includes(scopeArg?.split('=')[1])
+      ? scopeArg.split('=')[1]
+      : 'all';
 
 function isRatioScaledPercent(storedPercent, expectedPercent) {
   if (storedPercent == null || expectedPercent == null) return false;
@@ -45,7 +53,9 @@ export function summarizeTradeReviewFindings(items = []) {
   const topIssue = rank(issueCounts)[0] || null;
   const topExchange = rank(byExchange)[0] || null;
   const topSymbol = rank(bySymbol)[0] || null;
-  const repairCommand = 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run validate-review:fix';
+  const repairCommand = paperFindings > 0 && liveFindings === 0
+    ? 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run validate-review:fix:paper'
+    : 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run validate-review:fix';
 
   let repairHint = 'trade_review 누락/불일치 항목을 재생성하고 pnl_percent를 entry_value 기준으로 재계산합니다.';
   if (topIssue?.key === 'missing_review') {
@@ -65,13 +75,15 @@ export function summarizeTradeReviewFindings(items = []) {
     paperFindings,
     paperOnly: paperFindings > 0 && liveFindings === 0,
     repairCommand,
+    recheckCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run validate-review -- --days=90',
     repairHint,
   };
 }
 
-export async function validateTradeReview({ days = 30, fix = false } = {}) {
+export async function validateTradeReview({ days = 30, fix = false, scope = 'all' } = {}) {
   await db.initSchema();
   await journalDb.initJournalSchema();
+  const safeScope = ['paper', 'live', 'all'].includes(String(scope)) ? String(scope) : 'all';
 
   const since = Date.now() - days * 24 * 60 * 60 * 1000;
   const rows = await db.query(`
@@ -99,8 +111,16 @@ export async function validateTradeReview({ days = 30, fix = false } = {}) {
 
   const findings = [];
   let fixed = 0;
+  let fixedLive = 0;
+  let fixedPaper = 0;
+  let scopedClosedTrades = 0;
 
   for (const row of rows) {
+    const isPaper = Boolean(row.is_paper);
+    if (safeScope === 'paper' && !isPaper) continue;
+    if (safeScope === 'live' && isPaper) continue;
+    scopedClosedTrades++;
+
     const issues = [];
     const expectedPnlPercent = row.entry_value > 0 && row.pnl_amount != null
       ? Number(((Number(row.pnl_amount) / Number(row.entry_value)) * 100).toFixed(4))
@@ -147,13 +167,15 @@ export async function validateTradeReview({ days = 30, fix = false } = {}) {
         await journalDb.ensureAutoReview(row.trade_id);
       }
       fixed++;
+      if (isPaper) fixedPaper++;
+      else fixedLive++;
     }
 
     findings.push({
       tradeId: row.trade_id,
       symbol: row.symbol,
       exchange: row.exchange,
-      isPaper: Boolean(row.is_paper),
+      isPaper,
       issues,
       pnlPercentStored: row.pnl_percent == null ? null : Number(row.pnl_percent),
       pnlPercentExpected: expectedPnlPercent,
@@ -167,16 +189,20 @@ export async function validateTradeReview({ days = 30, fix = false } = {}) {
 
   return {
     days,
-    closedTrades: rows.length,
+    scope: safeScope,
+    closedTrades: scopedClosedTrades,
+    scannedClosedTrades: rows.length,
     findings: findings.length,
     fixed,
+    fixedLive,
+    fixedPaper,
     summary,
     items: findings,
   };
 }
 
 async function main() {
-  const result = await validateTradeReview({ days: DAYS, fix: FIX });
+  const result = await validateTradeReview({ days: DAYS, fix: FIX, scope: SCOPE });
   console.log(JSON.stringify(result, null, 2));
 }
 
