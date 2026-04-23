@@ -548,6 +548,18 @@ function buildPositionStrategyRemediationHistoryLine(positionStrategyRemediation
   return `🗂️ remediation history: count ${positionStrategyRemediationHistorySummary.historyCount || 0} | changed ${positionStrategyRemediationHistorySummary.statusChanged ? 'yes' : 'no'} | next changed ${positionStrategyRemediationHistorySummary.nextCommandChanged ? 'yes' : 'no'}${positionStrategyRemediationHistorySummary.nextCommandChanged ? ` (${positionStrategyRemediationHistorySummary.nextCommandTransition?.previous || 'none'} -> ${positionStrategyRemediationHistorySummary.nextCommandTransition?.current || 'none'})` : ''} | age ${positionStrategyRemediationHistorySummary.ageMinutes ?? 'n/a'}m | stale ${positionStrategyRemediationHistorySummary.stale ? 'yes' : 'no'} | duplicate ${positionStrategyRemediationHistorySummary.delta?.duplicateManaged >= 0 ? '+' : ''}${positionStrategyRemediationHistorySummary.delta?.duplicateManaged || 0} | orphan ${positionStrategyRemediationHistorySummary.delta?.orphanProfiles >= 0 ? '+' : ''}${positionStrategyRemediationHistorySummary.delta?.orphanProfiles || 0}`;
 }
 
+function buildDailyFeedbackRemediationLines(positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary) {
+  return {
+    remediationLine: buildPositionStrategyRemediationLine(positionStrategyRemediationSummary),
+    remediationHistoryLine: buildPositionStrategyRemediationHistoryLine(positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary),
+    remediationRefreshStateLine: buildPositionStrategyRemediationRefreshStateLine(positionStrategyRemediationSummary),
+    remediationRefreshLine: buildPositionStrategyRemediationRefreshLine(positionStrategyRemediationSummary),
+    remediationRefreshCommandLine: buildPositionStrategyRemediationRefreshCommandLine(positionStrategyRemediationSummary),
+    remediationNextCommandLine: buildPositionStrategyRemediationNextCommandLine(positionStrategyRemediationSummary),
+    remediationCommandLine: buildPositionStrategyRemediationCommandLine(positionStrategyRemediationSummary),
+  };
+}
+
 function getLearningLoopNextCommand(learningLoopSummary) {
   const nextActions = learningLoopSummary?.decision?.nextActions;
   if (!Array.isArray(nextActions)) return null;
@@ -567,6 +579,10 @@ function buildDailyFeedbackMemoryQuery(dateKst, feedback, screeningSummary, reev
 }
 
 function buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary, positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary) {
+  const remediationLines = buildDailyFeedbackRemediationLines(
+    positionStrategyRemediationSummary,
+    positionStrategyRemediationHistorySummary,
+  );
   const lines = [
     `🌓 루나 일일 피드백 (${dateKst})`,
     `📌 ${feedback.summary}`,
@@ -585,20 +601,13 @@ function buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSumma
   if (positionStrategyCoverageLine) lines.push(positionStrategyCoverageLine);
   const positionStrategyHygieneLine = buildPositionStrategyHygieneLine(positionStrategyHygieneSummary);
   if (positionStrategyHygieneLine) lines.push(positionStrategyHygieneLine);
-  const positionStrategyRemediationLine = buildPositionStrategyRemediationLine(positionStrategyRemediationSummary);
-  if (positionStrategyRemediationLine) lines.push(positionStrategyRemediationLine);
-  const positionStrategyRemediationHistoryLine = buildPositionStrategyRemediationHistoryLine(positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary);
-  if (positionStrategyRemediationHistoryLine) lines.push(positionStrategyRemediationHistoryLine);
-  const positionStrategyRemediationRefreshStateLine = buildPositionStrategyRemediationRefreshStateLine(positionStrategyRemediationSummary);
-  if (positionStrategyRemediationRefreshStateLine) lines.push(positionStrategyRemediationRefreshStateLine);
-  const positionStrategyRemediationRefreshLine = buildPositionStrategyRemediationRefreshLine(positionStrategyRemediationSummary);
-  if (positionStrategyRemediationRefreshLine) lines.push(positionStrategyRemediationRefreshLine);
-  const positionStrategyRemediationRefreshCommandLine = buildPositionStrategyRemediationRefreshCommandLine(positionStrategyRemediationSummary);
-  if (positionStrategyRemediationRefreshCommandLine) lines.push(positionStrategyRemediationRefreshCommandLine);
-  const positionStrategyRemediationNextCommandLine = buildPositionStrategyRemediationNextCommandLine(positionStrategyRemediationSummary);
-  if (positionStrategyRemediationNextCommandLine) lines.push(positionStrategyRemediationNextCommandLine);
-  const positionStrategyRemediationCommandLine = buildPositionStrategyRemediationCommandLine(positionStrategyRemediationSummary);
-  if (positionStrategyRemediationCommandLine) lines.push(positionStrategyRemediationCommandLine);
+  if (remediationLines.remediationLine) lines.push(remediationLines.remediationLine);
+  if (remediationLines.remediationHistoryLine) lines.push(remediationLines.remediationHistoryLine);
+  if (remediationLines.remediationRefreshStateLine) lines.push(remediationLines.remediationRefreshStateLine);
+  if (remediationLines.remediationRefreshLine) lines.push(remediationLines.remediationRefreshLine);
+  if (remediationLines.remediationRefreshCommandLine) lines.push(remediationLines.remediationRefreshCommandLine);
+  if (remediationLines.remediationNextCommandLine) lines.push(remediationLines.remediationNextCommandLine);
+  if (remediationLines.remediationCommandLine) lines.push(remediationLines.remediationCommandLine);
   const positionStrategyHygieneCommandLine = buildPositionStrategyHygieneCommandLine(positionStrategyHygieneSummary);
   if (positionStrategyHygieneCommandLine) lines.push(positionStrategyHygieneCommandLine);
   if (Array.isArray(feedback.nextActions) && feedback.nextActions.length > 0) {
@@ -618,6 +627,10 @@ async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeni
   const remediationSummary = remediationView.remediationSummary;
   const remediationFlat = remediationView.remediationFlat;
   const resolvedRemediationRefreshState = remediationView.remediationRefreshState;
+  const remediationLines = buildDailyFeedbackRemediationLines(
+    positionStrategyRemediationSummary,
+    positionStrategyRemediationHistorySummary,
+  );
   const content = [
     `[일일 피드백 ${dateKst}] ${feedback.summary}`,
     `거래 ${feedback.stats.total}건 / 승률 ${(feedback.stats.winRate * 100).toFixed(1)}% / 손익 $${feedback.stats.totalPnl.toFixed(2)}`,
@@ -627,13 +640,13 @@ async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeni
     buildLearningLoopLine(learningLoopSummary),
     buildPositionStrategyCoverageLine(positionStrategyAuditSummary),
     buildPositionStrategyHygieneLine(positionStrategyHygieneSummary),
-    buildPositionStrategyRemediationLine(positionStrategyRemediationSummary),
-    buildPositionStrategyRemediationHistoryLine(positionStrategyRemediationHistorySummary),
-    buildPositionStrategyRemediationRefreshStateLine(positionStrategyRemediationSummary),
-    buildPositionStrategyRemediationRefreshLine(positionStrategyRemediationSummary),
-    buildPositionStrategyRemediationRefreshCommandLine(positionStrategyRemediationSummary),
-    buildPositionStrategyRemediationNextCommandLine(positionStrategyRemediationSummary),
-    buildPositionStrategyRemediationCommandLine(positionStrategyRemediationSummary),
+    remediationLines.remediationLine,
+    remediationLines.remediationHistoryLine,
+    remediationLines.remediationRefreshStateLine,
+    remediationLines.remediationRefreshLine,
+    remediationLines.remediationRefreshCommandLine,
+    remediationLines.remediationNextCommandLine,
+    remediationLines.remediationCommandLine,
     buildPositionStrategyHygieneCommandLine(positionStrategyHygieneSummary),
     `다음 액션: ${(feedback.nextActions || []).join(' / ') || '없음'}`,
   ].filter(Boolean).join('\n');
