@@ -17,6 +17,7 @@ function parseArgs(argv = process.argv.slice(2)) {
     json: Boolean(values.json),
     exchange: values.exchange ? String(values.exchange) : null,
     tradeMode: values['trade-mode'] ? String(values['trade-mode']) : null,
+    refresh: Boolean(values.refresh),
   };
 }
 
@@ -31,7 +32,13 @@ async function inferDecisionFromPosition(position) {
   };
 }
 
-export async function runBackfill({ exchange = null, tradeMode = null, json = false } = {}) {
+function needsRefresh(existing = null) {
+  if (!existing) return true;
+  const ratios = existing?.exit_plan?.partialExitRatios || existing?.exitPlan?.partialExitRatios;
+  return !ratios || typeof ratios !== 'object' || Object.keys(ratios).length === 0;
+}
+
+export async function runBackfill({ exchange = null, tradeMode = null, json = false, refresh = false } = {}) {
   await db.initSchema();
   const positions = await db.getOpenPositions(exchange, false, tradeMode);
   const processed = [];
@@ -41,7 +48,7 @@ export async function runBackfill({ exchange = null, tradeMode = null, json = fa
       exchange: position.exchange,
       tradeMode: position.trade_mode || 'normal',
     }).catch(() => null);
-    if (existing) {
+    if (existing && !(refresh || needsRefresh(existing))) {
       processed.push({
         symbol: position.symbol,
         exchange: position.exchange,
@@ -61,7 +68,7 @@ export async function runBackfill({ exchange = null, tradeMode = null, json = fa
     }).catch(() => null);
 
     const profile = await createOrUpdatePositionStrategyProfile({
-      signalId: latestSignal?.id || null,
+      signalId: existing?.signal_id || latestSignal?.id || null,
       symbol: position.symbol,
       exchange: position.exchange,
       tradeMode: position.trade_mode || 'normal',
@@ -72,9 +79,9 @@ export async function runBackfill({ exchange = null, tradeMode = null, json = fa
       symbol: position.symbol,
       exchange: position.exchange,
       tradeMode: position.trade_mode || 'normal',
-      status: profile ? 'created' : 'skipped',
+      status: profile ? (existing ? 'refreshed' : 'created') : 'skipped',
       strategyName: profile?.strategy_name || null,
-      signalId: latestSignal?.id || null,
+      signalId: existing?.signal_id || latestSignal?.id || null,
     });
   }
 
@@ -82,6 +89,7 @@ export async function runBackfill({ exchange = null, tradeMode = null, json = fa
     ok: true,
     total: processed.length,
     created: processed.filter((item) => item.status === 'created').length,
+    refreshed: processed.filter((item) => item.status === 'refreshed').length,
     existing: processed.filter((item) => item.status === 'existing').length,
     rows: processed,
   };

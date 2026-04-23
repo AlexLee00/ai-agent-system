@@ -46,7 +46,16 @@ function normalizeSetupType(value) {
   return normalized || null;
 }
 
+function getExitPlanRatio(exitPlan = null, reasonCode = null) {
+  const ratios = exitPlan?.partialExitRatios;
+  if (!ratios || typeof ratios !== 'object') return null;
+  const value = ratios?.[reasonCode];
+  return normalizeRatio(value);
+}
+
 function getStrategyAwarePartialExitRatio(reasonCode, strategyProfile = null) {
+  const exitPlanRatio = getExitPlanRatio(strategyProfile?.exit_plan || strategyProfile?.exitPlan, reasonCode);
+  if (exitPlanRatio != null) return exitPlanRatio;
   const base = getDefaultPartialExitRatio(reasonCode);
   const setupType = normalizeSetupType(strategyProfile?.setup_type);
 
@@ -96,6 +105,7 @@ function mapCandidate(row, strategyProfile = null, overrideRatio = null) {
     strategyProfile: strategyProfile ? {
       strategyName: strategyProfile.strategy_name || null,
       setupType: strategyProfile.setup_type || null,
+      exitPlan: strategyProfile.exit_plan || strategyProfile.exitPlan || null,
     } : null,
   };
 }

@@ -40,7 +40,57 @@ function buildMonitoringPlan(exchange = 'binance', regime = null, strategy = nul
   };
 }
 
-function buildExitPlan(strategy = null, latestBacktest = null) {
+function buildExitLadder(setupType = null) {
+  switch (String(setupType || '')) {
+    case 'mean_reversion':
+      return {
+        partialExitRatios: {
+          profit_lock_candidate: 0.65,
+          mean_reversion_profit_take: 0.6,
+          tv_live_bearish: 0.5,
+          backtest_drift_adjust: 0.45,
+        },
+        minHoldHours: 2,
+        mildLossGracePct: -1.2,
+      };
+    case 'breakout':
+      return {
+        partialExitRatios: {
+          profit_lock_candidate: 0.4,
+          tv_live_bearish: 0.35,
+          breakout_failed: 0.5,
+          backtest_drift_adjust: 0.35,
+        },
+        minHoldHours: 4,
+        mildLossGracePct: -1.5,
+      };
+    case 'trend_following':
+    case 'momentum_rotation':
+      return {
+        partialExitRatios: {
+          profit_lock_candidate: 0.33,
+          trend_following_trail: 0.25,
+          tv_live_bearish: 0.25,
+          backtest_drift_adjust: 0.2,
+        },
+        minHoldHours: 6,
+        mildLossGracePct: -0.8,
+      };
+    default:
+      return {
+        partialExitRatios: {
+          profit_lock_candidate: 0.5,
+          tv_live_bearish: 0.4,
+          backtest_drift_adjust: 0.3,
+        },
+        minHoldHours: 3,
+        mildLossGracePct: -1.0,
+      };
+  }
+}
+
+function buildExitPlan(strategy = null, latestBacktest = null, setupType = null) {
+  const ladder = buildExitLadder(setupType);
   return {
     primaryExit: strategy?.exit_condition || 'strategy_break_or_risk_exit',
     riskManagement: strategy?.risk_management || null,
@@ -49,6 +99,9 @@ function buildExitPlan(strategy = null, latestBacktest = null) {
       'tv_live_bearish',
       'mild_loss_hold_guard_release',
     ],
+    partialExitRatios: ladder.partialExitRatios,
+    minHoldHours: ladder.minHoldHours,
+    mildLossGracePct: ladder.mildLossGracePct,
     backtestAnchor: latestBacktest ? {
       label: latestBacktest.label || null,
       sharpe: latestBacktest.sharpe ?? null,
@@ -106,7 +159,7 @@ export async function createOrUpdatePositionStrategyProfile({
     setupType,
     thesis,
     monitoringPlan: buildMonitoringPlan(exchange, marketRegime, strategy),
-    exitPlan: buildExitPlan(strategy, latestBacktest),
+    exitPlan: buildExitPlan(strategy, latestBacktest, setupType),
     backtestPlan: buildBacktestPlan(exchange, latestBacktest),
     marketContext: marketRegime ? {
       regime: marketRegime.regime || null,
