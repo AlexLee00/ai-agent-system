@@ -6,7 +6,7 @@ const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const pgPool = require('../../../packages/core/lib/pg-pool.js');
 const { buildBlogCliInsight } = require('../lib/cli-insight.ts');
-const { getBlogHealthRuntimeConfig } = require('../lib/runtime-config.ts');
+const { getBlogHealthRuntimeConfig, getBlogNeighborCommenterConfig } = require('../lib/runtime-config.ts');
 const { assessInboundComment } = require('../lib/commenter.ts');
 const { readDevelopmentBaseline, buildSinceClause } = require('../lib/dev-baseline.ts');
 const { readCommenterRunResult } = require('../lib/commenter-run-telemetry.ts');
@@ -14,6 +14,7 @@ const { loadStrategyBundle, resolveExecutionTarget } = require('../lib/strategy-
 const { readLatestBlogEvalCase } = require('../lib/eval-case-telemetry.ts');
 
   const runtimeConfig = getBlogHealthRuntimeConfig();
+  const neighborRuntimeConfig = getBlogNeighborCommenterConfig();
   const strategy = loadStrategyBundle().plan;
 const BLOG_ROOT = path.join(env.PROJECT_ROOT, 'bots/blog');
 const BLOG_OPS_ROOT = path.join(BLOG_ROOT, 'output', 'ops');
@@ -673,6 +674,10 @@ async function getExposureSignal(baseline = null) {
 function buildActions({ latestReplyReplayCandidate, failureByKind, failureByAction, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun, neighborUiReplay = null, neighborSympathyReplay = null, staleSympathyFailureCount = 0, exposureSignal = null, primary }) {
   const actions = [];
   const latestEvalCase = primary?.latestEvalCase || null;
+  if (String(primary?.area || '') === 'engagement.target_gap.replies.neighbor_daily_limit') {
+    actions.push('today quota reached: neighbor pending queue는 다음 KST 일자 첫 실행에서 우선 처리');
+    actions.push('운영 조정: 외부 댓글을 더 당겨야 하면 neighbor maxDaily 조정 검토');
+  }
   if (latestEvalCase?.capturedAt) {
     actions.push(`latest eval case: ${String(latestEvalCase.capturedAt).slice(0, 19)} / ${String(latestEvalCase.subtype || 'unknown')} / ${String(latestEvalCase.code || 'unknown')}`);
   }
@@ -807,8 +812,10 @@ function buildActions({ latestReplyReplayCandidate, failureByKind, failureByActi
   return Array.from(new Set([...prioritized, ...actions]));
 }
 
-function buildPrimary({ failureByKind, failureByAction, latestReplyReplayCandidate, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun, exposureSignal = null }) {
+function buildPrimary({ failureByKind, failureByAction, latestReplyReplayCandidate, targetGaps, primaryGap, targets, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun, exposureSignal = null }) {
   const blogPrefix = `npm --prefix ${BLOG_ROOT}`;
+  const neighborMaxDaily = Math.max(0, Number(neighborRuntimeConfig?.maxDaily || 0));
+  const todayNeighborSuccess = Number(targets?.neighborComments?.success || 0);
   if ((failureByKind.ui || 0) > 0 || (failureByKind.browser || 0) > 0) {
     const uiFocus = buildUiFocus(failureByAction);
     const uiNextCommand = uiFocus.action === 'sympathy'
@@ -891,6 +898,14 @@ function buildPrimary({ failureByKind, failureByAction, latestReplyReplayCandida
         };
       }
       if (Number(neighborWorkload?.pendingCount || 0) > 0) {
+        if (neighborMaxDaily > 0 && todayNeighborSuccess >= neighborMaxDaily) {
+          return {
+            area: 'engagement.target_gap.replies.neighbor_daily_limit',
+            reason: `replies 목표치는 비어 있지만 현재 reply 대상 댓글이 없고, 외부 댓글도 오늘 quota ${todayNeighborSuccess}/${neighborMaxDaily}를 이미 채워 pending ${Number(neighborWorkload.pendingCount || 0)}건이 다음 실행 창으로 넘어갑니다.`,
+            nextCommand: '',
+            actionFocus: '오늘은 추가 neighbor 실행보다 다음 KST 일자에 pending queue를 우선 처리하거나 daily limit을 조정',
+          };
+        }
         return {
           area: 'engagement.target_gap.replies.no_workload',
           reason: `replies 목표치는 비어 있지만 현재 reply 대상 댓글이 없습니다 (baseline 이후 inbound 댓글 0건 / neighbor pending ${Number(neighborWorkload.pendingCount || 0)}건).`,
@@ -937,6 +952,9 @@ function buildPrimary({ failureByKind, failureByAction, latestReplyReplayCandida
 function buildEngagementDoctorFallback(payload = {}) {
   if (payload.totalFailures > 0) {
     return 'engagement 자동화는 최근 실패 흔적이 있어 replay 대상과 UI/browser 실패 비중부터 확인하는 편이 좋습니다.';
+  }
+  if (payload.primary?.area === 'engagement.target_gap.replies.neighbor_daily_limit') {
+    return 'engagement 자동화는 지금 고장보다 quota 상태가 더 큰 이유라서, 오늘 외부 댓글 한도를 이미 채운 pending queue를 다음 실행 창에서 우선 처리하는 편이 좋습니다.';
   }
   if (
     payload.primary?.area === 'engagement.target_gap.replies.no_workload'
@@ -1209,7 +1227,7 @@ async function main() {
     latestEvalCase,
   };
   payload.needsAttention = payload.totalFailures > 0 || targetGaps.length > 0 || Boolean(exposureSignal?.needsStrategy);
-  payload.primary = buildPrimary({ failureByKind, failureByAction, latestReplyReplayCandidate, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun, exposureSignal });
+  payload.primary = buildPrimary({ failureByKind, failureByAction, latestReplyReplayCandidate, targetGaps, primaryGap, targets, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun, exposureSignal });
   payload.primary.latestEvalCase = latestEvalCase;
   payload.actions = buildActions({ latestReplyReplayCandidate, failureByKind, failureByAction, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun, neighborUiReplay, neighborSympathyReplay, staleSympathyFailureCount, exposureSignal, primary: payload.primary });
 

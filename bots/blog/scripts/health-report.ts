@@ -22,7 +22,7 @@ const {
   buildFileActivityHealth,
   buildResolvedWebhookHealth,
 } = require('../../../packages/core/lib/health-provider');
-const { getBlogHealthRuntimeConfig } = require('../lib/runtime-config.ts');
+const { getBlogHealthRuntimeConfig, getBlogNeighborCommenterConfig } = require('../lib/runtime-config.ts');
 const { loadStrategyBundle, resolveExecutionTarget } = require('../lib/strategy-loader.ts');
 const { getInstagramConfig } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-graph.ts'));
 const {
@@ -46,6 +46,7 @@ const DAILY_LOG = path.join(BLOG_ROOT, 'blog-daily.log');
 const SHORTFORM_DIR = path.join(BLOG_ROOT, 'output', 'shortform');
 const INSTA_CARD_DIR = path.join(BLOG_ROOT, 'output', 'images', 'insta');
 const runtimeConfig = getBlogHealthRuntimeConfig();
+const neighborRuntimeConfig = getBlogNeighborCommenterConfig();
 const DAILY_LOG_STALE_MS = Number(runtimeConfig.dailyLogStaleMs || (36 * 60 * 60 * 1000));
 const NODE_SERVER_HEALTH_URL = runtimeConfig.nodeServerHealthUrl || 'http://127.0.0.1:3100/health';
 const N8N_HEALTH_URL = process.env.N8N_HEALTH_URL || runtimeConfig.n8nHealthUrl || 'http://127.0.0.1:5678/healthz';
@@ -1514,6 +1515,14 @@ async function buildEngagementHealth() {
         ok.push(`  last gap run idle reason: ${String(lastGapRun.idleReason)}`);
       }
     }
+    const neighborMaxDaily = Math.max(0, Number(neighborRuntimeConfig?.maxDaily || 0));
+    if (
+      neighborMaxDaily > 0
+      && Number(neighborStatusMap.get('pending') || 0) > 0
+      && neighborCommentSuccess >= neighborMaxDaily
+    ) {
+      ok.push(`  neighbor daily limit reached: ${neighborCommentSuccess}/${neighborMaxDaily} / pending ${Number(neighborStatusMap.get('pending') || 0)}건은 다음 KST 실행 창으로 이월`);
+    }
     if (neighborUiReplay?.ok) {
       if (neighborUiReplay?.result?.ok) {
         ok.push(`  neighbor replay latest: success / comment ${Number(neighborUiReplay?.candidate?.id || 0)} / ${String(neighborUiReplay?.candidate?.targetBlogId || '').trim() || 'unknown'}`);
@@ -2360,6 +2369,11 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
       const rest = entries.filter((item) => item.label !== 'neighbor');
       return neighborFirst ? [neighborFirst, ...rest] : entries;
     }
+    if (engagementDoctorPriority?.primaryArea === 'engagement.target_gap.replies.neighbor_daily_limit') {
+      const neighborFirst = entries.find((item) => item.label === 'neighbor');
+      const rest = entries.filter((item) => item.label !== 'neighbor');
+      return neighborFirst ? [neighborFirst, ...rest] : entries;
+    }
     if (!doctorPrimaryLabel) return entries;
     const primaryEntry = entries.find((item) => item.label === doctorPrimaryLabel);
     const rest = entries.filter((item) => item.label !== doctorPrimaryLabel);
@@ -2497,6 +2511,9 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
           engagementGapHint ? `현재 gap: ${engagementGapHint}` : '',
           engagementDoctorPriority?.primaryArea === 'engagement.target_gap.replies.no_workload'
             ? '현재 inbound는 reply 후보가 없어 gap이 유지되고 있습니다.'
+            : '',
+          engagementDoctorPriority?.primaryArea === 'engagement.target_gap.replies.neighbor_daily_limit'
+            ? `현재 inbound는 reply 후보가 없고, neighbor는 오늘 quota ${Number(engagementHealth?.neighborComments?.success || 0)}/${Math.max(0, Number(neighborRuntimeConfig?.maxDaily || 0))}를 이미 채워 pending queue가 다음 실행 창으로 넘어갑니다.`
             : '',
           engagementHealth?.lastGapRun?.allIdle
             ? `최근 fallback run도 idle: ${Array.isArray(engagementHealth.lastGapRun.attempted) ? engagementHealth.lastGapRun.attempted.map((item) => String(item?.label || '')).filter(Boolean).join(' -> ') : ''} / ${String(engagementHealth.lastGapRun.idleReason || '즉시 처리할 workload 없음')}`
