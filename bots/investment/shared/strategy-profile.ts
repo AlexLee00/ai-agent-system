@@ -16,17 +16,31 @@ function parseAnalystSignals(raw = '') {
 function buildFallbackStrategy(seedSignal = null, exchange = 'binance', decision = null) {
   const reasoning = String(seedSignal?.reasoning || decision?.reasoning || '').toLowerCase();
   const analystSignals = parseAnalystSignals(seedSignal?.analyst_signals || '');
-  const dominantOracle = analystSignals?.O || null;
+  const confidence = Math.max(0, Number(seedSignal?.confidence ?? decision?.confidence ?? 0.4));
+  const bullishVotes = ['A', 'O', 'H', 'S'].filter((name) => analystSignals?.[name] === 'B').length;
+  const bearishVotes = ['A', 'O', 'H', 'S'].filter((name) => analystSignals?.[name] === 'S').length;
   const setupType =
-    reasoning.includes('fast-path') || dominantOracle === 'B'
-      ? (exchange === 'binance' ? 'momentum_rotation' : 'equity_swing')
-      : reasoning.includes('반등') || reasoning.includes('mean reversion')
-        ? 'mean_reversion'
-        : reasoning.includes('돌파') || reasoning.includes('breakout')
+    reasoning.includes('반등')
+    || reasoning.includes('oversold')
+    || reasoning.includes('되돌림')
+    || reasoning.includes('mean reversion')
+      ? 'mean_reversion'
+      : reasoning.includes('돌파')
+        || reasoning.includes('breakout')
+        || reasoning.includes('squeeze')
+        || reasoning.includes('volume expansion')
+        || reasoning.includes('거래량 급증')
           ? 'breakout'
-          : exchange === 'binance'
-            ? 'momentum_rotation'
-            : 'equity_swing';
+          : reasoning.includes('trend')
+            || reasoning.includes('추세')
+            || reasoning.includes('pullback')
+            || (bullishVotes >= 3 && confidence >= 0.62)
+              ? (exchange === 'binance' ? 'trend_following' : 'equity_swing')
+              : reasoning.includes('fast-path') || (analystSignals?.O === 'B' && bearishVotes === 0)
+                ? (exchange === 'binance' ? 'momentum_rotation' : 'equity_swing')
+                : exchange === 'binance'
+                  ? 'momentum_rotation'
+                  : 'equity_swing';
 
   return {
     source: 'historical_signal_backfill',

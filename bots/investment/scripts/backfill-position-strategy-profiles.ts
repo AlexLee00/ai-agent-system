@@ -4,6 +4,7 @@
 import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { createOrUpdatePositionStrategyProfile } from '../shared/strategy-profile.ts';
+import { getInvestmentSyncRuntimeConfig } from '../shared/runtime-config.ts';
 
 function parseArgs(argv = process.argv.slice(2)) {
   const values = {};
@@ -18,7 +19,14 @@ function parseArgs(argv = process.argv.slice(2)) {
     exchange: values.exchange ? String(values.exchange) : null,
     tradeMode: values['trade-mode'] ? String(values['trade-mode']) : null,
     refresh: Boolean(values.refresh),
+    includeDust: Boolean(values['include-dust']),
   };
+}
+
+function getDustThresholdUsdt() {
+  const syncRuntime = getInvestmentSyncRuntimeConfig();
+  const threshold = Number(syncRuntime?.cryptoMinNotionalUsdt);
+  return Number.isFinite(threshold) && threshold > 0 ? threshold : 10;
 }
 
 async function inferDecisionFromPosition(position) {
@@ -61,12 +69,25 @@ function needsRefresh(existing = null) {
   return !ratios || typeof ratios !== 'object' || Object.keys(ratios).length === 0;
 }
 
-export async function runBackfill({ exchange = null, tradeMode = null, json = false, refresh = false } = {}) {
+export async function runBackfill({ exchange = null, tradeMode = null, json = false, refresh = false, includeDust = false } = {}) {
   await db.initSchema();
   const positions = await db.getOpenPositions(exchange, false, tradeMode);
   const processed = [];
+  const dustThresholdUsdt = getDustThresholdUsdt();
 
   for (const position of positions) {
+    const notionalUsdt = Number(position.amount || 0) * Number(position.avg_price || 0);
+    if (!includeDust && position.exchange === 'binance' && notionalUsdt > 0 && notionalUsdt < dustThresholdUsdt) {
+      processed.push({
+        symbol: position.symbol,
+        exchange: position.exchange,
+        tradeMode: position.trade_mode || 'normal',
+        status: 'skipped_dust',
+        notionalUsdt,
+      });
+      continue;
+    }
+
     const existing = await db.getPositionStrategyProfile(position.symbol, {
       exchange: position.exchange,
       tradeMode: position.trade_mode || 'normal',
@@ -109,6 +130,7 @@ export async function runBackfill({ exchange = null, tradeMode = null, json = fa
     created: processed.filter((item) => item.status === 'created').length,
     refreshed: processed.filter((item) => item.status === 'refreshed').length,
     existing: processed.filter((item) => item.status === 'existing').length,
+    skippedDust: processed.filter((item) => item.status === 'skipped_dust').length,
     rows: processed,
   };
 

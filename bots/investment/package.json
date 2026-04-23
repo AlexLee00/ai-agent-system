@@ -113,6 +113,7 @@
     "runtime:position-parity": "node scripts/runtime-position-parity-report.ts --sync",
     "runtime:position-strategy-audit": "node scripts/runtime-position-strategy-audit.ts",
     "runtime:normalize-strategy-lifecycle": "node scripts/normalize-strategy-lifecycle.ts",
+    "runtime:retire-dust-strategy-profiles": "node scripts/retire-dust-strategy-profiles.ts",
     "runtime:symbol-legs": "node scripts/runtime-symbol-leg-review.ts --json",
     "runtime:active-backtest": "node scripts/runtime-active-backtest.ts",
     "runtime:partial-adjust": "node scripts/partial-adjust-runner.ts",
