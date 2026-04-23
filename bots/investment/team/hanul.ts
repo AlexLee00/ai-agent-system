@@ -36,6 +36,7 @@ import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.ts';
 import { notifyTrade, notifyError, notifyJournalEntry, notifyKisSignal, notifyKisOverseasSignal, notifySettlement } from '../shared/report.ts';
 import { getDynamicMinOrderAmount } from '../shared/capital-manager.ts';
 import { getMarketOrderRule } from '../shared/order-rules.ts';
+import { buildExecutionRiskApprovalGuard } from '../shared/risk-approval-execution-guard.ts';
 import pgPool from '../../../packages/core/lib/pg-pool.js';
 
 // ─── 심볼 유효성 ────────────────────────────────────────────────────
@@ -104,6 +105,7 @@ async function failHanulSignal(signalId, {
   action = null,
   amount = null,
   error = null,
+  meta = null,
 } = {}) {
   await markSignalFailedDetailed(signalId, {
     reason,
@@ -113,6 +115,7 @@ async function failHanulSignal(signalId, {
     action,
     amount,
     error,
+    meta,
   });
   return { success: false, reason: reason || error || null, error: error || null };
 }
@@ -121,67 +124,38 @@ async function enforceHanulNemesisApproval(signal, market = 'domestic') {
   const paperMode = isPaperMode();
   const { id: signalId, symbol, action } = signal;
 
-  if (action === ACTIONS.SELL || paperMode) return { approved: true };
-
-  const nemesisVerdict = signal.nemesis_verdict || signal.nemesisVerdict;
-  const isApproved = ['approved', 'modified'].includes(String(nemesisVerdict || '').toLowerCase());
   const marketPrefix = market === 'overseas' ? 'sec015_overseas' : 'sec015';
+  const executionGuard = buildExecutionRiskApprovalGuard(signal, {
+    market,
+    codePrefix: marketPrefix,
+    executionBlockedBy: 'hanul_entry_guard',
+    paperMode,
+  });
 
-  if (!isApproved) {
-    const reason = `SEC-015: 네메시스 승인 없는 ${market} BUY signal 실행 차단 (verdict=${nemesisVerdict || 'null'})`;
+  if (!executionGuard.approved) {
+    const reason = `SEC-015: ${executionGuard.reason}`;
     console.error(`  🛡️ [한울] ${reason}`);
     if (signalId) {
       await db.updateSignalBlock(signalId, {
         status: SIGNAL_STATUS.FAILED,
         reason: reason.slice(0, 180),
-        code: `${marketPrefix}_nemesis_bypass_guard`,
-        meta: {
-          market,
-          symbol,
-          action,
-          nemesis_verdict: nemesisVerdict || null,
-          execution_blocked_by: 'hanul_entry_guard',
-        },
+        code: executionGuard.code,
+        meta: executionGuard.meta,
       }).catch(() => {});
     }
-    return failHanulSignal(signalId, {
+    const failed = await failHanulSignal(signalId, {
       reason,
-      code: `${marketPrefix}_nemesis_bypass_guard`,
+      code: executionGuard.code,
       market,
       symbol,
       action,
       amount: signal.amount_usdt,
+      meta: executionGuard.meta,
     });
-  }
-
-  if (signal.approved_at) {
-    const ageMs = Date.now() - new Date(signal.approved_at).getTime();
-    if (ageMs > 5 * 60 * 1000) {
-      const reason = `SEC-015: 승인 후 ${Math.round(ageMs / 1000)}초 경과 (${market} stale signal)`;
-      console.error(`  🛡️ [한울] ${reason}`);
-      if (signalId) {
-        await db.updateSignalBlock(signalId, {
-          status: SIGNAL_STATUS.FAILED,
-          reason: reason.slice(0, 180),
-          code: `${marketPrefix}_stale_approval`,
-          meta: {
-            market,
-            symbol,
-            action,
-            approved_at: signal.approved_at,
-            age_seconds: Math.round(ageMs / 1000),
-          },
-        }).catch(() => {});
-      }
-      return failHanulSignal(signalId, {
-        reason,
-        code: `${marketPrefix}_stale_approval`,
-        market,
-        symbol,
-        action,
-        amount: signal.amount_usdt,
-      });
-    }
+    return {
+      ...failed,
+      riskApprovalExecution: executionGuard.meta?.risk_approval_execution || null,
+    };
   }
 
   return { approved: true };
@@ -209,6 +183,7 @@ async function markSignalFailedDetailed(signalId, {
   action = null,
   amount = null,
   error = null,
+  meta = null,
 } = {}) {
   const normalizedReason = reason ? String(reason).slice(0, 180) : null;
   await db.updateSignalBlock(signalId, {
@@ -221,6 +196,7 @@ async function markSignalFailedDetailed(signalId, {
       action,
       amount,
       error: error ? String(error).slice(0, 240) : null,
+      ...(meta || {}),
     },
   }).catch(() => {});
 }

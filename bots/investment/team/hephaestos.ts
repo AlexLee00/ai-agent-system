@@ -20,6 +20,7 @@ import { loadSecrets, initHubSecrets, isPaperMode, getInvestmentTradeMode } from
 import { isSameDaySymbolReentryBlockEnabled, getInvestmentExecutionRuntimeConfig } from '../shared/runtime-config.ts';
 import { getInvestmentAgentRoleState } from '../shared/agent-role-state.ts';
 import { syncPositionsAtMarketOpen } from '../shared/position-sync.ts';
+import { buildExecutionRiskApprovalGuard } from '../shared/risk-approval-execution-guard.ts';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.ts';
 import { notifyTrade, notifyError, notifyJournalEntry, notifyTradeSkip, notifyCircuitBreaker, notifySettlement } from '../shared/report.ts';
 import { preTradeCheck, calculatePositionSize, getAvailableBalance, getAvailableUSDT, getOpenPositions, getDailyPnL, getDailyTradeCount, checkCircuitBreaker, getCapitalConfig, formatDailyTradeLimitReason, getDynamicMinOrderAmount } from '../shared/capital-manager.ts';
@@ -2497,41 +2498,27 @@ export async function executeSignal(signal) {
   const globalPaperMode = isPaperMode();
   const { id: signalId, symbol, action } = signal;
 
-  // ★ SEC-004 가드: 네메시스 승인 재검증 (BUY 전용 — SELL은 포지션 청산이므로 예외)
+  // ★ SEC-004 가드: 네메시스 승인/실행 freshness 재검증 (BUY 전용 — SELL은 포지션 청산이므로 예외)
   if (action !== ACTIONS.SELL && !globalPaperMode) {
-    const nemesisVerdict = signal.nemesis_verdict || signal.nemesisVerdict;
-    const isApproved = ['approved', 'modified'].includes(String(nemesisVerdict || '').toLowerCase());
-    if (!isApproved) {
-      const reason = `SEC-004: 네메시스 승인 없는 BUY signal 실행 차단 (verdict=${nemesisVerdict || 'null'})`;
+    const executionGuard = buildExecutionRiskApprovalGuard(signal, {
+      market: 'binance',
+      codePrefix: 'sec004',
+      executionBlockedBy: 'hephaestos_entry_guard',
+      paperMode: globalPaperMode,
+    });
+    if (!executionGuard.approved) {
+      const reason = `SEC-004: ${executionGuard.reason}`;
       console.error(`  🛡️ [헤파이스토스] ${reason}`);
       if (signalId) {
         await db.updateSignalBlock(signalId, {
           status: SIGNAL_STATUS.FAILED,
           reason: reason.slice(0, 180),
-          code: 'sec004_nemesis_bypass_guard',
-          meta: { symbol, action, nemesis_verdict: nemesisVerdict || null, execution_blocked_by: 'hephaestos_entry_guard' },
+          code: executionGuard.code,
+          meta: executionGuard.meta,
         }).catch(() => {});
       }
       notifyTradeSkip({ symbol, action, reason }).catch(() => {});
-      return { success: false, reason, code: 'sec004_nemesis_bypass_guard' };
-    }
-    // stale signal 체크 (승인 후 5분 초과)
-    if (signal.approved_at) {
-      const ageMs = Date.now() - new Date(signal.approved_at).getTime();
-      if (ageMs > 5 * 60 * 1000) {
-        const reason = `SEC-004: 승인 후 ${Math.round(ageMs / 1000)}초 경과 (stale signal)`;
-        console.error(`  🛡️ [헤파이스토스] ${reason}`);
-        if (signalId) {
-          await db.updateSignalBlock(signalId, {
-            status: SIGNAL_STATUS.FAILED,
-            reason: reason.slice(0, 180),
-            code: 'sec004_stale_approval',
-            meta: { symbol, action, approved_at: signal.approved_at, age_seconds: Math.round(ageMs / 1000) },
-          }).catch(() => {});
-        }
-        notifyTradeSkip({ symbol, action, reason }).catch(() => {});
-        return { success: false, reason, code: 'sec004_stale_approval' };
-      }
+      return { success: false, reason, code: executionGuard.code, riskApprovalExecution: executionGuard.meta?.risk_approval_execution || null };
     }
   }
 
