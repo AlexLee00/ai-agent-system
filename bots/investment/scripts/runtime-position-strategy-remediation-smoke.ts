@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import {
+  buildPositionStrategyRemediationActions,
   buildPositionStrategyRemediationDecision,
   buildPositionStrategyRemediationRefreshState,
 } from './runtime-position-strategy-remediation.ts';
@@ -44,6 +45,18 @@ export function runPositionStrategyRemediationSmoke() {
   });
   assert.equal(readyRefresh.needed, false);
   assert.equal(readyRefresh.command, null);
+  const readyActions = buildPositionStrategyRemediationActions({
+    status: 'position_strategy_hygiene_attention',
+    remediationReportCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation -- --json',
+    remediationHistoryCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation-history -- --json',
+    remediationRefreshCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation-refresh -- --if-stale --json',
+    hygieneReportCommand: 'npm --prefix /tmp run runtime:position-strategy-hygiene -- --json',
+    normalizeDryRunCommand: 'npm --prefix /tmp run runtime:normalize-duplicate-strategy-profiles -- --json --exchange=kis_overseas',
+    normalizeApplyCommand: 'npm --prefix /tmp run runtime:normalize-duplicate-strategy-profiles -- --apply --json --exchange=kis_overseas',
+    retireDryRunCommand: 'npm --prefix /tmp run runtime:retire-orphan-strategy-profiles -- --json --exchange=kis_overseas',
+    retireApplyCommand: 'npm --prefix /tmp run runtime:retire-orphan-strategy-profiles -- --apply --json --exchange=kis_overseas',
+  }, readyRefresh);
+  assert.match(readyActions.nextCommand, /runtime:position-strategy-remediation/);
 
   const clear = buildPositionStrategyRemediationDecision({
     status: 'position_strategy_hygiene_ok',
@@ -74,6 +87,14 @@ export function runPositionStrategyRemediationSmoke() {
   assert.equal(staleRefresh.needed, true);
   assert.match(staleRefresh.reason, /history refresh recommended/);
   assert.match(staleRefresh.command, /runtime:position-strategy-remediation-refresh/);
+  const staleActions = buildPositionStrategyRemediationActions({
+    status: 'position_strategy_hygiene_ok',
+    remediationReportCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation -- --json',
+    remediationHistoryCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation-history -- --json',
+    remediationRefreshCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation-refresh -- --if-stale --json',
+    hygieneReportCommand: 'npm --prefix /tmp run runtime:position-strategy-hygiene -- --json',
+  }, staleRefresh);
+  assert.match(staleActions.nextCommand, /runtime:position-strategy-remediation-refresh/);
 
   const missingHistory = buildPositionStrategyRemediationDecision({
     status: 'position_strategy_hygiene_attention',
@@ -94,9 +115,21 @@ export function runPositionStrategyRemediationSmoke() {
   assert.equal(missingRefresh.needed, true);
   assert.match(missingRefresh.reason, /history refresh required/);
   assert.match(missingRefresh.command, /runtime:position-strategy-remediation-refresh/);
+  const missingActions = buildPositionStrategyRemediationActions({
+    status: 'position_strategy_hygiene_attention',
+    remediationReportCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation -- --json',
+    remediationHistoryCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation-history -- --json',
+    remediationRefreshCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation-refresh -- --if-stale --json',
+    hygieneReportCommand: 'npm --prefix /tmp run runtime:position-strategy-hygiene -- --json',
+    normalizeDryRunCommand: 'npm --prefix /tmp run runtime:normalize-duplicate-strategy-profiles -- --json',
+    retireDryRunCommand: 'npm --prefix /tmp run runtime:retire-orphan-strategy-profiles -- --json',
+  }, missingRefresh);
+  assert.match(missingActions.nextCommand, /runtime:position-strategy-remediation-refresh/);
 
   const unavailable = buildPositionStrategyRemediationDecision(null);
   assert.equal(unavailable.status, 'position_strategy_remediation_unavailable');
+  const unavailableActions = buildPositionStrategyRemediationActions(null, missingRefresh);
+  assert.match(unavailableActions.nextCommand, /runtime:position-strategy-remediation-refresh/);
 
   return {
     ok: true,
@@ -104,6 +137,12 @@ export function runPositionStrategyRemediationSmoke() {
     clearStatus: clear.status,
     missingHistoryStatus: missingHistory.status,
     unavailableStatus: unavailable.status,
+    nextCommands: {
+      ready: readyActions.nextCommand,
+      stale: staleActions.nextCommand,
+      missing: missingActions.nextCommand,
+      unavailable: unavailableActions.nextCommand,
+    },
   };
 }
 

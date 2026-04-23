@@ -42,6 +42,51 @@ export function buildPositionStrategyRemediationRefreshState(remediationPlan = n
   };
 }
 
+export function buildPositionStrategyRemediationActions(remediationPlan = null, remediationRefreshState = null) {
+  if (!remediationPlan) {
+    return {
+      reportCommand: null,
+      historyCommand: null,
+      refreshCommand: remediationRefreshState?.command || null,
+      hygieneCommand: null,
+      normalizeDryRunCommand: null,
+      normalizeApplyCommand: null,
+      retireDryRunCommand: null,
+      retireApplyCommand: null,
+      nextCommand: remediationRefreshState?.command || null,
+    };
+  }
+
+  const refreshCommand = remediationRefreshState?.command
+    || remediationPlan?.remediationRefreshCommand
+    || remediationPlan?.remediationHistoryCommand
+    || null;
+  const reportCommand = remediationPlan?.remediationReportCommand || null;
+  const historyCommand = remediationPlan?.remediationHistoryCommand || null;
+  const hygieneCommand = remediationPlan?.hygieneReportCommand || null;
+  const normalizeDryRunCommand = remediationPlan?.normalizeDryRunCommand || null;
+  const normalizeApplyCommand = remediationPlan?.normalizeApplyCommand || null;
+  const retireDryRunCommand = remediationPlan?.retireDryRunCommand || null;
+  const retireApplyCommand = remediationPlan?.retireApplyCommand || null;
+
+  let nextCommand = reportCommand;
+  if (remediationRefreshState?.needed) nextCommand = refreshCommand || historyCommand || reportCommand;
+  else if (remediationPlan.status === 'position_strategy_hygiene_attention') nextCommand = reportCommand || normalizeDryRunCommand || retireDryRunCommand || hygieneCommand;
+  else nextCommand = hygieneCommand || reportCommand;
+
+  return {
+    reportCommand,
+    historyCommand,
+    refreshCommand,
+    hygieneCommand,
+    normalizeDryRunCommand,
+    normalizeApplyCommand,
+    retireDryRunCommand,
+    retireApplyCommand,
+    nextCommand,
+  };
+}
+
 export function buildPositionStrategyRemediationDecision(remediationPlan = null, remediationHistory = null) {
   const historyActionItem = buildHistoryActionItem(remediationHistory);
   const refreshState = buildPositionStrategyRemediationRefreshState(remediationPlan, remediationHistory);
@@ -92,6 +137,7 @@ export async function runPositionStrategyRemediation({ json = false, historyFile
     || buildPositionStrategyHygieneRemediationPlan(hygiene);
   const remediationHistory = readPositionStrategyRemediationHistory(historyFile);
   const remediationRefreshState = buildPositionStrategyRemediationRefreshState(remediationPlan, remediationHistory);
+  const remediationActions = buildPositionStrategyRemediationActions(remediationPlan, remediationRefreshState);
   const result = {
     ok: true,
     hygieneStatus: hygiene?.decision?.status || 'unknown',
@@ -99,6 +145,7 @@ export async function runPositionStrategyRemediation({ json = false, historyFile
     remediationPlan,
     remediationHistory,
     remediationRefreshState,
+    remediationActions,
     decision: buildPositionStrategyRemediationDecision(remediationPlan, remediationHistory),
   };
   if (json) return result;
