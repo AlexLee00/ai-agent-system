@@ -14,6 +14,7 @@ import { getDomesticQuoteSnapshot, getOverseasQuoteSnapshot, getVolumeRank } fro
 import { loadLatestScoutIntel, getScoutSignalForSymbol } from '../shared/scout-intel.ts';
 import { getYahooStockEventIntel } from '../shared/stock-event-intel.ts';
 import { getRecentHubMarketPulse } from '../shared/hub-market-pulse.ts';
+import { getDomesticMomentumSnapshot } from '../shared/domestic-market-intel.ts';
 
 const FLOW_THRESHOLDS = {
   buy: 0.55,
@@ -139,6 +140,7 @@ function deriveFlowDecision({
   scoutSignal,
   domesticScoutContext,
   domesticRank,
+  domesticMomentum,
   overseasEvent,
   hubPulse,
 } = {}) {
@@ -182,6 +184,21 @@ function deriveFlowDecision({
     } else if (domesticRank.rank <= 30) {
       score += 0.14;
       reasons.push(`거래량 상위 ${domesticRank.rank}위`);
+    }
+  }
+
+  if (exchange === 'kis' && domesticMomentum?.found) {
+    if (Number.isFinite(Number(domesticMomentum.rank)) && Number(domesticMomentum.rank) <= 10) {
+      score += 0.16;
+      reasons.push(`상승 랭크 ${domesticMomentum.rank}위`);
+    } else if (Number.isFinite(Number(domesticMomentum.rank)) && Number(domesticMomentum.rank) <= 30) {
+      score += 0.08;
+      reasons.push(`상승 랭크 ${domesticMomentum.rank}위`);
+    }
+
+    if (Number.isFinite(Number(domesticMomentum.changeRate)) && Number(domesticMomentum.changeRate) >= 4) {
+      score += 0.08;
+      reasons.push(`상승률 +${Number(domesticMomentum.changeRate).toFixed(2)}%`);
     }
   }
 
@@ -299,7 +316,7 @@ export async function analyzeStockFlow(symbol, exchange = 'kis') {
     loadLatestScoutIntel({ minutes: 24 * 60 }).catch(() => null),
   ]);
 
-  const [quote, domesticRank, overseasEvent, hubPulse] = await Promise.all([
+  const [quote, domesticRank, domesticMomentum, overseasEvent, hubPulse] = await Promise.all([
     exchange === 'kis'
       ? getDomesticQuoteSnapshot(symbol, false).catch((error) => ({
           error: error?.message || 'domestic_quote_failed',
@@ -309,6 +326,9 @@ export async function analyzeStockFlow(symbol, exchange = 'kis') {
         })),
     exchange === 'kis'
       ? loadDomesticVolumeRank(symbol)
+      : Promise.resolve(null),
+    exchange === 'kis'
+      ? getDomesticMomentumSnapshot(symbol).catch(() => null)
       : Promise.resolve(null),
     exchange === 'kis_overseas'
       ? getYahooStockEventIntel(symbol).catch(() => null)
@@ -334,6 +354,7 @@ export async function analyzeStockFlow(symbol, exchange = 'kis') {
     scoutSignal,
     domesticScoutContext,
     domesticRank,
+    domesticMomentum,
     overseasEvent,
     hubPulse,
   });
@@ -343,6 +364,7 @@ export async function analyzeStockFlow(symbol, exchange = 'kis') {
     quote: quote && !quote.error ? quote : null,
     quoteError: quote?.error || null,
     domesticRank,
+    domesticMomentum,
     overseasEvent: overseasEvent && !overseasEvent.error ? overseasEvent : null,
     hubPulse,
     scoutSignal: scoutSignal ? {
