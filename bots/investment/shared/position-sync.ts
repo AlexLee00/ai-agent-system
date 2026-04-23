@@ -40,6 +40,7 @@ function normalizeHolding(market, holding = {}) {
       avgPrice: Number(holding.avg_price || 0),
       unrealizedPnl: Number(holding.pnl_amt || 0),
       pnlPct: Number.isFinite(Number(holding.pnl_pct)) ? Number(holding.pnl_pct) : null,
+      currentPrice: Number(holding.current_price || 0),
       raw: holding,
     };
   }
@@ -51,6 +52,7 @@ function normalizeHolding(market, holding = {}) {
     unrealizedPnl: Number(holding.pnl_usd || 0),
     pnlPct: Number.isFinite(Number(holding.pnl_pct)) ? Number(holding.pnl_pct) : null,
     notional: Number(holding.notional || 0),
+    currentPrice: Number(holding.current_price || 0),
     raw: holding,
   };
 }
@@ -218,6 +220,23 @@ async function fetchOpenJournalAverage(exchange, symbol, tradeMode = 'normal', i
   return openValue / openSize;
 }
 
+async function fetchOpenJournalSymbols(exchange, isPaper = false) {
+  const rows = await db.query(
+    `SELECT DISTINCT symbol
+       FROM trade_journal
+      WHERE exchange = $1
+        AND status = 'open'
+        AND is_paper = $2`,
+    [exchange, Boolean(isPaper)],
+  ).catch(() => []);
+
+  return new Set(
+    rows
+      .map((row) => String(row.symbol || '').trim())
+      .filter(Boolean),
+  );
+}
+
 export async function syncPositionsAtMarketOpen(market) {
   const config = MARKET_CONFIG[market];
   if (!config) {
@@ -270,6 +289,9 @@ export async function syncPositionsAtMarketOpen(market) {
       .map((row) => String(row.symbol || '').trim())
       .filter(Boolean),
   );
+  const meaningfulJournalSymbols = market === 'crypto'
+    ? await fetchOpenJournalSymbols(config.exchange, paperFlag)
+    : new Set();
 
   const balance = market === 'domestic'
     ? await getDomesticBalance(useMockAccount)
@@ -303,9 +325,14 @@ export async function syncPositionsAtMarketOpen(market) {
             pnl_usd: 0,
             pnl_pct: null,
             notional,
+            current_price: last,
           });
         })
-        .filter((holding) => meaningfulTrackedSymbols.has(holding.symbol) || Number(holding.notional || 0) >= CRYPTO_SYNC_MIN_NOTIONAL_USDT);
+        .filter((holding) =>
+          meaningfulTrackedSymbols.has(holding.symbol)
+          || meaningfulJournalSymbols.has(holding.symbol)
+          || Number(holding.notional || 0) >= CRYPTO_SYNC_MIN_NOTIONAL_USDT,
+        );
     })()
     : (balance?.holdings || [])
       .map((holding) => normalizeHolding(market, holding))
@@ -368,11 +395,24 @@ export async function syncPositionsAtMarketOpen(market) {
           paperFlag,
         );
       }
+      let unrealizedPnl = Number(row.unrealizedPnl || 0);
+      if (market === 'crypto') {
+        const currentPrice = Number(
+          brokerHolding.currentPrice
+          || cryptoTickers?.[row.symbol]?.last
+          || (Number(brokerHolding.notional || 0) > 0 && Number(brokerHolding.qty || 0) > 0
+            ? Number(brokerHolding.notional) / Number(brokerHolding.qty)
+            : 0),
+        );
+        if (currentPrice > 0 && avgPrice > 0) {
+          unrealizedPnl = (currentPrice - avgPrice) * Number(row.amount || 0);
+        }
+      }
       await db.upsertPosition({
         symbol: row.symbol,
         amount: row.amount,
         avgPrice,
-        unrealizedPnl: row.unrealizedPnl,
+        unrealizedPnl,
         exchange: config.exchange,
         paper: paperFlag,
         tradeMode: row.tradeMode,
