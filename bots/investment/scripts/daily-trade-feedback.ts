@@ -315,6 +315,13 @@ function buildPositionStrategyRemediationLine(positionStrategyRemediationSummary
   return `🧯 remediation: ${decision.status || 'unknown'} | ${decision.headline || 'n/a'}`;
 }
 
+function buildPositionStrategyRemediationCommandLine(positionStrategyRemediationSummary) {
+  if (!positionStrategyRemediationSummary || positionStrategyRemediationSummary.error || !positionStrategyRemediationSummary.ok) return null;
+  const remediationPlan = positionStrategyRemediationSummary.remediationPlan || null;
+  if (!remediationPlan || remediationPlan.status !== 'position_strategy_hygiene_attention') return null;
+  return `🛠️ remediation report: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation -- --json`;
+}
+
 function getLearningLoopNextCommand(learningLoopSummary) {
   const nextActions = learningLoopSummary?.decision?.nextActions;
   if (!Array.isArray(nextActions)) return null;
@@ -354,6 +361,8 @@ function buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSumma
   if (positionStrategyHygieneLine) lines.push(positionStrategyHygieneLine);
   const positionStrategyRemediationLine = buildPositionStrategyRemediationLine(positionStrategyRemediationSummary);
   if (positionStrategyRemediationLine) lines.push(positionStrategyRemediationLine);
+  const positionStrategyRemediationCommandLine = buildPositionStrategyRemediationCommandLine(positionStrategyRemediationSummary);
+  if (positionStrategyRemediationCommandLine) lines.push(positionStrategyRemediationCommandLine);
   const positionStrategyHygieneCommandLine = buildPositionStrategyHygieneCommandLine(positionStrategyHygieneSummary);
   if (positionStrategyHygieneCommandLine) lines.push(positionStrategyHygieneCommandLine);
   if (Array.isArray(feedback.nextActions) && feedback.nextActions.length > 0) {
@@ -379,6 +388,7 @@ async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeni
     buildPositionStrategyCoverageLine(positionStrategyAuditSummary),
     buildPositionStrategyHygieneLine(positionStrategyHygieneSummary),
     buildPositionStrategyRemediationLine(positionStrategyRemediationSummary),
+    buildPositionStrategyRemediationCommandLine(positionStrategyRemediationSummary),
     buildPositionStrategyHygieneCommandLine(positionStrategyHygieneSummary),
     `다음 액션: ${(feedback.nextActions || []).join(' / ') || '없음'}`,
   ].filter(Boolean).join('\n');
