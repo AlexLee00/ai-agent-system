@@ -12,6 +12,7 @@ function parseArgs(argv = process.argv.slice(2)) {
   const fileArg = argv.find((arg) => arg.startsWith('--file='));
   return {
     file: fileArg?.split('=').slice(1).join('=') || DEFAULT_POSITION_STRATEGY_REMEDIATION_HISTORY_FILE,
+    ifStale: argv.includes('--if-stale'),
     json: argv.includes('--json'),
   };
 }
@@ -33,19 +34,41 @@ function renderText(result) {
   ].join('\n');
 }
 
-export async function runPositionStrategyRemediationRefresh({ file = DEFAULT_POSITION_STRATEGY_REMEDIATION_HISTORY_FILE, json = false } = {}) {
+export async function runPositionStrategyRemediationRefresh({
+  file = DEFAULT_POSITION_STRATEGY_REMEDIATION_HISTORY_FILE,
+  json = false,
+  ifStale = false,
+} = {}) {
   const before = readPositionStrategyRemediationHistory(file);
+  if (ifStale && before.current && !before.stale) {
+    const skipped = {
+      ok: true,
+      file,
+      before,
+      after: before,
+      skipped: true,
+      refreshState: {
+        needed: false,
+        stale: false,
+        reason: 'history refresh skipped: current snapshot is fresh',
+        command: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation-refresh -- --if-stale --json',
+      },
+    };
+    if (json) return skipped;
+    return renderText(skipped);
+  }
   const after = await buildPositionStrategyRemediationHistory({ file, json: true });
   const result = {
     ok: true,
     file,
     before,
     after,
+    skipped: false,
     refreshState: {
       needed: false,
       stale: false,
       reason: 'history refresh executed',
-      command: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation-refresh -- --json',
+      command: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation-refresh -- --if-stale --json',
     },
   };
   if (json) return result;

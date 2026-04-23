@@ -17,7 +17,7 @@ export function runPositionStrategyRemediationSmoke() {
     unmatchedManaged: 0,
     remediationReportCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation -- --json',
     remediationHistoryCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation-history -- --json',
-    remediationRefreshCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation-refresh -- --json',
+    remediationRefreshCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation-refresh -- --if-stale --json',
     hygieneReportCommand: 'npm --prefix /tmp run runtime:position-strategy-hygiene -- --json',
     normalizeDryRunCommand: 'npm --prefix /tmp run runtime:normalize-duplicate-strategy-profiles -- --json --exchange=kis_overseas',
     retireDryRunCommand: 'npm --prefix /tmp run runtime:retire-orphan-strategy-profiles -- --json --exchange=kis_overseas',
@@ -37,7 +37,7 @@ export function runPositionStrategyRemediationSmoke() {
   assert.match(ready.actionItems.join('\n'), /normalize dry-run/);
   const readyRefresh = buildPositionStrategyRemediationRefreshState({
     remediationHistoryCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation-history -- --json',
-    remediationRefreshCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation-refresh -- --json',
+    remediationRefreshCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation-refresh -- --if-stale --json',
   }, {
     stale: false,
     current: { status: 'position_strategy_remediation_ready' },
@@ -49,7 +49,7 @@ export function runPositionStrategyRemediationSmoke() {
     status: 'position_strategy_hygiene_ok',
     remediationReportCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation -- --json',
     remediationHistoryCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation-history -- --json',
-    remediationRefreshCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation-refresh -- --json',
+    remediationRefreshCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation-refresh -- --if-stale --json',
     hygieneReportCommand: 'npm --prefix /tmp run runtime:position-strategy-hygiene -- --json',
   }, {
     historyCount: 2,
@@ -66,7 +66,7 @@ export function runPositionStrategyRemediationSmoke() {
   assert.match(clear.actionItems.join('\n'), /stale yes/);
   const staleRefresh = buildPositionStrategyRemediationRefreshState({
     remediationHistoryCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation-history -- --json',
-    remediationRefreshCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation-refresh -- --json',
+    remediationRefreshCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation-refresh -- --if-stale --json',
   }, {
     stale: true,
     current: { status: 'position_strategy_remediation_clear' },
@@ -79,7 +79,7 @@ export function runPositionStrategyRemediationSmoke() {
     status: 'position_strategy_hygiene_attention',
     remediationReportCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation -- --json',
     remediationHistoryCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation-history -- --json',
-    remediationRefreshCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation-refresh -- --json',
+    remediationRefreshCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation-refresh -- --if-stale --json',
     hygieneReportCommand: 'npm --prefix /tmp run runtime:position-strategy-hygiene -- --json',
     normalizeDryRunCommand: 'npm --prefix /tmp run runtime:normalize-duplicate-strategy-profiles -- --json',
     retireDryRunCommand: 'npm --prefix /tmp run runtime:retire-orphan-strategy-profiles -- --json',
@@ -89,7 +89,7 @@ export function runPositionStrategyRemediationSmoke() {
   assert.match(missingHistory.actionItems.join('\n'), /history refresh required/);
   const missingRefresh = buildPositionStrategyRemediationRefreshState({
     remediationHistoryCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation-history -- --json',
-    remediationRefreshCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation-refresh -- --json',
+    remediationRefreshCommand: 'npm --prefix /tmp run runtime:position-strategy-remediation-refresh -- --if-stale --json',
   }, null);
   assert.equal(missingRefresh.needed, true);
   assert.match(missingRefresh.reason, /history refresh required/);

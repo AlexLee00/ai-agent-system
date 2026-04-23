@@ -17,10 +17,16 @@ export async function runPositionStrategyRemediationRefreshSmoke() {
     assert.equal(result.after.historyCount, 1);
     assert.equal(result.refreshState.needed, false);
     assert.match(result.refreshState.reason, /history refresh executed/);
+    const skipped = await runPositionStrategyRemediationRefresh({ file, json: true, ifStale: true });
+    assert.equal(skipped.ok, true);
+    assert.equal(skipped.skipped, true);
+    assert.equal(skipped.after.historyCount, 1);
+    assert.match(skipped.refreshState.reason, /history refresh skipped/);
     return {
       ok: true,
       beforeCount: result.before.historyCount,
       afterCount: result.after.historyCount,
+      skipped: skipped.skipped,
     };
   } finally {
     if (fs.existsSync(file)) fs.unlinkSync(file);
