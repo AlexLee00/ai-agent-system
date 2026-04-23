@@ -44,20 +44,20 @@ function renderText(payload) {
 export async function buildPositionStrategyRemediationHistory({ file = DEFAULT_POSITION_STRATEGY_REMEDIATION_HISTORY_FILE, json = false } = {}) {
   const report = await runPositionStrategyRemediation({ json: true });
   const plan = report.remediationPlan || {};
-  const actions = report.remediationActions || {};
+  const flat = report.remediationFlat || null;
   const current = {
     recordedAt: new Date().toISOString(),
-    status: report.remediationStatus || report.decision?.status || 'unknown',
-    headline: report.remediationHeadline || report.decision?.headline || 'n/a',
-    recommendedExchange: report.remediationRecommendedExchange || plan.recommendedExchange || null,
-    nextCommand: report.remediationNextCommand || actions.nextCommand || null,
-    refreshCommand: report.remediationActionRefreshCommand || report.remediationRefreshCommand || actions.refreshCommand || null,
-    reportCommand: report.remediationActionReportCommand || actions.reportCommand || null,
+    status: report.remediationStatus || flat?.status || report.decision?.status || 'unknown',
+    headline: report.remediationHeadline || flat?.headline || report.decision?.headline || 'n/a',
+    recommendedExchange: report.remediationRecommendedExchange || flat?.recommendedExchange || plan.recommendedExchange || null,
+    nextCommand: report.remediationNextCommand || flat?.nextCommand || null,
+    refreshCommand: report.remediationActionRefreshCommand || flat?.actionRefreshCommand || report.remediationRefreshCommand || flat?.refreshCommand || null,
+    reportCommand: report.remediationActionReportCommand || flat?.actionReportCommand || flat?.commands?.report || null,
     duplicateManaged: Number(report.remediationDuplicateManaged ?? plan.duplicateManagedScopes ?? 0),
     orphanProfiles: Number(report.remediationOrphanProfiles ?? plan.orphanProfiles ?? 0),
     unmatchedManaged: Number(report.remediationUnmatchedManaged ?? plan.unmatchedManaged ?? 0),
     actionItems: report.decision?.actionItems || [],
-    flat: report.remediationFlat || null,
+    flat,
   };
   const previousSnapshot = readPositionStrategyRemediationHistory(file);
   appendPositionStrategyRemediationHistory(file, current);
