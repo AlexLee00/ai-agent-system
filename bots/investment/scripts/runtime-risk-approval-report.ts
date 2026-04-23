@@ -19,6 +19,7 @@ function safeNumber(value, fallback = 0) {
 }
 
 function pct(value, digits = 1) {
+  if (value == null) return 'n/a';
   const n = Number(value);
   if (!Number.isFinite(n)) return 'n/a';
   return `${n.toFixed(digits)}%`;
@@ -27,11 +28,18 @@ function pct(value, digits = 1) {
 function normalizePreview(row = {}) {
   const preview = row.strategy_config?.risk_approval_preview || null;
   const application = row.strategy_config?.risk_approval_application || preview?.application || null;
+  const journalStatus = String(row.journal_status || '').toLowerCase();
+  const closed = journalStatus === 'closed' || row.exit_time != null;
   return {
     tradeId: row.trade_id || null,
     signalId: row.signal_id || null,
     symbol: row.symbol || null,
     exchange: row.exchange || null,
+    journalStatus: row.journal_status || null,
+    closed,
+    pnlNet: row.pnl_net != null ? Number(row.pnl_net) : null,
+    pnlPercent: row.pnl_percent != null ? Number(row.pnl_percent) : null,
+    exitReason: row.exit_reason || null,
     createdAt: row.created_at != null ? Number(row.created_at) : null,
     nemesisVerdict: row.nemesis_verdict || null,
     positionSizeOriginal: row.position_size_original != null ? Number(row.position_size_original) : null,
@@ -41,11 +49,50 @@ function normalizePreview(row = {}) {
   };
 }
 
+function makeOutcomeBucket(key) {
+  return {
+    key,
+    total: 0,
+    closed: 0,
+    wins: 0,
+    pnlNet: 0,
+    pnlPercentWeightedSum: 0,
+  };
+}
+
+function addOutcome(bucket, row) {
+  bucket.total += 1;
+  if (!row.closed) return;
+  bucket.closed += 1;
+  const pnlNet = safeNumber(row.pnlNet);
+  const pnlPercent = row.pnlPercent != null ? Number(row.pnlPercent) : null;
+  bucket.pnlNet += pnlNet;
+  if (pnlNet > 0 || Number(pnlPercent || 0) > 0) bucket.wins += 1;
+  if (pnlPercent != null && Number.isFinite(pnlPercent)) {
+    bucket.pnlPercentWeightedSum += pnlPercent;
+  }
+}
+
+function finalizeOutcomeBucket(bucket, extra = {}) {
+  return {
+    ...extra,
+    total: bucket.total,
+    closed: bucket.closed,
+    wins: bucket.wins,
+    winRate: bucket.closed > 0 ? Number(((bucket.wins / bucket.closed) * 100).toFixed(1)) : null,
+    avgPnlPercent: bucket.closed > 0 ? Number((bucket.pnlPercentWeightedSum / bucket.closed).toFixed(4)) : null,
+    pnlNet: Number(bucket.pnlNet.toFixed(4)),
+  };
+}
+
 export function summarizeRuntimeRiskApprovalRows(rows = []) {
   const byModel = {};
   const byDecision = {};
   const byMode = {};
   const byPreviewStatus = {};
+  const outcomeTotal = makeOutcomeBucket('total');
+  const outcomeByMode = {};
+  const outcomeByModel = {};
   const divergences = [];
   let total = 0;
   let previewRejects = 0;
@@ -68,6 +115,9 @@ export function summarizeRuntimeRiskApprovalRows(rows = []) {
     const application = row.application || {};
     const mode = String(application.mode || row.preview.mode || 'shadow');
     const previewStatus = String(application.previewStatus || 'unknown');
+    addOutcome(outcomeTotal, row);
+    if (!outcomeByMode[mode]) outcomeByMode[mode] = makeOutcomeBucket(mode);
+    addOutcome(outcomeByMode[mode], row);
     byPreviewStatus[previewStatus] = (byPreviewStatus[previewStatus] || 0) + 1;
     if (!byMode[mode]) byMode[mode] = { mode, total: 0, applied: 0, rejected: 0, amountDelta: 0 };
     byMode[mode].total += 1;
@@ -129,6 +179,9 @@ export function summarizeRuntimeRiskApprovalRows(rows = []) {
       bucket.amountDelta += safeNumber(step.amountAfter) - safeNumber(step.amountBefore);
       const reason = String(step.reason || 'unknown').slice(0, 120);
       bucket.reasons[reason] = (bucket.reasons[reason] || 0) + 1;
+
+      if (!outcomeByModel[model]) outcomeByModel[model] = makeOutcomeBucket(model);
+      addOutcome(outcomeByModel[model], row);
     }
   }
 
@@ -170,6 +223,15 @@ export function summarizeRuntimeRiskApprovalRows(rows = []) {
         amountDelta: Number(item.amountDelta.toFixed(4)),
       })),
     },
+    outcome: {
+      total: finalizeOutcomeBucket(outcomeTotal),
+      byMode: Object.entries(outcomeByMode)
+        .map(([mode, bucket]) => finalizeOutcomeBucket(bucket, { mode }))
+        .sort((a, b) => Number(b.closed || 0) - Number(a.closed || 0)),
+      byModel: Object.entries(outcomeByModel)
+        .map(([model, bucket]) => finalizeOutcomeBucket(bucket, { model }))
+        .sort((a, b) => Number(b.closed || 0) - Number(a.closed || 0)),
+    },
     modelRows,
     divergences,
   };
@@ -179,6 +241,9 @@ export function buildRuntimeRiskApprovalDecision(summary) {
   let status = 'risk_approval_preview_empty';
   let headline = 'risk approval preview가 아직 충분히 쌓이지 않았습니다.';
   const reasons = [`preview ${summary.total}건`, `preview rejects ${summary.previewRejects}건`, `legacy-approved/preview-rejected ${summary.legacyApprovedPreviewRejected}건`];
+  if (summary.outcome?.total) {
+    reasons.push(`closed outcomes ${summary.outcome.total.closed}건, pnl ${summary.outcome.total.pnlNet}`);
+  }
   const actionItems = ['네메시스 rationale에 risk_approval_preview 표본을 더 누적합니다.'];
 
   if (summary.total > 0) {
@@ -194,6 +259,9 @@ export function buildRuntimeRiskApprovalDecision(summary) {
         : '새 리스크 체인 preview와 기존 승인 흐름이 큰 충돌 없이 누적되고 있습니다.';
     actionItems.length = 0;
     if (summary.legacyApprovedPreviewRejected > 0) actionItems.push('divergence sample을 검토해 consensus/regime/feedback 모델 임계값을 보정합니다.');
+    if (Number(summary.outcome?.total?.closed || 0) > 0 && Number(summary.outcome?.total?.avgPnlPercent || 0) < 0) {
+      actionItems.push('risk approval outcome 손익이 음수인 모드/모델을 확인해 assist 감산율과 enforce 전환 조건을 보수적으로 재검토합니다.');
+    }
     actionItems.push('preview 안정성이 확인되면 네메시스 승인 금액 조정에 단계적으로 반영합니다.');
   }
 
@@ -230,6 +298,16 @@ function renderText(payload) {
       lines.push(`- mode ${item.mode}: total ${item.total}, applied ${item.applied}, rejected ${item.rejected}, delta ${item.amountDelta}`);
     }
   }
+  if (payload.summary.outcome?.total) {
+    const outcome = payload.summary.outcome.total;
+    lines.push(`성과 귀속: closed ${outcome.closed}/${outcome.total}, win ${pct(outcome.winRate)}, avg ${pct(outcome.avgPnlPercent, 2)}, pnl ${outcome.pnlNet}`);
+    for (const item of payload.summary.outcome.byMode || []) {
+      lines.push(`- outcome mode ${item.mode}: closed ${item.closed}/${item.total}, win ${pct(item.winRate)}, avg ${pct(item.avgPnlPercent, 2)}, pnl ${item.pnlNet}`);
+    }
+    for (const item of (payload.summary.outcome.byModel || []).slice(0, 5)) {
+      lines.push(`- outcome model ${item.model}: closed ${item.closed}/${item.total}, win ${pct(item.winRate)}, avg ${pct(item.avgPnlPercent, 2)}, pnl ${item.pnlNet}`);
+    }
+  }
   if (payload.summary.divergences.length) {
     lines.push('');
     lines.push('divergence samples:');
@@ -253,6 +331,11 @@ export async function buildRuntimeRiskApprovalReport({ days = 30, json = false }
       r.signal_id,
       j.symbol,
       j.exchange,
+      j.status AS journal_status,
+      j.exit_time,
+      j.exit_reason,
+      j.pnl_net,
+      j.pnl_percent,
       r.created_at,
       r.nemesis_verdict,
       r.position_size_original,

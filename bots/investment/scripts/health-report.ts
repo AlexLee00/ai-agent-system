@@ -1042,6 +1042,8 @@ function formatText(report) {
           const riskApprovalModeAuditTrend = riskApprovalModeAudit?.trend || null;
           const riskApprovalTopModel = riskApproval?.topModels?.[0] || null;
           const riskApprovalTrend = riskApproval?.trend || null;
+          const riskApprovalOutcome = riskApproval?.outcome || null;
+          const riskApprovalOutcomeMode = riskApproval?.outcomeByMode?.[0] || null;
           const riskApprovalReadinessTrend = riskApprovalReadiness?.trend || null;
           return [
             `  status: ${report.runtimeLearningLoop.decision?.status || 'unknown'}`,
@@ -1051,6 +1053,8 @@ function formatText(report) {
             `  top suggestion: ${report.runtimeLearningLoop.sections?.strategy?.runtimeSuggestionTop?.key || 'n/a'} -> ${report.runtimeLearningLoop.sections?.strategy?.runtimeSuggestionTop?.suggested ?? 'n/a'} (${report.runtimeLearningLoop.sections?.strategy?.runtimeSuggestionTop?.action || 'n/a'})`,
             `  strategy feedback outcomes: ${strategyFeedbackOutcomes?.status || 'unknown'} / tagged ${strategyFeedbackOutcomes?.total || strategyFeedbackOutcomes?.totalTagged || 0} / closed ${strategyFeedbackOutcomes?.closed || strategyFeedbackOutcomes?.closedTagged || 0} / pnl ${strategyFeedbackOutcomes?.pnlNet ?? 0}`,
             `  risk approval: ${riskApproval?.status || 'unknown'} / preview ${riskApproval?.total || 0} / rejects ${riskApproval?.previewRejects || 0} / divergence ${riskApproval?.divergence || 0} / amount delta ${riskApproval?.previewVsApprovedDelta ?? 0}`,
+            ...(riskApprovalOutcome ? [`  risk approval outcome: closed ${riskApprovalOutcome.closed || 0}/${riskApprovalOutcome.total || 0} / win ${riskApprovalOutcome.winRate ?? 'n/a'}% / avg ${riskApprovalOutcome.avgPnlPercent ?? 'n/a'}% / pnl ${riskApprovalOutcome.pnlNet ?? 0}`] : []),
+            ...(riskApprovalOutcomeMode ? [`  risk approval outcome mode: ${riskApprovalOutcomeMode.mode || 'n/a'} / closed ${riskApprovalOutcomeMode.closed || 0}/${riskApprovalOutcomeMode.total || 0} / avg ${riskApprovalOutcomeMode.avgPnlPercent ?? 'n/a'}%`] : []),
             `  risk approval readiness: ${riskApprovalReadiness?.status || 'unknown'} / mode ${riskApprovalReadiness?.currentMode || 'n/a'} -> ${riskApprovalReadiness?.targetMode || 'n/a'} / blockers ${(riskApprovalReadiness?.blockers || []).length}`,
             ...(riskApprovalReadiness?.dryRun ? [`  risk approval dry-run: assist applied ${riskApprovalReadiness.dryRun.assist?.applied ?? 0} / enforce rejected ${riskApprovalReadiness.dryRun.enforce?.rejected ?? 0}`] : []),
             ...(riskApprovalReadinessTrend ? [`  risk approval readiness trend: history ${riskApprovalReadinessTrend.historyCount || 0} / blocker Δ${riskApprovalReadinessTrend.delta?.blockerCount ?? 0} / preview Δ${riskApprovalReadinessTrend.delta?.previewTotal ?? 0} / reject Δ${riskApprovalReadinessTrend.delta?.previewRejects ?? 0} / divergence Δ${riskApprovalReadinessTrend.delta?.divergence ?? 0}`] : []),

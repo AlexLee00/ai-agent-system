@@ -51,6 +51,7 @@ function buildSnapshot(report, days) {
   const summary = report?.summary || {};
   const amount = summary.amount || {};
   const application = summary.application || {};
+  const outcome = summary.outcome?.total || {};
   return {
     recordedAt: new Date().toISOString(),
     days,
@@ -66,6 +67,10 @@ function buildSnapshot(report, days) {
     applicationRejected: Number(application.rejected || 0),
     applicationAmountDelta: Number(application.amountDelta || 0),
     applicationByMode: application.byMode || [],
+    outcomeClosed: Number(outcome.closed || 0),
+    outcomePnlNet: Number(outcome.pnlNet || 0),
+    outcomeAvgPnlPercent: outcome.avgPnlPercent != null ? Number(outcome.avgPnlPercent) : null,
+    outcomeWinRate: outcome.winRate != null ? Number(outcome.winRate) : null,
     topModel: summarizeTopModel(summary.modelRows?.[0] || null),
   };
 }
@@ -82,6 +87,9 @@ export function buildRuntimeRiskApprovalHistoryDelta(current, previous) {
       applicationApplied: 0,
       applicationRejected: 0,
       applicationAmountDelta: 0,
+      outcomeClosed: 0,
+      outcomePnlNet: 0,
+      outcomeAvgPnlPercent: 0,
     };
   }
   return {
@@ -94,6 +102,11 @@ export function buildRuntimeRiskApprovalHistoryDelta(current, previous) {
     applicationApplied: current.applicationApplied - Number(previous.applicationApplied || 0),
     applicationRejected: current.applicationRejected - Number(previous.applicationRejected || 0),
     applicationAmountDelta: current.applicationAmountDelta - Number(previous.applicationAmountDelta || 0),
+    outcomeClosed: current.outcomeClosed - Number(previous.outcomeClosed || 0),
+    outcomePnlNet: current.outcomePnlNet - Number(previous.outcomePnlNet || 0),
+    outcomeAvgPnlPercent: current.outcomeAvgPnlPercent == null || previous.outcomeAvgPnlPercent == null
+      ? 0
+      : Number((current.outcomeAvgPnlPercent - Number(previous.outcomeAvgPnlPercent || 0)).toFixed(4)),
   };
 }
 
@@ -109,6 +122,7 @@ function renderText(payload) {
     `divergence delta: ${payload.delta.legacyApprovedPreviewRejected >= 0 ? '+' : ''}${payload.delta.legacyApprovedPreviewRejected}`,
     `amount delta change: ${payload.delta.previewVsApprovedDelta >= 0 ? '+' : ''}${payload.delta.previewVsApprovedDelta.toFixed(4)}`,
     `application delta: applied ${payload.delta.applicationApplied >= 0 ? '+' : ''}${payload.delta.applicationApplied} / rejected ${payload.delta.applicationRejected >= 0 ? '+' : ''}${payload.delta.applicationRejected} / amount ${payload.delta.applicationAmountDelta >= 0 ? '+' : ''}${payload.delta.applicationAmountDelta.toFixed(4)}`,
+    `outcome delta: closed ${payload.delta.outcomeClosed >= 0 ? '+' : ''}${payload.delta.outcomeClosed} / pnl ${payload.delta.outcomePnlNet >= 0 ? '+' : ''}${payload.delta.outcomePnlNet.toFixed(4)} / avg ${payload.delta.outcomeAvgPnlPercent >= 0 ? '+' : ''}${payload.delta.outcomeAvgPnlPercent.toFixed(4)}%`,
     payload.current.topModel
       ? `top model: ${payload.current.topModel.model || 'n/a'} adjust ${payload.current.topModel.adjust} / reject ${payload.current.topModel.reject} / pass ${payload.current.topModel.pass}`
       : 'top model: none',

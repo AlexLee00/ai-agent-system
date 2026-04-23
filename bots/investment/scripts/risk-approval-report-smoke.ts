@@ -18,12 +18,18 @@ function row({
   approvedAmount = 100,
   application = {},
   steps = [],
+  closed = false,
+  pnlNet = null,
+  pnlPercent = null,
 } = {}) {
   return {
     symbol,
     exchange,
     nemesisVerdict,
     positionSizeApproved: approvedAmount,
+    closed,
+    pnlNet,
+    pnlPercent,
     preview: {
       approved: previewApproved,
       decision: previewDecision,
@@ -106,6 +112,28 @@ export function runRiskApprovalReportSmoke() {
   ]);
   assert.equal(unavailable.summary.amount.byPreviewStatus.unavailable, 1);
 
+  const outcome = decide([
+    row({
+      application: { mode: 'assist', applied: true, amountBefore: 100, amountAfter: 80, previewStatus: 'adjust' },
+      steps: [{ model: 'regime_risk', decision: 'ADJUST', amountBefore: 100, amountAfter: 80, reason: 'bear risk' }],
+      closed: true,
+      pnlNet: 12.34,
+      pnlPercent: 1.23,
+    }),
+    row({
+      application: { mode: 'assist', applied: true, amountBefore: 100, amountAfter: 90, previewStatus: 'adjust' },
+      steps: [{ model: 'regime_risk', decision: 'ADJUST', amountBefore: 100, amountAfter: 90, reason: 'bear risk' }],
+      closed: true,
+      pnlNet: -2,
+      pnlPercent: -0.2,
+    }),
+  ]);
+  assert.equal(outcome.summary.outcome.total.closed, 2);
+  assert.equal(outcome.summary.outcome.total.wins, 1);
+  assert.equal(outcome.summary.outcome.total.pnlNet, 10.34);
+  assert.equal(outcome.summary.outcome.byMode[0].mode, 'assist');
+  assert.equal(outcome.summary.outcome.byModel[0].model, 'regime_risk');
+
   return {
     ok: true,
     empty,
@@ -114,6 +142,7 @@ export function runRiskApprovalReportSmoke() {
     divergence: divergence.decision,
     reduction: reduction.summary.application,
     unavailable: unavailable.summary.amount.byPreviewStatus,
+    outcome: outcome.summary.outcome.total,
   };
 }
 

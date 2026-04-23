@@ -19,6 +19,9 @@ export function runRiskApprovalHistorySmoke() {
     applicationApplied: 2,
     applicationRejected: 1,
     applicationAmountDelta: -80,
+    outcomeClosed: 4,
+    outcomePnlNet: 12,
+    outcomeAvgPnlPercent: 0.8,
   }, {
     total: 10,
     previewRejects: 1,
@@ -29,12 +32,18 @@ export function runRiskApprovalHistorySmoke() {
     applicationApplied: 1,
     applicationRejected: 0,
     applicationAmountDelta: -30,
+    outcomeClosed: 2,
+    outcomePnlNet: 5,
+    outcomeAvgPnlPercent: 0.5,
   });
   assert.equal(preview.total, 2);
   assert.equal(preview.previewRejects, 2);
   assert.equal(preview.legacyApprovedPreviewRejected, 1);
   assert.equal(preview.previewVsApprovedDelta, -30);
   assert.equal(preview.applicationAmountDelta, -50);
+  assert.equal(preview.outcomeClosed, 2);
+  assert.equal(preview.outcomePnlNet, 7);
+  assert.equal(preview.outcomeAvgPnlPercent, 0.3);
 
   const readiness = buildRuntimeRiskApprovalReadinessHistoryDelta({
     blockerCount: 2,

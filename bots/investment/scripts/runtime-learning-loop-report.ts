@@ -462,6 +462,9 @@ function buildSectionStates({
       previewRejects: Number(riskApproval.summary?.previewRejects || 0),
       divergence: Number(riskApproval.summary?.legacyApprovedPreviewRejected || 0),
       previewVsApprovedDelta: Number(riskApproval.summary?.amount?.previewVsApprovedDelta || 0),
+      outcome: riskApproval.summary?.outcome?.total || null,
+      outcomeByMode: riskApproval.summary?.outcome?.byMode || [],
+      outcomeByModel: riskApproval.summary?.outcome?.byModel || [],
       topModels: (riskApproval.summary?.modelRows || []).slice(0, 5),
       trend: riskApprovalTrend ? {
         historyCount: Number(riskApprovalTrend.historyCount || 0),
@@ -720,6 +723,12 @@ function renderText(payload) {
     sections.collect.riskApproval
       ? `- risk approval ${sections.collect.riskApproval.status} | preview ${sections.collect.riskApproval.total} / rejects ${sections.collect.riskApproval.previewRejects} / divergence ${sections.collect.riskApproval.divergence} / amount delta ${sections.collect.riskApproval.previewVsApprovedDelta}`
       : '- risk approval none',
+    sections.collect.riskApproval?.outcome
+      ? `- risk approval outcome closed ${sections.collect.riskApproval.outcome.closed}/${sections.collect.riskApproval.outcome.total} | win ${sections.collect.riskApproval.outcome.winRate ?? 'n/a'}% / avg ${sections.collect.riskApproval.outcome.avgPnlPercent ?? 'n/a'}% / pnl ${sections.collect.riskApproval.outcome.pnlNet ?? 0}`
+      : null,
+    sections.collect.riskApproval?.outcomeByMode?.[0]
+      ? `- risk approval outcome mode ${sections.collect.riskApproval.outcomeByMode[0].mode} | closed ${sections.collect.riskApproval.outcomeByMode[0].closed}/${sections.collect.riskApproval.outcomeByMode[0].total} / avg ${sections.collect.riskApproval.outcomeByMode[0].avgPnlPercent ?? 'n/a'}%`
+      : null,
     sections.collect.riskApproval?.trend
       ? `- risk approval trend history ${sections.collect.riskApproval.trend.historyCount} | preview delta ${sections.collect.riskApproval.trend.delta?.total ?? 0} / reject delta ${sections.collect.riskApproval.trend.delta?.previewRejects ?? 0} / divergence delta ${sections.collect.riskApproval.trend.delta?.legacyApprovedPreviewRejected ?? 0} / amount delta change ${sections.collect.riskApproval.trend.delta?.previewVsApprovedDelta ?? 0}`
       : null,
