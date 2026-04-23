@@ -397,6 +397,7 @@ async function main() {
     const riskApproval = learningLoop?.sections?.collect?.riskApproval || null;
     const riskApprovalReadiness = learningLoop?.sections?.collect?.riskApprovalReadiness || null;
     const riskApprovalReadinessDelta = riskApprovalReadiness?.trend?.delta || {};
+    const riskApprovalModeAudit = learningLoop?.sections?.collect?.riskApprovalModeAudit || null;
     const riskApprovalKey = 'learning-loop-risk-approval-divergence';
     if (riskApproval?.status === 'risk_approval_preview_divergence') {
       if (hsm.canAlert(state, riskApprovalKey)) {
@@ -450,6 +451,23 @@ async function main() {
         msg: '✅ [루나 헬스] risk approval mode candidate 종료\n현재는 리스크 승인 체인 mode 전환 후보 상태가 아닙니다 — 자동 감지',
       });
       hsm.clearAlert(state, riskApprovalCandidateKey);
+    }
+
+    const riskApprovalModeAuditKey = 'learning-loop-risk-approval-mode-audit';
+    if (['risk_approval_mode_audit_attention', 'risk_approval_mode_audit_mode_watch'].includes(riskApprovalModeAudit?.status)) {
+      if (hsm.canAlert(state, riskApprovalModeAuditKey)) {
+        issues.push({
+          key: riskApprovalModeAuditKey,
+          level: riskApprovalModeAudit.status === 'risk_approval_mode_audit_attention' ? 2 : 1,
+          msg: `⚠️ [루나 헬스] risk approval mode audit\n${riskApprovalModeAudit.headline || '리스크 승인 mode/readiness 적용 상태 점검'}\nmode ${riskApprovalModeAudit.metrics?.currentMode || 'n/a'} / readiness ${riskApprovalModeAudit.metrics?.readinessStatus || 'n/a'} / blockers ${riskApprovalModeAudit.metrics?.blockerCount || 0}\napplication applied ${riskApprovalModeAudit.metrics?.applied || 0} / rejected ${riskApprovalModeAudit.metrics?.rejected || 0} / non-shadow ${riskApprovalModeAudit.metrics?.nonShadowApplications || 0}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:risk-approval-mode-audit -- --json`,
+        });
+      }
+    } else if (state[riskApprovalModeAuditKey]) {
+      recovers.push({
+        key: riskApprovalModeAuditKey,
+        msg: '✅ [루나 헬스] risk approval mode audit 회복\nmode/readiness/application 충돌 없음 — 자동 감지',
+      });
+      hsm.clearAlert(state, riskApprovalModeAuditKey);
     }
   } catch (e) {
     const key = 'learning-loop-check-failed';
