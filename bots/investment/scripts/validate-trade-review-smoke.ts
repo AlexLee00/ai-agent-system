@@ -43,22 +43,26 @@ export function runValidateTradeReviewSmoke() {
   assert.doesNotMatch(empty.repairCommand, /--paper-only/);
 
   const dryRunCloseout = buildTradeReviewRepairCloseout({
-    before: { findings: 2, scope: 'paper', summary: paperOnly },
-    after: { findings: 2, scope: 'paper', summary: paperOnly },
+    before: { findings: 2, scope: 'paper', closedTrades: 2, scopedLiveClosedTrades: 0, scopedPaperClosedTrades: 2, summary: paperOnly },
+    after: { findings: 2, scope: 'paper', closedTrades: 2, scopedLiveClosedTrades: 0, scopedPaperClosedTrades: 2, summary: paperOnly },
     fix: false,
   });
   assert.equal(dryRunCloseout.status, 'trade_review_repair_dry_run');
   assert.equal(dryRunCloseout.dryRun, true);
+  assert.equal(dryRunCloseout.liveSafe, true);
+  assert.equal(dryRunCloseout.beforePaperClosedTrades, 2);
   assert.match(dryRunCloseout.actionItems[0], /repair:paper/);
 
   const closedCloseout = buildTradeReviewRepairCloseout({
-    before: { findings: 2, scope: 'paper', summary: paperOnly },
-    repair: { fixed: 2, fixedLive: 0, fixedPaper: 2, scope: 'paper' },
-    after: { findings: 0, scope: 'paper', summary: empty },
+    before: { findings: 2, scope: 'paper', closedTrades: 2, scopedLiveClosedTrades: 0, scopedPaperClosedTrades: 2, summary: paperOnly },
+    repair: { fixed: 2, fixedLive: 0, fixedPaper: 2, scope: 'paper', closedTrades: 2, scopedLiveClosedTrades: 0, scopedPaperClosedTrades: 2 },
+    after: { findings: 0, scope: 'paper', closedTrades: 2, scopedLiveClosedTrades: 0, scopedPaperClosedTrades: 2, summary: empty },
     fix: true,
   });
   assert.equal(closedCloseout.status, 'trade_review_repair_closed');
   assert.equal(closedCloseout.fixedPaper, 2);
+  assert.equal(closedCloseout.fixedLive, 0);
+  assert.equal(closedCloseout.liveSafe, true);
 
   return { ok: true, summary, paperOnly, empty, dryRunCloseout, closedCloseout };
 }

@@ -949,7 +949,7 @@ function renderText(payload) {
       ? `- recheck command ${sections.feedback.validationSummary.recheckCommand}`
       : null,
     sections.feedback.validationRepairCloseout?.status
-      ? `- repair closeout ${sections.feedback.validationRepairCloseout.status} | before ${sections.feedback.validationRepairCloseout.beforeFindings} / after ${sections.feedback.validationRepairCloseout.afterFindings} / dryRun ${sections.feedback.validationRepairCloseout.dryRun}`
+      ? `- repair closeout ${sections.feedback.validationRepairCloseout.status} | before ${sections.feedback.validationRepairCloseout.beforeFindings} / after ${sections.feedback.validationRepairCloseout.afterFindings} / dryRun ${sections.feedback.validationRepairCloseout.dryRun} / liveSafe ${sections.feedback.validationRepairCloseout.liveSafe}`
       : null,
     `- ${sections.feedback.headline}`,
     '',

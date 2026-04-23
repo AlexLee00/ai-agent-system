@@ -92,6 +92,15 @@ export function buildTradeReviewRepairCloseout({ before = null, repair = null, a
   const fixedPaper = Number(repair?.fixedPaper || 0);
   const scope = repair?.scope || before?.scope || after?.scope || 'all';
   const dryRun = !fix;
+  const beforeClosedTrades = Number(before?.closedTrades || 0);
+  const afterClosedTrades = Number(after?.closedTrades ?? beforeClosedTrades);
+  const beforeLiveClosedTrades = Number(before?.scopedLiveClosedTrades || 0);
+  const beforePaperClosedTrades = Number(before?.scopedPaperClosedTrades || 0);
+  const afterLiveClosedTrades = Number(after?.scopedLiveClosedTrades ?? beforeLiveClosedTrades);
+  const afterPaperClosedTrades = Number(after?.scopedPaperClosedTrades ?? beforePaperClosedTrades);
+  const liveSafe = scope === 'paper'
+    ? fixedLive === 0 && beforeLiveClosedTrades === 0 && afterLiveClosedTrades === 0
+    : fixedLive === 0 && Number((after || before)?.summary?.liveFindings || 0) === 0;
 
   let status = 'trade_review_repair_no_findings';
   if (dryRun && beforeFindings > 0) status = 'trade_review_repair_dry_run';
@@ -108,8 +117,15 @@ export function buildTradeReviewRepairCloseout({ before = null, repair = null, a
     status,
     dryRun,
     scope,
+    liveSafe,
     beforeFindings,
     afterFindings,
+    beforeClosedTrades,
+    afterClosedTrades,
+    beforeLiveClosedTrades,
+    beforePaperClosedTrades,
+    afterLiveClosedTrades,
+    afterPaperClosedTrades,
     fixed,
     fixedLive,
     fixedPaper,
@@ -155,12 +171,16 @@ export async function validateTradeReview({ days = 30, fix = false, scope = 'all
   let fixedLive = 0;
   let fixedPaper = 0;
   let scopedClosedTrades = 0;
+  let scopedLiveClosedTrades = 0;
+  let scopedPaperClosedTrades = 0;
 
   for (const row of rows) {
     const isPaper = Boolean(row.is_paper);
     if (safeScope === 'paper' && !isPaper) continue;
     if (safeScope === 'live' && isPaper) continue;
     scopedClosedTrades++;
+    if (isPaper) scopedPaperClosedTrades++;
+    else scopedLiveClosedTrades++;
 
     const issues = [];
     const expectedPnlPercent = row.entry_value > 0 && row.pnl_amount != null
@@ -233,6 +253,8 @@ export async function validateTradeReview({ days = 30, fix = false, scope = 'all
     scope: safeScope,
     closedTrades: scopedClosedTrades,
     scannedClosedTrades: rows.length,
+    scopedLiveClosedTrades,
+    scopedPaperClosedTrades,
     findings: findings.length,
     fixed,
     fixedLive,
