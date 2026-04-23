@@ -22,48 +22,72 @@ const SIGMA_HTTP_PORT = process.env.SIGMA_HTTP_PORT || '4010';
 const SIGMA_V2_ENDPOINT =
   process.env.SIGMA_V2_ENDPOINT || `http://127.0.0.1:${SIGMA_HTTP_PORT}/sigma/v2`;
 
+const SUCCESS_OUTCOMES = ['success', 'signal_sent', 'applied', 'auto_applied'];
+const FAILURE_OUTCOMES = ['failure', 'failed', 'rejected', 'error'];
+
+function kstDateLabel(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
+
+async function queryPublic<T = any>(sql: string, params: any[] = []): Promise<T[]> {
+  return query('public', sql, params);
+}
+
+function firstRow<T extends Record<string, any>>(rows: T[]): T {
+  return rows[0] ?? ({} as T);
+}
+
 async function collectDailyStats() {
-  const [cycleRows, directiveRows, dpoRows, costRows] = await Promise.allSettled([
-    query(`
+  const [cycleRows, directiveRows, dpoRows, costRows] = await Promise.all([
+    queryPublic(`
       SELECT
-        COUNT(*) AS total_cycles,
-        COUNT(*) FILTER (WHERE outcome = 'success') AS success_count,
-        COUNT(*) FILTER (WHERE outcome = 'failure') AS error_count
-      FROM sigma_v2_directive_audit
+        COUNT(DISTINCT DATE_TRUNC('second', executed_at)) AS total_cycles,
+        COUNT(DISTINCT DATE_TRUNC('second', executed_at)) FILTER (
+          WHERE outcome = ANY($1::text[])
+        ) AS success_count,
+        COUNT(DISTINCT DATE_TRUNC('second', executed_at)) FILTER (
+          WHERE outcome = ANY($2::text[])
+        ) AS error_count
+      FROM public.sigma_v2_directive_audit
       WHERE executed_at >= NOW() - INTERVAL '24 hours'
-    `),
-    query(`
+    `, [SUCCESS_OUTCOMES, FAILURE_OUTCOMES]),
+    queryPublic(`
       SELECT
         COUNT(*) AS total_directives,
         COUNT(*) FILTER (WHERE tier = 2) AS tier2_count,
-        COUNT(*) FILTER (WHERE outcome = 'success') AS applied_count,
-        COUNT(*) FILTER (WHERE outcome = 'failure') AS rejected_count
-      FROM sigma_v2_directive_audit
+        COUNT(*) FILTER (WHERE outcome = ANY($1::text[])) AS applied_count,
+        COUNT(*) FILTER (WHERE outcome = ANY($2::text[])) AS rejected_count
+      FROM public.sigma_v2_directive_audit
       WHERE executed_at >= NOW() - INTERVAL '24 hours'
-    `),
-    query(`
+    `, [SUCCESS_OUTCOMES, FAILURE_OUTCOMES]),
+    queryPublic(`
       SELECT category, COUNT(*) AS cnt
-      FROM sigma_dpo_preference_pairs
+      FROM public.sigma_dpo_preference_pairs
       WHERE inserted_at >= NOW() - INTERVAL '24 hours'
       GROUP BY category
     `),
-    query(`
+    queryPublic(`
       SELECT COALESCE(SUM(cost_usd), 0) AS llm_cost_usd
-      FROM sigma_llm_cost_tracking
+      FROM public.sigma_llm_cost_tracking
       WHERE inserted_at >= NOW() - INTERVAL '24 hours'
     `),
   ]);
 
-  const cycle = cycleRows.status === 'fulfilled' ? cycleRows.value?.rows?.[0] : {};
-  const directive = directiveRows.status === 'fulfilled' ? directiveRows.value?.rows?.[0] : {};
-  const dpo = dpoRows.status === 'fulfilled' ? dpoRows.value?.rows ?? [] : [];
-  const cost = costRows.status === 'fulfilled' ? costRows.value?.rows?.[0] : {};
+  const cycle = firstRow(cycleRows);
+  const directive = firstRow(directiveRows);
+  const dpo = dpoRows;
+  const cost = firstRow(costRows);
 
   const preferredCount = dpo.find((r: any) => r.category === 'preferred')?.cnt ?? 0;
   const rejectedCount = dpo.find((r: any) => r.category === 'rejected')?.cnt ?? 0;
 
   return {
-    date: new Date().toISOString().slice(0, 10),
+    date: kstDateLabel(),
     total_cycles: Number(cycle.total_cycles ?? 0),
     success_count: Number(cycle.success_count ?? 0),
     error_count: Number(cycle.error_count ?? 0),
