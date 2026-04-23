@@ -623,6 +623,7 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
     remediationSummary,
     remediationTrend: remediationSummary?.trend || positionStrategyRemediationSummary?.remediationTrend || null,
     remediationRefreshState: remediationSummary?.refreshState || remediationRefreshState,
+    remediationCommands: remediationSummary?.commands || null,
     remediationNextCommandTransition: remediationSummary?.nextCommandTransition || positionStrategyRemediationSummary?.remediationNextCommandTransition || null,
     hygieneRemediationPlan,
     feedback,
