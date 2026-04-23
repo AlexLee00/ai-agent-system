@@ -18,6 +18,7 @@ import * as journalDb from '../shared/trade-journal-db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { loadSecrets, initHubSecrets, isPaperMode, getInvestmentTradeMode } from '../shared/secrets.ts';
 import { isSameDaySymbolReentryBlockEnabled, getInvestmentExecutionRuntimeConfig } from '../shared/runtime-config.ts';
+import { syncPositionsAtMarketOpen } from '../shared/position-sync.ts';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.ts';
 import { notifyTrade, notifyError, notifyJournalEntry, notifyTradeSkip, notifyCircuitBreaker, notifySettlement } from '../shared/report.ts';
 import { preTradeCheck, calculatePositionSize, getAvailableBalance, getAvailableUSDT, getOpenPositions, getDailyPnL, getDailyTradeCount, checkCircuitBreaker, getCapitalConfig, formatDailyTradeLimitReason, getDynamicMinOrderAmount } from '../shared/capital-manager.ts';
@@ -606,6 +607,12 @@ async function preparePendingSignalProcessing() {
   await initHubSecrets().catch(() => false);
   const tradeMode = getInvestmentTradeMode();
   const tradeModes = Array.from(new Set([tradeMode, 'normal', 'validation'].filter(Boolean)));
+  const syncResult = await syncPositionsAtMarketOpen('crypto').catch((error) => ({
+    ok: false,
+    reason: error?.message || String(error),
+    mismatchCount: 0,
+    mismatches: [],
+  }));
   const stalePending = [];
   for (const mode of tradeModes) {
     const rows = await cleanupStalePendingSignals({
@@ -621,6 +628,12 @@ async function preparePendingSignalProcessing() {
     console.warn(`[헤파이스토스] 실지갑 포지션 동기화 실패: ${error.message}`);
     return [];
   });
+  if (!syncResult.skipped && !syncResult.ok) {
+    console.warn(`[헤파이스토스] 브로커↔DB 포지션 복구 실패: ${syncResult.reason}`);
+  }
+  if (syncResult.ok && Number(syncResult.mismatchCount || 0) > 0) {
+    console.log(`[헤파이스토스] 브로커↔DB 포지션 복구 ${syncResult.mismatchCount}건`);
+  }
   if (stalePending.length > 0) {
     console.log(`[헤파이스토스] stale pending 정리 ${stalePending.length}건 (modes=${tradeModes.join(',')})`);
   }
@@ -1584,6 +1597,38 @@ async function fetchRecentBrokerExit(symbol, amountHint = 0) {
   }
 }
 
+async function getUntrackedLiquidationQuarantineSummary(symbol) {
+  const [recentTrade] = await db.query(
+    `SELECT side, executed_at
+       FROM trades
+      WHERE symbol = $1
+        AND exchange = 'binance'
+        AND executed_at > now() - interval '24 hours'
+      ORDER BY executed_at DESC
+      LIMIT 1`,
+    [symbol],
+  ).catch(() => [[]]);
+
+  const [recentPromotion] = await db.query(
+    `SELECT trade_id, exit_time
+       FROM trade_journal
+      WHERE symbol = $1
+        AND exchange = 'binance'
+        AND exit_reason = 'promoted_to_live'
+        AND exit_time IS NOT NULL
+        AND to_timestamp(exit_time / 1000.0) > now() - interval '24 hours'
+      ORDER BY exit_time DESC
+      LIMIT 1`,
+    [symbol],
+  ).catch(() => [[]]);
+
+  return {
+    recentTrade: recentTrade || null,
+    recentPromotion: recentPromotion || null,
+    active: Boolean(recentTrade || recentPromotion),
+  };
+}
+
 async function reconcileLivePositionsWithBrokerBalance() {
   const livePositions = await db.getAllPositions('binance', false).catch(() => []);
   if (livePositions.length === 0) return [];
@@ -1929,16 +1974,23 @@ async function _tryBuyWithBtcPair(symbol, base, signalId, signal, paperMode) {
  * @param {string} excludeBase  — 매수 대상 base 심볼 (예: 'ETH') → 이것은 매도 제외
  * @param {boolean} paperMode
  */
-async function _liquidateUntrackedForCapital(excludeBase, paperMode) {
+async function _liquidateUntrackedForCapital(excludeBasesInput, paperMode) {
   const capitalPolicy = getCapitalConfig('binance');
   const minOrderUsdt = await getDynamicMinOrderAmount('binance', getInvestmentTradeMode());
   const ex        = getExchange();
   const walletBal = await ex.fetchBalance();
   let totalUsd    = 0;
+  const liquidated = [];
+  const quarantined = [];
+  const excludeBases = new Set(
+    (Array.isArray(excludeBasesInput) ? excludeBasesInput : [excludeBasesInput])
+      .filter(Boolean)
+      .map((value) => String(value).trim().toUpperCase()),
+  );
 
   for (const [coin, free] of Object.entries(walletBal.free || {})) {
     if (coin === 'USDT')        continue;  // 기축통화 제외
-    if (coin === excludeBase)   continue;  // 매수 대상 제외
+    if (excludeBases.has(String(coin).trim().toUpperCase())) continue;  // 매수/승격 대상 제외
     if (!free || free <= 0)     continue;
 
     const sym        = `${coin}/USDT`;
@@ -1956,9 +2008,34 @@ async function _liquidateUntrackedForCapital(excludeBase, paperMode) {
       continue;
     }
 
+    const quarantine = await getUntrackedLiquidationQuarantineSummary(sym);
+    if (quarantine.active) {
+      const reasons = [
+        quarantine.recentPromotion ? '최근 승격 이력' : null,
+        quarantine.recentTrade ? `최근 ${String(quarantine.recentTrade.side || 'trade').toUpperCase()} 체결` : null,
+      ].filter(Boolean);
+      console.log(`  🧪 미추적 ${coin} ${untracked.toFixed(6)} (≈$${untrackedUsd.toFixed(2)}) — ${reasons.join(' + ')} 감지, 자동 청산 보류`);
+      quarantined.push(`${coin} ${untracked.toFixed(6)} (≈$${untrackedUsd.toFixed(2)})`);
+      continue;
+    }
+
     console.log(`  💱 [헤파이스토스] 미추적 ${coin} ${untracked.toFixed(6)} (≈$${untrackedUsd.toFixed(2)}) → USDT 전환`);
     await marketSell(sym, untracked, paperMode);
+    await db.insertTrade({
+      signalId: null,
+      symbol: sym,
+      side: 'liquidate',
+      amount: untracked,
+      price: curPrice || null,
+      totalUsdt: untrackedUsd,
+      paper: paperMode,
+      exchange: 'binance',
+      tradeMode: getInvestmentTradeMode(),
+    }).catch((err) => {
+      console.warn(`  ⚠️ 미추적 청산 체결 기록 실패 (${sym}): ${err.message}`);
+    });
     totalUsd += untrackedUsd;
+    liquidated.push(`${coin} ${untracked.toFixed(6)} (≈$${untrackedUsd.toFixed(2)})`);
   }
 
   if (totalUsd > 0) {
@@ -1970,8 +2047,12 @@ async function _liquidateUntrackedForCapital(excludeBase, paperMode) {
       paper:     paperMode,
       exchange:  'binance',
       tradeMode: getInvestmentTradeMode(),
-      memo:      `미추적 코인 청산 → 신규 매수 자본 확보${paperMode ? ' [PAPER]' : ''}`,
+      memo:      `미추적 코인 청산 → 신규 매수 자본 확보${paperMode ? ' [PAPER]' : ''}${liquidated.length ? ` | ${liquidated.join(', ')}` : ''}`,
     }).catch(() => {});
+  }
+
+  if (quarantined.length > 0) {
+    console.log(`  🧪 미추적 코인 자동 청산 보류: ${quarantined.join(', ')}`);
   }
 }
 
@@ -2073,8 +2154,9 @@ export async function executeSignal(signal) {
     let executionMeta = null;
 
     if (action === ACTIONS.BUY) {
+      let promoted = [];
       if (!globalPaperMode && signalTradeMode === 'normal') {
-        const promoted = await maybePromotePaperPositions({ reserveSlots: 1 }).catch(err => {
+        promoted = await maybePromotePaperPositions({ reserveSlots: 1 }).catch(err => {
           console.warn(`  ⚠️ PAPER 포지션 승격 체크 실패: ${err.message}`);
           return [];
         });
@@ -2123,7 +2205,11 @@ export async function executeSignal(signal) {
 
       // USDT 폴백: BTC 페어 없는 종목일 때 BTC → USDT → 매수
       try {
-        await _liquidateUntrackedForCapital(base, effectivePaperMode);
+        const excludeBases = [
+          base,
+          ...promoted.map((position) => String(position.symbol || '').split('/')[0]).filter(Boolean),
+        ];
+        await _liquidateUntrackedForCapital(excludeBases, effectivePaperMode);
       } catch (e) {
         console.warn(`  ⚠️ 미추적 코인 청산 실패 (매수 계속): ${e.message}`);
       }
