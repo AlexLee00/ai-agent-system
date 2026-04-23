@@ -1,27 +1,37 @@
 // @ts-nocheck
-const { checkTokenHealth, checkGroqAccounts } = require('../llm/oauth-monitor');
+const { checkTokenHealth, checkOpenAIOAuthHealth, checkGroqAccounts } = require('../llm/oauth-monitor');
 const pgPool = require('../../../../packages/core/lib/pg-pool');
 const { BudgetGuardian } = require('../budget-guardian');
 
 export async function llmHealthRoute(_req: any, res: any) {
-  const [oauth, groq, cacheCheck] = await Promise.all([
+  const [claudeOauth, openaiOauth, groq, cacheCheck] = await Promise.all([
     checkTokenHealth(),
+    checkOpenAIOAuthHealth(),
     checkGroqAccounts(),
     checkCacheDb(),
   ]);
 
   const budget = BudgetGuardian.getInstance().getCurrentUsage();
-  const overall = oauth.healthy && groq.available_accounts > 0 && !budget.emergency;
+  const overall = claudeOauth.healthy && openaiOauth.healthy && groq.available_accounts > 0 && !budget.emergency;
 
   res.json({
     ok: overall,
     timestamp: new Date().toISOString(),
     components: {
-      oauth: {
-        healthy: oauth.healthy,
-        expires_in_hours: Math.round(oauth.expires_in_hours * 10) / 10,
-        needs_refresh: oauth.needs_refresh,
-        error: oauth.error,
+      claude_oauth: {
+        healthy: claudeOauth.healthy,
+        expires_in_hours: Math.round(claudeOauth.expires_in_hours * 10) / 10,
+        needs_refresh: claudeOauth.needs_refresh,
+        auth_method: claudeOauth.auth_method,
+        account: claudeOauth.account,
+        error: claudeOauth.error,
+      },
+      openai_oauth: {
+        healthy: openaiOauth.healthy,
+        token_present: openaiOauth.token_present,
+        source: openaiOauth.source,
+        model: openaiOauth.model,
+        error: openaiOauth.error,
       },
       groq: groq,
       budget: {
