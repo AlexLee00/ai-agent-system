@@ -336,6 +336,12 @@ async function loadStrategyFamilyPerformance(days = 90) {
     weakestFamily: [...ranked]
       .filter((item) => item.worstQuality?.avgPnlPercent != null)
       .sort((a, b) => Number(a.worstQuality.avgPnlPercent) - Number(b.worstQuality.avgPnlPercent))[0] || null,
+    watchFamily: [...ranked]
+      .filter((item) => {
+        const quality = item.worstQuality || item.bestQuality;
+        return Number(item.closed || 0) >= 5 && Number(quality?.winRate ?? 100) < 34;
+      })
+      .sort((a, b) => Number((a.worstQuality || a.bestQuality)?.winRate ?? 100) - Number((b.worstQuality || b.bestQuality)?.winRate ?? 100))[0] || null,
     strongestFamily: [...ranked]
       .filter((item) => item.bestQuality?.avgPnlPercent != null)
       .sort((a, b) => Number(b.bestQuality.avgPnlPercent) - Number(a.bestQuality.avgPnlPercent))[0] || null,
@@ -393,6 +399,7 @@ function buildSectionStates({
     },
     strategyFamilyPerformance: {
       weakestFamily: strategyFamilyPerformance.weakestFamily,
+      watchFamily: strategyFamilyPerformance.watchFamily,
       strongestFamily: strategyFamilyPerformance.strongestFamily,
       byFamily: strategyFamilyPerformance.byFamily.slice(0, 5),
     },
@@ -522,12 +529,18 @@ function buildDecision(sections = {}) {
     if (strongest?.bestMode?.avgPnlPercent != null) {
       nextActions.push(`${strongest.regime} 장세의 ${strongest.bestMode.tradeMode} 레인은 유지하며 비교 표본으로 계속 누적합니다.`);
     }
-  } else if (Number(sections.collect.strategyFamilyPerformance?.weakestFamily?.worstQuality?.avgPnlPercent ?? 0) < -2) {
+  } else if (
+    Number(sections.collect.strategyFamilyPerformance?.weakestFamily?.worstQuality?.avgPnlPercent ?? 0) < -2 ||
+    Number(sections.collect.strategyFamilyPerformance?.watchFamily?.worstQuality?.winRate ?? sections.collect.strategyFamilyPerformance?.watchFamily?.bestQuality?.winRate ?? 100) < 34
+  ) {
     const weakestFamily = sections.collect.strategyFamilyPerformance.weakestFamily;
+    const watchFamily = sections.collect.strategyFamilyPerformance.watchFamily;
+    const targetFamily = Number(weakestFamily?.worstQuality?.avgPnlPercent ?? 0) < -2 ? weakestFamily : watchFamily;
+    const targetQuality = targetFamily?.worstQuality || targetFamily?.bestQuality || {};
     const strongestFamily = sections.collect.strategyFamilyPerformance?.strongestFamily;
     status = 'strategy_family_tuning_needed';
-    headline = `${weakestFamily.family} 전략 패밀리의 ${weakestFamily.worstQuality?.quality || 'unknown'} 품질 구간 성과가 약해, 패밀리 가중치와 적용 조건을 재조정해야 합니다.`;
-    nextActions.push(`${weakestFamily.family} 패밀리의 ${weakestFamily.worstQuality?.quality || 'unknown'} 구간 진입 조건과 비중을 먼저 낮추거나 입력 품질을 보강합니다.`);
+    headline = `${targetFamily.family} 전략 패밀리의 ${targetQuality.quality || 'unknown'} 품질 구간은 승률 또는 손익 기준으로 관찰 강화가 필요합니다.`;
+    nextActions.push(`${targetFamily.family} 패밀리의 ${targetQuality.quality || 'unknown'} 구간은 라우터 감점 효과를 관찰하며 진입 조건과 입력 품질을 함께 점검합니다.`);
     if (strongestFamily?.bestQuality) {
       nextActions.push(`${strongestFamily.family} 패밀리의 ${strongestFamily.bestQuality.quality} 구간은 기준선으로 유지하며 비교 표본을 더 누적합니다.`);
     }
@@ -603,6 +616,9 @@ function renderText(payload) {
     sections.collect.strategyFamilyPerformance?.weakestFamily
       ? `- weakest strategy family ${sections.collect.strategyFamilyPerformance.weakestFamily.family} / ${sections.collect.strategyFamilyPerformance.weakestFamily.worstQuality?.quality || 'unknown'} avg ${sections.collect.strategyFamilyPerformance.weakestFamily.worstQuality?.avgPnlPercent}%`
       : '- weakest strategy family none',
+    sections.collect.strategyFamilyPerformance?.watchFamily
+      ? `- watch strategy family ${sections.collect.strategyFamilyPerformance.watchFamily.family} / ${(sections.collect.strategyFamilyPerformance.watchFamily.worstQuality || sections.collect.strategyFamilyPerformance.watchFamily.bestQuality)?.quality || 'unknown'} win ${(sections.collect.strategyFamilyPerformance.watchFamily.worstQuality || sections.collect.strategyFamilyPerformance.watchFamily.bestQuality)?.winRate}%`
+      : '- watch strategy family none',
     sections.collect.strategyFamilyPerformance?.strongestFamily
       ? `- strongest strategy family ${sections.collect.strategyFamilyPerformance.strongestFamily.family} / ${sections.collect.strategyFamilyPerformance.strongestFamily.bestQuality?.quality || 'unknown'} avg ${sections.collect.strategyFamilyPerformance.strongestFamily.bestQuality?.avgPnlPercent}%`
       : '- strongest strategy family none',

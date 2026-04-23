@@ -117,6 +117,14 @@ function resolveCurrentValue(key) {
 }
 
 export function getParameterGovernance(key) {
+  if (String(key || '').startsWith('runtime_config.luna.strategyRouter.familyPerformanceFeedback.')) {
+    return {
+      key,
+      tier: 'observe',
+      label: '전략 패밀리 성과 피드백',
+      current: 'auto_observed',
+    };
+  }
   const spec = getSpecMap().get(key);
   if (!spec) return { key, tier: 'unknown', label: key };
   return {

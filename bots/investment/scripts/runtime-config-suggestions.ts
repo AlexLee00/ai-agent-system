@@ -177,6 +177,28 @@ async function loadRegimeLaneRows(days = 90) {
   `, [sinceEpochMs]).catch(() => []);
 }
 
+async function loadStrategyFamilyRows(days = 90) {
+  const safeDays = Math.max(14, Number(days || 90));
+  const sinceEpochMs = Date.now() - safeDays * 24 * 60 * 60 * 1000;
+  return db.query(`
+    SELECT
+      exchange,
+      COALESCE(NULLIF(strategy_family, ''), 'unknown') AS strategy_family,
+      COALESCE(NULLIF(strategy_quality, ''), 'unknown') AS strategy_quality,
+      COUNT(*) AS total,
+      COUNT(*) FILTER (WHERE status = 'closed' OR exit_time IS NOT NULL) AS closed,
+      COUNT(*) FILTER (WHERE (status = 'closed' OR exit_time IS NOT NULL) AND COALESCE(pnl_net, pnl_amount, 0) > 0) AS wins,
+      ROUND(AVG(CASE WHEN status = 'closed' OR exit_time IS NOT NULL THEN pnl_percent ELSE NULL END)::numeric, 4) AS avg_pnl_percent,
+      ROUND(SUM(CASE WHEN status = 'closed' OR exit_time IS NOT NULL THEN COALESCE(pnl_net, pnl_amount, 0) ELSE 0 END)::numeric, 4) AS pnl_net
+    FROM investment.trade_journal
+    WHERE created_at >= $1
+      AND COALESCE(exclude_from_learning, false) = false
+      AND COALESCE(NULLIF(strategy_family, ''), 'unknown') <> 'unknown'
+    GROUP BY 1, 2, 3
+    ORDER BY closed DESC, total DESC, exchange ASC, strategy_family ASC
+  `, [sinceEpochMs]).catch(() => []);
+}
+
 function buildDateRange(days) {
   const to = new Date();
   const from = new Date(Date.now() - (days - 1) * 86400000);
@@ -676,6 +698,82 @@ function summarizeRegimeLaneRows(rows = []) {
   };
 }
 
+function summarizeStrategyFamilyRows(rows = []) {
+  const byFamily = new Map();
+  for (const row of rows) {
+    const exchange = String(row.exchange || 'unknown');
+    const family = String(row.strategy_family || 'unknown');
+    const quality = String(row.strategy_quality || 'unknown');
+    const key = `${exchange}:${family}`;
+    if (!byFamily.has(key)) {
+      byFamily.set(key, {
+        exchange,
+        family,
+        qualities: [],
+        total: 0,
+        closed: 0,
+        wins: 0,
+        pnlNet: 0,
+      });
+    }
+    const bucket = byFamily.get(key);
+    const total = Number(row.total || 0);
+    const closed = Number(row.closed || 0);
+    const wins = Number(row.wins || 0);
+    const avgPnlPercent = row.avg_pnl_percent != null ? Number(row.avg_pnl_percent) : null;
+    const pnlNet = row.pnl_net != null ? Number(row.pnl_net) : 0;
+    bucket.total += total;
+    bucket.closed += closed;
+    bucket.wins += wins;
+    bucket.pnlNet += pnlNet;
+    bucket.qualities.push({
+      exchange,
+      family,
+      quality,
+      total,
+      closed,
+      wins,
+      winRate: closed > 0 ? round((wins / closed) * 100, 1) : null,
+      avgPnlPercent,
+      pnlNet,
+    });
+  }
+
+  const ranked = [...byFamily.values()].map((item) => {
+    const weightedAvg = item.qualities.reduce((acc, row) => {
+      if (row.avgPnlPercent == null || row.closed <= 0) return acc;
+      acc.weight += row.closed;
+      acc.sum += Number(row.avgPnlPercent) * row.closed;
+      return acc;
+    }, { sum: 0, weight: 0 });
+    const avgPnlPercent = weightedAvg.weight > 0 ? round(weightedAvg.sum / weightedAvg.weight, 4) : null;
+    const bestQuality = [...item.qualities]
+      .filter(row => row.avgPnlPercent != null)
+      .sort((a, b) => Number(b.avgPnlPercent) - Number(a.avgPnlPercent))[0] || null;
+    const worstQuality = [...item.qualities]
+      .filter(row => row.avgPnlPercent != null)
+      .sort((a, b) => Number(a.avgPnlPercent) - Number(b.avgPnlPercent))[0] || null;
+    return {
+      ...item,
+      winRate: item.closed > 0 ? round((item.wins / item.closed) * 100, 1) : null,
+      avgPnlPercent,
+      pnlNet: round(item.pnlNet, 4),
+      bestQuality,
+      worstQuality,
+    };
+  }).sort((a, b) => Number(b.closed || 0) - Number(a.closed || 0));
+
+  return {
+    byFamily: ranked,
+    weakestFamily: [...ranked]
+      .filter(item => item.closed >= 5 && item.avgPnlPercent != null)
+      .sort((a, b) => Number(a.avgPnlPercent) - Number(b.avgPnlPercent))[0] || null,
+    strongestFamily: [...ranked]
+      .filter(item => item.closed >= 5 && item.avgPnlPercent != null)
+      .sort((a, b) => Number(b.avgPnlPercent) - Number(a.avgPnlPercent))[0] || null,
+  };
+}
+
 function buildRegimeLaneSuggestions(config, executionConfig, regimeLaneSummary = null) {
   const suggestions = [];
   const weakest = regimeLaneSummary?.weakestRegime || null;
@@ -705,6 +803,45 @@ function buildRegimeLaneSuggestions(config, executionConfig, regimeLaneSummary =
       action: 'hold',
       confidence: 'medium',
       reason: `${strongest.regime} 장세의 ${strongest.bestMode.tradeMode} 레인은 평균 손익 ${round(strongest.bestMode.avgPnlPercent, 2)}%로 상대적으로 강합니다. 이 레인은 유지하며 비교 기준선 표본을 더 누적하는 편이 좋습니다.`,
+    });
+  }
+
+  return suggestions;
+}
+
+function buildStrategyFamilySuggestions(strategyFamilySummary = null) {
+  const suggestions = [];
+  const weakest = strategyFamilySummary?.weakestFamily || null;
+  const strongest = strategyFamilySummary?.strongestFamily || null;
+
+  if (weakest?.family && weakest.closed >= 5) {
+    const weakByPnl = Number(weakest.avgPnlPercent) < -2;
+    const weakByWinRate = Number(weakest.winRate) < 34;
+    if (weakByPnl || weakByWinRate) {
+      suggestions.push({
+        key: `runtime_config.luna.strategyRouter.familyPerformanceFeedback.${weakest.exchange}.${weakest.family}`,
+        current: 'auto_observed',
+        suggested: weakByPnl ? 'downweight_by_pnl' : 'downweight_by_win_rate',
+        action: 'observe',
+        confidence: weakest.closed >= 20 ? 'medium' : 'low',
+        reason: `${weakest.exchange}/${weakest.family} 패밀리는 최근 종료 ${weakest.closed}건 기준 평균 손익 ${weakest.avgPnlPercent}% / 승률 ${weakest.winRate}%입니다. 라우터는 이미 이 성과를 감점 피드백으로 반영하므로, 신규 config 변경보다 다음 표본에서 감점 효과를 관찰하는 편이 좋습니다.`,
+      });
+    }
+  }
+
+  if (
+    strongest?.family &&
+    strongest.closed >= 5 &&
+    Number(strongest.avgPnlPercent) > 1 &&
+    Number(strongest.winRate) >= 42
+  ) {
+    suggestions.push({
+      key: `runtime_config.luna.strategyRouter.familyPerformanceFeedback.${strongest.exchange}.${strongest.family}`,
+      current: 'auto_observed',
+      suggested: 'upweight_candidate',
+      action: 'promote_candidate',
+      confidence: strongest.closed >= 20 ? 'medium' : 'low',
+      reason: `${strongest.exchange}/${strongest.family} 패밀리는 최근 종료 ${strongest.closed}건 기준 평균 손익 ${strongest.avgPnlPercent}% / 승률 ${strongest.winRate}%입니다. 같은 regime에서 ranking 가중치 상향 후보로 비교할 수 있지만, 라우터 자동 피드백과 중복되지 않도록 관찰 후 승격하는 편이 좋습니다.`,
     });
   }
 
@@ -804,6 +941,7 @@ function buildSuggestions(
   validationBudgetPolicy = null,
   cryptoSoftGuardSummary = null,
   regimeLaneSummary = null,
+  strategyFamilySummary = null,
 ) {
   void capitalGuardBias;
   return [
@@ -814,10 +952,11 @@ function buildSuggestions(
     ...buildValidationBudgetSuggestions(validationBudgetSnapshots, validationBudgetPolicy),
     ...buildCryptoSoftGuardSuggestions(config, executionConfig, cryptoSoftGuardSummary, summaries),
     ...buildRegimeLaneSuggestions(config, executionConfig, regimeLaneSummary),
+    ...buildStrategyFamilySuggestions(strategyFamilySummary),
   ];
 }
 
-function buildReport(days, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, validationBudgetPolicyTrend, cryptoSoftGuardSummary, regimeLaneSummary, suggestions) {
+function buildReport(days, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, validationBudgetPolicyTrend, cryptoSoftGuardSummary, regimeLaneSummary, strategyFamilySummary, suggestions) {
   const governance = buildParameterGovernanceReport();
   return {
     periodDays: days,
@@ -829,6 +968,7 @@ function buildReport(days, summaries, validationSummaries, validationBudgetSnaps
     validationBudgetPolicyTrend,
     cryptoSoftGuardSummary,
     regimeLaneSummary,
+    strategyFamilySummary,
     suggestions,
     parameterGovernance: governance.summary,
     actionableSuggestions: suggestions.filter(item => item.action === 'adjust').length,
@@ -917,6 +1057,18 @@ function printHuman(report) {
       lines.push(`- strongest: ${strongest.regime} / ${strongest.bestMode.tradeMode} / avg pnl ${strongest.bestMode.avgPnlPercent}%`);
     }
   }
+  if (report.strategyFamilySummary?.weakestFamily || report.strategyFamilySummary?.strongestFamily) {
+    lines.push('');
+    lines.push('strategy family 요약:');
+    if (report.strategyFamilySummary?.weakestFamily) {
+      const weakest = report.strategyFamilySummary.weakestFamily;
+      lines.push(`- watch: ${weakest.exchange}/${weakest.family} / closed ${weakest.closed} / win ${weakest.winRate}% / avg pnl ${weakest.avgPnlPercent}%`);
+    }
+    if (report.strategyFamilySummary?.strongestFamily) {
+      const strongest = report.strategyFamilySummary.strongestFamily;
+      lines.push(`- strongest: ${strongest.exchange}/${strongest.family} / closed ${strongest.closed} / win ${strongest.winRate}% / avg pnl ${strongest.avgPnlPercent}%`);
+    }
+  }
   lines.push('');
   lines.push('설정 제안:');
   for (const item of report.suggestions) {
@@ -965,7 +1117,10 @@ export async function buildRuntimeConfigSuggestionsReport({ days = 14, write = f
     loadTodayTradeModeTradeRows(),
     loadTodaySignalBlockRows(),
   ]);
-  const regimeLaneRows = await loadRegimeLaneRows(Math.max(days * 3, 90));
+  const [regimeLaneRows, strategyFamilyRows] = await Promise.all([
+    loadRegimeLaneRows(Math.max(days * 3, 90)),
+    loadStrategyFamilyRows(Math.max(days * 3, 90)),
+  ]);
   const config = getInvestmentRuntimeConfig();
   const executionConfig = getInvestmentExecutionRuntimeConfig();
   const summaries = {
@@ -992,13 +1147,14 @@ export async function buildRuntimeConfigSuggestionsReport({ days = 14, write = f
   );
   const cryptoSoftGuardSummary = await buildRuntimeCryptoSoftGuardReport({ days, json: true }).catch(() => null);
   const regimeLaneSummary = summarizeRegimeLaneRows(regimeLaneRows);
+  const strategyFamilySummary = summarizeStrategyFamilyRows(strategyFamilyRows);
   const validationBudgetPolicyTrend = buildValidationBudgetPolicyTrend(
     validationBudgetPolicy,
     previousPolicySnapshot,
   );
   const suggestions = normalizeAnnotatedSuggestions(
     annotateRuntimeSuggestions(
-      buildSuggestions(config, executionConfig, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, cryptoSoftGuardSummary, regimeLaneSummary),
+      buildSuggestions(config, executionConfig, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, cryptoSoftGuardSummary, regimeLaneSummary, strategyFamilySummary),
     ),
   );
   const report = buildReport(
@@ -1011,6 +1167,7 @@ export async function buildRuntimeConfigSuggestionsReport({ days = 14, write = f
     validationBudgetPolicyTrend,
     cryptoSoftGuardSummary,
     regimeLaneSummary,
+    strategyFamilySummary,
     suggestions,
   );
   report.aiSummary = await buildInvestmentCliInsight({
@@ -1026,6 +1183,11 @@ export async function buildRuntimeConfigSuggestionsReport({ days = 14, write = f
       capitalGuardBias: report.capitalGuardBias,
       cryptoSoftGuard: report.cryptoSoftGuardSummary?.decision || null,
       regimeLaneSummary: report.regimeLaneSummary,
+      strategyFamilySummary: {
+        weakestFamily: report.strategyFamilySummary?.weakestFamily || null,
+        strongestFamily: report.strategyFamilySummary?.strongestFamily || null,
+        byFamily: (report.strategyFamilySummary?.byFamily || []).slice(0, 5),
+      },
     },
     fallback:
       report.actionableSuggestions > 0
@@ -1045,6 +1207,7 @@ export async function buildRuntimeConfigSuggestionsReport({ days = 14, write = f
         capitalGuardBias: report.capitalGuardBias,
         validationBudgetSnapshots: report.validationBudgetSnapshots,
         cryptoSoftGuardSummary: report.cryptoSoftGuardSummary,
+        strategyFamilySummary: report.strategyFamilySummary,
       },
     });
     report.saved = saved;
