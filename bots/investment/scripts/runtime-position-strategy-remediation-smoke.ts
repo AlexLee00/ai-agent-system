@@ -163,12 +163,38 @@ export async function runPositionStrategyRemediationContractSmoke() {
   assert.equal(result.ok, true);
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationNextCommandTransition'));
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationTrend'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationTrendHistoryCount'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationTrendChanged'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationTrendNextChanged'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationTrendAgeMinutes'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationTrendStale'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationTrendDuplicateDelta'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationTrendOrphanDelta'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationTrendUnmatchedDelta'));
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationSummary'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationRefreshNeeded'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationRefreshStale'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationRefreshReason'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationRefreshCommand'));
   assert.ok(Object.prototype.hasOwnProperty.call(result.remediationSummary || {}, 'commands'));
   return {
     ok: true,
     hasTransitionField: Object.prototype.hasOwnProperty.call(result, 'remediationNextCommandTransition'),
     hasTrendField: Object.prototype.hasOwnProperty.call(result, 'remediationTrend'),
+    hasTrendAliasFields:
+      Object.prototype.hasOwnProperty.call(result, 'remediationTrendHistoryCount')
+      && Object.prototype.hasOwnProperty.call(result, 'remediationTrendChanged')
+      && Object.prototype.hasOwnProperty.call(result, 'remediationTrendNextChanged')
+      && Object.prototype.hasOwnProperty.call(result, 'remediationTrendAgeMinutes')
+      && Object.prototype.hasOwnProperty.call(result, 'remediationTrendStale')
+      && Object.prototype.hasOwnProperty.call(result, 'remediationTrendDuplicateDelta')
+      && Object.prototype.hasOwnProperty.call(result, 'remediationTrendOrphanDelta')
+      && Object.prototype.hasOwnProperty.call(result, 'remediationTrendUnmatchedDelta'),
+    hasRefreshAliasFields:
+      Object.prototype.hasOwnProperty.call(result, 'remediationRefreshNeeded')
+      && Object.prototype.hasOwnProperty.call(result, 'remediationRefreshStale')
+      && Object.prototype.hasOwnProperty.call(result, 'remediationRefreshReason')
+      && Object.prototype.hasOwnProperty.call(result, 'remediationRefreshCommand'),
     hasSummaryField: Object.prototype.hasOwnProperty.call(result, 'remediationSummary'),
     hasSummaryCommandsField: Object.prototype.hasOwnProperty.call(result.remediationSummary || {}, 'commands'),
   };
