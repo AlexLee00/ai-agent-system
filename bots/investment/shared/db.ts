@@ -282,6 +282,43 @@ export async function initSchema() {
   try { await run(`ALTER TABLE position_strategy_profiles ADD COLUMN IF NOT EXISTS strategy_state JSONB DEFAULT '{}'::jsonb`); } catch { /* 무시 */ }
   try { await run(`ALTER TABLE position_strategy_profiles ADD COLUMN IF NOT EXISTS last_evaluation_at TIMESTAMPTZ`); } catch { /* 무시 */ }
   try { await run(`ALTER TABLE position_strategy_profiles ADD COLUMN IF NOT EXISTS last_attention_at TIMESTAMPTZ`); } catch { /* 무시 */ }
+  await run(`
+    CREATE TABLE IF NOT EXISTS agent_role_profiles (
+      agent_id           TEXT PRIMARY KEY,
+      team               TEXT NOT NULL,
+      primary_role       TEXT NOT NULL,
+      secondary_roles    JSONB DEFAULT '[]'::jsonb,
+      capabilities       JSONB DEFAULT '[]'::jsonb,
+      default_priority   INTEGER DEFAULT 50,
+      metadata           JSONB DEFAULT '{}'::jsonb,
+      updated_at         TIMESTAMPTZ DEFAULT now()
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS agent_role_state (
+      id                 TEXT DEFAULT gen_random_uuid()::text PRIMARY KEY,
+      agent_id           TEXT NOT NULL,
+      team               TEXT NOT NULL,
+      scope_type         TEXT NOT NULL,
+      scope_key          TEXT NOT NULL,
+      mission            TEXT NOT NULL,
+      role_mode          TEXT NOT NULL,
+      priority           INTEGER DEFAULT 50,
+      status             TEXT DEFAULT 'active',
+      reason             TEXT,
+      state              JSONB DEFAULT '{}'::jsonb,
+      created_at         TIMESTAMPTZ DEFAULT now(),
+      updated_at         TIMESTAMPTZ DEFAULT now()
+    )
+  `);
+  try {
+    await run(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_role_state_active_scope
+      ON agent_role_state(agent_id, scope_type, scope_key)
+      WHERE status = 'active'
+    `);
+  } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_agent_role_state_scope_updated ON agent_role_state(scope_type, scope_key, updated_at DESC)`); } catch { /* 무시 */ }
   try { await run(`UPDATE positions SET execution_mode = CASE WHEN paper = true THEN 'paper' ELSE 'live' END WHERE execution_mode IS NULL OR execution_mode = ''`); } catch { /* 무시 */ }
   try { await run(`UPDATE positions SET trade_mode = 'normal' WHERE trade_mode IS NULL`); } catch { /* 무시 */ }
   try { await run(`ALTER TABLE positions DROP CONSTRAINT IF EXISTS positions_pkey`); } catch { /* 무시 */ }
@@ -347,6 +384,7 @@ export async function initSchema() {
       [5, 'runtime_config_suggestion_log'],
       [6, 'positions_trade_mode_scope'],
       [7, 'positions_mode_metadata'],
+      [8, 'agent_role_profiles_state'],
     ]) {
       await run(
         `INSERT INTO schema_migrations (version, name) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
@@ -1332,6 +1370,133 @@ export async function closePositionStrategyProfile(symbol, {
   );
 }
 
+// ─── agent_role_profiles / agent_role_state ─────────────────────────
+
+export async function upsertAgentRoleProfile({
+  agentId,
+  team = 'investment',
+  primaryRole,
+  secondaryRoles = [],
+  capabilities = [],
+  defaultPriority = 50,
+  metadata = {},
+} = {}) {
+  if (!agentId || !primaryRole) return null;
+  return get(
+    `INSERT INTO agent_role_profiles (
+       agent_id, team, primary_role, secondary_roles, capabilities, default_priority, metadata, updated_at
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+     ON CONFLICT (agent_id) DO UPDATE SET
+       team = EXCLUDED.team,
+       primary_role = EXCLUDED.primary_role,
+       secondary_roles = EXCLUDED.secondary_roles,
+       capabilities = EXCLUDED.capabilities,
+       default_priority = EXCLUDED.default_priority,
+       metadata = EXCLUDED.metadata,
+       updated_at = now()
+     RETURNING *`,
+    [
+      String(agentId),
+      String(team || 'investment'),
+      String(primaryRole),
+      JSON.stringify(Array.isArray(secondaryRoles) ? secondaryRoles : []),
+      JSON.stringify(Array.isArray(capabilities) ? capabilities : []),
+      Math.max(0, Math.round(Number(defaultPriority || 50))),
+      JSON.stringify(metadata || {}),
+    ],
+  );
+}
+
+export async function upsertAgentRoleState({
+  agentId,
+  team = 'investment',
+  scopeType = 'global',
+  scopeKey = 'investment',
+  mission,
+  roleMode,
+  priority = 50,
+  status = 'active',
+  reason = null,
+  state = {},
+} = {}) {
+  if (!agentId || !mission || !roleMode) return null;
+  const updated = await get(
+    `UPDATE agent_role_state
+     SET team = $1,
+         mission = $2,
+         role_mode = $3,
+         priority = $4,
+         status = $5,
+         reason = $6,
+         state = $7::jsonb,
+         updated_at = now()
+     WHERE agent_id = $8
+       AND scope_type = $9
+       AND scope_key = $10
+       AND status = 'active'
+     RETURNING *`,
+    [
+      String(team || 'investment'),
+      String(mission),
+      String(roleMode),
+      Math.max(0, Math.round(Number(priority || 50))),
+      String(status || 'active'),
+      reason ? String(reason) : null,
+      JSON.stringify(state || {}),
+      String(agentId),
+      String(scopeType || 'global'),
+      String(scopeKey || 'investment'),
+    ],
+  );
+  if (updated) return updated;
+
+  return get(
+    `INSERT INTO agent_role_state (
+       agent_id, team, scope_type, scope_key, mission, role_mode, priority, status, reason, state
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+     RETURNING *`,
+    [
+      String(agentId),
+      String(team || 'investment'),
+      String(scopeType || 'global'),
+      String(scopeKey || 'investment'),
+      String(mission),
+      String(roleMode),
+      Math.max(0, Math.round(Number(priority || 50))),
+      String(status || 'active'),
+      reason ? String(reason) : null,
+      JSON.stringify(state || {}),
+    ],
+  );
+}
+
+export async function getActiveAgentRoleStates({
+  team = 'investment',
+  scopeType = null,
+  scopeKey = null,
+  limit = 100,
+} = {}) {
+  const conditions = [`status = 'active'`, `team = $1`];
+  const params = [String(team || 'investment')];
+  if (scopeType) {
+    params.push(String(scopeType));
+    conditions.push(`scope_type = $${params.length}`);
+  }
+  if (scopeKey) {
+    params.push(String(scopeKey));
+    conditions.push(`scope_key = $${params.length}`);
+  }
+  params.push(Math.max(1, Number(limit || 100)));
+  return query(
+    `SELECT *
+     FROM agent_role_state
+     WHERE ${conditions.join(' AND ')}
+     ORDER BY priority DESC, updated_at DESC
+     LIMIT $${params.length}`,
+    params,
+  );
+}
+
 // ─── risk_log ────────────────────────────────────────────────────────
 
 export async function insertRiskLog({ traceId, symbol, exchange, decision, riskScore, reason }) {
@@ -1503,6 +1668,7 @@ export default {
   upsertStrategy, getActiveStrategies, recordStrategyResult,
   getLatestVectorbtBacktestForSymbol, getLatestMarketRegimeSnapshot,
   getPositionStrategyProfile, upsertPositionStrategyProfile, updatePositionStrategyProfileState, closePositionStrategyProfile,
+  upsertAgentRoleProfile, upsertAgentRoleState, getActiveAgentRoleStates,
   insertRiskLog,
   insertAssetSnapshot, getLatestEquity, getEquityHistory,
   insertMarketRegimeSnapshot,

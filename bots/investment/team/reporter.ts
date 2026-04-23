@@ -26,6 +26,7 @@ import { adjustAnalystWeights } from '../shared/analyst-accuracy.ts';
 import { buildScreeningHistoryReport } from '../scripts/screening-history-report.ts';
 import { buildPositionReevaluationSummary } from '../scripts/position-reevaluation-summary.ts';
 import { buildStrategyExitSummary } from '../scripts/strategy-exit-runner.ts';
+import { buildRuntimeAgentRoleReport } from '../scripts/runtime-agent-role-report.ts';
 import { buildRuntimeMinOrderPressureReport } from '../scripts/runtime-min-order-pressure-report.ts';
 import { buildRuntimeKisOrderPressureReport } from '../scripts/runtime-kis-order-pressure-report.ts';
 import { buildRuntimeKisDomesticAutotuneReport } from '../scripts/runtime-kis-domestic-autotune-report.ts';
@@ -437,6 +438,20 @@ async function loadStrategyExitSummary() {
   }
 }
 
+async function loadAgentRoleSummary() {
+  try {
+    return await buildRuntimeAgentRoleReport({
+      exchange: 'binance',
+      refresh: false,
+      json: true,
+    });
+  } catch (error) {
+    return {
+      error: String(error?.message || error),
+    };
+  }
+}
+
 async function loadReevalTvMtfAutotuneSummary() {
   try {
     return await buildRuntimeReevalTvMtfAutotuneReport({
@@ -671,6 +686,21 @@ function buildStrategyExitLines(strategyExitSummary = null) {
   return lines;
 }
 
+function buildAgentRoleLines(agentRoleSummary = null) {
+  if (!agentRoleSummary) return ['조회 결과 없음'];
+  if (agentRoleSummary.error) return ['조회 실패'];
+  const decision = agentRoleSummary.decision || {};
+  const rows = Array.isArray(agentRoleSummary?.summary?.rows) ? agentRoleSummary.summary.rows : [];
+  const lines = [
+    `${decision.status || 'agent_roles_ready'}: ${decision.headline || '에이전트 역할 상태를 불러왔습니다.'}`,
+  ];
+  for (const row of rows.slice(0, 5)) {
+    lines.push(`${row.agent_id} | ${row.mission} | ${row.role_mode} | priority ${row.priority}`);
+    if (row.reason) lines.push(`  ${row.reason}`);
+  }
+  return lines;
+}
+
 function buildReevalTvMtfAutotuneLines(reevalTvMtfSummary = null) {
   if (!reevalTvMtfSummary) return ['조회 결과 없음'];
   if (reevalTvMtfSummary.error) return ['조회 실패'];
@@ -854,6 +884,7 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
   const screeningSummary = await loadScreeningSummary();
   const reevaluationSummary = await loadPositionReevaluationSummary();
   const strategyExitSummary = await loadStrategyExitSummary();
+  const agentRoleSummary = await loadAgentRoleSummary();
   const reevalTvMtfAutotuneSummary = await loadReevalTvMtfAutotuneSummary();
   const reevalTvMtfTrendSummary = await loadReevalTvMtfTrendSummary();
   const minOrderPressureSummary = await loadMinOrderPressureSummary();
@@ -900,6 +931,9 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
       '',
       '━━━ 포지션 재평가 ━━━',
       ...buildPositionReevaluationLines(reevaluationSummary).map((line) => `  ${line}`),
+      '',
+      '━━━ 에이전트 역할 상태 ━━━',
+      ...buildAgentRoleLines(agentRoleSummary).map((line) => `  ${line}`),
       '',
       '━━━ 전략 청산 preview ━━━',
       ...buildStrategyExitLines(strategyExitSummary).map((line) => `  ${line}`),
@@ -1144,6 +1178,10 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
   lines.push(...buildPositionReevaluationLines(reevaluationSummary).map((line) => `  ${line}`));
   lines.push(``);
 
+  lines.push(`━━━ 에이전트 역할 상태 ━━━`);
+  lines.push(...buildAgentRoleLines(agentRoleSummary).map((line) => `  ${line}`));
+  lines.push(``);
+
   lines.push(`━━━ 전략 청산 preview ━━━`);
   lines.push(...buildStrategyExitLines(strategyExitSummary).map((line) => `  ${line}`));
   lines.push(``);
@@ -1339,6 +1377,11 @@ ${JSON.stringify({
     adjusts: Number(reevaluationSummary.decision.metrics?.adjusts || 0),
     exits: Number(reevaluationSummary.decision.metrics?.exits || 0),
   } : null,
+  agentRoles: agentRoleSummary?.decision ? {
+    status: agentRoleSummary.decision.status,
+    count: Number(agentRoleSummary.decision.metrics?.count || 0),
+    topPriority: agentRoleSummary.decision.metrics?.topPriority || null,
+  } : null,
   strategyExit: strategyExitSummary?.status ? {
     status: strategyExitSummary.status,
     ready: Number(strategyExitSummary.metrics?.ready || 0),
@@ -1463,6 +1506,7 @@ ${JSON.stringify({
         ]),
         buildSection('스크리닝 동향', buildScreeningSummaryLines(screeningSummary)),
         buildSection('포지션 재평가', buildPositionReevaluationLines(reevaluationSummary)),
+        buildSection('에이전트 역할 상태', buildAgentRoleLines(agentRoleSummary)),
         buildSection('전략 청산 preview', buildStrategyExitLines(strategyExitSummary)),
         buildSection('포지션 TV-MTF autotune', buildReevalTvMtfAutotuneLines(reevalTvMtfAutotuneSummary)),
         buildSection('포지션 TV-MTF trend', buildReevalTvMtfTrendLines(reevalTvMtfTrendSummary)),
@@ -1498,6 +1542,9 @@ ${JSON.stringify({
           `실행 ${sigExec}개 / 승인대기 ${sigApproved}개 / 실패 ${sigFailed}개`,
           reevaluationSummary?.decision
             ? `재평가 ${reevaluationSummary.decision.status} / EXIT ${reevaluationSummary.decision.metrics?.exits || 0}`
+            : null,
+          agentRoleSummary?.decision?.metrics?.topPriority
+            ? `agent-role ${agentRoleSummary.decision.metrics.topPriority.agentId} / ${agentRoleSummary.decision.metrics.topPriority.mission}`
             : null,
           strategyExitSummary?.status
             ? `strategy-exit ${strategyExitSummary.status} / ready ${strategyExitSummary.metrics?.ready || 0}`

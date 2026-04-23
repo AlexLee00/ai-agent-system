@@ -3,6 +3,7 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as db from './db.ts';
+import { refreshInvestmentAgentRoles } from './agent-role-state.ts';
 import { getInvestmentSyncRuntimeConfig, getPositionReevaluationRuntimeConfig } from './runtime-config.ts';
 
 const execFileAsync = promisify(execFile);
@@ -808,6 +809,21 @@ export async function reevaluateOpenPositions({
   if (persist && results.length > 0) {
     persisted = await persistRuns(results);
   }
+
+  await refreshInvestmentAgentRoles({
+    reevaluationReport: {
+      rows: results,
+      activeCount: activeResults.length,
+      ignoredCount: ignoredResults.length,
+      summary: {
+        hold: activeResults.filter((item) => item.recommendation === 'HOLD').length,
+        adjust: activeResults.filter((item) => item.recommendation === 'ADJUST').length,
+        exit: activeResults.filter((item) => item.recommendation === 'EXIT').length,
+        ignored: ignoredResults.length,
+      },
+    },
+    exchange: exchange || 'binance',
+  }).catch(() => null);
 
   return {
     ok: true,
