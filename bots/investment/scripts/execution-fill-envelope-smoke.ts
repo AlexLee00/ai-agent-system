@@ -146,4 +146,59 @@ assert.equal(routeOnly.strategy.executionPlan.source, 'execution_envelope_route_
 assert.equal(routeOnly.linkage.hasResponsibilityPlan, true);
 assert.equal(routeOnly.regime.regime, 'trending_bull');
 
+const unattributed = buildExecutionFillEnvelope({
+  trade: {
+    id: 'trade-5',
+    symbol: 'HUMA/USDT',
+    side: 'sell',
+    amount: 100,
+    price: 0.02,
+    total_usdt: 2,
+    exchange: 'binance',
+    trade_mode: 'normal',
+    execution_origin: 'reconciliation',
+    quality_flag: 'degraded',
+  },
+  journal: {
+    trade_id: 'TRD-5',
+    signal_id: null,
+    status: 'closed',
+    market_regime: 'trending_bull',
+  },
+});
+assert.equal(unattributed.strategy.route.source, 'execution_envelope_unattributed_fallback');
+assert.equal(unattributed.strategy.setupType, 'unattributed_execution_tracking');
+assert.equal(unattributed.strategy.executionPlan.entrySizingMultiplier, 0);
+assert.equal(unattributed.strategy.responsibilityPlan.riskMission, 'position_truth_guard');
+assert.equal(unattributed.linkage.hasStrategyRoute, true);
+assert.equal(scoreExecutionFillEnvelope(unattributed).status, 'partial');
+
+const signalWithoutRoute = buildExecutionFillEnvelope({
+  trade: {
+    id: 'trade-6',
+    signal_id: 'sig-6',
+    symbol: 'SIGN/USDT',
+    side: 'sell',
+    amount: 10,
+    price: 0.018,
+    total_usdt: 0.18,
+    exchange: 'binance',
+    trade_mode: 'normal',
+  },
+  signal: {
+    id: 'sig-6',
+    analyst_signals: 'A:N|O:B|H:S|S:S',
+    nemesis_verdict: 'approved',
+  },
+  journal: {
+    trade_id: 'TRD-6',
+    signal_id: 'sig-6',
+    status: 'closed',
+    market_regime: 'trending_bull',
+  },
+});
+assert.equal(signalWithoutRoute.strategy.route.source, 'execution_envelope_signal_without_route_fallback');
+assert.equal(signalWithoutRoute.strategy.executionPlan.exitUrgency, 'manual_review');
+assert.equal(signalWithoutRoute.linkage.hasAgentConsensus, true);
+
 console.log('execution fill envelope smoke ok');

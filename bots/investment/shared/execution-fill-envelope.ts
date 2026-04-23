@@ -29,13 +29,24 @@ function firstObject(...values) {
   return null;
 }
 
-function deriveStrategyRoute({ signal = null, journal = null, strategyContext = {}, strategyProfile = null } = {}) {
+function deriveStrategyRoute({ trade = null, signal = null, journal = null, strategyContext = {}, strategyProfile = null } = {}) {
   const route = firstObject(signal?.strategy_route, journal?.strategy_route, strategyContext?.strategyRoute);
   if (route) return route;
 
   const setupType = strategyProfile?.setup_type || strategyContext?.setupType || null;
   const family = signal?.strategy_family || journal?.strategy_family || strategyContext?.family || setupType || null;
-  if (!setupType && !family) return null;
+  if (!setupType && !family) {
+    const hasExecutionRecoveryContext = Boolean(trade) && !strategyProfile && (signal || journal || trade?.execution_origin || trade?.quality_flag);
+    if (!hasExecutionRecoveryContext) return null;
+    return {
+      source: signal ? 'execution_envelope_signal_without_route_fallback' : 'execution_envelope_unattributed_fallback',
+      setupType: 'unattributed_execution_tracking',
+      selectedFamily: 'unattributed_execution_tracking',
+      executionOrigin: trade?.execution_origin || journal?.execution_origin || 'unattributed',
+      qualityFlag: trade?.quality_flag || journal?.quality_flag || 'degraded',
+      signalId: signal?.id || trade?.signal_id || journal?.signal_id || null,
+    };
+  }
 
   return {
     source: 'execution_envelope_profile_fallback',
@@ -64,6 +75,11 @@ function buildFallbackResponsibilityPlan({ exchange = 'binance', setupType = nul
     watchMission = bearishRegime ? 'risk_sentinel' : 'backtest_drift_watcher';
     riskMission = bearishRegime ? 'strict_risk_gate' : 'soft_sizing_preference';
     executionMission = 'partial_adjust_executor';
+  } else if (normalizedSetupType === 'unattributed_execution_tracking') {
+    ownerMode = 'reconciliation_tracking';
+    riskMission = 'position_truth_guard';
+    watchMission = 'execution_linkage_repair';
+    executionMission = 'no_new_order_until_attributed';
   }
 
   return {
@@ -93,9 +109,15 @@ function buildFallbackExecutionPlan({ exchange = 'binance', setupType = null, re
 
   if (riskMission === 'strict_risk_gate') entrySizingMultiplier *= 0.92;
   if (riskMission === 'soft_sizing_preference') entrySizingMultiplier *= 0.97;
+  if (riskMission === 'position_truth_guard') entrySizingMultiplier = 0;
   if (watchMission === 'backtest_drift_watcher') backtestUrgency = 'high';
+  if (watchMission === 'execution_linkage_repair') backtestUrgency = 'audit';
   if (normalizedSetupType === 'mean_reversion') partialAdjustBias *= 1.12;
   if (normalizedSetupType === 'momentum_rotation' || normalizedSetupType === 'trend_following') partialAdjustBias *= 1.04;
+  if (normalizedSetupType === 'unattributed_execution_tracking') {
+    partialAdjustBias = 0;
+    exitUrgency = 'manual_review';
+  }
   if (normalizedSetupType === 'breakout' && bearishRegime) exitUrgency = 'high';
 
   return {
@@ -124,7 +146,7 @@ export function buildExecutionFillEnvelope({
   const strategyContext = safeJson(strategyProfile?.strategy_context, {});
   const strategyState = safeJson(strategyProfile?.strategy_state, {});
   const marketContext = safeJson(strategyProfile?.market_context, {});
-  const strategyRoute = deriveStrategyRoute({ signal, journal, strategyContext, strategyProfile });
+  const strategyRoute = deriveStrategyRoute({ trade, signal, journal, strategyContext, strategyProfile });
   const setupType = strategyProfile?.setup_type || strategyRoute?.setupType || strategyRoute?.selectedFamily || null;
   const regime = journal?.market_regime || marketRegime?.regime || marketContext?.regime || strategyRoute?.regime || null;
   const responsibilityPlan = strategyContext?.responsibilityPlan
@@ -188,6 +210,8 @@ export function buildExecutionFillEnvelope({
 
 export function scoreExecutionFillEnvelope(envelope = {}) {
   const linkage = envelope.linkage || {};
+  const setupType = String(envelope?.strategy?.setupType || '').trim();
+  const routeSource = String(envelope?.strategy?.route?.source || '').trim();
   const checks = [
     ['trade', linkage.hasTrade],
     ['signal', linkage.hasSignal],
@@ -203,9 +227,22 @@ export function scoreExecutionFillEnvelope(envelope = {}) {
   const score = checks.length > 0
     ? Math.round(((checks.length - missing.length) / checks.length) * 100)
     : 0;
+  const recoveredUnattributedExecution =
+    setupType === 'unattributed_execution_tracking'
+    && routeSource.includes('fallback')
+    && linkage.hasTrade
+    && linkage.hasJournal
+    && linkage.hasStrategyRoute
+    && linkage.hasExecutionPlan
+    && linkage.hasResponsibilityPlan
+    && linkage.hasRegime;
   return {
     score,
     missing,
-    status: missing.length === 0 ? 'complete' : score >= 70 ? 'partial' : 'weak',
+    status: missing.length === 0
+      ? 'complete'
+      : (score >= 70 || recoveredUnattributedExecution)
+        ? 'partial'
+        : 'weak',
   };
 }
