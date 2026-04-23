@@ -1290,7 +1290,6 @@ async function finalizeExecutedTrade({ trade, signalId, signalTradeMode, capital
 
 async function resolveSellExecutionContext({
   persistFailure,
-  signalId,
   symbol,
   signalTradeMode,
   globalPaperMode,
@@ -1310,6 +1309,20 @@ async function resolveSellExecutionContext({
         paperMode: globalPaperMode,
         liveAmount: livePosition.amount || 0,
         tradeMode: signalTradeMode,
+      },
+    });
+    return { success: false, reason };
+  }
+
+  if (!globalPaperMode && !livePosition && fallbackLivePosition && fallbackLivePosition.trade_mode !== signalTradeMode) {
+    const reason = `동일 심볼의 다른 trade_mode(${fallbackLivePosition.trade_mode}) LIVE 포지션만 존재 — ${signalTradeMode} SELL로 교차 청산 차단`;
+    console.warn(`  ⚠️ ${symbol} ${reason}`);
+    await persistFailure(reason, {
+      code: 'cross_trade_mode_sell_blocked',
+      meta: {
+        requestedTradeMode: signalTradeMode,
+        fallbackTradeMode: fallbackLivePosition.trade_mode || 'normal',
+        fallbackAmount: Number(fallbackLivePosition.amount || 0),
       },
     });
     return { success: false, reason };

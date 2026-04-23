@@ -110,6 +110,7 @@
     "runtime:position-reeval-loop": "node scripts/position-reevaluation-loop.ts --iterations=1",
     "runtime:position-watch": "node scripts/position-watch.ts",
     "runtime:position-parity": "node scripts/runtime-position-parity-report.ts --sync",
+    "runtime:symbol-legs": "node scripts/runtime-symbol-leg-review.ts --json",
     "runtime:active-backtest": "node scripts/runtime-active-backtest.ts",
     "runtime:partial-adjust": "node scripts/partial-adjust-runner.ts",
     "runtime:strategy-exit": "node scripts/strategy-exit-runner.ts",
