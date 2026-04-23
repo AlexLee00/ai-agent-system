@@ -649,6 +649,9 @@ function buildPositionReevaluationLines(reevaluationSummary = null) {
   for (const row of spotlight) {
     const strategyName = row?.analysisSnapshot?.strategyProfile?.strategyName || row?.positionSnapshot?.strategyProfile?.strategyName || '전략 미지정';
     const setupType = row?.analysisSnapshot?.strategyProfile?.setupType || row?.positionSnapshot?.strategyProfile?.setupType || 'unknown';
+    const strategyState = row?.analysisSnapshot?.strategyProfile?.strategyState
+      || row?.positionSnapshot?.strategyProfile?.strategyState
+      || {};
     const responsibilityPlan =
       row?.analysisSnapshot?.strategyProfile?.responsibilityPlan
       || row?.positionSnapshot?.strategyProfile?.responsibilityPlan
@@ -658,6 +661,9 @@ function buildPositionReevaluationLines(reevaluationSummary = null) {
     const watch = responsibilityPlan.watchAgent ? `${responsibilityPlan.watchAgent}/${responsibilityPlan.watchMission || 'default'}` : null;
     const roleTrail = [owner, risk, watch].filter(Boolean).join(' · ');
     lines.push(`${row.symbol} ${row.recommendation} | ${strategyName} (${setupType}) | ${row.reasonCode || 'n/a'}`);
+    if (strategyState.lifecycleStatus || strategyState.latestAttentionType) {
+      lines.push(`  lifecycle: ${strategyState.lifecycleStatus || 'n/a'} | attention: ${strategyState.latestAttentionType || 'n/a'}`);
+    }
     if (roleTrail) lines.push(`  owner/risk/watch: ${roleTrail}`);
   }
   const driftRows = rows
@@ -688,10 +694,14 @@ function buildStrategyExitLines(strategyExitSummary = null) {
     const strategyName = candidate?.strategyProfile?.strategyName || '전략 미지정';
     const setupType = candidate?.strategyProfile?.setupType || 'unknown';
     const responsibilityPlan = candidate?.strategyProfile?.responsibilityPlan || {};
+    const strategyState = candidate?.strategyProfile?.strategyState || {};
     const guardText = candidate?.executionGuard?.allowed
       ? 'ready'
       : String(candidate?.executionGuard?.reason || 'guarded');
     lines.push(`${candidate.symbol} | ${strategyName} (${setupType}) | ${candidate.reasonCode || 'strategy_exit'} | ${guardText}`);
+    if (strategyState.lifecycleStatus || strategyState.latestExitGuardReason) {
+      lines.push(`  lifecycle: ${strategyState.lifecycleStatus || 'n/a'} | guard: ${strategyState.latestExitGuardReason || 'n/a'}`);
+    }
     if (responsibilityPlan.executionAgent || responsibilityPlan.riskAgent) {
       lines.push(`  execution/risk: ${responsibilityPlan.executionAgent || 'n/a'}/${responsibilityPlan.executionMission || 'default'} · ${responsibilityPlan.riskAgent || 'n/a'}/${responsibilityPlan.riskMission || 'default'}`);
     }

@@ -1136,12 +1136,22 @@ defmodule Luna.V2.PositionWatch do
           )
       end
     end)
+
+    update_strategy_profile_attention(candidate, %{
+      "lifecycleStatus" => "attention_active_backtest",
+      "latestAttentionType" => attention,
+      "latestAttentionReason" => to_string(candidate[:reason] || ""),
+      "latestWatchMission" => watch_mission,
+      "activeBacktestTriggeredAt" => DateTime.utc_now() |> DateTime.to_iso8601(),
+      "updatedBy" => "position_watch_active_backtest"
+    })
   end
 
   defp trigger_strategy_exit_preview(candidate) do
     symbol = to_string(candidate[:symbol] || "")
     exchange = to_string(candidate[:exchange] || "")
     trade_mode = to_string(candidate[:trade_mode] || candidate[:tradeMode] || "normal")
+    risk_mission = responsibility_value(candidate[:responsibility_plan], "riskMission")
 
     repo_root = "/Users/alexlee/projects/ai-agent-system"
     investment_dir = Path.join(repo_root, "bots/investment")
@@ -1177,6 +1187,15 @@ defmodule Luna.V2.PositionWatch do
           )
       end
     end)
+
+    update_strategy_profile_attention(candidate, %{
+      "lifecycleStatus" => "exit_preview_requested",
+      "latestAttentionType" => to_string(candidate[:attention_type] || ""),
+      "latestAttentionReason" => to_string(candidate[:reason] || ""),
+      "latestRiskMission" => risk_mission,
+      "strategyExitPreviewAt" => DateTime.utc_now() |> DateTime.to_iso8601(),
+      "updatedBy" => "position_watch_strategy_exit"
+    })
   end
 
   defp to_float(nil), do: 0.0
@@ -1198,6 +1217,37 @@ defmodule Luna.V2.PositionWatch do
   end
 
   defp responsibility_value(_, _), do: nil
+
+  defp update_strategy_profile_attention(candidate, strategy_state) do
+    symbol = to_string(candidate[:symbol] || "")
+    exchange = to_string(candidate[:exchange] || "")
+    trade_mode = to_string(candidate[:trade_mode] || candidate[:tradeMode] || "normal")
+    now_iso = DateTime.utc_now() |> DateTime.to_iso8601()
+
+    if symbol != "" and exchange != "" do
+      query = """
+      UPDATE investment.position_strategy_profiles
+         SET strategy_state = COALESCE(strategy_state, '{}'::jsonb) || $1::jsonb,
+             last_attention_at = $2::timestamptz,
+             updated_at = now()
+       WHERE symbol = $3
+         AND exchange = $4
+         AND COALESCE(trade_mode, 'normal') = $5
+         AND status = 'active'
+      """
+
+      _ =
+        Jay.Core.Repo.query(query, [
+          Jason.encode!(strategy_state || %{}),
+          now_iso,
+          symbol,
+          exchange,
+          trade_mode
+        ])
+    end
+  rescue
+    _ -> :ok
+  end
 
   defp schedule(interval_ms) do
     Process.send_after(self(), :tick, max(5_000, interval_ms))

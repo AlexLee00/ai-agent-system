@@ -147,6 +147,7 @@ function mapCandidate(row, strategyProfile = null) {
       strategyName: strategyProfile.strategy_name || null,
       setupType: strategyProfile.setup_type || null,
       exitPlan: strategyProfile.exit_plan || {},
+      strategyState: strategyProfile.strategy_state || {},
       responsibilityPlan: strategyProfile.strategy_context?.responsibilityPlan || {},
     } : null,
   };
@@ -156,6 +157,37 @@ function mapCandidate(row, strategyProfile = null) {
     exitReasonOverride: buildExitReason(candidate),
     executionGuard: guard,
   };
+}
+
+async function syncStrategyExitCandidateStates(candidates = [], phase = 'preview') {
+  for (const candidate of candidates) {
+    if (!candidate?.symbol || !candidate?.exchange || !candidate?.strategyProfile) continue;
+    const timestamp = new Date().toISOString();
+    const lifecycleStatus =
+      phase === 'execute'
+        ? 'exit_executing'
+        : candidate?.executionGuard?.allowed
+          ? 'exit_ready'
+          : 'exit_guarded';
+    await db.updatePositionStrategyProfileState(candidate.symbol, {
+      exchange: candidate.exchange,
+      tradeMode: candidate.tradeMode,
+      strategyState: {
+        lifecycleStatus,
+        latestRecommendation: 'EXIT',
+        latestReasonCode: candidate.reasonCode || null,
+        latestReason: candidate.reason || null,
+        latestExitGuardReason: candidate?.executionGuard?.reason || null,
+        latestExecutionMission: candidate?.strategyProfile?.responsibilityPlan?.executionMission || null,
+        latestRiskMission: candidate?.strategyProfile?.responsibilityPlan?.riskMission || null,
+        latestWatchMission: candidate?.strategyProfile?.responsibilityPlan?.watchMission || null,
+        updatedBy: phase === 'execute' ? 'strategy_exit_runner_execute' : 'strategy_exit_runner_preview',
+        updatedAt: timestamp,
+      },
+      lastEvaluationAt: timestamp,
+      lastAttentionAt: timestamp,
+    }).catch(() => null);
+  }
 }
 
 async function loadCandidates({ exchange = null, tradeMode = null, minutesBack = 180 } = {}) {
@@ -187,6 +219,7 @@ export async function buildStrategyExitSummary({
   minutesBack = 180,
 } = {}) {
   const candidates = await loadCandidates({ exchange, tradeMode, minutesBack });
+  await syncStrategyExitCandidateStates(candidates, 'preview');
   const ready = candidates.filter((candidate) => candidate.executionGuard?.allowed);
   const guarded = candidates.filter((candidate) => candidate.executionGuard?.allowed === false);
   let status = 'strategy_exit_idle';
@@ -343,6 +376,7 @@ async function main() {
 
   const preflight = await getExecutionPreflight(candidate);
   if (!options.execute) {
+    await syncStrategyExitCandidateStates([candidate], 'preview');
     const payload = {
       mode: 'preview',
       candidate,
@@ -361,6 +395,7 @@ async function main() {
     throw new Error(`strategy-exit preflight blocked: ${preflight.lines.join(' | ')}`);
   }
 
+  await syncStrategyExitCandidateStates([candidate], 'execute');
   const result = await executeCandidate(candidate);
   const payload = {
     mode: 'execute',

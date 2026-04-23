@@ -146,9 +146,36 @@ function mapCandidate(row, strategyProfile = null, overrideRatio = null) {
       strategyName: strategyProfile.strategy_name || null,
       setupType: strategyProfile.setup_type || null,
       exitPlan: strategyProfile.exit_plan || strategyProfile.exitPlan || null,
+      strategyState: strategyProfile.strategy_state || {},
       responsibilityPlan: strategyProfile.strategy_context?.responsibilityPlan || {},
     } : null,
   };
+}
+
+async function syncPartialAdjustCandidateStates(candidates = [], phase = 'preview') {
+  for (const candidate of candidates) {
+    if (!candidate?.symbol || !candidate?.exchange || !candidate?.strategyProfile) continue;
+    const lifecycleStatus = phase === 'execute' ? 'adjust_executing' : 'adjust_preview';
+    const attentionAt = new Date().toISOString();
+    await db.updatePositionStrategyProfileState(candidate.symbol, {
+      exchange: candidate.exchange,
+      tradeMode: candidate.tradeMode,
+      strategyState: {
+        lifecycleStatus,
+        latestRecommendation: 'ADJUST',
+        latestReasonCode: candidate.reasonCode || null,
+        latestReason: candidate.reason || null,
+        latestPartialExitRatio: candidate.partialExitRatio,
+        latestExecutionMission: candidate?.strategyProfile?.responsibilityPlan?.executionMission || null,
+        latestRiskMission: candidate?.strategyProfile?.responsibilityPlan?.riskMission || null,
+        latestWatchMission: candidate?.strategyProfile?.responsibilityPlan?.watchMission || null,
+        updatedBy: phase === 'execute' ? 'partial_adjust_runner_execute' : 'partial_adjust_runner_preview',
+        updatedAt: attentionAt,
+      },
+      lastEvaluationAt: attentionAt,
+      lastAttentionAt: attentionAt,
+    }).catch(() => null);
+  }
 }
 
 function pickCandidate(candidates, symbol, tradeMode = null) {
@@ -237,6 +264,7 @@ async function main() {
   });
 
   if (!args.symbol) {
+    await syncPartialAdjustCandidateStates(candidates, 'preview');
     const payload = {
       mode: 'preview',
       totalCandidates: candidates.length,
@@ -260,6 +288,7 @@ async function main() {
   }
 
   if (!args.execute) {
+    await syncPartialAdjustCandidateStates([candidate], 'preview');
     const payload = {
       mode: 'preview',
       candidate,
@@ -279,6 +308,7 @@ async function main() {
     throw new Error('실행하려면 --confirm=partial-adjust 가 필요합니다.');
   }
 
+  await syncPartialAdjustCandidateStates([candidate], 'execute');
   const signal = await createPartialAdjustSignal(candidate);
   const result = await executeCryptoSignal(signal);
   const payload = {
