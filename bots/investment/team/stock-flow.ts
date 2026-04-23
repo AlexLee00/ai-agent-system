@@ -12,6 +12,7 @@ import * as db from '../shared/db.ts';
 import { ANALYST_TYPES, ACTIONS } from '../shared/signal.ts';
 import { getDomesticQuoteSnapshot, getOverseasQuoteSnapshot, getVolumeRank } from '../shared/kis-client.ts';
 import { loadLatestScoutIntel, getScoutSignalForSymbol } from '../shared/scout-intel.ts';
+import { getYahooStockEventIntel } from '../shared/stock-event-intel.ts';
 
 const FLOW_THRESHOLDS = {
   buy: 0.55,
@@ -65,6 +66,7 @@ function deriveFlowDecision({
   sentinelRow,
   scoutSignal,
   domesticRank,
+  overseasEvent,
 } = {}) {
   let score = 0;
   const reasons = [];
@@ -124,6 +126,31 @@ function deriveFlowDecision({
     reasons.push(`장중 변동 ${Number(quote.changePct).toFixed(2)}%`);
   }
 
+  if (exchange === 'kis_overseas' && overseasEvent && !overseasEvent.error) {
+    if (Number.isFinite(Number(overseasEvent.earningsDays)) && overseasEvent.earningsDays >= 0 && overseasEvent.earningsDays <= 7) {
+      score -= 0.08;
+      reasons.push(`실적발표 임박 D-${overseasEvent.earningsDays}`);
+    }
+
+    if (Number.isFinite(Number(overseasEvent.recommendationMean))) {
+      if (overseasEvent.recommendationMean <= 2.2) {
+        score += 0.18;
+        reasons.push(`애널리스트 우호 ${Number(overseasEvent.recommendationMean).toFixed(2)}`);
+      } else if (overseasEvent.recommendationMean >= 3.4) {
+        score -= 0.18;
+        reasons.push(`애널리스트 보수 ${Number(overseasEvent.recommendationMean).toFixed(2)}`);
+      }
+    }
+
+    if (Number(overseasEvent.recentUpgrades || 0) > Number(overseasEvent.recentDowngrades || 0)) {
+      score += 0.12;
+      reasons.push(`최근 상향 ${overseasEvent.recentUpgrades}건`);
+    } else if (Number(overseasEvent.recentDowngrades || 0) > Number(overseasEvent.recentUpgrades || 0)) {
+      score -= 0.12;
+      reasons.push(`최근 하향 ${overseasEvent.recentDowngrades}건`);
+    }
+  }
+
   const signal =
     score >= FLOW_THRESHOLDS.buy ? ACTIONS.BUY
       : score <= FLOW_THRESHOLDS.sell ? ACTIONS.SELL
@@ -149,12 +176,15 @@ export async function analyzeStockFlow(symbol, exchange = 'kis') {
     loadLatestScoutIntel({ minutes: 24 * 60 }).catch(() => null),
   ]);
 
-  const [quote, domesticRank] = await Promise.all([
+  const [quote, domesticRank, overseasEvent] = await Promise.all([
     exchange === 'kis'
       ? getDomesticQuoteSnapshot(symbol, false)
       : getOverseasQuoteSnapshot(symbol),
     exchange === 'kis'
       ? loadDomesticVolumeRank(symbol)
+      : Promise.resolve(null),
+    exchange === 'kis_overseas'
+      ? getYahooStockEventIntel(symbol).catch(() => null)
       : Promise.resolve(null),
   ]);
 
@@ -172,12 +202,14 @@ export async function analyzeStockFlow(symbol, exchange = 'kis') {
     sentinelRow,
     scoutSignal,
     domesticRank,
+    overseasEvent,
   });
 
   const metadata = {
     exchange,
     quote,
     domesticRank,
+    overseasEvent: overseasEvent && !overseasEvent.error ? overseasEvent : null,
     scoutSignal: scoutSignal ? {
       source: scoutSignal.source,
       score: scoutSignal.score,
