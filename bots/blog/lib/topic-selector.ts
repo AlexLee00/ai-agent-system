@@ -363,6 +363,12 @@ function scoreCandidate(candidate, category = '', strategyPlan = null) {
   const preferredPatterns = CATEGORY_PATTERN_PREFERENCES[category] || [];
   const directives = normalizeExecutionDirectives(strategyPlan);
   const experimentHints = _resolveExperimentSelectionHints(strategyPlan);
+  const dailyMix = strategyPlan?.dailyMixPolicy && typeof strategyPlan.dailyMixPolicy === 'object'
+    ? strategyPlan.dailyMixPolicy
+    : {};
+  const evalLearning = strategyPlan?.evalLearning && typeof strategyPlan.evalLearning === 'object'
+    ? strategyPlan.evalLearning
+    : {};
   const candidateTokens = new Set([
     ...normalizeTokens(candidate.title),
     ...normalizeTokens(candidate.topic),
@@ -403,6 +409,18 @@ function scoreCandidate(candidate, category = '', strategyPlan = null) {
   }
   if (experimentHints.loserPattern && candidate.pattern === experimentHints.loserPattern && experimentHints.loserPatternLiftPct <= -0.05) {
     score -= experimentHints.loserPatternLiftPct <= -0.15 ? 5 : 3;
+  }
+  if (dailyMix.primaryCategory && category === dailyMix.primaryCategory) score += 3;
+  if (dailyMix.secondaryCategory && category === dailyMix.secondaryCategory) score += 1;
+  if (dailyMix.suppressedCategory && category === dailyMix.suppressedCategory) score -= 4;
+  if (dailyMix.titlePatternFocus && candidate.pattern === dailyMix.titlePatternFocus) score += 3;
+  if (dailyMix.weakTitlePattern && candidate.pattern === dailyMix.weakTitlePattern) score -= 3;
+  if (dailyMix.stabilityMode) {
+    if (['checklist', 'experience'].includes(candidate.pattern)) score += 2;
+    if (['warning', 'trend'].includes(candidate.pattern)) score -= 3;
+  }
+  if (Number(evalLearning.engagementFailureCount || 0) >= 2 && ['warning', 'trend'].includes(candidate.pattern)) {
+    score -= 2;
   }
   if (Array.isArray(strategyPlan.focus) && strategyPlan.focus.some((item) => String(item || '').includes('제목 패턴'))) {
     if (candidate.pattern !== strategyPlan.suppressedTitlePattern) score += 1;

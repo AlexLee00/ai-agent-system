@@ -82,6 +82,29 @@ function summarizeExperimentLearning(plan = null) {
   };
 }
 
+function summarizeEvalLearning(plan = null) {
+  const learning = plan?.evalLearning && typeof plan.evalLearning === 'object'
+    ? plan.evalLearning
+    : null;
+  return {
+    latestSummary: String(learning?.latestSummary || ''),
+    recurringCodeSummary: String(learning?.recurringCodeSummary || ''),
+    stabilityMode: learning?.stabilityMode === true,
+  };
+}
+
+function summarizeDailyMix(plan = null) {
+  const mix = plan?.dailyMixPolicy && typeof plan.dailyMixPolicy === 'object'
+    ? plan.dailyMixPolicy
+    : null;
+  return {
+    primaryCategory: String(mix?.primaryCategory || ''),
+    titlePatternFocus: String(mix?.titlePatternFocus || ''),
+    rotationMode: String(mix?.rotationMode || ''),
+    stabilityMode: mix?.stabilityMode === true,
+  };
+}
+
 function parseArgs(argv = []) {
   return {
     json: argv.includes('--json'),
@@ -248,6 +271,15 @@ function buildActions({ primary, digest = {} }) {
   if (digest?.strategyExperimentLearning?.weakestVariantSummary) {
     actions.push(`experiment weak lane: ${digest.strategyExperimentLearning.weakestVariantSummary}`);
   }
+  if (digest?.strategyEvalLearning?.latestSummary) {
+    actions.push(`eval learning: ${digest.strategyEvalLearning.latestSummary}`);
+  }
+  if (digest?.strategyEvalLearning?.recurringCodeSummary) {
+    actions.push(`eval recurring: ${digest.strategyEvalLearning.recurringCodeSummary}`);
+  }
+  if (digest?.strategyDailyMix?.primaryCategory || digest?.strategyDailyMix?.titlePatternFocus) {
+    actions.push(`daily mix: ${digest?.strategyDailyMix?.primaryCategory || 'none'} / ${digest?.strategyDailyMix?.titlePatternFocus || 'none'} / ${digest?.strategyDailyMix?.rotationMode || 'balanced'}${digest?.strategyDailyMix?.stabilityMode ? ' / stability' : ''}`);
+  }
 
   const recommendations = Array.isArray(digest?.recommendations) ? digest.recommendations : [];
   if (recommendations[0]) actions.push(`reco: ${recommendations[0]}`);
@@ -294,6 +326,8 @@ async function main() {
   const strategyFreshness = describeStrategyFreshness(strategyBundle?.plan || null);
   const strategyOperationalLearning = summarizeOperationalLearning(strategyBundle?.plan || null);
   const strategyExperimentLearning = summarizeExperimentLearning(strategyBundle?.plan || null);
+  const strategyEvalLearning = summarizeEvalLearning(strategyBundle?.plan || null);
+  const strategyDailyMix = summarizeDailyMix(strategyBundle?.plan || null);
   const strategyRuntime = strategyBundle?.plan
     ? {
         preferredCategory: strategyBundle.plan.preferredCategory || null,
@@ -321,6 +355,8 @@ async function main() {
     strategyFreshness,
     strategyOperationalLearning,
     strategyExperimentLearning,
+    strategyEvalLearning,
+    strategyDailyMix,
     strategyRuntime,
   };
   payload.primary = buildPrimary(digest);

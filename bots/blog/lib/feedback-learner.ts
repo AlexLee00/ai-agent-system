@@ -1,9 +1,9 @@
 'use strict';
 
 /**
- * bots/blog/lib/feedback-learner.ts — 마스터 피드백 학습
+ * bots/blog/lib/feedback-learner.ts — 운영 피드백 학습
  *
- * 피드백 루프 LEARN 단계: 마스터 수정 이력 → 선호 스타일 학습
+ * 피드백 루프 LEARN 단계: 수정 이력 + 운영 패턴 → 선호 스타일 학습
  */
 
 const pgPool = require('../../../packages/core/lib/pg-pool');
@@ -46,7 +46,7 @@ const DIFF_ANALYSIS_SYSTEM = `
 `.trim();
 
 /**
- * 마스터 수정 diff 분석 + 기록
+ * 수정 diff 분석 + 기록
  */
 async function recordFeedback(postId, originalTitle, modifiedTitle, originalContentHash, modifiedContentHash) {
   try {

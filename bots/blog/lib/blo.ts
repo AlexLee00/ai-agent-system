@@ -1628,6 +1628,12 @@ function _summarizeDailyMarketing(daily = {}) {
         ? `최근 약한 레인은 ${experimentLoser.dimension}:${experimentLoser.variant} (${Math.round(Number(experimentLoser.liftPct || 0) * 100)}% lift, n=${experimentLoser.sampleCount}) 입니다.`
         : ''
     );
+  const evalLatestSummary = String(strategyPlan?.evalLearning?.latestSummary || '');
+  const evalRecurringSummary = String(strategyPlan?.evalLearning?.recurringCodeSummary || '');
+  const dailyMixPrimaryCategory = String(strategyPlan?.dailyMixPolicy?.primaryCategory || '');
+  const dailyMixTitlePattern = String(strategyPlan?.dailyMixPolicy?.titlePatternFocus || '');
+  const dailyMixRotationMode = String(strategyPlan?.dailyMixPolicy?.rotationMode || '');
+  const dailyMixStabilityMode = strategyPlan?.dailyMixPolicy?.stabilityMode === true;
   const nextGeneralCategory = daily?.generalCtx?.category || 'none';
   const selectedGeneralTopic = nextGeneralCategory !== 'none'
     ? selectAndValidateTopic(
@@ -1667,6 +1673,12 @@ function _summarizeDailyMarketing(daily = {}) {
     opsAutonomyLaneSummary,
     experimentWinnerSummary,
     experimentWeakLaneSummary,
+    evalLatestSummary,
+    evalRecurringSummary,
+    dailyMixPrimaryCategory,
+    dailyMixTitlePattern,
+    dailyMixRotationMode,
+    dailyMixStabilityMode,
     briefLine: `📈 마케팅 전략: signal=${signalLabel} | impact=${(revenueImpact * 100).toFixed(1)}% | plan=${preferredCategory}/${preferredPattern} | next=${nextGeneralCategory}/${nextGeneralPattern} | predicted=${predictedAdoption} | title=${_compactPreviewTitle(nextGeneralTitle)} | suppress=${suppressedPattern}`,
   };
 }

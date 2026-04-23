@@ -60,11 +60,27 @@ function normalizeExecutionDirectives(strategy = null) {
   };
 }
 
+function normalizeDailyMixPolicy(strategy = null) {
+  const policy = strategy?.dailyMixPolicy || {};
+  return {
+    primaryCategory: policy.primaryCategory || null,
+    secondaryCategory: policy.secondaryCategory || null,
+    suppressedCategory: policy.suppressedCategory || null,
+    titlePatternFocus: policy.titlePatternFocus || null,
+    weakTitlePattern: policy.weakTitlePattern || null,
+    rotationMode: policy.rotationMode || 'balanced',
+    stabilityMode: policy.stabilityMode === true,
+    lectureMode: policy.lectureMode || 'balanced',
+    generalMode: policy.generalMode || 'balanced',
+  };
+}
+
 function loadStrategyBundle() {
   const plan = loadLatestStrategy();
   return {
     plan,
     executionDirectives: normalizeExecutionDirectives(plan),
+    dailyMixPolicy: normalizeDailyMixPolicy(plan),
   };
 }
 
@@ -82,6 +98,7 @@ module.exports = {
   STRATEGY_PATH,
   loadLatestStrategy,
   normalizeExecutionDirectives,
+  normalizeDailyMixPolicy,
   loadStrategyBundle,
   resolveExecutionTarget,
   resolveCreativeValue,

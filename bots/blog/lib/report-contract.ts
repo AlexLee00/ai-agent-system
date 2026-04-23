@@ -20,6 +20,8 @@ function buildDailyReportContract({ traceId = '', results = [], marketing = {} }
   if (marketing.opsAutonomyLaneSummary) appliedLearning.push(marketing.opsAutonomyLaneSummary);
   if (marketing.experimentWinnerSummary) appliedLearning.push(marketing.experimentWinnerSummary);
   if (marketing.experimentWeakLaneSummary) appliedLearning.push(marketing.experimentWeakLaneSummary);
+  if (marketing.evalLatestSummary) appliedLearning.push(`최근 eval learning: ${marketing.evalLatestSummary}`);
+  if (marketing.evalRecurringSummary) appliedLearning.push(`반복 eval code: ${marketing.evalRecurringSummary}`);
 
   if (marketing.nextGeneralCategory && marketing.nextGeneralCategory !== 'none') {
     nextExecution.push(`다음 일반 카테고리: ${marketing.nextGeneralCategory}`);
@@ -32,6 +34,9 @@ function buildDailyReportContract({ traceId = '', results = [], marketing = {} }
   }
   if (marketing.predictedAdoption && marketing.predictedAdoption !== 'warming_up') {
     nextExecution.push(`전략 정렬 예상: ${marketing.predictedAdoption}`);
+  }
+  if (marketing.dailyMixPrimaryCategory || marketing.dailyMixTitlePattern) {
+    nextExecution.push(`daily mix: ${marketing.dailyMixPrimaryCategory || 'none'} / ${marketing.dailyMixTitlePattern || 'none'} / ${marketing.dailyMixRotationMode || 'balanced'}${marketing.dailyMixStabilityMode ? ' / stability' : ''}`);
   }
 
   if (failureCount > 0) {

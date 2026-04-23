@@ -2029,6 +2029,12 @@ async function buildMarketingExpansionHealth() {
     }
     const operationalLearning = summarizeOperationalLearning(strategy?.operationalLearning || null);
     const experimentLearning = summarizeExperimentLearning(strategy?.experimentLearning || null);
+    const evalLearning = strategy?.evalLearning && typeof strategy.evalLearning === 'object'
+      ? strategy.evalLearning
+      : null;
+    const dailyMixPolicy = strategy?.dailyMixPolicy && typeof strategy.dailyMixPolicy === 'object'
+      ? strategy.dailyMixPolicy
+      : null;
     if (operationalLearning.titlePatternSummary) {
       ok.push(`  ops learning: ${operationalLearning.titlePatternSummary}`);
     }
@@ -2043,6 +2049,15 @@ async function buildMarketingExpansionHealth() {
     }
     if (experimentLearning.weakestVariantSummary) {
       ok.push(`  experiment weak lane: ${experimentLearning.weakestVariantSummary}`);
+    }
+    if (evalLearning?.latestSummary) {
+      ok.push(`  eval learning: ${String(evalLearning.latestSummary)}`);
+    }
+    if (evalLearning?.recurringCodeSummary) {
+      ok.push(`  eval recurring: ${String(evalLearning.recurringCodeSummary)}`);
+    }
+    if (dailyMixPolicy?.primaryCategory || dailyMixPolicy?.titlePatternFocus) {
+      ok.push(`  daily mix: ${String(dailyMixPolicy?.primaryCategory || 'none')} / ${String(dailyMixPolicy?.titlePatternFocus || 'none')} / ${String(dailyMixPolicy?.rotationMode || 'balanced')}${dailyMixPolicy?.stabilityMode ? ' / stability' : ''}`);
     }
     const adoption = digest?.strategyAdoption || null;
     if (adoption?.status) {
@@ -2134,6 +2149,8 @@ async function buildMarketingExpansionHealth() {
       suppressedTitlePattern: strategy?.suppressedTitlePattern || null,
       operationalLearning: summarizeOperationalLearning(strategy?.operationalLearning || null),
       experimentLearning,
+      evalLearning,
+      dailyMixPolicy,
       categoryPatternHotspot: strategy?.categoryPatternHotspot || null,
       hotspotTrend: strategy?.hotspotTrend || null,
       strategyAdoption: digest?.strategyAdoption || null,

@@ -6,7 +6,7 @@
  * 피드백 루프 ACT 단계: 자동 게시 vs 가드 게시 판단
  * - 초안 품질 자체 평가 (0~1 점수)
  * - Phase별 임계값으로 자동/검토 분기
- * - 마스터 피드백 패턴 반영
+ * - 운영 피드백 패턴 반영
  */
 
 const pgPool = require('../../../packages/core/lib/pg-pool');
@@ -35,7 +35,7 @@ async function getCurrentPhase() {
 }
 
 /**
- * 마스터 피드백 패턴 로드 (최근 30일)
+ * 운영 피드백 패턴 로드 (최근 30일)
  */
 async function loadFeedbackPatterns() {
   try {
@@ -85,7 +85,7 @@ function evaluatePostQuality(post, feedbackPatterns = []) {
     reasons.push('FAQ 섹션 없음');
   }
 
-  // 5. 마스터 빈출 수정 패턴 반영
+  // 5. 최근 수정/운영 패턴 반영
   for (const pattern of feedbackPatterns) {
     if (pattern.feedback_type === 'tone' && pattern.count >= 3) {
       // 톤 수정이 빈번 → 톤 검증 필요
@@ -134,7 +134,7 @@ function buildRuntimeThresholdAdjustment(runtimeContext = {}) {
 }
 
 /**
- * 자율 판단: 자동 게시 vs 마스터 검토
+ * 자율 판단: 자동 게시 vs 가드 게시
  *
  * @param {object} post           - { content, title, thumbnailPath, category }
  * @param {object} [qualityExtra] - { seoScore, criticScore } from quality-checker.ts

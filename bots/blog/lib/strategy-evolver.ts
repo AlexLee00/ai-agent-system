@@ -7,6 +7,7 @@ const env = require('../../../packages/core/lib/env');
 const kst = require('../../../packages/core/lib/kst');
 const { aggregateOperationalPatterns } = require('./feedback-learner.ts');
 const { readExperimentPlaybook } = require('./experiment-os.ts');
+const { readRecentBlogEvalCases } = require('./eval-case-telemetry.ts');
 
 const STRATEGY_DIR = path.join(env.PROJECT_ROOT, 'bots/blog/output/strategy');
 
@@ -411,6 +412,42 @@ function summarizeExperimentLearning(playbook = null) {
   };
 }
 
+function summarizeEvalLearning(cases = []) {
+  const normalized = Array.isArray(cases) ? cases : [];
+  const counts = normalized.reduce((acc, item) => {
+    const area = String(item?.area || 'unknown');
+    acc[area] = Number(acc[area] || 0) + 1;
+    return acc;
+  }, {});
+  const latest = normalized[0] || null;
+  const recurring = normalized.reduce((acc, item) => {
+    const code = String(item?.code || 'unknown');
+    acc[code] = Number(acc[code] || 0) + 1;
+    return acc;
+  }, {});
+  const topRecurring = Object.entries(recurring)
+    .sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0))[0];
+  const publishFailureCount = Number(counts.publish || 0);
+  const marketingFailureCount = Number(counts.marketing || 0);
+  const engagementFailureCount = Number(counts.engagement || 0);
+  const stabilityMode = publishFailureCount >= 2 || marketingFailureCount >= 1;
+
+  return {
+    generatedAt: new Date().toISOString(),
+    totalCount: normalized.length,
+    publishFailureCount,
+    marketingFailureCount,
+    engagementFailureCount,
+    stabilityMode,
+    latestSummary: latest?.capturedAt
+      ? `${String(latest.capturedAt).slice(0, 19)} / ${String(latest.area || 'unknown')}:${String(latest.subtype || 'unknown')} / ${String(latest.code || 'unknown')}`
+      : '',
+    recurringCodeSummary: topRecurring?.[0]
+      ? `${String(topRecurring[0])} ${Number(topRecurring[1] || 0)}건`
+      : '',
+  };
+}
+
 async function applyExperimentFeedbackToPlan(plan = {}) {
   const playbook = readExperimentPlaybook();
   if (!playbook || typeof playbook !== 'object') return plan;
@@ -464,10 +501,123 @@ async function applyExperimentFeedbackToPlan(plan = {}) {
   return next;
 }
 
+async function applyEvalFeedbackToPlan(plan = {}, previousPlan = null) {
+  const recentEvalCases = readRecentBlogEvalCases({ limit: 12 });
+  if (!Array.isArray(recentEvalCases) || recentEvalCases.length === 0) return plan;
+
+  const next = {
+    ...plan,
+    evalLearning: summarizeEvalLearning(recentEvalCases),
+  };
+
+  const focus = Array.isArray(next.focus) ? [...next.focus] : [];
+  const recommendations = Array.isArray(next.recommendations) ? [...next.recommendations] : [];
+  const evalLearning = next.evalLearning || {};
+
+  if (evalLearning.stabilityMode) {
+    const fallbackPattern = ['checklist', 'experience'].includes(String(previousPlan?.preferredTitlePattern || ''))
+      ? String(previousPlan.preferredTitlePattern)
+      : 'checklist';
+    next.preferredTitlePattern = fallbackPattern;
+    next.suppressedTitlePattern = ['warning', 'trend'].includes(String(next.suppressedTitlePattern || ''))
+      ? next.suppressedTitlePattern
+      : 'warning';
+    focus.unshift('최근 publish/strategy 실패가 있어 안정형 제목 패턴과 guarded 레인을 우선 유지');
+    recommendations.unshift('최근 publish/strategy 실패가 있어 다음 발행은 checklist/experience 중심의 안정형 조합으로 회귀합니다.');
+  }
+
+  if (evalLearning.marketingFailureCount > 0 && previousPlan?.preferredCategory) {
+    next.preferredCategory = previousPlan.preferredCategory;
+    next.preferredCategoryWeightBoost = Math.min(
+      Math.max(Number(previousPlan.preferredCategoryWeightBoost || 0), 4),
+      Math.max(Number(next.preferredCategoryWeightBoost || 0), 6),
+    );
+    focus.unshift(`최근 전략 갱신 실패가 있어 직전 안정 카테고리 ${previousPlan.preferredCategory} 중심으로 유지`);
+  }
+
+  if (evalLearning.engagementFailureCount >= 2) {
+    recommendations.push('최근 engagement 실패가 누적돼 과한 CTA보다 질문형·체크리스트형 제목을 우선 유지합니다.');
+  }
+
+  next.focus = [...new Set(focus.filter(Boolean))];
+  next.recommendations = [...new Set(recommendations.filter(Boolean))];
+  if (next.executionDirectives && typeof next.executionDirectives === 'object') {
+    next.executionDirectives = {
+      ...next.executionDirectives,
+      titlePolicy: {
+        ...(next.executionDirectives.titlePolicy || {}),
+        preferredPattern: next.preferredTitlePattern || next.executionDirectives?.titlePolicy?.preferredPattern || null,
+        suppressedPattern: next.suppressedTitlePattern || next.executionDirectives?.titlePolicy?.suppressedPattern || null,
+        tone: evalLearning.stabilityMode ? 'balanced' : next.executionDirectives?.titlePolicy?.tone || 'balanced',
+      },
+      creativePolicy: {
+        ...(next.executionDirectives.creativePolicy || {}),
+        hookStyle: evalLearning.stabilityMode ? 'balanced' : next.executionDirectives?.creativePolicy?.hookStyle || 'balanced',
+        ctaStyle: evalLearning.engagementFailureCount >= 2 ? 'balanced' : next.executionDirectives?.creativePolicy?.ctaStyle || 'balanced',
+      },
+    };
+  }
+  return next;
+}
+
+function applyDecayAndRollback(plan = {}, previousPlan = null) {
+  const next = { ...plan };
+  const focus = Array.isArray(next.focus) ? [...next.focus] : [];
+  const recommendations = Array.isArray(next.recommendations) ? [...next.recommendations] : [];
+  const worseningHotspot = String(next?.hotspotTrend?.status || '') === 'worsening';
+  const stabilityMode = Boolean(next?.evalLearning?.stabilityMode);
+
+  if (worseningHotspot) {
+    next.preferredCategoryWeightBoost = Math.max(0, Number(next.preferredCategoryWeightBoost || 0) - 2);
+    if (previousPlan?.preferredCategory && previousPlan.preferredCategory !== next.preferredCategory) {
+      next.preferredCategory = previousPlan.preferredCategory;
+      focus.unshift(`최근 hotspot이 악화돼 직전 안정 카테고리 ${previousPlan.preferredCategory}로 일부 rollback`);
+      recommendations.unshift('카테고리 집중도가 다시 악화돼 직전 안정 카테고리 기준으로 한 번 되돌려 검증합니다.');
+    }
+  }
+
+  if (stabilityMode) {
+    next.preferredCategoryWeightBoost = Math.max(0, Number(next.preferredCategoryWeightBoost || 0) - 1);
+    if (previousPlan?.preferredTitlePattern && ['trend', 'warning'].includes(String(next.preferredTitlePattern || ''))) {
+      next.preferredTitlePattern = ['checklist', 'experience'].includes(String(previousPlan.preferredTitlePattern || ''))
+        ? previousPlan.preferredTitlePattern
+        : 'checklist';
+    }
+    focus.push('평가 실패 신호가 남아 있어 공격적 title drift를 줄이고 안정형 패턴 유지');
+  }
+
+  next.focus = [...new Set(focus.filter(Boolean))];
+  next.recommendations = [...new Set(recommendations.filter(Boolean))];
+  return next;
+}
+
+function buildDailyMixPolicy(plan = {}, diagnosis = {}, previousPlan = null) {
+  const stabilityMode = Boolean(plan?.evalLearning?.stabilityMode);
+  return {
+    generatedAt: new Date().toISOString(),
+    primaryCategory: String(plan.preferredCategory || previousPlan?.preferredCategory || '').trim() || null,
+    secondaryCategory: String(diagnosis?.byCategory?.[0]?.key || previousPlan?.suppressedCategory || '').trim() || null,
+    suppressedCategory: String(plan.suppressedCategory || '').trim() || null,
+    titlePatternFocus: String(plan.preferredTitlePattern || previousPlan?.preferredTitlePattern || '').trim() || null,
+    weakTitlePattern: String(plan.suppressedTitlePattern || '').trim() || null,
+    rotationMode: stabilityMode ? 'stability' : Number(plan.preferredCategoryWeightBoost || 0) >= 6 ? 'winner_focus' : 'balanced',
+    stabilityMode,
+    lectureMode: stabilityMode ? 'trust_first' : 'balanced',
+    generalMode: stabilityMode ? 'problem_solution' : 'experiment',
+  };
+}
+
 async function evolveStrategy(diagnosis = {}, options = {}) {
   const basePlan = createStrategyPlan(diagnosis, options);
+  const previousPlan = readPreviousStrategyPlan(basePlan.weekOf);
   const operationalPlan = await applyOperationalFeedbackToPlan(basePlan);
-  const plan = await applyExperimentFeedbackToPlan(operationalPlan);
+  const experimentPlan = await applyExperimentFeedbackToPlan(operationalPlan);
+  const evalPlan = await applyEvalFeedbackToPlan(experimentPlan, previousPlan);
+  const rollbackPlan = applyDecayAndRollback(evalPlan, previousPlan);
+  const plan = {
+    ...rollbackPlan,
+    dailyMixPolicy: buildDailyMixPolicy(rollbackPlan, diagnosis, previousPlan),
+  };
   if (options.dryRun) {
     return {
       saved: false,
