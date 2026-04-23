@@ -528,6 +528,19 @@ function buildValidationPromotionSuggestions(config, validationSummaries) {
   const suggestions = [];
   const domesticValidation = validationSummaries.domestic;
   const overseasValidation = validationSummaries.overseas;
+  const cryptoValidation = validationSummaries.crypto;
+
+  if (cryptoValidation.strategyRouteQualityTop === 'thin') {
+    suggestions.push({
+      key: 'runtime_config.luna.strategyRouter.binance.validation.routeQuality',
+      current: cryptoValidation.strategyRouteQualityTop,
+      suggested: cryptoValidation.strategyRouteQualityTop,
+      action: 'observe',
+      confidence: 'medium',
+      reason: `암호화폐 validation의 전략 라우팅 품질이 ${cryptoValidation.strategyRouteQualityTop} 중심이고 top family가 ${cryptoValidation.strategyRouteTop || 'none'}라, confidence threshold 완화보다 전략 패밀리 가중치와 입력 품질 보강을 먼저 보는 편이 좋습니다.`,
+    });
+  }
+
   if (domesticValidation.liveTrades > 0 || domesticValidation.executed > 0) {
     suggestions.push({
       key: 'runtime_config.nemesis.thresholds.stockStarterApproveDomestic',
@@ -538,7 +551,7 @@ function buildValidationPromotionSuggestions(config, validationSummaries) {
       ),
       action: 'promote_candidate',
       confidence: 'medium',
-      reason: `국내장 validation에서 executed ${domesticValidation.executed}건 / LIVE ${domesticValidation.liveTrades}건이 확인돼 starter 승인 한도 일부를 normal 후보로 승격 검토할 가치가 있습니다.`,
+      reason: `국내장 validation에서 executed ${domesticValidation.executed}건 / LIVE ${domesticValidation.liveTrades}건이 확인됐고 전략 라우팅 top이 ${domesticValidation.strategyRouteTop || 'none'}라 starter 승인 한도 일부를 normal 후보로 승격 검토할 가치가 있습니다.`,
     });
     suggestions.push({
       key: 'runtime_config.luna.stockStrategyProfiles.aggressive.tradeModes.validation.minConfidence.live',
@@ -852,7 +865,7 @@ function printHuman(report) {
   lines.push('');
   lines.push('validation 요약:');
   for (const [market, summary] of Object.entries(report.validationSummary || {})) {
-    lines.push(`- ${market}: decision ${summary.decision} / BUY ${summary.buy} / approved ${summary.approved} / executed ${summary.executed} / trades ${summary.tradeTotal} (LIVE ${summary.liveTrades} / PAPER ${summary.paperTrades})${summary.weakTopReason ? ` / weakTop ${summary.weakTopReason}` : ''}`);
+    lines.push(`- ${market}: decision ${summary.decision} / BUY ${summary.buy} / approved ${summary.approved} / executed ${summary.executed} / trades ${summary.tradeTotal} (LIVE ${summary.liveTrades} / PAPER ${summary.paperTrades})${summary.weakTopReason ? ` / weakTop ${summary.weakTopReason}` : ''}${summary.strategyRouteTop ? ` / routeTop ${summary.strategyRouteTop}` : ''}${summary.strategyRouteQualityTop ? ` / routeQuality ${summary.strategyRouteQualityTop}` : ''}${summary.strategyRouteAvgReadiness == null ? '' : ` / readiness ${summary.strategyRouteAvgReadiness}`}`);
   }
   if (Object.keys(report.validationBudgetSnapshots || {}).length > 0) {
     lines.push('');

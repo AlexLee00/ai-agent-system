@@ -301,7 +301,7 @@ function buildIntegratedFeedbackSection(rows, trades) {
       const mode = String(meta?.investment_trade_mode || 'normal').toUpperCase();
       const key = `${market}|${mode}`;
       const bucket = pipelineSummary.get(key) || {
-        decision: 0, buy: 0, sell: 0, hold: 0, approved: 0, executed: 0, weak: 0, risk: 0, weakReasons: {},
+        decision: 0, buy: 0, sell: 0, hold: 0, approved: 0, executed: 0, weak: 0, risk: 0, weakReasons: {}, strategyRouteCounts: {}, strategyRouteQualityCounts: {}, strategyRouteReadinessSum: 0, strategyRouteReadinessCount: 0,
       };
       bucket.decision += Number(meta?.decided_symbols || 0);
       bucket.buy += Number(meta?.buy_decisions || 0);
@@ -315,6 +315,16 @@ function buildIntegratedFeedbackSection(rows, trades) {
       for (const [reason, count] of Object.entries(weakReasons)) {
         bucket.weakReasons[reason] = (bucket.weakReasons[reason] || 0) + Number(count || 0);
       }
+      for (const [family, count] of Object.entries(meta?.strategy_route_counts || {})) {
+        bucket.strategyRouteCounts[family] = (bucket.strategyRouteCounts[family] || 0) + Number(count || 0);
+      }
+      for (const [quality, count] of Object.entries(meta?.strategy_route_quality_counts || {})) {
+        bucket.strategyRouteQualityCounts[quality] = (bucket.strategyRouteQualityCounts[quality] || 0) + Number(count || 0);
+      }
+      if (Number.isFinite(Number(meta?.strategy_route_avg_readiness))) {
+        bucket.strategyRouteReadinessSum += Number(meta.strategy_route_avg_readiness);
+        bucket.strategyRouteReadinessCount++;
+      }
       pipelineSummary.set(key, bucket);
     }
   }
@@ -324,7 +334,7 @@ function buildIntegratedFeedbackSection(rows, trades) {
     lines.push(`- ${getMarketLabel(bucket)}`);
     for (const mode of modes) {
       const key = `${bucket}|${mode}`;
-      const pipeline = pipelineSummary.get(key) || { decision: 0, buy: 0, sell: 0, hold: 0, approved: 0, executed: 0, weak: 0, risk: 0, weakReasons: {} };
+      const pipeline = pipelineSummary.get(key) || { decision: 0, buy: 0, sell: 0, hold: 0, approved: 0, executed: 0, weak: 0, risk: 0, weakReasons: {}, strategyRouteCounts: {}, strategyRouteQualityCounts: {}, strategyRouteReadinessSum: 0, strategyRouteReadinessCount: 0 };
       const trade = tradeSummary.get(key) || { total: 0, live: 0, paper: 0 };
       const hasActivity = pipeline.decision || pipeline.approved || pipeline.executed || trade.total;
       if (!hasActivity) {
@@ -332,7 +342,12 @@ function buildIntegratedFeedbackSection(rows, trades) {
         continue;
       }
       const topWeakReason = Object.entries(pipeline.weakReasons).sort((a, b) => b[1] - a[1])[0];
-      lines.push(`  ${mode}: decision ${pipeline.decision} | BUY ${pipeline.buy} | SELL ${pipeline.sell} | HOLD ${pipeline.hold} | approved ${pipeline.approved} | executed ${pipeline.executed} | weak ${pipeline.weak} | risk ${pipeline.risk} | trades ${trade.total} (LIVE ${trade.live} / PAPER ${trade.paper})${topWeakReason ? ` | weakTop ${topWeakReason[0]}` : ''}`);
+      const topRoute = Object.entries(pipeline.strategyRouteCounts).sort((a, b) => b[1] - a[1])[0];
+      const topRouteQuality = Object.entries(pipeline.strategyRouteQualityCounts).sort((a, b) => b[1] - a[1])[0];
+      const routeReadiness = pipeline.strategyRouteReadinessCount > 0
+        ? Number((pipeline.strategyRouteReadinessSum / pipeline.strategyRouteReadinessCount).toFixed(4))
+        : null;
+      lines.push(`  ${mode}: decision ${pipeline.decision} | BUY ${pipeline.buy} | SELL ${pipeline.sell} | HOLD ${pipeline.hold} | approved ${pipeline.approved} | executed ${pipeline.executed} | weak ${pipeline.weak} | risk ${pipeline.risk} | trades ${trade.total} (LIVE ${trade.live} / PAPER ${trade.paper})${topWeakReason ? ` | weakTop ${topWeakReason[0]}` : ''}${topRoute ? ` | routeTop ${topRoute[0]}` : ''}${topRouteQuality ? ` | routeQuality ${topRouteQuality[0]}` : ''}${routeReadiness == null ? '' : ` | readiness ${routeReadiness}`}`);
     }
   }
   return lines.join('\n');
@@ -356,7 +371,7 @@ function buildValidationPromotionSection(rows, trades) {
     for (const meta of (row.meta_rows || [])) {
       const mode = String(meta?.investment_trade_mode || 'normal').toUpperCase();
       if (mode !== 'VALIDATION') continue;
-      const bucket = pipelineSummary.get(market) || { decision: 0, buy: 0, hold: 0, approved: 0, executed: 0, weak: 0, risk: 0, weakReasons: {} };
+      const bucket = pipelineSummary.get(market) || { decision: 0, buy: 0, hold: 0, approved: 0, executed: 0, weak: 0, risk: 0, weakReasons: {}, strategyRouteCounts: {}, strategyRouteQualityCounts: {}, strategyRouteReadinessSum: 0, strategyRouteReadinessCount: 0 };
       bucket.decision += Number(meta?.decided_symbols || 0);
       bucket.buy += Number(meta?.buy_decisions || 0);
       bucket.hold += Number(meta?.hold_decisions || 0);
@@ -367,6 +382,16 @@ function buildValidationPromotionSection(rows, trades) {
       const weakReasons = meta?.weak_signal_reasons || {};
       for (const [reason, count] of Object.entries(weakReasons)) {
         bucket.weakReasons[reason] = (bucket.weakReasons[reason] || 0) + Number(count || 0);
+      }
+      for (const [family, count] of Object.entries(meta?.strategy_route_counts || {})) {
+        bucket.strategyRouteCounts[family] = (bucket.strategyRouteCounts[family] || 0) + Number(count || 0);
+      }
+      for (const [quality, count] of Object.entries(meta?.strategy_route_quality_counts || {})) {
+        bucket.strategyRouteQualityCounts[quality] = (bucket.strategyRouteQualityCounts[quality] || 0) + Number(count || 0);
+      }
+      if (Number.isFinite(Number(meta?.strategy_route_avg_readiness))) {
+        bucket.strategyRouteReadinessSum += Number(meta.strategy_route_avg_readiness);
+        bucket.strategyRouteReadinessCount++;
       }
       pipelineSummary.set(market, bucket);
     }
@@ -382,7 +407,12 @@ function buildValidationPromotionSection(rows, trades) {
       continue;
     }
     if ((summary?.executed || 0) > 0 || trade.total > 0) {
-      lines.push(`- ${getMarketLabel(bucket)}: 승격 후보 — executed ${summary?.executed || 0}, trades ${trade.total} (LIVE ${trade.live} / PAPER ${trade.paper})${topWeakReason ? ` | weakTop ${topWeakReason[0]}` : ''}`);
+      const topRoute = Object.entries(summary?.strategyRouteCounts || {}).sort((a, b) => b[1] - a[1])[0];
+      const topRouteQuality = Object.entries(summary?.strategyRouteQualityCounts || {}).sort((a, b) => b[1] - a[1])[0];
+      const routeReadiness = Number(summary?.strategyRouteReadinessCount || 0) > 0
+        ? Number((Number(summary?.strategyRouteReadinessSum || 0) / Number(summary?.strategyRouteReadinessCount || 1)).toFixed(4))
+        : null;
+      lines.push(`- ${getMarketLabel(bucket)}: 승격 후보 — executed ${summary?.executed || 0}, trades ${trade.total} (LIVE ${trade.live} / PAPER ${trade.paper})${topWeakReason ? ` | weakTop ${topWeakReason[0]}` : ''}${topRoute ? ` | routeTop ${topRoute[0]}` : ''}${topRouteQuality ? ` | routeQuality ${topRouteQuality[0]}` : ''}${routeReadiness == null ? '' : ` | readiness ${routeReadiness}`}`);
       continue;
     }
     if ((summary?.approved || 0) > 0) {
