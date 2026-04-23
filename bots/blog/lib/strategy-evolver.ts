@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const kst = require('../../../packages/core/lib/kst');
+const { aggregateOperationalPatterns } = require('./feedback-learner.ts');
 
 const STRATEGY_DIR = path.join(env.PROJECT_ROOT, 'bots/blog/output/strategy');
 
@@ -309,8 +310,89 @@ function createStrategyPlan(diagnosis = {}, options = {}) {
   return applyMarketingFeedbackToPlan(plan, options.marketingDigest);
 }
 
+function extractOperationalDriftCategory(patterns = []) {
+  const driftPattern = (patterns || []).find((item) => item?.type === 'ops_alignment_signal');
+  const summary = String(driftPattern?.recentSummaries?.[0] || '');
+  const match = summary.match(/category_drift:([^\s/]+)/);
+  return match ? match[1] : null;
+}
+
+function extractOperationalLane(patterns = []) {
+  const lanePattern = (patterns || []).find((item) => item?.type === 'ops_autonomy_lane');
+  const summary = String(lanePattern?.recentSummaries?.[0] || '');
+  const match = summary.match(/최근 운영 포스트는 ([^ ]+) 레인 비중이 높습니다/);
+  return match ? match[1] : null;
+}
+
+function extractOperationalTitlePattern(patterns = []) {
+  const titlePattern = (patterns || []).find((item) => item?.type === 'ops_high_performance_title_pattern');
+  const summary = String(titlePattern?.recentSummaries?.[0] || '');
+  if (summary.includes('checklist')) return 'checklist';
+  if (summary.includes('experience')) return 'experience';
+  if (summary.includes('warning')) return 'warning';
+  if (summary.includes('trend')) return 'trend';
+  return null;
+}
+
+async function applyOperationalFeedbackToPlan(plan = {}) {
+  const patterns = await aggregateOperationalPatterns(30).catch(() => []);
+  if (!Array.isArray(patterns) || patterns.length === 0) return plan;
+
+  const next = {
+    ...plan,
+    operationalLearning: {
+      generatedAt: new Date().toISOString(),
+      patterns: patterns.map((item) => ({
+        type: item?.type || 'unknown',
+        count: Number(item?.count || 0),
+        summary: item?.recentSummaries?.[0] || '',
+      })),
+    },
+  };
+
+  const focus = Array.isArray(next.focus) ? [...next.focus] : [];
+  const recommendations = Array.isArray(next.recommendations) ? [...next.recommendations] : [];
+  const driftCategory = extractOperationalDriftCategory(patterns);
+  const dominantLane = extractOperationalLane(patterns);
+  const preferredPattern = extractOperationalTitlePattern(patterns);
+
+  if (preferredPattern) {
+    next.preferredTitlePattern = preferredPattern;
+    if (!next.suppressedTitlePattern || next.suppressedTitlePattern === preferredPattern) {
+      next.suppressedTitlePattern = preferredPattern === 'checklist' ? 'default' : next.suppressedTitlePattern;
+    }
+    focus.unshift(`${preferredPattern} 제목 패턴을 다음 발행 기본선으로 유지`);
+  }
+
+  if (driftCategory && driftCategory === next.suppressedCategory) {
+    next.preferredCategoryWeightBoost = Math.max(Number(next.preferredCategoryWeightBoost || 0), 8);
+    recommendations.unshift(`최근 운영 포스트가 ${driftCategory} 쪽으로 다시 쏠려 있어 다음 발행은 전략 우선 카테고리 복구를 더 강하게 적용합니다.`);
+    focus.unshift(`${driftCategory} drift를 줄이기 위해 전략 우선 카테고리 회전을 먼저 복구`);
+  }
+
+  if (dominantLane === 'auto_publish_guarded') {
+    recommendations.push('최근 운영 포스트가 guarded publish에 많이 머물러 있어 제목과 카테고리는 안정형 조합을 먼저 유지합니다.');
+    focus.push('guarded publish 비중을 줄이기 위해 안정형 주제 조합 유지');
+  }
+
+  next.focus = [...new Set(focus.filter(Boolean))];
+  next.recommendations = [...new Set(recommendations.filter(Boolean))];
+  if (next.executionDirectives && typeof next.executionDirectives === 'object') {
+    next.executionDirectives = {
+      ...next.executionDirectives,
+      titlePolicy: {
+        ...(next.executionDirectives.titlePolicy || {}),
+        preferredPattern: next.preferredTitlePattern || next.executionDirectives?.titlePolicy?.preferredPattern || null,
+        suppressedPattern: next.suppressedTitlePattern || next.executionDirectives?.titlePolicy?.suppressedPattern || null,
+      },
+    };
+  }
+  return next;
+}
+
 async function evolveStrategy(diagnosis = {}, options = {}) {
-  const plan = createStrategyPlan(diagnosis, options);
+  const basePlan = createStrategyPlan(diagnosis, options);
+  const plan = await applyOperationalFeedbackToPlan(basePlan);
   if (options.dryRun) {
     return {
       saved: false,
@@ -343,5 +425,6 @@ module.exports = {
   evolveStrategy,
   createStrategyPlan,
   applyMarketingFeedbackToPlan,
+  applyOperationalFeedbackToPlan,
   buildExecutionDirectives,
 };
