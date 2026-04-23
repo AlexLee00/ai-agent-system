@@ -56,7 +56,19 @@ config :luna,
       System.get_env("LUNA_POSITION_WATCH_ACTIVE_BACKTEST_COOLDOWN_MINUTES", "30")
     ),
   position_watch_active_backtest_max_per_tick:
-    String.to_integer(System.get_env("LUNA_POSITION_WATCH_ACTIVE_BACKTEST_MAX_PER_TICK", "2"))
+    String.to_integer(System.get_env("LUNA_POSITION_WATCH_ACTIVE_BACKTEST_MAX_PER_TICK", "2")),
+  position_watch_backtest_drift_enabled:
+    System.get_env("LUNA_POSITION_WATCH_BACKTEST_DRIFT_ENABLED", "true") == "true",
+  position_watch_backtest_drift_min_trades:
+    String.to_integer(System.get_env("LUNA_POSITION_WATCH_BACKTEST_DRIFT_MIN_TRADES", "4")),
+  position_watch_backtest_drift_adjust_sharpe_drop:
+    String.to_float(System.get_env("LUNA_POSITION_WATCH_BACKTEST_DRIFT_ADJUST_SHARPE_DROP", "0.75")),
+  position_watch_backtest_drift_exit_sharpe_drop:
+    String.to_float(System.get_env("LUNA_POSITION_WATCH_BACKTEST_DRIFT_EXIT_SHARPE_DROP", "1.5")),
+  position_watch_backtest_drift_adjust_return_drop_pct:
+    String.to_float(System.get_env("LUNA_POSITION_WATCH_BACKTEST_DRIFT_ADJUST_RETURN_DROP_PCT", "5.0")),
+  position_watch_backtest_drift_exit_return_drop_pct:
+    String.to_float(System.get_env("LUNA_POSITION_WATCH_BACKTEST_DRIFT_EXIT_RETURN_DROP_PCT", "10.0"))
 
 config :luna, Jay.Core.Repo,
   database: System.get_env("PG_DATABASE", "jay"),

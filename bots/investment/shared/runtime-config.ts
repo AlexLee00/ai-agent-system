@@ -247,6 +247,14 @@ const DEFAULT_RUNTIME_CONFIG = {
       shortHoldHours: 6,
       overwhelmingSellVotes: 3,
     },
+    backtestDrift: {
+      enabled: true,
+      minTradeCount: 4,
+      adjustSharpeDrop: 0.75,
+      exitSharpeDrop: 1.5,
+      adjustReturnDropPct: 5,
+      exitReturnDropPct: 10,
+    },
     tradingViewFrames: {
       byExchange: {
         binance: ['1h', '4h', '1d'],

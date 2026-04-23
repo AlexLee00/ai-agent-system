@@ -125,6 +125,13 @@ defmodule Luna.V2.PositionWatch do
       psp.setup_type,
       psp.monitoring_plan,
       psp.exit_plan,
+      psp.backtest_plan,
+      bt.created_at AS backtest_created_at,
+      bt.label AS backtest_label,
+      bt.sharpe AS backtest_sharpe,
+      bt.total_return AS backtest_total_return,
+      bt.max_drawdown AS backtest_max_drawdown,
+      bt.total_trades AS backtest_total_trades,
       CASE
         WHEN COALESCE(size, 0) * COALESCE(entry_price, 0) > 0
         THEN COALESCE(unrealized_pnl, 0) / (COALESCE(size, 0) * COALESCE(entry_price, 0))
@@ -132,7 +139,7 @@ defmodule Luna.V2.PositionWatch do
       END AS pnl_ratio
     FROM investment.live_positions
     LEFT JOIN LATERAL (
-      SELECT strategy_name, setup_type, monitoring_plan, exit_plan
+      SELECT strategy_name, setup_type, monitoring_plan, exit_plan, backtest_plan
       FROM investment.position_strategy_profiles psp
       WHERE psp.symbol = investment.live_positions.symbol
         AND psp.exchange = investment.live_positions.exchange
@@ -141,6 +148,14 @@ defmodule Luna.V2.PositionWatch do
       ORDER BY psp.updated_at DESC
       LIMIT 1
     ) psp ON TRUE
+    LEFT JOIN LATERAL (
+      SELECT created_at, label, sharpe, total_return, max_drawdown, total_trades
+      FROM vectorbt_backtest_runs bt
+      WHERE bt.symbol = investment.live_positions.symbol
+        AND bt.created_at > now() - INTERVAL '180 days'
+      ORDER BY bt.created_at DESC
+      LIMIT 1
+    ) bt ON TRUE
     WHERE status = 'open'
     ORDER BY updated_at DESC NULLS LAST
     LIMIT 200
@@ -209,14 +224,19 @@ defmodule Luna.V2.PositionWatch do
     tv_attention = classify_tv_attention(position[:tv], tv_stale_ms)
     setup_type = normalize_setup_type(position[:setup_type])
     monitoring_plan = normalize_json_map(position[:monitoring_plan])
+    backtest_plan = normalize_json_map(position[:backtest_plan])
     adjusted_gain_pct = strategy_adjust_gain_pct(adjust_gain_pct, setup_type)
     adjusted_stop_loss_pct = strategy_stop_loss_pct(stop_loss_pct, setup_type)
     strategy_tv_attention =
       classify_strategy_tv_attention(position, setup_type, monitoring_plan, adjusted_gain_pct)
+    backtest_attention = classify_backtest_drift_attention(position, backtest_plan)
 
     cond do
       not is_nil(strategy_tv_attention) ->
         Map.merge(position, strategy_tv_attention)
+
+      not is_nil(backtest_attention) ->
+        Map.merge(position, backtest_attention)
 
       not is_nil(tv_attention) ->
         Map.merge(position, tv_attention)
@@ -525,6 +545,118 @@ defmodule Luna.V2.PositionWatch do
   defp bearish_frame?(%{direction: :bearish}), do: true
   defp bearish_frame?(_), do: false
 
+  defp classify_backtest_drift_attention(_position, %{}) do
+    nil
+  end
+
+  defp classify_backtest_drift_attention(position, backtest_plan) do
+    if not KillSwitch.position_watch_backtest_drift_enabled?() do
+      nil
+    else
+      baseline = normalize_json_map(Map.get(backtest_plan, "latestBaseline", backtest_plan[:latestBaseline]))
+      baseline_created_at = parse_ts(Map.get(baseline, "createdAt", baseline[:createdAt]))
+      latest_created_at = parse_ts(position[:backtest_created_at])
+      latest_trades = trunc(to_float(position[:backtest_total_trades]))
+
+      cond do
+        map_size(baseline) == 0 ->
+          nil
+
+        is_nil(latest_created_at) or is_nil(baseline_created_at) ->
+          nil
+
+        DateTime.compare(latest_created_at, baseline_created_at) != :gt ->
+          nil
+
+        latest_trades < KillSwitch.position_watch_backtest_drift_min_trades() ->
+          nil
+
+        true ->
+          baseline_sharpe = json_float(baseline, "sharpe")
+          latest_sharpe = to_float(position[:backtest_sharpe])
+          baseline_return = json_float(baseline, "totalReturn")
+          latest_return = to_float(position[:backtest_total_return])
+          sharpe_drop = if finite?(baseline_sharpe), do: baseline_sharpe - latest_sharpe, else: nil
+          return_drop = if finite?(baseline_return), do: baseline_return - latest_return, else: nil
+          pnl_ratio = to_float(position[:pnl_ratio])
+
+          severe? =
+            (finite?(sharpe_drop) and sharpe_drop >= KillSwitch.position_watch_backtest_drift_exit_sharpe_drop()) or
+              (finite?(return_drop) and
+                 return_drop >= KillSwitch.position_watch_backtest_drift_exit_return_drop_pct())
+
+          moderate? =
+            (finite?(sharpe_drop) and
+               sharpe_drop >= KillSwitch.position_watch_backtest_drift_adjust_sharpe_drop()) or
+              (finite?(return_drop) and
+                 return_drop >= KillSwitch.position_watch_backtest_drift_adjust_return_drop_pct())
+
+          cond do
+            severe? and pnl_ratio < 0 ->
+              %{
+                attention_type: :backtest_drift_attention,
+                reason: "active backtest drift severe",
+                strategy_attention: "backtest_drift_exit",
+                backtest_sharpe_drop: sharpe_drop,
+                backtest_return_drop_pct: return_drop
+              }
+
+            moderate? ->
+              %{
+                attention_type: :backtest_drift_attention,
+                reason: "active backtest drift moderate",
+                strategy_attention: "backtest_drift_adjust",
+                backtest_sharpe_drop: sharpe_drop,
+                backtest_return_drop_pct: return_drop
+              }
+
+            true ->
+              nil
+          end
+      end
+    end
+  end
+
+  defp json_float(map, key) do
+    value = Map.get(map, key, Map.get(map, String.to_atom(key), nil))
+
+    case value do
+      nil -> nil
+      "" -> nil
+      _ -> to_float(value)
+    end
+  rescue
+    _ -> nil
+  end
+
+  defp finite?(value) when is_number(value), do: value == value
+  defp finite?(_), do: false
+
+  defp parse_ts(nil), do: nil
+
+  defp parse_ts(%DateTime{} = value), do: value
+
+  defp parse_ts(%NaiveDateTime{} = value) do
+    DateTime.from_naive(value, "Etc/UTC") |> elem(1)
+  rescue
+    _ -> nil
+  end
+
+  defp parse_ts(value) when is_binary(value) do
+    case DateTime.from_iso8601(value) do
+      {:ok, dt, _} ->
+        dt
+
+      _ ->
+        case NaiveDateTime.from_iso8601(value) do
+          {:ok, ndt} -> parse_ts(ndt)
+          _ -> nil
+        end
+    end
+  end
+
+  defp parse_ts(_), do: nil
+
   defp normalize_tv_status("connected"), do: :connected
   defp normalize_tv_status("disconnected"), do: :disconnected
   defp normalize_tv_status(_), do: :unknown
@@ -658,7 +790,7 @@ defmodule Luna.V2.PositionWatch do
     attention = candidate[:attention_type]
 
     exchange in ["binance", "kis", "kis_overseas"] and
-      attention in [:stop_loss_attention, :partial_adjust_attention, :tv_live_bearish]
+      attention in [:stop_loss_attention, :partial_adjust_attention, :tv_live_bearish, :backtest_drift_attention]
   end
 
   defp backtest_key(candidate) do

@@ -200,6 +200,19 @@ function getExitGuardConfig() {
   };
 }
 
+function getBacktestDriftConfig() {
+  const runtime = getPositionReevaluationRuntimeConfig();
+  const drift = runtime?.backtestDrift || {};
+  return {
+    enabled: drift?.enabled !== false,
+    minTradeCount: Math.max(1, Math.round(safeNumber(drift?.minTradeCount, 4))),
+    adjustSharpeDrop: safeNumber(drift?.adjustSharpeDrop, 0.75),
+    exitSharpeDrop: safeNumber(drift?.exitSharpeDrop, 1.5),
+    adjustReturnDropPct: safeNumber(drift?.adjustReturnDropPct, 5),
+    exitReturnDropPct: safeNumber(drift?.exitReturnDropPct, 10),
+  };
+}
+
 function getDustConfig() {
   const syncRuntime = getInvestmentSyncRuntimeConfig();
   return {
@@ -286,6 +299,107 @@ function getStrategySetupType(strategyProfile = null) {
   return String(strategyProfile?.setup_type || '').trim().toLowerCase() || null;
 }
 
+function buildBacktestDriftContext(strategyProfile = null, latestBacktest = null) {
+  const baseline = strategyProfile?.backtest_plan?.latestBaseline || null;
+  if (!baseline || !latestBacktest) return null;
+
+  const baselineCreatedAt = baseline?.createdAt ? new Date(baseline.createdAt).getTime() : NaN;
+  const latestCreatedAt = latestBacktest?.created_at ? new Date(latestBacktest.created_at).getTime() : NaN;
+  if (Number.isFinite(baselineCreatedAt) && Number.isFinite(latestCreatedAt) && latestCreatedAt <= baselineCreatedAt) {
+    return null;
+  }
+
+  const baselineSharpe = safeNumber(baseline?.sharpe, null);
+  const latestSharpe = safeNumber(latestBacktest?.sharpe, null);
+  const baselineReturn = safeNumber(baseline?.totalReturn, null);
+  const latestReturn = safeNumber(latestBacktest?.total_return, null);
+  const totalTrades = Math.max(
+    safeNumber(latestBacktest?.total_trades, 0),
+    safeNumber(baseline?.totalTrades, 0),
+  );
+
+  return {
+    baseline: {
+      createdAt: baseline?.createdAt || null,
+      label: baseline?.label || null,
+      sharpe: baselineSharpe,
+      totalReturn: baselineReturn,
+      totalTrades: safeNumber(baseline?.totalTrades, 0),
+    },
+    latest: {
+      createdAt: latestBacktest?.created_at || null,
+      label: latestBacktest?.label || null,
+      sharpe: latestSharpe,
+      totalReturn: latestReturn,
+      totalTrades: safeNumber(latestBacktest?.total_trades, 0),
+      maxDrawdown: safeNumber(latestBacktest?.max_drawdown, null),
+      winRate: safeNumber(latestBacktest?.win_rate, null),
+    },
+    sharpeDrop: Number.isFinite(baselineSharpe) && Number.isFinite(latestSharpe)
+      ? baselineSharpe - latestSharpe
+      : null,
+    returnDropPct: Number.isFinite(baselineReturn) && Number.isFinite(latestReturn)
+      ? baselineReturn - latestReturn
+      : null,
+    totalTrades,
+  };
+}
+
+function applyBacktestDriftDecision(baseDecision, {
+  strategyProfile = null,
+  latestBacktest = null,
+  pnlPct = 0,
+} = {}) {
+  const driftConfig = getBacktestDriftConfig();
+  if (!driftConfig.enabled) return { decision: baseDecision, driftContext: null };
+
+  const driftContext = buildBacktestDriftContext(strategyProfile, latestBacktest);
+  if (!driftContext) return { decision: baseDecision, driftContext: null };
+  if (driftContext.totalTrades < driftConfig.minTradeCount) {
+    return { decision: baseDecision, driftContext: { ...driftContext, ignored: 'thin_backtest' } };
+  }
+
+  const severeDrift = (
+    (Number.isFinite(driftContext.sharpeDrop) && driftContext.sharpeDrop >= driftConfig.exitSharpeDrop)
+    || (Number.isFinite(driftContext.returnDropPct) && driftContext.returnDropPct >= driftConfig.exitReturnDropPct)
+  );
+  const moderateDrift = (
+    (Number.isFinite(driftContext.sharpeDrop) && driftContext.sharpeDrop >= driftConfig.adjustSharpeDrop)
+    || (Number.isFinite(driftContext.returnDropPct) && driftContext.returnDropPct >= driftConfig.adjustReturnDropPct)
+  );
+
+  if (
+    severeDrift
+    && baseDecision.recommendation !== 'EXIT'
+    && pnlPct < 0
+  ) {
+    return {
+      decision: {
+        recommendation: 'EXIT',
+        reasonCode: 'backtest_drift_exit',
+        reason: `최근 active backtest가 baseline 대비 크게 악화(sharpeΔ ${safeNumber(driftContext.sharpeDrop).toFixed(2)}, returnΔ ${safeNumber(driftContext.returnDropPct).toFixed(2)}%p)되어 손실 구간 EXIT 우선`,
+      },
+      driftContext,
+    };
+  }
+
+  if (
+    moderateDrift
+    && baseDecision.recommendation === 'HOLD'
+  ) {
+    return {
+      decision: {
+        recommendation: 'ADJUST',
+        reasonCode: 'backtest_drift_adjust',
+        reason: `최근 active backtest가 baseline 대비 약화(sharpeΔ ${safeNumber(driftContext.sharpeDrop).toFixed(2)}, returnΔ ${safeNumber(driftContext.returnDropPct).toFixed(2)}%p)되어 보호 조정 우선`,
+      },
+      driftContext,
+    };
+  }
+
+  return { decision: baseDecision, driftContext };
+}
+
 function applyStrategyAwareDecision(baseDecision, {
   strategyProfile = null,
   pnlPct = 0,
@@ -362,7 +476,7 @@ function applyStrategyAwareDecision(baseDecision, {
   return baseDecision;
 }
 
-function decideReevaluation(position, analysisSummary, strategyProfile = null) {
+function decideReevaluation(position, analysisSummary, strategyProfile = null, latestBacktest = null) {
   const pnlPct = calcPnlPct(position);
   const heldHours = deriveHeldHours(position);
   const buy = Number(analysisSummary.buy || 0);
@@ -466,7 +580,7 @@ function decideReevaluation(position, analysisSummary, strategyProfile = null) {
     };
   }
 
-  return applyStrategyAwareDecision(baseDecision, {
+  const strategyDecision = applyStrategyAwareDecision(baseDecision, {
     strategyProfile,
     pnlPct,
     heldHours,
@@ -476,6 +590,11 @@ function decideReevaluation(position, analysisSummary, strategyProfile = null) {
     tv4hRsi,
     sell,
     buy,
+  });
+  return applyBacktestDriftDecision(strategyDecision, {
+    strategyProfile,
+    latestBacktest,
+    pnlPct,
   });
 }
 
@@ -567,12 +686,13 @@ export async function reevaluateOpenPositions({
       continue;
     }
 
-    const [analyses, strategyProfile] = await Promise.all([
+    const [analyses, strategyProfile, latestBacktest] = await Promise.all([
       db.getRecentAnalysis(position.symbol, minutesBack, position.exchange).catch(() => []),
       db.getPositionStrategyProfile(position.symbol, {
         exchange: position.exchange,
         tradeMode: position.trade_mode || 'normal',
       }).catch(() => null),
+      db.getLatestVectorbtBacktestForSymbol(position.symbol, position.exchange === 'binance' ? 45 : 180).catch(() => null),
     ]);
     let indicatorAnalyses = [];
     let indicatorAnalysis = null;
@@ -592,16 +712,16 @@ export async function reevaluateOpenPositions({
       ...(indicatorAnalysis ? [indicatorAnalysis] : []),
     ];
     const analysisSummary = summarizeAnalyses(mergedAnalyses);
-    const decision = decideReevaluation(position, analysisSummary, strategyProfile);
+    const decision = decideReevaluation(position, analysisSummary, strategyProfile, latestBacktest);
     results.push({
       exchange: position.exchange,
       symbol: position.symbol,
       paper: position.paper === true,
       tradeMode: position.trade_mode || 'normal',
       pnlPct: calcPnlPct(position),
-      recommendation: decision.recommendation,
-      reasonCode: decision.reasonCode,
-      reason: decision.reason,
+      recommendation: decision.decision.recommendation,
+      reasonCode: decision.decision.reasonCode,
+      reason: decision.decision.reason,
       positionSnapshot: {
         amount: safeNumber(position.amount),
         avgPrice: safeNumber(position.avg_price),
@@ -615,6 +735,15 @@ export async function reevaluateOpenPositions({
       },
       analysisSnapshot: {
         ...analysisSummary,
+        backtestDrift: decision.driftContext,
+        latestBacktest: latestBacktest ? {
+          createdAt: latestBacktest.created_at || null,
+          label: latestBacktest.label || null,
+          sharpe: latestBacktest.sharpe ?? null,
+          totalReturn: latestBacktest.total_return ?? null,
+          maxDrawdown: latestBacktest.max_drawdown ?? null,
+          totalTrades: latestBacktest.total_trades ?? null,
+        } : null,
         strategyProfile: strategyProfile ? {
           strategyName: strategyProfile.strategy_name || null,
           setupType: strategyProfile.setup_type || null,

@@ -104,4 +104,22 @@ defmodule Luna.V2.KillSwitch do
 
   def position_watch_active_backtest_max_per_tick,
     do: Application.get_env(:luna, :position_watch_active_backtest_max_per_tick, 2)
+
+  def position_watch_backtest_drift_enabled?,
+    do: Application.get_env(:luna, :position_watch_backtest_drift_enabled, true)
+
+  def position_watch_backtest_drift_min_trades,
+    do: Application.get_env(:luna, :position_watch_backtest_drift_min_trades, 4)
+
+  def position_watch_backtest_drift_adjust_sharpe_drop,
+    do: Application.get_env(:luna, :position_watch_backtest_drift_adjust_sharpe_drop, 0.75)
+
+  def position_watch_backtest_drift_exit_sharpe_drop,
+    do: Application.get_env(:luna, :position_watch_backtest_drift_exit_sharpe_drop, 1.5)
+
+  def position_watch_backtest_drift_adjust_return_drop_pct,
+    do: Application.get_env(:luna, :position_watch_backtest_drift_adjust_return_drop_pct, 5.0)
+
+  def position_watch_backtest_drift_exit_return_drop_pct,
+    do: Application.get_env(:luna, :position_watch_backtest_drift_exit_return_drop_pct, 10.0)
 end
