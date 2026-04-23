@@ -301,13 +301,29 @@ function buildPositionStrategyHygieneLine(positionStrategyHygieneSummary) {
   return `🧼 strategy hygiene: ${decision.status || 'unknown'} | ${decision.headline || 'n/a'}${recommendedExchange ? ` | focus ${recommendedExchange}` : ''}`;
 }
 
-function buildPositionStrategyHygieneCommandLine(positionStrategyHygieneSummary) {
+function buildPositionStrategyHygieneRemediationPlan(positionStrategyHygieneSummary) {
   if (!positionStrategyHygieneSummary || positionStrategyHygieneSummary.error || !positionStrategyHygieneSummary.ok) return null;
   const decision = positionStrategyHygieneSummary.decision || {};
-  if (decision.status !== 'position_strategy_hygiene_attention') return null;
   const recommendedExchange = positionStrategyHygieneSummary.recommendedExchange?.exchange || null;
   const exchangeSuffix = recommendedExchange ? ` --exchange=${recommendedExchange}` : '';
-  return `🛠️ hygiene follow-up: normalize/retire ${recommendedExchange || 'all'} | npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --json${exchangeSuffix}`;
+  return {
+    status: decision.status || 'unknown',
+    recommendedExchange,
+    duplicateManagedScopes: Number(positionStrategyHygieneSummary?.audit?.duplicateManagedProfileScopes || 0),
+    orphanProfiles: Number(positionStrategyHygieneSummary?.audit?.orphanProfiles || 0),
+    unmatchedManaged: Number(positionStrategyHygieneSummary?.audit?.unmatchedManagedPositions || 0),
+    hygieneReportCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-hygiene -- --json',
+    normalizeDryRunCommand: `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --json${exchangeSuffix}`,
+    normalizeApplyCommand: `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --apply --json${exchangeSuffix}`,
+    retireDryRunCommand: `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles -- --json${exchangeSuffix}`,
+    retireApplyCommand: `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles -- --apply --json${exchangeSuffix}`,
+  };
+}
+
+function buildPositionStrategyHygieneCommandLine(positionStrategyHygieneSummary) {
+  const remediationPlan = buildPositionStrategyHygieneRemediationPlan(positionStrategyHygieneSummary);
+  if (!remediationPlan || remediationPlan.status !== 'position_strategy_hygiene_attention') return null;
+  return `🛠️ hygiene follow-up: normalize/retire ${remediationPlan.recommendedExchange || 'all'} | ${remediationPlan.normalizeDryRunCommand}`;
 }
 
 function getLearningLoopNextCommand(learningLoopSummary) {
@@ -360,6 +376,7 @@ function buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSumma
 }
 
 async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary) {
+  const hygieneRemediationPlan = buildPositionStrategyHygieneRemediationPlan(positionStrategyHygieneSummary);
   const content = [
     `[일일 피드백 ${dateKst}] ${feedback.summary}`,
     `거래 ${feedback.stats.total}건 / 승률 ${(feedback.stats.winRate * 100).toFixed(1)}% / 손익 $${feedback.stats.totalPnl.toFixed(2)}`,
@@ -385,6 +402,7 @@ async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeni
     learning_loop_summary: learningLoopSummary?.decision || {},
     position_strategy_audit: positionStrategyAuditSummary || {},
     position_strategy_hygiene: positionStrategyHygieneSummary || {},
+    position_strategy_hygiene_remediation: hygieneRemediationPlan || {},
     position_strategy_hygiene_recommended_exchange: positionStrategyHygieneSummary?.recommendedExchange?.exchange || null,
     position_strategy_hygiene_recommended_count: Number(positionStrategyHygieneSummary?.recommendedExchange?.count || 0),
   }, 'luna');
@@ -406,6 +424,7 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
     error: String(error?.message || error),
   }));
   const feedback = await buildDailyFeedback(dateKst, trades, analystAccuracy);
+  const hygieneRemediationPlan = buildPositionStrategyHygieneRemediationPlan(positionStrategyHygieneSummary);
   const message = buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary);
 
   try {
@@ -453,6 +472,8 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
           tradeCount: feedback.stats.total,
           totalPnl: feedback.stats.totalPnl,
           winRate: feedback.stats.winRate,
+          hygieneStatus: hygieneRemediationPlan?.status || null,
+          hygieneExchange: hygieneRemediationPlan?.recommendedExchange || null,
         },
       }).catch(() => {});
       await dailyFeedbackMemory.consolidate({
@@ -476,6 +497,7 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
     learningLoopSummary,
     positionStrategyAuditSummary,
     positionStrategyHygieneSummary,
+    hygieneRemediationPlan,
     feedback,
     message,
   };
@@ -506,4 +528,5 @@ export {
   fetchDailyAnalystAccuracy,
   fetchDailyTrades,
   runDailyTradeFeedback,
+  buildPositionStrategyHygieneRemediationPlan,
 };
