@@ -37,6 +37,32 @@ function renderText(result) {
   ].join('\n');
 }
 
+function buildRemediationRefreshState({ needed = false, stale = false, reason = null } = {}) {
+  return {
+    needed,
+    stale,
+    reason,
+    command: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation-refresh -- --if-stale --json',
+  };
+}
+
+function buildPositionStrategyRemediationRefreshResult({
+  file,
+  before,
+  after,
+  skipped = false,
+  refreshState,
+}) {
+  return {
+    ok: true,
+    file,
+    before,
+    after,
+    skipped,
+    refreshState,
+  };
+}
+
 export async function runPositionStrategyRemediationRefresh({
   file = DEFAULT_POSITION_STRATEGY_REMEDIATION_HISTORY_FILE,
   json = false,
@@ -44,36 +70,32 @@ export async function runPositionStrategyRemediationRefresh({
 } = {}) {
   const before = readPositionStrategyRemediationHistory(file);
   if (ifStale && before.current && !before.stale) {
-    const skipped = {
-      ok: true,
+    const skipped = buildPositionStrategyRemediationRefreshResult({
       file,
       before,
       after: before,
       skipped: true,
-      refreshState: {
+      refreshState: buildRemediationRefreshState({
         needed: false,
         stale: false,
         reason: 'history refresh skipped: current snapshot is fresh',
-        command: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation-refresh -- --if-stale --json',
-      },
-    };
+      }),
+    });
     if (json) return skipped;
     return renderText(skipped);
   }
   const after = await buildPositionStrategyRemediationHistory({ file, json: true });
-  const result = {
-    ok: true,
+  const result = buildPositionStrategyRemediationRefreshResult({
     file,
     before,
     after,
     skipped: false,
-    refreshState: {
+    refreshState: buildRemediationRefreshState({
       needed: false,
       stale: false,
       reason: 'history refresh executed',
-      command: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation-refresh -- --if-stale --json',
-    },
-  };
+    }),
+  });
   if (json) return result;
   return renderText(result);
 }
