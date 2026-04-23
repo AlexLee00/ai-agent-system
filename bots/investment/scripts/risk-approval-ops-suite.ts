@@ -77,6 +77,10 @@ async function runReports(days) {
     executionGuardHistory: statusOf(executionGuardHistory),
     metrics: {
       previewTotal: Number(riskApproval.summary?.total || 0),
+      outcomeClosed: Number(riskApproval.summary?.outcome?.total?.closed || 0),
+      outcomePnlNet: Number(riskApproval.summary?.outcome?.total?.pnlNet || 0),
+      outcomeAvgPnlPercent: riskApproval.summary?.outcome?.total?.avgPnlPercent ?? null,
+      outcomeWorstSample: riskApproval.summary?.outcome?.samples?.worst?.[0] || null,
       readinessBlockers: Number(readiness.decision?.blockers?.length || 0),
       nonShadowApplications: Number(modeAudit.decision?.metrics?.nonShadowApplications || 0),
       executionGuardTotal: Number(executionGuard.summary?.total || 0),
@@ -125,6 +129,11 @@ function renderText(payload) {
   if (payload.reports) {
     lines.push(`reports: risk=${payload.reports.riskApproval} readiness=${payload.reports.readiness} modeAudit=${payload.reports.modeAudit} executionGuard=${payload.reports.executionGuard}`);
     lines.push(`metrics: preview=${payload.reports.metrics.previewTotal} readinessBlockers=${payload.reports.metrics.readinessBlockers} nonShadow=${payload.reports.metrics.nonShadowApplications} executionGuard=${payload.reports.metrics.executionGuardTotal}`);
+    lines.push(`outcome: closed=${payload.reports.metrics.outcomeClosed} pnl=${payload.reports.metrics.outcomePnlNet} avg=${payload.reports.metrics.outcomeAvgPnlPercent ?? 'n/a'}%`);
+    if (payload.reports.metrics.outcomeWorstSample) {
+      const sample = payload.reports.metrics.outcomeWorstSample;
+      lines.push(`worst sample: ${sample.exchange || 'n/a'}/${sample.symbol || 'n/a'} ${sample.mode || 'n/a'} pnl=${sample.pnlNet ?? 'n/a'} (${sample.pnlPercent ?? 'n/a'}%)`);
+    }
   }
   return lines.join('\n');
 }
