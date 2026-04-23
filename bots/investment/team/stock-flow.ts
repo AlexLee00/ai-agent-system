@@ -32,6 +32,17 @@ function toConfidence(score) {
   return Math.max(0.12, Math.min(0.92, Number((Math.abs(score) / 1.8).toFixed(4))));
 }
 
+function normalizeText(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function compactText(value, max = 80) {
+  const text = normalizeText(value);
+  if (!text) return '';
+  if (text.length <= max) return text;
+  return `${text.slice(0, Math.max(0, max - 1))}…`;
+}
+
 async function loadRecentAnalystMap(symbol, exchange) {
   const rows = await db.getRecentAnalysis(symbol, 12 * 60, exchange).catch(() => []);
   const byAnalyst = new Map();
@@ -57,6 +68,66 @@ async function loadDomesticVolumeRank(symbol) {
   }
 }
 
+function deriveDomesticScoutContext(symbol, scoutIntel, scoutSignal) {
+  const sections = scoutIntel?.sections && typeof scoutIntel.sections === 'object'
+    ? scoutIntel.sections
+    : {};
+  const sectorLines = Array.isArray(sections.sectors) ? sections.sectors : [];
+  const communityLines = Array.isArray(sections.community) ? sections.community : [];
+  const topLines = Array.isArray(sections.top10) ? sections.top10 : [];
+  const calendarLines = Array.isArray(sections.calendar) ? sections.calendar : [];
+
+  const source = String(scoutSignal?.source || '').trim();
+  const score = Number(scoutSignal?.score || 0);
+  let boost = 0;
+  const reasons = [];
+
+  if (source === 'sectors') {
+    boost += score >= 0.75 ? 0.24 : 0.16;
+    reasons.push(`토스 섹터 모멘텀 ${(score * 100).toFixed(0)}%`);
+  } else if (source === 'top10') {
+    boost += score >= 0.75 ? 0.2 : 0.12;
+    reasons.push(`토스 거래대금/인기 ${(score * 100).toFixed(0)}%`);
+  } else if (source === 'community') {
+    boost += score >= 0.75 ? 0.1 : 0.05;
+    reasons.push(`토스 커뮤니티 관심 ${(score * 100).toFixed(0)}%`);
+  } else if (source === 'calendar') {
+    boost += score >= 0.75 ? 0.08 : 0.04;
+    reasons.push(`토스 일정 포착 ${(score * 100).toFixed(0)}%`);
+  } else if (source === 'aiSignals' || source === 'strategies') {
+    boost += score >= 0.75 ? 0.16 : 0.1;
+    reasons.push(`토스 전략 신호 ${(score * 100).toFixed(0)}%`);
+  }
+
+  if (scoutIntel?.focusSymbols?.includes(symbol)) {
+    boost += 0.05;
+    reasons.push('토스 focus 심볼');
+  }
+
+  if (scoutIntel?.overlapSymbols?.includes(symbol)) {
+    boost += 0.04;
+    reasons.push('아르고스/토스 overlap');
+  }
+
+  const highlights = [
+    ...sectorLines.slice(0, 2),
+    ...topLines.slice(0, 1),
+    ...calendarLines.slice(0, 1),
+    ...communityLines.slice(0, 1),
+  ]
+    .map((line) => compactText(line, 64))
+    .filter(Boolean)
+    .slice(0, 4);
+
+  return {
+    boost: Number(boost.toFixed(4)),
+    reasons,
+    highlights,
+    source: source || null,
+    score: score > 0 ? Number(score.toFixed(4)) : 0,
+  };
+}
+
 function deriveFlowDecision({
   exchange,
   quote,
@@ -65,6 +136,7 @@ function deriveFlowDecision({
   newsRow,
   sentinelRow,
   scoutSignal,
+  domesticScoutContext,
   domesticRank,
   overseasEvent,
 } = {}) {
@@ -94,6 +166,11 @@ function deriveFlowDecision({
     const scoutBoost = Number(scoutSignal.score || 0) >= 0.75 ? 0.2 : Number(scoutSignal.score || 0) >= 0.6 ? 0.1 : 0;
     score += scoutBoost;
     reasons.push(`스카우트 ${scoutSignal.source} ${(Number(scoutSignal.score || 0) * 100).toFixed(0)}%`);
+  }
+
+  if (exchange === 'kis' && domesticScoutContext?.boost) {
+    score += Number(domesticScoutContext.boost || 0);
+    reasons.push(...(Array.isArray(domesticScoutContext.reasons) ? domesticScoutContext.reasons : []));
   }
 
   if (exchange === 'kis' && domesticRank) {
@@ -189,6 +266,9 @@ export async function analyzeStockFlow(symbol, exchange = 'kis') {
   ]);
 
   const scoutSignal = getScoutSignalForSymbol(scoutIntel, symbol);
+  const domesticScoutContext = exchange === 'kis'
+    ? deriveDomesticScoutContext(symbol, scoutIntel, scoutSignal)
+    : null;
   const taRow = byAnalyst.get(ANALYST_TYPES.TA_MTF) || null;
   const newsRow = byAnalyst.get(ANALYST_TYPES.NEWS) || null;
   const sentinelRow = byAnalyst.get(ANALYST_TYPES.SENTINEL) || null;
@@ -201,6 +281,7 @@ export async function analyzeStockFlow(symbol, exchange = 'kis') {
     newsRow,
     sentinelRow,
     scoutSignal,
+    domesticScoutContext,
     domesticRank,
     overseasEvent,
   });
@@ -215,6 +296,7 @@ export async function analyzeStockFlow(symbol, exchange = 'kis') {
       score: scoutSignal.score,
       label: scoutSignal.label,
     } : null,
+    domesticScoutContext,
     newsSignal: newsRow ? {
       signal: newsRow.signal,
       confidence: Number(newsRow.confidence || 0),

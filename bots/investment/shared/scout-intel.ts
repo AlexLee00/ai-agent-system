@@ -21,6 +21,18 @@ function normalizeSignals(signals = []) {
     .filter((item) => item.symbol);
 }
 
+function normalizeSections(sections = {}) {
+  return Object.fromEntries(
+    Object.entries(sections && typeof sections === 'object' ? sections : {}).map(([key, values]) => [
+      key,
+      (Array.isArray(values) ? values : [])
+        .map((item) => String(item || '').trim())
+        .filter(Boolean)
+        .slice(0, 10),
+    ]),
+  );
+}
+
 export async function loadLatestScoutIntel({ minutes = 24 * 60 } = {}) {
   try {
     const rows = await eventLake.search({
@@ -43,6 +55,12 @@ export async function loadLatestScoutIntel({ minutes = 24 * 60 } = {}) {
       .map(normalizeSymbol)
       .filter(Boolean);
     const signals = normalizeSignals(metadata.signals);
+    const sections = normalizeSections(metadata.sections || metadata.sectionHighlights || {});
+    const sectionCounts = metadata.sectionCounts && typeof metadata.sectionCounts === 'object'
+      ? Object.fromEntries(
+        Object.entries(metadata.sectionCounts).map(([key, value]) => [key, Number(value || 0)]),
+      )
+      : {};
 
     return {
       id: latest.id,
@@ -52,6 +70,8 @@ export async function loadLatestScoutIntel({ minutes = 24 * 60 } = {}) {
       focusSymbols,
       overlapSymbols,
       signals,
+      sections,
+      sectionCounts,
       bySymbol: new Map(signals.map((item) => [item.symbol, item])),
     };
   } catch {

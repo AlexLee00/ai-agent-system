@@ -176,6 +176,15 @@ async function recordScoutArtifacts(payload, summary) {
   const sectionCounts = Object.fromEntries(
     Object.entries(payload.sections || {}).map(([key, values]) => [key, Array.isArray(values) ? values.length : 0]),
   );
+  const sectionHighlights = Object.fromEntries(
+    Object.entries(payload.sections || {}).map(([key, values]) => [
+      key,
+      (Array.isArray(values) ? values : [])
+        .map((item) => String(item || '').trim())
+        .filter(Boolean)
+        .slice(0, 5),
+    ]),
+  );
   const baselineQuotes = {};
   const domesticSignals = topSignals.filter((item) => item.market === 'domestic').slice(0, 5);
 
@@ -243,6 +252,8 @@ async function recordScoutArtifacts(payload, summary) {
       source: payload.source,
       signals: topSignals,
       sectionCounts,
+      sectionHighlights,
+      sections: payload.sections || {},
       baselineQuotes,
       targetUrl: payload.targetUrl,
       urls: payload.urls || {},
