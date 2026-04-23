@@ -672,6 +672,7 @@ function buildDecision(
   const strategyFeedbackOutcomes = runtimeLearningLoop?.sections?.collect?.strategyFeedbackOutcomes || null;
   const riskApproval = runtimeLearningLoop?.sections?.collect?.riskApproval || null;
   const riskApprovalReadiness = runtimeLearningLoop?.sections?.collect?.riskApprovalReadiness || null;
+  const riskApprovalReadinessDelta = riskApprovalReadiness?.trend?.delta || {};
   const executionRiskApprovalTop = executionRiskApprovalGuardHealth?.rows?.[0] || null;
   return buildHealthDecision({
     warnings: [
@@ -810,12 +811,12 @@ function buildDecision(
       {
         active: riskApprovalReadiness?.status === 'risk_approval_readiness_blocked',
         level: 'medium',
-        reason: `risk approval mode readiness — ${riskApprovalReadiness?.headline || '전환 blocker 점검 필요'} / mode ${riskApprovalReadiness?.currentMode || 'n/a'} -> ${riskApprovalReadiness?.targetMode || 'n/a'} / blockers ${(riskApprovalReadiness?.blockers || []).join(', ') || 'n/a'} / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:risk-approval-readiness -- --json`,
+        reason: `risk approval mode readiness — ${riskApprovalReadiness?.headline || '전환 blocker 점검 필요'} / mode ${riskApprovalReadiness?.currentMode || 'n/a'} -> ${riskApprovalReadiness?.targetMode || 'n/a'} / blockers ${(riskApprovalReadiness?.blockers || []).join(', ') || 'n/a'} / trend blocker Δ${riskApprovalReadinessDelta.blockerCount ?? 0} preview Δ${riskApprovalReadinessDelta.previewTotal ?? 0} / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:risk-approval-readiness-history -- --json`,
       },
       {
         active: riskApprovalReadiness?.status === 'risk_approval_readiness_assist_ready' || riskApprovalReadiness?.status === 'risk_approval_readiness_enforce_candidate',
         level: 'low',
-        reason: `risk approval mode candidate — ${riskApprovalReadiness?.headline || '전환 후보 관찰'} / mode ${riskApprovalReadiness?.currentMode || 'n/a'} -> ${riskApprovalReadiness?.targetMode || 'n/a'} / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:risk-approval-readiness -- --json`,
+        reason: `risk approval mode candidate — ${riskApprovalReadiness?.headline || '전환 후보 관찰'} / mode ${riskApprovalReadiness?.currentMode || 'n/a'} -> ${riskApprovalReadiness?.targetMode || 'n/a'} / trend blocker Δ${riskApprovalReadinessDelta.blockerCount ?? 0} preview Δ${riskApprovalReadinessDelta.previewTotal ?? 0} / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:risk-approval-readiness-history -- --json`,
       },
       {
         active: Boolean(collectionInsufficient || collectionDegraded),
@@ -1032,6 +1033,7 @@ function formatText(report) {
           const riskApprovalReadiness = report.runtimeLearningLoop.sections?.collect?.riskApprovalReadiness || null;
           const riskApprovalTopModel = riskApproval?.topModels?.[0] || null;
           const riskApprovalTrend = riskApproval?.trend || null;
+          const riskApprovalReadinessTrend = riskApprovalReadiness?.trend || null;
           return [
             `  status: ${report.runtimeLearningLoop.decision?.status || 'unknown'}`,
             `  headline: ${report.runtimeLearningLoop.decision?.headline || 'n/a'}`,
@@ -1042,6 +1044,7 @@ function formatText(report) {
             `  risk approval: ${riskApproval?.status || 'unknown'} / preview ${riskApproval?.total || 0} / rejects ${riskApproval?.previewRejects || 0} / divergence ${riskApproval?.divergence || 0} / amount delta ${riskApproval?.previewVsApprovedDelta ?? 0}`,
             `  risk approval readiness: ${riskApprovalReadiness?.status || 'unknown'} / mode ${riskApprovalReadiness?.currentMode || 'n/a'} -> ${riskApprovalReadiness?.targetMode || 'n/a'} / blockers ${(riskApprovalReadiness?.blockers || []).length}`,
             ...(riskApprovalReadiness?.dryRun ? [`  risk approval dry-run: assist applied ${riskApprovalReadiness.dryRun.assist?.applied ?? 0} / enforce rejected ${riskApprovalReadiness.dryRun.enforce?.rejected ?? 0}`] : []),
+            ...(riskApprovalReadinessTrend ? [`  risk approval readiness trend: history ${riskApprovalReadinessTrend.historyCount || 0} / blocker Δ${riskApprovalReadinessTrend.delta?.blockerCount ?? 0} / preview Δ${riskApprovalReadinessTrend.delta?.previewTotal ?? 0} / reject Δ${riskApprovalReadinessTrend.delta?.previewRejects ?? 0} / divergence Δ${riskApprovalReadinessTrend.delta?.divergence ?? 0}`] : []),
             ...(riskApprovalTrend ? [`  risk approval trend: history ${riskApprovalTrend.historyCount || 0} / preview Δ${riskApprovalTrend.delta?.total ?? 0} / reject Δ${riskApprovalTrend.delta?.previewRejects ?? 0} / divergence Δ${riskApprovalTrend.delta?.legacyApprovedPreviewRejected ?? 0} / amount Δ${riskApprovalTrend.delta?.previewVsApprovedDelta ?? 0}`] : []),
             ...(strategyFeedbackTrend ? [`  feedback trend: history ${strategyFeedbackTrend.historyCount || 0} / tagged Δ${strategyFeedbackTrend.delta?.total ?? 0} / closed Δ${strategyFeedbackTrend.delta?.closed ?? 0} / pnl Δ${strategyFeedbackTrend.delta?.pnlNet ?? 0}`] : []),
             ...(strategyFeedbackWeak ? [`  feedback weakest: ${strategyFeedbackWeak.familyBias || 'n/a'} / ${strategyFeedbackWeak.family || 'n/a'} / ${strategyFeedbackWeak.executionKind || 'n/a'} / avg ${strategyFeedbackWeak.avgPnlPercent ?? 'n/a'}%`] : []),

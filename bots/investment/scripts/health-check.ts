@@ -396,6 +396,7 @@ async function main() {
 
     const riskApproval = learningLoop?.sections?.collect?.riskApproval || null;
     const riskApprovalReadiness = learningLoop?.sections?.collect?.riskApprovalReadiness || null;
+    const riskApprovalReadinessDelta = riskApprovalReadiness?.trend?.delta || {};
     const riskApprovalKey = 'learning-loop-risk-approval-divergence';
     if (riskApproval?.status === 'risk_approval_preview_divergence') {
       if (hsm.canAlert(state, riskApprovalKey)) {
@@ -422,7 +423,7 @@ async function main() {
         issues.push({
           key: riskApprovalReadinessKey,
           level: 2,
-          msg: `⚠️ [루나 헬스] risk approval mode readiness\n${riskApprovalReadiness.headline || '리스크 승인 체인 전환 blocker 점검 필요'}\nmode ${riskApprovalReadiness.currentMode || 'n/a'} -> ${riskApprovalReadiness.targetMode || 'n/a'}\nblockers: ${(riskApprovalReadiness.blockers || []).join(' / ') || 'n/a'}${riskApprovalReadiness.dryRun ? `\ndry-run assist: applied ${riskApprovalReadiness.dryRun.assist?.applied ?? 0} / rejected ${riskApprovalReadiness.dryRun.assist?.rejected ?? 0} / amount delta ${riskApprovalReadiness.dryRun.assist?.amountDelta ?? 0}\ndry-run enforce: applied ${riskApprovalReadiness.dryRun.enforce?.applied ?? 0} / rejected ${riskApprovalReadiness.dryRun.enforce?.rejected ?? 0} / amount delta ${riskApprovalReadiness.dryRun.enforce?.amountDelta ?? 0}` : ''}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:risk-approval-readiness -- --json`,
+          msg: `⚠️ [루나 헬스] risk approval mode readiness\n${riskApprovalReadiness.headline || '리스크 승인 체인 전환 blocker 점검 필요'}\nmode ${riskApprovalReadiness.currentMode || 'n/a'} -> ${riskApprovalReadiness.targetMode || 'n/a'}\nblockers: ${(riskApprovalReadiness.blockers || []).join(' / ') || 'n/a'}\ntrend: history ${riskApprovalReadiness.trend?.historyCount || 0} / blocker Δ${riskApprovalReadinessDelta.blockerCount ?? 0} / preview Δ${riskApprovalReadinessDelta.previewTotal ?? 0} / reject Δ${riskApprovalReadinessDelta.previewRejects ?? 0} / divergence Δ${riskApprovalReadinessDelta.divergence ?? 0}${riskApprovalReadiness.dryRun ? `\ndry-run assist: applied ${riskApprovalReadiness.dryRun.assist?.applied ?? 0} / rejected ${riskApprovalReadiness.dryRun.assist?.rejected ?? 0} / amount delta ${riskApprovalReadiness.dryRun.assist?.amountDelta ?? 0}\ndry-run enforce: applied ${riskApprovalReadiness.dryRun.enforce?.applied ?? 0} / rejected ${riskApprovalReadiness.dryRun.enforce?.rejected ?? 0} / amount delta ${riskApprovalReadiness.dryRun.enforce?.amountDelta ?? 0}` : ''}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:risk-approval-readiness-history -- --json`,
         });
       }
     } else if (state[riskApprovalReadinessKey]) {
@@ -440,7 +441,7 @@ async function main() {
         issues.push({
           key: riskApprovalCandidateKey,
           level: 1,
-          msg: `ℹ️ [루나 헬스] risk approval mode candidate\n${riskApprovalReadiness.headline || '리스크 승인 체인 mode 전환 후보'}\nmode ${riskApprovalReadiness.currentMode || 'n/a'} -> ${riskApprovalReadiness.targetMode || 'n/a'}\n자동 전환 없이 governance/마스터 승인 후보로만 기록합니다.\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:risk-approval-readiness -- --json`,
+          msg: `ℹ️ [루나 헬스] risk approval mode candidate\n${riskApprovalReadiness.headline || '리스크 승인 체인 mode 전환 후보'}\nmode ${riskApprovalReadiness.currentMode || 'n/a'} -> ${riskApprovalReadiness.targetMode || 'n/a'}\ntrend: history ${riskApprovalReadiness.trend?.historyCount || 0} / blocker Δ${riskApprovalReadinessDelta.blockerCount ?? 0} / preview Δ${riskApprovalReadinessDelta.previewTotal ?? 0}\n자동 전환 없이 governance/마스터 승인 후보로만 기록합니다.\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:risk-approval-readiness-history -- --json`,
         });
       }
     } else if (state[riskApprovalCandidateKey]) {
