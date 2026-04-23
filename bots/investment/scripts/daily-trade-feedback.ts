@@ -325,9 +325,8 @@ function buildPositionStrategyRemediationCommandLine(positionStrategyRemediation
   const remediationPlan = positionStrategyRemediationSummary.remediationPlan || null;
   const remediationFlat = positionStrategyRemediationSummary.remediationFlat || null;
   const remediationSummary = positionStrategyRemediationSummary.remediationSummary || null;
-  const remediationActions = remediationFlat?.actions || remediationSummary?.actions || positionStrategyRemediationSummary.remediationActions || null;
   if (!remediationPlan || remediationPlan.status !== 'position_strategy_hygiene_attention') return null;
-  return `🛠️ remediation report: ${positionStrategyRemediationSummary.remediationActionReportCommand || remediationActions?.reportCommand || remediationFlat?.commands?.report || remediationSummary?.commands?.report || remediationPlan.remediationReportCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation -- --json'}`;
+  return `🛠️ remediation report: ${positionStrategyRemediationSummary.remediationActionReportCommand || remediationFlat?.actionReportCommand || remediationFlat?.commands?.report || remediationSummary?.commands?.report || remediationPlan.remediationReportCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation -- --json'}`;
 }
 
 function buildPositionStrategyRemediationRefreshCommandLine(positionStrategyRemediationSummary) {
@@ -335,10 +334,9 @@ function buildPositionStrategyRemediationRefreshCommandLine(positionStrategyReme
   const remediationPlan = positionStrategyRemediationSummary.remediationPlan || null;
   const remediationFlat = positionStrategyRemediationSummary.remediationFlat || null;
   const remediationSummary = positionStrategyRemediationSummary.remediationSummary || null;
-  const remediationActions = remediationFlat?.actions || remediationSummary?.actions || positionStrategyRemediationSummary.remediationActions || null;
   const refreshCommand = positionStrategyRemediationSummary.remediationActionRefreshCommand
-    || remediationActions?.refreshCommand
-    || remediationFlat?.refresh?.command
+    || remediationFlat?.actionRefreshCommand
+    || remediationFlat?.refreshCommand
     || remediationFlat?.commands?.refresh
     || remediationSummary?.commands?.refresh
     || remediationSummary?.refreshState?.command
@@ -352,8 +350,7 @@ function buildPositionStrategyRemediationRefreshCommandLine(positionStrategyReme
 function buildPositionStrategyRemediationNextCommandLine(positionStrategyRemediationSummary) {
   if (!positionStrategyRemediationSummary || positionStrategyRemediationSummary.error || !positionStrategyRemediationSummary.ok) return null;
   const remediationFlat = positionStrategyRemediationSummary.remediationFlat || null;
-  const remediationSummary = positionStrategyRemediationSummary.remediationSummary || null;
-  const nextCommand = positionStrategyRemediationSummary.remediationNextCommand || remediationFlat?.nextCommand || remediationSummary?.nextCommand || positionStrategyRemediationSummary?.remediationActions?.nextCommand || null;
+  const nextCommand = positionStrategyRemediationSummary.remediationNextCommand || remediationFlat?.nextCommand || null;
   if (!nextCommand) return null;
   return `🧭 remediation next: ${nextCommand}`;
 }
