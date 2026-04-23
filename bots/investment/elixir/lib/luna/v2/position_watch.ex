@@ -46,13 +46,15 @@ defmodule Luna.V2.PositionWatch do
        last_interval_ms: interval_ms,
        dynamic_interval_ms: nil,
        dynamic_interval_until: nil,
-       dynamic_interval_source: nil
+       dynamic_interval_source: nil,
+       active_backtest_cooldowns: %{}
      }}
   end
 
   def handle_info(:tick, state) do
     snapshot = build_snapshot()
     maybe_broadcast(snapshot, state.last_snapshot)
+    state = maybe_trigger_active_backtests(snapshot, state)
     next_interval_ms = effective_interval_ms(snapshot, state)
     schedule(next_interval_ms)
 
@@ -68,6 +70,7 @@ defmodule Luna.V2.PositionWatch do
   def handle_call(:run_once, _from, state) do
     snapshot = build_snapshot()
     maybe_broadcast(snapshot, state.last_snapshot)
+    state = maybe_trigger_active_backtests(snapshot, state)
     {:reply, {:ok, snapshot}, %{state | last_snapshot: snapshot, last_run: DateTime.utc_now()}}
   end
 
@@ -502,6 +505,116 @@ defmodule Luna.V2.PositionWatch do
         {:position_watch_attention, snapshot}
       )
     end
+  end
+
+  defp maybe_trigger_active_backtests(snapshot, state) do
+    if not KillSwitch.position_watch_active_backtest_enabled?() do
+      state
+    else
+      now = DateTime.utc_now()
+      cooldowns = prune_backtest_cooldowns(state.active_backtest_cooldowns, now)
+
+      candidates =
+        snapshot
+        |> Map.get(:attention, [])
+        |> Enum.filter(&active_backtest_candidate?/1)
+        |> Enum.uniq_by(fn item ->
+          {to_string(item[:exchange] || ""), to_string(item[:symbol] || ""),
+           to_string(item[:attention_type] || "")}
+        end)
+        |> Enum.take(KillSwitch.position_watch_active_backtest_max_per_tick())
+
+      {updated_cooldowns, triggered_count} =
+        Enum.reduce(candidates, {cooldowns, 0}, fn candidate, {acc, count} ->
+          key = backtest_key(candidate)
+
+          if Map.has_key?(acc, key) do
+            {acc, count}
+          else
+            trigger_active_backtest(candidate)
+            {Map.put(acc, key, cooldown_expiry(now)), count + 1}
+          end
+        end)
+
+      if triggered_count > 0 do
+        Logger.info("[루나V2/PositionWatch] 액티브 백테스트 #{triggered_count}건 트리거")
+      end
+
+      %{state | active_backtest_cooldowns: updated_cooldowns}
+    end
+  end
+
+  defp active_backtest_candidate?(candidate) do
+    exchange = to_string(candidate[:exchange] || "")
+    attention = candidate[:attention_type]
+
+    exchange == "binance" and
+      attention in [:stop_loss_attention, :partial_adjust_attention, :tv_live_bearish]
+  end
+
+  defp backtest_key(candidate) do
+    exchange = to_string(candidate[:exchange] || "")
+    symbol = to_string(candidate[:symbol] || "")
+    attention = to_string(candidate[:attention_type] || "")
+    "#{exchange}:#{symbol}:#{attention}"
+  end
+
+  defp cooldown_expiry(now) do
+    DateTime.add(now, KillSwitch.position_watch_active_backtest_cooldown_minutes() * 60, :second)
+  end
+
+  defp prune_backtest_cooldowns(cooldowns, now) do
+    Enum.reduce(cooldowns, %{}, fn {key, expires_at}, acc ->
+      if match?(%DateTime{}, expires_at) and DateTime.compare(expires_at, now) == :gt do
+        Map.put(acc, key, expires_at)
+      else
+        acc
+      end
+    end)
+  end
+
+  defp trigger_active_backtest(candidate) do
+    symbol = to_string(candidate[:symbol] || "")
+    exchange = to_string(candidate[:exchange] || "")
+    attention = to_string(candidate[:attention_type] || "")
+    days = Integer.to_string(KillSwitch.position_watch_active_backtest_days())
+
+    repo_root = "/Users/alexlee/projects/ai-agent-system"
+    investment_dir = Path.join(repo_root, "bots/investment")
+
+    Task.start(fn ->
+      Logger.info("[루나V2/PositionWatch] 액티브 백테스트 시작 #{symbol} #{attention}")
+
+      case System.cmd(
+             "npm",
+             [
+               "--prefix",
+               investment_dir,
+               "run",
+               "runtime:active-backtest",
+               "--",
+               "--symbol=#{symbol}",
+               "--market=#{exchange}",
+               "--attention=#{attention}",
+               "--source=position_watch",
+               "--days=#{days}",
+               "--json"
+             ],
+             stderr_to_stdout: true,
+             cd: investment_dir,
+             env: [{"PAPER_MODE", "false"}]
+           ) do
+        {output, 0} ->
+          Logger.info(
+            "[루나V2/PositionWatch] 액티브 백테스트 완료 #{symbol} #{attention} #{String.trim(output)}"
+          )
+
+        {output, code} ->
+          Logger.warning(
+            "[루나V2/PositionWatch] 액티브 백테스트 실패 #{symbol} #{attention} exit=#{code} #{String.trim(output)}"
+          )
+      end
+    end)
   end
 
   defp to_float(nil), do: 0.0
