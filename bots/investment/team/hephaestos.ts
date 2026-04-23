@@ -1130,10 +1130,56 @@ async function checkBuyReentryGuards({
 }
 
 async function persistBuyPosition({ symbol, order, effectivePaperMode, signalTradeMode }) {
+  let managedAmount = Number(order.filled || 0);
+  let managedAvgPrice = Number(order.price || 0);
+
+  if (!effectivePaperMode) {
+    try {
+      const [walletBalances, liveLegRows] = await Promise.all([
+        fetchAssetBalances(symbol).catch(() => null),
+        db.query(
+          `SELECT amount, avg_price, COALESCE(trade_mode, 'normal') AS trade_mode
+             FROM investment.positions
+            WHERE exchange = 'binance'
+              AND paper = false
+              AND symbol = $1
+              AND amount > 0`,
+          [symbol],
+        ).catch(() => []),
+      ]);
+
+      const walletTotal = Number(walletBalances?.totalBalance || 0);
+      const sameModeTracked = liveLegRows
+        .filter((row) => String(row.trade_mode || 'normal') === String(signalTradeMode || 'normal'))
+        .reduce((sum, row) => sum + Number(row.amount || 0), 0);
+      const sameModeTrackedValue = liveLegRows
+        .filter((row) => String(row.trade_mode || 'normal') === String(signalTradeMode || 'normal'))
+        .reduce((sum, row) => sum + (Number(row.amount || 0) * Number(row.avg_price || 0)), 0);
+      const otherModesAmount = liveLegRows
+        .filter((row) => String(row.trade_mode || 'normal') !== String(signalTradeMode || 'normal'))
+        .reduce((sum, row) => sum + Number(row.amount || 0), 0);
+
+      const baselineManagedAmount = sameModeTracked + Number(order.filled || 0);
+      const residualDustAmount = Math.max(0, walletTotal - otherModesAmount - baselineManagedAmount);
+      managedAmount = Math.max(baselineManagedAmount, walletTotal - otherModesAmount, Number(order.filled || 0));
+
+      if (managedAmount > 0) {
+        const weightedValue = sameModeTrackedValue + (Number(order.filled || 0) * Number(order.price || 0)) + (residualDustAmount * Number(order.price || 0));
+        managedAvgPrice = weightedValue > 0 ? (weightedValue / managedAmount) : Number(order.price || 0);
+      }
+
+      if (residualDustAmount > 0.0000001) {
+        console.log(`  🧹 ${symbol} 신규 관리 포지션에 dust ${residualDustAmount.toFixed(8)} 추가 흡수 (${signalTradeMode})`);
+      }
+    } catch (error) {
+      console.warn(`  ⚠️ ${symbol} dust 흡수형 포지션 저장 보정 실패: ${error.message}`);
+    }
+  }
+
   await db.upsertPosition({
     symbol,
-    amount: order.filled || 0,
-    avgPrice: order.price || 0,
+    amount: managedAmount,
+    avgPrice: managedAvgPrice,
     unrealizedPnl: 0,
     paper: effectivePaperMode,
     exchange: 'binance',
