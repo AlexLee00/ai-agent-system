@@ -41,6 +41,33 @@ function getDefaultPartialExitRatio(reasonCode) {
   }
 }
 
+function normalizeSetupType(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized || null;
+}
+
+function getStrategyAwarePartialExitRatio(reasonCode, strategyProfile = null) {
+  const base = getDefaultPartialExitRatio(reasonCode);
+  const setupType = normalizeSetupType(strategyProfile?.setup_type);
+
+  switch (setupType) {
+    case 'mean_reversion':
+      if (reasonCode === 'profit_lock_candidate') return 0.65;
+      if (reasonCode === 'mean_reversion_profit_take') return 0.6;
+      return Math.max(base, 0.5);
+    case 'breakout':
+      if (reasonCode === 'profit_lock_candidate') return 0.4;
+      return Math.min(base, 0.35);
+    case 'trend_following':
+    case 'momentum_rotation':
+      if (reasonCode === 'trend_following_trail') return 0.25;
+      if (reasonCode === 'profit_lock_candidate') return 0.33;
+      return Math.min(base, 0.3);
+    default:
+      return base;
+  }
+}
+
 function normalizeRatio(value) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return null;
@@ -48,8 +75,8 @@ function normalizeRatio(value) {
   return Number(parsed.toFixed(4));
 }
 
-function mapCandidate(row, overrideRatio = null) {
-  const ratio = normalizeRatio(overrideRatio) ?? getDefaultPartialExitRatio(row.reasonCode);
+function mapCandidate(row, strategyProfile = null, overrideRatio = null) {
+  const ratio = normalizeRatio(overrideRatio) ?? getStrategyAwarePartialExitRatio(row.reasonCode, strategyProfile);
   const positionAmount = Number(row?.positionSnapshot?.amount || 0);
   const avgPrice = Number(row?.positionSnapshot?.avgPrice || 0);
   const estimatedNotional = positionAmount * avgPrice;
@@ -66,6 +93,10 @@ function mapCandidate(row, overrideRatio = null) {
     avgPrice,
     estimatedNotional,
     estimatedExitAmount,
+    strategyProfile: strategyProfile ? {
+      strategyName: strategyProfile.strategy_name || null,
+      setupType: strategyProfile.setup_type || null,
+    } : null,
   };
 }
 
@@ -104,10 +135,18 @@ async function loadCandidates({ tradeMode = null, minutesBack = 180, ratio = nul
     persist: false,
   });
 
-  return (report.rows || [])
-    .filter((row) => row.exchange === 'binance' && row.recommendation === 'ADJUST')
-    .map((row) => mapCandidate(row, ratio))
-    .filter((row) => row.partialExitRatio > 0 && row.positionAmount > 0);
+  const rows = (report.rows || [])
+    .filter((row) => row.exchange === 'binance' && row.recommendation === 'ADJUST');
+
+  const mapped = await Promise.all(rows.map(async (row) => {
+    const strategyProfile = await db.getPositionStrategyProfile(row.symbol, {
+      exchange: row.exchange,
+      tradeMode: row.tradeMode || 'normal',
+    }).catch(() => null);
+    return mapCandidate(row, strategyProfile, ratio);
+  }));
+
+  return mapped.filter((row) => row.partialExitRatio > 0 && row.positionAmount > 0);
 }
 
 async function createPartialAdjustSignal(candidate) {
