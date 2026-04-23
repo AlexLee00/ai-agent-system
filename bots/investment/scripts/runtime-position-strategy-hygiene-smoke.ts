@@ -11,11 +11,19 @@ const attention = buildPositionStrategyHygieneDecision({
     unmatchedManagedPositions: 1,
   },
   duplicateNormalization: {
+    rows: [
+      { exchange: 'kis_overseas', retirements: [{}, {}] },
+    ],
     decision: {
       headline: '동일 종목 active strategy profile 정규화 후보 2개 scope가 있습니다.',
     },
   },
   orphanRetirement: {
+    rows: [
+      { exchange: 'kis_overseas' },
+      { exchange: 'kis_overseas' },
+      { exchange: 'kis_overseas' },
+    ],
     decision: {
       headline: 'live 포지션이 없는 active strategy profile 3건이 있습니다.',
     },
@@ -24,6 +32,7 @@ const attention = buildPositionStrategyHygieneDecision({
 
 assert.equal(attention.status, 'position_strategy_hygiene_attention');
 assert.match(attention.actionItems.join('\n'), /duplicate scopes 2/);
+assert.match(attention.headline, /focus kis_overseas/);
 
 const ok = buildPositionStrategyHygieneDecision({
   audit: {

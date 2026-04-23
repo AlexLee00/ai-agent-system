@@ -8,6 +8,7 @@ function parseArgs(argv = process.argv.slice(2)) {
   return {
     json: argv.includes('--json'),
     apply: argv.includes('--apply'),
+    exchange: (argv.find((arg) => arg.startsWith('--exchange=')) || '').split('=').slice(1).join('=') || null,
   };
 }
 
@@ -30,30 +31,52 @@ export function buildOrphanStrategyProfileCandidates({ activeProfiles = [], live
     }));
 }
 
+export function findDominantOrphanExchange(candidates = []) {
+  const counts = new Map();
+  for (const candidate of candidates) {
+    const exchange = String(candidate?.exchange || '').trim();
+    if (!exchange) continue;
+    counts.set(exchange, (counts.get(exchange) || 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))
+    .map(([exchange, count]) => ({ exchange, count }))[0] || null;
+}
+
 export function summarizeOrphanStrategyProfiles(candidates = [], {
   apply = false,
   activeProfiles = 0,
   livePositions = 0,
+  exchange = null,
 } = {}) {
+  const dominantExchange = findDominantOrphanExchange(candidates);
   return {
     activeProfiles: Number(activeProfiles || 0),
     livePositions: Number(livePositions || 0),
+    exchange,
     orphanProfiles: candidates.length,
     orphanExchanges: [...new Set(candidates.map((row) => row.exchange).filter(Boolean))].length,
     orphanSymbols: [...new Set(candidates.map((row) => `${row.exchange}:${row.symbol}`).filter(Boolean))].length,
+    dominantExchange: dominantExchange?.exchange || null,
+    dominantExchangeProfiles: Number(dominantExchange?.count || 0),
     retirements: apply ? candidates.length : 0,
   };
 }
 
-export function buildOrphanStrategyProfileDecision(summary = {}, { apply = false } = {}) {
+export function buildOrphanStrategyProfileDecision(summary = {}, { apply = false, exchange = null } = {}) {
+  const scope = exchange ? `exchange=${exchange}` : 'exchange=all';
+  const preferredExchange = !exchange && summary.dominantExchange ? summary.dominantExchange : null;
   if (!apply && summary.orphanProfiles > 0) {
     return {
       status: 'orphan_strategy_profiles_candidates',
       headline: `live 포지션이 없는 active strategy profile ${summary.orphanProfiles}건이 있습니다.`,
       safeToApply: summary.orphanProfiles > 0,
       actionItems: [
-        `activeProfiles ${summary.activeProfiles || 0} / livePositions ${summary.livePositions || 0} / orphanSymbols ${summary.orphanSymbols || 0}`,
-        'dry-run rows를 확인한 뒤 --apply로 orphan active profile을 정리합니다.',
+        `범위: ${scope} / activeProfiles ${summary.activeProfiles || 0} / livePositions ${summary.livePositions || 0} / orphanSymbols ${summary.orphanSymbols || 0}`,
+        summary.dominantExchange ? `우선 거래소: ${summary.dominantExchange} (${summary.dominantExchangeProfiles || 0} profiles)` : '우선 거래소: n/a',
+        preferredExchange
+          ? `dry-run rows를 확인한 뒤 npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles -- --apply --json --exchange=${preferredExchange} 로 orphan active profile을 정리합니다.`
+          : 'dry-run rows를 확인한 뒤 --apply로 orphan active profile을 정리합니다.',
         '적용 후 runtime:position-strategy-audit와 health-report에서 orphan profile 감소를 재확인합니다.',
       ],
     };
@@ -64,6 +87,7 @@ export function buildOrphanStrategyProfileDecision(summary = {}, { apply = false
       headline: `orphan strategy profile ${summary.retirements}건을 정리했습니다.`,
       safeToApply: false,
       actionItems: [
+        `범위: ${scope}`,
         '적용 후 runtime:position-strategy-audit로 orphan profile이 줄었는지 확인합니다.',
       ],
     };
@@ -73,16 +97,17 @@ export function buildOrphanStrategyProfileDecision(summary = {}, { apply = false
     headline: '현재 orphan active strategy profile이 없습니다.',
     safeToApply: false,
     actionItems: [
+      `범위: ${scope}`,
       '추가 조치 없이 health/feedback 관찰을 유지합니다.',
     ],
   };
 }
 
-export async function retireOrphanStrategyProfiles({ apply = false } = {}) {
+export async function retireOrphanStrategyProfiles({ apply = false, exchange = null } = {}) {
   await db.initSchema();
   const [livePositions, activeProfiles] = await Promise.all([
-    db.getAllPositions(null, false),
-    db.getActivePositionStrategyProfiles({ status: 'active', limit: 1000 }),
+    db.getAllPositions(exchange, false),
+    db.getActivePositionStrategyProfiles({ exchange, status: 'active', limit: 1000 }),
   ]);
   const candidates = buildOrphanStrategyProfileCandidates({ activeProfiles, livePositions });
   const retired = [];
@@ -101,11 +126,13 @@ export async function retireOrphanStrategyProfiles({ apply = false } = {}) {
     apply,
     activeProfiles: activeProfiles.length,
     livePositions: livePositions.length,
+    exchange,
   });
 
   return {
     ok: true,
     apply,
+    exchange,
     activeProfiles: activeProfiles.length,
     livePositions: livePositions.length,
     candidates: candidates.length,
@@ -117,14 +144,17 @@ export async function retireOrphanStrategyProfiles({ apply = false } = {}) {
     decision: buildOrphanStrategyProfileDecision({
       ...summary,
       retirements: apply ? retired.length : 0,
-    }, { apply }),
+    }, { apply, exchange }),
     rows: apply ? retired : candidates,
   };
 }
 
 async function main() {
   const args = parseArgs();
-  const result = await retireOrphanStrategyProfiles({ apply: args.apply });
+  const result = await retireOrphanStrategyProfiles({
+    apply: args.apply,
+    exchange: args.exchange,
+  });
   if (args.json) console.log(JSON.stringify(result, null, 2));
   else {
     console.log(JSON.stringify(result, null, 2));

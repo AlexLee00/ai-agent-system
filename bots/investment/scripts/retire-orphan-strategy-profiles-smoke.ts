@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import {
   buildOrphanStrategyProfileCandidates,
   buildOrphanStrategyProfileDecision,
+  findDominantOrphanExchange,
   summarizeOrphanStrategyProfiles,
 } from './retire-orphan-strategy-profiles.ts';
 
@@ -30,14 +31,18 @@ const summary = summarizeOrphanStrategyProfiles(candidates, {
   apply: false,
   activeProfiles: 3,
   livePositions: 2,
+  exchange: null,
 });
 assert.equal(summary.orphanProfiles, 1);
 assert.equal(summary.orphanSymbols, 1);
+assert.equal(summary.dominantExchange, 'kis');
+assert.equal(findDominantOrphanExchange(candidates)?.exchange, 'kis');
 
 const decision = buildOrphanStrategyProfileDecision(summary, { apply: false });
 assert.equal(decision.status, 'orphan_strategy_profiles_candidates');
 assert.equal(decision.safeToApply, true);
 assert.match(decision.actionItems.join('\n'), /orphanSymbols 1/);
+assert.match(decision.actionItems.join('\n'), /우선 거래소: kis/);
 
 const retiredDecision = buildOrphanStrategyProfileDecision({ ...summary, retirements: 1 }, { apply: true });
 assert.equal(retiredDecision.status, 'orphan_strategy_profiles_retired');

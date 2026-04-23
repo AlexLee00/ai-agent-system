@@ -1187,6 +1187,7 @@ function formatText(report) {
               ? [
                 `  hygiene status: ${report.positionStrategyHygiene.decision?.status || 'unknown'}`,
                 `  hygiene headline: ${report.positionStrategyHygiene.decision?.headline || 'n/a'}`,
+                `  hygiene focus: ${report.positionStrategyHygiene.recommendedExchange?.exchange || 'all'}${report.positionStrategyHygiene.recommendedExchange?.count ? ` (${report.positionStrategyHygiene.recommendedExchange.count})` : ''}`,
               ]
               : []),
             ...(report.duplicateStrategyNormalization
@@ -1206,10 +1207,10 @@ function formatText(report) {
             ...(report.positionStrategyAudit.duplicateProfileScopes || []).slice(0, 3).map((scope) => `  duplicate: ${scope.exchange}/${scope.symbol} count ${scope.count} keeper ${scope.keeperProfileId}`),
             `  next command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-audit`,
             `  hygiene report: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-hygiene -- --json`,
-            `  normalize dry-run: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --json`,
-            `  normalize apply: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --apply --json`,
-            `  retire orphan dry-run: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles`,
-            `  retire orphan apply: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles -- --apply`,
+            `  normalize dry-run: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --json${report.positionStrategyHygiene?.recommendedExchange?.exchange ? ` --exchange=${report.positionStrategyHygiene.recommendedExchange.exchange}` : ''}`,
+            `  normalize apply: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --apply --json${report.positionStrategyHygiene?.recommendedExchange?.exchange ? ` --exchange=${report.positionStrategyHygiene.recommendedExchange.exchange}` : ''}`,
+            `  retire orphan dry-run: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles -- --json${report.positionStrategyHygiene?.recommendedExchange?.exchange ? ` --exchange=${report.positionStrategyHygiene.recommendedExchange.exchange}` : ''}`,
+            `  retire orphan apply: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles -- --apply --json${report.positionStrategyHygiene?.recommendedExchange?.exchange ? ` --exchange=${report.positionStrategyHygiene.recommendedExchange.exchange}` : ''}`,
           ]
         : ['  position strategy audit 정보 없음'],
     },
@@ -1290,8 +1291,9 @@ async function buildReport() {
   const executionAttachBackfill = await runExecutionAttachBackfill({ days: 14, limit: 50, dryRun: true }).catch(() => null);
   const positionStrategyAudit = await buildRuntimePositionStrategyAudit({ json: true }).catch(() => null);
   const positionStrategyHygiene = await runPositionStrategyHygiene({ json: true }).catch(() => null);
-  const duplicateStrategyNormalization = await normalizeDuplicateStrategyProfiles({ apply: false }).catch(() => null);
-  const orphanStrategyRetirement = await retireOrphanStrategyProfiles({ apply: false }).catch(() => null);
+  const hygieneRecommendedExchange = positionStrategyHygiene?.recommendedExchange?.exchange || null;
+  const duplicateStrategyNormalization = await normalizeDuplicateStrategyProfiles({ apply: false, exchange: hygieneRecommendedExchange }).catch(() => null);
+  const orphanStrategyRetirement = await retireOrphanStrategyProfiles({ apply: false, exchange: hygieneRecommendedExchange }).catch(() => null);
   const incidentLinkAudit = await backfillTradeIncidentLinks({
     dryRun: true,
     json: true,
