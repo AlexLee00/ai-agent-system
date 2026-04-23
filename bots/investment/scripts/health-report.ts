@@ -24,6 +24,7 @@ import { getValidationSoftBudgetConfig } from '../shared/runtime-config.ts';
 import { loadCandidates as loadForceExitCandidates } from './force-exit-candidate-report.ts';
 import { buildRuntimeLearningLoopReport } from './runtime-learning-loop-report.ts';
 import { runCollectionAudit } from './runtime-collection-audit.ts';
+import { runExecutionAttachAudit } from './runtime-execution-attach-audit.ts';
 import { backfillTradeIncidentLinks } from './backfill-trade-incident-links.ts';
 import {
   buildGuardHealth,
@@ -660,6 +661,7 @@ function buildDecision(
   collectionAudit,
   incidentLinkAudit,
   executionRiskApprovalGuardHealth,
+  executionAttachAudit,
 ) {
   const topBlock = signalBlockHealth.top[0] || null;
   const topReasonGroup = signalBlockHealth.topReasonGroups?.[0] || null;
@@ -679,6 +681,7 @@ function buildDecision(
   const riskApprovalModeAudit = runtimeLearningLoop?.sections?.collect?.riskApprovalModeAudit || null;
   const riskApprovalModeAuditDelta = riskApprovalModeAudit?.trend?.delta || {};
   const executionRiskApprovalTop = executionRiskApprovalGuardHealth?.rows?.[0] || null;
+  const executionAttachSummary = executionAttachAudit?.summary || {};
   return buildHealthDecision({
     warnings: [
       {
@@ -848,6 +851,11 @@ function buildDecision(
         active: Number(incidentLinkAudit?.updated || 0) > 0,
         level: 'medium',
         reason: `trade incident link audit — journal 누락 후보 ${incidentLinkAudit?.updated || 0}건 / scanned ${incidentLinkAudit?.scanned || 0} / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run journal:backfill-incident-links -- --dry-run --json`,
+      },
+      {
+        active: ['execution_attach_weak', 'execution_attach_partial'].includes(executionAttachAudit?.decision?.status),
+        level: executionAttachAudit?.decision?.status === 'execution_attach_weak' ? 'medium' : 'low',
+        reason: `execution attach audit — ${executionAttachAudit?.decision?.headline || '체결 envelope 연결 점검'} / score ${executionAttachSummary.avgAttachScore ?? 'n/a'} / complete ${executionAttachSummary.completeCount || 0} / recovered ${executionAttachSummary.recoveredPartialCount || 0} / actionable ${Number(executionAttachSummary.actionableWeakCount || 0) + Number(executionAttachSummary.actionablePartialCount || 0)} / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:execution-attach-audit -- --json`,
       },
     ],
     okReason: '핵심 서비스와 trade_review 정합성이 현재는 안정 구간입니다.',
@@ -1115,6 +1123,18 @@ function formatText(report) {
         : ['  incident link audit 정보 없음'],
     },
     {
+      title: '■ execution attach audit',
+      lines: report.executionAttachAudit
+        ? [
+            `  status: ${report.executionAttachAudit.decision?.status || 'unknown'}`,
+            `  summary: score ${report.executionAttachAudit.summary?.avgAttachScore ?? 'n/a'} / complete ${report.executionAttachAudit.summary?.completeCount || 0} / recovered ${report.executionAttachAudit.summary?.recoveredPartialCount || 0} / actionable ${Number(report.executionAttachAudit.summary?.actionableWeakCount || 0) + Number(report.executionAttachAudit.summary?.actionablePartialCount || 0)}`,
+            `  headline: ${report.executionAttachAudit.decision?.headline || 'n/a'}`,
+            ...((report.executionAttachAudit.decision?.actionItems || []).slice(0, 3).map((item) => `  next: ${item}`)),
+            `  next command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:execution-attach-audit -- --json`,
+          ]
+        : ['  execution attach audit 정보 없음'],
+    },
+    {
       title: null,
       lines: buildHealthDecisionSection({
         title: '■ 운영 판단',
@@ -1187,6 +1207,7 @@ async function buildReport() {
   const localLlmHealth = await loadLocalLlmHealth(status);
   const runtimeLearningLoop = await buildRuntimeLearningLoopReport({ days: 14, json: true }).catch(() => null);
   const collectionAudit = await runCollectionAudit({ markets: ['binance', 'kis', 'kis_overseas'], hours: 24 }).catch(() => null);
+  const executionAttachAudit = await runExecutionAttachAudit({ days: 14, limit: 50 }).catch(() => null);
   const incidentLinkAudit = await backfillTradeIncidentLinks({
     dryRun: true,
     json: true,
@@ -1219,6 +1240,7 @@ async function buildReport() {
     latestOpsSnapshot,
     collectionAudit,
     incidentLinkAudit,
+    executionAttachAudit,
     executionRiskApprovalGuardHealth,
   );
 
@@ -1248,6 +1270,7 @@ async function buildReport() {
     runtimeLearningLoop,
     collectionAudit,
     incidentLinkAudit,
+    executionAttachAudit,
     latestOpsSnapshot,
     capitalGuardBreakdown,
     cryptoGateActionPlan,
