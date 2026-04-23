@@ -1199,6 +1199,7 @@ function formatText(report) {
               ? [
                 `  remediation status: ${report.positionStrategyRemediation.decision?.status || 'unknown'}`,
                 `  remediation headline: ${report.positionStrategyRemediation.decision?.headline || 'n/a'}`,
+                `  remediation next: ${report.positionStrategyRemediationActions?.nextCommand || 'n/a'}`,
                 `  remediation refresh state: needed ${report.positionStrategyRemediationRefresh?.needed ? 'yes' : 'no'} / stale ${report.positionStrategyRemediationRefresh?.stale ? 'yes' : 'no'} / command ${report.positionStrategyRemediationRefresh?.command || 'n/a'}`,
                 ...(report.positionStrategyRemediationRefresh?.reason
                   ? [`  remediation refresh: ${report.positionStrategyRemediationRefresh.reason}`]
@@ -1227,14 +1228,14 @@ function formatText(report) {
               : []),
             ...(report.positionStrategyAudit.duplicateProfileScopes || []).slice(0, 3).map((scope) => `  duplicate: ${scope.exchange}/${scope.symbol} count ${scope.count} keeper ${scope.keeperProfileId}`),
             `  next command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-audit`,
-            `  remediation report: ${report.positionStrategyHygiene?.remediationPlan?.remediationReportCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation -- --json'}`,
-            `  remediation history: ${report.positionStrategyHygiene?.remediationPlan?.remediationHistoryCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation-history -- --json'}`,
-            `  remediation refresh: ${report.positionStrategyHygiene?.remediationPlan?.remediationRefreshCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation-refresh -- --if-stale --json'}`,
-            `  hygiene report: ${report.positionStrategyHygiene?.remediationPlan?.hygieneReportCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-hygiene -- --json'}`,
-            `  normalize dry-run: ${report.positionStrategyHygiene?.remediationPlan?.normalizeDryRunCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --json'}`,
-            `  normalize apply: ${report.positionStrategyHygiene?.remediationPlan?.normalizeApplyCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --apply --json'}`,
-            `  retire orphan dry-run: ${report.positionStrategyHygiene?.remediationPlan?.retireDryRunCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles -- --json'}`,
-            `  retire orphan apply: ${report.positionStrategyHygiene?.remediationPlan?.retireApplyCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles -- --apply --json'}`,
+            `  remediation report: ${report.positionStrategyRemediationActions?.reportCommand || report.positionStrategyHygiene?.remediationPlan?.remediationReportCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation -- --json'}`,
+            `  remediation history: ${report.positionStrategyRemediationActions?.historyCommand || report.positionStrategyHygiene?.remediationPlan?.remediationHistoryCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation-history -- --json'}`,
+            `  remediation refresh: ${report.positionStrategyRemediationActions?.refreshCommand || report.positionStrategyHygiene?.remediationPlan?.remediationRefreshCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation-refresh -- --if-stale --json'}`,
+            `  hygiene report: ${report.positionStrategyRemediationActions?.hygieneCommand || report.positionStrategyHygiene?.remediationPlan?.hygieneReportCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-hygiene -- --json'}`,
+            `  normalize dry-run: ${report.positionStrategyRemediationActions?.normalizeDryRunCommand || report.positionStrategyHygiene?.remediationPlan?.normalizeDryRunCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --json'}`,
+            `  normalize apply: ${report.positionStrategyRemediationActions?.normalizeApplyCommand || report.positionStrategyHygiene?.remediationPlan?.normalizeApplyCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --apply --json'}`,
+            `  retire orphan dry-run: ${report.positionStrategyRemediationActions?.retireDryRunCommand || report.positionStrategyHygiene?.remediationPlan?.retireDryRunCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles -- --json'}`,
+            `  retire orphan apply: ${report.positionStrategyRemediationActions?.retireApplyCommand || report.positionStrategyHygiene?.remediationPlan?.retireApplyCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles -- --apply --json'}`,
           ]
         : ['  position strategy audit 정보 없음'],
     },

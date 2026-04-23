@@ -321,18 +321,28 @@ function buildPositionStrategyRemediationLine(positionStrategyRemediationSummary
 function buildPositionStrategyRemediationCommandLine(positionStrategyRemediationSummary) {
   if (!positionStrategyRemediationSummary || positionStrategyRemediationSummary.error || !positionStrategyRemediationSummary.ok) return null;
   const remediationPlan = positionStrategyRemediationSummary.remediationPlan || null;
+  const remediationActions = positionStrategyRemediationSummary.remediationActions || null;
   if (!remediationPlan || remediationPlan.status !== 'position_strategy_hygiene_attention') return null;
-  return `🛠️ remediation report: ${remediationPlan.remediationReportCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation -- --json'}`;
+  return `🛠️ remediation report: ${remediationActions?.reportCommand || remediationPlan.remediationReportCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation -- --json'}`;
 }
 
 function buildPositionStrategyRemediationRefreshCommandLine(positionStrategyRemediationSummary) {
   if (!positionStrategyRemediationSummary || positionStrategyRemediationSummary.error || !positionStrategyRemediationSummary.ok) return null;
   const remediationPlan = positionStrategyRemediationSummary.remediationPlan || null;
-  const refreshCommand = positionStrategyRemediationSummary?.remediationRefreshState?.command
+  const remediationActions = positionStrategyRemediationSummary.remediationActions || null;
+  const refreshCommand = remediationActions?.refreshCommand
+    || positionStrategyRemediationSummary?.remediationRefreshState?.command
     || remediationPlan?.remediationRefreshCommand
     || null;
   if (!refreshCommand) return null;
   return `♻️ remediation refresh: ${refreshCommand}`;
+}
+
+function buildPositionStrategyRemediationNextCommandLine(positionStrategyRemediationSummary) {
+  if (!positionStrategyRemediationSummary || positionStrategyRemediationSummary.error || !positionStrategyRemediationSummary.ok) return null;
+  const nextCommand = positionStrategyRemediationSummary?.remediationActions?.nextCommand || null;
+  if (!nextCommand) return null;
+  return `🧭 remediation next: ${nextCommand}`;
 }
 
 function buildPositionStrategyRemediationRefreshLine(positionStrategyRemediationSummary) {
@@ -407,6 +417,8 @@ function buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSumma
   if (positionStrategyRemediationRefreshLine) lines.push(positionStrategyRemediationRefreshLine);
   const positionStrategyRemediationRefreshCommandLine = buildPositionStrategyRemediationRefreshCommandLine(positionStrategyRemediationSummary);
   if (positionStrategyRemediationRefreshCommandLine) lines.push(positionStrategyRemediationRefreshCommandLine);
+  const positionStrategyRemediationNextCommandLine = buildPositionStrategyRemediationNextCommandLine(positionStrategyRemediationSummary);
+  if (positionStrategyRemediationNextCommandLine) lines.push(positionStrategyRemediationNextCommandLine);
   const positionStrategyRemediationCommandLine = buildPositionStrategyRemediationCommandLine(positionStrategyRemediationSummary);
   if (positionStrategyRemediationCommandLine) lines.push(positionStrategyRemediationCommandLine);
   const positionStrategyHygieneCommandLine = buildPositionStrategyHygieneCommandLine(positionStrategyHygieneSummary);
@@ -442,6 +454,7 @@ async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeni
     buildPositionStrategyRemediationRefreshStateLine(positionStrategyRemediationSummary),
     buildPositionStrategyRemediationRefreshLine(positionStrategyRemediationSummary),
     buildPositionStrategyRemediationRefreshCommandLine(positionStrategyRemediationSummary),
+    buildPositionStrategyRemediationNextCommandLine(positionStrategyRemediationSummary),
     buildPositionStrategyRemediationCommandLine(positionStrategyRemediationSummary),
     buildPositionStrategyHygieneCommandLine(positionStrategyHygieneSummary),
     `다음 액션: ${(feedback.nextActions || []).join(' / ') || '없음'}`,
