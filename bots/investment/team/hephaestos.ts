@@ -1901,6 +1901,65 @@ async function resolveBuyOrderAmount({
   return { actualAmount };
 }
 
+function normalizeResponsibilityPlan(plan = null) {
+  return plan && typeof plan === 'object' ? plan : {};
+}
+
+function applyResponsibilityExecutionSizing(amount, {
+  action = ACTIONS.BUY,
+  confidence = 0,
+  responsibilityPlan = null,
+} = {}) {
+  const numericAmount = Number(amount || 0);
+  if (!(numericAmount > 0) || action !== ACTIONS.BUY) {
+    return { amount: numericAmount, multiplier: 1, reason: null };
+  }
+
+  const plan = normalizeResponsibilityPlan(responsibilityPlan);
+  const ownerMode = String(plan.ownerMode || '').trim().toLowerCase();
+  const riskMission = String(plan.riskMission || '').trim().toLowerCase();
+  const executionMission = String(plan.executionMission || '').trim().toLowerCase();
+  const watchMission = String(plan.watchMission || '').trim().toLowerCase();
+  let multiplier = 1;
+  const reasons = [];
+
+  if (ownerMode === 'capital_preservation') {
+    multiplier *= 0.95;
+    reasons.push('owner capital_preservation');
+  } else if (ownerMode === 'balanced_rotation') {
+    multiplier *= 0.98;
+    reasons.push('owner balanced_rotation');
+  } else if (ownerMode === 'opportunity_capture' && Number(confidence || 0) >= 0.74) {
+    multiplier *= 1.03;
+    reasons.push('owner opportunity_capture');
+  }
+
+  if (riskMission === 'strict_risk_gate') {
+    multiplier *= 0.9;
+    reasons.push('risk strict_risk_gate');
+  } else if (riskMission === 'soft_sizing_preference') {
+    multiplier *= 0.97;
+    reasons.push('risk soft_sizing_preference');
+  }
+
+  if (executionMission === 'execution_safeguard' || executionMission === 'precision_execution') {
+    multiplier *= 0.95;
+    reasons.push(`execution ${executionMission}`);
+  }
+
+  if (watchMission === 'risk_sentinel') {
+    multiplier *= 0.98;
+    reasons.push('watch risk_sentinel');
+  }
+
+  const normalizedMultiplier = Number(multiplier.toFixed(4));
+  return {
+    amount: numericAmount * normalizedMultiplier,
+    multiplier: normalizedMultiplier,
+    reason: reasons.length > 0 ? reasons.join(' + ') : null,
+  };
+}
+
 async function fetchRecentBrokerExit(symbol, amountHint = 0) {
   try {
     const orders = await getExchange().fetchOrders(symbol, undefined, 20);
@@ -2630,13 +2689,35 @@ export async function executeSignal(signal) {
         softGuards: combinedSoftGuards,
       });
       if (orderAmountState?.success === false) return orderAmountState;
-      const actualAmount = orderAmountState.actualAmount;
+      const responsibilitySizing = applyResponsibilityExecutionSizing(orderAmountState.actualAmount, {
+        action,
+        confidence: Number(signal?.confidence || 0),
+        responsibilityPlan: signal.existingResponsibilityPlan || null,
+      });
+      const actualAmount = responsibilitySizing.amount;
+      if (!effectivePaperMode && actualAmount < minOrderUsdt) {
+        return rejectExecution({
+          persistFailure,
+          symbol,
+          action,
+          reason: `책임계획 반영 후 주문금액 ${actualAmount.toFixed(2)} < 최소 ${minOrderUsdt}`,
+          code: 'position_sizing_rejected',
+          meta: {
+            minOrderUsdt,
+            responsibilityExecutionMultiplier: responsibilitySizing.multiplier,
+            responsibilityExecutionReason: responsibilitySizing.reason,
+          },
+          notify: 'skip',
+        });
+      }
       executionMeta = {
         softGuardApplied: combinedSoftGuardApplied,
         softGuards: combinedSoftGuards,
         reducedAmountMultiplier: combinedReducedAmountMultiplier,
         requestedAmountUsdt: Number(amountUsdt || 0),
         actualAmountUsdt: Number(actualAmount || 0),
+        responsibilityExecutionMultiplier: responsibilitySizing.multiplier,
+        responsibilityExecutionReason: responsibilitySizing.reason,
         agentRole: hephaestosRoleState
           ? {
               mission: hephaestosRoleState.mission || null,
@@ -2645,6 +2726,10 @@ export async function executeSignal(signal) {
             }
           : null,
       };
+
+      if (responsibilitySizing.reason && responsibilitySizing.multiplier !== 1) {
+        console.log(`  🎛️ [execution tone] ${symbol} 책임계획 반영 x${responsibilitySizing.multiplier.toFixed(2)} (${responsibilitySizing.reason})`);
+      }
 
       const order = await marketBuy(symbol, actualAmount, effectivePaperMode);
       trade = {

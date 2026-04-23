@@ -311,6 +311,65 @@ function normalizePartialExitRatio(value) {
   return Number(parsed.toFixed(4));
 }
 
+function normalizeResponsibilityPlan(plan = null) {
+  return plan && typeof plan === 'object' ? plan : {};
+}
+
+function applyHanulResponsibilityExecutionSizing(amount, {
+  action = ACTIONS.BUY,
+  confidence = 0,
+  responsibilityPlan = null,
+} = {}) {
+  const numericAmount = Number(amount || 0);
+  if (!(numericAmount > 0) || action !== ACTIONS.BUY) {
+    return { amount: numericAmount, multiplier: 1, reason: null };
+  }
+
+  const plan = normalizeResponsibilityPlan(responsibilityPlan);
+  const ownerMode = String(plan.ownerMode || '').trim().toLowerCase();
+  const riskMission = String(plan.riskMission || '').trim().toLowerCase();
+  const executionMission = String(plan.executionMission || '').trim().toLowerCase();
+  const watchMission = String(plan.watchMission || '').trim().toLowerCase();
+  let multiplier = 1;
+  const reasons = [];
+
+  if (ownerMode === 'capital_preservation') {
+    multiplier *= 0.95;
+    reasons.push('owner capital_preservation');
+  } else if (ownerMode === 'balanced_rotation' || ownerMode === 'equity_rotation') {
+    multiplier *= 0.98;
+    reasons.push(`owner ${ownerMode}`);
+  } else if (ownerMode === 'opportunity_capture' && Number(confidence || 0) >= 0.74) {
+    multiplier *= 1.02;
+    reasons.push('owner opportunity_capture');
+  }
+
+  if (riskMission === 'strict_risk_gate') {
+    multiplier *= 0.9;
+    reasons.push('risk strict_risk_gate');
+  } else if (riskMission === 'soft_sizing_preference') {
+    multiplier *= 0.97;
+    reasons.push('risk soft_sizing_preference');
+  }
+
+  if (executionMission === 'execution_safeguard' || executionMission === 'precision_execution') {
+    multiplier *= 0.95;
+    reasons.push(`execution ${executionMission}`);
+  }
+
+  if (watchMission === 'risk_sentinel') {
+    multiplier *= 0.98;
+    reasons.push('watch risk_sentinel');
+  }
+
+  const normalizedMultiplier = Number(multiplier.toFixed(4));
+  return {
+    amount: Math.round(numericAmount * normalizedMultiplier),
+    multiplier: normalizedMultiplier,
+    reason: reasons.length > 0 ? reasons.join(' + ') : null,
+  };
+}
+
 function isEffectivePartialExit({ entrySize = 0, soldAmount = 0, partialExitRatio = 1 } = {}) {
   const normalizedRatio = normalizePartialExitRatio(partialExitRatio);
   const baseline = Number(entrySize || 0);
@@ -834,9 +893,15 @@ export async function executeSignal(signal) {
   const signalTradeMode = signal.trade_mode || getInvestmentTradeMode();
   const exitReasonOverride = signal.exit_reason_override || null;
   const partialExitRatio = normalizePartialExitRatio(signal.partial_exit_ratio || signal.partialExitRatio);
+  const domesticBuySizing = applyHanulResponsibilityExecutionSizing(amountKrw, {
+    action,
+    confidence: signal.confidence,
+    responsibilityPlan: signal.existingResponsibilityPlan || null,
+  });
+  const effectiveBuyAmountKrw = action === ACTIONS.BUY ? domesticBuySizing.amount : amountKrw;
 
   const tag = paperMode ? '[PAPER]' : kisPaper ? '[LIVE/MOCK]' : '[LIVE/REAL]';
-  console.log(`\n⚡ [한울] ${symbol} ${action} ${amountKrw?.toLocaleString()}원 ${tag}`);
+  console.log(`\n⚡ [한울] ${symbol} ${action} ${effectiveBuyAmountKrw?.toLocaleString()}원 ${tag}`);
 
   try {
     const approvalGuard = await enforceHanulNemesisApproval(signal, 'domestic');
@@ -851,7 +916,7 @@ export async function executeSignal(signal) {
         market: 'domestic',
         symbol,
         action,
-        amount: amountKrw,
+        amount: effectiveBuyAmountKrw,
       });
     }
 
@@ -864,13 +929,13 @@ export async function executeSignal(signal) {
         market: 'domestic',
         symbol,
         action,
-        amount: amountKrw,
+        amount: effectiveBuyAmountKrw,
       });
     }
 
     // 신호 알람 (BUY/SELL만, HOLD 제외)
     if (action !== ACTIONS.HOLD) {
-      notifyKisSignal({ symbol, action, amountKrw, confidence: signal.confidence, reasoning: signal.reasoning, paper: paperMode || kisPaper, tradeMode: signalTradeMode });
+      notifyKisSignal({ symbol, action, amountKrw: effectiveBuyAmountKrw, confidence: signal.confidence, reasoning: signal.reasoning, paper: paperMode || kisPaper, tradeMode: signalTradeMode });
     }
 
     const kis = await getKis();
@@ -883,14 +948,18 @@ export async function executeSignal(signal) {
         paperMode,
         symbol,
         action,
-        amount: amountKrw,
+        amount: effectiveBuyAmountKrw,
         exchange: 'kis',
         market: 'domestic',
       });
       if (buyEntryState?.success === false) return buyEntryState;
 
+      if (domesticBuySizing.reason && domesticBuySizing.multiplier !== 1) {
+        console.log(`  🎛️ [execution tone] ${symbol} 책임계획 반영 x${domesticBuySizing.multiplier.toFixed(2)} (${domesticBuySizing.reason})`);
+      }
+
       // paperMode=true → dryRun(API 호출 없음) / false → brokerAccountMode(mock/real)에 따라 실제 주문 API 호출
-      const order = await kis.marketBuy(symbol, amountKrw, paperMode);
+      const order = await kis.marketBuy(symbol, effectiveBuyAmountKrw, paperMode);
       trade = {
         signalId, symbol, side: 'buy',
         amount:    order.qty,
@@ -1041,9 +1110,15 @@ export async function executeOverseasSignal(signal) {
   const signalTradeMode = signal.trade_mode || getInvestmentTradeMode();
   const exitReasonOverride = signal.exit_reason_override || null;
   const partialExitRatio = normalizePartialExitRatio(signal.partial_exit_ratio || signal.partialExitRatio);
+  const overseasBuySizing = applyHanulResponsibilityExecutionSizing(amountUsd, {
+    action,
+    confidence: signal.confidence,
+    responsibilityPlan: signal.existingResponsibilityPlan || null,
+  });
+  const effectiveBuyAmountUsd = action === ACTIONS.BUY ? overseasBuySizing.amount : amountUsd;
 
   const tag = paperMode ? '[PAPER]' : kisPaper ? '[LIVE/MOCK]' : '[LIVE/REAL]';
-  console.log(`\n⚡ [한울] 해외 ${symbol} ${action} $${amountUsd} ${tag}`);
+  console.log(`\n⚡ [한울] 해외 ${symbol} ${action} $${effectiveBuyAmountUsd} ${tag}`);
 
   try {
     const approvalGuard = await enforceHanulNemesisApproval(signal, 'overseas');
@@ -1058,7 +1133,7 @@ export async function executeOverseasSignal(signal) {
         market: 'overseas',
         symbol,
         action,
-        amount: amountUsd,
+        amount: effectiveBuyAmountUsd,
       });
     }
 
@@ -1071,13 +1146,13 @@ export async function executeOverseasSignal(signal) {
         market: 'overseas',
         symbol,
         action,
-        amount: amountUsd,
+        amount: effectiveBuyAmountUsd,
       });
     }
 
     // 신호 알람 (BUY/SELL만, HOLD 제외)
     if (action !== ACTIONS.HOLD) {
-      notifyKisOverseasSignal({ symbol, action, amountUsdt: amountUsd, confidence: signal.confidence, reasoning: signal.reasoning, paper: paperMode || kisPaper, tradeMode: signalTradeMode });
+      notifyKisOverseasSignal({ symbol, action, amountUsdt: effectiveBuyAmountUsd, confidence: signal.confidence, reasoning: signal.reasoning, paper: paperMode || kisPaper, tradeMode: signalTradeMode });
     }
 
     const kis = await getKis();
@@ -1090,13 +1165,17 @@ export async function executeOverseasSignal(signal) {
         paperMode,
         symbol,
         action,
-        amount: amountUsd,
+        amount: effectiveBuyAmountUsd,
         exchange: 'kis_overseas',
         market: 'overseas',
       });
       if (buyEntryState?.success === false) return buyEntryState;
 
-      const order = await kis.marketBuyOverseas(symbol, amountUsd, paperMode);
+      if (overseasBuySizing.reason && overseasBuySizing.multiplier !== 1) {
+        console.log(`  🎛️ [execution tone] ${symbol} 책임계획 반영 x${overseasBuySizing.multiplier.toFixed(2)} (${overseasBuySizing.reason})`);
+      }
+
+      const order = await kis.marketBuyOverseas(symbol, effectiveBuyAmountUsd, paperMode);
       trade = {
         signalId, symbol, side: 'buy',
         amount:    order.qty,
