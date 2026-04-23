@@ -156,6 +156,53 @@ async function loadCandidates({ exchange = null, tradeMode = null, minutesBack =
   return mapped;
 }
 
+export async function buildStrategyExitSummary({
+  exchange = null,
+  tradeMode = null,
+  minutesBack = 180,
+} = {}) {
+  const candidates = await loadCandidates({ exchange, tradeMode, minutesBack });
+  const ready = candidates.filter((candidate) => candidate.executionGuard?.allowed);
+  const guarded = candidates.filter((candidate) => candidate.executionGuard?.allowed === false);
+  let status = 'strategy_exit_idle';
+  let headline = '현재 전략 청산 preview 후보가 없습니다.';
+
+  if (candidates.length > 0) {
+    status = ready.length > 0 ? 'strategy_exit_ready' : 'strategy_exit_guarded';
+    headline = ready.length > 0
+      ? `전략 청산 preview ${ready.length}건이 실행 가능 상태입니다.`
+      : `전략 청산 preview ${guarded.length}건이 전략 가드로 보류 중입니다.`;
+  }
+
+  const reasons = [];
+  if (ready.length > 0) {
+    const topReady = ready
+      .slice()
+      .sort((a, b) => Math.abs(Number(b.pnlPct || 0)) - Math.abs(Number(a.pnlPct || 0)))
+      .slice(0, 3)
+      .map((candidate) => `${candidate.symbol} ${candidate.reasonCode || 'strategy_exit'} (${candidate.strategyProfile?.setupType || 'no_strategy'})`);
+    if (topReady.length > 0) reasons.push(`실행 가능: ${topReady.join(', ')}`);
+  }
+  if (guarded.length > 0) {
+    const topGuarded = guarded
+      .slice(0, 2)
+      .map((candidate) => `${candidate.symbol} ${candidate.executionGuard?.reason || 'guarded'}`);
+    if (topGuarded.length > 0) reasons.push(`보류: ${topGuarded.join(' | ')}`);
+  }
+
+  return {
+    status,
+    headline,
+    reasons,
+    metrics: {
+      totalCandidates: candidates.length,
+      ready: ready.length,
+      guarded: guarded.length,
+    },
+    candidates,
+  };
+}
+
 function pickCandidate(candidates, { symbol, exchange = null, tradeMode = null }) {
   if (!symbol) return null;
   return candidates.find((candidate) =>

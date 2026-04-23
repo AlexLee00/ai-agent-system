@@ -25,6 +25,7 @@ import { tracker }      from '../shared/cost-tracker.ts';
 import { adjustAnalystWeights } from '../shared/analyst-accuracy.ts';
 import { buildScreeningHistoryReport } from '../scripts/screening-history-report.ts';
 import { buildPositionReevaluationSummary } from '../scripts/position-reevaluation-summary.ts';
+import { buildStrategyExitSummary } from '../scripts/strategy-exit-runner.ts';
 import { buildRuntimeMinOrderPressureReport } from '../scripts/runtime-min-order-pressure-report.ts';
 import { buildRuntimeKisOrderPressureReport } from '../scripts/runtime-kis-order-pressure-report.ts';
 import { buildRuntimeKisDomesticAutotuneReport } from '../scripts/runtime-kis-domestic-autotune-report.ts';
@@ -424,6 +425,18 @@ async function loadPositionReevaluationSummary() {
   }
 }
 
+async function loadStrategyExitSummary() {
+  try {
+    return await buildStrategyExitSummary({
+      minutesBack: 180,
+    });
+  } catch (error) {
+    return {
+      error: String(error?.message || error),
+    };
+  }
+}
+
 async function loadReevalTvMtfAutotuneSummary() {
   try {
     return await buildRuntimeReevalTvMtfAutotuneReport({
@@ -614,6 +627,47 @@ function buildPositionReevaluationLines(reevaluationSummary = null) {
   if (Array.isArray(reevaluationSummary.decision.reasons)) {
     lines.push(...reevaluationSummary.decision.reasons.slice(0, 2));
   }
+  const rows = Array.isArray(reevaluationSummary?.report?.rows) ? reevaluationSummary.report.rows : [];
+  const spotlight = rows
+    .filter((row) => row.recommendation === 'EXIT' || row.recommendation === 'ADJUST')
+    .slice(0, 3);
+  for (const row of spotlight) {
+    const strategyName = row?.analysisSnapshot?.strategyProfile?.strategyName || row?.positionSnapshot?.strategyProfile?.strategyName || '전략 미지정';
+    const setupType = row?.analysisSnapshot?.strategyProfile?.setupType || row?.positionSnapshot?.strategyProfile?.setupType || 'unknown';
+    lines.push(`${row.symbol} ${row.recommendation} | ${strategyName} (${setupType}) | ${row.reasonCode || 'n/a'}`);
+  }
+  const driftRows = rows
+    .filter((row) => row?.analysisSnapshot?.backtestDrift && row.analysisSnapshot.backtestDrift.ignored !== 'thin_backtest')
+    .slice(0, 2);
+  for (const row of driftRows) {
+    const drift = row.analysisSnapshot.backtestDrift;
+    const sharpeDrop = Number.isFinite(Number(drift?.sharpeDrop)) ? Number(drift.sharpeDrop).toFixed(2) : 'n/a';
+    const returnDrop = Number.isFinite(Number(drift?.returnDropPct)) ? Number(drift.returnDropPct).toFixed(2) : 'n/a';
+    lines.push(`${row.symbol} drift | sharpeΔ ${sharpeDrop} / returnΔ ${returnDrop}%p`);
+  }
+  return lines;
+}
+
+function buildStrategyExitLines(strategyExitSummary = null) {
+  if (!strategyExitSummary) return ['조회 결과 없음'];
+  if (strategyExitSummary.error) return ['조회 실패'];
+  const metrics = strategyExitSummary.metrics || {};
+  const lines = [
+    `${strategyExitSummary.status}: ready ${metrics.ready || 0} / guarded ${metrics.guarded || 0}`,
+    strategyExitSummary.headline || '전략 청산 preview 결과 없음',
+  ];
+  if (Array.isArray(strategyExitSummary.reasons)) {
+    lines.push(...strategyExitSummary.reasons.slice(0, 2));
+  }
+  const top = Array.isArray(strategyExitSummary.candidates) ? strategyExitSummary.candidates.slice(0, 3) : [];
+  for (const candidate of top) {
+    const strategyName = candidate?.strategyProfile?.strategyName || '전략 미지정';
+    const setupType = candidate?.strategyProfile?.setupType || 'unknown';
+    const guardText = candidate?.executionGuard?.allowed
+      ? 'ready'
+      : String(candidate?.executionGuard?.reason || 'guarded');
+    lines.push(`${candidate.symbol} | ${strategyName} (${setupType}) | ${candidate.reasonCode || 'strategy_exit'} | ${guardText}`);
+  }
   return lines;
 }
 
@@ -799,6 +853,7 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
   await initHubSecrets().catch(() => false);
   const screeningSummary = await loadScreeningSummary();
   const reevaluationSummary = await loadPositionReevaluationSummary();
+  const strategyExitSummary = await loadStrategyExitSummary();
   const reevalTvMtfAutotuneSummary = await loadReevalTvMtfAutotuneSummary();
   const reevalTvMtfTrendSummary = await loadReevalTvMtfTrendSummary();
   const minOrderPressureSummary = await loadMinOrderPressureSummary();
@@ -845,6 +900,9 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
       '',
       '━━━ 포지션 재평가 ━━━',
       ...buildPositionReevaluationLines(reevaluationSummary).map((line) => `  ${line}`),
+      '',
+      '━━━ 전략 청산 preview ━━━',
+      ...buildStrategyExitLines(strategyExitSummary).map((line) => `  ${line}`),
       '',
       '━━━ 포지션 TV-MTF autotune ━━━',
       ...buildReevalTvMtfAutotuneLines(reevalTvMtfAutotuneSummary).map((line) => `  ${line}`),
@@ -1086,6 +1144,10 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
   lines.push(...buildPositionReevaluationLines(reevaluationSummary).map((line) => `  ${line}`));
   lines.push(``);
 
+  lines.push(`━━━ 전략 청산 preview ━━━`);
+  lines.push(...buildStrategyExitLines(strategyExitSummary).map((line) => `  ${line}`));
+  lines.push(``);
+
   lines.push(`━━━ 포지션 TV-MTF autotune ━━━`);
   lines.push(...buildReevalTvMtfAutotuneLines(reevalTvMtfAutotuneSummary).map((line) => `  ${line}`));
   lines.push(``);
@@ -1277,6 +1339,12 @@ ${JSON.stringify({
     adjusts: Number(reevaluationSummary.decision.metrics?.adjusts || 0),
     exits: Number(reevaluationSummary.decision.metrics?.exits || 0),
   } : null,
+  strategyExit: strategyExitSummary?.status ? {
+    status: strategyExitSummary.status,
+    ready: Number(strategyExitSummary.metrics?.ready || 0),
+    guarded: Number(strategyExitSummary.metrics?.guarded || 0),
+    totalCandidates: Number(strategyExitSummary.metrics?.totalCandidates || 0),
+  } : null,
   reevalTvMtfAutotune: reevalTvMtfAutotuneSummary?.decision ? {
     status: reevalTvMtfAutotuneSummary.decision.status,
     liveCoverage: Number(reevalTvMtfAutotuneSummary.decision.metrics?.liveCoverage || 0),
@@ -1395,6 +1463,7 @@ ${JSON.stringify({
         ]),
         buildSection('스크리닝 동향', buildScreeningSummaryLines(screeningSummary)),
         buildSection('포지션 재평가', buildPositionReevaluationLines(reevaluationSummary)),
+        buildSection('전략 청산 preview', buildStrategyExitLines(strategyExitSummary)),
         buildSection('포지션 TV-MTF autotune', buildReevalTvMtfAutotuneLines(reevalTvMtfAutotuneSummary)),
         buildSection('포지션 TV-MTF trend', buildReevalTvMtfTrendLines(reevalTvMtfTrendSummary)),
         buildSection('최소 주문 병목', buildMinOrderPressureLines(minOrderPressureSummary)),
@@ -1429,6 +1498,9 @@ ${JSON.stringify({
           `실행 ${sigExec}개 / 승인대기 ${sigApproved}개 / 실패 ${sigFailed}개`,
           reevaluationSummary?.decision
             ? `재평가 ${reevaluationSummary.decision.status} / EXIT ${reevaluationSummary.decision.metrics?.exits || 0}`
+            : null,
+          strategyExitSummary?.status
+            ? `strategy-exit ${strategyExitSummary.status} / ready ${strategyExitSummary.metrics?.ready || 0}`
             : null,
           reevalTvMtfAutotuneSummary?.decision
             ? `TV-MTF ${reevalTvMtfAutotuneSummary.decision.status} / 후보 ${reevalTvMtfAutotuneSummary.decision.candidates?.length || 0}`
