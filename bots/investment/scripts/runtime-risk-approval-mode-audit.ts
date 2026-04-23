@@ -22,7 +22,7 @@ function findMode(summary = {}, mode) {
   return (summary.application?.byMode || []).find((item) => String(item.mode || '') === mode) || null;
 }
 
-function buildDecision({ riskApproval, readiness }) {
+export function buildRiskApprovalModeAuditDecision({ riskApproval, readiness }) {
   const summary = riskApproval.summary || {};
   const readinessDecision = readiness.decision || {};
   const currentMode = readinessDecision.currentMode || readiness.modeConfig?.mode || 'shadow';
@@ -114,7 +114,7 @@ export async function buildRuntimeRiskApprovalModeAudit({ days = 30, json = fals
     buildRuntimeRiskApprovalReport({ days, json: true }),
     buildRuntimeRiskApprovalReadiness({ days, json: true }),
   ]);
-  const decision = buildDecision({ riskApproval, readiness });
+  const decision = buildRiskApprovalModeAuditDecision({ riskApproval, readiness });
   const payload = {
     ok: true,
     days: Number(days),
