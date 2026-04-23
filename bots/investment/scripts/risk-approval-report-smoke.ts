@@ -1,0 +1,131 @@
+#!/usr/bin/env node
+// @ts-nocheck
+
+import assert from 'assert/strict';
+import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import {
+  buildRuntimeRiskApprovalDecision,
+  summarizeRuntimeRiskApprovalRows,
+} from './runtime-risk-approval-report.ts';
+
+function row({
+  symbol = 'TEST/USDT',
+  exchange = 'binance',
+  nemesisVerdict = 'approved',
+  previewApproved = true,
+  previewDecision = 'PASS',
+  finalAmount = 100,
+  approvedAmount = 100,
+  application = {},
+  steps = [],
+} = {}) {
+  return {
+    symbol,
+    exchange,
+    nemesisVerdict,
+    positionSizeApproved: approvedAmount,
+    preview: {
+      approved: previewApproved,
+      decision: previewDecision,
+      finalAmount,
+      steps,
+    },
+    application,
+  };
+}
+
+function decide(rows) {
+  const summary = summarizeRuntimeRiskApprovalRows(rows);
+  return {
+    summary,
+    decision: buildRuntimeRiskApprovalDecision(summary),
+  };
+}
+
+export function runRiskApprovalReportSmoke() {
+  const empty = decide([]);
+  assert.equal(empty.decision.status, 'risk_approval_preview_empty');
+  assert.equal(empty.summary.total, 0);
+
+  const ok = decide([
+    row({
+      application: { mode: 'shadow', previewStatus: 'pass', amountBefore: 100, amountAfter: 100 },
+      steps: [{ model: 'hard_rule', decision: 'PASS', amountBefore: 100, amountAfter: 100, reason: 'ok' }],
+    }),
+  ]);
+  assert.equal(ok.decision.status, 'risk_approval_preview_ok');
+  assert.equal(ok.summary.modelRows[0].model, 'hard_rule');
+  assert.equal(ok.summary.amount.byPreviewStatus.pass, 1);
+
+  const watch = decide([
+    row({
+      previewApproved: false,
+      previewDecision: 'REJECT',
+      nemesisVerdict: 'rejected',
+      finalAmount: 0,
+      approvedAmount: 0,
+      application: { mode: 'enforce', applied: true, amountBefore: 100, amountAfter: 0, previewStatus: 'rejected' },
+    }),
+  ]);
+  assert.equal(watch.decision.status, 'risk_approval_preview_watch');
+  assert.equal(watch.summary.previewRejects, 1);
+  assert.equal(watch.summary.application.rejected, 1);
+
+  const divergence = decide([
+    row({
+      previewApproved: false,
+      previewDecision: 'REJECT',
+      nemesisVerdict: 'approved',
+      finalAmount: 0,
+      approvedAmount: 100,
+      application: { mode: 'shadow', amountBefore: 100, amountAfter: 100, previewStatus: 'rejected' },
+    }),
+  ]);
+  assert.equal(divergence.decision.status, 'risk_approval_preview_divergence');
+  assert.equal(divergence.summary.legacyApprovedPreviewRejected, 1);
+  assert.equal(divergence.summary.divergences.length, 1);
+
+  const reduction = decide([
+    row({
+      finalAmount: 70,
+      approvedAmount: 100,
+      application: { mode: 'assist', applied: true, amountBefore: 100, amountAfter: 70, previewStatus: 'adjust' },
+      steps: [{ model: 'feedback_risk', decision: 'ADJUST', amountBefore: 100, amountAfter: 70, reason: 'weak feedback' }],
+    }),
+  ]);
+  assert.equal(reduction.summary.amount.previewAmountReductions, 1);
+  assert.equal(reduction.summary.application.applied, 1);
+  assert.equal(reduction.summary.application.amountDelta, -30);
+  assert.equal(reduction.summary.modelRows[0].adjust, 1);
+
+  const unavailable = decide([
+    row({
+      previewDecision: 'preview_failed',
+      application: { mode: 'shadow', previewStatus: 'unavailable', amountBefore: 100, amountAfter: 100 },
+    }),
+  ]);
+  assert.equal(unavailable.summary.amount.byPreviewStatus.unavailable, 1);
+
+  return {
+    ok: true,
+    empty,
+    okDecision: ok.decision,
+    watch: watch.decision,
+    divergence: divergence.decision,
+    reduction: reduction.summary.application,
+    unavailable: unavailable.summary.amount.byPreviewStatus,
+  };
+}
+
+async function main() {
+  const result = runRiskApprovalReportSmoke();
+  if (process.argv.includes('--json')) console.log(JSON.stringify(result, null, 2));
+  else console.log('risk approval report smoke ok');
+}
+
+if (isDirectExecution(import.meta.url)) {
+  await runCliMain({
+    run: main,
+    errorPrefix: '❌ risk approval report smoke 실패:',
+  });
+}

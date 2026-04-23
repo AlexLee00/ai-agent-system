@@ -41,7 +41,7 @@ function normalizePreview(row = {}) {
   };
 }
 
-function summarize(rows = []) {
+export function summarizeRuntimeRiskApprovalRows(rows = []) {
   const byModel = {};
   const byDecision = {};
   const byMode = {};
@@ -175,7 +175,7 @@ function summarize(rows = []) {
   };
 }
 
-function buildDecision(summary) {
+export function buildRuntimeRiskApprovalDecision(summary) {
   let status = 'risk_approval_preview_empty';
   let headline = 'risk approval preview가 아직 충분히 쌓이지 않았습니다.';
   const reasons = [`preview ${summary.total}건`, `preview rejects ${summary.previewRejects}건`, `legacy-approved/preview-rejected ${summary.legacyApprovedPreviewRejected}건`];
@@ -265,8 +265,8 @@ export async function buildRuntimeRiskApprovalReport({ days = 30, json = false }
     ORDER BY r.created_at DESC
   `, [since]).catch(() => []);
   const rows = rawRows.map(normalizePreview);
-  const summary = summarize(rows);
-  const decision = buildDecision(summary);
+  const summary = summarizeRuntimeRiskApprovalRows(rows);
+  const decision = buildRuntimeRiskApprovalDecision(summary);
   const payload = {
     ok: true,
     days: Number(days),
