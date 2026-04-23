@@ -5,6 +5,7 @@ import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { runRiskApprovalChainSmoke } from './risk-approval-chain-smoke.ts';
 import { runRiskApprovalExecutionGuardSmoke } from './risk-approval-execution-guard-smoke.ts';
 import { runRiskApprovalModeSmoke } from './risk-approval-mode-smoke.ts';
+import { runRiskApprovalReadinessSmoke } from './risk-approval-readiness-smoke.ts';
 import { runRiskApprovalModeAuditSmoke } from './risk-approval-mode-audit-smoke.ts';
 import { buildRuntimeRiskApprovalReport } from './runtime-risk-approval-report.ts';
 import { buildRuntimeRiskApprovalHistory } from './runtime-risk-approval-history.ts';
@@ -85,6 +86,7 @@ export async function runRiskApprovalOpsSuite({ days = 30, smokeOnly = false } =
     chain: runRiskApprovalChainSmoke(),
     executionGuard: runRiskApprovalExecutionGuardSmoke(),
     mode: runRiskApprovalModeSmoke(),
+    readiness: runRiskApprovalReadinessSmoke(),
     modeAudit: runRiskApprovalModeAuditSmoke(),
   };
   const reports = smokeOnly ? null : await runReports(days);
@@ -96,6 +98,7 @@ export async function runRiskApprovalOpsSuite({ days = 30, smokeOnly = false } =
       chain: Boolean(smokes.chain.ok),
       executionGuard: Boolean(smokes.executionGuard.ok),
       mode: Boolean(smokes.mode.ok),
+      readiness: Boolean(smokes.readiness.ok),
       modeAudit: Boolean(smokes.modeAudit.ok),
     },
     reports,
@@ -108,7 +111,7 @@ function renderText(payload) {
     `smokeOnly: ${payload.smokeOnly}`,
     `days: ${payload.days}`,
     `smokes: chain=${payload.smokes.chain} executionGuard=${payload.smokes.executionGuard} mode=${payload.smokes.mode}`,
-    `audit smoke: modeAudit=${payload.smokes.modeAudit}`,
+    `decision smokes: readiness=${payload.smokes.readiness} modeAudit=${payload.smokes.modeAudit}`,
   ];
   if (payload.reports) {
     lines.push(`reports: risk=${payload.reports.riskApproval} readiness=${payload.reports.readiness} modeAudit=${payload.reports.modeAudit} executionGuard=${payload.reports.executionGuard}`);

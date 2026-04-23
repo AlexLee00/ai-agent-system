@@ -49,7 +49,7 @@ function getCurrentModeConfig() {
   };
 }
 
-function buildModeDryRun(riskApproval = {}, modeConfig = {}) {
+export function buildRiskApprovalModeDryRun(riskApproval = {}, modeConfig = {}) {
   const summary = riskApproval.summary || {};
   const amount = summary.amount || {};
   const total = safeNumber(summary.total);
@@ -87,7 +87,7 @@ function buildModeDryRun(riskApproval = {}, modeConfig = {}) {
   };
 }
 
-function buildDecision({ riskApproval, executionGuard, modeConfig }) {
+export function buildRiskApprovalReadinessDecision({ riskApproval, executionGuard, modeConfig }) {
   const summary = riskApproval.summary || {};
   const amount = summary.amount || {};
   const guardSummary = executionGuard.summary || {};
@@ -203,8 +203,8 @@ export async function buildRuntimeRiskApprovalReadiness({ days = 30, json = fals
     buildRuntimeExecutionRiskGuardHistory({ days, json: true, write: false }),
   ]);
   const modeConfig = getCurrentModeConfig();
-  const modeDryRun = buildModeDryRun(riskApproval, modeConfig);
-  const decision = buildDecision({ riskApproval, executionGuard, modeConfig });
+  const modeDryRun = buildRiskApprovalModeDryRun(riskApproval, modeConfig);
+  const decision = buildRiskApprovalReadinessDecision({ riskApproval, executionGuard, modeConfig });
   const payload = {
     ok: true,
     days: Number(days),
