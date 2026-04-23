@@ -657,6 +657,22 @@ export async function updateSignalStatus(id, status) {
   await run(`UPDATE signals SET status = $1 WHERE id = $2`, [status, id]);
 }
 
+export async function updateSignalApproval(id, {
+  status = 'approved',
+  nemesisVerdict = null,
+  approvedAt = null,
+} = {}) {
+  if (!id) return;
+  await run(
+    `UPDATE signals
+        SET status = $1,
+            nemesis_verdict = COALESCE($2, nemesis_verdict),
+            approved_at = COALESCE($3, approved_at, now())
+      WHERE id = $4`,
+    [status, nemesisVerdict, approvedAt, id],
+  );
+}
+
 export async function updateSignalAmount(id, amountUsdt) {
   await run(`UPDATE signals SET amount_usdt = $1 WHERE id = $2`, [amountUsdt, id]);
 }
@@ -1742,7 +1758,7 @@ export function close() {
 export default {
   query, run, get, initSchema,
   insertAnalysis, getRecentAnalysis,
-  insertSignal, updateSignalStatus, updateSignalAmount, updateSignalBlock, getSignalById, getPendingSignals, getApprovedSignals,
+  insertSignal, updateSignalStatus, updateSignalApproval, updateSignalAmount, updateSignalBlock, getSignalById, getPendingSignals, getApprovedSignals,
   insertTrade, getTradeHistory, getLatestTradeBySignalId, getSameDayTrade,
   upsertPosition, getPosition, getLivePosition, getPaperPosition, getAllPositions, getPaperPositions, getOpenPositions, deletePosition,
   getTodayPnl,

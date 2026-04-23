@@ -39,6 +39,7 @@ import { runBearResearcher } from './athena.ts';
 import { evaluateSignal } from './nemesis.ts';
 import { recommendStrategy } from './argos.ts';
 import { applyStrategyRouteDecisionBias, buildStrategyRoute, buildStrategyRouteSection } from '../shared/strategy-router.ts';
+import { buildSignalApprovalUpdate } from '../shared/signal-approval.ts';
 
 const LUNA_RUNTIME = getLunaRuntimeConfig();
 const LUNA_STOCK_PROFILE = getLunaStockStrategyProfile();
@@ -1625,7 +1626,7 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
       );
       if (riskResult.approved) {
         console.log(`  ✅ [네메시스] 승인: $${riskResult.adjustedAmount}${riskResult.tpPrice ? ` TP=${riskResult.tpPrice?.toFixed(2)} SL=${riskResult.slPrice?.toFixed(2)}` : ''}`);
-        await db.updateSignalStatus(signalId, 'approved');
+        await db.updateSignalApproval(signalId, buildSignalApprovalUpdate(riskResult));
         approvedCount++;
         results.push({
           symbol: dec.symbol, signalId, ...dec,

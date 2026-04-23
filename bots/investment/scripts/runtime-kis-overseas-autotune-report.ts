@@ -8,6 +8,8 @@ import { getParameterGovernance } from '../shared/runtime-parameter-governance.t
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { buildInvestmentCliInsight } from '../shared/cli-insight.ts';
 
+const OVERSEAS_APPROVAL_PERSIST_CUTOVER = '2026-04-23T13:01:51.000Z';
+
 function parseArgs(argv = process.argv.slice(2)) {
   const daysArg = argv.find((arg) => arg.startsWith('--days='));
   return {
@@ -19,9 +21,9 @@ function parseArgs(argv = process.argv.slice(2)) {
 async function loadSignalRows(days = 14) {
   const safeDays = Math.max(1, Number(days || 14));
   const baseline = getExchangeEvidenceBaseline('kis_overseas');
-  const lowerBound = baseline
-    ? `GREATEST(now() - INTERVAL '${safeDays} days', TIMESTAMP '${baseline}')`
-    : `now() - INTERVAL '${safeDays} days'`;
+  const bounds = [`now() - INTERVAL '${safeDays} days'`, `TIMESTAMP '${OVERSEAS_APPROVAL_PERSIST_CUTOVER}'`];
+  if (baseline) bounds.push(`TIMESTAMP '${baseline}'`);
+  const lowerBound = `GREATEST(${bounds.join(', ')})`;
   return db.query(
     `SELECT
        status,
@@ -39,9 +41,9 @@ async function loadSignalRows(days = 14) {
 async function loadTradeRows(days = 14) {
   const safeDays = Math.max(1, Number(days || 14));
   const baseline = getExchangeEvidenceBaseline('kis_overseas');
-  const lowerBound = baseline
-    ? `GREATEST(now() - INTERVAL '${safeDays} days', TIMESTAMP '${baseline}')`
-    : `now() - INTERVAL '${safeDays} days'`;
+  const bounds = [`now() - INTERVAL '${safeDays} days'`, `TIMESTAMP '${OVERSEAS_APPROVAL_PERSIST_CUTOVER}'`];
+  if (baseline) bounds.push(`TIMESTAMP '${baseline}'`);
+  const lowerBound = `GREATEST(${bounds.join(', ')})`;
   return db.query(
     `SELECT
        paper,
@@ -153,12 +155,14 @@ export function buildCandidate(config, signalSummary) {
   return null;
 }
 
-export function buildDecision(signalSummary, tradeSummary, candidate = null) {
+export function buildDecision(signalSummary, tradeSummary, candidate = null, options = {}) {
   const baseline = getExchangeEvidenceBaseline('kis_overseas');
+  const approvalPersistCutover = options.approvalPersistCutover || null;
   let status = 'kis_overseas_autotune_idle';
   let headline = '실계좌 전환 이후 해외장 self-tune 후보가 아직 없습니다.';
   const reasons = [
     baseline ? `실계좌 기준선: ${baseline}` : null,
+    approvalPersistCutover ? `승인 메타 보존 수정 기준선: ${approvalPersistCutover}` : null,
     `BUY 표본 ${signalSummary.totalBuy}건 / 실행 ${signalSummary.executedSignals}건 / 실패 ${signalSummary.failedSignals}건`,
     `실효 실패 ${signalSummary.effectiveFailedSignals}건 / mock 노이즈 ${signalSummary.mockUnsupported}건`,
     `실행률 ${signalSummary.executionRate}% / 실거래 BUY ${tradeSummary.realBuyTrades}건`,
@@ -184,6 +188,10 @@ export function buildDecision(signalSummary, tradeSummary, candidate = null) {
   } else if (signalSummary.totalBuy > 0) {
     status = 'kis_overseas_autotune_observe';
     headline = '해외장 표본은 있지만 지금은 관찰 유지가 더 안전합니다.';
+  } else if (approvalPersistCutover) {
+    status = 'kis_overseas_waiting_post_fix_sample';
+    headline = '승인 메타 보존 수정 이후 해외장 신규 표본을 기다리는 상태입니다.';
+    actionItems.push('과거 nemesis_bypass_guard 표본은 수정 전 데이터로 보고, 신규 BUY 표본에서 승인 메타 전파와 실행 전환을 확인합니다.');
   }
 
   const topBlock = signalSummary.effectiveTopBlocks[0] || signalSummary.topBlocks[0] || null;
@@ -250,6 +258,9 @@ function buildFallback(payload = {}) {
   if (decision.status === 'kis_overseas_operational_blocker_attention') {
     return '해외장 실패는 설정값보다 실행 권한 또는 승인 메타 전파 경로 점검이 우선입니다.';
   }
+  if (decision.status === 'kis_overseas_waiting_post_fix_sample') {
+    return '해외장 승인 메타 보존 수정 이후 신규 표본을 기다리는 상태입니다.';
+  }
   if (decision.status === 'kis_overseas_autotune_observe') {
     return '해외장 표본은 있지만 아직은 즉시 조정보다 관찰 유지가 더 안전합니다.';
   }
@@ -266,7 +277,9 @@ export async function buildRuntimeKisOverseasAutotuneReport({ days = 14, json = 
   const signalSummary = summarizeSignals(signalRows);
   const tradeSummary = summarizeTrades(tradeRows);
   const candidate = buildCandidate(config, signalSummary);
-  const decision = buildDecision(signalSummary, tradeSummary, candidate);
+  const decision = buildDecision(signalSummary, tradeSummary, candidate, {
+    approvalPersistCutover: OVERSEAS_APPROVAL_PERSIST_CUTOVER,
+  });
 
   const payload = {
     ok: true,
@@ -277,6 +290,7 @@ export async function buildRuntimeKisOverseasAutotuneReport({ days = 14, json = 
     tradeSummary,
     candidate,
     decision,
+    approvalPersistCutover: OVERSEAS_APPROVAL_PERSIST_CUTOVER,
   };
 
   payload.aiSummary = await buildInvestmentCliInsight({

@@ -1,6 +1,7 @@
 // @ts-nocheck
 import * as db from '../shared/db.ts';
 import { createOrUpdatePositionStrategyProfile } from '../shared/strategy-profile.ts';
+import { buildSignalApprovalUpdate } from '../shared/signal-approval.ts';
 import { SIGNAL_STATUS } from '../shared/signal.ts';
 import { loadAnalysesForSession, loadLatestNodePayload, buildAnalystSignals } from './helpers.ts';
 
@@ -63,7 +64,10 @@ async function run({ sessionId, market, symbol, decision: decisionOverride = nul
   if (risk) {
     if (risk.approved) {
       status = SIGNAL_STATUS.APPROVED;
-      await db.updateSignalStatus(signalId, SIGNAL_STATUS.APPROVED);
+      await db.updateSignalApproval(signalId, buildSignalApprovalUpdate({
+        ...risk,
+        status: SIGNAL_STATUS.APPROVED,
+      }));
       if (risk.adjustedAmount != null) {
         await db.updateSignalAmount(signalId, risk.adjustedAmount);
       }

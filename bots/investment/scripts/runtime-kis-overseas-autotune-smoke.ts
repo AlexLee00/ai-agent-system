@@ -33,6 +33,12 @@ export function runRuntimeKisOverseasAutotuneSmoke() {
   assert.equal(operationalDecision.status, 'kis_overseas_operational_blocker_attention');
   assert.match(operationalDecision.actionItems.join(' '), /nemesis_verdict|approved_at|승인 메타/);
 
+  const waitingDecision = buildDecision(summarizeSignals([]), trades, null, {
+    approvalPersistCutover: '2026-04-23T13:01:51.000Z',
+  });
+  assert.equal(waitingDecision.status, 'kis_overseas_waiting_post_fix_sample');
+  assert.match(waitingDecision.headline, /신규 표본/);
+
   const thresholdSignals = summarizeSignals([
     { status: 'executed', block_code: 'none', cnt: 3 },
     { status: 'failed', block_code: 'min_order_notional', cnt: 6 },
