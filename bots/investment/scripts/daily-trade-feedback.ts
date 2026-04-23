@@ -284,12 +284,13 @@ function buildPositionStrategyCoverageLine(positionStrategyAuditSummary) {
   const managed = Number(positionStrategyAuditSummary.managedPositions || 0);
   const profiles = Number(positionStrategyAuditSummary.managedProfiles || 0);
   const dust = Number(positionStrategyAuditSummary.dustPositions || 0);
+  const duplicates = Number(positionStrategyAuditSummary.duplicateManagedProfileScopes || positionStrategyAuditSummary.duplicateActiveProfileScopes || 0);
   const lifecycle = positionStrategyAuditSummary.lifecycleDistribution || {};
   const lifecycleLine = Object.entries(lifecycle)
     .slice(0, 3)
     .map(([key, value]) => `${key} ${value}`)
     .join(' / ');
-  return `🧩 strategy coverage: managed ${managed} / profiles ${profiles} / dust ${dust}${lifecycleLine ? ` | ${lifecycleLine}` : ''}`;
+  return `🧩 strategy coverage: managed ${managed} / profiles ${profiles} / dust ${dust} / duplicateScopes ${duplicates}${lifecycleLine ? ` | ${lifecycleLine}` : ''}`;
 }
 
 function getLearningLoopNextCommand(learningLoopSummary) {

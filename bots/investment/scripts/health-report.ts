@@ -26,6 +26,7 @@ import { buildRuntimeLearningLoopReport } from './runtime-learning-loop-report.t
 import { runCollectionAudit } from './runtime-collection-audit.ts';
 import { runExecutionAttachAudit } from './runtime-execution-attach-audit.ts';
 import { runExecutionAttachBackfill } from './runtime-execution-attach-backfill.ts';
+import { buildRuntimePositionStrategyAudit } from './runtime-position-strategy-audit.ts';
 import { backfillTradeIncidentLinks } from './backfill-trade-incident-links.ts';
 import {
   buildGuardHealth,
@@ -663,6 +664,7 @@ function buildDecision(
   incidentLinkAudit,
   executionAttachAudit,
   executionAttachBackfill,
+  positionStrategyAudit,
   executionRiskApprovalGuardHealth,
 ) {
   const topBlock = signalBlockHealth.top[0] || null;
@@ -686,6 +688,8 @@ function buildDecision(
   const executionAttachSummary = executionAttachAudit?.summary || {};
   const executionAttachBackfillSummary = executionAttachBackfill?.summary || {};
   const executionAttachNeedsRepair = ['execution_attach_error', 'execution_attach_weak', 'execution_attach_partial'].includes(executionAttachAudit?.decision?.status);
+  const positionStrategyDuplicateScopes = Number(positionStrategyAudit?.duplicateManagedProfileScopes || positionStrategyAudit?.duplicateActiveProfileScopes || 0);
+  const positionStrategyOrphans = Number(positionStrategyAudit?.orphanProfiles || 0);
   return buildHealthDecision({
     warnings: [
       {
@@ -872,6 +876,16 @@ function buildDecision(
           && Number(executionAttachBackfillSummary.attachCandidates || 0) === 0,
         level: 'low',
         reason: `execution attach backfill blocked — open position 조건으로 ${executionAttachBackfillSummary.openPositionBlocked || 0}건 제외 / 실제 포지션 동기화 확인 필요`,
+      },
+      {
+        active: positionStrategyDuplicateScopes > 0,
+        level: positionStrategyAudit?.duplicateManagedProfileScopes > 0 ? 'medium' : 'low',
+        reason: `position strategy duplicate scopes — 동일 종목 active profile ${positionStrategyDuplicateScopes}개 scope / managed ${positionStrategyAudit?.duplicateManagedProfileScopes || 0} / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-audit`,
+      },
+      {
+        active: positionStrategyOrphans > 0,
+        level: 'low',
+        reason: `position strategy orphan profiles — live 포지션 없는 active profile ${positionStrategyOrphans}개 / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles`,
       },
     ],
     okReason: '핵심 서비스와 trade_review 정합성이 현재는 안정 구간입니다.',
@@ -1160,6 +1174,17 @@ function formatText(report) {
         : ['  execution attach audit 정보 없음'],
     },
     {
+      title: '■ position strategy audit',
+      lines: report.positionStrategyAudit
+        ? [
+            `  managed: ${report.positionStrategyAudit.managedPositions || 0} / profiles ${report.positionStrategyAudit.managedProfiles || 0} / dust ${report.positionStrategyAudit.dustPositions || 0}`,
+            `  unmatched managed: ${report.positionStrategyAudit.unmatchedManagedPositions || 0} / orphan ${report.positionStrategyAudit.orphanProfiles || 0} / duplicate active scopes ${report.positionStrategyAudit.duplicateActiveProfileScopes || 0} / duplicate managed scopes ${report.positionStrategyAudit.duplicateManagedProfileScopes || 0}`,
+            ...(report.positionStrategyAudit.duplicateProfileScopes || []).slice(0, 3).map((scope) => `  duplicate: ${scope.exchange}/${scope.symbol} count ${scope.count} keeper ${scope.keeperProfileId}`),
+            `  next command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-audit`,
+          ]
+        : ['  position strategy audit 정보 없음'],
+    },
+    {
       title: null,
       lines: buildHealthDecisionSection({
         title: '■ 운영 판단',
@@ -1234,6 +1259,7 @@ async function buildReport() {
   const collectionAudit = await runCollectionAudit({ markets: ['binance', 'kis', 'kis_overseas'], hours: 24 }).catch(() => null);
   const executionAttachAudit = await runExecutionAttachAudit({ days: 14, limit: 50 }).catch(() => null);
   const executionAttachBackfill = await runExecutionAttachBackfill({ days: 14, limit: 50, dryRun: true }).catch(() => null);
+  const positionStrategyAudit = await buildRuntimePositionStrategyAudit({ json: true }).catch(() => null);
   const incidentLinkAudit = await backfillTradeIncidentLinks({
     dryRun: true,
     json: true,
@@ -1268,6 +1294,7 @@ async function buildReport() {
     incidentLinkAudit,
     executionAttachAudit,
     executionAttachBackfill,
+    positionStrategyAudit,
     executionRiskApprovalGuardHealth,
   );
 
@@ -1299,6 +1326,7 @@ async function buildReport() {
     incidentLinkAudit,
     executionAttachAudit,
     executionAttachBackfill,
+    positionStrategyAudit,
     latestOpsSnapshot,
     capitalGuardBreakdown,
     cryptoGateActionPlan,

@@ -17,6 +17,44 @@ function countBy(rows = [], selector) {
   }, {});
 }
 
+function profileScopeKey(row = {}) {
+  return `${String(row.exchange || '').trim()}:${String(row.symbol || '').trim()}`;
+}
+
+export function buildDuplicateActiveProfileScopes(activeProfiles = []) {
+  const grouped = new Map();
+  for (const profile of activeProfiles) {
+    const key = profileScopeKey(profile);
+    if (!key || key === ':') continue;
+    const current = grouped.get(key) || [];
+    current.push(profile);
+    grouped.set(key, current);
+  }
+  return [...grouped.entries()]
+    .filter(([, profiles]) => profiles.length > 1)
+    .map(([key, profiles]) => {
+      const [exchange, symbol] = key.split(':');
+      const sorted = [...profiles].sort((a, b) => {
+        const aTime = new Date(a.updated_at || a.created_at || 0).getTime();
+        const bTime = new Date(b.updated_at || b.created_at || 0).getTime();
+        return bTime - aTime;
+      });
+      const keeper = sorted[0] || null;
+      return {
+        key,
+        exchange,
+        symbol,
+        count: profiles.length,
+        keeperProfileId: keeper?.id || null,
+        duplicateProfileIds: sorted.slice(1).map((row) => row.id).filter(Boolean),
+        tradeModes: [...new Set(profiles.map((row) => String(row.trade_mode || 'normal')))],
+        setupTypes: [...new Set(profiles.map((row) => String(row.setup_type || 'unknown')))],
+        lifecycleStatuses: [...new Set(profiles.map((row) => String(row?.strategy_state?.lifecycleStatus || 'unknown')))],
+      };
+    })
+    .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
+}
+
 function getDustThresholdUsdt() {
   const syncRuntime = getInvestmentSyncRuntimeConfig();
   const threshold = Number(syncRuntime?.cryptoMinNotionalUsdt);
@@ -65,6 +103,8 @@ export async function buildRuntimePositionStrategyAudit({ json = false } = {}) {
   });
   const managedProfiles = activeProfiles.filter((profile) => managedSymbols.has(`${profile.exchange}:${profile.symbol}`));
   const dustProfiles = activeProfiles.filter((profile) => dustSymbols.has(`${profile.exchange}:${profile.symbol}`));
+  const duplicateActiveProfileScopes = buildDuplicateActiveProfileScopes(activeProfiles);
+  const duplicateManagedProfileScopes = duplicateActiveProfileScopes.filter((scope) => managedSymbols.has(`${scope.exchange}:${scope.symbol}`));
 
   const lifecycleDistribution = countBy(
     managedProfiles,
@@ -116,6 +156,9 @@ export async function buildRuntimePositionStrategyAudit({ json = false } = {}) {
     unmatchedManagedPositions: positionsWithoutProfiles.filter((row) => !dustSymbols.has(`${row.exchange}:${row.symbol}`)).length,
     unmatchedDustPositions: positionsWithoutProfiles.filter((row) => dustSymbols.has(`${row.exchange}:${row.symbol}`)).length,
     orphanProfiles: orphanProfiles.length,
+    duplicateActiveProfileScopes: duplicateActiveProfileScopes.length,
+    duplicateManagedProfileScopes: duplicateManagedProfileScopes.length,
+    duplicateActiveProfiles: duplicateActiveProfileScopes.reduce((sum, scope) => sum + Math.max(0, Number(scope.count || 0) - 1), 0),
     responsibilityCoverage,
     responsibilityCoveragePct: {
       owner: managedProfiles.length ? safeNumber((responsibilityCoverage.owner / managedProfiles.length) * 100) : 0,
@@ -145,6 +188,7 @@ export async function buildRuntimePositionStrategyAudit({ json = false } = {}) {
       setupType: row.setup_type,
       lifecycleStatus: row?.strategy_state?.lifecycleStatus || 'unknown',
     })),
+    duplicateProfileScopes: duplicateActiveProfileScopes.slice(0, 20),
     orphanSymbols: orphanProfiles.map((row) => ({
       symbol: row.symbol,
       exchange: row.exchange,
