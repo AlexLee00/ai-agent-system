@@ -902,16 +902,68 @@ function buildStrategyFeedbackOutcomeSuggestions(strategyFeedbackOutcomes = null
   return suggestions;
 }
 
-function buildRiskApprovalSuggestions(riskApproval = null, riskApprovalTrend = null) {
+export function buildRiskApprovalSuggestions(riskApproval = null, riskApprovalTrend = null, config = null) {
   const suggestions = [];
   const decision = riskApproval?.decision || {};
   const summary = riskApproval?.summary || {};
   const topModel = summary.modelRows?.[0] || null;
+  const outcome = summary.outcome || {};
+  const outcomeTotal = outcome.total || {};
+  const weakestOutcomeMode = [...(outcome.byMode || [])]
+    .filter(item => Number(item.closed || 0) >= 3 && item.avgPnlPercent != null)
+    .sort((a, b) => Number(a.avgPnlPercent) - Number(b.avgPnlPercent))[0] || null;
+  const strongestOutcomeMode = [...(outcome.byMode || [])]
+    .filter(item => Number(item.closed || 0) >= 3 && item.avgPnlPercent != null)
+    .sort((a, b) => Number(b.avgPnlPercent) - Number(a.avgPnlPercent))[0] || null;
+  const weakestOutcomeModel = [...(outcome.byModel || [])]
+    .filter(item => Number(item.closed || 0) >= 3 && item.avgPnlPercent != null)
+    .sort((a, b) => Number(a.avgPnlPercent) - Number(b.avgPnlPercent))[0] || null;
   const total = Number(summary.total || 0);
   const previewRejects = Number(summary.previewRejects || 0);
   const divergence = Number(summary.legacyApprovedPreviewRejected || 0);
   const delta = riskApprovalTrend?.delta || {};
   const divergenceDelta = Number(delta.legacyApprovedPreviewRejected || 0);
+  const currentAssistMaxReductionPct = Number(config?.nemesis?.riskApprovalChain?.assist?.maxReductionPct ?? 0.35);
+
+  if (weakestOutcomeMode && Number(weakestOutcomeMode.avgPnlPercent) < 0) {
+    suggestions.push({
+      key: 'runtime_config.nemesis.riskApprovalChain.assist.maxReductionPct',
+      current: currentAssistMaxReductionPct,
+      suggested: round(clamp(currentAssistMaxReductionPct + 0.05, 0.1, 0.5), 2),
+      action: 'adjust',
+      confidence: Number(weakestOutcomeMode.closed || 0) >= 10 ? 'medium' : 'low',
+      reason: `리스크 승인 ${weakestOutcomeMode.mode || 'unknown'} 모드의 사후 성과가 종료 ${weakestOutcomeMode.closed}/${weakestOutcomeMode.total}건 기준 평균 손익 ${weakestOutcomeMode.avgPnlPercent}% / 승률 ${weakestOutcomeMode.winRate ?? 'n/a'}% / PnL ${weakestOutcomeMode.pnlNet ?? 0}입니다. 승인 체인이 줄인 포지션도 음수 성과라 assist 최대 감산폭을 ${currentAssistMaxReductionPct} -> ${round(clamp(currentAssistMaxReductionPct + 0.05, 0.1, 0.5), 2)}로 키우는 비교 후보입니다.`,
+    });
+  } else if (strongestOutcomeMode && Number(strongestOutcomeMode.avgPnlPercent) > 0.5) {
+    suggestions.push({
+      key: 'runtime_config.nemesis.riskApprovalChain.outcomeMonitor',
+      current: 'outcome_observed',
+      suggested: 'preserve_current_mode_baseline',
+      action: 'observe',
+      confidence: Number(strongestOutcomeMode.closed || 0) >= 10 ? 'medium' : 'low',
+      reason: `리스크 승인 ${strongestOutcomeMode.mode || 'unknown'} 모드는 종료 ${strongestOutcomeMode.closed}/${strongestOutcomeMode.total}건 기준 평균 손익 ${strongestOutcomeMode.avgPnlPercent}% / 승률 ${strongestOutcomeMode.winRate ?? 'n/a'}%입니다. 즉시 완화하기보다 현재 모드를 기준선으로 유지하며 enforce 전환 후보와 비교합니다.`,
+    });
+  } else if (Number(outcomeTotal.total || 0) > 0) {
+    suggestions.push({
+      key: 'runtime_config.nemesis.riskApprovalChain.outcomeMonitor',
+      current: 'outcome_observed',
+      suggested: 'collect_closed_outcome_samples',
+      action: 'observe',
+      confidence: Number(outcomeTotal.closed || 0) >= 10 ? 'medium' : 'low',
+      reason: `리스크 승인 사후 성과가 total ${outcomeTotal.total || 0}건 / closed ${outcomeTotal.closed || 0}건 / PnL ${outcomeTotal.pnlNet ?? 0}로 누적 중입니다. 아직 모드별 성과 표본이 얇아 감산율 변경보다 종료 표본 추가 누적이 우선입니다.`,
+    });
+  }
+
+  if (weakestOutcomeModel && Number(weakestOutcomeModel.avgPnlPercent) < 0) {
+    suggestions.push({
+      key: `runtime_config.nemesis.riskApprovalChain.model.${weakestOutcomeModel.model || 'unknown'}.outcomeReview`,
+      current: 'outcome_observed',
+      suggested: 'tighten_model_reduction_or_reject_threshold',
+      action: Number(weakestOutcomeModel.closed || 0) >= 10 ? 'promote_candidate' : 'observe',
+      confidence: Number(weakestOutcomeModel.closed || 0) >= 10 ? 'medium' : 'low',
+      reason: `${weakestOutcomeModel.model || 'unknown'} 모델이 관여한 승인 결과가 종료 ${weakestOutcomeModel.closed}/${weakestOutcomeModel.total}건 기준 평균 손익 ${weakestOutcomeModel.avgPnlPercent}% / PnL ${weakestOutcomeModel.pnlNet ?? 0}입니다. 해당 모델의 감산·거절 임계값을 사후 성과 기준으로 재점검하는 후보입니다.`,
+    });
+  }
 
   if (decision.status === 'risk_approval_preview_divergence') {
     suggestions.push({
@@ -929,7 +981,7 @@ function buildRiskApprovalSuggestions(riskApproval = null, riskApprovalTrend = n
       suggested: previewRejects > 0 ? 'continue_preview_with_reject_sampling' : 'continue_preview_sampling',
       action: 'observe',
       confidence: total >= 20 ? 'medium' : 'low',
-      reason: `리스크 승인 preview가 ${total}건 누적됐고 preview reject ${previewRejects}건 / divergence ${divergence}건입니다. 현재는 기존 승인 흐름과 큰 충돌이 없어 shadow 표본을 더 쌓는 단계입니다.`,
+      reason: `리스크 승인 preview가 ${total}건 누적됐고 preview reject ${previewRejects}건 / divergence ${divergence}건 / closed outcome ${outcomeTotal.closed || 0}건입니다. 현재는 기존 승인 흐름과 큰 충돌이 없어 shadow 표본과 종료 성과를 함께 더 쌓는 단계입니다.`,
     });
   } else {
     suggestions.push({
@@ -1186,7 +1238,7 @@ function buildSuggestions(
     ...buildRegimeLaneSuggestions(config, executionConfig, regimeLaneSummary),
     ...buildStrategyFamilySuggestions(strategyFamilySummary),
     ...buildStrategyFeedbackOutcomeSuggestions(strategyFeedbackOutcomes),
-    ...buildRiskApprovalSuggestions(riskApproval, riskApprovalTrend),
+    ...buildRiskApprovalSuggestions(riskApproval, riskApprovalTrend, config),
     ...buildRiskApprovalReadinessSuggestions(riskApprovalReadiness, riskApprovalReadinessTrend),
     ...buildRiskApprovalModeAuditSuggestions(riskApprovalModeAudit, riskApprovalModeAuditTrend),
     ...buildExecutionRiskGuardSuggestions(executionRiskGuard, executionRiskGuardTrend),
@@ -1334,8 +1386,16 @@ function printHuman(report) {
     lines.push('risk approval preview 요약:');
     lines.push(`- ${decision.status}: ${decision.headline}`);
     lines.push(`  preview ${summary.total || 0} / rejects ${summary.previewRejects || 0} / divergence ${summary.legacyApprovedPreviewRejected || 0} / amount delta ${summary.amount?.previewVsApprovedDelta ?? 0}`);
+    if (summary.outcome?.total) {
+      const outcome = summary.outcome.total;
+      const topOutcomeMode = summary.outcome.byMode?.[0] || null;
+      lines.push(`  outcome closed ${outcome.closed || 0}/${outcome.total || 0} / win ${outcome.winRate ?? 'n/a'}% / avg ${outcome.avgPnlPercent ?? 'n/a'}% / pnl ${outcome.pnlNet ?? 0}`);
+      if (topOutcomeMode) {
+        lines.push(`  outcome mode ${topOutcomeMode.mode || 'n/a'} / closed ${topOutcomeMode.closed || 0}/${topOutcomeMode.total || 0} / avg ${topOutcomeMode.avgPnlPercent ?? 'n/a'}%`);
+      }
+    }
     if (trend?.delta) {
-      lines.push(`  trend: history ${trend.historyCount || 0} / preview Δ${trend.delta.total ?? 0} / reject Δ${trend.delta.previewRejects ?? 0} / divergence Δ${trend.delta.legacyApprovedPreviewRejected ?? 0}`);
+      lines.push(`  trend: history ${trend.historyCount || 0} / preview Δ${trend.delta.total ?? 0} / reject Δ${trend.delta.previewRejects ?? 0} / divergence Δ${trend.delta.legacyApprovedPreviewRejected ?? 0} / outcome closed Δ${trend.delta.outcomeClosed ?? 0} / pnl Δ${trend.delta.outcomePnlNet ?? 0}`);
     }
   }
   if (report.riskApprovalReadiness?.decision) {

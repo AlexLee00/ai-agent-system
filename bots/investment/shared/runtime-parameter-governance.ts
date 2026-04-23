@@ -139,12 +139,13 @@ export function getParameterGovernance(key) {
     return {
       key,
       tier: 'observe',
-      label: '리스크 승인 모델별 divergence 검토',
+      label: '리스크 승인 모델별 성과 검토',
       current: 'shadow_preview',
     };
   }
   if ([
     'runtime_config.nemesis.riskApprovalChain.shadowMonitor',
+    'runtime_config.nemesis.riskApprovalChain.outcomeMonitor',
     'runtime_config.nemesis.riskApprovalChain.executionBypassReview',
     'runtime_config.nemesis.riskApprovalChain.executionGuardMonitor',
   ].includes(String(key || ''))) {

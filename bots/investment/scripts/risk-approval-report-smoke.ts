@@ -7,6 +7,7 @@ import {
   buildRuntimeRiskApprovalDecision,
   summarizeRuntimeRiskApprovalRows,
 } from './runtime-risk-approval-report.ts';
+import { buildRiskApprovalSuggestions } from './runtime-config-suggestions.ts';
 
 function row({
   symbol = 'TEST/USDT',
@@ -134,6 +135,55 @@ export function runRiskApprovalReportSmoke() {
   assert.equal(outcome.summary.outcome.byMode[0].mode, 'assist');
   assert.equal(outcome.summary.outcome.byModel[0].model, 'regime_risk');
 
+  const outcomeSuggestions = buildRiskApprovalSuggestions({
+    decision: { status: 'risk_approval_preview_ok' },
+    summary: outcome.summary,
+  }, {
+    delta: { legacyApprovedPreviewRejected: 0 },
+  }, {
+    nemesis: { riskApprovalChain: { assist: { maxReductionPct: 0.35 } } },
+  });
+  assert.equal(
+    outcomeSuggestions.some((item) => item.key === 'runtime_config.nemesis.riskApprovalChain.outcomeMonitor'),
+    true,
+  );
+
+  const weakOutcome = decide([
+    row({
+      application: { mode: 'assist', applied: true, amountBefore: 100, amountAfter: 85, previewStatus: 'adjust' },
+      steps: [{ model: 'feedback_risk', decision: 'ADJUST', amountBefore: 100, amountAfter: 85, reason: 'weak feedback' }],
+      closed: true,
+      pnlNet: -1,
+      pnlPercent: -0.1,
+    }),
+    row({
+      application: { mode: 'assist', applied: true, amountBefore: 100, amountAfter: 85, previewStatus: 'adjust' },
+      steps: [{ model: 'feedback_risk', decision: 'ADJUST', amountBefore: 100, amountAfter: 85, reason: 'weak feedback' }],
+      closed: true,
+      pnlNet: -2,
+      pnlPercent: -0.2,
+    }),
+    row({
+      application: { mode: 'assist', applied: true, amountBefore: 100, amountAfter: 85, previewStatus: 'adjust' },
+      steps: [{ model: 'feedback_risk', decision: 'ADJUST', amountBefore: 100, amountAfter: 85, reason: 'weak feedback' }],
+      closed: true,
+      pnlNet: -3,
+      pnlPercent: -0.3,
+    }),
+  ]);
+  const weakSuggestions = buildRiskApprovalSuggestions({
+    decision: { status: 'risk_approval_preview_ok' },
+    summary: weakOutcome.summary,
+  }, null, {
+    nemesis: { riskApprovalChain: { assist: { maxReductionPct: 0.35 } } },
+  });
+  const assistTighten = weakSuggestions.find((item) => item.key === 'runtime_config.nemesis.riskApprovalChain.assist.maxReductionPct');
+  assert.equal(assistTighten?.suggested, 0.4);
+  assert.equal(
+    weakSuggestions.some((item) => item.key === 'runtime_config.nemesis.riskApprovalChain.model.feedback_risk.outcomeReview'),
+    true,
+  );
+
   return {
     ok: true,
     empty,
@@ -143,6 +193,8 @@ export function runRiskApprovalReportSmoke() {
     reduction: reduction.summary.application,
     unavailable: unavailable.summary.amount.byPreviewStatus,
     outcome: outcome.summary.outcome.total,
+    outcomeSuggestions: outcomeSuggestions.map((item) => item.key),
+    weakOutcomeSuggestions: weakSuggestions.map((item) => item.key),
   };
 }
 
