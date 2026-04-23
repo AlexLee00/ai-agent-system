@@ -51,6 +51,7 @@
     "runtime:decision-history": "node scripts/runtime-decision-history.ts --limit=5",
     "runtime:learning-loop": "node scripts/runtime-learning-loop-report.ts",
     "runtime:strategy-family": "node scripts/runtime-strategy-family-report.ts",
+    "runtime:strategy-feedback-outcomes": "node scripts/runtime-strategy-feedback-outcomes.ts",
     "runtime:market-coverage": "node scripts/runtime-market-coverage-report.ts",
     "runtime:market-coverage-history": "node scripts/runtime-market-coverage-history.ts",
     "runtime:planner-coverage": "node scripts/runtime-planner-coverage-report.ts",

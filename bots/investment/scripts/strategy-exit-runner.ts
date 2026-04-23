@@ -90,6 +90,16 @@ function normalizeFamilyPerformanceFeedback(feedback = null) {
   return feedback && typeof feedback === 'object' ? feedback : {};
 }
 
+function buildFamilyFeedbackIncidentSuffix(strategyProfile = null) {
+  const feedback = normalizeFamilyPerformanceFeedback(strategyProfile?.familyPerformanceFeedback);
+  const bias = String(feedback?.bias || '').trim();
+  if (!bias || bias === 'unknown') return '';
+  const family = String(feedback?.family || strategyProfile?.setupType || 'unknown').trim();
+  const winRate = feedback?.winRatePct != null ? `:winRate=${feedback.winRatePct}` : '';
+  const avgPnl = feedback?.avgPnlPercent != null ? `:avgPnl=${feedback.avgPnlPercent}` : '';
+  return `:family_bias=${bias}:family=${family}${winRate}${avgPnl}`;
+}
+
 function buildExitReason(candidate) {
   const exitPlan = normalizeExitPlan(candidate?.strategyProfile?.exitPlan);
   const primary = String(exitPlan.primaryExit || '').trim();
@@ -176,6 +186,15 @@ function applyExitPlanGuard(candidate) {
 
 function mapCandidate(row, strategyProfile = null) {
   const heldHours = heldHoursFromEntry(row?.positionSnapshot?.entryTime);
+  const strategyProfileSnapshot = strategyProfile ? {
+    strategyName: strategyProfile.strategy_name || null,
+    setupType: strategyProfile.setup_type || null,
+    exitPlan: strategyProfile.exit_plan || {},
+    strategyState: strategyProfile.strategy_state || {},
+    executionPlan: strategyProfile.strategy_context?.executionPlan || {},
+    familyPerformanceFeedback: strategyProfile.strategy_context?.familyPerformanceFeedback || {},
+    responsibilityPlan: strategyProfile.strategy_context?.responsibilityPlan || {},
+  } : null;
   const candidate = {
     exchange: row.exchange,
     symbol: row.symbol,
@@ -186,15 +205,7 @@ function mapCandidate(row, strategyProfile = null) {
     positionAmount: safeNumber(row?.positionSnapshot?.amount),
     positionValue: safeNumber(row?.positionSnapshot?.amount) * safeNumber(row?.positionSnapshot?.avgPrice),
     heldHours,
-    strategyProfile: strategyProfile ? {
-      strategyName: strategyProfile.strategy_name || null,
-      setupType: strategyProfile.setup_type || null,
-      exitPlan: strategyProfile.exit_plan || {},
-      strategyState: strategyProfile.strategy_state || {},
-      executionPlan: strategyProfile.strategy_context?.executionPlan || {},
-      familyPerformanceFeedback: strategyProfile.strategy_context?.familyPerformanceFeedback || {},
-      responsibilityPlan: strategyProfile.strategy_context?.responsibilityPlan || {},
-    } : null,
+    strategyProfile: strategyProfileSnapshot,
   };
   const guard = applyExitPlanGuard(candidate);
   if (candidate.strategyProfile) {
@@ -207,6 +218,7 @@ function mapCandidate(row, strategyProfile = null) {
   return {
     ...candidate,
     exitReasonOverride: buildExitReason(candidate),
+    signalIncidentLink: `${buildExitReason(candidate)}${buildFamilyFeedbackIncidentSuffix(candidate.strategyProfile)}`,
     executionGuard: guard,
   };
 }
@@ -368,6 +380,7 @@ async function getExecutionPreflight(candidate) {
 }
 
 async function createStrategyExitSignal(candidate) {
+  const incidentLink = candidate.signalIncidentLink || `${candidate.exitReasonOverride}${buildFamilyFeedbackIncidentSuffix(candidate.strategyProfile)}`;
   const signalId = await db.insertSignal({
     symbol: candidate.symbol,
     action: 'SELL',
@@ -381,14 +394,14 @@ async function createStrategyExitSignal(candidate) {
     executionOrigin: 'strategy',
     qualityFlag: 'trusted',
     excludeFromLearning: false,
-    incidentLink: `strategy_exit:${candidate.reasonCode || 'reeval_exit'}`,
+    incidentLink,
   });
   const signal = await db.getSignalById(signalId);
   return {
     ...signal,
     exchange: candidate.exchange,
     trade_mode: candidate.tradeMode,
-    exit_reason_override: candidate.exitReasonOverride,
+    exit_reason_override: incidentLink,
   };
 }
 

@@ -159,12 +159,32 @@ function normalizeRatio(value) {
   return Number(parsed.toFixed(4));
 }
 
+function buildFamilyFeedbackIncidentSuffix(strategyProfile = null) {
+  const feedback = strategyProfile?.familyPerformanceFeedback || {};
+  const bias = String(feedback?.bias || '').trim();
+  if (!bias || bias === 'unknown') return '';
+  const family = String(feedback?.family || strategyProfile?.setupType || 'unknown').trim();
+  const winRate = feedback?.winRatePct != null ? `:winRate=${feedback.winRatePct}` : '';
+  const avgPnl = feedback?.avgPnlPercent != null ? `:avgPnl=${feedback.avgPnlPercent}` : '';
+  return `:family_bias=${bias}:family=${family}${winRate}${avgPnl}`;
+}
+
 function mapCandidate(row, strategyProfile = null, overrideRatio = null) {
   const ratio = normalizeRatio(overrideRatio) ?? getStrategyAwarePartialExitRatio(row.reasonCode, strategyProfile);
   const positionAmount = Number(row?.positionSnapshot?.amount || 0);
   const avgPrice = Number(row?.positionSnapshot?.avgPrice || 0);
   const estimatedNotional = positionAmount * avgPrice;
   const estimatedExitAmount = positionAmount * ratio;
+  const strategyProfileSnapshot = strategyProfile ? {
+    strategyName: strategyProfile.strategy_name || null,
+    setupType: strategyProfile.setup_type || null,
+    exitPlan: strategyProfile.exit_plan || strategyProfile.exitPlan || null,
+    strategyState: strategyProfile.strategy_state || {},
+    executionPlan: getExecutionPlan(strategyProfile),
+    familyPerformanceFeedback: getFamilyPerformanceFeedback(strategyProfile),
+    responsibilityPlan: strategyProfile.strategy_context?.responsibilityPlan || {},
+  } : null;
+  const signalIncidentLink = `partial_adjust:${row.reasonCode || 'unknown'}${buildFamilyFeedbackIncidentSuffix(strategyProfileSnapshot)}`;
   return {
     exchange: row.exchange,
     symbol: row.symbol,
@@ -177,15 +197,8 @@ function mapCandidate(row, strategyProfile = null, overrideRatio = null) {
     avgPrice,
     estimatedNotional,
     estimatedExitAmount,
-    strategyProfile: strategyProfile ? {
-      strategyName: strategyProfile.strategy_name || null,
-      setupType: strategyProfile.setup_type || null,
-      exitPlan: strategyProfile.exit_plan || strategyProfile.exitPlan || null,
-      strategyState: strategyProfile.strategy_state || {},
-      executionPlan: getExecutionPlan(strategyProfile),
-      familyPerformanceFeedback: getFamilyPerformanceFeedback(strategyProfile),
-      responsibilityPlan: strategyProfile.strategy_context?.responsibilityPlan || {},
-    } : null,
+    signalIncidentLink,
+    strategyProfile: strategyProfileSnapshot,
   };
 }
 
@@ -267,6 +280,7 @@ async function loadCandidates({ tradeMode = null, minutesBack = 180, ratio = nul
 }
 
 async function createPartialAdjustSignal(candidate) {
+  const incidentLink = candidate.signalIncidentLink || `partial_adjust:${candidate.reasonCode}${buildFamilyFeedbackIncidentSuffix(candidate.strategyProfile)}`;
   const signalId = await db.insertSignal({
     symbol: candidate.symbol,
     action: 'SELL',
@@ -281,7 +295,7 @@ async function createPartialAdjustSignal(candidate) {
     executionOrigin: 'strategy',
     qualityFlag: 'trusted',
     excludeFromLearning: false,
-    incidentLink: `partial_adjust:${candidate.reasonCode}`,
+    incidentLink,
   });
 
   const signal = await db.getSignalById(signalId);
@@ -289,7 +303,7 @@ async function createPartialAdjustSignal(candidate) {
     ...signal,
     exchange: candidate.exchange,
     trade_mode: candidate.tradeMode,
-    exit_reason_override: `partial_adjust:${candidate.reasonCode}`,
+    exit_reason_override: incidentLink,
     partial_exit_ratio: candidate.partialExitRatio,
   };
 }
