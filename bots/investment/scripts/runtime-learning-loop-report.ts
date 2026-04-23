@@ -21,6 +21,7 @@ import { buildRuntimeRiskApprovalModeAudit } from './runtime-risk-approval-mode-
 import { buildRuntimeRiskApprovalModeAuditHistory } from './runtime-risk-approval-mode-audit-history.ts';
 import { buildRuntimeExecutionRiskGuardReport } from './runtime-execution-risk-guard-report.ts';
 import { buildRuntimeExecutionRiskGuardHistory } from './runtime-execution-risk-guard-history.ts';
+import { reconcileOpenJournals } from './reconcile-open-journals.ts';
 
 function parseArgs(argv = process.argv.slice(2)) {
   const daysArg = argv.find((arg) => arg.startsWith('--days='));
@@ -563,6 +564,7 @@ function buildSectionStates({
   riskApprovalModeAuditTrend,
   executionRiskGuard,
   executionRiskGuardTrend,
+  openJournalReconcile,
 }) {
   const runtimeAge = ageHours(freshness.latestRuntimeSessionAt);
   const reviewAge = ageHours(freshness.latestTradeReviewAt);
@@ -704,6 +706,19 @@ function buildSectionStates({
         previousStatus: executionRiskGuardTrend.previous?.status || null,
         delta: executionRiskGuardTrend.delta || {},
       } : null,
+    } : null,
+    openJournalReconcile: openJournalReconcile ? {
+      dryRun: openJournalReconcile.dryRun !== false,
+      totalScopes: Number(openJournalReconcile.totalScopes || 0),
+      candidates: Number(openJournalReconcile.candidates || 0),
+      affectedTradeCount: Number(openJournalReconcile.summary?.affectedTradeCount || 0),
+      noPositionScopes: Number(openJournalReconcile.summary?.noPositionScopes || 0),
+      duplicateScopes: Number(openJournalReconcile.summary?.duplicateScopes || 0),
+      observeScopes: Number(openJournalReconcile.summary?.observeScopes || 0),
+      topActions: openJournalReconcile.summary?.byAction || {},
+      sampleResults: (openJournalReconcile.results || []).slice(0, 5),
+      command: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:reconcile-open-journals',
+      writeCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:reconcile-open-journals -- --write',
     } : null,
   };
 
@@ -860,6 +875,10 @@ function buildDecision(sections = {}) {
   if (feedbackRepairAction && !nextActions.includes(feedbackRepairAction)) {
     nextActions.push(feedbackRepairAction);
   }
+  if (Number(sections.collect.openJournalReconcile?.candidates || 0) > 0) {
+    const action = `open journal 정리 후보 ${sections.collect.openJournalReconcile.candidates}개 scope / ${sections.collect.openJournalReconcile.affectedTradeCount}개 trade를 dry-run으로 확인합니다: ${sections.collect.openJournalReconcile.command}`;
+    if (!nextActions.includes(action)) nextActions.push(action);
+  }
 
   return {
     status,
@@ -954,6 +973,9 @@ function renderText(payload) {
     sections.collect.executionRiskGuard?.trend
       ? `- execution risk guard trend history ${sections.collect.executionRiskGuard.trend.historyCount} | total delta ${sections.collect.executionRiskGuard.trend.delta?.total ?? 0} / stale delta ${sections.collect.executionRiskGuard.trend.delta?.staleCount ?? 0} / bypass delta ${sections.collect.executionRiskGuard.trend.delta?.bypassCount ?? 0}`
       : null,
+    sections.collect.openJournalReconcile
+      ? `- open journal reconcile dryRun ${sections.collect.openJournalReconcile.dryRun} | candidates ${sections.collect.openJournalReconcile.candidates} / affected trades ${sections.collect.openJournalReconcile.affectedTradeCount} / no-position ${sections.collect.openJournalReconcile.noPositionScopes}`
+      : null,
     buildRegimeActionHint(sections.collect.regimePerformance?.weakestRegime, 'weak')
       ? `- tuning hint ${buildRegimeActionHint(sections.collect.regimePerformance?.weakestRegime, 'weak')}`
       : null,
@@ -1033,7 +1055,7 @@ function buildFallback(payload = {}) {
 }
 
 export async function buildRuntimeLearningLoopReport({ days = 14, json = false } = {}) {
-  const [freshness, runtimeDecision, executionGate, autotune, runtimeSuggestions, backtest, validation, regimeCoverage, regimePerformance, strategyFamilyPerformance, strategyFeedbackOutcomes, strategyFeedbackOutcomeTrend, riskApproval, riskApprovalTrend, riskApprovalReadiness, riskApprovalReadinessTrend, riskApprovalModeAudit, riskApprovalModeAuditTrend, executionRiskGuard, executionRiskGuardTrend, collectionAudit] = await Promise.all([
+  const [freshness, runtimeDecision, executionGate, autotune, runtimeSuggestions, backtest, validation, regimeCoverage, regimePerformance, strategyFamilyPerformance, strategyFeedbackOutcomes, strategyFeedbackOutcomeTrend, riskApproval, riskApprovalTrend, riskApprovalReadiness, riskApprovalReadinessTrend, riskApprovalModeAudit, riskApprovalModeAuditTrend, executionRiskGuard, executionRiskGuardTrend, collectionAudit, openJournalReconcile] = await Promise.all([
     loadLoopFreshness(),
     buildRuntimeDecisionReport({ market: 'all', limit: 5, json: true }).catch(() => ({ count: 0, summary: {}, rows: [] })),
     buildRuntimeCryptoExecutionGateReport({ days, json: true }).catch(() => ({ decision: {} })),
@@ -1055,6 +1077,7 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
     buildRuntimeExecutionRiskGuardReport({ days: 14, json: true }).catch(() => null),
     buildRuntimeExecutionRiskGuardHistory({ days: 14, json: true, write: false }).catch(() => null),
     runCollectionAudit({ markets: ['binance', 'kis', 'kis_overseas'], hours: 24 }).catch(() => null),
+    reconcileOpenJournals({ dryRun: true, market: 'crypto' }).catch(() => null),
   ]);
 
   const sections = buildSectionStates({
@@ -1079,6 +1102,7 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
     executionRiskGuard,
     executionRiskGuardTrend,
     collectionAudit,
+    openJournalReconcile,
   });
   const decision = buildDecision(sections);
 
@@ -1108,6 +1132,7 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
     backtest,
     validation,
     collectionAudit,
+    openJournalReconcile,
   };
 
   payload.aiSummary = await buildInvestmentCliInsight({
@@ -1137,6 +1162,7 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
       backtest: backtest.decision,
       validation,
       collectionAudit,
+      openJournalReconcile,
     },
     fallback: buildFallback(payload),
   });
