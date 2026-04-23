@@ -19,6 +19,7 @@ import { buildRuntimeRiskApprovalHistory } from './runtime-risk-approval-history
 import { buildRuntimeRiskApprovalReadiness } from './runtime-risk-approval-readiness.ts';
 import { buildRuntimeRiskApprovalReadinessHistory } from './runtime-risk-approval-readiness-history.ts';
 import { buildRuntimeRiskApprovalModeAudit } from './runtime-risk-approval-mode-audit.ts';
+import { buildRuntimeRiskApprovalModeAuditHistory } from './runtime-risk-approval-mode-audit-history.ts';
 import { buildRuntimeExecutionRiskGuardReport } from './runtime-execution-risk-guard-report.ts';
 import { buildRuntimeExecutionRiskGuardHistory } from './runtime-execution-risk-guard-history.ts';
 import { buildInvestmentCliInsight } from '../shared/cli-insight.ts';
@@ -1034,10 +1035,11 @@ function buildRiskApprovalReadinessSuggestions(riskApprovalReadiness = null, ris
   return suggestions;
 }
 
-function buildRiskApprovalModeAuditSuggestions(riskApprovalModeAudit = null) {
+function buildRiskApprovalModeAuditSuggestions(riskApprovalModeAudit = null, riskApprovalModeAuditTrend = null) {
   const suggestions = [];
   const decision = riskApprovalModeAudit?.decision || {};
   const metrics = decision.metrics || {};
+  const delta = riskApprovalModeAuditTrend?.delta || {};
   if (decision.status === 'risk_approval_mode_audit_attention') {
     suggestions.push({
       key: 'runtime_config.nemesis.riskApprovalChain.mode',
@@ -1045,7 +1047,7 @@ function buildRiskApprovalModeAuditSuggestions(riskApprovalModeAudit = null) {
       suggested: 'shadow_until_audit_clears',
       action: 'hold',
       confidence: 'medium',
-      reason: `${decision.headline || '리스크 승인 mode audit attention'} readiness ${metrics.readinessStatus || 'unknown'} / blockers ${metrics.blockerCount || 0} / non-shadow applications ${metrics.nonShadowApplications || 0}. mode 전환보다 설정 drift나 조기 적용 여부를 먼저 점검합니다.`,
+      reason: `${decision.headline || '리스크 승인 mode audit attention'} readiness ${metrics.readinessStatus || 'unknown'} / blockers ${metrics.blockerCount || 0} / non-shadow applications ${metrics.nonShadowApplications || 0}(Δ${delta.nonShadowApplications ?? 0}). mode 전환보다 설정 drift나 조기 적용 여부를 먼저 점검합니다.`,
     });
   } else if (decision.status === 'risk_approval_mode_audit_mode_watch') {
     suggestions.push({
@@ -1054,7 +1056,7 @@ function buildRiskApprovalModeAuditSuggestions(riskApprovalModeAudit = null) {
       suggested: 'watch_before_new_buy',
       action: 'observe',
       confidence: 'low',
-      reason: `${decision.headline || 'readiness blocker가 남은 non-shadow mode입니다.'} 신규 BUY 승인 전에 readiness blocker를 재확인합니다.`,
+      reason: `${decision.headline || 'readiness blocker가 남은 non-shadow mode입니다.'} blocker Δ${delta.blockerCount ?? 0}, non-shadow Δ${delta.nonShadowApplications ?? 0}. 신규 BUY 승인 전에 readiness blocker를 재확인합니다.`,
     });
   } else if (decision.status === 'risk_approval_mode_audit_preview_watch') {
     suggestions.push({
@@ -1063,7 +1065,7 @@ function buildRiskApprovalModeAuditSuggestions(riskApprovalModeAudit = null) {
       suggested: 'inspect_preview_failed_inputs',
       action: 'observe',
       confidence: 'low',
-      reason: `preview unavailable 표본 ${metrics.unavailablePreviewCount || 0}건이 관찰됩니다. risk approval chain 입력/모델/DB 컨텍스트 누락을 확인합니다.`,
+      reason: `preview unavailable 표본 ${metrics.unavailablePreviewCount || 0}건(Δ${delta.unavailablePreviewCount ?? 0})이 관찰됩니다. risk approval chain 입력/모델/DB 컨텍스트 누락을 확인합니다.`,
     });
   }
   return suggestions;
@@ -1169,6 +1171,7 @@ function buildSuggestions(
   riskApprovalReadiness = null,
   riskApprovalReadinessTrend = null,
   riskApprovalModeAudit = null,
+  riskApprovalModeAuditTrend = null,
   executionRiskGuard = null,
   executionRiskGuardTrend = null,
 ) {
@@ -1185,12 +1188,12 @@ function buildSuggestions(
     ...buildStrategyFeedbackOutcomeSuggestions(strategyFeedbackOutcomes),
     ...buildRiskApprovalSuggestions(riskApproval, riskApprovalTrend),
     ...buildRiskApprovalReadinessSuggestions(riskApprovalReadiness, riskApprovalReadinessTrend),
-    ...buildRiskApprovalModeAuditSuggestions(riskApprovalModeAudit),
+    ...buildRiskApprovalModeAuditSuggestions(riskApprovalModeAudit, riskApprovalModeAuditTrend),
     ...buildExecutionRiskGuardSuggestions(executionRiskGuard, executionRiskGuardTrend),
   ];
 }
 
-function buildReport(days, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, validationBudgetPolicyTrend, cryptoSoftGuardSummary, regimeLaneSummary, strategyFamilySummary, strategyFeedbackOutcomes, riskApproval, riskApprovalTrend, riskApprovalReadiness, riskApprovalReadinessTrend, riskApprovalModeAudit, executionRiskGuard, executionRiskGuardTrend, suggestions) {
+function buildReport(days, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, validationBudgetPolicyTrend, cryptoSoftGuardSummary, regimeLaneSummary, strategyFamilySummary, strategyFeedbackOutcomes, riskApproval, riskApprovalTrend, riskApprovalReadiness, riskApprovalReadinessTrend, riskApprovalModeAudit, riskApprovalModeAuditTrend, executionRiskGuard, executionRiskGuardTrend, suggestions) {
   const governance = buildParameterGovernanceReport();
   return {
     periodDays: days,
@@ -1209,6 +1212,7 @@ function buildReport(days, summaries, validationSummaries, validationBudgetSnaps
     riskApprovalReadiness,
     riskApprovalReadinessTrend,
     riskApprovalModeAudit,
+    riskApprovalModeAuditTrend,
     executionRiskGuard,
     executionRiskGuardTrend,
     suggestions,
@@ -1351,11 +1355,15 @@ function printHuman(report) {
   if (report.riskApprovalModeAudit?.decision) {
     const decision = report.riskApprovalModeAudit.decision;
     const metrics = decision.metrics || {};
+    const trend = report.riskApprovalModeAuditTrend || null;
     lines.push('');
     lines.push('risk approval mode audit 요약:');
     lines.push(`- ${decision.status}: ${decision.headline}`);
     lines.push(`  mode ${metrics.currentMode || 'n/a'} / readiness ${metrics.readinessStatus || 'n/a'} / blockers ${metrics.blockerCount || 0}`);
     lines.push(`  application applied ${metrics.applied || 0} / rejected ${metrics.rejected || 0} / non-shadow ${metrics.nonShadowApplications || 0} / unavailable ${metrics.unavailablePreviewCount || 0}`);
+    if (trend?.delta) {
+      lines.push(`  trend: history ${trend.historyCount || 0} / blocker Δ${trend.delta.blockerCount ?? 0} / non-shadow Δ${trend.delta.nonShadowApplications ?? 0} / unavailable Δ${trend.delta.unavailablePreviewCount ?? 0}`);
+    }
   }
   if (report.executionRiskGuard?.decision) {
     const decision = report.executionRiskGuard.decision;
@@ -1452,6 +1460,7 @@ export async function buildRuntimeConfigSuggestionsReport({ days = 14, write = f
   const riskApprovalReadiness = await buildRuntimeRiskApprovalReadiness({ days: Math.max(days, 30), json: true }).catch(() => null);
   const riskApprovalReadinessTrend = await buildRuntimeRiskApprovalReadinessHistory({ days: Math.max(days, 30), json: true, write: false }).catch(() => null);
   const riskApprovalModeAudit = await buildRuntimeRiskApprovalModeAudit({ days: Math.max(days, 30), json: true }).catch(() => null);
+  const riskApprovalModeAuditTrend = await buildRuntimeRiskApprovalModeAuditHistory({ days: Math.max(days, 30), json: true, write: false }).catch(() => null);
   const executionRiskGuard = await buildRuntimeExecutionRiskGuardReport({ days, json: true }).catch(() => null);
   const executionRiskGuardTrend = await buildRuntimeExecutionRiskGuardHistory({ days, json: true, write: false }).catch(() => null);
   const regimeLaneSummary = summarizeRegimeLaneRows(regimeLaneRows);
@@ -1462,7 +1471,7 @@ export async function buildRuntimeConfigSuggestionsReport({ days = 14, write = f
   );
   const suggestions = normalizeAnnotatedSuggestions(
     annotateRuntimeSuggestions(
-      buildSuggestions(config, executionConfig, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, cryptoSoftGuardSummary, regimeLaneSummary, strategyFamilySummary, strategyFeedbackOutcomes, riskApproval, riskApprovalTrend, riskApprovalReadiness, riskApprovalReadinessTrend, riskApprovalModeAudit, executionRiskGuard, executionRiskGuardTrend),
+      buildSuggestions(config, executionConfig, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, cryptoSoftGuardSummary, regimeLaneSummary, strategyFamilySummary, strategyFeedbackOutcomes, riskApproval, riskApprovalTrend, riskApprovalReadiness, riskApprovalReadinessTrend, riskApprovalModeAudit, riskApprovalModeAuditTrend, executionRiskGuard, executionRiskGuardTrend),
     ),
   );
   const report = buildReport(
@@ -1482,6 +1491,7 @@ export async function buildRuntimeConfigSuggestionsReport({ days = 14, write = f
     riskApprovalReadiness,
     riskApprovalReadinessTrend,
     riskApprovalModeAudit,
+    riskApprovalModeAuditTrend,
     executionRiskGuard,
     executionRiskGuardTrend,
     suggestions,
@@ -1517,6 +1527,10 @@ export async function buildRuntimeConfigSuggestionsReport({ days = 14, write = f
         delta: report.riskApprovalReadinessTrend.delta,
       } : null,
       riskApprovalModeAudit: report.riskApprovalModeAudit?.decision || null,
+      riskApprovalModeAuditTrend: report.riskApprovalModeAuditTrend ? {
+        historyCount: report.riskApprovalModeAuditTrend.historyCount,
+        delta: report.riskApprovalModeAuditTrend.delta,
+      } : null,
       executionRiskGuard: report.executionRiskGuard?.decision || null,
       executionRiskGuardTrend: report.executionRiskGuardTrend ? {
         historyCount: report.executionRiskGuardTrend.historyCount,
@@ -1554,6 +1568,10 @@ export async function buildRuntimeConfigSuggestionsReport({ days = 14, write = f
           delta: report.riskApprovalReadinessTrend.delta,
         } : null,
         riskApprovalModeAudit: report.riskApprovalModeAudit?.decision || null,
+        riskApprovalModeAuditTrend: report.riskApprovalModeAuditTrend ? {
+          historyCount: report.riskApprovalModeAuditTrend.historyCount,
+          delta: report.riskApprovalModeAuditTrend.delta,
+        } : null,
         executionRiskGuard: report.executionRiskGuard?.decision || null,
         executionRiskGuardTrend: report.executionRiskGuardTrend ? {
           historyCount: report.executionRiskGuardTrend.historyCount,

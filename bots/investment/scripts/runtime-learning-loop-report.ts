@@ -18,6 +18,7 @@ import { buildRuntimeRiskApprovalHistory } from './runtime-risk-approval-history
 import { buildRuntimeRiskApprovalReadiness } from './runtime-risk-approval-readiness.ts';
 import { buildRuntimeRiskApprovalReadinessHistory } from './runtime-risk-approval-readiness-history.ts';
 import { buildRuntimeRiskApprovalModeAudit } from './runtime-risk-approval-mode-audit.ts';
+import { buildRuntimeRiskApprovalModeAuditHistory } from './runtime-risk-approval-mode-audit-history.ts';
 import { buildRuntimeExecutionRiskGuardReport } from './runtime-execution-risk-guard-report.ts';
 import { buildRuntimeExecutionRiskGuardHistory } from './runtime-execution-risk-guard-history.ts';
 
@@ -376,6 +377,7 @@ function buildSectionStates({
   riskApprovalReadiness,
   riskApprovalReadinessTrend,
   riskApprovalModeAudit,
+  riskApprovalModeAuditTrend,
   executionRiskGuard,
   executionRiskGuardTrend,
 }) {
@@ -485,6 +487,11 @@ function buildSectionStates({
       status: riskApprovalModeAudit.decision?.status || 'unknown',
       headline: riskApprovalModeAudit.decision?.headline || null,
       metrics: riskApprovalModeAudit.decision?.metrics || {},
+      trend: riskApprovalModeAuditTrend ? {
+        historyCount: Number(riskApprovalModeAuditTrend.historyCount || 0),
+        previousStatus: riskApprovalModeAuditTrend.previous?.status || null,
+        delta: riskApprovalModeAuditTrend.delta || {},
+      } : null,
     } : null,
     executionRiskGuard: executionRiskGuard ? {
       status: executionRiskGuard.decision?.status || 'unknown',
@@ -728,6 +735,9 @@ function renderText(payload) {
     sections.collect.riskApprovalModeAudit
       ? `- risk approval mode audit ${sections.collect.riskApprovalModeAudit.status} | mode ${sections.collect.riskApprovalModeAudit.metrics?.currentMode || 'n/a'} / non-shadow ${sections.collect.riskApprovalModeAudit.metrics?.nonShadowApplications || 0} / unavailable ${sections.collect.riskApprovalModeAudit.metrics?.unavailablePreviewCount || 0}`
       : null,
+    sections.collect.riskApprovalModeAudit?.trend
+      ? `- risk approval mode audit trend history ${sections.collect.riskApprovalModeAudit.trend.historyCount} | non-shadow delta ${sections.collect.riskApprovalModeAudit.trend.delta?.nonShadowApplications ?? 0} / unavailable delta ${sections.collect.riskApprovalModeAudit.trend.delta?.unavailablePreviewCount ?? 0}`
+      : null,
     sections.collect.executionRiskGuard
       ? `- execution risk guard ${sections.collect.executionRiskGuard.status} | total ${sections.collect.executionRiskGuard.total} / stale ${sections.collect.executionRiskGuard.staleCount} / bypass ${sections.collect.executionRiskGuard.bypassCount}`
       : '- execution risk guard none',
@@ -792,7 +802,7 @@ function buildFallback(payload = {}) {
 }
 
 export async function buildRuntimeLearningLoopReport({ days = 14, json = false } = {}) {
-  const [freshness, runtimeDecision, executionGate, autotune, runtimeSuggestions, backtest, validation, regimeCoverage, regimePerformance, strategyFamilyPerformance, strategyFeedbackOutcomes, strategyFeedbackOutcomeTrend, riskApproval, riskApprovalTrend, riskApprovalReadiness, riskApprovalReadinessTrend, riskApprovalModeAudit, executionRiskGuard, executionRiskGuardTrend, collectionAudit] = await Promise.all([
+  const [freshness, runtimeDecision, executionGate, autotune, runtimeSuggestions, backtest, validation, regimeCoverage, regimePerformance, strategyFamilyPerformance, strategyFeedbackOutcomes, strategyFeedbackOutcomeTrend, riskApproval, riskApprovalTrend, riskApprovalReadiness, riskApprovalReadinessTrend, riskApprovalModeAudit, riskApprovalModeAuditTrend, executionRiskGuard, executionRiskGuardTrend, collectionAudit] = await Promise.all([
     loadLoopFreshness(),
     buildRuntimeDecisionReport({ market: 'all', limit: 5, json: true }).catch(() => ({ count: 0, summary: {}, rows: [] })),
     buildRuntimeCryptoExecutionGateReport({ days, json: true }).catch(() => ({ decision: {} })),
@@ -810,6 +820,7 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
     buildRuntimeRiskApprovalReadiness({ days: 30, json: true }).catch(() => null),
     buildRuntimeRiskApprovalReadinessHistory({ days: 30, json: true, write: false }).catch(() => null),
     buildRuntimeRiskApprovalModeAudit({ days: 30, json: true }).catch(() => null),
+    buildRuntimeRiskApprovalModeAuditHistory({ days: 30, json: true, write: false }).catch(() => null),
     buildRuntimeExecutionRiskGuardReport({ days: 14, json: true }).catch(() => null),
     buildRuntimeExecutionRiskGuardHistory({ days: 14, json: true, write: false }).catch(() => null),
     runCollectionAudit({ markets: ['binance', 'kis', 'kis_overseas'], hours: 24 }).catch(() => null),
@@ -833,6 +844,7 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
     riskApprovalReadiness,
     riskApprovalReadinessTrend,
     riskApprovalModeAudit,
+    riskApprovalModeAuditTrend,
     executionRiskGuard,
     executionRiskGuardTrend,
     collectionAudit,
@@ -857,6 +869,7 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
     riskApprovalReadiness,
     riskApprovalReadinessTrend,
     riskApprovalModeAudit,
+    riskApprovalModeAuditTrend,
     executionRiskGuard,
     executionRiskGuardTrend,
     executionGate,
@@ -885,6 +898,7 @@ export async function buildRuntimeLearningLoopReport({ days = 14, json = false }
       riskApprovalReadiness,
       riskApprovalReadinessTrend,
       riskApprovalModeAudit,
+      riskApprovalModeAuditTrend,
       executionRiskGuard,
       executionRiskGuardTrend,
       executionGate: executionGate.decision,

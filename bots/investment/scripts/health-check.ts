@@ -398,6 +398,7 @@ async function main() {
     const riskApprovalReadiness = learningLoop?.sections?.collect?.riskApprovalReadiness || null;
     const riskApprovalReadinessDelta = riskApprovalReadiness?.trend?.delta || {};
     const riskApprovalModeAudit = learningLoop?.sections?.collect?.riskApprovalModeAudit || null;
+    const riskApprovalModeAuditDelta = riskApprovalModeAudit?.trend?.delta || {};
     const riskApprovalKey = 'learning-loop-risk-approval-divergence';
     if (riskApproval?.status === 'risk_approval_preview_divergence') {
       if (hsm.canAlert(state, riskApprovalKey)) {
@@ -459,7 +460,7 @@ async function main() {
         issues.push({
           key: riskApprovalModeAuditKey,
           level: riskApprovalModeAudit.status === 'risk_approval_mode_audit_attention' ? 2 : 1,
-          msg: `⚠️ [루나 헬스] risk approval mode audit\n${riskApprovalModeAudit.headline || '리스크 승인 mode/readiness 적용 상태 점검'}\nmode ${riskApprovalModeAudit.metrics?.currentMode || 'n/a'} / readiness ${riskApprovalModeAudit.metrics?.readinessStatus || 'n/a'} / blockers ${riskApprovalModeAudit.metrics?.blockerCount || 0}\napplication applied ${riskApprovalModeAudit.metrics?.applied || 0} / rejected ${riskApprovalModeAudit.metrics?.rejected || 0} / non-shadow ${riskApprovalModeAudit.metrics?.nonShadowApplications || 0}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:risk-approval-mode-audit -- --json`,
+          msg: `⚠️ [루나 헬스] risk approval mode audit\n${riskApprovalModeAudit.headline || '리스크 승인 mode/readiness 적용 상태 점검'}\nmode ${riskApprovalModeAudit.metrics?.currentMode || 'n/a'} / readiness ${riskApprovalModeAudit.metrics?.readinessStatus || 'n/a'} / blockers ${riskApprovalModeAudit.metrics?.blockerCount || 0}\napplication applied ${riskApprovalModeAudit.metrics?.applied || 0} / rejected ${riskApprovalModeAudit.metrics?.rejected || 0} / non-shadow ${riskApprovalModeAudit.metrics?.nonShadowApplications || 0}\ntrend: history ${riskApprovalModeAudit.trend?.historyCount || 0} / non-shadow Δ${riskApprovalModeAuditDelta.nonShadowApplications ?? 0} / unavailable Δ${riskApprovalModeAuditDelta.unavailablePreviewCount ?? 0} / blocker Δ${riskApprovalModeAuditDelta.blockerCount ?? 0}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:risk-approval-mode-audit-history -- --json`,
         });
       }
     } else if (state[riskApprovalModeAuditKey]) {
