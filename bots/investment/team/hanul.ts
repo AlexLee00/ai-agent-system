@@ -83,6 +83,15 @@ function logHanulPhase(label, startedAt, extra = {}) {
   console.log(`[한울] ${label} ${JSON.stringify(payload)}`);
 }
 
+function buildHanulSignalJournalContext(signal = null) {
+  return {
+    executionOrigin: signal?.execution_origin || signal?.executionOrigin || 'strategy',
+    qualityFlag: signal?.quality_flag || signal?.qualityFlag || 'trusted',
+    excludeFromLearning: Boolean(signal?.exclude_from_learning ?? signal?.excludeFromLearning ?? false),
+    incidentLink: signal?.incident_link || signal?.incidentLink || signal?.exit_reason_override || null,
+  };
+}
+
 async function markSignalFailed(signalId, reason) {
   return markSignalFailedDetailed(signalId, { reason });
 }
@@ -246,6 +255,10 @@ async function recordHanulEntryJournal({
       strategy_quality: signal?.strategy_quality || null,
       strategy_readiness: signal?.strategy_readiness ?? null,
       strategy_route: signal?.strategy_route || null,
+      execution_origin: trade.executionOrigin || signal?.execution_origin || 'strategy',
+      quality_flag: trade.qualityFlag || signal?.quality_flag || 'trusted',
+      exclude_from_learning: Boolean(trade.excludeFromLearning ?? signal?.exclude_from_learning ?? false),
+      incident_link: trade.incidentLink || signal?.incident_link || null,
     });
     await journalDb.linkRationaleToTrade(tradeId, signalId).catch(() => {});
     notifyJournalEntry({
@@ -588,6 +601,10 @@ async function closeOpenJournalForSymbol(
     partialExitRatio = null,
     soldAmount = null,
     signalId = null,
+    executionOrigin = null,
+    qualityFlag = null,
+    excludeFromLearning = null,
+    incidentLink = null,
   } = {},
 ) {
   const openEntries = await journalDb.getOpenJournalEntries(market);
@@ -652,6 +669,10 @@ async function closeOpenJournalForSymbol(
       strategy_quality: entry.strategy_quality ?? null,
       strategy_readiness: entry.strategy_readiness ?? null,
       strategy_route: entry.strategy_route ?? null,
+      execution_origin: executionOrigin || entry.execution_origin || 'strategy',
+      quality_flag: qualityFlag || entry.quality_flag || 'trusted',
+      exclude_from_learning: Boolean(excludeFromLearning ?? entry.exclude_from_learning ?? false),
+      incident_link: incidentLink || entry.incident_link || null,
     });
 
     await journalDb.closeJournalEntry(partialTradeId, {
@@ -661,6 +682,10 @@ async function closeOpenJournalForSymbol(
       pnlAmount,
       pnlPercent,
       pnlNet: pnlAmount,
+      execution_origin: executionOrigin,
+      quality_flag: qualityFlag,
+      exclude_from_learning: excludeFromLearning,
+      incident_link: incidentLink,
     });
 
     await journalDb.ensureAutoReview(partialTradeId).catch(() => {});
@@ -685,6 +710,10 @@ async function closeOpenJournalForSymbol(
     pnlAmount,
     pnlPercent,
     pnlNet: pnlAmount,
+    execution_origin: executionOrigin,
+    quality_flag: qualityFlag,
+    exclude_from_learning: excludeFromLearning,
+    incident_link: incidentLink,
   });
   await journalDb.ensureAutoReview(entry.trade_id).catch(() => {});
   const review = await journalDb.getReviewByTradeId(entry.trade_id).catch(() => null);
@@ -720,6 +749,8 @@ async function closeOpenJournalForSymbol(
     maxAdverse: review?.max_adverse ?? null,
     signalAccuracy: review?.signal_accuracy ?? null,
     executionSpeed: review?.execution_speed ?? null,
+    qualityFlag,
+    incidentLink,
   }).catch(() => {});
 }
 
@@ -914,6 +945,7 @@ export async function executeSignal(signal) {
   const signalTradeMode = signal.trade_mode || getInvestmentTradeMode();
   const exitReasonOverride = signal.exit_reason_override || null;
   const partialExitRatio = normalizePartialExitRatio(signal.partial_exit_ratio || signal.partialExitRatio);
+  const journalContext = buildHanulSignalJournalContext(signal);
   const domesticBuySizing = applyHanulResponsibilityExecutionSizing(amountKrw, {
     action,
     confidence: signal.confidence,
@@ -990,6 +1022,10 @@ export async function executeSignal(signal) {
         paper:     paperMode,
         exchange:  'kis',
         tradeMode: signalTradeMode,
+        executionOrigin: journalContext.executionOrigin,
+        qualityFlag: journalContext.qualityFlag,
+        excludeFromLearning: journalContext.excludeFromLearning,
+        incidentLink: journalContext.incidentLink,
       };
 
       await db.upsertPosition({
@@ -1051,6 +1087,10 @@ export async function executeSignal(signal) {
         partialExitRatio: sellState.partialExitRatio < 1 ? sellState.partialExitRatio : null,
         partialExit: sellState.partialExitRatio < 1,
         remainingAmount: sellState.partialExitRatio < 1 ? Math.max(0, sellState.baseQty - Number(order.qty || 0)) : 0,
+        executionOrigin: journalContext.executionOrigin,
+        qualityFlag: journalContext.qualityFlag,
+        excludeFromLearning: journalContext.excludeFromLearning,
+        incidentLink: journalContext.incidentLink,
       };
       if (trade.partialExit) {
         const remainingAmount = Math.max(0, sellState.baseQty - Number(order.qty || 0));
@@ -1093,6 +1133,10 @@ export async function executeSignal(signal) {
           partialExitRatio: trade.partialExitRatio,
           soldAmount: Number(order.qty || 0),
           signalId,
+          executionOrigin: trade.executionOrigin,
+          qualityFlag: trade.qualityFlag,
+          excludeFromLearning: trade.excludeFromLearning,
+          incidentLink: trade.incidentLink,
         },
       ).catch(() => {});
 
@@ -1132,6 +1176,7 @@ export async function executeOverseasSignal(signal) {
   const signalTradeMode = signal.trade_mode || getInvestmentTradeMode();
   const exitReasonOverride = signal.exit_reason_override || null;
   const partialExitRatio = normalizePartialExitRatio(signal.partial_exit_ratio || signal.partialExitRatio);
+  const journalContext = buildHanulSignalJournalContext(signal);
   const overseasBuySizing = applyHanulResponsibilityExecutionSizing(amountUsd, {
     action,
     confidence: signal.confidence,
@@ -1207,6 +1252,10 @@ export async function executeOverseasSignal(signal) {
         paper:     paperMode,
         exchange:  'kis_overseas',
         tradeMode: signalTradeMode,
+        executionOrigin: journalContext.executionOrigin,
+        qualityFlag: journalContext.qualityFlag,
+        excludeFromLearning: journalContext.excludeFromLearning,
+        incidentLink: journalContext.incidentLink,
       };
 
       await db.upsertPosition({
@@ -1268,6 +1317,10 @@ export async function executeOverseasSignal(signal) {
         partialExitRatio: sellState.partialExitRatio < 1 ? sellState.partialExitRatio : null,
         partialExit: sellState.partialExitRatio < 1,
         remainingAmount: sellState.partialExitRatio < 1 ? Math.max(0, sellState.baseQty - Number(order.qty || 0)) : 0,
+        executionOrigin: journalContext.executionOrigin,
+        qualityFlag: journalContext.qualityFlag,
+        excludeFromLearning: journalContext.excludeFromLearning,
+        incidentLink: journalContext.incidentLink,
       };
       if (trade.partialExit) {
         const remainingAmount = Math.max(0, sellState.baseQty - Number(order.qty || 0));
@@ -1310,6 +1363,10 @@ export async function executeOverseasSignal(signal) {
           partialExitRatio: trade.partialExitRatio,
           soldAmount: Number(order.qty || 0),
           signalId,
+          executionOrigin: trade.executionOrigin,
+          qualityFlag: trade.qualityFlag,
+          excludeFromLearning: trade.excludeFromLearning,
+          incidentLink: trade.incidentLink,
         },
       ).catch(() => {});
 
