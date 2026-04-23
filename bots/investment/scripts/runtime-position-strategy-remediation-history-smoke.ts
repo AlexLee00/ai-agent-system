@@ -17,6 +17,7 @@ export async function runPositionStrategyRemediationHistorySmoke() {
     assert.equal(first.delta.duplicateManaged, 0);
     assert.equal(first.lastRecordedAt, first.current.recordedAt);
     assert.equal(typeof first.stale, 'boolean');
+    assert.ok(first.current.flat);
     assert.match(first.current.nextCommand || '', /runtime:position-strategy-remediation/);
 
     const second = await buildPositionStrategyRemediationHistory({ file, json: true });
@@ -27,6 +28,7 @@ export async function runPositionStrategyRemediationHistorySmoke() {
     assert.ok(Object.prototype.hasOwnProperty.call(second, 'nextCommandTransition'));
     assert.ok(Object.prototype.hasOwnProperty.call(second.delta, 'orphanProfiles'));
     assert.equal(typeof second.ageMinutes, 'number');
+    assert.equal(typeof second.current.flat?.headline, 'string');
     assert.equal(typeof second.current.refreshCommand, 'string');
 
     return {

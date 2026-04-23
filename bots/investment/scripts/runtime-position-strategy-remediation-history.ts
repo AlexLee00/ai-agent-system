@@ -18,22 +18,23 @@ function parseArgs(argv = process.argv.slice(2)) {
 }
 
 function renderText(payload) {
+  const currentFlat = payload.current.flat || null;
   return [
     '🗂️ Position Strategy Remediation History',
     `저장 파일: ${payload.file}`,
     `누적 스냅샷: ${payload.historyCount}건`,
     '',
-    `현재 상태: ${payload.current.status}`,
+    `현재 상태: ${currentFlat?.status || payload.current.status}`,
     `이전 상태: ${payload.previous?.status || '없음'}`,
-    `상태 변화: ${payload.statusChanged ? `${payload.previous?.status || 'none'} -> ${payload.current.status}` : '유지'}`,
-    `focus 변화: ${payload.previous?.recommendedExchange || 'none'} -> ${payload.current.recommendedExchange || 'none'}`,
-    `next command: ${payload.current.nextCommand || 'n/a'}`,
+    `상태 변화: ${payload.statusChanged ? `${payload.previous?.status || 'none'} -> ${currentFlat?.status || payload.current.status}` : '유지'}`,
+    `focus 변화: ${payload.previous?.recommendedExchange || 'none'} -> ${currentFlat?.recommendedExchange || payload.current.recommendedExchange || 'none'}`,
+    `next command: ${currentFlat?.nextCommand || payload.current.nextCommand || 'n/a'}`,
     `next command 변화: ${payload.nextCommandChanged ? `${payload.nextCommandTransition?.previous || 'none'} -> ${payload.nextCommandTransition?.current || 'none'}` : '유지'}`,
     `duplicate 변화: ${payload.delta.duplicateManaged >= 0 ? '+' : ''}${payload.delta.duplicateManaged}`,
     `orphan 변화: ${payload.delta.orphanProfiles >= 0 ? '+' : ''}${payload.delta.orphanProfiles}`,
     `unmatched 변화: ${payload.delta.unmatchedManaged >= 0 ? '+' : ''}${payload.delta.unmatchedManaged}`,
     '',
-    `요약: ${payload.current.headline}`,
+    `요약: ${currentFlat?.headline || payload.current.headline}`,
     '',
     '권장 조치:',
     ...payload.current.actionItems.map((item) => `- ${item}`),
@@ -46,16 +47,17 @@ export async function buildPositionStrategyRemediationHistory({ file = DEFAULT_P
   const actions = report.remediationActions || {};
   const current = {
     recordedAt: new Date().toISOString(),
-    status: report.decision?.status || 'unknown',
-    headline: report.decision?.headline || 'n/a',
-    recommendedExchange: plan.recommendedExchange || null,
-    nextCommand: actions.nextCommand || null,
-    refreshCommand: actions.refreshCommand || null,
-    reportCommand: actions.reportCommand || null,
-    duplicateManaged: Number(plan.duplicateManagedScopes || 0),
-    orphanProfiles: Number(plan.orphanProfiles || 0),
-    unmatchedManaged: Number(plan.unmatchedManaged || 0),
+    status: report.remediationStatus || report.decision?.status || 'unknown',
+    headline: report.remediationHeadline || report.decision?.headline || 'n/a',
+    recommendedExchange: report.remediationRecommendedExchange || plan.recommendedExchange || null,
+    nextCommand: report.remediationNextCommand || actions.nextCommand || null,
+    refreshCommand: report.remediationActionRefreshCommand || report.remediationRefreshCommand || actions.refreshCommand || null,
+    reportCommand: report.remediationActionReportCommand || actions.reportCommand || null,
+    duplicateManaged: Number(report.remediationDuplicateManaged ?? plan.duplicateManagedScopes ?? 0),
+    orphanProfiles: Number(report.remediationOrphanProfiles ?? plan.orphanProfiles ?? 0),
+    unmatchedManaged: Number(report.remediationUnmatchedManaged ?? plan.unmatchedManaged ?? 0),
     actionItems: report.decision?.actionItems || [],
+    flat: report.remediationFlat || null,
   };
   const previousSnapshot = readPositionStrategyRemediationHistory(file);
   appendPositionStrategyRemediationHistory(file, current);

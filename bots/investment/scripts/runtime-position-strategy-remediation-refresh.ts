@@ -18,13 +18,16 @@ function parseArgs(argv = process.argv.slice(2)) {
 }
 
 function renderText(result) {
+  const currentFlat = result.after.current?.flat || null;
   return [
     '♻️ Position Strategy Remediation Refresh',
     `저장 파일: ${result.file}`,
     `before count: ${result.before.historyCount || 0}`,
     `after count: ${result.after.historyCount || 0}`,
-    `status: ${result.after.current?.status || 'unknown'}`,
-    `headline: ${result.after.current?.headline || 'n/a'}`,
+    `status: ${currentFlat?.status || result.after.current?.status || 'unknown'}`,
+    `headline: ${currentFlat?.headline || result.after.current?.headline || 'n/a'}`,
+    `recommended exchange: ${currentFlat?.recommendedExchange || result.after.current?.recommendedExchange || 'n/a'}`,
+    `next command: ${currentFlat?.nextCommand || result.after.current?.nextCommand || 'n/a'}`,
     `refresh needed: ${result.refreshState?.needed ? 'yes' : 'no'}`,
     `refresh stale: ${result.refreshState?.stale ? 'yes' : 'no'}`,
     `refresh command: ${result.refreshState?.command || 'n/a'}`,

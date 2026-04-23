@@ -17,6 +17,7 @@ export async function runPositionStrategyRemediationRefreshSmoke() {
     assert.equal(result.after.historyCount, 1);
     assert.equal(result.refreshState.needed, false);
     assert.match(result.refreshState.reason, /history refresh executed/);
+    assert.ok(result.after.current?.flat);
     const skipped = await runPositionStrategyRemediationRefresh({ file, json: true, ifStale: true });
     assert.equal(skipped.ok, true);
     assert.equal(skipped.skipped, true);
