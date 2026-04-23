@@ -13,7 +13,7 @@ defmodule Luna.V2.PositionWatch do
   use GenServer
   require Logger
 
-  alias Luna.V2.KillSwitch
+  alias Luna.V2.{KillSwitch, MarketHoursGate}
 
   @topic "luna:position_watch"
 
@@ -25,24 +25,74 @@ defmodule Luna.V2.PositionWatch do
     GenServer.call(__MODULE__, :run_once, 60_000)
   end
 
+  def set_dynamic_interval(interval_ms, source \\ "luna", ttl_ms \\ 600_000)
+      when is_integer(interval_ms) and interval_ms > 0 and is_integer(ttl_ms) and ttl_ms > 0 do
+    GenServer.cast(__MODULE__, {:set_dynamic_interval, interval_ms, source, ttl_ms})
+  end
+
+  def clear_dynamic_interval do
+    GenServer.cast(__MODULE__, :clear_dynamic_interval)
+  end
+
   def init(_opts) do
     interval_ms = KillSwitch.position_watch_interval_ms()
     Logger.info("[루나V2/PositionWatch] 시작 (#{interval_ms}ms 간격)")
     schedule(interval_ms)
-    {:ok, %{last_snapshot: nil, last_run: nil}}
+    {:ok,
+     %{
+       last_snapshot: nil,
+       last_run: nil,
+       last_interval_ms: interval_ms,
+       dynamic_interval_ms: nil,
+       dynamic_interval_until: nil,
+       dynamic_interval_source: nil
+     }}
   end
 
   def handle_info(:tick, state) do
     snapshot = build_snapshot()
     maybe_broadcast(snapshot, state.last_snapshot)
-    schedule(KillSwitch.position_watch_interval_ms())
-    {:noreply, %{state | last_snapshot: snapshot, last_run: DateTime.utc_now()}}
+    next_interval_ms = effective_interval_ms(snapshot, state)
+    schedule(next_interval_ms)
+
+    {:noreply,
+     %{
+       state
+       | last_snapshot: snapshot,
+         last_run: DateTime.utc_now(),
+         last_interval_ms: next_interval_ms
+     }}
   end
 
   def handle_call(:run_once, _from, state) do
     snapshot = build_snapshot()
     maybe_broadcast(snapshot, state.last_snapshot)
     {:reply, {:ok, snapshot}, %{state | last_snapshot: snapshot, last_run: DateTime.utc_now()}}
+  end
+
+  def handle_cast({:set_dynamic_interval, interval_ms, source, ttl_ms}, state) do
+    until_at = DateTime.add(DateTime.utc_now(), ttl_ms, :millisecond)
+    Logger.info("[루나V2/PositionWatch] 동적 감시 간격 적용 #{interval_ms}ms source=#{source} ttl_ms=#{ttl_ms}")
+
+    {:noreply,
+     %{
+       state
+       | dynamic_interval_ms: interval_ms,
+         dynamic_interval_until: until_at,
+         dynamic_interval_source: source
+     }}
+  end
+
+  def handle_cast(:clear_dynamic_interval, state) do
+    Logger.info("[루나V2/PositionWatch] 동적 감시 간격 해제")
+
+    {:noreply,
+     %{
+       state
+       | dynamic_interval_ms: nil,
+         dynamic_interval_until: nil,
+         dynamic_interval_source: nil
+     }}
   end
 
   defp build_snapshot do
@@ -94,6 +144,7 @@ defmodule Luna.V2.PositionWatch do
           captured_at: DateTime.utc_now(),
           position_count: length(positions_with_tv),
           attention_count: length(attention),
+          watch_context: build_watch_context(positions_with_tv, tv_snapshot),
           stop_loss_pct: stop_loss_pct,
           adjust_gain_pct: adjust_gain_pct,
           stale_minutes: stale_minutes,
@@ -155,6 +206,53 @@ defmodule Luna.V2.PositionWatch do
   end
 
   defp stale_position?(_, _stale_minutes), do: false
+
+  defp build_watch_context(positions, tv_snapshot) do
+    counts =
+      Enum.reduce(positions, %{crypto: 0, domestic: 0, overseas: 0, unknown: 0}, fn position, acc ->
+        market = market_from_exchange(position[:exchange])
+        Map.update(acc, market, 1, &(&1 + 1))
+      end)
+
+    domestic_open? = MarketHoursGate.open?(:domestic)
+    overseas_open? = MarketHoursGate.open?(:overseas)
+    tv_status = Map.get(tv_snapshot, :status, :disabled)
+
+    recommended_interval_ms =
+      cond do
+        counts.crypto > 0 and tv_status in [:http_error, :transport_error, :disconnected] ->
+          KillSwitch.position_watch_fallback_ms()
+
+        counts.crypto > 0 ->
+          KillSwitch.position_watch_crypto_realtime_ms()
+
+        (counts.domestic > 0 and domestic_open?) or (counts.overseas > 0 and overseas_open?) ->
+          KillSwitch.position_watch_stock_realtime_ms()
+
+        counts.domestic > 0 or counts.overseas > 0 ->
+          KillSwitch.position_watch_stock_offhours_ms()
+
+        true ->
+          KillSwitch.position_watch_idle_ms()
+      end
+
+    recommended_mode =
+      cond do
+        counts.crypto > 0 -> :crypto_realtime
+        (counts.domestic > 0 and domestic_open?) or (counts.overseas > 0 and overseas_open?) -> :stocks_realtime
+        counts.domestic > 0 or counts.overseas > 0 -> :stocks_offhours
+        true -> :idle
+      end
+
+    %{
+      market_mix: counts,
+      domestic_open?: domestic_open?,
+      overseas_open?: overseas_open?,
+      tv_status: tv_status,
+      recommended_mode: recommended_mode,
+      recommended_interval_ms: recommended_interval_ms
+    }
+  end
 
   defp fetch_tradingview_snapshot(_positions, false, _timeframes, _tv_stale_ms) do
     %{status: :disabled, bars: %{}, error: nil}
@@ -296,6 +394,31 @@ defmodule Luna.V2.PositionWatch do
   defp normalize_tv_status("connected"), do: :connected
   defp normalize_tv_status("disconnected"), do: :disconnected
   defp normalize_tv_status(_), do: :unknown
+
+  defp effective_interval_ms(snapshot, state) do
+    now = DateTime.utc_now()
+
+    dynamic_active? =
+      is_integer(state.dynamic_interval_ms) and state.dynamic_interval_ms > 0 and
+        match?(%DateTime{}, state.dynamic_interval_until) and DateTime.compare(state.dynamic_interval_until, now) == :gt
+
+    if dynamic_active? do
+      state.dynamic_interval_ms
+    else
+      snapshot
+      |> Map.get(:watch_context, %{})
+      |> Map.get(:recommended_interval_ms, KillSwitch.position_watch_interval_ms())
+    end
+  end
+
+  defp market_from_exchange(exchange) do
+    case to_string(exchange || "") do
+      "binance" -> :crypto
+      "kis" -> :domestic
+      "kis_overseas" -> :overseas
+      _ -> :unknown
+    end
+  end
 
   defp to_tv_symbol(position) do
     symbol = to_string(position[:symbol] || "")
