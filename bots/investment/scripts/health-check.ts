@@ -596,9 +596,13 @@ async function main() {
           level: remediationAlertLevel,
           meta: {
             remediationSummary,
+            remediationStatus: remediationSummary?.status || null,
+            remediationHeadline: remediationSummary?.headline || null,
+            remediationCounts: remediationSummary?.counts || null,
             remediationRefreshState: remediationSummary?.refreshState || remediation?.remediationRefreshState || null,
             remediationHistory: remediationHistory || null,
             remediationTrend,
+            remediationNextCommand: remediationSummary?.nextCommand || null,
             remediationNextCommandTransition,
             remediationCommands,
             recommendedExchange,
