@@ -465,6 +465,7 @@ function buildSectionStates({
       outcome: riskApproval.summary?.outcome?.total || null,
       outcomeByMode: riskApproval.summary?.outcome?.byMode || [],
       outcomeByModel: riskApproval.summary?.outcome?.byModel || [],
+      outcomeSamples: riskApproval.summary?.outcome?.samples || null,
       topModels: (riskApproval.summary?.modelRows || []).slice(0, 5),
       trend: riskApprovalTrend ? {
         historyCount: Number(riskApprovalTrend.historyCount || 0),
@@ -728,6 +729,9 @@ function renderText(payload) {
       : null,
     sections.collect.riskApproval?.outcomeByMode?.[0]
       ? `- risk approval outcome mode ${sections.collect.riskApproval.outcomeByMode[0].mode} | closed ${sections.collect.riskApproval.outcomeByMode[0].closed}/${sections.collect.riskApproval.outcomeByMode[0].total} / avg ${sections.collect.riskApproval.outcomeByMode[0].avgPnlPercent ?? 'n/a'}%`
+      : null,
+    sections.collect.riskApproval?.outcomeSamples?.worst?.[0]
+      ? `- risk approval worst sample ${sections.collect.riskApproval.outcomeSamples.worst[0].exchange || 'n/a'}/${sections.collect.riskApproval.outcomeSamples.worst[0].symbol || 'n/a'} ${sections.collect.riskApproval.outcomeSamples.worst[0].mode || 'n/a'} pnl ${sections.collect.riskApproval.outcomeSamples.worst[0].pnlNet ?? 'n/a'} (${sections.collect.riskApproval.outcomeSamples.worst[0].pnlPercent ?? 'n/a'}%)`
       : null,
     sections.collect.riskApproval?.trend
       ? `- risk approval trend history ${sections.collect.riskApproval.trend.historyCount} | preview delta ${sections.collect.riskApproval.trend.delta?.total ?? 0} / reject delta ${sections.collect.riskApproval.trend.delta?.previewRejects ?? 0} / divergence delta ${sections.collect.riskApproval.trend.delta?.legacyApprovedPreviewRejected ?? 0} / amount delta change ${sections.collect.riskApproval.trend.delta?.previewVsApprovedDelta ?? 0}`

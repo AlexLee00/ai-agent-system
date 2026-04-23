@@ -134,6 +134,8 @@ export function runRiskApprovalReportSmoke() {
   assert.equal(outcome.summary.outcome.total.pnlNet, 10.34);
   assert.equal(outcome.summary.outcome.byMode[0].mode, 'assist');
   assert.equal(outcome.summary.outcome.byModel[0].model, 'regime_risk');
+  assert.equal(outcome.summary.outcome.samples.worst[0].pnlNet, -2);
+  assert.equal(outcome.summary.outcome.samples.best[0].pnlNet, 12.34);
 
   const outcomeSuggestions = buildRiskApprovalSuggestions({
     decision: { status: 'risk_approval_preview_ok' },
@@ -179,6 +181,7 @@ export function runRiskApprovalReportSmoke() {
   });
   const assistTighten = weakSuggestions.find((item) => item.key === 'runtime_config.nemesis.riskApprovalChain.assist.maxReductionPct');
   assert.equal(assistTighten?.suggested, 0.4);
+  assert.equal(weakOutcome.summary.outcome.samples.worst[0].pnlNet, -3);
   assert.equal(
     weakSuggestions.some((item) => item.key === 'runtime_config.nemesis.riskApprovalChain.model.feedback_risk.outcomeReview'),
     true,

@@ -93,6 +93,7 @@ export function summarizeRuntimeRiskApprovalRows(rows = []) {
   const outcomeTotal = makeOutcomeBucket('total');
   const outcomeByMode = {};
   const outcomeByModel = {};
+  const outcomeSamples = [];
   const divergences = [];
   let total = 0;
   let previewRejects = 0;
@@ -118,6 +119,23 @@ export function summarizeRuntimeRiskApprovalRows(rows = []) {
     addOutcome(outcomeTotal, row);
     if (!outcomeByMode[mode]) outcomeByMode[mode] = makeOutcomeBucket(mode);
     addOutcome(outcomeByMode[mode], row);
+    if (row.closed && outcomeSamples.length < 200) {
+      outcomeSamples.push({
+        tradeId: row.tradeId || null,
+        signalId: row.signalId || null,
+        exchange: row.exchange || null,
+        symbol: row.symbol || null,
+        mode,
+        previewDecision,
+        previewStatus,
+        finalAmount: row.preview.finalAmount ?? null,
+        approvedAmount: row.positionSizeApproved ?? null,
+        pnlNet: row.pnlNet,
+        pnlPercent: row.pnlPercent,
+        exitReason: row.exitReason || null,
+        models: (row.preview.steps || []).map((step) => step.model || 'unknown').filter(Boolean),
+      });
+    }
     byPreviewStatus[previewStatus] = (byPreviewStatus[previewStatus] || 0) + 1;
     if (!byMode[mode]) byMode[mode] = { mode, total: 0, applied: 0, rejected: 0, amountDelta: 0 };
     byMode[mode].total += 1;
@@ -231,6 +249,14 @@ export function summarizeRuntimeRiskApprovalRows(rows = []) {
       byModel: Object.entries(outcomeByModel)
         .map(([model, bucket]) => finalizeOutcomeBucket(bucket, { model }))
         .sort((a, b) => Number(b.closed || 0) - Number(a.closed || 0)),
+      samples: {
+        worst: [...outcomeSamples]
+          .sort((a, b) => safeNumber(a.pnlNet) - safeNumber(b.pnlNet))
+          .slice(0, 5),
+        best: [...outcomeSamples]
+          .sort((a, b) => safeNumber(b.pnlNet) - safeNumber(a.pnlNet))
+          .slice(0, 5),
+      },
     },
     modelRows,
     divergences,
@@ -306,6 +332,12 @@ function renderText(payload) {
     }
     for (const item of (payload.summary.outcome.byModel || []).slice(0, 5)) {
       lines.push(`- outcome model ${item.model}: closed ${item.closed}/${item.total}, win ${pct(item.winRate)}, avg ${pct(item.avgPnlPercent, 2)}, pnl ${item.pnlNet}`);
+    }
+    if (payload.summary.outcome.samples?.worst?.length) {
+      lines.push('outcome worst samples:');
+      for (const item of payload.summary.outcome.samples.worst) {
+        lines.push(`- ${item.exchange || 'n/a'}/${item.symbol || 'n/a'} ${item.mode || 'n/a'} pnl ${item.pnlNet ?? 'n/a'} (${pct(item.pnlPercent, 2)}) models ${(item.models || []).join(',') || 'n/a'} exit ${item.exitReason || 'n/a'}`);
+      }
     }
   }
   if (payload.summary.divergences.length) {

@@ -673,6 +673,7 @@ function buildDecision(
   const riskApproval = runtimeLearningLoop?.sections?.collect?.riskApproval || null;
   const riskApprovalOutcome = riskApproval?.outcome || null;
   const riskApprovalOutcomeMode = riskApproval?.outcomeByMode?.[0] || null;
+  const riskApprovalOutcomeWorst = riskApproval?.outcomeSamples?.worst?.[0] || null;
   const riskApprovalReadiness = runtimeLearningLoop?.sections?.collect?.riskApprovalReadiness || null;
   const riskApprovalReadinessDelta = riskApprovalReadiness?.trend?.delta || {};
   const riskApprovalModeAudit = runtimeLearningLoop?.sections?.collect?.riskApprovalModeAudit || null;
@@ -814,7 +815,7 @@ function buildDecision(
           Number(riskApprovalOutcomeMode?.avgPnlPercent ?? 0) < 0
         ),
         level: 'medium',
-        reason: `risk approval outcome — closed ${riskApprovalOutcome?.closed || 0}/${riskApprovalOutcome?.total || 0} / win ${riskApprovalOutcome?.winRate ?? 'n/a'}% / avg ${riskApprovalOutcome?.avgPnlPercent ?? 'n/a'}% / pnl ${riskApprovalOutcome?.pnlNet ?? 0} / mode ${riskApprovalOutcomeMode?.mode || 'n/a'} avg ${riskApprovalOutcomeMode?.avgPnlPercent ?? 'n/a'}% / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-suggest -- --json`,
+        reason: `risk approval outcome — closed ${riskApprovalOutcome?.closed || 0}/${riskApprovalOutcome?.total || 0} / win ${riskApprovalOutcome?.winRate ?? 'n/a'}% / avg ${riskApprovalOutcome?.avgPnlPercent ?? 'n/a'}% / pnl ${riskApprovalOutcome?.pnlNet ?? 0} / mode ${riskApprovalOutcomeMode?.mode || 'n/a'} avg ${riskApprovalOutcomeMode?.avgPnlPercent ?? 'n/a'}%${riskApprovalOutcomeWorst ? ` / worst ${riskApprovalOutcomeWorst.exchange || 'n/a'}/${riskApprovalOutcomeWorst.symbol || 'n/a'} pnl ${riskApprovalOutcomeWorst.pnlNet ?? 'n/a'}` : ''} / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-suggest -- --json`,
       },
       {
         active: riskApproval?.status === 'risk_approval_preview_divergence',
@@ -1055,6 +1056,7 @@ function formatText(report) {
           const riskApprovalTrend = riskApproval?.trend || null;
           const riskApprovalOutcome = riskApproval?.outcome || null;
           const riskApprovalOutcomeMode = riskApproval?.outcomeByMode?.[0] || null;
+          const riskApprovalOutcomeWorst = riskApproval?.outcomeSamples?.worst?.[0] || null;
           const riskApprovalReadinessTrend = riskApprovalReadiness?.trend || null;
           return [
             `  status: ${report.runtimeLearningLoop.decision?.status || 'unknown'}`,
@@ -1066,6 +1068,7 @@ function formatText(report) {
             `  risk approval: ${riskApproval?.status || 'unknown'} / preview ${riskApproval?.total || 0} / rejects ${riskApproval?.previewRejects || 0} / divergence ${riskApproval?.divergence || 0} / amount delta ${riskApproval?.previewVsApprovedDelta ?? 0}`,
             ...(riskApprovalOutcome ? [`  risk approval outcome: closed ${riskApprovalOutcome.closed || 0}/${riskApprovalOutcome.total || 0} / win ${riskApprovalOutcome.winRate ?? 'n/a'}% / avg ${riskApprovalOutcome.avgPnlPercent ?? 'n/a'}% / pnl ${riskApprovalOutcome.pnlNet ?? 0}`] : []),
             ...(riskApprovalOutcomeMode ? [`  risk approval outcome mode: ${riskApprovalOutcomeMode.mode || 'n/a'} / closed ${riskApprovalOutcomeMode.closed || 0}/${riskApprovalOutcomeMode.total || 0} / avg ${riskApprovalOutcomeMode.avgPnlPercent ?? 'n/a'}%`] : []),
+            ...(riskApprovalOutcomeWorst ? [`  risk approval worst sample: ${riskApprovalOutcomeWorst.exchange || 'n/a'}/${riskApprovalOutcomeWorst.symbol || 'n/a'} ${riskApprovalOutcomeWorst.mode || 'n/a'} / pnl ${riskApprovalOutcomeWorst.pnlNet ?? 'n/a'} (${riskApprovalOutcomeWorst.pnlPercent ?? 'n/a'}%) / models ${(riskApprovalOutcomeWorst.models || []).join(',') || 'n/a'}`] : []),
             `  risk approval readiness: ${riskApprovalReadiness?.status || 'unknown'} / mode ${riskApprovalReadiness?.currentMode || 'n/a'} -> ${riskApprovalReadiness?.targetMode || 'n/a'} / blockers ${(riskApprovalReadiness?.blockers || []).length}`,
             ...(riskApprovalReadiness?.dryRun ? [`  risk approval dry-run: assist applied ${riskApprovalReadiness.dryRun.assist?.applied ?? 0} / enforce rejected ${riskApprovalReadiness.dryRun.enforce?.rejected ?? 0}`] : []),
             ...(riskApprovalReadinessTrend ? [`  risk approval readiness trend: history ${riskApprovalReadinessTrend.historyCount || 0} / blocker Δ${riskApprovalReadinessTrend.delta?.blockerCount ?? 0} / preview Δ${riskApprovalReadinessTrend.delta?.previewTotal ?? 0} / reject Δ${riskApprovalReadinessTrend.delta?.previewRejects ?? 0} / divergence Δ${riskApprovalReadinessTrend.delta?.divergence ?? 0}`] : []),
