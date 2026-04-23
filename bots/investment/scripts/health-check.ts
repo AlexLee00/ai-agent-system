@@ -101,6 +101,74 @@ function isAlreadyAppliedSuggestion(topSuggestion = null) {
   return currentValue === suggestedValue;
 }
 
+function buildHealthCheckRemediationView(remediation, hygiene, remediationHistory = null) {
+  const remediationPlan = remediation?.remediationPlan || hygiene?.remediationPlan || buildPositionStrategyHygieneRemediationPlan(hygiene);
+  const remediationFlat = remediation?.remediationFlat || null;
+  const remediationSummary = remediation?.remediationSummary || null;
+  const remediationStatus = remediation?.remediationStatus || remediationFlat?.status || remediationSummary?.status || null;
+  const remediationHeadline = remediation?.remediationHeadline || remediationFlat?.headline || remediationSummary?.headline || remediation?.decision?.headline || hygiene?.decision?.headline || '포지션 전략 remediation 후보 감지';
+  const remediationCounts = remediation?.remediationCounts || remediationFlat?.counts || remediationSummary?.counts || null;
+  const remediationDuplicateManaged = remediation?.remediationDuplicateManaged ?? remediationFlat?.duplicateManaged ?? remediationCounts?.duplicateManaged ?? hygiene?.audit?.duplicateManagedProfileScopes ?? 0;
+  const remediationOrphanProfiles = remediation?.remediationOrphanProfiles ?? remediationFlat?.orphanProfiles ?? remediationCounts?.orphanProfiles ?? hygiene?.audit?.orphanProfiles ?? 0;
+  const remediationUnmatchedManaged = remediation?.remediationUnmatchedManaged ?? remediationFlat?.unmatchedManaged ?? remediationCounts?.unmatchedManaged ?? hygiene?.audit?.unmatchedManagedPositions ?? 0;
+  const remediationCommands = remediation?.remediationCommands || remediationFlat?.commands || remediationSummary?.commands || null;
+  const remediationActions = remediation?.remediationActions || remediationFlat?.actions || remediationSummary?.actions || null;
+  const remediationRefreshState = remediation?.remediationRefreshState || remediationFlat?.refresh || remediationSummary?.refreshState || null;
+  const remediationRefreshNeeded = remediation?.remediationRefreshNeeded ?? remediationFlat?.refreshNeeded ?? remediationRefreshState?.needed ?? null;
+  const remediationRefreshStale = remediation?.remediationRefreshStale ?? remediationFlat?.refreshStale ?? remediationRefreshState?.stale ?? null;
+  const remediationRefreshReason = remediation?.remediationRefreshReason || remediationFlat?.refreshReason || remediationRefreshState?.reason || null;
+  const remediationRefreshCommand = remediation?.remediationRefreshCommand || remediationFlat?.refreshCommand || remediationCommands?.refresh || remediationRefreshState?.command || null;
+  const remediationTrend = remediation?.remediationTrend
+    || (remediationFlat?.trendHistoryCount !== undefined
+      ? {
+        historyCount: remediationFlat?.trendHistoryCount,
+        statusChanged: remediationFlat?.trendChanged,
+        nextCommandChanged: remediationFlat?.trendNextChanged ?? remediationFlat?.nextCommandChanged,
+        nextCommandTransition: remediation?.remediationNextCommandTransition || remediationFlat?.nextCommandTransition || remediationSummary?.nextCommandTransition || null,
+        ageMinutes: remediationFlat?.trendAgeMinutes,
+        stale: remediationFlat?.trendStale,
+        duplicateDelta: remediationFlat?.trendDuplicateDelta,
+        orphanDelta: remediationFlat?.trendOrphanDelta,
+        unmatchedDelta: remediationFlat?.trendUnmatchedDelta,
+      }
+      : null)
+    || remediationFlat?.trend
+    || remediationSummary?.trend
+    || null;
+  const remediationNextCommand = remediation?.remediationNextCommand || remediationFlat?.nextCommand || remediationPlan?.remediationReportCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation -- --json';
+  const remediationNextCommandTransition = remediation?.remediationNextCommandTransition || remediationFlat?.nextCommandTransition || remediationTrend?.nextCommandTransition || remediationSummary?.nextCommandTransition || null;
+  const remediationNextCommandChanged = remediation?.remediationNextCommandChanged ?? remediationFlat?.nextCommandChanged ?? remediationTrend?.nextCommandChanged ?? null;
+  const remediationNextCommandPrevious = remediation?.remediationNextCommandPrevious || remediationFlat?.nextCommandPrevious || remediationNextCommandTransition?.previous || null;
+  const remediationNextCommandCurrent = remediation?.remediationNextCommandCurrent || remediationFlat?.nextCommandCurrent || remediationNextCommandTransition?.current || null;
+  const recommendedExchange = remediation?.remediationRecommendedExchange || remediationFlat?.recommendedExchange || remediationSummary?.recommendedExchange || remediationPlan?.recommendedExchange || null;
+  return {
+    remediationPlan,
+    remediationFlat,
+    remediationSummary,
+    remediationStatus,
+    remediationHeadline,
+    remediationCounts,
+    remediationDuplicateManaged,
+    remediationOrphanProfiles,
+    remediationUnmatchedManaged,
+    remediationCommands,
+    remediationActions,
+    remediationRefreshState,
+    remediationRefreshNeeded,
+    remediationRefreshStale,
+    remediationRefreshReason,
+    remediationRefreshCommand,
+    remediationTrend,
+    remediationNextCommand,
+    remediationNextCommandTransition,
+    remediationNextCommandChanged,
+    remediationNextCommandPrevious,
+    remediationNextCommandCurrent,
+    recommendedExchange,
+    remediationHistory: remediationHistory || null,
+  };
+}
+
 // ─── 알림 발송 ───────────────────────────────────────────────────
 
 async function notify(msg, level = 3, payload = null) {
@@ -579,46 +647,31 @@ async function main() {
       if (hsm.canAlert(state, key)) {
         const duplicateSample = hygiene?.duplicateNormalization?.rows?.[0] || null;
         const orphanSample = hygiene?.orphanRetirement?.rows?.[0] || null;
-        const remediationPlan = remediation?.remediationPlan || hygiene?.remediationPlan || buildPositionStrategyHygieneRemediationPlan(hygiene);
-        const remediationFlat = remediation?.remediationFlat || null;
-        const remediationSummary = remediation?.remediationSummary || null;
-        const remediationStatus = remediation?.remediationStatus || remediationFlat?.status || remediationSummary?.status || null;
-        const remediationHeadline = remediation?.remediationHeadline || remediationFlat?.headline || remediationSummary?.headline || remediation?.decision?.headline || hygiene.decision?.headline || '포지션 전략 remediation 후보 감지';
-        const remediationCounts = remediation?.remediationCounts || remediationFlat?.counts || remediationSummary?.counts || null;
-        const remediationDuplicateManaged = remediation?.remediationDuplicateManaged ?? remediationFlat?.duplicateManaged ?? remediationCounts?.duplicateManaged ?? hygiene.audit?.duplicateManagedProfileScopes ?? 0;
-        const remediationOrphanProfiles = remediation?.remediationOrphanProfiles ?? remediationFlat?.orphanProfiles ?? remediationCounts?.orphanProfiles ?? hygiene.audit?.orphanProfiles ?? 0;
-        const remediationUnmatchedManaged = remediation?.remediationUnmatchedManaged ?? remediationFlat?.unmatchedManaged ?? remediationCounts?.unmatchedManaged ?? hygiene.audit?.unmatchedManagedPositions ?? 0;
-        const remediationCommands = remediation?.remediationCommands || remediationFlat?.commands || remediationSummary?.commands || null;
-        const remediationActions = remediation?.remediationActions || remediationFlat?.actions || remediationSummary?.actions || null;
-        const remediationRefreshState = remediation?.remediationRefreshState || remediationFlat?.refresh || remediationSummary?.refreshState || null;
-        const remediationRefreshNeeded = remediation?.remediationRefreshNeeded ?? remediationFlat?.refreshNeeded ?? remediationRefreshState?.needed ?? null;
-        const remediationRefreshStale = remediation?.remediationRefreshStale ?? remediationFlat?.refreshStale ?? remediationRefreshState?.stale ?? null;
-        const remediationRefreshReason = remediation?.remediationRefreshReason || remediationFlat?.refreshReason || remediationRefreshState?.reason || null;
-        const remediationRefreshCommand = remediation?.remediationRefreshCommand || remediationFlat?.refreshCommand || remediationCommands?.refresh || remediationRefreshState?.command || null;
+        const remediationView = buildHealthCheckRemediationView(remediation, hygiene, remediationHistory);
+        const remediationPlan = remediationView.remediationPlan;
+        const remediationFlat = remediationView.remediationFlat;
+        const remediationSummary = remediationView.remediationSummary;
+        const remediationStatus = remediationView.remediationStatus;
+        const remediationHeadline = remediationView.remediationHeadline;
+        const remediationCounts = remediationView.remediationCounts;
+        const remediationDuplicateManaged = remediationView.remediationDuplicateManaged;
+        const remediationOrphanProfiles = remediationView.remediationOrphanProfiles;
+        const remediationUnmatchedManaged = remediationView.remediationUnmatchedManaged;
+        const remediationCommands = remediationView.remediationCommands;
+        const remediationActions = remediationView.remediationActions;
+        const remediationRefreshState = remediationView.remediationRefreshState;
+        const remediationRefreshNeeded = remediationView.remediationRefreshNeeded;
+        const remediationRefreshStale = remediationView.remediationRefreshStale;
+        const remediationRefreshReason = remediationView.remediationRefreshReason;
+        const remediationRefreshCommand = remediationView.remediationRefreshCommand;
         const remediationRefreshHint = remediationRefreshReason || null;
-        const remediationTrend = remediation?.remediationTrend
-          || (remediationFlat?.trendHistoryCount !== undefined
-            ? {
-              historyCount: remediationFlat?.trendHistoryCount,
-              statusChanged: remediationFlat?.trendChanged,
-              nextCommandChanged: remediationFlat?.trendNextChanged ?? remediationFlat?.nextCommandChanged,
-              nextCommandTransition: remediation?.remediationNextCommandTransition || remediationFlat?.nextCommandTransition || remediationSummary?.nextCommandTransition || null,
-              ageMinutes: remediationFlat?.trendAgeMinutes,
-              stale: remediationFlat?.trendStale,
-              duplicateDelta: remediationFlat?.trendDuplicateDelta,
-              orphanDelta: remediationFlat?.trendOrphanDelta,
-              unmatchedDelta: remediationFlat?.trendUnmatchedDelta,
-            }
-            : null)
-          || remediationFlat?.trend
-          || remediationSummary?.trend
-          || null;
-        const remediationNextCommand = remediation?.remediationNextCommand || remediationFlat?.nextCommand || remediationPlan?.remediationReportCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation -- --json';
-        const remediationNextCommandTransition = remediation?.remediationNextCommandTransition || remediationFlat?.nextCommandTransition || remediationTrend?.nextCommandTransition || remediationSummary?.nextCommandTransition || null;
-        const remediationNextCommandChanged = remediation?.remediationNextCommandChanged ?? remediationFlat?.nextCommandChanged ?? remediationTrend?.nextCommandChanged ?? null;
-        const remediationNextCommandPrevious = remediation?.remediationNextCommandPrevious || remediationFlat?.nextCommandPrevious || remediationNextCommandTransition?.previous || null;
-        const remediationNextCommandCurrent = remediation?.remediationNextCommandCurrent || remediationFlat?.nextCommandCurrent || remediationNextCommandTransition?.current || null;
-        const recommendedExchange = remediation?.remediationRecommendedExchange || remediationFlat?.recommendedExchange || remediationSummary?.recommendedExchange || remediationPlan?.recommendedExchange || null;
+        const remediationTrend = remediationView.remediationTrend;
+        const remediationNextCommand = remediationView.remediationNextCommand;
+        const remediationNextCommandTransition = remediationView.remediationNextCommandTransition;
+        const remediationNextCommandChanged = remediationView.remediationNextCommandChanged;
+        const remediationNextCommandPrevious = remediationView.remediationNextCommandPrevious;
+        const remediationNextCommandCurrent = remediationView.remediationNextCommandCurrent;
+        const recommendedExchange = remediationView.recommendedExchange;
         let remediationHistoryLine = null;
         if (remediationTrend) {
           const historyCount = remediation?.remediationTrendHistoryCount ?? remediationFlat?.trendHistoryCount ?? remediationTrend.historyCount ?? 0;

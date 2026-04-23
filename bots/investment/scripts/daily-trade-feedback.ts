@@ -390,33 +390,25 @@ function buildPositionStrategyHygieneCommandLine(positionStrategyHygieneSummary)
 
 function buildPositionStrategyRemediationLine(positionStrategyRemediationSummary) {
   if (!positionStrategyRemediationSummary || positionStrategyRemediationSummary.error || !positionStrategyRemediationSummary.ok) return null;
-  const remediationFlat = positionStrategyRemediationSummary.remediationFlat || null;
-  const remediationSummary = positionStrategyRemediationSummary.remediationSummary || null;
+  const remediationView = buildDailyFeedbackRemediationView(positionStrategyRemediationSummary, positionStrategyRemediationSummary?.remediationHistory || null);
   const decision = positionStrategyRemediationSummary.decision || {};
-  return `🧯 remediation: ${positionStrategyRemediationSummary.remediationStatus || remediationFlat?.status || remediationSummary?.status || decision.status || 'unknown'} | ${positionStrategyRemediationSummary.remediationHeadline || remediationFlat?.headline || remediationSummary?.headline || decision.headline || 'n/a'}`;
+  return `🧯 remediation: ${remediationView.remediationStatus || decision.status || 'unknown'} | ${remediationView.remediationHeadline || decision.headline || 'n/a'}`;
 }
 
 function buildPositionStrategyRemediationCommandLine(positionStrategyRemediationSummary) {
   if (!positionStrategyRemediationSummary || positionStrategyRemediationSummary.error || !positionStrategyRemediationSummary.ok) return null;
   const remediationPlan = positionStrategyRemediationSummary.remediationPlan || null;
-  const remediationFlat = positionStrategyRemediationSummary.remediationFlat || null;
-  const remediationSummary = positionStrategyRemediationSummary.remediationSummary || null;
+  const remediationView = buildDailyFeedbackRemediationView(positionStrategyRemediationSummary, positionStrategyRemediationSummary?.remediationHistory || null);
   if (!remediationPlan || remediationPlan.status !== 'position_strategy_hygiene_attention') return null;
-  return `🛠️ remediation report: ${positionStrategyRemediationSummary.remediationActionReportCommand || remediationFlat?.actionReportCommand || remediationFlat?.commands?.report || remediationSummary?.commands?.report || remediationPlan.remediationReportCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation -- --json'}`;
+  return `🛠️ remediation report: ${remediationView.remediationActionReportCommand || remediationView.remediationReportCommand || remediationPlan.remediationReportCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation -- --json'}`;
 }
 
 function buildPositionStrategyRemediationRefreshCommandLine(positionStrategyRemediationSummary) {
   if (!positionStrategyRemediationSummary || positionStrategyRemediationSummary.error || !positionStrategyRemediationSummary.ok) return null;
   const remediationPlan = positionStrategyRemediationSummary.remediationPlan || null;
-  const remediationFlat = positionStrategyRemediationSummary.remediationFlat || null;
-  const remediationSummary = positionStrategyRemediationSummary.remediationSummary || null;
-  const refreshCommand = positionStrategyRemediationSummary.remediationActionRefreshCommand
-    || remediationFlat?.actionRefreshCommand
-    || remediationFlat?.refreshCommand
-    || remediationFlat?.commands?.refresh
-    || remediationSummary?.commands?.refresh
-    || remediationSummary?.refreshState?.command
-    || positionStrategyRemediationSummary?.remediationRefreshState?.command
+  const remediationView = buildDailyFeedbackRemediationView(positionStrategyRemediationSummary, positionStrategyRemediationSummary?.remediationHistory || null);
+  const refreshCommand = remediationView.remediationActionRefreshCommand
+    || remediationView.remediationRefreshCommand
     || remediationPlan?.remediationRefreshCommand
     || null;
   if (!refreshCommand) return null;
@@ -425,85 +417,28 @@ function buildPositionStrategyRemediationRefreshCommandLine(positionStrategyReme
 
 function buildPositionStrategyRemediationNextCommandLine(positionStrategyRemediationSummary) {
   if (!positionStrategyRemediationSummary || positionStrategyRemediationSummary.error || !positionStrategyRemediationSummary.ok) return null;
-  const remediationFlat = positionStrategyRemediationSummary.remediationFlat || null;
-  const nextCommand = positionStrategyRemediationSummary.remediationNextCommand || remediationFlat?.nextCommand || null;
+  const remediationView = buildDailyFeedbackRemediationView(positionStrategyRemediationSummary, positionStrategyRemediationSummary?.remediationHistory || null);
+  const nextCommand = remediationView.remediationNextCommand;
   if (!nextCommand) return null;
   return `🧭 remediation next: ${nextCommand}`;
 }
 
 function buildPositionStrategyRemediationRefreshLine(positionStrategyRemediationSummary) {
   if (!positionStrategyRemediationSummary || positionStrategyRemediationSummary.error || !positionStrategyRemediationSummary.ok) return null;
-  const remediationFlat = positionStrategyRemediationSummary.remediationFlat || null;
-  const remediationSummary = positionStrategyRemediationSummary.remediationSummary || null;
-  const refreshState = {
-    needed: positionStrategyRemediationSummary?.remediationRefreshNeeded,
-    stale: positionStrategyRemediationSummary?.remediationRefreshStale,
-    reason: positionStrategyRemediationSummary?.remediationRefreshReason,
-    command: positionStrategyRemediationSummary?.remediationRefreshCommand,
-  };
-  const resolvedRefreshState = refreshState.reason !== undefined || refreshState.command !== undefined
-    ? refreshState
-    : remediationFlat?.refresh
-    || remediationSummary?.refreshState
-    || positionStrategyRemediationSummary?.remediationRefreshState
-    || buildPositionStrategyRemediationRefreshState(
-      positionStrategyRemediationSummary?.remediationPlan || null,
-      positionStrategyRemediationSummary?.remediationHistory || null,
-    );
-  return resolvedRefreshState?.reason ? `♻️ ${resolvedRefreshState.reason}` : null;
+  const remediationView = buildDailyFeedbackRemediationView(positionStrategyRemediationSummary, positionStrategyRemediationSummary?.remediationHistory || null);
+  return remediationView.remediationRefreshReason ? `♻️ ${remediationView.remediationRefreshReason}` : null;
 }
 
 function buildPositionStrategyRemediationRefreshStateLine(positionStrategyRemediationSummary) {
   if (!positionStrategyRemediationSummary || positionStrategyRemediationSummary.error || !positionStrategyRemediationSummary.ok) return null;
-  const remediationFlat = positionStrategyRemediationSummary.remediationFlat || null;
-  const remediationSummary = positionStrategyRemediationSummary.remediationSummary || null;
-  const refreshState = {
-    needed: positionStrategyRemediationSummary?.remediationRefreshNeeded,
-    stale: positionStrategyRemediationSummary?.remediationRefreshStale,
-    reason: positionStrategyRemediationSummary?.remediationRefreshReason,
-    command: positionStrategyRemediationSummary?.remediationRefreshCommand,
-  };
-  const resolvedRefreshState = refreshState.command !== undefined || refreshState.reason !== undefined
-    ? refreshState
-    : remediationFlat?.refresh
-    || remediationSummary?.refreshState
-    || positionStrategyRemediationSummary?.remediationRefreshState
-    || buildPositionStrategyRemediationRefreshState(
-      positionStrategyRemediationSummary?.remediationPlan || null,
-      positionStrategyRemediationSummary?.remediationHistory || null,
-    );
-  return `♻️ refresh state: needed ${resolvedRefreshState?.needed ? 'yes' : 'no'} | stale ${resolvedRefreshState?.stale ? 'yes' : 'no'} | command ${resolvedRefreshState?.command || 'n/a'}`;
+  const remediationView = buildDailyFeedbackRemediationView(positionStrategyRemediationSummary, positionStrategyRemediationSummary?.remediationHistory || null);
+  return `♻️ refresh state: needed ${remediationView.remediationRefreshNeeded ? 'yes' : 'no'} | stale ${remediationView.remediationRefreshStale ? 'yes' : 'no'} | command ${remediationView.remediationRefreshCommand || 'n/a'}`;
 }
 
 function buildPositionStrategyRemediationHistoryLine(positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary) {
-  const remediationFlat = positionStrategyRemediationSummary?.remediationFlat || null;
-  const remediationSummary = positionStrategyRemediationSummary?.remediationSummary || null;
-  const flatTrend = remediationFlat?.trendHistoryCount !== undefined
-    ? {
-      historyCount: remediationFlat?.trendHistoryCount,
-      statusChanged: remediationFlat?.trendChanged,
-      nextCommandChanged: remediationFlat?.trendNextChanged,
-      nextCommandTransition: remediationFlat?.nextCommandTransition || remediationSummary?.nextCommandTransition || null,
-      ageMinutes: remediationFlat?.trendAgeMinutes,
-      stale: remediationFlat?.trendStale,
-      duplicateDelta: remediationFlat?.trendDuplicateDelta,
-      orphanDelta: remediationFlat?.trendOrphanDelta,
-    }
-    : null;
-  const trend = positionStrategyRemediationSummary?.remediationTrendHistoryCount !== undefined
-    ? {
-      historyCount: positionStrategyRemediationSummary?.remediationTrendHistoryCount,
-      statusChanged: positionStrategyRemediationSummary?.remediationTrendChanged,
-      nextCommandChanged: positionStrategyRemediationSummary?.remediationTrendNextChanged,
-      nextCommandTransition: positionStrategyRemediationSummary?.remediationNextCommandTransition || remediationSummary?.nextCommandTransition || null,
-      ageMinutes: positionStrategyRemediationSummary?.remediationTrendAgeMinutes,
-      stale: positionStrategyRemediationSummary?.remediationTrendStale,
-      duplicateDelta: positionStrategyRemediationSummary?.remediationTrendDuplicateDelta,
-      orphanDelta: positionStrategyRemediationSummary?.remediationTrendOrphanDelta,
-    }
-    : flatTrend || remediationFlat?.trend || remediationSummary?.trend || null;
-  if (trend) {
-    return `🗂️ remediation history: count ${trend.historyCount || 0} | changed ${trend.statusChanged ? 'yes' : 'no'} | next changed ${trend.nextCommandChanged ? 'yes' : 'no'}${trend.nextCommandChanged ? ` (${trend.nextCommandTransition?.previous || 'none'} -> ${trend.nextCommandTransition?.current || 'none'})` : ''} | age ${trend.ageMinutes ?? 'n/a'}m | stale ${trend.stale ? 'yes' : 'no'} | duplicate ${trend.duplicateDelta >= 0 ? '+' : ''}${trend.duplicateDelta || 0} | orphan ${trend.orphanDelta >= 0 ? '+' : ''}${trend.orphanDelta || 0}`;
+  const remediationView = buildDailyFeedbackRemediationView(positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary);
+  if (remediationView.remediationTrendHistoryCount !== null && remediationView.remediationTrendHistoryCount !== undefined) {
+    return `🗂️ remediation history: count ${remediationView.remediationTrendHistoryCount || 0} | changed ${remediationView.remediationTrendChanged ? 'yes' : 'no'} | next changed ${remediationView.remediationTrendNextChanged ? 'yes' : 'no'}${remediationView.remediationTrendNextChanged ? ` (${remediationView.remediationNextCommandPrevious || 'none'} -> ${remediationView.remediationNextCommandCurrent || 'none'})` : ''} | age ${remediationView.remediationTrendAgeMinutes ?? 'n/a'}m | stale ${remediationView.remediationTrendStale ? 'yes' : 'no'} | duplicate ${(remediationView.remediationTrendDuplicateDelta ?? 0) >= 0 ? '+' : ''}${remediationView.remediationTrendDuplicateDelta || 0} | orphan ${(remediationView.remediationTrendOrphanDelta ?? 0) >= 0 ? '+' : ''}${remediationView.remediationTrendOrphanDelta || 0}`;
   }
   if (!positionStrategyRemediationHistorySummary || positionStrategyRemediationHistorySummary.error || !positionStrategyRemediationHistorySummary.ok) return null;
   return `🗂️ remediation history: count ${positionStrategyRemediationHistorySummary.historyCount || 0} | changed ${positionStrategyRemediationHistorySummary.statusChanged ? 'yes' : 'no'} | next changed ${positionStrategyRemediationHistorySummary.nextCommandChanged ? 'yes' : 'no'}${positionStrategyRemediationHistorySummary.nextCommandChanged ? ` (${positionStrategyRemediationHistorySummary.nextCommandTransition?.previous || 'none'} -> ${positionStrategyRemediationHistorySummary.nextCommandTransition?.current || 'none'})` : ''} | age ${positionStrategyRemediationHistorySummary.ageMinutes ?? 'n/a'}m | stale ${positionStrategyRemediationHistorySummary.stale ? 'yes' : 'no'} | duplicate ${positionStrategyRemediationHistorySummary.delta?.duplicateManaged >= 0 ? '+' : ''}${positionStrategyRemediationHistorySummary.delta?.duplicateManaged || 0} | orphan ${positionStrategyRemediationHistorySummary.delta?.orphanProfiles >= 0 ? '+' : ''}${positionStrategyRemediationHistorySummary.delta?.orphanProfiles || 0}`;
