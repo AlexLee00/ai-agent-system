@@ -3,7 +3,10 @@
 
 import assert from 'assert/strict';
 import { pathToFileURL } from 'url';
-import { summarizeTradeReviewFindings } from './validate-trade-review.ts';
+import {
+  buildTradeReviewRepairCloseout,
+  summarizeTradeReviewFindings,
+} from './validate-trade-review.ts';
 
 export function runValidateTradeReviewSmoke() {
   const summary = summarizeTradeReviewFindings([
@@ -20,7 +23,8 @@ export function runValidateTradeReviewSmoke() {
   assert.equal(summary.liveFindings, 2);
   assert.equal(summary.paperFindings, 1);
   assert.equal(summary.paperOnly, false);
-  assert.match(summary.repairCommand, /validate-review:fix/);
+  assert.match(summary.repairCommand, /validate-review:repair/);
+  assert.match(summary.fixCommand, /validate-review:fix/);
   assert.match(summary.repairHint, /pnl_percent/);
 
   const paperOnly = summarizeTradeReviewFindings([
@@ -29,7 +33,8 @@ export function runValidateTradeReviewSmoke() {
   assert.equal(paperOnly.liveFindings, 0);
   assert.equal(paperOnly.paperFindings, 1);
   assert.equal(paperOnly.paperOnly, true);
-  assert.match(paperOnly.repairCommand, /fix:paper/);
+  assert.match(paperOnly.repairCommand, /repair:paper/);
+  assert.match(paperOnly.fixCommand, /fix:paper/);
   assert.match(paperOnly.recheckCommand, /validate-review/);
 
   const empty = summarizeTradeReviewFindings([]);
@@ -37,7 +42,25 @@ export function runValidateTradeReviewSmoke() {
   assert.equal(empty.topIssue, null);
   assert.doesNotMatch(empty.repairCommand, /--paper-only/);
 
-  return { ok: true, summary, paperOnly, empty };
+  const dryRunCloseout = buildTradeReviewRepairCloseout({
+    before: { findings: 2, scope: 'paper', summary: paperOnly },
+    after: { findings: 2, scope: 'paper', summary: paperOnly },
+    fix: false,
+  });
+  assert.equal(dryRunCloseout.status, 'trade_review_repair_dry_run');
+  assert.equal(dryRunCloseout.dryRun, true);
+  assert.match(dryRunCloseout.actionItems[0], /repair:paper/);
+
+  const closedCloseout = buildTradeReviewRepairCloseout({
+    before: { findings: 2, scope: 'paper', summary: paperOnly },
+    repair: { fixed: 2, fixedLive: 0, fixedPaper: 2, scope: 'paper' },
+    after: { findings: 0, scope: 'paper', summary: empty },
+    fix: true,
+  });
+  assert.equal(closedCloseout.status, 'trade_review_repair_closed');
+  assert.equal(closedCloseout.fixedPaper, 2);
+
+  return { ok: true, summary, paperOnly, empty, dryRunCloseout, closedCloseout };
 }
 
 async function main() {

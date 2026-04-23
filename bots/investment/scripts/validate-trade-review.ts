@@ -54,6 +54,9 @@ export function summarizeTradeReviewFindings(items = []) {
   const topExchange = rank(byExchange)[0] || null;
   const topSymbol = rank(bySymbol)[0] || null;
   const repairCommand = paperFindings > 0 && liveFindings === 0
+    ? 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run validate-review:repair:paper'
+    : 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run validate-review:repair';
+  const fixCommand = paperFindings > 0 && liveFindings === 0
     ? 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run validate-review:fix:paper'
     : 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run validate-review:fix';
 
@@ -75,8 +78,46 @@ export function summarizeTradeReviewFindings(items = []) {
     paperFindings,
     paperOnly: paperFindings > 0 && liveFindings === 0,
     repairCommand,
+    fixCommand,
     recheckCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run validate-review -- --days=90',
     repairHint,
+  };
+}
+
+export function buildTradeReviewRepairCloseout({ before = null, repair = null, after = null, fix = false } = {}) {
+  const beforeFindings = Number(before?.findings || 0);
+  const afterFindings = Number(after?.findings ?? beforeFindings);
+  const fixed = Number(repair?.fixed || 0);
+  const fixedLive = Number(repair?.fixedLive || 0);
+  const fixedPaper = Number(repair?.fixedPaper || 0);
+  const scope = repair?.scope || before?.scope || after?.scope || 'all';
+  const dryRun = !fix;
+
+  let status = 'trade_review_repair_no_findings';
+  if (dryRun && beforeFindings > 0) status = 'trade_review_repair_dry_run';
+  else if (beforeFindings > 0 && afterFindings === 0) status = 'trade_review_repair_closed';
+  else if (beforeFindings > 0 && afterFindings > 0 && afterFindings < beforeFindings) status = 'trade_review_repair_partial';
+  else if (beforeFindings > 0 && afterFindings > 0) status = 'trade_review_repair_remaining';
+
+  const actionItems = [];
+  if (dryRun && before?.summary?.repairCommand) actionItems.push(before.summary.repairCommand);
+  if (!dryRun && afterFindings > 0 && after?.summary?.repairCommand) actionItems.push(after.summary.repairCommand);
+  if (!dryRun && after?.summary?.recheckCommand) actionItems.push(after.summary.recheckCommand);
+
+  return {
+    status,
+    dryRun,
+    scope,
+    beforeFindings,
+    afterFindings,
+    fixed,
+    fixedLive,
+    fixedPaper,
+    paperOnly: Boolean((after || before)?.summary?.paperOnly),
+    headline: dryRun
+      ? `trade_review 복구 dry-run: ${beforeFindings}건이 복구 후보입니다.`
+      : `trade_review 복구 결과: ${fixed}건 처리, 재검증 잔여 ${afterFindings}건입니다.`,
+    actionItems,
   };
 }
 
@@ -215,4 +256,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 
 export default {
   validateTradeReview,
+  buildTradeReviewRepairCloseout,
+  summarizeTradeReviewFindings,
 };
