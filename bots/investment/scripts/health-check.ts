@@ -20,6 +20,7 @@ import { buildRuntimeLearningLoopReport } from './runtime-learning-loop-report.t
 import { runCollectionAudit } from './runtime-collection-audit.ts';
 import { backfillTradeIncidentLinks } from './backfill-trade-incident-links.ts';
 import { normalizeDuplicateStrategyProfiles } from './normalize-duplicate-strategy-profiles.ts';
+import { retireOrphanStrategyProfiles } from './retire-orphan-strategy-profiles.ts';
 import { loadExecutionRiskApprovalGuardHealth } from './health-report-support.ts';
 
 const require = createRequire(import.meta.url);
@@ -593,6 +594,36 @@ async function main() {
         key,
         level: 1,
         msg: `ℹ️ [루나 헬스] position strategy duplicate scopes 점검 실패\n${e.message}`,
+      });
+    }
+  }
+
+  try {
+    const orphanProfiles = await retireOrphanStrategyProfiles({ apply: false });
+    const key = 'position-strategy-orphan-profiles';
+    if (Number(orphanProfiles?.summary?.orphanProfiles || 0) > 0) {
+      if (hsm.canAlert(state, key)) {
+        const sample = orphanProfiles.rows?.[0] || null;
+        issues.push({
+          key,
+          level: Number(orphanProfiles?.summary?.orphanProfiles || 0) >= 5 ? 2 : 1,
+          msg: `⚠️ [루나 헬스] position strategy orphan profiles\n${orphanProfiles.decision?.headline || 'live 포지션 없는 active strategy profile 감지'}\nactive profiles ${orphanProfiles.summary?.activeProfiles || 0} / live positions ${orphanProfiles.summary?.livePositions || 0} / orphan profiles ${orphanProfiles.summary?.orphanProfiles || 0} / orphan symbols ${orphanProfiles.summary?.orphanSymbols || 0}${sample ? `\nsample: ${sample.exchange}/${sample.symbol} ${sample.tradeMode} ${sample.lifecycleStatus}` : ''}\nnext commands:\n- npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-audit\n- npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:retire-orphan-strategy-profiles`,
+        });
+      }
+    } else if (state[key]) {
+      recovers.push({
+        key,
+        msg: '✅ [루나 헬스] position strategy orphan profiles 회복\norphan active strategy profile 없음 — 자동 감지',
+      });
+      hsm.clearAlert(state, key);
+    }
+  } catch (e) {
+    const key = 'position-strategy-orphan-profiles-check-failed';
+    if (hsm.canAlert(state, key)) {
+      issues.push({
+        key,
+        level: 1,
+        msg: `ℹ️ [루나 헬스] position strategy orphan profiles 점검 실패\n${e.message}`,
       });
     }
   }
