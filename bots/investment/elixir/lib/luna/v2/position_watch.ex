@@ -49,6 +49,9 @@ defmodule Luna.V2.PositionWatch do
     stop_loss_pct = KillSwitch.position_watch_stop_loss_pct()
     adjust_gain_pct = KillSwitch.position_watch_adjust_gain_pct()
     stale_minutes = KillSwitch.position_watch_stale_minutes()
+    tv_enabled? = KillSwitch.position_watch_tv_enabled?()
+    tv_timeframes = KillSwitch.position_watch_tv_timeframes()
+    tv_stale_ms = KillSwitch.position_watch_tv_stale_ms()
 
     query = """
     SELECT
@@ -79,18 +82,29 @@ defmodule Luna.V2.PositionWatch do
             |> Map.new(fn {value, key} -> {String.to_atom(key), value} end)
           end)
 
+        tv_snapshot = fetch_tradingview_snapshot(positions, tv_enabled?, tv_timeframes, tv_stale_ms)
+        positions_with_tv = attach_tv_snapshot(positions, tv_snapshot)
+
         attention =
-          positions
-          |> Enum.map(&classify_position(&1, stop_loss_pct, adjust_gain_pct, stale_minutes))
+          positions_with_tv
+          |> Enum.map(&classify_position(&1, stop_loss_pct, adjust_gain_pct, stale_minutes, tv_stale_ms))
           |> Enum.reject(&is_nil/1)
 
         %{
           captured_at: DateTime.utc_now(),
-          position_count: length(positions),
+          position_count: length(positions_with_tv),
           attention_count: length(attention),
           stop_loss_pct: stop_loss_pct,
           adjust_gain_pct: adjust_gain_pct,
           stale_minutes: stale_minutes,
+          tv_watch: %{
+            enabled: tv_enabled?,
+            timeframes: tv_timeframes,
+            stale_ms: tv_stale_ms,
+            status: Map.get(tv_snapshot, :status, :disabled),
+            count: map_size(Map.get(tv_snapshot, :bars, %{})),
+            error: Map.get(tv_snapshot, :error)
+          },
           attention: Enum.take(attention, 20)
         }
 
@@ -107,11 +121,15 @@ defmodule Luna.V2.PositionWatch do
     end
   end
 
-  defp classify_position(position, stop_loss_pct, adjust_gain_pct, stale_minutes) do
+  defp classify_position(position, stop_loss_pct, adjust_gain_pct, stale_minutes, tv_stale_ms) do
     pnl_ratio = to_float(position[:pnl_ratio])
     stale? = stale_position?(position[:updated_at], stale_minutes)
+    tv_attention = classify_tv_attention(position[:tv], tv_stale_ms)
 
     cond do
+      not is_nil(tv_attention) ->
+        Map.merge(position, tv_attention)
+
       stale? ->
         Map.merge(position, %{attention_type: :stale_position, reason: "updated_at stale"})
 
@@ -137,6 +155,163 @@ defmodule Luna.V2.PositionWatch do
   end
 
   defp stale_position?(_, _stale_minutes), do: false
+
+  defp fetch_tradingview_snapshot(_positions, false, _timeframes, _tv_stale_ms) do
+    %{status: :disabled, bars: %{}, error: nil}
+  end
+
+  defp fetch_tradingview_snapshot(positions, true, timeframes, _tv_stale_ms) do
+    symbols =
+      positions
+      |> Enum.map(&to_tv_symbol/1)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq()
+
+    Enum.each(symbols, fn symbol ->
+      Enum.each(timeframes, fn timeframe ->
+        _ = Req.get("#{KillSwitch.position_watch_tv_base_url()}/subscribe",
+          params: [symbol: symbol, timeframe: timeframe],
+          retry: false
+        )
+      end)
+    end)
+
+    case Req.get("#{KillSwitch.position_watch_tv_base_url()}/latest",
+           params: [symbols: Enum.join(symbols, ","), timeframes: Enum.join(timeframes, ",")],
+           retry: false
+         ) do
+      {:ok, %Req.Response{status: 200, body: %{"bars" => bars, "tv_ws" => tv_ws}}} ->
+        mapped =
+          Enum.reduce(bars || [], %{}, fn row, acc ->
+            symbol = Map.get(row, "symbol")
+            timeframe = Map.get(row, "timeframe")
+
+            if is_binary(symbol) and is_binary(timeframe) do
+              Map.put(acc, {symbol, timeframe}, normalize_tv_row(row))
+            else
+              acc
+            end
+          end)
+
+        %{status: normalize_tv_status(tv_ws), bars: mapped, error: nil}
+
+      {:ok, %Req.Response{status: status}} ->
+        %{status: :http_error, bars: %{}, error: "status=#{status}"}
+
+      {:error, reason} ->
+        %{status: :transport_error, bars: %{}, error: inspect(reason)}
+    end
+  end
+
+  defp attach_tv_snapshot(positions, tv_snapshot) do
+    Enum.map(positions, fn position ->
+      tv_symbol = to_tv_symbol(position)
+
+      tv =
+        if is_binary(tv_symbol) do
+          frames =
+            KillSwitch.position_watch_tv_timeframes()
+            |> Enum.map(fn timeframe ->
+              {timeframe, Map.get(tv_snapshot.bars, {tv_symbol, timeframe})}
+            end)
+            |> Enum.into(%{})
+
+          %{
+            symbol: tv_symbol,
+            frames: frames
+          }
+        else
+          nil
+        end
+
+      Map.put(position, :tv, tv)
+    end)
+  end
+
+  defp normalize_tv_row(row) do
+    bar = Map.get(row, "bar", %{}) || %{}
+    open = to_float(Map.get(bar, "open"))
+    close = to_float(Map.get(bar, "close"))
+    age_ms = Map.get(row, "ageMs")
+
+    %{
+      timeframe: Map.get(row, "timeframe"),
+      age_ms: if(is_number(age_ms), do: age_ms, else: to_float(age_ms)),
+      timestamp: Map.get(bar, "timestamp"),
+      open: open,
+      high: to_float(Map.get(bar, "high")),
+      low: to_float(Map.get(bar, "low")),
+      close: close,
+      volume: to_float(Map.get(bar, "volume")),
+      direction:
+        cond do
+          close > open -> :bullish
+          close < open -> :bearish
+          true -> :flat
+        end
+    }
+  end
+
+  defp classify_tv_attention(nil, _tv_stale_ms), do: nil
+
+  defp classify_tv_attention(%{frames: frames}, tv_stale_ms) when is_map(frames) do
+    stale_frame =
+      Enum.find(frames, fn {_timeframe, frame} ->
+        is_map(frame) and is_number(frame.age_ms) and frame.age_ms >= tv_stale_ms
+      end)
+
+    bearish_frame =
+      Enum.find(frames, fn {_timeframe, frame} ->
+        is_map(frame) and frame.direction == :bearish
+      end)
+
+    cond do
+      stale_frame ->
+        {timeframe, frame} = stale_frame
+        %{
+          attention_type: :tv_bar_stale,
+          reason: "TradingView #{timeframe} bar stale",
+          tv_timeframe: timeframe,
+          tv_age_ms: frame.age_ms
+        }
+
+      bearish_frame ->
+        {timeframe, frame} = bearish_frame
+        %{
+          attention_type: :tv_live_bearish,
+          reason: "TradingView #{timeframe} live candle bearish",
+          tv_timeframe: timeframe,
+          tv_age_ms: frame.age_ms,
+          tv_open: frame.open,
+          tv_close: frame.close
+        }
+
+      true ->
+        nil
+    end
+  end
+
+  defp classify_tv_attention(_, _tv_stale_ms), do: nil
+
+  defp normalize_tv_status("connected"), do: :connected
+  defp normalize_tv_status("disconnected"), do: :disconnected
+  defp normalize_tv_status(_), do: :unknown
+
+  defp to_tv_symbol(position) do
+    symbol = to_string(position[:symbol] || "")
+    exchange = to_string(position[:exchange] || "")
+
+    cond do
+      exchange == "binance" and String.contains?(symbol, "/") ->
+        "BINANCE:" <> String.replace(symbol, "/", "")
+
+      exchange == "kis" and Regex.match?(~r/^\d{6}$/, symbol) ->
+        "KRX:" <> symbol
+
+      true ->
+        nil
+    end
+  end
 
   defp maybe_broadcast(snapshot, previous_snapshot) do
     previous_attention = Map.get(previous_snapshot || %{}, :attention_count, 0)

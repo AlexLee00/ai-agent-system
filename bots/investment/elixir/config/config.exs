@@ -23,7 +23,11 @@ config :luna,
   position_watch_interval_ms: String.to_integer(System.get_env("LUNA_POSITION_WATCH_INTERVAL_MS", "60000")),
   position_watch_stop_loss_pct: String.to_float(System.get_env("LUNA_POSITION_WATCH_STOP_LOSS_PCT", "0.05")),
   position_watch_adjust_gain_pct: String.to_float(System.get_env("LUNA_POSITION_WATCH_ADJUST_GAIN_PCT", "0.10")),
-  position_watch_stale_minutes: String.to_integer(System.get_env("LUNA_POSITION_WATCH_STALE_MINUTES", "120"))
+  position_watch_stale_minutes: String.to_integer(System.get_env("LUNA_POSITION_WATCH_STALE_MINUTES", "120")),
+  position_watch_tv_enabled: System.get_env("LUNA_POSITION_WATCH_TV_ENABLED", "true") == "true",
+  position_watch_tv_base_url: System.get_env("LUNA_POSITION_WATCH_TV_BASE_URL", "http://127.0.0.1:8083"),
+  position_watch_tv_timeframes: String.split(System.get_env("LUNA_POSITION_WATCH_TV_TIMEFRAMES", "1h,4h"), ",", trim: true),
+  position_watch_tv_stale_ms: String.to_integer(System.get_env("LUNA_POSITION_WATCH_TV_STALE_MS", "180000"))
 
 config :luna, Jay.Core.Repo,
   database:  System.get_env("PG_DATABASE", "jay"),

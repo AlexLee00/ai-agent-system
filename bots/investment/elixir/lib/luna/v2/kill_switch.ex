@@ -56,4 +56,8 @@ defmodule Luna.V2.KillSwitch do
   def position_watch_stop_loss_pct, do: Application.get_env(:luna, :position_watch_stop_loss_pct, 0.05)
   def position_watch_adjust_gain_pct, do: Application.get_env(:luna, :position_watch_adjust_gain_pct, 0.10)
   def position_watch_stale_minutes, do: Application.get_env(:luna, :position_watch_stale_minutes, 120)
+  def position_watch_tv_enabled?, do: Application.get_env(:luna, :position_watch_tv_enabled, true)
+  def position_watch_tv_base_url, do: Application.get_env(:luna, :position_watch_tv_base_url, "http://127.0.0.1:8083")
+  def position_watch_tv_timeframes, do: Application.get_env(:luna, :position_watch_tv_timeframes, ["1h", "4h"])
+  def position_watch_tv_stale_ms, do: Application.get_env(:luna, :position_watch_tv_stale_ms, 180_000)
 end

@@ -54,6 +54,7 @@ const barPublishedCounter = new Counter({
 // 구독 상태 관리
 const subscriptions = new Map(); // key: `${symbol}:${timeframe}` → { symbol, timeframe, lastBarAt }
 const clientSockets = new Set(); // 연결된 클라이언트 WebSocket
+const latestBars = new Map(); // key: `${symbol}:${timeframe}` → { symbol, timeframe, lastBarAt, bar }
 
 // TradingView 연결 (실제 환경에서는 TV WebSocket API)
 // NOTE: TradingView WebSocket은 공식 API가 없어 dovudo 패턴의 비공개 프로토콜 사용
@@ -146,6 +147,12 @@ function processOhlcvUpdate(msg) {
       };
 
       sub.lastBarAt = Date.now();
+      latestBars.set(key, {
+        symbol: sub.symbol,
+        timeframe: sub.timeframe,
+        lastBarAt: sub.lastBarAt,
+        bar: barPayload,
+      });
       staleSubscriptionsGauge.set({ symbol: sub.symbol, timeframe: sub.timeframe }, 0);
       barPublishedCounter.inc({ symbol: sub.symbol, timeframe: sub.timeframe });
 
@@ -248,6 +255,7 @@ wss.on('connection', (ws, req) => {
       } else if (msg.action === 'unsubscribe' && msg.symbol && msg.timeframe) {
         const key = `${msg.symbol}:${msg.timeframe}`;
         subscriptions.delete(key);
+        latestBars.delete(key);
         staleSubscriptionsGauge.remove({ symbol: msg.symbol, timeframe: msg.timeframe });
         ws.send(JSON.stringify({ ok: true, action: 'unsubscribed', key }));
       } else if (msg.action === 'list') {
@@ -267,10 +275,11 @@ wss.on('connection', (ws, req) => {
 
 // Prometheus 메트릭스 서버 (포트 8083)
 const metricsServer = http.createServer(async (req, res) => {
-  if (req.url === '/metrics') {
+  const url = new URL(req.url || '/', `http://${req.headers.host || `127.0.0.1:${METRICS_PORT}`}`);
+  if (url.pathname === '/metrics') {
     res.setHeader('Content-Type', registry.contentType);
     res.end(await registry.metrics());
-  } else if (req.url === '/health') {
+  } else if (url.pathname === '/health') {
     const tvStatus = tvWs?.readyState === WebSocket.OPEN ? 'connected' : 'disconnected';
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({
@@ -278,6 +287,64 @@ const metricsServer = http.createServer(async (req, res) => {
       tv_ws: tvStatus,
       subscriptions: subscriptions.size,
       clients: clientSockets.size,
+    }));
+  } else if (url.pathname === '/subscribe') {
+    const symbol = url.searchParams.get('symbol');
+    const timeframe = url.searchParams.get('timeframe');
+    if (!symbol || !timeframe) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'symbol,timeframe required' }));
+      return;
+    }
+    const key = `${symbol}:${timeframe}`;
+    if (!subscriptions.has(key)) {
+      subscriptions.set(key, { symbol, timeframe, lastBarAt: null });
+      sendTvSubscribe(symbol, timeframe);
+      console.log(`[TV-WS] HTTP 구독 추가: ${key}`);
+    }
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ ok: true, key, subscriptions: subscriptions.size }));
+  } else if (url.pathname === '/unsubscribe') {
+    const symbol = url.searchParams.get('symbol');
+    const timeframe = url.searchParams.get('timeframe');
+    if (!symbol || !timeframe) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'symbol,timeframe required' }));
+      return;
+    }
+    const key = `${symbol}:${timeframe}`;
+    subscriptions.delete(key);
+    latestBars.delete(key);
+    staleSubscriptionsGauge.remove({ symbol, timeframe });
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ ok: true, key, subscriptions: subscriptions.size }));
+  } else if (url.pathname === '/latest') {
+    const symbols = (url.searchParams.get('symbols') || '')
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+    const timeframes = (url.searchParams.get('timeframes') || '')
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+    const now = Date.now();
+    const rows = [...latestBars.values()].filter((item) => {
+      if (symbols.length > 0 && !symbols.includes(item.symbol)) return false;
+      if (timeframes.length > 0 && !timeframes.includes(item.timeframe)) return false;
+      return true;
+    }).map((item) => ({
+      symbol: item.symbol,
+      timeframe: item.timeframe,
+      lastBarAt: item.lastBarAt,
+      ageMs: item.lastBarAt ? Math.max(0, now - item.lastBarAt) : null,
+      bar: item.bar,
+    }));
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({
+      status: 'ok',
+      tv_ws: tvWs?.readyState === WebSocket.OPEN ? 'connected' : 'disconnected',
+      count: rows.length,
+      bars: rows,
     }));
   } else {
     res.writeHead(404);
