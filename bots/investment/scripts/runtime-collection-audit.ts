@@ -109,6 +109,42 @@ export function inferObservedCollectQuality({ explicitQuality = null, nodeCovera
   };
 }
 
+export function applyCollectionUniverseCompletenessGate({
+  quality = null,
+  source = 'unknown',
+  market = 'unknown',
+  screeningUniverseCount = 0,
+  maintenanceUniverseCount = 0,
+  maintenanceProfiledCount = 0,
+} = {}) {
+  const current = quality || { status: 'unknown', readinessScore: 0 };
+  if (current.status !== 'ready') return current;
+  if (source !== 'observed_node_coverage') return current;
+
+  const hasUniverse =
+    Number(screeningUniverseCount || 0) > 0
+    || Number(maintenanceUniverseCount || 0) > 0
+    || Number(maintenanceProfiledCount || 0) > 0;
+  if (hasUniverse) return current;
+
+  return {
+    ...current,
+    status: 'degraded',
+    readinessScore: Math.min(Number(current.readinessScore || 0.5), 0.65),
+    reasons: [
+      ...(Array.isArray(current.reasons) ? current.reasons : []),
+      'missing_collection_universe_meta',
+    ],
+    observed: true,
+    universeGate: {
+      market,
+      screeningUniverseCount: Number(screeningUniverseCount || 0),
+      maintenanceUniverseCount: Number(maintenanceUniverseCount || 0),
+      maintenanceProfiledCount: Number(maintenanceProfiledCount || 0),
+    },
+  };
+}
+
 async function auditMarket(market, hours = 24) {
   const [latestRun, latestScreeningRun, latestMaintenanceRun, maintenanceUniverse] = await Promise.all([
     loadLatestRun(market, hours),
@@ -144,30 +180,40 @@ async function auditMarket(market, hours = 24) {
     nodeCoverage,
     market,
   });
-  const effectiveQuality = qualityInference.quality;
+  const screeningUniverseCount = Number(
+    collectMetrics.screeningSymbolCount
+    || screeningMetrics.screeningSymbolCount
+    || 0,
+  );
+  const maintenanceUniverseCount = Number(
+    collectMetrics.maintenanceSymbolCount
+    || maintenanceMetrics.maintenanceSymbolCount
+    || maintenanceUniverse.managedCount
+    || 0,
+  );
+  const maintenanceProfiledCount = Number(
+    collectMetrics.maintenanceProfiledCount
+    || maintenanceMetrics.maintenanceProfiledCount
+    || maintenanceUniverse.profiledCount
+    || 0,
+  );
+  const effectiveQuality = applyCollectionUniverseCompletenessGate({
+    quality: qualityInference.quality,
+    source: qualityInference.source,
+    market,
+    screeningUniverseCount,
+    maintenanceUniverseCount,
+    maintenanceProfiledCount,
+  });
 
   const audit = {
     market,
     latestSessionId: latestRun?.session_id || null,
     latestStartedAt: latestRun?.started_at ? new Date(Number(latestRun.started_at)).toISOString() : null,
     latestStatus: latestRun?.status || null,
-    screeningUniverseCount: Number(
-      collectMetrics.screeningSymbolCount
-      || screeningMetrics.screeningSymbolCount
-      || 0,
-    ),
-    maintenanceUniverseCount: Number(
-      collectMetrics.maintenanceSymbolCount
-      || maintenanceMetrics.maintenanceSymbolCount
-      || maintenanceUniverse.managedCount
-      || 0,
-    ),
-    maintenanceProfiledCount: Number(
-      collectMetrics.maintenanceProfiledCount
-      || maintenanceMetrics.maintenanceProfiledCount
-      || maintenanceUniverse.profiledCount
-      || 0,
-    ),
+    screeningUniverseCount,
+    maintenanceUniverseCount,
+    maintenanceProfiledCount,
     dustSkippedCount: Number(
       collectMetrics.maintenanceDustSkippedCount
       || maintenanceMetrics.maintenanceDustSkippedCount
@@ -257,17 +303,25 @@ export async function runCollectionAudit({ markets = MARKETS, hours = 24 } = {})
     marketsAudit.push(await auditMarket(market, hours));
   }
 
+  const qualityInsufficient = marketsAudit.filter((item) => item.collectQuality?.status === 'insufficient').length;
+  const qualityDegraded = marketsAudit.filter((item) => item.collectQuality?.status === 'degraded').length;
+  const qualityReady = marketsAudit.filter((item) => item.collectQuality?.status === 'ready').length;
+
   return {
-    status: 'collection_audit_ready',
+    status: qualityInsufficient > 0
+      ? 'collection_audit_insufficient'
+      : qualityDegraded > 0
+        ? 'collection_audit_degraded'
+        : 'collection_audit_ready',
     hours,
     markets: marketsAudit,
     summary: {
       markets: normalizedMarkets.length,
       withRecentRuns: marketsAudit.filter((item) => item.latestSessionId).length,
       maintenanceEnabled: marketsAudit.filter((item) => item.stages.maintenanceCollect.implemented).length,
-      qualityReady: marketsAudit.filter((item) => item.collectQuality?.status === 'ready').length,
-      qualityDegraded: marketsAudit.filter((item) => item.collectQuality?.status === 'degraded').length,
-      qualityInsufficient: marketsAudit.filter((item) => item.collectQuality?.status === 'insufficient').length,
+      qualityReady,
+      qualityDegraded,
+      qualityInsufficient,
     },
   };
 }

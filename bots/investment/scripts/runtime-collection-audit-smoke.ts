@@ -2,7 +2,10 @@
 // @ts-nocheck
 
 import assert from 'node:assert/strict';
-import { inferObservedCollectQuality } from './runtime-collection-audit.ts';
+import {
+  applyCollectionUniverseCompletenessGate,
+  inferObservedCollectQuality,
+} from './runtime-collection-audit.ts';
 
 const explicit = inferObservedCollectQuality({
   explicitQuality: { status: 'degraded', readinessScore: 0.5, reasons: ['x'] },
@@ -19,6 +22,27 @@ const domesticObserved = inferObservedCollectQuality({
 assert.equal(domesticObserved.source, 'observed_node_coverage');
 assert.equal(domesticObserved.quality.status, 'ready');
 assert.equal(domesticObserved.quality.collectMode, 'observed_core');
+
+const domesticObservedWithoutUniverse = applyCollectionUniverseCompletenessGate({
+  quality: domesticObserved.quality,
+  source: domesticObserved.source,
+  market: 'kis',
+  screeningUniverseCount: 0,
+  maintenanceUniverseCount: 0,
+  maintenanceProfiledCount: 0,
+});
+assert.equal(domesticObservedWithoutUniverse.status, 'degraded');
+assert.equal(domesticObservedWithoutUniverse.reasons.includes('missing_collection_universe_meta'), true);
+
+const domesticObservedWithUniverse = applyCollectionUniverseCompletenessGate({
+  quality: domesticObserved.quality,
+  source: domesticObserved.source,
+  market: 'kis',
+  screeningUniverseCount: 3,
+  maintenanceUniverseCount: 0,
+  maintenanceProfiledCount: 0,
+});
+assert.equal(domesticObservedWithUniverse.status, 'ready');
 
 const overseasObserved = inferObservedCollectQuality({
   nodeCoverage: { nodeIds: ['L02', 'L03', 'L04', 'L06'], total: 31 },
