@@ -33,6 +33,7 @@ async function analyzeCorrelation() {
   const trades = await db.query(`
     SELECT
       s.analyst_signals,
+      COALESCE(NULLIF(s.strategy_family, ''), NULLIF(j.strategy_family, ''), 'unknown') AS strategy_family,
       j.pnl_percent,
       j.symbol,
       j.direction
@@ -132,8 +133,37 @@ async function analyzeCorrelation() {
     console.log(`   ${marker} ${botLabels[bot]}: ${acc}% (${correct}/${total}건 일치)`);
   }
 
-  // ── 5. 권장 사항 ─────────────────────────────────────────────────
-  console.log('\n5. 권장 사항');
+  // ── 5. 전략 패밀리별 성과 ────────────────────────────────────────
+  console.log('\n5. 전략 패밀리별 성과\n');
+  const familyMap = {};
+  for (const t of trades) {
+    const family = String(t.strategy_family || 'unknown');
+    if (family === 'unknown') continue;
+    if (!familyMap[family]) familyMap[family] = { wins: 0, losses: 0, totalPnl: 0 };
+    const pnl = parseFloat(t.pnl_percent || 0);
+    if (pnl > 0) familyMap[family].wins++;
+    else familyMap[family].losses++;
+    familyMap[family].totalPnl += pnl;
+  }
+  const familyRows = Object.entries(familyMap)
+    .map(([family, data]) => {
+      const total = data.wins + data.losses;
+      const winRate = total > 0 ? (data.wins / total * 100).toFixed(1) : '0.0';
+      const expectancy = total > 0 ? (data.totalPnl / total).toFixed(3) : '0.000';
+      return { family, total, winRate, expectancy, totalPnl: data.totalPnl };
+    })
+    .sort((a, b) => parseFloat(b.expectancy) - parseFloat(a.expectancy));
+  if (familyRows.length === 0) {
+    console.log('   전략 패밀리 표본 없음');
+  } else {
+    for (const row of familyRows) {
+      const marker = parseFloat(row.expectancy) > 0 ? '✅' : '❌';
+      console.log(`   ${marker} ${row.family}: ${row.total}건 | 승률 ${row.winRate}% | 기대값 ${row.expectancy}% | 총PnL ${row.totalPnl.toFixed(2)}%`);
+    }
+  }
+
+  // ── 6. 권장 사항 ─────────────────────────────────────────────────
+  console.log('\n6. 권장 사항');
   if (sorted.length > 0 && parseFloat(sorted[0].expectancy) > 0) {
     console.log(`   최고 조합: ${sorted[0].pattern} (기대값 ${sorted[0].expectancy}%, ${sorted[0].total}건)`);
   }
@@ -146,18 +176,22 @@ async function analyzeCorrelation() {
   console.log('   → analyze-rr.js와 함께 주간 리뷰에서 참조');
   console.log('');
 
-  // ── 6. RAG 저장 ──────────────────────────────────────────────────
+  // ── 7. RAG 저장 ──────────────────────────────────────────────────
   try {
     const topPattern = sorted.length > 0 ? sorted[0] : null;
+    const topFamily = familyRows[0] || null;
     const ragSummary =
       `[신호 상관관계 분석 ${kst.today()}] ` +
       `${trades.length}건 | ` +
-      `최고 조합: ${topPattern?.pattern || 'N/A'} (기대값 ${topPattern?.expectancy || 'N/A'}%)`;
+      `최고 조합: ${topPattern?.pattern || 'N/A'} (기대값 ${topPattern?.expectancy || 'N/A'}%) | ` +
+      `전략 패밀리: ${topFamily?.family || 'N/A'} (${topFamily?.expectancy || 'N/A'}%)`;
     await rag.store('trades', ragSummary, {
       type:             'signal_correlation',
       total_trades:     trades.length,
       best_pattern:     topPattern?.pattern    || null,
       best_expectancy:  topPattern ? parseFloat(topPattern.expectancy) : null,
+      best_strategy_family: topFamily?.family || null,
+      best_strategy_expectancy: topFamily ? parseFloat(topFamily.expectancy) : null,
       days:             DAYS,
       event_type:       'signal_correlation_rag',
     }, 'luna');
