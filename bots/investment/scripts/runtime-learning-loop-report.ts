@@ -47,6 +47,15 @@ function buildRegimeActionHint(regimeSummary = null, direction = 'weak') {
   return `${regimeSummary.regime} 장세에서는 ${mode.tradeMode} 레인을 기준선으로 유지하며 표본을 더 누적합니다.`;
 }
 
+function isSuggestionAlreadyApplied(suggestion = null) {
+  if (!suggestion) return false;
+  if (suggestion.alreadyApplied === true) return true;
+  const current = suggestion.current ?? suggestion.governance?.current ?? null;
+  const suggested = suggestion.suggestedValue ?? suggestion.suggested ?? null;
+  if (current == null || suggested == null) return false;
+  return String(current) === String(suggested);
+}
+
 function selectPriorityRuntimeSuggestion(runtimeSuggestions = null, regimePerformance = null) {
   const suggestions = Array.isArray(runtimeSuggestions?.suggestions) ? runtimeSuggestions.suggestions : [];
   if (!suggestions.length) return null;
@@ -388,12 +397,26 @@ function buildDecision(sections = {}) {
     const weakest = sections.collect.regimePerformance.weakestRegime;
     const strongest = sections.collect.regimePerformance?.strongestRegime;
     const topSuggestion = sections.strategy?.runtimeSuggestionTop;
-    status = 'regime_strategy_tuning_needed';
-    headline = `${weakest.regime} 장세에서 ${weakest.worstMode.tradeMode} 레인의 성과가 약해 전략 수정이 필요합니다.`;
-    nextActions.push(`${weakest.regime} 장세의 ${weakest.worstMode.tradeMode} 레인 진입 기준과 비중을 먼저 줄이거나 재학습합니다.`);
-    nextActions.push('npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-suggest -- --json');
-    if (topSuggestion?.key) {
-      nextActions.push(`우선 검토 제안: ${topSuggestion.key} -> ${topSuggestion.suggested} (${topSuggestion.action})`);
+    const suggestionAlreadyApplied = isSuggestionAlreadyApplied(topSuggestion);
+    const suggestionAction = String(topSuggestion?.action || '');
+    const suggestionCurrent = topSuggestion?.current ?? topSuggestion?.governance?.current ?? 'n/a';
+    const suggestionTarget = topSuggestion?.suggestedValue ?? topSuggestion?.suggested ?? 'n/a';
+
+    if (suggestionAlreadyApplied || suggestionAction === 'observe' || suggestionAction === 'hold') {
+      status = 'regime_strategy_monitor';
+      headline = `${weakest.regime} 장세에서 ${weakest.worstMode.tradeMode} 레인의 성과 약세가 이어져, 현재 설정 반영 효과를 계속 관찰하며 다음 조정 타이밍을 판단합니다.`;
+      if (topSuggestion?.key) {
+        nextActions.push(`현재 적용값을 유지하며 관찰합니다: ${topSuggestion.key} = ${suggestionCurrent}`);
+      }
+      nextActions.push('runtime-suggest 결과와 최신 장세 스냅샷을 함께 보며 추가 완화가 필요한지 추세를 더 누적합니다.');
+    } else {
+      status = 'regime_strategy_tuning_needed';
+      headline = `${weakest.regime} 장세에서 ${weakest.worstMode.tradeMode} 레인의 성과가 약해, 대응 전략 조정을 우선 검토합니다.`;
+      nextActions.push(`${weakest.regime} 장세의 ${weakest.worstMode.tradeMode} 레인 진입 기준과 비중을 먼저 줄이거나 재학습합니다.`);
+      nextActions.push('npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-suggest -- --json');
+      if (topSuggestion?.key) {
+        nextActions.push(`우선 검토 제안: ${topSuggestion.key} ${suggestionCurrent} -> ${suggestionTarget} (${topSuggestion.action})`);
+      }
     }
     if (strongest?.bestMode?.avgPnlPercent != null) {
       nextActions.push(`${strongest.regime} 장세의 ${strongest.bestMode.tradeMode} 레인은 유지하며 비교 표본으로 계속 누적합니다.`);
