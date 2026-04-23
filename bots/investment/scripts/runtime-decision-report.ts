@@ -41,6 +41,18 @@ function countMapTotal(map = {}) {
   return Object.values(map || {}).reduce((sum, value) => sum + Number(value || 0), 0);
 }
 
+const DUST_EXIT_BLOCK_CODES = new Set([
+  'sell_amount_below_minimum',
+  'partial_sell_below_minimum',
+]);
+
+export function isDustExitOutcome({ status = '', blockCode = '' } = {}) {
+  const normalizedStatus = String(status || '').toLowerCase();
+  const normalizedBlockCode = String(blockCode || '').toLowerCase();
+  return DUST_EXIT_BLOCK_CODES.has(normalizedBlockCode)
+    && ['skipped_below_min', 'failed', 'blocked', 'rejected'].includes(normalizedStatus);
+}
+
 async function loadRuntimeDecisions({ market = 'all', limit = 5, includeSmoke = false } = {}) {
   const normalizedMarket = normalizeMarket(market);
   let where = `pipeline = 'luna_pipeline' AND meta->>'bridge_status' IS NOT NULL`;
@@ -127,31 +139,43 @@ async function loadRecentSignalOutcomeSummary({ market = 'all', hours = 6, since
 
   const summary = {
     total: 0,
+    activeTotal: 0,
     executed: 0,
     blocked: 0,
     failed: 0,
+    dustExitSkipped: 0,
     topBlockCode: null,
     topBlockCount: 0,
     rows: [],
+    dustRows: [],
   };
 
   for (const row of rows) {
     const count = Number(row.count || 0);
     const status = String(row.status || 'unknown');
     const blockCode = row.block_code || null;
+    const isDustExit = isDustExitOutcome({ status, blockCode });
     summary.total += count;
-    if (status === 'executed') summary.executed += count;
-    else if (status === 'blocked') summary.blocked += count;
-    else if (status === 'failed') summary.failed += count;
-    if (blockCode && count > summary.topBlockCount) {
+    if (isDustExit) {
+      summary.dustExitSkipped += count;
+    } else {
+      summary.activeTotal += count;
+      if (status === 'executed') summary.executed += count;
+      else if (status === 'blocked') summary.blocked += count;
+      else if (status === 'failed') summary.failed += count;
+    }
+    if (!isDustExit && blockCode && count > summary.topBlockCount) {
       summary.topBlockCode = blockCode;
       summary.topBlockCount = count;
     }
-    summary.rows.push({
+    const item = {
       status,
       blockCode,
       count,
-    });
+      category: isDustExit ? 'dust_exit_below_min' : 'active',
+    };
+    summary.rows.push(item);
+    if (isDustExit) summary.dustRows.push(item);
   }
 
   return summary;
@@ -321,7 +345,7 @@ function renderText(rows = [], args = {}) {
     `strategyRoutes: ${formatMap(summary.strategyRouteCounts)}${summary.strategyRouteAvgReadiness == null ? '' : ` | avgReadiness=${summary.strategyRouteAvgReadiness}`}`,
     `strategyRouteQuality: ${formatMap(summary.strategyRouteQualityCounts)}`,
     `warnings: ${summary.warnings.join(', ') || 'none'}`,
-    `signalOutcomes: executed=${signalOutcomes.executed || 0}, blocked=${rawBlocked}, activeBlocked=${activeBlocked || effectiveBlocked}, resolvedBlocked=${resolvedBlocked}, failed=${signalOutcomes.failed || 0}${signalOutcomes.topBlockCode ? ` | topBlock=${signalOutcomes.topBlockCode}:${signalOutcomes.topBlockCount || 0}` : ''}`,
+    `signalOutcomes: executed=${signalOutcomes.executed || 0}, blocked=${rawBlocked}, activeBlocked=${activeBlocked || effectiveBlocked}, resolvedBlocked=${resolvedBlocked}, failed=${signalOutcomes.failed || 0}, dustExitSkipped=${signalOutcomes.dustExitSkipped || 0}${signalOutcomes.topBlockCode ? ` | topBlock=${signalOutcomes.topBlockCode}:${signalOutcomes.topBlockCount || 0}` : ''}`,
     `blockedReview: active=${blockedReview.activeCount || 0}, resolved=${blockedReview.resolvedCount || 0}${blockedReview.topActiveReason ? ` | topActive=${blockedReview.topActiveReason}` : ''}`,
   ];
 

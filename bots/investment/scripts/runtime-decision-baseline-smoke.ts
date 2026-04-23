@@ -2,7 +2,7 @@
 // @ts-nocheck
 
 import assert from 'node:assert/strict';
-import { buildStockSizingFloorBaselineFilter } from './runtime-decision-report.ts';
+import { buildStockSizingFloorBaselineFilter, isDustExitOutcome } from './runtime-decision-report.ts';
 
 const all = buildStockSizingFloorBaselineFilter({ market: 'all' });
 assert.match(all, /kis/);
@@ -21,5 +21,11 @@ assert.doesNotMatch(overseas, /exchange = 'kis'/);
 
 const crypto = buildStockSizingFloorBaselineFilter({ market: 'crypto' });
 assert.equal(crypto, '');
+
+assert.equal(isDustExitOutcome({ status: 'skipped_below_min', blockCode: 'sell_amount_below_minimum' }), true);
+assert.equal(isDustExitOutcome({ status: 'failed', blockCode: 'sell_amount_below_minimum' }), true);
+assert.equal(isDustExitOutcome({ status: 'failed', blockCode: 'partial_sell_below_minimum' }), true);
+assert.equal(isDustExitOutcome({ status: 'executed', blockCode: 'sell_amount_below_minimum' }), false);
+assert.equal(isDustExitOutcome({ status: 'failed', blockCode: 'missing_position' }), false);
 
 console.log('✅ runtime decision baseline smoke passed');
