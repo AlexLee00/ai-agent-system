@@ -29,6 +29,7 @@ import { runExecutionAttachBackfill } from './runtime-execution-attach-backfill.
 import { buildRuntimePositionStrategyAudit } from './runtime-position-strategy-audit.ts';
 import { buildPositionStrategyHygieneRemediationPlan, runPositionStrategyHygiene } from './runtime-position-strategy-hygiene.ts';
 import { runPositionStrategyRemediation } from './runtime-position-strategy-remediation.ts';
+import { buildPositionStrategyRemediationHistory } from './runtime-position-strategy-remediation-history.ts';
 import { normalizeDuplicateStrategyProfiles } from './normalize-duplicate-strategy-profiles.ts';
 import { retireOrphanStrategyProfiles } from './retire-orphan-strategy-profiles.ts';
 import { backfillTradeIncidentLinks } from './backfill-trade-incident-links.ts';
@@ -1198,6 +1199,12 @@ function formatText(report) {
                 `  remediation headline: ${report.positionStrategyRemediation.decision?.headline || 'n/a'}`,
               ]
               : []),
+            ...(report.positionStrategyRemediationHistory
+              ? [
+                `  remediation history: count ${report.positionStrategyRemediationHistory.historyCount || 0} / changed ${report.positionStrategyRemediationHistory.statusChanged ? 'yes' : 'no'}`,
+                `  remediation delta: duplicate ${report.positionStrategyRemediationHistory.delta?.duplicateManaged >= 0 ? '+' : ''}${report.positionStrategyRemediationHistory.delta?.duplicateManaged || 0} / orphan ${report.positionStrategyRemediationHistory.delta?.orphanProfiles >= 0 ? '+' : ''}${report.positionStrategyRemediationHistory.delta?.orphanProfiles || 0} / unmatched ${report.positionStrategyRemediationHistory.delta?.unmatchedManaged >= 0 ? '+' : ''}${report.positionStrategyRemediationHistory.delta?.unmatchedManaged || 0}`,
+              ]
+              : []),
             ...(report.duplicateStrategyNormalization
               ? [
                 `  normalize status: ${report.duplicateStrategyNormalization.decision?.status || 'unknown'} / safeToApply ${report.duplicateStrategyNormalization.decision?.safeToApply === true ? 'yes' : 'no'}`,
@@ -1215,6 +1222,7 @@ function formatText(report) {
             ...(report.positionStrategyAudit.duplicateProfileScopes || []).slice(0, 3).map((scope) => `  duplicate: ${scope.exchange}/${scope.symbol} count ${scope.count} keeper ${scope.keeperProfileId}`),
             `  next command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-audit`,
             `  remediation report: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation -- --json`,
+            `  remediation history: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation-history -- --json`,
             `  hygiene report: ${report.positionStrategyHygiene?.remediationPlan?.hygieneReportCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-hygiene -- --json'}`,
             `  normalize dry-run: ${report.positionStrategyHygiene?.remediationPlan?.normalizeDryRunCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --json'}`,
             `  normalize apply: ${report.positionStrategyHygiene?.remediationPlan?.normalizeApplyCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --apply --json'}`,
@@ -1301,6 +1309,7 @@ async function buildReport() {
   const positionStrategyAudit = await buildRuntimePositionStrategyAudit({ json: true }).catch(() => null);
   const positionStrategyHygiene = await runPositionStrategyHygiene({ json: true }).catch(() => null);
   const positionStrategyRemediation = await runPositionStrategyRemediation({ json: true }).catch(() => null);
+  const positionStrategyRemediationHistory = await buildPositionStrategyRemediationHistory({ json: true }).catch(() => null);
   const hygieneRecommendedExchange = positionStrategyHygiene?.recommendedExchange?.exchange || null;
   const duplicateStrategyNormalization = await normalizeDuplicateStrategyProfiles({ apply: false, exchange: hygieneRecommendedExchange }).catch(() => null);
   const orphanStrategyRetirement = await retireOrphanStrategyProfiles({ apply: false, exchange: hygieneRecommendedExchange }).catch(() => null);
@@ -1341,6 +1350,7 @@ async function buildReport() {
     positionStrategyAudit,
     positionStrategyHygiene,
     positionStrategyRemediation,
+    positionStrategyRemediationHistory,
     duplicateStrategyNormalization,
     orphanStrategyRetirement,
     executionRiskApprovalGuardHealth,
@@ -1376,6 +1386,8 @@ async function buildReport() {
     executionAttachBackfill,
     positionStrategyAudit,
     positionStrategyHygiene,
+    positionStrategyRemediation,
+    positionStrategyRemediationHistory,
     duplicateStrategyNormalization,
     orphanStrategyRetirement,
     latestOpsSnapshot,
