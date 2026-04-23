@@ -880,7 +880,7 @@ function buildDecision(
       {
         active: positionStrategyDuplicateScopes > 0,
         level: positionStrategyAudit?.duplicateManagedProfileScopes > 0 ? 'medium' : 'low',
-        reason: `position strategy duplicate scopes — 동일 종목 active profile ${positionStrategyDuplicateScopes}개 scope / managed ${positionStrategyAudit?.duplicateManagedProfileScopes || 0} / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-audit`,
+        reason: `position strategy duplicate scopes — 동일 종목 active profile ${positionStrategyDuplicateScopes}개 scope / managed ${positionStrategyAudit?.duplicateManagedProfileScopes || 0} / next commands npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-audit && npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --json`,
       },
       {
         active: positionStrategyOrphans > 0,
@@ -1181,6 +1181,8 @@ function formatText(report) {
             `  unmatched managed: ${report.positionStrategyAudit.unmatchedManagedPositions || 0} / orphan ${report.positionStrategyAudit.orphanProfiles || 0} / duplicate active scopes ${report.positionStrategyAudit.duplicateActiveProfileScopes || 0} / duplicate managed scopes ${report.positionStrategyAudit.duplicateManagedProfileScopes || 0}`,
             ...(report.positionStrategyAudit.duplicateProfileScopes || []).slice(0, 3).map((scope) => `  duplicate: ${scope.exchange}/${scope.symbol} count ${scope.count} keeper ${scope.keeperProfileId}`),
             `  next command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-audit`,
+            `  normalize dry-run: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --json`,
+            `  normalize apply: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:normalize-duplicate-strategy-profiles -- --apply --json`,
           ]
         : ['  position strategy audit 정보 없음'],
     },
