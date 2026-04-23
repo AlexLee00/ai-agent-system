@@ -300,6 +300,13 @@ function getStrategySetupType(strategyProfile = null) {
   return String(strategyProfile?.setup_type || '').trim().toLowerCase() || null;
 }
 
+function getResponsibilityPlan(strategyProfile = null) {
+  const plan = strategyProfile?.strategy_context?.responsibilityPlan
+    || strategyProfile?.strategyContext?.responsibilityPlan
+    || {};
+  return typeof plan === 'object' && plan ? plan : {};
+}
+
 function buildStrategyStateUpdate({
   position = null,
   recommendation = null,
@@ -779,6 +786,7 @@ export async function reevaluateOpenPositions({
           strategyName: strategyProfile.strategy_name || null,
           setupType: strategyProfile.setup_type || null,
           thesis: strategyProfile.thesis || null,
+          responsibilityPlan: getResponsibilityPlan(strategyProfile),
         } : null,
       },
       analysisSnapshot: {
@@ -797,6 +805,7 @@ export async function reevaluateOpenPositions({
           setupType: strategyProfile.setup_type || null,
           monitoringPlan: strategyProfile.monitoring_plan || {},
           exitPlan: strategyProfile.exit_plan || {},
+          responsibilityPlan: getResponsibilityPlan(strategyProfile),
         } : null,
       },
     });

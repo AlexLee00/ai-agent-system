@@ -106,6 +106,7 @@ function mapCandidate(row, strategyProfile = null, overrideRatio = null) {
       strategyName: strategyProfile.strategy_name || null,
       setupType: strategyProfile.setup_type || null,
       exitPlan: strategyProfile.exit_plan || strategyProfile.exitPlan || null,
+      responsibilityPlan: strategyProfile.strategy_context?.responsibilityPlan || {},
     } : null,
   };
 }

@@ -123,6 +123,7 @@ function mapCandidate(row, strategyProfile = null) {
       strategyName: strategyProfile.strategy_name || null,
       setupType: strategyProfile.setup_type || null,
       exitPlan: strategyProfile.exit_plan || {},
+      responsibilityPlan: strategyProfile.strategy_context?.responsibilityPlan || {},
     } : null,
   };
   const guard = applyExitPlanGuard(candidate);

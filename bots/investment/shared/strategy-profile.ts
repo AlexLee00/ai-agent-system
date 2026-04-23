@@ -78,6 +78,54 @@ function buildMonitoringPlan(exchange = 'binance', regime = null, strategy = nul
   };
 }
 
+function buildResponsibilityPlan({
+  exchange = 'binance',
+  setupType = null,
+  regime = null,
+} = {}) {
+  const normalizedSetupType = String(setupType || '').trim().toLowerCase() || 'unknown';
+  const normalizedRegime = String(regime || '').trim().toLowerCase();
+  const bearishRegime = normalizedRegime.includes('bear');
+
+  let ownerAgent = 'luna';
+  let ownerMode = bearishRegime ? 'capital_preservation' : 'balanced_rotation';
+  let watchMission = bearishRegime ? 'risk_sentinel' : 'strategy_invalidation_watcher';
+  let riskMission = bearishRegime ? 'strict_risk_gate' : 'execution_safeguard';
+  let executionMission = 'precision_execution';
+
+  if (normalizedSetupType === 'mean_reversion') {
+    ownerMode = bearishRegime ? 'capital_preservation' : 'opportunity_capture';
+    watchMission = 'strategy_invalidation_watcher';
+    riskMission = 'soft_sizing_preference';
+    executionMission = 'partial_adjust_executor';
+  } else if (normalizedSetupType === 'breakout') {
+    ownerMode = bearishRegime ? 'capital_preservation' : 'opportunity_capture';
+    watchMission = 'risk_sentinel';
+    riskMission = bearishRegime ? 'strict_risk_gate' : 'execution_safeguard';
+  } else if (normalizedSetupType === 'trend_following' || normalizedSetupType === 'momentum_rotation') {
+    ownerMode = bearishRegime ? 'capital_preservation' : 'balanced_rotation';
+    watchMission = bearishRegime ? 'risk_sentinel' : 'backtest_drift_watcher';
+    riskMission = bearishRegime ? 'strict_risk_gate' : 'soft_sizing_preference';
+    executionMission = 'partial_adjust_executor';
+  } else if (exchange !== 'binance') {
+    ownerMode = 'equity_rotation';
+    watchMission = 'strategy_invalidation_watcher';
+    riskMission = 'execution_safeguard';
+  }
+
+  return {
+    ownerAgent,
+    ownerMode,
+    strategyScoutAgent: 'argos',
+    riskAgent: 'nemesis',
+    riskMission,
+    executionAgent: 'hephaestos',
+    executionMission,
+    watchAgent: 'position_watch',
+    watchMission,
+  };
+}
+
 function buildExitLadder(setupType = null) {
   switch (String(setupType || '')) {
     case 'mean_reversion':
@@ -193,6 +241,11 @@ export async function createOrUpdatePositionStrategyProfile({
   }
 
   const setupType = strategy?.setup_type || buildSetupType(exchange, strategy, decision);
+  const responsibilityPlan = buildResponsibilityPlan({
+    exchange,
+    setupType,
+    regime: marketRegime?.regime || null,
+  });
   const thesis = [
     decision?.reasoning ? `decision=${decision.reasoning}` : null,
     strategy?.summary ? `strategy=${strategy.summary}` : null,
@@ -223,6 +276,7 @@ export async function createOrUpdatePositionStrategyProfile({
       applicableTimeframe: strategy?.applicable_timeframe || null,
       decisionConfidence: decision?.confidence ?? null,
       amountUsdt: decision?.amount_usdt ?? null,
+      responsibilityPlan,
     },
   });
 }
