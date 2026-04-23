@@ -4,6 +4,7 @@
 import assert from 'assert/strict';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import {
+  buildExchangeCutoverFilter,
   buildOverseasSuggestions,
   summarizeExchange,
 } from './runtime-config-suggestions.ts';
@@ -20,6 +21,11 @@ function config() {
 }
 
 export function runRuntimeConfigSuggestionsSmoke() {
+  assert.match(
+    buildExchangeCutoverFilter('created_at'),
+    /kis_overseas.*2026-04-23T13:01:51\.000Z/,
+  );
+
   const summary = summarizeExchange([
     { exchange: 'kis_overseas', action: 'BUY', status: 'executed', cnt: 3 },
     { exchange: 'kis_overseas', action: 'BUY', status: 'failed', cnt: 30 },

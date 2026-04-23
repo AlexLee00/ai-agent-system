@@ -22,6 +22,7 @@ import { buildRuntimeRiskApprovalModeAudit } from './runtime-risk-approval-mode-
 import { buildRuntimeRiskApprovalModeAuditHistory } from './runtime-risk-approval-mode-audit-history.ts';
 import { buildRuntimeExecutionRiskGuardReport } from './runtime-execution-risk-guard-report.ts';
 import { buildRuntimeExecutionRiskGuardHistory } from './runtime-execution-risk-guard-history.ts';
+import { OVERSEAS_APPROVAL_PERSIST_CUTOVER } from './runtime-kis-overseas-autotune-report.ts';
 import { buildInvestmentCliInsight } from '../shared/cli-insight.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
@@ -71,6 +72,10 @@ function hasThresholdBlocker(summary = {}) {
   ]).has(String(item?.code || '')));
 }
 
+export function buildExchangeCutoverFilter(column = 'created_at') {
+  return `AND NOT (exchange = 'kis_overseas' AND ${column} < TIMESTAMPTZ '${OVERSEAS_APPROVAL_PERSIST_CUTOVER}')`;
+}
+
 async function loadSignalRows(fromDate, toDate) {
   return db.query(`
     SELECT
@@ -80,6 +85,7 @@ async function loadSignalRows(fromDate, toDate) {
       COUNT(*) AS cnt
     FROM signals
     WHERE CAST(created_at AT TIME ZONE 'Asia/Seoul' AS DATE) BETWEEN '${fromDate}' AND '${toDate}'
+      ${buildExchangeCutoverFilter('created_at')}
     GROUP BY exchange, action, status
     ORDER BY exchange, action, status
   `);
@@ -102,6 +108,7 @@ async function loadBlockCodeRows(fromDate, toDate) {
     FROM signals
     WHERE CAST(created_at AT TIME ZONE 'Asia/Seoul' AS DATE) BETWEEN '${fromDate}' AND '${toDate}'
       AND status IN ('failed', 'rejected', 'expired')
+      ${buildExchangeCutoverFilter('created_at')}
       ${stockSizingBaselineFilter}
     GROUP BY exchange, 2
     ORDER BY exchange, cnt DESC
@@ -117,6 +124,7 @@ async function loadAnalysisRows(fromDate, toDate) {
       COUNT(*) AS cnt
     FROM analysis
     WHERE CAST(created_at AT TIME ZONE 'Asia/Seoul' AS DATE) BETWEEN '${fromDate}' AND '${toDate}'
+      ${buildExchangeCutoverFilter('created_at')}
     GROUP BY exchange, analyst, signal
     ORDER BY exchange, analyst, signal
   `);

@@ -8,7 +8,7 @@ import { getParameterGovernance } from '../shared/runtime-parameter-governance.t
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { buildInvestmentCliInsight } from '../shared/cli-insight.ts';
 
-const OVERSEAS_APPROVAL_PERSIST_CUTOVER = '2026-04-23T13:01:51.000Z';
+export const OVERSEAS_APPROVAL_PERSIST_CUTOVER = '2026-04-23T13:01:51.000Z';
 
 function parseArgs(argv = process.argv.slice(2)) {
   const daysArg = argv.find((arg) => arg.startsWith('--days='));
