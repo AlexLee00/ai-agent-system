@@ -67,7 +67,7 @@ function isSuggestionAlreadyApplied(suggestion = null) {
   return String(current) === String(suggested);
 }
 
-function selectPriorityRuntimeSuggestion(runtimeSuggestions = null, regimePerformance = null) {
+export function selectPriorityRuntimeSuggestion(runtimeSuggestions = null, regimePerformance = null) {
   const suggestions = Array.isArray(runtimeSuggestions?.suggestions) ? runtimeSuggestions.suggestions : [];
   if (!suggestions.length) return null;
 

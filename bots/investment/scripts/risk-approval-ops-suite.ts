@@ -10,6 +10,7 @@ import { runRiskApprovalExecutionGuardReportSmoke } from './risk-approval-execut
 import { runRiskApprovalModeSmoke } from './risk-approval-mode-smoke.ts';
 import { runRiskApprovalReadinessSmoke } from './risk-approval-readiness-smoke.ts';
 import { runRiskApprovalModeAuditSmoke } from './risk-approval-mode-audit-smoke.ts';
+import { runRiskApprovalLearningLoopSmoke } from './risk-approval-learning-loop-smoke.ts';
 import { buildRuntimeRiskApprovalReport } from './runtime-risk-approval-report.ts';
 import { buildRuntimeRiskApprovalHistory } from './runtime-risk-approval-history.ts';
 import { buildRuntimeRiskApprovalReadiness } from './runtime-risk-approval-readiness.ts';
@@ -98,6 +99,7 @@ export async function runRiskApprovalOpsSuite({ days = 30, smokeOnly = false } =
     mode: runRiskApprovalModeSmoke(),
     readiness: runRiskApprovalReadinessSmoke(),
     modeAudit: runRiskApprovalModeAuditSmoke(),
+    learningLoop: runRiskApprovalLearningLoopSmoke(),
   };
   const reports = smokeOnly ? null : await runReports(days);
   return {
@@ -113,6 +115,7 @@ export async function runRiskApprovalOpsSuite({ days = 30, smokeOnly = false } =
       mode: Boolean(smokes.mode.ok),
       readiness: Boolean(smokes.readiness.ok),
       modeAudit: Boolean(smokes.modeAudit.ok),
+      learningLoop: Boolean(smokes.learningLoop.ok),
     },
     reports,
   };
@@ -124,7 +127,7 @@ function renderText(payload) {
     `smokeOnly: ${payload.smokeOnly}`,
     `days: ${payload.days}`,
     `smokes: chain=${payload.smokes.chain} report=${payload.smokes.report} history=${payload.smokes.history} executionGuard=${payload.smokes.executionGuard} executionGuardReport=${payload.smokes.executionGuardReport} mode=${payload.smokes.mode}`,
-    `decision smokes: readiness=${payload.smokes.readiness} modeAudit=${payload.smokes.modeAudit}`,
+    `decision smokes: readiness=${payload.smokes.readiness} modeAudit=${payload.smokes.modeAudit} learningLoop=${payload.smokes.learningLoop}`,
   ];
   if (payload.reports) {
     lines.push(`reports: risk=${payload.reports.riskApproval} readiness=${payload.reports.readiness} modeAudit=${payload.reports.modeAudit} executionGuard=${payload.reports.executionGuard}`);

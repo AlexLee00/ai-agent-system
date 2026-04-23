@@ -55,6 +55,7 @@
     "risk:approval-mode-smoke": "node scripts/risk-approval-mode-smoke.ts",
     "risk:approval-readiness-smoke": "node scripts/risk-approval-readiness-smoke.ts",
     "risk:approval-mode-audit-smoke": "node scripts/risk-approval-mode-audit-smoke.ts",
+    "risk:approval-learning-loop-smoke": "node scripts/risk-approval-learning-loop-smoke.ts",
     "risk:approval-ops-suite": "node scripts/risk-approval-ops-suite.ts",
     "runtime:risk-approval": "node scripts/runtime-risk-approval-report.ts",
     "runtime:risk-approval-history": "node scripts/runtime-risk-approval-history.ts",
