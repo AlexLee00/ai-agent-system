@@ -482,11 +482,19 @@ function isEffectivePartialExit({
 }
 
 function buildSignalQualityContext(signal = null) {
+  const isReconciledExecution = signal?.block_code === 'position_balance_reconciled';
+  const baseExecutionOrigin = signal?.execution_origin || signal?.executionOrigin || 'strategy';
+  const baseQualityFlag = signal?.quality_flag || signal?.qualityFlag || 'trusted';
+  const baseExclude = Boolean(signal?.exclude_from_learning ?? signal?.excludeFromLearning ?? false);
+  const baseIncident = signal?.incident_link || signal?.incidentLink || null;
+
   return {
-    executionOrigin: signal?.execution_origin || signal?.executionOrigin || 'strategy',
-    qualityFlag: signal?.quality_flag || signal?.qualityFlag || 'trusted',
-    excludeFromLearning: Boolean(signal?.exclude_from_learning ?? signal?.excludeFromLearning ?? false),
-    incidentLink: signal?.incident_link || signal?.incidentLink || null,
+    executionOrigin: isReconciledExecution ? 'reconciliation' : baseExecutionOrigin,
+    qualityFlag: isReconciledExecution
+      ? (baseQualityFlag === 'exclude_from_learning' ? baseQualityFlag : 'degraded')
+      : baseQualityFlag,
+    excludeFromLearning: isReconciledExecution ? true : baseExclude,
+    incidentLink: isReconciledExecution ? (baseIncident || 'position_balance_reconciled') : baseIncident,
   };
 }
 
@@ -598,6 +606,8 @@ async function closeOpenJournalForSymbol(
     maxAdverse: review?.max_adverse ?? null,
     signalAccuracy: review?.signal_accuracy ?? null,
     executionSpeed: review?.execution_speed ?? null,
+    qualityFlag,
+    incidentLink,
   }).catch(() => {});
 }
 

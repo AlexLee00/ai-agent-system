@@ -350,23 +350,34 @@ export function notifySettlement({
   symbol, side, entryPrice, exitPrice, pnl, holdDuration, weeklyPnl, winRate, totalTrades, wins, paper,
   market = 'crypto', pnlPercent = null, maxFavorable = null, maxAdverse = null,
   signalAccuracy = null, executionSpeed = null,
+  qualityFlag = null, incidentLink = null,
 }) {
   const tag     = formatExecutionTag(paper);
   const dir     = side === 'buy' ? 'LONG' : 'SHORT';
   const pnlSign = (pnl || 0) >= 0 ? '+' : '';
   const currency = market === 'domestic' ? '₩' : '$';
+  const formatSettlementPrice = (value) => {
+    const numeric = Number(value || 0);
+    if (!Number.isFinite(numeric)) return '-';
+    if (Math.abs(numeric) < 1) return numeric.toFixed(5);
+    if (Math.abs(numeric) < 100) return numeric.toFixed(3);
+    return numeric.toLocaleString();
+  };
   const pricePct = (entryPrice && exitPrice)
     ? ` (${((exitPrice / entryPrice - 1) * 100).toFixed(1)}%)` : '';
+  const isReconciledSettlement = incidentLink === 'position_balance_reconciled';
 
   const lines = [
     `${tag}💰 ${symbol} ${dir} 체결`,
     SMALL_DIVIDER,
-    `진입: ${currency}${Number(entryPrice).toLocaleString()}`,
-    `청산: ${currency}${Number(exitPrice).toLocaleString()}${pricePct}`,
+    `진입: ${currency}${formatSettlementPrice(entryPrice)}`,
+    `청산: ${currency}${formatSettlementPrice(exitPrice)}${pricePct}`,
     `수익: ${pnlSign}${currency}${Math.abs(pnl || 0).toFixed(2)}`,
   ];
   if (holdDuration) lines.push(`보유 시간: ${holdDuration}`);
   if (pnlPercent != null) lines.push(`실현 수익률: ${pnlPercent >= 0 ? '+' : ''}${Number(pnlPercent).toFixed(2)}%`);
+  if (isReconciledSettlement) lines.push('정산 메모: 실잔고와 포지션을 맞추는 정렬성 청산 (학습 제외)');
+  else if (qualityFlag === 'degraded') lines.push('정산 메모: 품질 저하 거래로 분류');
   if (maxFavorable != null || maxAdverse != null) {
     const mf = maxFavorable != null ? `MFE +${Number(maxFavorable).toFixed(2)}%` : 'MFE -';
     const ma = maxAdverse != null ? `MAE ${Number(maxAdverse).toFixed(2)}%` : 'MAE -';
