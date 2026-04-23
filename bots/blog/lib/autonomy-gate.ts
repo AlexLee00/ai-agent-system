@@ -104,6 +104,35 @@ function evaluatePostQuality(post, feedbackPatterns = []) {
   };
 }
 
+function buildRuntimeThresholdAdjustment(runtimeContext = {}) {
+  let delta = 0;
+  const reasons = [];
+  const signalCount = Number(runtimeContext.signalCount || 0);
+  const topSignalType = String(runtimeContext.topSignalType || '').trim();
+  const revenueImpactPct = Number(runtimeContext.revenueImpactPct || 0);
+  const guardedDominant = runtimeContext.guardedDominant === true;
+
+  if (signalCount > 0) {
+    delta -= 0.02;
+    reasons.push('운영 신호가 살아 있어 자율 발행 표본을 더 축적하도록 기준을 약간 완화합니다.');
+  }
+
+  if (guardedDominant) {
+    delta -= 0.03;
+    reasons.push('최근 guarded publish 비중이 높아 hard hold보다 guarded lane 표본 축적을 우선합니다.');
+  }
+
+  if (topSignalType === 'revenue_anomaly' || topSignalType === 'revenue_decline' || Math.abs(revenueImpactPct) >= 0.05) {
+    delta -= 0.02;
+    reasons.push('매출/전환 신호가 움직이는 구간이라 멈추기보다 가드형 자동 발행으로 반응을 계속 수집합니다.');
+  }
+
+  return {
+    delta: Number(delta.toFixed(4)),
+    reasons,
+  };
+}
+
 /**
  * 자율 판단: 자동 게시 vs 마스터 검토
  *
@@ -114,11 +143,13 @@ function evaluatePostQuality(post, feedbackPatterns = []) {
  * @param {object} post
  * @param {{ seoScore?: number, criticScore?: number }} [qualityExtra]
  */
-async function decideAutonomy(post, qualityExtra = {}) {
+async function decideAutonomy(post, qualityExtra = {}, runtimeContext = {}) {
   const phase = await getCurrentPhase();
   const feedbackPatterns = await loadFeedbackPatterns();
   const evaluation = evaluatePostQuality(post, feedbackPatterns);
   const threshold = PHASE_THRESHOLDS[phase] || 0.95;
+  const runtimeAdjustment = buildRuntimeThresholdAdjustment(runtimeContext);
+  const effectiveThreshold = Math.max(0.45, Math.min(0.98, threshold + Number(runtimeAdjustment.delta || 0)));
 
   // SEO + 크리틱 점수 통합 (0~1 스케일로 정규화, 각 최대 ±0.05 보정)
   let compositeScore = evaluation.score;
@@ -154,11 +185,12 @@ async function decideAutonomy(post, qualityExtra = {}) {
     decision = 'quality_hold';
     executionLane = 'hold';
     compositeReasons.push(...hardHoldReasons);
-  } else if (compositeScore < threshold) {
+  } else if (compositeScore < effectiveThreshold) {
     decision = 'auto_publish_guarded';
     executionLane = 'guarded';
     compositeReasons.push('점수가 임계값보다 낮아도 가드 레인으로 축소 자동 발행합니다.');
   }
+  compositeReasons.push(...runtimeAdjustment.reasons);
 
   return {
     decision,
@@ -168,7 +200,9 @@ async function decideAutonomy(post, qualityExtra = {}) {
     baseScore: evaluation.score,
     seoScore,
     criticScore,
-    threshold,
+    threshold: effectiveThreshold,
+    baseThreshold: threshold,
+    thresholdAdjustment: Number(runtimeAdjustment.delta || 0),
     reasons: compositeReasons,
     feedbackPatterns,
   };

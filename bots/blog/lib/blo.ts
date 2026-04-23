@@ -85,6 +85,7 @@ const {
   reportImageGenFailure,
   reportImageDiagnosis,
 }                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/img-gen-doctor.ts'));
+const { buildDailyReportContract }                  = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/report-contract.ts'));
 const pgPool                                        = require('../../../packages/core/lib/pg-pool');
 const rag                                           = require('../../../packages/core/lib/rag-safe');
 const hiringContract                                = require('../../../packages/core/lib/hiring-contract');
@@ -773,13 +774,29 @@ function _buildRevenueSummary(correlation = null) {
   };
 }
 
-async function _decideAutonomyForPost(postData, daily = {}) {
+async function _decideAutonomyForPost(postData, daily = {}, quality = null) {
   try {
-    const decision = await decideAutonomy(postData);
+    const strategyPlan = loadLatestStrategy() || {};
+    const operationalPatterns = Array.isArray(strategyPlan?.operationalLearning?.patterns)
+      ? strategyPlan.operationalLearning.patterns
+      : [];
+    const lanePattern = operationalPatterns.find((item) => String(item?.type || '') === 'ops_autonomy_lane') || null;
+    const laneSummary = String(lanePattern?.summary || '');
+    const runtimeContext = {
+      signalCount: Number(daily?.senseState?.signals?.length || 0),
+      topSignalType: String(daily?.senseState?.signals?.[0]?.type || ''),
+      revenueImpactPct: Number(daily?.revenueCorrelation?.revenueImpactPct || 0),
+      guardedDominant: laneSummary.includes('auto_publish_guarded'),
+    };
+    const decision = await decideAutonomy(postData, {
+      seoScore: quality?.seo?.seoScore,
+      criticScore: quality?.critic?.criticScore,
+    }, runtimeContext);
     return {
       ...decision,
       senseSummary: _buildSenseSummary(daily.senseState),
       revenueSummary: _buildRevenueSummary(daily.revenueCorrelation),
+      runtimeContext,
     };
   } catch (error) {
     console.warn('[블로] autonomy 판단 실패 (무시):', error.message);
@@ -1162,7 +1179,7 @@ async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx
     thumbnailPath: null,
     postType: 'lecture',
     category: 'Node.js강의',
-  }, context.daily || {});
+  }, context.daily || {}, quality);
   const published = await _publishAndTrack({
     title:         postTitle,
     content:       post.content,
@@ -1301,7 +1318,7 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
     thumbnailPath: images?.thumb?.filepath || null,
     postType: 'general',
     category: context.category,
-  }, context.daily || {});
+  }, context.daily || {}, quality);
   const titleAlignment = _buildGeneralTitleAlignmentMetadata({
     ...post,
     title: genTitle,
@@ -1656,17 +1673,22 @@ function _summarizeDailyMarketing(daily = {}) {
 
 function _buildDailyReportLines(results, traceCtx, daily = {}) {
   const marketing = _summarizeDailyMarketing(daily);
+  const contract = buildDailyReportContract({
+    traceId: traceCtx.trace_id,
+    results,
+    marketing,
+  });
   return [
-    '📝 [블로그팀] 일간 작업 완료',
-    `🔖 trace: ${traceCtx.trace_id.slice(0, 8)}`,
-    marketing.briefLine,
-    marketing.opsTitlePatternSummary ? `🧠 운영 학습: ${marketing.opsTitlePatternSummary}` : '',
-    marketing.opsAlignmentSummary ? `🧠 운영 정렬: ${marketing.opsAlignmentSummary}` : '',
-    marketing.experimentWinnerSummary ? `🧪 실험 승자: ${marketing.experimentWinnerSummary}` : '',
-    marketing.experimentWeakLaneSummary ? `🧪 실험 약세: ${marketing.experimentWeakLaneSummary}` : '',
+    `📝 [${contract.title}]`,
+    ...contract.sections.flatMap((section) => [
+      `■ ${section.title}`,
+      ...(Array.isArray(section.lines) ? section.lines.map((line) => `  ${line}`) : []),
+    ]),
     '',
+    '■ 결과 상세',
     ...results.map(_formatDailyResultLine),
     '',
+    '■ 리라이팅 가이드',
     ...results.filter(r => !r.error && !r.skipped).map(_buildDailyGuideLine),
     '',
     '📁 파일 위치: bots/blog/output/',
@@ -1728,46 +1750,35 @@ async function _sendDailyReport(results, traceCtx, options = {}) {
   const hasErrors = results.some(r => r.error);
   const marketing = _summarizeDailyMarketing(options.daily || {});
   const reportLines = _buildDailyReportLines(results, traceCtx, options.daily || {});
+  const reportContract = buildDailyReportContract({
+    traceId: traceCtx.trace_id,
+    results,
+    marketing,
+  });
 
   const reportEvent = buildReportEvent({
     from_bot: 'blog-blo',
     team: 'blog',
     event_type: 'report',
     alert_level: hasErrors ? 2 : 1,
-    title: '블로그팀 일간 작업 완료',
+    title: reportContract.title,
     summary: `trace ${traceCtx.trace_id.slice(0, 8)} | ${results.length}건`,
     sections: [
+      ...reportContract.sections,
       {
-        title: '결과',
+        title: '결과 상세',
         lines: results.map(_formatDailyResultLine),
       },
       {
         title: '리라이팅 가이드',
         lines: results.filter(r => !r.error && !r.skipped).map(_buildDailyGuideLine),
       },
-      {
-        title: '마케팅 전략',
-        lines: [
-          `signal: ${marketing.signalLabel}`,
-          `impact: ${(marketing.revenueImpactPct * 100).toFixed(1)}%`,
-          `plan: ${marketing.preferredCategory}/${marketing.preferredPattern}`,
-          `next: ${marketing.nextGeneralCategory}`,
-          `next pattern: ${marketing.nextGeneralPattern}`,
-          `next title: ${marketing.nextGeneralTitle}`,
-          `predicted: ${marketing.predictedAdoption}`,
-          `suppress: ${marketing.suppressedPattern}`,
-          ...(marketing.opsTitlePatternSummary ? [`ops learning: ${marketing.opsTitlePatternSummary}`] : []),
-          ...(marketing.opsAlignmentSummary ? [`ops alignment: ${marketing.opsAlignmentSummary}`] : []),
-          ...(marketing.opsAutonomyLaneSummary ? [`ops lane: ${marketing.opsAutonomyLaneSummary}`] : []),
-          ...(marketing.experimentWinnerSummary ? [`experiment winner: ${marketing.experimentWinnerSummary}`] : []),
-          ...(marketing.experimentWeakLaneSummary ? [`experiment weak lane: ${marketing.experimentWeakLaneSummary}`] : []),
-        ],
-      },
     ],
     footer: '파일 위치: bots/blog/output/ | 예약 발행: 내일 오전 07:00',
     payload: {
-      title: '블로그팀 일간 작업 완료',
+      title: reportContract.title,
       summary: `trace ${traceCtx.trace_id.slice(0, 8)} | ${results.length}건`,
+      contract: reportContract,
       details: reportLines,
     },
   });
