@@ -22,6 +22,16 @@ export function getRiskApprovalChainModeConfig() {
   return normalizeRiskApprovalChainModeConfig(getNemesisRuntimeConfig()?.riskApprovalChain || {});
 }
 
+function classifyRiskApprovalPreview(preview = null) {
+  const decision = String(preview?.decision || '').toUpperCase();
+  if (!preview || preview.approved == null || decision === 'PREVIEW_FAILED' || preview.error) {
+    return 'unavailable';
+  }
+  if (preview.approved === false || decision === 'REJECT') return 'rejected';
+  if (decision === 'ADJUST') return 'adjust';
+  return 'pass';
+}
+
 export function applyRiskApprovalChainMode({
   amountUsdt,
   adaptiveResult,
@@ -35,25 +45,56 @@ export function applyRiskApprovalChainMode({
   const previewAmount = Number(riskApprovalPreview?.finalAmount || 0);
   const minOrder = Number(rules?.MIN_ORDER_USDT || 0);
   const previewRejected = riskApprovalPreview?.approved === false || riskApprovalPreview?.decision === 'REJECT';
+  const previewStatus = classifyRiskApprovalPreview(riskApprovalPreview);
+
+  const common = {
+    mode,
+    modeConfig: resolvedModeConfig,
+    previewStatus,
+    previewDecision: riskApprovalPreview?.decision || null,
+    previewApproved: riskApprovalPreview?.approved ?? null,
+  };
+
+  if (!Number.isFinite(before) || before <= 0) {
+    return {
+      ...common,
+      approved: false,
+      amountUsdt: 0,
+      adaptiveResult,
+      applied: true,
+      reason: 'risk approval chain invalid amount',
+    };
+  }
 
   if (mode === 'shadow') {
     return {
+      ...common,
       approved: true,
       amountUsdt: before,
       adaptiveResult,
       applied: false,
-      mode,
       reason: 'shadow mode records preview only',
+    };
+  }
+
+  if (previewStatus === 'unavailable') {
+    return {
+      ...common,
+      approved: true,
+      amountUsdt: before,
+      adaptiveResult,
+      applied: false,
+      reason: `${mode} mode skipped because preview is unavailable`,
     };
   }
 
   if (mode === 'enforce' && previewRejected && resolvedModeConfig.enforce?.rejectOnPreviewReject) {
     return {
+      ...common,
       approved: false,
       amountUsdt: before,
       adaptiveResult,
       applied: true,
-      mode,
       reason: riskApprovalPreview?.rejectReason || 'risk approval chain rejected',
     };
   }
@@ -68,11 +109,11 @@ export function applyRiskApprovalChainMode({
 
   if (!shouldApplyAmount) {
     return {
+      ...common,
       approved: true,
       amountUsdt: before,
       adaptiveResult,
       applied: false,
-      mode,
       reason: `${mode} mode found no amount reduction`,
     };
   }
@@ -87,16 +128,17 @@ export function applyRiskApprovalChainMode({
 
   if (boundedAmount >= before) {
     return {
+      ...common,
       approved: true,
       amountUsdt: before,
       adaptiveResult,
       applied: false,
-      mode,
       reason: `${mode} reduction bounded to original amount`,
     };
   }
 
   return {
+    ...common,
     approved: true,
     amountUsdt: boundedAmount,
     adaptiveResult: {
@@ -108,7 +150,6 @@ export function applyRiskApprovalChainMode({
       },
     },
     applied: true,
-    mode,
     reason: `risk approval chain ${mode} amount reduction`,
   };
 }

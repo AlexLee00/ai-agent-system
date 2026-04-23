@@ -45,6 +45,7 @@ function summarize(rows = []) {
   const byModel = {};
   const byDecision = {};
   const byMode = {};
+  const byPreviewStatus = {};
   const divergences = [];
   let total = 0;
   let previewRejects = 0;
@@ -66,6 +67,8 @@ function summarize(rows = []) {
     if (row.preview.approved === false || previewDecision === 'REJECT') previewRejects += 1;
     const application = row.application || {};
     const mode = String(application.mode || row.preview.mode || 'shadow');
+    const previewStatus = String(application.previewStatus || 'unknown');
+    byPreviewStatus[previewStatus] = (byPreviewStatus[previewStatus] || 0) + 1;
     if (!byMode[mode]) byMode[mode] = { mode, total: 0, applied: 0, rejected: 0, amountDelta: 0 };
     byMode[mode].total += 1;
     if (application.applied) {
@@ -156,6 +159,7 @@ function summarize(rows = []) {
       previewVsApprovedDelta: Number((totalPreviewFinal - totalApproved).toFixed(4)),
       previewAmountReductions,
       previewAmountIncreases,
+      byPreviewStatus,
     },
     application: {
       applied: applicationApplied,
@@ -214,6 +218,12 @@ function renderText(payload) {
   }
   lines.push('');
   lines.push(`금액: approved ${payload.summary.amount.approved} / preview ${payload.summary.amount.previewFinal} / delta ${payload.summary.amount.previewVsApprovedDelta}`);
+  if (payload.summary.amount?.byPreviewStatus) {
+    const previewStatusLine = Object.entries(payload.summary.amount.byPreviewStatus)
+      .map(([key, value]) => `${key}:${value}`)
+      .join(', ');
+    lines.push(`preview status: ${previewStatusLine || 'none'}`);
+  }
   if (payload.summary.application?.byMode?.length) {
     lines.push(`적용: applied ${payload.summary.application.applied} / rejected ${payload.summary.application.rejected} / amount delta ${payload.summary.application.amountDelta}`);
     for (const item of payload.summary.application.byMode) {

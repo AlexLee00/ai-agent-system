@@ -987,6 +987,10 @@ export async function evaluateSignal(signal, opts = {}) {
       amountBefore: amountUsdt,
       amountAfter: riskApprovalApplication.amountUsdt,
       mode: riskApprovalApplication.mode,
+      modeConfig: riskApprovalApplication.modeConfig || riskApprovalModeConfig,
+      previewStatus: riskApprovalApplication.previewStatus || null,
+      previewDecision: riskApprovalApplication.previewDecision || riskApprovalPreview.decision || null,
+      previewApproved: riskApprovalApplication.previewApproved ?? riskApprovalPreview.approved ?? null,
     };
 
     if (!riskApprovalApplication.approved) {

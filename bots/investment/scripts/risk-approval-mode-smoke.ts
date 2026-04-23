@@ -33,6 +33,7 @@ const shadow = apply({ modeConfig: { mode: 'shadow' } });
 assert.equal(shadow.approved, true);
 assert.equal(shadow.applied, false);
 assert.equal(shadow.amountUsdt, 100);
+assert.equal(shadow.previewStatus, 'adjust');
 
 const assistBounded = apply({
   modeConfig: {
@@ -44,6 +45,7 @@ assert.equal(assistBounded.approved, true);
 assert.equal(assistBounded.applied, true);
 assert.equal(assistBounded.amountUsdt, 65);
 assert.equal(assistBounded.adaptiveResult.llm.decision, 'ADJUST');
+assert.equal(assistBounded.modeConfig.assist.maxReductionPct, 0.35);
 
 const assistDisabled = apply({
   modeConfig: {
@@ -100,5 +102,33 @@ const minOrder = apply({
 assert.equal(minOrder.approved, true);
 assert.equal(minOrder.applied, true);
 assert.equal(minOrder.amountUsdt, 10);
+
+const previewFailed = apply({
+  modeConfig: {
+    mode: 'enforce',
+    enforce: { rejectOnPreviewReject: true, applyAmountReduction: true },
+  },
+  riskApprovalPreview: {
+    approved: null,
+    decision: 'preview_failed',
+    error: 'boom',
+  },
+});
+assert.equal(previewFailed.approved, true);
+assert.equal(previewFailed.applied, false);
+assert.equal(previewFailed.previewStatus, 'unavailable');
+assert.match(previewFailed.reason, /preview is unavailable/);
+
+const invalidAmount = apply({
+  amountUsdt: 0,
+  modeConfig: {
+    mode: 'assist',
+    assist: { applyAmountReduction: true, maxReductionPct: 0.35 },
+  },
+});
+assert.equal(invalidAmount.approved, false);
+assert.equal(invalidAmount.applied, true);
+assert.equal(invalidAmount.amountUsdt, 0);
+assert.equal(invalidAmount.reason, 'risk approval chain invalid amount');
 
 console.log('risk approval mode smoke ok');
