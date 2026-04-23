@@ -107,6 +107,79 @@ function buildAnalystSignals(analyses) {
   ].join('|');
 }
 
+function normalizeCollectQuality(...candidates) {
+  for (const candidate of candidates) {
+    if (candidate && typeof candidate === 'object' && candidate.status) {
+      return {
+        status: String(candidate.status || 'ready'),
+        collectMode: String(candidate.collectMode || 'screening'),
+        readinessScore: Number(candidate.readinessScore || 1),
+        reasons: Array.isArray(candidate.reasons) ? candidate.reasons : [],
+      };
+    }
+  }
+  return {
+    status: 'ready',
+    collectMode: 'screening',
+    readinessScore: 1,
+    reasons: [],
+  };
+}
+
+function applyCollectQualityGuard(portfolioDecision, collectQuality) {
+  if (!portfolioDecision || !Array.isArray(portfolioDecision.decisions)) {
+    return { portfolioDecision, reducedBuyCount: 0, blockedBuyCount: 0 };
+  }
+
+  const qualityStatus = String(collectQuality?.status || 'ready');
+  if (qualityStatus === 'ready') {
+    return { portfolioDecision, reducedBuyCount: 0, blockedBuyCount: 0 };
+  }
+
+  let reducedBuyCount = 0;
+  let blockedBuyCount = 0;
+  const reasonSuffix = Array.isArray(collectQuality?.reasons) && collectQuality.reasons.length > 0
+    ? ` (${collectQuality.reasons.join(', ')})`
+    : '';
+
+  const decisions = portfolioDecision.decisions.map((decision) => {
+    if (decision?.action !== ACTIONS.BUY) return decision;
+
+    if (qualityStatus === 'insufficient') {
+      blockedBuyCount += 1;
+      return {
+        ...decision,
+        action: ACTIONS.HOLD,
+        amount_usdt: 0,
+        reasoning: `collect quality insufficient${reasonSuffix} | ${decision.reasoning || '신규 진입 보류'}`.slice(0, 180),
+      };
+    }
+
+    reducedBuyCount += 1;
+    return {
+      ...decision,
+      confidence: Math.max(0.12, Math.min(1, Number((Number(decision.confidence || 0) * 0.88).toFixed(4)))),
+      reasoning: `collect quality degraded${reasonSuffix} | ${decision.reasoning || '신규 진입 보수화'}`.slice(0, 180),
+    };
+  });
+
+  return {
+    portfolioDecision: {
+      ...portfolioDecision,
+      decisions,
+      collectQualityGuard: {
+        status: qualityStatus,
+        readinessScore: Number(collectQuality?.readinessScore || 0),
+        blockedBuyCount,
+        reducedBuyCount,
+        reasons: Array.isArray(collectQuality?.reasons) ? collectQuality.reasons : [],
+      },
+    },
+    reducedBuyCount,
+    blockedBuyCount,
+  };
+}
+
 async function applyRuntimeCryptoRepresentativePass({ portfolioDecision, exchange, investmentTradeMode }) {
   if (exchange !== 'binance' || investmentTradeMode !== 'normal') {
     return { decision: portfolioDecision, reduction: null };
@@ -506,6 +579,13 @@ export async function runDecisionExecutionPipeline({
   let exitEntrySummary = null;
   let representativeReduction = null;
   const plannerCompact = await loadDecisionPlannerCompact(sessionId);
+  const pipelineRun = await getPipelineRun(sessionId).catch(() => null);
+  const collectQuality = normalizeCollectQuality(
+    pipelineRun?.meta?.collect_quality,
+    pipelineRun?.meta?.collect_metrics?.collectQuality,
+  );
+  let collectQualityReducedBuyCount = 0;
+  let collectQualityBlockedBuyCount = 0;
 
   function countDecisionActions() {
     const counts = { buy: 0, sell: 0, hold: 0 };
@@ -537,18 +617,26 @@ export async function runDecisionExecutionPipeline({
     exitPhaseExecuted,
     exitBelowMinSkipped,
       savedExecutionWork: riskRejected * 5,
-      warnings: buildDecisionWarnings({
-        symbols,
-        debateCount,
-        debateLimit,
-        riskRejected,
-        weakSignalSkipped,
-        midGapPromoted,
-        representativeBuyDropped: Number(representativeReduction?.dropped?.length || 0),
-      }),
-      representativeBuyRequested: Number(representativeReduction?.requestedBuyCount || 0),
-      representativeBuyKept: Number(representativeReduction?.kept?.length || 0),
-      representativeBuyDropped: Number(representativeReduction?.dropped?.length || 0),
+      warnings: [
+        ...buildDecisionWarnings({
+          symbols,
+          debateCount,
+          debateLimit,
+          riskRejected,
+          weakSignalSkipped,
+          midGapPromoted,
+          representativeBuyDropped: Number(representativeReduction?.dropped?.length || 0),
+        }),
+        ...(collectQuality.status === 'degraded' ? ['collect_quality_degraded'] : []),
+        ...(collectQuality.status === 'insufficient' ? ['collect_quality_insufficient'] : []),
+      ],
+    representativeBuyRequested: Number(representativeReduction?.requestedBuyCount || 0),
+    representativeBuyKept: Number(representativeReduction?.kept?.length || 0),
+    representativeBuyDropped: Number(representativeReduction?.dropped?.length || 0),
+      collectQualityStatus: collectQuality.status,
+      collectQualityReadiness: collectQuality.readinessScore,
+      collectQualityBlockedBuyCount,
+      collectQualityReducedBuyCount,
       ...extra,
   });
 
@@ -790,6 +878,10 @@ export async function runDecisionExecutionPipeline({
     });
     portfolioDecision = representativePass.decision;
     representativeReduction = representativePass.reduction;
+    const collectQualityGuard = applyCollectQualityGuard(portfolioDecision, collectQuality);
+    portfolioDecision = collectQualityGuard.portfolioDecision;
+    collectQualityReducedBuyCount = collectQualityGuard.reducedBuyCount;
+    collectQualityBlockedBuyCount = collectQualityGuard.blockedBuyCount;
   }
   if (!portfolioDecision) {
     const metrics = buildMetrics({

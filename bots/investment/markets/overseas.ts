@@ -37,6 +37,7 @@ import {
 import { logMarketPipelineMetrics, runMarketCollectPipeline, summarizeNodeStatuses } from '../shared/pipeline-market-runner.ts';
 import { runDecisionExecutionPipeline } from '../shared/pipeline-decision-runner.ts';
 import { finishPipelineRun } from '../shared/pipeline-db.ts';
+import { updatePipelineRunMeta } from '../shared/pipeline-db.ts';
 
 import { processAllPendingKisOverseasSignals } from '../team/hanul.ts';
 
@@ -113,6 +114,11 @@ export async function runOverseasCycle(symbols, universeMeta = {}) {
       universeMeta,
     });
     sessionId = collect.sessionId;
+    await updatePipelineRunMeta(collect.sessionId, {
+      collect_metrics: collect.metrics,
+      collect_quality: collect.metrics?.collectQuality || null,
+      collect_warnings: collect.metrics?.warnings || [],
+    }).catch(() => {});
     console.log(`  🧩 [노드] session=${collect.sessionId}`);
     console.log(`  🧩 [노드] ${summarizeNodeStatuses(collect.summaries)}`);
     await logMarketPipelineMetrics('미국주식 수집', collect.metrics);

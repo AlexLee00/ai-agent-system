@@ -106,6 +106,18 @@ export async function finishPipelineRun(sessionId, { status = 'completed', meta 
   return { updated: true, status };
 }
 
+export async function updatePipelineRunMeta(sessionId, meta = {}) {
+  await ensurePipelineSchema();
+  const row = await get(`SELECT meta FROM pipeline_runs WHERE session_id = ?`, [sessionId]);
+  if (!row) return { updated: false, reason: 'not_found' };
+  const mergedMeta = { ...(row?.meta || {}), ...(meta || {}) };
+  await run(
+    `UPDATE pipeline_runs SET meta = ? WHERE session_id = ?`,
+    [JSON.stringify(mergedMeta), sessionId],
+  );
+  return { updated: true };
+}
+
 export async function startNodeRun({
   sessionId,
   nodeId,
@@ -184,6 +196,7 @@ export default {
   initPipelineSchema,
   createPipelineRun,
   finishPipelineRun,
+  updatePipelineRunMeta,
   startNodeRun,
   finishNodeRun,
   getPipelineRun,
