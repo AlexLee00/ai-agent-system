@@ -18,6 +18,7 @@ import { publishAlert } from '../shared/alert-publisher.ts';
 import { validateTradeReview } from './validate-trade-review.ts';
 import { buildRuntimeLearningLoopReport } from './runtime-learning-loop-report.ts';
 import { runCollectionAudit } from './runtime-collection-audit.ts';
+import { backfillTradeIncidentLinks } from './backfill-trade-incident-links.ts';
 
 const require = createRequire(import.meta.url);
 const hsm     = require('../../../packages/core/lib/health-state-manager');
@@ -284,6 +285,42 @@ async function main() {
         key,
         level: 2,
         msg: `⚠️ [루나 헬스] trade_review 점검 실패\n${e.message}`,
+      });
+    }
+  }
+
+  try {
+    const incidentAudit = await backfillTradeIncidentLinks({
+      dryRun: true,
+      json: true,
+      onlyFamilyBias: false,
+      limit: 500,
+    });
+    const missing = Number(incidentAudit?.updated || 0);
+    const key = 'trade-incident-link-integrity';
+    if (missing > 0) {
+      if (hsm.canAlert(state, key)) {
+        const sample = incidentAudit.samples?.[0] || null;
+        issues.push({
+          key,
+          level: 2,
+          msg: `⚠️ [루나 헬스] trade incident link 누락 후보\n복구 후보 ${missing}건${sample ? `\nsample: ${sample.exchange}/${sample.symbol} ${sample.tradeId}` : ''}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run journal:backfill-incident-links -- --dry-run --json`,
+        });
+      }
+    } else if (state[key]) {
+      recovers.push({
+        key,
+        msg: '✅ [루나 헬스] trade incident link 정합성 회복\nsignals/trades와 journal incident link 누락 후보 없음 — 자동 감지',
+      });
+      hsm.clearAlert(state, key);
+    }
+  } catch (e) {
+    const key = 'trade-incident-link-check-failed';
+    if (hsm.canAlert(state, key)) {
+      issues.push({
+        key,
+        level: 1,
+        msg: `ℹ️ [루나 헬스] trade incident link 점검 실패\n${e.message}`,
       });
     }
   }

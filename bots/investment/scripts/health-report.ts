@@ -24,6 +24,7 @@ import { getValidationSoftBudgetConfig } from '../shared/runtime-config.ts';
 import { loadCandidates as loadForceExitCandidates } from './force-exit-candidate-report.ts';
 import { buildRuntimeLearningLoopReport } from './runtime-learning-loop-report.ts';
 import { runCollectionAudit } from './runtime-collection-audit.ts';
+import { backfillTradeIncidentLinks } from './backfill-trade-incident-links.ts';
 import {
   buildGuardHealth,
   buildScheduledDeploymentState,
@@ -656,6 +657,7 @@ function buildDecision(
   runtimeLearningLoop,
   latestOpsSnapshot,
   collectionAudit,
+  incidentLinkAudit,
 ) {
   const topBlock = signalBlockHealth.top[0] || null;
   const topReasonGroup = signalBlockHealth.topReasonGroups?.[0] || null;
@@ -796,6 +798,11 @@ function buildDecision(
         reason: collectionInsufficient
           ? `collection audit — ${collectionInsufficient.market} collect quality insufficient / screening ${collectionInsufficient.screeningUniverseCount} / maintenance ${collectionInsufficient.maintenanceUniverseCount}`
           : `collection audit — ${collectionDegraded?.market || 'n/a'} collect quality degraded / screening ${collectionDegraded?.screeningUniverseCount || 0} / maintenance ${collectionDegraded?.maintenanceUniverseCount || 0}`,
+      },
+      {
+        active: Number(incidentLinkAudit?.updated || 0) > 0,
+        level: 'medium',
+        reason: `trade incident link audit — journal 누락 후보 ${incidentLinkAudit?.updated || 0}건 / scanned ${incidentLinkAudit?.scanned || 0} / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run journal:backfill-incident-links -- --dry-run --json`,
       },
     ],
     okReason: '핵심 서비스와 trade_review 정합성이 현재는 안정 구간입니다.',
@@ -1016,6 +1023,18 @@ function formatText(report) {
         : ['  collection audit 정보 없음'],
     },
     {
+      title: '■ trade incident link audit',
+      lines: report.incidentLinkAudit
+        ? [
+            `  scanned: ${report.incidentLinkAudit.scanned || 0}`,
+            `  missing candidates: ${report.incidentLinkAudit.updated || 0}`,
+            `  unresolved: ${report.incidentLinkAudit.unresolved || 0}`,
+            `  next command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run journal:backfill-incident-links -- --dry-run --json`,
+            ...((report.incidentLinkAudit.samples || []).slice(0, 5).map((sample) => `  sample: ${sample.exchange}/${sample.symbol} ${sample.tradeId} <- ${sample.incidentLink}`)),
+          ]
+        : ['  incident link audit 정보 없음'],
+    },
+    {
       title: null,
       lines: buildHealthDecisionSection({
         title: '■ 운영 판단',
@@ -1087,6 +1106,12 @@ async function buildReport() {
   const localLlmHealth = await loadLocalLlmHealth(status);
   const runtimeLearningLoop = await buildRuntimeLearningLoopReport({ days: 14, json: true }).catch(() => null);
   const collectionAudit = await runCollectionAudit({ markets: ['binance', 'kis', 'kis_overseas'], hours: 24 }).catch(() => null);
+  const incidentLinkAudit = await backfillTradeIncidentLinks({
+    dryRun: true,
+    json: true,
+    onlyFamilyBias: false,
+    limit: 500,
+  }).catch(() => null);
   const latestOpsSnapshot = loadLatestOpsSnapshot();
   const cryptoGateActionPlan = buildCryptoGateActionPlan(capitalGuardBreakdown);
   const kisCapabilityHealth = await loadKisCapabilityHealth();
@@ -1112,6 +1137,7 @@ async function buildReport() {
     runtimeLearningLoop,
     latestOpsSnapshot,
     collectionAudit,
+    incidentLinkAudit,
   );
 
   const report = {
@@ -1138,6 +1164,7 @@ async function buildReport() {
     localLlmHealth,
     runtimeLearningLoop,
     collectionAudit,
+    incidentLinkAudit,
     latestOpsSnapshot,
     capitalGuardBreakdown,
     cryptoGateActionPlan,
