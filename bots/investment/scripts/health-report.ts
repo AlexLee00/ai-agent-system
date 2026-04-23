@@ -670,6 +670,7 @@ function buildDecision(
   executionAttachBackfill,
   positionStrategyAudit,
   positionStrategyHygiene,
+  positionStrategyRemediation,
   duplicateStrategyNormalization,
   orphanStrategyRetirement,
   executionRiskApprovalGuardHealth,
@@ -890,7 +891,7 @@ function buildDecision(
       {
         active: positionStrategyHygieneStatus === 'position_strategy_hygiene_attention',
         level: Number(positionStrategyAudit?.duplicateManagedProfileScopes || 0) > 0 || Number(positionStrategyAudit?.unmatchedManagedPositions || 0) > 0 ? 'medium' : 'low',
-        reason: `position strategy hygiene — ${positionStrategyHygiene?.decision?.headline || '포지션 전략 위생 점검 필요'} / duplicate managed ${positionStrategyAudit?.duplicateManagedProfileScopes || 0} / orphan ${positionStrategyOrphans || 0} / unmatched managed ${positionStrategyAudit?.unmatchedManagedPositions || 0} / duplicate apply ${duplicateStrategyNormalization?.decision?.safeToApply === true ? 'yes' : 'no'} / orphan apply ${orphanStrategyRetirement?.decision?.safeToApply === true ? 'yes' : 'no'} / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-hygiene -- --json`,
+        reason: `position strategy remediation — ${positionStrategyRemediation?.decision?.headline || positionStrategyHygiene?.decision?.headline || '포지션 전략 위생 점검 필요'} / duplicate managed ${positionStrategyAudit?.duplicateManagedProfileScopes || 0} / orphan ${positionStrategyOrphans || 0} / unmatched managed ${positionStrategyAudit?.unmatchedManagedPositions || 0} / duplicate apply ${duplicateStrategyNormalization?.decision?.safeToApply === true ? 'yes' : 'no'} / orphan apply ${orphanStrategyRetirement?.decision?.safeToApply === true ? 'yes' : 'no'} / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation -- --json`,
       },
     ],
     okReason: '핵심 서비스와 trade_review 정합성이 현재는 안정 구간입니다.',
