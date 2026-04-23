@@ -21,6 +21,7 @@ import { isSameDaySymbolReentryBlockEnabled, getInvestmentExecutionRuntimeConfig
 import { getInvestmentAgentRoleState } from '../shared/agent-role-state.ts';
 import { syncPositionsAtMarketOpen } from '../shared/position-sync.ts';
 import { buildExecutionRiskApprovalGuard } from '../shared/risk-approval-execution-guard.ts';
+import { attachExecutionToPositionStrategy } from '../shared/execution-attach.ts';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.ts';
 import { notifyTrade, notifyError, notifyJournalEntry, notifyTradeSkip, notifyCircuitBreaker, notifySettlement } from '../shared/report.ts';
 import { preTradeCheck, calculatePositionSize, getAvailableBalance, getAvailableUSDT, getOpenPositions, getDailyPnL, getDailyTradeCount, checkCircuitBreaker, getCapitalConfig, formatDailyTradeLimitReason, getDynamicMinOrderAmount } from '../shared/capital-manager.ts';
@@ -2755,6 +2756,16 @@ export async function executeSignal(signal) {
       };
 
       await persistBuyPosition({ symbol, order, effectivePaperMode, signalTradeMode });
+      if (!effectivePaperMode) {
+        await attachExecutionToPositionStrategy({
+          trade,
+          signal,
+          dryRun: false,
+          requireOpenPosition: true,
+        }).catch((error) => {
+          console.warn(`  ⚠️ ${symbol} execution attach 실패: ${error.message}`);
+        });
+      }
       await syncCryptoStrategyExecutionState({
         symbol,
         tradeMode: signalTradeMode,

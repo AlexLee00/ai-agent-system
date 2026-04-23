@@ -37,6 +37,7 @@ import { notifyTrade, notifyError, notifyJournalEntry, notifyKisSignal, notifyKi
 import { getDynamicMinOrderAmount } from '../shared/capital-manager.ts';
 import { getMarketOrderRule } from '../shared/order-rules.ts';
 import { buildExecutionRiskApprovalGuard } from '../shared/risk-approval-execution-guard.ts';
+import { attachExecutionToPositionStrategy } from '../shared/execution-attach.ts';
 import pgPool from '../../../packages/core/lib/pg-pool.js';
 
 // ─── 심볼 유효성 ────────────────────────────────────────────────────
@@ -1079,6 +1080,16 @@ export async function executeSignal(signal) {
         paper: paperMode,
         tradeMode: signalTradeMode,
       });
+      if (!paperMode) {
+        await attachExecutionToPositionStrategy({
+          trade,
+          signal,
+          dryRun: false,
+          requireOpenPosition: true,
+        }).catch((error) => {
+          console.warn(`  ⚠️ ${symbol} execution attach 실패: ${error.message}`);
+        });
+      }
       await syncHanulStrategyExecutionState({
         symbol,
         exchange: 'kis',
@@ -1342,6 +1353,16 @@ export async function executeOverseasSignal(signal) {
         paper: paperMode,
         tradeMode: signalTradeMode,
       });
+      if (!paperMode) {
+        await attachExecutionToPositionStrategy({
+          trade,
+          signal,
+          dryRun: false,
+          requireOpenPosition: true,
+        }).catch((error) => {
+          console.warn(`  ⚠️ ${symbol} execution attach 실패: ${error.message}`);
+        });
+      }
       await syncHanulStrategyExecutionState({
         symbol,
         exchange: 'kis_overseas',
