@@ -376,6 +376,39 @@ function applyHanulResponsibilityExecutionSizing(amount, {
   };
 }
 
+export function applyHanulStockSizingFloor(amount, {
+  action = ACTIONS.BUY,
+  minOrder = 0,
+  maxOrder = Infinity,
+  currency = 'KRW',
+} = {}) {
+  const numericAmount = Number(amount || 0);
+  const floor = Number(minOrder || 0);
+  const cap = Number(maxOrder || Infinity);
+  if (action !== ACTIONS.BUY || !(numericAmount > 0) || !(floor > 0)) {
+    return { amount: numericAmount, adjusted: false, blocked: false, reason: null, code: null };
+  }
+  if (numericAmount >= floor) {
+    return { amount: numericAmount, adjusted: false, blocked: false, reason: null, code: null };
+  }
+  if (Number.isFinite(cap) && floor > cap) {
+    return {
+      amount: numericAmount,
+      adjusted: false,
+      blocked: true,
+      reason: `sizing floor 적용 불가 (${numericAmount.toLocaleString()} ${currency} < floor ${floor.toLocaleString()} ${currency}, cap ${cap.toLocaleString()} ${currency})`,
+      code: 'sizing_floor_unavailable',
+    };
+  }
+  return {
+    amount: floor,
+    adjusted: true,
+    blocked: false,
+    reason: `sizing floor 적용 (${numericAmount.toLocaleString()} ${currency} → ${floor.toLocaleString()} ${currency})`,
+    code: 'sizing_floor_applied',
+  };
+}
+
 function isEffectivePartialExit({ entrySize = 0, soldAmount = 0, partialExitRatio = 1 } = {}) {
   const normalizedRatio = normalizePartialExitRatio(partialExitRatio);
   const baseline = Number(entrySize || 0);
@@ -928,13 +961,46 @@ export async function executeSignal(signal) {
     responsibilityPlan: signal.existingResponsibilityPlan || null,
     executionPlan: signal.existingExecutionPlan || null,
   });
-  const effectiveBuyAmountKrw = action === ACTIONS.BUY ? domesticBuySizing.amount : amountKrw;
+  const domesticMinOrderKrw = action === ACTIONS.BUY
+    ? await getDynamicMinOrderAmount('kis', signalTradeMode)
+    : 0;
+  const domesticSizingFloor = applyHanulStockSizingFloor(domesticBuySizing.amount, {
+    action,
+    minOrder: domesticMinOrderKrw,
+    maxOrder: KIS_RULES.MAX_ORDER_KRW,
+    currency: 'KRW',
+  });
+  const effectiveBuyAmountKrw = action === ACTIONS.BUY ? domesticSizingFloor.amount : amountKrw;
+  const effectiveSignal = action === ACTIONS.BUY
+    ? { ...signal, amount_usdt: effectiveBuyAmountKrw }
+    : signal;
 
   const tag = paperMode ? '[PAPER]' : kisPaper ? '[LIVE/MOCK]' : '[LIVE/REAL]';
   console.log(`\n⚡ [한울] ${symbol} ${action} ${effectiveBuyAmountKrw?.toLocaleString()}원 ${tag}`);
 
   try {
-    const approvalGuard = await enforceHanulNemesisApproval(signal, 'domestic');
+    if (domesticSizingFloor.blocked) {
+      console.log(`  ⛔ sizing floor 차단: ${domesticSizingFloor.reason}`);
+      return failHanulSignal(signalId, {
+        reason: domesticSizingFloor.reason,
+        code: domesticSizingFloor.code,
+        market: 'domestic',
+        symbol,
+        action,
+        amount: effectiveBuyAmountKrw,
+        meta: {
+          originalAmount: amountKrw,
+          sizedAmount: domesticBuySizing.amount,
+          minOrder: domesticMinOrderKrw,
+        },
+      });
+    }
+
+    if (domesticSizingFloor.adjusted) {
+      console.log(`  🧱 [sizing floor] ${symbol} ${domesticSizingFloor.reason}`);
+    }
+
+    const approvalGuard = await enforceHanulNemesisApproval(effectiveSignal, 'domestic');
     if (approvalGuard?.success === false) return approvalGuard;
 
     const preflight = await getKisExecutionPreflight({ market: 'domestic', action });
@@ -950,7 +1016,7 @@ export async function executeSignal(signal) {
       });
     }
 
-    const risk = await checkKisRisk(signal);
+    const risk = await checkKisRisk(effectiveSignal);
     if (!risk.approved) {
       console.log(`  ❌ 리스크 거부: ${risk.reason}`);
       return failHanulSignal(signalId, {
@@ -1159,13 +1225,46 @@ export async function executeOverseasSignal(signal) {
     responsibilityPlan: signal.existingResponsibilityPlan || null,
     executionPlan: signal.existingExecutionPlan || null,
   });
-  const effectiveBuyAmountUsd = action === ACTIONS.BUY ? overseasBuySizing.amount : amountUsd;
+  const overseasMinOrderUsd = action === ACTIONS.BUY
+    ? await getDynamicMinOrderAmount('kis_overseas', signalTradeMode)
+    : 0;
+  const overseasSizingFloor = applyHanulStockSizingFloor(overseasBuySizing.amount, {
+    action,
+    minOrder: overseasMinOrderUsd,
+    maxOrder: KIS_OVERSEAS_RULES.MAX_ORDER_USD,
+    currency: 'USD',
+  });
+  const effectiveBuyAmountUsd = action === ACTIONS.BUY ? overseasSizingFloor.amount : amountUsd;
+  const effectiveSignal = action === ACTIONS.BUY
+    ? { ...signal, amount_usdt: effectiveBuyAmountUsd }
+    : signal;
 
   const tag = paperMode ? '[PAPER]' : kisPaper ? '[LIVE/MOCK]' : '[LIVE/REAL]';
   console.log(`\n⚡ [한울] 해외 ${symbol} ${action} $${effectiveBuyAmountUsd} ${tag}`);
 
   try {
-    const approvalGuard = await enforceHanulNemesisApproval(signal, 'overseas');
+    if (overseasSizingFloor.blocked) {
+      console.log(`  ⛔ sizing floor 차단: ${overseasSizingFloor.reason}`);
+      return failHanulSignal(signalId, {
+        reason: overseasSizingFloor.reason,
+        code: overseasSizingFloor.code,
+        market: 'overseas',
+        symbol,
+        action,
+        amount: effectiveBuyAmountUsd,
+        meta: {
+          originalAmount: amountUsd,
+          sizedAmount: overseasBuySizing.amount,
+          minOrder: overseasMinOrderUsd,
+        },
+      });
+    }
+
+    if (overseasSizingFloor.adjusted) {
+      console.log(`  🧱 [sizing floor] ${symbol} ${overseasSizingFloor.reason}`);
+    }
+
+    const approvalGuard = await enforceHanulNemesisApproval(effectiveSignal, 'overseas');
     if (approvalGuard?.success === false) return approvalGuard;
 
     const preflight = await getKisExecutionPreflight({ market: 'overseas', action });
@@ -1181,7 +1280,7 @@ export async function executeOverseasSignal(signal) {
       });
     }
 
-    const risk = await checkKisOverseasRisk(signal);
+    const risk = await checkKisOverseasRisk(effectiveSignal);
     if (!risk.approved) {
       console.log(`  ❌ 리스크 거부: ${risk.reason}`);
       return failHanulSignal(signalId, {
