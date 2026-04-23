@@ -30,6 +30,7 @@ import { buildPositionReevaluationSummary } from './position-reevaluation-summar
 import { buildRuntimeMinOrderPressureReport } from './runtime-min-order-pressure-report.ts';
 import { buildRuntimeLearningLoopReport } from './runtime-learning-loop-report.ts';
 import { buildRuntimePositionStrategyAudit } from './runtime-position-strategy-audit.ts';
+import { runPositionStrategyHygiene } from './runtime-position-strategy-hygiene.ts';
 const require = createRequire(import.meta.url);
 const LATEST_OPS_SNAPSHOT_FILE = '/Users/alexlee/projects/ai-agent-system/bots/investment/output/ops/parallel-ops-snapshot.json';
 const RAG_RUNTIME = getInvestmentRagRuntimeConfig();
@@ -293,6 +294,12 @@ function buildPositionStrategyCoverageLine(positionStrategyAuditSummary) {
   return `🧩 strategy coverage: managed ${managed} / profiles ${profiles} / dust ${dust} / duplicateScopes ${duplicates}${lifecycleLine ? ` | ${lifecycleLine}` : ''}`;
 }
 
+function buildPositionStrategyHygieneLine(positionStrategyHygieneSummary) {
+  if (!positionStrategyHygieneSummary || positionStrategyHygieneSummary.error || !positionStrategyHygieneSummary.ok) return null;
+  const decision = positionStrategyHygieneSummary.decision || {};
+  return `🧼 strategy hygiene: ${decision.status || 'unknown'} | ${decision.headline || 'n/a'}`;
+}
+
 function getLearningLoopNextCommand(learningLoopSummary) {
   const nextActions = learningLoopSummary?.decision?.nextActions;
   if (!Array.isArray(nextActions)) return null;
@@ -311,7 +318,7 @@ function buildDailyFeedbackMemoryQuery(dateKst, feedback, screeningSummary, reev
   ].filter(Boolean).join(' ');
 }
 
-function buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary) {
+function buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary) {
   const lines = [
     `🌓 루나 일일 피드백 (${dateKst})`,
     `📌 ${feedback.summary}`,
@@ -328,6 +335,8 @@ function buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSumma
   if (learningLoopLine) lines.push(learningLoopLine);
   const positionStrategyCoverageLine = buildPositionStrategyCoverageLine(positionStrategyAuditSummary);
   if (positionStrategyCoverageLine) lines.push(positionStrategyCoverageLine);
+  const positionStrategyHygieneLine = buildPositionStrategyHygieneLine(positionStrategyHygieneSummary);
+  if (positionStrategyHygieneLine) lines.push(positionStrategyHygieneLine);
   if (Array.isArray(feedback.nextActions) && feedback.nextActions.length > 0) {
     lines.push(`➡️ 다음 액션: ${feedback.nextActions.join(' / ')}`);
   }
@@ -338,7 +347,7 @@ function buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSumma
   return lines.join('\n');
 }
 
-async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary) {
+async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary) {
   const content = [
     `[일일 피드백 ${dateKst}] ${feedback.summary}`,
     `거래 ${feedback.stats.total}건 / 승률 ${(feedback.stats.winRate * 100).toFixed(1)}% / 손익 $${feedback.stats.totalPnl.toFixed(2)}`,
@@ -347,6 +356,7 @@ async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeni
     buildMinOrderPressureLine(minOrderPressureSummary),
     buildLearningLoopLine(learningLoopSummary),
     buildPositionStrategyCoverageLine(positionStrategyAuditSummary),
+    buildPositionStrategyHygieneLine(positionStrategyHygieneSummary),
     `다음 액션: ${(feedback.nextActions || []).join(' / ') || '없음'}`,
   ].filter(Boolean).join('\n');
   await rag.store('trades', content, {
@@ -361,6 +371,7 @@ async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeni
     min_order_pressure_summary: minOrderPressureSummary?.decision || {},
     learning_loop_summary: learningLoopSummary?.decision || {},
     position_strategy_audit: positionStrategyAuditSummary || {},
+    position_strategy_hygiene: positionStrategyHygieneSummary || {},
   }, 'luna');
 }
 
@@ -376,11 +387,14 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
   const positionStrategyAuditSummary = await buildRuntimePositionStrategyAudit({ json: true }).catch((error) => ({
     error: String(error?.message || error),
   }));
+  const positionStrategyHygieneSummary = await runPositionStrategyHygiene({ json: true }).catch((error) => ({
+    error: String(error?.message || error),
+  }));
   const feedback = await buildDailyFeedback(dateKst, trades, analystAccuracy);
-  const message = buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary);
+  const message = buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary);
 
   try {
-    await storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary);
+    await storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary);
   } catch (error) {
     console.warn(`  ⚠️ [daily-feedback] RAG 저장 실패(무시): ${error?.message || error}`);
   }
@@ -413,7 +427,7 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
         event_type: 'daily_feedback',
         alert_level: 1,
         message: finalMessage,
-        payload: { dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary },
+        payload: { dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary },
       });
       await dailyFeedbackMemory.remember(finalMessage, 'episodic', {
         importance: 0.7,
@@ -446,6 +460,7 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
     minOrderPressureSummary,
     learningLoopSummary,
     positionStrategyAuditSummary,
+    positionStrategyHygieneSummary,
     feedback,
     message,
   };
