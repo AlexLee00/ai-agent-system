@@ -50,6 +50,7 @@ function summarizeTopModel(row = null) {
 function buildSnapshot(report, days) {
   const summary = report?.summary || {};
   const amount = summary.amount || {};
+  const application = summary.application || {};
   return {
     recordedAt: new Date().toISOString(),
     days,
@@ -61,6 +62,10 @@ function buildSnapshot(report, days) {
     previewVsApprovedDelta: Number(amount.previewVsApprovedDelta || 0),
     previewFinal: Number(amount.previewFinal || 0),
     approved: Number(amount.approved || 0),
+    applicationApplied: Number(application.applied || 0),
+    applicationRejected: Number(application.rejected || 0),
+    applicationAmountDelta: Number(application.amountDelta || 0),
+    applicationByMode: application.byMode || [],
     topModel: summarizeTopModel(summary.modelRows?.[0] || null),
   };
 }
@@ -74,6 +79,9 @@ function buildDelta(current, previous) {
       previewVsApprovedDelta: 0,
       approved: 0,
       previewFinal: 0,
+      applicationApplied: 0,
+      applicationRejected: 0,
+      applicationAmountDelta: 0,
     };
   }
   return {
@@ -83,6 +91,9 @@ function buildDelta(current, previous) {
     previewVsApprovedDelta: current.previewVsApprovedDelta - Number(previous.previewVsApprovedDelta || 0),
     approved: current.approved - Number(previous.approved || 0),
     previewFinal: current.previewFinal - Number(previous.previewFinal || 0),
+    applicationApplied: current.applicationApplied - Number(previous.applicationApplied || 0),
+    applicationRejected: current.applicationRejected - Number(previous.applicationRejected || 0),
+    applicationAmountDelta: current.applicationAmountDelta - Number(previous.applicationAmountDelta || 0),
   };
 }
 
@@ -97,6 +108,7 @@ function renderText(payload) {
     `reject delta: ${payload.delta.previewRejects >= 0 ? '+' : ''}${payload.delta.previewRejects}`,
     `divergence delta: ${payload.delta.legacyApprovedPreviewRejected >= 0 ? '+' : ''}${payload.delta.legacyApprovedPreviewRejected}`,
     `amount delta change: ${payload.delta.previewVsApprovedDelta >= 0 ? '+' : ''}${payload.delta.previewVsApprovedDelta.toFixed(4)}`,
+    `application delta: applied ${payload.delta.applicationApplied >= 0 ? '+' : ''}${payload.delta.applicationApplied} / rejected ${payload.delta.applicationRejected >= 0 ? '+' : ''}${payload.delta.applicationRejected} / amount ${payload.delta.applicationAmountDelta >= 0 ? '+' : ''}${payload.delta.applicationAmountDelta.toFixed(4)}`,
     payload.current.topModel
       ? `top model: ${payload.current.topModel.model || 'n/a'} adjust ${payload.current.topModel.adjust} / reject ${payload.current.topModel.reject} / pass ${payload.current.topModel.pass}`
       : 'top model: none',

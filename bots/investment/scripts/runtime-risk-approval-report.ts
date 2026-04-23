@@ -26,6 +26,7 @@ function pct(value, digits = 1) {
 
 function normalizePreview(row = {}) {
   const preview = row.strategy_config?.risk_approval_preview || null;
+  const application = row.strategy_config?.risk_approval_application || preview?.application || null;
   return {
     tradeId: row.trade_id || null,
     signalId: row.signal_id || null,
@@ -36,16 +37,21 @@ function normalizePreview(row = {}) {
     positionSizeOriginal: row.position_size_original != null ? Number(row.position_size_original) : null,
     positionSizeApproved: row.position_size_approved != null ? Number(row.position_size_approved) : null,
     preview,
+    application,
   };
 }
 
 function summarize(rows = []) {
   const byModel = {};
   const byDecision = {};
+  const byMode = {};
   const divergences = [];
   let total = 0;
   let previewRejects = 0;
   let legacyApprovedPreviewRejected = 0;
+  let applicationApplied = 0;
+  let applicationRejected = 0;
+  let applicationAmountDelta = 0;
   let totalOriginal = 0;
   let totalApproved = 0;
   let totalPreviewFinal = 0;
@@ -56,6 +62,21 @@ function summarize(rows = []) {
     const previewDecision = row.preview.decision || 'unknown';
     byDecision[previewDecision] = (byDecision[previewDecision] || 0) + 1;
     if (row.preview.approved === false || previewDecision === 'REJECT') previewRejects += 1;
+    const application = row.application || {};
+    const mode = String(application.mode || row.preview.mode || 'shadow');
+    if (!byMode[mode]) byMode[mode] = { mode, total: 0, applied: 0, rejected: 0, amountDelta: 0 };
+    byMode[mode].total += 1;
+    if (application.applied) {
+      byMode[mode].applied += 1;
+      applicationApplied += 1;
+    }
+    if (String(row.nemesisVerdict || '').toLowerCase() === 'rejected' && mode === 'enforce') {
+      byMode[mode].rejected += 1;
+      applicationRejected += 1;
+    }
+    const appDelta = safeNumber(application.amountAfter) - safeNumber(application.amountBefore);
+    byMode[mode].amountDelta += appDelta;
+    applicationAmountDelta += appDelta;
 
     const legacyApproved = ['approved', 'modified'].includes(String(row.nemesisVerdict || '').toLowerCase());
     if (legacyApproved && (row.preview.approved === false || previewDecision === 'REJECT')) {
@@ -127,6 +148,15 @@ function summarize(rows = []) {
       previewFinal: Number(totalPreviewFinal.toFixed(4)),
       previewVsApprovedDelta: Number((totalPreviewFinal - totalApproved).toFixed(4)),
     },
+    application: {
+      applied: applicationApplied,
+      rejected: applicationRejected,
+      amountDelta: Number(applicationAmountDelta.toFixed(4)),
+      byMode: Object.values(byMode).map((item) => ({
+        ...item,
+        amountDelta: Number(item.amountDelta.toFixed(4)),
+      })),
+    },
     modelRows,
     divergences,
   };
@@ -175,6 +205,12 @@ function renderText(payload) {
   }
   lines.push('');
   lines.push(`금액: approved ${payload.summary.amount.approved} / preview ${payload.summary.amount.previewFinal} / delta ${payload.summary.amount.previewVsApprovedDelta}`);
+  if (payload.summary.application?.byMode?.length) {
+    lines.push(`적용: applied ${payload.summary.application.applied} / rejected ${payload.summary.application.rejected} / amount delta ${payload.summary.application.amountDelta}`);
+    for (const item of payload.summary.application.byMode) {
+      lines.push(`- mode ${item.mode}: total ${item.total}, applied ${item.applied}, rejected ${item.rejected}, delta ${item.amountDelta}`);
+    }
+  }
   if (payload.summary.divergences.length) {
     lines.push('');
     lines.push('divergence samples:');

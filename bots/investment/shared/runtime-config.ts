@@ -394,6 +394,17 @@ const DEFAULT_RUNTIME_CONFIG = {
       stockAutoApproveDomestic: 500000,
       stockAutoApproveOverseas: 400,
     },
+    riskApprovalChain: {
+      mode: 'shadow',
+      assist: {
+        applyAmountReduction: true,
+        maxReductionPct: 0.35,
+      },
+      enforce: {
+        rejectOnPreviewReject: true,
+        applyAmountReduction: true,
+      },
+    },
   },
   timeMode: getTimeProfiles(),
   llmPolicies: {

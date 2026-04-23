@@ -273,6 +273,113 @@ function buildRiskApprovalPreview({
   }
 }
 
+function getRiskApprovalChainModeConfig() {
+  const config = getNemesisRuntimeConfig()?.riskApprovalChain || {};
+  const mode = String(config.mode || 'shadow').toLowerCase();
+  const assistMaxReductionPct = Number(config.assist?.maxReductionPct ?? 0.35);
+  return {
+    mode: ['shadow', 'assist', 'enforce'].includes(mode) ? mode : 'shadow',
+    assist: {
+      applyAmountReduction: config.assist?.applyAmountReduction !== false,
+      maxReductionPct: Number.isFinite(assistMaxReductionPct) ? assistMaxReductionPct : 0.35,
+    },
+    enforce: {
+      rejectOnPreviewReject: config.enforce?.rejectOnPreviewReject !== false,
+      applyAmountReduction: config.enforce?.applyAmountReduction !== false,
+    },
+  };
+}
+
+function applyRiskApprovalChainMode({
+  amountUsdt,
+  adaptiveResult,
+  riskApprovalPreview,
+  modeConfig,
+  rules,
+} = {}) {
+  const mode = modeConfig?.mode || 'shadow';
+  const before = Number(amountUsdt || 0);
+  const previewAmount = Number(riskApprovalPreview?.finalAmount || 0);
+  const minOrder = Number(rules?.MIN_ORDER_USDT || 0);
+  const previewRejected = riskApprovalPreview?.approved === false || riskApprovalPreview?.decision === 'REJECT';
+
+  if (mode === 'shadow') {
+    return {
+      approved: true,
+      amountUsdt: before,
+      adaptiveResult,
+      applied: false,
+      mode,
+      reason: 'shadow mode records preview only',
+    };
+  }
+
+  if (mode === 'enforce' && previewRejected && modeConfig.enforce?.rejectOnPreviewReject) {
+    return {
+      approved: false,
+      amountUsdt: before,
+      adaptiveResult,
+      applied: true,
+      mode,
+      reason: riskApprovalPreview?.rejectReason || 'risk approval chain rejected',
+    };
+  }
+
+  const shouldApplyAmount =
+    previewAmount > 0 &&
+    previewAmount < before &&
+    (
+      (mode === 'assist' && modeConfig.assist?.applyAmountReduction) ||
+      (mode === 'enforce' && modeConfig.enforce?.applyAmountReduction)
+    );
+
+  if (!shouldApplyAmount) {
+    return {
+      approved: true,
+      amountUsdt: before,
+      adaptiveResult,
+      applied: false,
+      mode,
+      reason: `${mode} mode found no amount reduction`,
+    };
+  }
+
+  const maxReductionPct = mode === 'assist'
+    ? Math.max(0, Math.min(0.95, Number(modeConfig.assist?.maxReductionPct ?? 0.35)))
+    : 0.95;
+  const maxReductionAmount = Math.floor(before * (1 - maxReductionPct));
+  const boundedAmount = mode === 'assist'
+    ? Math.max(minOrder, maxReductionAmount, Math.floor(previewAmount))
+    : Math.max(minOrder, Math.floor(previewAmount));
+
+  if (boundedAmount >= before) {
+    return {
+      approved: true,
+      amountUsdt: before,
+      adaptiveResult,
+      applied: false,
+      mode,
+      reason: `${mode} reduction bounded to original amount`,
+    };
+  }
+
+  return {
+    approved: true,
+    amountUsdt: boundedAmount,
+    adaptiveResult: {
+      ...adaptiveResult,
+      llm: {
+        ...(adaptiveResult?.llm || {}),
+        decision: 'ADJUST',
+        reasoning: `${adaptiveResult?.llm?.reasoning || '리스크 승인'} | risk approval chain ${mode} 감산 ${before} -> ${boundedAmount}`,
+      },
+    },
+    applied: true,
+    mode,
+    reason: `risk approval chain ${mode} amount reduction`,
+  };
+}
+
 // ─── v2: 변동성 조정 ────────────────────────────────────────────────
 
 async function calcVolatilityFactor(symbol, atrRatio = null) {
@@ -971,6 +1078,66 @@ export async function evaluateSignal(signal, opts = {}) {
       existingStrategyProfile,
       rules,
     });
+    const riskApprovalModeConfig = getRiskApprovalChainModeConfig();
+    const riskApprovalApplication = applyRiskApprovalChainMode({
+      amountUsdt,
+      adaptiveResult,
+      riskApprovalPreview,
+      modeConfig: riskApprovalModeConfig,
+      rules,
+    });
+    riskApprovalPreview.mode = riskApprovalApplication.mode;
+    riskApprovalPreview.application = {
+      applied: Boolean(riskApprovalApplication.applied),
+      reason: riskApprovalApplication.reason || null,
+      amountBefore: amountUsdt,
+      amountAfter: riskApprovalApplication.amountUsdt,
+      mode: riskApprovalApplication.mode,
+    };
+
+    if (!riskApprovalApplication.approved) {
+      if (persist && signal.id) {
+        try {
+          await journalDb.insertRationale({
+            signal_id: signal.id,
+            luna_decision: 'enter',
+            luna_reasoning: signal.reasoning || '',
+            luna_confidence: signal.confidence ?? null,
+            nemesis_verdict: 'rejected',
+            nemesis_notes: `risk approval chain ${riskApprovalApplication.mode}: ${riskApprovalApplication.reason}`,
+            position_size_original: signal.amount_usdt,
+            position_size_approved: 0,
+            strategy_config: {
+              risk_approval_preview: riskApprovalPreview,
+              risk_approval_application: riskApprovalPreview.application,
+            },
+          });
+        } catch (e) {
+          console.warn(`  ⚠️ 매매일지 rationale 기록 실패: ${e.message}`);
+        }
+      }
+      try {
+        const nemesisMemory = new AgentMemory({ agentId: 'investment.nemesis', team: 'investment' });
+        await nemesisMemory.remember(
+          `[리스크 승인 체인 거절] ${symbol} ${action} | ${riskApprovalApplication.reason || 'risk approval chain rejected'}`,
+          'episodic',
+          {
+            keywords: [symbol, action, 'REJECT', 'risk_approval_chain'].filter(Boolean),
+            importance: 0.8,
+            metadata: { decision: 'REJECT', source: 'risk_approval_chain', symbol, action, mode: riskApprovalApplication.mode },
+          }
+        );
+      } catch { /* 무시 */ }
+      return {
+        approved: false,
+        reason: riskApprovalApplication.reason,
+        traceId,
+        nemesis_verdict: 'rejected',
+        risk_approval_preview: riskApprovalPreview,
+      };
+    }
+    amountUsdt = riskApprovalApplication.amountUsdt;
+    adaptiveResult = riskApprovalApplication.adaptiveResult || adaptiveResult;
 
     if (persist && signal.id) {
       try {
@@ -989,6 +1156,7 @@ export async function evaluateSignal(signal, opts = {}) {
           strategy_config: {
             ...(shadowHiring ? { shadow_hiring: shadowHiring } : {}),
             risk_approval_preview: riskApprovalPreview,
+            risk_approval_application: riskApprovalPreview.application,
             ...(marketRegime ? {
               market_regime: {
                 regime: marketRegime.regime,
