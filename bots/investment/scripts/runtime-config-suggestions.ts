@@ -14,6 +14,8 @@ import { annotateRuntimeSuggestions, buildParameterGovernanceReport } from '../s
 import { loadCryptoLiveGateReview } from './crypto-live-gate-review.ts';
 import { buildRuntimeCryptoSoftGuardReport } from './runtime-crypto-soft-guard-report.ts';
 import { buildStrategyFeedbackOutcomes } from './runtime-strategy-feedback-outcomes.ts';
+import { buildRuntimeRiskApprovalReport } from './runtime-risk-approval-report.ts';
+import { buildRuntimeRiskApprovalHistory } from './runtime-risk-approval-history.ts';
 import { buildInvestmentCliInsight } from '../shared/cli-insight.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
@@ -894,6 +896,49 @@ function buildStrategyFeedbackOutcomeSuggestions(strategyFeedbackOutcomes = null
   return suggestions;
 }
 
+function buildRiskApprovalSuggestions(riskApproval = null, riskApprovalTrend = null) {
+  const suggestions = [];
+  const decision = riskApproval?.decision || {};
+  const summary = riskApproval?.summary || {};
+  const topModel = summary.modelRows?.[0] || null;
+  const total = Number(summary.total || 0);
+  const previewRejects = Number(summary.previewRejects || 0);
+  const divergence = Number(summary.legacyApprovedPreviewRejected || 0);
+  const delta = riskApprovalTrend?.delta || {};
+  const divergenceDelta = Number(delta.legacyApprovedPreviewRejected || 0);
+
+  if (decision.status === 'risk_approval_preview_divergence') {
+    suggestions.push({
+      key: `runtime_config.nemesis.riskApprovalChain.model.${topModel?.model || 'unknown'}.divergenceReview`,
+      current: 'shadow_preview',
+      suggested: divergenceDelta > 0 ? 'tighten_threshold_review' : 'inspect_divergence_samples',
+      action: total >= 10 && divergence >= 2 ? 'promote_candidate' : 'observe',
+      confidence: total >= 20 ? 'medium' : 'low',
+      reason: `리스크 승인 preview ${total}건 중 기존 승인/preview 거절 충돌이 ${divergence}건입니다. 직전 대비 divergence Δ${divergenceDelta}이며 top model은 ${topModel?.model || 'n/a'}(adjust ${topModel?.adjust || 0}, reject ${topModel?.reject || 0})입니다. enforce 전환 전 divergence sample과 모델 임계값을 우선 검토합니다.`,
+    });
+  } else if (total > 0) {
+    suggestions.push({
+      key: 'runtime_config.nemesis.riskApprovalChain.shadowMonitor',
+      current: 'shadow_preview',
+      suggested: previewRejects > 0 ? 'continue_preview_with_reject_sampling' : 'continue_preview_sampling',
+      action: 'observe',
+      confidence: total >= 20 ? 'medium' : 'low',
+      reason: `리스크 승인 preview가 ${total}건 누적됐고 preview reject ${previewRejects}건 / divergence ${divergence}건입니다. 현재는 기존 승인 흐름과 큰 충돌이 없어 shadow 표본을 더 쌓는 단계입니다.`,
+    });
+  } else {
+    suggestions.push({
+      key: 'runtime_config.nemesis.riskApprovalChain.shadowMonitor',
+      current: 'shadow_preview',
+      suggested: 'collect_preview_samples',
+      action: 'observe',
+      confidence: 'low',
+      reason: '리스크 승인 preview 표본이 아직 없어 runtime_config 조정보다 네메시스 rationale 표본 누적이 먼저입니다.',
+    });
+  }
+
+  return suggestions;
+}
+
 function buildCryptoSoftGuardSuggestions(config, executionConfig, softGuardSummary = null, summaries = {}) {
   const suggestions = [];
   const decision = softGuardSummary?.decision || {};
@@ -989,6 +1034,8 @@ function buildSuggestions(
   regimeLaneSummary = null,
   strategyFamilySummary = null,
   strategyFeedbackOutcomes = null,
+  riskApproval = null,
+  riskApprovalTrend = null,
 ) {
   void capitalGuardBias;
   return [
@@ -1001,10 +1048,11 @@ function buildSuggestions(
     ...buildRegimeLaneSuggestions(config, executionConfig, regimeLaneSummary),
     ...buildStrategyFamilySuggestions(strategyFamilySummary),
     ...buildStrategyFeedbackOutcomeSuggestions(strategyFeedbackOutcomes),
+    ...buildRiskApprovalSuggestions(riskApproval, riskApprovalTrend),
   ];
 }
 
-function buildReport(days, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, validationBudgetPolicyTrend, cryptoSoftGuardSummary, regimeLaneSummary, strategyFamilySummary, strategyFeedbackOutcomes, suggestions) {
+function buildReport(days, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, validationBudgetPolicyTrend, cryptoSoftGuardSummary, regimeLaneSummary, strategyFamilySummary, strategyFeedbackOutcomes, riskApproval, riskApprovalTrend, suggestions) {
   const governance = buildParameterGovernanceReport();
   return {
     periodDays: days,
@@ -1018,6 +1066,8 @@ function buildReport(days, summaries, validationSummaries, validationBudgetSnaps
     regimeLaneSummary,
     strategyFamilySummary,
     strategyFeedbackOutcomes,
+    riskApproval,
+    riskApprovalTrend,
     suggestions,
     parameterGovernance: governance.summary,
     actionableSuggestions: suggestions.filter(item => item.action === 'adjust').length,
@@ -1129,6 +1179,18 @@ function printHuman(report) {
       lines.push(`  weakest: ${weak.familyBias || 'n/a'}/${weak.family || 'n/a'}/${weak.executionKind || 'n/a'} / avg ${weak.avgPnlPercent ?? 'n/a'}%`);
     }
   }
+  if (report.riskApproval?.decision) {
+    const decision = report.riskApproval.decision;
+    const summary = report.riskApproval.summary || {};
+    const trend = report.riskApprovalTrend || null;
+    lines.push('');
+    lines.push('risk approval preview 요약:');
+    lines.push(`- ${decision.status}: ${decision.headline}`);
+    lines.push(`  preview ${summary.total || 0} / rejects ${summary.previewRejects || 0} / divergence ${summary.legacyApprovedPreviewRejected || 0} / amount delta ${summary.amount?.previewVsApprovedDelta ?? 0}`);
+    if (trend?.delta) {
+      lines.push(`  trend: history ${trend.historyCount || 0} / preview Δ${trend.delta.total ?? 0} / reject Δ${trend.delta.previewRejects ?? 0} / divergence Δ${trend.delta.legacyApprovedPreviewRejected ?? 0}`);
+    }
+  }
   lines.push('');
   lines.push('설정 제안:');
   for (const item of report.suggestions) {
@@ -1207,6 +1269,8 @@ export async function buildRuntimeConfigSuggestionsReport({ days = 14, write = f
   );
   const cryptoSoftGuardSummary = await buildRuntimeCryptoSoftGuardReport({ days, json: true }).catch(() => null);
   const strategyFeedbackOutcomes = await buildStrategyFeedbackOutcomes({ days: Math.max(days * 3, 90), json: true }).catch(() => null);
+  const riskApproval = await buildRuntimeRiskApprovalReport({ days: Math.max(days, 30), json: true }).catch(() => null);
+  const riskApprovalTrend = await buildRuntimeRiskApprovalHistory({ days: Math.max(days, 30), json: true, write: false }).catch(() => null);
   const regimeLaneSummary = summarizeRegimeLaneRows(regimeLaneRows);
   const strategyFamilySummary = summarizeStrategyFamilyRows(strategyFamilyRows);
   const validationBudgetPolicyTrend = buildValidationBudgetPolicyTrend(
@@ -1215,7 +1279,7 @@ export async function buildRuntimeConfigSuggestionsReport({ days = 14, write = f
   );
   const suggestions = normalizeAnnotatedSuggestions(
     annotateRuntimeSuggestions(
-      buildSuggestions(config, executionConfig, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, cryptoSoftGuardSummary, regimeLaneSummary, strategyFamilySummary, strategyFeedbackOutcomes),
+      buildSuggestions(config, executionConfig, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, cryptoSoftGuardSummary, regimeLaneSummary, strategyFamilySummary, strategyFeedbackOutcomes, riskApproval, riskApprovalTrend),
     ),
   );
   const report = buildReport(
@@ -1230,6 +1294,8 @@ export async function buildRuntimeConfigSuggestionsReport({ days = 14, write = f
     regimeLaneSummary,
     strategyFamilySummary,
     strategyFeedbackOutcomes,
+    riskApproval,
+    riskApprovalTrend,
     suggestions,
   );
   report.aiSummary = await buildInvestmentCliInsight({
@@ -1251,6 +1317,11 @@ export async function buildRuntimeConfigSuggestionsReport({ days = 14, write = f
         byFamily: (report.strategyFamilySummary?.byFamily || []).slice(0, 5),
       },
       strategyFeedbackOutcomes: report.strategyFeedbackOutcomes?.decision || null,
+      riskApproval: report.riskApproval?.decision || null,
+      riskApprovalTrend: report.riskApprovalTrend ? {
+        historyCount: report.riskApprovalTrend.historyCount,
+        delta: report.riskApprovalTrend.delta,
+      } : null,
     },
     fallback:
       report.actionableSuggestions > 0
@@ -1271,6 +1342,11 @@ export async function buildRuntimeConfigSuggestionsReport({ days = 14, write = f
         validationBudgetSnapshots: report.validationBudgetSnapshots,
         cryptoSoftGuardSummary: report.cryptoSoftGuardSummary,
         strategyFamilySummary: report.strategyFamilySummary,
+        riskApproval: report.riskApproval?.decision || null,
+        riskApprovalTrend: report.riskApprovalTrend ? {
+          historyCount: report.riskApprovalTrend.historyCount,
+          delta: report.riskApprovalTrend.delta,
+        } : null,
       },
     });
     report.saved = saved;
