@@ -144,6 +144,7 @@ export async function runPositionStrategyRemediation({ json = false, historyFile
     recommendedExchange: remediationPlan?.recommendedExchange || null,
     remediationPlan,
     remediationHistory,
+    remediationNextCommandTransition: remediationHistory?.nextCommandTransition || null,
     remediationRefreshState,
     remediationActions,
     decision: buildPositionStrategyRemediationDecision(remediationPlan, remediationHistory),

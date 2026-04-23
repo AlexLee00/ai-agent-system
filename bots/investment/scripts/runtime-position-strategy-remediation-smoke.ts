@@ -7,6 +7,7 @@ import {
   buildPositionStrategyRemediationActions,
   buildPositionStrategyRemediationDecision,
   buildPositionStrategyRemediationRefreshState,
+  runPositionStrategyRemediation,
 } from './runtime-position-strategy-remediation.ts';
 
 export function runPositionStrategyRemediationSmoke() {
@@ -147,9 +148,24 @@ export function runPositionStrategyRemediationSmoke() {
 }
 
 async function main() {
-  const result = runPositionStrategyRemediationSmoke();
+  const smokeResult = runPositionStrategyRemediationSmoke();
+  const contractResult = await runPositionStrategyRemediationContractSmoke();
+  const result = {
+    ...smokeResult,
+    contract: contractResult,
+  };
   if (process.argv.includes('--json')) console.log(JSON.stringify(result, null, 2));
   else console.log('runtime position strategy remediation smoke ok');
+}
+
+export async function runPositionStrategyRemediationContractSmoke() {
+  const result = await runPositionStrategyRemediation({ json: true });
+  assert.equal(result.ok, true);
+  assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationNextCommandTransition'));
+  return {
+    ok: true,
+    hasTransitionField: Object.prototype.hasOwnProperty.call(result, 'remediationNextCommandTransition'),
+  };
 }
 
 if (isDirectExecution(import.meta.url)) {

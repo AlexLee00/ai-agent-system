@@ -592,7 +592,7 @@ async function main() {
           meta: {
             remediationRefreshState: remediation?.remediationRefreshState || null,
             remediationHistory: remediationHistory || null,
-            remediationNextCommandTransition: remediationHistory?.nextCommandTransition || null,
+            remediationNextCommandTransition: remediation?.remediationNextCommandTransition || null,
             recommendedExchange,
             remediationPlan,
             remediationActions,

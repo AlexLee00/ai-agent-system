@@ -544,7 +544,7 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
         event_type: 'daily_feedback',
         alert_level: 1,
         message: finalMessage,
-        payload: { dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary, positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary, remediationRefreshState, remediationActions: positionStrategyRemediationSummary?.remediationActions || null, remediationNextCommandTransition: positionStrategyRemediationHistorySummary?.nextCommandTransition || null, hygieneRemediationPlan },
+        payload: { dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary, positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary, remediationRefreshState, remediationActions: positionStrategyRemediationSummary?.remediationActions || null, remediationNextCommandTransition: positionStrategyRemediationSummary?.remediationNextCommandTransition || null, hygieneRemediationPlan },
       });
       await dailyFeedbackMemory.remember(finalMessage, 'episodic', {
         importance: 0.7,
@@ -590,7 +590,7 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
     positionStrategyRemediationSummary,
     positionStrategyRemediationHistorySummary,
     remediationRefreshState,
-    remediationNextCommandTransition: positionStrategyRemediationHistorySummary?.nextCommandTransition || null,
+    remediationNextCommandTransition: positionStrategyRemediationSummary?.remediationNextCommandTransition || null,
     hygieneRemediationPlan,
     feedback,
     message,
