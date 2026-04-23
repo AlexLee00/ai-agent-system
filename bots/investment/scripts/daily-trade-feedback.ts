@@ -322,7 +322,17 @@ function buildPositionStrategyRemediationCommandLine(positionStrategyRemediation
   if (!positionStrategyRemediationSummary || positionStrategyRemediationSummary.error || !positionStrategyRemediationSummary.ok) return null;
   const remediationPlan = positionStrategyRemediationSummary.remediationPlan || null;
   if (!remediationPlan || remediationPlan.status !== 'position_strategy_hygiene_attention') return null;
-  return `🛠️ remediation report: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation -- --json`;
+  return `🛠️ remediation report: ${remediationPlan.remediationReportCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation -- --json'}`;
+}
+
+function buildPositionStrategyRemediationRefreshCommandLine(positionStrategyRemediationSummary) {
+  if (!positionStrategyRemediationSummary || positionStrategyRemediationSummary.error || !positionStrategyRemediationSummary.ok) return null;
+  const remediationPlan = positionStrategyRemediationSummary.remediationPlan || null;
+  const refreshCommand = positionStrategyRemediationSummary?.remediationRefreshState?.command
+    || remediationPlan?.remediationRefreshCommand
+    || null;
+  if (!refreshCommand) return null;
+  return `♻️ remediation refresh: ${refreshCommand}`;
 }
 
 function buildPositionStrategyRemediationRefreshLine(positionStrategyRemediationSummary) {
@@ -395,6 +405,8 @@ function buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSumma
   if (positionStrategyRemediationRefreshStateLine) lines.push(positionStrategyRemediationRefreshStateLine);
   const positionStrategyRemediationRefreshLine = buildPositionStrategyRemediationRefreshLine(positionStrategyRemediationSummary);
   if (positionStrategyRemediationRefreshLine) lines.push(positionStrategyRemediationRefreshLine);
+  const positionStrategyRemediationRefreshCommandLine = buildPositionStrategyRemediationRefreshCommandLine(positionStrategyRemediationSummary);
+  if (positionStrategyRemediationRefreshCommandLine) lines.push(positionStrategyRemediationRefreshCommandLine);
   const positionStrategyRemediationCommandLine = buildPositionStrategyRemediationCommandLine(positionStrategyRemediationSummary);
   if (positionStrategyRemediationCommandLine) lines.push(positionStrategyRemediationCommandLine);
   const positionStrategyHygieneCommandLine = buildPositionStrategyHygieneCommandLine(positionStrategyHygieneSummary);
@@ -429,6 +441,7 @@ async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeni
     buildPositionStrategyRemediationHistoryLine(positionStrategyRemediationHistorySummary),
     buildPositionStrategyRemediationRefreshStateLine(positionStrategyRemediationSummary),
     buildPositionStrategyRemediationRefreshLine(positionStrategyRemediationSummary),
+    buildPositionStrategyRemediationRefreshCommandLine(positionStrategyRemediationSummary),
     buildPositionStrategyRemediationCommandLine(positionStrategyRemediationSummary),
     buildPositionStrategyHygieneCommandLine(positionStrategyHygieneSummary),
     `다음 액션: ${(feedback.nextActions || []).join(' / ') || '없음'}`,
@@ -517,7 +530,7 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
         event_type: 'daily_feedback',
         alert_level: 1,
         message: finalMessage,
-        payload: { dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary, positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary, remediationRefreshState },
+        payload: { dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary, positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary, remediationRefreshState, hygieneRemediationPlan },
       });
       await dailyFeedbackMemory.remember(finalMessage, 'episodic', {
         importance: 0.7,
@@ -533,6 +546,7 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
           remediationRefreshNeeded: remediationRefreshState.needed,
           remediationRefreshStale: remediationRefreshState.stale,
           remediationRefreshCommand: remediationRefreshState.command,
+          remediationReportCommand: hygieneRemediationPlan?.remediationReportCommand || null,
         },
       }).catch(() => {});
       await dailyFeedbackMemory.consolidate({
