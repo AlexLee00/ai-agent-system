@@ -109,12 +109,28 @@ export function summarizeReconcileResults(results = []) {
   };
 }
 
+export function buildWriteImpactGuard(summary = {}, maxAffectedTrades = 10) {
+  const max = Number(maxAffectedTrades);
+  if (!Number.isFinite(max) || max <= 0) return null;
+  const affectedTradeCount = Number(summary?.affectedTradeCount || 0);
+  if (affectedTradeCount <= max) return null;
+  return {
+    ok: false,
+    blocked: true,
+    reason: 'max_affected_trades_exceeded',
+    message: `open journal write 영향 trade 수 ${affectedTradeCount}건이 안전 한도 ${max}건을 초과했습니다. --symbols=...로 범위를 좁히거나 --max-affected-trades 값을 명시적으로 조정하세요.`,
+    affectedTradeCount,
+    maxAffectedTrades: max,
+  };
+}
+
 export async function reconcileOpenJournals({
   dryRun = true,
   market = 'crypto',
   noPositionMinAgeHours = 6,
   symbols = [],
   confirmLive = false,
+  maxAffectedTrades = 10,
 } = {}) {
   if (dryRun === false && confirmLive !== true) {
     return {
@@ -129,6 +145,26 @@ export async function reconcileOpenJournals({
       summary: summarizeReconcileResults([]),
       results: [],
     };
+  }
+
+  if (dryRun === false) {
+    const preflight = await reconcileOpenJournals({
+      dryRun: true,
+      market,
+      noPositionMinAgeHours,
+      symbols,
+      confirmLive: true,
+      maxAffectedTrades: null,
+    });
+    const impactGuard = buildWriteImpactGuard(preflight.summary, maxAffectedTrades);
+    if (impactGuard) {
+      return {
+        ...preflight,
+        ...impactGuard,
+        dryRun: false,
+        confirmLive,
+      };
+    }
   }
 
   await db.initSchema();
@@ -222,6 +258,7 @@ export async function reconcileOpenJournals({
     dryRun,
     market,
     confirmLive,
+    maxAffectedTrades: Number.isFinite(Number(maxAffectedTrades)) ? Number(maxAffectedTrades) : null,
     totalScopes: grouped.size,
     candidates: results.length,
     summary: summarizeReconcileResults(results),
@@ -234,12 +271,14 @@ async function main() {
   const dryRun = !args.includes('--write');
   const confirmLive = args.includes('--confirm-live');
   const minAgeArg = args.find((arg) => arg.startsWith('--no-position-min-age-hours='))?.split('=')[1];
+  const maxAffectedArg = args.find((arg) => arg.startsWith('--max-affected-trades='))?.split('=')[1];
   const symbolsArg = args.find((arg) => arg.startsWith('--symbols='))?.split('=')[1];
   const symbols = symbolsArg
     ? symbolsArg.split(',').map((value) => value.trim()).filter(Boolean)
     : [];
   const noPositionMinAgeHours = Number.isFinite(Number(minAgeArg)) ? Number(minAgeArg) : 6;
-  const result = await reconcileOpenJournals({ dryRun, market: 'crypto', noPositionMinAgeHours, symbols, confirmLive });
+  const maxAffectedTrades = Number.isFinite(Number(maxAffectedArg)) ? Number(maxAffectedArg) : 10;
+  const result = await reconcileOpenJournals({ dryRun, market: 'crypto', noPositionMinAgeHours, symbols, confirmLive, maxAffectedTrades });
   console.log(JSON.stringify(result, null, 2));
   if (result?.blocked) process.exitCode = 2;
 }

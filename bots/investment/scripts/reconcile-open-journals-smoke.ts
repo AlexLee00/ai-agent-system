@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import {
   buildScopeMap,
+  buildWriteImpactGuard,
   entryAgeHours,
   reconcileOpenJournals,
   scopeKey,
@@ -39,6 +40,11 @@ assert.equal(summary.affectedTradeCount, 3);
 assert.equal(summary.noPositionScopes, 1);
 assert.equal(summary.duplicateScopes, 1);
 assert.equal(summary.observeScopes, 1);
+
+const impactGuard = buildWriteImpactGuard({ affectedTradeCount: 11 }, 10);
+assert.equal(impactGuard.blocked, true);
+assert.equal(impactGuard.reason, 'max_affected_trades_exceeded');
+assert.equal(buildWriteImpactGuard({ affectedTradeCount: 10 }, 10), null);
 
 const blocked = await reconcileOpenJournals({ dryRun: false, confirmLive: false });
 assert.equal(blocked.ok, false);
