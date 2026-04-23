@@ -38,6 +38,8 @@ config :luna,
     String.to_float(System.get_env("LUNA_POSITION_WATCH_ADJUST_GAIN_PCT", "0.10")),
   position_watch_stale_minutes:
     String.to_integer(System.get_env("LUNA_POSITION_WATCH_STALE_MINUTES", "120")),
+  position_watch_crypto_dust_usdt:
+    String.to_float(System.get_env("LUNA_POSITION_WATCH_CRYPTO_DUST_USDT", "10.0")),
   position_watch_tv_enabled: System.get_env("LUNA_POSITION_WATCH_TV_ENABLED", "true") == "true",
   position_watch_tv_base_url:
     System.get_env("LUNA_POSITION_WATCH_TV_BASE_URL", "http://127.0.0.1:8083"),

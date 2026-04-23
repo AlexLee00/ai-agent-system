@@ -106,6 +106,7 @@ defmodule Luna.V2.PositionWatch do
     stop_loss_pct = KillSwitch.position_watch_stop_loss_pct()
     adjust_gain_pct = KillSwitch.position_watch_adjust_gain_pct()
     stale_minutes = KillSwitch.position_watch_stale_minutes()
+    crypto_dust_usdt = KillSwitch.position_watch_crypto_dust_usdt()
     tv_enabled? = KillSwitch.position_watch_tv_enabled?()
     tv_timeframes = KillSwitch.position_watch_tv_timeframes()
     tv_stale_ms = KillSwitch.position_watch_tv_stale_ms()
@@ -118,6 +119,7 @@ defmodule Luna.V2.PositionWatch do
       COALESCE(size, 0) AS size,
       COALESCE(entry_price, 0) AS entry_price,
       COALESCE(unrealized_pnl, 0) AS unrealized_pnl,
+      COALESCE(size, 0) * COALESCE(entry_price, 0) AS notional_value,
       updated_at,
       CASE
         WHEN COALESCE(size, 0) * COALESCE(entry_price, 0) > 0
@@ -142,10 +144,13 @@ defmodule Luna.V2.PositionWatch do
         tv_snapshot =
           fetch_tradingview_snapshot(positions, tv_enabled?, tv_timeframes, tv_stale_ms)
 
-        positions_with_tv = attach_tv_snapshot(positions, tv_snapshot)
+          positions_with_tv = attach_tv_snapshot(positions, tv_snapshot)
+
+        {dust_positions, active_positions} =
+          Enum.split_with(positions_with_tv, &dust_position?(&1, crypto_dust_usdt))
 
         attention =
-          positions_with_tv
+          active_positions
           |> Enum.map(
             &classify_position(&1, stop_loss_pct, adjust_gain_pct, stale_minutes, tv_stale_ms)
           )
@@ -153,9 +158,10 @@ defmodule Luna.V2.PositionWatch do
 
         %{
           captured_at: DateTime.utc_now(),
-          position_count: length(positions_with_tv),
+          position_count: length(active_positions),
+          ignored_dust_count: length(dust_positions),
           attention_count: length(attention),
-          watch_context: build_watch_context(positions_with_tv, tv_snapshot),
+          watch_context: build_watch_context(active_positions, tv_snapshot),
           stop_loss_pct: stop_loss_pct,
           adjust_gain_pct: adjust_gain_pct,
           stale_minutes: stale_minutes,
@@ -207,6 +213,12 @@ defmodule Luna.V2.PositionWatch do
       true ->
         nil
     end
+  end
+
+  defp dust_position?(position, crypto_dust_usdt) do
+    market_from_exchange(position[:exchange]) == :crypto and
+      to_float(position[:notional_value]) > 0 and
+      to_float(position[:notional_value]) < crypto_dust_usdt
   end
 
   defp stale_position?(nil, _stale_minutes), do: false

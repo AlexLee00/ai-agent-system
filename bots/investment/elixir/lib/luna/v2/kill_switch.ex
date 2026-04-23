@@ -79,6 +79,9 @@ defmodule Luna.V2.KillSwitch do
   def position_watch_stale_minutes,
     do: Application.get_env(:luna, :position_watch_stale_minutes, 120)
 
+  def position_watch_crypto_dust_usdt,
+    do: Application.get_env(:luna, :position_watch_crypto_dust_usdt, 10.0)
+
   def position_watch_tv_enabled?, do: Application.get_env(:luna, :position_watch_tv_enabled, true)
 
   def position_watch_tv_base_url,

@@ -39,13 +39,15 @@ function buildDecision(report) {
   const exits = Number(report.summary?.exit || 0);
   const adjusts = Number(report.summary?.adjust || 0);
   const holds = Number(report.summary?.hold || 0);
-  const count = Number(report.count || 0);
+  const ignored = Number(report.summary?.ignored || 0);
+  const count = Number(report.activeCount || report.count || 0);
   const topExit = topReason(rows, 'EXIT');
   const topAdjust = topReason(rows, 'ADJUST');
 
   let status = 'reeval_ok';
   let headline = '보유 포지션 재평가 레일이 안정적으로 기록되고 있습니다.';
   const reasons = [`재평가 ${count}건 (HOLD ${holds} / ADJUST ${adjusts} / EXIT ${exits})`];
+  if (ignored > 0) reasons.push(`dust/미세 포지션 ${ignored}건은 별도 관찰로 분리`);
 
   if (topExit) reasons.push(`최다 EXIT 사유: ${topExit.code} (${topExit.count}건)`);
   if (topAdjust) reasons.push(`최다 ADJUST 사유: ${topAdjust.code} (${topAdjust.count}건)`);
@@ -82,6 +84,7 @@ function buildDecision(report) {
     actionItems,
     metrics: {
       count,
+      ignored,
       holds,
       adjusts,
       exits,
@@ -106,6 +109,8 @@ function renderText(payload) {
     '',
     '핵심 지표:',
     `- positions: ${report.count}`,
+    `- activePositions: ${report.activeCount ?? report.count}`,
+    `- ignoredDust: ${decision.metrics.ignored}`,
     `- persisted: ${report.persisted}`,
     `- HOLD: ${decision.metrics.holds}`,
     `- ADJUST: ${decision.metrics.adjusts}`,

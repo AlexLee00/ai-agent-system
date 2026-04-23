@@ -3,7 +3,7 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as db from './db.ts';
-import { getPositionReevaluationRuntimeConfig } from './runtime-config.ts';
+import { getInvestmentSyncRuntimeConfig, getPositionReevaluationRuntimeConfig } from './runtime-config.ts';
 
 const execFileAsync = promisify(execFile);
 const TRADINGVIEW_MCP_SCRIPT = new URL('../scripts/tradingview-mcp-server.py', import.meta.url);
@@ -197,6 +197,31 @@ function getExitGuardConfig() {
     mildLossHoldThresholdPct: safeNumber(guards?.mildLossHoldThresholdPct, -1.0),
     shortHoldHours: safeNumber(guards?.shortHoldHours, 6),
     overwhelmingSellVotes: Math.max(1, Math.round(safeNumber(guards?.overwhelmingSellVotes, 3))),
+  };
+}
+
+function getDustConfig() {
+  const syncRuntime = getInvestmentSyncRuntimeConfig();
+  return {
+    cryptoMinNotionalUsdt: safeNumber(syncRuntime?.cryptoMinNotionalUsdt, 10),
+  };
+}
+
+function getPositionNotional(position = {}) {
+  return safeNumber(position?.amount) * safeNumber(position?.avg_price);
+}
+
+function classifyDustPosition(position = {}) {
+  const dust = getDustConfig();
+  if (position?.exchange !== 'binance' || position?.paper === true) return null;
+  const notional = getPositionNotional(position);
+  if (!(notional > 0) || notional >= dust.cryptoMinNotionalUsdt) return null;
+  return {
+    ignored: true,
+    recommendation: 'HOLD',
+    reasonCode: 'dust_position_ignored',
+    reason: `잔여 포지션 ${notional.toFixed(4)} USDT가 dust 기준 ${dust.cryptoMinNotionalUsdt} USDT 미만이라 재평가에서 분리`,
+    dustNotionalUsdt: notional,
   };
 }
 
@@ -436,6 +461,38 @@ export async function reevaluateOpenPositions({
   const results = [];
 
   for (const position of positions) {
+    const dustDecision = classifyDustPosition(position);
+    if (dustDecision) {
+      results.push({
+        exchange: position.exchange,
+        symbol: position.symbol,
+        paper: position.paper === true,
+        tradeMode: position.trade_mode || 'normal',
+        pnlPct: calcPnlPct(position),
+        recommendation: dustDecision.recommendation,
+        reasonCode: dustDecision.reasonCode,
+        reason: dustDecision.reason,
+        ignored: true,
+        positionSnapshot: {
+          amount: safeNumber(position.amount),
+          avgPrice: safeNumber(position.avg_price),
+          unrealizedPnl: safeNumber(position.unrealized_pnl),
+          entryTime: position.entry_time || null,
+          notionalUsdt: dustDecision.dustNotionalUsdt,
+        },
+        analysisSnapshot: {
+          total: 0,
+          buy: 0,
+          hold: 0,
+          sell: 0,
+          avgConfidence: 0,
+          ignoredAsDust: true,
+          dustNotionalUsdt: dustDecision.dustNotionalUsdt,
+        },
+      });
+      continue;
+    }
+
     const analyses = await db.getRecentAnalysis(position.symbol, minutesBack, position.exchange).catch(() => []);
     let indicatorAnalyses = [];
     let indicatorAnalysis = null;
@@ -475,6 +532,9 @@ export async function reevaluateOpenPositions({
     });
   }
 
+  const activeResults = results.filter((item) => item.ignored !== true);
+  const ignoredResults = results.filter((item) => item.ignored === true);
+
   let persisted = 0;
   if (persist && results.length > 0) {
     persisted = await persistRuns(results);
@@ -483,11 +543,14 @@ export async function reevaluateOpenPositions({
   return {
     ok: true,
     count: results.length,
+    activeCount: activeResults.length,
+    ignoredCount: ignoredResults.length,
     persisted,
     summary: {
-      hold: results.filter((item) => item.recommendation === 'HOLD').length,
-      adjust: results.filter((item) => item.recommendation === 'ADJUST').length,
-      exit: results.filter((item) => item.recommendation === 'EXIT').length,
+      hold: activeResults.filter((item) => item.recommendation === 'HOLD').length,
+      adjust: activeResults.filter((item) => item.recommendation === 'ADJUST').length,
+      exit: activeResults.filter((item) => item.recommendation === 'EXIT').length,
+      ignored: ignoredResults.length,
     },
     rows: results,
   };
