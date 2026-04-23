@@ -32,6 +32,22 @@ function buildHistoryRefreshActionItem(remediationPlan = null, remediationHistor
   return null;
 }
 
+export function buildPositionStrategyRemediationTrend(remediationHistory = null) {
+  if (!remediationHistory) return null;
+  return {
+    historyCount: remediationHistory.historyCount || 0,
+    statusChanged: Boolean(remediationHistory.statusChanged),
+    nextCommandChanged: Boolean(remediationHistory.nextCommandChanged),
+    nextCommandTransition: remediationHistory.nextCommandTransition || null,
+    ageMinutes: remediationHistory.ageMinutes ?? null,
+    stale: Boolean(remediationHistory.stale),
+    lastRecordedAt: remediationHistory.lastRecordedAt || null,
+    duplicateDelta: remediationHistory.delta?.duplicateManaged || 0,
+    orphanDelta: remediationHistory.delta?.orphanProfiles || 0,
+    unmatchedDelta: remediationHistory.delta?.unmatchedManaged || 0,
+  };
+}
+
 export function buildPositionStrategyRemediationRefreshState(remediationPlan = null, remediationHistory = null) {
   const reason = buildHistoryRefreshActionItem(remediationPlan, remediationHistory);
   return {
@@ -136,6 +152,7 @@ export async function runPositionStrategyRemediation({ json = false, historyFile
   const remediationPlan = hygiene?.remediationPlan
     || buildPositionStrategyHygieneRemediationPlan(hygiene);
   const remediationHistory = readPositionStrategyRemediationHistory(historyFile);
+  const remediationTrend = buildPositionStrategyRemediationTrend(remediationHistory);
   const remediationRefreshState = buildPositionStrategyRemediationRefreshState(remediationPlan, remediationHistory);
   const remediationActions = buildPositionStrategyRemediationActions(remediationPlan, remediationRefreshState);
   const result = {
@@ -144,6 +161,7 @@ export async function runPositionStrategyRemediation({ json = false, historyFile
     recommendedExchange: remediationPlan?.recommendedExchange || null,
     remediationPlan,
     remediationHistory,
+    remediationTrend,
     remediationNextCommandTransition: remediationHistory?.nextCommandTransition || null,
     remediationRefreshState,
     remediationActions,

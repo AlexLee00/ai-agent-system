@@ -1396,6 +1396,7 @@ async function buildReport() {
     positionStrategyHygiene,
     positionStrategyRemediation,
     positionStrategyRemediationHistory,
+    positionStrategyRemediationTrend: positionStrategyRemediation?.remediationTrend || null,
     positionStrategyRemediationRefresh: positionStrategyRemediation?.remediationRefreshState || null,
     positionStrategyRemediationActions: positionStrategyRemediation?.remediationActions || null,
     positionStrategyRemediationNextCommandTransition: positionStrategyRemediation?.remediationNextCommandTransition || null,

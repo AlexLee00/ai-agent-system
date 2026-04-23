@@ -162,9 +162,11 @@ export async function runPositionStrategyRemediationContractSmoke() {
   const result = await runPositionStrategyRemediation({ json: true });
   assert.equal(result.ok, true);
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationNextCommandTransition'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationTrend'));
   return {
     ok: true,
     hasTransitionField: Object.prototype.hasOwnProperty.call(result, 'remediationNextCommandTransition'),
+    hasTrendField: Object.prototype.hasOwnProperty.call(result, 'remediationTrend'),
   };
 }
 
