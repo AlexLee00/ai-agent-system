@@ -1,7 +1,7 @@
 {
   "file": "/Users/alexlee/projects/ai-agent-system/bots/investment/output/ops/position-runtime-evidence-gap-queue.json",
   "version": 1,
-  "updatedAt": "2026-04-24T12:20:36.702Z",
+  "updatedAt": "2026-04-24T13:09:52.210Z",
   "states": {
     "kis_overseas:DTE:validation": {
       "scopeKey": "kis_overseas:DTE:validation",
@@ -9,12 +9,12 @@
       "exchange": "kis_overseas",
       "tradeMode": "validation",
       "evidenceCount": 0,
-      "consecutiveGapCount": 283,
+      "consecutiveGapCount": 325,
       "threshold": 3,
       "cooldownMinutes": 60,
-      "lastSeenAt": "2026-04-24T12:20:33.721Z",
+      "lastSeenAt": "2026-04-24T13:09:43.449Z",
       "lastEvidenceAt": null,
-      "lastQueuedAt": "2026-04-24T11:50:02.561Z",
+      "lastQueuedAt": "2026-04-24T12:50:44.584Z",
       "status": "evidence_gap_observed"
     },
     "kis_overseas:POET:validation": {
@@ -23,12 +23,12 @@
       "exchange": "kis_overseas",
       "tradeMode": "validation",
       "evidenceCount": 0,
-      "consecutiveGapCount": 283,
+      "consecutiveGapCount": 325,
       "threshold": 3,
       "cooldownMinutes": 60,
-      "lastSeenAt": "2026-04-24T12:20:35.170Z",
+      "lastSeenAt": "2026-04-24T13:09:45.124Z",
       "lastEvidenceAt": null,
-      "lastQueuedAt": "2026-04-24T11:50:04.115Z",
+      "lastQueuedAt": "2026-04-24T12:50:46.209Z",
       "status": "evidence_gap_observed"
     },
     "kis_overseas:AGPU:validation": {
@@ -37,12 +37,12 @@
       "exchange": "kis_overseas",
       "tradeMode": "validation",
       "evidenceCount": 0,
-      "consecutiveGapCount": 283,
+      "consecutiveGapCount": 325,
       "threshold": 3,
       "cooldownMinutes": 60,
-      "lastSeenAt": "2026-04-24T12:20:36.702Z",
+      "lastSeenAt": "2026-04-24T13:09:47.064Z",
       "lastEvidenceAt": null,
-      "lastQueuedAt": "2026-04-24T11:50:05.950Z",
+      "lastQueuedAt": "2026-04-24T12:50:47.981Z",
       "status": "evidence_gap_observed"
     },
     "kis:005870:normal": {
@@ -51,12 +51,12 @@
       "exchange": "kis",
       "tradeMode": "normal",
       "evidenceCount": 0,
-      "consecutiveGapCount": 282,
+      "consecutiveGapCount": 325,
       "threshold": 3,
       "cooldownMinutes": 60,
-      "lastSeenAt": "2026-04-24T12:20:28.710Z",
+      "lastSeenAt": "2026-04-24T13:09:49.075Z",
       "lastEvidenceAt": null,
-      "lastQueuedAt": "2026-04-24T11:50:07.768Z",
+      "lastQueuedAt": "2026-04-24T12:50:49.467Z",
       "status": "evidence_gap_observed"
     },
     "kis:005870:validation": {
@@ -65,12 +65,12 @@
       "exchange": "kis",
       "tradeMode": "validation",
       "evidenceCount": 0,
-      "consecutiveGapCount": 282,
+      "consecutiveGapCount": 325,
       "threshold": 3,
       "cooldownMinutes": 60,
-      "lastSeenAt": "2026-04-24T12:20:30.034Z",
+      "lastSeenAt": "2026-04-24T13:09:50.707Z",
       "lastEvidenceAt": null,
-      "lastQueuedAt": "2026-04-24T11:50:09.220Z",
+      "lastQueuedAt": "2026-04-24T12:50:50.814Z",
       "status": "evidence_gap_observed"
     },
     "kis:012320:validation": {
@@ -79,12 +79,12 @@
       "exchange": "kis",
       "tradeMode": "validation",
       "evidenceCount": 0,
-      "consecutiveGapCount": 282,
+      "consecutiveGapCount": 325,
       "threshold": 3,
       "cooldownMinutes": 60,
-      "lastSeenAt": "2026-04-24T12:20:31.623Z",
+      "lastSeenAt": "2026-04-24T13:09:52.210Z",
       "lastEvidenceAt": null,
-      "lastQueuedAt": "2026-04-24T11:50:10.724Z",
+      "lastQueuedAt": "2026-04-24T12:50:52.322Z",
       "status": "evidence_gap_observed"
     },
     "binance:ZEC/USDT:normal": {
