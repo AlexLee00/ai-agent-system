@@ -1,11 +1,11 @@
 {
   "version": 1,
-  "updatedAt": "2026-04-24T18:20:34.311Z",
+  "updatedAt": "2026-04-24T22:27:23.067Z",
   "entries": [
     {
       "queueKey": "kis_overseas:live:live:kis_overseas:POET:normal:kis_overseas:POET:normal:ADJUST",
       "createdAt": "2026-04-24T16:34:48.844Z",
-      "updatedAt": "2026-04-24T18:20:15.198Z",
+      "updatedAt": "2026-04-24T22:26:58.972Z",
       "candidate": {
         "exchange": "kis_overseas",
         "symbol": "POET",
@@ -47,13 +47,13 @@
         "regime": "trending_bull",
         "reasonCode": "profit_lock_candidate"
       },
-      "reason": "child_process_error",
-      "waitingReason": "retry_scheduled",
-      "attempts": 1,
-      "retryCount": 1,
-      "nextRetryAt": "2026-04-24T18:25:15.198Z",
+      "reason": "미국 장외 시간 (ET 기준 2026-04-24)",
+      "waitingReason": "미국 장외 시간 (ET 기준 2026-04-24)",
+      "attempts": 0,
+      "retryCount": 0,
+      "nextRetryAt": null,
       "lastAttemptAt": "2026-04-24T18:20:15.198Z",
-      "lastStatus": "autonomous_action_retrying"
+      "lastStatus": "autonomous_action_queued"
     }
   ]
 }
