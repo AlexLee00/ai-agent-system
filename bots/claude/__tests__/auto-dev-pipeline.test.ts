@@ -600,7 +600,7 @@ async function test_review_cycle_uses_execution_context() {
 
 async function test_test_scope_is_executed_in_non_test_mode() {
   const tmpRoot = makeTempRoot();
-  const scopedCommand = 'echo scoped-test-ok';
+  const scopedCommand = 'npm --prefix bots/claude run test:auto-dev';
   const doc = makeDoc(
     tmpRoot,
     'CODEX_TEST_SCOPE.md',
@@ -637,12 +637,40 @@ async function test_test_scope_is_executed_in_non_test_mode() {
   }));
 
   assert.ok(
-    executedCommands.some(command => command.includes(scopedCommand)),
+    executedCommands.some(command =>
+      command.includes('npm --prefix') && command.includes('run test:auto-dev')),
     'test_scope command must be executed in non-test mode'
   );
 
   fs.rmSync(tmpRoot, { recursive: true, force: true });
   console.log('✅ auto-dev: test_scope commands are executed');
+}
+
+async function test_test_scope_rejects_unsafe_shell_command() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(
+    tmpRoot,
+    'CODEX_TEST_SCOPE_UNSAFE.md',
+    withRequiredMetadata('# Unsafe Scope\nblock', { test_scope: ['echo pwned && whoami'] })
+  );
+  const { mocks } = makeMocks(tmpRoot);
+
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, {
+      force: true,
+      test: false,
+      dryRun: false,
+      executeImplementation: true,
+      maxRevisionPasses: 0,
+    });
+    assert.strictEqual(result.ok, false);
+    assert.match(String(result.error || ''), /test_scope 항목|허용되지 않은 명령|allow/i);
+  }, testEnv(tmpRoot, {
+    CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION: 'true',
+  }));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: unsafe test_scope shell command is blocked');
 }
 
 async function test_archive_manifest_is_created() {
@@ -667,6 +695,36 @@ async function test_archive_manifest_is_created() {
   console.log('✅ auto-dev: archive manifest is created');
 }
 
+async function test_archive_manifest_failure_is_fail_closed() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(tmpRoot, 'CODEX_ARCHIVE_MANIFEST_FAIL.md', '# Archive\nmanifest fail');
+  const realFs = require('fs');
+  const fsMock = {
+    ...realFs,
+    writeFileSync: (targetPath, ...args) => {
+      if (String(targetPath).endsWith('.manifest.json')) {
+        throw new Error('manifest_write_failed');
+      }
+      return realFs.writeFileSync(targetPath, ...args);
+    },
+  };
+  const { mocks } = makeMocks(tmpRoot, { fs: fsMock });
+
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, {
+      test: true,
+      force: true,
+      archiveOnSuccess: true,
+    });
+    assert.strictEqual(result.ok, false);
+    assert.match(String(result.error || ''), /archive failed|manifest_write_failed/i);
+    assert.ok(fs.existsSync(doc), 'archive failure should roll back source document');
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: archive manifest failure is fail-closed');
+}
+
 async function main() {
   console.log('=== Auto Dev Pipeline 테스트 시작 ===\n');
   const tests = [
@@ -688,7 +746,9 @@ async function main() {
     test_bash_is_fail_closed_without_allowlist,
     test_review_cycle_uses_execution_context,
     test_test_scope_is_executed_in_non_test_mode,
+    test_test_scope_rejects_unsafe_shell_command,
     test_archive_manifest_is_created,
+    test_archive_manifest_failure_is_fail_closed,
   ];
 
   let passed = 0;

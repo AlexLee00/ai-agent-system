@@ -14,7 +14,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
-const { execFileSync, execSync } = require('child_process');
+const { execFileSync, execSync, spawn } = require('child_process');
 
 const env = require('../../../packages/core/lib/env');
 const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
@@ -37,6 +37,17 @@ const DEFAULT_ALLOWED_TOOLS = 'Edit,Write,Read,Glob,Grep';
 const DEFAULT_HARD_TEST_COMMANDS = [
   'npm --prefix bots/claude run typecheck',
   'npm --prefix bots/claude run test:unit',
+];
+const DEFAULT_SCOPED_TEST_SCRIPT_ALLOWLIST = [
+  'test:auto-dev',
+  'test:reviewer',
+  'test:guardian',
+  'test:commander',
+  'test:unit',
+  'typecheck',
+];
+const DEFAULT_SCOPED_TEST_PREFIX_ALLOWLIST = [
+  'bots/claude',
 ];
 const DEFAULT_LOCK_TTL_MS = Number(process.env.CLAUDE_AUTO_DEV_LOCK_TTL_MS || 15 * 60 * 1000);
 const DEFAULT_LOCK_HEARTBEAT_MS = Number(process.env.CLAUDE_AUTO_DEV_LOCK_HEARTBEAT_MS || 60 * 1000);
@@ -301,14 +312,59 @@ function refreshFileLock(lockHandle) {
 function startLockHeartbeat(lockHandle, intervalMs = DEFAULT_LOCK_HEARTBEAT_MS) {
   const safeInterval = Number(intervalMs);
   if (!lockHandle?.acquired || !(safeInterval > 0)) return () => {};
+  const token = toSafeString(lockHandle?.payload?.token);
+  const lockPath = toSafeString(lockHandle?.lockPath);
+
+  // Fallback heartbeat (same process). 이 타이머는 동기식 장기 작업 중에는 멈출 수 있다.
   const timer = setInterval(() => {
     const ok = refreshFileLock(lockHandle);
     if (!ok) clearInterval(timer);
   }, safeInterval);
   if (typeof timer.unref === 'function') timer.unref();
   lockHandle.heartbeatTimer = timer;
+
+  // Primary heartbeat (sidecar process). 동기 exec 블로킹 중에도 updatedAt 갱신을 유지한다.
+  if (typeof spawn === 'function' && token && lockPath) {
+    try {
+      const script = [
+        'const fs = require("fs");',
+        `const lockPath = ${JSON.stringify(lockPath)};`,
+        `const token = ${JSON.stringify(token)};`,
+        `const intervalMs = ${Math.max(1000, Math.floor(safeInterval))};`,
+        'function tick() {',
+        '  try {',
+        '    if (!fs.existsSync(lockPath)) { process.exit(0); return; }',
+        '    const raw = fs.readFileSync(lockPath, "utf8");',
+        '    const parsed = JSON.parse(raw);',
+        '    if (!parsed || parsed.token !== token) { process.exit(0); return; }',
+        '    parsed.updatedAt = new Date().toISOString();',
+        '    fs.writeFileSync(lockPath, JSON.stringify(parsed, null, 2), "utf8");',
+        '  } catch (_) {}',
+        '}',
+        'setInterval(tick, intervalMs).unref();',
+        'tick();',
+      ].join('\n');
+      const child = spawn(process.execPath, ['-e', script], {
+        stdio: 'ignore',
+        detached: false,
+      });
+      lockHandle.heartbeatProcess = child;
+      if (typeof child.unref === 'function') child.unref();
+      child.on('exit', () => {
+        if (lockHandle.heartbeatProcess === child) {
+          lockHandle.heartbeatProcess = null;
+        }
+      });
+    } catch {}
+  }
+
   return () => {
     try { clearInterval(timer); } catch {}
+    const child = lockHandle?.heartbeatProcess;
+    if (child && !child.killed) {
+      try { child.kill('SIGTERM'); } catch {}
+      lockHandle.heartbeatProcess = null;
+    }
     refreshFileLock(lockHandle);
   };
 }
@@ -367,6 +423,10 @@ function releaseFileLock(lockHandle) {
   if (!lockHandle?.lockPath) return;
   if (lockHandle.heartbeatTimer) {
     try { clearInterval(lockHandle.heartbeatTimer); } catch {}
+  }
+  const heartbeatProcess = lockHandle.heartbeatProcess;
+  if (heartbeatProcess && !heartbeatProcess.killed) {
+    try { heartbeatProcess.kill('SIGTERM'); } catch {}
   }
   try {
     const existing = readLockFile(lockHandle.lockPath);
@@ -667,8 +727,8 @@ function formatToolPolicyPromptSection(toolPolicy = null) {
   const lines = ['## Tool Policy'];
   lines.push(`- allowed_tools: ${toolPolicy.serialized}`);
   if (toolPolicy.bashEnabled) {
-    lines.push(`- bash_policy: allowlisted (${toolPolicy.bashAllowlist.join(', ')})`);
-    lines.push('- Bash는 반드시 allowlist prefix만 사용하고, 그 외 명령은 금지한다.');
+    lines.push('- bash_policy: enabled by explicit unsafe override');
+    lines.push('- 경고: Bash는 하드 allowlist 강제가 없으므로 운영 모드에서 기본 금지해야 한다.');
   } else {
     lines.push('- bash_policy: disabled (Bash tool 사용 금지)');
   }
@@ -710,10 +770,10 @@ function resolveAllowedToolsPolicy(options = {}) {
   const bashAllowlist = toList(process.env.CLAUDE_AUTO_DEV_BASH_ALLOWLIST || '').filter(Boolean);
   const allowUnsafeBash = process.env.CLAUDE_AUTO_DEV_ALLOW_UNSAFE_BASH === 'true' || options.allowUnsafeBash === true;
 
-  if (hasBash && bashAllowlist.length === 0 && !allowUnsafeBash) {
+  if (hasBash && !allowUnsafeBash) {
     return {
       ok: false,
-      error: 'Bash tool은 L5 auto_dev에서 기본 차단됩니다. 사용하려면 CLAUDE_AUTO_DEV_BASH_ALLOWLIST를 설정하거나 CLAUDE_AUTO_DEV_ALLOW_UNSAFE_BASH=true를 명시하세요.',
+      error: 'Bash tool은 L5 auto_dev에서 하드 차단됩니다. CLAUDE_AUTO_DEV_BASH_ALLOWLIST는 감사 메모 용도이며 실행 강제가 아닙니다. 반드시 CLAUDE_AUTO_DEV_ALLOW_UNSAFE_BASH=true를 명시한 경우에만 예외 허용됩니다.',
     };
   }
 
@@ -884,32 +944,140 @@ function shellQuote(value) {
   return `'${String(value || '').replace(/'/g, `'\\''`)}'`;
 }
 
-function inferScopedTestCommand(entry, cwd = ROOT) {
-  const text = toSafeString(entry);
-  if (!text) return null;
-  const commandLike = /[\s;&|`$()]/.test(text) || /^(npm|pnpm|yarn|node|npx|mix|pytest|python|bash|sh)\b/.test(text);
-  if (commandLike) return text;
+function isPathInsideBase(basePath, candidatePath) {
+  const rel = path.relative(basePath, candidatePath).replace(/\\/g, '/');
+  return rel === '' || (!rel.startsWith('..') && rel !== '..');
+}
 
-  const candidatePath = path.isAbsolute(text) ? text : path.join(cwd, text);
-  if (!fs.existsSync(candidatePath)) return text;
-  const rel = path.isAbsolute(text)
-    ? path.relative(cwd, text).replace(/\\/g, '/')
-    : normalizeRelPath(text);
-  const ext = path.extname(candidatePath).toLowerCase();
-  if (['.ts', '.js', '.mjs', '.cjs'].includes(ext)) {
-    return `node ${shellQuote(rel)}`;
+function resolveScopedTestScriptAllowlist() {
+  const configured = toList(process.env.CLAUDE_AUTO_DEV_TEST_SCOPE_SCRIPT_ALLOWLIST || '').filter(Boolean);
+  if (configured.length > 0) return new Set(configured);
+  return new Set(DEFAULT_SCOPED_TEST_SCRIPT_ALLOWLIST);
+}
+
+function resolveScopedTestPrefixAllowlist() {
+  const configured = toList(process.env.CLAUDE_AUTO_DEV_TEST_SCOPE_PREFIX_ALLOWLIST || '').filter(Boolean);
+  const source = configured.length > 0 ? configured : DEFAULT_SCOPED_TEST_PREFIX_ALLOWLIST;
+  return source
+    .map(item => normalizeWriteScopeEntry(item) || normalizeRelPath(item))
+    .filter(Boolean);
+}
+
+function isAllowedScopedPrefix(relPath, prefixAllowlist = []) {
+  if (!relPath) return false;
+  return prefixAllowlist.some(prefix => relPath === prefix || relPath.startsWith(`${prefix}/`));
+}
+
+function resolveScopedNpmCommand(entry, {
+  scriptAllowlist = new Set(),
+  prefixAllowlist = [],
+  repoRoot = ROOT,
+} = {}) {
+  const text = toSafeString(entry).replace(/\s+/g, ' ').trim();
+  if (!text) return { matched: false, ok: false, reason: 'empty' };
+
+  const m1 = text.match(/^npm\s+--prefix\s+([^\s]+)\s+run\s+([A-Za-z0-9:_-]+)$/);
+  const m2 = text.match(/^npm\s+run\s+([A-Za-z0-9:_-]+)\s+--prefix\s+([^\s]+)$/);
+  if (!m1 && !m2) return { matched: false, ok: false, reason: 'not_supported_npm_shape' };
+
+  const script = toSafeString(m1 ? m1[2] : m2[1]);
+  const prefixRaw = stripQuotes(m1 ? m1[1] : m2[2]);
+  const normalizedPrefix = normalizeRelPath(prefixRaw);
+  if (!scriptAllowlist.has(script)) {
+    return { matched: true, ok: false, reason: `script_not_allowlisted:${script}` };
   }
-  return `test -f ${shellQuote(rel)}`;
+  if (!isAllowedScopedPrefix(normalizedPrefix, prefixAllowlist)) {
+    return { matched: true, ok: false, reason: `prefix_not_allowlisted:${normalizedPrefix}` };
+  }
+  const absolutePrefix = path.resolve(repoRoot, normalizedPrefix);
+  if (!isPathInsideBase(repoRoot, absolutePrefix)) {
+    return { matched: true, ok: false, reason: `prefix_invalid:${normalizedPrefix}` };
+  }
+  return {
+    matched: true,
+    ok: true,
+    command: `npm --prefix ${shellQuote(normalizedPrefix)} run ${script}`,
+  };
+}
+
+function resolveScopedPathCommand(entry, {
+  prefixAllowlist = [],
+  repoRoot = ROOT,
+} = {}) {
+  const text = toSafeString(entry);
+  if (!text) return { ok: false, reason: 'empty' };
+  if (/[\s;&|`$()<>]/.test(text)) {
+    return { ok: false, reason: 'path_contains_shell_token' };
+  }
+
+  const candidate = path.isAbsolute(text) ? text : path.resolve(repoRoot, text);
+  if (!fs.existsSync(candidate) || !fs.statSync(candidate).isFile()) {
+    return { ok: false, reason: 'path_not_found' };
+  }
+  if (!isPathInsideBase(repoRoot, candidate)) {
+    return { ok: false, reason: 'path_outside_repo' };
+  }
+  const rel = normalizeRelPath(path.relative(repoRoot, candidate));
+  if (!isAllowedScopedPrefix(rel, prefixAllowlist)) {
+    return { ok: false, reason: `path_prefix_not_allowlisted:${rel}` };
+  }
+
+  const ext = path.extname(candidate).toLowerCase();
+  if (ext === '.ts') {
+    return {
+      ok: true,
+      command: `npm --prefix 'bots/claude' run test:unit -- ${shellQuote(rel)}`,
+    };
+  }
+  if (ext === '.js' || ext === '.cjs' || ext === '.mjs') {
+    return {
+      ok: true,
+      command: `node ${shellQuote(rel)}`,
+    };
+  }
+  return { ok: false, reason: `unsupported_extension:${ext || 'none'}` };
 }
 
 function resolveScopedTestCommands(analysis = null, cwd = ROOT) {
   const entries = Array.isArray(analysis?.metadata?.test_scope)
     ? analysis.metadata.test_scope
     : [];
-  const commands = entries.map(entry => inferScopedTestCommand(entry, cwd)).filter(Boolean);
+  const scriptAllowlist = resolveScopedTestScriptAllowlist();
+  const prefixAllowlist = resolveScopedTestPrefixAllowlist();
+  const commands = [];
+  const rejected = [];
+
+  for (const rawEntry of entries) {
+    const entry = toSafeString(rawEntry);
+    if (!entry) continue;
+    const npm = resolveScopedNpmCommand(entry, {
+      scriptAllowlist,
+      prefixAllowlist,
+      repoRoot: cwd,
+    });
+    if (npm.matched) {
+      if (npm.ok && npm.command) commands.push(npm.command);
+      else rejected.push({ entry, reason: npm.reason || 'invalid_npm_command' });
+      continue;
+    }
+
+    const scopedPath = resolveScopedPathCommand(entry, {
+      prefixAllowlist,
+      repoRoot: cwd,
+    });
+    if (scopedPath.ok && scopedPath.command) {
+      commands.push(scopedPath.command);
+      continue;
+    }
+    rejected.push({ entry, reason: scopedPath.reason || 'unsupported_test_scope_entry' });
+  }
+
   return {
     entries,
     commands,
+    rejected,
+    scriptAllowlist: [...scriptAllowlist],
+    prefixAllowlist,
   };
 }
 
@@ -1084,7 +1252,20 @@ async function runTestCycle(options = {}, executionContext = null, analysis = nu
       build,
       commands,
       scopedCommands: [],
-      message: 'test_scope metadata가 비어 있어 테스트 계약을 만족하지 못했습니다.',
+      scopedRejected: scoped.rejected,
+      message: scoped.entries.length === 0
+        ? 'test_scope metadata가 비어 있어 테스트 계약을 만족하지 못했습니다.'
+        : `test_scope 항목이 허용 정책에 맞지 않습니다: ${scoped.rejected.map(item => `${item.entry}(${item.reason})`).slice(0, 3).join(', ')}`,
+    };
+  }
+  if (scoped.rejected.length > 0) {
+    return {
+      pass: false,
+      build,
+      commands,
+      scopedCommands: [],
+      scopedRejected: scoped.rejected,
+      message: `test_scope 항목에 허용되지 않은 명령이 포함되어 있습니다: ${scoped.rejected.map(item => `${item.entry}(${item.reason})`).slice(0, 3).join(', ')}`,
     };
   }
 
@@ -1106,6 +1287,7 @@ async function runTestCycle(options = {}, executionContext = null, analysis = nu
     build,
     commands,
     scopedCommands,
+    scopedRejected: scoped.rejected,
     message: [
       `빌더: ${build.pass === false ? 'FAIL' : 'PASS'}`,
       `하드 테스트: ${commands.length === 0 ? 'SKIP' : commands.every(r => r.pass) ? 'PASS' : 'FAIL'}`,
@@ -1384,7 +1566,6 @@ async function processAutoDevDocument(filePath, options = {}) {
     }
 
     let archivedPath = null;
-    let archiveError = null;
     let archiveManifestPath = null;
     if (shouldArchiveOnSuccess(options)) {
       try {
@@ -1400,8 +1581,23 @@ async function processAutoDevDocument(filePath, options = {}) {
           test: testResult,
           integration: integrationResult,
         });
+        if (!archiveManifestPath) {
+          throw new Error('archive_manifest_not_created');
+        }
       } catch (error) {
-        archiveError = error.message;
+        const rollbackErrors = [];
+        const archivedAbsolute = archivedPath ? path.join(ROOT, archivedPath) : null;
+        if (archivedAbsolute && fs.existsSync(archivedAbsolute) && !fs.existsSync(filePath)) {
+          try {
+            fs.renameSync(archivedAbsolute, filePath);
+            archivedPath = null;
+            archiveManifestPath = null;
+          } catch (rollbackError) {
+            rollbackErrors.push(`archive_rollback_failed:${rollbackError.message}`);
+          }
+        }
+        const suffix = rollbackErrors.length > 0 ? ` (${rollbackErrors.join(', ')})` : '';
+        throw new Error(`archive failed: ${error.message}${suffix}`);
       }
     }
 
@@ -1419,7 +1615,6 @@ async function processAutoDevDocument(filePath, options = {}) {
       integration: integrationResult,
       archivedPath,
       archiveManifestPath,
-      archiveError,
       contentHash,
       completedAt: nowIso(),
       targetTeam: policy.targetTeam,
