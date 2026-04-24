@@ -157,6 +157,18 @@ function normalizeDecisionAmount(exchange, action, amount) {
   return Math.max(spec.min, Math.min(spec.max, Math.round(numeric)));
 }
 
+function formatLunaDecisionAmount(exchange, amount) {
+  const numeric = Number(amount || 0);
+  if (!Number.isFinite(numeric)) return 'N/A';
+  if (exchange === 'kis') {
+    return `${Math.round(numeric).toLocaleString('ko-KR')}원`;
+  }
+  if (exchange === 'kis_overseas') {
+    return `$${numeric.toFixed(2)}`;
+  }
+  return `${numeric.toFixed(2)} USDT`;
+}
+
 function buildAnalystWeights(exchange = 'binance') {
   const runtimeAnalystWeightConfig = getEffectiveAnalystWeightProfiles();
   const isStock = exchange === 'kis' || exchange === 'kis_overseas';
@@ -1510,7 +1522,8 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
     '',
     ...(portfolio_decision.decisions || []).map(d => {
       const emoji = d.action === 'BUY' ? '🟢' : d.action === 'SELL' ? '🔴' : '⚪';
-      return `${emoji} ${d.action} ${d.symbol} $${d.amount_usdt} (${((d.confidence || 0) * 100).toFixed(0)}%)\n  ${d.reasoning?.slice(0, 80)}`;
+      const amountLabel = formatLunaDecisionAmount(exchange, d.amount_usdt);
+      return `${emoji} ${d.action} ${d.symbol} ${amountLabel} (${((d.confidence || 0) * 100).toFixed(0)}%)\n  ${d.reasoning?.slice(0, 80)}`;
     }),
   ].join('\n');
   publishAlert({ from_bot: 'luna', event_type: 'report', alert_level: 1, message: summaryMsg });

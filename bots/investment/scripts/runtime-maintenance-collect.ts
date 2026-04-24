@@ -6,6 +6,7 @@ import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { initHubSecrets } from '../shared/secrets.ts';
 import { resolveManagedPositionUniverse } from '../shared/universe-fallback.ts';
 import { logMarketPipelineMetrics, runMarketCollectPipeline, summarizeNodeStatuses } from '../shared/pipeline-market-runner.ts';
+import { processHanulPendingReconcileQueue } from '../team/hanul.ts';
 
 function parseArgs(argv = []) {
   const args = {
@@ -13,6 +14,8 @@ function parseArgs(argv = []) {
     json: false,
     noAlert: false,
     limit: 0,
+    runKisPendingReconcile: true,
+    kisPendingReconcileLimit: 40,
   };
 
   for (const raw of argv) {
@@ -22,6 +25,10 @@ function parseArgs(argv = []) {
       args.markets = raw.split('=').slice(1).join('=').split(',').map((item) => item.trim()).filter(Boolean);
     } else if (raw.startsWith('--limit=')) {
       args.limit = Math.max(0, Number(raw.split('=').slice(1).join('=') || 0));
+    } else if (raw === '--no-kis-reconcile') {
+      args.runKisPendingReconcile = false;
+    } else if (raw.startsWith('--kis-reconcile-limit=')) {
+      args.kisPendingReconcileLimit = Math.max(1, Math.min(200, Number(raw.split('=').slice(1).join('=') || 40)));
     }
   }
 
@@ -94,6 +101,8 @@ async function collectForMarket(market, { limit = 0 } = {}) {
 export async function runMaintenanceCollect({
   markets = ['binance', 'kis', 'kis_overseas'],
   limit = 0,
+  runKisPendingReconcile = true,
+  kisPendingReconcileLimit = 40,
 } = {}) {
   await initHubSecrets();
   await db.initSchema();
@@ -101,6 +110,22 @@ export async function runMaintenanceCollect({
   const normalizedMarkets = (Array.isArray(markets) ? markets : [markets])
     .map((item) => String(item || '').trim())
     .filter(Boolean);
+
+  let kisPendingReconcile = null;
+  if (runKisPendingReconcile) {
+    kisPendingReconcile = await processHanulPendingReconcileQueue({
+      dryRun: false,
+      confirmLive: true,
+      limit: kisPendingReconcileLimit,
+      includePartialFill: true,
+      delayMs: 120,
+    }).catch((error) => ({
+      ok: false,
+      error: error?.message || String(error),
+      candidates: 0,
+      processed: 0,
+    }));
+  }
 
   const results = [];
   for (const market of normalizedMarkets) {
@@ -119,6 +144,7 @@ export async function runMaintenanceCollect({
     totalManaged: results.reduce((sum, item) => sum + Number(item.maintenanceMeta?.managedCount || 0), 0),
     totalDustSkipped: results.reduce((sum, item) => sum + Number(item.maintenanceMeta?.dustSkipped || 0), 0),
     totalProfiled: results.reduce((sum, item) => sum + Number(item.maintenanceMeta?.profiledCount || 0), 0),
+    kisPendingReconcile,
     results,
   };
 

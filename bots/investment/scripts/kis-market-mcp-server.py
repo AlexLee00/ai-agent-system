@@ -46,6 +46,9 @@ def build_node_env() -> dict:
     env.setdefault("REPO_ROOT", repo_root)
     env.setdefault("USE_HUB_SECRETS", "true")
     env.setdefault("HUB_BASE_URL", "http://127.0.0.1:7788")
+    # MCP 브리지 내부에서 kis-client가 다시 MCP를 호출하지 않도록 재귀를 차단한다.
+    env.setdefault("KIS_MCP_BRIDGE", "1")
+    env.setdefault("KIS_USE_MCP", "false")
     return env
 
 
@@ -97,6 +100,11 @@ import {{ initHubSecrets }} from './shared/secrets.ts';
 const action = {json.dumps(action)};
 const payload = {payload_json};
 const paper = payload.paper === true;
+const asNumber = (value, fallback = 0) => {{
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}};
+const toUpper = (value) => String(value || '').trim().toUpperCase();
 
 try {{
   await initHubSecrets();
@@ -115,9 +123,13 @@ try {{
       overseasPrice: Number(overseas?.price || 0),
       overseasExchangeCode: overseas?.excd || null,
     }}));
-  }} else if (action === 'quote') {{
-    const market = String(payload.market || 'domestic');
-    const symbol = String(payload.symbol || (market === 'overseas' ? 'AAPL' : '005930')).toUpperCase();
+  }} else if (action === 'quote' || action === 'domestic_quote' || action === 'overseas_quote') {{
+    const explicitMarket = payload.market ? String(payload.market) : null;
+    const market = explicitMarket || (action === 'overseas_quote' ? 'overseas' : 'domestic');
+    const defaultSymbol = market === 'overseas' ? 'AAPL' : '005930';
+    const symbol = market === 'overseas'
+      ? toUpper(payload.symbol || defaultSymbol)
+      : String(payload.symbol || defaultSymbol);
     if (market === 'overseas') {{
       const quote = await kis.getOverseasQuoteSnapshot(symbol);
       console.log(JSON.stringify({{
@@ -138,8 +150,30 @@ try {{
         quote,
       }}));
     }}
-  }} else if (action === 'balance') {{
-    const market = String(payload.market || 'domestic');
+  }} else if (action === 'domestic_price') {{
+    const symbol = String(payload.symbol || '005930');
+    const price = await kis.getDomesticPrice(symbol, paper);
+    console.log(JSON.stringify({{
+      status: 'ok',
+      action,
+      market: 'domestic',
+      symbol,
+      paper,
+      result: {{ price }},
+    }}));
+  }} else if (action === 'overseas_price') {{
+    const symbol = toUpper(payload.symbol || 'AAPL');
+    const result = await kis.getOverseasPrice(symbol);
+    console.log(JSON.stringify({{
+      status: 'ok',
+      action,
+      market: 'overseas',
+      symbol,
+      result,
+    }}));
+  }} else if (action === 'balance' || action === 'domestic_balance' || action === 'overseas_balance') {{
+    const explicitMarket = payload.market ? String(payload.market) : null;
+    const market = explicitMarket || (action === 'overseas_balance' ? 'overseas' : 'domestic');
     if (market === 'overseas') {{
       const balance = await kis.getOverseasBalance(paper);
       console.log(JSON.stringify({{
@@ -159,6 +193,125 @@ try {{
         balance,
       }}));
     }}
+  }} else if (action === 'domestic_buy') {{
+    const symbol = String(payload.symbol || '005930');
+    const amountKrw = asNumber(payload.amountKrw ?? payload.amount, 0);
+    const dryRun = payload.dryRun === true;
+    const result = await kis.marketBuy(symbol, amountKrw, dryRun);
+    console.log(JSON.stringify({{
+      status: 'ok',
+      action,
+      market: 'domestic',
+      symbol,
+      dryRun,
+      result,
+    }}));
+  }} else if (action === 'domestic_sell') {{
+    const symbol = String(payload.symbol || '005930');
+    const qty = asNumber(payload.qty, 0);
+    const dryRun = payload.dryRun === true;
+    const result = await kis.marketSell(symbol, qty, dryRun);
+    console.log(JSON.stringify({{
+      status: 'ok',
+      action,
+      market: 'domestic',
+      symbol,
+      dryRun,
+      result,
+    }}));
+  }} else if (action === 'overseas_buy') {{
+    const symbol = toUpper(payload.symbol || 'AAPL');
+    const amountUsd = asNumber(payload.amountUsd ?? payload.amount, 0);
+    const dryRun = payload.dryRun === true;
+    const result = await kis.marketBuyOverseas(symbol, amountUsd, dryRun);
+    console.log(JSON.stringify({{
+      status: 'ok',
+      action,
+      market: 'overseas',
+      symbol,
+      dryRun,
+      result,
+    }}));
+  }} else if (action === 'overseas_sell') {{
+    const symbol = toUpper(payload.symbol || 'AAPL');
+    const qty = asNumber(payload.qty, 0);
+    const dryRun = payload.dryRun === true;
+    const result = await kis.marketSellOverseas(symbol, qty, dryRun);
+    console.log(JSON.stringify({{
+      status: 'ok',
+      action,
+      market: 'overseas',
+      symbol,
+      dryRun,
+      result,
+    }}));
+  }} else if (action === 'domestic_fill') {{
+    const symbol = String(payload.symbol || '');
+    const ordNo = String(payload.ordNo || '').trim();
+    const side = String(payload.side || 'all').toUpperCase();
+    if (!symbol || !ordNo) throw new Error('domestic_fill requires symbol and ordNo');
+    if (typeof kis.getDomesticOrderFillByOrdNo !== 'function') {{
+      throw new Error('getDomesticOrderFillByOrdNo not implemented');
+    }}
+    const result = await kis.getDomesticOrderFillByOrdNo({{
+      symbol,
+      ordNo,
+      side,
+      paper,
+    }});
+    console.log(JSON.stringify({{
+      status: 'ok',
+      action,
+      market: 'domestic',
+      symbol,
+      ordNo,
+      paper,
+      result,
+    }}));
+  }} else if (action === 'overseas_fill') {{
+    const symbol = toUpper(payload.symbol || '');
+    const ordNo = String(payload.ordNo || '').trim();
+    const side = String(payload.side || 'all').toUpperCase();
+    if (!symbol || !ordNo) throw new Error('overseas_fill requires symbol and ordNo');
+    if (typeof kis.getOverseasOrderFillByOrdNo !== 'function') {{
+      throw new Error('getOverseasOrderFillByOrdNo not implemented');
+    }}
+    const result = await kis.getOverseasOrderFillByOrdNo({{
+      symbol,
+      ordNo,
+      side,
+      paper,
+    }});
+    console.log(JSON.stringify({{
+      status: 'ok',
+      action,
+      market: 'overseas',
+      symbol,
+      ordNo,
+      paper,
+      result,
+    }}));
+  }} else if (action === 'domestic_ranking') {{
+    const endpoint = String(payload.endpoint || '/uapi/domestic-stock/v1/ranking/volume');
+    const trId = String(payload.trId || 'FHPST01710000');
+    const params = payload.params && typeof payload.params === 'object' ? payload.params : {{}};
+    const result = await kis.getDomesticRanking(endpoint, trId, params, paper);
+    console.log(JSON.stringify({{
+      status: 'ok',
+      action,
+      endpoint,
+      trId,
+      paper,
+      result,
+    }}));
+  }} else if (action === 'volume_rank') {{
+    const result = await kis.getVolumeRank(paper);
+    console.log(JSON.stringify({{
+      status: 'ok',
+      action,
+      paper,
+      result,
+    }}));
   }} else {{
     throw new Error(`unsupported action: ${{action}}`);
   }}
@@ -373,6 +526,38 @@ def run_doctor(args):
     return 0
 
 
+def run_bridge_action(args):
+    payload = {}
+    if args.payload_json:
+        try:
+            payload = json.loads(args.payload_json)
+            if not isinstance(payload, dict):
+                raise ValueError("payload_json must decode to an object")
+        except Exception as exc:
+            message = f"payload_json parse failed: {exc}"
+            if args.json:
+                emit_json({"status": "error", "message": message})
+            else:
+                print(f"ERROR: {message}")
+            return 1
+
+    try:
+        result = run_node_kis_bridge(args.bridge_action, payload)
+    except Exception as exc:
+        payload = {"status": "error", "message": str(exc), "action": args.bridge_action}
+        if args.json:
+            emit_json(payload)
+        else:
+            print(f"ERROR: {exc}")
+        return 1
+
+    if args.json:
+        emit_json(result)
+    else:
+        print(f"[KIS MCP] bridge ok: action={args.bridge_action}")
+    return 0
+
+
 def run_server(deps):
     FastMCP = deps["FastMCP"]
     if FastMCP is None:
@@ -425,6 +610,29 @@ def run_server(deps):
         except Exception as exc:
             return {"status": "error", "message": str(exc)}
 
+    @mcp.tool()
+    def get_kis_order_fill(
+        market: str = "domestic",
+        symbol: str = "005930",
+        ord_no: str = "",
+        side: str = "all",
+        paper: bool = False,
+    ) -> dict:
+        action = "overseas_fill" if market == "overseas" else "domestic_fill"
+        try:
+            return run_node_kis_bridge(
+                action,
+                {
+                    "market": market,
+                    "symbol": symbol,
+                    "ordNo": ord_no,
+                    "side": side,
+                    "paper": paper,
+                },
+            )
+        except Exception as exc:
+            return {"status": "error", "message": str(exc)}
+
     mcp.run()
     return 0
 
@@ -435,6 +643,8 @@ def main():
     parser.add_argument("--doctor", action="store_true", help="KIS 시크릿/환경 진단 (API 호출 없음)")
     parser.add_argument("--quote", action="store_true", help="KIS 시세 조회")
     parser.add_argument("--balance", action="store_true", help="KIS 잔고 조회")
+    parser.add_argument("--bridge-action", default="", help="내부 브리지 액션 직접 실행 (JSON 출력 권장)")
+    parser.add_argument("--payload-json", default="", help="bridge-action payload JSON 문자열")
     parser.add_argument("--market", choices=["domestic", "overseas"], default="domestic")
     parser.add_argument("--symbol", default="005930")
     parser.add_argument("--paper", action="store_true")
@@ -451,6 +661,8 @@ def main():
         return run_quote(args)
     if args.balance:
         return run_balance(args)
+    if args.bridge_action:
+        return run_bridge_action(args)
 
     return run_server(deps)
 

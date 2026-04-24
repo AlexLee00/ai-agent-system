@@ -14,6 +14,9 @@
 import fs   from 'fs';
 import path from 'path';
 import os   from 'os';
+import { fileURLToPath } from 'url';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { loadSecrets, isKisPaper } from './secrets.ts';
 
 // ─── 상수 ──────────────────────────────────────────────────────────
@@ -37,6 +40,10 @@ const TR_ID = {
   DOMESTIC_BALANCE_LIVE:   'TTTC8434R',
   OVERSEAS_BALANCE_PAPER:  'VTTS3012R',
   OVERSEAS_BALANCE_LIVE:   'TTTS3012R',
+  DOMESTIC_DAILY_CCLD_PAPER: 'VTTC0081R',
+  DOMESTIC_DAILY_CCLD_LIVE: 'TTTC0081R',
+  OVERSEAS_CCLD_PAPER: 'VTTS3035R',
+  OVERSEAS_CCLD_LIVE: 'TTTS3035R',
 };
 
 const KIS_MIN_INTERVAL_MS = 380;
@@ -45,6 +52,13 @@ const KIS_RATE_LIMIT_RETRY_MS = 1100;
 const KIS_RATE_LIMIT_MAX_RETRIES = 2;
 const KIS_DEBUG_ENABLED = process.env.KIS_DEBUG === '1';
 export const KIS_DOMESTIC_BUY_SLIPPAGE_BUFFER = 1.01;
+const KIS_MCP_ENABLED_DEFAULT = String(process.env.KIS_USE_MCP ?? 'true').toLowerCase() !== 'false';
+const KIS_MCP_BRIDGE_MODE = process.env.KIS_MCP_BRIDGE === '1';
+const KIS_MCP_TIMEOUT_MS = Math.max(4_000, Number(process.env.KIS_MCP_TIMEOUT_MS || 20_000));
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const KIS_MCP_SERVER_PATH = process.env.KIS_MCP_SERVER_PATH || path.resolve(__dirname, '../scripts/kis-market-mcp-server.py');
+const execFileAsync = promisify(execFile);
 
 const _requestState = {
   paper: {
@@ -137,6 +151,126 @@ function parseKisErrorBody(raw = '') {
   }
 
   return truncateKisMessage(text);
+}
+
+function shouldUseKisMcp() {
+  return KIS_MCP_ENABLED_DEFAULT && !KIS_MCP_BRIDGE_MODE;
+}
+
+function resolveUsePaper(paper) {
+  return paper ?? isKisPaper();
+}
+
+function parseJsonFromMixedStdout(stdout = '') {
+  const text = String(stdout || '').trim();
+  if (text) {
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && typeof parsed === 'object') return parsed;
+    } catch {
+      // fallback to line scan
+    }
+  }
+  const lines = String(stdout || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    const line = lines[i];
+    try {
+      const parsed = JSON.parse(line);
+      if (parsed && typeof parsed === 'object') return parsed;
+    } catch {
+      // keep scanning
+    }
+  }
+  return null;
+}
+
+async function runKisMcpBridge(action, payload = {}) {
+  if (!shouldUseKisMcp()) return null;
+  try {
+    const { stdout } = await execFileAsync(
+      'python3',
+      [
+        KIS_MCP_SERVER_PATH,
+        '--bridge-action',
+        String(action || ''),
+        '--payload-json',
+        JSON.stringify(payload || {}),
+        '--json',
+      ],
+      {
+        cwd: path.resolve(__dirname, '..'),
+        env: {
+          ...process.env,
+          PROJECT_ROOT: process.env.PROJECT_ROOT || path.resolve(__dirname, '../../..'),
+          REPO_ROOT: process.env.REPO_ROOT || path.resolve(__dirname, '../../..'),
+          USE_HUB_SECRETS: process.env.USE_HUB_SECRETS || 'true',
+        },
+        timeout: KIS_MCP_TIMEOUT_MS,
+        maxBuffer: 10 * 1024 * 1024,
+      },
+    );
+    const parsed = parseJsonFromMixedStdout(stdout);
+    if (!parsed || parsed.status !== 'ok') {
+      throw new Error(parsed?.message || `KIS MCP bridge failed: ${action}`);
+    }
+    return parsed;
+  } catch (error) {
+    console.warn(`  ⚠️ [KIS MCP] bridge 실패 (${action}) — direct fallback: ${error?.message || error}`);
+    return null;
+  }
+}
+
+function parseNumeric(value) {
+  if (value == null || value === '') return 0;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  const text = String(value).replace(/,/g, '').trim();
+  if (!text) return 0;
+  const numeric = Number(text);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function pickFirstNumber(row, keys = []) {
+  for (const key of keys) {
+    if (row?.[key] == null || row?.[key] === '') continue;
+    const numeric = parseNumeric(row[key]);
+    if (Number.isFinite(numeric)) return numeric;
+  }
+  return 0;
+}
+
+function pickFirstString(row, keys = []) {
+  for (const key of keys) {
+    const value = row?.[key];
+    if (value == null) continue;
+    const text = String(value).trim();
+    if (text) return text;
+  }
+  return '';
+}
+
+function normalizeOrderNo(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  const digits = text.replace(/\D/g, '');
+  const normalized = digits.replace(/^0+/, '');
+  return normalized || digits || text;
+}
+
+function formatYmd(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}${m}${d}`;
+}
+
+function resolveKisSideCode(side = '') {
+  const normalized = String(side || '').toUpperCase();
+  if (normalized === 'BUY' || normalized === '02') return { domestic: '02', overseas: '02' };
+  if (normalized === 'SELL' || normalized === '01') return { domestic: '01', overseas: '01' };
+  return { domestic: '00', overseas: '00' };
 }
 
 async function getToken(paper) {
@@ -275,10 +409,15 @@ export async function getDomesticPrice(symbol, paper) {
 }
 
 export async function getDomesticQuoteSnapshot(symbol, paper) {
+  const usePaper = resolveUsePaper(paper);
+  const mcp = await runKisMcpBridge('domestic_quote', { symbol, paper: usePaper });
+  if (mcp?.quote && parseNumeric(mcp.quote.price) > 0) {
+    return mcp.quote;
+  }
   const data  = await kisRequest('GET', '/uapi/domestic-stock/v1/quotations/inquire-price', {
     trId:   TR_ID.DOMESTIC_PRICE,
     params: { FID_COND_MRKT_DIV_CODE: 'J', FID_INPUT_ISCD: symbol },
-    paper,
+    paper: usePaper,
   });
   const output = data.output || {};
   const price = parseInt(output.stck_prpr || '0', 10);
@@ -328,6 +467,10 @@ export async function getOverseasPrice(symbol) {
 }
 
 export async function getOverseasQuoteSnapshot(symbol) {
+  const mcp = await runKisMcpBridge('overseas_quote', { symbol: String(symbol || '').toUpperCase(), paper: false });
+  if (mcp?.quote && parseNumeric(mcp.quote.price) > 0) {
+    return mcp.quote;
+  }
   // 가격조회용 (shorter code)
   const PRICE_EXCD = {
     AAPL: 'NAS', MSFT: 'NAS', AMZN: 'NAS', GOOGL: 'NAS', META: 'NAS',
@@ -423,6 +566,330 @@ function parseAccount(paper) {
   return { cano: clean.slice(0, 8), prodCd: clean.slice(8, 10) || '01' };
 }
 
+function findOrderFillRow(rows = [], { ordNo, symbol = null } = {}) {
+  const normalizedOrdNo = normalizeOrderNo(ordNo);
+  const normalizedSymbol = String(symbol || '').trim().toUpperCase();
+  return rows.find((row) => {
+    const rowOrderNo = normalizeOrderNo(
+      row?.ODNO
+      || row?.odno
+      || row?.ord_no
+      || row?.ordNo
+      || row?.ordno,
+    );
+    if (!rowOrderNo) return false;
+    if (normalizedOrdNo && rowOrderNo !== normalizedOrdNo) return false;
+    if (!normalizedSymbol) return true;
+    const rowSymbol = String(
+      row?.PDNO
+      || row?.pdno
+      || row?.ISIN_PDNO
+      || row?.ovrs_pdno
+      || row?.symb
+      || row?.SYMB
+      || '',
+    ).trim().toUpperCase();
+    if (!rowSymbol) return true;
+    return rowSymbol === normalizedSymbol;
+  }) || null;
+}
+
+function resolveFillStatus({ filledQty = 0, remainingQty = 0 }) {
+  const filled = parseNumeric(filledQty);
+  const remain = parseNumeric(remainingQty);
+  if (filled > 0 && remain <= 1e-9) return 'filled_complete';
+  if (filled > 0) return 'partial_filled';
+  return 'fill_not_confirmed';
+}
+
+export async function getDomesticOrderFillByOrdNo({
+  symbol,
+  ordNo,
+  side = 'all',
+  paper,
+} = {}) {
+  const normalizedSymbol = String(symbol || '').trim();
+  const normalizedOrdNo = String(ordNo || '').trim();
+  const usePaper = resolveUsePaper(paper);
+
+  if (!normalizedSymbol || !normalizedOrdNo) {
+    return {
+      found: false,
+      symbol: normalizedSymbol || null,
+      ordNo: normalizedOrdNo || null,
+      filledQty: 0,
+      remainingQty: 0,
+      avgPrice: 0,
+      totalAmount: 0,
+      status: 'invalid_request',
+      paper: usePaper,
+      source: 'validation',
+      raw: null,
+    };
+  }
+
+  const mcp = await runKisMcpBridge('domestic_fill', {
+    symbol: normalizedSymbol,
+    ordNo: normalizedOrdNo,
+    side,
+    paper: usePaper,
+  });
+  if (mcp?.result && typeof mcp.result === 'object') {
+    return {
+      ...mcp.result,
+      source: mcp.result.source || 'kis_mcp_domestic_fill',
+    };
+  }
+
+  const { cano, prodCd } = parseAccount(usePaper);
+  const sideCode = resolveKisSideCode(side).domestic;
+  const now = new Date();
+  const start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  let data;
+  try {
+    data = await kisRequest('GET', '/uapi/domestic-stock/v1/trading/inquire-daily-ccld', {
+      trId: usePaper ? TR_ID.DOMESTIC_DAILY_CCLD_PAPER : TR_ID.DOMESTIC_DAILY_CCLD_LIVE,
+      params: {
+        CANO: cano,
+        ACNT_PRDT_CD: prodCd,
+        INQR_STRT_DT: formatYmd(start),
+        INQR_END_DT: formatYmd(now),
+        SLL_BUY_DVSN_CD: sideCode,
+        PDNO: normalizedSymbol,
+        CCLD_DVSN: '00',
+        INQR_DVSN: '00',
+        INQR_DVSN_3: '00',
+        ORD_GNO_BRNO: '',
+        ODNO: normalizedOrdNo,
+        INQR_DVSN_1: '',
+        EXCG_ID_DVSN_CD: 'KRX',
+        CTX_AREA_FK100: '',
+        CTX_AREA_NK100: '',
+      },
+      paper: usePaper,
+    });
+  } catch (error) {
+    return {
+      found: false,
+      symbol: normalizedSymbol,
+      ordNo: normalizedOrdNo,
+      filledQty: 0,
+      remainingQty: 0,
+      avgPrice: 0,
+      totalAmount: 0,
+      status: 'lookup_error',
+      paper: usePaper,
+      source: 'kis_domestic_inquire_daily_ccld',
+      error: String(error?.message || error),
+      raw: null,
+    };
+  }
+
+  const rows = Array.isArray(data?.output1) ? data.output1 : [];
+  const row = findOrderFillRow(rows, { ordNo: normalizedOrdNo, symbol: normalizedSymbol });
+  if (!row) {
+    return {
+      found: false,
+      symbol: normalizedSymbol,
+      ordNo: normalizedOrdNo,
+      filledQty: 0,
+      remainingQty: 0,
+      avgPrice: 0,
+      totalAmount: 0,
+      status: 'not_found',
+      paper: usePaper,
+      source: 'kis_domestic_inquire_daily_ccld',
+      raw: null,
+    };
+  }
+
+  const filledQty = pickFirstNumber(row, [
+    'tot_ccld_qty',
+    'tot_ccld_qty1',
+    'ccld_qty',
+    'ft_ccld_qty',
+    'tot_ccld_yn_qty',
+  ]);
+  const remainingQty = pickFirstNumber(row, [
+    'nccs_qty',
+    'rmn_qty',
+    'ord_remn_qty',
+    'ft_nccs_qty',
+  ]);
+  const avgPrice = pickFirstNumber(row, [
+    'avg_prvs',
+    'avg_unpr',
+    'ccld_unpr',
+    'ord_unpr',
+    'ft_ccld_unpr3',
+  ]);
+  const totalAmount = pickFirstNumber(row, [
+    'tot_ccld_amt',
+    'ccld_amt',
+    'ord_amt',
+    'ft_ccld_amt3',
+  ]);
+
+  return {
+    found: true,
+    symbol: normalizedSymbol,
+    ordNo: normalizedOrdNo,
+    filledQty,
+    remainingQty,
+    avgPrice,
+    totalAmount,
+    status: resolveFillStatus({ filledQty, remainingQty }),
+    paper: usePaper,
+    source: 'kis_domestic_inquire_daily_ccld',
+    raw: row,
+  };
+}
+
+export async function getOverseasOrderFillByOrdNo({
+  symbol,
+  ordNo,
+  side = 'all',
+  paper,
+} = {}) {
+  const normalizedSymbol = String(symbol || '').trim().toUpperCase();
+  const normalizedOrdNo = String(ordNo || '').trim();
+  const usePaper = resolveUsePaper(paper);
+
+  if (!normalizedSymbol || !normalizedOrdNo) {
+    return {
+      found: false,
+      symbol: normalizedSymbol || null,
+      ordNo: normalizedOrdNo || null,
+      filledQty: 0,
+      remainingQty: 0,
+      avgPrice: 0,
+      totalAmount: 0,
+      status: 'invalid_request',
+      paper: usePaper,
+      source: 'validation',
+      raw: null,
+    };
+  }
+
+  const mcp = await runKisMcpBridge('overseas_fill', {
+    symbol: normalizedSymbol,
+    ordNo: normalizedOrdNo,
+    side,
+    paper: usePaper,
+  });
+  if (mcp?.result && typeof mcp.result === 'object') {
+    return {
+      ...mcp.result,
+      source: mcp.result.source || 'kis_mcp_overseas_fill',
+    };
+  }
+
+  const { cano, prodCd } = parseAccount(usePaper);
+  const sideCode = resolveKisSideCode(side).overseas;
+  const now = new Date();
+  const start = new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000);
+  let data;
+  try {
+    data = await kisRequest('GET', '/uapi/overseas-stock/v1/trading/inquire-ccnl', {
+      trId: usePaper ? TR_ID.OVERSEAS_CCLD_PAPER : TR_ID.OVERSEAS_CCLD_LIVE,
+      params: {
+        CANO: cano,
+        ACNT_PRDT_CD: prodCd,
+        PDNO: normalizedSymbol,
+        ORD_STRT_DT: formatYmd(start),
+        ORD_END_DT: formatYmd(now),
+        SLL_BUY_DVSN: sideCode,
+        CCLD_NCCS_DVSN: '00',
+        OVRS_EXCG_CD: '%',
+        SORT_SQN: 'DS',
+        ORD_DT: '',
+        ORD_GNO_BRNO: '',
+        ODNO: normalizedOrdNo,
+        CTX_AREA_NK200: '',
+        CTX_AREA_FK200: '',
+      },
+      paper: usePaper,
+    });
+  } catch (error) {
+    return {
+      found: false,
+      symbol: normalizedSymbol,
+      ordNo: normalizedOrdNo,
+      filledQty: 0,
+      remainingQty: 0,
+      avgPrice: 0,
+      totalAmount: 0,
+      status: 'lookup_error',
+      paper: usePaper,
+      source: 'kis_overseas_inquire_ccnl',
+      error: String(error?.message || error),
+      raw: null,
+    };
+  }
+
+  const rows = Array.isArray(data?.output)
+    ? data.output
+    : Array.isArray(data?.output1)
+      ? data.output1
+      : [];
+  const row = findOrderFillRow(rows, { ordNo: normalizedOrdNo, symbol: normalizedSymbol });
+  if (!row) {
+    return {
+      found: false,
+      symbol: normalizedSymbol,
+      ordNo: normalizedOrdNo,
+      filledQty: 0,
+      remainingQty: 0,
+      avgPrice: 0,
+      totalAmount: 0,
+      status: 'not_found',
+      paper: usePaper,
+      source: 'kis_overseas_inquire_ccnl',
+      raw: null,
+    };
+  }
+
+  const filledQty = pickFirstNumber(row, [
+    'tot_ccld_qty',
+    'ft_ccld_qty',
+    'ccld_qty',
+    'tot_ccld_qty1',
+  ]);
+  const remainingQty = pickFirstNumber(row, [
+    'nccs_qty',
+    'ft_nccs_qty',
+    'rmn_qty',
+    'ord_remn_qty',
+  ]);
+  const avgPrice = pickFirstNumber(row, [
+    'ft_ccld_unpr3',
+    'avg_unpr',
+    'ccld_unpr',
+    'ord_unpr',
+    'ovrs_krx_fwdg_ord_unpr',
+  ]);
+  const totalAmount = pickFirstNumber(row, [
+    'ft_ccld_amt3',
+    'tot_ccld_amt',
+    'ccld_amt',
+    'ord_amt',
+  ]);
+
+  return {
+    found: true,
+    symbol: normalizedSymbol,
+    ordNo: normalizedOrdNo,
+    filledQty,
+    remainingQty,
+    avgPrice,
+    totalAmount,
+    status: resolveFillStatus({ filledQty, remainingQty }),
+    paper: usePaper,
+    source: 'kis_overseas_inquire_ccnl',
+    raw: row,
+  };
+}
+
 // ─── 국내주식 주문 ──────────────────────────────────────────────────
 
 /**
@@ -435,6 +902,11 @@ function parseAccount(paper) {
 export async function marketBuy(symbol, amountKrw, dryRun = false) {
   const paper = isKisPaper();
   const tag   = dryRun ? '[PAPER]' : paper ? '[LIVE/MOCK]' : '[LIVE/REAL]';
+
+  const mcp = await runKisMcpBridge('domestic_buy', { symbol, amountKrw, dryRun, paper });
+  if (mcp?.result && typeof mcp.result === 'object') {
+    return mcp.result;
+  }
 
   const currentPrice = await getDomesticPrice(symbol, paper);
   let effectiveAmountKrw = Number(amountKrw || 0);
@@ -512,6 +984,11 @@ export async function marketSell(symbol, qty, dryRun = false) {
   const paper = isKisPaper();
   const tag   = dryRun ? '[PAPER]' : paper ? '[LIVE/MOCK]' : '[LIVE/REAL]';
 
+  const mcp = await runKisMcpBridge('domestic_sell', { symbol, qty, dryRun, paper });
+  if (mcp?.result && typeof mcp.result === 'object') {
+    return mcp.result;
+  }
+
   const currentPrice = await getDomesticPrice(symbol, paper);
   console.log(`  📊 [KIS] ${symbol} 현재가 ${currentPrice.toLocaleString()}원 → 매도 ${qty}주 ${tag}`);
 
@@ -552,6 +1029,16 @@ export async function marketSell(symbol, qty, dryRun = false) {
 export async function marketBuyOverseas(symbol, amountUsd, dryRun = false) {
   const paper = isKisPaper();
   const tag   = dryRun ? '[PAPER]' : paper ? '[LIVE/MOCK]' : '[LIVE/REAL]';
+
+  const mcp = await runKisMcpBridge('overseas_buy', {
+    symbol: String(symbol || '').toUpperCase(),
+    amountUsd,
+    dryRun,
+    paper,
+  });
+  if (mcp?.result && typeof mcp.result === 'object') {
+    return mcp.result;
+  }
 
   const { price: currentPrice, excd } = await getOverseasPrice(symbol);
   const qty = Math.floor(amountUsd / currentPrice);
@@ -602,6 +1089,16 @@ export async function marketSellOverseas(symbol, qty, dryRun = false) {
   const paper = isKisPaper();
   const tag   = dryRun ? '[PAPER]' : paper ? '[LIVE/MOCK]' : '[LIVE/REAL]';
 
+  const mcp = await runKisMcpBridge('overseas_sell', {
+    symbol: String(symbol || '').toUpperCase(),
+    qty,
+    dryRun,
+    paper,
+  });
+  if (mcp?.result && typeof mcp.result === 'object') {
+    return mcp.result;
+  }
+
   const { price: currentPrice, excd } = await getOverseasPrice(symbol);
   console.log(`  📊 [KIS] ${symbol} 현재가 $${currentPrice} → 매도 ${qty}주 ${tag}`);
 
@@ -642,7 +1139,11 @@ export async function marketSellOverseas(symbol, qty, dryRun = false) {
  * TR_ID: TTTC8434R (실전) / VTTC8434R (모의)
  */
 export async function getDomesticBalance(paper) {
-  const usePaper = paper ?? isKisPaper();
+  const usePaper = resolveUsePaper(paper);
+  const mcp = await runKisMcpBridge('domestic_balance', { market: 'domestic', paper: usePaper });
+  if (mcp?.balance && typeof mcp.balance === 'object') {
+    return mcp.balance;
+  }
   const { cano, prodCd } = parseAccount(usePaper);
   const data = await kisRequest('GET', '/uapi/domestic-stock/v1/trading/inquire-balance', {
     trId: usePaper ? TR_ID.DOMESTIC_BALANCE_PAPER : TR_ID.DOMESTIC_BALANCE_LIVE,
@@ -692,6 +1193,10 @@ export async function getDomesticBalance(paper) {
  * TR_ID: FHPST01710000
  */
 export async function getDomesticRanking(endpoint, trId, params = {}, paper = false) {
+  const mcp = await runKisMcpBridge('domestic_ranking', { endpoint, trId, params, paper });
+  if (mcp?.result && Array.isArray(mcp.result)) {
+    return mcp.result;
+  }
   try {
     const data = await kisRequest('GET', endpoint, {
       trId,
@@ -719,6 +1224,10 @@ export async function getDomesticRanking(endpoint, trId, params = {}, paper = fa
 }
 
 export async function getVolumeRank(paper = false) {
+  const mcp = await runKisMcpBridge('volume_rank', { paper });
+  if (mcp?.result && Array.isArray(mcp.result)) {
+    return mcp.result;
+  }
   const rows = await getDomesticRanking(
     '/uapi/domestic-stock/v1/ranking/volume',
     'FHPST01710000',
@@ -734,7 +1243,11 @@ export async function getVolumeRank(paper = false) {
 }
 
 export async function getOverseasBalance(paper) {
-  const usePaper = paper ?? isKisPaper();
+  const usePaper = resolveUsePaper(paper);
+  const mcp = await runKisMcpBridge('overseas_balance', { market: 'overseas', paper: usePaper });
+  if (mcp?.balance && typeof mcp.balance === 'object') {
+    return mcp.balance;
+  }
   const { cano, prodCd } = parseAccount(usePaper);
   const data = await kisRequest('GET', '/uapi/overseas-stock/v1/trading/inquire-balance', {
     trId: usePaper ? TR_ID.OVERSEAS_BALANCE_PAPER : TR_ID.OVERSEAS_BALANCE_LIVE,

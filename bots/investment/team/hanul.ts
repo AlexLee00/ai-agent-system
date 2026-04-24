@@ -62,6 +62,8 @@ const KIS_RULES = {
 
 const KIS_ORDER_CASH_BUFFER_KRW = 10_000;
 const KIS_DOMESTIC_BUY_SLIPPAGE_BUFFER_DEFAULT = 1.01;
+const HANUL_RECONCILE_EPSILON = 1e-6;
+const HANUL_PENDING_RECONCILE_LIMIT = 40;
 
 const KIS_OVERSEAS_RULES = {
   MIN_ORDER_USD: getMarketOrderRule('kis_overseas')?.minOrderAmount ?? 200,
@@ -203,6 +205,863 @@ async function markSignalFailedDetailed(signalId, {
       ...(meta || {}),
     },
   }).catch(() => {});
+}
+
+function isRecoverableHanulPartialFill(verification = null, paperMode = false) {
+  if (paperMode) return false;
+  const filledQty = Number(verification?.filledQty || 0);
+  const observedQty = Number(verification?.observedQty);
+  return !verification?.verified
+    && filledQty > 0
+    && Number.isFinite(observedQty)
+    && observedQty >= 0;
+}
+
+async function markHanulPartialFillPendingSignal(signalId, {
+  market = 'domestic',
+  exchange = 'kis',
+  symbol = null,
+  action = null,
+  amount = null,
+  ordNo = null,
+  expectedQty = 0,
+  verification = null,
+} = {}) {
+  if (!signalId) return;
+  const filledQty = Number(verification?.filledQty || 0);
+  const expected = Number(expectedQty || 0);
+  const reason = `부분체결 대기: ${filledQty}/${expected > 0 ? expected : '?'}주 (${verification?.status || 'fill_not_confirmed'})`;
+  await db.updateSignalBlock(signalId, {
+    status: SIGNAL_STATUS.EXECUTED,
+    reason: reason.slice(0, 180),
+    code: 'partial_fill_pending',
+  }).catch(() => {});
+  await db.mergeSignalBlockMeta(signalId, {
+    partialFillPending: {
+      market,
+      exchange,
+      symbol,
+      action,
+      amount,
+      ordNo: ordNo || null,
+      followUpRequired: true,
+      verificationStatus: verification?.status || 'fill_not_confirmed',
+      beforeQty: Number(verification?.beforeQty ?? 0),
+      observedQty: Number(verification?.observedQty ?? 0),
+      expectedQty: expected,
+      filledQty,
+    },
+  }).catch(() => {});
+}
+
+function isAcceptedHanulPendingReconcile(verification = null, {
+  ordNo = null,
+  paperMode = false,
+} = {}) {
+  if (paperMode) return false;
+  if (!ordNo) return false;
+  const status = String(verification?.status || '');
+  const filledQty = Number(verification?.filledQty || 0);
+  return !verification?.verified && status === 'fill_not_confirmed' && !(filledQty > 0);
+}
+
+async function markHanulOrderPendingReconcileSignal(signalId, {
+  market = 'domestic',
+  exchange = 'kis',
+  symbol = null,
+  action = null,
+  amount = null,
+  ordNo = null,
+  expectedQty = 0,
+  verification = null,
+} = {}) {
+  if (!signalId) return;
+  const expected = Number(expectedQty || 0);
+  const reason = `주문 접수됨 — 체결 대기 (${expected > 0 ? expected : '?'}주, ordNo=${ordNo || 'N/A'})`;
+  await db.updateSignalBlock(signalId, {
+    status: SIGNAL_STATUS.EXECUTED,
+    reason: reason.slice(0, 180),
+    code: 'order_pending_reconcile',
+  }).catch(() => {});
+  await db.mergeSignalBlockMeta(signalId, {
+    pendingReconcile: {
+      market,
+      exchange,
+      symbol,
+      action,
+      amount,
+      ordNo: ordNo || null,
+      followUpRequired: true,
+      queueStatus: 'queued',
+      verificationStatus: verification?.status || 'fill_not_confirmed',
+      beforeQty: Number(verification?.beforeQty ?? 0),
+      observedQty: Number(verification?.observedQty ?? 0),
+      expectedQty: expected,
+      filledQty: Number(verification?.filledQty ?? 0),
+      updatedAt: new Date().toISOString(),
+    },
+  }).catch(() => {});
+}
+
+async function markHanulEstimatedExecutionPrice(signalId, {
+  market = 'domestic',
+  exchange = 'kis',
+  symbol = null,
+  action = null,
+  ordNo = null,
+  price = 0,
+  filledQty = 0,
+  currency = 'KRW',
+  status = 'pending_reconcile',
+  source = 'quote_estimated',
+} = {}) {
+  if (!signalId || !ordNo) return;
+  await db.mergeSignalBlockMeta(signalId, {
+    executionPrice: {
+      status,
+      source,
+      market,
+      exchange,
+      symbol,
+      action,
+      ordNo,
+      quotePrice: Number(price || 0),
+      filledQty: Number(filledQty || 0),
+      currency,
+      updatedAt: new Date().toISOString(),
+    },
+  }).catch(() => {});
+}
+
+function parseHanulBlockMeta(blockMeta = null) {
+  if (!blockMeta) return {};
+  if (typeof blockMeta === 'object') return blockMeta;
+  if (typeof blockMeta === 'string') {
+    try {
+      const parsed = JSON.parse(blockMeta);
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+function toFiniteNumber(value, fallback = 0) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function toSafePendingQty(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric >= 0 ? numeric : 0;
+}
+
+function deriveHanulIncrementalBuyPrice({
+  beforeQty = 0,
+  beforeAvgPrice = 0,
+  afterQty = 0,
+  afterAvgPrice = 0,
+  filledQty = 0,
+} = {}) {
+  const beforeQuantity = toSafePendingQty(beforeQty);
+  const afterQuantity = toSafePendingQty(afterQty);
+  const beforeAvg = toFiniteNumber(beforeAvgPrice, 0);
+  const afterAvg = toFiniteNumber(afterAvgPrice, 0);
+  const filled = toSafePendingQty(filledQty);
+  if (!(filled > HANUL_RECONCILE_EPSILON)) return 0;
+  if (!(afterQuantity > HANUL_RECONCILE_EPSILON) || !(afterAvg > 0)) return 0;
+
+  const beforeCost = Math.max(0, beforeQuantity * Math.max(0, beforeAvg));
+  const afterCost = Math.max(0, afterQuantity * afterAvg);
+  const incrementalCost = Math.max(0, afterCost - beforeCost);
+  if (!(incrementalCost > 0)) return 0;
+
+  const derived = incrementalCost / filled;
+  if (!(derived > 0)) return 0;
+  return derived;
+}
+
+export function classifyHanulPendingReconcileState({
+  expectedQty = 0,
+  filledQty = 0,
+  verified = false,
+} = {}) {
+  const expected = toSafePendingQty(expectedQty);
+  const filled = toSafePendingQty(filledQty);
+  const completed = Boolean(verified) || (expected > 0 && filled + HANUL_RECONCILE_EPSILON >= expected);
+  if (completed) {
+    return {
+      completed: true,
+      code: 'order_reconciled',
+      queueStatus: 'completed',
+      followUpRequired: false,
+    };
+  }
+  if (filled > HANUL_RECONCILE_EPSILON) {
+    return {
+      completed: false,
+      code: 'partial_fill_pending',
+      queueStatus: 'partial_pending',
+      followUpRequired: true,
+    };
+  }
+  return {
+    completed: false,
+    code: 'order_pending_reconcile',
+    queueStatus: 'queued',
+    followUpRequired: true,
+  };
+}
+
+export function buildHanulPendingReconcilePayload(signal = {}) {
+  if (!signal || typeof signal !== 'object') return null;
+  const blockMeta = parseHanulBlockMeta(signal.block_meta);
+  const pendingMeta = blockMeta.pendingReconcile && typeof blockMeta.pendingReconcile === 'object'
+    ? blockMeta.pendingReconcile
+    : null;
+  const partialMeta = blockMeta.partialFillPending && typeof blockMeta.partialFillPending === 'object'
+    ? blockMeta.partialFillPending
+    : null;
+
+  let sourceKey = null;
+  let sourceMeta = null;
+  if (signal.block_code === 'partial_fill_pending' && partialMeta) {
+    sourceKey = 'partialFillPending';
+    sourceMeta = partialMeta;
+  } else if (signal.block_code === 'order_pending_reconcile' && pendingMeta) {
+    sourceKey = 'pendingReconcile';
+    sourceMeta = pendingMeta;
+  } else if (pendingMeta?.followUpRequired !== false) {
+    sourceKey = 'pendingReconcile';
+    sourceMeta = pendingMeta;
+  } else if (partialMeta?.followUpRequired !== false) {
+    sourceKey = 'partialFillPending';
+    sourceMeta = partialMeta;
+  } else if (partialMeta) {
+    sourceKey = 'partialFillPending';
+    sourceMeta = partialMeta;
+  } else if (pendingMeta) {
+    sourceKey = 'pendingReconcile';
+    sourceMeta = pendingMeta;
+  } else {
+    return null;
+  }
+
+  const exchange = String(sourceMeta?.exchange || signal.exchange || '').trim() || 'kis';
+  const market = sourceMeta?.market || (exchange === 'kis_overseas' ? 'overseas' : 'domestic');
+  const symbol = String(sourceMeta?.symbol || signal.symbol || '').trim().toUpperCase();
+  const action = String(sourceMeta?.action || signal.action || '').trim().toUpperCase();
+  const expectedQty = toSafePendingQty(sourceMeta?.expectedQty);
+  const beforeQty = toSafePendingQty(sourceMeta?.beforeQty);
+  const observedQty = toSafePendingQty(sourceMeta?.observedQty);
+  const filledQty = toSafePendingQty(sourceMeta?.filledQty);
+  const followUpRequired = sourceMeta?.followUpRequired !== false;
+  const queueStatus = String(sourceMeta?.queueStatus || 'queued');
+  const ordNo = sourceMeta?.ordNo ? String(sourceMeta.ordNo) : null;
+  const tradeMode = signal.trade_mode || getInvestmentTradeMode();
+
+  return {
+    signal,
+    blockMeta,
+    sourceKey,
+    sourceMeta,
+    market,
+    exchange,
+    symbol,
+    action,
+    amount: toFiniteNumber(sourceMeta?.amount ?? signal.amount_usdt ?? 0, 0),
+    ordNo,
+    expectedQty,
+    beforeQty,
+    observedQty,
+    filledQty,
+    followUpRequired,
+    queueStatus,
+    tradeMode,
+    executionPriceMeta: blockMeta.executionPrice && typeof blockMeta.executionPrice === 'object'
+      ? blockMeta.executionPrice
+      : {},
+  };
+}
+
+async function resolveHanulReconcilePrice({
+  kis,
+  market = 'domestic',
+  symbol = null,
+  executionPriceMeta = null,
+} = {}) {
+  const estimated = toFiniteNumber(executionPriceMeta?.quotePrice || executionPriceMeta?.price || 0, 0);
+  if (estimated > 0) {
+    return { price: estimated, source: 'execution_meta_estimated' };
+  }
+  if (!kis || !symbol) return { price: 0, source: 'missing_symbol' };
+  try {
+    if (market === 'domestic' && typeof kis.getDomesticPrice === 'function') {
+      const price = toFiniteNumber(await kis.getDomesticPrice(symbol, isKisPaper()), 0);
+      if (price > 0) return { price, source: 'domestic_quote' };
+    }
+    if (market === 'overseas' && typeof kis.getOverseasQuote === 'function') {
+      const quote = await kis.getOverseasQuote(symbol);
+      const price = toFiniteNumber(quote?.price, 0);
+      if (price > 0) return { price, source: 'overseas_quote' };
+    }
+  } catch {
+    return { price: 0, source: 'quote_lookup_failed' };
+  }
+  return { price: 0, source: 'quote_unavailable' };
+}
+
+async function mergeHanulOpenJournalEntryForReconcileBuy({
+  market,
+  exchange,
+  signal,
+  trade,
+  paperMode = false,
+} = {}) {
+  const tradeMode = trade?.tradeMode || signal?.trade_mode || getInvestmentTradeMode();
+  const openEntries = await journalDb.getOpenJournalEntries(market).catch(() => []);
+  const scopedEntries = openEntries.filter((entry) => (
+    entry.symbol === trade.symbol
+      && Boolean(entry.is_paper) === Boolean(paperMode)
+      && String(entry.exchange || '') === String(exchange || '')
+      && String(entry.trade_mode || 'normal') === String(tradeMode || 'normal')
+  ));
+
+  if (scopedEntries.length !== 1) {
+    await recordHanulEntryJournal({
+      market,
+      exchange,
+      signalId: signal?.id || trade?.signalId || null,
+      symbol: trade.symbol,
+      trade,
+      paperMode,
+      confidence: signal?.confidence ?? null,
+      reasoning: signal?.reasoning ?? null,
+    });
+    return {
+      mode: scopedEntries.length === 0 ? 'created_new_entry' : 'multi_open_entries_created_new',
+      tradeId: null,
+    };
+  }
+
+  const entry = scopedEntries[0];
+  const currentSize = toFiniteNumber(entry.entry_size, 0);
+  const currentValue = toFiniteNumber(entry.entry_value, 0);
+  const addedSize = toSafePendingQty(trade.amount);
+  const addedValue = toFiniteNumber(trade.totalUsdt, 0);
+  const nextSize = currentSize + addedSize;
+  const nextValue = currentValue + addedValue;
+  const nextPrice = nextSize > 0
+    ? (nextValue / nextSize)
+    : toFiniteNumber(trade.price, toFiniteNumber(entry.entry_price, 0));
+
+  await db.run(
+    `UPDATE trade_journal
+        SET entry_size = $1,
+            entry_value = $2,
+            entry_price = $3
+      WHERE trade_id = $4`,
+    [nextSize, nextValue, nextPrice, entry.trade_id],
+  );
+
+  return {
+    mode: 'merged_existing_entry',
+    tradeId: entry.trade_id,
+    beforeSize: currentSize,
+    afterSize: nextSize,
+  };
+}
+
+async function applyHanulPendingReconcileDelta({
+  kis,
+  pending,
+  verification,
+  incrementalQty,
+  dryRun = true,
+} = {}) {
+  const signal = pending.signal;
+  const action = pending.action;
+  const side = action === ACTIONS.SELL ? 'sell' : 'buy';
+  const currency = pending.market === 'domestic' ? 'KRW' : 'USD';
+  const tag = '[RECONCILE]';
+  const tradeMode = pending.tradeMode || getInvestmentTradeMode();
+  const journalContext = buildHanulSignalJournalContext(signal);
+
+  let existingPosition = null;
+  let existingAmount = 0;
+  let existingAvg = 0;
+  let brokerAfterSnapshot = null;
+  let executionPrice = 0;
+  let priceSource = 'unresolved';
+  let priceTrusted = false;
+
+  if (side === 'buy') {
+    existingPosition = await db.getLivePosition(pending.symbol, pending.exchange, tradeMode).catch(() => null);
+    existingAmount = toSafePendingQty(existingPosition?.amount);
+    existingAvg = toFiniteNumber(existingPosition?.avg_price || existingPosition?.avgPrice, 0);
+    brokerAfterSnapshot = await getHanulBrokerHoldingSnapshot({
+      kis,
+      symbol: pending.symbol,
+      market: pending.market,
+    });
+    const derivedBuyPrice = deriveHanulIncrementalBuyPrice({
+      beforeQty: existingAmount,
+      beforeAvgPrice: existingAvg,
+      afterQty: toSafePendingQty(brokerAfterSnapshot?.qty || verification?.observedQty),
+      afterAvgPrice: toFiniteNumber(brokerAfterSnapshot?.avgPrice, 0),
+      filledQty: incrementalQty,
+    });
+    if (derivedBuyPrice > 0) {
+      executionPrice = derivedBuyPrice;
+      priceSource = 'broker_avg_cost_delta';
+      priceTrusted = true;
+    }
+  }
+
+  if (!(executionPrice > 0)) {
+    const quote = await resolveHanulReconcilePrice({
+      kis,
+      market: pending.market,
+      symbol: pending.symbol,
+      executionPriceMeta: pending.executionPriceMeta,
+    });
+    executionPrice = toFiniteNumber(quote.price, 0);
+    priceSource = quote.source || 'quote_unavailable';
+  }
+
+  const trade = {
+    signalId: signal.id,
+    symbol: pending.symbol,
+    side,
+    amount: incrementalQty,
+    price: executionPrice,
+    totalUsdt: incrementalQty * executionPrice,
+    paper: false,
+    exchange: pending.exchange,
+    tradeMode,
+    executionOrigin: journalContext.executionOrigin,
+    qualityFlag: journalContext.qualityFlag,
+    excludeFromLearning: journalContext.excludeFromLearning,
+    incidentLink: journalContext.incidentLink,
+  };
+
+  if (dryRun) {
+    return {
+      applied: false,
+      dryRun: true,
+      trade,
+      market: pending.market,
+      side,
+      priceSource,
+      priceTrusted,
+    };
+  }
+
+  await finalizeHanulTrade({ trade, signalId: signal.id, currency, tag });
+
+  if (side === 'buy') {
+    const observedQty = toSafePendingQty(verification?.observedQty);
+    const brokerObservedQty = toSafePendingQty(brokerAfterSnapshot?.qty);
+    const targetAmount = brokerObservedQty > HANUL_RECONCILE_EPSILON
+      ? brokerObservedQty
+      : (observedQty > HANUL_RECONCILE_EPSILON
+      ? observedQty
+      : (existingAmount + incrementalQty));
+    if (targetAmount > HANUL_RECONCILE_EPSILON) {
+      const brokerAvg = toFiniteNumber(brokerAfterSnapshot?.avgPrice, 0);
+      const combinedAmount = existingAmount + incrementalQty;
+      let blendedAvg = existingAvg > 0 ? existingAvg : executionPrice;
+      if (brokerAvg > 0) {
+        blendedAvg = brokerAvg;
+      } else if (combinedAmount > HANUL_RECONCILE_EPSILON && executionPrice > 0) {
+        blendedAvg = ((existingAmount * existingAvg) + (incrementalQty * executionPrice)) / combinedAmount;
+      }
+      await db.upsertPosition({
+        symbol: pending.symbol,
+        amount: targetAmount,
+        avgPrice: blendedAvg,
+        unrealizedPnl: toFiniteNumber(existingPosition?.unrealized_pnl || existingPosition?.unrealizedPnl, 0),
+        exchange: pending.exchange,
+        paper: false,
+        tradeMode,
+      });
+    }
+    await mergeHanulOpenJournalEntryForReconcileBuy({
+      market: pending.market,
+      exchange: pending.exchange,
+      signal,
+      trade,
+      paperMode: false,
+    }).catch((error) => {
+      console.warn(`  ⚠️ [한울] reconcile BUY journal merge 실패 ${pending.symbol}: ${error.message}`);
+    });
+    await attachExecutionToPositionStrategyTracked({
+      trade,
+      signal,
+      dryRun: false,
+      requireOpenPosition: true,
+    }).catch((error) => {
+      console.warn(`  ⚠️ [한울] reconcile BUY execution attach 실패 ${pending.symbol}: ${error.message}`);
+    });
+  } else {
+    const existingPosition = await db.getLivePosition(pending.symbol, pending.exchange, tradeMode).catch(() => null);
+    const existingAmount = toSafePendingQty(existingPosition?.amount);
+    const observedQty = toSafePendingQty(verification?.observedQty);
+    const remainingAmount = observedQty > HANUL_RECONCILE_EPSILON
+      ? observedQty
+      : Math.max(0, existingAmount - incrementalQty);
+    if (remainingAmount > HANUL_RECONCILE_EPSILON) {
+      await db.upsertPosition({
+        symbol: pending.symbol,
+        amount: remainingAmount,
+        avgPrice: toFiniteNumber(existingPosition?.avg_price || existingPosition?.avgPrice, 0),
+        unrealizedPnl: toFiniteNumber(existingPosition?.unrealized_pnl || existingPosition?.unrealizedPnl, 0),
+        exchange: pending.exchange,
+        paper: false,
+        tradeMode,
+      });
+    } else {
+      await db.deletePosition(pending.symbol, {
+        exchange: pending.exchange,
+        paper: false,
+        tradeMode,
+      });
+    }
+
+    const priorObservedQty = toSafePendingQty(pending.observedQty || pending.beforeQty || existingAmount);
+    const derivedPartialRatio = priorObservedQty > HANUL_RECONCILE_EPSILON
+      ? normalizePartialExitRatio(Math.min(1, incrementalQty / priorObservedQty))
+      : null;
+    await closeOpenJournalForSymbol(
+      pending.symbol,
+      pending.market,
+      false,
+      executionPrice,
+      trade.totalUsdt,
+      signal.exit_reason_override || 'sell_reconcile',
+      tradeMode,
+      {
+        partialExitRatio: derivedPartialRatio,
+        soldAmount: incrementalQty,
+        signalId: signal.id,
+        executionOrigin: trade.executionOrigin,
+        qualityFlag: trade.qualityFlag,
+        excludeFromLearning: trade.excludeFromLearning,
+        incidentLink: trade.incidentLink,
+      },
+    ).catch((error) => {
+      console.warn(`  ⚠️ [한울] reconcile SELL journal close 실패 ${pending.symbol}: ${error.message}`);
+    });
+  }
+
+  return {
+    applied: true,
+    dryRun: false,
+    trade,
+    market: pending.market,
+    side,
+    priceSource,
+    priceTrusted,
+  };
+}
+
+async function updateHanulPendingReconcileMetadata(pending, {
+  verification,
+  expectedQty,
+  nextFilledQty,
+  queueStatus,
+  followUpRequired,
+  stateCode,
+  reason,
+  dryRun,
+  executionPrice = null,
+} = {}) {
+  const signalId = pending?.signal?.id;
+  if (!signalId) return;
+
+  const nowIso = new Date().toISOString();
+  const nextMeta = {
+    ...pending.sourceMeta,
+    market: pending.market,
+    exchange: pending.exchange,
+    symbol: pending.symbol,
+    action: pending.action,
+    ordNo: pending.ordNo || pending.sourceMeta?.ordNo || null,
+    expectedQty: toSafePendingQty(expectedQty),
+    beforeQty: toSafePendingQty(verification?.beforeQty ?? pending.beforeQty),
+    observedQty: toSafePendingQty(verification?.observedQty ?? pending.observedQty),
+    filledQty: toSafePendingQty(nextFilledQty),
+    verificationStatus: verification?.status || pending.sourceMeta?.verificationStatus || null,
+    queueStatus,
+    followUpRequired,
+    lastCheckedAt: nowIso,
+    updatedAt: nowIso,
+  };
+  if (followUpRequired) {
+    nextMeta.completedAt = null;
+  } else {
+    nextMeta.completedAt = nowIso;
+  }
+
+  if (dryRun) return;
+
+  await db.updateSignalBlock(signalId, {
+    status: SIGNAL_STATUS.EXECUTED,
+    reason: reason ? String(reason).slice(0, 180) : null,
+    code: stateCode,
+  }).catch(() => {});
+  await db.mergeSignalBlockMeta(signalId, {
+    [pending.sourceKey]: nextMeta,
+  }).catch(() => {});
+
+  if (executionPrice && executionPrice.price > 0) {
+    const prevExecutionMeta = pending.executionPriceMeta && typeof pending.executionPriceMeta === 'object'
+      ? pending.executionPriceMeta
+      : {};
+    const trusted = executionPrice.trusted === true;
+    await db.mergeSignalBlockMeta(signalId, {
+      executionPrice: {
+        ...prevExecutionMeta,
+        status: followUpRequired
+          ? 'pending_reconcile'
+          : (trusted ? 'reconciled' : 'estimated_reconciled'),
+        source: executionPrice.source || prevExecutionMeta.source || 'quote_estimated',
+        market: pending.market,
+        exchange: pending.exchange,
+        symbol: pending.symbol,
+        action: pending.action,
+        ordNo: pending.ordNo || prevExecutionMeta.ordNo || null,
+        quotePrice: executionPrice.price,
+        filledQty: toSafePendingQty(nextFilledQty),
+        currency: pending.market === 'domestic' ? 'KRW' : 'USD',
+        updatedAt: nowIso,
+      },
+    }).catch(() => {});
+  }
+}
+
+async function reconcileSingleHanulPendingSignal({
+  kis,
+  pending,
+  dryRun = true,
+} = {}) {
+  const { signal } = pending;
+  const expectedQty = toSafePendingQty(pending.expectedQty);
+  const beforeQty = toSafePendingQty(pending.beforeQty);
+  const previousFilledQty = toSafePendingQty(pending.filledQty);
+
+  if (!pending.symbol || !pending.action || !(expectedQty > 0) || !(beforeQty >= 0)) {
+    const reason = 'pending reconcile 메타 불완전';
+    await updateHanulPendingReconcileMetadata(pending, {
+      verification: null,
+      expectedQty,
+      nextFilledQty: previousFilledQty,
+      queueStatus: 'invalid_meta',
+      followUpRequired: false,
+      stateCode: 'order_pending_reconcile_invalid_meta',
+      reason,
+      dryRun,
+    });
+    return {
+      signalId: signal.id,
+      symbol: pending.symbol,
+      action: pending.action,
+      ok: false,
+      status: 'invalid_meta',
+      expectedQty,
+      beforeQty,
+      previousFilledQty,
+      incrementalQty: 0,
+    };
+  }
+
+  const verification = await verifyHanulOrderFill({
+    kis,
+    symbol: pending.symbol,
+    market: pending.market,
+    side: pending.action,
+    expectedQty,
+    beforeQty,
+    paperMode: false,
+    ordNo: pending.ordNo || null,
+  });
+  const nextFilledQty = toSafePendingQty(verification?.filledQty);
+  const incrementalQty = Math.max(0, nextFilledQty - previousFilledQty);
+  const state = classifyHanulPendingReconcileState({
+    expectedQty,
+    filledQty: nextFilledQty,
+    verified: verification?.verified,
+  });
+
+  let applyResult = null;
+  if (incrementalQty > HANUL_RECONCILE_EPSILON) {
+    applyResult = await applyHanulPendingReconcileDelta({
+      kis,
+      pending,
+      verification,
+      incrementalQty,
+      dryRun,
+    });
+  }
+
+  const reason = state.completed
+    ? `주문 체결 정산 완료 ${nextFilledQty}/${expectedQty}주`
+    : (nextFilledQty > HANUL_RECONCILE_EPSILON
+      ? `부분체결 대기 ${nextFilledQty}/${expectedQty}주`
+      : `주문 체결 대기 (${expectedQty}주, ordNo=${pending.ordNo || 'N/A'})`);
+
+  await updateHanulPendingReconcileMetadata(pending, {
+    verification,
+    expectedQty,
+    nextFilledQty,
+    queueStatus: state.queueStatus,
+    followUpRequired: state.followUpRequired,
+    stateCode: state.code,
+    reason,
+    dryRun,
+    executionPrice: applyResult
+      ? {
+        price: toFiniteNumber(applyResult?.trade?.price, 0),
+        source: applyResult?.priceSource || null,
+        trusted: applyResult?.priceTrusted === true,
+      }
+      : null,
+  });
+
+  const lifecycleStatus = pending.action === ACTIONS.BUY
+    ? (state.completed ? 'position_open' : 'position_open_partial_fill_pending')
+    : (
+      state.completed && toSafePendingQty(verification?.observedQty) <= HANUL_RECONCILE_EPSILON
+        ? 'position_closed'
+        : (state.completed ? 'partial_exit_executed' : 'partial_exit_pending')
+    );
+  const recommendation = pending.action === ACTIONS.BUY ? 'HOLD' : 'ADJUST';
+
+  if (!dryRun) {
+    await syncHanulStrategyExecutionState({
+      symbol: pending.symbol,
+      exchange: pending.exchange,
+      tradeMode: pending.tradeMode,
+      lifecycleStatus,
+      recommendation,
+      reasonCode: state.code,
+      reason,
+      trade: applyResult?.trade || null,
+      updatedBy: 'hanul_pending_reconcile',
+    });
+  }
+
+  return {
+    signalId: signal.id,
+    symbol: pending.symbol,
+    exchange: pending.exchange,
+    action: pending.action,
+    ordNo: pending.ordNo || null,
+    ok: true,
+    status: state.code,
+    queueStatus: state.queueStatus,
+    followUpRequired: state.followUpRequired,
+    expectedQty,
+    beforeQty,
+    previousFilledQty,
+    observedQty: toSafePendingQty(verification?.observedQty),
+    filledQty: nextFilledQty,
+    incrementalQty,
+    applied: applyResult?.applied || false,
+    dryRun,
+  };
+}
+
+export async function processHanulPendingReconcileQueue({
+  limit = HANUL_PENDING_RECONCILE_LIMIT,
+  dryRun = true,
+  confirmLive = false,
+  includePartialFill = true,
+  delayMs = 250,
+} = {}) {
+  if (!dryRun && confirmLive !== true) {
+    return {
+      ok: false,
+      blocked: true,
+      reason: 'confirm_live_required',
+      message: '라이브 pending reconcile을 실행하려면 --write --confirm-live를 함께 지정하세요.',
+      candidates: 0,
+      processed: 0,
+      dryRun: false,
+    };
+  }
+
+  await ensureHanulHubSecretsLoaded();
+  await db.initSchema();
+  await journalDb.initJournalSchema();
+
+  const cappedLimit = Math.max(1, Math.min(200, Number(limit) || HANUL_PENDING_RECONCILE_LIMIT));
+  const rows = await db.query(
+    `SELECT *
+       FROM signals
+      WHERE status = $1
+        AND exchange IN ('kis', 'kis_overseas')
+        AND COALESCE(block_code, '') IN ('order_pending_reconcile', 'partial_fill_pending')
+      ORDER BY created_at ASC
+      LIMIT $2`,
+    [SIGNAL_STATUS.EXECUTED, cappedLimit],
+  );
+
+  const candidates = rows
+    .map((signal) => buildHanulPendingReconcilePayload(signal))
+    .filter((item) => item && item.followUpRequired);
+  const filtered = includePartialFill
+    ? candidates
+    : candidates.filter((item) => item.sourceKey !== 'partialFillPending');
+
+  if (filtered.length === 0) {
+    return {
+      ok: true,
+      dryRun,
+      confirmLive,
+      candidates: 0,
+      processed: 0,
+      summary: {
+        completed: 0,
+        partial: 0,
+        queued: 0,
+        invalid: 0,
+        applyCount: 0,
+      },
+      results: [],
+    };
+  }
+
+  const kis = await getKis();
+  const results = [];
+  for (const pending of filtered) {
+    const result = await reconcileSingleHanulPendingSignal({
+      kis,
+      pending,
+      dryRun,
+    });
+    results.push(result);
+    if (delayMs > 0) await sleep(delayMs);
+  }
+
+  const summary = {
+    completed: results.filter((row) => row.status === 'order_reconciled').length,
+    partial: results.filter((row) => row.status === 'partial_fill_pending').length,
+    queued: results.filter((row) => row.status === 'order_pending_reconcile').length,
+    invalid: results.filter((row) => row.status === 'invalid_meta' || row.status === 'order_pending_reconcile_invalid_meta').length,
+    applyCount: results.filter((row) => row.applied).length,
+  };
+
+  return {
+    ok: true,
+    dryRun,
+    confirmLive,
+    candidates: filtered.length,
+    processed: results.length,
+    summary,
+    results,
+  };
 }
 
 async function recordHanulEntryJournal({
@@ -984,6 +1843,15 @@ async function getHanulBrokerHoldingQty({
   symbol,
   market = 'domestic',
 } = {}) {
+  const snapshot = await getHanulBrokerHoldingSnapshot({ kis, symbol, market });
+  return Number.isFinite(snapshot?.qty) ? Number(snapshot.qty) : null;
+}
+
+async function getHanulBrokerHoldingSnapshot({
+  kis,
+  symbol,
+  market = 'domestic',
+} = {}) {
   if (!kis || !symbol) return null;
   const normalizedSymbol = String(symbol || '').toUpperCase();
   const brokerPaperMode = isKisPaper();
@@ -993,14 +1861,58 @@ async function getHanulBrokerHoldingQty({
       const balance = await kis.getDomesticBalance(brokerPaperMode);
       const holdings = Array.isArray(balance?.holdings) ? balance.holdings : [];
       const row = holdings.find((item) => String(item?.symbol || '') === normalizedSymbol);
-      return Number(row?.qty || 0);
+      return {
+        qty: Number(row?.qty || 0),
+        avgPrice: Number(row?.avg_price || row?.avgPrice || 0),
+        symbol: normalizedSymbol,
+        market: 'domestic',
+        exchange: 'kis',
+      };
     }
     if (market === 'overseas') {
       if (typeof kis.getOverseasBalance !== 'function') return null;
       const balance = await kis.getOverseasBalance(brokerPaperMode);
       const holdings = Array.isArray(balance?.holdings) ? balance.holdings : [];
       const row = holdings.find((item) => String(item?.symbol || '').toUpperCase() === normalizedSymbol);
-      return Number(row?.qty || 0);
+      return {
+        qty: Number(row?.qty || 0),
+        avgPrice: Number(row?.avg_price || row?.avgPrice || 0),
+        symbol: normalizedSymbol,
+        market: 'overseas',
+        exchange: 'kis_overseas',
+      };
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+async function getHanulOrderFillSnapshot({
+  kis,
+  symbol,
+  market = 'domestic',
+  side = ACTIONS.BUY,
+  ordNo = null,
+  paperMode = false,
+} = {}) {
+  if (!kis || !ordNo || paperMode) return null;
+  try {
+    if (market === 'domestic' && typeof kis.getDomesticOrderFillByOrdNo === 'function') {
+      return await kis.getDomesticOrderFillByOrdNo({
+        symbol,
+        ordNo,
+        side,
+        paper: isKisPaper(),
+      });
+    }
+    if (market === 'overseas' && typeof kis.getOverseasOrderFillByOrdNo === 'function') {
+      return await kis.getOverseasOrderFillByOrdNo({
+        symbol,
+        ordNo,
+        side,
+        paper: isKisPaper(),
+      });
     }
   } catch {
     return null;
@@ -1058,9 +1970,38 @@ async function verifyHanulOrderFill({
 
   const maxPolls = Math.max(1, Number(process.env.KIS_FILL_VERIFY_MAX_POLLS || 6));
   const pollIntervalMs = Math.max(500, Number(process.env.KIS_FILL_VERIFY_INTERVAL_MS || 1200));
+  let lastFillSnapshot = null;
 
   for (let attempt = 0; attempt < maxPolls; attempt += 1) {
     if (attempt > 0) await sleep(pollIntervalMs * attempt);
+    if (ordNo) {
+      const fillSnapshot = await getHanulOrderFillSnapshot({
+        kis,
+        symbol,
+        market,
+        side,
+        ordNo,
+        paperMode,
+      });
+      if (fillSnapshot && typeof fillSnapshot === 'object') {
+        lastFillSnapshot = fillSnapshot;
+        const apiFilledQty = Number(fillSnapshot.filledQty || 0);
+        if (apiFilledQty >= Math.max(0, expected - 1e-6)) {
+          return {
+            verified: true,
+            status: 'filled_complete',
+            beforeQty: before,
+            observedQty: null,
+            filledQty: apiFilledQty,
+            avgPrice: Number(fillSnapshot.avgPrice || 0),
+            totalAmount: Number(fillSnapshot.totalAmount || 0),
+            fillSource: fillSnapshot.source || 'order_fill_api',
+            ordNo: ordNo || null,
+          };
+        }
+      }
+    }
+
     const observed = await getHanulBrokerHoldingQty({ kis, symbol, market });
     if (!(Number.isFinite(observed) && observed >= 0)) continue;
 
@@ -1075,6 +2016,9 @@ async function verifyHanulOrderFill({
         beforeQty: before,
         observedQty: observed,
         filledQty: delta,
+        avgPrice: Number(lastFillSnapshot?.avgPrice || 0),
+        totalAmount: Number(lastFillSnapshot?.totalAmount || 0),
+        fillSource: lastFillSnapshot?.source || 'holding_delta',
         ordNo: ordNo || null,
       };
     }
@@ -1086,12 +2030,20 @@ async function verifyHanulOrderFill({
       ? Math.max(0, finalObserved - before)
       : Math.max(0, before - finalObserved))
     : 0;
+  const apiFilled = Number(lastFillSnapshot?.filledQty || 0);
+  const mergedFilledQty = Math.max(finalDelta, apiFilled);
+  const avgPrice = Number(lastFillSnapshot?.avgPrice || 0);
+  const totalAmount = Number(lastFillSnapshot?.totalAmount || 0);
+  const partialStatus = mergedFilledQty > 0 ? 'partial_filled' : 'fill_not_confirmed';
   return {
-    verified: false,
-    status: 'fill_not_confirmed',
+    verified: mergedFilledQty >= Math.max(0, expected - 1e-6),
+    status: mergedFilledQty >= Math.max(0, expected - 1e-6) ? 'filled_complete' : partialStatus,
     beforeQty: before,
     observedQty: Number.isFinite(finalObserved) ? finalObserved : null,
-    filledQty: finalDelta,
+    filledQty: mergedFilledQty,
+    avgPrice,
+    totalAmount,
+    fillSource: lastFillSnapshot?.source || 'holding_delta',
     ordNo: ordNo || null,
   };
 }
@@ -1206,6 +2158,8 @@ export async function executeSignal(signal) {
 
     const kis = await getKis();
     let trade;
+    let pendingPartialFill = null;
+    let estimatedExecutionPrice = null;
 
     if (action === ACTIONS.BUY) {
       const buyEntryState = await ensureHanulBuyEntryAllowed({
@@ -1224,11 +2178,12 @@ export async function executeSignal(signal) {
         console.log(`  🎛️ [execution tone] ${symbol} 책임계획 반영 x${domesticBuySizing.multiplier.toFixed(2)} (${domesticBuySizing.reason})`);
       }
 
-      const domesticBuyBeforeQty = await getHanulBrokerHoldingQty({
+      const domesticBuyBeforeSnapshot = await getHanulBrokerHoldingSnapshot({
         kis,
         symbol,
         market: 'domestic',
       });
+      const domesticBuyBeforeQty = Number(domesticBuyBeforeSnapshot?.qty);
       if (!paperMode && !(Number.isFinite(domesticBuyBeforeQty) && domesticBuyBeforeQty >= 0)) {
         return failHanulSignal(signalId, {
           reason: '국내주식 체결 검증용 보유수량 스냅샷 조회 실패',
@@ -1252,7 +2207,12 @@ export async function executeSignal(signal) {
         paperMode,
         ordNo: order?.ordNo || null,
       });
-      if (!domesticBuyVerification.verified) {
+      const domesticBuyPartialFill = isRecoverableHanulPartialFill(domesticBuyVerification, paperMode);
+      const domesticBuyPendingReconcile = isAcceptedHanulPendingReconcile(domesticBuyVerification, {
+        ordNo: order?.ordNo || null,
+        paperMode,
+      });
+      if (!domesticBuyVerification.verified && !domesticBuyPartialFill && !domesticBuyPendingReconcile) {
         return failHanulSignal(signalId, {
           reason: `국내주식 주문 체결 미확정 (${domesticBuyVerification.status})`,
           code: 'order_fill_unverified',
@@ -1269,6 +2229,35 @@ export async function executeSignal(signal) {
             filledQty: domesticBuyVerification.filledQty,
           },
         });
+      }
+      if (domesticBuyPendingReconcile) {
+        await markHanulOrderPendingReconcileSignal(signalId, {
+          market: 'domestic',
+          exchange: 'kis',
+          symbol,
+          action,
+          amount: effectiveBuyAmountKrw,
+          ordNo: order?.ordNo || null,
+          expectedQty: Number(order?.qty || 0),
+          verification: domesticBuyVerification,
+        });
+        await syncHanulStrategyExecutionState({
+          symbol,
+          exchange: 'kis',
+          tradeMode: signalTradeMode,
+          lifecycleStatus: 'entry_order_pending_reconcile',
+          recommendation: 'HOLD',
+          reasonCode: 'order_pending_reconcile',
+          reason: 'BUY 주문 접수 - 체결 대기',
+          updatedBy: 'hanul_buy_order_pending',
+        });
+        return {
+          success: true,
+          pending: true,
+          code: 'order_pending_reconcile',
+          ordNo: order?.ordNo || null,
+          verificationStatus: domesticBuyVerification.status,
+        };
       }
 
       const domesticFilledQty = Number(
@@ -1295,7 +2284,29 @@ export async function executeSignal(signal) {
         });
       }
 
-      const domesticFillPrice = Number(order?.price || 0);
+      const domesticBuyAfterSnapshot = !paperMode
+        ? await getHanulBrokerHoldingSnapshot({
+          kis,
+          symbol,
+          market: 'domestic',
+        })
+        : null;
+      const domesticDerivedBuyPrice = !paperMode
+        ? deriveHanulIncrementalBuyPrice({
+          beforeQty: domesticBuyBeforeSnapshot?.qty,
+          beforeAvgPrice: domesticBuyBeforeSnapshot?.avgPrice,
+          afterQty: domesticBuyAfterSnapshot?.qty ?? domesticBuyVerification?.observedQty,
+          afterAvgPrice: domesticBuyAfterSnapshot?.avgPrice,
+          filledQty: domesticFilledQty,
+        })
+        : 0;
+      const domesticVerifiedFillPrice = Number(domesticBuyVerification.avgPrice || 0);
+      const domesticFillPrice = domesticDerivedBuyPrice > 0
+        ? domesticDerivedBuyPrice
+        : domesticVerifiedFillPrice > 0
+          ? domesticVerifiedFillPrice
+          : Number(order?.price || 0);
+      const domesticPartialFillPending = !domesticBuyVerification.verified && domesticBuyPartialFill;
       trade = {
         signalId, symbol, side: 'buy',
         amount:    domesticFilledQty,
@@ -1304,6 +2315,9 @@ export async function executeSignal(signal) {
         paper:     paperMode,
         exchange:  'kis',
         tradeMode: signalTradeMode,
+        memo: domesticPartialFillPending
+          ? `부분체결 ${domesticFilledQty}/${Number(order?.qty || 0)}주 — 주문번호 ${order?.ordNo || 'N/A'} 잔여 체결 대기`
+          : null,
         executionOrigin: journalContext.executionOrigin,
         qualityFlag: journalContext.qualityFlag,
         excludeFromLearning: journalContext.excludeFromLearning,
@@ -1312,10 +2326,15 @@ export async function executeSignal(signal) {
 
       await db.upsertPosition({
         symbol,
-        amount: !paperMode && Number.isFinite(Number(domesticBuyVerification.observedQty))
-          ? Number(domesticBuyVerification.observedQty)
-          : domesticFilledQty,
-        avgPrice: domesticFillPrice || 0,
+        amount:
+          !paperMode && Number.isFinite(Number(domesticBuyAfterSnapshot?.qty))
+            ? Number(domesticBuyAfterSnapshot?.qty)
+            : !paperMode && Number.isFinite(Number(domesticBuyVerification?.observedQty))
+              ? Number(domesticBuyVerification?.observedQty)
+              : domesticFilledQty,
+        avgPrice: !paperMode && Number.isFinite(Number(domesticBuyAfterSnapshot?.avgPrice)) && Number(domesticBuyAfterSnapshot?.avgPrice) > 0
+          ? Number(domesticBuyAfterSnapshot?.avgPrice)
+          : (domesticFillPrice || 0),
         unrealizedPnl: 0,
         exchange: 'kis',
         paper: paperMode,
@@ -1335,12 +2354,12 @@ export async function executeSignal(signal) {
         symbol,
         exchange: 'kis',
         tradeMode: signalTradeMode,
-        lifecycleStatus: 'position_open',
+        lifecycleStatus: domesticPartialFillPending ? 'position_open_partial_fill_pending' : 'position_open',
         recommendation: 'HOLD',
-        reasonCode: 'buy_executed',
-        reason: 'BUY 체결 완료',
+        reasonCode: domesticPartialFillPending ? 'partial_fill_pending' : 'buy_executed',
+        reason: domesticPartialFillPending ? 'BUY 부분체결 - 잔여 체결 대기' : 'BUY 체결 완료',
         trade,
-        updatedBy: 'hanul_buy_execute',
+        updatedBy: domesticPartialFillPending ? 'hanul_buy_partial_pending' : 'hanul_buy_execute',
       });
 
       await recordHanulEntryJournal({
@@ -1353,6 +2372,37 @@ export async function executeSignal(signal) {
         confidence: signal.confidence,
         reasoning: signal.reasoning,
       });
+      if (domesticPartialFillPending) {
+        pendingPartialFill = {
+          market: 'domestic',
+          exchange: 'kis',
+          symbol,
+          action,
+          amount: effectiveBuyAmountKrw,
+          ordNo: order?.ordNo || null,
+          expectedQty: Number(order?.qty || 0),
+          verification: domesticBuyVerification,
+        };
+      }
+      if (!paperMode && order?.ordNo) {
+        const domesticPriceTrusted = domesticDerivedBuyPrice > 0 || domesticVerifiedFillPrice > 0;
+        estimatedExecutionPrice = {
+          market: 'domestic',
+          exchange: 'kis',
+          symbol,
+          action,
+          ordNo: order?.ordNo || null,
+          price: domesticFillPrice,
+          filledQty: domesticFilledQty,
+          currency: 'KRW',
+          status: domesticPriceTrusted ? 'reconciled' : 'pending_reconcile',
+          source: domesticDerivedBuyPrice > 0
+            ? 'broker_avg_cost_delta'
+            : domesticVerifiedFillPrice > 0
+              ? (domesticBuyVerification.fillSource || 'order_fill_api')
+              : 'quote_estimated',
+        };
+      }
 
     } else if (action === ACTIONS.SELL) {
       const sellState = await prepareHanulSellExecution({
@@ -1396,7 +2446,12 @@ export async function executeSignal(signal) {
         paperMode: sellState.sellPaperMode,
         ordNo: order?.ordNo || null,
       });
-      if (!domesticSellVerification.verified) {
+      const domesticSellPartialFill = isRecoverableHanulPartialFill(domesticSellVerification, sellState.sellPaperMode);
+      const domesticSellPendingReconcile = isAcceptedHanulPendingReconcile(domesticSellVerification, {
+        ordNo: order?.ordNo || null,
+        paperMode: sellState.sellPaperMode,
+      });
+      if (!domesticSellVerification.verified && !domesticSellPartialFill && !domesticSellPendingReconcile) {
         return failHanulSignal(signalId, {
           reason: `국내주식 매도 체결 미확정 (${domesticSellVerification.status})`,
           code: 'order_fill_unverified',
@@ -1414,14 +2469,68 @@ export async function executeSignal(signal) {
           },
         });
       }
+      if (domesticSellPendingReconcile) {
+        await markHanulOrderPendingReconcileSignal(signalId, {
+          market: 'domestic',
+          exchange: 'kis',
+          symbol,
+          action,
+          amount: amountKrw,
+          ordNo: order?.ordNo || null,
+          expectedQty: Number(order?.qty || 0),
+          verification: domesticSellVerification,
+        });
+        await syncHanulStrategyExecutionState({
+          symbol,
+          exchange: 'kis',
+          tradeMode: sellState.effectiveTradeMode,
+          lifecycleStatus: 'exit_order_pending_reconcile',
+          recommendation: 'ADJUST',
+          reasonCode: 'order_pending_reconcile',
+          reason: 'SELL 주문 접수 - 체결 대기',
+          updatedBy: 'hanul_sell_order_pending',
+        });
+        return {
+          success: true,
+          pending: true,
+          code: 'order_pending_reconcile',
+          ordNo: order?.ordNo || null,
+          verificationStatus: domesticSellVerification.status,
+        };
+      }
 
       const domesticSoldQty = Number(
         sellState.sellPaperMode
           ? order?.qty
           : (domesticSellVerification.filledQty || order?.qty || 0),
       );
-      const domesticSellPrice = Number(order?.price || 0);
+      if (!(domesticSoldQty > 0)) {
+        return failHanulSignal(signalId, {
+          reason: '국내주식 매도 체결수량 확인 실패',
+          code: 'order_fill_unverified',
+          market: 'domestic',
+          symbol,
+          action,
+          amount: amountKrw,
+          meta: {
+            ordNo: order?.ordNo || null,
+            verificationStatus: domesticSellVerification.status,
+            beforeQty: domesticSellVerification.beforeQty,
+            observedQty: domesticSellVerification.observedQty,
+            expectedQty: Number(order?.qty || 0),
+            filledQty: domesticSellVerification.filledQty,
+          },
+        });
+      }
+      const domesticSellPrice = Number(domesticSellVerification.avgPrice || order?.price || 0);
       const domesticRemainingQty = Math.max(0, sellState.baseQty - domesticSoldQty);
+      const domesticPartialFillPending = !domesticSellVerification.verified && domesticSellPartialFill;
+      const domesticIsPartialExit = sellState.partialExitRatio < 1
+        || domesticPartialFillPending
+        || domesticSoldQty < sellState.baseQty;
+      const domesticDerivedPartialRatio = sellState.baseQty > 0
+        ? normalizePartialExitRatio(domesticSoldQty / sellState.baseQty)
+        : null;
       trade = {
         signalId, symbol, side: 'sell',
         amount:    domesticSoldQty,
@@ -1430,15 +2539,20 @@ export async function executeSignal(signal) {
         paper:     sellState.sellPaperMode,
         exchange:  'kis',
         tradeMode: sellState.effectiveTradeMode,
-        partialExitRatio: sellState.partialExitRatio < 1 ? sellState.partialExitRatio : null,
-        partialExit: sellState.partialExitRatio < 1,
-        remainingAmount: sellState.partialExitRatio < 1
+        partialExitRatio: domesticIsPartialExit
+          ? (sellState.partialExitRatio < 1 ? sellState.partialExitRatio : domesticDerivedPartialRatio)
+          : null,
+        partialExit: domesticIsPartialExit,
+        remainingAmount: domesticIsPartialExit
           ? (
             !sellState.sellPaperMode && Number.isFinite(Number(domesticSellVerification.observedQty))
               ? Math.max(0, Number(domesticSellVerification.observedQty))
               : domesticRemainingQty
           )
           : 0,
+        memo: domesticPartialFillPending
+          ? `부분체결 ${domesticSoldQty}/${Number(order?.qty || 0)}주 — 주문번호 ${order?.ordNo || 'N/A'} 잔여 체결 대기`
+          : null,
         executionOrigin: journalContext.executionOrigin,
         qualityFlag: journalContext.qualityFlag,
         excludeFromLearning: journalContext.excludeFromLearning,
@@ -1461,12 +2575,12 @@ export async function executeSignal(signal) {
           symbol,
           exchange: 'kis',
           tradeMode: sellState.effectiveTradeMode,
-          lifecycleStatus: 'partial_exit_executed',
+          lifecycleStatus: domesticPartialFillPending ? 'partial_exit_pending' : 'partial_exit_executed',
           recommendation: 'ADJUST',
-          reasonCode: 'partial_exit_executed',
-          reason: '부분청산 체결 완료',
+          reasonCode: domesticPartialFillPending ? 'partial_fill_pending' : 'partial_exit_executed',
+          reason: domesticPartialFillPending ? 'SELL 부분체결 - 잔여 체결 대기' : '부분청산 체결 완료',
           trade,
-          updatedBy: 'hanul_partial_sell',
+          updatedBy: domesticPartialFillPending ? 'hanul_partial_sell_pending' : 'hanul_partial_sell',
         });
       } else {
         await db.deletePosition(symbol, {
@@ -1493,6 +2607,34 @@ export async function executeSignal(signal) {
           incidentLink: trade.incidentLink,
         },
       ).catch(() => {});
+      if (domesticPartialFillPending) {
+        pendingPartialFill = {
+          market: 'domestic',
+          exchange: 'kis',
+          symbol,
+          action,
+          amount: amountKrw,
+          ordNo: order?.ordNo || null,
+          expectedQty: Number(order?.qty || 0),
+          verification: domesticSellVerification,
+        };
+      }
+      if (!sellState.sellPaperMode && order?.ordNo) {
+        estimatedExecutionPrice = {
+          market: 'domestic',
+          exchange: 'kis',
+          symbol,
+          action,
+          ordNo: order?.ordNo || null,
+          price: domesticSellPrice,
+          filledQty: domesticSoldQty,
+          currency: 'KRW',
+          status: Number(domesticSellVerification.avgPrice || 0) > 0 ? 'reconciled' : 'pending_reconcile',
+          source: Number(domesticSellVerification.avgPrice || 0) > 0
+            ? (domesticSellVerification.fillSource || 'order_fill_api')
+            : 'quote_estimated',
+        };
+      }
 
     } else {
       console.log(`  ⏸️ HOLD — 실행 없음`);
@@ -1500,7 +2642,14 @@ export async function executeSignal(signal) {
       return { success: true };
     }
 
-    return finalizeHanulTrade({ trade, signalId, currency: 'KRW', tag });
+    const finalized = await finalizeHanulTrade({ trade, signalId, currency: 'KRW', tag });
+    if (estimatedExecutionPrice) {
+      await markHanulEstimatedExecutionPrice(signalId, estimatedExecutionPrice);
+    }
+    if (pendingPartialFill) {
+      await markHanulPartialFillPendingSignal(signalId, pendingPartialFill);
+    }
+    return finalized;
 
   } catch (e) {
     console.error(`  ❌ 실행 오류: ${e.message}`);
@@ -1613,6 +2762,8 @@ export async function executeOverseasSignal(signal) {
 
     const kis = await getKis();
     let trade;
+    let pendingPartialFill = null;
+    let estimatedExecutionPrice = null;
 
     if (action === ACTIONS.BUY) {
       const buyEntryState = await ensureHanulBuyEntryAllowed({
@@ -1658,7 +2809,12 @@ export async function executeOverseasSignal(signal) {
         paperMode,
         ordNo: order?.ordNo || null,
       });
-      if (!overseasBuyVerification.verified) {
+      const overseasBuyPartialFill = isRecoverableHanulPartialFill(overseasBuyVerification, paperMode);
+      const overseasBuyPendingReconcile = isAcceptedHanulPendingReconcile(overseasBuyVerification, {
+        ordNo: order?.ordNo || null,
+        paperMode,
+      });
+      if (!overseasBuyVerification.verified && !overseasBuyPartialFill && !overseasBuyPendingReconcile) {
         return failHanulSignal(signalId, {
           reason: `해외주식 주문 체결 미확정 (${overseasBuyVerification.status})`,
           code: 'order_fill_unverified',
@@ -1675,6 +2831,35 @@ export async function executeOverseasSignal(signal) {
             filledQty: overseasBuyVerification.filledQty,
           },
         });
+      }
+      if (overseasBuyPendingReconcile) {
+        await markHanulOrderPendingReconcileSignal(signalId, {
+          market: 'overseas',
+          exchange: 'kis_overseas',
+          symbol,
+          action,
+          amount: effectiveBuyAmountUsd,
+          ordNo: order?.ordNo || null,
+          expectedQty: Number(order?.qty || 0),
+          verification: overseasBuyVerification,
+        });
+        await syncHanulStrategyExecutionState({
+          symbol,
+          exchange: 'kis_overseas',
+          tradeMode: signalTradeMode,
+          lifecycleStatus: 'entry_order_pending_reconcile',
+          recommendation: 'HOLD',
+          reasonCode: 'order_pending_reconcile',
+          reason: 'BUY 주문 접수 - 체결 대기',
+          updatedBy: 'hanul_buy_order_pending',
+        });
+        return {
+          success: true,
+          pending: true,
+          code: 'order_pending_reconcile',
+          ordNo: order?.ordNo || null,
+          verificationStatus: overseasBuyVerification.status,
+        };
       }
 
       const overseasFilledQty = Number(
@@ -1701,7 +2886,8 @@ export async function executeOverseasSignal(signal) {
         });
       }
 
-      const overseasFillPrice = Number(order?.price || 0);
+      const overseasFillPrice = Number(overseasBuyVerification.avgPrice || order?.price || 0);
+      const overseasPartialFillPending = !overseasBuyVerification.verified && overseasBuyPartialFill;
       trade = {
         signalId, symbol, side: 'buy',
         amount:    overseasFilledQty,
@@ -1710,6 +2896,9 @@ export async function executeOverseasSignal(signal) {
         paper:     paperMode,
         exchange:  'kis_overseas',
         tradeMode: signalTradeMode,
+        memo: overseasPartialFillPending
+          ? `부분체결 ${overseasFilledQty}/${Number(order?.qty || 0)}주 — 주문번호 ${order?.ordNo || 'N/A'} 잔여 체결 대기`
+          : null,
         executionOrigin: journalContext.executionOrigin,
         qualityFlag: journalContext.qualityFlag,
         excludeFromLearning: journalContext.excludeFromLearning,
@@ -1741,12 +2930,12 @@ export async function executeOverseasSignal(signal) {
         symbol,
         exchange: 'kis_overseas',
         tradeMode: signalTradeMode,
-        lifecycleStatus: 'position_open',
+        lifecycleStatus: overseasPartialFillPending ? 'position_open_partial_fill_pending' : 'position_open',
         recommendation: 'HOLD',
-        reasonCode: 'buy_executed',
-        reason: 'BUY 체결 완료',
+        reasonCode: overseasPartialFillPending ? 'partial_fill_pending' : 'buy_executed',
+        reason: overseasPartialFillPending ? 'BUY 부분체결 - 잔여 체결 대기' : 'BUY 체결 완료',
         trade,
-        updatedBy: 'hanul_buy_execute',
+        updatedBy: overseasPartialFillPending ? 'hanul_buy_partial_pending' : 'hanul_buy_execute',
       });
 
       await recordHanulEntryJournal({
@@ -1759,6 +2948,34 @@ export async function executeOverseasSignal(signal) {
         confidence: signal.confidence,
         reasoning: signal.reasoning,
       });
+      if (overseasPartialFillPending) {
+        pendingPartialFill = {
+          market: 'overseas',
+          exchange: 'kis_overseas',
+          symbol,
+          action,
+          amount: effectiveBuyAmountUsd,
+          ordNo: order?.ordNo || null,
+          expectedQty: Number(order?.qty || 0),
+          verification: overseasBuyVerification,
+        };
+      }
+      if (!paperMode && order?.ordNo) {
+        estimatedExecutionPrice = {
+          market: 'overseas',
+          exchange: 'kis_overseas',
+          symbol,
+          action,
+          ordNo: order?.ordNo || null,
+          price: overseasFillPrice,
+          filledQty: overseasFilledQty,
+          currency: 'USD',
+          status: Number(overseasBuyVerification.avgPrice || 0) > 0 ? 'reconciled' : 'pending_reconcile',
+          source: Number(overseasBuyVerification.avgPrice || 0) > 0
+            ? (overseasBuyVerification.fillSource || 'order_fill_api')
+            : 'quote_estimated',
+        };
+      }
 
     } else if (action === ACTIONS.SELL) {
       const sellState = await prepareHanulSellExecution({
@@ -1802,7 +3019,12 @@ export async function executeOverseasSignal(signal) {
         paperMode: sellState.sellPaperMode,
         ordNo: order?.ordNo || null,
       });
-      if (!overseasSellVerification.verified) {
+      const overseasSellPartialFill = isRecoverableHanulPartialFill(overseasSellVerification, sellState.sellPaperMode);
+      const overseasSellPendingReconcile = isAcceptedHanulPendingReconcile(overseasSellVerification, {
+        ordNo: order?.ordNo || null,
+        paperMode: sellState.sellPaperMode,
+      });
+      if (!overseasSellVerification.verified && !overseasSellPartialFill && !overseasSellPendingReconcile) {
         return failHanulSignal(signalId, {
           reason: `해외주식 매도 체결 미확정 (${overseasSellVerification.status})`,
           code: 'order_fill_unverified',
@@ -1820,14 +3042,68 @@ export async function executeOverseasSignal(signal) {
           },
         });
       }
+      if (overseasSellPendingReconcile) {
+        await markHanulOrderPendingReconcileSignal(signalId, {
+          market: 'overseas',
+          exchange: 'kis_overseas',
+          symbol,
+          action,
+          amount: amountUsd,
+          ordNo: order?.ordNo || null,
+          expectedQty: Number(order?.qty || 0),
+          verification: overseasSellVerification,
+        });
+        await syncHanulStrategyExecutionState({
+          symbol,
+          exchange: 'kis_overseas',
+          tradeMode: sellState.effectiveTradeMode,
+          lifecycleStatus: 'exit_order_pending_reconcile',
+          recommendation: 'ADJUST',
+          reasonCode: 'order_pending_reconcile',
+          reason: 'SELL 주문 접수 - 체결 대기',
+          updatedBy: 'hanul_sell_order_pending',
+        });
+        return {
+          success: true,
+          pending: true,
+          code: 'order_pending_reconcile',
+          ordNo: order?.ordNo || null,
+          verificationStatus: overseasSellVerification.status,
+        };
+      }
 
       const overseasSoldQty = Number(
         sellState.sellPaperMode
           ? order?.qty
           : (overseasSellVerification.filledQty || order?.qty || 0),
       );
-      const overseasSellPrice = Number(order?.price || 0);
+      if (!(overseasSoldQty > 0)) {
+        return failHanulSignal(signalId, {
+          reason: '해외주식 매도 체결수량 확인 실패',
+          code: 'order_fill_unverified',
+          market: 'overseas',
+          symbol,
+          action,
+          amount: amountUsd,
+          meta: {
+            ordNo: order?.ordNo || null,
+            verificationStatus: overseasSellVerification.status,
+            beforeQty: overseasSellVerification.beforeQty,
+            observedQty: overseasSellVerification.observedQty,
+            expectedQty: Number(order?.qty || 0),
+            filledQty: overseasSellVerification.filledQty,
+          },
+        });
+      }
+      const overseasSellPrice = Number(overseasSellVerification.avgPrice || order?.price || 0);
       const overseasRemainingQty = Math.max(0, sellState.baseQty - overseasSoldQty);
+      const overseasPartialFillPending = !overseasSellVerification.verified && overseasSellPartialFill;
+      const overseasIsPartialExit = sellState.partialExitRatio < 1
+        || overseasPartialFillPending
+        || overseasSoldQty < sellState.baseQty;
+      const overseasDerivedPartialRatio = sellState.baseQty > 0
+        ? normalizePartialExitRatio(overseasSoldQty / sellState.baseQty)
+        : null;
       trade = {
         signalId, symbol, side: 'sell',
         amount:    overseasSoldQty,
@@ -1836,15 +3112,20 @@ export async function executeOverseasSignal(signal) {
         paper:     sellState.sellPaperMode,
         exchange:  'kis_overseas',
         tradeMode: sellState.effectiveTradeMode,
-        partialExitRatio: sellState.partialExitRatio < 1 ? sellState.partialExitRatio : null,
-        partialExit: sellState.partialExitRatio < 1,
-        remainingAmount: sellState.partialExitRatio < 1
+        partialExitRatio: overseasIsPartialExit
+          ? (sellState.partialExitRatio < 1 ? sellState.partialExitRatio : overseasDerivedPartialRatio)
+          : null,
+        partialExit: overseasIsPartialExit,
+        remainingAmount: overseasIsPartialExit
           ? (
             !sellState.sellPaperMode && Number.isFinite(Number(overseasSellVerification.observedQty))
               ? Math.max(0, Number(overseasSellVerification.observedQty))
               : overseasRemainingQty
           )
           : 0,
+        memo: overseasPartialFillPending
+          ? `부분체결 ${overseasSoldQty}/${Number(order?.qty || 0)}주 — 주문번호 ${order?.ordNo || 'N/A'} 잔여 체결 대기`
+          : null,
         executionOrigin: journalContext.executionOrigin,
         qualityFlag: journalContext.qualityFlag,
         excludeFromLearning: journalContext.excludeFromLearning,
@@ -1867,12 +3148,12 @@ export async function executeOverseasSignal(signal) {
           symbol,
           exchange: 'kis_overseas',
           tradeMode: sellState.effectiveTradeMode,
-          lifecycleStatus: 'partial_exit_executed',
+          lifecycleStatus: overseasPartialFillPending ? 'partial_exit_pending' : 'partial_exit_executed',
           recommendation: 'ADJUST',
-          reasonCode: 'partial_exit_executed',
-          reason: '부분청산 체결 완료',
+          reasonCode: overseasPartialFillPending ? 'partial_fill_pending' : 'partial_exit_executed',
+          reason: overseasPartialFillPending ? 'SELL 부분체결 - 잔여 체결 대기' : '부분청산 체결 완료',
           trade,
-          updatedBy: 'hanul_partial_sell',
+          updatedBy: overseasPartialFillPending ? 'hanul_partial_sell_pending' : 'hanul_partial_sell',
         });
       } else {
         await db.deletePosition(symbol, {
@@ -1899,6 +3180,34 @@ export async function executeOverseasSignal(signal) {
           incidentLink: trade.incidentLink,
         },
       ).catch(() => {});
+      if (overseasPartialFillPending) {
+        pendingPartialFill = {
+          market: 'overseas',
+          exchange: 'kis_overseas',
+          symbol,
+          action,
+          amount: amountUsd,
+          ordNo: order?.ordNo || null,
+          expectedQty: Number(order?.qty || 0),
+          verification: overseasSellVerification,
+        };
+      }
+      if (!sellState.sellPaperMode && order?.ordNo) {
+        estimatedExecutionPrice = {
+          market: 'overseas',
+          exchange: 'kis_overseas',
+          symbol,
+          action,
+          ordNo: order?.ordNo || null,
+          price: overseasSellPrice,
+          filledQty: overseasSoldQty,
+          currency: 'USD',
+          status: Number(overseasSellVerification.avgPrice || 0) > 0 ? 'reconciled' : 'pending_reconcile',
+          source: Number(overseasSellVerification.avgPrice || 0) > 0
+            ? (overseasSellVerification.fillSource || 'order_fill_api')
+            : 'quote_estimated',
+        };
+      }
 
     } else {
       console.log(`  ⏸️ HOLD — 실행 없음`);
@@ -1906,7 +3215,14 @@ export async function executeOverseasSignal(signal) {
       return { success: true };
     }
 
-    return finalizeHanulTrade({ trade, signalId, currency: 'USD', tag });
+    const finalized = await finalizeHanulTrade({ trade, signalId, currency: 'USD', tag });
+    if (estimatedExecutionPrice) {
+      await markHanulEstimatedExecutionPrice(signalId, estimatedExecutionPrice);
+    }
+    if (pendingPartialFill) {
+      await markHanulPartialFillPendingSignal(signalId, pendingPartialFill);
+    }
+    return finalized;
 
   } catch (e) {
     if (e?.message && e.message.includes('APBK1526')) {

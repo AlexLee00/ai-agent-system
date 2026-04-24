@@ -22,6 +22,45 @@ function compactReasoning(reasoning, maxLength = 90) {
   return `${text.slice(0, maxLength - 1).trimEnd()}…`;
 }
 
+function resolveExecutionCurrency(exchange = 'binance', currency = null) {
+  if (currency) return String(currency).toUpperCase();
+  if (exchange === 'kis') return 'KRW';
+  if (exchange === 'kis_overseas') return 'USD';
+  return 'USDT';
+}
+
+function formatExecutionValue(value, {
+  currency = 'USD',
+  price = false,
+  signed = false,
+} = {}) {
+  const numeric = Number(value || 0);
+  if (!Number.isFinite(numeric)) return '-';
+  const normalizedCurrency = String(currency || 'USD').toUpperCase();
+
+  if (normalizedCurrency === 'KRW') {
+    const abs = Math.abs(numeric);
+    const text = `${Math.round(abs).toLocaleString('ko-KR')}원`;
+    if (!signed) return text;
+    return `${numeric >= 0 ? '+' : '-'}${text}`;
+  }
+
+  const abs = Math.abs(numeric);
+  const usdLike = normalizedCurrency === 'USD';
+  const unit = usdLike ? '$' : ` ${normalizedCurrency}`;
+  let body;
+  if (price) {
+    if (abs < 1) body = abs.toFixed(5);
+    else if (abs < 100) body = abs.toFixed(3);
+    else body = abs.toLocaleString();
+  } else {
+    body = abs.toFixed(2);
+  }
+  const formatted = usdLike ? `${unit}${body}` : `${body}${unit}`;
+  if (!signed) return formatted;
+  return `${numeric >= 0 ? '+' : '-'}${formatted}`;
+}
+
 function loadRecentLocalLlmStatus() {
   try {
     if (!fs.existsSync(LOCAL_LLM_HEALTH_HISTORY_FILE)) return null;
@@ -108,16 +147,11 @@ export function notifySignal({
 }) {
   const tag   = formatExecutionTag({ paper, exchange, tradeMode });
   const emoji = action === 'BUY' ? '🟢' : action === 'SELL' ? '🔴' : '🟡';
-  const normalizedCurrency = String(
-    currency
-    || (exchange === 'kis' ? 'KRW' : exchange === 'kis_overseas' ? 'USD' : 'USDT')
-  ).toUpperCase();
+  const normalizedCurrency = resolveExecutionCurrency(exchange, currency);
   const numericAmount = Number(amountUsdt);
   const amountLabel = !Number.isFinite(numericAmount)
     ? 'N/A'
-    : normalizedCurrency === 'KRW'
-      ? `${Math.round(numericAmount).toLocaleString('ko-KR')}원`
-      : `$${numericAmount.toFixed(2)}`;
+    : formatExecutionValue(numericAmount, { currency: normalizedCurrency, price: false });
   const msg   = [
     `${tag}${emoji} ${action} 신호 — ${symbol}`,
     `금액: ${amountLabel}`,
@@ -151,33 +185,15 @@ export function notifyTrade({
               : side === 'liquidate' ? '💱 미추적 청산'
               : '✅ 체결';
   const isDomestic = exchange === 'kis';
-  const normalizedCurrency = String(
-    currency
-    || (isDomestic ? 'KRW' : exchange === 'kis_overseas' ? 'USD' : 'USDT')
-  ).toUpperCase();
-  const isKrw = normalizedCurrency === 'KRW';
-  const currencyPrefix = isKrw ? '' : '$';
+  const normalizedCurrency = resolveExecutionCurrency(exchange, currency);
   const formatPrice = (value) => {
-    const numeric = Number(value || 0);
-    if (!Number.isFinite(numeric)) return '-';
-    if (isKrw) return `${Math.round(numeric).toLocaleString('ko-KR')}원`;
-    if (Math.abs(numeric) < 1) return `${currencyPrefix}${numeric.toFixed(5)}`;
-    if (Math.abs(numeric) < 100) return `${currencyPrefix}${numeric.toFixed(3)}`;
-    return `${currencyPrefix}${numeric.toLocaleString()}`;
+    return formatExecutionValue(value, { currency: normalizedCurrency, price: true });
   };
   const formatValue = (value) => {
-    const numeric = Number(value || 0);
-    if (!Number.isFinite(numeric)) return '-';
-    if (isKrw) return `${Math.round(numeric).toLocaleString('ko-KR')}원`;
-    return `${currencyPrefix}${numeric.toFixed(2)}`;
+    return formatExecutionValue(value, { currency: normalizedCurrency, price: false });
   };
   const formatSignedValue = (value) => {
-    const numeric = Number(value || 0);
-    if (!Number.isFinite(numeric)) return '-';
-    const sign = numeric >= 0 ? '+' : '-';
-    const abs = Math.abs(numeric);
-    if (isKrw) return `${sign}${Math.round(abs).toLocaleString('ko-KR')}원`;
-    return `${sign}${currencyPrefix}${abs.toFixed(2)}`;
+    return formatExecutionValue(value, { currency: normalizedCurrency, price: false, signed: true });
   };
   const lines = [
     `${tag}${emoji} 체결 — ${symbol}`,
