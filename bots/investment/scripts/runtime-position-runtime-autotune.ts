@@ -42,22 +42,36 @@ function overrideKeyForExchange(exchange) {
 
 function buildUpdates(suggestions = []) {
   const updates = {};
-  const appliedSuggestions = [];
+  const appliedSuggestionsByKey = {};
   for (const suggestion of suggestions) {
     if (!suggestion?.exchange) continue;
     const key = overrideKeyForExchange(suggestion.exchange);
     if (!key || !Number.isFinite(Number(suggestion.recommendedCadenceMs))) continue;
-    updates[key] = Number(suggestion.recommendedCadenceMs);
-    appliedSuggestions.push({
-      exchange: suggestion.exchange,
-      key,
-      status: suggestion.status,
-      recommendedCadenceMs: Number(suggestion.recommendedCadenceMs),
-      currentAverageCadenceMs: suggestion.currentAverageCadenceMs ?? null,
-      reason: suggestion.reason || null,
-    });
+    const cadence = Number(suggestion.recommendedCadenceMs);
+    const existing = appliedSuggestionsByKey[key];
+    if (!existing) {
+      updates[key] = cadence;
+      appliedSuggestionsByKey[key] = {
+        exchange: suggestion.exchange,
+        exchanges: [suggestion.exchange],
+        key,
+        status: suggestion.status,
+        recommendedCadenceMs: cadence,
+        currentAverageCadenceMs: suggestion.currentAverageCadenceMs ?? null,
+        reason: suggestion.reason || null,
+      };
+      continue;
+    }
+    updates[key] = Math.min(Number(existing.recommendedCadenceMs || cadence), cadence);
+    existing.recommendedCadenceMs = updates[key];
+    existing.status = existing.status === 'tighten_runtime_watch' || suggestion.status === 'tighten_runtime_watch'
+      ? 'tighten_runtime_watch'
+      : existing.status;
+    existing.exchanges = Array.from(new Set([...(existing.exchanges || []), suggestion.exchange]));
+    existing.exchange = existing.exchanges.join(',');
+    existing.reason = [existing.reason, suggestion.reason].filter(Boolean).join(' | ');
   }
-  return { updates, appliedSuggestions };
+  return { updates, appliedSuggestions: Object.values(appliedSuggestionsByKey) };
 }
 
 function persistOverrides(updates = {}) {

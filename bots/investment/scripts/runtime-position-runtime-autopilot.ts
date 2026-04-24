@@ -7,6 +7,11 @@ import { runPositionRuntimeReport } from './runtime-position-runtime-report.ts';
 import { runPositionRuntimeTuning } from './runtime-position-runtime-tuning.ts';
 import { runPositionRuntimeDispatch } from './runtime-position-runtime-dispatch.ts';
 import { runPositionRuntimeAutotune } from './runtime-position-runtime-autotune.ts';
+import {
+  appendPositionRuntimeAutopilotHistory,
+  DEFAULT_POSITION_RUNTIME_AUTOPILOT_HISTORY_FILE,
+  readPositionRuntimeAutopilotHistorySummary,
+} from './runtime-position-runtime-autopilot-history-store.ts';
 
 function parseArgs(argv = []) {
   const args = {
@@ -17,6 +22,7 @@ function parseArgs(argv = []) {
     confirm: null,
     applyTuning: false,
     executeDispatch: false,
+    historyFile: DEFAULT_POSITION_RUNTIME_AUTOPILOT_HISTORY_FILE,
   };
   for (const raw of argv) {
     if (raw === '--json') args.json = true;
@@ -26,6 +32,7 @@ function parseArgs(argv = []) {
     else if (raw.startsWith('--exchange=')) args.exchange = raw.split('=').slice(1).join('=') || null;
     else if (raw.startsWith('--confirm=')) args.confirm = raw.split('=').slice(1).join('=') || null;
     else if (raw.startsWith('--limit=')) args.limit = Math.max(1, Number(raw.split('=').slice(1).join('=') || 5));
+    else if (raw.startsWith('--history-file=')) args.historyFile = raw.split('=').slice(1).join('=') || DEFAULT_POSITION_RUNTIME_AUTOPILOT_HISTORY_FILE;
   }
   return args;
 }
@@ -62,6 +69,57 @@ function renderText(result = {}) {
   return lines.join('\n');
 }
 
+function buildHistorySnapshot({
+  args,
+  decision,
+  runtimeReport,
+  tuning,
+  dispatchPreview,
+  autotunePreview,
+  autotuneResult,
+  dispatchResult,
+  status,
+}) {
+  const metrics = runtimeReport?.decision?.metrics || {};
+  return {
+    recordedAt: new Date().toISOString(),
+    exchange: args.exchange || 'all',
+    status: status || decision?.status || 'unknown',
+    headline: decision?.headline || null,
+    executed: Boolean(args.execute),
+    requested: {
+      applyTuning: Boolean(args.applyTuning),
+      executeDispatch: Boolean(args.executeDispatch),
+    },
+    decision: {
+      executeDispatch: Boolean(decision?.executeDispatch),
+      applyTuning: Boolean(decision?.applyTuning),
+      nextActions: decision?.nextActions || [],
+    },
+    metrics: {
+      active: Number(metrics.active || 0),
+      fastLane: Number(metrics.fastLane || 0),
+      adjustReady: Number(metrics.adjustReady || 0),
+      exitReady: Number(metrics.exitReady || 0),
+      staleValidation: Number(metrics.staleValidation || 0),
+    },
+    tuningStatus: tuning?.status || null,
+    tuningSuggestions: (tuning?.suggestions || []).map((item) => ({
+      exchange: item.exchange,
+      status: item.status,
+      recommendedCadenceMs: item.recommendedCadenceMs ?? null,
+      currentAverageCadenceMs: item.currentAverageCadenceMs ?? null,
+      pressureScore: item.pressureScore ?? null,
+      reason: item.reason || null,
+    })),
+    dispatchCandidateCount: Array.isArray(dispatchPreview?.candidates) ? dispatchPreview.candidates.length : 0,
+    dispatchExecutedCount: Array.isArray(dispatchResult?.results) ? dispatchResult.results.filter((item) => item?.ok).length : 0,
+    autotuneStatus: autotunePreview?.status || null,
+    autotuneApplied: autotuneResult?.status === 'position_runtime_autotune_applied',
+    appliedUpdates: autotuneResult?.updates || null,
+  };
+}
+
 export async function runPositionRuntimeAutopilot(args = {}) {
   const runtimeReport = await runPositionRuntimeReport({ exchange: args.exchange || null, limit: 200, json: true });
   const tuning = await runPositionRuntimeTuning({ exchange: args.exchange || null, json: true });
@@ -70,13 +128,29 @@ export async function runPositionRuntimeAutopilot(args = {}) {
   const decision = buildDecision(runtimeReport, tuning, dispatchPreview, autotunePreview);
 
   if (!args.execute) {
-    return {
+    const previewPayload = {
       ok: true,
       decision,
       runtimeReport,
       tuning,
       dispatchPreview,
       autotunePreview,
+    };
+    const historySnapshot = buildHistorySnapshot({
+      args,
+      decision,
+      runtimeReport,
+      tuning,
+      dispatchPreview,
+      autotunePreview,
+      status: decision.status,
+    });
+    appendPositionRuntimeAutopilotHistory(historySnapshot, args.historyFile || DEFAULT_POSITION_RUNTIME_AUTOPILOT_HISTORY_FILE);
+    const history = readPositionRuntimeAutopilotHistorySummary(args.historyFile || DEFAULT_POSITION_RUNTIME_AUTOPILOT_HISTORY_FILE);
+    return {
+      ...previewPayload,
+      historyFile: args.historyFile || DEFAULT_POSITION_RUNTIME_AUTOPILOT_HISTORY_FILE,
+      history,
     };
   }
 
@@ -107,6 +181,20 @@ export async function runPositionRuntimeAutopilot(args = {}) {
     })
     : null;
 
+  const historySnapshot = buildHistorySnapshot({
+    args,
+    decision,
+    runtimeReport,
+    tuning,
+    dispatchPreview,
+    autotunePreview,
+    autotuneResult,
+    dispatchResult,
+    status: 'position_runtime_autopilot_executed',
+  });
+  appendPositionRuntimeAutopilotHistory(historySnapshot, args.historyFile || DEFAULT_POSITION_RUNTIME_AUTOPILOT_HISTORY_FILE);
+  const history = readPositionRuntimeAutopilotHistorySummary(args.historyFile || DEFAULT_POSITION_RUNTIME_AUTOPILOT_HISTORY_FILE);
+
   return {
     ok: true,
     status: 'position_runtime_autopilot_executed',
@@ -117,6 +205,8 @@ export async function runPositionRuntimeAutopilot(args = {}) {
     autotunePreview,
     autotuneResult,
     dispatchResult,
+    historyFile: args.historyFile || DEFAULT_POSITION_RUNTIME_AUTOPILOT_HISTORY_FILE,
+    history,
   };
 }
 
