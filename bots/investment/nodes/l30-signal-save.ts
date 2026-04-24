@@ -1,11 +1,45 @@
 // @ts-nocheck
 import * as db from '../shared/db.ts';
+import * as journalDb from '../shared/trade-journal-db.ts';
 import { createOrUpdatePositionStrategyProfile } from '../shared/strategy-profile.ts';
 import { buildSignalApprovalUpdate } from '../shared/signal-approval.ts';
-import { SIGNAL_STATUS } from '../shared/signal.ts';
+import { ACTIONS, SIGNAL_STATUS } from '../shared/signal.ts';
 import { loadAnalysesForSession, loadLatestNodePayload, buildAnalystSignals } from './helpers.ts';
 
 const NODE_ID = 'L30';
+
+async function persistRiskApprovalRationaleAtSave({
+  signalId = null,
+  symbol = null,
+  decision = null,
+  risk = null,
+} = {}) {
+  if (!signalId || decision?.action !== ACTIONS.BUY || !risk?.risk_approval_preview) return;
+
+  const existing = await db.query(`
+    SELECT id
+      FROM investment.trade_rationale
+     WHERE signal_id = $1
+       AND strategy_config->'risk_approval_preview' IS NOT NULL
+     LIMIT 1
+  `, [signalId]).catch(() => []);
+  if (existing.length > 0) return;
+
+  await journalDb.insertRationale({
+    signal_id: signalId,
+    luna_decision: 'enter',
+    luna_reasoning: `[노드:${NODE_ID}] ${decision?.reasoning || ''}`.slice(0, 255),
+    luna_confidence: decision?.confidence ?? null,
+    nemesis_verdict: risk?.nemesis_verdict || 'approved',
+    nemesis_notes: risk?.risk_approval_application?.reason || risk?.risk_approval_preview?.application?.reason || null,
+    position_size_original: decision?.amount_usdt ?? null,
+    position_size_approved: risk?.adjustedAmount ?? decision?.amount_usdt ?? null,
+    strategy_config: {
+      risk_approval_preview: risk.risk_approval_preview,
+      risk_approval_application: risk.risk_approval_application || risk.risk_approval_preview?.application || null,
+    },
+  });
+}
 
 async function run({ sessionId, market, symbol, decision: decisionOverride = null, risk: riskOverride = null }) {
   if (!sessionId) throw new Error('sessionId 필요');
@@ -71,6 +105,14 @@ async function run({ sessionId, market, symbol, decision: decisionOverride = nul
       if (risk.adjustedAmount != null) {
         await db.updateSignalAmount(signalId, risk.adjustedAmount);
       }
+      await persistRiskApprovalRationaleAtSave({
+        signalId,
+        symbol,
+        decision,
+        risk,
+      }).catch((error) => {
+        console.warn(`  ⚠️ risk approval rationale 저장 실패(${symbol}): ${error.message}`);
+      });
       await createOrUpdatePositionStrategyProfile({
         signalId,
         symbol,
@@ -91,6 +133,14 @@ async function run({ sessionId, market, symbol, decision: decisionOverride = nul
           amount: decision.amount_usdt,
           adjustedAmount: risk.adjustedAmount ?? null,
         },
+      });
+      await persistRiskApprovalRationaleAtSave({
+        signalId,
+        symbol,
+        decision,
+        risk,
+      }).catch((error) => {
+        console.warn(`  ⚠️ risk approval rationale 저장 실패(${symbol}): ${error.message}`);
       });
     }
   }
