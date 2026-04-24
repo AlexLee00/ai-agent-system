@@ -1957,6 +1957,8 @@ async function processAutoDevDocument(filePath, options = {}) {
   let integrationRollback = null;
   let archivedPath = null;
   let archiveManifestPath = null;
+  let completionDocumentPath = null;
+  let implementationCompletedAt = null;
   try {
     updateJobState(job, 'received', {
       contentHash,
@@ -2108,22 +2110,42 @@ async function processAutoDevDocument(filePath, options = {}) {
       throw new Error(`integration failed: ${integrationResult.error || integrationResult.reason}`);
     }
 
-    if (shouldArchiveOnSuccess(options)) {
+    const writeCompletionDocument = shouldWriteImplementationCompletionDocument(runtimeConfig, options);
+    if (shouldArchiveOnSuccess(options) || writeCompletionDocument) {
       try {
-        archivedPath = archiveCompletedDocument(filePath, contentHash);
-        archiveManifestPath = writeArchiveManifest({
-          job,
-          archivedPath,
-          executionContext,
-          beforeStatus,
-          afterStatus,
-          newlyChangedFiles,
-          review: reviewResult,
-          test: testResult,
-          integration: integrationResult,
-        });
-        if (!archiveManifestPath) {
-          throw new Error('archive_manifest_not_created');
+        implementationCompletedAt = nowIso();
+        if (shouldArchiveOnSuccess(options)) {
+          archivedPath = archiveCompletedDocument(filePath, contentHash);
+          archiveManifestPath = writeArchiveManifest({
+            job,
+            archivedPath,
+            executionContext,
+            beforeStatus,
+            afterStatus,
+            newlyChangedFiles,
+            review: reviewResult,
+            test: testResult,
+            integration: integrationResult,
+          });
+          if (!archiveManifestPath) {
+            throw new Error('archive_manifest_not_created');
+          }
+        }
+
+        if (writeCompletionDocument) {
+          const completionTarget = archivedPath ? path.join(ROOT, archivedPath) : filePath;
+          const completion = writeImplementationCompletionSummary(completionTarget, {
+            completedAt: implementationCompletedAt,
+            profile: runtimeConfig.profile,
+            changedFiles: newlyChangedFiles,
+            review: reviewResult,
+            test: testResult,
+            integration: integrationResult,
+            archivedPath,
+            archiveManifestPath,
+          });
+          completionDocumentPath = completion.path;
+          implementationCompletedAt = completion.completedAt;
         }
       } catch (error) {
         const rollbackErrors = [];
@@ -2131,12 +2153,23 @@ async function processAutoDevDocument(filePath, options = {}) {
         if (integrationRollback?.attempted && !integrationRollback?.rolledBack) {
           rollbackErrors.push(`integration_rollback_failed:${integrationRollback.error || integrationRollback.reason || 'unknown'}`);
         }
+        const manifestAbsolute = archiveManifestPath ? path.join(ROOT, archiveManifestPath) : null;
+        if (manifestAbsolute && fs.existsSync(manifestAbsolute)) {
+          try {
+            fs.unlinkSync(manifestAbsolute);
+            archiveManifestPath = null;
+          } catch (rollbackError) {
+            rollbackErrors.push(`manifest_rollback_failed:${rollbackError.message}`);
+          }
+        }
         const archivedAbsolute = archivedPath ? path.join(ROOT, archivedPath) : null;
         if (archivedAbsolute && fs.existsSync(archivedAbsolute) && !fs.existsSync(filePath)) {
           try {
             fs.renameSync(archivedAbsolute, filePath);
             archivedPath = null;
             archiveManifestPath = null;
+            completionDocumentPath = null;
+            implementationCompletedAt = null;
           } catch (rollbackError) {
             rollbackErrors.push(`archive_rollback_failed:${rollbackError.message}`);
           }
@@ -2163,10 +2196,11 @@ async function processAutoDevDocument(filePath, options = {}) {
       worktreeCleanup: cleanupResult,
       archivedPath,
       archiveManifestPath,
+      completionDocumentPath,
       contentHash,
       completedAt: nowIso(),
-      implementationStatus: IMPLEMENTATION_COMPLETED_MARKER,
-      implementationCompletedAt: nowIso(),
+      implementationStatus: implementationCompletedAt ? IMPLEMENTATION_COMPLETED_MARKER : null,
+      implementationCompletedAt,
       profile: runtimeConfig.profile,
       targetTeam: policy.targetTeam,
       writeScope: policy.writeScope,
@@ -2201,6 +2235,7 @@ async function processAutoDevDocument(filePath, options = {}) {
       integrationRollback,
       worktreeCleanup: cleanupResult,
       archiveManifestPath,
+      completionDocumentPath,
     };
   } catch (error) {
     const afterStatus = captureGitStatusShort(executionContext?.cwd || ROOT);

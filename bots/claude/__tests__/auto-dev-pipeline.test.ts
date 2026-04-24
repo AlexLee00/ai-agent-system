@@ -235,7 +235,6 @@ async function test_processAutoDevDocument_runs_full_dry_pipeline() {
     assert.strictEqual(result.ok, true);
     assert.strictEqual(result.job.status, 'completed');
     assert.strictEqual(result.job.stage, 'completed');
-    assert.strictEqual(result.job.implementationStatus, 'auto_dev_implementation_completed');
     assert.ok(Array.isArray(result.job.beforeStatus));
     assert.ok(Array.isArray(result.job.afterStatus));
     assert.ok(Array.isArray(result.job.newlyChangedFiles));
@@ -244,6 +243,37 @@ async function test_processAutoDevDocument_runs_full_dry_pipeline() {
   assert.strictEqual(alarms.length, 0, 'test 모드는 실제 알림 대신 shadow');
   fs.rmSync(tmpRoot, { recursive: true, force: true });
   console.log('✅ auto-dev: processes dry pipeline to completion');
+}
+
+async function test_completed_document_is_updated_after_actual_implementation() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(tmpRoot, 'CODEX_MARK_COMPLETE.md', '# Complete\nupdate the doc');
+  const { mocks } = makeMocks(tmpRoot);
+
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, {
+      force: true,
+      test: false,
+      dryRun: false,
+      shadow: false,
+      executeImplementation: true,
+      maxRevisionPasses: 0,
+    });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.job.implementationStatus, 'auto_dev_implementation_completed');
+    assert.strictEqual(result.job.completionDocumentPath, 'docs/auto_dev/CODEX_MARK_COMPLETE.md');
+    const content = fs.readFileSync(doc, 'utf8');
+    assert.match(content, /implementation_status: auto_dev_implementation_completed/);
+    assert.match(content, /implementation_completed_at:/);
+    assert.match(content, /<!-- auto_dev:implementation_completed -->/);
+    assert.match(content, /## Implementation Completed/);
+    assert.deepStrictEqual(pipeline.listAutoDevDocuments(), []);
+  }, testEnv(tmpRoot, {
+    CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION: 'true',
+  }));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: completed implementation updates source document marker and summary');
 }
 
 async function test_non_development_task_is_blocked() {
@@ -887,6 +917,10 @@ async function test_archive_manifest_is_created() {
     assert.ok(fs.existsSync(path.join(tmpRoot, result.job.archiveManifestPath)));
     const manifest = JSON.parse(fs.readFileSync(path.join(tmpRoot, result.job.archiveManifestPath), 'utf8'));
     assert.strictEqual(manifest.implementationStatus, 'auto_dev_implementation_completed');
+    const archivedContent = fs.readFileSync(path.join(tmpRoot, result.job.archivedPath), 'utf8');
+    assert.match(archivedContent, /implementation_status: auto_dev_implementation_completed/);
+    assert.match(archivedContent, /## Implementation Completed/);
+    assert.match(archivedContent, /archive_manifest:/);
   }, testEnv(tmpRoot));
 
   fs.rmSync(tmpRoot, { recursive: true, force: true });
@@ -1250,6 +1284,7 @@ async function main() {
     test_listAutoDevDocuments_uses_auto_dev_only,
     test_analyzeAutoDevDocument_extracts_code_refs,
     test_processAutoDevDocument_runs_full_dry_pipeline,
+    test_completed_document_is_updated_after_actual_implementation,
     test_completed_job_is_skipped_without_force,
     test_content_hash_job_id_prevents_touch_reprocessing,
     test_review_failure_triggers_single_revise_loop,
