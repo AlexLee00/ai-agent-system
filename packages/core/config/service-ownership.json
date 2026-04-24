@@ -9,6 +9,8 @@
   { "label": "ai.claude.dexter.daily", "owner": "launchd", "expectedIdle": true },
   { "label": "ai.claude.archer", "owner": "launchd" },
   { "label": "ai.claude.auto-dev", "owner": "launchd", "optional": true, "expectedIdle": true },
+  { "label": "ai.claude.auto-dev.shadow", "owner": "launchd", "optional": true, "expectedIdle": true },
+  { "label": "ai.claude.auto-dev.autonomous", "owner": "launchd" },
 
   { "label": "ai.ska.commander", "owner": "launchd" },
   { "label": "ai.ska.naver-monitor", "owner": "launchd" },

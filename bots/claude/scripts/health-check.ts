@@ -27,14 +27,20 @@ const {
   isOptionalService,
 } = require('../../../packages/core/lib/service-ownership');
 
+const AUTO_DEV_SERVICES = [
+  'ai.claude.auto-dev',
+  'ai.claude.auto-dev.shadow',
+  'ai.claude.auto-dev.autonomous',
+];
+
 // 상시 실행 서비스 (PID 있어야 정상)
 const CONTINUOUS = [
   'ai.claude.commander',
-  ...(!isExpectedIdleService('ai.claude.auto-dev') ? ['ai.claude.auto-dev'] : []),
+  ...AUTO_DEV_SERVICES.filter((label) => !isExpectedIdleService(label)),
 ];
 
 // 감지할 전체 서비스
-const ALL_SERVICES = [
+const ALL_SERVICES = [...new Set([
   'ai.claude.commander',
   'ai.claude.dexter.quick',
   'ai.claude.dexter',
@@ -44,9 +50,9 @@ const ALL_SERVICES = [
   'ai.claude.guardian',
   'ai.claude.builder',
   'ai.claude.codex-notifier',
-  'ai.claude.auto-dev',
+  ...AUTO_DEV_SERVICES,
   'ai.claude.health-dashboard',
-];
+])];
 
 // 정상 종료 코드
 const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;

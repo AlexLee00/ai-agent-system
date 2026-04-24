@@ -131,6 +131,7 @@ function testEnv(tmpRoot, extra = {}) {
   return {
     CLAUDE_AUTO_DEV_STATE_FILE: path.join(tmpRoot, 'auto-dev-state.json'),
     CLAUDE_AUTO_DEV_RUN_HARD_TESTS: 'false',
+    CLAUDE_AUTO_DEV_COMPAT_MODE: 'true',
     CLAUDE_AUTO_DEV_LOCK_FILE: path.join(tmpRoot, 'claude-auto-dev.lock'),
     CLAUDE_AUTO_DEV_JOB_LOCK_DIR: path.join(tmpRoot, 'claude-auto-dev-job-locks'),
     CLAUDE_AUTO_DEV_WORKTREE_DIR: path.join(tmpRoot, 'claude-auto-dev-worktrees'),
@@ -554,6 +555,64 @@ async function test_profile_resolver_maps_runtime_profiles() {
   console.log('✅ auto-dev: promotion profiles resolve to runtime flags');
 }
 
+async function test_profile_authoritative_blocks_legacy_overrides() {
+  const tmpRoot = makeTempRoot();
+  const { mocks } = makeMocks(tmpRoot);
+
+  await withMocks(mocks, async pipeline => {
+    const runtime = pipeline.resolveAutoDevRuntimeConfig({}, {
+      CLAUDE_AUTO_DEV_PROFILE: 'shadow',
+      CLAUDE_AUTO_DEV_ENABLED: 'true',
+      CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION: 'true',
+      CLAUDE_AUTO_DEV_ARCHIVE_ON_SUCCESS: 'true',
+      CLAUDE_AUTO_DEV_RUN_HARD_TESTS: 'true',
+      CLAUDE_AUTO_DEV_INTEGRATION_MODE: 'cherry_pick',
+      CLAUDE_AUTO_DEV_COMPAT_MODE: 'false',
+    });
+
+    assert.strictEqual(runtime.profile, 'shadow');
+    assert.strictEqual(runtime.compatibilityMode, false);
+    assert.strictEqual(runtime.enabled, false);
+    assert.strictEqual(runtime.executeImplementation, false);
+    assert.strictEqual(runtime.archiveOnSuccess, false);
+    assert.strictEqual(runtime.runHardTests, false);
+    assert.strictEqual(runtime.integrationMode, 'patch');
+    assert.ok(runtime.ignoredLegacyOverrides.includes('env:enabled'));
+    assert.ok(runtime.ignoredLegacyOverrides.includes('env:executeImplementation'));
+    assert.ok(runtime.ignoredLegacyOverrides.includes('env:CLAUDE_AUTO_DEV_INTEGRATION_MODE'));
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: profile authoritative mode ignores legacy env overrides');
+}
+
+async function test_profile_compatibility_mode_allows_legacy_overrides() {
+  const tmpRoot = makeTempRoot();
+  const { mocks } = makeMocks(tmpRoot);
+
+  await withMocks(mocks, async pipeline => {
+    const runtime = pipeline.resolveAutoDevRuntimeConfig({}, {
+      CLAUDE_AUTO_DEV_PROFILE: 'shadow',
+      CLAUDE_AUTO_DEV_ENABLED: 'true',
+      CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION: 'true',
+      CLAUDE_AUTO_DEV_ARCHIVE_ON_SUCCESS: 'true',
+      CLAUDE_AUTO_DEV_RUN_HARD_TESTS: 'true',
+      CLAUDE_AUTO_DEV_INTEGRATION_MODE: 'cherry_pick',
+      CLAUDE_AUTO_DEV_COMPAT_MODE: 'true',
+    });
+
+    assert.strictEqual(runtime.compatibilityMode, true);
+    assert.strictEqual(runtime.enabled, true);
+    assert.strictEqual(runtime.executeImplementation, true);
+    assert.strictEqual(runtime.archiveOnSuccess, true);
+    assert.strictEqual(runtime.runHardTests, true);
+    assert.strictEqual(runtime.integrationMode, 'cherry_pick');
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: compatibility mode allows legacy env overrides');
+}
+
 async function test_bash_is_fail_closed_without_allowlist() {
   const tmpRoot = makeTempRoot();
   const doc = makeDoc(tmpRoot, 'CODEX_BASH_BLOCK.md', '# Bash\nblock');
@@ -802,6 +861,95 @@ async function test_archive_manifest_failure_is_fail_closed() {
   console.log('✅ auto-dev: archive manifest failure is fail-closed');
 }
 
+async function test_archive_manifest_failure_rolls_back_cherry_pick() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(tmpRoot, 'CODEX_ARCHIVE_ROLLBACK.md', '# Archive\nrollback');
+  const gitCalls = [];
+  let worktreeStatusCalls = 0;
+  let cherryPicked = false;
+  let reverted = false;
+  const realFs = require('fs');
+  const fsMock = {
+    ...realFs,
+    writeFileSync: (targetPath, ...args) => {
+      if (String(targetPath).endsWith('.manifest.json')) {
+        throw new Error('manifest_write_failed');
+      }
+      return realFs.writeFileSync(targetPath, ...args);
+    },
+  };
+  const { mocks } = makeMocks(tmpRoot, {
+    fs: fsMock,
+    child_process: {
+      execFileSync: (command, args = [], opts = {}) => {
+        if (command === 'bash') return '/usr/local/bin/claude\n';
+        if (command === 'claude') return 'ok';
+        if (command === 'rg') throw new Error('no match');
+        if (command === 'git') {
+          gitCalls.push({ args, cwd: opts.cwd });
+          const joined = args.join(' ');
+          const inWorktree = String(opts.cwd || '').includes('claude-auto-dev-worktrees');
+          if (joined === 'rev-parse --is-inside-work-tree') return 'true\n';
+          if (joined === 'rev-parse HEAD') {
+            if (inWorktree) return 'worktree-commit\n';
+            if (reverted) return 'rollback-commit\n';
+            if (cherryPicked) return 'target-commit\n';
+            return 'base-head\n';
+          }
+          if (joined === 'rev-parse --abbrev-ref HEAD') return 'main\n';
+          if (joined === 'cherry-pick worktree-commit') {
+            cherryPicked = true;
+            return '';
+          }
+          if (joined === 'revert --no-edit target-commit') {
+            reverted = true;
+            return '';
+          }
+          if (joined.startsWith('diff')) {
+            return 'diff --git a/bots/claude/src/reviewer.ts b/bots/claude/src/reviewer.ts\n';
+          }
+          return '';
+        }
+        return '';
+      },
+      execSync: (command, opts = {}) => {
+        if (String(command).includes('git status --short')) {
+          if (String(opts.cwd || '').includes('claude-auto-dev-worktrees')) {
+            worktreeStatusCalls += 1;
+            return worktreeStatusCalls === 1 ? '' : ' M bots/claude/src/reviewer.ts\n';
+          }
+          return '';
+        }
+        return '';
+      },
+    },
+  });
+
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, {
+      force: true,
+      test: false,
+      dryRun: false,
+      executeImplementation: true,
+      integrationMode: 'cherry_pick',
+      archiveOnSuccess: true,
+      maxRevisionPasses: 0,
+    });
+    assert.strictEqual(result.ok, false);
+    assert.match(String(result.error || ''), /archive failed|manifest_write_failed/i);
+    assert.strictEqual(result.job.integrationRollback?.rolledBack, true);
+  }, testEnv(tmpRoot));
+
+  assert.ok(
+    gitCalls.some(call => call.args.join(' ') === 'revert --no-edit target-commit'),
+    'archive failure after cherry-pick must revert integrated commit'
+  );
+  assert.ok(fs.existsSync(doc), 'archive failure should restore source document');
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: archive manifest failure rolls back cherry-picked integration');
+}
+
 async function test_worktree_cleanup_runs_after_success() {
   const tmpRoot = makeTempRoot();
   const doc = makeDoc(tmpRoot, 'CODEX_CLEANUP_WORKTREE.md', '# Cleanup\nworktree');
@@ -926,6 +1074,73 @@ async function test_cherry_pick_integration_commits_and_applies_patch() {
   console.log('✅ auto-dev: cherry-pick integration commits and applies patch');
 }
 
+async function test_cherry_pick_failure_aborts_and_fails_closed() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(tmpRoot, 'CODEX_CHERRY_PICK_FAIL.md', '# Cherry\npick fail');
+  const gitCalls = [];
+  let worktreeStatusCalls = 0;
+
+  const { mocks } = makeMocks(tmpRoot, {
+    child_process: {
+      execFileSync: (command, args = [], opts = {}) => {
+        if (command === 'bash') return '/usr/local/bin/claude\n';
+        if (command === 'claude') return 'ok';
+        if (command === 'rg') throw new Error('no match');
+        if (command === 'git') {
+          gitCalls.push({ args, cwd: opts.cwd });
+          const joined = args.join(' ');
+          const inWorktree = String(opts.cwd || '').includes('claude-auto-dev-worktrees');
+          if (joined === 'rev-parse --is-inside-work-tree') return 'true\n';
+          if (joined === 'rev-parse HEAD') return inWorktree ? 'worktree-commit\n' : 'base-head\n';
+          if (joined === 'rev-parse --abbrev-ref HEAD') return 'main\n';
+          if (joined === 'cherry-pick worktree-commit') {
+            const error = new Error('cherry_pick_conflict');
+            error.stderr = 'CONFLICT (content): Merge conflict in bots/claude/src/reviewer.ts';
+            throw error;
+          }
+          if (joined === 'cherry-pick --abort') return '';
+          if (joined.startsWith('diff')) {
+            return 'diff --git a/bots/claude/src/reviewer.ts b/bots/claude/src/reviewer.ts\n';
+          }
+          return '';
+        }
+        return '';
+      },
+      execSync: (command, opts = {}) => {
+        if (String(command).includes('git status --short')) {
+          if (String(opts.cwd || '').includes('claude-auto-dev-worktrees')) {
+            worktreeStatusCalls += 1;
+            return worktreeStatusCalls === 1 ? '' : ' M bots/claude/src/reviewer.ts\n';
+          }
+          return '';
+        }
+        return '';
+      },
+    },
+  });
+
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, {
+      force: true,
+      test: false,
+      dryRun: false,
+      executeImplementation: true,
+      integrationMode: 'cherry_pick',
+      maxRevisionPasses: 0,
+    });
+    assert.strictEqual(result.ok, false);
+    assert.match(String(result.error || ''), /integration failed|cherry-pick failed/i);
+  }, testEnv(tmpRoot));
+
+  assert.ok(
+    gitCalls.some(call => call.args.join(' ') === 'cherry-pick --abort'),
+    'cherry-pick conflict must trigger cherry-pick --abort'
+  );
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: cherry-pick failure aborts and fails closed');
+}
+
 async function test_status_snapshot_includes_profile_worktree_patch_counts() {
   const tmpRoot = makeTempRoot();
   makeDoc(tmpRoot, 'CODEX_STATUS.md', '# Status\nsnapshot');
@@ -985,6 +1200,8 @@ async function main() {
     test_completed_state_clears_active_error,
     test_launchd_plist_defaults_are_safe,
     test_profile_resolver_maps_runtime_profiles,
+    test_profile_authoritative_blocks_legacy_overrides,
+    test_profile_compatibility_mode_allows_legacy_overrides,
     test_bash_is_fail_closed_without_allowlist,
     test_lock_heartbeat_sidecar_enforces_parent_liveness,
     test_review_cycle_uses_execution_context,
@@ -992,8 +1209,10 @@ async function main() {
     test_test_scope_rejects_unsafe_shell_command,
     test_archive_manifest_is_created,
     test_archive_manifest_failure_is_fail_closed,
+    test_archive_manifest_failure_rolls_back_cherry_pick,
     test_worktree_cleanup_runs_after_success,
     test_cherry_pick_integration_commits_and_applies_patch,
+    test_cherry_pick_failure_aborts_and_fails_closed,
     test_status_snapshot_includes_profile_worktree_patch_counts,
   ];
 

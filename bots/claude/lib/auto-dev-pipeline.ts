@@ -168,9 +168,19 @@ function normalizeIntegrationMode(value, fallback = 'patch') {
 function resolveAutoDevRuntimeConfig(options = {}, envVars = process.env) {
   const profileName = normalizeAutoDevProfileName(options.profile || envVars.CLAUDE_AUTO_DEV_PROFILE);
   const profile = AUTO_DEV_PROFILES[profileName] || AUTO_DEV_PROFILES[DEFAULT_AUTO_DEV_PROFILE];
+  const compatibilityModeOption = typeof options.compatibilityMode === 'boolean'
+    ? options.compatibilityMode
+    : undefined;
+  const compatibilityModeEnv = readEnvBool(envVars, 'CLAUDE_AUTO_DEV_COMPAT_MODE');
+  const compatibilityMode = typeof compatibilityModeOption === 'boolean'
+    ? compatibilityModeOption
+    : typeof compatibilityModeEnv === 'boolean'
+      ? compatibilityModeEnv
+      : false;
   const config = {
     profile: profileName,
     profileLabel: profile.label,
+    compatibilityMode,
     enabled: profile.enabled,
     shadow: profile.shadow,
     executeImplementation: profile.executeImplementation,
@@ -179,6 +189,7 @@ function resolveAutoDevRuntimeConfig(options = {}, envVars = process.env) {
     cleanupWorktree: profile.cleanupWorktree,
     integrationMode: profile.integrationMode,
     allowDirtyBase: false,
+    ignoredLegacyOverrides: [],
   };
 
   const envOverrides = {
@@ -190,10 +201,21 @@ function resolveAutoDevRuntimeConfig(options = {}, envVars = process.env) {
     cleanupWorktree: readEnvBool(envVars, 'CLAUDE_AUTO_DEV_CLEANUP_WORKTREE'),
     allowDirtyBase: readEnvBool(envVars, 'CLAUDE_AUTO_DEV_ALLOW_DIRTY_BASE'),
   };
-  for (const [key, value] of Object.entries(envOverrides)) {
-    if (typeof value === 'boolean') config[key] = value;
+  if (compatibilityMode) {
+    for (const [key, value] of Object.entries(envOverrides)) {
+      if (typeof value === 'boolean') config[key] = value;
+    }
+    config.integrationMode = normalizeIntegrationMode(envVars.CLAUDE_AUTO_DEV_INTEGRATION_MODE, config.integrationMode);
+  } else {
+    for (const [key, value] of Object.entries(envOverrides)) {
+      if (typeof value === 'boolean') {
+        config.ignoredLegacyOverrides.push(`env:${key}`);
+      }
+    }
+    if (toSafeString(envVars.CLAUDE_AUTO_DEV_INTEGRATION_MODE)) {
+      config.ignoredLegacyOverrides.push('env:CLAUDE_AUTO_DEV_INTEGRATION_MODE');
+    }
   }
-  config.integrationMode = normalizeIntegrationMode(envVars.CLAUDE_AUTO_DEV_INTEGRATION_MODE, config.integrationMode);
 
   const optionOverrides = [
     'enabled',
@@ -204,11 +226,22 @@ function resolveAutoDevRuntimeConfig(options = {}, envVars = process.env) {
     'cleanupWorktree',
     'allowDirtyBase',
   ];
-  for (const key of optionOverrides) {
-    if (typeof options[key] === 'boolean') config[key] = options[key];
-  }
-  if (options.integrationMode) {
-    config.integrationMode = normalizeIntegrationMode(options.integrationMode, config.integrationMode);
+  if (compatibilityMode) {
+    for (const key of optionOverrides) {
+      if (typeof options[key] === 'boolean') config[key] = options[key];
+    }
+    if (options.integrationMode) {
+      config.integrationMode = normalizeIntegrationMode(options.integrationMode, config.integrationMode);
+    }
+  } else {
+    for (const key of optionOverrides) {
+      if (typeof options[key] === 'boolean') {
+        config.ignoredLegacyOverrides.push(`option:${key}`);
+      }
+    }
+    if (options.integrationMode) {
+      config.ignoredLegacyOverrides.push('option:integrationMode');
+    }
   }
 
   config.dryRun = Boolean(options.test || options.dryRun || !config.executeImplementation);
@@ -1074,6 +1107,12 @@ function runCommand(command, timeout = 600000, cwd = ROOT) {
   }
 }
 
+function summarizeExecError(error, limit = 2000) {
+  return String(error?.stderr || error?.stdout || error?.message || error || '')
+    .trim()
+    .slice(-Math.max(128, Number(limit) || 2000));
+}
+
 function shellQuote(value) {
   return `'${String(value || '').replace(/'/g, `'\\''`)}'`;
 }
@@ -1390,7 +1429,36 @@ function integrateWorktreeChanges(job, executionContext, {
   ], executionContext.cwd, 120000);
   const worktreeCommitSha = runGit(['rev-parse', 'HEAD'], executionContext.cwd, 10000);
   const targetBranch = runGit(['rev-parse', '--abbrev-ref', 'HEAD'], ROOT, 10000);
-  runGit(['cherry-pick', worktreeCommitSha], ROOT, 120000);
+  let targetCommitSha = null;
+  try {
+    runGit(['cherry-pick', worktreeCommitSha], ROOT, 120000);
+    targetCommitSha = runGit(['rev-parse', 'HEAD'], ROOT, 10000);
+  } catch (error) {
+    let abort = {
+      attempted: false,
+      ok: false,
+      error: null,
+    };
+    try {
+      abort.attempted = true;
+      runGit(['cherry-pick', '--abort'], ROOT, 60000);
+      abort.ok = true;
+    } catch (abortError) {
+      abort.error = summarizeExecError(abortError, 1200);
+    }
+    return {
+      ...patchResult,
+      ok: false,
+      reason: 'cherry_pick_failed',
+      error: `cherry-pick failed: ${summarizeExecError(error, 1600)}`,
+      integrationMode: runtimeConfig.integrationMode,
+      worktreeCommitSha,
+      targetBranch,
+      targetRoot: ROOT,
+      cherryPickAbort: abort,
+      recoveryPatchPath: patchResult.patchPath || null,
+    };
+  }
 
   return {
     ...patchResult,
@@ -1398,9 +1466,54 @@ function integrateWorktreeChanges(job, executionContext, {
     integrationMode: runtimeConfig.integrationMode,
     cherryPicked: true,
     worktreeCommitSha,
+    targetCommitSha,
     targetBranch,
     targetRoot: ROOT,
   };
+}
+
+function rollbackIntegratedChanges(integration = null) {
+  if (!integration || integration.mode !== 'cherry_picked') {
+    return {
+      attempted: false,
+      rolledBack: false,
+      reason: 'rollback_not_required',
+    };
+  }
+
+  const targetCommitSha = toSafeString(integration.targetCommitSha);
+  if (!targetCommitSha) {
+    return {
+      attempted: true,
+      rolledBack: false,
+      reason: 'rollback_missing_target_commit',
+    };
+  }
+
+  try {
+    runGit(['revert', '--no-edit', targetCommitSha], ROOT, 120000);
+    const rollbackCommitSha = runGit(['rev-parse', 'HEAD'], ROOT, 10000);
+    return {
+      attempted: true,
+      rolledBack: true,
+      revertedCommitSha: targetCommitSha,
+      rollbackCommitSha,
+    };
+  } catch (error) {
+    let revertAbortError = null;
+    try {
+      runGit(['revert', '--abort'], ROOT, 60000);
+    } catch (abortError) {
+      revertAbortError = summarizeExecError(abortError, 1000);
+    }
+    return {
+      attempted: true,
+      rolledBack: false,
+      revertedCommitSha: targetCommitSha,
+      error: summarizeExecError(error, 1600),
+      revertAbortError,
+    };
+  }
 }
 
 function cleanupExecutionContext(executionContext, options = {}) {
@@ -1675,6 +1788,10 @@ async function processAutoDevDocument(filePath, options = {}) {
   let policy = null;
   let executionContext = null;
   let cleanupResult = null;
+  let integrationResult = null;
+  let integrationRollback = null;
+  let archivedPath = null;
+  let archiveManifestPath = null;
   try {
     updateJobState(job, 'received', {
       contentHash,
@@ -1818,7 +1935,7 @@ async function processAutoDevDocument(filePath, options = {}) {
       throw new Error(`write scope violation: ${scopeViolations.slice(0, 8).join(', ')}`);
     }
 
-    const integrationResult = integrateWorktreeChanges(job, executionContext, {
+    integrationResult = integrateWorktreeChanges(job, executionContext, {
       changedFiles: newlyChangedFiles,
       afterStatus,
     }, options);
@@ -1826,8 +1943,6 @@ async function processAutoDevDocument(filePath, options = {}) {
       throw new Error(`integration failed: ${integrationResult.error || integrationResult.reason}`);
     }
 
-    let archivedPath = null;
-    let archiveManifestPath = null;
     if (shouldArchiveOnSuccess(options)) {
       try {
         archivedPath = archiveCompletedDocument(filePath, contentHash);
@@ -1847,6 +1962,10 @@ async function processAutoDevDocument(filePath, options = {}) {
         }
       } catch (error) {
         const rollbackErrors = [];
+        integrationRollback = rollbackIntegratedChanges(integrationResult);
+        if (integrationRollback?.attempted && !integrationRollback?.rolledBack) {
+          rollbackErrors.push(`integration_rollback_failed:${integrationRollback.error || integrationRollback.reason || 'unknown'}`);
+        }
         const archivedAbsolute = archivedPath ? path.join(ROOT, archivedPath) : null;
         if (archivedAbsolute && fs.existsSync(archivedAbsolute) && !fs.existsSync(filePath)) {
           try {
@@ -1875,6 +1994,7 @@ async function processAutoDevDocument(filePath, options = {}) {
       newlyChangedFiles,
       scopeViolations,
       integration: integrationResult,
+      integrationRollback,
       worktreeCleanup: cleanupResult,
       archivedPath,
       archiveManifestPath,
@@ -1911,6 +2031,7 @@ async function processAutoDevDocument(filePath, options = {}) {
       review: reviewResult,
       test: testResult,
       integration: integrationResult,
+      integrationRollback,
       worktreeCleanup: cleanupResult,
       archiveManifestPath,
     };
@@ -1926,6 +2047,10 @@ async function processAutoDevDocument(filePath, options = {}) {
       contentHash,
       profile: runtimeConfig.profile,
       worktreeCleanup: cleanupResult,
+      integration: integrationResult || null,
+      integrationRollback: integrationRollback || null,
+      archivedPath: archivedPath || null,
+      archiveManifestPath: archiveManifestPath || null,
       targetTeam: policy?.targetTeam || null,
       writeScope: policy?.writeScope || [],
       riskTier: policy?.riskTier || null,

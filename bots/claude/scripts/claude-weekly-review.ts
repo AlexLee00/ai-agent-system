@@ -33,7 +33,9 @@ const AGENTS = [
   { name: '가디언',   label: 'ai.claude.guardian' },
   { name: '빌더',     label: 'ai.claude.builder' },
   { name: '알림봇',   label: 'ai.claude.codex-notifier' },
-  { name: '자동개발', label: 'ai.claude.auto-dev' },
+  { name: '자동개발(legacy)', label: 'ai.claude.auto-dev' },
+  { name: '자동개발(shadow)', label: 'ai.claude.auto-dev.shadow' },
+  { name: '자동개발(L5)', label: 'ai.claude.auto-dev.autonomous' },
 ];
 
 // ─── 통계 수집 ────────────────────────────────────────────────────────

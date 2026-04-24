@@ -35,9 +35,15 @@ const {
   isOptionalService,
 } = require('../../../packages/core/lib/service-ownership');
 
+const AUTO_DEV_SERVICES = [
+  'ai.claude.auto-dev',
+  'ai.claude.auto-dev.shadow',
+  'ai.claude.auto-dev.autonomous',
+];
+
 const CONTINUOUS = [
   'ai.claude.commander',
-  ...(!isExpectedIdleService('ai.claude.auto-dev') ? ['ai.claude.auto-dev'] : []),
+  ...AUTO_DEV_SERVICES.filter((label) => !isExpectedIdleService(label)),
 ];
 const ALL_SERVICES = [
   'ai.claude.commander',
@@ -49,7 +55,7 @@ const ALL_SERVICES = [
   'ai.claude.guardian',
   'ai.claude.builder',
   'ai.claude.codex-notifier',
-  'ai.claude.auto-dev',
+  ...AUTO_DEV_SERVICES,
   'ai.claude.health-dashboard',
 ];
 const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;

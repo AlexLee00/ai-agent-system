@@ -23,6 +23,8 @@ const DEV_SERVICES = new Set([
   'ai.claude.dexter.daily',
   'ai.claude.archer',
   'ai.claude.auto-dev',
+  'ai.claude.auto-dev.shadow',
+  'ai.claude.auto-dev.autonomous',
   'ai.claude.health-dashboard',
   'ai.claude.health-check',
   'ai.ska.health-check',
