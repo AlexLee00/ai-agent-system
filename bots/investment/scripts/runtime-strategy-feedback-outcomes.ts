@@ -37,6 +37,40 @@ function money(value) {
   return `${n >= 0 ? '+' : '-'}$${Math.abs(n).toFixed(2)}`;
 }
 
+function normalizeExchange(exchange = null) {
+  return String(exchange || 'unknown').trim().toLowerCase() || 'unknown';
+}
+
+function formatExchangePnl(exchange = 'unknown', value = 0) {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n)) return 'n/a';
+  if (exchange === 'kis') {
+    return `${n >= 0 ? '+' : '-'}${Math.abs(Math.round(n)).toLocaleString('ko-KR')}원`;
+  }
+  return `${n >= 0 ? '+' : '-'}$${Math.abs(n).toFixed(2)}`;
+}
+
+function buildPnlSummary(pnlByExchange = {}) {
+  const entries = Object.entries(pnlByExchange || {})
+    .map(([exchange, value]) => [normalizeExchange(exchange), Number(value || 0)])
+    .filter(([, value]) => Number.isFinite(value) && Math.abs(value) > 0.0000001);
+  if (!entries.length) return '$0.00';
+  if (entries.length === 1) {
+    const [exchange, value] = entries[0];
+    return formatExchangePnl(exchange, value);
+  }
+  return `mixed: ${entries.map(([exchange, value]) => `${exchange} ${formatExchangePnl(exchange, value)}`).join(' / ')}`;
+}
+
+function mergePnlByExchange(target = {}, source = {}) {
+  const merged = { ...(target || {}) };
+  for (const [exchange, value] of Object.entries(source || {})) {
+    const key = normalizeExchange(exchange);
+    merged[key] = Number((Number(merged[key] || 0) + Number(value || 0)).toFixed(4));
+  }
+  return merged;
+}
+
 function summarizeContext(context = {}) {
   const feedbackSignals = safeNumber(context.feedbackSignals);
   const taggedFeedbackSignals = safeNumber(context.taggedFeedbackSignals);
@@ -62,16 +96,22 @@ export function normalizeStrategyFeedbackOutcomeRow(row = {}) {
   const family = extractTag(incident, 'family') || row.strategy_family || 'unknown';
   const closed = safeNumber(row.closed);
   const wins = safeNumber(row.wins);
+  const exchange = normalizeExchange(row.exchange);
+  const pnlNet = safeNumber(row.pnl_net);
+  const pnlByExchange = { [exchange]: Number(pnlNet.toFixed(4)) };
   return {
     familyBias,
     family,
+    exchange,
     executionKind: String(row.execution_kind || 'unknown'),
     total: safeNumber(row.total),
     closed,
     wins,
     winRate: closed > 0 ? wins / closed : null,
     avgPnlPercent: row.avg_pnl_percent != null ? Number(row.avg_pnl_percent) : null,
-    pnlNet: safeNumber(row.pnl_net),
+    pnlNet,
+    pnlByExchange,
+    pnlSummary: buildPnlSummary(pnlByExchange),
     latestCreatedAt: row.latest_created_at != null ? Number(row.latest_created_at) : null,
   };
 }
@@ -88,6 +128,7 @@ export function aggregateStrategyFeedbackOutcomeRows(rows = []) {
       closed: 0,
       wins: 0,
       pnlNet: 0,
+      pnlByExchange: {},
       pnlPercentWeightedSum: 0,
       latestCreatedAt: null,
     };
@@ -95,6 +136,7 @@ export function aggregateStrategyFeedbackOutcomeRows(rows = []) {
     bucket.closed += safeNumber(row.closed);
     bucket.wins += safeNumber(row.wins);
     bucket.pnlNet += safeNumber(row.pnlNet);
+    bucket.pnlByExchange = mergePnlByExchange(bucket.pnlByExchange, row.pnlByExchange);
     if (row.avgPnlPercent != null && row.closed > 0) {
       bucket.pnlPercentWeightedSum += Number(row.avgPnlPercent) * Number(row.closed);
     }
@@ -117,6 +159,8 @@ export function aggregateStrategyFeedbackOutcomeRows(rows = []) {
       winRate: bucket.closed > 0 ? bucket.wins / bucket.closed : null,
       avgPnlPercent: bucket.closed > 0 ? Number((bucket.pnlPercentWeightedSum / bucket.closed).toFixed(4)) : null,
       pnlNet: Number(bucket.pnlNet.toFixed(4)),
+      pnlByExchange: bucket.pnlByExchange,
+      pnlSummary: buildPnlSummary(bucket.pnlByExchange),
       latestCreatedAt: bucket.latestCreatedAt,
     }))
     .sort((a, b) =>
@@ -130,6 +174,8 @@ export function buildDecision(rows = [], sampleContext = {}) {
   const total = rows.reduce((sum, row) => sum + row.total, 0);
   const closed = rows.reduce((sum, row) => sum + row.closed, 0);
   const pnlNet = rows.reduce((sum, row) => sum + row.pnlNet, 0);
+  const pnlByExchange = rows.reduce((acc, row) => mergePnlByExchange(acc, row.pnlByExchange), {});
+  const pnlSummary = buildPnlSummary(pnlByExchange);
   const weak = rows
     .filter((row) => row.closed >= 3 && row.avgPnlPercent != null)
     .sort((a, b) => Number(a.avgPnlPercent) - Number(b.avgPnlPercent))[0] || null;
@@ -141,7 +187,7 @@ export function buildDecision(rows = [], sampleContext = {}) {
   let headline = '아직 전략 패밀리 피드백 태그가 붙은 체결 결과가 없습니다.';
   const actionItems = ['새 partial-adjust/strategy-exit 실행 이후 다시 확인합니다.'];
   const reasons = [
-    `tagged buckets ${rows.length}, trades ${total}, closed ${closed}, pnl ${money(pnlNet)}`,
+    `tagged buckets ${rows.length}, trades ${total}, closed ${closed}, pnl ${pnlSummary}`,
     `sample context: ${summarizeContext(sampleContext)}`,
   ];
 
@@ -183,7 +229,7 @@ export function buildDecision(rows = [], sampleContext = {}) {
     headline,
     reasons,
     actionItems,
-    metrics: { total, closed, pnlNet, weak, strong, sampleContext },
+    metrics: { total, closed, pnlNet, pnlByExchange, pnlSummary, weak, strong, sampleContext },
   };
 }
 
@@ -203,7 +249,7 @@ function renderText(payload) {
 
   if (rows.length === 0) lines.push('- 데이터 없음');
   for (const row of rows) {
-    lines.push(`- ${row.familyBias}/${row.family}/${row.executionKind}: total ${row.total}, closed ${row.closed}, win ${pct((row.winRate || 0) * 100, 1)}, avg ${pct(row.avgPnlPercent, 2)}, pnl ${money(row.pnlNet)}`);
+    lines.push(`- ${row.familyBias}/${row.family}/${row.executionKind}: total ${row.total}, closed ${row.closed}, win ${pct((row.winRate || 0) * 100, 1)}, avg ${pct(row.avgPnlPercent, 2)}, pnl ${row.pnlSummary}`);
   }
 
   lines.push('');
@@ -315,6 +361,7 @@ export async function buildStrategyFeedbackOutcomes({ days = 90, json = false } 
           WHEN incident_link LIKE 'strategy_exit:%' THEN 'strategy_exit'
           ELSE 'other'
         END AS execution_kind,
+        COALESCE(exchange, 'unknown') AS exchange,
         incident_link,
         COALESCE(NULLIF(strategy_family, ''), 'unknown') AS strategy_family,
         COUNT(*) AS total,
@@ -326,7 +373,7 @@ export async function buildStrategyFeedbackOutcomes({ days = 90, json = false } 
       FROM investment.trade_journal
       WHERE created_at >= $1
         AND incident_link LIKE '%family_bias=%'
-      GROUP BY 1, 2, 3
+      GROUP BY 1, 2, 3, 4
 
       UNION ALL
 
@@ -336,6 +383,7 @@ export async function buildStrategyFeedbackOutcomes({ days = 90, json = false } 
           WHEN closeout_type = 'full_exit' THEN 'strategy_exit'
           ELSE COALESCE(NULLIF(closeout_type, ''), 'other')
         END AS execution_kind,
+        COALESCE(exchange, 'unknown') AS exchange,
         CONCAT(
           'phase6_closeout:',
           COALESCE(NULLIF(closeout_type, ''), 'unknown'),
@@ -380,7 +428,7 @@ export async function buildStrategyFeedbackOutcomes({ days = 90, json = false } 
           COALESCE(NULLIF(family_bias, ''), '') <> ''
           OR COALESCE(NULLIF(strategy_family, ''), '') <> ''
         )
-      GROUP BY 1, 2, 3
+      GROUP BY 1, 2, 3, 4
     ) merged
     ORDER BY total DESC, closed DESC, latest_created_at DESC
   `, [since]).catch(() => []);

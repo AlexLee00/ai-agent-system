@@ -627,6 +627,8 @@ function buildSectionStates({
       total: Number(strategyFeedbackOutcomes.decision?.metrics?.total || 0),
       closed: Number(strategyFeedbackOutcomes.decision?.metrics?.closed || 0),
       pnlNet: Number(strategyFeedbackOutcomes.decision?.metrics?.pnlNet || 0),
+      pnlByExchange: strategyFeedbackOutcomes.decision?.metrics?.pnlByExchange || {},
+      pnlSummary: strategyFeedbackOutcomes.decision?.metrics?.pnlSummary || null,
       weak: strategyFeedbackOutcomes.decision?.metrics?.weak || null,
       strong: strategyFeedbackOutcomes.decision?.metrics?.strong || null,
       rows: (strategyFeedbackOutcomes.rows || []).slice(0, 5),
@@ -934,10 +936,10 @@ function renderText(payload) {
       : '- strongest strategy family none',
     `- top strategy families ${((sections.collect.strategyFamilyPerformance?.byFamily || []).map((item) => `${item.family}:${item.total}`).join(', ')) || 'none'}`,
     sections.collect.strategyFeedbackOutcomes
-      ? `- strategy feedback outcomes ${sections.collect.strategyFeedbackOutcomes.status} | tagged ${sections.collect.strategyFeedbackOutcomes.total} / closed ${sections.collect.strategyFeedbackOutcomes.closed} / pnl ${sections.collect.strategyFeedbackOutcomes.pnlNet}`
+      ? `- strategy feedback outcomes ${sections.collect.strategyFeedbackOutcomes.status} | tagged ${sections.collect.strategyFeedbackOutcomes.total} / closed ${sections.collect.strategyFeedbackOutcomes.closed} / pnl ${sections.collect.strategyFeedbackOutcomes.pnlSummary || sections.collect.strategyFeedbackOutcomes.pnlNet}`
       : '- strategy feedback outcomes none',
     sections.collect.strategyFeedbackOutcomes?.trend
-      ? `- strategy feedback trend history ${sections.collect.strategyFeedbackOutcomes.trend.historyCount} | tagged delta ${sections.collect.strategyFeedbackOutcomes.trend.delta?.total ?? 0} / closed delta ${sections.collect.strategyFeedbackOutcomes.trend.delta?.closed ?? 0} / pnl delta ${sections.collect.strategyFeedbackOutcomes.trend.delta?.pnlNet ?? 0}`
+      ? `- strategy feedback trend history ${sections.collect.strategyFeedbackOutcomes.trend.historyCount} | tagged delta ${sections.collect.strategyFeedbackOutcomes.trend.delta?.total ?? 0} / closed delta ${sections.collect.strategyFeedbackOutcomes.trend.delta?.closed ?? 0} / pnl delta ${sections.collect.strategyFeedbackOutcomes.trend.delta?.pnlSummary ?? sections.collect.strategyFeedbackOutcomes.trend.delta?.pnlNet ?? 0}`
       : null,
     sections.collect.riskApproval
       ? `- risk approval ${sections.collect.riskApproval.status} | preview ${sections.collect.riskApproval.total} / rejects ${sections.collect.riskApproval.previewRejects} / divergence ${sections.collect.riskApproval.divergence} / amount delta ${sections.collect.riskApproval.previewVsApprovedDelta}`

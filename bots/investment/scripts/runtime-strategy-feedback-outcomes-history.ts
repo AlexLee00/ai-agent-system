@@ -44,6 +44,8 @@ function summarizeWeakest(weak = null) {
     winRate: weak.winRate == null ? null : Number(weak.winRate),
     avgPnlPercent: weak.avgPnlPercent == null ? null : Number(weak.avgPnlPercent),
     pnlNet: Number(weak.pnlNet || 0),
+    pnlByExchange: weak.pnlByExchange || {},
+    pnlSummary: weak.pnlSummary || null,
   };
 }
 
@@ -59,9 +61,26 @@ function buildSnapshot(report, days) {
     total: Number(metrics.total || 0),
     closed: Number(metrics.closed || 0),
     pnlNet: Number(metrics.pnlNet || 0),
+    pnlByExchange: metrics.pnlByExchange || {},
+    pnlSummary: metrics.pnlSummary || null,
     weakest: summarizeWeakest(metrics.weak),
     strongest: summarizeWeakest(metrics.strong),
   };
+}
+
+function summarizeDeltaPnl(current = null, previous = null, deltaPnlNet = 0) {
+  const currentMap = current?.pnlByExchange || {};
+  const previousMap = previous?.pnlByExchange || {};
+  const currentKeys = Object.keys(currentMap);
+  const previousKeys = Object.keys(previousMap);
+  if (currentKeys.length === 1 && previousKeys.length === 1 && currentKeys[0] === previousKeys[0]) {
+    const exchange = currentKeys[0];
+    if (exchange === 'kis') {
+      return `${deltaPnlNet >= 0 ? '+' : '-'}${Math.abs(Math.round(deltaPnlNet)).toLocaleString('ko-KR')}원`;
+    }
+    return `${deltaPnlNet >= 0 ? '+' : '-'}$${Math.abs(deltaPnlNet).toFixed(2)}`;
+  }
+  return 'mixed';
 }
 
 function buildDelta(current, previous) {
@@ -78,6 +97,7 @@ function buildDelta(current, previous) {
     total: current.total - Number(previous.total || 0),
     closed: current.closed - Number(previous.closed || 0),
     pnlNet: current.pnlNet - Number(previous.pnlNet || 0),
+    pnlSummary: summarizeDeltaPnl(current, previous, current.pnlNet - Number(previous.pnlNet || 0)),
     bucketCount: current.bucketCount - Number(previous.bucketCount || 0),
     weakestAvgPnlPercent: current.weakest?.avgPnlPercent != null && previous.weakest?.avgPnlPercent != null
       ? current.weakest.avgPnlPercent - Number(previous.weakest.avgPnlPercent)
@@ -95,7 +115,7 @@ function renderText(payload) {
     `previous: ${payload.previous?.status || 'none'}`,
     `tagged delta: ${payload.delta.total >= 0 ? '+' : ''}${payload.delta.total}`,
     `closed delta: ${payload.delta.closed >= 0 ? '+' : ''}${payload.delta.closed}`,
-    `pnl delta: ${payload.delta.pnlNet >= 0 ? '+' : ''}${payload.delta.pnlNet.toFixed(4)}`,
+    `pnl delta: ${payload.delta.pnlSummary || `${payload.delta.pnlNet >= 0 ? '+' : ''}${payload.delta.pnlNet.toFixed(4)}`}`,
     weakest ? `weakest: ${weakest.familyBias || 'n/a'}/${weakest.family || 'n/a'}/${weakest.executionKind || 'n/a'} avg ${weakest.avgPnlPercent ?? 'n/a'}%` : 'weakest: none',
     '',
     `headline: ${payload.current.headline}`,
