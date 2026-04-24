@@ -69,26 +69,57 @@ export async function calculate(signal, context, deps) {
         approved_at: new Date().toISOString(),
       };
     } else {
+      const confidence = Number(signal.confidence ?? 0);
+      const importanceRaw = Number(signal.importance ?? confidence);
+      const importance = Number.isFinite(importanceRaw)
+        ? Math.min(1, Math.max(0, importanceRaw))
+        : confidence;
       const starterApproveLimit = signal.exchange === 'kis'
         ? stockThresholds.stockStarterApproveDomestic
         : stockThresholds.stockStarterApproveOverseas;
-      if ((signal.confidence ?? 0) >= stockThresholds.stockStarterApproveConfidence && amountUsdt <= starterApproveLimit) {
+      const starterConfidence = Number(stockThresholds.stockStarterApproveConfidence || 0);
+      const starterEligible = confidence >= starterConfidence;
+      const hardMax = Math.max(
+        Number(rules?.MIN_ORDER_USDT || 0),
+        Number(rules?.MAX_ORDER_USDT || starterApproveLimit),
+      );
+      const boundedStarterCap = Math.min(starterApproveLimit, hardMax);
+      const dynamicStretch = starterEligible
+        ? 1 + Math.max(0, importance - starterConfidence) * 1.5
+        : 1;
+      const dynamicStarterCap = Math.max(
+        boundedStarterCap,
+        Math.min(hardMax, Math.floor(boundedStarterCap * dynamicStretch)),
+      );
+      const adjustedForStarter = Math.max(
+        Number(rules?.MIN_ORDER_USDT || 0),
+        Math.min(amountUsdt, dynamicStarterCap),
+      );
+
+      if (starterEligible && adjustedForStarter <= hardMax) {
+        const resized = adjustedForStarter < amountUsdt;
         if (persist) {
           if (signal.id) {
             await db.updateSignalStatus(signal.id, SIGNAL_STATUS.APPROVED);
-            await db.updateSignalAmount(signal.id, amountUsdt);
+            await db.updateSignalAmount(signal.id, adjustedForStarter);
           }
           await db.insertRiskLog({
             traceId, symbol, exchange: signal.exchange, decision: 'APPROVE', riskScore: 2,
-            reason: `주식 validation starter 승인 (${amountUsdt} <= ${starterApproveLimit}, confidence ${(signal.confidence ?? 0).toFixed(2)})`,
+            reason: resized
+              ? `주식 dynamic starter 승인 (amount ${amountUsdt} → ${adjustedForStarter}, cap ${dynamicStarterCap}, confidence ${confidence.toFixed(2)}, importance ${importance.toFixed(2)})`
+              : `주식 starter 승인 (${adjustedForStarter} <= cap ${dynamicStarterCap}, confidence ${confidence.toFixed(2)}, importance ${importance.toFixed(2)})`,
           }).catch(() => {});
         }
         autoApproval = {
           approved: true,
-          adjustedAmount: amountUsdt,
+          adjustedAmount: adjustedForStarter,
           traceId,
           autoApproved: true,
           starterApproved: true,
+          dynamicSized: resized,
+          starterCap: dynamicStarterCap,
+          starterConfidence: confidence,
+          starterImportance: importance,
           nemesis_verdict: 'approved',
           approved_at: new Date().toISOString(),
         };

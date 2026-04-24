@@ -6,6 +6,8 @@ import {
   buildPositionStrategyHygieneRemediationPlan,
   runPositionStrategyHygiene,
 } from './runtime-position-strategy-hygiene.ts';
+import { normalizeDuplicateStrategyProfiles } from './normalize-duplicate-strategy-profiles.ts';
+import { retireOrphanStrategyProfiles } from './retire-orphan-strategy-profiles.ts';
 import {
   DEFAULT_POSITION_STRATEGY_REMEDIATION_HISTORY_FILE,
   readPositionStrategyRemediationHistory,
@@ -13,9 +15,12 @@ import {
 
 function parseArgs(argv = process.argv.slice(2)) {
   const historyFileArg = argv.find((arg) => arg.startsWith('--history-file='));
+  const stableCyclesArg = argv.find((arg) => arg.startsWith('--stable-cycles='));
   return {
     json: argv.includes('--json'),
     historyFile: historyFileArg?.split('=').slice(1).join('=') || DEFAULT_POSITION_STRATEGY_REMEDIATION_HISTORY_FILE,
+    autonomousApply: argv.includes('--autonomous-apply'),
+    stableCycles: Math.max(1, Number(stableCyclesArg?.split('=').slice(1).join('=') || 3)),
   };
 }
 
@@ -236,6 +241,133 @@ function buildPositionStrategyRemediationAliases(remediationFlat = null, remedia
   };
 }
 
+function buildAutonomousRemediationContext({
+  remediationPlan = null,
+  remediationHistory = null,
+  hygiene = null,
+  stableCycles = 3,
+} = {}) {
+  const historyCount = Number(remediationHistory?.historyCount || 0);
+  const historyStable = Boolean(remediationHistory?.current) && remediationHistory?.stale !== true;
+  const stableEnough = historyStable && historyCount >= Math.max(1, Number(stableCycles || 3));
+  const duplicateSafe = hygiene?.duplicateNormalization?.decision?.safeToApply === true;
+  const orphanSafe = hygiene?.orphanRetirement?.decision?.safeToApply === true;
+  const targetExchange = remediationPlan?.recommendedExchange || null;
+  return {
+    stableCycles: Math.max(1, Number(stableCycles || 3)),
+    historyCount,
+    historyStable,
+    stableEnough,
+    duplicateSafe,
+    orphanSafe,
+    targetExchange,
+    shouldApply: stableEnough && (duplicateSafe || orphanSafe),
+  };
+}
+
+async function runAutonomousRemediationApply({
+  context = null,
+  beforeHygiene = null,
+} = {}) {
+  if (!context) {
+    return {
+      enabled: true,
+      status: 'autonomous_action_blocked_by_safety',
+      reason: 'remediation_context_missing',
+      context: null,
+      applied: {
+        duplicate: null,
+        orphan: null,
+      },
+      verify: null,
+    };
+  }
+
+  if (!context.stableEnough) {
+    return {
+      enabled: true,
+      status: 'autonomous_action_blocked_by_safety',
+      reason: context.historyStable
+        ? `history_not_enough_cycles:${context.historyCount}/${context.stableCycles}`
+        : 'history_stale_or_missing',
+      context,
+      applied: {
+        duplicate: null,
+        orphan: null,
+      },
+      verify: null,
+    };
+  }
+
+  if (!context.duplicateSafe && !context.orphanSafe) {
+    return {
+      enabled: true,
+      status: 'autonomous_action_blocked_by_safety',
+      reason: 'safe_to_apply_false',
+      context,
+      applied: {
+        duplicate: null,
+        orphan: null,
+      },
+      verify: null,
+    };
+  }
+
+  const exchange = context.targetExchange || null;
+  const duplicateApplied = context.duplicateSafe
+    ? await normalizeDuplicateStrategyProfiles({ apply: true, exchange }).catch((error) => ({
+      ok: false,
+      error: error?.message || String(error),
+      retired: 0,
+    }))
+    : null;
+  const orphanApplied = context.orphanSafe
+    ? await retireOrphanStrategyProfiles({ apply: true, exchange }).catch((error) => ({
+      ok: false,
+      error: error?.message || String(error),
+      retired: 0,
+    }))
+    : null;
+
+  const afterHygiene = await runPositionStrategyHygiene({ json: true }).catch(() => null);
+  const beforeAudit = beforeHygiene?.audit || {};
+  const afterAudit = afterHygiene?.audit || {};
+  const beforeDuplicate = Number(beforeAudit?.duplicateManagedProfileScopes || 0);
+  const beforeOrphan = Number(beforeAudit?.orphanProfiles || 0);
+  const beforeUnmatched = Number(beforeAudit?.unmatchedManagedPositions || 0);
+  const afterDuplicate = Number(afterAudit?.duplicateManagedProfileScopes || 0);
+  const afterOrphan = Number(afterAudit?.orphanProfiles || 0);
+  const afterUnmatched = Number(afterAudit?.unmatchedManagedPositions || 0);
+  const verified = afterHygiene != null
+    && afterDuplicate <= beforeDuplicate
+    && afterOrphan <= beforeOrphan
+    && afterUnmatched <= beforeUnmatched;
+  return {
+    enabled: true,
+    status: verified ? 'autonomous_action_executed' : 'autonomous_action_failed',
+    reason: verified ? 'auto_apply_verified' : 'post_apply_verification_failed',
+    context,
+    applied: {
+      duplicate: duplicateApplied,
+      orphan: orphanApplied,
+    },
+    verify: {
+      ok: verified,
+      before: {
+        duplicateManaged: beforeDuplicate,
+        orphanProfiles: beforeOrphan,
+        unmatchedManaged: beforeUnmatched,
+      },
+      after: {
+        duplicateManaged: afterDuplicate,
+        orphanProfiles: afterOrphan,
+        unmatchedManaged: afterUnmatched,
+      },
+      afterHygiene: afterHygiene?.decision || null,
+    },
+  };
+}
+
 function buildPositionStrategyRemediationDecisionActionItems(
   remediationPlan,
   historyActionItem,
@@ -294,7 +426,12 @@ export function buildPositionStrategyRemediationDecision(remediationPlan = null,
   };
 }
 
-export async function runPositionStrategyRemediation({ json = false, historyFile = DEFAULT_POSITION_STRATEGY_REMEDIATION_HISTORY_FILE } = {}) {
+export async function runPositionStrategyRemediation({
+  json = false,
+  historyFile = DEFAULT_POSITION_STRATEGY_REMEDIATION_HISTORY_FILE,
+  autonomousApply = false,
+  stableCycles = 3,
+} = {}) {
   const hygiene = await runPositionStrategyHygiene({ json: true });
   const remediationPlan = hygiene?.remediationPlan
     || buildPositionStrategyHygieneRemediationPlan(hygiene);
@@ -318,6 +455,28 @@ export async function runPositionStrategyRemediation({ json = false, historyFile
     decision,
   });
   const remediationAliases = buildPositionStrategyRemediationAliases(remediationFlat, remediationPlan);
+  const autonomousContext = buildAutonomousRemediationContext({
+    remediationPlan,
+    remediationHistory,
+    hygiene,
+    stableCycles,
+  });
+  const remediationAutonomous = autonomousApply
+    ? await runAutonomousRemediationApply({
+      context: autonomousContext,
+      beforeHygiene: hygiene,
+    })
+    : {
+      enabled: false,
+      status: 'autonomous_action_blocked_by_safety',
+      reason: 'autonomous_apply_disabled',
+      context: autonomousContext,
+      applied: {
+        duplicate: null,
+        orphan: null,
+      },
+      verify: null,
+    };
   const result = {
     ok: true,
     hygieneStatus: hygiene?.decision?.status || 'unknown',
@@ -336,6 +495,12 @@ export async function runPositionStrategyRemediation({ json = false, historyFile
     remediationTrendUnmatchedDelta: remediationTrend?.unmatchedDelta ?? null,
     remediationSummary,
     remediationFlat,
+    remediationAutonomous,
+    remediationAutonomousStatus: remediationAutonomous?.status || null,
+    remediationAutonomousReason: remediationAutonomous?.reason || null,
+    remediationAutonomousContext: remediationAutonomous?.context || autonomousContext,
+    remediationAutonomousVerify: remediationAutonomous?.verify || null,
+    remediationAutonomousApplied: remediationAutonomous?.applied || null,
     ...remediationAliases,
     decision,
   };
@@ -345,7 +510,12 @@ export async function runPositionStrategyRemediation({ json = false, historyFile
 
 async function main() {
   const args = parseArgs();
-  const result = await runPositionStrategyRemediation({ json: true, historyFile: args.historyFile });
+  const result = await runPositionStrategyRemediation({
+    json: true,
+    historyFile: args.historyFile,
+    autonomousApply: args.autonomousApply,
+    stableCycles: args.stableCycles,
+  });
   if (args.json) console.log(JSON.stringify(result, null, 2));
   else console.log(JSON.stringify(result, null, 2));
 }

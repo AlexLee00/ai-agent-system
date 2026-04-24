@@ -89,6 +89,9 @@ function buildDecision(runtimeReport, tuning, dispatch, autotune, phase6SafetyRe
   const topGuardReasons = (dispatch?.guardReasonSummary?.topReasons || [])
     .slice(0, 2)
     .map((item) => `${item.reason}(${item.count})`);
+  const marketQueue = dispatch?.marketQueue || {};
+  const queuedWaiting = Number(marketQueue.waitingMarketOpen || 0);
+  const queuedRetrying = Number(marketQueue.retrying || 0);
   const cadenceRecommendations = buildCadenceRecommendationByExchange(tuning);
   return {
     status: blockedBySafety
@@ -113,6 +116,8 @@ function buildDecision(runtimeReport, tuning, dispatch, autotune, phase6SafetyRe
       blockedBySafety
         ? `phase6 safety contracts failed (${(phase6SafetyReadiness?.checks || []).filter((item) => item?.ok !== true).map((item) => item.key).join(', ') || 'unknown'})`
         : null,
+      queuedWaiting > 0 ? `market-open queue waiting ${queuedWaiting}` : null,
+      queuedRetrying > 0 ? `market-open queue retrying ${queuedRetrying}` : null,
     ].filter(Boolean),
     commands: {
       report: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime -- --json',
@@ -175,7 +180,9 @@ function buildDispatchExchangeSummary(candidates = [], results = []) {
     if (!summary[exchange]) {
       summary[exchange] = { candidates: 0, executed: 0 };
     }
-    if (result?.ok) summary[exchange].executed += 1;
+    if (String(result?.autonomousActionStatus || '') === 'autonomous_action_executed') {
+      summary[exchange].executed += 1;
+    }
   }
   return summary;
 }
@@ -195,7 +202,10 @@ function buildHistorySnapshot({
   const metrics = runtimeReport?.decision?.metrics || {};
   const exchangeSummary = buildExchangeRuntimeSummary(runtimeReport?.rows || []);
   const dispatchSummary = buildDispatchExchangeSummary(dispatchPreview?.candidates || [], dispatchResult?.results || []);
-  const dispatchFailures = (dispatchResult?.results || []).filter((item) => item?.ok !== true);
+  const dispatchFailures = (dispatchResult?.results || []).filter((item) => item?.autonomousActionStatus === 'autonomous_action_failed');
+  const dispatchQueued = (dispatchResult?.results || []).filter((item) => item?.autonomousActionStatus === 'autonomous_action_queued').length;
+  const dispatchRetrying = (dispatchResult?.results || []).filter((item) => item?.autonomousActionStatus === 'autonomous_action_retrying').length;
+  const dispatchExecuted = (dispatchResult?.results || []).filter((item) => item?.autonomousActionStatus === 'autonomous_action_executed').length;
   const cadenceRecommendationByExchange = buildCadenceRecommendationByExchange(tuning);
   const cadenceAppliedByExchange = buildCadenceAppliedByExchange(autotuneResult);
   return {
@@ -231,7 +241,9 @@ function buildHistorySnapshot({
       reason: item.reason || null,
     })),
     dispatchCandidateCount: Array.isArray(dispatchPreview?.candidates) ? dispatchPreview.candidates.length : 0,
-    dispatchExecutedCount: Array.isArray(dispatchResult?.results) ? dispatchResult.results.filter((item) => item?.ok).length : 0,
+    dispatchExecutedCount: dispatchExecuted,
+    dispatchQueuedCount: dispatchQueued,
+    dispatchRetryingCount: dispatchRetrying,
     dispatchFailureCount: dispatchFailures.length,
     dispatchFailures: dispatchFailures.slice(0, 5).map((item) => ({
       exchange: item?.candidate?.exchange || null,
@@ -241,6 +253,7 @@ function buildHistorySnapshot({
     })),
     dispatchByExchange: dispatchSummary,
     dispatchGuardReasonSummary: dispatchPreview?.guardReasonSummary || null,
+    dispatchMarketQueue: dispatchResult?.marketQueue || dispatchPreview?.marketQueue || null,
     dispatchBlockedCandidates: (dispatchPreview?.blockedCandidates || []).slice(0, 5).map((item) => ({
       exchange: item.exchange,
       symbol: item.symbol,
@@ -336,10 +349,16 @@ export async function runPositionRuntimeAutopilot(args = {}) {
       json: true,
     })
     : null;
-  const dispatchFailures = (dispatchResult?.results || []).filter((item) => item?.ok !== true);
+  const dispatchFailures = (dispatchResult?.results || []).filter((item) => item?.autonomousActionStatus === 'autonomous_action_failed');
+  const dispatchQueued = (dispatchResult?.results || []).filter((item) => item?.autonomousActionStatus === 'autonomous_action_queued').length;
+  const dispatchRetrying = (dispatchResult?.results || []).filter((item) => item?.autonomousActionStatus === 'autonomous_action_retrying').length;
   const executionStatus = dispatchFailures.length > 0
     ? 'position_runtime_autopilot_executed_with_dispatch_failures'
-    : 'position_runtime_autopilot_executed';
+    : dispatchQueued > 0
+      ? 'position_runtime_autopilot_executed_with_market_queue'
+      : dispatchRetrying > 0
+        ? 'position_runtime_autopilot_executed_with_retries'
+        : 'position_runtime_autopilot_executed';
 
   const historySnapshot = buildHistorySnapshot({
     args,

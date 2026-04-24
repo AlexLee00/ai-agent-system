@@ -99,6 +99,8 @@ export function runPositionRuntimeStateSmoke() {
   assert.match(executionIntent.autonomousExecuteCommand, /--execute/);
   assert.match(executionIntent.autonomousExecuteCommand, /--confirm=position-runtime-autopilot/);
   assert.equal(executionIntent.executionPolicy.autonomy, 'autonomous_allowed');
+  assert.ok(String(executionIntent.executionScope || '').includes('BTC/USDT'));
+  assert.ok(String(executionIntent.brokerScope || '').includes('BTC/USDT'));
 
   const runtimeState = buildPositionRuntimeState({
     position: {

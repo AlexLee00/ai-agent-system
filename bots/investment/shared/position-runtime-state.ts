@@ -30,6 +30,23 @@ function cloneObject(value, fallback = {}) {
     : { ...fallback };
 }
 
+function resolveEvidenceGapState(externalEvidenceGapState = null) {
+  const gap = externalEvidenceGapState && typeof externalEvidenceGapState === 'object'
+    ? externalEvidenceGapState
+    : {};
+  const consecutiveGapCount = safeNumber(gap?.state?.consecutiveGapCount ?? gap?.consecutiveGapCount, 0);
+  const threshold = safeNumber(gap?.state?.threshold ?? gap?.threshold, 3);
+  return {
+    status: normalizeString(gap?.status || gap?.state?.status, null),
+    consecutiveGapCount,
+    threshold,
+    gapSevere: consecutiveGapCount >= Math.max(1, threshold),
+    queuedNow: gap?.queuedNow === true,
+    activeTaskCount: Array.isArray(gap?.activeTasks) ? gap.activeTasks.length : 0,
+    queueSummary: gap?.queueSummary || null,
+  };
+}
+
 export function getPositionRuntimeMarket(exchange = 'binance') {
   if (exchange === 'binance') return 'crypto';
   if (exchange === 'kis') return 'domestic';
@@ -158,6 +175,7 @@ export function buildRegimeAwarePolicyMatrix({
   analysisSummary = null,
   driftContext = null,
   externalEvidenceSummary = null,
+  externalEvidenceGapState = null,
 } = {}) {
   const market = getPositionRuntimeMarket(exchange);
   const setupType = normalizeString(strategyProfile?.setup_type || strategyProfile?.setupType, 'unknown');
@@ -182,6 +200,11 @@ export function buildRegimeAwarePolicyMatrix({
     sourceQualityScore,
     recommendation,
   });
+  const evidenceGap = resolveEvidenceGapState(externalEvidenceGapState);
+  const evidenceGapPenalty = evidenceGap.gapSevere && recommendation !== 'EXIT';
+  const adjustedPositionSizeMultiplier = evidenceGapPenalty
+    ? Number(Math.max(0.1, safeNumber(policy.positionSizeMultiplier, 1) * 0.85).toFixed(4))
+    : policy.positionSizeMultiplier;
 
   const reevaluationBias = {
     weightedBias,
@@ -201,8 +224,10 @@ export function buildRegimeAwarePolicyMatrix({
     partialAdjustBias: policy.partialExitRatioBias,
     partialExitRatioBias: policy.partialExitRatioBias,
     cooldownMinutes: policy.cooldownMinutes,
-    positionSizeMultiplier: policy.positionSizeMultiplier,
-    reentryLock: policy.reentryLock === true,
+    positionSizeMultiplier: adjustedPositionSizeMultiplier,
+    reentryLock: policy.reentryLock === true || evidenceGapPenalty,
+    evidenceGapPenalty,
+    evidenceGapState: evidenceGap,
     sourceQualityBlocked: policy.sourceQualityBlocked === true,
     sourceQualityReason: policy.sourceQualityReason || null,
     monitorProfile: policy.monitorProfile,
@@ -263,6 +288,20 @@ export function buildExecutionIntent({
   const exchange = normalizeString(position?.exchange, null);
   const tradeMode = normalizeString(position?.trade_mode || position?.tradeMode, 'normal');
   const symbol = normalizeString(position?.symbol, null);
+  const brokerAccountMode = normalizeString(position?.broker_account_mode || position?.brokerAccountMode, position?.paper ? 'paper' : 'live');
+  const brokerAccountId = normalizeString(
+    position?.broker_account_id
+    || position?.brokerAccountId
+    || position?.account_id
+    || position?.accountId,
+    symbol && exchange ? `${exchange}:${brokerAccountMode || 'live'}:${position?.paper ? 'paper' : 'live'}` : null,
+  );
+  const positionId = normalizeString(
+    position?.position_id
+    || position?.positionId
+    || position?.id,
+    symbol && exchange ? `${exchange}:${symbol}:${tradeMode}` : null,
+  );
   const responsibilityPlan = cloneObject(
     strategyProfile?.strategy_context?.responsibilityPlan
     || strategyProfile?.strategyContext?.responsibilityPlan
@@ -367,8 +406,14 @@ export function buildExecutionIntent({
     autonomousExecuteCommand,
     runnerArgs,
     executionPolicy,
-    executionScope: symbol && exchange ? `${exchange}:${symbol}:${action}:${tradeMode}` : null,
-    brokerScope: symbol && exchange ? `${exchange}:${symbol}` : null,
+    executionScope: symbol && exchange
+      ? `${brokerAccountId || 'broker_unknown'}:${exchange}:${symbol}:${tradeMode}:${positionId || 'position_unknown'}:${action}`
+      : null,
+    brokerScope: symbol && exchange
+      ? `${brokerAccountId || 'broker_unknown'}:${exchange}:${symbol}:${positionId || 'position_unknown'}`
+      : null,
+    brokerAccountId: brokerAccountId || null,
+    positionId: positionId || null,
     urgency,
     riskGate,
     executionAllowed,
@@ -391,6 +436,7 @@ export function buildPositionRuntimeState({
   reason = null,
   regimeSnapshot = null,
   externalEvidenceSummary = null,
+  externalEvidenceGapState = null,
   trigger = null,
   previousState = null,
 } = {}) {
@@ -418,6 +464,7 @@ export function buildPositionRuntimeState({
     analysisSummary,
     driftContext,
     externalEvidenceSummary,
+    externalEvidenceGapState,
   });
   const validationState = buildOnlineValidationState({
     latestBacktest,
@@ -474,6 +521,7 @@ export function buildPositionRuntimeState({
         avgConfidence: safeNumber(analysisSummary?.avgConfidence, 0),
       },
       externalEvidenceSummary: externalEvidenceSummary || null,
+      externalEvidenceGapState: externalEvidenceGapState || null,
     },
     previousRecommendation: normalizeString(previous?.recommendation, null),
     previousReasonCode: normalizeString(previous?.reasonCode, null),

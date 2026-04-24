@@ -7,6 +7,7 @@ import { refreshInvestmentAgentRoles } from './agent-role-state.ts';
 import { getInvestmentSyncRuntimeConfig, getPositionReevaluationRuntimeConfig } from './runtime-config.ts';
 import { buildPositionRuntimeState, getPositionRuntimeMarket } from './position-runtime-state.ts';
 import { buildEvidenceSummaryForAgent } from './external-evidence-ledger.ts';
+import { updateExternalEvidenceGapTaskQueue } from './evidence-gap-task-queue.ts';
 import { recordLifecyclePhaseSnapshot } from './lifecycle-contract.ts';
 
 const execFileAsync = promisify(execFile);
@@ -788,6 +789,15 @@ export async function reevaluateOpenPositions({
       market: regimeMarket,
       days: 3,
     }).catch(() => null);
+    const externalEvidenceGapState = updateExternalEvidenceGapTaskQueue({
+      symbol: position.symbol,
+      exchange: position.exchange,
+      tradeMode: effectiveTradeMode,
+      evidenceCount: Number(externalEvidenceSummary?.evidenceCount || 0),
+      threshold: 3,
+      cooldownMinutes: 60,
+      reason: externalEvidenceSummary?.warning || null,
+    });
     let indicatorAnalyses = [];
     let indicatorAnalysis = null;
     if (liveIndicators) {
@@ -822,6 +832,7 @@ export async function reevaluateOpenPositions({
       reason: decision.decision.reason,
       regimeSnapshot,
       externalEvidenceSummary,
+      externalEvidenceGapState,
       trigger: {
         source: eventSource,
         attentionType,
@@ -879,6 +890,7 @@ export async function reevaluateOpenPositions({
             capturedAt: regimeSnapshot.captured_at || null,
           } : null,
           externalEvidenceSummary: externalEvidenceSummary || null,
+          externalEvidenceGapState: externalEvidenceGapState || null,
         },
         idempotencyKey: `phase2:${lifecycleBase}`,
       }).catch(() => null),
@@ -906,6 +918,7 @@ export async function reevaluateOpenPositions({
         },
         evidenceSnapshot: {
           externalEvidenceSummary: externalEvidenceSummary || null,
+          externalEvidenceGapState: externalEvidenceGapState || null,
         },
         idempotencyKey: `phase5:${lifecycleBase}`,
       }).catch(() => null),
@@ -946,6 +959,7 @@ export async function reevaluateOpenPositions({
           capturedAt: regimeSnapshot.captured_at || null,
         } : null,
         externalEvidenceSummary: externalEvidenceSummary || null,
+        externalEvidenceGapState: externalEvidenceGapState || null,
         runtimeState,
         latestBacktest: latestBacktest ? {
           createdAt: latestBacktest.created_at || null,

@@ -207,6 +207,12 @@ export async function runPositionStrategyRemediationContractSmoke() {
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationActionNormalizeApplyCommand'));
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationActionRetireDryRunCommand'));
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationActionRetireApplyCommand'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationAutonomous'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationAutonomousStatus'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationAutonomousReason'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationAutonomousContext'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationAutonomousVerify'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationAutonomousApplied'));
   assert.ok(Object.prototype.hasOwnProperty.call(result.remediationSummary || {}, 'commands'));
   return {
     ok: true,
@@ -261,6 +267,13 @@ export async function runPositionStrategyRemediationContractSmoke() {
       && Object.prototype.hasOwnProperty.call(result, 'remediationActionNormalizeApplyCommand')
       && Object.prototype.hasOwnProperty.call(result, 'remediationActionRetireDryRunCommand')
       && Object.prototype.hasOwnProperty.call(result, 'remediationActionRetireApplyCommand'),
+    hasAutonomousFields:
+      Object.prototype.hasOwnProperty.call(result, 'remediationAutonomous')
+      && Object.prototype.hasOwnProperty.call(result, 'remediationAutonomousStatus')
+      && Object.prototype.hasOwnProperty.call(result, 'remediationAutonomousReason')
+      && Object.prototype.hasOwnProperty.call(result, 'remediationAutonomousContext')
+      && Object.prototype.hasOwnProperty.call(result, 'remediationAutonomousVerify')
+      && Object.prototype.hasOwnProperty.call(result, 'remediationAutonomousApplied'),
     hasSummaryField: Object.prototype.hasOwnProperty.call(result, 'remediationSummary'),
     hasSummaryCommandsField: Object.prototype.hasOwnProperty.call(result.remediationSummary || {}, 'commands'),
   };

@@ -839,7 +839,7 @@ function buildDecision(
       {
         active: Number(runtimeView.metrics?.exitReady || 0) > 0 || Number(runtimeView.metrics?.adjustReady || 0) > 0 || runtimeView.tuningStatus === 'position_runtime_tuning_attention',
         level: Number(runtimeView.metrics?.exitReady || 0) > 0 ? 'high' : 'medium',
-        reason: `position runtime — ${runtimeView.headline} / tuning ${runtimeView.tuningStatus}${runtimeView.tuningSuggestion ? ` ${runtimeView.tuningSuggestion.exchange} ${runtimeView.tuningSuggestion.status}` : ''} / dispatch ${runtimeView.dispatchStatus} ${runtimeView.dispatchCandidates || 0}건 / next command ${runtimeView.dispatchCommand}`,
+        reason: `position runtime — ${runtimeView.headline} / action ${runtimeView.autonomousActionStatus || 'autonomous_action_blocked_by_safety'} / tuning ${runtimeView.tuningStatus}${runtimeView.tuningSuggestion ? ` ${runtimeView.tuningSuggestion.exchange} ${runtimeView.tuningSuggestion.status}` : ''} / dispatch ${runtimeView.dispatchStatus} ${runtimeView.dispatchCandidates || 0}건 / queue waiting ${runtimeView.marketQueue?.waitingMarketOpen || 0} retrying ${runtimeView.marketQueue?.retrying || 0}`,
       },
       {
         active: strategyFeedbackOutcomes?.status === 'strategy_feedback_outcome_attention',
@@ -853,27 +853,27 @@ function buildDecision(
           Number(riskApprovalOutcomeMode?.avgPnlPercent ?? 0) < 0
         ),
         level: 'medium',
-        reason: `risk approval outcome — closed ${riskApprovalOutcome?.closed || 0}/${riskApprovalOutcome?.total || 0} / win ${riskApprovalOutcome?.winRate ?? 'n/a'}% / avg ${riskApprovalOutcome?.avgPnlPercent ?? 'n/a'}% / pnl ${riskApprovalOutcome?.pnlNet ?? 0} / mode ${riskApprovalOutcomeMode?.mode || 'n/a'} avg ${riskApprovalOutcomeMode?.avgPnlPercent ?? 'n/a'}%${riskApprovalOutcomeWorst ? ` / worst ${riskApprovalOutcomeWorst.exchange || 'n/a'}/${riskApprovalOutcomeWorst.symbol || 'n/a'} pnl ${riskApprovalOutcomeWorst.pnlNet ?? 'n/a'}` : ''} / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-suggest -- --json`,
+        reason: `risk approval outcome — action autonomous_action_blocked_by_safety / closed ${riskApprovalOutcome?.closed || 0}/${riskApprovalOutcome?.total || 0} / win ${riskApprovalOutcome?.winRate ?? 'n/a'}% / avg ${riskApprovalOutcome?.avgPnlPercent ?? 'n/a'}% / pnl ${riskApprovalOutcome?.pnlNet ?? 0} / mode ${riskApprovalOutcomeMode?.mode || 'n/a'} avg ${riskApprovalOutcomeMode?.avgPnlPercent ?? 'n/a'}%${riskApprovalOutcomeWorst ? ` / worst ${riskApprovalOutcomeWorst.exchange || 'n/a'}/${riskApprovalOutcomeWorst.symbol || 'n/a'} pnl ${riskApprovalOutcomeWorst.pnlNet ?? 'n/a'}` : ''}`,
       },
       {
         active: riskApproval?.status === 'risk_approval_preview_divergence',
         level: 'medium',
-        reason: `risk approval preview divergence — ${riskApproval?.headline || '리스크 승인 preview와 기존 승인 결과 차이 점검 필요'} / preview ${riskApproval?.total || 0} / rejects ${riskApproval?.previewRejects || 0} / divergence ${riskApproval?.divergence || 0} / trend divergence Δ${riskApproval?.trend?.delta?.legacyApprovedPreviewRejected ?? 0} / amount delta ${riskApproval?.previewVsApprovedDelta ?? 0} / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:risk-approval -- --json`,
+        reason: `risk approval preview divergence — action autonomous_action_blocked_by_safety / ${riskApproval?.headline || '리스크 승인 preview와 기존 승인 결과 차이 점검 필요'} / preview ${riskApproval?.total || 0} / rejects ${riskApproval?.previewRejects || 0} / divergence ${riskApproval?.divergence || 0} / trend divergence Δ${riskApproval?.trend?.delta?.legacyApprovedPreviewRejected ?? 0} / amount delta ${riskApproval?.previewVsApprovedDelta ?? 0}`,
       },
       {
         active: riskApprovalReadiness?.status === 'risk_approval_readiness_blocked',
         level: 'medium',
-        reason: `risk approval mode readiness — ${riskApprovalReadiness?.headline || '전환 blocker 점검 필요'} / mode ${riskApprovalReadiness?.currentMode || 'n/a'} -> ${riskApprovalReadiness?.targetMode || 'n/a'} / blockers ${(riskApprovalReadiness?.blockers || []).join(', ') || 'n/a'} / trend blocker Δ${riskApprovalReadinessDelta.blockerCount ?? 0} preview Δ${riskApprovalReadinessDelta.previewTotal ?? 0} / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:risk-approval-readiness-history -- --json`,
+        reason: `risk approval mode readiness — action autonomous_action_blocked_by_safety / ${riskApprovalReadiness?.headline || '전환 blocker 점검 필요'} / mode ${riskApprovalReadiness?.currentMode || 'n/a'} -> ${riskApprovalReadiness?.targetMode || 'n/a'} / blockers ${(riskApprovalReadiness?.blockers || []).join(', ') || 'n/a'} / trend blocker Δ${riskApprovalReadinessDelta.blockerCount ?? 0} preview Δ${riskApprovalReadinessDelta.previewTotal ?? 0}`,
       },
       {
         active: riskApprovalReadiness?.status === 'risk_approval_readiness_assist_ready' || riskApprovalReadiness?.status === 'risk_approval_readiness_enforce_candidate',
         level: 'low',
-        reason: `risk approval mode candidate — ${riskApprovalReadiness?.headline || '전환 후보 관찰'} / mode ${riskApprovalReadiness?.currentMode || 'n/a'} -> ${riskApprovalReadiness?.targetMode || 'n/a'} / trend blocker Δ${riskApprovalReadinessDelta.blockerCount ?? 0} preview Δ${riskApprovalReadinessDelta.previewTotal ?? 0} / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:risk-approval-readiness-history -- --json`,
+        reason: `risk approval mode candidate — action autonomous_action_queued / ${riskApprovalReadiness?.headline || '전환 후보 관찰'} / mode ${riskApprovalReadiness?.currentMode || 'n/a'} -> ${riskApprovalReadiness?.targetMode || 'n/a'} / trend blocker Δ${riskApprovalReadinessDelta.blockerCount ?? 0} preview Δ${riskApprovalReadinessDelta.previewTotal ?? 0}`,
       },
       {
         active: ['risk_approval_mode_audit_attention', 'risk_approval_mode_audit_mode_watch'].includes(riskApprovalModeAudit?.status),
         level: riskApprovalModeAudit?.status === 'risk_approval_mode_audit_attention' ? 'medium' : 'low',
-        reason: `risk approval mode audit — ${riskApprovalModeAudit?.headline || 'mode/readiness 적용 상태 점검'} / mode ${riskApprovalModeAudit?.metrics?.currentMode || 'n/a'} / non-shadow ${riskApprovalModeAudit?.metrics?.nonShadowApplications || 0} Δ${riskApprovalModeAuditDelta.nonShadowApplications ?? 0} / unavailable ${riskApprovalModeAudit?.metrics?.unavailablePreviewCount || 0} Δ${riskApprovalModeAuditDelta.unavailablePreviewCount ?? 0} / outcome pnl ${riskApprovalModeAudit?.metrics?.outcomePnlNet ?? 0} Δ${riskApprovalModeAuditDelta.outcomePnlNet ?? 0} / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:risk-approval-mode-audit-history -- --json`,
+        reason: `risk approval mode audit — action autonomous_action_blocked_by_safety / ${riskApprovalModeAudit?.headline || 'mode/readiness 적용 상태 점검'} / mode ${riskApprovalModeAudit?.metrics?.currentMode || 'n/a'} / non-shadow ${riskApprovalModeAudit?.metrics?.nonShadowApplications || 0} Δ${riskApprovalModeAuditDelta.nonShadowApplications ?? 0} / unavailable ${riskApprovalModeAudit?.metrics?.unavailablePreviewCount || 0} Δ${riskApprovalModeAuditDelta.unavailablePreviewCount ?? 0} / outcome pnl ${riskApprovalModeAudit?.metrics?.outcomePnlNet ?? 0} Δ${riskApprovalModeAuditDelta.outcomePnlNet ?? 0}`,
       },
       {
         active: Boolean(collectionInsufficient || collectionDegraded),
@@ -1143,6 +1143,24 @@ function buildPositionRuntimeSnapshot(runtimeReport, runtimeTuning, runtimeDispa
   const suggestions = Array.isArray(runtimeTuning?.suggestions) ? runtimeTuning.suggestions : [];
   const topSuggestion = suggestions[0] || null;
   const candidates = Array.isArray(runtimeDispatch?.candidates) ? runtimeDispatch.candidates : [];
+  const dispatchResults = Array.isArray(runtimeDispatch?.results) ? runtimeDispatch.results : [];
+  const queuedCount = dispatchResults.filter((item) => item?.autonomousActionStatus === 'autonomous_action_queued').length
+    + Number(runtimeDispatch?.marketQueue?.waitingMarketOpen || 0);
+  const retryingCount = dispatchResults.filter((item) => item?.autonomousActionStatus === 'autonomous_action_retrying').length
+    + Number(runtimeDispatch?.marketQueue?.retrying || 0);
+  const failedCount = dispatchResults.filter((item) => item?.autonomousActionStatus === 'autonomous_action_failed').length;
+  const executedCount = dispatchResults.filter((item) => item?.autonomousActionStatus === 'autonomous_action_executed').length;
+  const autonomousActionStatus = failedCount > 0
+    ? 'autonomous_action_failed'
+    : retryingCount > 0
+      ? 'autonomous_action_retrying'
+      : queuedCount > 0 || candidates.length > 0
+        ? 'autonomous_action_queued'
+        : runtimeDispatch?.status === 'position_runtime_dispatch_blocked'
+          ? 'autonomous_action_blocked_by_safety'
+          : executedCount > 0
+            ? 'autonomous_action_executed'
+            : 'autonomous_action_blocked_by_safety';
   return {
     status: decision.status || 'position_runtime_unknown',
     headline: decision.headline || 'runtime state unavailable',
@@ -1159,6 +1177,12 @@ function buildPositionRuntimeSnapshot(runtimeReport, runtimeTuning, runtimeDispa
     dispatchStatus: runtimeDispatch?.status || 'position_runtime_dispatch_unknown',
     dispatchCandidates: candidates.length,
     dispatchTopCandidate: candidates[0] || null,
+    dispatchQueuedCount: queuedCount,
+    dispatchRetryingCount: retryingCount,
+    dispatchFailedCount: failedCount,
+    dispatchExecutedCount: executedCount,
+    marketQueue: runtimeDispatch?.marketQueue || null,
+    autonomousActionStatus,
     reportCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime -- --json',
     tuningCommand: topSuggestion?.exchange
       ? `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime-tuning -- --exchange=${topSuggestion.exchange} --json`
