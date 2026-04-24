@@ -67,12 +67,18 @@ function buildHistoryPressure(history = [], exchange = null) {
     };
   }
   const totals = relevant.reduce((acc, item) => {
-    acc.active += Number(item.metrics?.active || 0);
-    acc.adjustReady += Number(item.metrics?.adjustReady || 0);
-    acc.exitReady += Number(item.metrics?.exitReady || 0);
-    acc.fastLane += Number(item.metrics?.fastLane || 0);
-    acc.staleValidation += Number(item.metrics?.staleValidation || 0);
-    acc.dispatchExecuted += Number(item.dispatchExecutedCount || 0);
+    const exchangeSummary = item.exchange === exchange
+      ? item.metrics
+      : item.exchangeSummary?.[exchange] || null;
+    acc.active += Number(exchangeSummary?.active || 0);
+    acc.adjustReady += Number(exchangeSummary?.adjustReady || 0);
+    acc.exitReady += Number(exchangeSummary?.exitReady || 0);
+    acc.fastLane += Number(exchangeSummary?.fastLane || 0);
+    acc.staleValidation += Number(exchangeSummary?.staleValidation || 0);
+    const dispatchByExchange = item.exchange === exchange
+      ? Number(item.dispatchExecutedCount || 0)
+      : Number(item.dispatchByExchange?.[exchange]?.executed || 0);
+    acc.dispatchExecuted += dispatchByExchange;
     const suggestion = (item.tuningSuggestions || []).find((entry) => entry?.exchange === exchange);
     if (Number.isFinite(Number(suggestion?.recommendedCadenceMs))) {
       acc.suggestedCadenceTotal += Number(suggestion.recommendedCadenceMs);

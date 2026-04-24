@@ -23,6 +23,7 @@ function parseArgs(argv = []) {
     applyTuning: false,
     executeDispatch: false,
     historyFile: DEFAULT_POSITION_RUNTIME_AUTOPILOT_HISTORY_FILE,
+    recordHistory: true,
   };
   for (const raw of argv) {
     if (raw === '--json') args.json = true;
@@ -33,6 +34,7 @@ function parseArgs(argv = []) {
     else if (raw.startsWith('--confirm=')) args.confirm = raw.split('=').slice(1).join('=') || null;
     else if (raw.startsWith('--limit=')) args.limit = Math.max(1, Number(raw.split('=').slice(1).join('=') || 5));
     else if (raw.startsWith('--history-file=')) args.historyFile = raw.split('=').slice(1).join('=') || DEFAULT_POSITION_RUNTIME_AUTOPILOT_HISTORY_FILE;
+    else if (raw === '--no-history') args.recordHistory = false;
   }
   return args;
 }
@@ -69,6 +71,49 @@ function renderText(result = {}) {
   return lines.join('\n');
 }
 
+function buildExchangeRuntimeSummary(rows = []) {
+  return (rows || []).reduce((acc, row) => {
+    const exchange = row?.exchange || 'unknown';
+    if (!acc[exchange]) {
+      acc[exchange] = {
+        active: 0,
+        fastLane: 0,
+        adjustReady: 0,
+        exitReady: 0,
+        staleValidation: 0,
+      };
+    }
+    if (!row?.runtimeState) return acc;
+    const bucket = acc[exchange];
+    bucket.active += 1;
+    const cadenceMs = Number(row?.runtimeState?.monitoringPolicy?.cadenceMs || 0);
+    if (cadenceMs > 0 && cadenceMs <= 15_000) bucket.fastLane += 1;
+    if (row?.runtimeState?.executionIntent?.action === 'ADJUST') bucket.adjustReady += 1;
+    if (row?.runtimeState?.executionIntent?.action === 'EXIT') bucket.exitReady += 1;
+    if (row?.runtimeState?.validationState?.severity === 'critical') bucket.staleValidation += 1;
+    return acc;
+  }, {});
+}
+
+function buildDispatchExchangeSummary(candidates = [], results = []) {
+  const summary = {};
+  for (const candidate of candidates || []) {
+    const exchange = candidate?.exchange || 'unknown';
+    if (!summary[exchange]) {
+      summary[exchange] = { candidates: 0, executed: 0 };
+    }
+    summary[exchange].candidates += 1;
+  }
+  for (const result of results || []) {
+    const exchange = result?.candidate?.exchange || 'unknown';
+    if (!summary[exchange]) {
+      summary[exchange] = { candidates: 0, executed: 0 };
+    }
+    if (result?.ok) summary[exchange].executed += 1;
+  }
+  return summary;
+}
+
 function buildHistorySnapshot({
   args,
   decision,
@@ -81,6 +126,8 @@ function buildHistorySnapshot({
   status,
 }) {
   const metrics = runtimeReport?.decision?.metrics || {};
+  const exchangeSummary = buildExchangeRuntimeSummary(runtimeReport?.rows || []);
+  const dispatchSummary = buildDispatchExchangeSummary(dispatchPreview?.candidates || [], dispatchResult?.results || []);
   return {
     recordedAt: new Date().toISOString(),
     exchange: args.exchange || 'all',
@@ -103,6 +150,7 @@ function buildHistorySnapshot({
       exitReady: Number(metrics.exitReady || 0),
       staleValidation: Number(metrics.staleValidation || 0),
     },
+    exchangeSummary,
     tuningStatus: tuning?.status || null,
     tuningSuggestions: (tuning?.suggestions || []).map((item) => ({
       exchange: item.exchange,
@@ -114,6 +162,7 @@ function buildHistorySnapshot({
     })),
     dispatchCandidateCount: Array.isArray(dispatchPreview?.candidates) ? dispatchPreview.candidates.length : 0,
     dispatchExecutedCount: Array.isArray(dispatchResult?.results) ? dispatchResult.results.filter((item) => item?.ok).length : 0,
+    dispatchByExchange: dispatchSummary,
     autotuneStatus: autotunePreview?.status || null,
     autotuneApplied: autotuneResult?.status === 'position_runtime_autotune_applied',
     appliedUpdates: autotuneResult?.updates || null,
@@ -145,7 +194,9 @@ export async function runPositionRuntimeAutopilot(args = {}) {
       autotunePreview,
       status: decision.status,
     });
-    appendPositionRuntimeAutopilotHistory(historySnapshot, args.historyFile || DEFAULT_POSITION_RUNTIME_AUTOPILOT_HISTORY_FILE);
+    if (args.recordHistory !== false) {
+      appendPositionRuntimeAutopilotHistory(historySnapshot, args.historyFile || DEFAULT_POSITION_RUNTIME_AUTOPILOT_HISTORY_FILE);
+    }
     const history = readPositionRuntimeAutopilotHistorySummary(args.historyFile || DEFAULT_POSITION_RUNTIME_AUTOPILOT_HISTORY_FILE);
     return {
       ...previewPayload,
@@ -192,7 +243,9 @@ export async function runPositionRuntimeAutopilot(args = {}) {
     dispatchResult,
     status: 'position_runtime_autopilot_executed',
   });
-  appendPositionRuntimeAutopilotHistory(historySnapshot, args.historyFile || DEFAULT_POSITION_RUNTIME_AUTOPILOT_HISTORY_FILE);
+  if (args.recordHistory !== false) {
+    appendPositionRuntimeAutopilotHistory(historySnapshot, args.historyFile || DEFAULT_POSITION_RUNTIME_AUTOPILOT_HISTORY_FILE);
+  }
   const history = readPositionRuntimeAutopilotHistorySummary(args.historyFile || DEFAULT_POSITION_RUNTIME_AUTOPILOT_HISTORY_FILE);
 
   return {

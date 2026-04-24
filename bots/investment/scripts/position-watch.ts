@@ -5,7 +5,8 @@ import fs from 'node:fs';
 import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { publishAlert } from '../shared/alert-publisher.ts';
-import { buildPositionReevaluationSummary } from './position-reevaluation-summary.ts';
+import { runPositionRuntimeReport } from './runtime-position-runtime-report.ts';
+import { runPositionRuntimeAutopilot } from './runtime-position-runtime-autopilot.ts';
 
 const DEFAULT_STATE_FILE = '/tmp/investment-position-watch-state.json';
 
@@ -44,32 +45,36 @@ function saveState(filePath, state) {
 
 function buildFocusRows(rows = [], recommendation) {
   return rows
-    .filter((row) => row.recommendation === recommendation)
+    .filter((row) => row?.runtimeState?.executionIntent?.action === recommendation)
     .slice(0, 5)
     .map((row) => ({
       exchange: row.exchange,
       symbol: row.symbol,
       tradeMode: row.tradeMode || 'normal',
-      pnlPct: Number(row.pnlPct || 0),
-      reasonCode: row.reasonCode || 'unknown',
+      pnlPct: Number(row?.runtimeState?.marketState?.latestPnlPct || 0),
+      reasonCode: row?.runtimeState?.reasonCode || 'unknown',
     }));
 }
 
-function buildSnapshot(summaryPayload) {
-  const decision = summaryPayload?.decision || {};
-  const report = summaryPayload?.report || {};
-  const rows = report.rows || [];
+function buildSnapshot(runtimePayload = {}, autopilotPayload = {}) {
+  const decision = runtimePayload?.decision || {};
+  const rows = runtimePayload?.rows || [];
+  const autopilotDecision = autopilotPayload?.decision || {};
   return {
     status: decision.status || 'unknown',
-    headline: decision.headline || null,
-    count: Number(report.count || 0),
-    holds: Number(decision?.metrics?.holds || 0),
-    adjusts: Number(decision?.metrics?.adjusts || 0),
-    exits: Number(decision?.metrics?.exits || 0),
-    topExit: decision?.metrics?.topExit || null,
-    topAdjust: decision?.metrics?.topAdjust || null,
+    headline: decision.headline || autopilotDecision.headline || null,
+    count: Number(decision?.metrics?.active || 0),
+    holds: Math.max(0, Number(decision?.metrics?.active || 0) - Number(decision?.metrics?.adjustReady || 0) - Number(decision?.metrics?.exitReady || 0)),
+    adjusts: Number(decision?.metrics?.adjustReady || 0),
+    exits: Number(decision?.metrics?.exitReady || 0),
+    fastLane: Number(decision?.metrics?.fastLane || 0),
+    staleValidation: Number(decision?.metrics?.staleValidation || 0),
+    topExit: (autopilotPayload?.dispatchPreview?.candidates || []).find((row) => row?.action === 'EXIT') || null,
+    topAdjust: (autopilotPayload?.dispatchPreview?.candidates || []).find((row) => row?.action === 'ADJUST') || null,
     exitRows: buildFocusRows(rows, 'EXIT'),
     adjustRows: buildFocusRows(rows, 'ADJUST'),
+    autopilotStatus: autopilotDecision.status || null,
+    autopilotNextActions: autopilotDecision.nextActions || [],
   };
 }
 
@@ -77,10 +82,12 @@ function buildSignature(snapshot) {
   return JSON.stringify({
     status: snapshot.status,
     count: snapshot.count,
+    fastLane: snapshot.fastLane,
+    staleValidation: snapshot.staleValidation,
     adjusts: snapshot.adjusts,
     exits: snapshot.exits,
-    topExit: snapshot.topExit?.code || null,
-    topAdjust: snapshot.topAdjust?.code || null,
+    topExit: snapshot.topExit?.symbol || null,
+    topAdjust: snapshot.topAdjust?.symbol || null,
     exitSymbols: snapshot.exitRows.map((row) => `${row.exchange}:${row.symbol}:${row.tradeMode}:${row.reasonCode}`),
     adjustSymbols: snapshot.adjustRows.map((row) => `${row.exchange}:${row.symbol}:${row.tradeMode}:${row.reasonCode}`),
   });
@@ -90,14 +97,22 @@ function renderMessage(snapshot) {
   const lines = [
     '👀 포지션 watch',
     `status: ${snapshot.status}`,
-    `positions: ${snapshot.count} | HOLD ${snapshot.holds} / ADJUST ${snapshot.adjusts} / EXIT ${snapshot.exits}`,
+    `positions: ${snapshot.count} | fast-lane ${snapshot.fastLane || 0} | HOLD ${snapshot.holds} / ADJUST ${snapshot.adjusts} / EXIT ${snapshot.exits}`,
   ];
 
-  if (snapshot.topExit?.code) {
-    lines.push(`topExit: ${snapshot.topExit.code} (${snapshot.topExit.count})`);
+  if (snapshot.topExit?.symbol) {
+    lines.push(`topExit: ${snapshot.topExit.exchange} ${snapshot.topExit.symbol} ${snapshot.topExit.tradeMode || 'normal'} | ${snapshot.topExit.reasonCode || 'unknown'}`);
   }
-  if (snapshot.topAdjust?.code) {
-    lines.push(`topAdjust: ${snapshot.topAdjust.code} (${snapshot.topAdjust.count})`);
+  if (snapshot.topAdjust?.symbol) {
+    lines.push(`topAdjust: ${snapshot.topAdjust.exchange} ${snapshot.topAdjust.symbol} ${snapshot.topAdjust.tradeMode || 'normal'} | ${snapshot.topAdjust.reasonCode || 'unknown'}`);
+  }
+  if (snapshot.autopilotStatus) {
+    lines.push(`autopilot: ${snapshot.autopilotStatus}`);
+  }
+  if ((snapshot.autopilotNextActions || []).length > 0) {
+    for (const item of snapshot.autopilotNextActions) {
+      lines.push(`- ${item}`);
+    }
   }
 
   if (snapshot.exitRows.length > 0) {
@@ -160,13 +175,16 @@ async function maybeNotify(snapshot, previous, notifyEnabled) {
 }
 
 export async function runPositionWatch(args = {}) {
-  const summary = await buildPositionReevaluationSummary({
+  const runtimeReport = await runPositionRuntimeReport({
     json: true,
-    persist: args.persist,
-    paper: args.paper,
-    minutesBack: args.minutesBack,
+    limit: 200,
   });
-  const snapshot = buildSnapshot(summary);
+  const autopilotPreview = await runPositionRuntimeAutopilot({
+    json: true,
+    limit: 5,
+    recordHistory: false,
+  });
+  const snapshot = buildSnapshot(runtimeReport, autopilotPreview);
   const previous = loadState(args.stateFile);
   const notify = await maybeNotify(snapshot, previous, args.notify);
   const signature = notify.signature || buildSignature(snapshot);
@@ -181,6 +199,8 @@ export async function runPositionWatch(args = {}) {
     ok: true,
     capturedAt: state.capturedAt,
     snapshot,
+    runtimeReport,
+    autopilotPreview,
     notify,
     stateFile: args.stateFile,
   };
