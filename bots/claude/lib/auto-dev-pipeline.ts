@@ -102,11 +102,23 @@ const REQUIRED_METADATA_FIELDS = [
   'target_team',
   'owner_agent',
   'risk_tier',
+  'task_type',
   'write_scope',
   'test_scope',
   'autonomy_level',
   'requires_live_execution',
 ];
+const DEVELOPMENT_TASK_TYPES = new Set([
+  'development_task',
+  'implementation_task',
+]);
+const COMPLETED_IMPLEMENTATION_STATUSES = new Set([
+  'completed',
+  'done',
+  'implementation_completed',
+  'auto_dev_implementation_completed',
+]);
+const IMPLEMENTATION_COMPLETED_MARKER = 'auto_dev_implementation_completed';
 
 const STAGES = [
   { id: 'received', label: '문서 접수', agent: 'auto-dev-orchestrator' },
@@ -277,6 +289,10 @@ function normalizeRelPath(relPath) {
   return toSafeString(relPath).replace(/\\/g, '/').replace(/^\.\//, '');
 }
 
+function normalizeMetadataToken(value) {
+  return toSafeString(value).toLowerCase().replace(/[-\s]+/g, '_');
+}
+
 function normalizeWriteScopeEntry(scope) {
   let value = normalizeRelPath(scope);
   if (!value) return null;
@@ -333,18 +349,29 @@ function parseFrontmatterMetadata(frontmatter) {
 }
 
 function normalizeDocumentMetadata(raw = {}) {
+  const taskType = normalizeMetadataToken(raw.task_type || raw.taskType);
   const metadata = {
     target_team: toSafeString(raw.target_team || raw.targetTeam).toLowerCase(),
     owner_agent: toSafeString(raw.owner_agent || raw.ownerAgent),
     risk_tier: toSafeString(raw.risk_tier || raw.riskTier).toLowerCase(),
+    task_type: taskType,
     write_scope: toList(raw.write_scope || raw.writeScope).map(normalizeRelPath).filter(Boolean),
     test_scope: toList(raw.test_scope || raw.testScope).filter(Boolean),
     autonomy_level: toSafeString(raw.autonomy_level || raw.autonomyLevel),
     requires_live_execution: parseBooleanish(
       raw.requires_live_execution != null ? raw.requires_live_execution : raw.requiresLiveExecution
     ),
+    implementation_status: normalizeMetadataToken(raw.implementation_status || raw.implementationStatus),
   };
   return metadata;
+}
+
+function isDevelopmentTaskMetadata(metadata = {}) {
+  return DEVELOPMENT_TASK_TYPES.has(normalizeMetadataToken(metadata.task_type));
+}
+
+function isImplementationCompletedMetadata(metadata = {}) {
+  return COMPLETED_IMPLEMENTATION_STATUSES.has(normalizeMetadataToken(metadata.implementation_status));
 }
 
 function missingMetadataFields(metadata = {}) {
@@ -366,6 +393,18 @@ function missingMetadataFields(metadata = {}) {
 
 function evaluateDocumentPolicy(analysis = {}) {
   const metadata = analysis.metadata || {};
+  if (isImplementationCompletedMetadata(metadata)) {
+    return {
+      decision: 'implementation_completed',
+      status: 'completed',
+      policyDecision: 'implementation_completed',
+      reason: 'auto_dev implementation already completed',
+      targetTeam: metadata.target_team || null,
+      writeScope: metadata.write_scope || [],
+      riskTier: metadata.risk_tier || null,
+    };
+  }
+
   const missing = missingMetadataFields(metadata);
   if (missing.length > 0) {
     return {
@@ -374,6 +413,18 @@ function evaluateDocumentPolicy(analysis = {}) {
       policyDecision: 'blocked_missing_metadata',
       reason: `필수 metadata 누락: ${missing.join(', ')}`,
       missingMetadata: missing,
+      targetTeam: metadata.target_team || null,
+      writeScope: metadata.write_scope || [],
+      riskTier: metadata.risk_tier || null,
+    };
+  }
+
+  if (!isDevelopmentTaskMetadata(metadata)) {
+    return {
+      decision: 'blocked_non_development_task',
+      status: 'blocked',
+      policyDecision: 'blocked_non_development_task',
+      reason: `task_type=${metadata.task_type || 'unknown'} is not an auto_dev development task`,
       targetTeam: metadata.target_team || null,
       writeScope: metadata.write_scope || [],
       riskTier: metadata.risk_tier || null,
@@ -735,7 +786,23 @@ function listAutoDevDocuments() {
     .filter(name => !name.endsWith('.done.md'))
     .map(name => path.join(AUTO_DEV_DIR, name))
     .filter(filePath => fs.statSync(filePath).isFile())
+    .filter(isActionableAutoDevDocument)
     .sort((a, b) => fs.statSync(a).mtimeMs - fs.statSync(b).mtimeMs);
+}
+
+function readAutoDevDocumentMetadata(filePath) {
+  try {
+    const content = fs.readFileSync(filePath, 'utf8');
+    const envelope = splitDocumentFrontmatter(content);
+    return normalizeDocumentMetadata(parseFrontmatterMetadata(envelope.frontmatter));
+  } catch {
+    return {};
+  }
+}
+
+function isActionableAutoDevDocument(filePath) {
+  const metadata = readAutoDevDocumentMetadata(filePath);
+  return isDevelopmentTaskMetadata(metadata) && !isImplementationCompletedMetadata(metadata);
 }
 
 function relativeToRoot(filePath) {
@@ -846,6 +913,7 @@ function buildImplementationPlan(analysis) {
   if (analysis.metadata) {
     lines.push(`- target_team: \`${analysis.metadata.target_team || 'unknown'}\``);
     lines.push(`- risk_tier: \`${analysis.metadata.risk_tier || 'unknown'}\``);
+    lines.push(`- task_type: \`${analysis.metadata.task_type || 'unknown'}\``);
     if (Array.isArray(analysis.metadata.write_scope) && analysis.metadata.write_scope.length > 0) {
       lines.push(`- write_scope: \`${analysis.metadata.write_scope.join(', ')}\``);
     }
@@ -1586,6 +1654,83 @@ function archiveCompletedDocument(filePath, contentHash) {
   return relativeToRoot(destination);
 }
 
+function upsertFrontmatterScalar(frontmatter, key, value) {
+  const lines = String(frontmatter || '').split(/\r?\n/).filter((line, index, items) => {
+    return !(index === items.length - 1 && line === '');
+  });
+  const pattern = new RegExp(`^\\s*${key}\\s*:`);
+  let replaced = false;
+  const nextLines = lines.map(line => {
+    if (!pattern.test(line)) return line;
+    replaced = true;
+    return `${key}: ${value}`;
+  });
+  if (!replaced) nextLines.push(`${key}: ${value}`);
+  return nextLines.join('\n');
+}
+
+function stripPreviousImplementationCompletionSection(body) {
+  const marker = '<!-- auto_dev:implementation_completed -->';
+  const index = String(body || '').indexOf(marker);
+  if (index < 0) return String(body || '').trimEnd();
+  return String(body || '').slice(0, index).trimEnd();
+}
+
+function summarizeCompletionText(value, limit = 500) {
+  const text = toSafeString(value).replace(/\s+/g, ' ');
+  return text.length > limit ? `${text.slice(0, limit - 3)}...` : text;
+}
+
+function formatImplementationCompletionSection(summary = {}) {
+  const changedFiles = Array.isArray(summary.changedFiles) ? summary.changedFiles : [];
+  const changedFilesValue = changedFiles.length > 0
+    ? changedFiles.slice(0, 20).map(file => `\`${file}\``).join(', ')
+    : 'none';
+  const lines = [
+    '<!-- auto_dev:implementation_completed -->',
+    '## Implementation Completed',
+    '',
+    `- implementation_status: \`${IMPLEMENTATION_COMPLETED_MARKER}\``,
+    `- implementation_completed_at: \`${summary.completedAt || nowIso()}\``,
+    `- profile: \`${summary.profile || 'unknown'}\``,
+    `- integration_mode: \`${summary.integration?.mode || summary.integration?.integrationMode || 'none'}\``,
+    `- changed_files_count: ${changedFiles.length}`,
+    `- changed_files: ${changedFilesValue}`,
+    `- review: ${summary.review?.pass ? 'PASS' : 'UNKNOWN'}${summary.review?.message ? ` - ${summarizeCompletionText(summary.review.message, 220)}` : ''}`,
+    `- test: ${summary.test?.pass ? 'PASS' : 'UNKNOWN'}${summary.test?.message ? ` - ${summarizeCompletionText(summary.test.message, 220)}` : ''}`,
+  ];
+  if (summary.integration?.patchPath) lines.push(`- patch_path: \`${relativeToRoot(summary.integration.patchPath)}\``);
+  if (summary.integration?.worktreeCommitSha) lines.push(`- worktree_commit: \`${summary.integration.worktreeCommitSha}\``);
+  if (summary.integration?.targetCommitSha) lines.push(`- target_commit: \`${summary.integration.targetCommitSha}\``);
+  if (summary.archivedPath) lines.push(`- archived_document: \`${summary.archivedPath}\``);
+  if (summary.archiveManifestPath) lines.push(`- archive_manifest: \`${summary.archiveManifestPath}\``);
+  return `${lines.join('\n')}\n`;
+}
+
+function writeImplementationCompletionSummary(filePath, summary = {}) {
+  const content = fs.readFileSync(filePath, 'utf8');
+  const envelope = splitDocumentFrontmatter(content);
+  const completedAt = summary.completedAt || nowIso();
+  let frontmatter = envelope.hasFrontmatter ? envelope.frontmatter : '';
+  frontmatter = upsertFrontmatterScalar(frontmatter, 'implementation_status', IMPLEMENTATION_COMPLETED_MARKER);
+  frontmatter = upsertFrontmatterScalar(frontmatter, 'implementation_completed_at', completedAt);
+  const body = stripPreviousImplementationCompletionSection(envelope.hasFrontmatter ? envelope.body : content);
+  const section = formatImplementationCompletionSection({ ...summary, completedAt });
+  fs.writeFileSync(filePath, `---\n${frontmatter}\n---\n\n${body}\n\n${section}`, 'utf8');
+  return {
+    path: relativeToRoot(filePath),
+    completedAt,
+    status: IMPLEMENTATION_COMPLETED_MARKER,
+  };
+}
+
+function shouldWriteImplementationCompletionDocument(runtimeConfig = {}, options = {}) {
+  return Boolean(
+    shouldArchiveOnSuccess(options)
+    || (runtimeConfig.executeImplementation && !runtimeConfig.dryRun && !runtimeConfig.shadow)
+  );
+}
+
 function writeArchiveManifest({
   job,
   archivedPath,
@@ -1600,8 +1745,11 @@ function writeArchiveManifest({
   if (!archivedPath) return null;
   const archivedAbsolute = path.join(ROOT, archivedPath);
   const manifestPath = `${archivedAbsolute}.manifest.json`;
+  const archivedAt = nowIso();
   const manifest = {
-    archivedAt: nowIso(),
+    archivedAt,
+    implementationStatus: IMPLEMENTATION_COMPLETED_MARKER,
+    implementationCompletedAt: archivedAt,
     sourceDocument: job?.analysis?.relPath || job?.relPath || null,
     archivedDocument: archivedPath,
     contentHash: job?.contentHash || null,
@@ -1682,7 +1830,7 @@ function updateJobState(job, stageId, data = {}) {
   const state = loadState();
   const previous = state.jobs[job.id] || {};
   const now = nowIso();
-  const nextStatus = stageId === 'completed'
+  const nextStatus = stageId === 'completed' || stageId === 'implementation_completed'
     ? 'completed'
     : stageId === 'failed'
       ? 'failed'
@@ -1710,7 +1858,7 @@ function updateJobState(job, stageId, data = {}) {
       error: nextData.error || previous.error || null,
     });
   }
-  if (stageId === 'completed' && (previous.error || nextData.error)) {
+  if (nextStatus === 'completed' && (previous.error || nextData.error)) {
     events.push({
       at: now,
       type: 'job_completed_after_failure',
@@ -1734,7 +1882,7 @@ function updateJobState(job, stageId, data = {}) {
   if (stageId === 'failed') {
     state.jobs[job.id].failedAt = state.jobs[job.id].failedAt || now;
   }
-  if (stageId === 'completed') {
+  if (nextStatus === 'completed') {
     if (state.jobs[job.id].error) {
       state.jobs[job.id].lastError = state.jobs[job.id].error;
     }
@@ -2017,6 +2165,8 @@ async function processAutoDevDocument(filePath, options = {}) {
       archiveManifestPath,
       contentHash,
       completedAt: nowIso(),
+      implementationStatus: IMPLEMENTATION_COMPLETED_MARKER,
+      implementationCompletedAt: nowIso(),
       profile: runtimeConfig.profile,
       targetTeam: policy.targetTeam,
       writeScope: policy.writeScope,

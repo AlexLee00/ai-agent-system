@@ -30,6 +30,10 @@ function withRequiredMetadata(body, overrides = {}) {
     `target_team: ${overrides.target_team || 'claude'}`,
     `owner_agent: ${overrides.owner_agent || 'codex'}`,
     `risk_tier: ${overrides.risk_tier || 'normal'}`,
+    `task_type: ${overrides.task_type || 'development_task'}`,
+    ...(overrides.implementation_status
+      ? [`implementation_status: ${overrides.implementation_status}`]
+      : []),
     'write_scope:',
     ...writeScope.map(item => `  - ${item}`),
     'test_scope:',
@@ -173,8 +177,18 @@ async function test_listAutoDevDocuments_uses_auto_dev_only() {
   const tmpRoot = makeTempRoot();
   fs.mkdirSync(path.join(tmpRoot, 'docs', 'auto_dev'), { recursive: true });
   fs.mkdirSync(path.join(tmpRoot, 'docs', 'codex'), { recursive: true });
-  fs.writeFileSync(path.join(tmpRoot, 'docs', 'auto_dev', 'CODEX_SAMPLE.md'), '# A', 'utf8');
-  fs.writeFileSync(path.join(tmpRoot, 'docs', 'codex', 'CODEX_OLD.md'), '# B', 'utf8');
+  fs.writeFileSync(path.join(tmpRoot, 'docs', 'auto_dev', 'CODEX_SAMPLE.md'), withRequiredMetadata('# A'), 'utf8');
+  fs.writeFileSync(
+    path.join(tmpRoot, 'docs', 'auto_dev', 'CODEX_NOTE.md'),
+    withRequiredMetadata('# Note', { task_type: 'planning_note' }),
+    'utf8'
+  );
+  fs.writeFileSync(
+    path.join(tmpRoot, 'docs', 'auto_dev', 'CODEX_DONE.md'),
+    withRequiredMetadata('# Done', { implementation_status: 'auto_dev_implementation_completed' }),
+    'utf8'
+  );
+  fs.writeFileSync(path.join(tmpRoot, 'docs', 'codex', 'CODEX_OLD.md'), withRequiredMetadata('# B'), 'utf8');
 
   const { mocks } = makeMocks(tmpRoot);
   await withMocks(mocks, async pipeline => {
@@ -183,7 +197,7 @@ async function test_listAutoDevDocuments_uses_auto_dev_only() {
   }, testEnv(tmpRoot));
 
   fs.rmSync(tmpRoot, { recursive: true, force: true });
-  console.log('✅ auto-dev: scans docs/auto_dev only');
+  console.log('✅ auto-dev: scans actionable docs/auto_dev development tasks only');
 }
 
 async function test_analyzeAutoDevDocument_extracts_code_refs() {
@@ -221,6 +235,7 @@ async function test_processAutoDevDocument_runs_full_dry_pipeline() {
     assert.strictEqual(result.ok, true);
     assert.strictEqual(result.job.status, 'completed');
     assert.strictEqual(result.job.stage, 'completed');
+    assert.strictEqual(result.job.implementationStatus, 'auto_dev_implementation_completed');
     assert.ok(Array.isArray(result.job.beforeStatus));
     assert.ok(Array.isArray(result.job.afterStatus));
     assert.ok(Array.isArray(result.job.newlyChangedFiles));
@@ -229,6 +244,51 @@ async function test_processAutoDevDocument_runs_full_dry_pipeline() {
   assert.strictEqual(alarms.length, 0, 'test 모드는 실제 알림 대신 shadow');
   fs.rmSync(tmpRoot, { recursive: true, force: true });
   console.log('✅ auto-dev: processes dry pipeline to completion');
+}
+
+async function test_non_development_task_is_blocked() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(
+    tmpRoot,
+    'CODEX_NOTE.md',
+    withRequiredMetadata('# Note\nnot a dev task', { task_type: 'planning_note' })
+  );
+  const { mocks } = makeMocks(tmpRoot);
+
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, { test: true, force: true });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.skipped, true);
+    assert.strictEqual(result.reason, 'blocked_non_development_task');
+    assert.strictEqual(result.job.status, 'blocked');
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: non-development auto_dev docs are blocked');
+}
+
+async function test_implementation_completed_marker_is_skipped() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(
+    tmpRoot,
+    'CODEX_DONE.md',
+    withRequiredMetadata('# Done\nalready implemented', {
+      implementation_status: 'auto_dev_implementation_completed',
+    })
+  );
+  const { mocks } = makeMocks(tmpRoot);
+
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, { test: true, force: true });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.skipped, true);
+    assert.strictEqual(result.reason, 'implementation_completed');
+    assert.strictEqual(result.job.status, 'completed');
+    assert.strictEqual(result.job.stage, 'implementation_completed');
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: implementation-completed marker prevents reprocessing');
 }
 
 async function test_completed_job_is_skipped_without_force() {
@@ -825,6 +885,8 @@ async function test_archive_manifest_is_created() {
     assert.ok(result.job.archiveManifestPath, 'archive manifest should exist');
     assert.ok(fs.existsSync(path.join(tmpRoot, result.job.archivedPath)));
     assert.ok(fs.existsSync(path.join(tmpRoot, result.job.archiveManifestPath)));
+    const manifest = JSON.parse(fs.readFileSync(path.join(tmpRoot, result.job.archiveManifestPath), 'utf8'));
+    assert.strictEqual(manifest.implementationStatus, 'auto_dev_implementation_completed');
   }, testEnv(tmpRoot));
 
   fs.rmSync(tmpRoot, { recursive: true, force: true });
@@ -1194,6 +1256,8 @@ async function main() {
     test_test_failure_triggers_single_revise_loop,
     test_state_file_override_is_used,
     test_missing_metadata_is_blocked,
+    test_non_development_task_is_blocked,
+    test_implementation_completed_marker_is_skipped,
     test_non_claude_target_is_routed,
     test_global_lock_blocks_parallel_pipeline,
     test_job_lock_blocks_duplicate_document_execution,
