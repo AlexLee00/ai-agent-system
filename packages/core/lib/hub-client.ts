@@ -225,6 +225,59 @@ export async function queryOpsDb(
   }
 }
 
+export async function fetchHubSecretMetadata(category?: string, timeoutMs = 3000): Promise<any | null> {
+  if (!env.HUB_BASE_URL) return null;
+  if (!env.HUB_AUTH_TOKEN) {
+    warnOnce('hub-auth-missing:secrets-meta', '[hub-client] HUB_AUTH_TOKEN 없음 — secrets-meta 조회 생략');
+    return null;
+  }
+
+  const cacheKey = getCacheKey('secrets-meta', category || '*');
+  const cached = getCached(cacheKey);
+  if (cached !== undefined) return cached;
+
+  const url = category
+    ? `${env.HUB_BASE_URL}/hub/secrets-meta/${encodeURIComponent(category)}`
+    : `${env.HUB_BASE_URL}/hub/secrets-meta`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${env.HUB_AUTH_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      warnOnce(`hub-secrets-meta:${category || '*'}:${res.status}`, `[hub-client] secrets-meta${category ? ` ${category}` : ''}: HTTP ${res.status}`);
+      if (res.status === 429) setCached(cacheKey, null, 5000);
+      if (res.status === 401) setCached(cacheKey, null, 30000);
+      return null;
+    }
+
+    const json = await res.json();
+    setCached(cacheKey, json, 30000);
+    return json;
+  } catch (error) {
+    const err = error as Error & { name?: string };
+    if (shouldUseCurlFallback(error, url)) {
+      const json = fetchJsonViaCurl(url, env.HUB_AUTH_TOKEN, timeoutMs);
+      if (json) {
+        setCached(cacheKey, json, 30000);
+        return json;
+      }
+    }
+    const message = err.name === 'AbortError' ? '타임아웃' : err.message;
+    console.warn(`[hub-client] secrets-meta: ${message}`);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function fetchOpsErrors(minutes = 60, service: string | null = null, timeoutMs = 3000): Promise<any | null> {
   if (!env.HUB_BASE_URL) return null;
   if (!env.HUB_AUTH_TOKEN) {

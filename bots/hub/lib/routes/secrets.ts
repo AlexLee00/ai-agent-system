@@ -293,4 +293,54 @@ async function secretsRoute(req: SecretsRequest, res: SecretsResponse): Promise<
   }
 }
 
-export { secretsRoute };
+// ─── Secret Metadata (값 미노출) ─────────────────────────────────────────────
+
+const { isSecretKey, buildFieldMeta, buildCategoryMeta } = require('../secrets-meta.js') as {
+  isSecretKey: (key: string) => boolean;
+  buildFieldMeta: (key: string, value: unknown) => Record<string, unknown>;
+  buildCategoryMeta: (data: Dict) => Record<string, Record<string, unknown>>;
+};
+
+type MetaRequest = {
+  params?: { category?: string };
+};
+
+type MetaResponse = {
+  status: (code: number) => MetaResponse;
+  json: (payload: unknown) => MetaResponse | void;
+};
+
+async function secretsMetaRoute(req: MetaRequest, res: MetaResponse): Promise<MetaResponse | void> {
+  const { category = '' } = req.params || {};
+  const handler = CATEGORY_HANDLERS[category];
+  if (!handler) {
+    return res.status(404).json({
+      error: `unknown secrets category: ${category}`,
+      available: Object.keys(CATEGORY_HANDLERS),
+    });
+  }
+  try {
+    const data = handler();
+    const fields = buildCategoryMeta(data);
+    return res.json({ ok: true, category, values_redacted: true, fields });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return res.status(500).json({ error: 'secrets meta load failed', detail: message });
+  }
+}
+
+async function secretsMetaAllRoute(_req: MetaRequest, res: MetaResponse): Promise<MetaResponse | void> {
+  const categories: Record<string, { present: boolean; field_count: number }> = {};
+  for (const [name, handler] of Object.entries(CATEGORY_HANDLERS)) {
+    try {
+      const data = handler();
+      const keys = Object.keys(data);
+      categories[name] = { present: keys.length > 0, field_count: keys.length };
+    } catch {
+      categories[name] = { present: false, field_count: 0 };
+    }
+  }
+  return res.json({ ok: true, values_redacted: true, categories });
+}
+
+export { secretsRoute, secretsMetaRoute, secretsMetaAllRoute, isSecretKey, buildFieldMeta, buildCategoryMeta };

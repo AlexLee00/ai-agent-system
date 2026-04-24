@@ -9,7 +9,7 @@ const { alarmRoute } = require('../lib/routes/alarm');
 const { pgQueryRoute } = require('../lib/routes/pg');
 const { n8nWebhookRoute, n8nHealthRoute, n8nWorkflowsRoute, n8nTriggerWorkflowRoute } = require('../lib/routes/n8n');
 const { servicesStatusRoute, envRoute } = require('../lib/routes/services');
-const { secretsRoute } = require('../lib/routes/secrets');
+const { secretsRoute, secretsMetaRoute, secretsMetaAllRoute } = require('../lib/routes/secrets');
 const { errorsRecentRoute, errorsSummaryRoute } = require('../lib/routes/errors');
 const {
   eventsSearchRoute,
@@ -203,6 +203,8 @@ const secretsLimiter = rateLimit({
   message: { error: 'secrets rate limit exceeded (60/min)' },
 });
 app.get('/hub/secrets/:category', secretsLimiter, secretsRoute);
+app.get('/hub/secrets-meta', secretsLimiter, secretsMetaAllRoute);
+app.get('/hub/secrets-meta/:category', secretsLimiter, secretsMetaRoute);
 
 const llmLimiter = rateLimit({
   windowMs: 60 * 1000,
