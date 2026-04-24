@@ -71,6 +71,22 @@ const ALL_SERVICES = [
 const NORMAL_EXIT_CODES = new Set([0, -9, -15]);
 const LOCAL_LLM_HEALTH_HISTORY_FILE = '/tmp/investment-local-llm-health-history.jsonl';
 const LATEST_OPS_SNAPSHOT_FILE = '/Users/alexlee/projects/ai-agent-system/bots/investment/output/ops/parallel-ops-snapshot.json';
+const INVESTMENT_BOT_PREFIX = '/Users/alexlee/projects/ai-agent-system/bots/investment';
+const MCP_HEALTH_CHECK_TIMEOUT_MS = 25_000;
+const MCP_HEALTH_PROBES = [
+  {
+    key: 'mcp-health-kis',
+    label: 'KIS',
+    command: `npm --prefix ${INVESTMENT_BOT_PREFIX} run kis-mcp:test`,
+    nextCommand: `npm --prefix ${INVESTMENT_BOT_PREFIX} run kis-mcp:test`,
+  },
+  {
+    key: 'mcp-health-binance',
+    label: 'Binance',
+    command: `npm --prefix ${INVESTMENT_BOT_PREFIX} run binance-mcp:test`,
+    nextCommand: `npm --prefix ${INVESTMENT_BOT_PREFIX} run binance-mcp:test`,
+  },
+];
 
 function loadLatestOpsSnapshot() {
   try {
@@ -357,6 +373,98 @@ function getLocalStandbySummary() {
   }
 }
 
+function truncateText(value, max = 280) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  return text.length > max ? `${text.slice(0, max)}…` : text;
+}
+
+function parseJsonTail(text = '') {
+  const raw = String(text || '').trim();
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    // tail scan fallback
+  }
+
+  const starts = [];
+  for (let i = raw.length - 1; i >= 0; i -= 1) {
+    if (raw[i] !== '{') continue;
+    starts.push(i);
+    if (starts.length >= 80) break;
+  }
+  for (const index of starts) {
+    try {
+      return JSON.parse(raw.slice(index));
+    } catch {
+      // keep scanning
+    }
+  }
+  return null;
+}
+
+function runMcpHealthProbe(probe = null) {
+  const command = String(probe?.command || '').trim();
+  const label = String(probe?.label || 'unknown');
+  const startedAt = Date.now();
+  if (!command) {
+    return {
+      ok: false,
+      label,
+      command,
+      latencyMs: Date.now() - startedAt,
+      error: 'missing_probe_command',
+      payload: null,
+      stdoutTail: '',
+      stderrTail: '',
+    };
+  }
+
+  try {
+    const stdout = execSync(command, {
+      encoding: 'utf8',
+      timeout: MCP_HEALTH_CHECK_TIMEOUT_MS,
+      maxBuffer: 2 * 1024 * 1024,
+    });
+    const payload = parseJsonTail(stdout);
+    const status = String(payload?.status || '').trim().toLowerCase();
+    const ok = status === 'ok';
+    return {
+      ok,
+      label,
+      command,
+      latencyMs: Date.now() - startedAt,
+      status: status || 'unknown',
+      error: ok ? null : (payload?.message || `status_${status || 'unknown'}`),
+      payload,
+      stdoutTail: truncateText(stdout, 360),
+      stderrTail: '',
+    };
+  } catch (error) {
+    const stdout = String(error?.stdout || '');
+    const stderr = String(error?.stderr || '');
+    const payload = parseJsonTail(stdout) || parseJsonTail(stderr);
+    const status = String(payload?.status || '').trim().toLowerCase() || null;
+    const message = payload?.message
+      || truncateText(stderr, 360)
+      || truncateText(stdout, 360)
+      || truncateText(error?.message || String(error), 360)
+      || 'mcp_health_probe_failed';
+    return {
+      ok: false,
+      label,
+      command,
+      latencyMs: Date.now() - startedAt,
+      status,
+      error: message,
+      payload,
+      stdoutTail: truncateText(stdout, 360),
+      stderrTail: truncateText(stderr, 360),
+    };
+  }
+}
+
 // ─── launchctl 파싱 ──────────────────────────────────────────────
 
 function getLaunchctlStatus() {
@@ -443,6 +551,48 @@ async function main() {
         recovers.push({ key: `exitcode:${label}:0`, msg: `✅ [투자팀 루나 헬스] ${shortName} 회복\nexit code 정상 (0) — 자동 감지` });
         prevKeys.forEach(k => hsm.clearAlert(state, k));
       }
+    }
+  }
+
+  try {
+    for (const probe of MCP_HEALTH_PROBES) {
+      const result = runMcpHealthProbe(probe);
+      if (!result.ok) {
+        if (hsm.canAlert(state, probe.key)) {
+          issues.push({
+            key: probe.key,
+            level: 2,
+            meta: {
+              autonomousActionStatus: 'autonomous_action_blocked_by_safety',
+              provider: probe.label,
+              command: probe.command,
+              nextCommand: probe.nextCommand,
+              latencyMs: result.latencyMs,
+              status: result.status || 'error',
+              error: result.error || null,
+              payload: result.payload || null,
+              stdoutTail: result.stdoutTail || null,
+              stderrTail: result.stderrTail || null,
+            },
+            msg: `⚠️ [투자팀 루나 헬스] ${probe.label} MCP health 실패\naction status: autonomous_action_blocked_by_safety\nreason: ${result.error || 'unknown'}\nlatency: ${result.latencyMs}ms\nnext command: ${probe.nextCommand}`,
+          });
+        }
+      } else if (state[probe.key]) {
+        recovers.push({
+          key: probe.key,
+          msg: `✅ [투자팀 루나 헬스] ${probe.label} MCP health 회복\nstatus=${result.status || 'ok'} / latency ${result.latencyMs}ms — 자동 감지`,
+        });
+        hsm.clearAlert(state, probe.key);
+      }
+    }
+  } catch (e) {
+    const key = 'mcp-health-check-failed';
+    if (hsm.canAlert(state, key)) {
+      issues.push({
+        key,
+        level: 1,
+        msg: `ℹ️ [투자팀 루나 헬스] MCP health 점검 실패\n${e.message}`,
+      });
     }
   }
 
