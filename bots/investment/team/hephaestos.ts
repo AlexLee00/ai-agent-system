@@ -12,11 +12,10 @@
  * 실행: node team/hephaestos.js [--symbol=BTC/USDT] [--action=BUY] [--amount=100]
  */
 
-import ccxt from 'ccxt';
 import * as db from '../shared/db.ts';
 import * as journalDb from '../shared/trade-journal-db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
-import { loadSecrets, initHubSecrets, isPaperMode, getInvestmentTradeMode } from '../shared/secrets.ts';
+import { initHubSecrets, isPaperMode, getInvestmentTradeMode } from '../shared/secrets.ts';
 import { isSameDaySymbolReentryBlockEnabled, getInvestmentExecutionRuntimeConfig } from '../shared/runtime-config.ts';
 import { getInvestmentAgentRoleState } from '../shared/agent-role-state.ts';
 import { syncPositionsAtMarketOpen } from '../shared/position-sync.ts';
@@ -25,6 +24,14 @@ import { attachExecutionToPositionStrategyTracked } from '../shared/execution-at
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.ts';
 import { notifyTrade, notifyError, notifyJournalEntry, notifyTradeSkip, notifyCircuitBreaker, notifySettlement } from '../shared/report.ts';
 import { preTradeCheck, calculatePositionSize, getAvailableBalance, getAvailableUSDT, getOpenPositions, getDailyPnL, getDailyTradeCount, checkCircuitBreaker, getCapitalConfig, formatDailyTradeLimitReason, getDynamicMinOrderAmount } from '../shared/capital-manager.ts';
+import {
+  getBinanceExchange,
+  getUsdtFreeBalance,
+  getTickerLastPrice,
+  createBinanceMarketBuy,
+  createBinanceMarketSell,
+  fetchBinanceOrder,
+} from '../shared/binance-client.ts';
 
 // ─── 심볼 유효성 ────────────────────────────────────────────────────
 
@@ -56,7 +63,6 @@ async function normalizeBinanceMarketOrderExecution(symbol, side, rawOrder = nul
   maxAttempts = 4,
   pollDelayMs = 900,
 } = {}) {
-  const ex = getExchange();
   let latest = rawOrder || {};
   const orderId = extractOrderId(latest);
   let attempt = 0;
@@ -86,7 +92,7 @@ async function normalizeBinanceMarketOrderExecution(symbol, side, rawOrder = nul
     attempt += 1;
     await delay(pollDelayMs * attempt);
     try {
-      const fetched = await ex.fetchOrder(orderId, symbol);
+      const fetched = await fetchBinanceOrder(orderId, symbol);
       if (fetched && typeof fetched === 'object') latest = fetched;
     } catch {
       // fetchOrder 미지원/일시 실패는 마지막 원본 응답으로 판정
@@ -129,37 +135,22 @@ async function normalizeBinanceMarketOrderExecution(symbol, side, rawOrder = nul
   throw verifyError;
 }
 
-// ─── CCXT 바이낸스 클라이언트 (lazy init) ──────────────────────────
-
-let _exchange = null;
-
 function getExchange() {
-  if (_exchange) return _exchange;
-  const secrets = loadSecrets();
-  _exchange = new ccxt.binance({
-    apiKey: secrets.binance_api_key || '',
-    secret: secrets.binance_api_secret || '',
-    options: { defaultType: 'spot' },
-  });
-  return _exchange;
+  return getBinanceExchange();
 }
 
 /**
  * 바이낸스 USDT 가용 잔고 조회 (LU-004: 잔고 부족 알림용)
  */
 export async function fetchUsdtBalance() {
-  const ex  = getExchange();
-  const bal = await ex.fetchBalance();
-  return bal.free?.USDT || 0;
+  return getUsdtFreeBalance();
 }
 
 /**
  * 현재가 조회 (PAPER_MODE에서도 사용)
  */
 export async function fetchTicker(symbol) {
-  const ex = getExchange();
-  const ticker = await ex.fetchTicker(symbol);
-  return ticker.last;
+  return getTickerLastPrice(symbol);
 }
 
 /**
@@ -172,8 +163,7 @@ async function marketBuy(symbol, amountUsdt, paperMode) {
     console.log(`  📄 [헤파이스토스] PAPER BUY ${symbol} $${amountUsdt} @ ~$${price?.toLocaleString()}`);
     return { filled, price, dryRun: true };
   }
-  const ex = getExchange();
-  const rawOrder = await ex.createOrder(symbol, 'market', 'buy', undefined, undefined, { quoteOrderQty: amountUsdt });
+  const rawOrder = await createBinanceMarketBuy(symbol, amountUsdt);
   return normalizeBinanceMarketOrderExecution(symbol, 'buy', rawOrder);
 }
 
@@ -185,7 +175,17 @@ async function marketSell(symbol, amount, paperMode) {
     const price     = await fetchTicker(symbol).catch(() => 0);
     const totalUsdt = amount * price;
     console.log(`  📄 [헤파이스토스] PAPER SELL ${symbol} ${amount} @ ~$${price?.toLocaleString()}`);
-    return { amount, price, totalUsdt, dryRun: true };
+    return {
+      amount,
+      filled: amount,
+      price,
+      average: price,
+      totalUsdt,
+      cost: totalUsdt,
+      status: 'closed',
+      dryRun: true,
+      normalized: true,
+    };
   }
   const ex = getExchange();
   await ex.loadMarkets();
@@ -202,7 +202,8 @@ async function marketSell(symbol, amount, paperMode) {
     };
     throw error;
   }
-  return await ex.createOrder(symbol, 'market', 'sell', normalizedAmount);
+  const rawOrder = await createBinanceMarketSell(symbol, normalizedAmount);
+  return normalizeBinanceMarketOrderExecution(symbol, 'sell', rawOrder);
 }
 
 async function getMinSellAmount(symbol) {
@@ -1717,7 +1718,9 @@ async function executeSellTrade({
   qualityContext = null,
 }) {
   const order = await marketSell(symbol, amount, sellPaperMode);
-  const soldAmount = Number(order.amount || amount || 0);
+  const soldAmount = Number(order.filled || order.amount || amount || 0);
+  const sellPrice = Number(order.price || order.average || 0);
+  const settledUsdt = Number(order.totalUsdt || order.cost || (soldAmount * sellPrice));
   const effectiveRatio = normalizePartialExitRatio(partialExitRatio);
   const baselineAmount = Number(sourcePositionAmount || position?.amount || 0);
   const remainingAmount = Math.max(0, baselineAmount - soldAmount);
@@ -1730,9 +1733,9 @@ async function executeSellTrade({
     signalId,
     symbol,
     side: 'sell',
-    amount: order.amount || amount,
-    price: order.price,
-    totalUsdt: order.totalUsdt || ((order.amount || amount) * (order.price || 0)),
+    amount: soldAmount,
+    price: sellPrice,
+    totalUsdt: settledUsdt,
     paper: sellPaperMode,
     exchange: 'binance',
     tradeMode: effectivePositionTradeMode,
@@ -2542,14 +2545,17 @@ async function _liquidateUntrackedForCapital(excludeBasesInput, paperMode) {
     }
 
     console.log(`  💱 [헤파이스토스] 미추적 ${coin} ${untracked.toFixed(6)} (≈$${untrackedUsd.toFixed(2)}) → USDT 전환`);
-    await marketSell(sym, untracked, paperMode);
+    const liquidationOrder = await marketSell(sym, untracked, paperMode);
+    const liquidatedAmount = Number(liquidationOrder?.filled || liquidationOrder?.amount || untracked || 0);
+    const liquidatedPrice = Number(liquidationOrder?.price || liquidationOrder?.average || curPrice || 0);
+    const liquidatedUsdt = Number(liquidationOrder?.totalUsdt || liquidationOrder?.cost || (liquidatedAmount * liquidatedPrice));
     await db.insertTrade({
       signalId: null,
       symbol: sym,
       side: 'liquidate',
-      amount: untracked,
-      price: curPrice || null,
-      totalUsdt: untrackedUsd,
+      amount: liquidatedAmount,
+      price: liquidatedPrice || null,
+      totalUsdt: liquidatedUsdt,
       paper: paperMode,
       exchange: 'binance',
       tradeMode: getInvestmentTradeMode(),
@@ -2560,8 +2566,8 @@ async function _liquidateUntrackedForCapital(excludeBasesInput, paperMode) {
     }).catch((err) => {
       console.warn(`  ⚠️ 미추적 청산 체결 기록 실패 (${sym}): ${err.message}`);
     });
-    totalUsd += untrackedUsd;
-    liquidated.push(`${coin} ${untracked.toFixed(6)} (≈$${untrackedUsd.toFixed(2)})`);
+    totalUsd += liquidatedUsdt;
+    liquidated.push(`${coin} ${liquidatedAmount.toFixed(6)} (≈$${liquidatedUsdt.toFixed(2)})`);
   }
 
   if (totalUsd > 0) {
