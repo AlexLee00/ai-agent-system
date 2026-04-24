@@ -177,19 +177,34 @@ claude-commander (팀장)
 **파일**: `lib/auto-dev-pipeline.ts`
 **실행기**: `scripts/auto-dev-runner.ts`
 **launchd**: `ai.claude.auto-dev.plist`
-**Kill Switch**: `CLAUDE_AUTO_DEV_ENABLED=true`
+**Kill Switch**: `CLAUDE_AUTO_DEV_PROFILE=shadow` (기본값 — enabled=false)
+
+### 역할 경계 (불변)
+
+- **전략/설계 채팅** (Meti/Claude Opus): 구현 요청 MD(`docs/auto_dev/*.md`)를 작성하고 inbox에 투입. **코드 직접 수정 절대 금지.**
+- **코드작업 채팅** (Codex/Claude Code): `docs/auto_dev/*.md`를 읽고 구현·테스트·커밋. 이 채팅에서만 실제 파일 변경이 일어난다.
+
+### 운영 프로필
+
+| 프로필 | enabled | shadow | execute | 용도 |
+|--------|---------|--------|---------|------|
+| `shadow` | false | true | false | 기본값 — Kill Switch OFF |
+| `supervised_l4` | true | true | false | 드라이런 감시 모드 |
+| `autonomous_l5` | true | false | true | 완전 자율 실행 |
+
+프로필 전환: `launchctl setenv CLAUDE_AUTO_DEV_PROFILE supervised_l4`
 
 ### 라이프사이클
 
 ```
 docs/auto_dev/*.md
-  → 문서/코드 분석
+  → 문서/코드 분석 (content hash로 중복 방지)
   → 구현계획 수립 + 시작 알림
-  → Claude Code 구현
+  → Claude Code 구현 (worktree status snapshot)
   → Reviewer + Guardian
-  → 실패 시 수정 루프
+  → 실패 시 revise_after_review (1회)
   → Builder + hard tests
-  → 실패 시 수정 루프
+  → 실패 시 revise_after_test (1회)
   → 구현 완료 + 종료 알림
 ```
 

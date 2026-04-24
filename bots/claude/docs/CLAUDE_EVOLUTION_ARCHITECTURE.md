@@ -163,11 +163,18 @@ execute(taskType, params)
                                          ↓
                               [claude-daily-report.ts 06:30 KST]
 
+[전략/설계 채팅(Meti)] → docs/auto_dev/*.md 생성 (코드 직접 수정 금지)
+[코드작업 채팅(Codex)] → 구현/테스트/커밋 (docs/auto_dev/*.md 참조)
+
 [docs/auto_dev 문서 투입] → [auto-dev-pipeline]
-  → [문서/코드 분석] → [구현계획 시작 알림]
-  → [Claude Code 구현] → [Reviewer + Guardian]
-  → [수정 루프] → [Builder + hard tests]
-  → [수정 루프] → [완료 알림]
+  → [문서/코드 분석 + content hash 중복 방지]
+  → [구현계획 시작 알림]
+  → [Claude Code 구현 (worktree status snapshot)]
+  → [Reviewer + Guardian]
+  → [revise_after_review (실패 시 1회)]
+  → [Builder + hard tests]
+  → [revise_after_test (실패 시 1회)]
+  → [완료 알림]
 
 [Codex 직접 실행] → [codex-plan-notifier] → [Telegram: 계획/진행/완료 알림]
 
