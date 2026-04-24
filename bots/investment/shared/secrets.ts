@@ -309,11 +309,16 @@ export function formatExecutionTag(input = null) {
     : input?.paper === false
       ? 'live'
       : modeInfo.executionMode;
-  const brokerAccountMode = modeInfo.brokerAccountMode;
   const tradeMode = String(input?.tradeMode || modeInfo.investmentTradeMode || getInvestmentTradeMode()).trim().toLowerCase();
   const normalizedTradeMode = tradeMode === 'validation' ? 'validation' : 'normal';
+  const includeBrokerAccountMode = input?.includeBrokerAccountMode === true;
+  const brokerAccountMode = modeInfo.brokerAccountMode;
 
-  return `[${executionMode.toUpperCase()}/${brokerAccountMode.toUpperCase()}][${normalizedTradeMode}] `;
+  if (includeBrokerAccountMode) {
+    return `[${executionMode.toUpperCase()}/${brokerAccountMode.toUpperCase()}][${normalizedTradeMode}] `;
+  }
+
+  return `[${executionMode.toUpperCase()}][${normalizedTradeMode}] `;
 }
 
 export function getExecutionMode() {
