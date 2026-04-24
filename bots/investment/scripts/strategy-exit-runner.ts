@@ -11,6 +11,7 @@ import {
   getKisMarketStatus,
   getKisOverseasMarketStatus,
 } from '../shared/secrets.ts';
+import { beginCloseout, finalizeCloseout } from '../shared/position-closeout-engine.ts';
 
 function parseArgs(argv = process.argv.slice(2)) {
   const values = {};
@@ -386,6 +387,7 @@ async function getExecutionPreflight(candidate) {
 
 async function createStrategyExitSignal(candidate) {
   const incidentLink = candidate.signalIncidentLink || `${candidate.exitReasonOverride}${buildFamilyFeedbackIncidentSuffix(candidate.strategyProfile)}`;
+  const idempotencyKey = `strategy_exit:${candidate.symbol}:${candidate.exchange}:${candidate.tradeMode}:${candidate.reasonCode || 'exit'}:${Date.now().toString(36)}`;
   const signalId = await db.insertSignal({
     symbol: candidate.symbol,
     action: 'SELL',
@@ -407,6 +409,12 @@ async function createStrategyExitSignal(candidate) {
     exchange: candidate.exchange,
     trade_mode: candidate.tradeMode,
     exit_reason_override: incidentLink,
+    _idempotencyKey: idempotencyKey,
+    _regime: candidate?.strategyProfile?.positionRuntimeState?.regime || null,
+    _setupType: candidate?.strategyProfile?.setupType || null,
+    _strategyFamily: candidate?.strategyProfile?.familyPerformanceFeedback?.family || null,
+    _familyBias: candidate?.strategyProfile?.familyPerformanceFeedback?.bias || null,
+    _positionValue: candidate.positionValue,
   };
 }
 
@@ -468,12 +476,56 @@ async function main() {
   }
 
   await syncStrategyExitCandidateStates([candidate], 'execute');
-  const result = await executeCandidate(candidate);
+  const signal = await createStrategyExitSignal(candidate);
+
+  const closeoutCtx = {
+    symbol: candidate.symbol,
+    exchange: candidate.exchange,
+    tradeMode: candidate.tradeMode,
+    closeoutType: 'full_exit',
+    reasonCode: candidate.reasonCode,
+    incidentLink: signal.exit_reason_override,
+    plannedRatio: 1.0,
+    plannedNotional: signal._positionValue,
+    regime: signal._regime,
+    setupType: signal._setupType,
+    strategyFamily: signal._strategyFamily,
+    familyBias: signal._familyBias,
+    idempotencyKey: signal._idempotencyKey,
+    cooldownMinutes: 60,
+  };
+  const beginResult = await beginCloseout(closeoutCtx).catch(() => ({ ok: true }));
+  if (!beginResult.ok) {
+    throw new Error(`strategy-exit closeout guard: ${beginResult.reason}`);
+  }
+
+  let executeResult = null;
+  let executeError = null;
+  try {
+    if (signal.exchange === 'binance') executeResult = await executeCryptoSignal(signal);
+    else if (signal.exchange === 'kis') executeResult = await executeDomesticSignal(signal);
+    else if (signal.exchange === 'kis_overseas') executeResult = await executeOverseasSignal(signal);
+    else throw new Error(`지원하지 않는 exchange: ${signal.exchange}`);
+  } catch (err) {
+    executeError = err;
+  }
+
+  const closeoutResult = await finalizeCloseout(
+    closeoutCtx,
+    signal.id,
+    executeResult,
+    executeError,
+  ).catch(() => null);
+
+  if (executeError) throw executeError;
+
   const payload = {
     mode: 'execute',
     candidate,
     preflight,
-    result,
+    signalId: signal.id,
+    result: executeResult,
+    closeoutReviewId: closeoutResult?.reviewId || null,
   };
   if (options.json) return console.log(JSON.stringify(payload, null, 2));
   console.log(JSON.stringify(payload, null, 2));

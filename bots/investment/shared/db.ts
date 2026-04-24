@@ -378,6 +378,87 @@ export async function initSchema() {
   await run(`CREATE INDEX IF NOT EXISTS idx_dual_winner   ON dual_model_results(winner, created_at)`);
   await run(`CREATE INDEX IF NOT EXISTS idx_dual_symbol   ON dual_model_results(symbol, created_at)`);
 
+  // ── position_lifecycle_events (Phase 6 라이프사이클 감사 로그) ──
+  await run(`
+    CREATE TABLE IF NOT EXISTS position_lifecycle_events (
+      id                  TEXT DEFAULT gen_random_uuid()::text PRIMARY KEY,
+      position_scope_key  TEXT NOT NULL,
+      exchange            TEXT NOT NULL,
+      symbol              TEXT NOT NULL,
+      trade_mode          TEXT DEFAULT 'normal',
+      phase               TEXT NOT NULL,
+      owner_agent         TEXT,
+      event_type          TEXT NOT NULL,
+      input_snapshot      JSONB DEFAULT '{}'::jsonb,
+      output_snapshot     JSONB DEFAULT '{}'::jsonb,
+      policy_snapshot     JSONB DEFAULT '{}'::jsonb,
+      evidence_snapshot   JSONB DEFAULT '{}'::jsonb,
+      idempotency_key     TEXT,
+      created_at          TIMESTAMPTZ DEFAULT now()
+    )
+  `);
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_ple_scope_phase ON position_lifecycle_events(position_scope_key, phase, created_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_ple_symbol_phase ON position_lifecycle_events(symbol, exchange, phase, created_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_ple_idempotency ON position_lifecycle_events(idempotency_key) WHERE idempotency_key IS NOT NULL`); } catch { /* 무시 */ }
+
+  // ── position_closeout_reviews (Phase 6 청산 회고 기록) ──
+  await run(`
+    CREATE TABLE IF NOT EXISTS position_closeout_reviews (
+      id                        TEXT DEFAULT gen_random_uuid()::text PRIMARY KEY,
+      signal_id                 TEXT,
+      trade_id                  TEXT,
+      journal_id                TEXT,
+      exchange                  TEXT NOT NULL,
+      symbol                    TEXT NOT NULL,
+      trade_mode                TEXT DEFAULT 'normal',
+      closeout_type             TEXT NOT NULL,
+      closeout_reason           TEXT,
+      planned_ratio             DOUBLE PRECISION,
+      executed_ratio            DOUBLE PRECISION,
+      planned_notional          DOUBLE PRECISION,
+      executed_notional         DOUBLE PRECISION,
+      slippage_pct              DOUBLE PRECISION,
+      fee_total                 DOUBLE PRECISION,
+      pnl_realized              DOUBLE PRECISION,
+      pnl_remaining_unrealized  DOUBLE PRECISION,
+      regime                    TEXT,
+      setup_type                TEXT,
+      strategy_family           TEXT,
+      family_bias               TEXT,
+      review_status             TEXT DEFAULT 'pending',
+      review_result             JSONB DEFAULT '{}'::jsonb,
+      policy_suggestions        JSONB DEFAULT '[]'::jsonb,
+      idempotency_key           TEXT,
+      created_at                TIMESTAMPTZ DEFAULT now(),
+      reviewed_at               TIMESTAMPTZ
+    )
+  `);
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_pcr_symbol ON position_closeout_reviews(symbol, exchange, created_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_pcr_review_status ON position_closeout_reviews(review_status, created_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_pcr_idempotency ON position_closeout_reviews(idempotency_key) WHERE idempotency_key IS NOT NULL`); } catch { /* 무시 */ }
+
+  // ── external_evidence_events (외부 에비던스 레저) ──
+  await run(`
+    CREATE TABLE IF NOT EXISTS external_evidence_events (
+      id                TEXT DEFAULT gen_random_uuid()::text PRIMARY KEY,
+      source_type       TEXT NOT NULL,
+      source_name       TEXT,
+      source_url        TEXT,
+      symbol            TEXT,
+      market            TEXT,
+      strategy_family   TEXT,
+      signal_direction  TEXT,
+      score             DOUBLE PRECISION DEFAULT 0,
+      source_quality    DOUBLE PRECISION DEFAULT 0.5,
+      freshness_score   DOUBLE PRECISION DEFAULT 1.0,
+      evidence_summary  TEXT,
+      raw_ref           JSONB DEFAULT '{}'::jsonb,
+      created_at        TIMESTAMPTZ DEFAULT now()
+    )
+  `);
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_eee_source_type ON external_evidence_events(source_type, created_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_eee_symbol ON external_evidence_events(symbol, market, created_at DESC)`); } catch { /* 무시 */ }
+
   // 스키마 버전 기록
   try {
     for (const [v, name] of [
@@ -389,6 +470,9 @@ export async function initSchema() {
       [6, 'positions_trade_mode_scope'],
       [7, 'positions_mode_metadata'],
       [8, 'agent_role_profiles_state'],
+      [9, 'position_lifecycle_events'],
+      [10, 'position_closeout_reviews'],
+      [11, 'external_evidence_events'],
     ]) {
       await run(
         `INSERT INTO schema_migrations (version, name) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
@@ -1766,6 +1850,231 @@ export async function updateRuntimeConfigSuggestionLogReview(id, {
   );
 }
 
+// ─── position_lifecycle_events ───────────────────────────────────────
+
+export async function insertLifecycleEvent({
+  positionScopeKey,
+  exchange,
+  symbol,
+  tradeMode = 'normal',
+  phase,
+  ownerAgent = null,
+  eventType,
+  inputSnapshot = {},
+  outputSnapshot = {},
+  policySnapshot = {},
+  evidenceSnapshot = {},
+  idempotencyKey = null,
+}) {
+  if (!positionScopeKey || !exchange || !symbol || !phase || !eventType) return null;
+  if (idempotencyKey) {
+    const existing = await get(
+      `SELECT id FROM position_lifecycle_events WHERE idempotency_key = $1`,
+      [idempotencyKey],
+    ).catch(() => null);
+    if (existing) return existing.id;
+  }
+  const row = await get(
+    `INSERT INTO position_lifecycle_events
+       (position_scope_key, exchange, symbol, trade_mode, phase, owner_agent, event_type,
+        input_snapshot, output_snapshot, policy_snapshot, evidence_snapshot, idempotency_key)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+     RETURNING id`,
+    [
+      positionScopeKey, exchange, symbol, tradeMode || 'normal',
+      phase, ownerAgent || null, eventType,
+      JSON.stringify(inputSnapshot ?? {}),
+      JSON.stringify(outputSnapshot ?? {}),
+      JSON.stringify(policySnapshot ?? {}),
+      JSON.stringify(evidenceSnapshot ?? {}),
+      idempotencyKey || null,
+    ],
+  ).catch(() => null);
+  return row?.id || null;
+}
+
+export async function getLifecycleEventsForScope(positionScopeKey, { limit = 50 } = {}) {
+  return query(
+    `SELECT * FROM position_lifecycle_events
+     WHERE position_scope_key = $1
+     ORDER BY created_at DESC
+     LIMIT $2`,
+    [positionScopeKey, limit],
+  ).catch(() => []);
+}
+
+export async function getLifecyclePhaseCoverage({ days = 7 } = {}) {
+  return query(
+    `SELECT symbol, exchange, trade_mode,
+            array_agg(DISTINCT phase ORDER BY phase) AS covered_phases,
+            COUNT(*) AS event_count,
+            MAX(created_at) AS last_event_at
+     FROM position_lifecycle_events
+     WHERE created_at >= now() - ($1::int * INTERVAL '1 day')
+     GROUP BY symbol, exchange, trade_mode
+     ORDER BY last_event_at DESC`,
+    [days],
+  ).catch(() => []);
+}
+
+// ─── position_closeout_reviews ───────────────────────────────────────
+
+export async function insertCloseoutReview({
+  signalId = null,
+  tradeId = null,
+  journalId = null,
+  exchange,
+  symbol,
+  tradeMode = 'normal',
+  closeoutType,
+  closeoutReason = null,
+  plannedRatio = null,
+  executedRatio = null,
+  plannedNotional = null,
+  executedNotional = null,
+  slippagePct = null,
+  feeTotal = null,
+  pnlRealized = null,
+  pnlRemainingUnrealized = null,
+  regime = null,
+  setupType = null,
+  strategyFamily = null,
+  familyBias = null,
+  reviewStatus = 'pending',
+  reviewResult = {},
+  policySuggestions = [],
+  idempotencyKey = null,
+}) {
+  if (!exchange || !symbol || !closeoutType) return null;
+  if (idempotencyKey) {
+    const existing = await get(
+      `SELECT id FROM position_closeout_reviews WHERE idempotency_key = $1`,
+      [idempotencyKey],
+    ).catch(() => null);
+    if (existing) return existing.id;
+  }
+  const row = await get(
+    `INSERT INTO position_closeout_reviews
+       (signal_id, trade_id, journal_id, exchange, symbol, trade_mode,
+        closeout_type, closeout_reason, planned_ratio, executed_ratio,
+        planned_notional, executed_notional, slippage_pct, fee_total,
+        pnl_realized, pnl_remaining_unrealized, regime, setup_type,
+        strategy_family, family_bias, review_status, review_result,
+        policy_suggestions, idempotency_key)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
+     RETURNING id`,
+    [
+      signalId || null, tradeId || null, journalId || null,
+      exchange, symbol, tradeMode || 'normal',
+      closeoutType, closeoutReason || null,
+      plannedRatio != null ? Number(plannedRatio) : null,
+      executedRatio != null ? Number(executedRatio) : null,
+      plannedNotional != null ? Number(plannedNotional) : null,
+      executedNotional != null ? Number(executedNotional) : null,
+      slippagePct != null ? Number(slippagePct) : null,
+      feeTotal != null ? Number(feeTotal) : null,
+      pnlRealized != null ? Number(pnlRealized) : null,
+      pnlRemainingUnrealized != null ? Number(pnlRemainingUnrealized) : null,
+      regime || null, setupType || null,
+      strategyFamily || null, familyBias || null,
+      reviewStatus || 'pending',
+      JSON.stringify(reviewResult ?? {}),
+      JSON.stringify(policySuggestions ?? []),
+      idempotencyKey || null,
+    ],
+  ).catch(() => null);
+  return row?.id || null;
+}
+
+export async function updateCloseoutReview(id, {
+  reviewStatus,
+  reviewResult = null,
+  policySuggestions = null,
+  executedRatio = null,
+  executedNotional = null,
+  slippagePct = null,
+  pnlRealized = null,
+  journalId = null,
+  tradeId = null,
+} = {}) {
+  if (!id) return null;
+  const sets = ['reviewed_at = now()'];
+  const params = [];
+  let idx = 1;
+  if (reviewStatus != null) { sets.push(`review_status = $${idx++}`); params.push(reviewStatus); }
+  if (reviewResult != null) { sets.push(`review_result = $${idx++}`); params.push(JSON.stringify(reviewResult)); }
+  if (policySuggestions != null) { sets.push(`policy_suggestions = $${idx++}`); params.push(JSON.stringify(policySuggestions)); }
+  if (executedRatio != null) { sets.push(`executed_ratio = $${idx++}`); params.push(Number(executedRatio)); }
+  if (executedNotional != null) { sets.push(`executed_notional = $${idx++}`); params.push(Number(executedNotional)); }
+  if (slippagePct != null) { sets.push(`slippage_pct = $${idx++}`); params.push(Number(slippagePct)); }
+  if (pnlRealized != null) { sets.push(`pnl_realized = $${idx++}`); params.push(Number(pnlRealized)); }
+  if (journalId != null) { sets.push(`journal_id = $${idx++}`); params.push(String(journalId)); }
+  if (tradeId != null) { sets.push(`trade_id = $${idx++}`); params.push(String(tradeId)); }
+  params.push(id);
+  return get(
+    `UPDATE position_closeout_reviews SET ${sets.join(', ')} WHERE id = $${idx} RETURNING id, review_status`,
+    params,
+  ).catch(() => null);
+}
+
+export async function getRecentCloseoutReviews({ days = 30, symbol = null, exchange = null, limit = 100 } = {}) {
+  const conds = [`created_at >= now() - ($1::int * INTERVAL '1 day')`];
+  const params = [days];
+  if (symbol) { conds.push(`symbol = $${params.length + 1}`); params.push(symbol); }
+  if (exchange) { conds.push(`exchange = $${params.length + 1}`); params.push(exchange); }
+  params.push(limit);
+  return query(
+    `SELECT * FROM position_closeout_reviews WHERE ${conds.join(' AND ')} ORDER BY created_at DESC LIMIT $${params.length}`,
+    params,
+  ).catch(() => []);
+}
+
+// ─── external_evidence_events ─────────────────────────────────────────
+
+export async function insertExternalEvidence({
+  sourceType,
+  sourceName = null,
+  sourceUrl = null,
+  symbol = null,
+  market = null,
+  strategyFamily = null,
+  signalDirection = null,
+  score = 0,
+  sourceQuality = 0.5,
+  freshnessScore = 1.0,
+  evidenceSummary = null,
+  rawRef = {},
+}) {
+  if (!sourceType) return null;
+  const row = await get(
+    `INSERT INTO external_evidence_events
+       (source_type, source_name, source_url, symbol, market, strategy_family,
+        signal_direction, score, source_quality, freshness_score, evidence_summary, raw_ref)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+     RETURNING id`,
+    [
+      sourceType, sourceName || null, sourceUrl || null,
+      symbol || null, market || null, strategyFamily || null,
+      signalDirection || null,
+      Number(score || 0), Number(sourceQuality || 0.5), Number(freshnessScore || 1.0),
+      evidenceSummary || null, JSON.stringify(rawRef ?? {}),
+    ],
+  ).catch(() => null);
+  return row?.id || null;
+}
+
+export async function getRecentExternalEvidence({ days = 7, symbol = null, sourceType = null, limit = 50 } = {}) {
+  const conds = [`created_at >= now() - ($1::int * INTERVAL '1 day')`];
+  const params = [days];
+  if (symbol) { conds.push(`symbol = $${params.length + 1}`); params.push(symbol); }
+  if (sourceType) { conds.push(`source_type = $${params.length + 1}`); params.push(sourceType); }
+  params.push(limit);
+  return query(
+    `SELECT * FROM external_evidence_events WHERE ${conds.join(' AND ')} ORDER BY created_at DESC LIMIT $${params.length}`,
+    params,
+  ).catch(() => []);
+}
+
 export function close() {
   // pgPool 관리 — 개별 close 불필요 (pgPool.closeAll()로 전체 종료)
 }
@@ -1788,5 +2097,8 @@ export default {
   insertMarketRegimeSnapshot,
   insertRuntimeConfigSuggestionLog, getRecentRuntimeConfigSuggestionLogs,
   getRuntimeConfigSuggestionLogById, updateRuntimeConfigSuggestionLogReview,
+  insertLifecycleEvent, getLifecycleEventsForScope, getLifecyclePhaseCoverage,
+  insertCloseoutReview, updateCloseoutReview, getRecentCloseoutReviews,
+  insertExternalEvidence, getRecentExternalEvidence,
   close,
 };

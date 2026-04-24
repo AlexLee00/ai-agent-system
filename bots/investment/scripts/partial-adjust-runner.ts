@@ -11,6 +11,7 @@ import {
   getKisMarketStatus,
   getKisOverseasMarketStatus,
 } from '../shared/secrets.ts';
+import { beginCloseout, finalizeCloseout } from '../shared/position-closeout-engine.ts';
 
 function parseArgs(argv = process.argv.slice(2)) {
   const values = {};
@@ -286,6 +287,7 @@ async function loadCandidates({ tradeMode = null, minutesBack = 180, ratio = nul
 
 async function createPartialAdjustSignal(candidate) {
   const incidentLink = candidate.signalIncidentLink || `partial_adjust:${candidate.reasonCode}${buildFamilyFeedbackIncidentSuffix(candidate.strategyProfile)}`;
+  const idempotencyKey = `partial_adjust:${candidate.symbol}:${candidate.exchange}:${candidate.tradeMode}:${candidate.reasonCode}:${Date.now().toString(36)}`;
   const signalId = await db.insertSignal({
     symbol: candidate.symbol,
     action: 'SELL',
@@ -310,6 +312,11 @@ async function createPartialAdjustSignal(candidate) {
     trade_mode: candidate.tradeMode,
     exit_reason_override: incidentLink,
     partial_exit_ratio: candidate.partialExitRatio,
+    _idempotencyKey: idempotencyKey,
+    _regime: candidate?.strategyProfile?.positionRuntimeState?.regime || null,
+    _setupType: candidate?.strategyProfile?.setupType || null,
+    _strategyFamily: candidate?.strategyProfile?.familyPerformanceFeedback?.family || null,
+    _familyBias: candidate?.strategyProfile?.familyPerformanceFeedback?.bias || null,
   };
 }
 
@@ -422,13 +429,52 @@ async function main() {
 
   await syncPartialAdjustCandidateStates([candidate], 'execute');
   const signal = await createPartialAdjustSignal(candidate);
-  const result = await executePartialAdjustSignal(signal);
+
+  const closeoutCtx = {
+    symbol: candidate.symbol,
+    exchange: candidate.exchange,
+    tradeMode: candidate.tradeMode,
+    closeoutType: 'partial_adjust',
+    reasonCode: candidate.reasonCode,
+    incidentLink: signal.exit_reason_override,
+    plannedRatio: candidate.partialExitRatio,
+    plannedNotional: candidate.estimatedNotional,
+    regime: signal._regime,
+    setupType: signal._setupType,
+    strategyFamily: signal._strategyFamily,
+    familyBias: signal._familyBias,
+    idempotencyKey: signal._idempotencyKey,
+    cooldownMinutes: 30,
+  };
+  const beginResult = await beginCloseout(closeoutCtx).catch(() => ({ ok: true }));
+  if (!beginResult.ok) {
+    throw new Error(`partial-adjust closeout guard: ${beginResult.reason}`);
+  }
+
+  let executeResult = null;
+  let executeError = null;
+  try {
+    executeResult = await executePartialAdjustSignal(signal);
+  } catch (err) {
+    executeError = err;
+  }
+
+  const closeoutResult = await finalizeCloseout(
+    closeoutCtx,
+    signal.id,
+    executeResult,
+    executeError,
+  ).catch(() => null);
+
+  if (executeError) throw executeError;
+
   const payload = {
     mode: 'execute',
     candidate,
     preflight,
     signalId: signal.id,
-    result,
+    result: executeResult,
+    closeoutReviewId: closeoutResult?.reviewId || null,
   };
 
   if (args.json) {
