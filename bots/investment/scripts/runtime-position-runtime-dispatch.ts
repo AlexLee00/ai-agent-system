@@ -347,6 +347,23 @@ function addMinutesIso(minutes = 5) {
   return new Date(Date.now() + (Math.max(1, Number(minutes || 5)) * 60 * 1000)).toISOString();
 }
 
+function detectTerminalChildFailure(message = '', stdout = '', stderr = '') {
+  const text = [message, stdout, stderr]
+    .map((value) => String(value || ''))
+    .join('\n')
+    .toLowerCase();
+  if (!text) return null;
+  if (
+    text.includes('후보를 찾지 못했습니다')
+    || text.includes('candidate_not_found')
+    || text.includes('partial-adjust 후보를 찾지 못했습니다')
+    || text.includes('strategy-exit 후보를 찾지 못했습니다')
+  ) {
+    return 'candidate_not_found';
+  }
+  return null;
+}
+
 async function resolveMarketGate(candidate = null) {
   const exchange = String(candidate?.exchange || '').toLowerCase();
   const isStockExchange = exchange === 'kis' || exchange === 'kis_overseas';
@@ -431,15 +448,22 @@ async function executeCandidate(candidate, { phase6 = false } = {}) {
     stdout = String(result?.stdout || '');
     stderr = String(result?.stderr || '');
   } catch (error) {
+    const stdoutText = String(error?.stdout || '').trim();
+    const stderrText = String(error?.stderr || '').trim();
+    const terminalStatus = detectTerminalChildFailure(
+      String(error?.message || error),
+      stdoutText,
+      stderrText,
+    );
     return {
       ok: false,
-      status: 'child_process_error',
-      autonomousActionStatus: 'autonomous_action_retrying',
+      status: terminalStatus || 'child_process_error',
+      autonomousActionStatus: terminalStatus ? 'autonomous_action_failed' : 'autonomous_action_retrying',
       candidate,
       command: invocation.command,
       error: String(error?.message || error),
-      output: String(error?.stdout || '').trim(),
-      stderr: String(error?.stderr || '').trim(),
+      output: stdoutText,
+      stderr: stderrText,
     };
   }
 
@@ -647,17 +671,21 @@ export async function runPositionRuntimeDispatch(args = {}) {
       marketQueueEntries = removePositionRuntimeMarketQueueEntry(marketQueueEntries, entry.queueKey);
     } else {
       const shouldRetry = RETRYABLE_STATUSES.has(String(executed.status || '')) && retryCount < maxRetryCount;
-      marketQueueEntries = upsertPositionRuntimeMarketQueueEntry(marketQueueEntries, {
-        queueKey: entry.queueKey,
-        candidate,
-        reason: String(executed.status || 'execution_failed'),
-        waitingReason: shouldRetry ? 'retry_scheduled' : 'retry_limit_reached',
-        status: shouldRetry ? 'autonomous_action_retrying' : 'autonomous_action_failed',
-        attempts,
-        retryCount,
-        lastAttemptAt,
-        nextRetryAt: shouldRetry ? addMinutesIso(retryDelayMinutes) : null,
-      });
+      if (shouldRetry) {
+        marketQueueEntries = upsertPositionRuntimeMarketQueueEntry(marketQueueEntries, {
+          queueKey: entry.queueKey,
+          candidate,
+          reason: String(executed.status || 'execution_failed'),
+          waitingReason: 'retry_scheduled',
+          status: 'autonomous_action_retrying',
+          attempts,
+          retryCount,
+          lastAttemptAt,
+          nextRetryAt: addMinutesIso(retryDelayMinutes),
+        });
+      } else {
+        marketQueueEntries = removePositionRuntimeMarketQueueEntry(marketQueueEntries, entry.queueKey);
+      }
     }
   }
 
