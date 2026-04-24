@@ -242,7 +242,7 @@ function serializeRunnerArgs(runnerArgs = {}) {
   return args;
 }
 
-function buildExecutionInvocation(candidate, { phase6 = false } = {}) {
+export function buildExecutionInvocation(candidate, { phase6 = false } = {}) {
   if (phase6) {
     if (candidate?.runner && candidate?.runnerArgs && typeof candidate.runnerArgs === 'object') {
       return {
@@ -485,7 +485,7 @@ async function executeCandidate(candidate, { phase6 = false } = {}) {
   };
 }
 
-function renderText(result = {}) {
+export function renderText(result = {}) {
   const lines = [
     '🚦 Position Runtime Dispatch',
     `status: ${result.status || 'unknown'}`,

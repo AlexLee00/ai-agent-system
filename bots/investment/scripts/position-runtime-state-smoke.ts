@@ -73,6 +73,71 @@ export function runPositionRuntimeStateSmoke() {
   });
   assert.equal(policyMatrix.riskGate, 'strict_risk_gate');
 
+  const evidenceGapBase = buildRegimeAwarePolicyMatrix({
+    exchange: 'binance',
+    strategyProfile: { setup_type: 'trend_following' },
+    pnlPct: 1.2,
+    recommendation: 'ADJUST',
+    regime: { regime: 'volatile' },
+    analysisSummary: { buy: 2, sell: 1, liveIndicator: { weightedBias: 0.2 } },
+    externalEvidenceGapState: {
+      state: { consecutiveGapCount: 1, threshold: 3 },
+    },
+  });
+  const evidenceGapAdjusted = buildRegimeAwarePolicyMatrix({
+    exchange: 'binance',
+    strategyProfile: { setup_type: 'trend_following' },
+    pnlPct: 1.2,
+    recommendation: 'ADJUST',
+    regime: { regime: 'volatile' },
+    analysisSummary: { buy: 2, sell: 1, liveIndicator: { weightedBias: 0.2 } },
+    externalEvidenceGapState: {
+      state: { consecutiveGapCount: 6, threshold: 3 },
+    },
+  });
+  assert.equal(evidenceGapAdjusted.evidenceGapPenalty, true);
+  assert.equal(evidenceGapAdjusted.reentryLock, true);
+  assert.ok(evidenceGapAdjusted.positionSizeMultiplier < evidenceGapBase.positionSizeMultiplier);
+
+  const evidenceGapBuy = buildRegimeAwarePolicyMatrix({
+    exchange: 'binance',
+    strategyProfile: { setup_type: 'trend_following' },
+    pnlPct: 0.6,
+    recommendation: 'BUY',
+    regime: { regime: 'volatile' },
+    analysisSummary: { buy: 3, sell: 0, liveIndicator: { weightedBias: 0.5 } },
+    externalEvidenceGapState: {
+      state: { consecutiveGapCount: 5, threshold: 3 },
+    },
+  });
+  assert.equal(evidenceGapBuy.evidenceGapPenalty, true);
+  assert.ok(evidenceGapBuy.positionSizeMultiplier < evidenceGapBase.positionSizeMultiplier);
+
+  const evidenceGapExit = buildRegimeAwarePolicyMatrix({
+    exchange: 'binance',
+    strategyProfile: { setup_type: 'trend_following' },
+    pnlPct: -3.2,
+    recommendation: 'EXIT',
+    regime: { regime: 'trending_bear' },
+    analysisSummary: { buy: 0, sell: 4, liveIndicator: { weightedBias: -0.8 } },
+    externalEvidenceGapState: {
+      state: { consecutiveGapCount: 7, threshold: 3 },
+    },
+  });
+  const evidenceGapExitNoGap = buildRegimeAwarePolicyMatrix({
+    exchange: 'binance',
+    strategyProfile: { setup_type: 'trend_following' },
+    pnlPct: -3.2,
+    recommendation: 'EXIT',
+    regime: { regime: 'trending_bear' },
+    analysisSummary: { buy: 0, sell: 4, liveIndicator: { weightedBias: -0.8 } },
+    externalEvidenceGapState: {
+      state: { consecutiveGapCount: 0, threshold: 3 },
+    },
+  });
+  assert.equal(evidenceGapExit.evidenceGapPenalty, false);
+  assert.equal(evidenceGapExit.positionSizeMultiplier, evidenceGapExitNoGap.positionSizeMultiplier);
+
   const validationState = buildOnlineValidationState({
     latestBacktest: { total_trades: 12, created_at: '2026-04-24T00:00:00.000Z' },
     driftContext: { totalTrades: 12, sharpeDrop: 1.8, returnDropPct: 12 },

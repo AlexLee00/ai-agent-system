@@ -11,12 +11,12 @@
 		<key>PATH</key>
 		<string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
 		<key>CLAUDE_AUTO_DEV_PROFILE</key>
-		<string>shadow</string>
+		<string>autonomous_l5</string>
 	</dict>
 	<key>KeepAlive</key>
 	<false/>
 	<key>Label</key>
-	<string>ai.claude.auto-dev</string>
+	<string>ai.claude.auto-dev.autonomous</string>
 	<key>ProgramArguments</key>
 	<array>
 		<string>/opt/homebrew/bin/tsx</string>
@@ -25,9 +25,9 @@
 	<key>RunAtLoad</key>
 	<true/>
 	<key>StandardErrorPath</key>
-	<string>/Users/alexlee/projects/ai-agent-system/bots/claude/auto-dev.err.log</string>
+	<string>/Users/alexlee/projects/ai-agent-system/bots/claude/auto-dev.autonomous.err.log</string>
 	<key>StandardOutPath</key>
-	<string>/Users/alexlee/projects/ai-agent-system/bots/claude/auto-dev.log</string>
+	<string>/Users/alexlee/projects/ai-agent-system/bots/claude/auto-dev.autonomous.log</string>
 	<key>WorkingDirectory</key>
 	<string>/Users/alexlee/projects/ai-agent-system</string>
 </dict>

@@ -55,6 +55,49 @@ const DEFAULT_RUNNING_STALE_MS = Number(process.env.CLAUDE_AUTO_DEV_RUNNING_STAL
 const DEFAULT_TARGET_TEAM = String(process.env.CLAUDE_AUTO_DEV_TARGET_TEAM || 'claude').toLowerCase();
 const AUTO_DEV_ARTIFACT_DIR = process.env.CLAUDE_AUTO_DEV_ARTIFACT_DIR ||
   path.join(WORKSPACE, 'claude-auto-dev-artifacts');
+const DEFAULT_AUTO_DEV_PROFILE = 'shadow';
+const AUTO_DEV_PROFILES = {
+  shadow: {
+    label: 'shadow',
+    enabled: false,
+    shadow: true,
+    executeImplementation: false,
+    archiveOnSuccess: false,
+    runHardTests: false,
+    cleanupWorktree: true,
+    integrationMode: 'patch',
+  },
+  supervised_l4: {
+    label: 'supervised_l4',
+    enabled: true,
+    shadow: true,
+    executeImplementation: false,
+    archiveOnSuccess: false,
+    runHardTests: false,
+    cleanupWorktree: true,
+    integrationMode: 'patch',
+  },
+  autonomous_l5: {
+    label: 'autonomous_l5',
+    enabled: true,
+    shadow: false,
+    executeImplementation: true,
+    archiveOnSuccess: true,
+    runHardTests: true,
+    cleanupWorktree: true,
+    integrationMode: 'cherry_pick',
+  },
+};
+const AUTO_DEV_PROFILE_ALIASES = {
+  safe: 'shadow',
+  shadow_mode: 'shadow',
+  l4: 'supervised_l4',
+  supervised: 'supervised_l4',
+  supervised_l4: 'supervised_l4',
+  l5: 'autonomous_l5',
+  autonomous: 'autonomous_l5',
+  autonomous_l5: 'autonomous_l5',
+};
 const REQUIRED_METADATA_FIELDS = [
   'target_team',
   'owner_agent',
@@ -100,6 +143,80 @@ function parseBooleanish(value) {
   if (normalized === 'true' || normalized === 'yes' || normalized === 'y') return true;
   if (normalized === 'false' || normalized === 'no' || normalized === 'n') return false;
   return null;
+}
+
+function normalizeAutoDevProfileName(value) {
+  const normalized = toSafeString(value || DEFAULT_AUTO_DEV_PROFILE).toLowerCase().replace(/-/g, '_');
+  const aliased = AUTO_DEV_PROFILE_ALIASES[normalized] || normalized;
+  return AUTO_DEV_PROFILES[aliased] ? aliased : DEFAULT_AUTO_DEV_PROFILE;
+}
+
+function readEnvBool(envVars, key) {
+  if (!envVars || envVars[key] === undefined) return undefined;
+  const parsed = parseBooleanish(envVars[key]);
+  return typeof parsed === 'boolean' ? parsed : undefined;
+}
+
+function normalizeIntegrationMode(value, fallback = 'patch') {
+  const normalized = toSafeString(value || fallback).toLowerCase().replace(/-/g, '_');
+  if (normalized === 'cherrypick') return 'cherry_pick';
+  if (normalized === 'pull_request' || normalized === 'pullrequest') return 'pr';
+  if (['none', 'patch', 'cherry_pick', 'pr'].includes(normalized)) return normalized;
+  return fallback;
+}
+
+function resolveAutoDevRuntimeConfig(options = {}, envVars = process.env) {
+  const profileName = normalizeAutoDevProfileName(options.profile || envVars.CLAUDE_AUTO_DEV_PROFILE);
+  const profile = AUTO_DEV_PROFILES[profileName] || AUTO_DEV_PROFILES[DEFAULT_AUTO_DEV_PROFILE];
+  const config = {
+    profile: profileName,
+    profileLabel: profile.label,
+    enabled: profile.enabled,
+    shadow: profile.shadow,
+    executeImplementation: profile.executeImplementation,
+    archiveOnSuccess: profile.archiveOnSuccess,
+    runHardTests: profile.runHardTests,
+    cleanupWorktree: profile.cleanupWorktree,
+    integrationMode: profile.integrationMode,
+    allowDirtyBase: false,
+  };
+
+  const envOverrides = {
+    enabled: readEnvBool(envVars, 'CLAUDE_AUTO_DEV_ENABLED'),
+    shadow: readEnvBool(envVars, 'CLAUDE_AUTO_DEV_SHADOW'),
+    executeImplementation: readEnvBool(envVars, 'CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION'),
+    archiveOnSuccess: readEnvBool(envVars, 'CLAUDE_AUTO_DEV_ARCHIVE_ON_SUCCESS'),
+    runHardTests: readEnvBool(envVars, 'CLAUDE_AUTO_DEV_RUN_HARD_TESTS'),
+    cleanupWorktree: readEnvBool(envVars, 'CLAUDE_AUTO_DEV_CLEANUP_WORKTREE'),
+    allowDirtyBase: readEnvBool(envVars, 'CLAUDE_AUTO_DEV_ALLOW_DIRTY_BASE'),
+  };
+  for (const [key, value] of Object.entries(envOverrides)) {
+    if (typeof value === 'boolean') config[key] = value;
+  }
+  config.integrationMode = normalizeIntegrationMode(envVars.CLAUDE_AUTO_DEV_INTEGRATION_MODE, config.integrationMode);
+
+  const optionOverrides = [
+    'enabled',
+    'shadow',
+    'executeImplementation',
+    'archiveOnSuccess',
+    'runHardTests',
+    'cleanupWorktree',
+    'allowDirtyBase',
+  ];
+  for (const key of optionOverrides) {
+    if (typeof options[key] === 'boolean') config[key] = options[key];
+  }
+  if (options.integrationMode) {
+    config.integrationMode = normalizeIntegrationMode(options.integrationMode, config.integrationMode);
+  }
+
+  config.dryRun = Boolean(options.test || options.dryRun || !config.executeImplementation);
+  return config;
+}
+
+function getRuntimeConfig(options = {}) {
+  return options.runtimeConfig || resolveAutoDevRuntimeConfig(options);
 }
 
 function toList(value) {
@@ -479,9 +596,9 @@ function isGitRepository(cwd = ROOT) {
 }
 
 function ensureExecutionContext(job, options = {}) {
-  const executeImplementation = options.executeImplementation ?? process.env.CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION === 'true';
-  const dryRun = Boolean(options.test || options.dryRun || !executeImplementation);
-  const allowDirtyBase = process.env.CLAUDE_AUTO_DEV_ALLOW_DIRTY_BASE === 'true';
+  const runtimeConfig = getRuntimeConfig(options);
+  const dryRun = runtimeConfig.dryRun;
+  const allowDirtyBase = runtimeConfig.allowDirtyBase;
 
   if (dryRun || !isGitRepository(ROOT)) {
     return {
@@ -492,6 +609,7 @@ function ensureExecutionContext(job, options = {}) {
         dryRun,
         worktreePath: null,
         baseSha: null,
+        profile: runtimeConfig.profile,
       },
     };
   }
@@ -527,6 +645,7 @@ function ensureExecutionContext(job, options = {}) {
       baseSha,
       baseStatus,
       baseDirty: [...baseDirty],
+      profile: runtimeConfig.profile,
     },
   };
 }
@@ -718,7 +837,8 @@ function formatStageMessage(job, stageId, details = '') {
 }
 
 async function sendStageAlarm(job, stageId, details = '', options = {}) {
-  const shadow = options.shadow ?? process.env.CLAUDE_AUTO_DEV_SHADOW !== 'false';
+  const runtimeConfig = getRuntimeConfig(options);
+  const shadow = options.shadow ?? runtimeConfig.shadow;
   const message = formatStageMessage(job, stageId, details);
   if (shadow || options.test) {
     console.log(`[auto-dev] [SHADOW] ${stageId}: ${job.analysis?.relPath || job.relPath}`);
@@ -829,8 +949,8 @@ function resolveClaudeCliCommand() {
 }
 
 async function runClaudeImplementation(job, mode, options = {}, failureContext = '', executionContext = null) {
-  const execute = options.executeImplementation ?? process.env.CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION === 'true';
-  const dryRun = Boolean(options.test || options.dryRun || !execute);
+  const runtimeConfig = getRuntimeConfig(options);
+  const dryRun = runtimeConfig.dryRun;
   const cwd = executionContext?.cwd || ROOT;
 
   if (dryRun) {
@@ -1204,9 +1324,126 @@ function exportWorktreePatch(job, executionContext, {
   };
 }
 
+function formatAutoDevCommitMessage(job) {
+  const title = toSafeString(job?.analysis?.title || job?.title || job?.relPath || 'auto_dev update');
+  const trimmed = title.length > 72 ? `${title.slice(0, 69)}...` : title;
+  return `auto-dev: ${trimmed}`;
+}
+
+function integrateWorktreeChanges(job, executionContext, {
+  changedFiles = [],
+  afterStatus = [],
+} = {}, options = {}) {
+  const runtimeConfig = getRuntimeConfig(options);
+  const patchResult = exportWorktreePatch(job, executionContext, {
+    changedFiles,
+    afterStatus,
+  });
+
+  if (!patchResult.ok || !patchResult.required) {
+    return {
+      ...patchResult,
+      integrationMode: runtimeConfig.integrationMode,
+    };
+  }
+
+  if (runtimeConfig.integrationMode === 'none' || runtimeConfig.integrationMode === 'patch') {
+    return {
+      ...patchResult,
+      integrationMode: runtimeConfig.integrationMode,
+    };
+  }
+
+  if (runtimeConfig.integrationMode !== 'cherry_pick') {
+    return {
+      ...patchResult,
+      ok: false,
+      reason: 'integration_mode_unsupported',
+      error: `지원하지 않는 auto_dev integrationMode입니다: ${runtimeConfig.integrationMode}`,
+      integrationMode: runtimeConfig.integrationMode,
+    };
+  }
+
+  const rootStatus = captureGitStatusShort(ROOT);
+  const rootDirty = [...collectChangedPaths(rootStatus)];
+  if (rootDirty.length > 0 && !runtimeConfig.allowDirtyBase) {
+    return {
+      ...patchResult,
+      ok: false,
+      reason: 'target_worktree_dirty',
+      error: '기본 worktree가 dirty 상태라 cherry-pick 자동 통합을 차단합니다.',
+      integrationMode: runtimeConfig.integrationMode,
+      targetStatus: rootStatus,
+      targetDirty: rootDirty,
+    };
+  }
+
+  runGit(['add', '--', ...changedFiles], executionContext.cwd, 60000);
+  runGit([
+    '-c',
+    'user.name=Claude Auto Dev',
+    '-c',
+    'user.email=claude-auto-dev@local',
+    'commit',
+    '-m',
+    formatAutoDevCommitMessage(job),
+  ], executionContext.cwd, 120000);
+  const worktreeCommitSha = runGit(['rev-parse', 'HEAD'], executionContext.cwd, 10000);
+  const targetBranch = runGit(['rev-parse', '--abbrev-ref', 'HEAD'], ROOT, 10000);
+  runGit(['cherry-pick', worktreeCommitSha], ROOT, 120000);
+
+  return {
+    ...patchResult,
+    mode: 'cherry_picked',
+    integrationMode: runtimeConfig.integrationMode,
+    cherryPicked: true,
+    worktreeCommitSha,
+    targetBranch,
+    targetRoot: ROOT,
+  };
+}
+
+function cleanupExecutionContext(executionContext, options = {}) {
+  const runtimeConfig = getRuntimeConfig(options);
+  if (!executionContext || executionContext.mode !== 'worktree' || !executionContext.worktreePath) {
+    return {
+      ok: true,
+      attempted: false,
+      removed: false,
+      reason: 'worktree_not_used',
+    };
+  }
+  if (!runtimeConfig.cleanupWorktree) {
+    return {
+      ok: true,
+      attempted: false,
+      removed: false,
+      reason: 'cleanup_disabled',
+      worktreePath: executionContext.worktreePath,
+    };
+  }
+
+  try {
+    runGit(['worktree', 'remove', '--force', executionContext.worktreePath], ROOT, 60000);
+    return {
+      ok: true,
+      attempted: true,
+      removed: true,
+      worktreePath: executionContext.worktreePath,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      attempted: true,
+      removed: false,
+      worktreePath: executionContext.worktreePath,
+      error: String(error.stderr || error.stdout || error.message || error).slice(0, 1000),
+    };
+  }
+}
+
 function shouldArchiveOnSuccess(options = {}) {
-  if (typeof options.archiveOnSuccess === 'boolean') return options.archiveOnSuccess;
-  return process.env.CLAUDE_AUTO_DEV_ARCHIVE_ON_SUCCESS === 'true';
+  return getRuntimeConfig(options).archiveOnSuccess;
 }
 
 function archiveCompletedDocument(filePath, contentHash) {
@@ -1255,6 +1492,7 @@ function writeArchiveManifest({
 async function runTestCycle(options = {}, executionContext = null, analysis = null) {
   const builder = require('../src/builder');
   const testMode = Boolean(options.test);
+  const runtimeConfig = getRuntimeConfig(options);
   const cwd = executionContext?.cwd || ROOT;
   const build = await builder.runBuildCheck({ force: true, test: testMode });
   const commands = [];
@@ -1283,7 +1521,7 @@ async function runTestCycle(options = {}, executionContext = null, analysis = nu
     };
   }
 
-  if (!testMode && !options.dryRun && process.env.CLAUDE_AUTO_DEV_RUN_HARD_TESTS !== 'false') {
+  if (!testMode && !options.dryRun && runtimeConfig.runHardTests) {
     const configured = process.env.CLAUDE_AUTO_DEV_HARD_TEST_COMMANDS;
     const hardTests = configured ? configured.split('&&').map(item => item.trim()).filter(Boolean) : DEFAULT_HARD_TEST_COMMANDS;
     hardTests.forEach(command => commands.push(runCommand(command, 600000, cwd)));
@@ -1410,6 +1648,7 @@ async function processAutoDevDocument(filePath, options = {}) {
 
   const job = { id, filePath, relPath, title: path.basename(filePath, '.md'), contentHash };
   const maxRevisionPasses = Number(options.maxRevisionPasses ?? process.env.CLAUDE_AUTO_DEV_MAX_REVISIONS ?? 1);
+  const runtimeConfig = getRuntimeConfig(options);
   const staleRunningJob = state.jobs[id]?.status === 'running' ? state.jobs[id] : null;
   if (!options.force && staleRunningJob && !isTimestampStale(staleRunningJob.updatedAt, DEFAULT_RUNNING_STALE_MS)) {
     return { ok: true, skipped: true, reason: 'already_running', job: staleRunningJob };
@@ -1435,9 +1674,11 @@ async function processAutoDevDocument(filePath, options = {}) {
   let beforeStatus = [];
   let policy = null;
   let executionContext = null;
+  let cleanupResult = null;
   try {
     updateJobState(job, 'received', {
       contentHash,
+      profile: runtimeConfig.profile,
       lock: {
         global: false,
         job: true,
@@ -1463,6 +1704,7 @@ async function processAutoDevDocument(filePath, options = {}) {
       writeScope: policy.writeScope,
       riskTier: policy.riskTier,
       policyDecision: policy.policyDecision,
+      profile: runtimeConfig.profile,
     });
     await setAgentStatus('analysis', job);
 
@@ -1474,6 +1716,7 @@ async function processAutoDevDocument(filePath, options = {}) {
         writeScope: policy.writeScope,
         riskTier: policy.riskTier,
         policyDecision: policy.policyDecision,
+        profile: runtimeConfig.profile,
       });
       await markAgentDone();
       return { ok: true, skipped: true, reason: policy.decision, job: blockedJob };
@@ -1490,6 +1733,7 @@ async function processAutoDevDocument(filePath, options = {}) {
         riskTier: policy.riskTier,
         baseStatus: contextResult.baseStatus || [],
         baseDirty: contextResult.baseDirty || [],
+        profile: runtimeConfig.profile,
       });
       await markAgentDone();
       return { ok: true, skipped: true, reason: contextResult.stage || 'blocked_dirty_worktree', job: blockedJob };
@@ -1507,11 +1751,13 @@ async function processAutoDevDocument(filePath, options = {}) {
         cwd: executionContext.cwd,
         baseSha: executionContext.baseSha,
         worktreePath: executionContext.worktreePath,
+        profile: executionContext.profile,
       },
       targetTeam: policy.targetTeam,
       writeScope: policy.writeScope,
       riskTier: policy.riskTier,
       policyDecision: policy.policyDecision,
+      profile: runtimeConfig.profile,
     });
     await setAgentStatus('plan', job);
     await sendStageAlarm(job, 'plan', `구현계획 수립 완료\n\n${plan.slice(0, 1800)}`, options);
@@ -1521,6 +1767,7 @@ async function processAutoDevDocument(filePath, options = {}) {
       writeScope: policy.writeScope,
       riskTier: policy.riskTier,
       policyDecision: policy.policyDecision,
+      profile: runtimeConfig.profile,
     });
     await setAgentStatus('implementation', job);
     const implementation = await runClaudeImplementation(job, 'implementation', options, '', executionContext);
@@ -1571,10 +1818,10 @@ async function processAutoDevDocument(filePath, options = {}) {
       throw new Error(`write scope violation: ${scopeViolations.slice(0, 8).join(', ')}`);
     }
 
-    const integrationResult = exportWorktreePatch(job, executionContext, {
+    const integrationResult = integrateWorktreeChanges(job, executionContext, {
       changedFiles: newlyChangedFiles,
       afterStatus,
-    });
+    }, options);
     if (!integrationResult.ok) {
       throw new Error(`integration failed: ${integrationResult.error || integrationResult.reason}`);
     }
@@ -1615,6 +1862,7 @@ async function processAutoDevDocument(filePath, options = {}) {
       }
     }
 
+    cleanupResult = cleanupExecutionContext(executionContext, options);
     const finalJob = updateJobState(job, 'completed', {
       analysis,
       plan,
@@ -1627,10 +1875,12 @@ async function processAutoDevDocument(filePath, options = {}) {
       newlyChangedFiles,
       scopeViolations,
       integration: integrationResult,
+      worktreeCleanup: cleanupResult,
       archivedPath,
       archiveManifestPath,
       contentHash,
       completedAt: nowIso(),
+      profile: runtimeConfig.profile,
       targetTeam: policy.targetTeam,
       writeScope: policy.writeScope,
       riskTier: policy.riskTier,
@@ -1640,12 +1890,15 @@ async function processAutoDevDocument(filePath, options = {}) {
         cwd: executionContext.cwd,
         baseSha: executionContext.baseSha,
         worktreePath: executionContext.worktreePath,
+        profile: executionContext.profile,
       },
     });
     const changedPreview = newlyChangedFiles.length === 0
       ? '변경 후보 파일 없음'
       : `변경 후보 파일 ${newlyChangedFiles.length}개\n${newlyChangedFiles.slice(0, 10).map(file => `- ${file}`).join('\n')}`;
-    const integrationPreview = integrationResult.exported
+    const integrationPreview = integrationResult.mode === 'cherry_picked'
+      ? `통합 산출물: cherry-picked\n- commit: ${integrationResult.worktreeCommitSha}\n- patch: ${integrationResult.patchPath}`
+      : integrationResult.exported
       ? `통합 산출물: patch exported\n- ${integrationResult.patchPath}`
       : '통합 산출물: 없음';
     await sendStageAlarm(job, 'completed', `리뷰/테스트 통과\n\n${testResult.message}\n\n${changedPreview}\n\n${integrationPreview}`, options);
@@ -1658,17 +1911,21 @@ async function processAutoDevDocument(filePath, options = {}) {
       review: reviewResult,
       test: testResult,
       integration: integrationResult,
+      worktreeCleanup: cleanupResult,
       archiveManifestPath,
     };
   } catch (error) {
     const afterStatus = captureGitStatusShort(executionContext?.cwd || ROOT);
     const newlyChangedFiles = collectNewlyChangedFiles(beforeStatus, afterStatus);
+    cleanupResult = cleanupExecutionContext(executionContext, options);
     const failedJob = updateJobState(job, 'failed', {
       error: error.message,
       beforeStatus,
       afterStatus,
       newlyChangedFiles,
       contentHash,
+      profile: runtimeConfig.profile,
+      worktreeCleanup: cleanupResult,
       targetTeam: policy?.targetTeam || null,
       writeScope: policy?.writeScope || [],
       riskTier: policy?.riskTier || null,
@@ -1679,6 +1936,7 @@ async function processAutoDevDocument(filePath, options = {}) {
           cwd: executionContext.cwd,
           baseSha: executionContext.baseSha,
           worktreePath: executionContext.worktreePath,
+          profile: executionContext.profile,
         }
         : null,
     });
@@ -1692,6 +1950,7 @@ async function processAutoDevDocument(filePath, options = {}) {
 }
 
 async function runAutoDevPipeline(options = {}) {
+  const runtimeConfig = getRuntimeConfig(options);
   const globalLock = acquireFileLock(
     AUTO_DEV_LOCK_FILE,
     { jobId: null, relPath: null },
@@ -1706,10 +1965,15 @@ async function runAutoDevPipeline(options = {}) {
       failedCount: 0,
       stateFile: STATE_FILE,
       runtime: {
-        shadow: options.shadow ?? process.env.CLAUDE_AUTO_DEV_SHADOW !== 'false',
-        dryRun: true,
-        executeImplementation: false,
-        runHardTests: process.env.CLAUDE_AUTO_DEV_RUN_HARD_TESTS !== 'false',
+        profile: runtimeConfig.profile,
+        enabled: runtimeConfig.enabled,
+        shadow: runtimeConfig.shadow,
+        dryRun: runtimeConfig.dryRun,
+        executeImplementation: runtimeConfig.executeImplementation,
+        archiveOnSuccess: runtimeConfig.archiveOnSuccess,
+        runHardTests: runtimeConfig.runHardTests,
+        cleanupWorktree: runtimeConfig.cleanupWorktree,
+        integrationMode: runtimeConfig.integrationMode,
       },
       lock: {
         acquired: false,
@@ -1730,8 +1994,9 @@ async function runAutoDevPipeline(options = {}) {
   const docs = listAutoDevDocuments();
   const results = [];
   try {
+    const runOptions = { ...options, runtimeConfig };
     for (const doc of docs) {
-      results.push(await processAutoDevDocument(doc, options));
+      results.push(await processAutoDevDocument(doc, runOptions));
       if (options.once) break;
     }
   } finally {
@@ -1742,9 +2007,6 @@ async function runAutoDevPipeline(options = {}) {
   const skippedCount = results.filter(result => result.skipped).length;
   const failedCount = results.filter(result => !result.ok && !result.skipped).length;
   const processedCount = results.length - skippedCount;
-  const executeImplementation = options.executeImplementation ?? process.env.CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION === 'true';
-  const shadow = options.shadow ?? process.env.CLAUDE_AUTO_DEV_SHADOW !== 'false';
-  const dryRun = Boolean(options.dryRun || options.test || !executeImplementation);
 
   return {
     ok: results.every(result => result.ok || result.skipped),
@@ -1754,10 +2016,15 @@ async function runAutoDevPipeline(options = {}) {
     failedCount,
     stateFile: STATE_FILE,
     runtime: {
-      shadow,
-      dryRun,
-      executeImplementation,
-      runHardTests: process.env.CLAUDE_AUTO_DEV_RUN_HARD_TESTS !== 'false',
+      profile: runtimeConfig.profile,
+      enabled: runtimeConfig.enabled,
+      shadow: runtimeConfig.shadow,
+      dryRun: runtimeConfig.dryRun,
+      executeImplementation: runtimeConfig.executeImplementation,
+      archiveOnSuccess: runtimeConfig.archiveOnSuccess,
+      runHardTests: runtimeConfig.runHardTests,
+      cleanupWorktree: runtimeConfig.cleanupWorktree,
+      integrationMode: runtimeConfig.integrationMode,
     },
     lock: {
       acquired: true,
@@ -1767,14 +2034,71 @@ async function runAutoDevPipeline(options = {}) {
   };
 }
 
+function listDirectoryEntriesSafe(dir, predicate = null) {
+  try {
+    if (!fs.existsSync(dir)) return [];
+    return fs.readdirSync(dir)
+      .filter(name => !predicate || predicate(name, path.join(dir, name)))
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+function getAutoDevStatusSnapshot(options = {}) {
+  const runtimeConfig = getRuntimeConfig(options);
+  const state = loadState();
+  const jobs = Object.values(state.jobs || {});
+  const docs = listAutoDevDocuments();
+  const worktrees = listDirectoryEntriesSafe(AUTO_DEV_WORKTREE_DIR);
+  const patches = listDirectoryEntriesSafe(AUTO_DEV_ARTIFACT_DIR, name => name.endsWith('.patch'));
+  const latestJobs = jobs
+    .slice()
+    .sort((a, b) => String(a.updatedAt || '').localeCompare(String(b.updatedAt || '')))
+    .slice(-10);
+
+  return {
+    ok: true,
+    profile: runtimeConfig.profile,
+    runtime: runtimeConfig,
+    stateFile: STATE_FILE,
+    autoDevDir: AUTO_DEV_DIR,
+    worktreeDir: AUTO_DEV_WORKTREE_DIR,
+    artifactDir: AUTO_DEV_ARTIFACT_DIR,
+    counts: {
+      pendingDocs: docs.length,
+      jobs: jobs.length,
+      runningJobs: jobs.filter(job => job.status === 'running').length,
+      failedJobs: jobs.filter(job => job.status === 'failed').length,
+      completedJobs: jobs.filter(job => job.status === 'completed').length,
+      worktrees: worktrees.length,
+      patches: patches.length,
+    },
+    pendingDocs: docs.map(relativeToRoot),
+    worktrees: {
+      count: worktrees.length,
+      entries: worktrees,
+    },
+    patches: {
+      count: patches.length,
+      entries: patches.slice(-20),
+    },
+    latestJobs,
+    state,
+  };
+}
+
 module.exports = {
   STAGES,
   AUTO_DEV_DIR,
   STATE_FILE,
+  AUTO_DEV_PROFILES,
+  resolveAutoDevRuntimeConfig,
   listAutoDevDocuments,
   analyzeAutoDevDocument,
   buildImplementationPlan,
   processAutoDevDocument,
   runAutoDevPipeline,
+  getAutoDevStatusSnapshot,
   loadState,
 };

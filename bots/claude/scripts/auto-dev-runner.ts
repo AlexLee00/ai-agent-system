@@ -14,15 +14,23 @@ const once = args.includes('--once');
 const test = args.includes('--test');
 const dryRun = args.includes('--dry-run');
 const force = args.includes('--force');
+const profileArg = args.find(arg => arg.startsWith('--profile='));
+const profileIndex = args.indexOf('--profile');
+const profile = profileArg
+  ? profileArg.split('=').slice(1).join('=').trim()
+  : profileIndex >= 0
+    ? args[profileIndex + 1]
+    : undefined;
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 async function runOnce() {
-  const result = await pipeline.runAutoDevPipeline({ once, test, dryRun, force });
+  const result = await pipeline.runAutoDevPipeline({ once, test, dryRun, force, profile });
   console.log(JSON.stringify({
     ok: result.ok,
+    profile: result.runtime?.profile,
     count: result.count,
     docs: result.results.map(item => ({
       ok: item.ok,
@@ -36,9 +44,10 @@ async function runOnce() {
 }
 
 async function main() {
-  const enabled = process.env.CLAUDE_AUTO_DEV_ENABLED === 'true' || once || test;
+  const runtime = pipeline.resolveAutoDevRuntimeConfig({ profile, test, dryRun });
+  const enabled = runtime.enabled || once || test;
   if (!enabled) {
-    console.log('[auto-dev] Kill Switch OFF — CLAUDE_AUTO_DEV_ENABLED=true 설정 필요');
+    console.log(`[auto-dev] Kill Switch OFF — CLAUDE_AUTO_DEV_PROFILE=${runtime.profile} enabled=false`);
     if (process.env.CLAUDE_AUTO_DEV_DISABLED_IDLE === 'true') {
       const idleMs = Number(process.env.CLAUDE_AUTO_DEV_DISABLED_IDLE_MS || 10 * 60 * 1000);
       while (true) {
@@ -54,7 +63,7 @@ async function main() {
   }
 
   const intervalMs = Number(process.env.CLAUDE_AUTO_DEV_INTERVAL_MS || 5 * 60 * 1000);
-  console.log(`[auto-dev] 시작 — docs/auto_dev 감시 (${intervalMs}ms)`);
+  console.log(`[auto-dev] 시작 — docs/auto_dev 감시 (${intervalMs}ms, profile=${runtime.profile})`);
 
   while (true) {
     await runOnce();

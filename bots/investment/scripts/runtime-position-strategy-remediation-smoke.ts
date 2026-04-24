@@ -207,6 +207,7 @@ export async function runPositionStrategyRemediationContractSmoke() {
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationActionNormalizeApplyCommand'));
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationActionRetireDryRunCommand'));
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationActionRetireApplyCommand'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationActionAutonomousApplyCommand'));
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationAutonomous'));
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationAutonomousStatus'));
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationAutonomousReason'));
@@ -214,6 +215,8 @@ export async function runPositionStrategyRemediationContractSmoke() {
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationAutonomousVerify'));
   assert.ok(Object.prototype.hasOwnProperty.call(result, 'remediationAutonomousApplied'));
   assert.ok(Object.prototype.hasOwnProperty.call(result.remediationSummary || {}, 'commands'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result.remediationSummary?.commands || {}, 'autonomousApply'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result.remediationFlat?.commands || {}, 'autonomousApply'));
   return {
     ok: true,
     hasTransitionField: Object.prototype.hasOwnProperty.call(result, 'remediationNextCommandTransition'),
@@ -266,7 +269,8 @@ export async function runPositionStrategyRemediationContractSmoke() {
       && Object.prototype.hasOwnProperty.call(result, 'remediationActionNormalizeDryRunCommand')
       && Object.prototype.hasOwnProperty.call(result, 'remediationActionNormalizeApplyCommand')
       && Object.prototype.hasOwnProperty.call(result, 'remediationActionRetireDryRunCommand')
-      && Object.prototype.hasOwnProperty.call(result, 'remediationActionRetireApplyCommand'),
+      && Object.prototype.hasOwnProperty.call(result, 'remediationActionRetireApplyCommand')
+      && Object.prototype.hasOwnProperty.call(result, 'remediationActionAutonomousApplyCommand'),
     hasAutonomousFields:
       Object.prototype.hasOwnProperty.call(result, 'remediationAutonomous')
       && Object.prototype.hasOwnProperty.call(result, 'remediationAutonomousStatus')

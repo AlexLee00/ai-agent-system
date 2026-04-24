@@ -25,6 +25,10 @@ import { backfillTradeIncidentLinks } from './backfill-trade-incident-links.ts';
 import { buildPositionStrategyHygieneRemediationPlan, runPositionStrategyHygiene } from './runtime-position-strategy-hygiene.ts';
 import { runPositionStrategyRemediation } from './runtime-position-strategy-remediation.ts';
 import { loadExecutionRiskApprovalGuardHealth } from './health-report-support.ts';
+import {
+  enrichAutonomousActionAlertPayload,
+  resolveAutonomousActionAlertEventType,
+} from '../shared/autonomous-action-event.ts';
 
 const require = createRequire(import.meta.url);
 const hsm     = require('../../../packages/core/lib/health-state-manager');
@@ -160,6 +164,7 @@ function buildHealthCheckRemediationView(remediation, hygiene, remediationHistor
   const remediationNextCommandCurrent = remediation?.remediationNextCommandCurrent || remediationFlat?.nextCommandCurrent || remediationNextCommandTransition?.current || null;
   const recommendedExchange = remediation?.remediationRecommendedExchange || remediationFlat?.recommendedExchange || remediationSummary?.recommendedExchange || remediationPlan?.recommendedExchange || null;
   const remediationActionReportCommand = remediation?.remediationActionReportCommand || remediationFlat?.actionReportCommand || remediationCommandsBase?.report || remediationSummary?.actions?.reportCommand || null;
+  const remediationActionAutonomousApplyCommand = remediation?.remediationActionAutonomousApplyCommand || remediationFlat?.actionAutonomousApplyCommand || remediationCommandsBase?.autonomousApply || remediationSummary?.actions?.autonomousApplyCommand || remediationPlan?.remediationAutonomousApplyCommand || null;
   const remediationActionHistoryCommand = remediation?.remediationActionHistoryCommand || remediationFlat?.actionHistoryCommand || remediationCommandsBase?.history || remediationSummary?.actions?.historyCommand || null;
   const remediationActionRefreshCommand = remediation?.remediationActionRefreshCommand || remediationFlat?.actionRefreshCommand || remediationRefreshCommand || remediationSummary?.actions?.refreshCommand || null;
   const remediationActionHygieneCommand = remediation?.remediationActionHygieneCommand || remediationFlat?.actionHygieneCommand || remediationCommandsBase?.hygiene || remediationSummary?.actions?.hygieneCommand || null;
@@ -169,6 +174,7 @@ function buildHealthCheckRemediationView(remediation, hygiene, remediationHistor
   const remediationActionRetireApplyCommand = remediation?.remediationActionRetireApplyCommand || remediationFlat?.actionRetireApplyCommand || remediationCommandsBase?.retireApply || remediationSummary?.actions?.retireApplyCommand || null;
   const remediationCommands = {
     report: remediationActionReportCommand || null,
+    autonomousApply: remediationActionAutonomousApplyCommand || null,
     history: remediationActionHistoryCommand || null,
     refresh: remediationRefreshCommand || remediationActionRefreshCommand || null,
     hygiene: remediationActionHygieneCommand || null,
@@ -179,6 +185,7 @@ function buildHealthCheckRemediationView(remediation, hygiene, remediationHistor
   };
   const remediationActions = {
     reportCommand: remediationActionReportCommand || null,
+    autonomousApplyCommand: remediationActionAutonomousApplyCommand || null,
     historyCommand: remediationActionHistoryCommand || null,
     refreshCommand: remediationActionRefreshCommand || remediationRefreshCommand || null,
     hygieneCommand: remediationActionHygieneCommand || null,
@@ -221,6 +228,7 @@ function buildHealthCheckRemediationView(remediation, hygiene, remediationHistor
     recommendedExchange,
     remediationHistory: remediationHistory || null,
     remediationActionReportCommand,
+    remediationActionAutonomousApplyCommand,
     remediationActionHistoryCommand,
     remediationActionRefreshCommand,
     remediationActionHygieneCommand,
@@ -318,13 +326,18 @@ function buildHealthCheckRuntimeView(runtimeReport, runtimeTuning, runtimeDispat
 // ─── 알림 발송 ───────────────────────────────────────────────────
 
 async function notify(msg, level = 3, payload = null) {
+  const normalizedPayload = enrichAutonomousActionAlertPayload(
+    payload && typeof payload === 'object' ? payload : null,
+    msg,
+  );
+  const eventType = resolveAutonomousActionAlertEventType(normalizedPayload, 'health_check');
   try {
     await publishAlert({
       from_bot: 'luna-health-check',
-      event_type: 'health_check',
+      event_type: eventType,
       alert_level: level,
       message: msg,
-      payload: payload && typeof payload === 'object' ? payload : undefined,
+      payload: normalizedPayload || undefined,
     });
   } catch { /* 무시 */ }
 }
@@ -1008,6 +1021,7 @@ async function main() {
             remediationNextCommandCurrent,
             remediationCommands,
             remediationActionReportCommand: remediationView.remediationActionReportCommand,
+            remediationActionAutonomousApplyCommand: remediationView.remediationActionAutonomousApplyCommand,
             remediationActionHistoryCommand: remediationView.remediationActionHistoryCommand,
             remediationActionRefreshCommand: remediationView.remediationActionRefreshCommand,
             remediationActionHygieneCommand: remediationView.remediationActionHygieneCommand,
@@ -1016,6 +1030,7 @@ async function main() {
             remediationActionRetireDryRunCommand: remediationView.remediationActionRetireDryRunCommand,
             remediationActionRetireApplyCommand: remediationView.remediationActionRetireApplyCommand,
             remediationReportCommand: remediationView.remediationReportCommand,
+            remediationAutonomousApplyCommand: remediationView.remediationActionAutonomousApplyCommand || remediationView.remediationCommands?.autonomousApply || null,
             remediationHistoryCommand: remediationView.remediationHistoryCommand,
             remediationRefreshCommand,
             remediationNormalizeDryRunCommand: remediationView.remediationNormalizeDryRunCommand,

@@ -15,6 +15,8 @@ const crypto = require('crypto');
 
 const PIPELINE_PATH = path.resolve(__dirname, '../lib/auto-dev-pipeline.ts');
 const AUTO_DEV_PLIST_PATH = path.resolve(__dirname, '../launchd/ai.claude.auto-dev.plist');
+const AUTO_DEV_SHADOW_PLIST_PATH = path.resolve(__dirname, '../launchd/ai.claude.auto-dev.shadow.plist');
+const AUTO_DEV_AUTONOMOUS_PLIST_PATH = path.resolve(__dirname, '../launchd/ai.claude.auto-dev.autonomous.plist');
 
 function makeTempRoot() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'claude-auto-dev-'));
@@ -132,6 +134,7 @@ function testEnv(tmpRoot, extra = {}) {
     CLAUDE_AUTO_DEV_LOCK_FILE: path.join(tmpRoot, 'claude-auto-dev.lock'),
     CLAUDE_AUTO_DEV_JOB_LOCK_DIR: path.join(tmpRoot, 'claude-auto-dev-job-locks'),
     CLAUDE_AUTO_DEV_WORKTREE_DIR: path.join(tmpRoot, 'claude-auto-dev-worktrees'),
+    CLAUDE_AUTO_DEV_ARTIFACT_DIR: path.join(tmpRoot, 'claude-auto-dev-artifacts'),
     ...extra,
   };
 }
@@ -511,12 +514,44 @@ async function test_completed_state_clears_active_error() {
 
 async function test_launchd_plist_defaults_are_safe() {
   const plist = fs.readFileSync(AUTO_DEV_PLIST_PATH, 'utf8');
-  assert.match(plist, /<key>CLAUDE_AUTO_DEV_ENABLED<\/key>\s*<string>false<\/string>/);
-  assert.match(plist, /<key>CLAUDE_AUTO_DEV_SHADOW<\/key>\s*<string>true<\/string>/);
-  assert.match(plist, /<key>CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION<\/key>\s*<string>false<\/string>/);
-  assert.match(plist, /<key>CLAUDE_AUTO_DEV_RUN_HARD_TESTS<\/key>\s*<string>false<\/string>/);
+  const shadowPlist = fs.readFileSync(AUTO_DEV_SHADOW_PLIST_PATH, 'utf8');
+  const autonomousPlist = fs.readFileSync(AUTO_DEV_AUTONOMOUS_PLIST_PATH, 'utf8');
+  assert.match(plist, /<key>CLAUDE_AUTO_DEV_PROFILE<\/key>\s*<string>shadow<\/string>/);
+  assert.match(shadowPlist, /<key>CLAUDE_AUTO_DEV_PROFILE<\/key>\s*<string>shadow<\/string>/);
+  assert.match(autonomousPlist, /<key>CLAUDE_AUTO_DEV_PROFILE<\/key>\s*<string>autonomous_l5<\/string>/);
+  assert.doesNotMatch(shadowPlist, /CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION/);
+  assert.doesNotMatch(autonomousPlist, /CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION/);
   assert.match(plist, /<key>KeepAlive<\/key>\s*<false\/>/);
   console.log('✅ auto-dev: launchd plist safe defaults verified');
+}
+
+async function test_profile_resolver_maps_runtime_profiles() {
+  const tmpRoot = makeTempRoot();
+  const { mocks } = makeMocks(tmpRoot);
+
+  await withMocks(mocks, async pipeline => {
+    const shadow = pipeline.resolveAutoDevRuntimeConfig({ profile: 'shadow' }, {});
+    assert.strictEqual(shadow.enabled, false);
+    assert.strictEqual(shadow.shadow, true);
+    assert.strictEqual(shadow.executeImplementation, false);
+    assert.strictEqual(shadow.integrationMode, 'patch');
+
+    const supervised = pipeline.resolveAutoDevRuntimeConfig({ profile: 'supervised_l4' }, {});
+    assert.strictEqual(supervised.enabled, true);
+    assert.strictEqual(supervised.shadow, true);
+    assert.strictEqual(supervised.executeImplementation, false);
+
+    const autonomous = pipeline.resolveAutoDevRuntimeConfig({ profile: 'autonomous_l5' }, {});
+    assert.strictEqual(autonomous.enabled, true);
+    assert.strictEqual(autonomous.shadow, false);
+    assert.strictEqual(autonomous.executeImplementation, true);
+    assert.strictEqual(autonomous.archiveOnSuccess, true);
+    assert.strictEqual(autonomous.runHardTests, true);
+    assert.strictEqual(autonomous.integrationMode, 'cherry_pick');
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: promotion profiles resolve to runtime flags');
 }
 
 async function test_bash_is_fail_closed_without_allowlist() {
@@ -767,6 +802,170 @@ async function test_archive_manifest_failure_is_fail_closed() {
   console.log('✅ auto-dev: archive manifest failure is fail-closed');
 }
 
+async function test_worktree_cleanup_runs_after_success() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(tmpRoot, 'CODEX_CLEANUP_WORKTREE.md', '# Cleanup\nworktree');
+  const gitCalls = [];
+  let worktreeStatusCalls = 0;
+
+  const { mocks } = makeMocks(tmpRoot, {
+    child_process: {
+      execFileSync: (command, args = [], opts = {}) => {
+        if (command === 'bash') return '/usr/local/bin/claude\n';
+        if (command === 'claude') return 'ok';
+        if (command === 'rg') throw new Error('no match');
+        if (command === 'git') {
+          gitCalls.push({ args, cwd: opts.cwd });
+          const joined = args.join(' ');
+          if (joined === 'rev-parse --is-inside-work-tree') return 'true\n';
+          if (joined === 'rev-parse HEAD') return String(opts.cwd || '').includes('claude-auto-dev-worktrees')
+            ? 'worktree-head\n'
+            : 'base-head\n';
+          if (joined.startsWith('diff')) {
+            return 'diff --git a/bots/claude/src/reviewer.ts b/bots/claude/src/reviewer.ts\n';
+          }
+          return '';
+        }
+        return '';
+      },
+      execSync: (command, opts = {}) => {
+        if (String(command).includes('git status --short')) {
+          if (String(opts.cwd || '').includes('claude-auto-dev-worktrees')) {
+            worktreeStatusCalls += 1;
+            return worktreeStatusCalls === 1 ? '' : ' M bots/claude/src/reviewer.ts\n';
+          }
+          return '';
+        }
+        return '';
+      },
+    },
+  });
+
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, {
+      force: true,
+      test: false,
+      dryRun: false,
+      executeImplementation: true,
+      maxRevisionPasses: 0,
+    });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.job.worktreeCleanup?.removed, true);
+  }, testEnv(tmpRoot, {
+    CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION: 'true',
+  }));
+
+  assert.ok(
+    gitCalls.some(call => call.args.join(' ').startsWith('worktree remove --force')),
+    'successful worktree jobs must remove the detached worktree'
+  );
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: worktree cleanup runs after successful job');
+}
+
+async function test_cherry_pick_integration_commits_and_applies_patch() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(tmpRoot, 'CODEX_CHERRY_PICK.md', '# Cherry\npick');
+  const gitCalls = [];
+  let worktreeStatusCalls = 0;
+
+  const { mocks } = makeMocks(tmpRoot, {
+    child_process: {
+      execFileSync: (command, args = [], opts = {}) => {
+        if (command === 'bash') return '/usr/local/bin/claude\n';
+        if (command === 'claude') return 'ok';
+        if (command === 'rg') throw new Error('no match');
+        if (command === 'git') {
+          gitCalls.push({ args, cwd: opts.cwd });
+          const joined = args.join(' ');
+          const inWorktree = String(opts.cwd || '').includes('claude-auto-dev-worktrees');
+          if (joined === 'rev-parse --is-inside-work-tree') return 'true\n';
+          if (joined === 'rev-parse HEAD') return inWorktree ? 'worktree-commit\n' : 'base-head\n';
+          if (joined === 'rev-parse --abbrev-ref HEAD') return 'main\n';
+          if (joined.startsWith('diff')) {
+            return 'diff --git a/bots/claude/src/reviewer.ts b/bots/claude/src/reviewer.ts\n';
+          }
+          return '';
+        }
+        return '';
+      },
+      execSync: (command, opts = {}) => {
+        if (String(command).includes('git status --short')) {
+          if (String(opts.cwd || '').includes('claude-auto-dev-worktrees')) {
+            worktreeStatusCalls += 1;
+            return worktreeStatusCalls === 1 ? '' : ' M bots/claude/src/reviewer.ts\n';
+          }
+          return '';
+        }
+        return '';
+      },
+    },
+  });
+
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, {
+      force: true,
+      test: false,
+      dryRun: false,
+      executeImplementation: true,
+      integrationMode: 'cherry_pick',
+      maxRevisionPasses: 0,
+    });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.integration.mode, 'cherry_picked');
+    assert.strictEqual(result.integration.targetBranch, 'main');
+  }, testEnv(tmpRoot, {
+    CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION: 'true',
+  }));
+
+  assert.ok(gitCalls.some(call => call.args.includes('commit')), 'worktree changes must be committed before cherry-pick');
+  assert.ok(gitCalls.some(call => call.args[0] === 'cherry-pick'), 'worktree commit must be cherry-picked into main');
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: cherry-pick integration commits and applies patch');
+}
+
+async function test_status_snapshot_includes_profile_worktree_patch_counts() {
+  const tmpRoot = makeTempRoot();
+  makeDoc(tmpRoot, 'CODEX_STATUS.md', '# Status\nsnapshot');
+  const statePath = path.join(tmpRoot, 'auto-dev-state.json');
+  const worktreeDir = path.join(tmpRoot, 'claude-auto-dev-worktrees');
+  const artifactDir = path.join(tmpRoot, 'claude-auto-dev-artifacts');
+  fs.mkdirSync(path.join(worktreeDir, 'job-1'), { recursive: true });
+  fs.mkdirSync(artifactDir, { recursive: true });
+  fs.writeFileSync(path.join(artifactDir, 'one.patch'), 'diff --git a/a b/a\n', 'utf8');
+  fs.writeFileSync(statePath, JSON.stringify({
+    jobs: {
+      one: {
+        id: 'one',
+        relPath: 'docs/auto_dev/CODEX_STATUS.md',
+        status: 'completed',
+        stage: 'completed',
+        title: 'Status',
+        updatedAt: new Date().toISOString(),
+      },
+    },
+  }), 'utf8');
+  const { mocks } = makeMocks(tmpRoot);
+
+  await withMocks(mocks, async pipeline => {
+    const snapshot = pipeline.getAutoDevStatusSnapshot({ profile: 'supervised_l4' });
+    assert.strictEqual(snapshot.profile, 'supervised_l4');
+    assert.strictEqual(snapshot.counts.pendingDocs, 1);
+    assert.strictEqual(snapshot.counts.worktrees, 1);
+    assert.strictEqual(snapshot.counts.patches, 1);
+    assert.strictEqual(snapshot.counts.completedJobs, 1);
+  }, testEnv(tmpRoot, {
+    CLAUDE_AUTO_DEV_STATE_FILE: statePath,
+    CLAUDE_AUTO_DEV_WORKTREE_DIR: worktreeDir,
+    CLAUDE_AUTO_DEV_ARTIFACT_DIR: artifactDir,
+  }));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: status snapshot includes profile/worktree/patch counts');
+}
+
 async function main() {
   console.log('=== Auto Dev Pipeline 테스트 시작 ===\n');
   const tests = [
@@ -785,6 +984,7 @@ async function main() {
     test_job_lock_blocks_duplicate_document_execution,
     test_completed_state_clears_active_error,
     test_launchd_plist_defaults_are_safe,
+    test_profile_resolver_maps_runtime_profiles,
     test_bash_is_fail_closed_without_allowlist,
     test_lock_heartbeat_sidecar_enforces_parent_liveness,
     test_review_cycle_uses_execution_context,
@@ -792,6 +992,9 @@ async function main() {
     test_test_scope_rejects_unsafe_shell_command,
     test_archive_manifest_is_created,
     test_archive_manifest_failure_is_fail_closed,
+    test_worktree_cleanup_runs_after_success,
+    test_cherry_pick_integration_commits_and_applies_patch,
+    test_status_snapshot_includes_profile_worktree_patch_counts,
   ];
 
   let passed = 0;

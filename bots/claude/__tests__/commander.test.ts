@@ -185,6 +185,9 @@ async function test_runAutoDev_handler_exists() {
   assert.ok(src.includes('handleRunAutoDev'), 'handleRunAutoDev 존재');
   assert.ok(src.includes('run_auto_dev'), 'run_auto_dev 핸들러 등록');
   assert.ok(src.includes('show_auto_dev_status'), 'show_auto_dev_status 핸들러 등록');
+  assert.ok(src.includes('getAutoDevStatusSnapshot'), 'show_auto_dev_status는 확장 상태 스냅샷을 사용해야 함');
+  assert.ok(src.includes('worktree/patch'), 'show_auto_dev_status는 worktree/patch 카운트를 출력해야 함');
+  assert.ok(src.includes('프로필:'), 'show_auto_dev_status는 profile을 출력해야 함');
   console.log('✅ commander: auto_dev handlers registered');
 }
 

@@ -11,16 +11,20 @@ import { retireOrphanStrategyProfiles } from './retire-orphan-strategy-profiles.
 import {
   DEFAULT_POSITION_STRATEGY_REMEDIATION_HISTORY_FILE,
   readPositionStrategyRemediationHistory,
+  readPositionStrategyRemediationHistoryLines,
 } from './runtime-position-strategy-remediation-history-store.ts';
 
 function parseArgs(argv = process.argv.slice(2)) {
   const historyFileArg = argv.find((arg) => arg.startsWith('--history-file='));
   const stableCyclesArg = argv.find((arg) => arg.startsWith('--stable-cycles='));
+  const safeCyclesArg = argv.find((arg) => arg.startsWith('--safe-cycles='));
+  const stableCycles = Math.max(1, Number(stableCyclesArg?.split('=').slice(1).join('=') || 3));
   return {
     json: argv.includes('--json'),
     historyFile: historyFileArg?.split('=').slice(1).join('=') || DEFAULT_POSITION_STRATEGY_REMEDIATION_HISTORY_FILE,
     autonomousApply: argv.includes('--autonomous-apply'),
-    stableCycles: Math.max(1, Number(stableCyclesArg?.split('=').slice(1).join('=') || 3)),
+    stableCycles,
+    safeCycles: Math.max(1, Number(safeCyclesArg?.split('=').slice(1).join('=') || stableCycles)),
   };
 }
 
@@ -67,6 +71,7 @@ export function buildPositionStrategyRemediationActions(remediationPlan = null, 
   if (!remediationPlan) {
     return {
       reportCommand: null,
+      autonomousApplyCommand: null,
       historyCommand: null,
       refreshCommand: remediationRefreshState?.command || null,
       hygieneCommand: null,
@@ -83,6 +88,7 @@ export function buildPositionStrategyRemediationActions(remediationPlan = null, 
     || remediationPlan?.remediationHistoryCommand
     || null;
   const reportCommand = remediationPlan?.remediationReportCommand || null;
+  const autonomousApplyCommand = remediationPlan?.remediationAutonomousApplyCommand || null;
   const historyCommand = remediationPlan?.remediationHistoryCommand || null;
   const hygieneCommand = remediationPlan?.hygieneReportCommand || null;
   const normalizeDryRunCommand = remediationPlan?.normalizeDryRunCommand || null;
@@ -97,6 +103,7 @@ export function buildPositionStrategyRemediationActions(remediationPlan = null, 
 
   return {
     reportCommand,
+    autonomousApplyCommand,
     historyCommand,
     refreshCommand,
     hygieneCommand,
@@ -130,6 +137,7 @@ export function buildPositionStrategyRemediationSummary({
     actions: remediationActions || null,
     commands: remediationActions ? {
       report: remediationActions.reportCommand || null,
+      autonomousApply: remediationActions.autonomousApplyCommand || null,
       history: remediationActions.historyCommand || null,
       refresh: remediationActions.refreshCommand || null,
       hygiene: remediationActions.hygieneCommand || null,
@@ -179,6 +187,7 @@ export function buildPositionStrategyRemediationFlat({
     refreshReason: remediationRefreshState?.reason || null,
     refreshCommand: remediationRefreshState?.command || null,
     actionReportCommand: remediationActions?.reportCommand || null,
+    actionAutonomousApplyCommand: remediationActions?.autonomousApplyCommand || null,
     actionHistoryCommand: remediationActions?.historyCommand || null,
     actionRefreshCommand: remediationActions?.refreshCommand || null,
     actionHygieneCommand: remediationActions?.hygieneCommand || null,
@@ -188,6 +197,7 @@ export function buildPositionStrategyRemediationFlat({
     actionRetireApplyCommand: remediationActions?.retireApplyCommand || null,
     actions: remediationActions ? {
       reportCommand: remediationActions.reportCommand || null,
+      autonomousApplyCommand: remediationActions.autonomousApplyCommand || null,
       historyCommand: remediationActions.historyCommand || null,
       refreshCommand: remediationActions.refreshCommand || null,
       hygieneCommand: remediationActions.hygieneCommand || null,
@@ -198,6 +208,7 @@ export function buildPositionStrategyRemediationFlat({
     } : null,
     commands: remediationActions ? {
       report: remediationActions.reportCommand || null,
+      autonomousApply: remediationActions.autonomousApplyCommand || null,
       history: remediationActions.historyCommand || null,
       refresh: remediationActions.refreshCommand || null,
       hygiene: remediationActions.hygieneCommand || null,
@@ -231,6 +242,7 @@ function buildPositionStrategyRemediationAliases(remediationFlat = null, remedia
     remediationActions: remediationFlat?.actions || null,
     remediationCommands: remediationFlat?.commands || null,
     remediationActionReportCommand: remediationFlat?.actionReportCommand || null,
+    remediationActionAutonomousApplyCommand: remediationFlat?.actionAutonomousApplyCommand || null,
     remediationActionHistoryCommand: remediationFlat?.actionHistoryCommand || null,
     remediationActionRefreshCommand: remediationFlat?.actionRefreshCommand || null,
     remediationActionHygieneCommand: remediationFlat?.actionHygieneCommand || null,
@@ -241,33 +253,127 @@ function buildPositionStrategyRemediationAliases(remediationFlat = null, remedia
   };
 }
 
-function buildAutonomousRemediationContext({
+function resolveHistorySafeToApplyState(snapshot = null) {
+  const safe = snapshot?.safeToApply
+    || snapshot?.flat?.safeToApply
+    || null;
+  const autonomousContext = snapshot?.autonomousContext
+    || snapshot?.remediationAutonomousContext
+    || snapshot?.flat?.autonomousContext
+    || null;
+  const duplicateSafe = safe?.duplicate === true
+    || snapshot?.duplicateSafeToApply === true
+    || autonomousContext?.duplicateSafe === true;
+  const orphanSafe = safe?.orphan === true
+    || snapshot?.orphanSafeToApply === true
+    || autonomousContext?.orphanSafe === true;
+  return {
+    duplicateSafe,
+    orphanSafe,
+    anySafe: duplicateSafe || orphanSafe,
+  };
+}
+
+function resolveSnapshotRecommendedExchange(snapshot = null) {
+  const exchange = String(
+    snapshot?.recommendedExchange
+    || snapshot?.flat?.recommendedExchange
+    || snapshot?.remediationRecommendedExchange
+    || '',
+  ).trim();
+  return exchange || null;
+}
+
+function countConsecutiveSafeToApplyCycles(
+  historyLines = [],
+  {
+    action = 'duplicate',
+    targetExchange = null,
+  } = {},
+) {
+  if (!Array.isArray(historyLines) || historyLines.length === 0) return 0;
+  let count = 0;
+  for (let index = historyLines.length - 1; index >= 0; index -= 1) {
+    const snapshot = historyLines[index];
+    if (targetExchange) {
+      const snapshotExchange = resolveSnapshotRecommendedExchange(snapshot);
+      if (!snapshotExchange || snapshotExchange !== targetExchange) break;
+    }
+    const safeState = resolveHistorySafeToApplyState(snapshot);
+    const actionSafe = action === 'orphan'
+      ? safeState.orphanSafe === true
+      : safeState.duplicateSafe === true;
+    if (!actionSafe) break;
+    count += 1;
+  }
+  return count;
+}
+
+export function buildAutonomousRemediationContext({
   remediationPlan = null,
   remediationHistory = null,
+  remediationHistoryLines = [],
   hygiene = null,
   stableCycles = 3,
+  safeCycles = null,
 } = {}) {
+  const stableCycleThreshold = Math.max(1, Number(stableCycles || 3));
+  const safeCycleThreshold = Math.max(1, Number(safeCycles || stableCycleThreshold));
   const historyCount = Number(remediationHistory?.historyCount || 0);
   const historyStable = Boolean(remediationHistory?.current) && remediationHistory?.stale !== true;
-  const stableEnough = historyStable && historyCount >= Math.max(1, Number(stableCycles || 3));
+  const stableEnough = historyStable && historyCount >= stableCycleThreshold;
   const duplicateSafe = hygiene?.duplicateNormalization?.decision?.safeToApply === true;
   const orphanSafe = hygiene?.orphanRetirement?.decision?.safeToApply === true;
   const targetExchange = remediationPlan?.recommendedExchange || null;
+  const duplicateHistoricalSafeCycles = countConsecutiveSafeToApplyCycles(remediationHistoryLines, {
+    action: 'duplicate',
+    targetExchange,
+  });
+  const orphanHistoricalSafeCycles = countConsecutiveSafeToApplyCycles(remediationHistoryLines, {
+    action: 'orphan',
+    targetExchange,
+  });
+  const duplicateConsecutiveSafeCycles = duplicateSafe ? duplicateHistoricalSafeCycles + 1 : 0;
+  const orphanConsecutiveSafeCycles = orphanSafe ? orphanHistoricalSafeCycles + 1 : 0;
+  const duplicateSafeEnough = duplicateConsecutiveSafeCycles >= safeCycleThreshold;
+  const orphanSafeEnough = orphanConsecutiveSafeCycles >= safeCycleThreshold;
+  const duplicateApplyEligible = duplicateSafe && duplicateSafeEnough;
+  const orphanApplyEligible = orphanSafe && orphanSafeEnough;
+  const currentSafe = duplicateSafe || orphanSafe;
+  const historicalSafeCycles = Math.max(duplicateHistoricalSafeCycles, orphanHistoricalSafeCycles);
+  const consecutiveSafeCycles = Math.max(duplicateConsecutiveSafeCycles, orphanConsecutiveSafeCycles);
+  const safeEnough = duplicateApplyEligible || orphanApplyEligible;
   return {
-    stableCycles: Math.max(1, Number(stableCycles || 3)),
+    stableCycles: stableCycleThreshold,
+    safeCycles: safeCycleThreshold,
     historyCount,
     historyStable,
     stableEnough,
     duplicateSafe,
     orphanSafe,
+    duplicateHistoricalSafeCycles,
+    orphanHistoricalSafeCycles,
+    duplicateConsecutiveSafeCycles,
+    orphanConsecutiveSafeCycles,
+    duplicateSafeEnough,
+    orphanSafeEnough,
+    duplicateApplyEligible,
+    orphanApplyEligible,
+    currentSafe,
+    historicalSafeCycles,
+    consecutiveSafeCycles,
+    safeEnough,
     targetExchange,
-    shouldApply: stableEnough && (duplicateSafe || orphanSafe),
+    shouldApply: stableEnough && safeEnough && currentSafe,
   };
 }
 
-async function runAutonomousRemediationApply({
+export async function runAutonomousRemediationApply({
   context = null,
   beforeHygiene = null,
+  normalizeApply = normalizeDuplicateStrategyProfiles,
+  retireApply = retireOrphanStrategyProfiles,
+  loadPostApplyHygiene = () => runPositionStrategyHygiene({ json: true }),
 } = {}) {
   if (!context) {
     return {
@@ -299,6 +405,20 @@ async function runAutonomousRemediationApply({
     };
   }
 
+  if (!context.safeEnough) {
+    return {
+      enabled: true,
+      status: 'autonomous_action_blocked_by_safety',
+      reason: `safe_to_apply_not_stable:duplicate=${context.duplicateConsecutiveSafeCycles || 0}/${context.safeCycles || 1},orphan=${context.orphanConsecutiveSafeCycles || 0}/${context.safeCycles || 1}`,
+      context,
+      applied: {
+        duplicate: null,
+        orphan: null,
+      },
+      verify: null,
+    };
+  }
+
   if (!context.duplicateSafe && !context.orphanSafe) {
     return {
       enabled: true,
@@ -313,35 +433,86 @@ async function runAutonomousRemediationApply({
     };
   }
 
+  const beforeAudit = beforeHygiene?.audit || {};
+  const beforeDuplicate = Number(beforeAudit?.duplicateManagedProfileScopes || 0);
+  const beforeOrphan = Number(beforeAudit?.orphanProfiles || 0);
+  const beforeUnmatched = Number(beforeAudit?.unmatchedManagedPositions || 0);
+  const duplicateApplyEligible = context.duplicateApplyEligible === true;
+  const orphanApplyEligible = context.orphanApplyEligible === true;
+  const duplicateRequiresApply = duplicateApplyEligible && beforeDuplicate > 0;
+  const orphanRequiresApply = orphanApplyEligible && beforeOrphan > 0;
+  const duplicateExplicitNoop = duplicateApplyEligible && beforeDuplicate <= 0;
+  const orphanExplicitNoop = orphanApplyEligible && beforeOrphan <= 0;
+
   const exchange = context.targetExchange || null;
-  const duplicateApplied = context.duplicateSafe
-    ? await normalizeDuplicateStrategyProfiles({ apply: true, exchange }).catch((error) => ({
+  const duplicateApplied = duplicateRequiresApply
+    ? await normalizeApply({ apply: true, exchange }).catch((error) => ({
       ok: false,
       error: error?.message || String(error),
       retired: 0,
     }))
     : null;
-  const orphanApplied = context.orphanSafe
-    ? await retireOrphanStrategyProfiles({ apply: true, exchange }).catch((error) => ({
+  const orphanApplied = orphanRequiresApply
+    ? await retireApply({ apply: true, exchange }).catch((error) => ({
       ok: false,
       error: error?.message || String(error),
       retired: 0,
     }))
     : null;
 
-  const afterHygiene = await runPositionStrategyHygiene({ json: true }).catch(() => null);
-  const beforeAudit = beforeHygiene?.audit || {};
+  const afterHygiene = await loadPostApplyHygiene({ json: true }).catch(() => null);
   const afterAudit = afterHygiene?.audit || {};
-  const beforeDuplicate = Number(beforeAudit?.duplicateManagedProfileScopes || 0);
-  const beforeOrphan = Number(beforeAudit?.orphanProfiles || 0);
-  const beforeUnmatched = Number(beforeAudit?.unmatchedManagedPositions || 0);
   const afterDuplicate = Number(afterAudit?.duplicateManagedProfileScopes || 0);
   const afterOrphan = Number(afterAudit?.orphanProfiles || 0);
   const afterUnmatched = Number(afterAudit?.unmatchedManagedPositions || 0);
+  const applyResultOk = (result = null) => {
+    if (!result || typeof result !== 'object') return false;
+    if (result.ok === false || result.success === false) return false;
+    if (result.ok === true || result.success === true) return true;
+    return true;
+  };
+  const duplicateApplyOk = duplicateRequiresApply ? applyResultOk(duplicateApplied) : null;
+  const orphanApplyOk = orphanRequiresApply ? applyResultOk(orphanApplied) : null;
+  const duplicateReduced = afterHygiene != null && afterDuplicate < beforeDuplicate;
+  const orphanReduced = afterHygiene != null && afterOrphan < beforeOrphan;
+  const unmatchedVerified = afterHygiene != null && afterUnmatched <= beforeUnmatched;
+  const duplicateVerified = !duplicateApplyEligible
+    || duplicateExplicitNoop
+    || (duplicateRequiresApply && duplicateApplyOk === true && duplicateReduced);
+  const orphanVerified = !orphanApplyEligible
+    || orphanExplicitNoop
+    || (orphanRequiresApply && orphanApplyOk === true && orphanReduced);
+  const duplicateReason = !duplicateApplyEligible
+    ? 'not_eligible'
+    : duplicateExplicitNoop
+      ? 'explicit_noop_already_clear'
+      : afterHygiene == null
+        ? 'post_apply_hygiene_unavailable'
+        : duplicateApplyOk !== true
+          ? 'apply_failed'
+          : duplicateReduced
+            ? 'verified'
+            : 'no_reduction';
+  const orphanReason = !orphanApplyEligible
+    ? 'not_eligible'
+    : orphanExplicitNoop
+      ? 'explicit_noop_already_clear'
+      : afterHygiene == null
+        ? 'post_apply_hygiene_unavailable'
+        : orphanApplyOk !== true
+          ? 'apply_failed'
+          : orphanReduced
+            ? 'verified'
+            : 'no_reduction';
+  const failureReasons = [];
+  if (afterHygiene == null) failureReasons.push('post_apply_hygiene_unavailable');
+  if (!duplicateVerified) failureReasons.push(`duplicate_${duplicateReason}`);
+  if (!orphanVerified) failureReasons.push(`orphan_${orphanReason}`);
+  if (!unmatchedVerified) failureReasons.push('unmatched_not_verified');
   const verified = afterHygiene != null
-    && afterDuplicate <= beforeDuplicate
-    && afterOrphan <= beforeOrphan
-    && afterUnmatched <= beforeUnmatched;
+    && duplicateVerified
+    && orphanVerified
+    && unmatchedVerified;
   return {
     enabled: true,
     status: verified ? 'autonomous_action_executed' : 'autonomous_action_failed',
@@ -363,6 +534,32 @@ async function runAutonomousRemediationApply({
         orphanProfiles: afterOrphan,
         unmatchedManaged: afterUnmatched,
       },
+      actionChecks: {
+        duplicate: {
+          eligible: duplicateApplyEligible,
+          requiresApply: duplicateRequiresApply,
+          explicitNoop: duplicateExplicitNoop,
+          resultOk: duplicateApplyOk,
+          reduced: duplicateReduced,
+          verified: duplicateVerified,
+          reason: duplicateReason,
+        },
+        orphan: {
+          eligible: orphanApplyEligible,
+          requiresApply: orphanRequiresApply,
+          explicitNoop: orphanExplicitNoop,
+          resultOk: orphanApplyOk,
+          reduced: orphanReduced,
+          verified: orphanVerified,
+          reason: orphanReason,
+        },
+        unmatched: {
+          before: beforeUnmatched,
+          after: afterUnmatched,
+          verified: unmatchedVerified,
+        },
+      },
+      failureReasons,
       afterHygiene: afterHygiene?.decision || null,
     },
   };
@@ -381,11 +578,14 @@ function buildPositionStrategyRemediationDecisionActionItems(
     ...(historyActionItem ? [historyActionItem] : []),
     ...(historyRefreshActionItem ? [historyRefreshActionItem] : []),
     `remediation report: ${remediationPlan.remediationReportCommand}`,
+    remediationPlan.remediationAutonomousApplyCommand
+      ? `autonomous apply: ${remediationPlan.remediationAutonomousApplyCommand}`
+      : null,
     `remediation history: ${remediationPlan.remediationHistoryCommand}`,
     `hygiene report: ${remediationPlan.hygieneReportCommand}`,
     ...(includeNormalize ? [`normalize dry-run: ${remediationPlan.normalizeDryRunCommand}`] : []),
     ...(includeRetire ? [`retire dry-run: ${remediationPlan.retireDryRunCommand}`] : []),
-  ];
+  ].filter(Boolean);
 }
 
 export function buildPositionStrategyRemediationDecision(remediationPlan = null, remediationHistory = null) {
@@ -431,15 +631,25 @@ export async function runPositionStrategyRemediation({
   historyFile = DEFAULT_POSITION_STRATEGY_REMEDIATION_HISTORY_FILE,
   autonomousApply = false,
   stableCycles = 3,
+  safeCycles = stableCycles,
+  hygiene = null,
+  postApplyHygieneLoader = null,
+  remediationHistory = null,
+  remediationHistoryLines = null,
+  normalizeApply = normalizeDuplicateStrategyProfiles,
+  retireApply = retireOrphanStrategyProfiles,
 } = {}) {
-  const hygiene = await runPositionStrategyHygiene({ json: true });
-  const remediationPlan = hygiene?.remediationPlan
-    || buildPositionStrategyHygieneRemediationPlan(hygiene);
-  const remediationHistory = readPositionStrategyRemediationHistory(historyFile);
-  const remediationTrend = buildPositionStrategyRemediationTrend(remediationHistory);
-  const remediationRefreshState = buildPositionStrategyRemediationRefreshState(remediationPlan, remediationHistory);
+  const baselineHygiene = hygiene || await runPositionStrategyHygiene({ json: true });
+  const remediationPlan = baselineHygiene?.remediationPlan
+    || buildPositionStrategyHygieneRemediationPlan(baselineHygiene);
+  const remediationHistoryState = remediationHistory || readPositionStrategyRemediationHistory(historyFile);
+  const remediationHistoryRows = Array.isArray(remediationHistoryLines)
+    ? remediationHistoryLines
+    : readPositionStrategyRemediationHistoryLines(historyFile);
+  const remediationTrend = buildPositionStrategyRemediationTrend(remediationHistoryState);
+  const remediationRefreshState = buildPositionStrategyRemediationRefreshState(remediationPlan, remediationHistoryState);
   const remediationActions = buildPositionStrategyRemediationActions(remediationPlan, remediationRefreshState);
-  const decision = buildPositionStrategyRemediationDecision(remediationPlan, remediationHistory);
+  const decision = buildPositionStrategyRemediationDecision(remediationPlan, remediationHistoryState);
   const remediationSummary = buildPositionStrategyRemediationSummary({
     remediationPlan,
     remediationTrend,
@@ -457,14 +667,24 @@ export async function runPositionStrategyRemediation({
   const remediationAliases = buildPositionStrategyRemediationAliases(remediationFlat, remediationPlan);
   const autonomousContext = buildAutonomousRemediationContext({
     remediationPlan,
-    remediationHistory,
-    hygiene,
+    remediationHistory: remediationHistoryState,
+    remediationHistoryLines: remediationHistoryRows,
+    hygiene: baselineHygiene,
     stableCycles,
+    safeCycles,
   });
+  const loadPostApplyHygiene = typeof postApplyHygieneLoader === 'function'
+    ? postApplyHygieneLoader
+    : (hygiene
+      ? async () => hygiene
+      : async () => runPositionStrategyHygiene({ json: true }));
   const remediationAutonomous = autonomousApply
     ? await runAutonomousRemediationApply({
       context: autonomousContext,
-      beforeHygiene: hygiene,
+      beforeHygiene: baselineHygiene,
+      normalizeApply,
+      retireApply,
+      loadPostApplyHygiene,
     })
     : {
       enabled: false,
@@ -479,10 +699,10 @@ export async function runPositionStrategyRemediation({
     };
   const result = {
     ok: true,
-    hygieneStatus: hygiene?.decision?.status || 'unknown',
+    hygieneStatus: baselineHygiene?.decision?.status || 'unknown',
     recommendedExchange: remediationPlan?.recommendedExchange || null,
     remediationPlan,
-    remediationHistory,
+    remediationHistory: remediationHistoryState,
     remediationTrend,
     remediationTrendHistoryCount: remediationTrend?.historyCount ?? null,
     remediationTrendChanged: remediationTrend?.statusChanged ?? null,
@@ -515,6 +735,7 @@ async function main() {
     historyFile: args.historyFile,
     autonomousApply: args.autonomousApply,
     stableCycles: args.stableCycles,
+    safeCycles: args.safeCycles,
   });
   if (args.json) console.log(JSON.stringify(result, null, 2));
   else console.log(JSON.stringify(result, null, 2));

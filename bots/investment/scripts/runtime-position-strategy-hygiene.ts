@@ -46,6 +46,7 @@ export function buildPositionStrategyHygieneRemediationPlan({
     orphanProfiles: Number(audit?.orphanProfiles || 0),
     unmatchedManaged: Number(audit?.unmatchedManagedPositions || 0),
     remediationReportCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation -- --json',
+    remediationAutonomousApplyCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation:autonomous',
     remediationHistoryCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation-history -- --json',
     remediationRefreshCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation-refresh -- --if-stale --json',
     hygieneReportCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-hygiene -- --json',

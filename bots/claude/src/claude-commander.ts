@@ -825,7 +825,8 @@ async function handleRunAutoDev(args) {
     const test = parseBool(args.test, false);
     const dryRun = parseBool(args.dry_run ?? args.dryRun, false);
     const force = parseBool(args.force, false);
-    const shadow = parseBool(args.shadow, process.env.CLAUDE_AUTO_DEV_SHADOW !== 'false');
+    const shadow = args.shadow === undefined ? undefined : parseBool(args.shadow, false);
+    const profile = args.profile || args.auto_dev_profile || process.env.CLAUDE_AUTO_DEV_PROFILE;
 
     const result = await pipeline.runAutoDevPipeline({
       once,
@@ -833,13 +834,15 @@ async function handleRunAutoDev(args) {
       dryRun,
       force,
       shadow,
+      profile,
     });
     const lines = [
       '🤖 클로드 auto_dev 실행',
+      `프로필: ${result.runtime?.profile || 'shadow'}`,
       `처리 문서: ${result.count}`,
       `실처리/스킵/실패: ${result.processedCount || 0}/${result.skippedCount || 0}/${result.failedCount || 0}`,
       `상태 파일: ${result.stateFile || 'N/A'}`,
-      `옵션: once=${once} test=${test} dryRun=${dryRun} force=${force} shadow=${shadow}`,
+      `옵션: once=${once} test=${test} dryRun=${dryRun} force=${force} shadow=${result.runtime?.shadow}`,
       `결과: ${result.ok ? '✅ PASS' : '❌ FAIL'}`,
     ];
     for (const item of result.results || []) {
@@ -857,16 +860,25 @@ async function handleRunAutoDev(args) {
 async function handleShowAutoDevStatus(args) {
   try {
     const pipeline = require('../lib/auto-dev-pipeline');
-    const state = pipeline.loadState();
-    const jobs = Object.values(state.jobs || {});
+    const profile = args.profile || args.auto_dev_profile || process.env.CLAUDE_AUTO_DEV_PROFILE;
+    const snapshot = pipeline.getAutoDevStatusSnapshot({ profile });
+    const jobs = snapshot.latestJobs || [];
+    const lines = [
+      '📋 auto_dev 상태',
+      `프로필: ${snapshot.profile}`,
+      `런타임: enabled=${snapshot.runtime.enabled} shadow=${snapshot.runtime.shadow} execute=${snapshot.runtime.executeImplementation} integration=${snapshot.runtime.integrationMode}`,
+      `대기 문서: ${snapshot.counts.pendingDocs}`,
+      `worktree/patch: ${snapshot.counts.worktrees}/${snapshot.counts.patches}`,
+      `작업 이력: total=${snapshot.counts.jobs} running=${snapshot.counts.runningJobs} failed=${snapshot.counts.failedJobs} completed=${snapshot.counts.completedJobs}`,
+    ];
     if (jobs.length === 0) {
-      return { ok: true, message: '📋 auto_dev 처리 이력 없음', data: state };
+      lines.push('최근 작업: 없음');
+      return { ok: true, message: lines.join('\n'), data: snapshot };
     }
-    const lines = ['📋 auto_dev 상태'];
-    jobs.slice(-10).forEach(job => {
+    jobs.forEach(job => {
       lines.push(`- ${job.relPath}: ${job.status}/${job.stage} (${job.title || 'untitled'})`);
     });
-    return { ok: true, message: lines.join('\n'), data: state };
+    return { ok: true, message: lines.join('\n'), data: snapshot };
   } catch (e) {
     return { ok: false, error: e.message };
   }

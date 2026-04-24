@@ -55,6 +55,13 @@ function buildCurrentRemediationSnapshot(report) {
     autonomousStatus: report.remediationAutonomousStatus || null,
     autonomousReason: report.remediationAutonomousReason || null,
     autonomousVerify: report.remediationAutonomousVerify || null,
+    safeToApply: {
+      duplicate: report.remediationAutonomousContext?.duplicateSafe === true,
+      orphan: report.remediationAutonomousContext?.orphanSafe === true,
+    },
+    duplicateSafeToApply: report.remediationAutonomousContext?.duplicateSafe === true,
+    orphanSafeToApply: report.remediationAutonomousContext?.orphanSafe === true,
+    autonomousContext: report.remediationAutonomousContext || null,
     duplicateManaged: Number(report.remediationDuplicateManaged ?? flat?.duplicateManaged ?? plan.duplicateManagedScopes ?? 0),
     orphanProfiles: Number(report.remediationOrphanProfiles ?? flat?.orphanProfiles ?? plan.orphanProfiles ?? 0),
     unmatchedManaged: Number(report.remediationUnmatchedManaged ?? flat?.unmatchedManaged ?? plan.unmatchedManaged ?? 0),

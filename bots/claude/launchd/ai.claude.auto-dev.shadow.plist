@@ -16,7 +16,7 @@
 	<key>KeepAlive</key>
 	<false/>
 	<key>Label</key>
-	<string>ai.claude.auto-dev</string>
+	<string>ai.claude.auto-dev.shadow</string>
 	<key>ProgramArguments</key>
 	<array>
 		<string>/opt/homebrew/bin/tsx</string>
@@ -25,9 +25,9 @@
 	<key>RunAtLoad</key>
 	<true/>
 	<key>StandardErrorPath</key>
-	<string>/Users/alexlee/projects/ai-agent-system/bots/claude/auto-dev.err.log</string>
+	<string>/Users/alexlee/projects/ai-agent-system/bots/claude/auto-dev.shadow.err.log</string>
 	<key>StandardOutPath</key>
-	<string>/Users/alexlee/projects/ai-agent-system/bots/claude/auto-dev.log</string>
+	<string>/Users/alexlee/projects/ai-agent-system/bots/claude/auto-dev.shadow.log</string>
 	<key>WorkingDirectory</key>
 	<string>/Users/alexlee/projects/ai-agent-system</string>
 </dict>

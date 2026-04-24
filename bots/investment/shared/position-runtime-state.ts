@@ -202,8 +202,14 @@ export function buildRegimeAwarePolicyMatrix({
   });
   const evidenceGap = resolveEvidenceGapState(externalEvidenceGapState);
   const evidenceGapPenalty = evidenceGap.gapSevere && recommendation !== 'EXIT';
+  const evidenceGapExcessCycles = evidenceGapPenalty
+    ? Math.max(0, Number(evidenceGap.consecutiveGapCount || 0) - Math.max(1, Number(evidenceGap.threshold || 1)))
+    : 0;
+  const evidenceGapBoundedDecay = evidenceGapPenalty
+    ? Number(Math.max(0.65, 1 - (evidenceGapExcessCycles * 0.05)).toFixed(4))
+    : 1;
   const adjustedPositionSizeMultiplier = evidenceGapPenalty
-    ? Number(Math.max(0.1, safeNumber(policy.positionSizeMultiplier, 1) * 0.85).toFixed(4))
+    ? Number(Math.max(0.1, safeNumber(policy.positionSizeMultiplier, 1) * 0.85 * evidenceGapBoundedDecay).toFixed(4))
     : policy.positionSizeMultiplier;
 
   const reevaluationBias = {
@@ -227,6 +233,8 @@ export function buildRegimeAwarePolicyMatrix({
     positionSizeMultiplier: adjustedPositionSizeMultiplier,
     reentryLock: policy.reentryLock === true || evidenceGapPenalty,
     evidenceGapPenalty,
+    evidenceGapBoundedDecay,
+    evidenceGapExcessCycles,
     evidenceGapState: evidenceGap,
     sourceQualityBlocked: policy.sourceQualityBlocked === true,
     sourceQualityReason: policy.sourceQualityReason || null,
