@@ -33,14 +33,17 @@ const AUTO_DEV_JOB_LOCK_DIR = process.env.CLAUDE_AUTO_DEV_JOB_LOCK_DIR ||
 const AUTO_DEV_WORKTREE_DIR = process.env.CLAUDE_AUTO_DEV_WORKTREE_DIR ||
   path.join(WORKSPACE, 'claude-auto-dev-worktrees');
 
-const DEFAULT_ALLOWED_TOOLS = 'Edit,Write,Bash,Read,Glob,Grep';
+const DEFAULT_ALLOWED_TOOLS = 'Edit,Write,Read,Glob,Grep';
 const DEFAULT_HARD_TEST_COMMANDS = [
   'npm --prefix bots/claude run typecheck',
   'npm --prefix bots/claude run test:unit',
 ];
 const DEFAULT_LOCK_TTL_MS = Number(process.env.CLAUDE_AUTO_DEV_LOCK_TTL_MS || 15 * 60 * 1000);
+const DEFAULT_LOCK_HEARTBEAT_MS = Number(process.env.CLAUDE_AUTO_DEV_LOCK_HEARTBEAT_MS || 60 * 1000);
 const DEFAULT_RUNNING_STALE_MS = Number(process.env.CLAUDE_AUTO_DEV_RUNNING_STALE_MS || 30 * 60 * 1000);
 const DEFAULT_TARGET_TEAM = String(process.env.CLAUDE_AUTO_DEV_TARGET_TEAM || 'claude').toLowerCase();
+const AUTO_DEV_ARTIFACT_DIR = process.env.CLAUDE_AUTO_DEV_ARTIFACT_DIR ||
+  path.join(WORKSPACE, 'claude-auto-dev-artifacts');
 const REQUIRED_METADATA_FIELDS = [
   'target_team',
   'owner_agent',
@@ -99,6 +102,14 @@ function toList(value) {
     return normalized.split(',').map(item => stripQuotes(item.trim())).filter(Boolean);
   }
   return [stripQuotes(normalized)];
+}
+
+function toToolList(value) {
+  return toList(value)
+    .map(item => item.split(/\s+/))
+    .flat()
+    .map(item => toSafeString(item))
+    .filter(Boolean);
 }
 
 function normalizeRelPath(relPath) {
@@ -265,6 +276,43 @@ function isTimestampStale(isoTime, ttlMs) {
   return Date.now() - time > ttlMs;
 }
 
+function writeLockPayload(lockPath, payload) {
+  fs.writeFileSync(lockPath, JSON.stringify(payload, null, 2), 'utf8');
+}
+
+function refreshFileLock(lockHandle) {
+  if (!lockHandle?.lockPath || !lockHandle?.payload?.token) return false;
+  try {
+    const existing = readLockFile(lockHandle.lockPath);
+    if (!existing || existing.token !== lockHandle.payload.token) return false;
+    const nextPayload = {
+      ...existing,
+      ...lockHandle.payload,
+      updatedAt: nowIso(),
+    };
+    writeLockPayload(lockHandle.lockPath, nextPayload);
+    lockHandle.payload = nextPayload;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function startLockHeartbeat(lockHandle, intervalMs = DEFAULT_LOCK_HEARTBEAT_MS) {
+  const safeInterval = Number(intervalMs);
+  if (!lockHandle?.acquired || !(safeInterval > 0)) return () => {};
+  const timer = setInterval(() => {
+    const ok = refreshFileLock(lockHandle);
+    if (!ok) clearInterval(timer);
+  }, safeInterval);
+  if (typeof timer.unref === 'function') timer.unref();
+  lockHandle.heartbeatTimer = timer;
+  return () => {
+    try { clearInterval(timer); } catch {}
+    refreshFileLock(lockHandle);
+  };
+}
+
 function acquireFileLock(lockPath, payload, options = {}) {
   ensureDir(path.dirname(lockPath));
   const ttlMs = Number(options.ttlMs || DEFAULT_LOCK_TTL_MS);
@@ -273,6 +321,7 @@ function acquireFileLock(lockPath, payload, options = {}) {
     pid: process.pid,
     hostname: getHostName(),
     startedAt: nowIso(),
+    updatedAt: nowIso(),
     ...payload,
   };
 
@@ -287,7 +336,7 @@ function acquireFileLock(lockPath, payload, options = {}) {
         return { acquired: false, lockPath, error: error.message, reason: 'lock_io_error' };
       }
       const existing = readLockFile(lockPath);
-      const stale = existing && isTimestampStale(existing.startedAt || existing.updatedAt, ttlMs);
+      const stale = existing && isTimestampStale(existing.updatedAt || existing.startedAt, ttlMs);
       if (stale) {
         try {
           fs.unlinkSync(lockPath);
@@ -316,6 +365,9 @@ function acquireFileLock(lockPath, payload, options = {}) {
 
 function releaseFileLock(lockHandle) {
   if (!lockHandle?.lockPath) return;
+  if (lockHandle.heartbeatTimer) {
+    try { clearInterval(lockHandle.heartbeatTimer); } catch {}
+  }
   try {
     const existing = readLockFile(lockHandle.lockPath);
     if (existing?.token && lockHandle?.payload?.token && existing.token !== lockHandle.payload.token) {
@@ -332,6 +384,15 @@ function runGit(args, cwd = ROOT, timeout = 30000) {
     timeout,
     stdio: ['ignore', 'pipe', 'pipe'],
   }).trim();
+}
+
+function runGitRaw(args, cwd = ROOT, timeout = 30000) {
+  return execFileSync('git', args, {
+    cwd,
+    encoding: 'utf8',
+    timeout,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
 }
 
 function isGitRepository(cwd = ROOT) {
@@ -601,7 +662,20 @@ function loadPrompt(filePath) {
   return fs.readFileSync(filePath, 'utf8');
 }
 
-function buildClaudePrompt(job, mode, failureContext = '') {
+function formatToolPolicyPromptSection(toolPolicy = null) {
+  if (!toolPolicy || !toolPolicy.ok) return '';
+  const lines = ['## Tool Policy'];
+  lines.push(`- allowed_tools: ${toolPolicy.serialized}`);
+  if (toolPolicy.bashEnabled) {
+    lines.push(`- bash_policy: allowlisted (${toolPolicy.bashAllowlist.join(', ')})`);
+    lines.push('- Bash는 반드시 allowlist prefix만 사용하고, 그 외 명령은 금지한다.');
+  } else {
+    lines.push('- bash_policy: disabled (Bash tool 사용 금지)');
+  }
+  return lines.join('\n');
+}
+
+function buildClaudePrompt(job, mode, failureContext = '', toolPolicy = null) {
   const prompt = loadPrompt(job.filePath);
   const plan = job.plan || buildImplementationPlan(job.analysis);
   return [
@@ -613,12 +687,43 @@ function buildClaudePrompt(job, mode, failureContext = '') {
     '규칙: 변경 후 관련 테스트를 실행하고 결과를 남긴다.',
     '',
     `## Mode: ${mode}`,
+    formatToolPolicyPromptSection(toolPolicy),
     failureContext ? `## Failure Context\n${failureContext}` : '',
     '## Implementation Plan',
     plan,
     '## Source Document',
     prompt,
   ].filter(Boolean).join('\n\n');
+}
+
+function resolveAllowedToolsPolicy(options = {}) {
+  const configured = options.allowedTools || process.env.CLAUDE_AUTO_DEV_ALLOWED_TOOLS || DEFAULT_ALLOWED_TOOLS;
+  const parsed = toToolList(configured);
+  const unique = [...new Set(parsed)];
+  if (unique.length === 0) {
+    return {
+      ok: false,
+      error: 'allowedTools가 비어 있습니다. CLAUDE_AUTO_DEV_ALLOWED_TOOLS 설정을 확인하세요.',
+    };
+  }
+  const hasBash = unique.some(tool => tool.toLowerCase() === 'bash');
+  const bashAllowlist = toList(process.env.CLAUDE_AUTO_DEV_BASH_ALLOWLIST || '').filter(Boolean);
+  const allowUnsafeBash = process.env.CLAUDE_AUTO_DEV_ALLOW_UNSAFE_BASH === 'true' || options.allowUnsafeBash === true;
+
+  if (hasBash && bashAllowlist.length === 0 && !allowUnsafeBash) {
+    return {
+      ok: false,
+      error: 'Bash tool은 L5 auto_dev에서 기본 차단됩니다. 사용하려면 CLAUDE_AUTO_DEV_BASH_ALLOWLIST를 설정하거나 CLAUDE_AUTO_DEV_ALLOW_UNSAFE_BASH=true를 명시하세요.',
+    };
+  }
+
+  return {
+    ok: true,
+    list: unique,
+    serialized: unique.join(','),
+    bashEnabled: hasBash,
+    bashAllowlist,
+  };
 }
 
 function resolveClaudeCliCommand() {
@@ -658,9 +763,12 @@ async function runClaudeImplementation(job, mode, options = {}, failureContext =
     return { pass: true, skipped: true, message: `[auto-dev] ${mode} dry-run` };
   }
 
-  const allowedTools = process.env.CLAUDE_AUTO_DEV_ALLOWED_TOOLS || DEFAULT_ALLOWED_TOOLS;
+  const toolPolicy = resolveAllowedToolsPolicy(options);
+  if (!toolPolicy.ok) {
+    return { pass: false, skipped: false, error: toolPolicy.error };
+  }
   const timeout = Number(process.env.CLAUDE_AUTO_DEV_TIMEOUT_MS || 60 * 60 * 1000);
-  const prompt = buildClaudePrompt(job, mode, failureContext);
+  const prompt = buildClaudePrompt(job, mode, failureContext, toolPolicy);
   const cli = resolveClaudeCliCommand();
 
   if (!cli.ok) {
@@ -668,7 +776,7 @@ async function runClaudeImplementation(job, mode, options = {}, failureContext =
   }
 
   try {
-    const output = execFileSync(cli.command, ['--print', prompt, '--allowedTools', allowedTools], {
+    const output = execFileSync(cli.command, ['--print', prompt, '--allowedTools', toolPolicy.serialized], {
       cwd,
       encoding: 'utf8',
       timeout,
@@ -681,13 +789,52 @@ async function runClaudeImplementation(job, mode, options = {}, failureContext =
   }
 }
 
-async function runReviewCycle(options = {}) {
+function toAbsoluteFileList(files = [], cwd = ROOT) {
+  return files
+    .map(file => toSafeString(file))
+    .filter(Boolean)
+    .map(file => (path.isAbsolute(file) ? file : path.join(cwd, file)));
+}
+
+function resolveChangedFilesForReview({
+  beforeStatus = [],
+  executionContext = null,
+} = {}) {
+  const cwd = executionContext?.cwd || ROOT;
+  const currentStatus = captureGitStatusShort(cwd);
+  const newlyChanged = collectNewlyChangedFiles(beforeStatus, currentStatus);
+  const fallbackChanged = [...collectChangedPaths(currentStatus)];
+  const scopedChanged = newlyChanged.length > 0 ? newlyChanged : fallbackChanged;
+  return {
+    cwd,
+    currentStatus,
+    changedFiles: scopedChanged,
+    changedFilesAbsolute: toAbsoluteFileList(scopedChanged, cwd),
+  };
+}
+
+async function runReviewCycle(options = {}, executionContext = null, beforeStatus = []) {
   const reviewer = require('../src/reviewer');
   const guardian = require('../src/guardian');
   const testMode = Boolean(options.test);
+  const reviewScope = resolveChangedFilesForReview({
+    beforeStatus,
+    executionContext,
+  });
 
-  const review = await reviewer.runReview({ force: true, test: testMode });
-  const guard = await guardian.runFullSecurityScan({ force: true, test: testMode });
+  const review = await reviewer.runReview({
+    force: true,
+    test: testMode,
+    rootDir: reviewScope.cwd,
+    files: reviewScope.changedFilesAbsolute,
+    commitRef: 'HEAD',
+  });
+  const guard = await guardian.runFullSecurityScan({
+    force: true,
+    test: testMode,
+    rootDir: reviewScope.cwd,
+    files: reviewScope.changedFilesAbsolute,
+  });
   const pass = review.summary?.pass !== false && guard.pass !== false;
   const guardLayerSummary = [];
   const guardLayers = guard.layers || {};
@@ -701,6 +848,10 @@ async function runReviewCycle(options = {}) {
     pass,
     review,
     guardian: guard,
+    reviewScope: {
+      cwd: reviewScope.cwd,
+      changedFiles: reviewScope.changedFiles,
+    },
     message: [
       `리뷰어: ${review.summary?.pass === false ? 'FAIL' : 'PASS'}`,
       `가디언: ${guard.pass === false ? 'FAIL' : 'PASS'}`,
@@ -729,6 +880,39 @@ function runCommand(command, timeout = 600000, cwd = ROOT) {
   }
 }
 
+function shellQuote(value) {
+  return `'${String(value || '').replace(/'/g, `'\\''`)}'`;
+}
+
+function inferScopedTestCommand(entry, cwd = ROOT) {
+  const text = toSafeString(entry);
+  if (!text) return null;
+  const commandLike = /[\s;&|`$()]/.test(text) || /^(npm|pnpm|yarn|node|npx|mix|pytest|python|bash|sh)\b/.test(text);
+  if (commandLike) return text;
+
+  const candidatePath = path.isAbsolute(text) ? text : path.join(cwd, text);
+  if (!fs.existsSync(candidatePath)) return text;
+  const rel = path.isAbsolute(text)
+    ? path.relative(cwd, text).replace(/\\/g, '/')
+    : normalizeRelPath(text);
+  const ext = path.extname(candidatePath).toLowerCase();
+  if (['.ts', '.js', '.mjs', '.cjs'].includes(ext)) {
+    return `node ${shellQuote(rel)}`;
+  }
+  return `test -f ${shellQuote(rel)}`;
+}
+
+function resolveScopedTestCommands(analysis = null, cwd = ROOT) {
+  const entries = Array.isArray(analysis?.metadata?.test_scope)
+    ? analysis.metadata.test_scope
+    : [];
+  const commands = entries.map(entry => inferScopedTestCommand(entry, cwd)).filter(Boolean);
+  return {
+    entries,
+    commands,
+  };
+}
+
 function captureGitStatusShort(cwd = ROOT) {
   if (!isGitRepository(cwd)) return [];
   try {
@@ -754,6 +938,10 @@ function extractChangedPath(statusLine) {
   return candidate.trim() || null;
 }
 
+function isUntrackedStatusLine(statusLine) {
+  return toSafeString(statusLine).startsWith('?? ');
+}
+
 function collectChangedPaths(statusLines = []) {
   const set = new Set();
   for (const line of statusLines) {
@@ -767,6 +955,71 @@ function collectNewlyChangedFiles(beforeStatus = [], afterStatus = []) {
   const before = collectChangedPaths(beforeStatus);
   const after = collectChangedPaths(afterStatus);
   return [...after].filter(file => !before.has(file)).sort();
+}
+
+function collectUntrackedFiles(statusLines = []) {
+  const files = [];
+  for (const line of statusLines) {
+    if (!isUntrackedStatusLine(line)) continue;
+    const file = extractChangedPath(line);
+    if (file) files.push(file);
+  }
+  return [...new Set(files)];
+}
+
+function exportWorktreePatch(job, executionContext, {
+  changedFiles = [],
+  afterStatus = [],
+} = {}) {
+  if (!executionContext || executionContext.mode !== 'worktree' || changedFiles.length === 0) {
+    return {
+      ok: true,
+      required: false,
+      exported: false,
+      reason: 'integration_not_required',
+    };
+  }
+
+  ensureDir(AUTO_DEV_ARTIFACT_DIR);
+  const untracked = collectUntrackedFiles(afterStatus).filter(file => changedFiles.includes(file));
+  if (untracked.length > 0) {
+    try {
+      runGit(['add', '-N', '--', ...untracked], executionContext.cwd, 20000);
+    } catch {
+      // patch export 시도는 계속 진행
+    }
+  }
+
+  const patchRaw = runGitRaw(['diff', '--binary', '--', ...changedFiles], executionContext.cwd, 120000);
+  const patchText = String(patchRaw || '');
+  if (!patchText.trim()) {
+    return {
+      ok: false,
+      required: true,
+      exported: false,
+      reason: 'patch_export_empty',
+      error: '변경 파일이 있으나 patch 출력이 비어 있습니다.',
+    };
+  }
+
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const base = path.basename(job.relPath, '.md');
+  const patchName = `${base}.${job.contentHash}.${stamp}.patch`;
+  const patchPath = path.join(AUTO_DEV_ARTIFACT_DIR, patchName);
+  fs.writeFileSync(patchPath, patchText.endsWith('\n') ? patchText : `${patchText}\n`, 'utf8');
+
+  return {
+    ok: true,
+    required: true,
+    exported: true,
+    mode: 'patch_exported',
+    patchPath,
+    patchDigest: crypto.createHash('sha1').update(patchText).digest('hex'),
+    patchBytes: Buffer.byteLength(patchText, 'utf8'),
+    changedFiles,
+    worktreePath: executionContext.worktreePath || executionContext.cwd,
+    baseSha: executionContext.baseSha || null,
+  };
 }
 
 function shouldArchiveOnSuccess(options = {}) {
@@ -784,12 +1037,56 @@ function archiveCompletedDocument(filePath, contentHash) {
   return relativeToRoot(destination);
 }
 
-async function runTestCycle(options = {}, executionContext = null) {
+function writeArchiveManifest({
+  job,
+  archivedPath,
+  executionContext = null,
+  beforeStatus = [],
+  afterStatus = [],
+  newlyChangedFiles = [],
+  review = null,
+  test = null,
+  integration = null,
+} = {}) {
+  if (!archivedPath) return null;
+  const archivedAbsolute = path.join(ROOT, archivedPath);
+  const manifestPath = `${archivedAbsolute}.manifest.json`;
+  const manifest = {
+    archivedAt: nowIso(),
+    sourceDocument: job?.analysis?.relPath || job?.relPath || null,
+    archivedDocument: archivedPath,
+    contentHash: job?.contentHash || null,
+    title: job?.analysis?.title || job?.title || null,
+    baseSha: executionContext?.baseSha || null,
+    worktreePath: executionContext?.worktreePath || executionContext?.cwd || null,
+    changedFiles: newlyChangedFiles,
+    beforeStatus,
+    afterStatus,
+    review: review ? { pass: review.pass, message: review.message } : null,
+    test: test ? { pass: test.pass, message: test.message } : null,
+    integration: integration || null,
+  };
+  fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf8');
+  return relativeToRoot(manifestPath);
+}
+
+async function runTestCycle(options = {}, executionContext = null, analysis = null) {
   const builder = require('../src/builder');
   const testMode = Boolean(options.test);
   const cwd = executionContext?.cwd || ROOT;
   const build = await builder.runBuildCheck({ force: true, test: testMode });
   const commands = [];
+  const scoped = resolveScopedTestCommands(analysis, cwd);
+
+  if (scoped.commands.length === 0) {
+    return {
+      pass: false,
+      build,
+      commands,
+      scopedCommands: [],
+      message: 'test_scope metadata가 비어 있어 테스트 계약을 만족하지 못했습니다.',
+    };
+  }
 
   if (!testMode && !options.dryRun && process.env.CLAUDE_AUTO_DEV_RUN_HARD_TESTS !== 'false') {
     const configured = process.env.CLAUDE_AUTO_DEV_HARD_TEST_COMMANDS;
@@ -797,14 +1094,22 @@ async function runTestCycle(options = {}, executionContext = null) {
     hardTests.forEach(command => commands.push(runCommand(command, 600000, cwd)));
   }
 
-  const pass = build.pass !== false && commands.every(result => result.pass);
+  const scopedCommands = testMode
+    ? scoped.commands.map(command => ({ command, pass: true, skipped: true, output: '[test-mode] scoped test skipped' }))
+    : scoped.commands.map(command => runCommand(command, 600000, cwd));
+
+  const pass = build.pass !== false
+    && commands.every(result => result.pass)
+    && scopedCommands.every(result => result.pass);
   return {
     pass,
     build,
     commands,
+    scopedCommands,
     message: [
       `빌더: ${build.pass === false ? 'FAIL' : 'PASS'}`,
       `하드 테스트: ${commands.length === 0 ? 'SKIP' : commands.every(r => r.pass) ? 'PASS' : 'FAIL'}`,
+      `test_scope: ${scopedCommands.every(r => r.pass) ? 'PASS' : 'FAIL'} (${scoped.entries.length}개)`,
     ].join('\n'),
   };
 }
@@ -929,6 +1234,7 @@ async function processAutoDevDocument(filePath, options = {}) {
       job: state.jobs[id] || { id, relPath, stage: 'locked_job', status: 'blocked' },
     };
   }
+  const stopJobLockHeartbeat = startLockHeartbeat(jobLock);
 
   let beforeStatus = [];
   let policy = null;
@@ -1038,7 +1344,7 @@ async function processAutoDevDocument(filePath, options = {}) {
         );
         if (!revision.pass) throw new Error(`review revision failed: ${revision.error}`);
       }
-      reviewResult = await runReviewCycle(options);
+      reviewResult = await runReviewCycle(options, executionContext, beforeStatus);
       if (reviewResult.pass) break;
     }
     if (!reviewResult.pass) throw new Error(`review failed: ${reviewResult.message}`);
@@ -1057,7 +1363,7 @@ async function processAutoDevDocument(filePath, options = {}) {
         );
         if (!revision.pass) throw new Error(`test revision failed: ${revision.error}`);
       }
-      testResult = await runTestCycle(options, executionContext);
+      testResult = await runTestCycle(options, executionContext, analysis);
       if (testResult.pass) break;
     }
     if (!testResult.pass) throw new Error(`tests failed: ${testResult.message}`);
@@ -1069,11 +1375,31 @@ async function processAutoDevDocument(filePath, options = {}) {
       throw new Error(`write scope violation: ${scopeViolations.slice(0, 8).join(', ')}`);
     }
 
+    const integrationResult = exportWorktreePatch(job, executionContext, {
+      changedFiles: newlyChangedFiles,
+      afterStatus,
+    });
+    if (!integrationResult.ok) {
+      throw new Error(`integration failed: ${integrationResult.error || integrationResult.reason}`);
+    }
+
     let archivedPath = null;
     let archiveError = null;
+    let archiveManifestPath = null;
     if (shouldArchiveOnSuccess(options)) {
       try {
         archivedPath = archiveCompletedDocument(filePath, contentHash);
+        archiveManifestPath = writeArchiveManifest({
+          job,
+          archivedPath,
+          executionContext,
+          beforeStatus,
+          afterStatus,
+          newlyChangedFiles,
+          review: reviewResult,
+          test: testResult,
+          integration: integrationResult,
+        });
       } catch (error) {
         archiveError = error.message;
       }
@@ -1084,11 +1410,15 @@ async function processAutoDevDocument(filePath, options = {}) {
       plan,
       review: { pass: reviewResult.pass, message: reviewResult.message },
       test: { pass: testResult.pass, message: testResult.message },
+      reviewScope: reviewResult.reviewScope || null,
+      scopedTests: testResult.scopedCommands || [],
       beforeStatus,
       afterStatus,
       newlyChangedFiles,
       scopeViolations,
+      integration: integrationResult,
       archivedPath,
+      archiveManifestPath,
       archiveError,
       contentHash,
       completedAt: nowIso(),
@@ -1106,9 +1436,21 @@ async function processAutoDevDocument(filePath, options = {}) {
     const changedPreview = newlyChangedFiles.length === 0
       ? '변경 후보 파일 없음'
       : `변경 후보 파일 ${newlyChangedFiles.length}개\n${newlyChangedFiles.slice(0, 10).map(file => `- ${file}`).join('\n')}`;
-    await sendStageAlarm(job, 'completed', `리뷰/테스트 통과\n\n${testResult.message}\n\n${changedPreview}`, options);
+    const integrationPreview = integrationResult.exported
+      ? `통합 산출물: patch exported\n- ${integrationResult.patchPath}`
+      : '통합 산출물: 없음';
+    await sendStageAlarm(job, 'completed', `리뷰/테스트 통과\n\n${testResult.message}\n\n${changedPreview}\n\n${integrationPreview}`, options);
     await markAgentDone();
-    return { ok: true, job: finalJob, analysis, plan, review: reviewResult, test: testResult };
+    return {
+      ok: true,
+      job: finalJob,
+      analysis,
+      plan,
+      review: reviewResult,
+      test: testResult,
+      integration: integrationResult,
+      archiveManifestPath,
+    };
   } catch (error) {
     const afterStatus = captureGitStatusShort(executionContext?.cwd || ROOT);
     const newlyChangedFiles = collectNewlyChangedFiles(beforeStatus, afterStatus);
@@ -1135,6 +1477,7 @@ async function processAutoDevDocument(filePath, options = {}) {
     await markAgentError(error.message);
     return { ok: false, error: error.message, job: failedJob };
   } finally {
+    try { stopJobLockHeartbeat(); } catch {}
     releaseFileLock(jobLock);
   }
 }
@@ -1173,6 +1516,7 @@ async function runAutoDevPipeline(options = {}) {
       }],
     };
   }
+  const stopGlobalHeartbeat = startLockHeartbeat(globalLock);
 
   const docs = listAutoDevDocuments();
   const results = [];
@@ -1182,6 +1526,7 @@ async function runAutoDevPipeline(options = {}) {
       if (options.once) break;
     }
   } finally {
+    try { stopGlobalHeartbeat(); } catch {}
     releaseFileLock(globalLock);
   }
 

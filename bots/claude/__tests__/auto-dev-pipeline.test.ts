@@ -519,6 +519,154 @@ async function test_launchd_plist_defaults_are_safe() {
   console.log('✅ auto-dev: launchd plist safe defaults verified');
 }
 
+async function test_bash_is_fail_closed_without_allowlist() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(tmpRoot, 'CODEX_BASH_BLOCK.md', '# Bash\nblock');
+  const { mocks } = makeMocks(tmpRoot);
+
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, {
+      force: true,
+      test: false,
+      dryRun: false,
+      executeImplementation: true,
+    });
+    assert.strictEqual(result.ok, false);
+    assert.match(String(result.error || ''), /Bash tool.+차단|allowlist/i);
+  }, testEnv(tmpRoot, {
+    CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION: 'true',
+    CLAUDE_AUTO_DEV_ALLOWED_TOOLS: 'Edit,Write,Bash,Read',
+  }));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: Bash is fail-closed without allowlist');
+}
+
+async function test_review_cycle_uses_execution_context() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(tmpRoot, 'CODEX_REVIEW_SCOPE.md', '# Review\nscope');
+  let reviewerOptions = null;
+  let guardianOptions = null;
+
+  const { mocks } = makeMocks(tmpRoot, {
+    '../src/reviewer': {
+      runReview: async (opts) => {
+        reviewerOptions = opts;
+        return { summary: { pass: true }, message: 'review ok' };
+      },
+    },
+    '../src/guardian': {
+      runFullSecurityScan: async (opts) => {
+        guardianOptions = opts;
+        return { pass: true, message: 'guardian ok', critical: [], high: [], layers: {} };
+      },
+    },
+    child_process: {
+      execFileSync: (command) => {
+        if (command === 'bash') return '/usr/local/bin/claude\n';
+        if (command === 'claude') return 'ok';
+        if (command === 'rg') throw new Error('no match');
+        return '';
+      },
+      execSync: (command) => {
+        if (String(command).includes('git status --short')) return ' M bots/claude/src/reviewer.ts\n';
+        return '';
+      },
+    },
+  });
+
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, {
+      force: true,
+      test: false,
+      dryRun: false,
+      executeImplementation: true,
+      maxRevisionPasses: 0,
+    });
+    assert.strictEqual(result.ok, true);
+  }, testEnv(tmpRoot, {
+    CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION: 'true',
+    CLAUDE_AUTO_DEV_ALLOW_DIRTY_BASE: 'true',
+  }));
+
+  assert.ok(reviewerOptions && guardianOptions, 'reviewer/guardian 호출 옵션이 기록되어야 함');
+  assert.ok(String(reviewerOptions.rootDir || '').includes('claude-auto-dev-worktrees'));
+  assert.ok(Array.isArray(reviewerOptions.files), 'reviewer files 전달 필요');
+  assert.ok(Array.isArray(guardianOptions.files), 'guardian files 전달 필요');
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: review/guardian use worktree execution context');
+}
+
+async function test_test_scope_is_executed_in_non_test_mode() {
+  const tmpRoot = makeTempRoot();
+  const scopedCommand = 'echo scoped-test-ok';
+  const doc = makeDoc(
+    tmpRoot,
+    'CODEX_TEST_SCOPE.md',
+    withRequiredMetadata('# Scope\nrun', { test_scope: [scopedCommand] })
+  );
+  const executedCommands = [];
+
+  const { mocks } = makeMocks(tmpRoot, {
+    child_process: {
+      execFileSync: (command) => {
+        if (command === 'bash') return '/usr/local/bin/claude\n';
+        if (command === 'claude') return 'ok';
+        if (command === 'rg') throw new Error('no match');
+        return '';
+      },
+      execSync: (command) => {
+        executedCommands.push(String(command));
+        return '';
+      },
+    },
+  });
+
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, {
+      force: true,
+      test: false,
+      dryRun: false,
+      executeImplementation: true,
+      maxRevisionPasses: 0,
+    });
+    assert.strictEqual(result.ok, true);
+  }, testEnv(tmpRoot, {
+    CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION: 'true',
+  }));
+
+  assert.ok(
+    executedCommands.some(command => command.includes(scopedCommand)),
+    'test_scope command must be executed in non-test mode'
+  );
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: test_scope commands are executed');
+}
+
+async function test_archive_manifest_is_created() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(tmpRoot, 'CODEX_ARCHIVE_MANIFEST.md', '# Archive\nmanifest');
+  const { mocks } = makeMocks(tmpRoot);
+
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, {
+      test: true,
+      force: true,
+      archiveOnSuccess: true,
+    });
+    assert.strictEqual(result.ok, true);
+    assert.ok(result.job.archivedPath, 'archive path should exist');
+    assert.ok(result.job.archiveManifestPath, 'archive manifest should exist');
+    assert.ok(fs.existsSync(path.join(tmpRoot, result.job.archivedPath)));
+    assert.ok(fs.existsSync(path.join(tmpRoot, result.job.archiveManifestPath)));
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: archive manifest is created');
+}
+
 async function main() {
   console.log('=== Auto Dev Pipeline 테스트 시작 ===\n');
   const tests = [
@@ -537,6 +685,10 @@ async function main() {
     test_job_lock_blocks_duplicate_document_execution,
     test_completed_state_clears_active_error,
     test_launchd_plist_defaults_are_safe,
+    test_bash_is_fail_closed_without_allowlist,
+    test_review_cycle_uses_execution_context,
+    test_test_scope_is_executed_in_non_test_mode,
+    test_archive_manifest_is_created,
   ];
 
   let passed = 0;

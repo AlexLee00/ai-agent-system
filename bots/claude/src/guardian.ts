@@ -30,13 +30,19 @@ const env           = require('../../../packages/core/lib/env');
 const reviewer      = require('./reviewer');
 
 const ROOT         = env.PROJECT_ROOT;
-const GITIGNORE    = path.join(ROOT, '.gitignore');
-const PACKAGE_JSON = path.join(ROOT, 'package.json');
-const GUARDIAN_SELF_FILES = new Set([
-  path.join(ROOT, 'bots', 'claude', 'src', 'guardian.ts'),
-  path.join(ROOT, 'bots', 'claude', 'src', 'guardian.js'),
-  path.join(ROOT, 'bots', 'claude', '__tests__', 'guardian.test.ts'),
-].map(file => path.resolve(file)));
+
+function resolveRootDir(options = {}) {
+  const candidate = options.rootDir || options.cwd || ROOT;
+  return path.resolve(candidate);
+}
+
+function buildGuardianSelfFiles(rootDir = ROOT) {
+  return new Set([
+    path.join(rootDir, 'bots', 'claude', 'src', 'guardian.ts'),
+    path.join(rootDir, 'bots', 'claude', 'src', 'guardian.js'),
+    path.join(rootDir, 'bots', 'claude', '__tests__', 'guardian.test.ts'),
+  ].map(file => path.resolve(file)));
+}
 
 const REQUIRED_IGNORE_PATTERNS = ['secrets.json', '.env', '*.pem'];
 const SUSPICIOUS_PACKAGES = ['xmrig', 'coinhive', 'crypto-miner', 'keylogger', 'cryptonight'];
@@ -62,10 +68,12 @@ const SECRET_PATTERNS = [
   /telegram_bot_token.*[:=]\s*["']?[0-9]+:[a-zA-Z0-9_-]{35}["']?/i, // Telegram token
 ];
 
-function shouldIgnoreNetworkAuditHit(filePath) {
+function shouldIgnoreNetworkAuditHit(filePath, options = {}) {
   if (!filePath) return true;
+  const rootDir = resolveRootDir(options);
+  const guardianSelfFiles = buildGuardianSelfFiles(rootDir);
   const resolved = path.resolve(String(filePath).trim());
-  if (GUARDIAN_SELF_FILES.has(resolved)) return true;
+  if (guardianSelfFiles.has(resolved)) return true;
 
   // detector definition 자체는 self-scan false positive이므로 제외한다.
   if (resolved.endsWith(`${path.sep}bots${path.sep}claude${path.sep}src${path.sep}guardian.ts`)) return true;
@@ -74,13 +82,16 @@ function shouldIgnoreNetworkAuditHit(filePath) {
 }
 
 function safeExec(command, options = {}) {
+  const rootDir = resolveRootDir(options);
+  const execOptions = { ...options };
+  delete execOptions.rootDir;
   try {
     return execSync(command, {
-      cwd: ROOT,
+      cwd: execOptions.cwd || rootDir,
       stdio: 'pipe',
       encoding: 'utf8',
       timeout: 30000,
-      ...options,
+      ...execOptions,
     }).trim();
   } catch (error) {
     return '';
@@ -89,9 +100,11 @@ function safeExec(command, options = {}) {
 
 // ─── Layer 1: .gitignore 완전성 ────────────────────────────────────────
 
-function layer1_gitignoreAudit() {
+function layer1_gitignoreAudit(options = {}) {
+  const rootDir = resolveRootDir(options);
+  const gitignore = path.join(rootDir, '.gitignore');
   try {
-    const content = fs.readFileSync(GITIGNORE, 'utf8');
+    const content = fs.readFileSync(gitignore, 'utf8');
     const hasAnyPemProtection = content.includes('*.pem') || content.includes('*.key');
     return REQUIRED_IGNORE_PATTERNS
       .filter(pattern => {
@@ -106,11 +119,12 @@ function layer1_gitignoreAudit() {
 
 // ─── Layer 2: 커밋된 시크릿 스캔 ──────────────────────────────────────
 
-function layer2_commitSecretScan() {
+function layer2_commitSecretScan(options = {}) {
+  const rootDir = resolveRootDir(options);
   const issues = [];
   try {
     // 최근 20 커밋의 diff 스캔
-    const diff = safeExec('git log -20 --diff-filter=A -p -- "*.json" "*.yaml" "*.yml" "*.env" 2>/dev/null || true');
+    const diff = safeExec('git log -20 --diff-filter=A -p -- "*.json" "*.yaml" "*.yml" "*.env" 2>/dev/null || true', { rootDir });
     if (!diff) return issues;
 
     const lines = diff.split('\n');
@@ -133,9 +147,11 @@ function layer2_commitSecretScan() {
 
 // ─── Layer 3: 의심 패키지 검사 ────────────────────────────────────────
 
-function layer3_suspiciousPackages() {
+function layer3_suspiciousPackages(options = {}) {
+  const rootDir = resolveRootDir(options);
+  const packageJson = path.join(rootDir, 'package.json');
   try {
-    const pkg = JSON.parse(fs.readFileSync(PACKAGE_JSON, 'utf8'));
+    const pkg = JSON.parse(fs.readFileSync(packageJson, 'utf8'));
     const deps = {
       ...(pkg.dependencies || {}),
       ...(pkg.devDependencies || {}),
@@ -150,10 +166,11 @@ function layer3_suspiciousPackages() {
 
 // ─── Layer 4: 의존성 취약점 ───────────────────────────────────────────
 
-function layer4_dependencyVulnerabilities() {
+function layer4_dependencyVulnerabilities(options = {}) {
+  const rootDir = resolveRootDir(options);
   const issues = [];
   try {
-    const output = safeExec('npm audit --json 2>/dev/null || true');
+    const output = safeExec('npm audit --json 2>/dev/null || true', { rootDir });
     if (!output) return issues;
 
     let audit;
@@ -185,25 +202,26 @@ function layer4_dependencyVulnerabilities() {
 
 // ─── Layer 5: 파일 권한 검사 ──────────────────────────────────────────
 
-function layer5_permissionAudit() {
+function layer5_permissionAudit(options = {}) {
+  const rootDir = resolveRootDir(options);
   const issues = [];
   try {
     // 777 또는 666 권한 파일 검사 (민감한 디렉토리만)
-    const targets = ['bots', 'packages', 'elixir'].map(d => path.join(ROOT, d));
+    const targets = ['bots', 'packages', 'elixir'].map(d => path.join(rootDir, d));
     for (const target of targets) {
       if (!fs.existsSync(target)) continue;
 
       const found777 = safeExec(`find "${target}" -perm 777 -not -path "*/node_modules/*" -not -path "*/.git/*" 2>/dev/null | head -5`);
       if (found777) {
         found777.split('\n').filter(Boolean).forEach(f => {
-          issues.push({ severity: 'HIGH', desc: `chmod 777 파일 발견: ${path.relative(ROOT, f)}`, layer: 5 });
+          issues.push({ severity: 'HIGH', desc: `chmod 777 파일 발견: ${path.relative(rootDir, f)}`, layer: 5 });
         });
       }
 
       const found666 = safeExec(`find "${target}" -perm 666 -name "*.json" -not -path "*/node_modules/*" 2>/dev/null | head -5`);
       if (found666) {
         found666.split('\n').filter(Boolean).forEach(f => {
-          issues.push({ severity: 'HIGH', desc: `chmod 666 JSON 파일: ${path.relative(ROOT, f)}`, layer: 5 });
+          issues.push({ severity: 'HIGH', desc: `chmod 666 JSON 파일: ${path.relative(rootDir, f)}`, layer: 5 });
         });
       }
     }
@@ -213,25 +231,26 @@ function layer5_permissionAudit() {
 
 // ─── Layer 6: 외부 네트워크 호출 검사 ────────────────────────────────
 
-function layer6_networkAudit() {
+function layer6_networkAudit(options = {}) {
+  const rootDir = resolveRootDir(options);
   const issues = [];
   try {
     // 소스 파일에서 의심 도메인 검색
     for (const domain of SUSPICIOUS_DOMAINS) {
       const found = safeExec(
         `grep -rl "${domain}" --include="*.ts" --include="*.js" --include="*.json" ` +
-        `"${ROOT}/bots" "${ROOT}/packages" 2>/dev/null | ` +
+        `"${rootDir}/bots" "${rootDir}/packages" 2>/dev/null | ` +
         `grep -v node_modules | grep -v ".git" | head -5`
       );
       if (found) {
         found.split('\n')
           .map(item => item.trim())
           .filter(Boolean)
-          .filter(filePath => !shouldIgnoreNetworkAuditHit(filePath))
+          .filter(filePath => !shouldIgnoreNetworkAuditHit(filePath, { rootDir }))
           .forEach(f => {
           issues.push({
             severity: 'HIGH',
-            desc: `의심 도메인(${domain}) 하드코딩: ${path.relative(ROOT, f)}`,
+            desc: `의심 도메인(${domain}) 하드코딩: ${path.relative(rootDir, f)}`,
             layer: 6,
           });
           });
@@ -246,6 +265,7 @@ function layer6_networkAudit() {
 async function runFullSecurityScan(options = {}) {
   const enabled  = process.env.CLAUDE_GUARDIAN_ENABLED === 'true';
   const testMode = Boolean(options.test) || process.argv.includes('--test');
+  const rootDir = resolveRootDir(options);
 
   if (!enabled && !testMode && !options.force) {
     return {
@@ -254,7 +274,9 @@ async function runFullSecurityScan(options = {}) {
     };
   }
 
-  const files = Array.isArray(options.files) ? options.files : await reviewer.getChangedFiles();
+  const files = Array.isArray(options.files)
+    ? options.files.map(file => (path.isAbsolute(file) ? file : path.join(rootDir, file)))
+    : await reviewer.getChangedFiles({ rootDir });
   const jsFiles = files.filter(file => /\.(m?js|cjs|json)$/i.test(file));
 
   // 기존 skills 기반 파일 패턴 체크
@@ -267,12 +289,12 @@ async function runFullSecurityScan(options = {}) {
   });
 
   // 6계층 보안 체크
-  const l1 = layer1_gitignoreAudit();
-  const l2 = layer2_commitSecretScan();
-  const l3 = layer3_suspiciousPackages();
-  const l4 = layer4_dependencyVulnerabilities();
-  const l5 = layer5_permissionAudit();
-  const l6 = layer6_networkAudit();
+  const l1 = layer1_gitignoreAudit({ rootDir });
+  const l2 = layer2_commitSecretScan({ rootDir });
+  const l3 = layer3_suspiciousPackages({ rootDir });
+  const l4 = layer4_dependencyVulnerabilities({ rootDir });
+  const l5 = layer5_permissionAudit({ rootDir });
+  const l6 = layer6_networkAudit({ rootDir });
 
   const allIssues = [...findings, ...l1, ...l2, ...l3, ...l4, ...l5, ...l6];
 
@@ -283,7 +305,7 @@ async function runFullSecurityScan(options = {}) {
     layers: { l1, l2, l3, l4, l5, l6 },
   };
 
-  const message = formatSecurityReport(payload);
+  const message = formatSecurityReport(payload, { rootDir });
   let sent = false;
 
   if (!testMode) {
@@ -297,6 +319,7 @@ async function runFullSecurityScan(options = {}) {
 
   return {
     ...payload,
+    rootDir,
     sent,
     message,
     pass: payload.critical.length === 0 && payload.high.length === 0,
@@ -305,7 +328,8 @@ async function runFullSecurityScan(options = {}) {
 
 // ─── 리포트 포맷 ──────────────────────────────────────────────────────
 
-function formatSecurityReport(payload) {
+function formatSecurityReport(payload, options = {}) {
+  const rootDir = resolveRootDir({ rootDir: options.rootDir || payload?.rootDir || ROOT });
   const lines = ['🛡️ 가디언 6계층 보안 검사'];
   lines.push(`- 검사 파일: ${payload.files.length}개`);
   lines.push(`- CRITICAL: ${payload.critical.length}건`);
@@ -334,7 +358,7 @@ function formatSecurityReport(payload) {
     lines.push('');
     lines.push(title);
     items.slice(0, 12).forEach(item => {
-      const prefix = item.file ? `${path.relative(ROOT, item.file)}:${item.line || 0}` : `L${item.layer || '?'}`;
+      const prefix = item.file ? `${path.relative(rootDir, item.file)}:${item.line || 0}` : `L${item.layer || '?'}`;
       lines.push(`- ${prefix} — ${item.desc}`);
     });
   };
