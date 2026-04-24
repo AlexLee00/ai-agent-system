@@ -295,10 +295,11 @@ async function secretsRoute(req: SecretsRequest, res: SecretsResponse): Promise<
 
 // ─── Secret Metadata (값 미노출) ─────────────────────────────────────────────
 
-const { isSecretKey, buildFieldMeta, buildCategoryMeta } = require('../secrets-meta.js') as {
+const { isSecretKey, buildFieldMeta, buildCategoryMeta, buildRequiredSummary } = require('../secrets-meta.js') as {
   isSecretKey: (key: string) => boolean;
   buildFieldMeta: (key: string, value: unknown) => Record<string, unknown>;
   buildCategoryMeta: (data: Dict) => Record<string, Record<string, unknown>>;
+  buildRequiredSummary: (category: string, data: Dict) => { missing: string[]; present: string[] } | null;
 };
 
 type MetaRequest = {
@@ -322,7 +323,10 @@ async function secretsMetaRoute(req: MetaRequest, res: MetaResponse): Promise<Me
   try {
     const data = handler();
     const fields = buildCategoryMeta(data);
-    return res.json({ ok: true, category, values_redacted: true, fields });
+    const required = buildRequiredSummary(category, data);
+    const payload: Record<string, unknown> = { ok: true, category, values_redacted: true, fields };
+    if (required !== null) payload.required = required;
+    return res.json(payload);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return res.status(500).json({ error: 'secrets meta load failed', detail: message });
@@ -343,4 +347,4 @@ async function secretsMetaAllRoute(_req: MetaRequest, res: MetaResponse): Promis
   return res.json({ ok: true, values_redacted: true, categories });
 }
 
-export { secretsRoute, secretsMetaRoute, secretsMetaAllRoute, isSecretKey, buildFieldMeta, buildCategoryMeta };
+export { secretsRoute, secretsMetaRoute, secretsMetaAllRoute, isSecretKey, buildFieldMeta, buildCategoryMeta, buildRequiredSummary };
