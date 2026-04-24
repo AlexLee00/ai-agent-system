@@ -1,11 +1,11 @@
 {
   "version": 1,
-  "updatedAt": "2026-04-24T23:01:06.816Z",
+  "updatedAt": "2026-04-24T23:03:31.691Z",
   "entries": [
     {
       "queueKey": "kis_overseas:live:live:kis_overseas:POET:normal:kis_overseas:POET:normal:ADJUST",
       "createdAt": "2026-04-24T16:34:48.844Z",
-      "updatedAt": "2026-04-24T23:00:42.475Z",
+      "updatedAt": "2026-04-24T23:03:07.264Z",
       "candidate": {
         "exchange": "kis_overseas",
         "symbol": "POET",
