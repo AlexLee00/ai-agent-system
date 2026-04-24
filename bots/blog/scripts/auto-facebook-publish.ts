@@ -4,10 +4,16 @@
 /**
  * bots/blog/scripts/auto-facebook-publish.ts
  *
- * 오늘 발행된 최신 블로그 포스트를 Facebook 페이지에 자동 공유.
- * 성공/실패 결과를 Telegram으로 보고.
- *
+ * Queue-first Facebook 발행.
  * launchd ai.blog.facebook-publish에서 매일 19:00 KST 실행.
+ *
+ * 동작 순서:
+ *   1. marketing_publish_queue에서 facebook_page 대기 job 확인
+ *   2. job 있으면 → strategy_native publish (quality gate → native message → publish)
+ *   3. job 없으면 → 오늘 네이버 포스트 기반 legacy 공유 (naver_post fallback)
+ *   4. 성공/실패 결과 Telegram 보고
+ *
+ * L5 원칙: 사용자 승인 없음. 정책 통과 시 자동 게시.
  */
 
 const path = require('path');
@@ -15,13 +21,27 @@ const env = require('../../../packages/core/lib/env');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const { runIfOps } = require('../../../packages/core/lib/mode-guard');
 const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
-const { publishFacebookPost, checkFacebookPublishReadiness } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/facebook-publisher.ts'));
-const { ensurePublishLogSchema, reportPublishSuccess, reportPublishFailure } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/publish-reporter.ts'));
-const { resolveInstagramHostedMediaUrl } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-image-host.ts'));
+const { publishFacebookPost, checkFacebookPublishReadiness } = require(
+  path.join(env.PROJECT_ROOT, 'bots/blog/lib/facebook-publisher.ts')
+);
+const { ensurePublishLogSchema, reportPublishSuccess, reportPublishFailure } = require(
+  path.join(env.PROJECT_ROOT, 'bots/blog/lib/publish-reporter.ts')
+);
+const { resolveInstagramHostedMediaUrl } = require(
+  path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-image-host.ts')
+);
+const { claimNextPublishJob, markPublishSuccess, markPublishFailure } = require(
+  path.join(env.PROJECT_ROOT, 'bots/blog/lib/omnichannel/publish-queue.ts')
+);
+const { evaluateAndSaveQuality } = require(
+  path.join(env.PROJECT_ROOT, 'bots/blog/lib/omnichannel/creative-quality-gate.ts')
+);
+const { createMarketingCampaignFromSignals } = require(
+  path.join(env.PROJECT_ROOT, 'bots/blog/lib/omnichannel/campaign-planner.ts')
+);
 
 const DRY_RUN = process.argv.includes('--dry-run');
 const FACEBOOK_READINESS_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run check:facebook -- --json`;
-const FACEBOOK_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:facebook -- --json`;
 const SOCIAL_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:social -- --json`;
 const BLOG_OPS_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:ops -- --json`;
 
@@ -46,12 +66,8 @@ function getDoctorActions(command = '', limit = 2, areaPrefix = '') {
     }).trim();
     const payload = JSON.parse(extractJsonObjectText(output) || '{}');
     const primaryArea = String(payload?.primary?.area || '');
-    if (!primaryArea || primaryArea === 'clear' || primaryArea === 'unknown') {
-      return [];
-    }
-    if (areaPrefix && !primaryArea.startsWith(areaPrefix)) {
-      return [];
-    }
+    if (!primaryArea || primaryArea === 'clear' || primaryArea === 'unknown') return [];
+    if (areaPrefix && !primaryArea.startsWith(areaPrefix)) return [];
     return Array.isArray(payload?.actions)
       ? payload.actions.map((item) => String(item || '').trim()).filter(Boolean).slice(0, limit)
       : [];
@@ -63,9 +79,7 @@ function getDoctorActions(command = '', limit = 2, areaPrefix = '') {
 function buildPreviewBundleForTitle(title = '') {
   try {
     const {
-      findReelPathForTitle,
-      findReelCoverPathForTitle,
-      findReelQaSheetPathForTitle,
+      findReelPathForTitle, findReelCoverPathForTitle, findReelQaSheetPathForTitle,
     } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-files.ts'));
     const reelPath = findReelPathForTitle(title) || '';
     const coverPath = findReelCoverPathForTitle(title) || '';
@@ -89,24 +103,15 @@ async function buildFacebookFailureDetail(error) {
     const opsActions = getDoctorActions(BLOG_OPS_DOCTOR_COMMAND, 2, 'social');
     const scopes = Array.isArray(readiness?.permissionScopes) && readiness.permissionScopes.length > 0
       ? readiness.permissionScopes.join(', ')
-      : (baseMessage.includes('pages_manage_posts') || baseMessage.includes('pages_read_engagement')
-        ? 'pages_manage_posts, pages_read_engagement'
-        : '');
-    const pageHint = readiness?.pageId ? `page=${String(readiness.pageId).slice(0, 32)}` : '';
-    const scopeHint = scopes ? `scopes=${scopes}` : '';
-    const actionHint = scopes ? 'action=Meta 앱 권한 재연결 후 페이지 토큰 재발급' : '';
+      : '';
     const extras = [
-      pageHint,
-      scopeHint,
+      readiness?.pageId ? `page=${String(readiness.pageId).slice(0, 32)}` : '',
+      scopes ? `scopes=${scopes}` : '',
       `diagnose=${FACEBOOK_READINESS_COMMAND}`,
-      `doctor=${FACEBOOK_DOCTOR_COMMAND}`,
       `social=${SOCIAL_DOCTOR_COMMAND}`,
-      `ops=${BLOG_OPS_DOCTOR_COMMAND}`,
-      'primary blocker=social.facebook',
-      `next=${SOCIAL_DOCTOR_COMMAND}`,
       ...socialActions.map((item) => `social action=${item}`),
       ...opsActions.map((item) => `ops action=${item}`),
-      actionHint,
+      scopes ? 'action=Meta 앱 권한 재연결 후 페이지 토큰 재발급' : '',
     ].filter(Boolean).join(' / ');
     return extras ? `${baseMessage}\n${extras}` : baseMessage;
   } catch {
@@ -146,64 +151,154 @@ async function hasFacebookPublishToday() {
   }
 }
 
-async function main() {
-  console.log(`[facebook-auto] 시작 dryRun=${DRY_RUN}`);
+/**
+ * strategy_native 경로: 큐 job → quality gate → native message → publish
+ */
+async function publishFromQueue(queueJob) {
+  const { queue_id: queueId, variant } = queueJob;
+  if (!variant) {
+    await markPublishFailure(queueId, { error: 'variant_not_found', failureKind: 'unknown' });
+    return { ok: false, reason: 'variant_not_found' };
+  }
 
+  const qr = await evaluateAndSaveQuality({ variant, config: {}, dryRun: DRY_RUN });
+  if (qr.gateResult === 'blocked') {
+    console.warn(`[facebook-auto][native] quality gate BLOCKED score=${qr.scoreTotal}`);
+    await markPublishFailure(queueId, {
+      error: `quality_gate_blocked: ${qr.reasons.blocked.join('; ')}`,
+      failureKind: 'quality_gate',
+      block: true,
+    });
+    await runIfOps('blog-fb-quality-block', () => postAlarm({
+      message: `[블로팀] Facebook strategy_native 발행 quality gate 차단\n점수=${qr.scoreTotal}\n이유=${qr.reasons.blocked.join(', ')}`,
+      team: 'blog', bot: 'auto-facebook-publish', level: 'warn',
+    }), () => console.log('[DEV] quality gate blocked')).catch(() => {});
+    return { ok: false, reason: 'quality_gate_blocked' };
+  }
+
+  const message = variant.body || variant.caption || variant.title || '';
+  if (!message) {
+    await markPublishFailure(queueId, { error: 'empty_message', failureKind: 'unknown' });
+    return { ok: false, reason: 'empty_message' };
+  }
+
+  console.log(`[facebook-auto][native] 발행 대상: "${(message).slice(0, 60)}..." dryRun=${DRY_RUN}`);
+
+  if (DRY_RUN) {
+    console.log('[facebook-auto][native][dry-run] strategy_native 발행 시뮬레이션');
+    console.log(JSON.stringify({ message: message.slice(0, 100), queueId, variantId: variant.variant_id }, null, 2));
+    return { ok: true, dryRun: true };
+  }
+
+  try {
+    const result = await publishFacebookPost({ message, link: '', dryRun: false });
+    await markPublishSuccess(queueId);
+    await reportPublishSuccess('facebook', variant.title || 'strategy_native', '', {
+      postId: variant.variant_id,
+      sourceMode: 'strategy_native',
+      variantId: variant.variant_id,
+    });
+    console.log(`[facebook-auto][native] 발행 성공 fbPostId=${result.postId}`);
+    return { ok: true, result };
+  } catch (err) {
+    const detailedError = await buildFacebookFailureDetail(err);
+    await markPublishFailure(queueId, { error: err.message, failureKind: 'publish' });
+    await reportPublishFailure('facebook', variant.title || 'strategy_native', detailedError, {
+      sourceMode: 'strategy_native',
+    });
+    return { ok: false, reason: 'publish_failed', error: err };
+  }
+}
+
+/**
+ * legacy naver_post fallback 경로
+ */
+async function publishFromNaverPost() {
   const post = await getTodayLatestPost();
   if (!post) {
-    console.log('[facebook-auto] 오늘 발행된 포스트 없음 — 생략');
+    console.log('[facebook-auto][legacy] 오늘 발행된 포스트 없음 — 생략');
     return;
   }
 
   const alreadyPublished = await hasFacebookPublishToday();
   if (alreadyPublished) {
-    console.log('[facebook-auto] 오늘 이미 Facebook 발행 완료 — 생략');
+    console.log('[facebook-auto][legacy] 오늘 이미 Facebook 발행 완료 — 생략');
     return;
   }
 
   const { id: postId, title, naver_url: naverUrl, category, status: postStatus } = post;
   const previewBundle = buildPreviewBundleForTitle(title);
   const message = [
-    `📝 새 포스팅이 올라왔습니다!`,
+    `새 포스팅이 올라왔습니다!`,
     ``,
     `제목: ${title}`,
     `카테고리: ${category || '일반'}`,
     naverUrl ? `\n블로그 링크 ▼` : '',
   ].filter(line => line !== undefined).join('\n').trim();
 
-  console.log(`[facebook-auto] 발행 대상: "${title}" status=${postStatus || 'unknown'} naverUrl=${naverUrl || 'none'}`);
-  if (previewBundle) {
-    console.log(`[facebook-auto] preview bundle: ${previewBundle}`);
-  }
-  if (postStatus === 'ready' && !naverUrl) {
-    console.log('[facebook-auto] published 미확정 포스트를 링크 없이 Facebook teaser로 발행합니다.');
-  }
+  console.log(`[facebook-auto][legacy] "${title}" status=${postStatus || 'unknown'}`);
+  if (previewBundle) console.log(`[facebook-auto][legacy] preview bundle: ${previewBundle}`);
 
   try {
-    const result = await publishFacebookPost({
-      message,
-      link: naverUrl || '',
-      dryRun: DRY_RUN,
-    });
+    const result = await publishFacebookPost({ message, link: naverUrl || '', dryRun: DRY_RUN });
 
     if (DRY_RUN) {
-      console.log('[facebook-auto][dry-run] 발행 시뮬레이션 완료');
+      console.log('[facebook-auto][legacy][dry-run] 발행 시뮬레이션 완료');
       console.log(JSON.stringify(result, null, 2));
       return;
     }
 
-    await reportPublishSuccess('facebook', title, naverUrl || '', { postId, previewBundle });
-    console.log(`[facebook-auto] 발행 성공 fbPostId=${result.postId}`);
-
+    await reportPublishSuccess('facebook', title, naverUrl || '', { postId, previewBundle, sourceMode: 'naver_post' });
+    console.log(`[facebook-auto][legacy] 발행 성공 fbPostId=${result.postId}`);
   } catch (err) {
-    const rawMessage = String(err?.rawMessage || err?.message || '');
-    console.error('[facebook-auto] 발행 실패:', err.message);
-    if (rawMessage && rawMessage !== err.message) {
-      console.error('[facebook-auto] raw failure:', rawMessage);
-    }
     const detailedError = await buildFacebookFailureDetail(err);
-    await reportPublishFailure('facebook', title, detailedError, { postId, previewBundle });
+    await reportPublishFailure('facebook', title, detailedError, { postId, previewBundle, sourceMode: 'naver_post' });
+    console.error('[facebook-auto][legacy] 발행 실패:', err.message);
   }
+}
+
+async function main() {
+  console.log(`[facebook-auto] 시작 dryRun=${DRY_RUN}`);
+
+  // ── 1. Queue-first: strategy_native 큐 확인 ────────────────────────────
+  const queueJob = await claimNextPublishJob('facebook_page', { dryRun: DRY_RUN }).catch(() => null);
+
+  if (queueJob) {
+    console.log(`[facebook-auto] queue-first: job=${queueJob.queue_id} variant=${queueJob.variant_id}`);
+    await publishFromQueue(queueJob);
+    console.log('[facebook-auto] 완료 (queue-first)');
+    return;
+  }
+
+  // ── 2. 전략이 social_native_required이면 새 캠페인 생성 ────────────────
+  let newCampaignQueued = false;
+  try {
+    const { directives } = require(
+      path.join(env.PROJECT_ROOT, 'bots/blog/lib/strategy-loader.ts')
+    ).loadStrategyBundle();
+    const nativeRequired = directives?.socialNativeRequired === true;
+    if (nativeRequired) {
+      console.log('[facebook-auto] social_native_required — 새 campaign 생성');
+      await createMarketingCampaignFromSignals({ brandAxis: 'cafe_library', objective: 'awareness', dryRun: DRY_RUN });
+      newCampaignQueued = true;
+    }
+  } catch (e) {
+    console.warn('[facebook-auto] 전략 로드 또는 campaign 생성 실패:', e.message);
+  }
+
+  if (newCampaignQueued) {
+    const newJob = await claimNextPublishJob('facebook_page', { dryRun: DRY_RUN }).catch(() => null);
+    if (newJob) {
+      await publishFromQueue(newJob);
+      console.log('[facebook-auto] 완료 (new-campaign queue)');
+      return;
+    }
+  }
+
+  // ── 3. Legacy naver_post fallback ────────────────────────────────────────
+  console.log('[facebook-auto] 큐 없음 — legacy naver_post fallback');
+  await publishFromNaverPost();
+  console.log('[facebook-auto] 완료');
 }
 
 main().catch(err => {

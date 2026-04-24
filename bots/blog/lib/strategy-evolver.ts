@@ -230,7 +230,44 @@ function buildExecutionDirectives(plan = {}, diagnosis = {}, marketingDigest = n
         : isConversionPush
           ? 'trust-building, concrete value, reservation-oriented payoff'
           : 'premium curiosity with clear business relevance',
+      // Omnichannel 확장 필드
+      reelHookIntensity: isAmplifyPush ? 'high' : isConversionPush ? 'medium' : 'balanced',
+      thumbnailAggro: isAmplifyPush ? 'high' : 'medium',
+      storyInteractionMode: isConversionPush ? 'poll_cta' : 'brand_story',
+      facebookConversationMode: isConversionPush ? 'conversion' : 'community',
     },
+    // Omnichannel: 캠페인 믹스 (brand_axis 비율)
+    campaignMix: {
+      cafeLibraryRatio: isConversionPush ? 0.7 : 0.5,
+      seunghoDadRatio: isConversionPush ? 0.3 : 0.5,
+      conversionRatio: isConversionPush ? 0.6 : 0.3,
+      brandTrustRatio: isAmplifyPush ? 0.4 : 0.2,
+    },
+    // Omnichannel: 채널별 발행 목표
+    platformTargets: {
+      naverBlog: { postsPerCycle: 1 },
+      instagram: {
+        feedPerCycle: 0,
+        reelsPerCycle: instagramTarget,
+        storiesPerCycle: isAmplifyPush ? 1 : 0,
+      },
+      facebook: { postsPerCycle: facebookTarget },
+    },
+    // Omnichannel: 인게이지먼트 정책
+    engagementPolicy: {
+      inboundReplyTarget: 1,
+      outboundNeighborCommentTarget: neighborBase,
+      sympathyTarget: sympathyBase,
+      lowExposureEscalationThreshold: 3,  // 연속 노출 실패 횟수
+    },
+    // Omnichannel: 귀인 정책
+    attributionPolicy: {
+      utmNaming: 'brand_axis__platform__objective',
+      attributionWindowDays: 7,
+      revenueUpliftThreshold: 0.05,
+    },
+    // strategy_native 강제 여부 (이 값이 true이면 naver fallback 없이 campaign 생성)
+    socialNativeRequired: missingStrategyNativeSignals && (isAmplifyPush || isConversionPush),
   };
 }
 

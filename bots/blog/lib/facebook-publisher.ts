@@ -2,7 +2,7 @@
 
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
-const { getInstagramConfig } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-graph.ts'));
+const { getFacebookConfigFromMeta } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/meta-graph-config.ts'));
 
 /**
  * @typedef {{
@@ -16,7 +16,7 @@ const { getInstagramConfig } = require(path.join(env.PROJECT_ROOT, 'packages/cor
 
 /** @returns {Promise<FacebookPublishConfig>} */
 function getFacebookPublishConfig() {
-  return /** @type {Promise<FacebookPublishConfig>} */ (getInstagramConfig());
+  return /** @type {Promise<FacebookPublishConfig>} */ (getFacebookConfigFromMeta());
 }
 
 /** @param {FacebookPublishConfig} config */
