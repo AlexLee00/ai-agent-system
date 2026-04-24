@@ -2161,4 +2161,30 @@ async function run(options = {}) {
   return results;
 }
 
-module.exports = { run };
+async function retryLectureOnly(options = {}) {
+  console.log('\n📝 [블로] 강의 포스팅 재발행 시작\n');
+  if (options.dryRun) {
+    console.log('[블로][dry-run] 강의 포스팅 재발행 검증 실행');
+  }
+
+  const traceCtx = startTrace({ bot: 'blog-blo', action: 'lecture_retry' });
+  console.log(`[블로] trace_id: ${traceCtx.trace_id}`);
+
+  const daily = await _prepareDailyRun(traceCtx, { ...options, lectureOnly: true });
+  if (daily.inactive) {
+    console.log('[블로] 일시 정지 상태. 종료.');
+    return { type: 'lecture', skipped: true, reason: 'inactive' };
+  }
+  if (!daily.lectureCtx) {
+    console.log('[블로] 재발행할 강의 스케줄이 없습니다.');
+    return { type: 'lecture', skipped: true, reason: 'lecture_not_scheduled' };
+  }
+
+  const lectureResult = await _runLectureStage(daily, traceCtx, options);
+  await _runPostPublishChecks(options);
+
+  console.log('\n📝 [블로] 강의 포스팅 재발행 완료\n');
+  return lectureResult;
+}
+
+module.exports = { run, retryLectureOnly };

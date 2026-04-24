@@ -11,6 +11,7 @@
     "test:unit": "../../node_modules/.bin/jest __tests__/evolution-cycle.test.ts __tests__/platform-orchestration.test.ts --runInBand",
     "test:daily-dry": "../../node_modules/.bin/tsx scripts/run-daily.ts --dry-run",
     "daily": "../../node_modules/.bin/tsx scripts/run-daily.ts",
+    "retry:lecture": "../../node_modules/.bin/tsx scripts/retry-lecture-post.ts",
     "replay:reply-ui": "../../node_modules/.bin/tsx scripts/replay-reply-ui.ts",
     "replay:neighbor-ui": "node scripts/replay-neighbor-comment-ui.ts",
     "replay:neighbor-sympathy": "node scripts/replay-neighbor-sympathy-ui.ts",
