@@ -1,6 +1,46 @@
-# 세션 인수인계 — 2026-04-25 (CODEX_BLOG_L5_OMNICHANNEL_MARKETING_PLAN P0 구현 — 75차 세션)
+# 세션 인수인계 — 2026-04-25 (CODEX_CLAUDE_L5_AUTONOMOUS_PROCESS_GAP_PLAN P2 완성 — 76차 세션)
 
-## 완료 요약 ✅ (75차 세션) — CODEX_BLOG_L5_OMNICHANNEL_MARKETING_PLAN P0
+## 완료 요약 ✅ (76차 세션) — CODEX_CLAUDE_L5_AUTONOMOUS_PROCESS_GAP_PLAN P2 완성
+
+### 클로드팀 auto-dev L5 승격 P2 보강 (커밋 `2b565c6e`)
+
+**구현 완료 항목**:
+- **completion document marker**: `executeImplementation` 완료 시 소스 문서에 `implementation_status`, `implementation_completed_at`, `## Implementation Completed` 섹션 자동 삽입. `CLAUDE_AUTO_DEV_ARCHIVE_ON_SUCCESS=true`일 때 아카이브된 문서에도 동일 마커 적용.
+- **archive manifest rollback 보강**: manifest 파일 쓰기 실패 시 manifest도 rollback 대상에 포함.
+- **completionDocumentPath / implementationCompletedAt**: job state에 필드 추가.
+
+**이미 구현되어 있던 P2 항목** (19절 이전 커밋들에서 완료):
+- promotion profile (`CLAUDE_AUTO_DEV_PROFILE=shadow|dry_run|supervised_l4|autonomous_l5`, `AUTO_DEV_PROFILES` 상수)
+- worktree cleanup (`cleanupExecutionContext` → `git worktree remove`)
+- patch → main cherry-pick 자동화 (`exportWorktreePatch` + `integrateWorktreeChanges`)
+- plist 분리 (`ai.claude.auto-dev.shadow.plist` / `ai.claude.auto-dev.autonomous.plist`)
+- `show_auto_dev_status` 확장 (profile/worktree count/patch count/active|stale|failed|completed 분리)
+
+**검증 결과**:
+- `test:auto-dev` 33/33 통과 (신규: `completed_document_is_updated_after_actual_implementation`)
+- `test:commander` 12/12, `typecheck` 통과, `node --check` 5파일 OK
+- plist OK, 투자팀 파일 변경 없음
+
+### 현재 auto-dev 운영 레벨
+```
+CLAUDE_AUTO_DEV_PROFILE=shadow  (기본, launchd 미로드)
+CLAUDE_AUTO_DEV_ENABLED=false   (Kill Switch ON)
+CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION=false
+
+L5 승격 조건 전부 충족:
+  P0 × 5 ✅, P1 × 5 ✅, P2 × 5 ✅
+supervised_l4 실험 후 autonomous_l5 승격 가능
+```
+
+### 다음 세션 필수 작업
+1. **supervised_l4 실험**: `CLAUDE_AUTO_DEV_PROFILE=supervised_l4` + `CLAUDE_AUTO_DEV_ENABLED=true`로 단순 문서 1~2건 실험
+2. worktree 실제 생성/삭제 디스크 확인
+3. manifest + patch + 알림 정상 여부 확인
+4. 이상 없으면 `autonomous_l5` 승격 여부 결정
+
+---
+
+## 이전 완료 요약 ✅ (75차 세션) — CODEX_BLOG_L5_OMNICHANNEL_MARKETING_PLAN P0
 
 ### 블로팀 L5 옴니채널 마케팅 P0 구현
 
