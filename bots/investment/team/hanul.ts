@@ -25,6 +25,7 @@ import * as db from '../shared/db.ts';
 import * as journalDb from '../shared/trade-journal-db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import {
+  initHubSecrets,
   isPaperMode,
   isKisPaper,
   getInvestmentTradeMode,
@@ -943,6 +944,14 @@ async function checkKisOverseasRisk(signal) {
 
 let _kisPromise = null;
 
+async function ensureHanulHubSecretsLoaded() {
+  try {
+    await initHubSecrets();
+  } catch (error) {
+    console.warn(`  ⚠️ [한울] Hub secrets 초기화 실패: ${error?.message || error}`);
+  }
+}
+
 /** kis-client.js 동적 로드 (ESM). 실패 시 mock 반환 */
 function getKis() {
   if (!_kisPromise) {
@@ -971,6 +980,7 @@ function getKis() {
  * @param {object} signal  { id, symbol, action, amount_usdt(=amountKrw), confidence }
  */
 export async function executeSignal(signal) {
+  await ensureHanulHubSecretsLoaded();
   const paperMode = isPaperMode();
   const kisPaper  = isKisPaper();
   const { id: signalId, symbol, action, amount_usdt: amountKrw } = signal;
@@ -1259,6 +1269,7 @@ export async function executeSignal(signal) {
  * @param {object} signal  { id, symbol, action, amount_usdt(=amountUsd), confidence }
  */
 export async function executeOverseasSignal(signal) {
+  await ensureHanulHubSecretsLoaded();
   const paperMode = isPaperMode();
   const kisPaper  = isKisPaper();
   const { id: signalId, symbol, action, amount_usdt: amountUsd } = signal;
