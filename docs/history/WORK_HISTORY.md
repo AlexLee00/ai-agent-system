@@ -4,6 +4,17 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-04-24: CODEX_LUNA_AUTOTRADE_LIFECYCLE_PHASE6_DEEP_PLAN 검증 (74차 세션)
+
+- **검증 세션**: DEEP PLAN Phase A~F 전체 구현 상태 점검 — 이전 세션(fea54ce6)에서 모두 완료됨 확인
+- **Phase A**: lifecycle-contract.ts + DB 3개 테이블 (lifecycle_events, closeout_reviews, external_evidence_events)
+- **Phase B**: position-closeout-engine.ts beginCloseout/finalizeCloseout + runner 연결
+- **Phase C**: regime-strategy-policy.ts 중앙 정책 어댑터, position-runtime-state.ts import 확인
+- **Phase D**: runtime-phase6-feedback-suggestions.ts → db.insertRuntimeConfigSuggestionLog 연결
+- **Phase E**: external-evidence-ledger.ts, argos.ts/scout.ts에서 recordEvidence 호출
+- **Phase F**: autopilot --execute-dispatch 지원, launchd plist 완전자율 설정
+- **테스트**: npm run check 전체 통과 (50+ 스모크 테스트 100% pass)
+
 ## 2026-04-22: Phase 5 legal-credentials 버그 수정 + 테스트 (73차 세션)
 
 - **버그 수정**: `legal-credentials.js` `resolveKoreaLawCredentials` — Hub 실패 시 try-catch 없이 에러 전파, 로컬 폴백 불동작 수정

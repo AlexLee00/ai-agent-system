@@ -1,3 +1,37 @@
+# 세션 인수인계 — 2026-04-24 (CODEX_LUNA_AUTOTRADE_LIFECYCLE_PHASE6_DEEP_PLAN 검증 — 74차 세션)
+
+## 완료 요약 ✅ (74차 세션)
+
+### Phase 6 구현 검증 + 완전자율 폐루프 확인
+
+이번 세션은 CODEX_LUNA_AUTOTRADE_LIFECYCLE_PHASE6_DEEP_PLAN 구현 상태 검증 세션이었습니다.
+
+**이전 세션(fea54ce6)에서 이미 완료된 사항**:
+- **Phase A** — `lifecycle-contract.ts`, `runtime-lifecycle-audit.ts`, DB 테이블 3개 (`position_lifecycle_events`, `position_closeout_reviews`, `external_evidence_events`)
+- **Phase B** — `position-closeout-engine.ts` (beginCloseout/finalizeCloseout), `partial-adjust-runner.ts` + `strategy-exit-runner.ts` 연결
+- **Phase C** — `regime-strategy-policy.ts` (중앙 정책 어댑터), `position-runtime-state.ts`에서 `computeRegimePolicy` import
+- **Phase D** — `runtime-phase6-feedback-suggestions.ts` → `db.insertRuntimeConfigSuggestionLog` 연결
+- **Phase E** — `external-evidence-ledger.ts`, `argos.ts`/`scout.ts`에서 `recordEvidence`/`recordScoutEvidence` 호출
+- **Phase F** — `runtime-position-runtime-autopilot.ts` `--execute-dispatch` 지원, `launchd/ai.investment.runtime-autopilot.plist` 완전자율 실행 설정
+
+**이번 세션(74차) 검증 결과**:
+- `npm run check` 전체 통과 (TypeScript 체크 + 50+ 스모크 테스트 100% pass)
+- lifecycle-contract-smoke ✅, runtime-phase6-closeout-smoke ✅, runtime-phase6-feedback-suggestions-smoke ✅, runtime-external-evidence-smoke ✅
+- regime-strategy-policy: 18/18 passed, external-evidence: 14/14 passed
+
+**현재 시스템 상태**:
+- `feedbackSignals=0, taggedTrades=0` — 코드 문제 아님, 실제 closeout 실행 표본이 아직 없음
+- autopilot plist: `--execute --apply-tuning --execute-dispatch --confirm=position-runtime-autopilot` (120초 간격)
+- OPS에 plist 로드 후 ADJUST/EXIT 후보 발생 시 자동 처리 → feedback loop 자동 채워짐
+
+**다음 세션 우선순위**:
+1. OPS에서 `launchctl unload && launchctl load ai.investment.runtime-autopilot.plist` (git pull 후)
+2. `runtime:position-runtime -- --json`으로 첫 ADJUST/EXIT 후보 확인
+3. 첫 phase6 closeout 실행 후 `runtime:strategy-feedback-outcomes`에서 feedbackSignals > 0 확인
+4. `runtime:phase6-feedback-suggestions`에서 governance suggestion 생성 확인
+
+---
+
 # 세션 인수인계 — 2026-04-22 (Phase 5 클라이언트 버그 수정 + 테스트 — 73차 세션)
 
 ## 완료 요약 ✅ (73차 세션)
