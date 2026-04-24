@@ -217,6 +217,72 @@ function buildMessage({ symbol, market, days, attention, quality, topResult, per
   ].join('\n');
 }
 
+function marketToExchange(market = 'binance') {
+  if (market === 'binance') return 'binance';
+  if (market === 'kis') return 'kis';
+  if (market === 'kis_overseas') return 'kis_overseas';
+  return market;
+}
+
+async function syncActiveBacktestRuntimeState(symbol, market, payload = {}) {
+  const exchange = marketToExchange(market);
+  const strategyProfile = await db.getPositionStrategyProfile(symbol, {
+    exchange,
+    tradeMode: 'normal',
+  }).catch(() => null);
+  if (!strategyProfile?.id) return;
+
+  const previousRuntime = strategyProfile?.strategy_state?.positionRuntimeState || {};
+  const previousExecutionIntent = previousRuntime?.executionIntent || {};
+  const severity = payload?.quality?.actionable
+    ? payload?.quality?.status === 'active_backtest_priority'
+      ? 'warning'
+      : 'stable'
+    : 'thin';
+  const validationState = {
+    ...(previousRuntime?.validationState || {}),
+    enabled: true,
+    severity,
+    totalTrades: safeNumber(payload?.topResult?.total_trades, 0),
+    sharpeDrop: previousRuntime?.validationState?.sharpeDrop ?? 0,
+    returnDropPct: previousRuntime?.validationState?.returnDropPct ?? 0,
+    lastBacktestAt: new Date().toISOString(),
+    nextBacktestWindowDays: safeNumber(payload?.days, 30),
+  };
+
+  const nextRuntime = {
+    ...previousRuntime,
+    updatedAt: new Date().toISOString(),
+    updatedBy: 'runtime_active_backtest',
+    validationState,
+    executionIntent: {
+      ...previousExecutionIntent,
+      validationSeverity: severity,
+    },
+    latestBacktestRuntime: {
+      status: payload?.status || null,
+      attention: payload?.attention || null,
+      topResult: payload?.topResult || null,
+      quality: payload?.quality || null,
+      persisted: payload?.persisted || 0,
+      updatedAt: new Date().toISOString(),
+    },
+  };
+
+  await db.updatePositionStrategyProfileState(symbol, {
+    exchange,
+    tradeMode: strategyProfile.trade_mode || 'normal',
+    strategyState: {
+      latestBacktestValidation: validationState,
+      positionRuntimeState: nextRuntime,
+      updatedBy: 'runtime_active_backtest',
+      updatedAt: new Date().toISOString(),
+    },
+    lastEvaluationAt: new Date().toISOString(),
+    lastAttentionAt: severity === 'warning' ? new Date().toISOString() : null,
+  }).catch(() => null);
+}
+
 export async function runActiveBacktest({
   symbol = 'BTC/USDT',
   market = 'binance',
@@ -259,6 +325,22 @@ export async function runActiveBacktest({
   const topResult = selectTopResult(raw, attention, context) || selectFallbackResult(raw, attention, context);
   const quality = classifyBacktestQuality({ market, usableRows, topResult, context });
   const persisted = await persistRows(symbol, market, effectiveDays, attention, source, raw, context);
+  const payload = {
+    ok: true,
+    status: quality.status,
+    symbol,
+    market,
+    attention,
+    days: effectiveDays,
+    context,
+    persisted,
+    quality,
+    topResult,
+    usableResultCount: usableRows.length,
+    totalResults: raw.length,
+  };
+
+  await syncActiveBacktestRuntimeState(symbol, market, payload).catch(() => null);
 
   if (!noAlert && topResult) {
     await publishAlert({
@@ -279,21 +361,6 @@ export async function runActiveBacktest({
       },
     }).catch(() => {});
   }
-
-  const payload = {
-    ok: true,
-    status: quality.status,
-    symbol,
-    market,
-    attention,
-    days: effectiveDays,
-    context,
-    persisted,
-    quality,
-    topResult,
-    usableResultCount: usableRows.length,
-    totalResults: raw.length,
-  };
 
   return json ? payload : JSON.stringify(payload, null, 2);
 }

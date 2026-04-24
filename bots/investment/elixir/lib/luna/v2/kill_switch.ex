@@ -131,4 +131,13 @@ defmodule Luna.V2.KillSwitch do
 
   def position_watch_strategy_exit_max_per_tick,
     do: Application.get_env(:luna, :position_watch_strategy_exit_max_per_tick, 2)
+
+  def position_watch_reevaluation_enabled?,
+    do: Application.get_env(:luna, :position_watch_reevaluation_enabled, true)
+
+  def position_watch_reevaluation_cooldown_minutes,
+    do: Application.get_env(:luna, :position_watch_reevaluation_cooldown_minutes, 10)
+
+  def position_watch_reevaluation_max_per_tick,
+    do: Application.get_env(:luna, :position_watch_reevaluation_max_per_tick, 3)
 end

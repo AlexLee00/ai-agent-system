@@ -48,13 +48,15 @@ defmodule Luna.V2.PositionWatch do
        dynamic_interval_until: nil,
        dynamic_interval_source: nil,
        active_backtest_cooldowns: %{},
-       strategy_exit_cooldowns: %{}
+       strategy_exit_cooldowns: %{},
+       reevaluation_cooldowns: %{}
      }}
   end
 
   def handle_info(:tick, state) do
     snapshot = build_snapshot()
     maybe_broadcast(snapshot, state.last_snapshot)
+    state = maybe_trigger_runtime_reevaluations(snapshot, state)
     state = maybe_trigger_active_backtests(snapshot, state)
     state = maybe_trigger_strategy_exit_previews(snapshot, state)
     next_interval_ms = effective_interval_ms(snapshot, state)
@@ -72,6 +74,7 @@ defmodule Luna.V2.PositionWatch do
   def handle_call(:run_once, _from, state) do
     snapshot = build_snapshot()
     maybe_broadcast(snapshot, state.last_snapshot)
+    state = maybe_trigger_runtime_reevaluations(snapshot, state)
     state = maybe_trigger_active_backtests(snapshot, state)
     state = maybe_trigger_strategy_exit_previews(snapshot, state)
     {:reply, {:ok, snapshot}, %{state | last_snapshot: snapshot, last_run: DateTime.utc_now()}}
@@ -970,6 +973,45 @@ defmodule Luna.V2.PositionWatch do
     end
   end
 
+  defp maybe_trigger_runtime_reevaluations(snapshot, state) do
+    if not KillSwitch.position_watch_reevaluation_enabled?() do
+      state
+    else
+      now = DateTime.utc_now()
+      cooldowns = prune_backtest_cooldowns(state.reevaluation_cooldowns, now)
+
+      candidates =
+        snapshot
+        |> Map.get(:attention, [])
+        |> Enum.filter(&reevaluation_candidate?/1)
+        |> Enum.uniq_by(fn item ->
+          {to_string(item[:exchange] || ""), to_string(item[:symbol] || ""),
+           to_string(item[:trade_mode] || item[:tradeMode] || "normal"),
+           to_string(item[:attention_type] || "")}
+        end)
+        |> Enum.take(KillSwitch.position_watch_reevaluation_max_per_tick())
+
+      {updated_cooldowns, triggered_count} =
+        Enum.reduce(candidates, {cooldowns, 0}, fn candidate, {acc, count} ->
+          key = reevaluation_key(candidate)
+
+          if Map.has_key?(acc, key) do
+            {acc, count}
+          else
+            trigger_runtime_reevaluation(candidate)
+            expiry = reevaluation_cooldown_expiry(now, candidate)
+            {Map.put(acc, key, expiry), count + 1}
+          end
+        end)
+
+      if triggered_count > 0 do
+        Logger.info("[루나V2/PositionWatch] runtime reevaluation #{triggered_count}건 트리거")
+      end
+
+      %{state | reevaluation_cooldowns: updated_cooldowns}
+    end
+  end
+
   defp maybe_trigger_strategy_exit_previews(snapshot, state) do
     if not KillSwitch.position_watch_strategy_exit_enabled?() do
       state
@@ -1022,6 +1064,20 @@ defmodule Luna.V2.PositionWatch do
       )
   end
 
+  defp reevaluation_candidate?(candidate) do
+    exchange = to_string(candidate[:exchange] || "")
+    attention = candidate[:attention_type]
+
+    exchange in ["binance", "kis", "kis_overseas"] and
+      attention in [
+        :stop_loss_attention,
+        :partial_adjust_attention,
+        :tv_live_bearish,
+        :backtest_drift_attention,
+        :tv_bar_stale
+      ]
+  end
+
   defp strategy_exit_candidate?(candidate) do
     exchange = to_string(candidate[:exchange] || "")
     attention = candidate[:attention_type]
@@ -1048,6 +1104,14 @@ defmodule Luna.V2.PositionWatch do
     symbol = to_string(candidate[:symbol] || "")
     trade_mode = to_string(candidate[:trade_mode] || candidate[:tradeMode] || "normal")
     "#{exchange}:#{symbol}:#{trade_mode}"
+  end
+
+  defp reevaluation_key(candidate) do
+    exchange = to_string(candidate[:exchange] || "")
+    symbol = to_string(candidate[:symbol] || "")
+    trade_mode = to_string(candidate[:trade_mode] || candidate[:tradeMode] || "normal")
+    attention = to_string(candidate[:attention_type] || "")
+    "#{exchange}:#{symbol}:#{trade_mode}:#{attention}"
   end
 
   defp backtest_cooldown_expiry(now, candidate) do
@@ -1077,6 +1141,21 @@ defmodule Luna.V2.PositionWatch do
         risk_mission == "strict_risk_gate" -> max(5, div(base, 2))
         watch_mission == "risk_sentinel" -> max(5, base - 5)
         true -> base
+      end
+
+    DateTime.add(now, minutes * 60, :second)
+  end
+
+  defp reevaluation_cooldown_expiry(now, candidate) do
+    attention = candidate[:attention_type]
+    base = KillSwitch.position_watch_reevaluation_cooldown_minutes()
+
+    minutes =
+      case attention do
+        :stop_loss_attention -> max(3, div(base, 2))
+        :backtest_drift_attention -> max(5, base)
+        :tv_live_bearish -> max(3, div(base, 2))
+        _ -> base
       end
 
     DateTime.add(now, minutes * 60, :second)
@@ -1222,6 +1301,62 @@ defmodule Luna.V2.PositionWatch do
       "latestRiskMission" => risk_mission,
       "strategyExitPreviewAt" => DateTime.utc_now() |> DateTime.to_iso8601(),
       "updatedBy" => "position_watch_strategy_exit"
+    })
+  end
+
+  defp trigger_runtime_reevaluation(candidate) do
+    symbol = to_string(candidate[:symbol] || "")
+    exchange = to_string(candidate[:exchange] || "")
+    trade_mode = to_string(candidate[:trade_mode] || candidate[:tradeMode] || "normal")
+    attention_type = to_string(candidate[:attention_type] || "")
+    attention_reason = to_string(candidate[:reason] || "")
+
+    repo_root = "/Users/alexlee/projects/ai-agent-system"
+    investment_dir = Path.join(repo_root, "bots/investment")
+
+    Task.start(fn ->
+      Logger.info(
+        "[루나V2/PositionWatch] runtime reevaluation 시작 #{symbol} #{exchange}/#{trade_mode} #{attention_type}"
+      )
+
+      case System.cmd(
+             "npm",
+             [
+               "--prefix",
+               investment_dir,
+               "run",
+               "runtime:position-reeval-event",
+               "--",
+               "--symbol=#{symbol}",
+               "--exchange=#{exchange}",
+               "--trade-mode=#{trade_mode}",
+               "--event-source=position_watch",
+               "--attention-type=#{attention_type}",
+               "--attention-reason=#{attention_reason}",
+               "--json"
+             ],
+             stderr_to_stdout: true,
+             cd: investment_dir,
+             env: [{"PAPER_MODE", "false"}]
+           ) do
+        {output, 0} ->
+          Logger.info(
+            "[루나V2/PositionWatch] runtime reevaluation 완료 #{symbol} #{exchange}/#{trade_mode} #{String.trim(output)}"
+          )
+
+        {output, code} ->
+          Logger.warning(
+            "[루나V2/PositionWatch] runtime reevaluation 실패 #{symbol} #{exchange}/#{trade_mode} exit=#{code} #{String.trim(output)}"
+          )
+      end
+    end)
+
+    update_strategy_profile_attention(candidate, %{
+      "lifecycleStatus" => "reevaluation_requested",
+      "latestAttentionType" => attention_type,
+      "latestAttentionReason" => attention_reason,
+      "runtimeReevaluationRequestedAt" => DateTime.utc_now() |> DateTime.to_iso8601(),
+      "updatedBy" => "position_watch_runtime_reevaluation"
     })
   end
 

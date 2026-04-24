@@ -5,6 +5,7 @@ import { promisify } from 'util';
 import * as db from './db.ts';
 import { refreshInvestmentAgentRoles } from './agent-role-state.ts';
 import { getInvestmentSyncRuntimeConfig, getPositionReevaluationRuntimeConfig } from './runtime-config.ts';
+import { buildPositionRuntimeState, getPositionRuntimeMarket } from './position-runtime-state.ts';
 
 const execFileAsync = promisify(execFile);
 const TRADINGVIEW_MCP_SCRIPT = new URL('../scripts/tradingview-mcp-server.py', import.meta.url);
@@ -321,6 +322,7 @@ function buildStrategyStateUpdate({
   reason = null,
   analysisSummary = null,
   driftContext = null,
+  runtimeState = null,
 } = {}) {
   return {
     lifecycleStatus: recommendation === 'EXIT'
@@ -339,6 +341,7 @@ function buildStrategyStateUpdate({
       avgConfidence: safeNumber(analysisSummary?.avgConfidence),
     },
     backtestDrift: driftContext || null,
+    positionRuntimeState: runtimeState || null,
     updatedBy: 'position_reevaluator',
     updatedAt: new Date().toISOString(),
   };
@@ -707,11 +710,17 @@ export async function reevaluateOpenPositions({
   exchange = null,
   paper = false,
   tradeMode = null,
+  symbol = null,
   minutesBack = 180,
   persist = true,
   liveIndicators = true,
+  eventSource = 'position_reevaluator',
+  attentionType = null,
+  attentionReason = null,
+  eventPayload = null,
 } = {}) {
-  const positions = await db.getOpenPositions(exchange, paper, tradeMode);
+  const positions = (await db.getOpenPositions(exchange, paper, tradeMode))
+    .filter((item) => !symbol || String(item.symbol || '').toUpperCase() === String(symbol || '').toUpperCase());
   const results = [];
 
   for (const position of positions) {
@@ -755,6 +764,9 @@ export async function reevaluateOpenPositions({
       }).catch(() => null),
       db.getLatestVectorbtBacktestForSymbol(position.symbol, position.exchange === 'binance' ? 45 : 180).catch(() => null),
     ]);
+    const regimeMarket = getPositionRuntimeMarket(position.exchange);
+    const regimeKey = regimeMarket === 'crypto' ? 'binance' : regimeMarket;
+    const regimeSnapshot = await db.getLatestMarketRegimeSnapshot(regimeKey).catch(() => null);
     let indicatorAnalyses = [];
     let indicatorAnalysis = null;
     if (liveIndicators) {
@@ -774,6 +786,28 @@ export async function reevaluateOpenPositions({
     ];
     const analysisSummary = summarizeAnalyses(mergedAnalyses);
     const decision = decideReevaluation(position, analysisSummary, strategyProfile, latestBacktest);
+    const pnlPct = calcPnlPct(position);
+    const runtimeState = buildPositionRuntimeState({
+      position: {
+        ...position,
+        pnlPct,
+      },
+      strategyProfile,
+      analysisSummary,
+      latestBacktest,
+      driftContext: decision.driftContext,
+      recommendation: decision.decision.recommendation,
+      reasonCode: decision.decision.reasonCode,
+      reason: decision.decision.reason,
+      regimeSnapshot,
+      trigger: {
+        source: eventSource,
+        attentionType,
+        attentionReason,
+        payload: eventPayload,
+      },
+      previousState: strategyProfile?.strategy_state?.positionRuntimeState || null,
+    });
     if (strategyProfile?.id) {
       const attentionAt = decision.decision.recommendation === 'HOLD' ? null : new Date().toISOString();
       await db.updatePositionStrategyProfileState(position.symbol, {
@@ -786,6 +820,7 @@ export async function reevaluateOpenPositions({
           reason: decision.decision.reason,
           analysisSummary,
           driftContext: decision.driftContext,
+          runtimeState,
         }),
         lastEvaluationAt: new Date().toISOString(),
         lastAttentionAt: attentionAt,
@@ -800,6 +835,8 @@ export async function reevaluateOpenPositions({
       recommendation: decision.decision.recommendation,
       reasonCode: decision.decision.reasonCode,
       reason: decision.decision.reason,
+      executionIntent: runtimeState.executionIntent,
+      runtimeState,
       positionSnapshot: {
         amount: safeNumber(position.amount),
         avgPrice: safeNumber(position.avg_price),
@@ -812,11 +849,19 @@ export async function reevaluateOpenPositions({
           strategyState: strategyProfile.strategy_state || {},
           familyPerformanceFeedback: getFamilyPerformanceFeedback(strategyProfile),
           responsibilityPlan: getResponsibilityPlan(strategyProfile),
+          positionRuntimeState: runtimeState,
         } : null,
       },
       analysisSnapshot: {
         ...analysisSummary,
         backtestDrift: decision.driftContext,
+        regime: regimeSnapshot ? {
+          market: regimeSnapshot.market || regimeKey,
+          regime: regimeSnapshot.regime || null,
+          confidence: regimeSnapshot.confidence ?? null,
+          capturedAt: regimeSnapshot.captured_at || null,
+        } : null,
+        runtimeState,
         latestBacktest: latestBacktest ? {
           createdAt: latestBacktest.created_at || null,
           label: latestBacktest.label || null,
@@ -833,6 +878,7 @@ export async function reevaluateOpenPositions({
           strategyState: strategyProfile.strategy_state || {},
           familyPerformanceFeedback: getFamilyPerformanceFeedback(strategyProfile),
           responsibilityPlan: getResponsibilityPlan(strategyProfile),
+          positionRuntimeState: runtimeState,
         } : null,
       },
     });

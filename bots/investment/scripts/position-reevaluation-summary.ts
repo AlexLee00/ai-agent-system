@@ -79,11 +79,16 @@ function buildDecision(report) {
   const topExit = topReason(rows, 'EXIT');
   const topAdjust = topReason(rows, 'ADJUST');
   const familyFeedback = buildFamilyFeedbackMetrics(rows);
+  const runtimeTracked = rows.filter((row) => row?.runtimeState).length;
+  const executionExit = rows.filter((row) => row?.executionIntent?.action === 'EXIT').length;
+  const executionAdjust = rows.filter((row) => row?.executionIntent?.action === 'ADJUST').length;
+  const fastLane = rows.filter((row) => Number(row?.runtimeState?.monitoringPolicy?.cadenceMs || 0) > 0 && Number(row?.runtimeState?.monitoringPolicy?.cadenceMs || 0) <= 15_000).length;
 
   let status = 'reeval_ok';
   let headline = '보유 포지션 재평가 레일이 안정적으로 기록되고 있습니다.';
   const reasons = [`재평가 ${count}건 (HOLD ${holds} / ADJUST ${adjusts} / EXIT ${exits})`];
   if (ignored > 0) reasons.push(`dust/미세 포지션 ${ignored}건은 별도 관찰로 분리`);
+  if (runtimeTracked > 0) reasons.push(`runtime 추적 ${runtimeTracked}건 / fast-lane ${fastLane}건 / intent EXIT ${executionExit}건`);
 
   if (topExit) reasons.push(`최다 EXIT 사유: ${topExit.code} (${topExit.count}건)`);
   if (topAdjust) reasons.push(`최다 ADJUST 사유: ${topAdjust.code} (${topAdjust.count}건)`);
@@ -136,6 +141,10 @@ function buildDecision(report) {
       topExit,
       topAdjust,
       familyFeedback,
+      runtimeTracked,
+      executionExit,
+      executionAdjust,
+      fastLane,
     },
   };
 }
@@ -172,6 +181,12 @@ function renderText(payload) {
   if (decision.metrics.familyFeedback?.affectedCount > 0) {
     lines.push(`- familyFeedbackAffected: ${decision.metrics.familyFeedback.affectedCount}`);
     lines.push(`- familyFeedbackBias: ${Object.entries(decision.metrics.familyFeedback.distribution).map(([key, value]) => `${key}:${value}`).join(', ')}`);
+  }
+  if (decision.metrics.runtimeTracked > 0) {
+    lines.push(`- runtimeTracked: ${decision.metrics.runtimeTracked}`);
+    lines.push(`- runtimeFastLane: ${decision.metrics.fastLane}`);
+    lines.push(`- executionIntentExit: ${decision.metrics.executionExit}`);
+    lines.push(`- executionIntentAdjust: ${decision.metrics.executionAdjust}`);
   }
 
   lines.push('');

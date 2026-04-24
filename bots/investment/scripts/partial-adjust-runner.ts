@@ -183,6 +183,7 @@ function mapCandidate(row, strategyProfile = null, overrideRatio = null) {
     executionPlan: getExecutionPlan(strategyProfile),
     familyPerformanceFeedback: getFamilyPerformanceFeedback(strategyProfile),
     responsibilityPlan: strategyProfile.strategy_context?.responsibilityPlan || {},
+    positionRuntimeState: strategyProfile.strategy_state?.positionRuntimeState || null,
   } : null;
   const signalIncidentLink = `partial_adjust:${row.reasonCode || 'unknown'}${buildFamilyFeedbackIncidentSuffix(strategyProfileSnapshot)}`;
   return {
@@ -198,6 +199,9 @@ function mapCandidate(row, strategyProfile = null, overrideRatio = null) {
     estimatedNotional,
     estimatedExitAmount,
     signalIncidentLink,
+    executionIntent: row.executionIntent
+      || strategyProfileSnapshot?.positionRuntimeState?.executionIntent
+      || null,
     strategyProfile: strategyProfileSnapshot,
   };
 }
@@ -221,6 +225,7 @@ async function syncPartialAdjustCandidateStates(candidates = [], phase = 'previe
         latestExecutionMission: candidate?.strategyProfile?.responsibilityPlan?.executionMission || null,
         latestRiskMission: candidate?.strategyProfile?.responsibilityPlan?.riskMission || null,
         latestWatchMission: candidate?.strategyProfile?.responsibilityPlan?.watchMission || null,
+        latestExecutionIntent: candidate?.executionIntent || null,
         updatedBy: phase === 'execute' ? 'partial_adjust_runner_execute' : 'partial_adjust_runner_preview',
         updatedAt: attentionAt,
       },

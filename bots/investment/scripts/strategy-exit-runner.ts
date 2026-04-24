@@ -194,6 +194,7 @@ function mapCandidate(row, strategyProfile = null) {
     executionPlan: strategyProfile.strategy_context?.executionPlan || {},
     familyPerformanceFeedback: strategyProfile.strategy_context?.familyPerformanceFeedback || {},
     responsibilityPlan: strategyProfile.strategy_context?.responsibilityPlan || {},
+    positionRuntimeState: strategyProfile.strategy_state?.positionRuntimeState || null,
   } : null;
   const candidate = {
     exchange: row.exchange,
@@ -205,6 +206,9 @@ function mapCandidate(row, strategyProfile = null) {
     positionAmount: safeNumber(row?.positionSnapshot?.amount),
     positionValue: safeNumber(row?.positionSnapshot?.amount) * safeNumber(row?.positionSnapshot?.avgPrice),
     heldHours,
+    executionIntent: row.executionIntent
+      || strategyProfileSnapshot?.positionRuntimeState?.executionIntent
+      || null,
     strategyProfile: strategyProfileSnapshot,
   };
   const guard = applyExitPlanGuard(candidate);
@@ -247,6 +251,7 @@ async function syncStrategyExitCandidateStates(candidates = [], phase = 'preview
         latestExecutionMission: candidate?.strategyProfile?.responsibilityPlan?.executionMission || null,
         latestRiskMission: candidate?.strategyProfile?.responsibilityPlan?.riskMission || null,
         latestWatchMission: candidate?.strategyProfile?.responsibilityPlan?.watchMission || null,
+        latestExecutionIntent: candidate?.executionIntent || null,
         updatedBy: phase === 'execute' ? 'strategy_exit_runner_execute' : 'strategy_exit_runner_preview',
         updatedAt: timestamp,
       },

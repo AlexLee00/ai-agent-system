@@ -74,7 +74,13 @@ config :luna,
   position_watch_strategy_exit_cooldown_minutes:
     String.to_integer(System.get_env("LUNA_POSITION_WATCH_STRATEGY_EXIT_COOLDOWN_MINUTES", "30")),
   position_watch_strategy_exit_max_per_tick:
-    String.to_integer(System.get_env("LUNA_POSITION_WATCH_STRATEGY_EXIT_MAX_PER_TICK", "2"))
+    String.to_integer(System.get_env("LUNA_POSITION_WATCH_STRATEGY_EXIT_MAX_PER_TICK", "2")),
+  position_watch_reevaluation_enabled:
+    System.get_env("LUNA_POSITION_WATCH_REEVALUATION_ENABLED", "true") == "true",
+  position_watch_reevaluation_cooldown_minutes:
+    String.to_integer(System.get_env("LUNA_POSITION_WATCH_REEVALUATION_COOLDOWN_MINUTES", "10")),
+  position_watch_reevaluation_max_per_tick:
+    String.to_integer(System.get_env("LUNA_POSITION_WATCH_REEVALUATION_MAX_PER_TICK", "3"))
 
 config :luna, Jay.Core.Repo,
   database: System.get_env("PG_DATABASE", "jay"),

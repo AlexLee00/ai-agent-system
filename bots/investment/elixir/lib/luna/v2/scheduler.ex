@@ -12,9 +12,6 @@ defmodule Luna.V2.Scheduler do
 
   alias Luna.V2.{MapeKLoop, MarketHoursGate, KillSwitch}
 
-  @crypto_interval_ms   60_000
-  @stock_interval_ms   180_000
-
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
@@ -26,10 +23,12 @@ defmodule Luna.V2.Scheduler do
   # ─── GenServer ───────────────────────────────────────────────────
 
   def init(_opts) do
-    Logger.info("[Scheduler] 기동 — crypto 60s / stock 180s")
-    schedule(:crypto, @crypto_interval_ms)
-    schedule(:domestic, @stock_interval_ms)
-    schedule(:overseas, @stock_interval_ms)
+    crypto_interval = crypto_interval_ms()
+    stock_interval = stock_market_open_interval_ms()
+    Logger.info("[Scheduler] 기동 — crypto #{crypto_interval}ms / stock-open #{stock_interval}ms")
+    schedule(:crypto, crypto_interval)
+    schedule(:domestic, stock_interval_for(:domestic))
+    schedule(:overseas, stock_interval_for(:overseas))
     {:ok, %{ticks: %{crypto: 0, domestic: 0, overseas: 0}, started_at: DateTime.utc_now()}}
   end
 
@@ -41,7 +40,7 @@ defmodule Luna.V2.Scheduler do
     if KillSwitch.mapek_enabled?() do
       MapeKLoop.trigger_cycle(:crypto)
     end
-    schedule(:crypto, @crypto_interval_ms)
+    schedule(:crypto, crypto_interval_ms())
     {:noreply, update_in(state, [:ticks, :crypto], &(&1 + 1))}
   end
 
@@ -49,7 +48,7 @@ defmodule Luna.V2.Scheduler do
     if KillSwitch.mapek_enabled?() and MarketHoursGate.open?(market) do
       MapeKLoop.trigger_cycle(market)
     end
-    schedule(market, @stock_interval_ms)
+    schedule(market, stock_interval_for(market))
     {:noreply, update_in(state, [:ticks, market], &(&1 + 1))}
   end
 
@@ -59,5 +58,21 @@ defmodule Luna.V2.Scheduler do
 
   defp schedule(market, interval_ms) do
     Process.send_after(self(), {:tick, market}, interval_ms)
+  end
+
+  defp crypto_interval_ms do
+    max(15_000, KillSwitch.position_watch_crypto_realtime_ms())
+  end
+
+  defp stock_market_open_interval_ms do
+    max(15_000, KillSwitch.position_watch_stock_realtime_ms())
+  end
+
+  defp stock_market_closed_interval_ms do
+    max(60_000, KillSwitch.position_watch_stock_offhours_ms())
+  end
+
+  defp stock_interval_for(market) do
+    if MarketHoursGate.open?(market), do: stock_market_open_interval_ms(), else: stock_market_closed_interval_ms()
   end
 end
