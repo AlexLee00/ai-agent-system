@@ -1286,7 +1286,7 @@ async function notifyExecutedTrade({ trade, signalTradeMode, capitalPolicy }) {
   const [curBalance, curPositions, curDailyPnl] = await Promise.all([
     getAvailableBalance().catch(() => null),
     getOpenPositions('binance', false, signalTradeMode).catch(() => []),
-    getDailyPnL().catch(() => null),
+    getDailyPnL(trade.exchange || 'binance', signalTradeMode).catch(() => null),
   ]);
 
   await notifyTrade({

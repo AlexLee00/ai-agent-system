@@ -1337,7 +1337,7 @@ export async function getExitDecisions(openPositions, exchange = 'binance') {
 
 async function buildPortfolioContext(exchange = 'binance') {
   const positions  = await db.getAllPositions(exchange, false);
-  const todayPnl   = await db.getTodayPnl();
+  const todayPnl   = await db.getTodayPnl(exchange);
   const posValue   = positions.reduce((s, p) => s + (p.amount * p.avg_price), 0);
   const usdtFree   = exchange === 'binance'
     ? await getAvailableUSDT().catch(() => 0)
