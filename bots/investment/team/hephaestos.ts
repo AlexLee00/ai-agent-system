@@ -38,6 +38,97 @@ async function delay(ms) {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function toPositiveNumber(value, fallback = 0) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : fallback;
+}
+
+function inferOrderFillPrice(order = {}) {
+  const directPrice = toPositiveNumber(order.price, 0) || toPositiveNumber(order.average, 0);
+  if (directPrice > 0) return directPrice;
+  const filled = toPositiveNumber(order.filled, 0);
+  const cost = toPositiveNumber(order.cost, 0);
+  if (filled > 0 && cost > 0) return cost / filled;
+  return 0;
+}
+
+async function normalizeBinanceMarketOrderExecution(symbol, side, rawOrder = null, {
+  maxAttempts = 4,
+  pollDelayMs = 900,
+} = {}) {
+  const ex = getExchange();
+  let latest = rawOrder || {};
+  const orderId = extractOrderId(latest);
+  let attempt = 0;
+
+  while (attempt <= maxAttempts) {
+    const status = String(latest?.status || '').trim().toLowerCase();
+    const filled = toPositiveNumber(latest?.filled, 0);
+    const fillPrice = inferOrderFillPrice(latest);
+    const isClosed = status === 'closed' || status === 'filled';
+
+    if (filled > 0 && fillPrice > 0 && (isClosed || !status)) {
+      const normalizedCost = toPositiveNumber(latest?.cost, filled * fillPrice);
+      return {
+        ...latest,
+        id: orderId || latest?.id || null,
+        side: side || latest?.side || null,
+        status: status || 'closed',
+        filled,
+        price: fillPrice,
+        average: fillPrice,
+        cost: normalizedCost,
+        normalized: true,
+      };
+    }
+
+    if (!orderId || attempt === maxAttempts) break;
+    attempt += 1;
+    await delay(pollDelayMs * attempt);
+    try {
+      const fetched = await ex.fetchOrder(orderId, symbol);
+      if (fetched && typeof fetched === 'object') latest = fetched;
+    } catch {
+      // fetchOrder 미지원/일시 실패는 마지막 원본 응답으로 판정
+    }
+  }
+
+  const lastStatus = String(latest?.status || '').trim().toLowerCase() || 'unknown';
+  const lastFilled = toPositiveNumber(latest?.filled, 0);
+  const lastPrice = inferOrderFillPrice(latest);
+  if (lastFilled > 0 && lastPrice > 0) {
+    const pendingError = /** @type {any} */ (new Error(
+      `order_pending_fill_verification:${symbol}:${lastStatus}:${lastFilled}:${lastPrice}`,
+    ));
+    pendingError.code = 'order_pending_fill_verification';
+    pendingError.meta = {
+      symbol,
+      side,
+      orderId: orderId || null,
+      status: lastStatus,
+      filled: lastFilled,
+      price: lastPrice,
+      attempts: maxAttempts + 1,
+    };
+    throw pendingError;
+  }
+
+  const verifyError = /** @type {any} */ (new Error(
+    `order_fill_unverified:${symbol}:${lastStatus}:${lastFilled}:${lastPrice}`,
+  ));
+  verifyError.code = 'order_fill_unverified';
+  verifyError.meta = {
+    symbol,
+    side,
+    orderId: orderId || null,
+    status: lastStatus,
+    filled: lastFilled,
+    price: lastPrice,
+    attempts: maxAttempts + 1,
+  };
+  throw verifyError;
+}
+
 // ─── CCXT 바이낸스 클라이언트 (lazy init) ──────────────────────────
 
 let _exchange = null;
@@ -82,7 +173,8 @@ async function marketBuy(symbol, amountUsdt, paperMode) {
     return { filled, price, dryRun: true };
   }
   const ex = getExchange();
-  return await ex.createOrder(symbol, 'market', 'buy', undefined, undefined, { quoteOrderQty: amountUsdt });
+  const rawOrder = await ex.createOrder(symbol, 'market', 'buy', undefined, undefined, { quoteOrderQty: amountUsdt });
+  return normalizeBinanceMarketOrderExecution(symbol, 'buy', rawOrder);
 }
 
 /**

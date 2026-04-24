@@ -4,10 +4,20 @@
 import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { runPositionRuntimeReport } from './runtime-position-runtime-report.ts';
+import { getKisMarketStatus, getKisOverseasMarketStatus } from '../shared/secrets.ts';
+import {
+  DEFAULT_POSITION_RUNTIME_MARKET_QUEUE_FILE,
+  readPositionRuntimeMarketQueue,
+  removePositionRuntimeMarketQueueEntry,
+  summarizePositionRuntimeMarketQueue,
+  upsertPositionRuntimeMarketQueueEntry,
+  writePositionRuntimeMarketQueue,
+} from './runtime-position-runtime-market-queue-store.ts';
 
 const INVESTMENT_BOT_PREFIX = '/Users/alexlee/projects/ai-agent-system/bots/investment';
 const FAILURE_STATUSES = new Set(['failed', 'fail', 'error', 'blocked', 'rejected', 'canceled', 'cancelled', 'child_process_error']);
 const PENDING_STATUSES = new Set(['pending', 'queued', 'waiting', 'scheduled']);
+const RETRYABLE_STATUSES = new Set(['child_process_error', 'child_output_not_json', 'child_execute_not_verified', 'child_execution_pending']);
 
 function parseArgs(argv = []) {
   const args = {
@@ -17,6 +27,9 @@ function parseArgs(argv = []) {
     limit: 10,
     phase6: false,
     json: false,
+    queueFile: DEFAULT_POSITION_RUNTIME_MARKET_QUEUE_FILE,
+    retryDelayMinutes: 5,
+    maxRetryCount: 5,
   };
   for (const raw of argv) {
     if (raw === '--json') args.json = true;
@@ -25,6 +38,9 @@ function parseArgs(argv = []) {
     else if (raw.startsWith('--confirm=')) args.confirm = raw.split('=').slice(1).join('=') || null;
     else if (raw.startsWith('--exchange=')) args.exchange = raw.split('=').slice(1).join('=') || null;
     else if (raw.startsWith('--limit=')) args.limit = Math.max(1, Number(raw.split('=').slice(1).join('=') || 10));
+    else if (raw.startsWith('--queue-file=')) args.queueFile = raw.split('=').slice(1).join('=') || DEFAULT_POSITION_RUNTIME_MARKET_QUEUE_FILE;
+    else if (raw.startsWith('--retry-delay-minutes=')) args.retryDelayMinutes = Math.max(1, Number(raw.split('=').slice(1).join('=') || 5));
+    else if (raw.startsWith('--max-retry-count=')) args.maxRetryCount = Math.max(1, Number(raw.split('=').slice(1).join('=') || 5));
   }
   return args;
 }
@@ -49,6 +65,14 @@ function mapRuntimeCandidate(row = {}) {
       ? 'runtime:partial-adjust'
       : null;
   const runner = executionIntent?.runner || fallbackRunner;
+  const brokerAccountId = executionIntent?.brokerAccountId
+    || row?.positionSnapshot?.brokerAccountId
+    || row?.positionSnapshot?.broker_account_id
+    || `${exchange}:${row?.paper === true ? 'paper' : 'live'}`;
+  const positionId = executionIntent?.positionId
+    || row?.positionSnapshot?.positionId
+    || row?.positionSnapshot?.position_id
+    || `${exchange}:${symbol}:${tradeMode}`;
   const fallbackPreviewCommand = runner && symbol && exchange
     ? `npm --prefix ${INVESTMENT_BOT_PREFIX} run ${runner} -- --symbol=${symbol} --exchange=${exchange} --trade-mode=${tradeMode} --json`
     : null;
@@ -83,8 +107,12 @@ function mapRuntimeCandidate(row = {}) {
     runner,
     runnerArgs: executionIntent?.runnerArgs || fallbackRunnerArgs,
     executionPolicy,
-    executionScope: executionIntent?.executionScope || `${exchange}:${symbol}:${action}:${row.tradeMode || 'normal'}`,
-    brokerScope: executionIntent?.brokerScope || `${exchange}:${symbol}`,
+    executionScope: executionIntent?.executionScope
+      || `${brokerAccountId}:${exchange}:${symbol}:${tradeMode}:${positionId}:${action}`,
+    brokerScope: executionIntent?.brokerScope
+      || `${brokerAccountId}:${exchange}:${symbol}:${positionId}`,
+    brokerAccountId,
+    positionId,
     isHardExit,
     urgency: executionIntent?.urgency || 'low',
     executionAllowed: executionIntent?.executionAllowed === true,
@@ -167,7 +195,7 @@ export function buildGuardReasonSummary(blockedRows = [], limit = 5) {
 export function applyExecutionScopeGate(candidates = []) {
   const groups = new Map();
   for (const candidate of candidates || []) {
-    const key = `${candidate.exchange}:${candidate.symbol}:${candidate.action}`;
+    const key = `${candidate.brokerScope || candidate.executionScope || `${candidate.exchange}:${candidate.symbol}:${candidate.tradeMode}`}:${candidate.action}`;
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(candidate);
   }
@@ -183,8 +211,10 @@ export function applyExecutionScopeGate(candidates = []) {
 
     const hasHardExit = scoped.some((item) => item?.isHardExit === true);
     const preferred = hasHardExit
-      ? scoped.find((item) => item?.tradeMode === 'normal') || scoped[0]
-      : scoped[0];
+      ? scoped.find((item) => item?.tradeMode === 'normal')
+        || scoped.find((item) => item?.executionPolicy?.autonomy === 'hard_exit_required')
+        || scoped[0]
+      : scoped.find((item) => item?.tradeMode === 'normal') || scoped[0];
     selected.push(preferred);
 
     for (const candidate of scoped) {
@@ -313,12 +343,77 @@ export function classifyChildExecutionOutput(stdout = '', { phase6 = false } = {
   return { ok: true, status: 'child_executed_verified', childPayload: payload };
 }
 
+function addMinutesIso(minutes = 5) {
+  return new Date(Date.now() + (Math.max(1, Number(minutes || 5)) * 60 * 1000)).toISOString();
+}
+
+async function resolveMarketGate(candidate = null) {
+  const exchange = String(candidate?.exchange || '').toLowerCase();
+  const isStockExchange = exchange === 'kis' || exchange === 'kis_overseas';
+  const requiresMarketOpen = exchange !== 'binance'
+    && (
+      candidate?.executionPolicy?.requiresMarketOpen === true
+      || (isStockExchange && candidate?.executionPolicy?.requiresMarketOpen !== false)
+    );
+  if (!requiresMarketOpen) {
+    return {
+      requiresMarketOpen: false,
+      isOpen: true,
+      reason: 'market_not_required',
+    };
+  }
+
+  if (candidate?.exchange === 'kis') {
+    const status = await getKisMarketStatus().catch((error) => ({
+      isOpen: false,
+      reason: `market_status_error:${error?.message || String(error)}`,
+    }));
+    return {
+      requiresMarketOpen: true,
+      isOpen: status?.isOpen === true,
+      reason: status?.reason || 'market_status_unknown',
+    };
+  }
+
+  if (candidate?.exchange === 'kis_overseas') {
+    const status = getKisOverseasMarketStatus();
+    return {
+      requiresMarketOpen: true,
+      isOpen: status?.isOpen === true,
+      reason: status?.reason || 'market_status_unknown',
+    };
+  }
+
+  return {
+    requiresMarketOpen: true,
+    isOpen: true,
+    reason: 'market_not_supported_default_open',
+  };
+}
+
+function toAutonomousActionStatus(result = null) {
+  const status = String(result?.status || '').trim();
+  if (status === 'autonomous_action_queued') return status;
+  if (status === 'autonomous_action_retrying') return status;
+  if (result?.ok === true) return 'autonomous_action_executed';
+  if (
+    status === 'missing_autonomous_execution_path'
+    || status.startsWith('child_non_execute_mode_')
+    || status === 'position_runtime_dispatch_confirmation_required'
+  ) {
+    return 'autonomous_action_blocked_by_safety';
+  }
+  if (status === 'child_execution_pending') return 'autonomous_action_retrying';
+  return 'autonomous_action_failed';
+}
+
 async function executeCandidate(candidate, { phase6 = false } = {}) {
   const invocation = buildExecutionInvocation(candidate, { phase6 });
   if (!invocation) {
     return {
       ok: false,
       status: phase6 ? 'missing_autonomous_execution_path' : 'missing_command',
+      autonomousActionStatus: 'autonomous_action_blocked_by_safety',
       candidate,
     };
   }
@@ -339,6 +434,7 @@ async function executeCandidate(candidate, { phase6 = false } = {}) {
     return {
       ok: false,
       status: 'child_process_error',
+      autonomousActionStatus: 'autonomous_action_retrying',
       candidate,
       command: invocation.command,
       error: String(error?.message || error),
@@ -348,9 +444,15 @@ async function executeCandidate(candidate, { phase6 = false } = {}) {
   }
 
   const classification = classifyChildExecutionOutput(stdout, { phase6 });
+  const autonomousActionStatus = classification.status === 'child_execution_pending'
+    ? 'autonomous_action_retrying'
+    : classification.ok === true
+      ? 'autonomous_action_executed'
+      : toAutonomousActionStatus({ ok: false, status: classification.status });
   return {
     ok: classification.ok === true,
     status: classification.status,
+    autonomousActionStatus,
     candidate,
     command: invocation.command,
     childPayload: classification.childPayload || null,
@@ -370,6 +472,12 @@ function renderText(result = {}) {
   }
   if (result.suppressedCandidates?.length > 0) {
     lines.push(`suppressedByScope: ${result.suppressedCandidates.length}`);
+  }
+  if (Number(result.dedupedCandidates || 0) > 0) {
+    lines.push(`dedupedCandidates: ${result.dedupedCandidates}`);
+  }
+  if (result.marketQueue) {
+    lines.push(`marketQueue: total ${result.marketQueue.total || 0} / waiting ${result.marketQueue.waitingMarketOpen || 0} / retrying ${result.marketQueue.retrying || 0}`);
   }
   for (const candidate of result.candidates || []) {
     lines.push(`- ${candidate.exchange} ${candidate.symbol} ${candidate.tradeMode} | ${candidate.action} | ${candidate.regime || 'n/a'} | ${candidate.urgency}`);
@@ -412,11 +520,15 @@ export async function runPositionRuntimeDispatch(args = {}) {
   );
   const scopeGate = applyExecutionScopeGate(phaseCandidates);
   const candidates = scopeGate.selected.slice(0, args.limit || 10);
+  const dedupedCandidates = Math.max(0, phaseCandidates.length - scopeGate.selected.length);
   const blockedCandidates = (args.phase6
     ? allBlockedCandidates.filter((row) => row.action === 'ADJUST' || row.action === 'EXIT')
     : allBlockedCandidates
   ).slice(0, Math.max(args.limit || 10, 10));
   const suppressedCandidates = scopeGate.suppressed.slice(0, Math.max(args.limit || 10, 10));
+  const queueSnapshot = readPositionRuntimeMarketQueue(args.queueFile || DEFAULT_POSITION_RUNTIME_MARKET_QUEUE_FILE);
+  let marketQueueEntries = queueSnapshot.entries || [];
+  let marketQueueSummary = summarizePositionRuntimeMarketQueue(marketQueueEntries, args.exchange || null);
 
   if (!args.execute) {
     const hasBlockedActionable = guardReasonSummary.blockedActionable > 0;
@@ -431,7 +543,12 @@ export async function runPositionRuntimeDispatch(args = {}) {
       candidates,
       blockedCandidates,
       suppressedCandidates,
+      dedupedCandidates,
       guardReasonSummary,
+      marketQueue: {
+        ...marketQueueSummary,
+        file: args.queueFile || DEFAULT_POSITION_RUNTIME_MARKET_QUEUE_FILE,
+      },
       runtimeDecision: runtimeReport.decision,
     };
   }
@@ -444,7 +561,12 @@ export async function runPositionRuntimeDispatch(args = {}) {
       candidates,
       blockedCandidates,
       suppressedCandidates,
+      dedupedCandidates,
       guardReasonSummary,
+      marketQueue: {
+        ...marketQueueSummary,
+        file: args.queueFile || DEFAULT_POSITION_RUNTIME_MARKET_QUEUE_FILE,
+      },
       reason: args.phase6 === true
         ? 'use --confirm=phase6-autopilot'
         : 'use --confirm=runtime-dispatch',
@@ -452,18 +574,156 @@ export async function runPositionRuntimeDispatch(args = {}) {
   }
 
   const results = [];
-  for (const candidate of candidates) {
-    results.push(await executeCandidate(candidate, { phase6: args.phase6 === true }));
+  const handledExecutionKeys = new Set();
+  const retryDelayMinutes = Math.max(1, Number(args.retryDelayMinutes || 5));
+  const maxRetryCount = Math.max(1, Number(args.maxRetryCount || 5));
+
+  const queueCandidate = (candidate, reason, extra = {}) => {
+    marketQueueEntries = upsertPositionRuntimeMarketQueueEntry(marketQueueEntries, {
+      candidate,
+      reason,
+      waitingReason: reason,
+      status: extra.autonomousActionStatus || 'autonomous_action_queued',
+      attempts: Number.isFinite(Number(extra.attempts)) ? Number(extra.attempts) : null,
+      retryCount: Number.isFinite(Number(extra.retryCount)) ? Number(extra.retryCount) : null,
+      lastAttemptAt: extra.lastAttemptAt || null,
+      nextRetryAt: extra.nextRetryAt || null,
+    });
+    return {
+      ok: true,
+      status: 'queued_for_market_open',
+      autonomousActionStatus: extra.autonomousActionStatus || 'autonomous_action_queued',
+      candidate,
+      queueReason: reason,
+      nextRetryAt: extra.nextRetryAt || null,
+      fromQueue: extra.fromQueue === true,
+    };
+  };
+
+  const queuedForExchange = (marketQueueEntries || [])
+    .filter((entry) => !args.exchange || String(entry?.candidate?.exchange || '') === String(args.exchange))
+    .slice(0, Math.max(args.limit || 10, 10));
+
+  for (const entry of queuedForExchange) {
+    const candidate = entry?.candidate || null;
+    if (!candidate) continue;
+    const entryStatus = String(entry?.lastStatus || '').trim().toLowerCase();
+    if (entryStatus === 'autonomous_action_failed') continue;
+    const executionKey = `${candidate?.executionScope || candidate?.brokerScope || entry.queueKey}:${candidate?.action || 'HOLD'}`;
+    const nextRetryAt = entry?.nextRetryAt ? new Date(entry.nextRetryAt).getTime() : null;
+    if (nextRetryAt != null && Number.isFinite(nextRetryAt) && nextRetryAt > Date.now()) continue;
+    const gate = await resolveMarketGate(candidate);
+    if (gate.requiresMarketOpen && gate.isOpen !== true) {
+      marketQueueEntries = upsertPositionRuntimeMarketQueueEntry(marketQueueEntries, {
+        queueKey: entry.queueKey,
+        candidate,
+        reason: gate.reason || 'market_closed',
+        waitingReason: gate.reason || 'market_closed',
+        status: 'autonomous_action_queued',
+      });
+      continue;
+    }
+
+    const executed = await executeCandidate(candidate, { phase6: args.phase6 === true });
+    const attempts = Number(entry?.attempts || 0) + 1;
+    const lastAttemptAt = new Date().toISOString();
+    const retryCount = Number(entry?.retryCount || 0) + (executed.ok === true ? 0 : 1);
+    const autonomousActionStatus = executed.ok === true
+      ? 'autonomous_action_executed'
+      : RETRYABLE_STATUSES.has(String(executed.status || '')) && retryCount < maxRetryCount
+        ? 'autonomous_action_retrying'
+        : toAutonomousActionStatus(executed);
+    const normalizedResult = {
+      ...executed,
+      fromQueue: true,
+      attempts,
+      retryCount,
+      lastAttemptAt,
+      autonomousActionStatus,
+    };
+    results.push(normalizedResult);
+    handledExecutionKeys.add(executionKey);
+    if (executed.ok === true) {
+      marketQueueEntries = removePositionRuntimeMarketQueueEntry(marketQueueEntries, entry.queueKey);
+    } else {
+      const shouldRetry = RETRYABLE_STATUSES.has(String(executed.status || '')) && retryCount < maxRetryCount;
+      marketQueueEntries = upsertPositionRuntimeMarketQueueEntry(marketQueueEntries, {
+        queueKey: entry.queueKey,
+        candidate,
+        reason: String(executed.status || 'execution_failed'),
+        waitingReason: shouldRetry ? 'retry_scheduled' : 'retry_limit_reached',
+        status: shouldRetry ? 'autonomous_action_retrying' : 'autonomous_action_failed',
+        attempts,
+        retryCount,
+        lastAttemptAt,
+        nextRetryAt: shouldRetry ? addMinutesIso(retryDelayMinutes) : null,
+      });
+    }
   }
-  const hasFailures = results.some((item) => item?.ok !== true);
+
+  for (const candidate of candidates) {
+    const executionKey = `${candidate?.executionScope || candidate?.brokerScope || `${candidate?.exchange}:${candidate?.symbol}:${candidate?.tradeMode}`}:${candidate?.action || 'HOLD'}`;
+    if (handledExecutionKeys.has(executionKey)) continue;
+    const gate = await resolveMarketGate(candidate);
+    if (gate.requiresMarketOpen && gate.isOpen !== true) {
+      results.push(queueCandidate(candidate, gate.reason || 'market_closed', {
+        autonomousActionStatus: 'autonomous_action_queued',
+      }));
+      continue;
+    }
+    const executed = await executeCandidate(candidate, { phase6: args.phase6 === true });
+    const retryableFailure = executed?.ok !== true && RETRYABLE_STATUSES.has(String(executed?.status || ''));
+    const attempts = 1;
+    const retryCount = retryableFailure ? 1 : 0;
+    const lastAttemptAt = new Date().toISOString();
+    const retryAt = retryableFailure ? addMinutesIso(retryDelayMinutes) : null;
+    if (retryableFailure) {
+      marketQueueEntries = upsertPositionRuntimeMarketQueueEntry(marketQueueEntries, {
+        candidate,
+        reason: String(executed?.status || 'execution_failed'),
+        waitingReason: 'retry_scheduled',
+        status: 'autonomous_action_retrying',
+        attempts,
+        retryCount,
+        lastAttemptAt,
+        nextRetryAt: retryAt,
+      });
+    }
+    results.push({
+      ...executed,
+      attempts,
+      retryCount,
+      lastAttemptAt,
+      autonomousActionStatus: retryableFailure
+        ? 'autonomous_action_retrying'
+        : (executed.autonomousActionStatus || toAutonomousActionStatus(executed)),
+      nextRetryAt: retryAt,
+    });
+  }
+  const queuePayload = writePositionRuntimeMarketQueue(marketQueueEntries, args.queueFile || DEFAULT_POSITION_RUNTIME_MARKET_QUEUE_FILE);
+  marketQueueSummary = summarizePositionRuntimeMarketQueue(queuePayload.entries || [], args.exchange || null);
+  const hasFailures = results.some((item) => item?.autonomousActionStatus === 'autonomous_action_failed');
+  const queuedActions = results.filter((item) => item?.autonomousActionStatus === 'autonomous_action_queued').length;
+  const retryingActions = results.filter((item) => item?.autonomousActionStatus === 'autonomous_action_retrying').length;
   return {
     ok: hasFailures !== true,
     phase6Mode: args.phase6 === true,
-    status: hasFailures ? 'position_runtime_dispatch_executed_with_failures' : 'position_runtime_dispatch_executed',
+    status: hasFailures
+      ? 'position_runtime_dispatch_executed_with_failures'
+      : queuedActions > 0
+        ? 'position_runtime_dispatch_executed_with_queue'
+        : retryingActions > 0
+          ? 'position_runtime_dispatch_executed_with_retry'
+          : 'position_runtime_dispatch_executed',
     candidates,
     blockedCandidates,
     suppressedCandidates,
+    dedupedCandidates,
     guardReasonSummary,
+    marketQueue: {
+      ...marketQueueSummary,
+      file: args.queueFile || DEFAULT_POSITION_RUNTIME_MARKET_QUEUE_FILE,
+    },
     results,
     runtimeDecision: runtimeReport.decision,
   };

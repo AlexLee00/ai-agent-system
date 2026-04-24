@@ -95,12 +95,32 @@ export function sendTelegram(message) {
 
 // ─── 신호 포매터 ─────────────────────────────────────────────────────
 
-export function notifySignal({ symbol, action, amountUsdt, confidence, reasoning, paper, exchange = 'binance', tradeMode = null }) {
+export function notifySignal({
+  symbol,
+  action,
+  amountUsdt,
+  confidence,
+  reasoning,
+  paper,
+  exchange = 'binance',
+  currency = null,
+  tradeMode = null,
+}) {
   const tag   = formatExecutionTag({ paper, exchange, tradeMode });
   const emoji = action === 'BUY' ? '🟢' : action === 'SELL' ? '🔴' : '🟡';
+  const normalizedCurrency = String(
+    currency
+    || (exchange === 'kis' ? 'KRW' : exchange === 'kis_overseas' ? 'USD' : 'USDT')
+  ).toUpperCase();
+  const numericAmount = Number(amountUsdt);
+  const amountLabel = !Number.isFinite(numericAmount)
+    ? 'N/A'
+    : normalizedCurrency === 'KRW'
+      ? `${Math.round(numericAmount).toLocaleString('ko-KR')}원`
+      : `$${numericAmount.toFixed(2)}`;
   const msg   = [
     `${tag}${emoji} ${action} 신호 — ${symbol}`,
-    `금액: $${amountUsdt?.toFixed(2) || 'N/A'}`,
+    `금액: ${amountLabel}`,
     `확신도: ${((confidence || 0) * 100).toFixed(0)}%`,
     reasoning ? `근거: ${compactReasoning(reasoning)}` : '',
   ].filter(Boolean).join('\n');
@@ -108,7 +128,22 @@ export function notifySignal({ symbol, action, amountUsdt, confidence, reasoning
 }
 
 /** @param {any} input */
-export function notifyTrade({ symbol, side, amount, price, totalUsdt, paper, exchange = 'binance', tradeMode = null, tpPrice, slPrice, tpslSource, capitalInfo, memo }) {
+export function notifyTrade({
+  symbol,
+  side,
+  amount,
+  price,
+  totalUsdt,
+  paper,
+  exchange = 'binance',
+  currency = null,
+  tradeMode = null,
+  tpPrice,
+  slPrice,
+  tpslSource,
+  capitalInfo,
+  memo,
+}) {
   const tag   = formatExecutionTag({ paper, exchange, tradeMode });
   const emoji = side === 'buy'       ? '✅ 매수'
               : side === 'sell'      ? '✅ 매도'
@@ -116,25 +151,37 @@ export function notifyTrade({ symbol, side, amount, price, totalUsdt, paper, exc
               : side === 'liquidate' ? '💱 미추적 청산'
               : '✅ 체결';
   const isDomestic = exchange === 'kis';
-  const isOverseas = exchange === 'kis_overseas';
-  const currency = isDomestic ? '₩' : '$';
+  const normalizedCurrency = String(
+    currency
+    || (isDomestic ? 'KRW' : exchange === 'kis_overseas' ? 'USD' : 'USDT')
+  ).toUpperCase();
+  const isKrw = normalizedCurrency === 'KRW';
+  const currencyPrefix = isKrw ? '' : '$';
   const formatPrice = (value) => {
     const numeric = Number(value || 0);
     if (!Number.isFinite(numeric)) return '-';
-    if (isDomestic) return `${currency}${Math.round(numeric).toLocaleString()}`;
-    if (Math.abs(numeric) < 1) return `${currency}${numeric.toFixed(5)}`;
-    if (Math.abs(numeric) < 100) return `${currency}${numeric.toFixed(3)}`;
-    return `${currency}${numeric.toLocaleString()}`;
+    if (isKrw) return `${Math.round(numeric).toLocaleString('ko-KR')}원`;
+    if (Math.abs(numeric) < 1) return `${currencyPrefix}${numeric.toFixed(5)}`;
+    if (Math.abs(numeric) < 100) return `${currencyPrefix}${numeric.toFixed(3)}`;
+    return `${currencyPrefix}${numeric.toLocaleString()}`;
   };
   const formatValue = (value) => {
     const numeric = Number(value || 0);
     if (!Number.isFinite(numeric)) return '-';
-    const fixed = isDomestic ? Math.round(numeric).toLocaleString() : numeric.toFixed(2);
-    return `${currency}${fixed}`;
+    if (isKrw) return `${Math.round(numeric).toLocaleString('ko-KR')}원`;
+    return `${currencyPrefix}${numeric.toFixed(2)}`;
+  };
+  const formatSignedValue = (value) => {
+    const numeric = Number(value || 0);
+    if (!Number.isFinite(numeric)) return '-';
+    const sign = numeric >= 0 ? '+' : '-';
+    const abs = Math.abs(numeric);
+    if (isKrw) return `${sign}${Math.round(abs).toLocaleString('ko-KR')}원`;
+    return `${sign}${currencyPrefix}${abs.toFixed(2)}`;
   };
   const lines = [
     `${tag}${emoji} 체결 — ${symbol}`,
-    `수량: ${isDomestic ? Number(amount || 0).toLocaleString() : Number(amount || 0).toFixed(6)} / 가격: ${formatPrice(price)}`,
+    `수량: ${isDomestic ? Number(amount || 0).toLocaleString('ko-KR') : Number(amount || 0).toFixed(6)} / 가격: ${formatPrice(price)}`,
     `총액: ${formatValue(totalUsdt)}`,
   ];
   if (tpPrice && slPrice && price) {
@@ -142,14 +189,14 @@ export function notifyTrade({ symbol, side, amount, price, totalUsdt, paper, exc
     const dynTag    = isDynamic ? '[동적]' : '[고정]';
     const tpPct     = ((tpPrice / price - 1) * 100).toFixed(1);
     const slPct     = ((slPrice / price - 1) * 100).toFixed(1);
-    lines.push(`${dynTag} TP: $${tpPrice?.toLocaleString()} (+${tpPct}%) | SL: $${slPrice?.toLocaleString()} (${slPct}%)`);
+    lines.push(`${dynTag} TP: ${formatPrice(tpPrice)} (+${tpPct}%) | SL: ${formatPrice(slPrice)} (${slPct}%)`);
   }
   if (memo) lines.push(`📝 ${memo}`);
   if (capitalInfo) {
     lines.push(DIVIDER);
-    if (capitalInfo.balance    != null) lines.push(`💰 가용 잔고: $${parseFloat(capitalInfo.balance).toFixed(2)}`);
+    if (capitalInfo.balance    != null) lines.push(`💰 가용 잔고: ${formatValue(capitalInfo.balance)}`);
     if (capitalInfo.openPositions != null) lines.push(`📊 동시 포지션: ${capitalInfo.openPositions}/${capitalInfo.maxPositions}`);
-    if (capitalInfo.dailyPnL   != null) lines.push(`🛡️ 일간 PnL: ${capitalInfo.dailyPnL >= 0 ? '+' : ''}${capitalInfo.dailyPnL.toFixed(2)} USDT`);
+    if (capitalInfo.dailyPnL   != null) lines.push(`🛡️ 일간 PnL: ${formatSignedValue(capitalInfo.dailyPnL)}`);
   }
   return publishLunaMessage({ message: lines.join('\n'), eventType: 'trade', alertLevel: 1 });
 }

@@ -18,7 +18,10 @@ export async function runPositionStrategyRemediationHistorySmoke() {
     assert.equal(first.lastRecordedAt, first.current.recordedAt);
     assert.equal(typeof first.stale, 'boolean');
     assert.ok(first.current.flat);
-    assert.match(first.current.nextCommand || '', /runtime:position-strategy-remediation/);
+    assert.match(
+      first.current.nextCommand || '',
+      /runtime:position-strategy-(?:remediation|hygiene)/,
+    );
 
     const second = await buildPositionStrategyRemediationHistory({ file, json: true });
     assert.equal(second.ok, true);
