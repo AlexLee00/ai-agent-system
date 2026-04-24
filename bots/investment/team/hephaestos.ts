@@ -1401,6 +1401,8 @@ async function recordExecutedTradeJournal({ trade, signalId, exitReason }) {
     const execTime = Date.now();
     const tradeId = await journalDb.generateTradeId();
     const signal = signalId ? await db.getSignalById(signalId).catch(() => null) : null;
+    const executionOrigin = trade.executionOrigin || 'strategy';
+    const excludeFromLearning = Boolean(trade.excludeFromLearning ?? false);
     await journalDb.insertJournalEntry({
       trade_id: tradeId,
       signal_id: signalId,
@@ -1424,24 +1426,28 @@ async function recordExecutedTradeJournal({ trade, signalId, exitReason }) {
       strategy_quality: signal?.strategy_quality || null,
       strategy_readiness: signal?.strategy_readiness ?? null,
       strategy_route: signal?.strategy_route || null,
-      execution_origin: trade.executionOrigin || 'strategy',
+      execution_origin: executionOrigin,
       quality_flag: trade.qualityFlag || 'trusted',
-      exclude_from_learning: Boolean(trade.excludeFromLearning ?? false),
+      exclude_from_learning: excludeFromLearning,
       incident_link: trade.incidentLink || null,
     });
     await journalDb.linkRationaleToTrade(tradeId, signalId);
-    notifyJournalEntry({
-      tradeId,
-      symbol: trade.symbol,
-      direction: 'long',
-      market: 'crypto',
-      entryPrice: trade.price,
-      entryValue: trade.totalUsdt,
-      isPaper: trade.paper,
-      tpPrice: trade.tpPrice,
-      slPrice: trade.slPrice,
-      tpSlSet: trade.tpSlSet,
-    });
+    const suppressUserFacingAlert = excludeFromLearning
+      && ['reconciliation', 'cleanup'].includes(String(executionOrigin || '').toLowerCase());
+    if (!suppressUserFacingAlert) {
+      notifyJournalEntry({
+        tradeId,
+        symbol: trade.symbol,
+        direction: 'long',
+        market: 'crypto',
+        entryPrice: trade.price,
+        entryValue: trade.totalUsdt,
+        isPaper: trade.paper,
+        tpPrice: trade.tpPrice,
+        slPrice: trade.slPrice,
+        tpSlSet: trade.tpSlSet,
+      });
+    }
     return;
   }
 
