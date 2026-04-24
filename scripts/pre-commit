@@ -139,6 +139,7 @@ fi
 # 경로이므로 엄격히 차단.
 FORCE_TRACKED_PATHS=(
   "docs/codex/"
+  "docs/auto_dev/"
   "docs/strategy/"
   "PATCH_REQUEST.md"
 )

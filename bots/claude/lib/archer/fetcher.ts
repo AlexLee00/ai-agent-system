@@ -34,6 +34,7 @@ const USAGE_EXCLUDES = [
 const USAGE_FILE_EXCLUDES = [
   'package-lock.json',
   'PATCH_REQUEST.md',
+  'docs/auto_dev/PATCH_REQUEST.md',
   'bots/claude/archer-cache.json',
   'bots/registry.json',
   'bots/claude/lib/archer/config.js',

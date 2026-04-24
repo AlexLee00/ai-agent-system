@@ -4,7 +4,7 @@
 /**
  * bots/claude/src/archer.js — 아처 (Archer) 기술 인텔리전스 봇
  *
- * v2.0: AI/LLM 기술 트렌드 서칭 + PATCH_REQUEST.md 패치업 오케스트레이터
+ * v2.0: AI/LLM 기술 트렌드 서칭 + docs/auto_dev PATCH_REQUEST.md 패치업 오케스트레이터
  *
  * 실행: node bots/claude/src/archer.js [--telegram] [--no-claude] [--fetch-only]
  *
@@ -120,7 +120,7 @@ async function main() {
     // 4. 리포트 저장
     const { filePath } = await reporter.report({ data, analysis, runDate });
 
-    // 5. 패치 티켓 저장 + PATCH_REQUEST.md 생성
+    // 5. 패치 티켓 저장 + docs/auto_dev/PATCH_REQUEST.md 생성
     if (analysis) {
       savePatchTickets: {
         try {
@@ -209,7 +209,7 @@ async function main() {
     const elapsed = Date.now() - start;
     console.log(`\n✅ ${BOT_NAME} 완료 (총 ${elapsed}ms)`);
     if (filePath) console.log(`📄 리포트: ${filePath}`);
-    console.log(`📝 PATCH_REQUEST.md: ${cfg.OUTPUT.patchRequestFile}`);
+    console.log(`📝 auto_dev PATCH_REQUEST.md: ${cfg.OUTPUT.patchRequestFile}`);
     writeLog(`OK | ${elapsed}ms | report=${filePath || 'none'}`);
 
     // 팀버스: 완료 등록

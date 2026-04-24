@@ -1196,14 +1196,14 @@ tb.sendMessage('archer', 'dexter', 'alert', 'critical', 'CVE-2026-XXXX', cve);
 ### 17-4. PATCH_REQUEST.md 처리 규칙
 
 ```bash
-# 위치: 항상 프로젝트 루트
-~/projects/ai-agent-system/PATCH_REQUEST.md
+# 위치: 자동 구현 인박스
+~/projects/ai-agent-system/docs/auto_dev/PATCH_REQUEST.md
 
-# 아처가 생성 → Claude Code RC 세션이 자동 감지 → urgency 순 실행
+# 아처가 생성 → Claude Code RC 세션이 docs/auto_dev를 자동 감지 → urgency 순 실행
 # critical → high → medium → low
 
 # 완료 후 반드시 삭제 (중복 실행 방지)
-rm PATCH_REQUEST.md
+rm docs/auto_dev/PATCH_REQUEST.md
 ```
 
 ```javascript
@@ -1312,7 +1312,7 @@ function parseJsonResponse(text) {
 - [ ] team-bus 연동 — main() 시작/종료 시 setStatus/markDone/markError
 - [ ] team-bus 직접 DB 쿼리 금지 — lib/team-bus.js 함수만 사용
 - [ ] 아처 서칭 범위 준수 — BTC/ETH/FearGreed 수집 코드 없음
-- [ ] PATCH_REQUEST.md 위치 — 항상 프로젝트 루트
+- [ ] PATCH_REQUEST.md 위치 — 항상 `docs/auto_dev/PATCH_REQUEST.md`
 - [ ] 패치 완료 후 PATCH_REQUEST.md 삭제 로직 포함
 - [ ] SESSION.md 업데이트 — 작업 완료/중단 시 갱신
 - [ ] 외부 HTTP — Node.js https 모듈만 사용 (axios 등 금지)

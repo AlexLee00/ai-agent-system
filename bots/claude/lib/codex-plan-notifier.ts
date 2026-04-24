@@ -28,6 +28,9 @@ const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 const ROOT       = env.PROJECT_ROOT;
 const WORKSPACE  = path.join(os.homedir(), '.openclaw', 'workspace');
 const STATE_FILE = path.join(WORKSPACE, 'codex-notifier-state.json');
+const AUTO_DEV_REL_DIR = 'docs/auto_dev';
+const CODEX_REL_DIR    = 'docs/codex';
+const PROMPT_REL_DIRS  = [AUTO_DEV_REL_DIR, CODEX_REL_DIR];
 
 const CHECK_INTERVAL_MS   = 5 * 60 * 1000;   // 5분
 const STALL_THRESHOLD_MS  = 30 * 60 * 1000;  // 30분 정체 시 경고
@@ -97,6 +100,74 @@ function durationSince(ts) {
 
 function hashMessage(msg) {
   return crypto.createHash('md5').update(msg).digest('hex').slice(0, 12);
+}
+
+function toProjectRelativePath(filePath) {
+  if (!filePath) return '';
+
+  const root = ROOT.replace(/\\/g, '/').replace(/\/$/, '');
+  let value = String(filePath)
+    .trim()
+    .replace(/^['"]|['"]$/g, '')
+    .replace(/\\/g, '/')
+    .replace(/^\.\//, '');
+
+  if (value.startsWith(`${root}/`)) {
+    value = value.slice(root.length + 1);
+  }
+
+  const docsIndex = value.indexOf('/docs/');
+  if (docsIndex >= 0) {
+    value = value.slice(docsIndex + 1);
+  }
+
+  return value;
+}
+
+function isSupportedPromptFile(promptFile) {
+  const rel = toProjectRelativePath(promptFile);
+  return PROMPT_REL_DIRS.some(dir => rel.startsWith(`${dir}/`)) && /\.md$/i.test(rel);
+}
+
+function normalizePromptName(promptName) {
+  const stem = String(promptName || '')
+    .trim()
+    .replace(/^['"]|['"]$/g, '')
+    .replace(/\\/g, '/')
+    .split('/')
+    .pop()
+    .replace(/\.md$/i, '');
+
+  return stem || 'CODEX_CLAUDE_EVOLUTION';
+}
+
+function findPromptFileByName(promptName) {
+  const stem = normalizePromptName(promptName);
+  const fileName = `${stem}.md`;
+
+  for (const dir of PROMPT_REL_DIRS) {
+    const relPath = `${dir}/${fileName}`;
+    if (fs.existsSync(path.join(ROOT, relPath))) {
+      return relPath;
+    }
+  }
+
+  return `${AUTO_DEV_REL_DIR}/${fileName}`;
+}
+
+function extractPromptFileFromCmdLine(cmdLine) {
+  const normalized = String(cmdLine || '').replace(/\\/g, '/');
+  const directMatch = normalized.match(/(?:^|\s|["'])((?:[^\s"']+\/)?docs\/(?:auto_dev|codex)\/[A-Za-z0-9_.-]+\.md)(?=$|\s|["'])/i);
+  if (directMatch) {
+    const relPath = toProjectRelativePath(directMatch[1]);
+    if (isSupportedPromptFile(relPath)) return relPath;
+  }
+
+  const stemMatch = normalized.match(/\b(CODEX_[A-Z0-9_]+)\.md\b/i)
+    || normalized.match(/\b(CODEX_[A-Z0-9_]+(?:_EVOLUTION|_REMODEL|_COMPLETE|_PLAN)?)\b/i);
+  const promptName = stemMatch ? stemMatch[1] : 'CODEX_CLAUDE_EVOLUTION';
+
+  return findPromptFileByName(promptName);
 }
 
 // ─── 상태 관리 ────────────────────────────────────────────────────────
@@ -308,10 +379,8 @@ async function detectCodexProcesses() {
 
       const cmdLine = parts.slice(10).join(' ');
 
-      // 프롬프트 파일 경로 추출
-      const fileMatch = cmdLine.match(/CODEX_([A-Z_]+?)(?:\.md|_EVOLUTION|_REMODEL|_COMPLETE)/i);
-      const promptName = fileMatch ? `CODEX_${fileMatch[1]}_EVOLUTION` : 'CODEX_CLAUDE_EVOLUTION';
-      const promptFile = `docs/codex/${promptName}.md`;
+      // 프롬프트 파일 경로 추출 — docs/auto_dev를 우선하고 docs/codex는 하위 호환으로 유지
+      const promptFile = extractPromptFileFromCmdLine(cmdLine);
 
       // 프롬프트 파일 내용 읽기
       let promptContent = '';
@@ -686,6 +755,8 @@ module.exports = {
   runManualTest,
   loadCurrentState,
   isProcessAlive,
+  findPromptFileByName,
+  extractPromptFileFromCmdLine,
   shouldSuppressHistoricalStart,
   getHistoricalCompletionSignal,
   recordHistoricalSuppression,

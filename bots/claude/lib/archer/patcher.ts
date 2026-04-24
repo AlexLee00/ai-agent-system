@@ -2,11 +2,11 @@
 'use strict';
 
 /**
- * lib/archer/patcher.js — 패치 티켓 저장 및 PATCH_REQUEST.md 생성
+ * lib/archer/patcher.js — 패치 티켓 저장 및 auto_dev PATCH_REQUEST.md 생성
  *
  * 역할:
  *   1. 분석 결과에서 패치 티켓 추출 → reports/patches/ 저장
- *   2. 프로젝트 루트 PATCH_REQUEST.md 자동 생성 (Claude Code가 세션 시작 시 처리)
+ *   2. docs/auto_dev/PATCH_REQUEST.md 자동 생성 (Claude Code가 세션 시작 시 처리)
  *   3. 덱스터에게 텔레그램 알림 전송
  */
 
@@ -58,7 +58,8 @@ function buildPatchRequestMd(analysis, runDate) {
 
   lines.push(`# PATCH_REQUEST.md`);
   lines.push(`> 아처 자동 생성 — ${runDate} (${now} KST)`);
-  lines.push(`> ⚠️ Claude Code 세션 시작 시 자동 처리 대상`);
+  lines.push(`> 위치: docs/auto_dev/PATCH_REQUEST.md`);
+  lines.push(`> ⚠️ Claude Code 세션 시작 시 auto_dev 인박스 자동 처리 대상`);
   lines.push('');
 
   // 요약
@@ -144,7 +145,7 @@ function buildPatchRequestMd(analysis, runDate) {
   lines.push('---');
   lines.push('');
   lines.push('> 이 파일은 아처가 자동 생성합니다. 직접 수정 금지.');
-  lines.push('> Claude Code가 세션 시작 시 내용을 확인하고 필요한 조치를 취합니다.');
+  lines.push('> Claude Code가 docs/auto_dev 인박스를 확인하고 필요한 조치를 취합니다.');
 
   return lines.join('\n');
 }
@@ -157,8 +158,12 @@ function buildPatchRequestMd(analysis, runDate) {
  */
 function savePatchRequest(analysis, runDate) {
   const md = buildPatchRequestMd(analysis, runDate);
+  const dir = path.dirname(config.OUTPUT.patchRequestFile);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
   fs.writeFileSync(config.OUTPUT.patchRequestFile, md, 'utf8');
-  console.log(`  📝 [아처] PATCH_REQUEST.md 저장: ${config.OUTPUT.patchRequestFile}`);
+  console.log(`  📝 [아처] auto_dev PATCH_REQUEST.md 저장: ${config.OUTPUT.patchRequestFile}`);
   return config.OUTPUT.patchRequestFile;
 }
 
@@ -212,7 +217,7 @@ function sendTelegram(analysis, runDate) {
   }
 
   const totalItems = patches.length + security.length + llmApi.length + (analysis.ai_techniques || []).length;
-  lines.push(`📄 PATCH_REQUEST.md 생성됨 (${totalItems}건 항목)`);
+  lines.push(`📄 docs/auto_dev/PATCH_REQUEST.md 생성됨 (${totalItems}건 항목)`);
 
   const level = criticalSecurity.length > 0 ? 3 : criticalPatches.length > 0 ? 3 : 2;
   publishToMainBot({

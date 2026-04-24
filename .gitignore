@@ -193,6 +193,7 @@ bots/investment/output/ops/market-regime-capture.json
 
 # ── 내부 문서 (공개 불필요!) ──
 docs/codex/*
+docs/auto_dev/*
 bots/sigma/docs/codex/*
 docs/strategy/
 docs/OPUS_FINAL_HANDOFF.md

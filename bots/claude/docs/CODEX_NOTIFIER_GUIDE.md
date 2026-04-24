@@ -27,7 +27,7 @@ Codex Watcher 자동 감지 (5분 주기)
 
 | 파일 | 역할 |
 |------|------|
-| `bots/claude/lib/codex-plan-notifier.ts` | 핵심 로직 (593줄) |
+| `bots/claude/lib/codex-plan-notifier.ts` | 핵심 로직 |
 | `bots/claude/scripts/codex-notifier-runner.ts` | launchd 실행 진입점 |
 | `bots/claude/launchd/ai.claude.codex-notifier.plist` | launchd 데몬 설정 |
 
@@ -62,7 +62,7 @@ ps aux | grep -E 'claude.*CODEX|claude.*--print'
 
 ### 2. Phase 파싱
 
-프롬프트 파일(`docs/codex/CODEX_*_EVOLUTION.md`)을 읽어:
+프롬프트 파일(`docs/auto_dev/CODEX_*.md` 우선, `docs/codex/CODEX_*.md` 하위 호환)을 읽어:
 
 ```regex
 ## 📋 Phase ([A-Z0-9]+) \(([^)]+)\) — (\S+)
@@ -98,7 +98,7 @@ ps aux | grep -E 'claude.*CODEX|claude.*--print'
 
 🎯 Agents — 3개 스켈레톤 완전 구현
 ⏰ 예상 소요: 2~3일
-🧬 대장정: docs/codex/CODEX_CLAUDE_EVOLUTION.md
+🧬 대장정: docs/auto_dev/CODEX_CLAUDE_EVOLUTION.md
 
 📁 예상 변경 파일:
   • bots/claude/src/reviewer.ts

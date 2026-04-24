@@ -14,6 +14,7 @@ const sharedConfig = require('../config');
 
 const HOME = os.homedir();
 const ROOT = path.join(HOME, 'projects', 'ai-agent-system');
+const AUTO_DEV_DIR = path.join(ROOT, 'docs', 'auto_dev');
 
 module.exports = {
   ROOT,
@@ -187,7 +188,8 @@ module.exports = {
     reportDir:        path.join(ROOT, 'bots', 'claude', 'reports'),
     cacheFile:        path.join(ROOT, 'bots', 'claude', 'archer-cache.json'),
     patchDir:         path.join(ROOT, 'bots', 'claude', 'reports', 'patches'),
-    patchRequestFile: path.join(ROOT, 'PATCH_REQUEST.md'),
+    autoDevDir:       AUTO_DEV_DIR,
+    patchRequestFile: path.join(AUTO_DEV_DIR, 'PATCH_REQUEST.md'),
     lockFile:         '/tmp/archer.lock',
     logFile:          '/tmp/archer.log',
   },

@@ -1,6 +1,6 @@
 # 7_AGENTS_OVERVIEW — 클로드팀 7 에이전트 개요
 
-> 최종 업데이트: 2026-04-18
+> 최종 업데이트: 2026-04-24
 > Phase A/N/D/C/T/I 완료 후 최종 상태
 
 ---
@@ -67,7 +67,7 @@ claude-commander (팀장)
 **주기**: 매일 1회
 
 - AI/LLM 기술 트렌드 수집
-- PATCH_REQUEST 오케스트레이터
+- docs/auto_dev PATCH_REQUEST 오케스트레이터
 - 팀 업그레이드 제안 → State Bus
 
 ---
@@ -163,7 +163,7 @@ claude-commander (팀장)
 
 ## 7. Codex Plan Notifier (알림) ★
 
-**파일**: `lib/codex-plan-notifier.ts` (593줄)  
+**파일**: `lib/codex-plan-notifier.ts`
 **launchd**: `ai.claude.codex-notifier.plist`  
 **Kill Switch**: `CLAUDE_CODEX_NOTIFIER_ENABLED=true`
 
@@ -199,11 +199,11 @@ claude-commander (팀장)
 | reviewer.test.ts | 7 |
 | guardian.test.ts | 6 |
 | builder.test.ts | 7 |
-| codex-plan-notifier.test.ts | 12 |
+| codex-plan-notifier.test.ts | 15 |
 | doctor-verify-loop.test.ts | 12 |
 | commander.test.ts | 10 |
 | e2e/full-flow.test.ts | 4 |
-| **합계** | **58** |
+| **합계** | **61** |
 
 ```bash
 # 전체 테스트 실행

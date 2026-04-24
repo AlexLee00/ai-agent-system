@@ -88,7 +88,7 @@
     ↓
 Claude Sonnet 분석 (analyzer.js)
     ↓
-PATCH_REQUEST.md 생성 (patcher.js)  →  Claude Code RC 세션이 자동 감지
+docs/auto_dev/PATCH_REQUEST.md 생성 (patcher.js)  →  Claude Code RC 세션이 자동 감지
     ↓
 텔레그램 주간 리포트 발송 (reporter.js)
 ```

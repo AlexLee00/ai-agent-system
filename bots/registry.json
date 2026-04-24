@@ -62,8 +62,8 @@
         "archer": {
           "name": "아처",
           "file": "bots/claude/src/archer.js",
-          "role": "기술 인텔리전스 봇 v2.0 — AI/LLM 기술 트렌드 서칭 + PATCH_REQUEST.md 패치업 오케스트레이터",
-          "description": "GitHub Releases·npm·웹RSS(Anthropic/OpenAI/HuggingFace/arXiv) 수집 → Claude 분석 → 패치 티켓 + PATCH_REQUEST.md 자동 생성 + 텔레그램",
+          "role": "기술 인텔리전스 봇 v2.0 — AI/LLM 기술 트렌드 서칭 + docs/auto_dev PATCH_REQUEST.md 패치업 오케스트레이터",
+          "description": "GitHub Releases·npm·웹RSS(Anthropic/OpenAI/HuggingFace/arXiv) 수집 → Claude 분석 → 패치 티켓 + docs/auto_dev/PATCH_REQUEST.md 자동 생성 + 텔레그램",
           "schedule": "매주 월요일 09:00 KST (launchd: ai.claude.archer)",
           "flags": {
             "--telegram": "패치 알림을 텔레그램으로 발송",
@@ -79,7 +79,7 @@
           "outputs": {
             "reportDir": "bots/claude/reports/",
             "patchDir": "bots/claude/reports/patches/",
-            "patchRequestFile": "PATCH_REQUEST.md (프로젝트 루트)"
+            "patchRequestFile": "docs/auto_dev/PATCH_REQUEST.md (자동 구현 인박스)"
           },
           "teamBus": {
             "db": "~/.openclaw/workspace/claude-team.db",

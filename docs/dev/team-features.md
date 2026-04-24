@@ -198,7 +198,7 @@ bash scripts/reload-monitor.sh
 
 **위치**: `bots/claude/`
 **상태**: ✅ DEV 모드 — 점검·알림·패치 티켓까지만 담당
-**설명**: 전체 시스템 점검 + 기술 인텔리전스 + PATCH_REQUEST 오케스트레이션
+**설명**: 전체 시스템 점검 + 기술 인텔리전스 + docs/auto_dev PATCH_REQUEST 오케스트레이션
 
 > 클로드팀은 스카팀·루나팀 코드를 **직접 수정하지 않는다**.
 > 점검 → 알림 → 패치 티켓 생성까지만 담당.
@@ -240,7 +240,7 @@ npm run dexter:daily        # 일일 보고 (텔레그램)
 |------|------|------|
 | 데이터 수집 | `lib/archer/fetcher.js` | GitHub Releases·npm Registry·npm audit·웹 서칭 8개 소스 |
 | LLM 분석 | `lib/archer/analyzer.js` | Claude Sonnet — AI/LLM 트렌드 분석 + 패치 우선순위 평가 |
-| 패치 오케스트레이션 | `lib/archer/patcher.js` | PATCH_REQUEST.md 생성 (urgency: critical→high→medium→low) |
+| 패치 오케스트레이션 | `lib/archer/patcher.js` | `docs/auto_dev/PATCH_REQUEST.md` 생성 (urgency: critical→high→medium→low) |
 | 리포트 생성 | `lib/archer/reporter.js` | 주간 기술 트렌드 리포트 + 텔레그램 발송 |
 
 > **아처 서칭 범위**: GitHub·npm·AI뉴스 한정

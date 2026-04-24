@@ -1,8 +1,8 @@
 # CLAUDE_EVOLUTION_ARCHITECTURE — 클로드팀 완전자율 운영 아키텍처
 
-> 최종 업데이트: 2026-04-18 (47차 세션 이후)
+> 최종 업데이트: 2026-04-24 (auto_dev 인박스 반영)
 > 담당: 코덱스 (Claude Code)
-> 상위 문서: docs/codex/CODEX_CLAUDE_EVOLUTION.md
+> 상위 문서: docs/auto_dev/CODEX_CLAUDE_EVOLUTION.md 또는 docs/codex/CODEX_CLAUDE_EVOLUTION.md
 
 ---
 
@@ -26,7 +26,7 @@
 │  ─────┴──────────────────────────────────────────   │
 │                                                      │
 │  [감지] Dexter — 22개 체크 모듈 + Emergency 모드      │
-│  [인텔] Archer — AI/LLM 트렌드 + PATCH_REQUEST       │
+│  [인텔] Archer — AI/LLM 트렌드 + auto_dev PATCH_REQUEST │
 │  [복구] Doctor — L1/L2/L3 + Verify Loop (3회 재시도) │
 │  [리뷰] Reviewer — 코드 리뷰 자동화 (6개 함수)        │
 │  [보안] Guardian — 6계층 보안 풀스캔                  │
@@ -58,7 +58,7 @@ bots/claude/
 │   └── builder.ts             # 멀티 빌드 (325줄)
 ├── lib/
 │   ├── doctor.ts              # L1/L2/L3 + Verify Loop (929줄)
-│   ├── codex-plan-notifier.ts # 구현 계획 알림 ★ (593줄)
+│   ├── codex-plan-notifier.ts # 구현 계획 알림 ★
 │   ├── telegram-reporter.ts   # 5채널 리포터 (437줄)
 │   ├── daily-report.ts        # 일일 보고 (기존)
 │   └── config.ts              # 설정
@@ -81,7 +81,7 @@ bots/claude/
 │   ├── reviewer.test.ts          # 7 테스트
 │   ├── guardian.test.ts          # 6 테스트
 │   ├── builder.test.ts           # 7 테스트
-│   ├── codex-plan-notifier.test.ts # 12 테스트
+│   ├── codex-plan-notifier.test.ts # 15 테스트
 │   ├── doctor-verify-loop.test.ts  # 12 테스트
 │   ├── commander.test.ts           # 10 테스트
 │   └── e2e/full-flow.test.ts       # 4 시나리오
@@ -152,7 +152,7 @@ execute(taskType, params)
                                          ↓
                               [claude-daily-report.ts 06:30 KST]
 
-[Codex 실행] → [codex-plan-notifier] → [Telegram: 계획/진행/완료 알림]
+[docs/auto_dev 문서 투입] → [Codex 실행] → [codex-plan-notifier] → [Telegram: 계획/진행/완료 알림]
 
 [Commander 명령] → [run_review] → [Reviewer] → [Guardian] → [Builder]
                                    (reviewer.ts)  (guardian.ts) (builder.ts)
