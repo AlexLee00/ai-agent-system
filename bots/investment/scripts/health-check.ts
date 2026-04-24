@@ -383,14 +383,14 @@ async function main() {
       const key = `unloaded:${label}`;
       if (hsm.canAlert(state, key)) {
         const ownerHint = ownership?.owner === 'launchd' ? '' : `\nownership=${ownership?.owner || 'unknown'}`;
-        issues.push({ key, level: hsm.getAlertLevel(label), msg: `🔴 [루나 헬스] ${shortName} 미로드\nlaunchd에 등록되지 않음 → 수동 확인 필요${ownerHint}` });
+        issues.push({ key, level: hsm.getAlertLevel(label), msg: `🔴 [투자팀 루나 헬스] ${shortName} 미로드\nlaunchd에 등록되지 않음 → 수동 확인 필요${ownerHint}` });
       }
       continue;
     }
 
     // 미로드 → 회복
     if (state[`unloaded:${label}`]) {
-      recovers.push({ key: `unloaded:${label}`, msg: `✅ [루나 헬스] ${shortName} 회복\nlaunchd 정상 로드 — 자동 감지` });
+      recovers.push({ key: `unloaded:${label}`, msg: `✅ [투자팀 루나 헬스] ${shortName} 회복\nlaunchd 정상 로드 — 자동 감지` });
       hsm.clearAlert(state, `unloaded:${label}`);
     }
 
@@ -399,10 +399,10 @@ async function main() {
       if (!svc.running) {
         const key = `down:${label}`;
         if (hsm.canAlert(state, key)) {
-          issues.push({ key, level: hsm.getAlertLevel(label), msg: `🔴 [루나 헬스] ${shortName} 다운\nPID 없음 — launchd 재시작 실패 가능성` });
+          issues.push({ key, level: hsm.getAlertLevel(label), msg: `🔴 [투자팀 루나 헬스] ${shortName} 다운\nPID 없음 — launchd 재시작 실패 가능성` });
         }
       } else if (state[`down:${label}`]) {
-        recovers.push({ key: `down:${label}`, msg: `✅ [루나 헬스] ${shortName} 회복\nPID 정상 확인 — 자동 감지` });
+        recovers.push({ key: `down:${label}`, msg: `✅ [투자팀 루나 헬스] ${shortName} 회복\nPID 정상 확인 — 자동 감지` });
         hsm.clearAlert(state, `down:${label}`);
       }
     }
@@ -411,12 +411,12 @@ async function main() {
     if (!NORMAL_EXIT_CODES.has(svc.exitCode) && !(CONTINUOUS.includes(label) && svc.running)) {
       const key = `exitcode:${label}:${svc.exitCode}`;
       if (hsm.canAlert(state, key)) {
-        issues.push({ key, level: hsm.getAlertLevel(label), msg: `⚠️ [루나 헬스] ${shortName} 비정상 종료\nexit code: ${svc.exitCode}` });
+        issues.push({ key, level: hsm.getAlertLevel(label), msg: `⚠️ [투자팀 루나 헬스] ${shortName} 비정상 종료\nexit code: ${svc.exitCode}` });
       }
     } else {
       const prevKeys = Object.keys(state).filter(k => k.startsWith(`exitcode:${label}:`));
       if (prevKeys.length > 0) {
-        recovers.push({ key: `exitcode:${label}:0`, msg: `✅ [루나 헬스] ${shortName} 회복\nexit code 정상 (0) — 자동 감지` });
+        recovers.push({ key: `exitcode:${label}:0`, msg: `✅ [투자팀 루나 헬스] ${shortName} 회복\nexit code 정상 (0) — 자동 감지` });
         prevKeys.forEach(k => hsm.clearAlert(state, k));
       }
     }
@@ -437,11 +437,11 @@ async function main() {
         issues.push({
           key,
           level: 2,
-          msg: `⚠️ [루나 헬스] trade_review 정합성 이상\n종료 거래 ${validation.closedTrades}건 중 ${validation.findings}건 점검 필요\nscope: ${scope}\nissue: ${summary.topIssue?.key || 'unknown'}${repairCommand}`,
+          msg: `⚠️ [투자팀 루나 헬스] trade_review 정합성 이상\n종료 거래 ${validation.closedTrades}건 중 ${validation.findings}건 점검 필요\nscope: ${scope}\nissue: ${summary.topIssue?.key || 'unknown'}${repairCommand}`,
         });
       }
     } else if (state['trade-review-integrity']) {
-      recovers.push({ key: 'trade-review-integrity', msg: `✅ [루나 헬스] trade_review 정합성 회복\n거래 리뷰 누락/불일치 없음 — 자동 감지` });
+      recovers.push({ key: 'trade-review-integrity', msg: `✅ [투자팀 루나 헬스] trade_review 정합성 회복\n거래 리뷰 누락/불일치 없음 — 자동 감지` });
       hsm.clearAlert(state, 'trade-review-integrity');
     }
   } catch (e) {
@@ -450,7 +450,7 @@ async function main() {
       issues.push({
         key,
         level: 2,
-        msg: `⚠️ [루나 헬스] trade_review 점검 실패\n${e.message}`,
+        msg: `⚠️ [투자팀 루나 헬스] trade_review 점검 실패\n${e.message}`,
       });
     }
   }
@@ -470,13 +470,13 @@ async function main() {
         issues.push({
           key,
           level: 2,
-          msg: `⚠️ [루나 헬스] trade incident link 누락 후보\n복구 후보 ${missing}건${sample ? `\nsample: ${sample.exchange}/${sample.symbol} ${sample.tradeId}` : ''}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run journal:backfill-incident-links -- --dry-run --json`,
+          msg: `⚠️ [투자팀 루나 헬스] trade incident link 누락 후보\n복구 후보 ${missing}건${sample ? `\nsample: ${sample.exchange}/${sample.symbol} ${sample.tradeId}` : ''}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run journal:backfill-incident-links -- --dry-run --json`,
         });
       }
     } else if (state[key]) {
       recovers.push({
         key,
-        msg: '✅ [루나 헬스] trade incident link 정합성 회복\nsignals/trades와 journal incident link 누락 후보 없음 — 자동 감지',
+        msg: '✅ [투자팀 루나 헬스] trade incident link 정합성 회복\nsignals/trades와 journal incident link 누락 후보 없음 — 자동 감지',
       });
       hsm.clearAlert(state, key);
     }
@@ -486,7 +486,7 @@ async function main() {
       issues.push({
         key,
         level: 1,
-        msg: `ℹ️ [루나 헬스] trade incident link 점검 실패\n${e.message}`,
+        msg: `ℹ️ [투자팀 루나 헬스] trade incident link 점검 실패\n${e.message}`,
       });
     }
   }
@@ -517,21 +517,21 @@ async function main() {
         issues.push({
           key,
           level: suggestionAlreadyApplied ? 1 : 2,
-          msg: `${suggestionAlreadyApplied ? 'ℹ️' : '⚠️'} [루나 헬스] regime strategy ${suggestionAlreadyApplied ? 'monitor' : 'tuning'}\n${learningLoop.decision.headline}\nweakest: ${learningLoop?.sections?.collect?.regimePerformance?.weakestRegime?.regime || 'n/a'} / ${learningLoop?.sections?.collect?.regimePerformance?.weakestRegime?.worstMode?.tradeMode || 'n/a'}\ntop suggestion: ${topSuggestion?.key || 'n/a'} ${suggestionAlreadyApplied ? `${topSuggestionCurrent} (already applied)` : `${topSuggestionCurrent} -> ${topSuggestionSuggested}`} (${topSuggestion?.action || 'n/a'})${latestOpsSnapshot?.capturedAt ? `\nlatest snapshot: ${latestOpsSnapshot.capturedAt} / ${latestWeakest?.regime || 'n/a'} / ${latestWeakestMode}` : ''}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-suggest -- --json`,
+          msg: `${suggestionAlreadyApplied ? 'ℹ️' : '⚠️'} [투자팀 루나 헬스] regime strategy ${suggestionAlreadyApplied ? 'monitor' : 'tuning'}\n${learningLoop.decision.headline}\nweakest: ${learningLoop?.sections?.collect?.regimePerformance?.weakestRegime?.regime || 'n/a'} / ${learningLoop?.sections?.collect?.regimePerformance?.weakestRegime?.worstMode?.tradeMode || 'n/a'}\ntop suggestion: ${topSuggestion?.key || 'n/a'} ${suggestionAlreadyApplied ? `${topSuggestionCurrent} (already applied)` : `${topSuggestionCurrent} -> ${topSuggestionSuggested}`} (${topSuggestion?.action || 'n/a'})${latestOpsSnapshot?.capturedAt ? `\nlatest snapshot: ${latestOpsSnapshot.capturedAt} / ${latestWeakest?.regime || 'n/a'} / ${latestWeakestMode}` : ''}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-suggest -- --json`,
         });
       }
     } else if (state['learning-loop-regime-tuning'] || state['learning-loop-regime-monitor']) {
       if (state['learning-loop-regime-tuning']) {
         recovers.push({
           key: 'learning-loop-regime-tuning',
-          msg: '✅ [루나 헬스] regime strategy tuning 회복\n현재 learning loop 기준 레짐 튜닝 긴급 신호 없음 — 자동 감지',
+          msg: '✅ [투자팀 루나 헬스] regime strategy tuning 회복\n현재 learning loop 기준 레짐 튜닝 긴급 신호 없음 — 자동 감지',
         });
         hsm.clearAlert(state, 'learning-loop-regime-tuning');
       }
       if (state['learning-loop-regime-monitor']) {
         recovers.push({
           key: 'learning-loop-regime-monitor',
-          msg: '✅ [루나 헬스] regime strategy monitor 회복\n현재 learning loop 기준 관찰 알림 신호 없음 — 자동 감지',
+          msg: '✅ [투자팀 루나 헬스] regime strategy monitor 회복\n현재 learning loop 기준 관찰 알림 신호 없음 — 자동 감지',
         });
         hsm.clearAlert(state, 'learning-loop-regime-monitor');
       }
@@ -547,13 +547,13 @@ async function main() {
         issues.push({
           key: strategyFeedbackKey,
           level: 2,
-          msg: `⚠️ [루나 헬스] strategy feedback outcomes attention\n${strategyFeedbackOutcomes.headline || '전략 피드백 적용 결과 점검 필요'}\ntagged ${strategyFeedbackOutcomes.total || strategyFeedbackOutcomes.totalTagged || 0} / closed ${strategyFeedbackOutcomes.closed || strategyFeedbackOutcomes.closedTagged || 0} / pnl ${strategyFeedbackOutcomes.pnlNet ?? 0}${trend ? `\ntrend: history ${trend.historyCount || 0} / tagged Δ${delta.total ?? 0} / closed Δ${delta.closed ?? 0} / pnl Δ${delta.pnlNet ?? 0}` : ''}${weakest ? `\nweakest: ${weakest.familyBias || 'n/a'} / ${weakest.family || 'n/a'} / ${weakest.executionKind || 'n/a'} avg ${weakest.avgPnlPercent ?? 'n/a'}%` : ''}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:strategy-feedback-outcomes -- --json`,
+          msg: `⚠️ [투자팀 루나 헬스] strategy feedback outcomes attention\n${strategyFeedbackOutcomes.headline || '전략 피드백 적용 결과 점검 필요'}\ntagged ${strategyFeedbackOutcomes.total || strategyFeedbackOutcomes.totalTagged || 0} / closed ${strategyFeedbackOutcomes.closed || strategyFeedbackOutcomes.closedTagged || 0} / pnl ${strategyFeedbackOutcomes.pnlNet ?? 0}${trend ? `\ntrend: history ${trend.historyCount || 0} / tagged Δ${delta.total ?? 0} / closed Δ${delta.closed ?? 0} / pnl Δ${delta.pnlNet ?? 0}` : ''}${weakest ? `\nweakest: ${weakest.familyBias || 'n/a'} / ${weakest.family || 'n/a'} / ${weakest.executionKind || 'n/a'} avg ${weakest.avgPnlPercent ?? 'n/a'}%` : ''}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:strategy-feedback-outcomes -- --json`,
         });
       }
     } else if (state[strategyFeedbackKey]) {
       recovers.push({
         key: strategyFeedbackKey,
-        msg: '✅ [루나 헬스] strategy feedback outcomes 회복\n전략 피드백 적용 결과 기준 주의 신호 없음 — 자동 감지',
+        msg: '✅ [투자팀 루나 헬스] strategy feedback outcomes 회복\n전략 피드백 적용 결과 기준 주의 신호 없음 — 자동 감지',
       });
       hsm.clearAlert(state, strategyFeedbackKey);
     }
@@ -580,13 +580,13 @@ async function main() {
         issues.push({
           key: riskApprovalOutcomeKey,
           level: 2,
-          msg: `⚠️ [루나 헬스] risk approval outcome attention\n리스크 승인 체인의 사후 성과가 약해 outcome 기반 튜닝 후보를 확인해야 합니다.\nclosed ${riskApprovalOutcome.closed || 0}/${riskApprovalOutcome.total || 0} / win ${riskApprovalOutcome.winRate ?? 'n/a'}% / avg ${riskApprovalOutcome.avgPnlPercent ?? 'n/a'}% / pnl ${riskApprovalOutcome.pnlNet ?? 0}${riskApprovalOutcomeMode ? `\nmode: ${riskApprovalOutcomeMode.mode || 'n/a'} / closed ${riskApprovalOutcomeMode.closed || 0}/${riskApprovalOutcomeMode.total || 0} / avg ${riskApprovalOutcomeMode.avgPnlPercent ?? 'n/a'}% / pnl ${riskApprovalOutcomeMode.pnlNet ?? 0}` : ''}${riskApprovalOutcomeModel ? `\nmodel: ${riskApprovalOutcomeModel.model || 'n/a'} / closed ${riskApprovalOutcomeModel.closed || 0}/${riskApprovalOutcomeModel.total || 0} / avg ${riskApprovalOutcomeModel.avgPnlPercent ?? 'n/a'}% / pnl ${riskApprovalOutcomeModel.pnlNet ?? 0}` : ''}${riskApprovalOutcomeWorst ? `\nworst: ${riskApprovalOutcomeWorst.exchange || 'n/a'}/${riskApprovalOutcomeWorst.symbol || 'n/a'} ${riskApprovalOutcomeWorst.mode || 'n/a'} pnl ${riskApprovalOutcomeWorst.pnlNet ?? 'n/a'} (${riskApprovalOutcomeWorst.pnlPercent ?? 'n/a'}%) models ${(riskApprovalOutcomeWorst.models || []).join(',') || 'n/a'}` : ''}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-suggest -- --json`,
+          msg: `⚠️ [투자팀 루나 헬스] risk approval outcome attention\n리스크 승인 체인의 사후 성과가 약해 outcome 기반 튜닝 후보를 확인해야 합니다.\nclosed ${riskApprovalOutcome.closed || 0}/${riskApprovalOutcome.total || 0} / win ${riskApprovalOutcome.winRate ?? 'n/a'}% / avg ${riskApprovalOutcome.avgPnlPercent ?? 'n/a'}% / pnl ${riskApprovalOutcome.pnlNet ?? 0}${riskApprovalOutcomeMode ? `\nmode: ${riskApprovalOutcomeMode.mode || 'n/a'} / closed ${riskApprovalOutcomeMode.closed || 0}/${riskApprovalOutcomeMode.total || 0} / avg ${riskApprovalOutcomeMode.avgPnlPercent ?? 'n/a'}% / pnl ${riskApprovalOutcomeMode.pnlNet ?? 0}` : ''}${riskApprovalOutcomeModel ? `\nmodel: ${riskApprovalOutcomeModel.model || 'n/a'} / closed ${riskApprovalOutcomeModel.closed || 0}/${riskApprovalOutcomeModel.total || 0} / avg ${riskApprovalOutcomeModel.avgPnlPercent ?? 'n/a'}% / pnl ${riskApprovalOutcomeModel.pnlNet ?? 0}` : ''}${riskApprovalOutcomeWorst ? `\nworst: ${riskApprovalOutcomeWorst.exchange || 'n/a'}/${riskApprovalOutcomeWorst.symbol || 'n/a'} ${riskApprovalOutcomeWorst.mode || 'n/a'} pnl ${riskApprovalOutcomeWorst.pnlNet ?? 'n/a'} (${riskApprovalOutcomeWorst.pnlPercent ?? 'n/a'}%) models ${(riskApprovalOutcomeWorst.models || []).join(',') || 'n/a'}` : ''}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-suggest -- --json`,
         });
       }
     } else if (state[riskApprovalOutcomeKey]) {
       recovers.push({
         key: riskApprovalOutcomeKey,
-        msg: '✅ [루나 헬스] risk approval outcome 회복\n리스크 승인 사후 성과 기준 주의 신호 없음 — 자동 감지',
+        msg: '✅ [투자팀 루나 헬스] risk approval outcome 회복\n리스크 승인 사후 성과 기준 주의 신호 없음 — 자동 감지',
       });
       hsm.clearAlert(state, riskApprovalOutcomeKey);
     }
@@ -600,13 +600,13 @@ async function main() {
         issues.push({
           key: riskApprovalKey,
           level: 2,
-          msg: `⚠️ [루나 헬스] risk approval preview divergence\n${riskApproval.headline || '리스크 승인 preview와 기존 승인 결과 차이 점검 필요'}\npreview ${riskApproval.total || 0} / rejects ${riskApproval.previewRejects || 0} / divergence ${riskApproval.divergence || 0}\namount delta ${riskApproval.previewVsApprovedDelta ?? 0}${trend ? `\ntrend: history ${trend.historyCount || 0} / preview Δ${delta.total ?? 0} / reject Δ${delta.previewRejects ?? 0} / divergence Δ${delta.legacyApprovedPreviewRejected ?? 0} / amount Δ${delta.previewVsApprovedDelta ?? 0}` : ''}${topModel ? `\ntop model: ${topModel.model || 'n/a'} / adjust ${topModel.adjust || 0} / reject ${topModel.reject || 0} / pass ${topModel.pass || 0}` : ''}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:risk-approval -- --json`,
+          msg: `⚠️ [투자팀 루나 헬스] risk approval preview divergence\n${riskApproval.headline || '리스크 승인 preview와 기존 승인 결과 차이 점검 필요'}\npreview ${riskApproval.total || 0} / rejects ${riskApproval.previewRejects || 0} / divergence ${riskApproval.divergence || 0}\namount delta ${riskApproval.previewVsApprovedDelta ?? 0}${trend ? `\ntrend: history ${trend.historyCount || 0} / preview Δ${delta.total ?? 0} / reject Δ${delta.previewRejects ?? 0} / divergence Δ${delta.legacyApprovedPreviewRejected ?? 0} / amount Δ${delta.previewVsApprovedDelta ?? 0}` : ''}${topModel ? `\ntop model: ${topModel.model || 'n/a'} / adjust ${topModel.adjust || 0} / reject ${topModel.reject || 0} / pass ${topModel.pass || 0}` : ''}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:risk-approval -- --json`,
         });
       }
     } else if (state[riskApprovalKey]) {
       recovers.push({
         key: riskApprovalKey,
-        msg: '✅ [루나 헬스] risk approval preview 회복\n리스크 승인 preview와 기존 승인 간 divergence 없음 — 자동 감지',
+        msg: '✅ [투자팀 루나 헬스] risk approval preview 회복\n리스크 승인 preview와 기존 승인 간 divergence 없음 — 자동 감지',
       });
       hsm.clearAlert(state, riskApprovalKey);
     }
@@ -617,13 +617,13 @@ async function main() {
         issues.push({
           key: riskApprovalReadinessKey,
           level: 2,
-          msg: `⚠️ [루나 헬스] risk approval mode readiness\n${riskApprovalReadiness.headline || '리스크 승인 체인 전환 blocker 점검 필요'}\nmode ${riskApprovalReadiness.currentMode || 'n/a'} -> ${riskApprovalReadiness.targetMode || 'n/a'}\nblockers: ${(riskApprovalReadiness.blockers || []).join(' / ') || 'n/a'}\ntrend: history ${riskApprovalReadiness.trend?.historyCount || 0} / blocker Δ${riskApprovalReadinessDelta.blockerCount ?? 0} / preview Δ${riskApprovalReadinessDelta.previewTotal ?? 0} / reject Δ${riskApprovalReadinessDelta.previewRejects ?? 0} / divergence Δ${riskApprovalReadinessDelta.divergence ?? 0}${riskApprovalReadiness.dryRun ? `\ndry-run assist: applied ${riskApprovalReadiness.dryRun.assist?.applied ?? 0} / rejected ${riskApprovalReadiness.dryRun.assist?.rejected ?? 0} / amount delta ${riskApprovalReadiness.dryRun.assist?.amountDelta ?? 0}\ndry-run enforce: applied ${riskApprovalReadiness.dryRun.enforce?.applied ?? 0} / rejected ${riskApprovalReadiness.dryRun.enforce?.rejected ?? 0} / amount delta ${riskApprovalReadiness.dryRun.enforce?.amountDelta ?? 0}` : ''}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:risk-approval-readiness-history -- --json`,
+          msg: `⚠️ [투자팀 루나 헬스] risk approval mode readiness\n${riskApprovalReadiness.headline || '리스크 승인 체인 전환 blocker 점검 필요'}\nmode ${riskApprovalReadiness.currentMode || 'n/a'} -> ${riskApprovalReadiness.targetMode || 'n/a'}\nblockers: ${(riskApprovalReadiness.blockers || []).join(' / ') || 'n/a'}\ntrend: history ${riskApprovalReadiness.trend?.historyCount || 0} / blocker Δ${riskApprovalReadinessDelta.blockerCount ?? 0} / preview Δ${riskApprovalReadinessDelta.previewTotal ?? 0} / reject Δ${riskApprovalReadinessDelta.previewRejects ?? 0} / divergence Δ${riskApprovalReadinessDelta.divergence ?? 0}${riskApprovalReadiness.dryRun ? `\ndry-run assist: applied ${riskApprovalReadiness.dryRun.assist?.applied ?? 0} / rejected ${riskApprovalReadiness.dryRun.assist?.rejected ?? 0} / amount delta ${riskApprovalReadiness.dryRun.assist?.amountDelta ?? 0}\ndry-run enforce: applied ${riskApprovalReadiness.dryRun.enforce?.applied ?? 0} / rejected ${riskApprovalReadiness.dryRun.enforce?.rejected ?? 0} / amount delta ${riskApprovalReadiness.dryRun.enforce?.amountDelta ?? 0}` : ''}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:risk-approval-readiness-history -- --json`,
         });
       }
     } else if (state[riskApprovalReadinessKey]) {
       recovers.push({
         key: riskApprovalReadinessKey,
-        msg: '✅ [루나 헬스] risk approval mode readiness 회복\n리스크 승인 체인 전환 blocker 없음 — 자동 감지',
+        msg: '✅ [투자팀 루나 헬스] risk approval mode readiness 회복\n리스크 승인 체인 전환 blocker 없음 — 자동 감지',
       });
       hsm.clearAlert(state, riskApprovalReadinessKey);
     }
@@ -635,13 +635,13 @@ async function main() {
         issues.push({
           key: riskApprovalCandidateKey,
           level: 1,
-          msg: `ℹ️ [루나 헬스] risk approval mode candidate\n${riskApprovalReadiness.headline || '리스크 승인 체인 mode 전환 후보'}\nmode ${riskApprovalReadiness.currentMode || 'n/a'} -> ${riskApprovalReadiness.targetMode || 'n/a'}\ntrend: history ${riskApprovalReadiness.trend?.historyCount || 0} / blocker Δ${riskApprovalReadinessDelta.blockerCount ?? 0} / preview Δ${riskApprovalReadinessDelta.previewTotal ?? 0}\n자동 전환 없이 governance/마스터 승인 후보로만 기록합니다.\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:risk-approval-readiness-history -- --json`,
+        msg: `ℹ️ [투자팀 루나 헬스] risk approval mode candidate\n${riskApprovalReadiness.headline || '리스크 승인 체인 mode 전환 후보'}\nmode ${riskApprovalReadiness.currentMode || 'n/a'} -> ${riskApprovalReadiness.targetMode || 'n/a'}\ntrend: history ${riskApprovalReadiness.trend?.historyCount || 0} / blocker Δ${riskApprovalReadinessDelta.blockerCount ?? 0} / preview Δ${riskApprovalReadinessDelta.previewTotal ?? 0}\n자동 전환 없이 governance/마스터 승인 후보로만 기록합니다.\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:risk-approval-readiness-history -- --json`,
         });
       }
     } else if (state[riskApprovalCandidateKey]) {
       recovers.push({
         key: riskApprovalCandidateKey,
-        msg: '✅ [루나 헬스] risk approval mode candidate 종료\n현재는 리스크 승인 체인 mode 전환 후보 상태가 아닙니다 — 자동 감지',
+        msg: '✅ [투자팀 루나 헬스] risk approval mode candidate 종료\n현재는 리스크 승인 체인 mode 전환 후보 상태가 아닙니다 — 자동 감지',
       });
       hsm.clearAlert(state, riskApprovalCandidateKey);
     }
@@ -652,13 +652,13 @@ async function main() {
         issues.push({
           key: riskApprovalModeAuditKey,
           level: riskApprovalModeAudit.status === 'risk_approval_mode_audit_attention' ? 2 : 1,
-          msg: `⚠️ [루나 헬스] risk approval mode audit\n${riskApprovalModeAudit.headline || '리스크 승인 mode/readiness 적용 상태 점검'}\nmode ${riskApprovalModeAudit.metrics?.currentMode || 'n/a'} / readiness ${riskApprovalModeAudit.metrics?.readinessStatus || 'n/a'} / blockers ${riskApprovalModeAudit.metrics?.blockerCount || 0}\napplication applied ${riskApprovalModeAudit.metrics?.applied || 0} / rejected ${riskApprovalModeAudit.metrics?.rejected || 0} / non-shadow ${riskApprovalModeAudit.metrics?.nonShadowApplications || 0}\noutcome closed ${riskApprovalModeAudit.metrics?.outcomeClosed || 0} / pnl ${riskApprovalModeAudit.metrics?.outcomePnlNet ?? 0} / avg ${riskApprovalModeAudit.metrics?.outcomeAvgPnlPercent ?? 'n/a'}%\ntrend: history ${riskApprovalModeAudit.trend?.historyCount || 0} / non-shadow Δ${riskApprovalModeAuditDelta.nonShadowApplications ?? 0} / unavailable Δ${riskApprovalModeAuditDelta.unavailablePreviewCount ?? 0} / blocker Δ${riskApprovalModeAuditDelta.blockerCount ?? 0} / outcome pnl Δ${riskApprovalModeAuditDelta.outcomePnlNet ?? 0}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:risk-approval-mode-audit-history -- --json`,
+          msg: `⚠️ [투자팀 루나 헬스] risk approval mode audit\n${riskApprovalModeAudit.headline || '리스크 승인 mode/readiness 적용 상태 점검'}\nmode ${riskApprovalModeAudit.metrics?.currentMode || 'n/a'} / readiness ${riskApprovalModeAudit.metrics?.readinessStatus || 'n/a'} / blockers ${riskApprovalModeAudit.metrics?.blockerCount || 0}\napplication applied ${riskApprovalModeAudit.metrics?.applied || 0} / rejected ${riskApprovalModeAudit.metrics?.rejected || 0} / non-shadow ${riskApprovalModeAudit.metrics?.nonShadowApplications || 0}\noutcome closed ${riskApprovalModeAudit.metrics?.outcomeClosed || 0} / pnl ${riskApprovalModeAudit.metrics?.outcomePnlNet ?? 0} / avg ${riskApprovalModeAudit.metrics?.outcomeAvgPnlPercent ?? 'n/a'}%\ntrend: history ${riskApprovalModeAudit.trend?.historyCount || 0} / non-shadow Δ${riskApprovalModeAuditDelta.nonShadowApplications ?? 0} / unavailable Δ${riskApprovalModeAuditDelta.unavailablePreviewCount ?? 0} / blocker Δ${riskApprovalModeAuditDelta.blockerCount ?? 0} / outcome pnl Δ${riskApprovalModeAuditDelta.outcomePnlNet ?? 0}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:risk-approval-mode-audit-history -- --json`,
         });
       }
     } else if (state[riskApprovalModeAuditKey]) {
       recovers.push({
         key: riskApprovalModeAuditKey,
-        msg: '✅ [루나 헬스] risk approval mode audit 회복\nmode/readiness/application 충돌 없음 — 자동 감지',
+        msg: '✅ [투자팀 루나 헬스] risk approval mode audit 회복\nmode/readiness/application 충돌 없음 — 자동 감지',
       });
       hsm.clearAlert(state, riskApprovalModeAuditKey);
     }
@@ -668,7 +668,7 @@ async function main() {
       issues.push({
         key,
         level: 2,
-        msg: `⚠️ [루나 헬스] learning loop 점검 실패\n${e.message}`,
+        msg: `⚠️ [투자팀 루나 헬스] learning loop 점검 실패\n${e.message}`,
       });
     }
   }
@@ -693,21 +693,21 @@ async function main() {
         issues.push({
           key,
           level,
-          msg: `${insufficient ? '⚠️' : 'ℹ️'} [루나 헬스] collection audit ${insufficient ? 'attention' : 'monitor'}\nmarket: ${target.market}\ncollect quality: ${target.collectQuality?.status || 'unknown'}\nreason: ${remediation.reason || (target.collectQuality?.reasons || []).join(', ') || 'n/a'}\nscreening: ${target.screeningUniverseCount} / maintenance: ${target.maintenanceUniverseCount} / profiled: ${target.maintenanceProfiledCount} / dust skipped: ${target.dustSkippedCount}${commandLines ? `\nnext commands:\n${commandLines}` : '\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:collection-audit'}`,
+          msg: `${insufficient ? '⚠️' : 'ℹ️'} [투자팀 루나 헬스] collection audit ${insufficient ? 'attention' : 'monitor'}\nmarket: ${target.market}\ncollect quality: ${target.collectQuality?.status || 'unknown'}\nreason: ${remediation.reason || (target.collectQuality?.reasons || []).join(', ') || 'n/a'}\nscreening: ${target.screeningUniverseCount} / maintenance: ${target.maintenanceUniverseCount} / profiled: ${target.maintenanceProfiledCount} / dust skipped: ${target.dustSkippedCount}${commandLines ? `\nnext commands:\n${commandLines}` : '\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:collection-audit'}`,
         });
       }
     } else if (state['collection-audit-insufficient'] || state['collection-audit-degraded']) {
       if (state['collection-audit-insufficient']) {
         recovers.push({
           key: 'collection-audit-insufficient',
-          msg: '✅ [루나 헬스] collection audit 회복\ncollect quality insufficient market 없음 — 자동 감지',
+          msg: '✅ [투자팀 루나 헬스] collection audit 회복\ncollect quality insufficient market 없음 — 자동 감지',
         });
         hsm.clearAlert(state, 'collection-audit-insufficient');
       }
       if (state['collection-audit-degraded']) {
         recovers.push({
           key: 'collection-audit-degraded',
-          msg: '✅ [루나 헬스] collection audit 안정화\ncollect quality degraded market 없음 — 자동 감지',
+          msg: '✅ [투자팀 루나 헬스] collection audit 안정화\ncollect quality degraded market 없음 — 자동 감지',
         });
         hsm.clearAlert(state, 'collection-audit-degraded');
       }
@@ -718,7 +718,7 @@ async function main() {
       issues.push({
         key,
         level: 1,
-        msg: `ℹ️ [루나 헬스] collection audit 점검 실패\n${e.message}`,
+        msg: `ℹ️ [투자팀 루나 헬스] collection audit 점검 실패\n${e.message}`,
       });
     }
   }
@@ -836,13 +836,13 @@ async function main() {
             remediationPlan,
             remediationActions,
           },
-          msg: `⚠️ [루나 헬스] position strategy remediation\n${remediationHeadline}\nduplicate managed scopes ${remediationDuplicateManaged} / orphan profiles ${remediationOrphanProfiles} / unmatched managed ${remediationUnmatchedManaged}${remediationHistoryLine ? `\n${remediationHistoryLine}` : ''}${remediationRefreshHint ? `\n${remediationRefreshHint}` : ''}${recommendedExchange ? `\nrecommended exchange: ${recommendedExchange}` : ''}${duplicateSample ? `\nduplicate sample: ${duplicateSample.exchange}/${duplicateSample.symbol} keeper=${duplicateSample.keeperProfileId} retirements=${duplicateSample.retirements?.length || 0}` : ''}${orphanSample ? `\norphan sample: ${orphanSample.exchange}/${orphanSample.symbol} ${orphanSample.tradeMode} ${orphanSample.lifecycleStatus}` : ''}\nnext command: ${remediationNextCommand}\ncommands:\n- ${remediationCommandLines.join('\n- ')}`,
+          msg: `⚠️ [투자팀 루나 헬스] position strategy remediation\n${remediationHeadline}\nduplicate managed scopes ${remediationDuplicateManaged} / orphan profiles ${remediationOrphanProfiles} / unmatched managed ${remediationUnmatchedManaged}${remediationHistoryLine ? `\n${remediationHistoryLine}` : ''}${remediationRefreshHint ? `\n${remediationRefreshHint}` : ''}${recommendedExchange ? `\nrecommended exchange: ${recommendedExchange}` : ''}${duplicateSample ? `\nduplicate sample: ${duplicateSample.exchange}/${duplicateSample.symbol} keeper=${duplicateSample.keeperProfileId} retirements=${duplicateSample.retirements?.length || 0}` : ''}${orphanSample ? `\norphan sample: ${orphanSample.exchange}/${orphanSample.symbol} ${orphanSample.tradeMode} ${orphanSample.lifecycleStatus}` : ''}\nnext command: ${remediationNextCommand}\ncommands:\n- ${remediationCommandLines.join('\n- ')}`,
         });
       }
     } else if (state[key] || state[legacyKey]) {
       recovers.push({
         key,
-        msg: '✅ [루나 헬스] position strategy remediation 회복\nmanaged 포지션 기준 duplicate/orphan/unmatched 이슈 없음 — 자동 감지',
+        msg: '✅ [투자팀 루나 헬스] position strategy remediation 회복\nmanaged 포지션 기준 duplicate/orphan/unmatched 이슈 없음 — 자동 감지',
       });
       hsm.clearAlert(state, key);
       hsm.clearAlert(state, legacyKey);
@@ -853,7 +853,7 @@ async function main() {
       issues.push({
         key,
         level: 1,
-        msg: `ℹ️ [루나 헬스] position strategy remediation 점검 실패\n${e.message}`,
+        msg: `ℹ️ [투자팀 루나 헬스] position strategy remediation 점검 실패\n${e.message}`,
       });
     }
   }
@@ -892,13 +892,13 @@ async function main() {
             positionRuntimeAutotuneCommand: runtimeView.autotuneCommand,
             positionRuntimeAutopilotCommand: runtimeView.autopilotCommand,
           },
-          msg: `⚠️ [루나 헬스] position runtime loop\n${runtimeView.headline}\nactive ${active} / fast-lane ${runtimeView.metrics?.fastLane || 0} / adjust ${adjustReady} / exit ${exitReady} / critical validation ${criticalValidation}\ntuning ${runtimeView.tuningStatus}${topSuggestion ? ` / ${topSuggestion.exchange} ${topSuggestion.status} ${topSuggestion.currentAverageCadenceMs || 'n/a'} -> ${topSuggestion.recommendedCadenceMs || 'n/a'}` : ''}\ndispatch ${runtimeView.dispatchStatus} / candidates ${runtimeView.dispatchCandidates}${topCandidate ? ` / top ${topCandidate.exchange}/${topCandidate.symbol} ${topCandidate.action} ${topCandidate.urgency}` : ''}\ncommands:\n- ${runtimeView.reportCommand}\n- ${runtimeView.tuningCommand}\n- ${runtimeView.dispatchCommand}\n- ${runtimeView.autotuneCommand}\n- ${runtimeView.autopilotCommand}`,
+          msg: `⚠️ [투자팀 루나 헬스] position runtime loop\n${runtimeView.headline}\nactive ${active} / fast-lane ${runtimeView.metrics?.fastLane || 0} / adjust ${adjustReady} / exit ${exitReady} / critical validation ${criticalValidation}\ntuning ${runtimeView.tuningStatus}${topSuggestion ? ` / ${topSuggestion.exchange} ${topSuggestion.status} ${topSuggestion.currentAverageCadenceMs || 'n/a'} -> ${topSuggestion.recommendedCadenceMs || 'n/a'}` : ''}\ndispatch ${runtimeView.dispatchStatus} / candidates ${runtimeView.dispatchCandidates}${topCandidate ? ` / top ${topCandidate.exchange}/${topCandidate.symbol} ${topCandidate.action} ${topCandidate.urgency}` : ''}\ncommands:\n- ${runtimeView.reportCommand}\n- ${runtimeView.tuningCommand}\n- ${runtimeView.dispatchCommand}\n- ${runtimeView.autotuneCommand}\n- ${runtimeView.autopilotCommand}`,
         });
       }
     } else if (state[key]) {
       recovers.push({
         key,
-        msg: '✅ [루나 헬스] position runtime loop 안정화\nruntime adjust/exit/critical validation attention 없음 — 자동 감지',
+        msg: '✅ [투자팀 루나 헬스] position runtime loop 안정화\nruntime adjust/exit/critical validation attention 없음 — 자동 감지',
       });
       hsm.clearAlert(state, key);
     }
@@ -908,7 +908,7 @@ async function main() {
       issues.push({
         key,
         level: 1,
-        msg: `ℹ️ [루나 헬스] position runtime loop 점검 실패\n${e.message}`,
+        msg: `ℹ️ [투자팀 루나 헬스] position runtime loop 점검 실패\n${e.message}`,
       });
     }
   }
@@ -923,13 +923,13 @@ async function main() {
         issues.push({
           key,
           level: Number(executionGuard.staleCount || 0) > 0 ? 2 : 1,
-          msg: `⚠️ [루나 헬스] execution risk approval guard\n최근 ${executionGuard.periodHours}시간 실행 직전 차단 ${executionGuard.total}건\nstale ${executionGuard.staleCount} / bypass ${executionGuard.bypassCount}${top ? `\ntop: ${top.exchange} ${top.blockCode} ${top.count}건 (${top.blockedBy})` : ''}${sample ? `\nsample: ${sample.exchange}/${sample.symbol} ${sample.blockCode}` : ''}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run report`,
+        msg: `⚠️ [투자팀 루나 헬스] execution risk approval guard\n최근 ${executionGuard.periodHours}시간 실행 직전 차단 ${executionGuard.total}건\nstale ${executionGuard.staleCount} / bypass ${executionGuard.bypassCount}${top ? `\ntop: ${top.exchange} ${top.blockCode} ${top.count}건 (${top.blockedBy})` : ''}${sample ? `\nsample: ${sample.exchange}/${sample.symbol} ${sample.blockCode}` : ''}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run report`,
         });
       }
     } else if (state[key]) {
       recovers.push({
         key,
-        msg: '✅ [루나 헬스] execution risk approval guard 회복\n최근 24시간 실행 직전 리스크 승인 차단 없음 — 자동 감지',
+        msg: '✅ [투자팀 루나 헬스] execution risk approval guard 회복\n최근 24시간 실행 직전 리스크 승인 차단 없음 — 자동 감지',
       });
       hsm.clearAlert(state, key);
     }
@@ -939,7 +939,7 @@ async function main() {
       issues.push({
         key,
         level: 1,
-        msg: `ℹ️ [루나 헬스] execution risk approval guard 점검 실패\n${e.message}`,
+        msg: `ℹ️ [투자팀 루나 헬스] execution risk approval guard 점검 실패\n${e.message}`,
       });
     }
   }
@@ -953,7 +953,7 @@ async function main() {
       issues.push({
         key,
         level: 3,
-        msg: `⚠️ [루나 헬스] local LLM flapping\n최근 probe ok ${localLlmTrend.okCount} / fail ${localLlmTrend.failCount} / 전환 ${localLlmTrend.transitionCount}회\n11434는 embeddings 전용이며, chat 경로는 Groq 우선${localLlmTrend.lastError ? `\nlast error: ${localLlmTrend.lastError}` : ''}`,
+        msg: `⚠️ [투자팀 루나 헬스] local LLM flapping\n최근 probe ok ${localLlmTrend.okCount} / fail ${localLlmTrend.failCount} / 전환 ${localLlmTrend.transitionCount}회\n11434는 embeddings 전용이며, chat 경로는 Groq 우선${localLlmTrend.lastError ? `\nlast error: ${localLlmTrend.lastError}` : ''}`,
       });
     }
   } else if (localLlmTrend.status === 'degraded') {
@@ -962,13 +962,13 @@ async function main() {
       issues.push({
         key,
         level: 2,
-        msg: `⚠️ [루나 헬스] local LLM degraded\n최근 embeddings probe 실패\n11434는 embeddings 전용이며, chat 경로는 Groq 우선${localLlmTrend.lastError ? `\n${localLlmTrend.lastError}` : ''}`,
+        msg: `⚠️ [투자팀 루나 헬스] local LLM degraded\n최근 embeddings probe 실패\n11434는 embeddings 전용이며, chat 경로는 Groq 우선${localLlmTrend.lastError ? `\n${localLlmTrend.lastError}` : ''}`,
       });
     }
   } else {
     ['local-llm-flapping', 'local-llm-degraded'].forEach((key) => {
       if (state[key]) {
-        recovers.push({ key, msg: `✅ [루나 헬스] local LLM 회복\n최근 생성 probe 기준 ${localLlmTrend.status} 상태 — 자동 감지` });
+        recovers.push({ key, msg: `✅ [투자팀 루나 헬스] local LLM 회복\n최근 생성 probe 기준 ${localLlmTrend.status} 상태 — 자동 감지` });
         hsm.clearAlert(state, key);
       }
     });
