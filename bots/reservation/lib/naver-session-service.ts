@@ -25,6 +25,25 @@ export function createNaverSessionService(deps: CreateNaverSessionServiceDeps) {
     ensureHeadedFlag,
     naverUrl,
   } = deps;
+  const navigationTimeoutMs = 30000;
+
+  async function safeGotoNaverHome(page: any, reason: string, maxAttempts = 2): Promise<void> {
+    let lastError: any = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        await page.goto(naverUrl, { waitUntil: 'domcontentloaded', timeout: navigationTimeoutMs });
+        await page.waitForNetworkIdle({ idleTime: 800, timeout: 5000 }).catch(() => null);
+        return;
+      } catch (error: any) {
+        lastError = error;
+        log(`⚠️ 네이버 홈 복귀 실패(${reason}) ${attempt}/${maxAttempts}: ${error?.message || error}`);
+        if (attempt < maxAttempts) {
+          await delay(1200);
+        }
+      }
+    }
+    throw lastError;
+  }
 
   async function installNameShim(page: any): Promise<void> {
     if (!page) return;
@@ -242,7 +261,7 @@ export function createNaverSessionService(deps: CreateNaverSessionServiceDeps) {
             return text.includes('오늘 확정') || text.includes('예약 현황');
           }, { timeout: 30 * 60 * 1000 }).catch(() => null);
 
-          await page.goto(naverUrl, { waitUntil: 'networkidle2' });
+          await safeGotoNaverHome(page, 'post-login');
         } else {
           log('⚠️ 로그인 폼을 못 찾음(추가 인증/차단 가능).');
         }

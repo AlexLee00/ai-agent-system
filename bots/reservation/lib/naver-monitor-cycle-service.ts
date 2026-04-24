@@ -1,3 +1,5 @@
+import { getReservationBrowserConfig } from './runtime-config';
+
 type Logger = (message: string) => void;
 
 export type CreateNaverMonitorCycleServiceDeps = {
@@ -57,6 +59,27 @@ export function createNaverMonitorCycleService(deps: CreateNaverMonitorCycleServ
     pathJoin,
     getModeSuffix,
   } = deps;
+  const browserConfig = getReservationBrowserConfig();
+  const navigationTimeoutMs = Math.max(15000, browserConfig.navigationTimeoutMs || 30000);
+  const networkIdleTimeoutMs = Math.min(5000, navigationTimeoutMs);
+
+  async function safeGotoNaverHome(page: any, naverUrl: string, reason: string, maxAttempts = 2): Promise<void> {
+    let lastError: any = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        await page.goto(naverUrl, { waitUntil: 'domcontentloaded', timeout: navigationTimeoutMs });
+        await page.waitForNetworkIdle({ idleTime: 800, timeout: networkIdleTimeoutMs }).catch(() => null);
+        return;
+      } catch (error: any) {
+        lastError = error;
+        log(`⚠️ 네이버 홈 복귀 실패(${reason}) ${attempt}/${maxAttempts}: ${error?.message || error}`);
+        if (attempt < maxAttempts) {
+          await deps.delay(1200);
+        }
+      }
+    }
+    throw lastError;
+  }
 
   async function executeCycle({
     page,
@@ -95,8 +118,7 @@ export function createNaverMonitorCycleService(deps: CreateNaverMonitorCycleServ
   }) {
     const cycleStart = Date.now();
 
-    await page.goto(naverUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
-    await page.waitForNetworkIdle({ idleTime: 800, timeout: 20000 }).catch(() => null);
+    await safeGotoNaverHome(page, naverUrl, 'cycle-entry');
     await ensureHomeFromCalendar(page);
 
     const sessionOk = await page.evaluate(() => {
@@ -179,7 +201,7 @@ export function createNaverMonitorCycleService(deps: CreateNaverMonitorCycleServ
           .join(' | ');
         log(`🧵 오늘 확정 처리 실패 stack: ${stackPreview}`);
       }
-      try { await page.goto(naverUrl, { waitUntil: 'networkidle2' }); } catch (_) {}
+      try { await safeGotoNaverHome(page, naverUrl, 'confirmed-cycle-recovery'); } catch (_) {}
     }
 
     let currentCancelledList: Record<string, any>[] = [];
@@ -195,7 +217,7 @@ export function createNaverMonitorCycleService(deps: CreateNaverMonitorCycleServ
         }));
       } catch (err: any) {
         log(`⚠️ 취소 탭 처리 중 오류: ${err.message}`);
-        try { await page.goto(naverUrl, { waitUntil: 'networkidle2' }); } catch (_) {}
+        try { await safeGotoNaverHome(page, naverUrl, 'cancel-tab-recovery'); } catch (_) {}
       }
     }
 
@@ -210,7 +232,7 @@ export function createNaverMonitorCycleService(deps: CreateNaverMonitorCycleServ
         });
       } catch (err: any) {
         log(`⚠️ [취소감지2E] 오류: ${err.message}`);
-        try { await page.goto(naverUrl, { waitUntil: 'networkidle2' }); } catch (_) {}
+        try { await safeGotoNaverHome(page, naverUrl, 'expanded-cancel-recovery'); } catch (_) {}
       }
     }
 
@@ -278,7 +300,7 @@ export function createNaverMonitorCycleService(deps: CreateNaverMonitorCycleServ
         });
       } catch (err: any) {
         if (err.message !== 'cancelledHref 없음') {
-          try { await page.goto(naverUrl, { waitUntil: 'networkidle2' }); } catch (_) {}
+          try { await safeGotoNaverHome(page, naverUrl, 'future-cancel-recovery'); } catch (_) {}
         }
         log(`⚠️ [취소감지4] 오류 — 스킵: ${err.message}`);
       }

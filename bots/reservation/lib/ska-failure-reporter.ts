@@ -30,7 +30,7 @@ export function classifyError(message: string): SkaErrorType {
   if (/detached\s*Frame|selector|not\s*found|No\s*node\s*found|waitForSelector/i.test(msg)) {
     return 'selector_broken';
   }
-  if (/ECONNREFUSED|ECONNRESET|ERR_NETWORK|fetch\s*failed|network/i.test(msg)) {
+  if (/ECONNREFUSED|ECONNRESET|ERR_NETWORK|ERR_NAME_NOT_RESOLVED|fetch\s*failed|network/i.test(msg)) {
     return 'network_error';
   }
   if (/timeout|TimeoutError|Navigation\s*timeout|Waiting\s*failed/i.test(msg)) {
