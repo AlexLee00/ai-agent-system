@@ -8,12 +8,15 @@ const TEAM_CONFIG_MAP = {
   darwin: '/Users/alexlee/projects/ai-agent-system/bots/academic/config.json',
   justin: '/Users/alexlee/projects/ai-agent-system/bots/legal/config.json',
   sigma: '/Users/alexlee/projects/ai-agent-system/bots/data/config.json',
+  luna: '/Users/alexlee/projects/ai-agent-system/bots/investment/config.yaml',
+  investment: '/Users/alexlee/projects/ai-agent-system/bots/investment/config.yaml',
 };
 
 const TASK_KEYWORDS = {
   research: ['research', 'search', 'source', 'paper', 'code'],
   citation: ['citation', 'legal', 'evidence', 'review', 'brief'],
   quality: ['quality', 'etl', 'analysis', 'metrics', 'dataset'],
+  trading: ['trading', 'market', 'signal', 'execution', 'portfolio', 'quote', 'screening'],
 };
 
 function normalizeTask(taskType = '') {
@@ -83,6 +86,8 @@ function buildMcpPlan(team, taskType, options = {}) {
       ? `use ${item.id} to gather verifiable sources`
       : normalizedTask === 'citation'
         ? `use ${item.id} to validate identifiers and evidence`
+        : normalizedTask === 'trading'
+          ? `use ${item.id} to collect market context and execution signals`
         : `use ${item.id} to inspect data quality and operational context`,
     reasons: item.reasons,
   }));

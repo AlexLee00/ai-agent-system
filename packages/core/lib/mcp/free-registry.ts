@@ -38,6 +38,33 @@ const FREE_MCP_REGISTRY = {
     preferredTeams: ['sigma'],
     taskHints: ['quality', 'etl', 'analysis', 'ops'],
   },
+  'tradingview-market': {
+    id: 'tradingview-market',
+    label: 'TradingView Market MCP',
+    cost: 'free',
+    mode: 'local',
+    capabilities: ['quote', 'ohlcv', 'indicators', 'multi-symbol-quote'],
+    preferredTeams: ['investment', 'luna'],
+    taskHints: ['trading', 'market', 'analysis', 'signal', 'research'],
+  },
+  'toss-market-intel': {
+    id: 'toss-market-intel',
+    label: 'Toss Market Intel MCP',
+    cost: 'free',
+    mode: 'local',
+    capabilities: ['community-intel', 'screening-candidates', 'section-scan'],
+    preferredTeams: ['investment', 'luna'],
+    taskHints: ['trading', 'market', 'screening', 'signal', 'research'],
+  },
+  'kis-market': {
+    id: 'kis-market',
+    label: 'KIS Market MCP',
+    cost: 'free',
+    mode: 'local',
+    capabilities: ['domestic-quote', 'overseas-quote', 'balance-check'],
+    preferredTeams: ['investment', 'luna'],
+    taskHints: ['trading', 'market', 'execution', 'signal', 'ops'],
+  },
 };
 
 function getMcpDefinition(id) {
