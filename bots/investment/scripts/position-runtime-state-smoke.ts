@@ -23,6 +23,45 @@ export function runPositionRuntimeStateSmoke() {
   assert.equal(monitoringPolicy.lane, 'attention_fast_lane');
   assert.ok(monitoringPolicy.cadenceMs <= 10000);
 
+  const monitoringPolicyNoExternalEvidence = buildRegimeAwareMonitoringPolicy({
+    exchange: 'binance',
+    recommendation: 'ADJUST',
+    reasonCode: 'profit_lock_candidate',
+    regime: { regime: 'volatile' },
+    setupType: 'momentum_rotation',
+    analysisSummary: {
+      avgConfidence: 0.64,
+      liveIndicator: { avgConfidence: 0.66, weightedBias: 0.4 },
+    },
+    externalEvidenceSummary: {
+      evidenceCount: 0,
+      avgQuality: 0,
+      avgFreshness: 0,
+      warning: 'no evidence',
+    },
+  });
+  assert.equal(monitoringPolicyNoExternalEvidence.sourceQualityBlocked, false);
+  assert.ok(monitoringPolicyNoExternalEvidence.sourceQualityScore >= 0.45);
+
+  const monitoringPolicyLowExternalQuality = buildRegimeAwareMonitoringPolicy({
+    exchange: 'binance',
+    recommendation: 'ADJUST',
+    reasonCode: 'profit_lock_candidate',
+    regime: { regime: 'volatile' },
+    setupType: 'momentum_rotation',
+    analysisSummary: {
+      avgConfidence: 0.64,
+      liveIndicator: { avgConfidence: 0.66, weightedBias: 0.4 },
+    },
+    externalEvidenceSummary: {
+      evidenceCount: 4,
+      avgQuality: 0.2,
+      avgFreshness: 0.5,
+      warning: 'low quality',
+    },
+  });
+  assert.equal(monitoringPolicyLowExternalQuality.sourceQualityBlocked, true);
+
   const policyMatrix = buildRegimeAwarePolicyMatrix({
     exchange: 'binance',
     strategyProfile: { setup_type: 'trend_following' },
@@ -56,6 +95,10 @@ export function runPositionRuntimeStateSmoke() {
   });
   assert.equal(executionIntent.action, 'EXIT');
   assert.match(executionIntent.command, /runtime:strategy-exit/);
+  assert.match(executionIntent.previewCommand, /runtime:strategy-exit/);
+  assert.match(executionIntent.autonomousExecuteCommand, /--execute/);
+  assert.match(executionIntent.autonomousExecuteCommand, /--confirm=position-runtime-autopilot/);
+  assert.equal(executionIntent.executionPolicy.autonomy, 'autonomous_allowed');
 
   const runtimeState = buildPositionRuntimeState({
     position: {
@@ -100,6 +143,7 @@ export function runPositionRuntimeStateSmoke() {
   assert.equal(runtimeState.version, 3);
   assert.equal(runtimeState.regime.regime, 'trending_bear');
   assert.equal(runtimeState.executionIntent.action, 'EXIT');
+  assert.equal(runtimeState.executionIntent.executionPolicy.autonomy, 'autonomous_allowed');
   assert.equal(runtimeState.validationState.severity, 'critical');
   assert.equal(runtimeState.monitoringPolicy.lane, 'attention_fast_lane');
 

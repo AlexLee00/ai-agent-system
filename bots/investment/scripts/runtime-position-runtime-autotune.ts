@@ -34,13 +34,14 @@ function loadOverrides() {
   }
 }
 
-function overrideKeyForExchange(exchange) {
+export function overrideKeyForExchange(exchange) {
   if (exchange === 'binance') return 'position_watch_crypto_realtime_ms';
-  if (exchange === 'kis' || exchange === 'kis_overseas') return 'position_watch_stock_realtime_ms';
+  if (exchange === 'kis') return 'position_watch_domestic_realtime_ms';
+  if (exchange === 'kis_overseas') return 'position_watch_overseas_realtime_ms';
   return null;
 }
 
-function buildUpdates(suggestions = []) {
+export function buildUpdates(suggestions = []) {
   const updates = {};
   const appliedSuggestionsByKey = {};
   for (const suggestion of suggestions) {

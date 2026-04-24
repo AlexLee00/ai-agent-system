@@ -29,8 +29,6 @@ const ROOT       = env.PROJECT_ROOT;
 const WORKSPACE  = path.join(os.homedir(), '.openclaw', 'workspace');
 const STATE_FILE = path.join(WORKSPACE, 'codex-notifier-state.json');
 const AUTO_DEV_REL_DIR = 'docs/auto_dev';
-const CODEX_REL_DIR    = 'docs/codex';
-const PROMPT_REL_DIRS  = [AUTO_DEV_REL_DIR, CODEX_REL_DIR];
 
 const CHECK_INTERVAL_MS   = 5 * 60 * 1000;   // 5분
 const STALL_THRESHOLD_MS  = 30 * 60 * 1000;  // 30분 정체 시 경고
@@ -126,7 +124,7 @@ function toProjectRelativePath(filePath) {
 
 function isSupportedPromptFile(promptFile) {
   const rel = toProjectRelativePath(promptFile);
-  return PROMPT_REL_DIRS.some(dir => rel.startsWith(`${dir}/`)) && /\.md$/i.test(rel);
+  return rel.startsWith(`${AUTO_DEV_REL_DIR}/`) && /\.md$/i.test(rel);
 }
 
 function normalizePromptName(promptName) {
@@ -143,25 +141,19 @@ function normalizePromptName(promptName) {
 
 function findPromptFileByName(promptName) {
   const stem = normalizePromptName(promptName);
-  const fileName = `${stem}.md`;
-
-  for (const dir of PROMPT_REL_DIRS) {
-    const relPath = `${dir}/${fileName}`;
-    if (fs.existsSync(path.join(ROOT, relPath))) {
-      return relPath;
-    }
-  }
-
-  return `${AUTO_DEV_REL_DIR}/${fileName}`;
+  return `${AUTO_DEV_REL_DIR}/${stem}.md`;
 }
 
 function extractPromptFileFromCmdLine(cmdLine) {
   const normalized = String(cmdLine || '').replace(/\\/g, '/');
-  const directMatch = normalized.match(/(?:^|\s|["'])((?:[^\s"']+\/)?docs\/(?:auto_dev|codex)\/[A-Za-z0-9_.-]+\.md)(?=$|\s|["'])/i);
+  const directMatch = normalized.match(/(?:^|\s|["'])((?:[^\s"']+\/)?docs\/auto_dev\/[A-Za-z0-9_.-]+\.md)(?=$|\s|["')])/i);
   if (directMatch) {
     const relPath = toProjectRelativePath(directMatch[1]);
     if (isSupportedPromptFile(relPath)) return relPath;
   }
+
+  const unsupportedDocsMatch = normalized.match(/(?:^|\s|["'])((?:[^\s"']+\/)?docs\/(?!auto_dev\/)[A-Za-z0-9_./-]+\.md)(?=$|\s|["')])/i);
+  if (unsupportedDocsMatch) return '';
 
   const stemMatch = normalized.match(/\b(CODEX_[A-Z0-9_]+)\.md\b/i)
     || normalized.match(/\b(CODEX_[A-Z0-9_]+(?:_EVOLUTION|_REMODEL|_COMPLETE|_PLAN)?)\b/i);
@@ -379,8 +371,9 @@ async function detectCodexProcesses() {
 
       const cmdLine = parts.slice(10).join(' ');
 
-      // 프롬프트 파일 경로 추출 — docs/auto_dev를 우선하고 docs/codex는 하위 호환으로 유지
+      // 프롬프트 파일 경로 추출 — 클로드팀 자동 구현 인박스는 docs/auto_dev만 감지한다.
       const promptFile = extractPromptFileFromCmdLine(cmdLine);
+      if (!promptFile) continue;
 
       // 프롬프트 파일 내용 읽기
       let promptContent = '';

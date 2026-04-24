@@ -22,12 +22,25 @@ defmodule Luna.V2.KillSwitchTest do
     Application.put_env(:luna, :position_watch_interval_ms, 60_000)
     Application.put_env(:luna, :position_watch_crypto_realtime_ms, 15_000)
     Application.put_env(:luna, :position_watch_stock_realtime_ms, 15_000)
+    Application.put_env(:luna, :position_watch_domestic_realtime_ms, 13_000)
+    Application.put_env(:luna, :position_watch_overseas_realtime_ms, 21_000)
     Application.put_env(:luna, :position_watch_stock_offhours_ms, 300_000)
 
     assert Luna.V2.KillSwitch.position_watch_enabled?()
     assert Luna.V2.KillSwitch.position_watch_interval_ms() == 60_000
     assert Luna.V2.KillSwitch.position_watch_crypto_realtime_ms() == 15_000
     assert Luna.V2.KillSwitch.position_watch_stock_realtime_ms() == 15_000
+    assert Luna.V2.KillSwitch.position_watch_domestic_realtime_ms() == 13_000
+    assert Luna.V2.KillSwitch.position_watch_overseas_realtime_ms() == 21_000
     assert Luna.V2.KillSwitch.position_watch_stock_offhours_ms() == 300_000
+  end
+
+  test "domestic/overseas realtime key는 legacy stock key로 fallback" do
+    Application.delete_env(:luna, :position_watch_domestic_realtime_ms)
+    Application.delete_env(:luna, :position_watch_overseas_realtime_ms)
+    Application.put_env(:luna, :position_watch_stock_realtime_ms, 17_500)
+
+    assert Luna.V2.KillSwitch.position_watch_domestic_realtime_ms() == 17_500
+    assert Luna.V2.KillSwitch.position_watch_overseas_realtime_ms() == 17_500
   end
 end

@@ -26,6 +26,20 @@ config :luna,
     String.to_integer(System.get_env("LUNA_POSITION_WATCH_IDLE_MS", "60000")),
   position_watch_crypto_realtime_ms:
     String.to_integer(System.get_env("LUNA_POSITION_WATCH_CRYPTO_REALTIME_MS", "15000")),
+  position_watch_domestic_realtime_ms:
+    String.to_integer(
+      System.get_env(
+        "LUNA_POSITION_WATCH_DOMESTIC_REALTIME_MS",
+        System.get_env("LUNA_POSITION_WATCH_STOCK_REALTIME_MS", "15000")
+      )
+    ),
+  position_watch_overseas_realtime_ms:
+    String.to_integer(
+      System.get_env(
+        "LUNA_POSITION_WATCH_OVERSEAS_REALTIME_MS",
+        System.get_env("LUNA_POSITION_WATCH_STOCK_REALTIME_MS", "15000")
+      )
+    ),
   position_watch_stock_realtime_ms:
     String.to_integer(System.get_env("LUNA_POSITION_WATCH_STOCK_REALTIME_MS", "15000")),
   position_watch_stock_offhours_ms:

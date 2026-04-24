@@ -11,7 +11,9 @@ import {
   getKisMarketStatus,
   getKisOverseasMarketStatus,
 } from '../shared/secrets.ts';
+import { publishToMainBot } from '../shared/mainbot-client.ts';
 import { beginCloseout, finalizeCloseout } from '../shared/position-closeout-engine.ts';
+import { recordLifecyclePhaseSnapshot } from '../shared/lifecycle-contract.ts';
 
 function parseArgs(argv = process.argv.slice(2)) {
   const values = {};
@@ -28,9 +30,18 @@ function parseArgs(argv = process.argv.slice(2)) {
     exchange: values.exchange ? String(values.exchange) : null,
     tradeMode: values['trade-mode'] ? String(values['trade-mode']) : null,
     confirm: values.confirm ? String(values.confirm) : null,
+    runContext: values['run-context'] ? String(values['run-context']) : null,
     ratio: values.ratio != null ? Number(values.ratio) : null,
     minutesBack: values.minutes ? Math.max(10, Number(values.minutes)) : 180,
   };
+}
+
+function isAutonomousExecutionContext(args = {}) {
+  const confirm = String(args?.confirm || '').trim();
+  const runContext = String(args?.runContext || '').trim();
+  return confirm === 'position-runtime-autopilot'
+    || runContext === 'position-runtime-autopilot'
+    || runContext === 'phase6-autopilot';
 }
 
 function getDefaultPartialExitRatio(reasonCode) {
@@ -177,6 +188,7 @@ function mapCandidate(row, strategyProfile = null, overrideRatio = null) {
   const estimatedNotional = positionAmount * avgPrice;
   const estimatedExitAmount = positionAmount * ratio;
   const strategyProfileSnapshot = strategyProfile ? {
+    id: strategyProfile.id || null,
     strategyName: strategyProfile.strategy_name || null,
     setupType: strategyProfile.setup_type || null,
     exitPlan: strategyProfile.exit_plan || strategyProfile.exitPlan || null,
@@ -287,7 +299,7 @@ async function loadCandidates({ tradeMode = null, minutesBack = 180, ratio = nul
 
 async function createPartialAdjustSignal(candidate) {
   const incidentLink = candidate.signalIncidentLink || `partial_adjust:${candidate.reasonCode}${buildFamilyFeedbackIncidentSuffix(candidate.strategyProfile)}`;
-  const idempotencyKey = `partial_adjust:${candidate.symbol}:${candidate.exchange}:${candidate.tradeMode}:${candidate.reasonCode}:${Date.now().toString(36)}`;
+  const idempotencyKey = buildPartialAdjustIdempotencyKey(candidate);
   const signalId = await db.insertSignal({
     symbol: candidate.symbol,
     action: 'SELL',
@@ -318,6 +330,42 @@ async function createPartialAdjustSignal(candidate) {
     _strategyFamily: candidate?.strategyProfile?.familyPerformanceFeedback?.family || null,
     _familyBias: candidate?.strategyProfile?.familyPerformanceFeedback?.bias || null,
   };
+}
+
+export function buildPartialAdjustIdempotencyKey(candidate) {
+  const symbol = String(candidate?.symbol || 'UNKNOWN');
+  const exchange = String(candidate?.exchange || 'unknown');
+  const tradeMode = String(candidate?.tradeMode || 'normal');
+  const reasonCode = String(candidate?.reasonCode || 'unknown');
+  const strategyProfileId = String(candidate?.strategyProfile?.id || 'profile_unknown');
+  const strategyName = String(candidate?.strategyProfile?.strategyName || 'strategy_unknown');
+  const setupType = String(candidate?.strategyProfile?.setupType || 'setup_unknown');
+  const runtimeState = candidate?.strategyProfile?.positionRuntimeState || {};
+  const runtimeVersion = Number(runtimeState?.version);
+  const runtimeVersionToken = Number.isFinite(runtimeVersion) ? `v${runtimeVersion}` : 'v0';
+  const runtimeUpdatedAt = String(runtimeState?.updatedAt || runtimeState?.updated_at || '').trim();
+  const runtimeUpdatedToken = runtimeUpdatedAt
+    ? runtimeUpdatedAt.replace(/[^0-9a-z]/gi, '').slice(0, 20)
+    : 'no_runtime_ts';
+  const ratio = Number(candidate?.partialExitRatio || 0);
+  const positionAmount = Number(candidate?.positionAmount || 0);
+  const estimatedNotional = Number(candidate?.estimatedNotional || 0);
+  return [
+    'partial_adjust',
+    'v2',
+    symbol,
+    exchange,
+    tradeMode,
+    reasonCode,
+    strategyProfileId,
+    strategyName,
+    setupType,
+    runtimeVersionToken,
+    runtimeUpdatedToken,
+    ratio.toFixed(4),
+    positionAmount.toFixed(8),
+    estimatedNotional.toFixed(2),
+  ].join(':');
 }
 
 async function executePartialAdjustSignal(signal) {
@@ -376,6 +424,7 @@ async function main() {
     await syncPartialAdjustCandidateStates(candidates, 'preview');
     const payload = {
       mode: 'preview',
+      ok: true,
       totalCandidates: candidates.length,
       candidates,
       usage: [
@@ -405,6 +454,7 @@ async function main() {
     const preflight = await getExecutionPreflight(candidate);
     const payload = {
       mode: 'preview',
+      ok: true,
       candidate,
       preflight,
       executeCommand: `env PAPER_MODE=false node bots/investment/scripts/partial-adjust-runner.ts --symbol=${candidate.symbol} --exchange=${candidate.exchange} --trade-mode=${candidate.tradeMode} --execute --confirm=partial-adjust`,
@@ -419,8 +469,9 @@ async function main() {
     return;
   }
 
-  if (args.confirm !== 'partial-adjust') {
-    throw new Error('실행하려면 --confirm=partial-adjust 가 필요합니다.');
+  const autonomousContext = isAutonomousExecutionContext(args);
+  if (!autonomousContext && args.confirm !== 'partial-adjust') {
+    throw new Error('실행하려면 --confirm=partial-adjust 또는 --confirm=position-runtime-autopilot 가 필요합니다.');
   }
   const preflight = await getExecutionPreflight(candidate);
   if (!preflight.ok) {
@@ -429,6 +480,29 @@ async function main() {
 
   await syncPartialAdjustCandidateStates([candidate], 'execute');
   const signal = await createPartialAdjustSignal(candidate);
+  const lifecyclePolicySnapshot = candidate?.strategyProfile?.positionRuntimeState?.policyMatrix
+    || candidate?.executionIntent?.policyMatrix
+    || {};
+  await recordLifecyclePhaseSnapshot({
+    symbol: candidate.symbol,
+    exchange: candidate.exchange,
+    tradeMode: candidate.tradeMode,
+    phase: 'phase3_approve',
+    ownerAgent: 'partial_adjust_runner',
+    eventType: 'completed',
+    inputSnapshot: {
+      recommendation: 'ADJUST',
+      reasonCode: candidate.reasonCode,
+      preflight,
+    },
+    outputSnapshot: {
+      signalId: signal.id,
+      incidentLink: signal.exit_reason_override,
+      idempotencyKey: signal._idempotencyKey,
+    },
+    policySnapshot: lifecyclePolicySnapshot,
+    idempotencyKey: `phase3:partial_adjust:${signal._idempotencyKey}`,
+  }).catch(() => null);
 
   const closeoutCtx = {
     symbol: candidate.symbol,
@@ -446,10 +520,60 @@ async function main() {
     idempotencyKey: signal._idempotencyKey,
     cooldownMinutes: 30,
   };
-  const beginResult = await beginCloseout(closeoutCtx).catch(() => ({ ok: true }));
+  const beginResult = await beginCloseout(closeoutCtx).catch(async (error) => {
+    const reason = `closeout_guard_error:${error?.message || String(error)}`;
+    await publishToMainBot({
+      from_bot: 'luna',
+      event_type: 'system_error',
+      alert_level: 3,
+      message: `⚠️ [phase6] partial-adjust closeout guard exception\nsymbol=${candidate.symbol}\nexchange=${candidate.exchange}\ncloseoutType=partial_adjust\nreason=${reason}`,
+      payload: {
+        closeoutType: 'partial_adjust',
+        closeout_guard_error: reason,
+        symbol: candidate.symbol,
+        exchange: candidate.exchange,
+        tradeMode: candidate.tradeMode,
+        idempotencyKey: signal._idempotencyKey,
+      },
+    }).catch(() => null);
+    return { ok: false, reason };
+  });
   if (!beginResult.ok) {
+    await recordLifecyclePhaseSnapshot({
+      symbol: candidate.symbol,
+      exchange: candidate.exchange,
+      tradeMode: candidate.tradeMode,
+      phase: 'phase4_execute',
+      ownerAgent: 'partial_adjust_runner',
+      eventType: 'blocked',
+      inputSnapshot: {
+        signalId: signal.id,
+        idempotencyKey: signal._idempotencyKey,
+      },
+      outputSnapshot: {
+        reason: beginResult.reason || 'closeout_preflight_blocked',
+      },
+      policySnapshot: lifecyclePolicySnapshot,
+      idempotencyKey: `phase4:block:partial_adjust:${signal._idempotencyKey}`,
+    }).catch(() => null);
     throw new Error(`partial-adjust closeout guard: ${beginResult.reason}`);
   }
+  await recordLifecyclePhaseSnapshot({
+    symbol: candidate.symbol,
+    exchange: candidate.exchange,
+    tradeMode: candidate.tradeMode,
+    phase: 'phase4_execute',
+    ownerAgent: 'partial_adjust_runner',
+    eventType: 'started',
+    inputSnapshot: {
+      signalId: signal.id,
+      idempotencyKey: signal._idempotencyKey,
+      plannedRatio: candidate.partialExitRatio,
+      plannedNotional: candidate.estimatedNotional,
+    },
+    policySnapshot: lifecyclePolicySnapshot,
+    idempotencyKey: `phase4:start:partial_adjust:${signal._idempotencyKey}`,
+  }).catch(() => null);
 
   let executeResult = null;
   let executeError = null;
@@ -465,11 +589,38 @@ async function main() {
     executeResult,
     executeError,
   ).catch(() => null);
+  const executionFailed = Boolean(executeError || closeoutResult?.ok === false);
+  await recordLifecyclePhaseSnapshot({
+    symbol: candidate.symbol,
+    exchange: candidate.exchange,
+    tradeMode: candidate.tradeMode,
+    phase: 'phase4_execute',
+    ownerAgent: 'partial_adjust_runner',
+    eventType: executionFailed ? 'failed' : 'completed',
+    inputSnapshot: {
+      signalId: signal.id,
+      idempotencyKey: signal._idempotencyKey,
+    },
+    outputSnapshot: {
+      ok: !executionFailed,
+      closeoutReviewId: closeoutResult?.reviewId || null,
+      error: executeError?.message || closeoutResult?.error || null,
+    },
+    policySnapshot: lifecyclePolicySnapshot,
+    idempotencyKey: `phase4:result:partial_adjust:${signal._idempotencyKey}`,
+  }).catch(() => null);
 
   if (executeError) throw executeError;
+  if (closeoutResult?.ok === false) {
+    throw new Error(`partial-adjust execution unsuccessful: ${closeoutResult.error || closeoutResult.reviewStatus || 'unknown'}`);
+  }
 
   const payload = {
     mode: 'execute',
+    ok: true,
+    runContext: args.runContext || null,
+    executionStatus: closeoutResult?.reviewStatus === 'pending' ? 'pending' : 'executed',
+    reviewStatus: closeoutResult?.reviewStatus || 'completed',
     candidate,
     preflight,
     signalId: signal.id,

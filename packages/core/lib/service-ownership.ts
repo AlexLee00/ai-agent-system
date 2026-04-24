@@ -25,6 +25,10 @@ function isExpectedIdleService(label) {
   return getServiceOwnership(label)?.expectedIdle === true;
 }
 
+function isOptionalService(label) {
+  return getServiceOwnership(label)?.optional === true;
+}
+
 function getHubServiceLabels() {
   return [
     'ai.openclaw.gateway',
@@ -58,4 +62,5 @@ module.exports = {
   isElixirOwnedService,
   isRetiredService,
   isExpectedIdleService,
+  isOptionalService,
 };

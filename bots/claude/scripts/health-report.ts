@@ -30,8 +30,15 @@ const {
   buildHttpChecks,
   buildResolvedWebhookHealth,
 } = require('../../../packages/core/lib/health-provider');
+const {
+  isExpectedIdleService,
+  isOptionalService,
+} = require('../../../packages/core/lib/service-ownership');
 
-const CONTINUOUS = ['ai.claude.commander'];
+const CONTINUOUS = [
+  'ai.claude.commander',
+  ...(!isExpectedIdleService('ai.claude.auto-dev') ? ['ai.claude.auto-dev'] : []),
+];
 const ALL_SERVICES = [
   'ai.claude.commander',
   'ai.claude.dexter.quick',
@@ -42,6 +49,7 @@ const ALL_SERVICES = [
   'ai.claude.guardian',
   'ai.claude.builder',
   'ai.claude.codex-notifier',
+  'ai.claude.auto-dev',
   'ai.claude.health-dashboard',
 ];
 const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;
@@ -228,13 +236,15 @@ function formatText(report) {
 }
 
 async function buildReport() {
-  const status = getLaunchctlStatus();
+  const status = getLaunchctlStatus(ALL_SERVICES);
   const serviceRows = buildServiceRows(status, {
     labels: ALL_SERVICES,
     continuous: CONTINUOUS,
     normalExitCodes: NORMAL_EXIT_CODES,
     shortLabel: (label) => hsm.shortLabel(label),
     isExpectedExit,
+    treatMissingAsOk: (label) => isExpectedIdleService(label) || isOptionalService(label),
+    missingOkText: (name) => `  ${name}: expected idle`,
   });
   const dashboardHealth = await buildDashboardHealth();
   const n8nHealth = await buildN8nHealth();

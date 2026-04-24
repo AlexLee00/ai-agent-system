@@ -24,8 +24,13 @@ defmodule Luna.V2.Scheduler do
 
   def init(_opts) do
     crypto_interval = crypto_interval_ms()
-    stock_interval = stock_market_open_interval_ms()
-    Logger.info("[Scheduler] 기동 — crypto #{crypto_interval}ms / stock-open #{stock_interval}ms")
+    domestic_interval = stock_market_open_interval_ms(:domestic)
+    overseas_interval = stock_market_open_interval_ms(:overseas)
+
+    Logger.info(
+      "[Scheduler] 기동 — crypto #{crypto_interval}ms / domestic-open #{domestic_interval}ms / overseas-open #{overseas_interval}ms"
+    )
+
     schedule(:crypto, crypto_interval)
     schedule(:domestic, stock_interval_for(:domestic))
     schedule(:overseas, stock_interval_for(:overseas))
@@ -40,6 +45,7 @@ defmodule Luna.V2.Scheduler do
     if KillSwitch.mapek_enabled?() do
       MapeKLoop.trigger_cycle(:crypto)
     end
+
     schedule(:crypto, crypto_interval_ms())
     {:noreply, update_in(state, [:ticks, :crypto], &(&1 + 1))}
   end
@@ -48,6 +54,7 @@ defmodule Luna.V2.Scheduler do
     if KillSwitch.mapek_enabled?() and MarketHoursGate.open?(market) do
       MapeKLoop.trigger_cycle(market)
     end
+
     schedule(market, stock_interval_for(market))
     {:noreply, update_in(state, [:ticks, market], &(&1 + 1))}
   end
@@ -64,15 +71,22 @@ defmodule Luna.V2.Scheduler do
     max(15_000, KillSwitch.position_watch_crypto_realtime_ms())
   end
 
-  defp stock_market_open_interval_ms do
-    max(15_000, KillSwitch.position_watch_stock_realtime_ms())
-  end
+  defp stock_market_open_interval_ms(:domestic),
+    do: max(15_000, KillSwitch.position_watch_domestic_realtime_ms())
+
+  defp stock_market_open_interval_ms(:overseas),
+    do: max(15_000, KillSwitch.position_watch_overseas_realtime_ms())
+
+  defp stock_market_open_interval_ms(_market),
+    do: max(15_000, KillSwitch.position_watch_stock_realtime_ms())
 
   defp stock_market_closed_interval_ms do
     max(60_000, KillSwitch.position_watch_stock_offhours_ms())
   end
 
   defp stock_interval_for(market) do
-    if MarketHoursGate.open?(market), do: stock_market_open_interval_ms(), else: stock_market_closed_interval_ms()
+    if MarketHoursGate.open?(market),
+      do: stock_market_open_interval_ms(market),
+      else: stock_market_closed_interval_ms()
   end
 end

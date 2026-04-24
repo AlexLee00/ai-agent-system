@@ -42,12 +42,16 @@ function summarizeContext(context = {}) {
   const taggedFeedbackSignals = safeNumber(context.taggedFeedbackSignals);
   const taggedTrades = safeNumber(context.taggedTrades);
   const taggedJournals = safeNumber(context.taggedJournals);
+  const closeoutReviews = safeNumber(context.closeoutReviews);
+  const closeoutTaggedReviews = safeNumber(context.closeoutTaggedReviews);
   const activeFeedbackCandidates = safeNumber(context.activeFeedbackCandidates);
   return [
     `signals ${feedbackSignals}`,
     `taggedSignals ${taggedFeedbackSignals}`,
     `taggedTrades ${taggedTrades}`,
     `taggedJournals ${taggedJournals}`,
+    `closeoutReviews ${closeoutReviews}`,
+    `closeoutTagged ${closeoutTaggedReviews}`,
     `activeCandidates ${activeFeedbackCandidates}`,
   ].join(', ');
 }
@@ -154,12 +158,14 @@ export function buildDecision(rows = [], sampleContext = {}) {
     safeNumber(sampleContext.feedbackSignals) > 0
     || safeNumber(sampleContext.taggedFeedbackSignals) > 0
     || safeNumber(sampleContext.taggedTrades) > 0
+    || safeNumber(sampleContext.closeoutReviews) > 0
+    || safeNumber(sampleContext.closeoutTaggedReviews) > 0
   ) {
     status = 'strategy_feedback_outcome_telemetry_gap';
-    headline = '전략 피드백 실행 흔적은 있지만 trade_journal 결과 태그가 누적되지 않습니다.';
+    headline = '전략 피드백 실행 흔적은 있지만 outcome 버킷(trade_journal/closeout_review) 누적이 비어 있습니다.';
     actionItems.length = 0;
     actionItems.push('journal:backfill-incident-links -- --family-bias-only 결과와 SELL 실행 저장 경로를 점검합니다.');
-    actionItems.push('partial-adjust/strategy-exit 체결 이후 signal/trade incident_link가 trade_journal로 이어지는지 확인합니다.');
+    actionItems.push('partial-adjust/strategy-exit 체결 이후 signal/trade incident_link + position_closeout_reviews 연결 경로를 함께 확인합니다.');
   } else {
     status = safeNumber(sampleContext.activeFeedbackCandidates) > 0
       ? 'strategy_feedback_outcome_waiting_execution'
@@ -225,6 +231,11 @@ async function loadStrategyFeedbackSampleContext(days = 90, sinceMs = null) {
       FROM investment.trade_journal
       WHERE created_at >= $2
     ),
+    closeout_scope AS (
+      SELECT *
+      FROM investment.position_closeout_reviews
+      WHERE created_at >= to_timestamp($2::double precision / 1000.0)
+    ),
     profile_scope AS (
       SELECT *
       FROM investment.position_strategy_profiles
@@ -254,6 +265,13 @@ async function loadStrategyFeedbackSampleContext(days = 90, sinceMs = null) {
       (SELECT COUNT(*) FROM journal_scope j WHERE j.incident_link LIKE '%family_bias=%') AS tagged_journals,
       (SELECT COUNT(*) FROM journal_scope j WHERE j.incident_link LIKE 'partial_adjust:%') AS journal_partial_adjusts,
       (SELECT COUNT(*) FROM journal_scope j WHERE j.incident_link LIKE 'strategy_exit:%') AS journal_strategy_exits,
+      (SELECT COUNT(*) FROM closeout_scope c) AS closeout_reviews,
+      (
+        SELECT COUNT(*)
+        FROM closeout_scope c
+        WHERE COALESCE(NULLIF(c.family_bias, ''), '') <> ''
+           OR COALESCE(NULLIF(c.strategy_family, ''), '') <> ''
+      ) AS closeout_tagged_reviews,
       (
         SELECT COUNT(*)
         FROM profile_scope p
@@ -277,6 +295,8 @@ async function loadStrategyFeedbackSampleContext(days = 90, sinceMs = null) {
     taggedJournals: safeNumber(row.tagged_journals),
     journalPartialAdjusts: safeNumber(row.journal_partial_adjusts),
     journalStrategyExits: safeNumber(row.journal_strategy_exits),
+    closeoutReviews: safeNumber(row.closeout_reviews),
+    closeoutTaggedReviews: safeNumber(row.closeout_tagged_reviews),
     activeFeedbackCandidates: safeNumber(row.active_feedback_candidates),
     activeFamilyBiasProfiles: safeNumber(row.active_family_bias_profiles),
   };
@@ -287,24 +307,81 @@ export async function buildStrategyFeedbackOutcomes({ days = 90, json = false } 
   await initJournalSchema();
   const since = Date.now() - Math.max(1, Number(days || 90)) * 24 * 60 * 60 * 1000;
   const rawRows = await db.query(`
-    SELECT
-      CASE
-        WHEN incident_link LIKE 'partial_adjust:%' THEN 'partial_adjust'
-        WHEN incident_link LIKE 'strategy_exit:%' THEN 'strategy_exit'
-        ELSE 'other'
-      END AS execution_kind,
-      incident_link,
-      COALESCE(NULLIF(strategy_family, ''), 'unknown') AS strategy_family,
-      COUNT(*) AS total,
-      COUNT(*) FILTER (WHERE status = 'closed' OR exit_time IS NOT NULL) AS closed,
-      COUNT(*) FILTER (WHERE (status = 'closed' OR exit_time IS NOT NULL) AND COALESCE(pnl_net, pnl_amount, 0) > 0) AS wins,
-      ROUND(AVG(CASE WHEN status = 'closed' OR exit_time IS NOT NULL THEN pnl_percent ELSE NULL END)::numeric, 4) AS avg_pnl_percent,
-      ROUND(SUM(CASE WHEN status = 'closed' OR exit_time IS NOT NULL THEN COALESCE(pnl_net, pnl_amount, 0) ELSE 0 END)::numeric, 4) AS pnl_net,
-      MAX(created_at) AS latest_created_at
-    FROM investment.trade_journal
-    WHERE created_at >= $1
-      AND incident_link LIKE '%family_bias=%'
-    GROUP BY 1, 2, 3
+    SELECT *
+    FROM (
+      SELECT
+        CASE
+          WHEN incident_link LIKE 'partial_adjust:%' THEN 'partial_adjust'
+          WHEN incident_link LIKE 'strategy_exit:%' THEN 'strategy_exit'
+          ELSE 'other'
+        END AS execution_kind,
+        incident_link,
+        COALESCE(NULLIF(strategy_family, ''), 'unknown') AS strategy_family,
+        COUNT(*) AS total,
+        COUNT(*) FILTER (WHERE status = 'closed' OR exit_time IS NOT NULL) AS closed,
+        COUNT(*) FILTER (WHERE (status = 'closed' OR exit_time IS NOT NULL) AND COALESCE(pnl_net, pnl_amount, 0) > 0) AS wins,
+        ROUND(AVG(CASE WHEN status = 'closed' OR exit_time IS NOT NULL THEN pnl_percent ELSE NULL END)::numeric, 4) AS avg_pnl_percent,
+        ROUND(SUM(CASE WHEN status = 'closed' OR exit_time IS NOT NULL THEN COALESCE(pnl_net, pnl_amount, 0) ELSE 0 END)::numeric, 4) AS pnl_net,
+        MAX(created_at) AS latest_created_at
+      FROM investment.trade_journal
+      WHERE created_at >= $1
+        AND incident_link LIKE '%family_bias=%'
+      GROUP BY 1, 2, 3
+
+      UNION ALL
+
+      SELECT
+        CASE
+          WHEN closeout_type = 'partial_adjust' THEN 'partial_adjust'
+          WHEN closeout_type = 'full_exit' THEN 'strategy_exit'
+          ELSE COALESCE(NULLIF(closeout_type, ''), 'other')
+        END AS execution_kind,
+        CONCAT(
+          'phase6_closeout:',
+          COALESCE(NULLIF(closeout_type, ''), 'unknown'),
+          ':family_bias=',
+          COALESCE(NULLIF(family_bias, ''), 'unknown'),
+          ':family=',
+          COALESCE(NULLIF(strategy_family, ''), 'unknown')
+        ) AS incident_link,
+        COALESCE(NULLIF(strategy_family, ''), 'unknown') AS strategy_family,
+        COUNT(*) AS total,
+        COUNT(*) FILTER (WHERE review_status IN ('completed', 'failed')) AS closed,
+        COUNT(*) FILTER (
+          WHERE review_status = 'completed'
+            AND COALESCE(pnl_realized, 0) > 0
+        ) AS wins,
+        ROUND(
+          AVG(
+            CASE
+              WHEN review_status IN ('completed', 'failed')
+                THEN CASE
+                  WHEN planned_notional > 0 THEN (COALESCE(pnl_realized, 0) / planned_notional) * 100
+                  ELSE NULL
+                END
+              ELSE NULL
+            END
+          )::numeric,
+          4
+        ) AS avg_pnl_percent,
+        ROUND(
+          SUM(
+            CASE
+              WHEN review_status IN ('completed', 'failed') THEN COALESCE(pnl_realized, 0)
+              ELSE 0
+            END
+          )::numeric,
+          4
+        ) AS pnl_net,
+        ROUND((MAX(EXTRACT(EPOCH FROM created_at)) * 1000)::numeric, 0) AS latest_created_at
+      FROM investment.position_closeout_reviews
+      WHERE created_at >= to_timestamp($1::double precision / 1000.0)
+        AND (
+          COALESCE(NULLIF(family_bias, ''), '') <> ''
+          OR COALESCE(NULLIF(strategy_family, ''), '') <> ''
+        )
+      GROUP BY 1, 2, 3
+    ) merged
     ORDER BY total DESC, closed DESC, latest_created_at DESC
   `, [since]).catch(() => []);
 

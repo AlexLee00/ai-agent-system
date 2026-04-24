@@ -156,6 +156,17 @@ async function runScript(script, flags = '') {
   }
 }
 
+function parseBool(value, defaultValue = false) {
+  if (value === undefined || value === null) return defaultValue;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) return defaultValue;
+  if (['true', '1', 'yes', 'y', 'on'].includes(normalized)) return true;
+  if (['false', '0', 'no', 'n', 'off'].includes(normalized)) return false;
+  return defaultValue;
+}
+
 // ─── 명령 핸들러 ─────────────────────────────────────────────────────
 
 /**
@@ -690,7 +701,7 @@ async function handleCodexReject(args) {
 async function handleRunReview(args) {
   try {
     const reviewer = require('./reviewer');
-    const result = await reviewer.runReview({ force: true, test: Boolean(args.test) });
+    const result = await reviewer.runReview({ force: true, test: parseBool(args.test, false) });
     return { ok: true, message: result.message, data: { pass: result.summary?.pass } };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -703,7 +714,7 @@ async function handleRunReview(args) {
 async function handleRunGuardian(args) {
   try {
     const guardian = require('./guardian');
-    const result = await guardian.runFullSecurityScan({ force: true, test: Boolean(args.test) });
+    const result = await guardian.runFullSecurityScan({ force: true, test: parseBool(args.test, false) });
     return { ok: true, message: result.message, data: { pass: result.pass, critical: result.critical.length, high: result.high.length } };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -716,7 +727,7 @@ async function handleRunGuardian(args) {
 async function handleRunBuilder(args) {
   try {
     const builder = require('./builder');
-    const result = await builder.runBuildCheck({ force: true, test: Boolean(args.test) });
+    const result = await builder.runBuildCheck({ force: true, test: parseBool(args.test, false) });
     return { ok: true, message: result.message, data: { pass: result.pass } };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -805,6 +816,63 @@ async function handleShowCodexStatus(args) {
 }
 
 /**
+ * auto_dev 자동 구현 파이프라인 수동 실행
+ */
+async function handleRunAutoDev(args) {
+  try {
+    const pipeline = require('../lib/auto-dev-pipeline');
+    const once = parseBool(args.once, true);
+    const test = parseBool(args.test, false);
+    const dryRun = parseBool(args.dry_run ?? args.dryRun, false);
+    const force = parseBool(args.force, false);
+    const shadow = parseBool(args.shadow, process.env.CLAUDE_AUTO_DEV_SHADOW !== 'false');
+
+    const result = await pipeline.runAutoDevPipeline({
+      once,
+      test,
+      dryRun,
+      force,
+      shadow,
+    });
+    const lines = [
+      '🤖 클로드 auto_dev 실행',
+      `처리 문서: ${result.count}`,
+      `실처리/스킵/실패: ${result.processedCount || 0}/${result.skippedCount || 0}/${result.failedCount || 0}`,
+      `상태 파일: ${result.stateFile || 'N/A'}`,
+      `옵션: once=${once} test=${test} dryRun=${dryRun} force=${force} shadow=${shadow}`,
+      `결과: ${result.ok ? '✅ PASS' : '❌ FAIL'}`,
+    ];
+    for (const item of result.results || []) {
+      lines.push(`- ${item.job?.relPath || 'unknown'}: ${item.job?.stage || 'unknown'}${item.error ? ` (${item.error})` : ''}`);
+    }
+    return { ok: result.ok, message: lines.join('\n'), data: result };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
+ * auto_dev 상태 조회
+ */
+async function handleShowAutoDevStatus(args) {
+  try {
+    const pipeline = require('../lib/auto-dev-pipeline');
+    const state = pipeline.loadState();
+    const jobs = Object.values(state.jobs || {});
+    if (jobs.length === 0) {
+      return { ok: true, message: '📋 auto_dev 처리 이력 없음', data: state };
+    }
+    const lines = ['📋 auto_dev 상태'];
+    jobs.slice(-10).forEach(job => {
+      lines.push(`- ${job.relPath}: ${job.status}/${job.stage} (${job.title || 'untitled'})`);
+    });
+    return { ok: true, message: lines.join('\n'), data: state };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
  * Doctor Verify Loop 수동 실행
  */
 async function handleRunDoctorVerify(args) {
@@ -843,6 +911,10 @@ const HANDLERS = {
   // Phase N 신규 2개
   test_codex_notifier: handleTestCodexNotifier,
   show_codex_status:   handleShowCodexStatus,
+
+  // Phase AD 신규 2개
+  run_auto_dev:        handleRunAutoDev,
+  show_auto_dev_status: handleShowAutoDevStatus,
 
   // Phase D 신규 1개
   run_doctor_verify: handleRunDoctorVerify,

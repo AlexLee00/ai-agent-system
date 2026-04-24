@@ -14,10 +14,11 @@
 
 import * as db from './db.ts';
 import {
-  buildPositionScopeKey,
+  buildPhase6EventIdempotencyKey,
   recordPhase6Start,
   recordPhase6Result,
   recordPhase6ReviewCreated,
+  recordPhase6ReviewCompleted,
 } from './lifecycle-contract.ts';
 
 function safeNumber(value, fallback = 0) {
@@ -27,6 +28,190 @@ function safeNumber(value, fallback = 0) {
 
 function extractTag(text = '', key = '') {
   return String(text || '').match(new RegExp(`${key}=([^:]+)`))?.[1] || null;
+}
+
+function normalizeExecutionStatus(executeResult: Record<string, unknown> | null = null) {
+  const raw = String(
+    executeResult?.status
+    || executeResult?.trade?.status
+    || executeResult?.result
+    || '',
+  ).trim().toLowerCase();
+  return raw || null;
+}
+
+const SUCCESS_STATUSES = new Set([
+  'completed',
+  'closed',
+  'filled',
+  'executed',
+  'success',
+  'ok',
+  'done',
+  'settled',
+]);
+
+const FAILURE_STATUSES = new Set([
+  'failed',
+  'error',
+  'rejected',
+  'blocked',
+  'skipped',
+  'cancelled',
+  'canceled',
+  'aborted',
+]);
+
+const PENDING_STATUSES = new Set([
+  'pending',
+  'open',
+  'new',
+  'submitted',
+  'accepted',
+  'queued',
+  'processing',
+]);
+
+function normalizeBoolean(value) {
+  if (value === true || value === false) return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return null;
+  if (['true', '1', 'yes', 'on'].includes(normalized)) return true;
+  if (['false', '0', 'no', 'off'].includes(normalized)) return false;
+  return null;
+}
+
+function hasPositiveExecutionFill(executeResult: Record<string, unknown> | null = null) {
+  const metrics = [
+    executeResult?.executedNotional,
+    executeResult?.total_usdt,
+    executeResult?.notional,
+    executeResult?.filled,
+    executeResult?.amount,
+    executeResult?.trade?.filled,
+    executeResult?.trade?.amount,
+  ];
+  return metrics.some((value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0;
+  });
+}
+
+function hasExplicitExecutionFailure(executeResult: Record<string, unknown> | null = null, status: string | null = null) {
+  if (!executeResult) return true;
+  if (normalizeBoolean(executeResult?.success) === false) return true;
+  if (normalizeBoolean(executeResult?.ok) === false) return true;
+  if (normalizeBoolean(executeResult?.filled) === false) return true;
+  if (status && FAILURE_STATUSES.has(status)) return true;
+  return false;
+}
+
+function deriveExecutionSuccess(
+  executeResult: Record<string, unknown> | null = null,
+  error: Error | null = null,
+  tradeId: string | null = null,
+) {
+  if (error) return false;
+  const status = normalizeExecutionStatus(executeResult);
+  if (hasExplicitExecutionFailure(executeResult, status)) return false;
+  if (status && SUCCESS_STATUSES.has(status)) return true;
+  if (status && PENDING_STATUSES.has(status)) return false;
+  if (normalizeBoolean(executeResult?.success) === true) return true;
+  if (normalizeBoolean(executeResult?.ok) === true) return true;
+  if (normalizeBoolean(executeResult?.filled) === true) return true;
+  if (hasPositiveExecutionFill(executeResult)) return true;
+  return false;
+}
+
+function extractExecutionFailureMessage(
+  executeResult: Record<string, unknown> | null = null,
+  error: Error | null = null,
+  status: string | null = null,
+) {
+  if (error?.message) return error.message;
+  if (!executeResult) return 'execution_result_missing';
+  const reason = executeResult?.reason
+    || executeResult?.error
+    || executeResult?.message
+    || executeResult?.trade?.rejectReason
+    || null;
+  if (reason) return String(reason);
+  if (status && FAILURE_STATUSES.has(status)) return `execution_status_${status}`;
+  return 'execution_unsuccessful';
+}
+
+function shouldMarkReviewCompleted(executeResult: Record<string, unknown> | null = null, tradeId: string | null = null) {
+  const status = normalizeExecutionStatus(executeResult);
+  if (status && FAILURE_STATUSES.has(status)) return false;
+  if (status && PENDING_STATUSES.has(status)) return false;
+  if (status && SUCCESS_STATUSES.has(status)) {
+    return true;
+  }
+  if (normalizeBoolean(executeResult?.filled) === true) return true;
+  if (hasPositiveExecutionFill(executeResult)) return true;
+  return false;
+}
+
+export function normalizeExecutionOutcome(
+  executeResult: Record<string, unknown> | null = null,
+  error: Error | null = null,
+  tradeId: string | null = null,
+) {
+  const executionStatus = normalizeExecutionStatus(executeResult);
+  const success = deriveExecutionSuccess(executeResult, error, tradeId);
+  const failureReason = success
+    ? null
+    : extractExecutionFailureMessage(executeResult, error, executionStatus);
+  const reviewStatus = !success
+    ? (executionStatus && PENDING_STATUSES.has(executionStatus) ? 'pending' : 'failed')
+    : shouldMarkReviewCompleted(executeResult, tradeId)
+      ? 'completed'
+      : 'pending';
+  return {
+    success,
+    reviewStatus,
+    executionStatus,
+    failureReason,
+  };
+}
+
+export function assessPhase6SafetyReadiness() {
+  const checks = [];
+  const pendingWithTradeId = normalizeExecutionOutcome({ tradeId: 't1', status: 'pending' }, null, 't1');
+  checks.push({
+    key: 'trade_id_pending_not_completed',
+    ok: pendingWithTradeId.success === false && pendingWithTradeId.reviewStatus !== 'completed',
+    observed: pendingWithTradeId,
+  });
+
+  const rejectedWithTradeId = normalizeExecutionOutcome({ tradeId: 't2', ok: false, status: 'rejected' }, null, 't2');
+  checks.push({
+    key: 'trade_id_rejected_failed',
+    ok: rejectedWithTradeId.success === false && rejectedWithTradeId.reviewStatus === 'failed',
+    observed: rejectedWithTradeId,
+  });
+
+  const filledWithTradeId = normalizeExecutionOutcome({ tradeId: 't3', status: 'filled', filled: true }, null, 't3');
+  checks.push({
+    key: 'filled_trade_completed',
+    ok: filledWithTradeId.success === true && filledWithTradeId.reviewStatus === 'completed',
+    observed: filledWithTradeId,
+  });
+
+  const failedObject = normalizeExecutionOutcome({ success: false, reason: 'blocked' }, null, null);
+  checks.push({
+    key: 'explicit_failure_object_failed',
+    ok: failedObject.success === false && failedObject.reviewStatus === 'failed',
+    observed: failedObject,
+  });
+
+  return {
+    ok: checks.every((check) => check.ok === true),
+    checkedAt: new Date().toISOString(),
+    checks,
+  };
 }
 
 export interface CloseoutContext {
@@ -56,6 +241,7 @@ export interface CloseoutResult {
   tradeId?: string | null;
   reviewId?: string | null;
   lifecycleEventId?: string | null;
+  reviewStatus?: string | null;
   executedRatio?: number | null;
   executedNotional?: number | null;
   pnlRealized?: number | null;
@@ -73,14 +259,23 @@ async function checkCooldown(
   cooldownMinutes: number,
 ): Promise<{ ok: boolean; reason?: string }> {
   if (cooldownMinutes <= 0) return { ok: true };
-  const recent = await db.query(
-    `SELECT id, created_at FROM investment.position_closeout_reviews
-     WHERE symbol = $1 AND exchange = $2 AND trade_mode = $3 AND closeout_type = $4
-       AND created_at >= now() - ($5::int * INTERVAL '1 minute')
-     ORDER BY created_at DESC
-     LIMIT 1`,
-    [symbol, exchange, tradeMode, closeoutType, cooldownMinutes],
-  ).catch(() => []);
+  let recent = [];
+  try {
+    recent = await db.query(
+      `SELECT id, created_at FROM investment.position_closeout_reviews
+       WHERE symbol = $1 AND exchange = $2 AND trade_mode = $3 AND closeout_type = $4
+         AND created_at >= now() - ($5::int * INTERVAL '1 minute')
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [symbol, exchange, tradeMode, closeoutType, cooldownMinutes],
+    );
+  } catch (error) {
+    return {
+      ok: false,
+      reason: `cooldown_check_failed:${error?.message || String(error)}`,
+    };
+  }
+
   if (recent.length > 0) {
     return {
       ok: false,
@@ -135,9 +330,12 @@ export async function finalizeCloseout(
     ? safeNumber(executeResult.executedRatio)
     : (plannedRatio != null ? safeNumber(plannedRatio) : null);
 
-  const success = !error && executeResult != null;
-  const reviewStatus = success ? 'pending' : 'failed';
-  const closeoutReason = error?.message || reasonCode || String(incidentLink || '');
+  const executionOutcome = normalizeExecutionOutcome(executeResult, error, String(tradeId || '') || null);
+  const success = executionOutcome.success;
+  const executionStatus = executionOutcome.executionStatus;
+  const failureReason = executionOutcome.failureReason;
+  const reviewStatus = executionOutcome.reviewStatus;
+  const closeoutReason = failureReason || reasonCode || String(incidentLink || '');
   const reviewIdemKey = idempotencyKey ? `review:${idempotencyKey}` : null;
 
   const reviewId = await db.insertCloseoutReview({
@@ -156,7 +354,11 @@ export async function finalizeCloseout(
     strategyFamily: resolvedFamily,
     familyBias,
     reviewStatus,
-    reviewResult: error ? { error: error.message, stack: error.stack?.slice(0, 300) } : {},
+    reviewResult: !success ? {
+      error: failureReason,
+      status: executionStatus,
+      stack: error?.stack?.slice(0, 300) || null,
+    } : {},
     policySuggestions: [],
     idempotencyKey: reviewIdemKey,
   });
@@ -165,9 +367,13 @@ export async function finalizeCloseout(
     symbol, exchange, tradeMode,
     closeoutType,
     signalId: signalId || null,
+    idempotencyKey,
     outputSnapshot: {
       reviewId, tradeId, executedRatio, executedNotional, pnlRealized,
-      success, error: error?.message || null,
+      success,
+      reviewStatus,
+      executionStatus,
+      error: failureReason,
     },
     policySnapshot,
     success,
@@ -177,6 +383,16 @@ export async function finalizeCloseout(
     await recordPhase6ReviewCreated({
       symbol, exchange, tradeMode, reviewId, closeoutType,
     }).catch(() => null);
+    if (reviewStatus === 'completed') {
+      await recordPhase6ReviewCompleted({
+        symbol,
+        exchange,
+        tradeMode,
+        reviewId,
+        closeoutType,
+        reviewStatus,
+      }).catch(() => null);
+    }
   }
 
   return {
@@ -185,10 +401,11 @@ export async function finalizeCloseout(
     tradeId: String(tradeId || '') || null,
     reviewId,
     lifecycleEventId,
+    reviewStatus,
     executedRatio,
     executedNotional,
     pnlRealized,
-    error: error?.message || null,
+    error: failureReason,
   };
 }
 
@@ -203,12 +420,43 @@ export async function preflightCloseout(ctx: CloseoutContext): Promise<{
   const { symbol, exchange, tradeMode = 'normal', closeoutType, idempotencyKey, cooldownMinutes = 0 } = ctx;
 
   if (idempotencyKey) {
-    const existing = await db.get(
-      `SELECT id FROM investment.position_lifecycle_events WHERE idempotency_key = $1`,
-      [idempotencyKey],
-    ).catch(() => null);
+    const lifecycleKey = buildPhase6EventIdempotencyKey({
+      eventKind: 'start',
+      closeoutType,
+      symbol,
+      exchange,
+      tradeMode,
+      idempotencyKey,
+    });
+    let existing = null;
+    try {
+      existing = await db.get(
+        `SELECT id FROM investment.position_lifecycle_events WHERE idempotency_key = $1`,
+        [lifecycleKey],
+      );
+    } catch (error) {
+      return {
+        ok: false,
+        reason: `idempotency_lifecycle_check_failed:${error?.message || String(error)}`,
+      };
+    }
     if (existing) {
-      return { ok: false, reason: `idempotency: 이미 처리된 key (${idempotencyKey})` };
+      return { ok: false, reason: `idempotency: 이미 처리된 lifecycle key (${idempotencyKey})` };
+    }
+    let existingReview = null;
+    try {
+      existingReview = await db.get(
+        `SELECT id FROM investment.position_closeout_reviews WHERE idempotency_key = $1`,
+        [`review:${idempotencyKey}`],
+      );
+    } catch (error) {
+      return {
+        ok: false,
+        reason: `idempotency_review_check_failed:${error?.message || String(error)}`,
+      };
+    }
+    if (existingReview) {
+      return { ok: false, reason: `idempotency: 이미 처리된 review key (${idempotencyKey})` };
     }
   }
 
@@ -230,21 +478,37 @@ export async function beginCloseout(ctx: CloseoutContext): Promise<{
   const preflight = await preflightCloseout(ctx);
   if (!preflight.ok) return { ok: false, reason: preflight.reason };
 
-  const lifecycleEventId = await recordPhase6Start({
-    symbol: ctx.symbol,
-    exchange: ctx.exchange,
-    tradeMode: ctx.tradeMode || 'normal',
-    closeoutType: ctx.closeoutType,
-    signalId: ctx.idempotencyKey ? ctx.idempotencyKey.split(':').pop() : null,
-    inputSnapshot: {
-      reasonCode: ctx.reasonCode,
-      plannedRatio: ctx.plannedRatio,
-      plannedNotional: ctx.plannedNotional,
-      regime: ctx.regime,
-      setupType: ctx.setupType,
-    },
-    policySnapshot: ctx.policySnapshot || {},
-  }).catch(() => null);
+  let lifecycleEventId = null;
+  try {
+    lifecycleEventId = await recordPhase6Start({
+      symbol: ctx.symbol,
+      exchange: ctx.exchange,
+      tradeMode: ctx.tradeMode || 'normal',
+      closeoutType: ctx.closeoutType,
+      signalId: ctx.idempotencyKey ? ctx.idempotencyKey.split(':').pop() : null,
+      idempotencyKey: ctx.idempotencyKey || null,
+      inputSnapshot: {
+        reasonCode: ctx.reasonCode,
+        plannedRatio: ctx.plannedRatio,
+        plannedNotional: ctx.plannedNotional,
+        regime: ctx.regime,
+        setupType: ctx.setupType,
+      },
+      policySnapshot: ctx.policySnapshot || {},
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      reason: `phase6_start_record_failed:${error?.message || String(error)}`,
+    };
+  }
+
+  if (!lifecycleEventId) {
+    return {
+      ok: false,
+      reason: 'phase6_start_record_failed:empty_lifecycle_event_id',
+    };
+  }
 
   return { ok: true, lifecycleEventId };
 }

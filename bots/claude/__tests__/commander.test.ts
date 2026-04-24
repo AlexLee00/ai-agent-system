@@ -3,7 +3,7 @@
 /**
  * Phase C: claude-commander.ts 단위 테스트
  *
- * HANDLERS 17개 등록 확인 + 주요 핸들러 동작 테스트
+ * HANDLERS 19개 등록 확인 + 주요 핸들러 동작 테스트
  *
  * 실행: node bots/claude/__tests__/commander.test.ts
  */
@@ -89,11 +89,11 @@ function getHandlerNamesFromSource() {
   return matches.map(m => m[1]);
 }
 
-// ─── Test 1: HANDLERS 17개 등록 확인 (소스 분석) ─────────────────────
+// ─── Test 1: HANDLERS 19개 등록 확인 (소스 분석) ─────────────────────
 
-async function test_handlers_count_is_17() {
+async function test_handlers_count_is_19() {
   const handlerNames = getHandlerNamesFromSource();
-  assert.ok(handlerNames.length >= 17, `핸들러 수: ${handlerNames.length} (최소 17개 필요)`);
+  assert.ok(handlerNames.length >= 19, `핸들러 수: ${handlerNames.length} (최소 19개 필요)`);
 
   const required = [
     // 기존 10개
@@ -103,13 +103,15 @@ async function test_handlers_count_is_17() {
     'run_review', 'run_guardian', 'run_builder', 'run_full_quality',
     // Phase N 2개
     'test_codex_notifier', 'show_codex_status',
+    // Phase AD 2개
+    'run_auto_dev', 'show_auto_dev_status',
     // Phase D 1개
     'run_doctor_verify',
   ];
   for (const name of required) {
     assert.ok(handlerNames.includes(name), `핸들러 '${name}' 등록 확인`);
   }
-  console.log(`✅ commander: 17개 핸들러 모두 등록됨 (총 ${handlerNames.length}개)`);
+  console.log(`✅ commander: 19개 핸들러 모두 등록됨 (총 ${handlerNames.length}개)`);
 }
 
 // ─── Test 2: run_doctor_verify — task_type 없을 때 에러 ──────────────
@@ -176,7 +178,31 @@ async function test_runGuardian_handler_exists() {
   console.log('✅ commander: run_guardian handler registered');
 }
 
-// ─── Test 8: processCommands — 알 수 없는 명령 에러 처리 ─────────────
+// ─── Test 8: run_auto_dev — 핸들러 존재 ─────────────────────────────
+
+async function test_runAutoDev_handler_exists() {
+  const src = fs.readFileSync(COMMANDER_PATH, 'utf8');
+  assert.ok(src.includes('handleRunAutoDev'), 'handleRunAutoDev 존재');
+  assert.ok(src.includes('run_auto_dev'), 'run_auto_dev 핸들러 등록');
+  assert.ok(src.includes('show_auto_dev_status'), 'show_auto_dev_status 핸들러 등록');
+  console.log('✅ commander: auto_dev handlers registered');
+}
+
+// ─── Test 9: run_auto_dev boolean 파싱 보강 확인 ─────────────────────
+
+async function test_runAutoDev_boolean_parsing_hardening() {
+  const src = fs.readFileSync(COMMANDER_PATH, 'utf8');
+  assert.ok(src.includes('function parseBool'), 'parseBool 유틸 존재');
+  assert.ok(src.includes("'false'") && src.includes("'0'") && src.includes("'no'"), 'false 문자열 파싱 규칙 존재');
+  assert.ok(src.includes('parseBool(args.once') || src.includes('parseBool(args.once,'), 'once 파싱에 parseBool 사용');
+  assert.ok(src.includes('parseBool(args.test') || src.includes('parseBool(args.test,'), 'test 파싱에 parseBool 사용');
+  assert.ok(src.includes('parseBool(args.dry_run ?? args.dryRun'), 'dry_run/dryRun 파싱에 parseBool 사용');
+  assert.ok(src.includes('parseBool(args.force'), 'force 파싱에 parseBool 사용');
+  assert.ok(src.includes('parseBool(args.shadow'), 'shadow 파싱에 parseBool 사용');
+  console.log('✅ commander: run_auto_dev boolean parsing hardened');
+}
+
+// ─── Test 10: processCommands — 알 수 없는 명령 에러 처리 ─────────────
 
 async function test_processCommands_handles_unknown_command() {
   const src = fs.readFileSync(COMMANDER_PATH, 'utf8');
@@ -187,7 +213,7 @@ async function test_processCommands_handles_unknown_command() {
   console.log('✅ commander: processCommands handles unknown command gracefully');
 }
 
-// ─── Test 9: analyze_unknown — NLP 학습 인텐트 목록에 신규 포함 ───────
+// ─── Test 10: analyze_unknown — NLP 학습 인텐트 목록에 신규 포함 ───────
 
 async function test_nlp_intents_include_new_commands() {
   const src = fs.readFileSync(COMMANDER_PATH, 'utf8');
@@ -201,7 +227,7 @@ async function test_nlp_intents_include_new_commands() {
   console.log('✅ commander: NLP intents include new Phase A/N/D commands');
 }
 
-// ─── Test 10: 30초 폴링 유지 ─────────────────────────────────────────
+// ─── Test 11: 30초 폴링 유지 ─────────────────────────────────────────
 
 async function test_polling_interval_maintained() {
   const src = fs.readFileSync(COMMANDER_PATH, 'utf8');
@@ -214,13 +240,15 @@ async function test_polling_interval_maintained() {
 async function main() {
   console.log('=== Commander 테스트 시작 ===\n');
   const tests = [
-    test_handlers_count_is_17,
+    test_handlers_count_is_19,
     test_handleRunDoctorVerify_no_task_type,
     test_handleRunFullQuality_sequential_logic,
     test_testCodexNotifier_handler_exists,
     test_showCodexStatus_handler_exists,
     test_runReview_handler_exists,
     test_runGuardian_handler_exists,
+    test_runAutoDev_handler_exists,
+    test_runAutoDev_boolean_parsing_hardening,
     test_processCommands_handles_unknown_command,
     test_nlp_intents_include_new_commands,
     test_polling_interval_maintained,

@@ -127,7 +127,7 @@ async function main() {
   if (args.execute) {
     console.log('');
     console.log('⚡ execute 모드: runtime-position-runtime-dispatch를 통해 phase6 후보를 처리하세요.');
-    console.log('   npm run runtime:position-runtime-dispatch -- --phase6 --confirm=phase6-autopilot');
+    console.log('   npm run runtime:position-runtime-dispatch -- --execute --phase6 --confirm=phase6-autopilot');
   }
 }
 

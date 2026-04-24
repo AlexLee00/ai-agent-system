@@ -11,7 +11,9 @@ import {
   getKisMarketStatus,
   getKisOverseasMarketStatus,
 } from '../shared/secrets.ts';
+import { publishToMainBot } from '../shared/mainbot-client.ts';
 import { beginCloseout, finalizeCloseout } from '../shared/position-closeout-engine.ts';
+import { recordLifecyclePhaseSnapshot } from '../shared/lifecycle-contract.ts';
 
 function parseArgs(argv = process.argv.slice(2)) {
   const values = {};
@@ -28,8 +30,17 @@ function parseArgs(argv = process.argv.slice(2)) {
     exchange: values.exchange ? String(values.exchange) : null,
     tradeMode: values['trade-mode'] ? String(values['trade-mode']) : null,
     confirm: values.confirm ? String(values.confirm) : null,
+    runContext: values['run-context'] ? String(values['run-context']) : null,
     minutesBack: values.minutes ? Math.max(10, Number(values.minutes)) : 180,
   };
+}
+
+function isAutonomousExecutionContext(options = {}) {
+  const confirm = String(options?.confirm || '').trim();
+  const runContext = String(options?.runContext || '').trim();
+  return confirm === 'position-runtime-autopilot'
+    || runContext === 'position-runtime-autopilot'
+    || runContext === 'phase6-autopilot';
 }
 
 function getMarketLabel(exchange) {
@@ -188,6 +199,7 @@ function applyExitPlanGuard(candidate) {
 function mapCandidate(row, strategyProfile = null) {
   const heldHours = heldHoursFromEntry(row?.positionSnapshot?.entryTime);
   const strategyProfileSnapshot = strategyProfile ? {
+    id: strategyProfile.id || null,
     strategyName: strategyProfile.strategy_name || null,
     setupType: strategyProfile.setup_type || null,
     exitPlan: strategyProfile.exit_plan || {},
@@ -387,7 +399,7 @@ async function getExecutionPreflight(candidate) {
 
 async function createStrategyExitSignal(candidate) {
   const incidentLink = candidate.signalIncidentLink || `${candidate.exitReasonOverride}${buildFamilyFeedbackIncidentSuffix(candidate.strategyProfile)}`;
-  const idempotencyKey = `strategy_exit:${candidate.symbol}:${candidate.exchange}:${candidate.tradeMode}:${candidate.reasonCode || 'exit'}:${Date.now().toString(36)}`;
+  const idempotencyKey = buildStrategyExitIdempotencyKey(candidate);
   const signalId = await db.insertSignal({
     symbol: candidate.symbol,
     action: 'SELL',
@@ -418,6 +430,40 @@ async function createStrategyExitSignal(candidate) {
   };
 }
 
+export function buildStrategyExitIdempotencyKey(candidate) {
+  const symbol = String(candidate?.symbol || 'UNKNOWN');
+  const exchange = String(candidate?.exchange || 'unknown');
+  const tradeMode = String(candidate?.tradeMode || 'normal');
+  const reasonCode = String(candidate?.reasonCode || 'exit');
+  const strategyProfileId = String(candidate?.strategyProfile?.id || 'profile_unknown');
+  const strategyName = String(candidate?.strategyProfile?.strategyName || 'strategy_unknown');
+  const setupType = String(candidate?.strategyProfile?.setupType || 'setup_unknown');
+  const runtimeState = candidate?.strategyProfile?.positionRuntimeState || {};
+  const runtimeVersion = Number(runtimeState?.version);
+  const runtimeVersionToken = Number.isFinite(runtimeVersion) ? `v${runtimeVersion}` : 'v0';
+  const runtimeUpdatedAt = String(runtimeState?.updatedAt || runtimeState?.updated_at || '').trim();
+  const runtimeUpdatedToken = runtimeUpdatedAt
+    ? runtimeUpdatedAt.replace(/[^0-9a-z]/gi, '').slice(0, 20)
+    : 'no_runtime_ts';
+  const positionAmount = Number(candidate?.positionAmount || 0);
+  const positionValue = Number(candidate?.positionValue || 0);
+  return [
+    'strategy_exit',
+    'v2',
+    symbol,
+    exchange,
+    tradeMode,
+    reasonCode,
+    strategyProfileId,
+    strategyName,
+    setupType,
+    runtimeVersionToken,
+    runtimeUpdatedToken,
+    positionAmount.toFixed(8),
+    positionValue.toFixed(2),
+  ].join(':');
+}
+
 async function executeCandidate(candidate) {
   const signal = await createStrategyExitSignal(candidate);
   if (candidate.exchange === 'binance') return executeCryptoSignal(signal);
@@ -437,6 +483,7 @@ async function main() {
   if (!options.symbol) {
     const payload = {
       mode: 'preview',
+      ok: true,
       totalCandidates: candidates.length,
       candidates,
       usage: [
@@ -459,6 +506,7 @@ async function main() {
     await syncStrategyExitCandidateStates([candidate], 'preview');
     const payload = {
       mode: 'preview',
+      ok: true,
       candidate,
       preflight,
       executeCommand: `env PAPER_MODE=false node bots/investment/scripts/strategy-exit-runner.ts --symbol=${candidate.symbol} --exchange=${candidate.exchange} --trade-mode=${candidate.tradeMode} --execute --confirm=strategy-exit`,
@@ -468,8 +516,9 @@ async function main() {
     return;
   }
 
-  if (options.confirm !== 'strategy-exit') {
-    throw new Error('실행하려면 --confirm=strategy-exit 가 필요합니다.');
+  const autonomousContext = isAutonomousExecutionContext(options);
+  if (!autonomousContext && options.confirm !== 'strategy-exit') {
+    throw new Error('실행하려면 --confirm=strategy-exit 또는 --confirm=position-runtime-autopilot 가 필요합니다.');
   }
   if (!preflight.ok) {
     throw new Error(`strategy-exit preflight blocked: ${preflight.lines.join(' | ')}`);
@@ -477,6 +526,29 @@ async function main() {
 
   await syncStrategyExitCandidateStates([candidate], 'execute');
   const signal = await createStrategyExitSignal(candidate);
+  const lifecyclePolicySnapshot = candidate?.strategyProfile?.positionRuntimeState?.policyMatrix
+    || candidate?.executionIntent?.policyMatrix
+    || {};
+  await recordLifecyclePhaseSnapshot({
+    symbol: candidate.symbol,
+    exchange: candidate.exchange,
+    tradeMode: candidate.tradeMode,
+    phase: 'phase3_approve',
+    ownerAgent: 'strategy_exit_runner',
+    eventType: 'completed',
+    inputSnapshot: {
+      recommendation: 'EXIT',
+      reasonCode: candidate.reasonCode,
+      preflight,
+    },
+    outputSnapshot: {
+      signalId: signal.id,
+      incidentLink: signal.exit_reason_override,
+      idempotencyKey: signal._idempotencyKey,
+    },
+    policySnapshot: lifecyclePolicySnapshot,
+    idempotencyKey: `phase3:strategy_exit:${signal._idempotencyKey}`,
+  }).catch(() => null);
 
   const closeoutCtx = {
     symbol: candidate.symbol,
@@ -494,10 +566,60 @@ async function main() {
     idempotencyKey: signal._idempotencyKey,
     cooldownMinutes: 60,
   };
-  const beginResult = await beginCloseout(closeoutCtx).catch(() => ({ ok: true }));
+  const beginResult = await beginCloseout(closeoutCtx).catch(async (error) => {
+    const reason = `closeout_guard_error:${error?.message || String(error)}`;
+    await publishToMainBot({
+      from_bot: 'luna',
+      event_type: 'system_error',
+      alert_level: 3,
+      message: `⚠️ [phase6] strategy-exit closeout guard exception\nsymbol=${candidate.symbol}\nexchange=${candidate.exchange}\ncloseoutType=full_exit\nreason=${reason}`,
+      payload: {
+        closeoutType: 'full_exit',
+        closeout_guard_error: reason,
+        symbol: candidate.symbol,
+        exchange: candidate.exchange,
+        tradeMode: candidate.tradeMode,
+        idempotencyKey: signal._idempotencyKey,
+      },
+    }).catch(() => null);
+    return { ok: false, reason };
+  });
   if (!beginResult.ok) {
+    await recordLifecyclePhaseSnapshot({
+      symbol: candidate.symbol,
+      exchange: candidate.exchange,
+      tradeMode: candidate.tradeMode,
+      phase: 'phase4_execute',
+      ownerAgent: 'strategy_exit_runner',
+      eventType: 'blocked',
+      inputSnapshot: {
+        signalId: signal.id,
+        idempotencyKey: signal._idempotencyKey,
+      },
+      outputSnapshot: {
+        reason: beginResult.reason || 'closeout_preflight_blocked',
+      },
+      policySnapshot: lifecyclePolicySnapshot,
+      idempotencyKey: `phase4:block:strategy_exit:${signal._idempotencyKey}`,
+    }).catch(() => null);
     throw new Error(`strategy-exit closeout guard: ${beginResult.reason}`);
   }
+  await recordLifecyclePhaseSnapshot({
+    symbol: candidate.symbol,
+    exchange: candidate.exchange,
+    tradeMode: candidate.tradeMode,
+    phase: 'phase4_execute',
+    ownerAgent: 'strategy_exit_runner',
+    eventType: 'started',
+    inputSnapshot: {
+      signalId: signal.id,
+      idempotencyKey: signal._idempotencyKey,
+      plannedRatio: 1.0,
+      plannedNotional: signal._positionValue,
+    },
+    policySnapshot: lifecyclePolicySnapshot,
+    idempotencyKey: `phase4:start:strategy_exit:${signal._idempotencyKey}`,
+  }).catch(() => null);
 
   let executeResult = null;
   let executeError = null;
@@ -516,11 +638,38 @@ async function main() {
     executeResult,
     executeError,
   ).catch(() => null);
+  const executionFailed = Boolean(executeError || closeoutResult?.ok === false);
+  await recordLifecyclePhaseSnapshot({
+    symbol: candidate.symbol,
+    exchange: candidate.exchange,
+    tradeMode: candidate.tradeMode,
+    phase: 'phase4_execute',
+    ownerAgent: 'strategy_exit_runner',
+    eventType: executionFailed ? 'failed' : 'completed',
+    inputSnapshot: {
+      signalId: signal.id,
+      idempotencyKey: signal._idempotencyKey,
+    },
+    outputSnapshot: {
+      ok: !executionFailed,
+      closeoutReviewId: closeoutResult?.reviewId || null,
+      error: executeError?.message || closeoutResult?.error || null,
+    },
+    policySnapshot: lifecyclePolicySnapshot,
+    idempotencyKey: `phase4:result:strategy_exit:${signal._idempotencyKey}`,
+  }).catch(() => null);
 
   if (executeError) throw executeError;
+  if (closeoutResult?.ok === false) {
+    throw new Error(`strategy-exit execution unsuccessful: ${closeoutResult.error || closeoutResult.reviewStatus || 'unknown'}`);
+  }
 
   const payload = {
     mode: 'execute',
+    ok: true,
+    runContext: options.runContext || null,
+    executionStatus: closeoutResult?.reviewStatus === 'pending' ? 'pending' : 'executed',
+    reviewStatus: closeoutResult?.reviewStatus || 'completed',
     candidate,
     preflight,
     signalId: signal.id,

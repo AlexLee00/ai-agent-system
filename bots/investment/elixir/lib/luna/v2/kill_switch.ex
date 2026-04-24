@@ -78,6 +78,20 @@ defmodule Luna.V2.KillSwitch do
   def position_watch_crypto_realtime_ms,
     do: get_env_override(:position_watch_crypto_realtime_ms, 15_000)
 
+  def position_watch_domestic_realtime_ms do
+    case get_env_override(:position_watch_domestic_realtime_ms, nil) do
+      nil -> position_watch_stock_realtime_ms()
+      value -> value
+    end
+  end
+
+  def position_watch_overseas_realtime_ms do
+    case get_env_override(:position_watch_overseas_realtime_ms, nil) do
+      nil -> position_watch_stock_realtime_ms()
+      value -> value
+    end
+  end
+
   def position_watch_stock_realtime_ms,
     do: get_env_override(:position_watch_stock_realtime_ms, 15_000)
 

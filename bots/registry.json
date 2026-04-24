@@ -90,6 +90,24 @@
               "check_history"
             ]
           }
+        },
+        "auto-dev": {
+          "name": "오토데브",
+          "file": "bots/claude/scripts/auto-dev-runner.ts",
+          "role": "docs/auto_dev 문서 기반 완전자율 개발 오케스트레이터",
+          "description": "문서 접수 → 문서/코드 분석 → 구현계획 수립 알림 → 구현 → 리뷰/보안 → 수정 → 테스트 → 수정 → 완료 알림 상태머신",
+          "schedule": "상주 감시 5분 루프 (launchd: ai.claude.auto-dev)",
+          "flags": {
+            "--once": "인박스 문서 1건 처리",
+            "--dry-run": "구현 실행 없이 분석/계획/검증 흐름만 점검",
+            "--force": "완료 이력과 무관하게 재처리"
+          },
+          "outputs": {
+            "inbox": "docs/auto_dev/*.md",
+            "stateFile": "~/.openclaw/workspace/claude-auto-dev-state.json",
+            "startAlarm": "구현계획 수립 완료",
+            "finishAlarm": "리뷰/테스트 통과 후 구현 완료"
+          }
         }
       }
     },

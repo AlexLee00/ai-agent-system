@@ -1,4 +1,4 @@
-# 7_AGENTS_OVERVIEW — 클로드팀 7 에이전트 개요
+# 7_AGENTS_OVERVIEW — 클로드팀 8 에이전트 개요
 
 > 최종 업데이트: 2026-04-24
 > Phase A/N/D/C/T/I 완료 후 최종 상태
@@ -15,7 +15,8 @@ claude-commander (팀장)
 ├── [리뷰] Reviewer ← Phase A
 ├── [보안] Guardian ← Phase A
 ├── [빌드] Builder  ← Phase A
-└── [알림] Codex Plan Notifier ← Phase N ★
+├── [알림] Codex Plan Notifier ← Phase N ★
+└── [자동개발] Auto Dev Orchestrator ← Phase AD ★
 ```
 
 ---
@@ -171,7 +172,32 @@ claude-commander (팀장)
 
 ---
 
-## launchd 서비스 현황 (총 14개)
+## 8. Auto Dev Orchestrator (자동개발) ★
+
+**파일**: `lib/auto-dev-pipeline.ts`
+**실행기**: `scripts/auto-dev-runner.ts`
+**launchd**: `ai.claude.auto-dev.plist`
+**Kill Switch**: `CLAUDE_AUTO_DEV_ENABLED=true`
+
+### 라이프사이클
+
+```
+docs/auto_dev/*.md
+  → 문서/코드 분석
+  → 구현계획 수립 + 시작 알림
+  → Claude Code 구현
+  → Reviewer + Guardian
+  → 실패 시 수정 루프
+  → Builder + hard tests
+  → 실패 시 수정 루프
+  → 구현 완료 + 종료 알림
+```
+
+상태 파일: `~/.openclaw/workspace/claude-auto-dev-state.json`
+
+---
+
+## launchd 서비스 현황 (총 15개)
 
 | 서비스 | 주기 | 상태 |
 |--------|------|------|
@@ -187,23 +213,25 @@ claude-commander (팀장)
 | ai.claude.guardian | 매일 03:00 | Phase A 신설 |
 | ai.claude.builder | 이벤트 기반 | Phase A 신설 |
 | ai.claude.codex-notifier | 상주 (5분 주기) | Phase N 신설 ★ |
+| ai.claude.auto-dev | 상주 (5분 주기) | Phase AD 신설 ★ |
 | ai.claude.daily-report | 매일 06:30 | Phase T 신설 |
 | ai.claude.weekly-report | 매주 일요일 19:00 | Phase T 신설 |
 
 ---
 
-## 테스트 현황 (58개, 100% 통과)
+## 테스트 현황 (67개, 100% 통과)
 
 | 파일 | 테스트 수 |
 |------|-----------|
 | reviewer.test.ts | 7 |
 | guardian.test.ts | 6 |
 | builder.test.ts | 7 |
-| codex-plan-notifier.test.ts | 15 |
+| codex-plan-notifier.test.ts | 16 |
+| auto-dev-pipeline.test.ts | 4 |
 | doctor-verify-loop.test.ts | 12 |
-| commander.test.ts | 10 |
+| commander.test.ts | 11 |
 | e2e/full-flow.test.ts | 4 |
-| **합계** | **61** |
+| **합계** | **67** |
 
 ```bash
 # 전체 테스트 실행
@@ -211,6 +239,7 @@ node bots/claude/__tests__/reviewer.test.ts
 node bots/claude/__tests__/guardian.test.ts
 node bots/claude/__tests__/builder.test.ts
 node bots/claude/__tests__/codex-plan-notifier.test.ts
+node bots/claude/__tests__/auto-dev-pipeline.test.ts
 node bots/claude/__tests__/doctor-verify-loop.test.ts
 node bots/claude/__tests__/commander.test.ts
 node bots/claude/__tests__/e2e/full-flow.test.ts

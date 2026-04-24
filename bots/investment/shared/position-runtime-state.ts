@@ -1,6 +1,14 @@
 // @ts-nocheck
 
+import { computeRegimePolicy } from './regime-strategy-policy.ts';
+
 function safeNumber(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function nullableNumber(value, fallback = null) {
+  if (value == null || value === '') return fallback;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
 }
@@ -8,6 +16,12 @@ function safeNumber(value, fallback = 0) {
 function normalizeString(value, fallback = null) {
   const normalized = String(value || '').trim();
   return normalized || fallback;
+}
+
+function clamp01(value, fallback = 0) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(1, Math.max(0, parsed));
 }
 
 function cloneObject(value, fallback = {}) {
@@ -21,6 +35,59 @@ export function getPositionRuntimeMarket(exchange = 'binance') {
   if (exchange === 'kis') return 'domestic';
   if (exchange === 'kis_overseas') return 'overseas';
   return 'unknown';
+}
+
+function getPolicyMarket(exchange = 'binance') {
+  return exchange === 'binance' ? 'crypto' : 'stock';
+}
+
+function resolveFamilyBias(strategyProfile = null) {
+  const context = strategyProfile?.strategy_context || strategyProfile?.strategyContext || {};
+  const feedback = context.familyPerformanceFeedback
+    || strategyProfile?.familyPerformanceFeedback
+    || strategyProfile?.strategy_state?.familyPerformanceFeedback
+    || {};
+  return normalizeString(feedback?.bias, null);
+}
+
+function resolveInternalSourceQualityScore(analysisSummary = null) {
+  const live = analysisSummary?.liveIndicator || {};
+  const qualityScore = nullableNumber(
+    live?.quality?.score
+    ?? live?.qualityScore
+    ?? live?.avgConfidence
+    ?? live?.confidence
+    ?? analysisSummary?.avgConfidence,
+    null,
+  );
+  if (qualityScore != null) return clamp01(qualityScore, 0.5);
+  return null;
+}
+
+function resolveSourceQualityScore(analysisSummary = null, externalEvidenceSummary = null) {
+  const internalQuality = resolveInternalSourceQualityScore(analysisSummary);
+  const externalEvidenceCount = Number(externalEvidenceSummary?.evidenceCount || 0);
+  const externalQuality = nullableNumber(externalEvidenceSummary?.avgQuality, null);
+  const externalFreshness = nullableNumber(externalEvidenceSummary?.avgFreshness, null);
+
+  if (externalEvidenceCount > 0 && externalQuality != null) {
+    const freshnessMultiplier = externalFreshness != null
+      ? 0.75 + (clamp01(externalFreshness, 0) * 0.25)
+      : 1;
+    const adjustedExternal = clamp01(externalQuality * freshnessMultiplier, 1);
+    if (internalQuality != null) {
+      const externalWeight = Math.min(0.75, 0.35 + (Math.min(externalEvidenceCount, 6) * 0.07));
+      return clamp01((adjustedExternal * externalWeight) + (internalQuality * (1 - externalWeight)), 1);
+    }
+    return adjustedExternal;
+  }
+
+  if (internalQuality != null) {
+    // 외부 에비던스 부재는 "품질 미확정"으로 취급한다.
+    // 즉시 실행 차단 대신 내부 신호 품질 기반 감쇠 점수를 사용한다.
+    return clamp01(Math.min(Math.max(internalQuality * 0.9, 0.45), 0.75), 0.5);
+  }
+  return 0.5;
 }
 
 export function getPositionRuntimeRegime(regimeSnapshot = null, exchange = 'binance') {
@@ -44,58 +111,41 @@ export function buildRegimeAwareMonitoringPolicy({
   attentionType = null,
   regime = null,
   setupType = null,
+  strategyProfile = null,
+  analysisSummary = null,
+  driftContext = null,
+  externalEvidenceSummary = null,
 } = {}) {
   const market = getPositionRuntimeMarket(exchange);
   const normalizedRegime = normalizeString(regime?.regime, market === 'crypto' ? 'volatile' : 'ranging');
   const normalizedSetupType = normalizeString(setupType, 'unknown');
   const normalizedRecommendation = normalizeString(recommendation, 'HOLD');
   const normalizedAttentionType = normalizeString(attentionType, null);
-
-  let cadenceMs = market === 'crypto' ? 15_000 : 15_000;
-  let lane = market === 'crypto' ? 'crypto_realtime' : 'stock_realtime';
-  let reevaluationWindowMinutes = market === 'crypto' ? 45 : 120;
-  let backgroundBacktestWindowDays = market === 'crypto' ? 21 : 120;
-  let profile = 'balanced_monitor';
-
-  if (normalizedRegime === 'trending_bear' || normalizedRecommendation === 'EXIT') {
-    cadenceMs = market === 'crypto' ? 10_000 : 12_000;
-    reevaluationWindowMinutes = market === 'crypto' ? 20 : 45;
-    backgroundBacktestWindowDays = market === 'crypto' ? 30 : 180;
-    profile = 'defensive_watch';
-  } else if (normalizedRegime === 'trending_bull') {
-    cadenceMs = market === 'crypto' ? 15_000 : 20_000;
-    reevaluationWindowMinutes = market === 'crypto' ? 30 : 60;
-    backgroundBacktestWindowDays = market === 'crypto' ? 21 : 120;
-    profile = 'trend_follow_watch';
-  } else if (normalizedRegime === 'volatile') {
-    cadenceMs = market === 'crypto' ? 12_000 : 15_000;
-    reevaluationWindowMinutes = market === 'crypto' ? 25 : 45;
-    backgroundBacktestWindowDays = market === 'crypto' ? 28 : 150;
-    profile = 'volatility_watch';
-  }
-
-  if (normalizedAttentionType === 'tv_bar_stale') {
-    cadenceMs = Math.max(cadenceMs, market === 'crypto' ? 30_000 : 60_000);
-    lane = 'stale_recovery';
-  } else if (normalizedAttentionType || normalizedRecommendation !== 'HOLD') {
-    cadenceMs = Math.min(cadenceMs, market === 'crypto' ? 10_000 : 12_000);
-    lane = 'attention_fast_lane';
-  }
-
-  if (normalizedSetupType === 'mean_reversion') {
-    reevaluationWindowMinutes = Math.min(reevaluationWindowMinutes, market === 'crypto' ? 20 : 45);
-  } else if (normalizedSetupType === 'trend_following' || normalizedSetupType === 'momentum_rotation') {
-    reevaluationWindowMinutes = Math.max(reevaluationWindowMinutes, market === 'crypto' ? 30 : 90);
-  }
+  const sourceQualityScore = resolveSourceQualityScore(analysisSummary, externalEvidenceSummary);
+  const policy = computeRegimePolicy({
+    exchange,
+    market: getPolicyMarket(exchange),
+    regime: normalizedRegime,
+    setupType: normalizedSetupType,
+    familyBias: resolveFamilyBias(strategyProfile),
+    sharpeDrop: safeNumber(driftContext?.sharpeDrop, 0),
+    returnDropPct: safeNumber(driftContext?.returnDropPct, 0),
+    sourceQualityScore,
+    recommendation: normalizedRecommendation,
+    attentionType: normalizedAttentionType,
+  });
 
   return {
-    lane,
-    profile,
-    cadenceMs,
-    reevaluationWindowMinutes,
-    backgroundBacktestWindowDays,
+    lane: policy.lane,
+    profile: policy.monitorProfile,
+    cadenceMs: policy.cadenceMs,
+    reevaluationWindowMinutes: policy.reevaluationWindowMinutes,
+    backgroundBacktestWindowDays: policy.backgroundBacktestWindowDays,
     recommendedEventSource: normalizedAttentionType ? 'position_watch' : 'runtime_loop',
     reasonCode: normalizeString(reasonCode, null),
+    sourceQualityScore: Number(sourceQualityScore.toFixed(4)),
+    sourceQualityBlocked: policy.sourceQualityBlocked === true,
+    sourceQualityReason: policy.sourceQualityReason || null,
   };
 }
 
@@ -107,6 +157,7 @@ export function buildRegimeAwarePolicyMatrix({
   regime = null,
   analysisSummary = null,
   driftContext = null,
+  externalEvidenceSummary = null,
 } = {}) {
   const market = getPositionRuntimeMarket(exchange);
   const setupType = normalizeString(strategyProfile?.setup_type || strategyProfile?.setupType, 'unknown');
@@ -114,46 +165,23 @@ export function buildRegimeAwarePolicyMatrix({
   const sellCount = safeNumber(analysisSummary?.sell, 0);
   const buyCount = safeNumber(analysisSummary?.buy, 0);
   const weightedBias = safeNumber(analysisSummary?.liveIndicator?.weightedBias, 0);
-
-  let stopLossPct = market === 'crypto' ? 0.05 : 0.04;
-  let profitLockPct = market === 'crypto' ? 0.10 : 0.08;
-  let partialAdjustBias = 1.0;
-  let riskGate = normalizedRegime === 'trending_bear' ? 'strict_risk_gate' : 'execution_safeguard';
-  let policyMode = normalizedRegime === 'trending_bear' ? 'defensive' : normalizedRegime === 'trending_bull' ? 'aggressive' : 'balanced';
-
-  if (setupType === 'mean_reversion') {
-    stopLossPct *= 0.9;
-    profitLockPct *= 0.75;
-    partialAdjustBias = 1.2;
-    policyMode = 'mean_reversion_control';
-  } else if (setupType === 'trend_following' || setupType === 'momentum_rotation') {
-    stopLossPct *= 1.1;
-    profitLockPct *= 1.25;
-    partialAdjustBias = 0.85;
-    policyMode = 'trend_follow_control';
-  } else if (setupType === 'breakout') {
-    stopLossPct *= 1.0;
-    profitLockPct *= 1.05;
-    partialAdjustBias = 0.95;
-    policyMode = 'breakout_control';
-  }
-
-  if (normalizedRegime === 'trending_bear') {
-    stopLossPct *= 0.8;
-    profitLockPct *= 0.8;
-    partialAdjustBias += 0.15;
-  } else if (normalizedRegime === 'trending_bull') {
-    stopLossPct *= 1.05;
-    profitLockPct *= 1.15;
-    partialAdjustBias -= 0.05;
-  } else if (normalizedRegime === 'volatile') {
-    stopLossPct *= 0.85;
-    partialAdjustBias += 0.1;
-  }
-
-  if (safeNumber(driftContext?.sharpeDrop, 0) > 0 || safeNumber(driftContext?.returnDropPct, 0) > 0) {
-    partialAdjustBias += 0.1;
-  }
+  const familyBias = resolveFamilyBias(strategyProfile);
+  const sourceQualityScore = resolveSourceQualityScore(analysisSummary, externalEvidenceSummary);
+  const closeoutAvgPnlPercent = nullableNumber(strategyProfile?.strategy_state?.phase6Closeout?.avgPnlPercent, null);
+  const closeoutWinRate = nullableNumber(strategyProfile?.strategy_state?.phase6Closeout?.winRate, null);
+  const policy = computeRegimePolicy({
+    exchange,
+    market: getPolicyMarket(exchange),
+    regime: normalizedRegime,
+    setupType,
+    familyBias,
+    sharpeDrop: safeNumber(driftContext?.sharpeDrop, 0),
+    returnDropPct: safeNumber(driftContext?.returnDropPct, 0),
+    closeoutAvgPnlPercent,
+    closeoutWinRate,
+    sourceQualityScore,
+    recommendation,
+  });
 
   const reevaluationBias = {
     weightedBias,
@@ -166,11 +194,22 @@ export function buildRegimeAwarePolicyMatrix({
     market,
     setupType,
     regime: normalizedRegime,
-    policyMode,
-    riskGate,
-    stopLossPct: Number(stopLossPct.toFixed(4)),
-    profitLockPct: Number(profitLockPct.toFixed(4)),
-    partialAdjustBias: Number(partialAdjustBias.toFixed(4)),
+    policyMode: policy.policyMode,
+    riskGate: policy.riskGate,
+    stopLossPct: policy.stopLossPct,
+    profitLockPct: policy.profitLockPct,
+    partialAdjustBias: policy.partialExitRatioBias,
+    partialExitRatioBias: policy.partialExitRatioBias,
+    cooldownMinutes: policy.cooldownMinutes,
+    positionSizeMultiplier: policy.positionSizeMultiplier,
+    reentryLock: policy.reentryLock === true,
+    sourceQualityBlocked: policy.sourceQualityBlocked === true,
+    sourceQualityReason: policy.sourceQualityReason || null,
+    monitorProfile: policy.monitorProfile,
+    lane: policy.lane,
+    cadenceMs: policy.cadenceMs,
+    reevaluationWindowMinutes: policy.reevaluationWindowMinutes,
+    backgroundBacktestWindowDays: policy.backgroundBacktestWindowDays,
     reevaluationBias,
   };
 }
@@ -237,24 +276,84 @@ export function buildExecutionIntent({
       ? 'normal'
       : 'low';
   const riskGate = normalizeString(responsibilityPlan?.riskMission, policyMatrix?.riskGate || 'execution_safeguard');
+  const isHardExit = recommendation === 'EXIT' && String(reasonCode || '') === 'stop_loss_threshold';
+  const triggerSource = normalizeString(trigger?.source, 'runtime_loop');
 
   let runner = null;
   let command = null;
+  let previewCommand = null;
+  let manualExecuteCommand = null;
+  let autonomousExecuteCommand = null;
+  let runnerArgs = null;
+  let executionPolicy = {
+    autonomy: 'manual_only',
+    needsUserApproval: false,
+    requiresMarketOpen: false,
+    postActionAlertOnly: true,
+  };
   let action = 'HOLD';
   let executionAllowed = false;
+  const guardReasons = [];
 
   if (recommendation === 'EXIT' && symbol && exchange) {
     action = 'EXIT';
     runner = 'runtime:strategy-exit';
-    command = `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:strategy-exit -- --symbol=${symbol} --exchange=${exchange} --trade-mode=${tradeMode} --json`;
+    previewCommand = `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:strategy-exit -- --symbol=${symbol} --exchange=${exchange} --trade-mode=${tradeMode} --json`;
+    manualExecuteCommand = `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:strategy-exit -- --symbol=${symbol} --exchange=${exchange} --trade-mode=${tradeMode} --execute --confirm=strategy-exit --json`;
+    autonomousExecuteCommand = `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:strategy-exit -- --symbol=${symbol} --exchange=${exchange} --trade-mode=${tradeMode} --execute --confirm=position-runtime-autopilot --run-context=position-runtime-autopilot --json`;
+    runnerArgs = {
+      symbol,
+      exchange,
+      'trade-mode': tradeMode,
+      execute: true,
+      confirm: 'position-runtime-autopilot',
+      'run-context': 'position-runtime-autopilot',
+      json: true,
+    };
+    executionPolicy = {
+      autonomy: isHardExit ? 'hard_exit_required' : 'autonomous_allowed',
+      needsUserApproval: false,
+      requiresMarketOpen: exchange !== 'binance',
+      postActionAlertOnly: true,
+    };
+    command = previewCommand;
     executionAllowed = true;
   } else if (recommendation === 'ADJUST' && symbol && exchange) {
     action = 'ADJUST';
     runner = 'runtime:partial-adjust';
-    command = `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:partial-adjust -- --symbol=${symbol} --exchange=${exchange} --trade-mode=${tradeMode} --json`;
+    previewCommand = `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:partial-adjust -- --symbol=${symbol} --exchange=${exchange} --trade-mode=${tradeMode} --json`;
+    manualExecuteCommand = `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:partial-adjust -- --symbol=${symbol} --exchange=${exchange} --trade-mode=${tradeMode} --execute --confirm=partial-adjust --json`;
+    autonomousExecuteCommand = `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:partial-adjust -- --symbol=${symbol} --exchange=${exchange} --trade-mode=${tradeMode} --execute --confirm=position-runtime-autopilot --run-context=position-runtime-autopilot --json`;
+    runnerArgs = {
+      symbol,
+      exchange,
+      'trade-mode': tradeMode,
+      execute: true,
+      confirm: 'position-runtime-autopilot',
+      'run-context': 'position-runtime-autopilot',
+      json: true,
+    };
+    executionPolicy = {
+      autonomy: 'autonomous_allowed',
+      needsUserApproval: false,
+      requiresMarketOpen: exchange !== 'binance',
+      postActionAlertOnly: true,
+    };
+    command = previewCommand;
     executionAllowed = true;
   } else if (symbol && exchange) {
-    command = `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=${symbol} --exchange=${exchange} --trade-mode=${tradeMode} --event-source=${normalizeString(trigger?.source, 'runtime_loop')} --json`;
+    command = `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=${symbol} --exchange=${exchange} --trade-mode=${tradeMode} --event-source=${triggerSource} --json`;
+  }
+
+  if (executionAllowed) {
+    if (policyMatrix?.sourceQualityBlocked === true) {
+      guardReasons.push(policyMatrix?.sourceQualityReason || 'source_quality_blocked');
+      executionAllowed = false;
+    }
+    if (normalizeString(validationState?.severity, 'stable') === 'critical' && action === 'ADJUST') {
+      guardReasons.push('validation_severity_critical_adjust_blocked');
+      executionAllowed = false;
+    }
   }
 
   return {
@@ -263,9 +362,17 @@ export function buildExecutionIntent({
     reason: normalizeString(reason, null),
     runner,
     command,
+    previewCommand,
+    manualExecuteCommand,
+    autonomousExecuteCommand,
+    runnerArgs,
+    executionPolicy,
+    executionScope: symbol && exchange ? `${exchange}:${symbol}:${action}:${tradeMode}` : null,
+    brokerScope: symbol && exchange ? `${exchange}:${symbol}` : null,
     urgency,
     riskGate,
     executionAllowed,
+    guardReasons,
     setupType,
     exitGuard: normalizeString(exitPlan?.primaryExit, null),
     weightedBias: safeNumber(analysisSummary?.liveIndicator?.weightedBias, 0),
@@ -283,6 +390,7 @@ export function buildPositionRuntimeState({
   reasonCode = null,
   reason = null,
   regimeSnapshot = null,
+  externalEvidenceSummary = null,
   trigger = null,
   previousState = null,
 } = {}) {
@@ -296,6 +404,10 @@ export function buildPositionRuntimeState({
     attentionType: trigger?.attentionType,
     regime: marketRegime,
     setupType,
+    strategyProfile,
+    analysisSummary,
+    driftContext,
+    externalEvidenceSummary,
   });
   const policyMatrix = buildRegimeAwarePolicyMatrix({
     exchange,
@@ -305,6 +417,7 @@ export function buildPositionRuntimeState({
     regime: marketRegime,
     analysisSummary,
     driftContext,
+    externalEvidenceSummary,
   });
   const validationState = buildOnlineValidationState({
     latestBacktest,
@@ -360,6 +473,7 @@ export function buildPositionRuntimeState({
         sell: safeNumber(analysisSummary?.sell, 0),
         avgConfidence: safeNumber(analysisSummary?.avgConfidence, 0),
       },
+      externalEvidenceSummary: externalEvidenceSummary || null,
     },
     previousRecommendation: normalizeString(previous?.recommendation, null),
     previousReasonCode: normalizeString(previous?.reasonCode, null),

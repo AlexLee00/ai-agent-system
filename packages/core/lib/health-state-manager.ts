@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+const { isExpectedIdleService, isOptionalService } = require('./service-ownership');
 
 type HealthState = Record<string, string>;
 
@@ -21,6 +22,7 @@ const DEV_SERVICES = new Set([
   'ai.claude.dexter',
   'ai.claude.dexter.daily',
   'ai.claude.archer',
+  'ai.claude.auto-dev',
   'ai.claude.health-dashboard',
   'ai.claude.health-check',
   'ai.ska.health-check',
@@ -99,6 +101,14 @@ function shortLabel(label: string): string {
   return label.replace(/^ai\.[a-z-]+\./, '');
 }
 
+function isExpectedIdleHealthService(label: string): boolean {
+  return isExpectedIdleService(label);
+}
+
+function isOptionalHealthService(label: string): boolean {
+  return isOptionalService(label);
+}
+
 export = {
   STATE_FILE,
   loadState,
@@ -113,6 +123,8 @@ export = {
   getAlertLevel,
   parseLabelFromKey,
   shortLabel,
+  isExpectedIdleHealthService,
+  isOptionalHealthService,
   TEAM_PREFIXES,
   DEV_SERVICES,
 };

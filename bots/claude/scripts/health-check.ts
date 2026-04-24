@@ -22,9 +22,16 @@ const {
   getLaunchctlStatus,
   DEFAULT_NORMAL_EXIT_CODES,
 } = require('../../../packages/core/lib/health-provider');
+const {
+  isExpectedIdleService,
+  isOptionalService,
+} = require('../../../packages/core/lib/service-ownership');
 
 // 상시 실행 서비스 (PID 있어야 정상)
-const CONTINUOUS = ['ai.claude.commander'];
+const CONTINUOUS = [
+  'ai.claude.commander',
+  ...(!isExpectedIdleService('ai.claude.auto-dev') ? ['ai.claude.auto-dev'] : []),
+];
 
 // 감지할 전체 서비스
 const ALL_SERVICES = [
@@ -37,6 +44,7 @@ const ALL_SERVICES = [
   'ai.claude.guardian',
   'ai.claude.builder',
   'ai.claude.codex-notifier',
+  'ai.claude.auto-dev',
   'ai.claude.health-dashboard',
 ];
 
@@ -91,7 +99,13 @@ async function main() {
     const tag       = hsm.getAlertTag(label); // 클로드팀 서비스 = '[점검] '
 
     // 1. 미로드 감지
-    if (!svc) {
+    if (!svc || svc.loaded === false) {
+      if (isExpectedIdleService(label) || isOptionalService(label)) {
+        hsm.clearAlert(state, `unloaded:${label}`);
+        hsm.clearAlert(state, `down:${label}`);
+        hsm.clearAlert(state, `exitcode:${label}:`, true);
+        continue;
+      }
       const key = `unloaded:${label}`;
       if (hsm.canAlert(state, key)) {
         issues.push({ key, level: hsm.getAlertLevel(label), msg: `🔴 ${tag}[클로드 헬스] ${shortName} 미로드\nlaunchd에 등록되지 않음 → 수동 확인 필요` });

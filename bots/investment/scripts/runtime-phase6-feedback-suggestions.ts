@@ -20,9 +20,11 @@ import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { annotateRuntimeSuggestions, getParameterGovernance } from '../shared/runtime-parameter-governance.ts';
 
 function parseArgs(argv = process.argv.slice(2)) {
-  const args = { days: 30, minSamples: 3, json: false };
+  const args = { days: 30, minSamples: 3, writeLog: true, json: false };
   for (const raw of argv) {
     if (raw === '--json') args.json = true;
+    if (raw === '--no-write-log') args.writeLog = false;
+    if (raw === '--write-log') args.writeLog = true;
     if (raw.startsWith('--days=')) args.days = Math.max(1, Number(raw.split('=')[1] || 30));
     if (raw.startsWith('--min-samples=')) args.minSamples = Math.max(1, Number(raw.split('=')[1] || 3));
   }
@@ -135,7 +137,188 @@ function buildSuggestions(rows, minSamples = 3) {
   return suggestions;
 }
 
-export async function buildPhase6FeedbackSuggestions({ days = 30, minSamples = 3 } = {}) {
+function sanitizeSegment(value, fallback = 'unknown') {
+  const normalized = String(value || '').trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_');
+  return normalized || fallback;
+}
+
+function mapConfidence(priority = 'allow', governanceStatus = null) {
+  const signal = String(governanceStatus || priority || 'allow').toLowerCase();
+  if (signal === 'escalate') return 'medium';
+  if (signal === 'block') return 'high';
+  return 'medium';
+}
+
+function mapRuntimeSuggestion(item = {}) {
+  const key = String(item.key || '');
+  const family = sanitizeSegment(item?.context?.family, 'unknown');
+  const setupType = sanitizeSegment(item?.context?.setupType, 'unknown');
+  const closeoutType = sanitizeSegment(item?.context?.closeoutType, 'unknown');
+  const governanceStatus = String(item.governanceStatus || item.priority || 'allow').toLowerCase();
+  const action = governanceStatus === 'allow' ? 'adjust' : 'hold';
+  const confidence = mapConfidence(item.priority, governanceStatus);
+
+  if (key.startsWith('strategy_family.') && key.endsWith('.partialExitRatioBias')) {
+    const delta = safeNumber(item.delta, 0);
+    return {
+      key: `runtime_config.luna.strategyRouter.familyPerformanceFeedback.${family}.phase6.partialExitRatioBias`,
+      current: 1.0,
+      suggested: Number((1.0 + (item.action === 'decrease' ? -delta : delta)).toFixed(4)),
+      action,
+      confidence,
+      reason: item.reason,
+      governanceStatus,
+      context: item.context || {},
+      source: 'phase6_closeout_feedback',
+    };
+  }
+
+  if (key.startsWith('setup_type.') && key.endsWith('.stopLossPct')) {
+    const delta = safeNumber(item.delta, 0);
+    return {
+      key: `runtime_config.luna.strategyRouter.setupTypePolicy.${setupType}.stopLossPct`,
+      current: 0.05,
+      suggested: Number(Math.max(0.01, 0.05 - delta).toFixed(4)),
+      action,
+      confidence,
+      reason: item.reason,
+      governanceStatus,
+      context: item.context || {},
+      source: 'phase6_closeout_feedback',
+    };
+  }
+
+  if (key.startsWith('strategy_family.') && key.endsWith('.reentryLock')) {
+    return {
+      key: `runtime_config.luna.strategyRouter.familyPerformanceFeedback.${family}.phase6.reentryLock`,
+      current: false,
+      suggested: item.value === true,
+      action,
+      confidence,
+      reason: item.reason,
+      governanceStatus,
+      context: item.context || {},
+      source: 'phase6_closeout_feedback',
+    };
+  }
+
+  if (key.startsWith('execution.slippage_guard.')) {
+    const delta = safeNumber(item.delta, 0);
+    return {
+      key: `runtime_config.execution.phase6.slippageGuard.${closeoutType}.tighteningFactor`,
+      current: 0,
+      suggested: Number(Math.max(0, delta).toFixed(4)),
+      action,
+      confidence,
+      reason: item.reason,
+      governanceStatus,
+      context: item.context || {},
+      source: 'phase6_closeout_feedback',
+    };
+  }
+
+  return {
+    key: `runtime_config.luna.phase6.feedback.${sanitizeSegment(key, 'unknown_key')}`,
+    current: null,
+    suggested: item.value ?? null,
+    action,
+    confidence,
+    reason: item.reason,
+    governanceStatus,
+    context: item.context || {},
+    source: 'phase6_closeout_feedback',
+  };
+}
+
+function buildRuntimeConfigSuggestions(annotated = []) {
+  const reduced = new Map();
+  for (const item of annotated) {
+    const mapped = mapRuntimeSuggestion(item);
+    if (!mapped?.key) continue;
+    const existing = reduced.get(mapped.key);
+    if (!existing) {
+      reduced.set(mapped.key, mapped);
+      continue;
+    }
+    if (existing.action !== 'adjust' && mapped.action === 'adjust') {
+      reduced.set(mapped.key, mapped);
+    }
+  }
+  return [...reduced.values()];
+}
+
+function buildPhase6SuggestionFingerprint(suggestions = []) {
+  return JSON.stringify(
+    (suggestions || []).map((item) => ({
+      key: item.key,
+      action: item.action,
+      suggested: item.suggested,
+      governanceStatus: item.governanceStatus || null,
+    })),
+  );
+}
+
+async function maybePersistPhase6SuggestionLog(payload, runtimeConfigSuggestions = [], writeLog = true) {
+  if (!writeLog) return { logSaved: false, reason: 'write_log_disabled' };
+  if (!Array.isArray(runtimeConfigSuggestions) || runtimeConfigSuggestions.length === 0) {
+    return { logSaved: false, reason: 'no_runtime_suggestions' };
+  }
+  const actionableCount = runtimeConfigSuggestions.filter((item) => item.action === 'adjust').length;
+  const fingerprint = buildPhase6SuggestionFingerprint(runtimeConfigSuggestions);
+
+  const latest = await db.getRecentRuntimeConfigSuggestionLogs(1).catch(() => []);
+  const latestRow = latest?.[0] || null;
+  const latestFingerprint = latestRow?.policy_snapshot?.phase6FeedbackFingerprint
+    || latestRow?.policy_snapshot?.phase6_feedback_fingerprint
+    || null;
+  const latestCapturedAt = latestRow?.captured_at ? new Date(latestRow.captured_at).getTime() : 0;
+  const withinCooldown = Number.isFinite(latestCapturedAt) && latestCapturedAt > 0
+    ? Date.now() - latestCapturedAt < (6 * 60 * 60 * 1000)
+    : false;
+
+  if (latestFingerprint && latestFingerprint === fingerprint && withinCooldown) {
+    return {
+      logSaved: false,
+      reason: 'duplicate_recent_snapshot',
+      existingLogId: latestRow?.id || null,
+    };
+  }
+
+  const inserted = await db.insertRuntimeConfigSuggestionLog({
+    periodDays: payload.days,
+    actionableCount,
+    marketSummary: {
+      source: 'phase6_feedback',
+      status: payload.status,
+      totalSamples: payload.totalSamples,
+      aggregatedBuckets: payload.aggregatedBuckets,
+      allowCount: payload.allowCount,
+      escalateCount: payload.escalateCount,
+      blockCount: payload.blockCount,
+    },
+    suggestions: runtimeConfigSuggestions,
+    policySnapshot: {
+      source: 'phase6_feedback',
+      generatedAt: payload.generatedAt,
+      phase6FeedbackFingerprint: fingerprint,
+      phase6FeedbackStatus: payload.status,
+      suggestionCount: payload.suggestionCount,
+    },
+    reviewStatus: actionableCount > 0 ? 'pending' : 'hold',
+    reviewNote: actionableCount > 0
+      ? 'phase6 feedback suggestions queued for runtime review'
+      : 'phase6 feedback suggestions (no auto-actionable adjustments)',
+  }).catch(() => null);
+
+  return {
+    logSaved: Boolean(inserted?.id),
+    logId: inserted?.id || null,
+    capturedAt: inserted?.captured_at || null,
+    actionableCount,
+  };
+}
+
+export async function buildPhase6FeedbackSuggestions({ days = 30, minSamples = 3, writeLog = true } = {}) {
   await db.initSchema();
 
   const aggregated = await aggregateCloseoutResults({ days });
@@ -152,6 +335,7 @@ export async function buildPhase6FeedbackSuggestions({ days = 30, minSamples = 3
   const allowSuggestions = annotated.filter((s) => s.governanceStatus === 'allow' || s.priority === 'allow');
   const escalateSuggestions = annotated.filter((s) => s.governanceStatus === 'escalate' || s.priority === 'escalate');
   const blockSuggestions = annotated.filter((s) => s.governanceStatus === 'block');
+  const runtimeConfigSuggestions = buildRuntimeConfigSuggestions(annotated);
 
   const totalSamples = aggregated.reduce((sum, r) => sum + safeNumber(r.total), 0);
   const status = suggestions.length === 0 && totalSamples < minSamples
@@ -160,7 +344,7 @@ export async function buildPhase6FeedbackSuggestions({ days = 30, minSamples = 3
       ? 'no_suggestions'
       : 'has_suggestions';
 
-  return {
+  const payload = {
     ok: true,
     days,
     minSamples,
@@ -175,7 +359,13 @@ export async function buildPhase6FeedbackSuggestions({ days = 30, minSamples = 3
     allowSuggestions,
     escalateSuggestions,
     blockSuggestions,
+    runtimeConfigSuggestions,
     aggregated,
+  };
+  const persisted = await maybePersistPhase6SuggestionLog(payload, runtimeConfigSuggestions, writeLog);
+  return {
+    ...payload,
+    suggestionLog: persisted,
   };
 }
 
@@ -185,6 +375,7 @@ function renderText(payload) {
     `period: ${payload.days}d | status: ${payload.status}`,
     `samples: ${payload.totalSamples} | buckets: ${payload.aggregatedBuckets} | suggestions: ${payload.suggestionCount}`,
     `allow=${payload.allowCount}, escalate=${payload.escalateCount}, block=${payload.blockCount}`,
+    `runtime_config_suggestions=${payload.runtimeConfigSuggestions?.length || 0}`,
     '',
   ];
 
@@ -204,6 +395,11 @@ function renderText(payload) {
   }
   if (payload.status === 'waiting_samples') {
     lines.push(`ℹ️  closeout review 표본이 ${payload.minSamples}건 미만. 실행 후 다시 확인하세요.`);
+  }
+  if (payload.suggestionLog?.logSaved) {
+    lines.push(`🗂️  suggestion log 저장: ${payload.suggestionLog.logId} (actionable=${payload.suggestionLog.actionableCount})`);
+  } else if (payload.suggestionLog?.reason) {
+    lines.push(`ℹ️  suggestion log 미저장: ${payload.suggestionLog.reason}`);
   }
   return lines.join('\n');
 }

@@ -7,6 +7,7 @@ import { runPositionRuntimeReport } from './runtime-position-runtime-report.ts';
 import { runPositionRuntimeTuning } from './runtime-position-runtime-tuning.ts';
 import { runPositionRuntimeDispatch } from './runtime-position-runtime-dispatch.ts';
 import { runPositionRuntimeAutotune } from './runtime-position-runtime-autotune.ts';
+import { assessPhase6SafetyReadiness } from '../shared/position-closeout-engine.ts';
 import {
   appendPositionRuntimeAutopilotHistory,
   DEFAULT_POSITION_RUNTIME_AUTOPILOT_HISTORY_FILE,
@@ -39,24 +40,85 @@ function parseArgs(argv = []) {
   return args;
 }
 
-function buildDecision(runtimeReport, tuning, dispatch, autotune) {
+function buildCadenceRecommendationByExchange(tuning = null) {
+  const summary = {};
+  for (const item of tuning?.suggestions || []) {
+    if (!item?.exchange) continue;
+    summary[item.exchange] = {
+      status: item.status || null,
+      recommendedCadenceMs: item.recommendedCadenceMs ?? null,
+      currentAverageCadenceMs: item.currentAverageCadenceMs ?? null,
+      reason: item.reason || null,
+    };
+  }
+  return summary;
+}
+
+function buildCadenceAppliedByExchange(autotuneResult = null) {
+  const summary = {};
+  for (const item of autotuneResult?.appliedSuggestions || []) {
+    const exchanges = Array.isArray(item?.exchanges) && item.exchanges.length > 0
+      ? item.exchanges
+      : String(item?.exchange || '').split(',').filter(Boolean);
+    for (const exchange of exchanges) {
+      summary[exchange] = {
+        key: item.key || null,
+        appliedCadenceMs: Number.isFinite(Number(item?.recommendedCadenceMs))
+          ? Number(item.recommendedCadenceMs)
+          : null,
+        previousCadenceMs: Number.isFinite(Number(item?.currentAverageCadenceMs))
+          ? Number(item.currentAverageCadenceMs)
+          : null,
+        status: item.status || null,
+      };
+    }
+  }
+  return summary;
+}
+
+function buildDecision(runtimeReport, tuning, dispatch, autotune, phase6SafetyReadiness = null) {
   const metrics = runtimeReport?.decision?.metrics || {};
-  const executeDispatch = Number(metrics.exitReady || 0) > 0 || Number(metrics.adjustReady || 0) > 0;
+  const dispatchCandidates = Array.isArray(dispatch?.candidates) ? dispatch.candidates.length : 0;
+  const blockedActionable = Number(dispatch?.guardReasonSummary?.blockedActionable || 0);
+  const executeDispatch = dispatchCandidates > 0;
   const applyTuning = tuning?.status === 'position_runtime_tuning_attention';
+  const blockedByGuard = executeDispatch === false
+    && blockedActionable > 0
+    && (Number(metrics.exitReady || 0) > 0 || Number(metrics.adjustReady || 0) > 0);
+  const blockedBySafety = phase6SafetyReadiness?.ok === false;
+  const topGuardReasons = (dispatch?.guardReasonSummary?.topReasons || [])
+    .slice(0, 2)
+    .map((item) => `${item.reason}(${item.count})`);
+  const cadenceRecommendations = buildCadenceRecommendationByExchange(tuning);
   return {
-    status: executeDispatch || applyTuning ? 'position_runtime_autopilot_ready' : 'position_runtime_autopilot_idle',
-    headline: `runtime active ${metrics.active || 0} / adjust ${metrics.adjustReady || 0} / exit ${metrics.exitReady || 0} / tuning ${tuning?.status || 'unknown'} / dispatch ${dispatch?.status || 'unknown'}`,
+    status: blockedBySafety
+      ? 'position_runtime_autopilot_blocked'
+      : executeDispatch || applyTuning
+        ? 'position_runtime_autopilot_ready'
+        : blockedByGuard
+          ? 'position_runtime_autopilot_blocked'
+          : 'position_runtime_autopilot_idle',
+    headline: `runtime active ${metrics.active || 0} / adjust ${metrics.adjustReady || 0} / exit ${metrics.exitReady || 0} / tuning ${tuning?.status || 'unknown'} / dispatch ${dispatch?.status || 'unknown'} / phase6-safety ${phase6SafetyReadiness?.ok === true ? 'ok' : 'blocked'}`,
     executeDispatch,
     applyTuning,
+    blockedByGuard,
+    blockedBySafety,
+    cadenceRecommendations,
     nextActions: [
       applyTuning ? 'runtime autotune apply candidate present' : null,
       executeDispatch ? 'runtime dispatch candidate present' : null,
+      blockedByGuard
+        ? `dispatch blocked by guard (${topGuardReasons.join(', ') || 'execution_allowed_false'})`
+        : null,
+      blockedBySafety
+        ? `phase6 safety contracts failed (${(phase6SafetyReadiness?.checks || []).filter((item) => item?.ok !== true).map((item) => item.key).join(', ') || 'unknown'})`
+        : null,
     ].filter(Boolean),
     commands: {
       report: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime -- --json',
       tuning: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime-tuning -- --json',
       autotune: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime-autotune -- --apply --confirm=runtime-autotune --json',
-      dispatch: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime-dispatch -- --execute --confirm=runtime-dispatch --json',
+      dispatch: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime-dispatch -- --execute --phase6 --confirm=phase6-autopilot --json',
     },
   };
 }
@@ -67,6 +129,10 @@ function renderText(result = {}) {
     `status: ${result.decision?.status || 'unknown'}`,
     `headline: ${result.decision?.headline || 'n/a'}`,
   ];
+  if (result.phase6SafetyReadiness?.ok === false) {
+    const failedChecks = (result.phase6SafetyReadiness?.checks || []).filter((item) => item?.ok !== true);
+    lines.push(`phase6 safety blocked: ${failedChecks.map((item) => item.key).join(', ') || 'unknown'}`);
+  }
   for (const item of result.decision?.nextActions || []) lines.push(`- ${item}`);
   return lines.join('\n');
 }
@@ -117,6 +183,7 @@ function buildDispatchExchangeSummary(candidates = [], results = []) {
 function buildHistorySnapshot({
   args,
   decision,
+  phase6SafetyReadiness,
   runtimeReport,
   tuning,
   dispatchPreview,
@@ -128,6 +195,9 @@ function buildHistorySnapshot({
   const metrics = runtimeReport?.decision?.metrics || {};
   const exchangeSummary = buildExchangeRuntimeSummary(runtimeReport?.rows || []);
   const dispatchSummary = buildDispatchExchangeSummary(dispatchPreview?.candidates || [], dispatchResult?.results || []);
+  const dispatchFailures = (dispatchResult?.results || []).filter((item) => item?.ok !== true);
+  const cadenceRecommendationByExchange = buildCadenceRecommendationByExchange(tuning);
+  const cadenceAppliedByExchange = buildCadenceAppliedByExchange(autotuneResult);
   return {
     recordedAt: new Date().toISOString(),
     exchange: args.exchange || 'all',
@@ -162,24 +232,46 @@ function buildHistorySnapshot({
     })),
     dispatchCandidateCount: Array.isArray(dispatchPreview?.candidates) ? dispatchPreview.candidates.length : 0,
     dispatchExecutedCount: Array.isArray(dispatchResult?.results) ? dispatchResult.results.filter((item) => item?.ok).length : 0,
+    dispatchFailureCount: dispatchFailures.length,
+    dispatchFailures: dispatchFailures.slice(0, 5).map((item) => ({
+      exchange: item?.candidate?.exchange || null,
+      symbol: item?.candidate?.symbol || null,
+      tradeMode: item?.candidate?.tradeMode || null,
+      status: item?.status || 'failed',
+    })),
     dispatchByExchange: dispatchSummary,
+    dispatchGuardReasonSummary: dispatchPreview?.guardReasonSummary || null,
+    dispatchBlockedCandidates: (dispatchPreview?.blockedCandidates || []).slice(0, 5).map((item) => ({
+      exchange: item.exchange,
+      symbol: item.symbol,
+      action: item.action,
+      sourceQualityBlocked: item.sourceQualityBlocked === true,
+      validationSeverity: item.validationSeverity || 'stable',
+      executionAllowed: item.executionAllowed === true,
+      guardReasons: item.guardReasons || [],
+    })),
     autotuneStatus: autotunePreview?.status || null,
     autotuneApplied: autotuneResult?.status === 'position_runtime_autotune_applied',
     appliedUpdates: autotuneResult?.updates || null,
+    cadenceRecommendationByExchange,
+    cadenceAppliedByExchange,
+    phase6SafetyReadiness: phase6SafetyReadiness || null,
   };
 }
 
 export async function runPositionRuntimeAutopilot(args = {}) {
+  const phase6SafetyReadiness = args.phase6SafetyReadiness || assessPhase6SafetyReadiness();
   const runtimeReport = await runPositionRuntimeReport({ exchange: args.exchange || null, limit: 200, json: true });
   const tuning = await runPositionRuntimeTuning({ exchange: args.exchange || null, json: true });
-  const dispatchPreview = await runPositionRuntimeDispatch({ exchange: args.exchange || null, limit: args.limit || 5, json: true });
+  const dispatchPreview = await runPositionRuntimeDispatch({ exchange: args.exchange || null, limit: args.limit || 5, phase6: true, json: true });
   const autotunePreview = await runPositionRuntimeAutotune({ exchange: args.exchange || null, json: true });
-  const decision = buildDecision(runtimeReport, tuning, dispatchPreview, autotunePreview);
+  const decision = buildDecision(runtimeReport, tuning, dispatchPreview, autotunePreview, phase6SafetyReadiness);
 
   if (!args.execute) {
     const previewPayload = {
       ok: true,
       decision,
+      phase6SafetyReadiness,
       runtimeReport,
       tuning,
       dispatchPreview,
@@ -188,6 +280,7 @@ export async function runPositionRuntimeAutopilot(args = {}) {
     const historySnapshot = buildHistorySnapshot({
       args,
       decision,
+      phase6SafetyReadiness,
       runtimeReport,
       tuning,
       dispatchPreview,
@@ -210,7 +303,18 @@ export async function runPositionRuntimeAutopilot(args = {}) {
       ok: false,
       status: 'position_runtime_autopilot_confirmation_required',
       decision,
+      phase6SafetyReadiness,
       reason: 'use --confirm=position-runtime-autopilot',
+    };
+  }
+
+  if (phase6SafetyReadiness.ok !== true) {
+    return {
+      ok: false,
+      status: 'position_runtime_autopilot_blocked_by_phase6_safety',
+      decision,
+      phase6SafetyReadiness,
+      reason: 'phase6 safety readiness failed; fix runtime guards before execute/apply',
     };
   }
 
@@ -225,23 +329,29 @@ export async function runPositionRuntimeAutopilot(args = {}) {
   const dispatchResult = args.executeDispatch && decision.executeDispatch
     ? await runPositionRuntimeDispatch({
       exchange: args.exchange || null,
+      phase6: true,
       execute: true,
-      confirm: 'runtime-dispatch',
+      confirm: 'phase6-autopilot',
       limit: args.limit || 5,
       json: true,
     })
     : null;
+  const dispatchFailures = (dispatchResult?.results || []).filter((item) => item?.ok !== true);
+  const executionStatus = dispatchFailures.length > 0
+    ? 'position_runtime_autopilot_executed_with_dispatch_failures'
+    : 'position_runtime_autopilot_executed';
 
   const historySnapshot = buildHistorySnapshot({
     args,
     decision,
+    phase6SafetyReadiness,
     runtimeReport,
     tuning,
     dispatchPreview,
     autotunePreview,
     autotuneResult,
     dispatchResult,
-    status: 'position_runtime_autopilot_executed',
+    status: executionStatus,
   });
   if (args.recordHistory !== false) {
     appendPositionRuntimeAutopilotHistory(historySnapshot, args.historyFile || DEFAULT_POSITION_RUNTIME_AUTOPILOT_HISTORY_FILE);
@@ -249,15 +359,17 @@ export async function runPositionRuntimeAutopilot(args = {}) {
   const history = readPositionRuntimeAutopilotHistorySummary(args.historyFile || DEFAULT_POSITION_RUNTIME_AUTOPILOT_HISTORY_FILE);
 
   return {
-    ok: true,
-    status: 'position_runtime_autopilot_executed',
+    ok: dispatchFailures.length === 0,
+    status: executionStatus,
     decision,
+    phase6SafetyReadiness,
     runtimeReport,
     tuning,
     dispatchPreview,
     autotunePreview,
     autotuneResult,
     dispatchResult,
+    dispatchFailures,
     historyFile: args.historyFile || DEFAULT_POSITION_RUNTIME_AUTOPILOT_HISTORY_FILE,
     history,
   };

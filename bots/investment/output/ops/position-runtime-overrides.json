@@ -1,5 +1,7 @@
 {
   "position_watch_stock_realtime_ms": 15000,
   "position_watch_crypto_realtime_ms": 10000,
-  "updatedAt": "2026-04-24T03:17:02.245Z"
+  "updatedAt": "2026-04-24T05:57:23.717Z",
+  "position_watch_domestic_realtime_ms": 15000,
+  "position_watch_overseas_realtime_ms": 21150
 }

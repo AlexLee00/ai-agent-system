@@ -57,13 +57,52 @@ async function main() {
   assert('finalizeCloseout ok=false (실패)', finErr.ok === false);
   assert('finalizeCloseout reviewId 생성됨 (실패도 기록)', typeof finErr.reviewId === 'string');
 
-  // 6. idempotency — 같은 idempotencyKey로 두 번 beginCloseout
+  // 6. finalizeCloseout — executeResult가 존재해도 success=false면 실패 처리
+  const softFailCtx = { ...ctx, idempotencyKey: `smoke:soft-fail:${Date.now()}` };
+  const finSoftFail = await finalizeCloseout(softFailCtx, 'sig-smoke-003', {
+    success: false,
+    status: 'failed',
+    reason: 'mock execution rejected',
+  }, null);
+  assert('finalizeCloseout ok=false (executeResult.success=false)', finSoftFail.ok === false);
+  assert('finalizeCloseout reviewStatus=failed (executeResult.success=false)', finSoftFail.reviewStatus === 'failed');
+
+  // 7. finalizeCloseout — ok=false 객체는 실패로 기록
+  const rejectedCtx = { ...ctx, idempotencyKey: `smoke:reject:${Date.now()}` };
+  const finRejected = await finalizeCloseout(rejectedCtx, 'sig-smoke-004', {
+    ok: false,
+    status: 'rejected',
+    error: 'mock rejected',
+  }, null);
+  assert('finalizeCloseout ok=false (executeResult.ok=false)', finRejected.ok === false);
+  assert('finalizeCloseout reviewStatus=failed (executeResult.ok=false)', finRejected.reviewStatus === 'failed');
+
+  // 8. finalizeCloseout — tradeId + pending 은 completed 아님
+  const pendingCtx = { ...ctx, idempotencyKey: `smoke:pending:${Date.now()}` };
+  const finPending = await finalizeCloseout(pendingCtx, 'sig-smoke-005', {
+    tradeId: 'trade-smoke-pending',
+    status: 'pending',
+  }, null);
+  assert('finalizeCloseout ok=false (tradeId+pending)', finPending.ok === false);
+  assert('finalizeCloseout reviewStatus=pending (tradeId+pending)', finPending.reviewStatus === 'pending');
+
+  // 9. finalizeCloseout — tradeId + filled 는 completed
+  const filledCtx = { ...ctx, idempotencyKey: `smoke:filled:${Date.now()}` };
+  const finFilled = await finalizeCloseout(filledCtx, 'sig-smoke-006', {
+    tradeId: 'trade-smoke-filled',
+    status: 'filled',
+    filled: true,
+  }, null);
+  assert('finalizeCloseout ok=true (tradeId+filled)', finFilled.ok === true);
+  assert('finalizeCloseout reviewStatus=completed (tradeId+filled)', finFilled.reviewStatus === 'completed');
+
+  // 10. idempotency — 같은 idempotencyKey로 두 번 beginCloseout
   const ikey = `smoke:idem2:${Date.now()}`;
   const b1 = await beginCloseout({ ...ctx, idempotencyKey: ikey, cooldownMinutes: 0 });
   const b2 = await beginCloseout({ ...ctx, idempotencyKey: ikey, cooldownMinutes: 0 });
   assert('idempotency: 두 번째 beginCloseout는 block', b1.ok === true && b2.ok === false);
 
-  // 7. buildPositionScopeKey
+  // 11. buildPositionScopeKey
   const scopeKey = buildPositionScopeKey('BTC/USDT', 'binance', 'normal');
   assert('buildPositionScopeKey 형식', scopeKey === 'binance:BTC/USDT:normal');
 

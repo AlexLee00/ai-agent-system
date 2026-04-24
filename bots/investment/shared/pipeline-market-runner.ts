@@ -4,6 +4,7 @@ import { finishPipelineRun } from './pipeline-db.ts';
 import { publishAlert } from './alert-publisher.ts';
 import { getInvestmentNode } from '../nodes/index.ts';
 import { buildPreScreenPlannerContext } from './pre-screen-planner-bridge.ts';
+import { recordLifecyclePhaseSnapshot } from './lifecycle-contract.ts';
 
 const COLLECT_NODE_SETS = {
   binance: ['L06', 'L02', 'L03', 'L05'],
@@ -128,6 +129,123 @@ function buildRuntimePlannerPayload({ market, symbols = [], meta = {} } = {}) {
   };
 }
 
+function summarizeSymbolCollectState(symbol, summaries = []) {
+  const symbolRows = summaries.filter((item) => item.symbol === symbol);
+  const total = symbolRows.length;
+  const failedRows = symbolRows.filter((item) => item.status === 'failed');
+  const completedRows = symbolRows.filter((item) => item.status === 'completed');
+  const failedCore = failedRows.filter((item) => !ENRICHMENT_NODE_IDS.has(item.nodeId));
+  const failedEnrichment = failedRows.filter((item) => ENRICHMENT_NODE_IDS.has(item.nodeId));
+  const partialFallbackRows = completedRows.filter((item) => item.partialFallback);
+  const partialFallbackSources = {};
+  for (const row of partialFallbackRows) {
+    for (const err of Array.isArray(row.errors) ? row.errors : []) {
+      const key = String(err?.source || 'unknown');
+      partialFallbackSources[key] = (partialFallbackSources[key] || 0) + 1;
+    }
+  }
+
+  return {
+    symbolRows,
+    total,
+    failedRows,
+    completedRows,
+    failedCore,
+    failedEnrichment,
+    partialFallbackRows,
+    partialFallbackSources,
+  };
+}
+
+async function emitPhase1CollectStarted({
+  sessionId,
+  market,
+  symbols = [],
+  triggerType = 'cycle',
+  meta = {},
+  perSymbolNodes = [],
+}) {
+  if (!Array.isArray(symbols) || symbols.length === 0) return;
+  const tradeMode = String(meta?.trade_mode || 'normal');
+  await Promise.allSettled(
+    symbols.map((symbol) => (
+      recordLifecyclePhaseSnapshot({
+        symbol,
+        exchange: market,
+        tradeMode,
+        phase: 'phase1_collect',
+        ownerAgent: 'argos_collect_pipeline',
+        eventType: 'started',
+        inputSnapshot: {
+          triggerType,
+          collectMode: String(meta?.collect_mode || 'screening'),
+          nodeSet: perSymbolNodes,
+        },
+        policySnapshot: {
+          collectMode: String(meta?.collect_mode || 'screening'),
+          researchOnly: Boolean(meta?.research_only),
+        },
+        idempotencyKey: `phase1:start:${sessionId}:${symbol}`,
+      })
+    )),
+  );
+}
+
+async function emitPhase1CollectCompleted({
+  sessionId,
+  market,
+  symbols = [],
+  summaries = [],
+  metrics = {},
+  meta = {},
+}) {
+  if (!Array.isArray(symbols) || symbols.length === 0) return;
+  const tradeMode = String(meta?.trade_mode || 'normal');
+  await Promise.allSettled(
+    symbols.map((symbol) => {
+      const status = summarizeSymbolCollectState(symbol, summaries);
+      let eventType = 'completed';
+      if (status.total <= 0) eventType = 'skipped';
+      else if (status.failedCore.length > 0) eventType = 'failed';
+      else if (status.failedEnrichment.length > 0) eventType = 'blocked';
+
+      return recordLifecyclePhaseSnapshot({
+        symbol,
+        exchange: market,
+        tradeMode,
+        phase: 'phase1_collect',
+        ownerAgent: 'argos_collect_pipeline',
+        eventType,
+        outputSnapshot: {
+          collectStatus:
+            status.total <= 0 ? 'skipped'
+              : status.failedCore.length > 0 ? 'core_failed'
+                : status.failedEnrichment.length > 0 ? 'enrichment_degraded'
+                  : status.partialFallbackRows.length > 0 ? 'partial_fallback'
+                    : 'ready',
+          nodeCount: status.total,
+          completedCount: status.completedRows.length,
+          failedCount: status.failedRows.length,
+          failedCoreCount: status.failedCore.length,
+          failedEnrichmentCount: status.failedEnrichment.length,
+          partialFallbackCount: status.partialFallbackRows.length,
+          collectQuality: metrics.collectQuality || null,
+        },
+        policySnapshot: {
+          collectMode: String(meta?.collect_mode || 'screening'),
+          concurrencyLimit: Number(metrics.concurrencyLimit || 0),
+          warningCount: Array.isArray(metrics.warnings) ? metrics.warnings.length : 0,
+        },
+        evidenceSnapshot: {
+          failedNodes: status.failedRows.map((row) => ({ nodeId: row.nodeId, error: row.error || null })),
+          partialFallbackSources: status.partialFallbackSources,
+        },
+        idempotencyKey: `phase1:result:${sessionId}:${symbol}`,
+      });
+    }),
+  );
+}
+
 export async function runMarketCollectPipeline({
   market,
   symbols,
@@ -169,6 +287,15 @@ export async function runMarketCollectPipeline({
     }
 
     const perSymbolNodes = nodeIds.filter(nodeId => nodeId !== 'L06');
+    await emitPhase1CollectStarted({
+      sessionId,
+      market,
+      symbols,
+      triggerType,
+      meta,
+      perSymbolNodes,
+    }).catch(() => {});
+
     const tasks = [];
     for (const symbol of symbols) {
       for (const nodeId of perSymbolNodes) {
@@ -295,6 +422,15 @@ export async function runMarketCollectPipeline({
     });
     if (metrics.collectQuality.status === 'degraded') metrics.warnings.push('collect_quality_degraded');
     if (metrics.collectQuality.status === 'insufficient') metrics.warnings.push('collect_quality_insufficient');
+
+    await emitPhase1CollectCompleted({
+      sessionId,
+      market,
+      symbols,
+      summaries,
+      metrics,
+      meta,
+    }).catch(() => {});
 
     return { sessionId, market, symbols, summaries, metrics };
   } catch (err) {

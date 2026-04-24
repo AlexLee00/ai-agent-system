@@ -21,6 +21,7 @@ const {
   isElixirOwnedService,
   isRetiredService,
   isExpectedIdleService,
+  isOptionalService,
 } = require('../../../packages/core/lib/service-ownership.js');
 // getAllPoolStats는 module.exports에 포함됨
 const { LEAD_MODES, _getLeadMode } = require('../lib/claude-lead-brain');
@@ -289,6 +290,7 @@ function getBotStatuses() {
     { label: '덱스터 (quick)',       service: 'ai.claude.dexter.quick' },
     { label: '덱스터 (full)',        service: 'ai.claude.dexter' },
     { label: '아처',                 service: 'ai.claude.archer' },
+    { label: '클로드 자동개발',       service: 'ai.claude.auto-dev' },
     { label: '스카 커맨더',          service: 'ai.ska.commander' },
     { label: '앤디 (네이버모니터)', service: 'ai.ska.naver-monitor' },
     { label: '루나 커맨더',          service: 'ai.investment.commander' },
@@ -325,6 +327,8 @@ function getBotStatuses() {
         status = 'managed-by-elixir';
       } else if (isExpectedIdleService(b.service)) {
         status = 'expected-idle';
+      } else if (isOptionalService(b.service)) {
+        status = 'optional-stopped';
       }
 
       return {
@@ -395,7 +399,7 @@ async function getHealthData() {
     poolStats = pgPool.getAllPoolStats();
   } catch {}
 
-  const healthyStatuses = new Set(['running', 'managed-by-elixir', 'expected-idle']);
+  const healthyStatuses = new Set(['running', 'managed-by-elixir', 'expected-idle', 'optional-stopped']);
   const runningCount = botStatuses.filter(b => healthyStatuses.has(b.status)).length;
   const totalBots    = botStatuses.length;
   const commanderHealthy = isLaunchdServiceRunning('ai.claude.commander');

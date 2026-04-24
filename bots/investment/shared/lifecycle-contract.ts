@@ -63,6 +63,32 @@ export function buildPositionScopeKey(symbol: string, exchange: string, tradeMod
   return `${exchange}:${symbol}:${tradeMode}`;
 }
 
+export function buildPhase6EventIdempotencyKey({
+  eventKind = 'start',
+  closeoutType,
+  symbol,
+  exchange,
+  tradeMode = 'normal',
+  signalId = null,
+  idempotencyKey = null,
+}: {
+  eventKind?: 'start' | 'result';
+  closeoutType: string;
+  symbol: string;
+  exchange: string;
+  tradeMode?: string;
+  signalId?: string | null;
+  idempotencyKey?: string | null;
+}): string | null {
+  if (idempotencyKey) {
+    return `phase6:${eventKind}:${closeoutType}:${idempotencyKey}`;
+  }
+  if (signalId) {
+    return `phase6:${eventKind}:${closeoutType}:${symbol}:${exchange}:${tradeMode}:${signalId}`;
+  }
+  return null;
+}
+
 export async function recordLifecycleEvent(input: LifecycleEventInput): Promise<string | null> {
   return db.insertLifecycleEvent({
     positionScopeKey: input.positionScopeKey,
@@ -80,6 +106,47 @@ export async function recordLifecycleEvent(input: LifecycleEventInput): Promise<
   });
 }
 
+export async function recordLifecyclePhaseSnapshot({
+  symbol,
+  exchange,
+  tradeMode = 'normal',
+  phase,
+  ownerAgent = null,
+  eventType = 'completed',
+  inputSnapshot = {},
+  outputSnapshot = {},
+  policySnapshot = {},
+  evidenceSnapshot = {},
+  idempotencyKey = null,
+}: {
+  symbol: string;
+  exchange: string;
+  tradeMode?: string;
+  phase: LifecyclePhase;
+  ownerAgent?: string | null;
+  eventType?: LifecycleEventType | string;
+  inputSnapshot?: Record<string, unknown>;
+  outputSnapshot?: Record<string, unknown>;
+  policySnapshot?: Record<string, unknown>;
+  evidenceSnapshot?: Record<string, unknown>;
+  idempotencyKey?: string | null;
+}): Promise<string | null> {
+  return recordLifecycleEvent({
+    positionScopeKey: buildPositionScopeKey(symbol, exchange, tradeMode),
+    symbol,
+    exchange,
+    tradeMode,
+    phase,
+    ownerAgent,
+    eventType,
+    inputSnapshot,
+    outputSnapshot,
+    policySnapshot,
+    evidenceSnapshot,
+    idempotencyKey,
+  });
+}
+
 /**
  * phase6 청산/부분조정 시작 이벤트 기록.
  * idempotency_key = `phase6:<closeout_type>:<symbol>:<exchange>:<tradeMode>:<signal_id>`
@@ -90,6 +157,7 @@ export async function recordPhase6Start({
   tradeMode = 'normal',
   closeoutType,
   signalId,
+  idempotencyKey = null,
   ownerAgent = 'phase6_closeout_engine',
   inputSnapshot = {},
   policySnapshot = {},
@@ -99,14 +167,21 @@ export async function recordPhase6Start({
   tradeMode?: string;
   closeoutType: string;
   signalId?: string | null;
+  idempotencyKey?: string | null;
   ownerAgent?: string;
   inputSnapshot?: Record<string, unknown>;
   policySnapshot?: Record<string, unknown>;
 }): Promise<string | null> {
   const scopeKey = buildPositionScopeKey(symbol, exchange, tradeMode);
-  const idempotencyKey = signalId
-    ? `phase6:${closeoutType}:${symbol}:${exchange}:${tradeMode}:${signalId}`
-    : null;
+  const phase6IdempotencyKey = buildPhase6EventIdempotencyKey({
+    eventKind: 'start',
+    closeoutType,
+    symbol,
+    exchange,
+    tradeMode,
+    signalId,
+    idempotencyKey,
+  });
   return recordLifecycleEvent({
     positionScopeKey: scopeKey,
     exchange,
@@ -117,7 +192,7 @@ export async function recordPhase6Start({
     eventType: closeoutType === 'partial_adjust' ? 'partial_adjust' : 'full_exit',
     inputSnapshot,
     policySnapshot,
-    idempotencyKey,
+    idempotencyKey: phase6IdempotencyKey,
   });
 }
 
@@ -127,6 +202,7 @@ export async function recordPhase6Result({
   tradeMode = 'normal',
   closeoutType,
   signalId,
+  idempotencyKey = null,
   ownerAgent = 'phase6_closeout_engine',
   outputSnapshot = {},
   policySnapshot = {},
@@ -137,15 +213,22 @@ export async function recordPhase6Result({
   tradeMode?: string;
   closeoutType: string;
   signalId?: string | null;
+  idempotencyKey?: string | null;
   ownerAgent?: string;
   outputSnapshot?: Record<string, unknown>;
   policySnapshot?: Record<string, unknown>;
   success?: boolean;
 }): Promise<string | null> {
   const scopeKey = buildPositionScopeKey(symbol, exchange, tradeMode);
-  const idempotencyKey = signalId
-    ? `phase6:result:${closeoutType}:${symbol}:${exchange}:${tradeMode}:${signalId}`
-    : null;
+  const phase6IdempotencyKey = buildPhase6EventIdempotencyKey({
+    eventKind: 'result',
+    closeoutType,
+    symbol,
+    exchange,
+    tradeMode,
+    signalId,
+    idempotencyKey,
+  });
   return recordLifecycleEvent({
     positionScopeKey: scopeKey,
     exchange,
@@ -156,7 +239,7 @@ export async function recordPhase6Result({
     eventType: success ? 'completed' : 'failed',
     outputSnapshot,
     policySnapshot,
-    idempotencyKey,
+    idempotencyKey: phase6IdempotencyKey,
   });
 }
 
@@ -187,6 +270,35 @@ export async function recordPhase6ReviewCreated({
   });
 }
 
+export async function recordPhase6ReviewCompleted({
+  symbol,
+  exchange,
+  tradeMode = 'normal',
+  reviewId,
+  closeoutType,
+  reviewStatus = 'completed',
+}: {
+  symbol: string;
+  exchange: string;
+  tradeMode?: string;
+  reviewId: string;
+  closeoutType: string;
+  reviewStatus?: string;
+}): Promise<string | null> {
+  const scopeKey = buildPositionScopeKey(symbol, exchange, tradeMode);
+  return recordLifecycleEvent({
+    positionScopeKey: scopeKey,
+    exchange,
+    symbol,
+    tradeMode,
+    phase: 'phase6_closeout',
+    ownerAgent: 'closeout_review',
+    eventType: 'review_completed',
+    outputSnapshot: { reviewId, closeoutType, reviewStatus },
+    idempotencyKey: `phase6:review-completed:${reviewId}`,
+  });
+}
+
 /**
  * 현재 오픈 포지션 기준으로 phase6 커버리지 gap을 감사한다.
  * ADJUST/EXIT 후보가 있는데 phase6 lifecycle event가 없는 포지션을 warning으로 반환한다.
@@ -200,7 +312,9 @@ export async function auditPhase6Coverage({
 }> {
   const coverage = await db.getLifecyclePhaseCoverage({ days }).catch(() => []);
   const coveredKeys = new Set(
-    coverage.map((r) => buildPositionScopeKey(r.symbol, r.exchange, r.trade_mode)),
+    coverage
+      .filter((r) => Array.isArray(r.covered_phases) && r.covered_phases.includes('phase6_closeout'))
+      .map((r) => buildPositionScopeKey(r.symbol, r.exchange, r.trade_mode)),
   );
 
   const profiles = await db.query(`
@@ -231,9 +345,12 @@ export default {
   LIFECYCLE_PHASES,
   LIFECYCLE_EVENT_TYPES,
   buildPositionScopeKey,
+  buildPhase6EventIdempotencyKey,
   recordLifecycleEvent,
+  recordLifecyclePhaseSnapshot,
   recordPhase6Start,
   recordPhase6Result,
   recordPhase6ReviewCreated,
+  recordPhase6ReviewCompleted,
   auditPhase6Coverage,
 };

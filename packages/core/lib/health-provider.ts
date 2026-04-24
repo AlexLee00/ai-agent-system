@@ -29,7 +29,7 @@ type ServiceRowsOptions = {
   normalExitCodes?: Set<number>;
   shortLabel?: (label: string) => string;
   isExpectedExit?: (label: string, exitCode: number, svc: LaunchctlServiceStatus) => boolean;
-  treatMissingAsOk?: boolean;
+  treatMissingAsOk?: boolean | ((label: string, svc?: LaunchctlServiceStatus | null) => boolean);
   missingOkText?: (name: string, label: string) => string;
 };
 
@@ -156,8 +156,12 @@ function buildServiceRows(
   for (const label of labels) {
     const svc = status[label];
     const name = shortLabel(label);
-    if (!svc) {
-      if (treatMissingAsOk) ok.push(missingOkText(name, label));
+    const missing = !svc || svc.loaded === false;
+    if (missing) {
+      const missingAllowed = typeof treatMissingAsOk === 'function'
+        ? treatMissingAsOk(label, svc)
+        : treatMissingAsOk;
+      if (missingAllowed) ok.push(missingOkText(name, label));
       else warn.push(`  ${name}: 미로드`);
       continue;
     }

@@ -27,6 +27,7 @@ import { search as searchRag } from '../shared/rag-client.ts';
 import { getDomesticRanking, getVolumeRank } from '../shared/kis-client.ts';
 import { getKisOverseasSymbols, getKisSymbols, isPaperMode } from '../shared/secrets.ts';
 import { getArgosRuntimeConfig } from '../shared/runtime-config.ts';
+import { recordEvidence } from '../shared/external-evidence-ledger.ts';
 import { loadLatestScoutIntel, boostCandidatesWithScout } from '../shared/scout-intel.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -323,6 +324,67 @@ function _filterCandidatesByLiquidity(candidates, market) {
   }
 
   return kept;
+}
+
+function _normalizeEvidenceSignalDirection(changeRate = 0) {
+  const change = Number(changeRate || 0);
+  if (change > 0.35) return 'bullish';
+  if (change < -0.35) return 'bearish';
+  return 'neutral';
+}
+
+function _normalizeEvidenceScore(candidate = {}) {
+  const value = Number(
+    candidate.intelligenceScore
+    ?? candidate.finalScore
+    ?? candidate.changeRate
+    ?? candidate.changePercent
+    ?? 0,
+  );
+  if (!Number.isFinite(value)) return 0.5;
+  const normalized = 0.5 + (Math.tanh(value / 10) * 0.5);
+  return Number(Math.max(0, Math.min(1, normalized)).toFixed(4));
+}
+
+async function _recordArgosScreeningEvidence(result = {}) {
+  const byMarket = [
+    { market: 'crypto', rows: result?.crypto?.screening || [] },
+    { market: 'domestic', rows: result?.domestic?.screening || [] },
+    { market: 'overseas', rows: result?.overseas?.screening || [] },
+  ];
+
+  const tasks = [];
+  for (const item of byMarket) {
+    const rows = Array.isArray(item.rows) ? item.rows : [];
+    for (const [idx, candidate] of rows.slice(0, 8).entries()) {
+      if (!candidate?.symbol) continue;
+      const score = _normalizeEvidenceScore(candidate);
+      tasks.push(
+        recordEvidence({
+          sourceType: 'scout',
+          sourceName: `argos_${item.market}_screening`,
+          symbol: candidate.symbol,
+          market: item.market,
+          signalDirection: _normalizeEvidenceSignalDirection(candidate.changeRate ?? candidate.changePercent),
+          score,
+          sourceQuality: 0.72,
+          freshnessScore: 1.0,
+          evidenceSummary: `${item.market} screening rank ${idx + 1} / intel ${Number(candidate.intelligenceScore ?? candidate.finalScore ?? 0).toFixed(2)}`,
+          rawRef: {
+            sourceNames: candidate.sourceNames || [],
+            sourceCount: Number(candidate.sourceCount || 0),
+            changeRate: Number(candidate.changeRate ?? candidate.changePercent ?? 0),
+            volume: Number(candidate.volume ?? candidate.volume24h ?? 0),
+            dollarVolume: Number(candidate.dollarVolume ?? candidate.volume24h ?? 0),
+          },
+        }),
+      );
+    }
+  }
+
+  if (tasks.length > 0) {
+    await Promise.allSettled(tasks);
+  }
 }
 
 // ─── Fear & Greed Index ─────────────────────────────────────────────
@@ -1322,6 +1384,8 @@ export async function screenAllMarkets() {
   console.log(`  암호화폐: ${result.crypto.all.join(', ')}`);
   console.log(`  국내주식: ${result.domestic.all.join(', ')}`);
   console.log(`  해외주식: ${result.overseas.all.join(', ')}\n`);
+
+  await _recordArgosScreeningEvidence(result).catch(() => {});
 
   return result;
 }

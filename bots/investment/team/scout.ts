@@ -20,6 +20,7 @@ import { initSchema as initRagSchema, store as storeRag } from '../shared/rag-cl
 import { publishAlert } from '../shared/alert-publisher.ts';
 import { initHubSecrets, isKisPaper } from '../shared/secrets.ts';
 import { getDomesticPrice } from '../shared/kis-client.ts';
+import { recordScoutEvidence } from '../shared/external-evidence-ledger.ts';
 import { collectTossMarketIntel } from './toss-market-intel.ts';
 
 const logger = {
@@ -259,6 +260,30 @@ async function recordScoutArtifacts(payload, summary) {
       urls: payload.urls || {},
     },
   });
+
+  await Promise.allSettled(
+    topSignals.slice(0, 8).map((signal, idx) => {
+      const score = Number(signal?.score ?? 0.5);
+      const boundedScore = Number.isFinite(score) ? Math.max(0, Math.min(score, 1)) : 0.5;
+      const signalDirection = boundedScore >= 0.6 ? 'bullish' : boundedScore <= 0.4 ? 'bearish' : 'neutral';
+      return recordScoutEvidence({
+        symbol: signal.symbol,
+        market: signal.market,
+        score: boundedScore,
+        signalDirection,
+        strategyFamily: null,
+        summary: `scout ${payload.source} rank ${idx + 1}/${topSignals.length} (${signal.source})`,
+        rawRef: {
+          source: payload.source,
+          signalSource: signal.source,
+          overlapSymbols: summary.overlapSymbols || [],
+          focusSymbols: summary.focusSymbols || [],
+          sectionCounts,
+          baselineQuote: baselineQuotes[signal.symbol] || null,
+        },
+      });
+    }),
+  );
 }
 
 function buildTelegramMessage(payload, summary) {

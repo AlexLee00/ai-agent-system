@@ -2,6 +2,7 @@
 
 import { ACTIONS, ANALYST_TYPES } from './signal.ts';
 import * as journalDb from './trade-journal-db.ts';
+import { buildEvidenceSummaryForAgent } from './external-evidence-ledger.ts';
 
 const CRYPTO_FAMILIES = [
   'trend_following',
@@ -73,6 +74,45 @@ function buildRegimeBias(regime = null, exchange = 'binance') {
     return { defensive_rotation: 0.18, breakout: 0.06, mean_reversion: -0.04 };
   }
   return {};
+}
+
+function marketFromExchange(exchange = 'binance') {
+  if (exchange === 'binance') return 'crypto';
+  if (exchange === 'kis') return 'domestic';
+  if (exchange === 'kis_overseas') return 'overseas';
+  return 'unknown';
+}
+
+function applyExternalEvidenceFeatures({
+  exchange = 'binance',
+  summary = null,
+  scores,
+  reasons,
+}) {
+  if (!summary || Number(summary.evidenceCount || 0) <= 0) return;
+
+  const evidenceCount = Math.max(1, Number(summary.evidenceCount || 0));
+  const bullish = Number(summary?.signals?.bullish || 0);
+  const bearish = Number(summary?.signals?.bearish || 0);
+  const netSignal = bullish - bearish;
+  const quality = clamp(Number(summary.avgQuality ?? 0), 0, 1);
+  const freshness = clamp(Number(summary.avgFreshness ?? 0), 0, 1);
+  const conviction = clamp(Math.abs(netSignal) / evidenceCount, 0, 1);
+  const weight = Math.max(0.03, 0.18 * quality * (0.6 + freshness * 0.4) * Math.max(0.4, conviction));
+
+  if (netSignal > 0) {
+    add(scores, exchange === 'binance' ? 'trend_following' : 'equity_swing', weight, `external evidence bullish (${bullish}/${bearish})`, reasons);
+    add(scores, 'breakout', weight * 0.45, 'external evidence momentum confirmation', reasons);
+  } else if (netSignal < 0) {
+    add(scores, 'defensive_rotation', weight, `external evidence bearish (${bullish}/${bearish})`, reasons);
+    add(scores, 'mean_reversion', weight * 0.4, 'external evidence risk-off bias', reasons);
+  } else {
+    add(scores, 'mean_reversion', weight * 0.35, 'external evidence mixed/neutral', reasons);
+  }
+
+  if (summary.warning) {
+    add(scores, 'defensive_rotation', 0.04, 'external evidence quality warning', reasons);
+  }
 }
 
 function applyAnalystFeatures({ analyses = [], exchange = 'binance', scores, reasons }) {
@@ -212,6 +252,18 @@ export async function buildStrategyRoute({
 
   applyAnalystFeatures({ analyses, exchange, scores, reasons });
 
+  const externalEvidenceSummary = await buildEvidenceSummaryForAgent({
+    symbol,
+    market: marketFromExchange(exchange),
+    days: 3,
+  }).catch(() => null);
+  applyExternalEvidenceFeatures({
+    exchange,
+    summary: externalEvidenceSummary,
+    scores,
+    reasons,
+  });
+
   const argosSetup = normalizeSetupType(argosStrategy?.setup_type || argosStrategy?.strategy_name || argosStrategy?.summary, exchange);
   if (argosSetup && scores[argosSetup] != null) {
     add(scores, argosSetup, 0.16 * clamp(argosStrategy?.quality_score ?? 0.6), 'Argos strategy recommendation', reasons);
@@ -274,6 +326,13 @@ export async function buildStrategyRoute({
       setupType: argosStrategy.setup_type || null,
       qualityScore: argosStrategy.quality_score ?? null,
       source: argosStrategy.source || null,
+    } : null,
+    externalEvidence: externalEvidenceSummary ? {
+      evidenceCount: Number(externalEvidenceSummary.evidenceCount || 0),
+      avgQuality: Number(externalEvidenceSummary.avgQuality || 0),
+      avgFreshness: Number(externalEvidenceSummary.avgFreshness || 0),
+      signals: externalEvidenceSummary.signals || { bullish: 0, bearish: 0, neutral: 0 },
+      warning: externalEvidenceSummary.warning || null,
     } : null,
     feedbackNotes: [...feedback.notes, ...familyFeedback.notes].slice(0, 6),
     reasons: reasons.slice(0, 8),

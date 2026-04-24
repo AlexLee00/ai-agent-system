@@ -9,6 +9,8 @@
 코덱스(Claude Code)가 자율 실행될 때 **마스터가 터미널 없이** 진행 상황을 파악할 수 있도록  
 Telegram 알림을 자동 전송하는 시스템.
 
+`docs/auto_dev/*.md` 신규 문서의 실제 자동 구현은 `Auto Dev Orchestrator`가 담당한다. 이 알림기는 사람이 직접 실행한 Claude/Codex 프로세스의 계획/진행/완료 브로드캐스트를 계속 맡는다.
+
 ```
 마스터 → 코덱스 프롬프트 복붙
          ↓
@@ -30,6 +32,8 @@ Codex Watcher 자동 감지 (5분 주기)
 | `bots/claude/lib/codex-plan-notifier.ts` | 핵심 로직 |
 | `bots/claude/scripts/codex-notifier-runner.ts` | launchd 실행 진입점 |
 | `bots/claude/launchd/ai.claude.codex-notifier.plist` | launchd 데몬 설정 |
+| `bots/claude/lib/auto-dev-pipeline.ts` | `docs/auto_dev` 자동 구현 상태머신 |
+| `bots/claude/launchd/ai.claude.auto-dev.plist` | auto_dev 인박스 상주 감시 |
 
 ---
 
@@ -62,7 +66,7 @@ ps aux | grep -E 'claude.*CODEX|claude.*--print'
 
 ### 2. Phase 파싱
 
-프롬프트 파일(`docs/auto_dev/CODEX_*.md` 우선, `docs/codex/CODEX_*.md` 하위 호환)을 읽어:
+프롬프트 파일(`docs/auto_dev/CODEX_*.md`)만 읽어:
 
 ```regex
 ## 📋 Phase ([A-Z0-9]+) \(([^)]+)\) — (\S+)
@@ -163,3 +167,4 @@ node bots/claude/scripts/codex-notifier-runner.ts
 | 프로세스 감지 안 됨 | 명령줄 패턴 불일치 | `ps aux`로 프로세스 형태 확인 후 감지 정규식 조정 |
 | 중복 알림 | dedup 오동작 | `~/.openclaw/workspace/codex-notifier-state.json` 삭제 |
 | 서비스 시작 안 됨 | Kill Switch OFF 상태 | 서비스는 자동 재실행 (KeepAlive=true), 30초 대기 후 종료 |
+| auto_dev 문서가 구현되지 않음 | Auto Dev Kill Switch OFF | `CLAUDE_AUTO_DEV_ENABLED=true` 및 `ai.claude.auto-dev` 상태 확인 |

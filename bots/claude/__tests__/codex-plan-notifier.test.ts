@@ -120,7 +120,7 @@ async function test_formatPlanStartMessage_contains_required_fields() {
     const exec = {
       pid: 12345,
       started_at: Date.now(),
-      prompt_file: 'docs/codex/CODEX_CLAUDE_EVOLUTION.md',
+      prompt_file: 'docs/auto_dev/CODEX_CLAUDE_EVOLUTION.md',
       total_phases: [],
       completed_phases: [],
       last_commit_sha: 'abc1234',
@@ -152,7 +152,7 @@ async function test_formatProgressMessage_has_percentage() {
     const exec = {
       pid: 12345,
       started_at: Date.now() - 3600000,
-      prompt_file: 'docs/codex/CODEX_CLAUDE_EVOLUTION.md',
+      prompt_file: 'docs/auto_dev/CODEX_CLAUDE_EVOLUTION.md',
       total_phases: [{ id: 'A' }, { id: 'N' }],
       current_phase: { id: 'N', name: 'Notifier' },
       completed_phases: [{ id: 'A' }],
@@ -175,7 +175,7 @@ async function test_formatCompletionMessage_has_duration() {
     const exec = {
       pid: 12345,
       started_at: Date.now() - 7200000, // 2시간 전
-      prompt_file: 'docs/codex/CODEX_CLAUDE_EVOLUTION.md',
+      prompt_file: 'docs/auto_dev/CODEX_CLAUDE_EVOLUTION.md',
       total_phases: [{ id: 'A' }],
       completed_phases: [],
       last_commit_sha: 'def5678',
@@ -313,7 +313,7 @@ async function test_shouldSuppressHistoricalStart_completed_prompt() {
 
   await withMocks(mocks, async (notifier) => {
     const suppress = notifier.shouldSuppressHistoricalStart({
-      prompt_file: 'docs/codex/CODEX_JUSTIN_EVOLUTION.md',
+      prompt_file: 'docs/auto_dev/CODEX_JUSTIN_EVOLUTION.md',
     });
     assert.strictEqual(suppress, true, '완료된 과거 prompt는 start 알림 억제');
   });
@@ -322,13 +322,12 @@ async function test_shouldSuppressHistoricalStart_completed_prompt() {
   console.log('✅ codex-notifier: suppresses historical completed prompt starts');
 }
 
-// ─── Test 14: docs/auto_dev 프롬프트 우선 감지 ───────────────────────
+// ─── Test 14: docs/auto_dev 프롬프트 단일 감지 ───────────────────────
 
-async function test_findPromptFileByName_prefers_auto_dev() {
+async function test_findPromptFileByName_uses_auto_dev_only() {
   const tmpDir = path.join(os.tmpdir(), 'notifier-autodev-' + Date.now());
   fs.mkdirSync(path.join(tmpDir, 'docs', 'auto_dev'), { recursive: true });
   fs.mkdirSync(path.join(tmpDir, 'docs', 'codex'), { recursive: true });
-  fs.writeFileSync(path.join(tmpDir, 'docs', 'auto_dev', 'CODEX_SAMPLE_EVOLUTION.md'), SAMPLE_CODEX_CONTENT, 'utf8');
   fs.writeFileSync(path.join(tmpDir, 'docs', 'codex', 'CODEX_SAMPLE_EVOLUTION.md'), SAMPLE_CODEX_CONTENT, 'utf8');
 
   const mocks = makeNotifierMocks({
@@ -337,11 +336,11 @@ async function test_findPromptFileByName_prefers_auto_dev() {
 
   await withMocks(mocks, async (notifier) => {
     const promptFile = notifier.findPromptFileByName('CODEX_SAMPLE_EVOLUTION');
-    assert.strictEqual(promptFile, 'docs/auto_dev/CODEX_SAMPLE_EVOLUTION.md', 'auto_dev 경로 우선');
+    assert.strictEqual(promptFile, 'docs/auto_dev/CODEX_SAMPLE_EVOLUTION.md', 'docs/codex 존재 여부와 무관하게 auto_dev만 사용');
   });
 
   fs.rmSync(tmpDir, { recursive: true, force: true });
-  console.log('✅ codex-notifier: findPromptFileByName prefers docs/auto_dev');
+  console.log('✅ codex-notifier: findPromptFileByName uses docs/auto_dev only');
 }
 
 // ─── Test 15: 커맨드라인의 docs/auto_dev 직접 경로 감지 ─────────────
@@ -365,6 +364,25 @@ async function test_extractPromptFileFromCmdLine_detects_auto_dev_path() {
   console.log('✅ codex-notifier: extracts docs/auto_dev prompt paths from cmdline');
 }
 
+// ─── Test 16: docs/codex 직접 경로는 감지하지 않음 ──────────────────
+
+async function test_extractPromptFileFromCmdLine_ignores_docs_codex_path() {
+  const tmpDir = path.join(os.tmpdir(), 'notifier-codex-ignore-' + Date.now());
+
+  const mocks = makeNotifierMocks({
+    '../../../packages/core/lib/env': { PROJECT_ROOT: tmpDir },
+  });
+
+  await withMocks(mocks, async (notifier) => {
+    const promptFile = notifier.extractPromptFileFromCmdLine(
+      `claude --print "$(cat ${tmpDir}/docs/codex/CODEX_SAMPLE_EVOLUTION.md)"`
+    );
+    assert.strictEqual(promptFile, '', 'docs/codex 직접 경로는 무시');
+  });
+
+  console.log('✅ codex-notifier: ignores docs/codex prompt paths');
+}
+
 // ─── 실행 ─────────────────────────────────────────────────────────────
 
 async function main() {
@@ -383,8 +401,9 @@ async function main() {
     test_loadState_returns_empty_when_no_file,
     test_parsePhases_empty_content,
     test_shouldSuppressHistoricalStart_completed_prompt,
-    test_findPromptFileByName_prefers_auto_dev,
+    test_findPromptFileByName_uses_auto_dev_only,
     test_extractPromptFileFromCmdLine_detects_auto_dev_path,
+    test_extractPromptFileFromCmdLine_ignores_docs_codex_path,
   ];
 
   let passed = 0, failed = 0;

@@ -6,6 +6,8 @@ import * as db from './db.ts';
 import { refreshInvestmentAgentRoles } from './agent-role-state.ts';
 import { getInvestmentSyncRuntimeConfig, getPositionReevaluationRuntimeConfig } from './runtime-config.ts';
 import { buildPositionRuntimeState, getPositionRuntimeMarket } from './position-runtime-state.ts';
+import { buildEvidenceSummaryForAgent } from './external-evidence-ledger.ts';
+import { recordLifecyclePhaseSnapshot } from './lifecycle-contract.ts';
 
 const execFileAsync = promisify(execFile);
 const TRADINGVIEW_MCP_SCRIPT = new URL('../scripts/tradingview-mcp-server.py', import.meta.url);
@@ -724,13 +726,27 @@ export async function reevaluateOpenPositions({
   const results = [];
 
   for (const position of positions) {
+    const effectiveTradeMode = position.trade_mode || 'normal';
     const dustDecision = classifyDustPosition(position);
     if (dustDecision) {
+      await recordLifecyclePhaseSnapshot({
+        symbol: position.symbol,
+        exchange: position.exchange,
+        tradeMode: effectiveTradeMode,
+        phase: 'phase5_monitor',
+        ownerAgent: 'position_reevaluator',
+        eventType: 'skipped',
+        outputSnapshot: {
+          recommendation: dustDecision.recommendation,
+          reasonCode: dustDecision.reasonCode,
+          dustNotionalUsdt: dustDecision.dustNotionalUsdt,
+        },
+      }).catch(() => null);
       results.push({
         exchange: position.exchange,
         symbol: position.symbol,
         paper: position.paper === true,
-        tradeMode: position.trade_mode || 'normal',
+        tradeMode: effectiveTradeMode,
         pnlPct: calcPnlPct(position),
         recommendation: dustDecision.recommendation,
         reasonCode: dustDecision.reasonCode,
@@ -760,13 +776,18 @@ export async function reevaluateOpenPositions({
       db.getRecentAnalysis(position.symbol, minutesBack, position.exchange).catch(() => []),
       db.getPositionStrategyProfile(position.symbol, {
         exchange: position.exchange,
-        tradeMode: position.trade_mode || 'normal',
+        tradeMode: effectiveTradeMode,
       }).catch(() => null),
       db.getLatestVectorbtBacktestForSymbol(position.symbol, position.exchange === 'binance' ? 45 : 180).catch(() => null),
     ]);
     const regimeMarket = getPositionRuntimeMarket(position.exchange);
     const regimeKey = regimeMarket === 'crypto' ? 'binance' : regimeMarket;
     const regimeSnapshot = await db.getLatestMarketRegimeSnapshot(regimeKey).catch(() => null);
+    const externalEvidenceSummary = await buildEvidenceSummaryForAgent({
+      symbol: position.symbol,
+      market: regimeMarket,
+      days: 3,
+    }).catch(() => null);
     let indicatorAnalyses = [];
     let indicatorAnalysis = null;
     if (liveIndicators) {
@@ -800,6 +821,7 @@ export async function reevaluateOpenPositions({
       reasonCode: decision.decision.reasonCode,
       reason: decision.decision.reason,
       regimeSnapshot,
+      externalEvidenceSummary,
       trigger: {
         source: eventSource,
         attentionType,
@@ -812,7 +834,7 @@ export async function reevaluateOpenPositions({
       const attentionAt = decision.decision.recommendation === 'HOLD' ? null : new Date().toISOString();
       await db.updatePositionStrategyProfileState(position.symbol, {
         exchange: position.exchange,
-        tradeMode: position.trade_mode || 'normal',
+        tradeMode: effectiveTradeMode,
         strategyState: buildStrategyStateUpdate({
           position,
           recommendation: decision.decision.recommendation,
@@ -826,11 +848,73 @@ export async function reevaluateOpenPositions({
         lastAttentionAt: attentionAt,
       }).catch(() => null);
     }
+    const lifecycleVersion = Number(runtimeState?.version || 0);
+    const lifecycleBase = `${position.exchange}:${position.symbol}:${effectiveTradeMode}:${lifecycleVersion}`;
+    await Promise.all([
+      recordLifecyclePhaseSnapshot({
+        symbol: position.symbol,
+        exchange: position.exchange,
+        tradeMode: effectiveTradeMode,
+        phase: 'phase2_analyze',
+        ownerAgent: 'position_reevaluator',
+        eventType: 'completed',
+        inputSnapshot: {
+          minutesBack,
+          analysisCount: mergedAnalyses.length,
+          eventSource,
+          attentionType: attentionType || null,
+        },
+        outputSnapshot: {
+          recommendation: decision.decision.recommendation,
+          reasonCode: decision.decision.reasonCode,
+          reason: decision.decision.reason,
+          pnlPct,
+        },
+        policySnapshot: runtimeState?.policyMatrix || {},
+        evidenceSnapshot: {
+          regime: regimeSnapshot ? {
+            market: regimeSnapshot.market || regimeKey,
+            regime: regimeSnapshot.regime || null,
+            confidence: regimeSnapshot.confidence ?? null,
+            capturedAt: regimeSnapshot.captured_at || null,
+          } : null,
+          externalEvidenceSummary: externalEvidenceSummary || null,
+        },
+        idempotencyKey: `phase2:${lifecycleBase}`,
+      }).catch(() => null),
+      recordLifecyclePhaseSnapshot({
+        symbol: position.symbol,
+        exchange: position.exchange,
+        tradeMode: effectiveTradeMode,
+        phase: 'phase5_monitor',
+        ownerAgent: 'position_watch',
+        eventType: 'completed',
+        inputSnapshot: {
+          eventSource,
+          attentionType: attentionType || null,
+          attentionReason: attentionReason || null,
+        },
+        outputSnapshot: {
+          recommendation: decision.decision.recommendation,
+          reasonCode: decision.decision.reasonCode,
+          validationSeverity: runtimeState?.validationState?.severity || null,
+          executionAllowed: runtimeState?.executionIntent?.executionAllowed === true,
+        },
+        policySnapshot: {
+          monitoringPolicy: runtimeState?.monitoringPolicy || {},
+          policyMatrix: runtimeState?.policyMatrix || {},
+        },
+        evidenceSnapshot: {
+          externalEvidenceSummary: externalEvidenceSummary || null,
+        },
+        idempotencyKey: `phase5:${lifecycleBase}`,
+      }).catch(() => null),
+    ]);
     results.push({
       exchange: position.exchange,
       symbol: position.symbol,
       paper: position.paper === true,
-      tradeMode: position.trade_mode || 'normal',
+      tradeMode: effectiveTradeMode,
       pnlPct: calcPnlPct(position),
       recommendation: decision.decision.recommendation,
       reasonCode: decision.decision.reasonCode,
@@ -861,6 +945,7 @@ export async function reevaluateOpenPositions({
           confidence: regimeSnapshot.confidence ?? null,
           capturedAt: regimeSnapshot.captured_at || null,
         } : null,
+        externalEvidenceSummary: externalEvidenceSummary || null,
         runtimeState,
         latestBacktest: latestBacktest ? {
           createdAt: latestBacktest.created_at || null,
